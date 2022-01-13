@@ -36,6 +36,9 @@
 ##include "mem.isa"
 ##include "fp.isa"
 ##include "amo.isa"
+##include "vector.isa"
+##include "vec_arith.isa"
+##include "vec_mem.isa"
 
 // Include formats for nonstandard extensions
 ##include "compressed.isa"

@@ -1,7 +1,6 @@
 // -*- mode:c++ -*-
 
-// Copyright (c) 2015 RISC-V Foundation
-// Copyright (c) 2016 The University of Virginia
+// Copyright (c) 2022 PLCT Lab
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -27,72 +26,37 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Basic instruction class declaration template.
-def template BasicDeclare {{
-    //
-    // Static instruction class for "%(mnemonic)s".
-    //
-    class %(class_name)s : public %(base_class)s
-    {
-      private:
-        %(reg_idx_arr_decl)s;
 
-      public:
-        /// Constructor.
-        %(class_name)s(ExtMachInst machInst);
-        Fault execute(ExecContext *, Trace::InstRecord *) const override;
-        using %(base_class)s::generateDisassembly;
-    };
-}};
-
-// Basic instruction class constructor template.
-def template BasicConstructor {{
-    %(class_name)s::%(class_name)s(ExtMachInst machInst)
-        : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s)
-    {
-        %(set_reg_idx_arr)s;
-        %(constructor)s;
-    }
-}};
-
-
-// Basic instruction class execute method template.
-def template BasicExecute {{
-    Fault
-    %(class_name)s::execute(ExecContext *xc,
-        Trace::InstRecord *traceData) const
-    {
-        %(op_decl)s;
-        %(op_rd)s;
-        %(code)s;
-        %(op_wb)s;
-        return NoFault;
-    }
-}};
-
-def template NoWBExecute {{
-    Fault
-    %(class_name)s::execute(ExecContext *xc,
-        Trace::InstRecord *traceData) const
-    {
-        %(op_decl)s;
-        %(op_rd)s;
-        %(code)s;
-        return NoFault;
-    }
-}};
-
-
-// Basic decode template.
-def template BasicDecode {{
-    return new %(class_name)s(machInst);
-}};
-
-// The most basic instruction format...
-def format BasicOp(code, *flags) {{
-    iop = InstObjParams(name, Name, 'RiscvStaticInst', code, flags)
+def format VConfOp(code, *flags) {{
+    iop = InstObjParams(name, Name, 'VConfOp', code, flags)
     header_output = BasicDeclare.subst(iop)
     decoder_output = BasicConstructor.subst(iop)
     decode_block = BasicDecode.subst(iop)
-    exec_output = BasicExecute.subst(iop)
+    exec_output = VConfExecute.subst(iop)
+}};
+
+def template VConfExecute {{
+    Fault
+    %(class_name)s::execute(ExecContext *xc,
+        Trace::InstRecord *traceData) const
+    {
+        auto tc = xc->tcBase();
+
+        %(op_decl)s;
+        %(op_rd)s;
+        %(code)s;
+
+        if (vlmax == 0) {
+            vtype_set_vill(vtype);
+            vl = 0;
+        }
+        tc->setMiscReg(MISCREG_VL, vl);
+        tc->setMiscReg(MISCREG_VTYPE, vtype);
+        tc->setMiscReg(MISCREG_VSTART, 0);
+        tc->getDecoderPtr()->as<Decoder>().setVl(vl);
+        tc->getDecoderPtr()->as<Decoder>().setVtype(vtype);
+        tc->getDecoderPtr()->as<Decoder>().setVConfigDone();
+        %(op_wb)s;
+        return NoFault;
+    }
 }};

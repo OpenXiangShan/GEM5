@@ -303,6 +303,7 @@ Fetch2::evaluate()
 
         unsigned int output_index = 0;
 
+        bool fetch2_stall = false;
         /* Pack instructions into the output while we can.  This may involve
          * using more than one input line.  Note that lineWidth will be 0
          * for faulting lines */
@@ -310,7 +311,8 @@ Fetch2::evaluate()
             (line_in->isFault() ||
                 fetch_info.inputIndex < line_in->lineWidth) && /* More input */
             output_index < outputWidth && /* More output to fill */
-            prediction.isBubble() /* No predicted branch */)
+            prediction.isBubble() && /* No predicted branch */
+            !fetch2_stall)
         {
             ThreadContext *thread = cpu.getContext(line_in->id.threadId);
             InstDecoder *decoder = thread->getDecoderPtr();
@@ -386,6 +388,7 @@ Fetch2::evaluate()
                         line_in->lineBaseAddr + fetch_info.inputIndex);
                     DPRINTF(Fetch, "Offering MachInst to decoder addr: 0x%x\n",
                             line_in->lineBaseAddr + fetch_info.inputIndex);
+                    fetch2_stall = decoder->isStalled();
                 }
 
                 /* Maybe make the above a loop to accomodate ISAs with

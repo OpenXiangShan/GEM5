@@ -32,7 +32,6 @@
 #include <sstream>
 #include <string>
 
-#include "arch/riscv/insts/bitfields.hh"
 #include "arch/riscv/utility.hh"
 #include "cpu/exec_context.hh"
 #include "cpu/static_inst.hh"
@@ -49,7 +48,7 @@ MemFenceMicro::generateDisassembly(
         Addr pc, const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
-    ss << csprintf("0x%08x", machInst) << ' ' << mnemonic;
+    ss << csprintf("0x%08x", machInst.instBits) << ' ' << mnemonic;
     return ss.str();
 }
 
@@ -66,11 +65,11 @@ LoadReserved::generateDisassembly(
 {
     std::stringstream ss;
     ss << mnemonic;
-    if (AQ || RL)
+    if (machInst.aq || machInst.rl)
         ss << '_';
-    if (AQ)
+    if (machInst.aq)
         ss << "aq";
-    if (RL)
+    if (machInst.rl)
         ss << "rl";
     ss << ' ' << registerName(RegId(IntRegClass, RD)) << ", ("
             << registerName(RegId(IntRegClass, RS1)) << ')';
@@ -94,11 +93,11 @@ StoreCond::generateDisassembly(
 {
     std::stringstream ss;
     ss << mnemonic;
-    if (AQ || RL)
+    if (machInst.aq || machInst.rl)
         ss << '_';
-    if (AQ)
+    if (machInst.aq)
         ss << "aq";
-    if (RL)
+    if (machInst.rl)
         ss << "rl";
     ss << ' ' << registerName(RegId(IntRegClass, RD)) << ", "
             << registerName(RegId(IntRegClass, RS2)) << ", ("
@@ -124,11 +123,11 @@ AtomicMemOp::generateDisassembly(
 {
     std::stringstream ss;
     ss << mnemonic;
-    if (AQ || RL)
+    if (machInst.aq || machInst.rl)
         ss << '_';
-    if (AQ)
+    if (machInst.aq)
         ss << "aq";
-    if (RL)
+    if (machInst.rl)
         ss << "rl";
     ss << ' ' << registerName(RegId(IntRegClass, RD)) << ", "
             << registerName(RegId(IntRegClass, RS2)) << ", ("

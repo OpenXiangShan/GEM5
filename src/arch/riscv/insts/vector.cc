@@ -1,6 +1,5 @@
 /*
- * Copyright (c) 2015 RISC-V Foundation
- * Copyright (c) 2017 The University of Virginia
+ * Copyright (c) 2022 PLCT Lab
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,7 +26,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "arch/riscv/insts/mem.hh"
+#include "arch/riscv/insts/vector.hh"
 
 #include <sstream>
 #include <string>
@@ -43,20 +42,17 @@ namespace RiscvISA
 {
 
 std::string
-Load::generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const
+VConfOp::generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
-    ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", " <<
-        offset << '(' << registerName(srcRegIdx(0)) << ')';
-    return ss.str();
-}
-
-std::string
-Store::generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const
-{
-    std::stringstream ss;
-    ss << mnemonic << ' ' << registerName(srcRegIdx(1)) << ", " <<
-        offset << '(' << registerName(srcRegIdx(0)) << ')';
+    ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", ";
+    if (bit31 && bit30 == 0) {
+        ss << registerName(srcRegIdx(0)) << ", " << registerName(srcRegIdx(1));
+    } else if (bit31 && bit30) {
+        ss << uimm << ", " << zimm;
+    } else {
+        ss << registerName(srcRegIdx(0)) << ", " << zimm;
+    }
     return ss.str();
 }
 

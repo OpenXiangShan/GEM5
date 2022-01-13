@@ -353,6 +353,7 @@ class VecRegOperand(RegOperand):
 
     def makeWrite(self):
         return f'''
+        xc->setRegOperand(this, 0, &tmp_d{op_idx});
         if (traceData) {{
             traceData->setData(tmp_d{self.dest_reg_idx});
         }}

@@ -53,5 +53,8 @@ namespace RiscvISA;
 //Include the definitions for the instruction formats
 ##include "formats/formats.isa"
 
+//Include the definitions for the instruction templates
+##include "templates/templates.isa"
+
 //Include the decoder definition
 ##include "decoder.isa"

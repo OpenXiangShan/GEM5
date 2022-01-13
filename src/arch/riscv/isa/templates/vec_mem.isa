@@ -1,0 +1,398 @@
+
+def template VLoadStoreMacroDeclare {{
+  class %(class_name)s : public %(base_class)s
+  {
+  private:
+    %(reg_idx_arr_decl)s;
+  public:
+    %(class_name)s(ExtMachInst extMachInst);
+    using %(base_class)s::generateDisassembly;
+  };
+}};
+
+def template VleConstructor {{
+  %(class_name)s::%(class_name)s(ExtMachInst extMachInst)
+      : %(base_class)s("%(mnemonic)s", extMachInst, VectorDummyOp)
+  {
+    %(set_reg_idx_arr)s;
+    %(constructor)s;
+    // num of mem acc operations in one Vec reg
+    uint32_t numMaPerVReg = this->numMemAccPerVReg();
+    // num of elem in one mem acc operation
+    int32_t elemNumPerMa = this->numElemPerMemAcc();
+    flags[IsVector] = true;
+    int32_t left_vl = this->vl;
+    int32_t micro_vl = std::min(left_vl, elemNumPerMa);
+    StaticInstPtr micro_op;
+    uint32_t offset;
+
+    for (VecRegIdx i=0; micro_vl>0; ++i) {
+      int regCnt = 0;
+      for (int j=0; j<numMaPerVReg && micro_vl>0; ++j) {
+        offset = (i * numMaPerVReg + j) * cache_line_size / 8;
+        micro_op = new %(class_name)sMicro(extMachInst, offset,
+                VecMemInternalReg0 + j, micro_vl);
+        micro_op->setFlag(IsDelayedCommit);
+        micro_op->setFlag(IsLoad);
+        this->microops.push_back(micro_op);
+        micro_vl = std::min(left_vl -= elemNumPerMa, elemNumPerMa);
+        regCnt++;
+      }
+      micro_op = new VldMvMicroInst(extMachInst, extMachInst.vd + i, regCnt);
+      this->microops.push_back(micro_op);
+    }
+    this->microops.front()->setFlag(IsFirstMicroop);
+    this->microops.back()->setFlag(IsLastMicroop);
+  }
+}};
+
+def template VleMicroDeclare {{
+  class %(class_name)s : public %(base_class)s
+  {
+  private:
+    RegId destRegIdxArr[1];
+    RegId srcRegIdxArr[1];
+  public:
+    %(class_name)s(ExtMachInst extMachInst, uint32_t _offset, uint8_t _dst_reg,
+            uint8_t _micro_vl)
+        : %(base_class)s("%(mnemonic)s", extMachInst, VectorDummyOp,
+            _offset, _dst_reg, _micro_vl)
+    {
+      %(set_reg_idx_arr)s;
+      _numSrcRegs = 0;
+      _numDestRegs = 0;
+      _numFPDestRegs = 0;
+      _numVecDestRegs = 0;
+      _numVecElemDestRegs = 0;
+      _numVecPredDestRegs = 0;
+      _numIntDestRegs = 0;
+      _numCCDestRegs = 0;
+      setDestRegIdx(_numDestRegs++, RegId(VecRegClass, _dst_reg));
+      _numVecDestRegs++;
+      setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, extMachInst.rs1));
+      this->flags[IsVector] = true;
+      this->flags[IsLoad] = true;
+    }
+    Fault execute(ExecContext *, Trace::InstRecord *) const override;
+    Fault initiateAcc(ExecContext *, Trace::InstRecord *) const override;
+    Fault completeAcc(PacketPtr, ExecContext *,
+                        Trace::InstRecord *) const override;
+    using %(base_class)s::generateDisassembly;
+  };
+}};
+
+def template VleMicroExecute {{
+  Fault
+  %(class_name)s::execute(ExecContext *xc,
+    Trace::InstRecord *traceData) const
+  {
+    auto tc = xc->tcBase();
+
+    Addr EA;
+    Fault fault = NoFault;
+    std::size_t memAccessSize = this->micro_vl * this->sew() / 8;
+
+    const TheISA::vreg_t& tmp_v0 = tc->readVecReg(RegId(VecRegClass, 0));
+    [[maybe_unused]] auto v0 = tmp_v0.as<uint8_t>();
+
+    %(op_decl)s;
+
+    %(op_rd)s;
+
+    %(ea_code)s;
+
+    if (fault == NoFault) {
+      fault = readMemAtomic(xc, EA, Mem.as<uint8_t>(), memAccessSize,
+              this->memAccessFlags, std::vector<bool>(memAccessSize, true));
+      for (size_t i = 0; i < this->micro_vl; i++) {
+        %(memacc_code)s;
+      }
+    }
+
+    // (op_wb)s;
+    if (fault == NoFault) {
+      xc->setVecRegOperand(this, 0, tmp_d0);
+    }
+    if (traceData) {
+      traceData->setData(tmp_d0);
+    }
+    return fault;
+  }
+}};
+
+def template VleMicroInitiateAcc {{
+  Fault
+  %(class_name)s::initiateAcc(ExecContext* xc,
+      Trace::InstRecord* traceData) const
+  {
+    Addr EA;
+    Fault fault = NoFault;
+    std::size_t memAccessSize = this->micro_vl * this->sew() / 8;
+    %(op_src_decl)s;
+
+    %(op_rd)s;
+
+    %(ea_code)s;
+
+    if (fault == NoFault) {
+      fault = initiateMemRead(xc, EA, memAccessSize, this->memAccessFlags,
+              std::vector<bool>(memAccessSize, true));
+    }
+    return fault;
+  }
+}};
+
+def template VleMicroCompleteAcc {{
+  Fault
+  %(class_name)s::completeAcc(PacketPtr pkt,
+              ExecContext *xc, Trace::InstRecord *traceData) const
+  {
+    Fault fault = NoFault;
+    %(op_decl)s;
+
+    %(op_rd)s;
+
+    memcpy(Mem.as<uint8_t>(), pkt->getPtr<uint8_t>(),
+                pkt->getSize());
+
+    if (fault == NoFault) {
+      for (size_t i = 0; i < this->micro_vl; i++) {
+        %(memacc_code)s;
+      }
+    }
+    // (op_wb)s;
+    if (fault == NoFault) {
+      xc->setVecRegOperand(this, 0, tmp_d0);
+    }
+    if (traceData) {
+      traceData->setData(tmp_d0);
+    }
+    return fault;
+  }
+}};
+
+def template VseConstructor {{
+  %(class_name)s::%(class_name)s(ExtMachInst extMachInst)
+    : %(base_class)s("%(mnemonic)s", extMachInst, VectorDummyOp)
+  {
+    %(set_reg_idx_arr)s;
+    %(constructor)s;
+    // num of mem acc operations in one Vec reg
+    uint32_t numMaPerVReg = this->numMemAccPerVReg();
+    // num of elem in one mem acc operation
+    int32_t elemNumPerMa = this->numElemPerMemAcc();
+    flags[IsVector] = true;
+    int32_t left_vl = this->vl;
+    int32_t micro_vl = std::min(left_vl, elemNumPerMa);
+
+    StaticInstPtr micro_op;
+    std::vector<StaticInstPtr> tmp_ops;
+    uint32_t offset;
+    for (VecRegIdx i=0; micro_vl>0; ++i) {
+      int regCnt = 0;
+      for (int j=0; j<numMaPerVReg && micro_vl>0; ++j) {
+        offset = (i * numMaPerVReg + j) * cache_line_size / 8;
+        micro_op = new %(class_name)sMicro(extMachInst, offset,
+                VecMemInternalReg0 + j, micro_vl);
+        micro_op->setFlag(IsDelayedCommit);
+        micro_op->setFlag(IsStore);
+        tmp_ops.push_back(micro_op);
+        micro_vl = std::min(left_vl -= elemNumPerMa, elemNumPerMa);
+        regCnt++;
+      }
+      micro_op = new VstMvMicroInst(extMachInst, extMachInst.vs3 + i, regCnt);
+      this->microops.push_back(micro_op);
+      for (StaticInstPtr op : tmp_ops) {
+        this->microops.push_back(op);
+      }
+      tmp_ops.clear();
+    }
+    this->microops.front()->setFlag(IsFirstMicroop);
+    this->microops.back()->setFlag(IsLastMicroop);
+  }
+}};
+
+def template VseMicroDeclare {{
+  class %(class_name)s : public %(base_class)s
+  {
+  private:
+    RegId destRegIdxArr[0];
+    RegId srcRegIdxArr[2];
+  public:
+    %(class_name)s(ExtMachInst extMachInst, uint32_t _offset, uint8_t _src_reg,
+                uint8_t _micro_vl)
+        : %(base_class)s("%(mnemonic)s""_micro", extMachInst, VectorDummyOp,
+                _offset, _src_reg, _micro_vl)
+    {
+      %(set_reg_idx_arr)s;
+      _numSrcRegs = 0;
+      _numDestRegs = 0;
+      _numFPDestRegs = 0;
+      _numVecDestRegs = 0;
+      _numVecElemDestRegs = 0;
+      _numVecPredDestRegs = 0;
+      _numIntDestRegs = 0;
+      _numCCDestRegs = 0;
+      setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, extMachInst.rs1));
+      setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _src_reg));
+      this->flags[IsVector] = true;
+      this->flags[IsStore] = true;
+    }
+    Fault execute(ExecContext *, Trace::InstRecord *) const override;
+    Fault initiateAcc(ExecContext *, Trace::InstRecord *) const override;
+    Fault completeAcc(PacketPtr, ExecContext *,
+                        Trace::InstRecord *) const override;
+    using %(base_class)s::generateDisassembly;
+  };
+}};
+
+def template VseMicroExecute {{
+  Fault
+  %(class_name)s::execute(ExecContext *xc, Trace::InstRecord *traceData) const
+  {
+    auto tc = xc->tcBase();
+
+    Addr EA;
+    Fault fault = NoFault;
+    std::size_t memAccessSize = this->micro_vl * this->sew() / 8;
+    const TheISA::vreg_t& tmp_v0 = tc->readVecReg(RegId(VecRegClass, 0));
+    [[maybe_unused]] auto v0 = tmp_v0.as<uint8_t>();
+
+    %(op_decl)s;
+
+    %(op_rd)s;
+
+    %(ea_code)s;
+
+    const std::vector<bool> byte_enable(memAccessSize, true);
+
+    fault = readMemAtomic(xc, EA, Mem.as<uint8_t>(), memAccessSize,
+            this->memAccessFlags, byte_enable);
+    if (fault != NoFault) return fault;
+    for (size_t i = 0; i < this->micro_vl; i++) {
+      // Todo: add vm
+      %(memacc_code)s;
+    }
+    fault = writeMemAtomic(xc, Mem.as<uint8_t>(), EA, memAccessSize,
+            this->memAccessFlags, nullptr, byte_enable);
+    if (fault != NoFault) return fault;
+    return NoFault;
+  }
+}};
+
+def template VseMicroInitiateAcc {{
+  Fault
+  %(class_name)s::initiateAcc(ExecContext* xc,
+          Trace::InstRecord* traceData) const
+  {
+    auto tc = xc->tcBase();
+    Addr EA;
+    Fault fault = NoFault;
+    std::size_t memAccessSize = this->micro_vl * this->sew() / 8;
+    const TheISA::vreg_t& tmp_v0 = tc->readVecReg(RegId(VecRegClass, 0));
+    [[maybe_unused]] auto v0 = tmp_v0.as<uint8_t>();
+
+    %(op_decl)s;
+
+    %(op_rd)s;
+
+    %(ea_code)s;
+
+    const std::vector<bool> byte_enable(memAccessSize, true);
+
+    for (size_t i = 0; i < this->micro_vl; i++) {
+      // Todo: add vm
+      %(memacc_code)s;
+    }
+    fault = writeMemTiming(xc, Mem.as<uint8_t>(), EA, memAccessSize,
+            this->memAccessFlags, nullptr, byte_enable);
+    if (fault != NoFault) return fault;
+    return NoFault;
+  }
+}};
+
+def template VseMicroCompleteAcc {{
+  Fault
+  %(class_name)s::completeAcc(PacketPtr pkt, ExecContext* xc,
+          Trace::InstRecord* traceData) const
+  {
+    return NoFault;
+  }
+}};
+
+def template VlmConstructor {{
+  %(class_name)s::%(class_name)s(ExtMachInst extMachInst)
+      : %(base_class)s("%(mnemonic)s", extMachInst, VectorDummyOp)
+  {
+    %(set_reg_idx_arr)s;
+    %(constructor)s;
+    // num of mem acc operations in one Vec reg
+    uint32_t numMaPerVReg = this->numMemAccPerVReg();
+    // num of elem in one mem acc operation
+    int32_t elemNumPerMa = this->numElemPerMemAcc() * 8;
+    flags[IsVector] = true;
+    int32_t left_vl = this->vl;
+    int32_t micro_vl = std::min(left_vl, elemNumPerMa);
+    StaticInstPtr micro_op;
+    uint32_t offset;
+
+    for (VecRegIdx i=0; micro_vl>0; ++i) {
+      int regCnt = 0;
+      for (int j=0; j<numMaPerVReg && micro_vl>0; ++j) {
+        offset = (i * numMaPerVReg + j) * cache_line_size / 8;
+        micro_op = new Vle8_vMicro(extMachInst, offset,
+                VecMemInternalReg0 + j, (micro_vl + 7) / 8);
+        micro_op->setFlag(IsDelayedCommit);
+        micro_op->setFlag(IsLoad);
+        this->microops.push_back(micro_op);
+        micro_vl = std::min(left_vl -= elemNumPerMa, elemNumPerMa);
+        regCnt++;
+      }
+      micro_op = new VldMvMicroInst(extMachInst, extMachInst.vd + i, regCnt);
+      this->microops.push_back(micro_op);
+    }
+    this->microops.front()->setFlag(IsFirstMicroop);
+    this->microops.back()->setFlag(IsLastMicroop);
+  }
+}};
+
+def template VsmConstructor {{
+  %(class_name)s::%(class_name)s(ExtMachInst extMachInst)
+    : %(base_class)s("%(mnemonic)s", extMachInst, VectorDummyOp)
+  {
+    %(set_reg_idx_arr)s;
+    %(constructor)s;
+    // num of mem acc operations in one Vec reg
+    uint32_t numMaPerVReg = this->numMemAccPerVReg();
+    // num of elem in one mem acc operation
+    int32_t elemNumPerMa = this->numElemPerMemAcc() * 8;
+    flags[IsVector] = true;
+    int32_t left_vl = this->vl;
+    int32_t micro_vl = std::min(left_vl, elemNumPerMa);
+
+    StaticInstPtr micro_op;
+    std::vector<StaticInstPtr> tmp_ops;
+    uint32_t offset;
+    for (VecRegIdx i=0; micro_vl>0; ++i) {
+      int regCnt = 0;
+      for (int j=0; j<numMaPerVReg && micro_vl>0; ++j) {
+        offset = (i * numMaPerVReg + j) * cache_line_size / 8;
+        micro_op = new Vse8_vMicro(extMachInst, offset,
+                VecMemInternalReg0 + j, (micro_vl + 7) / 8);
+        micro_op->setFlag(IsDelayedCommit);
+        micro_op->setFlag(IsStore);
+        tmp_ops.push_back(micro_op);
+        micro_vl = std::min(left_vl -= elemNumPerMa, elemNumPerMa);
+        regCnt++;
+      }
+      micro_op = new VstMvMicroInst(extMachInst, extMachInst.vs3 + i, regCnt);
+      this->microops.push_back(micro_op);
+      for (StaticInstPtr op : tmp_ops) {
+        this->microops.push_back(op);
+      }
+      tmp_ops.clear();
+    }
+    this->microops.front()->setFlag(IsFirstMicroop);
+    this->microops.back()->setFlag(IsLastMicroop);
+  }
+}};

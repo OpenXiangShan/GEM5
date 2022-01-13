@@ -1,6 +1,5 @@
 /*
- * Copyright (c) 2015 RISC-V Foundation
- * Copyright (c) 2017 The University of Virginia
+ * Copyright (c) 2022 PLCT Lab
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,13 +26,14 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "arch/riscv/insts/mem.hh"
+#ifndef __ARCH_RISCV_INSTS_VECTOR_HH__
+#define __ARCH_RISCV_INSTS_VECTOR_HH__
 
-#include <sstream>
 #include <string>
 
 #include "arch/riscv/insts/static_inst.hh"
-#include "arch/riscv/utility.hh"
+#include "arch/riscv/regs/misc.hh"
+#include "cpu/exec_context.hh"
 #include "cpu/static_inst.hh"
 
 namespace gem5
@@ -42,23 +42,28 @@ namespace gem5
 namespace RiscvISA
 {
 
-std::string
-Load::generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const
+/**
+ * Base class for Vector Config operations
+ */
+class VConfOp : public RiscvStaticInst
 {
-    std::stringstream ss;
-    ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", " <<
-        offset << '(' << registerName(srcRegIdx(0)) << ')';
-    return ss.str();
-}
+  protected:
+    uint64_t bit30;
+    uint64_t bit31;
+    uint64_t zimm;
+    uint64_t uimm;
+    VConfOp(const char *mnem, ExtMachInst _extMachInst, OpClass __opClass)
+        : RiscvStaticInst(mnem, _extMachInst, __opClass),
+          bit30(_extMachInst.bit30), bit31(_extMachInst.bit31),
+          zimm(_extMachInst.zimm_vsetivli), uimm(_extMachInst.uimm_vsetivli)
+    {}
 
-std::string
-Store::generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const
-{
-    std::stringstream ss;
-    ss << mnemonic << ' ' << registerName(srcRegIdx(1)) << ", " <<
-        offset << '(' << registerName(srcRegIdx(0)) << ')';
-    return ss.str();
-}
+    std::string generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const override;
+};
 
 } // namespace RiscvISA
 } // namespace gem5
+
+
+#endif // __ARCH_RISCV_INSTS_VECTOR_HH__

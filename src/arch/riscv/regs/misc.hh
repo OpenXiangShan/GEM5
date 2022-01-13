@@ -187,6 +187,14 @@ enum MiscRegIndex
     MISCREG_FFLAGS,
     MISCREG_FRM,
 
+    MISCREG_VSTART,
+    MISCREG_VXSAT,
+    MISCREG_VXRM,
+    MISCREG_VCSR,
+    MISCREG_VL,
+    MISCREG_VTYPE,
+    MISCREG_VLENB,
+
     // These registers are not in the standard, hence does not exist in the
     // CSRData map. These are mainly used to provide a minimal implementation
     // for non-maskable-interrupt in our simple cpu.
@@ -364,7 +372,15 @@ enum CSRIndex
     CSR_TDATA3 = 0x7A3,
     CSR_DCSR = 0x7B0,
     CSR_DPC = 0x7B1,
-    CSR_DSCRATCH = 0x7B2
+    CSR_DSCRATCH = 0x7B2,
+
+    CSR_VSTART       = 0x008,
+    CSR_VXSAT        = 0x009,
+    CSR_VXRM         = 0x00A,
+    CSR_VCSR         = 0x00F,
+    CSR_VL           = 0xC20,
+    CSR_VTYPE        = 0xC21,
+    CSR_VLENB        = 0xC22
 };
 
 struct CSRMetadata
@@ -534,7 +550,15 @@ const std::map<int, CSRMetadata> CSRData = {
     {CSR_TDATA3, {"tdata3", MISCREG_TDATA3}},
     {CSR_DCSR, {"dcsr", MISCREG_DCSR}},
     {CSR_DPC, {"dpc", MISCREG_DPC}},
-    {CSR_DSCRATCH, {"dscratch", MISCREG_DSCRATCH}}
+    {CSR_DSCRATCH, {"dscratch", MISCREG_DSCRATCH}},
+
+    {CSR_VSTART,       {"vstart", MISCREG_VSTART}},
+    {CSR_VXSAT,        {"vxsat" , MISCREG_VXSAT}},
+    {CSR_VXRM,         {"vxrm"  , MISCREG_VXRM}},
+    {CSR_VCSR,         {"vcsr"  , MISCREG_VCSR}},
+    {CSR_VL,           {"vl"    , MISCREG_VL}},
+    {CSR_VTYPE,        {"vtype" , MISCREG_VTYPE}},
+    {CSR_VLENB,        {"vlenb" , MISCREG_VLENB}}
 };
 
 /**
@@ -557,6 +581,7 @@ BitUnion64(STATUS)
     Bitfield<16, 15> xs;
     Bitfield<14, 13> fs;
     Bitfield<12, 11> mpp;
+    Bitfield<10, 9> vs;
     Bitfield<8> spp;
     Bitfield<7> mpie;
     Bitfield<5> spie;
@@ -588,6 +613,7 @@ const off_t MXL_OFFSET = (sizeof(uint64_t) * 8 - 2);
 const off_t SXL_OFFSET = 34;
 const off_t UXL_OFFSET = 32;
 const off_t FS_OFFSET = 13;
+const off_t VS_OFFSET = 9;
 const off_t FRM_OFFSET = 5;
 
 const RegVal ISA_MXL_MASK = 3ULL << MXL_OFFSET;
@@ -607,6 +633,7 @@ const RegVal STATUS_MPRV_MASK = 1ULL << 17;
 const RegVal STATUS_XS_MASK = 3ULL << 15;
 const RegVal STATUS_FS_MASK = 3ULL << FS_OFFSET;
 const RegVal STATUS_MPP_MASK = 3ULL << 11;
+const RegVal STATUS_VS_MASK = 3ULL << VS_OFFSET;
 const RegVal STATUS_SPP_MASK = 1ULL << 8;
 const RegVal STATUS_MPIE_MASK = 1ULL << 7;
 const RegVal STATUS_SPIE_MASK = 1ULL << 5;
@@ -620,6 +647,7 @@ const RegVal MSTATUS_MASK = STATUS_SD_MASK | STATUS_SXL_MASK |
                             STATUS_MXR_MASK | STATUS_SUM_MASK |
                             STATUS_MPRV_MASK | STATUS_XS_MASK |
                             STATUS_FS_MASK | STATUS_MPP_MASK |
+                            STATUS_VS_MASK |
                             STATUS_SPP_MASK | STATUS_MPIE_MASK |
                             STATUS_SPIE_MASK | STATUS_UPIE_MASK |
                             STATUS_MIE_MASK | STATUS_SIE_MASK |
@@ -627,13 +655,14 @@ const RegVal MSTATUS_MASK = STATUS_SD_MASK | STATUS_SXL_MASK |
 const RegVal SSTATUS_MASK = STATUS_SD_MASK | STATUS_UXL_MASK |
                             STATUS_MXR_MASK | STATUS_SUM_MASK |
                             STATUS_XS_MASK | STATUS_FS_MASK |
+                            STATUS_VS_MASK |
                             STATUS_SPP_MASK | STATUS_SPIE_MASK |
                             STATUS_UPIE_MASK | STATUS_SIE_MASK |
                             STATUS_UIE_MASK;
 const RegVal USTATUS_MASK = STATUS_SD_MASK | STATUS_MXR_MASK |
                             STATUS_SUM_MASK | STATUS_XS_MASK |
-                            STATUS_FS_MASK | STATUS_UPIE_MASK |
-                            STATUS_UIE_MASK;
+                            STATUS_FS_MASK | STATUS_VS_MASK |
+                            STATUS_UPIE_MASK | STATUS_UIE_MASK;
 
 const RegVal MEI_MASK = 1ULL << 11;
 const RegVal SEI_MASK = 1ULL << 9;

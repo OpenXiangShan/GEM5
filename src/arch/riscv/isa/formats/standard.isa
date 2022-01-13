@@ -44,7 +44,7 @@ def template ImmDeclare {{
 
       public:
         /// Constructor.
-        %(class_name)s(MachInst machInst);
+        %(class_name)s(ExtMachInst machInst);
         Fault execute(ExecContext *, Trace::InstRecord *) const override;
         std::string generateDisassembly(Addr pc,
             const loader::SymbolTable *symtab) const override;
@@ -52,7 +52,7 @@ def template ImmDeclare {{
 }};
 
 def template ImmConstructor {{
-    %(class_name)s::%(class_name)s(MachInst machInst)
+    %(class_name)s::%(class_name)s(ExtMachInst machInst)
         : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s)
     {
         %(set_reg_idx_arr)s;
@@ -168,7 +168,7 @@ def template BranchDeclare {{
 
       public:
         /// Constructor.
-        %(class_name)s(MachInst machInst);
+        %(class_name)s(ExtMachInst machInst);
         Fault execute(ExecContext *, Trace::InstRecord *) const override;
 
         std::string
@@ -226,7 +226,7 @@ def template JumpDeclare {{
 
       public:
         /// Constructor.
-        %(class_name)s(MachInst machInst);
+        %(class_name)s(ExtMachInst machInst);
         Fault execute(ExecContext *, Trace::InstRecord *) const override;
 
         std::string

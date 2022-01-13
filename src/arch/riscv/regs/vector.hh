@@ -1,6 +1,5 @@
 /*
- * Copyright (c) 2015 RISC-V Foundation
- * Copyright (c) 2017 The University of Virginia
+ * Copyright (c) 2022 PLCT Lab
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,14 +26,16 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "arch/riscv/insts/mem.hh"
 
-#include <sstream>
+#ifndef __ARCH_RISCV_REGS_VECTOR_HH__
+#define __ARCH_RISCV_REGS_VECTOR_HH__
+
+#include <cstdint>
 #include <string>
+#include <vector>
 
-#include "arch/riscv/insts/static_inst.hh"
-#include "arch/riscv/utility.hh"
-#include "cpu/static_inst.hh"
+#include "arch/generic/vec_pred_reg.hh"
+#include "arch/generic/vec_reg.hh"
 
 namespace gem5
 {
@@ -42,23 +43,38 @@ namespace gem5
 namespace RiscvISA
 {
 
-std::string
-Load::generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const
-{
-    std::stringstream ss;
-    ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", " <<
-        offset << '(' << registerName(srcRegIdx(0)) << ')';
-    return ss.str();
-}
+constexpr unsigned NumVecElemPerVecReg = 4;
+using VecElem = uint64_t;
+constexpr size_t vlenb = NumVecElemPerVecReg * sizeof(VecElem);
+constexpr size_t VLEN = vlenb * 8;
+using VecRegContainer =
+    gem5::VecRegContainer<vlenb>;
+using vreg_t = VecRegContainer;
 
-std::string
-Store::generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const
-{
-    std::stringstream ss;
-    ss << mnemonic << ' ' << registerName(srcRegIdx(1)) << ", " <<
-        offset << '(' << registerName(srcRegIdx(0)) << ')';
-    return ss.str();
-}
+using VecPredReg =
+    gem5::VecPredRegT<VecElem, NumVecElemPerVecReg, false, false>;
+using ConstVecPredReg =
+    gem5::VecPredRegT<VecElem, NumVecElemPerVecReg, false, true>;
+using VecPredRegContainer = VecPredReg::Container;
+using VecRegIdx = uint8_t;
+
+const int NumVecStandardRegs = 32;
+const int NumVecMemInternalRegs = 4;
+
+const int NumVecRegs = NumVecStandardRegs + NumVecMemInternalRegs;
+
+const std::vector<std::string> VecRegNames = {
+    "v0",   "v1",   "v2",   "v3",   "v4",   "v5",   "v6",   "v7",
+    "v8",   "v9",   "v10",  "v11",  "v12",  "v13",  "v14",  "v15",
+    "v16",  "v17",  "v18",  "v19",  "v20",  "v21",  "v22",  "v23",
+    "v24",  "v25",  "v26",  "v27",  "v28",  "v29",  "v30",  "v31",
+    "vmem0", "vmem1", "vmem2", "vmem3"
+};
+
+// internal vector indices
+constexpr int VecMemInternalReg0 = NumVecStandardRegs;
 
 } // namespace RiscvISA
 } // namespace gem5
+
+#endif // __ARCH_RISCV_REGS_VECTOR_HH__

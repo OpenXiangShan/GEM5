@@ -41,6 +41,7 @@
 #include "arch/riscv/regs/float.hh"
 #include "arch/riscv/regs/int.hh"
 #include "arch/riscv/regs/misc.hh"
+#include "arch/riscv/regs/vector.hh"
 #include "base/bitfield.hh"
 #include "base/compiler.hh"
 #include "base/logging.hh"
@@ -52,6 +53,7 @@
 #include "debug/LLSC.hh"
 #include "debug/MiscRegs.hh"
 #include "debug/RiscvMisc.hh"
+#include "debug/VecRegs.hh"
 #include "mem/packet.hh"
 #include "mem/request.hh"
 #include "params/RiscvISA.hh"
@@ -190,10 +192,30 @@ namespace RiscvISA
     [MISCREG_FFLAGS]        = "FFLAGS",
     [MISCREG_FRM]           = "FRM",
 
+    [MISCREG_VSTART]        = "VSTART",
+    [MISCREG_VXSAT]         = "VXSAT",
+    [MISCREG_VXRM]          = "VXRM",
+    [MISCREG_VCSR]          = "VCSR",
+    [MISCREG_VL]            = "VL",
+    [MISCREG_VTYPE]         = "VTYPE",
+    [MISCREG_VLENB]         = "VLENB",
+
     [MISCREG_NMIVEC]        = "NMIVEC",
     [MISCREG_NMIE]          = "NMIE",
     [MISCREG_NMIP]          = "NMIP",
 }};
+
+
+namespace
+{
+
+/* Not applicable to RISCV */
+RegClass vecPredRegClass(VecPredRegClass, VecPredRegClassName, 1,
+        debug::IntRegs);
+RegClass ccRegClass(CCRegClass, CCRegClassName, 0, debug::IntRegs);
+
+} // anonymous namespace
+
 
 ISA::ISA(const Params &p) : BaseISA(p)
 {
@@ -233,6 +255,8 @@ ISA::copyRegsFrom(ThreadContext *src)
         tc->setReg(reg, src->getReg(reg));
     }
 
+    // TODO: Copy vector regs.
+
     // Lastly copy PC/NPC
     tc->pcState(src->pcState());
 }
@@ -248,10 +272,12 @@ void ISA::clear()
     miscRegFile[MISCREG_IMPID] = 0;
     if (FullSystem) {
         // Xiangshan assume machine boots with FS off
-        miscRegFile[MISCREG_STATUS] = (2ULL << UXL_OFFSET) | (2ULL << SXL_OFFSET);
+        miscRegFile[MISCREG_STATUS] = (2ULL << UXL_OFFSET) | (2ULL << SXL_OFFSET) |
+                                    (1ULL << VS_OFFSET);
     } else {
         // SE assumes process starts with FS on
-        miscRegFile[MISCREG_STATUS] = (2ULL << UXL_OFFSET) | (2ULL << SXL_OFFSET) | (1ULL << FS_OFFSET);
+        miscRegFile[MISCREG_STATUS] = (2ULL << UXL_OFFSET) | (2ULL << SXL_OFFSET) |
+                                    (1ULL << FS_OFFSET) | (1ULL << VS_OFFSET);
     }
     miscRegFile[MISCREG_MCOUNTEREN] = 0x7;
     miscRegFile[MISCREG_SCOUNTEREN] = 0x7;
@@ -356,6 +382,11 @@ ISA::readMiscReg(int misc_reg)
             else
                 return mbits(val, 63, 1);
         }
+      case MISCREG_VLENB:
+        {
+            return vlenb;
+        }
+        break;
       default:
         // Try reading HPM counters
         // As a placeholder, all HPM counters are just cycle counters

@@ -42,7 +42,7 @@ decode QUADRANT default Unknown::unknown() {
                   CIMM8<7:6> << 4 |
                   CIMM8<5:2> << 6;
         }}, {{
-            if (machInst == 0)
+            if (machInst.instBits == 0)
                 return std::make_shared<IllegalInstFault>("zero instruction",
                                                            machInst);
             Rp2 = sp + imm;
@@ -448,6 +448,38 @@ decode QUADRANT default Unknown::unknown() {
                     Fd_bits = fd.v;
                 }}, inst_flags=FloatMemReadOp);
             }
+
+            0x0: decode MOP {
+                0x0: decode LUMOP {
+                    0x00: VleOp::vle8_v({{
+                        Vd_ub[i] = Mem_vc.as<uint8_t>()[i];
+                    }}, inst_flags=VectorDummyOp);
+                    0x0b: VlmOp::vlm_v({{
+                        Vd_ub[i] = Mem_vc.as<uint8_t>()[i];
+                    }}, inst_flags=VectorDummyOp);
+                }
+            }
+            0x5: decode MOP {
+                0x0: decode LUMOP {
+                    0x00: VleOp::vle16_v({{
+                        Vd_uh[i] = Mem_vc.as<uint16_t>()[i];
+                    }}, inst_flags=VectorDummyOp);
+                }
+            }
+            0x6: decode MOP {
+                0x0: decode LUMOP {
+                    0x00: VleOp::vle32_v({{
+                        Vd_uw[i] = Mem_vc.as<uint32_t>()[i];
+                    }}, inst_flags=VectorDummyOp);
+                }
+            }
+            0x7: decode MOP {
+                0x0: decode LUMOP {
+                    0x00: VleOp::vle64_v({{
+                        Vd_ud[i] = Mem_vc.as<uint64_t>()[i];
+                    }}, inst_flags=VectorDummyOp);
+                }
+            }
         }
 
         0x03: decode FUNCT3 {
@@ -686,6 +718,38 @@ decode QUADRANT default Unknown::unknown() {
 
                     Mem_ud = Fs2_bits;
                 }}, inst_flags=FloatMemWriteOp);
+            }
+
+            0x0: decode MOP {
+                0x0: decode SUMOP {
+                    0x00: VseOp::vse8_v({{
+                        Mem_vc.as<uint8_t>()[i] = Vs3_ub[i];
+                    }}, inst_flags=VectorDummyOp);
+                    0x0b: VsmOp::vsm_v({{
+                        Mem_vc.as<uint8_t>()[i] = Vs3_ub[i];
+                    }}, inst_flags=VectorDummyOp);
+                }
+            }
+            0x5: decode MOP {
+                0x0: decode SUMOP {
+                    0x00: VseOp::vse16_v({{
+                        Mem_vc.as<uint16_t>()[i] = Vs3_uh[i];
+                    }}, inst_flags=VectorDummyOp);
+                }
+            }
+            0x6: decode MOP {
+                0x0: decode SUMOP {
+                    0x00: VseOp::vse32_v({{
+                        Mem_vc.as<uint32_t>()[i] = Vs3_uw[i];
+                    }}, inst_flags=VectorDummyOp);
+                }
+            }
+            0x7: decode MOP {
+                0x0: decode SUMOP {
+                    0x00: VseOp::vse64_v({{
+                        Mem_vc.as<uint64_t>()[i] = Vs3_ud[i];
+                    }}, inst_flags=VectorDummyOp);
+                }
             }
         }
 
@@ -1856,6 +1920,471 @@ decode QUADRANT default Unknown::unknown() {
                     fd = freg(f16(Rs1_uh));
                     Fd_bits = fd.v;
                 }}, FloatCvtOp);
+            }
+        }
+
+        0x15: decode FUNCT3 {
+            0x0: decode VFUNCT6 {
+                // OPIVV
+                format VectorIntFormat {
+                    0x0: vadd_vv({{
+                        Vd_vu[i] = Vs2_vu[i] + Vs1_vu[i];
+                    }}, OPIVV, VectorDummyOp);
+                    0x2: vsub_vv({{
+                        Vd_vu[i] = Vs2_vu[i] - Vs1_vu[i];
+                    }}, OPIVV, VectorDummyOp);
+                    0x4: vminu_vv({{
+                        Vd_vu[i] = Vs2_vu[i] < Vs1_vu[i] ?
+                                Vs2_vu[i] : Vs1_vu[i];
+                    }}, OPIVV, VectorDummyOp);
+                    0x5: vmin_vv({{
+                        Vd_vi[i] = Vs2_vi[i] < Vs1_vi[i] ?
+                                Vs2_vi[i] : Vs1_vi[i];
+                    }}, OPIVV, VectorDummyOp);
+                    0x6: vmaxu_vv({{
+                        Vd_vu[i] = Vs2_vu[i] > Vs1_vu[i] ?
+                                Vs2_vu[i] : Vs1_vu[i];
+                    }}, OPIVV, VectorDummyOp);
+                    0x7: vmax_vv({{
+                        Vd_vi[i] = Vs2_vi[i] > Vs1_vi[i] ?
+                                Vs2_vi[i] : Vs1_vi[i];
+                    }}, OPIVV, VectorDummyOp);
+                    0x9: vand_vv({{
+                        Vd_vu[i] = Vs2_vu[i] & Vs1_vu[i];
+                    }}, OPIVV, VectorDummyOp);
+                    0xa: vor_vv({{
+                        Vd_vu[i] = Vs2_vu[i] | Vs1_vu[i];
+                    }}, OPIVV, VectorDummyOp);
+                    0xb: vxor_vv({{
+                        Vd_vu[i] = Vs2_vu[i] ^ Vs1_vu[i];
+                    }}, OPIVV, VectorDummyOp);
+                    0xc: vrgather_vv({{
+                        Vd_vu[i] = Vs1_vu[i] >= this->vlmax()
+                            ? 0
+                            : Vs2_vu[Vs1_vu[i]];
+                    }}, OPIVV, VectorDummyOp);
+                    0x10: decode VM {
+                        0x0: vadc_vvm({{
+                            Vd_vi[i] = Vs2_vi[i] + Vs1_vi[i]
+                                    + elem_mask(v0, ei);
+                        }}, OPIVV, VectorDummyOp);
+                        // the unmasked versions (vm=1) are reserved
+                    }
+                    0x12: decode VM {
+                        0x0: vsbc_vvm({{
+                            Vd_vi[i] = Vs2_vi[i] - Vs1_vi[i]
+                                    - elem_mask(v0, ei);
+                        }}, OPIVV, VectorDummyOp);
+                        // the unmasked versions (vm=1) are reserved
+                    }
+                    0x17: decode VM {
+                        0x0: vmerge_vvm({{
+                            Vd_vu[i] = elem_mask(v0, ei)
+                                    ? Vs1_vu[i]
+                                    : Vs2_vu[i];
+                        }}, OPIVV, VectorDummyOp);
+                        0x1: decode VS2 {
+                            0x0: vmv_v_v({{
+                                Vd_vu[i] = Vs1_vu[i];
+                            }}, OPIVV, VectorDummyOp);
+                        }
+                    }
+                    0x25: vsll_vv({{
+                        Vd_vu[i] = Vs2_vu[i] << (Vs1_vu[i] & this->sew_mask());
+                    }}, OPIVV, VectorDummyOp);
+                    0x28: vsrl_vv({{
+                        Vd_vu[i] = Vs2_vu[i] >> (Vs1_vu[i] & this->sew_mask());
+                    }}, OPIVV, VectorDummyOp);
+                    0x29: vsra_vv({{
+                        Vd_vi[i] = Vs2_vi[i] >> (Vs1_vu[i] & this->sew_mask());
+                    }}, OPIVV, VectorDummyOp);
+                }
+                format VectorIntMaskFormat {
+                    0x11: decode VM {
+                        0x0: vmadc_vvm({{
+                            Vds[ei/8] = ASSIGN_VD_BIT(ei, carry_out(
+                                    Vs2_vu[i], Vs1_vu[i], elem_mask(v0, ei)));
+                        }}, OPIVV, VectorDummyOp);
+                        0x1: vmadc_vv({{
+                            Vds[ei/8] = ASSIGN_VD_BIT(ei, carry_out(
+                                    Vs2_vu[i], Vs1_vu[i]));
+                        }}, OPIVV, VectorDummyOp);
+                    }
+                    0x13: decode VM {
+                        0x0: vmsbc_vvm({{
+                            Vds[ei/8] = ASSIGN_VD_BIT(ei, borrow_out(
+                                    Vs2_vi[i], Vs1_vi[i], elem_mask(v0, ei)));
+                        }}, OPIVV, VectorDummyOp);
+                        0x1: vmsbc_vv({{
+                            Vds[ei/8] = ASSIGN_VD_BIT(ei, borrow_out(
+                                    Vs2_vi[i], Vs1_vi[i]));
+                        }}, OPIVV, VectorDummyOp);
+                    }
+                    0x18: vmseq_vv({{
+                        if (this->vm || elem_mask(v0, ei)) {
+                            Vds[ei/8] = ASSIGN_VD_BIT(ei,
+                                (Vs2_vu[i] == Vs1_vu[i]));
+                        }
+                    }}, OPIVV, VectorDummyOp);
+                    0x19: vmsne_vv({{
+                        if (this->vm || elem_mask(v0, ei)) {
+                            Vds[ei/8] = ASSIGN_VD_BIT(ei,
+                                (Vs2_vu[i] != Vs1_vu[i]));
+                        };
+                    }}, OPIVV, VectorDummyOp);
+                    0x1a: vmsltu_vv({{
+                        if (this->vm || elem_mask(v0, ei)) {
+                            Vds[ei/8] = ASSIGN_VD_BIT(ei,
+                                (Vs2_vu[i] < Vs1_vu[i]));
+                        };
+                    }}, OPIVV, VectorDummyOp);
+                    0x1b: vmslt_vv({{
+                        if (this->vm || elem_mask(v0, ei)) {
+                            Vds[ei/8] = ASSIGN_VD_BIT(ei,
+                                (Vs2_vi[i] < Vs1_vi[i]));
+                        };
+                    }}, OPIVV, VectorDummyOp);
+                    0x1c: vmsleu_vv({{
+                        if (this->vm || elem_mask(v0, ei)) {
+                            Vds[ei/8] = ASSIGN_VD_BIT(ei,
+                                (Vs2_vu[i] <= Vs1_vu[i]));
+                        };
+                    }}, OPIVV, VectorDummyOp);
+                    0x1d: vmsle_vv({{
+                        if (this->vm || elem_mask(v0, ei)) {
+                            Vds[ei/8] = ASSIGN_VD_BIT(ei,
+                                (Vs2_vi[i] <= Vs1_vi[i]));
+                        };
+                    }}, OPIVV, VectorDummyOp);
+                }
+            }
+            0x1: decode VFUNCT6 {
+                format VectorFloatFormat {
+                    0x00: vfadd_vv({{
+                        auto fd = fadd(ftype(Vs2_vu[i]), ftype(Vs1_vu[i]));
+                        Vd_vu[i] = fd.v;
+                    }}, VectorDummyOp);
+                    0x02: vfsub_vv({{
+                        auto fd = fsub(ftype(Vs2_vu[i]), ftype(Vs1_vu[i]));
+                        Vd_vu[i] = fd.v;
+                    }}, VectorDummyOp);
+                    0x04: vfmin_vv({{
+                        auto fd = fmin(ftype(Vs2_vu[i]), ftype(Vs1_vu[i]));
+                        Vd_vu[i] = fd.v;
+                    }}, VectorDummyOp);
+                    0x06: vfmax_vv({{
+                        auto fd = fmax(ftype(Vs2_vu[i]), ftype(Vs1_vu[i]));
+                        Vd_vu[i] = fd.v;
+                    }}, VectorDummyOp);
+                    0x08: vfsgnj_vv({{
+                        Vd_vu[i] = fsgnj(ftype(Vs2_vu[i]),
+                            ftype(Vs1_vu[i]), false, false).v;
+                    }}, VectorDummyOp);
+                    0x09: vfsgnjn_vv({{
+                        Vd_vu[i] = fsgnj(ftype(Vs2_vu[i]),
+                            ftype(Vs1_vu[i]), true, false).v;
+                    }}, VectorDummyOp);
+                    0x0a: vfsgnjx_vv({{
+                        Vd_vu[i] = fsgnj(ftype(Vs2_vu[i]),
+                            ftype(Vs1_vu[i]), false, true).v;
+                    }}, VectorDummyOp);
+                    0x20: vfdiv_vv({{
+                        auto fd = fdiv(ftype(Vs2_vu[i]), ftype(Vs1_vu[i]));
+                        Vd_vu[i] = fd.v;
+                    }}, VectorDummyOp);
+                    0x24: vfmul_vv({{
+                        auto fd = fmul(ftype(Vs2_vu[i]), ftype(Vs1_vu[i]));
+                        Vd_vu[i] = fd.v;
+                    }}, VectorDummyOp);
+                }
+            }
+            // OPIVI
+            0x3: decode VFUNCT6 {
+                format VectorIntFormat {
+                    0x00: vadd_vi({{
+                        Vd_vi[i] = Vs2_vi[i] + (vi)sext<5>(VECIMM);
+                    }}, OPIVI, VectorDummyOp);
+                    0x03: vrsub_vi({{
+                        Vd_vi[i] = (vi)sext<5>(VECIMM) - Vs2_vi[i];
+                    }}, OPIVI, VectorDummyOp);
+                    0x09: vand_vi({{
+                        Vd_vi[i] = Vs2_vi[i] & (vi)sext<5>(VECIMM);
+                    }}, OPIVI, VectorDummyOp);
+                    0x0a: vor_vi({{
+                        Vd_vi[i] = Vs2_vi[i] | (vi)sext<5>(VECIMM);
+                    }}, OPIVI, VectorDummyOp);
+                    0x0b: vxor_vi({{
+                        Vd_vi[i] = Vs2_vi[i] ^ (vi)sext<5>(VECIMM);
+                    }}, OPIVI, VectorDummyOp);
+                    0x10: decode VM {
+                        0x0: vadc_vim({{
+                            Vd_vi[i] = Vs2_vi[i] +
+                                (vi)sext<5>(VECIMM) + elem_mask(v0, ei);
+                        }}, OPIVI, VectorDummyOp);
+                        // the unmasked versions (vm=1) are reserved
+                    }
+                    0x17: decode VM {
+                        0x0: vmerge_vim({{
+                            Vd_vi[i] = elem_mask(v0, ei)
+                                    ? (vi)sext<5>(VECIMM)
+                                    : Vs2_vi[i];
+                        }}, OPIVI, VectorDummyOp);
+                        0x1: vmv_v_i({{
+                            Vd_vi[i] = (vi)sext<5>(VECIMM);
+                        }}, OPIVI, VectorDummyOp);
+                    }
+                    0x25: vsll_vi({{
+                        Vd_vu[i] = Vs2_vu[i] <<
+                                    ((vu)VECIMM & this->sew_mask());
+                    }}, OPIVI, VectorDummyOp);
+                    0x28: vsrl_vi({{
+                        Vd_vu[i] = Vs2_vu[i] >>
+                                    ((vu)VECIMM & this->sew_mask());
+                    }}, OPIVI, VectorDummyOp);
+                    0x29: vsra_vi({{
+                        Vd_vi[i] = Vs2_vi[i] >>
+                                    ((vu)VECIMM & this->sew_mask());
+                    }}, OPIVI, VectorDummyOp);
+                }
+                format VectorIntMaskFormat {
+                    0x11: decode VM {
+                        0x0: vmadc_vim({{
+                            Vds[ei/8] = ASSIGN_VD_BIT(ei, carry_out(Vs2_vi[i],
+                                (vi)sext<5>(VECIMM), elem_mask(v0, ei)));
+                        }}, OPIVI, VectorDummyOp);
+                        0x1: vmadc_vi({{
+                            Vds[ei/8] = ASSIGN_VD_BIT(ei, carry_out(Vs2_vi[i],
+                                (vi)sext<5>(VECIMM)));
+                        }}, OPIVI, VectorDummyOp);
+                    }
+                    0x18: vmseq_vi({{
+                        Vds[ei/8] = ASSIGN_VD_BIT(ei,
+                                    (Vs2_vi[i] == (vi)sext<5>(VECIMM)));
+                    }}, OPIVI, VectorDummyOp);
+                    0x19: vmsne_vi({{
+                        Vds[ei/8] = ASSIGN_VD_BIT(ei,
+                                    (Vs2_vi[i] != (vi)sext<5>(VECIMM)));
+                    }}, OPIVI, VectorDummyOp);
+                    0x1c: vmsleu_vi({{
+                        Vds[ei/8] = ASSIGN_VD_BIT(ei,
+                                    (Vs2_vu[i] <= (vu)sext<5>(VECIMM)));
+                    }}, OPIVI, VectorDummyOp);
+                    0x1d: vmsle_vi({{
+                        Vds[ei/8] = ASSIGN_VD_BIT(ei,
+                                    (Vs2_vi[i] <= (vi)sext<5>(VECIMM)));
+                    }}, OPIVI, VectorDummyOp);
+                    0x1e: vmsgtu_vi({{
+                        Vds[ei/8] = ASSIGN_VD_BIT(ei,
+                                    (Vs2_vu[i] > (vu)sext<5>(VECIMM)));
+                    }}, OPIVI, VectorDummyOp);
+                    0x1f: vmsgt_vi({{
+                        Vds[ei/8] = ASSIGN_VD_BIT(ei,
+                                    (Vs2_vi[i] > (vi)sext<5>(VECIMM)));
+                    }}, OPIVI, VectorDummyOp);
+                }
+            }
+            // OPIVX
+            0x4: decode VFUNCT6 {
+                format VectorIntFormat {
+                    0x0: vadd_vx({{
+                        Vd_vu[i] = Vs2_vu[i] + Rs1_vu;
+                    }}, OPIVX, VectorDummyOp);
+                    0x2: vsub_vx({{
+                        Vd_vu[i] = Vs2_vu[i] - Rs1_vu;
+                    }}, OPIVX, VectorDummyOp);
+                    0x3: vrsub_vx({{
+                        Vd_vu[i] = Rs1_vu - Vs2_vu[i];
+                    }}, OPIVX, VectorDummyOp);
+                    0x4: vminu_vx({{
+                        Vd_vu[i] = std::min(Vs2_vu[i], Rs1_vu);
+                    }}, OPIVX, VectorDummyOp);
+                    0x5: vmin_vx({{
+                        Vd_vi[i] = std::min(Vs2_vi[i], Rs1_vi);
+                    }}, OPIVX, VectorDummyOp);
+                    0x6: vmaxu_vx({{
+                        Vd_vu[i] = std::max(Vs2_vu[i], Rs1_vu);
+                    }}, OPIVX, VectorDummyOp);
+                    0x7: vmax_vx({{
+                        Vd_vi[i] = std::max(Vs2_vi[i], Rs1_vi);
+                    }}, OPIVX, VectorDummyOp);
+                    0x9: vand_vx({{
+                        Vd_vu[i] = Vs2_vu[i] & Rs1_vu;
+                    }}, OPIVX, VectorDummyOp);
+                    0xa: vor_vx({{
+                        Vd_vu[i] = Vs2_vu[i] | Rs1_vu;
+                    }}, OPIVX, VectorDummyOp);
+                    0xb: vxor_vx({{
+                        Vd_vu[i] = Vs2_vu[i] ^ Rs1_vu;
+                    }}, OPIVX, VectorDummyOp);
+                    0xc: vrgather_vx({{
+                        Vd_vu[i] = Rs1_vu >= this->vlmax()
+                                ? 0
+                                : Vs2_vu[Rs1_vu];
+                    }}, OPIVX, VectorDummyOp);
+                    0x10: decode VM {
+                        0x0: vadc_vxm({{
+                            Vd_vi[i] = Vs2_vi[i] + Rs1_vi + elem_mask(v0, ei);
+                        }}, OPIVX, VectorDummyOp);
+                        // the unmasked versions (vm=1) are reserved
+                    }
+                    0x12: decode VM {
+                        0x0: vsbc_vxm({{
+                            Vd_vi[i] = Vs2_vi[i] - Rs1_vi - elem_mask(v0, ei);
+                        }}, OPIVX, VectorDummyOp);
+                        // the unmasked versions (vm=1) are reserved
+                    }
+                    0x17: decode VM {
+                        0x0: vmerge_vxm({{
+                            Vd_vu[i] = elem_mask(v0, ei) ? Rs1_vu : Vs2_vu[i];
+                        }}, OPIVX, VectorDummyOp);
+                        0x1: decode VS2 {
+                            0x0: vmv_v_x({{
+                                Vd_vu[i] = Rs1_vu;
+                            }}, OPIVX, VectorDummyOp);
+                        }
+                    }
+                    0x25: vsll_vx({{
+                        Vd_vu[i] = Vs2_vu[i] << (Rs1_vu & this->sew_mask());
+                    }}, OPIVX, VectorDummyOp);
+                    0x28: vsrl_vx({{
+                        Vd_vu[i] = Vs2_vu[i] >> (Rs1_vu & this->sew_mask());
+                    }}, OPIVX, VectorDummyOp);
+                    0x29: vsra_vx({{
+                        Vd_vi[i] = Vs2_vi[i] >> (Rs1_vu & this->sew_mask());
+                    }}, OPIVX, VectorDummyOp);
+                }
+                format VectorIntMaskFormat {
+                    0x11: decode VM {
+                        0x0: vmadc_vxm({{
+                            Vds[ei/8] = ASSIGN_VD_BIT(ei, carry_out(
+                                        Vs2_vi[i], Rs1_vi, elem_mask(v0, ei)));
+                        }}, OPIVX, VectorDummyOp);
+                        0x1: vmadc_vx({{
+                            Vds[ei/8] = ASSIGN_VD_BIT(ei, carry_out(
+                                        Vs2_vi[i], Rs1_vi));
+                        }}, OPIVX, VectorDummyOp);
+                    }
+                    0x13: decode VM {
+                        0x0: vmsbc_vxm({{
+                            Vds[ei/8] = ASSIGN_VD_BIT(ei, borrow_out(
+                                        Vs2_vi[i], Rs1_vi, elem_mask(v0, ei)));
+                        }}, OPIVX, VectorDummyOp);
+                        0x1: vmsbc_vx({{
+                            Vds[ei/8] = ASSIGN_VD_BIT(ei, borrow_out(
+                                        Vs2_vi[i], Rs1_vi));
+                        }}, OPIVX, VectorDummyOp);
+                    }
+                    0x18: vmseq_vx({{
+                        if (this->vm || elem_mask(v0, ei)) {
+                            Vds[ei/8] = ASSIGN_VD_BIT(ei,
+                                (Vs2_vu[i] == Rs1_vu));
+                        }
+                    }}, OPIVX, VectorDummyOp);
+                    0x19: vmsne_vx({{
+                        if (this->vm || elem_mask(v0, ei)) {
+                            Vds[ei/8] = ASSIGN_VD_BIT(ei,
+                                (Vs2_vu[i] != Rs1_vu));
+                        }
+                    }}, OPIVX, VectorDummyOp);
+                    0x1a: vmsltu_vx({{
+                        if (this->vm || elem_mask(v0, ei)) {
+                            Vds[ei/8] = ASSIGN_VD_BIT(ei,
+                                (Vs2_vu[i] < Rs1_vu));
+                        }
+                    }}, OPIVX, VectorDummyOp);
+                    0x1b: vmslt_vx({{
+                        if (this->vm || elem_mask(v0, ei)) {
+                            Vds[ei/8] = ASSIGN_VD_BIT(ei,
+                                (Vs2_vi[i] < Rs1_vi));
+                        }
+                    }}, OPIVX, VectorDummyOp);
+                    0x1c: vmsleu_vx({{
+                        if (this->vm || elem_mask(v0, ei)) {
+                            Vds[ei/8] = ASSIGN_VD_BIT(ei,
+                                (Vs2_vu[i] <= Rs1_vu));
+                        }
+                    }}, OPIVX, VectorDummyOp);
+                    0x1d: vmsle_vx({{
+                        if (this->vm || elem_mask(v0, ei)) {
+                            Vds[ei/8] = ASSIGN_VD_BIT(ei,
+                                (Vs2_vi[i] <= Rs1_vi));
+                        }
+                    }}, OPIVX, VectorDummyOp);
+                    0x1e: vmsgtu_vx({{
+                        if (this->vm || elem_mask(v0, ei)) {
+                            Vds[ei/8] = ASSIGN_VD_BIT(ei,
+                                (Vs2_vu[i] > Rs1_vu));
+                        }
+                    }}, OPIVX, VectorDummyOp);
+                    0x1f: vmsgt_vx({{
+                        if (this->vm || elem_mask(v0, ei)) {
+                            Vds[ei/8] = ASSIGN_VD_BIT(ei,
+                                (Vs2_vi[i] > Rs1_vi));
+                        }
+                    }}, OPIVX, VectorDummyOp);
+                }
+            }
+            0x7: decode BIT31 {
+                format VConfOp {
+                    0x0: vsetvli({{
+                        uint64_t rd = destRegIdx(0).index();
+                        uint64_t rs1 = srcRegIdx(0).index();
+                        uint64_t vtype = zimm;
+                        uint64_t vlmax = vtype_VLMAX(vtype);
+                        uint64_t avl;
+
+                        if (rd == 0 && rs1 == 0) {
+                            avl = xc->readMiscReg(MISCREG_VL);
+                        } else if (rs1 == 0) {
+                            avl = std::numeric_limits<uint64_t>::max();
+                        } else {
+                            avl = Rs1_ud;
+                        }
+
+                        uint64_t vl = vlmax;
+                        if (avl <= vlmax) {
+                            vl = avl;
+                        }
+
+                        Rd = vl;
+                    }}, VectorDummyOp);
+                    0x1: decode BIT30 {
+                        0x0: vsetvl({{
+                            uint64_t rd = destRegIdx(0).index();
+                            uint64_t rs1 = srcRegIdx(0).index();
+                            uint64_t vtype = Rs2_ud;
+                            uint64_t vlmax = vtype_VLMAX(vtype);
+                            uint64_t avl;
+
+                            if (rd == 0 && rs1 == 0) {
+                                avl = xc->readMiscReg(MISCREG_VL);
+                            } else if (rs1 == 0) {
+                                avl = std::numeric_limits<uint64_t>::max();
+                            } else {
+                                avl = Rs1_ud;
+                            }
+
+                            uint64_t vl = vlmax;
+                            if (avl <= vlmax) {
+                                vl = avl;
+                            }
+
+                            Rd = vl;
+                        }}, VectorDummyOp);
+                        0x1: vsetivli({{
+                            uint64_t vtype = zimm;
+                            uint64_t vlmax = vtype_VLMAX(vtype);
+                            uint64_t avl = uimm;
+
+                            uint64_t vl = vlmax;
+                            if (avl <= vlmax) {
+                                vl = avl;
+                            }
+
+                            Rd = vl;
+                        }}, VectorDummyOp);
+                    }
+                }
             }
         }
 

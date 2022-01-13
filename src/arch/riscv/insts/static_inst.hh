@@ -33,12 +33,12 @@
 #include <string>
 
 #include "arch/riscv/pcstate.hh"
+#include "arch/riscv/regs/misc.hh"
 #include "arch/riscv/types.hh"
 #include "cpu/exec_context.hh"
 #include "cpu/static_inst.hh"
 #include "cpu/thread_context.hh"
 #include "mem/packet.hh"
-
 namespace gem5
 {
 

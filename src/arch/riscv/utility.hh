@@ -51,6 +51,7 @@
 
 #include "arch/riscv/regs/float.hh"
 #include "arch/riscv/regs/int.hh"
+#include "arch/riscv/regs/vector.hh"
 #include "base/types.hh"
 #include "cpu/reg_class.hh"
 #include "cpu/static_inst.hh"
@@ -129,12 +130,66 @@ registerName(RegId reg)
             return str.str();
         }
         return float_reg::RegNames[reg.index()];
-    } else {
+    else if (reg.is(VecRegClass)) {
+        if (reg.index() >= NumVecRegs) {
+            std::stringstream str;
+            str << "?? (v" << reg.index() << ')';
+            return str.str();
+        }
+        return VecRegNames[reg.index()];
+    } else  {
         /* It must be an InvalidRegClass, in RISC-V we should treat it as a
          * zero register for the disassembler to work correctly.
          */
         return int_reg::RegNames[reg.index()];
     }
+}
+
+// Vector extension functions
+inline uint64_t
+vtype_SEW(const uint64_t vtype)
+{
+    return 8 << bits(vtype, 5, 3);
+}
+
+/*
+* Encode LMUL to lmul as follows:
+*     LMUL    vlmul    lmul
+*      1       000       0
+*      2       001       1
+*      4       010       2
+*      8       011       3
+*      -       100       -
+*     1/8      101      -3
+*     1/4      110      -2
+*     1/2      111      -1
+*
+* then, we can calculate VLMAX = vlen >> (vsew + 3 - lmul)
+* e.g. vlen = 256 bits, SEW = 16, LMUL = 1/8
+*      => VLMAX = vlen >> (1 + 3 - (-3))
+*               = 256 >> 7
+*               = 2
+* Ref: https://github.com/qemu/qemu/blob/5e9d14f2/target/riscv/cpu.h
+*/
+inline uint64_t
+vtype_VLMAX(const uint64_t vtype)
+{
+    int64_t lmul = (int64_t)sext<3>(bits(vtype, 2, 0));
+    int64_t vsew = bits(vtype, 5, 3);
+    return gem5::RiscvISA::VLEN >> (vsew + 3 - lmul);
+}
+
+inline uint64_t
+vtype_regs_per_group(const uint64_t vtype)
+{
+    int64_t lmul = (int64_t)sext<3>(bits(vtype, 2, 0));
+    return 1 << std::max<int64_t>(0, lmul);
+}
+
+inline void
+vtype_set_vill(uint64_t& vtype)
+{
+    vtype = (uint64_t)0 ^ (1UL << (sizeof(RegVal) * 8 - 1));
 }
 
 } // namespace RiscvISA

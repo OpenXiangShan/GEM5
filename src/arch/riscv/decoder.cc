@@ -38,44 +38,76 @@ namespace gem5
 namespace RiscvISA
 {
 
+GenericISA::BasicDecodeCache<Decoder, ExtMachInst> Decoder::defaultCache;
+
+bool isVConfig(ExtMachInst extMachInst)
+{
+    uint64_t opcode = bits(extMachInst, 6, 0);
+    uint64_t width = extMachInst.width;
+    return opcode == 0b1010111u && width == 0b111u;
+}
+
 void Decoder::reset()
 {
     aligned = true;
     mid = false;
+    vConfigDone = true;
+    data = 0;
     emi = 0;
 }
 
 void
 Decoder::moreBytes(const PCStateBase &pc, Addr fetchPC)
 {
+    if (GEM5_UNLIKELY(!this->vConfigDone)) {
+        DPRINTF(Decode, "Wait VConfig inst execute ...\n");
+        instDone = false;
+        outOfBytes = false; // stop update pc
+        stall = true; // stop fetch
+        return;
+    }
+    stall = false;
     // The MSB of the upper and lower halves of a machine instruction.
-    constexpr size_t max_bit = sizeof(machInst) * 8 - 1;
-    constexpr size_t mid_bit = sizeof(machInst) * 4 - 1;
-
-    auto inst = letoh(machInst);
+    constexpr size_t max_bit = 31;
+    constexpr size_t mid_bit = 15;
+    constexpr size_t inst_normal_size = 4;
+    auto inst = letoh(data);
     DPRINTF(Decode, "Requesting bytes 0x%08x from address %#x\n", inst,
             fetchPC);
 
-    bool aligned = pc.instAddr() % sizeof(machInst) == 0;
+    bool aligned = pc.instAddr() % inst_normal_size == 0;
     if (aligned) {
-        emi = inst;
-        if (compressed(emi))
-            emi = bits(emi, mid_bit, 0);
+        emi.instBits = inst;
+        if (compressed(inst))
+            emi.instBits = bits(inst, mid_bit, 0);
         outOfBytes = !compressed(emi);
         instDone = true;
     } else {
         if (mid) {
-            assert(bits(emi, max_bit, mid_bit + 1) == 0);
-            replaceBits(emi, max_bit, mid_bit + 1, inst);
+            assert(bits(emi.instBits, max_bit, mid_bit + 1) == 0);
+            replaceBits(emi.instBits, max_bit, mid_bit + 1, inst);
             mid = false;
             outOfBytes = false;
             instDone = true;
         } else {
-            emi = bits(inst, max_bit, mid_bit + 1);
+            emi.instBits = bits(inst, max_bit, mid_bit + 1);
             mid = !compressed(emi);
             outOfBytes = true;
             instDone = compressed(emi);
         }
+    }
+    if (instDone) {
+        emi.vl      = this->vl;
+        emi.vtype   = this->vtype;
+        emi.vill    = this->vill;
+        emi.compressed = compressed(emi);
+        if (isVConfig(emi)) {
+            this->vConfigDone = false; // set true when vconfig inst execute
+        }
+        DPRINTF(Decode, "inst:0x%08x, vtype:0x%x, vill:%d, vl:%d, "
+            "compressed:%01x, vConfDone:%d\n",
+            emi.instBits, emi.vtype, emi.vill, emi.vl, emi.compressed,
+            this->vConfigDone);
     }
 }
 
@@ -83,11 +115,9 @@ StaticInstPtr
 Decoder::decode(ExtMachInst mach_inst, Addr addr)
 {
     DPRINTF(Decode, "Decoding instruction 0x%08x at address %#x\n",
-            mach_inst, addr);
+            mach_inst.instBits, addr);
 
-    StaticInstPtr &si = instMap[mach_inst];
-    if (!si)
-        si = decodeInst(mach_inst);
+    StaticInstPtr si = defaultCache.decode(this, mach_inst, addr);
 
     DPRINTF(Decode, "Decode: Decoded %s instruction: %#x\n",
             si->getName(), mach_inst);
@@ -103,11 +133,11 @@ Decoder::decode(PCStateBase &_next_pc)
 
     auto &next_pc = _next_pc.as<PCState>();
 
-    if (compressed(emi)) {
-        next_pc.npc(next_pc.instAddr() + sizeof(machInst) / 2);
+    if (emi.compressed) {
+        next_pc.npc(next_pc.instAddr() + 2);
         next_pc.compressed(true);
     } else {
-        next_pc.npc(next_pc.instAddr() + sizeof(machInst));
+        next_pc.npc(next_pc.instAddr() + 4);
         next_pc.compressed(false);
     }
 
@@ -125,6 +155,29 @@ Decoder::setPCStateWithInstDesc(const bool &compressed, PCStateBase &_next_pc)
         next_pc.npc(next_pc.instAddr() + sizeof(machInst));
         next_pc.compressed(false);
     }
+}
+
+Decoder::setVl(uint32_t new_vl)
+{
+    this->vl = new_vl;
+}
+
+void
+Decoder::setVtype(uint64_t new_vtype)
+{
+    this->vill = bits(new_vtype, XLEN-1);
+    if (GEM5_UNLIKELY(this->vill)) {
+        this->vtype = 0;
+    }
+    else {
+        this->vtype = bits(new_vtype, 7, 0);
+    }
+}
+
+void
+Decoder::setVConfigDone()
+{
+    this->vConfigDone = true;
 }
 
 } // namespace RiscvISA
