@@ -1662,6 +1662,8 @@ Fetch::fetch(bool &status_change)
     auto *dec_ptr = decoder[tid];
     const Addr pc_mask = dec_ptr->pcMask();
 
+    auto fetchStall = false;
+
     // Loop through instruction memory from the cache.
     // Keep issuing while fetchWidth is available and branch is not
     // predicted taken
@@ -1738,8 +1740,9 @@ Fetch::fetch(bool &status_change)
                         pc_offset = 0;
                     }
                 } else {
-                    // We need more bytes for this instruction so blk_offset and
-                    // pc_offset will be updated
+                    fetchStall = dec_ptr->isStalled();
+                    // We need more bytes for this instruction so blkOffset and
+                    // pcOffset will be updated
                     break;
                 }
             }
