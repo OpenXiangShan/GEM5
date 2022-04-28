@@ -89,6 +89,39 @@ output header {{
     GEM5_UNREACHABLE;
   }
 
+  template<typename FloatType>
+  bool Fle(FloatType a, FloatType b)
+  {
+    if constexpr(std::is_same_v<float32_t, FloatType>)
+      return f32_le(a, b);
+    else if constexpr(std::is_same_v<float64_t, FloatType>)
+      return f64_le(a, b);
+    GEM5_UNREACHABLE;
+  }
+
+  template<typename FloatType>
+  bool Feq(FloatType a, FloatType b)
+  {
+    if constexpr(std::is_same_v<float32_t, FloatType>)
+      return f32_eq(a, b);
+    else if constexpr(std::is_same_v<float64_t, FloatType>)
+      return f64_eq(a, b);
+    GEM5_UNREACHABLE;
+  }
+
+  template<typename FloatType>
+  bool Flt(FloatType a, FloatType b)
+  {
+    if constexpr(std::is_same_v<float32_t, FloatType>)
+      return f32_lt(a, b);
+    else if constexpr(std::is_same_v<float64_t, FloatType>)
+      return f64_lt(a, b);
+    GEM5_UNREACHABLE;
+  }
+
+  #define VFMERGE(fs1,fs2) \
+  ((elem_mask(v0, ei)) ? (fs1) : (fs2))
+
   #define ASSIGN_VD_BIT(idx, bit) \
   ((Vds[(idx)/8] & ~(1 << (idx)%8)) | ((bit) << (idx)%8))
 
@@ -289,15 +322,8 @@ def template VectorFloatMicroConstructor {{
     _numVecPredDestRegs = 0;
     _numIntDestRegs = 0;
     _numCCDestRegs = 0;
-    setDestRegIdx(_numDestRegs++,
-                    RegId(VecRegClass, extMachInst.vd + _micro_idx));
-    _numVecDestRegs++;
-    setSrcRegIdx(_numSrcRegs++,
-                    RegId(VecRegClass, extMachInst.vs1 + _micro_idx));
-    setSrcRegIdx(_numSrcRegs++,
-                    RegId(VecRegClass, extMachInst.vs2 + _micro_idx));
-    if(!this->vm)
-      setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, 0));
+    %(set_dest_reg_idx)s;
+    %(set_src_reg_idx)s;
   }
 }};
 
@@ -321,22 +347,10 @@ def template VectorFloatMicroExecute {{
     if (machInst.vill)
       return std::make_shared<IllegalInstFault>("VILL is set", machInst);
 
-    const auto micro_vlmax = TheISA::VLEN >> (machInst.vtype.vsew + 3);
     %(op_decl)s;
     %(op_rd)s;
-    [[maybe_unused]] RiscvISA::vreg_t tmp_v0;
-    [[maybe_unused]] uint8_t* v0;
-    if(!this->vm) {
-      tmp_v0 = xc->readVecRegOperand(this, _numSrcRegs-1); // v0 at the last
-      v0 = tmp_v0.as<uint8_t>();
-    }
-
-    for (uint32_t i = 0; i < this->micro_vl; i++) {
-      uint32_t ei = i + micro_vlmax * this->micro_idx;
-      if (this->vm || elem_mask(v0, ei)) {
-        %(code)s;
-      }
-    }
+    %(vm_decl_rd)s;
+    %(code)s;
     %(op_wb)s;
 
     return NoFault;
@@ -437,6 +451,124 @@ def template VectorIntMaskMicroExecute {{
     if (machInst.vill)
       return std::make_shared<IllegalInstFault>("VILL is set", machInst);
 
+    %(op_decl)s;
+    %(op_rd)s;
+    RiscvISA::vreg_t tmp_d0 = xc->getWritableVecRegOperand(this, 0);
+    auto Vds = tmp_d0.as<uint8_t>();
+
+    %(vm_decl_rd)s;
+
+    %(code)s
+
+    xc->setVecRegOperand(this, 0, tmp_d0);
+    if (traceData) {
+      traceData->setData(tmp_d0);
+    }
+    return NoFault;
+  }
+}};
+
+def template VectorFloatMaskMacroDeclare {{
+  template<typename ElemType>
+  class %(class_name)s : public %(base_class)s {
+  private:
+    %(reg_idx_arr_decl)s;
+  public:
+    %(class_name)s(ExtMachInst extMachInst);
+    using %(base_class)s::generateDisassembly;
+  };
+}};
+
+def template VectorFloatMaskMacroConstructor {{
+  template<typename ElemType>
+  %(class_name)s<ElemType>::%(class_name)s(ExtMachInst extMachInst)
+    : %(base_class)s("%(mnemonic)s", extMachInst, VectorDummyOp)
+  {
+    %(set_reg_idx_arr)s;
+    %(constructor)s;
+    const uint32_t numMicroOps = numMicroOp();
+    int32_t tmp_vl = this->vl;
+    const int32_t micro_vlmax = TheISA::VLEN >> (extMachInst.vtype.vsew + 3);
+    int32_t micro_vl = std::min(tmp_vl, micro_vlmax);
+    StaticInstPtr micro_op;
+
+    // allow one empty micro op to hold IsLastMicroop flag
+    for (int i=0; i<numMicroOps && micro_vl>=0; ++i) {
+      micro_op = new %(class_name)sMicro<ElemType>(extMachInst, micro_vl, i);
+      micro_op->setDelayedCommit();
+      this->microops.push_back(micro_op);
+      micro_vl = std::min(tmp_vl -= micro_vlmax, micro_vlmax);
+    }
+
+    this->microops.front()->setFirstMicroop();
+    this->microops.back()->setLastMicroop();
+  }
+}};
+
+def template VectorFloatMaskMicroDeclare {{
+  template<typename ElemType>
+  class %(class_name)s : public %(base_class)s
+  {
+  private:
+    RegId srcRegIdxArr[4];
+    RegId destRegIdxArr[1];
+    bool vm;
+  public:
+    %(class_name)s(ExtMachInst extMachInst,
+            uint8_t _micro_vl, uint8_t _micro_idx);
+    Fault execute(ExecContext* xc, Trace::InstRecord* traceData)const override;
+    using %(base_class)s::generateDisassembly;
+  };
+}};
+
+def template VectorFloatMaskMicroConstructor {{
+  template<typename ElemType>
+  %(class_name)s<ElemType>::%(class_name)s(ExtMachInst extMachInst,
+      uint8_t _micro_vl, uint8_t _micro_idx)
+    : %(base_class)s("%(mnemonic)s", extMachInst,
+        VectorDummyOp, _micro_vl, _micro_idx)
+  {
+    this->vm = extMachInst.vm;
+    %(set_reg_idx_arr)s;
+    _numSrcRegs = 0;
+    _numDestRegs = 0;
+    _numFPDestRegs = 0;
+    _numVecDestRegs = 0;
+    _numVecElemDestRegs = 0;
+    _numVecPredDestRegs = 0;
+    _numIntDestRegs = 0;
+    _numCCDestRegs = 0;
+    %(set_dest_reg_idx)s;
+    %(set_src_reg_idx)s;
+  }
+}};
+
+def template VectorFloatMaskMicroExecute {{
+  template <typename ElemType>
+  Fault
+  %(class_name)s<ElemType>::execute(ExecContext* xc,
+                                    Trace::InstRecord* traceData) const
+  {
+    using vu = decltype(ElemType::v);
+    auto ftype = Ftype<ElemType>;
+    [[maybe_unused]] auto fsqrt = Fsqrt<ElemType>;
+    [[maybe_unused]] auto fsgnj = Fsgnj<ElemType>;
+    [[maybe_unused]] auto
+                    fadd = Fadd<ElemType>,
+                    fsub = Fsub<ElemType>,
+                    fmin = Fmin<ElemType>,
+                    fmax = Fmax<ElemType>,
+                    fdiv = Fdiv<ElemType>,
+                    fmul = Fmul<ElemType>;
+    [[maybe_unused]] auto
+                    fle = Fle<ElemType>,
+                    feq = Feq<ElemType>,
+                    flt = Flt<ElemType>;
+
+    if (machInst.vill)
+      return std::make_shared<IllegalInstFault>("VILL is set", machInst);
+
+    [[maybe_unused]] size_t greg_idx = 0;
     %(op_decl)s;
     %(op_rd)s;
     RiscvISA::vreg_t tmp_d0 = xc->getWritableVecRegOperand(this, 0);
