@@ -55,9 +55,9 @@ class Decoder : public InstDecoder
   protected:
     //The extended machine instruction being generated
     ExtMachInst emi;
-    uint32_t data;
+    uint32_t machInst;
     uint32_t vl;
-    uint8_t vtype; // exclude vill
+    uint8_t vtype8;
     bool vill;
 
     /// A cache of decoded instruction objects.
@@ -72,7 +72,7 @@ class Decoder : public InstDecoder
     StaticInstPtr decode(ExtMachInst mach_inst, Addr addr);
 
   public:
-    Decoder(const RiscvDecoderParams &p) : InstDecoder(p, &data)
+    Decoder(const RiscvDecoderParams &p) : InstDecoder(p, &machInst)
     {
         reset();
     }
@@ -80,6 +80,9 @@ class Decoder : public InstDecoder
     void reset() override;
 
     inline bool compressed(ExtMachInst inst) { return (inst & 0x3) < 0x3; }
+    inline bool vconf(ExtMachInst inst) {
+      return inst.opcode7 == 0b1010111u && inst.width == 0b111u;
+    }
 
     //Use this to give data to the decoder. This should be used
     //when there is control flow.
@@ -95,6 +98,8 @@ class Decoder : public InstDecoder
     void setVtype(uint64_t new_vtype);
 
     void setVConfigDone();
+
+    void setVlAndVtype(uint32_t vl, uint64_t vtype);
 };
 
 } // namespace RiscvISA

@@ -167,7 +167,7 @@ def template VectorIntMacroConstructor {{
     %(constructor)s;
     const uint32_t numMicroOps = numMicroOp();
     int32_t tmp_vl = this->vl;
-    const int32_t micro_vlmax = TheISA::VLEN >> (extMachInst.vtype.vsew + 3);
+    const int32_t micro_vlmax = TheISA::VLEN >> (extMachInst.vtype8.vsew + 3);
     int32_t micro_vl = std::min(tmp_vl, micro_vlmax);
     StaticInstPtr micro_op;
 
@@ -243,12 +243,12 @@ def template VectorIntMicroExecute {{
 }};
 
 def template VectorIntDecodeBlock {{
-  switch(machInst.vtype.vsew) {
+  switch(machInst.vtype8.vsew) {
     case 0b000: return new %(class_name)s<uint8_t>(machInst);
     case 0b001: return new %(class_name)s<uint16_t>(machInst);
     case 0b010: return new %(class_name)s<uint32_t>(machInst);
     case 0b011: return new %(class_name)s<uint64_t>(machInst);
-    default: panic("vsew: %x not supported", machInst.vtype.vsew);
+    default: panic("vsew: %x not supported", machInst.vtype8.vsew);
   }
 }};
 
@@ -272,7 +272,7 @@ def template VectorFloatMacroConstructor {{
     %(constructor)s;
     const uint32_t numMicroOps = numMicroOp();
     int32_t tmp_vl = this->vl;
-    const int32_t micro_vlmax = TheISA::VLEN >> (extMachInst.vtype.vsew + 3);
+    const int32_t micro_vlmax = TheISA::VLEN >> (extMachInst.vtype8.vsew + 3);
     int32_t micro_vl = std::min(tmp_vl, micro_vlmax);
     StaticInstPtr micro_op;
 
@@ -358,10 +358,10 @@ def template VectorFloatMicroExecute {{
 }};
 
 def template VectorFloatDecodeBlock {{
-  switch(machInst.vtype.vsew) {
+  switch(machInst.vtype8.vsew) {
     case 0b010: return new %(class_name)s<float32_t>(machInst);
     case 0b011: return new %(class_name)s<float64_t>(machInst);
-    default: panic("vsew: %x not supported", machInst.vtype.vsew);
+    default: panic("vsew: %x not supported", machInst.vtype8.vsew);
   }
 }};
 
@@ -385,7 +385,7 @@ def template VectorIntMaskMacroConstructor {{
     %(constructor)s;
     const uint32_t numMicroOps = numMicroOp();
     int32_t tmp_vl = this->vl;
-    const int32_t micro_vlmax = TheISA::VLEN >> (extMachInst.vtype.vsew + 3);
+    const int32_t micro_vlmax = TheISA::VLEN >> (extMachInst.vtype8.vsew + 3);
     int32_t micro_vl = std::min(tmp_vl, micro_vlmax);
     StaticInstPtr micro_op;
 
@@ -488,7 +488,7 @@ def template VectorFloatMaskMacroConstructor {{
     %(constructor)s;
     const uint32_t numMicroOps = numMicroOp();
     int32_t tmp_vl = this->vl;
-    const int32_t micro_vlmax = TheISA::VLEN >> (extMachInst.vtype.vsew + 3);
+    const int32_t micro_vlmax = TheISA::VLEN >> (extMachInst.vtype8.vsew + 3);
     int32_t micro_vl = std::min(tmp_vl, micro_vlmax);
     StaticInstPtr micro_op;
 

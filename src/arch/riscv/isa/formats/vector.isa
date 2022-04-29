@@ -53,9 +53,7 @@ def template VConfExecute {{
         tc->setMiscReg(MISCREG_VL, vl);
         tc->setMiscReg(MISCREG_VTYPE, vtype);
         tc->setMiscReg(MISCREG_VSTART, 0);
-        tc->getDecoderPtr()->as<Decoder>().setVl(vl);
-        tc->getDecoderPtr()->as<Decoder>().setVtype(vtype);
-        tc->getDecoderPtr()->as<Decoder>().setVConfigDone();
+        tc->getDecoderPtr()->as<Decoder>().setVlAndVtype(vl, vtype);
         %(op_wb)s;
         return NoFault;
     }

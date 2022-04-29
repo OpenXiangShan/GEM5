@@ -91,7 +91,7 @@ protected:
                    OpClass __opClass)
         : RiscvMacroInst(mnem, _extMachInst, __opClass),
         vl(_extMachInst.vl),
-        vtype(checked_vtype(_extMachInst.vill, _extMachInst.vtype)),
+        vtype(checked_vtype(_extMachInst.vill, _extMachInst.vtype8)),
         vm(_extMachInst.vm)
     {
         this->flags[IsVector] = true;
@@ -121,7 +121,7 @@ protected:
             OpClass __opClass, uint8_t _micro_vl)
         : RiscvMicroInst(mnem, extMachInst, __opClass),
         vm(extMachInst.vm), micro_vl(_micro_vl),
-        vtype(extMachInst.vtype) // has been checked by vector macro inst
+        vtype(extMachInst.vtype8) // has been checked by vector macro inst
     {
         this->flags[IsVector] = true;
     }

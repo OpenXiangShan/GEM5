@@ -61,16 +61,17 @@ BitUnion64(ExtMachInst)
     // More bits for vector extension
     Bitfield<52, 41>    vl;
     Bitfield<40>        vill;
-    SubBitUnion(vtype, 39, 32) // exclude vill
+    SubBitUnion(vtype8, 39, 32) // exclude vill
         Bitfield<39> vma;
         Bitfield<38> vta;
         Bitfield<37, 35> vsew;
         Bitfield<34, 32> vlmul;
-    EndSubBitUnion(vtype)
+    EndSubBitUnion(vtype8)
     // Common
     uint32_t            instBits;
     Bitfield< 1,  0>    quadRant;
     Bitfield< 6,  2>    opcode;
+    Bitfield< 6,  0>    opcode7;
     // R-Type
     Bitfield<31,  0>    all;
     Bitfield<11,  7>    rd;
