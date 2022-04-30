@@ -1,6 +1,6 @@
 output header {{
   template<typename FloatType, typename IntType = decltype(FloatType::v)>
-  auto Ftype(IntType a) -> FloatType
+  auto ftype(IntType a) -> FloatType
   {
     if constexpr(std::is_same_v<uint32_t, IntType>)
       return f32(a);
@@ -10,7 +10,7 @@ output header {{
   }
 
   template<typename FloatType>
-  FloatType Fadd(FloatType a, FloatType b)
+  FloatType fadd(FloatType a, FloatType b)
   {
     if constexpr(std::is_same_v<float32_t, FloatType>)
       return f32_add(a, b);
@@ -20,7 +20,7 @@ output header {{
   }
 
   template<typename FloatType>
-  FloatType Fsub(FloatType a, FloatType b)
+  FloatType fsub(FloatType a, FloatType b)
   {
     if constexpr(std::is_same_v<float32_t, FloatType>)
       return f32_sub(a, b);
@@ -30,7 +30,7 @@ output header {{
   }
 
   template<typename FloatType>
-  FloatType Fmin(FloatType a, FloatType b)
+  FloatType fmin(FloatType a, FloatType b)
   {
     if constexpr(std::is_same_v<float32_t, FloatType>)
       return f32_min(a, b);
@@ -40,7 +40,7 @@ output header {{
   }
 
   template<typename FloatType>
-  FloatType Fmax(FloatType a, FloatType b)
+  FloatType fmax(FloatType a, FloatType b)
   {
     if constexpr(std::is_same_v<float32_t, FloatType>)
       return f32_max(a, b);
@@ -50,7 +50,7 @@ output header {{
   }
 
   template<typename FloatType>
-  FloatType Fdiv(FloatType a, FloatType b)
+  FloatType fdiv(FloatType a, FloatType b)
   {
     if constexpr(std::is_same_v<float32_t, FloatType>)
       return f32_div(a, b);
@@ -60,7 +60,7 @@ output header {{
   }
 
   template<typename FloatType>
-  FloatType Fmul(FloatType a, FloatType b)
+  FloatType fmul(FloatType a, FloatType b)
   {
     if constexpr(std::is_same_v<float32_t, FloatType>)
       return f32_mul(a, b);
@@ -70,7 +70,7 @@ output header {{
   }
 
   template<typename FloatType>
-  FloatType Fsqrt(FloatType a)
+  FloatType fsqrt(FloatType a)
   {
     if constexpr(std::is_same_v<float32_t, FloatType>)
       return f32_sqrt(a);
@@ -80,7 +80,7 @@ output header {{
   }
 
   template<typename FloatType>
-  FloatType Fsgnj(FloatType a, FloatType b, bool n, bool x)
+  FloatType fsgnj(FloatType a, FloatType b, bool n, bool x)
   {
     if constexpr(std::is_same_v<float32_t, FloatType>)
       return fsgnj32(a, b, n, x);
@@ -90,7 +90,7 @@ output header {{
   }
 
   template<typename FloatType>
-  bool Fle(FloatType a, FloatType b)
+  bool fle(FloatType a, FloatType b)
   {
     if constexpr(std::is_same_v<float32_t, FloatType>)
       return f32_le(a, b);
@@ -100,7 +100,7 @@ output header {{
   }
 
   template<typename FloatType>
-  bool Feq(FloatType a, FloatType b)
+  bool feq(FloatType a, FloatType b)
   {
     if constexpr(std::is_same_v<float32_t, FloatType>)
       return f32_eq(a, b);
@@ -110,7 +110,7 @@ output header {{
   }
 
   template<typename FloatType>
-  bool Flt(FloatType a, FloatType b)
+  bool flt(FloatType a, FloatType b)
   {
     if constexpr(std::is_same_v<float32_t, FloatType>)
       return f32_lt(a, b);
@@ -333,17 +333,8 @@ def template VectorFloatMicroExecute {{
   %(class_name)s<ElemType>::execute(ExecContext* xc,
                                     Trace::InstRecord* traceData) const
   {
-    using vu = decltype(ElemType::v);
-    auto ftype = Ftype<ElemType>;
-    [[maybe_unused]] auto fsqrt = Fsqrt<ElemType>;
-    [[maybe_unused]] auto fsgnj = Fsgnj<ElemType>;
-    [[maybe_unused]] auto
-                    fadd = Fadd<ElemType>,
-                    fsub = Fsub<ElemType>,
-                    fmin = Fmin<ElemType>,
-                    fmax = Fmax<ElemType>,
-                    fdiv = Fdiv<ElemType>,
-                    fmul = Fmul<ElemType>;
+    using et = ElemType;
+    using vu = decltype(et::v);
     if (machInst.vill)
       return std::make_shared<IllegalInstFault>("VILL is set", machInst);
 
@@ -549,26 +540,11 @@ def template VectorFloatMaskMicroExecute {{
   %(class_name)s<ElemType>::execute(ExecContext* xc,
                                     Trace::InstRecord* traceData) const
   {
-    using vu = decltype(ElemType::v);
-    auto ftype = Ftype<ElemType>;
-    [[maybe_unused]] auto fsqrt = Fsqrt<ElemType>;
-    [[maybe_unused]] auto fsgnj = Fsgnj<ElemType>;
-    [[maybe_unused]] auto
-                    fadd = Fadd<ElemType>,
-                    fsub = Fsub<ElemType>,
-                    fmin = Fmin<ElemType>,
-                    fmax = Fmax<ElemType>,
-                    fdiv = Fdiv<ElemType>,
-                    fmul = Fmul<ElemType>;
-    [[maybe_unused]] auto
-                    fle = Fle<ElemType>,
-                    feq = Feq<ElemType>,
-                    flt = Flt<ElemType>;
-
+    using et = ElemType;
+    using vu = decltype(et::v);
     if (machInst.vill)
       return std::make_shared<IllegalInstFault>("VILL is set", machInst);
 
-    [[maybe_unused]] size_t greg_idx = 0;
     %(op_decl)s;
     %(op_rd)s;
     RiscvISA::vreg_t tmp_d0 = xc->getWritableVecRegOperand(this, 0);
