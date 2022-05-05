@@ -90,8 +90,6 @@ protected:
 
     int8_t ilmul() const { return (int8_t)sext<3>(this->vlmul()); }
 
-    uint32_t vlmax() const { return RiscvISA::VLEN >> (vsew() + 3 - ilmul()); }
-
     uint32_t microVlmax() const { return RiscvISA::VLEN >> (vsew() + 3);}
 
 };
@@ -105,7 +103,7 @@ protected:
             OpClass __opClass, uint8_t _micro_vl)
         : RiscvMicroInst(mnem, extMachInst, __opClass),
         micro_vl(_micro_vl),
-        vtype(extMachInst.vtype8) // has been checked by vector macro inst
+        vtype(extMachInst.vtype8)
     {
         this->flags[IsVector] = true;
     }
@@ -117,8 +115,6 @@ protected:
     virtual uint32_t sew() const = 0;
 
     int8_t ilmul() const { return (int8_t)sext<3>(this->vlmul()); }
-
-    uint32_t vlmax() const { return RiscvISA::VLEN >> (vsew() + 3 - ilmul()); }
 
     uint32_t microVlmax() const { return RiscvISA::VLEN >> (vsew() + 3);}
 

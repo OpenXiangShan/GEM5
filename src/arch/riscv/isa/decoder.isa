@@ -1959,7 +1959,7 @@ decode QUADRANT default Unknown::unknown() {
                         Vd_vu[i] = Vs2_vu[i] ^ Vs1_vu[i];
                     }}, OPIVV, VectorDummyOp);
                     0xc: vrgather_vv({{
-                        Vd_vu[i] = Vs1_vu[i] >= this->vlmax()
+                        Vd_vu[i] = Vs1_vu[i] >= vtype_VLMAX(vtype)
                             ? 0
                             : Vs2_vu[Vs1_vu[i]];
                     }}, OPIVV, VectorDummyOp);
@@ -2227,7 +2227,7 @@ decode QUADRANT default Unknown::unknown() {
                         Vd_vu[i] = Vs2_vu[i] ^ Rs1_vu;
                     }}, OPIVX, VectorDummyOp);
                     0xc: vrgather_vx({{
-                        Vd_vu[i] = Rs1_vu >= this->vlmax()
+                        Vd_vu[i] = Rs1_vu >= vtype_VLMAX(vtype)
                                 ? 0
                                 : Vs2_vu[Rs1_vu];
                     }}, OPIVX, VectorDummyOp);
