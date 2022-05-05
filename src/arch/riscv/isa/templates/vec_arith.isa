@@ -45,7 +45,7 @@ def template VectorIntMacroConstructor {{
   {
     %(set_reg_idx_arr)s;
     %(constructor)s;
-    const uint32_t numMicroOps = numMicroOp();
+    const uint32_t numMicroOps = vtype_regs_per_group(vtype);
     int32_t tmp_vl = this->vl;
     const int32_t micro_vlmax = TheISA::VLEN >> (extMachInst.vtype8.vsew + 3);
     int32_t micro_vl = std::min(tmp_vl, micro_vlmax);
@@ -150,7 +150,7 @@ def template VectorFloatMacroConstructor {{
   {
     %(set_reg_idx_arr)s;
     %(constructor)s;
-    const uint32_t numMicroOps = numMicroOp();
+    const uint32_t numMicroOps = vtype_regs_per_group(vtype);
     int32_t tmp_vl = this->vl;
     const int32_t micro_vlmax = TheISA::VLEN >> (extMachInst.vtype8.vsew + 3);
     int32_t micro_vl = std::min(tmp_vl, micro_vlmax);
@@ -254,7 +254,7 @@ def template VectorIntMaskMacroConstructor {{
   {
     %(set_reg_idx_arr)s;
     %(constructor)s;
-    const uint32_t numMicroOps = numMicroOp();
+    const uint32_t numMicroOps = vtype_regs_per_group(vtype);
     int32_t tmp_vl = this->vl;
     const int32_t micro_vlmax = TheISA::VLEN >> (extMachInst.vtype8.vsew + 3);
     int32_t micro_vl = std::min(tmp_vl, micro_vlmax);
@@ -357,7 +357,7 @@ def template VectorFloatMaskMacroConstructor {{
   {
     %(set_reg_idx_arr)s;
     %(constructor)s;
-    const uint32_t numMicroOps = numMicroOp();
+    const uint32_t numMicroOps = vtype_regs_per_group(vtype);
     int32_t tmp_vl = this->vl;
     const int32_t micro_vlmax = TheISA::VLEN >> (extMachInst.vtype8.vsew + 3);
     int32_t micro_vl = std::min(tmp_vl, micro_vlmax);
