@@ -49,16 +49,6 @@ namespace RiscvISA
 
 constexpr uint32_t cache_line_size = 64;
 
-inline uint32_t width2sew(uint64_t width) {
-    switch (bits(width, 2, 0)) {
-        case 0b000: return 8;
-        case 0b101: return 16;
-        case 0b110: return 32;
-        case 0b111: return 64;
-        default: panic("width: %x not supported", bits(width, 2, 0));
-    }
-}
-
 inline uint8_t checked_vtype(bool vill, uint8_t vtype) {
     panic_if(vill, "vill has been set");
     const uint8_t vsew = bits(vtype, 5, 3);
@@ -96,10 +86,6 @@ protected:
     {
         this->flags[IsVector] = true;
     }
-
-    uint8_t vsew() const { return bits(this->vtype, 5, 3); }
-
-    virtual uint32_t sew() const = 0;
 };
 
 class VectorArithMicroInst : public VectorMicroInst
@@ -112,8 +98,6 @@ protected:
 
     std::string generateDisassembly(
             Addr pc, const loader::SymbolTable *symtab) const override;
-
-    uint32_t sew() const override { return 8 << this->vsew(); }
 };
 
 class VectorArithMacroInst : public VectorMacroInst
@@ -132,38 +116,27 @@ protected:
 
 class VectorMemMicroInst : public VectorMicroInst
 {
-    uint32_t _sew;
 protected:
-    VectorMemMicroInst(const char* mnem, ExtMachInst _extMachInst,
+    VectorMemMicroInst(const char* mnem, ExtMachInst _machInst,
                    OpClass __opClass, uint8_t _micro_vl)
-        : VectorMicroInst(mnem, _extMachInst, __opClass, _micro_vl),
-        _sew(width2sew(_extMachInst.width))
+        : VectorMicroInst(mnem, _machInst, __opClass, _micro_vl)
     {}
-
-    uint32_t sew() const override { return _sew; }
 };
 
 class VectorMemMacroInst : public VectorMacroInst
 {
-    uint32_t _sew;
 protected:
-    VectorMemMacroInst(const char* mnem, ExtMachInst _extMachInst,
+    VectorMemMacroInst(const char* mnem, ExtMachInst _machInst,
                    OpClass __opClass)
-        : VectorMacroInst(mnem, _extMachInst, __opClass),
-        _sew(width2sew(_extMachInst.width)) // sew set by mem inst not vconfig
+        : VectorMacroInst(mnem, _machInst, __opClass)
     {}
 
-    virtual uint32_t numElemPerMemAcc() {
-        return cache_line_size / this->_sew;
-    }
-
-    uint32_t numMemAcc() {
-        const uint32_t elemNumPerMemAcc = this->numElemPerMemAcc();
-        return (vl + elemNumPerMemAcc - 1) / elemNumPerMemAcc;
+    int32_t numElemPerMemAcc() {
+        return sizeof(RiscvISA::VecElem) * 8 / width_EEW(machInst.width);
     }
 
     constexpr uint32_t numMemAccPerVReg() {
-        return RiscvISA::VLEN / cache_line_size;
+        return RiscvISA::VLEN / (sizeof(RiscvISA::VecElem) * 8);
     }
 };
 

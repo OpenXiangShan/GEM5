@@ -90,7 +90,7 @@ def template VleMicroExecute {{
 
     Addr EA;
     Fault fault = NoFault;
-    std::size_t memAccessSize = this->micro_vl * this->sew() / 8;
+    std::size_t memAccessSize = this->micro_vl * width_EEW(machInst.width) / 8;
 
     const TheISA::vreg_t& tmp_v0 = tc->readVecReg(RegId(VecRegClass, 0));
     [[maybe_unused]] auto v0 = tmp_v0.as<uint8_t>();
@@ -127,7 +127,7 @@ def template VleMicroInitiateAcc {{
   {
     Addr EA;
     Fault fault = NoFault;
-    std::size_t memAccessSize = this->micro_vl * this->sew() / 8;
+    std::size_t memAccessSize = this->micro_vl * width_EEW(machInst.width) / 8;
     %(op_src_decl)s;
 
     %(op_rd)s;
@@ -254,7 +254,7 @@ def template VseMicroExecute {{
 
     Addr EA;
     Fault fault = NoFault;
-    std::size_t memAccessSize = this->micro_vl * this->sew() / 8;
+    std::size_t memAccessSize = this->micro_vl * width_EEW(machInst.width) / 8;
     const TheISA::vreg_t& tmp_v0 = tc->readVecReg(RegId(VecRegClass, 0));
     [[maybe_unused]] auto v0 = tmp_v0.as<uint8_t>();
 
@@ -288,7 +288,7 @@ def template VseMicroInitiateAcc {{
     auto tc = xc->tcBase();
     Addr EA;
     Fault fault = NoFault;
-    std::size_t memAccessSize = this->micro_vl * this->sew() / 8;
+    std::size_t memAccessSize = this->micro_vl * width_EEW(machInst.width) / 8;
     const TheISA::vreg_t& tmp_v0 = tc->readVecReg(RegId(VecRegClass, 0));
     [[maybe_unused]] auto v0 = tmp_v0.as<uint8_t>();
 

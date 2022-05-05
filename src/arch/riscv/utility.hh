@@ -199,6 +199,17 @@ vtype_set_vill(uint64_t& vtype)
     vtype = (uint64_t)0 ^ (1UL << (sizeof(RegVal) * 8 - 1));
 }
 
+inline uint64_t width_EEW(uint64_t width)
+{
+    switch (width) {
+    case 0b000: return 8;
+    case 0b101: return 16;
+    case 0b110: return 32;
+    case 0b111: return 64;
+    default: GEM5_UNREACHABLE;
+    }
+}
+
 /*
   *  Spec Section 4.5
   *  Ref:
