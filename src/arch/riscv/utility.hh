@@ -192,6 +192,19 @@ vtype_set_vill(uint64_t& vtype)
     vtype = (uint64_t)0 ^ (1UL << (sizeof(RegVal) * 8 - 1));
 }
 
+/*
+  *  Spec Section 4.5
+  *  Ref:
+  *  https://github.com/qemu/qemu/blob/c7d773ae/target/riscv/vector_helper.c
+*/
+inline int
+elem_mask(const uint8_t* v0, const int index)
+{
+  int idx = index / 8;
+  int pos = index % 8;
+  return (v0[idx] >> pos) & 1;
+}
+
 } // namespace RiscvISA
 } // namespace gem5
 
