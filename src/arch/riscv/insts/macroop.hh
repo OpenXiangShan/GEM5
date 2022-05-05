@@ -84,8 +84,6 @@ protected:
 
     uint8_t vsew() const { return bits(this->vtype, 5, 3); }
 
-    uint8_t vlmul() const { return bits(this->vtype, 2, 0); }
-
     virtual uint32_t sew() const = 0;
 
     uint32_t microVlmax() const { return RiscvISA::VLEN >> (vsew() + 3);}
@@ -107,8 +105,6 @@ protected:
     }
 
     uint8_t vsew() const { return bits(this->vtype, 5, 3); }
-
-    uint8_t vlmul() const { return bits(this->vtype, 2, 0); }
 
     virtual uint32_t sew() const = 0;
 
