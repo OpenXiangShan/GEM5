@@ -85,9 +85,6 @@ protected:
     uint8_t vsew() const { return bits(this->vtype, 5, 3); }
 
     virtual uint32_t sew() const = 0;
-
-    uint32_t microVlmax() const { return RiscvISA::VLEN >> (vsew() + 3);}
-
 };
 
 class VectorMicroInst : public RiscvMicroInst
@@ -107,8 +104,6 @@ protected:
     uint8_t vsew() const { return bits(this->vtype, 5, 3); }
 
     virtual uint32_t sew() const = 0;
-
-    uint32_t microVlmax() const { return RiscvISA::VLEN >> (vsew() + 3);}
 
     uint64_t sew_mask() const { return (1 << (3 + vsew())) - 1; }
 };

@@ -52,8 +52,10 @@ let {{
         return "if (this->vm || elem_mask(v0, ei)) {\n" + \
             code + "}\n"
     def eiDeclarePrefix(code):
-        return "uint32_t ei = i + this->microVlmax() * this->micro_idx;\n" + \
-            code
+        return '''
+            uint32_t ei = i + vtype_elements_per_reg(vtype) *
+                this->micro_idx;
+        ''' + code
 }};
 
 

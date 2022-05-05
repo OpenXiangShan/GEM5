@@ -180,6 +180,13 @@ vtype_VLMAX(const uint64_t vtype)
 }
 
 inline uint64_t
+vtype_elements_per_reg(const uint64_t vtype)
+{
+    int64_t vsew = bits(vtype, 5, 3);
+    return gem5::RiscvISA::VLEN >> (vsew + 3);
+}
+
+inline uint64_t
 vtype_regs_per_group(const uint64_t vtype)
 {
     int64_t lmul = (int64_t)sext<3>(bits(vtype, 2, 0));
