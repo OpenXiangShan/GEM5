@@ -149,9 +149,6 @@ def bitfield LUMOP      <24:20>;
 def bitfield SUMOP      <24:20>;
 def bitfield WIDTH      <14:12>;
 
-def bitfield SIMM_3     <17:15>;
 def bitfield BIT31      <31>;
 def bitfield BIT30      <30>;
-def bitfield ZIMM       <30:20>;
-def bitfield UIMM       <19:15>;
-def bitfield VECIMM     <19:15>;
+def bitfield SIMM5     <19:15>;

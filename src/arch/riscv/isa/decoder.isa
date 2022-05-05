@@ -1990,13 +1990,16 @@ decode QUADRANT default Unknown::unknown() {
                         }
                     }
                     0x25: vsll_vv({{
-                        Vd_vu[i] = Vs2_vu[i] << (Vs1_vu[i] & this->sew_mask());
+                        Vd_vu[i] = Vs2_vu[i] << (Vs1_vu[i] &
+                                                 (vtype_SEW(vtype)-1));
                     }}, OPIVV, VectorDummyOp);
                     0x28: vsrl_vv({{
-                        Vd_vu[i] = Vs2_vu[i] >> (Vs1_vu[i] & this->sew_mask());
+                        Vd_vu[i] = Vs2_vu[i] >> (Vs1_vu[i] &
+                                                 (vtype_SEW(vtype)-1));
                     }}, OPIVV, VectorDummyOp);
                     0x29: vsra_vv({{
-                        Vd_vi[i] = Vs2_vi[i] >> (Vs1_vu[i] & this->sew_mask());
+                        Vd_vi[i] = Vs2_vi[i] >> (Vs1_vu[i] &
+                                                 (vtype_SEW(vtype)-1));
                     }}, OPIVV, VectorDummyOp);
                 }
                 format VectorIntMaskFormat {
@@ -2112,84 +2115,84 @@ decode QUADRANT default Unknown::unknown() {
             0x3: decode VFUNCT6 {
                 format VectorIntFormat {
                     0x00: vadd_vi({{
-                        Vd_vi[i] = Vs2_vi[i] + (vi)sext<5>(VECIMM);
+                        Vd_vi[i] = Vs2_vi[i] + (vi)sext<5>(SIMM5);
                     }}, OPIVI, VectorDummyOp);
                     0x03: vrsub_vi({{
-                        Vd_vi[i] = (vi)sext<5>(VECIMM) - Vs2_vi[i];
+                        Vd_vi[i] = (vi)sext<5>(SIMM5) - Vs2_vi[i];
                     }}, OPIVI, VectorDummyOp);
                     0x09: vand_vi({{
-                        Vd_vi[i] = Vs2_vi[i] & (vi)sext<5>(VECIMM);
+                        Vd_vi[i] = Vs2_vi[i] & (vi)sext<5>(SIMM5);
                     }}, OPIVI, VectorDummyOp);
                     0x0a: vor_vi({{
-                        Vd_vi[i] = Vs2_vi[i] | (vi)sext<5>(VECIMM);
+                        Vd_vi[i] = Vs2_vi[i] | (vi)sext<5>(SIMM5);
                     }}, OPIVI, VectorDummyOp);
                     0x0b: vxor_vi({{
-                        Vd_vi[i] = Vs2_vi[i] ^ (vi)sext<5>(VECIMM);
+                        Vd_vi[i] = Vs2_vi[i] ^ (vi)sext<5>(SIMM5);
                     }}, OPIVI, VectorDummyOp);
                     0x10: decode VM {
                         0x0: vadc_vim({{
                             Vd_vi[i] = Vs2_vi[i] +
-                                (vi)sext<5>(VECIMM) + elem_mask(v0, ei);
+                                (vi)sext<5>(SIMM5) + elem_mask(v0, ei);
                         }}, OPIVI, VectorDummyOp);
                         // the unmasked versions (vm=1) are reserved
                     }
                     0x17: decode VM {
                         0x0: vmerge_vim({{
                             Vd_vi[i] = elem_mask(v0, ei)
-                                    ? (vi)sext<5>(VECIMM)
+                                    ? (vi)sext<5>(SIMM5)
                                     : Vs2_vi[i];
                         }}, OPIVI, VectorDummyOp);
                         0x1: vmv_v_i({{
-                            Vd_vi[i] = (vi)sext<5>(VECIMM);
+                            Vd_vi[i] = (vi)sext<5>(SIMM5);
                         }}, OPIVI, VectorDummyOp);
                     }
                     0x25: vsll_vi({{
                         Vd_vu[i] = Vs2_vu[i] <<
-                                    ((vu)VECIMM & this->sew_mask());
+                                    ((vu)SIMM5 & (vtype_SEW(vtype)-1) & 0x1f);
                     }}, OPIVI, VectorDummyOp);
                     0x28: vsrl_vi({{
                         Vd_vu[i] = Vs2_vu[i] >>
-                                    ((vu)VECIMM & this->sew_mask());
+                                    ((vu)SIMM5 & (vtype_SEW(vtype)-1) & 0x1f);
                     }}, OPIVI, VectorDummyOp);
                     0x29: vsra_vi({{
                         Vd_vi[i] = Vs2_vi[i] >>
-                                    ((vu)VECIMM & this->sew_mask());
+                                    ((vu)SIMM5 & (vtype_SEW(vtype)-1) & 0x1f);
                     }}, OPIVI, VectorDummyOp);
                 }
                 format VectorIntMaskFormat {
                     0x11: decode VM {
                         0x0: vmadc_vim({{
                             Vds[ei/8] = ASSIGN_VD_BIT(ei, carry_out(Vs2_vi[i],
-                                (vi)sext<5>(VECIMM), elem_mask(v0, ei)));
+                                (vi)sext<5>(SIMM5), elem_mask(v0, ei)));
                         }}, OPIVI, VectorDummyOp);
                         0x1: vmadc_vi({{
                             Vds[ei/8] = ASSIGN_VD_BIT(ei, carry_out(Vs2_vi[i],
-                                (vi)sext<5>(VECIMM)));
+                                (vi)sext<5>(SIMM5)));
                         }}, OPIVI, VectorDummyOp);
                     }
                     0x18: vmseq_vi({{
                         Vds[ei/8] = ASSIGN_VD_BIT(ei,
-                                    (Vs2_vi[i] == (vi)sext<5>(VECIMM)));
+                                    (Vs2_vi[i] == (vi)sext<5>(SIMM5)));
                     }}, OPIVI, VectorDummyOp);
                     0x19: vmsne_vi({{
                         Vds[ei/8] = ASSIGN_VD_BIT(ei,
-                                    (Vs2_vi[i] != (vi)sext<5>(VECIMM)));
+                                    (Vs2_vi[i] != (vi)sext<5>(SIMM5)));
                     }}, OPIVI, VectorDummyOp);
                     0x1c: vmsleu_vi({{
                         Vds[ei/8] = ASSIGN_VD_BIT(ei,
-                                    (Vs2_vu[i] <= (vu)sext<5>(VECIMM)));
+                                    (Vs2_vu[i] <= (vu)sext<5>(SIMM5)));
                     }}, OPIVI, VectorDummyOp);
                     0x1d: vmsle_vi({{
                         Vds[ei/8] = ASSIGN_VD_BIT(ei,
-                                    (Vs2_vi[i] <= (vi)sext<5>(VECIMM)));
+                                    (Vs2_vi[i] <= (vi)sext<5>(SIMM5)));
                     }}, OPIVI, VectorDummyOp);
                     0x1e: vmsgtu_vi({{
                         Vds[ei/8] = ASSIGN_VD_BIT(ei,
-                                    (Vs2_vu[i] > (vu)sext<5>(VECIMM)));
+                                    (Vs2_vu[i] > (vu)sext<5>(SIMM5)));
                     }}, OPIVI, VectorDummyOp);
                     0x1f: vmsgt_vi({{
                         Vds[ei/8] = ASSIGN_VD_BIT(ei,
-                                    (Vs2_vi[i] > (vi)sext<5>(VECIMM)));
+                                    (Vs2_vi[i] > (vi)sext<5>(SIMM5)));
                     }}, OPIVI, VectorDummyOp);
                 }
             }
@@ -2254,13 +2257,16 @@ decode QUADRANT default Unknown::unknown() {
                         }
                     }
                     0x25: vsll_vx({{
-                        Vd_vu[i] = Vs2_vu[i] << (Rs1_vu & this->sew_mask());
+                        Vd_vu[i] = Vs2_vu[i] << (Rs1_vu &
+                                                 (vtype_SEW(vtype)-1));
                     }}, OPIVX, VectorDummyOp);
                     0x28: vsrl_vx({{
-                        Vd_vu[i] = Vs2_vu[i] >> (Rs1_vu & this->sew_mask());
+                        Vd_vu[i] = Vs2_vu[i] >> (Rs1_vu &
+                                                 (vtype_SEW(vtype)-1));
                     }}, OPIVX, VectorDummyOp);
                     0x29: vsra_vx({{
-                        Vd_vi[i] = Vs2_vi[i] >> (Rs1_vu & this->sew_mask());
+                        Vd_vi[i] = Vs2_vi[i] >> (Rs1_vu &
+                                                 (vtype_SEW(vtype)-1));
                     }}, OPIVX, VectorDummyOp);
                 }
                 format VectorIntMaskFormat {

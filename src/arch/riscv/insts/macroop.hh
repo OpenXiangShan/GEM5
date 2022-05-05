@@ -81,10 +81,6 @@ protected:
     {
         this->flags[IsVector] = true;
     }
-
-    uint8_t vsew() const { return bits(this->vtype, 5, 3); }
-
-    virtual uint32_t sew() const = 0;
 };
 
 class VectorMicroInst : public RiscvMicroInst
@@ -104,8 +100,6 @@ protected:
     uint8_t vsew() const { return bits(this->vtype, 5, 3); }
 
     virtual uint32_t sew() const = 0;
-
-    uint64_t sew_mask() const { return (1 << (3 + vsew())) - 1; }
 };
 
 class VectorArithMicroInst : public VectorMicroInst
@@ -134,8 +128,6 @@ protected:
 
     std::string generateDisassembly(
             Addr pc, const loader::SymbolTable *symtab) const override;
-
-    uint32_t sew() const override { return 8 << this->vsew(); }
 };
 
 class VectorMemMicroInst : public VectorMicroInst
@@ -173,8 +165,6 @@ protected:
     constexpr uint32_t numMemAccPerVReg() {
         return RiscvISA::VLEN / cache_line_size;
     }
-
-    uint32_t sew() const override { return _sew; }
 };
 
 class VleMacroInst : public VectorMemMacroInst
