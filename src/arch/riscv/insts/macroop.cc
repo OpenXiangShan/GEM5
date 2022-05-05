@@ -58,7 +58,7 @@ std::string VectorArithMacroInst::generateDisassembly(Addr pc,
     std::stringstream ss;
     ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
         << registerName(srcRegIdx(1)) << ", " << registerName(srcRegIdx(0));
-    if (vm == 0) {
+    if (machInst.vm == 0) {
         ss << ", v0.t";
     }
     return ss.str();

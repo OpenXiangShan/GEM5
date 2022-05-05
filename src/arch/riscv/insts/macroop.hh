@@ -73,13 +73,11 @@ class VectorMacroInst : public RiscvMacroInst
 protected:
     uint32_t vl;
     uint8_t vtype;
-    bool vm;
-    VectorMacroInst(const char* mnem, ExtMachInst _extMachInst,
+    VectorMacroInst(const char* mnem, ExtMachInst _machInst,
                    OpClass __opClass)
-        : RiscvMacroInst(mnem, _extMachInst, __opClass),
-        vl(_extMachInst.vl),
-        vtype(checked_vtype(_extMachInst.vill, _extMachInst.vtype8)),
-        vm(_extMachInst.vm)
+        : RiscvMacroInst(mnem, _machInst, __opClass),
+        vl(_machInst.vl),
+        vtype(checked_vtype(_machInst.vill, _machInst.vtype8))
     {
         this->flags[IsVector] = true;
     }
@@ -101,13 +99,12 @@ protected:
 class VectorMicroInst : public RiscvMicroInst
 {
 protected:
-    bool vm;
     uint8_t micro_vl;
     uint8_t vtype;
     VectorMicroInst(const char *mnem, ExtMachInst extMachInst,
             OpClass __opClass, uint8_t _micro_vl)
         : RiscvMicroInst(mnem, extMachInst, __opClass),
-        vm(extMachInst.vm), micro_vl(_micro_vl),
+        micro_vl(_micro_vl),
         vtype(extMachInst.vtype8) // has been checked by vector macro inst
     {
         this->flags[IsVector] = true;
