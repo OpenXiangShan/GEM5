@@ -86,36 +86,19 @@ def template VleMicroExecute {{
   %(class_name)s::execute(ExecContext *xc,
     Trace::InstRecord *traceData) const
   {
-    auto tc = xc->tcBase();
-
     Addr EA;
-    Fault fault = NoFault;
-    std::size_t memAccessSize = this->micro_vl * width_EEW(machInst.width) / 8;
+    %(op_decl)s; %(op_rd)s; %(ea_code)s;
 
-    const TheISA::vreg_t& tmp_v0 = tc->readVecReg(RegId(VecRegClass, 0));
-    [[maybe_unused]] auto v0 = tmp_v0.as<uint8_t>();
+    Fault fault = readMemAtomicLE(xc, traceData, EA, Mem.as<uint64_t>()[0],
+                                  memAccessFlags);
+    if (fault != NoFault)
+        return fault;
 
-    %(op_decl)s;
-
-    %(op_rd)s;
-
-    %(ea_code)s;
-
-    if (fault == NoFault) {
-      fault = readMemAtomic(xc, EA, Mem.as<uint8_t>(), memAccessSize,
-              this->memAccessFlags, std::vector<bool>(memAccessSize, true));
-      for (size_t i = 0; i < this->micro_vl; i++) {
+    for (size_t i = 0; i < this->micro_vl; i++) {
         %(memacc_code)s;
-      }
     }
 
-    // (op_wb)s;
-    if (fault == NoFault) {
-      xc->setVecRegOperand(this, 0, tmp_d0);
-    }
-    if (traceData) {
-      traceData->setData(tmp_d0);
-    }
+    %(op_wb)s;
     return fault;
   }
 }};
