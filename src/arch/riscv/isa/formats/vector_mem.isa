@@ -46,7 +46,6 @@ let {{
         microiop.constructor += s
 
     # select templates
-
     constructTemplate = eval(exec_template_base + 'Constructor')
 
     header_output   = VLoadStoreMacroDeclare.subst(iop)
