@@ -48,7 +48,6 @@ output header {{
 #include "arch/riscv/decoder.hh"
 #include "arch/riscv/insts/amo.hh"
 #include "arch/riscv/insts/compressed.hh"
-#include "arch/riscv/insts/macroop.hh"
 #include "arch/riscv/insts/mem.hh"
 #include "arch/riscv/insts/pseudo.hh"
 #include "arch/riscv/insts/standard.hh"
