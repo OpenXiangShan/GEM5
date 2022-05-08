@@ -85,7 +85,9 @@ def template VleMicroExecute {{
     Trace::InstRecord *traceData) const
   {
     Addr EA;
-    %(op_decl)s; %(op_rd)s; %(ea_code)s;
+    %(op_decl)s;
+    %(op_rd)s;
+    %(ea_code)s;
 
     Fault fault = readMemAtomicLE(xc, traceData, EA, Mem.as<uint64_t>()[0],
                                   memAccessFlags);
@@ -443,7 +445,9 @@ Fault
 %(class_name)s::execute(ExecContext *xc, Trace::InstRecord *traceData) const
 {
   Addr EA;
-  %(op_decl)s;%(op_rd)s;%(ea_code)s;
+  %(op_decl)s;
+  %(op_rd)s;
+  %(ea_code)s;
 
   for (size_t i = 0; i < NumVecElemPerVecReg; i++) {
     %(memacc_code)s;
@@ -462,7 +466,9 @@ def template VsWholeMicroInitiateAcc {{
           Trace::InstRecord* traceData) const
   {
     Addr EA;
-    %(op_decl)s;%(op_rd)s;%(ea_code)s;
+    %(op_decl)s;
+    %(op_rd)s;
+    %(ea_code)s;
 
     for (size_t i = 0; i < NumVecElemPerVecReg; i++) {
       %(memacc_code)s;
@@ -555,7 +561,9 @@ Fault
 %(class_name)s::execute(ExecContext *xc, Trace::InstRecord *traceData) const
 {
     Addr EA;
-    %(op_decl)s;%(op_rd)s;%(ea_code)s;
+    %(op_decl)s;
+    %(op_rd)s;
+    %(ea_code)s;
 
     Fault fault = readMemAtomicLE(xc, traceData, EA, Mem.as<uint64_t>()[0],
                                   memAccessFlags);
@@ -579,7 +587,9 @@ def template VlWholeMicroInitiateAcc {{
           Trace::InstRecord* traceData) const
   {
     Addr EA;
-    %(op_src_decl)s;%(op_rd)s;%(ea_code)s;
+    %(op_src_decl)s;
+    %(op_rd)s;
+    %(ea_code)s;
 
     Fault fault = initiateMemRead(xc, traceData, EA, Mem, memAccessFlags);
     return fault;
@@ -592,7 +602,8 @@ Fault
 %(class_name)s::completeAcc(PacketPtr pkt, ExecContext* xc,
         Trace::InstRecord* traceData) const
 {
-    %(op_decl)s;%(op_rd)s;
+    %(op_decl)s;
+    %(op_rd)s;
 
     memcpy(Mem.as<uint8_t>(), pkt->getPtr<uint8_t>(),
            pkt->getSize());
