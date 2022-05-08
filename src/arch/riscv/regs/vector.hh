@@ -56,10 +56,9 @@ using VecPredReg =
 using ConstVecPredReg =
     gem5::VecPredRegT<VecElem, NumVecElemPerVecReg, false, true>;
 using VecPredRegContainer = VecPredReg::Container;
-using VecRegIdx = uint8_t;
 
 const int NumVecStandardRegs = 32;
-const int NumVecMemInternalRegs = 4;
+const int NumVecMemInternalRegs = NumVecElemPerVecReg;
 
 const int NumVecRegs = NumVecStandardRegs + NumVecMemInternalRegs;
 
@@ -71,7 +70,6 @@ const std::vector<std::string> VecRegNames = {
     "vmem0", "vmem1", "vmem2", "vmem3"
 };
 
-// internal vector indices
 constexpr int VecMemInternalReg0 = NumVecStandardRegs;
 
 } // namespace RiscvISA

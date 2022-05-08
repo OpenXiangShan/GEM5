@@ -115,3 +115,25 @@ def format VsmOp(
     VLoadStoreBase(name, Name, ea_code, memacc_code, mem_flags,
       inst_flags, 'VseMacroInst', exec_template_base='Vsm', need_micro=False)
 }};
+
+def format VlWholeOp(
+  memacc_code,
+  ea_code={{EA = Rs1 + this->offset;}},
+  mem_flags=[],
+  inst_flags=[]
+) {{
+  (header_output, decoder_output, decode_block, exec_output) = \
+    VLoadStoreBase(name, Name, ea_code, memacc_code, mem_flags,
+      inst_flags, 'VlWholeMacroInst', exec_template_base='VlWhole')
+}};
+
+def format VsWholeOp(
+  memacc_code,
+  ea_code={{EA = Rs1 + this->offset;}},
+  mem_flags=[],
+  inst_flags=[]
+) {{
+  (header_output, decoder_output, decode_block, exec_output) = \
+    VLoadStoreBase(name, Name, ea_code, memacc_code, mem_flags,
+      inst_flags, 'VsWholeMacroInst', exec_template_base='VsWhole')
+}};

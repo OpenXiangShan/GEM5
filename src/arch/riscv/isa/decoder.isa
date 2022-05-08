@@ -454,6 +454,22 @@ decode QUADRANT default Unknown::unknown() {
                     0x00: VleOp::vle8_v({{
                         Vd_ub[i] = Mem_vc.as<uint8_t>()[i];
                     }}, inst_flags=VectorDummyOp);
+                    0x08: decode NF {
+                        format VlWholeOp {
+                            0x0: vl1re8_v({{
+                                Vd_ub[i] = Mem_vc.as<uint8_t>()[i];
+                            }}, inst_flags=VectorDummyOp);
+                            0x1: vl2re8_v({{
+                                Vd_ub[i] = Mem_vc.as<uint8_t>()[i];
+                            }}, inst_flags=VectorDummyOp);
+                            0x3: vl4re8_v({{
+                                Vd_ub[i] = Mem_vc.as<uint8_t>()[i];
+                            }}, inst_flags=VectorDummyOp);
+                            0x7: vl8re8_v({{
+                                Vd_ub[i] = Mem_vc.as<uint8_t>()[i];
+                            }}, inst_flags=VectorDummyOp);
+                        }
+                    }
                     0x0b: VlmOp::vlm_v({{
                         Vd_ub[i] = Mem_vc.as<uint8_t>()[i];
                     }}, inst_flags=VectorDummyOp);
@@ -464,6 +480,22 @@ decode QUADRANT default Unknown::unknown() {
                     0x00: VleOp::vle16_v({{
                         Vd_uh[i] = Mem_vc.as<uint16_t>()[i];
                     }}, inst_flags=VectorDummyOp);
+                    0x08: decode NF {
+                        format VlWholeOp {
+                            0x0: vl1re16_v({{
+                                Vd_uh[i] = Mem_vc.as<uint16_t>()[i];
+                            }}, inst_flags=VectorDummyOp);
+                            0x1: vl2re16_v({{
+                                Vd_uh[i] = Mem_vc.as<uint16_t>()[i];
+                            }}, inst_flags=VectorDummyOp);
+                            0x3: vl4re16_v({{
+                                Vd_uh[i] = Mem_vc.as<uint16_t>()[i];
+                            }}, inst_flags=VectorDummyOp);
+                            0x7: vl8re16_v({{
+                                Vd_uh[i] = Mem_vc.as<uint16_t>()[i];
+                            }}, inst_flags=VectorDummyOp);
+                        }
+                    }
                 }
             }
             0x6: decode MOP {
@@ -471,6 +503,22 @@ decode QUADRANT default Unknown::unknown() {
                     0x00: VleOp::vle32_v({{
                         Vd_uw[i] = Mem_vc.as<uint32_t>()[i];
                     }}, inst_flags=VectorDummyOp);
+                    0x08: decode NF {
+                        format VlWholeOp {
+                            0x0: vl1re32_v({{
+                                Vd_uw[i] = Mem_vc.as<uint32_t>()[i];
+                            }}, inst_flags=VectorDummyOp);
+                            0x1: vl2re32_v({{
+                                Vd_uw[i] = Mem_vc.as<uint32_t>()[i];
+                            }}, inst_flags=VectorDummyOp);
+                            0x3: vl4re32_v({{
+                                Vd_uw[i] = Mem_vc.as<uint32_t>()[i];
+                            }}, inst_flags=VectorDummyOp);
+                            0x7: vl8re32_v({{
+                                Vd_uw[i] = Mem_vc.as<uint32_t>()[i];
+                            }}, inst_flags=VectorDummyOp);
+                        }
+                    }
                 }
             }
             0x7: decode MOP {
@@ -478,6 +526,22 @@ decode QUADRANT default Unknown::unknown() {
                     0x00: VleOp::vle64_v({{
                         Vd_ud[i] = Mem_vc.as<uint64_t>()[i];
                     }}, inst_flags=VectorDummyOp);
+                    0x08: decode NF {
+                        format VlWholeOp {
+                            0x0: vl1re64_v({{
+                                Vd_ud[i] = Mem_vc.as<uint64_t>()[i];
+                            }}, inst_flags=VectorDummyOp);
+                            0x1: vl2re64_v({{
+                                Vd_ud[i] = Mem_vc.as<uint64_t>()[i];
+                            }}, inst_flags=VectorDummyOp);
+                            0x3: vl4re64_v({{
+                                Vd_ud[i] = Mem_vc.as<uint64_t>()[i];
+                            }}, inst_flags=VectorDummyOp);
+                            0x7: vl8re64_v({{
+                                Vd_ud[i] = Mem_vc.as<uint64_t>()[i];
+                            }}, inst_flags=VectorDummyOp);
+                        }
+                    }
                 }
             }
         }
@@ -725,6 +789,22 @@ decode QUADRANT default Unknown::unknown() {
                     0x00: VseOp::vse8_v({{
                         Mem_vc.as<uint8_t>()[i] = Vs3_ub[i];
                     }}, inst_flags=VectorDummyOp);
+                    format VsWholeOp {
+                        0x8: decode NF {
+                            0x0: vs1r_v({{
+                                Mem_vc.as<uint64_t>()[i] = Vs3_ud[i];
+                            }}, inst_flags=VectorDummyOp);
+                            0x1: vs2r_v({{
+                                Mem_vc.as<uint64_t>()[i] = Vs3_ud[i];
+                            }}, inst_flags=VectorDummyOp);
+                            0x3: vs4r_v({{
+                                Mem_vc.as<uint64_t>()[i] = Vs3_ud[i];
+                            }}, inst_flags=VectorDummyOp);
+                            0x7: vs8r_v({{
+                                Mem_vc.as<uint64_t>()[i] = Vs3_ud[i];
+                            }}, inst_flags=VectorDummyOp);
+                        }
+                    }
                     0x0b: VsmOp::vsm_v({{
                         Mem_vc.as<uint8_t>()[i] = Vs3_ub[i];
                     }}, inst_flags=VectorDummyOp);

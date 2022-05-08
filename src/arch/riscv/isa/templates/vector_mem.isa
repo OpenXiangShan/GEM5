@@ -16,8 +16,6 @@ def template VleConstructor {{
   {
     %(set_reg_idx_arr)s;
     %(constructor)s;
-    // num of mem acc operations in one Vec reg
-    uint32_t numMaPerVReg = this->numMemAccPerVReg();
     // num of elem in one mem acc operation
     int32_t elemNumPerMa = this->numElemPerMemAcc();
     flags[IsVector] = true;
@@ -26,10 +24,10 @@ def template VleConstructor {{
     StaticInstPtr micro_op;
     uint32_t offset;
 
-    for (VecRegIdx i=0; micro_vl>0; ++i) {
+    for (int i = 0; micro_vl > 0; ++i) {
       int regCnt = 0;
-      for (int j=0; j<numMaPerVReg && micro_vl>0; ++j) {
-        offset = (i * numMaPerVReg + j) * cache_line_size / 8;
+      for (int j = 0; j < NumVecElemPerVecReg && micro_vl > 0; ++j) {
+        offset = (i * NumVecElemPerVecReg + j) * sizeof(VecElem);
         micro_op = new %(class_name)sMicro(extMachInst, offset,
                 VecMemInternalReg0 + j, micro_vl);
         micro_op->setFlag(IsDelayedCommit);
@@ -160,8 +158,6 @@ def template VseConstructor {{
   {
     %(set_reg_idx_arr)s;
     %(constructor)s;
-    // num of mem acc operations in one Vec reg
-    uint32_t numMaPerVReg = this->numMemAccPerVReg();
     // num of elem in one mem acc operation
     int32_t elemNumPerMa = this->numElemPerMemAcc();
     flags[IsVector] = true;
@@ -171,10 +167,10 @@ def template VseConstructor {{
     StaticInstPtr micro_op;
     std::vector<StaticInstPtr> tmp_ops;
     uint32_t offset;
-    for (VecRegIdx i=0; micro_vl>0; ++i) {
+    for (int i = 0; micro_vl > 0; ++i) {
       int regCnt = 0;
-      for (int j=0; j<numMaPerVReg && micro_vl>0; ++j) {
-        offset = (i * numMaPerVReg + j) * cache_line_size / 8;
+      for (int j = 0; j < NumVecElemPerVecReg && micro_vl > 0; ++j) {
+        offset = (i * NumVecElemPerVecReg + j) * sizeof(VecElem);
         micro_op = new %(class_name)sMicro(extMachInst, offset,
                 VecMemInternalReg0 + j, micro_vl);
         micro_op->setFlag(IsDelayedCommit);
@@ -309,8 +305,6 @@ def template VlmConstructor {{
   {
     %(set_reg_idx_arr)s;
     %(constructor)s;
-    // num of mem acc operations in one Vec reg
-    uint32_t numMaPerVReg = this->numMemAccPerVReg();
     // num of elem in one mem acc operation
     int32_t elemNumPerMa = this->numElemPerMemAcc() * 8;
     flags[IsVector] = true;
@@ -319,10 +313,10 @@ def template VlmConstructor {{
     StaticInstPtr micro_op;
     uint32_t offset;
 
-    for (VecRegIdx i=0; micro_vl>0; ++i) {
+    for (int i = 0; micro_vl > 0; ++i) {
       int regCnt = 0;
-      for (int j=0; j<numMaPerVReg && micro_vl>0; ++j) {
-        offset = (i * numMaPerVReg + j) * cache_line_size / 8;
+      for (int j = 0; j < NumVecElemPerVecReg && micro_vl > 0; ++j) {
+        offset = (i * NumVecElemPerVecReg + j) * sizeof(VecElem);
         micro_op = new Vle8_vMicro(extMachInst, offset,
                 VecMemInternalReg0 + j, (micro_vl + 7) / 8);
         micro_op->setFlag(IsDelayedCommit);
@@ -345,8 +339,6 @@ def template VsmConstructor {{
   {
     %(set_reg_idx_arr)s;
     %(constructor)s;
-    // num of mem acc operations in one Vec reg
-    uint32_t numMaPerVReg = this->numMemAccPerVReg();
     // num of elem in one mem acc operation
     int32_t elemNumPerMa = this->numElemPerMemAcc() * 8;
     flags[IsVector] = true;
@@ -356,10 +348,10 @@ def template VsmConstructor {{
     StaticInstPtr micro_op;
     std::vector<StaticInstPtr> tmp_ops;
     uint32_t offset;
-    for (VecRegIdx i=0; micro_vl>0; ++i) {
+    for (int i = 0; micro_vl > 0; ++i) {
       int regCnt = 0;
-      for (int j=0; j<numMaPerVReg && micro_vl>0; ++j) {
-        offset = (i * numMaPerVReg + j) * cache_line_size / 8;
+      for (int j = 0; j < NumVecElemPerVecReg && micro_vl > 0; ++j) {
+        offset = (i * NumVecElemPerVecReg + j) * sizeof(VecElem);
         micro_op = new Vse8_vMicro(extMachInst, offset,
                 VecMemInternalReg0 + j, (micro_vl + 7) / 8);
         micro_op->setFlag(IsDelayedCommit);
@@ -378,4 +370,240 @@ def template VsmConstructor {{
     this->microops.front()->setFlag(IsFirstMicroop);
     this->microops.back()->setFlag(IsLastMicroop);
   }
+}};
+
+def template VsWholeConstructor {{
+
+%(class_name)s::%(class_name)s(ExtMachInst _machInst)
+  : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
+{
+  %(set_reg_idx_arr)s;
+  %(constructor)s;
+  flags[IsVector] = true;
+
+  StaticInstPtr microop;
+  uint32_t offset;
+  size_t NFIELDS = machInst.nf + 1;
+  for (int i = 0; i < NFIELDS; ++i) {
+    microop = new VstMvMicroInst(_machInst, _machInst.vs3 + i,
+                                 NumVecMemInternalRegs);
+    this->microops.push_back(microop);
+    for (int j = 0; j < NumVecElemPerVecReg; ++j) {
+      offset = (i * NumVecElemPerVecReg + j) * sizeof(VecElem);
+      microop = new %(class_name)sMicro(_machInst, offset,
+                                        VecMemInternalReg0 + j);
+      microop->setFlag(IsDelayedCommit);
+      microop->setFlag(IsStore);
+      this->microops.push_back(microop);
+    }
+  }
+  this->microops.front()->setFlag(IsFirstMicroop);
+  this->microops.back()->setFlag(IsLastMicroop);
+}
+
+}};
+
+def template VsWholeMicroDeclare {{
+
+class %(class_name)s: public %(base_class)s
+{
+private:
+  RegId destRegIdxArr[0];
+  RegId srcRegIdxArr[2];
+public:
+  %(class_name)s(ExtMachInst _machInst, uint32_t _offset, uint8_t _srcReg)
+    : %(base_class)s("%(mnemonic)s_micro", _machInst, %(op_class)s, _offset)
+  {
+    %(set_reg_idx_arr)s;
+    _numSrcRegs = 0;
+    _numDestRegs = 0;
+    _numFPDestRegs = 0;
+    _numVecDestRegs = 0;
+    _numVecElemDestRegs = 0;
+    _numVecPredDestRegs = 0;
+    _numIntDestRegs = 0;
+    _numCCDestRegs = 0;
+    setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
+    setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _srcReg));
+    this->flags[IsVector] = true;
+    this->flags[IsStore] = true;
+  }
+  Fault execute(ExecContext *, Trace::InstRecord *) const override;
+  Fault initiateAcc(ExecContext *, Trace::InstRecord *) const override;
+  Fault completeAcc(PacketPtr, ExecContext *,
+                      Trace::InstRecord *) const override;
+  using %(base_class)s::generateDisassembly;
+};
+
+}};
+
+def template VsWholeMicroExecute {{
+
+Fault
+%(class_name)s::execute(ExecContext *xc, Trace::InstRecord *traceData) const
+{
+  Addr EA;
+  %(op_decl)s;%(op_rd)s;%(ea_code)s;
+
+  for (size_t i = 0; i < NumVecElemPerVecReg; i++) {
+    %(memacc_code)s;
+  }
+
+  Fault fault = writeMemAtomicLE(xc, traceData, Mem.as<uint64_t>()[0], EA,
+                                 memAccessFlags, nullptr);
+  return fault;
+}
+
+}};
+
+def template VsWholeMicroInitiateAcc {{
+  Fault
+  %(class_name)s::initiateAcc(ExecContext* xc,
+          Trace::InstRecord* traceData) const
+  {
+    Addr EA;
+    %(op_decl)s;%(op_rd)s;%(ea_code)s;
+
+    for (size_t i = 0; i < NumVecElemPerVecReg; i++) {
+      %(memacc_code)s;
+    }
+
+    Fault fault = writeMemTimingLE(xc, traceData, Mem.as<uint64_t>()[0], EA,
+                                   memAccessFlags, nullptr);
+    return fault;
+  }
+}};
+
+def template VsWholeMicroCompleteAcc {{
+  Fault
+  %(class_name)s::completeAcc(PacketPtr pkt, ExecContext* xc,
+          Trace::InstRecord* traceData) const
+  {
+    return NoFault;
+  }
+}};
+
+def template VlWholeConstructor {{
+
+%(class_name)s::%(class_name)s(ExtMachInst _machInst)
+  : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
+{
+  %(set_reg_idx_arr)s;
+  %(constructor)s;
+  flags[IsVector] = true;
+
+  StaticInstPtr microop;
+  uint32_t offset;
+  size_t NFIELDS = machInst.nf + 1;
+  for (int i = 0; i < NFIELDS; ++i) {
+    for (int j = 0; j < NumVecElemPerVecReg; ++j) {
+      offset = (i * NumVecElemPerVecReg + j) * sizeof(VecElem);
+      microop = new %(class_name)sMicro(_machInst, offset,
+                                        VecMemInternalReg0 + j);
+      microop->setFlag(IsDelayedCommit);
+      microop->setFlag(IsLoad);
+      this->microops.push_back(microop);
+    }
+
+    microop = new VstMvMicroInst(_machInst, _machInst.vd + i,
+                                 NumVecMemInternalRegs);
+    this->microops.push_back(microop);
+  }
+  this->microops.front()->setFlag(IsFirstMicroop);
+  this->microops.back()->setFlag(IsLastMicroop);
+}
+
+}};
+
+def template VlWholeMicroDeclare {{
+
+class %(class_name)s: public %(base_class)s
+{
+private:
+  RegId destRegIdxArr[1];
+  RegId srcRegIdxArr[1];
+public:
+  %(class_name)s(ExtMachInst _machInst, uint32_t _offset, uint8_t _dstReg)
+    : %(base_class)s("%(mnemonic)s_micro", _machInst, %(op_class)s, _offset)
+  {
+    %(set_reg_idx_arr)s;
+    _numSrcRegs = 0;
+    _numDestRegs = 0;
+    _numFPDestRegs = 0;
+    _numVecDestRegs = 0;
+    _numVecElemDestRegs = 0;
+    _numVecPredDestRegs = 0;
+    _numIntDestRegs = 0;
+    _numCCDestRegs = 0;
+    setDestRegIdx(_numDestRegs++, RegId(VecRegClass, _dstReg));
+    setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
+    this->flags[IsVector] = true;
+    this->flags[IsLoad] = true;
+  }
+  Fault execute(ExecContext *, Trace::InstRecord *) const override;
+  Fault initiateAcc(ExecContext *, Trace::InstRecord *) const override;
+  Fault completeAcc(PacketPtr, ExecContext *,
+                    Trace::InstRecord *) const override;
+  using %(base_class)s::generateDisassembly;
+};
+
+}};
+
+def template VlWholeMicroExecute {{
+
+Fault
+%(class_name)s::execute(ExecContext *xc, Trace::InstRecord *traceData) const
+{
+    Addr EA;
+    %(op_decl)s;%(op_rd)s;%(ea_code)s;
+
+    Fault fault = readMemAtomicLE(xc, traceData, EA, Mem.as<uint64_t>()[0],
+                                  memAccessFlags);
+    if (fault != NoFault)
+        return fault;
+
+    size_t elem_per_reg = gem5::RiscvISA::VLEN / width_EEW(machInst.width);
+    for (size_t i = 0; i < elem_per_reg; i++) {
+        %(memacc_code)s;
+    }
+
+    %(op_wb)s;
+    return NoFault;
+}
+
+}};
+
+def template VlWholeMicroInitiateAcc {{
+  Fault
+  %(class_name)s::initiateAcc(ExecContext* xc,
+          Trace::InstRecord* traceData) const
+  {
+    Addr EA;
+    %(op_src_decl)s;%(op_rd)s;%(ea_code)s;
+
+    Fault fault = initiateMemRead(xc, traceData, EA, Mem, memAccessFlags);
+    return fault;
+  }
+}};
+
+def template VlWholeMicroCompleteAcc {{
+
+Fault
+%(class_name)s::completeAcc(PacketPtr pkt, ExecContext* xc,
+        Trace::InstRecord* traceData) const
+{
+    %(op_decl)s;%(op_rd)s;
+
+    memcpy(Mem.as<uint8_t>(), pkt->getPtr<uint8_t>(),
+           pkt->getSize());
+
+    size_t elem_per_reg = gem5::RiscvISA::VLEN / width_EEW(machInst.width);
+    for (size_t i = 0; i < elem_per_reg; ++i) {
+        %(memacc_code)s;
+    }
+
+    %(op_wb)s;
+    return NoFault;
+}
+
 }};

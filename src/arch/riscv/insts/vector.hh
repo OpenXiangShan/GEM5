@@ -43,8 +43,6 @@ namespace gem5
 namespace RiscvISA
 {
 
-constexpr uint32_t cache_line_size = 64;
-
 /**
  * Base class for Vector Config operations
  */
@@ -150,10 +148,6 @@ class VectorMemMacroInst : public VectorMacroInst
     int32_t numElemPerMemAcc() {
         return sizeof(RiscvISA::VecElem) * 8 / width_EEW(machInst.width);
     }
-
-    constexpr uint32_t numMemAccPerVReg() {
-        return RiscvISA::VLEN / (sizeof(RiscvISA::VecElem) * 8);
-    }
 };
 
 class VleMacroInst : public VectorMemMacroInst
@@ -211,6 +205,64 @@ class VseMicroInst : public VectorMemMicroInst
             uint8_t _micro_vl)
         : VectorMemMicroInst(mnem, _machInst, __opClass, _micro_vl),
         offset(_offset), src_reg(_src_reg),
+        memAccessFlags(0)
+    {}
+
+    std::string generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
+class VlWholeMacroInst : public VectorMemMacroInst
+{
+  protected:
+    VlWholeMacroInst(const char *mnem, ExtMachInst _machInst,
+                     OpClass __opClass)
+      : VectorMemMacroInst(mnem, _machInst, __opClass)
+    {}
+
+    std::string generateDisassembly(
+      Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
+class VlWholeMicroInst : public VectorMemMicroInst
+{
+  protected:
+    uint32_t offset;
+    Request::Flags memAccessFlags;
+
+    VlWholeMicroInst(const char *mnem, ExtMachInst _machInst,
+                     OpClass __opClass, uint32_t _offset)
+      : VectorMemMicroInst(mnem, _machInst, __opClass,
+                           NumVecMemInternalRegs), offset(_offset),
+        memAccessFlags(0)
+    {}
+
+    std::string generateDisassembly(
+      Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
+class VsWholeMacroInst : public VectorMemMacroInst
+{
+  protected:
+    VsWholeMacroInst(const char *mnem, ExtMachInst _machInst,
+                   OpClass __opClass)
+        : VectorMemMacroInst(mnem, _machInst, __opClass)
+    {}
+
+    std::string generateDisassembly(
+            Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
+class VsWholeMicroInst : public VectorMemMicroInst
+{
+  protected:
+    uint32_t offset;
+    Request::Flags memAccessFlags;
+
+    VsWholeMicroInst(const char *mnem, ExtMachInst _machInst,
+                     OpClass __opClass, uint32_t _offset)
+        : VectorMemMicroInst(mnem, _machInst, __opClass,
+                             NumVecMemInternalRegs), offset(_offset),
         memAccessFlags(0)
     {}
 

@@ -86,7 +86,25 @@ std::string VleMicroInst::generateDisassembly(Addr pc,
     return ss.str();
 }
 
+std::string VlWholeMicroInst::generateDisassembly(Addr pc,
+        const loader::SymbolTable *symtab) const
+{
+    std::stringstream ss;
+    ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", " <<
+        offset << '(' << registerName(srcRegIdx(0)) << ')';
+    return ss.str();
+}
+
 std::string VseMicroInst::generateDisassembly(Addr pc,
+        const loader::SymbolTable *symtab) const
+{
+    std::stringstream ss;
+    ss << mnemonic << ' ' << registerName(srcRegIdx(1)) << ", " <<
+        offset << '(' << registerName(srcRegIdx(0)) << ')';
+    return ss.str();
+}
+
+std::string VsWholeMicroInst::generateDisassembly(Addr pc,
         const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
@@ -104,7 +122,25 @@ std::string VleMacroInst::generateDisassembly(Addr pc,
     return ss.str();
 }
 
+std::string VlWholeMacroInst::generateDisassembly(Addr pc,
+        const loader::SymbolTable *symtab) const
+{
+    std::stringstream ss;
+    ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", " <<
+        '(' << registerName(srcRegIdx(0)) << ')';
+    return ss.str();
+}
+
 std::string VseMacroInst::generateDisassembly(Addr pc,
+        const loader::SymbolTable *symtab) const
+{
+    std::stringstream ss;
+    ss << mnemonic << ' ' << registerName(srcRegIdx(1)) << ", " <<
+        '(' << registerName(srcRegIdx(0)) << ')';
+    return ss.str();
+}
+
+std::string VsWholeMacroInst::generateDisassembly(Addr pc,
         const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
@@ -121,11 +157,11 @@ VldMvMicroInst::execute(ExecContext *xc,
     RiscvISA::vreg_t tmp_d0 = xc->getWritableVecRegOperand(this, 0);
     auto Vd = tmp_d0.as<uint8_t>();
 
-    constexpr auto offset = cache_line_size / 8;
     for (int i = 0; i < this->src_num; i++) {
         RiscvISA::vreg_t tmp_s = xc->readVecRegOperand(this, i);
         auto s = tmp_s.as<uint8_t>();
-        memcpy(Vd + i * offset, s, offset);
+        memcpy(Vd + i * sizeof(RiscvISA::VecElem), s,
+               sizeof(RiscvISA::VecElem));
     }
     xc->setVecRegOperand(this, 0, tmp_d0);
     return fault;
@@ -150,11 +186,11 @@ VstMvMicroInst::execute(ExecContext *xc,
     RiscvISA::vreg_t tmp_s0 = xc->readVecRegOperand(this, 0);
     auto Vs = tmp_s0.as<uint8_t>();
 
-    constexpr auto offset = cache_line_size / 8;
     for (int i = 0; i < this->dst_num; i++) {
         RiscvISA::vreg_t tmp_d = xc->getWritableVecRegOperand(this, i);
         auto d = tmp_d.as<uint8_t>();
-        memcpy(d, Vs + i * offset, offset);
+        memcpy(d, Vs + i * sizeof(RiscvISA::VecElem),
+               sizeof(RiscvISA::VecElem));
         xc->setVecRegOperand(this, i, tmp_d);
     }
     return fault;
