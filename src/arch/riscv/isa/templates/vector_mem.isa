@@ -505,7 +505,7 @@ def template VlWholeConstructor {{
       this->microops.push_back(microop);
     }
 
-    microop = new VstMvMicroInst(_machInst, _machInst.vd + i,
+    microop = new VldMvMicroInst(_machInst, _machInst.vd + i,
                                  NumVecMemInternalRegs);
     this->microops.push_back(microop);
   }
