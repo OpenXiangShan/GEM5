@@ -46,37 +46,39 @@ let {{
             }
         '''
     def loopWrapper(code):
-        return "for (uint32_t i = 0; i < this->micro_vl; i++) {\n" + \
+        return "for (uint32_t i = 0; i < this->microVl; i++) {\n" + \
                code + "}\n"
     def maskCondWrapper(code):
         return "if (this->vm || elem_mask(v0, ei)) {\n" + \
                code + "}\n"
     def eiDeclarePrefix(code):
         return '''
-            uint32_t ei = i + vtype_elements_per_reg(vtype) * this->micro_idx;
+            uint32_t ei = i + vtype_elements_per_reg(vtype) * this->microIdx;
         ''' + code
 }};
 
 
 def format VectorIntFormat(code, category, *flags) {{
-    iop = InstObjParams(name, Name, 'VectorIntMacroOp', {'code': code}, flags)
+    iop = InstObjParams(name, Name, 'VectorArithMacroInst', {'code': code},
+                        flags)
+
     split_name = name.split("_")
     insts_neednot_mask = ["vmv"]
     need_vm = split_name[0] not in insts_neednot_mask
     mask_cond = need_vm and ('m' not in split_name[1])
     need_elem_idx = mask_cond or code.find("ei") != -1
 
-    dest_reg_id = "RegId(VecRegClass, extMachInst.vd + _micro_idx)"
+    dest_reg_id = "RegId(VecRegClass, extMachInst.vd + _microIdx)"
     src1_reg_id = ""
     if category == "OPIVV":
-        src1_reg_id = "RegId(VecRegClass, extMachInst.vs1 + _micro_idx)"
+        src1_reg_id = "RegId(VecRegClass, extMachInst.vs1 + _microIdx)"
     elif category == "OPIVX":
         src1_reg_id = "RegId(IntRegClass, extMachInst.rs1)"
     elif category == "OPIVI":
         pass
     else:
         error("not supported category for VectorIntFormat: %s" % category)
-    src2RegId = "RegId(VecRegClass, extMachInst.vs2 + _micro_idx)"
+    src2RegId = "RegId(VecRegClass, extMachInst.vs2 + _microIdx)"
 
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
 
@@ -100,7 +102,7 @@ def format VectorIntFormat(code, category, *flags) {{
 
     microiop = InstObjParams(name + "_micro",
         Name + "Micro",
-        'VectorIntMicroOp',
+        'VectorArithMicroInst',
         {'code': code,
          'set_dest_reg_idx': set_dest_reg_idx,
          'set_src_reg_idx': set_src_reg_idx,
@@ -122,20 +124,20 @@ def format VectorIntFormat(code, category, *flags) {{
 def format VectorIntMaskFormat(code, category, *flags) {{
     iop = InstObjParams(name,
         Name,
-        'VectorIntMaskMacroOp',
+        'VectorArithMacroInst',
         {'code': code},
         flags)
     dest_reg_id = "RegId(VecRegClass, extMachInst.vd)"
     src1_reg_id = ""
     if category == "OPIVV":
-        src1_reg_id = "RegId(VecRegClass, extMachInst.vs1 + _micro_idx)"
+        src1_reg_id = "RegId(VecRegClass, extMachInst.vs1 + _microIdx)"
     elif category == "OPIVX":
         src1_reg_id = "RegId(IntRegClass, extMachInst.rs1)"
     elif category == "OPIVI":
         pass
     else:
         error("not supported category for VectorIntFormat: %s" % category)
-    src2RegId = "RegId(VecRegClass, extMachInst.vs2 + _micro_idx)"
+    src2RegId = "RegId(VecRegClass, extMachInst.vs2 + _microIdx)"
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
     set_src_reg_idx = ""
     if category != "OPIVI":
@@ -149,7 +151,7 @@ def format VectorIntMaskFormat(code, category, *flags) {{
 
     microiop = InstObjParams(name + "_micro",
         Name + "Micro",
-        'VectorIntMicroOp',
+        'VectorArithMicroInst',
         {'code': code,
          'set_dest_reg_idx': set_dest_reg_idx,
          'set_src_reg_idx': set_src_reg_idx,
@@ -170,7 +172,7 @@ def format VectorIntMaskFormat(code, category, *flags) {{
 def format VectorFloatFormat(code, category, *flags) {{
     iop = InstObjParams(name,
         Name,
-        'VectorFloatMacroOp',
+        'VectorArithMacroInst',
         {'code': code},
         flags)
     split_name = name.split("_")
@@ -179,15 +181,15 @@ def format VectorFloatFormat(code, category, *flags) {{
     mask_cond = need_vm and ('m' not in split_name[1])
     need_elem_idx = mask_cond or code.find("ei") != -1
 
-    dest_reg_id = "RegId(VecRegClass, extMachInst.vd + _micro_idx)"
+    dest_reg_id = "RegId(VecRegClass, extMachInst.vd + _microIdx)"
     src1_reg_id = ""
     if category == "OPFVV":
-        src1_reg_id = "RegId(VecRegClass, extMachInst.vs1 + _micro_idx)"
+        src1_reg_id = "RegId(VecRegClass, extMachInst.vs1 + _microIdx)"
     elif category == "OPFVF":
         src1_reg_id = "RegId(FloatRegClass, extMachInst.rs1)"
     else:
         error("not supported category for VectorFloatFormat: %s" % category)
-    src2RegId = "RegId(VecRegClass, extMachInst.vs2 + _micro_idx)"
+    src2RegId = "RegId(VecRegClass, extMachInst.vs2 + _microIdx)"
 
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
 
@@ -209,7 +211,7 @@ def format VectorFloatFormat(code, category, *flags) {{
 
     microiop = InstObjParams(name + "_micro",
         Name + "Micro",
-        'VectorFloatMicroOp',
+        'VectorArithMicroInst',
         {'code': code,
          'set_dest_reg_idx': set_dest_reg_idx,
          'set_src_reg_idx': set_src_reg_idx,
@@ -231,18 +233,18 @@ def format VectorFloatFormat(code, category, *flags) {{
 def format VectorFloatMaskFormat(code, category, *flags) {{
     iop = InstObjParams(name,
         Name,
-        'VectorFloatMaskMacroOp',
+        'VectorArithMacroInst',
         {'code': code},
         flags)
     dest_reg_id = "RegId(VecRegClass, extMachInst.vd)"
     src1_reg_id = ""
     if category == "OPFVV":
-        src1_reg_id = "RegId(VecRegClass, extMachInst.vs1 + _micro_idx)"
+        src1_reg_id = "RegId(VecRegClass, extMachInst.vs1 + _microIdx)"
     elif category == "OPFVF":
         src1_reg_id = "RegId(FloatRegClass, extMachInst.rs1)"
     else:
         error("not supported category for VectorFloatFormat: %s" % category)
-    src2RegId = "RegId(VecRegClass, extMachInst.vs2 + _micro_idx)"
+    src2RegId = "RegId(VecRegClass, extMachInst.vs2 + _microIdx)"
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
     set_src_reg_idx = ""
     set_src_reg_idx += setSrcWrapper(src1_reg_id)
@@ -255,7 +257,7 @@ def format VectorFloatMaskFormat(code, category, *flags) {{
 
     microiop = InstObjParams(name + "_micro",
         Name + "Micro",
-        'VectorFloatMicroOp',
+        'VectorArithMicroInst',
         {'code': code,
          'set_dest_reg_idx': set_dest_reg_idx,
          'set_src_reg_idx': set_src_reg_idx,

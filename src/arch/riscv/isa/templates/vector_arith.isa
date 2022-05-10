@@ -55,7 +55,7 @@ template<typename ElemType>
     StaticInstPtr micro_op;
 
     // allow one empty micro op to hold IsLastMicroop flag
-    for (int i=0; i<numMicroOps && micro_vl>=0; ++i) {
+    for (int i = 0; i < numMicroOps && micro_vl >= 0; ++i) {
         micro_op = new %(class_name)sMicro<ElemType>(extMachInst, micro_vl, i);
         micro_op->setDelayedCommit();
         this->microops.push_back(micro_op);
@@ -77,8 +77,8 @@ private:
     RegId destRegIdxArr[1];
     bool vm;
 public:
-    %(class_name)s(ExtMachInst extMachInst, uint8_t _micro_vl,
-                   uint8_t _micro_idx);
+    %(class_name)s(ExtMachInst extMachInst, uint8_t _microVl,
+                   uint8_t _microIdx);
     Fault execute(ExecContext* xc, Trace::InstRecord* traceData)const override;
     using %(base_class)s::generateDisassembly;
 };
@@ -89,9 +89,9 @@ def template VectorIntMicroConstructor {{
 
 template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst extMachInst,
-                                         uint8_t _micro_vl, uint8_t _micro_idx)
+                                         uint8_t _microVl, uint8_t _microIdx)
     : %(base_class)s("%(mnemonic)s", extMachInst,
-                     VectorDummyOp, _micro_vl, _micro_idx)
+                     VectorDummyOp, _microVl, _microIdx)
 {
     this->vm = extMachInst.vm;
     %(set_reg_idx_arr)s;
@@ -193,7 +193,7 @@ private:
     bool vm;
 public:
     %(class_name)s(ExtMachInst extMachInst,
-        uint8_t _micro_vl, uint8_t _micro_idx);
+        uint8_t _microVl, uint8_t _microIdx);
     Fault execute(ExecContext* xc, Trace::InstRecord* traceData)const override;
     using %(base_class)s::generateDisassembly;
 };
@@ -203,9 +203,9 @@ public:
 def template VectorFloatMicroConstructor {{
 template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst extMachInst,
-                                         uint8_t _micro_vl, uint8_t _micro_idx)
+                                         uint8_t _microVl, uint8_t _microIdx)
     : %(base_class)s("%(mnemonic)s", extMachInst,
-                     VectorDummyOp, _micro_vl, _micro_idx)
+                     VectorDummyOp, _microVl, _microIdx)
 {
     this->vm = extMachInst.vm;
     %(set_reg_idx_arr)s;
@@ -308,7 +308,7 @@ private:
     bool vm;
 public:
     %(class_name)s(ExtMachInst extMachInst,
-                   uint8_t _micro_vl, uint8_t _micro_idx);
+                   uint8_t _microVl, uint8_t _microIdx);
     Fault execute(ExecContext* xc, Trace::InstRecord* traceData)const override;
     using %(base_class)s::generateDisassembly;
 };
@@ -319,9 +319,9 @@ def template VectorIntMaskMicroConstructor {{
 
 template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst extMachInst,
-                                         uint8_t _micro_vl, uint8_t _micro_idx)
+                                         uint8_t _microVl, uint8_t _microIdx)
 : %(base_class)s("%(mnemonic)s", extMachInst,
-                 VectorDummyOp, _micro_vl, _micro_idx)
+                 VectorDummyOp, _microVl, _microIdx)
 {
     this->vm = extMachInst.vm;
     %(set_reg_idx_arr)s;
@@ -420,7 +420,7 @@ private:
     bool vm;
 public:
     %(class_name)s(ExtMachInst extMachInst,
-                   uint8_t _micro_vl, uint8_t _micro_idx);
+                   uint8_t _microVl, uint8_t _microIdx);
     Fault execute(ExecContext* xc, Trace::InstRecord* traceData)const override;
     using %(base_class)s::generateDisassembly;
 };
@@ -431,9 +431,9 @@ def template VectorFloatMaskMicroConstructor {{
 
 template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst extMachInst,
-                                         uint8_t _micro_vl, uint8_t _micro_idx)
+                                         uint8_t _microVl, uint8_t _microIdx)
 : %(base_class)s("%(mnemonic)s", extMachInst,
-                 VectorDummyOp, _micro_vl, _micro_idx)
+                 VectorDummyOp, _microVl, _microIdx)
 {
     this->vm = extMachInst.vm;
     %(set_reg_idx_arr)s;

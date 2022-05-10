@@ -34,7 +34,7 @@ def template VleConstructor {{
             offset = (i * NumVecElemPerVecReg + j) * sizeof(VecElem);
             micro_op = new %(class_name)sMicro(extMachInst, offset,
                                                VecMemInternalReg0 + j,
-                                               micro_vl);
+                                               micro_vl, j);
             micro_op->setFlag(IsDelayedCommit);
             micro_op->setFlag(IsLoad);
             this->microops.push_back(micro_op);
@@ -59,10 +59,10 @@ private:
     RegId destRegIdxArr[1];
     RegId srcRegIdxArr[1];
 public:
-    %(class_name)s(ExtMachInst extMachInst, uint32_t _offset, uint8_t _dst_reg,
-                   uint8_t _micro_vl)
-    : %(base_class)s("%(mnemonic)s", extMachInst, VectorDummyOp,
-        _offset, _dst_reg, _micro_vl)
+    %(class_name)s(ExtMachInst extMachInst, uint32_t _offset, uint8_t _dstReg,
+                   uint8_t _microVl, uint8_t _microIdx)
+    : %(base_class)s("%(mnemonic)s", extMachInst, VectorDummyOp, _offset,
+                     _dstReg, _microVl, _microIdx)
     {
         %(set_reg_idx_arr)s;
         _numSrcRegs = 0;
@@ -73,7 +73,7 @@ public:
         _numVecPredDestRegs = 0;
         _numIntDestRegs = 0;
         _numCCDestRegs = 0;
-        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, _dst_reg));
+        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, _dstReg));
         _numVecDestRegs++;
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, extMachInst.rs1));
         this->flags[IsVector] = true;
@@ -105,7 +105,7 @@ Fault
     if (fault != NoFault)
         return fault;
 
-    for (size_t i = 0; i < this->micro_vl; i++) {
+    for (size_t i = 0; i < this->microVl; i++) {
         %(memacc_code)s;
     }
 
@@ -123,7 +123,7 @@ Fault
 {
     Addr EA;
     Fault fault = NoFault;
-    std::size_t memAccessSize = this->micro_vl * width_EEW(machInst.width) / 8;
+    std::size_t memAccessSize = this->microVl * width_EEW(machInst.width) / 8;
     %(op_src_decl)s;
 
     %(op_rd)s;
@@ -152,7 +152,7 @@ Fault
 
     memcpy(Mem.as<uint8_t>(), pkt->getPtr<uint8_t>(), pkt->getSize());
     if (fault == NoFault) {
-      for (size_t i = 0; i < this->micro_vl; i++) {
+      for (size_t i = 0; i < this->microVl; i++) {
         %(memacc_code)s;
       }
     }
@@ -191,7 +191,8 @@ def template VseConstructor {{
         for (int j = 0; j < NumVecElemPerVecReg && micro_vl > 0; ++j) {
             offset = (i * NumVecElemPerVecReg + j) * sizeof(VecElem);
             micro_op = new %(class_name)sMicro(extMachInst, offset,
-                    VecMemInternalReg0 + j, micro_vl);
+                                               VecMemInternalReg0 + j,
+                                               micro_vl, j);
             micro_op->setFlag(IsDelayedCommit);
             micro_op->setFlag(IsStore);
             tmp_ops.push_back(micro_op);
@@ -223,10 +224,10 @@ private:
     RegId destRegIdxArr[0];
     RegId srcRegIdxArr[2];
 public:
-    %(class_name)s(ExtMachInst extMachInst, uint32_t _offset, uint8_t _src_reg,
-                   uint8_t _micro_vl)
+    %(class_name)s(ExtMachInst extMachInst, uint32_t _offset, uint8_t _srcReg,
+                   uint8_t _microVl, uint8_t _microIdx)
         : %(base_class)s("%(mnemonic)s""_micro", extMachInst, VectorDummyOp,
-                         _offset, _src_reg, _micro_vl)
+                         _offset, _srcReg, _microVl, _microIdx)
     {
         %(set_reg_idx_arr)s;
         _numSrcRegs = 0;
@@ -238,7 +239,7 @@ public:
         _numIntDestRegs = 0;
         _numCCDestRegs = 0;
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, extMachInst.rs1));
-        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _src_reg));
+        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _srcReg));
         this->flags[IsVector] = true;
         this->flags[IsStore] = true;
     }
@@ -261,7 +262,7 @@ Fault
 
     Addr EA;
     Fault fault = NoFault;
-    std::size_t memAccessSize = this->micro_vl * width_EEW(machInst.width) / 8;
+    std::size_t memAccessSize = this->microVl * width_EEW(machInst.width) / 8;
     const TheISA::vreg_t& tmp_v0 = tc->readVecReg(RegId(VecRegClass, 0));
     [[maybe_unused]] auto v0 = tmp_v0.as<uint8_t>();
 
@@ -275,7 +276,7 @@ Fault
                           this->memAccessFlags, byte_enable);
     if (fault != NoFault) return fault;
 
-    for (size_t i = 0; i < this->micro_vl; i++) {
+    for (size_t i = 0; i < this->microVl; i++) {
         // Todo: add vm
         %(memacc_code)s;
     }
@@ -298,7 +299,7 @@ Fault
     auto tc = xc->tcBase();
     Addr EA;
     Fault fault = NoFault;
-    std::size_t memAccessSize = this->micro_vl * width_EEW(machInst.width) / 8;
+    std::size_t memAccessSize = this->microVl * width_EEW(machInst.width) / 8;
     const TheISA::vreg_t& tmp_v0 = tc->readVecReg(RegId(VecRegClass, 0));
     [[maybe_unused]] auto v0 = tmp_v0.as<uint8_t>();
 
@@ -308,7 +309,7 @@ Fault
 
     const std::vector<bool> byte_enable(memAccessSize, true);
 
-    for (size_t i = 0; i < this->micro_vl; i++) {
+    for (size_t i = 0; i < this->microVl; i++) {
         // Todo: add vm
         %(memacc_code)s;
     }
@@ -352,14 +353,15 @@ def template VlmConstructor {{
     for (int i = 0; micro_vl > 0; ++i) {
         int regCnt = 0;
         for (int j = 0; j < NumVecElemPerVecReg && micro_vl > 0; ++j) {
-        offset = (i * NumVecElemPerVecReg + j) * sizeof(VecElem);
-        micro_op = new Vle8_vMicro(extMachInst, offset,
-                                   VecMemInternalReg0 + j, (micro_vl + 7) / 8);
-        micro_op->setFlag(IsDelayedCommit);
-        micro_op->setFlag(IsLoad);
-        this->microops.push_back(micro_op);
-        micro_vl = std::min(left_vl -= elemNumPerMa, elemNumPerMa);
-        regCnt++;
+            offset = (i * NumVecElemPerVecReg + j) * sizeof(VecElem);
+            micro_op = new Vle8_vMicro(extMachInst, offset,
+                                       VecMemInternalReg0 + j,
+                                       (micro_vl + 7) / 8, j);
+            micro_op->setFlag(IsDelayedCommit);
+            micro_op->setFlag(IsLoad);
+            this->microops.push_back(micro_op);
+            micro_vl = std::min(left_vl -= elemNumPerMa, elemNumPerMa);
+            regCnt++;
         }
         micro_op = new VldMvMicroInst(extMachInst, extMachInst.vd + i, regCnt);
         this->microops.push_back(micro_op);
@@ -392,7 +394,7 @@ def template VsmConstructor {{
             offset = (i * NumVecElemPerVecReg + j) * sizeof(VecElem);
             micro_op = new Vse8_vMicro(extMachInst, offset,
                                        VecMemInternalReg0 + j,
-                                       (micro_vl + 7) / 8);
+                                       (micro_vl + 7) / 8, j);
             micro_op->setFlag(IsDelayedCommit);
             micro_op->setFlag(IsStore);
             tmp_ops.push_back(micro_op);
@@ -433,7 +435,7 @@ def template VsWholeConstructor {{
         for (int j = 0; j < NumVecElemPerVecReg; ++j) {
             offset = (i * NumVecElemPerVecReg + j) * sizeof(VecElem);
             microop = new %(class_name)sMicro(_machInst, offset,
-                                              VecMemInternalReg0 + j);
+                                              VecMemInternalReg0 + j, j);
             microop->setFlag(IsDelayedCommit);
             microop->setFlag(IsStore);
             this->microops.push_back(microop);
@@ -453,9 +455,10 @@ private:
     RegId destRegIdxArr[0];
     RegId srcRegIdxArr[2];
 public:
-    %(class_name)s(ExtMachInst _machInst, uint32_t _offset, uint8_t _srcReg)
+    %(class_name)s(ExtMachInst _machInst, uint32_t _offset, uint8_t _srcReg,
+                   uint8_t _microIdx)
         : %(base_class)s("%(mnemonic)s_micro", _machInst, %(op_class)s,
-                         _offset)
+                         _offset, _microIdx)
     {
         %(set_reg_idx_arr)s;
         _numSrcRegs = 0;
@@ -549,7 +552,7 @@ def template VlWholeConstructor {{
         for (int j = 0; j < NumVecElemPerVecReg; ++j) {
             offset = (i * NumVecElemPerVecReg + j) * sizeof(VecElem);
             microop = new %(class_name)sMicro(_machInst, offset,
-                                            VecMemInternalReg0 + j);
+                                              VecMemInternalReg0 + j, j);
             microop->setFlag(IsDelayedCommit);
             microop->setFlag(IsLoad);
             this->microops.push_back(microop);
@@ -574,9 +577,10 @@ private:
     RegId destRegIdxArr[1];
     RegId srcRegIdxArr[1];
 public:
-    %(class_name)s(ExtMachInst _machInst, uint32_t _offset, uint8_t _dstReg)
+    %(class_name)s(ExtMachInst _machInst, uint32_t _offset, uint8_t _dstReg,
+                   uint8_t _microIdx)
         : %(base_class)s("%(mnemonic)s_micro", _machInst, %(op_class)s,
-                         _offset)
+                         _offset, _microIdx)
     {
         %(set_reg_idx_arr)s;
         _numSrcRegs = 0;

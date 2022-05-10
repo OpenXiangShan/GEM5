@@ -89,13 +89,15 @@ class VectorMacroInst : public RiscvMacroInst
 
 class VectorMicroInst : public RiscvMicroInst
 {
-  protected:
-    uint8_t micro_vl;
+protected:
+    uint8_t microVl;
+    uint8_t microIdx;
     uint8_t vtype;
-    VectorMicroInst(const char *mnem, ExtMachInst _machInst,
-            OpClass __opClass, uint8_t _micro_vl)
+    VectorMicroInst(const char *mnem, ExtMachInst _machInst, OpClass __opClass,
+                    uint8_t _microVl, uint8_t _microIdx)
         : RiscvMicroInst(mnem, _machInst, __opClass),
-        micro_vl(_micro_vl),
+        microVl(_microVl),
+        microIdx(_microIdx),
         vtype(_machInst.vtype8)
     {
         this->flags[IsVector] = true;
@@ -104,10 +106,11 @@ class VectorMicroInst : public RiscvMicroInst
 
 class VectorArithMicroInst : public VectorMicroInst
 {
-  protected:
+protected:
     VectorArithMicroInst(const char *mnem, ExtMachInst _machInst,
-            OpClass __opClass, uint8_t _micro_vl)
-        : VectorMicroInst(mnem, _machInst, __opClass, _micro_vl)
+                         OpClass __opClass, uint8_t _microVl,
+                         uint8_t _microIdx)
+        : VectorMicroInst(mnem, _machInst, __opClass, _microVl, _microIdx)
     {}
 
     std::string generateDisassembly(
@@ -118,7 +121,7 @@ class VectorArithMacroInst : public VectorMacroInst
 {
   protected:
     VectorArithMacroInst(const char* mnem, ExtMachInst _machInst,
-                   OpClass __opClass)
+                         OpClass __opClass)
         : VectorMacroInst(mnem, _machInst, __opClass)
     {
         this->flags[IsVector] = true;
@@ -132,8 +135,8 @@ class VectorMemMicroInst : public VectorMicroInst
 {
   protected:
     VectorMemMicroInst(const char* mnem, ExtMachInst _machInst,
-                   OpClass __opClass, uint8_t _micro_vl)
-        : VectorMicroInst(mnem, _machInst, __opClass, _micro_vl)
+                       OpClass __opClass, uint8_t _microVl, uint8_t _microIdx)
+        : VectorMicroInst(mnem, _machInst, __opClass, _microVl, _microIdx)
     {}
 };
 
@@ -141,7 +144,7 @@ class VectorMemMacroInst : public VectorMacroInst
 {
   protected:
     VectorMemMacroInst(const char* mnem, ExtMachInst _machInst,
-                   OpClass __opClass)
+                       OpClass __opClass)
         : VectorMacroInst(mnem, _machInst, __opClass)
     {}
 
@@ -182,11 +185,10 @@ class VleMicroInst : public VectorMemMicroInst
     Request::Flags memAccessFlags;
 
     VleMicroInst(const char *mnem, ExtMachInst _machInst,
-            OpClass __opClass, uint32_t _offset, uint8_t _dst_reg,
-            uint8_t _micro_vl)
-        : VectorMemMicroInst(mnem, _machInst, __opClass, _micro_vl),
-        offset(_offset), dst_reg(_dst_reg),
-        memAccessFlags(0)
+            OpClass __opClass, uint32_t _offset, uint8_t _dstReg,
+            uint8_t _microVl, uint8_t _microIdx)
+        : VectorMemMicroInst(mnem, _machInst, __opClass, _microVl, _microIdx)
+        , offset(_offset), dst_reg(_dstReg), memAccessFlags(0)
     {}
 
     std::string generateDisassembly(
@@ -201,11 +203,10 @@ class VseMicroInst : public VectorMemMicroInst
     Request::Flags memAccessFlags;
 
     VseMicroInst(const char *mnem, ExtMachInst _machInst,
-            OpClass __opClass, uint32_t _offset, uint8_t _src_reg,
-            uint8_t _micro_vl)
-        : VectorMemMicroInst(mnem, _machInst, __opClass, _micro_vl),
-        offset(_offset), src_reg(_src_reg),
-        memAccessFlags(0)
+            OpClass __opClass, uint32_t _offset, uint8_t _srcReg,
+            uint8_t _microVl, uint8_t _microIdx)
+        : VectorMemMicroInst(mnem, _machInst, __opClass, _microVl, _microIdx)
+        , offset(_offset) , src_reg(_srcReg), memAccessFlags(0)
     {}
 
     std::string generateDisassembly(
@@ -231,10 +232,10 @@ class VlWholeMicroInst : public VectorMemMicroInst
     Request::Flags memAccessFlags;
 
     VlWholeMicroInst(const char *mnem, ExtMachInst _machInst,
-                     OpClass __opClass, uint32_t _offset)
-      : VectorMemMicroInst(mnem, _machInst, __opClass,
-                           NumVecMemInternalRegs), offset(_offset),
-        memAccessFlags(0)
+                     OpClass __opClass, uint32_t _offset, uint8_t _microIdx)
+      : VectorMemMicroInst(
+          mnem, _machInst, __opClass, NumVecMemInternalRegs, _microIdx)
+      , offset(_offset), memAccessFlags(0)
     {}
 
     std::string generateDisassembly(
@@ -260,25 +261,25 @@ class VsWholeMicroInst : public VectorMemMicroInst
     Request::Flags memAccessFlags;
 
     VsWholeMicroInst(const char *mnem, ExtMachInst _machInst,
-                     OpClass __opClass, uint32_t _offset)
-        : VectorMemMicroInst(mnem, _machInst, __opClass,
-                             NumVecMemInternalRegs), offset(_offset),
-        memAccessFlags(0)
+                     OpClass __opClass, uint32_t _offset, uint8_t _microIdx)
+        : VectorMemMicroInst(
+            mnem, _machInst, __opClass, NumVecMemInternalRegs, _microIdx)
+        , offset(_offset), memAccessFlags(0)
     {}
 
     std::string generateDisassembly(
         Addr pc, const loader::SymbolTable *symtab) const override;
 };
 
-class VldMvMicroInst : public VectorArithMicroInst
+class VldMvMicroInst : public RiscvMicroInst
 {
   private:
     RegId srcRegIdxArr[NumVecMemInternalRegs];
     RegId destRegIdxArr[1];
     uint8_t src_num;
   public:
-    VldMvMicroInst(ExtMachInst _machInst, uint8_t _dst_reg, uint8_t _src_num)
-        : VectorArithMicroInst("vl_mv_micro", _machInst, VectorDummyOp, 0)
+    VldMvMicroInst(ExtMachInst _machInst, uint8_t _dstReg, uint8_t _src_num)
+        : RiscvMicroInst("vl_mv_micro", _machInst, VectorDummyOp)
     {
         src_num = _src_num;
         setRegIdxArrays(
@@ -296,7 +297,7 @@ class VldMvMicroInst : public VectorArithMicroInst
         _numIntDestRegs = 0;
         _numCCDestRegs = 0;
 
-        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, _dst_reg));
+        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, _dstReg));
         _numVecDestRegs++;
         for (uint8_t i=0; i<_src_num; i++) {
             setSrcRegIdx(_numSrcRegs++,
@@ -309,15 +310,15 @@ class VldMvMicroInst : public VectorArithMicroInst
         Addr pc, const loader::SymbolTable *symtab) const override;
 };
 
-class VstMvMicroInst : public VectorArithMicroInst
+class VstMvMicroInst : public RiscvMicroInst
 {
   private:
     RegId srcRegIdxArr[1];
     RegId destRegIdxArr[NumVecMemInternalRegs];
     uint8_t dst_num;
   public:
-    VstMvMicroInst(ExtMachInst _machInst, uint8_t _src_reg, uint8_t _dst_num)
-        : VectorArithMicroInst("vs_mv_micro", _machInst, VectorDummyOp, 0)
+    VstMvMicroInst(ExtMachInst _machInst, uint8_t _srcReg, uint8_t _dst_num)
+        : RiscvMicroInst("vs_mv_micro", _machInst, VectorDummyOp)
     {
         dst_num = _dst_num;
         setRegIdxArrays(
@@ -340,100 +341,12 @@ class VstMvMicroInst : public VectorArithMicroInst
                         RegId(VecRegClass, VecMemInternalReg0 + i));
             _numVecDestRegs++;
         }
-        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _src_reg));
+        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _srcReg));
         this->flags[IsVector] = true;
     }
     Fault execute(ExecContext *, Trace::InstRecord *) const override;
     std::string generateDisassembly(
         Addr pc, const loader::SymbolTable *symtab) const override;
-};
-
-class VectorIntMacroOp : public VectorArithMacroInst
-{
-  public:
-    VectorIntMacroOp(const char* mnem, ExtMachInst _machInst,
-            OpClass __opClass)
-        : VectorArithMacroInst(mnem, _machInst, __opClass)
-    {}
-    using VectorArithMacroInst::generateDisassembly;
-};
-
-class VectorIntMicroOp : public VectorArithMicroInst
-{
-  public:
-    uint8_t micro_idx;
-    VectorIntMicroOp(const char *mnem, ExtMachInst _machInst,
-            OpClass __opClass, uint8_t _micro_vl, uint8_t _micro_idx)
-        : VectorArithMicroInst(mnem, _machInst, __opClass, _micro_vl),
-        micro_idx(_micro_idx)
-    {}
-    using VectorArithMicroInst::generateDisassembly;
-};
-
-class VectorFloatMacroOp : public VectorArithMacroInst
-{
-  public:
-    VectorFloatMacroOp(const char* mnem, ExtMachInst _machInst,
-            OpClass __opClass)
-        : VectorArithMacroInst(mnem, _machInst, __opClass)
-    {}
-    using VectorArithMacroInst::generateDisassembly;
-};
-
-class VectorFloatMicroOp : public VectorArithMicroInst
-{
-  public:
-    uint8_t micro_idx;
-    VectorFloatMicroOp(const char *mnem, ExtMachInst _machInst,
-            OpClass __opClass, uint8_t _micro_vl, uint8_t _micro_idx)
-        : VectorArithMicroInst(mnem, _machInst, __opClass, _micro_vl),
-        micro_idx(_micro_idx)
-    {}
-    using VectorArithMicroInst::generateDisassembly;
-};
-
-class VectorIntMaskMacroOp : public VectorArithMacroInst
-{
-  public:
-    VectorIntMaskMacroOp(const char* mnem, ExtMachInst _machInst,
-            OpClass __opClass)
-        : VectorArithMacroInst(mnem, _machInst, __opClass)
-    {}
-    using VectorArithMacroInst::generateDisassembly;
-};
-
-class VectorIntMaskMicroOp : public VectorArithMicroInst
-{
-  public:
-    uint8_t micro_idx;
-    VectorIntMaskMicroOp(const char *mnem, ExtMachInst _machInst,
-            OpClass __opClass, uint8_t _micro_vl, uint8_t _micro_idx)
-        : VectorArithMicroInst(mnem, _machInst, __opClass, _micro_vl),
-        micro_idx(_micro_idx)
-    {}
-    using VectorArithMicroInst::generateDisassembly;
-};
-
-class VectorFloatMaskMacroOp : public VectorArithMacroInst
-{
-  public:
-    VectorFloatMaskMacroOp(const char* mnem, ExtMachInst _machInst,
-            OpClass __opClass)
-        : VectorArithMacroInst(mnem, _machInst, __opClass)
-    {}
-    using VectorArithMacroInst::generateDisassembly;
-};
-
-class VectorFloatMaskMicroOp : public VectorArithMicroInst
-{
-  public:
-    uint8_t micro_idx;
-    VectorFloatMaskMicroOp(const char *mnem, ExtMachInst _machInst,
-            OpClass __opClass, uint8_t _micro_vl, uint8_t _micro_idx)
-        : VectorArithMicroInst(mnem, _machInst, __opClass, _micro_vl),
-        micro_idx(_micro_idx)
-    {}
-    using VectorArithMicroInst::generateDisassembly;
 };
 
 } // namespace RiscvISA
