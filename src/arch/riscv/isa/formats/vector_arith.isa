@@ -30,12 +30,12 @@
 let {{
     def setDestWrapper(destRegId):
         return "setDestRegIdx(_numDestRegs++, " + destRegId + ");\n" + \
-            "_numVecDestRegs++;\n"
+               "_numVecDestRegs++;\n"
     def setSrcWrapper(srcRegId):
         return "setSrcRegIdx(_numSrcRegs++, " + srcRegId + ");\n"
     def setSrcVm():
         return "if (!this->vm)\n" + \
-            "    setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, 0));"
+               "    setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, 0));"
     def vmDeclAndReadData():
         return '''
             [[maybe_unused]] RiscvISA::vreg_t tmp_v0;
@@ -47,24 +47,19 @@ let {{
         '''
     def loopWrapper(code):
         return "for (uint32_t i = 0; i < this->micro_vl; i++) {\n" + \
-            code + "}\n"
+               code + "}\n"
     def maskCondWrapper(code):
         return "if (this->vm || elem_mask(v0, ei)) {\n" + \
-            code + "}\n"
+               code + "}\n"
     def eiDeclarePrefix(code):
         return '''
-            uint32_t ei = i + vtype_elements_per_reg(vtype) *
-                this->micro_idx;
+            uint32_t ei = i + vtype_elements_per_reg(vtype) * this->micro_idx;
         ''' + code
 }};
 
 
 def format VectorIntFormat(code, category, *flags) {{
-    iop = InstObjParams(name,
-        Name,
-        'VectorIntMacroOp',
-        {'code': code},
-        flags)
+    iop = InstObjParams(name, Name, 'VectorIntMacroOp', {'code': code}, flags)
     split_name = name.split("_")
     insts_neednot_mask = ["vmv"]
     need_vm = split_name[0] not in insts_neednot_mask
@@ -84,13 +79,14 @@ def format VectorIntFormat(code, category, *flags) {{
     src2RegId = "RegId(VecRegClass, extMachInst.vs2 + _micro_idx)"
 
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
-    # set_src_reg_idx
+
     set_src_reg_idx = ""
     if category != "OPIVI":
         set_src_reg_idx += setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2RegId)
     if need_vm:
         set_src_reg_idx += setSrcVm()
+
     # code
     if mask_cond:
         code = maskCondWrapper(code)
@@ -106,17 +102,20 @@ def format VectorIntFormat(code, category, *flags) {{
         Name + "Micro",
         'VectorIntMicroOp',
         {'code': code,
-        'set_dest_reg_idx': set_dest_reg_idx,
-        'set_src_reg_idx': set_src_reg_idx,
-        'vm_decl_rd': vm_decl_rd},
+         'set_dest_reg_idx': set_dest_reg_idx,
+         'set_src_reg_idx': set_src_reg_idx,
+         'vm_decl_rd': vm_decl_rd},
         flags)
 
+    # Because of the use of templates, we had to put all parts in header to
+    # keep the compiler happy.
     header_output = \
         VectorIntMicroDeclare.subst(microiop) + \
         VectorIntMicroConstructor.subst(microiop) + \
         VectorIntMicroExecute.subst(microiop) + \
         VectorIntMacroDeclare.subst(iop) + \
         VectorIntMacroConstructor.subst(iop)
+
     decode_block = VectorIntDecodeBlock.subst(iop)
 }};
 
@@ -152,10 +151,13 @@ def format VectorIntMaskFormat(code, category, *flags) {{
         Name + "Micro",
         'VectorIntMicroOp',
         {'code': code,
-        'set_dest_reg_idx': set_dest_reg_idx,
-        'set_src_reg_idx': set_src_reg_idx,
-        'vm_decl_rd': vm_decl_rd},
+         'set_dest_reg_idx': set_dest_reg_idx,
+         'set_src_reg_idx': set_src_reg_idx,
+         'vm_decl_rd': vm_decl_rd},
         flags)
+
+    # Because of the use of templates, we had to put all parts in header to
+    # keep the compiler happy.
     header_output = \
         VectorIntMaskMicroDeclare.subst(microiop) + \
         VectorIntMaskMicroConstructor.subst(microiop) + \
@@ -184,11 +186,11 @@ def format VectorFloatFormat(code, category, *flags) {{
     elif category == "OPFVF":
         src1_reg_id = "RegId(FloatRegClass, extMachInst.rs1)"
     else:
-        error("not supported category for VectorIntFormat: %s" % category)
+        error("not supported category for VectorFloatFormat: %s" % category)
     src2RegId = "RegId(VecRegClass, extMachInst.vs2 + _micro_idx)"
 
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
-    # set_src_reg_idx
+
     set_src_reg_idx = ""
     set_src_reg_idx += setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2RegId)
@@ -209,17 +211,20 @@ def format VectorFloatFormat(code, category, *flags) {{
         Name + "Micro",
         'VectorFloatMicroOp',
         {'code': code,
-        'set_dest_reg_idx': set_dest_reg_idx,
-        'set_src_reg_idx': set_src_reg_idx,
-        'vm_decl_rd': vm_decl_rd},
+         'set_dest_reg_idx': set_dest_reg_idx,
+         'set_src_reg_idx': set_src_reg_idx,
+         'vm_decl_rd': vm_decl_rd},
         flags)
 
+    # Because of the use of templates, we had to put all parts in header to
+    # keep the compiler happy.
     header_output = \
         VectorFloatMicroDeclare.subst(microiop) + \
         VectorFloatMicroConstructor.subst(microiop) + \
         VectorFloatMicroExecute.subst(microiop) + \
         VectorFloatMacroDeclare.subst(iop) + \
         VectorFloatMacroConstructor.subst(iop)
+
     decode_block = VectorFloatDecodeBlock.subst(iop)
 }};
 
@@ -236,7 +241,7 @@ def format VectorFloatMaskFormat(code, category, *flags) {{
     elif category == "OPFVF":
         src1_reg_id = "RegId(FloatRegClass, extMachInst.rs1)"
     else:
-        error("not supported category for VectorIntFormat: %s" % category)
+        error("not supported category for VectorFloatFormat: %s" % category)
     src2RegId = "RegId(VecRegClass, extMachInst.vs2 + _micro_idx)"
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
     set_src_reg_idx = ""
@@ -252,10 +257,13 @@ def format VectorFloatMaskFormat(code, category, *flags) {{
         Name + "Micro",
         'VectorFloatMicroOp',
         {'code': code,
-        'set_dest_reg_idx': set_dest_reg_idx,
-        'set_src_reg_idx': set_src_reg_idx,
-        'vm_decl_rd': vm_decl_rd},
+         'set_dest_reg_idx': set_dest_reg_idx,
+         'set_src_reg_idx': set_src_reg_idx,
+         'vm_decl_rd': vm_decl_rd},
         flags)
+
+    # Because of the use of templates, we had to put all parts in header to
+    # keep the compiler happy.
     header_output = \
         VectorFloatMaskMicroDeclare.subst(microiop) + \
         VectorFloatMaskMicroConstructor.subst(microiop) + \

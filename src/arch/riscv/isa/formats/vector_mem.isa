@@ -28,9 +28,13 @@
 
 
 let {{
-  def VLoadStoreBase(name, Name, ea_code, memacc_code, mem_flags,
-      inst_flags, base_class, postacc_code='', decode_template=BasicDecode,
-      exec_template_base='', need_micro=True):
+
+def VMemBase(name, Name, ea_code, memacc_code, mem_flags,
+                   inst_flags, base_class, postacc_code='',
+                   decode_template=BasicDecode, exec_template_base='',
+                   # If it's a macroop, the corresponding microops will be
+                   # generated.
+                   is_macroop=True):
     # Make sure flags are in lists (convert to lists if not).
     mem_flags = makeList(mem_flags)
     inst_flags = makeList(inst_flags)
@@ -45,95 +49,97 @@ let {{
         s = '\n\tmemAccessFlags = ' + '|'.join(mem_flags) + ';'
         microiop.constructor += s
 
-    # select templates
     constructTemplate = eval(exec_template_base + 'Constructor')
 
-    header_output   = VLoadStoreMacroDeclare.subst(iop)
+    header_output   = VMemMacroDeclare.subst(iop)
     decoder_output  = constructTemplate.subst(iop)
     decode_block    = decode_template.subst(iop)
-    exec_output     = ""
-    if need_micro:
-        microiop = InstObjParams(name + "_micro",
-            Name + "Micro",
-            exec_template_base + 'MicroInst',
-            {'ea_code': ea_code,
-              'memacc_code': memacc_code,
-              'postacc_code': postacc_code },
-            inst_flags)
-        microDeclTemplate = eval(exec_template_base + 'Micro' + 'Declare')
-        microExecTemplate = eval(exec_template_base + 'Micro' + 'Execute')
-        microInitTemplate = eval(exec_template_base + 'Micro' + 'InitiateAcc')
-        microCompTemplate = eval(exec_template_base + 'Micro' + 'CompleteAcc')
-        header_output += microDeclTemplate.subst(microiop)
-        exec_output   += (microExecTemplate.subst(microiop) +
-            microInitTemplate.subst(microiop) +
-            microCompTemplate.subst(microiop))
+    exec_output     = ''
+    if not is_macroop:
+        return (header_output, decoder_output, decode_block, exec_output)
+
+    microiop = InstObjParams(name + '_micro',
+        Name + 'Micro',
+        exec_template_base + 'MicroInst',
+        {'ea_code': ea_code,
+         'memacc_code': memacc_code,
+         'postacc_code': postacc_code},
+        inst_flags)
+    microDeclTemplate = eval(exec_template_base + 'Micro' + 'Declare')
+    microExecTemplate = eval(exec_template_base + 'Micro' + 'Execute')
+    microInitTemplate = eval(exec_template_base + 'Micro' + 'InitiateAcc')
+    microCompTemplate = eval(exec_template_base + 'Micro' + 'CompleteAcc')
+    header_output += microDeclTemplate.subst(microiop)
+    exec_output += (microExecTemplate.subst(microiop) +
+                    microInitTemplate.subst(microiop) +
+                    microCompTemplate.subst(microiop))
 
     return (header_output, decoder_output, decode_block, exec_output)
+
 }};
 
 def format VleOp(
-  memacc_code,
-  ea_code={{EA = Rs1 + this->offset;}},
-  mem_flags=[],
-  inst_flags=[]
+    memacc_code,
+    ea_code={{ EA = Rs1 + this->offset; }},
+    mem_flags=[],
+    inst_flags=[]
 ) {{
-  (header_output, decoder_output, decode_block, exec_output) = \
-    VLoadStoreBase(name, Name, ea_code, memacc_code, mem_flags,
-      inst_flags, 'VleMacroInst', exec_template_base='Vle')
+    (header_output, decoder_output, decode_block, exec_output) = \
+        VMemBase(name, Name, ea_code, memacc_code, mem_flags,
+                 inst_flags, 'VleMacroInst', exec_template_base='Vle')
 }};
 
 def format VseOp(
-  memacc_code,
-  ea_code={{EA = Rs1 + this->offset;}},
-  mem_flags=[],
-  inst_flags=[]
+    memacc_code,
+    ea_code={{ EA = Rs1 + this->offset; }},
+    mem_flags=[],
+    inst_flags=[]
 ) {{
-  (header_output, decoder_output, decode_block, exec_output) = \
-    VLoadStoreBase(name, Name, ea_code, memacc_code, mem_flags,
-      inst_flags, 'VseMacroInst', exec_template_base='Vse')
+    (header_output, decoder_output, decode_block, exec_output) = \
+        VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
+                 'VseMacroInst', exec_template_base='Vse')
 }};
 
 def format VlmOp(
-  memacc_code,
-  ea_code={{EA = Rs1 + this->offset;}},
-  mem_flags=[],
-  inst_flags=[]
+    memacc_code,
+    ea_code={{ EA = Rs1 + this->offset; }},
+    mem_flags=[],
+    inst_flags=[]
 ) {{
-  (header_output, decoder_output, decode_block, exec_output) = \
-    VLoadStoreBase(name, Name, ea_code, memacc_code, mem_flags,
-      inst_flags, 'VleMacroInst', exec_template_base='Vlm', need_micro=False)
+    (header_output, decoder_output, decode_block, exec_output) = \
+        VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
+                 'VleMacroInst', exec_template_base='Vlm', is_macroop=False)
 }};
 
 def format VsmOp(
   memacc_code,
-  ea_code={{EA = Rs1 + this->offset;}},
+  ea_code={{ EA = Rs1 + this->offset; }},
   mem_flags=[],
   inst_flags=[]
 ) {{
-  (header_output, decoder_output, decode_block, exec_output) = \
-    VLoadStoreBase(name, Name, ea_code, memacc_code, mem_flags,
-      inst_flags, 'VseMacroInst', exec_template_base='Vsm', need_micro=False)
+    (header_output, decoder_output, decode_block, exec_output) = \
+        VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
+                 'VseMacroInst', exec_template_base='Vsm', is_macroop=False)
 }};
 
 def format VlWholeOp(
-  memacc_code,
-  ea_code={{EA = Rs1 + this->offset;}},
-  mem_flags=[],
-  inst_flags=[]
+    memacc_code,
+    ea_code={{ EA = Rs1 + this->offset; }},
+    mem_flags=[],
+    inst_flags=[]
 ) {{
-  (header_output, decoder_output, decode_block, exec_output) = \
-    VLoadStoreBase(name, Name, ea_code, memacc_code, mem_flags,
-      inst_flags, 'VlWholeMacroInst', exec_template_base='VlWhole')
+    (header_output, decoder_output, decode_block, exec_output) = \
+        VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
+                 'VlWholeMacroInst', exec_template_base='VlWhole')
 }};
 
 def format VsWholeOp(
-  memacc_code,
-  ea_code={{EA = Rs1 + this->offset;}},
-  mem_flags=[],
-  inst_flags=[]
+    memacc_code,
+    ea_code={{ EA = Rs1 + this->offset; }},
+    mem_flags=[],
+    inst_flags=[]
 ) {{
-  (header_output, decoder_output, decode_block, exec_output) = \
-    VLoadStoreBase(name, Name, ea_code, memacc_code, mem_flags,
-      inst_flags, 'VsWholeMacroInst', exec_template_base='VsWhole')
+    (header_output, decoder_output, decode_block, exec_output) = \
+        VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
+                 'VsWholeMacroInst', exec_template_base='VsWhole')
 }};

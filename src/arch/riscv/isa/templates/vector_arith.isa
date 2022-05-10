@@ -1,48 +1,51 @@
 output header {{
-  #define VFMERGE(fs1,fs2) \
-  ((elem_mask(v0, ei)) ? (fs1) : (fs2))
 
-  #define ASSIGN_VD_BIT(idx, bit) \
-  ((Vds[(idx)/8] & ~(1 << (idx)%8)) | ((bit) << (idx)%8))
+#define VFMERGE(fs1, fs2) ((elem_mask(v0, ei)) ? (fs1) : (fs2))
 
-  template<typename Type>
-  bool inline
-  carry_out(Type a, Type b, bool carry_in = false) {
+#define ASSIGN_VD_BIT(idx, bit) \
+    ((Vds[(idx)/8] & ~(1 << (idx)%8)) | ((bit) << (idx)%8))
+
+template<typename Type>
+bool inline
+carry_out(Type a, Type b, bool carry_in = false) {
     using TypeU = std::make_unsigned_t<Type>;
     TypeU s = *reinterpret_cast<TypeU*>(&a)
             + *reinterpret_cast<TypeU*>(&b) + carry_in;
     return carry_in
         ? (s <= *reinterpret_cast<TypeU*>(&a))
         : (s <  *reinterpret_cast<TypeU*>(&a));
-  }
+}
 
-  template<typename Type>
-  bool inline
-  borrow_out(Type a, Type b, bool borrow_in = false) {
+template<typename Type>
+bool inline
+borrow_out(Type a, Type b, bool borrow_in = false) {
     using TypeU = std::make_unsigned_t<Type>;
     return borrow_in
         ? (*reinterpret_cast<TypeU*>(&a) <= *reinterpret_cast<TypeU*>(&b))
         : (*reinterpret_cast<TypeU*>(&a) <  *reinterpret_cast<TypeU*>(&b));
-  }
+}
 
 }};
 
 def template VectorIntMacroDeclare {{
-  template<typename ElemType>
-  class %(class_name)s : public %(base_class)s {
-  private:
+
+template<typename ElemType>
+class %(class_name)s : public %(base_class)s {
+private:
     %(reg_idx_arr_decl)s;
-  public:
+public:
     %(class_name)s(ExtMachInst extMachInst);
     using %(base_class)s::generateDisassembly;
-  };
+};
+
 }};
 
 def template VectorIntMacroConstructor {{
-  template<typename ElemType>
-  %(class_name)s<ElemType>::%(class_name)s(ExtMachInst extMachInst)
+
+template<typename ElemType>
+%(class_name)s<ElemType>::%(class_name)s(ExtMachInst extMachInst)
     : %(base_class)s("%(mnemonic)s", extMachInst, VectorDummyOp)
-  {
+{
     %(set_reg_idx_arr)s;
     %(constructor)s;
     const uint32_t numMicroOps = vtype_regs_per_group(vtype);
@@ -53,40 +56,43 @@ def template VectorIntMacroConstructor {{
 
     // allow one empty micro op to hold IsLastMicroop flag
     for (int i=0; i<numMicroOps && micro_vl>=0; ++i) {
-      micro_op = new %(class_name)sMicro<ElemType>(extMachInst, micro_vl, i);
-      micro_op->setDelayedCommit();
-      this->microops.push_back(micro_op);
-      micro_vl = std::min(tmp_vl -= micro_vlmax, micro_vlmax);
+        micro_op = new %(class_name)sMicro<ElemType>(extMachInst, micro_vl, i);
+        micro_op->setDelayedCommit();
+        this->microops.push_back(micro_op);
+        micro_vl = std::min(tmp_vl -= micro_vlmax, micro_vlmax);
     }
 
     this->microops.front()->setFirstMicroop();
     this->microops.back()->setLastMicroop();
-  }
+}
 }};
 
 def template VectorIntMicroDeclare {{
-  template<typename ElemType>
-  class %(class_name)s : public %(base_class)s
-  {
-  private:
+
+template<typename ElemType>
+class %(class_name)s : public %(base_class)s
+{
+private:
     RegId srcRegIdxArr[4];
     RegId destRegIdxArr[1];
     bool vm;
-  public:
-    %(class_name)s(ExtMachInst extMachInst,
-            uint8_t _micro_vl, uint8_t _micro_idx);
+public:
+    %(class_name)s(ExtMachInst extMachInst, uint8_t _micro_vl,
+                   uint8_t _micro_idx);
     Fault execute(ExecContext* xc, Trace::InstRecord* traceData)const override;
     using %(base_class)s::generateDisassembly;
-  };
+};
+
 }};
 
 def template VectorIntMicroConstructor {{
-  template<typename ElemType>
-  %(class_name)s<ElemType>::%(class_name)s(ExtMachInst extMachInst,
-        uint8_t _micro_vl, uint8_t _micro_idx)
+
+template<typename ElemType>
+%(class_name)s<ElemType>::%(class_name)s(ExtMachInst extMachInst,
+                                         uint8_t _micro_vl, uint8_t _micro_idx)
     : %(base_class)s("%(mnemonic)s", extMachInst,
-        VectorDummyOp, _micro_vl, _micro_idx)
-  {
+                     VectorDummyOp, _micro_vl, _micro_idx)
+{
     this->vm = extMachInst.vm;
     %(set_reg_idx_arr)s;
     _numSrcRegs = 0;
@@ -99,19 +105,21 @@ def template VectorIntMicroConstructor {{
     _numCCDestRegs = 0;
     %(set_dest_reg_idx)s;
     %(set_src_reg_idx)s;
-  }
+}
+
 }};
 
 def template VectorIntMicroExecute {{
-  template <typename ElemType>
-  Fault
-  %(class_name)s<ElemType>::execute(ExecContext* xc,
-                                    Trace::InstRecord* traceData) const
-  {
+
+template <typename ElemType>
+Fault
+%(class_name)s<ElemType>::execute(ExecContext* xc,
+                                  Trace::InstRecord* traceData) const
+{
     using vu [[maybe_unused]] = std::make_unsigned_t<ElemType>;
     using vi [[maybe_unused]] = std::make_signed_t<ElemType>;
     if (machInst.vill)
-      return std::make_shared<IllegalInstFault>("VILL is set", machInst);
+        return std::make_shared<IllegalInstFault>("VILL is set", machInst);
 
     %(op_decl)s;
     %(op_rd)s;
@@ -119,35 +127,40 @@ def template VectorIntMicroExecute {{
     %(code)s;
     %(op_wb)s;
     return NoFault;
-  }
+}
+
 }};
 
 def template VectorIntDecodeBlock {{
-  switch(machInst.vtype8.vsew) {
-    case 0b000: return new %(class_name)s<uint8_t>(machInst);
-    case 0b001: return new %(class_name)s<uint16_t>(machInst);
-    case 0b010: return new %(class_name)s<uint32_t>(machInst);
-    case 0b011: return new %(class_name)s<uint64_t>(machInst);
-    default: panic("vsew: %x not supported", machInst.vtype8.vsew);
-  }
+
+switch(machInst.vtype8.vsew) {
+case 0b000: return new %(class_name)s<uint8_t>(machInst);
+case 0b001: return new %(class_name)s<uint16_t>(machInst);
+case 0b010: return new %(class_name)s<uint32_t>(machInst);
+case 0b011: return new %(class_name)s<uint64_t>(machInst);
+default: panic("vsew: %x not supported", machInst.vtype8.vsew);
+}
+
 }};
 
 def template VectorFloatMacroDeclare {{
-  template<typename ElemType>
-  class %(class_name)s : public %(base_class)s {
-  private:
+
+template<typename ElemType>
+class %(class_name)s : public %(base_class)s {
+private:
     %(reg_idx_arr_decl)s;
-  public:
+public:
     %(class_name)s(ExtMachInst extMachInst);
     using %(base_class)s::generateDisassembly;
-  };
+};
+
 }};
 
 def template VectorFloatMacroConstructor {{
-  template<typename ElemType>
-  %(class_name)s<ElemType>::%(class_name)s(ExtMachInst extMachInst)
+template<typename ElemType>
+%(class_name)s<ElemType>::%(class_name)s(ExtMachInst extMachInst)
     : %(base_class)s("%(mnemonic)s", extMachInst, VectorDummyOp)
-  {
+{
     %(set_reg_idx_arr)s;
     %(constructor)s;
     const uint32_t numMicroOps = vtype_regs_per_group(vtype);
@@ -158,40 +171,42 @@ def template VectorFloatMacroConstructor {{
 
     // allow one empty micro op to hold IsLastMicroop flag
     for (int i=0; i<numMicroOps && micro_vl>=0; ++i) {
-      micro_op = new %(class_name)sMicro<ElemType>(extMachInst, micro_vl, i);
-      micro_op->setDelayedCommit();
-      this->microops.push_back(micro_op);
-      micro_vl = std::min(tmp_vl -= micro_vlmax, micro_vlmax);
+        micro_op = new %(class_name)sMicro<ElemType>(extMachInst, micro_vl, i);
+        micro_op->setDelayedCommit();
+        this->microops.push_back(micro_op);
+        micro_vl = std::min(tmp_vl -= micro_vlmax, micro_vlmax);
     }
 
     this->microops.front()->setFirstMicroop();
     this->microops.back()->setLastMicroop();
-  }
+}
 }};
 
 def template VectorFloatMicroDeclare {{
-  template<typename ElemType>
-  class %(class_name)s : public %(base_class)s
-  {
-  private:
+
+template<typename ElemType>
+class %(class_name)s : public %(base_class)s
+{
+private:
     RegId srcRegIdxArr[4];
     RegId destRegIdxArr[1];
     bool vm;
-  public:
+public:
     %(class_name)s(ExtMachInst extMachInst,
-            uint8_t _micro_vl, uint8_t _micro_idx);
+        uint8_t _micro_vl, uint8_t _micro_idx);
     Fault execute(ExecContext* xc, Trace::InstRecord* traceData)const override;
     using %(base_class)s::generateDisassembly;
-  };
+};
+
 }};
 
 def template VectorFloatMicroConstructor {{
-  template<typename ElemType>
-  %(class_name)s<ElemType>::%(class_name)s(ExtMachInst extMachInst,
-        uint8_t _micro_vl, uint8_t _micro_idx)
+template<typename ElemType>
+%(class_name)s<ElemType>::%(class_name)s(ExtMachInst extMachInst,
+                                         uint8_t _micro_vl, uint8_t _micro_idx)
     : %(base_class)s("%(mnemonic)s", extMachInst,
-        VectorDummyOp, _micro_vl, _micro_idx)
-  {
+                     VectorDummyOp, _micro_vl, _micro_idx)
+{
     this->vm = extMachInst.vm;
     %(set_reg_idx_arr)s;
     _numSrcRegs = 0;
@@ -204,19 +219,21 @@ def template VectorFloatMicroConstructor {{
     _numCCDestRegs = 0;
     %(set_dest_reg_idx)s;
     %(set_src_reg_idx)s;
-  }
+}
+
 }};
 
 def template VectorFloatMicroExecute {{
-  template <typename ElemType>
-  Fault
-  %(class_name)s<ElemType>::execute(ExecContext* xc,
-                                    Trace::InstRecord* traceData) const
-  {
+
+template <typename ElemType>
+Fault
+%(class_name)s<ElemType>::execute(ExecContext* xc,
+                                  Trace::InstRecord* traceData) const
+{
     using et = ElemType;
     using vu = decltype(et::v);
     if (machInst.vill)
-      return std::make_shared<IllegalInstFault>("VILL is set", machInst);
+        return std::make_shared<IllegalInstFault>("VILL is set", machInst);
 
     %(op_decl)s;
     %(op_rd)s;
@@ -225,33 +242,39 @@ def template VectorFloatMicroExecute {{
     %(op_wb)s;
 
     return NoFault;
-  }
+}
+
 }};
 
 def template VectorFloatDecodeBlock {{
-  switch(machInst.vtype8.vsew) {
-    case 0b010: return new %(class_name)s<float32_t>(machInst);
-    case 0b011: return new %(class_name)s<float64_t>(machInst);
-    default: panic("vsew: %x not supported", machInst.vtype8.vsew);
-  }
+
+switch(machInst.vtype8.vsew) {
+case 0b010: return new %(class_name)s<float32_t>(machInst);
+case 0b011: return new %(class_name)s<float64_t>(machInst);
+default: panic("vsew: %x not supported", machInst.vtype8.vsew);
+}
+
 }};
 
 def template VectorIntMaskMacroDeclare {{
-  template<typename ElemType>
-  class %(class_name)s : public %(base_class)s {
-  private:
+
+template<typename ElemType>
+class %(class_name)s : public %(base_class)s {
+private:
     %(reg_idx_arr_decl)s;
-  public:
+public:
     %(class_name)s(ExtMachInst extMachInst);
     using %(base_class)s::generateDisassembly;
-  };
+};
+
 }};
 
 def template VectorIntMaskMacroConstructor {{
-  template<typename ElemType>
-  %(class_name)s<ElemType>::%(class_name)s(ExtMachInst extMachInst)
+
+template<typename ElemType>
+%(class_name)s<ElemType>::%(class_name)s(ExtMachInst extMachInst)
     : %(base_class)s("%(mnemonic)s", extMachInst, VectorDummyOp)
-  {
+{
     %(set_reg_idx_arr)s;
     %(constructor)s;
     const uint32_t numMicroOps = vtype_regs_per_group(vtype);
@@ -262,40 +285,44 @@ def template VectorIntMaskMacroConstructor {{
 
     // allow one empty micro op to hold IsLastMicroop flag
     for (int i=0; i<numMicroOps && micro_vl>=0; ++i) {
-      micro_op = new %(class_name)sMicro<ElemType>(extMachInst, micro_vl, i);
-      micro_op->setDelayedCommit();
-      this->microops.push_back(micro_op);
-      micro_vl = std::min(tmp_vl -= micro_vlmax, micro_vlmax);
+        micro_op = new %(class_name)sMicro<ElemType>(extMachInst, micro_vl, i);
+        micro_op->setDelayedCommit();
+        this->microops.push_back(micro_op);
+        micro_vl = std::min(tmp_vl -= micro_vlmax, micro_vlmax);
     }
 
     this->microops.front()->setFirstMicroop();
     this->microops.back()->setLastMicroop();
-  }
+}
+
 }};
 
 def template VectorIntMaskMicroDeclare {{
-  template<typename ElemType>
-  class %(class_name)s : public %(base_class)s
-  {
-  private:
+
+template<typename ElemType>
+class %(class_name)s : public %(base_class)s
+{
+private:
     RegId srcRegIdxArr[4];
     RegId destRegIdxArr[1];
     bool vm;
-  public:
+public:
     %(class_name)s(ExtMachInst extMachInst,
-            uint8_t _micro_vl, uint8_t _micro_idx);
+                   uint8_t _micro_vl, uint8_t _micro_idx);
     Fault execute(ExecContext* xc, Trace::InstRecord* traceData)const override;
     using %(base_class)s::generateDisassembly;
-  };
+};
+
 }};
 
 def template VectorIntMaskMicroConstructor {{
-  template<typename ElemType>
-  %(class_name)s<ElemType>::%(class_name)s(ExtMachInst extMachInst,
-      uint8_t _micro_vl, uint8_t _micro_idx)
-    : %(base_class)s("%(mnemonic)s", extMachInst,
-        VectorDummyOp, _micro_vl, _micro_idx)
-  {
+
+template<typename ElemType>
+%(class_name)s<ElemType>::%(class_name)s(ExtMachInst extMachInst,
+                                         uint8_t _micro_vl, uint8_t _micro_idx)
+: %(base_class)s("%(mnemonic)s", extMachInst,
+                 VectorDummyOp, _micro_vl, _micro_idx)
+{
     this->vm = extMachInst.vm;
     %(set_reg_idx_arr)s;
     _numSrcRegs = 0;
@@ -308,19 +335,21 @@ def template VectorIntMaskMicroConstructor {{
     _numCCDestRegs = 0;
     %(set_dest_reg_idx)s;
     %(set_src_reg_idx)s;
-  }
+}
+
 }};
 
 def template VectorIntMaskMicroExecute {{
-  template <typename ElemType>
-  Fault
-  %(class_name)s<ElemType>::execute(ExecContext* xc,
-                                    Trace::InstRecord* traceData) const
-  {
+
+template <typename ElemType>
+Fault
+%(class_name)s<ElemType>::execute(ExecContext* xc,
+                                  Trace::InstRecord* traceData) const
+{
     using vu [[maybe_unused]] = std::make_unsigned_t<ElemType>;
     using vi [[maybe_unused]] = std::make_signed_t<ElemType>;
     if (machInst.vill)
-      return std::make_shared<IllegalInstFault>("VILL is set", machInst);
+        return std::make_shared<IllegalInstFault>("VILL is set", machInst);
 
     %(op_decl)s;
     %(op_rd)s;
@@ -328,33 +357,36 @@ def template VectorIntMaskMicroExecute {{
     auto Vds = tmp_d0.as<uint8_t>();
 
     %(vm_decl_rd)s;
-
     %(code)s
 
     xc->setVecRegOperand(this, 0, tmp_d0);
     if (traceData) {
-      traceData->setData(tmp_d0);
+        traceData->setData(tmp_d0);
     }
     return NoFault;
-  }
+}
+
 }};
 
 def template VectorFloatMaskMacroDeclare {{
-  template<typename ElemType>
-  class %(class_name)s : public %(base_class)s {
-  private:
+
+template<typename ElemType>
+class %(class_name)s : public %(base_class)s {
+private:
     %(reg_idx_arr_decl)s;
-  public:
+public:
     %(class_name)s(ExtMachInst extMachInst);
     using %(base_class)s::generateDisassembly;
-  };
+};
+
 }};
 
 def template VectorFloatMaskMacroConstructor {{
-  template<typename ElemType>
-  %(class_name)s<ElemType>::%(class_name)s(ExtMachInst extMachInst)
+
+template<typename ElemType>
+%(class_name)s<ElemType>::%(class_name)s(ExtMachInst extMachInst)
     : %(base_class)s("%(mnemonic)s", extMachInst, VectorDummyOp)
-  {
+{
     %(set_reg_idx_arr)s;
     %(constructor)s;
     const uint32_t numMicroOps = vtype_regs_per_group(vtype);
@@ -365,40 +397,44 @@ def template VectorFloatMaskMacroConstructor {{
 
     // allow one empty micro op to hold IsLastMicroop flag
     for (int i=0; i<numMicroOps && micro_vl>=0; ++i) {
-      micro_op = new %(class_name)sMicro<ElemType>(extMachInst, micro_vl, i);
-      micro_op->setDelayedCommit();
-      this->microops.push_back(micro_op);
-      micro_vl = std::min(tmp_vl -= micro_vlmax, micro_vlmax);
+        micro_op = new %(class_name)sMicro<ElemType>(extMachInst, micro_vl, i);
+        micro_op->setDelayedCommit();
+        this->microops.push_back(micro_op);
+        micro_vl = std::min(tmp_vl -= micro_vlmax, micro_vlmax);
     }
 
     this->microops.front()->setFirstMicroop();
     this->microops.back()->setLastMicroop();
-  }
+}
+
 }};
 
 def template VectorFloatMaskMicroDeclare {{
-  template<typename ElemType>
-  class %(class_name)s : public %(base_class)s
-  {
-  private:
+
+template<typename ElemType>
+class %(class_name)s : public %(base_class)s
+{
+private:
     RegId srcRegIdxArr[4];
     RegId destRegIdxArr[1];
     bool vm;
-  public:
+public:
     %(class_name)s(ExtMachInst extMachInst,
-            uint8_t _micro_vl, uint8_t _micro_idx);
+                   uint8_t _micro_vl, uint8_t _micro_idx);
     Fault execute(ExecContext* xc, Trace::InstRecord* traceData)const override;
     using %(base_class)s::generateDisassembly;
-  };
+};
+
 }};
 
 def template VectorFloatMaskMicroConstructor {{
-  template<typename ElemType>
-  %(class_name)s<ElemType>::%(class_name)s(ExtMachInst extMachInst,
-      uint8_t _micro_vl, uint8_t _micro_idx)
-    : %(base_class)s("%(mnemonic)s", extMachInst,
-        VectorDummyOp, _micro_vl, _micro_idx)
-  {
+
+template<typename ElemType>
+%(class_name)s<ElemType>::%(class_name)s(ExtMachInst extMachInst,
+                                         uint8_t _micro_vl, uint8_t _micro_idx)
+: %(base_class)s("%(mnemonic)s", extMachInst,
+                 VectorDummyOp, _micro_vl, _micro_idx)
+{
     this->vm = extMachInst.vm;
     %(set_reg_idx_arr)s;
     _numSrcRegs = 0;
@@ -411,19 +447,21 @@ def template VectorFloatMaskMicroConstructor {{
     _numCCDestRegs = 0;
     %(set_dest_reg_idx)s;
     %(set_src_reg_idx)s;
-  }
+}
+
 }};
 
 def template VectorFloatMaskMicroExecute {{
-  template <typename ElemType>
-  Fault
-  %(class_name)s<ElemType>::execute(ExecContext* xc,
-                                    Trace::InstRecord* traceData) const
-  {
+
+template <typename ElemType>
+Fault
+%(class_name)s<ElemType>::execute(ExecContext* xc,
+                                  Trace::InstRecord* traceData) const
+{
     using et = ElemType;
     using vu = decltype(et::v);
     if (machInst.vill)
-      return std::make_shared<IllegalInstFault>("VILL is set", machInst);
+        return std::make_shared<IllegalInstFault>("VILL is set", machInst);
 
     %(op_decl)s;
     %(op_rd)s;
@@ -431,13 +469,14 @@ def template VectorFloatMaskMicroExecute {{
     auto Vds = tmp_d0.as<uint8_t>();
 
     %(vm_decl_rd)s;
-
     %(code)s
 
     xc->setVecRegOperand(this, 0, tmp_d0);
     if (traceData) {
-      traceData->setData(tmp_d0);
+        traceData->setData(tmp_d0);
     }
+
     return NoFault;
-  }
+}
+
 }};
