@@ -5,7 +5,7 @@ class %(class_name)s : public %(base_class)s
 private:
     %(reg_idx_arr_decl)s;
 public:
-    %(class_name)s(ExtMachInst extMachInst);
+    %(class_name)s(ExtMachInst _machInst);
     using %(base_class)s::generateDisassembly;
 };
 
@@ -13,39 +13,42 @@ public:
 
 def template VleConstructor {{
 
-%(class_name)s::%(class_name)s(ExtMachInst extMachInst)
-    : %(base_class)s("%(mnemonic)s", extMachInst, VectorDummyOp)
+%(class_name)s::%(class_name)s(ExtMachInst _machInst)
+    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
 {
     %(set_reg_idx_arr)s;
     %(constructor)s;
 
-    // Num of elems in one memory access operation
-    int32_t elemNumPerMa = CachelineSize / width_EEW(machInst.width);
-    flags[IsVector] = true;
-    int32_t left_vl = this->vl;
-    int32_t micro_vl = std::min(left_vl, elemNumPerMa);
-    StaticInstPtr micro_op;
+    // Num of elems in one memory access operation.
+    int32_t num_elems_per_ma = CachelineSize / width_EEW(machInst.width);
+
+    int32_t remaining_vl = this->vl;
+    int32_t micro_vl = std::min(remaining_vl, num_elems_per_ma);
+    StaticInstPtr microop;
     uint32_t offset;
 
     for (int i = 0; micro_vl > 0; ++i) {
-        int regCnt = 0;
+        size_t src_reg_count = 0;
         for (int j = 0; j < NumMemAccPerVecReg && micro_vl > 0; ++j) {
             offset = (i * NumMemAccPerVecReg + j) * CachelineSizeByte;
-            micro_op = new %(class_name)sMicro(extMachInst, offset,
-                                               VecMemInternalReg0 + j,
-                                               micro_vl, j);
-            micro_op->setFlag(IsDelayedCommit);
-            micro_op->setFlag(IsLoad);
-            this->microops.push_back(micro_op);
-            micro_vl = std::min(left_vl -= elemNumPerMa, elemNumPerMa);
-            regCnt++;
+            microop = new %(class_name)sMicro(machInst, offset,
+                                              VecMemInternalReg0 + j,
+                                              micro_vl, j);
+            microop->setFlag(IsDelayedCommit);
+            microop->setFlag(IsLoad);
+            this->microops.push_back(microop);
+            remaining_vl -= num_elems_per_ma;
+            micro_vl = std::min(remaining_vl, num_elems_per_ma);
+            src_reg_count++;
         }
-        micro_op = new VldMvMicroInst(extMachInst, extMachInst.vd + i, regCnt);
-        this->microops.push_back(micro_op);
+
+        microop = new VldMvMicroInst(machInst, machInst.vd + i, src_reg_count);
+        this->microops.push_back(microop);
     }
 
     this->microops.front()->setFlag(IsFirstMicroop);
     this->microops.back()->setFlag(IsLastMicroop);
+    this->flags[IsVector] = true;
 }
 
 }};
@@ -58,10 +61,10 @@ private:
     RegId destRegIdxArr[1];
     RegId srcRegIdxArr[1];
 public:
-    %(class_name)s(ExtMachInst extMachInst, uint32_t _offset, uint8_t _dstReg,
+    %(class_name)s(ExtMachInst _machInst, uint32_t _offset, uint8_t _dstReg,
                    uint8_t _microVl, uint8_t _microIdx)
-    : %(base_class)s("%(mnemonic)s", extMachInst, VectorDummyOp, _offset,
-                     _dstReg, _microVl, _microIdx)
+    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp, _microVl,
+                     _microIdx, _offset)
     {
         %(set_reg_idx_arr)s;
         _numSrcRegs = 0;
@@ -74,7 +77,7 @@ public:
         _numCCDestRegs = 0;
         setDestRegIdx(_numDestRegs++, RegId(VecRegClass, _dstReg));
         _numVecDestRegs++;
-        setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, extMachInst.rs1));
+        setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
         this->flags[IsVector] = true;
         this->flags[IsLoad] = true;
     }
@@ -121,18 +124,12 @@ Fault
                             Trace::InstRecord* traceData) const
 {
     Addr EA;
-    Fault fault = NoFault;
-    std::size_t memAccessSize = this->microVl * width_EEW(machInst.width) / 8;
+
     %(op_src_decl)s;
-
     %(op_rd)s;
-
     %(ea_code)s;
 
-    if (fault == NoFault) {
-      fault = initiateMemRead(xc, EA, memAccessSize, this->memAccessFlags,
-                              std::vector<bool>(memAccessSize, true));
-    }
+    Fault fault = initiateMemRead(xc, traceData, EA, Mem, memAccessFlags);
     return fault;
 }
 
@@ -144,64 +141,54 @@ Fault
 %(class_name)s::completeAcc(PacketPtr pkt, ExecContext *xc,
                             Trace::InstRecord *traceData) const
 {
-    Fault fault = NoFault;
     %(op_decl)s;
-
     %(op_rd)s;
 
     memcpy(Mem.as<uint8_t>(), pkt->getPtr<uint8_t>(), pkt->getSize());
-    if (fault == NoFault) {
-      for (size_t i = 0; i < this->microVl; i++) {
+    for (size_t i = 0; i < this->microVl; i++) {
         %(memacc_code)s;
-      }
     }
 
-    // (op_wb)s;
-    if (fault == NoFault) {
-      xc->setVecRegOperand(this, 0, tmp_d0);
-    }
-    if (traceData) {
-      traceData->setData(tmp_d0);
-    }
-    return fault;
+    %(op_wb)s;
+    return NoFault;
 }
 
 }};
 
 def template VseConstructor {{
 
-%(class_name)s::%(class_name)s(ExtMachInst extMachInst)
-    : %(base_class)s("%(mnemonic)s", extMachInst, VectorDummyOp)
+%(class_name)s::%(class_name)s(ExtMachInst _machInst)
+    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
 {
     %(set_reg_idx_arr)s;
     %(constructor)s;
 
-    // Num of elems in one memory access operation.
-    int32_t elemNumPerMa = CachelineSize / width_EEW(machInst.width);
-    flags[IsVector] = true;
-    int32_t left_vl = this->vl;
-    int32_t micro_vl = std::min(left_vl, elemNumPerMa);
+    // Num of elems in one memory access operation..
+    int32_t num_elems_per_ma = CachelineSize / width_EEW(machInst.width);
+    int32_t remaining_vl = this->vl;
+    int32_t micro_vl = std::min(remaining_vl, num_elems_per_ma);
 
-    StaticInstPtr micro_op;
+    StaticInstPtr microop;
     std::vector<StaticInstPtr> tmp_ops;
     uint32_t offset;
     for (int i = 0; micro_vl > 0; ++i) {
-        int regCnt = 0;
+        size_t src_reg_count = 0;
         for (int j = 0; j < NumMemAccPerVecReg && micro_vl > 0; ++j) {
             offset = (i * NumMemAccPerVecReg + j) * CachelineSizeByte;
-            micro_op = new %(class_name)sMicro(extMachInst, offset,
+            microop = new %(class_name)sMicro(_machInst, offset,
                                                VecMemInternalReg0 + j,
                                                micro_vl, j);
-            micro_op->setFlag(IsDelayedCommit);
-            micro_op->setFlag(IsStore);
-            tmp_ops.push_back(micro_op);
-            micro_vl = std::min(left_vl -= elemNumPerMa, elemNumPerMa);
-            regCnt++;
+            microop->setFlag(IsDelayedCommit);
+            microop->setFlag(IsStore);
+            tmp_ops.push_back(microop);
+            remaining_vl -= num_elems_per_ma;
+            micro_vl = std::min(remaining_vl, num_elems_per_ma);
+            src_reg_count++;
         }
 
-        micro_op = new VstMvMicroInst(extMachInst, extMachInst.vs3 + i,
-                                      regCnt);
-        this->microops.push_back(micro_op);
+        microop = new VstMvMicroInst(_machInst, _machInst.vs3 + i,
+                                     src_reg_count);
+        this->microops.push_back(microop);
 
         for (StaticInstPtr op : tmp_ops) {
             this->microops.push_back(op);
@@ -211,6 +198,7 @@ def template VseConstructor {{
 
     this->microops.front()->setFlag(IsFirstMicroop);
     this->microops.back()->setFlag(IsLastMicroop);
+    this->flags[IsVector] = true;
 }
 
 }};
@@ -223,10 +211,10 @@ private:
     RegId destRegIdxArr[0];
     RegId srcRegIdxArr[2];
 public:
-    %(class_name)s(ExtMachInst extMachInst, uint32_t _offset, uint8_t _srcReg,
+    %(class_name)s(ExtMachInst _machInst, uint32_t _offset, uint8_t _srcReg,
                    uint8_t _microVl, uint8_t _microIdx)
-        : %(base_class)s("%(mnemonic)s""_micro", extMachInst, VectorDummyOp,
-                         _offset, _srcReg, _microVl, _microIdx)
+        : %(base_class)s("%(mnemonic)s""_micro", _machInst, VectorDummyOp,
+                         _microVl, _microIdx, _offset)
     {
         %(set_reg_idx_arr)s;
         _numSrcRegs = 0;
@@ -237,7 +225,7 @@ public:
         _numVecPredDestRegs = 0;
         _numIntDestRegs = 0;
         _numCCDestRegs = 0;
-        setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, extMachInst.rs1));
+        setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
         setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _srcReg));
         this->flags[IsVector] = true;
         this->flags[IsStore] = true;
@@ -258,10 +246,8 @@ Fault
 %(class_name)s::execute(ExecContext *xc, Trace::InstRecord *traceData) const
 {
     auto tc = xc->tcBase();
-
     Addr EA;
-    Fault fault = NoFault;
-    std::size_t memAccessSize = this->microVl * width_EEW(machInst.width) / 8;
+
     const TheISA::vreg_t& tmp_v0 = tc->readVecReg(RegId(VecRegClass, 0));
     [[maybe_unused]] auto v0 = tmp_v0.as<uint8_t>();
 
@@ -269,22 +255,19 @@ Fault
     %(op_rd)s;
     %(ea_code)s;
 
-    const std::vector<bool> byte_enable(memAccessSize, true);
-
-    fault = readMemAtomic(xc, EA, Mem.as<uint8_t>(), memAccessSize,
-                          this->memAccessFlags, byte_enable);
+    Fault fault = readMemAtomicLE(xc, traceData, EA, Mem.as<uint64_t>()[0],
+                                  memAccessFlags);
     if (fault != NoFault) return fault;
 
+
     for (size_t i = 0; i < this->microVl; i++) {
-        // Todo: add vm
+        // TODO: Handle vm.
         %(memacc_code)s;
     }
 
-    fault = writeMemAtomic(xc, Mem.as<uint8_t>(), EA, memAccessSize,
-                           this->memAccessFlags, nullptr, byte_enable);
-    if (fault != NoFault) return fault;
-
-    return NoFault;
+    fault = writeMemAtomicLE(xc, traceData, Mem.as<uint64_t>()[0], EA,
+                             memAccessFlags, nullptr);
+    return fault;
 }
 
 }};
@@ -297,8 +280,7 @@ Fault
 {
     auto tc = xc->tcBase();
     Addr EA;
-    Fault fault = NoFault;
-    std::size_t memAccessSize = this->microVl * width_EEW(machInst.width) / 8;
+
     const TheISA::vreg_t& tmp_v0 = tc->readVecReg(RegId(VecRegClass, 0));
     [[maybe_unused]] auto v0 = tmp_v0.as<uint8_t>();
 
@@ -306,18 +288,14 @@ Fault
     %(op_rd)s;
     %(ea_code)s;
 
-    const std::vector<bool> byte_enable(memAccessSize, true);
-
     for (size_t i = 0; i < this->microVl; i++) {
-        // Todo: add vm
+        // TODO: Handle vm.
         %(memacc_code)s;
     }
 
-    fault = writeMemTiming(xc, Mem.as<uint8_t>(), EA, memAccessSize,
-                           this->memAccessFlags, nullptr, byte_enable);
-    if (fault != NoFault) return fault;
-
-    return NoFault;
+    Fault fault = writeMemTimingLE(xc, traceData, Mem.as<uint64_t>()[0], EA,
+                                    memAccessFlags, nullptr);
+    return fault;
 }
 
 }};
@@ -335,75 +313,77 @@ Fault
 
 def template VlmConstructor {{
 
-%(class_name)s::%(class_name)s(ExtMachInst extMachInst)
-    : %(base_class)s("%(mnemonic)s", extMachInst, VectorDummyOp)
+%(class_name)s::%(class_name)s(ExtMachInst _machInst)
+    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
 {
     %(set_reg_idx_arr)s;
     %(constructor)s;
 
-    // Num of elems in one memory access operation.
-    int32_t elemNumPerMa = CachelineSize / width_EEW(machInst.width);
-    flags[IsVector] = true;
-    int32_t left_vl = this->vl;
-    int32_t micro_vl = std::min(left_vl, elemNumPerMa);
-    StaticInstPtr micro_op;
+    // Num of elems in one memory access operation..
+    int32_t num_elems_per_ma = CachelineSize / width_EEW(machInst.width);
+    int32_t remaining_vl = this->vl;
+    int32_t micro_vl = std::min(remaining_vl, num_elems_per_ma);
+    StaticInstPtr microop;
     uint32_t offset;
 
     for (int i = 0; micro_vl > 0; ++i) {
-        int regCnt = 0;
+        size_t src_reg_count = 0;
         for (int j = 0; j < NumMemAccPerVecReg && micro_vl > 0; ++j) {
             offset = (i * NumMemAccPerVecReg + j) * CachelineSizeByte;
-            micro_op = new Vle8_vMicro(extMachInst, offset,
-                                       VecMemInternalReg0 + j,
-                                       (micro_vl + 7) / 8, j);
-            micro_op->setFlag(IsDelayedCommit);
-            micro_op->setFlag(IsLoad);
-            this->microops.push_back(micro_op);
-            micro_vl = std::min(left_vl -= elemNumPerMa, elemNumPerMa);
-            regCnt++;
+            microop = new Vle8_vMicro(_machInst, offset,
+                                      VecMemInternalReg0 + j,
+                                      (micro_vl + 7) / 8, j);
+            microop->setFlag(IsDelayedCommit);
+            microop->setFlag(IsLoad);
+            this->microops.push_back(microop);
+            remaining_vl -= num_elems_per_ma;
+            micro_vl = std::min(remaining_vl, num_elems_per_ma);
+            src_reg_count++;
         }
-        micro_op = new VldMvMicroInst(extMachInst, extMachInst.vd + i, regCnt);
-        this->microops.push_back(micro_op);
+        microop = new VldMvMicroInst(_machInst, _machInst.vd + i,
+                                     src_reg_count);
+        this->microops.push_back(microop);
     }
     this->microops.front()->setFlag(IsFirstMicroop);
     this->microops.back()->setFlag(IsLastMicroop);
+    this->flags[IsVector] = true;
 }
 
 }};
 
 def template VsmConstructor {{
 
-%(class_name)s::%(class_name)s(ExtMachInst extMachInst)
-    : %(base_class)s("%(mnemonic)s", extMachInst, VectorDummyOp)
+%(class_name)s::%(class_name)s(ExtMachInst _machInst)
+    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
 {
     %(set_reg_idx_arr)s;
     %(constructor)s;
 
-    // Num of elems in one memory access operation.
-    int32_t elemNumPerMa = CachelineSize / width_EEW(machInst.width);
-    flags[IsVector] = true;
-    int32_t left_vl = this->vl;
-    int32_t micro_vl = std::min(left_vl, elemNumPerMa);
+    // Num of elems in one memory access operation..
+    int32_t num_elems_per_ma = CachelineSize / width_EEW(machInst.width);
+    int32_t remaining_vl = this->vl;
+    int32_t micro_vl = std::min(remaining_vl, num_elems_per_ma);
 
-    StaticInstPtr micro_op;
+    StaticInstPtr microop;
     std::vector<StaticInstPtr> tmp_ops;
     uint32_t offset;
     for (int i = 0; micro_vl > 0; ++i) {
-        int regCnt = 0;
+        size_t src_reg_count = 0;
         for (int j = 0; j < NumMemAccPerVecReg && micro_vl > 0; ++j) {
             offset = (i * NumMemAccPerVecReg + j) * CachelineSizeByte;
-            micro_op = new Vse8_vMicro(extMachInst, offset,
-                                       VecMemInternalReg0 + j,
-                                       (micro_vl + 7) / 8, j);
-            micro_op->setFlag(IsDelayedCommit);
-            micro_op->setFlag(IsStore);
-            tmp_ops.push_back(micro_op);
-            micro_vl = std::min(left_vl -= elemNumPerMa, elemNumPerMa);
-            regCnt++;
+            microop = new Vse8_vMicro(_machInst, offset,
+                                      VecMemInternalReg0 + j,
+                                      (micro_vl + 7) / 8, j);
+            microop->setFlag(IsDelayedCommit);
+            microop->setFlag(IsStore);
+            tmp_ops.push_back(microop);
+            remaining_vl -= num_elems_per_ma;
+            micro_vl = std::min(remaining_vl, num_elems_per_ma);
+            src_reg_count++;
         }
-        micro_op = new VstMvMicroInst(extMachInst, extMachInst.vs3 + i,
-                                      regCnt);
-        this->microops.push_back(micro_op);
+        microop = new VstMvMicroInst(_machInst, _machInst.vs3 + i,
+                                     src_reg_count);
+        this->microops.push_back(microop);
         for (StaticInstPtr op : tmp_ops) {
             this->microops.push_back(op);
         }
@@ -412,6 +392,7 @@ def template VsmConstructor {{
 
     this->microops.front()->setFlag(IsFirstMicroop);
     this->microops.back()->setFlag(IsLastMicroop);
+    this->flags[IsVector] = true;
 }
 
 }};
@@ -423,7 +404,6 @@ def template VsWholeConstructor {{
 {
     %(set_reg_idx_arr)s;
     %(constructor)s;
-    flags[IsVector] = true;
 
     StaticInstPtr microop;
     uint32_t offset;
@@ -443,6 +423,7 @@ def template VsWholeConstructor {{
     }
     this->microops.front()->setFlag(IsFirstMicroop);
     this->microops.back()->setFlag(IsLastMicroop);
+    this->flags[IsVector] = true;
 }
 
 }};
@@ -488,18 +469,18 @@ def template VsWholeMicroExecute {{
 Fault
 %(class_name)s::execute(ExecContext *xc, Trace::InstRecord *traceData) const
 {
-  Addr EA;
-  %(op_decl)s;
-  %(op_rd)s;
-  %(ea_code)s;
+    Addr EA;
+    %(op_decl)s;
+    %(op_rd)s;
+    %(ea_code)s;
 
-  for (size_t i = 0; i < NumMemAccPerVecReg; i++) {
-    %(memacc_code)s;
-  }
+    for (size_t i = 0; i < NumMemAccPerVecReg; i++) {
+        %(memacc_code)s;
+    }
 
-  Fault fault = writeMemAtomicLE(xc, traceData, Mem.as<uint64_t>()[0], EA,
-                                 memAccessFlags, nullptr);
-  return fault;
+    Fault fault = writeMemAtomicLE(xc, traceData, Mem.as<uint64_t>()[0], EA,
+                                   memAccessFlags, nullptr);
+    return fault;
 }
 
 }};
@@ -543,7 +524,6 @@ def template VlWholeConstructor {{
 {
     %(set_reg_idx_arr)s;
     %(constructor)s;
-    flags[IsVector] = true;
 
     StaticInstPtr microop;
     uint32_t offset;
@@ -565,6 +545,7 @@ def template VlWholeConstructor {{
 
     this->microops.front()->setFlag(IsFirstMicroop);
     this->microops.back()->setFlag(IsLastMicroop);
+    this->flags[IsVector] = true;
 }
 
 }};

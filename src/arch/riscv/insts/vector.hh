@@ -134,9 +134,15 @@ class VectorArithMacroInst : public VectorMacroInst
 class VectorMemMicroInst : public VectorMicroInst
 {
   protected:
+    uint32_t offset; // Used to calculate EA.
+    Request::Flags memAccessFlags;
+
     VectorMemMicroInst(const char* mnem, ExtMachInst _machInst,
-                       OpClass __opClass, uint8_t _microVl, uint8_t _microIdx)
+                       OpClass __opClass, uint8_t _microVl, uint8_t _microIdx,
+                       uint32_t _offset)
         : VectorMicroInst(mnem, _machInst, __opClass, _microVl, _microIdx)
+        , offset(_offset)
+        , memAccessFlags(0)
     {}
 };
 
@@ -176,15 +182,11 @@ class VseMacroInst : public VectorMemMacroInst
 class VleMicroInst : public VectorMemMicroInst
 {
   protected:
-    uint32_t offset; // base addr in rs1
-    uint8_t dst_reg;
-    Request::Flags memAccessFlags;
-
     VleMicroInst(const char *mnem, ExtMachInst _machInst,
-            OpClass __opClass, uint32_t _offset, uint8_t _dstReg,
-            uint8_t _microVl, uint8_t _microIdx)
-        : VectorMemMicroInst(mnem, _machInst, __opClass, _microVl, _microIdx)
-        , offset(_offset), dst_reg(_dstReg), memAccessFlags(0)
+                 OpClass __opClass, uint8_t _microVl, uint8_t _microIdx,
+                 uint32_t _offset)
+        : VectorMemMicroInst(mnem, _machInst, __opClass, _microVl, _microIdx,
+                             _offset)
     {}
 
     std::string generateDisassembly(
@@ -194,15 +196,11 @@ class VleMicroInst : public VectorMemMicroInst
 class VseMicroInst : public VectorMemMicroInst
 {
   protected:
-    uint32_t offset; // base addr in rs1
-    uint8_t src_reg;
-    Request::Flags memAccessFlags;
-
     VseMicroInst(const char *mnem, ExtMachInst _machInst,
-            OpClass __opClass, uint32_t _offset, uint8_t _srcReg,
-            uint8_t _microVl, uint8_t _microIdx)
-        : VectorMemMicroInst(mnem, _machInst, __opClass, _microVl, _microIdx)
-        , offset(_offset) , src_reg(_srcReg), memAccessFlags(0)
+                 OpClass __opClass, uint8_t _microVl, uint8_t _microIdx,
+                 uint32_t _offset)
+        : VectorMemMicroInst(mnem, _machInst, __opClass, _microVl, _microIdx,
+                             _offset)
     {}
 
     std::string generateDisassembly(
@@ -224,14 +222,10 @@ class VlWholeMacroInst : public VectorMemMacroInst
 class VlWholeMicroInst : public VectorMemMicroInst
 {
   protected:
-    uint32_t offset;
-    Request::Flags memAccessFlags;
-
     VlWholeMicroInst(const char *mnem, ExtMachInst _machInst,
                      OpClass __opClass, uint32_t _offset, uint8_t _microIdx)
-      : VectorMemMicroInst(
-          mnem, _machInst, __opClass, NumVecMemInternalRegs, _microIdx)
-      , offset(_offset), memAccessFlags(0)
+        : VectorMemMicroInst(mnem, _machInst, __opClass, NumVecMemInternalRegs,
+                             _microIdx, _offset)
     {}
 
     std::string generateDisassembly(
@@ -253,14 +247,10 @@ class VsWholeMacroInst : public VectorMemMacroInst
 class VsWholeMicroInst : public VectorMemMicroInst
 {
   protected:
-    uint32_t offset;
-    Request::Flags memAccessFlags;
-
     VsWholeMicroInst(const char *mnem, ExtMachInst _machInst,
                      OpClass __opClass, uint32_t _offset, uint8_t _microIdx)
-        : VectorMemMicroInst(
-            mnem, _machInst, __opClass, NumVecMemInternalRegs, _microIdx)
-        , offset(_offset), memAccessFlags(0)
+        : VectorMemMicroInst(mnem, _machInst, __opClass, NumVecMemInternalRegs,
+                             _microIdx, _offset)
     {}
 
     std::string generateDisassembly(
@@ -272,12 +262,13 @@ class VldMvMicroInst : public RiscvMicroInst
   private:
     RegId srcRegIdxArr[NumVecMemInternalRegs];
     RegId destRegIdxArr[1];
-    uint8_t src_num;
+
+    size_t srcRegs;
   public:
-    VldMvMicroInst(ExtMachInst _machInst, uint8_t _dstReg, uint8_t _src_num)
+    VldMvMicroInst(ExtMachInst _machInst, uint8_t _dstReg, size_t _srcRegs)
         : RiscvMicroInst("vl_mv_micro", _machInst, VectorDummyOp)
+        , srcRegs(_srcRegs)
     {
-        src_num = _src_num;
         setRegIdxArrays(
             reinterpret_cast<RegIdArrayPtr>(
                 &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
@@ -295,9 +286,9 @@ class VldMvMicroInst : public RiscvMicroInst
 
         setDestRegIdx(_numDestRegs++, RegId(VecRegClass, _dstReg));
         _numVecDestRegs++;
-        for (uint8_t i=0; i<_src_num; i++) {
+        for (size_t i = 0; i < this->srcRegs; i++) {
             setSrcRegIdx(_numSrcRegs++,
-                        RegId(VecRegClass, VecMemInternalReg0 + i));
+                         RegId(VecRegClass, VecMemInternalReg0 + i));
         }
         this->flags[IsVector] = true;
     }
@@ -311,12 +302,12 @@ class VstMvMicroInst : public RiscvMicroInst
   private:
     RegId srcRegIdxArr[1];
     RegId destRegIdxArr[NumVecMemInternalRegs];
-    uint8_t dst_num;
+    uint8_t dstRegs;
   public:
-    VstMvMicroInst(ExtMachInst _machInst, uint8_t _srcReg, uint8_t _dst_num)
+    VstMvMicroInst(ExtMachInst _machInst, uint8_t _srcReg, uint8_t _dstRegs)
         : RiscvMicroInst("vs_mv_micro", _machInst, VectorDummyOp)
+        , dstRegs(_dstRegs)
     {
-        dst_num = _dst_num;
         setRegIdxArrays(
             reinterpret_cast<RegIdArrayPtr>(
                 &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
@@ -332,9 +323,9 @@ class VstMvMicroInst : public RiscvMicroInst
         _numIntDestRegs = 0;
         _numCCDestRegs = 0;
 
-        for (uint8_t i=0; i<_dst_num; i++) {
+        for (uint8_t i = 0; i < this->dstRegs; i++) {
             setDestRegIdx(_numDestRegs++,
-                        RegId(VecRegClass, VecMemInternalReg0 + i));
+                          RegId(VecRegClass, VecMemInternalReg0 + i));
             _numVecDestRegs++;
         }
         setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _srcReg));

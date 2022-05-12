@@ -155,7 +155,7 @@ VldMvMicroInst::execute(ExecContext *xc, Trace::InstRecord *traceData) const
     vreg_t tmp_d0 = xc->getWritableVecRegOperand(this, 0);
     auto Vd = tmp_d0.as<uint8_t>();
 
-    for (int i = 0; i < this->src_num; i++) {
+    for (size_t i = 0; i < this->srcRegs; i++) {
         vreg_t tmp_s = xc->readVecRegOperand(this, i);
         auto s = tmp_s.as<uint8_t>();
         memcpy(Vd + i * CachelineSizeByte, s, CachelineSizeByte);
@@ -183,7 +183,7 @@ VstMvMicroInst::execute(ExecContext *xc, Trace::InstRecord *traceData) const
     vreg_t tmp_s0 = xc->readVecRegOperand(this, 0);
     auto Vs = tmp_s0.as<uint8_t>();
 
-    for (int i = 0; i < this->dst_num; i++) {
+    for (int i = 0; i < this->dstRegs; i++) {
         vreg_t tmp_d = xc->getWritableVecRegOperand(this, i);
         auto d = tmp_d.as<uint8_t>();
         memcpy(d, Vs + i * CachelineSizeByte, CachelineSizeByte);
