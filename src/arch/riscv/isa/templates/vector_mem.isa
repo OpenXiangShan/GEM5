@@ -1,4 +1,3 @@
-
 def template VMemMacroDeclare {{
 
 class %(class_name)s : public %(base_class)s
@@ -20,8 +19,8 @@ def template VleConstructor {{
     %(set_reg_idx_arr)s;
     %(constructor)s;
 
-    // num of elem in one mem acc operation
-    int32_t elemNumPerMa = this->numElemPerMemAcc();
+    // Num of elems in one memory access operation
+    int32_t elemNumPerMa = CachelineSize / width_EEW(machInst.width);
     flags[IsVector] = true;
     int32_t left_vl = this->vl;
     int32_t micro_vl = std::min(left_vl, elemNumPerMa);
@@ -30,8 +29,8 @@ def template VleConstructor {{
 
     for (int i = 0; micro_vl > 0; ++i) {
         int regCnt = 0;
-        for (int j = 0; j < NumVecElemPerVecReg && micro_vl > 0; ++j) {
-            offset = (i * NumVecElemPerVecReg + j) * sizeof(VecElem);
+        for (int j = 0; j < NumMemAccPerVecReg && micro_vl > 0; ++j) {
+            offset = (i * NumMemAccPerVecReg + j) * CachelineSizeByte;
             micro_op = new %(class_name)sMicro(extMachInst, offset,
                                                VecMemInternalReg0 + j,
                                                micro_vl, j);
@@ -177,8 +176,8 @@ def template VseConstructor {{
     %(set_reg_idx_arr)s;
     %(constructor)s;
 
-    // num of elem in one mem acc operation
-    int32_t elemNumPerMa = this->numElemPerMemAcc();
+    // Num of elems in one memory access operation.
+    int32_t elemNumPerMa = CachelineSize / width_EEW(machInst.width);
     flags[IsVector] = true;
     int32_t left_vl = this->vl;
     int32_t micro_vl = std::min(left_vl, elemNumPerMa);
@@ -188,8 +187,8 @@ def template VseConstructor {{
     uint32_t offset;
     for (int i = 0; micro_vl > 0; ++i) {
         int regCnt = 0;
-        for (int j = 0; j < NumVecElemPerVecReg && micro_vl > 0; ++j) {
-            offset = (i * NumVecElemPerVecReg + j) * sizeof(VecElem);
+        for (int j = 0; j < NumMemAccPerVecReg && micro_vl > 0; ++j) {
+            offset = (i * NumMemAccPerVecReg + j) * CachelineSizeByte;
             micro_op = new %(class_name)sMicro(extMachInst, offset,
                                                VecMemInternalReg0 + j,
                                                micro_vl, j);
@@ -342,8 +341,8 @@ def template VlmConstructor {{
     %(set_reg_idx_arr)s;
     %(constructor)s;
 
-    // num of elem in one mem acc operation
-    int32_t elemNumPerMa = this->numElemPerMemAcc() * 8;
+    // Num of elems in one memory access operation.
+    int32_t elemNumPerMa = CachelineSize / width_EEW(machInst.width);
     flags[IsVector] = true;
     int32_t left_vl = this->vl;
     int32_t micro_vl = std::min(left_vl, elemNumPerMa);
@@ -352,8 +351,8 @@ def template VlmConstructor {{
 
     for (int i = 0; micro_vl > 0; ++i) {
         int regCnt = 0;
-        for (int j = 0; j < NumVecElemPerVecReg && micro_vl > 0; ++j) {
-            offset = (i * NumVecElemPerVecReg + j) * sizeof(VecElem);
+        for (int j = 0; j < NumMemAccPerVecReg && micro_vl > 0; ++j) {
+            offset = (i * NumMemAccPerVecReg + j) * CachelineSizeByte;
             micro_op = new Vle8_vMicro(extMachInst, offset,
                                        VecMemInternalReg0 + j,
                                        (micro_vl + 7) / 8, j);
@@ -379,8 +378,9 @@ def template VsmConstructor {{
 {
     %(set_reg_idx_arr)s;
     %(constructor)s;
-    // num of elem in one mem acc operation
-    int32_t elemNumPerMa = this->numElemPerMemAcc() * 8;
+
+    // Num of elems in one memory access operation.
+    int32_t elemNumPerMa = CachelineSize / width_EEW(machInst.width);
     flags[IsVector] = true;
     int32_t left_vl = this->vl;
     int32_t micro_vl = std::min(left_vl, elemNumPerMa);
@@ -390,8 +390,8 @@ def template VsmConstructor {{
     uint32_t offset;
     for (int i = 0; micro_vl > 0; ++i) {
         int regCnt = 0;
-        for (int j = 0; j < NumVecElemPerVecReg && micro_vl > 0; ++j) {
-            offset = (i * NumVecElemPerVecReg + j) * sizeof(VecElem);
+        for (int j = 0; j < NumMemAccPerVecReg && micro_vl > 0; ++j) {
+            offset = (i * NumMemAccPerVecReg + j) * CachelineSizeByte;
             micro_op = new Vse8_vMicro(extMachInst, offset,
                                        VecMemInternalReg0 + j,
                                        (micro_vl + 7) / 8, j);
@@ -432,8 +432,8 @@ def template VsWholeConstructor {{
         microop = new VstMvMicroInst(_machInst, _machInst.vs3 + i,
                                      NumVecMemInternalRegs);
         this->microops.push_back(microop);
-        for (int j = 0; j < NumVecElemPerVecReg; ++j) {
-            offset = (i * NumVecElemPerVecReg + j) * sizeof(VecElem);
+        for (int j = 0; j < NumMemAccPerVecReg; ++j) {
+            offset = (i * NumMemAccPerVecReg + j) * CachelineSizeByte;
             microop = new %(class_name)sMicro(_machInst, offset,
                                               VecMemInternalReg0 + j, j);
             microop->setFlag(IsDelayedCommit);
@@ -493,7 +493,7 @@ Fault
   %(op_rd)s;
   %(ea_code)s;
 
-  for (size_t i = 0; i < NumVecElemPerVecReg; i++) {
+  for (size_t i = 0; i < NumMemAccPerVecReg; i++) {
     %(memacc_code)s;
   }
 
@@ -515,7 +515,7 @@ Fault
     %(op_rd)s;
     %(ea_code)s;
 
-    for (size_t i = 0; i < NumVecElemPerVecReg; i++) {
+    for (size_t i = 0; i < NumMemAccPerVecReg; i++) {
         %(memacc_code)s;
     }
     Fault fault = writeMemTimingLE(xc, traceData, Mem.as<uint64_t>()[0], EA,
@@ -549,8 +549,8 @@ def template VlWholeConstructor {{
     uint32_t offset;
     size_t NFIELDS = machInst.nf + 1;
     for (int i = 0; i < NFIELDS; ++i) {
-        for (int j = 0; j < NumVecElemPerVecReg; ++j) {
-            offset = (i * NumVecElemPerVecReg + j) * sizeof(VecElem);
+        for (int j = 0; j < NumMemAccPerVecReg; ++j) {
+            offset = (i * NumMemAccPerVecReg + j) * CachelineSizeByte;
             microop = new %(class_name)sMicro(_machInst, offset,
                                               VecMemInternalReg0 + j, j);
             microop->setFlag(IsDelayedCommit);

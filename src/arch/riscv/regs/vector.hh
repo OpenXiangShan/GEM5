@@ -43,10 +43,13 @@ namespace gem5
 namespace RiscvISA
 {
 
+constexpr size_t CachelineSizeByte = 8;
+constexpr size_t CachelineSize = CachelineSizeByte * 8;
 constexpr unsigned NumVecElemPerVecReg = 4;
 using VecElem = uint64_t;
 constexpr size_t vlenb = NumVecElemPerVecReg * sizeof(VecElem);
 constexpr size_t VLEN = vlenb * 8;
+constexpr size_t NumMemAccPerVecReg = VLEN / CachelineSize;
 using VecRegContainer =
     gem5::VecRegContainer<vlenb>;
 using vreg_t = VecRegContainer;

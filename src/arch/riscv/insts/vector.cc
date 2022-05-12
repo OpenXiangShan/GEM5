@@ -150,21 +150,20 @@ std::string VsWholeMacroInst::generateDisassembly(Addr pc,
 }
 
 Fault
-VldMvMicroInst::execute(ExecContext *xc,
-        Trace::InstRecord *traceData) const
+VldMvMicroInst::execute(ExecContext *xc, Trace::InstRecord *traceData) const
 {
-    Fault fault = NoFault;
-    RiscvISA::vreg_t tmp_d0 = xc->getWritableVecRegOperand(this, 0);
+    vreg_t tmp_d0 = xc->getWritableVecRegOperand(this, 0);
     auto Vd = tmp_d0.as<uint8_t>();
 
     for (int i = 0; i < this->src_num; i++) {
-        RiscvISA::vreg_t tmp_s = xc->readVecRegOperand(this, i);
+        vreg_t tmp_s = xc->readVecRegOperand(this, i);
         auto s = tmp_s.as<uint8_t>();
-        memcpy(Vd + i * sizeof(RiscvISA::VecElem), s,
-               sizeof(RiscvISA::VecElem));
+        memcpy(Vd + i * CachelineSizeByte, s, CachelineSizeByte);
     }
+
     xc->setVecRegOperand(this, 0, tmp_d0);
-    return fault;
+
+    return NoFault;
 }
 
 std::string VldMvMicroInst::generateDisassembly(Addr pc,
@@ -179,21 +178,19 @@ std::string VldMvMicroInst::generateDisassembly(Addr pc,
 }
 
 Fault
-VstMvMicroInst::execute(ExecContext *xc,
-        Trace::InstRecord *traceData) const
+VstMvMicroInst::execute(ExecContext *xc, Trace::InstRecord *traceData) const
 {
-    Fault fault = NoFault;
-    RiscvISA::vreg_t tmp_s0 = xc->readVecRegOperand(this, 0);
+    vreg_t tmp_s0 = xc->readVecRegOperand(this, 0);
     auto Vs = tmp_s0.as<uint8_t>();
 
     for (int i = 0; i < this->dst_num; i++) {
-        RiscvISA::vreg_t tmp_d = xc->getWritableVecRegOperand(this, i);
+        vreg_t tmp_d = xc->getWritableVecRegOperand(this, i);
         auto d = tmp_d.as<uint8_t>();
-        memcpy(d, Vs + i * sizeof(RiscvISA::VecElem),
-               sizeof(RiscvISA::VecElem));
+        memcpy(d, Vs + i * CachelineSizeByte, CachelineSizeByte);
         xc->setVecRegOperand(this, i, tmp_d);
     }
-    return fault;
+
+    return NoFault;
 }
 
 std::string VstMvMicroInst::generateDisassembly(Addr pc,

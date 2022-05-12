@@ -147,10 +147,6 @@ class VectorMemMacroInst : public VectorMacroInst
                        OpClass __opClass)
         : VectorMacroInst(mnem, _machInst, __opClass)
     {}
-
-    int32_t numElemPerMemAcc() {
-        return sizeof(RiscvISA::VecElem) * 8 / width_EEW(machInst.width);
-    }
 };
 
 class VleMacroInst : public VectorMemMacroInst
