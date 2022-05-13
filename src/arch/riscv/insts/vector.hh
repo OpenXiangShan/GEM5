@@ -361,6 +361,80 @@ class VstMvMicroInst : public RiscvMicroInst
         Addr pc, const loader::SymbolTable *symtab) const override;
 };
 
+template<typename ElemType>
+class VMaskMvMicroInst : public VectorArithMicroInst
+{
+  private:
+    static constexpr size_t LMUL_MAX = 8;
+    RegId srcRegIdxArr[LMUL_MAX];
+    RegId destRegIdxArr[1];
+    uint8_t src_num;
+  public:
+    VMaskMvMicroInst(ExtMachInst extMachInst, uint8_t _dst_reg,
+        uint8_t _src_num)
+        : VectorArithMicroInst("vmask_mv_micro", extMachInst, VectorDummyOp, 0,
+            0)
+        , src_num(_src_num)
+    {
+        setRegIdxArrays(
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
+
+        _numSrcRegs = 0;
+        _numDestRegs = 0;
+        _numFPDestRegs = 0;
+        _numVecDestRegs = 0;
+        _numVecElemDestRegs = 0;
+        _numVecPredDestRegs = 0;
+        _numIntDestRegs = 0;
+        _numCCDestRegs = 0;
+
+        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, _dst_reg));
+        _numVecDestRegs++;
+        for (uint8_t i=0; i<_src_num; i++) {
+            setSrcRegIdx(_numSrcRegs++,
+                        RegId(VecRegClass, VecMemInternalReg0 + i));
+        }
+    }
+
+    Fault execute(ExecContext* xc, Trace::InstRecord* traceData)
+            const override {
+        RiscvISA::vreg_t tmp_d0 = xc->getWritableVecRegOperand(this, 0);
+        auto Vd = tmp_d0.as<uint8_t>();
+
+        constexpr uint8_t bit_offset = VLEN / (8 * sizeof(ElemType));
+        size_t bit_cnt = 0;
+        for (uint8_t i = 0; i < this->src_num; i++) {
+            RiscvISA::vreg_t tmp_s = xc->readVecRegOperand(this, i);
+            auto s = tmp_s.as<uint8_t>();
+            if constexpr (bit_offset < 8) {
+                constexpr uint8_t shift_period = 8 / bit_offset;
+                constexpr std::bitset<8> m((1 << bit_offset) - 1);
+                Vd[bit_cnt/8] |= (s[0] & m.to_ulong()) << i % shift_period;
+                bit_cnt += bit_offset;
+            } else {
+                constexpr uint8_t byte_offset = bit_offset / 8;
+                memcpy(Vd + i * byte_offset, s, byte_offset);
+            }
+        }
+        xc->setVecRegOperand(this, 0, tmp_d0);
+        return NoFault;
+    }
+
+    std::string generateDisassembly(
+            Addr pc, const loader::SymbolTable *symtab) const override {
+        std::stringstream ss;
+        ss << mnemonic << ' ' << registerName(destRegIdx(0));
+        for (uint8_t i = 0; i < this->src_num; i++) {
+            ss << ", " << registerName(srcRegIdx(i));
+        }
+        ss << ", offset:" << VLEN / (8 * sizeof(ElemType));
+        return ss.str();
+    }
+};
+
 } // namespace RiscvISA
 } // namespace gem5
 

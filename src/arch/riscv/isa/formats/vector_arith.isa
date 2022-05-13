@@ -125,7 +125,7 @@ def format VectorIntMaskFormat(code, category, *flags) {{
         'VectorArithMacroInst',
         {'code': code},
         flags)
-    dest_reg_id = "RegId(VecRegClass, _machInst.vd)"
+    dest_reg_id = "RegId(VecRegClass, VecMemInternalReg0 + _microIdx)"
     src1_reg_id = ""
     if category == "OPIVV":
         src1_reg_id = "RegId(VecRegClass, _machInst.vs1 + _microIdx)"
@@ -230,7 +230,7 @@ def format VectorFloatMaskFormat(code, category, *flags) {{
         'VectorArithMacroInst',
         {'code': code},
         flags)
-    dest_reg_id = "RegId(VecRegClass, _machInst.vd)"
+    dest_reg_id = "RegId(VecRegClass, VecMemInternalReg0 + _microIdx)"
     src1_reg_id = ""
     if category == "OPFVV":
         src1_reg_id = "RegId(VecRegClass, _machInst.vs1 + _microIdx)"

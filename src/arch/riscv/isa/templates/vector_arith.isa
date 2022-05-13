@@ -3,7 +3,7 @@ output header {{
 #define VFMERGE(fs1, fs2) ((elem_mask(v0, ei)) ? (fs1) : (fs2))
 
 #define ASSIGN_VD_BIT(idx, bit) \
-    ((Vds[(idx)/8] & ~(1 << (idx)%8)) | ((bit) << (idx)%8))
+    ((Vd[(idx)/8] & ~(1 << (idx)%8)) | ((bit) << (idx)%8))
 
 template<typename Type>
 bool inline
@@ -291,6 +291,9 @@ template<typename ElemType>
         this->microops.push_back(microop);
         micro_vl = std::min(tmp_vl -= micro_vlmax, micro_vlmax);
     }
+    microop = new VMaskMvMicroInst<ElemType>(_machInst, _machInst.vd,
+        this->microops.size());
+    this->microops.push_back(microop);
 
     this->microops.front()->setFirstMicroop();
     this->microops.back()->setLastMicroop();
@@ -354,16 +357,9 @@ Fault
 
     %(op_decl)s;
     %(op_rd)s;
-    RiscvISA::vreg_t tmp_d0 = xc->getWritableVecRegOperand(this, 0);
-    auto Vds = tmp_d0.as<uint8_t>();
-
     %(vm_decl_rd)s;
-    %(code)s
-
-    xc->setVecRegOperand(this, 0, tmp_d0);
-    if (traceData) {
-        traceData->setData(tmp_d0);
-    }
+    %(code)s;
+    %(op_wb)s;
     return NoFault;
 }
 
@@ -403,6 +399,9 @@ template<typename ElemType>
         this->microops.push_back(microop);
         micro_vl = std::min(tmp_vl -= micro_vlmax, micro_vlmax);
     }
+    microop = new VMaskMvMicroInst<ElemType>(_machInst, _machInst.vd,
+        this->microops.size());
+    this->microops.push_back(microop);
 
     this->microops.front()->setFirstMicroop();
     this->microops.back()->setLastMicroop();
@@ -466,17 +465,9 @@ Fault
 
     %(op_decl)s;
     %(op_rd)s;
-    RiscvISA::vreg_t tmp_d0 = xc->getWritableVecRegOperand(this, 0);
-    auto Vds = tmp_d0.as<uint8_t>();
-
     %(vm_decl_rd)s;
-    %(code)s
-
-    xc->setVecRegOperand(this, 0, tmp_d0);
-    if (traceData) {
-        traceData->setData(tmp_d0);
-    }
-
+    %(code)s;
+    %(op_wb)s;
     return NoFault;
 }
 
