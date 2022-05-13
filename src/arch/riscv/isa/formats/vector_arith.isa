@@ -53,7 +53,7 @@ let {{
                code + "}\n"
     def eiDeclarePrefix(code):
         return '''
-            uint32_t ei = i + vtype_elements_per_reg(vtype) * this->microIdx;
+            uint32_t ei = i + vtype_VLMAX(vtype, true) * this->microIdx;
         ''' + code
 }};
 
