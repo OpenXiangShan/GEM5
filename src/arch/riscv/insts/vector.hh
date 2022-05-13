@@ -257,6 +257,31 @@ class VsWholeMicroInst : public VectorMemMicroInst
         Addr pc, const loader::SymbolTable *symtab) const override;
 };
 
+class VMvWholeMacroInst : public VectorArithMacroInst
+{
+  protected:
+    VMvWholeMacroInst(const char* mnem, ExtMachInst _machInst,
+                         OpClass __opClass)
+        : VectorArithMacroInst(mnem, _machInst, __opClass)
+    {}
+
+    std::string generateDisassembly(
+            Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
+class VMvWholeMicroInst : public VectorArithMicroInst
+{
+  protected:
+    VMvWholeMicroInst(const char *mnem, ExtMachInst _machInst,
+                         OpClass __opClass, uint8_t _microVl,
+                         uint8_t _microIdx)
+        : VectorArithMicroInst(mnem, _machInst, __opClass, _microVl, _microIdx)
+    {}
+
+    std::string generateDisassembly(
+            Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
 class VldMvMicroInst : public RiscvMicroInst
 {
   private:

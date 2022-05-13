@@ -61,11 +61,9 @@ let {{
 def format VectorIntFormat(code, category, *flags) {{
     iop = InstObjParams(name, Name, 'VectorArithMacroInst', {'code': code},
                         flags)
-
-    split_name = name.split("_")
-    insts_neednot_mask = ["vmv"]
-    need_vm = split_name[0] not in insts_neednot_mask
-    mask_cond = need_vm and ('m' not in split_name[1])
+    inst_name, inst_suffix = name.split("_", maxsplit=1)
+    v0_required = inst_name not in ["vmv"]
+    mask_cond = v0_required and (inst_suffix not in ['vvm', 'vxm', 'vim'])
     need_elem_idx = mask_cond or code.find("ei") != -1
 
     dest_reg_id = "RegId(VecRegClass, _machInst.vd + _microIdx)"
@@ -86,7 +84,7 @@ def format VectorIntFormat(code, category, *flags) {{
     if category != "OPIVI":
         set_src_reg_idx += setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2RegId)
-    if need_vm:
+    if v0_required:
         set_src_reg_idx += setSrcVm()
 
     # code
@@ -97,7 +95,7 @@ def format VectorIntFormat(code, category, *flags) {{
     code = loopWrapper(code)
 
     vm_decl_rd = ""
-    if need_vm:
+    if v0_required:
         vm_decl_rd = vmDeclAndReadData()
 
     microiop = InstObjParams(name + "_micro",
@@ -170,15 +168,11 @@ def format VectorIntMaskFormat(code, category, *flags) {{
 }};
 
 def format VectorFloatFormat(code, category, *flags) {{
-    iop = InstObjParams(name,
-        Name,
-        'VectorArithMacroInst',
-        {'code': code},
-        flags)
-    split_name = name.split("_")
-    insts_neednot_mask = ["vfmv"]
-    need_vm = split_name[0] not in insts_neednot_mask
-    mask_cond = need_vm and ('m' not in split_name[1])
+    iop = InstObjParams(name, Name, 'VectorArithMacroInst', {'code': code},
+                        flags)
+    inst_name, inst_suffix = name.split("_", maxsplit=1)
+    v0_required = inst_name not in ["vfmv"]
+    mask_cond = v0_required and (inst_suffix not in ['vvm', 'vxm', 'vim'])
     need_elem_idx = mask_cond or code.find("ei") != -1
 
     dest_reg_id = "RegId(VecRegClass, _machInst.vd + _microIdx)"
@@ -196,7 +190,7 @@ def format VectorFloatFormat(code, category, *flags) {{
     set_src_reg_idx = ""
     set_src_reg_idx += setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2RegId)
-    if need_vm:
+    if v0_required:
         set_src_reg_idx += setSrcVm()
     # code
     if mask_cond:
@@ -206,7 +200,7 @@ def format VectorFloatFormat(code, category, *flags) {{
     code = loopWrapper(code)
 
     vm_decl_rd = ""
-    if need_vm:
+    if v0_required:
         vm_decl_rd = vmDeclAndReadData()
 
     microiop = InstObjParams(name + "_micro",
@@ -273,4 +267,23 @@ def format VectorFloatMaskFormat(code, category, *flags) {{
         VectorFloatMaskMacroDeclare.subst(iop) + \
         VectorFloatMaskMacroConstructor.subst(iop)
     decode_block = VectorFloatDecodeBlock.subst(iop)
+}};
+
+def format VMvWholeFormat(code, category, *flags) {{
+    iop = InstObjParams(name, Name, 'VMvWholeMacroInst', {'code': code}, flags)
+
+    microiop = InstObjParams(name + "_micro",
+        Name + "Micro",
+        'VMvWholeMicroInst',
+        {'code': code},
+        flags)
+
+    header_output = \
+        VMvWholeMacroDeclare.subst(iop) + \
+        VMvWholeMicroDeclare.subst(microiop)
+    decoder_output = \
+        VMvWholeMacroConstructor.subst(iop) + \
+        VMvWholeMicroConstructor.subst(microiop)
+    exec_output = VMvWholeMicroExecute.subst(microiop)
+    decode_block = BasicDecode.subst(iop)
 }};

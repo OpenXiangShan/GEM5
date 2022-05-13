@@ -163,6 +163,7 @@ BitUnion64(ExtMachInst)
     Bitfield<11,  7>    vd;
     Bitfield<11,  7>    vs3;
     Bitfield<19, 15>    vecimm;
+    Bitfield<17, 15>    simm3;
     // vsetvli
     Bitfield<31>        bit31;
     Bitfield<30>        bit30;

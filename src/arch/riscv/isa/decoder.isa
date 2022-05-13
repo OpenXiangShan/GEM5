@@ -2239,6 +2239,24 @@ decode QUADRANT default Unknown::unknown() {
                                     ((vu)SIMM5 & (vtype_SEW(vtype)-1) & 0x1f);
                     }}, OPIVI, VectorDummyOp);
                 }
+                // According to Spec Section 16.6,
+                // vm must be 1 (unmasked) in vmv<nr>r.v instructions.
+                0x27: decode VM { 0x1: decode SIMM3 {
+                    format VMvWholeFormat {
+                        0x0: vmv1r_v({{
+                            Vd_ud[i] = Vs2_ud[i];
+                        }}, OPIVI, VectorDummyOp);
+                        0x1: vmv2r_v({{
+                            Vd_ud[i] = Vs2_ud[i];
+                        }}, OPIVI, VectorDummyOp);
+                        0x3: vmv4r_v({{
+                            Vd_ud[i] = Vs2_ud[i];
+                        }}, OPIVI, VectorDummyOp);
+                        0x7: vmv8r_v({{
+                            Vd_ud[i] = Vs2_ud[i];
+                        }}, OPIVI, VectorDummyOp);
+                    }
+                }}
                 format VectorIntMaskFormat {
                     0x11: decode VM {
                         0x0: vmadc_vim({{

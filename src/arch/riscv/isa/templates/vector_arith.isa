@@ -481,3 +481,96 @@ Fault
 }
 
 }};
+
+def template VMvWholeMacroDeclare {{
+
+class %(class_name)s : public %(base_class)s {
+private:
+    %(reg_idx_arr_decl)s;
+public:
+    %(class_name)s(ExtMachInst _machInst);
+    using %(base_class)s::generateDisassembly;
+};
+
+}};
+
+def template VMvWholeMacroConstructor {{
+
+%(class_name)s::%(class_name)s(ExtMachInst _machInst)
+    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
+{
+    %(set_reg_idx_arr)s;
+    %(constructor)s;
+    const uint32_t num_microops = _machInst.simm3 + 1;
+    StaticInstPtr microop;
+
+    for (int i = 0; i < num_microops; ++i) {
+        microop = new %(class_name)sMicro(_machInst, 0, i);
+        microop->setDelayedCommit();
+        this->microops.push_back(microop);
+    }
+
+    this->microops.front()->setFirstMicroop();
+    this->microops.back()->setLastMicroop();
+}
+
+}};
+
+def template VMvWholeMicroDeclare {{
+
+class %(class_name)s : public %(base_class)s
+{
+private:
+    RegId srcRegIdxArr[1];
+    RegId destRegIdxArr[1];
+    bool vm;
+public:
+    %(class_name)s(ExtMachInst _machInst, uint8_t _microVl,
+                   uint8_t _microIdx);
+    Fault execute(ExecContext* xc, Trace::InstRecord* traceData)const override;
+    using %(base_class)s::generateDisassembly;
+};
+
+}};
+
+def template VMvWholeMicroConstructor {{
+
+%(class_name)s::%(class_name)s(ExtMachInst _machInst,
+                               uint8_t _microVl, uint8_t _microIdx)
+    : %(base_class)s("%(mnemonic)s", _machInst,
+                     %(op_class)s, _microVl, _microIdx)
+{
+    %(set_reg_idx_arr)s;
+    _numSrcRegs = 0;
+    _numDestRegs = 0;
+    _numFPDestRegs = 0;
+    _numVecDestRegs = 0;
+    _numVecElemDestRegs = 0;
+    _numVecPredDestRegs = 0;
+    _numIntDestRegs = 0;
+    _numCCDestRegs = 0;
+    setDestRegIdx(_numDestRegs++,
+                  RegId(VecRegClass, _machInst.vd + _microIdx));
+    _numVecDestRegs++;
+    setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _machInst.vs2 + _microIdx));
+}
+
+}};
+
+def template VMvWholeMicroExecute {{
+
+Fault
+%(class_name)s::execute(ExecContext* xc, Trace::InstRecord* traceData) const
+{
+    // TODO: Check register alignment.
+    // TODO: If vd is equal to vs2 the instruction is an architectural NOP.
+    %(op_decl)s;
+    %(op_rd)s;
+    for (size_t i = 0; i < NumVecElemPerVecReg; i++) {
+        %(code)s;
+    }
+    %(op_wb)s;
+    return NoFault;
+}
+
+}};

@@ -177,6 +177,26 @@ std::string VldMvMicroInst::generateDisassembly(Addr pc,
     return ss.str();
 }
 
+std::string
+VMvWholeMacroInst::generateDisassembly(Addr pc,
+    const loader::SymbolTable *symtab) const
+{
+    std::stringstream ss;
+    ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", " <<
+        registerName(srcRegIdx(1));
+    return ss.str();
+}
+
+std::string
+VMvWholeMicroInst::generateDisassembly(Addr pc,
+    const loader::SymbolTable *symtab) const
+{
+    std::stringstream ss;
+    ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", " <<
+        registerName(srcRegIdx(1));
+    return ss.str();
+}
+
 Fault
 VstMvMicroInst::execute(ExecContext *xc, Trace::InstRecord *traceData) const
 {
