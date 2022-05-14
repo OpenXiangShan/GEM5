@@ -59,8 +59,8 @@ def template VleMicroDeclare {{
 class %(class_name)s : public %(base_class)s
 {
 private:
+    RegId srcRegIdxArr[2];
     RegId destRegIdxArr[1];
-    RegId srcRegIdxArr[1];
 public:
     %(class_name)s(ExtMachInst _machInst, uint32_t _offset, uint8_t _dstReg,
                    uint8_t _microVl, uint8_t _microIdx)
@@ -79,6 +79,9 @@ public:
         setDestRegIdx(_numDestRegs++, RegId(VecRegClass, _dstReg));
         _numVecDestRegs++;
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
+        if (!_machInst.vm) {
+            setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, 0));
+        }
         this->flags[IsVector] = true;
         this->flags[IsLoad] = true;
     }
@@ -98,7 +101,6 @@ def template VleMicroExecute {{
 Fault
 %(class_name)s::execute(ExecContext *xc, Trace::InstRecord *traceData) const
 {
-    auto tc = xc->tcBase();
     Addr EA;
     %(op_decl)s;
     %(op_rd)s;
@@ -107,7 +109,7 @@ Fault
     RiscvISA::vreg_t tmp_v0;
     uint8_t *v0;
     if(!machInst.vm) {
-        tmp_v0 = tc->readVecReg(RegId(VecRegClass, 0));
+        tmp_v0 = xc->readVecRegOperand(this, _numSrcRegs - 1);
         v0 = tmp_v0.as<uint8_t>();
     }
 
@@ -155,14 +157,13 @@ Fault
 %(class_name)s::completeAcc(PacketPtr pkt, ExecContext *xc,
                             Trace::InstRecord *traceData) const
 {
-    auto tc = xc->tcBase();
     %(op_decl)s;
     %(op_rd)s;
 
     RiscvISA::vreg_t tmp_v0;
     uint8_t *v0;
     if(!machInst.vm) {
-        tmp_v0 = tc->readVecReg(RegId(VecRegClass, 0));
+        tmp_v0 = xc->readVecRegOperand(this, _numSrcRegs - 1);
         v0 = tmp_v0.as<uint8_t>();
     }
 
@@ -237,8 +238,8 @@ def template VseMicroDeclare {{
 class %(class_name)s : public %(base_class)s
 {
 private:
+    RegId srcRegIdxArr[3];
     RegId destRegIdxArr[0];
-    RegId srcRegIdxArr[2];
 public:
     %(class_name)s(ExtMachInst _machInst, uint32_t _offset, uint8_t _srcReg,
                    uint8_t _microVl, uint8_t _microIdx)
@@ -256,6 +257,9 @@ public:
         _numCCDestRegs = 0;
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
         setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _srcReg));
+        if (!_machInst.vm) {
+            setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, 0));
+        }
         this->flags[IsVector] = true;
         this->flags[IsStore] = true;
     }
@@ -274,13 +278,12 @@ def template VseMicroExecute {{
 Fault
 %(class_name)s::execute(ExecContext *xc, Trace::InstRecord *traceData) const
 {
-    auto tc = xc->tcBase();
     Addr EA;
 
     RiscvISA::vreg_t tmp_v0;
     uint8_t *v0;
     if(!machInst.vm) {
-        tmp_v0 = tc->readVecReg(RegId(VecRegClass, 0));
+        tmp_v0 = xc->readVecRegOperand(this, _numSrcRegs - 1);
         v0 = tmp_v0.as<uint8_t>();
     }
 
@@ -314,13 +317,12 @@ Fault
 %(class_name)s::initiateAcc(ExecContext* xc,
                             Trace::InstRecord* traceData) const
 {
-    auto tc = xc->tcBase();
     Addr EA;
 
     RiscvISA::vreg_t tmp_v0;
     uint8_t *v0;
     if(!machInst.vm) {
-        tmp_v0 = tc->readVecReg(RegId(VecRegClass, 0));
+        tmp_v0 = xc->readVecRegOperand(this, _numSrcRegs - 1);
         v0 = tmp_v0.as<uint8_t>();
     }
 
