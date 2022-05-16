@@ -125,6 +125,12 @@ def format VectorIntMaskFormat(code, category, *flags) {{
         'VectorArithMacroInst',
         {'code': code},
         flags)
+    inst_name, inst_suffix = name.split("_", maxsplit=1)
+    v0_required = not (inst_name in ["vmadc", "vmsbc"] \
+        and inst_suffix in ["vv", "vx", "vi"])
+    mask_cond = inst_name not in ['vmadc', 'vmsbc']
+    need_elem_idx = mask_cond or code.find("ei") != -1
+
     dest_reg_id = "RegId(VecRegClass, VecMemInternalReg0 + _microIdx)"
     src1_reg_id = ""
     if category == "OPIVV":
@@ -135,17 +141,25 @@ def format VectorIntMaskFormat(code, category, *flags) {{
         pass
     else:
         error("not supported category for VectorIntFormat: %s" % category)
-    src2RegId = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
+    src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
     set_src_reg_idx = ""
     if category != "OPIVI":
         set_src_reg_idx += setSrcWrapper(src1_reg_id)
-    set_src_reg_idx += setSrcWrapper(src2RegId)
-    set_src_reg_idx += setSrcVm()
-    vm_decl_rd = vmDeclAndReadData()
+    set_src_reg_idx += setSrcWrapper(src2_reg_id)
+    if v0_required:
+        set_src_reg_idx += setSrcVm()
 
-    code = eiDeclarePrefix(code)
+    #code
+    if mask_cond:
+        code = maskCondWrapper(code)
+    if need_elem_idx:
+        code = eiDeclarePrefix(code)
     code = loopWrapper(code)
+
+    vm_decl_rd = ""
+    if v0_required:
+        vm_decl_rd = vmDeclAndReadData()
 
     microiop = InstObjParams(name + "_micro",
         Name + "Micro",
@@ -238,14 +252,15 @@ def format VectorFloatMaskFormat(code, category, *flags) {{
         src1_reg_id = "RegId(FloatRegClass, _machInst.rs1)"
     else:
         error("not supported category for VectorFloatFormat: %s" % category)
-    src2RegId = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
+    src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
     set_src_reg_idx = ""
     set_src_reg_idx += setSrcWrapper(src1_reg_id)
-    set_src_reg_idx += setSrcWrapper(src2RegId)
+    set_src_reg_idx += setSrcWrapper(src2_reg_id)
     set_src_reg_idx += setSrcVm()
     vm_decl_rd = vmDeclAndReadData()
 
+    code = maskCondWrapper(code)
     code = eiDeclarePrefix(code)
     code = loopWrapper(code)
 

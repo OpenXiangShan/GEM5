@@ -421,7 +421,7 @@ class VMaskMvMicroInst : public VectorArithMicroInst
             const override {
         RiscvISA::vreg_t tmp_d0 = xc->getWritableVecRegOperand(this, 0);
         auto Vd = tmp_d0.as<uint8_t>();
-
+        memset(Vd, 0, vlenb);
         constexpr uint8_t bit_offset = VLEN / (8 * sizeof(ElemType));
         size_t bit_cnt = 0;
         for (uint8_t i = 0; i < this->src_num; i++) {
@@ -430,7 +430,8 @@ class VMaskMvMicroInst : public VectorArithMicroInst
             if constexpr (bit_offset < 8) {
                 constexpr uint8_t shift_period = 8 / bit_offset;
                 constexpr std::bitset<8> m((1 << bit_offset) - 1);
-                Vd[bit_cnt/8] |= (s[0] & m.to_ulong()) << i % shift_period;
+                Vd[bit_cnt/8] |= (s[0] & m.to_ulong()) <<
+                    (i % shift_period * bit_offset);
                 bit_cnt += bit_offset;
             } else {
                 constexpr uint8_t byte_offset = bit_offset / 8;
