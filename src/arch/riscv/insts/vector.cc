@@ -96,6 +96,7 @@ std::string VleMicroInst::generateDisassembly(Addr pc,
     std::stringstream ss;
     ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", " <<
         offset << '(' << registerName(srcRegIdx(0)) << ')';
+    if (!machInst.vm) ss << ", v0.t";
     return ss.str();
 }
 
@@ -114,6 +115,7 @@ std::string VseMicroInst::generateDisassembly(Addr pc,
     std::stringstream ss;
     ss << mnemonic << ' ' << registerName(srcRegIdx(1)) << ", " <<
         offset << '(' << registerName(srcRegIdx(0)) << ')';
+    if (!machInst.vm) ss << ", v0.t";
     return ss.str();
 }
 
@@ -132,6 +134,7 @@ std::string VleMacroInst::generateDisassembly(Addr pc,
     std::stringstream ss;
     ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", " <<
         '(' << registerName(srcRegIdx(0)) << ')';
+    if (!machInst.vm) ss << ", v0.t";
     return ss.str();
 }
 
@@ -150,6 +153,7 @@ std::string VseMacroInst::generateDisassembly(Addr pc,
     std::stringstream ss;
     ss << mnemonic << ' ' << registerName(srcRegIdx(1)) << ", " <<
         '(' << registerName(srcRegIdx(0)) << ')';
+    if (!machInst.vm) ss << ", v0.t";
     return ss.str();
 }
 
