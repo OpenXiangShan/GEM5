@@ -2004,8 +2004,8 @@ decode QUADRANT default Unknown::unknown() {
         }
 
         0x15: decode FUNCT3 {
+            // OPIVV
             0x0: decode VFUNCT6 {
-                // OPIVV
                 format VectorIntFormat {
                     0x0: vadd_vv({{
                         Vd_vu[i] = Vs2_vu[i] + Vs1_vu[i];
@@ -2167,6 +2167,14 @@ decode QUADRANT default Unknown::unknown() {
                                              ftype<et>(Vs1_vu[i]),
                                              false, true).v;
                     }}, OPFVV, VectorDummyOp);
+                }
+                // VWFUNARY0
+                0x10: decode VS1 {
+                    0x00: VectorNonSplitFormat::vfmv_f_s({{
+                        Fd_bits = Vs1_vu[0];
+                    }}, OPFVV, VectorDummyOp);
+                }
+                format VectorFloatFormat{
                     0x20: vfdiv_vv({{
                         auto fd = fdiv<et>(ftype<et>(Vs2_vu[i]),
                                            ftype<et>(Vs1_vu[i]));
