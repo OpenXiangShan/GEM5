@@ -162,7 +162,8 @@ VldMvMicroInst::execute(ExecContext *xc, Trace::InstRecord *traceData) const
     }
 
     xc->setVecRegOperand(this, 0, tmp_d0);
-
+    if (traceData)
+        traceData->setData(tmp_d0);
     return NoFault;
 }
 
@@ -209,7 +210,8 @@ VstMvMicroInst::execute(ExecContext *xc, Trace::InstRecord *traceData) const
         memcpy(d, Vs + i * CachelineSizeByte, CachelineSizeByte);
         xc->setVecRegOperand(this, i, tmp_d);
     }
-
+    if (traceData)
+        traceData->setData(tmp_s0);
     return NoFault;
 }
 

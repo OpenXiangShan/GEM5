@@ -420,6 +420,8 @@ class VMaskMvMicroInst : public VectorArithMicroInst
             }
         }
         xc->setVecRegOperand(this, 0, tmp_d0);
+        if (traceData)
+            traceData->setData(tmp_d0);
         return NoFault;
     }
 
