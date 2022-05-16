@@ -72,6 +72,24 @@ inline uint8_t checked_vtype(bool vill, uint8_t vtype) {
     return vtype;
 }
 
+class VectorNonSplitInst : public RiscvStaticInst
+{
+  protected:
+    uint32_t vl;
+    uint8_t vtype;
+    VectorNonSplitInst(const char* mnem, ExtMachInst _machInst,
+                   OpClass __opClass)
+        : RiscvStaticInst(mnem, _machInst, __opClass),
+        vl(_machInst.vl),
+        vtype(checked_vtype(_machInst.vill, _machInst.vtype8))
+    {
+        this->flags[IsVector] = true;
+    }
+
+    std::string generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
 class VectorMacroInst : public RiscvMacroInst
 {
   protected:

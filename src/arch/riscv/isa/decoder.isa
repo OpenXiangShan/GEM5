@@ -2191,6 +2191,15 @@ decode QUADRANT default Unknown::unknown() {
                     }}, OPFVV, VectorDummyOp);
                 }
             }
+            // OPMVV
+            0x2: decode VFUNCT6 {
+                // VWXUNARY0
+                0x10: decode VS1 {
+                    0x00: VectorNonSplitFormat::vmv_x_s({{
+                        Rd_vu = Vs2_vu[0];
+                    }}, OPMVV, VectorDummyOp);
+                }
+            }
             // OPIVI
             0x3: decode VFUNCT6 {
                 format VectorIntFormat {

@@ -56,6 +56,19 @@ VConfOp::generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const
     return ss.str();
 }
 
+std::string
+VectorNonSplitInst::generateDisassembly(Addr pc,
+        const loader::SymbolTable *symtab) const
+{
+    std::stringstream ss;
+    ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
+        << registerName(srcRegIdx(0));
+    if (machInst.vm == 0) {
+        ss << ", v0.t";
+    }
+    return ss.str();
+}
+
 std::string VectorArithMicroInst::generateDisassembly(Addr pc,
         const loader::SymbolTable *symtab) const
 {
