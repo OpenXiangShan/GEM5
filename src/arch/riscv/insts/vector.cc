@@ -172,7 +172,7 @@ VldMvMicroInst::execute(ExecContext *xc, Trace::InstRecord *traceData) const
     vreg_t tmp_d0 = xc->getWritableVecRegOperand(this, 0);
     auto Vd = tmp_d0.as<uint8_t>();
 
-    for (size_t i = 0; i < this->srcRegs; i++) {
+    for (size_t i = 0; i < this->_numSrcRegs; i++) {
         vreg_t tmp_s = xc->readVecRegOperand(this, i);
         auto s = tmp_s.as<uint8_t>();
         memcpy(Vd + i * CachelineSizeByte, s, CachelineSizeByte);
@@ -189,7 +189,7 @@ std::string VldMvMicroInst::generateDisassembly(Addr pc,
 {
     std::stringstream ss;
     ss << mnemonic << ' ' << registerName(destRegIdx(0));
-    for (int i = 0; i < NumVecMemInternalRegs; i++) {
+    for (int i = 0; i < this->_numSrcRegs; i++) {
         ss << ", " << registerName(srcRegIdx(i));
     }
     return ss.str();
@@ -221,7 +221,7 @@ VstMvMicroInst::execute(ExecContext *xc, Trace::InstRecord *traceData) const
     vreg_t tmp_s0 = xc->readVecRegOperand(this, 0);
     auto Vs = tmp_s0.as<uint8_t>();
 
-    for (int i = 0; i < this->dstRegs; i++) {
+    for (int i = 0; i < this->_numDestRegs; i++) {
         vreg_t tmp_d = xc->getWritableVecRegOperand(this, i);
         auto d = tmp_d.as<uint8_t>();
         memcpy(d, Vs + i * CachelineSizeByte, CachelineSizeByte);
@@ -237,7 +237,7 @@ std::string VstMvMicroInst::generateDisassembly(Addr pc,
 {
     std::stringstream ss;
     ss << mnemonic << ' ';
-    for (int i = 0; i < NumVecMemInternalRegs; i++) {
+    for (int i = 0; i < this->_numDestRegs; i++) {
         ss << registerName(destRegIdx(i)) << ", ";
     }
     ss << registerName(srcRegIdx(0));

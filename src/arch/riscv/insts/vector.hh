@@ -306,11 +306,9 @@ class VldMvMicroInst : public RiscvMicroInst
     RegId srcRegIdxArr[NumVecMemInternalRegs];
     RegId destRegIdxArr[1];
 
-    size_t srcRegs;
   public:
-    VldMvMicroInst(ExtMachInst _machInst, uint8_t _dstReg, size_t _srcRegs)
+    VldMvMicroInst(ExtMachInst _machInst, uint8_t _dstReg, size_t _numSrcs)
         : RiscvMicroInst("vl_mv_micro", _machInst, VectorDummyOp)
-        , srcRegs(_srcRegs)
     {
         setRegIdxArrays(
             reinterpret_cast<RegIdArrayPtr>(
@@ -329,7 +327,7 @@ class VldMvMicroInst : public RiscvMicroInst
 
         setDestRegIdx(_numDestRegs++, RegId(VecRegClass, _dstReg));
         _numVecDestRegs++;
-        for (size_t i = 0; i < this->srcRegs; i++) {
+        for (size_t i = 0; i < _numSrcs; i++) {
             setSrcRegIdx(_numSrcRegs++,
                          RegId(VecRegClass, VecMemInternalReg0 + i));
         }
@@ -345,11 +343,9 @@ class VstMvMicroInst : public RiscvMicroInst
   private:
     RegId srcRegIdxArr[1];
     RegId destRegIdxArr[NumVecMemInternalRegs];
-    uint8_t dstRegs;
   public:
-    VstMvMicroInst(ExtMachInst _machInst, uint8_t _srcReg, uint8_t _dstRegs)
+    VstMvMicroInst(ExtMachInst _machInst, uint8_t _srcReg, uint8_t _numDsts)
         : RiscvMicroInst("vs_mv_micro", _machInst, VectorDummyOp)
-        , dstRegs(_dstRegs)
     {
         setRegIdxArrays(
             reinterpret_cast<RegIdArrayPtr>(
@@ -366,7 +362,7 @@ class VstMvMicroInst : public RiscvMicroInst
         _numIntDestRegs = 0;
         _numCCDestRegs = 0;
 
-        for (uint8_t i = 0; i < this->dstRegs; i++) {
+        for (uint8_t i = 0; i < _numDsts; i++) {
             setDestRegIdx(_numDestRegs++,
                           RegId(VecRegClass, VecMemInternalReg0 + i));
             _numVecDestRegs++;
@@ -383,16 +379,14 @@ template<typename ElemType>
 class VMaskMvMicroInst : public VectorArithMicroInst
 {
   private:
-    static constexpr size_t LMUL_MAX = 8;
     RegId srcRegIdxArr[LMUL_MAX];
     RegId destRegIdxArr[1];
-    uint8_t src_num;
+
   public:
-    VMaskMvMicroInst(ExtMachInst extMachInst, uint8_t _dst_reg,
-        uint8_t _src_num)
+    VMaskMvMicroInst(ExtMachInst extMachInst, uint8_t _dstReg,
+        uint8_t _numSrcs)
         : VectorArithMicroInst("vmask_mv_micro", extMachInst, VectorDummyOp, 0,
             0)
-        , src_num(_src_num)
     {
         setRegIdxArrays(
             reinterpret_cast<RegIdArrayPtr>(
@@ -409,9 +403,9 @@ class VMaskMvMicroInst : public VectorArithMicroInst
         _numIntDestRegs = 0;
         _numCCDestRegs = 0;
 
-        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, _dst_reg));
+        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, _dstReg));
         _numVecDestRegs++;
-        for (uint8_t i=0; i<_src_num; i++) {
+        for (uint8_t i=0; i<_numSrcs; i++) {
             setSrcRegIdx(_numSrcRegs++,
                         RegId(VecRegClass, VecMemInternalReg0 + i));
         }
@@ -424,7 +418,7 @@ class VMaskMvMicroInst : public VectorArithMicroInst
         memset(Vd, 0, vlenb);
         constexpr uint8_t bit_offset = VLEN / (8 * sizeof(ElemType));
         size_t bit_cnt = 0;
-        for (uint8_t i = 0; i < this->src_num; i++) {
+        for (uint8_t i = 0; i < this->_numSrcRegs; i++) {
             RiscvISA::vreg_t tmp_s = xc->readVecRegOperand(this, i);
             auto s = tmp_s.as<uint8_t>();
             if constexpr (bit_offset < 8) {
@@ -448,7 +442,7 @@ class VMaskMvMicroInst : public VectorArithMicroInst
             Addr pc, const loader::SymbolTable *symtab) const override {
         std::stringstream ss;
         ss << mnemonic << ' ' << registerName(destRegIdx(0));
-        for (uint8_t i = 0; i < this->src_num; i++) {
+        for (uint8_t i = 0; i < this->_numSrcRegs; i++) {
             ss << ", " << registerName(srcRegIdx(i));
         }
         ss << ", offset:" << VLEN / (8 * sizeof(ElemType));
