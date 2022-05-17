@@ -64,6 +64,10 @@ class BaseInterrupts : public SimObject
      */
     virtual Fault getInterrupt() = 0;
     /*
+     * Return the interrupt NO to be processed.
+     */
+    virtual int getInterruptNO() = 0;
+    /*
      * Update interrupt related state after an interrupt has been processed.
      */
     virtual void updateIntrInfo() = 0;

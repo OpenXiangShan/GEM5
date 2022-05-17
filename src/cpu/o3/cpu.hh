@@ -288,6 +288,9 @@ class CPU : public BaseCPU
     /** Returns the Fault for any valid interrupt. */
     Fault getInterrupts();
 
+    /** Returns the Interrupt NO for any valid interrupt. */
+    int getInterruptsNO();
+
     /** Processes any an interrupt fault. */
     void processInterrupts(const Fault &interrupt);
 
@@ -650,6 +653,13 @@ class CPU : public BaseCPU
 
   public:
     void difftestStep(const DynInstPtr &inst);
+
+    bool difftestEnabled() const
+    {
+        return enableDifftest;
+    }
+
+    void difftestRaiseIntr(uint64_t no);
 };
 
 } // namespace o3

@@ -85,6 +85,7 @@ struct DiffState
     uint64_t nemu_commit_inst_pc;
     int cpu_id;
     struct DynamicConfig dynamic_config;
+    bool will_handle_intr;
 };
 
 class RefProxy

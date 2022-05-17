@@ -135,6 +135,16 @@ class Interrupts : public BaseInterrupts
         return NoFault;
     }
 
+    int getInterruptNO()
+    {
+        assert(checkInterrupts());
+        std::bitset<NumInterruptTypes> mask = globalMask();
+        for (int c = 0; c < NumInterruptTypes; c++)
+            if (checkInterrupt(c) && mask[c])
+                return c;
+        return -1;
+    }
+
     void updateIntrInfo() {}
 
     void

@@ -350,6 +350,13 @@ def template CSRExecute {{
             }
             break;
           }
+          case CSR_TIME: {
+                std::string error = csprintf(
+                    "force accessing to time CSR generate fault\n");
+                olddata = 0;
+                return std::make_shared<IllegalInstFault>(error, machInst);
+                break;
+          }
           default:
             break;
         }
