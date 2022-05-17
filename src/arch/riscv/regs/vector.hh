@@ -62,9 +62,8 @@ using ConstVecPredReg =
 using VecPredRegContainer = VecPredReg::Container;
 
 const int NumVecStandardRegs = 32;
-const int NumVecMemInternalRegs = std::max(LMUL_MAX, NumVecElemPerVecReg);
-
-const int NumVecRegs = NumVecStandardRegs + NumVecMemInternalRegs;
+const int NumVecInternalRegs = std::max(LMUL_MAX, NumVecElemPerVecReg);
+const int NumVecRegs = NumVecStandardRegs + NumVecInternalRegs;
 
 const std::vector<std::string> VecRegNames = {
     "v0",   "v1",   "v2",   "v3",   "v4",   "v5",   "v6",   "v7",

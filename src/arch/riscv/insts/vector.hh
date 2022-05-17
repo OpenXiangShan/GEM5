@@ -242,7 +242,7 @@ class VlWholeMicroInst : public VectorMemMicroInst
   protected:
     VlWholeMicroInst(const char *mnem, ExtMachInst _machInst,
                      OpClass __opClass, uint32_t _offset, uint8_t _microIdx)
-        : VectorMemMicroInst(mnem, _machInst, __opClass, NumVecMemInternalRegs,
+        : VectorMemMicroInst(mnem, _machInst, __opClass, NumMemAccPerVecReg,
                              _microIdx, _offset)
     {}
 
@@ -267,7 +267,7 @@ class VsWholeMicroInst : public VectorMemMicroInst
   protected:
     VsWholeMicroInst(const char *mnem, ExtMachInst _machInst,
                      OpClass __opClass, uint32_t _offset, uint8_t _microIdx)
-        : VectorMemMicroInst(mnem, _machInst, __opClass, NumVecMemInternalRegs,
+        : VectorMemMicroInst(mnem, _machInst, __opClass, NumMemAccPerVecReg,
                              _microIdx, _offset)
     {}
 
@@ -303,7 +303,7 @@ class VMvWholeMicroInst : public VectorArithMicroInst
 class VldMvMicroInst : public RiscvMicroInst
 {
   private:
-    RegId srcRegIdxArr[NumVecMemInternalRegs];
+    RegId srcRegIdxArr[NumMemAccPerVecReg];
     RegId destRegIdxArr[1];
 
   public:
@@ -342,7 +342,7 @@ class VstMvMicroInst : public RiscvMicroInst
 {
   private:
     RegId srcRegIdxArr[1];
-    RegId destRegIdxArr[NumVecMemInternalRegs];
+    RegId destRegIdxArr[NumMemAccPerVecReg];
   public:
     VstMvMicroInst(ExtMachInst _machInst, uint8_t _srcReg, uint8_t _numDsts)
         : RiscvMicroInst("vs_mv_micro", _machInst, VectorDummyOp)

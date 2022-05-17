@@ -456,7 +456,7 @@ def template VsWholeConstructor {{
     size_t NFIELDS = machInst.nf + 1;
     for (int i = 0; i < NFIELDS; ++i) {
         microop = new VstMvMicroInst(_machInst, _machInst.vs3 + i,
-                                     NumVecMemInternalRegs);
+                                     NumMemAccPerVecReg);
         this->microops.push_back(microop);
         for (int j = 0; j < NumMemAccPerVecReg; ++j) {
             offset = (i * NumMemAccPerVecReg + j) * CachelineSizeByte;
@@ -585,7 +585,7 @@ def template VlWholeConstructor {{
         }
 
         microop = new VldMvMicroInst(_machInst, _machInst.vd + i,
-                                     NumVecMemInternalRegs);
+                                     NumMemAccPerVecReg);
         this->microops.push_back(microop);
     }
 
