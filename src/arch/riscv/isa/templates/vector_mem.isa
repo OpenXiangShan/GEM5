@@ -70,14 +70,8 @@ public:
         %(set_reg_idx_arr)s;
         _numSrcRegs = 0;
         _numDestRegs = 0;
-        _numFPDestRegs = 0;
-        _numVecDestRegs = 0;
-        _numVecElemDestRegs = 0;
-        _numVecPredDestRegs = 0;
-        _numIntDestRegs = 0;
-        _numCCDestRegs = 0;
         setDestRegIdx(_numDestRegs++, RegId(VecRegClass, _dstReg));
-        _numVecDestRegs++;
+        _numTypedDestRegs[VecRegClass]++;
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
         if (!_machInst.vm) {
             setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, 0));
@@ -109,7 +103,7 @@ Fault
     RiscvISA::vreg_t tmp_v0;
     uint8_t *v0;
     if(!machInst.vm) {
-        tmp_v0 = xc->readVecRegOperand(this, _numSrcRegs - 1);
+        xc->getRegOperand(this, _numSrcRegs-1, &tmp_v0);
         v0 = tmp_v0.as<uint8_t>();
     }
 
@@ -163,7 +157,7 @@ Fault
     RiscvISA::vreg_t tmp_v0;
     uint8_t *v0;
     if(!machInst.vm) {
-        tmp_v0 = xc->readVecRegOperand(this, _numSrcRegs - 1);
+        xc->getRegOperand(this, _numSrcRegs - 1, &tmp_v0);
         v0 = tmp_v0.as<uint8_t>();
     }
 
@@ -249,12 +243,6 @@ public:
         %(set_reg_idx_arr)s;
         _numSrcRegs = 0;
         _numDestRegs = 0;
-        _numFPDestRegs = 0;
-        _numVecDestRegs = 0;
-        _numVecElemDestRegs = 0;
-        _numVecPredDestRegs = 0;
-        _numIntDestRegs = 0;
-        _numCCDestRegs = 0;
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
         setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _srcReg));
         if (!_machInst.vm) {
@@ -283,7 +271,7 @@ Fault
     RiscvISA::vreg_t tmp_v0;
     uint8_t *v0;
     if(!machInst.vm) {
-        tmp_v0 = xc->readVecRegOperand(this, _numSrcRegs - 1);
+        xc->getRegOperand(this, _numSrcRegs - 1, &tmp_v0);
         v0 = tmp_v0.as<uint8_t>();
     }
 
@@ -322,7 +310,7 @@ Fault
     RiscvISA::vreg_t tmp_v0;
     uint8_t *v0;
     if(!machInst.vm) {
-        tmp_v0 = xc->readVecRegOperand(this, _numSrcRegs - 1);
+        xc->getRegOperand(this, _numSrcRegs - 1, &tmp_v0);
         v0 = tmp_v0.as<uint8_t>();
     }
 
@@ -490,12 +478,6 @@ public:
         %(set_reg_idx_arr)s;
         _numSrcRegs = 0;
         _numDestRegs = 0;
-        _numFPDestRegs = 0;
-        _numVecDestRegs = 0;
-        _numVecElemDestRegs = 0;
-        _numVecPredDestRegs = 0;
-        _numIntDestRegs = 0;
-        _numCCDestRegs = 0;
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
         setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _srcReg));
         this->flags[IsVector] = true;
@@ -612,13 +594,8 @@ public:
         %(set_reg_idx_arr)s;
         _numSrcRegs = 0;
         _numDestRegs = 0;
-        _numFPDestRegs = 0;
-        _numVecDestRegs = 0;
-        _numVecElemDestRegs = 0;
-        _numVecPredDestRegs = 0;
-        _numIntDestRegs = 0;
-        _numCCDestRegs = 0;
         setDestRegIdx(_numDestRegs++, RegId(VecRegClass, _dstReg));
+        _numTypedDestRegs[VecRegClass]++;
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
         this->flags[IsVector] = true;
         this->flags[IsLoad] = true;

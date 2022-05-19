@@ -97,12 +97,6 @@ template<typename ElemType>
     %(set_reg_idx_arr)s;
     _numSrcRegs = 0;
     _numDestRegs = 0;
-    _numFPDestRegs = 0;
-    _numVecDestRegs = 0;
-    _numVecElemDestRegs = 0;
-    _numVecPredDestRegs = 0;
-    _numIntDestRegs = 0;
-    _numCCDestRegs = 0;
     %(set_dest_reg_idx)s;
     %(set_src_reg_idx)s;
 }
@@ -212,12 +206,6 @@ template<typename ElemType>
     %(set_reg_idx_arr)s;
     _numSrcRegs = 0;
     _numDestRegs = 0;
-    _numFPDestRegs = 0;
-    _numVecDestRegs = 0;
-    _numVecElemDestRegs = 0;
-    _numVecPredDestRegs = 0;
-    _numIntDestRegs = 0;
-    _numCCDestRegs = 0;
     %(set_dest_reg_idx)s;
     %(set_src_reg_idx)s;
 }
@@ -331,12 +319,6 @@ template<typename ElemType>
     %(set_reg_idx_arr)s;
     _numSrcRegs = 0;
     _numDestRegs = 0;
-    _numFPDestRegs = 0;
-    _numVecDestRegs = 0;
-    _numVecElemDestRegs = 0;
-    _numVecPredDestRegs = 0;
-    _numIntDestRegs = 0;
-    _numCCDestRegs = 0;
     %(set_dest_reg_idx)s;
     %(set_src_reg_idx)s;
 }
@@ -439,12 +421,6 @@ template<typename ElemType>
     %(set_reg_idx_arr)s;
     _numSrcRegs = 0;
     _numDestRegs = 0;
-    _numFPDestRegs = 0;
-    _numVecDestRegs = 0;
-    _numVecElemDestRegs = 0;
-    _numVecPredDestRegs = 0;
-    _numIntDestRegs = 0;
-    _numCCDestRegs = 0;
     %(set_dest_reg_idx)s;
     %(set_src_reg_idx)s;
 }
@@ -534,15 +510,9 @@ def template VMvWholeMicroConstructor {{
     %(set_reg_idx_arr)s;
     _numSrcRegs = 0;
     _numDestRegs = 0;
-    _numFPDestRegs = 0;
-    _numVecDestRegs = 0;
-    _numVecElemDestRegs = 0;
-    _numVecPredDestRegs = 0;
-    _numIntDestRegs = 0;
-    _numCCDestRegs = 0;
     setDestRegIdx(_numDestRegs++,
                   RegId(VecRegClass, _machInst.vd + _microIdx));
-    _numVecDestRegs++;
+    _numTypedDestRegs[VecRegClass]++;
     setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _machInst.vs2 + _microIdx));
 }
 

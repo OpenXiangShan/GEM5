@@ -318,15 +318,9 @@ class VldMvMicroInst : public RiscvMicroInst
 
         _numSrcRegs = 0;
         _numDestRegs = 0;
-        _numFPDestRegs = 0;
-        _numVecDestRegs = 0;
-        _numVecElemDestRegs = 0;
-        _numVecPredDestRegs = 0;
-        _numIntDestRegs = 0;
-        _numCCDestRegs = 0;
 
         setDestRegIdx(_numDestRegs++, RegId(VecRegClass, _dstReg));
-        _numVecDestRegs++;
+        _numTypedDestRegs[VecRegClass]++;
         for (size_t i = 0; i < _numSrcs; i++) {
             setSrcRegIdx(_numSrcRegs++,
                          RegId(VecRegClass, VecMemInternalReg0 + i));
@@ -355,17 +349,11 @@ class VstMvMicroInst : public RiscvMicroInst
 
         _numSrcRegs = 0;
         _numDestRegs = 0;
-        _numFPDestRegs = 0;
-        _numVecDestRegs = 0;
-        _numVecElemDestRegs = 0;
-        _numVecPredDestRegs = 0;
-        _numIntDestRegs = 0;
-        _numCCDestRegs = 0;
 
         for (uint8_t i = 0; i < _numDsts; i++) {
             setDestRegIdx(_numDestRegs++,
                           RegId(VecRegClass, VecMemInternalReg0 + i));
-            _numVecDestRegs++;
+            _numTypedDestRegs[VecRegClass]++;
         }
         setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _srcReg));
         this->flags[IsVector] = true;
@@ -396,15 +384,9 @@ class VMaskMvMicroInst : public VectorArithMicroInst
 
         _numSrcRegs = 0;
         _numDestRegs = 0;
-        _numFPDestRegs = 0;
-        _numVecDestRegs = 0;
-        _numVecElemDestRegs = 0;
-        _numVecPredDestRegs = 0;
-        _numIntDestRegs = 0;
-        _numCCDestRegs = 0;
 
         setDestRegIdx(_numDestRegs++, RegId(VecRegClass, _dstReg));
-        _numVecDestRegs++;
+        _numTypedDestRegs[VecRegClass]++;
         for (uint8_t i=0; i<_numSrcs; i++) {
             setSrcRegIdx(_numSrcRegs++,
                         RegId(VecRegClass, VecMemInternalReg0 + i));
@@ -413,13 +395,14 @@ class VMaskMvMicroInst : public VectorArithMicroInst
 
     Fault execute(ExecContext* xc, Trace::InstRecord* traceData)
             const override {
-        RiscvISA::vreg_t tmp_d0 = xc->getWritableVecRegOperand(this, 0);
+        vreg_t tmp_d0 = *(vreg_t *)xc->getWritableRegOperand(this, 0);
         auto Vd = tmp_d0.as<uint8_t>();
         memset(Vd, 0, vlenb);
         constexpr uint8_t bit_offset = VLEN / (8 * sizeof(ElemType));
         size_t bit_cnt = 0;
         for (uint8_t i = 0; i < this->_numSrcRegs; i++) {
-            RiscvISA::vreg_t tmp_s = xc->readVecRegOperand(this, i);
+            vreg_t tmp_s;
+            xc->getRegOperand(this, i, &tmp_s);
             auto s = tmp_s.as<uint8_t>();
             if constexpr (bit_offset < 8) {
                 constexpr uint8_t shift_period = 8 / bit_offset;
@@ -432,7 +415,7 @@ class VMaskMvMicroInst : public VectorArithMicroInst
                 memcpy(Vd + i * byte_offset, s, byte_offset);
             }
         }
-        xc->setVecRegOperand(this, 0, tmp_d0);
+        xc->setRegOperand(this, 0, &tmp_d0);
         if (traceData)
             traceData->setData(tmp_d0);
         return NoFault;

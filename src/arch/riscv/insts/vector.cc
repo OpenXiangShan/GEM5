@@ -169,16 +169,17 @@ std::string VsWholeMacroInst::generateDisassembly(Addr pc,
 Fault
 VldMvMicroInst::execute(ExecContext *xc, Trace::InstRecord *traceData) const
 {
-    vreg_t tmp_d0 = xc->getWritableVecRegOperand(this, 0);
+    vreg_t tmp_d0 = *(vreg_t *)xc->getWritableRegOperand(this, 0);
     auto Vd = tmp_d0.as<uint8_t>();
 
     for (size_t i = 0; i < this->_numSrcRegs; i++) {
-        vreg_t tmp_s = xc->readVecRegOperand(this, i);
+        vreg_t tmp_s;
+        xc->getRegOperand(this, i, &tmp_s);
         auto s = tmp_s.as<uint8_t>();
         memcpy(Vd + i * CachelineSizeByte, s, CachelineSizeByte);
     }
 
-    xc->setVecRegOperand(this, 0, tmp_d0);
+    xc->setRegOperand(this, 0, &tmp_d0);
     if (traceData)
         traceData->setData(tmp_d0);
     return NoFault;
@@ -218,14 +219,15 @@ VMvWholeMicroInst::generateDisassembly(Addr pc,
 Fault
 VstMvMicroInst::execute(ExecContext *xc, Trace::InstRecord *traceData) const
 {
-    vreg_t tmp_s0 = xc->readVecRegOperand(this, 0);
+    vreg_t tmp_s0;
+    xc->getRegOperand(this, 0, &tmp_s0);
     auto Vs = tmp_s0.as<uint8_t>();
 
     for (int i = 0; i < this->_numDestRegs; i++) {
-        vreg_t tmp_d = xc->getWritableVecRegOperand(this, i);
+        vreg_t tmp_d = *(vreg_t *)xc->getWritableRegOperand(this, i);
         auto d = tmp_d.as<uint8_t>();
         memcpy(d, Vs + i * CachelineSizeByte, CachelineSizeByte);
-        xc->setVecRegOperand(this, i, tmp_d);
+        xc->setRegOperand(this, i, &tmp_d);
     }
     if (traceData)
         traceData->setData(tmp_s0);

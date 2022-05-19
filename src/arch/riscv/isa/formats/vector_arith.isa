@@ -30,7 +30,7 @@
 let {{
     def setDestWrapper(destRegId):
         return "setDestRegIdx(_numDestRegs++, " + destRegId + ");\n" + \
-               "_numVecDestRegs++;\n"
+               "_numTypedDestRegs[VecRegClass]++;\n"
     def setSrcWrapper(srcRegId):
         return "setSrcRegIdx(_numSrcRegs++, " + srcRegId + ");\n"
     def setSrcVm():
@@ -41,7 +41,8 @@ let {{
             [[maybe_unused]] RiscvISA::vreg_t tmp_v0;
             [[maybe_unused]] uint8_t* v0;
             if(!machInst.vm) {
-                tmp_v0 = xc->readVecRegOperand(this, _numSrcRegs - 1);
+                vreg_t tmp_v0;
+                xc->getRegOperand(this, _numSrcRegs-1, &tmp_v0);
                 v0 = tmp_v0.as<uint8_t>();
             }
         '''
