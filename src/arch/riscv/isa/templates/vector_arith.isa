@@ -25,6 +25,14 @@ borrow_out(Type a, Type b, bool borrow_in = false) {
         : (*reinterpret_cast<TypeU*>(&a) <  *reinterpret_cast<TypeU*>(&b));
 }
 
+template<typename Type> struct double_width;
+template<> struct double_width<uint8_t>     { using type = uint16_t;};
+template<> struct double_width<uint16_t>    { using type = uint32_t;};
+template<> struct double_width<uint32_t>    { using type = uint64_t;};
+template<> struct double_width<int8_t>      { using type = int16_t; };
+template<> struct double_width<int16_t>     { using type = int32_t; };
+template<> struct double_width<int32_t>     { using type = int64_t; };
+
 }};
 
 def template VectorIntMacroDeclare {{
@@ -133,6 +141,131 @@ case 0b000: return new %(class_name)s<uint8_t>(machInst);
 case 0b001: return new %(class_name)s<uint16_t>(machInst);
 case 0b010: return new %(class_name)s<uint32_t>(machInst);
 case 0b011: return new %(class_name)s<uint64_t>(machInst);
+default: GEM5_UNREACHABLE;
+}
+
+}};
+
+def template VectorIntWideningMacroDeclare {{
+
+template<typename ElemType>
+class %(class_name)s : public %(base_class)s {
+private:
+    %(reg_idx_arr_decl)s;
+public:
+    %(class_name)s(ExtMachInst _machInst);
+    using %(base_class)s::generateDisassembly;
+};
+
+}};
+
+def template VectorIntWideningMacroConstructor {{
+
+template<typename ElemType>
+%(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
+    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
+{
+    %(set_reg_idx_arr)s;
+    %(constructor)s;
+    const int64_t vlmul = vtype_vlmul(_machInst.vtype8);
+    // Todo: move to Decode template
+    panic_if(vlmul == 3, "LMUL=8 is illegal for widening inst");
+    // when LMUL setted as m1, need to split to 2 micro insts
+    const uint32_t num_microops = 1 << std::max<int64_t>(0, vlmul + 1);
+
+    int32_t tmp_vl = this->vl;
+    const int32_t t_micro_vlmax = vtype_VLMAX(_machInst.vtype8, true);
+    const int32_t micro_vlmax = vlmul < 0 ? t_micro_vlmax : t_micro_vlmax / 2;
+    int32_t micro_vl = std::min(tmp_vl, micro_vlmax);
+    StaticInstPtr microop;
+
+    // Allow one empty micro op to hold IsLastMicroop flag
+    for (int i = 0; i < num_microops && micro_vl >= 0; ++i) {
+        microop = new %(class_name)sMicro<ElemType>(_machInst, micro_vl, i);
+        microop->setDelayedCommit();
+        this->microops.push_back(microop);
+        micro_vl = std::min(tmp_vl -= micro_vlmax, micro_vlmax);
+    }
+
+    this->microops.front()->setFirstMicroop();
+    this->microops.back()->setLastMicroop();
+}
+
+}};
+
+def template VectorIntWideningMicroDeclare {{
+
+template<typename ElemType>
+class %(class_name)s : public %(base_class)s
+{
+private:
+    RegId srcRegIdxArr[4];
+    RegId destRegIdxArr[1];
+    bool vm;
+public:
+    %(class_name)s(ExtMachInst _machInst, uint8_t _microVl,
+                   uint8_t _microIdx);
+    Fault execute(ExecContext* xc, Trace::InstRecord* traceData)const override;
+    using %(base_class)s::generateDisassembly;
+};
+
+}};
+
+def template VectorIntWideningMicroConstructor {{
+
+template<typename ElemType>
+%(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst,
+        uint8_t _microVl, uint8_t _microIdx)
+    : %(base_class)s("%(mnemonic)s", _machInst,
+                     VectorDummyOp, _microVl, _microIdx)
+{
+    this->vm = _machInst.vm;
+    %(set_reg_idx_arr)s;
+    _numSrcRegs = 0;
+    _numDestRegs = 0;
+    %(set_dest_reg_idx)s;
+    %(set_src_reg_idx)s;
+}
+
+}};
+
+def template VectorIntWideningMicroExecute {{
+
+template <typename ElemType>
+Fault
+%(class_name)s<ElemType>::execute(ExecContext* xc,
+                                  Trace::InstRecord* traceData) const
+{
+    using vu [[maybe_unused]] = std::make_unsigned_t<ElemType>;
+    using vi [[maybe_unused]] = std::make_signed_t<ElemType>;
+    using vwu [[maybe_unused]] = typename double_width<vu>::type;
+    using vwi [[maybe_unused]] = typename double_width<vi>::type;
+
+    if (machInst.vill)
+        return std::make_shared<IllegalInstFault>("VILL is set", machInst);
+
+    const int64_t vlmul = vtype_vlmul(machInst.vtype8);
+    const int32_t t_micro_vlmax = vtype_VLMAX(machInst.vtype8, true);
+    const int32_t micro_vlmax = vlmul < 0 ? t_micro_vlmax : t_micro_vlmax / 2;
+    [[maybe_unused]] const size_t offset =
+        (this->microIdx % 2 == 0) ? 0 : micro_vlmax;
+
+    %(op_decl)s;
+    %(op_rd)s;
+    %(vm_decl_rd)s;
+    %(code)s;
+    %(op_wb)s;
+    return NoFault;
+}
+
+}};
+
+def template VectorIntWideningDecodeBlock {{
+
+switch(machInst.vtype8.vsew) {
+case 0b000: return new %(class_name)s<uint8_t>(machInst);
+case 0b001: return new %(class_name)s<uint16_t>(machInst);
+case 0b010: return new %(class_name)s<uint32_t>(machInst);
 default: GEM5_UNREACHABLE;
 }
 

@@ -42,6 +42,8 @@ def operand_types {{
 
     'vi' : 'vi',
     'vu' : 'vu',
+    'vwi': 'vwi',
+    'vwu': 'vwu',
     'vc' : 'RiscvISA::VecRegContainer'
 }};
 

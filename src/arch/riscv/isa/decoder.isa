@@ -2195,6 +2195,63 @@ decode QUADRANT default Unknown::unknown() {
                         Rd_vu = Vs2_vu[0];
                     }}, OPMVV, VectorDummyOp);
                 }
+                format VectorIntWideningFormat {
+                    0x30: vwaddu_vv({{
+                        Vd_vwu[i] = vwu(Vs2_vu[i + offset])
+                                + vwu(Vs1_vu[i + offset]);
+                    }}, OPMVV, VectorDummyOp);
+                    0x31: vwadd_vv({{
+                        Vd_vwi[i] = vwi(Vs2_vi[i + offset])
+                                + vwi(Vs1_vi[i + offset]);
+                    }}, OPMVV, VectorDummyOp);
+                    0x32: vwsubu_vv({{
+                        Vd_vwu[i] = vwu(Vs2_vu[i + offset])
+                                - vwu(Vs1_vu[i + offset]);
+                    }}, OPMVV, VectorDummyOp);
+                    0x33: vwsub_vv({{
+                        Vd_vwi[i] = vwi(Vs2_vi[i + offset])
+                                - vwi(Vs1_vi[i + offset]);
+                    }}, OPMVV, VectorDummyOp);
+                    0x34: vwaddu_wv({{
+                        Vd_vwu[i] = Vs2_vwu[i] + vwu(Vs1_vu[i + offset]);
+                    }}, OPMVV, VectorDummyOp);
+                    0x35: vwadd_wv({{
+                        Vd_vwi[i] = Vs2_vwi[i] + vwi(Vs1_vi[i + offset]);
+                    }}, OPMVV, VectorDummyOp);
+                    0x36: vwsubu_wv({{
+                        Vd_vwu[i] = Vs2_vwu[i] - vwu(Vs1_vu[i + offset]);
+                    }}, OPMVV, VectorDummyOp);
+                    0x37: vwsub_wv({{
+                        Vd_vwi[i] = Vs2_vwi[i] - vwi(Vs1_vi[i + offset]);
+                    }}, OPMVV, VectorDummyOp);
+                    0x38: vwmulu_vv({{
+                        Vd_vwu[i] = vwu(Vs2_vu[i + offset])
+                                * vwu(Vs1_vu[i + offset]);
+                    }}, OPMVV, VectorDummyOp);
+                    0x3a: vwmulsu_vv({{
+                        Vd_vwi[i] = vwi(Vs2_vi[i + offset])
+                                * vwu(Vs1_vu[i + offset]);
+                    }}, OPMVV, VectorDummyOp);
+                    0x3b: vwmul_vv({{
+                        Vd_vwi[i] = vwi(Vs2_vi[i + offset])
+                                * vwi(Vs1_vi[i + offset]);
+                    }}, OPMVV, VectorDummyOp);
+                    0x3c: vwmaccu_vv({{
+                        Vd_vwu[i] = vwu(Vs1_vu[i + offset])
+                                * vwu(Vs2_vu[i + offset])
+                                + Vs3_vwu[i];
+                    }}, OPMVV, VectorDummyOp);
+                    0x3d: vwmacc_vv({{
+                        Vd_vwi[i] = vwi(Vs1_vi[i + offset])
+                                * vwi(Vs2_vi[i + offset])
+                                + Vs3_vwi[i];
+                    }}, OPMVV, VectorDummyOp);
+                    0x3f: vwmaccsu_vv({{
+                        Vd_vwi[i] = vwi(Vs1_vi[i + offset])
+                                * vwu(Vs2_vu[i + offset])
+                                + Vs3_vwi[i];
+                    }}, OPMVV, VectorDummyOp);
+                }
             }
             // OPIVI
             0x3: decode VFUNCT6 {
@@ -2523,6 +2580,60 @@ decode QUADRANT default Unknown::unknown() {
                                            ftype<et>(Vs2_vu[i]));
                         Vd_vu[i] = fd.v;
                     }}, OPFVF, VectorDummyOp);
+                }
+            }
+            // OPMVX
+            0x6: decode VFUNCT6 {
+                format VectorIntWideningFormat {
+                    0x30: vwaddu_vx({{
+                        Vd_vwu[i] = vwu(Vs2_vu[i + offset]) + vwu(Rs1_vu);
+                    }}, OPMVX, VectorDummyOp);
+                    0x31: vwadd_vx({{
+                        Vd_vwi[i] = vwi(Vs2_vi[i + offset]) + vwi(Rs1_vi);
+                    }}, OPMVX, VectorDummyOp);
+                    0x32: vwsubu_vx({{
+                        Vd_vwu[i] = vwu(Vs2_vu[i + offset]) - vwu(Rs1_vu);
+                    }}, OPMVX, VectorDummyOp);
+                    0x33: vwsub_vx({{
+                        Vd_vwi[i] = vwi(Vs2_vi[i + offset]) - vwi(Rs1_vi);
+                    }}, OPMVX, VectorDummyOp);
+                    0x34: vwaddu_wx({{
+                        Vd_vwu[i] = Vs2_vwu[i] + vwu(Rs1_vu);
+                    }}, OPMVX, VectorDummyOp);
+                    0x35: vwadd_wx({{
+                        Vd_vwi[i] = Vs2_vwi[i] + vwi(Rs1_vi);
+                    }}, OPMVX, VectorDummyOp);
+                    0x36: vwsubu_wx({{
+                        Vd_vwu[i] = Vs2_vwu[i] - vwu(Rs1_vu);
+                    }}, OPMVX, VectorDummyOp);
+                    0x37: vwsub_wx({{
+                        Vd_vwi[i] = Vs2_vwi[i] - vwi(Rs1_vi);
+                    }}, OPMVX, VectorDummyOp);
+                    0x38: vwmulu_vx({{
+                        Vd_vwu[i] = vwu(Vs2_vu[i + offset]) * vwu(Rs1_vu);
+                    }}, OPMVX, VectorDummyOp);
+                    0x3a: vwmulsu_vx({{
+                        Vd_vwi[i] = vwi(Vs2_vi[i + offset]) * vwu(Rs1_vu);
+                    }}, OPMVX, VectorDummyOp);
+                    0x3b: vwmul_vx({{
+                        Vd_vwi[i] = vwi(Vs2_vi[i + offset]) * vwi(Rs1_vi);
+                    }}, OPMVX, VectorDummyOp);
+                    0x3c: vwmaccu_vx({{
+                        Vd_vwu[i] = vwu(Rs1_vu) * vwu(Vs2_vu[i + offset])
+                                + Vs3_vwu[i];
+                    }}, OPMVX, VectorDummyOp);
+                    0x3d: vwmacc_vx({{
+                        Vd_vwi[i] = vwi(Rs1_vi) * vwi(Vs2_vi[i + offset])
+                                + Vs3_vwi[i];
+                    }}, OPMVX, VectorDummyOp);
+                    0x3e: vwmaccus_vx({{
+                        Vd_vwi[i] = vwu(Rs1_vu) * vwi(Vs2_vi[i + offset])
+                                + Vs3_vwi[i];
+                    }}, OPMVX, VectorDummyOp);
+                    0x3f: vwmaccsu_vx({{
+                        Vd_vwi[i] = vwi(Rs1_vi) * vwu(Vs2_vu[i + offset])
+                                + Vs3_vwi[i];
+                    }}, OPMVX, VectorDummyOp);
                 }
             }
             0x7: decode BIT31 {
