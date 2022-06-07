@@ -343,6 +343,26 @@ bool flt(FloatType a, FloatType b)
     GEM5_UNREACHABLE;
 }
 
+template<typename FloatType>
+FloatType fmadd(FloatType a, FloatType b, FloatType c)
+{
+    if constexpr(std::is_same_v<float32_t, FloatType>)
+        return f32_mulAdd(a, b, c);
+    else if constexpr(std::is_same_v<float64_t, FloatType>)
+        return f64_mulAdd(a, b, c);
+    GEM5_UNREACHABLE;
+}
+
+template<typename FloatType>
+FloatType fneg(FloatType a)
+{
+    if constexpr(std::is_same_v<float32_t, FloatType>)
+        return f32(a.v ^ uint32_t(mask(31, 31)));
+    else if constexpr(std::is_same_v<float64_t, FloatType>)
+        return f64(a.v ^ mask(63, 63));
+    GEM5_UNREACHABLE;
+}
+
 } // namespace RiscvISA
 } // namespace gem5
 

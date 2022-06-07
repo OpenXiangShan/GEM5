@@ -261,7 +261,10 @@ def format VectorFloatFormat(code, category, *flags) {{
                         flags)
     inst_name, inst_suffix = name.split("_", maxsplit=1)
     v0_required = inst_name not in ["vfmv"]
-    mask_cond = v0_required and (inst_suffix not in ['vvm', 'vxm', 'vim'])
+    vs3_required = inst_name in [
+        "vfmadd", "vfnmadd", "vfmsub", "vfnmsub",
+        "vfmacc", "vfnmacc", "vfmsac", "vfnmsac"]
+    mask_cond = v0_required
     need_elem_idx = mask_cond or code.find("ei") != -1
 
     dest_reg_id = "RegId(VecRegClass, _machInst.vd + _microIdx)"
@@ -272,13 +275,16 @@ def format VectorFloatFormat(code, category, *flags) {{
         src1_reg_id = "RegId(FloatRegClass, _machInst.rs1)"
     else:
         error("not supported category for VectorFloatFormat: %s" % category)
-    src2RegId = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
+    src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
+    src3_reg_id = "RegId(VecRegClass, _machInst.vs3 + _microIdx)"
 
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
 
     set_src_reg_idx = ""
     set_src_reg_idx += setSrcWrapper(src1_reg_id)
-    set_src_reg_idx += setSrcWrapper(src2RegId)
+    set_src_reg_idx += setSrcWrapper(src2_reg_id)
+    if vs3_required:
+        set_src_reg_idx += setSrcWrapper(src3_reg_id)
     if v0_required:
         set_src_reg_idx += setSrcVm()
     # code
