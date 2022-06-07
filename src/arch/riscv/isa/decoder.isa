@@ -2711,6 +2711,66 @@ decode QUADRANT default Unknown::unknown() {
                         Vd_vu[i] = fd.v;
                     }}, OPFVF, VectorDummyOp);
                 }
+                format VectorFloatWideningFormat {
+                    0x30: vfwadd_vf({{
+                        auto fd = fadd<ewt>(
+                            fwiden(ftype<et>(Vs2_vu[i + offset])),
+                            fwiden(ftype<et>((vu)Fs1_bits)));
+                        Vd_vwu[i] = fd.v;
+                    }}, OPFVF, VectorDummyOp);
+                    0x32: vfwsub_vf({{
+                        auto fd = fsub<ewt>(
+                            fwiden(ftype<et>(Vs2_vu[i + offset])),
+                            fwiden(ftype<et>((vu)Fs1_bits)));
+                        Vd_vwu[i] = fd.v;
+                    }}, OPFVF, VectorDummyOp);
+                    0x34: vfwadd_wf({{
+                        auto fd = fadd<ewt>(
+                            ftype<ewt>(Vs2_vwu[i]),
+                            fwiden(ftype<et>((vu)Fs1_bits)));
+                        Vd_vwu[i] = fd.v;
+                    }}, OPFVF, VectorDummyOp);
+                    0x36: vfwsub_wf({{
+                        auto fd = fsub<ewt>(
+                            ftype<ewt>(Vs2_vwu[i]),
+                            fwiden(ftype<et>((vu)Fs1_bits)));
+                        Vd_vwu[i] = fd.v;
+                    }}, OPFVF, VectorDummyOp);
+                    0x38: vfwmul_vf({{
+                        auto fd = fmul<ewt>(
+                            fwiden(ftype<et>(Vs2_vu[i + offset])),
+                            fwiden(ftype<et>((vu)Fs1_bits)));
+                        Vd_vwu[i] = fd.v;
+                    }}, OPFVF, VectorDummyOp);
+                    0x3c: vfwmacc_vf({{
+                        auto fd = fmadd<ewt>(
+                            fwiden(ftype<et>((vu)Fs1_bits)),
+                            fwiden(ftype<et>(Vs2_vu[i + offset])),
+                            ftype<ewt>(Vs3_vwu[i]));
+                        Vd_vwu[i] = fd.v;
+                    }}, OPFVF, VectorDummyOp);
+                    0x3d: vfwnmacc_vf({{
+                        auto fd = fmadd<ewt>(
+                            fwiden(fneg(ftype<et>((vu)Fs1_bits))),
+                            fwiden(ftype<et>(Vs2_vu[i + offset])),
+                            fneg(ftype<ewt>(Vs3_vwu[i])));
+                        Vd_vwu[i] = fd.v;
+                    }}, OPFVF, VectorDummyOp);
+                    0x3e: vfwmsac_vf({{
+                        auto fd = fmadd<ewt>(
+                            fwiden(ftype<et>((vu)Fs1_bits)),
+                            fwiden(ftype<et>(Vs2_vu[i + offset])),
+                            fneg(ftype<ewt>(Vs3_vwu[i])));
+                        Vd_vwu[i] = fd.v;
+                    }}, OPFVF, VectorDummyOp);
+                    0x3f: vfwnmsac_vf({{
+                        auto fd = fmadd<ewt>(
+                            fwiden(fneg(ftype<et>((vu)Fs1_bits))),
+                            fwiden(ftype<et>(Vs2_vu[i + offset])),
+                            ftype<ewt>(Vs3_vwu[i]));
+                        Vd_vwu[i] = fd.v;
+                    }}, OPFVF, VectorDummyOp);
+                }
             }
             // OPMVX
             0x6: decode VFUNCT6 {

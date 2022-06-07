@@ -333,9 +333,7 @@ def format VectorFloatWideningFormat(code, category, *flags) {{
     if category in ["OPFVV"]:
         src1_reg_id = "RegId(VecRegClass, _machInst.vs1 + _microIdx / 2)"
     elif category in ["OPFVF"]:
-        src1_reg_id = "RegId(IntRegClass, _machInst.rs1)"
-    elif category == "OPIVI":
-        pass
+        src1_reg_id = "RegId(FloatRegClass, _machInst.rs1)"
     else:
         error("not supported category for VectorFloatFormat: %s" % category)
     src2_reg_id = ""
