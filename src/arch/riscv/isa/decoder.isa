@@ -2652,10 +2652,13 @@ decode QUADRANT default Unknown::unknown() {
                                              ftype<et>((vu)Fs1_bits),
                                              false, true).v;
                     }}, OPFVF, VectorDummyOp);
-                    0x17: vfmerge_vf({{
-                        Vd_vu[i] = VFMERGE(ftype<et>((vu)Fs1_bits),
-                                           ftype<et>(Vs2_vu[i])).v;
-                    }}, OPFVF, VectorDummyOp);
+                    0x17: decode VM {
+                        0x0: vfmerge_vfm({{
+                            Vd_vu[i] = elem_mask(v0, ei)
+                                    ? ftype<et>((vu)Fs1_bits).v
+                                    : Vs2_vu[i];
+                        }}, OPFVF, VectorDummyOp);
+                    }
                 }
                 format VectorFloatMaskFormat {
                     0x18: vmfeq_vf({{

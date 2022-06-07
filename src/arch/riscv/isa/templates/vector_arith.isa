@@ -1,7 +1,5 @@
 output header {{
 
-#define VFMERGE(fs1, fs2) ((elem_mask(v0, ei)) ? (fs1) : (fs2))
-
 #define ASSIGN_VD_BIT(idx, bit) \
     ((Vd[(idx)/8] & ~(1 << (idx)%8)) | ((bit) << (idx)%8))
 

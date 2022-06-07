@@ -264,7 +264,7 @@ def format VectorFloatFormat(code, category, *flags) {{
     vs3_required = inst_name in [
         "vfmadd", "vfnmadd", "vfmsub", "vfnmsub",
         "vfmacc", "vfnmacc", "vfmsac", "vfnmsac"]
-    mask_cond = v0_required
+    mask_cond = v0_required and (inst_suffix not in ['vvm', 'vfm'])
     need_elem_idx = mask_cond or code.find("ei") != -1
 
     dest_reg_id = "RegId(VecRegClass, _machInst.vd + _microIdx)"
