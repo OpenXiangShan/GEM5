@@ -2196,7 +2196,7 @@ decode QUADRANT default Unknown::unknown() {
                                     ftype<et>(Vs1_vu[i])));
                     }}, OPFVV, VectorDummyOp);
                 }
-                format VectorFloatFormat{
+                format VectorFloatFormat {
                     0x20: vfdiv_vv({{
                         auto fd = fdiv<et>(ftype<et>(Vs2_vu[i]),
                                            ftype<et>(Vs1_vu[i]));
@@ -2254,6 +2254,66 @@ decode QUADRANT default Unknown::unknown() {
                                             ftype<et>(Vs2_vu[i]),
                                             ftype<et>(Vs3_vu[i]));
                         Vd_vu[i] = fd.v;
+                    }}, OPFVV, VectorDummyOp);
+                }
+                format VectorFloatWideningFormat {
+                    0x30: vfwadd_vv({{
+                        auto fd = fadd<ewt>(
+                            fwiden(ftype<et>(Vs2_vu[i + offset])),
+                            fwiden(ftype<et>(Vs1_vu[i + offset])));
+                        Vd_vwu[i] = fd.v;
+                    }}, OPFVV, VectorDummyOp);
+                    0x32: vfwsub_vv({{
+                        auto fd = fsub<ewt>(
+                            fwiden(ftype<et>(Vs2_vu[i + offset])),
+                            fwiden(ftype<et>(Vs1_vu[i + offset])));
+                        Vd_vwu[i] = fd.v;
+                    }}, OPFVV, VectorDummyOp);
+                    0x34: vfwadd_wv({{
+                        auto fd = fadd<ewt>(
+                            ftype<ewt>(Vs2_vwu[i]),
+                            fwiden(ftype<et>(Vs1_vu[i + offset])));
+                        Vd_vwu[i] = fd.v;
+                    }}, OPFVV, VectorDummyOp);
+                    0x36: vfwsub_wv({{
+                        auto fd = fsub<ewt>(
+                            ftype<ewt>(Vs2_vwu[i]),
+                            fwiden(ftype<et>(Vs1_vu[i + offset])));
+                        Vd_vwu[i] = fd.v;
+                    }}, OPFVV, VectorDummyOp);
+                    0x38: vfwmul_vv({{
+                        auto fd = fmul<ewt>(
+                            fwiden(ftype<et>(Vs2_vu[i + offset])),
+                            fwiden(ftype<et>(Vs1_vu[i + offset])));
+                        Vd_vwu[i] = fd.v;
+                    }}, OPFVV, VectorDummyOp);
+                    0x3c: vfwmacc_vv({{
+                        auto fd = fmadd<ewt>(
+                            fwiden(ftype<et>(Vs1_vu[i + offset])),
+                            fwiden(ftype<et>(Vs2_vu[i + offset])),
+                            ftype<ewt>(Vs3_vwu[i]));
+                        Vd_vwu[i] = fd.v;
+                    }}, OPFVV, VectorDummyOp);
+                    0x3d: vfwnmacc_vv({{
+                        auto fd = fmadd<ewt>(
+                            fwiden(fneg(ftype<et>(Vs1_vu[i + offset]))),
+                            fwiden(ftype<et>(Vs2_vu[i + offset])),
+                            fneg(ftype<ewt>(Vs3_vwu[i])));
+                        Vd_vwu[i] = fd.v;
+                    }}, OPFVV, VectorDummyOp);
+                    0x3e: vfwmsac_vv({{
+                        auto fd = fmadd<ewt>(
+                            fwiden(ftype<et>(Vs1_vu[i + offset])),
+                            fwiden(ftype<et>(Vs2_vu[i + offset])),
+                            fneg(ftype<ewt>(Vs3_vwu[i])));
+                        Vd_vwu[i] = fd.v;
+                    }}, OPFVV, VectorDummyOp);
+                    0x3f: vfwnmsac_vv({{
+                        auto fd = fmadd<ewt>(
+                            fwiden(fneg(ftype<et>(Vs1_vu[i + offset]))),
+                            fwiden(ftype<et>(Vs2_vu[i + offset])),
+                            ftype<ewt>(Vs3_vwu[i]));
+                        Vd_vwu[i] = fd.v;
                     }}, OPFVV, VectorDummyOp);
                 }
             }

@@ -223,6 +223,15 @@ elem_mask(const uint8_t* v0, const int index)
     return (v0[idx] >> pos) & 1;
 }
 
+template<typename Type> struct double_width;
+template<> struct double_width<uint8_t>     { using type = uint16_t;};
+template<> struct double_width<uint16_t>    { using type = uint32_t;};
+template<> struct double_width<uint32_t>    { using type = uint64_t;};
+template<> struct double_width<int8_t>      { using type = int16_t; };
+template<> struct double_width<int16_t>     { using type = int32_t; };
+template<> struct double_width<int32_t>     { using type = int64_t; };
+template<> struct double_width<float32_t>   { using type = float64_t;};
+
 template<typename FloatType, typename IntType = decltype(FloatType::v)>
 auto ftype(IntType a) -> FloatType
 {
@@ -360,6 +369,14 @@ FloatType fneg(FloatType a)
         return f32(a.v ^ uint32_t(mask(31, 31)));
     else if constexpr(std::is_same_v<float64_t, FloatType>)
         return f64(a.v ^ mask(63, 63));
+    GEM5_UNREACHABLE;
+}
+
+template<typename FT, typename WFT = typename double_width<FT>::type>
+WFT fwiden(FT a)
+{
+    if constexpr(std::is_same_v<float32_t, FT>)
+        return f32_to_f64(a);
     GEM5_UNREACHABLE;
 }
 
