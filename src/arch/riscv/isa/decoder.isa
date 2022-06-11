@@ -52,9 +52,13 @@ decode QUADRANT default Unknown::unknown() {
                 offset = CIMM3 << 3 | CIMM2 << 6;
             }}, {{
                 STATUS status = xc->readMiscReg(MISCREG_STATUS);
-                if (status.fs == FPUStatus::OFF)
+                if (status.fs == FPUStatus::OFF) {
                     return std::make_shared<IllegalInstFault>("FPU is off",
                                                                machInst);
+                } else {
+                    status.fs = 3;
+                    xc->setMiscReg(MISCREG_STATUS,status);
+                }
 
                 Fp2_bits = Mem;
             }}, {{
@@ -273,6 +277,14 @@ decode QUADRANT default Unknown::unknown() {
                          CIMM1 << 5 |
                          CIMM5<2:0> << 6;
             }}, {{
+                STATUS status = xc->readMiscReg(MISCREG_STATUS);
+                if (status.fs == FPUStatus::OFF) {
+                    return std::make_shared<IllegalInstFault>("FPU is off",
+                                                          machInst);
+                } else {
+                    status.fs = 3;
+                    xc->setMiscReg(MISCREG_STATUS,status);
+                }
                 Fc1_bits = Mem;
             }}, {{
                 EA = sp + offset;
@@ -411,18 +423,26 @@ decode QUADRANT default Unknown::unknown() {
                 }}, inst_flags=FloatMemReadOp);
                 0x2: flw({{
                     STATUS status = xc->readMiscReg(MISCREG_STATUS);
-                    if (status.fs == FPUStatus::OFF)
+                    if (status.fs == FPUStatus::OFF) {
                         return std::make_shared<IllegalInstFault>(
                                     "FPU is off", machInst);
+                    } else {
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS,status);
+                    }
                     freg_t fd;
                     fd = freg(f32(Mem_uw));
                     Fd_bits = fd.v;
                 }}, inst_flags=FloatMemReadOp);
                 0x3: fld({{
                     STATUS status = xc->readMiscReg(MISCREG_STATUS);
-                    if (status.fs == FPUStatus::OFF)
+                    if (status.fs == FPUStatus::OFF) {
                         return std::make_shared<IllegalInstFault>(
                                     "FPU is off", machInst);
+                    } else {
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS,status);
+                    }
                     freg_t fd;
                     fd = freg(f64(Mem));
                     Fd_bits = fd.v;

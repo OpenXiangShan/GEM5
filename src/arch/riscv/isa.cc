@@ -497,6 +497,17 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 setMiscRegNoEffect(misc_reg, mstatus);
             }
             break;
+            case MISCREG_FFLAGS:
+            case MISCREG_FRM:
+            {
+                DPRINTF(RiscvMisc, "Will set fs\n");
+                STATUS mstatus = readMiscRegNoEffect(MISCREG_STATUS);
+                mstatus.fs = 3;
+                mstatus.sd = 1;
+                setMiscRegNoEffect(MISCREG_STATUS, mstatus);
+                setMiscRegNoEffect(misc_reg, val);
+            }
+            break;
           default:
             setMiscRegNoEffect(misc_reg, val);
         }
