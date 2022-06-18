@@ -107,8 +107,10 @@ Fault
         v0 = tmp_v0.as<uint8_t>();
     }
 
-    Fault fault = readMemAtomicLE(xc, traceData, EA, Mem.as<uint64_t>()[0],
-                                  memAccessFlags);
+    uint32_t mem_size = width_EEW(machInst.width) / 8 * this->microVl;
+    const std::vector<bool> byte_enable(mem_size, true);
+    Fault fault = xc->readMem(EA, Mem.as<uint8_t>(), mem_size,
+                                memAccessFlags, byte_enable);
     if (fault != NoFault)
         return fault;
 
@@ -139,7 +141,10 @@ Fault
     %(op_rd)s;
     %(ea_code)s;
 
-    Fault fault = initiateMemRead(xc, traceData, EA, Mem, memAccessFlags);
+    uint32_t mem_size = width_EEW(this->machInst.width) / 8 * this->microVl;
+    const std::vector<bool> byte_enable(mem_size, true);
+    Fault fault = initiateMemRead(xc, EA, mem_size, memAccessFlags,
+                                    byte_enable);
     return fault;
 }
 
@@ -279,8 +284,10 @@ Fault
     %(op_rd)s;
     %(ea_code)s;
 
-    Fault fault = readMemAtomicLE(xc, traceData, EA, Mem.as<uint64_t>()[0],
-                                  memAccessFlags);
+    uint32_t mem_size = 0;
+    const std::vector<bool> byte_enable(mem_size, true);
+    Fault fault = xc->readMem(EA, Mem.as<uint8_t>(), mem_size,
+                                  memAccessFlags, byte_enable);
     if (fault != NoFault) return fault;
 
     size_t ei;
@@ -292,8 +299,8 @@ Fault
         }
     }
 
-    fault = writeMemAtomicLE(xc, traceData, Mem.as<uint64_t>()[0], EA,
-                             memAccessFlags, nullptr);
+    fault = xc->writeMem(Mem.as<uint8_t>(), mem_size, EA,
+                             memAccessFlags, nullptr, byte_enable);
     return fault;
 }
 
@@ -327,8 +334,10 @@ Fault
         }
     }
 
-    Fault fault = writeMemTimingLE(xc, traceData, Mem.as<uint64_t>()[0], EA,
-                                    memAccessFlags, nullptr);
+    uint32_t mem_size = width_EEW(this->machInst.width) / 8 * this->microVl;
+    const std::vector<bool> byte_enable(mem_size, true);
+    Fault fault = xc->writeMem(Mem.as<uint8_t>(), mem_size, EA,
+                                memAccessFlags, nullptr, byte_enable);
     return fault;
 }
 
