@@ -69,20 +69,25 @@ def format VectorIntFormat(code, category, *flags) {{
                         flags)
     inst_name, inst_suffix = name.split("_", maxsplit=1)
     v0_required = inst_name not in ["vmv"]
+    vs3_required = (inst_name.find("vmacc") != -1 or
+                    inst_name.find("vnmsac") != -1 or
+                    inst_name.find("vmadd") != -1 or
+                    inst_name.find("vnmsub") != -1)
     mask_cond = v0_required and (inst_suffix not in ['vvm', 'vxm', 'vim'])
     need_elem_idx = mask_cond or code.find("ei") != -1
 
     dest_reg_id = "RegId(VecRegClass, _machInst.vd + _microIdx)"
     src1_reg_id = ""
-    if category == "OPIVV":
+    if category in ["OPIVV", "OPMVV"]:
         src1_reg_id = "RegId(VecRegClass, _machInst.vs1 + _microIdx)"
-    elif category == "OPIVX":
+    elif category in ["OPIVX", "OPMVX"]:
         src1_reg_id = "RegId(IntRegClass, _machInst.rs1)"
     elif category == "OPIVI":
         pass
     else:
         error("not supported category for VectorIntFormat: %s" % category)
     src2RegId = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
+    src3_reg_id = "RegId(VecRegClass, _machInst.vs3 + _microIdx)"
 
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
 
@@ -90,6 +95,8 @@ def format VectorIntFormat(code, category, *flags) {{
     if category != "OPIVI":
         set_src_reg_idx += setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2RegId)
+    if vs3_required:
+        set_src_reg_idx += setSrcWrapper(src3_reg_id)
     if v0_required:
         set_src_reg_idx += setSrcVm()
 

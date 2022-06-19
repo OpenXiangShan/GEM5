@@ -2325,6 +2325,20 @@ decode QUADRANT default Unknown::unknown() {
                         Rd_vu = Vs2_vu[0];
                     }}, OPMVV, VectorDummyOp);
                 }
+                format VectorIntFormat {
+                    0x29: vmadd_vv({{
+                        Vd_vi[i] = Vs3_vi[i] * Vs1_vi[i] + Vs2_vi[i];
+                    }}, OPMVV, VectorDummyOp);
+                    0x2b: vnmsub_vv({{
+                        Vd_vi[i] = -(Vs3_vi[i] * Vs1_vi[i]) + Vs2_vi[i];
+                    }}, OPMVV, VectorDummyOp);
+                    0x2d: vmacc_vv({{
+                        Vd_vi[i] = Vs2_vi[i] * Vs1_vi[i] + Vs3_vi[i];
+                    }}, OPMVV, VectorDummyOp);
+                    0x2f: vnmsac_vv({{
+                        Vd_vi[i] = -(Vs2_vi[i] * Vs1_vi[i]) + Vs3_vi[i];
+                    }}, OPMVV, VectorDummyOp);
+                }
                 format VectorIntWideningFormat {
                     0x30: vwaddu_vv({{
                         Vd_vwu[i] = vwu(Vs2_vu[i + offset])
@@ -2825,6 +2839,20 @@ decode QUADRANT default Unknown::unknown() {
             }
             // OPMVX
             0x6: decode VFUNCT6 {
+                format VectorIntFormat {
+                    0x29: vmadd_vx({{
+                        Vd_vi[i] = Vs3_vi[i] * Rs1_vi + Vs2_vi[i];
+                    }}, OPMVX, VectorDummyOp);
+                    0x2b: vnmsub_vx({{
+                        Vd_vi[i] = -(Vs3_vi[i] * Rs1_vi) + Vs2_vi[i];
+                    }}, OPMVX, VectorDummyOp);
+                    0x2d: vmacc_vx({{
+                        Vd_vi[i] = Vs2_vi[i] * Rs1_vi + Vs3_vi[i];
+                    }}, OPMVX, VectorDummyOp);
+                    0x2f: vnmsac_vx({{
+                        Vd_vi[i] = -(Vs2_vi[i] * Rs1_vi) + Vs3_vi[i];
+                    }}, OPMVX, VectorDummyOp);
+                }
                 format VectorIntWideningFormat {
                     0x30: vwaddu_vx({{
                         Vd_vwu[i] = vwu(Vs2_vu[i + offset]) + vwu(Rs1_vu);

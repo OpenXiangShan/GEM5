@@ -284,7 +284,7 @@ Fault
     %(op_rd)s;
     %(ea_code)s;
 
-    uint32_t mem_size = 0;
+    uint32_t mem_size = width_EEW(this->machInst.width) / 8 * this->microVl;
     const std::vector<bool> byte_enable(mem_size, true);
     Fault fault = xc->readMem(EA, Mem.as<uint8_t>(), mem_size,
                                   memAccessFlags, byte_enable);
