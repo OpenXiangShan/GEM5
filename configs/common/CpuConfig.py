@@ -56,6 +56,9 @@ def config_etrace(cpu_cls, cpu_list, options):
             cpu.numROBEntries = 512;
             cpu.LQEntries = 128;
             cpu.SQEntries = 128;
+
+            if options.nemu_diff:
+                cpu.nemuDiff = True
     else:
         fatal("%s does not support data dependency tracing. Use a CPU model of"
               " type or inherited from DerivO3CPU.", cpu_cls)

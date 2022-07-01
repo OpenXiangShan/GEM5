@@ -70,6 +70,9 @@
 #endif
 #endif
 
+uint8_t *pmemStart;
+uint64_t pmemSize;
+
 namespace gem5
 {
 
@@ -451,6 +454,10 @@ PhysicalMemory::unserializeStore(CheckpointIn &cp)
     // we've already got the actual backing store mapped
     uint8_t* pmem = backingStore[store_id].pmem;
     AddrRange range = backingStore[store_id].range;
+
+    pmemStart = pmem;
+    pmemSize = range.size();
+    //Addr partSize = pmemSize;
 
     long range_size;
     UNSERIALIZE_SCALAR(range_size);

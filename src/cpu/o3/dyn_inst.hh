@@ -180,6 +180,7 @@ class DynInst : public ExecContext, public RefCounted
         HitExternalSnoop,
         EffAddrValid,
         RecordResult,
+        LockedWriteSuccess,
         Predicate,
         MemAccPredicate,
         PredTaken,
@@ -370,6 +371,10 @@ class DynInst : public ExecContext, public RefCounted
     /** Records changes to result? */
     void recordResult(bool f) { instFlags[RecordResult] = f; }
 
+    /** Is the locked write success */
+    bool lockedWriteSuccess() const { return instFlags[LockedWriteSuccess]; }
+    void lockedWriteSuccess(bool b) { instFlags[LockedWriteSuccess] = b; }
+
     /** Is the effective virtual address valid. */
     bool effAddrValid() const { return instFlags[EffAddrValid]; }
     void effAddrValid(bool b) { instFlags[EffAddrValid] = b; }
@@ -514,6 +519,12 @@ class DynInst : public ExecContext, public RefCounted
     void setPredTarg(const PCStateBase &pred_pc) { set(predPC, pred_pc); }
 
     const PCStateBase &readPredTarg() { return *predPC; }
+
+    /** Read the PC of this instruction. */
+    Addr instAddr() const { return pc->instAddr(); }
+
+    /** Read the PC of the next instruction. */
+    Addr nextInstAddr() const { return pc->nextInstAddr(); }
 
     /** Returns whether the instruction was predicted taken or not. */
     bool readPredTaken() { return instFlags[PredTaken]; }
@@ -704,6 +715,15 @@ class DynInst : public ExecContext, public RefCounted
         if (!instResult.empty()) {
             InstResult t = instResult.front();
             instResult.pop();
+            return t;
+        }
+        return dflt;
+    }
+
+    InstResult getResult(InstResult dflt = InstResult())
+    {
+        if (!instResult.empty()) {
+            InstResult t = instResult.front();
             return t;
         }
         return dflt;

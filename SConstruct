@@ -723,6 +723,8 @@ Build variables for {dir}:
 
     env.Append(CCFLAGS='$CCFLAGS_EXTRA')
     env.Append(LINKFLAGS='$LINKFLAGS_EXTRA')
+    env.Append(CPPDEFINES={
+    'REF_SO': '\\\"../riscv64-nemu-interpreter-so\\\"'})
 
     exports=['env', 'gem5py_env']
 

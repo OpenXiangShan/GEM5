@@ -179,6 +179,13 @@ def addNoISAOptions(parser):
         "Direct parameters of the root object are not accessible, "
         "only parameters of its children.")
 
+    # Nemu difftest option
+    parser.add_argument(
+        "--nemu-diff",
+        action="store_true",
+        help="use NEMU as ref to do difftest")
+
+
 # Add common options that assume a non-NULL ISA.
 
 

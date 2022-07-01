@@ -59,13 +59,38 @@ class PCStateBase : public Serializable
   protected:
     Addr _pc = 0;
     MicroPC _upc = 0;
+    Addr _npc = 0;
 
-    PCStateBase(const PCStateBase &other) : _pc(other._pc), _upc(other._upc) {}
+    PCStateBase(const PCStateBase &other) : _pc(other._pc),
+    _upc(other._upc),
+    _npc(other._npc) {}
     PCStateBase &operator=(const PCStateBase &other) = default;
     PCStateBase() {}
 
   public:
     virtual ~PCStateBase() = default;
+
+    /**
+     * Returns the memory address the bytes of this instruction came from.
+     *
+     * @return Memory address of the current instruction's encoding.
+     */
+    Addr
+    instAddr() const
+    {
+        return _pc;
+    }
+
+    /**
+     * Returns the memory address the bytes of the next instruction came from.
+     *
+     * @return Memory address of the next instruction's encoding.
+     */
+    Addr
+    nextInstAddr() const
+    {
+        return _npc;
+    }
 
     template<class Target>
     Target &
@@ -87,6 +112,7 @@ class PCStateBase : public Serializable
     {
         _pc = other._pc;
         _upc = other._upc;
+        _npc = other._npc;
     }
     void update(const PCStateBase *ptr) { update(*ptr); }
 
@@ -95,18 +121,7 @@ class PCStateBase : public Serializable
     virtual bool
     equals(const PCStateBase &other) const
     {
-        return _pc == other._pc && _upc == other._upc;
-    }
-
-    /**
-     * Returns the memory address of the instruction this PC points to.
-     *
-     * @return Memory address of the instruction this PC points to.
-     */
-    Addr
-    instAddr() const
-    {
-        return _pc;
+        return _pc == other._pc && _upc == other._upc && _npc == other._npc;
     }
 
     /**
@@ -134,6 +149,7 @@ class PCStateBase : public Serializable
     {
         SERIALIZE_SCALAR(_pc);
         SERIALIZE_SCALAR(_upc);
+        SERIALIZE_SCALAR(_npc);
     }
 
     void
@@ -141,6 +157,7 @@ class PCStateBase : public Serializable
     {
         UNSERIALIZE_SCALAR(_pc);
         UNSERIALIZE_SCALAR(_upc);
+        UNSERIALIZE_SCALAR(_npc);
     }
 };
 

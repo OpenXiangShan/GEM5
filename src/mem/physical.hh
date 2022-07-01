@@ -296,6 +296,8 @@ class PhysicalMemory : public Serializable
      */
     void unserializeStore(CheckpointIn &cp);
 
+    int nohypeNum;
+
 };
 
 } // namespace memory

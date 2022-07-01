@@ -52,6 +52,9 @@
 #include "arch/generic/pcstate.hh"
 #include "base/statistics.hh"
 #include "config/the_isa.hh"
+#include "cpu/activity.hh"
+#include "cpu/base.hh"
+#include "cpu/difftest.hh"
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/commit.hh"
 #include "cpu/o3/decode.hh"
@@ -64,8 +67,6 @@
 #include "cpu/o3/rob.hh"
 #include "cpu/o3/scoreboard.hh"
 #include "cpu/o3/thread_state.hh"
-#include "cpu/activity.hh"
-#include "cpu/base.hh"
 #include "cpu/simple_thread.hh"
 #include "cpu/timebuf.hh"
 #include "params/BaseO3CPU.hh"
@@ -337,6 +338,12 @@ class CPU : public BaseCPU
     /** Reads the commit PC state of a specific thread. */
     const PCStateBase &pcState(ThreadID tid);
 
+    /** Reads the commit PC of a specific thread. */
+    Addr instAddr(ThreadID tid);
+
+    /** Reads the next PC of a specific thread. */
+    Addr nextInstAddr(ThreadID tid);
+
     /** Initiates a squash of all in-flight instructions for a given
      * thread.  The source of the squash is an external update of
      * state through the TC.
@@ -371,6 +378,10 @@ class CPU : public BaseCPU
 
     /** Debug function to print all instructions on the list. */
     void dumpInsts();
+
+    RegVal readArchIntReg(int reg_idx, ThreadID tid);
+
+    RegVal readArchFloatReg(int reg_idx, ThreadID tid);
 
   public:
 #ifndef NDEBUG
@@ -620,6 +631,23 @@ class CPU : public BaseCPU
     // hardware transactional memory
     void htmSendAbortSignal(ThreadID tid, uint64_t htm_uid,
                             HtmFailureFaultCause cause) override;
+
+  private:
+    uint32_t diff_wdst[DIFFTEST_WIDTH];
+    uint64_t diff_wdata[DIFFTEST_WIDTH];
+    uint64_t diff_wpc[DIFFTEST_WIDTH];
+    uint64_t gem5_reg[DIFFTEST_NR_REG];
+    uint64_t nemu_reg[DIFFTEST_NR_REG];
+    DiffState diff;
+    NemuProxy* proxy;
+
+    bool enable_nemu_diff;
+    bool hasCommit{false};
+
+    void readGem5Regs();
+
+    std::pair<int, bool> diffWithNEMU(const DynInstPtr &inst);
+
 };
 
 } // namespace o3
