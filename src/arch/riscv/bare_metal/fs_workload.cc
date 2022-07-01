@@ -44,9 +44,18 @@ BareMetal::BareMetal(const Params &p) : Workload(p),
     _isBareMetal(p.bare_metal), _resetVect(p.reset_vect),
     bootloader(loader::createObjectFile(p.bootloader))
 {
-    fatal_if(!bootloader, "Could not load bootloader file %s.", p.bootloader);
-    _resetVect = bootloader->entryPoint();
-    bootloaderSymtab = bootloader->symtab();
+    if (!bootloader){
+        if (p.bootloader.empty()){
+            inform("No bootload provided\n");
+            _resetVect = 0x80000000;
+        } else {
+            panic("Could not load bootloader file %s.", p.bootloader);
+        }
+
+    }else{
+        _resetVect = bootloader->entryPoint();
+        bootloaderSymtab = bootloader -> symtab();
+    }
 }
 
 BareMetal::~BareMetal()
@@ -64,8 +73,13 @@ BareMetal::initState()
         tc->activate();
     }
 
-    warn_if(!bootloader->buildImage().write(system->physProxy),
+    if (bootloader){
+        warn_if(!bootloader->buildImage().write(system->physProxy),
             "Could not load sections to memory.");
+    }
+
+//    warn_if(!bootloader->buildImage().write(system->physProxy),
+  //          "Could not load sections to memory.");
 
     for (auto *tc: system->threads) {
         RiscvISA::Reset().invoke(tc);

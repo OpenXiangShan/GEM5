@@ -531,3 +531,7 @@ def addFSOptions(parser):
     # Debug option
     parser.add_argument("--wait-gdb", default=False, action='store_true',
                         help="Wait for remote GDB to connect.")
+    #add gcpt
+    parser.add_argument("--generic-rv-cpt", action= "store", type = str,
+                        default = None,
+                        help="The path of generic risc-v checkpoint")
