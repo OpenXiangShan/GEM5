@@ -2319,6 +2319,48 @@ decode QUADRANT default Unknown::unknown() {
             }
             // OPMVV
             0x2: decode VFUNCT6 {
+                format VectorReduceFormat {
+                    0x0: vredsum_vs({{
+                        Vd_vi[0] =
+                            reduce_loop(std::plus<vi>(), Vs1_vi, Vs2_vi);
+                    }}, OPMVV, VectorDummyOp);
+                    0x1: vredand_vs({{
+                        Vd_vi[0] =
+                            reduce_loop(std::bit_and<vi>(), Vs1_vi, Vs2_vi);
+                    }}, OPMVV, VectorDummyOp);
+                    0x2: vredor_vs({{
+                        Vd_vi[0] =
+                            reduce_loop(std::bit_or<vi>(), Vs1_vi, Vs2_vi);
+                    }}, OPMVV, VectorDummyOp);
+                    0x3: vredxor_vs({{
+                        Vd_vi[0] =
+                            reduce_loop(std::bit_xor<vi>(), Vs1_vi, Vs2_vi);
+                    }}, OPMVV, VectorDummyOp);
+                    0x4: vredminu_vs({{
+                        Vd_vu[0] =
+                            reduce_loop([](const vu& src1, const vu& src2) {
+                                return std::min<vu>(src1, src2);
+                            }, Vs1_vu, Vs2_vu);
+                    }}, OPMVV, VectorDummyOp);
+                    0x5: vredmin_vs({{
+                        Vd_vi[0] =
+                            reduce_loop([](const vi& src1, const vi& src2) {
+                                return std::min<vi>(src1, src2);
+                            }, Vs1_vi, Vs2_vi);
+                    }}, OPMVV, VectorDummyOp);
+                    0x6: vredmaxu_vs({{
+                        Vd_vu[0] =
+                            reduce_loop([](const vu& src1, const vu& src2) {
+                                return std::max<vu>(src1, src2);
+                            }, Vs1_vu, Vs2_vu);
+                    }}, OPMVV, VectorDummyOp);
+                    0x7: vredmax_vs({{
+                        Vd_vi[0] =
+                            reduce_loop([](const vi& src1, const vi& src2) {
+                                return std::max<vi>(src1, src2);
+                            }, Vs1_vi, Vs2_vi);
+                    }}, OPMVV, VectorDummyOp);
+                }
                 // VWXUNARY0
                 0x10: decode VS1 {
                     0x00: VectorNonSplitFormat::vmv_x_s({{

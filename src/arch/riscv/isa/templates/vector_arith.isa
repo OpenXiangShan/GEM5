@@ -747,3 +747,140 @@ Fault
 }
 
 }};
+
+def template VectorReduceMacroDeclare {{
+
+template<typename ElemType>
+class %(class_name)s : public %(base_class)s {
+private:
+    %(reg_idx_arr_decl)s;
+public:
+    %(class_name)s(ExtMachInst _machInst);
+    using %(base_class)s::generateDisassembly;
+};
+
+}};
+
+def template VectorReduceMacroConstructor {{
+
+template<typename ElemType>
+%(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
+    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
+{
+    %(set_reg_idx_arr)s;
+    %(constructor)s;
+    const uint32_t num_microops = vtype_regs_per_group(vtype);
+    int32_t tmp_vl = this->vl;
+    const int32_t micro_vlmax = vtype_VLMAX(_machInst.vtype8, true);
+    int32_t micro_vl = std::min(tmp_vl, micro_vlmax);
+    StaticInstPtr microop;
+
+    // Allow one empty micro op to hold IsLastMicroop flag
+    for (int i = 0; i < num_microops && micro_vl >= 0; ++i) {
+        microop = new %(class_name)sMicro<ElemType>(_machInst, micro_vl, i);
+        microop->setDelayedCommit();
+        this->microops.push_back(microop);
+        micro_vl = std::min(tmp_vl -= micro_vlmax, micro_vlmax);
+    }
+    this->microops.front()->setFirstMicroop();
+    this->microops.back()->setLastMicroop();
+}
+
+}};
+
+def template VectorReduceMicroDeclare {{
+
+template<typename ElemType>
+class %(class_name)s : public %(base_class)s
+{
+private:
+    // vs2, vs1, vd, vm
+    RegId srcRegIdxArr[4];
+    RegId destRegIdxArr[1];
+    bool vm;
+public:
+    %(class_name)s(ExtMachInst _machInst,
+                   uint8_t _microVl, uint8_t _microIdx);
+    Fault execute(ExecContext* xc, Trace::InstRecord* traceData)const override;
+    using %(base_class)s::generateDisassembly;
+};
+
+}};
+
+def template VectorReduceMicroConstructor {{
+
+template<typename ElemType>
+%(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst,
+                                         uint8_t _microVl, uint8_t _microIdx)
+: %(base_class)s("%(mnemonic)s", _machInst,
+                 VectorDummyOp, _microVl, _microIdx)
+{
+    this->vm = _machInst.vm;
+    %(set_reg_idx_arr)s;
+    _numSrcRegs = 0;
+    _numDestRegs = 0;
+    setDestRegIdx(_numDestRegs++, RegId(VecRegClass, _machInst.vd));
+    _numTypedDestRegs[VecRegClass]++;
+    ;
+    setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _machInst.vs1));
+    setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _machInst.vs2 + _microIdx));
+
+    // Treat tail undisturbed/agnostic as the same
+    // We always need old rd as src vreg
+    setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _machInst.vd));
+    if (!this->vm)
+        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, 0));
+}
+
+}};
+
+def template VectorReduceMicroExecute {{
+
+template <typename ElemType>
+Fault
+%(class_name)s<ElemType>::execute(ExecContext* xc,
+                                  Trace::InstRecord* traceData) const
+{
+    using vu [[maybe_unused]] = std::make_unsigned_t<ElemType>;
+    using vi [[maybe_unused]] = std::make_signed_t<ElemType>;
+    if (machInst.vill)
+        return std::make_shared<IllegalInstFault>("VILL is set", machInst);
+
+    %(op_decl)s;
+    %(op_rd)s;
+
+    [[maybe_unused]] RiscvISA::vreg_t old_vd;
+    [[maybe_unused]] ElemType* old_Vd = nullptr;
+    xc->getRegOperand(this, 2, &old_vd);
+    old_Vd = old_vd.as<ElemType>();
+
+    [[maybe_unused]] RiscvISA::vreg_t tmp_v0;
+    [[maybe_unused]] uint8_t* v0 = nullptr;
+    if (!this->vm) {
+        xc->getRegOperand(this, _numSrcRegs-1, &tmp_v0);
+        v0 = tmp_v0.as<uint8_t>();
+    }
+
+    // Treat tail undisturbed/agnostic as the same
+    memcpy(Vd, old_Vd, vlenb);
+
+    Vd[0] = this->microIdx != 0 ? old_Vd[0] : Vs1[0];
+
+    auto reduce_loop =
+        [&, this](const auto& f, const auto* _, const auto* vs2) {
+            ElemType tmp_val = Vd[0];
+            for (uint32_t i = 0; i < this->microVl; i++) {
+                uint32_t ei = i + vtype_VLMAX(vtype, true) * this->microIdx;
+                if (this->vm || elem_mask(v0, ei)) {
+                    tmp_val = f(tmp_val, Vs2[i]);
+                }
+            }
+            return tmp_val;
+        };
+
+    %(code)s;
+    %(op_wb)s;
+    return NoFault;
+}
+
+}};
