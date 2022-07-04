@@ -9,9 +9,6 @@
 #include "cpu/nemu_common.hh"
 #include "debug/ValueCommit.hh"
 
-#ifndef REF_SO
-# error Please define REF_SO to the path of NEMU shared object file
-#endif
 
 const char *reg_name[DIFFTEST_NR_REG] = {
   "$0", "ra", "sp", "gp", "tp", "t0", "t1", "t2",
@@ -30,13 +27,13 @@ const char *reg_name[DIFFTEST_NR_REG] = {
   "mtval", "stval", "mtvec", "stvec", "mode"
 };
 
-NemuProxy::NemuProxy(int coreid) {
+NemuProxy::NemuProxy(int coreid, const char *ref_so) {
 
-  void *handle = dlmopen(LM_ID_NEWLM, REF_SO, RTLD_LAZY | RTLD_DEEPBIND);
-  puts("Using " REF_SO " for difftest");
+  void *handle = dlmopen(LM_ID_NEWLM, ref_so, RTLD_LAZY | RTLD_DEEPBIND);
+  printf("Using %s for difftest", ref_so);
   if (!handle){
-    printf("%s\n", dlerror());
-    assert(0);
+      printf("%s\n", dlerror());
+      assert(0);
   }
 
   this->memcpy = (void (*)(paddr_t, void *, size_t, bool))
@@ -89,45 +86,4 @@ NemuProxy::NemuProxy(int coreid) {
   assert(nemu_init);
 
   nemu_init();
-}
-
-NemuProxy::NemuProxy(int tid, bool nohype) {
-  assert(nohype);
-  void *handle = dlmopen(LM_ID_NEWLM, REF_SO, RTLD_LAZY | RTLD_DEEPBIND);
-  puts("Using " REF_SO " for difftest");
-  if (!handle){
-    printf("%s\n", dlerror());
-    assert(0);
-  }
-
-  this->memcpy = (void (*)(paddr_t, void *, size_t, bool))
-  dlsym(handle, "difftest_memcpy");
-  assert(this->memcpy);
-
-  regcpy = (void (*)(void *, bool))dlsym(handle, "difftest_regcpy");
-  assert(regcpy);
-
-  csrcpy = (void (*)(void *, bool))dlsym(handle, "difftest_csrcpy");
-  assert(csrcpy);
-
-  uarchstatus_cpy = (void (*)(void *, bool))
-  dlsym(handle, "difftest_uarchstatus_cpy");
-  assert(uarchstatus_cpy);
-
-  exec = (void (*)(uint64_t))dlsym(handle, "difftest_exec");
-  assert(exec);
-
-  update_config = (vaddr_t (*)(void *))dlsym(handle, "update_dynamic_config");
-  assert(update_config);
-
-  raise_intr = (void (*)(uint64_t))dlsym(handle, "difftest_raise_intr");
-  assert(raise_intr);
-
-  isa_reg_display = (void (*)(void))dlsym(handle, "isa_reg_display");
-  assert(isa_reg_display);
-
-  auto nemu_nohype_init = (void (*)(int))dlsym(handle, "difftest_nohype_init");
-  assert(nemu_nohype_init);
-
-  nemu_nohype_init(tid);
 }

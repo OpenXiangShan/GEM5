@@ -171,4 +171,3 @@ class BaseO3CPU(BaseCPU):
                                        "Branch Predictor")
     needsTSO = Param.Bool(False, "Enable TSO Memory model")
 
-    nemuDiff = Param.Bool(False,"use NEMU as ref to difftest")

@@ -181,9 +181,16 @@ def addNoISAOptions(parser):
 
     # Nemu difftest option
     parser.add_argument(
-        "--nemu-diff",
+        "--enable-difftest",
         action="store_true",
         help="use NEMU as ref to do difftest")
+
+    parser.add_argument(
+        "--difftest-ref-so",
+        action="store",
+        default="{}/build/riscv64-nemu-interpreter-so".format(
+            os.environ['NEMU_HOME']),
+        help="The shared lib file used to do difftest")
 
 
 # Add common options that assume a non-NULL ISA.

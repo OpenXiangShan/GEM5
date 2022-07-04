@@ -115,7 +115,7 @@ CPU::CPU(const BaseO3CPUParams &params)
       system(params.system),
       lastRunningCycle(curCycle()),
       cpuStats(this),
-      enable_nemu_diff(params.nemuDiff)
+      enable_nemu_diff(params.enable_difftest)
 {
     fatal_if(FullSystem && params.numThreads > 1,
             "SMT is not supported in O3 in full system mode currently.");
@@ -299,6 +299,26 @@ CPU::CPU(const BaseO3CPUParams &params)
     if (!params.switched_out && interrupts.empty()) {
         fatal("O3CPU %s has no interrupt controller.\n"
               "Ensure createInterruptController() is called.\n", name());
+    }
+
+    if (enable_nemu_diff) {
+        assert(params.difftest_ref_so.length() > 2);
+        diff.nemu_reg = nemu_reg;
+        // diff.wpc = diff_wpc;
+        // diff.wdata = diff_wdata;
+        // diff.wdst = diff_wdst;
+        diff.nemu_this_pc = 0x80000000u;
+        diff.cpu_id = params.cpu_id;
+        proxy = new NemuProxy(params.cpu_id, params.difftest_ref_so.c_str());
+        warn("Difftest is enabled with ref so: %s.\n",
+             params.difftest_ref_so.c_str());
+        proxy->regcpy(gem5_reg, REF_TO_DUT);
+        diff.dynamic_config.ignore_illegal_mem_access = false;
+        diff.dynamic_config.debug_difftest = false;
+        proxy->update_config(&diff.dynamic_config);
+    } else {
+        warn("Difftest is disabled\n");
+        hasCommit = true;
     }
 }
 

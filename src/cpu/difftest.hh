@@ -115,8 +115,7 @@ public:
 class NemuProxy : public RefProxy
 {
 public:
-  NemuProxy(int coreid);
-  NemuProxy(int tid, bool nohype);
+  NemuProxy(int coreid, const char* ref_so);
 private:
 };
 
