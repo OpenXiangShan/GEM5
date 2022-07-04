@@ -1256,8 +1256,8 @@ CPU::instDone(ThreadID tid, const DynInstPtr &inst)
                 if (diff_at != NoneDiff) {
                     panic("Difftest failed again!\n");
                 } else {
-                    warn("Difftest matched again,
-                     NEMU seems to commit the failed mem instruction\n");
+                    warn("Difftest matched again, "
+                     "NEMU seems to commit the failed mem instruction\n");
                 }
 
             }
@@ -1711,13 +1711,13 @@ CPU::diffWithNEMU(const DynInstPtr &inst)
                    ((0xffffffffULL) << 32)) {
 
                     DPRINTF(ValueCommit,
-                            "Difference might be caused by box, ignore it\n");
+                            "Difference might be caused by box,"
+                            " ignore it\n");
 
                 } else if (is_mmio) {
                     DPRINTF(ValueCommit,
-                            "Difference might be caused by read %s at %#lx,
-                             ignore it\n",
-                            "mmio", inst->physEffAddr);
+                            "Difference might be caused by read %s at %#lx,"
+                            " ignore it\n", "mmio", inst->physEffAddr);
                     nemu_reg[dest_tag] = gem5_val;
                     proxy->regcpy(nemu_reg,DUT_TO_REF);
                 } else {
