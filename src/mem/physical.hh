@@ -191,6 +191,8 @@ class PhysicalMemory : public Serializable
                    const std::vector<AbstractMemory*>& _memories,
                    bool mmap_using_noreserve,
                    const std::string& shared_backstore,
+                   bool restore_from_gcpt,
+                   const std::string&gcpt_path,
                    bool auto_unlink_shared_backstore);
 
     /**
@@ -297,6 +299,19 @@ class PhysicalMemory : public Serializable
     void unserializeStore(CheckpointIn &cp);
 
     int nohypeNum;
+
+    void unserializeStoreFrom(std::string filepath,
+                              unsigned store_id, long range_size);
+
+    void unserializeStoreFromFile(std::string filepath);
+
+  private:
+    bool restoreFromGCpt;
+
+    std::string gCptPath;
+
+  public:
+    bool tryRestoreFromGCpt();
 
 };
 
