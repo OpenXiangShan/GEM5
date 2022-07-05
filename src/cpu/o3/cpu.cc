@@ -1224,6 +1224,18 @@ CPU::pcState(const PCStateBase &val, ThreadID tid)
     commit.pcState(val, tid);
 }
 
+Addr
+CPU::instAddr(ThreadID tid)
+{
+    return commit.instAddr(tid);
+}
+
+Addr
+CPU::nextInstAddr(ThreadID tid)
+{
+    return commit.nextInstAddr(tid);
+}
+
 void
 CPU::squashFromTC(ThreadID tid)
 {
@@ -1253,6 +1265,16 @@ CPU::instDone(ThreadID tid, const DynInstPtr &inst)
         // Check for instruction-count-based events.
         thread[tid]->comInstEventQueue.serviceEvents(thread[tid]->numInst);
 
+        if (this->nextDumpInstCount
+                && totalInsts() == this->nextDumpInstCount) {
+            fprintf(stderr, "Will trigger stat dump and reset\n");
+            Stats::schedStatEvent(true, true, curTick(), 0);
+
+            /*if (this->repeatDumpInstCount) {
+                this->nextDumpInstCount += this->repeatDumpInstCount;
+            };*/
+        }
+
         if (!hasCommit && inst->instAddr() == 0x80000000u) {
             hasCommit = true;
             readGem5Regs();
@@ -1265,6 +1287,21 @@ CPU::instDone(ThreadID tid, const DynInstPtr &inst)
             fprintf(stderr, "Will start regcpy to NEMU\n");
             proxy->regcpy(gem5_reg, DUT_TO_REF);
         }
+
+        if (scFenceInFlight) {
+            assert(inst->isWriteBarrier() && inst->isReadBarrier());
+            DPRINTF(ValueCommit, "Skip diff fence generated from LR/SC\n");
+            should_diff = false;
+        }
+    }
+
+    scFenceInFlight = false;
+
+    if (!inst->isLastMicroop() &&
+            inst->isStoreConditional() && inst->isDelayedCommit()) {
+        scFenceInFlight = true;
+        DPRINTF(ValueCommit, "Diff SC even if it is not the last Microop\n");
+        should_diff = true;
     }
 
     if (enable_nemu_diff && should_diff) {
@@ -1289,11 +1326,14 @@ CPU::instDone(ThreadID tid, const DynInstPtr &inst)
         }
     }
 
+    DPRINTF(ValueCommit, "commit_pc: %s\n", inst->pcState());
+
     thread[tid]->numOp++;
     thread[tid]->threadStats.numOps++;
     cpuStats.committedOps[tid]++;
 
     probeInstCommit(inst->staticInst, inst->pcState().instAddr());
+    cpuStats.lastCommitTick = curTick();
 }
 
 void
@@ -1694,6 +1734,9 @@ CPU::diffWithNEMU(const DynInstPtr &inst)
             }
         }
     }
+    DPRINTF(ValueCommit, "Inst [sn:%lli] %s, NEMU: %#lx, GEM5: %#lx\n",
+                inst->seqNum, "PC", nemu_pc, gem5_pc
+               );
 
     if (diff.npc != inst->nextInstAddr()) {
         warn("Inst [sn:%lli]\n", inst->seqNum);
@@ -1707,10 +1750,6 @@ CPU::diffWithNEMU(const DynInstPtr &inst)
                 inst->seqNum, "NPC", diff.npc, inst->nextInstAddr()
                );
     }
-
-    DPRINTF(ValueCommit, "Inst [sn:%llu] @ %#lx is %s\n",
-            inst->seqNum, inst->instAddr(),
-            inst->staticInst->disassemble(inst->instAddr()));
 
     // auto gem5_mstatus = readMiscRegNoEffect(MISCREG_STATUS, 0);
     // auto nemu_mstatus = nemu_reg[DIFFTEST_MSTATUS];

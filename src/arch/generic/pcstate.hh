@@ -266,13 +266,17 @@ namespace GenericISA
 class PCStateWithNext : public PCStateBase
 {
   protected:
-    Addr _npc = 0;
+    //Addr _npc = 0;
 
     MicroPC _nupc = 1;
 
     PCStateWithNext(const PCStateWithNext &other) : PCStateBase(other),
-        _npc(other._npc), _nupc(other._nupc)
+        _nupc(other._nupc)
     {}
+
+    //PCStateWithNext(const PCStateWithNext &other) : PCStateBase(other),
+    //    _npc(other._npc), _nupc(other._nupc)
+    //{}
     PCStateWithNext &operator=(const PCStateWithNext &other) = default;
     PCStateWithNext() {}
 

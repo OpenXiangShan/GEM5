@@ -53,8 +53,8 @@ NemuProxy::NemuProxy(int coreid, const char *ref_so) {
   exec = (void (*)(uint64_t))dlsym(handle, "difftest_exec");
   assert(exec);
 
-  guided_exec = (vaddr_t (*)(void *))dlsym(handle, "difftest_guided_exec");
-  assert(guided_exec);
+  //guided_exec = (vaddr_t (*)(void *))dlsym(handle, "difftest_guided_exec");
+  //assert(guided_exec);
 
   update_config = (vaddr_t (*)(void *))
   dlsym(handle, "update_dynamic_config");

@@ -625,6 +625,7 @@ class CPU : public BaseCPU
         //number of misc
         statistics::Scalar miscRegfileReads;
         statistics::Scalar miscRegfileWrites;
+        statistics::Scalar lastCommitTick;
     } cpuStats;
 
   public:
@@ -642,6 +643,7 @@ class CPU : public BaseCPU
     NemuProxy* proxy;
 
     bool enable_nemu_diff;
+    bool scFenceInFlight{false};
     bool hasCommit{false};
 
     void readGem5Regs();

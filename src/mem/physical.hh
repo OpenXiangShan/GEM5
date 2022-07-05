@@ -298,7 +298,7 @@ class PhysicalMemory : public Serializable
      */
     void unserializeStore(CheckpointIn &cp);
 
-    int nohypeNum;
+    //int nohypeNum;
 
     void unserializeStoreFrom(std::string filepath,
                               unsigned store_id, long range_size);
