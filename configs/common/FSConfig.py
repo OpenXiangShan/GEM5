@@ -656,6 +656,24 @@ def makeBareMetalRiscvSystem(mem_mode, mdesc=None, cmdline=None):
     self.system_port = self.membus.cpu_side_ports
     return self
 
+def makeBareMetalXiangshanSystem(mem_mode, mdesc=None, cmdline=None):
+    self = makeBareMetalRiscvSystem(mem_mode, mdesc, cmdline)
+    self.mem_ranges = [AddrRange(start=0x80000000, size=mdesc.mem())]
+    print(self.mem_ranges)
+
+    self.uartlite  = UartLite()
+    self.uartlite.pio = self.membus.mem_side_ports
+
+    self.clint = Clint()
+    self.clint.pio = self.membus.mem_side_ports
+    self.clint.pio_addr = 0x38000000
+    self.clint.pio_size = 0xC000
+    self.clint.num_threads = 1
+
+    self.workload.xiangshan_cpt = True
+    self.workload.reset_vect = 0x80000000
+    return self
+
 def makeDualRoot(full_system, testSystem, driveSystem, dumpfile):
     self = Root(full_system = full_system)
     self.testsys = testSystem

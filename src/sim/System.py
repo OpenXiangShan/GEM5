@@ -128,3 +128,7 @@ class System(SimObject):
     # ISA specific value in this class directly.
     m5ops_base = Param.Addr(0, "Base of the 64KiB PA range used for "
        "memory-mapped m5ops. Set to 0 to disable.")
+
+    # Checkpoint image file for Xiangshan
+    restore_from_gcpt = Param.Bool(False, "Restoring from Xiangshan gcpt")
+    gcpt_file = Param.String("", "Xiangshan checkpoint image file")
