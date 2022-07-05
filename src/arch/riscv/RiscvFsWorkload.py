@@ -40,6 +40,7 @@ class RiscvBareMetal(Workload):
     bootloader = Param.String("File, that contains the bootloader code")
     bare_metal = Param.Bool(True, "Using Bare Metal Application?")
     reset_vect = Param.Addr(0x0, 'Reset vector')
+    xiangshan_cpt = Param.Bool(False, "Using Xiangshan checkpoint")
 
 class RiscvLinux(KernelWorkload):
     type = 'RiscvLinux'

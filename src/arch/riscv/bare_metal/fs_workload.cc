@@ -41,12 +41,21 @@ namespace RiscvISA
 {
 
 BareMetal::BareMetal(const Params &p) : Workload(p),
-    _isBareMetal(p.bare_metal), _resetVect(p.reset_vect),
-    bootloader(loader::createObjectFile(p.bootloader))
+    _isBareMetal(p.bare_metal), _resetVect(p.reset_vect)
 {
-    fatal_if(!bootloader, "Could not load bootloader file %s.", p.bootloader);
-    _resetVect = bootloader->entryPoint();
-    bootloaderSymtab = bootloader->symtab();
+    if (!p.xiangshan_cpt) {
+        bootloader = loader::createObjectFile(p.bootloader);
+        fatal_if(!bootloader, "Could not load bootloader file %s.",
+                 p.bootloader);
+        _resetVect = bootloader->entryPoint();
+        bootloaderSymtab = bootloader->symtab();
+    } else {
+        bootloader = nullptr;
+        assert(p.bootloader.empty());
+        _resetVect = p.reset_vect;
+        inform("No bootload provided, because using XS GCPT, reset to %#lx\n",
+               _resetVect);
+    }
 }
 
 BareMetal::~BareMetal()
@@ -64,8 +73,10 @@ BareMetal::initState()
         tc->activate();
     }
 
-    warn_if(!bootloader->buildImage().write(system->physProxy),
+    if (bootloader) {
+        warn_if(!bootloader->buildImage().write(system->physProxy),
             "Could not load sections to memory.");
+    }
 
     for (auto *tc: system->threads) {
         RiscvISA::Reset().invoke(tc);

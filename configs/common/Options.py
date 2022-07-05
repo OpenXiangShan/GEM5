@@ -531,3 +531,11 @@ def addFSOptions(parser):
     # Debug option
     parser.add_argument("--wait-gdb", default=False, action='store_true',
                         help="Wait for remote GDB to connect.")
+
+    # Xiangshan related options
+    parser.add_argument("--xiangshan-system", action= "store_true",
+                        help = "Use memory layout of Xiangshan system")
+
+    parser.add_argument("--generic-rv-cpt", action= "store", type = str,
+                        default = None,
+                        help="The path of Xiangshan risc-v checkpoint")
