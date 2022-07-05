@@ -143,3 +143,14 @@ def format VsWholeOp(
         VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
                  'VsWholeMacroInst', exec_template_base='VsWhole')
 }};
+
+def format VlStrideOp(
+    memacc_code,
+    ea_code={{ EA = Rs1 + Rs2 * (regIdx * vlenb + microIdx); }},
+    mem_flags=[],
+    inst_flags=[]
+) {{
+    (header_output, decoder_output, decode_block, exec_output) = \
+        VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
+                 'VlStrideMacroInst', exec_template_base='VlStride')
+}};

@@ -474,6 +474,9 @@ decode QUADRANT default Unknown::unknown() {
                         Vd_ub[i] = Mem_vc.as<uint8_t>()[i];
                     }}, inst_flags=VectorDummyOp);
                 }
+                0x2: VlStrideOp::vlse8_v({{
+                    Vd_ub[microIdx] = Mem_vc.as<uint8_t>()[0];
+                }}, inst_flags=VectorDummyOp);
             }
             0x5: decode MOP {
                 0x0: decode LUMOP {
@@ -497,6 +500,9 @@ decode QUADRANT default Unknown::unknown() {
                         }
                     }
                 }
+                0x2: VlStrideOp::vlse16_v({{
+                    Vd_uh[microIdx] = Mem_vc.as<uint16_t>()[0];
+                }}, inst_flags=VectorDummyOp);
             }
             0x6: decode MOP {
                 0x0: decode LUMOP {
@@ -520,6 +526,9 @@ decode QUADRANT default Unknown::unknown() {
                         }
                     }
                 }
+                0x2: VlStrideOp::vlse32_v({{
+                    Vd_uw[microIdx] = Mem_vc.as<uint32_t>()[0];
+                }}, inst_flags=VectorDummyOp);
             }
             0x7: decode MOP {
                 0x0: decode LUMOP {
@@ -543,6 +552,9 @@ decode QUADRANT default Unknown::unknown() {
                         }
                     }
                 }
+                0x2: VlStrideOp::vlse64_v({{
+                    Vd_ud[microIdx] = Mem_vc.as<uint64_t>()[0];
+                }}, inst_flags=VectorDummyOp);
             }
         }
 

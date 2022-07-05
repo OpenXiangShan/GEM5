@@ -683,3 +683,195 @@ Fault
 }
 
 }};
+
+def template VlStrideConstructor {{
+
+%(class_name)s::%(class_name)s(ExtMachInst _machInst)
+    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
+{
+    %(set_reg_idx_arr)s;
+    %(constructor)s;
+
+    const int32_t num_elems_per_vreg = VLEN / width_EEW(_machInst.width);
+    int32_t remaining_vl = this->vl;
+    // Num of elems in one vreg
+    int32_t micro_vl = std::min(remaining_vl, num_elems_per_vreg);
+    StaticInstPtr microop;
+
+    for (int i = 0; micro_vl > 0; ++i) {
+        for (int j = 0; j < micro_vl; ++j) {
+            microop = new %(class_name)sMicro(machInst, i, j, micro_vl);
+            microop->setFlag(IsDelayedCommit);
+            microop->setFlag(IsLoad);
+            this->microops.push_back(microop);
+        }
+        remaining_vl -= num_elems_per_vreg;
+        micro_vl = std::min(remaining_vl, num_elems_per_vreg);
+    }
+
+    this->microops.front()->setFlag(IsFirstMicroop);
+    this->microops.back()->setFlag(IsLastMicroop);
+    this->flags[IsVector] = true;
+}
+
+}};
+
+def template VlStrideMicroDeclare {{
+
+class %(class_name)s : public %(base_class)s
+{
+private:
+    // rs1, rs2, vd, vm
+    RegId srcRegIdxArr[4];
+    RegId destRegIdxArr[1];
+public:
+    %(class_name)s(ExtMachInst _machInst, uint8_t _regIdx, uint8_t _microIdx,
+        uint8_t _microVl)
+    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp,
+        _regIdx, _microIdx, _microVl)
+    {
+        %(set_reg_idx_arr)s;
+        _numSrcRegs = 0;
+        _numDestRegs = 0;
+        setDestRegIdx(_numDestRegs++,
+            RegId(VecRegClass, _machInst.vd + _regIdx));
+        _numTypedDestRegs[VecRegClass]++;
+        setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
+        setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs2));
+        if (_microIdx != 0 || !_machInst.vtype8.vma || !_machInst.vtype8.vta) {
+            setSrcRegIdx(_numSrcRegs++,
+                RegId(VecRegClass, _machInst.vd + _regIdx));
+        }
+        if (!_machInst.vm) {
+            setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, 0));
+        }
+        this->flags[IsLoad] = true;
+    }
+
+    Fault execute(ExecContext *, Trace::InstRecord *) const override;
+    Fault initiateAcc(ExecContext *, Trace::InstRecord *) const override;
+    Fault completeAcc(PacketPtr, ExecContext *,
+                      Trace::InstRecord *) const override;
+    using %(base_class)s::generateDisassembly;
+
+};
+
+}};
+
+def template VlStrideMicroExecute {{
+
+Fault
+%(class_name)s::execute(ExecContext *xc, Trace::InstRecord *traceData) const
+{
+    Fault fault = NoFault;
+    Addr EA;
+
+    %(op_decl)s;
+    %(op_rd)s;
+    %(ea_code)s;
+
+    constexpr uint8_t elem_size = sizeof(Vd[0]);
+    RiscvISA::vreg_t tmp_v0;
+    uint8_t *v0;
+    if (!machInst.vm) {
+        xc->getRegOperand(this, _numSrcRegs-1, &tmp_v0);
+        v0 = tmp_v0.as<uint8_t>();
+    }
+
+    uint32_t mem_size = elem_size;
+    const std::vector<bool> byte_enable(mem_size, true);
+
+    size_t ei = this->regIdx * vlenb / elem_size + this->microIdx;
+    if (machInst.vm || elem_mask(v0, ei)) {
+        fault = xc->readMem(EA, Mem.as<uint8_t>(), mem_size,
+                                memAccessFlags, byte_enable);
+        if (fault != NoFault)
+            return fault;
+        %(memacc_code)s; /* Vd[this->microIdx] = Mem[0]; */
+    }
+
+    %(op_wb)s;
+    return fault;
+}
+
+}};
+
+def template VlStrideMicroInitiateAcc {{
+
+Fault
+%(class_name)s::initiateAcc(ExecContext* xc,
+                            Trace::InstRecord* traceData) const
+{
+    Fault fault = NoFault;
+    Addr EA;
+
+    %(op_src_decl)s;
+    %(op_rd)s;
+    %(ea_code)s;
+
+    constexpr uint8_t elem_size = sizeof(Vd[0]);
+
+    RiscvISA::vreg_t tmp_v0;
+    uint8_t *v0;
+    if (!machInst.vm) {
+        xc->getRegOperand(this, _numSrcRegs-1, &tmp_v0);
+        v0 = tmp_v0.as<uint8_t>();
+    }
+
+    uint32_t mem_size = elem_size;
+    size_t ei = this->regIdx * vlenb / elem_size + this->microIdx;
+    bool need_load = machInst.vm || elem_mask(v0, ei);
+    const std::vector<bool> byte_enable(mem_size, need_load);
+    fault = initiateMemRead(xc, EA, mem_size, memAccessFlags, byte_enable);
+    return fault;
+}
+
+}};
+
+def template VlStrideMicroCompleteAcc {{
+
+Fault
+%(class_name)s::completeAcc(PacketPtr pkt, ExecContext *xc,
+                            Trace::InstRecord *traceData) const
+{
+    %(op_decl)s;
+    %(op_rd)s;
+
+    constexpr uint8_t elem_size = sizeof(Vd[0]);
+
+    RiscvISA::vreg_t old_vd;
+    decltype(Vd) old_Vd = nullptr;
+    if (this->microIdx != 0 || !machInst.vtype8.vma || !machInst.vtype8.vta) {
+        xc->getRegOperand(this, 2, &old_vd);
+        old_Vd = old_vd.as<std::remove_reference_t<decltype(Vd[0])> >();
+    }
+
+    RiscvISA::vreg_t tmp_v0;
+    uint8_t *v0;
+    if (!machInst.vm) {
+        xc->getRegOperand(this, _numSrcRegs-1, &tmp_v0);
+        v0 = tmp_v0.as<uint8_t>();
+    }
+
+    if (microIdx == 0) {
+        // vmu
+        if (machInst.vtype8.vma == 0)
+            memcpy(Vd, old_Vd, microVl * elem_size);
+        // vtu
+        if (machInst.vtype8.vta == 0)
+            memcpy(Vd + microVl, old_Vd + microVl, vlenb - microVl*elem_size);
+    } else {
+        memcpy(Vd, old_Vd, vlenb);
+    }
+
+    size_t ei = this->regIdx * vlenb / sizeof(Vd[0]) + this->microIdx;
+    if (machInst.vm || elem_mask(v0, ei)) {
+        memcpy(Mem.as<uint8_t>(), pkt->getPtr<uint8_t>(), pkt->getSize());
+        %(memacc_code)s; /* Vd[this->microIdx] = Mem[0]; */
+    }
+
+    %(op_wb)s;
+    return NoFault;
+}
+
+}};
