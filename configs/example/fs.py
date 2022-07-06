@@ -144,6 +144,10 @@ def build_test_system(np):
     # For now, assign all the CPUs to the same clock domain
     test_sys.cpu = [TestCPUClass(clk_domain=test_sys.cpu_clk_domain, cpu_id=i)
                     for i in range(np)]
+    if args.xiangshan_system:
+        for cpu in test_sys.cpu:
+            cpu.mmu.pma_checker = PMAChecker(
+                uncacheable=[AddrRange(0, size=0x80000000)])
 
     if args.ruby:
         bootmem = getattr(test_sys, '_bootmem', None)
