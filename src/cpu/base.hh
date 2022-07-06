@@ -646,6 +646,10 @@ class BaseCPU : public ClockedObject
     const Cycles pwrGatingLatency;
     const bool powerGatingOnIdle;
     EventFunctionWrapper enterPwrGatingEvent;
+
+    //const uint64_t repeatDumpInstCount;
+
+    uint64_t nextDumpInstCount{0};
 };
 
 } // namespace gem5

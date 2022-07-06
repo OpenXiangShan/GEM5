@@ -1251,6 +1251,16 @@ CPU::instDone(ThreadID tid, const DynInstPtr &inst)
         thread[tid]->threadStats.numInsts++;
         cpuStats.committedInsts[tid]++;
 
+        if (this->nextDumpInstCount
+                && totalInsts() == this->nextDumpInstCount) {
+            fprintf(stderr, "Will trigger stat dump and reset\n");
+            Stats::schedStatEvent(true, true, curTick(), 0);
+
+            /*if (this->repeatDumpInstCount) {
+                this->nextDumpInstCount += this->repeatDumpInstCount;
+            };*/
+        }
+
         // Check for instruction-count-based events.
         thread[tid]->comInstEventQueue.serviceEvents(thread[tid]->numInst);
 
