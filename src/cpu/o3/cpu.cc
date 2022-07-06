@@ -41,7 +41,6 @@
  */
 
 #include "cpu/o3/cpu.hh"
-
 #include "config/the_isa.hh"
 #include "cpu/activity.hh"
 #include "cpu/checker/cpu.hh"
@@ -55,6 +54,7 @@
 #include "debug/Drain.hh"
 #include "debug/O3CPU.hh"
 #include "debug/Quiesce.hh"
+#include "debug/ValueCommit.hh"
 #include "enums/MemoryMode.hh"
 #include "sim/cur_tick.hh"
 #include "sim/full_system.hh"
@@ -114,7 +114,8 @@ CPU::CPU(const BaseO3CPUParams &params)
       globalSeqNum(1),
       system(params.system),
       lastRunningCycle(curCycle()),
-      cpuStats(this)
+      cpuStats(this),
+      enableDifftest(params.enable_difftest)
 {
     fatal_if(FullSystem && params.numThreads > 1,
             "SMT is not supported in O3 in full system mode currently.");
@@ -298,6 +299,27 @@ CPU::CPU(const BaseO3CPUParams &params)
     if (!params.switched_out && interrupts.empty()) {
         fatal("O3CPU %s has no interrupt controller.\n"
               "Ensure createInterruptController() is called.\n", name());
+    }
+
+    if (enableDifftest) {
+        assert(params.difftest_ref_so.length() > 2);
+        diff.nemu_reg = referenceRegFile;
+        // diff.wpc = diffWPC;
+        // diff.wdata = diffWData;
+        // diff.wdst = diffWDst;
+        diff.nemu_this_pc = 0x80000000u;
+        diff.cpu_id = params.cpu_id;
+        warn("cpu_id set to %d\n", params.cpu_id);
+        proxy = new NemuProxy(params.cpu_id, params.difftest_ref_so.c_str());
+        warn("Difftest is enabled with ref so: %s.\n",
+             params.difftest_ref_so.c_str());
+        proxy->regcpy(gem5RegFile, REF_TO_DUT);
+        diff.dynamic_config.ignore_illegal_mem_access = false;
+        diff.dynamic_config.debug_difftest = false;
+        proxy->update_config(&diff.dynamic_config);
+    } else {
+        warn("Difftest is disabled\n");
+        hasCommit = true;
     }
 }
 
@@ -1221,20 +1243,71 @@ CPU::addInst(const DynInstPtr &inst)
 void
 CPU::instDone(ThreadID tid, const DynInstPtr &inst)
 {
+    bool should_diff = false;
     // Keep an instruction count.
     if (!inst->isMicroop() || inst->isLastMicroop()) {
+        should_diff = true;
         thread[tid]->numInst++;
         thread[tid]->threadStats.numInsts++;
         cpuStats.committedInsts[tid]++;
 
         // Check for instruction-count-based events.
         thread[tid]->comInstEventQueue.serviceEvents(thread[tid]->numInst);
+
+        if (!hasCommit && inst->pcState().instAddr() == 0x80000000u) {
+            hasCommit = true;
+            readGem5Regs();
+            gem5RegFile[DIFFTEST_THIS_PC] = inst->pcState().instAddr();
+            fprintf(stderr, "Will start memcpy to NEMU\n");
+            proxy->memcpy(0x80000000u, pmemStart + pmemSize * diff.cpu_id,
+                          pmemSize, DUT_TO_REF);
+            fprintf(stderr, "Will start regcpy to NEMU\n");
+            proxy->regcpy(gem5RegFile, DUT_TO_REF);
+        }
+
+        if (scFenceInFlight) {
+            assert(inst->isWriteBarrier() && inst->isReadBarrier());
+            DPRINTF(ValueCommit, "Skip diff fence generated from LR/SC\n");
+            should_diff = false;
+        }
     }
+
+    scFenceInFlight = false;
+
+    if (!inst->isLastMicroop() && inst->isStoreConditional() &&
+        inst->isDelayedCommit()) {
+        scFenceInFlight = true;
+        DPRINTF(ValueCommit, "Diff SC even if it is not the last Microop\n");
+        should_diff = true;
+    }
+
+    if (enableDifftest && should_diff) {
+        auto [diff_at, npc_match] = diffWithNEMU(inst);
+        if (diff_at != NoneDiff) {
+            if (npc_match && diff_at == PCDiff) {
+                warn("Found PC mismatch, Let NEMU run one more instruction\n");
+                std::tie(diff_at, npc_match) = diffWithNEMU(inst);
+                if (diff_at != NoneDiff) {
+                    panic("Difftest failed again!\n");
+                } else {
+                    warn("Difftest matched again, "
+                     "NEMU seems to commit the failed mem instruction\n");
+                }
+            }
+            else {
+                panic("Difftest failed!\n");
+            }
+        }
+    }
+
+    DPRINTF(ValueCommit, "commit_pc: %s\n", inst->pcState());
+
     thread[tid]->numOp++;
     thread[tid]->threadStats.numOps++;
     cpuStats.committedOps[tid]++;
 
     probeInstCommit(inst->staticInst, inst->pcState().instAddr());
+    cpuStats.lastCommitTick = curTick();
 }
 
 void
@@ -1556,6 +1629,148 @@ CPU::htmSendAbortSignal(ThreadID tid, uint64_t htm_uid,
     if (!iew.ldstQueue.getDataPort().sendTimingReq(abort_pkt)) {
         panic("HTM abort signal was not sent to the memory subsystem.");
     }
+}
+
+void
+CPU::readGem5Regs()
+{
+    for (int i = 0; i < 32; i++) {
+        gem5RegFile[i] = readArchIntReg(i, 0);
+        gem5RegFile[i + 32] = readArchFloatReg(i, 0);
+    }
+}
+
+std::pair<int, bool>
+CPU::diffWithNEMU(const DynInstPtr &inst)
+{
+    int diff_at = DiffAt::NoneDiff;
+    bool npc_match = false;
+    bool is_mmio = (0x38000000u < inst->physEffAddr) &&
+                   (inst->physEffAddr < 0x41000000u);
+
+    if (inst->isStoreConditional()){
+        diff.sync.lrscValid = inst->lockedWriteSuccess();
+        proxy->uarchstatus_cpy(&diff.sync,DIFFTEST_TO_REF);
+    }
+    if (is_mmio){
+        //ismmio
+        diff.dynamic_config.ignore_illegal_mem_access = true;
+        proxy->update_config(&diff.dynamic_config);
+    }
+
+    //difftest step start
+    proxy->exec(1);
+    proxy->regcpy(diff.nemu_reg,REF_TO_DIFFTEST);
+
+    uint64_t next_pc = diff.nemu_reg[DIFFTEST_THIS_PC];
+
+    // replace with "this pc" for checking
+    diff.nemu_commit_inst_pc = diff.nemu_this_pc;
+    diff.nemu_this_pc = next_pc;
+    diff.npc = next_pc;
+    //difftest step end
+
+    if (is_mmio){
+        //ismmio
+        diff.dynamic_config.ignore_illegal_mem_access = false;
+        proxy->update_config(&diff.dynamic_config);
+    }
+
+    auto gem5_pc = inst->pcState().instAddr();
+    auto nemu_pc = diff.nemu_commit_inst_pc;
+    DPRINTF(ValueCommit, "NEMU PC: %#10lx, GEM5 PC: %#10lx\n",
+            nemu_pc, gem5_pc);
+
+    // auto nemu_store_addr = referenceRegFile[DIFFTEST_STORE_ADDR];
+    // if (nemu_store_addr) {
+    //     DPRINTF(ValueCommit, "NEMU store addr: %#lx\n", nemu_store_addr);
+    // }
+
+    // uint8_t gem5_inst[5];
+    // uint8_t nemu_inst[9];
+
+    // int nemu_inst_len = referenceRegFile[DIFFTEST_RVC] ? 2 : 4;
+    // int gem5_inst_len = inst->pcState().compressed() ? 2 : 4;
+
+    // assert(inst->staticInst->asBytes(gem5_inst, 8));
+    // *reinterpret_cast<uint32_t *>(nemu_inst) =
+    //     htole<uint32_t>(referenceRegFile[DIFFTEST_INST_PAYLOAD]);
+
+    if (nemu_pc != gem5_pc) {
+        // warn("NEMU store addr: %#lx\n", nemu_store_addr);
+        warn("Inst [sn:%lli]\n", inst->seqNum);
+        warn("Diff at %s, NEMU: %#lx, GEM5: %#lx\n",
+                "PC", nemu_pc, gem5_pc
+            );
+        if (!diff_at) {
+            diff_at = PCDiff;
+            if (diff.npc == gem5_pc) {
+                npc_match = true;
+            }
+        }
+    }
+    DPRINTF(ValueCommit, "Inst [sn:%lli] %s, NEMU: %#lx, GEM5: %#lx\n",
+                inst->seqNum, "PC", nemu_pc, gem5_pc
+               );
+    // auto gem5_mstatus = readMiscRegNoEffect(MISCREG_STATUS, 0);
+    // auto nemu_mstatus = referenceRegFile[DIFFTEST_MSTATUS];
+    // DPRINTF(ValueCommit, "%s: NEMU = %#lx, GEM5 = %#lx\n",
+    //         "mstatus", nemu_mstatus, gem5_mstatus);
+
+    if (inst->numDestRegs() > 0) {
+        const auto &dest = inst->staticInst->destRegIdx(0);
+        auto dest_tag = dest.index() + dest.isFloatReg() * 32;
+
+        if ((dest.isFloatReg() || dest.isIntReg()) && !dest.isZeroReg()) {
+            auto gem5_val = inst->getResult().asNoAssert<RegVal>();
+            auto nemu_val = referenceRegFile[dest_tag];
+
+            if (gem5_val != nemu_val) {
+                if (dest.isFloatReg() &&
+                    (gem5_val ^ nemu_val) == ((0xffffffffULL) << 32)) {
+                    DPRINTF(ValueCommit,
+                            "Difference might be caused by box,"
+                            " ignore it\n");
+
+                } else if (is_mmio) {
+                    DPRINTF(ValueCommit,
+                            "Difference might be caused by read %s at %#lx,"
+                            " ignore it\n",
+                            "mmio", inst->physEffAddr);
+                    referenceRegFile[dest_tag] = gem5_val;
+                    proxy->regcpy(referenceRegFile, DUT_TO_REF);
+                } else {
+                    warn("Inst [sn:%lli] pc:%s\n", inst->seqNum,
+                         inst->pcState());
+                    warn("Diff at %s Ref value: %#lx, GEM5 value: %#lx\n",
+                         reg_name[dest_tag], nemu_val, gem5_val);
+                    if (!diff_at)
+                        diff_at = ValueDiff;
+                }
+            }
+        }
+    }
+    return std::make_pair(diff_at, npc_match);
+}
+
+RegVal
+CPU::readArchIntReg(int reg_idx, ThreadID tid)
+{
+    cpuStats.intRegfileReads++;
+    PhysRegIdPtr phys_reg =
+        commitRenameMap[tid].lookup(RegId(IntRegClass, reg_idx));
+
+    return regFile.getReg(phys_reg);
+}
+
+RegVal
+CPU::readArchFloatReg(int reg_idx, ThreadID tid)
+{
+    cpuStats.fpRegfileReads++;
+    PhysRegIdPtr phys_reg =
+        commitRenameMap[tid].lookup(RegId(FloatRegClass, reg_idx));
+
+    return regFile.getReg(phys_reg);
 }
 
 } // namespace o3
