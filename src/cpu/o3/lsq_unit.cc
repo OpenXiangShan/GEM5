@@ -871,6 +871,8 @@ LSQUnit::writebackStores()
             inst->recordResult(true);
             request->packetSent();
 
+            inst->lockedWriteSuccess(success);
+
             if (!success) {
                 request->complete();
                 // Instantly complete this store.

@@ -180,6 +180,7 @@ class DynInst : public ExecContext, public RefCounted
         HitExternalSnoop,
         EffAddrValid,
         RecordResult,
+        LockedWriteSuccess,
         Predicate,
         MemAccPredicate,
         PredTaken,
@@ -369,6 +370,10 @@ class DynInst : public ExecContext, public RefCounted
   public:
     /** Records changes to result? */
     void recordResult(bool f) { instFlags[RecordResult] = f; }
+
+    /** Is the locked write success */
+    bool lockedWriteSuccess() const { return instFlags[LockedWriteSuccess]; }
+    void lockedWriteSuccess(bool b) { instFlags[LockedWriteSuccess] = b; }
 
     /** Is the effective virtual address valid. */
     bool effAddrValid() const { return instFlags[EffAddrValid]; }
@@ -704,6 +709,15 @@ class DynInst : public ExecContext, public RefCounted
         if (!instResult.empty()) {
             InstResult t = instResult.front();
             instResult.pop();
+            return t;
+        }
+        return dflt;
+    }
+
+    InstResult getResult(InstResult dflt = InstResult())
+    {
+        if (!instResult.empty()) {
+            InstResult t = instResult.front();
             return t;
         }
         return dflt;

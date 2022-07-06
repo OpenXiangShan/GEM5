@@ -70,6 +70,9 @@
 #endif
 #endif
 
+uint8_t *pmemStart;
+uint64_t pmemSize;
+
 namespace gem5
 {
 
@@ -508,6 +511,10 @@ PhysicalMemory::unserializeStoreFrom(std::string filepath,
     if (gzclose(compressed_mem))
         fatal("Close failed on physical memory checkpoint file '%s'\n",
               filepath.c_str());
+
+    // For Difftest copy memory
+    pmemStart = pmem;
+    pmemSize = range.size();
 }
 
 bool PhysicalMemory::tryRestoreFromXSCpt() {

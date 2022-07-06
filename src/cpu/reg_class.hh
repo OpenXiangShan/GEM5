@@ -180,6 +180,17 @@ class RegId
         return regClass != MiscRegClass && regClass != InvalidRegClass;
     }
 
+    inline bool isZeroReg() const
+    {
+        return regClass == InvalidRegClass;
+    }
+
+    /** @return true if it is an integer physical register. */
+    bool isIntReg() const { return regClass == IntRegClass; }
+
+    /** @return true if it is a floating-point physical register. */
+    bool isFloatReg() const { return regClass == FloatRegClass; }
+
     /** @return true if it is of the specified class. */
     constexpr bool
     is(RegClassType reg_class) const

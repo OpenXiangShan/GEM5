@@ -52,6 +52,9 @@
 #include "arch/generic/pcstate.hh"
 #include "base/statistics.hh"
 #include "config/the_isa.hh"
+#include "cpu/activity.hh"
+#include "cpu/base.hh"
+#include "cpu/difftest.hh"
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/commit.hh"
 #include "cpu/o3/decode.hh"
@@ -64,8 +67,6 @@
 #include "cpu/o3/rob.hh"
 #include "cpu/o3/scoreboard.hh"
 #include "cpu/o3/thread_state.hh"
-#include "cpu/activity.hh"
-#include "cpu/base.hh"
 #include "cpu/simple_thread.hh"
 #include "cpu/timebuf.hh"
 #include "params/BaseO3CPU.hh"
@@ -372,6 +373,10 @@ class CPU : public BaseCPU
     /** Debug function to print all instructions on the list. */
     void dumpInsts();
 
+    RegVal readArchIntReg(int reg_idx, ThreadID tid);
+
+    RegVal readArchFloatReg(int reg_idx, ThreadID tid);
+
   public:
 #ifndef NDEBUG
     /** Count of total number of dynamic instructions in flight. */
@@ -614,12 +619,31 @@ class CPU : public BaseCPU
         //number of misc
         statistics::Scalar miscRegfileReads;
         statistics::Scalar miscRegfileWrites;
+        statistics::Scalar lastCommitTick;
     } cpuStats;
 
   public:
     // hardware transactional memory
     void htmSendAbortSignal(ThreadID tid, uint64_t htm_uid,
                             HtmFailureFaultCause cause) override;
+
+  private:
+    uint32_t diffWDst[DIFFTEST_WIDTH];
+    uint64_t diffWData[DIFFTEST_WIDTH];
+    uint64_t diffWPC[DIFFTEST_WIDTH];
+    uint64_t gem5RegFile[DIFFTEST_NR_REG];
+    uint64_t referenceRegFile[DIFFTEST_NR_REG];
+    DiffState diff;
+    NemuProxy* proxy;
+
+    bool enableDifftest;
+    bool scFenceInFlight{false};
+    bool hasCommit{false};
+
+    void readGem5Regs();
+
+    std::pair<int, bool> diffWithNEMU(const DynInstPtr &inst);
+
 };
 
 } // namespace o3

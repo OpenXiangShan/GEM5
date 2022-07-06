@@ -147,6 +147,9 @@ class BaseCPU(ClockedObject):
     _uncached_interrupt_response_ports = []
     _uncached_interrupt_request_ports = []
 
+    enable_difftest = Param.Bool(False,"use NEMU as ref to difftest")
+    difftest_ref_so = Param.String("", "The reference so for online difftest")
+
     def createInterruptController(self):
         self.interrupts = [
                 self.ArchInterrupts() for i in range(self.numThreads)]
