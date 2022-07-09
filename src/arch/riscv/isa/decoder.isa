@@ -2131,43 +2131,61 @@ decode QUADRANT default Unknown::unknown() {
             }
             // OPFVV
             0x1: decode VFUNCT6 {
-                format VectorFloatFormat {
-                    0x00: vfadd_vv({{
-                        auto fd = fadd<et>(ftype<et>(Vs2_vu[i]),
-                                           ftype<et>(Vs1_vu[i]));
-                        Vd_vu[i] = fd.v;
-                    }}, OPFVV, VectorDummyOp);
-                    0x02: vfsub_vv({{
-                        auto fd = fsub<et>(ftype<et>(Vs2_vu[i]),
-                                           ftype<et>(Vs1_vu[i]));
-                        Vd_vu[i] = fd.v;
-                    }}, OPFVV, VectorDummyOp);
-                    0x04: vfmin_vv({{
-                        auto fd = fmin<et>(ftype<et>(Vs2_vu[i]),
-                                           ftype<et>(Vs1_vu[i]));
-                        Vd_vu[i] = fd.v;
-                    }}, OPFVV, VectorDummyOp);
-                    0x06: vfmax_vv({{
-                        auto fd = fmax<et>(ftype<et>(Vs2_vu[i]),
-                                           ftype<et>(Vs1_vu[i]));
-                        Vd_vu[i] = fd.v;
-                    }}, OPFVV, VectorDummyOp);
-                    0x08: vfsgnj_vv({{
-                        Vd_vu[i] = fsgnj<et>(ftype<et>(Vs2_vu[i]),
-                                             ftype<et>(Vs1_vu[i]),
-                                             false, false).v;
-                    }}, OPFVV, VectorDummyOp);
-                    0x09: vfsgnjn_vv({{
-                        Vd_vu[i] = fsgnj<et>(ftype<et>(Vs2_vu[i]),
-                                             ftype<et>(Vs1_vu[i]),
-                                             true, false).v;
-                    }}, OPFVV, VectorDummyOp);
-                    0x0a: vfsgnjx_vv({{
-                        Vd_vu[i] = fsgnj<et>(ftype<et>(Vs2_vu[i]),
-                                             ftype<et>(Vs1_vu[i]),
-                                             false, true).v;
-                    }}, OPFVV, VectorDummyOp);
-                }
+                0x00: VectorFloatFormat::vfadd_vv({{
+                    auto fd = fadd<et>(ftype<et>(Vs2_vu[i]),
+                                       ftype<et>(Vs1_vu[i]));
+                    Vd_vu[i] = fd.v;
+                }}, OPFVV, VectorDummyOp);
+                0x01: VectorReduceFloatFormat::vfredusum_vs({{
+                    Vd_vu[0] = reduce_loop([](const vu& src1, const vu& src2) {
+                        return fadd<et>(ftype<et>(src1), ftype<et>(src2));
+                    }, Vs1_vu, Vs2_vu);
+                }}, OPFVV, VectorDummyOp);
+                0x02: VectorFloatFormat::vfsub_vv({{
+                    auto fd = fsub<et>(ftype<et>(Vs2_vu[i]),
+                                       ftype<et>(Vs1_vu[i]));
+                    Vd_vu[i] = fd.v;
+                }}, OPFVV, VectorDummyOp);
+                0x03: VectorReduceFloatFormat::vfredosum_vs({{
+                    Vd_vu[0] = reduce_loop([](const vu& src1, const vu& src2) {
+                        return fadd<et>(ftype<et>(src1), ftype<et>(src2));
+                    }, Vs1_vu, Vs2_vu);
+                }}, OPFVV, VectorDummyOp);
+                0x04: VectorFloatFormat::vfmin_vv({{
+                    auto fd = fmin<et>(ftype<et>(Vs2_vu[i]),
+                                       ftype<et>(Vs1_vu[i]));
+                    Vd_vu[i] = fd.v;
+                }}, OPFVV, VectorDummyOp);
+                0x05: VectorReduceFloatFormat::vfredmin_vs({{
+                    Vd_vu[0] = reduce_loop([](const vu& src1, const vu& src2) {
+                        return fmin<et>(ftype<et>(src1), ftype<et>(src2));
+                    }, Vs1_vu, Vs2_vu);
+                }}, OPFVV, VectorDummyOp);
+                0x06: VectorFloatFormat::vfmax_vv({{
+                    auto fd = fmax<et>(ftype<et>(Vs2_vu[i]),
+                                       ftype<et>(Vs1_vu[i]));
+                    Vd_vu[i] = fd.v;
+                }}, OPFVV, VectorDummyOp);
+                0x07: VectorReduceFloatFormat::vfredmax_vs({{
+                    Vd_vu[0] = reduce_loop([](const vu& src1, const vu& src2) {
+                        return fmax<et>(ftype<et>(src1), ftype<et>(src2));
+                    }, Vs1_vu, Vs2_vu);
+                }}, OPFVV, VectorDummyOp);
+                0x08: VectorFloatFormat::vfsgnj_vv({{
+                    Vd_vu[i] = fsgnj<et>(ftype<et>(Vs2_vu[i]),
+                                         ftype<et>(Vs1_vu[i]),
+                                         false, false).v;
+                }}, OPFVV, VectorDummyOp);
+                0x09: VectorFloatFormat::vfsgnjn_vv({{
+                    Vd_vu[i] = fsgnj<et>(ftype<et>(Vs2_vu[i]),
+                                         ftype<et>(Vs1_vu[i]),
+                                         true, false).v;
+                }}, OPFVV, VectorDummyOp);
+                0x0a: VectorFloatFormat::vfsgnjx_vv({{
+                    Vd_vu[i] = fsgnj<et>(ftype<et>(Vs2_vu[i]),
+                                         ftype<et>(Vs1_vu[i]),
+                                         false, true).v;
+                }}, OPFVV, VectorDummyOp);
                 // VWFUNARY0
                 0x10: decode VS1 {
                     0x00: VectorNonSplitFormat::vfmv_f_s({{
@@ -2319,7 +2337,7 @@ decode QUADRANT default Unknown::unknown() {
             }
             // OPMVV
             0x2: decode VFUNCT6 {
-                format VectorReduceFormat {
+                format VectorReduceIntFormat {
                     0x0: vredsum_vs({{
                         Vd_vi[0] =
                             reduce_loop(std::plus<vi>(), Vs1_vi, Vs2_vi);
