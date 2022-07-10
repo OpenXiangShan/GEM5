@@ -135,6 +135,12 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
 
     branchPred = params.branchPred;
 
+    if (isDecoupledFrontend) {
+        dbp = dynamic_cast<branch_prediction::DecoupledBPU*>(branchPred);
+    } else {
+        dbp = nullptr;
+    }
+
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         decoder[tid] = params.decoder[tid];
         // Create space to buffer the cache line data,
@@ -514,16 +520,26 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     // this function updates it.
     bool predict_taken;
 
-    if (!inst->isControl()) {
+    ThreadID tid = inst->threadNumber;
+    if (isDecoupledFrontend) {
+        std::tie(predict_taken, usedUpFetchTargets) =
+            dbp->decoupledPredict(
+                inst->staticInst, inst->seqNum, next_pc, tid);
+    }
+
+    // For decoupled frontend, the instruction type is predicted with BTB
+    if ((isDecoupledFrontend && !predict_taken) ||
+        (!isDecoupledFrontend && !inst->isControl())) {
         inst->staticInst->advancePC(next_pc);
         inst->setPredTarg(next_pc);
         inst->setPredTaken(false);
         return false;
     }
 
-    ThreadID tid = inst->threadNumber;
-    predict_taken = branchPred->predict(inst->staticInst, inst->seqNum,
-                                        next_pc, tid);
+    if (!isDecoupledFrontend) {
+        predict_taken = branchPred->predict(inst->staticInst, inst->seqNum,
+                                            next_pc, tid);
+    }
 
     if (predict_taken) {
         DPRINTF(Fetch, "[tid:%i] [sn:%llu] Branch at PC %#x "
@@ -754,6 +770,8 @@ Fetch::doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst,
     // some opportunities to handle interrupts may be missed.
     delayedCommit[tid] = true;
 
+    usedUpFetchTargets = true;
+
     ++fetchStats.squashCycles;
 }
 
@@ -935,6 +953,12 @@ Fetch::tick()
 
     // Reset the number of the instruction we've fetched.
     numInst = 0;
+
+    if (isDecoupledFrontend) {
+        dbp->tick();
+        usedUpFetchTargets = !dbp->trySupplyFetchWithTarget();
+    }
+
 }
 
 bool
@@ -964,21 +988,45 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
         // If it was a branch mispredict on a control instruction, update the
         // branch predictor with that instruction, otherwise just kill the
         // invalid state we generated in after sequence number
-        if (fromCommit->commitInfo[tid].mispredictInst &&
-            fromCommit->commitInfo[tid].mispredictInst->isControl()) {
-            branchPred->squash(fromCommit->commitInfo[tid].doneSeqNum,
-                    *fromCommit->commitInfo[tid].pc,
-                    fromCommit->commitInfo[tid].branchTaken, tid);
+        if (!isDecoupledFrontend) {
+            if (fromCommit->commitInfo[tid].mispredictInst &&
+                fromCommit->commitInfo[tid].mispredictInst->isControl()) {
+                branchPred->squash(fromCommit->commitInfo[tid].doneSeqNum,
+                        *fromCommit->commitInfo[tid].pc,
+                        fromCommit->commitInfo[tid].branchTaken, tid);
+            } else {
+                branchPred->squash(fromCommit->commitInfo[tid].doneSeqNum,
+                                tid);
+            }
         } else {
-            branchPred->squash(fromCommit->commitInfo[tid].doneSeqNum,
-                              tid);
+            auto mispred_inst = fromCommit->commitInfo[tid].mispredictInst;
+            if (mispred_inst && mispred_inst->isControl()) {
+                dbp->controlSquash(
+                    mispred_inst->getFtqId(), mispred_inst->getFsqId(),
+                    mispred_inst->pcState(), *fromCommit->commitInfo[tid].pc,
+                    mispred_inst->staticInst, mispred_inst->getInstBytes(),
+                    fromCommit->commitInfo[tid].branchTaken,
+                    mispred_inst->seqNum, tid);
+            } else {
+                // TODO: what if exception?
+                auto squashed_inst = fromCommit->commitInfo[tid].squashInst;
+                if (squashed_inst) {
+                    dbp->nonControlSquash(
+                        squashed_inst->getFtqId(), squashed_inst->getFsqId(),
+                        squashed_inst->pcState(), squashed_inst->seqNum, tid);
+                }
+            }
         }
 
         return true;
     } else if (fromCommit->commitInfo[tid].doneSeqNum) {
         // Update the branch predictor if it wasn't a squashed instruction
         // that was broadcasted.
-        branchPred->update(fromCommit->commitInfo[tid].doneSeqNum, tid);
+        if (!isDecoupledFrontend) {
+            branchPred->update(fromCommit->commitInfo[tid].doneSeqNum, tid);
+        } else {
+            branchPred->update(fromCommit->commitInfo[tid].doneFsqId, tid);
+        }
     }
 
     // Check squash signals from decode.
@@ -987,13 +1035,29 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
                 "from decode.\n",tid);
 
         // Update the branch predictor.
-        if (fromDecode->decodeInfo[tid].branchMispredict) {
-            branchPred->squash(fromDecode->decodeInfo[tid].doneSeqNum,
-                    *fromDecode->decodeInfo[tid].nextPC,
-                    fromDecode->decodeInfo[tid].branchTaken, tid);
+        if (!isDecoupledFrontend) {
+            if (fromDecode->decodeInfo[tid].branchMispredict) {
+                branchPred->squash(fromDecode->decodeInfo[tid].doneSeqNum,
+                                   *fromDecode->decodeInfo[tid].nextPC,
+                                   fromDecode->decodeInfo[tid].branchTaken,
+                                   tid);
+            } else {
+                branchPred->squash(fromDecode->decodeInfo[tid].doneSeqNum,
+                                   tid);
+            }
         } else {
-            branchPred->squash(fromDecode->decodeInfo[tid].doneSeqNum,
-                              tid);
+            auto mispred_inst = fromDecode->decodeInfo[tid].mispredictInst;
+            if (fromDecode->decodeInfo[tid].branchMispredict) {
+                dbp->controlSquash(
+                    mispred_inst->getFtqId(), mispred_inst->getFsqId(),
+                    mispred_inst->pcState(),
+                    *fromDecode->decodeInfo[tid].nextPC,
+                    mispred_inst->staticInst, mispred_inst->getInstBytes(),
+                    fromDecode->decodeInfo[tid].branchTaken,
+                    mispred_inst->seqNum, tid);
+            } else {
+                warn("Unexpected non-control squash from decode.\n");
+            }
         }
 
         if (fetchStatus[tid] != Squashing) {
@@ -1063,6 +1127,11 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
 
     DPRINTF(Fetch, "[tid:%i] Instruction is: %s\n", tid,
             instruction->staticInst->disassemble(this_pc.instAddr()));
+
+    if (isDecoupledFrontend) {
+        instruction->setFsqId(dbp->getSupplyingStreamId(tid));
+        instruction->setFtqId(dbp->getSupplyingTargetId(tid));
+    }
 
 #if TRACING_ON
     if (trace) {

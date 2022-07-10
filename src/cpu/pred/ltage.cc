@@ -53,6 +53,7 @@ namespace branch_prediction
 LTAGE::LTAGE(const LTAGEParams &params)
   : TAGE(params), loopPredictor(params.loop_predictor)
 {
+    static_assert( std::is_constructible_v<LTAGE, const LTAGEParams &>);
 }
 
 void
