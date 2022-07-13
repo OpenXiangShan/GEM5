@@ -2415,6 +2415,9 @@ decode QUADRANT default Unknown::unknown() {
                         else
                             Vd_vi[i] = Vs2_vi[i] / Vs1_vi[i];
                     }}, OPMVV, VectorDummyOp);
+                    0x25: vmul_vv({{
+                        Vd_vi[i] = Vs2_vi[i] * Vs1_vi[i];
+                    }}, OPMVV, VectorDummyOp);
                     0x29: vmadd_vv({{
                         Vd_vi[i] = Vs3_vi[i] * Vs1_vi[i] + Vs2_vi[i];
                     }}, OPMVV, VectorDummyOp);
@@ -2945,6 +2948,9 @@ decode QUADRANT default Unknown::unknown() {
                             Vd_vi[i] = Vs2_vi[i];
                         else
                             Vd_vi[i] = Vs2_vi[i] / Rs1_vi;
+                    }}, OPMVX, VectorDummyOp);
+                    0x25: vmul_vx({{
+                        Vd_vi[i] = Vs2_vi[i] * Rs1_vi;
                     }}, OPMVX, VectorDummyOp);
                     0x29: vmadd_vx({{
                         Vd_vi[i] = Vs3_vi[i] * Rs1_vi + Vs2_vi[i];
