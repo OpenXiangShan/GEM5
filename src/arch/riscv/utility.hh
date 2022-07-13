@@ -199,7 +199,8 @@ vtype_set_vill(uint64_t& vtype)
     vtype = (uint64_t)0 ^ (1UL << (sizeof(RegVal) * 8 - 1));
 }
 
-inline uint64_t width_EEW(uint64_t width)
+inline uint64_t
+width_EEW(uint64_t width)
 {
     switch (width) {
     case 0b000: return 8;
@@ -223,6 +224,40 @@ elem_mask(const uint8_t* v0, const int index)
     return (v0[idx] >> pos) & 1;
 }
 
+inline uint64_t
+mulhu(uint64_t a, uint64_t b)
+{
+    uint64_t a_lo = (uint32_t)a;
+    uint64_t a_hi = a >> 32;
+    uint64_t b_lo = (uint32_t)b;
+    uint64_t b_hi = b >> 32;
+
+    uint64_t hi = a_hi * b_hi;
+    uint64_t mid1 = a_hi * b_lo;
+    uint64_t mid2 = a_lo * b_hi;
+    uint64_t lo = a_lo * b_lo;
+    uint64_t carry = ((uint64_t)(uint32_t)mid1
+            + (uint64_t)(uint32_t)mid2 + (lo >> 32)) >> 32;
+
+    return hi + (mid1 >> 32) + (mid2 >> 32) + carry;
+}
+
+inline int64_t
+mulh(int64_t a, int64_t b)
+{
+    int negate = (a < 0) != (b < 0);
+    uint64_t res = mulhu(a < 0 ? -a : a, b < 0 ? -b : b);
+    return negate ? ~res + (a * b == 0) : res;
+}
+
+inline int64_t
+mulhsu(int64_t a, uint64_t b)
+{
+    bool negate = a < 0;
+    uint64_t res = mulhu(a < 0 ? -a : a, b);
+    return negate ? ~res + (a * b == 0) : res;
+}
+
 template<typename Type> struct double_width;
 template<> struct double_width<uint8_t>     { using type = uint16_t;};
 template<> struct double_width<uint16_t>    { using type = uint32_t;};
@@ -232,8 +267,8 @@ template<> struct double_width<int16_t>     { using type = int32_t; };
 template<> struct double_width<int32_t>     { using type = int64_t; };
 template<> struct double_width<float32_t>   { using type = float64_t;};
 
-template<typename FloatType, typename IntType = decltype(FloatType::v)>
-auto ftype(IntType a) -> FloatType
+template<typename FloatType, typename IntType = decltype(FloatType::v)> auto
+ftype(IntType a) -> FloatType
 {
     if constexpr(std::is_same_v<uint32_t, IntType>)
         return f32(a);
@@ -242,8 +277,8 @@ auto ftype(IntType a) -> FloatType
     GEM5_UNREACHABLE;
 }
 
-template<typename FloatType>
-FloatType fadd(FloatType a, FloatType b)
+template<typename FloatType> FloatType
+fadd(FloatType a, FloatType b)
 {
     if constexpr(std::is_same_v<float32_t, FloatType>)
         return f32_add(a, b);
@@ -252,8 +287,8 @@ FloatType fadd(FloatType a, FloatType b)
     GEM5_UNREACHABLE;
 }
 
-template<typename FloatType>
-FloatType fsub(FloatType a, FloatType b)
+template<typename FloatType> FloatType
+fsub(FloatType a, FloatType b)
 {
     if constexpr(std::is_same_v<float32_t, FloatType>)
         return f32_sub(a, b);
@@ -262,8 +297,8 @@ FloatType fsub(FloatType a, FloatType b)
     GEM5_UNREACHABLE;
 }
 
-template<typename FloatType>
-FloatType fmin(FloatType a, FloatType b)
+template<typename FloatType> FloatType
+fmin(FloatType a, FloatType b)
 {
     if constexpr(std::is_same_v<float32_t, FloatType>)
         return f32_min(a, b);
@@ -272,8 +307,8 @@ FloatType fmin(FloatType a, FloatType b)
     GEM5_UNREACHABLE;
 }
 
-template<typename FloatType>
-FloatType fmax(FloatType a, FloatType b)
+template<typename FloatType> FloatType
+fmax(FloatType a, FloatType b)
 {
     if constexpr(std::is_same_v<float32_t, FloatType>)
         return f32_max(a, b);
@@ -282,8 +317,8 @@ FloatType fmax(FloatType a, FloatType b)
     GEM5_UNREACHABLE;
 }
 
-template<typename FloatType>
-FloatType fdiv(FloatType a, FloatType b)
+template<typename FloatType> FloatType
+fdiv(FloatType a, FloatType b)
 {
     if constexpr(std::is_same_v<float32_t, FloatType>)
         return f32_div(a, b);
@@ -292,8 +327,8 @@ FloatType fdiv(FloatType a, FloatType b)
     GEM5_UNREACHABLE;
 }
 
-template<typename FloatType>
-FloatType fmul(FloatType a, FloatType b)
+template<typename FloatType> FloatType
+fmul(FloatType a, FloatType b)
 {
     if constexpr(std::is_same_v<float32_t, FloatType>)
         return f32_mul(a, b);
@@ -302,8 +337,8 @@ FloatType fmul(FloatType a, FloatType b)
     GEM5_UNREACHABLE;
 }
 
-template<typename FloatType>
-FloatType fsqrt(FloatType a)
+template<typename FloatType> FloatType
+fsqrt(FloatType a)
 {
     if constexpr(std::is_same_v<float32_t, FloatType>)
         return f32_sqrt(a);
@@ -312,8 +347,8 @@ FloatType fsqrt(FloatType a)
     GEM5_UNREACHABLE;
 }
 
-template<typename FloatType>
-FloatType fsgnj(FloatType a, FloatType b, bool n, bool x)
+template<typename FloatType> FloatType
+fsgnj(FloatType a, FloatType b, bool n, bool x)
 {
     if constexpr(std::is_same_v<float32_t, FloatType>)
         return fsgnj32(a, b, n, x);
@@ -322,8 +357,8 @@ FloatType fsgnj(FloatType a, FloatType b, bool n, bool x)
     GEM5_UNREACHABLE;
 }
 
-template<typename FloatType>
-bool fle(FloatType a, FloatType b)
+template<typename FloatType> bool
+fle(FloatType a, FloatType b)
 {
     if constexpr(std::is_same_v<float32_t, FloatType>)
         return f32_le(a, b);
@@ -332,8 +367,8 @@ bool fle(FloatType a, FloatType b)
     GEM5_UNREACHABLE;
 }
 
-template<typename FloatType>
-bool feq(FloatType a, FloatType b)
+template<typename FloatType> bool
+feq(FloatType a, FloatType b)
 {
     if constexpr(std::is_same_v<float32_t, FloatType>)
         return f32_eq(a, b);
@@ -342,8 +377,8 @@ bool feq(FloatType a, FloatType b)
     GEM5_UNREACHABLE;
 }
 
-template<typename FloatType>
-bool flt(FloatType a, FloatType b)
+template<typename FloatType> bool
+flt(FloatType a, FloatType b)
 {
     if constexpr(std::is_same_v<float32_t, FloatType>)
         return f32_lt(a, b);
@@ -352,8 +387,8 @@ bool flt(FloatType a, FloatType b)
     GEM5_UNREACHABLE;
 }
 
-template<typename FloatType>
-FloatType fmadd(FloatType a, FloatType b, FloatType c)
+template<typename FloatType> FloatType
+fmadd(FloatType a, FloatType b, FloatType c)
 {
     if constexpr(std::is_same_v<float32_t, FloatType>)
         return f32_mulAdd(a, b, c);
@@ -362,8 +397,8 @@ FloatType fmadd(FloatType a, FloatType b, FloatType c)
     GEM5_UNREACHABLE;
 }
 
-template<typename FloatType>
-FloatType fneg(FloatType a)
+template<typename FloatType> FloatType
+fneg(FloatType a)
 {
     if constexpr(std::is_same_v<float32_t, FloatType>)
         return f32(a.v ^ uint32_t(mask(31, 31)));
@@ -372,8 +407,8 @@ FloatType fneg(FloatType a)
     GEM5_UNREACHABLE;
 }
 
-template<typename FT, typename WFT = typename double_width<FT>::type>
-WFT fwiden(FT a)
+template<typename FT, typename WFT = typename double_width<FT>::type> WFT
+fwiden(FT a)
 {
     if constexpr(std::is_same_v<float32_t, FT>)
         return f32_to_f64(a);

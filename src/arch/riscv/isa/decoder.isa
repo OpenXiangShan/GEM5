@@ -1044,26 +1044,7 @@ decode QUADRANT default Unknown::unknown() {
                         Rd = Rs1 << Rs2<5:0>;
                     }});
                     0x1: mulh({{
-                        bool negate = (Rs1_sd < 0) != (Rs2_sd < 0);
-
-                        uint64_t Rs1_lo = (uint32_t)std::abs(Rs1_sd);
-                        uint64_t Rs1_hi = (uint64_t)std::abs(Rs1_sd) >> 32;
-                        uint64_t Rs2_lo = (uint32_t)std::abs(Rs2_sd);
-                        uint64_t Rs2_hi = (uint64_t)std::abs(Rs2_sd) >> 32;
-
-                        uint64_t hi = Rs1_hi*Rs2_hi;
-                        uint64_t mid1 = Rs1_hi*Rs2_lo;
-                        uint64_t mid2 = Rs1_lo*Rs2_hi;
-                        uint64_t lo = Rs2_lo*Rs1_lo;
-                        uint64_t carry = ((uint64_t)(uint32_t)mid1
-                                + (uint64_t)(uint32_t)mid2 + (lo >> 32)) >> 32;
-
-                        uint64_t res = hi +
-                                       (mid1 >> 32) +
-                                       (mid2 >> 32) +
-                                       carry;
-                        Rd = negate ? ~res + (Rs1_sd*Rs2_sd == 0 ? 1 : 0)
-                                    : res;
+                        Rd_sd = mulh(Rs1_sd, Rs2_sd);
                     }}, IntMultOp);
                     0x5: clmul({{
                         Rd = 0;
@@ -1095,24 +1076,7 @@ decode QUADRANT default Unknown::unknown() {
                         Rd = (Rs1_sd < Rs2_sd) ? 1 : 0;
                     }});
                     0x1: mulhsu({{
-                        bool negate = Rs1_sd < 0;
-                        uint64_t Rs1_lo = (uint32_t)std::abs(Rs1_sd);
-                        uint64_t Rs1_hi = (uint64_t)std::abs(Rs1_sd) >> 32;
-                        uint64_t Rs2_lo = (uint32_t)Rs2;
-                        uint64_t Rs2_hi = Rs2 >> 32;
-
-                        uint64_t hi = Rs1_hi*Rs2_hi;
-                        uint64_t mid1 = Rs1_hi*Rs2_lo;
-                        uint64_t mid2 = Rs1_lo*Rs2_hi;
-                        uint64_t lo = Rs1_lo*Rs2_lo;
-                        uint64_t carry = ((uint64_t)(uint32_t)mid1
-                                + (uint64_t)(uint32_t)mid2 + (lo >> 32)) >> 32;
-
-                        uint64_t res = hi +
-                                       (mid1 >> 32) +
-                                       (mid2 >> 32) +
-                                       carry;
-                        Rd = negate ? ~res + (Rs1_sd*Rs2 == 0 ? 1 : 0) : res;
+                        Rd_sd = mulhsu(Rs1_sd, Rs2);
                     }}, IntMultOp);
                     0x5: clmulr({{
                         Rd = 0;
@@ -1134,19 +1098,7 @@ decode QUADRANT default Unknown::unknown() {
                         Rd = (Rs1 < Rs2) ? 1 : 0;
                     }});
                     0x1: mulhu({{
-                        uint64_t Rs1_lo = (uint32_t)Rs1;
-                        uint64_t Rs1_hi = Rs1 >> 32;
-                        uint64_t Rs2_lo = (uint32_t)Rs2;
-                        uint64_t Rs2_hi = Rs2 >> 32;
-
-                        uint64_t hi = Rs1_hi*Rs2_hi;
-                        uint64_t mid1 = Rs1_hi*Rs2_lo;
-                        uint64_t mid2 = Rs1_lo*Rs2_hi;
-                        uint64_t lo = Rs1_lo*Rs2_lo;
-                        uint64_t carry = ((uint64_t)(uint32_t)mid1
-                                + (uint64_t)(uint32_t)mid2 + (lo >> 32)) >> 32;
-
-                        Rd = hi + (mid1 >> 32) + (mid2 >> 32) + carry;
+                        Rd = mulhu(Rs1, Rs2);
                     }}, IntMultOp);
                     0x5: clmulh({{
                         Rd = 0;
@@ -2415,8 +2367,53 @@ decode QUADRANT default Unknown::unknown() {
                         else
                             Vd_vi[i] = Vs2_vi[i] / Vs1_vi[i];
                     }}, OPMVV, VectorDummyOp);
+                    0x22: vremu_vv({{
+                        if (Vs1_vu[i] == 0) {
+                            Vd_vu[i] = Vs2_vu[i];
+                        } else {
+                            Vd_vu[i] = Vs2_vu[i] % Vs1_vu[i];
+                        }
+                    }}, OPMVV, VectorDummyOp);
+                    0x23: vrem_vv({{
+                        if (Vs1_vi[i] == 0) {
+                            Vd_vi[i] = Vs2_vi[i];
+                        } else if (Vs2_vi[i] == std::numeric_limits<vi>::min()
+                                && Vs1_vi[i] == -1) {
+                            Vd_vi[i] = 0;
+                        } else {
+                            Vd_vi[i] = Vs2_vi[i] % Vs1_vi[i];
+                        }
+                    }}, OPMVV, VectorDummyOp);
+                    0x24: vmulhu_vv({{
+                        auto sew = vtype_SEW(vtype);
+                        if (sew < 64) {
+                            Vd_vu[i] = ((uint64_t)Vs2_vu[i] * Vs1_vu[i])
+                                        >> sew;
+                        } else {
+                            Vd_vu[i] = mulhu(Vs2_vu[i], Vs1_vu[i]);
+                        }
+                    }}, OPMVV, VectorDummyOp);
                     0x25: vmul_vv({{
                         Vd_vi[i] = Vs2_vi[i] * Vs1_vi[i];
+                    }}, OPMVV, VectorDummyOp);
+                    0x26: vmulhsu_vv({{
+                        auto sew = vtype_SEW(vtype);
+                        if (sew < 64) {
+                            Vd_vi[i] = ((int64_t)Vs2_vi[i] *
+                                        (uint64_t)Vs1_vu[i])
+                                        >> sew;
+                        } else {
+                            Vd_vi[i] = mulhsu(Vs2_vi[i], Vs1_vu[i]);
+                        }
+                    }}, OPMVV, VectorDummyOp);
+                    0x27: vmulh_vv({{
+                        auto sew = vtype_SEW(vtype);
+                        if (sew < 64) {
+                            Vd_vi[i] = ((int64_t)Vs2_vi[i] * Vs1_vi[i])
+                                        >> sew;
+                        } else {
+                            Vd_vi[i] = mulh(Vs2_vi[i], Vs1_vi[i]);
+                        }
                     }}, OPMVV, VectorDummyOp);
                     0x29: vmadd_vv({{
                         Vd_vi[i] = Vs3_vi[i] * Vs1_vi[i] + Vs2_vi[i];
