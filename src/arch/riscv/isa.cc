@@ -387,6 +387,12 @@ ISA::readMiscReg(int misc_reg)
             return vlenb;
         }
         break;
+      case MISCREG_VCSR:
+        {
+            return readMiscRegNoEffect(MISCREG_VXSAT) &
+                  (readMiscRegNoEffect(MISCREG_VXRM) << 1);
+        }
+        break;
       default:
         // Try reading HPM counters
         // As a placeholder, all HPM counters are just cycle counters
@@ -552,6 +558,22 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 mstatus.sd = 1;
                 setMiscRegNoEffect(MISCREG_STATUS, mstatus);
                 setMiscRegNoEffect(misc_reg, val);
+            }
+            break;
+          case MISCREG_VXSAT:
+            {
+                setMiscRegNoEffect(misc_reg, val & 0x1);
+            }
+            break;
+          case MISCREG_VXRM:
+            {
+                setMiscRegNoEffect(misc_reg, val & 0x3);
+            }
+            break;
+          case MISCREG_VCSR:
+            {
+                setMiscRegNoEffect(MISCREG_VXSAT, val & 0x1);
+                setMiscRegNoEffect(MISCREG_VXRM, (val & 0x6) >> 1);
             }
             break;
           default:
