@@ -562,6 +562,9 @@ Commit::squashAll(ThreadID tid)
     toIEW->commitInfo[tid].squashInst = NULL;
 
     set(toIEW->commitInfo[tid].pc, pc[tid]);
+
+    toIEW->commitInfo[tid].squashedStreamId = committedStreamId;
+    toIEW->commitInfo[tid].squashedTargetId = committedTargetId;
 }
 
 void
@@ -1059,6 +1062,8 @@ Commit::commitInsts()
                     toIEW->commitInfo[tid].doneFsqId =
                         head_inst->getFsqId() - 1;
                 }
+                committedStreamId = head_inst->getFsqId();
+                committedTargetId = head_inst->getFtqId();
 
                 if (tid == 0)
                     canHandleInterrupts = !head_inst->isDelayedCommit();

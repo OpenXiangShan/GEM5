@@ -194,8 +194,8 @@ struct TimeStruct
         InstSeqNum doneSeqNum; // *F, I
 
         uint64_t doneFsqId; // F
-        uint64_t squashedStreamId;
-        uint64_t squashedTargetId;
+        uint64_t squashedStreamId; // F
+        uint64_t squashedTargetId; // F
 
         /// Tell Rename how many free entries it has in the ROB
         unsigned freeROBEntries; // *R

@@ -461,6 +461,11 @@ class Commit
     int htmStarts[MaxThreads];
     int htmStops[MaxThreads];
 
+    // committed Stream and Target
+
+    uint64_t committedStreamId{};
+    uint64_t committedTargetId{};
+
     struct CommitStats : public statistics::Group
     {
         CommitStats(CPU *cpu, Commit *commit);

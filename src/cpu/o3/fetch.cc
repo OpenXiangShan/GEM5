@@ -1015,20 +1015,20 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
                     mispred_inst->seqNum, tid);
             } else {
                 // TODO: what if exception?
-                auto squashed_inst = fromCommit->commitInfo[tid].squashInst;
-                if (squashed_inst) {
-                    DPRINTF(DecoupleBP,
-                            "squashed_inst->pc: %#lx, commit pc: %#lx\n",
-                            squashed_inst->pcState().instAddr(),
-                            fromCommit->commitInfo[tid].pc == nullptr
-                                ? 0
-                                : fromCommit->commitInfo[tid].pc->instAddr());
-                    dbp->nonControlSquash(squashed_inst->getFtqId(),
-                                          squashed_inst->getFsqId(),
-                                          *fromCommit->commitInfo[tid].pc,
-                                          squashed_inst->seqNum,
-                                          tid);
-                } else {
+                // auto squashed_inst = fromCommit->commitInfo[tid].squashInst;
+                // if (squashed_inst) {
+                //     DPRINTF(DecoupleBP,
+                //             "squashed_inst->pc: %#lx, commit pc: %#lx\n",
+                //             squashed_inst->pcState().instAddr(),
+                //             fromCommit->commitInfo[tid].pc == nullptr
+                //                 ? 0
+                //               : fromCommit->commitInfo[tid].pc->instAddr());
+                //     dbp->nonControlSquash(squashed_inst->getFtqId(),
+                //                           squashed_inst->getFsqId(),
+                //                           *fromCommit->commitInfo[tid].pc,
+                //                           squashed_inst->seqNum,
+                //                           tid);
+                // } else {
                     if (fromCommit->commitInfo[tid].pc &&
                         fromCommit->commitInfo[tid].squashedStreamId != 0) {
                         DPRINTF(
@@ -1041,9 +1041,9 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
                     } else {
                         DPRINTF(
                             DecoupleBP,
-                            "Dont squash dbq because no meaning full stream\n");
+                            "Dont squash dbq because no meaningful stream\n");
                     }
-                }
+                // }
             }
         }
 
