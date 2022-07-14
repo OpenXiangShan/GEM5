@@ -72,6 +72,13 @@ StreamUBTB::update(const PredictionID fsq_id, Addr stream_start_pc,
                    bool is_indirect, unsigned control_size,
                    bool actually_taken,
                    const boost::dynamic_bitset<> &history) {
+    if (control_pc < stream_start_pc) {
+        DPRINTF(DecoupleBP,
+                "Control PC %#lx is before stream start %#lx, ignore it\n",
+                control_pc,
+                stream_start_pc);
+        return;
+    }
     std::string buf;
     boost::to_string(history, buf);
     DPRINTF(DecoupleBP,
