@@ -452,7 +452,12 @@ decode QUADRANT default Unknown::unknown() {
             0x0: decode MOP {
                 0x0: decode LUMOP {
                     0x00: VleOp::vle8_v({{
-                        Vd_ub[i] = Mem_vc.as<uint8_t>()[i];
+                        if ((machInst.vm || elem_mask(v0, ei)) &&
+                            i < this->microVl) {
+                            Vd_ub[i] = Mem_vc.as<uint8_t>()[i];
+                        } else {
+                            Vd_ub[i] = Vs2_ub[i];
+                        }
                     }}, inst_flags=VectorDummyOp);
                     0x08: decode NF {
                         format VlWholeOp {
@@ -481,7 +486,12 @@ decode QUADRANT default Unknown::unknown() {
             0x5: decode MOP {
                 0x0: decode LUMOP {
                     0x00: VleOp::vle16_v({{
-                        Vd_uh[i] = Mem_vc.as<uint16_t>()[i];
+                        if ((machInst.vm || elem_mask(v0, ei)) &&
+                            i < this->microVl) {
+                            Vd_uh[i] = Mem_vc.as<uint16_t>()[i];
+                        } else {
+                            Vd_uh[i] = Vs2_uh[i];
+                        }
                     }}, inst_flags=VectorDummyOp);
                     0x08: decode NF {
                         format VlWholeOp {
@@ -507,7 +517,12 @@ decode QUADRANT default Unknown::unknown() {
             0x6: decode MOP {
                 0x0: decode LUMOP {
                     0x00: VleOp::vle32_v({{
-                        Vd_uw[i] = Mem_vc.as<uint32_t>()[i];
+                        if ((machInst.vm || elem_mask(v0, ei)) &&
+                            i < this->microVl) {
+                            Vd_uw[i] = Mem_vc.as<uint32_t>()[i];
+                        } else {
+                            Vd_uw[i] = Vs2_uw[i];
+                        }
                     }}, inst_flags=VectorDummyOp);
                     0x08: decode NF {
                         format VlWholeOp {
@@ -533,7 +548,12 @@ decode QUADRANT default Unknown::unknown() {
             0x7: decode MOP {
                 0x0: decode LUMOP {
                     0x00: VleOp::vle64_v({{
-                        Vd_ud[i] = Mem_vc.as<uint64_t>()[i];
+                        if ((machInst.vm || elem_mask(v0, ei)) &&
+                            i < this->microVl) {
+                            Vd_ud[i] = Mem_vc.as<uint64_t>()[i];
+                        } else {
+                            Vd_ud[i] = Vs2_ud[i];
+                        }
                     }}, inst_flags=VectorDummyOp);
                     0x08: decode NF {
                         format VlWholeOp {

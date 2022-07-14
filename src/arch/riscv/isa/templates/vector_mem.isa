@@ -31,8 +31,6 @@ def template VleConstructor {{
         microop = new VSplitTmpMicroInst(machInst, machInst.vd + i,
                                          NumMemAccPerVecReg);
         this->microops.push_back(microop);
-
-        size_t src_reg_count = 0;
         for (int j = 0; j < NumMemAccPerVecReg && micro_vl > 0; ++j) {
             offset = (i * NumMemAccPerVecReg + j) * CachelineSizeByte;
             microop = new %(class_name)sMicro(machInst, offset,
@@ -44,11 +42,9 @@ def template VleConstructor {{
             this->microops.push_back(microop);
             remaining_vl -= num_elems_per_ma;
             micro_vl = std::min(remaining_vl, num_elems_per_ma);
-            src_reg_count++;
         }
-
         microop = new VMergeTmpMicroInst(machInst, machInst.vd + i,
-                                         src_reg_count);
+                                         NumMemAccPerVecReg);
         this->microops.push_back(microop);
     }
 
@@ -64,7 +60,7 @@ def template VleMicroDeclare {{
 class %(class_name)s : public %(base_class)s
 {
 private:
-    RegId srcRegIdxArr[2];
+    RegId srcRegIdxArr[3];
     RegId destRegIdxArr[1];
 public:
     %(class_name)s(ExtMachInst _machInst, uint32_t _offset, uint8_t _dstReg,
@@ -78,6 +74,7 @@ public:
         setDestRegIdx(_numDestRegs++, RegId(VecRegClass, _dstReg));
         _numTypedDestRegs[VecRegClass]++;
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
+        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _dstReg));
         if (!_machInst.vm) {
             setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, 0));
         }
@@ -121,11 +118,9 @@ Fault
 
     size_t ei;
     int32_t num_elems_per_ma = CachelineSize / width_EEW(machInst.width);
-    for (size_t i = 0; i < this->microVl; i++) {
+    for (size_t i = 0; i < num_elems_per_ma; i++) {
         ei = i + num_elems_per_ma * this->microIdx;
-        if (machInst.vm || elem_mask(v0, ei)) {
-            %(memacc_code)s;
-        }
+        %(memacc_code)s;
     }
 
     %(op_wb)s;
@@ -175,11 +170,9 @@ Fault
 
     size_t ei;
     int32_t num_elems_per_ma = CachelineSize / width_EEW(machInst.width);
-    for (size_t i = 0; i < this->microVl; i++) {
+    for (size_t i = 0; i < num_elems_per_ma; i++) {
         ei = i + num_elems_per_ma * this->microIdx;
-        if (machInst.vm || elem_mask(v0, ei)) {
-            %(memacc_code)s;
-        }
+        %(memacc_code)s;
     }
 
     %(op_wb)s;
