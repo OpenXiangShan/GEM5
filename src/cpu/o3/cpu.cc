@@ -1690,8 +1690,10 @@ CPU::diffWithNEMU(const DynInstPtr &inst)
 
     auto gem5_pc = inst->pcState().instAddr();
     auto nemu_pc = diff.nemu_commit_inst_pc;
-    DPRINTF(ValueCommit, "NEMU PC: %#10lx, GEM5 PC: %#10lx\n",
-            nemu_pc, gem5_pc);
+    DPRINTF(ValueCommit,
+            "NEMU PC: %#10lx, GEM5 PC: %#10lx, inst: %s\n",
+            nemu_pc, gem5_pc,
+            inst->staticInst->disassemble(inst->pcState().instAddr()).c_str());
 
     // auto nemu_store_addr = referenceRegFile[DIFFTEST_STORE_ADDR];
     // if (nemu_store_addr) {
@@ -1737,6 +1739,11 @@ CPU::diffWithNEMU(const DynInstPtr &inst)
             auto gem5_val = inst->getResult().asNoAssert<RegVal>();
             auto nemu_val = referenceRegFile[dest_tag];
 
+            DPRINTF(ValueCommit,
+                    "At %s Ref value: %#lx, GEM5 value: %#lx\n",
+                    reg_name[dest_tag],
+                    nemu_val,
+                    gem5_val);
             if (gem5_val != nemu_val) {
                 if (dest.isFloatReg() &&
                     (gem5_val ^ nemu_val) == ((0xffffffffULL) << 32)) {
@@ -1752,6 +1759,16 @@ CPU::diffWithNEMU(const DynInstPtr &inst)
                     referenceRegFile[dest_tag] = gem5_val;
                     proxy->regcpy(referenceRegFile, DUT_TO_REF);
                 } else {
+                    for (int i = 0; i < inst->numSrcRegs(); i++) {
+                        const auto &src = inst->staticInst->srcRegIdx(i);
+                        DPRINTF(
+                            ValueCommit, "Src%d %s = %lx\n",
+                            i, reg_name[src.index()],
+                            inst->getRegOperand(inst->staticInst.get(), i));
+                    }
+                    DPRINTF(ValueCommit,
+                            "Inst src count: %u, dest count: %u\n",
+                            inst->numSrcRegs(), inst->numDestRegs());
                     warn("Inst [sn:%lli] pc:%s\n", inst->seqNum,
                          inst->pcState());
                     warn("Diff at %s Ref value: %#lx, GEM5 value: %#lx\n",
