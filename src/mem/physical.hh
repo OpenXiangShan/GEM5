@@ -171,6 +171,8 @@ class PhysicalMemory : public Serializable
     // Restore from Xiangshan checkpoint image
     bool restoreFromXiangshanCpt;
 
+    std::string gCptRestorerPath;
+
     std::string xsCptPath;
 
     /**
@@ -197,6 +199,7 @@ class PhysicalMemory : public Serializable
                    bool mmap_using_noreserve,
                    const std::string& shared_backstore,
                    bool restore_from_gcpt,
+                   const std::string& gcpt_restorer_path,
                    const std::string&gcpt_path,
                    bool auto_unlink_shared_backstore);
 

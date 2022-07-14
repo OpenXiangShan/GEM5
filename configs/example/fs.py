@@ -343,6 +343,10 @@ if args.generic_rv_cpt is not None:
     assert(args.xiangshan_system)
     test_sys.restore_from_gcpt = True
     test_sys.gcpt_file = args.generic_rv_cpt
+    if args.gcpt_restorer is None:
+        test_sys.gcpt_restorer_file = ""
+    else:
+        test_sys.gcpt_restorer_file = args.gcpt_restorer
 
 if len(bm) == 2:
     drive_sys = build_drive_system(np)

@@ -84,12 +84,14 @@ PhysicalMemory::PhysicalMemory(const std::string& _name,
                                bool mmap_using_noreserve,
                                const std::string& shared_backstore,
                                bool restore_from_gcpt,
+                               const std::string& gcpt_restorer_path,
                                const std::string& gcpt_path,
                                bool auto_unlink_shared_backstore) :
     _name(_name), size(0), mmapUsingNoReserve(mmap_using_noreserve),
     sharedBackstore(shared_backstore), sharedBackstoreSize(0),
     pageSize(sysconf(_SC_PAGE_SIZE)),
     restoreFromXiangshanCpt(restore_from_gcpt),
+    gCptRestorerPath(gcpt_restorer_path),
     xsCptPath(gcpt_path)
 {
     // Register cleanup callback if requested.
@@ -507,6 +509,21 @@ PhysicalMemory::unserializeStoreFrom(std::string filepath,
     }
 
     delete[] temp_page;
+
+    if (restoreFromXiangshanCpt && !gCptRestorerPath.empty()) {
+        warn("Overriding Gcpt restorer\n");
+        warn("gCptRestorerPath： %s\n", gCptRestorerPath.c_str());
+
+        FILE *fp = fopen(gCptRestorerPath.c_str(), "rb");
+        if (!fp) {
+            panic("Can not open '%s'", gCptRestorerPath);
+        }
+
+        uint32_t restorer_size = 0x400;
+        fseek(fp, 0, SEEK_SET);
+        assert(restorer_size == fread(pmem, 1, restorer_size, fp));
+        fclose(fp);
+    }
 
     if (gzclose(compressed_mem))
         fatal("Close failed on physical memory checkpoint file '%s'\n",
