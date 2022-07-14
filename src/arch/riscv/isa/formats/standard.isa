@@ -327,6 +327,7 @@ def template CSRExecute {{
             return std::make_shared<IllegalInstFault>(
                     csprintf("Illegal CSR index %#x\n", csr), machInst);
         }
+        DPRINTF(RiscvMisc, "Executing inst: %s\n", mnemonic);
 
         %(op_decl)s;
         %(op_rd)s;
