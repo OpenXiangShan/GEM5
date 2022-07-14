@@ -188,7 +188,8 @@ std::string VlStrideMicroInst::generateDisassembly(Addr pc,
 }
 
 Fault
-VldMvMicroInst::execute(ExecContext *xc, Trace::InstRecord *traceData) const
+VMergeTmpMicroInst::execute(
+    ExecContext *xc, Trace::InstRecord *traceData) const
 {
     vreg_t tmp_d0 = *(vreg_t *)xc->getWritableRegOperand(this, 0);
     auto Vd = tmp_d0.as<uint8_t>();
@@ -206,7 +207,7 @@ VldMvMicroInst::execute(ExecContext *xc, Trace::InstRecord *traceData) const
     return NoFault;
 }
 
-std::string VldMvMicroInst::generateDisassembly(Addr pc,
+std::string VMergeTmpMicroInst::generateDisassembly(Addr pc,
         const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
@@ -238,7 +239,8 @@ VMvWholeMicroInst::generateDisassembly(Addr pc,
 }
 
 Fault
-VstMvMicroInst::execute(ExecContext *xc, Trace::InstRecord *traceData) const
+VSplitTmpMicroInst::execute(
+    ExecContext *xc, Trace::InstRecord *traceData) const
 {
     vreg_t tmp_s0;
     xc->getRegOperand(this, 0, &tmp_s0);
@@ -255,7 +257,7 @@ VstMvMicroInst::execute(ExecContext *xc, Trace::InstRecord *traceData) const
     return NoFault;
 }
 
-std::string VstMvMicroInst::generateDisassembly(Addr pc,
+std::string VSplitTmpMicroInst::generateDisassembly(Addr pc,
         const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;

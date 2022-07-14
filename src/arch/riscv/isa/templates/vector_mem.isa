@@ -28,6 +28,10 @@ def template VleConstructor {{
     uint32_t offset;
 
     for (int i = 0; micro_vl > 0; ++i) {
+        microop = new VSplitTmpMicroInst(machInst, machInst.vd + i,
+                                         NumMemAccPerVecReg);
+        this->microops.push_back(microop);
+
         size_t src_reg_count = 0;
         for (int j = 0; j < NumMemAccPerVecReg && micro_vl > 0; ++j) {
             offset = (i * NumMemAccPerVecReg + j) * CachelineSizeByte;
@@ -43,7 +47,8 @@ def template VleConstructor {{
             src_reg_count++;
         }
 
-        microop = new VldMvMicroInst(machInst, machInst.vd + i, src_reg_count);
+        microop = new VMergeTmpMicroInst(machInst, machInst.vd + i,
+                                         src_reg_count);
         this->microops.push_back(microop);
     }
 
@@ -215,7 +220,7 @@ def template VseConstructor {{
             src_reg_count++;
         }
 
-        microop = new VstMvMicroInst(_machInst, _machInst.vs3 + i,
+        microop = new VSplitTmpMicroInst(_machInst, _machInst.vs3 + i,
                                      src_reg_count);
         this->microops.push_back(microop);
 
@@ -383,7 +388,7 @@ def template VlmConstructor {{
             micro_vl = std::min(remaining_vl, num_elems_per_ma);
             src_reg_count++;
         }
-        microop = new VldMvMicroInst(_machInst, _machInst.vd + i,
+        microop = new VMergeTmpMicroInst(_machInst, _machInst.vd + i,
                                      src_reg_count);
         this->microops.push_back(microop);
     }
@@ -424,7 +429,7 @@ def template VsmConstructor {{
             micro_vl = std::min(remaining_vl, num_elems_per_ma);
             src_reg_count++;
         }
-        microop = new VstMvMicroInst(_machInst, _machInst.vs3 + i,
+        microop = new VSplitTmpMicroInst(_machInst, _machInst.vs3 + i,
                                      src_reg_count);
         this->microops.push_back(microop);
         for (StaticInstPtr op : tmp_ops) {
@@ -452,7 +457,7 @@ def template VsWholeConstructor {{
     uint32_t offset;
     size_t NFIELDS = machInst.nf + 1;
     for (int i = 0; i < NFIELDS; ++i) {
-        microop = new VstMvMicroInst(_machInst, _machInst.vs3 + i,
+        microop = new VSplitTmpMicroInst(_machInst, _machInst.vs3 + i,
                                      NumMemAccPerVecReg);
         this->microops.push_back(microop);
         for (int j = 0; j < NumMemAccPerVecReg; ++j) {
@@ -575,7 +580,7 @@ def template VlWholeConstructor {{
             this->microops.push_back(microop);
         }
 
-        microop = new VldMvMicroInst(_machInst, _machInst.vd + i,
+        microop = new VMergeTmpMicroInst(_machInst, _machInst.vd + i,
                                      NumMemAccPerVecReg);
         this->microops.push_back(microop);
     }

@@ -85,8 +85,8 @@ def format VleOp(
     inst_flags=[]
 ) {{
     (header_output, decoder_output, decode_block, exec_output) = \
-        VMemBase(name, Name, ea_code, memacc_code, mem_flags,
-                 inst_flags, 'VleMacroInst', exec_template_base='Vle')
+        VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
+                 'VleMacroInst', exec_template_base='Vle')
 }};
 
 def format VseOp(

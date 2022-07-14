@@ -328,15 +328,15 @@ class VMvWholeMicroInst : public VectorArithMicroInst
             Addr pc, const loader::SymbolTable *symtab) const override;
 };
 
-class VldMvMicroInst : public RiscvMicroInst
+class VMergeTmpMicroInst : public RiscvMicroInst
 {
   private:
     RegId srcRegIdxArr[NumMemAccPerVecReg];
     RegId destRegIdxArr[1];
 
   public:
-    VldMvMicroInst(ExtMachInst _machInst, uint8_t _dstReg, size_t _numSrcs)
-        : RiscvMicroInst("vl_mv_micro", _machInst, VectorDummyOp)
+    VMergeTmpMicroInst(ExtMachInst _machInst, uint8_t _dstReg, size_t _numSrcs)
+        : RiscvMicroInst("vmerge_tmp_micro", _machInst, VectorDummyOp)
     {
         setRegIdxArrays(
             reinterpret_cast<RegIdArrayPtr>(
@@ -360,14 +360,15 @@ class VldMvMicroInst : public RiscvMicroInst
         Addr pc, const loader::SymbolTable *symtab) const override;
 };
 
-class VstMvMicroInst : public RiscvMicroInst
+class VSplitTmpMicroInst : public RiscvMicroInst
 {
   private:
     RegId srcRegIdxArr[1];
     RegId destRegIdxArr[NumMemAccPerVecReg];
   public:
-    VstMvMicroInst(ExtMachInst _machInst, uint8_t _srcReg, uint8_t _numDsts)
-        : RiscvMicroInst("vs_mv_micro", _machInst, VectorDummyOp)
+    VSplitTmpMicroInst(ExtMachInst _machInst, uint8_t _srcReg,
+                       uint8_t _numDsts)
+        : RiscvMicroInst("vsplit_tmp_micro", _machInst, VectorDummyOp)
     {
         setRegIdxArrays(
             reinterpret_cast<RegIdArrayPtr>(
