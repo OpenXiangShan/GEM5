@@ -261,6 +261,10 @@ PhysicalMemory::createBackingStore(
                               conf_table_reported, in_addr_map, kvm_map,
                               shm_fd, map_offset);
 
+    // For Difftest copy memory
+    pmemStart = pmem;
+    pmemSize = range.size();
+
     // point the memories to their backing store
     for (const auto& m : _memories) {
         DPRINTF(AddrRanges, "Mapping memory %s to backing store\n",
@@ -512,9 +516,6 @@ PhysicalMemory::unserializeStoreFrom(std::string filepath,
         fatal("Close failed on physical memory checkpoint file '%s'\n",
               filepath.c_str());
 
-    // For Difftest copy memory
-    pmemStart = pmem;
-    pmemSize = range.size();
 }
 
 bool PhysicalMemory::tryRestoreFromXSCpt() {

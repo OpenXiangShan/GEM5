@@ -48,6 +48,7 @@ class BareMetal : public Workload
     Addr _resetVect;
     loader::ObjectFile *bootloader;
     loader::SymbolTable bootloaderSymtab;
+    bool raw_binary;
 
   public:
     PARAMS(RiscvBareMetal);

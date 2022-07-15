@@ -546,8 +546,11 @@ def addFSOptions(parser):
 
     # Xiangshan related options
     parser.add_argument("--xiangshan-system", action= "store_true",
-                        help = "Use memory layout of Xiangshan system")
+                        help="Use memory layout of Xiangshan system")
 
     parser.add_argument("--generic-rv-cpt", action= "store", type = str,
-                        default = None,
+                        default=None,
                         help="The path of Xiangshan risc-v checkpoint")
+
+    parser.add_argument("--raw-bbl", action= "store_true",
+                        help = "The kernel/bbl/app is not elf but binary")
