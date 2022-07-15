@@ -131,8 +131,10 @@ def build_test_system(np):
     if buildEnv['TARGET_ISA'] == 'riscv':
         if args.generic_rv_cpt is not None :
             test_sys.workload.bootloader = ''
+            test_sys.workload.xiangshan_cpt = True
         else :
             test_sys.workload.bootloader = args.kernel
+            test_sys.workload.xiangshan_cpt = False
     elif args.kernel is not None:
         test_sys.workload.object_file = binary(args.kernel)
 

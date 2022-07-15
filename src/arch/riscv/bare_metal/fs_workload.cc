@@ -49,6 +49,8 @@ BareMetal::BareMetal(const Params &p) : Workload(p),
                  p.bootloader);
         _resetVect = bootloader->entryPoint();
         bootloaderSymtab = bootloader->symtab();
+        inform("Using bootloader or BareMetal workload, reset to %#lx\n",
+               _resetVect);
     } else {
         bootloader = nullptr;
         assert(p.bootloader.empty());
