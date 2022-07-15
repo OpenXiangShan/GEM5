@@ -50,6 +50,7 @@
 #include "cpu/o3/limits.hh"
 #include "cpu/pc_event.hh"
 #include "cpu/pred/bpred_unit.hh"
+#include "cpu/pred/decoupled_bpred.hh"
 #include "cpu/timebuf.hh"
 #include "cpu/translation.hh"
 #include "enums/SMTFetchPolicy.hh"
@@ -387,6 +388,8 @@ class Fetch
     /** Profile the reasons of fetch stall. */
     void profileStall(ThreadID tid);
 
+    bool ftqEmpty() { return isDecoupledFrontend && usedUpFetchTargets; }
+
   private:
     /** Pointer to the O3CPU. */
     CPU *cpu;
@@ -412,6 +415,8 @@ class Fetch
 
     /** BPredUnit. */
     branch_prediction::BPredUnit *branchPred;
+
+    branch_prediction::DecoupledBPU *dbp;
 
     std::unique_ptr<PCStateBase> pc[MaxThreads];
 
@@ -527,6 +532,11 @@ class Fetch
 
     /** Event used to delay fault generation of translation faults */
     FinishTranslationEvent finishTranslationEvent;
+
+    /** Decoupled frontend related */
+    bool isDecoupledFrontend{true};
+
+    bool usedUpFetchTargets;
 
   protected:
     struct FetchStatGroup : public statistics::Group

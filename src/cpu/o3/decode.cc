@@ -48,6 +48,7 @@
 #include "cpu/o3/limits.hh"
 #include "debug/Activity.hh"
 #include "debug/Decode.hh"
+#include "debug/DecoupleBP.hh"
 #include "debug/O3PipeView.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/full_system.hh"
@@ -716,6 +717,15 @@ Decode::decodeInsts(ThreadID tid)
             ++stats.branchResolved;
 
             std::unique_ptr<PCStateBase> target = inst->branchTarget();
+            auto &t = target->as<RiscvISA::PCState>();
+            auto &pred = inst->readPredTarg().as<RiscvISA::PCState>();
+            if (t.start_equals(pred) && !t.equals(pred)) {
+                DPRINTF(
+                    DecoupleBP,
+                    "Override useless npc, from %#lx->%#lx to %#lx->%#lx\n",
+                    pred.pc(), pred.npc(), t.pc(), t.npc());
+                inst->setPredTarg(t);
+            }
             if (*target != inst->readPredTarg()) {
                 ++stats.branchMispred;
 
@@ -724,9 +734,8 @@ Decode::decodeInsts(ThreadID tid)
                 squash(inst, inst->threadNumber);
 
                 DPRINTF(Decode,
-                        "[tid:%i] [sn:%llu] "
-                        "Updating predictions: Wrong predicted target: %s \
-                        PredPC: %s\n",
+                        "[tid:%i] [sn:%llu] Updating predictions:"
+                        " Wrong predicted target: %s PredPC: %s\n",
                         tid, inst->seqNum, inst->readPredTarg(), *target);
                 //The micro pc after an instruction level branch should be 0
                 inst->setPredTarg(*target);

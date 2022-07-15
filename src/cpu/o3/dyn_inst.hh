@@ -324,6 +324,12 @@ class DynInst : public ExecContext, public RefCounted
     /** Predicted PC state after this instruction. */
     std::unique_ptr<PCStateBase> predPC;
 
+    /** fsqId and ftqId are used for squashing and committing */
+    /** The fetch stream queue ID of the instruction. */
+    unsigned fsqId;
+    /** The fetch target queue ID of the instruction. */
+    unsigned ftqId;
+
     /** The Macroop if one exists */
     const StaticInstPtr macroop;
 
@@ -1188,6 +1194,36 @@ class DynInst : public ExecContext, public RefCounted
             return;
         cpu->setReg(reg, val);
         //TODO setResult
+    }
+
+    void
+    setFsqId(unsigned id)
+    {
+        fsqId = id;
+    }
+
+    unsigned
+    getFsqId()
+    {
+        return fsqId;
+    }
+
+    void
+    setFtqId(unsigned id)
+    {
+        ftqId = id;
+    }
+
+    unsigned
+    getFtqId()
+    {
+        return ftqId;
+    }
+
+    unsigned getInstBytes()
+    {
+        RiscvISA::PCState rpc = pc->as<RiscvISA::PCState>();
+        return rpc.compressed() ? 2 : 4;
     }
 };
 

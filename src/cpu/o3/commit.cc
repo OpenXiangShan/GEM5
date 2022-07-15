@@ -874,8 +874,18 @@ Commit::commit()
                 fromIEW->mispredictInst[tid];
             toIEW->commitInfo[tid].branchTaken =
                 fromIEW->branchTaken[tid];
-            toIEW->commitInfo[tid].squashInst =
-                                    rob->findInst(tid, squashed_inst);
+
+            auto squashed_inst_ptr = rob->findInst(tid, squashed_inst);
+            toIEW->commitInfo[tid].squashInst = squashed_inst_ptr;
+            if (!squashed_inst_ptr) {
+                DPRINTF(Commit,
+                        "Unable to find squashed instruction in ROB\n");
+            }
+            toIEW->commitInfo[tid].squashedStreamId = fromIEW->squashedStreamId[tid];
+            toIEW->commitInfo[tid].squashedTargetId = fromIEW->squashedTargetId[tid];
+
+            // toIEW->commitInfo[tid].doneFsqId =
+            //                         toIEW->commitInfo[tid].squashInst->getFsqId();
             if (toIEW->commitInfo[tid].mispredictInst) {
                 if (toIEW->commitInfo[tid].mispredictInst->isUncondCtrl()) {
                      toIEW->commitInfo[tid].branchTaken = true;
@@ -1044,6 +1054,11 @@ Commit::commitInsts()
 
                 // Set the doneSeqNum to the youngest committed instruction.
                 toIEW->commitInfo[tid].doneSeqNum = head_inst->seqNum;
+
+                if (head_inst->getFsqId() > 1) {
+                    toIEW->commitInfo[tid].doneFsqId =
+                        head_inst->getFsqId() - 1;
+                }
 
                 if (tid == 0)
                     canHandleInterrupts = !head_inst->isDelayedCommit();

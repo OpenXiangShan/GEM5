@@ -94,6 +94,8 @@ struct IEWStruct
     DynInstPtr mispredictInst[MaxThreads];
     Addr mispredPC[MaxThreads];
     InstSeqNum squashedSeqNum[MaxThreads];
+    uint64_t squashedStreamId[MaxThreads];
+    uint64_t squashedTargetId[MaxThreads];
     std::unique_ptr<PCStateBase> pc[MaxThreads];
 
     bool squash[MaxThreads];
@@ -190,6 +192,10 @@ struct TimeStruct
         /// squashed.  Similar to having a single bus that broadcasts the
         /// retired or squashed sequence number.
         InstSeqNum doneSeqNum; // *F, I
+
+        uint64_t doneFsqId; // F
+        uint64_t squashedStreamId;
+        uint64_t squashedTargetId;
 
         /// Tell Rename how many free entries it has in the ROB
         unsigned freeROBEntries; // *R

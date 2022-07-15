@@ -761,3 +761,30 @@ class MultiperspectivePerceptronTAGE8KB(MultiperspectivePerceptronTAGE):
     tage = MPP_TAGE_8KB()
     loop_predictor = MPP_LoopPredictor_8KB()
     statistical_corrector = MPP_StatisticalCorrector_8KB()
+
+class TimedPredictor(SimObject):
+    type = 'TimedPredictor'
+    cxx_class = 'gem5::branch_prediction::TimedPredictor'
+    cxx_header = "cpu/pred/timed_pred.hh"
+
+# class StreamPredictor(TimedPredictor):
+#     type = 'StreamPredictor'
+#     cxx_class = 'gem5::branch_prediction::StreamPredictor'
+#     cxx_header = "cpu/pred/stream_pred.hh"
+
+class StreamUBTB(TimedPredictor):
+    type = 'StreamUBTB'
+    cxx_class = 'gem5::branch_prediction::StreamUBTB'
+    cxx_header = "cpu/pred/ubtb.hh"
+
+class DecoupledBPU(BranchPredictor):
+    type = 'DecoupledBPU'
+    cxx_class = 'gem5::branch_prediction::DecoupledBPU'
+    cxx_header = "cpu/pred/decoupled_bpred.hh"
+
+    # stream_pred = Param.StreamPredictor(StreamPredictor(),
+    # "backing stream predictor")
+    stream_ubtb = Param.StreamUBTB(StreamUBTB(), "fast stream predictor")
+
+    ftq_size = Param.Unsigned(128, "Fetch target queue size")
+
