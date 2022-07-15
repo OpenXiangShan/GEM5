@@ -390,7 +390,9 @@ CPU::CPUStats::CPUStats(CPU *cpu)
       ADD_STAT(miscRegfileReads, statistics::units::Count::get(),
                "number of misc regfile reads"),
       ADD_STAT(miscRegfileWrites, statistics::units::Count::get(),
-               "number of misc regfile writes")
+               "number of misc regfile writes"),
+      ADD_STAT(lastCommitTick, statistics::units::Count::get(),
+               "The last tick to commit an instruction")
 {
     // Register any of the O3CPU's stats here.
     timesIdled
