@@ -161,6 +161,12 @@ class MemoryImage
         }
         return false;
     }
+
+    void
+    setSegAddr(size_t i, Addr addr)
+    {
+        _segments.at(i).base = addr;
+    }
 };
 
 static inline std::ostream &

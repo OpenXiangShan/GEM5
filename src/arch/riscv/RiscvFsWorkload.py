@@ -41,6 +41,8 @@ class RiscvBareMetal(Workload):
     bare_metal = Param.Bool(True, "Using Bare Metal Application?")
     reset_vect = Param.Addr(0x0, 'Reset vector')
     xiangshan_cpt = Param.Bool(False, "Using Xiangshan checkpoint")
+    raw_bootloader = Param.Bool(
+        False, "kernel or bbl provided is binary not elf")
 
 class RiscvLinux(KernelWorkload):
     type = 'RiscvLinux'

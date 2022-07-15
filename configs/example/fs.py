@@ -82,7 +82,6 @@ def build_test_system(np):
         test_sys = makeSparcSystem(test_mem_mode, bm[0], cmdline=cmdline)
     elif buildEnv['TARGET_ISA'] == "riscv":
         if args.xiangshan_system:
-            assert args.generic_rv_cpt is not None
             test_sys = makeBareMetalXiangshanSystem(test_mem_mode, bm[0],
                                                     cmdline=cmdline)
         else:
@@ -135,6 +134,9 @@ def build_test_system(np):
         else :
             test_sys.workload.bootloader = args.kernel
             test_sys.workload.xiangshan_cpt = False
+            if args.xiangshan_system and args.raw_bbl:
+                test_sys.workload.raw_bootloader = True
+
     elif args.kernel is not None:
         test_sys.workload.object_file = binary(args.kernel)
 

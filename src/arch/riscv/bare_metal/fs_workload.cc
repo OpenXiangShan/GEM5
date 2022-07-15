@@ -41,16 +41,17 @@ namespace RiscvISA
 {
 
 BareMetal::BareMetal(const Params &p) : Workload(p),
-    _isBareMetal(p.bare_metal), _resetVect(p.reset_vect)
+    _isBareMetal(p.bare_metal), _resetVect(p.reset_vect),
+    raw_binary(p.raw_bootloader)
 {
     if (!p.xiangshan_cpt) {
-        bootloader = loader::createObjectFile(p.bootloader);
+        bootloader = loader::createObjectFile(p.bootloader, raw_binary);
         fatal_if(!bootloader, "Could not load bootloader file %s.",
                  p.bootloader);
-        _resetVect = bootloader->entryPoint();
+        _resetVect = raw_binary ? p.reset_vect: bootloader->entryPoint();
         bootloaderSymtab = bootloader->symtab();
-        inform("Using bootloader or BareMetal workload, reset to %#lx\n",
-               _resetVect);
+        inform("Using %s of bootloader or BareMetal workload, reset to %#lx\n",
+               raw_binary? "bin": "elf", _resetVect);
     } else {
         bootloader = nullptr;
         assert(p.bootloader.empty());
@@ -62,7 +63,9 @@ BareMetal::BareMetal(const Params &p) : Workload(p),
 
 BareMetal::~BareMetal()
 {
-    delete bootloader;
+    if (bootloader) {
+        delete bootloader;
+    }
 }
 
 void
@@ -76,8 +79,16 @@ BareMetal::initState()
     }
 
     if (bootloader) {
-        warn_if(!bootloader->buildImage().write(system->physProxy),
-            "Could not load sections to memory.");
+        if (!raw_binary) {
+            warn_if(!bootloader->buildImage().write(system->physProxy),
+                    "Could not load sections to memory.");
+        } else {
+            auto img = bootloader->buildImage();
+            assert(img.segments().size() == 1);
+            img.setSegAddr(0, _resetVect);
+            warn_if(!img.write(system->physProxy),
+                    "Could not load raw binary to memory.");
+        }
     }
 
     for (auto *tc: system->threads) {
