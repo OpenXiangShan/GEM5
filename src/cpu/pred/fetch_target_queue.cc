@@ -3,9 +3,11 @@
 #include "base/trace.hh"
 #include "debug/DecoupleBP.hh"
 
-namespace gem5 {
+namespace gem5
+{
 
-namespace branch_prediction {
+namespace branch_prediction
+{
 
 FetchTargetQueue::FetchTargetQueue(unsigned size) : ftqSize(size)
 {
@@ -31,8 +33,7 @@ FetchTargetQueue::squash(FetchTargetId new_enq_target_id,
     DPRINTF(DecoupleBP,
             "FTQ demand stream ID update to %lu, FTQ demand pc update to "
             "%#lx\n",
-            new_enq_stream_id,
-            new_enq_pc);
+            new_enq_stream_id, new_enq_pc);
 }
 
 bool
@@ -57,8 +58,7 @@ FetchTargetQueue::finishCurrentFetchTarget()
     ftq.erase(supplyFetchTargetState.targetId);
     DPRINTF(DecoupleBP,
             "Finish current fetch target: %lu, inc demand to %lu\n",
-            supplyFetchTargetState.targetId,
-            fetchDemandTargetId);
+            supplyFetchTargetState.targetId, fetchDemandTargetId);
 }
 
 bool
@@ -77,13 +77,12 @@ FetchTargetQueue::trySupplyFetchWithTarget()
             supplyFetchTargetState.entry = it->second;
             return true;
         } else {
-            DPRINTF(
-                DecoupleBP, "Target id %lu not found\n", fetchDemandTargetId);
+            DPRINTF(DecoupleBP, "Target id %lu not found\n",
+                    fetchDemandTargetId);
             if (!ftq.empty()) {
                 // sanity check
                 --it;
-                DPRINTF(DecoupleBP,
-                        "Last entry of target queue: %lu\n",
+                DPRINTF(DecoupleBP, "Last entry of target queue: %lu\n",
                         it->first);
                 assert(it->first < fetchDemandTargetId);
             }
@@ -92,8 +91,7 @@ FetchTargetQueue::trySupplyFetchWithTarget()
     }
     DPRINTF(DecoupleBP,
             "FTQ supplying, valid: %u, supply id: %u, demand id: %u\n",
-            supplyFetchTargetState.valid,
-            supplyFetchTargetState.targetId,
+            supplyFetchTargetState.valid, supplyFetchTargetState.targetId,
             fetchDemandTargetId);
     return true;
 }
@@ -109,24 +107,18 @@ FetchTargetQueue::getDemandTargetIt()
 void
 FetchTargetQueue::enqueue(FtqEntry entry)
 {
-    DPRINTF(DecoupleBP,
-            "Enqueueing target %lu with pc %#x and stream %lu\n",
-            fetchTargetEnqState.desireTargetId,
-            entry.startPC,
-            entry.fsqID);
+    DPRINTF(DecoupleBP, "Enqueueing target %lu with pc %#x and stream %lu\n",
+            fetchTargetEnqState.desireTargetId, entry.startPC, entry.fsqID);
     ftq[fetchTargetEnqState.desireTargetId] = entry;
 }
 
 void
-FetchTargetQueue::dump(const char *when)
+FetchTargetQueue::dump(const char* when)
 {
     DPRINTF(DecoupleBP, "%s, dump FTQ\n", when);
     for (auto it = ftq.begin(); it != ftq.end(); ++it) {
-        DPRINTFR(DecoupleBP,
-                 "FTQ entry: %lu, pc: %#x, stream: %lu\n",
-                 it->first,
-                 it->second.startPC,
-                 it->second.fsqID);
+        DPRINTFR(DecoupleBP, "FTQ entry: %lu, pc: %#x, stream: %lu\n",
+                 it->first, it->second.startPC, it->second.fsqID);
     }
 }
 

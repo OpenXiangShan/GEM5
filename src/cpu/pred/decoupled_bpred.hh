@@ -8,9 +8,11 @@
 #include "debug/DecoupleBP.hh"
 #include "params/DecoupledBPU.hh"
 
-namespace gem5 {
+namespace gem5
+{
 
-namespace branch_prediction {
+namespace branch_prediction
+{
 
 class DecoupledBPU : public BPredUnit
 {
@@ -24,15 +26,14 @@ class DecoupledBPU : public BPredUnit
 
     FetchTargetQueue fetchTargetQueue;
 
-    std::map<FetchStreamId, FetchStream> fetchStreamQueue;  // this is a queue
-                                                            // ptr for fsq
-                                                            // itself
+    std::map<FetchStreamId, FetchStream> fetchStreamQueue;
     unsigned fetchStreamQueueSize;
     FetchStreamId fsqId{1};
 
     unsigned cacheLineOffsetBits{6};  // TODO: parameterize this
     unsigned cacheLineSize{64};
-    Addr alignToCacheLine(Addr addr) {
+    Addr alignToCacheLine(Addr addr)
+    {
         return addr & ~((1 << cacheLineOffsetBits) - 1);
     }
 
@@ -50,66 +51,49 @@ class DecoupledBPU : public BPredUnit
 
     void makeNewPredictionAndInsertFsq();
 
-    void printStream(const FetchStream &e) {
+    void printStream(const FetchStream &e)
+    {
         if (!e.resolved) {
             DPRINTFR(DecoupleBP,
                      "FSQ prediction:: %#lx-[%#lx, %#lx) --> %#lx, "
                      "hasEnteredFtq: %d\n",
-                     e.streamStart,
-                     e.predBranchAddr,
-                     e.predStreamEnd,
-                     e.predTarget,
-                     e.hasEnteredFtq);
+                     e.streamStart, e.predBranchAddr, e.predStreamEnd,
+                     e.predTarget, e.hasEnteredFtq);
         } else {
             DPRINTFR(
                 DecoupleBP,
                 "Resolved: %i, resolved stream:: %#lx-[%#lx, %#lx) --> %#lx\n",
-                e.resolved,
-                e.streamStart,
-                e.exeBranchAddr,
-                e.exeStreamEnd,
+                e.resolved, e.streamStart, e.exeBranchAddr, e.exeStreamEnd,
                 e.exeTarget);
         }
     }
 
-    void printStreamFull(const FetchStream &e) {
+    void printStreamFull(const FetchStream &e)
+    {
         DPRINTFR(
             DecoupleBP,
             "FSQ prediction:: %#lx-[%#lx, %#lx) --> %#lx, hasEnteredFtq: %d\n",
-            e.streamStart,
-            e.predBranchAddr,
-            e.predStreamEnd,
-            e.predTarget,
+            e.streamStart, e.predBranchAddr, e.predStreamEnd, e.predTarget,
             e.hasEnteredFtq);
         DPRINTFR(
             DecoupleBP,
             "Resolved: %i, resolved stream:: %#lx-[%#lx, %#lx) --> %#lx\n",
-            e.exeEnded,
-            e.streamStart,
-            e.exeBranchAddr,
-            e.exeStreamEnd,
+            e.exeEnded, e.streamStart, e.exeBranchAddr, e.exeStreamEnd,
             e.exeTarget);
     }
 
-    void printFetchTarget(const FtqEntry &e, const char *when) {
+    void printFetchTarget(const FtqEntry &e, const char *when)
+    {
         DPRINTFR(DecoupleBP,
                  "%s:: %#lx - [%#lx, %#lx) --> %#lx, taken: %d, fsqID: %lu\n",
-                 when,
-                 e.startPC,
-                 e.takenPC,
-                 e.endPC,
-                 e.target,
-                 e.taken,
+                 when, e.startPC, e.takenPC, e.endPC, e.target, e.taken,
                  e.fsqID);
     }
 
-    void printFetchTargetFull(const FtqEntry &e) {
-        DPRINTFR(DecoupleBP,
-                 "Fetch Target:: %#lx-[%#lx, %#lx) --> %#lx\n",
-                 e.startPC,
-                 e.takenPC,
-                 e.endPC,
-                 e.target);
+    void printFetchTargetFull(const FtqEntry &e)
+    {
+        DPRINTFR(DecoupleBP, "Fetch Target:: %#lx-[%#lx, %#lx) --> %#lx\n",
+                 e.startPC, e.takenPC, e.endPC, e.target);
     }
 
   public:
@@ -117,11 +101,13 @@ class DecoupledBPU : public BPredUnit
 
     bool trySupplyFetchWithTarget();
 
-    void squash(const InstSeqNum &squashed_sn, ThreadID tid) {
+    void squash(const InstSeqNum &squashed_sn, ThreadID tid)
+    {
         panic("Squashing decoupled BP with tightly coupled API\n");
     }
     void squash(const InstSeqNum &squashed_sn, const PCStateBase &corr_target,
-                bool actually_taken, ThreadID tid) {
+                bool actually_taken, ThreadID tid)
+    {
         panic("Squashing decoupled BP with tightly coupled API\n");
     }
 
@@ -165,12 +151,11 @@ class DecoupledBPU : public BPredUnit
 
     void update(ThreadID tid, Addr instPC, bool taken, void *bp_history,
                 bool squashed, const StaticInstPtr &inst,
-                Addr corrTarget) override {}
-
-    bool lookup(ThreadID tid, Addr instPC, void * &bp_history)
+                Addr corrTarget) override
     {
-        return false;
     }
+
+    bool lookup(ThreadID tid, Addr instPC, void *&bp_history) { return false; }
 };
 }  // namespace branch_prediction
 }  // namespace gem5

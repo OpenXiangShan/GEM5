@@ -3,9 +3,11 @@
 
 #include "cpu/pred/stream_struct.hh"
 
-namespace gem5 {
+namespace gem5
+{
 
-namespace branch_prediction {
+namespace branch_prediction
+{
 
 struct FetchTargetEnqState
 {
