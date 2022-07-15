@@ -670,6 +670,9 @@ def makeBareMetalXiangshanSystem(mem_mode, mdesc=None, cmdline=None):
     self.clint.pio_size = 0xC000
     self.clint.num_threads = 1
 
+    self.mmcs = NemuMMC()
+    self.mmcs.pio = self.membus.mem_side_ports
+
     self.workload.reset_vect = 0x80000000
     return self
 
