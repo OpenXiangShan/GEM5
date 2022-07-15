@@ -225,6 +225,13 @@ def build_test_system(np):
 
         MemConfig.config_mem(args, test_sys)
 
+        if args.mmc_img:
+            for mmc, cpu in zip(test_sys.mmcs, test_sys.cpu):
+                mmc.cpt_bin_path = args.mmc_cptbin
+                mmc.img_path = args.mmc_img
+                cpu.nemuSDCptBin = mmc.cpt_bin_path
+                cpu.nemuSDimg = mmc.img_path
+
     if ObjectList.is_kvm_cpu(TestCPUClass) or \
         ObjectList.is_kvm_cpu(FutureClass):
         # Assign KVM CPUs to their own event queues / threads. This

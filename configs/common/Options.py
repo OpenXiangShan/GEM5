@@ -566,3 +566,8 @@ def addFSOptions(parser):
 
     parser.add_argument("--raw-bbl", action= "store_true",
                         help = "The kernel/bbl/app is not elf but binary")
+
+    parser.add_argument("--mmc-img", action="store", type=str,
+                        default=None, help="The path of mmc img")
+    parser.add_argument("--mmc-cptbin", action="store",
+                        type=str, default=None, help="The path of mmc cptbin")
