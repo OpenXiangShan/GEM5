@@ -318,6 +318,9 @@ CPU::CPU(const BaseO3CPUParams &params)
         diff.dynamic_config.ignore_illegal_mem_access = false;
         diff.dynamic_config.debug_difftest = false;
         proxy->update_config(&diff.dynamic_config);
+        if (params.nemuSDimg.size() && params.nemuSDCptBin.size())
+            proxy->sdcard_init(params.nemuSDimg.c_str(),
+                               params.nemuSDCptBin.c_str());
     } else {
         warn("Difftest is disabled\n");
         hasCommit = true;
@@ -1663,8 +1666,10 @@ CPU::diffWithNEMU(const DynInstPtr &inst)
 {
     int diff_at = DiffAt::NoneDiff;
     bool npc_match = false;
-    bool is_mmio = (0x38000000u < inst->physEffAddr) &&
-                   (inst->physEffAddr < 0x41000000u);
+    bool is_mmio =
+        ((0x38000000u <= inst->physEffAddr) &&
+         (inst->physEffAddr <= 0x39000000u)) ||
+        (0x40600000u <= inst->physEffAddr && inst->physEffAddr <= 0x41600000u);
 
     if (inst->isStoreConditional()){
         diff.sync.lrscValid = inst->lockedWriteSuccess();
