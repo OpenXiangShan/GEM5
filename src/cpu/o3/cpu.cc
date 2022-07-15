@@ -326,7 +326,6 @@ CPU::CPU(const BaseO3CPUParams &params)
             proxy->sdcard_init(params.nemuSDimg.c_str(),
                                params.nemuSDCptBin.c_str());
         diff.will_handle_intr = false;
-
     } else {
         warn("Difftest is disabled\n");
         hasCommit = true;

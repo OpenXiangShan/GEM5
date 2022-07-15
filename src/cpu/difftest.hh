@@ -106,6 +106,8 @@ class RefProxy
     void (*isa_reg_display)() = NULL;
     void (*query)(void *result_buffer, uint64_t type) = NULL;
     void (*debug_mem_sync)(paddr_t addr, void *bytes, size_t size) = NULL;
+    void (*sdcard_init)(const char *img_path,
+                        const char *sd_cpt_bin_path) = NULL;
 };
 
 class NemuProxy : public RefProxy

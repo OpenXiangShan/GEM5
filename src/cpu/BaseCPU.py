@@ -152,6 +152,8 @@ class BaseCPU(ClockedObject):
 
     enable_difftest = Param.Bool(False,"use NEMU as ref to difftest")
     difftest_ref_so = Param.String("", "The reference so for online difftest")
+    nemuSDimg = Param.String("", "Nemu MMC img path for diff")
+    nemuSDCptBin = Param.String("", "Nemu MMC cpt bin path for diff")
 
     def createInterruptController(self):
         self.interrupts = [
