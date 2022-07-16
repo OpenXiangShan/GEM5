@@ -56,6 +56,7 @@
 #include "debug/Quiesce.hh"
 #include "debug/ValueCommit.hh"
 #include "enums/MemoryMode.hh"
+#include "sim/async.hh"
 #include "sim/cur_tick.hh"
 #include "sim/full_system.hh"
 #include "sim/process.hh"
@@ -1265,6 +1266,11 @@ CPU::instDone(ThreadID tid, const DynInstPtr &inst)
 
         // Check for instruction-count-based events.
         thread[tid]->comInstEventQueue.serviceEvents(thread[tid]->numInst);
+
+        if (this->warmupInstCount && totalInsts() == this->warmupInstCount) {
+            fprintf(stderr, "Will trigger stat dump and reset\n");
+            Stats::schedStatEvent(true, true, curTick(), 0);
+        }
 
         if (!hasCommit && inst->pcState().instAddr() == 0x80000000u) {
             hasCommit = true;

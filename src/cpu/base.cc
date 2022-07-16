@@ -139,7 +139,8 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
       syscallRetryLatency(p.syscallRetryLatency),
       pwrGatingLatency(p.pwr_gating_latency),
       powerGatingOnIdle(p.power_gating_on_idle),
-      enterPwrGatingEvent([this]{ enterPwrGating(); }, name())
+      enterPwrGatingEvent([this]{ enterPwrGating(); }, name()),
+      warmupInstCount(p.warmupInstCount)
 {
     // if Python did not provide a valid ID, do it here
     if (_cpuId == -1 ) {

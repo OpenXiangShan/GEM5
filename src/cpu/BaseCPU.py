@@ -147,6 +147,9 @@ class BaseCPU(ClockedObject):
     _uncached_interrupt_response_ports = []
     _uncached_interrupt_request_ports = []
 
+    warmupInstCount = Param.Counter(0,
+        "reset stats when any thread has reached this inst count")
+
     enable_difftest = Param.Bool(False,"use NEMU as ref to difftest")
     difftest_ref_so = Param.String("", "The reference so for online difftest")
 
