@@ -498,6 +498,10 @@ def run(options, root, testsys, cpu_class):
         testsys.switch_cpus = switch_cpus
         switch_cpu_list = [(testsys.cpu[i], switch_cpus[i]) for i in range(np)]
 
+    for i in range(np):
+        if options.warmup_insts_no_switch != None:
+            testsys.cpu[i].warmupInstCount = options.warmup_insts_no_switch
+
     if options.repeat_switch:
         switch_class = getCPUClass(options.cpu_type)[0]
         if switch_class.require_caches() and \

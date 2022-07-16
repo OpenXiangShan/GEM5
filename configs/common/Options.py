@@ -387,6 +387,10 @@ def addCommonOptions(parser):
     parser.add_argument("-p", "--prog-interval", type=str,
                         help="CPU Progress Interval")
 
+    # for warmup without switching cpu
+    parser.add_argument("--warmup-insts-no-switch", action="store", type=int,
+        default=None,
+        help="Warmup period in total instructions, reset stats without switch")
     # Fastforwarding and simpoint related materials
     parser.add_argument(
         "-W", "--warmup-insts", action="store", type=int, default=None,

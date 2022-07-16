@@ -647,6 +647,8 @@ class BaseCPU : public ClockedObject
     const bool powerGatingOnIdle;
     EventFunctionWrapper enterPwrGatingEvent;
 
+    const uint64_t warmupInstCount;
+
     //const uint64_t repeatDumpInstCount;
 
     uint64_t nextDumpInstCount{0};
