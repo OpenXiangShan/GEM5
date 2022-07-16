@@ -20,17 +20,16 @@ StreamUBTB::StreamUBTB(const Params &p) : TimedPredictor(p) {
 }
 
 void
-StreamUBTB::tickStart() {}
+StreamUBTB::tickStart()
+{
+    prediction.valid = false;
+}
 
 void
 StreamUBTB::tick() {}
 
 void
 StreamUBTB::putPCHistory(Addr pc, const boost::dynamic_bitset<> &history) {
-    if (pc == 0) {
-        prediction.valid = false;
-        return;
-    }
     DPRINTF(DecoupleBP, "Prediction request: stream start=%#lx\n", pc);
     const auto &it = ubtb.find(pc);  // TODO: use hash of pc and history
     if (it == ubtb.end()) {

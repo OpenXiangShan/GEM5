@@ -572,6 +572,8 @@ Commit::squashFromTrap(ThreadID tid)
 {
     squashAll(tid);
 
+    toIEW->commitInfo[tid].isTrapSquash = true;
+
     DPRINTF(Commit, "Squashing from trap, restarting at PC %s\n", *pc[tid]);
 
     thread[tid]->trapPending = false;

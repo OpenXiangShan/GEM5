@@ -200,6 +200,7 @@ struct TimeStruct
         /// Tell Rename how many free entries it has in the ROB
         unsigned freeROBEntries; // *R
 
+        bool isTrapSquash;
         bool squash; // *F, D, R, I
         bool robSquashing; // *F, D, R, I
 

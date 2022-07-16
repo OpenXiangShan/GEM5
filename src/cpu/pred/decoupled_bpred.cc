@@ -15,6 +15,7 @@ DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
     s0StreamPC = 0x80000000;
 
     s0History.resize(historyBits, 0);
+    fetchTargetQueue.setName(name());
 }
 
 void
@@ -23,7 +24,6 @@ DecoupledBPU::tick()
     if (!squashing) {
         DPRINTF(DecoupleBP, "DecoupledBPU::tick()\n");
         s0UbtbPred = streamUBTB->getStream();
-        DPRINTF(DecoupleBP, "After ubtb\n");
         tryEnqFetchTarget();
         tryEnqFetchStream();
 
@@ -31,7 +31,10 @@ DecoupledBPU::tick()
         DPRINTF(DecoupleBP, "Squashing, skip this cycle\n");
     }
 
-    streamUBTB->putPCHistory(s0StreamPC, s0History);
+    streamUBTB->tickStart();
+    if (!streamQueueFull()) {
+        streamUBTB->putPCHistory(s0StreamPC, s0History);
+    }
     squashing = false;
 }
 
@@ -293,7 +296,41 @@ DecoupledBPU::nonControlSquash(unsigned target_id, unsigned stream_id,
 }
 
 void
-DecoupledBPU::update(unsigned stream_id, ThreadID tid)
+DecoupledBPU::trapSquash(unsigned target_id, unsigned stream_id,
+                         const PCStateBase &inst_pc, ThreadID tid)
+{
+    DPRINTF(DecoupleBP,
+            "trap squash: target id: %lu, stream id: %lu, inst_pc: %#lx\n",
+            target_id, stream_id, inst_pc.instAddr());
+    squashing = true;
+
+    dumpFsq("before trap squash");
+
+    auto erase_it = fetchStreamQueue.upper_bound(stream_id);
+    while (erase_it != fetchStreamQueue.end()) {
+        DPRINTF(DecoupleBP, "erasing entry %lu\n", erase_it->first);
+        printStream(erase_it->second);
+        fetchStreamQueue.erase(erase_it++);
+    }
+
+    // inc stream id because current stream is disturbed
+    auto ftq_demand_stream_id = stream_id + 1;
+    // todo update stream head id here
+    fsqId = stream_id + 1;
+
+    fetchTargetQueue.squash(target_id + 1, ftq_demand_stream_id,
+                            inst_pc.instAddr());
+
+    s0StreamPC = inst_pc.instAddr();
+
+    DPRINTF(DecoupleBP,
+            "After squash, FSQ head Id=%lu, s0pc=%#lx, demand stream Id=%lu, "
+            "Fetch demanded target Id=%lu\n",
+            fsqId, s0StreamPC, fetchTargetQueue.getEnqState().streamId,
+            fetchTargetQueue.getSupplyingTargetId());
+}
+
+void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
 {
     // aka, commit stream
     // commit controls in local prediction history buffer to committedSeq
@@ -329,7 +366,7 @@ DecoupledBPU::dumpFsq(const char *when)
 void
 DecoupledBPU::tryEnqFetchStream()
 {
-    if (fetchStreamQueue.size() < fetchStreamQueueSize) {
+    if (!streamQueueFull()) {
         // if queue empty, should make predictions
         if (fetchStreamQueue.empty()) {
             DPRINTF(DecoupleBP, "FSQ is empty\n");

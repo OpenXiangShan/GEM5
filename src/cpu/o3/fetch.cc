@@ -1013,37 +1013,27 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
                     mispred_inst->staticInst, mispred_inst->getInstBytes(),
                     fromCommit->commitInfo[tid].branchTaken,
                     mispred_inst->seqNum, tid);
+            } else if (fromCommit->commitInfo[tid].isTrapSquash) {
+                dbp->trapSquash(
+                    fromCommit->commitInfo[tid].squashedTargetId,
+                    fromCommit->commitInfo[tid].squashedStreamId,
+                    *fromCommit->commitInfo[tid].pc, tid);
+
             } else {
-                // TODO: what if exception?
-                // auto squashed_inst = fromCommit->commitInfo[tid].squashInst;
-                // if (squashed_inst) {
-                //     DPRINTF(DecoupleBP,
-                //             "squashed_inst->pc: %#lx, commit pc: %#lx\n",
-                //             squashed_inst->pcState().instAddr(),
-                //             fromCommit->commitInfo[tid].pc == nullptr
-                //                 ? 0
-                //               : fromCommit->commitInfo[tid].pc->instAddr());
-                //     dbp->nonControlSquash(squashed_inst->getFtqId(),
-                //                           squashed_inst->getFsqId(),
-                //                           *fromCommit->commitInfo[tid].pc,
-                //                           squashed_inst->seqNum,
-                //                           tid);
-                // } else {
-                    if (fromCommit->commitInfo[tid].pc &&
-                        fromCommit->commitInfo[tid].squashedStreamId != 0) {
-                        DPRINTF(
-                            DecoupleBP,
-                            "Squash with stream id and target id from IEW\n");
-                        dbp->nonControlSquash(
-                            fromCommit->commitInfo[tid].squashedTargetId,
-                            fromCommit->commitInfo[tid].squashedStreamId,
-                            *fromCommit->commitInfo[tid].pc, 0, tid);
-                    } else {
-                        DPRINTF(
-                            DecoupleBP,
-                            "Dont squash dbq because no meaningful stream\n");
-                    }
-                // }
+                if (fromCommit->commitInfo[tid].pc &&
+                    fromCommit->commitInfo[tid].squashedStreamId != 0) {
+                    DPRINTF(
+                        DecoupleBP,
+                        "Squash with stream id and target id from IEW\n");
+                    dbp->nonControlSquash(
+                        fromCommit->commitInfo[tid].squashedTargetId,
+                        fromCommit->commitInfo[tid].squashedStreamId,
+                        *fromCommit->commitInfo[tid].pc, 0, tid);
+                } else {
+                    DPRINTF(
+                        DecoupleBP,
+                        "Dont squash dbq because no meaningful stream\n");
+                }
             }
         }
 

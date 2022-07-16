@@ -2,6 +2,7 @@
 #define __CPU_PRED_FETCH_TARGET_QUEUE_HH__
 
 #include "cpu/pred/stream_struct.hh"
+#include "sim/sim_object.hh"
 
 namespace gem5
 {
@@ -43,6 +44,8 @@ class FetchTargetQueue
 
     FetchTargetEnqState fetchTargetEnqState;
 
+    std::string _name;
+
   public:
     FetchTargetQueue(unsigned size);
 
@@ -81,6 +84,10 @@ class FetchTargetQueue
     void enqueue(FtqEntry entry);
 
     void dump(const char *when);
+
+    const std::string &name() const { return _name; }
+
+    void setName(const std::string &parent) { _name = parent + ".ftq"; }
 };
 
 }

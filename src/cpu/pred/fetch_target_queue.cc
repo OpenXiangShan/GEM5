@@ -9,7 +9,8 @@ namespace gem5
 namespace branch_prediction
 {
 
-FetchTargetQueue::FetchTargetQueue(unsigned size) : ftqSize(size)
+FetchTargetQueue::FetchTargetQueue(unsigned size) :
+ ftqSize(size)
 {
     fetchTargetEnqState.pc = 0x80000000;
     fetchDemandTargetId = 0;

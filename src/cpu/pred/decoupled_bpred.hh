@@ -45,6 +45,8 @@ class DecoupledBPU : public BPredUnit
     boost::dynamic_bitset<> s0History;
     StreamPrediction s0UbtbPred;
 
+    bool squashing{false};
+
     void tryEnqFetchStream();
 
     void tryEnqFetchTarget();
@@ -96,6 +98,11 @@ class DecoupledBPU : public BPredUnit
                  e.startPC, e.takenPC, e.endPC, e.target);
     }
 
+    bool streamQueueFull() const
+    {
+        return fetchStreamQueue.size() >= fetchStreamQueueSize;
+    }
+
   public:
     void tick();
 
@@ -116,6 +123,7 @@ class DecoupledBPU : public BPredUnit
                                            const InstSeqNum &seqNum,
                                            PCStateBase &pc, ThreadID tid);
 
+    // redirect the stream
     void controlSquash(unsigned ftq_id, unsigned fsq_id,
                        const PCStateBase &control_pc,
                        const PCStateBase &target_pc,
@@ -123,9 +131,15 @@ class DecoupledBPU : public BPredUnit
                        bool actually_taken, const InstSeqNum &squashed_sn,
                        ThreadID tid);
 
+    // keep the stream: original prediction might be right
+    // For memory violation, stream continues after squashing
     void nonControlSquash(unsigned ftq_id, unsigned fsq_id,
                           const PCStateBase &inst_pc, const InstSeqNum seq,
                           ThreadID tid);
+
+    // Not a control. But stream is actually disturbed
+    void trapSquash(unsigned ftq_id, unsigned fsq_id,
+                    const PCStateBase &inst_pc, ThreadID tid);
 
     void update(unsigned fsqID, ThreadID tid);
 
@@ -139,8 +153,6 @@ class DecoupledBPU : public BPredUnit
     }
 
     void dumpFsq(const char *when);
-
-    bool squashing{false};
 
     // Dummy overriding
     void uncondBranch(ThreadID tid, Addr pc, void *&bp_history) override {}
