@@ -2,8 +2,10 @@
 #define __CPU_PRED_UBTB_HH__
 
 #include <map>
+#include <unordered_map>
 #include <vector>
 
+#include "base/statistics.hh"
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/pred/stream_struct.hh"
@@ -51,6 +53,15 @@ class StreamUBTB : public TimedPredictor
     UBTBMap ubtb;
 
     UBTBHeap mruList;
+
+    struct UBTBStatGroup : public statistics::Group
+    {
+        statistics::Scalar coldMisses;  // never seen
+        statistics::Scalar capacityMisses;  // seen but limited by capacity
+        statistics::Scalar compulsoryMisses;  // seen but not predicted correctly
+    } ubtbStats;
+
+    std::unordered_map<Addr, bool> fullHist;
 
   public:
     StreamUBTB(const Params &p);
