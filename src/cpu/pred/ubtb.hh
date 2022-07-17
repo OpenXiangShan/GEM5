@@ -56,9 +56,10 @@ class StreamUBTB : public TimedPredictor
 
     struct UBTBStatGroup : public statistics::Group
     {
-        statistics::Scalar coldMisses;  // never seen
-        statistics::Scalar capacityMisses;  // seen but limited by capacity
-        statistics::Scalar compulsoryMisses;  // seen but not predicted correctly
+      UBTBStatGroup(StreamUBTB& s);
+      statistics::Scalar coldMisses;  // never seen
+      statistics::Scalar capacityMisses;  // seen but limited by capacity
+      statistics::Scalar compulsoryMisses;  // seen but not predicted correctly
     } ubtbStats;
 
     std::unordered_map<Addr, bool> fullHist;

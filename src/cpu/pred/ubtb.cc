@@ -7,7 +7,10 @@ namespace gem5 {
 
 namespace branch_prediction {
 
-StreamUBTB::StreamUBTB(const Params &p) : TimedPredictor(p) {
+StreamUBTB::StreamUBTB(const Params& p):
+    TimedPredictor(p),
+    ubtbStats(*this)
+{
     for (auto i = 0; i < size; i++) {
         ubtb[0xfffffff - i];  // dummy initialization
     }
@@ -17,6 +20,17 @@ StreamUBTB::StreamUBTB(const Params &p) : TimedPredictor(p) {
     }
     std::make_heap(mruList.begin(), mruList.end(), older());
     prediction.valid = false;
+}
+
+StreamUBTB::UBTBStatGroup::UBTBStatGroup(StreamUBTB& s):
+    statistics::Group(&s,"UBTB"),
+    ADD_STAT(coldMisses, "never seen"),
+    ADD_STAT(capacityMisses, "seen but limited by capacity"),
+    ADD_STAT(compulsoryMisses, "seen but not predicted correctly")
+{
+    coldMisses.prereq(coldMisses);
+    capacityMisses.prereq(capacityMisses);
+    compulsoryMisses.prereq(compulsoryMisses);
 }
 
 void
@@ -93,20 +107,30 @@ StreamUBTB::update(const PredictionID fsq_id, Addr stream_start_pc,
             buf.c_str(),
             control_size);
 
+
+
     auto tag = makePCHistTag(stream_start_pc, history);
     auto it = ubtb.find(tag);
-
+    // if the tag is not found and the table is full
     bool new_entry = it == ubtb.end();
-
-    if (new_entry) {
+    //important:the size of ubtb is same as the size of mruList
+    if (new_entry) {//free a new entry to the new entry
         std::pop_heap(mruList.begin(), mruList.end(), older());
-        const auto &ubtb_entry = mruList.back();
+        const auto& ubtb_entry = mruList.back();
         DPRINTF(DecoupleBP,
                 "StreamUBTB::update: pop ubtb_entry: %#x\n",
                 ubtb_entry->first);
         ubtb.erase(ubtb_entry->first);
     }
+    //mydo:seen but not predicted correctly
+    if (!new_entry) {
+        if (ubtb[tag].nextStream != target) {
+            ++ubtbStats.compulsoryMisses;
+        }
+    }
+    //endmydo
 
+    //update the entry
     ubtb[tag].tick = curTick();
     ubtb[tag].bbStart = stream_start_pc;
     ubtb[tag].bbEnd = control_pc;
@@ -118,6 +142,16 @@ StreamUBTB::update(const PredictionID fsq_id, Addr stream_start_pc,
         mruList.back() = it;
         std::push_heap(mruList.begin(), mruList.end(), older());
     }
+
+    //mydo:never seen
+    if (fullHist.find(stream_start_pc) == fullHist.end()) {
+        ++ubtbStats.coldMisses;
+        fullHist[stream_start_pc] = true;
+    }
+    else if (new_entry) {//seen but limited by capacity
+        ++ubtbStats.capacityMisses;
+    }
+    //endmydo
 
     DPRINTF(
         DecoupleBP,
@@ -134,6 +168,7 @@ StreamUBTB::update(const PredictionID fsq_id, Addr stream_start_pc,
     // Because fetch has been redirected, here we must make another prediction
 }
 
+//get the tag from pc
 uint64_t
 StreamUBTB::makePCHistTag(Addr pc, const boost::dynamic_bitset<> &history) {
     auto hist = history;
