@@ -356,11 +356,30 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
         return;
     auto it = fetchStreamQueue.begin();
     while (it != fetchStreamQueue.end() && stream_id >= it->first) {
-        // TODO: do update here
 
         // dequeue
         DPRINTF(DecoupleBP, "dequeueing stream id: %lu, entry below:\n",
                 it->first);
+        bool miss_predicted =
+            it->second.predBranchAddr != it->second.exeBranchAddr ||
+            it->second.predTarget != it->second.exeTarget;
+        DPRINTF(DecoupleBP,
+                "Commit stream start %#lx, which is %s predicted, "
+                "final br addr: %#lx, final target: %#lx, pred br addr: %#lx, "
+                "pred target: %#lx\n",
+                it->second.streamStart, miss_predicted ? "miss" : "correctly",
+                it->second.exeBranchAddr, it->second.exeTarget,
+                it->second.predBranchAddr, it->second.predTarget);
+
+        if (!miss_predicted) {
+            // TODO: do ubtb update here
+            streamUBTB->commit(
+                it->first, it->second.streamStart, it->second.exeBranchAddr,
+                it->second.exeTarget,
+                it->second.exeStreamEnd - it->second.exeBranchAddr,
+                it->second.history);
+        }
+
         it = fetchStreamQueue.erase(it);
     }
     DPRINTF(DecoupleBP, "after commit stream, fetchStreamQueue size: %lu\n",
@@ -615,9 +634,11 @@ DecoupledBPU::makeNewPredictionAndInsertFsq()
         DPRINTF(DecoupleBP, "Update s0History form %s to %s\n", buf1.c_str(),
                 buf2.c_str());
         DPRINTF(DecoupleBP, "Hashed path: %#lx\n", hashed_path);
-        DPRINTF(DecoupleBP, "Valid s0UbtbPred: %#lx-[%#lx, %#lx) --> %#lx\n",
-                entry.streamStart, entry.predBranchAddr, entry.predStreamEnd,
-                entry.predTarget);
+        DPRINTF(DecoupleBP,
+                "Build stream %lu with Valid s0UbtbPred: %#lx-[%#lx, %#lx) "
+                "--> %#lx\n",
+                fsqId, entry.streamStart, entry.predBranchAddr,
+                entry.predStreamEnd, entry.predTarget);
     } else {
         DPRINTF(DecoupleBP,
                 "No valid prediction, gen missing stream: %#lx -> ...\n",

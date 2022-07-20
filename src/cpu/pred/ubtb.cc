@@ -134,23 +134,37 @@ StreamUBTB::update(const PredictionID fsq_id, Addr stream_start_pc,
                 ubtb_entry->first, ubtb_entry->second.tick);
         ubtb.erase(ubtb_entry->first);
     }
-    //mydo:seen but not predicted correctly
-    if (!new_entry) {
-        if (ubtb[tag].nextStream != target) {
-            DPRINTF(DecoupleBP,
-                    "Stream start %#lx, last target: %#lx, new target: %#lx\n",
-                    stream_start_pc, ubtb[tag].nextStream, target);
-            ++ubtbStats.compulsoryMisses;
+
+
+    if (new_entry) {
+        // insert entry
+        ubtb[tag].tick = curTick();
+        ubtb[tag].bbStart = stream_start_pc;
+        ubtb[tag].controlAddr = control_pc;
+        ubtb[tag].controlSize = control_size;
+        ubtb[tag].nextStream = target;
+        ubtb[tag].hysteresis = 1;
+    } else {
+        // decide whether or not update the entry
+        if (ubtb[tag].controlAddr != control_pc &&
+            ubtb[tag].nextStream != target) {
+            ubtb[tag].hysteresis =
+                std::max((int)0, (int)ubtb[tag].hysteresis - 1);
+            if (ubtb[tag].hysteresis > 0) {
+                DPRINTF(DecoupleBP, "Hysteresis: %d > 0, will not update\n",
+                        ubtb[tag].hysteresis);
+            } else {
+                DPRINTF(DecoupleBP, "Hysteresis: %d <= 0, will update\n",
+                        ubtb[tag].hysteresis);
+                ubtb[tag].tick = curTick();
+                ubtb[tag].bbStart = stream_start_pc;
+                ubtb[tag].controlAddr = control_pc;
+                ubtb[tag].controlSize = control_size;
+                ubtb[tag].nextStream = target;
+                ubtb[tag].hysteresis = 0;
+            }
         }
     }
-    //endmydo
-
-    //update the entry
-    ubtb[tag].tick = curTick();
-    ubtb[tag].bbStart = stream_start_pc;
-    ubtb[tag].controlAddr = control_pc;
-    ubtb[tag].controlSize = control_size;
-    ubtb[tag].nextStream = target;
 
     if (new_entry) {
         auto it = ubtb.find(tag);
@@ -184,6 +198,34 @@ StreamUBTB::update(const PredictionID fsq_id, Addr stream_start_pc,
         ubtb[tag].nextStream);
 
     // Because fetch has been redirected, here we must make another prediction
+}
+
+
+void
+StreamUBTB::commit(const FetchStreamId pred_id, Addr stream_start_pc,
+                   Addr control_pc, Addr target, unsigned control_size,
+                   const boost::dynamic_bitset<> &history)
+{
+    auto tag = makePCHistTag(stream_start_pc, history);
+    auto it = ubtb.find(tag);
+    if (it == ubtb.end()) {
+        DPRINTF(DecoupleBP, "Tag %#lx (to commit) not found\n", tag);
+        return;
+    }
+    if (it->second.bbStart == stream_start_pc &&
+        it->second.controlAddr == control_pc &&
+        it->second.nextStream == target) {
+        it->second.hysteresis = std::min(2U, it->second.hysteresis + 1);
+        DPRINTF(DecoupleBP,
+                "Confirm prediction for stream start %#lx hysteresis: %d\n",
+                stream_start_pc, it->second.hysteresis);
+        return;
+    } else {
+        DPRINTF(DecoupleBP,
+                "Confirming prediction opposes current prediction for stream "
+                "start %#lx\n",
+                stream_start_pc);
+    }
 }
 
 //get the tag from pc
