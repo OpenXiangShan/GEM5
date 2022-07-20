@@ -172,19 +172,29 @@ StreamUBTB::update(const PredictionID fsq_id, Addr stream_start_pc,
         std::push_heap(mruList.begin(), mruList.end(), older());
     }
 
-    //mydo:never seen
     auto fit = fullHist.find(tag);
-    if (fit == fullHist.end()) {
+    if (fit == fullHist.end()) {  // never seen
         ++ubtbStats.coldMisses;
-        fullHist[tag] = stream_start_pc;
+        fullHist[tag].streamStart = stream_start_pc;
+        fullHist[tag].branchAddr = control_pc;
+        fullHist[tag].targetAddr = target;
 
-    } else if (fit->second == stream_start_pc) {
+    } else if (fit->second.streamStart == stream_start_pc &&
+               fit->second.branchAddr == control_pc &&
+               fit->second.targetAddr == target) {
+        // seen but limited by capacity
         ++ubtbStats.capacityMisses;
-
-    } else {//seen but limited by capacity
+    } else {
         ++ubtbStats.compulsoryMisses;
+        DPRINTF(DecoupleBP,
+                "For tag %#lx, p start: %#lx, p br: %#lx, p target: %#lx, "
+                "t start: %#lx, t br: %#lx, t target: %#lx\n",
+                tag, fit->second.streamStart, fit->second.branchAddr,
+                fit->second.targetAddr, stream_start_pc, control_pc, target);
+        fit->second.streamStart = stream_start_pc;
+        fit->second.branchAddr = control_pc;
+        fit->second.targetAddr = target;
     }
-    //endmydo
 
     DPRINTF(
         DecoupleBP,

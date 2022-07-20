@@ -62,7 +62,14 @@ class StreamUBTB : public TimedPredictor
       statistics::Scalar compulsoryMisses;  // seen but not predicted correctly
     } ubtbStats;
 
-    std::unordered_map<Addr, Addr> fullHist;
+    struct HistEntry
+    {
+        Addr streamStart;
+        Addr branchAddr;
+        Addr targetAddr;
+    };
+
+    std::unordered_map<Addr, HistEntry> fullHist;
 
   public:
     StreamUBTB(const Params &p);
