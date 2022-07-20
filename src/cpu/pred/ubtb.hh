@@ -62,7 +62,7 @@ class StreamUBTB : public TimedPredictor
       statistics::Scalar compulsoryMisses;  // seen but not predicted correctly
     } ubtbStats;
 
-    std::unordered_map<Addr, bool> fullHist;
+    std::unordered_map<Addr, Addr> fullHist;
 
   public:
     StreamUBTB(const Params &p);
@@ -86,6 +86,12 @@ class StreamUBTB : public TimedPredictor
     uint64_t makePCHistTag(Addr pc, const boost::dynamic_bitset<> &history);
 
     StreamPrediction prediction;
+
+    boost::dynamic_bitset<> loMask;
+    boost::dynamic_bitset<> usedMask;
+
+    unsigned historyLen{};
+    unsigned usedBits{};
 };
 
 }

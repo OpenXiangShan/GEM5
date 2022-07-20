@@ -1,6 +1,8 @@
 #ifndef __CPU_PRED_DECOUPLED_BPRED_HH__
 #define __CPU_PRED_DECOUPLED_BPRED_HH__
 
+#include <vector>
+
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/fetch_target_queue.hh"
 #include "cpu/pred/stream_struct.hh"
@@ -32,10 +34,12 @@ class DecoupledBPU : public BPredUnit
 
     unsigned cacheLineOffsetBits{6};  // TODO: parameterize this
     unsigned cacheLineSize{64};
-    Addr alignToCacheLine(Addr addr)
-    {
-        return addr & ~((1 << cacheLineOffsetBits) - 1);
-    }
+
+    const unsigned historyTokenBits{8};
+
+    constexpr Addr foldingTokenMask() { return (1 << historyTokenBits) - 1; }
+
+    constexpr unsigned numFoldingTokens() { return 64/historyTokenBits; }
 
     const unsigned historyBits{128};
 
@@ -45,6 +49,8 @@ class DecoupledBPU : public BPredUnit
     boost::dynamic_bitset<> s0History;
     StreamPrediction s0UbtbPred;
 
+    boost::dynamic_bitset<> commitHistory;
+
     bool squashing{false};
 
     void tryEnqFetchStream();
@@ -52,6 +58,15 @@ class DecoupledBPU : public BPredUnit
     void tryEnqFetchTarget();
 
     void makeNewPredictionAndInsertFsq();
+
+    Addr alignToCacheLine(Addr addr)
+    {
+        return addr & ~((1 << cacheLineOffsetBits) - 1);
+    }
+
+    Addr computePathHash(Addr br, Addr target);
+
+    void histShiftIn(Addr hash, boost::dynamic_bitset<> &history);
 
     void printStream(const FetchStream &e)
     {

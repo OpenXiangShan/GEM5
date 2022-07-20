@@ -78,10 +78,9 @@ struct IdealStreamStorage
 {
     // Addr tag;  // addr of the taken branch?
     Addr bbStart;
-    Addr bbEnd;
+    Addr controlAddr;
     Addr nextStream;
-    unsigned length;
-    // unsigned instCount;
+    uint16_t controlSize;
     unsigned hysteresis;
     bool endIsRet;
 };
@@ -96,9 +95,9 @@ using StreamStorage = IdealStreamStorage;
 struct StreamPrediction
 {
     Addr bbStart;
-    Addr bbEnd;
+    Addr controlAddr;
     Addr nextStream;
-    uint16_t streamLength;
+    uint16_t controlSize;
     bool valid;
     bool endIsRet;
     bool rasUpdated;

@@ -16,6 +16,9 @@ DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
 
     s0History.resize(historyBits, 0);
     fetchTargetQueue.setName(name());
+
+    commitHistory.resize(historyBits, 0);
+    squashing = true;
 }
 
 void
@@ -166,15 +169,36 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
             fetchStreamQueue.erase(erase_it++);
         }
 
+        auto current_stream = fetchStreamQueue.find(stream_id);
+
+        if (current_stream != fetchStreamQueue.end()) {
+            std::string buf1, buf2;
+            boost::to_string(s0History, buf1);
+            boost::to_string(it->second.history, buf2);
+            DPRINTF(DecoupleBP, "Recover history %s\nto %s\n", buf1.c_str(),
+                    buf2.c_str());
+            s0History = it->second.history;
+            auto hashed_path =
+                computePathHash(control_pc.instAddr(), corr_target.instAddr());
+            histShiftIn(hashed_path, s0History);
+            boost::to_string(s0History, buf1);
+            DPRINTF(DecoupleBP, "Shift in history %s\n", buf1.c_str());
+        } else {
+            DPRINTF(DecoupleBP,
+                    "Squashing stream %lu is not found, maybe committed\n",
+                    stream_id);
+        }
+
         // inc stream id because current stream ends
         ftq_demand_stream_id = stream_id + 1;
 
         // todo update stream head id here
         fsqId = stream_id + 1;
 
-        DPRINTF(
-            DecoupleBP,
-            "a miss flow was redirected by taken branch, new fsq entry is:\n");
+        DPRINTF(DecoupleBP,
+                "a %s flow was redirected by taken branch, "
+                "new fsq entry is:\n",
+                stream.streamEnded ? "pred-longer" : "miss");
         printStream(stream);
 
     } else {
@@ -545,6 +569,36 @@ DecoupledBPU::tryEnqFetchTarget()
     }
 }
 
+Addr
+DecoupledBPU::computePathHash(Addr br, Addr target)
+{
+    Addr ret = 0;
+    for (unsigned i = 0; i < numFoldingTokens(); i++) {
+        ret ^= (br >> (i * historyTokenBits)) & foldingTokenMask();
+    }
+    for (unsigned i = 0; i < numFoldingTokens(); i++) {
+        ret ^= (target >> (i * historyTokenBits)) & foldingTokenMask();
+    }
+    return ret;
+}
+
+void
+DecoupledBPU::histShiftIn(Addr hash, boost::dynamic_bitset<> &history)
+{
+    std::string buf;
+    boost::to_string(history, buf);
+    // DPRINTF(DecoupleBP, "Hist before shiftin: %s, hist len: %u, hash:
+    // %#lx\n", buf.c_str(), history.size(), hash); DPRINTF(DecoupleBP, "Reach
+    // x\n");
+    history <<= 2;
+    boost::dynamic_bitset<> temp_hash_bits(historyBits, hash);
+    boost::to_string(temp_hash_bits, buf);
+    // DPRINTF(DecoupleBP, "hash to shiftin: %s\n", buf.c_str());
+    history ^= temp_hash_bits;
+    boost::to_string(history, buf);
+    DPRINTF(DecoupleBP, "Hist after shiftin: %s\n", buf.c_str());
+}
+
 void
 DecoupledBPU::makeNewPredictionAndInsertFsq()
 {
@@ -555,10 +609,20 @@ DecoupledBPU::makeNewPredictionAndInsertFsq()
     entry.streamStart = s0StreamPC;
     if (s0UbtbPred.valid) {
         entry.streamEnded = true;
-        entry.predStreamEnd = s0UbtbPred.bbStart + s0UbtbPred.streamLength;
-        entry.predBranchAddr = s0UbtbPred.bbEnd;
+        entry.predStreamEnd = s0UbtbPred.controlAddr + s0UbtbPred.controlSize;
+        entry.predBranchAddr = s0UbtbPred.controlAddr;
         entry.predTarget = s0UbtbPred.nextStream;
         s0StreamPC = s0UbtbPred.nextStream;
+        entry.history = s0UbtbPred.history;
+        auto hashed_path = computePathHash(s0UbtbPred.controlAddr,
+                                            s0UbtbPred.nextStream);
+        std::string buf1, buf2;
+        boost::to_string(s0History, buf1);
+        histShiftIn(hashed_path, s0History);
+        boost::to_string(s0History, buf2);
+        DPRINTF(DecoupleBP, "Update s0History form %s to %s\n", buf1.c_str(),
+                buf2.c_str());
+        DPRINTF(DecoupleBP, "Hashed path: %#lx\n", hashed_path);
         DPRINTF(DecoupleBP, "Valid s0UbtbPred: %#lx-[%#lx, %#lx) --> %#lx\n",
                 entry.streamStart, entry.predBranchAddr, entry.predStreamEnd,
                 entry.predTarget);
@@ -567,10 +631,16 @@ DecoupledBPU::makeNewPredictionAndInsertFsq()
                 "No valid prediction, gen missing stream: %#lx -> ...\n",
                 s0StreamPC);
         entry.streamEnded = false;
-        entry.history.resize(historyBits, 0);
+        entry.history.resize(historyBits);
+        DPRINTF(DecoupleBP, "entry hist size: %lu, ubtb hist size: %lu\n",
+                entry.history.size(), s0UbtbPred.history.size());
+        entry.history = s0UbtbPred.history;
         // TODO: when hit, the remaining signals should be the prediction
         // result
     }
+    std::string buf;
+    boost::to_string(entry.history, buf);
+    DPRINTF(DecoupleBP, "New prediction history: %s\n", buf.c_str());
     entry.setDefaultResolve();
     auto [insert_it, inserted] = fetchStreamQueue.emplace(fsqId, entry);
     assert(inserted);
