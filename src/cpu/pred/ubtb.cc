@@ -62,17 +62,6 @@ StreamUBTB::putPCHistory(Addr pc, const boost::dynamic_bitset<> &history) {
         prediction.valid = false;
         prediction.history = history;
 
-    } else if (it->second.bbStart != pc) {
-        DPRINTF(DecoupleBP,
-                "Tag mismatch, guess an unlimited stream, entry pc: %#lx\n",
-                it->second.bbStart);
-        prediction.valid = false;
-        prediction.history = history;
-        // prediction.bbStart = pc;
-        // prediction.controlAddr = 0;
-        // prediction.streamLength = unlimitedStreamLen;
-        // prediction.nextStream = 0;
-        // prediction.endIsRet = false;
     } else {
         DPRINTF(DecoupleBP, "UBTB Entry found\n");
         prediction.valid = true;
