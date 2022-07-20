@@ -13,7 +13,7 @@ StreamUBTB::StreamUBTB(const Params& p):
     ubtbStats(*this),
     loMask(64, (-1UL)),
     historyLen(128), // todo: read it from params
-    usedBits(32), // todo: read it from params
+    usedBits(64), // todo: read it from params
     usedMask(usedBits, (-1UL))
 {
     for (auto i = 0; i < size; i++) {
@@ -244,6 +244,7 @@ StreamUBTB::makePCHistTag(Addr pc, const boost::dynamic_bitset<> &history) {
     DPRINTF(DecoupleBP, "History size %lu\n", history.size());
     Addr hash = pc;
 
+    // xor 64+64 -> 64
     // Addr hi = (history >> 64).to_ulong();
     // boost::dynamic_bitset<> lo_bits(history & loMask);
     // lo_bits.resize(64);
@@ -251,10 +252,11 @@ StreamUBTB::makePCHistTag(Addr pc, const boost::dynamic_bitset<> &history) {
     // hash ^= hi;
     // hash ^= lo;
 
+    // xor used bits to pc
     // boost::dynamic_bitset<> used_bits(history & usedMask);
     // used_bits.resize(usedBits);
     // Addr used = used_bits.to_ulong();
-    // hash ^= used << 32;
+    // hash ^= used;
 
     // std::string buf;
     // boost::to_string(history, buf);

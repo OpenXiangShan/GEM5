@@ -125,24 +125,24 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
     bool is_indirect = static_inst->isIndirectCtrl();
     // bool is_call = static_inst->isCall();
     // bool is_return = static_inst->isReturn();
-    DPRINTF(DecoupleBP,
-            "Control squash: ftq_id=%lu, fsq_id=%lu, control_pc=0x%lx, "
-            "corr_target=0x%lx, is_conditional=%u, "
-            "is_indirect=%u, actually_taken=%u, branch seq: %lu\n",
-            target_id, stream_id, control_pc.instAddr(),
-            corr_target.instAddr(), is_conditional, is_indirect,
-            actually_taken, seq);
-
     squashing = true;
 
     s0StreamPC = corr_target.instAddr();
-
-    dumpFsq("Before control squash");
 
     // check sanity
     auto it = fetchStreamQueue.find(stream_id);
     assert(it != fetchStreamQueue.end());
     auto &stream = it->second;
+
+    DPRINTF(DecoupleBP,
+            "Control squash: ftq_id=%lu, fsq_id=%lu, stream start=%#lx,"
+            " control_pc=%#lx, corr_target=%#lx, is_conditional=%u, "
+            "is_indirect=%u, actually_taken=%u, branch seq: %lu\n",
+            target_id, stream_id, stream.streamStart, control_pc.instAddr(),
+            corr_target.instAddr(), is_conditional, is_indirect,
+            actually_taken, seq);
+
+    dumpFsq("Before control squash");
 
     FetchTargetId ftq_demand_stream_id;
     stream.resolved = true;
@@ -625,8 +625,8 @@ DecoupledBPU::makeNewPredictionAndInsertFsq()
         entry.predTarget = s0UbtbPred.nextStream;
         s0StreamPC = s0UbtbPred.nextStream;
         entry.history = s0UbtbPred.history;
-        auto hashed_path = computePathHash(s0UbtbPred.controlAddr,
-                                            s0UbtbPred.nextStream);
+        auto hashed_path =
+            computePathHash(s0UbtbPred.controlAddr, s0UbtbPred.nextStream);
         std::string buf1, buf2;
         boost::to_string(s0History, buf1);
         histShiftIn(hashed_path, s0History);
