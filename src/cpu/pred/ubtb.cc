@@ -72,6 +72,9 @@ StreamUBTB::putPCHistory(Addr pc, const boost::dynamic_bitset<> &history) {
         prediction.nextStream = it->second.nextStream;
         prediction.endIsRet = it->second.endIsRet;
         prediction.history = history;
+
+        it->second.tick = curTick();
+        std::make_heap(mruList.begin(), mruList.end(), older());
     }
 }
 
@@ -127,8 +130,8 @@ StreamUBTB::update(const PredictionID fsq_id, Addr stream_start_pc,
         std::pop_heap(mruList.begin(), mruList.end(), older());
         const auto& ubtb_entry = mruList.back();
         DPRINTF(DecoupleBP,
-                "StreamUBTB::update: pop ubtb_entry: %#x\n",
-                ubtb_entry->first);
+                "StreamUBTB::update: pop ubtb_entry: %#x, tick: %lu\n",
+                ubtb_entry->first, ubtb_entry->second.tick);
         ubtb.erase(ubtb_entry->first);
     }
     //mydo:seen but not predicted correctly
