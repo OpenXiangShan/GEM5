@@ -9,11 +9,12 @@ namespace branch_prediction {
 
 StreamUBTB::StreamUBTB(const Params& p):
     TimedPredictor(p),
+    size(32),
     ubtbStats(*this),
     loMask(64, (-1UL)),
-    usedMask(usedBits, (-1UL)),
     historyLen(128), // todo: read it from params
-    usedBits(10) // todo: read it from params
+    usedBits(32), // todo: read it from params
+    usedMask(usedBits, (-1UL))
 {
     for (auto i = 0; i < size; i++) {
         ubtb[0xfffffff - i];  // dummy initialization
@@ -195,15 +196,15 @@ StreamUBTB::makePCHistTag(Addr pc, const boost::dynamic_bitset<> &history) {
     // hash ^= hi;
     // hash ^= lo;
 
-    boost::dynamic_bitset<> used_bits(history & usedMask);
-    used_bits.resize(usedBits);
-    Addr used = used_bits.to_ulong();
-    hash ^= used << 32;
+    // boost::dynamic_bitset<> used_bits(history & usedMask);
+    // used_bits.resize(usedBits);
+    // Addr used = used_bits.to_ulong();
+    // hash ^= used << 32;
 
-    std::string buf;
-    boost::to_string(history, buf);
-    DPRINTF(DecoupleBP, "PC to hash: %#lx, hash: %#lx, history: %s\n", pc,
-            hash, buf.c_str());
+    // std::string buf;
+    // boost::to_string(history, buf);
+    // DPRINTF(DecoupleBP, "PC to hash: %#lx, hash: %#lx, history: %s\n", pc,
+    //         hash, buf.c_str());
     return hash;
 }
 

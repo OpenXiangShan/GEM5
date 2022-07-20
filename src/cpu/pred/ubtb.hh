@@ -48,7 +48,7 @@ class StreamUBTB : public TimedPredictor
   private:
     const unsigned delay{1};
 
-    const unsigned size{32};
+    const unsigned size;
 
     UBTBMap ubtb;
 
@@ -83,15 +83,19 @@ class StreamUBTB : public TimedPredictor
                 bool is_indirect, unsigned control_size, bool actually_taken,
                 const boost::dynamic_bitset<> &history);
 
+    void commit(const FetchStreamId pred_id, Addr stream_start_pc,
+                Addr control_pc, Addr target, unsigned control_size,
+                const boost::dynamic_bitset<> &history);
+
     uint64_t makePCHistTag(Addr pc, const boost::dynamic_bitset<> &history);
 
     StreamPrediction prediction;
 
     boost::dynamic_bitset<> loMask;
-    boost::dynamic_bitset<> usedMask;
 
     unsigned historyLen{};
     unsigned usedBits{};
+    boost::dynamic_bitset<> usedMask;
 };
 
 }
