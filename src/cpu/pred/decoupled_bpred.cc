@@ -169,25 +169,17 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
             fetchStreamQueue.erase(erase_it++);
         }
 
-        auto current_stream = fetchStreamQueue.find(stream_id);
-
-        if (current_stream != fetchStreamQueue.end()) {
-            std::string buf1, buf2;
-            boost::to_string(s0History, buf1);
-            boost::to_string(it->second.history, buf2);
-            DPRINTF(DecoupleBP, "Recover history %s\nto %s\n", buf1.c_str(),
-                    buf2.c_str());
-            s0History = it->second.history;
-            auto hashed_path =
-                computePathHash(control_pc.instAddr(), corr_target.instAddr());
-            histShiftIn(hashed_path, s0History);
-            boost::to_string(s0History, buf1);
-            DPRINTF(DecoupleBP, "Shift in history %s\n", buf1.c_str());
-        } else {
-            DPRINTF(DecoupleBP,
-                    "Squashing stream %lu is not found, maybe committed\n",
-                    stream_id);
-        }
+        std::string buf1, buf2;
+        boost::to_string(s0History, buf1);
+        boost::to_string(stream.history, buf2);
+        DPRINTF(DecoupleBP, "Recover history %s\nto %s\n", buf1.c_str(),
+                buf2.c_str());
+        s0History = stream.history;
+        auto hashed_path =
+            computePathHash(control_pc.instAddr(), corr_target.instAddr());
+        histShiftIn(hashed_path, s0History);
+        boost::to_string(s0History, buf1);
+        DPRINTF(DecoupleBP, "Shift in history %s\n", buf1.c_str());
 
         // inc stream id because current stream ends
         ftq_demand_stream_id = stream_id + 1;
