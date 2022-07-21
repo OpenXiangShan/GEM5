@@ -152,6 +152,9 @@ class BaseCache(ClockedObject):
     # data cache.
     write_allocator = Param.WriteAllocator(NULL, "Write allocator")
 
+    enable_arch_db = Param.Bool(False, "Enable arch db")
+    arch_db_file = Param.String("", "Where to save arch db")
+
 class Cache(BaseCache):
     type = 'Cache'
     cxx_header = 'mem/cache/cache.hh'
