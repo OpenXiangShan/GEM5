@@ -981,6 +981,9 @@ class BaseCache : public ClockedObject
      * Normally this is all possible memory addresses. */
     const AddrRangeList addrRanges;
 
+    /** ChiselDB */
+    bool enable_chisel_db;
+
   public:
     /** System we are currently operating in. */
     System *system;

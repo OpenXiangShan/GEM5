@@ -40,6 +40,8 @@ Source('mshr_queue.cc')
 Source('noncoherent_cache.cc')
 Source('write_queue.cc')
 Source('write_queue_entry.cc')
+Source('chisel_db.cc')
+env.Append(LIBS=['sqlite3'])
 
 DebugFlag('Cache')
 DebugFlag('CacheComp')
@@ -50,6 +52,7 @@ DebugFlag('CacheVerbose')
 DebugFlag('HWPrefetch')
 DebugFlag('MSHR')
 DebugFlag('HWPrefetchQueue')
+DebugFlag('ChiselDB')
 
 # CacheTags is so outrageously verbose, printing the cache's entire tag
 # array on each timing access, that you should probably have to ask for

@@ -47,11 +47,13 @@
 
 #include "base/compiler.hh"
 #include "base/logging.hh"
+#include "chisel_db.h"
 #include "debug/Cache.hh"
 #include "debug/CacheComp.hh"
 #include "debug/CachePort.hh"
 #include "debug/CacheRepl.hh"
 #include "debug/CacheVerbose.hh"
+#include "debug/ChiselDB.hh"
 #include "debug/HWPrefetch.hh"
 #include "mem/cache/compressors/base.hh"
 #include "mem/cache/mshr.hh"
@@ -61,6 +63,7 @@
 #include "mem/cache/tags/super_blk.hh"
 #include "params/BaseCache.hh"
 #include "params/WriteAllocator.hh"
+#include "sim/core.hh"
 #include "sim/cur_tick.hh"
 
 namespace gem5
@@ -109,6 +112,7 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       noTargetMSHR(nullptr),
       missCount(p.max_miss_count),
       addrRanges(p.addr_ranges.begin(), p.addr_ranges.end()),
+      enable_chisel_db(p.enable_chisel_db),
       system(p.system),
       stats(*this)
 {
@@ -134,6 +138,14 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
         "Compressed cache %s does not have a compression algorithm", name());
     if (compressor)
         compressor->setCache(this);
+
+    if (enable_chisel_db){
+        fatal_if(p.chisel_db_file == "" || p.chisel_db_file == "None",
+                 "Chisel db file path is not given!");
+        init_db(enable_chisel_db);
+        registerExitCallback([p](){ save_db(p.chisel_db_file.c_str()); });
+    }
+
 }
 
 BaseCache::~BaseCache()
@@ -457,6 +469,24 @@ BaseCache::recvTimingReq(PacketPtr pkt)
 
         handleTimingReqHit(pkt, blk, request_time);
     } else {
+        // ChiselDB: for now we only track packet which has PC
+        // and is normal load/store
+        // TODO: for now there are some bugs in vaddrs
+        if (enable_chisel_db && pkt->req->hasPC() &&
+            (pkt->isRead() || pkt->isWrite())){
+            Addr pc = pkt->req->getPC();
+            Addr vaddr = pkt->req->getVaddr();
+            Addr paddr = pkt->req->getPaddr();
+            uint8_t source = pkt->isRead() ? 0 : 1;
+            uint64_t curCycle = ticksToCycles(curTick());
+            DPRINTF(ChiselDB,
+                "ChiselDB: insert record [%x %d %x %x %x %s]\n",
+                pc, source, paddr, vaddr, curCycle, this->name()
+            );
+            L1MissTrace_write(
+              pc, source, paddr, vaddr, curCycle, this->name().c_str());
+        }
+
         handleTimingReqMiss(pkt, blk, forward_time, request_time);
 
         ppMiss->notify(pkt);

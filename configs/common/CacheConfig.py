@@ -143,7 +143,9 @@ def config_cache(options, system):
     for i in range(options.num_cpus):
         if options.caches:
             icache = icache_class(**_get_cache_opts('l1i', options))
-            dcache = dcache_class(**_get_cache_opts('l1d', options))
+            dcache = dcache_class(enable_chisel_db=options.enable_chisel_db,
+                                  chisel_db_file=options.chisel_db_file,
+                                  **_get_cache_opts('l1d', options))
 
             # If we have a walker cache specified, instantiate two
             # instances here
