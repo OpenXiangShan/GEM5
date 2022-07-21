@@ -61,6 +61,8 @@ class VConfOp : public RiscvStaticInst
 
     std::string generateDisassembly(
         Addr pc, const loader::SymbolTable *symtab) const override;
+
+    std::string generateZimmDisassembly() const;
 };
 
 inline uint8_t checked_vtype(bool vill, uint8_t vtype) {
