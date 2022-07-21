@@ -52,7 +52,7 @@ class RiscvTLB(BaseTLB):
     cxx_class = 'gem5::RiscvISA::TLB'
     cxx_header = 'arch/riscv/tlb.hh'
 
-    size = Param.Int(64, "TLB size")
+    size = Param.Int(2048, "TLB size")
     walker = Param.RiscvPagetableWalker(\
             RiscvPagetableWalker(), "page table walker")
     # Grab the pma_checker from the MMU
