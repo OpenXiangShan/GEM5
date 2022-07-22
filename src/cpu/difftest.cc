@@ -25,7 +25,7 @@ const char *reg_name[DIFFTEST_NR_REG] = {
     "mip",    "mie",   "mscratch", "sscratch", "mideleg", "medeleg",
     "mtval",  "stval", "mtvec",    "stvec",    "mode"};
 
-NemuProxy::NemuProxy(int coreid, const char *ref_so)
+NemuProxy::NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff)
 {
     void *handle = dlmopen(LM_ID_NEWLM, ref_so, RTLD_LAZY | RTLD_DEEPBIND);
     printf("Using %s for difftest", ref_so);
@@ -78,10 +78,11 @@ NemuProxy::NemuProxy(int coreid, const char *ref_so)
         assert(nemu_difftest_set_mhartid);
         nemu_difftest_set_mhartid(coreid);
     }
-
-    sdcard_init = (void (*)(const char *, const char *))dlsym(
-        handle, "difftest_sdcard_init");
-    assert(sdcard_init);
+    if (enable_sdcard_diff) {
+        sdcard_init = (void (*)(const char *, const char *))dlsym(
+            handle, "difftest_sdcard_init");
+        assert(sdcard_init);
+    }
 
     auto nemu_init = (void (*)(void))dlsym(handle, "difftest_init");
     assert(nemu_init);
