@@ -317,6 +317,9 @@ class DynInst : public ExecContext, public RefCounted
     /** The thread this instruction is from. */
     ThreadID threadNumber = 0;
 
+    /** The GHR of the instruction. */
+    unsigned ghr = 0;
+
     /** Iterator pointing to this BaseDynInst in the list of all insts. */
     ListIt instListIt;
 
@@ -930,6 +933,12 @@ class DynInst : public ExecContext, public RefCounted
 
     /** Sets the thread id. */
     void setTid(ThreadID tid) { threadNumber = tid; }
+
+    /** Sets the GHR of this instruction. */
+    void setGhr(unsigned GHR) { ghr = GHR; }
+
+    /** Gets the GHR of this instruction. */
+    unsigned getGhr() const { return ghr; }
 
     /** Sets the pointer to the thread state. */
     void setThreadState(ThreadState *state) { thread = state; }

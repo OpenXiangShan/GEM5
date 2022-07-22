@@ -304,9 +304,6 @@ CPU::CPU(const BaseO3CPUParams &params)
     if (enableDifftest) {
         assert(params.difftest_ref_so.length() > 2);
         diff.nemu_reg = referenceRegFile;
-        // diff.wpc = diffWPC;
-        // diff.wdata = diffWData;
-        // diff.wdst = diffWDst;
         diff.nemu_this_pc = 0x80000000u;
         diff.cpu_id = params.cpu_id;
         warn("cpu_id set to %d\n", params.cpu_id);
@@ -553,6 +550,8 @@ CPU::startup()
     iew.startupStage();
     rename.startupStage();
     commit.startupStage();
+
+    registerExitCallback([this]() { rename.dumpLiveOutRegisters(); });
 }
 
 void

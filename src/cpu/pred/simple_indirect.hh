@@ -59,6 +59,7 @@ class SimpleIndirectPredictor : public IndirectPredictor
     void deleteIndirectInfo(ThreadID tid, void * indirect_history);
     void changeDirectionPrediction(ThreadID tid, void * indirect_history,
                                    bool actually_taken);
+    unsigned getGhr(ThreadID tid) override { return threadInfo[tid].ghr; };
 
   private:
     const bool hashGHR;

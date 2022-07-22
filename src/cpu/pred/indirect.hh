@@ -67,6 +67,7 @@ class IndirectPredictor : public SimObject
     virtual void changeDirectionPrediction(ThreadID tid,
                                            void * indirect_history,
                                            bool actually_taken) = 0;
+    virtual unsigned getGhr(ThreadID tid) = 0;
 };
 
 } // namespace branch_prediction

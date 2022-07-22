@@ -42,8 +42,12 @@
 #ifndef __CPU_O3_RENAME_HH__
 #define __CPU_O3_RENAME_HH__
 
+#include <bitset>
 #include <list>
+#include <map>
+#include <set>
 #include <utility>
+#include <vector>
 
 #include "base/statistics.hh"
 #include "cpu/o3/comm.hh"
@@ -532,7 +536,42 @@ class Rename
         statistics::Scalar tempSerializing;
         /** Number of instructions inserted into skid buffers. */
         statistics::Scalar skidInsts;
+        /** Number of successful prediction that using table. */
+        statistics::Scalar successPredictionTable;
+        /** Number of successful prediction that using map. */
+        statistics::Scalar successPredictionMap;
+        /** Number of rename. */
+        statistics::Scalar renameCount;
+        /** Number of rename less than 4 instructions. */
+        statistics::Scalar renameCountLess4;
+        /** Number of misprediction due to first access. */
+        statistics::Scalar misPredFirstAccess;
+        /** Number of misprediction due to length of insts sequence. */
+        statistics::Scalar misPredLength;
+        /** Number of misprediction due to different insts sequence. */
+        statistics::Scalar misPredSequence;
+        /** Number of misprediction due to conflict. */
+        statistics::Scalar misPredConflict;
+        /** The accuracy of rename prediction that using table */
+        statistics::Formula tableAccuracy;
+        /** The accuracy of rename prediction that using map */
+        statistics::Formula mapAccuracy;
     } stats;
+
+
+  public:
+    /** Live-Out Prediction Table: 2 ways,
+     * 4k entries for each way, 69 bits for each entry. */
+    std::vector<std::bitset<69>> liveOutTable;
+    std::vector<std::vector<std::vector<Addr>>> instsSequenceVec;
+    std::map<Addr, std::map<Addr, std::bitset<69>>> liveOutMap;
+    std::vector<std::set<Addr>> conflictPCTable;
+    std::vector<std::set<unsigned>> conflictGhrTable;
+    std::map<unsigned, unsigned> countMap;
+    std::map<unsigned, unsigned> countTable;
+
+    /** dump the number of live out registers. */
+    void dumpLiveOutRegisters();
 };
 
 } // namespace o3

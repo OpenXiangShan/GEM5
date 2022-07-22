@@ -1058,6 +1058,8 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
 
     instruction->setThreadState(cpu->thread[tid]);
 
+    instruction->setGhr(branchPred->getGhr(tid));
+
     DPRINTF(Fetch, "[tid:%i] Instruction PC %s created [sn:%lli].\n",
             tid, this_pc, seq);
 

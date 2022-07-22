@@ -41,6 +41,9 @@
 
 #include "cpu/o3/rename.hh"
 
+#include <fstream>
+#include <iomanip>
+#include <iostream>
 #include <list>
 
 #include "cpu/o3/cpu.hh"
@@ -48,6 +51,7 @@
 #include "cpu/o3/limits.hh"
 #include "cpu/reg_class.hh"
 #include "debug/Activity.hh"
+#include "debug/LiveOutPrediction.hh"
 #include "debug/O3PipeView.hh"
 #include "debug/Rename.hh"
 #include "params/BaseO3CPU.hh"
@@ -85,6 +89,18 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
         stalls[tid] = {false, false};
         serializeInst[tid] = nullptr;
         serializeOnNextInst[tid] = false;
+    }
+
+    // initialize live-out prediction table
+    for (int i = 0;i < 32768;i++) {
+        std::bitset<69> tmp;
+        std::vector<std::vector<Addr>> instsTmp;
+        std::set<Addr> pcTmp;
+        std::set<unsigned> ghrTmp;
+        liveOutTable.push_back(tmp);
+        instsSequenceVec.push_back(instsTmp);
+        conflictPCTable.push_back(pcTmp);
+        conflictGhrTable.push_back(ghrTmp);
     }
 }
 
@@ -143,7 +159,27 @@ Rename::RenameStats::RenameStats(statistics::Group *parent)
       ADD_STAT(tempSerializing, statistics::units::Count::get(),
                "count of temporary serializing insts renamed"),
       ADD_STAT(skidInsts, statistics::units::Count::get(),
-               "count of insts added to the skid buffer")
+               "count of insts added to the skid buffer"),
+      ADD_STAT(successPredictionTable, statistics::units::Count::get(),
+               "count of successful prediction that using table"),
+      ADD_STAT(successPredictionMap, statistics::units::Count::get(),
+               "count of successful prediction that using map"),
+      ADD_STAT(renameCount, statistics::units::Count::get(),
+               "count of rename"),
+      ADD_STAT(renameCountLess4, statistics::units::Count::get(),
+               "count of rename"),
+      ADD_STAT(misPredFirstAccess, statistics::units::Count::get(),
+               "count of misprediction due to first access"),
+      ADD_STAT(misPredLength, statistics::units::Count::get(),
+               "count of misprediction due to length of insts sequence"),
+      ADD_STAT(misPredSequence, statistics::units::Count::get(),
+               "count of misprediction due to different insts sequence"),
+      ADD_STAT(misPredConflict, statistics::units::Count::get(),
+               "count of misprediction due to conflict"),
+      ADD_STAT(tableAccuracy, statistics::units::Ratio::get(),
+               "The accuracy of rename prediction that using table"),
+      ADD_STAT(mapAccuracy, statistics::units::Ratio::get(),
+               "The accuracy of rename prediction that using map")
 {
     squashCycles.prereq(squashCycles);
     idleCycles.prereq(idleCycles);
@@ -173,6 +209,23 @@ Rename::RenameStats::RenameStats(statistics::Group *parent)
     serializing.flags(statistics::total);
     tempSerializing.flags(statistics::total);
     skidInsts.flags(statistics::total);
+    successPredictionTable.flags(statistics::total);
+    successPredictionMap.flags(statistics::total);
+    renameCount.flags(statistics::total);
+    renameCountLess4.flags(statistics::total);
+    misPredFirstAccess.flags(statistics::total);
+    misPredLength.flags(statistics::total);
+    misPredSequence.flags(statistics::total);
+    misPredConflict.flags(statistics::total);
+
+    tableAccuracy.flags(statistics::total |
+                        statistics::nozero |
+                        statistics::nonan);
+    tableAccuracy = successPredictionTable / renameCount;
+    mapAccuracy.flags(statistics::total |
+                      statistics::nozero |
+                      statistics::nonan);
+    mapAccuracy = successPredictionMap / renameCount;
 }
 
 void
@@ -593,6 +646,29 @@ Rename::renameInsts(ThreadID tid)
     }
 
     int renamed_insts = 0;
+    Addr firstInstPC = insts_to_rename.front()->pcState().instAddr();
+    unsigned ghr = insts_to_rename.front()->ghr;
+    DPRINTF(LiveOutPrediction, "[tid:%i] First inst PC: %lu, GHR: %u\n",
+            tid, firstInstPC, ghr);
+    Addr hash = 0x7fff & (firstInstPC >> 2 ^ ghr);
+    assert(hash < 32768);
+
+    std::bitset<69> lookUpTableEntry = liveOutTable[hash];
+    std::bitset<69> lookUpMapEntry;
+    std::bitset<69> srcRegsEntry;
+    std::bitset<69> destRegsEntry;
+    std::vector<Addr> instsSequence;
+    std::vector<std::vector<Addr>> loopUpSequence = instsSequenceVec[hash];
+    bool differentSeq = true;
+    std::set<Addr> lookUpPCSet = conflictPCTable[hash];
+    std::set<unsigned> loopUpGhrSet = conflictGhrTable[hash];
+    if (liveOutMap.find(firstInstPC ^ ghr) != liveOutMap.end()) {
+        std::map<Addr, std::bitset<69>> tempMap =
+        liveOutMap[firstInstPC ^ ghr];
+        if (tempMap.find(firstInstPC) != tempMap.end()) {
+            lookUpMapEntry = tempMap[firstInstPC];
+        }
+    }
 
     while (insts_available > 0 &&  toIEWIndex < renameWidth) {
         DPRINTF(Rename, "[tid:%i] Sending instructions to IEW.\n", tid);
@@ -600,6 +676,7 @@ Rename::renameInsts(ThreadID tid)
         assert(!insts_to_rename.empty());
 
         DynInstPtr inst = insts_to_rename.front();
+        instsSequence.push_back(inst->pcState().instAddr());
 
         //For all kind of instructions, check ROB and IQ first For load
         //instruction, check LQ size and take into account the inflight loads
@@ -731,6 +808,154 @@ Rename::renameInsts(ThreadID tid)
 
         // Decrement how many instructions are available.
         --insts_available;
+
+        // mark the logical registers written by the first 4 instructions
+        // RISCV-V: 32 IntRegs, 32 FloatRegs, 1 VecRegs,
+        // 2 VecElemClass, 1 VecPredRegClass
+        if (renamed_insts <= 4) {
+            for (int dest_idx = 0; dest_idx < inst->numDestRegs();
+                 dest_idx++) {
+                const RegId& destReg = inst->destRegIdx(dest_idx);
+                const uint16_t destRegIdx = destReg.index();
+                uint16_t entryIdx = 0;
+                bool validReg = true;
+                switch(destReg.classValue()) {
+                    case IntRegClass: {
+                        entryIdx = destRegIdx;
+                        break;
+                    }
+                    case FloatRegClass: {
+                        entryIdx = destRegIdx + 32;
+                        break;
+                    }
+                    case VecRegClass: {
+                        entryIdx = destRegIdx + 64;
+                        break;
+                    }
+                    case VecElemClass: {
+                        entryIdx = destRegIdx + 65;
+                        break;
+                    }
+                    case VecPredRegClass: {
+                        entryIdx = destRegIdx + 67;
+                        break;
+                    }
+                    default: {
+                        validReg = false;
+                    }
+                }
+                if (validReg) {
+                    assert(entryIdx >= 0 && entryIdx < 68);
+                    destRegsEntry.set(entryIdx);
+                }
+            }
+        }
+
+        // calculate the prediction accuracy
+        if (renamed_insts > 4) {
+            for (int src_idx = 0;src_idx < inst->numSrcRegs();src_idx++) {
+                const RegId& srcReg = inst->srcRegIdx(src_idx);
+                const uint16_t srcRegIdx = srcReg.index();
+                uint16_t entryIdx = 0;
+                bool validReg = true;
+                switch(srcReg.classValue()) {
+                    case IntRegClass: {
+                        entryIdx = srcRegIdx;
+                        break;
+                    }
+                    case FloatRegClass: {
+                        entryIdx = srcRegIdx + 32;
+                        break;
+                    }
+                    case VecRegClass: {
+                        entryIdx = srcRegIdx + 64;
+                        break;
+                    }
+                    case VecElemClass: {
+                        entryIdx = srcRegIdx + 65;
+                        break;
+                    }
+                    case VecPredRegClass: {
+                        entryIdx = srcRegIdx + 67;
+                        break;
+                    }
+                    default: {
+                        validReg = false;
+                    }
+                }
+                if (validReg) {
+                    assert(entryIdx >= 0 && entryIdx < 68);
+                    srcRegsEntry.set(entryIdx);
+                }
+            }
+        }
+
+        // finish constructing the prediction table
+        if (insts_available == 0) {
+            // update the Live-Out Predictor table
+            std::bitset<69> updateMapEntry =
+                            (lookUpMapEntry | destRegsEntry).set(68);
+            std::bitset<69> updateTableEntry =
+                            (lookUpTableEntry | destRegsEntry).set(68);
+            liveOutTable[hash] = updateTableEntry;
+            liveOutMap[firstInstPC ^ ghr][firstInstPC] = updateMapEntry;
+            conflictGhrTable[hash].insert(ghr);
+            conflictPCTable[hash].insert(firstInstPC);
+        }
+    }
+    // update instSequenceVec
+    int instSeqLength = 0;
+    for (auto it = loopUpSequence.begin(); it != loopUpSequence.end(); it++) {
+        int i;
+        for (i = 0;i < instsSequence.size() && i < it->size();i++) {
+            if (instsSequence.at(i) != it->at(i)) {
+                break;
+            }
+        }
+        if (i == instsSequence.size() || i == it->size()) {
+            differentSeq = false;
+            instSeqLength = it->size();
+            if (instsSequence.size() > it->size())
+                *it = instsSequence;
+            break;
+        }
+    }
+
+    if (renamed_insts > 4) {
+        if (lookUpTableEntry == (srcRegsEntry | lookUpTableEntry)) {
+            stats.successPredictionTable++;
+            if (countTable.find(liveOutTable[hash].count()) ==
+                countTable.end()) {
+                countTable[liveOutTable[hash].count()] = 1;
+            } else {
+                countTable[liveOutTable[hash].count()]++;
+            }
+        } else {
+            if (!lookUpTableEntry.test(68))
+                stats.misPredFirstAccess++;
+            else if ((lookUpPCSet.find(firstInstPC) == lookUpPCSet.end()) ||
+                    (loopUpGhrSet.find(ghr) == loopUpGhrSet.end()))
+                stats.misPredConflict++;
+            else if (differentSeq)
+                stats.misPredSequence++;
+            else if (instSeqLength != renamed_insts)
+                stats.misPredLength++;
+        }
+
+        if (lookUpMapEntry == (srcRegsEntry | lookUpMapEntry)) {
+            stats.successPredictionMap++;
+            unsigned index =
+            liveOutMap[firstInstPC ^ ghr][firstInstPC].count();
+            if (countMap.find(index) == countTable.end()) {
+                countMap[index] = 1;
+            } else {
+                countMap[index]++;
+            }
+        }
+
+        stats.renameCount++;
+    } else {
+        stats.renameCountLess4++;
     }
 
     instsInProgress[tid] += renamed_insts;
@@ -1420,6 +1645,24 @@ Rename::dumpHistory()
             buf_it++;
         }
     }
+}
+
+void
+Rename::dumpLiveOutRegisters()
+{
+    warn("%s: Dumping Live-out Registers Count on Exit\n", name().c_str());
+    std::ofstream ofs;
+    ofs.open((name() + ".live-out.txt").c_str());
+    std::stringstream ss;
+    for (auto it = countTable.begin(); it != countTable.end(); ++it) {
+        ss << it->first << ": " << it->second << std::endl;
+    }
+    ss << "Map" << std::endl;
+    for (auto it = countMap.begin(); it != countMap.end(); ++it) {
+        ss << it->first << ": " << it->second << std::endl;
+    }
+    ofs << ss.rdbuf();
+    ofs.close();
 }
 
 } // namespace o3

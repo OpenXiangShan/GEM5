@@ -333,6 +333,9 @@ class BPredUnit : public SimObject
         statistics::Scalar indirectMispredicted;
     } stats;
 
+  public:
+    unsigned getGhr(ThreadID tid) { return iPred->getGhr(tid); }
+
   protected:
     /** Number of bits to shift instructions by for predictor addresses. */
     const unsigned instShiftAmt;
