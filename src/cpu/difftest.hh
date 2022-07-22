@@ -113,7 +113,7 @@ class RefProxy
 class NemuProxy : public RefProxy
 {
   public:
-    NemuProxy(int coreid, const char *ref_so);
+    NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff);
 
   private:
 };

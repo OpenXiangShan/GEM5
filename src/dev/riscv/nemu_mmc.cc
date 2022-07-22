@@ -103,7 +103,6 @@ NemuMMC::sdcard_io_handler(uint32_t offset)
 {
     // printf("444\n");
     assert(img_fp);
-    assert(sdfp);
     int idx = offset / 4;
     switch (idx) {
         case SDCMD:
