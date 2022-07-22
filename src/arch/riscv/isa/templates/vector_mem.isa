@@ -240,7 +240,7 @@ private:
 public:
     %(class_name)s(ExtMachInst _machInst, uint32_t _offset, uint8_t _srcReg,
                    uint8_t _microVl, uint8_t _microIdx)
-        : %(base_class)s("%(mnemonic)s""_micro", _machInst, VectorDummyOp,
+        : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp,
                          _microVl, _microIdx, _offset)
     {
         %(set_reg_idx_arr)s;
