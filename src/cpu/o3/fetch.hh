@@ -360,6 +360,8 @@ class Fetch
 
     RequestPort &getInstPort() { return icachePort; }
 
+    void flushFetchBuffer();
+
   private:
     DynInstPtr buildInst(ThreadID tid, StaticInstPtr staticInst,
             StaticInstPtr curMacroop, const PCStateBase &this_pc,

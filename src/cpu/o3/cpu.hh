@@ -367,6 +367,9 @@ class CPU : public BaseCPU
     /** Removes the instruction pointed to by the iterator. */
     void squashInstIt(const ListIt &instIt, ThreadID tid);
 
+    // flush fetch buffer while flushing tlb
+    void flushTLBs() override;
+
     /** Cleans up all instructions on the remove list. */
     void cleanUpRemovedInsts();
 

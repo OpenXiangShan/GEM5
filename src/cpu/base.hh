@@ -353,7 +353,7 @@ class BaseCPU : public ClockedObject
      * it easier to compare traces when debugging
      * handover/checkpointing.
      */
-    void flushTLBs();
+    virtual void flushTLBs();
 
     /**
      * Determine if the CPU is switched out.
