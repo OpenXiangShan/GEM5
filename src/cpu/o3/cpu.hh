@@ -627,6 +627,7 @@ class CPU : public BaseCPU
     void htmSendAbortSignal(ThreadID tid, uint64_t htm_uid,
                             HtmFailureFaultCause cause) override;
 
+    // online difftest
   private:
     uint32_t diffWDst[DIFFTEST_WIDTH];
     uint64_t diffWData[DIFFTEST_WIDTH];
@@ -644,6 +645,8 @@ class CPU : public BaseCPU
 
     std::pair<int, bool> diffWithNEMU(const DynInstPtr &inst);
 
+  public:
+    void difftestStep(const DynInstPtr &inst);
 };
 
 } // namespace o3

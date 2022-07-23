@@ -42,6 +42,8 @@
 
 #include "arch/riscv/regs/misc.hh"
 #include "cpu/o3/cpu.hh"
+
+#include "arch/riscv/regs/misc.hh"
 #include "config/the_isa.hh"
 #include "cpu/activity.hh"
 #include "cpu/checker/cpu.hh"
@@ -1247,10 +1249,7 @@ CPU::addInst(const DynInstPtr &inst)
 void
 CPU::instDone(ThreadID tid, const DynInstPtr &inst)
 {
-    bool should_diff = false;
-    // Keep an instruction count.
     if (!inst->isMicroop() || inst->isLastMicroop()) {
-        should_diff = true;
         thread[tid]->numInst++;
         thread[tid]->threadStats.numInsts++;
         cpuStats.committedInsts[tid]++;
@@ -1273,6 +1272,23 @@ CPU::instDone(ThreadID tid, const DynInstPtr &inst)
             Stats::schedStatEvent(true, true, curTick(), 0);
         }
 
+    }
+
+    thread[tid]->numOp++;
+    thread[tid]->threadStats.numOps++;
+    cpuStats.committedOps[tid]++;
+
+    probeInstCommit(inst->staticInst, inst->pcState().instAddr());
+    cpuStats.lastCommitTick = curTick();
+}
+
+void
+CPU::difftestStep(const DynInstPtr &inst)
+{
+    bool should_diff = false;
+    // Keep an instruction count.
+    if (!inst->isMicroop() || inst->isLastMicroop()) {
+        should_diff = true;
         if (!hasCommit && inst->pcState().instAddr() == 0x80000000u) {
             hasCommit = true;
             readGem5Regs();
@@ -1320,14 +1336,9 @@ CPU::instDone(ThreadID tid, const DynInstPtr &inst)
     }
 
     DPRINTF(ValueCommit, "commit_pc: %s\n", inst->pcState());
-
-    thread[tid]->numOp++;
-    thread[tid]->threadStats.numOps++;
-    cpuStats.committedOps[tid]++;
-
-    probeInstCommit(inst->staticInst, inst->pcState().instAddr());
-    cpuStats.lastCommitTick = curTick();
 }
+
+
 
 void
 CPU::removeFrontInst(const DynInstPtr &inst)
@@ -1733,19 +1744,6 @@ CPU::diffWithNEMU(const DynInstPtr &inst)
     DPRINTF(ValueCommit, "Inst [sn:%lli] %s, NEMU: %#lx, GEM5: %#lx\n",
                 inst->seqNum, "PC", nemu_pc, gem5_pc
                );
-    auto gem5_mstatus = readMiscRegNoEffect(RiscvISA::MISCREG_STATUS, 0);
-    auto nemu_mstatus = referenceRegFile[DIFFTEST_MSTATUS];
-    DPRINTF(ValueCommit, "%s: NEMU = %#lx, GEM5 = %#lx\n",
-            "mstatus", nemu_mstatus, gem5_mstatus);
-
-    if (gem5_mstatus != nemu_mstatus) {
-        warn("Inst [sn:%lli]\n", inst->seqNum);
-        warn("Diff at %s, NEMU: %#lx, GEM5: %#lx\n",
-                "mstatus", nemu_mstatus, gem5_mstatus
-            );
-        panic("mstatus mismatch\n");
-    }
-
     if (inst->numDestRegs() > 0) {
         const auto &dest = inst->staticInst->destRegIdx(0);
         auto dest_tag = dest.index() + dest.isFloatReg() * 32;
@@ -1791,6 +1789,46 @@ CPU::diffWithNEMU(const DynInstPtr &inst)
                     if (!diff_at)
                         diff_at = ValueDiff;
                 }
+            }
+        }
+
+        // always check some CSR regs
+        {
+            // mstatus
+            auto gem5_val =
+                readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_STATUS, 0);
+            auto ref_val = referenceRegFile[DIFFTEST_MSTATUS];
+            if (gem5_val != ref_val) {
+                warn("Inst [sn:%lli] pc:%s\n", inst->seqNum,
+                     inst->pcState());
+                warn("Diff at %s Ref value: %#lx, GEM5 value: %#lx\n",
+                     "mstatus", ref_val, gem5_val);
+                if (!diff_at)
+                    diff_at = ValueDiff;
+            }
+            // mcause
+            gem5_val =
+                readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_MCAUSE, 0);
+            ref_val = referenceRegFile[DIFFTEST_MCAUSE];
+            if (gem5_val != ref_val) {
+                warn("Inst [sn:%lli] pc:%s\n", inst->seqNum,
+                     inst->pcState());
+                warn("Diff at %s Ref value: %#lx, GEM5 value: %#lx\n",
+                     "mcause", ref_val, gem5_val);
+                if (!diff_at)
+                    diff_at = ValueDiff;
+            }
+            // satp
+            gem5_val =
+                readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_SATP, 0);
+            ref_val = referenceRegFile[DIFFTEST_SATP];
+            if (gem5_val != ref_val) {
+                warn("Inst [sn:%lli] pc:%s\n", inst->seqNum,
+                     inst->pcState());
+                warn("Diff at %s Ref value: %#lx, GEM5 value: %#lx\n",
+                     "satp", ref_val, gem5_val);
+                if (!diff_at)
+                    diff_at = ValueDiff;
             }
         }
     }

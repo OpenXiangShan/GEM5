@@ -1080,6 +1080,8 @@ Commit::commitInsts()
                 // Updates misc. registers.
                 head_inst->updateMiscRegs();
 
+                cpu->difftestStep(head_inst);
+
                 // Check instruction execution if it successfully commits and
                 // is not carrying a fault.
                 if (cpu->checker) {
