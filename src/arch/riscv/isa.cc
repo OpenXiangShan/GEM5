@@ -382,6 +382,9 @@ ISA::setMiscRegNoEffect(int misc_reg, RegVal val)
 void
 ISA::setMiscReg(int misc_reg, RegVal val)
 {
+    if (misc_reg == MISCREG_STATUS) {
+        DPRINTF(RiscvMisc, "setMiscReg: setting mstatus with %#lx\n", val);
+    }
     if (misc_reg >= MISCREG_CYCLE && misc_reg <= MISCREG_HPMCOUNTER31) {
         // Ignore writes to HPM counters for now
         warn("Ignoring write to %s.\n", CSRData.at(misc_reg).name);
@@ -462,6 +465,9 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                     new_val.mode != AddrXlateMode::SV39)
                     new_val.mode = cur_val.mode;
                 setMiscRegNoEffect(misc_reg, new_val);
+                if (cur_val != new_val) {
+                    tc->getCpuPtr()->flushTLBs();
+                }
             }
             break;
           case MISCREG_TSELECT:
@@ -488,8 +494,11 @@ ISA::setMiscReg(int misc_reg, RegVal val)
             {
                 // SXL and UXL are hard-wired to 64 bit
                 auto cur = readMiscRegNoEffect(misc_reg);
+                DPRINTF(RiscvMisc, "Value before and: %#lx\n", val);
                 val &= ~(STATUS_SXL_MASK | STATUS_UXL_MASK);
+                DPRINTF(RiscvMisc, "Value before or: %#lx\n", val);
                 val |= cur & (STATUS_SXL_MASK | STATUS_UXL_MASK);
+                DPRINTF(RiscvMisc, "Value after or: %#lx\n", val);
                 STATUS mstatus = val;
                 mstatus.sd = mstatus.fs == 0x3;
                 setMiscRegNoEffect(misc_reg, mstatus);

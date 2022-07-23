@@ -1448,6 +1448,13 @@ CPU::squashInstIt(const ListIt &instIt, ThreadID tid)
 }
 
 void
+CPU::flushTLBs()
+{
+    BaseCPU::flushTLBs();
+    fetch.flushFetchBuffer();
+}
+
+void
 CPU::cleanUpRemovedInsts()
 {
     while (!removeList.empty()) {
