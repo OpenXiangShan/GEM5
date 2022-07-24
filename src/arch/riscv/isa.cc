@@ -335,6 +335,7 @@ ISA::readMiscReg(int misc_reg)
         {
             auto ic = dynamic_cast<RiscvISA::Interrupts *>(
                     tc->getCpuPtr()->getInterruptController(tc->threadId()));
+            DPRINTF(RiscvMisc, "Read IE value: %#lx.\n", ic->readIE());
             return ic->readIE();
         }
       case MISCREG_SEPC:
@@ -452,6 +453,7 @@ ISA::setMiscReg(int misc_reg, RegVal val)
             {
                 auto ic = dynamic_cast<RiscvISA::Interrupts *>(
                     tc->getCpuPtr()->getInterruptController(tc->threadId()));
+                DPRINTF(RiscvMisc, "Setting IE to %#lx.\n", val);
                 ic->setIE(val);
             }
             break;
