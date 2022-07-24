@@ -647,9 +647,7 @@ const RegVal USI_MASK = 1ULL << 0;
 const RegVal MI_MASK = MEI_MASK | SEI_MASK | UEI_MASK |
                        MTI_MASK | STI_MASK | UTI_MASK |
                        MSI_MASK | SSI_MASK | USI_MASK;
-const RegVal SI_MASK = SEI_MASK | UEI_MASK |
-                       STI_MASK | UTI_MASK |
-                       SSI_MASK | USI_MASK;
+const RegVal SI_MASK = SEI_MASK | STI_MASK | SSI_MASK;
 const RegVal UI_MASK = UEI_MASK | UTI_MASK | USI_MASK;
 const RegVal FFLAGS_MASK = (1 << FRM_OFFSET) - 1;
 const RegVal FRM_MASK = 0x7;
