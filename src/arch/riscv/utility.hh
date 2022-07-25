@@ -415,6 +415,74 @@ fwiden(FT a)
     GEM5_UNREACHABLE;
 }
 
+//ref:  https://locklessinc.com/articles/sat_arithmetic/
+template<typename T> T
+sat_add(T x, T y, bool* sat)
+{
+    using UT = std::make_unsigned_t<T>;
+    UT ux = x;
+    UT uy = y;
+    UT res = ux + uy;
+
+    int sh = sizeof(T) * 8 - 1;
+
+    ux = (ux >> sh) + (((UT)0x1 << sh) - 1);
+
+    if ((T) ((ux ^ uy) | ~(uy ^ res)) >= 0) {
+    res = ux;
+    *sat = true;
+    }
+    return res;
+}
+
+template<typename T> T
+sat_sub(T x, T y, bool* sat)
+{
+    using UT = std::make_unsigned_t<T>;
+    UT ux = x;
+    UT uy = y;
+    UT res = ux - uy;
+
+    int sh = sizeof(T) * 8 - 1;
+
+    ux = (ux >> sh) + (((UT)0x1 << sh) - 1);
+
+    if ((T) ((ux ^ uy) & (ux ^ res)) < 0) {
+    res = ux;
+    *sat = true;
+    }
+    return res;
+}
+
+template<typename T> T
+sat_addu(T x, T y, bool* sat)
+{
+    T res = x + y;
+
+    bool t = res < x;
+    if (false == *sat){
+    *sat = t;
+    }
+    res |= -(res < x);
+
+    return res;
+}
+
+template<typename T> T
+sat_subu(T x, T y, bool* sat)
+{
+    T res = x - y;
+
+    bool t = !(res <= x);
+    if (false == *sat){
+    *sat = t;
+    }
+
+    res &= -(res <= x);
+
+    return res;
+}
+
 } // namespace RiscvISA
 } // namespace gem5
 

@@ -961,3 +961,87 @@ Fault
 }
 
 }};
+
+def template VectorIntVxsatMacroDeclare {{
+
+template<typename ElemType>
+class %(class_name)s : public %(base_class)s{
+private:
+    %(reg_idx_arr_decl)s;
+    bool vxsat = false;
+public:
+    %(class_name)s(ExtMachInst _machInst);
+    using %(base_class)s::generateDisassembly;
+};
+
+}};
+
+def template VectorIntVxsatMacroConstructor {{
+
+template<typename ElemType>
+%(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
+    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
+{
+    %(set_reg_idx_arr)s;
+    %(constructor)s;
+    const uint32_t num_microops = vtype_regs_per_group(vtype);
+    int32_t tmp_vl = this->vl;
+    const int32_t micro_vlmax = vtype_VLMAX(_machInst.vtype8, true);
+    int32_t micro_vl = std::min(tmp_vl, micro_vlmax);
+    StaticInstPtr microop;
+
+    // Allow one empty micro op to hold IsLastMicroop flag
+    for (int i = 0; i < num_microops && micro_vl >= 0; ++i) {
+        microop = new %(class_name)sMicro<ElemType>(_machInst,
+            micro_vl, i, &vxsat);
+        microop->setDelayedCommit();
+        this->microops.push_back(microop);
+        micro_vl = std::min(tmp_vl -= micro_vlmax, micro_vlmax);
+    }
+
+    microop = new VxsatMicroInst(&vxsat, _machInst);
+    microop->setFlag(StaticInst::IsSerializeAfter);
+    microop->setFlag(StaticInst::IsNonSpeculative);
+    this->microops.push_back(microop);
+    this->microops.front()->setFirstMicroop();
+    this->microops.back()->setLastMicroop();
+}
+}};
+
+def template VectorIntVxsatMicroDeclare {{
+
+template<typename ElemType>
+class %(class_name)s : public %(base_class)s
+{
+private:
+    RegId srcRegIdxArr[4];
+    RegId destRegIdxArr[1];
+    bool vm;
+    bool* vxsatptr;
+public:
+    %(class_name)s(ExtMachInst _machInst, uint8_t _microVl,
+                   uint8_t _microIdx, bool* vxsatptr);
+    Fault execute(ExecContext* xc, Trace::InstRecord* traceData)const override;
+    using %(base_class)s::generateDisassembly;
+};
+
+}};
+
+def template VectorIntVxsatMicroConstructor {{
+
+template<typename ElemType>
+%(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst,
+    uint8_t _microVl, uint8_t _microIdx, bool* vxsatptr)
+    : %(base_class)s("%(mnemonic)s", _machInst,
+                     VectorDummyOp, _microVl, _microIdx)
+{
+    this->vm = _machInst.vm;
+    this->vxsatptr = vxsatptr;
+    %(set_reg_idx_arr)s;
+    _numSrcRegs = 0;
+    _numDestRegs = 0;
+    %(set_dest_reg_idx)s;
+    %(set_src_reg_idx)s;
+}
+
+}};

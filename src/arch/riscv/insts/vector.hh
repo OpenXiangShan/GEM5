@@ -410,6 +410,34 @@ class VMaskMergeMicroInst : public VectorArithMicroInst
     }
 };
 
+class VxsatMicroInst : public VectorArithMicroInst
+{
+  private:
+    bool* vxsat;
+  public:
+    VxsatMicroInst(bool* Vxsat, ExtMachInst extMachInst)
+        : VectorArithMicroInst("vxsat_micro", extMachInst, VectorDummyOp, 0,
+            0)
+    {
+        vxsat = Vxsat;
+    }
+    Fault execute(ExecContext* xc, Trace::InstRecord* traceData)
+    const override
+    {
+        xc->setMiscReg(MISCREG_VXSAT,*vxsat);
+        auto vcsr = xc->readMiscReg(MISCREG_VCSR);
+        xc->setMiscReg(MISCREG_VCSR, ((vcsr&~1)|*vxsat));
+        return NoFault;
+    }
+    std::string generateDisassembly(Addr pc, const loader::SymbolTable *symtab)
+      const override
+    {
+        std::stringstream ss;
+        ss << mnemonic << ' ' << "VXSAT" << ", " << (*vxsat ? "0x1" : "0x0");
+        return ss.str();
+    }
+};
+
 } // namespace RiscvISA
 } // namespace gem5
 

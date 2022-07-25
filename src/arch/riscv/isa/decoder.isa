@@ -2053,6 +2053,26 @@ decode QUADRANT default Unknown::unknown() {
                             }}, OPIVV, VectorDummyOp);
                         }
                     }
+                }
+                format VectorIntVxsatFormat{
+                    0x20: vsaddu_vv({{
+                        Vd_vu[i] = sat_addu<vu>(Vs2_vu[i], Vs1_vu[i],
+                            vxsatptr);
+                    }}, OPIVV, VectorDummyOp);
+                    0x21: vsadd_vv({{
+                        Vd_vu[i] = sat_add<vi>(Vs2_vu[i], Vs1_vu[i],
+                            vxsatptr);
+                    }}, OPIVV, VectorDummyOp);
+                    0x22: vssubu_vv({{
+                        Vd_vu[i] = sat_subu<vu>(Vs2_vu[i], Vs1_vu[i],
+                            vxsatptr);
+                    }}, OPIVV, VectorDummyOp);
+                    0x23: vssub_vv({{
+                        Vd_vu[i] = sat_sub<vi>(Vs2_vu[i], Vs1_vu[i],
+                            vxsatptr);
+                    }}, OPIVV, VectorDummyOp);
+                }
+                format VectorIntFormat {
                     0x25: vsll_vv({{
                         Vd_vu[i] = Vs2_vu[i] << (Vs1_vu[i] &
                                                  (vtype_SEW(vtype)-1));
@@ -2543,6 +2563,18 @@ decode QUADRANT default Unknown::unknown() {
                             Vd_vi[i] = (vi)sext<5>(SIMM5);
                         }}, OPIVI, VectorDummyOp);
                     }
+                }
+                format VectorIntVxsatFormat{
+                    0x20: vsaddu_vi({{
+                        Vd_vu[i] = sat_addu<vu>(Vs2_vu[i], (vu)SIMM5,
+                            vxsatptr);
+                    }}, OPIVI, VectorDummyOp);
+                    0x21: vsadd_vi({{
+                        Vd_vu[i] = sat_add<vi>(Vs2_vu[i], (vu)SIMM5,
+                            vxsatptr);
+                    }}, OPIVI, VectorDummyOp);
+                }
+                format VectorIntFormat {
                     0x25: vsll_vi({{
                         Vd_vu[i] = Vs2_vu[i] <<
                                     ((vu)SIMM5 & (vtype_SEW(vtype)-1) & 0x1f);
@@ -2672,6 +2704,26 @@ decode QUADRANT default Unknown::unknown() {
                             }}, OPIVX, VectorDummyOp);
                         }
                     }
+                }
+                format VectorIntVxsatFormat{
+                    0x20: vsaddu_vx({{
+                        Vd_vu[i] = sat_addu<vu>(Vs2_vu[i], Rs1_vu,
+                            vxsatptr);
+                    }}, OPIVX, VectorDummyOp);
+                    0x21: vsadd_vx({{
+                        Vd_vu[i] = sat_add<vi>(Vs2_vu[i], Rs1_vu,
+                            vxsatptr);
+                    }}, OPIVX, VectorDummyOp);
+                    0x22: vssubu_vx({{
+                        Vd_vu[i] = sat_subu<vu>(Vs2_vu[i], Rs1_vu,
+                            vxsatptr);
+                    }}, OPIVX, VectorDummyOp);
+                    0x23: vssub_vx({{
+                        Vd_vu[i] = sat_sub<vi>(Vs2_vu[i], Rs1_vu,
+                            vxsatptr);
+                    }}, OPIVX, VectorDummyOp);
+                }
+                format VectorIntFormat {
                     0x25: vsll_vx({{
                         Vd_vu[i] = Vs2_vu[i] << (Rs1_vu &
                                                  (vtype_SEW(vtype)-1));
