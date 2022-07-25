@@ -71,6 +71,8 @@ template<typename ElemType>
 class %(class_name)s : public %(base_class)s
 {
 private:
+    // vs1, vs2, vs3(old_vd), vm for *.vv, *.vx
+    // vs2, (old_vd), vm for *.vi
     RegId srcRegIdxArr[4];
     RegId destRegIdxArr[1];
     bool vm;
@@ -117,6 +119,11 @@ Fault
     %(op_decl)s;
     %(op_rd)s;
     %(vm_decl_rd)s;
+    RiscvISA::vreg_t old_vd;
+    decltype(Vd) old_Vd = nullptr;
+    xc->getRegOperand(this, %(old_vd_idx)d, &old_vd);
+    old_Vd = old_vd.as<std::remove_reference_t<decltype(Vd[0])> >();
+    memcpy(Vd, old_Vd, vlenb);
     %(code)s;
     %(op_wb)s;
     return NoFault;
