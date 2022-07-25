@@ -44,11 +44,6 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags,
          'postacc_code': postacc_code },
         inst_flags)
 
-    if mem_flags:
-        mem_flags = [ 'Request::%s' % flag for flag in mem_flags ]
-        s = '\n\tmemAccessFlags = ' + '|'.join(mem_flags) + ';'
-        microiop.constructor += s
-
     constructTemplate = eval(exec_template_base + 'Constructor')
 
     header_output   = VMemMacroDeclare.subst(iop)
@@ -65,6 +60,12 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags,
          'memacc_code': memacc_code,
          'postacc_code': postacc_code},
         inst_flags)
+
+    if mem_flags:
+        mem_flags = [ 'Request::%s' % flag for flag in mem_flags ]
+        s = '\n\tmemAccessFlags = ' + '|'.join(mem_flags) + ';'
+        microiop.constructor += s
+
     microDeclTemplate = eval(exec_template_base + 'Micro' + 'Declare')
     microExecTemplate = eval(exec_template_base + 'Micro' + 'Execute')
     microInitTemplate = eval(exec_template_base + 'Micro' + 'InitiateAcc')
@@ -80,7 +81,7 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags,
 
 def format VleOp(
     memacc_code,
-    ea_code={{ EA = Rs1 + this->offset; }},
+    ea_code={{ EA = Rs1 + vlenb * microIdx; }},
     mem_flags=[],
     inst_flags=[]
 ) {{

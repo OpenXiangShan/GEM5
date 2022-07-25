@@ -63,8 +63,8 @@ VConfOp::generateZimmDisassembly() const
     bool frac_lmul = bits(zimm, 2);
     int sew = 1 << (bits(zimm, 5, 3) + 3);
     int lmul = bits(zimm, 1, 0);
-    auto vta = bits(zimm, 6) == 1 ? "ta" : "ma";
-    auto vma = bits(zimm, 7) == 1 ? "ta" : "ma";
+    auto vta = bits(zimm, 6) == 1 ? "ta" : "tu";
+    auto vma = bits(zimm, 7) == 1 ? "ma" : "mu";
     s << "e" << sew;
     if (frac_lmul) {
         std::string lmul_str = "";
@@ -124,8 +124,9 @@ std::string VleMicroInst::generateDisassembly(Addr pc,
         const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
-    ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", " <<
-        offset << '(' << registerName(srcRegIdx(0)) << ')';
+    ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
+       << vlenb * microIdx << '(' << registerName(srcRegIdx(0)) << ')' << ", "
+       << registerName(srcRegIdx(1));
     if (!machInst.vm) ss << ", v0.t";
     return ss.str();
 }
