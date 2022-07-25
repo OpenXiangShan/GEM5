@@ -766,9 +766,9 @@ Fault
 
     %(op_decl)s;
     %(op_rd)s;
-    %(ea_code)s;
-
     constexpr uint8_t elem_size = sizeof(Vd[0]);
+    %(ea_code)s; // ea_code depends on elem_size
+
     RiscvISA::vreg_t tmp_v0;
     uint8_t *v0;
     if (!machInst.vm) {
@@ -805,9 +805,8 @@ Fault
 
     %(op_src_decl)s;
     %(op_rd)s;
-    %(ea_code)s;
-
     constexpr uint8_t elem_size = sizeof(Vd[0]);
+    %(ea_code)s; // ea_code depends on elem_size
 
     RiscvISA::vreg_t tmp_v0;
     uint8_t *v0;
