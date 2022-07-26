@@ -376,7 +376,7 @@ def template CSRExecute {{
         %(code)s;
 
         data &= maskVal;
-        if (data != olddata) {
+        if (data != olddata || csr == CSR_FCSR) {
             if (bits(csr, 11, 10) == 0x3) {
                 return std::make_shared<IllegalInstFault>(
                         csprintf("CSR %s is read-only\n", csrName), machInst);
