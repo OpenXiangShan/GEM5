@@ -321,6 +321,12 @@ CPU::CPU(const BaseO3CPUParams &params)
         diff.dynamic_config.ignore_illegal_mem_access = false;
         diff.dynamic_config.debug_difftest = false;
         proxy->update_config(&diff.dynamic_config);
+
+        if (params.nemuSDimg.size() && params.nemuSDCptBin.size())
+            proxy->sdcard_init(params.nemuSDimg.c_str(),
+                               params.nemuSDCptBin.c_str());
+        diff.will_handle_intr = false;
+
     } else {
         warn("Difftest is disabled\n");
         hasCommit = true;
@@ -800,6 +806,13 @@ CPU::getInterrupts()
 {
     // Check if there are any outstanding interrupts
     return interrupts[0]->getInterrupt();
+}
+
+int
+CPU::getInterruptsNO()
+{
+    // Check if there are any outstanding interrupts
+    return interrupts[0]->getInterruptNO();
 }
 
 void
@@ -1286,6 +1299,9 @@ void
 CPU::difftestStep(const DynInstPtr &inst)
 {
     bool should_diff = false;
+    DPRINTF(ValueCommit, "DiffTest step on inst pc: %#lx: %s\n",
+            inst->pcState().instAddr(),
+            inst->staticInst->disassemble(inst->pcState().instAddr()));
     // Keep an instruction count.
     if (!inst->isMicroop() || inst->isLastMicroop()) {
         should_diff = true;
@@ -1302,7 +1318,6 @@ CPU::difftestStep(const DynInstPtr &inst)
 
         if (scFenceInFlight) {
             assert(inst->isWriteBarrier() && inst->isReadBarrier());
-            DPRINTF(ValueCommit, "Skip diff fence generated from LR/SC\n");
             should_diff = false;
         }
     }
@@ -1312,7 +1327,6 @@ CPU::difftestStep(const DynInstPtr &inst)
     if (!inst->isLastMicroop() && inst->isStoreConditional() &&
         inst->isDelayedCommit()) {
         scFenceInFlight = true;
-        DPRINTF(ValueCommit, "Diff SC even if it is not the last Microop\n");
         should_diff = true;
     }
 
@@ -1320,9 +1334,11 @@ CPU::difftestStep(const DynInstPtr &inst)
         auto [diff_at, npc_match] = diffWithNEMU(inst);
         if (diff_at != NoneDiff) {
             if (npc_match && diff_at == PCDiff) {
-                warn("Found PC mismatch, Let NEMU run one more instruction\n");
+                // warn("Found PC mismatch, Let NEMU run one more
+                // instruction\n");
                 std::tie(diff_at, npc_match) = diffWithNEMU(inst);
                 if (diff_at != NoneDiff) {
+                    proxy->isa_reg_display();
                     panic("Difftest failed again!\n");
                 } else {
                     warn("Difftest matched again, "
@@ -1330,12 +1346,18 @@ CPU::difftestStep(const DynInstPtr &inst)
                 }
             }
             else {
+                proxy->isa_reg_display();
                 panic("Difftest failed!\n");
             }
         }
     }
-
     DPRINTF(ValueCommit, "commit_pc: %s\n", inst->pcState());
+}
+
+void
+CPU::difftestRaiseIntr(uint64_t no) {
+    diff.will_handle_intr = true;
+    proxy->raise_intr(no);
 }
 
 
@@ -1688,6 +1710,11 @@ CPU::diffWithNEMU(const DynInstPtr &inst)
         proxy->update_config(&diff.dynamic_config);
     }
 
+    if (diff.will_handle_intr){
+        proxy->regcpy(diff.nemu_reg,REF_TO_DIFFTEST);
+        diff.nemu_this_pc = diff.nemu_reg[DIFFTEST_THIS_PC];
+        diff.will_handle_intr = false;
+    }
     //difftest step start
     proxy->exec(1);
     proxy->regcpy(diff.nemu_reg,REF_TO_DIFFTEST);
@@ -1730,8 +1757,8 @@ CPU::diffWithNEMU(const DynInstPtr &inst)
 
     if (nemu_pc != gem5_pc) {
         // warn("NEMU store addr: %#lx\n", nemu_store_addr);
-        warn("Inst [sn:%lli]\n", inst->seqNum);
-        warn("Diff at %s, NEMU: %#lx, GEM5: %#lx\n",
+        DPRINTF(ValueCommit,"Inst [sn:%lli]\n", inst->seqNum);
+        DPRINTF(ValueCommit,"Diff at %s, NEMU: %#lx, GEM5: %#lx\n",
                 "PC", nemu_pc, gem5_pc
             );
         if (!diff_at) {
@@ -1741,9 +1768,11 @@ CPU::diffWithNEMU(const DynInstPtr &inst)
             }
         }
     }
-    DPRINTF(ValueCommit, "Inst [sn:%lli] %s, NEMU: %#lx, GEM5: %#lx\n",
-                inst->seqNum, "PC", nemu_pc, gem5_pc
-               );
+
+    DPRINTF(ValueCommit, "Inst [sn:%llu] @ %#lx in GEM5 is %s\n",
+            inst->seqNum, inst->pcState().instAddr(),
+            inst->staticInst->disassemble(inst->pcState().instAddr()));
+
     if (inst->numDestRegs() > 0) {
         const auto &dest = inst->staticInst->destRegIdx(0);
         auto dest_tag = dest.index() + dest.isFloatReg() * 32;
