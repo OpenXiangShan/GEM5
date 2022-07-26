@@ -293,8 +293,7 @@ def format VectorFloatFormat(code, category, *flags) {{
     set_src_reg_idx = ""
     set_src_reg_idx += setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
-    if vs3_required:
-        set_src_reg_idx += setSrcWrapper(src3_reg_id)
+    set_src_reg_idx += setSrcWrapper(src3_reg_id)
     if v0_required:
         set_src_reg_idx += setSrcVm()
     # code
