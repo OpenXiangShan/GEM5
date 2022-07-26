@@ -736,14 +736,7 @@ public:
         _numTypedDestRegs[VecRegClass]++;
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs2));
-
-        /* Because the test suits does not support mask/tail agnostic,
-         * we treat vta as vtu, vma as vmu.
-         * The vma or vta strategy can be implemented as below:
-        if (_microIdx != 0 || !_machInst.vtype8.vma || !_machInst.vtype8.vta) {
-            setSrcRegIdx(_numSrcRegs++,
-                RegId(VecRegClass, _machInst.vd + _regIdx));
-        }*/
+        // We treat agnostic as undistrubed
         setSrcRegIdx(_numSrcRegs++,
             RegId(VecRegClass, _machInst.vd + _regIdx));
         if (!_machInst.vm) {
@@ -844,13 +837,7 @@ Fault
 
     RiscvISA::vreg_t old_vd;
     decltype(Vd) old_Vd = nullptr;
-    /* Because the test suits does not support mask/tail agnostic,
-     * we treat vta as vtu, vma as vmu.
-     * The vma or vta strategy can be implemented as below:
-    if (this->microIdx != 0 || !machInst.vtype8.vma || !machInst.vtype8.vta) {
-        xc->getRegOperand(this, 2, &old_vd);
-        old_Vd = old_vd.as<std::remove_reference_t<decltype(Vd[0])> >();
-    }*/
+    // We treat agnostic as undistrubed
     xc->getRegOperand(this, 2, &old_vd);
     old_Vd = old_vd.as<std::remove_reference_t<decltype(Vd[0])> >();
 
