@@ -1879,10 +1879,11 @@ CPU::diffWithNEMU(const DynInstPtr &inst)
                 readMiscReg(RiscvISA::MiscRegIndex::MISCREG_IP, 0);
             ref_val = referenceRegFile[DIFFTEST_MIP];
             if (gem5_val != ref_val) {
-                warn("Inst [sn:%lli] pc:%s\n", inst->seqNum,
-                     inst->pcState());
-                warn("Diff at %s Ref value: %#lx, GEM5 value: %#lx\n",
-                     "mip", ref_val, gem5_val);
+                DPRINTF(ValueCommit, "Inst [sn:%lli] pc:%s\n", inst->seqNum,
+                        inst->pcState());
+                DPRINTF(ValueCommit,
+                        "Diff at %s Ref value: %#lx, GEM5 value: %#lx\n",
+                        "mip", ref_val, gem5_val);
             }
 
             if (diff_at != NoneDiff) {
