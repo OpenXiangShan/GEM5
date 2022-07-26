@@ -484,6 +484,7 @@ template<typename ElemType>
 class %(class_name)s : public %(base_class)s
 {
 private:
+    // vs1, vs2, old_vd, v0
     RegId srcRegIdxArr[4];
     RegId destRegIdxArr[1];
     bool vm;
@@ -529,6 +530,13 @@ Fault
     %(op_decl)s;
     %(op_rd)s;
     %(vm_decl_rd)s;
+    RiscvISA::vreg_t old_vd;
+    decltype(Vd) old_Vd = nullptr;
+    xc->getRegOperand(this, %(old_vd_idx)s, &old_vd);
+    old_Vd = old_vd.as<uint8_t>();
+    memcpy(Vd, old_Vd, vlenb);
+    constexpr uint16_t bit_offset = vlenb / sizeof(ElemType);
+    const uint16_t offset = bit_offset * microIdx;
     %(code)s;
     %(op_wb)s;
     return NoFault;

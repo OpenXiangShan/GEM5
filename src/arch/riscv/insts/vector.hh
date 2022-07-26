@@ -372,20 +372,25 @@ class VMaskMvMicroInst : public VectorArithMicroInst
         auto Vd = tmp_d0.as<uint8_t>();
         memset(Vd, 0, vlenb);
         constexpr uint8_t bit_offset = VLEN / (8 * sizeof(ElemType));
-        size_t bit_cnt = 0;
-        for (uint8_t i = 0; i < this->_numSrcRegs; i++) {
-            vreg_t tmp_s;
+        size_t bit_cnt = bit_offset;
+        vreg_t tmp_s;
+        xc->getRegOperand(this, 0, &tmp_s);
+        auto s = tmp_s.as<uint8_t>();
+        // cp the first result and tail
+        memcpy(Vd, s, vlenb);
+        for (uint8_t i = 1; i < this->_numSrcRegs; i++) {
             xc->getRegOperand(this, i, &tmp_s);
             auto s = tmp_s.as<uint8_t>();
             if constexpr (bit_offset < 8) {
-                constexpr uint8_t shift_period = 8 / bit_offset;
-                constexpr std::bitset<8> m((1 << bit_offset) - 1);
-                Vd[bit_cnt/8] |= (s[0] & m.to_ulong()) <<
-                    (i % shift_period * bit_offset);
+                constexpr uint8_t m = (1 << bit_offset) - 1;
+                const uint8_t mask = m << (i * bit_offset % 8);
+                // clr & ext bits
+                Vd[bit_cnt/8] ^= Vd[bit_cnt/8] & mask;
+                Vd[bit_cnt/8] |= s[bit_cnt/8] & mask;
                 bit_cnt += bit_offset;
             } else {
                 constexpr uint8_t byte_offset = bit_offset / 8;
-                memcpy(Vd + i * byte_offset, s, byte_offset);
+                memcpy(Vd + i * byte_offset, s + i * byte_offset, byte_offset);
             }
         }
         xc->setRegOperand(this, 0, &tmp_d0);

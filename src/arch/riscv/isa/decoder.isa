@@ -2069,46 +2069,48 @@ decode QUADRANT default Unknown::unknown() {
                 format VectorIntMaskFormat {
                     0x11: decode VM {
                         0x0: vmadc_vvm({{
-                            Vd_ub[i/8] = ASSIGN_VD_BIT(i, carry_out(
-                                    Vs2_vu[i], Vs1_vu[i], elem_mask(v0, ei)));
+                            Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
+                                carry_out(Vs2_vu[i], Vs1_vu[i],
+                                    elem_mask(v0, ei)));
                         }}, OPIVV, VectorDummyOp);
                         0x1: vmadc_vv({{
-                            Vd_ub[i/8] = ASSIGN_VD_BIT(i, carry_out(
-                                    Vs2_vu[i], Vs1_vu[i]));
+                            Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
+                                carry_out(Vs2_vu[i], Vs1_vu[i]));
                         }}, OPIVV, VectorDummyOp);
                     }
                     0x13: decode VM {
                         0x0: vmsbc_vvm({{
-                            Vd_ub[i/8] = ASSIGN_VD_BIT(i, borrow_out(
-                                    Vs2_vi[i], Vs1_vi[i], elem_mask(v0, ei)));
+                            Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
+                                borrow_out(Vs2_vi[i], Vs1_vi[i],
+                                    elem_mask(v0, ei)));
                         }}, OPIVV, VectorDummyOp);
                         0x1: vmsbc_vv({{
-                            Vd_ub[i/8] = ASSIGN_VD_BIT(i, borrow_out(
-                                    Vs2_vi[i], Vs1_vi[i]));
+                            Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
+                                borrow_out(Vs2_vi[i], Vs1_vi[i]));
                         }}, OPIVV, VectorDummyOp);
                     }
                     0x18: vmseq_vv({{
-                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
+                        Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
                             (Vs2_vu[i] == Vs1_vu[i]));
                     }}, OPIVV, VectorDummyOp);
                     0x19: vmsne_vv({{
-                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
+                        Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
                             (Vs2_vu[i] != Vs1_vu[i]));
                     }}, OPIVV, VectorDummyOp);
                     0x1a: vmsltu_vv({{
-                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
+                        Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
                             (Vs2_vu[i] < Vs1_vu[i]));
                     }}, OPIVV, VectorDummyOp);
                     0x1b: vmslt_vv({{
-                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
+                        Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
                             (Vs2_vi[i] < Vs1_vi[i]));
                     }}, OPIVV, VectorDummyOp);
                     0x1c: vmsleu_vv({{
-                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
+                        Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
                             (Vs2_vu[i] <= Vs1_vu[i]));
                     }}, OPIVV, VectorDummyOp);
                     0x1d: vmsle_vv({{
-                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
+                        Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
                             (Vs2_vi[i] <= Vs1_vi[i]));
                     }}, OPIVV, VectorDummyOp);
                 }
@@ -2575,37 +2577,38 @@ decode QUADRANT default Unknown::unknown() {
                 format VectorIntMaskFormat {
                     0x11: decode VM {
                         0x0: vmadc_vim({{
-                            Vd_ub[i/8] = ASSIGN_VD_BIT(i, carry_out(Vs2_vi[i],
-                                (vi)sext<5>(SIMM5), elem_mask(v0, ei)));
+                            Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
+                                carry_out(Vs2_vi[i], (vi)sext<5>(SIMM5),
+                                    elem_mask(v0, ei)));
                         }}, OPIVI, VectorDummyOp);
                         0x1: vmadc_vi({{
-                            Vd_ub[i/8] = ASSIGN_VD_BIT(i, carry_out(Vs2_vi[i],
-                                (vi)sext<5>(SIMM5)));
+                            Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
+                                carry_out(Vs2_vi[i], (vi)sext<5>(SIMM5)));
                         }}, OPIVI, VectorDummyOp);
                     }
                     0x18: vmseq_vi({{
-                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
-                                    (Vs2_vi[i] == (vi)sext<5>(SIMM5)));
+                        Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
+                            (Vs2_vi[i] == (vi)sext<5>(SIMM5)));
                     }}, OPIVI, VectorDummyOp);
                     0x19: vmsne_vi({{
-                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
-                                    (Vs2_vi[i] != (vi)sext<5>(SIMM5)));
+                        Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
+                            (Vs2_vi[i] != (vi)sext<5>(SIMM5)));
                     }}, OPIVI, VectorDummyOp);
                     0x1c: vmsleu_vi({{
-                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
-                                    (Vs2_vu[i] <= (vu)sext<5>(SIMM5)));
+                        Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
+                            (Vs2_vu[i] <= (vu)sext<5>(SIMM5)));
                     }}, OPIVI, VectorDummyOp);
                     0x1d: vmsle_vi({{
-                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
-                                    (Vs2_vi[i] <= (vi)sext<5>(SIMM5)));
+                        Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
+                            (Vs2_vi[i] <= (vi)sext<5>(SIMM5)));
                     }}, OPIVI, VectorDummyOp);
                     0x1e: vmsgtu_vi({{
-                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
-                                    (Vs2_vu[i] > (vu)sext<5>(SIMM5)));
+                        Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
+                            (Vs2_vu[i] > (vu)sext<5>(SIMM5)));
                     }}, OPIVI, VectorDummyOp);
                     0x1f: vmsgt_vi({{
-                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
-                                    (Vs2_vi[i] > (vi)sext<5>(SIMM5)));
+                        Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
+                            (Vs2_vi[i] > (vi)sext<5>(SIMM5)));
                     }}, OPIVI, VectorDummyOp);
                 }
             }
@@ -2685,54 +2688,56 @@ decode QUADRANT default Unknown::unknown() {
                 format VectorIntMaskFormat {
                     0x11: decode VM {
                         0x0: vmadc_vxm({{
-                            Vd_ub[i/8] = ASSIGN_VD_BIT(i, carry_out(
-                                        Vs2_vi[i], Rs1_vi, elem_mask(v0, ei)));
+                            Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
+                                carry_out(Vs2_vi[i], Rs1_vi,
+                                    elem_mask(v0, ei)));
                         }}, OPIVX, VectorDummyOp);
                         0x1: vmadc_vx({{
-                            Vd_ub[i/8] = ASSIGN_VD_BIT(i, carry_out(
-                                        Vs2_vi[i], Rs1_vi));
+                            Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
+                                carry_out(Vs2_vi[i], Rs1_vi));
                         }}, OPIVX, VectorDummyOp);
                     }
                     0x13: decode VM {
                         0x0: vmsbc_vxm({{
-                            Vd_ub[i/8] = ASSIGN_VD_BIT(i, borrow_out(
-                                        Vs2_vi[i], Rs1_vi, elem_mask(v0, ei)));
+                            Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
+                                borrow_out(Vs2_vi[i], Rs1_vi,
+                                    elem_mask(v0, ei)));
                         }}, OPIVX, VectorDummyOp);
                         0x1: vmsbc_vx({{
-                            Vd_ub[i/8] = ASSIGN_VD_BIT(i, borrow_out(
-                                        Vs2_vi[i], Rs1_vi));
+                            Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
+                                borrow_out(Vs2_vi[i], Rs1_vi));
                         }}, OPIVX, VectorDummyOp);
                     }
                     0x18: vmseq_vx({{
-                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
+                        Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
                             (Vs2_vu[i] == Rs1_vu));
                     }}, OPIVX, VectorDummyOp);
                     0x19: vmsne_vx({{
-                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
+                        Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
                             (Vs2_vu[i] != Rs1_vu));
                     }}, OPIVX, VectorDummyOp);
                     0x1a: vmsltu_vx({{
-                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
+                        Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
                             (Vs2_vu[i] < Rs1_vu));
                     }}, OPIVX, VectorDummyOp);
                     0x1b: vmslt_vx({{
-                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
+                        Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
                             (Vs2_vi[i] < Rs1_vi));
                     }}, OPIVX, VectorDummyOp);
                     0x1c: vmsleu_vx({{
-                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
+                        Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
                             (Vs2_vu[i] <= Rs1_vu));
                     }}, OPIVX, VectorDummyOp);
                     0x1d: vmsle_vx({{
-                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
+                        Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
                             (Vs2_vi[i] <= Rs1_vi));
                     }}, OPIVX, VectorDummyOp);
                     0x1e: vmsgtu_vx({{
-                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
+                        Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
                             (Vs2_vu[i] > Rs1_vu));
                     }}, OPIVX, VectorDummyOp);
                     0x1f: vmsgt_vx({{
-                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
+                        Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
                             (Vs2_vi[i] > Rs1_vi));
                     }}, OPIVX, VectorDummyOp);
                 }
