@@ -413,10 +413,12 @@ def format VectorFloatMaskFormat(code, category, *flags) {{
     else:
         error("not supported category for VectorFloatFormat: %s" % category)
     src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
+    old_dest_reg_id = "RegId(VecRegClass, _machInst.vd)"
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
     set_src_reg_idx = ""
     set_src_reg_idx += setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
+    set_src_reg_idx += setSrcWrapper(old_dest_reg_id)
     set_src_reg_idx += setSrcVm()
     vm_decl_rd = vmDeclAndReadData()
 
@@ -430,7 +432,8 @@ def format VectorFloatMaskFormat(code, category, *flags) {{
         {'code': code,
          'set_dest_reg_idx': set_dest_reg_idx,
          'set_src_reg_idx': set_src_reg_idx,
-         'vm_decl_rd': vm_decl_rd},
+         'vm_decl_rd': vm_decl_rd,
+         'old_vd_idx': 2},
         flags)
 
     # Because of the use of templates, we had to put all parts in header to

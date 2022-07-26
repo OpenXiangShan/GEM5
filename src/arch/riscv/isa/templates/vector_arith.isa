@@ -468,7 +468,7 @@ template<typename ElemType>
         this->microops.push_back(microop);
         micro_vl = std::min(tmp_vl -= micro_vlmax, micro_vlmax);
     }
-    microop = new VMaskMvMicroInst<ElemType>(_machInst, _machInst.vd,
+    microop = new VMaskMergeMicroInst<ElemType>(_machInst, _machInst.vd,
         this->microops.size());
     this->microops.push_back(microop);
 
@@ -484,7 +484,8 @@ template<typename ElemType>
 class %(class_name)s : public %(base_class)s
 {
 private:
-    // vs1, vs2, old_vd, v0
+    // vs1(rs1), vs2, old_vd, v0 for *.vv[m] or *.vx[m]
+    // vs2, old_vd, v0 for *.vi[m]
     RegId srcRegIdxArr[4];
     RegId destRegIdxArr[1];
     bool vm;
@@ -530,6 +531,7 @@ Fault
     %(op_decl)s;
     %(op_rd)s;
     %(vm_decl_rd)s;
+
     RiscvISA::vreg_t old_vd;
     decltype(Vd) old_Vd = nullptr;
     xc->getRegOperand(this, %(old_vd_idx)s, &old_vd);
@@ -537,6 +539,7 @@ Fault
     memcpy(Vd, old_Vd, vlenb);
     constexpr uint16_t bit_offset = vlenb / sizeof(ElemType);
     const uint16_t offset = bit_offset * microIdx;
+
     %(code)s;
     %(op_wb)s;
     return NoFault;
@@ -578,7 +581,7 @@ template<typename ElemType>
         this->microops.push_back(microop);
         micro_vl = std::min(tmp_vl -= micro_vlmax, micro_vlmax);
     }
-    microop = new VMaskMvMicroInst<ElemType>(_machInst, _machInst.vd,
+    microop = new VMaskMergeMicroInst<ElemType>(_machInst, _machInst.vd,
         this->microops.size());
     this->microops.push_back(microop);
 
@@ -594,6 +597,7 @@ template<typename ElemType>
 class %(class_name)s : public %(base_class)s
 {
 private:
+    // vs1(rs1), vs2, old_vd, v0 for *.vv or *.vf
     RegId srcRegIdxArr[4];
     RegId destRegIdxArr[1];
     bool vm;
@@ -639,6 +643,15 @@ Fault
     %(op_decl)s;
     %(op_rd)s;
     %(vm_decl_rd)s;
+
+    RiscvISA::vreg_t old_vd;
+    decltype(Vd) old_Vd = nullptr;
+    xc->getRegOperand(this, %(old_vd_idx)d, &old_vd);
+    old_Vd = old_vd.as<uint8_t>();
+    memcpy(Vd, old_Vd, vlenb);
+    constexpr uint16_t bit_offset = vlenb / sizeof(ElemType);
+    const uint16_t offset = bit_offset * microIdx;
+
     %(code)s;
     %(op_wb)s;
     return NoFault;

@@ -2180,22 +2180,22 @@ decode QUADRANT default Unknown::unknown() {
                 }
                 format VectorFloatMaskFormat {
                     0x18: vmfeq_vv({{
-                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
+                        Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
                             feq<et>(ftype<et>(Vs2_vu[i]),
                                     ftype<et>(Vs1_vu[i])));
                     }}, OPFVV, VectorFloatOp);
                     0x19: vmfle_vv({{
-                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
+                        Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
                             fle<et>(ftype<et>(Vs2_vu[i]),
                                     ftype<et>(Vs1_vu[i])));
                     }}, OPFVV, VectorDummyOp);
                     0x1b: vmflt_vv({{
-                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
+                        Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
                             flt<et>(ftype<et>(Vs2_vu[i]),
                                     ftype<et>(Vs1_vu[i])));
                     }}, OPFVV, VectorDummyOp);
                     0x1c: vmfne_vv({{
-                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
+                        Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
                             !feq<et>(ftype<et>(Vs2_vu[i]),
                                     ftype<et>(Vs1_vu[i])));
                     }}, OPFVV, VectorDummyOp);
@@ -2790,34 +2790,34 @@ decode QUADRANT default Unknown::unknown() {
                 }
                 format VectorFloatMaskFormat {
                     0x18: vmfeq_vf({{
-                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
+                        Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
                             feq<et>(ftype<et>(Vs2_vu[i]),
                                     ftype<et>((vu)Fs1_bits)));
                     }}, OPFVF, VectorFloatOp);
                     0x19: vmfle_vf({{
-                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
+                        Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
                             fle<et>(ftype<et>(Vs2_vu[i]),
                                     ftype<et>((vu)Fs1_bits)));
                     }}, OPFVF, VectorDummyOp);
                     0x1b: vmflt_vf({{
-                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
+                        Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
                             flt<et>(ftype<et>(Vs2_vu[i]),
                                     ftype<et>((vu)Fs1_bits)));
                     }}, OPFVF, VectorDummyOp);
                     0x1c: vmfne_vf({{
-                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
+                        Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
                             !feq<et>(ftype<et>(Vs2_vu[i]),
-                                        ftype<et>((vu)Fs1_bits)));
+                                     ftype<et>((vu)Fs1_bits)));
                     }}, OPFVF, VectorDummyOp);
                     0x1d: vmfgt_vf({{
-                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
-                            !fle<et>(ftype<et>(Vs2_vu[i]),
-                                        ftype<et>((vu)Fs1_bits)));
+                        Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
+                            flt<et>(ftype<et>((vu)Fs1_bits),
+                                    ftype<et>(Vs2_vu[i])));
                     }}, OPFVF, VectorDummyOp);
                     0x1f: vmfge_vf({{
-                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
-                            !flt<et>(ftype<et>(Vs2_vu[i]),
-                                        ftype<et>((vu)Fs1_bits)));
+                        Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,
+                            fle<et>(ftype<et>((vu)Fs1_bits),
+                                    ftype<et>(Vs2_vu[i])));
                     }}, OPFVF, VectorDummyOp);
                 }
                 format VectorFloatFormat{
