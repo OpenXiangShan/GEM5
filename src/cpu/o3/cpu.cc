@@ -1872,6 +1872,26 @@ CPU::diffWithNEMU(const DynInstPtr &inst)
                 if (!diff_at)
                     diff_at = ValueDiff;
             }
+            // mip
+            gem5_val =
+                readMiscReg(RiscvISA::MiscRegIndex::MISCREG_IP, 0);
+            ref_val = referenceRegFile[DIFFTEST_MIP];
+            if (gem5_val != ref_val) {
+                warn("Inst [sn:%lli] pc:%s\n", inst->seqNum,
+                     inst->pcState());
+                warn("Diff at %s Ref value: %#lx, GEM5 value: %#lx\n",
+                     "mip", ref_val, gem5_val);
+            }
+
+            if (diff_at != NoneDiff) {
+                warn(
+                    "Inst [sn:%llu] @ %#lx in GEM5 is %s\n", inst->seqNum,
+                    inst->pcState().instAddr(),
+                    inst->staticInst->disassemble(inst->pcState().instAddr()));
+                if (inst->isLoad()) {
+                    warn("Load addr: %#lx\n", inst->physEffAddr);
+                }
+            }
         }
     }
     return std::make_pair(diff_at, npc_match);
