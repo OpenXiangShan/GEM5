@@ -190,13 +190,6 @@ def addNoISAOptions(parser):
                         default="{}/build/riscv64-nemu-interpreter-so".format(
                             os.environ['NEMU_HOME']),
                         help="The shared lib file used to do difftest")
-    # ChiselDB option
-    parser.add_argument("--enable-chisel-db",
-                        action="store_true",
-                        help="enable chisel database")
-    parser.add_argument("--chisel-db-file",
-                        action="store",
-                        help="Where to save database")
 
 
 # Add common options that assume a non-NULL ISA.

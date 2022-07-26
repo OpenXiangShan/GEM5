@@ -981,9 +981,6 @@ class BaseCache : public ClockedObject
      * Normally this is all possible memory addresses. */
     const AddrRangeList addrRanges;
 
-    /** ArchDB */
-    bool enableArchDB;
-
   public:
     /** System we are currently operating in. */
     System *system;
