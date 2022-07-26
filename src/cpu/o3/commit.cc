@@ -736,6 +736,10 @@ Commit::handleInterrupt()
         // CPU will handle interrupt. Note that we ignore the local copy of
         // interrupt. This is because the local copy may no longer be the
         // interrupt that the interrupt controller thinks is being handled.
+        if (cpu->difftestEnabled()) {
+            cpu->difftestRaiseIntr(cpu->getInterruptsNO() | (1ULL << 63));
+        }
+
         cpu->processInterrupts(cpu->getInterrupts());
 
         thread[0]->noSquashFromTC = false;
@@ -1057,7 +1061,9 @@ Commit::commitInsts()
                 // Updates misc. registers.
                 head_inst->updateMiscRegs();
 
-                cpu->difftestStep(head_inst);
+                if (cpu->difftestEnabled()) {
+                    cpu->difftestStep(head_inst);
+                }
 
                 // Check instruction execution if it successfully commits and
                 // is not carrying a fault.
