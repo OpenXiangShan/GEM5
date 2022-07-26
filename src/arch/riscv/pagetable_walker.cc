@@ -617,7 +617,20 @@ Fault
 Walker::WalkerState::pageFault(bool present)
 {
     DPRINTF(PageTableWalker, "Raising page fault.\n");
-    return walker->tlb->createPagefault(entry.vaddr, mode);
+    if (req->isInstFetch()) {
+        if (req->getPC() < entry.vaddr) {
+            // expected: instruction crosses the page boundary
+            if (!req->getPC() + 4 >= entry.vaddr) {
+                warn("Unexepected fetch page fault: PC: %#x, Page: %#x\n",
+                     req->getPC(), entry.vaddr);
+            }
+            return walker->tlb->createPagefault(entry.vaddr, mode);
+        } else {
+            return walker->tlb->createPagefault(req->getPC(), mode);
+        }
+    } else {
+        return walker->tlb->createPagefault(entry.vaddr, mode);
+    }
 }
 
 } // namespace RiscvISA
