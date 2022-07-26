@@ -664,11 +664,12 @@ def makeBareMetalXiangshanSystem(mem_mode, mdesc=None, cmdline=None):
     self.uartlite  = UartLite()
     self.uartlite.pio = self.membus.mem_side_ports
 
-    self.clint = Clint()
-    self.clint.pio = self.membus.mem_side_ports
-    self.clint.pio_addr = 0x38000000
-    self.clint.pio_size = 0xC000
-    self.clint.num_threads = 1
+    self.lint = Lint()
+    self.lint.pio = self.membus.mem_side_ports
+    self.lint.pio_addr = 0x38000000
+    self.lint.pio_size = 0x10000
+    self.lint.num_threads = 1
+    self.lint.int_enable = 1
 
     self.mmcs = NemuMMC()
     self.mmcs.pio = self.membus.mem_side_ports
