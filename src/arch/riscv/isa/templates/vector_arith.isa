@@ -412,6 +412,12 @@ Fault
     %(op_decl)s;
     %(op_rd)s;
     %(vm_decl_rd)s;
+    RiscvISA::vreg_t old_vd;
+    decltype(Vd) old_Vd = nullptr;
+    xc->getRegOperand(this, 2, &old_vd);
+    old_Vd = old_vd.as<std::remove_reference_t<decltype(Vd[0])> >();
+    memcpy(Vd, old_Vd, vlenb);
+
     %(code)s;
     %(op_wb)s;
     return NoFault;
