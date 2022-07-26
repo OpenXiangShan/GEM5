@@ -1697,8 +1697,8 @@ CPU::diffWithNEMU(const DynInstPtr &inst)
 {
     int diff_at = DiffAt::NoneDiff;
     bool npc_match = false;
-    bool is_mmio = (0x38000000u < inst->physEffAddr) &&
-                   (inst->physEffAddr < 0x41000000u);
+
+    bool is_mmio = inst->strictlyOrdered();
 
     if (inst->isStoreConditional()){
         diff.sync.lrscValid = inst->lockedWriteSuccess();
