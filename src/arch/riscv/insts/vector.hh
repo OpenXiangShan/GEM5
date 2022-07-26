@@ -243,13 +243,14 @@ class VlWholeMacroInst : public VectorMemMacroInst
       Addr pc, const loader::SymbolTable *symtab) const override;
 };
 
-class VlWholeMicroInst : public VectorMemMicroInst
+class VlWholeMicroInst : public VectorMicroInst
 {
   protected:
+    Request::Flags memAccessFlags;
+
     VlWholeMicroInst(const char *mnem, ExtMachInst _machInst,
-                     OpClass __opClass, uint32_t _offset, uint8_t _microIdx)
-        : VectorMemMicroInst(mnem, _machInst, __opClass, NumMemAccPerVecReg,
-                             _microIdx, _offset)
+                     OpClass __opClass, uint8_t _microVl, uint8_t _microIdx)
+        : VectorMicroInst(mnem, _machInst, __opClass, _microVl, _microIdx)
     {}
 
     std::string generateDisassembly(
@@ -260,7 +261,7 @@ class VsWholeMacroInst : public VectorMemMacroInst
 {
   protected:
     VsWholeMacroInst(const char *mnem, ExtMachInst _machInst,
-                   OpClass __opClass)
+                     OpClass __opClass)
         : VectorMemMacroInst(mnem, _machInst, __opClass)
     {}
 
@@ -335,75 +336,11 @@ class VMvWholeMicroInst : public VectorArithMicroInst
             Addr pc, const loader::SymbolTable *symtab) const override;
 };
 
-class VMergeTmpMicroInst : public RiscvMicroInst
-{
-  private:
-    RegId srcRegIdxArr[NumMemAccPerVecReg];
-    RegId destRegIdxArr[1];
-
-  public:
-    VMergeTmpMicroInst(ExtMachInst _machInst, uint8_t _dstReg, size_t _numSrcs)
-        : RiscvMicroInst("vmerge_tmp_micro", _machInst, VectorDummyOp)
-    {
-        setRegIdxArrays(
-            reinterpret_cast<RegIdArrayPtr>(
-                &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
-            reinterpret_cast<RegIdArrayPtr>(
-                &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
-
-        _numSrcRegs = 0;
-        _numDestRegs = 0;
-
-        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, _dstReg));
-        _numTypedDestRegs[VecRegClass]++;
-        for (size_t i = 0; i < _numSrcs; i++) {
-            setSrcRegIdx(_numSrcRegs++,
-                         RegId(VecRegClass, VecMemInternalReg0 + i));
-        }
-        this->flags[IsVector] = true;
-    }
-    Fault execute(ExecContext *, Trace::InstRecord *) const override;
-    std::string generateDisassembly(
-        Addr pc, const loader::SymbolTable *symtab) const override;
-};
-
-class VSplitTmpMicroInst : public RiscvMicroInst
-{
-  private:
-    RegId srcRegIdxArr[1];
-    RegId destRegIdxArr[NumMemAccPerVecReg];
-  public:
-    VSplitTmpMicroInst(ExtMachInst _machInst, uint8_t _srcReg,
-                       uint8_t _numDsts)
-        : RiscvMicroInst("vsplit_tmp_micro", _machInst, VectorDummyOp)
-    {
-        setRegIdxArrays(
-            reinterpret_cast<RegIdArrayPtr>(
-                &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
-            reinterpret_cast<RegIdArrayPtr>(
-                &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
-
-        _numSrcRegs = 0;
-        _numDestRegs = 0;
-
-        for (uint8_t i = 0; i < _numDsts; i++) {
-            setDestRegIdx(_numDestRegs++,
-                          RegId(VecRegClass, VecMemInternalReg0 + i));
-            _numTypedDestRegs[VecRegClass]++;
-        }
-        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _srcReg));
-        this->flags[IsVector] = true;
-    }
-    Fault execute(ExecContext *, Trace::InstRecord *) const override;
-    std::string generateDisassembly(
-        Addr pc, const loader::SymbolTable *symtab) const override;
-};
-
 template<typename ElemType>
 class VMaskMvMicroInst : public VectorArithMicroInst
 {
   private:
-    RegId srcRegIdxArr[LMUL_MAX];
+    RegId srcRegIdxArr[NumVecInternalRegs];
     RegId destRegIdxArr[1];
 
   public:

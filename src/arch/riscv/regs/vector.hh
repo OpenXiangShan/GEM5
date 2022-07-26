@@ -43,14 +43,10 @@ namespace gem5
 namespace RiscvISA
 {
 
-constexpr size_t CachelineSizeByte = 8;
-constexpr size_t CachelineSize = CachelineSizeByte * 8;
 constexpr unsigned NumVecElemPerVecReg = 4;
-constexpr unsigned LMUL_MAX = 8;
 using VecElem = uint64_t;
 constexpr size_t vlenb = NumVecElemPerVecReg * sizeof(VecElem);
 constexpr size_t VLEN = vlenb * 8;
-constexpr size_t NumMemAccPerVecReg = VLEN / CachelineSize;
 using VecRegContainer =
     gem5::VecRegContainer<vlenb>;
 using vreg_t = VecRegContainer;
@@ -62,7 +58,7 @@ using ConstVecPredReg =
 using VecPredRegContainer = VecPredReg::Container;
 
 const int NumVecStandardRegs = 32;
-const int NumVecInternalRegs = std::max(LMUL_MAX, NumVecElemPerVecReg);
+const int NumVecInternalRegs = 8;
 const int NumVecRegs = NumVecStandardRegs + NumVecInternalRegs;
 
 const std::vector<std::string> VecRegNames = {

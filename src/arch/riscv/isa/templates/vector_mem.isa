@@ -20,9 +20,9 @@ def template VleConstructor {{
     %(constructor)s;
 
     const uint32_t num_microops = vtype_regs_per_group(vtype);
-    int32_t tmp_vl = this->vl;
+    int32_t remaining_vl = this->vl;
     const int32_t micro_vlmax = vtype_VLMAX(_machInst.vtype8, true);
-    int32_t micro_vl = std::min(tmp_vl, micro_vlmax);
+    int32_t micro_vl = std::min(remaining_vl, micro_vlmax);
     StaticInstPtr microop;
 
     for (int i = 0; i < num_microops && micro_vl > 0; ++i) {
@@ -30,7 +30,7 @@ def template VleConstructor {{
         microop->setDelayedCommit();
         microop->setFlag(IsLoad);
         this->microops.push_back(microop);
-        micro_vl = std::min(tmp_vl -= micro_vlmax, micro_vlmax);
+        micro_vl = std::min(remaining_vl -= micro_vlmax, micro_vlmax);
     }
 
     this->microops.front()->setFirstMicroop();
@@ -175,9 +175,9 @@ def template VseConstructor {{
     %(constructor)s;
 
     const uint32_t num_microops = vtype_regs_per_group(vtype);
-    int32_t tmp_vl = this->vl;
+    int32_t remaining_vl = this->vl;
     const int32_t micro_vlmax = vtype_VLMAX(_machInst.vtype8, true);
-    int32_t micro_vl = std::min(tmp_vl, micro_vlmax);
+    int32_t micro_vl = std::min(remaining_vl, micro_vlmax);
 
     StaticInstPtr microop;
 
@@ -186,7 +186,7 @@ def template VseConstructor {{
         microop->setDelayedCommit();
         microop->setFlag(IsStore);
         this->microops.push_back(microop);
-        micro_vl = std::min(tmp_vl -= micro_vlmax, micro_vlmax);
+        micro_vl = std::min(remaining_vl -= micro_vlmax, micro_vlmax);
     }
 
     this->microops.front()->setFlag(IsFirstMicroop);
@@ -249,7 +249,8 @@ Fault
 
     const size_t micro_vlmax = vtype_VLMAX(machInst.vtype8, true);
     const size_t eewb = width_EEW(machInst.width) / 8;
-    std::vector<bool> byte_enable(eewb * microVl, false);
+    const size_t mem_size = eewb * microVl;
+    std::vector<bool> byte_enable(mem_size, false);
     size_t ei;
     for (size_t i = 0; i < microVl; i++) {
         ei = i + micro_vlmax * microIdx;
@@ -261,7 +262,7 @@ Fault
     }
 
     Fault fault;
-    fault = xc->writeMem(Mem.as<uint8_t>(), eewb * microVl, EA, memAccessFlags,
+    fault = xc->writeMem(Mem.as<uint8_t>(), mem_size, EA, memAccessFlags,
                          nullptr, byte_enable);
     return fault;
 }
@@ -289,7 +290,8 @@ Fault
 
     const size_t micro_vlmax = vtype_VLMAX(machInst.vtype8, true);
     const size_t eewb = width_EEW(machInst.width) / 8;
-    std::vector<bool> byte_enable(eewb * microVl, false);
+    const size_t mem_size = eewb * microVl;
+    std::vector<bool> byte_enable(mem_size, false);
     size_t ei;
     for (size_t i = 0; i < microVl; i++) {
         ei = i + micro_vlmax * microIdx;
@@ -301,7 +303,7 @@ Fault
     }
 
     Fault fault;
-    fault = xc->writeMem(Mem.as<uint8_t>(), eewb * microVl, EA, memAccessFlags,
+    fault = xc->writeMem(Mem.as<uint8_t>(), mem_size, EA, memAccessFlags,
                          nullptr, byte_enable);
     return fault;
 }
@@ -485,27 +487,19 @@ def template VlWholeConstructor {{
     %(set_reg_idx_arr)s;
     %(constructor)s;
 
-    StaticInstPtr microop;
-    uint32_t offset;
     size_t NFIELDS = machInst.nf + 1;
-    for (int i = 0; i < NFIELDS; ++i) {
-        for (int j = 0; j < NumMemAccPerVecReg; ++j) {
-            offset = (i * NumMemAccPerVecReg + j) * CachelineSizeByte;
-            microop = new %(class_name)sMicro(_machInst, offset,
-                                              VecMemInternalReg0 + j, i);
-            microop->setFlag(IsDelayedCommit);
-            microop->setFlag(IsLoad);
-            this->microops.push_back(microop);
-        }
+    const int32_t micro_vlmax = vtype_VLMAX(_machInst.vtype8, true);
 
-        microop = new VMergeTmpMicroInst(_machInst, _machInst.vd + i,
-                                     NumMemAccPerVecReg);
+    StaticInstPtr microop;
+    for (int i = 0; i < NFIELDS; ++i) {
+        microop = new %(class_name)sMicro(_machInst, micro_vlmax, i);
+        microop->setDelayedCommit();
+        microop->setFlag(IsLoad);
         this->microops.push_back(microop);
     }
 
-    this->microops.front()->setFlag(IsFirstMicroop);
-    this->microops.back()->setFlag(IsLastMicroop);
-    this->flags[IsVector] = true;
+    this->microops.front()->setFirstMicroop();
+    this->microops.back()->setLastMicroop();
 }
 
 }};
@@ -518,15 +512,15 @@ private:
     RegId destRegIdxArr[1];
     RegId srcRegIdxArr[1];
 public:
-    %(class_name)s(ExtMachInst _machInst, uint32_t _offset, uint8_t _dstReg,
-                   uint8_t _microIdx)
+    %(class_name)s(ExtMachInst _machInst, uint8_t _microVl, uint8_t _microIdx)
         : %(base_class)s("%(mnemonic)s_micro", _machInst, %(op_class)s,
-                         _offset, _microIdx)
+                         _microVl, _microIdx)
     {
         %(set_reg_idx_arr)s;
         _numSrcRegs = 0;
         _numDestRegs = 0;
-        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, _dstReg));
+        setDestRegIdx(_numDestRegs++,
+                      RegId(VecRegClass, _machInst.vd + _microIdx));
         _numTypedDestRegs[VecRegClass]++;
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
         this->flags[IsVector] = true;
@@ -551,12 +545,12 @@ Fault
     %(op_rd)s;
     %(ea_code)s;
 
-    Fault fault = readMemAtomicLE(xc, traceData, EA, Mem.as<uint64_t>()[0],
-                                  memAccessFlags);
+    Fault fault = readMemAtomicLE(xc, traceData, EA,
+                                  *(vreg_t::Container*)(&Mem), memAccessFlags);
     if (fault != NoFault)
         return fault;
 
-    size_t elem_per_reg = gem5::RiscvISA::VLEN / width_EEW(machInst.width);
+    size_t elem_per_reg = VLEN / width_EEW(machInst.width);
     for (size_t i = 0; i < elem_per_reg; i++) {
         %(memacc_code)s;
     }
@@ -593,10 +587,9 @@ Fault
     %(op_decl)s;
     %(op_rd)s;
 
-    memcpy(Mem.as<uint8_t>(), pkt->getPtr<uint8_t>(),
-           pkt->getSize());
+    memcpy(Mem.as<uint8_t>(), pkt->getPtr<uint8_t>(), pkt->getSize());
 
-    size_t elem_per_reg = gem5::RiscvISA::VLEN / width_EEW(machInst.width);
+    size_t elem_per_reg = VLEN / width_EEW(machInst.width);
     for (size_t i = 0; i < elem_per_reg; ++i) {
         %(memacc_code)s;
     }

@@ -716,7 +716,7 @@ Fault
     // TODO: If vd is equal to vs2 the instruction is an architectural NOP.
     %(op_decl)s;
     %(op_rd)s;
-    for (size_t i = 0; i < NumMemAccPerVecReg; i++) {
+    for (size_t i = 0; i < (VLEN / 64); i++) {
         %(code)s;
     }
     %(op_wb)s;

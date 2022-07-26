@@ -135,8 +135,8 @@ std::string VlWholeMicroInst::generateDisassembly(Addr pc,
         const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
-    ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", " <<
-        offset << '(' << registerName(srcRegIdx(0)) << ')';
+    ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
+       << vlenb * microIdx << '(' << registerName(srcRegIdx(0)) << ')';
     return ss.str();
 }
 
@@ -221,37 +221,6 @@ std::string VlStrideMicroInst::generateDisassembly(Addr pc,
     return ss.str();
 }
 
-Fault
-VMergeTmpMicroInst::execute(
-    ExecContext *xc, Trace::InstRecord *traceData) const
-{
-    vreg_t tmp_d0 = *(vreg_t *)xc->getWritableRegOperand(this, 0);
-    auto Vd = tmp_d0.as<uint8_t>();
-
-    for (size_t i = 0; i < this->_numSrcRegs; i++) {
-        vreg_t tmp_s;
-        xc->getRegOperand(this, i, &tmp_s);
-        auto s = tmp_s.as<uint8_t>();
-        memcpy(Vd + i * CachelineSizeByte, s, CachelineSizeByte);
-    }
-
-    xc->setRegOperand(this, 0, &tmp_d0);
-    if (traceData)
-        traceData->setData(tmp_d0);
-    return NoFault;
-}
-
-std::string VMergeTmpMicroInst::generateDisassembly(Addr pc,
-        const loader::SymbolTable *symtab) const
-{
-    std::stringstream ss;
-    ss << mnemonic << ' ' << registerName(destRegIdx(0));
-    for (int i = 0; i < this->_numSrcRegs; i++) {
-        ss << ", " << registerName(srcRegIdx(i));
-    }
-    return ss.str();
-}
-
 std::string
 VMvWholeMacroInst::generateDisassembly(Addr pc,
     const loader::SymbolTable *symtab) const
@@ -269,37 +238,6 @@ VMvWholeMicroInst::generateDisassembly(Addr pc,
     std::stringstream ss;
     ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", " <<
         registerName(srcRegIdx(1));
-    return ss.str();
-}
-
-Fault
-VSplitTmpMicroInst::execute(
-    ExecContext *xc, Trace::InstRecord *traceData) const
-{
-    vreg_t tmp_s0;
-    xc->getRegOperand(this, 0, &tmp_s0);
-    auto Vs = tmp_s0.as<uint8_t>();
-
-    for (int i = 0; i < this->_numDestRegs; i++) {
-        vreg_t tmp_d = *(vreg_t *)xc->getWritableRegOperand(this, i);
-        auto d = tmp_d.as<uint8_t>();
-        memcpy(d, Vs + i * CachelineSizeByte, CachelineSizeByte);
-        xc->setRegOperand(this, i, &tmp_d);
-    }
-    if (traceData)
-        traceData->setData(tmp_s0);
-    return NoFault;
-}
-
-std::string VSplitTmpMicroInst::generateDisassembly(Addr pc,
-        const loader::SymbolTable *symtab) const
-{
-    std::stringstream ss;
-    ss << mnemonic << ' ';
-    for (int i = 0; i < this->_numDestRegs; i++) {
-        ss << registerName(destRegIdx(i)) << ", ";
-    }
-    ss << registerName(srcRegIdx(0));
     return ss.str();
 }
 
