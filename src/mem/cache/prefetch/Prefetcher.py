@@ -428,13 +428,13 @@ class BOPPrefetcher(QueuedPrefetcher):
     cxx_class = 'gem5::prefetch::BOP'
     cxx_header = "mem/cache/prefetch/bop.hh"
     score_max = Param.Unsigned(31, "Max. score to update the best offset")
-    round_max = Param.Unsigned(100, "Max. round to update the best offset")
-    bad_score = Param.Unsigned(10, "Score at which the HWP is disabled")
-    rr_size = Param.Unsigned(64, "Number of entries of each RR bank")
+    round_max = Param.Unsigned(50, "Max. round to update the best offset")
+    bad_score = Param.Unsigned(1, "Score at which the HWP is disabled")
+    rr_size = Param.Unsigned(256, "Number of entries of each RR bank")
     tag_bits = Param.Unsigned(12, "Bits used to store the tag")
-    offset_list_size = Param.Unsigned(46,
+    offset_list_size = Param.Unsigned(12,
                 "Number of entries in the offsets list")
-    negative_offsets_enable = Param.Bool(True,
+    negative_offsets_enable = Param.Bool(False,
                 "Initialize the offsets list also with negative values \
                 (i.e. the table will have half of the entries with positive \
                 offsets and the other half with negative ones)")
