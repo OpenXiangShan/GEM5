@@ -154,8 +154,8 @@ std::string VsWholeMicroInst::generateDisassembly(Addr pc,
         const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
-    ss << mnemonic << ' ' << registerName(srcRegIdx(1)) << ", " <<
-        offset << '(' << registerName(srcRegIdx(0)) << ')';
+    ss << mnemonic << ' ' << registerName(srcRegIdx(1)) << ", "
+       << vlenb * microIdx << '(' << registerName(srcRegIdx(0)) << ')';
     return ss.str();
 }
 

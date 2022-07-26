@@ -103,7 +103,7 @@ def format VseOp(
 
 def format VlmOp(
     memacc_code,
-    ea_code={{ EA = Rs1 + this->offset; }},
+    ea_code={{ EA = Rs1; }},
     mem_flags=[],
     inst_flags=[]
 ) {{
@@ -114,7 +114,7 @@ def format VlmOp(
 
 def format VsmOp(
   memacc_code,
-  ea_code={{ EA = Rs1 + this->offset; }},
+  ea_code={{ EA = Rs1; }},
   mem_flags=[],
   inst_flags=[]
 ) {{
@@ -125,7 +125,7 @@ def format VsmOp(
 
 def format VlWholeOp(
     memacc_code,
-    ea_code={{ EA = Rs1 + this->offset; }},
+    ea_code={{ EA = Rs1 + vlenb * microIdx; }},
     mem_flags=[],
     inst_flags=[]
 ) {{
@@ -136,7 +136,7 @@ def format VlWholeOp(
 
 def format VsWholeOp(
     memacc_code,
-    ea_code={{ EA = Rs1 + this->offset; }},
+    ea_code={{ EA = Rs1 + vlenb * microIdx; }},
     mem_flags=[],
     inst_flags=[]
 ) {{

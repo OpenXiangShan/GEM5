@@ -376,25 +376,19 @@ def template VsWholeConstructor {{
     %(set_reg_idx_arr)s;
     %(constructor)s;
 
-    StaticInstPtr microop;
-    uint32_t offset;
     size_t NFIELDS = machInst.nf + 1;
+    const int32_t micro_vlmax = vtype_VLMAX(_machInst.vtype8, true);
+
+    StaticInstPtr microop;
     for (int i = 0; i < NFIELDS; ++i) {
-        microop = new VSplitTmpMicroInst(_machInst, _machInst.vs3 + i,
-                                     NumMemAccPerVecReg);
+        microop = new %(class_name)sMicro(_machInst, micro_vlmax, i);
+        microop->setDelayedCommit();
+        microop->setFlag(IsStore);
         this->microops.push_back(microop);
-        for (int j = 0; j < NumMemAccPerVecReg; ++j) {
-            offset = (i * NumMemAccPerVecReg + j) * CachelineSizeByte;
-            microop = new %(class_name)sMicro(_machInst, offset,
-                                              VecMemInternalReg0 + j, i);
-            microop->setFlag(IsDelayedCommit);
-            microop->setFlag(IsStore);
-            this->microops.push_back(microop);
-        }
     }
-    this->microops.front()->setFlag(IsFirstMicroop);
-    this->microops.back()->setFlag(IsLastMicroop);
-    this->flags[IsVector] = true;
+
+    this->microops.front()->setFirstMicroop();
+    this->microops.back()->setLastMicroop();
 }
 
 }};
@@ -407,16 +401,16 @@ private:
     RegId destRegIdxArr[0];
     RegId srcRegIdxArr[2];
 public:
-    %(class_name)s(ExtMachInst _machInst, uint32_t _offset, uint8_t _srcReg,
-                   uint8_t _microIdx)
-        : %(base_class)s("%(mnemonic)s_micro", _machInst, %(op_class)s,
-                         _offset, _microIdx)
+    %(class_name)s(ExtMachInst _machInst, uint8_t _microVl, uint8_t _microIdx)
+        : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s,
+                         _microVl, _microIdx)
     {
         %(set_reg_idx_arr)s;
         _numSrcRegs = 0;
         _numDestRegs = 0;
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
-        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _srcReg));
+        setSrcRegIdx(_numSrcRegs++,
+                     RegId(VecRegClass, _machInst.vs3 + _microIdx));
         this->flags[IsVector] = true;
         this->flags[IsStore] = true;
     }
@@ -439,12 +433,12 @@ Fault
     %(op_rd)s;
     %(ea_code)s;
 
-    for (size_t i = 0; i < NumMemAccPerVecReg; i++) {
+    for (size_t i = 0; i < vlenb; i++) {
         %(memacc_code)s;
     }
 
-    Fault fault = writeMemAtomicLE(xc, traceData, Mem.as<uint64_t>()[0], EA,
-                                   memAccessFlags, nullptr);
+    Fault fault = writeMemAtomicLE(xc, traceData, *(vreg_t::Container*)(&Mem),
+                                   EA, memAccessFlags, nullptr);
     return fault;
 }
 
@@ -461,11 +455,12 @@ Fault
     %(op_rd)s;
     %(ea_code)s;
 
-    for (size_t i = 0; i < NumMemAccPerVecReg; i++) {
+    for (size_t i = 0; i < vlenb; i++) {
         %(memacc_code)s;
     }
-    Fault fault = writeMemTimingLE(xc, traceData, Mem.as<uint64_t>()[0], EA,
-                                   memAccessFlags, nullptr);
+
+    Fault fault = writeMemTimingLE(xc, traceData, *(vreg_t::Container*)(&Mem),
+                                   EA, memAccessFlags, nullptr);
     return fault;
 }
 

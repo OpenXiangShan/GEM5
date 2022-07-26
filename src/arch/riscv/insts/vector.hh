@@ -268,13 +268,14 @@ class VsWholeMacroInst : public VectorMemMacroInst
             Addr pc, const loader::SymbolTable *symtab) const override;
 };
 
-class VsWholeMicroInst : public VectorMemMicroInst
+class VsWholeMicroInst : public VectorMicroInst
 {
   protected:
+    Request::Flags memAccessFlags;
+
     VsWholeMicroInst(const char *mnem, ExtMachInst _machInst,
-                     OpClass __opClass, uint32_t _offset, uint8_t _microIdx)
-        : VectorMemMicroInst(mnem, _machInst, __opClass, NumMemAccPerVecReg,
-                             _microIdx, _offset)
+                     OpClass __opClass, uint8_t _microVl, uint8_t _microIdx)
+        : VectorMicroInst(mnem, _machInst, __opClass, _microIdx, _microIdx)
     {}
 
     std::string generateDisassembly(
