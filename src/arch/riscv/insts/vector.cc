@@ -144,8 +144,8 @@ std::string VseMicroInst::generateDisassembly(Addr pc,
         const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
-    ss << mnemonic << ' ' << registerName(srcRegIdx(1)) << ", " <<
-        offset << '(' << registerName(srcRegIdx(0)) << ')';
+    ss << mnemonic << ' ' << registerName(srcRegIdx(1)) << ", "
+       << vlenb * microIdx  << '(' << registerName(srcRegIdx(0)) << ')';
     if (!machInst.vm) ss << ", v0.t";
     return ss.str();
 }

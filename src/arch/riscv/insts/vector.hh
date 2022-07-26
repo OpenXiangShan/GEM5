@@ -215,15 +215,17 @@ class VleMicroInst : public VectorMicroInst
         Addr pc, const loader::SymbolTable *symtab) const override;
 };
 
-class VseMicroInst : public VectorMemMicroInst
+class VseMicroInst : public VectorMicroInst
 {
   protected:
-    VseMicroInst(const char *mnem, ExtMachInst _machInst,
-                 OpClass __opClass, uint8_t _microVl, uint8_t _microIdx,
-                 uint32_t _offset)
-        : VectorMemMicroInst(mnem, _machInst, __opClass, _microVl, _microIdx,
-                             _offset)
-    {}
+    Request::Flags memAccessFlags;
+
+    VseMicroInst(const char *mnem, ExtMachInst _machInst, OpClass __opClass,
+                 uint8_t _microVl, uint8_t _microIdx)
+        : VectorMicroInst(mnem, _machInst, __opClass, _microVl, _microIdx)
+    {
+        this->flags[IsStore] = true;
+    }
 
     std::string generateDisassembly(
         Addr pc, const loader::SymbolTable *symtab) const override;

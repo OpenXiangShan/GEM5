@@ -174,43 +174,23 @@ def template VseConstructor {{
     %(set_reg_idx_arr)s;
     %(constructor)s;
 
-    // Num of elems in one memory access operation.
-    int32_t num_elems_per_ma = CachelineSize / width_EEW(machInst.width);
-    int32_t remaining_vl = this->vl;
-    int32_t micro_vl = std::min(remaining_vl, num_elems_per_ma);
+    const uint32_t num_microops = vtype_regs_per_group(vtype);
+    int32_t tmp_vl = this->vl;
+    const int32_t micro_vlmax = vtype_VLMAX(_machInst.vtype8, true);
+    int32_t micro_vl = std::min(tmp_vl, micro_vlmax);
 
     StaticInstPtr microop;
-    std::vector<StaticInstPtr> tmp_ops;
-    uint32_t offset;
-    for (int i = 0; micro_vl > 0; ++i) {
-        size_t src_reg_count = 0;
-        for (int j = 0; j < NumMemAccPerVecReg && micro_vl > 0; ++j) {
-            offset = (i * NumMemAccPerVecReg + j) * CachelineSizeByte;
-            microop = new %(class_name)sMicro(_machInst, offset,
-                                               VecMemInternalReg0 + j,
-                                               micro_vl,
-                                               i * NumMemAccPerVecReg + j);
-            microop->setFlag(IsDelayedCommit);
-            microop->setFlag(IsStore);
-            tmp_ops.push_back(microop);
-            remaining_vl -= num_elems_per_ma;
-            micro_vl = std::min(remaining_vl, num_elems_per_ma);
-            src_reg_count++;
-        }
 
-        microop = new VSplitTmpMicroInst(_machInst, _machInst.vs3 + i,
-                                     src_reg_count);
+    for (int i = 0; i < num_microops && micro_vl > 0; ++i) {
+        microop = new %(class_name)sMicro(_machInst, micro_vl, i);
+        microop->setDelayedCommit();
+        microop->setFlag(IsStore);
         this->microops.push_back(microop);
-
-        for (StaticInstPtr op : tmp_ops) {
-            this->microops.push_back(op);
-        }
-        tmp_ops.clear();
+        micro_vl = std::min(tmp_vl -= micro_vlmax, micro_vlmax);
     }
 
     this->microops.front()->setFlag(IsFirstMicroop);
     this->microops.back()->setFlag(IsLastMicroop);
-    this->flags[IsVector] = true;
 }
 
 }};
@@ -223,16 +203,16 @@ private:
     RegId srcRegIdxArr[3];
     RegId destRegIdxArr[0];
 public:
-    %(class_name)s(ExtMachInst _machInst, uint32_t _offset, uint8_t _srcReg,
-                   uint8_t _microVl, uint8_t _microIdx)
+    %(class_name)s(ExtMachInst _machInst, uint8_t _microVl, uint8_t _microIdx)
         : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp,
-                         _microVl, _microIdx, _offset)
+                         _microVl, _microIdx)
     {
         %(set_reg_idx_arr)s;
         _numSrcRegs = 0;
         _numDestRegs = 0;
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
-        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _srcReg));
+        setSrcRegIdx(_numSrcRegs++,
+                     RegId(VecRegClass, _machInst.vs3 + _microIdx));
         if (!_machInst.vm) {
             setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, 0));
         }
@@ -267,23 +247,22 @@ Fault
     %(op_rd)s;
     %(ea_code)s;
 
-    uint32_t mem_size = width_EEW(this->machInst.width) / 8 * this->microVl;
-    const std::vector<bool> byte_enable(mem_size, true);
-    Fault fault = xc->readMem(EA, Mem.as<uint8_t>(), mem_size,
-                                  memAccessFlags, byte_enable);
-    if (fault != NoFault) return fault;
-
+    const size_t micro_vlmax = vtype_VLMAX(machInst.vtype8, true);
+    const size_t eewb = width_EEW(machInst.width) / 8;
+    std::vector<bool> byte_enable(eewb * microVl, false);
     size_t ei;
-    int32_t num_elems_per_ma = CachelineSize / width_EEW(machInst.width);
-    for (size_t i = 0; i < this->microVl; i++) {
-        ei = i + num_elems_per_ma * this->microIdx;
+    for (size_t i = 0; i < microVl; i++) {
+        ei = i + micro_vlmax * microIdx;
         if (machInst.vm || elem_mask(v0, ei)) {
             %(memacc_code)s;
+            auto it = byte_enable.begin() + i * eewb;
+            std::fill(it, it + eewb, true);
         }
     }
 
-    fault = xc->writeMem(Mem.as<uint8_t>(), mem_size, EA,
-                             memAccessFlags, nullptr, byte_enable);
+    Fault fault;
+    fault = xc->writeMem(Mem.as<uint8_t>(), eewb * microVl, EA, memAccessFlags,
+                         nullptr, byte_enable);
     return fault;
 }
 
@@ -308,19 +287,22 @@ Fault
     %(op_rd)s;
     %(ea_code)s;
 
+    const size_t micro_vlmax = vtype_VLMAX(machInst.vtype8, true);
+    const size_t eewb = width_EEW(machInst.width) / 8;
+    std::vector<bool> byte_enable(eewb * microVl, false);
     size_t ei;
-    int32_t num_elems_per_ma = CachelineSize / width_EEW(machInst.width);
-    for (size_t i = 0; i < this->microVl; i++) {
-        ei = i + num_elems_per_ma * this->microIdx;
+    for (size_t i = 0; i < microVl; i++) {
+        ei = i + micro_vlmax * microIdx;
         if (machInst.vm || elem_mask(v0, ei)) {
             %(memacc_code)s;
+            auto it = byte_enable.begin() + i * eewb;
+            std::fill(it, it + eewb, true);
         }
     }
 
-    uint32_t mem_size = width_EEW(this->machInst.width) / 8 * this->microVl;
-    const std::vector<bool> byte_enable(mem_size, true);
-    Fault fault = xc->writeMem(Mem.as<uint8_t>(), mem_size, EA,
-                                memAccessFlags, nullptr, byte_enable);
+    Fault fault;
+    fault = xc->writeMem(Mem.as<uint8_t>(), eewb * microVl, EA, memAccessFlags,
+                         nullptr, byte_enable);
     return fault;
 }
 
@@ -345,9 +327,8 @@ def template VlmConstructor {{
     %(set_reg_idx_arr)s;
     %(constructor)s;
 
-    int32_t tmp_vl = this->vl;
-    const int32_t micro_vlmax = vtype_VLMAX(_machInst.vtype8, true);
-    int32_t micro_vl = std::min(tmp_vl, micro_vlmax) / 8;
+    const uint32_t micro_vlmax = vtype_VLMAX(_machInst.vtype8, true);
+    int32_t micro_vl = (std::min(this->vl, micro_vlmax) + 7) / 8;
     StaticInstPtr microop;
 
     microop = new Vle8_vMicro(_machInst, micro_vl, 0);
@@ -369,40 +350,20 @@ def template VsmConstructor {{
     %(set_reg_idx_arr)s;
     %(constructor)s;
 
-    // Num of elems in one memory access operation.
-    int32_t num_elems_per_ma = CachelineSize * 8 / width_EEW(machInst.width);
-    int32_t remaining_vl = this->vl;
-    int32_t micro_vl = std::min(remaining_vl, num_elems_per_ma);
+    const uint32_t micro_vlmax = vtype_VLMAX(_machInst.vtype8, true);
+    int32_t micro_vl = (std::min(this->vl, micro_vlmax) + 7) / 8;
 
     StaticInstPtr microop;
-    std::vector<StaticInstPtr> tmp_ops;
-    uint32_t offset;
-    for (int i = 0; micro_vl > 0; ++i) {
-        size_t src_reg_count = 0;
-        for (int j = 0; j < NumMemAccPerVecReg && micro_vl > 0; ++j) {
-            offset = (i * NumMemAccPerVecReg + j) * CachelineSizeByte;
-            microop = new Vse8_vMicro(_machInst, offset,
-                                      VecMemInternalReg0 + j,
-                                      (micro_vl + 7) / 8, j);
-            microop->setFlag(IsDelayedCommit);
-            microop->setFlag(IsStore);
-            tmp_ops.push_back(microop);
-            remaining_vl -= num_elems_per_ma;
-            micro_vl = std::min(remaining_vl, num_elems_per_ma);
-            src_reg_count++;
-        }
-        microop = new VSplitTmpMicroInst(_machInst, _machInst.vs3 + i,
-                                     src_reg_count);
-        this->microops.push_back(microop);
-        for (StaticInstPtr op : tmp_ops) {
-            this->microops.push_back(op);
-        }
-        tmp_ops.clear();
-    }
+    microop = new Vse8_vMicro(_machInst, micro_vl, 0);
+    microop->setDelayedCommit();
+    microop->setFlag(IsStore);
+    this->microops.push_back(microop);
+
+    this->microops.front()->setFirstMicroop();
+    this->microops.back()->setLastMicroop();
 
     this->microops.front()->setFlag(IsFirstMicroop);
     this->microops.back()->setFlag(IsLastMicroop);
-    this->flags[IsVector] = true;
 }
 
 }};

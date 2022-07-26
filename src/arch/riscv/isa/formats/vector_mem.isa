@@ -92,7 +92,7 @@ def format VleOp(
 
 def format VseOp(
     memacc_code,
-    ea_code={{ EA = Rs1 + this->offset; }},
+    ea_code={{ EA = Rs1 + vlenb * microIdx; }},
     mem_flags=[],
     inst_flags=[]
 ) {{
