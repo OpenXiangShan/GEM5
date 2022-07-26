@@ -1,4 +1,4 @@
-# Copyright 2018 Google, Inc.
+# Copyright 2022 Google, Inc.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are
@@ -23,19 +23,21 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-Import('*')
+.PHONY: all clean
 
-if not env['CONF']['USE_SYSTEMC']:
-    Return()
+CXXFLAGS ?= -g -O2
+CPPFLAGS ?= -MD -MP
 
-SimObject('TlmBridge.py', sim_objects=[
-    'Gem5ToTlmBridgeBase', 'TlmToGem5BridgeBase'] +
-    [f'Gem5ToTlmBridge{bits}' for bits in (32, 64, 128, 256, 512)] +
-    [f'TlmToGem5Bridge{bits}' for bits in (32, 64, 128, 256, 512)])
+SRCS = shared_memory_client_example.cc
+EXES = $(SRCS:.cc=)
+DEPS = $(SRCS:.cc=.d)
 
-Source('gem5_to_tlm.cc')
-Source('sc_ext.cc')
-Source('sc_mm.cc')
-Source('tlm_to_gem5.cc')
+all: $(EXES)
 
-DebugFlag('TlmBridge')
+clean:
+	rm -rf $(EXES) $(DEPS)
+
+$(EXES): %: %.cc
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(LDFLAGS) -o $@ $< $(LDLIBS)
+
+-include $(DEPS)

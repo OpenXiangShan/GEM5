@@ -1,4 +1,14 @@
-# Copyright 2018 Google, Inc.
+# Copyright (c) 2022 Arm Limited
+# All rights reserved.
+#
+# The license below extends only to copyright in the software and shall
+# not be construed as granting a license to any other intellectual
+# property including but not limited to intellectual property relating
+# to a hardware implementation of the functionality of the software
+# licensed hereunder.  You may use the software subject to the license
+# terms below provided that you ensure that this notice is replicated
+# unmodified and in its entirety in all distributions of the software,
+# modified or unmodified, in source code or in binary form.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are
@@ -23,19 +33,33 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-Import('*')
+minimum_pre_commit_version: "2.18"
 
-if not env['CONF']['USE_SYSTEMC']:
-    Return()
+default_language_version:
+  python: python3
 
-SimObject('TlmBridge.py', sim_objects=[
-    'Gem5ToTlmBridgeBase', 'TlmToGem5BridgeBase'] +
-    [f'Gem5ToTlmBridge{bits}' for bits in (32, 64, 128, 256, 512)] +
-    [f'TlmToGem5Bridge{bits}' for bits in (32, 64, 128, 256, 512)])
+exclude: |
+  (?x)^(
+    ext/.*|
+    build/.*|
+    src/systemc/ext/.*|
+    src/systemc/tests/.*/.*|
+    src/python/m5/ext/.*
+  )$
 
-Source('gem5_to_tlm.cc')
-Source('sc_ext.cc')
-Source('sc_mm.cc')
-Source('tlm_to_gem5.cc')
-
-DebugFlag('TlmBridge')
+repos:
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v4.3.0
+  hooks:
+  - id: trailing-whitespace
+  - id: end-of-file-fixer
+  - id: check-json
+  - id: check-yaml
+  - id: check-added-large-files
+  - id: mixed-line-ending
+    args: [--fix=lf]
+  - id: check-case-conflict
+- repo: https://github.com/psf/black
+  rev: 22.6.0
+  hooks:
+    - id: black
