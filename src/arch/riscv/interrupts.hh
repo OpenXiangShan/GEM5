@@ -151,22 +151,14 @@ class Interrupts : public BaseInterrupts
     post(int int_num, int index)
     {
         DPRINTF(Interrupt, "Interrupt %d:%d posted\n", int_num, index);
-        if (int_num != INT_NMI) {
-            ip[int_num] = true;
-        } else {
-            postNMI();
-        }
+        ip[int_num] = true;
     }
 
     void
     clear(int int_num, int index)
     {
         DPRINTF(Interrupt, "Interrupt %d:%d cleared\n", int_num, index);
-        if (int_num != INT_NMI) {
-            ip[int_num] = false;
-        } else {
-            clearNMI();
-        }
+        ip[int_num] = false;
     }
 
     void postNMI() { tc->setMiscReg(MISCREG_NMIP, 1); }
