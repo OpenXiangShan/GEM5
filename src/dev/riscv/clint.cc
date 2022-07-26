@@ -167,6 +167,8 @@ Clint::read(PacketPtr pkt)
 
     // Perform register read
     registers.read(pkt->getAddr(), pkt->getPtr<void>(), pkt->getSize());
+    DPRINTF(Clint, "Read response - data: %#lx, mtime: %#lx\n",
+            *pkt->getConstPtr<uint64_t>(), registers.mtime.get());
 
     if (is_atomic) {
         // Perform atomic operation
