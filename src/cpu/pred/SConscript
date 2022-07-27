@@ -32,7 +32,7 @@ if env['CONF']['TARGET_ISA'] == 'null':
     Return()
 
 SimObject('BranchPredictor.py', sim_objects=[
-    'IndirectPredictor', 'SimpleIndirectPredictor', 'BranchPredictor',
+    'IndirectPredictor', 'SimpleIndirectPredictor', 'ITTAGE', 'BranchPredictor',
     'LocalBP', 'TournamentBP', 'BiModeBP', 'TAGEBase', 'TAGE', 'LoopPredictor',
     'TAGE_SC_L_TAGE', 'TAGE_SC_L_TAGE_64KB', 'TAGE_SC_L_TAGE_8KB',
     'LTAGE', 'TAGE_SC_L_LoopPredictor', 'StatisticalCorrector', 'TAGE_SC_L',
@@ -51,6 +51,7 @@ Source('bpred_unit.cc')
 Source('2bit_local.cc')
 Source('btb.cc')
 Source('simple_indirect.cc')
+Source('ITTAGE.cc')
 Source('indirect.cc')
 Source('ras.cc')
 Source('tournament.cc')
