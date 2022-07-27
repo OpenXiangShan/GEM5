@@ -13,14 +13,14 @@ namespace gem5
 namespace branch_prediction
 {
 
-ITTAGE::ITTAGE(
-        const ITTAGEParams &params)
-        : IndirectPredictor(params),
-          ghrMask((1 << params.indirectGHRBits)-1),
-          pathLength(params.indirectPathLength),
-          numPredictors(params.numPredictors),
-          ghrNumBits(params.indirectGHRBits),
-          numTageBits(params.indirectTageBits)   
+ITTAGE::ITTAGE(const ITTAGEParams &params):
+    IndirectPredictor(params),
+    ghrMask((1 << params.indirectGHRBits)-1),
+    pathLength(params.indirectPathLength),
+    numPredictors(params.numPredictors),
+    ghrNumBits(params.indirectGHRBits),
+    numTageBits(params.indirectTageBits),
+    histBitSizes(params.histBitSizes)
 {
     std::cout<<"ITTAGE parameters:"<<std::endl;
     std::cout<<"numThreads="<<params.numThreads<<std::endl;
@@ -30,15 +30,16 @@ ITTAGE::ITTAGE(
 
     targetCache.resize(params.numThreads);
     previous_target.resize(params.numThreads);
+    //initialize base predictor
     base_predictor.resize(params.numThreads);
     for (unsigned int i = 0; i < params.numThreads; ++i) {
         base_predictor[i].resize(1 << numTageBits);
     }
-
+    //initialize ittage predictor
     for (unsigned i = 0; i < params.numThreads; i++) {
         targetCache[i].resize(numPredictors);
         for (unsigned j = 0; j < numPredictors; ++j) {
-            targetCache[i][j].resize((1 << 8));
+            targetCache[i][j].resize((1 << histBitSizes[i]));
         }
     }
     use_alt = 8;
@@ -96,13 +97,13 @@ ITTAGE::lookup_helper(Addr br_addr, PCStateBase& target, PCStateBase& alt_target
         unsigned tmp_tag = (br_addr & 0xff) ^ csr1 ^ (csr2 << 1);
         const auto &way = targetCache.at(tid).at(i).at(tmp_index);
         if (way.tag == tmp_tag && way.target) {
-            if (pred_counts == 0) {
+            if (pred_counts == 0) {//第一次命中
                 set(target_1, way.target);
                 predictor_1 = i;
                 predictor_index_1 = tmp_index;
                 ++pred_counts;
             }
-            if (pred_counts == 1) {
+            if (pred_counts == 1) {//第二次命中
                 set(target_2, way.target);
                 predictor_2 = i;
                 predictor_index_2 = tmp_index;
@@ -156,10 +157,11 @@ bool ITTAGE::lookup(Addr br_addr, PCStateBase& target, ThreadID tid) {
     int alt_predictor_index = 0;
     int pred_count = 0; // no use
     bool use_alt_pred = true;
-    bool lookupResult = lookup_helper(br_addr, target, *alt_target, tid, predictor, predictor_index, alt_predictor, alt_predictor_index, pred_count, use_alt_pred);
-    if (!lookupResult) {
-        return false;
-    }
+    //bool lookupResult =
+    lookup_helper(br_addr, target, *alt_target, tid, predictor, predictor_index, alt_predictor, alt_predictor_index, pred_count, use_alt_pred);
+    // if (!lookupResult) {
+    //     return false;
+    // }
     if (use_alt_pred) {
         assert(alt_target);
         set(target, *alt_target);
@@ -383,7 +385,7 @@ int ITTAGE::getTableGhrLen(int table) {
 unsigned ITTAGE::getCSR1(unsigned ghr, int table) {
     int ghrLen = getTableGhrLen(table);
     ghr = ghr & ((1ULL << ghrLen) - 1); // remove unnecessary data on higher position
-    unsigned ret = 0, mask = 0x7f;
+    unsigned ret = 0, mask = ((1 << (histBitSizes[table]-1)) - 1);
     int i = 0;
     while (i + 7 < ghrLen) {
         ret = ret ^ (ghr & mask);
@@ -397,7 +399,7 @@ unsigned ITTAGE::getCSR1(unsigned ghr, int table) {
 unsigned ITTAGE::getCSR2(unsigned ghr, int table) {
     int ghrLen = getTableGhrLen(table);
     ghr = ghr & ((1ULL << ghrLen) - 1); // remove unnecessary data on higher position
-    unsigned ret = 0, mask = 0xff;
+    unsigned ret = 0, mask = ((1 << (histBitSizes[table])) - 1);
     int i = 0;
     while (i + 8 < ghrLen) {
         ret = ret ^ (ghr & mask);
