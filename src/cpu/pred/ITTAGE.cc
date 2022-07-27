@@ -39,7 +39,7 @@ ITTAGE::ITTAGE(const ITTAGEParams &params):
     for (unsigned i = 0; i < params.numThreads; i++) {
         targetCache[i].resize(numPredictors);
         for (unsigned j = 0; j < numPredictors; ++j) {
-            targetCache[i][j].resize((1 << histBitSizes[i]));
+            targetCache[i][j].resize((1 << histBitSizes[j]));
         }
     }
     use_alt = 8;
@@ -93,7 +93,7 @@ ITTAGE::lookup_helper(Addr br_addr, PCStateBase& target, PCStateBase& alt_target
         unsigned csr2 = getCSR2(threadInfo.at(tid).ghr, i);
         uint32_t index = getAddrFold(br_addr,i);
         unsigned tmp_index = index ^ csr1;
-        unsigned tmp_tag = (br_addr & 0xff) ^ csr1 ^ (csr2 << 1);
+        unsigned tmp_tag = getTag(br_addr, csr1, csr2, i);
         const auto &way = targetCache.at(tid).at(i).at(tmp_index);
         if (way.tag == tmp_tag && way.target) {
             if (pred_counts == 0) {//第一次命中
@@ -329,7 +329,9 @@ ITTAGE::recordTarget(
                 --targetCache.at(tid).at(predictor_sel).at(predictor_index_sel).counter;
             } else {
                 set(targetCache.at(tid).at(predictor_sel).at(predictor_index_sel).target, target);
-                targetCache.at(tid).at(predictor_sel).at(predictor_index_sel).tag = (hist_entry.pcAddr & 0xff) ^ getCSR1(threadInfo.at(tid).ghr, predictor_sel) ^ (getCSR2(threadInfo.at(tid).ghr, predictor_sel) << 1);
+                targetCache.at(tid).at(predictor_sel).at(predictor_index_sel).tag =
+                    getTag(hist_entry.pcAddr, getCSR1(threadInfo.at(tid).ghr, predictor_sel), getCSR2(threadInfo.at(tid).ghr, predictor_sel), predictor_sel);
+                    //(hist_entry.pcAddr & 0xff) ^ getCSR1(threadInfo.at(tid).ghr, predictor_sel) ^ (getCSR2(threadInfo.at(tid).ghr, predictor_sel) << 1);
                 targetCache.at(tid).at(predictor_sel).at(predictor_index_sel).counter = 1;
                 targetCache.at(tid).at(predictor_sel).at(predictor_index_sel).useful = 0;
             }
@@ -349,7 +351,9 @@ ITTAGE::recordTarget(
                     if (reset_counter < 255) reset_counter++;
                     set(targetCache.at(tid).at(start_pos).at(new_index).target, target);
                     DPRINTF(Indirect, "record prediction table: %d, %d, %s\n", start_pos, new_index, *targetCache.at(tid).at(start_pos).at(new_index).target);
-                    targetCache.at(tid).at(start_pos).at(new_index).tag = (hist_entry.pcAddr & 0xff) ^ getCSR1(threadInfo.at(tid).ghr, start_pos) ^ (getCSR2(threadInfo.at(tid).ghr, start_pos) << 1);
+                    targetCache.at(tid).at(start_pos).at(new_index).tag =
+                        getTag(hist_entry.pcAddr, getCSR1(threadInfo.at(tid).ghr, start_pos), getCSR2(threadInfo.at(tid).ghr, start_pos), start_pos);
+                        //(hist_entry.pcAddr & 0xff) ^ getCSR1(threadInfo.at(tid).ghr, start_pos) ^ (getCSR2(threadInfo.at(tid).ghr, start_pos) << 1);
                     targetCache.at(tid).at(start_pos).at(new_index).counter = 1;
                     ++allocated;
                     ++start_pos; // do not allocate on consecutive predictors
@@ -418,6 +422,12 @@ uint32_t ITTAGE::getAddrFold(int address,int table) {
     folded_address ^= address / (1 << (24));
     return folded_address & ((1 << histBitSizes[table]) - 1);
 }
+uint32_t ITTAGE::getTag(Addr pc, uint32_t csr1, uint32_t csr2, int table) {
+    return (pc & 0xff) ^ csr1 ^ (csr2 << 1);
+}
+
+
+
 
 } // namespace branch_prediction
 } // namespace gem5
