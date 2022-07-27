@@ -81,8 +81,6 @@ ITTAGE::lookup_helper(Addr br_addr, PCStateBase& target, PCStateBase& alt_target
 {
     // todo: adjust according to ITTAGE
     DPRINTF(Indirect, "Looking up %x\n", br_addr);
-
-    unsigned index = getAddrFold(br_addr);
     int pred_counts = 0;
     std::unique_ptr<PCStateBase> target_1, target_2;
     int predictor_1 = 0;
@@ -93,6 +91,7 @@ ITTAGE::lookup_helper(Addr br_addr, PCStateBase& target, PCStateBase& alt_target
     for (int i = numPredictors - 1; i >= 0; --i) {
         unsigned csr1 = getCSR1(threadInfo.at(tid).ghr, i);
         unsigned csr2 = getCSR2(threadInfo.at(tid).ghr, i);
+        uint32_t index = getAddrFold(br_addr,i);
         unsigned tmp_index = index ^ csr1;
         unsigned tmp_tag = (br_addr & 0xff) ^ csr1 ^ (csr2 << 1);
         const auto &way = targetCache.at(tid).at(i).at(tmp_index);
@@ -344,7 +343,7 @@ ITTAGE::recordTarget(
                 start_pos = 0;
             }
             for (; start_pos < numPredictors; ++start_pos) {
-                int new_index = getAddrFold(hist_entry.pcAddr);
+                int new_index = getAddrFold(hist_entry.pcAddr, start_pos);
                 new_index ^= getCSR1(threadInfo.at(tid).ghr, start_pos);
                 if (targetCache.at(tid).at(start_pos).at(new_index).useful == 0) {
                     if (reset_counter < 255) reset_counter++;
@@ -362,7 +361,7 @@ ITTAGE::recordTarget(
                     if (reset_counter > 0) --reset_counter;
                     if (reset_counter == 0) {
                         for (int i = 0; i < numPredictors; ++i) {
-                            for (int j = 0; j < (1 << 8); ++j) {
+                            for (int j = 0; j < (1 << histBitSizes[i]); ++j) {
                                 targetCache.at(tid).at(i).at(j).useful = 0;
                             }
                         }
@@ -410,14 +409,14 @@ unsigned ITTAGE::getCSR2(unsigned ghr, int table) {
     return ret & mask;
 }
 
-uint8_t ITTAGE::getAddrFold(int address) {
-    uint8_t folded_address, k;
+uint32_t ITTAGE::getAddrFold(int address,int table) {
+    uint32_t folded_address, k;
     folded_address = 0;
     for (k = 0; k < 3; k++) {
         folded_address ^= ((address % (1 << ((k + 1) * 8))) / (1 << (k * 8)));
     }
     folded_address ^= address / (1 << (24));
-    return folded_address;
+    return folded_address & ((1 << histBitSizes[table]) - 1);
 }
 
 } // namespace branch_prediction
