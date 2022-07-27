@@ -22,10 +22,6 @@ ITTAGE::ITTAGE(const ITTAGEParams &params):
     numTageBits(params.indirectTageBits),
     histBitSizes(params.histBitSizes)
 {
-    std::cout<<"ITTAGE parameters:"<<std::endl;
-    std::cout<<"numThreads="<<params.numThreads<<std::endl;
-    std::cout<<"numPredictors="<<params.numPredictors<<std::endl;
-    // std::cout<<"numTageBits="<<params.indirectTageBits<<std::end;
     threadInfo.resize(params.numThreads);
 
     targetCache.resize(params.numThreads);
