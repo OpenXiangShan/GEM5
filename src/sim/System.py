@@ -132,3 +132,4 @@ class System(SimObject):
     # Checkpoint image file for Xiangshan
     restore_from_gcpt = Param.Bool(False, "Restoring from Xiangshan gcpt")
     gcpt_file = Param.String("", "Xiangshan checkpoint image file")
+    gcpt_restorer_file = Param.String("", "GCPT restorer image file")
