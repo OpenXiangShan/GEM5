@@ -59,8 +59,11 @@ class ITTAGE(IndirectPredictor):
 
     indirectPathLength = Param.Unsigned(3, "Previous indirect targets to use for path history")
     numPredictors = Param.Unsigned(3, "Number of TAGE predictors")
+    histBitSizes = VectorParam.Int(
+        [8, 9, 10], "the bit sizes of the ITTAGE T1~Tn")
     indirectGHRBits = Param.Unsigned(31, "Indirect GHR number of bits")
     indirectTageBits = Param.Unsigned(16, "Tage bit length for base predictor")
+    
 
 class BranchPredictor(SimObject):
     type = 'BranchPredictor'
