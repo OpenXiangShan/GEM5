@@ -153,10 +153,8 @@ bool ITTAGE::lookup(Addr br_addr, PCStateBase& target, ThreadID tid) {
         DPRINTF(Indirect, "Hit %x (target:%s)\n", br_addr, target);
     }
     // std::cout<<"DEBUG: target.instAddr="<<target.instAddr()<<std::endl;
-    DPRINTF(Indirect, "target.instAddr()=%x\n", target.instAddr());
-    RiscvISA::PCState cpTarget = target.clone()->as<RiscvISA::PCState>();
+    RiscvISA::PCState &cpTarget = target.as<RiscvISA::PCState>();
     cpTarget.set(target.instAddr());
-    DPRINTF(Indirect, "modified target.instAddr()=%x\n", target.instAddr());
     return true;
 }
 
