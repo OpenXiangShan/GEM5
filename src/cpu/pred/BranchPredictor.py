@@ -58,9 +58,9 @@ class ITTAGE(IndirectPredictor):
     cxx_header = "cpu/pred/ITTAGE.hh"
 
     indirectPathLength = Param.Unsigned(3, "Previous indirect targets to use for path history")
-    numPredictors = Param.Unsigned(3, "Number of TAGE predictors")
-    indirectGHRBits = Param.Unsigned(31, "Indirect GHR number of bits")
-    indirectTageBits = Param.Unsigned(16, "Tage bit length for base predictor")
+    numPredictors = Param.Unsigned(15, "Number of TAGE predictors")
+    indirectGHRBits = Param.Unsigned(63, "Indirect GHR number of bits")
+    simpleBTBSize = Param.Unsigned(512, "Tage bit length for base predictor")
 
 class BranchPredictor(SimObject):
     type = 'BranchPredictor'
@@ -74,6 +74,7 @@ class BranchPredictor(SimObject):
     RASSize = Param.Unsigned(16, "RAS size")
     instShiftAmt = Param.Unsigned(2, "Number of bits to shift instructions by")
 
+    # indirectBranchPred = Param.IndirectPredictor(SimpleIndirectPredictor(),
     indirectBranchPred = Param.IndirectPredictor(ITTAGE(),
       "Indirect branch predictor, set to NULL to disable indirect predictions")
 

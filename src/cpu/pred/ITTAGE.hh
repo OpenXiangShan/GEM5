@@ -43,15 +43,15 @@ public:
 
 private:
     bool lookup_helper(Addr, PCStateBase&, PCStateBase&, ThreadID, int&, int&, int&, int&, int&, bool&);
-    unsigned getCSR1(unsigned ghr, int table);
-    unsigned getCSR2(unsigned ghr, int table);
+    uint64_t getCSR1(uint64_t ghr, int table);
+    uint64_t getCSR2(uint64_t ghr, int table);
     uint8_t getAddrFold(int address);
     int getTableGhrLen(int table);
-    const unsigned ghrMask;
+    const uint64_t ghrMask;
     const unsigned pathLength;
     const unsigned numPredictors;
     const unsigned ghrNumBits;
-    const unsigned numTageBits;
+    const unsigned baseBTBSize;
     int use_alt; // min:0 max: 15
     int reset_counter;
     std::vector<RiscvISA::PCState> previous_target;
@@ -79,8 +79,10 @@ private:
 
         std::deque<HistoryEntry> pathHist;
         unsigned headHistEntry;
-        unsigned ghr;
+        uint64_t ghr;
     };
+
+    unsigned historyLenTable[16];
 
     std::vector<ThreadInfo> threadInfo;
 
