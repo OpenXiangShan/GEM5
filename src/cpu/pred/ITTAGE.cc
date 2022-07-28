@@ -62,7 +62,7 @@ ITTAGE::updateDirectionInfo(
 {
     threadInfo.at(tid).ghr <<= 1;
     threadInfo.at(tid).ghr |= actually_taken;
-    threadInfo.at(tid).ghr &= ghrMask;
+    //threadInfo.at(tid).ghr &= ghrMask;
 }
 
 void
@@ -70,7 +70,7 @@ ITTAGE::changeDirectionPrediction(ThreadID tid, void * indirect_history, bool ac
 {
     unsigned * previousGhr = static_cast<unsigned *>(indirect_history);
     threadInfo.at(tid).ghr = ((*previousGhr) << 1) + actually_taken;
-    threadInfo.at(tid).ghr &= ghrMask;
+    //threadInfo.at(tid).ghr &= ghrMask;
     // maybe we should update hash here?
     // No: CSRs are calculated at use-time
 }
@@ -337,14 +337,14 @@ ITTAGE::recordTarget(
         }
         if (pred_count == 0 || allocate_values) {
             int allocated = 0;
-            int start_pos;
+            uint32_t start_pos;
             if (pred_count > 0){
                 start_pos = predictor_sel + 1;
             } else {
                 start_pos = 0;
             }
             for (; start_pos < numPredictors; ++start_pos) {
-                int new_index = getAddrFold(hist_entry.pcAddr, start_pos);
+                uint32_t new_index = getAddrFold(hist_entry.pcAddr, start_pos);
                 new_index ^= getCSR1(threadInfo.at(tid).ghr, start_pos);
                 if (targetCache.at(tid).at(start_pos).at(new_index).useful == 0) {
                     if (reset_counter < 255) reset_counter++;
@@ -380,14 +380,14 @@ ITTAGE::recordTarget(
 
 }
 
-int ITTAGE::getTableGhrLen(int table) {
+uint64_t ITTAGE::getTableGhrLen(int table) {
     return histLengths[table];
 }
 
-unsigned ITTAGE::getCSR1(unsigned ghr, int table) {
-    int ghrLen = getTableGhrLen(table);
+uint64_t ITTAGE::getCSR1(uint64_t ghr, int table) {
+    uint64_t ghrLen = getTableGhrLen(table);
     ghr = ghr & ((1ULL << ghrLen) - 1); // remove unnecessary data on higher position
-    unsigned ret = 0, mask = ((1 << (TBitSizes[table]-1)) - 1);
+    uint64_t ret = 0, mask = ((1 << (TBitSizes[table] - 1)) - 1);
     int i = 0;
     while (i + 7 < ghrLen) {
         ret = ret ^ ghr;
@@ -398,10 +398,10 @@ unsigned ITTAGE::getCSR1(unsigned ghr, int table) {
     return ret & mask;
 }
 
-unsigned ITTAGE::getCSR2(unsigned ghr, int table) {
-    int ghrLen = getTableGhrLen(table);
+uint64_t ITTAGE::getCSR2(uint64_t ghr, int table) {
+    uint64_t ghrLen = getTableGhrLen(table);
     ghr = ghr & ((1ULL << ghrLen) - 1); // remove unnecessary data on higher position
-    unsigned ret = 0, mask = ((1 << (TBitSizes[table])) - 1);
+    uint64_t ret = 0, mask = ((1 << (TBitSizes[table])) - 1);
     int i = 0;
     while (i + 8 < ghrLen) {
         ret = ret ^ ghr;
@@ -412,7 +412,7 @@ unsigned ITTAGE::getCSR2(unsigned ghr, int table) {
     return ret & mask;
 }
 
-uint32_t ITTAGE::getAddrFold(int address,int table) {
+uint32_t ITTAGE::getAddrFold(uint64_t address, int table) {
     uint32_t folded_address, k;
     folded_address = 0;
     for (k = 0; k < 3; k++) {

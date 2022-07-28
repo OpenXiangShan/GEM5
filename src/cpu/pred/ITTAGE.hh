@@ -41,11 +41,11 @@ public:
 
 private:
     bool lookup_helper(Addr, PCStateBase&, PCStateBase&, ThreadID, int&, int&, int&, int&, int&, bool&);
-    unsigned getCSR1(unsigned ghr, int table);
-    unsigned getCSR2(unsigned ghr, int table);
-    uint32_t getAddrFold(int address, int table);
+    uint64_t getCSR1(uint64_t ghr, int table);
+    uint64_t getCSR2(uint64_t ghr, int table);
+    uint32_t getAddrFold(uint64_t address, int table);
     uint32_t getTag(Addr pc, uint32_t csr1, uint32_t csr2, int table);
-    int getTableGhrLen(int table);
+    uint64_t getTableGhrLen(int table);
     const unsigned ghrMask;
     const unsigned pathLength;
     const unsigned numPredictors;
