@@ -22,7 +22,7 @@ ITTAGE::ITTAGE(const ITTAGEParams &params):
     numTageBits(params.indirectTageBits),
     histBitSizes(params.histBitSizes),
     histTagBitSizes(params.histTagBitSizes),
-    histTagPcShifts(params.histTagPcShifts),
+    histTagPcShifts(params.histTagPcShifts)
 {
     threadInfo.resize(params.numThreads);
 
