@@ -49,7 +49,6 @@ private:
     uint64_t getTableGhrLen(int table);
     const unsigned pathLength;
     const unsigned numPredictors;
-    const unsigned ghrNumBits;
     const unsigned numTageBits;
     std::vector<int> TBitSizes;
     std::vector<int> TTagBitSizes;

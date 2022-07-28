@@ -67,7 +67,6 @@ class ITTAGE(IndirectPredictor):
         [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2], "when the T1~Tn entry's tag generating, PC right shift")
     histLengths = VectorParam.Int(
         [0, 10, 16, 27, 44, 60, 64, 64, 64, 64, 64, 64, 64, 64, 64], "the ITTAGE T1~Tn history length")
-    indirectGHRBits = Param.Unsigned(31, "Indirect GHR number of bits")
     indirectTageBits = Param.Unsigned(16, "Tage bit length for base predictor")
     
 

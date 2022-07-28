@@ -18,7 +18,6 @@ ITTAGE::ITTAGE(const ITTAGEParams &params):
     IndirectPredictor(params),
     pathLength(params.indirectPathLength),
     numPredictors(params.numPredictors),
-    ghrNumBits(params.indirectGHRBits),
     numTageBits(params.indirectTageBits),
     TBitSizes(params.TBitSizes),
     TTagBitSizes(params.TTagBitSizes),
@@ -48,7 +47,6 @@ ITTAGE::ITTAGE(const ITTAGEParams &params):
     }
     use_alt = 8;
     reset_counter = 128;
-    fatal_if(ghrNumBits > (sizeof(ThreadInfo::ghr)*8), "ghr_size is too big");
 }
 
 void
