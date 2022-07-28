@@ -32,6 +32,7 @@ ITTAGE::ITTAGE(
     base_predictor.resize(params.numThreads);
     for (unsigned int i = 0; i < params.numThreads; ++i) {
         base_predictor[i].resize(baseBTBSize);
+        threadInfo[i].ghr.resize(4096);
     }
 
     for (unsigned i = 0; i < params.numThreads; i++) {
@@ -57,27 +58,28 @@ ITTAGE::genIndirectInfo(ThreadID tid,
     // record the GHR as it was before this prediction
     // It will be used to recover the history in case this prediction is
     // wrong or belongs to bad path
-    indirect_history = new uint64_t(threadInfo[tid].ghr);
+    indirect_history = new bitset(threadInfo[tid].ghr);
 }
 
 void
 ITTAGE::updateDirectionInfo(
         ThreadID tid, bool actually_taken)
 {
-    DPRINTF(Indirect, "Update GHR from %#lx to %#lx (speculative update, direction)\n", threadInfo[tid].ghr,
-            (threadInfo[tid].ghr << 1) | actually_taken);
+    //DPRINTF(Indirect, "Update GHR from %#lx to %#lx (speculative update, direction)\n", threadInfo[tid].ghr,(threadInfo[tid].ghr << 1) | actually_taken);
     threadInfo[tid].ghr <<= 1;
-    threadInfo[tid].ghr |= actually_taken;
-    threadInfo[tid].ghr &= ghrMask;
+    //threadInfo[tid].ghr |= actually_taken;
+    threadInfo.at(tid).ghr.set(0, actually_taken);
+    //threadInfo[tid].ghr &= ghrMask;
 }
 
 void
 ITTAGE::changeDirectionPrediction(ThreadID tid, void * indirect_history, bool actually_taken)
 {
-    uint64_t* previousGhr = static_cast<uint64_t *>(indirect_history);
-    threadInfo[tid].ghr = ((*previousGhr) << 1) + actually_taken;
+    bitset* previousGhr = static_cast<bitset *>(indirect_history);
+    threadInfo.at(tid).ghr = ((*previousGhr) << 1);
+    threadInfo.at(tid).ghr.set(0, actually_taken);
     DPRINTF(Indirect, "Recover GHR to %#lx\n", threadInfo[tid].ghr);
-    threadInfo[tid].ghr &= ghrMask;
+    //threadInfo[tid].ghr &= ghrMask;
     // maybe we should update hash here?
     // No: CSRs are calculated at use-time
 }
@@ -189,7 +191,7 @@ ITTAGE::commit(InstSeqNum seq_num, ThreadID tid,
     ThreadInfo &t_info = threadInfo[tid];
 
     // we do not need to recover the GHR, so delete the information
-    uint64_t *previousGhr = static_cast<uint64_t *>(indirect_history);
+    bitset *previousGhr = static_cast<bitset *>(indirect_history);
     delete previousGhr;
 
     if (t_info.pathHist.empty()) return;
@@ -232,7 +234,7 @@ ITTAGE::squash(InstSeqNum seq_num, ThreadID tid)
 void
 ITTAGE::deleteIndirectInfo(ThreadID tid, void * indirect_history)
 {
-    uint64_t * previousGhr = static_cast<uint64_t *>(indirect_history);
+    bitset * previousGhr = static_cast<bitset *>(indirect_history);
     threadInfo[tid].ghr = *previousGhr;
 
     delete previousGhr;
@@ -244,7 +246,7 @@ ITTAGE::recordTarget(
         ThreadID tid)
 {
     // here ghr was appended one more
-    uint64_t ghr_last = threadInfo[tid].ghr | 1;
+    bitset ghr_last = threadInfo.at(tid).ghr.set(0, 1);
     threadInfo[tid].ghr >>= 1;
     DPRINTF(Indirect, "record with target:%s\n", target);
     // todo: adjust according to ITTAGE
@@ -381,8 +383,7 @@ ITTAGE::recordTarget(
 
     set(previous_target[tid], target);
 
-    DPRINTF(Indirect, "Update GHR from %#lx to %#lx (miss path with indirect?)\n", threadInfo[tid].ghr,
-            (threadInfo[tid].ghr << 1) | ghr_last);
+    //DPRINTF(Indirect, "Update GHR from %#lx to %#lx (miss path with indirect?)\n", threadInfo[tid].ghr,(threadInfo[tid].ghr << 1) | ghr_last);
     threadInfo[tid].ghr = (threadInfo[tid].ghr << 1) | ghr_last;
 }
 
@@ -390,34 +391,40 @@ int ITTAGE::getTableGhrLen(int table) {
     return historyLenTable[table];
 }
 
-uint64_t ITTAGE::getCSR1(uint64_t ghr, int table) {
+uint64_t ITTAGE::getCSR1(bitset& ghr, int table) {
     uint64_t ghrLen = getTableGhrLen(table);
-    ghr = ghr & ((1ULL << ghrLen) - 1); // remove unnecessary data on higher position
-    DPRINTF(Indirect, "CSR1 using GHR: %#lx, ghrLen: %d\n", ghr, ghrLen);
-    uint64_t ret = 0, mask = 0x7f;
+    bitset ghr_cpy(ghr);
+    ghr_cpy.resize(ghrLen);
+    bitset mask(ghrLen,0x7f);
+    bitset ret(ghrLen,0);
+    //DPRINTF(Indirect, "CSR1 using GHR: %#lx, ghrLen: %d\n", ghr, ghrLen);
     uint64_t i = 0;
     while (i + 7 < ghrLen) {
-        ret = ret ^ (ghr & mask);
-        ghr >>= 7;
+        ret = ret ^ (ghr_cpy & mask);
+        ghr_cpy >>= 7;
         i += 7;
     }
-    ret = ret ^ (ghr & mask);
-    return ret & mask;
+    ret = ret ^ (ghr_cpy & mask);
+    ret.resize(7);
+    return ret.to_ulong();
 }
 
-uint64_t ITTAGE::getCSR2(uint64_t ghr, int table) {
+uint64_t ITTAGE::getCSR2(bitset& ghr, int table) {
     uint64_t ghrLen = getTableGhrLen(table);
-    ghr = ghr & ((1ULL << ghrLen) - 1); // remove unnecessary data on higher position
-    DPRINTF(Indirect, "CSR2 using GHR: %#lx, ghrLen: %d\n", ghr, ghrLen);
-    uint64_t ret = 0, mask = 0xff;
+    bitset ghr_cpy(ghr);
+    ghr_cpy.resize(ghrLen);
+    bitset mask(ghrLen,0xff);
+    bitset ret(ghrLen,0);
+    //DPRINTF(Indirect, "CSR1 using GHR: %#lx, ghrLen: %d\n", ghr, ghrLen);
     uint64_t i = 0;
     while (i + 8 < ghrLen) {
-        ret = ret ^ (ghr & mask);
-        ghr >>= 8;
+        ret = ret ^ (ghr_cpy & mask);
+        ghr_cpy >>= 8;
         i += 8;
     }
-    ret = ret ^ (ghr & mask);
-    return ret & mask;
+    ret = ret ^ (ghr_cpy & mask);
+    ret.resize(8);
+    return ret.to_ulong();
 }
 
 uint8_t ITTAGE::getAddrFold(int address) {

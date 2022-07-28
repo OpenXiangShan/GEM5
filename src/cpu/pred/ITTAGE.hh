@@ -17,6 +17,7 @@
 #include "config/the_isa.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/pred/indirect.hh"
+#include <boost/dynamic_bitset.hpp>
 #include "params/ITTAGE.hh"
 
 namespace gem5
@@ -26,7 +27,7 @@ namespace branch_prediction
 {
 
 using namespace RiscvISA;
-
+using bitset = boost::dynamic_bitset<>;
 class ITTAGE : public IndirectPredictor {
 public:
     ITTAGE(const ITTAGEParams &params);
@@ -43,8 +44,8 @@ public:
 
 private:
     bool lookup_helper(Addr, PCStateBase&, PCStateBase&, ThreadID, int&, int&, int&, int&, int&, bool&);
-    uint64_t getCSR1(uint64_t ghr, int table);
-    uint64_t getCSR2(uint64_t ghr, int table);
+    uint64_t getCSR1(bitset& ghr, int table);
+    uint64_t getCSR2(bitset& ghr, int table);
     uint8_t getAddrFold(int address);
     int getTableGhrLen(int table);
     const uint64_t ghrMask;
@@ -75,11 +76,11 @@ private:
     };
 
     struct ThreadInfo {
-        ThreadInfo() : headHistEntry(0), ghr(0) {}
+        ThreadInfo() : headHistEntry(0){}
 
         std::deque<HistoryEntry> pathHist;
         unsigned headHistEntry;
-        uint64_t ghr;
+        bitset ghr;
     };
 
     unsigned historyLenTable[16];
