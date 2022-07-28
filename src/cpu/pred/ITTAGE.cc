@@ -391,15 +391,11 @@ uint64_t ITTAGE::getTableGhrLen(int table) {
 }
 
 uint64_t ITTAGE::getCSR1(boost::dynamic_bitset<>& ghr, int table) {
-    boost::dynamic_bitset<> ghr_cpy(ghr);
     uint64_t ghrLen = getTableGhrLen(table);
-    boost::dynamic_bitset<> ghr_mask(ghrLen);
-    ghr_mask.set();
-    ghr = ghr & ghr_mask; // remove unnecessary data on higher position
-    boost::dynamic_bitset<> ret(64, 0);
-    boost::dynamic_bitset<> mask(TBitSizes[table]-1);
-    mask.set();
-    // uint64_t ret = 0, mask = ((1 << (TBitSizes[table] - 1)) - 1);
+    boost::dynamic_bitset<> ghr_cpy(ghr); // remove unnecessary data on higher position
+    ghr_cpy.resize(ghrLen);
+    boost::dynamic_bitset<> ret(ghrLen, 0);
+    // uint64_t ret = 0, mask = ((1 << (TBitSizes[table]-1)) - 1);
     int i = 0;
     while (i + 7 < ghrLen) {
         ret = ghr_cpy ^ ret;
@@ -407,19 +403,16 @@ uint64_t ITTAGE::getCSR1(boost::dynamic_bitset<>& ghr, int table) {
         i += 7;
     }
     ret = ret ^ ghr_cpy;
-    return (ret & mask).to_ulong();
+    ret.resize(TBitSizes[table]-1);
+    return ret.to_ulong();
 }
 
 uint64_t ITTAGE::getCSR2(boost::dynamic_bitset<>& ghr, int table) {
-    boost::dynamic_bitset<> ghr_cpy(ghr);
     uint64_t ghrLen = getTableGhrLen(table);
-    boost::dynamic_bitset<> ghr_mask(ghrLen);
-    ghr_mask.set();
-    ghr = ghr & ghr_mask; // remove unnecessary data on higher position
-    boost::dynamic_bitset<> ret(64, 0);
-    boost::dynamic_bitset<> mask(TBitSizes[table]);
-    mask.set();
-    // uint64_t ret = 0, mask = ((1 << (TBitSizes[table] - 1)) - 1);
+    boost::dynamic_bitset<> ghr_cpy(ghr); // remove unnecessary data on higher position
+    ghr_cpy.resize(ghrLen);
+    boost::dynamic_bitset<> ret(ghrLen, 0);
+    // uint64_t ret = 0, mask = ((1 << (TBitSizes[table])) - 1);
     int i = 0;
     while (i + 8 < ghrLen) {
         ret = ghr_cpy ^ ret;
@@ -427,7 +420,8 @@ uint64_t ITTAGE::getCSR2(boost::dynamic_bitset<>& ghr, int table) {
         i += 8;
     }
     ret = ret ^ ghr_cpy;
-    return (ret & mask).to_ulong();
+    ret.resize(TBitSizes[table]);
+    return ret.to_ulong();
 }
 
 uint64_t ITTAGE::getAddrFold(uint64_t address, int table) {
