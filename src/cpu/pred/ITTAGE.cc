@@ -6,6 +6,7 @@
 
 #include "base/intmath.hh"
 #include "debug/Indirect.hh"
+#include <algorithm>
 
 namespace gem5
 {
@@ -25,7 +26,12 @@ ITTAGE::ITTAGE(const ITTAGEParams &params):
     TTagPcShifts(params.TTagPcShifts),
     histLengths(params.histLengths)
 {
+    uint32_t max_histlength = *std::max_element(histLengths.begin(), histLengths.end());
     threadInfo.resize(params.numThreads);
+    for(int i = 0; i < params.numThreads; i++)
+    {
+        threadInfo[i].ghr.resize(max_histlength);
+    }
 
     targetCache.resize(params.numThreads);
     previous_target.resize(params.numThreads);
@@ -53,7 +59,7 @@ ITTAGE::genIndirectInfo(ThreadID tid,
     // record the GHR as it was before this prediction
     // It will be used to recover the history in case this prediction is
     // wrong or belongs to bad path
-    indirect_history = new unsigned(threadInfo.at(tid).ghr);
+    indirect_history = new boost::dynamic_bitset<>(threadInfo.at(tid).ghr);
 }
 
 void
@@ -61,15 +67,17 @@ ITTAGE::updateDirectionInfo(
         ThreadID tid, bool actually_taken)
 {
     threadInfo.at(tid).ghr <<= 1;
-    threadInfo.at(tid).ghr |= actually_taken;
+    threadInfo.at(tid).ghr.set(0, actually_taken);
+    
     //threadInfo.at(tid).ghr &= ghrMask;
 }
 
 void
 ITTAGE::changeDirectionPrediction(ThreadID tid, void * indirect_history, bool actually_taken)
 {
-    unsigned * previousGhr = static_cast<unsigned *>(indirect_history);
-    threadInfo.at(tid).ghr = ((*previousGhr) << 1) + actually_taken;
+    boost::dynamic_bitset<>* previousGhr = static_cast<boost::dynamic_bitset<>*>(indirect_history);
+    threadInfo.at(tid).ghr = ((*previousGhr) << 1);
+    threadInfo.at(tid).ghr.set(0, actually_taken);
     //threadInfo.at(tid).ghr &= ghrMask;
     // maybe we should update hash here?
     // No: CSRs are calculated at use-time
@@ -384,18 +392,23 @@ uint64_t ITTAGE::getTableGhrLen(int table) {
     return histLengths[table];
 }
 
-uint64_t ITTAGE::getCSR1(uint64_t ghr, int table) {
+uint64_t ITTAGE::getCSR1(boost::dynamic_bitset<>& ghr, int table) {
     uint64_t ghrLen = getTableGhrLen(table);
-    ghr = ghr & ((1ULL << ghrLen) - 1); // remove unnecessary data on higher position
-    uint64_t ret = 0, mask = ((1 << (TBitSizes[table] - 1)) - 1);
+    boost::dynamic_bitset<> ghr_mask(ghrLen);
+    ghr_mask.set();
+    ghr = ghr & ghr_mask; // remove unnecessary data on higher position
+    boost::dynamic_bitset<> ret(64, 0);
+    boost::dynamic_bitset<> mask(TBitSizes[table]);
+    mask.set();
+    // uint64_t ret = 0, mask = ((1 << (TBitSizes[table] - 1)) - 1);
     int i = 0;
     while (i + 7 < ghrLen) {
-        ret = ret ^ ghr;
+        ret = ghr ^ ret;
         ghr >>= 7;
         i += 7;
     }
     ret = ret ^ ghr;
-    return ret & mask;
+    return (ret & mask).to_ulong();
 }
 
 uint64_t ITTAGE::getCSR2(uint64_t ghr, int table) {

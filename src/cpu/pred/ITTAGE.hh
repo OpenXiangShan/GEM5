@@ -16,6 +16,7 @@
 #include "config/the_isa.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/pred/indirect.hh"
+#include <boost/dynamic_bitset.hpp>
 #include "params/ITTAGE.hh"
 
 namespace gem5
@@ -41,7 +42,7 @@ public:
 
 private:
     bool lookup_helper(Addr, PCStateBase&, PCStateBase&, ThreadID, int&, int&, int&, int&, int&, bool&);
-    uint64_t getCSR1(uint64_t ghr, int table);
+    uint64_t getCSR1(boost::dynamic_bitset<>& ghr, int table);
     uint64_t getCSR2(uint64_t ghr, int table);
     uint32_t getAddrFold(uint64_t address, int table);
     uint32_t getTag(Addr pc, uint32_t csr1, uint32_t csr2, int table);
@@ -82,7 +83,7 @@ private:
 
         std::deque<HistoryEntry> pathHist;
         unsigned headHistEntry;
-        uint64_t ghr;
+        boost::dynamic_bitset<> ghr;
     };
 
     std::vector<ThreadInfo> threadInfo;
