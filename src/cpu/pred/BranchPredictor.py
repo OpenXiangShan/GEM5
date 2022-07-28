@@ -59,12 +59,14 @@ class ITTAGE(IndirectPredictor):
 
     indirectPathLength = Param.Unsigned(3, "Previous indirect targets to use for path history")
     numPredictors = Param.Unsigned(3, "Number of TAGE predictors")
-    histBitSizes = VectorParam.Int(
+    TBitSizes = VectorParam.Int(
         [8, 9, 10], "the bit sizes of the ITTAGE T1~Tn length")
-    histTagBitSizes = VectorParam.Int(
+    TTagBitSizes = VectorParam.Int(
         [6, 8, 10], "the T1~Tn entry's tag bit size")
-    histTagPcShifts = VectorParam.Int(
-        [2,3,5],"when the T1~Tn entry's tag generating, PC right shift")
+    TTagPcShifts = VectorParam.Int(
+        [2,3,5],"when the T1~Tn entry's tag generating, PC right shift") 
+    histLengths = VectorParam.Int(
+        [8, 8, 8], "the ITTAGE T1~Tn history length")
     indirectGHRBits = Param.Unsigned(31, "Indirect GHR number of bits")
     indirectTageBits = Param.Unsigned(16, "Tage bit length for base predictor")
     

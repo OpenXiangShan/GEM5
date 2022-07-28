@@ -51,9 +51,10 @@ private:
     const unsigned numPredictors;
     const unsigned ghrNumBits;
     const unsigned numTageBits;
-    std::vector<int> histBitSizes;
-    std::vector<int> histTagBitSizes;
-    std::vector<int> histTagPcShifts;
+    std::vector<int> TBitSizes;
+    std::vector<int> TTagBitSizes;
+    std::vector<int> TTagPcShifts;
+    std::vector<int> histLengths;
     int use_alt; // min:0 max: 15
     int reset_counter;
     std::vector<std::unique_ptr<PCStateBase>> previous_target;
@@ -81,7 +82,7 @@ private:
 
         std::deque<HistoryEntry> pathHist;
         unsigned headHistEntry;
-        unsigned ghr;
+        uint64_t ghr;
     };
 
     std::vector<ThreadInfo> threadInfo;

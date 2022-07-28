@@ -20,9 +20,10 @@ ITTAGE::ITTAGE(const ITTAGEParams &params):
     numPredictors(params.numPredictors),
     ghrNumBits(params.indirectGHRBits),
     numTageBits(params.indirectTageBits),
-    histBitSizes(params.histBitSizes),
-    histTagBitSizes(params.histTagBitSizes),
-    histTagPcShifts(params.histTagPcShifts)
+    TBitSizes(params.TBitSizes),
+    TTagBitSizes(params.TTagBitSizes),
+    TTagPcShifts(params.TTagPcShifts),
+    histLengths(params.histLengths)
 {
     threadInfo.resize(params.numThreads);
 
@@ -37,7 +38,7 @@ ITTAGE::ITTAGE(const ITTAGEParams &params):
     for (unsigned i = 0; i < params.numThreads; i++) {
         targetCache[i].resize(numPredictors);
         for (unsigned j = 0; j < numPredictors; ++j) {
-            targetCache[i][j].resize((1 << histBitSizes[j]));
+            targetCache[i][j].resize((1 << TBitSizes[j]));
         }
     }
     use_alt = 8;
@@ -363,7 +364,7 @@ ITTAGE::recordTarget(
                     if (reset_counter > 0) --reset_counter;
                     if (reset_counter == 0) {
                         for (int i = 0; i < numPredictors; ++i) {
-                            for (int j = 0; j < (1 << histBitSizes[i]); ++j) {
+                            for (int j = 0; j < (1 << TBitSizes[i]); ++j) {
                                 targetCache.at(tid).at(i).at(j).useful = 0;
                             }
                         }
@@ -380,34 +381,34 @@ ITTAGE::recordTarget(
 }
 
 int ITTAGE::getTableGhrLen(int table) {
-    return 8 << table;
+    return histLengths[table];
 }
 
 unsigned ITTAGE::getCSR1(unsigned ghr, int table) {
     int ghrLen = getTableGhrLen(table);
     ghr = ghr & ((1ULL << ghrLen) - 1); // remove unnecessary data on higher position
-    unsigned ret = 0, mask = ((1 << (histBitSizes[table]-1)) - 1);
+    unsigned ret = 0, mask = ((1 << (TBitSizes[table]-1)) - 1);
     int i = 0;
     while (i + 7 < ghrLen) {
-        ret = ret ^ (ghr & mask);
+        ret = ret ^ ghr;
         ghr >>= 7;
         i += 7;
     }
-    ret = ret ^ (ghr & mask);
+    ret = ret ^ ghr;
     return ret & mask;
 }
 
 unsigned ITTAGE::getCSR2(unsigned ghr, int table) {
     int ghrLen = getTableGhrLen(table);
     ghr = ghr & ((1ULL << ghrLen) - 1); // remove unnecessary data on higher position
-    unsigned ret = 0, mask = ((1 << (histBitSizes[table])) - 1);
+    unsigned ret = 0, mask = ((1 << (TBitSizes[table])) - 1);
     int i = 0;
     while (i + 8 < ghrLen) {
-        ret = ret ^ (ghr & mask);
+        ret = ret ^ ghr;
         ghr >>= 8;
         i += 8;
     }
-    ret = ret ^ (ghr & mask);
+    ret = ret ^ ghr;
     return ret & mask;
 }
 
@@ -418,10 +419,10 @@ uint32_t ITTAGE::getAddrFold(int address,int table) {
         folded_address ^= ((address % (1 << ((k + 1) * 8))) / (1 << (k * 8)));
     }
     folded_address ^= address / (1 << (24));
-    return folded_address & ((1 << histBitSizes[table]) - 1);
+    return folded_address & ((1 << TBitSizes[table]) - 1);
 }
 uint32_t ITTAGE::getTag(Addr pc, uint32_t csr1, uint32_t csr2, int table) {
-    return ((pc >> histTagPcShifts[table]) ^ csr1 ^ (csr2 << 1)) & ((1 << histTagBitSizes[table]) - 1);
+    return ((pc >> TTagPcShifts[table]) ^ csr1 ^ (csr2 << 1)) & ((1 << TTagBitSizes[table]) - 1);
 }
 
 
@@ -432,4 +433,5 @@ uint32_t ITTAGE::getTag(Addr pc, uint32_t csr1, uint32_t csr2, int table) {
 
 
 //1:485573
-//2:
+//2:490229
+//3:1161498
