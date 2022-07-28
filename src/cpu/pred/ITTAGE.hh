@@ -43,11 +43,10 @@ public:
 private:
     bool lookup_helper(Addr, PCStateBase&, PCStateBase&, ThreadID, int&, int&, int&, int&, int&, bool&);
     uint64_t getCSR1(boost::dynamic_bitset<>& ghr, int table);
-    uint64_t getCSR2(uint64_t ghr, int table);
-    uint32_t getAddrFold(uint64_t address, int table);
-    uint32_t getTag(Addr pc, uint32_t csr1, uint32_t csr2, int table);
+    uint64_t getCSR2(boost::dynamic_bitset<>& ghr, int table);
+    uint64_t getAddrFold(uint64_t address, int table);
+    uint64_t getTag(Addr pc, uint64_t csr1, uint64_t csr2, int table);
     uint64_t getTableGhrLen(int table);
-    const unsigned ghrMask;
     const unsigned pathLength;
     const unsigned numPredictors;
     const unsigned ghrNumBits;

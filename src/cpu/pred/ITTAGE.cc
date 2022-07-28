@@ -16,7 +16,6 @@ namespace branch_prediction
 
 ITTAGE::ITTAGE(const ITTAGEParams &params):
     IndirectPredictor(params),
-    ghrMask((1 << params.indirectGHRBits)-1),
     pathLength(params.indirectPathLength),
     numPredictors(params.numPredictors),
     ghrNumBits(params.indirectGHRBits),
@@ -96,11 +95,11 @@ ITTAGE::lookup_helper(Addr br_addr, PCStateBase& target, PCStateBase& alt_target
     int predictor_index_2 = 0;
 
     for (int i = numPredictors - 1; i >= 0; --i) {
-        unsigned csr1 = getCSR1(threadInfo.at(tid).ghr, i);
-        unsigned csr2 = getCSR2(threadInfo.at(tid).ghr, i);
+        uint32_t csr1 = getCSR1(threadInfo.at(tid).ghr, i);
+        uint32_t csr2 = getCSR2(threadInfo.at(tid).ghr, i);
         uint32_t index = getAddrFold(br_addr,i);
-        unsigned tmp_index = index ^ csr1;
-        unsigned tmp_tag = getTag(br_addr, csr1, csr2, i);
+        uint32_t tmp_index = index ^ csr1;
+        uint32_t tmp_tag = getTag(br_addr, csr1, csr2, i);
         const auto &way = targetCache.at(tid).at(i).at(tmp_index);
         if (way.tag == tmp_tag && way.target) {
             if (pred_counts == 0) {//第一次命中
@@ -199,7 +198,7 @@ ITTAGE::commit(InstSeqNum seq_num, ThreadID tid,
     ThreadInfo &t_info = threadInfo.at(tid);
 
     // we do not need to recover the GHR, so delete the information
-    unsigned * previousGhr = static_cast<unsigned *>(indirect_history);
+    boost::dynamic_bitset<>* previousGhr = static_cast<boost::dynamic_bitset<>*>(indirect_history);
     delete previousGhr;
 
     if (t_info.pathHist.empty()) return;
@@ -242,7 +241,7 @@ ITTAGE::squash(InstSeqNum seq_num, ThreadID tid)
 void
 ITTAGE::deleteIndirectInfo(ThreadID tid, void * indirect_history)
 {
-    unsigned * previousGhr = static_cast<unsigned *>(indirect_history);
+    boost::dynamic_bitset<>* previousGhr = static_cast<boost::dynamic_bitset<>*>(indirect_history);
     threadInfo.at(tid).ghr = *previousGhr;
 
     delete previousGhr;
@@ -254,7 +253,7 @@ ITTAGE::recordTarget(
         ThreadID tid)
 {
     // here ghr was appended one more
-    int ghr_last = threadInfo.at(tid).ghr | 1;
+    boost::dynamic_bitset<> ghr_last = threadInfo.at(tid).ghr.set(0, 1);// | 1;
     threadInfo.at(tid).ghr >>= 1;
     DPRINTF(Indirect, "record with target:%s\n", target);
     // todo: adjust according to ITTAGE
@@ -385,7 +384,6 @@ ITTAGE::recordTarget(
     }
 
     threadInfo.at(tid).ghr = (threadInfo.at(tid).ghr << 1) | ghr_last;
-
 }
 
 uint64_t ITTAGE::getTableGhrLen(int table) {
@@ -393,6 +391,27 @@ uint64_t ITTAGE::getTableGhrLen(int table) {
 }
 
 uint64_t ITTAGE::getCSR1(boost::dynamic_bitset<>& ghr, int table) {
+    boost::dynamic_bitset<> ghr_cpy(ghr);
+    uint64_t ghrLen = getTableGhrLen(table);
+    boost::dynamic_bitset<> ghr_mask(ghrLen);
+    ghr_mask.set();
+    ghr = ghr & ghr_mask; // remove unnecessary data on higher position
+    boost::dynamic_bitset<> ret(64, 0);
+    boost::dynamic_bitset<> mask(TBitSizes[table]-1);
+    mask.set();
+    // uint64_t ret = 0, mask = ((1 << (TBitSizes[table] - 1)) - 1);
+    int i = 0;
+    while (i + 7 < ghrLen) {
+        ret = ghr_cpy ^ ret;
+        ghr_cpy >>= 7;
+        i += 7;
+    }
+    ret = ret ^ ghr_cpy;
+    return (ret & mask).to_ulong();
+}
+
+uint64_t ITTAGE::getCSR2(boost::dynamic_bitset<>& ghr, int table) {
+    boost::dynamic_bitset<> ghr_cpy(ghr);
     uint64_t ghrLen = getTableGhrLen(table);
     boost::dynamic_bitset<> ghr_mask(ghrLen);
     ghr_mask.set();
@@ -402,31 +421,17 @@ uint64_t ITTAGE::getCSR1(boost::dynamic_bitset<>& ghr, int table) {
     mask.set();
     // uint64_t ret = 0, mask = ((1 << (TBitSizes[table] - 1)) - 1);
     int i = 0;
-    while (i + 7 < ghrLen) {
-        ret = ghr ^ ret;
-        ghr >>= 7;
-        i += 7;
+    while (i + 8 < ghrLen) {
+        ret = ghr_cpy ^ ret;
+        ghr_cpy >>= 8;
+        i += 8;
     }
-    ret = ret ^ ghr;
+    ret = ret ^ ghr_cpy;
     return (ret & mask).to_ulong();
 }
 
-uint64_t ITTAGE::getCSR2(uint64_t ghr, int table) {
-    uint64_t ghrLen = getTableGhrLen(table);
-    ghr = ghr & ((1ULL << ghrLen) - 1); // remove unnecessary data on higher position
-    uint64_t ret = 0, mask = ((1 << (TBitSizes[table])) - 1);
-    int i = 0;
-    while (i + 8 < ghrLen) {
-        ret = ret ^ ghr;
-        ghr >>= 8;
-        i += 8;
-    }
-    ret = ret ^ ghr;
-    return ret & mask;
-}
-
-uint32_t ITTAGE::getAddrFold(uint64_t address, int table) {
-    uint32_t folded_address, k;
+uint64_t ITTAGE::getAddrFold(uint64_t address, int table) {
+    uint64_t folded_address, k;
     folded_address = 0;
     for (k = 0; k < 3; k++) {
         folded_address ^= ((address % (1 << ((k + 1) * 8))) / (1 << (k * 8)));
@@ -434,7 +439,7 @@ uint32_t ITTAGE::getAddrFold(uint64_t address, int table) {
     folded_address ^= address / (1 << (24));
     return folded_address & ((1 << TBitSizes[table]) - 1);
 }
-uint32_t ITTAGE::getTag(Addr pc, uint32_t csr1, uint32_t csr2, int table) {
+uint64_t ITTAGE::getTag(Addr pc, uint64_t csr1, uint64_t csr2, int table) {
     return ((pc >> TTagPcShifts[table]) ^ csr1 ^ (csr2 << 1)) & ((1 << TTagBitSizes[table]) - 1);
 }
 
