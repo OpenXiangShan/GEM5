@@ -20,7 +20,9 @@ ITTAGE::ITTAGE(const ITTAGEParams &params):
     numPredictors(params.numPredictors),
     ghrNumBits(params.indirectGHRBits),
     numTageBits(params.indirectTageBits),
-    histBitSizes(params.histBitSizes)
+    histBitSizes(params.histBitSizes),
+    histTagBitSizes(params.histTagBitSizes),
+    histTagPcShifts(params.histTagPcShifts),
 {
     threadInfo.resize(params.numThreads);
 
@@ -419,7 +421,7 @@ uint32_t ITTAGE::getAddrFold(int address,int table) {
     return folded_address & ((1 << histBitSizes[table]) - 1);
 }
 uint32_t ITTAGE::getTag(Addr pc, uint32_t csr1, uint32_t csr2, int table) {
-    return (pc & 0xff) ^ csr1 ^ (csr2 << 1);
+    return ((pc >> histTagPcShifts[table]) ^ csr1 ^ (csr2 << 1)) & ((1 << histTagBitSizes[table]) - 1);
 }
 
 
@@ -427,3 +429,7 @@ uint32_t ITTAGE::getTag(Addr pc, uint32_t csr1, uint32_t csr2, int table) {
 
 } // namespace branch_prediction
 } // namespace gem5
+
+
+//1:485573
+//2:

@@ -52,6 +52,8 @@ private:
     const unsigned ghrNumBits;
     const unsigned numTageBits;
     std::vector<int> histBitSizes;
+    std::vector<int> histTagBitSizes;
+    std::vector<int> histTagPcShifts;
     int use_alt; // min:0 max: 15
     int reset_counter;
     std::vector<std::unique_ptr<PCStateBase>> previous_target;
