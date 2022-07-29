@@ -49,8 +49,8 @@ private:
     uint64_t getTableGhrLen(int table);
     const unsigned pathLength;
     const unsigned numPredictors;
-    const unsigned numTageBits;
-    std::vector<int> TBitSizes;
+    const unsigned simpleBTBSize;
+    std::vector<int> tableSizes;
     std::vector<int> TTagBitSizes;
     std::vector<int> TTagPcShifts;
     std::vector<int> histLengths;
@@ -85,6 +85,8 @@ private:
     };
 
     std::vector<ThreadInfo> threadInfo;
+
+    std::string prBuf1, prBuf2;
 
 };
 

@@ -58,16 +58,16 @@ class ITTAGE(IndirectPredictor):
     cxx_header = "cpu/pred/ITTAGE.hh"
 
     indirectPathLength = Param.Unsigned(3, "Previous indirect targets to use for path history")
-    numPredictors = Param.Unsigned(15, "Number of TAGE predictors")
-    TBitSizes = VectorParam.Int(
-        [12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 11, 11, 11, 11, 11], "the bit sizes of the ITTAGE T1~Tn length")
+    numPredictors = Param.Unsigned(11, "Number of TAGE predictors")
+    tableSizes = VectorParam.Int(
+        [256] * 15, "the bit sizes of the ITTAGE T1~Tn length")
     TTagBitSizes = VectorParam.Int(
         [9, 9, 13, 13, 13, 13, 13, 13, 13, 13, 15, 15, 15, 15, 15], "the T1~Tn entry's tag bit size")
     TTagPcShifts = VectorParam.Int(
         [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2], "when the T1~Tn entry's tag generating, PC right shift")
     histLengths = VectorParam.Int(
-        [0, 10, 16, 27, 44, 60, 64, 64, 64, 64, 64, 64, 64, 64, 64], "the ITTAGE T1~Tn history length")
-    indirectTageBits = Param.Unsigned(16, "Tage bit length for base predictor")
+        [4, 10, 16, 27, 44, 60, 96, 109, 219, 449, 487], "the ITTAGE T1~Tn history length")
+    simpleBTBSize = Param.Unsigned(512, "size of base predictor")
     
 
 class BranchPredictor(SimObject):
