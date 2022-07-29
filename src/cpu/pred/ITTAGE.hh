@@ -26,6 +26,7 @@ namespace branch_prediction
 {
 
 class ITTAGE : public IndirectPredictor {
+    using bitset = boost::dynamic_bitset<>;
 public:
 
     ITTAGE(const ITTAGEParams &params);
@@ -42,10 +43,10 @@ public:
 
 private:
     bool lookup_helper(Addr, PCStateBase&, PCStateBase&, ThreadID, int&, int&, int&, int&, int&, bool&);
-    uint64_t getCSR1(boost::dynamic_bitset<>& ghr, int table);
-    uint64_t getCSR2(boost::dynamic_bitset<>& ghr, int table);
+    uint64_t getCSR1(bitset& ghr, int table);
+    uint64_t getCSR2(bitset& ghr, int table);
     uint64_t getAddrFold(uint64_t address, int table);
-    uint64_t getTag(Addr pc, uint64_t csr1, uint64_t csr2, int table);
+    uint64_t getTag(Addr pc, bitset& ghr, int table);
     uint64_t getTableGhrLen(int table);
     const unsigned pathLength;
     const unsigned numPredictors;
@@ -81,7 +82,7 @@ private:
 
         std::deque<HistoryEntry> pathHist;
         unsigned headHistEntry;
-        boost::dynamic_bitset<> ghr;
+        bitset ghr;
     };
 
     std::vector<ThreadInfo> threadInfo;
