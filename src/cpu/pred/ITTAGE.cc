@@ -98,7 +98,6 @@ ITTAGE::lookup_helper(Addr br_addr, PCStateBase& target, PCStateBase& alt_target
 
     for (int i = numPredictors - 1; i >= 0; --i) {
         uint32_t csr1 = getCSR1(threadInfo[tid].ghr, i);
-        uint32_t csr2 = getCSR2(threadInfo[tid].ghr, i);
         to_string(threadInfo[tid].ghr, prBuf1);
         DPRINTF(Indirect, "ITTAGE Predictor %i predict pc %#lx with ghr %s\n",
                 i, br_addr, prBuf1);
@@ -378,14 +377,15 @@ ITTAGE::recordTarget(
             for (; start_pos < numPredictors; ++start_pos) {
                 uint32_t new_index = getAddrFold(hist_entry.pcAddr, start_pos);
                 new_index ^= getCSR1(threadInfo[tid].ghr, start_pos);
-                if (targetCache[tid][start_pos][new_index].useful == 0) {
+                auto& way_new = targetCache[tid][start_pos][new_index];
+                if (way_new.useful == 0) {
                     if (reset_counter < 255) reset_counter++;
-                    set(targetCache[tid][start_pos][new_index].target, target);
-                    targetCache[tid][start_pos][new_index].tag =
+                    set(way_new.target, target);
+                    way_new.tag =
                         getTag(hist_entry.pcAddr,
                                threadInfo[tid].ghr,
                                start_pos);
-                    targetCache[tid][start_pos][new_index].counter = 1;
+                    way_new.counter = 1;
 
                     to_string(threadInfo[tid].ghr, prBuf1);
                     DPRINTF(Indirect,
@@ -406,8 +406,8 @@ ITTAGE::recordTarget(
                             "Allocating table %u [%u] is still usefull, u:%u, "
                             "target: %#lx\n",
                             start_pos, new_index,
-                            targetCache[tid][start_pos][new_index].useful,
-                            targetCache[tid][start_pos][new_index].target->instAddr());
+                            way_new.useful,
+                            way_new.target->instAddr());
 
                         --reset_counter;
                     }
