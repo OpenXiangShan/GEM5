@@ -60,7 +60,7 @@ class ITTAGE(IndirectPredictor):
     indirectPathLength = Param.Unsigned(3, "Previous indirect targets to use for path history")
     numPredictors = Param.Unsigned(11, "Number of TAGE predictors")
     tableSizes = VectorParam.Int(
-        [256] * 15, "the bit sizes of the ITTAGE T1~Tn length")
+        [256] * 15, "the ITTAGE T1~Tn length")
     TTagBitSizes = VectorParam.Int(
         [9, 9, 13, 13, 13, 13, 13, 13, 13, 13, 15, 15, 15, 15, 15], "the T1~Tn entry's tag bit size")
     TTagPcShifts = VectorParam.Int(
