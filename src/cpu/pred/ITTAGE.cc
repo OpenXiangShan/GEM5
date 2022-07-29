@@ -22,6 +22,7 @@ ITTAGE::ITTAGE(const ITTAGEParams &params):
     pathLength(params.indirectPathLength),
     numPredictors(params.numPredictors),
     simpleBTBSize(params.simpleBTBSize),
+    pathHistLength(params.pathHistLength),
     tableSizes(params.tableSizes),
     TTagBitSizes(params.TTagBitSizes),
     TTagPcShifts(params.TTagPcShifts),
@@ -234,7 +235,7 @@ ITTAGE::recordIndirect(Addr br_addr, Addr tgt_addr,
     DPRINTF(Indirect, "Recording %x seq:%d\n", br_addr, seq_num);
     HistoryEntry entry(br_addr, tgt_addr, seq_num);
     threadInfo[tid].pathHist.push_back(entry);
-    for (int i = 0;i < 3;i++) {
+    for (int i = 0;i < pathHistLength;i++) {
         bool pathBit = ((br_addr >> i) ^ (tgt_addr >> i)) & 1ULL;
         threadInfo[tid].ghr <<= 1;
         threadInfo[tid].ghr.set(0, pathBit);
@@ -289,8 +290,8 @@ ITTAGE::squash(InstSeqNum seq_num, ThreadID tid)
         t_info.ghr >>=1;
         t_info.mark >>=1;
         if (t_info.mark.test(0)) {
-            t_info.ghr >>=3;
-            t_info.mark >>=3;
+            t_info.ghr >>= pathHistLength;
+            t_info.mark >>= pathHistLength;
         }
     }
     t_info.pathHist.erase(squash_itr, t_info.pathHist.end());
@@ -314,10 +315,9 @@ ITTAGE::recordTarget(
     bitset& ghr = *static_cast<bitset*>(indirect_history);
     // here ghr was appended one more
     bitset ghr_last = threadInfo[tid].ghr.set(0, 1);// | 1;
+    threadInfo[tid].ghr >>= 1;
     if (threadInfo[tid].mark.test(1)) {
-        threadInfo[tid].ghr >>= 4;
-    } else {
-        threadInfo[tid].ghr >>= 1;
+        threadInfo[tid].ghr >>= pathHistLength;
     }
     DPRINTF(Indirect, "record with target:%s\n", target);
     // todo: adjust according to ITTAGE
@@ -513,11 +513,8 @@ ITTAGE::recordTarget(
     if (GEM5_UNLIKELY(TRACING_ON && gem5::debug::Indirect)) {
         to_string(ghr, prBuf1);
     }
-    if (threadInfo[tid].mark.test(1)) {
-        threadInfo[tid].ghr = (threadInfo[tid].ghr << 4) | ghr_last;
-    } else {
-        threadInfo[tid].ghr = (threadInfo[tid].ghr << 1) | ghr_last;
-    }
+    unsigned shift = threadInfo[tid].mark.test(1) ? pathHistLength + 1 : 1;
+    threadInfo[tid].ghr = (threadInfo[tid].ghr << shift) | ghr_last;
     if (GEM5_UNLIKELY(TRACING_ON && gem5::debug::Indirect)) {
         to_string(ghr, prBuf1);
     }
