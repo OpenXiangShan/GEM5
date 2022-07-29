@@ -53,7 +53,7 @@ ITTAGE::genIndirectInfo(ThreadID tid,
     // record the GHR as it was before this prediction
     // It will be used to recover the history in case this prediction is
     // wrong or belongs to bad path
-    indirect_history = new boost::dynamic_bitset<>(threadInfo[tid].ghr);
+    indirect_history = new bitset(threadInfo[tid].ghr);
 }
 
 void
@@ -77,7 +77,7 @@ ITTAGE::updateDirectionInfo(
 void
 ITTAGE::changeDirectionPrediction(ThreadID tid, void * indirect_history, bool actually_taken)
 {
-    boost::dynamic_bitset<>* previousGhr = static_cast<boost::dynamic_bitset<>*>(indirect_history);
+    bitset* previousGhr = static_cast<bitset*>(indirect_history);
     threadInfo[tid].ghr = ((*previousGhr) << 1);
     threadInfo[tid].ghr.set(0, actually_taken);
     to_string(threadInfo[tid].ghr, prBuf1);
@@ -104,7 +104,7 @@ ITTAGE::lookup_helper(Addr br_addr, PCStateBase& target, PCStateBase& alt_target
                 i, br_addr, prBuf1);
         uint32_t index = getAddrFold(br_addr, i);
         uint32_t tmp_index = index ^ csr1;
-        uint32_t tmp_tag = getTag(br_addr, csr1, csr2, i);
+        uint32_t tmp_tag = getTag(br_addr, threadInfo[tid].ghr, i);
         const auto &way = targetCache[tid][i][tmp_index];
         if (way.tag == tmp_tag && way.target) {
             DPRINTF(Indirect, "tag %#lx is found in predictor %i\n", tmp_tag,
@@ -207,7 +207,7 @@ ITTAGE::commit(InstSeqNum seq_num, ThreadID tid,
     ThreadInfo &t_info = threadInfo[tid];
 
     // we do not need to recover the GHR, so delete the information
-    boost::dynamic_bitset<>* previousGhr = static_cast<boost::dynamic_bitset<>*>(indirect_history);
+    bitset* previousGhr = static_cast<bitset*>(indirect_history);
     delete previousGhr;
 
     if (t_info.pathHist.empty()) return;
@@ -250,7 +250,7 @@ ITTAGE::squash(InstSeqNum seq_num, ThreadID tid)
 void
 ITTAGE::deleteIndirectInfo(ThreadID tid, void * indirect_history)
 {
-    boost::dynamic_bitset<>* previousGhr = static_cast<boost::dynamic_bitset<>*>(indirect_history);
+    bitset* previousGhr = static_cast<bitset*>(indirect_history);
     threadInfo[tid].ghr = *previousGhr;
 
     delete previousGhr;
@@ -262,7 +262,7 @@ ITTAGE::recordTarget(
         ThreadID tid)
 {
     // here ghr was appended one more
-    boost::dynamic_bitset<> ghr_last = threadInfo[tid].ghr.set(0, 1);// | 1;
+    bitset ghr_last = threadInfo[tid].ghr.set(0, 1);// | 1;
     threadInfo[tid].ghr >>= 1;
     DPRINTF(Indirect, "record with target:%s\n", target);
     // todo: adjust according to ITTAGE
@@ -317,32 +317,34 @@ ITTAGE::recordTarget(
 
     bool allocate_values = true;
 
-
+    auto& way_sel = targetCache[tid][predictor_sel][predictor_index_sel];
     if (pred_count > 0 && target_sel->equals(target)) {
         // the prediction was from predictor tables and correct
         // increment the counter
         DPRINTF(Indirect, "Prediction for %#lx => %#lx is correct\n", hist_entry.pcAddr, target.instAddr());
-        if (targetCache[tid][predictor_sel][predictor_index_sel].counter <= 2) {
-            ++targetCache[tid][predictor_sel][predictor_index_sel].counter;
+        if (way_sel.counter <= 2) {
+            ++way_sel.counter;
         }
     } else {
         // a misprediction
         DPRINTF(Indirect, "Prediction for %#lx => %#lx is incorrect\n", hist_entry.pcAddr, target.instAddr());
+        auto& way1 = targetCache[tid][predictor][predictor_index];
+        auto& way2 = targetCache[tid][alt_predictor][alt_predictor_index];
         if (pred_count > 0) {
-            if (targetCache[tid][predictor][predictor_index].target->equals(target) &&
+            if (way1.target->equals(target) &&
                 pred_count == 2 &&
-                !targetCache[tid][alt_predictor][alt_predictor_index].target->equals(target)) {
+                !way2.target->equals(target)) {
                 // if pred was right and alt_pred was wrong
-                targetCache[tid][predictor][predictor_index].useful = 1;
+                way1.useful = 1;
                 DPRINTF(Indirect, "Alt pred was wrong, but pred was right\n");
                 allocate_values = false;
                 if (use_alt > 0) {
                     --use_alt;
                 }
             }
-            if (!targetCache[tid][predictor][predictor_index].target->equals(target) &&
+            if (!way1.target->equals(target) &&
                 pred_count == 2 &&
-                targetCache[tid][alt_predictor][alt_predictor_index].target->equals(target)) {
+                way2.target->equals(target)) {
                 // if pred was wrong and alt_pred was right
                 DPRINTF(Indirect, "Alt pred was right, but pred was wrong\n");
                 if (use_alt < 15) {
@@ -350,17 +352,17 @@ ITTAGE::recordTarget(
                 }
             }
             // if counter > 0 then decrement, else replace
-            if (targetCache[tid][predictor_sel][predictor_index_sel].counter > 0) {
-                --targetCache[tid][predictor_sel][predictor_index_sel].counter;
+
+            if (way_sel.counter > 0) {
+                --way_sel.counter;
             } else {
-                set(targetCache[tid][predictor_sel][predictor_index_sel].target, target);
-                targetCache[tid][predictor_sel][predictor_index_sel].tag =
+                set(way_sel.target, target);
+                way_sel.tag =
                     getTag(hist_entry.pcAddr,
-                           getCSR1(threadInfo[tid].ghr, predictor_sel),
-                           getCSR2(threadInfo[tid].ghr, predictor_sel),
+                           threadInfo[tid].ghr,
                            predictor_sel);
-                targetCache[tid][predictor_sel][predictor_index_sel].counter = 1;
-                targetCache[tid][predictor_sel][predictor_index_sel].useful = 0;
+                way_sel.counter = 1;
+                way_sel.useful = 0;
             }
         }
         DPRINTF(Indirect, "Pred count: %d, allocate values: %u\n", pred_count, allocate_values);
@@ -381,8 +383,7 @@ ITTAGE::recordTarget(
                     set(targetCache[tid][start_pos][new_index].target, target);
                     targetCache[tid][start_pos][new_index].tag =
                         getTag(hist_entry.pcAddr,
-                               getCSR1(threadInfo[tid].ghr, start_pos),
-                               getCSR2(threadInfo[tid].ghr, start_pos),
+                               threadInfo[tid].ghr,
                                start_pos);
                     targetCache[tid][start_pos][new_index].counter = 1;
 
@@ -440,13 +441,13 @@ uint64_t ITTAGE::getTableGhrLen(int table) {
     return histLengths[table];
 }
 
-uint64_t ITTAGE::getCSR1(boost::dynamic_bitset<>& ghr, int table) {
+uint64_t ITTAGE::getCSR1(bitset& ghr, int table) {
     uint64_t ghrLen = getTableGhrLen(table);
-    boost::dynamic_bitset<> ghr_cpy(ghr); // remove unnecessary data on higher position
+    bitset ghr_cpy(ghr); // remove unnecessary data on higher position
     to_string(ghr, prBuf1);
     DPRINTF(Indirect, "CSR1 using GHR: %s, ghrLen: %d\n", prBuf1, ghrLen);
     ghr_cpy.resize(ghrLen);
-    boost::dynamic_bitset<> ret(ghrLen, 0);
+    bitset ret(ghrLen, 0);
     int i = 0;
     while (i + 7 < ghrLen) {
         ret = ghr_cpy ^ ret;
@@ -459,13 +460,13 @@ uint64_t ITTAGE::getCSR1(boost::dynamic_bitset<>& ghr, int table) {
     return ret.to_ulong();
 }
 
-uint64_t ITTAGE::getCSR2(boost::dynamic_bitset<>& ghr, int table) {
+uint64_t ITTAGE::getCSR2(bitset& ghr, int table) {
     uint64_t ghrLen = getTableGhrLen(table);
-    boost::dynamic_bitset<> ghr_cpy(ghr); // remove unnecessary data on higher position
+    bitset ghr_cpy(ghr); // remove unnecessary data on higher position
     to_string(ghr, prBuf1);
     DPRINTF(Indirect, "CSR2 using GHR: %s, ghrLen: %d\n", prBuf1, ghrLen);
     ghr_cpy.resize(ghrLen);
-    boost::dynamic_bitset<> ret(ghrLen, 0);
+    bitset ret(ghrLen, 0);
     int i = 0;
     while (i + 8 < ghrLen) {
         ret = ghr_cpy ^ ret;
@@ -487,7 +488,9 @@ uint64_t ITTAGE::getAddrFold(uint64_t address, int table) {
     folded_address ^= address / (1 << (24));
     return folded_address & (tableSizes[table] - 1);
 }
-uint64_t ITTAGE::getTag(Addr pc, uint64_t csr1, uint64_t csr2, int table) {
+uint64_t ITTAGE::getTag(Addr pc, bitset& ghr, int table) {
+    uint64_t csr1 = getCSR1(ghr, table);
+    uint64_t csr2 = getCSR2(ghr, table);
     return ((pc >> TTagPcShifts[table]) ^ csr1 ^ (csr2 << 1)) & ((1 << TTagBitSizes[table]) - 1);
 }
 
