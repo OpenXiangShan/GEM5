@@ -449,13 +449,13 @@ uint64_t ITTAGE::getCSR1(bitset& ghr, int table) {
     ghr_cpy.resize(ghrLen);
     bitset ret(ghrLen, 0);
     int i = 0;
-    while (i + 7 < ghrLen) {
+    while (i + (ceilLog2(tableSizes[table])-1) < ghrLen) {
         ret = ghr_cpy ^ ret;
-        ghr_cpy >>= 7;
-        i += 7;
+        ghr_cpy >>= (ceilLog2(tableSizes[table])-1);
+        i += (ceilLog2(tableSizes[table])-1);
     }
     ret = ret ^ ghr_cpy;
-    ret.resize(ceilLog2(tableSizes[table]));
+    ret.resize(ceilLog2(tableSizes[table])-1);
     DPRINTF(Indirect, "CSR1: %#lx\n", ret.to_ulong());
     return ret.to_ulong();
 }
@@ -468,10 +468,10 @@ uint64_t ITTAGE::getCSR2(bitset& ghr, int table) {
     ghr_cpy.resize(ghrLen);
     bitset ret(ghrLen, 0);
     int i = 0;
-    while (i + 8 < ghrLen) {
+    while (i + ceilLog2(tableSizes[table]) < ghrLen) {
         ret = ghr_cpy ^ ret;
-        ghr_cpy >>= 8;
-        i += 8;
+        ghr_cpy >>= ceilLog2(tableSizes[table]);
+        i += ceilLog2(tableSizes[table]);
     }
     ret = ret ^ ghr_cpy;
     ret.resize(ceilLog2(tableSizes[table]));
@@ -502,3 +502,4 @@ uint64_t ITTAGE::getTag(Addr pc, bitset& ghr, int table) {
 
 
 //337767
+//336489
