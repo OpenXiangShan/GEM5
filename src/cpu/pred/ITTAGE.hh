@@ -102,6 +102,7 @@ private:
         std::deque<HistoryEntry> pathHist;
         unsigned headHistEntry;
         bitset ghr;
+        bitset mark;
     };
 
     std::vector<ThreadInfo> threadInfo;
