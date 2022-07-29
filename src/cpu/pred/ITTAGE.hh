@@ -52,6 +52,7 @@ private:
     const unsigned pathLength;
     const unsigned numPredictors;
     const unsigned simpleBTBSize;
+    const unsigned pathHistLength;
     std::vector<int> tableSizes;
     std::vector<int> TTagBitSizes;
     std::vector<int> TTagPcShifts;
