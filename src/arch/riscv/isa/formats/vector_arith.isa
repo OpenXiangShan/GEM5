@@ -45,6 +45,8 @@ let {{
                 v0 = tmp_v0.as<uint8_t>();
             }
         '''
+    def copyOldVd(vd_idx):
+        return 'COPY_OLD_VD(%d);' % vd_idx
     def loopWrapper(code):
         return "for (uint32_t i = 0; i < this->microVl; i++) {\n" + \
                code + "}\n"
@@ -68,13 +70,8 @@ def format VectorIntFormat(code, category, *flags) {{
                         flags)
     inst_name, inst_suffix = name.split("_", maxsplit=1)
     v0_required = inst_name not in ["vmv"]
-    vs3_required = (inst_name.find("vmacc") != -1 or
-                    inst_name.find("vnmsac") != -1 or
-                    inst_name.find("vmadd") != -1 or
-                    inst_name.find("vnmsub") != -1)
     mask_cond = v0_required and (inst_suffix not in ['vvm', 'vxm', 'vim'])
     need_elem_idx = mask_cond or code.find("ei") != -1
-
     old_vd_idx = 2
     dest_reg_id = "vecRegClass[_machInst.vd + _microIdx]"
     src1_reg_id = ""
@@ -95,7 +92,6 @@ def format VectorIntFormat(code, category, *flags) {{
     if category != "OPIVI":
         set_src_reg_idx += setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
-    # Always read old vd, regardless of vs3_required
     set_src_reg_idx += setSrcWrapper(src3_reg_id)
     if v0_required:
         set_src_reg_idx += setSrcVm()
@@ -118,7 +114,7 @@ def format VectorIntFormat(code, category, *flags) {{
          'set_dest_reg_idx': set_dest_reg_idx,
          'set_src_reg_idx': set_src_reg_idx,
          'vm_decl_rd': vm_decl_rd,
-         'old_vd_idx': old_vd_idx},
+         'copy_old_vd': copyOldVd(old_vd_idx)},
         flags)
 
     # Because of the use of templates, we had to put all parts in header to
@@ -133,12 +129,59 @@ def format VectorIntFormat(code, category, *flags) {{
     decode_block = VectorIntDecodeBlock.subst(iop)
 }};
 
+
+def format VectorIntExtFormat(code, category, *flags) {{
+    iop = InstObjParams(name, Name, 'VectorArithMacroInst', {'code': code},
+                        flags)
+    inst_name, inst_suffix = name.split("_", maxsplit=1)
+    ext_div = int(inst_suffix[-1])
+
+    old_vd_idx = 1
+    dest_reg_id = "RegId(VecRegClass, _machInst.vd + _microIdx)"
+    src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx / " + \
+                      str(ext_div) + ")"
+    src3_reg_id = "RegId(VecRegClass, _machInst.vs3 + _microIdx)"
+
+    set_dest_reg_idx = setDestWrapper(dest_reg_id)
+
+    set_src_reg_idx = ""
+    set_src_reg_idx += setSrcWrapper(src2_reg_id)
+    set_src_reg_idx += setSrcWrapper(src3_reg_id)
+    set_src_reg_idx += setSrcVm()
+
+    code = maskCondWrapper(code)
+    code = eiDeclarePrefix(code)
+    code = loopWrapper(code)
+    vm_decl_rd = vmDeclAndReadData()
+
+    microiop = InstObjParams(name + "_micro",
+        Name + "Micro",
+        'VectorArithMicroInst',
+        {'code': code,
+         'set_dest_reg_idx': set_dest_reg_idx,
+         'set_src_reg_idx': set_src_reg_idx,
+         'vm_decl_rd': vm_decl_rd,
+         'copy_old_vd': copyOldVd(old_vd_idx),
+         'ext_div': ext_div},
+        flags)
+
+    # Because of the use of templates, we had to put all parts in header to
+    # keep the compiler happy.
+    header_output = \
+        VectorIntExtMicroDeclare.subst(microiop) + \
+        VectorIntMicroConstructor.subst(microiop) + \
+        VectorIntExtMicroExecute.subst(microiop) + \
+        VectorIntExtMacroDeclare.subst(iop) + \
+        VectorIntMacroConstructor.subst(iop)
+
+    decode_block = VectorIntDecodeBlock.subst(iop)
+}};
+
 def format VectorIntWideningFormat(code, category, *flags) {{
     iop = InstObjParams(name, Name, 'VectorArithMacroInst', {'code': code},
                         flags)
     inst_name, inst_suffix = name.split("_", maxsplit=1)
     v0_required = True
-    vs3_required = inst_name.find("vwmacc") != -1
     mask_cond = v0_required
     need_elem_idx = mask_cond or code.find("ei") != -1
 
@@ -166,7 +209,6 @@ def format VectorIntWideningFormat(code, category, *flags) {{
     if category != "OPIVI":
         set_src_reg_idx += setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
-    # Always read old vd, regardless of vs3_required
     set_src_reg_idx += setSrcWrapper(src3_reg_id)
     if v0_required:
         set_src_reg_idx += setSrcVm()
@@ -189,7 +231,7 @@ def format VectorIntWideningFormat(code, category, *flags) {{
          'set_dest_reg_idx': set_dest_reg_idx,
          'set_src_reg_idx': set_src_reg_idx,
          'vm_decl_rd': vm_decl_rd,
-         'old_vd_idx': old_vd_idx},
+         'copy_old_vd': copyOldVd(old_vd_idx)},
         flags)
 
     # Because of the use of templates, we had to put all parts in header to
@@ -256,7 +298,7 @@ def format VectorIntMaskFormat(code, category, *flags) {{
          'set_dest_reg_idx': set_dest_reg_idx,
          'set_src_reg_idx': set_src_reg_idx,
          'vm_decl_rd': vm_decl_rd,
-         'old_vd_idx': old_vd_idx},
+         'copy_old_vd': copyOldVd(old_vd_idx)},
         flags)
 
     # Because of the use of templates, we had to put all parts in header to
@@ -275,9 +317,6 @@ def format VectorFloatFormat(code, category, *flags) {{
                         flags)
     inst_name, inst_suffix = name.split("_", maxsplit=1)
     v0_required = inst_name not in ["vfmv"]
-    vs3_required = inst_name in [
-        "vfmadd", "vfnmadd", "vfmsub", "vfnmsub",
-        "vfmacc", "vfnmacc", "vfmsac", "vfnmsac"]
     mask_cond = v0_required and (inst_suffix not in ['vvm', 'vfm'])
     need_elem_idx = mask_cond or code.find("ei") != -1
 
@@ -317,7 +356,8 @@ def format VectorFloatFormat(code, category, *flags) {{
         {'code': code,
          'set_dest_reg_idx': set_dest_reg_idx,
          'set_src_reg_idx': set_src_reg_idx,
-         'vm_decl_rd': vm_decl_rd},
+         'vm_decl_rd': vm_decl_rd,
+         'copy_old_vd': copyOldVd(2)},
         flags)
 
     # Because of the use of templates, we had to put all parts in header to
@@ -337,7 +377,6 @@ def format VectorFloatWideningFormat(code, category, *flags) {{
                         flags)
     inst_name, inst_suffix = name.split("_", maxsplit=1)
     v0_required = True
-    vs3_required = inst_name in ["vfwmacc", "vfwnmacc", "vfwmsac", "vfwnmsac"]
     mask_cond = v0_required
     need_elem_idx = mask_cond or code.find("ei") != -1
 
@@ -361,7 +400,6 @@ def format VectorFloatWideningFormat(code, category, *flags) {{
     set_src_reg_idx = ""
     set_src_reg_idx += setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
-    # Always read old vd, regardless of vs3_required
     set_src_reg_idx += setSrcWrapper(src3_reg_id)
     if v0_required:
         set_src_reg_idx += setSrcVm()
@@ -383,7 +421,8 @@ def format VectorFloatWideningFormat(code, category, *flags) {{
         {'code': code,
          'set_dest_reg_idx': set_dest_reg_idx,
          'set_src_reg_idx': set_src_reg_idx,
-         'vm_decl_rd': vm_decl_rd},
+         'vm_decl_rd': vm_decl_rd,
+         'copy_old_vd': copyOldVd(2)},
         flags)
 
     # Because of the use of templates, we had to put all parts in header to
@@ -433,7 +472,7 @@ def format VectorFloatMaskFormat(code, category, *flags) {{
          'set_dest_reg_idx': set_dest_reg_idx,
          'set_src_reg_idx': set_src_reg_idx,
          'vm_decl_rd': vm_decl_rd,
-         'old_vd_idx': 2},
+         'copy_old_vd': copyOldVd(2)},
         flags)
 
     # Because of the use of templates, we had to put all parts in header to
@@ -522,7 +561,8 @@ def format VectorReduceIntFormat(code, category, *flags) {{
          'set_dest_reg_idx': set_dest_reg_idx,
          'set_src_reg_idx': set_src_reg_idx,
          'vm_decl_rd': vm_decl_rd,
-         'type_def': type_def},
+         'type_def': type_def,
+         'copy_old_vd': copyOldVd(2)},
         flags)
 
     # Because of the use of templates, we had to put all parts in header to
@@ -563,7 +603,8 @@ def format VectorReduceFloatFormat(code, category, *flags) {{
          'set_dest_reg_idx': set_dest_reg_idx,
          'set_src_reg_idx': set_src_reg_idx,
          'vm_decl_rd': vm_decl_rd,
-         'type_def': type_def},
+         'type_def': type_def,
+         'copy_old_vd': copyOldVd(2)},
         flags)
 
     # Because of the use of templates, we had to put all parts in header to
@@ -615,7 +656,7 @@ def format VectorIntVxsatFormat(code, category, *flags) {{
          'set_dest_reg_idx': set_dest_reg_idx,
          'set_src_reg_idx': set_src_reg_idx,
          'vm_decl_rd': vm_decl_rd,
-         'old_vd_idx': old_vd_idx},
+         'copy_old_vd': copyOldVd(old_vd_idx)},
         flags)
 
     # Because of the use of templates, we had to put all parts in header to

@@ -40,11 +40,13 @@ def operand_types {{
     'sf' : 'float',
     'df' : 'double',
 
-    'vi' : 'vi',
-    'vu' : 'vu',
-    'vwi': 'vwi',
-    'vwu': 'vwu',
-    'vc' : 'RiscvISA::VecRegContainer'
+    'vi'    : 'vi',
+    'vu'    : 'vu',
+    'vwi'   : 'vwi',
+    'vwu'   : 'vwu',
+    'vext'  : 'vext',
+    'vextu' : 'vextu',
+    'vc'    : 'RiscvISA::VecRegContainer'
 }};
 
 let {{

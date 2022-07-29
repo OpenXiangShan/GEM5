@@ -2392,6 +2392,28 @@ decode QUADRANT default Unknown::unknown() {
                     }}, OPMVV, VectorDummyOp);
                 }
                 format VectorIntFormat {
+                    0x12: decode VS1 {
+                        format VectorIntExtFormat {
+                            0x02: vzext_vf8({{
+                                Vd_vu[i] = Vs2_vextu[i + offset];
+                            }}, OPMVV, VectorDummyOp);
+                            0x03: vsext_vf8({{
+                                Vd_vi[i] = Vs2_vext[i + offset];
+                            }}, OPMVV, VectorDummyOp);
+                            0x04: vzext_vf4({{
+                                Vd_vu[i] = Vs2_vextu[i + offset];
+                            }}, OPMVV, VectorDummyOp);
+                            0x05: vsext_vf4({{
+                                Vd_vi[i] = Vs2_vext[i + offset];
+                            }}, OPMVV, VectorDummyOp);
+                            0x06: vzext_vf2({{
+                                Vd_vu[i] = Vs2_vextu[i + offset];
+                            }}, OPMVV, VectorDummyOp);
+                            0x07: vsext_vf2({{
+                                Vd_vi[i] = Vs2_vext[i + offset];
+                            }}, OPMVV, VectorDummyOp);
+                        }
+                    }
                     0x20: vdivu_vv({{
                         if (Vs1_vu[i] == 0)
                             Vd_vu[i] = (vu)-1;

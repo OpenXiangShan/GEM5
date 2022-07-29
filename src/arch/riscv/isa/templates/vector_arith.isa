@@ -119,13 +119,115 @@ Fault
     %(op_decl)s;
     %(op_rd)s;
     %(vm_decl_rd)s;
-    RiscvISA::vreg_t old_vd;
-    decltype(Vd) old_Vd = nullptr;
-    xc->getRegOperand(this, %(old_vd_idx)d, &old_vd);
-    old_Vd = old_vd.as<std::remove_reference_t<decltype(Vd[0])> >();
-    memcpy(Vd, old_Vd, vlenb);
+    %(copy_old_vd)s;
     %(code)s;
     %(op_wb)s;
+
+    return NoFault;
+}
+
+}};
+
+def template VectorIntExtMacroDeclare {{
+
+template<typename ElemType>
+class %(class_name)s : public %(base_class)s {
+private:
+    %(reg_idx_arr_decl)s;
+public:
+    %(class_name)s(ExtMachInst _machInst);
+    std::string generateDisassembly(Addr pc,
+        const loader::SymbolTable *symtab) const
+    {
+        std::stringstream ss;
+        ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
+            << registerName(srcRegIdx(0));
+        if (machInst.vm == 0) ss << ", v0.t";
+        return ss.str();
+    }
+};
+
+}};
+
+def template VectorIntExtMicroDeclare {{
+
+template<typename ElemType>
+class %(class_name)s : public %(base_class)s
+{
+private:
+    RegId srcRegIdxArr[3];
+    RegId destRegIdxArr[1];
+    bool vm;
+public:
+    %(class_name)s(ExtMachInst _machInst, uint8_t _microVl,
+                   uint8_t _microIdx);
+    Fault execute(ExecContext* xc, Trace::InstRecord* traceData)const override;
+    std::string generateDisassembly(Addr pc,
+        const loader::SymbolTable *symtab) const
+    {
+        std::stringstream ss;
+        ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
+            << registerName(srcRegIdx(0));
+        if (machInst.vm == 0) ss << ", v0.t";
+        return ss.str();
+    }
+};
+
+}};
+
+def template VectorIntExtMicroExecute {{
+
+template <typename ElemType>
+Fault
+%(class_name)s<ElemType>::execute(ExecContext* xc,
+                                  Trace::InstRecord* traceData) const
+{
+    using vu [[maybe_unused]] = std::make_unsigned_t<ElemType>;
+    using vi [[maybe_unused]] = std::make_signed_t<ElemType>;
+
+    if (machInst.vill)
+        return std::make_shared<IllegalInstFault>("VILL is set", machInst);
+
+    auto SEW = vtype_SEW(vtype);
+    const int32_t micro_vlmax = vtype_VLMAX(vtype, true);
+    auto offset = ((microIdx % %(ext_div)d) * micro_vlmax) / %(ext_div)d;
+    switch (SEW / %(ext_div)d) {
+      case 8: {
+        using vext  [[maybe_unused]] = int8_t;
+        using vextu [[maybe_unused]] = uint8_t;
+        %(op_decl)s;
+        %(op_rd)s;
+        %(vm_decl_rd)s;
+        %(copy_old_vd)s;
+        %(code)s;
+        %(op_wb)s;
+        break;
+      }
+      case 16: {
+        using vext  [[maybe_unused]] = int16_t;
+        using vextu [[maybe_unused]] = uint16_t;
+        %(op_decl)s;
+        %(op_rd)s;
+        %(vm_decl_rd)s;
+        %(copy_old_vd)s;
+        %(code)s;
+        %(op_wb)s;
+        break;
+      }
+      case 32: {
+        using vext  [[maybe_unused]] = int32_t;
+        using vextu [[maybe_unused]] = uint32_t;
+        %(op_decl)s;
+        %(op_rd)s;
+        %(vm_decl_rd)s;
+        %(copy_old_vd)s;
+        %(code)s;
+        %(op_wb)s;
+      break;
+      }
+      default: break;
+    }
+
     return NoFault;
 }
 
@@ -251,11 +353,7 @@ Fault
     %(op_decl)s;
     %(op_rd)s;
     %(vm_decl_rd)s;
-    RiscvISA::vreg_t old_vd;
-    decltype(Vd) old_Vd = nullptr;
-    xc->getRegOperand(this, 2, &old_vd);
-    old_Vd = old_vd.as<std::remove_reference_t<decltype(Vd[0])> >();
-    memcpy(Vd, old_Vd, vlenb);
+    %(copy_old_vd)s;
     %(code)s;
     %(op_wb)s;
     return NoFault;
@@ -364,12 +462,7 @@ Fault
     %(op_decl)s;
     %(op_rd)s;
     %(vm_decl_rd)s;
-    RiscvISA::vreg_t old_vd;
-    decltype(Vd) old_Vd = nullptr;
-    xc->getRegOperand(this, 2, &old_vd);
-    old_Vd = old_vd.as<std::remove_reference_t<decltype(Vd[0])> >();
-    memcpy(Vd, old_Vd, vlenb);
-
+    %(copy_old_vd)s;
     %(code)s;
     %(op_wb)s;
 
@@ -412,12 +505,7 @@ Fault
     %(op_decl)s;
     %(op_rd)s;
     %(vm_decl_rd)s;
-    RiscvISA::vreg_t old_vd;
-    decltype(Vd) old_Vd = nullptr;
-    xc->getRegOperand(this, 2, &old_vd);
-    old_Vd = old_vd.as<std::remove_reference_t<decltype(Vd[0])> >();
-    memcpy(Vd, old_Vd, vlenb);
-
+    %(copy_old_vd)s;
     %(code)s;
     %(op_wb)s;
     return NoFault;
@@ -531,12 +619,8 @@ Fault
     %(op_decl)s;
     %(op_rd)s;
     %(vm_decl_rd)s;
+    %(copy_old_vd)s;
 
-    RiscvISA::vreg_t old_vd;
-    decltype(Vd) old_Vd = nullptr;
-    xc->getRegOperand(this, %(old_vd_idx)s, &old_vd);
-    old_Vd = old_vd.as<uint8_t>();
-    memcpy(Vd, old_Vd, vlenb);
     constexpr uint16_t bit_offset = vlenb / sizeof(ElemType);
     const uint16_t offset = bit_offset * microIdx;
 
@@ -643,12 +727,8 @@ Fault
     %(op_decl)s;
     %(op_rd)s;
     %(vm_decl_rd)s;
+    %(copy_old_vd)s;
 
-    RiscvISA::vreg_t old_vd;
-    decltype(Vd) old_Vd = nullptr;
-    xc->getRegOperand(this, %(old_vd_idx)d, &old_vd);
-    old_Vd = old_vd.as<uint8_t>();
-    memcpy(Vd, old_Vd, vlenb);
     constexpr uint16_t bit_offset = vlenb / sizeof(ElemType);
     const uint16_t offset = bit_offset * microIdx;
 
@@ -885,15 +965,7 @@ Fault
     %(op_decl)s;
     %(op_rd)s;
     %(vm_decl_rd)s;
-
-    [[maybe_unused]] RiscvISA::vreg_t old_vd;
-    [[maybe_unused]] ElemType* old_Vd = nullptr;
-    xc->getRegOperand(this, 2, &old_vd);
-    old_Vd = old_vd.as<ElemType>();
-
-
-    // Treat tail undisturbed/agnostic as the same
-    memcpy(Vd, old_Vd, vlenb);
+    %(copy_old_vd)s;
 
     Vd[0] = this->microIdx != 0 ? old_Vd[0] : Vs1[0];
 
@@ -930,15 +1002,7 @@ Fault
     %(op_decl)s;
     %(op_rd)s;
     %(vm_decl_rd)s;
-
-    [[maybe_unused]] RiscvISA::vreg_t old_vd;
-    [[maybe_unused]] vu* old_Vd = nullptr;
-    xc->getRegOperand(this, 2, &old_vd);
-    old_Vd = old_vd.as<vu>();
-
-
-    // Treat tail undisturbed/agnostic as the same
-    memcpy(Vd, old_Vd, vlenb);
+    %(copy_old_vd)s;
 
     Vd[0] = this->microIdx != 0 ? old_Vd[0] : Vs1[0];
 
