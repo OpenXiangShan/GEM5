@@ -331,6 +331,7 @@ class BPredUnit : public SimObject
         statistics::Scalar indirectMisses;
         /** Stat for the number of indirect target mispredictions.*/
         statistics::Scalar indirectMispredicted;
+        std::map<Addr, uint32_t> MisspredPCcnt;
     } stats;
 
   protected:

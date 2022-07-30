@@ -49,7 +49,7 @@
 #include "base/trace.hh"
 #include "config/the_isa.hh"
 #include "debug/Branch.hh"
-
+#include "sim/core.hh"
 namespace gem5
 {
 
@@ -71,6 +71,7 @@ BPredUnit::BPredUnit(const Params &params)
 {
     for (auto& r : RAS)
         r.init(params.RASSize);
+
 }
 
 BPredUnit::BPredUnitStats::BPredUnitStats(statistics::Group *parent)
@@ -100,6 +101,15 @@ BPredUnit::BPredUnitStats::BPredUnitStats(statistics::Group *parent)
                "Number of mispredicted indirect branches.")
 {
     BTBHitRatio.precision(6);
+    registerExitCallback([this]() {
+        //write in a file "pcMiss.txt"
+        std::ofstream ofs("pcMiss.txt", std::ios::out);
+        ofs << "pc"<<" "<<"cnt" << std::endl;
+        for (auto& it : MisspredPCcnt) {
+            ofs << it.first << " " << it.second << std::endl;
+        }
+        ofs.close();
+    });
 }
 
 probing::PMUUPtr
@@ -463,6 +473,7 @@ BPredUnit::squash(const InstSeqNum &squashed_sn,
             }
             if (hist_it->wasIndirect) {
                 ++stats.indirectMispredicted;
+                stats.MisspredPCcnt[hist_it->pc]++;
                 if (iPred) {
                     iPred->recordTarget(
                         hist_it->seqNum, pred_hist.front().indirectHistory,
