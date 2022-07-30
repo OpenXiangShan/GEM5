@@ -24,7 +24,8 @@ ITTAGE::ITTAGE(const ITTAGEParams &params):
     tableSizes(params.tableSizes),
     TTagBitSizes(params.TTagBitSizes),
     TTagPcShifts(params.TTagPcShifts),
-    histLengths(params.histLengths)
+    histLengths(params.histLengths),
+    ittagestats(this)
 {
     uint32_t max_histlength = *std::max_element(histLengths.begin(), histLengths.end());
     threadInfo.resize(params.numThreads);
@@ -44,6 +45,15 @@ ITTAGE::ITTAGE(const ITTAGEParams &params):
     }
     use_alt = 8;
     reset_counter = 128;
+}
+
+ITTAGE::ITTAGEStats::ITTAGEStats(statistics::Group* parent):
+    statistics::Group(parent),
+    ADD_STAT(mainpredHit, statistics::units::Count::get(), "ittage the provider component hit"),
+    ADD_STAT(altpredHit, statistics::units::Count::get(), "ittage the alternate prediction hit")
+{
+    mainpredHit.prereq(mainpredHit);
+    altpredHit.prereq(altpredHit);
 }
 
 void
@@ -127,10 +137,12 @@ ITTAGE::lookup_helper(Addr br_addr, PCStateBase& target, PCStateBase& alt_target
     const auto& way1 = targetCache[tid][predictor_1][predictor_index_1];
     const auto& way2 = targetCache[tid][predictor_2][predictor_index_2];
     if (pred_counts > 0) {
-        if (use_alt > 7 && way1.counter == 1 && way1.useful == 0 && pred_counts == 2 && way2.counter > 0) {
+        if (use_alt > 10 && way1.counter == 1 && way1.useful == 0 && pred_counts == 2 && way2.counter > 0) {
             use_alt_pred = true;
+            ittagestats.altpredHit++;
         } else {
             use_alt_pred = false;
+            ittagestats.mainpredHit++;
         }
         set(target, *target_1);
         if (use_alt_pred) {
