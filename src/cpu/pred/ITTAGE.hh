@@ -11,7 +11,8 @@
 #define __CPU_PRED_ITTAGE_HH__
 
 #include <deque>
-
+#include "base/types.hh"
+#include "base/statistics.hh"
 #include "arch/generic/pcstate.hh"
 #include "config/the_isa.hh"
 #include "cpu/inst_seq.hh"
@@ -59,6 +60,14 @@ private:
     int reset_counter;
     std::vector<std::unique_ptr<PCStateBase>> previous_target;
     std::vector<std::vector<std::unique_ptr<PCStateBase>> >base_predictor;
+
+    struct ITTAGEStats : public statistics::Group {
+        statistics::Scalar mainpredHit;
+        statistics::Scalar altpredHit;
+        ITTAGEStats(statistics::Group* parent);
+    }ittagestats;
+
+    
     struct IPredEntry {
         Addr tag = 0;
         std::unique_ptr<PCStateBase> target;
