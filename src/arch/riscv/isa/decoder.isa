@@ -2198,6 +2198,34 @@ decode QUADRANT default Unknown::unknown() {
                         Fd_bits = Vs1_vu[0];
                     }}, OPFVV, VectorDummyOp);
                 }
+                format VectorFloatCvtFormat {
+                    0x12: decode VS1 {
+                        0x0: vfcvt_xu_f_v({{
+                            Vd_vu[i] = f_to_ui<et>(ftype<et>(Vs2_vu[i]),
+                                                   softfloat_roundingMode);
+                        }}, OPFVV, VectorDummyOp);
+                        0x1: vfcvt_x_f_v({{
+                            Vd_vu[i] = f_to_i<et>(ftype<et>(Vs2_vu[i]),
+                                                  softfloat_roundingMode);
+                        }}, OPFVV, VectorDummyOp);
+                        0x2: vfcvt_f_xu_v({{
+                            auto fd = ui_to_f<et>(Vs2_vu[i]);
+                            Vd_vu[i] = fd.v;
+                        }}, OPFVV, VectorDummyOp);
+                        0x3: vfcvt_f_x_v({{
+                            auto fd = i_to_f<et>(Vs2_vu[i]);
+                            Vd_vu[i] = fd.v;
+                        }}, OPFVV, VectorDummyOp);
+                        0x6: vfcvt_rtz_xu_f_v({{
+                            Vd_vu[i] = f_to_ui<et>(ftype<et>(Vs2_vu[i]),
+                                                   softfloat_round_minMag);
+                        }}, OPFVV, VectorDummyOp);
+                        0x7: vfcvt_rtz_x_f_v({{
+                            Vd_vu[i] = f_to_i<et>(ftype<et>(Vs2_vu[i]),
+                                                  softfloat_round_minMag);
+                        }}, OPFVV, VectorDummyOp);
+                    }
+                }
                 format VectorFloatMaskFormat {
                     0x18: vmfeq_vv({{
                         Vd_ub[(i + offset)/8] = ASSIGN_VD_BIT(i + offset,

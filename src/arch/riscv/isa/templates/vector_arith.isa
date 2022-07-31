@@ -3,6 +3,19 @@ output header {{
 #define ASSIGN_VD_BIT(idx, bit) \
     ((Vd[(idx)/8] & ~(1 << (idx)%8)) | ((bit) << (idx)%8))
 
+#define COPY_OLD_VD(idx)                                             \
+    [[maybe_unused]] RiscvISA::vreg_t old_vd;                        \
+    [[maybe_unused]] decltype(Vd) old_Vd = nullptr;                  \
+    xc->getRegOperand(this, idx, &old_vd);                           \
+    old_Vd = old_vd.as<std::remove_reference_t<decltype(Vd[0])> >(); \
+    memcpy(Vd, old_Vd, vlenb);
+
+#define VRM_REQUIRED                                                         \
+        uint_fast8_t frm = xc->readMiscReg(MISCREG_FRM);                     \
+        if (frm > 4)                                                         \
+            return std::make_shared<IllegalInstFault>("RM fault", machInst); \
+        softfloat_roundingMode = frm;
+
 template<typename Type>
 bool inline
 carry_out(Type a, Type b, bool carry_in = false) {
@@ -459,6 +472,8 @@ Fault
     if (machInst.vill)
         return std::make_shared<IllegalInstFault>("VILL is set", machInst);
 
+    VRM_REQUIRED;
+
     %(op_decl)s;
     %(op_rd)s;
     %(vm_decl_rd)s;
@@ -480,6 +495,38 @@ default: GEM5_UNREACHABLE;
 }
 
 }};
+
+def template VectorFloatCvtMacroDeclare {{
+
+template<typename ElemType>
+class %(class_name)s : public %(base_class)s {
+private:
+    %(reg_idx_arr_decl)s;
+public:
+    %(class_name)s(ExtMachInst _machInst);
+    using %(base_class)s::generateDisassembly;
+};
+
+}};
+
+def template VectorFloatCvtMicroDeclare {{
+
+template<typename ElemType>
+class %(class_name)s : public %(base_class)s
+{
+private:
+    RegId srcRegIdxArr[3];
+    RegId destRegIdxArr[1];
+    bool vm;
+public:
+    %(class_name)s(ExtMachInst _machInst,
+        uint8_t _microVl, uint8_t _microIdx);
+    Fault execute(ExecContext* xc, Trace::InstRecord* traceData)const override;
+    using %(base_class)s::generateDisassembly;
+};
+
+}};
+
 
 def template VectorFloatWideningMicroExecute {{
 

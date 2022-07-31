@@ -415,6 +415,48 @@ fwiden(FT a)
     GEM5_UNREACHABLE;
 }
 
+template<typename FloatType, typename IntType = decltype(FloatType::v)> IntType
+f_to_ui(FloatType a, uint_fast8_t mode)
+{
+    if constexpr(std::is_same_v<float32_t, FloatType>)
+        return f32_to_ui32(a, mode, true);
+    else if constexpr(std::is_same_v<float64_t, FloatType>)
+        return f64_to_ui64(a, mode, true);
+    GEM5_UNREACHABLE;
+}
+
+template<typename FloatType, typename IntType = decltype(FloatType::v)> IntType
+f_to_i(FloatType a, uint_fast8_t mode)
+{
+    if constexpr(std::is_same_v<float32_t, FloatType>)
+        return (uint32_t)f32_to_i32(a, mode, true);
+    else if constexpr(std::is_same_v<float64_t, FloatType>)
+        return (uint64_t)f64_to_i64(a, mode, true);
+    GEM5_UNREACHABLE;
+}
+
+template<typename FloatType, typename IntType = decltype(FloatType::v)>
+FloatType
+ui_to_f(IntType a)
+{
+    if constexpr(std::is_same_v<float32_t, FloatType>)
+        return ui32_to_f32(a);
+    else if constexpr(std::is_same_v<float64_t, FloatType>)
+        return ui64_to_f64(a);
+    GEM5_UNREACHABLE;
+}
+
+template<typename FloatType, typename IntType = decltype(FloatType::v)>
+FloatType
+i_to_f(IntType a)
+{
+    if constexpr(std::is_same_v<float32_t, FloatType>)
+        return i32_to_f32((int32_t)a);
+    else if constexpr(std::is_same_v<float64_t, FloatType>)
+        return i64_to_f64((int64_t)a);
+    GEM5_UNREACHABLE;
+}
+
 //ref:  https://locklessinc.com/articles/sat_arithmetic/
 template<typename T> T
 sat_add(T x, T y, bool* sat)

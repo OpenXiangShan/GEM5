@@ -41,11 +41,4 @@
         softfloat_roundingMode = rm;                                        \
 
 
-#define VRM_REQUIRED                                                        \
-        uint_fast8_t frm = xc->readMiscReg(MISCREG_FRM);                    \
-        if (frm > 4)                                                        \
-            return std::make_shared<IllegalInstFault>("RM fault", machInst);\
-        softfloat_roundingMode = frm;                                       \
-
-
 #endif // __ARCH_RISCV_FP_INST_HH__
