@@ -137,10 +137,10 @@ def format VectorIntExtFormat(code, category, *flags) {{
     ext_div = int(inst_suffix[-1])
 
     old_vd_idx = 1
-    dest_reg_id = "RegId(VecRegClass, _machInst.vd + _microIdx)"
-    src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx / " + \
-                      str(ext_div) + ")"
-    src3_reg_id = "RegId(VecRegClass, _machInst.vs3 + _microIdx)"
+    dest_reg_id = "vecRegClass[_machInst.vd + _microIdx]"
+    src2_reg_id = "vecRegClass[_machInst.vs2 + _microIdx / " + \
+                      str(ext_div) + "]"
+    src3_reg_id = "vecRegClass[_machInst.vs3 + _microIdx]"
 
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
 
@@ -377,9 +377,9 @@ def format VectorFloatCvtFormat(code, category, *flags) {{
                         flags)
 
     old_vd_idx = 1
-    dest_reg_id = "RegId(VecRegClass, _machInst.vd + _microIdx)"
-    src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
-    src3_reg_id = "RegId(VecRegClass, _machInst.vs3 + _microIdx)"
+    dest_reg_id = "vecRegClass[_machInst.vd + _microIdx]"
+    src2_reg_id = "vecRegClass[_machInst.vs2 + _microIdx]"
+    src3_reg_id = "vecRegClass[_machInst.vs3 + _microIdx]"
 
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
 
