@@ -43,7 +43,7 @@ public:
     void changeDirectionPrediction(ThreadID tid, void * indirect_history, bool actually_taken);
 
 private:
-    bool lookup_helper(Addr, PCStateBase&, PCStateBase&, ThreadID, int&, int&, int&, int&, int&, bool&);
+    bool lookup_helper(Addr,bitset&, PCStateBase&, PCStateBase&, ThreadID, int&, int&, int&, int&, int&, bool&);
     uint64_t getCSR1(bitset& ghr, int table);
     uint64_t getCSR2(bitset& ghr, int table);
     uint64_t getAddrFold(uint64_t address, int table);
