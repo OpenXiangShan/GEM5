@@ -6,6 +6,7 @@
 
 #include "base/intmath.hh"
 #include "debug/Indirect.hh"
+#include "sim/core.hh"
 #include <algorithm>
 
 namespace gem5
@@ -45,6 +46,15 @@ ITTAGE::ITTAGE(const ITTAGEParams &params):
     }
     use_alt = 8;
     reset_counter = 128;
+    registerExitCallback([this]() {
+        //write in a file "pcMiss.txt"
+        std::ofstream ofs("build/tmp/altuseCnt.txt", std::ios::out);
+        ofs << "pc" << " " << "cnt" << std::endl;
+        for (auto& it : ittagestats.altCounter) {
+            ofs << it.first << " " << it.second << std::endl;
+        }
+        ofs.close();
+    });
 }
 
 ITTAGE::ITTAGEStats::ITTAGEStats(statistics::Group* parent):
@@ -184,6 +194,7 @@ bool ITTAGE::lookup(Addr br_addr, PCStateBase& target, ThreadID tid) {
     bool use_alt_pred = true;
     //bool lookupResult =
     lookup_helper(br_addr, target, *alt_target, tid, predictor, predictor_index, alt_predictor, alt_predictor_index, pred_count, use_alt_pred);
+    ittagestats.altCounter[use_alt]++;
     // if (!lookupResult) {
     //     return false;
     // }
@@ -297,6 +308,7 @@ ITTAGE::recordTarget(
     PCStateBase *target_2 = target.clone();
     std::unique_ptr<PCStateBase> target_sel;
     bool predictor_found = lookup_helper(hist_entry.pcAddr, *target_1, *target_2, tid, predictor, predictor_index, alt_predictor, alt_predictor_index, pred_count, use_alt_pred);
+    
     if (predictor_found && use_alt_pred) {
         set(target_sel, target_2);
         predictor_sel = alt_predictor;
@@ -494,11 +506,12 @@ uint64_t ITTAGE::getCSR2(bitset& ghr, int table) {
 uint64_t ITTAGE::getAddrFold(uint64_t address, int table) {
     uint64_t folded_address, k;
     folded_address = 0;
-    for (k = 0; k < 3; k++) {
-        folded_address ^= ((address % (1 << ((k + 1) * 8))) / (1 << (k * 8)));
+    for (k = 0; k < 8; k++) {
+        folded_address ^= address;
+        address >>= 8;
     }
-    folded_address ^= address / (1 << (24));
-    return folded_address & (tableSizes[table] - 1);
+    //folded_address ^= address / (1 << (24));
+    return folded_address & ((1 << ceilLog2(tableSizes[table])) - 1);
 }
 uint64_t ITTAGE::getTag(Addr pc, bitset& ghr, int table) {
     uint64_t csr1 = getCSR1(ghr, table);

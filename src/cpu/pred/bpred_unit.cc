@@ -103,7 +103,7 @@ BPredUnit::BPredUnitStats::BPredUnitStats(statistics::Group *parent)
     BTBHitRatio.precision(6);
     registerExitCallback([this]() {
         //write in a file "pcMiss.txt"
-        std::ofstream ofs("pcMiss.txt", std::ios::out);
+        std::ofstream ofs("build/tmp/pcMiss.txt", std::ios::out);
         ofs << "pc"<<" "<<"cnt" << std::endl;
         for (auto& it : MisspredPCcnt) {
             ofs << it.first << " " << it.second << std::endl;

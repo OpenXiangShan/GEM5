@@ -64,6 +64,7 @@ private:
     struct ITTAGEStats : public statistics::Group {
         statistics::Scalar mainpredHit;
         statistics::Scalar altpredHit;
+        std::map<uint32_t, uint32_t> altCounter;
         ITTAGEStats(statistics::Group* parent);
     }ittagestats;
 
