@@ -236,7 +236,7 @@ ITTAGE::recordIndirect(Addr br_addr, Addr tgt_addr,
     HistoryEntry entry(br_addr, tgt_addr, seq_num);
     threadInfo[tid].pathHist.push_back(entry);
     for (int i = 0;i < pathHistLength;i++) {
-        bool pathBit = ((br_addr >> (i + 2)) ^ (tgt_addr >> (i + 2))) & 1ULL;
+        bool pathBit = ((br_addr >> (i + 1)) ^ (tgt_addr >> (i + 1))) & 1ULL;
         threadInfo[tid].ghr <<= 1;
         threadInfo[tid].ghr.set(0, pathBit);
         threadInfo[tid].mark <<= 1;

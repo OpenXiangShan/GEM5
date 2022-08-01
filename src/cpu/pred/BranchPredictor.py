@@ -68,7 +68,7 @@ class ITTAGE(IndirectPredictor):
     histLengths = VectorParam.Int(
         [4, 10, 16, 27, 44, 60, 96, 109, 219, 449, 487], "the ITTAGE T1~Tn history length")
     simpleBTBSize = Param.Unsigned(512, "size of base predictor")
-    pathHistLength = Param.Unsigned(1, "the length of path history in GHR")
+    pathHistLength = Param.Unsigned(3, "the length of path history in GHR")
     
 
 class BranchPredictor(SimObject):
