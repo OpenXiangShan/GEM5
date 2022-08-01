@@ -47,23 +47,35 @@ ITTAGE::ITTAGE(const ITTAGEParams &params):
     use_alt = 8;
     reset_counter = 128;
     registerExitCallback([this]() {
-        //write in a file "pcMiss.txt"
         std::ofstream ofs("build/tmp/altuseCnt.txt", std::ios::out);
-        ofs << "pc" << " " << "cnt" << std::endl;
-        for (auto& it : ittagestats.altCounter) {
+        ofs << "use_alt" << " " << "cnt" << std::endl;
+        for (auto& it : ittagestats.usealtCounter) {
             ofs << it.first << " " << it.second << std::endl;
         }
         ofs.close();
+
+        std::ofstream ofs1("build/tmp/TableHitCnt.txt", std::ios::out);
+        ofs1 << "table" << " " << "lookupcnt" << " " << "predhit" << " " << "predmiss" << std::endl;
+        for (auto& it : ittagestats.THitCnt) {
+            ofs1 << it.first << " " << it.second.lookuphit <<" "<< it.second.predhit <<" "<< it.second.predmiss << std::endl;
+        }
+        ofs1.close();
+
+
     });
 }
 
 ITTAGE::ITTAGEStats::ITTAGEStats(statistics::Group* parent):
     statistics::Group(parent),
-    ADD_STAT(mainpredHit, statistics::units::Count::get(), "ittage the provider component hit"),
-    ADD_STAT(altpredHit, statistics::units::Count::get(), "ittage the alternate prediction hit")
+    ADD_STAT(mainlookupHit, statistics::units::Count::get(), "ittage the provider component lookup hit"),
+    ADD_STAT(altlookupHit, statistics::units::Count::get(), "ittage the alternate prediction lookup hit"),
+    ADD_STAT(mainpredHit, statistics::units::Count::get(), "ittage the provider component pred hit"),
+    ADD_STAT(altpredHit, statistics::units::Count::get(), "ittage the alternate prediction pred hit")
 {
     mainpredHit.prereq(mainpredHit);
     altpredHit.prereq(altpredHit);
+    mainlookupHit.prereq(mainlookupHit);
+    altlookupHit.prereq(altlookupHit);
 }
 
 void
@@ -143,16 +155,16 @@ ITTAGE::lookup_helper(Addr br_addr, PCStateBase& target, PCStateBase& alt_target
             }
         }
     }
-    // decide whether use altpred or not
-    const auto& way1 = targetCache[tid][predictor_1][predictor_index_1];
-    const auto& way2 = targetCache[tid][predictor_2][predictor_index_2];
+    pred_count = pred_counts;
     if (pred_counts > 0) {
-        if (use_alt > 10 && way1.counter == 1 && way1.useful == 0 && pred_counts == 2 && way2.counter > 0) {
+        const auto& way1 = targetCache[tid][predictor_1][predictor_index_1];
+        const auto& way2 = targetCache[tid][predictor_2][predictor_index_2];
+        if ((use_alt > 10) && (way1.counter == 1) && (way1.useful == 0) && (pred_counts == 2) && (way2.counter > 0)) {
             use_alt_pred = true;
-            ittagestats.altpredHit++;
+            ittagestats.altlookupHit++;
         } else {
             use_alt_pred = false;
-            ittagestats.mainpredHit++;
+            ittagestats.mainlookupHit++;
         }
         set(target, *target_1);
         if (use_alt_pred) {
@@ -191,10 +203,10 @@ bool ITTAGE::lookup(Addr br_addr, PCStateBase& target, ThreadID tid) {
     int alt_predictor = 0;
     int alt_predictor_index = 0;
     int pred_count = 0; // no use
-    bool use_alt_pred = true;
+    bool use_alt_pred = false;
     //bool lookupResult =
     lookup_helper(br_addr, target, *alt_target, tid, predictor, predictor_index, alt_predictor, alt_predictor_index, pred_count, use_alt_pred);
-    ittagestats.altCounter[use_alt]++;
+    
     // if (!lookupResult) {
     //     return false;
     // }
@@ -303,12 +315,12 @@ ITTAGE::recordTarget(
     int pred_count = 0; // no use
     int predictor_sel = 0;
     int predictor_index_sel = 0;
-    bool use_alt_pred = true;
+    bool use_alt_pred = false;
     PCStateBase *target_1 = target.clone();
     PCStateBase *target_2 = target.clone();
     std::unique_ptr<PCStateBase> target_sel;
     bool predictor_found = lookup_helper(hist_entry.pcAddr, *target_1, *target_2, tid, predictor, predictor_index, alt_predictor, alt_predictor_index, pred_count, use_alt_pred);
-    
+    ittagestats.usealtCounter[use_alt]++;
     if (predictor_found && use_alt_pred) {
         set(target_sel, target_2);
         predictor_sel = alt_predictor;
@@ -320,6 +332,26 @@ ITTAGE::recordTarget(
     } else {
         predictor_sel = predictor;
         predictor_index_sel = predictor_index;
+    }
+    if(predictor_found){
+        if(pred_count==1){
+            ittagestats.THitCnt[predictor].lookuphit++;
+            if(targetCache[tid][predictor][predictor_index].target->equals(target)){
+                ittagestats.THitCnt[predictor].predhit++;
+            }
+            else{
+                ittagestats.THitCnt[predictor].predmiss++;
+            }
+        }
+        if(pred_count==2){
+            ittagestats.THitCnt[alt_predictor].lookuphit++;
+            if(targetCache[tid][alt_predictor][alt_predictor_index].target->equals(target)){
+                ittagestats.THitCnt[alt_predictor].predhit++;
+            }
+            else{
+                ittagestats.THitCnt[alt_predictor].predmiss++;
+            }
+        }
     }
 
     // update previous target
@@ -341,12 +373,17 @@ ITTAGE::recordTarget(
     bool allocate_values = true;
 
     auto& way_sel = targetCache[tid][predictor_sel][predictor_index_sel];
-    if (pred_count > 0 && target_sel->equals(target)) {
+    if (pred_count > 0 && target_sel->equals(target)) {//pred hit
         // the prediction was from predictor tables and correct
         // increment the counter
         DPRINTF(Indirect, "Prediction for %#lx => %#lx is correct\n", hist_entry.pcAddr, target.instAddr());
         if (way_sel.counter <= 2) {
             ++way_sel.counter;
+        }
+        if((predictor_sel==alt_predictor) && (pred_count==2)){
+            ittagestats.altpredHit++;
+        }else if(pred_count>0){
+            ittagestats.mainpredHit++;
         }
     } else {
         // a misprediction
@@ -357,6 +394,7 @@ ITTAGE::recordTarget(
             if (way1.target->equals(target) &&
                 pred_count == 2 &&
                 !way2.target->equals(target)) {
+                ittagestats.mainpredHit++;
                 // if pred was right and alt_pred was wrong
                 way1.useful = 1;
                 DPRINTF(Indirect, "Alt pred was wrong, but pred was right\n");
@@ -368,6 +406,7 @@ ITTAGE::recordTarget(
             if (!way1.target->equals(target) &&
                 pred_count == 2 &&
                 way2.target->equals(target)) {
+                ittagestats.altpredHit++;
                 // if pred was wrong and alt_pred was right
                 DPRINTF(Indirect, "Alt pred was right, but pred was wrong\n");
                 if (use_alt < 15) {
@@ -388,6 +427,7 @@ ITTAGE::recordTarget(
                 way_sel.useful = 0;
             }
         }
+        //update the tag
         DPRINTF(Indirect, "Pred count: %d, allocate values: %u\n", pred_count, allocate_values);
         if (pred_count == 0 || allocate_values) {
             int allocated = 0;
@@ -418,7 +458,7 @@ ITTAGE::recordTarget(
                             start_pos, new_index, hist_entry.pcAddr, prBuf1,
                             target.instAddr());
                     ++allocated;
-                    ++start_pos; // do not allocate on consecutive predictors
+                    //++start_pos; // do not allocate on consecutive predictors
                     if (allocated == 2) {
                         break;
                     }
