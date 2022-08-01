@@ -117,7 +117,7 @@ ITTAGE::changeDirectionPrediction(ThreadID tid, void * indirect_history, bool ac
 }
 
 bool
-ITTAGE::lookup_helper(Addr br_addr, PCStateBase& target, PCStateBase& alt_target,ThreadID tid, int &predictor, int &predictor_index, int &alt_predictor, int &alt_predictor_index, int &pred_count, bool &use_alt_pred)
+ITTAGE::lookup_helper(Addr br_addr, bitset& ghr, PCStateBase& target, PCStateBase& alt_target, ThreadID tid, int& predictor, int& predictor_index, int& alt_predictor, int& alt_predictor_index, int& pred_count, bool& use_alt_pred)
 {
     // todo: adjust according to ITTAGE
     DPRINTF(Indirect, "Looking up %x\n", br_addr);
@@ -129,13 +129,13 @@ ITTAGE::lookup_helper(Addr br_addr, PCStateBase& target, PCStateBase& alt_target
     int predictor_index_2 = 0;
 
     for (int i = numPredictors - 1; i >= 0; --i) {
-        uint32_t csr1 = getCSR1(threadInfo[tid].ghr, i);
-        to_string(threadInfo[tid].ghr, prBuf1);
+        uint32_t csr1 = getCSR1(ghr, i);
+        to_string(ghr, prBuf1);
         DPRINTF(Indirect, "ITTAGE Predictor %i predict pc %#lx with ghr %s\n",
                 i, br_addr, prBuf1);
         uint32_t index = getAddrFold(br_addr, i);
         uint32_t tmp_index = index ^ csr1;
-        uint32_t tmp_tag = getTag(br_addr, threadInfo[tid].ghr, i);
+        uint32_t tmp_tag = getTag(br_addr, ghr, i);
         const auto &way = targetCache[tid][i][tmp_index];
         if (way.tag == tmp_tag && way.target) {
             DPRINTF(Indirect, "tag %#lx is found in predictor %i\n", tmp_tag,
@@ -205,7 +205,7 @@ bool ITTAGE::lookup(Addr br_addr, PCStateBase& target, ThreadID tid) {
     int pred_count = 0; // no use
     bool use_alt_pred = false;
     //bool lookupResult =
-    lookup_helper(br_addr, target, *alt_target, tid, predictor, predictor_index, alt_predictor, alt_predictor_index, pred_count, use_alt_pred);
+    lookup_helper(br_addr,threadInfo[tid].ghr,target, *alt_target, tid, predictor, predictor_index, alt_predictor, alt_predictor_index, pred_count, use_alt_pred);
     
     // if (!lookupResult) {
     //     return false;
@@ -295,9 +295,8 @@ ITTAGE::recordTarget(
         InstSeqNum seq_num, void * indirect_history, const PCStateBase& target,
         ThreadID tid)
 {
+    bitset& ghr = *static_cast<bitset*>(indirect_history);
     // here ghr was appended one more
-    bitset ghr_last = threadInfo[tid].ghr.set(0, 1);// | 1;
-    threadInfo[tid].ghr >>= 1;
     DPRINTF(Indirect, "record with target:%s\n", target);
     // todo: adjust according to ITTAGE
     ThreadInfo &t_info = threadInfo[tid];
@@ -319,7 +318,7 @@ ITTAGE::recordTarget(
     PCStateBase *target_1 = target.clone();
     PCStateBase *target_2 = target.clone();
     std::unique_ptr<PCStateBase> target_sel;
-    bool predictor_found = lookup_helper(hist_entry.pcAddr, *target_1, *target_2, tid, predictor, predictor_index, alt_predictor, alt_predictor_index, pred_count, use_alt_pred);
+    bool predictor_found = lookup_helper(hist_entry.pcAddr,ghr, *target_1, *target_2, tid, predictor, predictor_index, alt_predictor, alt_predictor_index, pred_count, use_alt_pred);
     ittagestats.usealtCounter[use_alt]++;
     if (predictor_found && use_alt_pred) {
         set(target_sel, target_2);
@@ -421,7 +420,7 @@ ITTAGE::recordTarget(
                 set(way_sel.target, target);
                 way_sel.tag =
                     getTag(hist_entry.pcAddr,
-                           threadInfo[tid].ghr,
+                           ghr,
                            predictor_sel);
                 way_sel.counter = 1;
                 way_sel.useful = 0;
@@ -440,18 +439,18 @@ ITTAGE::recordTarget(
             DPRINTF(Indirect, "Start pos: %d\n", start_pos);
             for (; start_pos < numPredictors; ++start_pos) {
                 uint32_t new_index = getAddrFold(hist_entry.pcAddr, start_pos);
-                new_index ^= getCSR1(threadInfo[tid].ghr, start_pos);
+                new_index ^= getCSR1(ghr, start_pos);
                 auto& way_new = targetCache[tid][start_pos][new_index];
                 if (way_new.useful == 0) {
                     if (reset_counter < 255) reset_counter++;
                     set(way_new.target, target);
                     way_new.tag =
                         getTag(hist_entry.pcAddr,
-                               threadInfo[tid].ghr,
+                               ghr,
                                start_pos);
                     way_new.counter = 1;
 
-                    to_string(threadInfo[tid].ghr, prBuf1);
+                    to_string(ghr, prBuf1);
                     DPRINTF(Indirect,
                             "Allocating table %u [%u] for br %#lx + hist "
                             "%s, target: %#lx\n",
@@ -490,11 +489,10 @@ ITTAGE::recordTarget(
     }
 
     if (GEM5_UNLIKELY(TRACING_ON && gem5::debug::Indirect)) {
-        to_string(threadInfo[tid].ghr, prBuf1);
+        to_string(ghr, prBuf1);
     }
-    threadInfo[tid].ghr = (threadInfo[tid].ghr << 1) | ghr_last;
     if (GEM5_UNLIKELY(TRACING_ON && gem5::debug::Indirect)) {
-        to_string(threadInfo[tid].ghr, prBuf1);
+        to_string(ghr, prBuf1);
     }
     DPRINTF(Indirect,
             "Update GHR from %#lx to %#lx (miss path with indirect?)\n",
