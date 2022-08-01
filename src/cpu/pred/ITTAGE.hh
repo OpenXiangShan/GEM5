@@ -61,10 +61,19 @@ private:
     std::vector<std::unique_ptr<PCStateBase>> previous_target;
     std::vector<std::vector<std::unique_ptr<PCStateBase>> >base_predictor;
 
+
+    struct TCnts{
+        uint32_t lookuphit;
+        uint32_t predmiss;
+        uint32_t predhit;
+    };
     struct ITTAGEStats : public statistics::Group {
+        statistics::Scalar mainlookupHit;
+        statistics::Scalar altlookupHit;
         statistics::Scalar mainpredHit;
         statistics::Scalar altpredHit;
-        std::map<uint32_t, uint32_t> altCounter;
+        std::map<uint32_t, uint32_t> usealtCounter;
+        std::map<uint32_t, TCnts>  THitCnt;
         ITTAGEStats(statistics::Group* parent);
     }ittagestats;
 
