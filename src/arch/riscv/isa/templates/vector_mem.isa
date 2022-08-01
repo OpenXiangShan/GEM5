@@ -54,14 +54,12 @@ public:
         %(set_reg_idx_arr)s;
         _numSrcRegs = 0;
         _numDestRegs = 0;
-        setDestRegIdx(_numDestRegs++,
-                      RegId(VecRegClass, _machInst.vd + _microIdx));
+        setDestRegIdx(_numDestRegs++, vecRegClass[_machInst.vd + _microIdx]);
         _numTypedDestRegs[VecRegClass]++;
-        setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
-        setSrcRegIdx(_numSrcRegs++,
-                     RegId(VecRegClass, _machInst.vd + _microIdx));
+        setSrcRegIdx(_numSrcRegs++, intRegClass[_machInst.rs1]);
+        setSrcRegIdx(_numSrcRegs++, vecRegClass[_machInst.vd + _microIdx]);
         if (!_machInst.vm) {
-            setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, 0));
+            setSrcRegIdx(_numSrcRegs++, vecRegClass[0]);
         }
     }
 
@@ -210,11 +208,10 @@ public:
         %(set_reg_idx_arr)s;
         _numSrcRegs = 0;
         _numDestRegs = 0;
-        setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
-        setSrcRegIdx(_numSrcRegs++,
-                     RegId(VecRegClass, _machInst.vs3 + _microIdx));
+        setSrcRegIdx(_numSrcRegs++, intRegClass[_machInst.rs1]);
+        setSrcRegIdx(_numSrcRegs++, vecRegClass[_machInst.vs3 + _microIdx]);
         if (!_machInst.vm) {
-            setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, 0));
+            setSrcRegIdx(_numSrcRegs++, vecRegClass[0]);
         }
         this->flags[IsVector] = true;
         this->flags[IsStore] = true;
@@ -410,9 +407,8 @@ public:
         %(set_reg_idx_arr)s;
         _numSrcRegs = 0;
         _numDestRegs = 0;
-        setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
-        setSrcRegIdx(_numSrcRegs++,
-                     RegId(VecRegClass, _machInst.vs3 + _microIdx));
+        setSrcRegIdx(_numSrcRegs++, intRegClass[_machInst.rs1]);
+        setSrcRegIdx(_numSrcRegs++, vecRegClass[_machInst.vs3 + _microIdx]);
         this->flags[IsVector] = true;
         this->flags[IsStore] = true;
     }
@@ -519,10 +515,9 @@ public:
         %(set_reg_idx_arr)s;
         _numSrcRegs = 0;
         _numDestRegs = 0;
-        setDestRegIdx(_numDestRegs++,
-                      RegId(VecRegClass, _machInst.vd + _microIdx));
+        setDestRegIdx(_numDestRegs++, vecRegClass[_machInst.vd + _microIdx]);
         _numTypedDestRegs[VecRegClass]++;
-        setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
+        setSrcRegIdx(_numSrcRegs++, intRegClass[_machInst.rs1]);
         this->flags[IsVector] = true;
         this->flags[IsLoad] = true;
     }
@@ -649,16 +644,14 @@ public:
         %(set_reg_idx_arr)s;
         _numSrcRegs = 0;
         _numDestRegs = 0;
-        setDestRegIdx(_numDestRegs++,
-            RegId(VecRegClass, _machInst.vd + _regIdx));
+        setDestRegIdx(_numDestRegs++, vecRegClass[_machInst.vd + _regIdx]);
         _numTypedDestRegs[VecRegClass]++;
-        setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
-        setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs2));
+        setSrcRegIdx(_numSrcRegs++, intRegClass[_machInst.rs1]);
+        setSrcRegIdx(_numSrcRegs++, intRegClass[_machInst.rs2]);
         // We treat agnostic as undistrubed
-        setSrcRegIdx(_numSrcRegs++,
-            RegId(VecRegClass, _machInst.vd + _regIdx));
+        setSrcRegIdx(_numSrcRegs++, vecRegClass[_machInst.vd + _regIdx]);
         if (!_machInst.vm) {
-            setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, 0));
+            setSrcRegIdx(_numSrcRegs++, vecRegClass[0]);
         }
         this->flags[IsLoad] = true;
     }

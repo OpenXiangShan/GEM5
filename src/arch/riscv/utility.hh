@@ -130,7 +130,7 @@ registerName(RegId reg)
             return str.str();
         }
         return float_reg::RegNames[reg.index()];
-    else if (reg.is(VecRegClass)) {
+    } else if (reg.is(VecRegClass)) {
         if (reg.index() >= NumVecRegs) {
             std::stringstream str;
             str << "?? (v" << reg.index() << ')';

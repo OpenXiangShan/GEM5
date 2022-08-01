@@ -36,6 +36,8 @@
 
 #include "arch/generic/vec_pred_reg.hh"
 #include "arch/generic/vec_reg.hh"
+#include "cpu/reg_class.hh"
+#include "debug/VecRegs.hh"
 
 namespace gem5
 {
@@ -70,6 +72,19 @@ const std::vector<std::string> VecRegNames = {
 };
 
 const int VecMemInternalReg0 = NumVecStandardRegs;
+
+static inline VecElemRegClassOps<RiscvISA::VecElem>
+    vecRegElemClassOps(NumVecElemPerVecReg);
+static inline TypedRegClassOps<RiscvISA::VecRegContainer> vecRegClassOps;
+
+inline constexpr RegClass vecRegClass =
+    RegClass(VecRegClass, VecRegClassName, NumVecRegs, debug::VecRegs).
+        ops(vecRegClassOps).
+        regType<VecRegContainer>();
+inline constexpr RegClass vecElemClass =
+    RegClass(VecElemClass, VecElemClassName, NumVecRegs * NumVecElemPerVecReg,
+            debug::VecRegs).
+        ops(vecRegElemClassOps);
 
 } // namespace RiscvISA
 } // namespace gem5

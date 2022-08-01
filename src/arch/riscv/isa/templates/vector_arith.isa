@@ -720,10 +720,9 @@ def template VMvWholeMicroConstructor {{
     %(set_reg_idx_arr)s;
     _numSrcRegs = 0;
     _numDestRegs = 0;
-    setDestRegIdx(_numDestRegs++,
-                  RegId(VecRegClass, _machInst.vd + _microIdx));
+    setDestRegIdx(_numDestRegs++, vecRegClass[_machInst.vd + _microIdx]);
     _numTypedDestRegs[VecRegClass]++;
-    setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _machInst.vs2 + _microIdx));
+    setSrcRegIdx(_numSrcRegs++, vecRegClass[_machInst.vs2 + _microIdx]);
 }
 
 }};

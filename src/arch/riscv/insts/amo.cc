@@ -71,8 +71,9 @@ LoadReserved::generateDisassembly(
         ss << "aq";
     if (machInst.rl)
         ss << "rl";
-    ss << ' ' << registerName(RegId(IntRegClass, RD)) << ", ("
-            << registerName(RegId(IntRegClass, RS1)) << ')';
+
+    ss << ' ' << registerName(intRegClass[machInst.rd]) << ", ("
+            << registerName(intRegClass[machInst.rs1]) << ')';
     return ss.str();
 }
 
@@ -99,9 +100,10 @@ StoreCond::generateDisassembly(
         ss << "aq";
     if (machInst.rl)
         ss << "rl";
-    ss << ' ' << registerName(RegId(IntRegClass, RD)) << ", "
-            << registerName(RegId(IntRegClass, RS2)) << ", ("
-            << registerName(RegId(IntRegClass, RS1)) << ')';
+
+    ss << ' ' << registerName(intRegClass[machInst.rd]) << ", "
+            << registerName(intRegClass[machInst.rs2]) << ", ("
+            << registerName(intRegClass[machInst.rs1]) << ')';
     return ss.str();
 }
 
@@ -129,9 +131,10 @@ AtomicMemOp::generateDisassembly(
         ss << "aq";
     if (machInst.rl)
         ss << "rl";
-    ss << ' ' << registerName(RegId(IntRegClass, RD)) << ", "
-            << registerName(RegId(IntRegClass, RS2)) << ", ("
-            << registerName(RegId(IntRegClass, RS1)) << ')';
+
+    ss << ' ' << registerName(intRegClass[machInst.rd]) << ", "
+            << registerName(intRegClass[machInst.rs2]) << ", ("
+            << registerName(intRegClass[machInst.rs1]) << ')';
     return ss.str();
 }
 

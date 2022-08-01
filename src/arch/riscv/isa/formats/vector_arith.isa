@@ -35,7 +35,7 @@ let {{
         return "setSrcRegIdx(_numSrcRegs++, " + srcRegId + ");\n"
     def setSrcVm():
         return "if (!this->vm)\n" + \
-               "    setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, 0));"
+               "    setSrcRegIdx(_numSrcRegs++, vecRegClass[0]);"
     def vmDeclAndReadData():
         return '''
             [[maybe_unused]] RiscvISA::vreg_t tmp_v0;
@@ -76,18 +76,18 @@ def format VectorIntFormat(code, category, *flags) {{
     need_elem_idx = mask_cond or code.find("ei") != -1
 
     old_vd_idx = 2
-    dest_reg_id = "RegId(VecRegClass, _machInst.vd + _microIdx)"
+    dest_reg_id = "vecRegClass[_machInst.vd + _microIdx]"
     src1_reg_id = ""
     if category in ["OPIVV", "OPMVV"]:
-        src1_reg_id = "RegId(VecRegClass, _machInst.vs1 + _microIdx)"
+        src1_reg_id = "vecRegClass[_machInst.vs1 + _microIdx]"
     elif category in ["OPIVX", "OPMVX"]:
-        src1_reg_id = "RegId(IntRegClass, _machInst.rs1)"
+        src1_reg_id = "intRegClass[_machInst.rs1]"
     elif category == "OPIVI":
         old_vd_idx = 1
     else:
         error("not supported category for VectorIntFormat: %s" % category)
-    src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
-    src3_reg_id = "RegId(VecRegClass, _machInst.vs3 + _microIdx)"
+    src2_reg_id = "vecRegClass[_machInst.vs2 + _microIdx]"
+    src3_reg_id = "vecRegClass[_machInst.vs3 + _microIdx]"
 
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
 
@@ -143,22 +143,22 @@ def format VectorIntWideningFormat(code, category, *flags) {{
     need_elem_idx = mask_cond or code.find("ei") != -1
 
     old_vd_idx = 2
-    dest_reg_id = "RegId(VecRegClass, _machInst.vd + _microIdx)"
+    dest_reg_id = "vecRegClass[_machInst.vd + _microIdx]"
     src1_reg_id = ""
     if category in ["OPIVV", "OPMVV"]:
-        src1_reg_id = "RegId(VecRegClass, _machInst.vs1 + _microIdx / 2)"
+        src1_reg_id = "vecRegClass[_machInst.vs1 + _microIdx / 2]"
     elif category in ["OPIVX", "OPMVX"]:
-        src1_reg_id = "RegId(IntRegClass, _machInst.rs1)"
+        src1_reg_id = "intRegClass[_machInst.rs1]"
     elif category == "OPIVI":
         old_vd_idx = 1
     else:
         error("not supported category for VectorIntFormat: %s" % category)
     src2_reg_id = ""
     if inst_suffix in ["vv", "vx"]:
-        src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx / 2)"
+        src2_reg_id = "vecRegClass[_machInst.vs2 + _microIdx / 2]"
     elif inst_suffix in ["wv", "wx"]:
-        src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
-    src3_reg_id = "RegId(VecRegClass, _machInst.vs3 + _microIdx)"
+        src2_reg_id = "vecRegClass[_machInst.vs2 + _microIdx]"
+    src3_reg_id = "vecRegClass[_machInst.vs3 + _microIdx]"
 
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
 
@@ -217,18 +217,18 @@ def format VectorIntMaskFormat(code, category, *flags) {{
     need_elem_idx = mask_cond or code.find("ei") != -1
 
     old_vd_idx = 2
-    dest_reg_id = "RegId(VecRegClass, VecMemInternalReg0 + _microIdx)"
+    dest_reg_id = "vecRegClass[VecMemInternalReg0 + _microIdx]"
     src1_reg_id = ""
     if category == "OPIVV":
-        src1_reg_id = "RegId(VecRegClass, _machInst.vs1 + _microIdx)"
+        src1_reg_id = "vecRegClass[_machInst.vs1 + _microIdx]"
     elif category == "OPIVX":
-        src1_reg_id = "RegId(IntRegClass, _machInst.rs1)"
+        src1_reg_id = "intRegClass[_machInst.rs1]"
     elif category == "OPIVI":
         old_vd_idx = 1
     else:
         error("not supported category for VectorIntFormat: %s" % category)
-    src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
-    old_dest_reg_id = "RegId(VecRegClass, _machInst.vd)"
+    src2_reg_id = "vecRegClass[_machInst.vs2 + _microIdx]"
+    old_dest_reg_id = "vecRegClass[_machInst.vd]"
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
     set_src_reg_idx = ""
     if category != "OPIVI":
@@ -281,16 +281,16 @@ def format VectorFloatFormat(code, category, *flags) {{
     mask_cond = v0_required and (inst_suffix not in ['vvm', 'vfm'])
     need_elem_idx = mask_cond or code.find("ei") != -1
 
-    dest_reg_id = "RegId(VecRegClass, _machInst.vd + _microIdx)"
+    dest_reg_id = "vecRegClass[_machInst.vd + _microIdx]"
     src1_reg_id = ""
     if category == "OPFVV":
-        src1_reg_id = "RegId(VecRegClass, _machInst.vs1 + _microIdx)"
+        src1_reg_id = "vecRegClass[_machInst.vs1 + _microIdx]"
     elif category == "OPFVF":
-        src1_reg_id = "RegId(FloatRegClass, _machInst.rs1)"
+        src1_reg_id = "floatRegClass[_machInst.rs1]"
     else:
         error("not supported category for VectorFloatFormat: %s" % category)
-    src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
-    src3_reg_id = "RegId(VecRegClass, _machInst.vs3 + _microIdx)"
+    src2_reg_id = "vecRegClass[_machInst.vs2 + _microIdx]"
+    src3_reg_id = "vecRegClass[_machInst.vs3 + _microIdx]"
 
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
 
@@ -341,20 +341,20 @@ def format VectorFloatWideningFormat(code, category, *flags) {{
     mask_cond = v0_required
     need_elem_idx = mask_cond or code.find("ei") != -1
 
-    dest_reg_id = "RegId(VecRegClass, _machInst.vd + _microIdx)"
+    dest_reg_id = "vecRegClass[_machInst.vd + _microIdx]"
     src1_reg_id = ""
     if category in ["OPFVV"]:
-        src1_reg_id = "RegId(VecRegClass, _machInst.vs1 + _microIdx / 2)"
+        src1_reg_id = "vecRegClass[_machInst.vs1 + _microIdx / 2]"
     elif category in ["OPFVF"]:
-        src1_reg_id = "RegId(FloatRegClass, _machInst.rs1)"
+        src1_reg_id = "floatRegClass[_machInst.rs1]"
     else:
         error("not supported category for VectorFloatFormat: %s" % category)
     src2_reg_id = ""
     if inst_suffix in ["vv", "vf"]:
-        src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx / 2)"
+        src2_reg_id = "vecRegClass[_machInst.vs2 + _microIdx / 2]"
     elif inst_suffix in ["wv", "wf"]:
-        src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
-    src3_reg_id = "RegId(VecRegClass, _machInst.vs3 + _microIdx)"
+        src2_reg_id = "vecRegClass[_machInst.vs2 + _microIdx]"
+    src3_reg_id = "vecRegClass[_machInst.vs3 + _microIdx]"
 
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
 
@@ -404,16 +404,16 @@ def format VectorFloatMaskFormat(code, category, *flags) {{
         'VectorArithMacroInst',
         {'code': code},
         flags)
-    dest_reg_id = "RegId(VecRegClass, VecMemInternalReg0 + _microIdx)"
+    dest_reg_id = "vecRegClass[VecMemInternalReg0 + _microIdx]"
     src1_reg_id = ""
     if category == "OPFVV":
-        src1_reg_id = "RegId(VecRegClass, _machInst.vs1 + _microIdx)"
+        src1_reg_id = "vecRegClass[_machInst.vs1 + _microIdx]"
     elif category == "OPFVF":
-        src1_reg_id = "RegId(FloatRegClass, _machInst.rs1)"
+        src1_reg_id = "floatRegClass[_machInst.rs1]"
     else:
         error("not supported category for VectorFloatFormat: %s" % category)
-    src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
-    old_dest_reg_id = "RegId(VecRegClass, _machInst.vd)"
+    src2_reg_id = "vecRegClass[_machInst.vs2 + _microIdx]"
+    old_dest_reg_id = "vecRegClass[_machInst.vd]"
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
     set_src_reg_idx = ""
     set_src_reg_idx += setSrcWrapper(src1_reg_id)
@@ -499,10 +499,10 @@ def format VectorReduceIntFormat(code, category, *flags) {{
     iop = InstObjParams(name, Name, 'VectorArithMacroInst', {'code': code},
                         flags)
     inst_name, inst_suffix = name.split("_", maxsplit=1)
-    dest_reg_id = "RegId(VecRegClass, _machInst.vd)"
-    src1_reg_id = "RegId(VecRegClass, _machInst.vs1)"
-    src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
-    old_dest_reg_id = "RegId(VecRegClass, _machInst.vd)"
+    dest_reg_id = "vecRegClass[_machInst.vd]"
+    src1_reg_id = "vecRegClass[_machInst.vs1]"
+    src2_reg_id = "vecRegClass[_machInst.vs2 + _microIdx]"
+    old_dest_reg_id = "vecRegClass[_machInst.vd]"
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
     set_src_reg_idx = setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
@@ -540,10 +540,10 @@ def format VectorReduceFloatFormat(code, category, *flags) {{
     iop = InstObjParams(name, Name, 'VectorArithMacroInst', {'code': code},
                         flags)
     inst_name, inst_suffix = name.split("_", maxsplit=1)
-    dest_reg_id = "RegId(VecRegClass, _machInst.vd)"
-    src1_reg_id = "RegId(VecRegClass, _machInst.vs1)"
-    src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
-    old_dest_reg_id = "RegId(VecRegClass, _machInst.vd)"
+    dest_reg_id = "vecRegClass[_machInst.vd]"
+    src1_reg_id = "vecRegClass[_machInst.vs1]"
+    src2_reg_id = "vecRegClass[_machInst.vs2 + _microIdx]"
+    old_dest_reg_id = "vecRegClass[_machInst.vd]"
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
     set_src_reg_idx = setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
@@ -582,18 +582,18 @@ def format VectorIntVxsatFormat(code, category, *flags) {{
                         flags)
     inst_name, inst_suffix = name.split("_", maxsplit=1)
     old_vd_idx = 2
-    dest_reg_id = "RegId(VecRegClass, _machInst.vd + _microIdx)"
+    dest_reg_id = "vecRegClass[_machInst.vd + _microIdx]"
     src1_reg_id = ""
     if category in ["OPIVV"]:
-        src1_reg_id = "RegId(VecRegClass, _machInst.vs1 + _microIdx)"
+        src1_reg_id = "vecRegClass[_machInst.vs1 + _microIdx]"
     elif category in ["OPIVX"]:
-        src1_reg_id = "RegId(IntRegClass, _machInst.rs1)"
+        src1_reg_id = "intRegClass[_machInst.rs1]"
     elif category == "OPIVI":
         old_vd_idx = 1
     else:
         error("not supported category for VectorIntVxsatFormat: %s" % category)
-    src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
-    src3_reg_id = "RegId(VecRegClass, _machInst.vs3 + _microIdx)"
+    src2_reg_id = "vecRegClass[_machInst.vs2 + _microIdx]"
+    src3_reg_id = "vecRegClass[_machInst.vs3 + _microIdx]"
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
 
     set_src_reg_idx = ""

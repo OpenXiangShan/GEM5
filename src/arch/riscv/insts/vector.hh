@@ -358,11 +358,10 @@ class VMaskMergeMicroInst : public VectorArithMicroInst
         _numSrcRegs = 0;
         _numDestRegs = 0;
 
-        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, _dstReg));
+        setDestRegIdx(_numDestRegs++, vecRegClass[_dstReg]);
         _numTypedDestRegs[VecRegClass]++;
         for (uint8_t i=0; i<_numSrcs; i++) {
-            setSrcRegIdx(_numSrcRegs++,
-                        RegId(VecRegClass, VecMemInternalReg0 + i));
+            setSrcRegIdx(_numSrcRegs++, vecRegClass[VecMemInternalReg0 + i]);
         }
     }
 
