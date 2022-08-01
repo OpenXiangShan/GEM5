@@ -312,13 +312,9 @@ ITTAGE::recordTarget(
         InstSeqNum seq_num, void * indirect_history, const PCStateBase& target,
         ThreadID tid)
 {
-    bitset& ghr = *static_cast<bitset*>(indirect_history);
+    ThreadInfo* recordThreadInfo = static_cast<ThreadInfo*>(indirect_history);
+    bitset& ghr = recordThreadInfo->ghr;
     // here ghr was appended one more
-    bitset ghr_last = threadInfo[tid].ghr.set(0, 1);// | 1;
-    threadInfo[tid].ghr >>= 1;
-    if (threadInfo[tid].mark.test(1)) {
-        threadInfo[tid].ghr >>= pathHistLength;
-    }
     DPRINTF(Indirect, "record with target:%s\n", target);
     // todo: adjust according to ITTAGE
     ThreadInfo &t_info = threadInfo[tid];
@@ -513,8 +509,6 @@ ITTAGE::recordTarget(
     if (GEM5_UNLIKELY(TRACING_ON && gem5::debug::Indirect)) {
         to_string(ghr, prBuf1);
     }
-    unsigned shift = threadInfo[tid].mark.test(1) ? pathHistLength + 1 : 1;
-    threadInfo[tid].ghr = (threadInfo[tid].ghr << shift) | ghr_last;
     if (GEM5_UNLIKELY(TRACING_ON && gem5::debug::Indirect)) {
         to_string(ghr, prBuf1);
     }
