@@ -29,7 +29,6 @@ ITTAGE::ITTAGE(const ITTAGEParams &params):
     pathLength(params.indirectPathLength),
     numPredictors(params.numPredictors),
     simpleBTBSize(params.simpleBTBSize),
-    pathHistLength(params.pathHistLength),
     tableSizes(params.tableSizes),
     TTagBitSizes(params.TTagBitSizes),
     TTagPcShifts(params.TTagPcShifts),
@@ -44,7 +43,6 @@ ITTAGE::ITTAGE(const ITTAGEParams &params):
     for (unsigned int i = 0; i < params.numThreads; ++i) {
         //initialize ghr
         threadInfo[i].ghr.resize(max_histlength);
-        threadInfo[i].mark.resize(max_histlength);
         //initialize base predictor
         base_predictor[i].resize(simpleBTBSize);
         //initialize ittage predictor
@@ -94,7 +92,7 @@ ITTAGE::genIndirectInfo(ThreadID tid,
     // record the GHR as it was before this prediction
     // It will be used to recover the history in case this prediction is
     // wrong or belongs to bad path
-    indirect_history = new ThreadInfo(threadInfo[tid]);
+    indirect_history = new bitset(threadInfo[tid].ghr);
 }
 
 void
@@ -106,7 +104,6 @@ ITTAGE::updateDirectionInfo(
     }
     threadInfo[tid].ghr <<= 1;
     threadInfo[tid].ghr.set(0, actually_taken);
-    threadInfo[tid].mark <<= 1;
 
     if (GEM5_UNLIKELY(TRACING_ON && gem5::debug::Indirect)) {
         to_string(threadInfo[tid].ghr, prBuf2);
@@ -119,10 +116,9 @@ ITTAGE::updateDirectionInfo(
 void
 ITTAGE::changeDirectionPrediction(ThreadID tid, void * indirect_history, bool actually_taken)
 {
-    ThreadInfo* previousThreadInfo = static_cast<ThreadInfo*>(indirect_history);
-    threadInfo[tid].ghr = ((previousThreadInfo->ghr) << 1);
+    bitset* previousGhr = static_cast<bitset*>(indirect_history);
+    threadInfo[tid].ghr = ((*previousGhr) << 1);
     threadInfo[tid].ghr.set(0, actually_taken);
-    threadInfo[tid].mark = ((previousThreadInfo->mark) << 1);
     to_string(threadInfo[tid].ghr, prBuf1);
     CDPRINTF(lastIndirectBrAddr, Indirect, "Recover GHR to %s on squash\n", prBuf1);
 }
@@ -246,13 +242,6 @@ ITTAGE::recordIndirect(Addr br_addr, Addr tgt_addr,
     CDPRINTF(br_addr, Indirect, "Recording %x seq:%d\n", br_addr, seq_num);
     HistoryEntry entry(br_addr, tgt_addr, seq_num);
     threadInfo[tid].pathHist.push_back(entry);
-    for (int i = 0;i < pathHistLength;i++) {
-        bool pathBit = ((br_addr >> (i + 1)) ^ (tgt_addr >> (i + 1))) & 1ULL;
-        threadInfo[tid].ghr <<= 1;
-        threadInfo[tid].ghr.set(0, pathBit);
-        threadInfo[tid].mark <<= 1;
-        threadInfo[tid].mark.set(0, 1);
-    }
 }
 
 void
@@ -262,13 +251,12 @@ ITTAGE::commit(InstSeqNum seq_num, ThreadID tid,
     ThreadInfo &t_info = threadInfo[tid];
 
     // we do not need to recover the GHR, so delete the information
-    ThreadInfo* previousThreadInfo = static_cast<ThreadInfo*>(indirect_history);
+    bitset* previousGhr = static_cast<bitset*>(indirect_history);
 
     if (t_info.pathHist.empty()) return;
 
     if (t_info.headHistEntry < t_info.pathHist.size() &&
         t_info.pathHist[t_info.headHistEntry].seqNum <= seq_num) {
-        bitset &ghr = previousThreadInfo->ghr;
         const Addr br_addr = t_info.pathHist[t_info.headHistEntry].pcAddr;
         const Addr target_addr = t_info.pathHist[t_info.headHistEntry].targetAddr;
 
@@ -277,13 +265,13 @@ ITTAGE::commit(InstSeqNum seq_num, ThreadID tid,
                  br_addr, target_addr, t_info.pathHist[t_info.headHistEntry].seqNum);
 
         for (int i = numPredictors - 1; i >= 0;--i) {
-            uint32_t csr1 = getCSR1(ghr, i);
-            to_string(ghr, prBuf1);
+            uint32_t csr1 = getCSR1(*previousGhr, i);
+            to_string(*previousGhr, prBuf1);
             CDPRINTF(br_addr, Indirect, "Confirm ITTAGE Predictor %i predict pc %#lx with ghr %s\n",
                     i, br_addr, prBuf1);
             uint32_t index = getAddrFold(br_addr, i);
             uint32_t tmp_index = index ^ csr1;
-            uint32_t tmp_tag = getTag(br_addr, ghr, i);
+            uint32_t tmp_tag = getTag(br_addr, *previousGhr, i);
             auto &way = targetCache[tid][i][tmp_index];
             if (way.tag == tmp_tag && way.target && way.target->instAddr() == target_addr) {
                 if (way.counter <= 2)
@@ -298,7 +286,7 @@ ITTAGE::commit(InstSeqNum seq_num, ThreadID tid,
             ++t_info.headHistEntry;
         }
     }
-    delete previousThreadInfo;
+    delete previousGhr;
 }
 
 void
@@ -322,11 +310,6 @@ ITTAGE::squash(InstSeqNum seq_num, ThreadID tid)
     int queue_size = t_info.pathHist.size();
     for (int i = 0; i < queue_size - valid_count; ++i) {
         t_info.ghr >>=1;
-        t_info.mark >>=1;
-        if (t_info.mark.test(0)) {
-            t_info.ghr >>= pathHistLength;
-            t_info.mark >>= pathHistLength;
-        }
     }
     t_info.pathHist.erase(squash_itr, t_info.pathHist.end());
 }
@@ -334,11 +317,10 @@ ITTAGE::squash(InstSeqNum seq_num, ThreadID tid)
 void
 ITTAGE::deleteIndirectInfo(ThreadID tid, void * indirect_history)
 {
-    ThreadInfo* previousThreadInfo = static_cast<ThreadInfo*>(indirect_history);
-    threadInfo[tid].ghr = previousThreadInfo->ghr;
-    threadInfo[tid].mark = previousThreadInfo->mark;
+    bitset* previousGhr = static_cast<bitset*>(indirect_history);
+    threadInfo[tid].ghr = *previousGhr;
 
-    delete previousThreadInfo;
+    delete previousGhr;
 }
 
 void
@@ -346,8 +328,7 @@ ITTAGE::recordTarget(
         InstSeqNum seq_num, void * indirect_history, const PCStateBase& target,
         ThreadID tid)
 {
-    ThreadInfo* recordThreadInfo = static_cast<ThreadInfo*>(indirect_history);
-    bitset& ghr = recordThreadInfo->ghr;
+    bitset& ghr = *static_cast<bitset*>(indirect_history);
     // here ghr was appended one more
     DPRINTF(Indirect, "record with target: %s\n", target);
     // todo: adjust according to ITTAGE

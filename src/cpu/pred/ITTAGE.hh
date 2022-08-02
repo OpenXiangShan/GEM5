@@ -52,7 +52,6 @@ private:
     const unsigned pathLength;
     const unsigned numPredictors;
     const unsigned simpleBTBSize;
-    const unsigned pathHistLength;
     std::vector<int> tableSizes;
     std::vector<int> TTagBitSizes;
     std::vector<int> TTagPcShifts;
@@ -103,7 +102,6 @@ private:
         std::deque<HistoryEntry> pathHist;
         unsigned headHistEntry;
         bitset ghr;
-        bitset mark;
     };
 
     std::vector<ThreadInfo> threadInfo;
