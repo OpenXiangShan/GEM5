@@ -47,9 +47,16 @@ let {{
         '''
     def copyOldVd(vd_idx):
         return 'COPY_OLD_VD(%d);' % vd_idx
-    def loopWrapper(code):
-        return "for (uint32_t i = 0; i < this->microVl; i++) {\n" + \
-               code + "}\n"
+    def loopWrapper(code, micro_inst = True):
+        if micro_inst:
+            upper_bound = "this->microVl"
+        else:
+            upper_bound = "(uint32_t)machInst.vl"
+        return '''
+            for (uint32_t i = 0; i < %s; i++) {
+                %s
+            }
+        ''' % (upper_bound, code)
     def maskCondWrapper(code):
         return "if (this->vm || elem_mask(v0, ei)) {\n" + \
                code + "}\n"
@@ -636,6 +643,48 @@ def format VectorNonSplitFormat(code, category, *flags) {{
         VectorNonSplitExecute.subst(iop)
 
     decode_block = VectorIntDecodeBlock.subst(iop)
+}};
+
+def format VectorMaskFormat(code, category, *flags) {{
+    inst_name, inst_suffix = name.split("_", maxsplit=1)
+    old_vd_idx = 2
+    if category not in ["OPMVV"]:
+        error("not supported category for VectorIntFormat: %s" % category)
+    dest_reg_id = "vecRegClass[_machInst.vd]"
+    src1_reg_id = "vecRegClass[_machInst.vs1]"
+    src2_reg_id = "vecRegClass[_machInst.vs2]"
+
+    # The tail of vector mask inst should be treated as tail-agnostic.
+    # We treat it with tail-undisturbed policy, since
+    # the test suits only support undisturbed policy.
+    # TODO: remove it
+    old_dest_reg_id = "vecRegClass[_machInst.vd]"
+
+    set_src_reg_idx = ""
+    set_src_reg_idx += setSrcWrapper(src1_reg_id)
+    set_src_reg_idx += setSrcWrapper(src2_reg_id)
+    set_src_reg_idx += setSrcWrapper(old_dest_reg_id)
+
+    set_dest_reg_idx = setDestWrapper(dest_reg_id)
+
+    code = loopWrapper(code, micro_inst = False)
+
+    iop = InstObjParams(name,
+        Name,
+        'VectorNonSplitInst',
+        {'code': code,
+         'set_dest_reg_idx': set_dest_reg_idx,
+         'set_src_reg_idx': set_src_reg_idx,
+         'copy_old_vd': copyOldVd(old_vd_idx)},
+        flags)
+    # Because of the use of templates, we had to put all parts in header to
+    # keep the compiler happy.
+    header_output = \
+        VectorMaskDeclare.subst(iop) + \
+        VectorMaskConstructor.subst(iop) + \
+        VectorMaskExecute.subst(iop)
+
+    decode_block = VectorMaskDecodeBlock.subst(iop)
 }};
 
 def format VectorReduceIntFormat(code, category, *flags) {{

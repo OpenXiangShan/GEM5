@@ -867,6 +867,64 @@ Fault
 
 }};
 
+def template VectorMaskDeclare {{
+
+template<typename ElemType>
+class %(class_name)s : public %(base_class)s {
+private:
+    RegId srcRegIdxArr[3];
+    RegId destRegIdxArr[1];
+public:
+    %(class_name)s(ExtMachInst _machInst);
+    Fault execute(ExecContext* xc, Trace::InstRecord* traceData)const override;
+    using %(base_class)s::generateDisassembly;
+};
+
+}};
+
+def template VectorMaskConstructor {{
+
+template<typename ElemType>
+%(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
+    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
+{
+    %(set_reg_idx_arr)s;
+    %(set_dest_reg_idx)s;
+    %(set_src_reg_idx)s;
+}
+
+}};
+
+def template VectorMaskExecute {{
+
+template<typename ElemType>
+Fault
+%(class_name)s<ElemType>::execute(ExecContext* xc,
+                                  Trace::InstRecord* traceData) const
+{
+    using vu = uint8_t;
+
+    if (machInst.vill)
+        return std::make_shared<IllegalInstFault>("VILL is set", machInst);
+
+    %(op_decl)s;
+    %(op_rd)s;
+    // TODO: remove it
+    %(copy_old_vd)s;
+    %(code)s;
+    %(op_wb)s;
+
+    return NoFault;
+};
+
+}};
+
+def template VectorMaskDecodeBlock {{
+
+return new %(class_name)s<uint8_t>(machInst);
+
+}};
+
 def template VectorNonSplitDeclare {{
 
 template<typename ElemType>

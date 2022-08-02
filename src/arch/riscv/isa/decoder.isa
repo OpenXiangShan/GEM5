@@ -2419,29 +2419,63 @@ decode QUADRANT default Unknown::unknown() {
                         Rd_ud = Vs2_vi[0];
                     }}, OPMVV, VectorDummyOp);
                 }
-                format VectorIntFormat {
-                    0x12: decode VS1 {
-                        format VectorIntExtFormat {
-                            0x02: vzext_vf8({{
-                                Vd_vu[i] = Vs2_vextu[i + offset];
-                            }}, OPMVV, VectorDummyOp);
-                            0x03: vsext_vf8({{
-                                Vd_vi[i] = Vs2_vext[i + offset];
-                            }}, OPMVV, VectorDummyOp);
-                            0x04: vzext_vf4({{
-                                Vd_vu[i] = Vs2_vextu[i + offset];
-                            }}, OPMVV, VectorDummyOp);
-                            0x05: vsext_vf4({{
-                                Vd_vi[i] = Vs2_vext[i + offset];
-                            }}, OPMVV, VectorDummyOp);
-                            0x06: vzext_vf2({{
-                                Vd_vu[i] = Vs2_vextu[i + offset];
-                            }}, OPMVV, VectorDummyOp);
-                            0x07: vsext_vf2({{
-                                Vd_vi[i] = Vs2_vext[i + offset];
-                            }}, OPMVV, VectorDummyOp);
-                        }
+                0x12: decode VS1 {
+                    format VectorIntExtFormat {
+                        0x02: vzext_vf8({{
+                            Vd_vu[i] = Vs2_vextu[i + offset];
+                        }}, OPMVV, VectorDummyOp);
+                        0x03: vsext_vf8({{
+                            Vd_vi[i] = Vs2_vext[i + offset];
+                        }}, OPMVV, VectorDummyOp);
+                        0x04: vzext_vf4({{
+                            Vd_vu[i] = Vs2_vextu[i + offset];
+                        }}, OPMVV, VectorDummyOp);
+                        0x05: vsext_vf4({{
+                            Vd_vi[i] = Vs2_vext[i + offset];
+                        }}, OPMVV, VectorDummyOp);
+                        0x06: vzext_vf2({{
+                            Vd_vu[i] = Vs2_vextu[i + offset];
+                        }}, OPMVV, VectorDummyOp);
+                        0x07: vsext_vf2({{
+                            Vd_vi[i] = Vs2_vext[i + offset];
+                        }}, OPMVV, VectorDummyOp);
                     }
+                }
+                format VectorMaskFormat {
+                    0x18: vmandn_mm({{
+                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
+                            elem_mask(Vs2_vu, i) & !elem_mask(Vs1_vu, i));
+                    }}, OPMVV, VectorDummyOp);
+                    0x19: vmand_mm({{
+                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
+                            elem_mask(Vs2_vu, i) & elem_mask(Vs1_vu, i));
+                    }}, OPMVV, VectorDummyOp);
+                    0x1a: vmor_mm({{
+                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
+                            elem_mask(Vs2_vu, i) | elem_mask(Vs1_vu, i));
+                    }}, OPMVV, VectorDummyOp);
+                    0x1b: vmxor_mm({{
+                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
+                            elem_mask(Vs2_vu, i) ^ elem_mask(Vs1_vu, i));
+                    }}, OPMVV, VectorDummyOp);
+                    0x1c: vmorn_mm({{
+                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
+                            elem_mask(Vs2_vu, i) | !elem_mask(Vs1_vu, i));
+                    }}, OPMVV, VectorDummyOp);
+                    0x1d: vmnand_mm({{
+                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
+                            !(elem_mask(Vs2_vu, i) & elem_mask(Vs1_vu, i)));
+                    }}, OPMVV, VectorDummyOp);
+                    0x1e: vmnor_mm({{
+                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
+                            !(elem_mask(Vs2_vu, i) | elem_mask(Vs1_vu, i)));
+                    }}, OPMVV, VectorDummyOp);
+                    0x1f: vmxnor_mm({{
+                        Vd_ub[i/8] = ASSIGN_VD_BIT(i,
+                            !(elem_mask(Vs2_vu, i) ^ elem_mask(Vs1_vu, i)));
+                    }}, OPMVV, VectorDummyOp);
+                }
+                format VectorIntFormat {
                     0x20: vdivu_vv({{
                         if (Vs1_vu[i] == 0)
                             Vd_vu[i] = (vu)-1;
