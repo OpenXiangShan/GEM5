@@ -15,6 +15,12 @@ namespace gem5
 namespace branch_prediction
 {
 
+#define CDPRINTF(pc, ...) do { \
+    if (pc == 115622) { \
+        DPRINTF(__VA_ARGS__); \
+    } \
+} while(0);
+
 using boost::to_string;
 
 ITTAGE::ITTAGE(const ITTAGEParams &params):
@@ -104,9 +110,9 @@ ITTAGE::updateDirectionInfo(
     if (GEM5_UNLIKELY(TRACING_ON && gem5::debug::Indirect)) {
         to_string(threadInfo[tid].ghr, prBuf2);
     }
-    DPRINTF(Indirect,
-            "Update GHR from %s to %s (speculative update, direction)\n",
-            prBuf1, prBuf2);
+    // DPRINTF(Indirect,
+    //         "Update GHR from %s to %s (speculative update, direction)\n",
+    //         prBuf1, prBuf2);
 }
 
 void
@@ -117,14 +123,14 @@ ITTAGE::changeDirectionPrediction(ThreadID tid, void * indirect_history, bool ac
     threadInfo[tid].ghr.set(0, actually_taken);
     threadInfo[tid].mark = ((previousThreadInfo->mark) << 1);
     to_string(threadInfo[tid].ghr, prBuf1);
-    DPRINTF(Indirect, "Recover GHR to %s\n", prBuf1);
+    // DPRINTF(Indirect, "Recover GHR to %s\n", prBuf1);
 }
 
 bool
 ITTAGE::lookup_helper(Addr br_addr, bitset& ghr, PCStateBase& target, PCStateBase& alt_target, ThreadID tid, int& predictor, int& predictor_index, int& alt_predictor, int& alt_predictor_index, int& pred_count, bool& use_alt_pred)
 {
     // todo: adjust according to ITTAGE
-    DPRINTF(Indirect, "Looking up %x\n", br_addr);
+    CDPRINTF(br_addr, Indirect, "Looking up %#lx\n", br_addr);
     int pred_counts = 0;
     std::unique_ptr<PCStateBase> target_1, target_2;
     int predictor_1 = 0;
@@ -135,15 +141,16 @@ ITTAGE::lookup_helper(Addr br_addr, bitset& ghr, PCStateBase& target, PCStateBas
     for (int i = numPredictors - 1; i >= 0; --i) {
         uint32_t csr1 = getCSR1(ghr, i);
         to_string(ghr, prBuf1);
-        DPRINTF(Indirect, "ITTAGE Predictor %i predict pc %#lx with ghr %s\n",
-                i, br_addr, prBuf1);
         uint32_t index = getAddrFold(br_addr, i);
         uint32_t tmp_index = index ^ csr1;
         uint32_t tmp_tag = getTag(br_addr, ghr, i);
+        CDPRINTF(br_addr, Indirect, "ITTAGE table %u [%u] (histlen=%u) predict pc %#lx with ghr %s\n",
+                i, tmp_index, histLengths[i], br_addr, prBuf1);
         const auto &way = targetCache[tid][i][tmp_index];
         if (way.tag == tmp_tag && way.target) {
-            DPRINTF(Indirect, "tag %#lx is found in predictor %i\n", tmp_tag,
+            CDPRINTF(br_addr, Indirect, "tag %#lx is found in predictor %i\n", tmp_tag,
                     i);
+            CDPRINTF(br_addr, Indirect, "Predicted target: %#lx\n", way.target->instAddr());
             if (pred_counts == 0) {//第一次命中
                 set(target_1, way.target);
                 predictor_1 = i;
@@ -190,13 +197,15 @@ ITTAGE::lookup_helper(Addr br_addr, bitset& ghr, PCStateBase& target, PCStateBas
                 set(target, *base_predictor[tid][(br_addr ^ prev_target->instAddr()) % simpleBTBSize]);
                 // no need to set
                 pred_count = pred_counts;
-                DPRINTF(Indirect, "Miss on %#lx, return target %#lx from base table\n", br_addr, target.instAddr());
+                CDPRINTF(br_addr, Indirect,
+                         "Miss on %#lx, return target %#lx from base table\n",
+                         br_addr, target.instAddr());
                 return true;
             }
         }
     }
     // may not reach here
-    DPRINTF(Indirect, "Miss %x\n", br_addr);
+    CDPRINTF(br_addr, Indirect, "Miss %x\n", br_addr);
     return false;
 }
 
@@ -219,9 +228,9 @@ bool ITTAGE::lookup(Addr br_addr, PCStateBase& target, ThreadID tid) {
         set(target, *alt_target);
     }
     if (pred_count == 0) {
-        DPRINTF(Indirect, "Hit %#lx (target:%#lx) with base_predictor\n", br_addr, target.instAddr());
+        CDPRINTF(br_addr, Indirect, "Hit %#lx (target:%#lx) with base_predictor\n", br_addr, target.instAddr());
     } else {
-        DPRINTF(Indirect, "Hit %#lx (target:%#lx)\n", br_addr, target.instAddr());
+        CDPRINTF(br_addr, Indirect, "Hit %#lx (target:%#lx)\n", br_addr, target.instAddr());
     }
     // std::cout<<"DEBUG: target.instAddr="<<target.instAddr()<<std::endl;
     // target.set(target.instAddr());
@@ -232,7 +241,7 @@ void
 ITTAGE::recordIndirect(Addr br_addr, Addr tgt_addr,
                                         InstSeqNum seq_num, ThreadID tid)
 {
-    DPRINTF(Indirect, "Recording %x seq:%d\n", br_addr, seq_num);
+    CDPRINTF(br_addr, Indirect, "Recording %x seq:%d\n", br_addr, seq_num);
     HistoryEntry entry(br_addr, tgt_addr, seq_num);
     threadInfo[tid].pathHist.push_back(entry);
     for (int i = 0;i < pathHistLength;i++) {
@@ -248,7 +257,6 @@ void
 ITTAGE::commit(InstSeqNum seq_num, ThreadID tid,
                                 void * indirect_history)
 {
-    DPRINTF(Indirect, "Committing seq:%d\n", seq_num);
     ThreadInfo &t_info = threadInfo[tid];
 
     // we do not need to recover the GHR, so delete the information
@@ -264,7 +272,7 @@ ITTAGE::commit(InstSeqNum seq_num, ThreadID tid,
         for (int i = numPredictors - 1; i >= 0;--i) {
             uint32_t csr1 = getCSR1(ghr, i);
             to_string(ghr, prBuf1);
-            DPRINTF(Indirect, "update ITTAGE Predictor %i predict pc %#lx with ghr %s\n",
+            CDPRINTF(br_addr, Indirect, "Confirm ITTAGE Predictor %i predict pc %#lx with ghr %s\n",
                     i, br_addr, prBuf1);
             uint32_t index = getAddrFold(br_addr, i);
             uint32_t tmp_index = index ^ csr1;
@@ -289,7 +297,7 @@ ITTAGE::commit(InstSeqNum seq_num, ThreadID tid,
 void
 ITTAGE::squash(InstSeqNum seq_num, ThreadID tid)
 {
-    DPRINTF(Indirect, "Squashing seq:%d\n", seq_num);
+    // DPRINTF(Indirect, "Squashing seq:%d\n", seq_num);
     ThreadInfo &t_info = threadInfo[tid];
     auto squash_itr = t_info.pathHist.begin();
     int valid_count = 0;
@@ -300,10 +308,10 @@ ITTAGE::squash(InstSeqNum seq_num, ThreadID tid)
         ++squash_itr;
         ++valid_count;
     }
-    if (squash_itr != t_info.pathHist.end()) {
-        DPRINTF(Indirect, "Squashing series starting with sn:%d\n",
-                squash_itr->seqNum);
-    }
+    // if (squash_itr != t_info.pathHist.end()) {
+    //     DPRINTF(Indirect, "Squashing series starting with sn:%d\n",
+    //             squash_itr->seqNum);
+    // }
     int queue_size = t_info.pathHist.size();
     for (int i = 0; i < queue_size - valid_count; ++i) {
         t_info.ghr >>=1;
@@ -334,12 +342,13 @@ ITTAGE::recordTarget(
     ThreadInfo* recordThreadInfo = static_cast<ThreadInfo*>(indirect_history);
     bitset& ghr = recordThreadInfo->ghr;
     // here ghr was appended one more
-    DPRINTF(Indirect, "record with target:%s\n", target);
+    DPRINTF(Indirect, "record with target: %s\n", target);
     // todo: adjust according to ITTAGE
     ThreadInfo &t_info = threadInfo[tid];
 
     // Should have just squashed so this branch should be the oldest
     auto hist_entry = *(t_info.pathHist.rbegin());
+    CDPRINTF(hist_entry.pcAddr, Indirect, "record with target:%s\n", target);
     // Temporarily pop it off the history so we can calculate the set
     t_info.pathHist.pop_back();
 
@@ -392,13 +401,13 @@ ITTAGE::recordTarget(
 
     // update previous target
     set(previous_target[tid], target);
-    DPRINTF(Indirect, "update previous target: %s\n", *previous_target[tid]);
+    CDPRINTF(hist_entry.pcAddr, Indirect, "update previous target: %s\n", *previous_target[tid]);
     // update base predictor
     const PCStateBase *prev_target = previous_target[tid].get();
     if (prev_target) {
         set(base_predictor[tid][(hist_entry.pcAddr ^ previous_target[tid]->instAddr()) %simpleBTBSize],
             target);
-        DPRINTF(Indirect, "Update base predictor: %s\n",
+        CDPRINTF(hist_entry.pcAddr, Indirect, "Update base predictor: %s\n",
                 *base_predictor[tid][(hist_entry.pcAddr ^ previous_target[tid]->instAddr()) % simpleBTBSize]);
     }
     
@@ -412,7 +421,9 @@ ITTAGE::recordTarget(
     if (pred_count > 0 && target_sel->equals(target)) {//pred hit
         // the prediction was from predictor tables and correct
         // increment the counter
-        DPRINTF(Indirect, "Prediction for %#lx => %#lx is correct\n", hist_entry.pcAddr, target.instAddr());
+        CDPRINTF(hist_entry.pcAddr, Indirect,
+                 "Prediction for %#lx => %#lx is correct\n", hist_entry.pcAddr,
+                 target.instAddr());
         if (way_sel.counter <= 2) {
             ++way_sel.counter;
         }
@@ -423,7 +434,9 @@ ITTAGE::recordTarget(
         }
     } else {
         // a misprediction
-        DPRINTF(Indirect, "Prediction for %#lx => %#lx is incorrect\n", hist_entry.pcAddr, target.instAddr());
+        CDPRINTF(hist_entry.pcAddr, Indirect,
+                 "Prediction for %#lx => %#lx (sn:%lu) is incorrect\n",
+                 hist_entry.pcAddr, target.instAddr(), seq_num);
         auto& way1 = targetCache[tid][predictor][predictor_index];
         auto& way2 = targetCache[tid][alt_predictor][alt_predictor_index];
         if (pred_count > 0) {
@@ -433,7 +446,7 @@ ITTAGE::recordTarget(
                 ittagestats.mainpredHit++;
                 // if pred was right and alt_pred was wrong
                 way1.useful = 1;
-                DPRINTF(Indirect, "Alt pred was wrong, but pred was right\n");
+                CDPRINTF(hist_entry.pcAddr, Indirect, "Alt pred was wrong, but pred was right\n");
                 allocate_values = false;
                 if (use_alt > 0) {
                     --use_alt;
@@ -444,7 +457,7 @@ ITTAGE::recordTarget(
                 way2.target->equals(target)) {
                 ittagestats.altpredHit++;
                 // if pred was wrong and alt_pred was right
-                DPRINTF(Indirect, "Alt pred was right, but pred was wrong\n");
+                CDPRINTF(hist_entry.pcAddr, Indirect, "Alt pred was right, but pred was wrong\n");
                 if (use_alt < 15) {
                     ++use_alt;
                 }
@@ -453,7 +466,13 @@ ITTAGE::recordTarget(
 
             if (way_sel.counter > 0) {
                 --way_sel.counter;
+                CDPRINTF(hist_entry.pcAddr, Indirect,
+                         "Table %u: dec counter that predict target=%#lx to %u\n",
+                         predictor_sel, way_sel.target->instAddr(), way_sel.counter);
             } else {
+                CDPRINTF(hist_entry.pcAddr, Indirect,
+                         "Table %u: replace target from %#lx to %#lx\n",
+                         predictor_sel, way_sel.target->instAddr(), target.instAddr());
                 set(way_sel.target, target);
                 way_sel.tag =
                     getTag(hist_entry.pcAddr,
@@ -464,7 +483,7 @@ ITTAGE::recordTarget(
             }
         }
         //update the tag
-        DPRINTF(Indirect, "Pred count: %d, allocate values: %u\n", pred_count, allocate_values);
+        CDPRINTF(hist_entry.pcAddr, Indirect, "Pred count: %d, allocate values: %u\n", pred_count, allocate_values);
         if (pred_count == 0 || allocate_values) {
             int allocated = 0;
             uint32_t start_pos;
@@ -473,7 +492,7 @@ ITTAGE::recordTarget(
             } else {
                 start_pos = 0;
             }
-            DPRINTF(Indirect, "Start pos: %d\n", start_pos);
+            CDPRINTF(hist_entry.pcAddr, Indirect, "Start pos: %d\n", start_pos);
             for (; start_pos < numPredictors; ++start_pos) {
                 uint32_t new_index = getAddrFold(hist_entry.pcAddr, start_pos);
                 new_index ^= getCSR1(ghr, start_pos);
@@ -488,10 +507,10 @@ ITTAGE::recordTarget(
                     way_new.counter = 1;
 
                     to_string(ghr, prBuf1);
-                    DPRINTF(Indirect,
-                            "Allocating table %u [%u] for br %#lx + hist "
+                    CDPRINTF(hist_entry.pcAddr, Indirect,
+                            "Allocating table %u [%u] (histlen=%u) for br %#lx + hist "
                             "%s, target: %#lx\n",
-                            start_pos, new_index, hist_entry.pcAddr, prBuf1,
+                            start_pos, new_index, histLengths[start_pos], hist_entry.pcAddr, prBuf1,
                             target.instAddr());
                     ++allocated;
                     //++start_pos; // do not allocate on consecutive predictors
@@ -501,13 +520,11 @@ ITTAGE::recordTarget(
                 } else {
                     // reset useful bits
                     if (reset_counter > 0) {
-                        DPRINTF(
-                            Indirect,
-                            "Allocating table %u [%u] is still usefull, u:%u, "
-                            "target: %#lx\n",
-                            start_pos, new_index,
-                            way_new.useful,
-                            way_new.target->instAddr());
+                        CDPRINTF(hist_entry.pcAddr, Indirect,
+                                 "Allocating table %u [%u] is still usefull,"
+                                 "u : %u, target : % #lx\n ",
+                                 start_pos, new_index, way_new.useful,
+                                 way_new.target->instAddr());
 
                         --reset_counter;
                     }
@@ -531,7 +548,7 @@ ITTAGE::recordTarget(
     if (GEM5_UNLIKELY(TRACING_ON && gem5::debug::Indirect)) {
         to_string(ghr, prBuf1);
     }
-    DPRINTF(Indirect,
+    CDPRINTF(hist_entry.pcAddr, Indirect,
             "Update GHR from %#lx to %#lx (miss path with indirect?)\n",
             prBuf1, prBuf2);
 }
@@ -544,7 +561,7 @@ uint64_t ITTAGE::getCSR1(bitset& ghr, int table) {
     uint64_t ghrLen = getTableGhrLen(table);
     bitset ghr_cpy(ghr); // remove unnecessary data on higher position
     to_string(ghr, prBuf1);
-    DPRINTF(Indirect, "CSR1 using GHR: %s, ghrLen: %d\n", prBuf1, ghrLen);
+    // DPRINTF(Indirect, "CSR1 using GHR: %s, ghrLen: %d\n", prBuf1, ghrLen);
     ghr_cpy.resize(ghrLen);
     bitset ret(ghrLen, 0);
     int i = 0;
@@ -555,7 +572,7 @@ uint64_t ITTAGE::getCSR1(bitset& ghr, int table) {
     }
     ret = ret ^ ghr_cpy;
     ret.resize(ceilLog2(tableSizes[table])-1);
-    DPRINTF(Indirect, "CSR1: %#lx\n", ret.to_ulong());
+    // DPRINTF(Indirect, "CSR1: %#lx\n", ret.to_ulong());
     return ret.to_ulong();
 }
 
@@ -563,7 +580,7 @@ uint64_t ITTAGE::getCSR2(bitset& ghr, int table) {
     uint64_t ghrLen = getTableGhrLen(table);
     bitset ghr_cpy(ghr); // remove unnecessary data on higher position
     to_string(ghr, prBuf1);
-    DPRINTF(Indirect, "CSR2 using GHR: %s, ghrLen: %d\n", prBuf1, ghrLen);
+    // DPRINTF(Indirect, "CSR2 using GHR: %s, ghrLen: %d\n", prBuf1, ghrLen);
     ghr_cpy.resize(ghrLen);
     bitset ret(ghrLen, 0);
     int i = 0;
@@ -574,7 +591,7 @@ uint64_t ITTAGE::getCSR2(bitset& ghr, int table) {
     }
     ret = ret ^ ghr_cpy;
     ret.resize(ceilLog2(tableSizes[table]));
-    DPRINTF(Indirect, "CSR2: %#lx\n", ret.to_ulong());
+    // DPRINTF(Indirect, "CSR2: %#lx\n", ret.to_ulong());
     return ret.to_ulong();
 }
 
