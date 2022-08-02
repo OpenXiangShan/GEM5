@@ -253,18 +253,37 @@ ITTAGE::commit(InstSeqNum seq_num, ThreadID tid,
 
     // we do not need to recover the GHR, so delete the information
     ThreadInfo* previousThreadInfo = static_cast<ThreadInfo*>(indirect_history);
-    delete previousThreadInfo;
 
     if (t_info.pathHist.empty()) return;
 
     if (t_info.headHistEntry < t_info.pathHist.size() &&
         t_info.pathHist[t_info.headHistEntry].seqNum <= seq_num) {
+        bitset &ghr = previousThreadInfo->ghr;
+        const Addr br_addr = t_info.pathHist[t_info.headHistEntry].pcAddr;
+        const Addr targetAddr = t_info.pathHist[t_info.headHistEntry].targetAddr;
+        for (int i = numPredictors - 1; i >= 0;--i) {
+            uint32_t csr1 = getCSR1(ghr, i);
+            to_string(ghr, prBuf1);
+            DPRINTF(Indirect, "update ITTAGE Predictor %i predict pc %#lx with ghr %s\n",
+                    i, br_addr, prBuf1);
+            uint32_t index = getAddrFold(br_addr, i);
+            uint32_t tmp_index = index ^ csr1;
+            uint32_t tmp_tag = getTag(br_addr, ghr, i);
+            auto &way = targetCache[tid][i][tmp_index];
+            if (way.tag == tmp_tag && way.target && way.target->instAddr() == targetAddr) {
+                DPRINTF(Indirect, "tag %#lx is found in predictor %i\n", tmp_tag,i);
+                if (way.counter <= 2)
+                    ++way.counter;
+                break;
+            }
+        }
         if (t_info.headHistEntry >= pathLength) {
             t_info.pathHist.pop_front();
         } else {
             ++t_info.headHistEntry;
         }
     }
+    delete previousThreadInfo;
 }
 
 void
