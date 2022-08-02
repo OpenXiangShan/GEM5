@@ -110,6 +110,7 @@ private:
 
     std::string prBuf1, prBuf2;
 
+    Addr lastIndirectBrAddr;
 };
 
 } // namespace branch_prediction
