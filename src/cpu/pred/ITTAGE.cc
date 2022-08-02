@@ -15,8 +15,9 @@ namespace gem5
 namespace branch_prediction
 {
 
+#define ObservingPC (115622)
 #define CDPRINTF(pc, ...) do { \
-    if (pc == 115622) { \
+    if (pc == ObservingPC) { \
         DPRINTF(__VA_ARGS__); \
     } \
 } while(0);
@@ -110,9 +111,9 @@ ITTAGE::updateDirectionInfo(
     if (GEM5_UNLIKELY(TRACING_ON && gem5::debug::Indirect)) {
         to_string(threadInfo[tid].ghr, prBuf2);
     }
-    // DPRINTF(Indirect,
-    //         "Update GHR from %s to %s (speculative update, direction)\n",
-    //         prBuf1, prBuf2);
+    CDPRINTF(lastIndirectBrAddr, Indirect,
+            "Update GHR from %s to %s (speculative update, direction)\n",
+            prBuf1, prBuf2);
 }
 
 void
@@ -123,7 +124,7 @@ ITTAGE::changeDirectionPrediction(ThreadID tid, void * indirect_history, bool ac
     threadInfo[tid].ghr.set(0, actually_taken);
     threadInfo[tid].mark = ((previousThreadInfo->mark) << 1);
     to_string(threadInfo[tid].ghr, prBuf1);
-    // DPRINTF(Indirect, "Recover GHR to %s\n", prBuf1);
+    CDPRINTF(lastIndirectBrAddr, Indirect, "Recover GHR to %s on squash\n", prBuf1);
 }
 
 bool
@@ -144,7 +145,7 @@ ITTAGE::lookup_helper(Addr br_addr, bitset& ghr, PCStateBase& target, PCStateBas
         uint32_t index = getAddrFold(br_addr, i);
         uint32_t tmp_index = index ^ csr1;
         uint32_t tmp_tag = getTag(br_addr, ghr, i);
-        CDPRINTF(br_addr, Indirect, "ITTAGE table %u [%u] (histlen=%u) predict pc %#lx with ghr %s\n",
+        CDPRINTF(br_addr, Indirect, "ITTAGE table %u [%u] (histlen=%u) lookup pc %#lx with ghr %s\n",
                 i, tmp_index, histLengths[i], br_addr, prBuf1);
         const auto &way = targetCache[tid][i][tmp_index];
         if (way.tag == tmp_tag && way.target) {
@@ -234,6 +235,7 @@ bool ITTAGE::lookup(Addr br_addr, PCStateBase& target, ThreadID tid) {
     }
     // std::cout<<"DEBUG: target.instAddr="<<target.instAddr()<<std::endl;
     // target.set(target.instAddr());
+    lastIndirectBrAddr = br_addr;
     return true;
 }
 
@@ -268,7 +270,12 @@ ITTAGE::commit(InstSeqNum seq_num, ThreadID tid,
         t_info.pathHist[t_info.headHistEntry].seqNum <= seq_num) {
         bitset &ghr = previousThreadInfo->ghr;
         const Addr br_addr = t_info.pathHist[t_info.headHistEntry].pcAddr;
-        const Addr targetAddr = t_info.pathHist[t_info.headHistEntry].targetAddr;
+        const Addr target_addr = t_info.pathHist[t_info.headHistEntry].targetAddr;
+
+        CDPRINTF(br_addr, Indirect,
+                 "Prediction for %#lx => %#lx (sn:%lu) is correct\n",
+                 br_addr, target_addr, t_info.pathHist[t_info.headHistEntry].seqNum);
+
         for (int i = numPredictors - 1; i >= 0;--i) {
             uint32_t csr1 = getCSR1(ghr, i);
             to_string(ghr, prBuf1);
@@ -278,10 +285,10 @@ ITTAGE::commit(InstSeqNum seq_num, ThreadID tid,
             uint32_t tmp_index = index ^ csr1;
             uint32_t tmp_tag = getTag(br_addr, ghr, i);
             auto &way = targetCache[tid][i][tmp_index];
-            if (way.tag == tmp_tag && way.target && way.target->instAddr() == targetAddr) {
-                DPRINTF(Indirect, "tag %#lx is found in predictor %i\n", tmp_tag,i);
+            if (way.tag == tmp_tag && way.target && way.target->instAddr() == target_addr) {
                 if (way.counter <= 2)
                     ++way.counter;
+                DPRINTF(Indirect, "tag %#lx is found in predictor %i, inc confidence to %i\n", tmp_tag, i, way.counter);
                 break;
             }
         }
@@ -539,18 +546,7 @@ ITTAGE::recordTarget(
                 }
             }
         }
-
     }
-
-    if (GEM5_UNLIKELY(TRACING_ON && gem5::debug::Indirect)) {
-        to_string(ghr, prBuf1);
-    }
-    if (GEM5_UNLIKELY(TRACING_ON && gem5::debug::Indirect)) {
-        to_string(ghr, prBuf1);
-    }
-    CDPRINTF(hist_entry.pcAddr, Indirect,
-            "Update GHR from %#lx to %#lx (miss path with indirect?)\n",
-            prBuf1, prBuf2);
 }
 
 uint64_t ITTAGE::getTableGhrLen(int table) {
