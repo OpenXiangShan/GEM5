@@ -7,6 +7,7 @@
 #include "base/intmath.hh"
 #include "debug/Indirect.hh"
 #include "sim/core.hh"
+#include "arch/riscv/pcstate.hh"
 #include <algorithm>
 
 namespace gem5
@@ -159,7 +160,7 @@ ITTAGE::lookup_helper(Addr br_addr, bitset& ghr, PCStateBase& target, PCStateBas
     if (pred_counts > 0) {
         const auto& way1 = targetCache[tid][predictor_1][predictor_index_1];
         const auto& way2 = targetCache[tid][predictor_2][predictor_index_2];
-        if ((use_alt > 10) && (way1.counter == 1) && (way1.useful == 0) && (pred_counts == 2) && (way2.counter > 0)) {
+        if ((use_alt > 7) && (way1.counter == 1) && (way1.useful == 0) && (pred_counts == 2) && (way2.counter > 0)) {
             use_alt_pred = true;
             ittagestats.altlookupHit++;
         } else {
@@ -206,7 +207,7 @@ bool ITTAGE::lookup(Addr br_addr, PCStateBase& target, ThreadID tid) {
     bool use_alt_pred = false;
     //bool lookupResult =
     lookup_helper(br_addr,threadInfo[tid].ghr,target, *alt_target, tid, predictor, predictor_index, alt_predictor, alt_predictor_index, pred_count, use_alt_pred);
-    
+    ittagestats.usealtCounter[use_alt]++;
     // if (!lookupResult) {
     //     return false;
     // }
@@ -242,8 +243,38 @@ ITTAGE::commit(InstSeqNum seq_num, ThreadID tid,
 
     // we do not need to recover the GHR, so delete the information
     bitset* previousGhr = static_cast<bitset*>(indirect_history);
+    int predictor = 0;
+    int predictor_index = 0;
+    int alt_predictor = 0;
+    int alt_predictor_index = 0;
+    int pred_count = 0; // no use
+    int predictor_sel = 0;
+    int predictor_index_sel = 0;
+    bool use_alt_pred = false;
+    HistoryEntry& commit_inst = threadInfo[tid].pathHist.front();
+    RiscvISA::PCState target_1;
+    RiscvISA::PCState target_2;
+    RiscvISA::PCState target_sel;
+    bool lookupResult = lookup_helper(commit_inst.pcAddr, *previousGhr, target_1, target_2, tid, predictor, predictor_index, alt_predictor, alt_predictor_index, pred_count, use_alt_pred);
     delete previousGhr;
+    if (lookupResult) {
+        if (use_alt_pred) {
+            set(target_sel, target_2);
+            predictor_sel = alt_predictor;
+            predictor_index_sel = alt_predictor_index;
+        }
+        else {
+            set(target_sel, target_1);
+            predictor_sel = predictor;
+            predictor_index_sel = predictor_index;
+        }
 
+        //update the counter
+        if (targetCache[tid][predictor_sel][predictor_index_sel].counter <= 2) {
+            targetCache[tid][predictor_sel][predictor_index_sel].counter++;
+        }
+    }
+    
     if (t_info.pathHist.empty()) return;
 
     if (t_info.headHistEntry < t_info.pathHist.size() &&
@@ -319,7 +350,6 @@ ITTAGE::recordTarget(
     PCStateBase *target_2 = target.clone();
     std::unique_ptr<PCStateBase> target_sel;
     bool predictor_found = lookup_helper(hist_entry.pcAddr,ghr, *target_1, *target_2, tid, predictor, predictor_index, alt_predictor, alt_predictor_index, pred_count, use_alt_pred);
-    ittagestats.usealtCounter[use_alt]++;
     if (predictor_found && use_alt_pred) {
         set(target_sel, target_2);
         predictor_sel = alt_predictor;
