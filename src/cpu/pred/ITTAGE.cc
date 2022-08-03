@@ -198,7 +198,14 @@ ITTAGE::lookup_helper(Addr br_addr, bitset& ghr, PCStateBase& target, PCStateBas
                          "Miss on %#lx, return target %#lx from base table\n",
                          br_addr, target.instAddr());
                 return true;
+            } else {
+                CDPRINTF(br_addr, Indirect,
+                         "Final miss on %#lx: base target is not found\n",
+                         br_addr);
             }
+        } else {
+            CDPRINTF(br_addr, Indirect,
+                     "Final miss on %#lx: prev target is null\n", br_addr);
         }
     }
     // may not reach here
@@ -242,6 +249,38 @@ ITTAGE::recordIndirect(Addr br_addr, Addr tgt_addr,
     CDPRINTF(br_addr, Indirect, "Recording %x seq:%d\n", br_addr, seq_num);
     HistoryEntry entry(br_addr, tgt_addr, seq_num);
     threadInfo[tid].pathHist.push_back(entry);
+    DPRINTF(Indirect, "Pushing sn: %lu\n", threadInfo[tid].pathHist.back().seqNum);
+}
+
+void
+ITTAGE::commitHistoryEntry(const HistoryEntry &entry, bitset *ghr, ThreadID tid)
+{
+    Addr br_addr = entry.pcAddr;
+    Addr target_addr = entry.targetAddr;
+    CDPRINTF(br_addr, Indirect,
+                "Prediction for %#lx => %#lx is correct\n",
+                br_addr, target_addr);
+    for (int i = numPredictors - 1; i >= 0; --i) {
+        uint32_t csr1 = getCSR1(*ghr, i);
+        to_string(*ghr, prBuf1);
+        CDPRINTF(br_addr, Indirect,
+                 "Confirm ITTAGE Predictor %i predict pc %#lx with ghr %s\n",
+                 i, br_addr, prBuf1);
+        uint32_t index = getAddrFold(br_addr, i);
+        uint32_t tmp_index = index ^ csr1;
+        uint32_t tmp_tag = getTag(br_addr, *ghr, i);
+        auto& way = targetCache[tid][i][tmp_index];
+        if (way.tag == tmp_tag && way.target &&
+            way.target->instAddr() == target_addr) {
+            if (way.counter <= 2)
+                ++way.counter;
+            DPRINTF(
+                Indirect,
+                "tag %#lx is found in predictor %i, inc confidence to %i\n",
+                tmp_tag, i, way.counter);
+            break;
+        }
+    }
 }
 
 void
@@ -250,37 +289,17 @@ ITTAGE::commit(InstSeqNum seq_num, ThreadID tid,
 {
     ThreadInfo &t_info = threadInfo[tid];
 
-    // we do not need to recover the GHR, so delete the information
     bitset* previousGhr = static_cast<bitset*>(indirect_history);
 
     if (t_info.pathHist.empty()) return;
 
     if (t_info.headHistEntry < t_info.pathHist.size() &&
         t_info.pathHist[t_info.headHistEntry].seqNum <= seq_num) {
-        const Addr br_addr = t_info.pathHist[t_info.headHistEntry].pcAddr;
-        const Addr target_addr = t_info.pathHist[t_info.headHistEntry].targetAddr;
+        // There exists a history entry that is not committed yet.
+        commitHistoryEntry(t_info.pathHist[t_info.headHistEntry], previousGhr, tid);
 
-        CDPRINTF(br_addr, Indirect,
-                 "Prediction for %#lx => %#lx (sn:%lu) is correct\n",
-                 br_addr, target_addr, t_info.pathHist[t_info.headHistEntry].seqNum);
-
-        for (int i = numPredictors - 1; i >= 0;--i) {
-            uint32_t csr1 = getCSR1(*previousGhr, i);
-            to_string(*previousGhr, prBuf1);
-            CDPRINTF(br_addr, Indirect, "Confirm ITTAGE Predictor %i predict pc %#lx with ghr %s\n",
-                    i, br_addr, prBuf1);
-            uint32_t index = getAddrFold(br_addr, i);
-            uint32_t tmp_index = index ^ csr1;
-            uint32_t tmp_tag = getTag(br_addr, *previousGhr, i);
-            auto &way = targetCache[tid][i][tmp_index];
-            if (way.tag == tmp_tag && way.target && way.target->instAddr() == target_addr) {
-                if (way.counter <= 2)
-                    ++way.counter;
-                DPRINTF(Indirect, "tag %#lx is found in predictor %i, inc confidence to %i\n", tmp_tag, i, way.counter);
-                break;
-            }
-        }
         if (t_info.headHistEntry >= pathLength) {
+            DPRINTF(Indirect, "Poping sn: %lu\n", threadInfo[tid].pathHist.front().seqNum);
             t_info.pathHist.pop_front();
         } else {
             ++t_info.headHistEntry;
@@ -292,7 +311,7 @@ ITTAGE::commit(InstSeqNum seq_num, ThreadID tid,
 void
 ITTAGE::squash(InstSeqNum seq_num, ThreadID tid)
 {
-    // DPRINTF(Indirect, "Squashing seq:%d\n", seq_num);
+    DPRINTF(Indirect, "Squashing since sn: %lu\n", seq_num);
     ThreadInfo &t_info = threadInfo[tid];
     auto squash_itr = t_info.pathHist.begin();
     int valid_count = 0;
@@ -312,6 +331,8 @@ ITTAGE::squash(InstSeqNum seq_num, ThreadID tid)
         t_info.ghr >>=1;
     }
     t_info.pathHist.erase(squash_itr, t_info.pathHist.end());
+    DPRINTF(Indirect, "After squashing, the back is now sn: %lu\n",
+            t_info.pathHist.empty() ? 0 : t_info.pathHist.back().seqNum);
 }
 
 void
@@ -330,14 +351,22 @@ ITTAGE::recordTarget(
 {
     bitset& ghr = *static_cast<bitset*>(indirect_history);
     // here ghr was appended one more
-    DPRINTF(Indirect, "record with target: %s\n", target);
+    DPRINTF(Indirect, "record with target: %s, sn: %lu\n", target, seq_num);
     // todo: adjust according to ITTAGE
     ThreadInfo &t_info = threadInfo[tid];
 
     // Should have just squashed so this branch should be the oldest
+    while (!t_info.pathHist.empty() && t_info.pathHist.back().seqNum > seq_num) {
+        DPRINTF(Indirect, "Poping sn: %lu\n", t_info.pathHist.back().seqNum);
+        t_info.pathHist.pop_back();
+    }
+
+    assert(t_info.pathHist.back().seqNum == seq_num);
     auto hist_entry = *(t_info.pathHist.rbegin());
-    CDPRINTF(hist_entry.pcAddr, Indirect, "record with target:%s\n", target);
+    CDPRINTF(hist_entry.pcAddr, Indirect, "Record (redirect) %#lx => %#lx\n",
+             hist_entry.pcAddr, target.instAddr());
     // Temporarily pop it off the history so we can calculate the set
+    DPRINTF(Indirect, "Poping sn: %lu\n", t_info.pathHist.back().seqNum);
     t_info.pathHist.pop_back();
 
     // we have lost the original lookup info, so we need to lookup again
@@ -402,6 +431,7 @@ ITTAGE::recordTarget(
     // update global history anyway
     hist_entry.targetAddr = target.instAddr();
     t_info.pathHist.push_back(hist_entry);
+    DPRINTF(Indirect, "Pushing sn: %lu\n", t_info.pathHist.back().seqNum);
 
     bool allocate_values = true;
 

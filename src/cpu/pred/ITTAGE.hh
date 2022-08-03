@@ -90,11 +90,18 @@ private:
     std::vector<std::vector<std::vector<IPredEntry> > >targetCache;
 
     struct HistoryEntry {
-        HistoryEntry(Addr br_addr, Addr tgt_addr, InstSeqNum seq_num) : pcAddr(br_addr), targetAddr(tgt_addr), seqNum(seq_num) {}
+        HistoryEntry(Addr br_addr, Addr tgt_addr, InstSeqNum seq_num)
+            : pcAddr(br_addr),
+              targetAddr(tgt_addr),
+              seqNum(seq_num)
+        {
+        }
         Addr pcAddr;
         Addr targetAddr;
         InstSeqNum seqNum;
     };
+
+    void commitHistoryEntry(const HistoryEntry &entry, bitset *ghr, ThreadID tid);
 
     struct ThreadInfo {
         ThreadInfo() : headHistEntry(0), ghr(0) {}
