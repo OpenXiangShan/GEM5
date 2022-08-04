@@ -565,7 +565,7 @@ ITTAGE::recordTarget(
                             start_pos, new_index, histLengths[start_pos], hist_entry.pcAddr, prBuf1,
                             target.instAddr());
                     ++allocated;
-                    //++start_pos; // do not allocate on consecutive predictors
+                    ++start_pos; // do not allocate on consecutive predictors
                     if (allocated == 2) {
                         break;
                     }
