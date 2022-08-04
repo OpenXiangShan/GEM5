@@ -283,10 +283,10 @@ ITTAGE::commitHistoryEntry(const HistoryEntry &entry, bitset *ghr, ThreadID tid)
         auto& way = targetCache[tid][i][tmp_index];
         if (way.tag == tmp_tag && way.target &&
             way.target->instAddr() == target_addr) {
-            if (way.counter <= 2)
+            if (way.counter < 2)
                 ++way.counter;
-            DPRINTF(
-                Indirect,
+            CDPRINTF(
+                entry.pcAddr, Indirect,
                 "tag %#lx is found in predictor %i, inc confidence to %i\n",
                 tmp_tag, i, way.counter);
             break;
