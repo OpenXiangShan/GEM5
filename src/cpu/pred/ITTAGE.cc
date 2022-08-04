@@ -135,7 +135,11 @@ ITTAGE::changeDirectionPrediction(ThreadID tid, void * indirect_history, bool ac
 }
 
 bool
-ITTAGE::lookup_helper(Addr br_addr, bitset& ghr, PCStateBase& target, PCStateBase& alt_target, ThreadID tid, int& predictor, int& predictor_index, int& alt_predictor, int& alt_predictor_index, int& pred_count, bool& use_alt_pred)
+ITTAGE::lookup_helper(Addr br_addr, bitset& ghr, PCStateBase& target,
+                      PCStateBase& alt_target, ThreadID tid, int& predictor,
+                      int& predictor_index, int& alt_predictor,
+                      int& alt_predictor_index, int& pred_count,
+                      bool& use_alt_pred)
 {
     // todo: adjust according to ITTAGE
     CDPRINTF(br_addr, Indirect, "Looking up %#lx\n", br_addr);
@@ -172,6 +176,10 @@ ITTAGE::lookup_helper(Addr br_addr, bitset& ghr, PCStateBase& target, PCStateBas
                 ++pred_counts;
                 break;
             }
+        } else {
+            DPRINTF(Indirect,
+                    "Mismatch: finding=%#lx, stored=%#lx, target=%#lx\n",
+                    tmp_tag, way.tag, way.target ? way.target->instAddr() : 0);
         }
     }
     pred_count = pred_counts;
@@ -233,8 +241,10 @@ bool ITTAGE::lookup(Addr br_addr, PCStateBase& target, ThreadID tid) {
     int pred_count = 0; // no use
     bool use_alt_pred = false;
     //bool lookupResult =
-    lookup_helper(br_addr,threadInfo[tid].ghr,target, *alt_target, tid, predictor, predictor_index, alt_predictor, alt_predictor_index, pred_count, use_alt_pred);
-    
+    lookup_helper(br_addr, threadInfo[tid].ghr, target, *alt_target, tid,
+                  predictor, predictor_index, alt_predictor,
+                  alt_predictor_index, pred_count, use_alt_pred);
+
     // if (!lookupResult) {
     //     return false;
     // }
@@ -260,7 +270,7 @@ ITTAGE::recordIndirect(Addr br_addr, Addr tgt_addr,
     CDPRINTF(br_addr, Indirect, "Recording %x seq:%d\n", br_addr, seq_num);
     HistoryEntry entry(br_addr, tgt_addr, seq_num);
     threadInfo[tid].pathHist.push_back(entry);
-    DPRINTF(Indirect, "Pushing sn: %lu\n", threadInfo[tid].pathHist.back().seqNum);
+    // DPRINTF(Indirect, "Pushing sn: %lu\n", threadInfo[tid].pathHist.back().seqNum);
 }
 
 void
@@ -310,7 +320,7 @@ ITTAGE::commit(InstSeqNum seq_num, ThreadID tid,
         commitHistoryEntry(t_info.pathHist[t_info.headHistEntry], previousGhr, tid);
 
         if (t_info.headHistEntry >= pathLength) {
-            DPRINTF(Indirect, "Poping sn: %lu\n", threadInfo[tid].pathHist.front().seqNum);
+            // DPRINTF(Indirect, "Poping sn: %lu\n", threadInfo[tid].pathHist.front().seqNum);
             t_info.pathHist.pop_front();
         } else {
             ++t_info.headHistEntry;
@@ -322,7 +332,7 @@ ITTAGE::commit(InstSeqNum seq_num, ThreadID tid,
 void
 ITTAGE::squash(InstSeqNum seq_num, ThreadID tid)
 {
-    DPRINTF(Indirect, "Squashing since sn: %lu\n", seq_num);
+    // DPRINTF(Indirect, "Squashing since sn: %lu\n", seq_num);
     ThreadInfo &t_info = threadInfo[tid];
     auto squash_itr = t_info.pathHist.begin();
     int valid_count = 0;
@@ -342,8 +352,8 @@ ITTAGE::squash(InstSeqNum seq_num, ThreadID tid)
         t_info.ghr >>=1;
     }
     t_info.pathHist.erase(squash_itr, t_info.pathHist.end());
-    DPRINTF(Indirect, "After squashing, the back is now sn: %lu\n",
-            t_info.pathHist.empty() ? 0 : t_info.pathHist.back().seqNum);
+    // DPRINTF(Indirect, "After squashing, the back is now sn: %lu\n",
+    //         t_info.pathHist.empty() ? 0 : t_info.pathHist.back().seqNum);
 }
 
 void
@@ -362,13 +372,13 @@ ITTAGE::recordTarget(
 {
     bitset& ghr = *static_cast<bitset*>(indirect_history);
     // here ghr was appended one more
-    DPRINTF(Indirect, "record with target: %s, sn: %lu\n", target, seq_num);
+    // DPRINTF(Indirect, "record with target: %s, sn: %lu\n", target, seq_num);
     // todo: adjust according to ITTAGE
     ThreadInfo &t_info = threadInfo[tid];
 
     // Should have just squashed so this branch should be the oldest
     while (!t_info.pathHist.empty() && t_info.pathHist.back().seqNum > seq_num) {
-        DPRINTF(Indirect, "Poping sn: %lu\n", t_info.pathHist.back().seqNum);
+        // DPRINTF(Indirect, "Poping sn: %lu\n", t_info.pathHist.back().seqNum);
         t_info.pathHist.pop_back();
     }
 
@@ -377,7 +387,7 @@ ITTAGE::recordTarget(
     CDPRINTF(hist_entry.pcAddr, Indirect, "Record (redirect) %#lx => %#lx\n",
              hist_entry.pcAddr, target.instAddr());
     // Temporarily pop it off the history so we can calculate the set
-    DPRINTF(Indirect, "Poping sn: %lu\n", t_info.pathHist.back().seqNum);
+    // DPRINTF(Indirect, "Poping sn: %lu\n", t_info.pathHist.back().seqNum);
     t_info.pathHist.pop_back();
 
     // we have lost the original lookup info, so we need to lookup again
@@ -392,7 +402,10 @@ ITTAGE::recordTarget(
     PCStateBase *target_1 = target.clone();
     PCStateBase *target_2 = target.clone();
     std::unique_ptr<PCStateBase> target_sel;
-    bool predictor_found = lookup_helper(hist_entry.pcAddr,ghr, *target_1, *target_2, tid, predictor, predictor_index, alt_predictor, alt_predictor_index, pred_count, use_alt_pred);
+    bool predictor_found =
+        lookup_helper(hist_entry.pcAddr, ghr, *target_1, *target_2, tid,
+                      predictor, predictor_index, alt_predictor,
+                      alt_predictor_index, pred_count, use_alt_pred);
     ittagestats.usealtCounter[use_alt]++;
     if (predictor_found && use_alt_pred) {
         set(target_sel, target_2);
@@ -442,7 +455,7 @@ ITTAGE::recordTarget(
     // update global history anyway
     hist_entry.targetAddr = target.instAddr();
     t_info.pathHist.push_back(hist_entry);
-    DPRINTF(Indirect, "Pushing sn: %lu\n", t_info.pathHist.back().seqNum);
+    // DPRINTF(Indirect, "Pushing sn: %lu\n", t_info.pathHist.back().seqNum);
 
     bool allocate_values = true;
 
