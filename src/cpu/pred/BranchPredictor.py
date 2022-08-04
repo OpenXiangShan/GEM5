@@ -43,7 +43,7 @@ class SimpleIndirectPredictor(IndirectPredictor):
     cxx_header = "cpu/pred/simple_indirect.hh"
 
     indirectHashGHR = Param.Bool(True, "Hash branch predictor GHR")
-    indirectHashTargets = Param.Bool(True, "Hash path history targets")
+    indirectHashTargets = Param.Bool(False, "Hash path history targets")
     indirectSets = Param.Unsigned(256, "Cache sets for indirect predictor")
     indirectWays = Param.Unsigned(2, "Ways for indirect predictor")
     indirectTagSize = Param.Unsigned(16, "Indirect target cache tag bits")
