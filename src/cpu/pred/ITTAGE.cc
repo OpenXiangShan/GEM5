@@ -4,10 +4,12 @@
 
 #include "cpu/pred/ITTAGE.hh"
 
+#include <algorithm>
+
 #include "base/intmath.hh"
+#include "base/output.hh"
 #include "debug/Indirect.hh"
 #include "sim/core.hh"
-#include <algorithm>
 
 namespace gem5
 {
@@ -54,21 +56,30 @@ ITTAGE::ITTAGE(const ITTAGEParams &params):
     use_alt = 8;
     reset_counter = 128;
     registerExitCallback([this]() {
-        std::ofstream ofs("build/tmp/altuseCnt.txt", std::ios::out);
-        ofs << "use_alt" << " " << "cnt" << std::endl;
+        {
+        auto out_handle = simout.create("altuseCnt.txt", false, true);
+        *out_handle->stream() << "use_alt" << " " << "cnt" << std::endl;
         for (auto& it : ittagestats.usealtCounter) {
-            ofs << it.first << " " << it.second << std::endl;
+            *out_handle->stream() << it.first << " " << it.second << std::endl;
         }
-        ofs.close();
+        simout.close(out_handle);
+        }
 
-        std::ofstream ofs1("build/tmp/TableHitCnt.txt", std::ios::out);
-        ofs1 << "table" << " " << "lookupcnt" << " " << "predhit" << " " << "predmiss" << std::endl;
+        {
+        auto out_handle = simout.create("TableHitCnt.txt", false, true);
+        *out_handle->stream() << "table" << " " << "lookupcnt" << " " << "predhit" << " " << "predmiss" << std::endl;
         for (auto& it : ittagestats.THitCnt) {
-            ofs1 << it.first << " " << it.second.lookuphit <<" "<< it.second.predhit <<" "<< it.second.predmiss << std::endl;
+            *out_handle->stream() << it.first << " " << it.second.lookuphit <<" "<< it.second.predhit <<" "<< it.second.predmiss << std::endl;
         }
-        ofs1.close();
-
-
+        simout.close(out_handle);
+        }
+        {
+            auto out_handle = simout.create("missHistMap.txt", false, true);
+            for (const auto &it: missHistMap) {
+                *out_handle->stream() << it.first << ": " << it.second << std::endl;
+            }
+            simout.close(out_handle);
+        }
     });
 }
 
@@ -455,6 +466,16 @@ ITTAGE::recordTarget(
         CDPRINTF(hist_entry.pcAddr, Indirect,
                  "Prediction for %#lx => %#lx (sn:%lu) is incorrect\n",
                  hist_entry.pcAddr, target.instAddr(), seq_num);
+        if (hist_entry.pcAddr == ObservingPC) {
+            bitset tmp_hist(ghr);
+            tmp_hist.resize(observeHistLen);
+            uint64_t obs_hist = tmp_hist.to_ulong();
+            if (missHistMap.count(obs_hist)) {
+                missHistMap[obs_hist]++;
+            } else {
+                missHistMap[obs_hist] = 1;
+            }
+        }
         auto& way1 = targetCache[tid][predictor][predictor_index];
         auto& way2 = targetCache[tid][alt_predictor][alt_predictor_index];
         if (pred_count > 0) {
