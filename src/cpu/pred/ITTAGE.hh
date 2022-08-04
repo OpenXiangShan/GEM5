@@ -10,6 +10,9 @@
 #ifndef __CPU_PRED_ITTAGE_HH__
 #define __CPU_PRED_ITTAGE_HH__
 
+#include <unordered_map>
+#include <boost/dynamic_bitset.hpp>
+
 #include <deque>
 #include "base/types.hh"
 #include "base/statistics.hh"
@@ -17,7 +20,6 @@
 #include "config/the_isa.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/pred/indirect.hh"
-#include <boost/dynamic_bitset.hpp>
 #include "params/ITTAGE.hh"
 
 namespace gem5
@@ -110,6 +112,9 @@ private:
         unsigned headHistEntry;
         bitset ghr;
     };
+
+    const unsigned observeHistLen{13};
+    std::unordered_map<unsigned, uint64_t> missHistMap;
 
     std::vector<ThreadInfo> threadInfo;
 

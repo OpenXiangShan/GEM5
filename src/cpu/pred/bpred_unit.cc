@@ -46,6 +46,7 @@
 
 #include "arch/generic/pcstate.hh"
 #include "base/compiler.hh"
+#include "base/output.hh"
 #include "base/trace.hh"
 #include "config/the_isa.hh"
 #include "debug/Branch.hh"
@@ -103,12 +104,12 @@ BPredUnit::BPredUnitStats::BPredUnitStats(statistics::Group *parent)
     BTBHitRatio.precision(6);
     registerExitCallback([this]() {
         //write in a file "pcMiss.txt"
-        std::ofstream ofs("build/tmp/pcMiss.txt", std::ios::out);
-        ofs << "pc"<<" "<<"cnt" << std::endl;
+        auto out_handle = simout.create("pcMiss.txt", false, true);
+        *out_handle->stream() << "pc"<<" "<<"cnt" << std::endl;
         for (auto& it : MisspredPCcnt) {
-            ofs << it.first << " " << it.second << std::endl;
+            *out_handle->stream() << it.first << " " << it.second << std::endl;
         }
-        ofs.close();
+        simout.close(out_handle);
     });
 }
 
