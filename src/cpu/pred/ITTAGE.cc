@@ -586,22 +586,33 @@ uint64_t ITTAGE::getTableGhrLen(int table) {
 }
 
 uint64_t ITTAGE::getCSR1(bitset& ghr, int table) {
-    uint64_t ghrLen = getTableGhrLen(table);
+    uint64_t direction_hist_len = getTableGhrLen(table);
     bitset ghr_cpy(ghr); // remove unnecessary data on higher position
     to_string(ghr, prBuf1);
     // DPRINTF(Indirect, "CSR1 using GHR: %s, ghrLen: %d\n", prBuf1, ghrLen);
-    ghr_cpy.resize(ghrLen);
-    bitset ret(ghrLen, 0);
+    ghr_cpy.resize(direction_hist_len);
+    bitset hash(direction_hist_len, 0);
     int i = 0;
-    while (i + (ceilLog2(tableSizes[table])-1) < ghrLen) {
-        ret = ghr_cpy ^ ret;
+    while (i + (ceilLog2(tableSizes[table])-1) < direction_hist_len) {
+        hash ^= ghr_cpy;
         ghr_cpy >>= (ceilLog2(tableSizes[table])-1);
         i += (ceilLog2(tableSizes[table])-1);
     }
-    ret = ret ^ ghr_cpy;
-    ret.resize(ceilLog2(tableSizes[table])-1);
+    hash ^= ghr_cpy;
+
+    // ThreadInfo &t_info = threadInfo[0];
+    // unsigned count = 0;
+    // for (auto it = t_info.pathHist.rbegin();
+    //      it != t_info.pathHist.rend() && count < pathLength; ++it) {
+    //     Addr signiture = (it->targetAddr ^ it->pcAddr) >> 1;
+    //     bitset path_hist(hash.size(), signiture);
+    //     hash ^= path_hist;
+    //     count++;
+    // }
+
+    hash.resize(ceilLog2(tableSizes[table]));
     // DPRINTF(Indirect, "CSR1: %#lx\n", ret.to_ulong());
-    return ret.to_ulong();
+    return hash.to_ulong();
 }
 
 uint64_t ITTAGE::getCSR2(bitset& ghr, int table) {
