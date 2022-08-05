@@ -284,9 +284,9 @@ ITTAGE::commitHistoryEntry(const HistoryEntry &entry, bitset *ghr, ThreadID tid)
     for (int i = numPredictors - 1; i >= 0; --i) {
         uint32_t csr1 = getCSR1(*ghr, i);
         to_string(*ghr, prBuf1);
-        CDPRINTF(br_addr, Indirect,
-                 "Confirm ITTAGE Predictor %i predict pc %#lx with ghr %s\n",
-                 i, br_addr, prBuf1);
+        // CDPRINTF(br_addr, Indirect,
+        //          "Confirm ITTAGE Predictor %i predict pc %#lx with ghr %s\n",
+        //          i, br_addr, prBuf1);
         uint32_t index = getAddrFold(br_addr, i);
         uint32_t tmp_index = index ^ csr1;
         uint32_t tmp_tag = getTag(br_addr, *ghr, i);
@@ -295,6 +295,10 @@ ITTAGE::commitHistoryEntry(const HistoryEntry &entry, bitset *ghr, ThreadID tid)
             way.target->instAddr() == target_addr) {
             if (way.counter < 2)
                 ++way.counter;
+            way.useful = 1;
+            CDPRINTF(entry.pcAddr, Indirect,
+                     "Table %u [%u]: prediction for %#lx => %#lx is correct\n",
+                     i, tmp_index, br_addr, target_addr);
             CDPRINTF(
                 entry.pcAddr, Indirect,
                 "tag %#lx is found in predictor %i, inc confidence to %i\n",
@@ -464,7 +468,8 @@ ITTAGE::recordTarget(
         // the prediction was from predictor tables and correct
         // increment the counter
         CDPRINTF(hist_entry.pcAddr, Indirect,
-                 "Prediction for %#lx => %#lx is correct\n", hist_entry.pcAddr,
+                 "Table %u [%u]: prediction for %#lx => %#lx is correct\n",
+                 predictor, predictor_index, hist_entry.pcAddr,
                  target.instAddr());
         if (way_sel.counter <= 2) {
             ++way_sel.counter;
@@ -477,8 +482,10 @@ ITTAGE::recordTarget(
     } else {
         // a misprediction
         CDPRINTF(hist_entry.pcAddr, Indirect,
-                 "Prediction for %#lx => %#lx (sn:%lu) is incorrect\n",
-                 hist_entry.pcAddr, target.instAddr(), seq_num);
+                 "Table %u [%u]: prediction for %#lx => %#lx (sn:%lu) is "
+                 "incorrect\n",
+                 predictor, predictor_index, hist_entry.pcAddr,
+                 target.instAddr(), seq_num);
         if (hist_entry.pcAddr == ObservingPC) {
             bitset tmp_hist(ghr);
             tmp_hist.resize(observeHistLen);
@@ -518,13 +525,16 @@ ITTAGE::recordTarget(
 
             if (way_sel.counter > 0) {
                 --way_sel.counter;
-                CDPRINTF(hist_entry.pcAddr, Indirect,
-                         "Table %u: dec counter that predict target=%#lx to %u\n",
-                         predictor_sel, way_sel.target->instAddr(), way_sel.counter);
+                CDPRINTF(
+                    hist_entry.pcAddr, Indirect,
+                    "Table %u [%u]: dec counter that pred tgt=%#lx to %u\n",
+                    predictor_sel, predictor_index, way_sel.target->instAddr(),
+                    way_sel.counter);
             } else {
                 CDPRINTF(hist_entry.pcAddr, Indirect,
-                         "Table %u: replace target from %#lx to %#lx\n",
-                         predictor_sel, way_sel.target->instAddr(), target.instAddr());
+                         "Table %u [%u]: replace target from %#lx to %#lx\n",
+                         predictor_sel, predictor_index,
+                         way_sel.target->instAddr(), target.instAddr());
                 set(way_sel.target, target);
                 way_sel.tag =
                     getTag(hist_entry.pcAddr,
