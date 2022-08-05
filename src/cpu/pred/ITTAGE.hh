@@ -113,7 +113,7 @@ private:
         bitset ghr;
     };
 
-    const unsigned observeHistLen{13};
+    const unsigned observeHistLen{27};
     std::unordered_map<unsigned, uint64_t> missHistMap;
 
     std::vector<ThreadInfo> threadInfo;
