@@ -2198,31 +2198,66 @@ decode QUADRANT default Unknown::unknown() {
                         Fd_bits = Vs1_vu[0];
                     }}, OPFVV, VectorDummyOp);
                 }
-                format VectorFloatCvtFormat {
-                    0x12: decode VS1 {
-                        0x0: vfcvt_xu_f_v({{
+                0x12: decode VS1 {
+                    format VectorFloatCvtFormat {
+                        0x00: vfcvt_xu_f_v({{
                             Vd_vu[i] = f_to_ui<et>(ftype<et>(Vs2_vu[i]),
                                                    softfloat_roundingMode);
                         }}, OPFVV, VectorDummyOp);
-                        0x1: vfcvt_x_f_v({{
+                        0x01: vfcvt_x_f_v({{
                             Vd_vu[i] = f_to_i<et>(ftype<et>(Vs2_vu[i]),
                                                   softfloat_roundingMode);
                         }}, OPFVV, VectorDummyOp);
-                        0x2: vfcvt_f_xu_v({{
+                        0x02: vfcvt_f_xu_v({{
                             auto fd = ui_to_f<et>(Vs2_vu[i]);
                             Vd_vu[i] = fd.v;
                         }}, OPFVV, VectorDummyOp);
-                        0x3: vfcvt_f_x_v({{
+                        0x03: vfcvt_f_x_v({{
                             auto fd = i_to_f<et>(Vs2_vu[i]);
                             Vd_vu[i] = fd.v;
                         }}, OPFVV, VectorDummyOp);
-                        0x6: vfcvt_rtz_xu_f_v({{
+                        0x06: vfcvt_rtz_xu_f_v({{
                             Vd_vu[i] = f_to_ui<et>(ftype<et>(Vs2_vu[i]),
                                                    softfloat_round_minMag);
                         }}, OPFVV, VectorDummyOp);
-                        0x7: vfcvt_rtz_x_f_v({{
+                        0x07: vfcvt_rtz_x_f_v({{
                             Vd_vu[i] = f_to_i<et>(ftype<et>(Vs2_vu[i]),
                                                   softfloat_round_minMag);
+                        }}, OPFVV, VectorDummyOp);
+                    }
+                    format VectorFloatWideningCvtFormat {
+                        0x08: vfwcvt_xu_f_v({{
+                            Vd_vwu[i] = f_to_wui<et>(
+                                ftype<et>(Vs2_vu[i + offset]),
+                                softfloat_roundingMode);
+                        }}, OPFVV, VectorDummyOp);
+                        0x09: vfwcvt_x_f_v({{
+                            Vd_vwu[i] = f_to_wi<et>(
+                                ftype<et>(Vs2_vu[i + offset]),
+                                softfloat_roundingMode);
+                        }}, OPFVV, VectorDummyOp);
+                        0x0a: vfwcvt_f_xu_v({{
+                            auto fd = ui_to_wf<vu>(Vs2_vu[i + offset]);
+                            Vd_vwu[i] = fd.v;
+                        }}, OPFVV, VectorDummyOp);
+                        0x0b: vfwcvt_f_x_v({{
+                            auto fd = i_to_wf<vu>(Vs2_vu[i + offset]);
+                            Vd_vwu[i] = fd.v;
+                        }}, OPFVV, VectorDummyOp);
+                        0x0c: vfwcvt_f_f_v({{
+                            auto fd = f_to_wf<et>(
+                                ftype<et>(Vs2_vu[i + offset]));
+                            Vd_vwu[i] = fd.v;
+                        }}, OPFVV, VectorDummyOp);
+                        0x0e: vfwcvt_rtz_xu_f_v({{
+                            Vd_vwu[i] = f_to_wui<et>(
+                                ftype<et>(Vs2_vu[i + offset]),
+                                softfloat_round_minMag);
+                        }}, OPFVV, VectorDummyOp);
+                        0x0f: vfwcvt_rtz_x_f_v({{
+                            Vd_vwu[i] = f_to_wi<et>(
+                                ftype<et>(Vs2_vu[i + offset]),
+                                softfloat_round_minMag);
                         }}, OPFVV, VectorDummyOp);
                     }
                 }

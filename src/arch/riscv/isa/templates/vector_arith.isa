@@ -501,7 +501,15 @@ private:
     %(reg_idx_arr_decl)s;
 public:
     %(class_name)s(ExtMachInst _machInst);
-    using %(base_class)s::generateDisassembly;
+    std::string generateDisassembly(Addr pc,
+        const loader::SymbolTable *symtab) const
+    {
+        std::stringstream ss;
+        ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
+            << registerName(srcRegIdx(0));
+        if (machInst.vm == 0) ss << ", v0.t";
+        return ss.str();
+    }
 };
 
 }};
@@ -519,7 +527,15 @@ public:
     %(class_name)s(ExtMachInst _machInst,
         uint8_t _microVl, uint8_t _microIdx);
     Fault execute(ExecContext* xc, Trace::InstRecord* traceData)const override;
-    using %(base_class)s::generateDisassembly;
+    std::string generateDisassembly(Addr pc,
+        const loader::SymbolTable *symtab) const
+    {
+        std::stringstream ss;
+        ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
+            << registerName(srcRegIdx(0));
+        if (machInst.vm == 0) ss << ", v0.t";
+        return ss.str();
+    }
 };
 
 }};
@@ -539,6 +555,8 @@ Fault
 
     if (machInst.vill)
         return std::make_shared<IllegalInstFault>("VILL is set", machInst);
+
+    VRM_REQUIRED;
 
     const int64_t vlmul = vtype_vlmul(machInst.vtype8);
     const int32_t t_micro_vlmax = vtype_VLMAX(machInst.vtype8, true);
