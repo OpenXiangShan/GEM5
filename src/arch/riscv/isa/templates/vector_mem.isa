@@ -19,7 +19,8 @@ def template VleConstructor {{
     %(set_reg_idx_arr)s;
     %(constructor)s;
 
-    const uint32_t num_microops = vtype_regs_per_group(vtype);
+    const int32_t emul = get_emul(_machInst.width, vtype);
+    const uint32_t num_microops = emul < 0 ? 1 : 1 << emul;
     int32_t remaining_vl = this->vl;
     const int32_t micro_vlmax = VLEN / width_EEW(_machInst.width);
     int32_t micro_vl = std::min(remaining_vl, micro_vlmax);
@@ -172,7 +173,8 @@ def template VseConstructor {{
     %(set_reg_idx_arr)s;
     %(constructor)s;
 
-    const uint32_t num_microops = vtype_regs_per_group(vtype);
+    const int32_t emul = get_emul(_machInst.width, vtype);
+    const uint32_t num_microops = emul < 0 ? 1 : 1 << emul;
     int32_t remaining_vl = this->vl;
     const int32_t micro_vlmax = VLEN / width_EEW(_machInst.width);
     int32_t micro_vl = std::min(remaining_vl, micro_vlmax);
