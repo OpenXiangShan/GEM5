@@ -2134,6 +2134,18 @@ decode QUADRANT default Unknown::unknown() {
                             (Vs2_vi[i] <= Vs1_vi[i]));
                     }}, OPIVV, VectorDummyOp);
                 }
+                format VectorIntNarrowingFormat {
+                    0x2c: vnsrl_wv({{
+                        auto sew = vtype_SEW(vtype);
+                        Vd_vu[i + offset] = (vu)(Vs2_vwu[i] >>
+                            ((vwu)Vs1_vu[i + offset] & (sew * 2 - 1)));
+                    }}, OPIVV, VectorDummyOp);
+                    0x2d: vnsra_wv({{
+                        auto sew = vtype_SEW(vtype);
+                        Vd_vi[i + offset] = (vi)(Vs2_vwi[i] >>
+                            ((vwu)Vs1_vu[i + offset] & (sew * 2 - 1)));
+                    }}, OPIVV, VectorDummyOp);
+                }
             }
             // OPFVV
             0x1: decode VFUNCT6 {
@@ -2814,6 +2826,18 @@ decode QUADRANT default Unknown::unknown() {
                             (Vs2_vi[i] > (vi)sext<5>(SIMM5)));
                     }}, OPIVI, VectorDummyOp);
                 }
+                format VectorIntNarrowingFormat {
+                    0x2c: vnsrl_wi({{
+                        auto sew = vtype_SEW(vtype);
+                        Vd_vu[i + offset] = (vu)(Vs2_vwu[i] >>
+                                            ((vwu)SIMM5 & (sew * 2 - 1)));
+                    }}, OPIVI, VectorDummyOp);
+                    0x2d: vnsra_wi({{
+                        auto sew = vtype_SEW(vtype);
+                        Vd_vi[i + offset] = (vi)(Vs2_vwi[i] >>
+                                            ((vwu)SIMM5 & (sew * 2 - 1)));
+                    }}, OPIVI, VectorDummyOp);
+                }
             }
             // OPIVX
             0x4: decode VFUNCT6 {
@@ -2908,6 +2932,19 @@ decode QUADRANT default Unknown::unknown() {
                                                  (vtype_SEW(vtype)-1));
                     }}, OPIVX, VectorDummyOp);
                 }
+                format VectorIntNarrowingFormat {
+                    0x2c: vnsrl_wx({{
+                        auto sew = vtype_SEW(vtype);
+                        Vd_vu[i + offset] = (vu)(Vs2_vwu[i] >>
+                                            ((vwu)Rs1_vu & (sew * 2 - 1)));
+                    }}, OPIVX, VectorDummyOp);
+                    0x2d: vnsra_wx({{
+                        auto sew = vtype_SEW(vtype);
+                        Vd_vi[i + offset] = (vi)(Vs2_vwi[i] >>
+                                            ((vwu)Rs1_vu & (sew * 2 - 1)));
+                    }}, OPIVX, VectorDummyOp);
+                }
+
                 format VectorIntMaskFormat {
                     0x11: decode VM {
                         0x0: vmadc_vxm({{
