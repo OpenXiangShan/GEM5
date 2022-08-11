@@ -21,7 +21,7 @@ def template VleConstructor {{
 
     const uint32_t num_microops = vtype_regs_per_group(vtype);
     int32_t remaining_vl = this->vl;
-    const int32_t micro_vlmax = vtype_VLMAX(_machInst.vtype8, true);
+    const int32_t micro_vlmax = VLEN / width_EEW(_machInst.width);
     int32_t micro_vl = std::min(remaining_vl, micro_vlmax);
     StaticInstPtr microop;
 
@@ -174,7 +174,7 @@ def template VseConstructor {{
 
     const uint32_t num_microops = vtype_regs_per_group(vtype);
     int32_t remaining_vl = this->vl;
-    const int32_t micro_vlmax = vtype_VLMAX(_machInst.vtype8, true);
+    const int32_t micro_vlmax = VLEN / width_EEW(_machInst.width);
     int32_t micro_vl = std::min(remaining_vl, micro_vlmax);
 
     StaticInstPtr microop;
@@ -326,7 +326,7 @@ def template VlmConstructor {{
     %(set_reg_idx_arr)s;
     %(constructor)s;
 
-    const uint32_t micro_vlmax = vtype_VLMAX(_machInst.vtype8, true);
+    const uint32_t micro_vlmax = VLEN / width_EEW(_machInst.width);
     int32_t micro_vl = (std::min(this->vl, micro_vlmax) + 7) / 8;
     StaticInstPtr microop;
 
@@ -349,7 +349,7 @@ def template VsmConstructor {{
     %(set_reg_idx_arr)s;
     %(constructor)s;
 
-    const uint32_t micro_vlmax = vtype_VLMAX(_machInst.vtype8, true);
+    const uint32_t micro_vlmax = VLEN / width_EEW(_machInst.width);
     int32_t micro_vl = (std::min(this->vl, micro_vlmax) + 7) / 8;
 
     StaticInstPtr microop;
@@ -376,7 +376,7 @@ def template VsWholeConstructor {{
     %(constructor)s;
 
     size_t NFIELDS = machInst.nf + 1;
-    const int32_t micro_vlmax = vtype_VLMAX(_machInst.vtype8, true);
+    const int32_t micro_vlmax = VLEN / width_EEW(_machInst.width);
 
     StaticInstPtr microop;
     for (int i = 0; i < NFIELDS; ++i) {
@@ -484,7 +484,7 @@ def template VlWholeConstructor {{
     %(constructor)s;
 
     size_t NFIELDS = machInst.nf + 1;
-    const int32_t micro_vlmax = vtype_VLMAX(_machInst.vtype8, true);
+    const int32_t micro_vlmax = VLEN / width_EEW(_machInst.width);
 
     StaticInstPtr microop;
     for (int i = 0; i < NFIELDS; ++i) {
