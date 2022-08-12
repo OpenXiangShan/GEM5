@@ -614,6 +614,36 @@ sat_subu(T x, T y, bool* sat)
     return res;
 }
 
+/**
+ * Ref:
+ * https://github.com/riscv-software-src/riscv-isa-sim
+ */
+inline __uint128_t
+int_rounding(__uint128_t result, uint8_t xrm, uint8_t gb) {
+    const uint64_t lsb = 1UL << (gb);
+    const uint64_t lsb_half = lsb >> 1;
+    switch (xrm) {
+    case 0 /* RNU */:
+        result += lsb_half;
+        break;
+    case 1 /* RNE */:
+        if ((result & lsb_half) &&
+            ((result & (lsb_half - 1)) || (result & lsb)))
+            result += lsb;
+        break;
+    case 2 /* RDN */:
+        break;
+    case 3 /* ROD */:
+        if (result & (lsb - 1))
+            result |= lsb;
+        break;
+    default:
+        panic("Invalid xrm value %d", (int)xrm);
+    }
+
+    return result;
+}
+
 } // namespace RiscvISA
 } // namespace gem5
 

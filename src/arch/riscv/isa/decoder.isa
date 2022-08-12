@@ -2071,6 +2071,22 @@ decode QUADRANT default Unknown::unknown() {
                         Vd_vu[i] = sat_sub<vi>(Vs2_vu[i], Vs1_vu[i],
                             vxsatptr);
                     }}, OPIVV, VectorDummyOp);
+                    0x27: vsmul_vv({{
+                        vi max = std::numeric_limits<vi>::max();
+                        vi min = std::numeric_limits<vi>::min();
+                        bool overflow = Vs1_vi[i] == Vs2_vi[i] &&
+                                        Vs1_vi[i] == min;
+                        __int128_t result = (__int128_t)Vs1_vi[i] *
+                                            (__int128_t)Vs2_vi[i];
+                        result = int_rounding(result, 0 /* TODO */, sew - 1);
+                        result = result >> (sew - 1);
+                        if (overflow) {
+                            result = max;
+                            *vxsatptr = true;
+                        }
+
+                        Vd_vi[i] = (vi)result;
+                    }}, OPIVV, VectorDummyOp);
                 }
                 format VectorIntFormat {
                     0x25: vsll_vv({{
@@ -2453,6 +2469,28 @@ decode QUADRANT default Unknown::unknown() {
                             reduce_loop([](const vi& src1, const vi& src2) {
                                 return std::max<vi>(src1, src2);
                             }, Vs1_vi, Vs2_vi);
+                    }}, OPMVV, VectorDummyOp);
+                }
+                format VectorIntFormat {
+                    0x8: vaaddu_vv({{
+                        __uint128_t res = (__uint128_t)Vs2_vu[i] + Vs1_vu[i];
+                        res = int_rounding(res, 0 /* TODO */, 1);
+                        Vd_vu[i] = res >> 1;
+                    }}, OPMVV, VectorDummyOp);
+                    0x9: vaadd_vv({{
+                        __uint128_t res = (__uint128_t)Vs2_vi[i] + Vs1_vi[i];
+                        res = int_rounding(res, 0 /* TODO */, 1);
+                        Vd_vi[i] = res >> 1;
+                    }}, OPMVV, VectorDummyOp);
+                    0xa: vasubu_vv({{
+                        __uint128_t res = (__uint128_t)Vs2_vu[i] - Vs1_vu[i];
+                        res = int_rounding(res, 0 /* TODO */, 1);
+                        Vd_vu[i] = res >> 1;
+                    }}, OPMVV, VectorDummyOp);
+                    0xb: vasub_vv({{
+                        __uint128_t res = (__uint128_t)Vs2_vi[i] - Vs1_vi[i];
+                        res = int_rounding(res, 0 /* TODO */, 1);
+                        Vd_vi[i] = res >> 1;
                     }}, OPMVV, VectorDummyOp);
                 }
                 // VWXUNARY0
@@ -2902,6 +2940,21 @@ decode QUADRANT default Unknown::unknown() {
                         Vd_vu[i] = sat_sub<vi>(Vs2_vu[i], Rs1_vu,
                             vxsatptr);
                     }}, OPIVX, VectorDummyOp);
+                    0x27: vsmul_vx({{
+                        vi max = std::numeric_limits<vi>::max();
+                        vi min = std::numeric_limits<vi>::min();
+                        bool overflow = Rs1_vi == Vs2_vi[i] && Rs1_vi == min;
+                        __int128_t result =
+                            (__int128_t)Rs1_vi * (__int128_t)Vs2_vi[i];
+                        result = int_rounding(result, 0 /* TODO */, sew - 1);
+                        result = result >> (sew - 1);
+                        if (overflow) {
+                            result = max;
+                            *vxsatptr = true;
+                        }
+
+                        Vd_vi[i] = (vi)result;
+                    }}, OPIVX, VectorDummyOp);
                 }
                 format VectorIntFormat {
                     0x25: vsll_vx({{
@@ -3194,8 +3247,25 @@ decode QUADRANT default Unknown::unknown() {
             // OPMVX
             0x6: decode VFUNCT6 {
                 format VectorIntFormat {
-                    0x10: vmv_s_x({{ // Special case of OPMVX
-                        Vd_vu[0] = Rs1_vu;
+                    0x08: vaaddu_vx({{
+                        __uint128_t res = (__uint128_t)Vs2_vu[i] + Rs1_vu;
+                        res = int_rounding(res, 0 /* TODO */, 1);
+                        Vd_vu[i] = res >> 1;
+                    }}, OPMVX, VectorDummyOp);
+                    0x09: vaadd_vx({{
+                        __uint128_t res = (__uint128_t)Vs2_vi[i] + Rs1_vi;
+                        res = int_rounding(res, 0 /* TODO */, 1);
+                        Vd_vi[i] = res >> 1;
+                    }}, OPMVX, VectorDummyOp);
+                    0x0a: vasubu_vx({{
+                        __uint128_t res = (__uint128_t)Vs2_vu[i] - Rs1_vu;
+                        res = int_rounding(res, 0 /* TODO */, 1);
+                        Vd_vu[i] = res >> 1;
+                    }}, OPMVX, VectorDummyOp);
+                    0x0b: vasub_vx({{
+                        __uint128_t res = (__uint128_t)Vs2_vi[i] - Rs1_vi;
+                        res = int_rounding(res, 0 /* TODO */, 1);
+                        Vd_vi[i] = res >> 1;
                     }}, OPMVX, VectorDummyOp);
                     0x20: vdivu_vx({{
                         if (Rs1_vu == 0)
