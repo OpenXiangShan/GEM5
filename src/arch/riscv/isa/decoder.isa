@@ -2074,16 +2074,13 @@ decode QUADRANT default Unknown::unknown() {
                 }
                 format VectorIntFormat {
                     0x25: vsll_vv({{
-                        Vd_vu[i] = Vs2_vu[i] << (Vs1_vu[i] &
-                                                 (vtype_SEW(vtype)-1));
+                        Vd_vu[i] = Vs2_vu[i] << (Vs1_vu[i] & (sew - 1));
                     }}, OPIVV, VectorDummyOp);
                     0x28: vsrl_vv({{
-                        Vd_vu[i] = Vs2_vu[i] >> (Vs1_vu[i] &
-                                                 (vtype_SEW(vtype)-1));
+                        Vd_vu[i] = Vs2_vu[i] >> (Vs1_vu[i] & (sew - 1));
                     }}, OPIVV, VectorDummyOp);
                     0x29: vsra_vv({{
-                        Vd_vi[i] = Vs2_vi[i] >> (Vs1_vu[i] &
-                                                 (vtype_SEW(vtype)-1));
+                        Vd_vi[i] = Vs2_vi[i] >> (Vs1_vu[i] & (sew - 1));
                     }}, OPIVV, VectorDummyOp);
                 }
                 format VectorIntMaskFormat {
@@ -2136,12 +2133,10 @@ decode QUADRANT default Unknown::unknown() {
                 }
                 format VectorIntNarrowingFormat {
                     0x2c: vnsrl_wv({{
-                        auto sew = vtype_SEW(vtype);
                         Vd_vu[i + offset] = (vu)(Vs2_vwu[i] >>
                             ((vwu)Vs1_vu[i + offset] & (sew * 2 - 1)));
                     }}, OPIVV, VectorDummyOp);
                     0x2d: vnsra_wv({{
-                        auto sew = vtype_SEW(vtype);
                         Vd_vi[i + offset] = (vi)(Vs2_vwi[i] >>
                             ((vwu)Vs1_vu[i + offset] & (sew * 2 - 1)));
                     }}, OPIVV, VectorDummyOp);
@@ -2532,9 +2527,7 @@ decode QUADRANT default Unknown::unknown() {
                     0x21: vdiv_vv({{
                         if (Vs1_vi[i] == 0)
                             Vd_vi[i] = -1;
-                        else if (Vs2_vi[i] ==
-                                    (std::numeric_limits<int64_t>::min()
-                                        >> (64 - vtype_SEW(vtype)))
+                        else if (Vs2_vi[i] == std::numeric_limits<vi>::min()
                                 && Vs1_vi[i] == -1)
                             Vd_vi[i] = Vs2_vi[i];
                         else
@@ -2558,7 +2551,6 @@ decode QUADRANT default Unknown::unknown() {
                         }
                     }}, OPMVV, VectorDummyOp);
                     0x24: vmulhu_vv({{
-                        auto sew = vtype_SEW(vtype);
                         if (sew < 64) {
                             Vd_vu[i] = ((uint64_t)Vs2_vu[i] * Vs1_vu[i])
                                         >> sew;
@@ -2570,7 +2562,6 @@ decode QUADRANT default Unknown::unknown() {
                         Vd_vi[i] = Vs2_vi[i] * Vs1_vi[i];
                     }}, OPMVV, VectorDummyOp);
                     0x26: vmulhsu_vv({{
-                        auto sew = vtype_SEW(vtype);
                         if (sew < 64) {
                             Vd_vi[i] = ((int64_t)Vs2_vi[i] *
                                         (uint64_t)Vs1_vu[i])
@@ -2580,7 +2571,6 @@ decode QUADRANT default Unknown::unknown() {
                         }
                     }}, OPMVV, VectorDummyOp);
                     0x27: vmulh_vv({{
-                        auto sew = vtype_SEW(vtype);
                         if (sew < 64) {
                             Vd_vi[i] = ((int64_t)Vs2_vi[i] * Vs1_vi[i])
                                         >> sew;
@@ -2726,12 +2716,10 @@ decode QUADRANT default Unknown::unknown() {
                 }
                 format VectorIntFormat {
                     0x25: vsll_vi({{
-                        Vd_vu[i] = Vs2_vu[i] <<
-                                    ((vu)SIMM5 & (vtype_SEW(vtype)-1) & 0x1f);
+                        Vd_vu[i] = Vs2_vu[i] << ((vu)SIMM5 & (sew - 1) & 0x1f);
                     }}, OPIVI, VectorDummyOp);
                     0x28: vsrl_vi({{
-                        Vd_vu[i] = Vs2_vu[i] >>
-                                    ((vu)SIMM5 & (vtype_SEW(vtype)-1) & 0x1f);
+                        Vd_vu[i] = Vs2_vu[i] >> ((vu)SIMM5 & (sew - 1) & 0x1f);
                     }}, OPIVI, VectorDummyOp);
                     0x2a: vssrl_vi({{
                         int sh = SIMM5 & (vtype_SEW(vtype) - 1);
@@ -2742,8 +2730,7 @@ decode QUADRANT default Unknown::unknown() {
                         Vd_vu[i] = val >> sh;
                     }}, OPIVI, VectorDummyOp);
                     0x29: vsra_vi({{
-                        Vd_vi[i] = Vs2_vi[i] >>
-                                    ((vu)SIMM5 & (vtype_SEW(vtype)-1) & 0x1f);
+                        Vd_vi[i] = Vs2_vi[i] >> ((vu)SIMM5 & (sew - 1) & 0x1f);
                     }}, OPIVI, VectorDummyOp);
                 }
                 format VectorIntNarrowingFormat {
@@ -2828,12 +2815,10 @@ decode QUADRANT default Unknown::unknown() {
                 }
                 format VectorIntNarrowingFormat {
                     0x2c: vnsrl_wi({{
-                        auto sew = vtype_SEW(vtype);
                         Vd_vu[i + offset] = (vu)(Vs2_vwu[i] >>
                                             ((vwu)SIMM5 & (sew * 2 - 1)));
                     }}, OPIVI, VectorDummyOp);
                     0x2d: vnsra_wi({{
-                        auto sew = vtype_SEW(vtype);
                         Vd_vi[i + offset] = (vi)(Vs2_vwi[i] >>
                                             ((vwu)SIMM5 & (sew * 2 - 1)));
                     }}, OPIVI, VectorDummyOp);
@@ -2920,26 +2905,21 @@ decode QUADRANT default Unknown::unknown() {
                 }
                 format VectorIntFormat {
                     0x25: vsll_vx({{
-                        Vd_vu[i] = Vs2_vu[i] << (Rs1_vu &
-                                                 (vtype_SEW(vtype)-1));
+                        Vd_vu[i] = Vs2_vu[i] << (Rs1_vu & (sew - 1));
                     }}, OPIVX, VectorDummyOp);
                     0x28: vsrl_vx({{
-                        Vd_vu[i] = Vs2_vu[i] >> (Rs1_vu &
-                                                 (vtype_SEW(vtype)-1));
+                        Vd_vu[i] = Vs2_vu[i] >> (Rs1_vu & (sew - 1));
                     }}, OPIVX, VectorDummyOp);
                     0x29: vsra_vx({{
-                        Vd_vi[i] = Vs2_vi[i] >> (Rs1_vu &
-                                                 (vtype_SEW(vtype)-1));
+                        Vd_vi[i] = Vs2_vi[i] >> (Rs1_vu & (sew - 1));
                     }}, OPIVX, VectorDummyOp);
                 }
                 format VectorIntNarrowingFormat {
                     0x2c: vnsrl_wx({{
-                        auto sew = vtype_SEW(vtype);
                         Vd_vu[i + offset] = (vu)(Vs2_vwu[i] >>
                                             ((vwu)Rs1_vu & (sew * 2 - 1)));
                     }}, OPIVX, VectorDummyOp);
                     0x2d: vnsra_wx({{
-                        auto sew = vtype_SEW(vtype);
                         Vd_vi[i + offset] = (vi)(Vs2_vwi[i] >>
                                             ((vwu)Rs1_vu & (sew * 2 - 1)));
                     }}, OPIVX, VectorDummyOp);
@@ -3226,9 +3206,7 @@ decode QUADRANT default Unknown::unknown() {
                     0x21: vdiv_vx({{
                         if (Rs1_vi == 0)
                             Vd_vi[i] = -1;
-                        else if (Vs2_vi[i] ==
-                                    (std::numeric_limits<int64_t>::min()
-                                        >> (64 - vtype_SEW(vtype)))
+                        else if (Vs2_vi[i] == std::numeric_limits<vi>::min()
                                 && Rs1_vi == -1)
                             Vd_vi[i] = Vs2_vi[i];
                         else
@@ -3250,7 +3228,6 @@ decode QUADRANT default Unknown::unknown() {
                             Vd_vi[i] = Vs2_vi[i] % Rs1_vi;
                     }}, OPMVX, VectorDummyOp);
                     0x24: vmulhu_vx({{
-                        auto sew = vtype_SEW(vtype);
                         if (sew < 64)
                             Vd_vu[i] = ((uint64_t)Vs2_vu[i] * Rs1_vu)
                                         >> sew;
@@ -3261,7 +3238,6 @@ decode QUADRANT default Unknown::unknown() {
                         Vd_vi[i] = Vs2_vi[i] * Rs1_vi;
                     }}, OPMVX, VectorDummyOp);
                     0x26: vmulhsu_vx({{
-                        auto sew = vtype_SEW(vtype);
                         if (sew < 64)
                             Vd_vi[i] = ((int64_t)Vs2_vi[i] *
                                         (uint64_t)Rs1_vu)
@@ -3270,7 +3246,6 @@ decode QUADRANT default Unknown::unknown() {
                             Vd_vi[i] = mulhsu(Vs2_vi[i], Rs1_vu);
                     }}, OPMVX, VectorDummyOp);
                     0x27: vmulh_vx({{
-                        auto sew = vtype_SEW(vtype);
                         if (sew < 64)
                             Vd_vi[i] = ((int64_t)Vs2_vi[i] * Rs1_vi)
                                         >> sew;

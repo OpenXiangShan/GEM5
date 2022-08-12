@@ -124,6 +124,7 @@ Fault
 {
     using vu [[maybe_unused]] = std::make_unsigned_t<ElemType>;
     using vi [[maybe_unused]] = std::make_signed_t<ElemType>;
+    [[maybe_unused]] constexpr size_t sew = sizeof(vu) * 8;
 
     if (machInst.vill)
         return std::make_shared<IllegalInstFault>("VILL is set", machInst);
@@ -351,6 +352,7 @@ Fault
     using vi [[maybe_unused]] = std::make_signed_t<ElemType>;
     using vwu [[maybe_unused]] = typename double_width<vu>::type;
     using vwi [[maybe_unused]] = typename double_width<vi>::type;
+    [[maybe_unused]] constexpr size_t sew = sizeof(vu) * 8;
 
     if (machInst.vill)
         return std::make_shared<IllegalInstFault>("VILL is set", machInst);
