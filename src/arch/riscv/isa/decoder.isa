@@ -2283,6 +2283,45 @@ decode QUADRANT default Unknown::unknown() {
                                 softfloat_round_minMag);
                         }}, OPFVV, VectorDummyOp);
                     }
+                    format VectorFloatNarrowingCvtFormat {
+                        0x10: vfncvt_xu_f_w({{
+                            Vd_vu[i + offset] = f_to_nui<vu>(
+                                ftype<ewt>(Vs2_vwu[i]),
+                                softfloat_roundingMode);
+                        }}, OPFVV, VectorDummyOp);
+                        0x11: vfncvt_x_f_w({{
+                            Vd_vu[i + offset] = f_to_ni<vu>(
+                                ftype<ewt>(Vs2_vwu[i]),
+                                softfloat_roundingMode);
+                        }}, OPFVV, VectorDummyOp);
+                        0x12: vfncvt_f_xu_w({{
+                            auto fd = ui_to_nf<et>(Vs2_vwu[i]);
+                            Vd_vu[i + offset] = fd.v;
+                        }}, OPFVV, VectorDummyOp);
+                        0x13: vfncvt_f_x_w({{
+                            auto fd = i_to_nf<et>(Vs2_vwu[i]);
+                            Vd_vu[i + offset] = fd.v;
+                        }}, OPFVV, VectorDummyOp);
+                        0x14: vfncvt_f_f_w({{
+                            auto fd = f_to_nf<et>(ftype<ewt>(Vs2_vwu[i]));
+                            Vd_vu[i + offset] = fd.v;
+                        }}, OPFVV, VectorDummyOp);
+                        0x15: vfncvt_rod_f_f_w({{
+                            softfloat_roundingMode = softfloat_round_odd;
+                            auto fd = f_to_nf<et>(ftype<ewt>(Vs2_vwu[i]));
+                            Vd_vu[i + offset] = fd.v;
+                        }}, OPFVV, VectorDummyOp);
+                        0x16: vfncvt_rtz_xu_f_w({{
+                            Vd_vu[i + offset] = f_to_nui<vu>(
+                                ftype<ewt>(Vs2_vwu[i]),
+                                softfloat_round_minMag);
+                        }}, OPFVV, VectorDummyOp);
+                        0x17: vfncvt_rtz_x_f_w({{
+                            Vd_vu[i + offset] = f_to_ni<vu>(
+                                ftype<ewt>(Vs2_vwu[i]),
+                                softfloat_round_minMag);
+                        }}, OPFVV, VectorDummyOp);
+                    }
                 }
                 format VectorFloatMaskFormat {
                     0x18: vmfeq_vv({{

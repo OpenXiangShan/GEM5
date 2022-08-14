@@ -470,6 +470,17 @@ f_to_wui(FloatType a, uint_fast8_t mode)
     GEM5_UNREACHABLE;
 }
 
+template<
+    typename IntType,
+    typename FloatType = typename double_widthf<IntType>::type
+> IntType
+f_to_nui(FloatType a, uint_fast8_t mode)
+{
+    if constexpr(std::is_same_v<float64_t, FloatType>)
+        return f64_to_ui32(a, mode, true);
+    GEM5_UNREACHABLE;
+}
+
 template<typename FloatType, typename IntType = decltype(FloatType::v)> IntType
 f_to_i(FloatType a, uint_fast8_t mode)
 {
@@ -488,6 +499,17 @@ f_to_wi(FloatType a, uint_fast8_t mode)
 {
     if constexpr(std::is_same_v<float32_t, FloatType>)
         return (uint64_t)f32_to_i64(a, mode, true);
+    GEM5_UNREACHABLE;
+}
+
+template<
+    typename IntType,
+    typename FloatType = typename double_widthf<IntType>::type
+> IntType
+f_to_ni(FloatType a, uint_fast8_t mode)
+{
+    if constexpr(std::is_same_v<float64_t, FloatType>)
+        return (uint32_t)f64_to_i32(a, mode, true);
     GEM5_UNREACHABLE;
 }
 
@@ -510,6 +532,17 @@ ui_to_wf(IntType a)
 {
     if constexpr(std::is_same_v<float64_t, FloatType>)
         return ui32_to_f64(a);
+    GEM5_UNREACHABLE;
+}
+
+template<
+    typename FloatType,
+    typename IntType = decltype(double_width<FloatType>::type::v)
+> FloatType
+ui_to_nf(IntType a)
+{
+    if constexpr(std::is_same_v<float32_t, FloatType>)
+        return ui64_to_f32(a);
     GEM5_UNREACHABLE;
 }
 
@@ -537,12 +570,36 @@ i_to_wf(IntType a)
 
 template<
     typename FloatType,
+    typename IntType = std::make_signed_t<
+        decltype(double_width<FloatType>::type::v)
+    >
+> FloatType
+i_to_nf(IntType a)
+{
+    if constexpr(std::is_same_v<float32_t, FloatType>)
+        return i64_to_f32(a);
+    GEM5_UNREACHABLE;
+}
+
+template<
+    typename FloatType,
     typename FloatWType = typename double_width<FloatType>::type
 > FloatWType
 f_to_wf(FloatType a)
 {
     if constexpr(std::is_same_v<float32_t, FloatType>)
         return f32_to_f64(a);
+    GEM5_UNREACHABLE;
+}
+
+template<
+    typename FloatNType,
+    typename FloatType = typename double_width<FloatNType>::type
+> FloatNType
+f_to_nf(FloatType a)
+{
+    if constexpr(std::is_same_v<float64_t, FloatType>)
+        return f64_to_f32(a);
     GEM5_UNREACHABLE;
 }
 

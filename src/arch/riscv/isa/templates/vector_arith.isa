@@ -6,7 +6,7 @@ output header {{
 #define COPY_OLD_VD(idx)                                             \
     [[maybe_unused]] RiscvISA::vreg_t old_vd;                        \
     [[maybe_unused]] decltype(Vd) old_Vd = nullptr;                  \
-    xc->getRegOperand(this, idx, &old_vd);                           \
+    xc->getRegOperand(this, (idx), &old_vd);                           \
     old_Vd = old_vd.as<std::remove_reference_t<decltype(Vd[0])> >(); \
     memcpy(Vd, old_Vd, VLENB);
 

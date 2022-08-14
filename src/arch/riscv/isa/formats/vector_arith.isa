@@ -581,6 +581,49 @@ def format VectorFloatWideningCvtFormat(code, category, *flags) {{
     decode_block = VectorFloatWideningDecodeBlock.subst(iop)
 }};
 
+def format VectorFloatNarrowingCvtFormat(code, category, *flags) {{
+    iop = InstObjParams(name, Name, 'VectorArithMacroInst', {'code': code},
+                        flags)
+
+    old_vd_idx = 1
+    dest_reg_id = "vecRegClass[_machInst.vd + _microIdx / 2]"
+    src2_reg_id = "vecRegClass[_machInst.vs2 + _microIdx]"
+    src3_reg_id = "vecRegClass[_machInst.vs3 + _microIdx / 2]"
+
+    set_dest_reg_idx = setDestWrapper(dest_reg_id)
+
+    set_src_reg_idx = ""
+    set_src_reg_idx += setSrcWrapper(src2_reg_id)
+    set_src_reg_idx += setSrcWrapper(src3_reg_id)
+    set_src_reg_idx += setSrcVm()
+    code = maskCondWrapper(code)
+    code = eiDeclarePrefix(code)
+    code = loopWrapper(code)
+
+    vm_decl_rd = vmDeclAndReadData()
+
+    microiop = InstObjParams(name + "_micro",
+        Name + "Micro",
+        'VectorArithMicroInst',
+        {'code': code,
+         'set_dest_reg_idx': set_dest_reg_idx,
+         'set_src_reg_idx': set_src_reg_idx,
+         'vm_decl_rd': vm_decl_rd,
+         'copy_old_vd': copyOldVd(old_vd_idx)},
+        flags)
+
+    # Because of the use of templates, we had to put all parts in header to
+    # keep the compiler happy.
+    header_output = \
+        VectorFloatCvtMicroDeclare.subst(microiop) + \
+        VectorFloatMicroConstructor.subst(microiop) + \
+        VectorFloatWideningMicroExecute.subst(microiop) + \
+        VectorFloatCvtMacroDeclare.subst(iop) + \
+        VectorIntWideningMacroConstructor.subst(iop)
+
+    decode_block = VectorFloatWideningDecodeBlock.subst(iop)
+}};
+
 def format VectorFloatMaskFormat(code, category, *flags) {{
     iop = InstObjParams(name,
         Name,
