@@ -61,6 +61,7 @@
 #include "mem/cache/cache_blk.hh"
 #include "mem/cache/compressors/base.hh"
 #include "mem/cache/mshr_queue.hh"
+#include "mem/cache/request_buffer.hh"
 #include "mem/cache/tags/base.hh"
 #include "mem/cache/write_queue.hh"
 #include "mem/cache/write_queue_entry.hh"
@@ -68,6 +69,7 @@
 #include "mem/packet_queue.hh"
 #include "mem/qport.hh"
 #include "mem/request.hh"
+#include "params/RequestBuffer.hh"
 #include "params/WriteAllocator.hh"
 #include "sim/clocked_object.hh"
 #include "sim/eventq.hh"
@@ -386,6 +388,13 @@ class BaseCache : public ClockedObject
      * whole-line write into a writeback straight away.
      */
     WriteAllocator * const writeAllocator;
+
+    RequestBuffer * const requestBuffer;
+    void processRequestBufferDequeue();
+    void processRequestBufferUpdate();
+    EventFunctionWrapper requestBufferDequeueEvent;
+    EventFunctionWrapper updateRequestBufferEvent;
+    void scheduleRequestBufferDequeueEvent();
 
     /**
      * Temporary cache block for occasional transitory use.  We use

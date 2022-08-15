@@ -46,6 +46,13 @@ from m5.objects.Prefetcher import BasePrefetcher
 from m5.objects.ReplacementPolicies import *
 from m5.objects.Tags import *
 
+
+class RequestBuffer(ClockedObject):
+    type = 'RequestBuffer'
+    cxx_header = "mem/cache/request_buffer.hh"
+    cxx_class = "gem5::RequestBuffer"
+    capacity = Param.Int(16, "Size of request buffer")
+
 # Enum for cache clusivity, currently mostly inclusive or mostly
 # exclusive.
 class Clusivity(Enum): vals = ['mostly_incl', 'mostly_excl']
@@ -151,6 +158,8 @@ class BaseCache(ClockedObject):
     # in the current cache. Typically, this would be enabled in the
     # data cache.
     write_allocator = Param.WriteAllocator(NULL, "Write allocator")
+
+    request_buffer = Param.RequestBuffer(NULL, "Request buffer")
 
     enable_arch_db = Param.Bool(False, "Enable arch db")
     arch_db_file = Param.String("", "Where to save arch db")

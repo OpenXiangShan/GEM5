@@ -1466,6 +1466,10 @@ Cache::sendMSHRQueuePacket(MSHR* mshr)
                     mshr->blkAddr);
 
             // Deallocate the mshr target
+            if (requestBuffer){
+                requestBuffer->wakeup(mshr);
+                schedule(requestBufferDequeueEvent, nextCycle());
+            }
             if (mshrQueue.forceDeallocateTarget(mshr)) {
                 // Clear block if this deallocation resulted freed an
                 // mshr when all had previously been utilized
