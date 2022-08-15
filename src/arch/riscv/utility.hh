@@ -705,9 +705,9 @@ sat_subu(T x, T y, bool* sat)
  * Ref:
  * https://github.com/riscv-software-src/riscv-isa-sim
  */
-inline __uint128_t
-int_rounding(__uint128_t result, uint8_t xrm, uint8_t gb) {
-    const uint64_t lsb = 1UL << (gb);
+template<typename T> T
+int_rounding(T result, uint8_t xrm, unsigned gb) {
+    const uint64_t lsb = 1UL << gb;
     const uint64_t lsb_half = lsb >> 1;
     switch (xrm) {
     case 0 /* RNU */:

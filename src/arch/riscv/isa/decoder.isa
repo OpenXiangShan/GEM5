@@ -2078,7 +2078,8 @@ decode QUADRANT default Unknown::unknown() {
                                         Vs1_vi[i] == min;
                         __int128_t result = (__int128_t)Vs1_vi[i] *
                                             (__int128_t)Vs2_vi[i];
-                        result = int_rounding(result, 0 /* TODO */, sew - 1);
+                        result = int_rounding<__int128_t>(
+                            result, 0 /* TODO */, sew - 1);
                         result = result >> (sew - 1);
                         if (overflow) {
                             result = max;
@@ -2155,6 +2156,42 @@ decode QUADRANT default Unknown::unknown() {
                     0x2d: vnsra_wv({{
                         Vd_vi[i + offset] = (vi)(Vs2_vwi[i] >>
                             ((vwu)Vs1_vu[i + offset] & (sew * 2 - 1)));
+                    }}, OPIVV, VectorDummyOp);
+                    0x2e: vnclipu_wv({{
+                        vu max = std::numeric_limits<vu>::max();
+                        uint64_t sign_mask =
+                            std::numeric_limits<uint64_t>::max() << sew;
+                        __uint128_t res = Vs2_vwu[i];
+                        unsigned shift = Vs1_vu[i + offset] & ((sew * 2) - 1);
+
+                        res = int_rounding<__uint128_t>(
+                            res, 0 /* TODO */, shift) >> shift;
+
+                        if (res & sign_mask) {
+                            res = max;
+                            // TODO: vxsat
+                        }
+
+                        Vd_vu[i + offset] = (vu)res;
+                    }}, OPIVV, VectorDummyOp);
+                    0x2f: vnclip_wv({{
+                        vi max = std::numeric_limits<vi>::max();
+                        vi min = std::numeric_limits<vi>::min();
+                        __int128_t res = Vs2_vwi[i];
+                        unsigned shift = Vs1_vi[i + offset] & ((sew * 2) - 1);
+
+                        res = int_rounding<__int128_t>(
+                            res, 0 /* TODO */, shift) >> shift;
+
+                        if (res < min) {
+                            res = min;
+                            // TODO: vxsat
+                        } else if (res > max) {
+                            res = max;
+                            // TODO: vxsat
+                        }
+
+                        Vd_vi[i + offset] = (vi)res;
                     }}, OPIVV, VectorDummyOp);
                 }
             }
@@ -2534,22 +2571,22 @@ decode QUADRANT default Unknown::unknown() {
                 format VectorIntFormat {
                     0x8: vaaddu_vv({{
                         __uint128_t res = (__uint128_t)Vs2_vu[i] + Vs1_vu[i];
-                        res = int_rounding(res, 0 /* TODO */, 1);
+                        res = int_rounding<__uint128_t>(res, 0 /* TODO */, 1);
                         Vd_vu[i] = res >> 1;
                     }}, OPMVV, VectorDummyOp);
                     0x9: vaadd_vv({{
                         __uint128_t res = (__uint128_t)Vs2_vi[i] + Vs1_vi[i];
-                        res = int_rounding(res, 0 /* TODO */, 1);
+                        res = int_rounding<__uint128_t>(res, 0 /* TODO */, 1);
                         Vd_vi[i] = res >> 1;
                     }}, OPMVV, VectorDummyOp);
                     0xa: vasubu_vv({{
                         __uint128_t res = (__uint128_t)Vs2_vu[i] - Vs1_vu[i];
-                        res = int_rounding(res, 0 /* TODO */, 1);
+                        res = int_rounding<__uint128_t>(res, 0 /* TODO */, 1);
                         Vd_vu[i] = res >> 1;
                     }}, OPMVV, VectorDummyOp);
                     0xb: vasub_vv({{
                         __uint128_t res = (__uint128_t)Vs2_vi[i] - Vs1_vi[i];
-                        res = int_rounding(res, 0 /* TODO */, 1);
+                        res = int_rounding<__uint128_t>(res, 0 /* TODO */, 1);
                         Vd_vi[i] = res >> 1;
                     }}, OPMVV, VectorDummyOp);
                 }
@@ -2920,6 +2957,42 @@ decode QUADRANT default Unknown::unknown() {
                         Vd_vi[i + offset] = (vi)(Vs2_vwi[i] >>
                                             ((vwu)SIMM5 & (sew * 2 - 1)));
                     }}, OPIVI, VectorDummyOp);
+                    0x2e: vnclipu_wi({{
+                        vu max = std::numeric_limits<vu>::max();
+                        uint64_t sign_mask =
+                            std::numeric_limits<uint64_t>::max() << sew;
+                        __uint128_t res = Vs2_vwu[i];
+                        unsigned shift = VS1 & ((sew * 2) - 1);
+
+                        res = int_rounding<__uint128_t>(
+                            res, 0 /* TODO */, shift) >> shift;
+
+                        if (res & sign_mask) {
+                            // TODO: vxsat
+                            res = max;
+                        }
+
+                        Vd_vu[i + offset] = (vu)res;
+                    }}, OPIVI, VectorDummyOp);
+                    0x2f: vnclip_wi({{
+                        vi max = std::numeric_limits<vi>::max();
+                        vi min = std::numeric_limits<vi>::min();
+                        __int128_t res = Vs2_vwi[i];
+                        unsigned shift = VS1 & ((sew * 2) - 1);
+
+                        res = int_rounding<__int128_t>(
+                            res, 0 /* TODO */, shift) >> shift;
+
+                        if (res < min) {
+                            res = min;
+                            // TODO: vxsat
+                        } else if (res > max) {
+                            res = max;
+                            // TODO: vxsat
+                        }
+
+                        Vd_vi[i + offset] = (vi)res;
+                    }}, OPIVI, VectorDummyOp);
                 }
             }
             // OPIVX
@@ -3006,7 +3079,8 @@ decode QUADRANT default Unknown::unknown() {
                         bool overflow = Rs1_vi == Vs2_vi[i] && Rs1_vi == min;
                         __int128_t result =
                             (__int128_t)Rs1_vi * (__int128_t)Vs2_vi[i];
-                        result = int_rounding(result, 0 /* TODO */, sew - 1);
+                        result = int_rounding<__uint128_t>(
+                            result, 0 /* TODO */, sew - 1);
                         result = result >> (sew - 1);
                         if (overflow) {
                             result = max;
@@ -3035,6 +3109,42 @@ decode QUADRANT default Unknown::unknown() {
                     0x2d: vnsra_wx({{
                         Vd_vi[i + offset] = (vi)(Vs2_vwi[i] >>
                                             ((vwu)Rs1_vu & (sew * 2 - 1)));
+                    }}, OPIVX, VectorDummyOp);
+                    0x2e: vnclipu_wx({{
+                        vu max = std::numeric_limits<vu>::max();
+                        uint64_t sign_mask =
+                            std::numeric_limits<uint64_t>::max() << sew;
+                        __uint128_t res = Vs2_vwu[i];
+                        unsigned shift = Rs1_vu & ((sew * 2) - 1);
+
+                        res = int_rounding<__uint128_t>(
+                            res, 0 /* TODO */, shift) >> shift;
+
+                        if (res & sign_mask) {
+                            // TODO: vxsat
+                            res = max;
+                        }
+
+                        Vd_vu[i + offset] = (vu)res;
+                    }}, OPIVX, VectorDummyOp);
+                    0x2f: vnclip_wx({{
+                        vi max = std::numeric_limits<vi>::max();
+                        vi min = std::numeric_limits<vi>::min();
+                        __int128_t res = Vs2_vwi[i];
+                        unsigned shift = Rs1_vi & ((sew * 2) - 1);
+
+                        res = int_rounding<__int128_t>(
+                            res, 0 /* TODO */, shift) >> shift;
+
+                        if (res < min) {
+                            res = min;
+                            // TODO: vxsat
+                        } else if (res > max) {
+                            res = max;
+                            // TODO: vxsat
+                        }
+
+                        Vd_vi[i + offset] = (vi)res;
                     }}, OPIVX, VectorDummyOp);
                 }
 
@@ -3309,22 +3419,22 @@ decode QUADRANT default Unknown::unknown() {
                 format VectorIntFormat {
                     0x08: vaaddu_vx({{
                         __uint128_t res = (__uint128_t)Vs2_vu[i] + Rs1_vu;
-                        res = int_rounding(res, 0 /* TODO */, 1);
+                        res = int_rounding<__uint128_t>(res, 0 /* TODO */, 1);
                         Vd_vu[i] = res >> 1;
                     }}, OPMVX, VectorDummyOp);
                     0x09: vaadd_vx({{
                         __uint128_t res = (__uint128_t)Vs2_vi[i] + Rs1_vi;
-                        res = int_rounding(res, 0 /* TODO */, 1);
+                        res = int_rounding<__uint128_t>(res, 0 /* TODO */, 1);
                         Vd_vi[i] = res >> 1;
                     }}, OPMVX, VectorDummyOp);
                     0x0a: vasubu_vx({{
                         __uint128_t res = (__uint128_t)Vs2_vu[i] - Rs1_vu;
-                        res = int_rounding(res, 0 /* TODO */, 1);
+                        res = int_rounding<__uint128_t>(res, 0 /* TODO */, 1);
                         Vd_vu[i] = res >> 1;
                     }}, OPMVX, VectorDummyOp);
                     0x0b: vasub_vx({{
                         __uint128_t res = (__uint128_t)Vs2_vi[i] - Rs1_vi;
-                        res = int_rounding(res, 0 /* TODO */, 1);
+                        res = int_rounding<__uint128_t>(res, 0 /* TODO */, 1);
                         Vd_vi[i] = res >> 1;
                     }}, OPMVX, VectorDummyOp);
                     0x20: vdivu_vx({{
