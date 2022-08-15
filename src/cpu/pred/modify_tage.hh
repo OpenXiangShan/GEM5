@@ -87,6 +87,7 @@ class StreamTAGE : public TimedPredictor
     int reset_counter;
 
     struct PredEntry {
+        bool valid = false;
         Addr tag = 0;
         TickedStreamStorage target;
         int counter = 0;
@@ -96,6 +97,7 @@ class StreamTAGE : public TimedPredictor
     bitset ghr;
     std::vector<std::vector<PredEntry>  >targetCache;
     TickedStreamStorage previous_target;
+    std::vector<bool> base_predictor_valid;
     std::vector<TickedStreamStorage> base_predictor;
 
   private:
