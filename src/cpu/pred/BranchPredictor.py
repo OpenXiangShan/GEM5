@@ -777,6 +777,22 @@ class StreamUBTB(TimedPredictor):
     cxx_class = 'gem5::branch_prediction::StreamUBTB'
     cxx_header = "cpu/pred/ubtb.hh"
 
+class StreamTAGE(TimedPredictor):
+    type = 'StreamTAGE'
+    cxx_class = 'gem5::branch_prediction::StreamTAGE'
+    cxx_header = "cpu/pred/modify_tage.hh"
+
+    numPredictors = Param.Unsigned(11, "Number of TAGE predictors")
+    tableSizes = VectorParam.Int(
+        [256] * 15, "the ITTAGE T1~Tn length")
+    TTagBitSizes = VectorParam.Int(
+        [9, 9, 13, 13, 13, 13, 13, 13, 13, 13, 15, 15, 15, 15, 15], "the T1~Tn entry's tag bit size")
+    TTagPcShifts = VectorParam.Int(
+        [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2], "when the T1~Tn entry's tag generating, PC right shift")
+    histLengths = VectorParam.Int(
+        [4, 10, 16, 27, 44, 60, 96, 109, 219, 449, 487], "the ITTAGE T1~Tn history length")
+    simpleBTBSize = Param.Unsigned(512, "size of base predictor")
+
 class DecoupledBPU(BranchPredictor):
     type = 'DecoupledBPU'
     cxx_class = 'gem5::branch_prediction::DecoupledBPU'
@@ -784,7 +800,7 @@ class DecoupledBPU(BranchPredictor):
 
     # stream_pred = Param.StreamPredictor(StreamPredictor(),
     # "backing stream predictor")
-    stream_ubtb = Param.StreamUBTB(StreamUBTB(), "fast stream predictor")
+    stream_tage = Param.StreamTAGE(StreamTAGE(), "fast stream predictor")
 
     ftq_size = Param.Unsigned(128, "Fetch target queue size")
 

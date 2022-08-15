@@ -45,7 +45,7 @@ SimObject('BranchPredictor.py', sim_objects=[
     'MultiperspectivePerceptronTAGE64KB', 'MPP_TAGE_8KB',
     'MPP_LoopPredictor_8KB', 'MPP_StatisticalCorrector_8KB',
     'MultiperspectivePerceptronTAGE8KB', 'TimedPredictor',
-    'StreamUBTB', 'DecoupledBPU'])
+    'StreamUBTB', 'StreamTAGE', 'DecoupledBPU'])
 
 DebugFlag('Indirect')
 Source('bpred_unit.cc')
@@ -73,6 +73,7 @@ Source('tage_sc_l_64KB.cc')
 Source('decoupled_bpred.cc')
 Source('fetch_target_queue.cc')
 Source('ubtb.cc')
+Source('modify_tage.cc')
 Source('timed_pred.cc')
 DebugFlag('FreeList')
 DebugFlag('Branch')

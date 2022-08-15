@@ -6,9 +6,9 @@ namespace branch_prediction
 {
 
 DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
-    : BPredUnit(p), fetchTargetQueue(p.ftq_size), streamUBTB(p.stream_ubtb)
+    : BPredUnit(p), fetchTargetQueue(p.ftq_size), streamTAGE(p.stream_tage)
 {
-    assert(streamUBTB);
+    assert(streamTAGE);
 
     // TODO: remove this
     fetchStreamQueueSize = 64;
@@ -26,7 +26,7 @@ DecoupledBPU::tick()
 {
     if (!squashing) {
         DPRINTF(DecoupleBP, "DecoupledBPU::tick()\n");
-        s0UbtbPred = streamUBTB->getStream();
+        s0UbtbPred = streamTAGE->getStream();
         tryEnqFetchTarget();
         tryEnqFetchStream();
 
@@ -34,9 +34,9 @@ DecoupledBPU::tick()
         DPRINTF(DecoupleBP, "Squashing, skip this cycle\n");
     }
 
-    streamUBTB->tickStart();
+    streamTAGE->tickStart();
     if (!streamQueueFull()) {
-        streamUBTB->putPCHistory(s0StreamPC, s0History);
+        streamTAGE->putPCHistory(s0StreamPC, s0History);
     }
     squashing = false;
 }
@@ -156,9 +156,9 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
         stream.exeStreamEnd = stream.exeBranchAddr + control_inst_size;
 
 
-        streamUBTB->update(stream_id, stream.streamStart,
+        streamTAGE->update(stream.streamStart,
                            control_pc.instAddr(), corr_target.instAddr(),
-                           is_conditional, is_indirect, control_inst_size,
+                           control_inst_size,
                            actually_taken, stream.history);
 
         // clear younger fsq entries
@@ -373,10 +373,9 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
 
         if (!miss_predicted) {
             // TODO: do ubtb update here
-            streamUBTB->commit(
-                it->first, it->second.streamStart, it->second.exeBranchAddr,
+            streamTAGE->commit(
+                it->second.streamStart,
                 it->second.exeTarget,
-                it->second.exeStreamEnd - it->second.exeBranchAddr,
                 it->second.history);
         }
 
