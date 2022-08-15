@@ -382,6 +382,26 @@ fsqrt(FloatType a)
 }
 
 template<typename FloatType> FloatType
+frsqrte7(FloatType a)
+{
+    if constexpr(std::is_same_v<float32_t, FloatType>)
+        return f32_rsqrte7(a);
+    else if constexpr(std::is_same_v<float64_t, FloatType>)
+        return f64_rsqrte7(a);
+    GEM5_UNREACHABLE;
+}
+
+template<typename FloatType> FloatType
+frecip7(FloatType a)
+{
+    if constexpr(std::is_same_v<float32_t, FloatType>)
+        return f32_recip7(a);
+    else if constexpr(std::is_same_v<float64_t, FloatType>)
+        return f64_recip7(a);
+    GEM5_UNREACHABLE;
+}
+
+template<typename FloatType> FloatType
 fsgnj(FloatType a, FloatType b, bool n, bool x)
 {
     if constexpr(std::is_same_v<float32_t, FloatType>)
