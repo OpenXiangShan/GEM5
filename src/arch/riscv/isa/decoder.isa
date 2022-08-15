@@ -2325,16 +2325,20 @@ decode QUADRANT default Unknown::unknown() {
                 }
                 0x13: decode VS1 {
                     format VectorFloatCvtFormat {
-                        0x0: vfsqrt_v({{
+                        0x00: vfsqrt_v({{
                             auto fd = fsqrt<et>(ftype<et>(Vs2_vu[i]));
                             Vd_vu[i] = fd.v;
                         }}, OPFVV, VectorDummyOp);
-                        0x4: vfrsqrt7_v({{
+                        0x04: vfrsqrt7_v({{
                             auto fd = frsqrte7<et>(ftype<et>(Vs2_vu[i]));
                             Vd_vu[i] = fd.v;
                         }}, OPFVV, VectorDummyOp);
-                        0x5: vfrec7_v({{
+                        0x05: vfrec7_v({{
                             auto fd = frecip7<et>(ftype<et>(Vs2_vu[i]));
+                            Vd_vu[i] = fd.v;
+                        }}, OPFVV, VectorDummyOp);
+                        0x10: vfclass_v({{
+                            auto fd = fclassify<et>(ftype<et>(Vs2_vu[i]));
                             Vd_vu[i] = fd.v;
                         }}, OPFVV, VectorDummyOp);
                     }

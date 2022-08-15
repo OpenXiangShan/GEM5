@@ -402,6 +402,16 @@ frecip7(FloatType a)
 }
 
 template<typename FloatType> FloatType
+fclassify(FloatType a)
+{
+    if constexpr(std::is_same_v<float32_t, FloatType>)
+        return f32(f32_classify(a));
+    else if constexpr(std::is_same_v<float64_t, FloatType>)
+        return f64(f64_classify(a));
+    GEM5_UNREACHABLE;
+}
+
+template<typename FloatType> FloatType
 fsgnj(FloatType a, FloatType b, bool n, bool x)
 {
     if constexpr(std::is_same_v<float32_t, FloatType>)
