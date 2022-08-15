@@ -57,7 +57,7 @@ StreamTAGE::lookup_helper(Addr streamStart, const bitset& history, TickedStreamS
         uint32_t tmp_index = index;
         uint32_t tmp_tag = getTag(streamStart, history, i);
         const auto &way = targetCache[i][tmp_index];
-        if (way.tag == tmp_tag && way.valid) {
+        if (way.tag == tmp_tag && way.valid && (streamStart >= way.target.bbStart && streamStart <= way.target.controlAddr)) {
             if (pred_counts == 0) {//第一次命中
                 target_1 = way.target;
                 predictor_1 = i;
@@ -99,8 +99,10 @@ StreamTAGE::lookup_helper(Addr streamStart, const bitset& history, TickedStreamS
         target = base_predictor[(streamStart ^ previous_target.bbStart) % simpleBTBSize];
         // no need to set
         pred_count = pred_counts;
-        if (base_predictor_valid[(streamStart ^ previous_target.bbStart) % simpleBTBSize])
+        if (base_predictor_valid[(streamStart ^ previous_target.bbStart) % simpleBTBSize] && streamStart >= target.bbStart && streamStart <= target.controlAddr) {
+            DPRINTF(DecoupleBP, "%lx, found entry in base predictor, streamStart: %lx, controlAddr: %lx, nextStream: %lx\n", streamStart, target.bbStart, target.controlAddr, target.nextStream);
             return true;
+        }
     }
     // may not reach here
     return false;
@@ -125,6 +127,7 @@ StreamTAGE::putPCHistory(Addr pc, const bitset &history) {
     }
 
     auto& way = targetCache[predictor][predictor_index];
+    DPRINTF(DecoupleBP, "valid: %d, bbStart : %lx, controlAddr: %lx, nextStream: %lx\n", way.valid, pc, way.target.controlAddr, way.target.nextStream);
     if (!found) {
         DPRINTF(DecoupleBP,
                 "not found for stream=%#lx, guess an unlimited stream\n",

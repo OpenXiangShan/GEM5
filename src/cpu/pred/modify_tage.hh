@@ -10,6 +10,7 @@
 #include "cpu/pred/stream_struct.hh"
 #include "cpu/pred/timed_pred.hh"
 #include "params/StreamTAGE.hh"
+#include "debug/DecoupleBP.hh"
 #include "sim/sim_object.hh"
 
 namespace gem5
