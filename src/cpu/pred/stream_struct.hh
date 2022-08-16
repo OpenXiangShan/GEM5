@@ -83,6 +83,21 @@ struct IdealStreamStorage
     uint16_t controlSize;
     unsigned hysteresis;
     bool endIsRet;
+    inline bool equal(IdealStreamStorage& stream) {
+        if (bbStart != stream.bbStart) {
+            return false;
+        }
+        if (controlAddr != stream.controlAddr) {
+            return false;
+        }
+        if (nextStream != stream.nextStream) {
+            return false;
+        }
+        if (controlSize != stream.controlSize) {
+            return false;
+        }
+        return true;
+    }
 };
 
 struct RealStreamStorage

@@ -777,6 +777,12 @@ class StreamUBTB(TimedPredictor):
     cxx_class = 'gem5::branch_prediction::StreamUBTB'
     cxx_header = "cpu/pred/ubtb.hh"
 
+
+class StreamTage(TimedPredictor):
+    type = 'StreamTage'
+    cxx_class = 'gem5::branch_prediction::StreamTage'
+    cxx_header = "cpu/pred/decoupled_tage.hh"
+
 class DecoupledBPU(BranchPredictor):
     type = 'DecoupledBPU'
     cxx_class = 'gem5::branch_prediction::DecoupledBPU'
@@ -784,7 +790,7 @@ class DecoupledBPU(BranchPredictor):
 
     # stream_pred = Param.StreamPredictor(StreamPredictor(),
     # "backing stream predictor")
-    stream_ubtb = Param.StreamUBTB(StreamUBTB(), "fast stream predictor")
+    stream_ubtb = Param.StreamTage(StreamTage(), "fast stream predictor")
 
     ftq_size = Param.Unsigned(128, "Fetch target queue size")
 
