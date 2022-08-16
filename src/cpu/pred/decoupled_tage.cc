@@ -14,7 +14,7 @@ void StreamTage::Table::init(uint32_t Tsize, uint32_t TtagSize) {
     else {
         this->isBasePred = false;
         this->entry = new TageEntry[(1 << (ceilLog2(Tsize)))];
-        tagMask = (1 << (ceilLog2(TtagSize))) - 1;
+        tagMask = (1 << TtagSize) - 1;
     }
     indexMask = (1 << (ceilLog2(Tsize))) - 1;
 
@@ -104,12 +104,13 @@ void StreamTage::Table::update(Addr pc,const bitset& history, bool setUsefulBit,
 }
 
 uint64_t StreamTage::Table::getIndex(Addr pc, const bitset& history) {
-    //pc >>= 2;
-    return (pc ^ history.to_ulong()) & indexMask;
+
+    pc >>= 2;
+    return (pc) & indexMask;
 }
 uint64_t StreamTage::Table::getTag(Addr pc, const bitset& history) {
-    //pc >>= 4;
-    return (pc ^ history.to_ulong()) & tagMask;
+    pc >>= 2;
+    return (pc) & tagMask;
 }
 
 
@@ -122,7 +123,7 @@ StreamTage::StreamTage(const Params& p):
     lookup_result.resize(4);
     targetCache[0].init(256, 0);
     for (uint64_t i = 1; i < 4; i++) {
-        targetCache[i].init(256, 8);
+        targetCache[i].init(256, 16);
     }
 }
 
@@ -142,18 +143,16 @@ int StreamTage::getProviderIndex(Table& T1, Table& T2) {
         return 0;
     }
     else {
-        if(cast(TageEntry, T1.entry_found)->useful > cast(TageEntry, T2.entry_found)->useful) {
+        if(cast(TageEntry, T1.entry_found)->useful > cast(TageEntry, T2.entry_found)->useful &&
+            cast(TageEntry, T1.entry_found)->cnt > 1) {
             return 0;
         }
         else if (cast(TageEntry, T1.entry_found)->useful == cast(TageEntry, T2.entry_found)->useful) {
-            if (cast(TageEntry, T1.entry_found)->cnt > cast(TageEntry, T2.entry_found)->cnt) {
+            if (cast(TageEntry, T1.entry_found)->cnt >= cast(TageEntry, T2.entry_found)->cnt) {
                 return 0;
             }
-            else if(cast(TageEntry, T1.entry_found)->cnt < cast(TageEntry, T2.entry_found)->cnt) {
+            else{
                 return 1;
-            }
-            else {
-                return rand() % 2;
             }
         }
         else {
@@ -165,7 +164,7 @@ int StreamTage::getProviderIndex(Table& T1, Table& T2) {
 
 void StreamTage::putPCHistory(Addr pc, const boost::dynamic_bitset<>& history) {
     int provider_rdy = 0;
-    BaseEntry* entry_found[2];
+    BaseEntry* entry_found[2]={nullptr,nullptr};
     int Tfound_index[2];
     for (int i = 0;i < targetCache.size();i++) {
 
@@ -212,7 +211,6 @@ void StreamTage::update(const PredictionID fsq_id, Addr stream_start_pc,
                    bool is_indirect, unsigned control_size,
                    bool actually_taken,
                    const boost::dynamic_bitset<>& history) {
-
     StreamStorage new_stream={
         .bbStart = stream_start_pc,
         .controlAddr = control_pc,
@@ -258,7 +256,7 @@ void StreamTage::update(const PredictionID fsq_id, Addr stream_start_pc,
     for (;Tstart_index < targetCache.size();Tstart_index++) {
         targetCache[Tstart_index].allocate(stream_start_pc, stream_start_pc, history, new_stream);
         allocate_cnt++;
-        if (allocate_cnt > 2) {
+        if (allocate_cnt >= 2) {//allocate 2 
             break;
         }
     }

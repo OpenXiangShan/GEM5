@@ -40,7 +40,7 @@ public:
         uint64_t getTag(Addr pc, const bitset& history);
     public:
         bool isBasePred;
-        BaseEntry* entry_found;
+        BaseEntry* entry_found=nullptr;
         //set the table size and the tag bit size
         //if the tag bit size is zero,this table will set to be base predictor
         void init(uint32_t Tsize, uint32_t TtagSize);
