@@ -22,7 +22,9 @@ void StreamTage::Table::init(uint32_t Tsize, uint32_t TtagSize) {
 bool StreamTage::Table::lookup(Addr pc,const bitset& history) {
     uint64_t index = this->getIndex(pc, history);
     if (isBasePred) {
-        if (cast(BaseEntry, entry)[index].valid) {
+        if (cast(BaseEntry, entry)[index].valid &&
+            (pc >= cast(BaseEntry, entry)[index].stream.bbStart &&
+            pc <= cast(BaseEntry, entry)[index].stream.controlAddr)) {
             entry_found = &cast(BaseEntry, entry)[index];
             return true;
         }
@@ -32,7 +34,10 @@ bool StreamTage::Table::lookup(Addr pc,const bitset& history) {
     }
     else {
         uint64_t tag = this->getTag(pc, history);
-        if (cast(TageEntry, entry)[index].valid && cast(TageEntry, entry)[index].tag == tag) {
+        if (cast(TageEntry, entry)[index].valid &&
+            (cast(TageEntry, entry)[index].tag == tag) &&
+            (pc >= cast(TageEntry, entry)[index].stream.bbStart &&
+             pc <= cast(TageEntry, entry)[index].stream.controlAddr)) {
             entry_found = &cast(TageEntry, entry)[index];
             return true;
         }
@@ -99,11 +104,11 @@ void StreamTage::Table::update(Addr pc,const bitset& history, bool setUsefulBit,
 }
 
 uint64_t StreamTage::Table::getIndex(Addr pc, const bitset& history) {
-    pc >>= 2;
+    //pc >>= 2;
     return (pc ^ history.to_ulong()) & indexMask;
 }
 uint64_t StreamTage::Table::getTag(Addr pc, const bitset& history) {
-    pc >>= 4;
+    //pc >>= 4;
     return (pc ^ history.to_ulong()) & tagMask;
 }
 
