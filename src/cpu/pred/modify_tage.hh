@@ -44,7 +44,7 @@ class StreamTAGE : public TimedPredictor
   private:
     const unsigned delay{1};
 
-    bool lookup_helper(Addr,const bitset&, TickedStreamStorage&, TickedStreamStorage&, int&, int&, int&, int&, int&, bool&);
+    bool lookup_helper(bool, Addr,const bitset&, TickedStreamStorage&, TickedStreamStorage&, int&, int&, int&, int&, int&, bool&);
 
   public:
     StreamTAGE(const Params &p);
@@ -65,7 +65,7 @@ class StreamTAGE : public TimedPredictor
                 unsigned control_size, bool actually_taken,
                 const bitset &history);
 
-    void commit(Addr, Addr, bitset&);
+    void commit(Addr, Addr, Addr, bitset&);
 
     uint64_t makePCHistTag(Addr pc, const bitset &history);
 
@@ -86,6 +86,13 @@ class StreamTAGE : public TimedPredictor
 
     int use_alt; // min:0 max: 15
     int reset_counter;
+
+    struct DBPStats : public statistics::Group {
+        statistics::Scalar coldMisses;
+        statistics::Scalar capacityMisses;
+        statistics::Scalar compulsoryMisses;
+        DBPStats(statistics::Group* parent);
+    }dbpstats;
 
     struct PredEntry {
         bool valid = false;

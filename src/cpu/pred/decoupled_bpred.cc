@@ -374,7 +374,7 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
         if (!miss_predicted) {
             // TODO: do ubtb update here
             streamTAGE->commit(
-                it->second.streamStart,
+                it->second.streamStart, it->second.exeBranchAddr,
                 it->second.exeTarget,
                 it->second.history);
         }

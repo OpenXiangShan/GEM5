@@ -17,7 +17,8 @@ StreamTAGE::StreamTAGE(const Params& p):
     tableSizes(p.tableSizes),
     TTagBitSizes(p.TTagBitSizes),
     TTagPcShifts(p.TTagPcShifts),
-    histLengths(p.histLengths)
+    histLengths(p.histLengths),
+    dbpstats(this)
 {
     base_predictor.resize(simpleBTBSize);
     for (int i = 0;i < simpleBTBSize;i++)
@@ -27,6 +28,17 @@ StreamTAGE::StreamTAGE(const Params& p):
         //initialize ittage predictor
         targetCache[i].resize(tableSizes[i]);
     }
+}
+
+StreamTAGE::DBPStats::DBPStats(statistics::Group* parent):
+    statistics::Group(parent),
+    ADD_STAT(coldMisses, statistics::units::Count::get(), "ittage the provider component lookup hit"),
+    ADD_STAT(capacityMisses, statistics::units::Count::get(), "ittage the alternate prediction lookup hit"),
+    ADD_STAT(compulsoryMisses, statistics::units::Count::get(), "ittage the provider component pred hit")
+{
+    coldMisses.prereq(coldMisses);
+    capacityMisses.prereq(capacityMisses);
+    compulsoryMisses.prereq(compulsoryMisses);
 }
 
 void
@@ -39,7 +51,7 @@ void
 StreamTAGE::tick() {}
 
 bool
-StreamTAGE::lookup_helper(Addr streamStart, const bitset& history, TickedStreamStorage& target,
+StreamTAGE::lookup_helper(bool flag, Addr streamStart, const bitset& history, TickedStreamStorage& target,
                           TickedStreamStorage& alt_target, int& predictor,
                           int& predictor_index, int& alt_predictor,
                           int& alt_predictor_index, int& pred_count,
@@ -73,6 +85,13 @@ StreamTAGE::lookup_helper(Addr streamStart, const bitset& history, TickedStreamS
             }
         } else {
 
+        }
+
+        if (flag == false) {
+            if (way.tag == tmp_tag && !way.valid)
+                dbpstats.compulsoryMisses++;
+            else if (way.tag == tmp_tag && way.valid && !(streamStart >= way.target.bbStart && streamStart <= way.target.controlAddr))
+                dbpstats.capacityMisses++;
         }
     }
     pred_count = pred_counts;
@@ -118,7 +137,7 @@ StreamTAGE::putPCHistory(Addr pc, const bitset &history) {
     int alt_predictor_index = 0;
     int pred_count = 0; // no use
     bool use_alt_pred = false;
-    bool found = lookup_helper(pc, history, target, alt_target, predictor, predictor_index,
+    bool found = lookup_helper(false, pc, history, target, alt_target, predictor, predictor_index,
                   alt_predictor, alt_predictor_index, pred_count, use_alt_pred);
     if (use_alt_pred) {
         target = alt_target;
@@ -192,7 +211,7 @@ StreamTAGE::update(Addr stream_start_pc,
     int predictor_sel = 0;
     int predictor_index_sel = 0;
     bool use_alt_pred = false;
-    bool predictor_found = lookup_helper(stream_start_pc, history, target_1, target_2, predictor, predictor_index,
+    bool predictor_found = lookup_helper(true, stream_start_pc, history, target_1, target_2, predictor, predictor_index,
                                          alt_predictor, alt_predictor_index, pred_count, use_alt_pred);
     if (predictor_found && use_alt_pred) {
         target_sel = target_2;
@@ -231,6 +250,7 @@ StreamTAGE::update(Addr stream_start_pc,
         // increment the counter
         if (way_sel.counter <= 2) {
             ++way_sel.counter;
+            ++way_sel.target.hysteresis;
         }
     } else {
         // a misprediction
@@ -258,6 +278,7 @@ StreamTAGE::update(Addr stream_start_pc,
 
             if (way_sel.counter > 0) {
                 --way_sel.counter;
+                --way_sel.target.hysteresis;
             } else {
                 way_sel.target.tick = curTick();
                 way_sel.target.bbStart = stream_start_pc;
@@ -293,7 +314,7 @@ StreamTAGE::update(Addr stream_start_pc,
                     way_new.target.controlAddr = control_pc;
                     way_new.target.controlSize = control_size;
                     way_new.target.nextStream = target;
-                    way_new.target.hysteresis = 0;
+                    way_new.target.hysteresis = 1;
                     way_new.tag =
                         getTag(stream_start_pc,
                                history,
@@ -324,19 +345,22 @@ StreamTAGE::update(Addr stream_start_pc,
 }
 
 void
-StreamTAGE::commit(Addr stream_start_pc, Addr target, bitset &history)
+StreamTAGE::commit(Addr stream_start_pc, Addr controlAddr, Addr target, bitset &history)
 {
-    Addr br_addr = stream_start_pc;
-    Addr target_addr = target;
     for (int i = numPredictors - 1; i >= 0; --i) {
-        uint32_t index = getAddrFold(br_addr, i);
+        uint32_t index = getAddrFold(stream_start_pc, i);
         uint32_t tmp_index = index;
-        uint32_t tmp_tag = getTag(br_addr, history, i);
+        uint32_t tmp_tag = getTag(stream_start_pc, history, i);
         auto& way = targetCache[i][tmp_index];
         if (way.tag == tmp_tag &&
-            way.target.bbStart == target_addr) {
+            way.target.bbStart == stream_start_pc &&
+            way.target.controlAddr == controlAddr &&
+            way.target.nextStream == target) {
             if (way.counter < 2)
                 ++way.counter;
+            if (way.target.hysteresis < 2) {
+                ++way.target.hysteresis;
+            }
             way.useful = 1;
             way.valid = true;
             break;
