@@ -60,6 +60,12 @@ public:
 
 
 private:
+    // struct StreamRecord
+    // {
+    //     uint32_t table_index;
+    //     uint32_t entry_index;
+    // };
+    // std::map < Addr, StreamRecord> recordMap;
 
     const unsigned delay{ 1 };
     struct StatGroup : public statistics::Group {

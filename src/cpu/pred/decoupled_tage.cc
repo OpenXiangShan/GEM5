@@ -183,7 +183,6 @@ void StreamTage::putPCHistory(Addr pc, const boost::dynamic_bitset<>& history) {
     BaseEntry* entry_found[2]={nullptr,nullptr};
     int Tfound_index[2];
     for (int i = targetCache.size()-1;i >=0 ;i--) {
-
         if (targetCache[i].lookup(pc, history)) {
             entry_found[provider_rdy] = targetCache[i].entry_found;
             Tfound_index[provider_rdy] = i;
@@ -238,7 +237,6 @@ void StreamTage::update(const PredictionID fsq_id, Addr stream_start_pc,
     int provider_rdy = 0;
     int Tfound_index[2];
     for (int i = targetCache.size()-1;i >= 0 ;i--) {
-
         if (targetCache[i].lookup(stream_start_pc, history)) {
             Tfound_index[provider_rdy] = i;
             provider_rdy++;
@@ -272,7 +270,8 @@ void StreamTage::update(const PredictionID fsq_id, Addr stream_start_pc,
     for (;Tstart_index < targetCache.size();Tstart_index++) {
         targetCache[Tstart_index].allocate(stream_start_pc, stream_start_pc, history, new_stream);
         allocate_cnt++;
-        if (allocate_cnt >= 2) {//allocate 2 
+        Tstart_index++;
+        if (allocate_cnt >= 3) {//allocate 3
             break;
         }
     }
@@ -291,12 +290,17 @@ void StreamTage::commit(const FetchStreamId pred_id, Addr stream_start_pc,
         .hysteresis = 0,
         .endIsRet = false
     };
-    for(int i=targetCache.size()-1;i>=0;i--){
+    int provider_rdy = 0;
+    for (int i = targetCache.size() - 1;i >= 0;i--) {
         bool foundit = targetCache[i].lookup(stream_start_pc,history);
         if(foundit){
             if(targetCache[i].entry_found->stream.equal(now_stream)){
-                targetCache[i].update(stream_start_pc,history,true,true);
+                targetCache[i].update(stream_start_pc, history, true, true);
+                provider_rdy++;
             }
+        }
+        if (provider_rdy == 2) {
+            break;
         }
     }
 }
