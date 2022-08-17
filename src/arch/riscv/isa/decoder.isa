@@ -2022,11 +2022,34 @@ decode QUADRANT default Unknown::unknown() {
                     0xb: vxor_vv({{
                         Vd_vu[i] = Vs2_vu[i] ^ Vs1_vu[i];
                     }}, OPIVV, VectorDummyOp);
-                    0xc: vrgather_vv({{
-                        Vd_vu[i] = Vs1_vu[i] >= vtype_VLMAX(vtype)
-                            ? 0
-                            : Vs2_vu[Vs1_vu[i]];
-                    }}, OPIVV, VectorDummyOp);
+                }
+                0x0c: VectorGatherFormat::vrgather_vv({{
+                    for (uint32_t i = 0; i < microVl; i++) {
+                        uint32_t ei = i + vs1_idx * vs1_elems + vs1_bias;
+                        if (this->vm || elem_mask(v0, ei)) {
+                            const uint64_t idx = Vs1_vu[i]
+                                - vs2_elems * vs2_idx;
+                            auto res = (Vs1_vu[i] >= vlmax) ? 0
+                                : (idx < vs2_elems) ? Vs2_vu[idx]
+                                : Vs3_vu[i];
+                            Vd_vu[i] = res;
+                        }
+                    }
+                }}, OPIVV, VectorDummyOp);
+                0x0e: VectorGatherFormat::vrgatherei16_vv({{
+                    for (uint32_t i = 0; i < microVl; i++) {
+                        uint32_t ei = i + vs1_idx * vs1_elems + vs1_bias;
+                        if (this->vm || elem_mask(v0, ei)) {
+                            const uint16_t idx = Vs1_uh[i + vs1_bias]
+                                - vs2_elems * vs2_idx;
+                            auto res = (Vs1_uh[i + vs1_bias] >= vlmax) ? 0
+                                : (idx < vs2_elems) ? Vs2_vu[idx]
+                                : Vs3_vu[i + vd_bias];
+                            Vd_vu[i + vd_bias] = res;
+                        }
+                    }
+                }}, OPIVV, VectorDummyOp);
+                format VectorIntFormat {
                     0x10: decode VM {
                         0x0: vadc_vvm({{
                             Vd_vi[i] = Vs2_vi[i] + Vs1_vi[i]
@@ -2802,25 +2825,20 @@ decode QUADRANT default Unknown::unknown() {
                     0x0b: vxor_vi({{
                         Vd_vi[i] = Vs2_vi[i] ^ (vi)sext<5>(SIMM5);
                     }}, OPIVI, VectorDummyOp);
-                    0x0c: vrgather_vi({{
-                        Vd_vi[i] = SIMM5 >= vtype_VLMAX(vtype)
-                                ? 0
-                                : Vs2_vi[SIMM5];
-                    }}, OPIVI, VectorDummyOp);
-                    0x0e: vslideup_vi({{
-                        if (i < SIMM5) {
-                            continue;
+                }
+                0x0c: VectorGatherFormat::vrgather_vi({{
+                    for (uint32_t i = 0; i < microVl; i++) {
+                        uint32_t ei = i + vs1_idx * vs1_elems + vs1_bias;
+                        if (this->vm || elem_mask(v0, ei)) {
+                            const uint64_t idx =
+                                (uint64_t)sext<5>(SIMM5) - vs2_elems * vs2_idx;
+                            Vd_vu[i] = ((uint64_t)sext<5>(SIMM5) >= vlmax) ? 0
+                                : (idx < vs2_elems) ? Vs2_vu[idx]
+                                : Vs3_vu[i];
                         }
-                        __uint128_t source_element_index = (__uint128_t)i - SIMM5;
-                        Vd_vi[i] = Vs2_vi[source_element_index];
-                    }}, OPIVI, VectorDummyOp);
-                    0x0f: vslidedown_vi({{
-                        if ((i + SIMM5) < (VLEN / vtype_SEW(vtype))) {
-                            Vd_vi[i] = Vs2_vi[i + SIMM5];
-                        } else {
-                            Vd_vi[i] = 0;;
-                        }
-                    }}, OPIVI, VectorDummyOp);
+                    }
+                }}, OPIVI, VectorDummyOp);
+                format VectorIntFormat {
                     0x10: decode VM {
                         0x0: vadc_vim({{
                             Vd_vi[i] = Vs2_vi[i] +
@@ -3028,11 +3046,19 @@ decode QUADRANT default Unknown::unknown() {
                     0xb: vxor_vx({{
                         Vd_vu[i] = Vs2_vu[i] ^ Rs1_vu;
                     }}, OPIVX, VectorDummyOp);
-                    0xc: vrgather_vx({{
-                        Vd_vu[i] = Rs1_vu >= vtype_VLMAX(vtype)
-                                ? 0
-                                : Vs2_vu[Rs1_vu];
-                    }}, OPIVX, VectorDummyOp);
+                }
+                0x0c: VectorGatherFormat::vrgather_vx({{
+                    for (uint32_t i = 0; i < microVl; i++) {
+                        uint32_t ei = i + vs1_idx * vs1_elems + vs1_bias;
+                        if (this->vm || elem_mask(v0, ei)) {
+                            const uint64_t idx = Rs1_vu - vs2_elems * vs2_idx;
+                            Vd_vu[i] = (Rs1_vu >= vlmax) ? 0
+                                : (idx < vs2_elems) ? Vs2_vu[idx]
+                                : Vs3_vu[i];
+                        }
+                    }
+                }}, OPIVX, VectorDummyOp);
+                format VectorIntFormat {
                     0x10: decode VM {
                         0x0: vadc_vxm({{
                             Vd_vi[i] = Vs2_vi[i] + Rs1_vi + elem_mask(v0, ei);

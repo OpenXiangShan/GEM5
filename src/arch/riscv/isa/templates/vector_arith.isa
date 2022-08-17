@@ -1144,6 +1144,177 @@ Fault
 
 }};
 
+def template VectorGatherMacroDeclare {{
+
+template<typename ElemType, typename IndexType>
+class %(class_name)s : public %(base_class)s{
+private:
+    %(reg_idx_arr_decl)s;
+public:
+    %(class_name)s(ExtMachInst _machInst);
+    using %(base_class)s::generateDisassembly;
+};
+
+}};
+
+def template VectorGatherMacroConstructor {{
+
+template<typename ElemType, typename IndexType>
+%(class_name)s<ElemType, IndexType>::%(class_name)s(ExtMachInst _machInst)
+    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
+{
+    %(set_reg_idx_arr)s;
+    %(constructor)s;
+    constexpr uint32_t vd_eewb = sizeof(ElemType);
+    constexpr uint32_t vs2_eewb = sizeof(ElemType);
+    constexpr uint32_t vs1_eewb = sizeof(IndexType);
+    constexpr bool vs1_split = vd_eewb > vs1_eewb;
+    const int8_t lmul = vtype_vlmul(vtype);
+    const int8_t vs1_emul = lmul +
+        (vs1_split ? -(vs2_eewb / vs1_eewb) : vs1_eewb / vs2_eewb);
+    const uint8_t vs2_vregs = lmul < 0 ? 1 : 1 << lmul;
+    const uint8_t vs1_vregs = vs1_emul < 0 ? 1 : 1 << vs1_emul;
+    const uint8_t vd_vregs = vs2_vregs;
+    const int32_t micro_vlmax = vlenb / std::max(vd_eewb, vs1_eewb);
+    int32_t remaining_vl = this->vl;
+    int32_t micro_vl = std::min(remaining_vl, micro_vlmax);
+    StaticInstPtr microop;
+    for (uint8_t i = 0; i < std::max(vs1_vregs, vd_vregs) && micro_vl > 0;
+            i++) {
+        for (uint8_t j = 0; j < vs2_vregs; j++) {
+            microop = new %(class_name)sMicro<ElemType, IndexType>(
+                _machInst, micro_vl, i * vs2_vregs + j);
+            microop->setDelayedCommit();
+            this->microops.push_back(microop);
+        }
+        micro_vl = std::min(remaining_vl -= micro_vlmax, micro_vlmax);
+    }
+
+    this->microops.front()->setFirstMicroop();
+    this->microops.back()->setLastMicroop();
+}
+
+}};
+
+def template VectorGatherMicroDeclare {{
+
+template<typename ElemType, typename IndexType>
+class %(class_name)s : public %(base_class)s
+{
+private:
+    // vs2, vs1, vd, vm
+    RegId srcRegIdxArr[4];
+    RegId destRegIdxArr[1];
+    bool vm;
+public:
+    %(class_name)s(ExtMachInst _machInst,
+                   uint8_t _microVl, uint8_t _microIdx);
+    Fault execute(ExecContext* xc, Trace::InstRecord* traceData)const override;
+    using %(base_class)s::generateDisassembly;
+};
+
+}};
+
+def template VectorGatherMicroConstructor {{
+
+template<typename ElemType, typename IndexType>
+%(class_name)s<ElemType, IndexType>::%(class_name)s(ExtMachInst _machInst,
+    uint8_t _microVl, uint8_t _microIdx)
+: %(base_class)s("%(mnemonic)s", _machInst,
+                 VectorDummyOp, _microVl, _microIdx)
+{
+    this->vm = _machInst.vm;
+    %(set_reg_idx_arr)s;
+    _numSrcRegs = 0;
+    _numDestRegs = 0;
+    [[maybe_unused]] constexpr uint32_t vd_eewb = sizeof(ElemType);
+    [[maybe_unused]] constexpr uint32_t vs2_eewb = sizeof(ElemType);
+    [[maybe_unused]] constexpr uint32_t vs1_eewb = sizeof(IndexType);
+    constexpr uint8_t vs1_split_num = (vd_eewb + vs1_eewb - 1) / vs1_eewb;
+    constexpr uint8_t vd_split_num = (vs1_eewb + vd_eewb - 1) / vd_eewb;
+    const int8_t lmul = vtype_vlmul(vtype);
+    const uint8_t vs2_vregs = lmul < 0 ? 1 : 1 << lmul;
+    [[maybe_unused]] const uint8_t vs2_idx = _microIdx % vs2_vregs;
+    [[maybe_unused]] const uint8_t vs1_idx =
+        _microIdx / vs2_vregs / vs1_split_num;
+    [[maybe_unused]] const uint8_t vd_idx =
+        _microIdx / vs2_vregs / vd_split_num;
+    %(set_dest_reg_idx)s;
+    %(set_src_reg_idx)s;
+}
+
+}};
+
+def template VectorGatherMicroExecute {{
+
+template <typename ElemType, typename IndexType>
+Fault
+%(class_name)s<ElemType, IndexType>::execute(ExecContext* xc,
+                                  Trace::InstRecord* traceData) const
+{
+    using vu [[maybe_unused]] = std::make_unsigned_t<ElemType>;
+    [[maybe_unused]] constexpr size_t sew = sizeof(vu) * 8;
+
+    if (machInst.vill)
+        return std::make_shared<IllegalInstFault>("VILL is set", machInst);
+
+    %(op_decl)s;
+    %(op_rd)s;
+    %(vm_decl_rd)s;
+    %(copy_old_vd)s;
+    const uint32_t vlmax = vtype_VLMAX(vtype);
+    constexpr uint8_t vd_eewb = sizeof(ElemType);
+    constexpr uint8_t vs1_eewb = sizeof(IndexType);
+    constexpr uint8_t vs2_eewb = sizeof(ElemType);
+    constexpr uint8_t vs1_split_num = (vd_eewb + vs1_eewb - 1) / vs1_eewb;
+    constexpr uint8_t vd_split_num = (vs1_eewb + vd_eewb - 1) / vd_eewb;
+    [[maybe_unused]] constexpr uint16_t vd_elems = vlenb / vd_eewb;
+    [[maybe_unused]] constexpr uint16_t vs1_elems = vlenb / vs1_eewb;
+    [[maybe_unused]] constexpr uint16_t vs2_elems = vlenb / vs2_eewb;
+    [[maybe_unused]] const int8_t lmul = vtype_vlmul(vtype);
+    [[maybe_unused]] const uint8_t vs2_vregs = lmul < 0 ? 1 : 1 << lmul;
+    [[maybe_unused]] const uint8_t vs2_idx = microIdx % vs2_vregs;
+    [[maybe_unused]] const uint8_t vs1_idx =
+        microIdx / vs2_vregs / vs1_split_num;
+    [[maybe_unused]] const uint8_t vd_idx =
+        microIdx / vs2_vregs / vd_split_num;
+    [[maybe_unused]] const uint16_t vs1_bias =
+        vs1_elems * (vd_idx % vs1_split_num) / vs1_split_num;
+    [[maybe_unused]] const uint16_t vd_bias =
+        vd_elems * (vs1_idx % vd_split_num) / vd_split_num;
+
+    %(code)s;
+    %(op_wb)s;
+
+    return NoFault;
+}
+
+}};
+
+def template VectorGatherDecodeBlock {{
+
+switch(machInst.vtype8.vsew) {
+    case 0b000: {
+        using elem_type [[maybe_unused]] = uint8_t;
+        return new %(class_name)s<uint8_t, %(idx_type)s>(machInst);
+    }
+    case 0b001: {
+        using elem_type [[maybe_unused]] = uint16_t;
+        return new %(class_name)s<uint16_t, %(idx_type)s>(machInst);
+    }
+    case 0b010: {
+        using elem_type [[maybe_unused]] = uint32_t;
+        return new %(class_name)s<uint32_t, %(idx_type)s>(machInst);
+    }
+    case 0b011: {
+        using elem_type [[maybe_unused]] = uint64_t;
+        return new %(class_name)s<uint64_t, %(idx_type)s>(machInst);
+    }
+    default: GEM5_UNREACHABLE;
+}
+
+}};
+
 def template VectorIntVxsatMacroDeclare {{
 
 template<typename ElemType>
