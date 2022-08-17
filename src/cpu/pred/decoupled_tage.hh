@@ -66,7 +66,6 @@ private:
     } TageStats;
 
     StreamPrediction prediction;
-    std::vector<StreamStorage> lookup_result;
     //return 0:use T1 main pred
     //return 1:use T2 alt pred
     int getProviderIndex(Table& T1, Table& T2);

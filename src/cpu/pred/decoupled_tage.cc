@@ -110,7 +110,7 @@ uint64_t StreamTage::Table::getIndex(Addr pc, const bitset& history) {
 }
 uint64_t StreamTage::Table::getTag(Addr pc, const bitset& history) {
     //pc;
-    return (pc);
+    return (pc) & tagMask;
 }
 
 
@@ -119,10 +119,9 @@ uint64_t StreamTage::Table::getTag(Addr pc, const bitset& history) {
 StreamTage::StreamTage(const Params& p):
     TimedPredictor(p),
     TageStats(*this) {
-    targetCache.resize(4);
-    lookup_result.resize(4);
+    targetCache.resize(8);
     targetCache[0].init(256, 0);
-    for (uint64_t i = 1; i < 4; i++) {
+    for (uint64_t i = 1; i < 8; i++) {
         targetCache[i].init(256, 16);
     }
 }

@@ -32,7 +32,7 @@ run1:
 	--mem-size=8GB --num-cpus=1 -I=100000000 --warmup-insts-no-switch=20000000
 
 debug:
-	./scripts-gem5/test-perl.sh DecoupleBP 16382916500 debug_dir
+	./scripts-gem5/test-perl.sh DecoupleBP 13009469500 debug_dir
 kill:
 	killall gem5.opt -SIGUSR1 && sleep 2; grep "simTick\|committedInsts\|lastCommit" m5out/stats.txt
 
