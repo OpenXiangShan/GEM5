@@ -33,7 +33,7 @@ public:
 
     class Table {
         BaseEntry* entry;
-        uint8_t reset_counter = 128;
+        uint8_t reset_counter = 32;
         uint64_t tagMask;
         uint64_t indexMask;
         uint64_t getIndex(Addr pc, const bitset& history);

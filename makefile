@@ -31,7 +31,12 @@ run1:
 	--caches --cacheline_size=64 --l1i_size=128kB --l1i_assoc=8 --l1d_size=128kB --l1d_assoc=8 --l2cache --l2_size=1MB --l2_assoc=8 \
 	--mem-size=8GB --num-cpus=1 -I=100000000 --warmup-insts-no-switch=20000000
 
-#tage 1628324 2099676 1548411
+debug:
+	./scripts-gem5/test-perl.sh DecoupleBP 16382916500 debug_dir
+kill:
+	killall gem5.opt -SIGUSR1 && sleep 2; grep "simTick\|committedInsts\|lastCommit" m5out/stats.txt
+
+#tage 1628324 2099676 1548411 1556750
 #ubtb 1324134
 #--warmup-insts-no-switch=20000000 
 

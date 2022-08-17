@@ -68,7 +68,7 @@ bool StreamTage::Table::allocate(Addr old_pc, Addr new_pc,const bitset& history,
                 reset_counter--;
             }
             if (reset_counter == 0) {
-                reset_counter = 128;
+                reset_counter = 32;
                 for (uint64_t i = 0; i < (indexMask+1); i++) {
                     cast(TageEntry, entry)[i].useful = 0;
                 }
@@ -105,12 +105,12 @@ void StreamTage::Table::update(Addr pc,const bitset& history, bool setUsefulBit,
 
 uint64_t StreamTage::Table::getIndex(Addr pc, const bitset& history) {
 
-    pc >>= 2;
+    //pc;
     return (pc) & indexMask;
 }
 uint64_t StreamTage::Table::getTag(Addr pc, const bitset& history) {
-    pc >>= 2;
-    return (pc) & tagMask;
+    //pc;
+    return (pc);
 }
 
 
@@ -166,7 +166,7 @@ void StreamTage::putPCHistory(Addr pc, const boost::dynamic_bitset<>& history) {
     int provider_rdy = 0;
     BaseEntry* entry_found[2]={nullptr,nullptr};
     int Tfound_index[2];
-    for (int i = 0;i < targetCache.size();i++) {
+    for (int i = targetCache.size()-1;i >=0 ;i--) {
 
         if (targetCache[i].lookup(pc, history)) {
             entry_found[provider_rdy] = targetCache[i].entry_found;
@@ -221,7 +221,7 @@ void StreamTage::update(const PredictionID fsq_id, Addr stream_start_pc,
     };
     int provider_rdy = 0;
     int Tfound_index[2];
-    for (int i = 0;i < targetCache.size();i++) {
+    for (int i = targetCache.size()-1;i >= 0 ;i--) {
 
         if (targetCache[i].lookup(stream_start_pc, history)) {
             Tfound_index[provider_rdy] = i;
@@ -267,7 +267,22 @@ void StreamTage::commit(const FetchStreamId pred_id, Addr stream_start_pc,
                    Addr control_pc, Addr target, unsigned control_size,
                         const boost::dynamic_bitset<>& history) {
     //todo:when pred hit,update the stream
-
+    StreamStorage now_stream={
+        .bbStart = stream_start_pc,
+        .controlAddr = control_pc,
+        .nextStream = target,
+        .controlSize = (uint16_t)control_size,
+        .hysteresis = 0,
+        .endIsRet = false
+    };
+    for(int i=targetCache.size()-1;i>=0;i--){
+        bool foundit = targetCache[i].lookup(stream_start_pc,history);
+        if(foundit){
+            if(targetCache[i].entry_found->stream.equal(now_stream)){
+                targetCache[i].update(stream_start_pc,history,true,true);
+            }
+        }
+    }
 }
 
 
