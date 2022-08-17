@@ -322,6 +322,11 @@ DecoupledBPU::trapSquash(unsigned target_id, unsigned stream_id,
 
     dumpFsq("before trap squash");
 
+    auto it = fetchStreamQueue.find(stream_id);
+    assert(it != fetchStreamQueue.end());
+    auto &stream = it->second;
+    stream.exeEnded = true;
+
     auto erase_it = fetchStreamQueue.upper_bound(stream_id);
     while (erase_it != fetchStreamQueue.end()) {
         DPRINTF(DecoupleBP, "erasing entry %lu\n", erase_it->first);
