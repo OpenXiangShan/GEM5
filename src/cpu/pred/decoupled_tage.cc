@@ -6,7 +6,7 @@ namespace gem5 {
 
 namespace branch_prediction {
 
-void StreamTage::Table::init(uint32_t Tsize, uint32_t TtagSize) {
+void StreamTage::Table::init(uint32_t Tsize, uint32_t TtagSize, uint32_t tagPcShift, uint32_t histLength) {
     if (TtagSize == 0) {
         this->isBasePred = true;
         this->entry = new BaseEntry[(1 << (ceilLog2(Tsize)))];
@@ -17,6 +17,8 @@ void StreamTage::Table::init(uint32_t Tsize, uint32_t TtagSize) {
         tagMask = (1 << TtagSize) - 1;
     }
     indexMask = (1 << (ceilLog2(Tsize))) - 1;
+    this->tagPcShift = tagPcShift;
+    this->histLength = histLength;
 
 }
 bool StreamTage::Table::lookup(Addr pc,const bitset& history) {
@@ -68,7 +70,7 @@ bool StreamTage::Table::allocate(Addr old_pc, Addr new_pc,const bitset& history,
                 reset_counter--;
             }
             if (reset_counter == 0) {
-                reset_counter = 32;
+                reset_counter = 128;
                 for (uint64_t i = 0; i < (indexMask+1); i++) {
                     cast(TageEntry, entry)[i].useful = 0;
                 }
@@ -104,25 +106,35 @@ void StreamTage::Table::update(Addr pc,const bitset& history, bool setUsefulBit,
 }
 
 uint64_t StreamTage::Table::getIndex(Addr pc, const bitset& history) {
-
-    //pc;
-    return (pc) & indexMask;
+    bitset temp(history);
+    temp.resize(64);
+    uint64_t folded_address, k;
+    folded_address = 0;
+    for (k = 0; k < 8; k++) {
+        folded_address ^= pc;
+        pc >>= 8;
+    }
+    return (folded_address) & indexMask;
 }
 uint64_t StreamTage::Table::getTag(Addr pc, const bitset& history) {
-    //pc;
-    return (pc) & tagMask;
+    bitset temp(history);
+    temp.resize(64);
+    pc >>= tagPcShift;
+    return (pc ^ temp.to_ulong()) & tagMask;
 }
 
-
-
-
+/***********************************************************************/
 StreamTage::StreamTage(const Params& p):
     TimedPredictor(p),
-    TageStats(*this) {
-    targetCache.resize(8);
-    targetCache[0].init(256, 0);
-    for (uint64_t i = 1; i < 8; i++) {
-        targetCache[i].init(256, 16);
+    TageStats(*this),
+    tableSizes(p.tableSizes),
+    TTagBitSizes(p.TTagBitSizes),
+    TTagPcShifts(p.TTagPcShifts),
+    histLengths(p.histLengths) {
+    
+    targetCache.resize(tableSizes.size());
+    for (uint64_t i = 0; i < targetCache.size(); i++) {
+        targetCache[i].init(tableSizes[i], TTagBitSizes[i],TTagPcShifts[i],histLengths[i]);
     }
 }
 
@@ -138,27 +150,32 @@ void StreamTage::tickStart() {
 void StreamTage::tick() {}
 
 int StreamTage::getProviderIndex(Table& T1, Table& T2) {
+    int ret = 0;
     if (T2.isBasePred) {//if T2 is basePred
         return 0;
     }
     else {
         if(cast(TageEntry, T1.entry_found)->useful > cast(TageEntry, T2.entry_found)->useful &&
             cast(TageEntry, T1.entry_found)->cnt > 1) {
-            return 0;
+            ret = 0;
         }
         else if (cast(TageEntry, T1.entry_found)->useful == cast(TageEntry, T2.entry_found)->useful) {
+            
             if (cast(TageEntry, T1.entry_found)->cnt >= cast(TageEntry, T2.entry_found)->cnt) {
-                return 0;
+                ret = 0;
             }
             else{
-                return 1;
+                ret = 1;
             }
         }
         else {
-            return 1;
+            ret = 1;
         }
     }
-    return 0;
+    if (use_alt_counter > 10) {
+        ret = 1;
+    }
+    return ret;
 }
 
 void StreamTage::putPCHistory(Addr pc, const boost::dynamic_bitset<>& history) {

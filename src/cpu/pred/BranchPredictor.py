@@ -782,6 +782,19 @@ class StreamTage(TimedPredictor):
     type = 'StreamTage'
     cxx_class = 'gem5::branch_prediction::StreamTage'
     cxx_header = "cpu/pred/decoupled_tage.hh"
+    #T0 is the base pred
+    tableSizes = VectorParam.Int(
+        [256] * 11, "the ITTAGE T0~Tn length")
+    TTagBitSizes = VectorParam.Int(
+        [0, 9, 9, 13, 13, 13, 13, 13, 13, 13, 13, 15, 15, 15, 15, 15], 
+        "the T0~Tn entry's tag bit size")
+    histLengths = VectorParam.Int(
+        [0, 4, 10, 16, 27, 44, 60, 96, 109, 219, 449, 487], 
+        "the ITTAGE T0~Tn history length")
+    TTagPcShifts = VectorParam.Int(
+        [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2], 
+        "when the T0~Tn entry's tag generating, PC right shift")
+    
 
 class DecoupledBPU(BranchPredictor):
     type = 'DecoupledBPU'

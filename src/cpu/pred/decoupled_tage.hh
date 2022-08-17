@@ -30,12 +30,13 @@ public:
         uint8_t cnt = 0;
         uint8_t useful = 0;
     };
-
     class Table {
         BaseEntry* entry;
-        uint8_t reset_counter = 32;
+        uint8_t reset_counter = 128;
         uint64_t tagMask;
         uint64_t indexMask;
+        uint64_t tagPcShift;
+        uint64_t histLength;
         uint64_t getIndex(Addr pc, const bitset& history);
         uint64_t getTag(Addr pc, const bitset& history);
     public:
@@ -43,7 +44,7 @@ public:
         BaseEntry* entry_found=nullptr;
         //set the table size and the tag bit size
         //if the tag bit size is zero,this table will set to be base predictor
-        void init(uint32_t Tsize, uint32_t TtagSize);
+        void init(uint32_t Tsize, uint32_t TtagSize,uint32_t tagPcShift,uint32_t histLength);
         bool lookup(Addr pc, const bitset& history);
         //when predict miss,alloc a new entry
         //old_pc:used to replace the old entry
@@ -59,6 +60,7 @@ public:
 
 
 private:
+
     const unsigned delay{ 1 };
     struct StatGroup : public statistics::Group {
         StatGroup(StreamTage& s);
@@ -66,6 +68,12 @@ private:
     } TageStats;
 
     StreamPrediction prediction;
+    std::vector<int> tableSizes;
+    std::vector<int> TTagBitSizes;
+    std::vector<int> TTagPcShifts;
+    std::vector<int> histLengths;
+    uint8_t use_alt_counter = 0;
+    
     //return 0:use T1 main pred
     //return 1:use T2 alt pred
     int getProviderIndex(Table& T1, Table& T2);
