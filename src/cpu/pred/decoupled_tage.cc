@@ -95,7 +95,7 @@ void StreamTage::Table::update(Addr pc,const bitset& history, bool setUsefulBit,
                 if (setUsefulBit) {
                     cast(TageEntry, entry_found)->useful = 1;
                 }
-                if (use_counter < 256) {
+                if (use_counter < 255) {
                     use_counter++;
                 }
             }
