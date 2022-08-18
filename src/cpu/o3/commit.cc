@@ -1420,12 +1420,25 @@ Commit::updateComInstStats(const DynInstPtr &inst)
     //  Control Instructions
     //
     //
-    static int inst_bxx_cnt = 0;
     if (inst->isControl()) {
-        if (inst_bxx_cnt < 20 && inst->readPredTaken()) {
-            inst_bxx_cnt++;
-            printf("control pc:0x%lx,target pc:0x%lx\n", inst->pcState().instAddr(), inst->predPC->instAddr());
+        if (inst->readPredTaken()) {
+            DPRINTF(Commit, "Start print branch logs\n");
+            for (auto it : branch_log) {
+                DPRINTF(Commit, "control pc:%lx -> target pc:%lx\n,", it.pc, it.target);
+            }
+            DPRINTF(Commit, "End\n");
         }
+        Branch_set temp = {
+            inst->pcState().instAddr(),
+            inst->predPC->instAddr()
+        };
+        if (branch_log.size() < 20) {
+
+        }
+        else {
+            branch_log.erase(branch_log.begin());
+        }
+        branch_log.push_back(temp);
         stats.branches[tid]++;
     }
 

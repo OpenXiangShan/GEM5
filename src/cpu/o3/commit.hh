@@ -126,6 +126,11 @@ class Commit
     ProbePointArg<DynInstPtr> *ppCommitStall;
     /** To probe when an instruction is squashed */
     ProbePointArg<DynInstPtr> *ppSquash;
+    struct Branch_set {
+      Addr pc=0;
+      Addr target=0;
+    };
+    std::vector<Branch_set> branch_log;
 
     /** Mark the thread as processing a trap. */
     void processTrapEvent(ThreadID tid);
