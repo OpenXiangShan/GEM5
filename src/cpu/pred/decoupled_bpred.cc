@@ -80,6 +80,18 @@ DecoupledBPU::decoupledPredict(const StaticInstPtr &inst,
     assert(pc.instAddr() < end && pc.instAddr() >= start);
     bool taken = pc.instAddr() == taken_pc && target_to_fetch.taken;
 
+    // record target information
+    FetchStreamId fsqId = target_to_fetch.fsqID;
+    if (taken) {
+        if (lastBranchRes.size() >= 20) {
+            lastBranchRes.pop();
+            lastBranchRes.push(std::make_pair(taken_pc, target_to_fetch.target));
+        } else {
+            lastBranchRes.push(std::make_pair(taken_pc, target_to_fetch.target));
+        }
+    }
+    lastBranchResMap[fsqId] = lastBranchRes;
+
     bool run_out_of_this_entry = false;
 
     if (taken) {
@@ -167,6 +179,17 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
             DPRINTF(DecoupleBP, "erasing entry %lu\n", erase_it->first);
             printStream(erase_it->second);
             fetchStreamQueue.erase(erase_it++);
+        }
+
+        // record and squash target information
+        auto findLastBranchRes = lastBranchResMap.find(stream_id);
+        assert(findLastBranchRes != lastBranchResMap.end());
+        lastBranchRes = findLastBranchRes->second;
+        auto copy_queue = lastBranchRes;
+        while (copy_queue.size() > 0) {
+            auto it = copy_queue.front();
+            DPRINTF(DecoupleBP, "control PC: %lx -> target PC: %lx\n", it.first, it.second);
+            copy_queue.pop();
         }
 
         std::string buf1, buf2;
@@ -385,6 +408,12 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
         }
 
         it = fetchStreamQueue.erase(it);
+    }
+    auto copy_queue = lastBranchRes;
+    while (copy_queue.size() > 0) {
+        auto it = copy_queue.front();
+        DPRINTF(DecoupleBP, "control PC: %lx -> target PC: %lx\n", it.first, it.second);
+        copy_queue.pop();
     }
     DPRINTF(DecoupleBP, "after commit stream, fetchStreamQueue size: %lu\n",
             fetchStreamQueue.size());

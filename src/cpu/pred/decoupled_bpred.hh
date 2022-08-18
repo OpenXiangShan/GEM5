@@ -2,6 +2,8 @@
 #define __CPU_PRED_DECOUPLED_BPRED_HH__
 
 #include <vector>
+#include <queue>
+#include <utility> 
 
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/fetch_target_queue.hh"
@@ -183,6 +185,10 @@ class DecoupledBPU : public BPredUnit
     }
 
     bool lookup(ThreadID tid, Addr instPC, void *&bp_history) { return false; }
+
+public:
+    std::queue<std::pair<Addr, Addr>> lastBranchRes;
+    std::map<FetchStreamId, std::queue<std::pair<Addr, Addr>>> lastBranchResMap;
 };
 }  // namespace branch_prediction
 }  // namespace gem5
