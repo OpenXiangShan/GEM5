@@ -1419,8 +1419,29 @@ Commit::updateComInstStats(const DynInstPtr &inst)
     //
     //  Control Instructions
     //
-    if (inst->isControl())
+    //
+    if (inst->isControl()) {
+        DPRINTF(Commit, "Start print branch logs\n");
+        for (auto it : branchLog) {
+            DPRINTF(Commit, "control pc:%lx -> target pc:%lx\n,", it.pc, it.target);
+        }
+        DPRINTF(Commit, "End\n");
+        if (inst->readPredTaken()) {
+            BranchInfo temp = {
+                inst->pcState().instAddr(),
+                inst->predPC->instAddr()
+            };
+            if (branchLog.size() < 20) {
+
+            }
+            else {
+                branchLog.pop_front(branchLog.begin());
+            }
+            branchLog.push_back(temp);
+        }
+       
         stats.branches[tid]++;
+    }
 
     //
     //  Memory references
