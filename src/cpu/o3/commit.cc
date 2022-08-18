@@ -1428,9 +1428,15 @@ Commit::updateComInstStats(const DynInstPtr &inst)
         DPRINTF(DecoupleBP, "End\n");
         bool mispred = inst->mispredicted();
         if (inst->readPredTaken() ^ mispred) {
+            auto target = inst->predPC->instAddr();
+            if (mispred) {
+                std::unique_ptr<PCStateBase> tmp_next_pc(inst->pcState().clone());
+                inst->staticInst->advancePC(*tmp_next_pc);
+                target = tmp_next_pc->instAddr();
+            }
             BranchInfo temp = {
                 inst->pcState().instAddr(),
-                inst->predPC->instAddr()
+                target
             };
             if (branchLog.size() < 20) {
 
