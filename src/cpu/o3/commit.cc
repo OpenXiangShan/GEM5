@@ -1419,8 +1419,15 @@ Commit::updateComInstStats(const DynInstPtr &inst)
     //
     //  Control Instructions
     //
-    if (inst->isControl())
+    //
+    static int inst_bxx_cnt = 0;
+    if (inst->isControl()) {
+        if (inst_bxx_cnt < 20 && inst->readPredTaken()) {
+            inst_bxx_cnt++;
+            printf("control pc:0x%lx,target pc:0x%lx\n", inst->pcState().instAddr(), inst->predPC->instAddr());
+        }
         stats.branches[tid]++;
+    }
 
     //
     //  Memory references
