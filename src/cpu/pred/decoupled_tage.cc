@@ -69,7 +69,7 @@ bool StreamTage::Table::allocate(Addr old_pc, Addr new_pc,const bitset& history,
             if (reset_counter > 0) {
                 reset_counter--;
             }
-            if (reset_counter == 0) {
+            if (reset_counter == 0 && use_counter < 128) {
                 reset_counter = 128;
                 for (uint64_t i = 0; i < (indexMask+1); i++) {
                     cast(TageEntry, entry)[i].useful = 0;
@@ -95,10 +95,16 @@ void StreamTage::Table::update(Addr pc,const bitset& history, bool setUsefulBit,
                 if (setUsefulBit) {
                     cast(TageEntry, entry_found)->useful = 1;
                 }
+                if (use_counter < 256) {
+                    use_counter++;
+                }
             }
             else {
                 if (cast(TageEntry, entry_found)->cnt > 0) {
                     cast(TageEntry, entry_found)->cnt--;
+                }
+                if(use_counter > 0) {
+                    use_counter--;
                 }
             }
         }
@@ -155,25 +161,14 @@ int StreamTage::getProviderIndex(Table& T1, Table& T2) {
         return 0;
     }
     else {
-        if(cast(TageEntry, T1.entry_found)->useful > cast(TageEntry, T2.entry_found)->useful &&
-            cast(TageEntry, T1.entry_found)->cnt > 1) {
-            ret = 0;
-        }
-        else if (cast(TageEntry, T1.entry_found)->useful == cast(TageEntry, T2.entry_found)->useful) {
-            
-            if (cast(TageEntry, T1.entry_found)->cnt >= cast(TageEntry, T2.entry_found)->cnt) {
-                ret = 0;
-            }
-            else{
-                ret = 1;
-            }
-        }
-        else {
+        if(cast(TageEntry, T1.entry_found)->useful == 0 &&
+           cast(TageEntry, T1.entry_found)->cnt <= 1 &&
+           cast(TageEntry, T2.entry_found)->cnt > 0) {
             ret = 1;
         }
-    }
-    if (use_alt_counter > 10) {
-        ret = 1;
+        else {
+            ret = 0;
+        }
     }
     return ret;
 }
@@ -245,9 +240,9 @@ void StreamTage::update(const PredictionID fsq_id, Addr stream_start_pc,
             break;
         }
     }
-    int Tstart_index = 0;
+    int Tstart_index = 1;
     if (provider_rdy == 0) {//all in miss
-        Tstart_index = 0;
+        Tstart_index = 1;
     }
     else if (provider_rdy == 1) {//only one found,this must in missing
         Tstart_index = Tfound_index[0] + 1;
@@ -266,12 +261,18 @@ void StreamTage::update(const PredictionID fsq_id, Addr stream_start_pc,
         }
     }
     //allocate new stream
+    targetCache[0].allocate(stream_start_pc, stream_start_pc, history, new_stream);
     int allocate_cnt = 0;
     for (;Tstart_index < targetCache.size();Tstart_index++) {
-        targetCache[Tstart_index].allocate(stream_start_pc, stream_start_pc, history, new_stream);
-        allocate_cnt++;
-        Tstart_index++;
-        if (allocate_cnt >= 3) {//allocate 3
+        bool success = targetCache[Tstart_index].allocate(stream_start_pc, stream_start_pc, history, new_stream);
+        if (success) {
+            allocate_cnt++;
+            Tstart_index++;
+        }
+        else {
+            
+        }
+        if (allocate_cnt >= 2) {//allocate 2
             break;
         }
     }

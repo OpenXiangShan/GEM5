@@ -33,6 +33,7 @@ public:
     class Table {
         BaseEntry* entry;
         uint8_t reset_counter = 128;
+        uint8_t use_counter = 0;
         uint64_t tagMask;
         uint64_t indexMask;
         uint64_t tagPcShift;
