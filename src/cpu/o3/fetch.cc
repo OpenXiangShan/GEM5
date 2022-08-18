@@ -522,6 +522,7 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     // this function updates it.
     bool predict_taken;
 
+    //  BP  =>  FSQ  =>  FTB  => Fetch
     ThreadID tid = inst->threadNumber;
     if (isDecoupledFrontend) {
         std::tie(predict_taken, usedUpFetchTargets) =

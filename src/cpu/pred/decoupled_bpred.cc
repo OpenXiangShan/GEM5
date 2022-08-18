@@ -81,7 +81,7 @@ DecoupledBPU::decoupledPredict(const StaticInstPtr &inst,
     bool taken = pc.instAddr() == taken_pc && target_to_fetch.taken;
 
     // record target information
-    FetchStreamId fsqId = target_to_fetch.fsqID;
+    // FetchStreamId fsqId = target_to_fetch.fsqID;
     if (taken) {
         if (lastBranchRes.size() >= 20) {
             lastBranchRes.pop();
@@ -90,7 +90,6 @@ DecoupledBPU::decoupledPredict(const StaticInstPtr &inst,
             lastBranchRes.push(std::make_pair(taken_pc, target_to_fetch.target));
         }
     }
-    lastBranchResMap[fsqId] = lastBranchRes;
 
     bool run_out_of_this_entry = false;
 
@@ -689,6 +688,7 @@ DecoupledBPU::makeNewPredictionAndInsertFsq()
     DPRINTF(DecoupleBP, "New prediction history: %s\n", buf.c_str());
     entry.setDefaultResolve();
     auto [insert_it, inserted] = fetchStreamQueue.emplace(fsqId, entry);
+    lastBranchResMap[fsqId] = lastBranchRes;
     assert(inserted);
 
     dumpFsq("after insert new stream");

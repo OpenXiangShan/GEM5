@@ -1421,12 +1421,13 @@ Commit::updateComInstStats(const DynInstPtr &inst)
     //
     //
     if (inst->isControl()) {
-        DPRINTF(Commit, "Start print branch logs\n");
+        DPRINTF(DecoupleBP, "Start print branch logs\n");
         for (auto it : branchLog) {
-            DPRINTF(Commit, "control pc:%lx -> target pc:%lx\n,", it.pc, it.target);
+            DPRINTF(DecoupleBP, "control pc:%lx -> target pc:%lx\n,", it.pc, it.target);
         }
-        DPRINTF(Commit, "End\n");
-        if (inst->readPredTaken()) {
+        DPRINTF(DecoupleBP, "End\n");
+        bool mispred = inst->mispredicted();
+        if (inst->readPredTaken() ^ mispred) {
             BranchInfo temp = {
                 inst->pcState().instAddr(),
                 inst->predPC->instAddr()
@@ -1435,7 +1436,7 @@ Commit::updateComInstStats(const DynInstPtr &inst)
 
             }
             else {
-                branchLog.pop_front(branchLog.begin());
+                branchLog.pop_front();
             }
             branchLog.push_back(temp);
         }
