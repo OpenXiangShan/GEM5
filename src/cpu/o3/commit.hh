@@ -42,6 +42,7 @@
 #define __CPU_O3_COMMIT_HH__
 
 #include <queue>
+#include <list>
 
 #include "base/statistics.hh"
 #include "cpu/exetrace.hh"
@@ -126,11 +127,11 @@ class Commit
     ProbePointArg<DynInstPtr> *ppCommitStall;
     /** To probe when an instruction is squashed */
     ProbePointArg<DynInstPtr> *ppSquash;
-    struct Branch_set {
+    struct BranchInfo {
       Addr pc=0;
       Addr target=0;
     };
-    std::vector<Branch_set> branch_log;
+    std::list<BranchInfo> branchLog;
 
     /** Mark the thread as processing a trap. */
     void processTrapEvent(ThreadID tid);

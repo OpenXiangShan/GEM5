@@ -1421,23 +1421,23 @@ Commit::updateComInstStats(const DynInstPtr &inst)
     //
     //
     if (inst->isControl()) {
+        DPRINTF(Commit, "Start print branch logs\n");
+        for (auto it : branchLog) {
+            DPRINTF(Commit, "control pc:%lx -> target pc:%lx\n,", it.pc, it.target);
+        }
+        DPRINTF(Commit, "End\n");
         if (inst->readPredTaken()) {
-            DPRINTF(Commit, "Start print branch logs\n");
-            for (auto it : branch_log) {
-                DPRINTF(Commit, "control pc:%lx -> target pc:%lx\n,", it.pc, it.target);
-            }
-            DPRINTF(Commit, "End\n");
-            Branch_set temp = {
+            BranchInfo temp = {
                 inst->pcState().instAddr(),
                 inst->predPC->instAddr()
             };
-            if (branch_log.size() < 20) {
+            if (branchLog.size() < 20) {
 
             }
             else {
-                branch_log.erase(branch_log.begin());
+                branchLog.pop_front(branchLog.begin());
             }
-            branch_log.push_back(temp);
+            branchLog.push_back(temp);
         }
        
         stats.branches[tid]++;
