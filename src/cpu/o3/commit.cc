@@ -1427,18 +1427,19 @@ Commit::updateComInstStats(const DynInstPtr &inst)
                 DPRINTF(Commit, "control pc:%lx -> target pc:%lx\n,", it.pc, it.target);
             }
             DPRINTF(Commit, "End\n");
-        }
-        Branch_set temp = {
-            inst->pcState().instAddr(),
-            inst->predPC->instAddr()
-        };
-        if (branch_log.size() < 20) {
+            Branch_set temp = {
+                inst->pcState().instAddr(),
+                inst->predPC->instAddr()
+            };
+            if (branch_log.size() < 20) {
 
+            }
+            else {
+                branch_log.erase(branch_log.begin());
+            }
+            branch_log.push_back(temp);
         }
-        else {
-            branch_log.erase(branch_log.begin());
-        }
-        branch_log.push_back(temp);
+       
         stats.branches[tid]++;
     }
 
