@@ -91,6 +91,12 @@ class PCState : public GenericISA::UPCState<4>
             return npc() != pc() + 4 || nupc() != upc() + 1;
         }
     }
+
+    Addr
+    getFallThruPC() const
+    {
+        return pc() + (compressed() ? 2 : 4);
+    }
 };
 
 } // namespace RiscvISA

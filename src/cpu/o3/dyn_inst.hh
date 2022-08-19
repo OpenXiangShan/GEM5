@@ -324,6 +324,8 @@ class DynInst : public ExecContext, public RefCounted
     /** Predicted PC state after this instruction. */
     std::unique_ptr<PCStateBase> predPC;
 
+    Addr fallThruPC;
+
     /** fsqId and ftqId are used for squashing and committing */
     /** The fetch stream queue ID of the instruction. */
     unsigned fsqId;

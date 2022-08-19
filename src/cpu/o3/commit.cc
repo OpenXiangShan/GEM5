@@ -1421,27 +1421,26 @@ Commit::updateComInstStats(const DynInstPtr &inst)
     //
     //
     if (inst->isControl()) {
+        bool mispred = inst->mispredicted();
+        std::unique_ptr<PCStateBase> tmp_next_pc(inst->pcState().clone());
+        inst->staticInst->advancePC(*tmp_next_pc);
+        DPRINTF(DecoupleBP, "Control inst %lu, PC: %#lx -> target: %#lx\n",
+                inst->seqNum, inst->pcState().instAddr(),
+                tmp_next_pc->instAddr());
+        DPRINTF(DecoupleBP, "mispredicted: %i, pred taken: %i\n", mispred,
+                inst->readPredTaken());
         DPRINTF(DecoupleBP, "Start print branch logs\n");
         for (auto it : branchLog) {
-            DPRINTF(DecoupleBP, "control pc:%lx -> target pc:%lx\n,", it.pc, it.target);
+            DPRINTF(DecoupleBP, "control pc: %#lx -> target pc: %#lx\n,",
+                    it.pc, it.target);
         }
         DPRINTF(DecoupleBP, "End\n");
-        bool mispred = inst->mispredicted();
-        if (inst->readPredTaken() ^ mispred) {
-            auto target = inst->predPC->instAddr();
-            if (mispred) {
-                std::unique_ptr<PCStateBase> tmp_next_pc(inst->pcState().clone());
-                inst->staticInst->advancePC(*tmp_next_pc);
-                target = tmp_next_pc->instAddr();
-            }
+        if (tmp_next_pc->instAddr() != inst->fallThruPC) {
             BranchInfo temp = {
                 inst->pcState().instAddr(),
-                target
+                tmp_next_pc->instAddr()
             };
-            if (branchLog.size() < 20) {
-
-            }
-            else {
+            if (branchLog.size() >= 20) {
                 branchLog.pop_front();
             }
             branchLog.push_back(temp);
