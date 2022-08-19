@@ -187,7 +187,7 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
         auto copy_queue = lastBranchRes;
         while (copy_queue.size() > 0) {
             auto it = copy_queue.front();
-            DPRINTF(DecoupleBP, "control PC: %lx -> target PC: %lx\n", it.first, it.second);
+            DPRINTF(DecoupleBP, "control pc: %#lx -> target pc: %#lx\n", it.first, it.second);
             copy_queue.pop();
         }
 
@@ -411,7 +411,7 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
     auto copy_queue = lastBranchRes;
     while (copy_queue.size() > 0) {
         auto it = copy_queue.front();
-        DPRINTF(DecoupleBP, "control PC: %lx -> target PC: %lx\n", it.first, it.second);
+        DPRINTF(DecoupleBP, "control pc: %#lx -> target pc: %#lx\n", it.first, it.second);
         copy_queue.pop();
     }
     DPRINTF(DecoupleBP, "after commit stream, fetchStreamQueue size: %lu\n",
