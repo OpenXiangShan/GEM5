@@ -187,8 +187,8 @@ class DecoupledBPU : public BPredUnit
     bool lookup(ThreadID tid, Addr instPC, void *&bp_history) { return false; }
 
 public:
-    std::queue<std::pair<Addr, Addr>> lastBranchRes;
-    std::map<FetchStreamId, std::queue<std::pair<Addr, Addr>>> lastBranchResMap;
+    std::list<std::pair<Addr, Addr>> lastBranchRes;
+    std::map<FetchStreamId, std::list<std::pair<Addr, Addr>>> lastBranchResMap;
 };
 }  // namespace branch_prediction
 }  // namespace gem5

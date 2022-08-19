@@ -1424,6 +1424,16 @@ Commit::updateComInstStats(const DynInstPtr &inst)
         bool mispred = inst->mispredicted();
         std::unique_ptr<PCStateBase> tmp_next_pc(inst->pcState().clone());
         inst->staticInst->advancePC(*tmp_next_pc);
+        // add if taken
+        if (tmp_next_pc->instAddr() != inst->fallThruPC) {
+            BranchInfo temp = {inst->pcState().instAddr(),
+                               tmp_next_pc->instAddr()};
+            if (branchLog.size() >= 20) {
+                branchLog.pop_front();
+            }
+            branchLog.push_back(temp);
+        }
+        // tracing recent taken branches
         DPRINTF(DecoupleBP, "Control inst %lu, PC: %#lx -> target: %#lx\n",
                 inst->seqNum, inst->pcState().instAddr(),
                 tmp_next_pc->instAddr());
@@ -1435,16 +1445,7 @@ Commit::updateComInstStats(const DynInstPtr &inst)
                     it.pc, it.target);
         }
         DPRINTF(DecoupleBP, "End\n");
-        if (tmp_next_pc->instAddr() != inst->fallThruPC) {
-            BranchInfo temp = {
-                inst->pcState().instAddr(),
-                tmp_next_pc->instAddr()
-            };
-            if (branchLog.size() >= 20) {
-                branchLog.pop_front();
-            }
-            branchLog.push_back(temp);
-        }
+        
        
         stats.branches[tid]++;
     }
