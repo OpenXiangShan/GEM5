@@ -123,6 +123,12 @@ FetchTargetQueue::dump(const char* when)
     }
 }
 
+bool
+FetchTargetQueue::validSupplyFetchTargetState() const
+{
+    return supplyFetchTargetState.valid;
+}
+
 }  // namespace branch_prediction
 
 }  // namespace gem5

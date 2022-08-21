@@ -88,6 +88,8 @@ class FetchTargetQueue
     const std::string &name() const { return _name; }
 
     void setName(const std::string &parent) { _name = parent + ".ftq"; }
+
+    bool validSupplyFetchTargetState() const;
 };
 
 }

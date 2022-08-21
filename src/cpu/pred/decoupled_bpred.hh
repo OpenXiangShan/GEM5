@@ -187,8 +187,19 @@ class DecoupledBPU : public BPredUnit
     bool lookup(ThreadID tid, Addr instPC, void *&bp_history) { return false; }
 
 public:
-    std::list<std::pair<Addr, Addr>> lastBranchRes;
-    std::map<FetchStreamId, std::list<std::pair<Addr, Addr>>> lastBranchResMap;
+    struct listItem {
+        FetchStreamId fsqId;
+        Addr streamStart;
+        Addr exeTarget;
+        Addr exeBranchAddr;
+        bool operator!= (const listItem &other) {
+            return (streamStart != other.streamStart) ||
+                   (exeTarget != other.exeTarget) ||
+                   (exeBranchAddr != other.exeBranchAddr);
+        }
+    };
+    std::list<listItem> lastBranchRes;
+    std::map<FetchStreamId, std::list<listItem>> lastBranchResMap;
 };
 }  // namespace branch_prediction
 }  // namespace gem5

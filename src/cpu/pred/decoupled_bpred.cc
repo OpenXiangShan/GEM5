@@ -38,6 +38,15 @@ DecoupledBPU::tick()
     if (!streamQueueFull()) {
         streamTAGE->putPCHistory(s0StreamPC, s0History);
     }
+    if (fetchTargetQueue.validSupplyFetchTargetState()) {
+        lastBranchResMap[fetchTargetQueue.getSupplyingStreamId()] = lastBranchRes;
+        DPRINTF(DecoupleBP, "record lastBranchRes for fsqId %lu\n", fetchTargetQueue.getSupplyingStreamId());
+        for (const auto &it2: lastBranchRes) {
+            DPRINTF(DecoupleBP, "FsqId:%lu stream start pc: %#lx control pc: %#lx -> target pc: %#lx\n",
+                    it2.fsqId, it2.streamStart, it2.exeBranchAddr, it2.exeTarget);
+        }
+    }
+    
     squashing = false;
 }
 
@@ -82,17 +91,23 @@ DecoupledBPU::decoupledPredict(const StaticInstPtr &inst,
 
     // record target information
     // FetchStreamId fsqId = target_to_fetch.fsqID;
+    listItem item;
+    item.fsqId = target_to_fetch.fsqID;
+    item.streamStart = start;
+    item.exeBranchAddr = taken_pc;
+    item.exeTarget = target_to_fetch.target;
     if (taken) {
         if (lastBranchRes.size() >= 20) {
             lastBranchRes.pop_front();
-            lastBranchRes.push_back(std::make_pair(taken_pc, target_to_fetch.target));
+            lastBranchRes.push_back(item);
         } else {
-            lastBranchRes.push_back(std::make_pair(taken_pc, target_to_fetch.target));
+            lastBranchRes.push_back(item);
         }
 
         DPRINTF(DecoupleBP, "Dump records after predict %#lx\n", pc.instAddr());
-        for (const auto it: lastBranchRes) {
-            DPRINTF(DecoupleBP, "control pc: %#lx -> target pc: %#lx\n", it.first, it.second);
+        for (const auto &it: lastBranchRes) {
+            DPRINTF(DecoupleBP, "fsqID: %lu stream start pc: %#lx control pc: %#lx -> target pc: %#lx\n",
+                    it.fsqId, it.streamStart, it.exeBranchAddr, it.exeTarget);
         }
     }
 
@@ -189,19 +204,55 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
         auto findLastBranchRes = lastBranchResMap.find(stream_id);
         assert(findLastBranchRes != lastBranchResMap.end());
         lastBranchRes = findLastBranchRes->second;
+        for (const auto &it2: lastBranchRes) {
+            DPRINTF(DecoupleBP, "FsqId:%lu stream start pc: %#lx control pc: %#lx -> target pc: %#lx\n",
+                    it2.fsqId, it2.streamStart, it2.exeBranchAddr, it2.exeTarget);
+        }
 
+        auto squash_it = lastBranchRes.begin();
+        while (squash_it != lastBranchRes.end()) {
+            if (squash_it->fsqId >= stream_id) {
+                lastBranchRes.erase(squash_it++);
+            } else {
+                squash_it++;
+            }
+        }
+
+        /*FetchStreamId lastId = lastBranchRes.back().fsqId;
+        for(auto it : fetchStreamQueue) {
+            if (it.first > lastId) {
+                listItem item;
+                item.fsqId = it.first;
+                item.streamStart = it.second.streamStart;
+                item.exeBranchAddr = it.second.exeBranchAddr;
+                item.exeTarget = it.second.exeTarget;
+                if (lastBranchRes.size() >= 20) {
+                    lastBranchRes.pop_front();
+                    lastBranchRes.push_back(item);
+                } else {
+                    lastBranchRes.push_back(item);
+                }
+            }
+        }*/
+
+        listItem item;
+        item.fsqId = stream_id;
+        item.streamStart = stream.streamStart;
+        item.exeBranchAddr = stream.exeBranchAddr;
+        item.exeTarget = stream.exeTarget;
         if (lastBranchRes.size() >= 20) {
             lastBranchRes.pop_front();
-            lastBranchRes.push_back(std::make_pair(control_pc.instAddr(), corr_target.instAddr()));
+            lastBranchRes.push_back(item);
         } else {
-            lastBranchRes.push_back(std::make_pair(control_pc.instAddr(), corr_target.instAddr()));
+            lastBranchRes.push_back(item);
         }
 
-        DPRINTF(DecoupleBP, "Dump records after recover mis branch %#lx\n", control_pc.instAddr());
-        for (const auto &it: lastBranchRes) {
-            DPRINTF(DecoupleBP, "control pc: %#lx -> target pc: %#lx\n",
-                    it.first, it.second);
-        }
+        //DPRINTF(DecoupleBP, "Dump records after recover mis branch %#lx\n", control_pc.instAddr());
+        //for (const auto &it: lastBranchRes) {
+        //    DPRINTF(DecoupleBP, "stream start pc: %#lx control pc: %#lx -> target pc: %#lx\n",
+        //            it.streamStart, it.exeBranchAddr, it.exeTarget);
+        //}
+        //dumpFsq("after control squash");
 
         std::string buf1, buf2;
         boost::to_string(s0History, buf1);
@@ -252,6 +303,20 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
         printStream(stream);
     }
     dumpFsq("After control squash");
+
+    for (const auto &it2: lastBranchRes) {
+        DPRINTF(DecoupleBP, "FsqId:%lu stream start pc: %#lx control pc: %#lx -> target pc: %#lx\n",
+                it2.fsqId, it2.streamStart, it2.exeBranchAddr, it2.exeTarget);
+    }
+
+    listItem lastItem = lastBranchRes.front();
+    for (auto &it: lastBranchRes) {
+        if (it != lastBranchRes.front() && it.exeBranchAddr < lastItem.exeTarget) {
+            assert(0);
+        } else {
+            lastItem = it;
+        }
+    }
 
     s0UbtbPred.valid = false;
 
@@ -337,6 +402,24 @@ DecoupledBPU::nonControlSquash(unsigned target_id, unsigned stream_id,
         s0StreamPC = target;
         fsqId = (--it)->first + 1;
     }
+
+    DPRINTF(DecoupleBP, "non control squash: squash lastBranchRes\n");
+    auto findLastBranchRes = lastBranchResMap.find(stream_id);
+    assert(findLastBranchRes != lastBranchResMap.end());
+    lastBranchRes = findLastBranchRes->second;
+    auto squash_it = lastBranchRes.begin();
+    while (squash_it != lastBranchRes.end()) {
+        if (squash_it->fsqId >= stream_id) {
+            lastBranchRes.erase(squash_it++);
+        } else {
+            squash_it++;
+        }
+    }
+    for (const auto &it2: lastBranchRes) {
+        DPRINTF(DecoupleBP, "FsqId:%lu stream start pc: %#lx control pc: %#lx -> target pc: %#lx\n",
+                it2.fsqId, it2.streamStart, it2.exeBranchAddr, it2.exeTarget);
+    }
+
     dumpFsq("after non-control squash");
     DPRINTF(DecoupleBP,
             "After squash, FSQ head Id=%lu, s0pc=%#lx, demand stream Id=%lu, "
@@ -694,7 +777,6 @@ DecoupledBPU::makeNewPredictionAndInsertFsq()
     DPRINTF(DecoupleBP, "New prediction history: %s\n", buf.c_str());
     entry.setDefaultResolve();
     auto [insert_it, inserted] = fetchStreamQueue.emplace(fsqId, entry);
-    lastBranchResMap[fsqId] = lastBranchRes;
     assert(inserted);
 
     dumpFsq("after insert new stream");
