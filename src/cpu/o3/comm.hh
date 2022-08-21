@@ -221,6 +221,9 @@ struct TimeStruct
         /// the IEW stage.
         bool strictlyOrdered; // *I
 
+        /// last commited instruction's PC
+        Addr lastCommitedPC;
+
     };
 
     CommitComm commitInfo[MaxThreads];

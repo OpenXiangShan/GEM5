@@ -435,6 +435,9 @@ class Commit
     /** The sequence number of the last commited instruction. */
     InstSeqNum lastCommitedSeqNum[MaxThreads];
 
+    /** The addr of the last squashed instruction. */
+    Addr lastCommitedPC[MaxThreads];
+
     /** Records if there is a trap currently in flight. */
     bool trapInFlight[MaxThreads];
 

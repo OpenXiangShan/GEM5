@@ -218,23 +218,6 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
             }
         }
 
-        /*FetchStreamId lastId = lastBranchRes.back().fsqId;
-        for(auto it : fetchStreamQueue) {
-            if (it.first > lastId) {
-                listItem item;
-                item.fsqId = it.first;
-                item.streamStart = it.second.streamStart;
-                item.exeBranchAddr = it.second.exeBranchAddr;
-                item.exeTarget = it.second.exeTarget;
-                if (lastBranchRes.size() >= 20) {
-                    lastBranchRes.pop_front();
-                    lastBranchRes.push_back(item);
-                } else {
-                    lastBranchRes.push_back(item);
-                }
-            }
-        }*/
-
         listItem item;
         item.fsqId = stream_id;
         item.streamStart = stream.streamStart;
@@ -430,7 +413,7 @@ DecoupledBPU::nonControlSquash(unsigned target_id, unsigned stream_id,
 
 void
 DecoupledBPU::trapSquash(unsigned target_id, unsigned stream_id,
-                         const PCStateBase &inst_pc, ThreadID tid)
+                         const PCStateBase &inst_pc, Addr lastCommitedPC, ThreadID tid)
 {
     DPRINTF(DecoupleBP,
             "trap squash: target id: %lu, stream id: %lu, inst_pc: %#lx\n",
@@ -443,12 +426,32 @@ DecoupledBPU::trapSquash(unsigned target_id, unsigned stream_id,
     assert(it != fetchStreamQueue.end());
     auto &stream = it->second;
     stream.exeEnded = true;
+    stream.exeBranchAddr = lastCommitedPC;
+    stream.exeTarget = inst_pc.instAddr();
 
     auto erase_it = fetchStreamQueue.upper_bound(stream_id);
     while (erase_it != fetchStreamQueue.end()) {
         DPRINTF(DecoupleBP, "erasing entry %lu\n", erase_it->first);
         printStream(erase_it->second);
         fetchStreamQueue.erase(erase_it++);
+    }
+
+    listItem item;
+    item.fsqId = stream_id;
+    item.streamStart = stream.streamStart;
+    item.exeBranchAddr = stream.exeBranchAddr;
+    item.exeTarget = stream.exeTarget;
+    if (lastBranchRes.size() >= 20) {
+        lastBranchRes.pop_front();
+        lastBranchRes.push_back(item);
+    } else {
+        lastBranchRes.push_back(item);
+    }
+
+    DPRINTF(DecoupleBPHist, "dump lastBranchRes after trap squash: stream id %lu\n", stream_id);
+    for (const auto &it2: lastBranchRes) {
+        DPRINTF(DecoupleBPHist, "FsqId:%lu stream start pc: %#lx control pc: %#lx -> target pc: %#lx\n",
+                it2.fsqId, it2.streamStart, it2.exeBranchAddr, it2.exeTarget);
     }
 
     // inc stream id because current stream is disturbed
@@ -461,7 +464,7 @@ DecoupledBPU::trapSquash(unsigned target_id, unsigned stream_id,
 
     s0StreamPC = inst_pc.instAddr();
 
-    DPRINTF(DecoupleBP,
+    DPRINTF(DecoupleBPHist,
             "After squash, FSQ head Id=%lu, s0pc=%#lx, demand stream Id=%lu, "
             "Fetch demanded target Id=%lu\n",
             fsqId, s0StreamPC, fetchTargetQueue.getEnqState().streamId,

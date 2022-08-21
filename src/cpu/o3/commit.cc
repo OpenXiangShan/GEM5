@@ -538,6 +538,11 @@ Commit::squashAll(ThreadID tid)
     // all instructions of this thread.
     InstSeqNum squashed_inst = rob->isEmpty(tid) ?
         lastCommitedSeqNum[tid] : rob->readHeadInst(tid)->seqNum - 1;
+    
+    if (trapSquash[tid]) {
+        Addr lastPC = rob->isEmpty(tid) ? lastCommitedPC[tid] : rob->readHeadInst(tid)->pcState().instAddr();
+        toIEW->commitInfo[tid].lastCommitedPC = lastPC;
+    }
 
     // All younger instructions will be squashed. Set the sequence
     // number as the youngest instruction in the ROB (0 in this case.
@@ -1091,6 +1096,7 @@ Commit::commitInsts()
 
                 // Keep track of the last sequence number commited
                 lastCommitedSeqNum[tid] = head_inst->seqNum;
+                lastCommitedPC[tid] = head_inst->pcState().instAddr();
 
                 // If this is an instruction that doesn't play nicely with
                 // others squash everything and restart fetch

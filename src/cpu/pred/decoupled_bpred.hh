@@ -10,6 +10,7 @@
 #include "cpu/pred/stream_struct.hh"
 #include "cpu/pred/modify_tage.hh"
 #include "debug/DecoupleBP.hh"
+#include "debug/DecoupleBPHist.hh"
 #include "params/DecoupledBPU.hh"
 
 namespace gem5
@@ -156,7 +157,7 @@ class DecoupledBPU : public BPredUnit
 
     // Not a control. But stream is actually disturbed
     void trapSquash(unsigned ftq_id, unsigned fsq_id,
-                    const PCStateBase &inst_pc, ThreadID tid);
+                    const PCStateBase &inst_pc, Addr lastCommitedPC, ThreadID tid);
 
     void update(unsigned fsqID, ThreadID tid);
 
