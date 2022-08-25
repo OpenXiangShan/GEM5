@@ -573,6 +573,7 @@ Commit::squashFromTrap(ThreadID tid)
     squashAll(tid);
 
     toIEW->commitInfo[tid].isTrapSquash = true;
+    toIEW->commitInfo[tid].committedPC = committedPC[tid];
 
     DPRINTF(Commit, "Squashing from trap, restarting at PC %s\n", *pc[tid]);
 
@@ -1301,6 +1302,8 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         generateTrapEvent(tid, inst_fault);
         return false;
     }
+
+    committedPC[tid] = head_inst->pcState().instAddr();
 
     updateComInstStats(head_inst);
 

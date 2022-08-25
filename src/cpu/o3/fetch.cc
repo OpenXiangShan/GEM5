@@ -1018,6 +1018,7 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
                 dbp->trapSquash(
                     fromCommit->commitInfo[tid].squashedTargetId,
                     fromCommit->commitInfo[tid].squashedStreamId,
+                    fromCommit->commitInfo[tid].committedPC,
                     *fromCommit->commitInfo[tid].pc, tid);
 
             } else {

@@ -172,6 +172,7 @@ struct TimeStruct
         /// instruction for a branch mispredict, but the same instruction for
         /// order violation and the like
         std::unique_ptr<PCStateBase> pc; // *F
+        Addr committedPC; // *F for trap squash
 
         /// Provide fetch the instruction that mispredicted, if this
         /// pointer is not-null a misprediction occured

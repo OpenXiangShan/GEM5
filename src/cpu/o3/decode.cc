@@ -293,7 +293,13 @@ Decode::squash(const DynInstPtr &inst, ThreadID tid)
     toFetch->decodeInfo[tid].mispredictInst = inst;
     toFetch->decodeInfo[tid].squash = true;
     toFetch->decodeInfo[tid].doneSeqNum = inst->seqNum;
-    set(toFetch->decodeInfo[tid].nextPC, *inst->branchTarget());
+    if (inst->isControl()) {
+        set(toFetch->decodeInfo[tid].nextPC, *inst->branchTarget());
+    } else {
+        PCStateBase *npc_ptr = inst->pcState().clone();
+        npc_ptr->as<RiscvISA::PCState>().set(inst->pcState().getFallThruPC());
+        set(toFetch->decodeInfo[tid].nextPC, *npc_ptr);
+    }
 
     // Looking at inst->pcState().branching()
     // may yield unexpected results if the branch
@@ -697,7 +703,7 @@ Decode::decodeInsts(ThreadID tid)
         // Ensure that if it was predicted as a branch, it really is a
         // branch.
         if (inst->readPredTaken() && !inst->isControl()) {
-            panic("Instruction predicted as a branch!");
+            // panic("Instruction predicted as a branch!");
 
             ++stats.controlMispred;
 

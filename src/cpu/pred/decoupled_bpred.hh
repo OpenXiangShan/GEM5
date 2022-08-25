@@ -18,6 +18,120 @@ namespace gem5
 namespace branch_prediction
 {
 
+class HistoryManager
+{
+  public:
+    struct TakenEntry
+    {
+        TakenEntry(Addr _pc, Addr _target, bool _miss, uint64_t stream_id)
+            : pc(_pc), target(_target), miss(_miss), streamId(stream_id)
+        {
+        }
+      Addr pc;
+      Addr target;
+      bool miss;
+      uint64_t streamId;
+    };
+
+  private:
+    std::list<TakenEntry> speculativeHists;
+
+    unsigned IdealHistLen{20};
+
+  public:
+    void addSpeculativeHist(const Addr addr, const Addr target, const uint64_t stream_id)
+    {
+        speculativeHists.emplace_back(addr, target, addr == 0, stream_id);
+
+        const auto &it = speculativeHists.back();
+        DPRINTF(DecoupleBP,
+                "Add taken %lu, %#lx->%#lx\n",
+                it.streamId, it.pc, it.target);
+    }
+
+    void commit(const uint64_t stream_id)
+    {
+        auto it = speculativeHists.begin();
+        while (speculativeHists.size() > IdealHistLen &&
+               it != speculativeHists.end()) {
+            if (it->streamId < stream_id) {
+                DPRINTF(DecoupleBP,
+                        "Commit taken %lu, %#lx->%#lx\n",
+                        it->streamId, it->pc, it->target);
+                it = speculativeHists.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
+    void squash(const uint64_t stream_id, const Addr taken_pc, const Addr target)
+    {
+        dump("before squash");
+        auto it = speculativeHists.begin();
+        while (it != speculativeHists.end()) {
+            if (it->streamId == stream_id) {
+                it->miss = false;
+                it->pc = taken_pc;
+                it->target = target;
+            } if (it->streamId > stream_id) {
+                DPRINTF(DecoupleBP,
+                        "Squash taken %lu, %#lx->%#lx\n",
+                        it->streamId, it->pc, it->target);
+                it = speculativeHists.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        dump("after squash");
+        // checkSanity();
+    }
+
+    void checkSanity()
+    {
+        if (speculativeHists.size() < 2) {
+            return;
+        }
+        auto last = speculativeHists.begin();
+        if (last->miss) {
+            return;
+        }
+        auto cur = speculativeHists.begin();
+        cur++;
+        while (cur != speculativeHists.end()) {
+            if (cur->miss) {
+                break;
+            }
+            if (last->target > cur->pc) {
+                DPRINTF(DecoupleBP,
+                        "Sanity check failed: %#lx->%#lx, %#lx->%#lx\n",
+                        last->pc, last->target, cur->pc, cur->target);
+            }
+            assert(last->target <= cur->pc);
+            if (cur->pc - last->target > 1024) {
+                warn("Stream %#lx-%#lx is too long", last->target, cur->pc);
+            }
+            if (cur->pc - last->target > 32*1024) {
+                dump("before panic");
+                panic("Stream %#lx-%#lx is too long", last->target, cur->pc);
+            }
+            last = cur;
+            cur++;
+        }
+    }
+
+    void dump(const char* when)
+    {
+        DPRINTF(DecoupleBP, "Dump ideal history %s:\n", when);
+        for (auto it = speculativeHists.begin(); it != speculativeHists.end();
+             it++) {
+            DPRINTFR(DecoupleBP,
+                     "stream: %lu, %#lx -> %#lx, miss: %d\n",
+                     it->streamId, it->pc, it->target, it->miss);
+        }
+    }
+};
+
 class DecoupledBPU : public BPredUnit
 {
   public:
@@ -54,6 +168,8 @@ class DecoupledBPU : public BPredUnit
     boost::dynamic_bitset<> commitHistory;
 
     bool squashing{false};
+
+    HistoryManager historyManager;
 
     void tryEnqFetchStream();
 
@@ -155,7 +271,7 @@ class DecoupledBPU : public BPredUnit
                           ThreadID tid);
 
     // Not a control. But stream is actually disturbed
-    void trapSquash(unsigned ftq_id, unsigned fsq_id,
+    void trapSquash(unsigned ftq_id, unsigned fsq_id, Addr last_committed_pc,
                     const PCStateBase &inst_pc, ThreadID tid);
 
     void update(unsigned fsqID, ThreadID tid);
@@ -186,20 +302,6 @@ class DecoupledBPU : public BPredUnit
 
     bool lookup(ThreadID tid, Addr instPC, void *&bp_history) { return false; }
 
-public:
-    struct listItem {
-        FetchStreamId fsqId;
-        Addr streamStart;
-        Addr exeTarget;
-        Addr exeBranchAddr;
-        bool operator!= (const listItem &other) {
-            return (streamStart != other.streamStart) ||
-                   (exeTarget != other.exeTarget) ||
-                   (exeBranchAddr != other.exeBranchAddr);
-        }
-    };
-    std::list<listItem> lastBranchRes;
-    std::map<FetchStreamId, std::list<listItem>> lastBranchResMap;
 };
 }  // namespace branch_prediction
 }  // namespace gem5
