@@ -36,7 +36,7 @@ class HistoryManager
   private:
     std::list<TakenEntry> speculativeHists;
 
-    unsigned IdealHistLen{20};
+    unsigned IdealHistLen{246};
 
   public:
     void addSpeculativeHist(const Addr addr, const Addr target, const uint64_t stream_id)
@@ -168,7 +168,7 @@ class DecoupledBPU : public BPredUnit
 
     constexpr unsigned numFoldingTokens() { return 64/historyTokenBits; }
 
-    const unsigned historyBits{128};
+    const unsigned historyBits{488};
 
     StreamTAGE *streamTAGE{};
 
