@@ -200,6 +200,11 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
         stream.predBranchAddr = 0;
         stream.resolved = false;
 
+        streamTAGE->update(stream.streamStart,
+                           0, 0,
+                           control_inst_size,
+                           actually_taken, stream.history);
+
         // keep stream id because still in the same stream
         ftq_demand_stream_id = stream_id;
         // todo update stream head id here
@@ -212,6 +217,16 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
             printStream(erase_it->second);
             fetchStreamQueue.erase(erase_it++);
         }
+
+        boost::to_string(s0History, buf1);
+        boost::to_string(stream.history, buf2);
+        DPRINTF(DecoupleBP, "Recover history %s\nto %s\n", buf1.c_str(),
+                buf2.c_str());
+        s0History = stream.history;
+        histShiftIn(0, s0History);
+        boost::to_string(s0History, buf1);
+        DPRINTF(DecoupleBP, "Shift in history %s\n", buf1.c_str());
+
         DPRINTF(DecoupleBP,
                 "a taken flow was redirected by NOT taken branch, new fsq "
                 "entry is:\n");
