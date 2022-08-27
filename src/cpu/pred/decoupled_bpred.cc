@@ -632,13 +632,7 @@ DecoupledBPU::tryEnqFetchTarget()
 Addr
 DecoupledBPU::computePathHash(Addr br, Addr target)
 {
-    Addr ret = 0;
-    for (unsigned i = 0; i < numFoldingTokens(); i++) {
-        ret ^= (br >> (i * historyTokenBits)) & foldingTokenMask();
-    }
-    for (unsigned i = 0; i < numFoldingTokens(); i++) {
-        ret ^= (target >> (i * historyTokenBits)) & foldingTokenMask();
-    }
+    Addr ret = ((br >> 1) ^ (target >> 2)) & foldingTokenMask();
     return ret;
 }
 
