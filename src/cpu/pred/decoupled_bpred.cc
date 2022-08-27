@@ -247,8 +247,9 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
             fsqId, fetchTargetQueue.getEnqState().streamId,
             fetchTargetQueue.getSupplyingTargetId());
 
-    historyManager.squash(stream_id, control_pc.instAddr(),
+    historyManager.squash(stream_id, actually_taken, control_pc.instAddr(),
                           corr_target.instAddr());
+    checkHistory(s0History);
 }
 
 void
@@ -356,7 +357,18 @@ DecoupledBPU::trapSquash(unsigned target_id, unsigned stream_id,
                         stream.exeBranchAddr, stream.exeTarget,
                         4, true, stream.history);
 
-    historyManager.squash(stream_id, last_committed_pc, inst_pc.instAddr());
+    historyManager.squash(stream_id, true, last_committed_pc, inst_pc.instAddr());
+
+    boost::to_string(s0History, buf1);
+    boost::to_string(stream.history, buf2);
+    DPRINTF(DecoupleBP, "Recover history %s\nto %s\n", buf1.c_str(),
+            buf2.c_str());
+    s0History = stream.history;
+    auto hashed_path =
+        computePathHash(last_committed_pc, inst_pc.instAddr());
+    histShiftIn(hashed_path, s0History);
+    boost::to_string(s0History, buf1);
+    DPRINTF(DecoupleBP, "Shift in history %s\n", buf1.c_str());
 
     auto erase_it = fetchStreamQueue.upper_bound(stream_id);
     while (erase_it != fetchStreamQueue.end()) {
@@ -687,7 +699,17 @@ DecoupledBPU::makeNewPredictionAndInsertFsq()
         entry.history.resize(historyBits);
         DPRINTF(DecoupleBP, "entry hist size: %lu, ubtb hist size: %lu\n",
                 entry.history.size(), s0UbtbPred.history.size());
-        entry.history = s0UbtbPred.history;
+        // when pred is invalid, history from s0UbtbPred is outdated
+        // entry.history = s0History is right for back-to-back predictor
+        // but not true for backing predictor taking multi-cycles to predict.
+        entry.history = s0History; 
+
+        boost::to_string(s0History, buf1);
+        histShiftIn(0UL, s0History);
+        boost::to_string(s0History, buf2);
+        DPRINTF(DecoupleBP, "Update s0History from\n%s\nto\n%s\nwith dummy path\n", buf1.c_str(),
+                buf2.c_str());
+
         historyManager.addSpeculativeHist(0, 0, fsqId);
         // TODO: when hit, the remaining signals should be the prediction
         // result
@@ -708,7 +730,39 @@ DecoupledBPU::makeNewPredictionAndInsertFsq()
                 fsqId);
     }
     printStream(entry);
+    checkHistory(s0History);
 }
+
+void
+DecoupledBPU::checkHistory(const boost::dynamic_bitset<> &history)
+{
+    unsigned ideal_size = 0;
+    boost::dynamic_bitset<> ideal_hash_hist(historyBits, 0);
+    for (const auto entry: historyManager.getSpeculativeHist()) {
+        ideal_size += 2;
+        Addr signature = computePathHash(entry.pc, entry.target);
+        DPRINTF(DecoupleBP, "%#lx->%#lx, signature: %#lx\n", entry.pc,
+                entry.target, signature);
+        ideal_hash_hist <<= 2;
+        for (unsigned i = 0; i < historyTokenBits; i++) {
+            ideal_hash_hist[i] ^= (signature >> i) & 1;
+        }
+    }
+    unsigned comparable_size = std::min(ideal_size, historyBits);
+    boost::dynamic_bitset<> sized_real_hist(history);
+    ideal_hash_hist.resize(comparable_size);
+    sized_real_hist.resize(comparable_size);
+
+    boost::to_string(ideal_hash_hist, buf1);
+    boost::to_string(sized_real_hist, buf2);
+    DPRINTF(DecoupleBP,
+            "Ideal size:\t%u, real history size:\t%u, comparable size:\t%u\n",
+            ideal_size, historyBits, comparable_size);
+    DPRINTF(DecoupleBP, "Ideal history:\t%s\nreal history:\t%s\n",
+            buf1.c_str(), buf2.c_str());
+    assert(ideal_hash_hist == sized_real_hist);
+}
+
 
 }  // namespace branch_prediction
 

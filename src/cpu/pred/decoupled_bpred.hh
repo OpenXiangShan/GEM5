@@ -65,15 +65,26 @@ class HistoryManager
         }
     }
 
-    void squash(const uint64_t stream_id, const Addr taken_pc, const Addr target)
+    const std::list<TakenEntry> &getSpeculativeHist()
+    {
+        return speculativeHists;
+    }
+
+    void squash(const uint64_t stream_id, bool taken, const Addr taken_pc, const Addr target)
     {
         dump("before squash");
         auto it = speculativeHists.begin();
         while (it != speculativeHists.end()) {
             if (it->streamId == stream_id) {
-                it->miss = false;
-                it->pc = taken_pc;
-                it->target = target;
+                if (taken) {
+                    it->miss = false;
+                    it->pc = taken_pc;
+                    it->target = target;
+                } else {
+                    it->miss = true;
+                    it->pc = 0;
+                    it->target = 0;
+                }
             } if (it->streamId > stream_id) {
                 DPRINTF(DecoupleBP,
                         "Squash taken %lu, %#lx->%#lx\n",
@@ -84,7 +95,7 @@ class HistoryManager
             }
         }
         dump("after squash");
-        // checkSanity();
+        checkSanity();
     }
 
     void checkSanity()
