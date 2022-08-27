@@ -784,13 +784,13 @@ class StreamTAGE(TimedPredictor):
 
     numPredictors = Param.Unsigned(11, "Number of TAGE predictors")
     tableSizes = VectorParam.Int(
-        [256] * 15, "the ITTAGE T1~Tn length")
+        [4096] * 10 + [2048] * 5, "the ITTAGE T1~Tn length")
     TTagBitSizes = VectorParam.Int(
         [9, 9, 13, 13, 13, 13, 13, 13, 13, 13, 15, 15, 15, 15, 15], "the T1~Tn entry's tag bit size")
     TTagPcShifts = VectorParam.Int(
-        [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2], "when the T1~Tn entry's tag generating, PC right shift")
+        [1] * 20, "when the T1~Tn entry's tag generating, PC right shift")
     histLengths = VectorParam.Int(
-        [4, 10, 16, 27, 44, 60, 96, 109, 219, 449, 487], "the ITTAGE T1~Tn history length")
+        [4, 10, 16, 28, 44, 60, 96, 110, 220, 450, 488], "the ITTAGE T1~Tn history length")
     simpleBTBSize = Param.Unsigned(512, "size of base predictor")
 
 class DecoupledBPU(BranchPredictor):
