@@ -78,6 +78,8 @@ DecoupledBPU::decoupledPredict(const StaticInstPtr &inst,
     printFetchTarget(target_to_fetch, "");
 
     assert(pc.instAddr() < end && pc.instAddr() >= start);
+    //Two situations casue target_to_fetch.taken: cache truncation and branch taken,
+    //only taken branches are predicted taken.
     bool taken = pc.instAddr() == taken_pc && target_to_fetch.taken;
 
     bool run_out_of_this_entry = false;
@@ -91,6 +93,7 @@ DecoupledBPU::decoupledPredict(const StaticInstPtr &inst,
         DPRINTF(DecoupleBP,
                 "Predicted pc: %#lx, upc: %#lx, npc(meaningless): %#lx\n",
                 target->instAddr(), rtarget.upc(), rtarget.npc());
+        //Set PC as predicted result.
         set(pc, *target);
         run_out_of_this_entry = true;
     } else {
@@ -456,6 +459,8 @@ DecoupledBPU::tryEnqFetchStream()
 void
 DecoupledBPU::tryEnqFetchTarget()
 {
+    //Decompose fsq block and align with cacheline, 
+    //insert into ftq
     DPRINTF(DecoupleBP, "Try to enq fetch target\n");
     if (!fetchTargetQueue.full()) {
         // ftq can accept new cache lines,
@@ -466,13 +471,13 @@ DecoupledBPU::tryEnqFetchTarget()
             auto it = fetchStreamQueue.find(ftq_enq_state.streamId);
             if (it != fetchStreamQueue.end()) {
                 auto stream_to_enq = it->second;
-                Addr end = stream_to_enq.resolved
+                Addr end = stream_to_enq.resolved       // end pc / taken pc
                                ? stream_to_enq.exeStreamEnd
                                : stream_to_enq.predStreamEnd;
                 Addr baddr = stream_to_enq.resolved
                                  ? stream_to_enq.exeBranchAddr
                                  : stream_to_enq.predBranchAddr;
-                bool ended = stream_to_enq.resolved
+                bool ended = stream_to_enq.resolved     //stream will taken
                                  ? stream_to_enq.exeEnded
                                  : stream_to_enq.streamEnded;
                 DPRINTF(DecoupleBP, "Try to enque with stream: ID=%i ",
