@@ -528,7 +528,7 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     ThreadID tid = inst->threadNumber;
     if (isDecoupledFrontend) {
         //Get predict_taken as decoupled predictor,
-        //and check wheather FTB is used up
+        //and check wheather FTQ is used up
         std::tie(predict_taken, usedUpFetchTargets) =
             dbp->decoupledPredict(
                 inst->staticInst, inst->seqNum, next_pc, tid);
@@ -780,7 +780,7 @@ Fetch::doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst,
     // some opportunities to handle interrupts may be missed.
     delayedCommit[tid] = true;
 
-    //After squash, FTB is empty.
+    //After squash, FTQ is empty.
     usedUpFetchTargets = true;
 
     ++fetchStats.squashCycles;
@@ -970,7 +970,7 @@ Fetch::tick()
         //In order to maintain the state of the predictor,
         //the tick() function needs to be called every cycle
         dbp->tick();
-        //If FTB is empty and can't be filled with new block,
+        //If FTQ is empty and can't be filled with new block,
         //set usedUpFetchTargets to true
         usedUpFetchTargets = !dbp->trySupplyFetchWithTarget();
     }
