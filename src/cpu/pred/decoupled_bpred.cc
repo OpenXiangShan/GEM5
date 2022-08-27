@@ -170,7 +170,6 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
             fetchStreamQueue.erase(erase_it++);
         }
 
-        std::string buf1, buf2;
         boost::to_string(s0History, buf1);
         boost::to_string(stream.history, buf2);
         DPRINTF(DecoupleBP, "Recover history %s\nto %s\n", buf1.c_str(),
@@ -619,18 +618,17 @@ DecoupledBPU::computePathHash(Addr br, Addr target)
 void
 DecoupledBPU::histShiftIn(Addr hash, boost::dynamic_bitset<> &history)
 {
-    std::string buf;
-    boost::to_string(history, buf);
+    // boost::to_string(history, buf2);
     // DPRINTF(DecoupleBP, "Hist before shiftin: %s, hist len: %u, hash:
     // %#lx\n", buf.c_str(), history.size(), hash); DPRINTF(DecoupleBP, "Reach
     // x\n");
     history <<= 2;
     boost::dynamic_bitset<> temp_hash_bits(historyBits, hash);
-    boost::to_string(temp_hash_bits, buf);
+    // boost::to_string(temp_hash_bits, buf2);
     // DPRINTF(DecoupleBP, "hash to shiftin: %s\n", buf.c_str());
     history ^= temp_hash_bits;
-    boost::to_string(history, buf);
-    DPRINTF(DecoupleBP, "Hist after shiftin: %s\n", buf.c_str());
+    // boost::to_string(history, buf2);
+    // DPRINTF(DecoupleBP, "Hist after shiftin: %s\n", buf2.c_str());
 }
 
 void
@@ -648,9 +646,9 @@ DecoupledBPU::makeNewPredictionAndInsertFsq()
         entry.predTarget = s0UbtbPred.nextStream;
         s0StreamPC = s0UbtbPred.nextStream;
         entry.history = s0UbtbPred.history;
+
         auto hashed_path =
             computePathHash(s0UbtbPred.controlAddr, s0UbtbPred.nextStream);
-        std::string buf1, buf2;
         boost::to_string(s0History, buf1);
         histShiftIn(hashed_path, s0History);
         boost::to_string(s0History, buf2);
@@ -679,9 +677,8 @@ DecoupledBPU::makeNewPredictionAndInsertFsq()
         // TODO: when hit, the remaining signals should be the prediction
         // result
     }
-    std::string buf;
-    boost::to_string(entry.history, buf);
-    DPRINTF(DecoupleBP, "New prediction history: %s\n", buf.c_str());
+    boost::to_string(entry.history, buf1);
+    DPRINTF(DecoupleBP, "New prediction history: %s\n", buf1.c_str());
     entry.setDefaultResolve();
     auto [insert_it, inserted] = fetchStreamQueue.emplace(fsqId, entry);
     assert(inserted);

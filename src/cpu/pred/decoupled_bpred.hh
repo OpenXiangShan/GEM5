@@ -302,7 +302,11 @@ class DecoupledBPU : public BPredUnit
 
     bool lookup(ThreadID tid, Addr instPC, void *&bp_history) { return false; }
 
+    void checkHistory(const boost::dynamic_bitset<> &history);
+
+    std::string buf1, buf2;
 };
+
 }  // namespace branch_prediction
 }  // namespace gem5
 
