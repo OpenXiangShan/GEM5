@@ -69,7 +69,7 @@ class StreamTAGE : public TimedPredictor
 
     uint64_t makePCHistTag(Addr pc, const bitset &history);
 
-    uint64_t getAddrFold(uint64_t address, int table);
+    uint64_t getIndex(Addr pc, const bitset& ghr, int table);
 
     uint64_t getTag(Addr pc, const bitset& ghr, int table);
 
@@ -78,11 +78,24 @@ class StreamTAGE : public TimedPredictor
     StreamPrediction prediction;
 
     const unsigned numPredictors;
-    const unsigned simpleBTBSize;
-    std::vector<int> tableSizes;
-    std::vector<int> TTagBitSizes;
-    std::vector<int> TTagPcShifts;
-    std::vector<int> histLengths;
+    const unsigned baseTableSize;
+
+    std::vector<unsigned> tableSizes;
+    std::vector<unsigned> tableIndexBits;
+    std::vector<bitset> tableIndexMasks;
+    std::vector<uint64_t> tablePcMasks;
+    // std::vector<bitset> indexCalcBuffer;
+    std::vector<unsigned> tagSegments;
+
+    std::vector<unsigned> tableTagBits;
+    std::vector<bitset> tableTagMasks;
+    // std::vector<bitset> tagCalcBuffer;
+    std::vector<unsigned> indexSegments;
+
+    std::vector<unsigned> tablePcShifts;
+    std::vector<unsigned> histLengths;
+
+    unsigned maxHistLen;
 
     int use_alt; // min:0 max: 15
     int reset_counter;

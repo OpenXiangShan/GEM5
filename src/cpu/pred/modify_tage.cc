@@ -13,20 +13,38 @@ namespace branch_prediction {
 StreamTAGE::StreamTAGE(const Params& p):
     TimedPredictor(p),
     numPredictors(p.numPredictors),
-    simpleBTBSize(p.simpleBTBSize),
+    baseTableSize(p.baseTableSize),
     tableSizes(p.tableSizes),
-    TTagBitSizes(p.TTagBitSizes),
-    TTagPcShifts(p.TTagPcShifts),
+    tableTagBits(p.TTagBitSizes),
+    tablePcShifts(p.TTagPcShifts),
     histLengths(p.histLengths),
+    maxHistLen(p.maxHistLen),
     dbpstats(this)
 {
-    base_predictor.resize(simpleBTBSize);
-    for (int i = 0;i < simpleBTBSize;i++)
-        base_predictor_valid.push_back(false);
+    base_predictor.resize(baseTableSize);
+    base_predictor_valid.resize(baseTableSize, false);
+
     targetCache.resize(numPredictors);
+    tableIndexBits.resize(numPredictors);
+    tableIndexMasks.resize(numPredictors);
+    indexSegments.resize(numPredictors);
+    tableTagMasks.resize(numPredictors);
+    tagSegments.resize(numPredictors);
     for (unsigned int i = 0; i < p.numPredictors; ++i) {
         //initialize ittage predictor
         targetCache[i].resize(tableSizes[i]);
+
+        tableIndexBits[i] = ceilLog2(tableSizes[i]);
+        tableIndexMasks[i].resize(maxHistLen, true);
+        tableIndexMasks[i] >>= (maxHistLen - tableIndexBits[i]);
+        indexSegments[i] = ceil(histLengths[i] / tableIndexBits[i]);
+
+        tableTagMasks[i].resize(maxHistLen, true);
+        tableTagMasks[i] >>= (maxHistLen - tableTagBits[i]);
+        tagSegments[i] = ceil(histLengths[i] / tableTagBits[i]);
+
+        // indexCalcBuffer[i].resize(maxHistLen, false);
+        // tagCalcBuffer[i].resize(maxHistLen, false);
     }
 }
 
@@ -65,8 +83,7 @@ StreamTAGE::lookup_helper(bool flag, Addr streamStart, const bitset& history, Ti
     int predictor_index_2 = 0;
 
     for (int i = numPredictors - 1; i >= 0; --i) {
-        uint32_t index = getAddrFold(streamStart, i);
-        uint32_t tmp_index = index;
+        uint32_t tmp_index = getIndex(streamStart, history, i);
         uint32_t tmp_tag = getTag(streamStart, history, i);
         const auto &way = targetCache[i][tmp_index];
         if (way.tag == tmp_tag && way.valid && (streamStart >= way.target.bbStart && streamStart <= way.target.controlAddr)) {
@@ -117,11 +134,14 @@ StreamTAGE::lookup_helper(bool flag, Addr streamStart, const bitset& history, Ti
         return true;
     } else {
         dbpstats.providerTableDist.sample(20U);
+        auto base_table_idx = streamStart % baseTableSize;
         use_alt_pred = false;
-        target = base_predictor[(streamStart ^ previous_target.bbStart) % simpleBTBSize];
+        target = base_predictor[base_table_idx];
         // no need to set
         pred_count = pred_counts;
-        if (base_predictor_valid[(streamStart ^ previous_target.bbStart) % simpleBTBSize] && streamStart >= target.bbStart && streamStart <= target.controlAddr) {
+        if (base_predictor_valid[base_table_idx] &&
+            streamStart >= target.bbStart &&
+            streamStart <= target.controlAddr) {
             DPRINTF(DecoupleBP, "%lx, found entry in base predictor, streamStart: %lx, controlAddr: %lx, nextStream: %lx\n", streamStart, target.bbStart, target.controlAddr, target.nextStream);
             return true;
         }
@@ -236,13 +256,14 @@ StreamTAGE::update(Addr stream_start_pc,
     previous_target.nextStream = target;
     previous_target.hysteresis = 1;
 
-    base_predictor[(stream_start_pc ^ previous_target.bbStart) %simpleBTBSize].tick = curTick();
-    base_predictor[(stream_start_pc ^ previous_target.bbStart) %simpleBTBSize].bbStart = stream_start_pc;
-    base_predictor[(stream_start_pc ^ previous_target.bbStart) %simpleBTBSize].controlAddr = control_pc;
-    base_predictor[(stream_start_pc ^ previous_target.bbStart) %simpleBTBSize].controlSize = control_size;
-    base_predictor[(stream_start_pc ^ previous_target.bbStart) %simpleBTBSize].nextStream = target;
-    base_predictor[(stream_start_pc^ previous_target.bbStart) %simpleBTBSize].hysteresis = 1;
-    base_predictor_valid[(stream_start_pc ^ previous_target.bbStart) %simpleBTBSize] = true;
+    auto base_table_idx = stream_start_pc % baseTableSize;
+    base_predictor[base_table_idx].tick = curTick();
+    base_predictor[base_table_idx].bbStart = stream_start_pc;
+    base_predictor[base_table_idx].controlAddr = control_pc;
+    base_predictor[base_table_idx].controlSize = control_size;
+    base_predictor[base_table_idx].nextStream = target;
+    base_predictor[base_table_idx].hysteresis = 1;
+    base_predictor_valid[base_table_idx] = true;
 
     bool allocate_values = true;
 
@@ -307,7 +328,7 @@ StreamTAGE::update(Addr stream_start_pc,
                 start_pos = 0;
             }
             for (; start_pos < numPredictors; ++start_pos) {
-                uint32_t new_index = getAddrFold(stream_start_pc, start_pos);
+                uint32_t new_index = getIndex(stream_start_pc, history, start_pos);
                 auto& way_new = targetCache[start_pos][new_index];
                 if (way_new.useful == 0) {
                     if (reset_counter < 255) reset_counter++;
@@ -351,8 +372,7 @@ void
 StreamTAGE::commit(Addr stream_start_pc, Addr controlAddr, Addr target, bitset &history)
 {
     for (int i = numPredictors - 1; i >= 0; --i) {
-        uint32_t index = getAddrFold(stream_start_pc, i);
-        uint32_t tmp_index = index;
+        uint32_t tmp_index = getIndex(stream_start_pc, history, i);
         uint32_t tmp_tag = getTag(stream_start_pc, history, i);
         auto& way = targetCache[i][tmp_index];
         if (way.tag == tmp_tag &&
@@ -377,21 +397,34 @@ StreamTAGE::getTableGhrLen(int table) {
 }
 
 uint64_t
-StreamTAGE::getAddrFold(uint64_t address, int table) {
-    uint64_t folded_address, k;
-    folded_address = 0;
-    for (k = 0; k < 8; k++) {
-        folded_address ^= address;
-        address >>= 8;
+StreamTAGE::getTag(Addr pc, const bitset& history, int t)
+{
+    bitset buf(tableTagBits[t], pc >> tablePcShifts[t]);  // lower bits of PC
+    buf.resize(maxHistLen);
+    bitset hist(history);  // copy a writable history
+    assert(history.size() == buf.size());
+    for (unsigned i = 0; i < tagSegments[t]; i++) {
+        assert(history.size() == tableTagMasks[t].size());
+        auto masked = hist & tableTagMasks[t];
+        buf ^= masked;  // fold into the buf
+        hist >>= tableTagBits[t];  // shift right to get next fold
     }
-    return folded_address & ((1 << ceilLog2(tableSizes[table])) - 1);
+    return buf.to_ulong();
 }
 
 uint64_t
-StreamTAGE::getTag(Addr pc, const bitset& history, int table) {
-    bitset temp = history;
-    temp.resize(64);
-    return ((pc >> TTagPcShifts[table]) ^ temp.to_ulong()) & ((1 << TTagBitSizes[table]) - 1);
+StreamTAGE::getIndex(Addr pc, const bitset& history, int t)
+{
+    bitset buf(tableIndexBits[t], pc >> tablePcShifts[t]);
+    buf.resize(maxHistLen);
+    bitset hist(history);  // copy a writable history
+    for (unsigned i = 0; i < indexSegments[t]; i++) {
+        assert(history.size() == tableIndexMasks[t].size());
+        auto masked = hist & tableIndexMasks[t];
+        buf ^= masked;  // fold into the buf
+        hist >>= tableIndexBits[t];  // shift right to get next fold
+    }
+    return buf.to_ulong();
 }
 
 }  // namespace branch_prediction
