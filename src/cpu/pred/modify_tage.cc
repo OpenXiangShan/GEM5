@@ -34,11 +34,11 @@ StreamTAGE::DBPStats::DBPStats(statistics::Group* parent):
     statistics::Group(parent),
     ADD_STAT(coldMisses, statistics::units::Count::get(), "ittage the provider component lookup hit"),
     ADD_STAT(capacityMisses, statistics::units::Count::get(), "ittage the alternate prediction lookup hit"),
-    ADD_STAT(compulsoryMisses, statistics::units::Count::get(), "ittage the provider component pred hit")
+    ADD_STAT(compulsoryMisses, statistics::units::Count::get(), "ittage the provider component pred hit"),
+    ADD_STAT(providerTableDist, statistics::units::Count::get(), "the distribution of provider component")
 {
-    coldMisses.prereq(coldMisses);
-    capacityMisses.prereq(capacityMisses);
-    compulsoryMisses.prereq(compulsoryMisses);
+    using namespace statistics;
+    providerTableDist.init(0, 21, 1).flags(statistics::pdf);
 }
 
 void
@@ -96,6 +96,8 @@ StreamTAGE::lookup_helper(bool flag, Addr streamStart, const bitset& history, Ti
     }
     pred_count = pred_counts;
     if (pred_counts > 0) {
+
+        dbpstats.providerTableDist.sample(predictor_1);
         const auto& way1 = targetCache[predictor_1][predictor_index_1];
         const auto& way2 = targetCache[predictor_2][predictor_index_2];
         if ((way1.counter == 1) && (way1.useful == 0) && (pred_counts == 2) && (way2.counter > 0)) {
@@ -114,6 +116,7 @@ StreamTAGE::lookup_helper(bool flag, Addr streamStart, const bitset& history, Ti
         pred_count = pred_counts;
         return true;
     } else {
+        dbpstats.providerTableDist.sample(20U);
         use_alt_pred = false;
         target = base_predictor[(streamStart ^ previous_target.bbStart) % simpleBTBSize];
         // no need to set

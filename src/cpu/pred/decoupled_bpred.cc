@@ -125,7 +125,18 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
     bool is_conditional = static_inst->isCondCtrl();
     bool is_indirect = static_inst->isIndirectCtrl();
     // bool is_call = static_inst->isCall();
-    // bool is_return = static_inst->isReturn();
+    bool is_return = static_inst->isReturn();
+
+    if (is_conditional) {
+        ++stats.condIncorrect;
+    }
+    if (is_indirect) {
+        ++stats.indirectMispredicted;
+    }
+    if (is_return) {
+        ++stats.RASIncorrect;
+    }
+
     squashing = true;
 
     s0StreamPC = corr_target.instAddr();

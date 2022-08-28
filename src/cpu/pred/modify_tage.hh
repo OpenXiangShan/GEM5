@@ -91,6 +91,7 @@ class StreamTAGE : public TimedPredictor
         statistics::Scalar coldMisses;
         statistics::Scalar capacityMisses;
         statistics::Scalar compulsoryMisses;
+        statistics::Distribution providerTableDist;
         DBPStats(statistics::Group* parent);
     }dbpstats;
 
