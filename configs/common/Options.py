@@ -133,6 +133,9 @@ def addNoISAOptions(parser):
                         help="Memory channels interleave")
 
     parser.add_argument("--memchecker", action="store_true")
+    # DRAMsim3 option
+    parser.add_argument("--dramsim3-ini",type=str,default=None,
+                        help = "dramsim3 config file")
 
     # Cache Options
     parser.add_argument("--external-memory-system", type=str,
