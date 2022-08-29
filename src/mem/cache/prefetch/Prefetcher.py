@@ -147,6 +147,74 @@ class QueuedPrefetcher(BasePrefetcher):
     throttle_control_percentage = Param.Percent(0, "Percentage of requests \
         that can be throttled depending on the accuracy of the prefetcher.")
 
+class SMSPrefetcher(QueuedPrefetcher):
+    type = "SMSPrefetcher"
+    cxx_class = 'gem5::prefetch::SMSPrefetcher'
+    cxx_header = 'mem/cache/prefetch/sms.hh'
+
+    use_virtual_addresses = True
+    region_size = Param.Int(1024, "region size")
+    # filter table (full-assoc)
+    filter_entries = Param.MemorySize("16", "num of filter table entries")
+    filter_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.filter_entries,
+            size=Parent.filter_entries),
+        "Indexing policy of filter table"
+    )
+    filter_replacement_policy = Param.BaseReplacementPolicy(
+        FIFORP(),
+        "Replacement policy of filter table"
+    )
+    # active generation table (full-assoc)
+    act_entries = Param.MemorySize(
+        "16",
+        "num of active generation table entries"
+    )
+    act_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.act_entries,
+            size=Parent.act_entries),
+        "Indexing policy of active generation table"
+    )
+    act_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(),
+        "Replacement policy of active generation table"
+    )
+    # pht table (set-assoc)
+    pht_entries = Param.MemorySize(
+        "64",
+        "num of pattern history table entries"
+    )
+    pht_assoc = Param.Int(2, "Associativity of the pattern history table")
+    pht_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.pht_assoc,
+            size=Parent.pht_entries),
+        "Indexing policy of pattern history table"
+    )
+    pht_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(),
+        "Replacement policy of pattern history table"
+    )
+    # pf gen table (full-assoc)
+    # not implemented now, because queued prefetcher already had a filter
+    pf_gen_entries = Param.MemorySize("16", "num of pf_gen entries")
+    pf_gen_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.pf_gen_entries,
+            size=Parent.pf_gen_entries),
+        "Indexing policy of pf_gen"
+    )
+    pf_gen_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(),
+        "Replacement policy of pf_gen"
+    )
+
 class StridePrefetcherHashedSetAssociative(SetAssociative):
     type = 'StridePrefetcherHashedSetAssociative'
     cxx_class = 'gem5::prefetch::StridePrefetcherHashedSetAssociative'
