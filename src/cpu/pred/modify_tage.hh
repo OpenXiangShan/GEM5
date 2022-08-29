@@ -19,6 +19,12 @@ namespace gem5
 namespace branch_prediction
 {
 
+  enum EndType {
+        END_TYPE_CALL,
+        END_TYPE_RET,
+        END_TYPE_NONE
+    };
+
 class StreamTAGE : public TimedPredictor
 {
     using bitset = boost::dynamic_bitset<>;
@@ -37,6 +43,7 @@ class StreamTAGE : public TimedPredictor
             this->nextStream = 0;
             this->controlSize = 0;
             this->hysteresis = 0;
+            this->endIsCall = 0;
             this->endIsRet = 0;
         }
     };
@@ -63,7 +70,7 @@ class StreamTAGE : public TimedPredictor
     void update(Addr stream_start_pc,
                 Addr control_pc, Addr target,
                 unsigned control_size, bool actually_taken,
-                const bitset &history);
+                const bitset &history, EndType endType);
 
     void commit(Addr, Addr, Addr, bitset&);
 

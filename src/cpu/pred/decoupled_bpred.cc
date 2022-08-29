@@ -19,6 +19,21 @@ DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
 
     commitHistory.resize(historyBits, 0);
     squashing = true;
+    
+    streamRAS->init(16);
+}
+
+void
+DecoupledBPU::useStreamRAS()
+{
+    if (s0UbtbPred.endIsCall) {
+        DPRINTF(DecoupleBP, "Use stream RAS for call\n");
+        streamRAS->push(s0UbtbPred.controlAddr + s0UbtbPred.controlSize);
+    } else if (s0UbtbPred.endIsRet) {
+        DPRINTF(DecoupleBP, "Use stream RAS for ret\n");
+        s0UbtbPred.nextStream = streamRAS->top();
+        streamRAS->pop();
+    }
 }
 
 void
@@ -27,6 +42,7 @@ DecoupledBPU::tick()
     if (!squashing) {
         DPRINTF(DecoupleBP, "DecoupledBPU::tick()\n");
         s0UbtbPred = streamTAGE->getStream();
+        useStreamRAS();
         tryEnqFetchTarget();
         tryEnqFetchStream();
 
@@ -124,8 +140,9 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
 {
     bool is_conditional = static_inst->isCondCtrl();
     bool is_indirect = static_inst->isIndirectCtrl();
-    // bool is_call = static_inst->isCall();
+    bool is_call = static_inst->isCall();
     bool is_return = static_inst->isReturn();
+    EndType endType = END_TYPE_NONE;
 
     if (is_conditional) {
         ++stats.condIncorrect;
@@ -135,6 +152,10 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
     }
     if (is_return) {
         ++stats.RASIncorrect;
+        endType = END_TYPE_RET;
+    }
+    if (is_call) {
+        endType = END_TYPE_CALL;
     }
 
     squashing = true;
@@ -171,7 +192,7 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
         streamTAGE->update(stream.streamStart,
                            control_pc.instAddr(), corr_target.instAddr(),
                            control_inst_size,
-                           actually_taken, stream.history);
+                           actually_taken, stream.history, endType);
 
         // clear younger fsq entries
         auto erase_it = fetchStreamQueue.upper_bound(stream_id);
@@ -214,7 +235,7 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
         streamTAGE->update(stream.streamStart,
                            0, 0,
                            control_inst_size,
-                           actually_taken, stream.history);
+                           actually_taken, stream.history, endType);
 
         // keep stream id because still in the same stream
         ftq_demand_stream_id = stream_id;
@@ -366,7 +387,7 @@ DecoupledBPU::trapSquash(unsigned target_id, unsigned stream_id,
 
     streamTAGE->update(stream.streamStart,
                         stream.exeBranchAddr, stream.exeTarget,
-                        4, true, stream.history);
+                        4, true, stream.history, END_TYPE_NONE);
 
     historyManager.squash(stream_id, true, last_committed_pc, inst_pc.instAddr());
 

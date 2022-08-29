@@ -184,6 +184,7 @@ StreamTAGE::putPCHistory(Addr pc, const bitset &history) {
         prediction.controlAddr = target.controlAddr;
         prediction.controlSize = target.controlSize;
         prediction.nextStream = target.nextStream;
+        prediction.endIsCall = target.endIsCall;
         prediction.endIsRet = target.endIsRet;
         prediction.history = history;
 
@@ -214,7 +215,7 @@ StreamTAGE::update(Addr stream_start_pc,
                    Addr control_pc, Addr target,
                    unsigned control_size,
                    bool actually_taken,
-                   const bitset &history) {
+                   const bitset &history, EndType endType) {
     if (control_pc < stream_start_pc) {
         DPRINTF(DecoupleBP,
                 "Control PC %#lx is before stream start %#lx, ignore it\n",
@@ -255,6 +256,8 @@ StreamTAGE::update(Addr stream_start_pc,
     previous_target.controlSize = control_size;
     previous_target.nextStream = target;
     previous_target.hysteresis = 1;
+    previous_target.endIsCall = (endType == END_TYPE_CALL);
+    previous_target.endIsRet = (endType == END_TYPE_RET);
 
     auto base_table_idx = stream_start_pc % baseTableSize;
     base_predictor[base_table_idx].tick = curTick();
@@ -263,6 +266,8 @@ StreamTAGE::update(Addr stream_start_pc,
     base_predictor[base_table_idx].controlSize = control_size;
     base_predictor[base_table_idx].nextStream = target;
     base_predictor[base_table_idx].hysteresis = 1;
+    base_predictor[base_table_idx].endIsCall = (endType == END_TYPE_CALL);
+    base_predictor[base_table_idx].endIsRet = (endType == END_TYPE_RET);
     base_predictor_valid[base_table_idx] = true;
 
     bool allocate_values = true;
@@ -276,6 +281,8 @@ StreamTAGE::update(Addr stream_start_pc,
             ++way_sel.counter;
             ++way_sel.target.hysteresis;
         }
+        way_sel.target.endIsCall = (endType == END_TYPE_CALL);
+        way_sel.target.endIsRet = (endType == END_TYPE_RET);
     } else {
         // a misprediction
         auto& way1 = targetCache[predictor][predictor_index];
@@ -310,6 +317,8 @@ StreamTAGE::update(Addr stream_start_pc,
                 way_sel.target.controlSize = control_size;
                 way_sel.target.nextStream = target;
                 way_sel.target.hysteresis = 1;
+                way_sel.target.endIsCall = (endType == END_TYPE_CALL);
+                way_sel.target.endIsRet = (endType == END_TYPE_RET);
                 way_sel.tag =
                     getTag(stream_start_pc,
                            history,
@@ -339,6 +348,8 @@ StreamTAGE::update(Addr stream_start_pc,
                     way_new.target.controlSize = control_size;
                     way_new.target.nextStream = target;
                     way_new.target.hysteresis = 1;
+                    way_new.target.endIsCall = (endType == END_TYPE_CALL);
+                    way_new.target.endIsRet = (endType == END_TYPE_RET);
                     way_new.tag =
                         getTag(stream_start_pc,
                                history,

@@ -83,6 +83,7 @@ struct IdealStreamStorage
     uint16_t controlSize;
     unsigned hysteresis;
     bool endIsRet;
+    bool endIsCall;
 };
 
 struct RealStreamStorage
@@ -99,6 +100,7 @@ struct StreamPrediction
     Addr nextStream;
     uint16_t controlSize;
     bool valid;
+    bool endIsCall;
     bool endIsRet;
     bool rasUpdated;
     boost::dynamic_bitset<> history;
