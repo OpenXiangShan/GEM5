@@ -13,117 +13,114 @@
 #include "debug/DecoupleBP.hh"
 #include "sim/sim_object.hh"
 
-namespace gem5
-{
+namespace gem5 {
 
-namespace branch_prediction
-{
+namespace branch_prediction {
 
-class StreamTAGE : public TimedPredictor
-{
-    using bitset = boost::dynamic_bitset<>;
-  public:
-    typedef StreamTAGEParams Params;
+class StreamTAGE : public TimedPredictor {
+	using bitset = boost::dynamic_bitset<>;
+public:
+	typedef StreamTAGEParams Params;
 
-    struct TickedStreamStorage : public StreamStorage
-    {
-        uint64_t tick;
+	struct TickedStreamStorage : public StreamStorage {
+		uint64_t tick;	
+		StreamEndType endType;
 
-        public:
-         TickedStreamStorage()
-             : tick(0) {
-            this->bbStart = 0;
-            this->controlAddr = 0;
-            this->nextStream = 0;
-            this->controlSize = 0;
-            this->hysteresis = 0;
-            this->endIsRet = 0;
-        }
-    };
+	public:
+		TickedStreamStorage()
+			: tick(0) {
+			this->bbStart = 0;
+			this->controlAddr = 0;
+			this->nextStream = 0;
+			this->controlSize = 0;
+			this->hysteresis = 0;
+			this->endIsRet = 0;
+		}
+	};
 
-  private:
-    const unsigned delay{1};
+private:
+	const unsigned delay{ 1 };
 
-    bool lookup_helper(bool, Addr,const bitset&, TickedStreamStorage&, TickedStreamStorage&, int&, int&, int&, int&, int&, bool&);
+	bool lookup_helper(bool, Addr, const bitset&, TickedStreamStorage&, TickedStreamStorage&, int&, int&, int&, int&, int&, bool&);
 
-  public:
-    StreamTAGE(const Params &p);
+public:
+	StreamTAGE(const Params& p);
 
-    void tickStart() override;
+	void tickStart() override;
 
-    void tick() override;
+	void tick() override;
 
-    void putPCHistory(Addr pc,
-                      const bitset &history) override;
+	void putPCHistory(Addr pc,
+					  const bitset& history) override;
 
-    unsigned getDelay() override { return delay; }
+	unsigned getDelay() override { return delay; }
 
-    StreamPrediction getStream();
+	StreamPrediction getStream();
 
-    void update(Addr stream_start_pc,
-                Addr control_pc, Addr target,
-                unsigned control_size, bool actually_taken,
-                const bitset &history);
+	void update(Addr stream_start_pc,
+				Addr control_pc, Addr target,
+				unsigned control_size, bool actually_taken, StreamEndType endType,
+				const bitset& history);
 
-    void commit(Addr, Addr, Addr, bitset&);
+	void commit(Addr, Addr, Addr, bitset&);
 
-    uint64_t makePCHistTag(Addr pc, const bitset &history);
+	uint64_t makePCHistTag(Addr pc, const bitset& history);
 
-    uint64_t getIndex(Addr pc, const bitset& ghr, int table);
+	uint64_t getIndex(Addr pc, const bitset& ghr, int table);
 
-    uint64_t getTag(Addr pc, const bitset& ghr, int table);
+	uint64_t getTag(Addr pc, const bitset& ghr, int table);
 
-    uint64_t getTableGhrLen(int table);
+	uint64_t getTableGhrLen(int table);
 
-    StreamPrediction prediction;
+	StreamPrediction prediction;
 
-    const unsigned numPredictors;
-    const unsigned baseTableSize;
+	const unsigned numPredictors;
+	const unsigned baseTableSize;
 
-    std::vector<unsigned> tableSizes;
-    std::vector<unsigned> tableIndexBits;
-    std::vector<bitset> tableIndexMasks;
-    std::vector<uint64_t> tablePcMasks;
-    // std::vector<bitset> indexCalcBuffer;
-    std::vector<unsigned> tagSegments;
+	std::vector<unsigned> tableSizes;
+	std::vector<unsigned> tableIndexBits;
+	std::vector<bitset> tableIndexMasks;
+	std::vector<uint64_t> tablePcMasks;
+	// std::vector<bitset> indexCalcBuffer;
+	std::vector<unsigned> tagSegments;
 
-    std::vector<unsigned> tableTagBits;
-    std::vector<bitset> tableTagMasks;
-    // std::vector<bitset> tagCalcBuffer;
-    std::vector<unsigned> indexSegments;
+	std::vector<unsigned> tableTagBits;
+	std::vector<bitset> tableTagMasks;
+	// std::vector<bitset> tagCalcBuffer;
+	std::vector<unsigned> indexSegments;
 
-    std::vector<unsigned> tablePcShifts;
-    std::vector<unsigned> histLengths;
+	std::vector<unsigned> tablePcShifts;
+	std::vector<unsigned> histLengths;
 
-    unsigned maxHistLen;
+	unsigned maxHistLen;
 
-    int use_alt; // min:0 max: 15
-    int reset_counter;
+	int use_alt; // min:0 max: 15
+	int reset_counter;
 
-    struct DBPStats : public statistics::Group {
-        statistics::Scalar coldMisses;
-        statistics::Scalar capacityMisses;
-        statistics::Scalar compulsoryMisses;
-        statistics::Distribution providerTableDist;
-        DBPStats(statistics::Group* parent);
-    }dbpstats;
+	struct DBPStats : public statistics::Group {
+		statistics::Scalar coldMisses;
+		statistics::Scalar capacityMisses;
+		statistics::Scalar compulsoryMisses;
+		statistics::Distribution providerTableDist;
+		DBPStats(statistics::Group* parent);
+	}dbpstats;
 
-    struct PredEntry {
-        bool valid = false;
-        Addr tag = 0;
-        TickedStreamStorage target;
-        int counter = 0;
-        int useful = 0;
-    };
+	struct PredEntry {
+		bool valid = false;
+		Addr tag = 0;
+		TickedStreamStorage target;
+		int counter = 0;
+		int useful = 0;
+	};
 
-    bitset ghr;
-    std::vector<std::vector<PredEntry>  >targetCache;
-    TickedStreamStorage previous_target;
-    std::vector<bool> base_predictor_valid;
-    std::vector<TickedStreamStorage> base_predictor;
+	bitset ghr;
+	std::vector<std::vector<PredEntry>  >targetCache;
+	TickedStreamStorage previous_target;
+	std::vector<bool> base_predictor_valid;
+	std::vector<TickedStreamStorage> base_predictor;
 
-  private:
-    bool equals(TickedStreamStorage, Addr, Addr, Addr);
+private:
+	bool equals(TickedStreamStorage, Addr, Addr, Addr);
 };
 
 }

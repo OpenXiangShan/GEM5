@@ -14,6 +14,11 @@ using FetchStreamId = uint64_t;
 using FetchTargetId = uint64_t;
 using PredictionID = uint64_t;
 
+
+enum class StreamEndType {
+    None, Call, Return
+};
+
 struct FetchStream
 {
     Addr streamStart;
@@ -40,6 +45,9 @@ struct FetchStream
     bool hasEnteredFtq;
     bool resolved;
 
+    uint32_t retIdx;
+    StreamEndType endType;
+
     boost::dynamic_bitset<> history;
 
     FetchStream()
@@ -56,7 +64,8 @@ struct FetchStream
         , exeBranchAddr(0)
         , exeBranchType(0)
         , hasEnteredFtq(0)
-        , resolved(false) {}
+        , resolved(false)
+        , endType(StreamEndType::None) {}
 
     // the default exe result should be consistent with prediction
     void setDefaultResolve() {
@@ -101,6 +110,8 @@ struct StreamPrediction
     bool valid;
     bool endIsRet;
     bool rasUpdated;
+    Addr retIdx;
+    StreamEndType endType;
     boost::dynamic_bitset<> history;
 };
 

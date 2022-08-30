@@ -186,6 +186,7 @@ StreamTAGE::putPCHistory(Addr pc, const bitset &history) {
         prediction.nextStream = target.nextStream;
         prediction.endIsRet = target.endIsRet;
         prediction.history = history;
+        prediction.endType = target.endType;
 
         way.target.tick = curTick();
     }
@@ -213,7 +214,7 @@ void
 StreamTAGE::update(Addr stream_start_pc,
                    Addr control_pc, Addr target,
                    unsigned control_size,
-                   bool actually_taken,
+                   bool actually_taken, StreamEndType endType,
                    const bitset &history) {
     if (control_pc < stream_start_pc) {
         DPRINTF(DecoupleBP,
@@ -255,6 +256,7 @@ StreamTAGE::update(Addr stream_start_pc,
     previous_target.controlSize = control_size;
     previous_target.nextStream = target;
     previous_target.hysteresis = 1;
+    previous_target.endType = endType;
 
     auto base_table_idx = stream_start_pc % baseTableSize;
     base_predictor[base_table_idx].tick = curTick();
@@ -263,6 +265,7 @@ StreamTAGE::update(Addr stream_start_pc,
     base_predictor[base_table_idx].controlSize = control_size;
     base_predictor[base_table_idx].nextStream = target;
     base_predictor[base_table_idx].hysteresis = 1;
+    base_predictor[base_table_idx].endType = endType;
     base_predictor_valid[base_table_idx] = true;
 
     bool allocate_values = true;
@@ -310,6 +313,7 @@ StreamTAGE::update(Addr stream_start_pc,
                 way_sel.target.controlSize = control_size;
                 way_sel.target.nextStream = target;
                 way_sel.target.hysteresis = 1;
+                way_sel.target.endType = endType;
                 way_sel.tag =
                     getTag(stream_start_pc,
                            history,
@@ -339,6 +343,7 @@ StreamTAGE::update(Addr stream_start_pc,
                     way_new.target.controlSize = control_size;
                     way_new.target.nextStream = target;
                     way_new.target.hysteresis = 1;
+                    way_new.target.endType = endType;
                     way_new.tag =
                         getTag(stream_start_pc,
                                history,

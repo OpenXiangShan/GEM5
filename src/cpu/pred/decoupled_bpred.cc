@@ -6,7 +6,7 @@ namespace branch_prediction
 {
 
 DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
-    : BPredUnit(p), fetchTargetQueue(p.ftq_size), historyBits(p.maxHistLen), streamTAGE(p.stream_tage)
+    : BPredUnit(p), fetchTargetQueue(p.ftq_size), historyBits(p.maxHistLen), streamTAGE(p.stream_tage), streamRas(new StreamRas(64))
 {
     assert(streamTAGE);
 
@@ -27,6 +27,14 @@ DecoupledBPU::tick()
     if (!squashing) {
         DPRINTF(DecoupleBP, "DecoupledBPU::tick()\n");
         s0UbtbPred = streamTAGE->getStream();
+        if (s0UbtbPred.endType == StreamEndType::Call) {
+            streamRas->push(s0UbtbPred.controlAddr + 4);
+        }
+        else if (s0UbtbPred.endType == StreamEndType::Return) {
+            auto rasTop = streamRas->pop();
+            s0UbtbPred.nextStream = rasTop.first;
+            s0UbtbPred.retIdx = rasTop.second;
+        }
         tryEnqFetchTarget();
         tryEnqFetchStream();
 
@@ -124,8 +132,13 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
 {
     bool is_conditional = static_inst->isCondCtrl();
     bool is_indirect = static_inst->isIndirectCtrl();
-    // bool is_call = static_inst->isCall();
+    bool is_call = static_inst->isCall();
     bool is_return = static_inst->isReturn();
+
+    StreamEndType endType =
+        is_call ? StreamEndType::Call :
+        is_return ? StreamEndType::Return :
+        StreamEndType::None;
 
     if (is_conditional) {
         ++stats.condIncorrect;
@@ -134,7 +147,7 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
         ++stats.indirectMispredicted;
     }
     if (is_return) {
-        ++stats.RASIncorrect;
+        //++stats.RASIncorrect;
     }
 
     squashing = true;
@@ -144,7 +157,17 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
     // check sanity
     auto it = fetchStreamQueue.find(stream_id);
     assert(it != fetchStreamQueue.end());
-    auto &stream = it->second;
+    auto& stream = it->second;
+
+    if (it->second.endType == StreamEndType::Return) {
+        ++stats.RASIncorrect;
+        streamRas->restore(it->second.predTarget, it->second.retIdx);
+        if (is_return) {
+            return;
+        }
+    }
+
+    
 
     DPRINTF(DecoupleBP,
             "Control squash: ftq_id=%lu, fsq_id=%lu, stream start=%#lx,"
@@ -171,7 +194,7 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
         streamTAGE->update(stream.streamStart,
                            control_pc.instAddr(), corr_target.instAddr(),
                            control_inst_size,
-                           actually_taken, stream.history);
+                           actually_taken, endType, stream.history);
 
         // clear younger fsq entries
         auto erase_it = fetchStreamQueue.upper_bound(stream_id);
@@ -678,6 +701,8 @@ DecoupledBPU::makeNewPredictionAndInsertFsq()
         entry.predTarget = s0UbtbPred.nextStream;
         s0StreamPC = s0UbtbPred.nextStream;
         entry.history = s0UbtbPred.history;
+        entry.retIdx = s0UbtbPred.retIdx;
+        entry.endType = s0UbtbPred.endType;
 
         auto hashed_path =
             computePathHash(s0UbtbPred.controlAddr, s0UbtbPred.nextStream);

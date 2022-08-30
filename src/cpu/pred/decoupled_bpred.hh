@@ -9,6 +9,7 @@
 #include "cpu/pred/fetch_target_queue.hh"
 #include "cpu/pred/stream_struct.hh"
 #include "cpu/pred/modify_tage.hh"
+#include "cpu/pred/decoupled_ras.hh"
 #include "debug/DecoupleBP.hh"
 #include "params/DecoupledBPU.hh"
 
@@ -170,7 +171,8 @@ class DecoupledBPU : public BPredUnit
 
     const unsigned historyBits{488};
 
-    StreamTAGE *streamTAGE{};
+    StreamTAGE* streamTAGE{};
+    StreamRas* streamRas;
 
     Addr s0StreamPC;
     boost::dynamic_bitset<> s0History;
