@@ -19,20 +19,22 @@ DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
 
     commitHistory.resize(historyBits, 0);
     squashing = true;
-    
-    streamRAS->init(16);
 }
 
 void
 DecoupledBPU::useStreamRAS()
 {
-    if (s0UbtbPred.endIsCall) {
-        DPRINTF(DecoupleBP, "Use stream RAS for call\n");
-        streamRAS->push(s0UbtbPred.controlAddr + s0UbtbPred.controlSize);
-    } else if (s0UbtbPred.endIsRet) {
-        DPRINTF(DecoupleBP, "Use stream RAS for ret\n");
-        s0UbtbPred.nextStream = streamRAS->top();
-        streamRAS->pop();
+    if (s0UbtbPred.endIsCall && streamRAS.size() < RASMaxSize) {
+        DPRINTF(DecoupleBPHist, "%lu, Use stream RAS for call, addr: %lx, size: %d\n", fsqId, s0UbtbPred.controlAddr + s0UbtbPred.controlSize, streamRAS.size());
+        streamRAS.push(s0UbtbPred.controlAddr + s0UbtbPred.controlSize);
+        s0UbtbPred.useRAS = true;
+    } else if (s0UbtbPred.endIsRet && !streamRAS.empty()) {
+        DPRINTF(DecoupleBPHist, "%lu, Use stream RAS for ret, size: %d\n", fsqId, streamRAS.size());
+        s0UbtbPred.nextStream = streamRAS.top();
+        streamRAS.pop();
+        s0UbtbPred.useRAS = true;
+    } else {
+        s0UbtbPred.useRAS = false;
     }
 }
 
@@ -42,7 +44,6 @@ DecoupledBPU::tick()
     if (!squashing) {
         DPRINTF(DecoupleBP, "DecoupledBPU::tick()\n");
         s0UbtbPred = streamTAGE->getStream();
-        useStreamRAS();
         tryEnqFetchTarget();
         tryEnqFetchStream();
 
@@ -167,7 +168,7 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
     assert(it != fetchStreamQueue.end());
     auto &stream = it->second;
 
-    DPRINTF(DecoupleBP,
+    DPRINTF(DecoupleBPHist,
             "Control squash: ftq_id=%lu, fsq_id=%lu, stream start=%#lx,"
             " control_pc=%#lx, corr_target=%#lx, is_conditional=%u, "
             "is_indirect=%u, actually_taken=%u, branch seq: %lu\n",
@@ -187,12 +188,38 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
         stream.exeTarget = corr_target.instAddr();
         stream.branchSeq = seq;
         stream.exeStreamEnd = stream.exeBranchAddr + control_inst_size;
-
+        stream.wasCall = is_call;
+        stream.wasReturn = is_return;
 
         streamTAGE->update(stream.streamStart,
                            control_pc.instAddr(), corr_target.instAddr(),
                            control_inst_size,
                            actually_taken, stream.history, endType);
+
+        // restore RAS
+        auto find_it = fetchStreamQueue.find(stream_id);
+        for (auto it = --fetchStreamQueue.end();it != find_it;--it) {
+            auto restore = it->second;
+            if (restore.useRAS) {
+                if (restore.wasCall) {
+                    DPRINTF(DecoupleBPHist, "erase RAS for call, fsqid: %lu, addr: %lx, size: %d\n", it->first, streamRAS.top(), streamRAS.size());
+                    streamRAS.pop();
+                } else if (restore.wasReturn) {
+                    DPRINTF(DecoupleBPHist, "erase RAS for return, fsqid: %lu, addr: %lx, size: %d\n", it->first, restore.predTarget, streamRAS.size());
+                    streamRAS.push(restore.predTarget);
+                }
+            }
+        }
+        if (is_call && streamRAS.size() < RASMaxSize) {
+            DPRINTF(DecoupleBP, "Use stream RAS for call\n");
+            streamRAS.push(stream.exeStreamEnd);
+            stream.useRAS = true;
+        } else if (is_return && !streamRAS.empty()) {
+            DPRINTF(DecoupleBP, "Use stream RAS for ret\n");
+            streamRAS.pop();
+            stream.useRAS = true;
+        }
+
 
         // clear younger fsq entries
         auto erase_it = fetchStreamQueue.upper_bound(stream_id);
@@ -693,12 +720,17 @@ DecoupledBPU::makeNewPredictionAndInsertFsq()
     // s0StreamPC
     entry.streamStart = s0StreamPC;
     if (s0UbtbPred.valid) {
+        useStreamRAS();
+
         entry.streamEnded = true;
         entry.predStreamEnd = s0UbtbPred.controlAddr + s0UbtbPred.controlSize;
         entry.predBranchAddr = s0UbtbPred.controlAddr;
         entry.predTarget = s0UbtbPred.nextStream;
         s0StreamPC = s0UbtbPred.nextStream;
         entry.history = s0UbtbPred.history;
+        entry.useRAS = s0UbtbPred.useRAS;
+        entry.wasCall = s0UbtbPred.endIsCall;
+        entry.wasReturn = s0UbtbPred.endIsRet;
 
         auto hashed_path =
             computePathHash(s0UbtbPred.controlAddr, s0UbtbPred.nextStream);

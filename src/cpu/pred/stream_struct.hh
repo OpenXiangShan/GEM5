@@ -40,6 +40,11 @@ struct FetchStream
     bool hasEnteredFtq;
     bool resolved;
 
+    // RAS
+    bool useRAS;
+    bool wasCall;
+    bool wasReturn;
+
     boost::dynamic_bitset<> history;
 
     FetchStream()
@@ -56,7 +61,10 @@ struct FetchStream
         , exeBranchAddr(0)
         , exeBranchType(0)
         , hasEnteredFtq(0)
-        , resolved(false) {}
+        , resolved(false)
+        , useRAS(false)
+        , wasCall(false) 
+        , wasReturn(false) {}
 
     // the default exe result should be consistent with prediction
     void setDefaultResolve() {
@@ -102,6 +110,7 @@ struct StreamPrediction
     bool valid;
     bool endIsCall;
     bool endIsRet;
+    bool useRAS;
     bool rasUpdated;
     boost::dynamic_bitset<> history;
 };
