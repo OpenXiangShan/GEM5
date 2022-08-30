@@ -24,17 +24,15 @@ DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
 void
 DecoupledBPU::useStreamRAS()
 {
-    if (s0UbtbPred.endIsCall && streamRAS.size() < RASMaxSize) {
+    if (s0UbtbPred.endIsCall) {
         DPRINTF(DecoupleBPHist, "%lu, Use stream RAS for call, addr: %lx, size: %d\n", fsqId, s0UbtbPred.controlAddr + s0UbtbPred.controlSize, streamRAS.size());
         streamRAS.push(s0UbtbPred.controlAddr + s0UbtbPred.controlSize);
-        s0UbtbPred.useRAS = true;
+        dumpRAS();
     } else if (s0UbtbPred.endIsRet && !streamRAS.empty()) {
-        DPRINTF(DecoupleBPHist, "%lu, Use stream RAS for ret, size: %d\n", fsqId, streamRAS.size());
+        DPRINTF(DecoupleBPHist, "%lu, Use stream RAS for ret, nextStream: %lx, size: %d\n", fsqId, streamRAS.top(), streamRAS.size());
         s0UbtbPred.nextStream = streamRAS.top();
         streamRAS.pop();
-        s0UbtbPred.useRAS = true;
-    } else {
-        s0UbtbPred.useRAS = false;
+        dumpRAS();
     }
 }
 
@@ -181,6 +179,27 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
     FetchTargetId ftq_demand_stream_id;
     stream.resolved = true;
 
+    // restore RAS
+    dumpRAS();
+    auto find_it = fetchStreamQueue.find(stream_id);
+    for (auto it = --fetchStreamQueue.end();it != find_it;--it) {
+        auto restore = it->second;
+        if (restore.wasCall && !streamRAS.empty()) {
+            DPRINTF(DecoupleBPHist, "erase RAS for call, fsqid: %lu, addr: %lx, size: %d\n", it->first, streamRAS.top(), streamRAS.size());
+            streamRAS.pop();
+        } else if (restore.wasReturn) {
+            DPRINTF(DecoupleBPHist, "erase RAS for return, fsqid: %lu, addr: %lx, size: %d\n", it->first, restore.predTarget, streamRAS.size());
+            streamRAS.push(restore.predTarget);
+        }
+    }
+    if (find_it->second.wasCall && !streamRAS.empty()) {
+        DPRINTF(DecoupleBPHist, "erase RAS for call, fsqid: %lu, addr: %lx, size: %d\n", it->first, streamRAS.top(), streamRAS.size());
+        streamRAS.pop();
+    } else if (find_it->second.wasReturn) {
+        DPRINTF(DecoupleBPHist, "erase RAS for return, fsqid: %lu, addr: %lx, size: %d\n", it->first, find_it->second.predTarget, streamRAS.size());
+        streamRAS.push(find_it->second.predTarget);
+    }
+
     if (actually_taken) {
         stream.exeEnded = true;
         stream.exeBranchAddr = control_pc.instAddr();
@@ -195,29 +214,12 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
                            control_pc.instAddr(), corr_target.instAddr(),
                            control_inst_size,
                            actually_taken, stream.history, endType);
-
-        // restore RAS
-        auto find_it = fetchStreamQueue.find(stream_id);
-        for (auto it = --fetchStreamQueue.end();it != find_it;--it) {
-            auto restore = it->second;
-            if (restore.useRAS) {
-                if (restore.wasCall) {
-                    DPRINTF(DecoupleBPHist, "erase RAS for call, fsqid: %lu, addr: %lx, size: %d\n", it->first, streamRAS.top(), streamRAS.size());
-                    streamRAS.pop();
-                } else if (restore.wasReturn) {
-                    DPRINTF(DecoupleBPHist, "erase RAS for return, fsqid: %lu, addr: %lx, size: %d\n", it->first, restore.predTarget, streamRAS.size());
-                    streamRAS.push(restore.predTarget);
-                }
-            }
-        }
-        if (is_call && streamRAS.size() < RASMaxSize) {
-            DPRINTF(DecoupleBP, "Use stream RAS for call\n");
+        if (is_call) {
+            DPRINTF(DecoupleBPHist, "%lu, Use stream RAS for call, addr: %lx, size: %d\n", fsqId, stream.exeStreamEnd, streamRAS.size());
             streamRAS.push(stream.exeStreamEnd);
-            stream.useRAS = true;
         } else if (is_return && !streamRAS.empty()) {
-            DPRINTF(DecoupleBP, "Use stream RAS for ret\n");
+            DPRINTF(DecoupleBPHist, "%lu, Use stream RAS for ret, nextStream: %lx, size: %d\n", fsqId, streamRAS.top(), streamRAS.size());
             streamRAS.pop();
-            stream.useRAS = true;
         }
 
 
@@ -316,7 +318,7 @@ DecoupledBPU::nonControlSquash(unsigned target_id, unsigned stream_id,
                                const PCStateBase &inst_pc,
                                const InstSeqNum seq, ThreadID tid)
 {
-    DPRINTF(DecoupleBP,
+    DPRINTF(DecoupleBPHist,
             "non control squash: target id: %lu, stream id: %lu, inst_pc: %x, "
             "seq: %lu\n",
             target_id, stream_id, inst_pc.instAddr(), seq);
@@ -395,7 +397,7 @@ DecoupledBPU::trapSquash(unsigned target_id, unsigned stream_id,
                          Addr last_committed_pc, const PCStateBase &inst_pc,
                          ThreadID tid)
 {
-    DPRINTF(DecoupleBP,
+    DPRINTF(DecoupleBPHist,
             "trap squash: target id: %lu, stream id: %lu, inst_pc: %#lx\n",
             target_id, stream_id, inst_pc.instAddr());
     squashing = true;
@@ -428,6 +430,20 @@ DecoupledBPU::trapSquash(unsigned target_id, unsigned stream_id,
     histShiftIn(hashed_path, s0History);
     boost::to_string(s0History, buf1);
     DPRINTF(DecoupleBP, "Shift in history %s\n", buf1.c_str());
+
+    // restore RAS
+    dumpRAS();
+    auto find_it = fetchStreamQueue.find(stream_id);
+    for (auto it = --fetchStreamQueue.end();it != find_it;--it) {
+        auto restore = it->second;
+        if (restore.wasCall && !streamRAS.empty()) {
+            DPRINTF(DecoupleBPHist, "erase RAS for call, fsqid: %lu, addr: %lx, size: %d\n", it->first, streamRAS.top(), streamRAS.size());
+            streamRAS.pop();
+        } else if (restore.wasReturn) {
+            DPRINTF(DecoupleBPHist, "erase RAS for return, fsqid: %lu, addr: %lx, size: %d\n", it->first, restore.predTarget, streamRAS.size());
+            streamRAS.push(restore.predTarget);
+        }
+    }
 
     auto erase_it = fetchStreamQueue.upper_bound(stream_id);
     while (erase_it != fetchStreamQueue.end()) {
@@ -728,7 +744,6 @@ DecoupledBPU::makeNewPredictionAndInsertFsq()
         entry.predTarget = s0UbtbPred.nextStream;
         s0StreamPC = s0UbtbPred.nextStream;
         entry.history = s0UbtbPred.history;
-        entry.useRAS = s0UbtbPred.useRAS;
         entry.wasCall = s0UbtbPred.endIsCall;
         entry.wasReturn = s0UbtbPred.endIsRet;
 

@@ -321,7 +321,14 @@ class DecoupledBPU : public BPredUnit
     std::string buf1, buf2;
 
     std::stack<Addr> streamRAS;
-    unsigned int RASMaxSize{32};
+
+    void dumpRAS() {
+        auto ras = streamRAS;
+        while(!ras.empty()) {
+            DPRINTF(DecoupleBP, "RAS: %#lx\n", ras.top());
+            ras.pop();
+        }
+    }
 };
 
 }  // namespace branch_prediction
