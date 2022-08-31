@@ -17,18 +17,22 @@ namespace branch_prediction {
 
 class StreamRas {
     std::vector<Addr> ras;
-    std::vector<uint32_t> rasCnt;
     int32_t head_ptr;
     uint32_t maxSize;
 
 public:
+    inline void set(uint32_t idx,Addr pc){
+        assert(idx < maxSize);
+        ras[idx] = pc;
+    }
     StreamRas(uint32_t size);
-    //push callpc + 4
-    void push(Addr nextPC);
-    //return the ret pc and idx in the ras
+    //return the old ras head
+    std::pair<Addr, uint32_t> push(Addr nextPC);
+    //return the old ras head
     std::pair<Addr, uint32_t> pop();
 
     void restore(Addr top, uint32_t topIdx);
+    void callrestore(uint32_t topIdx);
 
 };
 }

@@ -6,7 +6,7 @@ namespace branch_prediction
 {
 
 DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
-    : BPredUnit(p), fetchTargetQueue(p.ftq_size), historyBits(p.maxHistLen), streamTAGE(p.stream_tage), streamRas(new StreamRas(64))
+    : BPredUnit(p), fetchTargetQueue(p.ftq_size), historyBits(p.maxHistLen), streamTAGE(p.stream_tage), streamRas(new StreamRas(512))
 {
     assert(streamTAGE);
 
@@ -27,15 +27,17 @@ DecoupledBPU::tick()
     if (!squashing) {
         DPRINTF(DecoupleBP, "DecoupledBPU::tick()\n");
         s0UbtbPred = streamTAGE->getStream();
+        s0UbtbPred.topIdx=0;
         if(s0UbtbPred.valid){
             if (s0UbtbPred.endType == StreamEndType::Call) {
-                streamRas->push(s0UbtbPred.controlAddr + 4);
+                auto rasTop = streamRas->push(s0UbtbPred.controlAddr + s0UbtbPred.controlSize);
+                s0UbtbPred.topIdx = rasTop.second;
             }
             else if (s0UbtbPred.endType == StreamEndType::Return) {
                 stats.RASUsed++;
                 auto rasTop = streamRas->pop();
                 s0UbtbPred.nextStream = rasTop.first;
-                s0UbtbPred.retIdx = rasTop.second;
+                s0UbtbPred.topIdx = rasTop.second;
             }
         }
         tryEnqFetchTarget();
@@ -162,12 +164,19 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
     assert(it != fetchStreamQueue.end());
     auto& stream = it->second;
 
-    if (it->second.endType == StreamEndType::Return) {
+    for (auto iter = --(fetchStreamQueue.end());iter != it;--iter) {
+        auto missEntry = iter->second;
+        if (missEntry.endType == StreamEndType::Return) {
+            streamRas->set(missEntry.topIdx,missEntry.predTarget);
+        }
+    }
+    if(it->second.endType == StreamEndType::Call){
         ++stats.RASIncorrect;
-        streamRas->restore(it->second.predTarget, it->second.retIdx);
-        // if (is_return) {
-        //     return;
-        // }
+        streamRas->callrestore(it->second.topIdx);
+    }
+    else if (it->second.endType == StreamEndType::Return) {
+        ++stats.RASIncorrect;
+        streamRas->restore(it->second.predTarget, it->second.topIdx);
     }
 
     
@@ -384,12 +393,20 @@ DecoupledBPU::trapSquash(unsigned target_id, unsigned stream_id,
     assert(it != fetchStreamQueue.end());
     auto &stream = it->second;
 
-    if (it->second.endType == StreamEndType::Return) {
+    //pop pop push will refill the ras data,so we need to restore the correct data
+    for (auto iter = --(fetchStreamQueue.end());iter != it;--iter) {
+        auto missEntry = iter->second;
+        if (missEntry.endType == StreamEndType::Return) {
+            streamRas->set(missEntry.topIdx,missEntry.predTarget);
+        }
+    }
+    if(it->second.endType == StreamEndType::Call){
         ++stats.RASIncorrect;
-        streamRas->restore(it->second.predTarget, it->second.retIdx);
-        // if (is_return) {
-        //     return;
-        // }
+        streamRas->callrestore(it->second.topIdx);
+    }
+    else if (it->second.endType == StreamEndType::Return) {
+        ++stats.RASIncorrect;
+        streamRas->restore(it->second.predTarget, it->second.topIdx);
     }
 
     stream.exeEnded = true;
@@ -401,7 +418,7 @@ DecoupledBPU::trapSquash(unsigned target_id, unsigned stream_id,
 
     streamTAGE->update(stream.streamStart,
                         stream.exeBranchAddr, stream.exeTarget,
-                        4, true, stream.endType, stream.history);
+                        4, true, StreamEndType::None, stream.history);
 
     historyManager.squash(stream_id, true, last_committed_pc, inst_pc.instAddr());
 
@@ -420,6 +437,7 @@ DecoupledBPU::trapSquash(unsigned target_id, unsigned stream_id,
     while (erase_it != fetchStreamQueue.end()) {
         DPRINTF(DecoupleBP, "erasing entry %lu\n", erase_it->first);
         printStream(erase_it->second);
+
         fetchStreamQueue.erase(erase_it++);
     }
 
@@ -713,7 +731,7 @@ DecoupledBPU::makeNewPredictionAndInsertFsq()
         entry.predTarget = s0UbtbPred.nextStream;
         s0StreamPC = s0UbtbPred.nextStream;
         entry.history = s0UbtbPred.history;
-        entry.retIdx = s0UbtbPred.retIdx;
+        entry.topIdx = s0UbtbPred.topIdx;
         entry.endType = s0UbtbPred.endType;
 
         auto hashed_path =

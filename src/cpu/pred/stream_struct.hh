@@ -45,7 +45,7 @@ struct FetchStream
     bool hasEnteredFtq;
     bool resolved;
 
-    uint32_t retIdx;
+    uint32_t topIdx;
     StreamEndType endType;
 
     boost::dynamic_bitset<> history;
@@ -110,7 +110,7 @@ struct StreamPrediction
     bool valid;
     bool endIsRet;
     bool rasUpdated;
-    Addr retIdx;
+    Addr topIdx;
     StreamEndType endType;
     boost::dynamic_bitset<> history;
 };
