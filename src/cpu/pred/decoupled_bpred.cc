@@ -146,8 +146,8 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
 {
     bool is_conditional = static_inst->isCondCtrl();
     bool is_indirect = static_inst->isIndirectCtrl();
-    bool is_call = static_inst->isCall();
-    bool is_return = static_inst->isReturn();
+    bool is_call = static_inst->isCall() && !static_inst->isNonSpeculative();
+    bool is_return = static_inst->isReturn() && !static_inst->isNonSpeculative();
     EndType endType = END_TYPE_NONE;
 
     if (is_conditional) {

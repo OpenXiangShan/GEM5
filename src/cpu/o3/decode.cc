@@ -296,7 +296,7 @@ Decode::squash(const DynInstPtr &inst, ThreadID tid)
     if (inst->isControl()) {
         set(toFetch->decodeInfo[tid].nextPC, *inst->branchTarget());
     } else {
-        PCStateBase *npc_ptr = inst->pcState().clone();
+        std::unique_ptr<PCStateBase> npc_ptr(inst->pcState().clone());
         npc_ptr->as<RiscvISA::PCState>().set(inst->pcState().getFallThruPC());
         set(toFetch->decodeInfo[tid].nextPC, *npc_ptr);
     }
@@ -747,6 +747,13 @@ Decode::decodeInsts(ThreadID tid)
                 inst->setPredTarg(*target);
                 break;
             }
+        }
+        if (inst->isNonSpeculative() && inst->readPredTaken()) {
+            // TODO: redirect to fall thru
+            std::unique_ptr<PCStateBase> npc(inst->pcState().clone());
+            npc->as<RiscvISA::PCState>().set(inst->pcState().getFallThruPC());
+            inst->setPredTaken(false);
+            inst->setPredTarg(*npc);
         }
     }
 
