@@ -4,6 +4,7 @@
 #include <vector>
 #include <queue>
 #include <utility> 
+#include <stack>
 
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/fetch_target_queue.hh"
@@ -321,7 +322,11 @@ class DecoupledBPU : public BPredUnit
     std::string buf1, buf2;
 
     std::stack<Addr> streamRAS;
-    unsigned int RASMaxSize{32};
+
+    void dumpRAS() {
+        for (std::stack<Addr> dump = streamRAS; !dump.empty(); dump.pop())
+            DPRINTF(DecoupleBPHist, "RAS: %lx\n", dump.top());
+    }
 };
 
 }  // namespace branch_prediction

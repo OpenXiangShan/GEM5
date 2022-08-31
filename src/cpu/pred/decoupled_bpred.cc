@@ -24,17 +24,15 @@ DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
 void
 DecoupledBPU::useStreamRAS()
 {
-    if (s0UbtbPred.endIsCall && streamRAS.size() < RASMaxSize) {
+    if (s0UbtbPred.endIsCall) {
         DPRINTF(DecoupleBPHist, "%lu, Use stream RAS for call, addr: %lx, size: %d\n", fsqId, s0UbtbPred.controlAddr + s0UbtbPred.controlSize, streamRAS.size());
         streamRAS.push(s0UbtbPred.controlAddr + s0UbtbPred.controlSize);
-        s0UbtbPred.useRAS = true;
+        dumpRAS();
     } else if (s0UbtbPred.endIsRet && !streamRAS.empty()) {
-        DPRINTF(DecoupleBPHist, "%lu, Use stream RAS for ret, size: %d\n", fsqId, streamRAS.size());
+        DPRINTF(DecoupleBPHist, "%lu, Use stream RAS for ret, nextStream: %lx, size: %d\n", fsqId, streamRAS.top(), streamRAS.size());
         s0UbtbPred.nextStream = streamRAS.top();
         streamRAS.pop();
-        s0UbtbPred.useRAS = true;
-    } else {
-        s0UbtbPred.useRAS = false;
+        dumpRAS();
     }
 }
 
@@ -181,6 +179,27 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
     FetchTargetId ftq_demand_stream_id;
     stream.resolved = true;
 
+    // restore ras
+    DPRINTF(DecoupleBPHist, "dump ras before control squash\n");
+    dumpRAS();
+    for (auto iter = --(fetchStreamQueue.end());iter != it;--iter) {
+        auto restore = iter->second;
+        if (restore.wasCall) {
+            DPRINTF(DecoupleBPHist, "erase call in control squash, fsqid: %lu\n", iter->first);
+            streamRAS.pop();
+        } else if (restore.wasReturn) {
+            DPRINTF(DecoupleBPHist, "erase return in control squash, fsqid: %lu\n", iter->first);
+            streamRAS.push(restore.predTarget);
+        }
+    }
+    if (stream.wasCall) {
+        DPRINTF(DecoupleBPHist, "erase call in control squash, fsqid: %lu\n", it->first);
+        streamRAS.pop();
+    } else if (stream.wasReturn) {
+        DPRINTF(DecoupleBPHist, "erase return in control squash, fsqid: %lu\n", it->first);
+        streamRAS.push(stream.predTarget);
+    }
+
     if (actually_taken) {
         stream.exeEnded = true;
         stream.exeBranchAddr = control_pc.instAddr();
@@ -191,35 +210,18 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
         stream.wasCall = is_call;
         stream.wasReturn = is_return;
 
+        if (stream.wasCall) {
+            DPRINTF(DecoupleBPHist, "use ras for call in control squash, fsqid: %lu\n, push addr: %lx", it->first, stream.exeStreamEnd);
+            streamRAS.push(stream.exeStreamEnd);
+        } else if (stream.wasReturn & !streamRAS.empty()) {
+            DPRINTF(DecoupleBPHist, "use ras for return in control squash, fsqid: %lu\n", it->first);
+            streamRAS.pop();
+        }
+
         streamTAGE->update(stream.streamStart,
                            control_pc.instAddr(), corr_target.instAddr(),
                            control_inst_size,
                            actually_taken, stream.history, endType);
-
-        // restore RAS
-        auto find_it = fetchStreamQueue.find(stream_id);
-        for (auto it = --fetchStreamQueue.end();it != find_it;--it) {
-            auto restore = it->second;
-            if (restore.useRAS) {
-                if (restore.wasCall) {
-                    DPRINTF(DecoupleBPHist, "erase RAS for call, fsqid: %lu, addr: %lx, size: %d\n", it->first, streamRAS.top(), streamRAS.size());
-                    streamRAS.pop();
-                } else if (restore.wasReturn) {
-                    DPRINTF(DecoupleBPHist, "erase RAS for return, fsqid: %lu, addr: %lx, size: %d\n", it->first, restore.predTarget, streamRAS.size());
-                    streamRAS.push(restore.predTarget);
-                }
-            }
-        }
-        if (is_call && streamRAS.size() < RASMaxSize) {
-            DPRINTF(DecoupleBP, "Use stream RAS for call\n");
-            streamRAS.push(stream.exeStreamEnd);
-            stream.useRAS = true;
-        } else if (is_return && !streamRAS.empty()) {
-            DPRINTF(DecoupleBP, "Use stream RAS for ret\n");
-            streamRAS.pop();
-            stream.useRAS = true;
-        }
-
 
         // clear younger fsq entries
         auto erase_it = fetchStreamQueue.upper_bound(stream_id);
@@ -293,6 +295,9 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
     }
     dumpFsq("After control squash");
 
+    DPRINTF(DecoupleBPHist, "dump ras after control squash\n");
+    dumpRAS();
+
     s0UbtbPred.valid = false;
 
     fetchTargetQueue.squash(target_id + 1, ftq_demand_stream_id,
@@ -316,7 +321,7 @@ DecoupledBPU::nonControlSquash(unsigned target_id, unsigned stream_id,
                                const PCStateBase &inst_pc,
                                const InstSeqNum seq, ThreadID tid)
 {
-    DPRINTF(DecoupleBP,
+    DPRINTF(DecoupleBPHist,
             "non control squash: target id: %lu, stream id: %lu, inst_pc: %x, "
             "seq: %lu\n",
             target_id, stream_id, inst_pc.instAddr(), seq);
@@ -395,7 +400,7 @@ DecoupledBPU::trapSquash(unsigned target_id, unsigned stream_id,
                          Addr last_committed_pc, const PCStateBase &inst_pc,
                          ThreadID tid)
 {
-    DPRINTF(DecoupleBP,
+    DPRINTF(DecoupleBPHist,
             "trap squash: target id: %lu, stream id: %lu, inst_pc: %#lx\n",
             target_id, stream_id, inst_pc.instAddr());
     squashing = true;
@@ -405,6 +410,28 @@ DecoupledBPU::trapSquash(unsigned target_id, unsigned stream_id,
     auto it = fetchStreamQueue.find(stream_id);
     assert(it != fetchStreamQueue.end());
     auto &stream = it->second;
+
+    // restore ras
+    DPRINTF(DecoupleBPHist, "dump ras before trap squash\n");
+    dumpRAS();
+    for (auto iter = --(fetchStreamQueue.end());iter != it;--iter) {
+        auto restore = iter->second;
+        if (restore.wasCall) {
+            DPRINTF(DecoupleBPHist, "erase call in trap squash, fsqid: %lu\n", iter->first);
+            streamRAS.pop();
+        } else if (restore.wasReturn) {
+            DPRINTF(DecoupleBPHist, "erase return in trap squash, fsqid: %lu\n", iter->first);
+            streamRAS.push(restore.predTarget);
+        }
+    }
+    if (stream.wasCall) {
+        DPRINTF(DecoupleBPHist, "erase call in trap squash, fsqid: %lu\n", it->first);
+        streamRAS.pop();
+    } else if (stream.wasReturn) {
+        DPRINTF(DecoupleBPHist, "erase return in trap squash, fsqid: %lu\n", it->first);
+        streamRAS.push(stream.predTarget);
+    }
+
     stream.exeEnded = true;
     stream.exeBranchAddr = last_committed_pc;
     stream.exeBranchType = 1;
@@ -451,6 +478,10 @@ DecoupledBPU::trapSquash(unsigned target_id, unsigned stream_id,
             "Id=%lu, Fetch demanded target Id=%lu\n",
             fsqId, s0StreamPC, fetchTargetQueue.getEnqState().streamId,
             fetchTargetQueue.getSupplyingTargetId());
+
+    // restore ras
+    DPRINTF(DecoupleBPHist, "dump ras after trap squash\n");
+    dumpRAS();
 }
 
 void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
@@ -728,7 +759,6 @@ DecoupledBPU::makeNewPredictionAndInsertFsq()
         entry.predTarget = s0UbtbPred.nextStream;
         s0StreamPC = s0UbtbPred.nextStream;
         entry.history = s0UbtbPred.history;
-        entry.useRAS = s0UbtbPred.useRAS;
         entry.wasCall = s0UbtbPred.endIsCall;
         entry.wasReturn = s0UbtbPred.endIsRet;
 
