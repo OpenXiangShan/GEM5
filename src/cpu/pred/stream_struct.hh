@@ -41,7 +41,6 @@ struct FetchStream
     bool resolved;
 
     // RAS
-    bool useRAS;
     bool wasCall;
     bool wasReturn;
 
@@ -62,7 +61,6 @@ struct FetchStream
         , exeBranchType(0)
         , hasEnteredFtq(0)
         , resolved(false)
-        , useRAS(false)
         , wasCall(false) 
         , wasReturn(false) {}
 
@@ -110,7 +108,6 @@ struct StreamPrediction
     bool valid;
     bool endIsCall;
     bool endIsRet;
-    bool useRAS;
     bool rasUpdated;
     boost::dynamic_bitset<> history;
 };

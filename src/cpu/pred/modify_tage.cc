@@ -176,6 +176,8 @@ StreamTAGE::putPCHistory(Addr pc, const bitset &history) {
                 pc);
         prediction.valid = false;
         prediction.history = history;
+        prediction.endIsCall = false;
+        prediction.endIsRet = false;
 
     } else {
         DPRINTF(DecoupleBP, "Entry found\n");

@@ -40,6 +40,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "arch/riscv/regs/misc.hh"
 #include "cpu/o3/cpu.hh"
 #include "config/the_isa.hh"
 #include "cpu/activity.hh"
@@ -1732,10 +1733,18 @@ CPU::diffWithNEMU(const DynInstPtr &inst)
     DPRINTF(ValueCommit, "Inst [sn:%lli] %s, NEMU: %#lx, GEM5: %#lx\n",
                 inst->seqNum, "PC", nemu_pc, gem5_pc
                );
-    // auto gem5_mstatus = readMiscRegNoEffect(MISCREG_STATUS, 0);
-    // auto nemu_mstatus = referenceRegFile[DIFFTEST_MSTATUS];
-    // DPRINTF(ValueCommit, "%s: NEMU = %#lx, GEM5 = %#lx\n",
-    //         "mstatus", nemu_mstatus, gem5_mstatus);
+    auto gem5_mstatus = readMiscRegNoEffect(RiscvISA::MISCREG_STATUS, 0);
+    auto nemu_mstatus = referenceRegFile[DIFFTEST_MSTATUS];
+    DPRINTF(ValueCommit, "%s: NEMU = %#lx, GEM5 = %#lx\n",
+            "mstatus", nemu_mstatus, gem5_mstatus);
+
+    if (gem5_mstatus != nemu_mstatus) {
+        warn("Inst [sn:%lli]\n", inst->seqNum);
+        warn("Diff at %s, NEMU: %#lx, GEM5: %#lx\n",
+                "mstatus", nemu_mstatus, gem5_mstatus
+            );
+        panic("mstatus mismatch\n");
+    }
 
     if (inst->numDestRegs() > 0) {
         const auto &dest = inst->staticInst->destRegIdx(0);

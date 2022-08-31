@@ -63,6 +63,7 @@
 #include "cpu/reg_class.hh"
 #include "cpu/static_inst.hh"
 #include "cpu/translation.hh"
+#include "debug/DecoupleBP.hh"
 #include "debug/HtmCpu.hh"
 
 namespace gem5
@@ -543,6 +544,8 @@ class DynInst : public ExecContext, public RefCounted
     {
         std::unique_ptr<PCStateBase> next_pc(pc->clone());
         staticInst->advancePC(*next_pc);
+        DPRINTF(DecoupleBP, "check misprediction next pc=%s and pred pc=%s\n",
+                *next_pc, *predPC);
         return *next_pc != *predPC;
     }
 
