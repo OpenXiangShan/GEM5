@@ -37,6 +37,7 @@
 #include "arch/generic/vec_pred_reg.hh"
 #include "arch/generic/vec_reg.hh"
 #include "cpu/reg_class.hh"
+#include "base/bitunion.hh"
 #include "debug/VecRegs.hh"
 
 namespace gem5
@@ -85,6 +86,15 @@ inline constexpr RegClass vecElemClass =
     RegClass(VecElemClass, VecElemClassName, NumVecRegs * NumVecElemPerVecReg,
             debug::VecRegs).
         ops(vecRegElemClassOps);
+
+BitUnion32(VTYPE)
+    Bitfield<31> vill;
+    Bitfield<7, 0> vtype8;
+    Bitfield<7> vma;
+    Bitfield<6> vta;
+    Bitfield<5, 3> vsew;
+    Bitfield<2, 0> vlmul;
+EndBitUnion(VTYPE)
 
 } // namespace RiscvISA
 } // namespace gem5
