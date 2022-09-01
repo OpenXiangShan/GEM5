@@ -151,21 +151,31 @@ VectorNonSplitInst::generateDisassembly(Addr pc,
 }
 
 std::string VectorArithMicroInst::generateDisassembly(Addr pc,
-        const loader::SymbolTable *symtab) const
+        const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
-    ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
-        << registerName(srcRegIdx(1)) << ", " << registerName(srcRegIdx(0));
+    ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", ";
+    if (machInst.funct3 == 0x3) {
+        // OPIVI
+      ss  << registerName(srcRegIdx(0)) << ", " << machInst.vecimm;
+    } else {
+      ss  << registerName(srcRegIdx(1)) << ", " << registerName(srcRegIdx(0));
+    }
     if (machInst.vm == 0) ss << ", v0.t";
     return ss.str();
 }
 
 std::string VectorArithMacroInst::generateDisassembly(Addr pc,
-        const loader::SymbolTable *symtab) const
+        const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
-    ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
-        << registerName(srcRegIdx(1)) << ", " << registerName(srcRegIdx(0));
+    ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", ";
+    if (machInst.funct3 == 0x3) {
+        // OPIVI
+      ss  << registerName(srcRegIdx(0)) << ", " << machInst.vecimm;
+    } else {
+      ss  << registerName(srcRegIdx(1)) << ", " << registerName(srcRegIdx(0));
+    }
     if (machInst.vm == 0) ss << ", v0.t";
     return ss.str();
 }

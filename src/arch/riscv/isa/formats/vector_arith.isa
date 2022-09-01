@@ -242,6 +242,71 @@ def format VectorIntWideningFormat(code, category, *flags) {{
     decode_block = VectorIntWideningDecodeBlock.subst(iop)
 }};
 
+def format VectorIntNarrowingFormat(code, category, *flags) {{
+    iop = InstObjParams(name, Name, 'VectorArithMacroInst', {'code': code},
+                        flags)
+    inst_name, inst_suffix = name.split("_", maxsplit=1)
+    v0_required = True
+    mask_cond = v0_required
+    need_elem_idx = mask_cond or code.find("ei") != -1
+
+    old_vd_idx = 1
+    dest_reg_id = "vecRegClass[_machInst.vd + _microIdx / 2]"
+    old_dest_reg_id = "vecRegClass[_machInst.vd + _microIdx / 2]"
+
+    if category not in ["OPIVI"]:
+        error("not supported category for VectorIntNarrowingFormat: %s" % category)
+
+    src2_reg_id = ""
+    if inst_suffix in ["wi"]:
+        src2_reg_id = "vecRegClass[_machInst.vs2 + _microIdx]"
+    else :
+        error("unsupported inst suffix for VectorIntNarrowingFormat: %s" % inst_suffix)
+
+    src2_reg_id = "vecRegClass[_machInst.vs2 + _microIdx]"
+
+    set_dest_reg_idx = setDestWrapper(dest_reg_id)
+
+    set_src_reg_idx = ""
+    set_src_reg_idx += setSrcWrapper(src2_reg_id)
+    set_src_reg_idx += setSrcWrapper(old_dest_reg_id)
+
+    if v0_required:
+        set_src_reg_idx += setSrcVm()
+
+    # code
+    if mask_cond:
+        code = maskCondWrapper(code)
+    if need_elem_idx:
+        code = eiDeclarePrefix(code, widening=True)
+    code = loopWrapper(code)
+
+    vm_decl_rd = ""
+    if v0_required:
+        vm_decl_rd = vmDeclAndReadData()
+
+    microiop = InstObjParams(name + "_micro",
+        Name + "Micro",
+        'VectorArithMicroInst',
+        {'code': code,
+         'set_dest_reg_idx': set_dest_reg_idx,
+         'set_src_reg_idx': set_src_reg_idx,
+         'vm_decl_rd': vm_decl_rd,
+         'copy_old_vd': copyOldVd(old_vd_idx)},
+        flags)
+
+    # Because of the use of templates, we had to put all parts in header to
+    # keep the compiler happy.
+    header_output = \
+        VectorIntWideningMicroDeclare.subst(microiop) + \
+        VectorIntWideningMicroConstructor.subst(microiop) + \
+        VectorIntWideningMicroExecute.subst(microiop) + \
+        VectorIntWideningMacroDeclare.subst(iop) + \
+        VectorIntWideningMacroConstructor.subst(iop)
+
+    decode_block = VectorIntWideningDecodeBlock.subst(iop)
+}};
+
 def format VectorIntMaskFormat(code, category, *flags) {{
     iop = InstObjParams(name,
         Name,
