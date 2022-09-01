@@ -2416,7 +2416,7 @@ decode QUADRANT default Unknown::unknown() {
                 // VWXUNARY0
                 0x10: decode VS1 {
                     0x00: VectorNonSplitFormat::vmv_x_s({{
-                        Rd_vu = Vs2_vu[0];
+                        Rd_ud = Vs2_vi[0];
                     }}, OPMVV, VectorDummyOp);
                 }
                 format VectorIntFormat {
@@ -2596,6 +2596,25 @@ decode QUADRANT default Unknown::unknown() {
                     0x0b: vxor_vi({{
                         Vd_vi[i] = Vs2_vi[i] ^ (vi)sext<5>(SIMM5);
                     }}, OPIVI, VectorDummyOp);
+                    0x0c: vrgather_vi({{
+                        Vd_vi[i] = SIMM5 >= vtype_VLMAX(vtype)
+                                ? 0
+                                : Vs2_vi[SIMM5];
+                    }}, OPIVI, VectorDummyOp);
+                    0x0e: vslideup_vi({{
+                        if (i < SIMM5) {
+                            continue;
+                        }
+                        __uint128_t source_element_index = (__uint128_t)i - SIMM5;
+                        Vd_vi[i] = Vs2_vi[source_element_index];
+                    }}, OPIVI, VectorDummyOp);
+                    0x0f: vslidedown_vi({{
+                        if ((i + SIMM5) < (VLEN / vtype_SEW(vtype))) {
+                            Vd_vi[i] = Vs2_vi[i + SIMM5];
+                        } else {
+                            Vd_vi[i] = 0;;
+                        }
+                    }}, OPIVI, VectorDummyOp);
                     0x10: decode VM {
                         0x0: vadc_vim({{
                             Vd_vi[i] = Vs2_vi[i] +
@@ -2633,9 +2652,42 @@ decode QUADRANT default Unknown::unknown() {
                         Vd_vu[i] = Vs2_vu[i] >>
                                     ((vu)SIMM5 & (vtype_SEW(vtype)-1) & 0x1f);
                     }}, OPIVI, VectorDummyOp);
+                    0x2a: vssrl_vi({{
+                        int sh = SIMM5 & (vtype_SEW(vtype) - 1);
+                        __uint128_t val = Vs2_vu[i];
+
+                        roundUnsignedInteger(val, xc->readMiscReg(MISCREG_VXRM), sh);
+
+                        Vd_vu[i] = val >> sh;
+                    }}, OPIVI, VectorDummyOp);
                     0x29: vsra_vi({{
                         Vd_vi[i] = Vs2_vi[i] >>
                                     ((vu)SIMM5 & (vtype_SEW(vtype)-1) & 0x1f);
+                    }}, OPIVI, VectorDummyOp);
+                }
+                format VectorIntNarrowingFormat {
+                    0x2c: vnsrl_wi({{
+                        Vd_vu[i + offset] = Vs2_vwu[i] >> (SIMM5 & (vtype_SEW(vtype) * 2 - 1));
+                    }}, OPIVI, VectorDummyOp);
+                    0x2d: vnsra_wi({{
+                        Vd_vu[i + offset] = Vs2_vwi[i] >> (SIMM5 & (vtype_SEW(vtype) * 2 - 1));
+                    }}, OPIVI, VectorDummyOp);
+                    0x2e: vnclipu_wi({{
+                    __uint128_t result = Vs2_vwu[i];
+                    unsigned shift = SIMM5 & ((vtype_SEW(vtype) * 2) - 1);
+
+                    roundUnsignedInteger(result, xc->readMiscReg(MISCREG_VXRM), shift);
+
+                    result = result >> shift;
+
+                    // saturation
+                    uint64_t sign_mask = UINT64_MAX << vtype_SEW(vtype);
+                    if (result & sign_mask) {
+                        result = UINT64_MAX >> (64 - vtype_SEW(vtype));
+                        xc->setMiscReg(MISCREG_VXSAT, 1);
+                    }
+
+                    Vd_vu[i + offset] = result;
                     }}, OPIVI, VectorDummyOp);
                 }
                 // According to Spec Section 16.6,
@@ -3056,6 +3108,9 @@ decode QUADRANT default Unknown::unknown() {
             // OPMVX
             0x6: decode VFUNCT6 {
                 format VectorIntFormat {
+                    0x10: vmv_s_x({{ // Special case of OPMVX
+                        Vd_vu[0] = Rs1_vu;
+                    }}, OPMVX, VectorDummyOp);
                     0x20: vdivu_vx({{
                         if (Rs1_vu == 0)
                             Vd_vu[i] = (vu)-1;
