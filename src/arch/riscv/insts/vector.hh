@@ -43,6 +43,17 @@ namespace gem5
 namespace RiscvISA
 {
 
+enum VectorRoundingMode {
+    RoundToNearestUp = 0,
+    RoundToNearestEven,
+    RoundDown,
+    RoundToOdd,
+    InvalidRound,
+};
+
+void roundUnsignedInteger(__uint128_t &result, uint32_t xrm, int gb);
+void roundSignedInteger(__int128_t &result, uint32_t xrm, int gb);
+
 /**
  * Base class for Vector Config operations
  */

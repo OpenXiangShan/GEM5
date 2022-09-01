@@ -41,6 +41,56 @@ namespace gem5
 namespace RiscvISA
 {
 
+void roundUnsignedInteger(__uint128_t &result, uint32_t xrm, int gb) {
+  const uint64_t lsb = 1UL << (gb);
+  const uint64_t lsb_half = lsb >> 1;
+  switch (xrm) {
+    case VectorRoundingMode::RoundToNearestUp:
+      result += lsb_half;
+      break;
+    case VectorRoundingMode::RoundToNearestEven:
+      if ((result & lsb_half) && ((result & (lsb_half - 1)) || (result & lsb))) {
+        result += lsb;
+      }
+      break;
+    case VectorRoundingMode::RoundDown:
+      break;
+    case VectorRoundingMode::RoundToOdd:
+      if (result & (lsb - 1)) {
+        result |= lsb;
+      }
+      break;
+    default:
+      printf("error: unknown vector rounding mode\n");
+      exit(1);
+  }
+}
+
+void roundSignedInteger(__int128_t &result, uint32_t xrm, int gb) {
+  const uint64_t lsb = 1UL << (gb);
+  const uint64_t lsb_half = lsb >> 1;
+  switch (xrm) {
+    case VectorRoundingMode::RoundToNearestUp:
+      result += lsb_half;
+      break;
+    case VectorRoundingMode::RoundToNearestEven:
+      if ((result & lsb_half) && ((result & (lsb_half - 1)) || (result & lsb))) {
+        result += lsb;
+      }
+      break;
+    case VectorRoundingMode::RoundDown:
+      break;
+    case VectorRoundingMode::RoundToOdd:
+      if (result & (lsb - 1)) {
+        result |= lsb;
+      }
+      break;
+    default:
+      printf("error: unknown vector rounding mode\n");
+      exit(1);
+  }
+}
+
 std::string
 VConfOp::generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const
 {
