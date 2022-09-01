@@ -184,7 +184,6 @@ def format VectorIntWideningFormat(code, category, *flags) {{
     v0_required = True
     mask_cond = v0_required
     need_elem_idx = mask_cond or code.find("ei") != -1
-
     old_vd_idx = 2
     dest_reg_id = "vecRegClass[_machInst.vd + _microIdx]"
     src1_reg_id = ""
@@ -192,8 +191,6 @@ def format VectorIntWideningFormat(code, category, *flags) {{
         src1_reg_id = "vecRegClass[_machInst.vs1 + _microIdx / 2]"
     elif category in ["OPIVX", "OPMVX"]:
         src1_reg_id = "intRegClass[_machInst.rs1]"
-    elif category == "OPIVI":
-        old_vd_idx = 1
     else:
         error("not supported category for VectorIntFormat: %s" % category)
     src2_reg_id = ""
@@ -206,8 +203,7 @@ def format VectorIntWideningFormat(code, category, *flags) {{
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
 
     set_src_reg_idx = ""
-    if category != "OPIVI":
-        set_src_reg_idx += setSrcWrapper(src1_reg_id)
+    set_src_reg_idx += setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
     set_src_reg_idx += setSrcWrapper(src3_reg_id)
     if v0_required:
