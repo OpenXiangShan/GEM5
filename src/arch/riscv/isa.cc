@@ -384,7 +384,7 @@ ISA::readMiscReg(int misc_reg)
         }
       case MISCREG_VLENB:
         {
-            return vlenb;
+            return VLENB;
         }
         break;
       case MISCREG_VCSR:

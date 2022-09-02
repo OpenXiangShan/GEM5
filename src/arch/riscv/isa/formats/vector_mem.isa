@@ -81,7 +81,7 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags,
 
 def format VleOp(
     memacc_code,
-    ea_code={{ EA = Rs1 + vlenb * microIdx; }},
+    ea_code={{ EA = Rs1 + VLENB * microIdx; }},
     mem_flags=[],
     inst_flags=[]
 ) {{
@@ -92,7 +92,7 @@ def format VleOp(
 
 def format VseOp(
     memacc_code,
-    ea_code={{ EA = Rs1 + vlenb * microIdx; }},
+    ea_code={{ EA = Rs1 + VLENB * microIdx; }},
     mem_flags=[],
     inst_flags=[]
 ) {{
@@ -125,7 +125,7 @@ def format VsmOp(
 
 def format VlWholeOp(
     memacc_code,
-    ea_code={{ EA = Rs1 + vlenb * microIdx; }},
+    ea_code={{ EA = Rs1 + VLENB * microIdx; }},
     mem_flags=[],
     inst_flags=[]
 ) {{
@@ -136,7 +136,7 @@ def format VlWholeOp(
 
 def format VsWholeOp(
     memacc_code,
-    ea_code={{ EA = Rs1 + vlenb * microIdx; }},
+    ea_code={{ EA = Rs1 + VLENB * microIdx; }},
     mem_flags=[],
     inst_flags=[]
 ) {{
@@ -147,7 +147,7 @@ def format VsWholeOp(
 
 def format VlStrideOp(
     memacc_code,
-    ea_code={{ EA = Rs1 + Rs2 * (regIdx * vlenb / elem_size + microIdx); }},
+    ea_code={{ EA = Rs1 + Rs2 * (regIdx * VLENB / elem_size + microIdx); }},
     mem_flags=[],
     inst_flags=[]
 ) {{

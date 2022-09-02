@@ -8,7 +8,7 @@ output header {{
     [[maybe_unused]] decltype(Vd) old_Vd = nullptr;                  \
     xc->getRegOperand(this, idx, &old_vd);                           \
     old_Vd = old_vd.as<std::remove_reference_t<decltype(Vd[0])> >(); \
-    memcpy(Vd, old_Vd, vlenb);
+    memcpy(Vd, old_Vd, VLENB);
 
 #define VRM_REQUIRED                                                         \
         uint_fast8_t frm = xc->readMiscReg(MISCREG_FRM);                     \
@@ -668,7 +668,7 @@ Fault
     %(vm_decl_rd)s;
     %(copy_old_vd)s;
 
-    constexpr uint16_t bit_offset = vlenb / sizeof(ElemType);
+    constexpr uint16_t bit_offset = VLENB / sizeof(ElemType);
     const uint16_t offset = bit_offset * microIdx;
 
     %(code)s;
@@ -776,7 +776,7 @@ Fault
     %(vm_decl_rd)s;
     %(copy_old_vd)s;
 
-    constexpr uint16_t bit_offset = vlenb / sizeof(ElemType);
+    constexpr uint16_t bit_offset = VLENB / sizeof(ElemType);
     const uint16_t offset = bit_offset * microIdx;
 
     %(code)s;

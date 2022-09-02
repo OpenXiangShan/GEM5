@@ -394,13 +394,13 @@ class VMaskMergeMicroInst : public VectorArithMicroInst
             const override {
         vreg_t tmp_d0 = *(vreg_t *)xc->getWritableRegOperand(this, 0);
         auto Vd = tmp_d0.as<uint8_t>();
-        constexpr uint8_t elems_per_vreg = vlenb / sizeof(ElemType);
+        constexpr uint8_t elems_per_vreg = VLENB / sizeof(ElemType);
         size_t bit_cnt = elems_per_vreg;
         vreg_t tmp_s;
         xc->getRegOperand(this, 0, &tmp_s);
         auto s = tmp_s.as<uint8_t>();
         // cp the first result and tail
-        memcpy(Vd, s, vlenb);
+        memcpy(Vd, s, VLENB);
         for (uint8_t i = 1; i < this->_numSrcRegs; i++) {
             xc->getRegOperand(this, i, &tmp_s);
             s = tmp_s.as<uint8_t>();
@@ -429,7 +429,7 @@ class VMaskMergeMicroInst : public VectorArithMicroInst
         for (uint8_t i = 0; i < this->_numSrcRegs; i++) {
             ss << ", " << registerName(srcRegIdx(i));
         }
-        ss << ", offset:" << vlenb / sizeof(ElemType);
+        ss << ", offset:" << VLENB / sizeof(ElemType);
         return ss.str();
     }
 };
