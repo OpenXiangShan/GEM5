@@ -54,6 +54,17 @@ enum VectorRoundingMode {
 void roundUnsignedInteger(__uint128_t &result, uint32_t xrm, int gb);
 void roundSignedInteger(__int128_t &result, uint32_t xrm, int gb);
 
+float
+getVflmul(uint32_t vlmul_encoding);
+
+inline uint32_t getSew(uint32_t vsew) {
+    assert(vsew <= 3);
+    return (8 << vsew);
+}
+
+uint32_t
+getVlmax(VTYPE vtype, uint32_t vlen);
+
 /**
  * Base class for Vector Config operations
  */
@@ -62,12 +73,15 @@ class VConfOp : public RiscvStaticInst
   protected:
     uint64_t bit30;
     uint64_t bit31;
-    uint64_t zimm;
+    uint64_t zimm10;
+    uint64_t zimm11;
     uint64_t uimm;
     VConfOp(const char *mnem, ExtMachInst _extMachInst, OpClass __opClass)
         : RiscvStaticInst(mnem, _extMachInst, __opClass),
           bit30(_extMachInst.bit30), bit31(_extMachInst.bit31),
-          zimm(_extMachInst.zimm_vsetivli), uimm(_extMachInst.uimm_vsetivli)
+          zimm10(_extMachInst.zimm_vsetivli),
+          zimm11(_extMachInst.zimm_vsetvli),
+          uimm(_extMachInst.uimm_vsetivli)
     {}
 
     std::string generateDisassembly(

@@ -46,14 +46,50 @@ def template VConfExecute {{
         %(op_rd)s;
         %(code)s;
 
-        if (vlmax == 0) {
-            vtype_set_vill(vtype);
-            vl = 0;
-        }
-        tc->setMiscReg(MISCREG_VL, vl);
-        tc->setMiscReg(MISCREG_VTYPE, vtype);
         tc->setMiscReg(MISCREG_VSTART, 0);
-        tc->getDecoderPtr()->as<Decoder>().setVlAndVtype(vl, vtype);
+
+        uint32_t vlen = xc->readMiscReg(MISCREG_VLENB) * 8;
+        uint32_t vlmax = getVlmax(xc->readMiscReg(MISCREG_VTYPE), vlen);
+
+        VTYPE new_vtype = requested_vtype;
+        if (xc->readMiscReg(MISCREG_VTYPE) != new_vtype) {
+            vlmax = getVlmax(new_vtype, vlen);
+
+            float vflmul = getVflmul(new_vtype.vlmul);
+
+            uint32_t sew = getSew(new_vtype.vsew);
+
+            uint32_t new_vill =
+                !(vflmul >= 0.125 && vflmul <= 8) ||
+                    sew > std::min(vflmul, 1.0f) * ELEN ||
+                    bits(requested_vtype, 30, 8) != 0;
+            if (new_vill) {
+                vlmax = 0;
+                new_vtype = 0;
+                new_vtype.vill = 1;
+            }
+
+            xc->setMiscReg(MISCREG_VTYPE, new_vtype);
+        }
+
+        uint32_t current_vl = xc->readMiscReg(MISCREG_VL);
+        uint32_t new_vl = 0;
+        if (vlmax == 0) {
+            new_vl = 0;
+        } else if (rd_bits == 0 && rs1_bits == 0) {
+            new_vl = current_vl > vlmax ? vlmax : current_vl;
+        } else if (rd_bits != 0 && rs1_bits == 0) {
+            new_vl = vlmax;
+        } else if (rs1_bits != 0) {
+            new_vl = requested_vl > vlmax ? vlmax : requested_vl;
+        }
+
+        xc->setMiscReg(MISCREG_VL, new_vl);
+
+        tc->getDecoderPtr()->as<Decoder>().setVlAndVtype(new_vl, new_vtype);
+
+        Rd = new_vl;
+
         %(op_wb)s;
         return NoFault;
     }

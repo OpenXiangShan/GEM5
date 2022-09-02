@@ -91,6 +91,20 @@ void roundSignedInteger(__int128_t &result, uint32_t xrm, int gb) {
   }
 }
 
+float
+getVflmul(uint32_t vlmul_encoding) {
+  int vlmul = int8_t(vlmul_encoding << 5) >> 5;
+  float vflmul = vlmul >= 0 ? 1 << vlmul : 1.0 / (1 << -vlmul);
+  return vflmul;
+}
+
+uint32_t
+getVlmax(VTYPE vtype, uint32_t vlen) {
+  uint32_t sew = getSew(vtype.vsew);
+  uint32_t vlmax = (vlen/sew) * getVflmul(vtype.vlmul);
+  return vlmax;
+}
+
 std::string
 VConfOp::generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const
 {
@@ -110,6 +124,10 @@ std::string
 VConfOp::generateZimmDisassembly() const
 {
     std::stringstream s;
+
+    // VSETIVLI uses ZIMM10 and VSETVLI uses ZIMM11
+    uint64_t zimm = (bit31 && bit30) ? zimm10 : zimm11;
+
     bool frac_lmul = bits(zimm, 2);
     int sew = 1 << (bits(zimm, 5, 3) + 3);
     int lmul = bits(zimm, 1, 0);

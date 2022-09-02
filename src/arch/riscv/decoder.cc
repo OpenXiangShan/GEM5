@@ -151,16 +151,10 @@ Decoder::setVl(uint32_t new_vl)
     this->vl = vl;
 }
 
-Decoder::setVlAndVtype(uint32_t vl, uint64_t vtype)
+Decoder::setVlAndVtype(uint32_t vl, VTYPE vtype)
 {
+    this->machVtype = vtype;
     this->machVl = vl;
-
-    this->machVtype.vill = bits(vtype, XLEN - 1);
-    if (GEM5_UNLIKELY(this->machVtype.vill)) {
-        this->machVtype.vtype8 = 0;
-    } else {
-        this->machVtype.vtype8 = bits(vtype, 7, 0);
-    }
 
     this->vConfigDone = true;
 }

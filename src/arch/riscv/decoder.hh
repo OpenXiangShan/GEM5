@@ -91,6 +91,7 @@ class Decoder : public InstDecoder
 
     StaticInstPtr decode(PCStateBase &nextPC) override;
 
+
     void setPCStateWithInstDesc(const bool &inst,
                                   PCStateBase &pc) override;
 
@@ -100,7 +101,7 @@ class Decoder : public InstDecoder
 
     void setVConfigDone();
 
-    void setVlAndVtype(uint32_t vl, uint64_t vtype);
+    void setVlAndVtype(uint32_t vl, VTYPE vtype);
 };
 
 } // namespace RiscvISA

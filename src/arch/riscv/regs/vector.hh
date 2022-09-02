@@ -50,6 +50,8 @@ constexpr unsigned NumVecElemPerVecReg = 4;
 using VecElem = uint64_t;
 constexpr size_t vlenb = NumVecElemPerVecReg * sizeof(VecElem);
 constexpr size_t VLEN = vlenb * 8;
+constexpr uint32_t ELEN = sizeof(VecElem) * 8;
+
 using VecRegContainer =
     gem5::VecRegContainer<vlenb>;
 using vreg_t = VecRegContainer;
