@@ -134,8 +134,10 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
     }
 
     branchPred = params.branchPred;
-
+    
     if (isDecoupledFrontend) {
+        //DecoupledBPU is a subclass of BPredUnit, 
+        //cast branchPred to dbp.
         dbp = dynamic_cast<branch_prediction::DecoupledBPU*>(branchPred);
         assert(dbp);
         usedUpFetchTargets = true;
@@ -522,8 +524,11 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     // this function updates it.
     bool predict_taken;
 
+    //Use the pc to predict, rather than the inst information.
     ThreadID tid = inst->threadNumber;
     if (isDecoupledFrontend) {
+        //Get predict_taken as decoupled predictor,
+        //and check wheather FTQ is used up
         std::tie(predict_taken, usedUpFetchTargets) =
             dbp->decoupledPredict(
                 inst->staticInst, inst->seqNum, next_pc, tid);
@@ -775,6 +780,7 @@ Fetch::doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst,
     // some opportunities to handle interrupts may be missed.
     delayedCommit[tid] = true;
 
+    //After squash, FTQ is empty.
     usedUpFetchTargets = true;
 
     ++fetchStats.squashCycles;
@@ -961,7 +967,11 @@ Fetch::tick()
 
     if (isDecoupledFrontend) {
         assert(dbp);
+        //In order to maintain the state of the predictor,
+        //the tick() function needs to be called every cycle
         dbp->tick();
+        //If FTQ is empty and can't be filled with new block,
+        //set usedUpFetchTargets to true
         usedUpFetchTargets = !dbp->trySupplyFetchWithTarget();
     }
 
@@ -1007,6 +1017,7 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
         } else {
             auto mispred_inst = fromCommit->commitInfo[tid].mispredictInst;
             if (mispred_inst) {
+                //miss prediction
                 dbp->controlSquash(
                     mispred_inst->getFtqId(), mispred_inst->getFsqId(),
                     mispred_inst->pcState(), *fromCommit->commitInfo[tid].pc,
@@ -1014,17 +1025,20 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
                     fromCommit->commitInfo[tid].branchTaken,
                     mispred_inst->seqNum, tid);
             } else if (fromCommit->commitInfo[tid].isTrapSquash) {
+                //trap
                 dbp->trapSquash(
                     fromCommit->commitInfo[tid].squashedTargetId,
                     fromCommit->commitInfo[tid].squashedStreamId,
                     *fromCommit->commitInfo[tid].pc, tid);
 
             } else {
+                //non-control squash, like memory violation
                 if (fromCommit->commitInfo[tid].pc &&
                     fromCommit->commitInfo[tid].squashedStreamId != 0) {
                     DPRINTF(
                         DecoupleBP,
                         "Squash with stream id and target id from IEW\n");
+                    //Only reset pc
                     dbp->nonControlSquash(
                         fromCommit->commitInfo[tid].squashedTargetId,
                         fromCommit->commitInfo[tid].squashedStreamId,
@@ -1068,6 +1082,9 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
             }
         } else {
             auto mispred_inst = fromDecode->decodeInfo[tid].mispredictInst;
+            //Only control squash will be send from decode.
+            //If nconditional jump inst predicted as non-taken,
+            //there will be a squash.
             if (fromDecode->decodeInfo[tid].branchMispredict) {
                 dbp->controlSquash(
                     mispred_inst->getFtqId(), mispred_inst->getFsqId(),
@@ -1152,6 +1169,8 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
     if (isDecoupledFrontend) {
         DPRINTF(DecoupleBP, "Set instruction %lu with stream id %lu, fetch id %lu\n",
                 instruction->seqNum, dbp->getSupplyingStreamId(), dbp->getSupplyingTargetId());
+        //Set fetch stream queue and fetch target queue ID to instruction, 
+        //get ID from decoupled branch predictor
         instruction->setFsqId(dbp->getSupplyingStreamId());
         instruction->setFtqId(dbp->getSupplyingTargetId());
     }
@@ -1256,6 +1275,8 @@ Fetch::fetch(bool &status_change)
 
         }
         if (ftqEmpty()) {
+            //Different from coupled front-end,
+            //fetch should stall if ftq is empty.
             DPRINTF(
                 Fetch, "[tid:%i] Fetch is stalled due to ftq empty\n", tid);
         }
@@ -1384,6 +1405,7 @@ Fetch::fetch(bool &status_change)
             // If we're branching after this instruction, quit fetching
             // from the same block.
             if (!isDecoupledFrontend) {
+                //Only in coupled frontend can we get predict information form instruction.
                 predictedBranch |= this_pc.branching();
             }
             predictedBranch |= lookupAndUpdateNextPC(instruction, *next_pc);
