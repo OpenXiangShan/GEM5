@@ -415,6 +415,8 @@ StreamTAGE::getTag(Addr pc, const bitset& history, int t)
     bitset buf(tableTagBits[t], pc >> tablePcShifts[t]);  // lower bits of PC
     buf.resize(maxHistLen);
     bitset hist(history);  // copy a writable history
+    hist.resize(histLengths[t]);
+    hist.resize(maxHistLen);
     assert(history.size() == buf.size());
     for (unsigned i = 0; i < tagSegments[t]; i++) {
         assert(history.size() == tableTagMasks[t].size());
@@ -431,6 +433,11 @@ StreamTAGE::getIndex(Addr pc, const bitset& history, int t)
     bitset buf(tableIndexBits[t], pc >> tablePcShifts[t]);
     buf.resize(maxHistLen);
     bitset hist(history);  // copy a writable history
+    hist.resize(histLengths[t]);
+    hist.resize(maxHistLen);
+    DPRINTFV(this->debugFlagOn,
+             "Calc index: allocate a %u bit buf, using hist %s\n",
+             tableIndexBits[t], hist);
     for (unsigned i = 0; i < indexSegments[t]; i++) {
         assert(history.size() == tableIndexMasks[t].size());
         auto masked = hist & tableIndexMasks[t];
