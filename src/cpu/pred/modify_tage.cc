@@ -37,11 +37,12 @@ StreamTAGE::StreamTAGE(const Params& p):
         tableIndexBits[i] = ceilLog2(tableSizes[i]);
         tableIndexMasks[i].resize(maxHistLen, true);
         tableIndexMasks[i] >>= (maxHistLen - tableIndexBits[i]);
-        indexSegments[i] = ceil(histLengths[i] / tableIndexBits[i]);
+        indexSegments[i] =
+            ceil((float)histLengths[i] / (float)tableIndexBits[i]);
 
         tableTagMasks[i].resize(maxHistLen, true);
         tableTagMasks[i] >>= (maxHistLen - tableTagBits[i]);
-        tagSegments[i] = ceil(histLengths[i] / tableTagBits[i]);
+        tagSegments[i] = ceil((float)histLengths[i] / (float)tableTagBits[i]);
 
         // indexCalcBuffer[i].resize(maxHistLen, false);
         // tagCalcBuffer[i].resize(maxHistLen, false);
