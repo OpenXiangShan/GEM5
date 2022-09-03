@@ -322,10 +322,12 @@ class DecoupledBPU : public BPredUnit
     std::string buf1, buf2;
 
     std::stack<Addr> streamRAS;
+    
+    bool lastCyclePredicted;
 
     void dumpRAS() {
         for (std::stack<Addr> dump = streamRAS; !dump.empty(); dump.pop())
-            DPRINTF(DecoupleBPHist, "RAS: %lx\n", dump.top());
+            DPRINTF(DecoupleBP, "RAS: %lx\n", dump.top());
     }
 };
 

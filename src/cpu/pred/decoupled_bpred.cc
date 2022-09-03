@@ -55,10 +55,12 @@ DecoupledBPU::tick()
     } else {
         DPRINTF(DecoupleBP, "Squashing, skip this cycle\n");
     }
+    lastCyclePredicted = false;
 
     streamTAGE->tickStart();
     if (!streamQueueFull()) {
         streamTAGE->putPCHistory(s0StreamPC, s0History);
+        lastCyclePredicted = true;
     }
     
     squashing = false;
@@ -551,7 +553,8 @@ DecoupledBPU::tryEnqFetchStream()
         // if queue empty, should make predictions
         if (fetchStreamQueue.empty()) {
             DPRINTF(DecoupleBP, "FSQ is empty\n");
-            makeNewPredictionAndInsertFsq();
+            if (lastCyclePredicted)
+                makeNewPredictionAndInsertFsq();
         } else {
             auto it = fetchStreamQueue.end();
             it--;
@@ -562,7 +565,8 @@ DecoupledBPU::tryEnqFetchStream()
                         "has ended\n",
                         it->first, it->second.streamStart);
                 // make new predictions
-                makeNewPredictionAndInsertFsq();
+                if (lastCyclePredicted)
+                    makeNewPredictionAndInsertFsq();
             } else {
                 // check if current stream hits after miss
                 DPRINTF(DecoupleBP,
