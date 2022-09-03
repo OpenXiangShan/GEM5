@@ -131,6 +131,10 @@ class StreamTAGE : public TimedPredictor
 
   private:
     bool equals(TickedStreamStorage, Addr, Addr, Addr);
+
+    bool debugFlagOn{false};
+
+    unsigned numTablesToAlloc{1};
 };
 
 }

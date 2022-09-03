@@ -19,7 +19,8 @@ StreamTAGE::StreamTAGE(const Params& p):
     tablePcShifts(p.TTagPcShifts),
     histLengths(p.histLengths),
     maxHistLen(p.maxHistLen),
-    dbpstats(this)
+    dbpstats(this),
+    numTablesToAlloc(p.numTablesToAlloc)
 {
     base_predictor.resize(baseTableSize);
     base_predictor_valid.resize(baseTableSize, false);
@@ -360,7 +361,7 @@ StreamTAGE::update(Addr stream_start_pc,
                     way_new.counter = 1;
                     ++allocated;
                     ++start_pos; // do not allocate on consecutive predictors
-                    if (allocated == 2) {
+                    if (allocated == numTablesToAlloc) {
                         break;
                     }
                 } else {

@@ -793,6 +793,7 @@ class StreamTAGE(TimedPredictor):
         [4, 10, 16, 28, 44, 60, 96, 110, 220, 450, 488], "the ITTAGE T1~Tn history length")
     baseTableSize = Param.Unsigned(4096, "size of base predictor")
     maxHistLen = Param.Unsigned(512, "The length of history passed from DBP")
+    numTablesToAlloc = Param.Unsigned(1, "The number of table to allocated each time")
 
 
 class DecoupledBPU(BranchPredictor):
