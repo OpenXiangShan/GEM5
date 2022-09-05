@@ -34,10 +34,11 @@ class StreamTAGE : public TimedPredictor
     struct TickedStreamStorage : public StreamStorage
     {
         uint64_t tick;
+        bool valid;
 
-        public:
-         TickedStreamStorage()
-             : tick(0) {
+      public:
+        TickedStreamStorage() : tick(0)
+        {
             this->bbStart = 0;
             this->controlAddr = 0;
             this->nextStream = 0;
@@ -46,15 +47,35 @@ class StreamTAGE : public TimedPredictor
             this->endIsCall = 0;
             this->endIsRet = 0;
         }
+
+        void set(Tick tick_, Addr stream_start_addr, Addr control_addr,
+                 Addr next_stream, uint8_t control_size, uint8_t hysteresis_,
+                 bool end_is_call, bool end_is_ret, bool valid_)
+        {
+            this->tick = tick_;
+            this->bbStart = stream_start_addr;
+            this->controlAddr = control_addr;
+            this->nextStream = next_stream;
+            this->controlSize = control_size;
+            this->hysteresis = hysteresis_;
+            this->endIsCall = end_is_call;
+            this->endIsRet = end_is_ret;
+            this->valid = valid_;
+        }
     };
 
   private:
     const unsigned delay{1};
 
-    bool lookup_helper(bool, Addr,const bitset&, TickedStreamStorage&, TickedStreamStorage&, int&, int&, int&, int&, int&, bool&);
+    bool lookupHelper(bool flag, Addr streamStart, const bitset& history,
+                       TickedStreamStorage& target,
+                       TickedStreamStorage& alt_target, int& predictor,
+                       int& predictor_index, int& alt_predictor,
+                       int& alt_predictor_index, int& pred_count,
+                       bool& use_alt_pred);
 
   public:
-    StreamTAGE(const Params &p);
+    StreamTAGE(const Params& p);
 
     void tickStart() override;
 
@@ -74,11 +95,12 @@ class StreamTAGE : public TimedPredictor
 
     void commit(Addr, Addr, Addr, bitset&);
 
-    uint64_t makePCHistTag(Addr pc, const bitset &history);
+  private:
+    Addr getBaseIndex(Addr pc);
 
-    uint64_t getIndex(Addr pc, const bitset& ghr, int table);
+    Addr getTageIndex(Addr pc, const bitset& ghr, int table);
 
-    uint64_t getTag(Addr pc, const bitset& ghr, int table);
+    Addr getTageTag(Addr pc, const bitset& ghr, int table);
 
     uint64_t getTableGhrLen(int table);
 
@@ -124,13 +146,11 @@ class StreamTAGE : public TimedPredictor
     };
 
     bitset ghr;
-    std::vector<std::vector<PredEntry>  >targetCache;
+    std::vector<std::vector<PredEntry>> tageTable;
     TickedStreamStorage previous_target;
-    std::vector<bool> base_predictor_valid;
-    std::vector<TickedStreamStorage> base_predictor;
+    std::vector<TickedStreamStorage> baseTable;
 
-  private:
-    bool equals(TickedStreamStorage, Addr, Addr, Addr);
+    bool equals(TickedStreamStorage &entry, Addr stream_start_pc, Addr control_pc, Addr target);
 
     bool debugFlagOn{false};
 
