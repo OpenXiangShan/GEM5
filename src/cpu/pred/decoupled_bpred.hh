@@ -333,6 +333,28 @@ class DecoupledBPU : public BPredUnit
     }
 
     bool debugFlagOn{false};
+
+    struct MispredictEntry {
+        Addr streamStart;
+        Addr controlAddr;
+        unsigned count;
+
+        bool operator<(const MispredictEntry &rhs) const
+        {
+            return count < rhs.count;
+        }
+
+        bool operator==(const MispredictEntry &rhs) const
+        {
+            return count == rhs.count;
+        }
+
+        MispredictEntry() {};
+        MispredictEntry(Addr streamStart, Addr controlAddr) :
+                        streamStart(streamStart), controlAddr(controlAddr), count(1) {} ;
+    };
+
+    std::map<Addr, MispredictEntry> topMispredicts;
 };
 
 }  // namespace branch_prediction

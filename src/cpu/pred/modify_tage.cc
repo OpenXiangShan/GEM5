@@ -528,9 +528,11 @@ StreamTAGE::getTageIndex(Addr pc, const bitset& history, int t)
     bitset hist(history);  // copy a writable history
     hist.resize(histLengths[t]);
     hist.resize(maxHistLen);
+
     DPRINTFV(this->debugFlagOn && ::gem5::debug::DecoupleBPVerbose,
              "Calc index: allocate a %u bit buf, using hist %s\n",
              tableIndexBits[t], hist);
+
     for (unsigned i = 0; i < indexSegments[t]; i++) {
         assert(history.size() == tableIndexMasks[t].size());
         auto masked = hist & tableIndexMasks[t];
