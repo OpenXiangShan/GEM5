@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "base/debug_helper.hh"
 #include "base/intmath.hh"
 #include "base/trace.hh"
 #include "debug/DecoupleBP.hh"
@@ -35,18 +36,23 @@ StreamTAGE::StreamTAGE(const Params& p):
     tagSegments.resize(numPredictors);
     for (unsigned int i = 0; i < p.numPredictors; ++i) {
         //initialize ittage predictor
+        assert(tableSizes.size() >= numPredictors);
         tageTable[i].resize(tableSizes[i]);
 
         tableIndexBits[i] = ceilLog2(tableSizes[i]);
         tableIndexMasks[i].resize(maxHistLen, true);
         tableIndexMasks[i] >>= (maxHistLen - tableIndexBits[i]);
+
+        assert(histLengths.size() >= numPredictors);
         indexSegments[i] =
             ceil((float)histLengths[i] / (float)tableIndexBits[i]);
 
+        assert(tableTagBits.size() >= numPredictors);
         tableTagMasks[i].resize(maxHistLen, true);
         tableTagMasks[i] >>= (maxHistLen - tableTagBits[i]);
         tagSegments[i] = ceil((float)histLengths[i] / (float)tableTagBits[i]);
 
+        assert(tablePcShifts.size() >= numPredictors);
         // indexCalcBuffer[i].resize(maxHistLen, false);
         // tagCalcBuffer[i].resize(maxHistLen, false);
     }
@@ -117,7 +123,8 @@ StreamTAGE::lookupHelper(bool flag, Addr stream_start, const bitset& history, Ti
     }
     pred_count = pred_counts;
     if (pred_counts > 0) {
-
+        DPRINTFV(debugFlagOn, "Select predictor %d, index %d\n", predictor_1, predictor_index_1);
+        DPRINTFV(debugFlagOn, "Select predictor %d, index %d\n", predictor_2, predictor_index_2);
         dbpstats.providerTableDist.sample(predictor_1);
         const auto& way1 = tageTable[predictor_1][predictor_index_1];
         const auto& way2 = tageTable[predictor_2][predictor_index_2];
@@ -142,8 +149,7 @@ StreamTAGE::lookupHelper(bool flag, Addr stream_start, const bitset& history, Ti
         use_alt_pred = false;
         target = baseTable[base_table_idx];
         pred_count = pred_counts;
-        // no need to set
-        if (baseTable[base_table_idx].valid &&
+        if (target.valid &&
             stream_start >= target.bbStart &&
             stream_start <= target.controlAddr) {
 
@@ -217,7 +223,7 @@ StreamTAGE::getStream() {
 }
 
 bool
-StreamTAGE::equals(TickedStreamStorage& t, Addr stream_start_pc,
+StreamTAGE::equals(const TickedStreamStorage& t, Addr stream_start_pc,
                    Addr control_pc, Addr target)
 {
     return (t.bbStart == stream_start_pc) && (t.controlAddr == control_pc) &&
@@ -230,8 +236,11 @@ StreamTAGE::update(Addr stream_start_pc,
                    unsigned control_size,
                    bool actually_taken,
                    const bitset &history, EndType endType) {
+    if (stream_start_pc == ObservingPC) {
+        debugFlagOn = true;
+    }
     if (control_pc < stream_start_pc) {
-        DPRINTF(DecoupleBP,
+        DPRINTFV(this->debugFlagOn,
                 "Control PC %#lx is before stream start %#lx, ignore it\n",
                 control_pc,
                 stream_start_pc);
@@ -318,7 +327,13 @@ StreamTAGE::update(Addr stream_start_pc,
             if (way_sel.counter > 0) {
                 --way_sel.counter;
                 --way_sel.target.hysteresis;
+                DPRINTFV(this->debugFlagOn,
+                         "Decrement counter to %d for predictor %d index %d\n",
+                         way_sel.counter, predictor_sel, predictor_index_sel);
             } else {
+                DPRINTFV(this->debugFlagOn,
+                         "predictor %d index %d now conf=%d, replace it\n",
+                         predictor_sel, predictor_index_sel, way_sel.counter);
                 way_sel.target.tick = curTick();
                 way_sel.target.bbStart = stream_start_pc;
                 way_sel.target.controlAddr = control_pc;
@@ -348,6 +363,9 @@ StreamTAGE::update(Addr stream_start_pc,
                 uint32_t new_index = getTageIndex(stream_start_pc, history, start_pos);
                 auto& way_new = tageTable[start_pos][new_index];
                 if (way_new.useful == 0) {
+                    DPRINTFV(this->debugFlagOn,
+                             "Allocated in table %d index[%d], histlen=%u\n",
+                             start_pos, new_index, histLengths[start_pos]);
                     if (reset_counter < 255) reset_counter++;
                     way_new.valid = true;
                     way_new.target.tick = curTick();
@@ -369,6 +387,9 @@ StreamTAGE::update(Addr stream_start_pc,
                         break;
                     }
                 } else {
+                    DPRINTFV(this->debugFlagOn,
+                             "Table %d index[%d] histlen=%u is useful\n",
+                             start_pos, new_index, histLengths[start_pos]);
                     // reset useful bits
                     if (reset_counter > 0) {
                         --reset_counter;
@@ -443,6 +464,9 @@ StreamTAGE::getTageIndex(Addr pc, const bitset& history, int t)
     bitset hist(history);  // copy a writable history
     hist.resize(histLengths[t]);
     hist.resize(maxHistLen);
+    DPRINTFV(this->debugFlagOn,
+             "Calc index: allocate a %u bit buf, using hist %s\n",
+             tableIndexBits[t], hist);
     for (unsigned i = 0; i < indexSegments[t]; i++) {
         assert(history.size() == tableIndexMasks[t].size());
         auto masked = hist & tableIndexMasks[t];

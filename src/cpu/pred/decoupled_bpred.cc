@@ -1,5 +1,7 @@
 #include "cpu/pred/decoupled_bpred.hh"
 
+#include "base/debug_helper.hh"
+
 namespace gem5
 {
 namespace branch_prediction
@@ -175,7 +177,12 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
     assert(it != fetchStreamQueue.end());
     auto &stream = it->second;
 
-    DPRINTF(DecoupleBPHist,
+    auto pc = stream.streamStart;
+    if (pc == ObservingPC) {
+        debugFlagOn = true;
+    }
+
+    DPRINTFV(this->debugFlagOn,
             "Control squash: ftq_id=%lu, fsq_id=%lu, stream start=%#lx,"
             " control_pc=%#lx, corr_target=%#lx, is_conditional=%u, "
             "is_indirect=%u, actually_taken=%u, branch seq: %lu\n",
@@ -183,13 +190,13 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
             corr_target.instAddr(), is_conditional, is_indirect,
             actually_taken, seq);
 
-    dumpFsq("Before control squash");
+    if (pc == ObservingPC) dumpFsq("Before control squash");
 
     FetchTargetId ftq_demand_stream_id;
     stream.resolved = true;
 
     // restore ras
-    DPRINTF(DecoupleBPHist, "dump ras before control squash\n");
+    DPRINTFV(this->debugFlagOn, "dump ras before control squash\n");
     dumpRAS();
     for (auto iter = --(fetchStreamQueue.end());iter != it;--iter) {
         auto restore = iter->second;
@@ -242,14 +249,14 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
 
         boost::to_string(s0History, buf1);
         boost::to_string(stream.history, buf2);
-        DPRINTF(DecoupleBP, "Recover history %s\nto %s\n", buf1.c_str(),
+        DPRINTFV(this->debugFlagOn, "Recover history %s\nto %s\n", buf1.c_str(),
                 buf2.c_str());
         s0History = stream.history;
         auto hashed_path =
             computePathHash(control_pc.instAddr(), corr_target.instAddr());
         histShiftIn(hashed_path, s0History);
         boost::to_string(s0History, buf1);
-        DPRINTF(DecoupleBP, "Shift in history %s\n", buf1.c_str());
+        DPRINTFV(this->debugFlagOn, "Shift in history %s\n", buf1.c_str());
 
         // inc stream id because current stream ends
         ftq_demand_stream_id = stream_id + 1;
@@ -257,10 +264,12 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
         // todo update stream head id here
         fsqId = stream_id + 1;
 
-        DPRINTF(DecoupleBP,
+        DPRINTFV(this->debugFlagOn,
                 "a %s flow was redirected by taken branch, "
+                "predicted taken pc = %#lx, "
                 "new fsq entry is:\n",
-                stream.streamEnded ? "pred-longer" : "miss");
+                stream.streamEnded ? "pred-longer" : "miss",
+                stream.predBranchAddr);
         printStream(stream);
 
     } else {
@@ -290,19 +299,20 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
 
         boost::to_string(s0History, buf1);
         boost::to_string(stream.history, buf2);
-        DPRINTF(DecoupleBP, "Recover history %s\nto %s\n", buf1.c_str(),
+        DPRINTFV(this->debugFlagOn, "Recover history %s\nto %s\n", buf1.c_str(),
                 buf2.c_str());
         s0History = stream.history;
         histShiftIn(0, s0History);
         boost::to_string(s0History, buf1);
-        DPRINTF(DecoupleBP, "Shift in history %s\n", buf1.c_str());
+        DPRINTFV(this->debugFlagOn, "Shift in history %s\n", buf1.c_str());
 
-        DPRINTF(DecoupleBP,
-                "a taken flow was redirected by NOT taken branch, new fsq "
-                "entry is:\n");
+        DPRINTFV(this->debugFlagOn,
+                "a taken flow was redirected by NOT taken branch,"
+                "predicted taken pc = %#lx, new fsq entry is:\n",
+                stream.predBranchAddr);
         printStream(stream);
     }
-    dumpFsq("After control squash");
+    if (pc == ObservingPC) dumpFsq("After control squash");
 
     DPRINTF(DecoupleBPHist, "dump ras after control squash\n");
     dumpRAS();
@@ -314,7 +324,7 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
 
     fetchTargetQueue.dump("After control squash");
 
-    DPRINTF(DecoupleBP,
+    DPRINTFV(this->debugFlagOn,
             "After squash, FSQ head Id=%lu, demand stream Id=%lu, Fetch "
             "demanded target Id=%lu\n",
             fsqId, fetchTargetQueue.getEnqState().streamId,
@@ -323,6 +333,7 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
     historyManager.squash(stream_id, actually_taken, control_pc.instAddr(),
                           corr_target.instAddr());
     checkHistory(s0History);
+    debugFlagOn = false;
 }
 
 void
@@ -330,7 +341,7 @@ DecoupledBPU::nonControlSquash(unsigned target_id, unsigned stream_id,
                                const PCStateBase &inst_pc,
                                const InstSeqNum seq, ThreadID tid)
 {
-    DPRINTF(DecoupleBPHist,
+    DPRINTFV(this->debugFlagOn,
             "non control squash: target id: %lu, stream id: %lu, inst_pc: %x, "
             "seq: %lu\n",
             target_id, stream_id, inst_pc.instAddr(), seq);
@@ -350,8 +361,9 @@ DecoupledBPU::nonControlSquash(unsigned target_id, unsigned stream_id,
 
     auto ftq_demand_stream_id = stream_id;
 
-    DPRINTF(DecoupleBP, "non control squash: start: %x, end: %x, target: %x\n",
-            start, end, target);
+    DPRINTFV(this->debugFlagOn,
+             "non control squash: start: %x, end: %x, target: %x\n", start,
+             end, target);
 
     if (end) {
         if (start <= inst_pc.instAddr() && inst_pc.instAddr() <= end) {
@@ -375,7 +387,6 @@ DecoupledBPU::nonControlSquash(unsigned target_id, unsigned stream_id,
     // stream.setDefaultResolve();
     // stream.branchSeq = -1;
 
-
     // Fetching from the original predicted fsq entry, since this is not a
     // mispredict. We allocate a new target id to avoid alias
     auto pc = inst_pc.instAddr();
@@ -396,8 +407,8 @@ DecoupledBPU::nonControlSquash(unsigned target_id, unsigned stream_id,
         fsqId = (--it)->first + 1;
     }
 
-    dumpFsq("after non-control squash");
-    DPRINTF(DecoupleBP,
+    if (pc == ObservingPC) dumpFsq("after non-control squash");
+    DPRINTFV(this->debugFlagOn,
             "After squash, FSQ head Id=%lu, s0pc=%#lx, demand stream Id=%lu, "
             "Fetch demanded target Id=%lu\n",
             fsqId, s0StreamPC, fetchTargetQueue.getEnqState().streamId,
@@ -414,7 +425,9 @@ DecoupledBPU::trapSquash(unsigned target_id, unsigned stream_id,
             target_id, stream_id, inst_pc.instAddr());
     squashing = true;
 
-    dumpFsq("before trap squash");
+    auto pc = inst_pc.instAddr();
+
+    if (pc == ObservingPC) dumpFsq("before trap squash");
 
     auto it = fetchStreamQueue.find(stream_id);
     assert(it != fetchStreamQueue.end());
@@ -538,10 +551,13 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
 void
 DecoupledBPU::dumpFsq(const char *when)
 {
-    DPRINTF(DecoupleBP, "dumping fsq entries %s...\n", when);
+    if (!debugFlagOn) {
+        return;
+    }
+    DPRINTF(DecoupleBPProbe, "dumping fsq entries %s...\n", when);
     for (auto it = fetchStreamQueue.begin(); it != fetchStreamQueue.end();
          it++) {
-        DPRINTFR(DecoupleBP, "StreamID %lu, ", it->first);
+        DPRINTFR(DecoupleBPProbe, "StreamID %lu, ", it->first);
         printStream(it->second);
     }
 }
