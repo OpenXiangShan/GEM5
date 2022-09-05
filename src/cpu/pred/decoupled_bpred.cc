@@ -1,4 +1,6 @@
 #include "cpu/pred/decoupled_bpred.hh"
+#include "sim/core.hh"
+#include "base/output.hh"
 
 namespace gem5
 {
@@ -19,6 +21,22 @@ DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
 
     commitHistory.resize(historyBits, 0);
     squashing = true;
+
+    registerExitCallback([this]() {
+        auto out_handle = simout.create("topMisPredicts.txt", false, true);
+        *out_handle->stream() << "streamStart" << " " << "control pc" << " " << "count" << std::endl;
+        std::vector<std::pair<Addr, MispredictEntry>> topMisPredPC;
+        for (auto &it : topMispredicts) {
+            topMisPredPC.push_back(it);
+        }
+        std::sort(topMisPredPC.begin(), topMisPredPC.end(), [](const std::pair<Addr, MispredictEntry> &a, const std::pair<Addr, MispredictEntry> &b) {
+            return a.second.count > b.second.count;
+        });
+        for (auto& it : topMisPredPC) {
+            *out_handle->stream() << std::hex << it.second.streamStart << " " << it.second.controlAddr << " " << std::dec << it.second.count << std::endl;
+        }
+        simout.close(out_handle);
+    });
 }
 
 void
@@ -524,6 +542,16 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
                 it->second.streamStart, it->second.exeBranchAddr,
                 it->second.exeTarget,
                 it->second.history);
+        } else {
+            MispredictEntry entry(it->second.streamStart,
+                                  it->second.exeBranchAddr);
+
+            auto find_it = topMispredicts.find(it->second.streamStart);
+            if (find_it == topMispredicts.end()) {
+                topMispredicts[it->second.streamStart] = entry;
+            } else {
+                find_it->second.count++;
+            }
         }
 
         it = fetchStreamQueue.erase(it);

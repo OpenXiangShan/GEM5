@@ -329,6 +329,29 @@ class DecoupledBPU : public BPredUnit
         for (std::stack<Addr> dump = streamRAS; !dump.empty(); dump.pop())
             DPRINTF(DecoupleBP, "RAS: %lx\n", dump.top());
     }
+
+
+    struct MispredictEntry {
+        Addr streamStart;
+        Addr controlAddr;
+        unsigned count;
+
+        bool operator<(const MispredictEntry &rhs) const
+        {
+            return count < rhs.count;
+        }
+
+        bool operator==(const MispredictEntry &rhs) const
+        {
+            return count == rhs.count;
+        }
+
+        MispredictEntry() {};
+        MispredictEntry(Addr streamStart, Addr controlAddr) :
+                        streamStart(streamStart), controlAddr(controlAddr), count(1) {} ;
+    };
+
+    std::map<Addr, MispredictEntry> topMispredicts;
 };
 
 }  // namespace branch_prediction

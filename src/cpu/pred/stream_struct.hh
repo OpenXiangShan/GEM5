@@ -5,6 +5,8 @@
 
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/static_inst.hh"
+#include "cpu/static_inst_fwd.hh"
 
 namespace gem5 {
 
