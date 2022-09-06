@@ -515,7 +515,7 @@ Fetch::deactivateThread(ThreadID tid)
 }
 
 bool
-Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
+Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc, bool &finshFetch)
 {
     // Do branch prediction check here.
     // A bit of a misnomer...next_PC is actually the current PC until
@@ -530,8 +530,10 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
                 inst->staticInst, inst->seqNum, next_pc, tid);
         if (usedUpFetchTargets) {
             DPRINTF(DecoupleBP, "Used up fetch targets.\n");
+            finshFetch = dbp->finishFetch(usedUpFetchTargets);
+            DPRINTF(DecoupleBP, "%sfinish fetch\n", finshFetch ? "" : "not ");
         }
-    }
+    }  
 
     // For decoupled frontend, the instruction type is predicted with BTB
     if ((isDecoupledFrontend && !predict_taken) ||
@@ -1152,10 +1154,15 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
             instruction->staticInst->disassemble(this_pc.instAddr()));
 
     if (isDecoupledFrontend) {
+        unsigned fsqId = dbp->getSupplyingStreamId();
+        unsigned ftqId = dbp->getSupplyingTargetId();
+        if (usedUpFetchTargets) {
+            std::tie(ftqId, fsqId) = dbp->nextSupplyTarget();
+        }
         DPRINTF(DecoupleBP, "Set instruction %lu with stream id %lu, fetch id %lu\n",
-                instruction->seqNum, dbp->getSupplyingStreamId(), dbp->getSupplyingTargetId());
-        instruction->setFsqId(dbp->getSupplyingStreamId());
-        instruction->setFtqId(dbp->getSupplyingTargetId());
+                instruction->seqNum, fsqId, ftqId);
+        instruction->setFsqId(fsqId);
+        instruction->setFtqId(ftqId);
     }
 
 #if TRACING_ON
@@ -1303,8 +1310,9 @@ Fetch::fetch(bool &status_change)
     // Loop through instruction memory from the cache.
     // Keep issuing while fetchWidth is available and branch is not
     // predicted taken
+    bool finishFetch = false;
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize
-           && !predictedBranch && !quiesce && !ftqEmpty()) {
+           && !predictedBranch && !quiesce && !ftqEmpty() && !finishFetch) {
         // We need to process more memory if we aren't going to get a
         // StaticInst from the rom, the current macroop, or what's already
         // in the decoder.
@@ -1390,7 +1398,7 @@ Fetch::fetch(bool &status_change)
             if (!isDecoupledFrontend) {
                 predictedBranch |= this_pc.branching();
             }
-            predictedBranch |= lookupAndUpdateNextPC(instruction, *next_pc);
+            predictedBranch |= lookupAndUpdateNextPC(instruction, *next_pc, finishFetch);
             if (predictedBranch) {
                 DPRINTF(Fetch, "Branch detected with PC = %s\n", this_pc);
             }

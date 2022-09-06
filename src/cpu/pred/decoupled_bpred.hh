@@ -254,6 +254,14 @@ class DecoupledBPU : public BPredUnit
 
     bool trySupplyFetchWithTarget();
 
+    bool finishFetch(bool run_out_of_this_entry) {
+        return fetchTargetQueue.finishFetch(run_out_of_this_entry);
+    }
+
+    std::pair<FetchTargetId, FetchStreamId> nextSupplyTarget() {
+        return fetchTargetQueue.nextSupplyTarget();
+    }
+
     void squash(const InstSeqNum &squashed_sn, ThreadID tid)
     {
         panic("Squashing decoupled BP with tightly coupled API\n");

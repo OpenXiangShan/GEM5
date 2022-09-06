@@ -144,7 +144,7 @@ StreamTAGE::lookupHelper(bool flag, Addr stream_start, const bitset& history, Ti
         target = baseTable[base_table_idx];
         // no need to set
         pred_count = pred_counts;
-        if (baseTableValid[base_table_idx] &&
+        if (baseTable[base_table_idx].valid &&
             stream_start >= target.bbStart &&
             stream_start <= target.controlAddr) {
             DPRINTFV(this->debugFlagOn,

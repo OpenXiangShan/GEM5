@@ -90,6 +90,25 @@ class FetchTargetQueue
     void setName(const std::string &parent) { _name = parent + ".ftq"; }
 
     bool validSupplyFetchTargetState() const;
+
+    bool finishFetch(bool run_out_of_this_entry) {
+        auto it = ftq.find(fetchDemandTargetId);
+        if (run_out_of_this_entry && it != ftq.end()) {
+            if (supplyFetchTargetState.entry.fsqID != it->second.fsqID) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    std::pair<FetchTargetId, FetchStreamId> nextSupplyTarget() {
+        auto it = ftq.find(fetchDemandTargetId);
+        if (it != ftq.end()) {
+            return std::make_pair(it->first, it->second.fsqID);
+        }
+        return std::make_pair(getSupplyingTargetId(), getSupplyingStreamId());
+    }
+    
 };
 
 }
