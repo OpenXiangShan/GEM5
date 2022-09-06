@@ -138,7 +138,8 @@ StreamTAGE::lookupHelper(bool flag, Addr last_chunk_start, Addr stream_start,
         dbpstats.providerTableDist.sample(predictor_1);
         const auto& way1 = tageTable[predictor_1][predictor_index_1];
         const auto& way2 = tageTable[predictor_2][predictor_index_2];
-        if ((way1.counter == 1) && (way1.useful == 0) && (pred_counts == 2) && (way2.counter > 0)) {
+        if ((way1.target.hysteresis == 1) && (way1.useful == 0) &&
+            (pred_counts == 2) && (way2.target.hysteresis > 0)) {
             use_alt_pred = true;
         } else {
             use_alt_pred = false;
@@ -291,15 +292,6 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
         predictor_index_sel = predictor_index;
     }
 
-    previous_target.tick = curTick();
-    previous_target.bbStart = stream_start_pc;
-    previous_target.controlAddr = control_pc;
-    previous_target.controlSize = control_size;
-    previous_target.nextStream = target;
-    previous_target.hysteresis = 1;
-    previous_target.endIsCall = (endType == END_TYPE_CALL);
-    previous_target.endIsRet = (endType == END_TYPE_RET);
-
     auto base_table_idx = getBaseIndex(stream_start_pc);
     baseTable[base_table_idx].set(
         curTick(), stream_start_pc, control_pc, target, control_size, 1,
@@ -312,8 +304,7 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
     if (pred_count > 0 && equals(target_sel, stream_start_pc, control_pc, target)) {//pred hit
         // the prediction was from predictor tables and correct
         // increment the counter
-        if (way_sel.counter <= 2) {
-            ++way_sel.counter;
+        if (way_sel.target.hysteresis <= 2) {
             ++way_sel.target.hysteresis;
         }
         way_sel.target.endIsCall = (endType == END_TYPE_CALL);
@@ -341,17 +332,15 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
                 }
             }
             // if counter > 0 then decrement, else replace
-
-            if (way_sel.counter > 0) {
-                --way_sel.counter;
+            if (way_sel.target.hysteresis > 0) {
                 --way_sel.target.hysteresis;
                 DPRINTFV(this->debugFlagOn || ::gem5::debug::DecoupleBP,
-                         "Decrement counter to %d for predictor %d index %d\n",
-                         way_sel.counter, predictor_sel, predictor_index_sel);
+                         "Decrement conf to %d for predictor %d index %d\n",
+                         way_sel.target.hysteresis, predictor_sel, predictor_index_sel);
             } else {
                 DPRINTFV(this->debugFlagOn || ::gem5::debug::DecoupleBP,
                          "predictor %d index %d now conf=%d, replace it\n",
-                         predictor_sel, predictor_index_sel, way_sel.counter);
+                         predictor_sel, predictor_index_sel, way_sel.target.hysteresis);
                 way_sel.target.tick = curTick();
                 way_sel.target.bbStart = stream_start_pc;
                 way_sel.target.controlAddr = control_pc;
@@ -364,7 +353,7 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
                     getTageTag(stream_start_pc,
                            history,
                            predictor_sel);
-                way_sel.counter = 1;
+                way_sel.target.hysteresis = 1;
                 way_sel.useful = 0;
             }
         }
@@ -398,7 +387,7 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
                         getTageTag(stream_start_pc,
                                history,
                                start_tage_table);
-                    way_new.counter = 1;
+                    way_new.target.hysteresis = 1;
                     ++allocated;
                     ++start_tage_table; // do not allocate on consecutive predictors
                     if (allocated == numTablesToAlloc) {
@@ -440,8 +429,6 @@ StreamTAGE::commit(Addr stream_start_pc, Addr controlAddr, Addr target, bitset &
             way.target.bbStart == stream_start_pc &&
             way.target.controlAddr == controlAddr &&
             way.target.nextStream == target) {
-            if (way.counter < 2)
-                ++way.counter;
             if (way.target.hysteresis < 2) {
                 ++way.target.hysteresis;
             }

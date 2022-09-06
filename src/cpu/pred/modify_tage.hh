@@ -147,7 +147,6 @@ class StreamTAGE : public TimedPredictor
 
     bitset ghr;
     std::vector<std::vector<PredEntry>> tageTable;
-    TickedStreamStorage previous_target;
     std::vector<TickedStreamStorage> baseTable;
 
     bool equals(const TickedStreamStorage& entry, Addr stream_start_pc,
