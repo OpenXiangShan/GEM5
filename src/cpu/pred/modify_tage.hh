@@ -67,12 +67,12 @@ class StreamTAGE : public TimedPredictor
   private:
     const unsigned delay{1};
 
-    bool lookupHelper(bool flag, Addr streamStart, const bitset& history,
-                       TickedStreamStorage& target,
-                       TickedStreamStorage& alt_target, int& predictor,
-                       int& predictor_index, int& alt_predictor,
-                       int& alt_predictor_index, int& pred_count,
-                       bool& use_alt_pred);
+    bool lookupHelper(bool flag, Addr last_chunk_start, Addr stream_start,
+                      const bitset& history, TickedStreamStorage& target,
+                      TickedStreamStorage& alt_target, int& predictor,
+                      int& predictor_index, int& alt_predictor,
+                      int& alt_predictor_index, int& pred_count,
+                      bool& use_alt_pred);
 
   public:
     StreamTAGE(const Params& p);
@@ -81,14 +81,14 @@ class StreamTAGE : public TimedPredictor
 
     void tick() override;
 
-    void putPCHistory(Addr pc,
-                      const bitset &history) override;
+    void putPCHistory(Addr cur_chunk_start, Addr stream_start,
+                      const bitset& history) override;
 
     unsigned getDelay() override { return delay; }
 
     StreamPrediction getStream();
 
-    void update(Addr stream_start_pc,
+    void update(Addr last_chunk_start_pc, Addr stream_start_pc,
                 Addr control_pc, Addr target,
                 unsigned control_size, bool actually_taken,
                 const bitset &history, EndType endType);

@@ -5,6 +5,7 @@
 #include "base/intmath.hh"
 #include "base/trace.hh"
 #include "debug/DecoupleBP.hh"
+#include "cpu/pred/stream_common.hh"
 
 namespace gem5 {
 
@@ -73,11 +74,12 @@ void
 StreamTAGE::tick() {}
 
 bool
-StreamTAGE::lookupHelper(bool flag, Addr stream_start, const bitset& history, TickedStreamStorage& target,
-                          TickedStreamStorage& alt_target, int& predictor,
-                          int& predictor_index, int& alt_predictor,
-                          int& alt_predictor_index, int& pred_count,
-                          bool& use_alt_pred)
+StreamTAGE::lookupHelper(bool flag, Addr last_chunk_start, Addr stream_start,
+                         const bitset& history, TickedStreamStorage& target,
+                         TickedStreamStorage& alt_target, int& predictor,
+                         int& predictor_index, int& alt_predictor,
+                         int& alt_predictor_index, int& pred_count,
+                         bool& use_alt_pred)
 {
     int pred_counts = 0;
     TickedStreamStorage target_1, target_2;
@@ -87,10 +89,12 @@ StreamTAGE::lookupHelper(bool flag, Addr stream_start, const bitset& history, Ti
     int predictor_index_2 = 0;
 
     for (int i = numPredictors - 1; i >= 0; --i) {
-        uint32_t tmp_index = getTageIndex(stream_start, history, i);
+        uint32_t tmp_index = getTageIndex(last_chunk_start, history, i);
         uint32_t tmp_tag = getTageTag(stream_start, history, i);
         const auto &way = tageTable[i][tmp_index];
-        if (way.tag == tmp_tag && way.valid && (stream_start >= way.target.bbStart && stream_start <= way.target.controlAddr)) {
+        if (way.tag == tmp_tag && way.valid &&
+            (last_chunk_start >= way.target.bbStart &&
+             last_chunk_start <= way.target.controlAddr)) {
             if (pred_counts == 0) {//第一次命中
                 target_1 = way.target;
                 predictor_1 = i;
@@ -105,14 +109,16 @@ StreamTAGE::lookupHelper(bool flag, Addr stream_start, const bitset& history, Ti
                 break;
             }
         } else {
-
         }
 
         if (flag == false) {
-            if (way.tag == tmp_tag && !way.valid)
+            if (way.tag == tmp_tag && !way.valid) {
                 dbpstats.compulsoryMisses++;
-            else if (way.tag == tmp_tag && way.valid && !(stream_start >= way.target.bbStart && stream_start <= way.target.controlAddr))
+            } else if (way.tag == tmp_tag && way.valid &&
+                       !(last_chunk_start >= way.target.bbStart &&
+                         last_chunk_start <= way.target.controlAddr)) {
                 dbpstats.capacityMisses++;
+            }
         }
     }
     pred_count = pred_counts;
@@ -138,19 +144,18 @@ StreamTAGE::lookupHelper(bool flag, Addr stream_start, const bitset& history, Ti
         return true;
     } else {
         dbpstats.providerTableDist.sample(20U);
-        auto base_table_idx = getBaseIndex(stream_start);
+        auto base_table_idx = getBaseIndex(last_chunk_start);
         use_alt_pred = false;
         target = baseTable[base_table_idx];
         pred_count = pred_counts;
-        // no need to set
-        if (baseTable[base_table_idx].valid &&
-            stream_start >= target.bbStart &&
-            stream_start <= target.controlAddr) {
+        if (target.valid &&
+            last_chunk_start >= target.bbStart &&
+            last_chunk_start <= target.controlAddr) {
 
             DPRINTF(DecoupleBP,
-                     "%lx, found entry in base predictor, streamStart: %lx, "
-                     "controlAddr: %lx, nextStream: %lx\n",
-                     stream_start, target.bbStart, target.controlAddr,
+                     "%#lx, found entry in base predictor, streamStart: %#lx, "
+                     "controlAddr: %#lx, nextStream: %#lx\n",
+                     last_chunk_start, target.bbStart, target.controlAddr,
                      target.nextStream);
             return true;
         }
@@ -160,7 +165,7 @@ StreamTAGE::lookupHelper(bool flag, Addr stream_start, const bitset& history, Ti
 }
 
 void
-StreamTAGE::putPCHistory(Addr pc, const bitset &history) {
+StreamTAGE::putPCHistory(Addr cur_chunk_start, Addr stream_start, const bitset &history) {
     TickedStreamStorage target;
     TickedStreamStorage alt_target;
     int predictor = 0;
@@ -169,8 +174,10 @@ StreamTAGE::putPCHistory(Addr pc, const bitset &history) {
     int alt_predictor_index = 0;
     int pred_count = 0; // no use
     bool use_alt_pred = false;
-    bool found = lookupHelper(false, pc, history, target, alt_target, predictor, predictor_index,
-                  alt_predictor, alt_predictor_index, pred_count, use_alt_pred);
+    bool found =
+        lookupHelper(false, cur_chunk_start, stream_start, history, target,
+                     alt_target, predictor, predictor_index, alt_predictor,
+                     alt_predictor_index, pred_count, use_alt_pred);
     if (use_alt_pred) {
         target = alt_target;
         predictor_index = alt_predictor_index;
@@ -178,11 +185,15 @@ StreamTAGE::putPCHistory(Addr pc, const bitset &history) {
     }
 
     auto& way = tageTable[predictor][predictor_index];
-    DPRINTF(DecoupleBP, "valid: %d, bbStart : %lx, controlAddr: %lx, nextStream: %lx\n", way.valid, pc, way.target.controlAddr, way.target.nextStream);
+    DPRINTF(DecoupleBP,
+            "valid: %d, chunkStart: %#lx, streamStart: %#lx  controlAddr: "
+            "%#lx, nextStream: %#lx\n",
+            way.valid, cur_chunk_start, stream_start, way.target.controlAddr,
+            way.target.nextStream);
     if (!found) {
         DPRINTF(DecoupleBP,
                 "not found for stream=%#lx, guess an unlimited stream\n",
-                pc);
+                cur_chunk_start);
         prediction.valid = false;
         prediction.history = history;
         prediction.endIsCall = false;
@@ -191,7 +202,7 @@ StreamTAGE::putPCHistory(Addr pc, const bitset &history) {
     } else {
         DPRINTF(DecoupleBP, "Entry found\n");
         prediction.valid = true;
-        prediction.bbStart = pc;
+        prediction.bbStart = stream_start;
         prediction.controlAddr = target.controlAddr;
         prediction.controlSize = target.controlSize;
         prediction.nextStream = target.nextStream;
@@ -225,7 +236,7 @@ StreamTAGE::equals(TickedStreamStorage& t, Addr stream_start_pc,
 }
 
 void
-StreamTAGE::update(Addr stream_start_pc,
+StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
                    Addr control_pc, Addr target,
                    unsigned control_size,
                    bool actually_taken,
@@ -249,8 +260,10 @@ StreamTAGE::update(Addr stream_start_pc,
     int predictor_sel = 0;
     int predictor_index_sel = 0;
     bool use_alt_pred = false;
-    bool predictor_found = lookupHelper(true, stream_start_pc, history, target_1, target_2, predictor, predictor_index,
-                                         alt_predictor, alt_predictor_index, pred_count, use_alt_pred);
+    bool predictor_found = lookupHelper(
+        true, last_chunk_start, stream_start_pc, history, target_1,
+        target_2, predictor, predictor_index, alt_predictor,
+        alt_predictor_index, pred_count, use_alt_pred);
     if (predictor_found && use_alt_pred) {
         target_sel = target_2;
         predictor_sel = alt_predictor;
@@ -338,16 +351,22 @@ StreamTAGE::update(Addr stream_start_pc,
         //update the tag
         if (pred_count == 0 || allocate_values) {
             int allocated = 0;
-            uint32_t start_pos;
+            uint32_t start_tage_table;
             if (pred_count > 0){
-                start_pos = predictor_sel + 1;
+                start_tage_table = predictor_sel + 1;
             } else {
-                start_pos = 0;
+                start_tage_table = 0;
             }
-            for (; start_pos < numPredictors; ++start_pos) {
-                uint32_t new_index = getTageIndex(stream_start_pc, history, start_pos);
-                auto& way_new = tageTable[start_pos][new_index];
+            for (; start_tage_table < numPredictors; ++start_tage_table) {
+                uint32_t new_index = getTageIndex(last_chunk_start, history, start_tage_table);
+                auto& way_new = tageTable[start_tage_table][new_index];
                 if (way_new.useful == 0) {
+<<<<<<< HEAD
+=======
+                    DPRINTFV(this->debugFlagOn,
+                             "Allocated in table %d index[%d], histlen=%u\n",
+                             start_tage_table, new_index, histLengths[start_tage_table]);
+>>>>>>> b88b180ba (Predict with chunk start pc for long streams)
                     if (reset_counter < 255) reset_counter++;
                     way_new.valid = true;
                     way_new.target.tick = curTick();
@@ -361,14 +380,20 @@ StreamTAGE::update(Addr stream_start_pc,
                     way_new.tag =
                         getTageTag(stream_start_pc,
                                history,
-                               start_pos);
+                               start_tage_table);
                     way_new.counter = 1;
                     ++allocated;
-                    ++start_pos; // do not allocate on consecutive predictors
+                    ++start_tage_table; // do not allocate on consecutive predictors
                     if (allocated == numTablesToAlloc) {
                         break;
                     }
                 } else {
+<<<<<<< HEAD
+=======
+                    DPRINTFV(this->debugFlagOn,
+                             "Table %d index[%d] histlen=%u is useful\n",
+                             start_tage_table, new_index, histLengths[start_tage_table]);
+>>>>>>> b88b180ba (Predict with chunk start pc for long streams)
                     // reset useful bits
                     if (reset_counter > 0) {
                         --reset_counter;
@@ -393,7 +418,8 @@ void
 StreamTAGE::commit(Addr stream_start_pc, Addr controlAddr, Addr target, bitset &history)
 {
     for (int i = numPredictors - 1; i >= 0; --i) {
-        uint32_t tmp_index = getTageIndex(stream_start_pc, history, i);
+        uint32_t tmp_index = getTageIndex(
+            computeLastChunkStart(controlAddr, stream_start_pc), history, i);
         uint32_t tmp_tag = getTageTag(stream_start_pc, history, i);
         auto& way = tageTable[i][tmp_index];
         if (way.tag == tmp_tag &&

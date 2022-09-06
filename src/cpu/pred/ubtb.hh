@@ -78,7 +78,7 @@ class StreamUBTB : public TimedPredictor
 
     void tick() override;
 
-    void putPCHistory(Addr pc,
+    void putPCHistory(Addr cur_chunk_start, Addr stream_start,
                       const boost::dynamic_bitset<> &history) override;
 
     unsigned getDelay() override { return delay; }

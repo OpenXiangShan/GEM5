@@ -1,5 +1,7 @@
 #include "cpu/pred/decoupled_bpred.hh"
 
+#include "cpu/pred/stream_common.hh"
+
 namespace gem5
 {
 namespace branch_prediction
@@ -12,7 +14,7 @@ DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
 
     // TODO: remove this
     fetchStreamQueueSize = 64;
-    s0StreamPC = 0x80000000;
+    s0PC = 0x80000000;
 
     s0History.resize(historyBits, 0);
     fetchTargetQueue.setName(name());
@@ -59,7 +61,7 @@ DecoupledBPU::tick()
 
     streamTAGE->tickStart();
     if (!streamQueueFull()) {
-        streamTAGE->putPCHistory(s0StreamPC, s0History);
+        streamTAGE->putPCHistory(s0PC, s0StreamStartPC, s0History);
         lastCyclePredicted = true;
     }
     
@@ -168,7 +170,7 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
 
     squashing = true;
 
-    s0StreamPC = corr_target.instAddr();
+    s0PC = corr_target.instAddr();
 
     // check sanity
     auto it = fetchStreamQueue.find(stream_id);
@@ -227,10 +229,10 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
             streamRAS.pop();
         }
 
-        streamTAGE->update(stream.streamStart,
-                           control_pc.instAddr(), corr_target.instAddr(),
-                           control_inst_size,
-                           actually_taken, stream.history, endType);
+        streamTAGE->update(
+            computeLastChunkStart(control_pc.instAddr(), stream.streamStart),
+            stream.streamStart, control_pc.instAddr(), corr_target.instAddr(),
+            control_inst_size, actually_taken, stream.history, endType);
 
         // clear younger fsq entries
         auto erase_it = fetchStreamQueue.upper_bound(stream_id);
@@ -270,10 +272,10 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
         stream.predBranchAddr = 0;
         stream.resolved = false;
 
-        streamTAGE->update(stream.streamStart,
-                           0, 0,
-                           control_inst_size,
-                           actually_taken, stream.history, endType);
+        streamTAGE->update(
+            computeLastChunkStart(control_pc.instAddr(), stream.streamStart),
+            stream.streamStart, 0UL, 0UL, control_inst_size, actually_taken,
+            stream.history, endType);
 
         // keep stream id because still in the same stream
         ftq_demand_stream_id = stream_id;
@@ -381,18 +383,18 @@ DecoupledBPU::nonControlSquash(unsigned target_id, unsigned stream_id,
     auto pc = inst_pc.instAddr();
     fetchTargetQueue.squash(target_id + 1, ftq_demand_stream_id, pc);
 
-    // we should set s0StreamPC to be the predTarget of the fsq entry
+    // we should set s0PC to be the predTarget of the fsq entry
     // in case that the stream is the newest entry in fsq,
     // That's because, if an inst of this stream had been squashed due to a
     // mispredict, and then a non-control squash was made on an inst oldder
-    // than this inst, the s0StreamPC would be set incorrectly by the previous
+    // than this inst, the s0PC would be set incorrectly by the previous
     // squash
     target = stream.resolved ? stream.exeTarget
                              : stream.predTarget;  // target might be updated
     bool this_entry_ended =
         stream.resolved ? stream.exeStreamEnd : stream.streamEnded;
     if (++it == fetchStreamQueue.end() && this_entry_ended) {
-        s0StreamPC = target;
+        s0PC = target;
         fsqId = (--it)->first + 1;
     }
 
@@ -400,7 +402,7 @@ DecoupledBPU::nonControlSquash(unsigned target_id, unsigned stream_id,
     DPRINTF(DecoupleBP,
             "After squash, FSQ head Id=%lu, s0pc=%#lx, demand stream Id=%lu, "
             "Fetch demanded target Id=%lu\n",
-            fsqId, s0StreamPC, fetchTargetQueue.getEnqState().streamId,
+            fsqId, s0PC, fetchTargetQueue.getEnqState().streamId,
             fetchTargetQueue.getSupplyingTargetId());
 }
 
@@ -448,9 +450,10 @@ DecoupledBPU::trapSquash(unsigned target_id, unsigned stream_id,
     stream.exeStreamEnd = stream.exeBranchAddr + 4;
 
 
-    streamTAGE->update(stream.streamStart,
-                        stream.exeBranchAddr, stream.exeTarget,
-                        4, true, stream.history, END_TYPE_NONE);
+    streamTAGE->update(
+        computeLastChunkStart(stream.exeBranchAddr, stream.streamStart),
+        stream.streamStart, stream.exeBranchAddr, stream.exeTarget, 4, true,
+        stream.history, END_TYPE_NONE);
 
     historyManager.squash(stream_id, true, last_committed_pc, inst_pc.instAddr());
 
@@ -480,12 +483,12 @@ DecoupledBPU::trapSquash(unsigned target_id, unsigned stream_id,
     fetchTargetQueue.squash(target_id + 1, ftq_demand_stream_id,
                             inst_pc.instAddr());
 
-    s0StreamPC = inst_pc.instAddr();
+    s0PC = inst_pc.instAddr();
 
     DPRINTF(DecoupleBP,
             "After trap squash, FSQ head Id=%lu, s0pc=%#lx, demand stream "
             "Id=%lu, Fetch demanded target Id=%lu\n",
-            fsqId, s0StreamPC, fetchTargetQueue.getEnqState().streamId,
+            fsqId, s0PC, fetchTargetQueue.getEnqState().streamId,
             fetchTargetQueue.getSupplyingTargetId());
 
     // restore ras
@@ -583,7 +586,7 @@ DecoupledBPU::tryEnqFetchStream()
                     back.predBranchAddr = 0;
                     back.predBranchType = 0;
                     back.hasEnteredFtq = false;
-                    s0StreamPC = back.predTarget;
+                    s0PC = back.predTarget;
                     DPRINTF(DecoupleBP, "fsq entry of id %lu modified to:\n",
                             it->first);
                     // pred ended, inc fsqID
@@ -591,9 +594,9 @@ DecoupledBPU::tryEnqFetchStream()
                     printStream(back);
                 } else {
                     // streamMiss = true;
-                    s0StreamPC += 0x40;
-                    DPRINTF(DecoupleBP, "s0StreamPC update to %#lx\n",
-                            s0StreamPC);
+                    s0PC += streamChunkSize;
+                    DPRINTF(DecoupleBP, "s0PC update to %#lx\n",
+                            s0PC);
                 }
             }
         }
@@ -629,14 +632,14 @@ DecoupledBPU::tryEnqFetchTarget()
                         it->first);
                 printStream(it->second);
                 // DPRINTF(DecoupleBP, "tryToEnqFtq: enq stream %d,
-                // pc:0x%lx\n", ftqEnqFsqID, s0StreamPC);
+                // pc:0x%lx\n", ftqEnqFsqID, s0PC);
                 DPRINTF(DecoupleBP, "Serve enq PC: %#lx with stream:\n",
                         ftq_enq_state.pc);
                 printStream(stream_to_enq);
                 // dumpFsq("for debugging steam enq");
                 DPRINTF(DecoupleBP, "ftqEnqPC < StreamEnd: %d\n",
                         ftq_enq_state.pc < end);
-                // assert((ftqEnqPC <= s0StreamPC &&
+                // assert((ftqEnqPC <= s0PC &&
                 // !stream_to_enq.streamEnded)
                 if (ended) {
                     assert(ftq_enq_state.pc < end);
@@ -759,8 +762,8 @@ DecoupledBPU::makeNewPredictionAndInsertFsq()
     DPRINTF(DecoupleBP, "Try to make new prediction and insert Fsq\n");
     FetchStream entry;
     // TODO: this may be wrong, need to check if we should use the last
-    // s0StreamPC
-    entry.streamStart = s0StreamPC;
+    // s0PC
+    entry.streamStart = s0PC;
     if (s0UbtbPred.valid) {
         useStreamRAS();
 
@@ -768,7 +771,7 @@ DecoupledBPU::makeNewPredictionAndInsertFsq()
         entry.predStreamEnd = s0UbtbPred.controlAddr + s0UbtbPred.controlSize;
         entry.predBranchAddr = s0UbtbPred.controlAddr;
         entry.predTarget = s0UbtbPred.nextStream;
-        s0StreamPC = s0UbtbPred.nextStream;
+        s0PC = s0UbtbPred.nextStream;
         entry.history = s0UbtbPred.history;
         entry.wasCall = s0UbtbPred.endIsCall;
         entry.wasReturn = s0UbtbPred.endIsRet;
@@ -793,7 +796,7 @@ DecoupledBPU::makeNewPredictionAndInsertFsq()
     } else {
         DPRINTF(DecoupleBP,
                 "No valid prediction, gen missing stream: %#lx -> ...\n",
-                s0StreamPC);
+                s0PC);
         entry.streamEnded = false;
         entry.history.resize(historyBits);
         DPRINTF(DecoupleBP, "entry hist size: %lu, ubtb hist size: %lu\n",
@@ -861,7 +864,6 @@ DecoupledBPU::checkHistory(const boost::dynamic_bitset<> &history)
             buf1.c_str(), buf2.c_str());
     assert(ideal_hash_hist == sized_real_hist);
 }
-
 
 }  // namespace branch_prediction
 

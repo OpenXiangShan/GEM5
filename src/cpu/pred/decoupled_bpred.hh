@@ -174,7 +174,8 @@ class DecoupledBPU : public BPredUnit
 
     StreamTAGE *streamTAGE{};
 
-    Addr s0StreamPC;
+    Addr s0PC;
+    Addr s0StreamStartPC;
     boost::dynamic_bitset<> s0History;
     StreamPrediction s0UbtbPred;
 

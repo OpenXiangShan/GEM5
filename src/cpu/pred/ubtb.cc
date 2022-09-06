@@ -50,23 +50,25 @@ void
 StreamUBTB::tick() {}
 
 void
-StreamUBTB::putPCHistory(Addr pc, const boost::dynamic_bitset<> &history) {
-    auto tag = makePCHistTag(pc, history);
+StreamUBTB::putPCHistory(Addr cur_chunk_start, Addr stream_start,
+                         const boost::dynamic_bitset<> &history)
+{
+    auto tag = makePCHistTag(cur_chunk_start, history);
     DPRINTF(DecoupleBP,
-            "Prediction request: stream start=%#lx, hash tag: %#lx\n", pc,
+            "Prediction request: stream start=%#lx, hash tag: %#lx\n", cur_chunk_start,
             tag);
-    const auto &it = ubtb.find(tag);  // TODO: use hash of pc and history
+    const auto &it = ubtb.find(tag);  // TODO: use hash of cur_chunk_start and history
     if (it == ubtb.end()) {
         DPRINTF(DecoupleBP,
                 "Tag not found for stream=%#lx, guess an unlimited stream\n",
-                pc);
+                cur_chunk_start);
         prediction.valid = false;
         prediction.history = history;
 
     } else {
         DPRINTF(DecoupleBP, "UBTB Entry found\n");
         prediction.valid = true;
-        prediction.bbStart = pc;
+        prediction.bbStart = cur_chunk_start;
         prediction.controlAddr = it->second.controlAddr;
         prediction.controlSize = it->second.controlSize;
         prediction.nextStream = it->second.nextStream;
