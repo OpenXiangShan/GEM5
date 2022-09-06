@@ -841,6 +841,9 @@ decode QUADRANT default Unknown::unknown() {
                         Mem_vc.as<uint8_t>()[i] = Vs3_ub[i];
                     }}, inst_flags=VectorDummyOp);
                 }
+                0x2: VsStrideOp::vsse8_v({{
+                    Mem_vc.as<uint8_t>()[0] = Vs3_ub[microIdx];
+                }}, inst_flags=VectorDummyOp);
             }
             0x5: decode MOP {
                 0x0: decode SUMOP {
@@ -848,6 +851,9 @@ decode QUADRANT default Unknown::unknown() {
                         Mem_vc.as<uint16_t>()[i] = Vs3_uh[i];
                     }}, inst_flags=VectorDummyOp);
                 }
+                0x2: VsStrideOp::vsse16_v({{
+                    Mem_vc.as<uint16_t>()[0] = Vs3_uh[microIdx];
+                }}, inst_flags=VectorDummyOp);
             }
             0x6: decode MOP {
                 0x0: decode SUMOP {
@@ -855,6 +861,9 @@ decode QUADRANT default Unknown::unknown() {
                         Mem_vc.as<uint32_t>()[i] = Vs3_uw[i];
                     }}, inst_flags=VectorDummyOp);
                 }
+                0x2: VsStrideOp::vsse32_v({{
+                    Mem_vc.as<uint32_t>()[0] = Vs3_uw[microIdx];
+                }}, inst_flags=VectorDummyOp);
             }
             0x7: decode MOP {
                 0x0: decode SUMOP {
@@ -862,6 +871,9 @@ decode QUADRANT default Unknown::unknown() {
                         Mem_vc.as<uint64_t>()[i] = Vs3_ud[i];
                     }}, inst_flags=VectorDummyOp);
                 }
+                0x2: VsStrideOp::vsse64_v({{
+                    Mem_vc.as<uint64_t>()[0] = Vs3_ud[microIdx];
+                }}, inst_flags=VectorDummyOp);
             }
         }
 

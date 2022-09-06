@@ -155,3 +155,14 @@ def format VlStrideOp(
         VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
                  'VlStrideMacroInst', exec_template_base='VlStride')
 }};
+
+def format VsStrideOp(
+    memacc_code,
+    ea_code={{ EA = Rs1 + Rs2 * (regIdx * vlenb / elem_size + microIdx); }},
+    mem_flags=[],
+    inst_flags=[]
+) {{
+    (header_output, decoder_output, decode_block, exec_output) = \
+        VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
+                 'VsStrideMacroInst', exec_template_base='VsStride')
+}};

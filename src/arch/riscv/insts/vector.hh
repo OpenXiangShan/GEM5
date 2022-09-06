@@ -336,6 +336,34 @@ class VlStrideMicroInst : public VectorMemMicroInst
         Addr pc, const loader::SymbolTable *symtab) const override;
 };
 
+class VsStrideMacroInst : public VectorMemMacroInst
+{
+  protected:
+    VsStrideMacroInst(const char* mnem, ExtMachInst _machInst,
+                   OpClass __opClass)
+        : VectorMemMacroInst(mnem, _machInst, __opClass)
+    {}
+
+    std::string generateDisassembly(
+            Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
+class VsStrideMicroInst : public VectorMemMicroInst
+{
+  protected:
+  uint8_t regIdx;
+    VsStrideMicroInst(const char *mnem, ExtMachInst _machInst,
+                      OpClass __opClass, uint8_t _regIdx,
+                      uint8_t _microIdx, uint8_t _microVl)
+        : VectorMemMicroInst(mnem, _machInst, __opClass, _microVl,
+                             _microIdx, 0)
+        , regIdx(_regIdx)
+    {}
+
+    std::string generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
 class VMvWholeMacroInst : public VectorArithMacroInst
 {
   protected:

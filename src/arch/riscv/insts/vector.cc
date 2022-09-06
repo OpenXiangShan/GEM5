@@ -299,6 +299,31 @@ std::string VlStrideMicroInst::generateDisassembly(Addr pc,
     return ss.str();
 }
 
+std::string VsStrideMacroInst::generateDisassembly(Addr pc,
+        const loader::SymbolTable *symtab) const
+{
+    std::stringstream ss;
+    ss << mnemonic << ' ' << registerName(srcRegIdx(2)) << ", " <<
+        '(' << registerName(srcRegIdx(0)) << ')' <<
+        ", " << registerName(srcRegIdx(1));
+    if (!machInst.vm) ss << ", v0.t";
+    return ss.str();
+}
+
+std::string VsStrideMicroInst::generateDisassembly(Addr pc,
+        const loader::SymbolTable *symtab) const
+{
+    std::stringstream ss;
+    ss << mnemonic << ' ' << registerName(srcRegIdx(2)) << ", " <<
+        '(' << registerName(srcRegIdx(0)) << ')' <<
+        ", "<< registerName(srcRegIdx(1));
+    if (microIdx != 0 || machInst.vtype8.vma == 0 || machInst.vtype8.vta == 0)
+        ss << ", " << registerName(srcRegIdx(2));
+    if (!machInst.vm) ss << ", v0.t";
+    return ss.str();
+}
+
+
 std::string
 VMvWholeMacroInst::generateDisassembly(Addr pc,
     const loader::SymbolTable *symtab) const
