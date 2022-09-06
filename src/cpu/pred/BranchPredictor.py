@@ -783,8 +783,10 @@ class StreamTAGE(TimedPredictor):
     cxx_header = "cpu/pred/modify_tage.hh"
 
     numPredictors = Param.Unsigned(15, "Number of TAGE predictors")
+    # tableSizes = VectorParam.Unsigned(
+    #     [2048]*2 + [512]*8 + [512]*5, "the ITTAGE T1~Tn length")
     tableSizes = VectorParam.Unsigned(
-        [2048]*2 + [512]*8 + [512]*5, "the ITTAGE T1~Tn length")
+        [4096]*2 + [512]*8 + [512]*5, "the ITTAGE T1~Tn length")
     TTagBitSizes = VectorParam.Unsigned(
         [9]*2 + [13]*8 + [15]*5, "the T1~Tn entry's tag bit size")
     TTagPcShifts = VectorParam.Unsigned(
@@ -795,7 +797,7 @@ class StreamTAGE(TimedPredictor):
          226, 324, 464, 668, 960],
         "the Stream TAGE T1~Tn history length")
     baseTableSize = Param.Unsigned(4096, "size of base predictor")
-    maxHistLen = Param.Unsigned(512, "The length of history passed from DBP")
+    maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
     numTablesToAlloc = Param.Unsigned(1, "The number of table to allocated each time")
 
 
@@ -807,7 +809,7 @@ class DecoupledBPU(BranchPredictor):
     # stream_pred = Param.StreamPredictor(StreamPredictor(),
     # "backing stream predictor")
     stream_tage = Param.StreamTAGE(StreamTAGE(), "fast stream predictor")
-    maxHistLen = Param.Unsigned(512, "The length of history")
+    maxHistLen = Param.Unsigned(970, "The length of history")
 
     ftq_size = Param.Unsigned(128, "Fetch target queue size")
 
