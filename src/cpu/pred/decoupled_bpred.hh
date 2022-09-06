@@ -12,6 +12,7 @@
 #include "cpu/pred/modify_tage.hh"
 #include "debug/DecoupleBP.hh"
 #include "debug/DecoupleBPHist.hh"
+#include "debug/DecoupleBPProbe.hh"
 #include "params/DecoupledBPU.hh"
 
 namespace gem5
@@ -330,6 +331,8 @@ class DecoupledBPU : public BPredUnit
         for (std::stack<Addr> dump = streamRAS; !dump.empty(); dump.pop())
             DPRINTF(DecoupleBP, "RAS: %lx\n", dump.top());
     }
+
+    bool debugFlagOn{false};
 };
 
 }  // namespace branch_prediction

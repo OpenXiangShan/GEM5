@@ -150,7 +150,8 @@ class StreamTAGE : public TimedPredictor
     TickedStreamStorage previous_target;
     std::vector<TickedStreamStorage> baseTable;
 
-    bool equals(TickedStreamStorage &entry, Addr stream_start_pc, Addr control_pc, Addr target);
+    bool equals(const TickedStreamStorage& entry, Addr stream_start_pc,
+                Addr control_pc, Addr target);
 
     bool debugFlagOn{false};
 
