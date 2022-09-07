@@ -10,6 +10,13 @@ namespace gem5 {
 
 namespace branch_prediction {
 
+enum EndType {
+    END_TYPE_CALL=0,
+    END_TYPE_RET,
+    END_TYPE_NOT_TAKEN,
+    END_TYPE_NONE
+};
+
 using FetchStreamId = uint64_t;
 using FetchTargetId = uint64_t;
 using PredictionID = uint64_t;
@@ -90,6 +97,7 @@ struct IdealStreamStorage
     unsigned hysteresis;
     bool endIsRet;
     bool endIsCall;
+    bool endNotTaken;
 };
 
 struct RealStreamStorage
@@ -108,6 +116,7 @@ struct StreamPrediction
     bool valid;
     bool endIsCall;
     bool endIsRet;
+    bool endNotTaken;
     bool rasUpdated;
     boost::dynamic_bitset<> history;
 };

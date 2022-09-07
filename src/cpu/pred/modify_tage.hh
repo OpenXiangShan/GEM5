@@ -19,12 +19,6 @@ namespace gem5
 namespace branch_prediction
 {
 
-  enum EndType {
-        END_TYPE_CALL,
-        END_TYPE_RET,
-        END_TYPE_NONE
-    };
-
 class StreamTAGE : public TimedPredictor
 {
     using bitset = boost::dynamic_bitset<>;

@@ -16,6 +16,7 @@ DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
     // TODO: remove this
     fetchStreamQueueSize = 64;
     s0PC = 0x80000000;
+    s0StreamStartPC = s0PC;
 
     s0History.resize(historyBits, 0);
     fetchTargetQueue.setName(name());
@@ -62,6 +63,9 @@ DecoupledBPU::tick()
 
     streamTAGE->tickStart();
     if (!streamQueueFull()) {
+        if (s0StreamStartPC == ObservingPC) {
+            DPRINTFV(true, "Predicting stream %#lx, id: %lu\n", s0StreamStartPC, fsqId);
+        }
         streamTAGE->putPCHistory(s0PC, s0StreamStartPC, s0History);
         lastCyclePredicted = true;
     }
@@ -172,6 +176,7 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
     squashing = true;
 
     s0PC = corr_target.instAddr();
+    s0StreamStartPC = s0PC;
 
     // check sanity
     auto it = fetchStreamQueue.find(stream_id);
@@ -267,12 +272,13 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
         // todo update stream head id here
         fsqId = stream_id + 1;
 
-        DPRINTFV(this->debugFlagOn || ::gem5::debug::DecoupleBP,
-                "a %s flow was redirected by taken branch, "
-                "predicted taken pc = %#lx, "
-                "new fsq entry is:\n",
-                stream.streamEnded ? "pred-longer" : "miss",
-                stream.predBranchAddr);
+        DPRINTFV(
+            this->debugFlagOn || ::gem5::debug::DecoupleBP,
+            "a %s flow was redirected by taken branch, "
+            "predicted: %#lx->%#lx, correct: %#lx->%#lx, new fsq entry is:\n",
+            stream.streamEnded ? "pred-longer" : "miss", stream.predBranchAddr,
+            stream.predTarget, control_pc.instAddr(), corr_target.instAddr());
+        
         printStream(stream);
 
     } else {
@@ -310,10 +316,12 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
         DPRINTFV(this->debugFlagOn || ::gem5::debug::DecoupleBP,
                  "Shift in history %s\n", buf1.c_str());
 
-        DPRINTFV(this->debugFlagOn || ::gem5::debug::DecoupleBP,
-                "a taken flow was redirected by NOT taken branch,"
-                "predicted taken pc = %#lx, new fsq entry is:\n",
-                stream.predBranchAddr);
+        DPRINTFV(
+            this->debugFlagOn || ::gem5::debug::DecoupleBP,
+            "a taken flow was redirected by NOT taken branch,"
+            "predicted: %#lx->%#lx, correct: %#lx->%#lx, new fsq entry is:\n",
+            stream.predBranchAddr, stream.predTarget, control_pc.instAddr(),
+            corr_target.instAddr());
         printStream(stream);
     }
     if (pc == ObservingPC) dumpFsq("After control squash");
@@ -408,6 +416,7 @@ DecoupledBPU::nonControlSquash(unsigned target_id, unsigned stream_id,
         stream.resolved ? stream.exeStreamEnd : stream.streamEnded;
     if (++it == fetchStreamQueue.end() && this_entry_ended) {
         s0PC = target;
+        s0StreamStartPC = s0PC;
         fsqId = (--it)->first + 1;
     }
 
@@ -499,6 +508,7 @@ DecoupledBPU::trapSquash(unsigned target_id, unsigned stream_id,
                             inst_pc.instAddr());
 
     s0PC = inst_pc.instAddr();
+    s0StreamStartPC = s0PC;
 
     DPRINTF(DecoupleBP,
             "After trap squash, FSQ head Id=%lu, s0pc=%#lx, demand stream "
@@ -605,6 +615,7 @@ DecoupledBPU::tryEnqFetchStream()
                     back.predBranchType = 0;
                     back.hasEnteredFtq = false;
                     s0PC = back.predTarget;
+                    s0StreamStartPC = s0PC;
                     DPRINTF(DecoupleBP, "fsq entry of id %lu modified to:\n",
                             it->first);
                     // pred ended, inc fsqID
@@ -781,18 +792,24 @@ DecoupledBPU::makeNewPredictionAndInsertFsq()
     FetchStream entry;
     // TODO: this may be wrong, need to check if we should use the last
     // s0PC
-    entry.streamStart = s0PC;
-    if (s0UbtbPred.valid) {
+    entry.streamStart = s0StreamStartPC;
+    if (s0StreamStartPC == ObservingPC) {
+        debugFlagOn = true;
+    }
+    DPRINTFV(debugFlagOn, "Make new pred, pred validL %i, taken: %i\n",
+             s0UbtbPred.valid, !s0UbtbPred.endNotTaken);
+    if (s0UbtbPred.valid && !s0UbtbPred.endNotTaken) {
         useStreamRAS();
 
         entry.streamEnded = true;
         entry.predStreamEnd = s0UbtbPred.controlAddr + s0UbtbPred.controlSize;
         entry.predBranchAddr = s0UbtbPred.controlAddr;
         entry.predTarget = s0UbtbPred.nextStream;
-        s0PC = s0UbtbPred.nextStream;
         entry.history = s0UbtbPred.history;
         entry.wasCall = s0UbtbPred.endIsCall;
         entry.wasReturn = s0UbtbPred.endIsRet;
+        s0PC = s0UbtbPred.nextStream;
+        s0StreamStartPC = s0PC;
 
         auto hashed_path =
             computePathHash(s0UbtbPred.controlAddr, s0UbtbPred.nextStream);
@@ -813,7 +830,7 @@ DecoupledBPU::makeNewPredictionAndInsertFsq()
                 entry.predStreamEnd, entry.predTarget);
     } else {
         DPRINTF(DecoupleBP,
-                "No valid prediction, gen missing stream: %#lx -> ...\n",
+                "No valid prediction or pred fall thru, gen missing stream: %#lx -> ...\n",
                 s0PC);
         entry.streamEnded = false;
         entry.history.resize(historyBits);
@@ -851,6 +868,7 @@ DecoupledBPU::makeNewPredictionAndInsertFsq()
     }
     printStream(entry);
     checkHistory(s0History);
+    debugFlagOn = false;
 }
 
 void

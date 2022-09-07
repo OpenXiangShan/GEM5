@@ -6,6 +6,7 @@
 #include "base/intmath.hh"
 #include "base/trace.hh"
 #include "debug/DecoupleBP.hh"
+#include "debug/DecoupleBPVerbose.hh"
 #include "cpu/pred/stream_common.hh"
 
 namespace gem5 {
@@ -98,9 +99,14 @@ StreamTAGE::lookupHelper(bool flag, Addr last_chunk_start, Addr stream_start,
         uint32_t tmp_index = getTageIndex(last_chunk_start, history, i);
         uint32_t tmp_tag = getTageTag(stream_start, history, i);
         const auto &way = tageTable[i][tmp_index];
+        DPRINTF(DecoupleBP || debugFlagOn,
+                "TAGE table[%u] index[%u], valid: %i, expected tag: %#lx, "
+                "found tag: %#lx, match: %i\n",
+                i, tmp_index, way.valid, tmp_tag, way.tag, way.tag == tmp_tag);
         if (way.tag == tmp_tag && way.valid &&
-            (last_chunk_start >= way.target.bbStart &&
-             last_chunk_start <= way.target.controlAddr)) {
+            ((last_chunk_start >= way.target.bbStart &&
+              last_chunk_start <= way.target.controlAddr) ||
+             way.target.endNotTaken)) {
             if (pred_counts == 0) {//第一次命中
                 target_1 = way.target;
                 predictor_1 = i;
@@ -114,7 +120,12 @@ StreamTAGE::lookupHelper(bool flag, Addr last_chunk_start, Addr stream_start,
                 ++pred_counts;
                 break;
             }
+            DPRINTFR(DecoupleBP || debugFlagOn, ", is usable\n");
         } else {
+            DPRINTFR(DecoupleBP || debugFlagOn,
+                    ", but exclude because chunk start %#lx not in stream %#lx-%#lx\n",
+                    last_chunk_start, way.target.bbStart,
+                    way.target.controlAddr);
         }
 
         if (flag == false) {
@@ -164,7 +175,7 @@ StreamTAGE::lookupHelper(bool flag, Addr last_chunk_start, Addr stream_start,
             last_chunk_start >= target.bbStart &&
             last_chunk_start <= target.controlAddr) {
 
-            DPRINTF(DecoupleBP,
+            DPRINTF(DecoupleBP || debugFlagOn,
                      "%#lx, found entry in base predictor, streamStart: %#lx, "
                      "controlAddr: %#lx, nextStream: %#lx\n",
                      last_chunk_start, target.bbStart, target.controlAddr,
@@ -186,6 +197,13 @@ StreamTAGE::putPCHistory(Addr cur_chunk_start, Addr stream_start, const bitset &
     int alt_predictor_index = 0;
     int pred_count = 0; // no use
     bool use_alt_pred = false;
+
+    if (stream_start == ObservingPC) {
+        debugFlagOn = true;
+        DPRINTFV(true, "Predict for stream %#lx, chunk: %#lx\n", stream_start,
+                 cur_chunk_start);
+    }
+
     bool found =
         lookupHelper(false, cur_chunk_start, stream_start, history, target,
                      alt_target, predictor, predictor_index, alt_predictor,
@@ -197,22 +215,25 @@ StreamTAGE::putPCHistory(Addr cur_chunk_start, Addr stream_start, const bitset &
     }
 
     auto& way = tageTable[predictor][predictor_index];
-    DPRINTF(DecoupleBP,
-            "valid: %d, chunkStart: %#lx, streamStart: %#lx  controlAddr: "
+    DPRINTF(DecoupleBP || debugFlagOn,
+            "found: %d, valid: %d, chunkStart: %#lx, streamStart: %#lx  controlAddr: "
             "%#lx, nextStream: %#lx\n",
-            way.valid, cur_chunk_start, stream_start, way.target.controlAddr,
+            found, way.valid, cur_chunk_start, stream_start, way.target.controlAddr,
             way.target.nextStream);
     if (!found) {
-        DPRINTF(DecoupleBP,
-                "not found for stream=%#lx, guess an unlimited stream\n",
-                cur_chunk_start);
+        DPRINTF(DecoupleBP || debugFlagOn,
+                "not found for stream=%#lx, chunk=%#lx, guess an unlimited stream\n",
+                stream_start, cur_chunk_start);
         prediction.valid = false;
         prediction.history = history;
         prediction.endIsCall = false;
         prediction.endIsRet = false;
+        prediction.endNotTaken = true;
 
     } else {
-        DPRINTF(DecoupleBP, "Entry found\n");
+        DPRINTF(DecoupleBP || debugFlagOn,
+                "Entry found in predictor %i: %#lx->%#lx, taken: %i\n", predictor,
+                target.controlAddr, target.nextStream, !target.endNotTaken);
         prediction.valid = true;
         prediction.bbStart = stream_start;
         prediction.controlAddr = target.controlAddr;
@@ -220,10 +241,12 @@ StreamTAGE::putPCHistory(Addr cur_chunk_start, Addr stream_start, const bitset &
         prediction.nextStream = target.nextStream;
         prediction.endIsCall = target.endIsCall;
         prediction.endIsRet = target.endIsRet;
+        prediction.endNotTaken = target.endNotTaken;
         prediction.history = history;
 
         way.target.tick = curTick();
     }
+    debugFlagOn = false;
 }
 
 StreamPrediction
@@ -249,14 +272,15 @@ StreamTAGE::equals(const TickedStreamStorage& t, Addr stream_start_pc,
 
 void
 StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
-                   Addr control_pc, Addr target,
-                   unsigned control_size,
-                   bool actually_taken,
-                   const bitset &history, EndType endType) {
+                   Addr control_pc, Addr target, unsigned control_size,
+                   bool actually_taken, const bitset& history, EndType endType)
+{
     if (stream_start_pc == ObservingPC) {
         debugFlagOn = true;
+        DPRINTFV(true, "Update for stream %#lx, chunk:%#lx\n", stream_start_pc,
+                 last_chunk_start);
     }
-    if (control_pc < stream_start_pc) {
+    if (actually_taken && (control_pc < stream_start_pc)) {
         DPRINTFV(this->debugFlagOn || ::gem5::debug::DecoupleBP,
                 "Control PC %#lx is before stream start %#lx, ignore it\n",
                 control_pc,
@@ -292,10 +316,21 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
         predictor_index_sel = predictor_index;
     }
 
-    auto base_table_idx = getBaseIndex(stream_start_pc);
-    baseTable[base_table_idx].set(
-        curTick(), stream_start_pc, control_pc, target, control_size, 1,
-        (endType == END_TYPE_CALL), (endType == END_TYPE_RET), true);
+    if (!predictor_found) {  // only need to update predictor when there is no
+                             // TAGE provider found
+        auto &entry = baseTable[getBaseIndex(last_chunk_start)];
+        if (entry.valid && entry.hysteresis >= 1) {
+            // dec conf
+            entry.hysteresis--;
+        } else {
+            // replace it
+            entry.set(curTick(), stream_start_pc, control_pc, target,
+                      control_size, 1, (endType == END_TYPE_CALL),
+                      (endType == END_TYPE_RET), true);
+        }
+        DPRINTFV(this->debugFlagOn || ::gem5::debug::DecoupleBP,
+                 "No TAGE provider found, only update base predictor\n");
+    }
 
     bool allocate_values = true;
 
@@ -304,11 +339,31 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
     if (pred_count > 0 && equals(target_sel, stream_start_pc, control_pc, target)) {//pred hit
         // the prediction was from predictor tables and correct
         // increment the counter
-        if (way_sel.target.hysteresis <= 2) {
-            ++way_sel.target.hysteresis;
+        if (way_sel.target.endNotTaken == !actually_taken) {
+            if (way_sel.target.hysteresis <= 2) {
+                ++way_sel.target.hysteresis;
+            }
+            way_sel.target.endIsCall = (endType == END_TYPE_CALL);
+            way_sel.target.endIsRet = (endType == END_TYPE_RET);
+            DPRINTF(DecoupleBP || this->debugFlagOn,
+                     "Predict correctly, inc conf for TAGE table %lu\n",
+                     predictor_sel);
+        } else {
+            if (way_sel.target.hysteresis > 1) {
+                way_sel.target.hysteresis -= 1;
+                DPRINTF(DecoupleBP || this->debugFlagOn,
+                         "Target is correct, but direction is wrong, dec "
+                         "conf to %u for TAGE table %lu\n",
+                         way_sel.target.hysteresis, predictor_sel);
+            } else {
+                way_sel.target.hysteresis = 1;
+                way_sel.target.endNotTaken = !actually_taken;
+                DPRINTF(DecoupleBP || this->debugFlagOn,
+                         "Target is correct, but direction is wrong, "
+                         "switch it to %s\n",
+                         way_sel.target.endNotTaken ? "not taken" : "taken");
+            }
         }
-        way_sel.target.endIsCall = (endType == END_TYPE_CALL);
-        way_sel.target.endIsRet = (endType == END_TYPE_RET);
     } else {
         // a misprediction
         auto& way1 = tageTable[predictor][predictor_index];
@@ -341,20 +396,22 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
                 DPRINTFV(this->debugFlagOn || ::gem5::debug::DecoupleBP,
                          "predictor %d index %d now conf=%d, replace it\n",
                          predictor_sel, predictor_index_sel, way_sel.target.hysteresis);
-                way_sel.target.tick = curTick();
-                way_sel.target.bbStart = stream_start_pc;
-                way_sel.target.controlAddr = control_pc;
-                way_sel.target.controlSize = control_size;
-                way_sel.target.nextStream = target;
-                way_sel.target.hysteresis = 1;
-                way_sel.target.endIsCall = (endType == END_TYPE_CALL);
-                way_sel.target.endIsRet = (endType == END_TYPE_RET);
-                way_sel.tag =
-                    getTageTag(stream_start_pc,
-                           history,
-                           predictor_sel);
-                way_sel.target.hysteresis = 1;
-                way_sel.useful = 0;
+                if (actually_taken) {
+                    DPRINTFV(this->debugFlagOn || ::gem5::debug::DecoupleBP,
+                             "Change to taken at %#lx to %#lx\n", control_pc,
+                             target);
+                    way_sel.target.set(curTick(), stream_start_pc, control_pc,
+                                       target, control_size, 1,
+                                       (endType == END_TYPE_CALL),
+                                       (endType == END_TYPE_RET), true);
+                    way_sel.tag =
+                        getTageTag(stream_start_pc, history, predictor_sel);
+                    way_sel.useful = 0;
+                } else {
+                    DPRINTFV(this->debugFlagOn || ::gem5::debug::DecoupleBP,
+                             "Change to not taken\n");
+                    way_sel.target.endNotTaken = true;
+                }
             }
         }
         //update the tag
@@ -374,6 +431,7 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
                              "Allocated in table %d index[%d], histlen=%u\n",
                              start_tage_table, new_index, histLengths[start_tage_table]);
                     if (reset_counter < 255) reset_counter++;
+
                     way_new.valid = true;
                     way_new.target.tick = curTick();
                     way_new.target.bbStart = stream_start_pc;
@@ -383,11 +441,11 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
                     way_new.target.hysteresis = 1;
                     way_new.target.endIsCall = (endType == END_TYPE_CALL);
                     way_new.target.endIsRet = (endType == END_TYPE_RET);
+                    way_new.target.endNotTaken = !actually_taken;
                     way_new.tag =
-                        getTageTag(stream_start_pc,
-                               history,
-                               start_tage_table);
+                        getTageTag(stream_start_pc, history, start_tage_table);
                     way_new.target.hysteresis = 1;
+
                     ++allocated;
                     ++start_tage_table; // do not allocate on consecutive predictors
                     if (allocated == numTablesToAlloc) {
@@ -470,7 +528,7 @@ StreamTAGE::getTageIndex(Addr pc, const bitset& history, int t)
     bitset hist(history);  // copy a writable history
     hist.resize(histLengths[t]);
     hist.resize(maxHistLen);
-    DPRINTFV(this->debugFlagOn || ::gem5::debug::DecoupleBP,
+    DPRINTFV(this->debugFlagOn && ::gem5::debug::DecoupleBPVerbose,
              "Calc index: allocate a %u bit buf, using hist %s\n",
              tableIndexBits[t], hist);
     for (unsigned i = 0; i < indexSegments[t]; i++) {

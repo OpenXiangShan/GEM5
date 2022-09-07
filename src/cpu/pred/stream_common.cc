@@ -9,12 +9,15 @@ unsigned streamChunkSize{0x40};
 Addr
 computeLastChunkStart(Addr taken_control_pc, Addr stream_start_pc)
 {
-    Addr chunk_start = taken_control_pc / streamChunkSize * streamChunkSize;
-    if (chunk_start >= stream_start_pc) {
-        return chunk_start;
-    } else {
-        return stream_start_pc;
+    while (stream_start_pc < taken_control_pc) {
+        stream_start_pc += streamChunkSize;
     }
+
+    if (stream_start_pc > taken_control_pc) {
+        stream_start_pc -= streamChunkSize;
+    }
+
+    return stream_start_pc;
 }
 
 
