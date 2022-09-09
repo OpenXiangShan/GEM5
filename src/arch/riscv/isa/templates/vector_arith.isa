@@ -1175,7 +1175,7 @@ template<typename ElemType, typename IndexType>
     const uint8_t vs2_vregs = lmul < 0 ? 1 : 1 << lmul;
     const uint8_t vs1_vregs = vs1_emul < 0 ? 1 : 1 << vs1_emul;
     const uint8_t vd_vregs = vs2_vregs;
-    const int32_t micro_vlmax = vlenb / std::max(vd_eewb, vs1_eewb);
+    const int32_t micro_vlmax = VLENB / std::max(vd_eewb, vs1_eewb);
     int32_t remaining_vl = this->vl;
     int32_t micro_vl = std::min(remaining_vl, micro_vlmax);
     StaticInstPtr microop;
@@ -1268,9 +1268,9 @@ Fault
     constexpr uint8_t vs2_eewb = sizeof(ElemType);
     constexpr uint8_t vs1_split_num = (vd_eewb + vs1_eewb - 1) / vs1_eewb;
     constexpr uint8_t vd_split_num = (vs1_eewb + vd_eewb - 1) / vd_eewb;
-    [[maybe_unused]] constexpr uint16_t vd_elems = vlenb / vd_eewb;
-    [[maybe_unused]] constexpr uint16_t vs1_elems = vlenb / vs1_eewb;
-    [[maybe_unused]] constexpr uint16_t vs2_elems = vlenb / vs2_eewb;
+    [[maybe_unused]] constexpr uint16_t vd_elems = VLENB / vd_eewb;
+    [[maybe_unused]] constexpr uint16_t vs1_elems = VLENB / vs1_eewb;
+    [[maybe_unused]] constexpr uint16_t vs2_elems = VLENB / vs2_eewb;
     [[maybe_unused]] const int8_t lmul = vtype_vlmul(vtype);
     [[maybe_unused]] const uint8_t vs2_vregs = lmul < 0 ? 1 : 1 << lmul;
     [[maybe_unused]] const uint8_t vs2_idx = microIdx % vs2_vregs;

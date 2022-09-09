@@ -558,7 +558,7 @@ const std::map<int, CSRMetadata> CSRData = {
     {CSR_VCSR,         {"vcsr"  , MISCREG_VCSR}},
     {CSR_VL,           {"vl"    , MISCREG_VL}},
     {CSR_VTYPE,        {"vtype" , MISCREG_VTYPE}},
-    {CSR_VLENB,        {"vlenb" , MISCREG_VLENB}}
+    {CSR_VLENB,        {"VLENB" , MISCREG_VLENB}}
 };
 
 /**

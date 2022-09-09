@@ -158,7 +158,7 @@ def format VlStrideOp(
 
 def format VsStrideOp(
     memacc_code,
-    ea_code={{ EA = Rs1 + Rs2 * (regIdx * vlenb / elem_size + microIdx); }},
+    ea_code={{ EA = Rs1 + Rs2 * (regIdx * VLENB / elem_size + microIdx); }},
     mem_flags=[],
     inst_flags=[]
 ) {{
