@@ -30,6 +30,7 @@ FetchTargetQueue::squash(FetchTargetId new_enq_target_id,
     fetchTargetEnqState.pc = new_enq_pc;
 
     supplyFetchTargetState.valid = false;
+    supplyFetchTargetState.entry = nullptr;
     fetchDemandTargetId = new_fetch_demand_target_id;
     DPRINTF(DecoupleBP,
             "FTQ demand stream ID update to %lu, FTQ demand pc update to "
@@ -48,7 +49,7 @@ FtqEntry&
 FetchTargetQueue::getTarget()
 {
     assert(fetchTargetAvailable());
-    return supplyFetchTargetState.entry;
+    return *supplyFetchTargetState.entry;
 }
 
 void
@@ -57,6 +58,7 @@ FetchTargetQueue::finishCurrentFetchTarget()
 
     ++fetchDemandTargetId;
     ftq.erase(supplyFetchTargetState.targetId);
+    supplyFetchTargetState.entry = nullptr;
     DPRINTF(DecoupleBP,
             "Finish current fetch target: %lu, inc demand to %lu\n",
             supplyFetchTargetState.targetId, fetchDemandTargetId);
@@ -75,7 +77,7 @@ FetchTargetQueue::trySupplyFetchWithTarget()
                     fetchDemandTargetId);
             supplyFetchTargetState.valid = true;
             supplyFetchTargetState.targetId = fetchDemandTargetId;
-            supplyFetchTargetState.entry = it->second;
+            supplyFetchTargetState.entry = &(it->second);
             return true;
         } else {
             DPRINTF(DecoupleBP, "Target id %lu not found\n",
@@ -85,6 +87,9 @@ FetchTargetQueue::trySupplyFetchWithTarget()
                 --it;
                 DPRINTF(DecoupleBP, "Last entry of target queue: %lu\n",
                         it->first);
+                if (it->first > fetchDemandTargetId) {
+                    dump("targets in buffer goes beyond demand\n");
+                }
                 assert(it->first < fetchDemandTargetId);
             }
             return false;

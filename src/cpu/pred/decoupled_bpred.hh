@@ -13,6 +13,7 @@
 #include "debug/DecoupleBP.hh"
 #include "debug/DecoupleBPHist.hh"
 #include "debug/DecoupleBPProbe.hh"
+#include "debug/DecoupleBPRAS.hh"
 #include "params/DecoupledBPU.hh"
 
 namespace gem5
@@ -51,6 +52,20 @@ class HistoryManager
                 "Add taken %lu, %#lx->%#lx\n",
                 it.streamId, it.pc, it.target);
     }
+    void updateSpeculativeHist(const Addr addr, const Addr target, const uint64_t stream_id)
+    {
+        auto &it = speculativeHists.back();
+        assert(it.streamId == stream_id);
+        assert(it.miss);
+        it.miss = false;
+        it.pc = addr;
+        it.target = target;
+
+        DPRINTF(DecoupleBP,
+                "Update taken %lu, %#lx->%#lx\n",
+                it.streamId, it.pc, it.target);
+    }
+
 
     void commit(const uint64_t stream_id)
     {
@@ -78,6 +93,7 @@ class HistoryManager
         dump("before squash");
         auto it = speculativeHists.begin();
         while (it != speculativeHists.end()) {
+            // why is it empty in logs?
             if (it->streamId == stream_id) {
                 if (taken) {
                     it->miss = false;
@@ -94,6 +110,9 @@ class HistoryManager
                         it->streamId, it->pc, it->target);
                 it = speculativeHists.erase(it);
             } else {
+                DPRINTF(DecoupleBP,
+                        "Skip stream %i when squashing stream %i\n",
+                        it->streamId, stream_id);
                 ++it;
             }
         }
@@ -190,7 +209,7 @@ class DecoupledBPU : public BPredUnit
 
     void tryEnqFetchTarget();
 
-    void makeNewPredictionAndInsertFsq();
+    void makeNewPrediction(bool create_new_stream);
 
     Addr alignToCacheLine(Addr addr)
     {
@@ -329,7 +348,7 @@ class DecoupledBPU : public BPredUnit
 
     void dumpRAS() {
         for (std::stack<Addr> dump = streamRAS; !dump.empty(); dump.pop())
-            DPRINTF(DecoupleBP, "RAS: %lx\n", dump.top());
+            DPRINTF(DecoupleBPRAS, "RAS: %lx\n", dump.top());
     }
 
     bool debugFlagOn{false};
@@ -355,6 +374,8 @@ class DecoupledBPU : public BPredUnit
     };
 
     std::map<Addr, MispredictEntry> topMispredicts;
+
+    void setTakenEntryWithStream(const FetchStream &stream_entry, FtqEntry &ftq_entry);
 };
 
 }  // namespace branch_prediction

@@ -22,7 +22,7 @@ struct FetchTargetReadState
 {
     bool valid;
     FetchTargetId targetId;
-    FtqEntry entry;
+    FtqEntry *entry;
 };
 
 class FetchTargetQueue
@@ -65,7 +65,7 @@ class FetchTargetQueue
 
     FetchStreamId getSupplyingStreamId()
     {
-        return supplyFetchTargetState.entry.fsqID;
+        return supplyFetchTargetState.entry->fsqID;
     }
 
     void finishCurrentFetchTarget();
@@ -90,6 +90,8 @@ class FetchTargetQueue
     void setName(const std::string &parent) { _name = parent + ".ftq"; }
 
     bool validSupplyFetchTargetState() const;
+
+    FtqEntry &getLastInsertedEntry() { return ftq.rbegin()->second; }
 };
 
 }
