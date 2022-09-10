@@ -224,16 +224,15 @@ class DecoupledBPU : public BPredUnit
     {
         if (!e.resolved) {
             DPRINTFR(DecoupleBP,
-                     "FSQ prediction:: %#lx-[%#lx, %#lx) --> %#lx, "
-                     "hasEnteredFtq: %d\n",
+                     "FSQ prediction:: %#lx-[%#lx, %#lx) --> %#lx, ended: %i\n",
                      e.streamStart, e.predBranchAddr, e.predStreamEnd,
-                     e.predTarget, e.hasEnteredFtq);
+                     e.predTarget, e.getEnded());
         } else {
             DPRINTFR(
                 DecoupleBP,
-                "Resolved: %i, resolved stream:: %#lx-[%#lx, %#lx) --> %#lx\n",
+                "Resolved: %i, resolved stream:: %#lx-[%#lx, %#lx) --> %#lx, ended: %i\n",
                 e.resolved, e.streamStart, e.exeBranchAddr, e.exeStreamEnd,
-                e.exeTarget);
+                e.exeTarget, e.getEnded());
         }
     }
 
@@ -241,9 +240,8 @@ class DecoupledBPU : public BPredUnit
     {
         DPRINTFR(
             DecoupleBP,
-            "FSQ prediction:: %#lx-[%#lx, %#lx) --> %#lx, hasEnteredFtq: %d\n",
-            e.streamStart, e.predBranchAddr, e.predStreamEnd, e.predTarget,
-            e.hasEnteredFtq);
+            "FSQ prediction:: %#lx-[%#lx, %#lx) --> %#lx\n",
+            e.streamStart, e.predBranchAddr, e.predStreamEnd, e.predTarget);
         DPRINTFR(
             DecoupleBP,
             "Resolved: %i, resolved stream:: %#lx-[%#lx, %#lx) --> %#lx\n",
@@ -376,6 +374,8 @@ class DecoupledBPU : public BPredUnit
     std::map<Addr, MispredictEntry> topMispredicts;
 
     void setTakenEntryWithStream(const FetchStream &stream_entry, FtqEntry &ftq_entry);
+
+    void setNTEntryWithStream(FtqEntry &ftq_entry, Addr endPC);
 };
 
 }  // namespace branch_prediction

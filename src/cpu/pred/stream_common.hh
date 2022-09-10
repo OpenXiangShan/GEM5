@@ -10,6 +10,9 @@ namespace branch_prediction {
 
 extern unsigned streamChunkSize;
 
+extern unsigned fetchTargetSize;
+extern unsigned fetchTargetMask;
+
 Addr computeLastChunkStart(Addr taken_control_pc, Addr stream_start_pc);
 
 }  // namespace branch_prediction

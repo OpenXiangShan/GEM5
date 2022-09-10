@@ -6,6 +6,9 @@ namespace branch_prediction {
 
 unsigned streamChunkSize{0x40};
 
+unsigned fetchTargetSize{0x40};
+unsigned fetchTargetMask = fetchTargetSize - 1;
+
 Addr
 computeLastChunkStart(Addr taken_control_pc, Addr stream_start_pc)
 {

@@ -25,7 +25,7 @@ FetchTargetQueue::squash(FetchTargetId new_enq_target_id,
     // Because we squash the whole ftq, head and tail should be the same
     auto new_fetch_demand_target_id = new_enq_target_id;
 
-    fetchTargetEnqState.desireTargetId = new_enq_target_id;
+    fetchTargetEnqState.nextEnqTargetId = new_enq_target_id;
     fetchTargetEnqState.streamId = new_enq_stream_id;
     fetchTargetEnqState.pc = new_enq_pc;
 
@@ -34,8 +34,8 @@ FetchTargetQueue::squash(FetchTargetId new_enq_target_id,
     fetchDemandTargetId = new_fetch_demand_target_id;
     DPRINTF(DecoupleBP,
             "FTQ demand stream ID update to %lu, FTQ demand pc update to "
-            "%#lx\n",
-            new_enq_stream_id, new_enq_pc);
+            "%#lx, fetch demand target Id updated to %lu\n",
+            new_enq_stream_id, new_enq_pc, fetchDemandTargetId);
 }
 
 bool
@@ -114,8 +114,9 @@ void
 FetchTargetQueue::enqueue(FtqEntry entry)
 {
     DPRINTF(DecoupleBP, "Enqueueing target %lu with pc %#x and stream %lu\n",
-            fetchTargetEnqState.desireTargetId, entry.startPC, entry.fsqID);
-    ftq[fetchTargetEnqState.desireTargetId] = entry;
+            fetchTargetEnqState.nextEnqTargetId, entry.startPC, entry.fsqID);
+    ftq[fetchTargetEnqState.nextEnqTargetId] = entry;
+    ++fetchTargetEnqState.nextEnqTargetId;
 }
 
 void
@@ -123,8 +124,8 @@ FetchTargetQueue::dump(const char* when)
 {
     DPRINTF(DecoupleBP, "%s, dump FTQ\n", when);
     for (auto it = ftq.begin(); it != ftq.end(); ++it) {
-        DPRINTFR(DecoupleBP, "FTQ entry: %lu, pc: %#x, stream: %lu\n",
-                 it->first, it->second.startPC, it->second.fsqID);
+        DPRINTFR(DecoupleBP, "FTQ entry: %lu, start pc: %#x, end pc: %#lx, stream ID: %lu\n",
+                 it->first, it->second.startPC, it->second.endPC, it->second.fsqID);
     }
 }
 

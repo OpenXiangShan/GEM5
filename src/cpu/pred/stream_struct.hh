@@ -5,6 +5,7 @@
 
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/pred/stream_common.hh"
 
 namespace gem5 {
 
@@ -44,7 +45,6 @@ struct FetchStream
     Addr exeBranchAddr;
     int exeBranchType;
     // TODO: remove signals below
-    bool hasEnteredFtq;
     bool resolved;
 
     // RAS
@@ -66,7 +66,6 @@ struct FetchStream
         , exeTarget(0)
         , exeBranchAddr(0)
         , exeBranchType(0)
-        , hasEnteredFtq(0)
         , resolved(false)
         , wasCall(false) 
         , wasReturn(false) {}
@@ -80,6 +79,11 @@ struct FetchStream
         exeBranchAddr = predBranchAddr;
         exeBranchType = predBranchType;
     }
+
+    bool getEnded() const { return resolved ? exeEnded : streamEnded; }
+    Addr getControlPC() const { return resolved ? exeBranchAddr : predBranchAddr; }
+    Addr getEndPC() const { return resolved ? exeStreamEnd : predStreamEnd; }
+    Addr getTarget() const { return resolved ? exeTarget : predTarget; }
 };
 
 struct FetchingStream : public FetchStream
@@ -137,7 +141,13 @@ struct FtqEntry
 {
     Addr startPC;
     Addr endPC;    // TODO: use PCState and it can be included in takenPC
-    Addr takenPC;  // TODO: use PCState
+
+    // When it is a taken branch, takenPC is the control (starting) PC
+    // When it is yet missing, takenPC is the ``known'' PC,
+    // decoupledPredict cannot goes beyond takenPC and should be blocked
+    // when current PC == takenPC
+    Addr takenPC;
+
     bool taken;
     Addr target;  // TODO: use PCState
     FetchStreamId fsqID;
@@ -148,6 +158,9 @@ struct FtqEntry
         , taken(false)
         , target(0)
         , fsqID(0) {}
+    
+    bool miss() const { return !taken; }
+    bool filledUp() const { return (endPC & fetchTargetMask) == 0; }
 };
 
 // struct FetchStreamWithID: public FetchStream {

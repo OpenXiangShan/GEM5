@@ -147,7 +147,6 @@ DecoupledBPU::decoupledPredict(const StaticInstPtr &inst,
         set(pc, *target);
         run_out_of_this_entry = true;
     } else {
-        // npc could be end + 2
         inst->advancePC(*target);
         if (target->instAddr() >= end) {
             run_out_of_this_entry = true;
@@ -199,25 +198,28 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
     s0PC = corr_target.instAddr();
     s0StreamStartPC = s0PC;
 
+    DPRINTF(DecoupleBP || debugFlagOn,
+            "Control squash: ftq_id=%lu, fsq_id=%lu,"
+            " control_pc=%#lx, corr_target=%#lx, is_conditional=%u, "
+            "is_indirect=%u, actually_taken=%u, branch seq: %lu\n",
+            target_id, stream_id, control_pc.instAddr(),
+            corr_target.instAddr(), is_conditional, is_indirect,
+            actually_taken, seq);
+
+    dumpFsq("Before control squash");
     // check sanity
     auto it = fetchStreamQueue.find(stream_id);
     assert(it != fetchStreamQueue.end());
     auto &stream = it->second;
+
+    DPRINTF(DecoupleBP || debugFlagOn, "stream start=%#lx", stream.streamStart);
+
 
     auto pc = stream.streamStart;
     if (pc == ObservingPC) {
         debugFlagOn = true;
     }
 
-    DPRINTFV(this->debugFlagOn || ::gem5::debug::DecoupleBP,
-            "Control squash: ftq_id=%lu, fsq_id=%lu, stream start=%#lx,"
-            " control_pc=%#lx, corr_target=%#lx, is_conditional=%u, "
-            "is_indirect=%u, actually_taken=%u, branch seq: %lu\n",
-            target_id, stream_id, stream.streamStart, control_pc.instAddr(),
-            corr_target.instAddr(), is_conditional, is_indirect,
-            actually_taken, seq);
-
-    if (pc == ObservingPC) dumpFsq("Before control squash");
 
     FetchTargetId ftq_demand_stream_id;
     stream.resolved = true;
@@ -346,7 +348,7 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
             corr_target.instAddr());
         printStream(stream);
     }
-    if (pc == ObservingPC) dumpFsq("After control squash");
+    dumpFsq("After control squash");
 
     DPRINTF(DecoupleBPRAS, "dump ras after control squash\n");
     dumpRAS();
@@ -600,9 +602,6 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
 void
 DecoupledBPU::dumpFsq(const char *when)
 {
-    if (!debugFlagOn) {
-        return;
-    }
     DPRINTF(DecoupleBPProbe, "dumping fsq entries %s...\n", when);
     for (auto it = fetchStreamQueue.begin(); it != fetchStreamQueue.end();
          it++) {
@@ -617,45 +616,47 @@ DecoupledBPU::tryEnqFetchStream()
     if (s0StreamStartPC == ObservingPC) {
         debugFlagOn = true;
     }
+    if (!lastCyclePredicted) {
+        DPRINTF(DecoupleBP, "last cycle not predicted, cannot enq fsq");
+        debugFlagOn = false;
+        return;
+    }
     if (!streamQueueFull()) {
-        // if queue empty, should make predictions
-        if (fetchStreamQueue.empty()) {
-            DPRINTF(DecoupleBP || debugFlagOn, "FSQ is empty\n");
-            if (lastCyclePredicted)
-                makeNewPrediction(true);
-        } else {
-            auto it = fetchStreamQueue.end();
-            it--;
-            auto &back = it->second;
-            if (back.streamEnded || back.exeEnded) {
+        bool should_create_new_stream = false;
+        if (!fetchStreamQueue.empty()) {
+            // check last entry state
+            auto &back = fetchStreamQueue.rbegin()->second;
+            if (back.getEnded()) {
+                should_create_new_stream = true;
                 DPRINTF(DecoupleBP || debugFlagOn,
-                        "FSQ is not empty, and the latest stream %lu (%#lx) "
-                        "has ended\n",
-                        it->first, it->second.streamStart);
-                // make new predictions
-                if (lastCyclePredicted)
-                    makeNewPrediction(true);
-            } else {
-                // check if current stream hits after miss
-                DPRINTF(DecoupleBP || debugFlagOn,
-                        "FSQ is not empty, but stream %lu has not ended:\n",
-                        it->first);
-                printStream(back);
-                makeNewPrediction(false);
-                
-                if (!back.streamEnded) {
-                    // streamMiss = true;
-                    s0PC += streamChunkSize;
-                    DPRINTF(DecoupleBP || debugFlagOn, "s0PC update to %#lx\n",
-                            s0PC);
-                } else {
-                    DPRINTF(DecoupleBP || debugFlagOn,
-                            "stream %lu has ended, s0PC update to %#lx");
-                }
+                        "FSQ: the latest stream has ended\n");
             }
         }
+        if (fetchStreamQueue.empty()) {
+            should_create_new_stream = true;
+            DPRINTF(DecoupleBP || debugFlagOn,
+                    "FSQ: is empty\n");
+        }
+
+        if (!should_create_new_stream) {
+            DPRINTF(DecoupleBP || debugFlagOn,
+                    "FSQ is not empty and the latest stream hasn't ended\n");
+        }
+        makeNewPrediction(should_create_new_stream);
+
+        const auto &back = fetchStreamQueue.rbegin()->second;
+        if (!back.getEnded()) {
+            // streamMiss = true;
+            DPRINTF(DecoupleBP || debugFlagOn, "s0PC update to %#lx\n", s0PC);
+        } else {
+            DPRINTF(DecoupleBP || debugFlagOn,
+                    "stream %lu has ended, s0PC update to %#lx\n",
+                    fetchStreamQueue.rend()->first, s0PC);
+        }
+
     } else {
-        DPRINTF(DecoupleBP || debugFlagOn, "FSQ is full: %lu\n", fetchStreamQueue.size());
+        DPRINTF(DecoupleBP || debugFlagOn, "FSQ is full: %lu\n",
+                fetchStreamQueue.size());
     }
     DPRINTF(DecoupleBP || debugFlagOn, "fsqId=%lu\n", fsqId);
     debugFlagOn = false;
@@ -665,15 +666,18 @@ void
 DecoupledBPU::setTakenEntryWithStream(const FetchStream &stream_entry, FtqEntry &ftq_entry)
 {
     ftq_entry.taken = true;
-    if (!stream_entry.resolved) {
-        ftq_entry.endPC = stream_entry.predStreamEnd;
-        ftq_entry.takenPC = stream_entry.predBranchAddr;
-        ftq_entry.target = stream_entry.predTarget;
-    } else {
-        ftq_entry.endPC = stream_entry.exeStreamEnd;
-        ftq_entry.takenPC = stream_entry.exeBranchAddr;
-        ftq_entry.target = stream_entry.exeTarget;
-    }
+    ftq_entry.takenPC = stream_entry.getControlPC();
+    ftq_entry.endPC = stream_entry.getEndPC();
+    ftq_entry.target = stream_entry.getTarget();
+}
+
+void
+DecoupledBPU::setNTEntryWithStream(FtqEntry &ftq_entry, Addr end_pc)
+{
+    ftq_entry.taken = false;
+    ftq_entry.takenPC = 0;
+    ftq_entry.target = 0;
+    ftq_entry.endPC = end_pc;
 }
 
 void
@@ -701,85 +705,97 @@ DecoupledBPU::tryEnqFetchTarget()
         return;
     }
 
-    auto stream_to_enq = it->second;
-    Addr end = stream_to_enq.resolved ? stream_to_enq.exeStreamEnd
-                                      : stream_to_enq.predStreamEnd;
-    Addr baddr = stream_to_enq.resolved ? stream_to_enq.exeBranchAddr
-                                        : stream_to_enq.predBranchAddr;
-    bool ended = stream_to_enq.resolved ? stream_to_enq.exeEnded
-                                        : stream_to_enq.streamEnded;
-    DPRINTF(DecoupleBP, "Try to enque with stream: ID=%i ", it->first);
-    printStream(it->second);
-    DPRINTF(DecoupleBP, "Serve enq PC: %#lx with stream:\n", ftq_enq_state.pc);
+    auto &stream_to_enq = it->second;
+    Addr end = stream_to_enq.getEndPC();
+    bool stream_ended = stream_to_enq.getEnded();
+    DPRINTF(DecoupleBP, "Serve enq PC: %#lx with stream %lu:\n",
+            ftq_enq_state.pc, it->first);
     printStream(stream_to_enq);
 
-    if (ended && ftq_enq_state.pc >= end) {
-        // stream has ended, and ftqEnqPC is beyond stream end
-        // this is because stream is updated last cycle
+    // We does let ftq to goes beyond fsq now
+    assert(ftq_enq_state.pc <= end);
+
+    // deal with an incompleted target entry
+    if (fetchTargetQueue.lastEntryIncomplete()) {
         DPRINTF(DecoupleBP || debugFlagOn,
-                "ftqEnqPC goes beyond stream end, correct it\n");
+                "Try filling up incompleted ftq entry\n");
         fetchTargetQueue.dump("Before update last entry");
         auto &last = fetchTargetQueue.getLastInsertedEntry();
-        setTakenEntryWithStream(stream_to_enq, last);
+        if (stream_to_enq.getEnded()) {
+            // mark the target as taken
+            setTakenEntryWithStream(stream_to_enq, last);
+            ftq_enq_state.streamId++;
+            ftq_enq_state.pc = last.target;
+        } else {
+            // still a missing target, set endPC to the predicted end
+            // decouplePredict is only allow to predicted untial this end
+            Addr predicted_until = stream_to_enq.getEndPC();
+            if (predicted_until > ftq_enq_state.pc) {
+                last.endPC =
+                    std::min(predicted_until,
+                             alignToCacheLine(last.endPC + fetchTargetSize));
+                ftq_enq_state.pc = last.endPC;
+            } else {
+                DPRINTF(
+                    DecoupleBP || debugFlagOn,
+                    "FSQ falls behind FTQ, cannot update last FTQ entry\n");
+            }
+        }
         printFetchTarget(last, "Updated in FTQ");
         fetchTargetQueue.dump("After update last entry");
-        ftq_enq_state.pc = last.target;
-        ftq_enq_state.streamId++;
         return;
     }
-    auto ftq_entry = FtqEntry();
-    if (!stream_to_enq.hasEnteredFtq) {
-        ftq_entry.startPC = stream_to_enq.streamStart;
-        stream_to_enq.hasEnteredFtq = true;
-        it->second = stream_to_enq;
-    } else {
-        ftq_entry.startPC = ftq_enq_state.pc;
-    }
-    ftq_enq_state.pc = alignToCacheLine(ftq_entry.startPC + 0x40);
-    DPRINTF(DecoupleBP, "Update ftqEnqPC from %#lx to %#lx\n",
-            ftq_entry.startPC, ftq_enq_state.pc);
+    // create a new target entry
+    FtqEntry ftq_entry;
+    ftq_entry.startPC = ftq_enq_state.pc;
+    ftq_entry.fsqID = ftq_enq_state.streamId;
 
-    // check if this is the last cache line of the stream
-    bool end_in_line = (end - alignToCacheLine(ftq_entry.startPC)) <= 0x40;
-    // whether the first byte of the branch instruction lies in
-    // this cache line
-    bool branch_in_line = (baddr - alignToCacheLine(ftq_entry.startPC)) < 0x40;
+    Addr baddr = stream_to_enq.getControlPC();
+    Addr line_end = alignToCacheLine(ftq_entry.startPC + fetchTargetSize);
+    bool branch_in_line = baddr < line_end;
+    bool end_in_line = end <= line_end;
 
     DPRINTF(DecoupleBP,
-            "end in line: %d, branch in line: %d, pred end: %d, "
-            "exe end: %d\n",
-            end_in_line, branch_in_line, stream_to_enq.streamEnded,
-            stream_to_enq.exeEnded);
-    ftq_entry.fsqID = ftq_enq_state.streamId;
-    if ((end_in_line || branch_in_line) && ended) {
-        setTakenEntryWithStream(stream_to_enq, ftq_entry);
+            "end in line: %d, branch in line: %d, stream ended: %d\n",
+            end_in_line, branch_in_line, stream_to_enq.getEnded());
 
+    if (stream_to_enq.getEnded() && branch_in_line) {
         DPRINTF(DecoupleBP, "Enqueue FTQ with ended stream %lu\n",
                 ftq_enq_state.streamId);
         printStream(stream_to_enq);
 
-        ftq_enq_state.streamId++;
+        setTakenEntryWithStream(stream_to_enq, ftq_entry);
         ftq_enq_state.pc = ftq_entry.target;
+        ftq_enq_state.streamId++;
+
         DPRINTF(DecoupleBP,
                 "Update ftqEnqPC to %#lx, FTQ demand stream ID to "
-                "%u, because stream ends\n",
+                "%lu, because stream ends\n",
                 ftq_enq_state.pc, ftq_enq_state.streamId);
-    } else {
-        // align to the end of current cache line
-        ftq_entry.endPC = alignToCacheLine(ftq_entry.startPC + 0x40);
 
-        ftq_entry.taken = false;
-        ftq_entry.takenPC = 0;
-        DPRINTF(DecoupleBP, "Enqueue FTQ with continuous stream %lu\n",
-                ftq_enq_state.streamId);
+    } else {
+        Addr predict_until;
+        if (!stream_to_enq.getEnded() && end_in_line) {
+            predict_until = end;
+        } else {
+            // Taken but br not in line
+            // Or, miss and predicted_until goes beyond this cache line
+            predict_until = line_end;
+        }
+        setNTEntryWithStream(ftq_entry, predict_until);
+        ftq_enq_state.pc = predict_until;
+        DPRINTF(DecoupleBP,
+                "Enqueue FTQ with continuous stream %lu that can predicted "
+                "until %#lx\n",
+                ftq_enq_state.streamId, predict_until);
         printStream(stream_to_enq);
     }
-    assert(ftq_enq_state.streamId <= fsqId + 1);
     fetchTargetQueue.enqueue(ftq_entry);
-    ftq_enq_state.desireTargetId++;
-    DPRINTF(DecoupleBP, "a %s stream inc ftqID: %lu -> %lu\n",
-            ended ? "ended" : "miss", ftq_enq_state.desireTargetId - 1,
-            ftq_enq_state.desireTargetId);
+
+    assert(ftq_enq_state.streamId <= fsqId + 1);
+
+    DPRINTF(DecoupleBP, "a%s stream, next enqueue target: %lu\n",
+            stream_ended ? "n ended" : " miss", ftq_enq_state.nextEnqTargetId);
     printFetchTarget(ftq_entry, "Insert to FTQ");
     fetchTargetQueue.dump("After insert new entry");
 }
@@ -866,6 +882,8 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
         DPRINTF(DecoupleBP,
                 "No valid prediction or pred fall thru, gen missing stream: %#lx -> ...\n",
                 s0PC);
+        s0PC += streamChunkSize;
+        entry.predStreamEnd = s0PC;
         entry.streamEnded = false;
         entry.history.resize(historyBits);
         DPRINTF(DecoupleBP, "entry hist size: %lu, ubtb hist size: %lu\n",
@@ -890,8 +908,9 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
     }
     boost::to_string(entry.history, buf1);
     DPRINTF(DecoupleBP, "New prediction history: %s\n", buf1.c_str());
-    entry.setDefaultResolve();
+
     if (create_new_stream) {
+        entry.setDefaultResolve();
         auto [insert_it, inserted] = fetchStreamQueue.emplace(fsqId, entry);
         assert(inserted);
 
@@ -902,7 +921,7 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
     }
 
     // only if the stream is predicted to be ended can we inc fsqID
-    if (entry.streamEnded) {
+    if (entry.getEnded()) {
         fsqId++;
         DPRINTF(DecoupleBP, "Inc fetch stream to %lu, because stream ends\n",
                 fsqId);

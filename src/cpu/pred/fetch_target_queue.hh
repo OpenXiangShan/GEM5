@@ -14,8 +14,8 @@ struct FetchTargetEnqState
 {
     Addr pc;
     FetchStreamId streamId;
-    FetchTargetId desireTargetId;
-    FetchTargetEnqState() : pc(0), streamId(1), desireTargetId(0) {}
+    FetchTargetId nextEnqTargetId;
+    FetchTargetEnqState() : pc(0), streamId(1), nextEnqTargetId(0) {}
 };
 
 struct FetchTargetReadState
@@ -92,6 +92,14 @@ class FetchTargetQueue
     bool validSupplyFetchTargetState() const;
 
     FtqEntry &getLastInsertedEntry() { return ftq.rbegin()->second; }
+
+    bool lastEntryIncomplete() const
+    {
+        if (ftq.empty())
+            return false;
+        const auto &last_entry = ftq.rbegin()->second;
+        return last_entry.miss() && !last_entry.filledUp();
+    }
 };
 
 }
