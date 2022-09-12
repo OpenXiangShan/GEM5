@@ -43,14 +43,14 @@ class HistoryManager
     unsigned IdealHistLen{246};
 
   public:
-    void addSpeculativeHist(const Addr addr, const Addr target, const uint64_t stream_id)
+    void addSpeculativeHist(const Addr addr, const Addr target,
+                            const uint64_t stream_id, bool is_miss)
     {
-        speculativeHists.emplace_back(addr, target, addr == 0, stream_id);
+        speculativeHists.emplace_back(addr, target, is_miss, stream_id);
 
         const auto &it = speculativeHists.back();
-        DPRINTF(DecoupleBP,
-                "Add taken %lu, %#lx->%#lx\n",
-                it.streamId, it.pc, it.target);
+        DPRINTF(DecoupleBP, "Add taken: %i, stream %lu, %#lx->%#lx\n",
+                !is_miss, it.streamId, it.pc, it.target);
     }
     void updateSpeculativeHist(const Addr addr, const Addr target, const uint64_t stream_id)
     {
@@ -223,17 +223,14 @@ class DecoupledBPU : public BPredUnit
     void printStream(const FetchStream &e)
     {
         if (!e.resolved) {
-            DPRINTFR(DecoupleBP,
-                     "FSQ prediction:: %#lx-[%#lx, %#lx) --> %#lx, ended: %i\n",
-                     e.streamStart, e.predBranchAddr, e.predStreamEnd,
-                     e.predTarget, e.getEnded());
+            DPRINTFR(DecoupleBP, "FSQ Predicted stream: ");
         } else {
-            DPRINTFR(
-                DecoupleBP,
-                "Resolved: %i, resolved stream:: %#lx-[%#lx, %#lx) --> %#lx, ended: %i\n",
-                e.resolved, e.streamStart, e.exeBranchAddr, e.exeStreamEnd,
-                e.exeTarget, e.getEnded());
+            DPRINTFR(DecoupleBP, "FSQ Resolved stream: ");
         }
+        DPRINTFR(DecoupleBP,
+                 "%#lx-[%#lx, %#lx) --> %#lx, ended: %i, taken: %i\n",
+                 e.streamStart, e.getControlPC(), e.getEndPC(),
+                 e.getNextStreamStart(), e.getEnded(), e.getTaken());
     }
 
     void printStreamFull(const FetchStream &e)
@@ -241,11 +238,11 @@ class DecoupledBPU : public BPredUnit
         DPRINTFR(
             DecoupleBP,
             "FSQ prediction:: %#lx-[%#lx, %#lx) --> %#lx\n",
-            e.streamStart, e.predBranchAddr, e.predStreamEnd, e.predTarget);
+            e.streamStart, e.predBranchPC, e.predEndPC, e.predTarget);
         DPRINTFR(
             DecoupleBP,
             "Resolved: %i, resolved stream:: %#lx-[%#lx, %#lx) --> %#lx\n",
-            e.exeEnded, e.streamStart, e.exeBranchAddr, e.exeStreamEnd,
+            e.exeEnded, e.streamStart, e.exeBranchPC, e.exeEndPC,
             e.exeTarget);
     }
 

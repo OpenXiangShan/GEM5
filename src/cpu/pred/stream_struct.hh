@@ -27,63 +27,68 @@ struct FetchStream
     Addr streamStart;
 
     // indicating whether a backing prediction has finished
-    bool streamEnded;
+    bool predEnded;
+    bool predTaken;
 
     // predicted stream end pc
-    Addr predStreamEnd;
+    Addr predEndPC;
     // TODO: use PCState for target(gem5 specific)
     Addr predTarget;
-    Addr predBranchAddr;
+    Addr predBranchPC;
     int predBranchType;
 
     // for commit, write at redirect or fetch
-    InstSeqNum branchSeq;
     bool exeEnded;
-    Addr exeStreamEnd;
+    bool exeTaken;
+    Addr exeEndPC;
     // TODO: use PCState for target(gem5 specific)
     Addr exeTarget;
-    Addr exeBranchAddr;
-    int exeBranchType;
+    Addr exeBranchPC;
+    // int exeBranchType;
     // TODO: remove signals below
     bool resolved;
 
     // RAS
-    bool wasCall;
-    bool wasReturn;
+    bool isCall;
+    bool isReturn;
 
     boost::dynamic_bitset<> history;
 
     FetchStream()
         : streamStart(0)
-        , streamEnded(false)
-        , predStreamEnd(0)
+        , predEnded(false)
+        , predTaken(false)
+        , predEndPC(0)
         , predTarget(0)
-        , predBranchAddr(0)
+        , predBranchPC(0)
         , predBranchType(0)
-        , branchSeq(-1)
         , exeEnded(false)
-        , exeStreamEnd(0)
+        , exeTaken(false)
+        , exeEndPC(0)
         , exeTarget(0)
-        , exeBranchAddr(0)
-        , exeBranchType(0)
+        , exeBranchPC(0)
+        // , exeBranchType(0)
         , resolved(false)
-        , wasCall(false) 
-        , wasReturn(false) {}
+        , isCall(false) 
+        , isReturn(false) {}
 
     // the default exe result should be consistent with prediction
     void setDefaultResolve() {
         resolved = false;
-        exeEnded = streamEnded;
-        exeStreamEnd = predStreamEnd;
+        exeEnded = predEnded;
+        exeEndPC = predEndPC;
         exeTarget = predTarget;
-        exeBranchAddr = predBranchAddr;
-        exeBranchType = predBranchType;
+        exeBranchPC = predBranchPC;
+        // exeBranchType = predBranchType;
     }
 
-    bool getEnded() const { return resolved ? exeEnded : streamEnded; }
-    Addr getControlPC() const { return resolved ? exeBranchAddr : predBranchAddr; }
-    Addr getEndPC() const { return resolved ? exeStreamEnd : predStreamEnd; }
-    Addr getTarget() const { return resolved ? exeTarget : predTarget; }
+    bool getEnded() const { return resolved ? exeEnded : predEnded; }
+    Addr getControlPC() const { return resolved ? exeBranchPC : predBranchPC; }
+    Addr getEndPC() const { return resolved ? exeEndPC : predEndPC; }
+    Addr getTaken() const { return resolved ? exeTaken : predTaken; }
+    Addr getTakenTarget() const { return resolved ? exeTarget : predTarget; }
+    Addr getFallThruPC() const { return getEndPC(); }
+    Addr getNextStreamStart() const {return getTaken() ? getTakenTarget() : getFallThruPC(); }
 };
 
 struct FetchingStream : public FetchStream

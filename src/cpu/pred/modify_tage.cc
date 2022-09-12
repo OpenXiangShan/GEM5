@@ -103,10 +103,15 @@ StreamTAGE::lookupHelper(bool flag, Addr last_chunk_start, Addr stream_start,
                 "TAGE table[%u] index[%u], valid: %i, expected tag: %#lx, "
                 "found tag: %#lx, match: %i\n",
                 i, tmp_index, way.valid, tmp_tag, way.tag, way.tag == tmp_tag);
-        if (way.tag == tmp_tag && way.valid &&
-            ((last_chunk_start >= way.target.bbStart &&
-              last_chunk_start <= way.target.controlAddr) ||
-             way.target.endNotTaken)) {
+        
+        bool match = way.tag == tmp_tag && way.valid;
+        bool sane = (last_chunk_start >= way.target.bbStart) &&
+                    ((way.target.endNotTaken &&
+                      last_chunk_start <
+                          way.target.controlAddr + way.target.controlSize) ||
+                     (!way.target.endNotTaken &&
+                      last_chunk_start <= way.target.controlAddr));
+        if (match && sane) {
             if (pred_counts == 0) {//第一次命中
                 target_1 = way.target;
                 predictor_1 = i;
@@ -428,7 +433,7 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
                 auto& way_new = tageTable[start_tage_table][new_index];
                 if (way_new.useful == 0) {
                     DPRINTFV(this->debugFlagOn || ::gem5::debug::DecoupleBP,
-                             "Allocated in table %d index[%d], histlen=%u\n",
+                             "Allocated in table[%d] index[%d], histlen=%u\n",
                              start_tage_table, new_index, histLengths[start_tage_table]);
                     if (reset_counter < 255) reset_counter++;
 

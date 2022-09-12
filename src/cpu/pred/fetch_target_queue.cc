@@ -33,7 +33,7 @@ FetchTargetQueue::squash(FetchTargetId new_enq_target_id,
     supplyFetchTargetState.entry = nullptr;
     fetchDemandTargetId = new_fetch_demand_target_id;
     DPRINTF(DecoupleBP,
-            "FTQ demand stream ID update to %lu, FTQ demand pc update to "
+            "FTQ demand stream ID update to %lu, ftqEnqPC update to "
             "%#lx, fetch demand target Id updated to %lu\n",
             new_enq_stream_id, new_enq_pc, fetchDemandTargetId);
 }
