@@ -716,6 +716,9 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
 
         instruction->setPredTarg(fetch_pc);
         instruction->fault = fault;
+        std::unique_ptr<PCStateBase> next_pc(fetch_pc.clone());
+        instruction->staticInst->advancePC(*next_pc);
+        set(instruction->predPC, next_pc);
         wroteToTimeBuffer = true;
 
         DPRINTF(Activity, "Activity this cycle.\n");

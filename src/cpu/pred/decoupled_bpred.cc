@@ -32,8 +32,12 @@ DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
         std::sort(topMisPredPC.begin(), topMisPredPC.end(), [](const std::pair<Addr, MispredictEntry> &a, const std::pair<Addr, MispredictEntry> &b) {
             return a.second.count > b.second.count;
         });
+        int count = 0;
         for (auto& it : topMisPredPC) {
             *out_handle->stream() << std::hex << it.second.streamStart << " " << it.second.controlAddr << " " << std::dec << it.second.count << std::endl;
+            if (count++ > 100) {
+                break;
+            }
         }
         simout.close(out_handle);
     });

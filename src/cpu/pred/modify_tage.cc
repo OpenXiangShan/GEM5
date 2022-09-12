@@ -184,12 +184,16 @@ StreamTAGE::putPCHistory(Addr pc, const bitset &history) {
                 "not found for stream=%#lx, guess an unlimited stream\n",
                 pc);
         prediction.valid = false;
-        prediction.history = history;
+        prediction.bbStart = pc;
+        prediction.controlAddr = 0;
+        prediction.controlSize = 0;
+        prediction.nextStream = 0;
         prediction.endIsCall = false;
         prediction.endIsRet = false;
+        prediction.history = history;
 
     } else {
-        DPRINTF(DecoupleBP, "Entry found\n");
+        DPRINTF(DecoupleBP, "Entry found in %s\n", pred_count == 0 ? "base" : "tage");
         prediction.valid = true;
         prediction.bbStart = pc;
         prediction.controlAddr = target.controlAddr;
