@@ -58,6 +58,7 @@ FetchTargetQueue::finishCurrentFetchTarget()
 
     ++fetchDemandTargetId;
     ftq.erase(supplyFetchTargetState.targetId);
+    supplyFetchTargetState.valid = false;
     supplyFetchTargetState.entry = nullptr;
     DPRINTF(DecoupleBP,
             "Finish current fetch target: %lu, inc demand to %lu\n",

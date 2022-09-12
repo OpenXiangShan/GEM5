@@ -60,12 +60,22 @@ class FetchTargetQueue
 
     FetchTargetId getSupplyingTargetId()
     {
-        return supplyFetchTargetState.targetId;
+        if (supplyFetchTargetState.valid) {
+            return supplyFetchTargetState.targetId;
+        } else {
+            return fetchDemandTargetId;
+        }
     }
 
     FetchStreamId getSupplyingStreamId()
     {
-        return supplyFetchTargetState.entry->fsqID;
+        if (supplyFetchTargetState.valid) {
+            return supplyFetchTargetState.entry->fsqID;
+        } else if (!ftq.empty()) {
+            return ftq.begin()->second.fsqID;
+        } else {
+            return fetchTargetEnqState.streamId;
+        }
     }
 
     void finishCurrentFetchTarget();
