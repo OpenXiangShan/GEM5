@@ -733,6 +733,12 @@ Decode::decodeInsts(ThreadID tid)
                 break;
             }
         }
+        if (inst->isNonSpeculative() && inst->readPredTaken()) {
+            std::unique_ptr<PCStateBase> npc(inst->pcState().clone());
+            inst->staticInst->advancePC(*npc);
+            inst->setPredTaken(false);
+            inst->setPredTarg(*npc);
+        }
     }
 
     // If we didn't process all instructions, then we will need to block
