@@ -38,13 +38,12 @@ class StreamTAGE : public TimedPredictor
             this->nextStream = 0;
             this->controlSize = 0;
             this->hysteresis = 0;
-            this->endIsCall = 0;
-            this->endIsRet = 0;
+            this->endType = END_NONE;
         }
 
         void set(Tick tick_, Addr stream_start_addr, Addr control_addr,
                  Addr next_stream, uint8_t control_size, uint8_t hysteresis_,
-                 bool end_is_call, bool end_is_ret, bool valid_)
+                 int end_type, bool valid_)
         {
             this->tick = tick_;
             this->bbStart = stream_start_addr;
@@ -52,8 +51,7 @@ class StreamTAGE : public TimedPredictor
             this->nextStream = next_stream;
             this->controlSize = control_size;
             this->hysteresis = hysteresis_;
-            this->endIsCall = end_is_call;
-            this->endIsRet = end_is_ret;
+            this->endType = end_type;
             this->valid = valid_;
         }
     };

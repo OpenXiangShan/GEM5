@@ -12,11 +12,19 @@ namespace gem5 {
 namespace branch_prediction {
 
 enum EndType {
-    END_TYPE_CALL=0,
-    END_TYPE_RET,
-    END_TYPE_NOT_TAKEN,
-    END_TYPE_NONE
+    END_CALL=0,
+    END_RET,
+    END_OTHER_TAKEN,
+    END_NOT_TAKEN,
+    END_NONE
 };
+
+enum SquashType {
+    SQUASH_NONE=0,
+    SQUASH_TRAP,
+    SQUASH_CTRL
+};
+
 
 using FetchStreamId = uint64_t;
 using FetchTargetId = uint64_t;
@@ -44,33 +52,32 @@ struct FetchStream
     // TODO: use PCState for target(gem5 specific)
     Addr exeTarget;
     Addr exeBranchPC;
-    // int exeBranchType;
+    int endType;
     // TODO: remove signals below
     bool resolved;
 
-    // RAS
-    bool isCall;
-    bool isReturn;
+    int squashType;
 
     boost::dynamic_bitset<> history;
 
     FetchStream()
-        : streamStart(0)
-        , predEnded(false)
-        , predTaken(false)
-        , predEndPC(0)
-        , predTarget(0)
-        , predBranchPC(0)
-        , predBranchType(0)
-        , exeEnded(false)
-        , exeTaken(false)
-        , exeEndPC(0)
-        , exeTarget(0)
-        , exeBranchPC(0)
-        // , exeBranchType(0)
-        , resolved(false)
-        , isCall(false) 
-        , isReturn(false) {}
+        : streamStart(0),
+          predEnded(false),
+          predTaken(false),
+          predEndPC(0),
+          predTarget(0),
+          predBranchPC(0),
+          predBranchType(0),
+          exeEnded(false),
+          exeTaken(false),
+          exeEndPC(0),
+          exeTarget(0),
+          exeBranchPC(0),
+          endType(EndType::END_NONE),
+          resolved(false),
+          squashType(SquashType::SQUASH_NONE)
+    {
+    }
 
     // the default exe result should be consistent with prediction
     void setDefaultResolve() {
@@ -89,6 +96,8 @@ struct FetchStream
     Addr getTakenTarget() const { return resolved ? exeTarget : predTarget; }
     Addr getFallThruPC() const { return getEndPC(); }
     Addr getNextStreamStart() const {return getTaken() ? getTakenTarget() : getFallThruPC(); }
+    bool isCall() const { return endType == END_CALL; }
+    bool isReturn() const { return endType == END_RET; }
 };
 
 struct FetchingStream : public FetchStream
@@ -104,9 +113,8 @@ struct IdealStreamStorage
     Addr nextStream;
     uint16_t controlSize;
     unsigned hysteresis;
-    bool endIsRet;
-    bool endIsCall;
     bool endNotTaken;
+    int endType;
 };
 
 struct RealStreamStorage
@@ -123,11 +131,12 @@ struct StreamPrediction
     Addr nextStream;
     uint16_t controlSize;
     bool valid;
-    bool endIsCall;
-    bool endIsRet;
+    int endType;
     bool endNotTaken;
     bool rasUpdated;
     boost::dynamic_bitset<> history;
+    bool isCall() const { return endType == END_CALL; }
+    bool isReturn() const { return endType == END_RET; }
 };
 
 struct StreamPredictionWithID : public StreamPrediction

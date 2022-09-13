@@ -231,8 +231,7 @@ StreamTAGE::putPCHistory(Addr cur_chunk_start, Addr stream_start, const bitset &
                 stream_start, cur_chunk_start);
         prediction.valid = false;
         prediction.history = history;
-        prediction.endIsCall = false;
-        prediction.endIsRet = false;
+        prediction.endType = END_NONE;
         prediction.endNotTaken = true;
 
     } else {
@@ -244,8 +243,7 @@ StreamTAGE::putPCHistory(Addr cur_chunk_start, Addr stream_start, const bitset &
         prediction.controlAddr = target.controlAddr;
         prediction.controlSize = target.controlSize;
         prediction.nextStream = target.nextStream;
-        prediction.endIsCall = target.endIsCall;
-        prediction.endIsRet = target.endIsRet;
+        prediction.endType = target.endType;
         prediction.endNotTaken = target.endNotTaken;
         prediction.history = history;
 
@@ -278,7 +276,7 @@ StreamTAGE::equals(const TickedStreamStorage& t, Addr stream_start_pc,
 void
 StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
                    Addr control_pc, Addr target, unsigned control_size,
-                   bool actually_taken, const bitset& history, EndType endType)
+                   bool actually_taken, const bitset& history, EndType end_type)
 {
     if (stream_start_pc == ObservingPC) {
         debugFlagOn = true;
@@ -330,8 +328,7 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
         } else {
             // replace it
             entry.set(curTick(), stream_start_pc, control_pc, target,
-                      control_size, 1, (endType == END_TYPE_CALL),
-                      (endType == END_TYPE_RET), true);
+                      control_size, 1, end_type, true);
         }
         DPRINTFV(this->debugFlagOn || ::gem5::debug::DecoupleBP,
                  "No TAGE provider found, only update base predictor\n");
@@ -348,8 +345,7 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
             if (way_sel.target.hysteresis <= 2) {
                 ++way_sel.target.hysteresis;
             }
-            way_sel.target.endIsCall = (endType == END_TYPE_CALL);
-            way_sel.target.endIsRet = (endType == END_TYPE_RET);
+            way_sel.target.endType = end_type;
             DPRINTF(DecoupleBP || this->debugFlagOn,
                      "Predict correctly, inc conf for TAGE table %lu\n",
                      predictor_sel);
@@ -407,8 +403,7 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
                              target);
                     way_sel.target.set(curTick(), stream_start_pc, control_pc,
                                        target, control_size, 1,
-                                       (endType == END_TYPE_CALL),
-                                       (endType == END_TYPE_RET), true);
+                                       end_type, true);
                     way_sel.tag =
                         getTageTag(stream_start_pc, history, predictor_sel);
                     way_sel.useful = 0;
@@ -444,8 +439,7 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
                     way_new.target.controlSize = control_size;
                     way_new.target.nextStream = target;
                     way_new.target.hysteresis = 1;
-                    way_new.target.endIsCall = (endType == END_TYPE_CALL);
-                    way_new.target.endIsRet = (endType == END_TYPE_RET);
+                    way_new.target.endType = end_type;
                     way_new.target.endNotTaken = !actually_taken;
                     way_new.tag =
                         getTageTag(stream_start_pc, history, start_tage_table);

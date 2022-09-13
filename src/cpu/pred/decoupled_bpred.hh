@@ -14,6 +14,7 @@
 #include "debug/DecoupleBPHist.hh"
 #include "debug/DecoupleBPProbe.hh"
 #include "debug/DecoupleBPRAS.hh"
+#include "debug/DecoupleBPVerbose.hh"
 #include "params/DecoupledBPU.hh"
 
 namespace gem5
@@ -73,7 +74,7 @@ class HistoryManager
         while (speculativeHists.size() > IdealHistLen &&
                it != speculativeHists.end()) {
             if (it->streamId < stream_id) {
-                DPRINTF(DecoupleBP,
+                DPRINTF(DecoupleBPVerbose,
                         "Commit taken %lu, %#lx->%#lx\n",
                         it->streamId, it->pc, it->target);
                 it = speculativeHists.erase(it);
@@ -105,12 +106,12 @@ class HistoryManager
                     it->target = 0;
                 }
             } if (it->streamId > stream_id) {
-                DPRINTF(DecoupleBP,
+                DPRINTF(DecoupleBPVerbose,
                         "Squash taken %lu, %#lx->%#lx\n",
                         it->streamId, it->pc, it->target);
                 it = speculativeHists.erase(it);
             } else {
-                DPRINTF(DecoupleBP,
+                DPRINTF(DecoupleBPVerbose,
                         "Skip stream %i when squashing stream %i\n",
                         it->streamId, stream_id);
                 ++it;
@@ -155,10 +156,10 @@ class HistoryManager
 
     void dump(const char* when)
     {
-        DPRINTF(DecoupleBP, "Dump ideal history %s:\n", when);
+        DPRINTF(DecoupleBPVerbose, "Dump ideal history %s:\n", when);
         for (auto it = speculativeHists.begin(); it != speculativeHists.end();
              it++) {
-            DPRINTFR(DecoupleBP,
+            DPRINTFR(DecoupleBPVerbose,
                      "stream: %lu, %#lx -> %#lx, miss: %d\n",
                      it->streamId, it->pc, it->target, it->miss);
         }
@@ -191,6 +192,8 @@ class DecoupledBPU : public BPredUnit
     constexpr unsigned numFoldingTokens() { return 64/historyTokenBits; }
 
     const unsigned historyBits{488};
+
+    const Addr MaxAddr{~(0ULL)};
 
     StreamTAGE *streamTAGE{};
 
@@ -343,7 +346,7 @@ class DecoupledBPU : public BPredUnit
 
     void dumpRAS() {
         for (std::stack<Addr> dump = streamRAS; !dump.empty(); dump.pop())
-            DPRINTF(DecoupleBPRAS, "RAS: %lx\n", dump.top());
+            DPRINTF(DecoupleBPRAS, "RAS: %#lx\n", dump.top());
     }
 
     bool debugFlagOn{false};

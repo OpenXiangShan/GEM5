@@ -72,7 +72,7 @@ StreamUBTB::putPCHistory(Addr cur_chunk_start, Addr stream_start,
         prediction.controlAddr = it->second.controlAddr;
         prediction.controlSize = it->second.controlSize;
         prediction.nextStream = it->second.nextStream;
-        prediction.endIsRet = it->second.endIsRet;
+        prediction.endType = it->second.endType;
         prediction.history = history;
 
         it->second.tick = curTick();
