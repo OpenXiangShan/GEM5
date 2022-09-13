@@ -504,7 +504,7 @@ private:
 public:
     %(class_name)s(ExtMachInst _machInst);
     std::string generateDisassembly(Addr pc,
-        const loader::SymbolTable *symtab) const
+        const loader::SymbolTable *symtab) const override
     {
         std::stringstream ss;
         ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
@@ -530,7 +530,7 @@ public:
         uint8_t _microVl, uint8_t _microIdx);
     Fault execute(ExecContext* xc, Trace::InstRecord* traceData)const override;
     std::string generateDisassembly(Addr pc,
-        const loader::SymbolTable *symtab) const
+        const loader::SymbolTable *symtab) const override
     {
         std::stringstream ss;
         ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
