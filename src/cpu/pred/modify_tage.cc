@@ -85,10 +85,10 @@ StreamTAGE::lookupHelper(bool flag, Addr last_chunk_start, Addr stream_start,
                          const bitset& history, TickedStreamStorage& target,
                          TickedStreamStorage& alt_target, int& predictor,
                          int& predictor_index, int& alt_predictor,
-                         int& alt_predictor_index, int& pred_count,
+                         int& alt_predictor_index, int& tage_pred_count,
                          bool& use_alt_pred)
 {
-    int pred_counts = 0;
+    int tage_pred_counts = 0;
     TickedStreamStorage target_1, target_2;
     int predictor_1 = 0;
     int predictor_2 = 0;
@@ -112,17 +112,17 @@ StreamTAGE::lookupHelper(bool flag, Addr last_chunk_start, Addr stream_start,
                      (!way.target.endNotTaken &&
                       last_chunk_start <= way.target.controlAddr));
         if (match && sane) {
-            if (pred_counts == 0) {//第一次命中
+            if (tage_pred_counts == 0) {//第一次命中
                 target_1 = way.target;
                 predictor_1 = i;
                 predictor_index_1 = tmp_index;
-                ++pred_counts;
+                ++tage_pred_counts;
             }
-            if (pred_counts == 1) {//第二次命中
+            if (tage_pred_counts == 1) {//第二次命中
                 target_2 = way.target;
                 predictor_2 = i;
                 predictor_index_2 = tmp_index;
-                ++pred_counts;
+                ++tage_pred_counts;
                 break;
             }
             DPRINTFR(DecoupleBP || debugFlagOn, ", is usable\n");
@@ -145,8 +145,8 @@ StreamTAGE::lookupHelper(bool flag, Addr last_chunk_start, Addr stream_start,
             }
         }
     }
-    pred_count = pred_counts;
-    if (pred_counts > 0) {
+    tage_pred_count = tage_pred_counts;
+    if (tage_pred_counts > 0) {
         DPRINTFV(debugFlagOn || ::gem5::debug::DecoupleBP,
                  "Select predictor %d, index %d\n", predictor_1,
                  predictor_index_1);
@@ -157,7 +157,7 @@ StreamTAGE::lookupHelper(bool flag, Addr last_chunk_start, Addr stream_start,
         const auto& way1 = tageTable[predictor_1][predictor_index_1];
         const auto& way2 = tageTable[predictor_2][predictor_index_2];
         if ((way1.target.hysteresis == 1) && (way1.useful == 0) &&
-            (pred_counts == 2) && (way2.target.hysteresis > 0)) {
+            (tage_pred_counts == 2) && (way2.target.hysteresis > 0)) {
             use_alt_pred = true;
         } else {
             use_alt_pred = false;
@@ -170,14 +170,14 @@ StreamTAGE::lookupHelper(bool flag, Addr last_chunk_start, Addr stream_start,
         predictor_index = predictor_index_1;
         alt_predictor = predictor_2;
         alt_predictor_index = predictor_index_2;
-        pred_count = pred_counts;
+        tage_pred_count = tage_pred_counts;
         return true;
     } else {
         dbpstats.providerTableDist.sample(20U);
         auto base_table_idx = getBaseIndex(last_chunk_start);
         use_alt_pred = false;
         target = baseTable[base_table_idx];
-        pred_count = pred_counts;
+        tage_pred_count = tage_pred_counts;
         if (target.valid &&
             last_chunk_start >= target.bbStart &&
             last_chunk_start <= target.controlAddr) {
@@ -301,14 +301,14 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
     int predictor_index = 0;
     int alt_predictor = 0;
     int alt_predictor_index = 0;
-    int pred_count = 0; // no use
+    int nonbase_pred_count = 0;
     int predictor_sel = 0;
     int predictor_index_sel = 0;
     bool use_alt_pred = false;
     bool predictor_found = lookupHelper(
         true, last_chunk_start, stream_start_pc, history, target_1,
         target_2, predictor, predictor_index, alt_predictor,
-        alt_predictor_index, pred_count, use_alt_pred);
+        alt_predictor_index, nonbase_pred_count, use_alt_pred);
     if (predictor_found && use_alt_pred) {
         target_sel = target_2;
         predictor_sel = alt_predictor;
@@ -322,12 +322,19 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
         predictor_index_sel = predictor_index;
     }
 
-    if (!predictor_found) {  // only need to update predictor when there is no
-                             // TAGE provider found
+    if (nonbase_pred_count == 0) {
+        // only need to update predictor when there is no
+        // TAGE provider found
         auto &entry = baseTable[getBaseIndex(last_chunk_start)];
         if (entry.valid && entry.hysteresis >= 1) {
             // dec conf
             entry.hysteresis--;
+            DPRINTF(
+                DecoupleBP || debugFlagOn,
+                "Dec conf of baseTable[%u] that %s at [%#lx, %#lx) -> %#lx\n",
+                getBaseIndex(last_chunk_start),
+                !entry.endNotTaken ? "taken" : "NT", entry.controlAddr,
+                entry.controlAddr + entry.controlSize, entry.nextStream);
         } else {
             // replace it
             DPRINTF(DecoupleBP || debugFlagOn,
@@ -346,7 +353,7 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
 
     auto& way_sel = tageTable[predictor_sel][predictor_index_sel];
 
-    if (pred_count > 0 && equals(target_sel, stream_start_pc, control_pc, target)) {//pred hit
+    if (nonbase_pred_count > 0 && equals(target_sel, stream_start_pc, control_pc, target)) {//pred hit
         // the prediction was from predictor tables and correct
         // increment the counter
         if (way_sel.target.endNotTaken == !actually_taken) {
@@ -354,7 +361,7 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
                 ++way_sel.target.hysteresis;
             }
             way_sel.target.endType = end_type;
-            way_sel.useful = true;
+            way_sel.useful = 1;
             DPRINTF(DecoupleBP || this->debugFlagOn,
                      "Predict correctly, inc conf for TAGE table %lu, mark as useful\n",
                      predictor_sel);
@@ -378,9 +385,9 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
         // a misprediction
         auto& way1 = tageTable[predictor][predictor_index];
         auto& way2 = tageTable[alt_predictor][alt_predictor_index];
-        if (pred_count > 0) {
+        if (nonbase_pred_count > 0) {
             if (equals(way1.target, stream_start_pc, control_pc, target) &&
-                pred_count == 2 &&
+                nonbase_pred_count == 2 &&
                 !equals(way2.target, stream_start_pc, control_pc, target)) {
                 way1.useful = 1;
                 allocate_values = false;
@@ -389,7 +396,7 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
                 }
             }
             if (!equals(way1.target, stream_start_pc, control_pc, target) &&
-                pred_count == 2 &&
+                nonbase_pred_count == 2 &&
                 equals(way2.target, stream_start_pc, control_pc, target)) {
                 // if pred was wrong and alt_pred was right
                 if (use_alt < 15) {
@@ -412,7 +419,7 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
                 way_sel.tag =
                     getTageTag(stream_start_pc, history, predictor_sel);
 
-                way_sel.useful = 1;
+                way_sel.useful = 0;
                 if (actually_taken) {
                     DPRINTFV(this->debugFlagOn || ::gem5::debug::DecoupleBP,
                              "Change to taken at %#lx to %#lx\n", control_pc,
@@ -426,10 +433,10 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
             }
         }
         //update the tag
-        if (pred_count == 0 || allocate_values) {
+        if (nonbase_pred_count == 0 || allocate_values) {
             int allocated = 0;
             uint32_t start_tage_table;
-            if (pred_count > 0){
+            if (nonbase_pred_count > 0){
                 start_tage_table = predictor_sel + 1;
             } else {
                 start_tage_table = 0;
@@ -441,7 +448,6 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
                     DPRINTFV(this->debugFlagOn || ::gem5::debug::DecoupleBP,
                              "Allocated in table[%d] index[%d], histlen=%u\n",
                              start_tage_table, new_index, histLengths[start_tage_table]);
-                    if (usefulResetCounter < 255) usefulResetCounter++;
 
                     way_new.valid = true;
                     way_new.target.tick = curTick();
@@ -465,19 +471,25 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
                     DPRINTFV(this->debugFlagOn || ::gem5::debug::DecoupleBP,
                              "Table %d index[%d] histlen=%u is useful\n",
                              start_tage_table, new_index, histLengths[start_tage_table]);
-                    // reset useful bits
-                    if (usefulResetCounter > 0) {
-                        --usefulResetCounter;
-                    }
-                    if (usefulResetCounter == 0) {
-                        for (int i = 0; i < numPredictors; ++i) {
-                            for (int j = 0; j < tableSizes[i]; ++j) {
-                                tageTable[i][j].useful = 0;
-                            }
+                    
+                }
+            }
+            if (allocated) {
+                if (usefulResetCounter < 255) {
+                    usefulResetCounter++;
+                }
+            } else {
+                if (usefulResetCounter > 0) {
+                    --usefulResetCounter;
+                }
+                if (usefulResetCounter == 0) {
+                    for (int i = 0; i < numPredictors; ++i) {
+                        for (int j = 0; j < tableSizes[i]; ++j) {
+                            tageTable[i][j].useful = 0;
                         }
-                        DPRINTF(DecoupleBP, "Resetting all useful bits");
-                        usefulResetCounter = 128;
                     }
+                    warn("Resetting all useful bits in stream TAGE");
+                    usefulResetCounter = 128;
                 }
             }
         }
