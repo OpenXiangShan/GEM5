@@ -7,6 +7,7 @@
 #include "base/trace.hh"
 #include "debug/DecoupleBP.hh"
 #include "debug/DecoupleBPVerbose.hh"
+#include "debug/DecoupleBPUseful.hh"
 #include "cpu/pred/stream_common.hh"
 
 namespace gem5 {
@@ -58,6 +59,7 @@ StreamTAGE::StreamTAGE(const Params& p):
         // indexCalcBuffer[i].resize(maxHistLen, false);
         // tagCalcBuffer[i].resize(maxHistLen, false);
     }
+    usefulResetCounter = 128;
 }
 
 StreamTAGE::DBPStats::DBPStats(statistics::Group* parent):
@@ -478,17 +480,28 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
                 if (usefulResetCounter < 255) {
                     usefulResetCounter++;
                 }
+                DPRINTF(DecoupleBPUseful,
+                        "Succeed to allocate table[%u] for stream %#lx, "
+                        "useful resetting counter now: %u\n",
+                        start_tage_table - 1, stream_start_pc, usefulResetCounter);
             } else {
                 if (usefulResetCounter > 0) {
                     --usefulResetCounter;
                 }
+                DPRINTF(DecoupleBPUseful,
+                        "Failed to allocate for stream %#lx, "
+                        "useful resetting counter now: %u\n",
+                        stream_start_pc, usefulResetCounter);
+
                 if (usefulResetCounter == 0) {
                     for (int i = 0; i < numPredictors; ++i) {
                         for (int j = 0; j < tableSizes[i]; ++j) {
                             tageTable[i][j].useful = 0;
                         }
                     }
-                    warn("Resetting all useful bits in stream TAGE");
+                    DPRINTF(DecoupleBPUseful,
+                            "Resetting all useful bits in stream TAGE\n");
+                    warn("Resetting all useful bits in stream TAGE\n");
                     usefulResetCounter = 128;
                 }
             }
