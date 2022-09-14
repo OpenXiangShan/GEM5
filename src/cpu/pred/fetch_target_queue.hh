@@ -80,7 +80,7 @@ class FetchTargetQueue
 
     void finishCurrentFetchTarget();
 
-    bool trySupplyFetchWithTarget();
+    bool trySupplyFetchWithTarget(Addr fetch_demand_pc);
 
 
     bool empty() const { return ftq.empty(); }

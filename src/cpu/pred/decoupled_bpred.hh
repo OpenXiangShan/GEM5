@@ -271,7 +271,7 @@ class DecoupledBPU : public BPredUnit
   public:
     void tick();
 
-    bool trySupplyFetchWithTarget();
+    bool trySupplyFetchWithTarget(Addr fetch_demand_pc);
 
     void squash(const InstSeqNum &squashed_sn, ThreadID tid)
     {
@@ -307,6 +307,8 @@ class DecoupledBPU : public BPredUnit
                     const PCStateBase &inst_pc, ThreadID tid);
 
     void update(unsigned fsqID, ThreadID tid);
+
+    void squashStreamAfter(unsigned squash_stream_id);
 
     unsigned getSupplyingTargetId()
     {

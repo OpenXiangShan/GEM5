@@ -88,7 +88,7 @@ class StreamTAGE : public TimedPredictor
     void commit(Addr, Addr, Addr, bitset&);
 
   private:
-    Addr getBaseIndex(Addr pc);
+    Addr getBaseIndex(Addr pc) const;
 
     Addr getTageIndex(Addr pc, const bitset& ghr, int table);
 
@@ -119,7 +119,7 @@ class StreamTAGE : public TimedPredictor
     unsigned maxHistLen;
 
     int use_alt; // min:0 max: 15
-    int reset_counter;
+    int usefulResetCounter;
 
     struct DBPStats : public statistics::Group {
         statistics::Scalar coldMisses;

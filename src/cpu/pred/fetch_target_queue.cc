@@ -66,12 +66,31 @@ FetchTargetQueue::finishCurrentFetchTarget()
 }
 
 bool
-FetchTargetQueue::trySupplyFetchWithTarget()
+FetchTargetQueue::trySupplyFetchWithTarget(Addr fetch_demand_pc)
 {
     if (!supplyFetchTargetState.valid ||
         supplyFetchTargetState.targetId != fetchDemandTargetId) {
         auto it = ftq.find(fetchDemandTargetId);
         if (it != ftq.end()) {
+            if (M5_UNLIKELY(fetch_demand_pc >= it->second.endPC)) {
+                // This is a special case where the fetch demand pc is
+                // already past the end of the ftq entry.
+                // In this case, we should just finish the current ftq
+                // entry and supply the fetch with the next ftq entry.
+                DPRINTF(DecoupleBP,
+                        "Skip ftq entry %lu: [%#lx, %#lx),", it->first,
+                        it->second.startPC, it->second.endPC);
+
+                ++fetchDemandTargetId;
+                it = ftq.erase(it);
+                if (it == ftq.end()) {
+                    return false;
+                }
+                DPRINTFR(DecoupleBP,
+                        " use %lu: [%#lx, %#lx) instead. because demand pc "
+                        "past the first entry.\n",
+                        it->first, it->second.startPC, it->second.endPC);
+            }
             DPRINTF(DecoupleBP,
                     "Found ftq entry with id %lu, writing to "
                     "fetchReadFtqEntryBuffer\n",

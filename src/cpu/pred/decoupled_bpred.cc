@@ -4,6 +4,7 @@
 #include "base/debug_helper.hh"
 #include "cpu/pred/stream_common.hh"
 #include "debug/DecoupleBPVerbose.hh"
+#include "debug/DecoupleBPHist.hh"
 #include "sim/core.hh"
 
 namespace gem5
@@ -95,9 +96,9 @@ DecoupledBPU::tick()
 }
 
 bool
-DecoupledBPU::trySupplyFetchWithTarget()
+DecoupledBPU::trySupplyFetchWithTarget(Addr fetch_demand_pc)
 {
-    return fetchTargetQueue.trySupplyFetchWithTarget();
+    return fetchTargetQueue.trySupplyFetchWithTarget(fetch_demand_pc);
 }
 
 
@@ -190,15 +191,6 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
 
     squashing = true;
 
-    DPRINTF(DecoupleBP || debugFlagOn,
-            "Control squash: ftq_id=%lu, fsq_id=%lu,"
-            " control_pc=%#lx, corr_target=%#lx, is_conditional=%u, "
-            "is_indirect=%u, actually_taken=%u, branch seq: %lu\n",
-            target_id, stream_id, control_pc.instAddr(),
-            corr_target.instAddr(), is_conditional, is_indirect,
-            actually_taken, seq);
-
-    dumpFsq("Before control squash");
     // check sanity
     auto squashing_stream_it = fetchStreamQueue.find(stream_id);
 
@@ -216,7 +208,25 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
 
     auto &stream = squashing_stream_it->second;
 
-    DPRINTF(DecoupleBP || debugFlagOn, "stream start=%#lx\n", stream.streamStart);
+    auto pc = stream.streamStart;
+    if (pc == ObservingPC) {
+        debugFlagOn = true;
+    }
+
+    DPRINTF(DecoupleBP || debugFlagOn,
+            "stream start=%#lx, predict on hist: %s\n", stream.streamStart,
+            stream.history);
+
+    DPRINTF(DecoupleBP || debugFlagOn,
+            "Control squash: ftq_id=%lu, fsq_id=%lu,"
+            " control_pc=%#lx, corr_target=%#lx, is_conditional=%u, "
+            "is_indirect=%u, actually_taken=%u, branch seq: %lu\n",
+            target_id, stream_id, control_pc.instAddr(),
+            corr_target.instAddr(), is_conditional, is_indirect,
+            actually_taken, seq);
+
+    dumpFsq("Before control squash");
+
 
     if (is_return) {
         ++stats.RASIncorrect;
@@ -230,11 +240,6 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
     }
 
     stream.squashType = SQUASH_CTRL;
-
-    auto pc = stream.streamStart;
-    if (pc == ObservingPC) {
-        debugFlagOn = true;
-    }
 
     FetchTargetId ftq_demand_stream_id;
 
@@ -263,13 +268,28 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
         DPRINTF(DecoupleBPRAS, "restore return in control squash, fsqid: %lu\n", squashing_stream_it->first);
         streamRAS.push(stream.getTakenTarget());
     }
+
+    squashStreamAfter(stream_id);
+
     stream.resolved = true;
     stream.exeEnded = true;
     stream.exeBranchPC = control_pc.instAddr();
     stream.exeTarget = corr_target.instAddr();
     stream.exeEndPC = stream.exeBranchPC + control_inst_size;
 
+    // recover history to the moment doing prediction
+    DPRINTF(DecoupleBPHist,
+             "Recover history %s\nto %s\n", s0History, stream.history);
+    s0History = stream.history;
+
     if (actually_taken) {
+
+        auto hashed_path =
+            computePathHash(control_pc.instAddr(), corr_target.instAddr());
+        histShiftIn(hashed_path, s0History);
+        DPRINTF(DecoupleBPHist,
+                 "Shift in history %s\n", s0History);
+
         stream.exeTaken = true;
         stream.endType =
             is_call ? END_CALL : (is_return ? END_RET : END_OTHER_TAKEN);
@@ -285,26 +305,6 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
             streamRAS.pop();
         }
 
-        // clear younger fsq entries
-        auto erase_it = fetchStreamQueue.upper_bound(stream_id);
-        while (erase_it != fetchStreamQueue.end()) {
-            DPRINTF(DecoupleBP, "erasing entry %lu\n", erase_it->first);
-            printStream(erase_it->second);
-            fetchStreamQueue.erase(erase_it++);
-        }
-
-        boost::to_string(s0History, buf1);
-        boost::to_string(stream.history, buf2);
-        DPRINTFV(this->debugFlagOn || ::gem5::debug::DecoupleBP,
-                 "Recover history %s\nto %s\n", buf1.c_str(), buf2.c_str());
-        s0History = stream.history;
-        auto hashed_path =
-            computePathHash(control_pc.instAddr(), corr_target.instAddr());
-        histShiftIn(hashed_path, s0History);
-        boost::to_string(s0History, buf1);
-        DPRINTFV(this->debugFlagOn || ::gem5::debug::DecoupleBP,
-                 "Shift in history %s\n", buf1.c_str());
-
         DPRINTFV(
             this->debugFlagOn || ::gem5::debug::DecoupleBP,
             "a %s flow was redirected by taken branch, "
@@ -316,21 +316,6 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
 
     } else {
         stream.endType = END_NOT_TAKEN;
-
-        // clear younger fsq entries
-        auto erase_it = fetchStreamQueue.upper_bound(stream_id);
-        while (erase_it != fetchStreamQueue.end()) {
-            DPRINTF(DecoupleBP, "erasing entry %lu\n", erase_it->first);
-            printStream(erase_it->second);
-            fetchStreamQueue.erase(erase_it++);
-        }
-
-        boost::to_string(s0History, buf1);
-        boost::to_string(stream.history, buf2);
-        DPRINTFV(this->debugFlagOn || ::gem5::debug::DecoupleBP,
-                 "Recover history %s\nto %s\n", buf1.c_str(), buf2.c_str());
-        s0History = stream.history;
-
         DPRINTFV(
             this->debugFlagOn || ::gem5::debug::DecoupleBP,
             "a taken flow was redirected by NOT taken branch,"
@@ -513,13 +498,6 @@ DecoupledBPU::trapSquash(unsigned target_id, unsigned stream_id,
     stream.endType = END_NOT_TAKEN;
     stream.squashType = SQUASH_TRAP;
 
-    // For trap squash, we expect them to always incorrectly predict
-    // Because correct prediction will cause strange behaviors
-    // streamTAGE->update(
-    //     computeLastChunkStart(stream.getControlPC(), stream.streamStart),
-    //     stream.streamStart, stream.getControlPC(), stream.getFallThruPC(), 4, false,
-    //     stream.history, END_NONE);
-
     historyManager.squash(stream_id, true, last_committed_pc, inst_pc.instAddr());
 
     boost::to_string(s0History, buf1);
@@ -535,12 +513,7 @@ DecoupledBPU::trapSquash(unsigned target_id, unsigned stream_id,
 
     checkHistory(s0History);
 
-    auto erase_it = fetchStreamQueue.upper_bound(stream_id);
-    while (erase_it != fetchStreamQueue.end()) {
-        DPRINTF(DecoupleBP, "erasing entry %lu\n", erase_it->first);
-        printStream(erase_it->second);
-        fetchStreamQueue.erase(erase_it++);
-    }
+    squashStreamAfter(stream_id);
 
     // inc stream id because current stream is disturbed
     auto ftq_demand_stream_id = stream_id + 1;
@@ -579,22 +552,41 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
         DPRINTF(DecoupleBP, "dequeueing stream id: %lu, entry below:\n",
                 it->first);
         bool miss_predicted = stream.squashType == SQUASH_CTRL;
-        DPRINTF(DecoupleBP,
+        DPRINTF(DecoupleBP || debugFlagOn,
                 "Commit stream start %#lx, which is %s predicted, "
                 "final br addr: %#lx, final target: %#lx, pred br addr: %#lx, "
                 "pred target: %#lx\n",
                 stream.streamStart, miss_predicted ? "miss" : "correctly",
                 stream.exeBranchPC, stream.exeTarget,
                 stream.predBranchPC, stream.predTarget);
+        if (stream.streamStart == ObservingPC) {
+            debugFlagOn = true;
+        }
 
         if (stream.squashType == SQUASH_NONE) {
             // TODO: do ubtb update here
+            DPRINTF(DecoupleBP || debugFlagOn, "Commit stream %lu\n", it->first);
             streamTAGE->commit(stream.streamStart, stream.getControlPC(),
                                stream.getNextStreamStart(), stream.history);
         } else if (stream.squashType == SQUASH_CTRL) {
-            streamTAGE->update(computeLastChunkStart(stream.getControlPC(),
-                                                     stream.streamStart),
-                               stream.streamStart, stream.getControlPC(),
+            DPRINTF(DecoupleBP || debugFlagOn,
+                    "Update mispred stream %lu, start=%#lx\n", it->first,
+                    stream.streamStart);
+            auto cur_chunk = stream.streamStart;
+            auto last_chunk = computeLastChunkStart(stream.getControlPC(), stream.streamStart);
+            while (cur_chunk < last_chunk) {
+                auto next_chunk = cur_chunk + streamChunkSize;
+                DPRINTF(DecoupleBP || debugFlagOn,
+                        "Update fall-thru chunk %#lx\n", cur_chunk);
+                streamTAGE->update(
+                    cur_chunk, stream.streamStart, next_chunk - 2, next_chunk,
+                    2, false /* not taken*/, stream.history, END_NOT_TAKEN);
+                cur_chunk = next_chunk;
+            }
+            DPRINTF(DecoupleBP || debugFlagOn, "Update taken chunk %#lx\n",
+                    last_chunk);
+            streamTAGE->update(last_chunk, stream.streamStart,
+                               stream.getControlPC(),
                                stream.getNextStreamStart(),
                                stream.getFallThruPC() - stream.getControlPC(),
                                stream.getTaken(), stream.history,
@@ -610,21 +602,38 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
                 find_it->second.count++;
             }
         } else {
+            DPRINTF(DecoupleBP || debugFlagOn, "Update trap stream %lu\n", it->first);
             assert(stream.squashType == SQUASH_TRAP);
+            // For trap squash, we expect them to always incorrectly predict
+            // Because correct prediction will cause strange behaviors
             streamTAGE->update(computeLastChunkStart(stream.getControlPC(),
                                                      stream.streamStart),
                                stream.streamStart, stream.getControlPC(),
-                               stream.getFallThruPC(), 4, false,
+                               stream.getFallThruPC(), 4, false /* not taken*/,
                                stream.history, END_NOT_TAKEN);
         }
 
         it = fetchStreamQueue.erase(it);
     }
+    debugFlagOn = false;
     DPRINTF(DecoupleBP, "after commit stream, fetchStreamQueue size: %lu\n",
             fetchStreamQueue.size());
     printStream(it->second);
 
     historyManager.commit(stream_id);
+}
+
+void
+DecoupledBPU::squashStreamAfter(unsigned squash_stream_id)
+{
+    auto erase_it = fetchStreamQueue.upper_bound(squash_stream_id);
+    while (erase_it != fetchStreamQueue.end()) {
+        DPRINTF(DecoupleBP || debugFlagOn || erase_it->second.streamStart == ObservingPC,
+                "Erasing stream %lu when squashing %lu\n", erase_it->first,
+                squash_stream_id);
+        printStream(erase_it->second);
+        fetchStreamQueue.erase(erase_it++);
+    }
 }
 
 void
@@ -940,7 +949,7 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
                                                  s0UbtbPred.nextStream, fsqId);
         }
 
-        DPRINTF(DecoupleBP,
+        DPRINTF(DecoupleBP || debugFlagOn,
                 "Build stream %lu with Valid s0UbtbPred: %#lx-[%#lx, %#lx) "
                 "--> %#lx, is call: %i, is return: %i\n",
                 fsqId, entry.streamStart, entry.predBranchPC,
@@ -975,9 +984,9 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
             historyManager.addSpeculativeHist(0, 0, fsqId, true);
         }
 
-        DPRINTF(DecoupleBP,
-                "No valid prediction or pred fall thru, gen missing stream: %#lx -> ..."
-                " is call: %i, is return: %i\n",
+        DPRINTF(DecoupleBP || debugFlagOn,
+                "No valid prediction or pred fall thru, gen missing stream:"
+                " %#lx -> ... is call: %i, is return: %i\n",
                 s0PC, entry.isCall(), entry.isReturn());
     }
     boost::to_string(entry.history, buf1);
@@ -989,9 +998,9 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
         assert(inserted);
 
         dumpFsq("after insert new stream");
-        DPRINTF(DecoupleBP, "Insert fetch stream %lu\n", fsqId);
+        DPRINTF(DecoupleBP || debugFlagOn, "Insert fetch stream %lu\n", fsqId);
     } else {
-        DPRINTF(DecoupleBP, "Update fetch stream %lu\n", fsqId);
+        DPRINTF(DecoupleBP || debugFlagOn, "Update fetch stream %lu\n", fsqId);
     }
 
     // only if the stream is predicted to be ended can we inc fsqID
