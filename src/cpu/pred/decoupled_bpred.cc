@@ -42,6 +42,22 @@ DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
             *out_handle->stream() << std::hex << it.second.streamStart << " " << it.second.controlAddr << " " << std::dec << it.second.count << std::endl;
         }
         simout.close(out_handle);
+
+        out_handle = simout.create("topMisPredictHist.txt", false, true);
+        *out_handle->stream() << "Hist" << " " << "count" << std::endl;
+        std::vector<std::pair<uint64_t, uint64_t>> topMisPredHistVec;
+        for (const auto &entry: topMispredHist) {
+            topMisPredHistVec.push_back(entry);
+        }
+        std::sort(topMisPredHistVec.begin(), topMisPredHistVec.end(),
+                  [](const std::pair<uint64_t, uint64_t> &a,
+                     const std::pair<uint64_t, uint64_t> &b) {
+                      return a.second > b.second;
+                  });
+        for (const auto &entry: topMisPredHistVec) {
+            *out_handle->stream() << std::hex << entry.first << " " << std::dec << entry.second << std::endl;
+        }
+        simout.close(out_handle);
     });
 }
 
@@ -213,7 +229,7 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
         debugFlagOn = true;
     }
 
-    DPRINTF(DecoupleBP || debugFlagOn,
+    DPRINTF(DecoupleBPHist,
             "stream start=%#lx, predict on hist: %s\n", stream.streamStart,
             stream.history);
 
@@ -552,6 +568,9 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
         DPRINTF(DecoupleBP, "dequeueing stream id: %lu, entry below:\n",
                 it->first);
         bool miss_predicted = stream.squashType == SQUASH_CTRL;
+        if (stream.streamStart == ObservingPC) {
+            debugFlagOn = true;
+        }
         DPRINTF(DecoupleBP || debugFlagOn,
                 "Commit stream start %#lx, which is %s predicted, "
                 "final br addr: %#lx, final target: %#lx, pred br addr: %#lx, "
@@ -559,19 +578,14 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
                 stream.streamStart, miss_predicted ? "miss" : "correctly",
                 stream.exeBranchPC, stream.exeTarget,
                 stream.predBranchPC, stream.predTarget);
-        if (stream.streamStart == ObservingPC) {
-            debugFlagOn = true;
-        }
 
-        if (stream.squashType == SQUASH_NONE) {
-            // TODO: do ubtb update here
-            DPRINTF(DecoupleBP || debugFlagOn, "Commit stream %lu\n", it->first);
-            streamTAGE->commit(stream.streamStart, stream.getControlPC(),
-                               stream.getNextStreamStart(), stream.history);
-        } else if (stream.squashType == SQUASH_CTRL) {
+        if (stream.squashType == SQUASH_NONE || stream.squashType == SQUASH_CTRL) {
             DPRINTF(DecoupleBP || debugFlagOn,
-                    "Update mispred stream %lu, start=%#lx\n", it->first,
-                    stream.streamStart);
+                    "Update mispred stream %lu, start=%#lx, hist=%s, "
+                    "taken=%i, control=%#lx, target=%#lx\n",
+                    it->first, stream.streamStart, stream.history,
+                    stream.getTaken(), stream.getControlPC(),
+                    stream.getTakenTarget());
             auto cur_chunk = stream.streamStart;
             auto last_chunk = computeLastChunkStart(stream.getControlPC(), stream.streamStart);
             while (cur_chunk < last_chunk) {
@@ -592,14 +606,25 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
                                stream.getTaken(), stream.history,
                                static_cast<EndType>(stream.endType));
 
-            MispredictEntry entry(stream.streamStart,
-                                  stream.exeBranchPC);
+            MispredictEntry entry(stream.streamStart, stream.exeBranchPC);
 
             auto find_it = topMispredicts.find(stream.streamStart);
             if (find_it == topMispredicts.end()) {
                 topMispredicts[stream.streamStart] = entry;
             } else {
                 find_it->second.count++;
+            }
+
+            if (stream.streamStart == ObservingPC && stream.squashType == SQUASH_CTRL) {
+                auto hist(stream.history);
+                hist.resize(18);
+                uint64_t pattern = hist.to_ulong();
+                auto find_it = topMispredHist.find(pattern);
+                if (find_it == topMispredHist.end()) {
+                    topMispredHist[pattern] = 1;
+                } else {
+                    find_it->second++;
+                }
             }
         } else {
             DPRINTF(DecoupleBP || debugFlagOn, "Update trap stream %lu\n", it->first);

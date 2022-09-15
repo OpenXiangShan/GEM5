@@ -783,20 +783,17 @@ class StreamTAGE(TimedPredictor):
     cxx_header = "cpu/pred/modify_tage.hh"
 
     numPredictors = Param.Unsigned(15, "Number of TAGE predictors")
-    # tableSizes = VectorParam.Unsigned(
-    #     [2048]*2 + [512]*8 + [512]*5, "the ITTAGE T1~Tn length")
     tableSizes = VectorParam.Unsigned(
-        [4096] + [2048, 2048, 1024] + [512]*6 + [256]*5, "the ITTAGE T1~Tn length")
+        [4096, 4096] + [2048, 2048, 1024] + [512]*6 + [256]*5, "the ITTAGE T0~Tn length")
     TTagBitSizes = VectorParam.Unsigned(
-        [9]*2 + [13]*8 + [15]*5, "the T1~Tn entry's tag bit size")
+        [0] + [9]*2 + [13]*8 + [15]*5, "the T0~Tn entry's tag bit size")
     TTagPcShifts = VectorParam.Unsigned(
-        [1] * 20, "when the T1~Tn entry's tag generating, PC right shift")
+        [1] * 20, "when the T0~Tn entry's tag generating, PC right shift")
     histLengths = VectorParam.Unsigned(
-        [6, 8, 12, 18, 26,
+        [0, 6, 8, 12, 16, 18, 22, 26,
          36, 52, 76, 110, 156,
-         226, 324, 464, 668, 960],
-        "the Stream TAGE T1~Tn history length")
-    baseTableSize = Param.Unsigned(4096, "size of base predictor")
+         226, 324, 464],
+        "the Stream TAGE T0~Tn history length")
     maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
     numTablesToAlloc = Param.Unsigned(1, "The number of table to allocated each time")
 

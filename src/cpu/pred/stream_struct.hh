@@ -112,7 +112,7 @@ struct IdealStreamStorage
     Addr controlAddr;
     Addr nextStream;
     uint16_t controlSize;
-    unsigned hysteresis;
+    int hysteresis;
     bool endNotTaken;
     int endType;
 };

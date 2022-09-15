@@ -227,7 +227,7 @@ StreamUBTB::commit(const FetchStreamId pred_id, Addr stream_start_pc,
     if (it->second.bbStart == stream_start_pc &&
         it->second.controlAddr == control_pc &&
         it->second.nextStream == target) {
-        it->second.hysteresis = std::min(2U, it->second.hysteresis + 1);
+        it->second.hysteresis = std::min(2, it->second.hysteresis + 1);
         DPRINTF(DecoupleBP,
                 "Confirm prediction for stream start %#lx hysteresis: %d\n",
                 stream_start_pc, it->second.hysteresis);

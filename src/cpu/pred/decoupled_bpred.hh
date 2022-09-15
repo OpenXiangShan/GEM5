@@ -374,6 +374,7 @@ class DecoupledBPU : public BPredUnit
     };
 
     std::map<Addr, MispredictEntry> topMispredicts;
+    std::map<uint64_t, uint64_t> topMispredHist;
 
     void setTakenEntryWithStream(const FetchStream &stream_entry, FtqEntry &ftq_entry);
 
