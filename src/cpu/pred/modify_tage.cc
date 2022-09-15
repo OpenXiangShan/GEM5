@@ -291,6 +291,7 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
         target_sel = main_target;
     }
 
+    bool main_is_useless = false;
     if (pred_count > 0) {
         assert (main_table >= 0);
         // update counter
@@ -324,7 +325,7 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
 
         // update usefull
         if (pred_match(*main_target)) {
-            bool no_alt = pred_count > 1;
+            bool no_alt = pred_count == 1;
             bool main_neq_alt = (pred_count > 1) && !pred_match(*alt_target);
             if (no_alt || main_neq_alt) {
                 DPRINTF(DecoupleBP || debugFlagOn,
@@ -350,6 +351,7 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
                          alt_entry);
             }
         }
+        main_is_useless = main_entry.useful == 0;
     }
 
     if (predictor_found && pred_match(*target_sel)) {
@@ -362,6 +364,8 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
     unsigned allocated = 0;
     if (pred_count == 0) {  // no entry
         start_table = 0;  // allocate since base
+    } else if (main_is_useless) {
+        start_table = main_table;
     } else {
         start_table = main_table + 1;
     }
