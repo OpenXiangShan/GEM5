@@ -338,7 +338,7 @@ class DecoupledBPU : public BPredUnit
 
     void checkHistory(const boost::dynamic_bitset<> &history);
 
-    void useStreamRAS();
+    bool useStreamRAS(FetchStreamId sid);
 
     std::string buf1, buf2;
 
@@ -379,6 +379,10 @@ class DecoupledBPU : public BPredUnit
     void setTakenEntryWithStream(const FetchStream &stream_entry, FtqEntry &ftq_entry);
 
     void setNTEntryWithStream(FtqEntry &ftq_entry, Addr endPC);
+
+    bool popRAS(FetchStreamId stream_id, const char *when);
+
+    void pushRAS(FetchStreamId stream_id, const char *when, Addr ra);
 };
 
 }  // namespace branch_prediction

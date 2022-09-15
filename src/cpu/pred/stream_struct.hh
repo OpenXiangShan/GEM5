@@ -137,6 +137,7 @@ struct StreamPrediction
     boost::dynamic_bitset<> history;
     bool isCall() const { return endType == END_CALL; }
     bool isReturn() const { return endType == END_RET; }
+    Addr getFallThruPC() const { return controlAddr + controlSize; }
 };
 
 struct StreamPredictionWithID : public StreamPrediction

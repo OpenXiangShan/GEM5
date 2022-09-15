@@ -61,28 +61,19 @@ DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
     });
 }
 
-void
-DecoupledBPU::useStreamRAS()
+bool
+DecoupledBPU::useStreamRAS(FetchStreamId stream_id)
 {
     if (s0UbtbPred.isCall()) {
-        DPRINTF(DecoupleBPRAS,
-                "%lu, push stream RAS for call, addr: %lx, size: %d\n", fsqId,
-                s0UbtbPred.controlAddr + s0UbtbPred.controlSize,
-                streamRAS.size());
-        streamRAS.push(s0UbtbPred.controlAddr + s0UbtbPred.controlSize);
+        pushRAS(stream_id, "speculative update", s0UbtbPred.getFallThruPC());
         dumpRAS();
-    } else if (s0UbtbPred.isReturn() && !streamRAS.empty()) {
-        DPRINTF(DecoupleBPRAS,
-                "%lu, pop stream RAS for ret, nextStream: %lx, control addr: "
-                "%#lx, control size: %#lx, RAS size: %d\n",
-                fsqId, streamRAS.top(), s0UbtbPred.controlAddr,
-                s0UbtbPred.controlSize, streamRAS.size());
-        s0UbtbPred.nextStream = streamRAS.top();
-        if (!streamRAS.empty()) {
-            streamRAS.pop();
-        }
+        return true;
+    } else if (s0UbtbPred.isReturn()) {
+        popRAS(stream_id, "speculative update");
         dumpRAS();
+        return true;
     }
+    return false;
 }
 
 void
@@ -244,17 +235,6 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
     dumpFsq("Before control squash");
 
 
-    if (is_return) {
-        ++stats.RASIncorrect;
-        stream.endType = END_RET;
-    } else if (is_call) {
-        stream.endType = END_CALL;
-    } else if (actually_taken) {
-        stream.endType = END_OTHER_TAKEN;
-    } else {
-        stream.endType = END_NOT_TAKEN;
-    }
-
     stream.squashType = SQUASH_CTRL;
 
     FetchTargetId ftq_demand_stream_id;
@@ -266,24 +246,31 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
     for (auto iter = --(fetchStreamQueue.end());iter != squashing_stream_it;--iter) {
         auto restore = iter->second;
         if (restore.isCall()) {
-            DPRINTF(DecoupleBPRAS, "erase call in control squash, fsqid: %lu\n", iter->first);
-            if (!streamRAS.empty()) {
-                streamRAS.pop();
-            }
+            popRAS(iter->first, "control squash (on mispred path)");
         } else if (restore.isReturn()) {
-            DPRINTF(DecoupleBPRAS, "restore return in control squash, fsqid: %lu\n", iter->first);
-            streamRAS.push(restore.getTakenTarget());
+            pushRAS(iter->first, "control squash (on mispred path)", restore.getTakenTarget());
         }
     }
+    // restore RAS to the state before speculative update
+    // We use **old** speculations (on whether is call or ret)
     if (stream.isCall()) {
-        DPRINTF(DecoupleBPRAS, "erase call in control squash, fsqid: %lu\n", squashing_stream_it->first);
-        if (!streamRAS.empty()) {
-            streamRAS.pop();
-        }
+        popRAS(stream_id, "control squash");
     } else if (stream.isReturn()) {
-        DPRINTF(DecoupleBPRAS, "restore return in control squash, fsqid: %lu\n", squashing_stream_it->first);
-        streamRAS.push(stream.getTakenTarget());
+        pushRAS(stream_id, "control squash", stream.getTakenTarget());
     }
+
+    // We should update endtype after restoring speculatively updated states!!
+    if (is_return) {
+        ++stats.RASIncorrect;
+        stream.endType = END_RET;
+    } else if (is_call) {
+        stream.endType = END_CALL;
+    } else if (actually_taken) {
+        stream.endType = END_OTHER_TAKEN;
+    } else {
+        stream.endType = END_NOT_TAKEN;
+    }
+    // Since here, we are using updated infomation
 
     squashStreamAfter(stream_id);
 
@@ -313,12 +300,10 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
                 "Mark stream %lu is call: %u, is return: %u\n", stream_id,
                 is_call, is_return);
 
-        if (stream.endType == END_CALL) {
-            DPRINTF(DecoupleBPRAS, "use ras for call in control squash, fsqid: %lu\n, push addr: %lx", squashing_stream_it->first, stream.exeEndPC);
-            streamRAS.push(stream.exeEndPC);
-        } else if (stream.endType == END_RET && !streamRAS.empty()) {
-            DPRINTF(DecoupleBPRAS, "use ras for return in control squash, fsqid: %lu\n", squashing_stream_it->first);
-            streamRAS.pop();
+        if (stream.isCall()) {
+            pushRAS(stream_id, "speculative update (in squash)", stream.getFallThruPC());
+        } else if (stream.isReturn()) {
+            popRAS(stream_id, "speculative update (in squash)");
         }
 
         DPRINTFV(
@@ -608,11 +593,13 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
 
             MispredictEntry entry(stream.streamStart, stream.exeBranchPC);
 
-            auto find_it = topMispredicts.find(stream.streamStart);
-            if (find_it == topMispredicts.end()) {
-                topMispredicts[stream.streamStart] = entry;
-            } else {
-                find_it->second.count++;
+            if (stream.squashType == SQUASH_CTRL) {
+                auto find_it = topMispredicts.find(stream.streamStart);
+                if (find_it == topMispredicts.end()) {
+                    topMispredicts[stream.streamStart] = entry;
+                } else {
+                    find_it->second.count++;
+                }
             }
 
             if (stream.streamStart == ObservingPC && stream.squashType == SQUASH_CTRL) {
@@ -944,7 +931,6 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
              s0UbtbPred.valid, !s0UbtbPred.endNotTaken);
     if (s0UbtbPred.valid && !s0UbtbPred.endNotTaken) {
         DPRINTF(DecoupleBP, "TAGE predicted target: %#lx\n", s0UbtbPred.nextStream);
-        useStreamRAS();
 
         entry.predEnded = true;
         entry.predTaken = true;
@@ -1070,6 +1056,32 @@ DecoupledBPU::checkHistory(const boost::dynamic_bitset<> &history)
     DPRINTF(DecoupleBP, "Ideal history:\t%s\nreal history:\t%s\n",
             buf1.c_str(), buf2.c_str());
     assert(ideal_hash_hist == sized_real_hist);
+}
+
+bool
+DecoupledBPU::popRAS(FetchStreamId stream_id, const char *when)
+{
+    if (streamRAS.empty()) {
+        DPRINTF(DecoupleBPRAS || debugFlagOn,
+                "RAS is empty, cannot pop when %s\n", when);
+        return false;
+    }
+    DPRINTF(DecoupleBPRAS || debugFlagOn,
+            "Pop RA: %#lx when %s, stream id: %lu, ", streamRAS.top(), when,
+            stream_id);
+    s0UbtbPred.nextStream = streamRAS.top();
+    streamRAS.pop();
+    DPRINTFR(DecoupleBPRAS || debugFlagOn, "RAS size: %lu after action\n", streamRAS.size());
+    return true;
+}
+
+void
+DecoupledBPU::pushRAS(FetchStreamId stream_id, const char *when, Addr ra)
+{
+    DPRINTF(DecoupleBPRAS || debugFlagOn,
+            "Push RA: %#lx when %s, stream id: %lu, ", ra, when, stream_id);
+    streamRAS.push(ra);
+    DPRINTFR(DecoupleBPRAS || debugFlagOn, "RAS size: %lu after action\n", streamRAS.size());
 }
 
 }  // namespace branch_prediction
