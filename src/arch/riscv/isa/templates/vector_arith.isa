@@ -202,8 +202,7 @@ Fault
         return std::make_shared<IllegalInstFault>("VILL is set", machInst);
 
     auto SEW = vtype_SEW(vtype);
-    const int32_t micro_vlmax = vtype_VLMAX(vtype, true);
-    auto offset = ((microIdx % %(ext_div)d) * micro_vlmax) / %(ext_div)d;
+    auto offset = (VLEN / SEW) * (microIdx % %(ext_div)d);
     switch (SEW / %(ext_div)d) {
       case 8: {
         using vext  [[maybe_unused]] = int8_t;
