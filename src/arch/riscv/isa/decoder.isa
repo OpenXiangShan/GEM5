@@ -2134,6 +2134,20 @@ decode QUADRANT default Unknown::unknown() {
                     0x29: vsra_vv({{
                         Vd_vi[i] = Vs2_vi[i] >> (Vs1_vu[i] & (sew - 1));
                     }}, OPIVV, VectorDummyOp);
+                    0x2a: vssrl_vv({{
+                        int sh = Vs1_vu[i] & (sew - 1);
+                        __uint128_t val = Vs2_vu[i];
+
+                        val = int_rounding<__uint128_t>(val, xc->readMiscReg(MISCREG_VXRM), sh);
+                        Vd_vu[i] = val >> sh;
+                    }}, OPIVV, VectorDummyOp);
+                    0x2b: vssra_vv({{
+                        int sh = Vs1_vi[i] & (sew - 1);
+                        __int128_t val = Vs2_vi[i];
+
+                        val = int_rounding<__int128_t>(val, xc->readMiscReg(MISCREG_VXRM), sh);
+                        Vd_vi[i] = val >> sh;
+                    }}, OPIVV, VectorDummyOp);
                 }
                 format VectorIntMaskFormat {
                     0x11: decode VM {
@@ -2898,6 +2912,13 @@ decode QUADRANT default Unknown::unknown() {
                     0x29: vsra_vi({{
                         Vd_vi[i] = Vs2_vi[i] >> ((vu)SIMM5 & (sew - 1) & 0x1f);
                     }}, OPIVI, VectorDummyOp);
+                    0x2b: vssra_vi({{
+                        int sh = SIMM5 & (sew - 1);
+                        __int128_t val = Vs2_vi[i];
+
+                        val = int_rounding<__int128_t>(val, xc->readMiscReg(MISCREG_VXRM), sh);
+                        Vd_vi[i] = val >> sh;
+                    }}, OPIVI, VectorDummyOp);
                 }
                 // According to Spec Section 16.6,
                 // vm must be 1 (unmasked) in vmv<nr>r.v instructions.
@@ -3113,6 +3134,20 @@ decode QUADRANT default Unknown::unknown() {
                     }}, OPIVX, VectorDummyOp);
                     0x29: vsra_vx({{
                         Vd_vi[i] = Vs2_vi[i] >> (Rs1_vu & (sew - 1));
+                    }}, OPIVX, VectorDummyOp);
+                    0x2a: vssrl_vx({{
+                        int sh = Rs1_vu & (sew - 1);
+                        __uint128_t val = Vs2_vu[i];
+
+                        val = int_rounding<__uint128_t>(val, xc->readMiscReg(MISCREG_VXRM), sh);
+                        Vd_vu[i] = val >> sh;
+                    }}, OPIVX, VectorDummyOp);
+                    0x2b: vssra_vx({{
+                        int sh = Rs1_vu & (sew - 1);
+                        __int128_t val = Vs2_vi[i];
+
+                        val = int_rounding<__int128_t>(val, xc->readMiscReg(MISCREG_VXRM), sh);
+                        Vd_vi[i] = val >> sh;
                     }}, OPIVX, VectorDummyOp);
                 }
                 format VectorIntNarrowingFormat {
