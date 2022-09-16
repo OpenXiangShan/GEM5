@@ -211,36 +211,6 @@ width_EEW(uint64_t width)
     }
 }
 
-/**
- * Encode EMUL to emul as follows:
- *     EMUL   emul
- *      1       0
- *      2       1
- *      4       2
- *      8       3
- *      -       -
- *     1/8     -3
- *     1/4     -2
- *     1/2     -1
- * @param mew_width mew << 3 | width
- * @param vtype
- * @return int32_t
- */
-inline int32_t
-get_emul(const uint64_t mew_width, const uint64_t vtype)
-{
-    panic_if(mew_width > 0x7, "encodings with mew=1 are reserved");
-    int32_t i_eew = mew_width  == 0 ? 0 : mew_width - 0x4;
-    int32_t i_sew = bits(vtype, 5, 3);
-    int32_t vlmul = bits(vtype, 2, 0);
-    int32_t emul = i_eew - i_sew + vlmul;
-    panic_if(emul > 3, "encodings with EMUL=%u are reserved",
-        uint32_t(8 << emul));
-    panic_if(emul < -3, "encodings with EMUL=1/%u are reserved",
-        uint32_t(8 << -emul));
-    return emul;
-}
-
 /*
   *  Spec Section 4.5
   *  Ref:
