@@ -311,6 +311,18 @@ ftype(IntType a) -> FloatType
     GEM5_UNREACHABLE;
 }
 
+// TODO: Consolidate ftype_freg(freg_t a) and ftype(IntType a) into a
+// single function
+template<typename FloatType, typename IntType = decltype(FloatType::v)> auto
+ftype_freg(freg_t a) -> FloatType
+{
+    if constexpr(std::is_same_v<uint32_t, IntType>)
+        return f32(a);
+    else if constexpr(std::is_same_v<uint64_t, IntType>)
+        return f64(a);
+    GEM5_UNREACHABLE;
+}
+
 template<typename FloatType> FloatType
 fadd(FloatType a, FloatType b)
 {
