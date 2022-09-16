@@ -64,14 +64,14 @@ class L1_ICache(L1Cache):
     mshrs = 2
 
 class L1_DCache(L1Cache):
-    tag_latency = 1
-    data_latency = 1
-    response_latency = 1
+    tag_latency = 3
+    data_latency = 3
+    response_latency = 13
     mshrs = 16
 
 class L2Cache(Cache):
-    tag_latency = 2
-    data_latency = 4
+    tag_latency = 20
+    data_latency = 20
     response_latency = 20
     mshrs = 32
     tgts_per_mshr = 20
@@ -79,8 +79,8 @@ class L2Cache(Cache):
     prefetch_on_access = True
 
 class L3Cache(Cache):
-    tag_latency = 2
-    data_latency = 4
+    tag_latency = 5
+    data_latency = 5
     response_latency = 30
     mshrs = 64
     tgts_per_mshr = 20
