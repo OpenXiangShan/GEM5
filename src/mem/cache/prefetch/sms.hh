@@ -35,22 +35,6 @@ class SMSPrefetcher : public Queued
 
     Addr regionOffset(Addr a) { return (a / blkSize) % region_blocks; }
 
-    // filter table
-    class FilterTableEntry : public TaggedEntry
-    {
-      public:
-        Addr pc;
-        bool is_secure;
-        Addr region_offset;
-        FilterTableEntry()
-            : TaggedEntry(){
-
-              };
-    };
-
-    AssociativeSet<FilterTableEntry> filter_table;
-
-    FilterTableEntry *filterLookup(const PrefetchInfo &pfi);
 
     // active generation table
     class ACTEntry : public TaggedEntry
@@ -59,10 +43,15 @@ class SMSPrefetcher : public Queued
         Addr pc;
         bool is_secure;
         uint64_t region_bits;
-        SatCounter8 decr_counter;
+        bool decr_mode;
         uint8_t access_cnt;
+        uint64_t region_offset;
         ACTEntry(const SatCounter8 &conf)
-            : TaggedEntry(), region_bits(0), decr_counter(conf), access_cnt(0)
+            : TaggedEntry(),
+              region_bits(0),
+              decr_mode(false),
+              access_cnt(0),
+              region_offset(0)
         {
         }
     };
@@ -78,9 +67,8 @@ class SMSPrefetcher : public Queued
     {
       public:
         std::vector<SatCounter8> hist;
-        bool decr_mode;
         PhtEntry(const size_t sz, const SatCounter8 &conf)
-            : TaggedEntry(), hist(sz, conf), decr_mode(false)
+            : TaggedEntry(), hist(sz, conf)
         {
         }
     };
