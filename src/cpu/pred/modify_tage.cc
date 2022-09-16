@@ -105,10 +105,9 @@ StreamTAGE::lookupHelper(bool flag, Addr last_chunk_start, Addr stream_start,
                 way.target.controlAddr, way.target.nextStream);
 
         bool sane = (last_chunk_start >= way.target.bbStart) &&
-                    ((way.target.endNotTaken &&
-                      last_chunk_start <
-                          way.target.controlAddr + way.target.controlSize) ||
-                     (!way.target.endNotTaken &&
+                    ((!way.target.isTaken() &&
+                      last_chunk_start < way.target.getFallThruPC()) ||
+                     (way.target.isTaken() &&
                       last_chunk_start <= way.target.controlAddr));
         if (match && sane) {
             if (provider_counts == 0) {
@@ -201,14 +200,13 @@ StreamTAGE::putPCHistory(Addr cur_chunk_start, Addr stream_start, const bitset &
         prediction.valid = false;
         prediction.history = history;
         prediction.endType = END_NONE;
-        prediction.endNotTaken = true;
 
     } else {
         auto& way = tageTable[main_table][main_table_index];
         DPRINTF(DecoupleBP || debugFlagOn,
                 "Valid: %d, chunkStart: %#lx, stream: [%#lx-%#lx] -> %#lx, taken: %i\n",
                 way.valid, cur_chunk_start, stream_start,
-                target->controlAddr, target->nextStream, !target->endNotTaken);
+                target->controlAddr, target->nextStream, target->isTaken());
 
         prediction.valid = true;
         prediction.bbStart = stream_start;
@@ -216,7 +214,6 @@ StreamTAGE::putPCHistory(Addr cur_chunk_start, Addr stream_start, const bitset &
         prediction.controlSize = target->controlSize;
         prediction.nextStream = target->nextStream;
         prediction.endType = target->endType;
-        prediction.endNotTaken = target->endNotTaken;
         prediction.history = history;
 
         way.target.tick = curTick();
@@ -302,12 +299,12 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
         DPRINTF(DecoupleBP || debugFlagOn,
                 "Previous main pred: [%#lx-%#lx] -> %#lx, taken: %i\n",
                 main_target->bbStart, main_target->controlAddr,
-                main_target->nextStream, !main_target->endNotTaken);
+                main_target->nextStream, main_target->isTaken());
         if (alt_target) {
             DPRINTF(DecoupleBP || debugFlagOn,
                     "Previous alt pred: [%#lx-%#lx] -> %#lx, taken: %i\n",
                     alt_target->bbStart, alt_target->controlAddr,
-                    alt_target->nextStream, !alt_target->endNotTaken);
+                    alt_target->nextStream, alt_target->isTaken());
         }
 
         if (pred_match(*main_target)) {
@@ -361,7 +358,7 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
 
     // allocate
     unsigned start_table;
-    unsigned allocated = 0;
+    unsigned allocated = 0, new_allocated = 0;
     if (pred_count == 0) {  // no entry
         start_table = 0;  // allocate since base
     } else if (main_is_useless) {
@@ -383,10 +380,10 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
         if (!entry.useful) {
             DPRINTF(DecoupleBP || debugFlagOn,
                     "%s %#lx-%#lx -> %#lx with %#lx-%#lx -> %#lx, new "
-                    "tag=%#lx\n", entry.valid ? "Replacing": "Allocating",
+                    "tag=%#lx, end type=%i\n", entry.valid ? "Replacing": "Allocating",
                     entry.target.bbStart, entry.target.controlAddr,
                     entry.target.nextStream, stream_start_pc, control_pc,
-                    target_pc, new_tag);
+                    target_pc, new_tag, end_type);
 
             entry.target.set(curTick(), stream_start_pc, control_pc, target_pc,
                              control_size, 0, end_type, true, !actually_taken);
@@ -395,12 +392,15 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
             setTag(entry.tag, new_tag, start_table);
 
             allocated++;
+            if (!entry.valid) {
+                new_allocated++;
+            }
             if (allocated == numTablesToAlloc) {
                 break;
             }
         }
     }
-    maintainUsefulCounters(allocated);
+    maintainUsefulCounters(allocated, new_allocated);
     debugFlagOn = false;
 }
 
@@ -512,16 +512,22 @@ StreamTAGE::satDecrement(TickedStreamStorage &target)
 }
 
 void
-StreamTAGE::maintainUsefulCounters(int allocated)
+StreamTAGE::maintainUsefulCounters(int allocated, int new_allocated)
 {
-    if (allocated) {
+    if (allocated && !new_allocated) {
+        DPRINTF(DecoupleBPUseful,
+                "Allocated from useless entry, dont modify reset counter: %u\n",
+                usefulResetCounter);
+        return;
+    }
+    if (new_allocated) {  // allocated from new entry
         if (usefulResetCounter < 255) {
             usefulResetCounter++;
         }
         DPRINTF(DecoupleBPUseful,
                 "Succeed to allocate, useful resetting counter now: %u\n",
                 usefulResetCounter);
-    } else {
+    } else if (!allocated) {  // allocation completely failed
         if (usefulResetCounter > 0) {
             --usefulResetCounter;
         }

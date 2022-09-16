@@ -579,7 +579,7 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
                         "Update fall-thru chunk %#lx\n", cur_chunk);
                 streamTAGE->update(
                     cur_chunk, stream.streamStart, next_chunk - 2, next_chunk,
-                    2, false /* not taken*/, stream.history, END_NOT_TAKEN);
+                    2, false /* not taken*/, stream.history, END_CONT);
                 cur_chunk = next_chunk;
             }
             DPRINTF(DecoupleBP || debugFlagOn, "Update taken chunk %#lx\n",
@@ -928,8 +928,8 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
     }
     DPRINTF(DecoupleBP || debugFlagOn, "Make pred with %s, pred valid: %i, taken: %i\n",
              create_new_stream ? "new stream" : "last missing stream",
-             s0UbtbPred.valid, !s0UbtbPred.endNotTaken);
-    if (s0UbtbPred.valid && !s0UbtbPred.endNotTaken) {
+             s0UbtbPred.valid, s0UbtbPred.isTaken());
+    if (s0UbtbPred.valid && s0UbtbPred.isTaken()) {
         DPRINTF(DecoupleBP, "TAGE predicted target: %#lx\n", s0UbtbPred.nextStream);
 
         entry.predEnded = true;
@@ -966,10 +966,15 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
                 fsqId, entry.streamStart, entry.predBranchPC,
                 entry.predEndPC, entry.predTarget, entry.isCall(), entry.isReturn());
     } else {
-        if (s0UbtbPred.valid && s0UbtbPred.endNotTaken) {
+        DPRINTF(DecoupleBP || debugFlagOn,
+                "No valid prediction or pred fall thru, gen missing stream:"
+                " %#lx -> ... is call: %i, is return: %i\n",
+                s0PC, entry.isCall(), entry.isReturn());
+
+        if (s0UbtbPred.valid && !s0UbtbPred.isTaken() && !s0UbtbPred.toBeCont()) {
             // The prediction only tell us not taken until endPC
             // The generated stream cannot serve since endPC
-            s0PC = s0UbtbPred.controlAddr + s0UbtbPred.controlSize;
+            s0PC = s0UbtbPred.getFallThruPC();
             s0StreamStartPC = s0PC;
             entry.predEnded = true;
         } else {
@@ -983,8 +988,7 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
         }
         entry.predEndPC = s0PC;
         entry.history.resize(historyBits);
-        DPRINTF(DecoupleBP, "entry hist size: %lu, ubtb hist size: %lu\n",
-                entry.history.size(), s0UbtbPred.history.size());
+
         // when pred is invalid, history from s0UbtbPred is outdated
         // entry.history = s0History is right for back-to-back predictor
         // but not true for backing predictor taking multi-cycles to predict.
@@ -994,12 +998,10 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
             // A missing history will not participate into history checking
             historyManager.addSpeculativeHist(0, 0, fsqId, true);
         }
-
-        DPRINTF(DecoupleBP || debugFlagOn,
-                "No valid prediction or pred fall thru, gen missing stream:"
-                " %#lx -> ... is call: %i, is return: %i\n",
-                s0PC, entry.isCall(), entry.isReturn());
     }
+    DPRINTF(DecoupleBP || debugFlagOn,
+            "After pred, s0StreamStartPC=%#lx, s0PC=%#lx\n", s0StreamStartPC,
+            s0PC);
     boost::to_string(entry.history, buf1);
     DPRINTF(DecoupleBP, "New prediction history: %s\n", buf1.c_str());
 

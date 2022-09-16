@@ -55,7 +55,6 @@ class StreamTAGE : public TimedPredictor
             this->hysteresis = hysteresis_;
             this->endType = end_type;
             this->valid = valid_;
-            this->endNotTaken = end_not_taken;
         }
     };
 
@@ -163,7 +162,7 @@ class StreamTAGE : public TimedPredictor
 
     bool satDecrement(TickedStreamStorage &target);
 
-    void maintainUsefulCounters(int allocated);
+    void maintainUsefulCounters(int allocated, int new_allocated);
 };
 
 }

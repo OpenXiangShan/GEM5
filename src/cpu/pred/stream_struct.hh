@@ -16,6 +16,7 @@ enum EndType {
     END_RET,
     END_OTHER_TAKEN,
     END_NOT_TAKEN,
+    END_CONT,  // to be continued
     END_NONE
 };
 
@@ -105,39 +106,42 @@ struct FetchingStream : public FetchStream
     Addr curPC;
 };
 
-struct IdealStreamStorage
+struct StreamDesc
 {
-    // Addr tag;  // addr of the taken branch?
+
     Addr bbStart;
     Addr controlAddr;
     Addr nextStream;
     uint16_t controlSize;
-    int hysteresis;
-    bool endNotTaken;
     int endType;
+
+    bool isTaken()
+    {
+        return endType == END_OTHER_TAKEN || endType == END_CALL ||
+               endType == END_RET;
+    }
+    bool toBeCont() { return endType == END_CONT; }
+    bool isCall() const { return endType == END_CALL; }
+    bool isReturn() const { return endType == END_RET; }
+    Addr getFallThruPC() const { return controlAddr + controlSize; }
 };
 
-struct RealStreamStorage
+struct IdealStreamStorage: public StreamDesc
+{
+    int hysteresis;
+};
+
+struct RealStreamStorage: public StreamDesc
 {
 };
 
 using StreamStorage = IdealStreamStorage;
 
 
-struct StreamPrediction
+struct StreamPrediction: public StreamDesc
 {
-    Addr bbStart;
-    Addr controlAddr;
-    Addr nextStream;
-    uint16_t controlSize;
     bool valid;
-    int endType;
-    bool endNotTaken;
-    bool rasUpdated;
     boost::dynamic_bitset<> history;
-    bool isCall() const { return endType == END_CALL; }
-    bool isReturn() const { return endType == END_RET; }
-    Addr getFallThruPC() const { return controlAddr + controlSize; }
 };
 
 struct StreamPredictionWithID : public StreamPrediction
