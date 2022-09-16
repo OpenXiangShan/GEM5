@@ -148,6 +148,24 @@ std::string VectorArithMacroInst::generateDisassembly(Addr pc,
     return ss.str();
 }
 
+std::string VectorVMUNARY0MicroInst::generateDisassembly(Addr pc,
+        const loader::SymbolTable *symtab) const
+{
+    std::stringstream ss;
+    ss << mnemonic << ' ' << registerName(destRegIdx(0));
+    if (machInst.vm == 0) ss << ", v0.t";
+    return ss.str();
+}
+
+std::string VectorVMUNARY0MacroInst::generateDisassembly(Addr pc,
+        const loader::SymbolTable *symtab) const
+{
+    std::stringstream ss;
+    ss << mnemonic << ' ' << registerName(destRegIdx(0));
+    if (machInst.vm == 0) ss << ", v0.t";
+    return ss.str();
+}
+
 std::string VleMicroInst::generateDisassembly(Addr pc,
         const loader::SymbolTable *symtab) const
 {

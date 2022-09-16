@@ -2667,6 +2667,11 @@ decode QUADRANT default Unknown::unknown() {
                         }}, OPMVV, VectorDummyOp);
                     }
                 }
+                0x14: decode RS1 {
+                    0x11: VectorIntFormat::vid_v({{
+                        Vd_vu[i] = ei;
+                    }}, OPMVV, VectorDummyOp);
+                }
                 format VectorMaskFormat {
                     0x18: vmandn_mm({{
                         Vd_ub[i/8] = ASSIGN_VD_BIT(i,

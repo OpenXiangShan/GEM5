@@ -73,25 +73,41 @@ let {{
 
 
 def format VectorIntFormat(code, category, *flags) {{
-    iop = InstObjParams(name, Name, 'VectorArithMacroInst', {'code': code},
+    macroop_class_name = 'VectorArithMacroInst'
+    microop_class_name = 'VectorArithMicroInst'
+
+    if name == "vid_v" :
+        macroop_class_name = 'VectorVMUNARY0MacroInst'
+        microp_class_name = 'VectorVMUNARY0MicroInst'
+
+    iop = InstObjParams(name, Name, macroop_class_name, {'code': code},
                         flags)
     inst_name, inst_suffix = name.split("_", maxsplit=1)
     v0_required = inst_name not in ["vmv"]
     mask_cond = v0_required and (inst_suffix not in ['vvm', 'vxm', 'vim'])
     need_elem_idx = mask_cond or code.find("ei") != -1
-    old_vd_idx = 2
+
     dest_reg_id = "vecRegClass[_machInst.vd + _microIdx]"
+
+    num_src_regs = 0
+
+    src2_reg_id = "vecRegClass[_machInst.vs2 + _microIdx]"
+    num_src_regs += 1
+
     src1_reg_id = ""
     if category in ["OPIVV", "OPMVV"]:
         src1_reg_id = "vecRegClass[_machInst.vs1 + _microIdx]"
+        num_src_regs += 1
     elif category in ["OPIVX", "OPMVX"]:
         src1_reg_id = "intRegClass[_machInst.rs1]"
+        num_src_regs += 1
     elif category == "OPIVI":
-        old_vd_idx = 1
+        pass
     else:
         error("not supported category for VectorIntFormat: %s" % category)
-    src2_reg_id = "vecRegClass[_machInst.vs2 + _microIdx]"
-    src3_reg_id = "vecRegClass[_machInst.vs3 + _microIdx]"
+
+    old_vd_idx = num_src_regs
+    src3_reg_id = "vecRegClass[_machInst.vd + _microIdx]"
 
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
 
@@ -116,7 +132,7 @@ def format VectorIntFormat(code, category, *flags) {{
 
     microiop = InstObjParams(name + "_micro",
         Name + "Micro",
-        'VectorArithMicroInst',
+        microop_class_name,
         {'code': code,
          'set_dest_reg_idx': set_dest_reg_idx,
          'set_src_reg_idx': set_src_reg_idx,

@@ -165,6 +165,34 @@ class VectorArithMacroInst : public VectorMacroInst
             Addr pc, const loader::SymbolTable *symtab) const override;
 };
 
+class VectorVMUNARY0MicroInst : public VectorMicroInst
+{
+protected:
+    VectorVMUNARY0MicroInst(const char *mnem, ExtMachInst _machInst,
+                         OpClass __opClass, uint8_t _microVl,
+                         uint8_t _microIdx)
+        : VectorMicroInst(mnem, _machInst, __opClass, _microVl, _microIdx)
+    {}
+
+    std::string generateDisassembly(
+            Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
+class VectorVMUNARY0MacroInst : public VectorMacroInst
+{
+  protected:
+    VectorVMUNARY0MacroInst(const char* mnem, ExtMachInst _machInst,
+                         OpClass __opClass)
+        : VectorMacroInst(mnem, _machInst, __opClass)
+    {
+        this->flags[IsVector] = true;
+    }
+
+    std::string generateDisassembly(
+            Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
+
 class VectorMemMicroInst : public VectorMicroInst
 {
   protected:
