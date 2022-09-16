@@ -3481,6 +3481,9 @@ decode QUADRANT default Unknown::unknown() {
                         res = int_rounding<__uint128_t>(res, 0 /* TODO */, 1);
                         Vd_vi[i] = res >> 1;
                     }}, OPMVX, VectorDummyOp);
+                    0x10: VectorNonSplitFormat::vmv_s_x({{ // Special case of OPMVX
+                        Vd_vu[0] = Rs1_vu;
+                    }}, OPMVX, VectorDummyOp);
                     0x0a: vasubu_vx({{
                         __uint128_t res = (__uint128_t)Vs2_vu[i] - Rs1_vu;
                         res = int_rounding<__uint128_t>(res, 0 /* TODO */, 1);
