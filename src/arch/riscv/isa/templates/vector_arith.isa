@@ -550,7 +550,7 @@ Fault
                                   Trace::InstRecord* traceData) const
 {
     using et = ElemType;
-    using vu = decltype(et::v);
+    using vu [[maybe_unused]] = decltype(et::v);
     using ewt = typename double_width<et>::type;
     using vwu = decltype(ewt::v);
 
