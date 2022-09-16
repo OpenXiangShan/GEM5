@@ -1085,18 +1085,16 @@ Fault
     %(vm_decl_rd)s;
     %(copy_old_vd)s;
 
-    Vd[0] = this->microIdx != 0 ? old_Vd[0] : Vs1[0];
-
     auto reduce_loop =
         [&, this](const auto& f, const auto* _, const auto* vs2) {
-            ElemType tmp_val = Vd[0];
+            ElemType microop_result = this->microIdx != 0 ? old_Vd[0] : Vs1[0];;
             for (uint32_t i = 0; i < this->microVl; i++) {
                 uint32_t ei = i + vtype_VLMAX(vtype, true) * this->microIdx;
                 if (this->vm || elem_mask(v0, ei)) {
-                    tmp_val = f(tmp_val, Vs2[i]);
+                    microop_result = f(microop_result, Vs2[i]);
                 }
             }
-            return tmp_val;
+            return microop_result;
         };
 
     %(code)s;
