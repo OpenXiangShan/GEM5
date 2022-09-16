@@ -12,12 +12,11 @@ SMSPrefetcher::SMSPrefetcher(const SMSPrefetcherParams &p)
     : Queued(p),
       region_size(p.region_size),
       region_blocks(p.region_size / p.block_size),
-      filter_table(p.filter_entries, p.filter_entries,
-                   p.filter_indexing_policy, p.filter_replacement_policy),
       act(p.act_entries, p.act_entries, p.act_indexing_policy,
           p.act_replacement_policy, ACTEntry(SatCounter8(2, 1))),
       pht(p.pht_assoc, p.pht_entries, p.pht_indexing_policy,
-          p.pht_replacement_policy, PhtEntry(region_blocks, SatCounter8(2, 0)))
+          p.pht_replacement_policy,
+          PhtEntry(2 * (region_blocks - 1), SatCounter8(2, 0)))
 {
     assert(isPowerOf2(region_size));
     DPRINTF(SMSPrefetcher, "SMS: region_size: %d region_blocks: %d\n",
@@ -36,92 +35,54 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi,
 
     Addr pc = pfi.getPC();
     Addr vaddr = pfi.getAddr();
-    Addr region_addr = regionAddress(vaddr);
+    Addr block_addr = blockAddress(vaddr);
+    // Addr region_addr = regionAddress(vaddr);
     Addr region_offset = regionOffset(vaddr);
 
     ACTEntry *act_match_entry = actLookup(pfi);
+    bool issue_pf = false;
     if (act_match_entry) {
-        DPRINTF(SMSPrefetcher, "ACT hit or match: pc:%x addr: %x offset: %d\n",
-                pc, vaddr, region_offset);
-        bool decr = act_match_entry->decr_counter.calcSaturation() > 0.5;
-        uint32_t priority = decr ? 0 : region_blocks - 1;
-        if (act_match_entry->access_cnt == 1 ||
-            act_match_entry->access_cnt > (region_blocks / 2)) {
+        bool decr = act_match_entry->decr_mode;
+        bool is_cross_region_match = act_match_entry->access_cnt == 0;
+        if (is_cross_region_match) {
+            act_match_entry->access_cnt = 1;
+        }
+        bool is_active_page =
+            is_cross_region_match ||
+            act_match_entry->access_cnt > (region_blocks * 3 / 4);
+        DPRINTF(SMSPrefetcher,
+                "ACT hit or match: pc:%x addr: %x offset: %d active: %d decr: "
+                "%d\n",
+                pc, vaddr, region_offset, is_active_page, decr);
+        if (is_active_page) {
+            issue_pf = true;
             // active page
-            Addr pf_region_addr = decr ? region_addr - 1 : region_addr + 1;
-            for (uint8_t i = 0; i < region_blocks; i++) {
-                if (i == region_offset)
-                    continue;
-                Addr pf_addr = pf_region_addr * region_size + i * blkSize;
-                addresses.push_back(AddrPriority(pf_addr, priority));
-                DPRINTF(SMSPrefetcher, "Page mode fetching addr: %x (%d)\n",
-                        pf_addr, i);
-                if (decr) {
-                    priority++;
-                } else {
-                    priority--;
+            Addr pf_tgt_addr =
+                decr ? block_addr + 30 * blkSize : block_addr - 30 * blkSize;
+            Addr pf_tgt_region = regionAddress(pf_tgt_addr);
+            Addr pf_tgt_offset = regionOffset(pf_tgt_addr);
+            DPRINTF(SMSPrefetcher, "tgt addr: %x offset: %d\n", pf_tgt_addr,
+                    pf_tgt_offset);
+            if (decr) {
+                for (int i = (int)region_blocks - 1;
+                     i >= pf_tgt_offset && i >= 0; i--) {
+                    Addr cur = pf_tgt_region * region_size + i * blkSize;
+                    addresses.push_back(AddrPriority(cur, i));
+                    DPRINTF(SMSPrefetcher, "pf addr: %x [%d]\n", cur, i);
+                    fatal_if(i < 0, "i < 0\n");
+                }
+            } else {
+                for (uint8_t i = 0; i <= pf_tgt_offset; i++) {
+                    Addr cur = pf_tgt_region * region_size + i * blkSize;
+                    addresses.push_back(AddrPriority(cur, region_blocks - i));
+                    DPRINTF(SMSPrefetcher, "pf addr: %x [%d]\n", cur, i);
                 }
             }
-        } else {
-            // TODO: add another prefetcher?
         }
-    } else {
-        FilterTableEntry *filter_entry = filterLookup(pfi);
-        if (filter_entry) {
-            DPRINTF(SMSPrefetcher,
-                    "Filter second hit: pc:%x addr: %x offset: %d\n", pc,
-                    vaddr, region_offset);
-            // second hit in filter, move filter entry to act
-            // 1. evict act entry
-            ACTEntry *act_entry = act.findVictim(0);
-            updatePht(act_entry);
-            // 2. insert filter entry to act
-            act_entry->pc = filter_entry->pc;
-            act_entry->is_secure = filter_entry->is_secure;
-            act_entry->region_bits =
-                (1 << region_offset) | (1 << filter_entry->region_offset);
-            act_entry->access_cnt = 2;
-            if (region_offset > filter_entry->region_offset) {
-                // not decr mode
-                act_entry->decr_counter.reset();
-                act_entry->decr_counter--;
-            } else {
-                // in decr mode
-                act_entry->decr_counter.reset();
-                act_entry->decr_counter++;
-            }
-            act.insertEntry(region_addr, filter_entry->is_secure, act_entry);
-            filter_table.invalidate(filter_entry);
-        }
-        // check pht, generate prefetch if possible
-        phtLookup(pfi, addresses);
-        // TODO: add another prefetcher?
     }
-}
-
-
-SMSPrefetcher::FilterTableEntry *
-SMSPrefetcher::filterLookup(const Base::PrefetchInfo &pfi)
-{
-    Addr pc = pfi.getPC();
-    Addr vaddr = pfi.getAddr();
-    Addr region_addr = regionAddress(vaddr);
-    Addr region_offset = regionOffset(vaddr);
-
-    FilterTableEntry *entry =
-        filter_table.findEntry(region_addr, pfi.isSecure());
-    if (entry) {
-        // second access to a region
-        return entry;
-    } else {
-        // first access to a region
-        // insert it to filter table
-        entry = filter_table.findVictim(0);
-        entry->pc = pc;
-        entry->is_secure = pfi.isSecure();
-        entry->region_offset = region_offset;
-        filter_table.insertEntry(region_addr, pfi.isSecure(), entry);
-        return nullptr;
+    if (!issue_pf) {
+        DPRINTF(SMSPrefetcher, "Pht lookup...\n");
+        phtLookup(pfi, addresses);
     }
 }
 
@@ -139,13 +100,10 @@ SMSPrefetcher::actLookup(const PrefetchInfo &pfi)
         // act hit
         act.accessEntry(entry);
         uint64_t region_bit_accessed = 1 << region_offset;
-        if (region_bit_accessed > entry->region_bits) {
-            entry->decr_counter--;
-        } else if (region_bit_accessed < entry->region_bits) {
-            entry->decr_counter++;
+        if (!(entry->region_bits & region_bit_accessed)) {
+            entry->access_cnt += 1;
         }
         entry->region_bits |= region_bit_accessed;
-        entry->access_cnt += 1;
         return entry;
     }
 
@@ -160,9 +118,10 @@ SMSPrefetcher::actLookup(const PrefetchInfo &pfi)
         // alloc new act entry
         entry->pc = pc;
         entry->is_secure = secure;
-        entry->decr_counter.reset();
+        entry->decr_mode = false;
         entry->region_bits = 1 << region_offset;
-        entry->access_cnt = 1;
+        entry->access_cnt = 0;
+        entry->region_offset = region_offset;
         act.insertEntry(region_addr, secure, entry);
         return entry;
     }
@@ -178,13 +137,24 @@ SMSPrefetcher::actLookup(const PrefetchInfo &pfi)
         // alloc new act entry
         entry->pc = pc;
         entry->is_secure = secure;
-        entry->decr_counter.reset();
-        entry->decr_counter++;
+        entry->decr_mode = true;
         entry->region_bits = 1 << region_offset;
-        entry->access_cnt = 1;
+        entry->access_cnt = 0;
+        entry->region_offset = region_offset;
         act.insertEntry(region_addr, secure, entry);
         return entry;
     }
+
+    // no matched entry, alloc new entry
+    entry = act.findVictim(0);
+    updatePht(entry);
+    entry->pc = pc;
+    entry->is_secure = secure;
+    entry->decr_mode = false;
+    entry->region_bits = 1 << region_offset;
+    entry->access_cnt = 1;
+    entry->region_offset = region_offset;
+    act.insertEntry(region_addr, secure, entry);
     return nullptr;
 }
 void
@@ -194,34 +164,37 @@ SMSPrefetcher::updatePht(SMSPrefetcher::ACTEntry *act_entry)
         return;
     }
     PhtEntry *pht_entry = pht.findEntry(act_entry->pc, act_entry->is_secure);
-    if (pht_entry) {
-        pht.accessEntry(pht_entry);
-        DPRINTF(SMSPrefetcher, "Pht update hit: pc: %x region_bits: %x\n",
-                act_entry->pc, act_entry->region_bits);
-        // pht hit, update it
-        for (uint8_t i = 0; i < region_blocks; i++) {
-            bool accessed = (act_entry->region_bits >> i) & 1;
-            if (accessed) {
-                pht_entry->hist[i]++;
-            } else {
-                pht_entry->hist[i]--;
-            }
+    bool is_update = pht_entry != nullptr;
+    if (!pht_entry) {
+        pht_entry = pht.findVictim(act_entry->pc);
+        for (uint8_t i = 0; i < 2 * (region_blocks - 1); i++) {
+            pht_entry->hist[i].reset();
         }
     } else {
-        // pht miss, evict old entry
-        pht_entry = pht.findVictim(act_entry->pc);
-        pht_entry->decr_mode = act_entry->decr_counter.calcSaturation() > 0.5;
-        for (uint8_t i = 0; i < region_blocks; i++) {
-            bool accessed = (act_entry->region_bits >> i) & 1;
-            if (accessed) {
-                pht_entry->hist[i].reset();
-                pht_entry->hist[i]++;
-            } else {
-                pht_entry->hist[i].reset();
-            }
+        pht.accessEntry(pht_entry);
+    }
+    Addr region_offset = act_entry->region_offset;
+    // incr part
+    for (uint8_t i = region_offset + 1, j = 0; i < region_blocks; i++, j++) {
+        uint8_t hist_idx = j + (region_blocks - 1);
+        bool accessed = (act_entry->region_bits >> i) & 1;
+        if (accessed) {
+            pht_entry->hist[hist_idx]++;
+        } else {
+            pht_entry->hist[hist_idx]--;
         }
-        DPRINTF(SMSPrefetcher, "Pht update miss: pc: %x region_bits: %x\n",
-                act_entry->pc, act_entry->region_bits);
+    }
+    // decr part
+    for (int i = int(region_offset) - 1, j = region_blocks - 2; i >= 0;
+         i--, j--) {
+        bool accessed = (act_entry->region_bits >> i) & 1;
+        if (accessed) {
+            pht_entry->hist[j]++;
+        } else {
+            pht_entry->hist[j]--;
+        }
+    }
+    if (!is_update) {
         pht.insertEntry(act_entry->pc, act_entry->is_secure, pht_entry);
     }
 }
@@ -231,29 +204,29 @@ SMSPrefetcher::phtLookup(const Base::PrefetchInfo &pfi,
 {
     Addr pc = pfi.getPC();
     Addr vaddr = pfi.getAddr();
-    Addr region_addr = regionAddress(vaddr);
+    Addr blk_addr = blockAddress(vaddr);
+    // Addr region_addr = regionAddress(vaddr);
     Addr region_offset = regionOffset(vaddr);
     bool secure = pfi.isSecure();
     PhtEntry *pht_entry = pht.findEntry(pc, secure);
     if (pht_entry) {
         pht.accessEntry(pht_entry);
-        DPRINTF(SMSPrefetcher, "Pht lookup hit: pc: %x, vaddr: %x\n", pc,
-                vaddr);
-        bool decr = pht_entry->decr_mode;
-        uint32_t priority = decr ? 0 : region_blocks - 1;
-        for (uint8_t i = 0; i < region_blocks; i++) {
-            if (i == region_offset)
-                continue;
+        DPRINTF(SMSPrefetcher,
+                "Pht lookup hit: pc: %x, vaddr: %x, offset: %x\n", pc, vaddr,
+                region_offset);
+        int priority = 2 * (region_blocks - 1);
+        // find incr pattern
+        for (uint8_t i = 0; i < region_blocks - 1; i++) {
+            if (pht_entry->hist[i + region_blocks - 1].calcSaturation() >
+                0.5) {
+                Addr pf_tgt_addr = blk_addr + (i + 1) * blkSize;
+                addresses.push_back(AddrPriority(pf_tgt_addr, priority--));
+            }
+        }
+        for (int i = region_blocks - 2, j = 1; i >= 0; i--, j++) {
             if (pht_entry->hist[i].calcSaturation() > 0.5) {
-                Addr pf_addr = region_addr * region_size + i * blkSize;
-                DPRINTF(SMSPrefetcher, "Pht fetching addr: %x (%d)\n", pf_addr,
-                        i);
-                addresses.push_back(AddrPriority(pf_addr, priority));
-                if (decr) {
-                    priority++;
-                } else {
-                    priority--;
-                }
+                Addr pf_tgt_addr = blk_addr - j * blkSize;
+                addresses.push_back(AddrPriority(pf_tgt_addr, priority--));
             }
         }
     }
