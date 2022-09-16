@@ -351,7 +351,7 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
                          alt_entry);
             }
         }
-        main_is_useless = main_entry.useful == 0;
+        main_is_useless = main_entry.useful == 0 && main_table > 0;
     }
 
     if (predictor_found && pred_match(*target_sel)) {
