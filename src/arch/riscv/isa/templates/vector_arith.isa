@@ -993,6 +993,28 @@ Fault
 
 }};
 
+def template VectorFloatNonSplitExecute {{
+
+template <typename ElemType>
+Fault
+%(class_name)s<ElemType>::execute(ExecContext* xc,
+                                    Trace::InstRecord* traceData) const
+{
+    using et = ElemType;
+    using vu = decltype(et::v);
+
+    if (machInst.vill)
+        return std::make_shared<IllegalInstFault>("VILL is set", machInst);
+    %(op_decl)s;
+    %(op_rd)s;
+    %(vm_decl_rd)s;
+    %(code)s;
+    %(op_wb)s;
+    return NoFault;
+}
+
+}};
+
 def template VectorReduceMacroDeclare {{
 
 template<typename ElemType>

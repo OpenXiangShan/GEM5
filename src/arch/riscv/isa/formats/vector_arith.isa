@@ -788,14 +788,21 @@ def format VectorNonSplitFormat(code, category, *flags) {{
          'vm_decl_rd': vm_decl_rd,
          'set_vm_idx': set_vm_idx},
         flags)
+
+    if inst_name == "vfmv" :
+        execute_block = VectorFloatNonSplitExecute.subst(iop)
+        decode_block = VectorFloatDecodeBlock.subst(iop)
+    else :
+        execute_block = VectorNonSplitExecute.subst(iop)
+        decode_block = VectorIntDecodeBlock.subst(iop)
+
     # Because of the use of templates, we had to put all parts in header to
     # keep the compiler happy.
     header_output = \
         VectorNonSplitDeclare.subst(iop) + \
         VectorNonSplitConstructor.subst(iop) + \
-        VectorNonSplitExecute.subst(iop)
+        execute_block
 
-    decode_block = VectorIntDecodeBlock.subst(iop)
 }};
 
 def format VectorMaskFormat(code, category, *flags) {{

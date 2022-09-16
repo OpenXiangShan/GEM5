@@ -3297,11 +3297,19 @@ decode QUADRANT default Unknown::unknown() {
                                              ftype<et>((vu)Fs1_bits),
                                              false, true).v;
                     }}, OPFVF, VectorDummyOp);
+                    0x10: VectorNonSplitFormat::vfmv_s_f({{
+                        auto fd = ftype_freg<et>(freg(Fs1_bits));
+                        Vd_vu[0] = fd.v;
+                    }}, OPFVV, VectorDummyOp);
                     0x17: decode VM {
                         0x0: vfmerge_vfm({{
                             Vd_vu[i] = elem_mask(v0, ei)
                                     ? ftype<et>((vu)Fs1_bits).v
                                     : Vs2_vu[i];
+                        }}, OPFVF, VectorDummyOp);
+                        0x1: vfmv_v_f({{
+                            auto fd = ftype_freg<et>(freg(Fs1_bits));
+                            Vd_vu[i] = fd.v;
                         }}, OPFVF, VectorDummyOp);
                     }
                 }
