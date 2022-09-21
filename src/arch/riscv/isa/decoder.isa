@@ -2511,6 +2511,16 @@ decode QUADRANT default Unknown::unknown() {
                                             ftype<et>(Vs3_vu[i]));
                         Vd_vu[i] = fd.v;
                     }}, OPFVV, VectorDummyOp);
+                    0x31: VectorReduceFloatWideningFormat::vfwredusum_vs({{
+                        Vd_vwu[0] = reduce_loop([](const vwu& src1, const vu& src2) {
+                            return fadd<ewt>(ftype<ewt>(src1), f_to_wf<et>(ftype<et>(src2)));
+                        }, Vs1_vwu, Vs2_vu);
+                    }}, OPFVV, VectorDummyOp);
+                    0x33: VectorReduceFloatWideningFormat::vfwredosum_vs({{
+                        Vd_vwu[0] = reduce_loop([](const vwu& src1, const vu& src2) {
+                            return fadd<ewt>(ftype<ewt>(src1), f_to_wf<et>(ftype<et>(src2)));
+                        }, Vs1_vwu, Vs2_vu);
+                    }}, OPFVV, VectorDummyOp);
                 }
                 format VectorFloatWideningFormat {
                     0x30: vfwadd_vv({{

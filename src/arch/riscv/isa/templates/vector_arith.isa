@@ -1163,6 +1163,43 @@ Fault
 
 }};
 
+def template VectorReduceFloatWideningMicroExecute {{
+
+template <typename ElemType>
+Fault
+%(class_name)s<ElemType>::execute(ExecContext* xc,
+                                  Trace::InstRecord* traceData) const
+{
+    %(type_def)s;
+    if (machInst.vill)
+        return std::make_shared<IllegalInstFault>("VILL is set", machInst);
+
+    %(op_decl)s;
+    %(op_rd)s;
+    %(vm_decl_rd)s;
+    %(copy_old_vd)s;
+
+    Vd[0] = this->microIdx != 0 ? old_Vd[0] : Vs1[0];
+
+    auto reduce_loop =
+        [&, this](const auto& f, const auto* _, const auto* vs2) {
+            vwu tmp_val = Vd[0];
+            for (uint32_t i = 0; i < this->microVl; i++) {
+                uint32_t ei = i + vtype_VLMAX(vtype, true) * this->microIdx;
+                if (this->vm || elem_mask(v0, ei)) {
+                    tmp_val = f(tmp_val, Vs2[i]).v;
+                }
+            }
+            return tmp_val;
+        };
+
+    %(code)s;
+    %(op_wb)s;
+    return NoFault;
+}
+
+}};
+
 def template VectorGatherMacroDeclare {{
 
 template<typename ElemType, typename IndexType>
