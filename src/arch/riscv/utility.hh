@@ -216,12 +216,14 @@ width_EEW(uint64_t width)
   *  Ref:
   *  https://github.com/qemu/qemu/blob/c7d773ae/target/riscv/vector_helper.c
 */
+template<typename T>
 inline int
-elem_mask(const uint8_t* v0, const int index)
+elem_mask(const T* vs, const int index)
 {
-    int idx = index / 8;
-    int pos = index % 8;
-    return (v0[idx] >> pos) & 1;
+    static_assert(std::is_integral_v<T>);
+    int idx = index / (sizeof(T)*8);
+    int pos = index % (sizeof(T)*8);
+    return (vs[idx] >> pos) & 1;
 }
 
 inline uint64_t
