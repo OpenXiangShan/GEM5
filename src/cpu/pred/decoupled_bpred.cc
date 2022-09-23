@@ -13,7 +13,11 @@ namespace branch_prediction
 {
 
 DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
-    : BPredUnit(p), fetchTargetQueue(p.ftq_size), historyBits(p.maxHistLen), streamTAGE(p.stream_tage)
+    : BPredUnit(p),
+      fetchTargetQueue(p.ftq_size),
+      historyBits(p.maxHistLen),
+      streamTAGE(p.stream_tage),
+      fdip(p.iprefetcher)
 {
     assert(streamTAGE);
 
@@ -959,12 +963,15 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
             historyManager.updateSpeculativeHist(s0UbtbPred.controlAddr,
                                                  s0UbtbPred.nextStream, fsqId);
         }
+        assert(fdip);
+        fdip->addStream(entry.streamStart, entry.getEndPC());
 
         DPRINTF(DecoupleBP || debugFlagOn,
                 "Build stream %lu with Valid s0UbtbPred: %#lx-[%#lx, %#lx) "
                 "--> %#lx, is call: %i, is return: %i\n",
                 fsqId, entry.streamStart, entry.predBranchPC,
                 entry.predEndPC, entry.predTarget, entry.isCall(), entry.isReturn());
+
     } else {
         DPRINTF(DecoupleBP || debugFlagOn,
                 "No valid prediction or pred fall thru, gen missing stream:"

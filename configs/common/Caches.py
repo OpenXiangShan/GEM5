@@ -61,7 +61,8 @@ class L1_ICache(L1Cache):
     tag_latency = 1
     data_latency = 1
     response_latency = 1
-    mshrs = 2
+    mshrs = 8
+    prefetch_on_access = True
 
 class L1_DCache(L1Cache):
     tag_latency = 1

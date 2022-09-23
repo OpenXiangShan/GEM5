@@ -49,7 +49,9 @@ def _get_hwp(hwp_option):
     if hwp_option == None:
         return NULL
 
+    print(ObjectList.hwp_list)
     hwpClass = ObjectList.hwp_list.get(hwp_option)
+    print(hwpClass)
     return hwpClass()
 
 def _get_cache_opts(level, options):
@@ -65,6 +67,7 @@ def _get_cache_opts(level, options):
 
     prefetcher_attr = '{}_hwp_type'.format(level)
     if hasattr(options, prefetcher_attr):
+        print(f'Attribute of prefetcher {getattr(options, prefetcher_attr)}')
         opts['prefetcher'] = _get_hwp(getattr(options, prefetcher_attr))
 
     return opts
@@ -142,8 +145,17 @@ def config_cache(options, system):
 
     for i in range(options.num_cpus):
         if options.caches:
+            print("Before create L1 i")
             icache = icache_class(**_get_cache_opts('l1i', options))
+            print(icache.prefetcher)
+            print("After create L1 i")
             dcache = dcache_class(**_get_cache_opts('l1d', options))
+
+            if isinstance(icache.prefetcher, FDIP):
+                icache.prefetcher.registerTLB(system.cpu[i].mmu.itb)
+                system.cpu[i].branchPred.iprefetcher = icache.prefetcher
+                print("IPref use VA:", icache.prefetcher.use_virtual_addresses)
+
 
             # If we have a walker cache specified, instantiate two
             # instances here

@@ -28,6 +28,7 @@
 from m5.SimObject import SimObject
 from m5.params import *
 from m5.proxy import *
+from m5.objects.Prefetcher import *
 
 class IndirectPredictor(SimObject):
     type = 'IndirectPredictor'
@@ -809,4 +810,5 @@ class DecoupledBPU(BranchPredictor):
     maxHistLen = Param.Unsigned(970, "The length of history")
 
     ftq_size = Param.Unsigned(128, "Fetch target queue size")
+    iprefetcher = Param.FDIP(NULL, "Prefetcher attached to cache")
 

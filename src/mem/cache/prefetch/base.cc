@@ -48,6 +48,7 @@
 #include <cassert>
 
 #include "base/intmath.hh"
+#include "debug/HWPrefetch.hh"
 #include "mem/cache/base.hh"
 #include "params/BasePrefetcher.hh"
 #include "sim/system.hh"
@@ -105,6 +106,7 @@ Base::Base(const BasePrefetcherParams &p)
       prefetchStats(this), issuedPrefetches(0),
       usefulPrefetches(0), tlb(nullptr)
 {
+    printf("Created prefetcher, use VA: %i\n", useVirtualAddresses);
 }
 
 void
@@ -263,9 +265,15 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
     // Verify this access type is observed by prefetcher
     if (observeAccess(pkt, miss)) {
         if (useVirtualAddresses && pkt->req->hasVaddr()) {
+            DPRINTF(HWPrefetch, "Notify pkt: %#lx with vaddr %#lx\n",
+                    pkt->getAddr(), pkt->req->getVaddr());
+
             PrefetchInfo pfi(pkt, pkt->req->getVaddr(), miss);
             notify(pkt, pfi);
         } else if (!useVirtualAddresses) {
+            DPRINTF(HWPrefetch, "Notify pkt: %#lx with paddr\n",
+                    pkt->getAddr());
+
             PrefetchInfo pfi(pkt, pkt->req->getPaddr(), miss);
             notify(pkt, pfi);
         }

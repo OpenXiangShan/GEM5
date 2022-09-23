@@ -229,7 +229,10 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
                 break;
             }
         } else {
-            DPRINTF(HWPrefetch, "Ignoring page crossing prefetch.\n");
+            DPRINTF(
+                HWPrefetch,
+                "Ignoring page crossing prefetch: current: %#lx, pref: %#lx\n",
+                pfi.getAddr(), addr_prio.first);
         }
     }
 }

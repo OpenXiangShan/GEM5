@@ -15,6 +15,7 @@
 #include "debug/DecoupleBPProbe.hh"
 #include "debug/DecoupleBPRAS.hh"
 #include "debug/DecoupleBPVerbose.hh"
+#include "mem/cache/prefetch/fdip.hh"
 #include "params/DecoupledBPU.hh"
 
 namespace gem5
@@ -373,6 +374,7 @@ class DecoupledBPU : public BPredUnit
                         streamStart(streamStart), controlAddr(controlAddr), count(1) {} ;
     };
 
+  private:
     std::map<Addr, MispredictEntry> topMispredicts;
     std::map<uint64_t, uint64_t> topMispredHist;
 
@@ -383,6 +385,8 @@ class DecoupledBPU : public BPredUnit
     bool popRAS(FetchStreamId stream_id, const char *when);
 
     void pushRAS(FetchStreamId stream_id, const char *when, Addr ra);
+
+    prefetch::FDIP *fdip;
 };
 
 }  // namespace branch_prediction
