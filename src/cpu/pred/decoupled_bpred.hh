@@ -10,6 +10,7 @@
 #include "cpu/pred/fetch_target_queue.hh"
 #include "cpu/pred/stream_struct.hh"
 #include "cpu/pred/modify_tage.hh"
+#include "cpu/pred/stream_loop_pred.hh"
 #include "debug/DecoupleBP.hh"
 #include "debug/DecoupleBPHist.hh"
 #include "debug/DecoupleBPProbe.hh"
@@ -383,6 +384,8 @@ class DecoupledBPU : public BPredUnit
     bool popRAS(FetchStreamId stream_id, const char *when);
 
     void pushRAS(FetchStreamId stream_id, const char *when, Addr ra);
+
+    StreamLoopPred *streamLoopPred{};
 };
 
 }  // namespace branch_prediction

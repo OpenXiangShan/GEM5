@@ -89,7 +89,7 @@ CPU::CPU(const BaseO3CPUParams &params)
       decode(this, params),
       rename(this, params),
       iew(this, params),
-      commit(this, params),
+      commit(this, fetch.getDBP(), params),
 
       regFile(params.numPhysIntRegs,
               params.numPhysFloatRegs,

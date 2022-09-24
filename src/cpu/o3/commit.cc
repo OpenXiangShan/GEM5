@@ -82,9 +82,10 @@ Commit::processTrapEvent(ThreadID tid)
     trapSquash[tid] = true;
 }
 
-Commit::Commit(CPU *_cpu, const BaseO3CPUParams &params)
+Commit::Commit(CPU *_cpu, branch_prediction::DecoupledBPU *_dbp, const BaseO3CPUParams &params)
     : commitPolicy(params.smtCommitPolicy),
       cpu(_cpu),
+      dbp(_dbp),
       iewToCommitDelay(params.iewToCommitDelay),
       commitToIEWDelay(params.commitToIEWDelay),
       renameToROBDelay(params.renameToROBDelay),
@@ -1039,6 +1040,12 @@ Commit::commitInsts()
             bool commit_success = commitHead(head_inst, num_committed);
 
             if (commit_success) {
+                Addr branchAddr = head_inst->pcState().instAddr();
+                Addr targetAddr = head_inst->predPC->instAddr();
+                if (targetAddr < branchAddr || dbp->streamLoopPred->findLoop(branchAddr)) {
+                    dbp->streamLoopPred->update(branchAddr, targetAddr);
+                }
+
                 ++num_committed;
                 stats.committedInstType[tid][head_inst->opClass()]++;
                 ppCommit->notify(head_inst);

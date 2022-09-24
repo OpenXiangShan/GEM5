@@ -54,6 +54,8 @@
 #include "cpu/o3/rename_map.hh"
 #include "cpu/o3/rob.hh"
 #include "cpu/timebuf.hh"
+#include "cpu/pred/bpred_unit.hh"
+#include "cpu/pred/decoupled_bpred.hh"
 #include "enums/CommitPolicy.hh"
 #include "sim/probe/probe.hh"
 
@@ -138,7 +140,7 @@ class Commit
 
   public:
     /** Construct a Commit with the given parameters. */
-    Commit(CPU *_cpu, const BaseO3CPUParams &params);
+    Commit(CPU *_cpu, branch_prediction::DecoupledBPU *_dbp, const BaseO3CPUParams &params);
 
     /** Returns the name of the Commit. */
     std::string name() const;
@@ -350,6 +352,8 @@ class Commit
   private:
     /** Pointer to O3CPU. */
     CPU *cpu;
+
+    branch_prediction::DecoupledBPU *dbp;
 
     /** Vector of all of the threads. */
     std::vector<ThreadState *> thread;
