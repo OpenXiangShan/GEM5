@@ -3,6 +3,7 @@
 
 #include <map>
 #include <list>
+#include <utility>
 
 #include "base/statistics.hh"
 #include "base/types.hh"
@@ -47,7 +48,7 @@ private:
 
     std::list<Addr> loopQueue;
 
-    Addr forwardTakenPC; // the most recent forward taken PC
+    std::pair<Addr, Addr> forwardTaken; // the most recent forward taken PC
 
     bool debugFlagOn{false};
 
@@ -76,8 +77,8 @@ public:
 
     void update(Addr branchAddr, Addr targetAddr);
 
-    void setRecentForwardTakenPC(Addr pc) {
-        forwardTakenPC = pc;
+    void setRecentForwardTakenPC(Addr branch, Addr target) {
+        forwardTaken = std::make_pair(branch, target);
     }
 
 };

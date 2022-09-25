@@ -1046,7 +1046,7 @@ Commit::commitInsts()
                     dbp->loopDetector->update(branchAddr, targetAddr);
                 }
                 if (targetAddr > branchAddr && head_inst->isControl()) {
-                    dbp->loopDetector->setRecentForwardTakenPC(branchAddr);
+                    dbp->loopDetector->setRecentForwardTakenPC(branchAddr, targetAddr);
                 }
 
                 ++num_committed;

@@ -51,10 +51,10 @@ LoopDetector::update(Addr branchAddr, Addr targetAddr) {
         entry->second.specCount = 0;
     }
 
-    if (entry->second.target < forwardTakenPC && entry->second.branch > forwardTakenPC) {
+    if (entry->second.target < forwardTaken.first && entry->second.branch > forwardTaken.first) {
         entry->second.intraTaken = true;
-        DPRINTF(DecoupleBP || debugFlagOn, "Detect intra taken at %#lx, loop:[%#lx, %#lx]\n",
-                forwardTakenPC, entry->second.target, entry->second.branch);
+        DPRINTF(DecoupleBP || debugFlagOn, "Detect intra taken at %#lx-->%#lx, loop:[%#lx, %#lx]\n",
+                forwardTaken.first, forwardTaken.second, entry->second.target, entry->second.branch);
     }
 }
 
