@@ -9,7 +9,7 @@
 #include "debug/DecoupleBP.hh"
 #include "base/debug_helper.hh"
 #include "base/trace.hh"
-#include "params/StreamLoopPred.hh"
+#include "params/LoopDetector.hh"
 #include "sim/sim_object.hh"
 
 namespace gem5
@@ -18,14 +18,14 @@ namespace gem5
 namespace branch_prediction
 {
 
-class StreamLoopPred : public SimObject
+class LoopDetector : public SimObject
 {
 
     using defer = std::shared_ptr<void>;
 public: 
-    typedef StreamLoopPredParams Params;
+    typedef LoopDetectorParams Params;
 
-    StreamLoopPred(const Params &params);
+    LoopDetector(const Params &params);
     
 private:
 

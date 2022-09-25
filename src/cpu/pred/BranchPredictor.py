@@ -797,9 +797,9 @@ class StreamTAGE(TimedPredictor):
     maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
     numTablesToAlloc = Param.Unsigned(1, "The number of table to allocated each time")
 
-class StreamLoopPred(SimObject):
-    type = 'StreamLoopPred'
-    cxx_class = 'gem5::branch_prediction::StreamLoopPred'
+class LoopDetector(SimObject):
+    type = 'LoopDetector'
+    cxx_class = 'gem5::branch_prediction::LoopDetector'
     cxx_header = "cpu/pred/loop_detector.hh"
 
     maxLoopQueueSize = Param.Unsigned(128, "The max size of loop queue")
@@ -812,7 +812,7 @@ class DecoupledBPU(BranchPredictor):
     # stream_pred = Param.StreamPredictor(StreamPredictor(),
     # "backing stream predictor")
     stream_tage = Param.StreamTAGE(StreamTAGE(), "fast stream predictor")
-    stream_loop = Param.StreamLoopPred(StreamLoopPred(), "stream loop predictor")
+    loop_detector = Param.LoopDetector(LoopDetector(), "loop detector")
     maxHistLen = Param.Unsigned(970, "The length of history")
 
     ftq_size = Param.Unsigned(128, "Fetch target queue size")

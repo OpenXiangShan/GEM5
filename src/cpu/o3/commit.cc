@@ -1041,12 +1041,12 @@ Commit::commitInsts()
 
             if (commit_success) {
                 Addr branchAddr = head_inst->pcState().instAddr();
-                Addr targetAddr = head_inst->predPC->instAddr();
-                if (targetAddr < branchAddr || dbp->streamLoopPred->findLoop(branchAddr)) {
-                    dbp->streamLoopPred->update(branchAddr, targetAddr);
+                Addr targetAddr = head_inst->pcState().clone()->as<RiscvISA::PCState>().npc();
+                if (targetAddr < branchAddr || dbp->loopDetector->findLoop(branchAddr)) {
+                    dbp->loopDetector->update(branchAddr, targetAddr);
                 }
                 if (targetAddr > branchAddr && head_inst->isControl()) {
-                    dbp->streamLoopPred->setRecentForwardTakenPC(branchAddr);
+                    dbp->loopDetector->setRecentForwardTakenPC(branchAddr);
                 }
 
                 ++num_committed;

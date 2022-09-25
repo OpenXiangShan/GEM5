@@ -13,7 +13,7 @@ namespace branch_prediction
 {
 
 DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
-    : BPredUnit(p), fetchTargetQueue(p.ftq_size), historyBits(p.maxHistLen), streamTAGE(p.stream_tage), streamLoopPred(p.stream_loop)
+    : BPredUnit(p), fetchTargetQueue(p.ftq_size), historyBits(p.maxHistLen), streamTAGE(p.stream_tage), loopDetector(p.loop_detector)
 {
     assert(streamTAGE);
 
