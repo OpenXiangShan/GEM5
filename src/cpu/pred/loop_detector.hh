@@ -21,6 +21,7 @@ namespace branch_prediction
 class StreamLoopPred : public SimObject
 {
 
+    using defer = std::shared_ptr<void>;
 public: 
     typedef StreamLoopPredParams Params;
 

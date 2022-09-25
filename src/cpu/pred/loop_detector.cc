@@ -13,6 +13,7 @@ StreamLoopPred::StreamLoopPred(const Params &params)
 
 void
 StreamLoopPred::update(Addr branchAddr, Addr targetAddr) {
+    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
     if (branchAddr == ObservingPC) {
         debugFlagOn = true;
     }
@@ -57,9 +58,6 @@ StreamLoopPred::update(Addr branchAddr, Addr targetAddr) {
             break;
         }
     }
-
-    debugFlagOn = false;
-
 }
 
 } // namespace branch_prediction
