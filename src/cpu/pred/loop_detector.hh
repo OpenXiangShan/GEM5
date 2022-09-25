@@ -33,13 +33,14 @@ private:
 
     struct LoopEntry
     {
-        Addr pc;
+        Addr branch;
+        Addr target;
         int specCount;
         int tripCount;
         bool intraTaken;
 
-        LoopEntry() : pc(0), specCount(0), tripCount(0), intraTaken(false) {}
-        LoopEntry(Addr pc) : pc(pc), specCount(1), tripCount(0), intraTaken(false) {}
+        LoopEntry() : branch(0), target(0), specCount(0), tripCount(0), intraTaken(false) {}
+        LoopEntry(Addr branch, Addr target) : branch(branch), target(target), specCount(1), tripCount(0), intraTaken(false) {}
     };
 
     std::map<Addr, LoopEntry> loopTable;

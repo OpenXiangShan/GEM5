@@ -28,7 +28,7 @@ LoopDetector::update(Addr branchAddr, Addr targetAddr) {
         if (entry == loopTable.end()) {
             DPRINTF(DecoupleBP || debugFlagOn, "taken update loop predictor from NULL to [%#lx, %d, %d, %s]\n",
                     branchAddr, 1, 0, intraTaken);
-            loopTable[branchAddr] = LoopEntry(branchAddr);
+            loopTable[branchAddr] = LoopEntry(branchAddr, targetAddr);
         } else {
             DPRINTF(DecoupleBP || debugFlagOn, "taken update loop predictor from [%#lx, %d, %d, %s] to [%#lx, %d, %d]\n",
                     branchAddr, entry->second.specCount, entry->second.tripCount, intraTaken,
@@ -51,12 +51,10 @@ LoopDetector::update(Addr branchAddr, Addr targetAddr) {
         entry->second.specCount = 0;
     }
 
-    for (auto iter : loopQueue) {
-        if (iter == forwardTakenPC) {
-            entry->second.intraTaken = true;
-            DPRINTF(DecoupleBP || debugFlagOn, "Detect intra taken loop at %#lx\n", branchAddr);
-            break;
-        }
+    if (entry->second.target < forwardTakenPC && entry->second.branch > forwardTakenPC) {
+        entry->second.intraTaken = true;
+        DPRINTF(DecoupleBP || debugFlagOn, "Detect intra taken at %#lx, loop:[%#lx, %#lx]\n",
+                forwardTakenPC, entry->second.target, entry->second.branch);
     }
 }
 
