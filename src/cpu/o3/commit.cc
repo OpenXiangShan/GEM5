@@ -1045,6 +1045,9 @@ Commit::commitInsts()
                 if (targetAddr < branchAddr || dbp->streamLoopPred->findLoop(branchAddr)) {
                     dbp->streamLoopPred->update(branchAddr, targetAddr);
                 }
+                if (targetAddr > branchAddr && head_inst->isControl()) {
+                    dbp->streamLoopPred->setRecentForwardTakenPC(branchAddr);
+                }
 
                 ++num_committed;
                 stats.committedInstType[tid][head_inst->opClass()]++;

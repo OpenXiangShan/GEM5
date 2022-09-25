@@ -1,5 +1,5 @@
-#ifndef __CPU_PRED_STREAM_LOOP_PRED_HH__
-#define __CPU_PRED_STREAM_LOOP_PRED_HH__
+#ifndef __CPU_PRED_LOOP_DETECTOR_HH__
+#define __CPU_PRED_LOOP_DETECTOR_HH__
 
 #include <map>
 #include <list>
@@ -30,49 +30,53 @@ private:
 
     unsigned maxLoopQueueSize;
 
-    struct PredEntry
+    struct LoopEntry
     {
         Addr pc;
         int specCount;
         int tripCount;
         bool intraTaken;
 
-        PredEntry() : pc(0), specCount(0), tripCount(0), intraTaken(false) {}
-        PredEntry(Addr pc) : pc(pc), specCount(1), tripCount(0), intraTaken(false) {}
+        LoopEntry() : pc(0), specCount(0), tripCount(0), intraTaken(false) {}
+        LoopEntry(Addr pc) : pc(pc), specCount(1), tripCount(0), intraTaken(false) {}
     };
 
-    std::map<Addr, PredEntry> predTable;
+    std::map<Addr, LoopEntry> loopTable;
 
     std::list<Addr> loopQueue;
+
+    Addr forwardTakenPC; // the most recent forward taken PC
 
     bool debugFlagOn{false};
 
 public:
 
     bool findLoop(Addr branchAddr) {
-        if (predTable.find(branchAddr) != predTable.end()) {
+        if (loopTable.find(branchAddr) != loopTable.end()) {
             return true;
         }
         return false;
     }
 
     int getTripCount(Addr pc) {
-        if (predTable.find(pc) == predTable.end())
+        if (loopTable.find(pc) == loopTable.end())
             return -1;
         else
-            return predTable[pc].tripCount;
+            return loopTable[pc].tripCount;
     }
 
     int getSpecCount(Addr pc) {
-        if (predTable.find(pc) == predTable.end())
+        if (loopTable.find(pc) == loopTable.end())
             return -1;
         else
-            return predTable[pc].specCount;
+            return loopTable[pc].specCount;
     }
 
     void update(Addr branchAddr, Addr targetAddr);
 
-    void detectIntraTaken();
+    void setRecentForwardTakenPC(Addr pc) {
+        forwardTakenPC = pc;
+    }
 
 };
 
@@ -80,4 +84,4 @@ public:
 
 }
 
-#endif  // __CPU_PRED_STREAM_LOOP_PRED_HH__
+#endif  // __CPU_PRED_LOOP_DETECTOR_HH__

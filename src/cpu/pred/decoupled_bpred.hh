@@ -10,7 +10,7 @@
 #include "cpu/pred/fetch_target_queue.hh"
 #include "cpu/pred/stream_struct.hh"
 #include "cpu/pred/modify_tage.hh"
-#include "cpu/pred/stream_loop_pred.hh"
+#include "cpu/pred/loop_detector.hh"
 #include "debug/DecoupleBP.hh"
 #include "debug/DecoupleBPHist.hh"
 #include "debug/DecoupleBPProbe.hh"

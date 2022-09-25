@@ -800,7 +800,7 @@ class StreamTAGE(TimedPredictor):
 class StreamLoopPred(SimObject):
     type = 'StreamLoopPred'
     cxx_class = 'gem5::branch_prediction::StreamLoopPred'
-    cxx_header = "cpu/pred/stream_loop_pred.hh"
+    cxx_header = "cpu/pred/loop_detector.hh"
 
     maxLoopQueueSize = Param.Unsigned(128, "The max size of loop queue")
 
