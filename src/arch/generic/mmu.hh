@@ -75,6 +75,11 @@ class BaseMMU : public SimObject
         virtual void finish(const Fault &fault, const RequestPtr &req,
                             ThreadContext *tc, BaseMMU::Mode mode) = 0;
 
+        //translate finish of queued deferred packet
+        void finishOfQDP(const Fault &fault, const RequestPtr &req,
+                            ThreadContext *tc, BaseMMU::Mode mode)
+        {}
+
         /** This function is used by the page table walker to determine
          * if it should translate the a pending request or if the underlying
          * request has been squashed.

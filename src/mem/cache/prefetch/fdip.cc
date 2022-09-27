@@ -29,13 +29,14 @@ FDIP::calculatePrefetch(const PrefetchInfo &pfi,
     }
     streamToPrefetch.valid = false;
 
-    for (int d = 0; d < degree; d++) {
-        Addr new_addr = blockAddress(streamToPrefetch.start) + d*(blkSize);
+    int blk_num = 0;
+    Addr new_addr;
+    do {
+        new_addr = blockAddress(streamToPrefetch.start) + blk_num*(blkSize);
         addresses.push_back(AddrPriority(new_addr, 0));
-        if (new_addr >= streamToPrefetch.end) {
-            break;
-        }
+        blk_num++;
     }
+    while (new_addr < streamToPrefetch.end);
 }
 
 void

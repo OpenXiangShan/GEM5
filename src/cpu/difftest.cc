@@ -28,7 +28,7 @@ const char *reg_name[DIFFTEST_NR_REG] = {
 NemuProxy::NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff)
 {
     void *handle = dlmopen(LM_ID_NEWLM, ref_so, RTLD_LAZY | RTLD_DEEPBIND);
-    printf("Using %s for difftest", ref_so);
+    printf("Using %s for difftest\n", ref_so);
     if (!handle) {
         printf("%s\n", dlerror());
         assert(0);

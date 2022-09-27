@@ -128,16 +128,22 @@ class Queued : public Base
         }
 
         void markDelayed() override
-        {}
+        {
+            printf("translation delayed\n");
+        }
 
         void finish(const Fault &fault, const RequestPtr &req,
-                            ThreadContext *tc, BaseMMU::Mode mode) override;
+                            ThreadContext *tc, BaseMMU::Mode mode) override
+        {}
+
+        void finishOfQDP(const Fault &fault, const RequestPtr &req,
+                            ThreadContext *tc, BaseMMU::Mode mode);
 
         /**
          * Issues the translation request to the provided TLB
          * @param tlb the tlb that has to translate the address
          */
-        void startTranslation(BaseTLB *tlb);
+        void startTranslationOfQDP(BaseTLB *tlb);
     };
 
     std::list<DeferredPacket> pfq;
