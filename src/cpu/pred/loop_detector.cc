@@ -21,18 +21,17 @@ LoopDetector::update(Addr branchAddr, Addr targetAddr) {
     bool taken_backward = targetAddr < branchAddr;
 
     auto entry = loopTable.find(branchAddr);
-    
-    std::string intraTaken =  entry != loopTable.end() && entry->second.intraTaken ? "intraTaken" : "no intraTaken";
 
     if (taken_backward) {
         if (entry == loopTable.end()) {
-            DPRINTF(DecoupleBP || debugFlagOn, "taken update loop predictor from NULL to [%#lx, %d, %d, %s]\n",
-                    branchAddr, 1, 0, intraTaken);
+            DPRINTF(DecoupleBP || debugFlagOn, "taken update loop detector from NULL to [%#lx, %#lx, %#lx, %d, %d]\n",
+                    branchAddr, 0, 0, 1, 0);
             loopTable[branchAddr] = LoopEntry(branchAddr, targetAddr);
         } else {
-            DPRINTF(DecoupleBP || debugFlagOn, "taken update loop predictor from [%#lx, %d, %d, %s] to [%#lx, %d, %d]\n",
-                    branchAddr, entry->second.specCount, entry->second.tripCount, intraTaken,
-                    branchAddr, entry->second.specCount + 1, entry->second.tripCount);
+            DPRINTF(DecoupleBP || debugFlagOn, "taken update loop detector from "
+                    "[%#lx, %#lx, %#lx, %d, %d] to [%#lx, %#lx, %#lx, %d, %d]\n",
+                    branchAddr, entry->second.target, entry->second.outTarget, entry->second.specCount, entry->second.tripCount,
+                    branchAddr, entry->second.target, entry->second.outTarget, entry->second.specCount + 1, entry->second.tripCount);
             entry->second.specCount++;
         }
 
@@ -43,18 +42,24 @@ LoopDetector::update(Addr branchAddr, Addr targetAddr) {
 
     } else {
         assert(entry != loopTable.end());
-        DPRINTF(DecoupleBP || debugFlagOn, "not taken update loop predictor from [%#lx, %d, %d, %s] to [%#lx, %d, %d]\n",
-                branchAddr, entry->second.specCount, entry->second.tripCount, intraTaken,
-                branchAddr, 0, entry->second.specCount);
+        DPRINTF(DecoupleBP || debugFlagOn, "not taken update loop detector from "
+                "[%#lx, %#lx, %#lx, %d, %d] to [%#lx, %#lx, %#lx, %d, %d]\n",
+                branchAddr, entry->second.target, entry->second.outTarget, entry->second.specCount, entry->second.tripCount,
+                branchAddr, entry->second.target, entry->second.outTarget, 0, entry->second.specCount);
 
         entry->second.tripCount = entry->second.specCount;
         entry->second.specCount = 0;
+        entry->second.outTarget = targetAddr;
     }
 
     if (entry->second.target < forwardTaken.first && entry->second.branch > forwardTaken.first) {
         entry->second.intraTaken = true;
         DPRINTF(DecoupleBP || debugFlagOn, "Detect intra taken at %#lx-->%#lx, loop:[%#lx, %#lx]\n",
                 forwardTaken.first, forwardTaken.second, entry->second.target, entry->second.branch);
+    }
+
+    if (!taken_backward) {
+	    streamLoopPredictor->updateEntry(branchAddr, entry->second.target, entry->second.outTarget, entry->second.tripCount, entry->second.intraTaken);
     }
 }
 

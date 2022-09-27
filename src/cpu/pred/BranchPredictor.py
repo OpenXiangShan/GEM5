@@ -804,6 +804,11 @@ class LoopDetector(SimObject):
 
     maxLoopQueueSize = Param.Unsigned(128, "The max size of loop queue")
 
+class StreamLoopPredictor(SimObject):
+    type = 'StreamLoopPredictor'
+    cxx_class = 'gem5::branch_prediction::StreamLoopPredictor'
+    cxx_header = "cpu/pred/stream_loop_predictor.hh"
+
 class DecoupledBPU(BranchPredictor):
     type = 'DecoupledBPU'
     cxx_class = 'gem5::branch_prediction::DecoupledBPU'
@@ -813,6 +818,7 @@ class DecoupledBPU(BranchPredictor):
     # "backing stream predictor")
     stream_tage = Param.StreamTAGE(StreamTAGE(), "fast stream predictor")
     loop_detector = Param.LoopDetector(LoopDetector(), "loop detector")
+    stream_loop_predictor = Param.StreamLoopPredictor(StreamLoopPredictor(), "stream loop predictor")
     maxHistLen = Param.Unsigned(970, "The length of history")
 
     ftq_size = Param.Unsigned(128, "Fetch target queue size")

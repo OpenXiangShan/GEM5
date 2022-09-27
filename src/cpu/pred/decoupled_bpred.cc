@@ -13,7 +13,7 @@ namespace branch_prediction
 {
 
 DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
-    : BPredUnit(p), fetchTargetQueue(p.ftq_size), historyBits(p.maxHistLen), streamTAGE(p.stream_tage), loopDetector(p.loop_detector)
+    : BPredUnit(p), fetchTargetQueue(p.ftq_size), historyBits(p.maxHistLen), streamTAGE(p.stream_tage), loopDetector(p.loop_detector), streamLoopPredictor(p.stream_loop_predictor)
 {
     assert(streamTAGE);
 
@@ -27,6 +27,8 @@ DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
 
     commitHistory.resize(historyBits, 0);
     squashing = true;
+
+    loopDetector->setStreamLoopPredictor(streamLoopPredictor);
 
     registerExitCallback([this]() {
         auto out_handle = simout.create("topMisPredicts.txt", false, true);
@@ -234,6 +236,7 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
 
     dumpFsq("Before control squash");
 
+    streamLoopPredictor->resetTripCount(control_pc.instAddr());
 
     stream.squashType = SQUASH_CTRL;
 
@@ -931,6 +934,13 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
              s0UbtbPred.valid, s0UbtbPred.isTaken());
     if (s0UbtbPred.valid && s0UbtbPred.isTaken()) {
         DPRINTF(DecoupleBP, "TAGE predicted target: %#lx\n", s0UbtbPred.nextStream);
+
+        bool useLoopPrediction = false;
+        Addr loopPredAddr = 0;
+
+        std::tie(useLoopPrediction, loopPredAddr) = 
+        streamLoopPredictor->makeLoopPrediction(s0UbtbPred.controlAddr);
+        s0UbtbPred.nextStream = useLoopPrediction ? loopPredAddr : s0UbtbPred.nextStream;
 
         entry.predEnded = true;
         entry.predTaken = true;

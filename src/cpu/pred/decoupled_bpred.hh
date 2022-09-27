@@ -386,6 +386,7 @@ class DecoupledBPU : public BPredUnit
     void pushRAS(FetchStreamId stream_id, const char *when, Addr ra);
 
     LoopDetector *loopDetector{};
+    StreamLoopPredictor *streamLoopPredictor{};
 };
 
 }  // namespace branch_prediction

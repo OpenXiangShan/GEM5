@@ -7,6 +7,7 @@
 
 #include "base/statistics.hh"
 #include "base/types.hh"
+#include "cpu/pred/stream_loop_predictor.hh"
 #include "debug/DecoupleBP.hh"
 #include "base/debug_helper.hh"
 #include "base/trace.hh"
@@ -36,12 +37,13 @@ private:
     {
         Addr branch;
         Addr target;
+        Addr outTarget;
         int specCount;
         int tripCount;
         bool intraTaken;
 
-        LoopEntry() : branch(0), target(0), specCount(0), tripCount(0), intraTaken(false) {}
-        LoopEntry(Addr branch, Addr target) : branch(branch), target(target), specCount(1), tripCount(0), intraTaken(false) {}
+        LoopEntry() : branch(0), target(0), outTarget(0), specCount(0), tripCount(0), intraTaken(false) {}
+        LoopEntry(Addr branch, Addr target) : branch(branch), target(target), outTarget(0), specCount(1), tripCount(0), intraTaken(false) {}
     };
 
     std::map<Addr, LoopEntry> loopTable;
@@ -50,9 +52,13 @@ private:
 
     std::pair<Addr, Addr> forwardTaken; // the most recent forward taken PC
 
+    StreamLoopPredictor *streamLoopPredictor{};
+
     bool debugFlagOn{false};
 
 public:
+
+    void setStreamLoopPredictor(StreamLoopPredictor *slp) { streamLoopPredictor = slp; }
 
     bool findLoop(Addr branchAddr) {
         if (loopTable.find(branchAddr) != loopTable.end()) {
