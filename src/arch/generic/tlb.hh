@@ -74,6 +74,9 @@ class BaseTLB : public SimObject
     virtual void translateTiming(
             const RequestPtr &req, ThreadContext *tc,
             BaseMMU::Translation *translation, BaseMMU::Mode mode) = 0;
+    virtual void translateTimingOfQDP(
+            const RequestPtr &req, ThreadContext *tc,
+            BaseMMU::Translation *translation, BaseMMU::Mode mode) = 0;
     virtual Fault
     translateFunctional(const RequestPtr &req, ThreadContext *tc,
                         BaseMMU::Mode mode)

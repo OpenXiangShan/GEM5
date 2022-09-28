@@ -78,18 +78,18 @@ Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size,
 }
 
 void
-Queued::DeferredPacket::startTranslation(BaseTLB *tlb)
+Queued::DeferredPacket::startTranslationOfQDP(BaseTLB *tlb)
 {
     assert(translationRequest != nullptr);
     if (!ongoingTranslation) {
         ongoingTranslation = true;
         // Prefetchers only operate in Timing mode
-        tlb->translateTiming(translationRequest, tc, this, BaseMMU::Read);
+        tlb->translateTimingOfQDP(translationRequest, tc, this, BaseMMU::Read);
     }
 }
 
 void
-Queued::DeferredPacket::finish(const Fault &fault,
+Queued::DeferredPacket::finishOfQDP(const Fault &fault,
     const RequestPtr &req, ThreadContext *tc, BaseMMU::Mode mode)
 {
     assert(ongoingTranslation);
@@ -296,7 +296,7 @@ Queued::processMissingTranslations(unsigned max)
         // Increase the iterator first because dp.startTranslation can end up
         // calling finishTranslation, which will erase "it"
         it++;
-        dp.startTranslation(tlb);
+        dp.startTranslationOfQDP(tlb);
         count += 1;
     }
 }
@@ -403,7 +403,7 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi,
      *   using VA: add the computed stride to the original PA
      *   using PA: no actions needed
      * if we are page crossing
-     *   using VA: Create a translaion request and enqueue the corresponding
+     *   using VA: Create a translation request and enqueue the corresponding
      *       deferred packet to the queue of pending translations
      *   using PA: use the provided VA to obtain the target VA, then attempt to
      *     translate the resulting address

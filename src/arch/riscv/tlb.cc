@@ -423,6 +423,19 @@ TLB::translateTiming(const RequestPtr &req, ThreadContext *tc,
         translation->markDelayed();
 }
 
+void
+TLB::translateTimingOfQDP(const RequestPtr &req, ThreadContext *tc,
+                     BaseMMU::Translation *translation, BaseMMU::Mode mode)
+{
+    bool delayed;
+    assert(translation);
+    Fault fault = translate(req, tc, translation, mode, delayed);
+    if (!delayed)
+        translation->finishOfQDP(fault, req, tc, mode);
+    else
+        translation->markDelayed();
+}
+
 Fault
 TLB::translateFunctional(const RequestPtr &req, ThreadContext *tc,
                          BaseMMU::Mode mode)
