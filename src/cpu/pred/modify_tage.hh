@@ -162,7 +162,7 @@ class StreamTAGE : public TimedPredictor
 
     bool satDecrement(TickedStreamStorage &target);
 
-    void maintainUsefulCounters(int allocated, int new_allocated);
+    void maintainUsefulCounters(int allocated, int new_allocated, int num_can_allocate, int num_cannot_allocate);
 };
 
 }

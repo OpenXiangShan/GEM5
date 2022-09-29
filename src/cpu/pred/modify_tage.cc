@@ -359,6 +359,7 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
     // allocate
     unsigned start_table;
     unsigned allocated = 0, new_allocated = 0;
+    unsigned can_allocate = 0, cannot_allocate = 0;
     if (pred_count == 0) {  // no entry
         start_table = 0;  // allocate since base
     } else if (main_is_useless) {
@@ -368,6 +369,7 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
     }
 
     for (; start_table < numPredictors; start_table++) {
+
         uint32_t new_index =
             getTageIndex(last_chunk_start, history, start_table);
         uint32_t new_tag =
@@ -378,6 +380,10 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
                 new_index, histLengths[start_table], entry.useful ? "useful" : "not useful");
 
         if (!entry.useful) {
+            can_allocate++;
+            if (allocated == numTablesToAlloc) {
+                continue;
+            }
             DPRINTF(DecoupleBP || debugFlagOn,
                     "%s %#lx-%#lx -> %#lx with %#lx-%#lx -> %#lx, new "
                     "tag=%#lx, end type=%i\n", entry.valid ? "Replacing": "Allocating",
@@ -395,12 +401,12 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
                 new_allocated++;
             }
             entry.valid = true;
-            if (allocated == numTablesToAlloc) {
-                break;
-            }
+
+        } else {
+            cannot_allocate++;
         }
     }
-    maintainUsefulCounters(allocated, new_allocated);
+    maintainUsefulCounters(allocated, new_allocated, can_allocate, cannot_allocate);
     debugFlagOn = false;
 }
 
@@ -512,40 +518,59 @@ StreamTAGE::satDecrement(TickedStreamStorage &target)
 }
 
 void
-StreamTAGE::maintainUsefulCounters(int allocated, int new_allocated)
+StreamTAGE::maintainUsefulCounters(int allocated, int new_allocated, int num_can_allocate, int num_cannot_allocate)
 {
-    if (allocated && !new_allocated) {
-        DPRINTF(DecoupleBPUseful,
-                "Allocated from useless entry, dont modify reset counter: %u\n",
-                usefulResetCounter);
-        return;
-    }
-    if (new_allocated) {  // allocated from new entry
-        if (usefulResetCounter < 255) {
-            usefulResetCounter++;
-        }
-        DPRINTF(DecoupleBPUseful,
-                "Succeed to allocate, useful resetting counter now: %u\n",
-                usefulResetCounter);
-    } else if (!allocated) {  // allocation completely failed
-        if (usefulResetCounter > 0) {
-            --usefulResetCounter;
-        }
-        DPRINTF(DecoupleBPUseful,
-                "Failed to allocate, useful resetting counter now: %u\n",
-                usefulResetCounter);
+    // if (allocated && !new_allocated) {
+    //     DPRINTF(DecoupleBPUseful,
+    //             "Allocated from useless entry, dont modify reset counter: %u\n",
+    //             usefulResetCounter);
+    //     return;
+    // }
+    // if (new_allocated) {  // allocated from new entry
+    //     if (usefulResetCounter < 255) {
+    //         usefulResetCounter++;
+    //     }
+    //     DPRINTF(DecoupleBPUseful,
+    //             "Succeed to allocate, useful resetting counter now: %u\n",
+    //             usefulResetCounter);
+    // } else if (!allocated) {  // allocation completely failed
+    //     if (usefulResetCounter > 0) {
+    //         --usefulResetCounter;
+    //     }
+    //     DPRINTF(DecoupleBPUseful,
+    //             "Failed to allocate, useful resetting counter now: %u\n",
+    //             usefulResetCounter);
 
-        if (usefulResetCounter == 0) {
-            for (int i = 0; i < numPredictors; ++i) {
-                for (int j = 0; j < tableSizes[i]; ++j) {
-                    tageTable[i][j].useful = 0;
-                }
+    //     if (usefulResetCounter == 0) {
+    //         for (int i = 0; i < numPredictors; ++i) {
+    //             for (int j = 0; j < tableSizes[i]; ++j) {
+    //                 tageTable[i][j].useful = 0;
+    //             }
+    //         }
+    //         DPRINTF(DecoupleBPUseful,
+    //                 "Resetting all useful bits in stream TAGE\n");
+    //         warn("Resetting all useful bits in stream TAGE\n");
+    //         usefulResetCounter = 128;
+    //     }
+    // }
+
+    DPRINTF(DecoupleBPUseful,
+            "allocate success %d tables, failure %d tables, now usefulResetCounter: %d\n",
+            usefulResetCounter);
+    usefulResetCounter = usefulResetCounter - num_cannot_allocate + num_can_allocate;
+    if (usefulResetCounter > 255) {
+        usefulResetCounter = 255;
+    }
+    if (usefulResetCounter <= 0) {
+        for (int i = 0; i < numPredictors; ++i) {
+            for (int j = 0; j < tableSizes[i]; ++j) {
+                tageTable[i][j].useful = 0;
             }
-            DPRINTF(DecoupleBPUseful,
-                    "Resetting all useful bits in stream TAGE\n");
-            warn("Resetting all useful bits in stream TAGE\n");
-            usefulResetCounter = 128;
         }
+        DPRINTF(DecoupleBPUseful,
+                "Resetting all useful bits in stream TAGE\n");
+        warn("Resetting all useful bits in stream TAGE\n");
+        usefulResetCounter = 128;
     }
 }
 
