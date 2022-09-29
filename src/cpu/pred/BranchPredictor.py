@@ -784,7 +784,7 @@ class StreamTAGE(TimedPredictor):
 
     numPredictors = Param.Unsigned(15, "Number of TAGE predictors")
     tableSizes = VectorParam.Unsigned(
-        [4096, 4096] + [2048, 2048, 1024] + [512]*6 + [256]*5, "the ITTAGE T0~Tn length")
+        [4096, 1024] + [1024]*9 + [512]*5, "the ITTAGE T0~Tn length")
     TTagBitSizes = VectorParam.Unsigned(
         [0] + [9]*2 + [13]*8 + [15]*5, "the T0~Tn entry's tag bit size")
     TTagPcShifts = VectorParam.Unsigned(
