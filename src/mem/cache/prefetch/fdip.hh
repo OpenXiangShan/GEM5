@@ -39,8 +39,6 @@ class FDIP : public Queued
 
     void addStream(Addr stream_start_pc, Addr stream_end_pc);
 
-    bool prefetchFilter(const PrefetchInfo &pfi, Addr pf_addr);
-
     StreamEntry streamToPrefetch;
 };
 
