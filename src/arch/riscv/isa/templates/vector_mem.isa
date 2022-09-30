@@ -1136,6 +1136,169 @@ Fault
 
 }};
 
+def template VsIndexConstructor {{
+
+template<typename ElemType>
+%(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
+    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
+{
+    %(set_reg_idx_arr)s;
+    %(constructor)s;
+
+    const uint32_t vs3_eewb = sizeof(ElemType);
+    const uint32_t vs2_eewb = width_EEW(_machInst.width) / 8;
+    const uint8_t vs2_split_num = (vs3_eewb + vs2_eewb - 1) / vs2_eewb;
+    const uint8_t vs3_split_num = (vs2_eewb + vs3_eewb - 1) / vs3_eewb;
+    const int32_t micro_vlmax = VLENB / std::max(vs3_eewb, vs2_eewb);
+    int32_t remaining_vl = this->vl;
+    int32_t micro_vl = std::min(remaining_vl, micro_vlmax);
+    StaticInstPtr microop;
+
+    for (uint8_t i = 0; micro_vl > 0; i++) {
+        for (uint8_t j = 0; j < micro_vl; ++j) {
+            uint8_t vs3RegIdx = i / vs3_split_num;
+            uint8_t vs2RegIdx = i / vs2_split_num;
+            uint8_t vs3ElemIdx = j + micro_vlmax * (i % vs3_split_num);
+            uint8_t vs2ElemIdx = j + micro_vlmax * (i % vs2_split_num);
+            microop = new %(class_name)sMicro<ElemType>(machInst,
+                vs3RegIdx, vs3ElemIdx, vs2RegIdx, vs2ElemIdx);
+            microop->setFlag(IsDelayedCommit);
+            microop->setFlag(IsStore);
+            this->microops.push_back(microop);
+        }
+        remaining_vl -= micro_vlmax;
+        micro_vl = std::min(remaining_vl, micro_vlmax);
+    }
+
+    this->microops.front()->setFlag(IsFirstMicroop);
+    this->microops.back()->setFlag(IsLastMicroop);
+    this->flags[IsVector] = true;
+}
+
+}};
+
+def template VsIndexMicroDeclare {{
+
+template<typename ElemType>
+class %(class_name)s : public %(base_class)s
+{
+private:
+    // rs1, vs2, vs3, vm
+    RegId srcRegIdxArr[4];
+    RegId destRegIdxArr[0];
+public:
+    %(class_name)s(ExtMachInst _machInst,
+        uint8_t _vs3RegIdx, uint8_t _vs3ElemIdx,
+        uint8_t _vs2RegIdx, uint8_t _vs2ElemIdx)
+    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp,
+        _vs3RegIdx, _vs3ElemIdx, _vs2RegIdx, _vs2ElemIdx)
+    {
+        %(set_reg_idx_arr)s;
+        _numSrcRegs = 0;
+        _numDestRegs = 0;
+        setSrcRegIdx(_numSrcRegs++, intRegClass[_machInst.rs1]);
+        setSrcRegIdx(_numSrcRegs++, vecRegClass[_machInst.vs2 + _vs2RegIdx]);
+        // We treat agnostic as undistrubed
+        setSrcRegIdx(_numSrcRegs++, vecRegClass[_machInst.vs3 + _vs3RegIdx]);
+        if (!_machInst.vm) {
+            setSrcRegIdx(_numSrcRegs++, vecRegClass[0]);
+        }
+        this->flags[IsStore] = true;
+    }
+
+    Fault execute(ExecContext *, Trace::InstRecord *) const override;
+    Fault initiateAcc(ExecContext *, Trace::InstRecord *) const override;
+    Fault completeAcc(PacketPtr, ExecContext *,
+                      Trace::InstRecord *) const override;
+    using %(base_class)s::generateDisassembly;
+};
+
+}};
+
+def template VsIndexMicroExecute {{
+
+template<typename ElemType>
+Fault
+%(class_name)s<ElemType>::execute(ExecContext *xc,
+    Trace::InstRecord *traceData)const
+{
+    using vu = std::make_unsigned_t<ElemType>;
+    Fault fault = NoFault;
+    Addr EA;
+
+    %(op_decl)s;
+    %(op_rd)s;
+    %(ea_code)s;
+    constexpr uint8_t elem_size = sizeof(Vs3[0]);
+    RiscvISA::vreg_t tmp_v0;
+    uint8_t *v0;
+    if (!machInst.vm) {
+        xc->getRegOperand(this, _numSrcRegs-1, &tmp_v0);
+        v0 = tmp_v0.as<uint8_t>();
+    }
+
+    uint32_t mem_size = elem_size;
+    const std::vector<bool> byte_enable(mem_size, true);
+
+    size_t ei = this->vs3RegIdx * VLENB / elem_size + this->vs3ElemIdx;
+    if (machInst.vm || elem_mask(v0, ei)) {
+        %(memacc_code)s; /* Mem[0] = Vs3[this->vs3ElemIdx] */
+        fault = xc->writeMem(Mem.as<uint8_t>(), mem_size, EA,
+                             memAccessFlags, nullptr, byte_enable);
+    }
+    return fault;
+}
+
+}};
+
+def template VsIndexMicroInitiateAcc {{
+
+template<typename ElemType>
+Fault
+%(class_name)s<ElemType>::initiateAcc(ExecContext* xc,
+                            Trace::InstRecord* traceData) const
+{
+    using vu = std::make_unsigned_t<ElemType>;
+    Fault fault = NoFault;
+    Addr EA;
+
+    %(op_src_decl)s;
+    %(op_rd)s;
+    %(ea_code)s;
+    constexpr uint8_t elem_size = sizeof(Vs3[0]);
+    RiscvISA::vreg_t tmp_v0;
+    uint8_t *v0;
+    if (!machInst.vm) {
+        xc->getRegOperand(this, _numSrcRegs-1, &tmp_v0);
+        v0 = tmp_v0.as<uint8_t>();
+    }
+
+    constexpr uint8_t mem_size = elem_size;
+    const std::vector<bool> byte_enable(mem_size, true);
+
+    size_t ei = this->vs3RegIdx * VLENB / elem_size + this->vs3ElemIdx;
+    if (machInst.vm || elem_mask(v0, ei)) {
+        %(memacc_code)s; /* Mem[0] = Vs3[this->vs3ElemIdx] */
+        fault = xc->writeMem(Mem.as<uint8_t>(), mem_size, EA,
+                             memAccessFlags, nullptr, byte_enable);
+    }
+    return fault;
+}
+
+}};
+
+def template VsIndexMicroCompleteAcc {{
+
+template<typename ElemType>
+Fault
+%(class_name)s<ElemType>::completeAcc(PacketPtr pkt, ExecContext* xc,
+                            Trace::InstRecord* traceData) const
+{
+    return NoFault;
+}
+
+}};
+
 def template VMemTemplateDecodeBlock {{
 
 switch(machInst.vtype8.vsew) {

@@ -316,6 +316,29 @@ std::string VlIndexMicroInst::generateDisassembly(Addr pc,
     return ss.str();
 }
 
+std::string VsIndexMacroInst::generateDisassembly(Addr pc,
+        const loader::SymbolTable *symtab) const
+{
+    std::stringstream ss;
+    ss << mnemonic << ' ' << registerName(srcRegIdx(2)) << ", "
+        << '(' << registerName(srcRegIdx(0)) << "),"
+        << registerName(srcRegIdx(1));
+    if (!machInst.vm) ss << ", v0.t";
+    return ss.str();
+}
+
+std::string VsIndexMicroInst::generateDisassembly(Addr pc,
+        const loader::SymbolTable *symtab) const
+{
+    std::stringstream ss;
+    ss << mnemonic << ' '
+        << registerName(srcRegIdx(2)) << "[" << uint16_t(vs3ElemIdx) << "], "
+        << '(' << registerName(srcRegIdx(0)) << "), "
+        << registerName(srcRegIdx(1)) << "[" << uint16_t(vs2ElemIdx) << "]";
+    if (!machInst.vm) ss << ", v0.t";
+    return ss.str();
+}
+
 std::string
 VMvWholeMacroInst::generateDisassembly(Addr pc,
     const loader::SymbolTable *symtab) const
