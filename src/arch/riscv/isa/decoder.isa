@@ -2303,9 +2303,13 @@ decode QUADRANT default Unknown::unknown() {
                 }}, OPFVV, VectorDummyOp);
                 // VWFUNARY0
                 0x10: decode VS1 {
-                    0x00: VectorNonSplitFormat::vfmv_f_s({{
-                        Fd_bits = Vs1_vu[0];
-                    }}, OPFVV, VectorDummyOp);
+                    0x00: decode VM {
+                        // The encodings corresponding to the masked versions
+                        // (vm=0) of vfmv.f.s are reserved
+                        0x1: VectorNonSplitFormat::vfmv_f_s({{
+                            Fd_bits = Vs1_vu[0];
+                        }}, OPFVV, VectorDummyOp);
+                    }
                 }
                 0x12: decode VS1 {
                     format VectorFloatCvtFormat {
@@ -2651,9 +2655,13 @@ decode QUADRANT default Unknown::unknown() {
                 }
                 // VWXUNARY0
                 0x10: decode VS1 {
-                    0x00: VectorNonSplitFormat::vmv_x_s({{
-                        Rd_ud = Vs2_vi[0];
-                    }}, OPMVV, VectorDummyOp);
+                    0x00: decode VM {
+                        // The encodings corresponding to the masked versions
+                        // (vm=0) of vmv.x.s are reserved.
+                        0x1: VectorNonSplitFormat::vmv_x_s({{
+                            Rd_ud = Vs2_vi[0];
+                        }}, OPMVV, VectorDummyOp);
+                    }
                 }
                 0x12: decode VS1 {
                     format VectorIntExtFormat {
@@ -3307,10 +3315,19 @@ decode QUADRANT default Unknown::unknown() {
                                              ftype_freg<et>(freg(Fs1_bits)),
                                              false, true).v;
                     }}, OPFVF, VectorDummyOp);
-                    0x10: VectorNonSplitFormat::vfmv_s_f({{
-                        auto fd = ftype_freg<et>(freg(Fs1_bits));
-                        Vd_vu[0] = fd.v;
-                    }}, OPFVV, VectorDummyOp);
+                }
+                // VRFUNARY0
+                0x10: decode VS2 {
+                    0x00: decode VM {
+                        // The encodings corresponding to the masked versions
+                        // (vm=0) of vfmv.s.f are reserved
+                        0x1: VectorNonSplitFormat::vfmv_s_f({{
+                            auto fd = ftype_freg<et>(freg(Fs1_bits));
+                            Vd_vu[0] = fd.v;
+                        }}, OPFVV, VectorDummyOp);
+                    }
+                }
+                format VectorFloatFormat{
                     0x17: decode VM {
                         0x0: vfmerge_vfm({{
                             Vd_vu[i] = elem_mask(v0, ei)
@@ -3499,9 +3516,18 @@ decode QUADRANT default Unknown::unknown() {
                         res = int_rounding<__uint128_t>(res, 0 /* TODO */, 1);
                         Vd_vi[i] = res >> 1;
                     }}, OPMVX, VectorDummyOp);
-                    0x10: VectorNonSplitFormat::vmv_s_x({{ // Special case of OPMVX
-                        Vd_vu[0] = Rs1_vu;
-                    }}, OPMVX, VectorDummyOp);
+                }
+                // VRXUNARY0
+                0x10: decode VS2 {
+                    0x00: decode VM {
+                        // The encodings corresponding to the masked versions
+                        // (vm=0) of vmv.s.x are reserved.
+                        0x1: VectorNonSplitFormat::vmv_s_x({{
+                            Vd_vu[0] = Rs1_vu;
+                        }}, OPMVX, VectorDummyOp);
+                    }
+                }
+                format VectorIntFormat {
                     0x0a: vasubu_vx({{
                         __uint128_t res = (__uint128_t)Vs2_vu[i] - Rs1_vu;
                         res = int_rounding<__uint128_t>(res, 0 /* TODO */, 1);
