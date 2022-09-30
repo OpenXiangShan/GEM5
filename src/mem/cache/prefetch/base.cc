@@ -151,7 +151,7 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
     pfUnused.flags(nozero);
 
     accuracy.flags(total);
-    accuracy = pfUseful / (pfIssued - pfHitInCache);
+    accuracy = pfUseful / pfIssued ;
 
     coverage.flags(total);
     coverage = pfUseful / (pfUseful + demandMshrMisses);
