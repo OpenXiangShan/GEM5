@@ -31,6 +31,7 @@ let {{
 
 def VMemBase(name, Name, ea_code, memacc_code, mem_flags,
                    inst_flags, base_class, postacc_code='',
+                   declare_template_base=VMemMacroDeclare,
                    decode_template=BasicDecode, exec_template_base='',
                    # If it's a macroop, the corresponding microops will be
                    # generated.
@@ -46,8 +47,12 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags,
 
     constructTemplate = eval(exec_template_base + 'Constructor')
 
-    header_output   = VMemMacroDeclare.subst(iop)
-    decoder_output  = constructTemplate.subst(iop)
+    header_output   = declare_template_base.subst(iop)
+    decoder_output  = ''
+    if declare_template_base is not VMemTemplateMacroDeclare:
+        decoder_output  += constructTemplate.subst(iop)
+    else:
+        header_output   += constructTemplate.subst(iop)
     decode_block    = decode_template.subst(iop)
     exec_output     = ''
     if not is_macroop:
@@ -70,10 +75,14 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags,
     microExecTemplate = eval(exec_template_base + 'Micro' + 'Execute')
     microInitTemplate = eval(exec_template_base + 'Micro' + 'InitiateAcc')
     microCompTemplate = eval(exec_template_base + 'Micro' + 'CompleteAcc')
-    header_output += microDeclTemplate.subst(microiop)
-    exec_output += (microExecTemplate.subst(microiop) +
-                    microInitTemplate.subst(microiop) +
-                    microCompTemplate.subst(microiop))
+    header_output = microDeclTemplate.subst(microiop) + header_output
+    micro_exec_output = (microExecTemplate.subst(microiop) +
+        microInitTemplate.subst(microiop) +
+        microCompTemplate.subst(microiop))
+    if declare_template_base is not VMemTemplateMacroDeclare:
+        exec_output += micro_exec_output
+    else:
+        header_output += micro_exec_output
 
     return (header_output, decoder_output, decode_block, exec_output)
 
@@ -165,4 +174,18 @@ def format VsStrideOp(
     (header_output, decoder_output, decode_block, exec_output) = \
         VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
                  'VsStrideMacroInst', exec_template_base='VsStride')
+}};
+
+def format VlIndexOp(
+    memacc_code,
+    ea_code,
+    mem_flags=[],
+    inst_flags=[]
+) {{
+    (header_output, decoder_output, decode_block, exec_output) = \
+        VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
+                 'VlIndexMacroInst', exec_template_base='VlIndex',
+                 declare_template_base=VMemTemplateMacroDeclare,
+                 decode_template=VMemTemplateDecodeBlock
+                 )
 }};
