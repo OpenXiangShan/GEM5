@@ -135,7 +135,7 @@ class Queued : public Base
         {}
 
         void finishOfQDP(const Fault &fault, const RequestPtr &req,
-                            ThreadContext *tc, BaseMMU::Mode mode);
+                            ThreadContext *tc, BaseMMU::Mode mode) override;
 
         /**
          * Issues the translation request to the provided TLB

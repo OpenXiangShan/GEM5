@@ -76,7 +76,7 @@ class BaseMMU : public SimObject
                             ThreadContext *tc, BaseMMU::Mode mode) = 0;
 
         //translate finish of queued deferred packet
-        void finishOfQDP(const Fault &fault, const RequestPtr &req,
+        virtual void finishOfQDP(const Fault &fault, const RequestPtr &req,
                             ThreadContext *tc, BaseMMU::Mode mode)
         {}
 
