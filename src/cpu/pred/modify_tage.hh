@@ -11,6 +11,7 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/pred/stream_struct.hh"
 #include "cpu/pred/timed_pred.hh"
+#include "cpu/pred/stream_loop_predictor.hh"
 #include "params/StreamTAGE.hh"
 #include "debug/DecoupleBP.hh"
 #include "sim/sim_object.hh"
@@ -23,6 +24,7 @@ namespace branch_prediction
 
 class StreamTAGE : public TimedPredictor
 {
+    using defer = std::shared_ptr<void>;
     using bitset = boost::dynamic_bitset<>;
   public:
     typedef StreamTAGEParams Params;
@@ -163,6 +165,16 @@ class StreamTAGE : public TimedPredictor
     bool satDecrement(TickedStreamStorage &target);
 
     void maintainUsefulCounters(int allocated, int new_allocated);
+
+    std::pair<bool, std::pair<bool, Addr>> makeLoopPrediction(bool use_alt_pred, int pred_count, TickedStreamStorage *target, TickedStreamStorage *alt_target);
+
+    StreamLoopPredictor *loopPredictor{};
+
+public:
+
+    void setStreamLoopPredictor(StreamLoopPredictor *slp) {
+      loopPredictor = slp;
+    }
 };
 
 }

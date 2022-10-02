@@ -165,8 +165,46 @@ StreamTAGE::lookupHelper(bool flag, Addr last_chunk_start, Addr stream_start,
     }
 }
 
+std::pair<bool, std::pair<bool, Addr>>
+StreamTAGE::makeLoopPrediction(bool use_alt_pred, int pred_count, TickedStreamStorage *target, TickedStreamStorage *alt_target) {
+    bool useMainLoopPrediction = false;
+    Addr mainLoopPredAddr = 0;
+    
+    bool useAltLoopPrediction = false;
+    Addr altLoopPredAddr = 0;
+
+    if (pred_count > 1) {
+        std::tie(useAltLoopPrediction, altLoopPredAddr) = 
+        loopPredictor->makeLoopPrediction(alt_target->controlAddr);
+    }
+
+    if (pred_count > 0) {
+        std::tie(useMainLoopPrediction, mainLoopPredAddr) = 
+        loopPredictor->makeLoopPrediction(target->controlAddr);
+    }
+
+    if (pred_count > 1 && target->controlAddr == alt_target->controlAddr) {
+        if (useMainLoopPrediction) {
+            return std::make_pair(true, std::make_pair(true, mainLoopPredAddr));
+        } else if (useAltLoopPrediction) {
+            return std::make_pair(true, std::make_pair(false, altLoopPredAddr));
+        } else {
+            return std::make_pair(false, std::make_pair(false, 0));
+        }
+    } else {
+        if (use_alt_pred && useAltLoopPrediction) {
+            return std::make_pair(true, std::make_pair(false, altLoopPredAddr));
+        }
+        if (!use_alt_pred && useMainLoopPrediction) {
+            return std::make_pair(true, std::make_pair(true, mainLoopPredAddr));
+        }
+        return std::make_pair(false, std::make_pair(false, 0));
+    }
+}
+
 void
 StreamTAGE::putPCHistory(Addr cur_chunk_start, Addr stream_start, const bitset &history) {
+    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
     TickedStreamStorage *target = nullptr;
     TickedStreamStorage *alt_target = nullptr;
     int main_table = -1;
@@ -187,10 +225,30 @@ StreamTAGE::putPCHistory(Addr cur_chunk_start, Addr stream_start, const bitset &
         lookupHelper(false, cur_chunk_start, stream_start, history, target,
                      alt_target, main_table, main_table_index, alt_table,
                      alt_table_index, pred_count, use_alt_pred);
-    if (use_alt_pred) {
-        target = alt_target;
-        main_table_index = alt_table_index;
-        main_table = alt_table;
+ 
+    auto res = makeLoopPrediction(use_alt_pred, pred_count, target, alt_target);
+    bool useLoopPrediction = res.first;
+    bool useAltLoopPred = !res.second.first;
+    Addr loopPredAddr = res.second.second;
+
+    if (useLoopPrediction) {
+        if (useAltLoopPred) {
+            target = alt_target;
+            main_table_index = alt_table_index;
+            main_table = alt_table;
+            DPRINTF(DecoupleBP || debugFlagOn, "use alt loop prediction\n");
+        } else {
+            DPRINTF(DecoupleBP || debugFlagOn, "use main loop prediction\n");
+        }
+    } else {
+        if (use_alt_pred) {
+            target = alt_target;
+            main_table_index = alt_table_index;
+            main_table = alt_table;
+            DPRINTF(DecoupleBP || debugFlagOn, "use alt prediction\n");
+        } else {
+            DPRINTF(DecoupleBP || debugFlagOn, "use main prediction\n");
+        }
     }
     
     if (!found) {
@@ -200,21 +258,23 @@ StreamTAGE::putPCHistory(Addr cur_chunk_start, Addr stream_start, const bitset &
         prediction.valid = false;
         prediction.history = history;
         prediction.endType = END_NONE;
+        prediction.useLoopPrediction = false;
 
     } else {
         auto& way = tageTable[main_table][main_table_index];
         DPRINTF(DecoupleBP || debugFlagOn,
                 "Valid: %d, chunkStart: %#lx, stream: [%#lx-%#lx] -> %#lx, taken: %i\n",
                 way.valid, cur_chunk_start, stream_start,
-                target->controlAddr, target->nextStream, target->isTaken());
+                target->controlAddr, useLoopPrediction ? loopPredAddr : target->nextStream, target->isTaken());
 
         prediction.valid = true;
         prediction.bbStart = stream_start;
         prediction.controlAddr = target->controlAddr;
         prediction.controlSize = target->controlSize;
-        prediction.nextStream = target->nextStream;
-        prediction.endType = target->endType;
+        prediction.nextStream = useLoopPrediction ? loopPredAddr : target->nextStream;
+        prediction.endType = useLoopPrediction ? (loopPredictor->isTakenForward(target->controlAddr) ? END_NOT_TAKEN : END_OTHER_TAKEN) : target->endType;
         prediction.history = history;
+        prediction.useLoopPrediction = useLoopPrediction;
 
         way.target.tick = curTick();
     }

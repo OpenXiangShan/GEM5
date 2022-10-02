@@ -236,7 +236,7 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
 
     dumpFsq("Before control squash");
 
-    streamLoopPredictor->resetTripCount(control_pc.instAddr());
+    streamLoopPredictor->controlSquash(stream_id, stream, control_pc.instAddr(), corr_target.instAddr());
 
     stream.squashType = SQUASH_CTRL;
 
@@ -282,6 +282,8 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
     stream.exeBranchPC = control_pc.instAddr();
     stream.exeTarget = corr_target.instAddr();
     stream.exeEndPC = stream.exeBranchPC + control_inst_size;
+
+    streamLoopPredictor->isIntraSquash(stream_id, stream, control_pc.instAddr());
 
     // recover history to the moment doing prediction
     DPRINTF(DecoupleBPHist,
@@ -929,18 +931,18 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
     if (s0StreamStartPC == ObservingPC) {
         debugFlagOn = true;
     }
+    if (s0UbtbPred.controlAddr == ObservingPC) {
+        debugFlagOn = true;
+    }
     DPRINTF(DecoupleBP || debugFlagOn, "Make pred with %s, pred valid: %i, taken: %i\n",
              create_new_stream ? "new stream" : "last missing stream",
              s0UbtbPred.valid, s0UbtbPred.isTaken());
     if (s0UbtbPred.valid && s0UbtbPred.isTaken()) {
         DPRINTF(DecoupleBP, "TAGE predicted target: %#lx\n", s0UbtbPred.nextStream);
 
-        bool useLoopPrediction = false;
-        Addr loopPredAddr = 0;
-
-        std::tie(useLoopPrediction, loopPredAddr) = 
-        streamLoopPredictor->makeLoopPrediction(s0UbtbPred.controlAddr);
-        s0UbtbPred.nextStream = useLoopPrediction ? loopPredAddr : s0UbtbPred.nextStream;
+        if (s0UbtbPred.useLoopPrediction) {
+            streamLoopPredictor->updateTripCount(fsqId, s0UbtbPred.controlAddr);
+        }
 
         entry.predEnded = true;
         entry.predTaken = true;
@@ -949,6 +951,7 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
         entry.predTarget = s0UbtbPred.nextStream;
         entry.history = s0UbtbPred.history;
         entry.endType = s0UbtbPred.endType;
+        entry.tripCount = s0UbtbPred.useLoopPrediction ? streamLoopPredictor->getTripCount(s0UbtbPred.controlAddr) : entry.tripCount;
         s0PC = s0UbtbPred.nextStream;
         s0StreamStartPC = s0PC;
 
@@ -980,8 +983,13 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
                 "No valid prediction or pred fall thru, gen missing stream:"
                 " %#lx -> ... is call: %i, is return: %i\n",
                 s0PC, entry.isCall(), entry.isReturn());
+        entry.isMiss = true;
 
         if (s0UbtbPred.valid && !s0UbtbPred.isTaken() && !s0UbtbPred.toBeCont()) {
+            if (s0UbtbPred.useLoopPrediction) {
+                streamLoopPredictor->updateTripCount(fsqId, s0UbtbPred.controlAddr);
+            }
+            entry.tripCount = s0UbtbPred.useLoopPrediction ? streamLoopPredictor->getTripCount(s0UbtbPred.controlAddr) : entry.tripCount;
             // The prediction only tell us not taken until endPC
             // The generated stream cannot serve since endPC
             s0PC = s0UbtbPred.getFallThruPC();

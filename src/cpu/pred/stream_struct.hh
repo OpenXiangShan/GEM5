@@ -58,6 +58,9 @@ struct FetchStream
     bool resolved;
 
     int squashType;
+    int tripCount;
+    bool isMiss;
+    bool useLoopPrediction;
 
     boost::dynamic_bitset<> history;
 
@@ -76,7 +79,10 @@ struct FetchStream
           exeBranchPC(0),
           endType(EndType::END_NONE),
           resolved(false),
-          squashType(SquashType::SQUASH_NONE)
+          squashType(SquashType::SQUASH_NONE),
+          tripCount(-1),
+          isMiss(false),
+          useLoopPrediction(false)
     {
     }
 
@@ -141,6 +147,7 @@ using StreamStorage = IdealStreamStorage;
 struct StreamPrediction: public StreamDesc
 {
     bool valid;
+    bool useLoopPrediction;
     boost::dynamic_bitset<> history;
 };
 
