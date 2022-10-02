@@ -472,6 +472,7 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi,
         DPRINTF(HWPrefetch, "Prefetch queued. "
                 "addr:%#x priority: %3d tick:%lld.\n",
                 new_pfi.getAddr(), priority, pf_time);
+        DPRINTF(HWPrefetch, "target_paddr: %#x\n",target_paddr);
         addToQueue(pfq, dpp);
     } else {
         // Add the translation request and try to resolve it later
