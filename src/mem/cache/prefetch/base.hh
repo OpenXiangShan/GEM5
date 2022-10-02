@@ -52,6 +52,7 @@
 #include "base/compiler.hh"
 #include "base/statistics.hh"
 #include "base/types.hh"
+#include "mem/cache/base.hh"
 #include "mem/cache/cache_blk.hh"
 #include "mem/packet.hh"
 #include "mem/request.hh"

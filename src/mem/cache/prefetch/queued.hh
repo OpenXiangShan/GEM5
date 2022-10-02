@@ -203,6 +203,12 @@ class Queued : public Base
 
     virtual void calculatePrefetch(const PrefetchInfo &pfi,
                                    std::vector<AddrPriority> &addresses) = 0;
+
+    virtual bool prefetchFilter(const PrefetchInfo &pfi, Addr pf_addr)
+    {
+        return false;
+    }
+
     PacketPtr getPacket() override;
 
     Tick nextPrefetchReadyTime() const override

@@ -151,12 +151,12 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
     pfUnused.flags(nozero);
 
     accuracy.flags(total);
-    accuracy = pfUseful / (pfIssued - pfHitInCache);
+    accuracy = pfUseful / pfIssued;
 
     coverage.flags(total);
     coverage = pfUseful / (pfUseful + demandMshrMisses);
 
-    pfLate = pfHitInMSHR + pfHitInWB;
+    pfLate = pfHitInCache + pfHitInMSHR + pfHitInWB;
 }
 
 bool
@@ -265,9 +265,9 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
     // Verify this access type is observed by prefetcher
     if (observeAccess(pkt, miss)) {
         if (useVirtualAddresses && pkt->req->hasVaddr()) {
-            DPRINTF(HWPrefetch, "Notify pkt: %#lx with vaddr %#lx ,
-                    cache miss: %d\n", pkt->getAddr(), pkt->req->getVaddr(),
-                    miss);
+            DPRINTF(HWPrefetch, "Notify pkt: %#lx with vaddr %#lx,"
+                    "cache miss: %d\n",
+                    pkt->getAddr(), pkt->req->getVaddr(), miss);
 
             PrefetchInfo pfi(pkt, pkt->req->getVaddr(), miss);
             notify(pkt, pfi);
