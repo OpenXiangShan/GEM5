@@ -132,7 +132,10 @@ class Queued : public Base
 
         void finish(const Fault &fault, const RequestPtr &req,
                             ThreadContext *tc, BaseMMU::Mode mode) override
-        {}
+        {
+            printf("Tlb go into wrong finish\n");
+            printf("wrong finish:%p, req:%p, tc:%p\n",&fault,&req,&tc);
+        }
 
         void finishOfQDP(const Fault &fault, const RequestPtr &req,
                             ThreadContext *tc, BaseMMU::Mode mode) override;

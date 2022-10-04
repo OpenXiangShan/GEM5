@@ -200,6 +200,13 @@ Walker::startWalkWrapper()
 {
     unsigned num_squashed = 0;
     WalkerState *currState = currStates.front();
+
+    void* vptr_addr = (void *)*(unsigned long *)currState->translation;
+    printf("vptr:%p\n",vptr_addr);
+    if (vptr_addr < 0x100000000000){
+        return ;
+    }
+
     while ((num_squashed < numSquashable) && currState &&
         currState->translation->squashed()) {
         currStates.pop_front();
@@ -532,7 +539,11 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
             timingFault = walker->pmp->pmpCheck(req, mode, pmode, tc);
 
             // Let the CPU continue.
-            translation->finish(timingFault, req, tc, mode);
+            // printf("timingFault:%p, req:%p, tc:%p\n",&timingFault,&req,&tc);
+            // printf("translation:%p\n",translation);
+            if (!translation->is_queued_trans){
+                translation->finish(timingFault, req, tc, mode);
+            }
         } else {
             // There was a fault during the walk. Let the CPU know.
             translation->finish(timingFault, req, tc, mode);

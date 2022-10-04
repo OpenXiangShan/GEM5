@@ -336,6 +336,7 @@ Queued::translationComplete(DeferredPacket *dp, bool failed)
                 it->translationRequest->getVaddr());
     }
     pfqMissingTranslation.erase(it);
+    dp->is_queued_trans = true;
 }
 
 bool
@@ -465,6 +466,7 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi,
 
     /* Create the packet and find the spot to insert it */
     DeferredPacket dpp(this, new_pfi, 0, priority);
+    dpp.is_queued_trans = true;
     if (has_target_pa) {
         Tick pf_time = curTick() + clockPeriod() * latency;
         dpp.createPkt(target_paddr, blkSize, requestorId, tagPrefetch,

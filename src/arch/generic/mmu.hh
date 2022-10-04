@@ -73,7 +73,8 @@ class BaseMMU : public SimObject
          * function. Once it's called, the object is no longer valid.
          */
         virtual void finish(const Fault &fault, const RequestPtr &req,
-                            ThreadContext *tc, BaseMMU::Mode mode) = 0;
+                            ThreadContext *tc, BaseMMU::Mode mode)
+        {}
 
         //translate finish of queued deferred packet
         virtual void finishOfQDP(const Fault &fault, const RequestPtr &req,
@@ -87,6 +88,8 @@ class BaseMMU : public SimObject
          * squashed?
          */
         virtual bool squashed() const { return false; }
+
+        bool is_queued_trans = false;
     };
 
   protected:
