@@ -1453,3 +1453,44 @@ template<typename ElemType>
 }
 
 }};
+
+def template VectorReduceIntWideningMicroExecute {{
+
+template <typename ElemType>
+Fault
+%(class_name)s<ElemType>::execute(ExecContext* xc,
+                                  Trace::InstRecord* traceData) const
+{
+    using vu [[maybe_unused]] = std::make_unsigned_t<ElemType>;
+    using vi [[maybe_unused]] = std::make_signed_t<ElemType>;
+    using vwu [[maybe_unused]] = typename double_width<vu>::type;
+    using vwi [[maybe_unused]] = typename double_width<vi>::type;
+
+    if (machInst.vill)
+        return std::make_shared<IllegalInstFault>("VILL is set", machInst);
+
+    %(op_decl)s;
+    %(op_rd)s;
+    %(vm_decl_rd)s;
+    %(copy_old_vd)s;
+
+    Vd[0] = this->microIdx != 0 ? old_Vd[0] : Vs1[0];
+
+    auto reduce_loop =
+        [&, this](const auto& f, const auto* _, const auto* vs2) {
+            vwu tmp_val = Vd[0];
+            for (uint32_t i = 0; i < this->microVl; i++) {
+                uint32_t ei = i + vtype_VLMAX(vtype, true) * this->microIdx;
+                if (this->vm || elem_mask(v0, ei)) {
+                    tmp_val = f(tmp_val, Vs2[i]);
+                }
+            }
+            return tmp_val;
+        };
+
+    %(code)s;
+    %(op_wb)s;
+    return NoFault;
+}
+
+}};

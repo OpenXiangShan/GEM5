@@ -2229,6 +2229,16 @@ decode QUADRANT default Unknown::unknown() {
                         Vd_vi[i] = val >> sh;
                     }}, OPIVV, VectorDummyOp);
                 }
+                format VectorReduceIntWideningFormat {
+                    0x30: vwredsumu_vs({{
+                        Vd_vwu[0] = reduce_loop(std::plus<vwu>(),
+                            Vs1_vwu, Vs2_vu);
+                    }}, OPIVV, VectorDummyOp);
+                    0x31: vwredsum_vs({{
+                        Vd_vwu[0] = reduce_loop(std::plus<vwi>(),
+                            Vs1_vwi, Vs2_vi);
+                    }}, OPIVV, VectorDummyOp);
+                }
                 format VectorIntMaskFormat {
                     0x11: decode VM {
                         0x0: vmadc_vvm({{
