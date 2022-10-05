@@ -175,6 +175,8 @@ class PhysicalMemory : public Serializable
 
     std::string xsCptPath;
 
+    bool mapToRawCpt{false};
+
     /**
      * Create the memory region providing the backing store for a
      * given address range that corresponds to a set of memories in
@@ -201,6 +203,7 @@ class PhysicalMemory : public Serializable
                    bool restore_from_gcpt,
                    const std::string& gcpt_restorer_path,
                    const std::string&gcpt_path,
+                   bool map_to_raw_cpt,
                    bool auto_unlink_shared_backstore);
 
     /**

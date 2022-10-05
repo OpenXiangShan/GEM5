@@ -1309,7 +1309,8 @@ CPU::difftestStep(const DynInstPtr &inst)
             hasCommit = true;
             readGem5Regs();
             gem5RegFile[DIFFTEST_THIS_PC] = inst->pcState().instAddr();
-            fprintf(stderr, "Will start memcpy to NEMU\n");
+            fprintf(stderr, "Will start memcpy to NEMU from %#lx, size=%lu\n",
+                    (uint64_t)pmemStart, pmemSize);
             proxy->memcpy(0x80000000u, pmemStart + pmemSize * diff.cpu_id,
                           pmemSize, DUT_TO_REF);
             fprintf(stderr, "Will start regcpy to NEMU\n");

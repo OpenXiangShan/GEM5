@@ -27,6 +27,8 @@
  */
 
 #include "base/loader/memory_image.hh"
+#include "base/trace.hh"
+#include "debug/MemoryAccess.hh"
 #include "mem/port_proxy.hh"
 
 namespace gem5
@@ -41,9 +43,11 @@ MemoryImage::writeSegment(const Segment &seg, const PortProxy &proxy) const
 {
     if (seg.size != 0) {
         if (seg.data) {
+            DPRINTF(MemoryAccess, "Writing segment %s to memory %#lx, size: %#lx\n", seg.name, seg.base, seg.size);
             proxy.writeBlob(seg.base, seg.data, seg.size);
         } else {
             // no image: must be bss
+            DPRINTF(MemoryAccess, "Clearing bss at memory %#lx\n", seg.base);
             proxy.memsetBlob(seg.base, 0, seg.size);
         }
     }
@@ -54,8 +58,12 @@ bool
 MemoryImage::write(const PortProxy &proxy) const
 {
     for (auto &seg: _segments)
-        if (!writeSegment(seg, proxy))
+        if (!writeSegment(seg, proxy)) {
             return false;
+        } else {
+            DPRINTF(MemoryAccess, "Wrote segment %s, data addr: %#lx",
+                    seg.name, (uint64_t)seg.data);
+        }
     return true;
 }
 
