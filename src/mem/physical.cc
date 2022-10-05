@@ -86,13 +86,14 @@ PhysicalMemory::PhysicalMemory(const std::string& _name,
                                bool restore_from_gcpt,
                                const std::string& gcpt_restorer_path,
                                const std::string& gcpt_path,
+                               bool map_to_raw_cpt,
                                bool auto_unlink_shared_backstore) :
     _name(_name), size(0), mmapUsingNoReserve(mmap_using_noreserve),
     sharedBackstore(shared_backstore), sharedBackstoreSize(0),
     pageSize(sysconf(_SC_PAGE_SIZE)),
     restoreFromXiangshanCpt(restore_from_gcpt),
     gCptRestorerPath(gcpt_restorer_path),
-    xsCptPath(gcpt_path)
+    xsCptPath(gcpt_path), mapToRawCpt(map_to_raw_cpt)
 {
     // Register cleanup callback if requested.
     if (auto_unlink_shared_backstore && !sharedBackstore.empty()) {
@@ -246,15 +247,20 @@ PhysicalMemory::createBackingStore(
     if (mmapUsingNoReserve) {
         map_flags |= MAP_NORESERVE;
     }
+    uint8_t* pmem = nullptr;
+    if (!mapToRawCpt) {
+        pmem =
+            (uint8_t*)mmap(NULL, range.size(), PROT_READ | PROT_WRITE,
+                           map_flags, shm_fd, map_offset);
 
-    uint8_t* pmem = (uint8_t*) mmap(NULL, range.size(),
-                                    PROT_READ | PROT_WRITE,
-                                    map_flags, shm_fd, map_offset);
-
-    if (pmem == (uint8_t*) MAP_FAILED) {
-        perror("mmap");
-        fatal("Could not mmap %d bytes for range %s!\n", range.size(),
-              range.to_string());
+        if (pmem == (uint8_t*)MAP_FAILED) {
+            perror("mmap");
+            fatal("Could not mmap %d bytes for range %s!\n", range.size(),
+                  range.to_string());
+        }
+        // For Difftest copy memory
+        pmemStart = pmem;
+        pmemSize = range.size();
     }
 
     // remember this backing store so we can checkpoint it and unmap
@@ -263,15 +269,19 @@ PhysicalMemory::createBackingStore(
                               conf_table_reported, in_addr_map, kvm_map,
                               shm_fd, map_offset);
 
-    // For Difftest copy memory
-    pmemStart = pmem;
-    pmemSize = range.size();
 
-    // point the memories to their backing store
-    for (const auto& m : _memories) {
-        DPRINTF(AddrRanges, "Mapping memory %s to backing store\n",
-                m->name());
-        m->setBackingStore(pmem);
+    if (!mapToRawCpt) {
+        assert(pmem);
+        // point the memories to their backing store
+        for (const auto& m : _memories) {
+            DPRINTF(AddrRanges, "Mapping memory %s to backing store\n",
+                    m->name());
+            m->setBackingStore(pmem);
+        }
+    } else {
+        for (const auto& m : _memories) {
+            DPRINTF(AddrRanges, "Do not create backing store for mmaped memory %s\n", m->name());
+        }
     }
 }
 
@@ -464,6 +474,14 @@ PhysicalMemory::unserializeStoreFromFile(std::string filepath)
     unserializeStoreFrom(filepath, 0, 0);
 }
 
+static bool
+hasGzipMagic(int fd)
+{
+    uint8_t buf[2] = {0};
+    size_t sz = pread(fd, buf, 2, 0);
+    panic_if(sz != 2, "Couldn't read magic bytes from object file");
+    return ((buf[0] == 0x1f) && (buf[1] == 0x8b));
+}
 
 void
 PhysicalMemory::unserializeStoreFrom(std::string filepath,
@@ -471,14 +489,59 @@ PhysicalMemory::unserializeStoreFrom(std::string filepath,
 {
     const uint32_t chunk_size = 16384;
 
+    int fd = open(filepath.c_str(), O_RDWR);
     // mmap memoryfile
+    if (!hasGzipMagic(fd)) {
+        assert(mapToRawCpt &&
+               "When using raw checkpoint, the memory must be directly mapped "
+               "to it to speed up init\n");
+        DPRINTF(Checkpoint, "Checkpoint file is not gz, treate it as raw bin, using mmap\n");
+
+        assert(store_id == 0);
+        fatal_if(fd < 0,
+                 "Failed to open file %s.\n"
+                 "This error typically occurs when the file path specified is "
+                 "incorrect.\n",
+                 filepath);
+        // Find the length of the file by seeking to the end.
+        off_t off = lseek(fd, 0, SEEK_END);
+        fatal_if(off < 0, "Failed to determine size of file %s.\n", filepath);
+        auto file_len = static_cast<size_t>(off);
+
+        backingStore[store_id].pmem =
+            (uint8_t*)mmap(NULL, file_len, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+
+        assert(backingStore[store_id].pmem != MAP_FAILED);
+
+        inform("mmap %s to %#lx, setting backing store pointer to it",
+            filepath, (uint64_t)backingStore[store_id].pmem);
+
+        // For Difftest copy memory
+        pmemStart = backingStore[store_id].pmem;
+        pmemSize = file_len;
+
+        inform("First 4 bytes are 0x%x 0x%x 0x%x 0x%x\n",
+            pmemStart[0],pmemStart[1],pmemStart[2],pmemStart[3]);
+
+        close(fd);
+        // point the memories to their backing store
+        for (const auto& m : memories) {
+            DPRINTF(AddrRanges, "Mapping memory %s to backing store %#lx\n",
+                    m->name(), (uint64_t)backingStore[store_id].pmem);
+            m->setBackingStore(backingStore[store_id].pmem);
+        }
+        return;
+    }
+
     gzFile compressed_mem = gzopen(filepath.c_str(), "rb");
+
     if (compressed_mem == nullptr)
         fatal("Can't open checkpoint file '%s'", filepath.c_str());
 
     // we've already got the actual backing store mapped
     uint8_t* pmem = backingStore[store_id].pmem;
     AddrRange range = backingStore[store_id].range;
+    assert(pmem);
 
     if (range_size != 0) {
         DPRINTF(Checkpoint, "Unserializing physical memory %s with size %d\n",
@@ -492,6 +555,7 @@ PhysicalMemory::unserializeStoreFrom(std::string filepath,
 
     uint64_t curr_size = 0;
     long* temp_page = new long[chunk_size];
+    assert(temp_page);
     long* pmem_current;
     uint32_t bytes_read;
     while (curr_size < range.size()) {
@@ -532,15 +596,16 @@ PhysicalMemory::unserializeStoreFrom(std::string filepath,
     if (gzclose(compressed_mem))
         fatal("Close failed on physical memory checkpoint file '%s'\n",
               filepath.c_str());
-
 }
 
-bool PhysicalMemory::tryRestoreFromXSCpt() {
-  if (!restoreFromXiangshanCpt) {
-    return false;
-  }
-  unserializeStoreFromFile(xsCptPath);
-  return true;
+bool
+PhysicalMemory::tryRestoreFromXSCpt()
+{
+    if (!restoreFromXiangshanCpt) {
+        return false;
+    }
+    unserializeStoreFromFile(xsCptPath);
+    return true;
 }
 
 } // namespace memory

@@ -112,6 +112,8 @@ AbstractMemory::setBackingStore(uint8_t* pmem_addr)
     backdoor.ptr(range.interleaved() ? nullptr : pmem_addr);
 
     pmemAddr = pmem_addr;
+
+    DPRINTF(MemoryAccess, "Backing store set to %#lx\n", (uint64_t)pmemAddr);
 }
 
 AbstractMemory::MemStats::MemStats(AbstractMemory &_mem)
@@ -393,6 +395,8 @@ AbstractMemory::access(PacketPtr pkt)
     assert(pkt->getAddrRange().isSubset(range));
 
     uint8_t *host_addr = toHostAddr(pkt->getAddr());
+    DPRINTF(MemoryAccess, "guest addr %#lx -> host_addr %#lx\n", pkt->getAddr(),
+            (uint64_t) host_addr);
 
     if (pkt->cmd == MemCmd::SwapReq) {
         if (pkt->isAtomicOp()) {
