@@ -104,6 +104,7 @@ doGzipLoad(int fd)
 
 ImageFileData::ImageFileData(const std::string &fname)
 {
+    inform("Loading file %s", fname);
     _filename = fname;
 
     // Open the file.
@@ -123,9 +124,15 @@ ImageFileData::ImageFileData(const std::string &fname)
     fatal_if(off < 0, "Failed to determine size of file %s.\n", fname);
     _len = static_cast<size_t>(off);
 
+    inform("File size is %d bytes", _len);
+
     // Mmap the whole shebang.
     _data = (uint8_t *)mmap(NULL, _len, PROT_READ, MAP_SHARED, fd, 0);
     close(fd);
+
+    inform("First 4 bytes are 0x%x 0x%x 0x%x 0x%x\n",
+           _data[0], _data[1], _data[2], _data[3]);
+    inform("Mapped start address is %p, %#lx", _data, (unsigned long)_data);
 
     panic_if(_data == MAP_FAILED, "Failed to mmap file %s.\n", fname);
 }

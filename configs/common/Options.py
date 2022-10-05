@@ -567,8 +567,8 @@ def addFSOptions(parser):
                       default="",
                       help="The path of generic risc-v checkpoint restorer")
 
-    parser.add_argument("--raw-bbl", action= "store_true",
-                        help = "The kernel/bbl/app is not elf but binary")
+    parser.add_argument("--raw-cpt", action= "store_true",
+                        help = "The checkpoint file is not gz but binary")
 
     parser.add_argument("--mmc-img", action="store", type=str,
                         default=None, help="The path of mmc img")

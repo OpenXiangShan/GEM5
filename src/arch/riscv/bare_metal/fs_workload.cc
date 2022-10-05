@@ -31,6 +31,7 @@
 
 #include "arch/riscv/faults.hh"
 #include "base/loader/object_file.hh"
+#include "debug/MemoryAccess.hh"
 #include "sim/system.hh"
 #include "sim/workload.hh"
 
@@ -83,11 +84,7 @@ BareMetal::initState()
             warn_if(!bootloader->buildImage().write(system->physProxy),
                     "Could not load sections to memory.");
         } else {
-            auto img = bootloader->buildImage();
-            assert(img.segments().size() == 1);
-            img.setSegAddr(0, _resetVect);
-            warn_if(!img.write(system->physProxy),
-                    "Could not load raw binary to memory.");
+            warn("Using raw cpt binary and mmap to it, no bootloader loaded.");
         }
     }
 
