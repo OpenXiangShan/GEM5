@@ -657,24 +657,42 @@ def makeBareMetalRiscvSystem(mem_mode, mdesc=None, cmdline=None):
     return self
 
 def makeBareMetalXiangshanSystem(mem_mode, mdesc=None, cmdline=None):
-    self = makeBareMetalRiscvSystem(mem_mode, mdesc, cmdline)
+    self = System()
+    if not mdesc:
+        # generic system
+        mdesc = SysConfig()
+    self.mem_mode = mem_mode
     self.mem_ranges = [AddrRange(start=0x80000000, size=mdesc.mem())]
     print(self.mem_ranges)
+    self.workload = RiscvBareMetal()
+
+    self.iobus = IOXBar()
+    self.membus = MemBus()
+
+    self.bridge = Bridge(delay='50ns')
+    self.bridge.mem_side_port = self.iobus.cpu_side_ports
+    self.bridge.cpu_side_port = self.membus.mem_side_ports
 
     self.uartlite  = UartLite()
-    self.uartlite.pio = self.membus.mem_side_ports
+    self.uartlite.pio = self.iobus.mem_side_ports
 
     self.lint = Lint()
-    self.lint.pio = self.membus.mem_side_ports
+    self.lint.pio = self.iobus.mem_side_ports
     self.lint.pio_addr = 0x38000000
     self.lint.pio_size = 0x10000
     self.lint.num_threads = 1
     self.lint.int_enable = 1
 
     self.mmcs = NemuMMC()
-    self.mmcs.pio = self.membus.mem_side_ports
+    self.mmcs.pio = self.iobus.mem_side_ports
+
+    self.bridge.ranges = [
+        AddrRange(self.uartlite.pio_addr, self.uartlite.pio_addr + self.uartlite.pio_size - 1),
+        AddrRange(self.lint.pio_addr, self.lint.pio_addr + self.lint.pio_size - 1),
+        ]
 
     self.workload.reset_vect = 0x80000000
+    self.system_port = self.membus.cpu_side_ports
     return self
 
 def makeDualRoot(full_system, testSystem, driveSystem, dumpfile):
