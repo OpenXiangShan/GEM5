@@ -1,4 +1,6 @@
 #include "cpu/pred/loop_detector.hh"
+#include "sim/core.hh"
+#include "base/output.hh"
 
 namespace gem5
 {
@@ -8,13 +10,19 @@ namespace branch_prediction
 LoopDetector::LoopDetector(const Params &params)
             : SimObject(params), maxLoopQueueSize(params.maxLoopQueueSize)
 {
-        
+        registerExitCallback([this]() {
+        auto out_handle = simout.create("loopHistory.txt", false, true);
+        for (auto iter : loopHistory) {
+            *out_handle->stream() << iter << std::endl;
+        }
+        simout.close(out_handle);
+    });
 }
 
 void
 LoopDetector::update(Addr branchAddr, Addr targetAddr) {
     defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
-    if (branchAddr == ObservingPC) {
+    if (branchAddr == ObservingPC || branchAddr == ObservingPC2) {
         debugFlagOn = true;
     }
         
@@ -50,6 +58,10 @@ LoopDetector::update(Addr branchAddr, Addr targetAddr) {
         entry->second.tripCount = entry->second.specCount;
         entry->second.specCount = 0;
         entry->second.outTarget = targetAddr;
+
+        if (branchAddr == ObservingPC) {
+            loopHistory.push_back(entry->second.tripCount);
+        }
     }
 
     if (entry->second.target < forwardTaken.first && entry->second.branch > forwardTaken.first) {

@@ -4,6 +4,7 @@
 #include <map>
 #include <list>
 #include <utility>
+#include <vector>
 
 #include "base/statistics.hh"
 #include "cpu/pred/stream_struct.hh"
@@ -19,6 +20,18 @@ namespace gem5
 
 namespace branch_prediction
 {
+
+struct DivideEntry
+{
+    bool taken;
+    Addr start;
+    Addr branch;
+    Addr next;
+
+    DivideEntry() : taken(false), start(0), branch(0), next(0) {}
+    DivideEntry(bool taken, Addr start, Addr branch, Addr next) : taken(taken), start(start), branch(branch), next(next) {}
+
+};
 
 class StreamLoopPredictor : public SimObject
 {
@@ -99,7 +112,7 @@ public:
 
     void controlSquash(unsigned fsqId, FetchStream stream, Addr branchAddr, Addr targetAddr);
 
-    void isIntraSquash(unsigned fsqId, FetchStream stream, Addr branchAddr);
+    std::pair<bool, std::vector<DivideEntry> > updateTAGE(Addr streamStart, Addr branchAddr, Addr targetAddr);
 
 };
 

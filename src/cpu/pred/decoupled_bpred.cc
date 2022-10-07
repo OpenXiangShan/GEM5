@@ -30,18 +30,20 @@ DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
 
     loopDetector->setStreamLoopPredictor(streamLoopPredictor);
 
+    streamTAGE->setStreamLoopPredictor(streamLoopPredictor);
+
     registerExitCallback([this]() {
         auto out_handle = simout.create("topMisPredicts.txt", false, true);
         *out_handle->stream() << "streamStart" << " " << "control pc" << " " << "count" << std::endl;
-        std::vector<std::pair<Addr, MispredictEntry>> topMisPredPC;
+        std::vector<std::pair<std::pair<Addr, Addr>, int>> topMisPredPC;
         for (auto &it : topMispredicts) {
             topMisPredPC.push_back(it);
         }
-        std::sort(topMisPredPC.begin(), topMisPredPC.end(), [](const std::pair<Addr, MispredictEntry> &a, const std::pair<Addr, MispredictEntry> &b) {
-            return a.second.count > b.second.count;
+        std::sort(topMisPredPC.begin(), topMisPredPC.end(), [](const std::pair<std::pair<Addr, Addr>, int> &a, const std::pair<std::pair<Addr, Addr>, int> &b) {
+            return a.second > b.second;
         });
         for (auto& it : topMisPredPC) {
-            *out_handle->stream() << std::hex << it.second.streamStart << " " << it.second.controlAddr << " " << std::dec << it.second.count << std::endl;
+            *out_handle->stream() << std::hex << it.first.first << " " << it.first.second << " " << std::dec << it.second << std::endl;
         }
         simout.close(out_handle);
 
@@ -59,6 +61,13 @@ DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
         for (const auto &entry: topMisPredHistVec) {
             *out_handle->stream() << std::hex << entry.first << " " << std::dec << entry.second << std::endl;
         }
+
+         out_handle = simout.create("misPredTripCount.txt", false, true);
+         *out_handle->stream() << missCount << std::endl;
+         for (const auto &entry : misPredTripCount) {
+            *out_handle->stream() << entry.first << " " << entry.second << std::endl;
+         }
+
         simout.close(out_handle);
     });
 }
@@ -221,6 +230,9 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
     if (pc == ObservingPC) {
         debugFlagOn = true;
     }
+    if (control_pc.instAddr() == ObservingPC || control_pc.instAddr() == ObservingPC2) {
+        debugFlagOn = true;
+    }
 
     DPRINTF(DecoupleBPHist,
             "stream start=%#lx, predict on hist: %s\n", stream.streamStart,
@@ -273,6 +285,7 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
     } else {
         stream.endType = END_NOT_TAKEN;
     }
+    DPRINTF(DecoupleBP || debugFlagOn, "stream end type: %d\n", stream.endType);
     // Since here, we are using updated infomation
 
     squashStreamAfter(stream_id);
@@ -282,8 +295,6 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
     stream.exeBranchPC = control_pc.instAddr();
     stream.exeTarget = corr_target.instAddr();
     stream.exeEndPC = stream.exeBranchPC + control_inst_size;
-
-    streamLoopPredictor->isIntraSquash(stream_id, stream, control_pc.instAddr());
 
     // recover history to the moment doing prediction
     DPRINTF(DecoupleBPHist,
@@ -561,6 +572,9 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
         if (stream.streamStart == ObservingPC) {
             debugFlagOn = true;
         }
+        if (stream.exeBranchPC == ObservingPC2) {
+            debugFlagOn = true;
+        }
         DPRINTF(DecoupleBP || debugFlagOn,
                 "Commit stream start %#lx, which is %s predicted, "
                 "final br addr: %#lx, final target: %#lx, pred br addr: %#lx, "
@@ -596,14 +610,27 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
                                stream.getTaken(), stream.history,
                                static_cast<EndType>(stream.endType));
 
-            MispredictEntry entry(stream.streamStart, stream.exeBranchPC);
-
             if (stream.squashType == SQUASH_CTRL) {
-                auto find_it = topMispredicts.find(stream.streamStart);
+                auto find_it = topMispredicts.find(std::make_pair(stream.streamStart, stream.exeBranchPC));
                 if (find_it == topMispredicts.end()) {
-                    topMispredicts[stream.streamStart] = entry;
+                    topMispredicts[std::make_pair(stream.streamStart, stream.exeBranchPC)] = 1;
                 } else {
-                    find_it->second.count++;
+                    find_it->second++;
+                }
+
+                if (stream.isMiss && stream.exeBranchPC == ObservingPC) {
+                    missCount++;
+                }
+
+                if (stream.exeBranchPC == ObservingPC) {
+                    debugFlagOn = true;
+                    auto misTripCount = misPredTripCount.find(stream.tripCount);
+                    if (misTripCount == misPredTripCount.end()) {
+                        misPredTripCount[stream.tripCount] = 1;
+                    } else {
+                        misPredTripCount[stream.tripCount]++;
+                    }
+                    DPRINTF(DecoupleBP || debugFlagOn, "commit mispredicted stream %lu\n", it->first);
                 }
             }
 
@@ -931,7 +958,7 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
     if (s0StreamStartPC == ObservingPC) {
         debugFlagOn = true;
     }
-    if (s0UbtbPred.controlAddr == ObservingPC) {
+    if (s0UbtbPred.controlAddr == ObservingPC || s0UbtbPred.controlAddr == ObservingPC2) {
         debugFlagOn = true;
     }
     DPRINTF(DecoupleBP || debugFlagOn, "Make pred with %s, pred valid: %i, taken: %i\n",

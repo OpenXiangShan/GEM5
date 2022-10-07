@@ -87,10 +87,17 @@ StreamTAGE::lookupHelper(bool flag, Addr last_chunk_start, Addr stream_start,
                          int& alt_table_index, int& provider_counts,
                          bool& use_alt_pred)
 {
+    if (stream_start == ObservingPC2) {
+        debugFlagOn = true;
+    }
     main_table = -1;
     main_table_index = -1;
     alt_table = -1;
     alt_table_index = -1;
+
+    std::string buf1;
+    boost::to_string(history, buf1);
+    DPRINTF(DecoupleBP || debugFlagOn, "history: %s\n", buf1.c_str());
 
     for (int i = numPredictors - 1; i >= 0; --i) {
         Addr tmp_index = getTageIndex(last_chunk_start, history, i);
@@ -100,9 +107,9 @@ StreamTAGE::lookupHelper(bool flag, Addr last_chunk_start, Addr stream_start,
 
         DPRINTF(DecoupleBP || debugFlagOn,
                 "TAGE table[%u] index[%u], valid: %i, expected tag: %#lx, "
-                "found tag: %#lx, match: %i, useful: %i, taken@%#lx->%#lx\n",
-                i, tmp_index, way.valid, tmp_tag, way.tag, match, way.useful,
-                way.target.controlAddr, way.target.nextStream);
+                "found tag: %#lx, match: %i, useful: %i, start: %#lx, taken@%#lx->%#lx, end_type:%d\n",
+                i, tmp_index, way.valid, tmp_tag, way.tag, match, way.useful, way.target.bbStart,
+                way.target.controlAddr, way.target.nextStream, way.target.endType);
 
         bool sane = (last_chunk_start >= way.target.bbStart) &&
                     ((!way.target.isTaken() &&
@@ -214,7 +221,7 @@ StreamTAGE::putPCHistory(Addr cur_chunk_start, Addr stream_start, const bitset &
     int pred_count = 0;
     bool use_alt_pred = false;
 
-    if (stream_start == ObservingPC) {
+    if (stream_start == ObservingPC || stream_start == ObservingPC2) {
         debugFlagOn = true;
     }
     DPRINTF(DecoupleBP || debugFlagOn,
@@ -307,7 +314,7 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
                    Addr control_pc, Addr target_pc, unsigned control_size,
                    bool actually_taken, const bitset& history, EndType end_type)
 {
-    if (stream_start_pc == ObservingPC) {
+    if (stream_start_pc == ObservingPC || control_pc == ObservingPC2) {
         debugFlagOn = true;
         DPRINTFV(true, "Update for stream %#lx, chunk:%#lx\n", stream_start_pc,
                  last_chunk_start);
@@ -347,6 +354,10 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
     } else if (predictor_found) {
         target_sel = main_target;
     }
+
+    DPRINTF(DecoupleBP || debugFlagOn,
+            "Update for stream %#lx, chunk:%#lx, predictor_found: %d, use_alt_pred: %d, pred_count: %d\n",
+            stream_start_pc, last_chunk_start, predictor_found, use_alt_pred, pred_count);
 
     bool main_is_useless = false;
     if (pred_count > 0) {
@@ -427,36 +438,76 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
         start_table = main_table + 1;
     }
 
-    for (; start_table < numPredictors; start_table++) {
-        uint32_t new_index =
-            getTageIndex(last_chunk_start, history, start_table);
-        uint32_t new_tag =
-            getTageTag(stream_start_pc, history, start_table);
-        auto &entry = tageTable[start_table][new_index];
-        DPRINTF(DecoupleBP || debugFlagOn,
-                "Table %d index[%d] histlen=%u is %s\n", start_table,
-                new_index, histLengths[start_table], entry.useful ? "useful" : "not useful");
+    auto res = loopPredictor->updateTAGE(stream_start_pc, control_pc, target_pc);
 
-        if (!entry.useful) {
+    if (res.first) {
+        auto vec = res.second;
+        std::string buf1;
+        boost::to_string(history, buf1);
+        DPRINTF(DecoupleBP || debugFlagOn, "history: %s\n", buf1.c_str());
+
+        for (; start_table < numPredictors && allocated < vec.size(); start_table++) {
+            uint32_t new_index =
+                getTageIndex(last_chunk_start, history, start_table);
+            uint32_t new_tag =
+                getTageTag(vec.at(allocated).start, history, start_table);
+            auto &entry = tageTable[start_table][new_index];
             DPRINTF(DecoupleBP || debugFlagOn,
-                    "%s %#lx-%#lx -> %#lx with %#lx-%#lx -> %#lx, new "
-                    "tag=%#lx, end type=%i\n", entry.valid ? "Replacing": "Allocating",
-                    entry.target.bbStart, entry.target.controlAddr,
-                    entry.target.nextStream, stream_start_pc, control_pc,
-                    target_pc, new_tag, end_type);
+                    "Table %d index[%d] histlen=%u is %s\n", start_table,
+                    new_index, histLengths[start_table], entry.useful ? "useful" : "not useful");
 
-            entry.target.set(curTick(), stream_start_pc, control_pc, target_pc,
-                             control_size, 0, end_type, true, !actually_taken);
-            entry.useful = 0;
-            entry.valid = true;
-            setTag(entry.tag, new_tag, start_table);
+            if (!entry.useful) {
+                DPRINTF(DecoupleBP || debugFlagOn,
+                        "loop update: %s %#lx-%#lx -> %#lx with %#lx-%#lx -> %#lx, new "
+                        "tag=%#lx, end type=%i\n", entry.valid ? "Replacing": "Allocating",
+                        entry.target.bbStart, entry.target.controlAddr,
+                        entry.target.nextStream, vec.at(allocated).start, vec.at(allocated).branch,
+                        vec.at(allocated).next, new_tag, vec.at(allocated).taken ? END_OTHER_TAKEN : END_NOT_TAKEN);
 
-            allocated++;
-            if (!entry.valid) {
-                new_allocated++;
+                entry.target.set(curTick(), vec.at(allocated).start, vec.at(allocated).branch, vec.at(allocated).next,
+                                control_size, 0, vec.at(allocated).taken ? END_OTHER_TAKEN : END_NOT_TAKEN, true, !actually_taken);
+                entry.useful = 0;
+                entry.valid = true;
+                setTag(entry.tag, new_tag, start_table);
+
+                allocated++;
+                if (!entry.valid) {
+                    new_allocated++;
+                }
             }
-            if (allocated == numTablesToAlloc) {
-                break;
+        }
+    } else {
+        for (; start_table < numPredictors; start_table++) {
+            uint32_t new_index =
+                getTageIndex(last_chunk_start, history, start_table);
+            uint32_t new_tag =
+                getTageTag(stream_start_pc, history, start_table);
+            auto &entry = tageTable[start_table][new_index];
+            DPRINTF(DecoupleBP || debugFlagOn,
+                    "Table %d index[%d] histlen=%u is %s\n", start_table,
+                    new_index, histLengths[start_table], entry.useful ? "useful" : "not useful");
+
+            if (!entry.useful) {
+                DPRINTF(DecoupleBP || debugFlagOn,
+                        "%s %#lx-%#lx -> %#lx with %#lx-%#lx -> %#lx, new "
+                        "tag=%#lx, end type=%i\n", entry.valid ? "Replacing": "Allocating",
+                        entry.target.bbStart, entry.target.controlAddr,
+                        entry.target.nextStream, stream_start_pc, control_pc,
+                        target_pc, new_tag, end_type);
+
+                entry.target.set(curTick(), stream_start_pc, control_pc, target_pc,
+                                control_size, 0, end_type, true, !actually_taken);
+                entry.useful = 0;
+                entry.valid = true;
+                setTag(entry.tag, new_tag, start_table);
+
+                allocated++;
+                if (!entry.valid) {
+                    new_allocated++;
+                }
+                if (allocated == numTablesToAlloc) {
+                    break;
+                }
             }
         }
     }

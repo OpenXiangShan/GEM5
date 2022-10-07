@@ -354,28 +354,10 @@ class DecoupledBPU : public BPredUnit
 
     bool debugFlagOn{false};
 
-    struct MispredictEntry {
-        Addr streamStart;
-        Addr controlAddr;
-        unsigned count;
-
-        bool operator<(const MispredictEntry &rhs) const
-        {
-            return count < rhs.count;
-        }
-
-        bool operator==(const MispredictEntry &rhs) const
-        {
-            return count == rhs.count;
-        }
-
-        MispredictEntry() {};
-        MispredictEntry(Addr streamStart, Addr controlAddr) :
-                        streamStart(streamStart), controlAddr(controlAddr), count(1) {} ;
-    };
-
-    std::map<Addr, MispredictEntry> topMispredicts;
+    std::map<std::pair<Addr, Addr>, int> topMispredicts;
     std::map<uint64_t, uint64_t> topMispredHist;
+    std::map<int, int> misPredTripCount;
+    unsigned int missCount{0};
 
     void setTakenEntryWithStream(const FetchStream &stream_entry, FtqEntry &ftq_entry);
 

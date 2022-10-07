@@ -4,6 +4,7 @@
 #include <map>
 #include <list>
 #include <utility>
+#include <vector>
 
 #include "base/statistics.hh"
 #include "base/types.hh"
@@ -55,6 +56,8 @@ private:
     StreamLoopPredictor *streamLoopPredictor{};
 
     bool debugFlagOn{false};
+
+    std::vector<int> loopHistory;
 
 public:
 
