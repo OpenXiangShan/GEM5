@@ -446,7 +446,7 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
         boost::to_string(history, buf1);
         DPRINTF(DecoupleBP || debugFlagOn, "history: %s\n", buf1.c_str());
 
-        for (; start_table < numPredictors; start_table++) {
+        for (; start_table < numPredictors && allocated < vec.size(); start_table++) {
             uint32_t new_index =
                 getTageIndex(last_chunk_start, history, start_table);
             uint32_t new_tag =
