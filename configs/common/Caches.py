@@ -72,15 +72,16 @@ class L1_DCache(L1Cache):
 class L2Cache(Cache):
     tag_latency = 2
     data_latency = 4
-    response_latency = 4
-    mshrs = 64
+    response_latency = 20
+    mshrs = 32
     tgts_per_mshr = 20
     clusivity='mostly_excl'
+    prefetch_on_access = True
 
 class L3Cache(Cache):
     tag_latency = 2
     data_latency = 4
-    response_latency = 4
+    response_latency = 30
     mshrs = 64
     tgts_per_mshr = 20
     clusivity='mostly_excl'
