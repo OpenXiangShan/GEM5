@@ -81,7 +81,7 @@ class BranchPredictor(SimObject):
     BTBTagSize = Param.Unsigned(16, "Size of the BTB tags, in bits")
     RASSize = Param.Unsigned(16, "RAS size")
     instShiftAmt = Param.Unsigned(2, "Number of bits to shift instructions by")
-
+    isDumpMisspredPC = Param.Bool(False, "enable dump miss pred pc")
     indirectBranchPred = Param.IndirectPredictor(ITTAGE(),
       "Indirect branch predictor, set to NULL to disable indirect predictions")
 

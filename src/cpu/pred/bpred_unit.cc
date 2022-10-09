@@ -68,11 +68,22 @@ BPredUnit::BPredUnit(const Params &params)
       RAS(numThreads),
       iPred(params.indirectBranchPred),
       stats(this),
+      isDumpMissPredPC(params.isDumpMisspredPC),
       instShiftAmt(params.instShiftAmt)
 {
     for (auto& r : RAS)
         r.init(params.RASSize);
-
+    if (isDumpMissPredPC) {
+        registerExitCallback([this]() {
+            // output to file "pcMiss.txt"
+            auto out_handle = simout.create("pcMiss.txt", false, true);
+            *out_handle->stream() << "pc" << " " << "cnt" << std::endl;
+            for (auto& it : missPredPcCount) {
+                *out_handle->stream() << it.first << " " << it.second << std::endl;
+            }
+            simout.close(out_handle);
+        });
+    }
 }
 
 BPredUnit::BPredUnitStats::BPredUnitStats(statistics::Group *parent)
@@ -102,15 +113,7 @@ BPredUnit::BPredUnitStats::BPredUnitStats(statistics::Group *parent)
                "Number of mispredicted indirect branches.")
 {
     BTBHitRatio.precision(6);
-    registerExitCallback([this]() {
-        //write in a file "pcMiss.txt"
-        auto out_handle = simout.create("pcMiss.txt", false, true);
-        *out_handle->stream() << "pc"<<" "<<"cnt" << std::endl;
-        for (auto& it : MisspredPCcnt) {
-            *out_handle->stream() << it.first << " " << it.second << std::endl;
-        }
-        simout.close(out_handle);
-    });
+
 }
 
 probing::PMUUPtr
@@ -474,7 +477,9 @@ BPredUnit::squash(const InstSeqNum &squashed_sn,
             }
             if (hist_it->wasIndirect) {
                 ++stats.indirectMispredicted;
-                stats.MisspredPCcnt[hist_it->pc]++;
+                if (isDumpMissPredPC) {
+                    missPredPcCount[hist_it->pc]++;
+                }
                 if (iPred) {
                     iPred->recordTarget(
                         hist_it->seqNum, pred_hist.front().indirectHistory,
