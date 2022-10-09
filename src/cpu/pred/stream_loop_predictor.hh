@@ -27,9 +27,11 @@ struct DivideEntry
     Addr start;
     Addr branch;
     Addr next;
+    Addr fallThruPC;
 
-    DivideEntry() : taken(false), start(0), branch(0), next(0) {}
-    DivideEntry(bool taken, Addr start, Addr branch, Addr next) : taken(taken), start(start), branch(branch), next(next) {}
+    DivideEntry() : taken(false), start(0), branch(0), next(0), fallThruPC(0) {}
+    DivideEntry(bool taken, Addr start, Addr branch, Addr next, Addr fallThruPC) : taken(taken), start(start), branch(branch), next(next),
+                                                                                   fallThruPC(fallThruPC) {}
 
 };
 
@@ -51,14 +53,15 @@ private:
         Addr branch;
         Addr target;
         Addr outTarget;
+        Addr fallThruPC;
         int tripCount;
         int detectedCount;
         bool intraTaken;
 
-        LoopEntry() : valid(true), branch(0), target(0), outTarget(0), tripCount(0), detectedCount(0), intraTaken(false) {}
-        LoopEntry(Addr branch, Addr target, Addr outTarget, int detectedCount, bool intraTaken) : 
-                 valid(true), branch(branch), target(target), outTarget(outTarget), tripCount(0),
-                 detectedCount(detectedCount), intraTaken(intraTaken) {}
+        LoopEntry() : valid(true), branch(0), target(0), outTarget(0), fallThruPC(0), tripCount(0), detectedCount(0), intraTaken(false) {}
+        LoopEntry(Addr branch, Addr target, Addr outTarget, Addr fallThruPC, int detectedCount, bool intraTaken) : 
+                 valid(true), branch(branch), target(target), outTarget(outTarget), fallThruPC(fallThruPC), 
+                 tripCount(0), detectedCount(detectedCount), intraTaken(intraTaken) {}
     };
 
     std::map<Addr, LoopEntry> loopTable;
@@ -108,7 +111,7 @@ public:
         assert(0);
     }
 
-    void updateEntry(Addr branchAddr, Addr targetAddr, Addr outTarget, int detectedCount, bool intraTaken);
+    void updateEntry(Addr branchAddr, Addr targetAddr, Addr outTarget, Addr fallThruPC, int detectedCount, bool intraTaken);
 
     void controlSquash(unsigned fsqId, FetchStream stream, Addr branchAddr, Addr targetAddr);
 

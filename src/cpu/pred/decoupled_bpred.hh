@@ -169,6 +169,7 @@ class HistoryManager
 
 class DecoupledBPU : public BPredUnit
 {
+    using defer = std::shared_ptr<void>;
   public:
     typedef DecoupledBPUParams Params;
 
@@ -367,8 +368,13 @@ class DecoupledBPU : public BPredUnit
 
     void pushRAS(FetchStreamId stream_id, const char *when, Addr ra);
 
+    void updateTAGE(FetchStream &stream);
+
     LoopDetector *loopDetector{};
     StreamLoopPredictor *streamLoopPredictor{};
+
+    void storeLoopInfo(unsigned int fsqId, FetchStream stream);
+    std::list<std::pair<unsigned int, FetchStream> > storedLoopStreams;
 };
 
 }  // namespace branch_prediction

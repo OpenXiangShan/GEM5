@@ -68,6 +68,12 @@ DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
             *out_handle->stream() << entry.first << " " << entry.second << std::endl;
          }
 
+         out_handle = simout.create("loopInfo.txt", false, true);
+         for (const auto &entry : storedLoopStreams) {
+            *out_handle->stream() << std::oct << entry.first << " " << std::hex << entry.second.streamStart << ", " 
+                                  << entry.second.exeBranchPC << "--->" << entry.second.exeTarget << " useLoopPred: " << entry.second.useLoopPrediction << std::endl;
+         }
+
         simout.close(out_handle);
     });
 }
@@ -565,6 +571,7 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
     auto it = fetchStreamQueue.begin();
     while (it != fetchStreamQueue.end() && stream_id >= it->first) {
         auto &stream = it->second;
+        storeLoopInfo(it->first, stream);
         // dequeue
         DPRINTF(DecoupleBP, "dequeueing stream id: %lu, entry below:\n",
                 it->first);
@@ -601,14 +608,7 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
                     2, false /* not taken*/, stream.history, END_CONT);
                 cur_chunk = next_chunk;
             }
-            DPRINTF(DecoupleBP || debugFlagOn, "Update taken chunk %#lx\n",
-                    last_chunk);
-            streamTAGE->update(last_chunk, stream.streamStart,
-                               stream.getControlPC(),
-                               stream.getNextStreamStart(),
-                               stream.getFallThruPC() - stream.getControlPC(),
-                               stream.getTaken(), stream.history,
-                               static_cast<EndType>(stream.endType));
+            updateTAGE(stream);
 
             if (stream.squashType == SQUASH_CTRL) {
                 auto find_it = topMispredicts.find(std::make_pair(stream.streamStart, stream.exeBranchPC));
@@ -1129,6 +1129,46 @@ DecoupledBPU::pushRAS(FetchStreamId stream_id, const char *when, Addr ra)
             "Push RA: %#lx when %s, stream id: %lu, ", ra, when, stream_id);
     streamRAS.push(ra);
     DPRINTFR(DecoupleBPRAS || debugFlagOn, "RAS size: %lu after action\n", streamRAS.size());
+}
+
+void
+DecoupledBPU::updateTAGE(FetchStream &stream)
+{
+    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    if (stream.streamStart == ObservingPC) {
+        debugFlagOn = true;
+    }
+    auto res = streamLoopPredictor->updateTAGE(stream.streamStart, stream.exeBranchPC, stream.exeTarget);
+    if (res.first) {
+        // loop up the tage and allocate for each divided stream
+        for (auto &it : res.second) {
+            auto last_chunk = computeLastChunkStart(it.branch, it.start);
+            DPRINTF(DecoupleBP || debugFlagOn, "Update divided chunk %#lx\n", last_chunk);
+            streamTAGE->update(last_chunk, it.start,
+                               it.branch,
+                               it.next,
+                               it.fallThruPC - it.branch,
+                               it.taken, stream.history,
+                               static_cast<EndType>(it.taken ? EndType::END_OTHER_TAKEN : EndType::END_NOT_TAKEN));
+        }
+    } else {
+        auto last_chunk = computeLastChunkStart(stream.getControlPC(), stream.streamStart);
+        DPRINTF(DecoupleBP || debugFlagOn, "Update taken chunk %#lx\n", last_chunk);
+        streamTAGE->update(last_chunk, stream.streamStart,
+                           stream.getControlPC(),
+                           stream.getNextStreamStart(),
+                           stream.getFallThruPC() - stream.getControlPC(),
+                           stream.getTaken(), stream.history,
+                           static_cast<EndType>(stream.endType));
+    }
+}
+
+void
+DecoupledBPU::storeLoopInfo(unsigned int fsqId, FetchStream stream)
+{
+    if (loopDetector->findLoop(stream.exeBranchPC)) {
+        storedLoopStreams.push_back(std::make_pair(fsqId, stream));
+    }
 }
 
 }  // namespace branch_prediction

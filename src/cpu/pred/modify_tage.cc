@@ -438,76 +438,36 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
         start_table = main_table + 1;
     }
 
-    auto res = loopPredictor->updateTAGE(stream_start_pc, control_pc, target_pc);
+    for (; start_table < numPredictors; start_table++) {
+        uint32_t new_index =
+            getTageIndex(last_chunk_start, history, start_table);
+        uint32_t new_tag =
+            getTageTag(stream_start_pc, history, start_table);
+        auto &entry = tageTable[start_table][new_index];
+        DPRINTF(DecoupleBP || debugFlagOn,
+                "Table %d index[%d] histlen=%u is %s\n", start_table,
+                new_index, histLengths[start_table], entry.useful ? "useful" : "not useful");
 
-    if (res.first) {
-        auto vec = res.second;
-        std::string buf1;
-        boost::to_string(history, buf1);
-        DPRINTF(DecoupleBP || debugFlagOn, "history: %s\n", buf1.c_str());
-
-        for (; start_table < numPredictors && allocated < vec.size(); start_table++) {
-            uint32_t new_index =
-                getTageIndex(last_chunk_start, history, start_table);
-            uint32_t new_tag =
-                getTageTag(vec.at(allocated).start, history, start_table);
-            auto &entry = tageTable[start_table][new_index];
+        if (!entry.useful) {
             DPRINTF(DecoupleBP || debugFlagOn,
-                    "Table %d index[%d] histlen=%u is %s\n", start_table,
-                    new_index, histLengths[start_table], entry.useful ? "useful" : "not useful");
+                    "%s %#lx-%#lx -> %#lx with %#lx-%#lx -> %#lx, new "
+                    "tag=%#lx, end type=%i\n", entry.valid ? "Replacing": "Allocating",
+                    entry.target.bbStart, entry.target.controlAddr,
+                    entry.target.nextStream, stream_start_pc, control_pc,
+                    target_pc, new_tag, end_type);
 
-            if (!entry.useful) {
-                DPRINTF(DecoupleBP || debugFlagOn,
-                        "loop update: %s %#lx-%#lx -> %#lx with %#lx-%#lx -> %#lx, new "
-                        "tag=%#lx, end type=%i\n", entry.valid ? "Replacing": "Allocating",
-                        entry.target.bbStart, entry.target.controlAddr,
-                        entry.target.nextStream, vec.at(allocated).start, vec.at(allocated).branch,
-                        vec.at(allocated).next, new_tag, vec.at(allocated).taken ? END_OTHER_TAKEN : END_NOT_TAKEN);
+            entry.target.set(curTick(), stream_start_pc, control_pc, target_pc,
+                            control_size, 0, end_type, true, !actually_taken);
+            entry.useful = 0;
+            entry.valid = true;
+            setTag(entry.tag, new_tag, start_table);
 
-                entry.target.set(curTick(), vec.at(allocated).start, vec.at(allocated).branch, vec.at(allocated).next,
-                                control_size, 0, vec.at(allocated).taken ? END_OTHER_TAKEN : END_NOT_TAKEN, true, !actually_taken);
-                entry.useful = 0;
-                entry.valid = true;
-                setTag(entry.tag, new_tag, start_table);
-
-                allocated++;
-                if (!entry.valid) {
-                    new_allocated++;
-                }
+            allocated++;
+            if (!entry.valid) {
+                new_allocated++;
             }
-        }
-    } else {
-        for (; start_table < numPredictors; start_table++) {
-            uint32_t new_index =
-                getTageIndex(last_chunk_start, history, start_table);
-            uint32_t new_tag =
-                getTageTag(stream_start_pc, history, start_table);
-            auto &entry = tageTable[start_table][new_index];
-            DPRINTF(DecoupleBP || debugFlagOn,
-                    "Table %d index[%d] histlen=%u is %s\n", start_table,
-                    new_index, histLengths[start_table], entry.useful ? "useful" : "not useful");
-
-            if (!entry.useful) {
-                DPRINTF(DecoupleBP || debugFlagOn,
-                        "%s %#lx-%#lx -> %#lx with %#lx-%#lx -> %#lx, new "
-                        "tag=%#lx, end type=%i\n", entry.valid ? "Replacing": "Allocating",
-                        entry.target.bbStart, entry.target.controlAddr,
-                        entry.target.nextStream, stream_start_pc, control_pc,
-                        target_pc, new_tag, end_type);
-
-                entry.target.set(curTick(), stream_start_pc, control_pc, target_pc,
-                                control_size, 0, end_type, true, !actually_taken);
-                entry.useful = 0;
-                entry.valid = true;
-                setTag(entry.tag, new_tag, start_table);
-
-                allocated++;
-                if (!entry.valid) {
-                    new_allocated++;
-                }
-                if (allocated == numTablesToAlloc) {
-                    break;
-                }
+            if (allocated == numTablesToAlloc) {
+                break;
             }
         }
     }

@@ -39,12 +39,14 @@ private:
         Addr branch;
         Addr target;
         Addr outTarget;
+        Addr fallThruPC;
         int specCount;
         int tripCount;
         bool intraTaken;
 
-        LoopEntry() : branch(0), target(0), outTarget(0), specCount(0), tripCount(0), intraTaken(false) {}
-        LoopEntry(Addr branch, Addr target) : branch(branch), target(target), outTarget(0), specCount(1), tripCount(0), intraTaken(false) {}
+        LoopEntry() : branch(0), target(0), outTarget(0), fallThruPC(0), specCount(0), tripCount(0), intraTaken(false) {}
+        LoopEntry(Addr branch, Addr target, Addr fallThruPC) : branch(branch), target(target), outTarget(0), fallThruPC(fallThruPC),
+                                              specCount(1), tripCount(0), intraTaken(false) {}
     };
 
     std::map<Addr, LoopEntry> loopTable;
@@ -84,7 +86,7 @@ public:
             return loopTable[pc].specCount;
     }
 
-    void update(Addr branchAddr, Addr targetAddr);
+    void update(Addr branchAddr, Addr targetAddr, Addr fallThruPC);
 
     void setRecentForwardTakenPC(Addr branch, Addr target) {
         forwardTaken = std::make_pair(branch, target);

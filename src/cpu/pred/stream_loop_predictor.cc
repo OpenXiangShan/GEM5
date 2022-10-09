@@ -66,25 +66,25 @@ StreamLoopPredictor::makeLoopPrediction(Addr branchAddr) {
 }
 
 void
-StreamLoopPredictor::updateEntry(Addr branchAddr, Addr targetAddr, Addr outTarget, int detectedCount, bool intraTaken) {
+StreamLoopPredictor::updateEntry(Addr branchAddr, Addr targetAddr, Addr outTarget, Addr fallThruPC, int detectedCount, bool intraTaken) {
     defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
     if (branchAddr == ObservingPC || branchAddr == ObservingPC2) {
         debugFlagOn = true;
     }
     auto entry = loopTable.find(branchAddr);
     if (entry == loopTable.end()) {
-        loopTable[branchAddr] = LoopEntry(branchAddr, targetAddr, outTarget, detectedCount, intraTaken);
-        DPRINTF(DecoupleBP || debugFlagOn, "insert loop table entry: [%#lx, %#lx, %#lx, %d, %d]\n",
-                branchAddr, targetAddr, outTarget, 0, detectedCount);
+        loopTable[branchAddr] = LoopEntry(branchAddr, targetAddr, outTarget, fallThruPC, detectedCount, intraTaken);
+        DPRINTF(DecoupleBP || debugFlagOn, "insert loop table entry: [%#lx, %#lx, %#lx, %d, %d, %#lx]\n",
+                branchAddr, targetAddr, outTarget, 0, detectedCount, fallThruPC);
 	} else {
         LoopEntry temp = entry->second;
         entry->second.detectedCount = detectedCount;
         entry->second.intraTaken = intraTaken;
-        DPRINTF(DecoupleBP || debugFlagOn, "update loop table entry from [%#lx, %#lx, %#lx, %d, %d] "
-                "to [%#lx, %#lx, %#lx, %d, %d]\n",
-                temp.branch, temp.target, temp.outTarget, temp.tripCount, temp.detectedCount,
+        DPRINTF(DecoupleBP || debugFlagOn, "update loop table entry from [%#lx, %#lx, %#lx, %d, %d, %#lx] "
+                "to [%#lx, %#lx, %#lx, %d, %d, %#lx]\n",
+                temp.branch, temp.target, temp.outTarget, temp.tripCount, temp.detectedCount, temp.fallThruPC,
                 entry->second.branch, entry->second.target, entry->second.outTarget,
-                entry->second.tripCount, entry->second.detectedCount);
+                entry->second.tripCount, entry->second.detectedCount, entry->second.fallThruPC);
     }
 }
 
@@ -134,7 +134,7 @@ StreamLoopPredictor::updateTAGE(Addr streamStart, Addr branchAddr, Addr targetAd
         for (const auto it : loopTable) {
             if (tempStart < it.second.branch && it.second.branch < entry->second.branch && it.second.outTarget <= entry->second.branch) {
                 hasIntrLoop = true;
-                DivideEntry temp = DivideEntry(false, tempStart, it.second.branch, it.second.outTarget);
+                DivideEntry temp = DivideEntry(false, tempStart, it.second.branch, it.second.outTarget, it.second.fallThruPC);
                 tempStart = it.second.outTarget;
                 divideEntryVec.push_back(temp);
                 DPRINTF(DecoupleBP || debugFlagOn, "detect loop: %#lx-->%#lx, update tempStart to %#lx\n",
@@ -142,10 +142,10 @@ StreamLoopPredictor::updateTAGE(Addr streamStart, Addr branchAddr, Addr targetAd
             }
         }
         if (targetAddr == entry->second.target) {
-            DivideEntry temp = DivideEntry(true, tempStart, entry->second.branch, targetAddr);
+            DivideEntry temp = DivideEntry(true, tempStart, entry->second.branch, targetAddr, entry->second.fallThruPC);
             divideEntryVec.push_back(temp);
         } else if (targetAddr == entry->second.outTarget) {
-            DivideEntry temp = DivideEntry(false, tempStart, entry->second.branch, targetAddr);
+            DivideEntry temp = DivideEntry(false, tempStart, entry->second.branch, targetAddr, entry->second.fallThruPC);
             divideEntryVec.push_back(temp);
         } else {
             DPRINTF(DecoupleBP || debugFlagOn, "target address doesn't match\n");

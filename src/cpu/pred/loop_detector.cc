@@ -20,7 +20,7 @@ LoopDetector::LoopDetector(const Params &params)
 }
 
 void
-LoopDetector::update(Addr branchAddr, Addr targetAddr) {
+LoopDetector::update(Addr branchAddr, Addr targetAddr, Addr fallThruPC) {
     defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
     if (branchAddr == ObservingPC || branchAddr == ObservingPC2) {
         debugFlagOn = true;
@@ -32,14 +32,14 @@ LoopDetector::update(Addr branchAddr, Addr targetAddr) {
 
     if (taken_backward) {
         if (entry == loopTable.end()) {
-            DPRINTF(DecoupleBP || debugFlagOn, "taken update loop detector from NULL to [%#lx, %#lx, %#lx, %d, %d]\n",
-                    branchAddr, 0, 0, 1, 0);
-            loopTable[branchAddr] = LoopEntry(branchAddr, targetAddr);
+            DPRINTF(DecoupleBP || debugFlagOn, "taken update loop detector from NULL to [%#lx, %#lx, %#lx, %d, %d, %#lx]\n",
+                    branchAddr, 0, 0, 1, 0, fallThruPC);
+            loopTable[branchAddr] = LoopEntry(branchAddr, targetAddr, fallThruPC);
         } else {
             DPRINTF(DecoupleBP || debugFlagOn, "taken update loop detector from "
-                    "[%#lx, %#lx, %#lx, %d, %d] to [%#lx, %#lx, %#lx, %d, %d]\n",
-                    branchAddr, entry->second.target, entry->second.outTarget, entry->second.specCount, entry->second.tripCount,
-                    branchAddr, entry->second.target, entry->second.outTarget, entry->second.specCount + 1, entry->second.tripCount);
+                    "[%#lx, %#lx, %#lx, %d, %d, %#lx] to [%#lx, %#lx, %#lx, %d, %d, %#lx]\n",
+                    branchAddr, entry->second.target, entry->second.outTarget, entry->second.specCount, entry->second.tripCount, entry->second.fallThruPC,
+                    branchAddr, entry->second.target, entry->second.outTarget, entry->second.specCount + 1, entry->second.tripCount, entry->second.fallThruPC);
             entry->second.specCount++;
         }
 
@@ -51,9 +51,9 @@ LoopDetector::update(Addr branchAddr, Addr targetAddr) {
     } else {
         assert(entry != loopTable.end());
         DPRINTF(DecoupleBP || debugFlagOn, "not taken update loop detector from "
-                "[%#lx, %#lx, %#lx, %d, %d] to [%#lx, %#lx, %#lx, %d, %d]\n",
-                branchAddr, entry->second.target, entry->second.outTarget, entry->second.specCount, entry->second.tripCount,
-                branchAddr, entry->second.target, entry->second.outTarget, 0, entry->second.specCount);
+                "[%#lx, %#lx, %#lx, %d, %d, %#lx] to [%#lx, %#lx, %#lx, %d, %d, %#lx]\n",
+                branchAddr, entry->second.target, entry->second.outTarget, entry->second.specCount, entry->second.tripCount, entry->second.fallThruPC,
+                branchAddr, entry->second.target, entry->second.outTarget, 0, entry->second.specCount, entry->second.fallThruPC);
 
         entry->second.tripCount = entry->second.specCount;
         entry->second.specCount = 0;
@@ -71,7 +71,8 @@ LoopDetector::update(Addr branchAddr, Addr targetAddr) {
     }
 
     if (!taken_backward) {
-	    streamLoopPredictor->updateEntry(branchAddr, entry->second.target, entry->second.outTarget, entry->second.tripCount, entry->second.intraTaken);
+	    streamLoopPredictor->updateEntry(branchAddr, entry->second.target, entry->second.outTarget, entry->second.fallThruPC,
+                                         entry->second.tripCount, entry->second.intraTaken);
     }
 }
 

@@ -1042,8 +1042,9 @@ Commit::commitInsts()
             if (commit_success) {
                 Addr branchAddr = head_inst->pcState().instAddr();
                 Addr targetAddr = head_inst->pcState().clone()->as<RiscvISA::PCState>().npc();
+                Addr fallThruPC = head_inst->pcState().clone()->as<RiscvISA::PCState>().getFallThruPC();
                 if (targetAddr < branchAddr || dbp->loopDetector->findLoop(branchAddr)) {
-                    dbp->loopDetector->update(branchAddr, targetAddr);
+                    dbp->loopDetector->update(branchAddr, targetAddr, fallThruPC);
                 }
                 if (targetAddr > branchAddr && head_inst->isControl()) {
                     dbp->loopDetector->setRecentForwardTakenPC(branchAddr, targetAddr);
