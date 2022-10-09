@@ -52,6 +52,24 @@ class SimpleIndirectPredictor(IndirectPredictor):
     indirectGHRBits = Param.Unsigned(13, "Indirect GHR number of bits")
     instShiftAmt = Param.Unsigned(2, "Number of bits to shift instructions by")
 
+class ITTAGE(IndirectPredictor):
+    type = 'ITTAGE'
+    cxx_class = 'gem5::branch_prediction::ITTAGE'
+    cxx_header = "cpu/pred/ITTAGE.hh"
+
+    indirectPathLength = Param.Unsigned(3, "Previous indirect targets to use for path history")
+    numPredictors = Param.Unsigned(15, "Number of TAGE predictors")
+    TBitSizes = VectorParam.Int(
+        [12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 11, 11, 11, 11, 11], "the bit sizes of the ITTAGE T1~Tn length")
+    TTagBitSizes = VectorParam.Int(
+        [9, 9, 13, 13, 13, 13, 13, 13, 13, 13, 15, 15, 15, 15, 15], "the T1~Tn entry's tag bit size")
+    TTagPcShifts = VectorParam.Int(
+        [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2], "when the T1~Tn entry's tag generating, PC right shift")
+    histLengths = VectorParam.Int(
+        [0, 10, 16, 27, 44, 60, 64, 64, 64, 64, 64, 64, 64, 64, 64], "the ITTAGE T1~Tn history length")
+    indirectTageBits = Param.Unsigned(16, "Tage bit length for base predictor")
+    
+
 class BranchPredictor(SimObject):
     type = 'BranchPredictor'
     cxx_class = 'gem5::branch_prediction::BPredUnit'
@@ -64,7 +82,7 @@ class BranchPredictor(SimObject):
     RASSize = Param.Unsigned(16, "RAS size")
     instShiftAmt = Param.Unsigned(2, "Number of bits to shift instructions by")
 
-    indirectBranchPred = Param.IndirectPredictor(SimpleIndirectPredictor(),
+    indirectBranchPred = Param.IndirectPredictor(ITTAGE(),
       "Indirect branch predictor, set to NULL to disable indirect predictions")
 
 class LocalBP(BranchPredictor):

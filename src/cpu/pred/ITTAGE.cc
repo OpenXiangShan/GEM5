@@ -1,0 +1,447 @@
+//
+// Created by xim on 5/8/21.
+//
+
+#include "cpu/pred/ITTAGE.hh"
+
+#include "base/intmath.hh"
+#include "debug/Indirect.hh"
+#include <algorithm>
+
+namespace gem5
+{
+
+namespace branch_prediction
+{
+
+ITTAGE::ITTAGE(const ITTAGEParams &params):
+    IndirectPredictor(params),
+    pathLength(params.indirectPathLength),
+    numPredictors(params.numPredictors),
+    numTageBits(params.indirectTageBits),
+    TBitSizes(params.TBitSizes),
+    TTagBitSizes(params.TTagBitSizes),
+    TTagPcShifts(params.TTagPcShifts),
+    histLengths(params.histLengths)
+{
+    uint32_t max_histlength = *std::max_element(histLengths.begin(), histLengths.end());
+    threadInfo.resize(params.numThreads);
+    for(int i = 0; i < params.numThreads; i++)
+    {
+        threadInfo[i].ghr.resize(max_histlength);
+    }
+
+    targetCache.resize(params.numThreads);
+    previous_target.resize(params.numThreads);
+    //initialize base predictor
+    base_predictor.resize(params.numThreads);
+    for (unsigned int i = 0; i < params.numThreads; ++i) {
+        base_predictor[i].resize(1 << numTageBits);
+    }
+    //initialize ittage predictor
+    for (unsigned i = 0; i < params.numThreads; i++) {
+        targetCache[i].resize(numPredictors);
+        for (unsigned j = 0; j < numPredictors; ++j) {
+            targetCache[i][j].resize((1 << TBitSizes[j]));
+        }
+    }
+    use_alt = 8;
+    reset_counter = 128;
+}
+
+void
+ITTAGE::genIndirectInfo(ThreadID tid,
+                                         void* & indirect_history)
+{
+    // record the GHR as it was before this prediction
+    // It will be used to recover the history in case this prediction is
+    // wrong or belongs to bad path
+    indirect_history = new boost::dynamic_bitset<>(threadInfo.at(tid).ghr);
+}
+
+void
+ITTAGE::updateDirectionInfo(
+        ThreadID tid, bool actually_taken)
+{
+    threadInfo.at(tid).ghr <<= 1;
+    threadInfo.at(tid).ghr.set(0, actually_taken);
+    
+    //threadInfo.at(tid).ghr &= ghrMask;
+}
+
+void
+ITTAGE::changeDirectionPrediction(ThreadID tid, void * indirect_history, bool actually_taken)
+{
+    boost::dynamic_bitset<>* previousGhr = static_cast<boost::dynamic_bitset<>*>(indirect_history);
+    threadInfo.at(tid).ghr = ((*previousGhr) << 1);
+    threadInfo.at(tid).ghr.set(0, actually_taken);
+    //threadInfo.at(tid).ghr &= ghrMask;
+    // maybe we should update hash here?
+    // No: CSRs are calculated at use-time
+}
+
+bool
+ITTAGE::lookup_helper(Addr br_addr, PCStateBase& target, PCStateBase& alt_target,ThreadID tid, int &predictor, int &predictor_index, int &alt_predictor, int &alt_predictor_index, int &pred_count, bool &use_alt_pred)
+{
+    // todo: adjust according to ITTAGE
+    DPRINTF(Indirect, "Looking up %x\n", br_addr);
+    int pred_counts = 0;
+    std::unique_ptr<PCStateBase> target_1, target_2;
+    int predictor_1 = 0;
+    int predictor_2 = 0;
+    int predictor_index_1 = 0;
+    int predictor_index_2 = 0;
+
+    for (int i = numPredictors - 1; i >= 0; --i) {
+        uint32_t csr1 = getCSR1(threadInfo.at(tid).ghr, i);
+        uint32_t csr2 = getCSR2(threadInfo.at(tid).ghr, i);
+        uint32_t index = getAddrFold(br_addr,i);
+        uint32_t tmp_index = index ^ csr1;
+        uint32_t tmp_tag = getTag(br_addr, csr1, csr2, i);
+        const auto &way = targetCache.at(tid).at(i).at(tmp_index);
+        if (way.tag == tmp_tag && way.target) {
+            if (pred_counts == 0) {//第一次命中
+                set(target_1, way.target);
+                predictor_1 = i;
+                predictor_index_1 = tmp_index;
+                ++pred_counts;
+            }
+            if (pred_counts == 1) {//第二次命中
+                set(target_2, way.target);
+                predictor_2 = i;
+                predictor_index_2 = tmp_index;
+                ++pred_counts;
+                break;
+            }
+        }
+    }
+    // decide whether use altpred or not
+    const auto& way1 = targetCache.at(tid).at(predictor_1).at(predictor_index_1);
+    const auto& way2 = targetCache.at(tid).at(predictor_2).at(predictor_index_2);
+    if (pred_counts > 0) {
+        if (use_alt > 7 && way1.counter == 1 && way1.useful == 0 && pred_counts == 2 && way2.counter > 0) {
+            use_alt_pred = true;
+        } else {
+            use_alt_pred = false;
+        }
+        set(target, *target_1);
+        if (use_alt_pred) {
+            set(alt_target, *target_2);
+        }
+        predictor = predictor_1;
+        predictor_index = predictor_index_1;
+        alt_predictor = predictor_2;
+        alt_predictor_index = predictor_index_2;
+        pred_count = pred_counts;
+        return true;
+    } else {
+        use_alt_pred = false;
+        const PCStateBase *prev_target = previous_target.at(tid).get();
+        if (prev_target) {
+            const PCStateBase *base_target = base_predictor.at(tid).at((br_addr ^ prev_target->instAddr()) % (1 << numTageBits)).get();
+            if (base_target) {
+                set(target, *base_predictor.at(tid).at((br_addr ^ prev_target->instAddr()) % (1 << numTageBits)));
+                // no need to set
+                pred_count = pred_counts;
+                return true;
+            }
+        }
+    }
+    // may not reach here
+    DPRINTF(Indirect, "Miss %x\n", br_addr);
+    return false;
+}
+
+bool ITTAGE::lookup(Addr br_addr, PCStateBase& target, ThreadID tid) {
+    PCStateBase *alt_target = target.clone();
+    int predictor = 0;
+    int predictor_index = 0;
+    int alt_predictor = 0;
+    int alt_predictor_index = 0;
+    int pred_count = 0; // no use
+    bool use_alt_pred = true;
+    //bool lookupResult =
+    lookup_helper(br_addr, target, *alt_target, tid, predictor, predictor_index, alt_predictor, alt_predictor_index, pred_count, use_alt_pred);
+    // if (!lookupResult) {
+    //     return false;
+    // }
+    if (use_alt_pred) {
+        assert(alt_target);
+        set(target, *alt_target);
+    }
+    if (pred_count == 0) {
+        DPRINTF(Indirect, "Hit %x (target:%s) with base_predictor\n", br_addr, target);
+    } else {
+        DPRINTF(Indirect, "Hit %x (target:%s)\n", br_addr, target);
+    }
+    // std::cout<<"DEBUG: target.instAddr="<<target.instAddr()<<std::endl;
+    // target.set(target.instAddr());
+    return true;
+}
+
+void
+ITTAGE::recordIndirect(Addr br_addr, Addr tgt_addr,
+                                        InstSeqNum seq_num, ThreadID tid)
+{
+    DPRINTF(Indirect, "Recording %x seq:%d\n", br_addr, seq_num);
+    HistoryEntry entry(br_addr, tgt_addr, seq_num);
+    threadInfo.at(tid).pathHist.push_back(entry);
+}
+
+void
+ITTAGE::commit(InstSeqNum seq_num, ThreadID tid,
+                                void * indirect_history)
+{
+    DPRINTF(Indirect, "Committing seq:%d\n", seq_num);
+    ThreadInfo &t_info = threadInfo.at(tid);
+
+    // we do not need to recover the GHR, so delete the information
+    boost::dynamic_bitset<>* previousGhr = static_cast<boost::dynamic_bitset<>*>(indirect_history);
+    delete previousGhr;
+
+    if (t_info.pathHist.empty()) return;
+
+    if (t_info.headHistEntry < t_info.pathHist.size() &&
+        t_info.pathHist[t_info.headHistEntry].seqNum <= seq_num) {
+        if (t_info.headHistEntry >= pathLength) {
+            t_info.pathHist.pop_front();
+        } else {
+            ++t_info.headHistEntry;
+        }
+    }
+}
+
+void
+ITTAGE::squash(InstSeqNum seq_num, ThreadID tid)
+{
+    DPRINTF(Indirect, "Squashing seq:%d\n", seq_num);
+    ThreadInfo &t_info = threadInfo.at(tid);
+    auto squash_itr = t_info.pathHist.begin();
+    int valid_count = 0;
+    while (squash_itr != t_info.pathHist.end()) {
+        if (squash_itr->seqNum > seq_num) {
+            break;
+        }
+        ++squash_itr;
+        ++valid_count;
+    }
+    if (squash_itr != t_info.pathHist.end()) {
+        DPRINTF(Indirect, "Squashing series starting with sn:%d\n",
+                squash_itr->seqNum);
+    }
+    int queue_size = t_info.pathHist.size();
+    for (int i = 0; i < queue_size - valid_count; ++i) {
+        t_info.ghr >>=1;
+    }
+    t_info.pathHist.erase(squash_itr, t_info.pathHist.end());
+}
+
+void
+ITTAGE::deleteIndirectInfo(ThreadID tid, void * indirect_history)
+{
+    boost::dynamic_bitset<>* previousGhr = static_cast<boost::dynamic_bitset<>*>(indirect_history);
+    threadInfo.at(tid).ghr = *previousGhr;
+
+    delete previousGhr;
+}
+
+void
+ITTAGE::recordTarget(
+        InstSeqNum seq_num, void * indirect_history, const PCStateBase& target,
+        ThreadID tid)
+{
+    // here ghr was appended one more
+    boost::dynamic_bitset<> ghr_last = threadInfo.at(tid).ghr.set(0, 1);// | 1;
+    threadInfo.at(tid).ghr >>= 1;
+    DPRINTF(Indirect, "record with target:%s\n", target);
+    // todo: adjust according to ITTAGE
+    ThreadInfo &t_info = threadInfo.at(tid);
+
+    // Should have just squashed so this branch should be the oldest
+    auto hist_entry = *(t_info.pathHist.rbegin());
+    // Temporarily pop it off the history so we can calculate the set
+    t_info.pathHist.pop_back();
+
+    // we have lost the original lookup info, so we need to lookup again
+    int predictor = 0;
+    int predictor_index = 0;
+    int alt_predictor = 0;
+    int alt_predictor_index = 0;
+    int pred_count = 0; // no use
+    int predictor_sel = 0;
+    int predictor_index_sel = 0;
+    bool use_alt_pred = true;
+    PCStateBase *target_1 = target.clone();
+    PCStateBase *target_2 = target.clone();
+    std::unique_ptr<PCStateBase> target_sel;
+    bool predictor_found = lookup_helper(hist_entry.pcAddr, *target_1, *target_2, tid, predictor, predictor_index, alt_predictor, alt_predictor_index, pred_count, use_alt_pred);
+    if (predictor_found && use_alt_pred) {
+        set(target_sel, target_2);
+        predictor_sel = alt_predictor;
+        predictor_index_sel = alt_predictor_index;
+    } else if (predictor_found) {
+        set(target_sel, target_1);
+        predictor_sel = predictor;
+        predictor_index_sel = predictor_index;
+    } else {
+        predictor_sel = predictor;
+        predictor_index_sel = predictor_index;
+    }
+
+    // update previous target
+    set(previous_target.at(tid), target);
+    DPRINTF(Indirect, "update previous target: %s\n", *previous_target.at(tid));
+    // update base predictor
+    const PCStateBase *prev_target = previous_target.at(tid).get();
+    if (prev_target) {
+        set(base_predictor.at(tid).at((hist_entry.pcAddr ^ previous_target.at(tid)->instAddr()) % (1 << numTageBits)), target);
+        DPRINTF(Indirect, "Update base predictor: %s\n", *base_predictor.at(tid).at((hist_entry.pcAddr ^ previous_target.at(tid)->instAddr()) % (1 << numTageBits)));
+    }
+    
+    // update global history anyway
+    hist_entry.targetAddr = target.instAddr();
+    t_info.pathHist.push_back(hist_entry);
+
+    bool allocate_values = true;
+
+
+    if (pred_count > 0 && target_sel->equals(target)) {
+        // the prediction was from predictor tables and correct
+        // increment the counter
+        if (targetCache.at(tid).at(predictor_sel).at(predictor_index_sel).counter <= 2) {
+            ++targetCache.at(tid).at(predictor_sel).at(predictor_index_sel).counter;
+        }
+    } else {
+        // a misprediction
+        if (pred_count > 0) {
+            if (targetCache.at(tid).at(predictor).at(predictor_index).target->equals(target) && pred_count == 2 && !targetCache.at(tid).at(alt_predictor).at(alt_predictor_index).target->equals(target)) {
+                // if pred was right and alt_pred was wrong
+                targetCache.at(tid).at(predictor).at(predictor_index).useful = 1;
+                allocate_values = false;
+                if (use_alt > 0) {
+                    --use_alt;
+                }
+            }
+            if (!targetCache.at(tid).at(predictor).at(predictor_index).target->equals(target) && pred_count == 2 && targetCache.at(tid).at(alt_predictor).at(alt_predictor_index).target->equals(target)) {
+                // if pred was wrong and alt_pred was right
+                if (use_alt < 15) {
+                    ++use_alt;
+                }
+            }
+            // if counter > 0 then decrement, else replace
+            if (targetCache.at(tid).at(predictor_sel).at(predictor_index_sel).counter > 0) {
+                --targetCache.at(tid).at(predictor_sel).at(predictor_index_sel).counter;
+            } else {
+                set(targetCache.at(tid).at(predictor_sel).at(predictor_index_sel).target, target);
+                targetCache.at(tid).at(predictor_sel).at(predictor_index_sel).tag =
+                    getTag(hist_entry.pcAddr, getCSR1(threadInfo.at(tid).ghr, predictor_sel), getCSR2(threadInfo.at(tid).ghr, predictor_sel), predictor_sel);
+                    //(hist_entry.pcAddr & 0xff) ^ getCSR1(threadInfo.at(tid).ghr, predictor_sel) ^ (getCSR2(threadInfo.at(tid).ghr, predictor_sel) << 1);
+                targetCache.at(tid).at(predictor_sel).at(predictor_index_sel).counter = 1;
+                targetCache.at(tid).at(predictor_sel).at(predictor_index_sel).useful = 0;
+            }
+        }
+        if (pred_count == 0 || allocate_values) {
+            int allocated = 0;
+            uint32_t start_pos;
+            if (pred_count > 0){
+                start_pos = predictor_sel + 1;
+            } else {
+                start_pos = 0;
+            }
+            for (; start_pos < numPredictors; ++start_pos) {
+                uint32_t new_index = getAddrFold(hist_entry.pcAddr, start_pos);
+                new_index ^= getCSR1(threadInfo.at(tid).ghr, start_pos);
+                if (targetCache.at(tid).at(start_pos).at(new_index).useful == 0) {
+                    if (reset_counter < 255) reset_counter++;
+                    set(targetCache.at(tid).at(start_pos).at(new_index).target, target);
+                    DPRINTF(Indirect, "record prediction table: %d, %d, %s\n", start_pos, new_index, *targetCache.at(tid).at(start_pos).at(new_index).target);
+                    targetCache.at(tid).at(start_pos).at(new_index).tag =
+                        getTag(hist_entry.pcAddr, getCSR1(threadInfo.at(tid).ghr, start_pos), getCSR2(threadInfo.at(tid).ghr, start_pos), start_pos);
+                        //(hist_entry.pcAddr & 0xff) ^ getCSR1(threadInfo.at(tid).ghr, start_pos) ^ (getCSR2(threadInfo.at(tid).ghr, start_pos) << 1);
+                    targetCache.at(tid).at(start_pos).at(new_index).counter = 1;
+                    ++allocated;
+                    ++start_pos; // do not allocate on consecutive predictors
+                    if (allocated == 3) {
+                        break;
+                    }
+                } else {
+                    // reset useful bits
+                    if (reset_counter > 0) --reset_counter;
+                    if (reset_counter == 0) {
+                        for (int i = 0; i < numPredictors; ++i) {
+                            for (int j = 0; j < (1 << TBitSizes[i]); ++j) {
+                                targetCache.at(tid).at(i).at(j).useful = 0;
+                            }
+                        }
+                        reset_counter = 128;
+                    }
+                }
+            }
+        }
+
+    }
+
+    threadInfo.at(tid).ghr = (threadInfo.at(tid).ghr << 1) | ghr_last;
+}
+
+uint64_t ITTAGE::getTableGhrLen(int table) {
+    return histLengths[table];
+}
+
+uint64_t ITTAGE::getCSR1(boost::dynamic_bitset<>& ghr, int table) {
+    uint64_t ghrLen = getTableGhrLen(table);
+    boost::dynamic_bitset<> ghr_cpy(ghr); // remove unnecessary data on higher position
+    ghr_cpy.resize(ghrLen);
+    boost::dynamic_bitset<> ret(ghrLen, 0);
+    // uint64_t ret = 0, mask = ((1 << (TBitSizes[table]-1)) - 1);
+    int i = 0;
+    while (i + 7 < ghrLen) {
+        ret = ghr_cpy ^ ret;
+        ghr_cpy >>= 7;
+        i += 7;
+    }
+    ret = ret ^ ghr_cpy;
+    ret.resize(TBitSizes[table]-1);
+    return ret.to_ulong();
+}
+
+uint64_t ITTAGE::getCSR2(boost::dynamic_bitset<>& ghr, int table) {
+    uint64_t ghrLen = getTableGhrLen(table);
+    boost::dynamic_bitset<> ghr_cpy(ghr); // remove unnecessary data on higher position
+    ghr_cpy.resize(ghrLen);
+    boost::dynamic_bitset<> ret(ghrLen, 0);
+    // uint64_t ret = 0, mask = ((1 << (TBitSizes[table])) - 1);
+    int i = 0;
+    while (i + 8 < ghrLen) {
+        ret = ghr_cpy ^ ret;
+        ghr_cpy >>= 8;
+        i += 8;
+    }
+    ret = ret ^ ghr_cpy;
+    ret.resize(TBitSizes[table]);
+    return ret.to_ulong();
+}
+
+uint64_t ITTAGE::getAddrFold(uint64_t address, int table) {
+    uint64_t folded_address, k;
+    folded_address = 0;
+    for (k = 0; k < 3; k++) {
+        folded_address ^= ((address % (1 << ((k + 1) * 8))) / (1 << (k * 8)));
+    }
+    folded_address ^= address / (1 << (24));
+    return folded_address & ((1 << TBitSizes[table]) - 1);
+}
+uint64_t ITTAGE::getTag(Addr pc, uint64_t csr1, uint64_t csr2, int table) {
+    return ((pc >> TTagPcShifts[table]) ^ csr1 ^ (csr2 << 1)) & ((1 << TTagBitSizes[table]) - 1);
+}
+
+
+
+
+} // namespace branch_prediction
+} // namespace gem5
+
+
+//1:485573
+//2:490229
+//3:1161498
