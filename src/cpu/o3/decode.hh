@@ -320,6 +320,10 @@ class Decode
         statistics::Scalar decodedInsts;
         /** Stat for total number of squashed instructions. */
         statistics::Scalar squashedInsts;
+        /** stat for total number of instructions that mispredicted due to pc. */
+        statistics::Scalar mispredictedByPC;
+        /** stat for total number of instructions that mispredicted due to npc. */
+        statistics::Scalar mispredictedByNPC;
     } stats;
 };
 
