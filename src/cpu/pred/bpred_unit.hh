@@ -333,6 +333,9 @@ class BPredUnit : public SimObject
         statistics::Scalar indirectMispredicted;
     } stats;
 
+    std::map<Addr, uint32_t> missPredPcCount;
+    bool isDumpMissPredPC;
+
   protected:
     /** Number of bits to shift instructions by for predictor addresses. */
     const unsigned instShiftAmt;

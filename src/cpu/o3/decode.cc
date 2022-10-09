@@ -142,7 +142,11 @@ Decode::DecodeStats::DecodeStats(CPU *cpu)
       ADD_STAT(decodedInsts, statistics::units::Count::get(),
                "Number of instructions handled by decode"),
       ADD_STAT(squashedInsts, statistics::units::Count::get(),
-               "Number of squashed instructions handled by decode")
+               "Number of squashed instructions handled by decode"),
+      ADD_STAT(mispredictedByPC, statistics::units::Count::get(),
+               "Number of instructions that mispredicted due to pc"),
+      ADD_STAT(mispredictedByNPC, statistics::units::Count::get(),
+               "Number of instructions that mispredicted due to npc")
 {
     idleCycles.prereq(idleCycles);
     blockedCycles.prereq(blockedCycles);
@@ -154,6 +158,8 @@ Decode::DecodeStats::DecodeStats(CPU *cpu)
     controlMispred.prereq(controlMispred);
     decodedInsts.prereq(decodedInsts);
     squashedInsts.prereq(squashedInsts);
+    mispredictedByPC.flags(statistics::total);
+    mispredictedByNPC.flags(statistics::total);
 }
 
 void
@@ -718,6 +724,15 @@ Decode::decodeInsts(ThreadID tid)
             std::unique_ptr<PCStateBase> target = inst->branchTarget();
             if (*target != inst->readPredTarg()) {
                 ++stats.branchMispred;
+
+                RiscvISA::PCState cpTarget = target->clone()->as<RiscvISA::PCState>();
+                RiscvISA::PCState cpPredTarget = inst->readPredTarg().clone()->as<RiscvISA::PCState>();
+
+                if (cpTarget.instAddr() != cpPredTarget.instAddr() && cpTarget.npc() == cpPredTarget.npc()) {
+                    ++stats.mispredictedByPC;
+                } else if (cpTarget.instAddr() == cpPredTarget.instAddr() && cpTarget.npc() != cpPredTarget.npc()) {
+                    ++stats.mispredictedByNPC;
+                }
 
                 // Might want to set some sort of boolean and just do
                 // a check at the end
