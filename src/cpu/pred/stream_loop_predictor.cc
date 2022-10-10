@@ -120,20 +120,47 @@ StreamLoopPredictor::controlSquash(unsigned fsqId, FetchStream stream, Addr bran
     }
 }
 
-void
-StreamLoopPredictor::isIntraSquash(unsigned fsqId, FetchStream stream, Addr branchAddr) {
-    for (auto &iter : loopTable) {
-        if (iter.second.target < branchAddr && branchAddr < iter.second.branch) {
-            defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
-            debugFlagOn = true;
-            DPRINTF(DecoupleBP || debugFlagOn, "squash fsq: %lu, pred: %#lx [%#lx --> %#lx], "
-                    "exe: %#lx [%#lx --> %#lx] at %#lx, "
-                    "in loop [%#lx, %#lx]\n",
-                    fsqId, stream.streamStart, stream.predBranchPC, stream.predTarget,
-                    stream.streamStart, stream.exeBranchPC, stream.exeTarget, branchAddr,
-                    iter.second.target, iter.second.branch);
-        }
+std::pair<bool, std::vector<DivideEntry> >
+StreamLoopPredictor::updateTAGE(Addr streamStart, Addr branchAddr, Addr targetAddr) {
+    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    if (streamStart == ObservingPC || branchAddr == ObservingPC2) {
+        debugFlagOn = true;
     }
+    auto entry = loopTable.find(branchAddr);
+    bool hasIntrLoop = false;
+    std::vector<DivideEntry> divideEntryVec;
+    if (entry != loopTable.end()) {
+        Addr tempStart = streamStart;
+        for (const auto it : loopTable) {
+            if (tempStart < it.second.branch && it.second.branch < entry->second.branch && it.second.outTarget <= entry->second.branch) {
+                hasIntrLoop = true;
+                DivideEntry temp = DivideEntry(false, tempStart, it.second.branch, it.second.outTarget);
+                tempStart = it.second.outTarget;
+                divideEntryVec.push_back(temp);
+                DPRINTF(DecoupleBP || debugFlagOn, "detect loop: %#lx-->%#lx, update tempStart to %#lx\n",
+                        it.second.target, it.second.branch, tempStart);
+            }
+        }
+        if (targetAddr == entry->second.target) {
+            DivideEntry temp = DivideEntry(true, tempStart, entry->second.branch, targetAddr);
+            divideEntryVec.push_back(temp);
+        } else if (targetAddr == entry->second.outTarget) {
+            DivideEntry temp = DivideEntry(false, tempStart, entry->second.branch, targetAddr);
+            divideEntryVec.push_back(temp);
+        } else {
+            DPRINTF(DecoupleBP || debugFlagOn, "target address doesn't match\n");
+        }
+    } else {
+        DPRINTF(DecoupleBP || debugFlagOn, "branchAddr: %#lx, not found in table\n",
+                branchAddr);
+    }
+
+    for (const auto it : divideEntryVec) {
+        DPRINTF(DecoupleBP || debugFlagOn, "divided stream: %s, %#lx [%#lx-->%#lx]\n",
+                it.taken ? "taken" : "not taken", it.start, it.branch, it.next);
+    }
+
+    return std::make_pair(hasIntrLoop, divideEntryVec);
 }
 
 } // namespace branch_prediction

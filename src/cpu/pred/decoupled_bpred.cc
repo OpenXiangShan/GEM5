@@ -30,6 +30,8 @@ DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
 
     loopDetector->setStreamLoopPredictor(streamLoopPredictor);
 
+    streamTAGE->setStreamLoopPredictor(streamLoopPredictor);
+
     registerExitCallback([this]() {
         auto out_handle = simout.create("topMisPredicts.txt", false, true);
         *out_handle->stream() << "streamStart" << " " << "control pc" << " " << "count" << std::endl;
@@ -282,8 +284,6 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
     stream.exeBranchPC = control_pc.instAddr();
     stream.exeTarget = corr_target.instAddr();
     stream.exeEndPC = stream.exeBranchPC + control_inst_size;
-
-    streamLoopPredictor->isIntraSquash(stream_id, stream, control_pc.instAddr());
 
     // recover history to the moment doing prediction
     DPRINTF(DecoupleBPHist,

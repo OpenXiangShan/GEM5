@@ -141,6 +141,7 @@ class StreamTAGE : public TimedPredictor
         Addr tag = 0;
         TickedStreamStorage target;
         int useful = 0;
+        bool isLoop = false;
     };
 
     std::vector<std::vector<PredEntry>> tageTable;

@@ -4,6 +4,7 @@
 #include <map>
 #include <list>
 #include <utility>
+#include <vector>
 
 #include "base/statistics.hh"
 #include "base/types.hh"
