@@ -498,13 +498,13 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
                 entry.target.set(curTick(), stream_start_pc, control_pc, target_pc,
                                 control_size, 0, end_type, true, !actually_taken);
                 entry.useful = 0;
-                entry.valid = true;
                 setTag(entry.tag, new_tag, start_table);
 
                 allocated++;
                 if (!entry.valid) {
                     new_allocated++;
                 }
+                entry.valid = true;
                 if (allocated == numTablesToAlloc) {
                     break;
                 }
