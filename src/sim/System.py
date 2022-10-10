@@ -132,4 +132,6 @@ class System(SimObject):
     # Checkpoint image file for Xiangshan
     restore_from_gcpt = Param.Bool(False, "Restoring from Xiangshan gcpt")
     gcpt_file = Param.String("", "Xiangshan checkpoint image file")
+    map_to_raw_cpt = Param.Bool(False, "Map physical memory to raw cpt with mmap")
     gcpt_restorer_file = Param.String("", "GCPT restorer image file")
+

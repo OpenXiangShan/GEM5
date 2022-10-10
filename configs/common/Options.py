@@ -190,6 +190,13 @@ def addNoISAOptions(parser):
                         default="{}/build/riscv64-nemu-interpreter-so".format(
                             os.environ['NEMU_HOME']),
                         help="The shared lib file used to do difftest")
+    # ArchDB option
+    parser.add_argument("--enable-arch-db",
+                        action="store_true",
+                        help="enable arch database")
+    parser.add_argument("--arch-db-file",
+                        action="store",
+                        help="Where to save database")
 
 
 # Add common options that assume a non-NULL ISA.
@@ -560,8 +567,8 @@ def addFSOptions(parser):
                       default="",
                       help="The path of generic risc-v checkpoint restorer")
 
-    parser.add_argument("--raw-bbl", action= "store_true",
-                        help = "The kernel/bbl/app is not elf but binary")
+    parser.add_argument("--raw-cpt", action= "store_true",
+                        help = "The checkpoint file is not gz but binary")
 
     parser.add_argument("--mmc-img", action="store", type=str,
                         default=None, help="The path of mmc img")

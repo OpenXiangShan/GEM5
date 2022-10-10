@@ -788,6 +788,14 @@ Fetch::doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst,
 }
 
 void
+Fetch::flushFetchBuffer()
+{
+    for (ThreadID i = 0; i < numThreads; ++i) {
+        fetchBufferValid[i] = false;
+    }
+}
+
+void
 Fetch::squashFromDecode(const PCStateBase &new_pc, const DynInstPtr squashInst,
         const InstSeqNum seq_num, ThreadID tid)
 {
@@ -1329,6 +1337,8 @@ Fetch::fetch(bool &status_change)
                 // current block.
                 break;
             }
+
+            DPRINTF(Fetch, "Supplying fetch from fetchBuffer\n");
 
             memcpy(dec_ptr->moreBytesPtr(),
                     fetchBuffer[tid] + blkOffset * instSize, instSize);

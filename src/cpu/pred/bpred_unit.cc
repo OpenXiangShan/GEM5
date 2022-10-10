@@ -46,10 +46,11 @@
 
 #include "arch/generic/pcstate.hh"
 #include "base/compiler.hh"
+#include "base/output.hh"
 #include "base/trace.hh"
 #include "config/the_isa.hh"
 #include "debug/Branch.hh"
-
+#include "sim/core.hh"
 namespace gem5
 {
 
@@ -67,10 +68,22 @@ BPredUnit::BPredUnit(const Params &params)
       RAS(numThreads),
       iPred(params.indirectBranchPred),
       stats(this),
+      isDumpMissPredPC(params.isDumpMisspredPC),
       instShiftAmt(params.instShiftAmt)
 {
     for (auto& r : RAS)
         r.init(params.RASSize);
+    if (isDumpMissPredPC) {
+        registerExitCallback([this]() {
+            // output to file "pcMiss.txt"
+            auto out_handle = simout.create("pcMiss.txt", false, true);
+            *out_handle->stream() << "pc" << " " << "cnt" << std::endl;
+            for (auto& it : missPredPcCount) {
+                *out_handle->stream() << it.first << " " << it.second << std::endl;
+            }
+            simout.close(out_handle);
+        });
+    }
 }
 
 BPredUnit::BPredUnitStats::BPredUnitStats(statistics::Group *parent)
@@ -100,6 +113,7 @@ BPredUnit::BPredUnitStats::BPredUnitStats(statistics::Group *parent)
                "Number of mispredicted indirect branches.")
 {
     BTBHitRatio.precision(6);
+
 }
 
 probing::PMUUPtr
@@ -463,6 +477,9 @@ BPredUnit::squash(const InstSeqNum &squashed_sn,
             }
             if (hist_it->wasIndirect) {
                 ++stats.indirectMispredicted;
+                if (isDumpMissPredPC) {
+                    missPredPcCount[hist_it->pc]++;
+                }
                 if (iPred) {
                     iPred->recordTarget(
                         hist_it->seqNum, pred_hist.front().indirectHistory,

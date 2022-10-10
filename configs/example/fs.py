@@ -131,10 +131,9 @@ def build_test_system(np):
         if args.generic_rv_cpt is not None :
             test_sys.workload.bootloader = ''
             test_sys.workload.xiangshan_cpt = True
-        else :
-            test_sys.workload.bootloader = args.kernel
-            test_sys.workload.xiangshan_cpt = False
-            if args.xiangshan_system and args.raw_bbl:
+            if args.xiangshan_system and args.raw_cpt:
+                test_sys.map_to_raw_cpt = True
+                print('Using raw bbl', args.kernel)
                 test_sys.workload.raw_bootloader = True
 
     elif args.kernel is not None:

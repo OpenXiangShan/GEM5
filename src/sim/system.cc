@@ -183,7 +183,7 @@ System::System(const Params &p)
       workload(p.workload),
       physmem(name() + ".physmem", p.memories, p.mmap_using_noreserve,
               p.shared_backstore, p.restore_from_gcpt, p.gcpt_restorer_file,
-              p.gcpt_file, p.auto_unlink_shared_backstore),
+              p.gcpt_file, p.map_to_raw_cpt, p.auto_unlink_shared_backstore),
       ShadowRomRanges(p.shadow_rom_ranges.begin(),
                       p.shadow_rom_ranges.end()),
       memoryMode(p.mem_mode),
@@ -552,7 +552,7 @@ void System::initState()
     SimObject::initState();
 
     if (physmem.tryRestoreFromXSCpt()) {
-        inform("Restoring from Generic Checkpoint\n");
+        inform("Restoring from Xiangshan RISC-V Checkpoint\n");
     }
 }
 

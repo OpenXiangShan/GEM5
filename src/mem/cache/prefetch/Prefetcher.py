@@ -147,6 +147,74 @@ class QueuedPrefetcher(BasePrefetcher):
     throttle_control_percentage = Param.Percent(0, "Percentage of requests \
         that can be throttled depending on the accuracy of the prefetcher.")
 
+class SMSPrefetcher(QueuedPrefetcher):
+    type = "SMSPrefetcher"
+    cxx_class = 'gem5::prefetch::SMSPrefetcher'
+    cxx_header = 'mem/cache/prefetch/sms.hh'
+
+    use_virtual_addresses = True
+    region_size = Param.Int(1024, "region size")
+    # filter table (full-assoc)
+    filter_entries = Param.MemorySize("16", "num of filter table entries")
+    filter_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.filter_entries,
+            size=Parent.filter_entries),
+        "Indexing policy of filter table"
+    )
+    filter_replacement_policy = Param.BaseReplacementPolicy(
+        FIFORP(),
+        "Replacement policy of filter table"
+    )
+    # active generation table (full-assoc)
+    act_entries = Param.MemorySize(
+        "16",
+        "num of active generation table entries"
+    )
+    act_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.act_entries,
+            size=Parent.act_entries),
+        "Indexing policy of active generation table"
+    )
+    act_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(),
+        "Replacement policy of active generation table"
+    )
+    # pht table (set-assoc)
+    pht_entries = Param.MemorySize(
+        "64",
+        "num of pattern history table entries"
+    )
+    pht_assoc = Param.Int(2, "Associativity of the pattern history table")
+    pht_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.pht_assoc,
+            size=Parent.pht_entries),
+        "Indexing policy of pattern history table"
+    )
+    pht_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(),
+        "Replacement policy of pattern history table"
+    )
+    # pf gen table (full-assoc)
+    # not implemented now, because queued prefetcher already had a filter
+    pf_gen_entries = Param.MemorySize("16", "num of pf_gen entries")
+    pf_gen_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.pf_gen_entries,
+            size=Parent.pf_gen_entries),
+        "Indexing policy of pf_gen"
+    )
+    pf_gen_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(),
+        "Replacement policy of pf_gen"
+    )
+
 class StridePrefetcherHashedSetAssociative(SetAssociative):
     type = 'StridePrefetcherHashedSetAssociative'
     cxx_class = 'gem5::prefetch::StridePrefetcherHashedSetAssociative'
@@ -428,13 +496,13 @@ class BOPPrefetcher(QueuedPrefetcher):
     cxx_class = 'gem5::prefetch::BOP'
     cxx_header = "mem/cache/prefetch/bop.hh"
     score_max = Param.Unsigned(31, "Max. score to update the best offset")
-    round_max = Param.Unsigned(100, "Max. round to update the best offset")
-    bad_score = Param.Unsigned(10, "Score at which the HWP is disabled")
-    rr_size = Param.Unsigned(64, "Number of entries of each RR bank")
+    round_max = Param.Unsigned(50, "Max. round to update the best offset")
+    bad_score = Param.Unsigned(1, "Score at which the HWP is disabled")
+    rr_size = Param.Unsigned(256, "Number of entries of each RR bank")
     tag_bits = Param.Unsigned(12, "Bits used to store the tag")
-    offset_list_size = Param.Unsigned(46,
+    offset_list_size = Param.Unsigned(12,
                 "Number of entries in the offsets list")
-    negative_offsets_enable = Param.Bool(True,
+    negative_offsets_enable = Param.Bool(False,
                 "Initialize the offsets list also with negative values \
                 (i.e. the table will have half of the entries with positive \
                 offsets and the other half with negative ones)")

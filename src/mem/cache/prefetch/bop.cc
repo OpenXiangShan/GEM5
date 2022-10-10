@@ -56,7 +56,7 @@ BOP::BOP(const BOPPrefetcherParams &p)
     if (!isPowerOf2(blkSize)) {
         fatal("%s: cache line size is not power of 2\n", name());
     }
-    if (!(p.negative_offsets_enable && (p.offset_list_size % 2 == 0))) {
+    if (p.negative_offsets_enable && !(p.offset_list_size % 2 == 0)) {
         fatal("%s: negative offsets enabled with odd offset list size\n",
               name());
     }

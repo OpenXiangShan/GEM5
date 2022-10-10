@@ -361,7 +361,10 @@ class Fetch
 
     RequestPort &getInstPort() { return icachePort; }
 
+
     branch_prediction::DecoupledBPU * getDBP() { return dbp; }
+
+    void flushFetchBuffer();
 
   private:
     DynInstPtr buildInst(ThreadID tid, StaticInstPtr staticInst,

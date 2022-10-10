@@ -323,7 +323,6 @@ CPU::CPU(const BaseO3CPUParams &params)
         diff.dynamic_config.ignore_illegal_mem_access = false;
         diff.dynamic_config.debug_difftest = false;
         proxy->update_config(&diff.dynamic_config);
-
         if (params.nemuSDimg.size() && params.nemuSDCptBin.size()) {
             proxy->sdcard_init(params.nemuSDimg.c_str(),
                                params.nemuSDCptBin.c_str());
@@ -1311,7 +1310,8 @@ CPU::difftestStep(const DynInstPtr &inst)
             hasCommit = true;
             readGem5Regs();
             gem5RegFile[DIFFTEST_THIS_PC] = inst->pcState().instAddr();
-            fprintf(stderr, "Will start memcpy to NEMU\n");
+            fprintf(stderr, "Will start memcpy to NEMU from %#lx, size=%lu\n",
+                    (uint64_t)pmemStart, pmemSize);
             proxy->memcpy(0x80000000u, pmemStart + pmemSize * diff.cpu_id,
                           pmemSize, DUT_TO_REF);
             fprintf(stderr, "Will start regcpy to NEMU\n");
@@ -1467,6 +1467,13 @@ CPU::squashInstIt(const ListIt &instIt, ThreadID tid)
         // Remove the instruction from the list.
         removeList.push(instIt);
     }
+}
+
+void
+CPU::flushTLBs()
+{
+    BaseCPU::flushTLBs();
+    fetch.flushFetchBuffer();
 }
 
 void
@@ -1770,6 +1777,9 @@ CPU::diffWithNEMU(const DynInstPtr &inst)
             }
         }
     }
+    DPRINTF(ValueCommit, "Inst [sn:%lli] PC, NEMU: %#lx, GEM5: %#lx\n",
+                inst->seqNum, nemu_pc, gem5_pc
+               );
 
     DPRINTF(ValueCommit, "Inst [sn:%llu] @ %#lx in GEM5 is %s\n",
             inst->seqNum, inst->pcState().instAddr(),

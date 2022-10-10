@@ -143,7 +143,11 @@ def config_cache(options, system):
     for i in range(options.num_cpus):
         if options.caches:
             icache = icache_class(**_get_cache_opts('l1i', options))
-            dcache = dcache_class(**_get_cache_opts('l1d', options))
+            dcache = dcache_class(enable_arch_db=options.enable_arch_db,
+                                  arch_db_file=options.arch_db_file,
+                                  **_get_cache_opts('l1d', options))
+            if dcache.prefetcher != NULL:
+                dcache.prefetcher.registerTLB(system.cpu[i].mmu.dtb)
 
             # If we have a walker cache specified, instantiate two
             # instances here
@@ -202,6 +206,8 @@ def config_cache(options, system):
             system.cpu[i].connectAllPorts(
                 system.tol2bus.cpu_side_ports,
                 system.membus.cpu_side_ports, system.membus.mem_side_ports)
+            if system.l2.prefetcher != NULL:
+                system.l2.prefetcher.registerTLB(system.cpu[i].mmu.dtb)
         elif options.external_memory_system:
             system.cpu[i].connectUncachedPorts(
                 system.membus.cpu_side_ports, system.membus.mem_side_ports)
