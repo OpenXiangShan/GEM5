@@ -304,6 +304,7 @@ Queued::processMissingTranslations(unsigned max)
 void
 Queued::translationComplete(DeferredPacket *dp, bool failed)
 {
+    bool in_squash = false;
     auto it = pfqMissingTranslation.begin();
     while (it != pfqMissingTranslation.end()) {
         if (&(*it) == dp) {
@@ -311,31 +312,47 @@ Queued::translationComplete(DeferredPacket *dp, bool failed)
         }
         it++;
     }
-    assert(it != pfqMissingTranslation.end());
-    if (!failed) {
-        DPRINTF(HWPrefetch, "%s Translation of vaddr %#x succeeded: "
-                "paddr %#x \n", tlb->name(),
-                it->translationRequest->getVaddr(),
-                it->translationRequest->getPaddr());
-        Addr target_paddr = it->translationRequest->getPaddr();
-        // check if this prefetch is already redundant
-        if (cacheSnoop && (inCache(target_paddr, it->pfInfo.isSecure()) ||
-                    inMissQueue(target_paddr, it->pfInfo.isSecure()))) {
-            statsQueued.pfInCache++;
-            DPRINTF(HWPrefetch, "Dropping redundant in "
-                    "cache/MSHR prefetch addr:%#x\n", target_paddr);
-        } else {
-            Tick pf_time = curTick() + clockPeriod() * latency;
-            it->createPkt(target_paddr, blkSize, requestorId, tagPrefetch,
-                          pf_time);
-            addToQueue(pfq, *it);
+    // If the dp is not in pfqMissingTranslation,
+    // we will find it in pfqSquashed
+    if (it == pfqMissingTranslation.end()){
+        in_squash = true;
+        it = pfqSquashed.begin();
+        while (it != pfqSquashed.end()) {
+            if (&(*it) == dp) {
+                break;
+            }
+            it++;
         }
-    } else {
-        DPRINTF(HWPrefetch, "%s Translation of vaddr %#x failed, dropping "
-                "prefetch request %#x \n", tlb->name(),
-                it->translationRequest->getVaddr());
+        assert(it != pfqSquashed.end());
     }
-    pfqMissingTranslation.erase(it);
+    if (!in_squash){
+        if (!failed) {
+            DPRINTF(HWPrefetch, "%s Translation of vaddr %#x succeeded: "
+                    "paddr %#x \n", tlb->name(),
+                    it->translationRequest->getVaddr(),
+                    it->translationRequest->getPaddr());
+            Addr target_paddr = it->translationRequest->getPaddr();
+            // check if this prefetch is already redundant
+            if (cacheSnoop && (inCache(target_paddr, it->pfInfo.isSecure()) ||
+                        inMissQueue(target_paddr, it->pfInfo.isSecure()))) {
+                statsQueued.pfInCache++;
+                DPRINTF(HWPrefetch, "Dropping redundant in "
+                        "cache/MSHR prefetch addr:%#x\n", target_paddr);
+            } else {
+                Tick pf_time = curTick() + clockPeriod() * latency;
+                it->createPkt(target_paddr, blkSize, requestorId, tagPrefetch,
+                            pf_time);
+                addToQueue(pfq, *it);
+            }
+        } else {
+            DPRINTF(HWPrefetch, "%s Translation of vaddr %#x failed, dropping "
+                    "prefetch request %#x \n", tlb->name(),
+                    it->translationRequest->getVaddr());
+        }
+        pfqMissingTranslation.erase(it);
+    } else {
+        pfqSquashed.erase(it);
+    }
 }
 
 bool
@@ -511,8 +528,21 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
         }
         DPRINTF(HWPrefetch, "Prefetch queue full, removing lowest priority "
                             "oldest packet, addr: %#x\n",it->pfInfo.getAddr());
-        delete it->pkt;
-        queue.erase(it);
+        if (&queue == &pfq || !it->ongoingTranslation){
+            delete it->pkt;
+            queue.erase(it);
+        } else {
+            /* If the packet's translation is on going,
+             * we can't erase it here. Just put it into
+             * the pfqSquashed list and wait for
+             * translationComplete to erase it */
+            assert(&queue == &pfqMissingTranslation);
+            DeferredPacket * old_ptr = &(*it);
+            pfqSquashed.splice(pfqSquashed.end(),queue,it);
+            it = pfqSquashed.end();
+            it--;
+            assert(&(*it) == old_ptr);
+        }
     }
 
     if ((queue.size() == 0) || (dpp <= queue.back())) {
