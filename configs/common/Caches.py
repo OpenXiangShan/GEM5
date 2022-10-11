@@ -65,12 +65,14 @@ class L1_ICache(L1Cache):
     prefetch_on_access = True
 
 class L1_DCache(L1Cache):
+    writeback_clean = True
     tag_latency = 1
     data_latency = 1
     response_latency = 1
     mshrs = 16
 
 class L2Cache(Cache):
+    writeback_clean = True
     tag_latency = 2
     data_latency = 4
     response_latency = 4
