@@ -31,6 +31,38 @@ using FetchStreamId = uint64_t;
 using FetchTargetId = uint64_t;
 using PredictionID = uint64_t;
 
+struct DivideEntry
+{
+    bool taken;
+    Addr start;
+    Addr branch;
+    Addr next;
+    Addr fallThruPC;
+
+    DivideEntry() : taken(false), start(0), branch(0), next(0), fallThruPC(0) {}
+    DivideEntry(bool taken, Addr start, Addr branch, Addr next, Addr fallThruPC) : taken(taken), start(start), branch(branch), next(next),
+                                                                                   fallThruPC(fallThruPC) {}
+
+};
+
+struct LoopEntry
+{
+    // may need to add a valid bit
+    bool valid;
+    Addr branch;
+    Addr target;
+    Addr outTarget;
+    Addr fallThruPC;
+    int tripCount;
+    int detectedCount;
+    bool intraTaken;
+
+    LoopEntry() : valid(true), branch(0), target(0), outTarget(0), fallThruPC(0), tripCount(0), detectedCount(0), intraTaken(false) {}
+    LoopEntry(Addr branch, Addr target, Addr outTarget, Addr fallThruPC, int detectedCount, bool intraTaken) : 
+              valid(true), branch(branch), target(target), outTarget(outTarget), fallThruPC(fallThruPC), 
+              tripCount(0), detectedCount(detectedCount), intraTaken(intraTaken) {}
+};
+
 struct FetchStream
 {
     Addr streamStart;
@@ -61,6 +93,7 @@ struct FetchStream
     int tripCount;
     bool isMiss;
     bool useLoopPrediction;
+    std::map<Addr, LoopEntry> loopTable;
 
     boost::dynamic_bitset<> history;
 

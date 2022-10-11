@@ -254,6 +254,7 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
 
     dumpFsq("Before control squash");
 
+    streamLoopPredictor->setLoopTable(stream.loopTable);
     streamLoopPredictor->controlSquash(stream_id, stream, control_pc.instAddr(), corr_target.instAddr());
 
     stream.squashType = SQUASH_CTRL;
@@ -969,6 +970,7 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
 
         if (s0UbtbPred.useLoopPrediction) {
             streamLoopPredictor->updateTripCount(fsqId, s0UbtbPred.controlAddr);
+            entry.useLoopPrediction = true;
         }
 
         entry.predEnded = true;
@@ -1015,6 +1017,7 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
         if (s0UbtbPred.valid && !s0UbtbPred.isTaken() && !s0UbtbPred.toBeCont()) {
             if (s0UbtbPred.useLoopPrediction) {
                 streamLoopPredictor->updateTripCount(fsqId, s0UbtbPred.controlAddr);
+                entry.useLoopPrediction = true;
             }
             entry.tripCount = s0UbtbPred.useLoopPrediction ? streamLoopPredictor->getTripCount(s0UbtbPred.controlAddr) : entry.tripCount;
             // The prediction only tell us not taken until endPC
@@ -1022,6 +1025,8 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
             s0PC = s0UbtbPred.getFallThruPC();
             s0StreamStartPC = s0PC;
             entry.predEnded = true;
+            entry.predBranchPC = s0UbtbPred.controlAddr;
+            entry.predTarget = s0UbtbPred.nextStream;
         } else {
             if (M5_UNLIKELY(s0PC + streamChunkSize < s0PC)) {
                 // wrap around is insane, we stop predicting
@@ -1052,6 +1057,7 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
 
     if (create_new_stream) {
         entry.setDefaultResolve();
+        entry.loopTable = streamLoopPredictor->getLoopTable();
         auto [insert_it, inserted] = fetchStreamQueue.emplace(fsqId, entry);
         assert(inserted);
 
@@ -1166,7 +1172,8 @@ DecoupledBPU::updateTAGE(FetchStream &stream)
 void
 DecoupledBPU::storeLoopInfo(unsigned int fsqId, FetchStream stream)
 {
-    if (loopDetector->findLoop(stream.exeBranchPC)) {
+    Addr branchPC = stream.squashType == SQUASH_CTRL ? stream.exeBranchPC : stream.predBranchPC;
+    if (loopDetector->findLoop(branchPC)) {
         storedLoopStreams.push_back(std::make_pair(fsqId, stream));
     }
 }

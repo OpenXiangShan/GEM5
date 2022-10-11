@@ -20,21 +20,6 @@ namespace gem5
 
 namespace branch_prediction
 {
-
-struct DivideEntry
-{
-    bool taken;
-    Addr start;
-    Addr branch;
-    Addr next;
-    Addr fallThruPC;
-
-    DivideEntry() : taken(false), start(0), branch(0), next(0), fallThruPC(0) {}
-    DivideEntry(bool taken, Addr start, Addr branch, Addr next, Addr fallThruPC) : taken(taken), start(start), branch(branch), next(next),
-                                                                                   fallThruPC(fallThruPC) {}
-
-};
-
 class StreamLoopPredictor : public SimObject
 {
 
@@ -45,24 +30,6 @@ public:
     StreamLoopPredictor(const Params &params);
     
 private:
-
-   struct LoopEntry
-    {
-        // may need to add a valid bit
-        bool valid;
-        Addr branch;
-        Addr target;
-        Addr outTarget;
-        Addr fallThruPC;
-        int tripCount;
-        int detectedCount;
-        bool intraTaken;
-
-        LoopEntry() : valid(true), branch(0), target(0), outTarget(0), fallThruPC(0), tripCount(0), detectedCount(0), intraTaken(false) {}
-        LoopEntry(Addr branch, Addr target, Addr outTarget, Addr fallThruPC, int detectedCount, bool intraTaken) : 
-                 valid(true), branch(branch), target(target), outTarget(outTarget), fallThruPC(fallThruPC), 
-                 tripCount(0), detectedCount(detectedCount), intraTaken(intraTaken) {}
-    };
 
     std::map<Addr, LoopEntry> loopTable;
 
@@ -101,6 +68,10 @@ public:
         DPRINTF(DecoupleBP || debugFlagOn, "can not get trip count at %#lx\n", branchAddr);
         return -1;
     }
+    
+    std::map<Addr, LoopEntry> getLoopTable() { return this->loopTable; }
+
+    void setLoopTable(std::map<Addr, LoopEntry> loopTable) { this->loopTable = loopTable; }
 
     bool isTakenForward(Addr branchAddr) {
         auto entry = loopTable.find(branchAddr);
