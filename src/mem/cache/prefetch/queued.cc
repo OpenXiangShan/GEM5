@@ -502,7 +502,14 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
                              DeferredPacket &dpp)
 {
     /* Verify prefetch buffer space for request */
-    if (queue.size() == queueSize) {
+    unsigned queue_size;
+    if (&queue == &pfq) {
+        queue_size = queueSize;
+    } else {
+        assert(&queue == &pfqMissingTranslation);
+        queue_size = missingTranslationQueueSize;
+    }
+    if (queue.size() == queue_size) {
         statsQueued.pfRemovedFull++;
         /* Lowest priority packet */
         iterator it = queue.end();
