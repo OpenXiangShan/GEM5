@@ -142,6 +142,7 @@ class Queued : public Base
 
     std::list<DeferredPacket> pfq;
     std::list<DeferredPacket> pfqMissingTranslation;
+    std::list<DeferredPacket> pfqSquashed;
 
     using const_iterator = std::list<DeferredPacket>::const_iterator;
     using iterator = std::list<DeferredPacket>::iterator;
