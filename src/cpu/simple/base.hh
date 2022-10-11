@@ -58,6 +58,7 @@
 #include "sim/eventq.hh"
 #include "sim/full_system.hh"
 #include "sim/system.hh"
+#include "cpu/difftest.hh"
 
 namespace gem5
 {
@@ -196,6 +197,32 @@ class BaseSimpleCPU : public BaseCPU
      * and initiateMemMgmtCmd() is used to instigate the command.
      */
     virtual Fault initiateMemMgmtCmd(Request::Flags flags) = 0;
+    
+    //difftest
+  private:
+    uint32_t diffWDst[DIFFTEST_WIDTH];//noues
+    uint64_t diffWData[DIFFTEST_WIDTH];//noues
+    uint64_t diffWPC[DIFFTEST_WIDTH];//noues
+    uint64_t gem5RegFile[DIFFTEST_NR_REG];
+    uint64_t referenceRegFile[DIFFTEST_NR_REG];
+    DiffState diff;
+    NemuProxy* proxy;
+
+    bool enableDifftest;
+    bool scFenceInFlight{ false };
+    bool hasCommit{ false };
+
+    void readGem5Regs();
+    std::pair<int, bool> diffWithNEMU(const StaticInstPtr& inst, const PCStateBase& curPC);
+
+  public:
+    void difftestStep(const StaticInstPtr& inst, const PCStateBase& curPC);
+
+    inline bool difftestEnabled() const {
+      return enableDifftest;
+    }
+
+    void difftestRaiseIntr(uint64_t no);
 
 };
 
