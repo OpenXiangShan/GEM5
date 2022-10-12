@@ -958,6 +958,10 @@ TimingSimpleCPU::completeDataAccess(PacketPtr pkt)
 
     pkt->req->setAccessLatency();
 
+    if (pkt->req->isStrictlyOrdered()) {
+        curInstStrictOrdered = true;
+    }
+
     updateCycleCounts();
     updateCycleCounters(BaseCPU::CPU_STATE_ON);
 

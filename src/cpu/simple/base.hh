@@ -133,6 +133,8 @@ class BaseSimpleCPU : public BaseCPU
 
     std::unique_ptr<PCStateBase> preExecuteTempPC;
 
+    bool curInstStrictOrdered{ false };
+
   public:
     void checkForInterrupts();
     void setupFetchRequest(const RequestPtr &req);
