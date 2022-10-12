@@ -355,7 +355,38 @@ Fault
 
     if (machInst.vill)
         return std::make_shared<IllegalInstFault>("VILL is set", machInst);
+    const int64_t vlmul = vtype_vlmul(machInst.vtype8);
+    const int32_t t_micro_vlmax = vtype_VLMAX(machInst.vtype8, true);
+    const int32_t micro_vlmax = vlmul < 0 ? t_micro_vlmax : t_micro_vlmax / 2;
+    [[maybe_unused]] const size_t offset =
+        (this->microIdx % 2 == 0) ? 0 : micro_vlmax;
 
+    %(op_decl)s;
+    %(op_rd)s;
+    %(vm_decl_rd)s;
+    %(copy_old_vd)s;
+    %(code)s;
+    %(op_wb)s;
+    return NoFault;
+}
+
+}};
+
+def template VectorIntNarrowingMicroExecute {{
+
+template <typename ElemType>
+Fault
+%(class_name)s<ElemType>::execute(ExecContext* xc,
+                                  Trace::InstRecord* traceData) const
+{
+    using vu [[maybe_unused]] = std::make_unsigned_t<ElemType>;
+    using vi [[maybe_unused]] = std::make_signed_t<ElemType>;
+    using vwu [[maybe_unused]] = typename double_width<vu>::type;
+    using vwi [[maybe_unused]] = typename double_width<vi>::type;
+    [[maybe_unused]] constexpr size_t sew = sizeof(vu) * 8;
+
+    if (machInst.vill)
+        return std::make_shared<IllegalInstFault>("VILL is set", machInst);
     const int64_t vlmul = vtype_vlmul(machInst.vtype8);
     const int32_t t_micro_vlmax = vtype_VLMAX(machInst.vtype8, true);
     const int32_t micro_vlmax = vlmul < 0 ? t_micro_vlmax : t_micro_vlmax / 2;
@@ -543,6 +574,40 @@ public:
 
 
 def template VectorFloatWideningMicroExecute {{
+
+template <typename ElemType>
+Fault
+%(class_name)s<ElemType>::execute(ExecContext* xc,
+                                  Trace::InstRecord* traceData) const
+{
+    using et = ElemType;
+    using vu [[maybe_unused]] = decltype(et::v);
+    using ewt = typename double_width<et>::type;
+    using vwu = decltype(ewt::v);
+
+    if (machInst.vill)
+        return std::make_shared<IllegalInstFault>("VILL is set", machInst);
+
+    VRM_REQUIRED;
+
+    const int64_t vlmul = vtype_vlmul(machInst.vtype8);
+    const int32_t t_micro_vlmax = vtype_VLMAX(machInst.vtype8, true);
+    const int32_t micro_vlmax = vlmul < 0 ? t_micro_vlmax : t_micro_vlmax / 2;
+    [[maybe_unused]] const size_t offset =
+        (this->microIdx % 2 == 0) ? 0 : micro_vlmax;
+
+    %(op_decl)s;
+    %(op_rd)s;
+    %(vm_decl_rd)s;
+    %(copy_old_vd)s;
+    %(code)s;
+    %(op_wb)s;
+    return NoFault;
+}
+
+}};
+
+def template VectorFloatNarrowingMicroExecute {{
 
 template <typename ElemType>
 Fault
@@ -1166,7 +1231,7 @@ template<typename ElemType>
 
 }};
 
-def template VectorNonSplitExecute {{
+def template VectorIntNonSplitExecute {{
 
 template <typename ElemType>
 Fault

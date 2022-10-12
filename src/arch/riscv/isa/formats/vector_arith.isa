@@ -70,6 +70,44 @@ let {{
             uint32_t ei = i + vtype_VLMAX(vtype, true) * this->microIdx;
             ''' + code
 
+    def wideningOpRegisterConstraintChecks(code):
+        return '''
+            const uint32_t num_microops = 1 << std::max<int64_t>(0, vtype_vlmul(machInst.vtype8) + 1);
+            if ((machInst.vd % alignToPowerOfTwo(num_microops)) != 0) {
+                std::string error =
+                    csprintf("Unaligned Vd group in Widening op");
+                return std::make_shared<IllegalInstFault>(error, machInst);
+            }
+            if ((machInst.vs2 <= machInst.vd) && (machInst.vd < (machInst.vs2 + num_microops - 1))) {
+                // A destination vector register group can overlap a source vector
+                // register group if The destination EEW is greater than the source
+                // EEW, the source EMUL is at least 1, and the overlap is in the
+                // highest- numbered part of the destination register group.
+                std::string error =
+                    csprintf("Unsupported overlap in Vs2 and Vd for Widening op");
+                return std::make_shared<IllegalInstFault>(error, machInst);
+            }
+            ''' + code
+
+    def narrowingOpRegisterConstraintChecks(code):
+        return '''
+            const uint32_t num_microops = 1 << std::max<int64_t>(0, vtype_vlmul(machInst.vtype8) + 1);
+            if ((machInst.vs2 % alignToPowerOfTwo(num_microops)) != 0) {
+                std::string error =
+                    csprintf("Unaligned VS2 group in Narrowing op");
+                return std::make_shared<IllegalInstFault>(error, machInst);
+            }
+            if ((machInst.vs2 < machInst.vd) && (machInst.vd <= (VS2 + num_microops - 1))) {
+                // A destination vector register group can overlap a source vector
+                // register group The destination EEW is smaller than the source EEW
+                // and the overlap is in the lowest-numbered part of the source
+                // register group
+                std::string error =
+                    csprintf("Unsupported overlap in Vs2 and Vd for Narrowing op");
+                return std::make_shared<IllegalInstFault>(error, machInst);
+            }
+        ''' + code
+
     def fflags_wrapper(code):
         return '''
         RegVal FFLAGS = xc->readMiscReg(MISCREG_FFLAGS);
@@ -249,6 +287,8 @@ def format VectorIntWideningFormat(code, category, *flags) {{
         code = eiDeclarePrefix(code, widening=True)
     code = loopWrapper(code)
 
+    code = wideningOpRegisterConstraintChecks(code)
+
     vm_decl_rd = ""
     if v0_required:
         vm_decl_rd = vmDeclAndReadData()
@@ -305,6 +345,7 @@ def format VectorIntNarrowingFormat(code, category, *flags) {{
     code = maskCondWrapper(code)
     code = eiDeclarePrefix(code, widening=True)
     code = loopWrapper(code)
+    code = narrowingOpRegisterConstraintChecks(code)
     vm_decl_rd = vmDeclAndReadData()
 
     microiop = InstObjParams(name + "_micro",
@@ -323,7 +364,7 @@ def format VectorIntNarrowingFormat(code, category, *flags) {{
     header_output = \
         VectorIntWideningMicroDeclare.subst(microiop) + \
         VectorIntWideningMicroConstructor.subst(microiop) + \
-        VectorIntWideningMicroExecute.subst(microiop) + \
+        VectorIntNarrowingMicroExecute.subst(microiop) + \
         VectorIntWideningMacroDeclare.subst(iop) + \
         VectorIntWideningMacroConstructor.subst(iop)
 
@@ -602,6 +643,7 @@ def format VectorFloatWideningFormat(code, category, *flags) {{
     code = loopWrapper(code)
     code = fflags_wrapper(code)
 
+    code = wideningOpRegisterConstraintChecks(code)
 
     vm_decl_rd = ""
     if v0_required:
@@ -692,6 +734,7 @@ def format VectorFloatNarrowingCvtFormat(code, category, *flags) {{
     code = eiDeclarePrefix(code)
     code = loopWrapper(code)
     code = fflags_wrapper(code)
+    code = narrowingOpRegisterConstraintChecks(code)
 
     vm_decl_rd = vmDeclAndReadData()
 
@@ -710,7 +753,7 @@ def format VectorFloatNarrowingCvtFormat(code, category, *flags) {{
     header_output = \
         VectorFloatCvtMicroDeclare.subst(microiop) + \
         VectorFloatMicroConstructor.subst(microiop) + \
-        VectorFloatWideningMicroExecute.subst(microiop) + \
+        VectorFloatNarrowingMicroExecute.subst(microiop) + \
         VectorFloatCvtMacroDeclare.subst(iop) + \
         VectorIntWideningMacroConstructor.subst(iop)
 
@@ -885,13 +928,10 @@ def format Vector1Vs1RdMaskFormat(code, category, *flags){{
 
 def format VectorNonSplitFormat(code, category, *flags) {{
     inst_name, inst_suffix = name.split("_", maxsplit=1)
-    v0_required = inst_name not in ["vmv", "vfmv"]
     vm_decl_rd = ""
-    if v0_required:
-        vm_decl_rd = vmDeclAndReadData()
 
-    mask_cond = v0_required
     set_vm_idx = ""
+
     if inst_name == "vfmv" :
         code = fflags_wrapper(code)
 
@@ -903,12 +943,15 @@ def format VectorNonSplitFormat(code, category, *flags) {{
          'set_vm_idx': set_vm_idx},
         flags)
 
+
     if inst_name == "vfmv" :
         execute_block = VectorFloatNonSplitExecute.subst(iop)
         decode_block = VectorFloatDecodeBlock.subst(iop)
-    else :
-        execute_block = VectorNonSplitExecute.subst(iop)
+    elif inst_name == "vmv" :
+        execute_block = VectorIntNonSplitExecute.subst(iop)
         decode_block = VectorIntDecodeBlock.subst(iop)
+    else :
+        error("Unsupported inst for VectorNonSplitFormat: %s" % inst_name)
 
     # Because of the use of templates, we had to put all parts in header to
     # keep the compiler happy.
