@@ -53,6 +53,7 @@
 #else
 #include "arch/generic/interrupts.hh"
 #include "base/statistics.hh"
+#include "cpu/difftest.hh"
 #include "debug/Mwait.hh"
 #include "mem/htm.hh"
 #include "mem/port_proxy.hh"
@@ -652,6 +653,58 @@ class BaseCPU : public ClockedObject
     //const uint64_t repeatDumpInstCount;
 
     uint64_t nextDumpInstCount{0};
+
+    // difftest
+  protected:
+    uint32_t diffWDst[DIFFTEST_WIDTH];
+    uint64_t diffWData[DIFFTEST_WIDTH];
+    uint64_t diffWPC[DIFFTEST_WIDTH];
+    uint64_t gem5RegFile[DIFFTEST_NR_REG];
+    uint64_t referenceRegFile[DIFFTEST_NR_REG];
+    DiffState diff;
+    NemuProxy *proxy;
+
+    bool enableDifftest;
+    bool scFenceInFlight{false};
+    bool hasCommit{false};
+
+    virtual void readGem5Regs()
+    {
+        panic("difftest:readGem5Regs() is not implemented\n");
+    }
+    std::pair<int, bool> diffWithNEMU(ThreadID tid);
+
+  public:
+    struct
+    {
+        gem5::StaticInstPtr inst;
+        // the result of currently inst
+        gem5::RegVal result;
+        // the lambda expr of get srcOperand
+        gem5::RegVal getSrcReg(const gem5::RegId &regid) { return 0; };
+        const gem5::PCStateBase *pc;
+        bool curInstStrictOrdered{false};
+        gem5::Addr physEffAddr;
+    } diffInfo;
+
+
+    virtual RegVal readMiscRegNoEffect(int misc_reg, ThreadID tid) const
+    {
+        panic("difftest:readGem5Regs() is not implemented\n");
+        return 0;
+    }
+
+    virtual RegVal readMiscReg(int misc_reg, ThreadID tid)
+    {
+        panic("difftest:readGem5Regs() is not implemented\n");
+        return 0;
+    }
+
+    void difftestStep(ThreadID tid);
+
+    inline bool difftestEnabled() const { return enableDifftest; }
+
+    void difftestRaiseIntr(uint64_t no);
 };
 
 } // namespace gem5

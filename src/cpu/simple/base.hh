@@ -48,6 +48,7 @@
 #include "base/statistics.hh"
 #include "cpu/base.hh"
 #include "cpu/checker/cpu.hh"
+#include "cpu/difftest.hh"
 #include "cpu/exec_context.hh"
 #include "cpu/pc_event.hh"
 #include "cpu/simple_thread.hh"
@@ -58,7 +59,6 @@
 #include "sim/eventq.hh"
 #include "sim/full_system.hh"
 #include "sim/system.hh"
-#include "cpu/difftest.hh"
 
 namespace gem5
 {
@@ -133,8 +133,6 @@ class BaseSimpleCPU : public BaseCPU
 
     std::unique_ptr<PCStateBase> preExecuteTempPC;
 
-    bool curInstStrictOrdered{ false };
-
   public:
     void checkForInterrupts();
     void setupFetchRequest(const RequestPtr &req);
@@ -200,30 +198,12 @@ class BaseSimpleCPU : public BaseCPU
      */
     virtual Fault initiateMemMgmtCmd(Request::Flags flags) = 0;
 
-    // difftest
-  private:
-    uint32_t diffWDst[DIFFTEST_WIDTH];   // noues
-    uint64_t diffWData[DIFFTEST_WIDTH];  // noues
-    uint64_t diffWPC[DIFFTEST_WIDTH];    // noues
-    uint64_t gem5RegFile[DIFFTEST_NR_REG];
-    uint64_t referenceRegFile[DIFFTEST_NR_REG];
-    DiffState diff;
-    NemuProxy* proxy;
+    // difftest virtual function
+    RegVal readMiscRegNoEffect(int misc_reg, ThreadID tid) const override;
 
-    bool enableDifftest;
-    bool scFenceInFlight{false};
-    bool hasCommit{false};
+    RegVal readMiscReg(int misc_reg, ThreadID tid) override;
 
-    void readGem5Regs();
-    std::pair<int, bool> diffWithNEMU(const StaticInstPtr& inst,
-                                      const PCStateBase& curPC);
-
-  public:
-    void difftestStep(const StaticInstPtr& inst, const PCStateBase& curPC);
-
-    inline bool difftestEnabled() const { return enableDifftest; }
-
-    void difftestRaiseIntr(uint64_t no);
+    void readGem5Regs() override;
 };
 
 } // namespace gem5

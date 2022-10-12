@@ -959,7 +959,8 @@ TimingSimpleCPU::completeDataAccess(PacketPtr pkt)
     pkt->req->setAccessLatency();
 
     if (pkt->req->isStrictlyOrdered()) {
-        curInstStrictOrdered = true;
+        diffInfo.physEffAddr = pkt->req->getPaddr();
+        diffInfo.curInstStrictOrdered = true;
     }
 
     updateCycleCounts();
