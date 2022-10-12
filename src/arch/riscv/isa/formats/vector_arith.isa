@@ -69,6 +69,16 @@ let {{
             return '''
             uint32_t ei = i + vtype_VLMAX(vtype, true) * this->microIdx;
             ''' + code
+
+    def fflags_wrapper(code):
+        return '''
+        RegVal FFLAGS = xc->readMiscReg(MISCREG_FFLAGS);
+        std::feclearexcept(FE_ALL_EXCEPT);
+        ''' + code + '''
+        FFLAGS |= softfloat_exceptionFlags;
+        softfloat_exceptionFlags = 0;
+        xc->setMiscReg(MISCREG_FFLAGS, FFLAGS);
+        '''
 }};
 
 
@@ -480,6 +490,7 @@ def format VectorFloatFormat(code, category, *flags) {{
     if need_elem_idx:
         code = eiDeclarePrefix(code)
     code = loopWrapper(code)
+    code = fflags_wrapper(code)
 
     vm_decl_rd = ""
     if v0_required:
@@ -525,6 +536,7 @@ def format VectorFloatCvtFormat(code, category, *flags) {{
     code = maskCondWrapper(code)
     code = eiDeclarePrefix(code)
     code = loopWrapper(code)
+    code = fflags_wrapper(code)
 
     vm_decl_rd = vmDeclAndReadData()
 
@@ -588,6 +600,8 @@ def format VectorFloatWideningFormat(code, category, *flags) {{
     if need_elem_idx:
         code = eiDeclarePrefix(code, widening=True)
     code = loopWrapper(code)
+    code = fflags_wrapper(code)
+
 
     vm_decl_rd = ""
     if v0_required:
@@ -633,6 +647,7 @@ def format VectorFloatWideningCvtFormat(code, category, *flags) {{
     code = maskCondWrapper(code)
     code = eiDeclarePrefix(code)
     code = loopWrapper(code)
+    code = fflags_wrapper(code)
 
     vm_decl_rd = vmDeclAndReadData()
 
@@ -676,6 +691,7 @@ def format VectorFloatNarrowingCvtFormat(code, category, *flags) {{
     code = maskCondWrapper(code)
     code = eiDeclarePrefix(code)
     code = loopWrapper(code)
+    code = fflags_wrapper(code)
 
     vm_decl_rd = vmDeclAndReadData()
 
@@ -728,6 +744,7 @@ def format VectorFloatMaskFormat(code, category, *flags) {{
     code = maskCondWrapper(code)
     code = eiDeclarePrefix(code)
     code = loopWrapper(code)
+    code = fflags_wrapper(code)
 
     microiop = InstObjParams(name + "_micro",
         Name + "Micro",
@@ -875,8 +892,8 @@ def format VectorNonSplitFormat(code, category, *flags) {{
 
     mask_cond = v0_required
     set_vm_idx = ""
-    if mask_cond:
-        set_vm_idx = setSrcVm()
+    if inst_name == "vfmv" :
+        code = fflags_wrapper(code)
 
     iop = InstObjParams(name,
         Name,
@@ -1006,6 +1023,9 @@ def format VectorReduceFloatFormat(code, category, *flags) {{
         using et = ElemType;
         using vu = decltype(et::v);
     '''
+
+    code = fflags_wrapper(code)
+
     microiop = InstObjParams(name + "_micro",
         Name + "Micro",
         'VectorArithMicroInst',
