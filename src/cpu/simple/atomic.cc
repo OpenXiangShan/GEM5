@@ -273,7 +273,8 @@ Tick
 AtomicSimpleCPU::sendPacket(RequestPort &port, const PacketPtr &pkt)
 {
     if (pkt->req->isStrictlyOrdered()) {
-        curInstStrictOrdered = true;
+        diffInfo.physEffAddr = pkt->req->getPaddr();
+        diffInfo.curInstStrictOrdered = true;
     }
     return port.sendAtomic(pkt);
 }

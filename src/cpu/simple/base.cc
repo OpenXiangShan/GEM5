@@ -42,6 +42,7 @@
 #include "cpu/simple/base.hh"
 
 #include "arch/generic/decoder.hh"
+#include "arch/riscv/regs/misc.hh"
 #include "base/cprintf.hh"
 #include "base/inifile.hh"
 #include "base/loader/symtab.hh"
@@ -66,6 +67,7 @@
 #include "debug/Fetch.hh"
 #include "debug/HtmCpu.hh"
 #include "debug/Quiesce.hh"
+#include "debug/SimpleCPU.hh"
 #include "mem/packet.hh"
 #include "mem/request.hh"
 #include "params/BaseSimpleCPU.hh"
@@ -77,8 +79,6 @@
 #include "sim/sim_object.hh"
 #include "sim/stats.hh"
 #include "sim/system.hh"
-#include "arch/riscv/regs/misc.hh"
-#include "debug/SimpleCPU.hh"
 
 namespace gem5
 {
@@ -88,8 +88,7 @@ BaseSimpleCPU::BaseSimpleCPU(const BaseSimpleCPUParams &p)
       curThread(0),
       branchPred(p.branchPred),
       traceData(NULL),
-      _status(Idle),
-      enableDifftest(p.enable_difftest)
+      _status(Idle)
 {
     SimpleThread *thread;
 
@@ -385,7 +384,7 @@ BaseSimpleCPU::preExecute()
         //Read the next micro op from the macro op
         curStaticInst = curMacroStaticInst->fetchMicroop(pc_state.microPC());
     }
-    curInstStrictOrdered = false;
+    diffInfo.curInstStrictOrdered = false;
 
     //If we decoded an instruction this "tick", record information about it.
     if (curStaticInst) {
@@ -482,7 +481,15 @@ BaseSimpleCPU::postExecute()
     }
     //
     if (enableDifftest) {
-        difftestStep(curStaticInst, threadContexts[curThread]->pcState());
+        diffInfo.inst = curStaticInst;
+        diffInfo.pc = &threadContexts[curThread]->pcState();
+        if (curStaticInst->numDestRegs() > 0) {
+            const auto &dest = curStaticInst->destRegIdx(0);
+            if ((dest.isFloatReg() || dest.isIntReg()) && !dest.isZeroReg()) {
+                diffInfo.result = threadContexts[curThread]->getReg(dest);
+            }
+        }
+        difftestStep(curThread);
     }
     // Call CPU instruction commit probes
     probeInstCommit(curStaticInst, instAddr);
@@ -527,6 +534,18 @@ BaseSimpleCPU::advancePC(const Fault &fault)
     }
 }
 
+RegVal
+BaseSimpleCPU::readMiscRegNoEffect(int misc_reg, ThreadID tid) const
+{
+    return threadContexts[curThread]->readMiscRegNoEffect(misc_reg);
+}
+
+RegVal
+BaseSimpleCPU::readMiscReg(int misc_reg, ThreadID tid)
+{
+    return threadContexts[curThread]->readMiscReg(misc_reg);
+}
+
 void
 BaseSimpleCPU::readGem5Regs()
 {
@@ -538,269 +557,6 @@ BaseSimpleCPU::readGem5Regs()
     }
 }
 
-std::pair<int, bool>
-BaseSimpleCPU::diffWithNEMU(const StaticInstPtr &inst,
-                            const PCStateBase &curPC)
-{
-    int diff_at = DiffAt::NoneDiff;
-    bool npc_match = false;
-    bool is_mmio = curInstStrictOrdered;
-
-    if (inst->isStoreConditional()) {
-        diff.sync.lrscValid = true;
-        proxy->uarchstatus_cpy(&diff.sync, DIFFTEST_TO_REF);
-    }
-    if (is_mmio) {
-        // ismmio
-        diff.dynamic_config.ignore_illegal_mem_access = true;
-        proxy->update_config(&diff.dynamic_config);
-    }
-
-    if (diff.will_handle_intr) {
-        proxy->regcpy(diff.nemu_reg, REF_TO_DIFFTEST);
-        diff.nemu_this_pc = diff.nemu_reg[DIFFTEST_THIS_PC];
-        diff.will_handle_intr = false;
-    }
-    // difftest step start
-    proxy->exec(1);
-    proxy->regcpy(diff.nemu_reg, REF_TO_DIFFTEST);
-
-    uint64_t next_pc = diff.nemu_reg[DIFFTEST_THIS_PC];
-
-    // replace with "this pc" for checking
-    diff.nemu_commit_inst_pc = diff.nemu_this_pc;
-    diff.nemu_this_pc = next_pc;
-    diff.npc = next_pc;
-    // difftest step end
-
-    if (is_mmio) {
-        // ismmio
-        diff.dynamic_config.ignore_illegal_mem_access = false;
-        proxy->update_config(&diff.dynamic_config);
-    }
-    auto gem5_pc = curPC.instAddr();
-    auto nemu_pc = diff.nemu_commit_inst_pc;
-    DPRINTF(SimpleCPU, "NEMU PC: %#10lx, GEM5 PC: %#10lx, inst: %s\n", nemu_pc,
-            gem5_pc, inst->disassemble(curPC.instAddr()).c_str());
-
-    // auto nemu_store_addr = referenceRegFile[DIFFTEST_STORE_ADDR];
-    // if (nemu_store_addr) {
-    //     DPRINTF(ValueCommit, "NEMU store addr: %#lx\n", nemu_store_addr);
-    // }
-
-    // uint8_t gem5_inst[5];
-    // uint8_t nemu_inst[9];
-
-    // int nemu_inst_len = referenceRegFile[DIFFTEST_RVC] ? 2 : 4;
-    // int gem5_inst_len = inst->pcState().compressed() ? 2 : 4;
-
-    // assert(inst->staticInst->asBytes(gem5_inst, 8));
-    // *reinterpret_cast<uint32_t *>(nemu_inst) =
-    //     htole<uint32_t>(referenceRegFile[DIFFTEST_INST_PAYLOAD]);
-
-    if (nemu_pc != gem5_pc) {
-        // warn("NEMU store addr: %#lx\n", nemu_store_addr);
-        DPRINTF(SimpleCPU, "Inst [sn:%lli]\n", 0);
-        DPRINTF(SimpleCPU, "Diff at %s, NEMU: %#lx, GEM5: %#lx\n", "PC",
-                nemu_pc, gem5_pc);
-        if (!diff_at) {
-            diff_at = PCDiff;
-            if (diff.npc == gem5_pc) {
-                npc_match = true;
-            }
-        }
-    }
-    DPRINTF(SimpleCPU, "Inst [sn:%lli] PC, NEMU: %#lx, GEM5: %#lx\n", 0,
-            nemu_pc, gem5_pc);
-
-    DPRINTF(SimpleCPU, "Inst [sn:%llu] @ %#lx in GEM5 is %s\n", 0,
-            curPC.instAddr(), inst->disassemble(curPC.instAddr()));
-    if (inst->numDestRegs() > 0) {
-        const auto &dest = inst->destRegIdx(0);
-        auto dest_tag = dest.index() + dest.isFloatReg() * 32;
-
-        if ((dest.isFloatReg() || dest.isIntReg()) && !dest.isZeroReg()) {
-            auto gem5_val = threadContexts[curThread]->getReg(dest);
-            auto nemu_val = referenceRegFile[dest_tag];
-
-            DPRINTF(SimpleCPU, "At %s Ref value: %#lx, GEM5 value: %#lx\n",
-                    reg_name[dest_tag], nemu_val, gem5_val);
-            if (gem5_val != nemu_val) {
-                if (dest.isFloatReg() &&
-                    (gem5_val ^ nemu_val) == ((0xffffffffULL) << 32)) {
-                    DPRINTF(SimpleCPU,
-                            "Difference might be caused by box,"
-                            " ignore it\n");
-
-                } else if (is_mmio) {
-                    // DPRINTF(SimpleCPU,
-                    // 		"Difference might be caused by read %s at %#lx,"
-                    // 		" ignore it\n",
-                    // 		"mmio", inst->physEffAddr);
-                    referenceRegFile[dest_tag] = gem5_val;
-                    proxy->regcpy(referenceRegFile, DUT_TO_REF);
-                } else {
-                    for (int i = 0; i < inst->numSrcRegs(); i++) {
-                        const auto &src = inst->srcRegIdx(i);
-                        DPRINTF(SimpleCPU, "Src%d %s = %lx\n", i,
-                                reg_name[src.index()],
-                                threadContexts[curThread]->getReg(src));
-                    }
-                    DPRINTF(SimpleCPU, "Inst src count: %u, dest count: %u\n",
-                            inst->numSrcRegs(), inst->numDestRegs());
-                    warn("Inst [sn:%lli] pc:%s\n", 0, curPC);
-                    warn("Diff at %s Ref value: %#lx, GEM5 value: %#lx\n",
-                         reg_name[dest_tag], nemu_val, gem5_val);
-                    if (!diff_at)
-                        diff_at = ValueDiff;
-                }
-            }
-        }
-
-        // always check some CSR regs
-        {
-            // mstatus
-            auto gem5_val = threadContexts[curThread]->readMiscRegNoEffect(
-                RiscvISA::MiscRegIndex::MISCREG_STATUS);
-            // readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_STATUS, 0);
-            auto ref_val = referenceRegFile[DIFFTEST_MSTATUS];
-            if (gem5_val != ref_val) {
-                warn("Inst [sn:%lli] pc:%s\n", 0, curPC);
-                warn("Diff at %s Ref value: %#lx, GEM5 value: %#lx\n",
-                     "mstatus", ref_val, gem5_val);
-                if (!diff_at)
-                    diff_at = ValueDiff;
-            }
-            // mcause
-            gem5_val = threadContexts[curThread]->readMiscRegNoEffect(
-                RiscvISA::MiscRegIndex::MISCREG_MCAUSE);
-            // readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_MCAUSE, 0);
-            ref_val = referenceRegFile[DIFFTEST_MCAUSE];
-            if (gem5_val != ref_val) {
-                warn("Inst [sn:%lli] pc:%s\n", 0, curPC);
-                warn("Diff at %s Ref value: %#lx, GEM5 value: %#lx\n",
-                     "mcause", ref_val, gem5_val);
-                if (!diff_at)
-                    diff_at = ValueDiff;
-            }
-            // satp
-            gem5_val = threadContexts[curThread]->readMiscRegNoEffect(
-                RiscvISA::MiscRegIndex::MISCREG_SATP);
-            // readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_SATP, 0);
-            ref_val = referenceRegFile[DIFFTEST_SATP];
-            if (gem5_val != ref_val) {
-                warn("Inst [sn:%lli] pc:%s\n", 0, curPC);
-                warn("Diff at %s Ref value: %#lx, GEM5 value: %#lx\n", "satp",
-                     ref_val, gem5_val);
-                if (!diff_at)
-                    diff_at = ValueDiff;
-            }
-
-            // mie
-            gem5_val = threadContexts[curThread]->readMiscReg(
-                RiscvISA::MiscRegIndex::MISCREG_IE);
-            // readMiscReg(RiscvISA::MiscRegIndex::MISCREG_IE, 0);
-            ref_val = referenceRegFile[DIFFTEST_MIE];
-            if (gem5_val != ref_val) {
-                warn("Inst [sn:%lli] pc:%s\n", 0, curPC);
-                warn("Diff at %s Ref value: %#lx, GEM5 value: %#lx\n", "mie",
-                     ref_val, gem5_val);
-                if (!diff_at)
-                    diff_at = ValueDiff;
-            }
-            // mip
-            gem5_val = threadContexts[curThread]->readMiscReg(
-                RiscvISA::MiscRegIndex::MISCREG_IP);
-            // readMiscReg(RiscvISA::MiscRegIndex::MISCREG_IP, 0);
-            ref_val = referenceRegFile[DIFFTEST_MIP];
-            if (gem5_val != ref_val) {
-                DPRINTF(SimpleCPU, "Inst [sn:%lli] pc:%s\n", 0, curPC);
-                DPRINTF(SimpleCPU,
-                        "Diff at %s Ref value: %#lx, GEM5 value: %#lx\n",
-                        "mip", ref_val, gem5_val);
-            }
-
-            if (diff_at != NoneDiff) {
-                warn("Inst [sn:%llu] @ %#lx in GEM5 is %s\n", 0,
-                     curPC.instAddr(), inst->disassemble(curPC.instAddr()));
-                if (inst->isLoad()) {
-                    // warn("Load addr: %#lx\n", inst->physEffAddr);
-                }
-            }
-        }
-    }
-    return std::make_pair(diff_at, npc_match);
-}
 
 
-void
-BaseSimpleCPU::difftestStep(const StaticInstPtr &inst,
-                            const PCStateBase &curPC)
-{
-    bool should_diff = false;
-    DPRINTF(SimpleCPU, "DiffTest step on inst pc: %#lx: %s\n",
-            curPC.instAddr(), inst->disassemble(curPC.instAddr()));
-    // Keep an instruction count.
-    if (!inst->isMicroop() || inst->isLastMicroop()) {
-        should_diff = true;
-        if (!hasCommit && curPC.instAddr() == 0x80000000u) {
-            hasCommit = true;
-            readGem5Regs();
-            gem5RegFile[DIFFTEST_THIS_PC] = curPC.instAddr();
-            fprintf(stderr, "Will start memcpy to NEMU from %#lx, size=%lu\n",
-                    (uint64_t)pmemStart, pmemSize);
-            proxy->memcpy(0x80000000u, pmemStart + pmemSize * diff.cpu_id,
-                          pmemSize, DUT_TO_REF);
-            fprintf(stderr, "Will start regcpy to NEMU\n");
-            proxy->regcpy(gem5RegFile, DUT_TO_REF);
-        }
-
-        if (scFenceInFlight) {
-            assert(inst->isWriteBarrier() && inst->isReadBarrier());
-            should_diff = false;
-        }
-    }
-
-    scFenceInFlight = false;
-
-    if (!inst->isLastMicroop() && inst->isStoreConditional() &&
-        inst->isDelayedCommit()) {
-        scFenceInFlight = true;
-        should_diff = true;
-    }
-
-    if (enableDifftest && should_diff) {
-        auto [diff_at, npc_match] = diffWithNEMU(inst, curPC);
-        if (diff_at != NoneDiff) {
-            if (npc_match && diff_at == PCDiff) {
-                // warn("Found PC mismatch, Let NEMU run one more
-                // instruction\n");
-                std::tie(diff_at, npc_match) = diffWithNEMU(inst, curPC);
-                if (diff_at != NoneDiff) {
-                    proxy->isa_reg_display();
-                    panic("Difftest failed again!\n");
-                } else {
-                    warn(
-                        "Difftest matched again, "
-                        "NEMU seems to commit the failed mem instruction\n");
-                }
-            } else {
-                proxy->isa_reg_display();
-                panic("Difftest failed!\n");
-            }
-        }
-    }
-    DPRINTF(SimpleCPU, "commit_pc: %s\n", curPC);
-}
-
-void
-BaseSimpleCPU::difftestRaiseIntr(uint64_t no)
-{
-    diff.will_handle_intr = true;
-    proxy->raise_intr(no);
-}
-
-
-
-
-} // namespace gem5
+}  // namespace gem5
