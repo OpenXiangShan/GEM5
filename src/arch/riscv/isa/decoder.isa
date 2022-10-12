@@ -2397,7 +2397,8 @@ decode QUADRANT default Unknown::unknown() {
                         // The encodings corresponding to the masked versions
                         // (vm=0) of vfmv.f.s are reserved
                         0x1: VectorNonSplitFormat::vfmv_f_s({{
-                            Fd_bits = Vs1_vu[0];
+                            freg_t fd = freg(Vs2_vu[0]);
+                            Fd_bits = fd.v;
                         }}, OPFVV, VectorDummyOp);
                     }
                 }
