@@ -385,6 +385,7 @@ BaseSimpleCPU::preExecute()
         //Read the next micro op from the macro op
         curStaticInst = curMacroStaticInst->fetchMicroop(pc_state.microPC());
     }
+    curInstStrictOrdered = false;
 
     //If we decoded an instruction this "tick", record information about it.
     if (curStaticInst) {
@@ -539,7 +540,7 @@ BaseSimpleCPU::diffWithNEMU(const StaticInstPtr& inst, const PCStateBase& curPC)
     int diff_at = DiffAt::NoneDiff;
 	bool npc_match = false;
 
-	bool is_mmio = false;
+	bool is_mmio = curInstStrictOrdered;
 
     if (inst->isStoreConditional()) {
         diff.sync.lrscValid = true;
