@@ -104,7 +104,10 @@ static constexpr float64_t f64(freg_t r) { return r; }
 static constexpr freg_t freg(float16_t f) { return {boxF16(f.v)}; }
 static constexpr freg_t freg(float32_t f) { return {boxF32(f.v)}; }
 static constexpr freg_t freg(float64_t f) { return f; }
-static constexpr freg_t freg(uint_fast16_t f) { return {f}; }
+
+static constexpr freg_t freg(uint16_t f) { return {boxF16(f)}; }
+static constexpr freg_t freg(uint32_t f) { return {boxF32(f)}; }
+static constexpr freg_t freg(uint64_t f) { return {f}; }
 
 namespace float_reg
 {
