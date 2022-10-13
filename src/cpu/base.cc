@@ -792,7 +792,7 @@ BaseCPU::diffWithNEMU(ThreadID tid)
     bool is_mmio = diffInfo.curInstStrictOrdered;
 
     if (diffInfo.inst->isStoreConditional()) {
-        diff.sync.lrscValid = true;
+        diff.sync.lrscValid = diffInfo.lockedWriteSuccess;
         proxy->uarchstatus_cpy(&diff.sync, DIFFTEST_TO_REF);
     }
     if (is_mmio) {

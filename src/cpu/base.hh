@@ -684,6 +684,8 @@ class BaseCPU : public ClockedObject
         gem5::RegVal getSrcReg(const gem5::RegId &regid) { return 0; };
         const gem5::PCStateBase *pc;
         bool curInstStrictOrdered{false};
+        //simple CPU use default value:true
+        bool lockedWriteSuccess{true};
         gem5::Addr physEffAddr;
     } diffInfo;
 

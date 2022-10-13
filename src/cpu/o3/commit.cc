@@ -1074,6 +1074,8 @@ Commit::commitInsts()
                     }
                     cpu->diffInfo.curInstStrictOrdered =
                         head_inst->strictlyOrdered();
+                    cpu->diffInfo.lockedWriteSuccess =
+                        head_inst->lockedWriteSuccess();
                     cpu->diffInfo.physEffAddr = head_inst->physEffAddr;
                     cpu->difftestStep(tid);
                 }
