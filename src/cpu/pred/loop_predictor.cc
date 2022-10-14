@@ -341,7 +341,7 @@ LoopPredictor::condBranchUpdate(ThreadID tid, Addr branch_pc, bool taken,
     }
 
     if (bi->loopPredValid) {
-        if (bi->predTaken != bi->loopPred) {
+        if (tage_pred != bi->loopPred) {
             signedCtrUpdate(loopUseCounter,
                       (bi->loopPred == taken),
                       withLoopBits);
