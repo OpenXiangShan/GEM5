@@ -97,7 +97,7 @@ public:
         forwardTaken = std::make_pair(branch, target);
     }
 
-    void adjustLoopEntry(bool taken_backward, LoopEntry &entry, Addr branchAddr, Addr targetAddr);
+    bool adjustLoopEntry(bool taken_backward, LoopEntry &entry, Addr branchAddr, Addr targetAddr);
 
     bool loopUpValid(Addr branchAddr) {
         auto entry = loopTable.find(branchAddr);

@@ -19,6 +19,34 @@ LoopDetector::LoopDetector(const Params &params)
     });
 }
 
+bool 
+LoopDetector::adjustLoopEntry(bool taken_backward, LoopEntry &entry, Addr branchAddr, Addr targetAddr) {
+    if (!entry.valid)
+        return false;
+
+    if (taken_backward) {
+        if (targetAddr != entry.target) {
+            entry.valid = false;
+            streamLoopPredictor->deleteEntry(branchAddr);
+            return false;
+        }
+    } else {
+        if (targetAddr != entry.outTarget && entry.outValid) {
+            entry.valid = false;
+            streamLoopPredictor->deleteEntry(branchAddr);
+            return false;
+        }
+
+        if (entry.tripCount != entry.specCount)
+            entry.counter--;
+        else
+            entry.counter++;
+
+        entry.valid = entry.counter > -8;
+    }
+    return true;
+}
+
 void
 LoopDetector::update(Addr branchAddr, Addr targetAddr, Addr fallThruPC) {
     defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
@@ -30,9 +58,8 @@ LoopDetector::update(Addr branchAddr, Addr targetAddr, Addr fallThruPC) {
 
     auto entry = loopTable.find(branchAddr);
 
-    if (entry != loopTable.end() && !entry->second.valid) {
-        DPRINTF(DecoupleBP || debugFlagOn, "loop entry at [%#lx, %#lx] is not loop, skip loop prediction\n",
-                branchAddr, entry->second.target);
+    if (entry != loopTable.end() && !adjustLoopEntry(taken_backward, entry->second, branchAddr, targetAddr)) {
+        DPRINTF(DecoupleBP || debugFlagOn, "%#lx is not a loop\n", branchAddr);
         return;
     }
 
@@ -42,12 +69,6 @@ LoopDetector::update(Addr branchAddr, Addr targetAddr, Addr fallThruPC) {
                     branchAddr, 0, 0, 1, 0, fallThruPC);
             loopTable[branchAddr] = LoopEntry(branchAddr, targetAddr, fallThruPC);
         } else {
-            if (targetAddr != entry->second.target) {
-                // update
-                entry->second.valid = false;
-                streamLoopPredictor->deleteEntry(branchAddr);
-                return;
-            }
             DPRINTF(DecoupleBP || debugFlagOn, "taken update loop detector from "
                     "[%#lx, %#lx, %#lx, %d, %d, %#lx] to [%#lx, %#lx, %#lx, %d, %d, %#lx]\n",
                     branchAddr, entry->second.target, entry->second.outTarget, entry->second.specCount, entry->second.tripCount, entry->second.fallThruPC,
@@ -61,12 +82,6 @@ LoopDetector::update(Addr branchAddr, Addr targetAddr, Addr fallThruPC) {
         loopQueue.push_back(branchAddr);
 
     } else {
-        if (targetAddr != entry->second.outTarget && entry->second.outValid) {
-            // update
-            entry->second.valid = false;
-            streamLoopPredictor->deleteEntry(branchAddr);
-            return;
-        }
         assert(entry != loopTable.end());
         DPRINTF(DecoupleBP || debugFlagOn, "not taken update loop detector from "
                 "[%#lx, %#lx, %#lx, %d, %d, %#lx] to [%#lx, %#lx, %#lx, %d, %d, %#lx]\n",
@@ -89,7 +104,7 @@ LoopDetector::update(Addr branchAddr, Addr targetAddr, Addr fallThruPC) {
                 forwardTaken.first, forwardTaken.second, entry->second.target, entry->second.branch);
     }
 
-    if (!taken_backward) {
+    if (!taken_backward && entry != loopTable.end() && entry->second.valid) {
 	    streamLoopPredictor->updateEntry(branchAddr, entry->second.target, entry->second.outTarget, entry->second.fallThruPC,
                                          entry->second.tripCount, entry->second.intraTaken);
     }
