@@ -184,7 +184,7 @@ struct StringWrap
 } while (0)
 
 #define DPRINTF(x, ...) do {                     \
-    if (GEM5_UNLIKELY(TRACING_ON && ::gem5::debug::x)) {   \
+    if (GEM5_UNLIKELY(TRACING_ON && (::gem5::debug::x))) {   \
         ::gem5::Trace::getDebugLogger()->dprintf_flag(   \
             ::gem5::curTick(), name(), #x, __VA_ARGS__); \
     }                                            \
@@ -198,7 +198,7 @@ struct StringWrap
 } while (0)
 
 #define DPRINTFR(x, ...) do {                          \
-    if (GEM5_UNLIKELY(TRACING_ON && ::gem5::debug::x)) {         \
+    if (GEM5_UNLIKELY(TRACING_ON && (::gem5::debug::x))) {         \
         ::gem5::Trace::getDebugLogger()->dprintf_flag(         \
             (::gem5::Tick)-1, std::string(), #x, __VA_ARGS__); \
     }                                                  \

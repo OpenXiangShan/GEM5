@@ -79,7 +79,7 @@ BPredUnit::BPredUnit(const Params &params)
             auto out_handle = simout.create("pcMiss.txt", false, true);
             *out_handle->stream() << "pc" << " " << "cnt" << std::endl;
             for (auto& it : missPredPcCount) {
-                *out_handle->stream() << it.first << " " << it.second << std::endl;
+                *out_handle->stream() << std::hex << it.first << " " << std::dec << it.second << std::endl;
             }
             simout.close(out_handle);
         });
@@ -460,6 +460,10 @@ BPredUnit::squash(const InstSeqNum &squashed_sn,
                pred_hist.front().bpHistory, true, pred_hist.front().inst,
                corr_target.instAddr());
 
+        if (isDumpMissPredPC) {
+            missPredPcCount[hist_it->pc]++;
+        }
+
         if (iPred) {
             iPred->changeDirectionPrediction(tid,
                 pred_hist.front().indirectHistory, actually_taken);
@@ -477,9 +481,6 @@ BPredUnit::squash(const InstSeqNum &squashed_sn,
             }
             if (hist_it->wasIndirect) {
                 ++stats.indirectMispredicted;
-                if (isDumpMissPredPC) {
-                    missPredPcCount[hist_it->pc]++;
-                }
                 if (iPred) {
                     iPred->recordTarget(
                         hist_it->seqNum, pred_hist.front().indirectHistory,
