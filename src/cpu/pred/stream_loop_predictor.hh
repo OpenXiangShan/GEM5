@@ -33,6 +33,8 @@ private:
 
     std::map<Addr, LoopEntry> loopTable;
 
+    std::list<std::pair<Addr, unsigned int>> mruLoop; // most recently used loop
+
     bool debugFlagOn{false};
 
 public:
@@ -69,9 +71,11 @@ public:
         return -1;
     }
     
-    std::map<Addr, LoopEntry> getLoopTable() { return this->loopTable; }
+    std::list<std::pair<Addr, unsigned int>> getMRULoop() { return this->mruLoop; }
 
-    void setLoopTable(std::map<Addr, LoopEntry> loopTable) { this->loopTable = loopTable; }
+    void restoreLoopTable(std::list<std::pair<Addr, unsigned int>> mruLoop);
+
+    void updateMRULoop(Addr branchAddr);
 
     bool isTakenForward(Addr branchAddr) {
         auto entry = loopTable.find(branchAddr);
@@ -79,12 +83,14 @@ public:
             return entry->second.tripCount == entry->second.detectedCount;
         }
         DPRINTF(DecoupleBP || debugFlagOn, "can not get trip count at %#lx\n", branchAddr);
-        assert(0);
+        return false;
     }
 
     void updateEntry(Addr branchAddr, Addr targetAddr, Addr outTarget, Addr fallThruPC, int detectedCount, bool intraTaken);
 
     void controlSquash(unsigned fsqId, FetchStream stream, Addr branchAddr, Addr targetAddr);
+
+    void deleteEntry(Addr branchAddr);
 
     std::pair<bool, std::vector<DivideEntry> > updateTAGE(Addr streamStart, Addr branchAddr, Addr targetAddr);
 

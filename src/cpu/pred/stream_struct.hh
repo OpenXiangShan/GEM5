@@ -93,7 +93,7 @@ struct FetchStream
     int tripCount;
     bool isMiss;
     bool useLoopPrediction;
-    std::map<Addr, LoopEntry> loopTable;
+    std::list<std::pair<Addr, unsigned int>> mruLoop;
 
     boost::dynamic_bitset<> history;
 

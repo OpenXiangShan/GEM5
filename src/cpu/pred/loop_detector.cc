@@ -30,12 +30,24 @@ LoopDetector::update(Addr branchAddr, Addr targetAddr, Addr fallThruPC) {
 
     auto entry = loopTable.find(branchAddr);
 
+    if (entry != loopTable.end() && !entry->second.valid) {
+        DPRINTF(DecoupleBP || debugFlagOn, "loop entry at [%#lx, %#lx] is not loop, skip loop prediction\n",
+                branchAddr, entry->second.target);
+        return;
+    }
+
     if (taken_backward) {
         if (entry == loopTable.end()) {
             DPRINTF(DecoupleBP || debugFlagOn, "taken update loop detector from NULL to [%#lx, %#lx, %#lx, %d, %d, %#lx]\n",
                     branchAddr, 0, 0, 1, 0, fallThruPC);
             loopTable[branchAddr] = LoopEntry(branchAddr, targetAddr, fallThruPC);
         } else {
+            if (targetAddr != entry->second.target) {
+                // update
+                entry->second.valid = false;
+                streamLoopPredictor->deleteEntry(branchAddr);
+                return;
+            }
             DPRINTF(DecoupleBP || debugFlagOn, "taken update loop detector from "
                     "[%#lx, %#lx, %#lx, %d, %d, %#lx] to [%#lx, %#lx, %#lx, %d, %d, %#lx]\n",
                     branchAddr, entry->second.target, entry->second.outTarget, entry->second.specCount, entry->second.tripCount, entry->second.fallThruPC,
@@ -49,6 +61,12 @@ LoopDetector::update(Addr branchAddr, Addr targetAddr, Addr fallThruPC) {
         loopQueue.push_back(branchAddr);
 
     } else {
+        if (targetAddr != entry->second.outTarget && entry->second.outValid) {
+            // update
+            entry->second.valid = false;
+            streamLoopPredictor->deleteEntry(branchAddr);
+            return;
+        }
         assert(entry != loopTable.end());
         DPRINTF(DecoupleBP || debugFlagOn, "not taken update loop detector from "
                 "[%#lx, %#lx, %#lx, %d, %d, %#lx] to [%#lx, %#lx, %#lx, %d, %d, %#lx]\n",
@@ -58,6 +76,7 @@ LoopDetector::update(Addr branchAddr, Addr targetAddr, Addr fallThruPC) {
         entry->second.tripCount = entry->second.specCount;
         entry->second.specCount = 0;
         entry->second.outTarget = targetAddr;
+        entry->second.outValid = true;
 
         if (branchAddr == ObservingPC) {
             loopHistory.push_back(entry->second.tripCount);

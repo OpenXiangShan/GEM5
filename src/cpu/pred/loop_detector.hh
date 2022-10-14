@@ -36,6 +36,7 @@ private:
 
     struct LoopEntry
     {
+        bool valid;
         Addr branch;
         Addr target;
         Addr outTarget;
@@ -43,10 +44,14 @@ private:
         int specCount;
         int tripCount;
         bool intraTaken;
+        bool outValid;
+        int counter;
 
-        LoopEntry() : branch(0), target(0), outTarget(0), fallThruPC(0), specCount(0), tripCount(0), intraTaken(false) {}
-        LoopEntry(Addr branch, Addr target, Addr fallThruPC) : branch(branch), target(target), outTarget(0), fallThruPC(fallThruPC),
-                                              specCount(1), tripCount(0), intraTaken(false) {}
+        LoopEntry() : valid(true), branch(0), target(0), outTarget(0), fallThruPC(0), specCount(0), tripCount(0), 
+                      intraTaken(false), outValid(false), counter(0) {}
+        LoopEntry(Addr branch, Addr target, Addr fallThruPC) : valid(true), branch(branch), target(target), 
+                                                               outTarget(0), fallThruPC(fallThruPC), specCount(1), 
+                                                               tripCount(0), intraTaken(false), outValid(false), counter(0) {}
     };
 
     std::map<Addr, LoopEntry> loopTable;
@@ -90,6 +95,17 @@ public:
 
     void setRecentForwardTakenPC(Addr branch, Addr target) {
         forwardTaken = std::make_pair(branch, target);
+    }
+
+    void adjustLoopEntry(bool taken_backward, LoopEntry &entry, Addr branchAddr, Addr targetAddr);
+
+    bool loopUpValid(Addr branchAddr) {
+        auto entry = loopTable.find(branchAddr);
+        if (entry != loopTable.end()) {
+            return entry->second.valid;
+        } else {
+            return false;
+        }
     }
 
 };

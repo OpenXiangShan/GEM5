@@ -32,9 +32,9 @@ StreamLoopPredictor::updateTripCount(unsigned fsqId, Addr branchAddr)
                 temp.tripCount, temp.detectedCount,
                 entry->second.branch, entry->second.target, entry->second.outTarget, 
                 entry->second.tripCount, entry->second.detectedCount);
+        updateMRULoop(branchAddr);
     } else {
         DPRINTF(DecoupleBP || debugFlagOn, "can not find corresponding loop entry at %#lx\n", branchAddr);
-        assert(0);
     }
 }
 
@@ -86,6 +86,45 @@ StreamLoopPredictor::updateEntry(Addr branchAddr, Addr targetAddr, Addr outTarge
                 entry->second.branch, entry->second.target, entry->second.outTarget,
                 entry->second.tripCount, entry->second.detectedCount, entry->second.fallThruPC);
     }
+    updateMRULoop(branchAddr);
+}
+
+void
+StreamLoopPredictor::updateMRULoop(Addr branchAddr) {
+    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    if (branchAddr == ObservingPC) {
+        debugFlagOn = true;
+    }
+    int tripCount = getTripCount(branchAddr);
+
+    if (tripCount == -1) {
+        DPRINTF(DecoupleBP || debugFlagOn, "loop at %#lx is not detected, skip update MRU loop\n", branchAddr);
+        assert(0);
+    }
+
+    for (auto it = mruLoop.begin(); it != mruLoop.end(); it++) {
+        if (it->first == branchAddr) {
+            mruLoop.erase(it);
+            break;
+        }
+    }
+    if (mruLoop.size() == 10) {
+        mruLoop.pop_front();
+    }
+    mruLoop.push_back(std::make_pair(branchAddr, tripCount));
+    DPRINTF(DecoupleBP || debugFlagOn, "update MRU loop: %#lx, tripCount: %d\n", branchAddr, tripCount);
+}
+
+void
+StreamLoopPredictor::restoreLoopTable(std::list<std::pair<Addr, unsigned int>> mruLoop) {
+    this->mruLoop = mruLoop;
+    for (auto &it : mruLoop) {
+        Addr branchAddr = it.first;
+        auto entry = loopTable.find(branchAddr);
+        if (entry != loopTable.end()) {
+            entry->second.tripCount = it.second;
+        }
+    }
 }
 
 void
@@ -114,6 +153,7 @@ StreamLoopPredictor::controlSquash(unsigned fsqId, FetchStream stream, Addr bran
                 branchAddr, targetAddr, temp.tripCount, entry->second.tripCount,
                 entry->second.valid ? "valid" : "invalid");
 
+        updateMRULoop(branchAddr);
     } else {
         DPRINTF(DecoupleBP || debugFlagOn, "control squash fsqId: %lu, not found in table\n",
                 fsqId);
@@ -161,6 +201,33 @@ StreamLoopPredictor::updateTAGE(Addr streamStart, Addr branchAddr, Addr targetAd
     }
 
     return std::make_pair(hasIntrLoop, divideEntryVec);
+}
+
+void
+StreamLoopPredictor::deleteEntry(Addr branchAddr) {
+    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    if (branchAddr == ObservingPC2) {
+        debugFlagOn = true;
+    }
+    auto entry = loopTable.find(branchAddr);
+    if (entry != loopTable.end()) {
+        DPRINTF(DecoupleBP || debugFlagOn, "delete loop table entry: [%#lx, %#lx, %#lx, %d, %d]\n",
+                entry->second.branch, entry->second.target, entry->second.outTarget,
+                entry->second.tripCount, entry->second.detectedCount);
+        loopTable.erase(entry);
+    } else {
+        DPRINTF(DecoupleBP || debugFlagOn, "delete loop table entry: %#lx, not found in table\n",
+                branchAddr);
+    }
+
+    for (auto it = mruLoop.begin(); it != mruLoop.end(); it++) {
+        if (it->first == branchAddr) {
+            mruLoop.erase(it);
+            DPRINTF(DecoupleBP || debugFlagOn, "delete loop table entry: %#lx, not found in table\n",
+                    branchAddr);
+            break;
+        }
+    }
 }
 
 } // namespace branch_prediction

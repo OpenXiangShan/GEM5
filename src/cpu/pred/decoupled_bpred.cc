@@ -254,7 +254,7 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
 
     dumpFsq("Before control squash");
 
-    streamLoopPredictor->setLoopTable(stream.loopTable);
+    streamLoopPredictor->restoreLoopTable(stream.mruLoop);
     streamLoopPredictor->controlSquash(stream_id, stream, control_pc.instAddr(), corr_target.instAddr());
 
     stream.squashType = SQUASH_CTRL;
@@ -1057,7 +1057,7 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
 
     if (create_new_stream) {
         entry.setDefaultResolve();
-        entry.loopTable = streamLoopPredictor->getLoopTable();
+        entry.mruLoop = streamLoopPredictor->getMRULoop();
         auto [insert_it, inserted] = fetchStreamQueue.emplace(fsqId, entry);
         assert(inserted);
 
