@@ -6,9 +6,31 @@ namespace branch_prediction
 {
 
 StreamLoopPredictor::StreamLoopPredictor(const Params &params)
-                    : SimObject(params)
+                    : SimObject(params), tableSize(params.tableSize)
 {
         
+}
+
+void
+StreamLoopPredictor::insertEntry(Addr branchAddr, LoopEntry loopEntry) {
+    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    if (branchAddr == ObservingPC) {
+        debugFlagOn = true;
+    }
+    if (loopTable.size() <= tableSize) {
+        loopTable[branchAddr] = loopEntry;
+    } else {
+        for (int i = 0; i < 4; i++) {
+            for (auto &it : loopTable) {
+                if (it.second.age == i) {
+                    loopTable.erase(it.first);
+                    loopTable[branchAddr] = loopEntry;
+                    assert(loopTable.size() <= tableSize);
+                    return;
+                }
+            }
+        }
+    }
 }
 
 void
@@ -18,8 +40,18 @@ StreamLoopPredictor::updateTripCount(unsigned fsqId, Addr branchAddr)
     if (branchAddr == ObservingPC || branchAddr == ObservingPC2) {
         debugFlagOn = true;
     }
+
+    counter++;
+    if (counter >= 128) {
+        for (auto &it : loopTable) {
+            it.second.age = it.second.age > 0 ? it.second.age - 1 : 0;
+        }
+        counter = 0;
+    }
+
     auto entry = loopTable.find(branchAddr);
     if (entry != loopTable.end()) {
+        entry->second.age = 3;
         LoopEntry temp = entry->second;
         if (entry->second.tripCount == entry->second.detectedCount) {
             entry->second.tripCount = 0;
@@ -73,7 +105,7 @@ StreamLoopPredictor::updateEntry(Addr branchAddr, Addr targetAddr, Addr outTarge
     }
     auto entry = loopTable.find(branchAddr);
     if (entry == loopTable.end()) {
-        loopTable[branchAddr] = LoopEntry(branchAddr, targetAddr, outTarget, fallThruPC, detectedCount, intraTaken);
+        insertEntry(branchAddr, LoopEntry(branchAddr, targetAddr, outTarget, fallThruPC, detectedCount, intraTaken));
         DPRINTF(DecoupleBP || debugFlagOn, "insert loop table entry: [%#lx, %#lx, %#lx, %d, %d, %#lx]\n",
                 branchAddr, targetAddr, outTarget, 0, detectedCount, fallThruPC);
 	} else {

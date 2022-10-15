@@ -803,11 +803,14 @@ class LoopDetector(SimObject):
     cxx_header = "cpu/pred/loop_detector.hh"
 
     maxLoopQueueSize = Param.Unsigned(128, "The max size of loop queue")
+    tableSize = Param.Unsigned(64, "The size of loop table")
 
 class StreamLoopPredictor(SimObject):
     type = 'StreamLoopPredictor'
     cxx_class = 'gem5::branch_prediction::StreamLoopPredictor'
     cxx_header = "cpu/pred/stream_loop_predictor.hh"
+
+    tableSize = Param.Unsigned(32, "The size of loop table")
 
 class DecoupledBPU(BranchPredictor):
     type = 'DecoupledBPU'

@@ -56,11 +56,12 @@ struct LoopEntry
     int tripCount;
     int detectedCount;
     bool intraTaken;
+    unsigned age;
 
-    LoopEntry() : valid(true), branch(0), target(0), outTarget(0), fallThruPC(0), tripCount(0), detectedCount(0), intraTaken(false) {}
+    LoopEntry() : valid(true), branch(0), target(0), outTarget(0), fallThruPC(0), tripCount(0), detectedCount(0), intraTaken(false), age(3) {}
     LoopEntry(Addr branch, Addr target, Addr outTarget, Addr fallThruPC, int detectedCount, bool intraTaken) : 
               valid(true), branch(branch), target(target), outTarget(outTarget), fallThruPC(fallThruPC), 
-              tripCount(0), detectedCount(detectedCount), intraTaken(intraTaken) {}
+              tripCount(0), detectedCount(detectedCount), intraTaken(intraTaken), age(3) {}
 };
 
 struct FetchStream

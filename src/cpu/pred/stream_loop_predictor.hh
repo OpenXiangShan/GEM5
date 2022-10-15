@@ -37,6 +37,10 @@ private:
 
     bool debugFlagOn{false};
 
+    unsigned int tableSize;
+
+    unsigned int counter = 0;
+
 public:
 
     std::pair<bool, Addr> makeLoopPrediction(Addr branchAddr);
@@ -91,6 +95,10 @@ public:
     void controlSquash(unsigned fsqId, FetchStream stream, Addr branchAddr, Addr targetAddr);
 
     void deleteEntry(Addr branchAddr);
+
+    void insertEntry(Addr branchAddr, LoopEntry loopEntry);
+
+    std::map<Addr, LoopEntry> getLoopTable() { return loopTable; }
 
     std::pair<bool, std::vector<DivideEntry> > updateTAGE(Addr streamStart, Addr branchAddr, Addr targetAddr);
 

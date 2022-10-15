@@ -33,8 +33,9 @@ public:
 private:
 
     unsigned maxLoopQueueSize;
+    unsigned tableSize;
 
-    struct LoopEntry
+    struct DetectorEntry
     {
         bool valid;
         Addr branch;
@@ -46,15 +47,16 @@ private:
         bool intraTaken;
         bool outValid;
         int counter;
+        unsigned age;
 
-        LoopEntry() : valid(true), branch(0), target(0), outTarget(0), fallThruPC(0), specCount(0), tripCount(0), 
-                      intraTaken(false), outValid(false), counter(0) {}
-        LoopEntry(Addr branch, Addr target, Addr fallThruPC) : valid(true), branch(branch), target(target), 
+        DetectorEntry() : valid(true), branch(0), target(0), outTarget(0), fallThruPC(0), specCount(0), tripCount(0), 
+                      intraTaken(false), outValid(false), counter(0) , age(3) {}
+        DetectorEntry(Addr branch, Addr target, Addr fallThruPC) : valid(true), branch(branch), target(target), 
                                                                outTarget(0), fallThruPC(fallThruPC), specCount(1), 
-                                                               tripCount(0), intraTaken(false), outValid(false), counter(0) {}
+                                                               tripCount(0), intraTaken(false), outValid(false), counter(0), age(3) {}
     };
 
-    std::map<Addr, LoopEntry> loopTable;
+    std::map<Addr, DetectorEntry> loopTable;
 
     std::list<Addr> loopQueue;
 
@@ -65,6 +67,8 @@ private:
     bool debugFlagOn{false};
 
     std::vector<int> loopHistory;
+
+    unsigned int counter = 0;
 
 public:
 
@@ -77,27 +81,15 @@ public:
         return false;
     }
 
-    int getTripCount(Addr pc) {
-        if (loopTable.find(pc) == loopTable.end())
-            return -1;
-        else
-            return loopTable[pc].tripCount;
-    }
-
-    int getSpecCount(Addr pc) {
-        if (loopTable.find(pc) == loopTable.end())
-            return -1;
-        else
-            return loopTable[pc].specCount;
-    }
-
     void update(Addr branchAddr, Addr targetAddr, Addr fallThruPC);
 
     void setRecentForwardTakenPC(Addr branch, Addr target) {
         forwardTaken = std::make_pair(branch, target);
     }
 
-    bool adjustLoopEntry(bool taken_backward, LoopEntry &entry, Addr branchAddr, Addr targetAddr);
+    void insertEntry(Addr branchAddr, DetectorEntry loopEntry);
+
+    bool adjustLoopEntry(bool taken_backward, DetectorEntry &entry, Addr branchAddr, Addr targetAddr);
 
     bool loopUpValid(Addr branchAddr) {
         auto entry = loopTable.find(branchAddr);
