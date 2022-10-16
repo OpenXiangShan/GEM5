@@ -489,9 +489,16 @@ PhysicalMemory::unserializeStoreFrom(std::string filepath,
 {
     const uint32_t chunk_size = 16384;
 
-    int fd = open(filepath.c_str(), O_RDWR);
+    int fd = open(filepath.c_str(), O_RDONLY);
+    fatal_if(fd < 0,
+                "Failed to open file %s.\n"
+                "This error typically occurs when the file path specified is "
+                "incorrect.\n",
+                filepath);
     // mmap memoryfile
     if (!hasGzipMagic(fd)) {
+        close(fd);
+        fd = open(filepath.c_str(), O_RDWR);
         assert(mapToRawCpt &&
                "When using raw checkpoint, the memory must be directly mapped "
                "to it to speed up init\n");
