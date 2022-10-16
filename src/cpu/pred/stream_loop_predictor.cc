@@ -17,7 +17,7 @@ StreamLoopPredictor::insertEntry(Addr branchAddr, LoopEntry loopEntry) {
     if (branchAddr == ObservingPC) {
         debugFlagOn = true;
     }
-    if (loopTable.size() <= tableSize) {
+    if (loopTable.size() < tableSize) {
         loopTable[branchAddr] = loopEntry;
     } else {
         for (int i = 0; i < 4; i++) {
