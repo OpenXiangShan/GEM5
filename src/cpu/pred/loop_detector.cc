@@ -12,6 +12,7 @@ LoopDetector::LoopDetector(const Params &params)
 {
         registerExitCallback([this]() {
         auto out_handle = simout.create("loopHistory.txt", false, true);
+        *out_handle->stream() << "replace: " << replaceCount << " invalidTripCount: " << invalidTripCount << " invalidLoopCount: " << invalidLoopCount << std::endl;
         for (auto iter : loopTable) {
             *out_handle->stream() << "loop entry: " << iter.second.valid << " " << std::hex << iter.first << " " << iter.second.branch << " " 
                                   << iter.second.target << " " << iter.second.outTarget << " " << iter.second.fallThruPC << " " 
@@ -38,21 +39,27 @@ LoopDetector::adjustLoopEntry(bool taken_backward, DetectorEntry &entry, Addr br
         if (targetAddr != entry.target) {
             entry.valid = false;
             streamLoopPredictor->deleteEntry(branchAddr);
+            invalidLoopCount++;
             return false;
         }
     } else {
         if (targetAddr != entry.outTarget && entry.outValid) {
             entry.valid = false;
             streamLoopPredictor->deleteEntry(branchAddr);
+            invalidLoopCount++;
             return false;
         }
 
         if (entry.tripCount != entry.specCount)
             entry.counter--;
         else
-            entry.counter = entry.counter >= 8 ? 8 : entry.counter + 1;
+            entry.counter = entry.counter >= 3 ? 3 : entry.counter + 1;
 
-        entry.valid = entry.counter > -8;
+        entry.valid = entry.counter >= -3;
+        if (!entry.valid) {
+            streamLoopPredictor->deleteEntry(branchAddr);
+            invalidTripCount++;
+        }
     }
     return true;
 }
@@ -70,6 +77,7 @@ LoopDetector::insertEntry(Addr branchAddr, DetectorEntry loopEntry) {
             for (auto &it : loopTable) {
                 if (it.second.age == i) {
                     loopTable.erase(it.first);
+                    replaceCount++;
                     loopTable[branchAddr] = loopEntry;
                     assert(loopTable.size() <= tableSize);
                     return;

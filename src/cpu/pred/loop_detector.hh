@@ -100,6 +100,12 @@ public:
         }
     }
 
+    long replaceCount = 0;
+
+    long invalidTripCount = 0;
+
+    long invalidLoopCount = 0;
+
 };
 
 }
