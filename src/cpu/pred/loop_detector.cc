@@ -67,7 +67,7 @@ LoopDetector::adjustLoopEntry(bool taken_backward, DetectorEntry &entry, Addr br
 void
 LoopDetector::insertEntry(Addr branchAddr, DetectorEntry loopEntry) {
     defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
-    if (branchAddr == ObservingPC) {
+    if (branchAddr == ObservingPC2) {
         debugFlagOn = true;
     }
     if (loopTable.size() < tableSize) {

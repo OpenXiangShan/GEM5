@@ -238,7 +238,7 @@ StreamTAGE::putPCHistory(Addr cur_chunk_start, Addr stream_start, const bitset &
     bool useAltLoopPred = !res.second.first;
     Addr loopPredAddr = res.second.second;
 
-    if (useLoopPrediction) {
+    if (useLoopPrediction && loopPredictor->loopValid()) {
         if (useAltLoopPred) {
             target = alt_target;
             main_table_index = alt_table_index;
@@ -266,24 +266,34 @@ StreamTAGE::putPCHistory(Addr cur_chunk_start, Addr stream_start, const bitset &
         prediction.history = history;
         prediction.endType = END_NONE;
         prediction.useLoopPrediction = false;
+        prediction.predSource = 2;
 
     } else {
+        bool loopValid = loopPredictor->loopValid();
         auto& way = tageTable[main_table][main_table_index];
         DPRINTF(DecoupleBP || debugFlagOn,
                 "Valid: %d, chunkStart: %#lx, stream: [%#lx-%#lx] -> %#lx, taken: %i\n",
                 way.valid, cur_chunk_start, stream_start,
-                target->controlAddr, useLoopPrediction ? loopPredAddr : target->nextStream, target->isTaken());
+                target->controlAddr, useLoopPrediction && loopValid ? loopPredAddr : target->nextStream, target->isTaken());
 
         prediction.valid = true;
         prediction.bbStart = stream_start;
         prediction.controlAddr = target->controlAddr;
         prediction.controlSize = target->controlSize;
-        prediction.nextStream = useLoopPrediction ? loopPredAddr : target->nextStream;
-        prediction.endType = useLoopPrediction ? (loopPredictor->isTakenForward(target->controlAddr) ? END_NOT_TAKEN : END_OTHER_TAKEN) : target->endType;
+        prediction.tageTarget = target->nextStream;
+        prediction.nextStream = useLoopPrediction && loopValid ? loopPredAddr : target->nextStream;
+        prediction.endType = useLoopPrediction && loopValid ? (loopPredictor->isTakenForward(target->controlAddr) ? END_NOT_TAKEN : END_OTHER_TAKEN) : target->endType;
         prediction.history = history;
         prediction.useLoopPrediction = useLoopPrediction;
 
         way.target.tick = curTick();
+
+        if (useLoopPrediction && !loopValid)
+            prediction.predSource = 0;
+        else if (useLoopPrediction && loopValid)
+            prediction.predSource = 1;
+        else
+            prediction.predSource = 2;
     }
     debugFlagOn = false;
 }

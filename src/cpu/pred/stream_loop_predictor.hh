@@ -41,7 +41,19 @@ private:
 
     unsigned int counter = 0;
 
+    int loopUseCount = 0;
+
 public:
+
+    bool loopValid() { return loopUseCount >= 0; }
+
+    void updateLoopUseCount(bool up) {
+        if (up) {
+            loopUseCount = loopUseCount >= 8 ? 8 : loopUseCount + 1;
+        } else {
+            loopUseCount = loopUseCount <= -8 ? -8 : loopUseCount - 1;
+        }
+    }
 
     std::pair<bool, Addr> makeLoopPrediction(Addr branchAddr);
 

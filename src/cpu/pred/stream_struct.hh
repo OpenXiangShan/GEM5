@@ -94,6 +94,10 @@ struct FetchStream
     int tripCount;
     bool isMiss;
     bool useLoopPrediction;
+    bool isLoop;
+    Addr loopTarget;
+    Addr tageTarget;
+    unsigned predSource;
     std::list<std::pair<Addr, unsigned int>> mruLoop;
 
     boost::dynamic_bitset<> history;
@@ -116,7 +120,11 @@ struct FetchStream
           squashType(SquashType::SQUASH_NONE),
           tripCount(-1),
           isMiss(false),
-          useLoopPrediction(false)
+          useLoopPrediction(false),
+          isLoop(false),
+          loopTarget(0),
+          tageTarget(0),
+          predSource(0)
     {
     }
 
@@ -182,6 +190,8 @@ struct StreamPrediction: public StreamDesc
 {
     bool valid;
     bool useLoopPrediction;
+    Addr tageTarget;
+    unsigned predSource;
     boost::dynamic_bitset<> history;
 };
 

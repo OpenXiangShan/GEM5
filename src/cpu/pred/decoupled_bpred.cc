@@ -48,6 +48,9 @@ DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
         simout.close(out_handle);
 
         out_handle = simout.create("topMisPredictHist.txt", false, true);
+        *out_handle->stream() << "use loop but invalid: " << useLoopButInvalid 
+                              << " use loop and valid: " << useLoopAndValid 
+                              << " not use loop: " << notUseLoop << std::endl;
         *out_handle->stream() << "Hist" << " " << "count" << std::endl;
         std::vector<std::pair<uint64_t, uint64_t>> topMisPredHistVec;
         for (const auto &entry: topMispredHist) {
@@ -72,6 +75,11 @@ DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
          for (const auto &entry : storedLoopStreams) {
             *out_handle->stream() << std::oct << entry.first << " " << std::hex << entry.second.streamStart << ", " 
                                   << entry.second.exeBranchPC << "--->" << entry.second.exeTarget << " useLoopPred: " << entry.second.useLoopPrediction << std::endl;
+         }
+
+         out_handle = simout.create("targets.txt", false, true);
+         for (const auto it : storeTargets) {
+            *out_handle->stream() << std::hex << it << std::endl;
          }
 
         simout.close(out_handle);
@@ -573,6 +581,10 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
     while (it != fetchStreamQueue.end() && stream_id >= it->first) {
         auto &stream = it->second;
         storeLoopInfo(it->first, stream);
+        if (stream.isLoop && stream.tageTarget != stream.loopTarget) {
+            Addr target = stream.squashType == SQUASH_CTRL ? stream.exeTarget : stream.predTarget;
+            streamLoopPredictor->updateLoopUseCount(stream.loopTarget == target);
+        }
         // dequeue
         DPRINTF(DecoupleBP, "dequeueing stream id: %lu, entry below:\n",
                 it->first);
@@ -612,6 +624,17 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
             updateTAGE(stream);
 
             if (stream.squashType == SQUASH_CTRL) {
+                if (stream.exeBranchPC == ObservingPC2) {
+                    storeTargets.push_back(stream.exeTarget);
+                }
+
+                if (stream.predSource == 0) {
+                    useLoopButInvalid++;
+                } else if (stream.predSource == 1)
+                    useLoopAndValid++;
+                else
+                    notUseLoop++;
+                    
                 auto find_it = topMispredicts.find(std::make_pair(stream.streamStart, stream.exeBranchPC));
                 if (find_it == topMispredicts.end()) {
                     topMispredicts[std::make_pair(stream.streamStart, stream.exeBranchPC)] = 1;
@@ -632,6 +655,10 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
                         misPredTripCount[stream.tripCount]++;
                     }
                     DPRINTF(DecoupleBP || debugFlagOn, "commit mispredicted stream %lu\n", it->first);
+                }
+            } else {
+                if (stream.predBranchPC == ObservingPC2) {
+                    storeTargets.push_back(stream.predTarget);
                 }
             }
 
@@ -968,11 +995,6 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
     if (s0UbtbPred.valid && s0UbtbPred.isTaken()) {
         DPRINTF(DecoupleBP, "TAGE predicted target: %#lx\n", s0UbtbPred.nextStream);
 
-        if (s0UbtbPred.useLoopPrediction) {
-            streamLoopPredictor->updateTripCount(fsqId, s0UbtbPred.controlAddr);
-            entry.useLoopPrediction = true;
-        }
-
         entry.predEnded = true;
         entry.predTaken = true;
         entry.predEndPC = s0UbtbPred.controlAddr + s0UbtbPred.controlSize;
@@ -980,7 +1002,6 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
         entry.predTarget = s0UbtbPred.nextStream;
         entry.history = s0UbtbPred.history;
         entry.endType = s0UbtbPred.endType;
-        entry.tripCount = s0UbtbPred.useLoopPrediction ? streamLoopPredictor->getTripCount(s0UbtbPred.controlAddr) : entry.tripCount;
         s0PC = s0UbtbPred.nextStream;
         s0StreamStartPC = s0PC;
 
@@ -1015,11 +1036,6 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
         entry.isMiss = true;
 
         if (s0UbtbPred.valid && !s0UbtbPred.isTaken() && !s0UbtbPred.toBeCont()) {
-            if (s0UbtbPred.useLoopPrediction) {
-                streamLoopPredictor->updateTripCount(fsqId, s0UbtbPred.controlAddr);
-                entry.useLoopPrediction = true;
-            }
-            entry.tripCount = s0UbtbPred.useLoopPrediction ? streamLoopPredictor->getTripCount(s0UbtbPred.controlAddr) : entry.tripCount;
             // The prediction only tell us not taken until endPC
             // The generated stream cannot serve since endPC
             s0PC = s0UbtbPred.getFallThruPC();
@@ -1056,6 +1072,14 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
     DPRINTF(DecoupleBP, "New prediction history: %s\n", buf1.c_str());
 
     if (create_new_stream) {
+        std::tie(entry.isLoop, entry.loopTarget) = streamLoopPredictor->makeLoopPrediction(s0UbtbPred.controlAddr);
+        if (s0UbtbPred.useLoopPrediction) {
+            streamLoopPredictor->updateTripCount(fsqId, s0UbtbPred.controlAddr);
+            entry.useLoopPrediction = true;
+        }
+        entry.tripCount = s0UbtbPred.useLoopPrediction ? streamLoopPredictor->getTripCount(s0UbtbPred.controlAddr) : entry.tripCount;
+        entry.predSource = s0UbtbPred.predSource;
+
         entry.setDefaultResolve();
         entry.mruLoop = streamLoopPredictor->getMRULoop();
         auto [insert_it, inserted] = fetchStreamQueue.emplace(fsqId, entry);

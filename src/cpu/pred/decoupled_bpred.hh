@@ -375,6 +375,14 @@ class DecoupledBPU : public BPredUnit
 
     void storeLoopInfo(unsigned int fsqId, FetchStream stream);
     std::list<std::pair<unsigned int, FetchStream> > storedLoopStreams;
+
+    long useLoopButInvalid = 0;
+
+    long useLoopAndValid = 0;
+
+    long notUseLoop = 0;
+
+    std::vector<Addr> storeTargets;
 };
 
 }  // namespace branch_prediction
