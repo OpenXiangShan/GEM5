@@ -387,6 +387,23 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
                     alt_target->bbStart, alt_target->controlAddr,
                     alt_target->nextStream, alt_target->isTaken());
         }
+        
+        // update alt choice counter
+        if (main_target->hysteresis == 0 && pred_count > 1 &&
+            (main_match ^ alt_match)) {  // one of them is correct
+            auto &alt_entry = useAlt[computeAltSelHash(stream_start_pc, history)];
+            if (!main_match) {
+                satIncrement(8, alt_entry);
+                DPRINTF(DecoupleBP || debugFlagOn,
+                         "Increment alt choice counter to %d\n",
+                         alt_entry);
+            } else {
+                satDecrement(-7, alt_entry);
+                DPRINTF(DecoupleBP || debugFlagOn,
+                         "Decrement alt choice counter to %d\n",
+                         alt_entry);
+            }
+        }
 
         if (pred_match(*main_target)) {
             // inc main entry confidence
@@ -412,23 +429,7 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
                 main_entry.useful = 1;
             }
         }
-        
-        // update alt choice counter
-        if (main_target->hysteresis == 0 && pred_count > 1 &&
-            (main_match ^ alt_match)) {  // one of them is correct
-            auto &alt_entry = useAlt[computeAltSelHash(stream_start_pc, history)];
-            if (!main_match) {
-                satIncrement(8, alt_entry);
-                DPRINTF(DecoupleBP || debugFlagOn,
-                         "Increment alt choice counter to %d\n",
-                         alt_entry);
-            } else {
-                satDecrement(-7, alt_entry);
-                DPRINTF(DecoupleBP || debugFlagOn,
-                         "Decrement alt choice counter to %d\n",
-                         alt_entry);
-            }
-        }
+
         main_is_useless = main_entry.useful == 0 && main_table > 0;
     }
 
@@ -469,13 +470,13 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
             entry.target.set(curTick(), stream_start_pc, control_pc, target_pc,
                             control_size, 0, end_type, true, !actually_taken);
             entry.useful = 0;
-            entry.valid = true;
             setTag(entry.tag, new_tag, start_table);
 
             allocated++;
             if (!entry.valid) {
                 new_allocated++;
             }
+            entry.valid = true;
             if (allocated == numTablesToAlloc) {
                 break;
             }
