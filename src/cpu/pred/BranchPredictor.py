@@ -800,7 +800,7 @@ class StreamTAGE(TimedPredictor):
          452, 648, 928],
         "the Stream TAGE T0~Tn history length")
     maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
-    numTablesToAlloc = Param.Unsigned(1, "The number of table to allocated each time")
+    numTablesToAlloc = Param.Unsigned(2, "The number of table to allocated each time")
 
 class LoopDetector(SimObject):
     type = 'LoopDetector'
