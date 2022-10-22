@@ -1175,23 +1175,27 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
     boost::to_string(entry.history, buf1);
     DPRINTF(DecoupleBP, "New prediction history: %s\n", buf1.c_str());
 
-    if (create_new_stream) {
-        std::tie(entry.isLoop, entry.loopTarget) = streamLoopPredictor->makeLoopPrediction(s0UbtbPred.controlAddr);
-        if (s0UbtbPred.useLoopPrediction) {
-            streamLoopPredictor->updateTripCount(fsqId, s0UbtbPred.controlAddr);
-            entry.useLoopPrediction = true;
-        }
-        entry.tripCount = s0UbtbPred.useLoopPrediction ? streamLoopPredictor->getTripCount(s0UbtbPred.controlAddr) : entry.tripCount;
-        entry.predSource = s0UbtbPred.predSource;
+    std::tie(entry.isLoop, entry.loopTarget) = streamLoopPredictor->makeLoopPrediction(s0UbtbPred.controlAddr);
+    if (s0UbtbPred.useLoopPrediction) {
+        streamLoopPredictor->updateTripCount(fsqId, s0UbtbPred.controlAddr);
+        entry.useLoopPrediction = true;
+    }
+    entry.tripCount = s0UbtbPred.useLoopPrediction ? streamLoopPredictor->getTripCount(s0UbtbPred.controlAddr) : entry.tripCount;
+    entry.predSource = s0UbtbPred.predSource;
+    entry.mruLoop = streamLoopPredictor->getMRULoop();
 
+    if (create_new_stream) {
         entry.setDefaultResolve();
-        entry.mruLoop = streamLoopPredictor->getMRULoop();
         auto [insert_it, inserted] = fetchStreamQueue.emplace(fsqId, entry);
         assert(inserted);
 
+        DPRINTF(DecoupleBP || debugFlagOn, "use loop prediction: %d at %#lx-->%#lx\n",
+                entry.useLoopPrediction, entry.predBranchPC, entry.predTarget);
         dumpFsq("after insert new stream");
         DPRINTF(DecoupleBP || debugFlagOn, "Insert fetch stream %lu\n", fsqId);
     } else {
+        DPRINTF(DecoupleBP || debugFlagOn, "use loop prediction: %d at %#lx-->%#lx\n",
+                s0UbtbPred.useLoopPrediction, entry.predBranchPC, entry.predTarget);
         DPRINTF(DecoupleBP || debugFlagOn, "Update fetch stream %lu\n", fsqId);
     }
 
