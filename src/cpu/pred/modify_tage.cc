@@ -275,8 +275,8 @@ StreamTAGE::putPCHistory(Addr cur_chunk_start, Addr stream_start, const bitset &
         bool loopValid = loopPredictor->loopValid();
         auto& way = tageTable[main_table][main_table_index];
         DPRINTF(DecoupleBP || debugFlagOn,
-                "Valid: %d, chunkStart: %#lx, stream: [%#lx-%#lx] -> %#lx, taken: %i\n",
-                way.valid, cur_chunk_start, stream_start,
+                "use loop prediction: %d, Valid: %d, chunkStart: %#lx, stream: [%#lx-%#lx] -> %#lx, taken: %i\n",
+                useLoopPrediction && loopValid, way.valid, cur_chunk_start, stream_start,
                 target->controlAddr, useLoopPrediction && loopValid ? loopPredAddr : target->nextStream, target->isTaken());
 
         prediction.valid = true;

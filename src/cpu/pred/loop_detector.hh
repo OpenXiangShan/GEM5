@@ -8,6 +8,7 @@
 
 #include "base/statistics.hh"
 #include "base/types.hh"
+#include "base/debug_helper.hh"
 #include "cpu/pred/stream_loop_predictor.hh"
 #include "debug/DecoupleBP.hh"
 #include "base/debug_helper.hh"
@@ -105,6 +106,8 @@ public:
     long invalidTripCount = 0;
 
     long invalidLoopCount = 0;
+
+    std::vector<int> tripCountVec;
 
 };
 

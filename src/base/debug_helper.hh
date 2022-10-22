@@ -1,5 +1,5 @@
 namespace gem5
 {
-#define ObservingPC (0x7336aUL)
-#define ObservingPC2 (0x7337cUL)
+#define ObservingPC (0x17d2aUL)
+#define ObservingPC2 (0x17d34UL)
 }

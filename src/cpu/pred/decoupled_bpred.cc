@@ -85,8 +85,13 @@ DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
 
          out_handle = simout.create("loopInfo.txt", false, true);
          for (const auto &entry : storedLoopStreams) {
-            *out_handle->stream() << std::oct << entry.first << " " << std::hex << entry.second.streamStart << ", " 
-                                  << entry.second.exeBranchPC << "--->" << entry.second.exeTarget << " useLoopPred: " << entry.second.useLoopPrediction << std::endl;
+            bool misPred = entry.second.squashType == SQUASH_CTRL;
+            *out_handle->stream() << std::dec << "miss: " << misPred << " " << entry.first << " " 
+                                  << std::hex << entry.second.streamStart << ", " 
+                                  << (misPred ? entry.second.exeBranchPC : entry.second.predBranchPC) << "--->" 
+                                  << (misPred ? entry.second.exeTarget : entry.second.predTarget) << std::dec
+                                  << " useLoopPred: " << entry.second.useLoopPrediction 
+                                  << " tripCount: " << entry.second.tripCount << std::endl;
          }
 
          out_handle = simout.create("targets.txt", false, true);
