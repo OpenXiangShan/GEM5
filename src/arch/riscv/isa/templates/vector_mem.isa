@@ -28,7 +28,7 @@ public:
 def template VleConstructor {{
 
 %(class_name)s::%(class_name)s(ExtMachInst _machInst)
-    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
     %(set_reg_idx_arr)s;
     %(constructor)s;
@@ -62,7 +62,7 @@ private:
     RegId destRegIdxArr[1];
 public:
     %(class_name)s(ExtMachInst _machInst, uint8_t _microVl, uint8_t _microIdx)
-    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp, _microVl,
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s, _microVl,
                      _microIdx)
     {
         %(set_reg_idx_arr)s;
@@ -181,7 +181,7 @@ Fault
 def template VseConstructor {{
 
 %(class_name)s::%(class_name)s(ExtMachInst _machInst)
-    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
     %(set_reg_idx_arr)s;
     %(constructor)s;
@@ -216,7 +216,7 @@ private:
     RegId destRegIdxArr[0];
 public:
     %(class_name)s(ExtMachInst _machInst, uint8_t _microVl, uint8_t _microIdx)
-        : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp,
+        : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s,
                          _microVl, _microIdx)
     {
         %(set_reg_idx_arr)s;
@@ -335,7 +335,7 @@ Fault
 def template VlmConstructor {{
 
 %(class_name)s::%(class_name)s(ExtMachInst _machInst)
-    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
     %(set_reg_idx_arr)s;
     %(constructor)s;
@@ -358,7 +358,7 @@ def template VlmConstructor {{
 def template VsmConstructor {{
 
 %(class_name)s::%(class_name)s(ExtMachInst _machInst)
-    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
     %(set_reg_idx_arr)s;
     %(constructor)s;
@@ -612,7 +612,7 @@ Fault
 def template VlStrideConstructor {{
 
 %(class_name)s::%(class_name)s(ExtMachInst _machInst)
-    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
     %(set_reg_idx_arr)s;
     %(constructor)s;
@@ -652,7 +652,7 @@ private:
 public:
     %(class_name)s(ExtMachInst _machInst, uint8_t _regIdx, uint8_t _microIdx,
         uint8_t _microVl)
-    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp,
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s,
         _regIdx, _microIdx, _microVl)
     {
         %(set_reg_idx_arr)s;
@@ -798,7 +798,7 @@ Fault
 def template VsStrideConstructor {{
 
 %(class_name)s::%(class_name)s(ExtMachInst _machInst)
-    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
     %(set_reg_idx_arr)s;
     %(constructor)s;
@@ -838,7 +838,7 @@ private:
 public:
     %(class_name)s(ExtMachInst _machInst, uint8_t _regIdx, uint8_t _microIdx,
             uint8_t _microVl)
-        : %(base_class)s("%(mnemonic)s""_micro", _machInst, VectorDummyOp,
+        : %(base_class)s("%(mnemonic)s""_micro", _machInst, %(op_class)s,
             _regIdx, _microIdx, _microVl)
     {
         %(set_reg_idx_arr)s;
@@ -946,7 +946,7 @@ def template VlIndexConstructor {{
 
 template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
-    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
     %(set_reg_idx_arr)s;
     %(constructor)s;
@@ -996,7 +996,7 @@ public:
     %(class_name)s(ExtMachInst _machInst,
         uint8_t _vdRegIdx, uint8_t _vdElemIdx,
         uint8_t _vs2RegIdx, uint8_t _vs2ElemIdx)
-    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp,
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s,
         _vdRegIdx, _vdElemIdx, _vs2RegIdx, _vs2ElemIdx)
     {
         %(set_reg_idx_arr)s;
@@ -1140,7 +1140,7 @@ def template VsIndexConstructor {{
 
 template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
-    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
     %(set_reg_idx_arr)s;
     %(constructor)s;
@@ -1190,7 +1190,7 @@ public:
     %(class_name)s(ExtMachInst _machInst,
         uint8_t _vs3RegIdx, uint8_t _vs3ElemIdx,
         uint8_t _vs2RegIdx, uint8_t _vs2ElemIdx)
-    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp,
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s,
         _vs3RegIdx, _vs3ElemIdx, _vs2RegIdx, _vs2ElemIdx)
     {
         %(set_reg_idx_arr)s;

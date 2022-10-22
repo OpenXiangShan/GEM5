@@ -479,8 +479,8 @@ class VMaskMergeMicroInst : public VectorArithMicroInst
   public:
     VMaskMergeMicroInst(ExtMachInst extMachInst, uint8_t _dstReg,
         uint8_t _numSrcs)
-        : VectorArithMicroInst("vmask_mv_micro", extMachInst, VectorDummyOp, 0,
-            0)
+        : VectorArithMicroInst("vmask_mv_micro", extMachInst,
+          VectorIntegerArithOp, 0, 0)
     {
         setRegIdxArrays(
             reinterpret_cast<RegIdArrayPtr>(
@@ -548,8 +548,8 @@ class VxsatMicroInst : public VectorArithMicroInst
     bool* vxsat;
   public:
     VxsatMicroInst(bool* Vxsat, ExtMachInst extMachInst)
-        : VectorArithMicroInst("vxsat_micro", extMachInst, VectorDummyOp, 0,
-            0)
+        : VectorArithMicroInst("vxsat_micro", extMachInst,
+          VectorIntegerArithOp, 0, 0)
     {
         vxsat = Vxsat;
     }

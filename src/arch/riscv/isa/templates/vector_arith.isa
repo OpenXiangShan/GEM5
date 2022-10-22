@@ -55,7 +55,7 @@ def template VectorIntMacroConstructor {{
 
 template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
-    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
     %(set_reg_idx_arr)s;
     %(constructor)s;
@@ -103,7 +103,7 @@ template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst,
                                          uint8_t _microVl, uint8_t _microIdx)
     : %(base_class)s("%(mnemonic)s", _machInst,
-                     VectorDummyOp, _microVl, _microIdx)
+                     %(op_class)s, _microVl, _microIdx)
 {
     this->vm = _machInst.vm;
     %(set_reg_idx_arr)s;
@@ -274,7 +274,7 @@ def template VectorIntWideningMacroConstructor {{
 
 template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
-    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
     %(set_reg_idx_arr)s;
     %(constructor)s;
@@ -328,7 +328,7 @@ template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst,
         uint8_t _microVl, uint8_t _microIdx)
     : %(base_class)s("%(mnemonic)s", _machInst,
-                     VectorDummyOp, _microVl, _microIdx)
+                     %(op_class)s, _microVl, _microIdx)
 {
     this->vm = _machInst.vm;
     %(set_reg_idx_arr)s;
@@ -431,7 +431,7 @@ public:
 def template VectorFloatMacroConstructor {{
 template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
-    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
     %(set_reg_idx_arr)s;
     %(constructor)s;
@@ -477,7 +477,7 @@ template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst,
                                          uint8_t _microVl, uint8_t _microIdx)
     : %(base_class)s("%(mnemonic)s", _machInst,
-                     VectorDummyOp, _microVl, _microIdx)
+                     %(op_class)s, _microVl, _microIdx)
 {
     this->vm = _machInst.vm;
     %(set_reg_idx_arr)s;
@@ -669,7 +669,7 @@ def template ViotaMacroConstructor {{
 
 template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
-    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
     %(set_reg_idx_arr)s;
     %(constructor)s;
@@ -720,7 +720,7 @@ template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst,
     uint8_t _microVl, uint8_t _microIdx, int* cnt)
     : %(base_class)s("%(mnemonic)s", _machInst,
-                     VectorDummyOp, _microVl, _microIdx)
+                     %(op_class)s, _microVl, _microIdx)
 {
     this->vm = _machInst.vm;
     this->cnt = cnt;
@@ -761,7 +761,7 @@ def template Vector1Vs1VdMaskConstructor {{
 
 template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
-    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
     this->vm = _machInst.vm;
     %(set_reg_idx_arr)s;
@@ -813,7 +813,7 @@ def template Vector1Vs1RdMaskConstructor {{
 
 template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
-    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
     this->vm = _machInst.vm;
     %(set_reg_idx_arr)s;
@@ -861,7 +861,7 @@ def template VectorIntMaskMacroConstructor {{
 
 template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
-    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
     %(set_reg_idx_arr)s;
     %(constructor)s;
@@ -913,7 +913,7 @@ template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst,
                                          uint8_t _microVl, uint8_t _microIdx)
 : %(base_class)s("%(mnemonic)s", _machInst,
-                 VectorDummyOp, _microVl, _microIdx)
+                 %(op_class)s, _microVl, _microIdx)
 {
     this->vm = _machInst.vm;
     %(set_reg_idx_arr)s;
@@ -969,7 +969,7 @@ def template VectorFloatMaskMacroConstructor {{
 
 template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
-    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
     %(set_reg_idx_arr)s;
     %(constructor)s;
@@ -1020,7 +1020,7 @@ template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst,
                                          uint8_t _microVl, uint8_t _microIdx)
 : %(base_class)s("%(mnemonic)s", _machInst,
-                 VectorDummyOp, _microVl, _microIdx)
+                 %(op_class)s, _microVl, _microIdx)
 {
     this->vm = _machInst.vm;
     %(set_reg_idx_arr)s;
@@ -1074,7 +1074,7 @@ public:
 def template VMvWholeMacroConstructor {{
 
 %(class_name)s::%(class_name)s(ExtMachInst _machInst)
-    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
     %(set_reg_idx_arr)s;
     %(constructor)s;
@@ -1164,7 +1164,7 @@ def template VectorMaskConstructor {{
 
 template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
-    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
     %(set_reg_idx_arr)s;
     %(set_dest_reg_idx)s;
@@ -1222,7 +1222,7 @@ def template VectorNonSplitConstructor {{
 
 template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
-    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
     %(set_reg_idx_arr)s;
     %(constructor)s;
@@ -1291,7 +1291,7 @@ def template VectorReduceMacroConstructor {{
 
 template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
-    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
     %(set_reg_idx_arr)s;
     %(constructor)s;
@@ -1338,7 +1338,7 @@ template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst,
                                          uint8_t _microVl, uint8_t _microIdx)
 : %(base_class)s("%(mnemonic)s", _machInst,
-                 VectorDummyOp, _microVl, _microIdx)
+                 %(op_class)s, _microVl, _microIdx)
 {
     this->vm = _machInst.vm;
     %(set_reg_idx_arr)s;
@@ -1476,7 +1476,7 @@ def template VectorGatherMacroConstructor {{
 
 template<typename ElemType, typename IndexType>
 %(class_name)s<ElemType, IndexType>::%(class_name)s(ExtMachInst _machInst)
-    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
     %(set_reg_idx_arr)s;
     %(constructor)s;
@@ -1536,7 +1536,7 @@ template<typename ElemType, typename IndexType>
 %(class_name)s<ElemType, IndexType>::%(class_name)s(ExtMachInst _machInst,
     uint8_t _microVl, uint8_t _microIdx)
 : %(base_class)s("%(mnemonic)s", _machInst,
-                 VectorDummyOp, _microVl, _microIdx)
+                 %(op_class)s, _microVl, _microIdx)
 {
     this->vm = _machInst.vm;
     %(set_reg_idx_arr)s;
@@ -1648,7 +1648,7 @@ def template VectorIntVxsatMacroConstructor {{
 
 template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
-    : %(base_class)s("%(mnemonic)s", _machInst, VectorDummyOp)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
     %(set_reg_idx_arr)s;
     %(constructor)s;
@@ -1700,7 +1700,7 @@ template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst,
     uint8_t _microVl, uint8_t _microIdx, bool* vxsatptr)
     : %(base_class)s("%(mnemonic)s", _machInst,
-                     VectorDummyOp, _microVl, _microIdx)
+                     %(op_class)s, _microVl, _microIdx)
 {
     this->vm = _machInst.vm;
     this->vxsatptr = vxsatptr;
