@@ -687,8 +687,10 @@ def makeBareMetalXiangshanSystem(mem_mode, mdesc=None, cmdline=None):
     self.mmcs.pio = self.iobus.mem_side_ports
 
     self.bridge.ranges = [
-        AddrRange(self.uartlite.pio_addr, self.uartlite.pio_addr + self.uartlite.pio_size - 1),
-        AddrRange(self.lint.pio_addr, self.lint.pio_addr + self.lint.pio_size - 1),
+        AddrRange(self.uartlite.pio_addr, self.uartlite.pio_addr +
+         self.uartlite.pio_size),
+        AddrRange(self.lint.pio_addr, self.lint.pio_addr + self.lint.pio_size),
+        AddrRange(self.mmcs.pio_addr, self.mmcs.pio_addr + self.mmcs.pio_size),
         ]
 
     self.workload.reset_vect = 0x80000000
