@@ -13,9 +13,20 @@ namespace branch_prediction
 {
 
 DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
-    : BPredUnit(p), fetchTargetQueue(p.ftq_size), historyBits(p.maxHistLen), streamTAGE(p.stream_tage), loopDetector(p.loop_detector), streamLoopPredictor(p.stream_loop_predictor)
+    : BPredUnit(p),
+      fetchTargetQueue(p.ftq_size),
+      historyBits(p.maxHistLen),
+      streamTAGE(p.stream_tage),
+      streamUBTB(p.stream_ubtb),
+      loopDetector(p.loop_detector),
+      streamLoopPredictor(p.stream_loop_predictor)
 {
     assert(streamTAGE);
+    assert(streamUBTB);
+
+    numComponents = 2;
+    components[0] = streamUBTB;
+    components[1] = streamTAGE;
 
     // TODO: remove this
     fetchStreamQueueSize = 64;
@@ -104,15 +115,21 @@ DecoupledBPU::useStreamRAS(FetchStreamId stream_id)
 void
 DecoupledBPU::tick()
 {
+    if (numOverrideBubbles == 0) {
+        getComponentPredictions();
+    }
     if (!squashing) {
         DPRINTF(DecoupleBP, "DecoupledBPU::tick()\n");
-        s0UbtbPred = streamTAGE->getStream();
         tryEnqFetchTarget();
         tryEnqFetchStream();
 
     } else {
         DPRINTF(DecoupleBP, "Squashing, skip this cycle\n");
     }
+    if (numOverrideBubbles > 0) {
+        numOverrideBubbles--;
+    }
+
     lastCyclePredicted = false;
 
     streamTAGE->tickStart();
@@ -121,10 +138,36 @@ DecoupledBPU::tick()
             DPRINTFV(true, "Predicting stream %#lx, id: %lu\n", s0StreamStartPC, fsqId);
         }
         streamTAGE->putPCHistory(s0PC, s0StreamStartPC, s0History);
+        streamUBTB->putPCHistory(s0PC, s0StreamStartPC, s0History);
         lastCyclePredicted = true;
     }
     
     squashing = false;
+}
+
+void
+DecoupledBPU::getComponentPredictions()
+{
+    for (unsigned i = 0; i < numComponents; i++) {
+        componentPreds[i] = components[i]->getStream();
+    }
+    // choose the most accurate prediction
+    StreamPrediction *chosen = &componentPreds[0];
+    for (unsigned i = numComponents - 1; i <= 0; i++) {
+        if (componentPreds[i].valid) {
+            chosen = &componentPreds[i];
+        }
+    }
+    // calculate bubbles
+    unsigned first_hit_stage = 0;
+    while (first_hit_stage < numComponents) {
+        if (componentPreds[first_hit_stage].match(*chosen)) {
+            break;
+        }
+        first_hit_stage++;
+    }
+    // generate bubbles
+    numOverrideBubbles = first_hit_stage;
 }
 
 bool
@@ -734,6 +777,10 @@ DecoupledBPU::tryEnqFetchStream()
         DPRINTF(DecoupleBP, "s0PC %#lx is insane, cannot make prediction\n", s0PC);
         debugFlagOn = false;
         return;
+    }
+    if (numOverrideBubbles > 0) {
+        DPRINTF(DecoupleBP, "Waiting for bubble caused by overriding, bubbles rest: %u\n", numOverrideBubbles);
+        return ;
     }
     if (!streamQueueFull()) {
         bool should_create_new_stream = false;

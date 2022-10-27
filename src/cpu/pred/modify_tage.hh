@@ -82,7 +82,7 @@ class StreamTAGE : public TimedPredictor
 
     unsigned getDelay() override { return delay; }
 
-    StreamPrediction getStream();
+    StreamPrediction getStream() override;
 
     void update(Addr last_chunk_start_pc, Addr stream_start_pc,
                 Addr control_pc, Addr target,

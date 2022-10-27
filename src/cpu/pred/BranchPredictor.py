@@ -824,7 +824,8 @@ class DecoupledBPU(BranchPredictor):
 
     # stream_pred = Param.StreamPredictor(StreamPredictor(),
     # "backing stream predictor")
-    stream_tage = Param.StreamTAGE(StreamTAGE(), "fast stream predictor")
+    stream_tage = Param.StreamTAGE(StreamTAGE(), "slower but accurate stream predictor (L2)")
+    stream_ubtb = Param.StreamUBTB(StreamUBTB(), "fast stream predictor (L1)")
     loop_detector = Param.LoopDetector(LoopDetector(), "loop detector")
     stream_loop_predictor = Param.StreamLoopPredictor(StreamLoopPredictor(), "stream loop predictor")
     maxHistLen = Param.Unsigned(970, "The length of history")

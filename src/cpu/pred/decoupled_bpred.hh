@@ -1,14 +1,16 @@
 #ifndef __CPU_PRED_DECOUPLED_BPRED_HH__
 #define __CPU_PRED_DECOUPLED_BPRED_HH__
 
-#include <vector>
+#include <array>
 #include <queue>
-#include <utility> 
 #include <stack>
+#include <utility> 
+#include <vector>
 
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/fetch_target_queue.hh"
 #include "cpu/pred/stream_struct.hh"
+#include "cpu/pred/ubtb.hh"
 #include "cpu/pred/modify_tage.hh"
 #include "cpu/pred/loop_detector.hh"
 #include "debug/DecoupleBP.hh"
@@ -199,6 +201,12 @@ class DecoupledBPU : public BPredUnit
 
     StreamTAGE *streamTAGE{};
 
+    StreamUBTB *streamUBTB{};
+
+    std::array<TimedPredictor*, 4> components{};
+    std::array<StreamPrediction, 4> componentPreds{};
+    unsigned numComponents{};
+
     Addr s0PC;
     Addr s0StreamStartPC;
     boost::dynamic_bitset<> s0History;
@@ -209,6 +217,8 @@ class DecoupledBPU : public BPredUnit
     bool squashing{false};
 
     HistoryManager historyManager;
+
+    unsigned numOverrideBubbles{0};
 
     void tryEnqFetchStream();
 
@@ -269,6 +279,8 @@ class DecoupledBPU : public BPredUnit
     {
         return fetchStreamQueue.size() >= fetchStreamQueueSize;
     }
+
+    void getComponentPredictions();
 
   public:
     void tick();

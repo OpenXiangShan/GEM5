@@ -172,6 +172,12 @@ struct StreamDesc
     bool isCall() const { return endType == END_CALL; }
     bool isReturn() const { return endType == END_RET; }
     Addr getFallThruPC() const { return controlAddr + controlSize; }
+
+    bool match(const StreamDesc &other) const
+    {
+        return bbStart == other.bbStart && controlAddr == other.controlAddr &&
+               controlSize == other.controlSize && endType == other.endType;
+    }
 };
 
 struct IdealStreamStorage: public StreamDesc

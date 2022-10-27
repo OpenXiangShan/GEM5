@@ -6,6 +6,7 @@
 
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/pred/stream_struct.hh"
 #include "params/TimedPredictor.hh"
 #include "sim/sim_object.hh"
 
@@ -27,6 +28,8 @@ class TimedPredictor: public SimObject
     virtual void tick() {}
     virtual void putPCHistory(Addr pc, Addr curChunkStart,
                               const boost::dynamic_bitset<> &history) {}
+
+    virtual StreamPrediction getStream() { panic("Not implemented"); }
 
     virtual unsigned getDelay() {return 0;}
 

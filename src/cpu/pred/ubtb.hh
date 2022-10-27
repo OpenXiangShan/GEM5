@@ -83,12 +83,13 @@ class StreamUBTB : public TimedPredictor
 
     unsigned getDelay() override { return delay; }
 
-    StreamPrediction getStream();
+    StreamPrediction getStream() override;
 
-    void update(const FetchStreamId pred_id, Addr stream_start_pc,
-                Addr control_pc, Addr target, bool is_conditional,
-                bool is_indirect, unsigned control_size, bool actually_taken,
-                const boost::dynamic_bitset<> &history);
+    void update(/*const FetchStreamId pred_id,*/ 
+                Addr last_chunk_start, Addr stream_start_pc,
+                Addr control_pc, Addr target, /*bool is_conditional,*/
+                /*bool is_indirect,*/ unsigned control_size, bool actually_taken,
+                const boost::dynamic_bitset<> &history, EndType end_type);
 
     void commit(const FetchStreamId pred_id, Addr stream_start_pc,
                 Addr control_pc, Addr target, unsigned control_size,

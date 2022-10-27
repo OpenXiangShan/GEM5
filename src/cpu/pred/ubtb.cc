@@ -49,24 +49,25 @@ StreamUBTB::tickStart()
 void
 StreamUBTB::tick() {}
 
-void
-StreamUBTB::putPCHistory(Addr cur_chunk_start, Addr stream_start,
+void                                                // CONFUSED seems uBTB never use stream_start?
+StreamUBTB::putPCHistory(Addr cur_chunk_start, Addr stream_start,         // no use
                          const boost::dynamic_bitset<> &history)
 {
-    auto tag = makePCHistTag(cur_chunk_start, history);
+    auto tag = makePCHistTag(cur_chunk_start, history); // CONFUSED tag is made by chunk_start
     DPRINTF(DecoupleBP,
-            "Prediction request: stream start=%#lx, hash tag: %#lx\n", cur_chunk_start,
+            "Prediction request: chunk start=%#lx, hash tag: %#lx\n", cur_chunk_start,
             tag);
     const auto &it = ubtb.find(tag);  // TODO: use hash of cur_chunk_start and history
     if (it == ubtb.end()) {
         DPRINTF(DecoupleBP,
-                "Tag not found for stream=%#lx, guess an unlimited stream\n",
+                "Tag not found for chunk start=%#lx, guess an unlimited stream\n",
                 cur_chunk_start);
         prediction.valid = false;
         prediction.history = history;
 
     } else {
         DPRINTF(DecoupleBP, "UBTB Entry found\n");
+                
         prediction.valid = true;
         prediction.bbStart = cur_chunk_start;
         prediction.controlAddr = it->second.controlAddr;
@@ -74,6 +75,11 @@ StreamUBTB::putPCHistory(Addr cur_chunk_start, Addr stream_start,
         prediction.nextStream = it->second.nextStream;
         prediction.endType = it->second.endType;
         prediction.history = history;
+
+        DPRINTF(DecoupleBP,
+                "Valid: %d, chunkStart: %#lx, stream: [%#lx-%#lx] -> %#lx, taken: %i\n",
+                true, cur_chunk_start, stream_start,
+                prediction.controlAddr, prediction.nextStream, prediction.isTaken());
 
         it->second.tick = curTick();
         std::make_heap(mruList.begin(), mruList.end(), older());
@@ -84,22 +90,25 @@ StreamPrediction
 StreamUBTB::getStream() {
     if (prediction.valid) {
         DPRINTF(DecoupleBP,
-                "Response stream prediction: %#lx->%#lx\n",
+                "Response streamUBTB prediction: %#lx->%#lx\n",
                 prediction.bbStart,
                 prediction.controlAddr);
     } else {
-        DPRINTF(DecoupleBP, "Response invalid prediction\n");
+        DPRINTF(DecoupleBP, "Response invalid uBTB prediction\n");
     }
     return prediction;
 }
 
 void
-StreamUBTB::update(const PredictionID fsq_id, Addr stream_start_pc,
-                   Addr control_pc, Addr target, bool is_conditional,
-                   bool is_indirect, unsigned control_size,
-                   bool actually_taken,
-                   const boost::dynamic_bitset<> &history) {
-    if (control_pc < stream_start_pc) {
+StreamUBTB::update(/*const PredictionID fsq_id,*/ 
+                   Addr last_chunk_start, Addr stream_start_pc,
+                   Addr control_pc, Addr target, /*bool is_conditional,*/
+                   /*bool is_indirect,*/ unsigned control_size,
+                   bool actually_taken, const boost::dynamic_bitset<> &history,
+                   EndType end_type) {
+    DPRINTF(DecoupleBP, "In streamUBTB->update().\n");
+
+    if (control_pc < stream_start_pc) {  
         DPRINTF(DecoupleBP,
                 "Control PC %#lx is before stream start %#lx, ignore it\n",
                 control_pc,
@@ -121,9 +130,9 @@ StreamUBTB::update(const PredictionID fsq_id, Addr stream_start_pc,
     //         buf.c_str(),
     //         control_size);
 
-    auto tag = makePCHistTag(stream_start_pc, history);
-    DPRINTF(DecoupleBP, "Update stream start=%#lx, hash tag: %#lx\n",
-            stream_start_pc, tag);
+    auto tag = makePCHistTag(last_chunk_start, history);
+    DPRINTF(DecoupleBP, "Update chunk start=%#lx, hash tag: %#lx\n",
+            last_chunk_start, tag);
     auto it = ubtb.find(tag);
     // if the tag is not found and the table is full
     bool new_entry = it == ubtb.end();
@@ -141,11 +150,12 @@ StreamUBTB::update(const PredictionID fsq_id, Addr stream_start_pc,
     if (new_entry) {
         // insert entry
         ubtb[tag].tick = curTick();
-        ubtb[tag].bbStart = stream_start_pc;
+        ubtb[tag].bbStart = last_chunk_start;
         ubtb[tag].controlAddr = control_pc;
         ubtb[tag].controlSize = control_size;
         ubtb[tag].nextStream = target;
         ubtb[tag].hysteresis = 1;
+        ubtb[tag].endType = end_type;
     } else {
         // decide whether or not update the entry
         if (ubtb[tag].controlAddr != control_pc &&
@@ -159,11 +169,12 @@ StreamUBTB::update(const PredictionID fsq_id, Addr stream_start_pc,
                 DPRINTF(DecoupleBP, "Hysteresis: %d <= 0, will update\n",
                         ubtb[tag].hysteresis);
                 ubtb[tag].tick = curTick();
-                ubtb[tag].bbStart = stream_start_pc;
+                ubtb[tag].bbStart = last_chunk_start;
                 ubtb[tag].controlAddr = control_pc;
                 ubtb[tag].controlSize = control_size;
                 ubtb[tag].nextStream = target;
                 ubtb[tag].hysteresis = 0;
+                ubtb[tag].endType = end_type;
             }
         }
     }
@@ -177,11 +188,11 @@ StreamUBTB::update(const PredictionID fsq_id, Addr stream_start_pc,
     auto fit = fullHist.find(tag);
     if (fit == fullHist.end()) {  // never seen
         ++ubtbStats.coldMisses;
-        fullHist[tag].streamStart = stream_start_pc;
+        fullHist[tag].streamStart = stream_start_pc;  // FIXME
         fullHist[tag].branchAddr = control_pc;
         fullHist[tag].targetAddr = target;
 
-    } else if (fit->second.streamStart == stream_start_pc &&
+    } else if (fit->second.streamStart == stream_start_pc &&  // FIXME
                fit->second.branchAddr == control_pc &&
                fit->second.targetAddr == target) {
         // seen but limited by capacity
@@ -193,7 +204,7 @@ StreamUBTB::update(const PredictionID fsq_id, Addr stream_start_pc,
                 "t start: %#lx, t br: %#lx, t target: %#lx\n",
                 tag, fit->second.streamStart, fit->second.branchAddr,
                 fit->second.targetAddr, stream_start_pc, control_pc, target);
-        fit->second.streamStart = stream_start_pc;
+        fit->second.streamStart = stream_start_pc;  // FIXME
         fit->second.branchAddr = control_pc;
         fit->second.targetAddr = target;
     }
@@ -209,6 +220,7 @@ StreamUBTB::update(const PredictionID fsq_id, Addr stream_start_pc,
         control_pc + control_size,
         ubtb[tag].nextStream);
 
+    DPRINTF(DecoupleBP, "Ends streamUBTB->update().\n");
     // Because fetch has been redirected, here we must make another prediction
 }
 
