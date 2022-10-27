@@ -158,6 +158,7 @@ DecoupledBPU::getComponentPredictions()
             chosen = &componentPreds[i];
         }
     }
+    s0UbtbPred = *chosen;
     // calculate bubbles
     unsigned first_hit_stage = 0;
     while (first_hit_stage < numComponents) {
