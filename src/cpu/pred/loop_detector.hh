@@ -107,7 +107,7 @@ public:
 
     long invalidLoopCount = 0;
 
-    std::vector<int> tripCountVec;
+    std::vector<std::pair<int, int>> tripCountVec;
 
 };
 

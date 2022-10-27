@@ -13,7 +13,7 @@ LoopDetector::LoopDetector(const Params &params)
         registerExitCallback([this]() {
         auto out_handle = simout.create("loopHistory.txt", false, true);
         for (auto iter : tripCountVec) {
-            *out_handle->stream() << std::dec << iter << std::endl;
+            *out_handle->stream() << std::dec << iter.first << " counter: " << iter.second << std::endl;
         }
         *out_handle->stream() << "replace: " << replaceCount << " invalidTripCount: " << invalidTripCount << " invalidLoopCount: " << invalidLoopCount << std::endl;
         for (auto iter : loopTable) {
@@ -35,8 +35,12 @@ LoopDetector::LoopDetector(const Params &params)
 
 bool 
 LoopDetector::adjustLoopEntry(bool taken_backward, DetectorEntry &entry, Addr branchAddr, Addr targetAddr) {
-    if (!entry.valid)
+    if (!entry.valid) {
+        if (branchAddr == ObservingPC2) {
+            tripCountVec.push_back(std::make_pair(0, -9));
+        }
         return false;
+    }
 
     if (taken_backward) {
         if (targetAddr != entry.target) {
@@ -148,7 +152,7 @@ LoopDetector::update(Addr branchAddr, Addr targetAddr, Addr fallThruPC) {
         entry->second.outValid = true;
 
         if (branchAddr == ObservingPC2) {
-            tripCountVec.push_back(entry->second.tripCount);
+            tripCountVec.push_back(std::make_pair(entry->second.tripCount, entry->second.counter));
         }
 
         if (branchAddr == ObservingPC2) {
