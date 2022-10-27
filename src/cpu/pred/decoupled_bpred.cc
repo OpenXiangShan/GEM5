@@ -295,6 +295,7 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
     auto &stream = squashing_stream_it->second;
 
     auto pc = stream.streamStart;
+    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
     if (pc == ObservingPC) {
         debugFlagOn = true;
     }
@@ -442,7 +443,6 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
     historyManager.squash(stream_id, actually_taken, control_pc.instAddr(),
                           corr_target.instAddr());
     checkHistory(s0History);
-    debugFlagOn = false;
 }
 
 void
@@ -632,6 +632,7 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
     if (fetchStreamQueue.empty())
         return;
     auto it = fetchStreamQueue.begin();
+    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
     while (it != fetchStreamQueue.end() && stream_id >= it->first) {
         auto &stream = it->second;
         storeLoopInfo(it->first, stream);
@@ -741,7 +742,6 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
 
         it = fetchStreamQueue.erase(it);
     }
-    debugFlagOn = false;
     DPRINTF(DecoupleBP, "after commit stream, fetchStreamQueue size: %lu\n",
             fetchStreamQueue.size());
     printStream(it->second);
@@ -776,6 +776,7 @@ DecoupledBPU::dumpFsq(const char *when)
 void
 DecoupledBPU::tryEnqFetchStream()
 {
+    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
     if (s0StreamStartPC == ObservingPC) {
         debugFlagOn = true;
     }
@@ -785,7 +786,6 @@ DecoupledBPU::tryEnqFetchStream()
     }
     if (s0PC == MaxAddr) {
         DPRINTF(DecoupleBP, "s0PC %#lx is insane, cannot make prediction\n", s0PC);
-        debugFlagOn = false;
         return;
     }
     if (numOverrideBubbles > 0) {
@@ -806,7 +806,6 @@ DecoupledBPU::tryEnqFetchStream()
                 DPRINTF(DecoupleBP,
                         "stream end %#lx is insane, cannot make prediction\n",
                         back.getEndPC());
-                debugFlagOn = false;
                 return;
             }
         }
@@ -838,7 +837,6 @@ DecoupledBPU::tryEnqFetchStream()
     }
     receivedPred = false;
     DPRINTF(DecoupleBP || debugFlagOn, "fsqId=%lu\n", fsqId);
-    debugFlagOn = false;
 }
 
 void
@@ -1042,6 +1040,7 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
     auto back = fetchStreamQueue.rbegin();
     auto &entry = create_new_stream ? entry_new : back->second;
     entry.streamStart = s0StreamStartPC;
+    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
     if (s0StreamStartPC == ObservingPC) {
         debugFlagOn = true;
     }
@@ -1158,7 +1157,6 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
     }
     printStream(entry);
     checkHistory(s0History);
-    debugFlagOn = false;
 }
 
 void
