@@ -77,6 +77,9 @@ class L2Cache(Cache):
     tgts_per_mshr = 20
     clusivity='mostly_excl'
     prefetch_on_access = True
+    # Only receive 1 req per cycle
+    max_read_per_cycle = 1
+    max_write_per_cycle = 1
 
 class L3Cache(Cache):
     tag_latency = 5
@@ -85,6 +88,9 @@ class L3Cache(Cache):
     mshrs = 64
     tgts_per_mshr = 20
     clusivity='mostly_excl'
+    # Only receive 1 req per cycle
+    max_read_per_cycle = 1
+    max_write_per_cycle = 1
 
 class IOCache(Cache):
     assoc = 8

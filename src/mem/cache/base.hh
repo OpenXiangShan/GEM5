@@ -113,6 +113,8 @@ class BaseCache : public ClockedObject
         Blocked_NoMSHRs = MSHRQueue_MSHRs,
         Blocked_NoWBBuffers = MSHRQueue_WriteBuffer,
         Blocked_NoTargets,
+        Blocked_NoReadPorts,
+        Blocked_NoWritePorts,
         NUM_BLOCKED_CAUSES
     };
 
@@ -920,6 +922,20 @@ class BaseCache : public ClockedObject
      * Whether tags and data are accessed sequentially.
      */
     const bool sequentialAccess;
+
+    /**
+     * Number of read/write reqs received in current cycle.
+     */
+    unsigned num_read_req;
+    unsigned num_write_req;
+
+    Cycles lastUpdateTime;
+
+    /**
+     * The max number of read/write reqs the cache can process per cycle.
+     */
+    const unsigned max_read_per_cycle;
+    const unsigned max_write_per_cycle;
 
     /** The number of targets for each MSHR. */
     const int numTarget;

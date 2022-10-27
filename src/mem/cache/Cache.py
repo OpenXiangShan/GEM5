@@ -118,6 +118,12 @@ class BaseCache(ClockedObject):
     sequential_access = Param.Bool(False,
         "Whether to access tags and data sequentially")
 
+    max_read_per_cycle = Param.Unsigned(0,
+        "The maximum number of read requests "
+        "that can be processed per cycle (0 represents no limitation).")
+    max_write_per_cycle = Param.Unsigned(0,
+        "The maximum number of write requests "
+        "that can be processed per cycle (0 represents no limitation).")
     cpu_side = ResponsePort("Upstream port closer to the CPU and/or device")
     mem_side = RequestPort("Downstream port closer to memory")
 

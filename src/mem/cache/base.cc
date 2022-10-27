@@ -101,6 +101,11 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       fillLatency(p.data_latency),
       responseLatency(p.response_latency),
       sequentialAccess(p.sequential_access),
+      num_read_req(0),
+      num_write_req(0),
+      lastUpdateTime(0),
+      max_read_per_cycle(p.max_read_per_cycle),
+      max_write_per_cycle(p.max_write_per_cycle),
       numTarget(p.tgts_per_mshr),
       forwardSnoops(true),
       clusivity(p.clusivity),
@@ -2420,6 +2425,8 @@ BaseCache::CacheStats::regStats()
     blockedCycles
         .subname(Blocked_NoMSHRs, "no_mshrs")
         .subname(Blocked_NoTargets, "no_targets")
+        .subname(Blocked_NoWritePorts, "no_write_ports")
+        .subname(Blocked_NoReadPorts, "no_read_ports")
         ;
 
 
@@ -2427,11 +2434,15 @@ BaseCache::CacheStats::regStats()
     blockedCauses
         .subname(Blocked_NoMSHRs, "no_mshrs")
         .subname(Blocked_NoTargets, "no_targets")
+        .subname(Blocked_NoWritePorts, "no_write_ports")
+        .subname(Blocked_NoReadPorts, "no_read_ports")
         ;
 
     avgBlocked
         .subname(Blocked_NoMSHRs, "no_mshrs")
         .subname(Blocked_NoTargets, "no_targets")
+        .subname(Blocked_NoWritePorts, "no_write_ports")
+        .subname(Blocked_NoReadPorts, "no_read_ports")
         ;
     avgBlocked = blockedCycles / blockedCauses;
 
@@ -2581,6 +2592,33 @@ BaseCache::CpuSidePort::recvTimingReq(PacketPtr pkt)
 {
     assert(pkt->isRequest());
 
+
+    // Check ports limitations.
+    Cycles curCycle = cache->curCycle();
+    if (cache->lastUpdateTime != curCycle) {
+        // @todo Use Event to reset stats?
+        cache->num_read_req = 0;
+        cache->num_write_req = 0;
+        cache->lastUpdateTime = curCycle;
+        DPRINTF(Cache, "recv timing req, udpate stats.\n");
+    } else {
+        DPRINTF(Cache, "recv timing req\n");
+    }
+    if (pkt->isWrite()) {
+        cache->num_write_req++;
+        if (cache->max_write_per_cycle > 0 &&
+            cache->num_write_req > cache->max_write_per_cycle) {
+            cache->setBlocked(Blocked_NoReadPorts);
+            DPRINTF(Cache, "write overflow\n");
+        }
+    } else {
+        cache->num_read_req++;
+        if (cache->max_read_per_cycle > 0 &&
+            cache->num_read_req > cache->max_read_per_cycle) {
+            cache->setBlocked(Blocked_NoWritePorts);
+            DPRINTF(Cache, "read overflow\n");
+        }
+    }
     if (cache->system->bypassCaches()) {
         // Just forward the packet if caches are disabled.
         // @todo This should really enqueue the packet rather
