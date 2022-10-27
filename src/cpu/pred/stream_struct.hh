@@ -176,6 +176,7 @@ struct StreamDesc
     bool match(const StreamDesc &other) const
     {
         return bbStart == other.bbStart && controlAddr == other.controlAddr &&
+               nextStream == other.nextStream &&
                controlSize == other.controlSize && endType == other.endType;
     }
 };

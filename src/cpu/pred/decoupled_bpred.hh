@@ -207,6 +207,9 @@ class DecoupledBPU : public BPredUnit
     std::array<StreamPrediction, 4> componentPreds{};
     unsigned numComponents{};
 
+    bool sentPCHist{false};
+    bool receivedPred{false};
+
     Addr s0PC;
     Addr s0StreamStartPC;
     boost::dynamic_bitset<> s0History;
@@ -358,8 +361,6 @@ class DecoupledBPU : public BPredUnit
 
     std::stack<Addr> streamRAS;
     
-    bool lastCyclePredicted;
-
     void dumpRAS() {
         for (std::stack<Addr> dump = streamRAS; !dump.empty(); dump.pop())
             DPRINTF(DecoupleBPRAS, "RAS: %#lx\n", dump.top());

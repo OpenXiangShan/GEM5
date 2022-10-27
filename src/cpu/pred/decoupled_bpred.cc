@@ -115,7 +115,7 @@ DecoupledBPU::useStreamRAS(FetchStreamId stream_id)
 void
 DecoupledBPU::tick()
 {
-    if (numOverrideBubbles == 0) {
+    if (!receivedPred && numOverrideBubbles == 0 && sentPCHist) {
         getComponentPredictions();
     }
     if (!squashing) {
@@ -125,23 +125,28 @@ DecoupledBPU::tick()
 
     } else {
         DPRINTF(DecoupleBP, "Squashing, skip this cycle\n");
+        receivedPred = false;
     }
     if (numOverrideBubbles > 0) {
         numOverrideBubbles--;
     }
 
-    lastCyclePredicted = false;
+    sentPCHist = false;
 
     streamTAGE->tickStart();
-    if (!streamQueueFull()) {
+    if (!receivedPred && !streamQueueFull()) {
         if (s0StreamStartPC == ObservingPC) {
             DPRINTFV(true, "Predicting stream %#lx, id: %lu\n", s0StreamStartPC, fsqId);
         }
+        DPRINTF(DecoupleBP, "Requesting prediction for stream start=%#lx\n", s0PC);
         streamTAGE->putPCHistory(s0PC, s0StreamStartPC, s0History);
         streamUBTB->putPCHistory(s0PC, s0StreamStartPC, s0History);
-        lastCyclePredicted = true;
+        sentPCHist = true;
     }
     
+    if (streamQueueFull()) {
+        DPRINTF(DecoupleBP, "Stream queue is full, don't request prediction\n");
+    }
     squashing = false;
 }
 
@@ -153,7 +158,11 @@ DecoupledBPU::getComponentPredictions()
     }
     // choose the most accurate prediction
     StreamPrediction *chosen = &componentPreds[0];
-    for (unsigned i = numComponents - 1; i <= 0; i++) {
+    for (int i = (int) numComponents - 1; i >= 0; i--) {
+        const auto &e =componentPreds[i];
+        DPRINTF(DecoupleBP,
+                "Component %u prediction: %#lx-[%#lx, %#lx) -> %#lx\n", i,
+                e.bbStart, e.controlAddr, e.getFallThruPC(), e.nextStream);
         if (componentPreds[i].valid) {
             chosen = &componentPreds[i];
         }
@@ -169,6 +178,7 @@ DecoupledBPU::getComponentPredictions()
     }
     // generate bubbles
     numOverrideBubbles = first_hit_stage;
+    receivedPred = true;
 }
 
 bool
@@ -769,9 +779,8 @@ DecoupledBPU::tryEnqFetchStream()
     if (s0StreamStartPC == ObservingPC) {
         debugFlagOn = true;
     }
-    if (!lastCyclePredicted) {
-        DPRINTF(DecoupleBP, "last cycle not predicted, cannot enq fsq\n");
-        debugFlagOn = false;
+    if (!receivedPred) {
+        DPRINTF(DecoupleBP, "No received prediction, cannot enq fsq\n");
         return;
     }
     if (s0PC == MaxAddr) {
@@ -783,7 +792,8 @@ DecoupledBPU::tryEnqFetchStream()
         DPRINTF(DecoupleBP, "Waiting for bubble caused by overriding, bubbles rest: %u\n", numOverrideBubbles);
         return ;
     }
-    if (!streamQueueFull()) {
+    assert(!streamQueueFull());
+    if (true) {
         bool should_create_new_stream = false;
         if (!fetchStreamQueue.empty()) {
             // check last entry state
@@ -826,6 +836,7 @@ DecoupledBPU::tryEnqFetchStream()
         DPRINTF(DecoupleBP || debugFlagOn, "FSQ is full: %lu\n",
                 fetchStreamQueue.size());
     }
+    receivedPred = false;
     DPRINTF(DecoupleBP || debugFlagOn, "fsqId=%lu\n", fsqId);
     debugFlagOn = false;
 }
