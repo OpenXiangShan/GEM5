@@ -683,9 +683,9 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
                     storeTargets.push_back(stream.exeTarget);
                 }
 
-                if (stream.predSource == 0) {
+                if (stream.predSource == LoopButInvalid) {
                     useLoopButInvalid++;
-                } else if (stream.predSource == 1)
+                } else if (stream.predSource == LoopAndValid)
                     useLoopAndValid++;
                 else
                     notUseLoop++;

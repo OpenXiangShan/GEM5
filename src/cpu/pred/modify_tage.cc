@@ -289,11 +289,11 @@ StreamTAGE::putPCHistory(Addr cur_chunk_start, Addr stream_start, const bitset &
         way.target.tick = curTick();
 
         if (useLoopPrediction && !loopValid)
-            prediction.predSource = 0;
+            prediction.predSource = LoopButInvalid;
         else if (useLoopPrediction && loopValid)
-            prediction.predSource = 1;
+            prediction.predSource = LoopAndValid;
         else
-            prediction.predSource = 2;
+            prediction.predSource = TAGE;
     }
     debugFlagOn = false;
 }

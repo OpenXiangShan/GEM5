@@ -22,6 +22,12 @@ namespace gem5
 namespace branch_prediction
 {
 
+  enum PredSource {
+    LoopButInvalid,
+    LoopAndValid,
+    TAGE
+  };
+
 class StreamTAGE : public TimedPredictor
 {
     using defer = std::shared_ptr<void>;
