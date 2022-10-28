@@ -368,15 +368,10 @@ Queued::alreadyInQueue(std::list<DeferredPacket> &queue,
         if (it->priority < priority) {
             /* Update priority value and position in the queue */
             it->priority = priority;
-            iterator prev = it;
-            while (prev != queue.begin()) {
-                prev--;
-                /* If the packet has higher priority, swap */
-                if (*it > *prev) {
-                    std::swap(*it, *prev);
-                    it = prev;
-                }
-            }
+            /* Because swap() will cause the translationComplete
+             * run into wrong DeferredPacket, we use std::list::sort
+             * to update this queue */
+            queue.sort(std::greater<DeferredPacket>());
             DPRINTF(HWPrefetch, "Prefetch addr already in "
                 "prefetch queue, priority updated\n");
         } else {
