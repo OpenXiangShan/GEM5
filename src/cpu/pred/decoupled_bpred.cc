@@ -5,6 +5,7 @@
 #include "cpu/pred/stream_common.hh"
 #include "debug/DecoupleBPVerbose.hh"
 #include "debug/DecoupleBPHist.hh"
+#include "debug/Override.hh"
 #include "sim/core.hh"
 
 namespace gem5
@@ -120,13 +121,16 @@ DecoupledBPU::tick()
     }
     if (!squashing) {
         DPRINTF(DecoupleBP, "DecoupledBPU::tick()\n");
+        DPRINTF(Override, "DecoupledBPU::tick()\n");
         tryEnqFetchTarget();
         tryEnqFetchStream();
 
     } else {
-        DPRINTF(DecoupleBP, "Squashing, skip this cycle\n");
         receivedPred = false;
+        DPRINTF(DecoupleBP, "Squashing, skip this cycle, receivedPred is %d.\n", receivedPred);
+        DPRINTF(Override, "Squashing, skip this cycle, receivedPred is %d.\n", receivedPred);
     }
+
     if (numOverrideBubbles > 0) {
         numOverrideBubbles--;
     }
@@ -134,11 +138,14 @@ DecoupledBPU::tick()
     sentPCHist = false;
 
     streamTAGE->tickStart();
+    streamUBTB->tickStart();
+
     if (!receivedPred && !streamQueueFull()) {
         if (s0StreamStartPC == ObservingPC) {
             DPRINTFV(true, "Predicting stream %#lx, id: %lu\n", s0StreamStartPC, fsqId);
         }
         DPRINTF(DecoupleBP, "Requesting prediction for stream start=%#lx\n", s0PC);
+        DPRINTF(Override, "Requesting prediction for stream start=%#lx\n", s0PC);
         streamTAGE->putPCHistory(s0PC, s0StreamStartPC, s0History);
         streamUBTB->putPCHistory(s0PC, s0StreamStartPC, s0History);
         sentPCHist = true;
@@ -146,6 +153,7 @@ DecoupledBPU::tick()
     
     if (streamQueueFull()) {
         DPRINTF(DecoupleBP, "Stream queue is full, don't request prediction\n");
+        DPRINTF(Override, "Stream queue is full, don't request prediction\n");
     }
     squashing = false;
 }
@@ -153,21 +161,32 @@ DecoupledBPU::tick()
 void
 DecoupledBPU::getComponentPredictions()
 {
+    DPRINTF(Override, "In getComponentPredictions().\n");
     for (unsigned i = 0; i < numComponents; i++) {
         componentPreds[i] = components[i]->getStream();
     }
+    DPRINTF(Override, "componentPreds[0]: valid: %d, (%#lx,%#lx)(%#lx)->%#lx, taken: %d, toBeCont: %d;\n"
+            "componentPreds[1]: valid: %d, (%#lx,%#lx)(%#lx)->%#lx, taken: %d, toBeCont: %d.\n",
+            componentPreds[0].valid, componentPreds[0].bbStart, componentPreds[0].controlAddr, componentPreds[0].getFallThruPC(),
+            componentPreds[0].nextStream, componentPreds[0].isTaken(), componentPreds[0].toBeCont(),
+            componentPreds[1].valid, componentPreds[1].bbStart, componentPreds[1].controlAddr, componentPreds[1].getFallThruPC(),
+            componentPreds[1].nextStream, componentPreds[1].isTaken(), componentPreds[1].toBeCont());
     // choose the most accurate prediction
     StreamPrediction *chosen = &componentPreds[0];
+    // int j = (int) numComponents - 1;
+    // DPRINTF(Override, "(int) numComponents - 1 : %d, numComponents: %d.\n", j, numComponents);
+
     for (int i = (int) numComponents - 1; i >= 0; i--) {
         const auto &e =componentPreds[i];
-        DPRINTF(DecoupleBP,
+        DPRINTF(Override,
                 "Component %u prediction: %#lx-[%#lx, %#lx) -> %#lx\n", i,
                 e.bbStart, e.controlAddr, e.getFallThruPC(), e.nextStream);
         if (componentPreds[i].valid) {
             chosen = &componentPreds[i];
+            break;
         }
     }
-    s0UbtbPred = *chosen;
+    s0UbtbPred = *chosen;  // chosen could be invalid
     // calculate bubbles
     unsigned first_hit_stage = 0;
     while (first_hit_stage < numComponents) {
@@ -181,8 +200,12 @@ DecoupledBPU::getComponentPredictions()
      * @brief We don't need to generate bubbles because ubtb does not work yet
      * @todo fix it with numOverrideBubbles = first_hit_stage;
      */
-    numOverrideBubbles = 0;
+    numOverrideBubbles = first_hit_stage;
     receivedPred = true;
+    DPRINTF(Override, "chosen is valid: %d, (%#lx,%#lx)(%#lx)->%#lx, taken: %d, toBeCont: %d;\n", 
+            s0UbtbPred.valid, s0UbtbPred.bbStart, s0UbtbPred.controlAddr, s0UbtbPred.getFallThruPC(),
+            s0UbtbPred.nextStream, s0UbtbPred.isTaken(), s0UbtbPred.toBeCont());
+    DPRINTF(Override, "Ends getComponentPredictions(), numOverrideBubbles is %d, receivedPred is set true.\n", numOverrideBubbles);
 }
 
 bool
@@ -678,9 +701,18 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
                 streamTAGE->update(
                     cur_chunk, stream.streamStart, next_chunk - 2, next_chunk,
                     2, false /* not taken*/, stream.history, END_CONT);
+                streamUBTB->update(
+                    cur_chunk, stream.streamStart, next_chunk - 2, next_chunk,
+                    2, false /* not taken*/, stream.history, END_CONT);  
                 cur_chunk = next_chunk;
             }
             updateTAGE(stream);
+            streamUBTB->update(last_chunk, stream.streamStart,
+                               stream.getControlPC(),
+                               stream.getNextStreamStart(),
+                               stream.getFallThruPC() - stream.getControlPC(),
+                               stream.getTaken(), stream.history,
+                               static_cast<EndType>(stream.endType));
 
             if (stream.squashType == SQUASH_CTRL) {
                 if (stream.exeBranchPC == ObservingPC2) {
@@ -742,6 +774,11 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
                                stream.streamStart, stream.getControlPC(),
                                stream.getFallThruPC(), 4, false /* not taken*/,
                                stream.history, END_NOT_TAKEN);
+            streamUBTB->update(computeLastChunkStart(stream.getControlPC(),
+                                                     stream.streamStart),
+                               stream.streamStart, stream.getControlPC(),
+                               stream.getFallThruPC(), 4, false /* not taken*/,
+                               stream.history, END_NOT_TAKEN);  
         }
 
         it = fetchStreamQueue.erase(it);
@@ -786,7 +823,10 @@ DecoupledBPU::tryEnqFetchStream()
     }
     if (!receivedPred) {
         DPRINTF(DecoupleBP, "No received prediction, cannot enq fsq\n");
+        DPRINTF(Override, "In tryEnqFetchStream(), received is false.\n");
         return;
+    } else {
+        DPRINTF(Override, "In tryEnqFetchStream(), received is true.\n");
     }
     if (s0PC == MaxAddr) {
         DPRINTF(DecoupleBP, "s0PC %#lx is insane, cannot make prediction\n", s0PC);
@@ -794,7 +834,8 @@ DecoupledBPU::tryEnqFetchStream()
     }
     if (numOverrideBubbles > 0) {
         DPRINTF(DecoupleBP, "Waiting for bubble caused by overriding, bubbles rest: %u\n", numOverrideBubbles);
-        return ;
+        DPRINTF(Override, "Waiting for bubble caused by overriding, bubbles rest: %u\n", numOverrideBubbles);
+        return;
     }
     assert(!streamQueueFull());
     if (true) {
@@ -840,6 +881,7 @@ DecoupledBPU::tryEnqFetchStream()
                 fetchStreamQueue.size());
     }
     receivedPred = false;
+    DPRINTF(Override, "In tryFetchEnqStream(), receivedPred reset to false.\n");
     DPRINTF(DecoupleBP || debugFlagOn, "fsqId=%lu\n", fsqId);
 }
 

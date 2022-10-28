@@ -8,6 +8,7 @@
 #include "debug/DecoupleBP.hh"
 #include "debug/DecoupleBPVerbose.hh"
 #include "debug/DecoupleBPUseful.hh"
+#include "debug/Override.hh"
 #include "cpu/pred/stream_common.hh"
 
 namespace gem5 {
@@ -211,6 +212,8 @@ StreamTAGE::makeLoopPrediction(bool use_alt_pred, int pred_count, TickedStreamSt
 
 void
 StreamTAGE::putPCHistory(Addr cur_chunk_start, Addr stream_start, const bitset &history) {
+    DPRINTF(Override, "In tage.putPCHistory().\n");
+
     defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
     TickedStreamStorage *target = nullptr;
     TickedStreamStorage *alt_target = nullptr;
@@ -296,6 +299,7 @@ StreamTAGE::putPCHistory(Addr cur_chunk_start, Addr stream_start, const bitset &
             prediction.predSource = TAGE;
     }
     debugFlagOn = false;
+    DPRINTF(Override, "Ends tage.putPCHistory().\n");
 }
 
 StreamPrediction

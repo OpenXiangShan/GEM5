@@ -2,6 +2,7 @@
 
 #include "base/trace.hh"
 #include "debug/DecoupleBP.hh"
+#include "debug/Override.hh"
 
 namespace gem5 {
 
@@ -53,6 +54,7 @@ void                                                // CONFUSED seems uBTB never
 StreamUBTB::putPCHistory(Addr cur_chunk_start, Addr stream_start,         // no use
                          const boost::dynamic_bitset<> &history)
 {
+    DPRINTF(Override, "In ubtb.putPCHistory().\n");
     auto tag = makePCHistTag(cur_chunk_start, history); // CONFUSED tag is made by chunk_start
     DPRINTF(DecoupleBP,
             "Prediction request: chunk start=%#lx, hash tag: %#lx\n", cur_chunk_start,
@@ -84,10 +86,13 @@ StreamUBTB::putPCHistory(Addr cur_chunk_start, Addr stream_start,         // no 
         it->second.tick = curTick();
         std::make_heap(mruList.begin(), mruList.end(), older());
     }
+
+    DPRINTF(Override, "Ends ubtb.putPCHistory().\n");
 }
 
 StreamPrediction
-StreamUBTB::getStream() {
+StreamUBTB::getStream() 
+{
     if (prediction.valid) {
         DPRINTF(DecoupleBP,
                 "Response streamUBTB prediction: %#lx->%#lx\n",

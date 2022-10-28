@@ -172,13 +172,6 @@ struct StreamDesc
     bool isCall() const { return endType == END_CALL; }
     bool isReturn() const { return endType == END_RET; }
     Addr getFallThruPC() const { return controlAddr + controlSize; }
-
-    bool match(const StreamDesc &other) const
-    {
-        return bbStart == other.bbStart && controlAddr == other.controlAddr &&
-               nextStream == other.nextStream &&
-               controlSize == other.controlSize && endType == other.endType;
-    }
 };
 
 struct IdealStreamStorage: public StreamDesc
@@ -200,6 +193,31 @@ struct StreamPrediction: public StreamDesc
     Addr tageTarget;
     unsigned predSource;
     boost::dynamic_bitset<> history;
+
+    bool match(StreamPrediction &other)
+    {
+        if (!other.valid) {
+            // chosen is invalid, means all predictors invalid, match
+            return true;
+        } else {
+            // chosen is valid
+            if (!this->valid) {
+                // if this is invalid and chosen is valid, sure no match
+                return false;
+            } else {
+                // both this and chosen valid 
+                if (this->isTaken() != other.isTaken()) {
+                    return false;
+                } else if (this->isTaken() && other.isTaken()) {
+                    // here bb.start is not a compare criteria, since ubtb and tage's bbStart is different
+                    return controlAddr == other.controlAddr && nextStream == other.nextStream;   // TODO consider endType and controlAddr
+                } else {
+                    return controlAddr == other.controlAddr && controlSize == other.controlSize && endType == other.endType;
+
+                }
+            }
+        }
+    }
 };
 
 struct StreamPredictionWithID : public StreamPrediction
