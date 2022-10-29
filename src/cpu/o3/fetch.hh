@@ -77,6 +77,72 @@ class CPU;
  * It supports the idling functionality of the CPU by indicating to
  * the CPU when it is active and inactive.
  */
+
+class LoopBuffer
+{
+  public:
+    /** The loop unrolled buffer. */
+    uint8_t activeBuffer[256];
+
+    uint8_t *activePointer;
+
+    /** Find a loop entry and update the active loop entry.
+     * Unroll it until loop exit.
+     */
+
+    void tryActivateLoop(Addr control_pc, unsigned pred_iteration) {
+        /**
+         * @todo: caculation limit, singleIterSize
+         * 
+         */
+    }
+
+    unsigned limit;
+
+    unsigned singleIterSize;
+
+    bool active{false};
+
+    /** check current offset against unrolled words
+     * For example, #iteration = 5, each iteration has 10 bytes (2NC + 1C)
+     * Then limit = 5 * 10 bytes = 5 * 10 / 4 words.
+     * When offset == 12, all payloads in loop buffer is used up. 2 byte
+     * dummy payloads should be provided in activeBuffer.
+     * 
+     * Another example, #iteration = 5, each iteration has 12 bytes (3NC)
+     * Then limit = 5 * 12 bytes = 5 * 12 / 4 words.
+     * When offset == 15, all payloads in loop buffer is used up
+     * 
+     * return true if used up
+     */
+    bool notifyOffset(unsigned offset)
+    {
+        if (offset == singleIterSize) {
+            // move activePointer to activeBuffer to simulate loop unrolling
+            activePointer = activeBuffer;
+        }
+        if (offset == limit) {
+            active = false;
+            return true;
+        }
+        return false;
+    }
+
+    void deactivate()
+    {
+        activePointer = nullptr;
+        active = false;
+        limit = 0;
+        singleIterSize = 0;
+    }
+
+    bool isActive() { return active; }
+
+    Addr getActiveLoopStart() { return 0; }
+
+    Addr getActiveLoopBranch() { return 0; }
+};
+
 class Fetch
 {
   public:
@@ -502,6 +568,11 @@ class Fetch
 
     /** Whether or not the fetch buffer data is valid. */
     bool fetchBufferValid[MaxThreads];
+
+    /** Loop buffer with unrolling */
+    LoopBuffer loopBuffer;
+
+    bool enableLoopBuffer{true};
 
     /** Size of instructions. */
     int instSize;

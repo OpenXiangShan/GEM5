@@ -238,6 +238,7 @@ struct FtqEntry
     
     bool miss() const { return !taken; }
     bool filledUp() const { return (endPC & fetchTargetMask) == 0; }
+    unsigned predLoopIteration;
 };
 
 // struct FetchStreamWithID: public FetchStream {

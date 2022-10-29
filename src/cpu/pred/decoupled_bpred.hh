@@ -327,6 +327,16 @@ class DecoupledBPU : public BPredUnit
 
     void squashStreamAfter(unsigned squash_stream_id);
 
+    bool fetchTargetAvailable()
+    {
+        return fetchTargetQueue.fetchTargetAvailable();
+    }
+
+    FtqEntry& getSupplyingFetchTarget()
+    {
+        return fetchTargetQueue.getTarget();
+    }
+
     unsigned getSupplyingTargetId()
     {
         return fetchTargetQueue.getSupplyingTargetId();

@@ -177,7 +177,11 @@ DecoupledBPU::getComponentPredictions()
         first_hit_stage++;
     }
     // generate bubbles
-    numOverrideBubbles = first_hit_stage;
+    /**
+     * @brief We don't need to generate bubbles because ubtb does not work yet
+     * @todo fix it with numOverrideBubbles = first_hit_stage;
+     */
+    numOverrideBubbles = 0;
     receivedPred = true;
 }
 
