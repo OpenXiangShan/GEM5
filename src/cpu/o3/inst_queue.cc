@@ -961,6 +961,89 @@ InstructionQueue::commit(const InstSeqNum &inst, ThreadID tid)
     assert(freeEntries == (numEntries - countInsts()));
 }
 
+uint32_t
+InstructionQueue::delayMatrix(DynInstPtr dep_inst, DynInstPtr completed_inst){
+    if (dep_inst->isLoad() && completed_inst->isLoad()){
+        return 1;
+    } else if (dep_inst->numSrcRegs()>0 && completed_inst->isLoad()){
+        return 2;
+    }
+    return 0;
+}
+
+void
+InstructionQueue::addToDelayedScheduleQueue(DynInstPtr dep_inst,
+                                            uint32_t delay_tick)
+{
+    auto it = delayedScheduleQue.find(dep_inst);
+    if (it != delayedScheduleQue.end()) {
+        it->second.second++;
+        DPRINTF(
+            IQ,
+            "delayedScheduleQue: Repeated insert [sn:%llu,name:%s,times:%u]\n",
+            dep_inst->seqNum, dep_inst->staticInst->getName(),
+            it->second.second);
+        DPRINTF(
+            IQ,
+            "delayedScheduleQue: Repeated item: [sn:%llu,name:%s,times:%u]\n",
+            it->first->seqNum, it->first->staticInst->getName(),
+            it->second.second);
+        DPRINTF(IQ, "%x:%x\n", it->first.get(), dep_inst.get());
+        return;
+    }
+    DPRINTF(IQ, "delayedScheduleQue: insert [sn:%llu,name:%s,tick:%u]\n",
+            dep_inst->seqNum, dep_inst->staticInst->getName(), delay_tick);
+    delayedScheduleQue[dep_inst] = std::make_pair(delay_tick, 1);
+}
+
+void
+InstructionQueue::delayWakeDependents()
+{
+    for (auto it = delayedScheduleQue.begin();
+         it != delayedScheduleQue.end();) {
+        if (it->first->isSquashed()) {  // skip it
+            it = delayedScheduleQue.erase(it);
+            continue;
+        }
+        if (it->second.first == 0 && it->second.second == 1) {
+            it->first->markSrcRegReady();
+            DPRINTF(IQ,
+                    "delayedScheduleQue: Delay waking dependents "
+                    "[sn:%llu,name:%s]\n",
+                    it->first->seqNum, it->first->staticInst->getName());
+            addIfReady(it->first);
+            assert(it->first->readyRegs <= it->first->numSrcRegs());
+            it = delayedScheduleQue.erase(it);
+            continue;
+        } else if (it->second.second > 1) {
+            while (it->second.second > 1) {
+                it->first->markSrcRegReady();
+                it->second.second--;
+            }
+            if (it->second.first == 0) {
+                it->first->markSrcRegReady();
+                DPRINTF(IQ,
+                        "delayedScheduleQue: Delay waking dependents "
+                        "[sn:%llu,name:%s]\n",
+                        it->first->seqNum, it->first->staticInst->getName());
+                addIfReady(it->first);
+                assert(it->first->readyRegs <= it->first->numSrcRegs());
+                it = delayedScheduleQue.erase(it);
+                continue;
+            }
+        }
+        DPRINTF(IQ,
+                "delayedScheduleQue: Counter decrements "
+                "[sn:%llu,name:%s,tick:%u]\n",
+                it->first->seqNum, it->first->staticInst->getName(),
+                it->second.first);
+        it->second.first--;
+        ++it;
+    }
+    DPRINTF(IQ, "delayedScheduleQue: has %u entry left\n",
+            delayedScheduleQue.size());
+}
+
 int
 InstructionQueue::wakeDependents(const DynInstPtr &completed_inst)
 {
@@ -1042,9 +1125,13 @@ InstructionQueue::wakeDependents(const DynInstPtr &completed_inst)
             // so that it knows which of its source registers is
             // ready.  However that would mean that the dependency
             // graph entries would need to hold the src_reg_idx.
-            dep_inst->markSrcRegReady();
-
-            addIfReady(dep_inst);
+            if (delayMatrix(dep_inst, completed_inst) == 0) {
+                dep_inst->markSrcRegReady();
+                addIfReady(dep_inst);
+            }else{
+                addToDelayedScheduleQueue(
+                    dep_inst, delayMatrix(dep_inst, completed_inst));
+            }
 
             dep_inst = dependGraph.pop(dest_reg->flatIndex());
 
@@ -1189,6 +1276,15 @@ InstructionQueue::doSquash(ThreadID tid)
 
     DPRINTF(IQ, "[tid:%i] Squashing until sequence number %i!\n",
             tid, squashedSeqNum[tid]);
+
+    for (auto it = delayedScheduleQue.begin();
+         it != delayedScheduleQue.end();) {
+        if (it->first->seqNum > squashedSeqNum[tid]) {
+            it = delayedScheduleQue.erase(it);
+        } else {
+            ++it;
+        }
+    }
 
     // Squash any instructions younger than the squashed sequence number
     // given.
