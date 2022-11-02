@@ -272,6 +272,10 @@ AtomicSimpleCPU::suspendContext(ThreadID thread_num)
 Tick
 AtomicSimpleCPU::sendPacket(RequestPort &port, const PacketPtr &pkt)
 {
+    if (pkt->req->isStrictlyOrdered()) {
+        diffInfo.physEffAddr = pkt->req->getPaddr();
+        diffInfo.curInstStrictOrdered = true;
+    }
     return port.sendAtomic(pkt);
 }
 
@@ -702,7 +706,6 @@ AtomicSimpleCPU::tick()
                     // caused the retry are unlikely to change every tick.
                     stall_ticks += clockEdge(syscallRetryLatency) - curTick();
                 }
-
                 postExecute();
             }
 

@@ -633,33 +633,9 @@ class CPU : public BaseCPU
     void htmSendAbortSignal(ThreadID tid, uint64_t htm_uid,
                             HtmFailureFaultCause cause) override;
 
-    // online difftest
-  private:
-    uint32_t diffWDst[DIFFTEST_WIDTH];
-    uint64_t diffWData[DIFFTEST_WIDTH];
-    uint64_t diffWPC[DIFFTEST_WIDTH];
-    uint64_t gem5RegFile[DIFFTEST_NR_REG];
-    uint64_t referenceRegFile[DIFFTEST_NR_REG];
-    DiffState diff;
-    NemuProxy* proxy;
-
-    bool enableDifftest;
-    bool scFenceInFlight{false};
-    bool hasCommit{false};
-
+    //difftest virtual function
     void readGem5Regs();
 
-    std::pair<int, bool> diffWithNEMU(const DynInstPtr &inst);
-
-  public:
-    void difftestStep(const DynInstPtr &inst);
-
-    bool difftestEnabled() const
-    {
-        return enableDifftest;
-    }
-
-    void difftestRaiseIntr(uint64_t no);
 };
 
 } // namespace o3

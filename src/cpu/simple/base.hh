@@ -48,6 +48,7 @@
 #include "base/statistics.hh"
 #include "cpu/base.hh"
 #include "cpu/checker/cpu.hh"
+#include "cpu/difftest.hh"
 #include "cpu/exec_context.hh"
 #include "cpu/pc_event.hh"
 #include "cpu/simple_thread.hh"
@@ -197,6 +198,12 @@ class BaseSimpleCPU : public BaseCPU
      */
     virtual Fault initiateMemMgmtCmd(Request::Flags flags) = 0;
 
+    // difftest virtual function
+    RegVal readMiscRegNoEffect(int misc_reg, ThreadID tid) const override;
+
+    RegVal readMiscReg(int misc_reg, ThreadID tid) override;
+
+    void readGem5Regs() override;
 };
 
 } // namespace gem5

@@ -42,6 +42,7 @@
 #include "cpu/simple/base.hh"
 
 #include "arch/generic/decoder.hh"
+#include "arch/riscv/regs/misc.hh"
 #include "base/cprintf.hh"
 #include "base/inifile.hh"
 #include "base/loader/symtab.hh"
@@ -66,6 +67,7 @@
 #include "debug/Fetch.hh"
 #include "debug/HtmCpu.hh"
 #include "debug/Quiesce.hh"
+#include "debug/SimpleCPU.hh"
 #include "mem/packet.hh"
 #include "mem/request.hh"
 #include "params/BaseSimpleCPU.hh"
@@ -117,6 +119,34 @@ BaseSimpleCPU::BaseSimpleCPU(const BaseSimpleCPUParams &p)
                 cpu_tc, this->checker);
     } else {
         checker = NULL;
+    }
+    if (enableDifftest) {
+        assert(p.difftest_ref_so.length() > 2);
+        diff.nemu_reg = referenceRegFile;
+        // diff.wpc = diffWPC;
+        // diff.wdata = diffWData;
+        // diff.wdst = diffWDst;
+        diff.nemu_this_pc = 0x80000000u;
+        diff.cpu_id = p.cpu_id;
+        warn("cpu_id set to %d\n", p.cpu_id);
+        proxy = new NemuProxy(
+            p.cpu_id, p.difftest_ref_so.c_str(),
+            p.nemuSDimg.size() && p.nemuSDCptBin.size());
+        warn("Difftest is enabled with ref so: %s.\n",
+             p.difftest_ref_so.c_str());
+        proxy->regcpy(gem5RegFile, REF_TO_DUT);
+        diff.dynamic_config.ignore_illegal_mem_access = false;
+        diff.dynamic_config.debug_difftest = false;
+        proxy->update_config(&diff.dynamic_config);
+        if (p.nemuSDimg.size() && p.nemuSDCptBin.size()) {
+            proxy->sdcard_init(p.nemuSDimg.c_str(),
+                               p.nemuSDCptBin.c_str());
+        }
+        diff.will_handle_intr = false;
+    }
+    else {
+        warn("Difftest is disabled\n");
+        hasCommit = true;
     }
 }
 
@@ -251,7 +281,6 @@ BaseSimpleCPU::checkForInterrupts()
     SimpleExecContext&t_info = *threadInfo[curThread];
     SimpleThread* thread = t_info.thread;
     ThreadContext* tc = thread->getTC();
-
     if (checkInterrupts(curThread)) {
         Fault interrupt = interrupts[curThread]->getInterrupt();
 
@@ -355,6 +384,7 @@ BaseSimpleCPU::preExecute()
         //Read the next micro op from the macro op
         curStaticInst = curMacroStaticInst->fetchMicroop(pc_state.microPC());
     }
+    diffInfo.curInstStrictOrdered = false;
 
     //If we decoded an instruction this "tick", record information about it.
     if (curStaticInst) {
@@ -385,7 +415,7 @@ BaseSimpleCPU::postExecute()
     SimpleExecContext &t_info = *threadInfo[curThread];
 
     assert(curStaticInst);
-
+    
     Addr instAddr = threadContexts[curThread]->pcState().instAddr();
 
     if (curStaticInst->isMemRef()) {
@@ -449,7 +479,18 @@ BaseSimpleCPU::postExecute()
         delete traceData;
         traceData = NULL;
     }
-
+    //
+    if (enableDifftest) {
+        diffInfo.inst = curStaticInst;
+        diffInfo.pc = &threadContexts[curThread]->pcState();
+        if (curStaticInst->numDestRegs() > 0) {
+            const auto &dest = curStaticInst->destRegIdx(0);
+            if ((dest.isFloatReg() || dest.isIntReg()) && !dest.isZeroReg()) {
+                diffInfo.result = threadContexts[curThread]->getReg(dest);
+            }
+        }
+        difftestStep(curThread);
+    }
     // Call CPU instruction commit probes
     probeInstCommit(curStaticInst, instAddr);
 }
@@ -493,4 +534,29 @@ BaseSimpleCPU::advancePC(const Fault &fault)
     }
 }
 
-} // namespace gem5
+RegVal
+BaseSimpleCPU::readMiscRegNoEffect(int misc_reg, ThreadID tid) const
+{
+    return threadContexts[curThread]->readMiscRegNoEffect(misc_reg);
+}
+
+RegVal
+BaseSimpleCPU::readMiscReg(int misc_reg, ThreadID tid)
+{
+    return threadContexts[curThread]->readMiscReg(misc_reg);
+}
+
+void
+BaseSimpleCPU::readGem5Regs()
+{
+    for (int i = 0; i < 32; i++) {
+        gem5RegFile[i] =
+            threadContexts[curThread]->getReg(RegId(IntRegClass, i));
+        gem5RegFile[i + 32] =
+            threadContexts[curThread]->getReg(RegId(FloatRegClass, i));
+    }
+}
+
+
+
+}  // namespace gem5
