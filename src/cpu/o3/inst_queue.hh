@@ -78,7 +78,7 @@ class FUPool;
 class CPU;
 class IEW;
 
-struct compare2222_function
+struct compare_function
 {
     bool operator()(const DynInstPtr &c1, const DynInstPtr &c2) const
     {
@@ -292,7 +292,7 @@ class InstructionQueue
 
     // inst:delaywaketick,insert times
     // it may insert multiple identical elements
-    std::map<DynInstPtr, std::pair<uint32_t, uint32_t>, compare2222_function>
+    std::map<DynInstPtr, std::pair<uint32_t, uint32_t>, compare_function>
         delayedScheduleQue;
 
     uint32_t delayMatrix(DynInstPtr dep_inst, DynInstPtr completed_inst);

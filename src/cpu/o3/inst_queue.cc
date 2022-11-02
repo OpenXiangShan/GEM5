@@ -52,6 +52,7 @@
 #include "enums/OpClass.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/core.hh"
+#include "cpu/o3/inst_delay_matrix.hh"
 
 // clang complains about std::set being overloaded with Packet::set if
 // we open up the entire namespace std
@@ -962,11 +963,12 @@ InstructionQueue::commit(const InstSeqNum &inst, ThreadID tid)
 }
 
 uint32_t
-InstructionQueue::delayMatrix(DynInstPtr dep_inst, DynInstPtr completed_inst){
-    if (dep_inst->isLoad() && completed_inst->isLoad()){
-        return 1;
-    } else if (dep_inst->numSrcRegs()>0 && completed_inst->isLoad()){
-        return 2;
+InstructionQueue::delayMatrix(DynInstPtr dep_inst, DynInstPtr completed_inst)
+{
+    auto it = scheduleDelayMatrix.find(
+        {dep_inst->opClass(), completed_inst->opClass()});
+    if (it != scheduleDelayMatrix.end()) {  // find it
+        return it->second;
     }
     return 0;
 }
@@ -1005,6 +1007,9 @@ InstructionQueue::delayWakeDependents()
             it = delayedScheduleQue.erase(it);
             continue;
         }
+
+        assert(it->second.first > 0);
+        it->second.first--;
         if (it->second.first == 0 && it->second.second == 1) {
             it->first->markSrcRegReady();
             DPRINTF(IQ,
@@ -1037,7 +1042,6 @@ InstructionQueue::delayWakeDependents()
                 "[sn:%llu,name:%s,tick:%u]\n",
                 it->first->seqNum, it->first->staticInst->getName(),
                 it->second.first);
-        it->second.first--;
         ++it;
     }
     DPRINTF(IQ, "delayedScheduleQue: has %u entry left\n",

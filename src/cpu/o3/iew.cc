@@ -872,7 +872,6 @@ IEW::dispatch(ThreadID tid)
 
         unblock(tid);
     }
-    instQueue.delayWakeDependents();
 }
 
 void
@@ -1457,6 +1456,7 @@ IEW::tick()
         checkSignalsAndUpdate(tid);
         dispatch(tid);
     }
+    instQueue.delayWakeDependents();
 
     if (exeStatus != Squashing) {
         executeInsts();
