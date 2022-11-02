@@ -197,6 +197,8 @@ class BPredUnit : public SimObject
 
     void dump();
 
+    void resetStats() override;
+
   private:
     struct PredictorHistory
     {

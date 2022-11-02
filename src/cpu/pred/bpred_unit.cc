@@ -76,10 +76,20 @@ BPredUnit::BPredUnit(const Params &params)
     if (isDumpMissPredPC) {
         registerExitCallback([this]() {
             // output to file "pcMiss.txt"
-            auto out_handle = simout.create("pcMiss.txt", false, true);
-            *out_handle->stream() << "pc" << " " << "cnt" << std::endl;
-            for (auto& it : missPredPcCount) {
-                *out_handle->stream() << std::hex << it.first << " " << std::dec << it.second << std::endl;
+            auto out_handle = simout.create("topMisPredicts.txt", false, true);
+            *out_handle->stream() << "control pc" << " " << "cnt" << std::endl;
+            std::vector<std::pair<Addr, uint32_t>> sorted_miss_pc;
+            for (const auto& it : missPredPcCount) {
+                sorted_miss_pc.push_back(it);
+            }
+            std::sort(sorted_miss_pc.begin(), sorted_miss_pc.end(),
+                      [](const std::pair<Addr, uint32_t> &a,
+                         const std::pair<Addr, uint32_t> &b) {
+                          return a.second > b.second;
+                      });
+            for (const auto& it : sorted_miss_pc) {
+                *out_handle->stream() << std::hex << it.first << " "
+                                      << std::dec << it.second << std::endl;
             }
             simout.close(out_handle);
         });
@@ -548,6 +558,13 @@ BPredUnit::dump()
             cprintf("\n");
         }
     }
+}
+
+void
+BPredUnit::resetStats()
+{
+    SimObject::resetStats();
+    missPredPcCount.clear();
 }
 
 } // namespace branch_prediction
