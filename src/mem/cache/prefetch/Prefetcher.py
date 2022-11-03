@@ -147,6 +147,47 @@ class QueuedPrefetcher(BasePrefetcher):
     throttle_control_percentage = Param.Percent(0, "Percentage of requests \
         that can be throttled depending on the accuracy of the prefetcher.")
 
+
+class BertiPrefetcher(QueuedPrefetcher):
+    type = "BertiPrefetcher"
+    cxx_class = "gem5::prefetch::BertiPrefetcher"
+    cxx_header = "mem/cache/prefetch/berti.hh"
+
+    use_virtual_addresses = True
+
+    history_table_entries = Param.MemorySize(
+        "64", "Number of history table entries."
+    )
+    history_table_assoc = Param.Int(2, "Associativity of the history table.")
+    history_table_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.history_table_assoc,
+            size=Parent.history_table_entries
+        ),
+        "Indexing policy of history table."
+    )
+    history_table_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(),
+        "Replacement policy of history table"
+    )
+
+    table_of_deltas_entries = Param.MemorySize(
+        "16", "Number of table of deltas entries."
+    )
+    table_of_deltas_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.table_of_deltas_entries,
+            size=Parent.table_of_deltas_entries),
+        "Indexing policy of table of deltas"
+    )
+    table_of_deltas_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(),
+        "Replacement policy of table of deltas"
+    )
+
+
 class SMSPrefetcher(QueuedPrefetcher):
     type = "SMSPrefetcher"
     cxx_class = 'gem5::prefetch::SMSPrefetcher'
