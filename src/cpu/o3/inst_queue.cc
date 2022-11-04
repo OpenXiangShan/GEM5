@@ -826,7 +826,9 @@ InstructionQueue::scheduleReadyInsts()
                 iqIOStats.intAluAccesses++;
             }
             if (idx > FUPool::NoFreeFU) {
-                op_latency = fuPool->getOpLatency(op_class);
+                if (!execLatencyCheck(cpu, issuing_inst, op_latency)) {
+                    op_latency = fuPool->getOpLatency(op_class);
+                }
             }
         }
 
