@@ -107,6 +107,17 @@ class CPUProgressEvent : public Event
     virtual const char *description() const;
 };
 
+struct DiffAllStates
+{
+    uint64_t gem5RegFile[DIFFTEST_NR_REG];
+    uint64_t referenceRegFile[DIFFTEST_NR_REG];
+    DiffState diff;
+    NemuProxy *proxy;
+
+    bool scFenceInFlight{false};
+    bool hasCommit{false};
+};
+
 class BaseCPU : public ClockedObject
 {
   protected:
@@ -656,17 +667,8 @@ class BaseCPU : public ClockedObject
 
     // difftest
   protected:
-    uint32_t diffWDst[DIFFTEST_WIDTH];
-    uint64_t diffWData[DIFFTEST_WIDTH];
-    uint64_t diffWPC[DIFFTEST_WIDTH];
-    uint64_t gem5RegFile[DIFFTEST_NR_REG];
-    uint64_t referenceRegFile[DIFFTEST_NR_REG];
-    DiffState diff;
-    NemuProxy *proxy;
-
     bool enableDifftest;
-    bool scFenceInFlight{false};
-    bool hasCommit{false};
+    std::shared_ptr<DiffAllStates> diffAllStates{};
 
     virtual void readGem5Regs()
     {
@@ -705,6 +707,16 @@ class BaseCPU : public ClockedObject
     inline bool difftestEnabled() const { return enableDifftest; }
 
     void difftestRaiseIntr(uint64_t no);
+
+    std::pair<bool, std::shared_ptr<DiffAllStates>> getDiffAllStates()
+    {
+        return std::make_pair(enableDifftest, diffAllStates);
+    }
+
+    void takeOverDiffAllStates(std::shared_ptr<DiffAllStates> diffAllStates)
+    {
+        this->diffAllStates = diffAllStates;
+    }
 };
 
 } // namespace gem5

@@ -220,6 +220,10 @@ class BaseCPU(ClockedObject):
         if len(self.decoder) != 0:
             raise RuntimeError("Decoders should not be set up manually")
         self.decoder = list([ self.ArchDecoder(isa=isa) for isa in self.isa ])
+        if len(self.decoder) == 0:
+            raise RuntimeError("There should be at least on decoder")
+        else:
+            print("Attach {} decoders to thread with addr: {}".format(len(self.decoder), self.decoder[0]))
         if self.checker != NULL:
             self.checker.createThreads()
 

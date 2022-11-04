@@ -135,6 +135,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
 
     branchPred = params.branchPred;
 
+    assert(params.decoder.size());
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         decoder[tid] = params.decoder[tid];
         // Create space to buffer the cache line data,

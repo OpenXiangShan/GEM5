@@ -302,34 +302,6 @@ CPU::CPU(const BaseO3CPUParams &params)
         fatal("O3CPU %s has no interrupt controller.\n"
               "Ensure createInterruptController() is called.\n", name());
     }
-
-    if (enableDifftest) {
-        assert(params.difftest_ref_so.length() > 2);
-        diff.nemu_reg = referenceRegFile;
-        // diff.wpc = diffWPC;
-        // diff.wdata = diffWData;
-        // diff.wdst = diffWDst;
-        diff.nemu_this_pc = 0x80000000u;
-        diff.cpu_id = params.cpu_id;
-        warn("cpu_id set to %d\n", params.cpu_id);
-        proxy = new NemuProxy(
-            params.cpu_id, params.difftest_ref_so.c_str(),
-            params.nemuSDimg.size() && params.nemuSDCptBin.size());
-        warn("Difftest is enabled with ref so: %s.\n",
-             params.difftest_ref_so.c_str());
-        proxy->regcpy(gem5RegFile, REF_TO_DUT);
-        diff.dynamic_config.ignore_illegal_mem_access = false;
-        diff.dynamic_config.debug_difftest = false;
-        proxy->update_config(&diff.dynamic_config);
-        if (params.nemuSDimg.size() && params.nemuSDCptBin.size()) {
-            proxy->sdcard_init(params.nemuSDimg.c_str(),
-                               params.nemuSDCptBin.c_str());
-        }
-        diff.will_handle_intr = false;
-    } else {
-        warn("Difftest is disabled\n");
-        hasCommit = true;
-    }
 }
 
 void
@@ -1626,8 +1598,8 @@ void
 CPU::readGem5Regs()
 {
     for (int i = 0; i < 32; i++) {
-        gem5RegFile[i] = readArchIntReg(i, 0);
-        gem5RegFile[i + 32] = readArchFloatReg(i, 0);
+        diffAllStates->gem5RegFile[i] = readArchIntReg(i, 0);
+        diffAllStates->gem5RegFile[i + 32] = readArchFloatReg(i, 0);
     }
 }
 

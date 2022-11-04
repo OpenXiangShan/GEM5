@@ -94,6 +94,11 @@ BaseSimpleCPU::BaseSimpleCPU(const BaseSimpleCPUParams &p)
 
     for (unsigned i = 0; i < numThreads; i++) {
         if (FullSystem) {
+            assert(p.decoder.size());
+            assert(p.system);
+            assert(p.mmu);
+            assert(p.isa[i]);
+            assert(p.decoder[i]);
             thread = new SimpleThread(
                 this, i, p.system, p.mmu, p.isa[i], p.decoder[i]);
         } else {
@@ -119,34 +124,6 @@ BaseSimpleCPU::BaseSimpleCPU(const BaseSimpleCPUParams &p)
                 cpu_tc, this->checker);
     } else {
         checker = NULL;
-    }
-    if (enableDifftest) {
-        assert(p.difftest_ref_so.length() > 2);
-        diff.nemu_reg = referenceRegFile;
-        // diff.wpc = diffWPC;
-        // diff.wdata = diffWData;
-        // diff.wdst = diffWDst;
-        diff.nemu_this_pc = 0x80000000u;
-        diff.cpu_id = p.cpu_id;
-        warn("cpu_id set to %d\n", p.cpu_id);
-        proxy = new NemuProxy(
-            p.cpu_id, p.difftest_ref_so.c_str(),
-            p.nemuSDimg.size() && p.nemuSDCptBin.size());
-        warn("Difftest is enabled with ref so: %s.\n",
-             p.difftest_ref_so.c_str());
-        proxy->regcpy(gem5RegFile, REF_TO_DUT);
-        diff.dynamic_config.ignore_illegal_mem_access = false;
-        diff.dynamic_config.debug_difftest = false;
-        proxy->update_config(&diff.dynamic_config);
-        if (p.nemuSDimg.size() && p.nemuSDCptBin.size()) {
-            proxy->sdcard_init(p.nemuSDimg.c_str(),
-                               p.nemuSDCptBin.c_str());
-        }
-        diff.will_handle_intr = false;
-    }
-    else {
-        warn("Difftest is disabled\n");
-        hasCommit = true;
     }
 }
 
@@ -550,9 +527,9 @@ void
 BaseSimpleCPU::readGem5Regs()
 {
     for (int i = 0; i < 32; i++) {
-        gem5RegFile[i] =
+        diffAllStates->gem5RegFile[i] =
             threadContexts[curThread]->getReg(RegId(IntRegClass, i));
-        gem5RegFile[i + 32] =
+        diffAllStates->gem5RegFile[i + 32] =
             threadContexts[curThread]->getReg(RegId(FloatRegClass, i));
     }
 }

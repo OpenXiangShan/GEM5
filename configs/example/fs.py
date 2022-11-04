@@ -171,6 +171,7 @@ def build_test_system(np):
             #
             cpu.clk_domain = test_sys.cpu_clk_domain
             cpu.createThreads()
+            print("Create threads for test sys cpu ({})".format(type(cpu)))
             cpu.createInterruptController()
 
             test_sys.ruby._cpu_ports[i].connectCpuPorts(cpu)
@@ -209,6 +210,7 @@ def build_test_system(np):
                     test_sys.cpu[i].branchPred.indirectBranchPred = \
                         IndirectBPClass()
             test_sys.cpu[i].createThreads()
+            print("Create threads for test sys cpu ({})".format(type(test_sys.cpu[i])))
 
         # If elastic tracing is enabled when not restoring from checkpoint and
         # when not fast forwarding using the atomic cpu, then check that the
