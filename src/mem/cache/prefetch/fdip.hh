@@ -20,10 +20,6 @@ namespace prefetch
 
 class FDIP : public Queued
 {
-  protected:
-    const int degree;
-
-
   public:
     struct StreamEntry
     {

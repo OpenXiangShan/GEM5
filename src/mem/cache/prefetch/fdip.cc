@@ -15,7 +15,7 @@ namespace prefetch
 {
 
 FDIP::FDIP(const FDIPParams &p)
-    : Queued(p), degree(p.degree)
+    : Queued(p)
 {
 
 }

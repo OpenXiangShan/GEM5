@@ -192,8 +192,6 @@ class FDIP(QueuedPrefetcher):
     cxx_class = 'gem5::prefetch::FDIP'
     cxx_header = "mem/cache/prefetch/fdip.hh"
 
-    degree = Param.Int(1, "Number of prefetches to generate")
-
     use_virtual_addresses = True
 
 
