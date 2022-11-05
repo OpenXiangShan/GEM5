@@ -40,11 +40,52 @@ FDIP::calculatePrefetch(const PrefetchInfo &pfi,
 }
 
 void
-FDIP::addStream(Addr stream_start_pc, Addr stream_end_pc)
+FDIP::getStreamId(FetchStreamId &stream_id)
+{
+    stream_id = streamToPrefetch.streamId;
+}
+
+void
+FDIP::addStream(Addr stream_start_pc, Addr stream_end_pc,
+                FetchStreamId stream_id)
 {
     streamToPrefetch.valid = true;
     streamToPrefetch.start = stream_start_pc;
     streamToPrefetch.end = stream_end_pc;
+    streamToPrefetch.streamId = stream_id;
+}
+
+void
+FDIP::squash(FetchStreamId stream_id)
+{
+    auto it = pfq.begin();
+    while (it != pfq.end())
+    {
+        if (it->streamId >= stream_id)
+            pfq.erase(it++);
+        else
+            it++;
+    }
+
+    it = pfqMissingTranslation.begin();
+    while (it != pfqMissingTranslation.end()){
+        if (it->streamId >= stream_id){
+            if (it->ongoingTranslation){
+                auto splice_it = it;
+                it++;
+                DeferredPacket * old_ptr = &(*splice_it);
+                pfqSquashed.splice(pfqSquashed.end(),
+                                    pfqMissingTranslation,splice_it);
+                auto check_it = pfqSquashed.end();
+                check_it--;
+                assert(&(*check_it) == old_ptr);
+            } else {
+                it = pfqMissingTranslation.erase(it);
+            }
+        } else {
+            it++;
+        }
+    }
 }
 
 } // namespace prefetch

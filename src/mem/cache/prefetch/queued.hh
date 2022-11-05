@@ -45,6 +45,7 @@
 #include "arch/generic/mmu.hh"
 #include "base/statistics.hh"
 #include "base/types.hh"
+#include "cpu/pred/stream_struct.hh"
 #include "mem/cache/prefetch/base.hh"
 #include "mem/packet.hh"
 
@@ -56,6 +57,7 @@ struct QueuedPrefetcherParams;
 GEM5_DEPRECATED_NAMESPACE(Prefetcher, prefetch);
 namespace prefetch
 {
+using FetchStreamId = branch_prediction::FetchStreamId;
 
 class Queued : public Base
 {
@@ -76,6 +78,7 @@ class Queued : public Base
         RequestPtr translationRequest;
         ThreadContext *tc;
         bool ongoingTranslation;
+        FetchStreamId streamId;
 
         /**
          * Constructor
@@ -88,7 +91,7 @@ class Queued : public Base
         DeferredPacket(Queued *o, PrefetchInfo const &pfi, Tick t,
             int32_t prio) : owner(o), pfInfo(pfi), tick(t), pkt(nullptr),
             priority(prio), translationRequest(), tc(nullptr),
-            ongoingTranslation(false) {
+            ongoingTranslation(false), streamId(0) {
         }
 
         bool operator>(const DeferredPacket& that) const
@@ -196,10 +199,15 @@ class Queued : public Base
 
     void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) override;
 
-    void insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, int32_t priority);
+    void insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, int32_t priority,
+                 FetchStreamId stream_id);
 
     virtual void calculatePrefetch(const PrefetchInfo &pfi,
                                    std::vector<AddrPriority> &addresses) = 0;
+    virtual void getStreamId(FetchStreamId &stream_id)
+    {
+        stream_id = 0;
+    }
     PacketPtr getPacket() override;
 
     Tick nextPrefetchReadyTime() const override

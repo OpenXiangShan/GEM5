@@ -642,6 +642,7 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
 void
 DecoupledBPU::squashStreamAfter(unsigned squash_stream_id)
 {
+    fdip->squash(squash_stream_id);
     auto erase_it = fetchStreamQueue.upper_bound(squash_stream_id);
     while (erase_it != fetchStreamQueue.end()) {
         DPRINTF(DecoupleBP || debugFlagOn || erase_it->second.streamStart == ObservingPC,
@@ -964,7 +965,8 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
                                                  s0UbtbPred.nextStream, fsqId);
         }
         assert(fdip);
-        fdip->addStream(entry.streamStart, entry.getEndPC());
+
+        fdip->addStream(entry.streamStart, entry.getEndPC(), fsqId);
 
         DPRINTF(DecoupleBP || debugFlagOn,
                 "Build stream %lu with Valid s0UbtbPred: %#lx-[%#lx, %#lx) "

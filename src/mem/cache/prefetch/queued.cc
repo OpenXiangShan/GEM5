@@ -196,6 +196,8 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
 
     // Calculate prefetches given this access
     std::vector<AddrPriority> addresses;
+    FetchStreamId stream_id = 0;
+    getStreamId(stream_id);
     calculatePrefetch(pfi, addresses);
 
     // Get the maximu number of prefetches that we are allowed to generate
@@ -223,7 +225,7 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
             DPRINTF(HWPrefetch, "Found a pf candidate addr: %#x, "
                     "inserting into prefetch queue.\n", new_pfi.getAddr());
             // Create and insert the request
-            insert(pkt, new_pfi, addr_prio.second);
+            insert(pkt, new_pfi, addr_prio.second, stream_id);
             num_pfs += 1;
             if (num_pfs == max_pfs) {
                 break;
@@ -398,7 +400,7 @@ Queued::createPrefetchRequest(Addr addr, PrefetchInfo const &pfi,
 
 void
 Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi,
-                         int32_t priority)
+                         int32_t priority, FetchStreamId stream_id)
 {
     if (queueFilter) {
         if (alreadyInQueue(pfq, new_pfi, priority)) {
@@ -477,6 +479,7 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi,
 
     /* Create the packet and find the spot to insert it */
     DeferredPacket dpp(this, new_pfi, 0, priority);
+    dpp.streamId = stream_id;
     if (has_target_pa) {
         Tick pf_time = curTick() + clockPeriod() * latency;
         dpp.createPkt(target_paddr, blkSize, requestorId, tagPrefetch,

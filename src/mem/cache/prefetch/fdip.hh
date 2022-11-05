@@ -26,6 +26,7 @@ class FDIP : public Queued
         bool valid;
         Addr start;
         Addr end;
+        FetchStreamId streamId;
     };
     FDIP(const FDIPParams &p);
     ~FDIP() = default;
@@ -33,7 +34,12 @@ class FDIP : public Queued
     void calculatePrefetch(const PrefetchInfo &pfi,
                            std::vector<AddrPriority> &addresses) override;
 
-    void addStream(Addr stream_start_pc, Addr stream_end_pc);
+    void getStreamId(FetchStreamId &streamId) override;
+
+    void addStream(Addr stream_start_pc, Addr stream_end_pc,
+                    FetchStreamId stream_id);
+
+    void squash(FetchStreamId streamId);
 
     StreamEntry streamToPrefetch;
 };
