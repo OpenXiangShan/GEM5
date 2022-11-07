@@ -19,8 +19,11 @@ BertiPrefetcher::BertiPrefetcher(const BertiPrefetcherParams &p)
                    p.history_table_replacement_policy, HistoryTableEntry()),
       tableOfDeltas(p.table_of_deltas_entries, p.table_of_deltas_entries,
                     p.table_of_deltas_indexing_policy,
-                    p.table_of_deltas_replacement_policy, TableOfDeltasEntry())
+                    p.table_of_deltas_replacement_policy,
+                    TableOfDeltasEntry()),
+      fillLatency(this, "fillLatency")
 {
+    fillLatency.init(0);
 }
 
 void
@@ -105,7 +108,7 @@ BertiPrefetcher::calculatePrefetch(const PrefetchInfo &pfi,
                                    std::vector<AddrPriority> &addressed)
 {
 
-    bool pf_filter = pfi.hasPC() && !pfi.isWrite() && pfi.isCacheMiss();
+    bool pf_filter = pfi.hasPC() && !pfi.isWrite();
 
     /** We don't have enough information to train prefetcher, skip. */
     if (!pf_filter)
@@ -149,6 +152,16 @@ BertiPrefetcher::notifyFill(const PacketPtr &pkt)
     /** Search history table, find deltas. */
     Cycles latency = ticksToCycles(curTick() - pkt->req->time());
     Cycles demand_cycle = ticksToCycles(pkt->req->time());
+
+    Cycles wrappedLatency;
+    if (latency > 300){
+        wrappedLatency = Cycles(300);
+    } else if (latency % 10 == 0) {
+        wrappedLatency = Cycles((latency / 10) * 10);
+    } else {
+        wrappedLatency = Cycles( ((latency / 10) + 1) * 10 );
+    }
+    fillLatency.sample(wrappedLatency);
 
     DPRINTF(BertiPrefetcher, "Updating table of deltas, latency [%d]\n",
             latency);

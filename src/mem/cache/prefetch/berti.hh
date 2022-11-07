@@ -7,6 +7,7 @@
 
 #include <vector>
 
+#include "base/statistics.hh"
 #include "base/types.hh"
 #include "mem/cache/prefetch/associative_set.hh"
 #include "mem/cache/prefetch/queued.hh"
@@ -86,6 +87,8 @@ class BertiPrefetcher : public Queued
     };
 
     AssociativeSet<TableOfDeltasEntry> tableOfDeltas;
+
+    statistics::SparseHistogram fillLatency;
 
     /** Update history table on demand miss. */
     void updateHistoryTable(const PrefetchInfo &pfi);
