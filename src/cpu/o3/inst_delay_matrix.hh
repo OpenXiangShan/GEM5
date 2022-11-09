@@ -17,12 +17,22 @@ namespace o3
 
 std::map<std::pair<OpClass, OpClass>, uint32_t> scheduleDelayMatrix = {
     // dep_inst completed_inst
+    // actually the order of dep_inst and completed_inst doesn't have much
+    // effect on the cycle delay????
     {{OpClass::IntAlu, OpClass::IntAlu}, 0},
     {{OpClass::IntMult, OpClass::IntAlu}, 1},
     {{OpClass::IntDiv, OpClass::IntDiv}, 1},
     {{OpClass::IntDiv, OpClass::IntMult}, 1},
     {{OpClass::IntDiv, OpClass::IntAlu}, 2},
 
+    {{OpClass::FloatCvt, OpClass::IntAlu}, 3},
+    {{OpClass::FloatCvt, OpClass::IntMult}, 3},
+    {{OpClass::FloatCvt, OpClass::IntDiv}, 3},
+
+    {{OpClass::FloatCvt, OpClass::FloatAdd}, 2},
+    {{OpClass::FloatCvt, OpClass::FloatMult}, 2},
+    {{OpClass::FloatCvt, OpClass::FloatDiv}, 2},
+    {{OpClass::FloatCvt, OpClass::FloatCvt}, 2},
 
 };
 
@@ -70,6 +80,9 @@ execLatencyCheck(CPU* cpu, DynInstPtr inst, Cycles& op_latency)
             return true;
         case OpClass::FloatDiv:
             op_latency = Cycles(19);
+            return true;
+        case OpClass::FloatCvt:
+            op_latency = Cycles(3);
             return true;
 
         default:
