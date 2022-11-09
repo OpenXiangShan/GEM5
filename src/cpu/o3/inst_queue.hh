@@ -78,6 +78,13 @@ class FUPool;
 class CPU;
 class IEW;
 
+struct compare_function
+{
+    bool operator()(const DynInstPtr &c1, const DynInstPtr &c2) const
+    {
+        return (c1.get() < c2.get());
+    }
+};
 /**
  * A standard instruction queue class.  It holds ready instructions, in
  * order, in seperate priority queues to facilitate the scheduling of
@@ -277,9 +284,20 @@ class InstructionQueue
     /** Debug function to print all instructions. */
     void printInsts();
 
+    void delayWakeDependents();
+
   private:
     /** Does the actual squashing. */
     void doSquash(ThreadID tid);
+
+    // inst:delaywaketick,insert times
+    // it may insert multiple identical elements
+    std::map<DynInstPtr, std::pair<uint32_t, uint32_t>, compare_function>
+        delayedScheduleQue;
+
+    uint32_t delayMatrix(DynInstPtr dep_inst, DynInstPtr completed_inst);
+
+    void addToDelayedScheduleQueue(DynInstPtr dep_inst, uint32_t delay_tick);
 
     /////////////////////////
     // Various pointers
