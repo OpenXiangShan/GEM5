@@ -1224,3 +1224,96 @@ def format VectorReduceIntWideningFormat(code, category, *flags) {{
         VectorReduceMacroConstructor.subst(iop)
     decode_block = VectorIntWideningDecodeBlock.subst(iop)
 }};
+
+let {{
+
+def VectorSlideBase(name, Name, category, code, flags, macro_construtor,
+        decode_template, micro_execute_template):
+    macroop_class_name = 'VectorSlideMacroInst'
+    microop_class_name = 'VectorSlideMicroInst'
+    # Make sure flags are in lists (convert to lists if not).
+    flags = makeList(flags)
+    iop = InstObjParams(name, Name, macroop_class_name, {'code': code},
+                        flags)
+    inst_name, inst_suffix = name.split("_", maxsplit=1)
+    dest_reg_id = "vecRegClass[_machInst.vd + vdIdx]"
+    src2_reg_id = "vecRegClass[_machInst.vs2 + vs2Idx]"
+    src1_ireg_id = "intRegClass[_machInst.rs1]"
+    src1_freg_id = "floatRegClass[_machInst.rs1]"
+
+    # The tail of vector mask inst should be treated as tail-agnostic.
+    # We treat it with tail-undisturbed policy, since
+    # the test suits only support undisturbed policy.
+    num_src_regs = 0
+
+    old_dest_reg_id = "vecRegClass[_machInst.vd + vdIdx]"
+    set_src_reg_idx = ""
+    if category in ["OPIVX", "OPMVX"]:
+        set_src_reg_idx += setSrcWrapper(src1_ireg_id)
+        num_src_regs += 1
+    elif category in ["OPFVF"]:
+        set_src_reg_idx += setSrcWrapper(src1_freg_id)
+        num_src_regs += 1
+    set_src_reg_idx += setSrcWrapper(src2_reg_id)
+    num_src_regs += 1
+    old_vd_idx = num_src_regs
+    set_src_reg_idx += setSrcWrapper(old_dest_reg_id)
+    set_dest_reg_idx = setDestWrapper(dest_reg_id)
+    vm_decl_rd = vmDeclAndReadData()
+    set_src_reg_idx += setSrcVm()
+    microiop = InstObjParams(name + "_micro",
+        Name + "Micro",
+        microop_class_name,
+        {'code': code,
+         'set_dest_reg_idx': set_dest_reg_idx,
+         'set_src_reg_idx': set_src_reg_idx,
+         'vm_decl_rd': vm_decl_rd,
+         'copy_old_vd': copyOldVd(old_vd_idx)},
+        flags)
+    # Because of the use of templates, we had to put all parts in header to
+    # keep the compiler happy.
+    # Because of the use of templates, we had to put all parts in header to
+    # keep the compiler happy.
+    header_output = \
+        VectorSlideMicroDeclare.subst(microiop) + \
+        VectorSlideMicroConstructor.subst(microiop) + \
+        micro_execute_template.subst(microiop) + \
+        VectorSlideMacroDeclare.subst(iop) + \
+        macro_construtor.subst(iop)
+
+    decode_block = decode_template.subst(iop)
+    return (header_output, decode_block)
+
+}};
+
+def format VectorSlideUpFormat(code, category, *flags) {{
+    (header_output, decode_block) = VectorSlideBase(name, Name, category, code,
+        flags,
+        macro_construtor = VectorSlideUpMacroConstructor,
+        decode_template = VectorIntDecodeBlock,
+        micro_execute_template = VectorSlideMicroExecute)
+}};
+
+def format VectorSlideDownFormat(code, category, *flags) {{
+    (header_output, decode_block) = VectorSlideBase(name, Name, category, code,
+        flags,
+        macro_construtor = VectorSlideDownMacroConstructor,
+        decode_template = VectorIntDecodeBlock,
+        micro_execute_template = VectorSlideMicroExecute)
+}};
+
+def format VectorFloatSlideUpFormat(code, category, *flags) {{
+    (header_output, decode_block) = VectorSlideBase(name, Name, category, code,
+        flags,
+        macro_construtor = VectorSlideUpMacroConstructor,
+        decode_template = VectorFloatDecodeBlock,
+        micro_execute_template = VectorFloatSlideMicroExecute)
+}};
+
+def format VectorFloatSlideDownFormat(code, category, *flags) {{
+    (header_output, decode_block) = VectorSlideBase(name, Name, category, code,
+        flags,
+        macro_construtor = VectorSlideDownMacroConstructor,
+        decode_template = VectorFloatDecodeBlock,
+        micro_execute_template = VectorFloatSlideMicroExecute)
+}};

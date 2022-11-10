@@ -1753,3 +1753,166 @@ Fault
 }
 
 }};
+
+def template VectorSlideMacroDeclare {{
+
+template<typename ElemType>
+class %(class_name)s : public %(base_class)s {
+private:
+    %(reg_idx_arr_decl)s;
+public:
+    %(class_name)s(ExtMachInst _machInst);
+    using %(base_class)s::generateDisassembly;
+};
+
+}};
+
+def template VectorSlideUpMacroConstructor {{
+
+template<typename ElemType>
+%(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
+{
+    %(set_reg_idx_arr)s;
+    %(constructor)s;
+    const uint32_t num_microops = vtype_regs_per_group(vtype);
+    int32_t tmp_vl = this->vl;
+    const int32_t micro_vlmax = vtype_VLMAX(_machInst.vtype8, true);
+    int32_t micro_vl = std::min(tmp_vl, micro_vlmax);
+    StaticInstPtr microop;
+    // Todo static filter out useless uop
+    int micro_idx = 0;
+    for (int i = 0; i < num_microops && micro_vl > 0; ++i) {
+        for (int j = 0; j <= i; ++j) {
+            microop = new %(class_name)sMicro<ElemType>(
+                _machInst, micro_vl, micro_idx++, i, j);
+            microop->setDelayedCommit();
+            this->microops.push_back(microop);
+        }
+        micro_vl = std::min(tmp_vl -= micro_vlmax, micro_vlmax);
+    }
+    this->microops.front()->setFirstMicroop();
+    this->microops.back()->setLastMicroop();
+}
+
+}};
+
+def template VectorSlideDownMacroConstructor {{
+
+template<typename ElemType>
+%(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
+{
+    %(set_reg_idx_arr)s;
+    %(constructor)s;
+    const uint32_t num_microops = vtype_regs_per_group(vtype);
+    int32_t tmp_vl = this->vl;
+    const int32_t micro_vlmax = vtype_VLMAX(_machInst.vtype8, true);
+    int32_t micro_vl = std::min(tmp_vl, micro_vlmax);
+    StaticInstPtr microop;
+    // Todo static filter out useless uop
+    int micro_idx = 0;
+    for (int i = 0; i < num_microops && micro_vl > 0; ++i) {
+        for (int j = i; j < num_microops; ++j) {
+            microop = new %(class_name)sMicro<ElemType>(
+                _machInst, micro_vl, micro_idx++, i, j);
+            microop->setDelayedCommit();
+            this->microops.push_back(microop);
+        }
+        micro_vl = std::min(tmp_vl -= micro_vlmax, micro_vlmax);
+    }
+    this->microops.front()->setFirstMicroop();
+    this->microops.back()->setLastMicroop();
+}
+
+}};
+
+def template VectorSlideMicroDeclare {{
+
+template<typename ElemType>
+class %(class_name)s : public %(base_class)s
+{
+private:
+    // vs2, vs1, vs3(old_vd), vm for *.vv, *.vx
+    // vs2, (old_vd), vm for *.vi
+    RegId srcRegIdxArr[4];
+    RegId destRegIdxArr[1];
+    bool vm;
+public:
+    %(class_name)s(ExtMachInst _machInst, uint8_t _microVl,
+        uint8_t _microIdx, uint8_t _vdIdx, uint8_t _vs2Idx);
+    Fault execute(ExecContext* xc, Trace::InstRecord* traceData)const override;
+    using %(base_class)s::generateDisassembly;
+};
+
+}};
+
+def template VectorSlideMicroConstructor {{
+
+template<typename ElemType>
+%(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst,
+        uint8_t _microVl, uint8_t _microIdx, uint8_t _vdIdx, uint8_t _vs2Idx)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s, _microVl,
+        _microIdx, _vdIdx, _vs2Idx)
+{
+    this->vm = _machInst.vm;
+    %(set_reg_idx_arr)s;
+    _numSrcRegs = 0;
+    _numDestRegs = 0;
+    %(set_dest_reg_idx)s;
+    %(set_src_reg_idx)s;
+}
+
+}};
+
+def template VectorSlideMicroExecute {{
+
+template<typename ElemType>
+Fault
+%(class_name)s<ElemType>::execute(ExecContext* xc,
+                                  Trace::InstRecord* traceData) const
+{
+    using vu [[maybe_unused]] = std::make_unsigned_t<ElemType>;
+    using vi [[maybe_unused]] = std::make_signed_t<ElemType>;
+
+    if (machInst.vill)
+        return std::make_shared<IllegalInstFault>("VILL is set", machInst);
+    [[maybe_unused]]const uint32_t vlmax = vtype_VLMAX(vtype);
+
+    %(op_decl)s;
+    %(op_rd)s;
+    %(vm_decl_rd)s;
+    %(copy_old_vd)s;
+    %(code)s;
+    %(op_wb)s;
+
+    return NoFault;
+};
+
+}};
+
+def template VectorFloatSlideMicroExecute {{
+
+template<typename ElemType>
+Fault
+%(class_name)s<ElemType>::execute(ExecContext* xc,
+                                  Trace::InstRecord* traceData) const
+{
+    using et = ElemType;
+    using vu = decltype(et::v);
+
+    if (machInst.vill)
+        return std::make_shared<IllegalInstFault>("VILL is set", machInst);
+    [[maybe_unused]]const uint32_t vlmax = vtype_VLMAX(vtype);
+
+    %(op_decl)s;
+    %(op_rd)s;
+    %(vm_decl_rd)s;
+    %(copy_old_vd)s;
+    %(code)s;
+    %(op_wb)s;
+
+    return NoFault;
+};
+
+}};

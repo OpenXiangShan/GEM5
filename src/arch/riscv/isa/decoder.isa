@@ -3080,6 +3080,69 @@ decode QUADRANT default Unknown::unknown() {
                         }
                     }
                 }}, OPIVI, VectorMiscOp);
+                0x0e: VectorSlideUpFormat::vslideup_vi({{
+                    const int offset = (int)(uint64_t)(SIMM5);
+                    const int microVlmax = vtype_VLMAX(machInst.vtype8, true);
+                    const int vregOffset = vdIdx - vs2Idx;
+                    const int offsetInVreg = offset - vregOffset * microVlmax;
+                    if (std::abs(offsetInVreg) < uint32_t(microVlmax)) {
+                        const int upperBound = (offsetInVreg >= 0)
+                            ? microVlmax - offsetInVreg
+                            : microVlmax + offsetInVreg;
+                        const int vdOffset = (offsetInVreg >= 0)
+                            ? offsetInVreg
+                            : 0;
+                        const int vs2Offset = (offsetInVreg >= 0)
+                            ? 0
+                            : -offsetInVreg;
+                        const int elemOffset = vdOffset + vdIdx * microVlmax;
+                        for (int i = 0;
+                            i < upperBound && i + vdOffset < microVl;
+                            i++) {
+                            if (this->vm || elem_mask(v0, i + elemOffset)) {
+                                Vd_vu[i + vdOffset] = Vs2_vu[i + vs2Offset];
+                            }
+                        }
+                    }
+                }}, OPIVI, VectorMiscOp);
+                0x0f: VectorSlideDownFormat::vslidedown_vi({{
+                    const int offset = (int)(uint64_t)(SIMM5);
+                    const int microVlmax = vtype_VLMAX(machInst.vtype8, true);
+                    const int vregOffset = vs2Idx - vdIdx;
+                    const int offsetInVreg = offset - vregOffset * microVlmax;
+                    const int numVs2s = vtype_regs_per_group(vtype);
+                    if (std::abs(offsetInVreg) < uint32_t(microVlmax)) {
+                        const bool needZeroTail = numVs2s == vs2Idx + 1;
+                        const int upperBound = (offsetInVreg >= 0)
+                            ? microVlmax - offsetInVreg
+                            : microVlmax + offsetInVreg;
+                        const int vdOffset = (offsetInVreg >= 0)
+                            ? 0
+                            : -offsetInVreg;
+                        const int vs2Offset = (offsetInVreg >= 0)
+                            ? offsetInVreg
+                            : 0;
+                        const int elemIdxBase = vdIdx * microVlmax;
+                        vreg_t resVreg;
+                        auto res = resVreg.as<vu>();
+                        for (int i = 0;
+                            i < upperBound && i + vdOffset < microVl;
+                            i++) {
+                            res[i + vdOffset] = Vs2_vu[i + vs2Offset];
+                        }
+                        if (needZeroTail) {
+                            for (int i = upperBound + vdOffset;
+                                i < microVlmax; i++) {
+                                res[i] = 0;
+                            }
+                        }
+                        for (int i = vdOffset; i < microVl ; i++) {
+                            if (vm || elem_mask(v0, i + elemIdxBase)) {
+                                Vd_vu[i] = res[i];
+                            }
+                        }
+                    }
+                }}, OPIVI, VectorMiscOp);
                 format VectorIntFormat {
                     0x10: decode VM {
                         0x0: vadc_vim({{
@@ -3272,6 +3335,69 @@ decode QUADRANT default Unknown::unknown() {
                         Vd_vu[i] = Vs2_vu[i] ^ Rs1_vu;
                     }}, OPIVX, VectorIntegerArithOp);
                 }
+                0x0e: VectorSlideUpFormat::vslideup_vx({{
+                    const int offset = (int)Rs1_vu;
+                    const int microVlmax = vtype_VLMAX(machInst.vtype8, true);
+                    const int vregOffset = vdIdx - vs2Idx;
+                    const int offsetInVreg = offset - vregOffset * microVlmax;
+                    if (std::abs(offsetInVreg) < uint32_t(microVlmax)) {
+                        const int upperBound = (offsetInVreg >= 0)
+                            ? microVlmax - offsetInVreg
+                            : microVlmax + offsetInVreg;
+                        const int vdOffset = (offsetInVreg >= 0)
+                            ? offsetInVreg
+                            : 0;
+                        const int vs2Offset = (offsetInVreg >= 0)
+                            ? 0
+                            : -offsetInVreg;
+                        const int elemOffset = vdOffset + vdIdx * microVlmax;
+                        for (int i = 0;
+                            i < upperBound && i + vdOffset < microVl;
+                            i++) {
+                            if (this->vm || elem_mask(v0, i + elemOffset)) {
+                                Vd_vu[i + vdOffset] = Vs2_vu[i + vs2Offset];
+                            }
+                        }
+                    }
+                }}, OPIVX, VectorMiscOp);
+                0x0f: VectorSlideDownFormat::vslidedown_vx({{
+                    const int offset = (int)Rs1_vu;
+                    const int microVlmax = vtype_VLMAX(machInst.vtype8, true);
+                    const int vregOffset = vs2Idx - vdIdx;
+                    const int offsetInVreg = offset - vregOffset * microVlmax;
+                    const int numVs2s = vtype_regs_per_group(vtype);
+                    if (std::abs(offsetInVreg) < uint32_t(microVlmax)) {
+                        const bool needZeroTail = numVs2s == vs2Idx + 1;
+                        const int upperBound = (offsetInVreg >= 0)
+                            ? microVlmax - offsetInVreg
+                            : microVlmax + offsetInVreg;
+                        const int vdOffset = (offsetInVreg >= 0)
+                            ? 0
+                            : -offsetInVreg;
+                        const int vs2Offset = (offsetInVreg >= 0)
+                            ? offsetInVreg
+                            : 0;
+                        const int elemIdxBase = vdIdx * microVlmax;
+                        vreg_t resVreg;
+                        auto res = resVreg.as<vu>();
+                        for (int i = 0;
+                            i < upperBound && i + vdOffset < microVl;
+                            i++) {
+                            res[i + vdOffset] = Vs2_vu[i + vs2Offset];
+                        }
+                        if (needZeroTail) {
+                            for (int i = upperBound + vdOffset;
+                                i < microVlmax; i++) {
+                                res[i] = 0;
+                            }
+                        }
+                        for (int i = vdOffset; i < microVl ; i++) {
+                            if (vm || elem_mask(v0, i + elemIdxBase)) {
+                                Vd_vu[i] = res[i];
+                            }
+                        }
+                    }
+                }}, OPIVX, VectorMiscOp);
                 0x0c: VectorGatherFormat::vrgather_vx({{
                     for (uint32_t i = 0; i < microVl; i++) {
                         uint32_t ei = i + vs1_idx * vs1_elems + vs1_bias;
@@ -3509,6 +3635,76 @@ decode QUADRANT default Unknown::unknown() {
                                              false, true).v;
                     }}, OPFVF, VectorFloatArithOp);
                 }
+                0x0e: VectorFloatSlideUpFormat::vfslide1up_vf({{
+                    const int offset = 1;
+                    const int microVlmax = vtype_VLMAX(machInst.vtype8, true);
+                    const int vregOffset = vdIdx - vs2Idx;
+                    const int offsetInVreg = offset - vregOffset * microVlmax;
+                    if (std::abs(offsetInVreg) < uint32_t(microVlmax)) {
+                        const int upperBound = (offsetInVreg >= 0)
+                            ? microVlmax - offsetInVreg
+                            : microVlmax + offsetInVreg;
+                        const int vdOffset = (offsetInVreg >= 0)
+                            ? offsetInVreg
+                            : 0;
+                        const int vs2Offset = (offsetInVreg >= 0)
+                            ? 0
+                            : -offsetInVreg;
+                        const int elemOffset = vdOffset + vdIdx * microVlmax;
+                        for (int i = 0;
+                            i < upperBound && i + vdOffset < microVl;
+                            i++) {
+                            if (this->vm || elem_mask(v0, i + elemOffset)) {
+                                Vd_vu[i + vdOffset] = Vs2_vu[i + vs2Offset];
+                            }
+                        }
+                        // TODO: dirty code
+                        if (vdIdx == 0 && vs2Idx == 0 &&
+                                (this->vm || elem_mask(v0, 0))) {
+                            tmp_d0.as<vu>()[0] = Rs1_vu;
+                        }
+                    }
+                }}, OPFVF, VectorMiscOp);
+                0x0f: VectorFloatSlideDownFormat::vfslide1down_vf({{
+                    const int offset = 1;
+                    const int microVlmax = vtype_VLMAX(machInst.vtype8, true);
+                    const int vregOffset = vs2Idx - vdIdx;
+                    const int offsetInVreg = offset - vregOffset * microVlmax;
+                    const int numVs2s = vtype_regs_per_group(vtype);
+                    if (std::abs(offsetInVreg) < uint32_t(microVlmax)) {
+                        const bool needZeroTail = numVs2s == vs2Idx + 1;
+                        const int upperBound = (offsetInVreg >= 0)
+                            ? microVlmax - offsetInVreg
+                            : microVlmax + offsetInVreg;
+                        const int vdOffset = (offsetInVreg >= 0)
+                            ? 0
+                            : -offsetInVreg;
+                        const int vs2Offset = (offsetInVreg >= 0)
+                            ? offsetInVreg
+                            : 0;
+                        const int elemIdxBase = vdIdx * microVlmax;
+                        vreg_t resVreg;
+                        auto res = resVreg.as<vu>();
+                        for (int i = 0;
+                            i < upperBound && i + vdOffset < microVl;
+                            i++) {
+                            res[i + vdOffset] = Vs2_vu[i + vs2Offset];
+                        }
+                        if (needZeroTail) {
+                            for (int i = upperBound + vdOffset;
+                                i < microVlmax; i++) {
+                                res[i] = 0;
+                            }
+                        }
+                        for (int i = vdOffset; i < microVl ; i++) {
+                            if (vm || elem_mask(v0, i + elemIdxBase)) {
+                                Vd_vu[i] = (i + elemIdxBase != machInst.vl - 1)
+                                    ? res[i]
+                                    : Rs1_vu;
+                            }
+                        }
+                    }
+                }}, OPFVF, VectorMiscOp);
                 // VRFUNARY0
                 0x10: decode VS2 {
                     0x00: decode VM {
@@ -3710,6 +3906,76 @@ decode QUADRANT default Unknown::unknown() {
                         Vd_vi[i] = res >> 1;
                     }}, OPMVX, VectorIntegerArithOp);
                 }
+                0x0e: VectorSlideUpFormat::vslide1up_vx({{
+                    const int offset = 1;
+                    const int microVlmax = vtype_VLMAX(machInst.vtype8, true);
+                    const int vregOffset = vdIdx - vs2Idx;
+                    const int offsetInVreg = offset - vregOffset * microVlmax;
+                    if (std::abs(offsetInVreg) < uint32_t(microVlmax)) {
+                        const int upperBound = (offsetInVreg >= 0)
+                            ? microVlmax - offsetInVreg
+                            : microVlmax + offsetInVreg;
+                        const int vdOffset = (offsetInVreg >= 0)
+                            ? offsetInVreg
+                            : 0;
+                        const int vs2Offset = (offsetInVreg >= 0)
+                            ? 0
+                            : -offsetInVreg;
+                        const int elemOffset = vdOffset + vdIdx * microVlmax;
+                        for (int i = 0;
+                            i < upperBound && i + vdOffset < microVl;
+                            i++) {
+                            if (this->vm || elem_mask(v0, i + elemOffset)) {
+                                Vd_vu[i + vdOffset] = Vs2_vu[i + vs2Offset];
+                            }
+                        }
+                        // TODO: dirty code
+                        if (vdIdx == 0 && vs2Idx == 0 &&
+                                (this->vm || elem_mask(v0, 0))) {
+                            tmp_d0.as<vu>()[0] = Rs1_vu;
+                        }
+                    }
+                }}, OPIVX, VectorMiscOp);
+                0x0f: VectorSlideDownFormat::vslide1down_vx({{
+                    const int offset = 1;
+                    const int microVlmax = vtype_VLMAX(machInst.vtype8, true);
+                    const int vregOffset = vs2Idx - vdIdx;
+                    const int offsetInVreg = offset - vregOffset * microVlmax;
+                    const int numVs2s = vtype_regs_per_group(vtype);
+                    if (std::abs(offsetInVreg) < uint32_t(microVlmax)) {
+                        const bool needZeroTail = numVs2s == vs2Idx + 1;
+                        const int upperBound = (offsetInVreg >= 0)
+                            ? microVlmax - offsetInVreg
+                            : microVlmax + offsetInVreg;
+                        const int vdOffset = (offsetInVreg >= 0)
+                            ? 0
+                            : -offsetInVreg;
+                        const int vs2Offset = (offsetInVreg >= 0)
+                            ? offsetInVreg
+                            : 0;
+                        const int elemIdxBase = vdIdx * microVlmax;
+                        vreg_t resVreg;
+                        auto res = resVreg.as<vu>();
+                        for (int i = 0;
+                            i < upperBound && i + vdOffset < microVl;
+                            i++) {
+                            res[i + vdOffset] = Vs2_vu[i + vs2Offset];
+                        }
+                        if (needZeroTail) {
+                            for (int i = upperBound + vdOffset;
+                                i < microVlmax; i++) {
+                                res[i] = 0;
+                            }
+                        }
+                        for (int i = vdOffset; i < microVl ; i++) {
+                            if (vm || elem_mask(v0, i + elemIdxBase)) {
+                                Vd_vu[i] = (i + elemIdxBase != machInst.vl - 1)
+                                    ? res[i]
+                                    : Rs1_vu;
+                            }
+                        }
+                    }
+                }}, OPIVX, VectorMiscOp);
                 // VRXUNARY0
                 0x10: decode VS2 {
                     0x00: decode VM {

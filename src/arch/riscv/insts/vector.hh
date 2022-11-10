@@ -192,6 +192,35 @@ class VectorVMUNARY0MacroInst : public VectorMacroInst
             Addr pc, const loader::SymbolTable *symtab) const override;
 };
 
+class VectorSlideMacroInst : public VectorMacroInst
+{
+  protected:
+    VectorSlideMacroInst(const char* mnem, ExtMachInst _machInst,
+                         OpClass __opClass)
+        : VectorMacroInst(mnem, _machInst, __opClass)
+    {
+        this->flags[IsVector] = true;
+    }
+
+    std::string generateDisassembly(
+            Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
+class VectorSlideMicroInst : public VectorMicroInst
+{
+  protected:
+    uint8_t vdIdx;
+    uint8_t vs2Idx;
+    VectorSlideMicroInst(const char *mnem, ExtMachInst _machInst,
+                         OpClass __opClass, uint8_t _microVl,
+                         uint8_t _microIdx, uint8_t _vdIdx, uint8_t _vs2Idx)
+        : VectorMicroInst(mnem, _machInst, __opClass, _microVl, _microIdx)
+        , vdIdx(_vdIdx), vs2Idx(_vs2Idx)
+    {}
+
+    std::string generateDisassembly(
+            Addr pc, const loader::SymbolTable *symtab) const override;
+};
 
 class VectorMemMicroInst : public VectorMicroInst
 {
