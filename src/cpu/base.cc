@@ -819,7 +819,7 @@ BaseCPU::GlobalStats::GlobalStats(statistics::Group *parent)
 
 
 std::pair<int, bool>
-BaseCPU::diffWithNEMU(ThreadID tid)
+BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
 {
     int diff_at = DiffAt::NoneDiff;
     bool npc_match = false;
@@ -880,7 +880,7 @@ BaseCPU::diffWithNEMU(ThreadID tid)
 
     if (nemu_pc != gem5_pc) {
         // warn("NEMU store addr: %#lx\n", nemu_store_addr);
-        DPRINTF(Diff, "Inst [sn:%lli]\n", 0);
+        DPRINTF(Diff, "Inst [sn:%lli]\n", seq);
         DPRINTF(Diff, "Diff at %s, NEMU: %#lx, GEM5: %#lx\n", "PC", nemu_pc,
                 gem5_pc);
         if (!diff_at) {
@@ -890,10 +890,10 @@ BaseCPU::diffWithNEMU(ThreadID tid)
             }
         }
     }
-    DPRINTF(Diff, "Inst [sn:%lli] PC, NEMU: %#lx, GEM5: %#lx\n", 0, nemu_pc,
+    DPRINTF(Diff, "Inst [sn:%lli] PC, NEMU: %#lx, GEM5: %#lx\n", seq, nemu_pc,
             gem5_pc);
 
-    DPRINTF(Diff, "Inst [sn:%llu] @ %#lx in GEM5 is %s\n", 0,
+    DPRINTF(Diff, "Inst [sn:%llu] @ %#lx in GEM5 is %s\n", seq,
             diffInfo.pc->instAddr(),
             diffInfo.inst->disassemble(diffInfo.pc->instAddr()));
     if (diffInfo.inst->numDestRegs() > 0) {
@@ -932,7 +932,7 @@ BaseCPU::diffWithNEMU(ThreadID tid)
                     DPRINTF(Diff, "Inst src count: %u, dest count: %u\n",
                             diffInfo.inst->numSrcRegs(),
                             diffInfo.inst->numDestRegs());
-                    warn("Inst [sn:%lli] pc:%s\n", 0, diffInfo.pc);
+                    warn("Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
                     warn("Diff at %s Ref value: %#lx, GEM5 value: %#lx\n",
                          reg_name[dest_tag], nemu_val, gem5_val);
                     if (!diff_at)
@@ -949,7 +949,7 @@ BaseCPU::diffWithNEMU(ThreadID tid)
             // readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_STATUS, 0);
             auto ref_val = diffAllStates->referenceRegFile[DIFFTEST_MSTATUS];
             if (gem5_val != ref_val) {
-                warn("Inst [sn:%lli] pc:%s\n", 0, diffInfo.pc);
+                warn("Inst [sn:%lli] pc:%s\n", seq, diffInfo.pc);
                 warn("Diff at %s Ref value: %#lx, GEM5 value: %#lx\n",
                      "mstatus", ref_val, gem5_val);
                 if (!diff_at)
@@ -961,7 +961,7 @@ BaseCPU::diffWithNEMU(ThreadID tid)
             // readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_MCAUSE, 0);
             ref_val = diffAllStates->referenceRegFile[DIFFTEST_MCAUSE];
             if (gem5_val != ref_val) {
-                warn("Inst [sn:%lli] pc:%s\n", 0, diffInfo.pc);
+                warn("Inst [sn:%lli] pc:%s\n", seq, diffInfo.pc);
                 warn("Diff at %s Ref value: %#lx, GEM5 value: %#lx\n",
                      "mcause", ref_val, gem5_val);
                 if (!diff_at)
@@ -973,7 +973,7 @@ BaseCPU::diffWithNEMU(ThreadID tid)
             // readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_SATP, 0);
             ref_val = diffAllStates->referenceRegFile[DIFFTEST_SATP];
             if (gem5_val != ref_val) {
-                warn("Inst [sn:%lli] pc:%s\n", 0, diffInfo.pc);
+                warn("Inst [sn:%lli] pc:%s\n", seq, diffInfo.pc);
                 warn("Diff at %s Ref value: %#lx, GEM5 value: %#lx\n", "satp",
                      ref_val, gem5_val);
                 if (!diff_at)
@@ -985,7 +985,7 @@ BaseCPU::diffWithNEMU(ThreadID tid)
             // readMiscReg(RiscvISA::MiscRegIndex::MISCREG_IE, 0);
             ref_val = diffAllStates->referenceRegFile[DIFFTEST_MIE];
             if (gem5_val != ref_val) {
-                warn("Inst [sn:%lli] pc:%s\n", 0, diffInfo.pc);
+                warn("Inst [sn:%lli] pc:%s\n", seq, diffInfo.pc);
                 warn("Diff at %s Ref value: %#lx, GEM5 value: %#lx\n", "mie",
                      ref_val, gem5_val);
                 if (!diff_at)
@@ -996,13 +996,13 @@ BaseCPU::diffWithNEMU(ThreadID tid)
             // readMiscReg(RiscvISA::MiscRegIndex::MISCREG_IP, 0);
             ref_val = diffAllStates->referenceRegFile[DIFFTEST_MIP];
             if (gem5_val != ref_val) {
-                DPRINTF(Diff, "Inst [sn:%lli] pc:%s\n", 0, diffInfo.pc);
+                DPRINTF(Diff, "Inst [sn:%lli] pc:%s\n", seq, diffInfo.pc);
                 DPRINTF(Diff, "Diff at %s Ref value: %#lx, GEM5 value: %#lx\n",
                         "mip", ref_val, gem5_val);
             }
 
             if (diff_at != NoneDiff) {
-                warn("Inst [sn:%llu] @ %#lx in GEM5 is %s\n", 0,
+                warn("Inst [sn:%llu] @ %#lx in GEM5 is %s\n", seq,
                      diffInfo.pc->instAddr(),
                      diffInfo.inst->disassemble(diffInfo.pc->instAddr()));
                 if (diffInfo.inst->isLoad()) {
@@ -1016,7 +1016,7 @@ BaseCPU::diffWithNEMU(ThreadID tid)
 
 
 void
-BaseCPU::difftestStep(ThreadID tid)
+BaseCPU::difftestStep(ThreadID tid, InstSeqNum seq)
 {
     bool should_diff = false;
     DPRINTF(Diff, "DiffTest step on inst pc: %#lx: %s\n",
@@ -1055,12 +1055,12 @@ BaseCPU::difftestStep(ThreadID tid)
     }
 
     if (enableDifftest && should_diff) {
-        auto [diff_at, npc_match] = diffWithNEMU(tid);
+        auto [diff_at, npc_match] = diffWithNEMU(tid, seq);
         if (diff_at != NoneDiff) {
             if (npc_match && diff_at == PCDiff) {
                 // warn("Found PC mismatch, Let NEMU run one more
                 // instruction\n");
-                std::tie(diff_at, npc_match) = diffWithNEMU(tid);
+                std::tie(diff_at, npc_match) = diffWithNEMU(tid, 0);
                 if (diff_at != NoneDiff) {
                     diffAllStates->proxy->isa_reg_display();
                     panic("Difftest failed again!\n");

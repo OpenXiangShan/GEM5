@@ -674,7 +674,7 @@ class BaseCPU : public ClockedObject
     {
         panic("difftest:readGem5Regs() is not implemented\n");
     }
-    std::pair<int, bool> diffWithNEMU(ThreadID tid);
+    std::pair<int, bool> diffWithNEMU(ThreadID tid, InstSeqNum seq);
 
   public:
     struct
@@ -702,7 +702,9 @@ class BaseCPU : public ClockedObject
         return 0;
     }
 
-    void difftestStep(ThreadID tid);
+    void difftestStep(ThreadID tid) { difftestStep(tid, 0);}
+
+    void difftestStep(ThreadID tid, InstSeqNum seq);
 
     inline bool difftestEnabled() const { return enableDifftest; }
 

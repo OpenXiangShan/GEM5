@@ -133,12 +133,16 @@ class BaseSimpleCPU : public BaseCPU
 
     std::unique_ptr<PCStateBase> preExecuteTempPC;
 
+    uint64_t numCommittedInsts{};
+
+    void difftestRecordAndStep();
+
   public:
     void checkForInterrupts();
     void setupFetchRequest(const RequestPtr &req);
     void serviceInstCountEvents();
     void preExecute();
-    void postExecute();
+    void postExecute(const Fault &fault);
     void advancePC(const Fault &fault);
 
     void haltContext(ThreadID thread_num) override;

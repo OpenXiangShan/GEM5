@@ -1075,7 +1075,7 @@ Commit::commitInsts()
                     cpu->diffInfo.curInstStrictOrdered =
                         head_inst->strictlyOrdered();
                     cpu->diffInfo.physEffAddr = head_inst->physEffAddr;
-                    cpu->difftestStep(tid);
+                    cpu->difftestStep(tid, head_inst->seqNum);
                 }
 
                 // Check instruction execution if it successfully commits and
