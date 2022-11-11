@@ -11,7 +11,7 @@
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/op_class.hh"
 #include "params/DelayCalibrator.hh"
-#include "params/ScheduleDelayMatrixmap.hh"
+#include "params/ScheduleDelayMatrixMap.hh"
 
 
 namespace gem5
@@ -20,13 +20,13 @@ namespace gem5
 namespace o3
 {
 class CPU;
-class ScheduleDelayMatrixmap : public SimObject
+class ScheduleDelayMatrixMap : public SimObject
 {
   public:
     OpClass dep_opclass;
     OpClass completed_opclass;
     uint32_t delay_tick;
-    ScheduleDelayMatrixmap(const ScheduleDelayMatrixmapParams& params)
+    ScheduleDelayMatrixMap(const ScheduleDelayMatrixMapParams& params)
         : SimObject(params),
           dep_opclass(params.dep_opclass),
           completed_opclass(params.completed_opclass),
