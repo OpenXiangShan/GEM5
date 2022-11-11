@@ -706,7 +706,7 @@ AtomicSimpleCPU::tick()
                     // caused the retry are unlikely to change every tick.
                     stall_ticks += clockEdge(syscallRetryLatency) - curTick();
                 }
-                postExecute();
+                postExecute(fault);
             }
 
             // @todo remove me after debugging with legion done

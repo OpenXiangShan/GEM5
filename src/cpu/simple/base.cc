@@ -387,7 +387,7 @@ BaseSimpleCPU::preExecute()
 }
 
 void
-BaseSimpleCPU::postExecute()
+BaseSimpleCPU::postExecute(const Fault &fault)
 {
     SimpleExecContext &t_info = *threadInfo[curThread];
 
@@ -456,18 +456,13 @@ BaseSimpleCPU::postExecute()
         delete traceData;
         traceData = NULL;
     }
-    //
-    if (enableDifftest) {
-        diffInfo.inst = curStaticInst;
-        diffInfo.pc = &threadContexts[curThread]->pcState();
-        if (curStaticInst->numDestRegs() > 0) {
-            const auto &dest = curStaticInst->destRegIdx(0);
-            if ((dest.isFloatReg() || dest.isIntReg()) && !dest.isZeroReg()) {
-                diffInfo.result = threadContexts[curThread]->getReg(dest);
-            }
-        }
-        difftestStep(curThread);
+
+    numCommittedInsts++;
+
+    if (enableDifftest && fault == NoFault) {
+        difftestRecordAndStep();
     }
+
     // Call CPU instruction commit probes
     probeInstCommit(curStaticInst, instAddr);
 }
@@ -534,6 +529,19 @@ BaseSimpleCPU::readGem5Regs()
     }
 }
 
-
+void
+BaseSimpleCPU::difftestRecordAndStep()
+{
+    assert(enableDifftest);
+    diffInfo.inst = curStaticInst;
+    diffInfo.pc = &threadContexts[curThread]->pcState();
+    if (curStaticInst->numDestRegs() > 0) {
+        const auto &dest = curStaticInst->destRegIdx(0);
+        if ((dest.isFloatReg() || dest.isIntReg()) && !dest.isZeroReg()) {
+            diffInfo.result = threadContexts[curThread]->getReg(dest);
+        }
+    }
+    difftestStep(curThread, numCommittedInsts);
+}
 
 }  // namespace gem5
