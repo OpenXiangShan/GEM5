@@ -505,6 +505,16 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
         }
         sendPackets();
     } else {
+        if (pkt->isError() && timingFault == NoFault)
+        {
+            if (pkt->req->hasVaddr()) {
+                timingFault = walker->pmp->createAddrfault(
+                    pkt->req->getVaddr(), mode);
+            } else {
+                timingFault = walker->pmp->createAddrfault(entry.vaddr, mode);
+            }
+        }
+
         delete pkt;
 
         sendPackets();
