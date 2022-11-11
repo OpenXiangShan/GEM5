@@ -125,3 +125,43 @@ class IprPort(FUDesc):
     opList = [ OpDesc(opClass='IprAccess', opLat = 3, pipelined = False) ]
     count = 1
 
+
+class ScheduleDelayMatrixmap(SimObject):
+    type = 'ScheduleDelayMatrixmap'
+    cxx_header = "cpu/o3/iew_delay_calibrator.hh"
+    cxx_class = 'gem5::o3::ScheduleDelayMatrixmap'
+
+    dep_opclass = Param.OpClass('the opclass of dep_inst')
+    completed_opclass = Param.OpClass('the opclass of complete_inst')
+    delay_tick = Param.UInt32(
+        'the delay tick between dep_inst and complete_inst')
+
+    def __init__(self, dep_opclass: str, completed_opclass: str, delay_tick: int):
+        super().__init__()
+        self.dep_opclass = dep_opclass
+        self.completed_opclass = completed_opclass
+        self.delay_tick = delay_tick
+
+
+class DelayCalibrator(SimObject):
+    type = 'DelayCalibrator'
+    cxx_header = "cpu/o3/iew_delay_calibrator.hh"
+    cxx_class = 'gem5::o3::DelayCalibrator'
+    # dep_inst completed_inst
+    # actually the order of dep_inst and completed_inst doesn't have much
+    # effect on the cycle delay????
+    matrix = VectorParam.ScheduleDelayMatrixmap(
+        [ScheduleDelayMatrixmap('IntAlu', 'IntAlu', 0),
+         ScheduleDelayMatrixmap('IntMult', 'IntAlu', 1),
+         ScheduleDelayMatrixmap('IntDiv', 'IntDiv', 1),
+         ScheduleDelayMatrixmap('IntDiv', 'IntMult', 1),
+         ScheduleDelayMatrixmap('IntDiv', 'IntAlu', 2),
+
+         ScheduleDelayMatrixmap('FloatCvt', 'IntAlu', 3),
+         ScheduleDelayMatrixmap('FloatCvt', 'IntMult', 3),
+         ScheduleDelayMatrixmap('FloatCvt', 'IntDiv', 3),
+
+         ScheduleDelayMatrixmap('FloatCvt', 'FloatAdd', 2),
+         ScheduleDelayMatrixmap('FloatCvt', 'FloatMult', 2),
+         ScheduleDelayMatrixmap('FloatCvt', 'FloatDiv', 2),
+         ScheduleDelayMatrixmap('FloatCvt', 'FloatCvt', 2)], '')

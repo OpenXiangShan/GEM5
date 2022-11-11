@@ -1,13 +1,14 @@
-#ifndef __CPU_O3_INST_DELAY_MATRIX_HH__
-#define __CPU_O3_INST_DELAY_MATRIX_HH__
-
 #include <list>
 #include <map>
 #include <queue>
 #include <vector>
 
+
 #include "base/types.hh"
+#include "cpu/o3/iew_delay_calibrator.hh"
 #include "cpu/op_class.hh"
+
+
 
 namespace gem5
 {
@@ -15,32 +16,29 @@ namespace gem5
 namespace o3
 {
 
-std::map<std::pair<OpClass, OpClass>, uint32_t> scheduleDelayMatrix = {
-    // dep_inst completed_inst
-    // actually the order of dep_inst and completed_inst doesn't have much
-    // effect on the cycle delay????
-    {{OpClass::IntAlu, OpClass::IntAlu}, 0},
-    {{OpClass::IntMult, OpClass::IntAlu}, 1},
-    {{OpClass::IntDiv, OpClass::IntDiv}, 1},
-    {{OpClass::IntDiv, OpClass::IntMult}, 1},
-    {{OpClass::IntDiv, OpClass::IntAlu}, 2},
 
-    {{OpClass::FloatCvt, OpClass::IntAlu}, 3},
-    {{OpClass::FloatCvt, OpClass::IntMult}, 3},
-    {{OpClass::FloatCvt, OpClass::IntDiv}, 3},
+DelayCalibrator::DelayCalibrator(const DelayCalibratorParams& params)
+    : SimObject(params)
+{
+    for (auto it = params.matrix.begin(); it != params.matrix.end(); ++it) {
+        matrix[std::make_pair((*it)->dep_opclass, (*it)->completed_opclass)] =
+            (*it)->delay_tick;
+    }
+}
 
-    {{OpClass::FloatCvt, OpClass::FloatAdd}, 2},
-    {{OpClass::FloatCvt, OpClass::FloatMult}, 2},
-    {{OpClass::FloatCvt, OpClass::FloatDiv}, 2},
-    {{OpClass::FloatCvt, OpClass::FloatCvt}, 2},
+uint32_t
+DelayCalibrator::lookupDelayMatrix(std::pair<OpClass, OpClass> ops)
+{
+    auto find_it = matrix.find(ops);
+    if (find_it != matrix.end()) {
+        return find_it->second;
+    }
+    return 0;
+}
 
-};
-
-
-
-// check the opclass and replace the latency
 bool
-execLatencyCheck(CPU* cpu, DynInstPtr inst, Cycles& op_latency)
+DelayCalibrator::execLatencyCheck(CPU* cpu, DynInstPtr inst,
+                                  Cycles& op_latency)
 {
     auto lzc = [](RegVal val) {
         for (int i = 0; i < 64; i++) {
@@ -95,6 +93,3 @@ execLatencyCheck(CPU* cpu, DynInstPtr inst, Cycles& op_latency)
 
 }
 }
-
-
-#endif
