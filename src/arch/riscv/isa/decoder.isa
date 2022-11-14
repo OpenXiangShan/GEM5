@@ -1986,5 +1986,7 @@ decode QUADRANT default Unknown::unknown() {
         }
 
         0x1e: M5Op::M5Op();
+
+        0x1a: NemuOp::NemuOp();
     }
 }
