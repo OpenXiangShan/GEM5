@@ -402,6 +402,8 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
     DPRINTF(DecoupleBPHist,
              "Recover history %s\nto %s\n", s0History, stream.history);
     s0History = stream.history;
+    streamTAGE->recoverFoldedHist(s0History);
+    // streamTAGE->checkFoldedHist(s0History);
 
     if (actually_taken) {
 
@@ -623,6 +625,8 @@ DecoupledBPU::trapSquash(unsigned target_id, unsigned stream_id,
     DPRINTF(DecoupleBP, "Recover history %s\nto %s\n", buf1.c_str(),
             buf2.c_str());
     s0History = stream.history;
+    streamTAGE->recoverFoldedHist(s0History);
+    // streamTAGE->checkFoldedHist(s0History);
     auto hashed_path =
         computePathHash(last_committed_pc, inst_pc.instAddr());
     histShiftIn(hashed_path, s0History);
@@ -703,12 +707,14 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
                 auto next_chunk = cur_chunk + streamChunkSize;
                 DPRINTF(DecoupleBP || debugFlagOn,
                         "Update fall-thru chunk %#lx\n", cur_chunk);
+                streamTAGE->recoverFoldedHist(stream.history);
                 streamTAGE->update(
                     cur_chunk, stream.streamStart, next_chunk - 2, next_chunk,
                     2, false /* not taken*/, stream.history, END_CONT);
                 streamUBTB->update(
                     cur_chunk, stream.streamStart, next_chunk - 2, next_chunk,
-                    2, false /* not taken*/, stream.history, END_CONT);  
+                    2, false /* not taken*/, stream.history, END_CONT);
+                streamTAGE->recoverFoldedHist(s0History);
                 cur_chunk = next_chunk;
             }
             updateTAGE(stream);
@@ -730,7 +736,7 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
                     useLoopAndValid++;
                 else
                     notUseLoop++;
-                    
+
                 auto find_it = topMispredicts.find(std::make_pair(stream.streamStart, stream.exeBranchPC));
                 if (find_it == topMispredicts.end()) {
                     topMispredicts[std::make_pair(stream.streamStart, stream.exeBranchPC)] = 1;
@@ -774,6 +780,7 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
             assert(stream.squashType == SQUASH_TRAP);
             // For trap squash, we expect them to always incorrectly predict
             // Because correct prediction will cause strange behaviors
+            streamTAGE->recoverFoldedHist(stream.history);
             streamTAGE->update(computeLastChunkStart(stream.getControlPC(),
                                                      stream.streamStart),
                                stream.streamStart, stream.getControlPC(),
@@ -783,7 +790,8 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
                                                      stream.streamStart),
                                stream.streamStart, stream.getControlPC(),
                                stream.getFallThruPC(), 4, false /* not taken*/,
-                               stream.history, END_NOT_TAKEN);  
+                               stream.history, END_NOT_TAKEN);
+            streamTAGE->recoverFoldedHist(s0History);
         }
 
         it = fetchStreamQueue.erase(it);
@@ -1072,13 +1080,20 @@ DecoupledBPU::histShiftIn(Addr hash, boost::dynamic_bitset<> &history)
     // DPRINTF(DecoupleBP, "Hist before shiftin: %s, hist len: %u, hash:
     // %#lx\n", buf.c_str(), history.size(), hash); DPRINTF(DecoupleBP, "Reach
     // x\n");
+    // boost::to_string(history, buf1);
+    // DPRINTF(DecoupleBP, "Hist before shiftin: %s\n", buf1.c_str());
+    boost::dynamic_bitset<> tempHist(history);
     history <<= 2;
     boost::dynamic_bitset<> temp_hash_bits(historyBits, hash);
+    // boost::to_string(history, buf1);
     // boost::to_string(temp_hash_bits, buf2);
-    // DPRINTF(DecoupleBP, "hash to shiftin: %s\n", buf.c_str());
+    // DPRINTF(DecoupleBP, "history << 2:%s, hash: %#lx, temp_hash_bits: %s\n", buf1.c_str(), hash, buf2.c_str());
     history ^= temp_hash_bits;
     // boost::to_string(history, buf2);
     // DPRINTF(DecoupleBP, "Hist after shiftin: %s\n", buf2.c_str());
+
+    streamTAGE->maintainFoldedHist(tempHist, temp_hash_bits);
+    // streamTAGE->checkFoldedHist(history);
 }
 
 void
@@ -1286,22 +1301,26 @@ DecoupledBPU::updateTAGE(FetchStream &stream)
         for (auto &it : res.second) {
             auto last_chunk = computeLastChunkStart(it.branch, it.start);
             DPRINTF(DecoupleBP || debugFlagOn, "Update divided chunk %#lx\n", last_chunk);
+            streamTAGE->recoverFoldedHist(stream.history);
             streamTAGE->update(last_chunk, it.start,
                                it.branch,
                                it.next,
                                it.fallThruPC - it.branch,
                                it.taken, stream.history,
                                static_cast<EndType>(it.taken ? EndType::END_OTHER_TAKEN : EndType::END_NOT_TAKEN));
+            streamTAGE->recoverFoldedHist(s0History);
         }
     } else {
         auto last_chunk = computeLastChunkStart(stream.getControlPC(), stream.streamStart);
         DPRINTF(DecoupleBP || debugFlagOn, "Update taken chunk %#lx\n", last_chunk);
+        streamTAGE->recoverFoldedHist(stream.history);
         streamTAGE->update(last_chunk, stream.streamStart,
                            stream.getControlPC(),
                            stream.getNextStreamStart(),
                            stream.getFallThruPC() - stream.getControlPC(),
                            stream.getTaken(), stream.history,
                            static_cast<EndType>(stream.endType));
+        streamTAGE->recoverFoldedHist(s0History);
     }
 }
 

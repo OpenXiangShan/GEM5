@@ -33,6 +33,8 @@ StreamTAGE::StreamTAGE(const Params& p):
     tableTagMasks.resize(numPredictors);
     tagSegments.resize(numPredictors);
     hasTag.resize(numPredictors);
+    tagFoldedHist.resize(numPredictors);
+    indexFoldedHist.resize(numPredictors);
     for (unsigned int i = 0; i < p.numPredictors; ++i) {
         //initialize ittage predictor
         assert(tableSizes.size() >= numPredictors);
@@ -41,6 +43,9 @@ StreamTAGE::StreamTAGE(const Params& p):
         tableIndexBits[i] = ceilLog2(tableSizes[i]);
         tableIndexMasks[i].resize(maxHistLen, true);
         tableIndexMasks[i] >>= (maxHistLen - tableIndexBits[i]);
+
+        tagFoldedHist[i].resize(tableTagBits[i]);
+        indexFoldedHist[i].resize(tableIndexBits[i]);
 
         assert(histLengths.size() >= numPredictors);
         indexSegments[i] =
@@ -507,7 +512,10 @@ StreamTAGE::getTageTag(Addr pc, const bitset& history, int t)
     if (!hasTag[t]) {
         return 0;
     }
-    bitset buf(tableTagBits[t], pc >> tablePcShifts[t]);  // lower bits of PC
+
+    bitset buf2(tableTagBits[t], pc >> tablePcShifts[t]);
+    /*bitset buf(tableTagBits[t], pc >> tablePcShifts[t]);  // lower bits of PC
+
     buf.resize(maxHistLen);
     bitset hist(history);  // copy a writable history
     hist.resize(histLengths[t]);
@@ -518,8 +526,127 @@ StreamTAGE::getTageTag(Addr pc, const bitset& history, int t)
         auto masked = hist & tableTagMasks[t];
         buf ^= masked;  // fold into the buf
         hist >>= tableTagBits[t];  // shift right to get next fold
+    }*/
+
+    buf2 ^= tagFoldedHist[t];
+
+    /*std::string str1, str2;
+    boost::to_string(buf, str1);
+    boost::to_string(buf2, str2);
+    DPRINTF(TempDebug, "Tag for table %d is %s, folded hist is %s\n", t, str1.c_str(), str2.c_str());
+    assert(buf2.to_ulong() == buf.to_ulong());*/
+    return buf2.to_ulong();
+}
+
+void
+StreamTAGE::maintainFoldedHist(const bitset& history, bitset hash)
+{
+    std::string hist_str;
+    boost::to_string(history, hist_str);
+    DPRINTF(TempDebug, "history:\t%s\n", hist_str.c_str());
+    // update the folded history when the global history is updated in the decoupled_bpred.cc
+    for (int t = 1;t < numPredictors;t++) {
+        for (int type = 0;type < 2;type++) {
+            bool res = false;
+
+            DPRINTF(TempDebug, "t: %d, type: %d\n", t, type);
+            std::string buf1;
+            auto &foldedHist = type ? tagFoldedHist[t] : indexFoldedHist[t];
+            boost::to_string(foldedHist, buf1);
+            DPRINTF(TempDebug, "foldedHist:\t%s\n", buf1.c_str());
+            unsigned int foldedLen = type ? tableTagBits[t] : tableIndexBits[t];
+            DPRINTF(TempDebug, "foldLen: %d, histLengths: %d\n", foldedLen, histLengths[t]);
+            unsigned int modResult = histLengths[t] % foldedLen;
+            bitset tempHist(history);
+
+            for(int i = 0;i < 2;i++) {
+                tempHist.resize(histLengths[t]);
+                bool foldedHighRes = foldedHist[foldedLen - 1];
+                bool oriHighRes = tempHist[histLengths[t] - 1];
+                DPRINTF(TempDebug, "oriHighRes: %d, foldedHighRes: %d\n", oriHighRes, foldedHighRes);
+
+                foldedHist <<= 1;
+                tempHist <<= 1;
+                foldedHist[0] = res ^ foldedHighRes;
+                foldedHist[modResult] ^= oriHighRes;
+                foldedHist.resize(foldedLen);
+
+                std::string buf2;
+                boost::to_string(foldedHist, buf2);
+                DPRINTF(TempDebug, "%d iteration updated foldedHist:\t%s\n", i, buf2.c_str());
+            }
+            assert(foldedLen >= 8);
+            hash.resize(foldedLen);
+            foldedHist ^= hash;
+            std::string buf2;
+            boost::to_string(foldedHist, buf2);
+            DPRINTF(TempDebug, "final foldedHist:\t%s\n", buf2.c_str());
+        }
     }
-    return buf.to_ulong();
+}
+
+void
+StreamTAGE::checkFoldedHist(const bitset& history)
+{
+    std::string hist_str, hash_str;
+    boost::to_string(history, hist_str);
+    DPRINTF(TempDebug, "history:\t%s\n", hist_str.c_str());
+    // update the folded history when the global history is updated in the decoupled_bpred.cc
+    for (int t = 1;t < numPredictors;t++) {
+        for (int type = 0;type < 2;type++) {
+            DPRINTF(TempDebug, "t: %d, type: %d\n", t, type);
+            std::string buf2, buf3;
+            auto &foldedHist = type ? tagFoldedHist[t] : indexFoldedHist[t];
+            unsigned int foldedLen = type ? tableTagBits[t] : tableIndexBits[t];
+            boost::to_string(foldedHist, buf2);
+
+            // check history
+            bitset idealHist(history);
+            idealHist.resize(histLengths[t]);
+            std::string buf4;
+            boost::to_string(idealHist, buf4);
+            DPRINTF(TempDebug, "idealHist:\t%s\n", buf4.c_str());
+
+            bitset idealFoldedHist;
+            idealFoldedHist.resize(foldedLen);
+            for (int i = 0;i < histLengths[t];i++) {
+                idealFoldedHist[i % foldedLen] ^= idealHist[i];
+            }
+            assert(foldedLen >= 8);
+            boost::to_string(idealFoldedHist, buf3);
+            DPRINTF(TempDebug, "idealFoldedHist:\t%s\tfoldedHist:\t%s\n", buf3.c_str(), buf2.c_str());
+            assert(idealFoldedHist == foldedHist);
+        }
+    }
+}
+
+void
+StreamTAGE::recoverFoldedHist(const bitset& history)
+{
+    std::string buf;
+    boost::to_string(history, buf);
+    DPRINTF(TempDebug, "recoverFoldedHist: %s\n", buf.c_str());
+    // manually compute the folded history
+    for (int t = 1;t < numPredictors;t++) {
+        for (int type = 0;type < 2;type++) {
+            auto &foldedHist = type ? tagFoldedHist[t] : indexFoldedHist[t];
+            unsigned int foldedLen = type ? tableTagBits[t] : tableIndexBits[t];
+            std::string buf0, buf1;
+            boost::to_string(foldedHist, buf0);
+            foldedHist.clear();
+            foldedHist.resize(foldedLen);
+            boost::to_string(foldedHist, buf1);
+            DPRINTF(TempDebug, "foldedHist:\t%s\tcleared:\t%s\n", buf0.c_str(), buf1.c_str());
+            bitset tempHist(history);
+            tempHist.resize(histLengths[t]);
+            for (int j = 0;j < histLengths[t];j++) {
+                foldedHist[j % foldedLen] ^= tempHist[j];
+            }
+            std::string buf2;
+            boost::to_string(foldedHist, buf2);
+            DPRINTF(TempDebug, "t:%d, type: %d, history:\t%s\n", t, type, buf2.c_str());
+        }
+    }
 }
 
 Addr
@@ -528,23 +655,34 @@ StreamTAGE::getTageIndex(Addr pc, const bitset& history, int t)
     if (histLengths[t] == 0) {
         return (pc >> tablePcShifts[t]) % tableSizes[t];
     }
-    bitset buf(tableIndexBits[t], pc >> tablePcShifts[t]);
+
+    bitset buf2(tableIndexBits[t], pc >> tablePcShifts[t]);
+    /*bitset buf(tableIndexBits[t], pc >> tablePcShifts[t]);
+
     buf.resize(maxHistLen);
     bitset hist(history);  // copy a writable history
     hist.resize(histLengths[t]);
     hist.resize(maxHistLen);
 
-    DPRINTFV(this->debugFlagOn && ::gem5::debug::DecoupleBPVerbose,
-             "Calc index: allocate a %u bit buf, using hist %s\n",
-             tableIndexBits[t], hist);
+    std::string str;
+    boost::to_string(hist, str);
+    DPRINTF(TempDebug, "pc: %#lx, history:\t%s\n", pc, str.c_str());
 
     for (unsigned i = 0; i < indexSegments[t]; i++) {
         assert(history.size() == tableIndexMasks[t].size());
         auto masked = hist & tableIndexMasks[t];
         buf ^= masked;  // fold into the buf
         hist >>= tableIndexBits[t];  // shift right to get next fold
-    }
-    return buf.to_ulong();
+    }*/
+
+    buf2 ^= indexFoldedHist[t];
+
+    /*std::string str1, str2;
+    boost::to_string(buf, str1);
+    boost::to_string(buf2, str2);
+    DPRINTF(TempDebug, "Index for table %d is %s, folded hist is %s\n", t, str1.c_str(), str2.c_str());
+    assert(buf2.to_ulong() == buf.to_ulong());*/
+    return buf2.to_ulong();
 }
 
 unsigned

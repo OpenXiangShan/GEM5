@@ -123,6 +123,8 @@ class StreamTAGE : public TimedPredictor
     std::vector<unsigned> tablePcShifts;
     std::vector<unsigned> histLengths;
     std::vector<bool> hasTag;
+    std::vector<bitset> tagFoldedHist;
+    std::vector<bitset> indexFoldedHist;
 
     unsigned maxHistLen;
 
@@ -182,6 +184,12 @@ public:
     void setStreamLoopPredictor(StreamLoopPredictor *slp) {
       loopPredictor = slp;
     }
+
+    void maintainFoldedHist(const bitset& history, bitset hash);
+
+    void recoverFoldedHist(const bitset& history);
+
+    void checkFoldedHist(const bitset& history);
 };
 
 }
