@@ -515,17 +515,30 @@ PhysicalMemory::unserializeStoreFrom(std::string filepath,
         fatal_if(off < 0, "Failed to determine size of file %s.\n", filepath);
         auto file_len = static_cast<size_t>(off);
 
-        backingStore[store_id].pmem =
-            (uint8_t*)mmap(NULL, file_len, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
-
-        assert(backingStore[store_id].pmem != MAP_FAILED);
-
-        inform("mmap %s to %#lx, setting backing store pointer to it",
-            filepath, (uint64_t)backingStore[store_id].pmem);
+        if (file_len < size) {
+            // small file -> anonymous map + file copy
+            backingStore[store_id].pmem = (uint8_t *)mmap(
+                NULL, size, PROT_READ | PROT_WRITE,
+                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            assert(backingStore[store_id].pmem != MAP_FAILED);
+            // copy file into pmem
+            inform("copying %s to pmem %#lx",
+                   filepath, (uint64_t)backingStore[store_id].pmem);
+            lseek(fd, 0, SEEK_SET);
+            auto bytes = read(fd, backingStore[store_id].pmem, file_len);
+            assert(bytes == file_len);
+        } else {
+            // large file -> file map
+            backingStore[store_id].pmem =(uint8_t*)mmap(
+                NULL, file_len, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+            assert(backingStore[store_id].pmem != MAP_FAILED);
+            inform("mmap %s to %#lx, setting backing store pointer to it",
+                   filepath, (uint64_t)backingStore[store_id].pmem);
+        }
 
         // For Difftest copy memory
         pmemStart = backingStore[store_id].pmem;
-        pmemSize = file_len;
+        pmemSize = std::max(file_len, size);
 
         inform("First 4 bytes are 0x%x 0x%x 0x%x 0x%x\n",
             pmemStart[0],pmemStart[1],pmemStart[2],pmemStart[3]);
