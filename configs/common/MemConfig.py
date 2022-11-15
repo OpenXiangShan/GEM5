@@ -36,47 +36,7 @@
 import m5.objects
 from common import ObjectList
 from common import HMC
-import os
-import sys
-import inspect
 
-_mem_classes = {}
-
-def is_mem_class(cls):
-    """Determine if a class is a memory controller that can be instantiated"""
-
-    # We can't use the normal inspect.isclass because the ParamFactory
-    # and ProxyFactory classes have a tendency to confuse it.
-    try:
-        return issubclass(cls, m5.objects.AbstractMemory) and \
-            not cls.abstract
-    except TypeError:
-        return False
-
-def get(name):
-    """Get a memory class from a user provided class name."""
-
-    try:
-        mem_class = _mem_classes[name]
-        return mem_class
-    except KeyError:
-        print("%s is not a valid memory controller." % (name,))
-        sys.exit(1)
-
-def dramsim3_size_mb(ini_file):
-    """Parsing ini file for DRAMsim3 so that the system knows mem size"""
-    print(ini_file)
-    assert(os.path.exists(ini_file))
-    import configparser
-    config = configparser.ConfigParser()
-    config.read(ini_file)
-    channel_size = config.getint("system", "channel_size")
-    num_channels = config.getint("system", "channels")
-    size_mb = channel_size * num_channels
-    return size_mb
-
-for name, cls in inspect.getmembers(m5.objects, is_mem_class):
-    _mem_classes[name] = cls
 
 def create_mem_intf(intf, r, i, intlv_bits, intlv_size,
                     xor_low_bit):
@@ -178,17 +138,6 @@ def config_mem(options, system):
 
     opt_dramsim3_ini = getattr(options, 'dramsim3_ini', None)
 
-    if opt_mem_type == "DRAMsim3":
-        ini_file = ''
-        if opt_dramsim3_ini:
-            ini_file = opt_dramsim3_ini
-        else:
-            ini_file = m5.objects.DRAMsim3.configFile
-        mem_size = dramsim3_size_mb(ini_file)
-        mem_size_str = str(mem_size) + "MB"
-        options.mem_size = mem_size_str
-        system.mem_ranges = [m5.objects.AddrRange(mem_size_str)]
-
     if opt_mem_type == "HMC_2500_1x32":
         HMChost = HMC.config_hmc_host_ctrl(options, system)
         HMC.config_hmc_dev(options, system, HMChost.hmc_host)
@@ -230,7 +179,6 @@ def config_mem(options, system):
 
     nvm_intfs = []
     mem_ctrls = []
-    cls = get(opt_mem_type)
 
     if opt_elastic_trace_en and not issubclass(intf, m5.objects.SimpleMemory):
         fatal("When elastic trace is enabled, configure mem-type as "
@@ -252,18 +200,7 @@ def config_mem(options, system):
         range_iter += 1
 
         for i in range(nbr_mem_ctrls):
-            if opt_mem_type == 'DRAMsim3':
-                #mem_ctrl = nvm_intfs()
-                mem_ctrl = cls()
-                if opt_dramsim3_ini:
-                    mem_ctrl.configFile = opt_dramsim3_ini
-                mem_ctrl.filePath = m5.options.outdir
-                #mem_ctrl.range=m5.objects.AddrRange(r.size())
-                mem_ctrl.range = m5.objects.AddrRange(start=0x80000000,
-                                size='64GB')
-                mem_ctrls.append(mem_ctrl)
-
-            elif opt_mem_type and (not opt_nvm_type or range_iter % 2 != 0):
+            if opt_mem_type and (not opt_nvm_type or range_iter % 2 != 0):
                 # Create the DRAM interface
                 dram_intf = create_mem_intf(intf, r, i,
                     intlv_bits, intlv_size, opt_xor_low_bit)
@@ -284,7 +221,12 @@ def config_mem(options, system):
                         "latency to 1ns.")
 
                 # Create the controller that will drive the interface
-                mem_ctrl = dram_intf.controller()
+                if issubclass(intf, m5.objects.DRAMsim3):
+                    if opt_dramsim3_ini:
+                        dram_intf.configFile = opt_dramsim3_ini
+                    mem_ctrl = dram_intf
+                else:
+                    mem_ctrl = dram_intf.controller()
 
                 mem_ctrls.append(mem_ctrl)
 
