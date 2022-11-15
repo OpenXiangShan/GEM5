@@ -102,6 +102,9 @@ struct FetchStream
 
     boost::dynamic_bitset<> history;
 
+    std::vector<boost::dynamic_bitset<>> indexFoldedHist;
+    std::vector<boost::dynamic_bitset<>> tagFoldedHist;
+
     FetchStream()
         : streamStart(0),
           predEnded(false),
@@ -218,6 +221,9 @@ struct StreamPrediction: public StreamDesc
             }
         }
     }
+
+    std::vector<boost::dynamic_bitset<>> indexFoldedHist;
+    std::vector<boost::dynamic_bitset<>> tagFoldedHist;
 };
 
 struct StreamPredictionWithID : public StreamPrediction

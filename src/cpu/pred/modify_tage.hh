@@ -74,7 +74,8 @@ class StreamTAGE : public TimedPredictor
                       TickedStreamStorage* &alt_target, int& predictor,
                       int& predictor_index, int& alt_predictor,
                       int& alt_predictor_index, int& pred_count,
-                      bool& use_alt_pred);
+                      bool& use_alt_pred, std::vector<bitset> index_folded_hist,
+		      std::vector<bitset> tag_folded_hist);
 
   public:
     StreamTAGE(const Params& p);
@@ -93,14 +94,16 @@ class StreamTAGE : public TimedPredictor
     void update(Addr last_chunk_start_pc, Addr stream_start_pc,
                 Addr control_pc, Addr target,
                 unsigned control_size, bool actually_taken,
-                const bitset &history, EndType endType);
+                const bitset &history, EndType endType,
+		std::vector<bitset> indexFoldedHist,
+		std::vector<bitset> tagFoldedHist);
 
     void commit(Addr, Addr, Addr, bitset&);
 
   private:
-    Addr getTageIndex(Addr pc, const bitset& ghr, int table);
+    Addr getTageIndex(Addr pc, const bitset& ghr, int table, const std::vector<bitset> index_folded_hist);
 
-    Addr getTageTag(Addr pc, const bitset& ghr, int table);
+    Addr getTageTag(Addr pc, const bitset& ghr, int table, const std::vector<bitset> tag_folded_hist);
 
     uint64_t getTableGhrLen(int table);
 

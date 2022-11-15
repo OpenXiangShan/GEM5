@@ -707,14 +707,13 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
                 auto next_chunk = cur_chunk + streamChunkSize;
                 DPRINTF(DecoupleBP || debugFlagOn,
                         "Update fall-thru chunk %#lx\n", cur_chunk);
-                streamTAGE->recoverFoldedHist(stream.history);
                 streamTAGE->update(
                     cur_chunk, stream.streamStart, next_chunk - 2, next_chunk,
-                    2, false /* not taken*/, stream.history, END_CONT);
+                    2, false /* not taken*/, stream.history, END_CONT,
+		            stream.indexFoldedHist, stream.tagFoldedHist);
                 streamUBTB->update(
                     cur_chunk, stream.streamStart, next_chunk - 2, next_chunk,
                     2, false /* not taken*/, stream.history, END_CONT);
-                streamTAGE->recoverFoldedHist(s0History);
                 cur_chunk = next_chunk;
             }
             updateTAGE(stream);
@@ -780,18 +779,19 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
             assert(stream.squashType == SQUASH_TRAP);
             // For trap squash, we expect them to always incorrectly predict
             // Because correct prediction will cause strange behaviors
-            streamTAGE->recoverFoldedHist(stream.history);
+            // streamTAGE->recoverFoldedHist(stream.history);
             streamTAGE->update(computeLastChunkStart(stream.getControlPC(),
                                                      stream.streamStart),
                                stream.streamStart, stream.getControlPC(),
                                stream.getFallThruPC(), 4, false /* not taken*/,
-                               stream.history, END_NOT_TAKEN);
+                               stream.history, END_NOT_TAKEN,
+			                   stream.indexFoldedHist, stream.tagFoldedHist);
+
             streamUBTB->update(computeLastChunkStart(stream.getControlPC(),
                                                      stream.streamStart),
                                stream.streamStart, stream.getControlPC(),
                                stream.getFallThruPC(), 4, false /* not taken*/,
                                stream.history, END_NOT_TAKEN);
-            streamTAGE->recoverFoldedHist(s0History);
         }
 
         it = fetchStreamQueue.erase(it);
@@ -1203,6 +1203,8 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
     entry.tripCount = s0UbtbPred.useLoopPrediction ? streamLoopPredictor->getTripCount(s0UbtbPred.controlAddr) : entry.tripCount;
     entry.predSource = s0UbtbPred.predSource;
     entry.mruLoop = streamLoopPredictor->getMRULoop();
+    entry.indexFoldedHist = s0UbtbPred.indexFoldedHist;
+    entry.tagFoldedHist = s0UbtbPred.tagFoldedHist;
 
     if (create_new_stream) {
         entry.setDefaultResolve();
@@ -1301,26 +1303,28 @@ DecoupledBPU::updateTAGE(FetchStream &stream)
         for (auto &it : res.second) {
             auto last_chunk = computeLastChunkStart(it.branch, it.start);
             DPRINTF(DecoupleBP || debugFlagOn, "Update divided chunk %#lx\n", last_chunk);
-            streamTAGE->recoverFoldedHist(stream.history);
+            // streamTAGE->recoverFoldedHist(stream.history);
             streamTAGE->update(last_chunk, it.start,
                                it.branch,
                                it.next,
                                it.fallThruPC - it.branch,
                                it.taken, stream.history,
-                               static_cast<EndType>(it.taken ? EndType::END_OTHER_TAKEN : EndType::END_NOT_TAKEN));
-            streamTAGE->recoverFoldedHist(s0History);
+                               static_cast<EndType>(it.taken ? EndType::END_OTHER_TAKEN : EndType::END_NOT_TAKEN),
+			                   stream.indexFoldedHist, stream.tagFoldedHist);
+            // streamTAGE->recoverFoldedHist(s0History);
         }
     } else {
         auto last_chunk = computeLastChunkStart(stream.getControlPC(), stream.streamStart);
         DPRINTF(DecoupleBP || debugFlagOn, "Update taken chunk %#lx\n", last_chunk);
-        streamTAGE->recoverFoldedHist(stream.history);
+        // streamTAGE->recoverFoldedHist(stream.history);
         streamTAGE->update(last_chunk, stream.streamStart,
                            stream.getControlPC(),
                            stream.getNextStreamStart(),
                            stream.getFallThruPC() - stream.getControlPC(),
                            stream.getTaken(), stream.history,
-                           static_cast<EndType>(stream.endType));
-        streamTAGE->recoverFoldedHist(s0History);
+                           static_cast<EndType>(stream.endType),
+			               stream.indexFoldedHist, stream.tagFoldedHist);
+        // streamTAGE->recoverFoldedHist(s0History);
     }
 }
 

@@ -7,6 +7,7 @@
 #include "base/trace.hh"
 #include "debug/DecoupleBP.hh"
 #include "debug/DecoupleBPVerbose.hh"
+#include "debug/TempDebug.hh"
 #include "debug/DecoupleBPUseful.hh"
 #include "debug/Override.hh"
 #include "cpu/pred/stream_common.hh"
@@ -91,7 +92,8 @@ StreamTAGE::lookupHelper(bool flag, Addr last_chunk_start, Addr stream_start,
                          TickedStreamStorage* &alt_target, int& main_table,
                          int& main_table_index, int& alt_table,
                          int& alt_table_index, int& provider_counts,
-                         bool& use_alt_pred)
+                         bool& use_alt_pred, std::vector<bitset> index_folded_hist,
+                         std::vector<bitset> tag_folded_hist)
 {
     if (stream_start == ObservingPC2) {
         debugFlagOn = true;
@@ -106,8 +108,8 @@ StreamTAGE::lookupHelper(bool flag, Addr last_chunk_start, Addr stream_start,
     DPRINTF(DecoupleBP || debugFlagOn, "history: %s\n", buf1.c_str());
 
     for (int i = numPredictors - 1; i >= 0; --i) {
-        Addr tmp_index = getTageIndex(last_chunk_start, history, i);
-        Addr tmp_tag = getTageTag(stream_start, history, i);
+        Addr tmp_index = getTageIndex(last_chunk_start, history, i, index_folded_hist);
+        Addr tmp_tag = getTageTag(stream_start, history, i, tag_folded_hist);
         auto &way = tageTable[i][tmp_index];
         bool match = way.valid && matchTag(tmp_tag, way.tag, i);
 
@@ -239,7 +241,7 @@ StreamTAGE::putPCHistory(Addr cur_chunk_start, Addr stream_start, const bitset &
     bool found =
         lookupHelper(false, cur_chunk_start, stream_start, history, target,
                      alt_target, main_table, main_table_index, alt_table,
-                     alt_table_index, pred_count, use_alt_pred);
+                     alt_table_index, pred_count, use_alt_pred, indexFoldedHist, tagFoldedHist);
  
     auto res = makeLoopPrediction(use_alt_pred, pred_count, target, alt_target);
     bool useLoopPrediction = res.first;
@@ -303,6 +305,8 @@ StreamTAGE::putPCHistory(Addr cur_chunk_start, Addr stream_start, const bitset &
         else
             prediction.predSource = TAGE;
     }
+    prediction.indexFoldedHist = indexFoldedHist;
+    prediction.tagFoldedHist = tagFoldedHist;
     debugFlagOn = false;
     DPRINTF(Override, "Ends tage.putPCHistory().\n");
 }
@@ -331,7 +335,8 @@ StreamTAGE::equals(const TickedStreamStorage& t, Addr stream_start_pc,
 void
 StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
                    Addr control_pc, Addr target_pc, unsigned control_size,
-                   bool actually_taken, const bitset& history, EndType end_type)
+                   bool actually_taken, const bitset& history, EndType end_type, 
+                   std::vector<bitset> stream_indexFoldedHist, std::vector<bitset> stream_tagFoldedHist)
 {
     if (stream_start_pc == ObservingPC || control_pc == ObservingPC2) {
         debugFlagOn = true;
@@ -360,7 +365,7 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
     bool predictor_found = lookupHelper(
         true, last_chunk_start, stream_start_pc, history, main_target,
         alt_target, main_table, main_table_index, alt_table,
-        alt_table_index, pred_count, use_alt_pred);
+        alt_table_index, pred_count, use_alt_pred, stream_indexFoldedHist, stream_tagFoldedHist);
 
     auto pred_match = [stream_start_pc, control_pc,
                           target_pc](const TickedStreamStorage& t) {
@@ -460,9 +465,9 @@ StreamTAGE::update(Addr last_chunk_start, Addr stream_start_pc,
 
     for (; start_table < numPredictors; start_table++) {
         uint32_t new_index =
-            getTageIndex(last_chunk_start, history, start_table);
+            getTageIndex(last_chunk_start, history, start_table, stream_indexFoldedHist);
         uint32_t new_tag =
-            getTageTag(stream_start_pc, history, start_table);
+            getTageTag(stream_start_pc, history, start_table, stream_tagFoldedHist);
         auto &entry = tageTable[start_table][new_index];
         DPRINTF(DecoupleBP || debugFlagOn,
                 "Table %d index[%d] histlen=%u is %s\n", start_table,
@@ -507,7 +512,7 @@ StreamTAGE::getTableGhrLen(int table) {
 }
 
 Addr
-StreamTAGE::getTageTag(Addr pc, const bitset& history, int t)
+StreamTAGE::getTageTag(Addr pc, const bitset& history, int t, std::vector<bitset> tag_folded_hist)
 {
     if (!hasTag[t]) {
         return 0;
@@ -528,7 +533,7 @@ StreamTAGE::getTageTag(Addr pc, const bitset& history, int t)
         hist >>= tableTagBits[t];  // shift right to get next fold
     }*/
 
-    buf2 ^= tagFoldedHist[t];
+    buf2 ^= tag_folded_hist[t];
 
     /*std::string str1, str2;
     boost::to_string(buf, str1);
@@ -650,7 +655,7 @@ StreamTAGE::recoverFoldedHist(const bitset& history)
 }
 
 Addr
-StreamTAGE::getTageIndex(Addr pc, const bitset& history, int t)
+StreamTAGE::getTageIndex(Addr pc, const bitset& history, int t, std::vector<bitset> index_folded_hist)
 {
     if (histLengths[t] == 0) {
         return (pc >> tablePcShifts[t]) % tableSizes[t];
@@ -675,7 +680,7 @@ StreamTAGE::getTageIndex(Addr pc, const bitset& history, int t)
         hist >>= tableIndexBits[t];  // shift right to get next fold
     }*/
 
-    buf2 ^= indexFoldedHist[t];
+    buf2 ^= index_folded_hist[t];
 
     /*std::string str1, str2;
     boost::to_string(buf, str1);
