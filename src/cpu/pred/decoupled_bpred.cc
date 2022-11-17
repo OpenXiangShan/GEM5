@@ -188,10 +188,12 @@ DecoupledBPU::getComponentPredictions()
                 e.bbStart, e.controlAddr, e.getFallThruPC(), e.nextStream);
         if (componentPreds[i].valid) {
             chosen = &componentPreds[i];
+            DPRINTF(Override, "choose component %d.\n", i);
             break;
         }
     }
     s0UbtbPred = *chosen;  // chosen could be invalid
+    streamTAGE->recordFoldedHist(s0UbtbPred);  // store the folded history
     // calculate bubbles
     unsigned first_hit_stage = 0;
     while (first_hit_stage < numComponents) {
@@ -403,7 +405,6 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
              "Recover history %s\nto %s\n", s0History, stream.history);
     s0History = stream.history;
     streamTAGE->recoverFoldedHist(s0History);
-    // streamTAGE->checkFoldedHist(s0History);
 
     if (actually_taken) {
 
@@ -779,7 +780,6 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
             assert(stream.squashType == SQUASH_TRAP);
             // For trap squash, we expect them to always incorrectly predict
             // Because correct prediction will cause strange behaviors
-            // streamTAGE->recoverFoldedHist(stream.history);
             streamTAGE->update(computeLastChunkStart(stream.getControlPC(),
                                                      stream.streamStart),
                                stream.streamStart, stream.getControlPC(),
@@ -1093,7 +1093,6 @@ DecoupledBPU::histShiftIn(Addr hash, boost::dynamic_bitset<> &history)
     // DPRINTF(DecoupleBP, "Hist after shiftin: %s\n", buf2.c_str());
 
     streamTAGE->maintainFoldedHist(tempHist, temp_hash_bits);
-    // streamTAGE->checkFoldedHist(history);
 }
 
 void
@@ -1303,7 +1302,6 @@ DecoupledBPU::updateTAGE(FetchStream &stream)
         for (auto &it : res.second) {
             auto last_chunk = computeLastChunkStart(it.branch, it.start);
             DPRINTF(DecoupleBP || debugFlagOn, "Update divided chunk %#lx\n", last_chunk);
-            // streamTAGE->recoverFoldedHist(stream.history);
             streamTAGE->update(last_chunk, it.start,
                                it.branch,
                                it.next,
@@ -1311,12 +1309,10 @@ DecoupledBPU::updateTAGE(FetchStream &stream)
                                it.taken, stream.history,
                                static_cast<EndType>(it.taken ? EndType::END_OTHER_TAKEN : EndType::END_NOT_TAKEN),
 			                   stream.indexFoldedHist, stream.tagFoldedHist);
-            // streamTAGE->recoverFoldedHist(s0History);
         }
     } else {
         auto last_chunk = computeLastChunkStart(stream.getControlPC(), stream.streamStart);
         DPRINTF(DecoupleBP || debugFlagOn, "Update taken chunk %#lx\n", last_chunk);
-        // streamTAGE->recoverFoldedHist(stream.history);
         streamTAGE->update(last_chunk, stream.streamStart,
                            stream.getControlPC(),
                            stream.getNextStreamStart(),
@@ -1324,7 +1320,6 @@ DecoupledBPU::updateTAGE(FetchStream &stream)
                            stream.getTaken(), stream.history,
                            static_cast<EndType>(stream.endType),
 			               stream.indexFoldedHist, stream.tagFoldedHist);
-        // streamTAGE->recoverFoldedHist(s0History);
     }
 }
 
