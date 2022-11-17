@@ -144,5 +144,6 @@ DebugFlag('VoltageDomain')
 DebugFlag('DVFS')
 DebugFlag('Vma')
 DebugFlag('PowerDomain')
+DebugFlag('ArchDB')
 
 CompoundFlag('SyscallAll', [ 'SyscallBase', 'SyscallVerbose'])

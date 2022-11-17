@@ -1242,6 +1242,7 @@ CPU::instDone(ThreadID tid, const DynInstPtr &inst)
                 && totalInsts() == this->nextDumpInstCount) {
             fprintf(stderr, "Will trigger stat dump and reset\n");
             Stats::schedStatEvent(true, true, curTick(), 0);
+            scheduleInstStop(tid,0,"Will trigger stat dump and reset");
 
             /*if (this->repeatDumpInstCount) {
                 this->nextDumpInstCount += this->repeatDumpInstCount;
@@ -1254,6 +1255,7 @@ CPU::instDone(ThreadID tid, const DynInstPtr &inst)
         if (this->warmupInstCount && totalInsts() == this->warmupInstCount) {
             fprintf(stderr, "Will trigger stat dump and reset\n");
             Stats::schedStatEvent(true, true, curTick(), 0);
+            scheduleInstStop(tid,0,"Will trigger stat dump and reset");
         }
 
     }
