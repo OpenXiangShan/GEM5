@@ -221,7 +221,7 @@ def config_mem(options, system):
                         "latency to 1ns.")
 
                 # Create the controller that will drive the interface
-                if issubclass(intf, m5.objects.DRAMsim3):
+                if hasattr(m5.objects, 'DRAMsim3') and issubclass(intf, m5.objects.DRAMsim3):
                     if opt_dramsim3_ini:
                         dram_intf.configFile = opt_dramsim3_ini
                     mem_ctrl = dram_intf
