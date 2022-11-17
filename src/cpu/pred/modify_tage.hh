@@ -91,6 +91,7 @@ class StreamTAGE : public TimedPredictor
 
     StreamPrediction getStream() override;
 
+    void recordFoldedHist(StreamPrediction &pred);
     void update(Addr last_chunk_start_pc, Addr stream_start_pc,
                 Addr control_pc, Addr target,
                 unsigned control_size, bool actually_taken,
