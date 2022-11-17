@@ -151,6 +151,20 @@ def build_test_system(np):
         for cpu in test_sys.cpu:
             cpu.mmu.pma_checker = PMAChecker(
                 uncacheable=[AddrRange(0, size=0x80000000)])
+    if args.enable_arch_db:
+        test_sys.arch_db = ArchDBer(arch_db_file=args.arch_db_file)
+        test_sys.arch_db.dump_from_start = args.arch_db_fromstart
+        test_sys.arch_db.table_cmds = [
+            "CREATE TABLE L1MissTrace(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "PC INT NOT NULL," \
+            "SOURCE INT NOT NULL," \
+            "PADDR INT NOT NULL," \
+            "VADDR INT NOT NULL," \
+            "STAMP INT NOT NULL," \
+            "SITE TEXT);"
+            ,
+        ]
 
     if args.ruby:
         bootmem = getattr(test_sys, '_bootmem', None)

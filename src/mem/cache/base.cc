@@ -54,7 +54,6 @@
 #include "debug/CacheRepl.hh"
 #include "debug/CacheVerbose.hh"
 #include "debug/HWPrefetch.hh"
-#include "mem/cache/arch_db.hh"
 #include "mem/cache/compressors/base.hh"
 #include "mem/cache/mshr.hh"
 #include "mem/cache/prefetch/base.hh"
@@ -63,6 +62,7 @@
 #include "mem/cache/tags/super_blk.hh"
 #include "params/BaseCache.hh"
 #include "params/WriteAllocator.hh"
+#include "sim/arch_db.hh"
 #include "sim/core.hh"
 #include "sim/cur_tick.hh"
 
@@ -112,7 +112,7 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       noTargetMSHR(nullptr),
       missCount(p.max_miss_count),
       addrRanges(p.addr_ranges.begin(), p.addr_ranges.end()),
-      enableArchDB(p.enable_arch_db),
+      archDBer(p.arch_db),
       system(p.system),
       stats(*this)
 {
@@ -138,13 +138,6 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
         "Compressed cache %s does not have a compression algorithm", name());
     if (compressor)
         compressor->setCache(this);
-
-    if (enableArchDB){
-        fatal_if(p.arch_db_file == "" || p.arch_db_file == "None",
-                 "Arch db file path is not given!");
-        init_db(enableArchDB);
-        registerExitCallback([p](){ save_db(p.arch_db_file.c_str()); });
-    }
 
 }
 
@@ -472,7 +465,7 @@ BaseCache::recvTimingReq(PacketPtr pkt)
         // ArchDB: for now we only track packet which has PC
         // and is normal load/store
         // TODO: for now there are some bugs in vaddrs
-        if (enableArchDB && pkt->req->hasPC() &&
+        if (archDBer && pkt->req->hasPC() &&
             (pkt->isRead() || pkt->isWrite())){
             Addr pc = pkt->req->getPC();
             Addr vaddr = pkt->req->getVaddr();
@@ -483,7 +476,7 @@ BaseCache::recvTimingReq(PacketPtr pkt)
                 "ArchDB: insert record [%x %d %x %x %x %s]\n",
                 pc, source, paddr, vaddr, curCycle, this->name()
             );
-            L1MissTrace_write(
+            archDBer->L1MissTrace_write(
               pc, source, paddr, vaddr, curCycle, this->name().c_str());
         }
 

@@ -1,0 +1,82 @@
+
+#include "sim/arch_db.hh"
+
+#include "params/ArchDBer.hh"
+
+namespace gem5{
+
+ArchDBer::ArchDBer(const Params &p)
+    : SimObject(p), dump(p.dump_from_start),
+    mem_db(nullptr), zErrMsg(nullptr),rc(0),
+    db_path(p.arch_db_file)
+{
+  int rc = sqlite3_open(":memory:", &mem_db);
+  if (rc) {
+    sqlite3_close(mem_db);
+    fatal("Can't open database: %s\n", sqlite3_errmsg(mem_db));
+  }
+
+  fatal_if(db_path == "" || db_path == "None",
+            "Arch db file path is not given!");
+
+  for (const auto &s : p.table_cmds) {
+    create_table(s);
+  }
+  registerExitCallback([this](){ save_db(); });
+}
+
+static int callback(void *NotUsed, int argc, char **argv, char **azColName){
+  return 0;
+}
+
+void ArchDBer::create_table(const std::string &sql) {
+  // create table
+  rc = sqlite3_exec(mem_db, sql.c_str(), callback, 0, &zErrMsg);
+  fatal_if(rc != SQLITE_OK, "SQL error: %s\n", zErrMsg);
+  inform("Table created: %s\n", sql.c_str());
+}
+
+void ArchDBer::start_recording() {
+  dump = true;
+}
+
+void ArchDBer::save_db() {
+  warn("saving memdb to %s ...\n", db_path.c_str());
+  sqlite3 *disk_db;
+  sqlite3_backup *pBackup;
+  int rc = sqlite3_open(db_path.c_str(), &disk_db);
+  if (rc == SQLITE_OK){
+    pBackup = sqlite3_backup_init(disk_db, "main", mem_db, "main");
+    if (pBackup){
+      (void)sqlite3_backup_step(pBackup, -1);
+      (void)sqlite3_backup_finish(pBackup);
+    }
+    rc = sqlite3_errcode(disk_db);
+  }
+  sqlite3_close(disk_db);
+}
+
+
+void ArchDBer::L1MissTrace_write(
+  uint64_t pc,
+  uint64_t source,
+  uint64_t paddr,
+  uint64_t vaddr,
+  uint64_t stamp,
+  const char * site
+) {
+  if (!dump) return;
+  char sql[512];
+  sprintf(sql,
+    "INSERT INTO L1MissTrace(PC,SOURCE,PADDR,VADDR, STAMP, SITE) " \
+    "VALUES(%ld, %ld, %ld, %ld, %ld, '%s');",
+    pc,source,paddr,vaddr, stamp, site
+  );
+  rc = sqlite3_exec(mem_db, sql, callback, 0, &zErrMsg);
+  if (rc != SQLITE_OK) {
+    fatal("SQL error: %s\n", zErrMsg);
+  };
+}
+
+} // namespace gem5
+

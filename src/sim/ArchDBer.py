@@ -1,7 +1,14 @@
-# -*- mode:python -*-
-
-# Copyright (c) 2006 The Regents of The University of Michigan
+# Copyright (c) 2013-2014 ARM Limited
 # All rights reserved.
+#
+# The license below extends only to copyright in the software and shall
+# not be construed as granting a license to any other intellectual
+# property including but not limited to intellectual property relating
+# to a hardware implementation of the functionality of the software
+# licensed hereunder.  You may use the software subject to the license
+# terms below provided that you ensure that this notice is replicated
+# unmodified and in its entirety in all distributions of the software,
+# modified or unmodified, in source code or in binary form.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are
@@ -26,35 +33,20 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-Import('*')
+from m5.params import *
+from m5.proxy import *
+from m5.SimObject import *
 
-SimObject('Cache.py', sim_objects=[
-    'WriteAllocator', 'BaseCache', 'Cache', 'NoncoherentCache'],
-    enums=['Clusivity'])
+class ArchDBer(SimObject):
+    type = 'ArchDBer'
+    cxx_header = "sim/arch_db.hh"
+    cxx_class = 'gem5::ArchDBer'
 
-Source('base.cc')
-Source('cache.cc')
-Source('cache_blk.cc')
-Source('mshr.cc')
-Source('mshr_queue.cc')
-Source('noncoherent_cache.cc')
-Source('write_queue.cc')
-Source('write_queue_entry.cc')
+    cxx_exports = [
+        PyBindMethod("start_recording"),
+    ]
 
-DebugFlag('Cache')
-DebugFlag('CacheComp')
-DebugFlag('CachePort')
-DebugFlag('CacheRepl')
-DebugFlag('CacheTags')
-DebugFlag('CacheVerbose')
-DebugFlag('HWPrefetch')
-DebugFlag('MSHR')
-DebugFlag('HWPrefetchQueue')
-DebugFlag('ArchDB')
+    arch_db_file = Param.String("", "Where to save arch db")
+    dump_from_start = Param.Bool(True, "Dump arch db from start")
 
-# CacheTags is so outrageously verbose, printing the cache's entire tag
-# array on each timing access, that you should probably have to ask for
-# it explicitly even above and beyond CacheAll.
-CompoundFlag('CacheAll', ['Cache', 'CacheComp', 'CachePort', 'CacheRepl',
-                          'CacheVerbose', 'HWPrefetch', 'MSHR'])
-
+    table_cmds = VectorParam.String([], "Tables to create")
