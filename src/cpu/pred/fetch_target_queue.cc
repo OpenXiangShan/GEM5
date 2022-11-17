@@ -155,6 +155,13 @@ FetchTargetQueue::validSupplyFetchTargetState() const
     return supplyFetchTargetState.valid;
 }
 
+void
+FetchTargetQueue::resetPC(Addr new_pc)
+{
+    supplyFetchTargetState.valid = false;
+    fetchTargetEnqState.pc = new_pc;
+}
+
 }  // namespace branch_prediction
 
 }  // namespace gem5

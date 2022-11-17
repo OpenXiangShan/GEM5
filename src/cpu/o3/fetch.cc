@@ -357,6 +357,10 @@ Fetch::resetStage()
     wroteToTimeBuffer = false;
     _status = Inactive;
     loopBuffer.deactivate();
+
+    if (isDecoupledFrontend) {
+        dbp->resetPC(pc[0]->instAddr());
+    }
 }
 
 void

@@ -406,6 +406,8 @@ class DecoupledBPU : public BPredUnit
     long notUseLoop = 0;
 
     std::vector<Addr> storeTargets;
+
+    void resetPC(Addr new_pc);
 };
 
 }  // namespace branch_prediction

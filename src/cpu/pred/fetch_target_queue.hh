@@ -110,6 +110,8 @@ class FetchTargetQueue
         const auto &last_entry = ftq.rbegin()->second;
         return last_entry.miss() && !last_entry.filledUp();
     }
+
+    void resetPC(Addr new_pc);
 };
 
 }

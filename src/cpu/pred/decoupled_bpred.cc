@@ -1337,6 +1337,13 @@ DecoupledBPU::storeLoopInfo(unsigned int fsqId, FetchStream stream)
     }
 }
 
+void
+DecoupledBPU::resetPC(Addr new_pc)
+{
+    s0PC = new_pc;
+    fetchTargetQueue.resetPC(new_pc);
+}
+
 }  // namespace branch_prediction
 
 }  // namespace gem5
