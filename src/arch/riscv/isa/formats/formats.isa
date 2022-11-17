@@ -42,6 +42,7 @@
 
 // Pseudo operations
 ##include "m5ops.isa"
+##include "nemuops.isa"
 
 // Include the unknown
 ##include "unknown.isa"

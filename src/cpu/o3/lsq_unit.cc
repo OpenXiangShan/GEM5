@@ -42,6 +42,7 @@
 #include "cpu/o3/lsq_unit.hh"
 
 #include "arch/generic/debugfaults.hh"
+#include "arch/riscv/faults.hh"
 #include "base/str.hh"
 #include "config/the_isa.hh"
 #include "cpu/checker/cpu.hh"
@@ -1321,6 +1322,16 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
 {
     LQEntry& load_entry = loadQueue[load_idx];
     const DynInstPtr& load_inst = load_entry.instruction();
+
+    DPRINTF(LSQUnit, "request: size: %u, Addr: %#lx\n",
+            request->mainReq()->getSize(), request->mainReq()->getVaddr());
+
+    if (request->mainReq()->getSize() > 1 &&
+        request->mainReq()->getVaddr() % request->mainReq()->getSize() != 0) {
+        DPRINTF(LSQUnit, "request: size: %u, Addr: %#lx, code: %d\n",
+                request->mainReq()->getSize(), request->mainReq()->getVaddr(), RiscvISA::ExceptionCode::LOAD_ADDR_MISALIGNED);
+        return std::make_shared<RiscvISA::AddressFault>(request->mainReq()->getVaddr(), RiscvISA::ExceptionCode::LOAD_ADDR_MISALIGNED);
+    }
 
     load_entry.setRequest(request);
     assert(load_inst);

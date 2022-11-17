@@ -198,6 +198,9 @@ class BPredUnit : public SimObject
     void dump();
 
   protected:
+
+    void resetStats() override;
+
     struct PredictorHistory
     {
         /**
@@ -332,6 +335,9 @@ class BPredUnit : public SimObject
         /** Stat for the number of indirect target mispredictions.*/
         statistics::Scalar indirectMispredicted;
     } stats;
+
+    std::map<Addr, uint32_t> missPredPcCount;
+    bool isDumpMissPredPC;
 
   protected:
     /** Number of bits to shift instructions by for predictor addresses. */

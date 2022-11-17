@@ -1096,7 +1096,20 @@ Commit::commitInsts()
                 head_inst->updateMiscRegs();
 
                 if (cpu->difftestEnabled()) {
-                    cpu->difftestStep(head_inst);
+                    cpu->diffInfo.inst = head_inst->staticInst;
+                    cpu->diffInfo.pc = &head_inst->pcState();
+                    if (head_inst->numDestRegs() > 0) {
+                        const auto &dest = head_inst->destRegIdx(0);
+                        if ((dest.isFloatReg() || dest.isIntReg()) &&
+                            !dest.isZeroReg()) {
+                            cpu->diffInfo.result =
+                                head_inst->getResult().asNoAssert<RegVal>();
+                        }
+                    }
+                    cpu->diffInfo.curInstStrictOrdered =
+                        head_inst->strictlyOrdered();
+                    cpu->diffInfo.physEffAddr = head_inst->physEffAddr;
+                    cpu->difftestStep(tid, head_inst->seqNum);
                 }
 
                 // Check instruction execution if it successfully commits and

@@ -37,6 +37,7 @@ import m5.objects
 from common import ObjectList
 from common import HMC
 
+
 def create_mem_intf(intf, r, i, intlv_bits, intlv_size,
                     xor_low_bit):
     """
@@ -135,6 +136,8 @@ def config_mem(options, system):
     opt_mem_channels_intlv = getattr(options, "mem_channels_intlv", 128)
     opt_xor_low_bit = getattr(options, "xor_low_bit", 0)
 
+    opt_dramsim3_ini = getattr(options, 'dramsim3_ini', None)
+
     if opt_mem_type == "HMC_2500_1x32":
         HMChost = HMC.config_hmc_host_ctrl(options, system)
         HMC.config_hmc_dev(options, system, HMChost.hmc_host)
@@ -218,7 +221,12 @@ def config_mem(options, system):
                         "latency to 1ns.")
 
                 # Create the controller that will drive the interface
-                mem_ctrl = dram_intf.controller()
+                if issubclass(intf, m5.objects.DRAMsim3):
+                    if opt_dramsim3_ini:
+                        dram_intf.configFile = opt_dramsim3_ini
+                    mem_ctrl = dram_intf
+                else:
+                    mem_ctrl = dram_intf.controller()
 
                 mem_ctrls.append(mem_ctrl)
 

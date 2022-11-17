@@ -145,6 +145,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         dbp = nullptr;
     }
 
+    assert(params.decoder.size());
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         decoder[tid] = params.decoder[tid];
         // Create space to buffer the cache line data,
@@ -791,6 +792,14 @@ Fetch::doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst,
 }
 
 void
+Fetch::flushFetchBuffer()
+{
+    for (ThreadID i = 0; i < numThreads; ++i) {
+        fetchBufferValid[i] = false;
+    }
+}
+
+void
 Fetch::squashFromDecode(const PCStateBase &new_pc, const DynInstPtr squashInst,
         const InstSeqNum seq_num, ThreadID tid)
 {
@@ -1366,6 +1375,7 @@ Fetch::fetch(bool &status_change)
             } else {
                 memcpy(dec_ptr->moreBytesPtr(),
                         fetchBuffer[tid] + blk_offset * instSize, instSize);
+                DPRINTF(Fetch, "Supplying fetch from fetchBuffer\n");
             }
 
             decoder[tid]->moreBytes(this_pc, fetch_addr);

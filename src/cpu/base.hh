@@ -53,6 +53,7 @@
 #else
 #include "arch/generic/interrupts.hh"
 #include "base/statistics.hh"
+#include "cpu/difftest.hh"
 #include "debug/Mwait.hh"
 #include "mem/htm.hh"
 #include "mem/port_proxy.hh"
@@ -104,6 +105,17 @@ class CPUProgressEvent : public Event
     void repeatEvent(bool repeat) { _repeatEvent = repeat; }
 
     virtual const char *description() const;
+};
+
+struct DiffAllStates
+{
+    uint64_t gem5RegFile[DIFFTEST_NR_REG];
+    uint64_t referenceRegFile[DIFFTEST_NR_REG];
+    DiffState diff;
+    NemuProxy *proxy;
+
+    bool scFenceInFlight{false};
+    bool hasCommit{false};
 };
 
 class BaseCPU : public ClockedObject
@@ -353,7 +365,7 @@ class BaseCPU : public ClockedObject
      * it easier to compare traces when debugging
      * handover/checkpointing.
      */
-    void flushTLBs();
+    virtual void flushTLBs();
 
     /**
      * Determine if the CPU is switched out.
@@ -652,6 +664,61 @@ class BaseCPU : public ClockedObject
     //const uint64_t repeatDumpInstCount;
 
     uint64_t nextDumpInstCount{0};
+
+    // difftest
+  protected:
+    bool enableDifftest;
+    std::shared_ptr<DiffAllStates> diffAllStates{};
+
+    virtual void readGem5Regs()
+    {
+        panic("difftest:readGem5Regs() is not implemented\n");
+    }
+    std::pair<int, bool> diffWithNEMU(ThreadID tid, InstSeqNum seq);
+
+  public:
+    struct
+    {
+        gem5::StaticInstPtr inst;
+        // the result of currently inst
+        gem5::RegVal result;
+        // the lambda expr of get srcOperand
+        gem5::RegVal getSrcReg(const gem5::RegId &regid) { return 0; };
+        const gem5::PCStateBase *pc;
+        bool curInstStrictOrdered{false};
+        gem5::Addr physEffAddr;
+    } diffInfo;
+
+
+    virtual RegVal readMiscRegNoEffect(int misc_reg, ThreadID tid) const
+    {
+        panic("difftest:readGem5Regs() is not implemented\n");
+        return 0;
+    }
+
+    virtual RegVal readMiscReg(int misc_reg, ThreadID tid)
+    {
+        panic("difftest:readGem5Regs() is not implemented\n");
+        return 0;
+    }
+
+    void difftestStep(ThreadID tid) { difftestStep(tid, 0);}
+
+    void difftestStep(ThreadID tid, InstSeqNum seq);
+
+    inline bool difftestEnabled() const { return enableDifftest; }
+
+    void difftestRaiseIntr(uint64_t no);
+
+    std::pair<bool, std::shared_ptr<DiffAllStates>> getDiffAllStates()
+    {
+        return std::make_pair(enableDifftest, diffAllStates);
+    }
+
+    void takeOverDiffAllStates(std::shared_ptr<DiffAllStates> diffAllStates)
+    {
+        this->diffAllStates = diffAllStates;
+    }
 };
 
 } // namespace gem5

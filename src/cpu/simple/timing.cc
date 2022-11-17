@@ -42,6 +42,7 @@
 #include "cpu/simple/timing.hh"
 
 #include "arch/generic/decoder.hh"
+#include "arch/riscv/faults.hh"
 #include "base/compiler.hh"
 #include "config/the_isa.hh"
 #include "cpu/exetrace.hh"
@@ -405,7 +406,7 @@ TimingSimpleCPU::translationFault(const Fault &fault)
         traceFault();
     }
 
-    postExecute();
+    postExecute(fault);
 
     advanceInst(fault);
 }
@@ -865,7 +866,7 @@ TimingSimpleCPU::completeIfetch(PacketPtr pkt)
                 traceFault();
             }
 
-            postExecute();
+            postExecute(fault);
             // @todo remove me after debugging with legion done
             if (curStaticInst && (!curStaticInst->isMicroop() ||
                         curStaticInst->isFirstMicroop()))
@@ -883,7 +884,7 @@ TimingSimpleCPU::completeIfetch(PacketPtr pkt)
             traceFault();
         }
 
-        postExecute();
+        postExecute(fault);
         // @todo remove me after debugging with legion done
         if (curStaticInst && (!curStaticInst->isMicroop() ||
                 curStaticInst->isFirstMicroop()))
@@ -957,6 +958,16 @@ TimingSimpleCPU::completeDataAccess(PacketPtr pkt)
            pkt->req->getFlags().isSet(Request::NO_ACCESS));
 
     pkt->req->setAccessLatency();
+
+    diffInfo.physEffAddr = pkt->req->getPaddr();
+    if (pkt->req->isStrictlyOrdered()) {
+        diffInfo.curInstStrictOrdered = true;
+    }
+
+    if (diffInfo.physEffAddr >= 0x38000000UL && diffInfo.physEffAddr < 0x38010000UL ) {
+        warn("Addr range: %s\n", pkt->getAddrRange().to_string());
+        assert(diffInfo.curInstStrictOrdered);
+    }
 
     updateCycleCounts();
     updateCycleCounters(BaseCPU::CPU_STATE_ON);
@@ -1049,6 +1060,13 @@ TimingSimpleCPU::completeDataAccess(PacketPtr pkt)
         } else {
             panic("HTM - unhandled rc %s", htmFailureToStr(htm_rc));
         }
+    } else if (pkt->req->getSize() > 1 && pkt->req->getVaddr() % pkt->req->getSize() != 0) {
+        warn("Unaligned access@PC: %#lx, VA: %#lx PA: %#lx",
+             t_info->thread->pcState().instAddr(), pkt->req->getVaddr(),
+             pkt->req->getPaddr());
+        fault = std::make_shared<RiscvISA::AddressFault>(
+            pkt->req->getVaddr(),
+            RiscvISA::ExceptionCode::LOAD_ADDR_MISALIGNED);
     } else {
         fault = curStaticInst->completeAcc(pkt, t_info,
                                      traceData);
@@ -1072,7 +1090,7 @@ TimingSimpleCPU::completeDataAccess(PacketPtr pkt)
 
     delete pkt;
 
-    postExecute();
+    postExecute(fault);
 
     advanceInst(fault);
 }

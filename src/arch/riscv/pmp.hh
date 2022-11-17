@@ -151,7 +151,7 @@ class PMP : public SimObject
      */
     bool shouldCheckPMP(RiscvISA::PrivilegeMode pmode,
                 BaseMMU::Mode mode, ThreadContext *tc);
-
+  public:
     /**
      * createAddrfault creates an address fault
      * if the pmp checks fail to pass for a given
@@ -163,7 +163,7 @@ class PMP : public SimObject
      * @return Fault.
      */
     Fault createAddrfault(Addr vaddr, BaseMMU::Mode mode);
-
+  private:
     /**
      * pmpUpdateRule updates the pmp rule for a
      * given pmp entry depending on the value

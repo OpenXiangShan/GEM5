@@ -65,6 +65,7 @@
 #include "cpu/translation.hh"
 #include "debug/DecoupleBP.hh"
 #include "debug/HtmCpu.hh"
+#include "debug/RiscvMisc.hh"
 
 namespace gem5
 {
@@ -1052,6 +1053,7 @@ class DynInst : public ExecContext, public RefCounted
                 return;
         }
 
+        DPRINTF(RiscvMisc, "Push misc reg %i: %#lx\n", misc_reg, val);
         _destMiscRegIdx.push_back(misc_reg);
         _destMiscRegVal.push_back(val);
     }

@@ -42,6 +42,7 @@
 #include "cpu/simple/base.hh"
 
 #include "arch/generic/decoder.hh"
+#include "arch/riscv/regs/misc.hh"
 #include "base/cprintf.hh"
 #include "base/inifile.hh"
 #include "base/loader/symtab.hh"
@@ -66,6 +67,7 @@
 #include "debug/Fetch.hh"
 #include "debug/HtmCpu.hh"
 #include "debug/Quiesce.hh"
+#include "debug/SimpleCPU.hh"
 #include "mem/packet.hh"
 #include "mem/request.hh"
 #include "params/BaseSimpleCPU.hh"
@@ -92,6 +94,11 @@ BaseSimpleCPU::BaseSimpleCPU(const BaseSimpleCPUParams &p)
 
     for (unsigned i = 0; i < numThreads; i++) {
         if (FullSystem) {
+            assert(p.decoder.size());
+            assert(p.system);
+            assert(p.mmu);
+            assert(p.isa[i]);
+            assert(p.decoder[i]);
             thread = new SimpleThread(
                 this, i, p.system, p.mmu, p.isa[i], p.decoder[i]);
         } else {
@@ -251,7 +258,6 @@ BaseSimpleCPU::checkForInterrupts()
     SimpleExecContext&t_info = *threadInfo[curThread];
     SimpleThread* thread = t_info.thread;
     ThreadContext* tc = thread->getTC();
-
     if (checkInterrupts(curThread)) {
         Fault interrupt = interrupts[curThread]->getInterrupt();
 
@@ -355,6 +361,7 @@ BaseSimpleCPU::preExecute()
         //Read the next micro op from the macro op
         curStaticInst = curMacroStaticInst->fetchMicroop(pc_state.microPC());
     }
+    diffInfo.curInstStrictOrdered = false;
 
     //If we decoded an instruction this "tick", record information about it.
     if (curStaticInst) {
@@ -380,12 +387,12 @@ BaseSimpleCPU::preExecute()
 }
 
 void
-BaseSimpleCPU::postExecute()
+BaseSimpleCPU::postExecute(const Fault &fault)
 {
     SimpleExecContext &t_info = *threadInfo[curThread];
 
     assert(curStaticInst);
-
+    
     Addr instAddr = threadContexts[curThread]->pcState().instAddr();
 
     if (curStaticInst->isMemRef()) {
@@ -450,6 +457,12 @@ BaseSimpleCPU::postExecute()
         traceData = NULL;
     }
 
+    numCommittedInsts++;
+
+    if (enableDifftest && fault == NoFault) {
+        difftestRecordAndStep();
+    }
+
     // Call CPU instruction commit probes
     probeInstCommit(curStaticInst, instAddr);
 }
@@ -493,4 +506,42 @@ BaseSimpleCPU::advancePC(const Fault &fault)
     }
 }
 
-} // namespace gem5
+RegVal
+BaseSimpleCPU::readMiscRegNoEffect(int misc_reg, ThreadID tid) const
+{
+    return threadContexts[curThread]->readMiscRegNoEffect(misc_reg);
+}
+
+RegVal
+BaseSimpleCPU::readMiscReg(int misc_reg, ThreadID tid)
+{
+    return threadContexts[curThread]->readMiscReg(misc_reg);
+}
+
+void
+BaseSimpleCPU::readGem5Regs()
+{
+    for (int i = 0; i < 32; i++) {
+        diffAllStates->gem5RegFile[i] =
+            threadContexts[curThread]->getReg(RegId(IntRegClass, i));
+        diffAllStates->gem5RegFile[i + 32] =
+            threadContexts[curThread]->getReg(RegId(FloatRegClass, i));
+    }
+}
+
+void
+BaseSimpleCPU::difftestRecordAndStep()
+{
+    assert(enableDifftest);
+    diffInfo.inst = curStaticInst;
+    diffInfo.pc = &threadContexts[curThread]->pcState();
+    if (curStaticInst->numDestRegs() > 0) {
+        const auto &dest = curStaticInst->destRegIdx(0);
+        if ((dest.isFloatReg() || dest.isIntReg()) && !dest.isZeroReg()) {
+            diffInfo.result = threadContexts[curThread]->getReg(dest);
+        }
+    }
+    difftestStep(curThread, numCommittedInsts);
+}
+
+}  // namespace gem5

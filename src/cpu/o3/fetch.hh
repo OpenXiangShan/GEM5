@@ -429,6 +429,8 @@ class Fetch
 
     branch_prediction::DecoupledBPU * getDBP() { return dbp; }
 
+    void flushFetchBuffer();
+
   private:
     DynInstPtr buildInst(ThreadID tid, StaticInstPtr staticInst,
             StaticInstPtr curMacroop, const PCStateBase &this_pc,

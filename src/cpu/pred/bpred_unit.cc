@@ -46,10 +46,11 @@
 
 #include "arch/generic/pcstate.hh"
 #include "base/compiler.hh"
+#include "base/output.hh"
 #include "base/trace.hh"
 #include "config/the_isa.hh"
 #include "debug/Branch.hh"
-
+#include "sim/core.hh"
 namespace gem5
 {
 
@@ -67,10 +68,32 @@ BPredUnit::BPredUnit(const Params &params)
       RAS(numThreads),
       iPred(params.indirectBranchPred),
       stats(this),
+      isDumpMissPredPC(params.isDumpMisspredPC),
       instShiftAmt(params.instShiftAmt)
 {
     for (auto& r : RAS)
         r.init(params.RASSize);
+    if (isDumpMissPredPC) {
+        registerExitCallback([this]() {
+            // output to file "pcMiss.txt"
+            auto out_handle = simout.create("topMisPredicts.txt", false, true);
+            *out_handle->stream() << "control pc" << " " << "cnt" << std::endl;
+            std::vector<std::pair<Addr, uint32_t>> sorted_miss_pc;
+            for (const auto& it : missPredPcCount) {
+                sorted_miss_pc.push_back(it);
+            }
+            std::sort(sorted_miss_pc.begin(), sorted_miss_pc.end(),
+                      [](const std::pair<Addr, uint32_t> &a,
+                         const std::pair<Addr, uint32_t> &b) {
+                          return a.second > b.second;
+                      });
+            for (const auto& it : sorted_miss_pc) {
+                *out_handle->stream() << std::hex << it.first << " "
+                                      << std::dec << it.second << std::endl;
+            }
+            simout.close(out_handle);
+        });
+    }
 }
 
 BPredUnit::BPredUnitStats::BPredUnitStats(statistics::Group *parent)
@@ -100,6 +123,7 @@ BPredUnit::BPredUnitStats::BPredUnitStats(statistics::Group *parent)
                "Number of mispredicted indirect branches.")
 {
     BTBHitRatio.precision(6);
+
 }
 
 probing::PMUUPtr
@@ -446,6 +470,10 @@ BPredUnit::squash(const InstSeqNum &squashed_sn,
                pred_hist.front().bpHistory, true, pred_hist.front().inst,
                corr_target.instAddr());
 
+        if (isDumpMissPredPC) {
+            missPredPcCount[hist_it->pc]++;
+        }
+
         if (iPred) {
             iPred->changeDirectionPrediction(tid,
                 pred_hist.front().indirectHistory, actually_taken);
@@ -530,6 +558,13 @@ BPredUnit::dump()
             cprintf("\n");
         }
     }
+}
+
+void
+BPredUnit::resetStats()
+{
+    SimObject::resetStats();
+    missPredPcCount.clear();
 }
 
 } // namespace branch_prediction

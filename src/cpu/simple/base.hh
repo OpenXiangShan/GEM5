@@ -48,6 +48,7 @@
 #include "base/statistics.hh"
 #include "cpu/base.hh"
 #include "cpu/checker/cpu.hh"
+#include "cpu/difftest.hh"
 #include "cpu/exec_context.hh"
 #include "cpu/pc_event.hh"
 #include "cpu/simple_thread.hh"
@@ -132,12 +133,16 @@ class BaseSimpleCPU : public BaseCPU
 
     std::unique_ptr<PCStateBase> preExecuteTempPC;
 
+    uint64_t numCommittedInsts{};
+
+    void difftestRecordAndStep();
+
   public:
     void checkForInterrupts();
     void setupFetchRequest(const RequestPtr &req);
     void serviceInstCountEvents();
     void preExecute();
-    void postExecute();
+    void postExecute(const Fault &fault);
     void advancePC(const Fault &fault);
 
     void haltContext(ThreadID thread_num) override;
@@ -197,6 +202,12 @@ class BaseSimpleCPU : public BaseCPU
      */
     virtual Fault initiateMemMgmtCmd(Request::Flags flags) = 0;
 
+    // difftest virtual function
+    RegVal readMiscRegNoEffect(int misc_reg, ThreadID tid) const override;
+
+    RegVal readMiscReg(int misc_reg, ThreadID tid) override;
+
+    void readGem5Regs() override;
 };
 
 } // namespace gem5

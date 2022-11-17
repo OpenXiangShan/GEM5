@@ -1477,6 +1477,7 @@ IEW::tick()
         checkSignalsAndUpdate(tid);
         dispatch(tid);
     }
+    instQueue.delayWakeDependents();
 
     if (exeStatus != Squashing) {
         executeInsts();

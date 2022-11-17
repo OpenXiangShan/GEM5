@@ -80,6 +80,10 @@ def setCPUClass(options):
         CPUClass = TmpClass
         TmpClass = AtomicSimpleCPU
         test_mem_mode = 'atomic'
+    # TODO
+    elif options.generic_rv_cpt and options.standard_switch:
+        CPUClass = TmpClass
+        TmpClass = TimingSimpleCPU
 
     # Ruby only supports atomic accesses in noncaching mode
     if test_mem_mode == 'atomic' and options.ruby:
@@ -489,6 +493,7 @@ def run(options, root, testsys, cpu_class):
                 switch_cpus[i].branchPred.indirectBranchPred = \
                     IndirectBPClass()
             switch_cpus[i].createThreads()
+            print("Create threads for switch cpu ({})".format(switch_cpus[i]))
 
         # If elastic tracing is enabled attach the elastic trace probe
         # to the switch CPUs
@@ -497,10 +502,13 @@ def run(options, root, testsys, cpu_class):
 
         testsys.switch_cpus = switch_cpus
         switch_cpu_list = [(testsys.cpu[i], switch_cpus[i]) for i in range(np)]
+    else:
+        print("No cpu_class provided")
 
-    for i in range(np):
-        if options.warmup_insts_no_switch != None:
-            testsys.cpu[i].warmupInstCount = options.warmup_insts_no_switch
+    if not options.standard_switch:
+        for i in range(np):
+            if options.warmup_insts_no_switch != None:
+                testsys.cpu[i].warmupInstCount = options.warmup_insts_no_switch
 
     if options.repeat_switch:
         switch_class = getCPUClass(options.cpu_type)[0]
@@ -551,6 +559,12 @@ def run(options, root, testsys, cpu_class):
             switch_cpus_1[i].clk_domain = testsys.cpu[i].clk_domain
             switch_cpus[i].isa = testsys.cpu[i].isa
             switch_cpus_1[i].isa = testsys.cpu[i].isa
+            if hasattr(options, "xiangshan_system") and options.xiangshan_system:
+                print("Attach decoder for xiangshan full system with standard switch")
+                switch_cpus[i].decoder = testsys.cpu[i].decoder
+                switch_cpus_1[i].decoder = testsys.cpu[i].decoder
+                switch_cpus[i].warmupInstCount = options.warmup_insts_no_switch
+                switch_cpus_1[i].warmupInstCount = options.warmup_insts_no_switch
 
             # if restoring, make atomic cpu simulate only a few instructions
             if options.checkpoint_restore != None:
@@ -687,7 +701,7 @@ def run(options, root, testsys, cpu_class):
             else:
                 exit_event = m5.simulate(options.standard_switch)
             print("Switching CPUS @ tick %s" % (m5.curTick()))
-            print("Simulation ends instruction count:%d" %
+            print("Will simulate instruction count in switch_cpus_1:%d" %
                     (testsys.switch_cpus_1[0].max_insts_any_thread))
             m5.switchCpus(testsys, switch_cpu_list1)
 

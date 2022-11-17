@@ -133,6 +133,9 @@ def addNoISAOptions(parser):
                         help="Memory channels interleave")
 
     parser.add_argument("--memchecker", action="store_true")
+    # DRAMsim3 option
+    parser.add_argument("--dramsim3-ini",type=str,default=None,
+                        help = "dramsim3 config file")
 
     # Cache Options
     parser.add_argument("--external-memory-system", type=str,
@@ -190,6 +193,13 @@ def addNoISAOptions(parser):
                         default="{}/build/riscv64-nemu-interpreter-so".format(
                             os.environ['NEMU_HOME']),
                         help="The shared lib file used to do difftest")
+    # ArchDB option
+    parser.add_argument("--enable-arch-db",
+                        action="store_true",
+                        help="enable arch database")
+    parser.add_argument("--arch-db-file",
+                        action="store",
+                        help="Where to save database")
 
 
 # Add common options that assume a non-NULL ISA.

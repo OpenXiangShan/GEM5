@@ -399,6 +399,9 @@ def template CSRExecute {{
               case CSR_MSTATUS: case CSR_SSTATUS: case CSR_USTATUS:
                 if (newdata_all != olddata_all) {
                     xc->setMiscReg(midx, newdata_all);
+                    auto new_val = xc->readMiscReg(MISCREG_STATUS);
+                    DPRINTF(RiscvMisc, "After writing mstatus: %#lx.\n",
+                            new_val);
                 } else {
                     return std::make_shared<IllegalInstFault>(
                             "Only bits in mask are allowed to be set\n",

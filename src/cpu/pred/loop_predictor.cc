@@ -33,6 +33,7 @@
 
 #include "cpu/pred/loop_predictor.hh"
 
+#include "base/debug_helper.hh"
 #include "base/random.hh"
 #include "base/trace.hh"
 #include "debug/LTage.hh"
@@ -193,7 +194,7 @@ LoopPredictor::loopUpdate(Addr pc, bool taken, BranchInfo* bi, bool tage_pred)
                 ltable[idx].currentIter = 0;
                 return;
             } else if (bi->loopPred != tage_pred || optionalAgeInc()) {
-                DPRINTF(LTage, "Loop Prediction success:%lx\n",pc);
+                DPRINTF(LTage || debugFlagOn, "Loop Prediction success:%lx\n",pc);
                 unsignedCtrUpdate(ltable[idx].age, true, loopTableAgeBits);
             }
         }
@@ -213,7 +214,7 @@ LoopPredictor::loopUpdate(Addr pc, bool taken, BranchInfo* bi, bool tage_pred)
 
         if (taken != (useDirectionBit ? ltable[idx].dir : true)) {
             if (ltable[idx].currentIter == ltable[idx].numIter) {
-                DPRINTF(LTage, "Loop End predicted successfully:%lx\n", pc);
+                DPRINTF(LTage || debugFlagOn, "Loop End predicted successfully:%lx\n", pc);
                 unsignedCtrUpdate(ltable[idx].confidence, true,
                                   loopTableConfidenceBits);
                 //just do not predict when the loop count is 1 or 2
@@ -225,7 +226,7 @@ LoopPredictor::loopUpdate(Addr pc, bool taken, BranchInfo* bi, bool tage_pred)
                     ltable[idx].confidence = 0;
                 }
             } else {
-                DPRINTF(LTage, "Loop End predicted incorrectly:%lx\n", pc);
+                DPRINTF(LTage || debugFlagOn, "Loop End predicted incorrectly:%lx\n", pc);
                 if (ltable[idx].numIter == 0) {
                     // first complete nest;
                     ltable[idx].confidence = 0;
@@ -251,7 +252,7 @@ LoopPredictor::loopUpdate(Addr pc, bool taken, BranchInfo* bi, bool tage_pred)
                 int loop_hit = (nrand + i) & ((1 << logLoopTableAssoc) - 1);
                 idx = finallindex(bi->loopIndex, bi->loopIndexB, loop_hit);
                 if (ltable[idx].age == 0) {
-                    DPRINTF(LTage,
+                    DPRINTF(LTage || debugFlagOn,
                             "Allocating loop pred entry for branch %lx\n",
                             pc);
                     ltable[idx].dir = !taken; // ignored if no useDirectionBit
@@ -277,6 +278,11 @@ bool
 LoopPredictor::loopPredict(ThreadID tid, Addr branch_pc, bool cond_branch,
                    BranchInfo* bi, bool prev_pred_taken, unsigned instShiftAmt)
 {
+    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    if (branch_pc == ObservingPC) {
+        debugFlagOn = true;
+    }
+
     bool pred_taken = prev_pred_taken;
     if (cond_branch) {
         // loop prediction
@@ -332,6 +338,12 @@ LoopPredictor::condBranchUpdate(ThreadID tid, Addr branch_pc, bool taken,
                                 bool tage_pred, BranchInfo* bi,
                                 unsigned instShiftAmt)
 {
+
+    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    if (branch_pc == ObservingPC) {
+        debugFlagOn = true;
+    }
+
     if (useSpeculation) {
         // recalculate loop prediction without speculation
         // It is ok to overwrite the loop prediction fields in bi
@@ -340,8 +352,12 @@ LoopPredictor::condBranchUpdate(ThreadID tid, Addr branch_pc, bool taken,
         bi->loopPred = getLoop(branch_pc, bi, false, instShiftAmt);
     }
 
+    DPRINTF(LTage || debugFlagOn,
+            "Updating loop pred for pc %#lx, lp valid: %i, pred taken: %i, loop pred: %i\n", branch_pc,
+            bi->loopPredValid, bi->predTaken, bi->loopPred);
+
     if (bi->loopPredValid) {
-        if (bi->predTaken != bi->loopPred) {
+        if (tage_pred != bi->loopPred) {
             signedCtrUpdate(loopUseCounter,
                       (bi->loopPred == taken),
                       withLoopBits);

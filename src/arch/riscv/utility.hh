@@ -55,6 +55,7 @@
 #include "cpu/reg_class.hh"
 #include "cpu/static_inst.hh"
 #include "cpu/thread_context.hh"
+#include "rvk.hh"
 
 namespace gem5
 {
@@ -121,13 +122,18 @@ registerName(RegId reg)
             return str.str();
         }
         return int_reg::RegNames[reg.index()];
-    } else {
+    } else if (reg.is(FloatRegClass)) {
         if (reg.index() >= float_reg::NumRegs) {
             std::stringstream str;
             str << "?? (f" << reg.index() << ')';
             return str.str();
         }
         return float_reg::RegNames[reg.index()];
+    } else {
+        /* It must be an InvalidRegClass, in RISC-V we should treat it as a
+         * zero register for the disassembler to work correctly.
+         */
+        return int_reg::RegNames[reg.index()];
     }
 }
 
