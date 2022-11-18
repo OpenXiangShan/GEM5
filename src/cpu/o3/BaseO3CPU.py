@@ -120,9 +120,9 @@ class BaseO3CPU(BaseCPU):
     trapLatency = Param.Cycles(13, "Trap latency")
     fetchTrapLatency = Param.Cycles(1, "Fetch trap latency")
 
-    backComSize = Param.Unsigned(5,
+    backComSize = Param.Unsigned(10,
             "Time buffer size for backwards communication")
-    forwardComSize = Param.Unsigned(5,
+    forwardComSize = Param.Unsigned(10,
             "Time buffer size for forward communication")
 
     LQEntries = Param.Unsigned(80, "Number of load queue entries")
