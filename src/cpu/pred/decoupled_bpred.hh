@@ -285,6 +285,8 @@ class DecoupledBPU : public BPredUnit
 
     void getComponentPredictions();
 
+    const bool dumpLoopPred;
+
   public:
     void tick();
 

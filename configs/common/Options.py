@@ -436,6 +436,9 @@ def addCommonOptions(parser):
         "that are present under any of the roots. If not given, dump all "
         "stats. ")
 
+    parser.add_argument("--dump-loop-pred", action='store_true', default=False,
+            help="Dump loop predictor logs at exit")
+
 
 def addSEOptions(parser):
     # Benchmark options

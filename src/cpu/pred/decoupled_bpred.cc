@@ -19,6 +19,7 @@ DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
       historyBits(p.maxHistLen),
       streamTAGE(p.stream_tage),
       streamUBTB(p.stream_ubtb),
+      dumpLoopPred(p.dump_loop_pred),
       loopDetector(p.loop_detector),
       streamLoopPredictor(p.stream_loop_predictor)
 {
@@ -77,27 +78,34 @@ DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
             *out_handle->stream() << std::hex << entry.first << " " << std::dec << entry.second << std::endl;
         }
 
-         out_handle = simout.create("misPredTripCount.txt", false, true);
-         *out_handle->stream() << missCount << std::endl;
-         for (const auto &entry : misPredTripCount) {
-            *out_handle->stream() << entry.first << " " << entry.second << std::endl;
-         }
+        if (dumpLoopPred) {
+            out_handle = simout.create("misPredTripCount.txt", false, true);
+            *out_handle->stream() << missCount << std::endl;
+            for (const auto &entry : misPredTripCount) {
+                *out_handle->stream()
+                    << entry.first << " " << entry.second << std::endl;
+            }
 
-         out_handle = simout.create("loopInfo.txt", false, true);
-         for (const auto &entry : storedLoopStreams) {
-            bool misPred = entry.second.squashType == SQUASH_CTRL;
-            *out_handle->stream() << std::dec << "miss: " << misPred << " " << entry.first << " " 
-                                  << std::hex << entry.second.streamStart << ", " 
-                                  << (misPred ? entry.second.exeBranchPC : entry.second.predBranchPC) << "--->" 
-                                  << (misPred ? entry.second.exeTarget : entry.second.predTarget) << std::dec
-                                  << " useLoopPred: " << entry.second.useLoopPrediction 
-                                  << " tripCount: " << entry.second.tripCount << std::endl;
-         }
+            out_handle = simout.create("loopInfo.txt", false, true);
+            for (const auto &entry : storedLoopStreams) {
+                bool misPred = entry.second.squashType == SQUASH_CTRL;
+                *out_handle->stream()
+                    << std::dec << "miss: " << misPred << " " << entry.first << " "
+                    << std::hex << entry.second.streamStart << ", "
+                    << (misPred ? entry.second.exeBranchPC
+                                : entry.second.predBranchPC)
+                    << "--->"
+                    << (misPred ? entry.second.exeTarget : entry.second.predTarget)
+                    << std::dec
+                    << " useLoopPred: " << entry.second.useLoopPrediction
+                    << " tripCount: " << entry.second.tripCount << std::endl;
+            }
+        }
 
-         out_handle = simout.create("targets.txt", false, true);
-         for (const auto it : storeTargets) {
+        out_handle = simout.create("targets.txt", false, true);
+        for (const auto it : storeTargets) {
             *out_handle->stream() << std::hex << it << std::endl;
-         }
+        }
 
         simout.close(out_handle);
     });
@@ -1327,7 +1335,7 @@ void
 DecoupledBPU::storeLoopInfo(unsigned int fsqId, FetchStream stream)
 {
     Addr branchPC = stream.squashType == SQUASH_CTRL ? stream.exeBranchPC : stream.predBranchPC;
-    if (loopDetector->findLoop(branchPC)) {
+    if (dumpLoopPred && loopDetector->findLoop(branchPC)) {
         storedLoopStreams.push_back(std::make_pair(fsqId, stream));
     }
 }

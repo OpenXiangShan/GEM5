@@ -849,4 +849,5 @@ class DecoupledBPU(BranchPredictor):
     maxHistLen = Param.Unsigned(970, "The length of history")
 
     ftq_size = Param.Unsigned(128, "Fetch target queue size")
+    dump_loop_pred = Param.Bool(False, "Dump loop detector/predictor related traces")
 

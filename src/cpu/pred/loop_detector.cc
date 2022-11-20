@@ -160,15 +160,24 @@ LoopDetector::update(Addr branchAddr, Addr targetAddr, Addr fallThruPC) {
         }
     }
 
-    if (entry->second.target < forwardTaken.first && entry->second.branch > forwardTaken.first) {
+
+    // intra loop forward taken detection
+    if (entry != loopTable.end() &&
+        entry->second.target < forwardTaken.first &&
+        entry->second.branch > forwardTaken.first) {
         entry->second.intraTaken = true;
-        DPRINTF(DecoupleBP || debugFlagOn, "Detect intra taken at %#lx-->%#lx, loop:[%#lx, %#lx]\n",
-                forwardTaken.first, forwardTaken.second, entry->second.target, entry->second.branch);
+        DPRINTF(DecoupleBP || debugFlagOn,
+                "Detect intra taken at %#lx-->%#lx, loop:[%#lx, %#lx]\n",
+                forwardTaken.first, forwardTaken.second, entry->second.target,
+                entry->second.branch);
     }
 
+    // correct loop prediction
     if (!taken_backward && entry != loopTable.end() && entry->second.valid) {
-	    streamLoopPredictor->updateEntry(branchAddr, entry->second.target, entry->second.outTarget, entry->second.fallThruPC,
-                                         entry->second.tripCount, entry->second.intraTaken);
+        streamLoopPredictor->updateEntry(
+            branchAddr, entry->second.target, entry->second.outTarget,
+            entry->second.fallThruPC, entry->second.tripCount,
+            entry->second.intraTaken);
     }
 }
 

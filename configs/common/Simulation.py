@@ -565,6 +565,9 @@ def run(options, root, testsys, cpu_class):
                 switch_cpus_1[i].decoder = testsys.cpu[i].decoder
                 switch_cpus[i].warmupInstCount = options.warmup_insts_no_switch
                 switch_cpus_1[i].warmupInstCount = options.warmup_insts_no_switch
+                switch_cpus[i].branchPred = testsys.cpu[i].branchPred
+                switch_cpus_1[i].branchPred = testsys.cpu[i].branchPred
+
 
             # if restoring, make atomic cpu simulate only a few instructions
             if options.checkpoint_restore != None:
