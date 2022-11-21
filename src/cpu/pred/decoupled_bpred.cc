@@ -1344,6 +1344,7 @@ void
 DecoupledBPU::resetPC(Addr new_pc)
 {
     s0PC = new_pc;
+    s0StreamStartPC = s0PC;
     fetchTargetQueue.resetPC(new_pc);
 }
 
