@@ -109,17 +109,17 @@ class PredALU(FUDesc):
 class ReadPort(FUDesc):
     opList = [ OpDesc(opClass='MemRead'),
                OpDesc(opClass='FloatMemRead') ]
-    count = 0
+    count = 2
 
 class WritePort(FUDesc):
     opList = [ OpDesc(opClass='MemWrite'),
                OpDesc(opClass='FloatMemWrite') ]
-    count = 0
+    count = 2
 
 class RdWrPort(FUDesc):
     opList = [ OpDesc(opClass='MemRead'), OpDesc(opClass='MemWrite'),
                OpDesc(opClass='FloatMemRead'), OpDesc(opClass='FloatMemWrite')]
-    count = 4
+    count = 0
 
 class IprPort(FUDesc):
     opList = [ OpDesc(opClass='IprAccess', opLat = 3, pipelined = False) ]
