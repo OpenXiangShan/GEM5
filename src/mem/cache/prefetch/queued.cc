@@ -61,8 +61,15 @@ Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size,
                                             bool tag_prefetch,
                                             Tick t) {
     /* Create a prefetch memory request */
-    RequestPtr req = std::make_shared<Request>(paddr, blk_size,
-                                                0, requestor_id);
+    RequestPtr req;
+    if (owner->useVirtualAddresses && pfInfo.hasPC()) {
+        req = std::make_shared<Request>(pfInfo.getAddr(), blk_size, 0,
+                                        requestor_id, pfInfo.getPC(), 0);
+        req->setPaddr(paddr);
+    } else {
+        req = std::make_shared<Request>(paddr, blk_size, 0, requestor_id);
+    }
+
 
     if (pfInfo.isSecure()) {
         req->setFlags(Request::SECURE);
