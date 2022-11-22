@@ -143,9 +143,7 @@ def config_cache(options, system):
     for i in range(options.num_cpus):
         if options.caches:
             icache = icache_class(**_get_cache_opts('l1i', options))
-            dcache = dcache_class(enable_arch_db=options.enable_arch_db,
-                                  arch_db_file=options.arch_db_file,
-                                  **_get_cache_opts('l1d', options))
+            dcache = dcache_class(**_get_cache_opts('l1d', options))
             if dcache.prefetcher != NULL:
                 dcache.prefetcher.registerTLB(system.cpu[i].mmu.dtb)
 

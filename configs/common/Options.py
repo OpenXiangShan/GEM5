@@ -200,6 +200,10 @@ def addNoISAOptions(parser):
     parser.add_argument("--arch-db-file",
                         action="store",
                         help="Where to save database")
+    parser.add_argument("--arch-db-fromstart",
+                        default=True,
+                        help="start arch database from "
+                        "the beginning of the simulation")
 
 
 # Add common options that assume a non-NULL ISA.

@@ -69,6 +69,7 @@
 #include "mem/qport.hh"
 #include "mem/request.hh"
 #include "params/WriteAllocator.hh"
+#include "sim/arch_db.hh"
 #include "sim/clocked_object.hh"
 #include "sim/eventq.hh"
 #include "sim/probe/probe.hh"
@@ -982,7 +983,7 @@ class BaseCache : public ClockedObject
     const AddrRangeList addrRanges;
 
     /** ArchDB */
-    bool enableArchDB;
+    ArchDBer *archDBer;
 
   public:
     /** System we are currently operating in. */

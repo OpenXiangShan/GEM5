@@ -264,9 +264,15 @@ def scriptCheckpoints(options, maxtick, cptdir):
 
     return exit_event
 
-def benchCheckpoints(options, maxtick, cptdir):
+def benchCheckpoints(testsys,options, maxtick, cptdir):
     exit_event = m5.simulate(maxtick - m5.curTick())
     exit_cause = exit_event.getCause()
+    while exit_cause == "Will trigger stat dump and reset":
+        if options.enable_arch_db:
+            print("into start_recording")
+            testsys.arch_db.start_recording()
+        exit_event = m5.simulate(maxtick - m5.curTick())
+        exit_cause = exit_event.getCause()
 
     num_checkpoints = 0
     max_checkpoints = options.max_checkpoints
@@ -743,7 +749,7 @@ def run(options, root, testsys, cpu_class):
             exit_event = repeatSwitch(testsys, repeat_switch_cpu_list,
                                       maxtick, options.repeat_switch)
         else:
-            exit_event = benchCheckpoints(options, maxtick, cptdir)
+            exit_event = benchCheckpoints(testsys,options, maxtick, cptdir)
 
     print('Exiting @ tick %i because %s' %
           (m5.curTick(), exit_event.getCause()))

@@ -59,6 +59,7 @@
 #include "mem/port.hh"
 #include "mem/port_proxy.hh"
 #include "params/System.hh"
+#include "sim/arch_db.hh"
 #include "sim/futex_map.hh"
 #include "sim/redirect_path.hh"
 #include "sim/se_signal.hh"
