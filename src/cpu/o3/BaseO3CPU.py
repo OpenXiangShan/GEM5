@@ -170,3 +170,6 @@ class BaseO3CPU(BaseCPU):
                                                        Parent.numThreads),
                                        "Branch Predictor")
     needsTSO = Param.Bool(False, "Enable TSO Memory model")
+
+    iewDelayCalibrator = Param.DelayCalibrator(DefaultDelayMatrix(),
+                                               "iew schedule and execute tick calibrator ")

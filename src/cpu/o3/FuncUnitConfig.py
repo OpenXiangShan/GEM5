@@ -109,19 +109,72 @@ class PredALU(FUDesc):
 class ReadPort(FUDesc):
     opList = [ OpDesc(opClass='MemRead'),
                OpDesc(opClass='FloatMemRead') ]
-    count = 0
+    count = 2
 
 class WritePort(FUDesc):
     opList = [ OpDesc(opClass='MemWrite'),
                OpDesc(opClass='FloatMemWrite') ]
-    count = 0
+    count = 2
 
 class RdWrPort(FUDesc):
     opList = [ OpDesc(opClass='MemRead'), OpDesc(opClass='MemWrite'),
                OpDesc(opClass='FloatMemRead'), OpDesc(opClass='FloatMemWrite')]
-    count = 4
+    count = 0
 
 class IprPort(FUDesc):
     opList = [ OpDesc(opClass='IprAccess', opLat = 3, pipelined = False) ]
     count = 1
 
+
+class ScheduleDelayMatrixMap(SimObject):
+    type = 'ScheduleDelayMatrixMap'
+    cxx_header = "cpu/o3/iew_delay_calibrator.hh"
+    cxx_class = 'gem5::o3::ScheduleDelayMatrixMap'
+
+    dep_opclass = Param.OpClass('the opclass of dep_inst (aka. consumer instructions)')
+    completed_opclass = Param.OpClass('the opclass of complete_inst (aka. producer instructions)')
+    delay_tick = Param.UInt32(
+        'the delay tick between dep_inst and complete_inst')
+
+
+class DelayCalibrator(SimObject):
+    type = 'DelayCalibrator'
+    cxx_header = "cpu/o3/iew_delay_calibrator.hh"
+    cxx_class = 'gem5::o3::DelayCalibrator'
+    # dep_inst completed_inst
+    # actually the order of dep_inst and completed_inst doesn't have much
+    # effect on the cycle delay????
+    matrix = VectorParam.ScheduleDelayMatrixMap('')
+
+
+class DefaultDelayMatrix(DelayCalibrator):
+    # dep_inst = consumer instruction; completed_inst = producer instruction
+    matrix = [
+        ScheduleDelayMatrixMap(dep_opclass='IntAlu', completed_opclass='IntAlu', delay_tick=0),
+        ScheduleDelayMatrixMap(dep_opclass='IntMult', completed_opclass='IntAlu', delay_tick=1),
+        ScheduleDelayMatrixMap(dep_opclass='IntDiv', completed_opclass='IntDiv', delay_tick=1),
+        ScheduleDelayMatrixMap(dep_opclass='IntDiv',
+                               completed_opclass='IntMult', delay_tick=1),
+        ScheduleDelayMatrixMap(dep_opclass='IntDiv',
+                               completed_opclass='IntAlu', delay_tick=2),
+
+        ScheduleDelayMatrixMap(dep_opclass='FloatCvt',
+                               completed_opclass='IntAlu', delay_tick=3),
+        ScheduleDelayMatrixMap(dep_opclass='FloatCvt',
+                               completed_opclass='IntMult', delay_tick=3),
+        ScheduleDelayMatrixMap(dep_opclass='FloatCvt',
+                               completed_opclass='IntDiv', delay_tick=3),
+
+        ScheduleDelayMatrixMap(dep_opclass='FloatCvt',
+                               completed_opclass='FloatAdd', delay_tick=2),
+        ScheduleDelayMatrixMap(dep_opclass='FloatCvt',
+                               completed_opclass='FloatMult', delay_tick=2),
+        ScheduleDelayMatrixMap(dep_opclass='FloatCvt',
+                               completed_opclass='FloatDiv', delay_tick=2),
+        ScheduleDelayMatrixMap(dep_opclass='FloatCvt',
+                               completed_opclass='FloatCvt', delay_tick=2),
+
+        ScheduleDelayMatrixMap(dep_opclass='MemRead',
+                               completed_opclass='IntAlu', delay_tick=0),
+        ScheduleDelayMatrixMap(dep_opclass='MemRead',
+                               completed_opclass='MemRead', delay_tick=1)]

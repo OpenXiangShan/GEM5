@@ -32,7 +32,8 @@ Import('*')
 
 if env['CONF']['TARGET_ISA'] != 'null':
     SimObject('FUPool.py', sim_objects=['FUPool'])
-    SimObject('FuncUnitConfig.py', sim_objects=[])
+    SimObject('FuncUnitConfig.py', sim_objects=[
+              'DelayCalibrator', 'ScheduleDelayMatrixMap'])
     SimObject('BaseO3CPU.py', sim_objects=['BaseO3CPU'], enums=[
         'SMTFetchPolicy', 'SMTQueuePolicy', 'CommitPolicy'])
 
@@ -56,6 +57,7 @@ if env['CONF']['TARGET_ISA'] != 'null':
     Source('store_set.cc')
     Source('thread_context.cc')
     Source('thread_state.cc')
+    Source('iew_delay_calibrator.cc')
 
     DebugFlag('CommitRate')
     DebugFlag('IEW')

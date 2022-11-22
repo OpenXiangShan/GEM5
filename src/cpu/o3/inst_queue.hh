@@ -77,6 +77,7 @@ namespace o3
 class FUPool;
 class CPU;
 class IEW;
+class DelayCalibrator;
 
 struct compare_function
 {
@@ -330,6 +331,8 @@ class InstructionQueue
 
     /** Function unit pool. */
     FUPool *fuPool;
+
+    DelayCalibrator *delayCalibrator;
 
     //////////////////////////////////////
     // Instruction lists, ready queues, and ordering

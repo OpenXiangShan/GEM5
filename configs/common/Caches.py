@@ -64,17 +64,17 @@ class L1_ICache(L1Cache):
     mshrs = 2
 
 class L1_DCache(L1Cache):
-    tag_latency = 1
-    data_latency = 1
-    response_latency = 1
     mshrs = 16
     # always writeback clean when lower level is exclusive
     writeback_clean = True
 
+    # aligned latency:
+    tag_latency = 1
+    data_latency = 2
+    # This is L1 miss & L2 hit latency
+    response_latency = 15
+
 class L2Cache(Cache):
-    tag_latency = 2
-    data_latency = 4
-    response_latency = 20
     mshrs = 32
     tgts_per_mshr = 20
     clusivity='mostly_excl'
@@ -82,14 +82,23 @@ class L2Cache(Cache):
     # always writeback clean when lower level is exclusive
     writeback_clean = True
 
+    # aligned latency:
+    tag_latency = 3
+    data_latency = 6
+    # This is L2 miss & L3 hit latency
+    response_latency = 19
+
 class L3Cache(Cache):
-    tag_latency = 2
-    data_latency = 4
-    response_latency = 30
     mshrs = 64
     tgts_per_mshr = 20
     clusivity='mostly_excl'
     writeback_clean = False
+
+    # aligned latency:
+    tag_latency = 2
+    data_latency = 4
+    # This is L3 miss latency, which should be modeled with memory controller
+    response_latency = 0
 
 class IOCache(Cache):
     assoc = 8

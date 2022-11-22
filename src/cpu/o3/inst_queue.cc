@@ -47,12 +47,12 @@
 #include "base/logging.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/fu_pool.hh"
+#include "cpu/o3/iew_delay_calibrator.hh"
 #include "cpu/o3/limits.hh"
 #include "debug/IQ.hh"
 #include "enums/OpClass.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/core.hh"
-#include "cpu/o3/inst_delay_matrix.hh"
 
 // clang complains about std::set being overloaded with Packet::set if
 // we open up the entire namespace std
@@ -90,6 +90,7 @@ InstructionQueue::InstructionQueue(CPU *cpu_ptr, IEW *iew_ptr,
     : cpu(cpu_ptr),
       iewStage(iew_ptr),
       fuPool(params.fuPool),
+      delayCalibrator(params.iewDelayCalibrator),
       iqPolicy(params.smtIQPolicy),
       numThreads(params.numThreads),
       numEntries(params.numIQEntries),
@@ -826,7 +827,8 @@ InstructionQueue::scheduleReadyInsts()
                 iqIOStats.intAluAccesses++;
             }
             if (idx > FUPool::NoFreeFU) {
-                if (!execLatencyCheck(cpu, issuing_inst, op_latency)) {
+                if (!delayCalibrator->execLatencyCheck(cpu, issuing_inst,
+                                                       op_latency)) {
                     op_latency = fuPool->getOpLatency(op_class);
                 }
             }
@@ -964,16 +966,6 @@ InstructionQueue::commit(const InstSeqNum &inst, ThreadID tid)
     assert(freeEntries == (numEntries - countInsts()));
 }
 
-uint32_t
-InstructionQueue::delayMatrix(DynInstPtr dep_inst, DynInstPtr completed_inst)
-{
-    auto it = scheduleDelayMatrix.find(
-        {dep_inst->opClass(), completed_inst->opClass()});
-    if (it != scheduleDelayMatrix.end()) {  // find it
-        return it->second;
-    }
-    return 0;
-}
 
 void
 InstructionQueue::addToDelayedScheduleQueue(DynInstPtr dep_inst,
@@ -1131,12 +1123,13 @@ InstructionQueue::wakeDependents(const DynInstPtr &completed_inst)
             // so that it knows which of its source registers is
             // ready.  However that would mean that the dependency
             // graph entries would need to hold the src_reg_idx.
-            if (delayMatrix(dep_inst, completed_inst) == 0) {
+            uint32_t loopup_tick = delayCalibrator->lookupDelayMatrix(
+                {dep_inst->opClass(), completed_inst->opClass()});
+            if (loopup_tick == 0) {
                 dep_inst->markSrcRegReady();
                 addIfReady(dep_inst);
-            }else{
-                addToDelayedScheduleQueue(
-                    dep_inst, delayMatrix(dep_inst, completed_inst));
+            } else {
+                addToDelayedScheduleQueue(dep_inst, loopup_tick);
             }
 
             dep_inst = dependGraph.pop(dest_reg->flatIndex());
