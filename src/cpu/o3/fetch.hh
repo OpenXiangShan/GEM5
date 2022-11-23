@@ -53,6 +53,7 @@
 #include "cpu/pc_event.hh"
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/stream/decoupled_bpred.hh"
+#include "cpu/pred/ftb/decoupled_bpred.hh"
 #include "cpu/timebuf.hh"
 #include "cpu/translation.hh"
 #include "enums/SMTFetchPolicy.hh"
@@ -429,7 +430,9 @@ class Fetch
 
     RequestPort &getInstPort() { return icachePort; }
 
-    branch_prediction::stream_pred::DecoupledStreamBPU * getDBP() { return dbp; }
+    branch_prediction::stream_pred::DecoupledStreamBPU * getDBSP() { return dbsp; }
+
+    branch_prediction::ftb_pred::DecoupledBPUWithFTB * getDBPFTB() { return dbpftb; }
 
     void flushFetchBuffer();
 
@@ -488,7 +491,9 @@ class Fetch
     /** BPredUnit. */
     branch_prediction::BPredUnit *branchPred;
 
-    branch_prediction::stream_pred::DecoupledStreamBPU *dbp;
+    branch_prediction::stream_pred::DecoupledStreamBPU *dbsp;
+
+    branch_prediction::ftb_pred::DecoupledBPUWithFTB *dbpftb;
 
     std::unique_ptr<PCStateBase> pc[MaxThreads];
 
@@ -623,6 +628,13 @@ class Fetch
 
     /** Decoupled frontend related */
     bool isDecoupledFrontend{true};
+
+    enum DBPType {
+      DBP_STREAM_PRED,
+      DBP_FTB_PRED
+    };
+
+    DBPType dbpType{DBP_FTB_PRED};
 
     bool usedUpFetchTargets;
 

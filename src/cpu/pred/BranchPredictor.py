@@ -851,3 +851,19 @@ class DecoupledStreamBPU(BranchPredictor):
     ftq_size = Param.Unsigned(128, "Fetch target queue size")
     dump_loop_pred = Param.Bool(False, "Dump loop detector/predictor related traces")
 
+class TimedBaseFTBPredictor(SimObject):
+    type = 'TimedBaseFTBPredictor'
+    cxx_class = 'gem5::branch_prediction::ftb_pred::TimedBaseFTBPredictor'
+    cxx_header = "cpu/pred/ftb/timed_base_pred.hh"
+    
+class DefaultFTB(TimedBaseFTBPredictor):
+    type = 'DefaultFTB'
+    cxx_class = 'gem5::branch_prediction::ftb_pred::DefaultFTB'
+    cxx_header = 'cpu/pred/ftb/ftb.hh'
+
+class DecoupledBPUWithFTB(BranchPredictor):
+    type = 'DecoupledBPUWithFTB'
+    cxx_class = 'gem5::branch_prediction::ftb_pred::DecoupledBPUWithFTB'
+    cxx_header = "cpu/pred/ftb/decoupled_bpred.hh"
+    
+    maxHistLen = Param.Unsigned(970, "The length of history")
