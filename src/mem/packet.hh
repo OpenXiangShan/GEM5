@@ -362,6 +362,9 @@ class Packet : public Printable
 
     Flags flags;
 
+    /// A flag to indicate that the packet needs to send right away
+    bool sendRightAway = false;
+
   public:
     typedef MemCmd::Command Command;
 
@@ -823,6 +826,21 @@ class Packet : public Printable
     }
 
     /**
+     * Setting and Getting the flag of whether the packet
+     * needs to be sent right away.
+    */
+
+    bool isSendRightAway()
+    {
+        return sendRightAway;
+    }
+
+    void setSendRightAway()
+    {
+        sendRightAway = true;
+    }
+
+    /**
      * Accessor function to atomic op.
      */
     AtomicOpFunctor *getAtomicOp() const { return req->getAtomicOpFunctor(); }
@@ -1079,7 +1097,7 @@ class Packet : public Printable
     void
     setSize(unsigned size)
     {
-        assert(!flags.isSet(VALID_SIZE));
+        assert(flags.isSet(VALID_SIZE));
 
         this->size = size;
         flags.set(VALID_SIZE);
@@ -1274,6 +1292,18 @@ class Packet : public Printable
             // one to the other, e.g. a forwarded response to a response
             std::memcpy(getPtr<uint8_t>(), p, getSize());
         }
+    }
+
+    void
+    setData(const uint8_t* p, unsigned src_index, unsigned dest_index, unsigned copySize)
+    {
+        std::memcpy(getPtr<uint8_t>() + dest_index, p + src_index, copySize);
+    }
+
+    void
+    getData(uint8_t* p)
+    {
+        std::memcpy(p, getPtr<uint8_t>(), getSize());
     }
 
     /**

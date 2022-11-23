@@ -694,6 +694,11 @@ class Request
         return _size;
     }
 
+    void setSize(unsigned size)
+    {
+        _size = size;
+    }
+
     const std::vector<bool>&
     getByteEnable() const
     {

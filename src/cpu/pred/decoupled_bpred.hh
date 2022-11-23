@@ -187,7 +187,7 @@ class DecoupledBPU : public BPredUnit
     FetchStreamId fsqId{1};
 
     unsigned cacheLineOffsetBits{6};  // TODO: parameterize this
-    unsigned cacheLineSize{64};
+    unsigned cacheLineSize{128};
 
     const unsigned historyTokenBits{8};
 

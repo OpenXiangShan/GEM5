@@ -4,9 +4,9 @@ namespace gem5 {
 
 namespace branch_prediction {
 
-unsigned streamChunkSize{0x40};
+unsigned streamChunkSize{0x80};
 
-unsigned fetchTargetSize{0x40};
+unsigned fetchTargetSize{0x80};
 unsigned fetchTargetMask = fetchTargetSize - 1;
 
 Addr

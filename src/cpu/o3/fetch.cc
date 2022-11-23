@@ -368,6 +368,25 @@ Fetch::processCacheCompletion(PacketPtr pkt)
 {
     ThreadID tid = cpu->contextToThread(pkt->req->contextId());
 
+    if (fetchMisaligned[tid]) {
+        if (waitingNextPkt[tid]) {
+            DPRINTF(Fetch, "[tid:%i] Waiting for next pkt.\n", tid);
+            waitingNextPkt[tid] = false;
+            firstPkt[tid] = pkt;
+            return;
+        } else {
+            DPRINTF(Fetch, "[tid:%i] Received next pkt.\n", tid);
+
+            // Copy two packets data into second packet
+            uint8_t* firstData = new uint8_t[fetchBufferSize];
+            uint8_t* secondData = new uint8_t[fetchBufferSize];
+            firstPkt[tid]->getData(firstData);
+            pkt->getData(secondData);
+            pkt->setData(firstData, 0, 0, firstPkt[tid]->getSize());
+            pkt->setData(secondData, 0, firstPkt[tid]->getSize(), pkt->getSize());
+        }
+    }
+
     DPRINTF(Fetch, "[tid:%i] Waking up from cache miss.\n", tid);
     assert(!cpu->switchedOut());
 
@@ -603,17 +622,46 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
         return false;
     }
 
-    // Align the fetch address to the start of a fetch buffer segment.
-    Addr fetchBufferBlockPC = fetchBufferAlignPC(vaddr);
+    Addr fetchPC = vaddr;
+    unsigned fetchSize = fetchBufferSize;
 
-    DPRINTF(Fetch, "[tid:%i] Fetching cache line %#x for addr %#x\n",
-            tid, fetchBufferBlockPC, vaddr);
+    DPRINTF(Fetch, "[tid:%i] Fetching cache line %#x for addr %#x, pc=%#lx\n",
+            tid, fetchPC, vaddr, pc);
 
     // Setup the memReq to do a read of the first instruction's address.
     // Set the appropriate read size and flags as well.
     // Build request here.
+    if (fetchPC % 64 + fetchBufferSize > 64) {
+        fetchMisaligned[tid] = true;
+        waitingNextPkt[tid] = true;
+
+        fetchSize = 64 - fetchPC % 64;
+        RequestPtr mem_req = std::make_shared<Request>(
+            fetchPC, fetchSize,
+            Request::INST_FETCH, cpu->instRequestorId(), pc,
+            cpu->thread[tid]->contextId());
+
+        mem_req->taskId(cpu->taskId());
+
+        memReq[tid] = mem_req;
+
+        // Initiate translation of the icache block
+        fetchStatus[tid] = ItlbWait;
+        FetchTranslation *trans = new FetchTranslation(this);
+        cpu->mmu->translateTiming(mem_req, cpu->thread[tid]->getTC(),
+                                  trans, BaseMMU::Execute);
+
+        fetchPC += (64 - fetchPC % 64);
+        fetchSize = fetchBufferSize - fetchSize;
+    } else {
+        fetchMisaligned[tid] = false;
+        waitingNextPkt[tid] = false;
+    }
+
+    accessInfo[tid] = std::make_pair(vaddr, fetchPC);
+
     RequestPtr mem_req = std::make_shared<Request>(
-        fetchBufferBlockPC, fetchBufferSize,
+        fetchPC, fetchSize,
         Request::INST_FETCH, cpu->instRequestorId(), pc,
         cpu->thread[tid]->contextId());
 
@@ -633,7 +681,7 @@ void
 Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
 {
     ThreadID tid = cpu->contextToThread(mem_req->contextId());
-    Addr fetchBufferBlockPC = mem_req->getVaddr();
+    Addr fetchPC = fetchMisaligned[tid] ? accessInfo[tid].first : mem_req->getVaddr();
 
     assert(!cpu->switchedOut());
 
@@ -665,8 +713,10 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
         // Build packet here.
         PacketPtr data_pkt = new Packet(mem_req, MemCmd::ReadReq);
         data_pkt->dataDynamic(new uint8_t[fetchBufferSize]);
+        if (fetchMisaligned[tid] && (accessInfo[tid].second == data_pkt->getAddr()))
+            data_pkt->setSendRightAway();
 
-        fetchBufferPC[tid] = fetchBufferBlockPC;
+        fetchBufferPC[tid] = fetchPC;
         fetchBufferValid[tid] = false;
         DPRINTF(Fetch, "Fetch: Doing instruction read.\n");
 
@@ -1262,14 +1312,11 @@ Fetch::fetch(bool &status_change)
         fetchStatus[tid] = Running;
         status_change = true;
     } else if (fetchStatus[tid] == Running) {
-        // Align the fetch PC so its at the start of a fetch buffer segment.
-        Addr fetchBufferBlockPC = fetchBufferAlignPC(fetch_addr);
-
         // If buffer is no longer valid or fetch_addr has moved to point
         // to the next cache block, AND we have no remaining ucode
         // from a macro-op, then start fetch from icache.
         if (!(fetchBufferValid[tid] &&
-              fetchBufferBlockPC == fetchBufferPC[tid]) &&
+              fetchBufferPC[tid] + fetchBufferSize > fetch_addr) &&
             !in_rom && !macroop[tid] && !loopBuffer.isActive()) {
             DPRINTF(Fetch, "[tid:%i] Attempting to translate and read "
                     "instruction, starting at PC %s.\n", tid, this_pc);
@@ -1354,14 +1401,11 @@ Fetch::fetch(bool &status_change)
         // in the decoder.
         bool need_mem = !in_rom && !curMacroop && !dec_ptr->instReady();
         fetch_addr = (this_pc.instAddr() + pc_offset) & pc_mask;
-        Addr fetchBufferBlockPC = fetchBufferAlignPC(fetch_addr);
 
         if (need_mem) {
             // If buffer is no longer valid or fetch_addr has moved to point
             // to the next cache block then start fetch from icache.
-            if (!loopBuffer.isActive() &&
-                (!fetchBufferValid[tid] ||
-                 fetchBufferBlockPC != fetchBufferPC[tid])) {
+            if (!loopBuffer.isActive() && !fetchBufferValid[tid]) {
                 break;
             }
 
@@ -1700,11 +1744,8 @@ Fetch::pipelineIcacheAccesses(ThreadID tid)
     Addr pcOffset = fetchOffset[tid];
     Addr fetchAddr = (this_pc.instAddr() + pcOffset) & decoder[tid]->pcMask();
 
-    // Align the fetch PC so its at the start of a fetch buffer segment.
-    Addr fetchBufferBlockPC = fetchBufferAlignPC(fetchAddr);
-
     // Unless buffer already got the block, fetch it from icache.
-    if (!(fetchBufferValid[tid] && fetchBufferBlockPC == fetchBufferPC[tid])) {
+    if (!(fetchBufferValid[tid] && (fetchBufferPC[tid] + fetchBufferSize > fetchAddr))) {
         DPRINTF(Fetch, "[tid:%i] Issuing a pipelined I-cache access, "
                 "starting at PC %s.\n", tid, this_pc);
 

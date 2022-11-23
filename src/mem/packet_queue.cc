@@ -164,8 +164,19 @@ PacketQueue::schedSendEvent(Tick when)
     if (when != MaxTick) {
         // we cannot go back in time, and to be consistent we stick to
         // one tick in the future
-        when = std::max(when, curTick() + 1);
-        // @todo Revisit the +1
+        bool sendRightAway = false;
+        for (auto it = transmitList.begin(); it != transmitList.end(); ++it) {
+            if (it->pkt->isSendRightAway()) {
+                sendRightAway = true;
+            }
+        }
+
+        if (sendRightAway) {
+            when = std::max(when, curTick());
+        } else {
+            when = std::max(when, curTick() + 1);
+            // @todo Revisit the +1
+        }
 
         if (!sendEvent.scheduled()) {
             em.schedule(&sendEvent, when);

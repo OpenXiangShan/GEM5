@@ -41,6 +41,8 @@
 #ifndef __CPU_O3_FETCH_HH__
 #define __CPU_O3_FETCH_HH__
 
+#include <utility>
+
 #include "arch/generic/decoder.hh"
 #include "arch/generic/mmu.hh"
 #include "base/statistics.hh"
@@ -561,6 +563,17 @@ class Fetch
 
     /** The PC of the first instruction loaded into the fetch buffer. */
     Addr fetchBufferPC[MaxThreads];
+
+    /** Indicating whether the fetch request is mis-aligned*/
+    bool fetchMisaligned[MaxThreads];
+
+    /** Indicating whether the thread is waiting second packet*/
+    bool waitingNextPkt[MaxThreads];
+
+    /** The information of access including the address of two requests*/
+    std::pair<Addr, Addr> accessInfo[MaxThreads];
+
+    PacketPtr firstPkt[MaxThreads];
 
     /** The size of the fetch queue in micro-ops */
     unsigned fetchQueueSize;
