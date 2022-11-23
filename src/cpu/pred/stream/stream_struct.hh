@@ -5,11 +5,13 @@
 
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
-#include "cpu/pred/stream_common.hh"
+#include "cpu/pred/stream/stream_common.hh"
 
 namespace gem5 {
 
 namespace branch_prediction {
+
+namespace stream_pred {
 
 enum EndType {
     END_CALL=0,
@@ -282,6 +284,8 @@ struct FtqEntry
 //     FtqEntryWithID(const FtqEntry &entry, FtqID id) : FtqEntry(entry),
 //     id(id) {}
 // }
+
+}  // namespace stream_pred
 
 }  // namespace branch_prediction
 

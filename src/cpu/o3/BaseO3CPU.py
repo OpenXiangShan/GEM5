@@ -166,6 +166,6 @@ class BaseO3CPU(BaseCPU):
     smtROBThreshold = Param.Int(100, "SMT ROB Threshold Sharing Parameter")
     smtCommitPolicy = Param.CommitPolicy('RoundRobin', "SMT Commit Policy")
 
-    branchPred = Param.BranchPredictor(DecoupledBPU(),
+    branchPred = Param.BranchPredictor(DecoupledStreamBPU(),
                                        "Branch Predictor")
     needsTSO = Param.Bool(False, "Enable TSO Memory model")

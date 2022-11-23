@@ -1,4 +1,4 @@
-#include "cpu/pred/ubtb.hh"
+#include "cpu/pred/stream/ubtb.hh"
 
 #include "base/trace.hh"
 #include "debug/DecoupleBP.hh"
@@ -8,8 +8,10 @@ namespace gem5 {
 
 namespace branch_prediction {
 
+namespace stream_pred {
+
 StreamUBTB::StreamUBTB(const Params& p):
-    TimedPredictor(p),
+    TimedStreamPredictor(p),
     size(32),
     ubtbStats(*this),
     loMask(64, (-1UL)),
@@ -283,6 +285,8 @@ StreamUBTB::makePCHistTag(Addr pc, const boost::dynamic_bitset<> &history) {
     //         hash, buf.c_str());
     return hash;
 }
+
+}  // namespace stream_pred
 
 }  // namespace branch_prediction
 

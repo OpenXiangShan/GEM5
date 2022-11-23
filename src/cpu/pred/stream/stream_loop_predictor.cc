@@ -1,8 +1,10 @@
-#include "cpu/pred/stream_loop_predictor.hh"
+#include "cpu/pred/stream/stream_loop_predictor.hh"
 
 namespace gem5
 {
 namespace branch_prediction
+{
+namespace stream_pred
 {
 
 StreamLoopPredictor::StreamLoopPredictor(const Params &params)
@@ -262,5 +264,6 @@ StreamLoopPredictor::deleteEntry(Addr branchAddr) {
     }
 }
 
+} // namespace stream_pred
 } // namespace branch_prediction
 } // namespace gem5

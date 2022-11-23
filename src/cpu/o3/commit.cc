@@ -82,7 +82,7 @@ Commit::processTrapEvent(ThreadID tid)
     trapSquash[tid] = true;
 }
 
-Commit::Commit(CPU *_cpu, branch_prediction::DecoupledBPU *_dbp, const BaseO3CPUParams &params)
+Commit::Commit(CPU *_cpu, branch_prediction::stream_pred::DecoupledStreamBPU *_dbp, const BaseO3CPUParams &params)
     : commitPolicy(params.smtCommitPolicy),
       cpu(_cpu),
       dbp(_dbp),

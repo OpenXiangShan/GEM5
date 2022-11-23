@@ -1,4 +1,4 @@
-#include "cpu/pred/fetch_target_queue.hh"
+#include "cpu/pred/stream/fetch_target_queue.hh"
 
 #include "base/trace.hh"
 #include "debug/DecoupleBP.hh"
@@ -7,6 +7,9 @@ namespace gem5
 {
 
 namespace branch_prediction
+{
+
+namespace stream_pred
 {
 
 FetchTargetQueue::FetchTargetQueue(unsigned size) :
@@ -161,6 +164,8 @@ FetchTargetQueue::resetPC(Addr new_pc)
     supplyFetchTargetState.valid = false;
     fetchTargetEnqState.pc = new_pc;
 }
+
+}  // namespace stream_pred
 
 }  // namespace branch_prediction
 

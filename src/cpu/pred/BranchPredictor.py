@@ -780,25 +780,25 @@ class MultiperspectivePerceptronTAGE8KB(MultiperspectivePerceptronTAGE):
     loop_predictor = MPP_LoopPredictor_8KB()
     statistical_corrector = MPP_StatisticalCorrector_8KB()
 
-class TimedPredictor(SimObject):
-    type = 'TimedPredictor'
-    cxx_class = 'gem5::branch_prediction::TimedPredictor'
-    cxx_header = "cpu/pred/timed_pred.hh"
+class TimedStreamPredictor(SimObject):
+    type = 'TimedStreamPredictor'
+    cxx_class = 'gem5::branch_prediction::stream_pred::TimedStreamPredictor'
+    cxx_header = "cpu/pred/stream/timed_pred.hh"
 
-# class StreamPredictor(TimedPredictor):
+# class StreamPredictor(TimedStreamPredictor):
 #     type = 'StreamPredictor'
 #     cxx_class = 'gem5::branch_prediction::StreamPredictor'
 #     cxx_header = "cpu/pred/stream_pred.hh"
 
-class StreamUBTB(TimedPredictor):
+class StreamUBTB(TimedStreamPredictor):
     type = 'StreamUBTB'
-    cxx_class = 'gem5::branch_prediction::StreamUBTB'
-    cxx_header = "cpu/pred/ubtb.hh"
+    cxx_class = 'gem5::branch_prediction::stream_pred::StreamUBTB'
+    cxx_header = "cpu/pred/stream/ubtb.hh"
 
-class StreamTAGE(TimedPredictor):
+class StreamTAGE(TimedStreamPredictor):
     type = 'StreamTAGE'
-    cxx_class = 'gem5::branch_prediction::StreamTAGE'
-    cxx_header = "cpu/pred/modify_tage.hh"
+    cxx_class = 'gem5::branch_prediction::stream_pred::StreamTAGE'
+    cxx_header = "cpu/pred/stream/modify_tage.hh"
 
     numPredictors = Param.Unsigned(16, "Number of TAGE predictors")
     tableSizes = VectorParam.Unsigned(
@@ -820,31 +820,31 @@ class StreamTAGE(TimedPredictor):
     maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
     numTablesToAlloc = Param.Unsigned(2, "The number of table to allocated each time")
 
-class LoopDetector(SimObject):
-    type = 'LoopDetector'
-    cxx_class = 'gem5::branch_prediction::LoopDetector'
-    cxx_header = "cpu/pred/loop_detector.hh"
+class StreamLoopDetector(SimObject):
+    type = 'StreamLoopDetector'
+    cxx_class = 'gem5::branch_prediction::stream_pred::StreamLoopDetector'
+    cxx_header = "cpu/pred/stream/loop_detector.hh"
 
     maxLoopQueueSize = Param.Unsigned(128, "The max size of loop queue")
     tableSize = Param.Unsigned(256, "The size of loop table")
 
 class StreamLoopPredictor(SimObject):
     type = 'StreamLoopPredictor'
-    cxx_class = 'gem5::branch_prediction::StreamLoopPredictor'
-    cxx_header = "cpu/pred/stream_loop_predictor.hh"
+    cxx_class = 'gem5::branch_prediction::stream_pred::StreamLoopPredictor'
+    cxx_header = "cpu/pred/stream/stream_loop_predictor.hh"
 
     tableSize = Param.Unsigned(128, "The size of loop table")
 
-class DecoupledBPU(BranchPredictor):
-    type = 'DecoupledBPU'
-    cxx_class = 'gem5::branch_prediction::DecoupledBPU'
-    cxx_header = "cpu/pred/decoupled_bpred.hh"
+class DecoupledStreamBPU(BranchPredictor):
+    type = 'DecoupledStreamBPU'
+    cxx_class = 'gem5::branch_prediction::stream_pred::DecoupledStreamBPU'
+    cxx_header = "cpu/pred/stream/decoupled_bpred.hh"
 
     # stream_pred = Param.StreamPredictor(StreamPredictor(),
     # "backing stream predictor")
     stream_tage = Param.StreamTAGE(StreamTAGE(), "slower but accurate stream predictor (L2)")
     stream_ubtb = Param.StreamUBTB(StreamUBTB(), "fast stream predictor (L1)")
-    loop_detector = Param.LoopDetector(LoopDetector(), "loop detector")
+    loop_detector = Param.StreamLoopDetector(StreamLoopDetector(), "loop detector")
     stream_loop_predictor = Param.StreamLoopPredictor(StreamLoopPredictor(), "stream loop predictor")
     maxHistLen = Param.Unsigned(970, "The length of history")
 

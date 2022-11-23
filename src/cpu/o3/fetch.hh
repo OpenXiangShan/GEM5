@@ -52,7 +52,7 @@
 #include "cpu/o3/limits.hh"
 #include "cpu/pc_event.hh"
 #include "cpu/pred/bpred_unit.hh"
-#include "cpu/pred/decoupled_bpred.hh"
+#include "cpu/pred/stream/decoupled_bpred.hh"
 #include "cpu/timebuf.hh"
 #include "cpu/translation.hh"
 #include "enums/SMTFetchPolicy.hh"
@@ -429,7 +429,7 @@ class Fetch
 
     RequestPort &getInstPort() { return icachePort; }
 
-    branch_prediction::DecoupledBPU * getDBP() { return dbp; }
+    branch_prediction::stream_pred::DecoupledStreamBPU * getDBP() { return dbp; }
 
     void flushFetchBuffer();
 
@@ -488,7 +488,7 @@ class Fetch
     /** BPredUnit. */
     branch_prediction::BPredUnit *branchPred;
 
-    branch_prediction::DecoupledBPU *dbp;
+    branch_prediction::stream_pred::DecoupledStreamBPU *dbp;
 
     std::unique_ptr<PCStateBase> pc[MaxThreads];
 

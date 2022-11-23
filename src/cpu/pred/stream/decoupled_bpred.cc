@@ -1,8 +1,8 @@
-#include "cpu/pred/decoupled_bpred.hh"
+#include "cpu/pred/stream/decoupled_bpred.hh"
 
 #include "base/output.hh"
 #include "base/debug_helper.hh"
-#include "cpu/pred/stream_common.hh"
+#include "cpu/pred/stream/stream_common.hh"
 #include "debug/DecoupleBPVerbose.hh"
 #include "debug/DecoupleBPHist.hh"
 #include "debug/Override.hh"
@@ -12,8 +12,10 @@ namespace gem5
 {
 namespace branch_prediction
 {
+namespace stream_pred
+{
 
-DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
+DecoupledStreamBPU::DecoupledStreamBPU(const DecoupledStreamBPUParams &p)
     : BPredUnit(p),
       fetchTargetQueue(p.ftq_size),
       historyBits(p.maxHistLen),
@@ -112,7 +114,7 @@ DecoupledBPU::DecoupledBPU(const DecoupledBPUParams &p)
 }
 
 bool
-DecoupledBPU::useStreamRAS(FetchStreamId stream_id)
+DecoupledStreamBPU::useStreamRAS(FetchStreamId stream_id)
 {
     if (s0UbtbPred.isCall()) {
         pushRAS(stream_id, "speculative update", s0UbtbPred.getFallThruPC());
@@ -127,14 +129,14 @@ DecoupledBPU::useStreamRAS(FetchStreamId stream_id)
 }
 
 void
-DecoupledBPU::tick()
+DecoupledStreamBPU::tick()
 {
     if (!receivedPred && numOverrideBubbles == 0 && sentPCHist) {
         getComponentPredictions();
     }
     if (!squashing) {
-        DPRINTF(DecoupleBP, "DecoupledBPU::tick()\n");
-        DPRINTF(Override, "DecoupledBPU::tick()\n");
+        DPRINTF(DecoupleBP, "DecoupledStreamBPU::tick()\n");
+        DPRINTF(Override, "DecoupledStreamBPU::tick()\n");
         tryEnqFetchTarget();
         tryEnqFetchStream();
 
@@ -172,7 +174,7 @@ DecoupledBPU::tick()
 }
 
 void
-DecoupledBPU::getComponentPredictions()
+DecoupledStreamBPU::getComponentPredictions()
 {
     DPRINTF(Override, "In getComponentPredictions().\n");
     for (unsigned i = 0; i < numComponents; i++) {
@@ -224,14 +226,14 @@ DecoupledBPU::getComponentPredictions()
 }
 
 bool
-DecoupledBPU::trySupplyFetchWithTarget(Addr fetch_demand_pc)
+DecoupledStreamBPU::trySupplyFetchWithTarget(Addr fetch_demand_pc)
 {
     return fetchTargetQueue.trySupplyFetchWithTarget(fetch_demand_pc);
 }
 
 
 std::pair<bool, bool>
-DecoupledBPU::decoupledPredict(const StaticInstPtr &inst,
+DecoupledStreamBPU::decoupledPredict(const StaticInstPtr &inst,
                                const InstSeqNum &seqNum, PCStateBase &pc,
                                ThreadID tid)
 {
@@ -298,7 +300,7 @@ DecoupledBPU::decoupledPredict(const StaticInstPtr &inst,
 }
 
 void
-DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
+DecoupledStreamBPU::controlSquash(unsigned target_id, unsigned stream_id,
                             const PCStateBase &control_pc,
                             const PCStateBase &corr_target,
                             const StaticInstPtr &static_inst,
@@ -489,7 +491,7 @@ DecoupledBPU::controlSquash(unsigned target_id, unsigned stream_id,
 }
 
 void
-DecoupledBPU::nonControlSquash(unsigned target_id, unsigned stream_id,
+DecoupledStreamBPU::nonControlSquash(unsigned target_id, unsigned stream_id,
                                const PCStateBase &inst_pc,
                                const InstSeqNum seq, ThreadID tid)
 {
@@ -576,7 +578,7 @@ DecoupledBPU::nonControlSquash(unsigned target_id, unsigned stream_id,
 }
 
 void
-DecoupledBPU::trapSquash(unsigned target_id, unsigned stream_id,
+DecoupledStreamBPU::trapSquash(unsigned target_id, unsigned stream_id,
                          Addr last_committed_pc, const PCStateBase &inst_pc,
                          ThreadID tid)
 {
@@ -668,7 +670,7 @@ DecoupledBPU::trapSquash(unsigned target_id, unsigned stream_id,
     dumpRAS();
 }
 
-void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
+void DecoupledStreamBPU::update(unsigned stream_id, ThreadID tid)
 {
     // aka, commit stream
     // commit controls in local prediction history buffer to committedSeq
@@ -812,7 +814,7 @@ void DecoupledBPU::update(unsigned stream_id, ThreadID tid)
 }
 
 void
-DecoupledBPU::squashStreamAfter(unsigned squash_stream_id)
+DecoupledStreamBPU::squashStreamAfter(unsigned squash_stream_id)
 {
     auto erase_it = fetchStreamQueue.upper_bound(squash_stream_id);
     while (erase_it != fetchStreamQueue.end()) {
@@ -825,7 +827,7 @@ DecoupledBPU::squashStreamAfter(unsigned squash_stream_id)
 }
 
 void
-DecoupledBPU::dumpFsq(const char *when)
+DecoupledStreamBPU::dumpFsq(const char *when)
 {
     DPRINTF(DecoupleBPProbe, "dumping fsq entries %s...\n", when);
     for (auto it = fetchStreamQueue.begin(); it != fetchStreamQueue.end();
@@ -836,7 +838,7 @@ DecoupledBPU::dumpFsq(const char *when)
 }
 
 void
-DecoupledBPU::tryEnqFetchStream()
+DecoupledStreamBPU::tryEnqFetchStream()
 {
     defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
     if (s0StreamStartPC == ObservingPC) {
@@ -907,7 +909,7 @@ DecoupledBPU::tryEnqFetchStream()
 }
 
 void
-DecoupledBPU::setTakenEntryWithStream(const FetchStream &stream_entry, FtqEntry &ftq_entry)
+DecoupledStreamBPU::setTakenEntryWithStream(const FetchStream &stream_entry, FtqEntry &ftq_entry)
 {
     ftq_entry.taken = true;
     ftq_entry.takenPC = stream_entry.getControlPC();
@@ -916,7 +918,7 @@ DecoupledBPU::setTakenEntryWithStream(const FetchStream &stream_entry, FtqEntry 
 }
 
 void
-DecoupledBPU::setNTEntryWithStream(FtqEntry &ftq_entry, Addr end_pc)
+DecoupledStreamBPU::setNTEntryWithStream(FtqEntry &ftq_entry, Addr end_pc)
 {
     ftq_entry.taken = false;
     ftq_entry.takenPC = 0;
@@ -925,7 +927,7 @@ DecoupledBPU::setNTEntryWithStream(FtqEntry &ftq_entry, Addr end_pc)
 }
 
 void
-DecoupledBPU::tryEnqFetchTarget()
+DecoupledStreamBPU::tryEnqFetchTarget()
 {
     DPRINTF(DecoupleBP, "Try to enq fetch target\n");
     if (fetchTargetQueue.full()) {
@@ -1075,14 +1077,14 @@ DecoupledBPU::tryEnqFetchTarget()
 }
 
 Addr
-DecoupledBPU::computePathHash(Addr br, Addr target)
+DecoupledStreamBPU::computePathHash(Addr br, Addr target)
 {
     Addr ret = ((br >> 1) ^ (target >> 2)) & foldingTokenMask();
     return ret;
 }
 
 void
-DecoupledBPU::histShiftIn(Addr hash, boost::dynamic_bitset<> &history)
+DecoupledStreamBPU::histShiftIn(Addr hash, boost::dynamic_bitset<> &history)
 {
     // boost::to_string(history, buf2);
     // DPRINTF(DecoupleBP, "Hist before shiftin: %s, hist len: %u, hash:
@@ -1104,7 +1106,7 @@ DecoupledBPU::histShiftIn(Addr hash, boost::dynamic_bitset<> &history)
 }
 
 void
-DecoupledBPU::makeNewPrediction(bool create_new_stream)
+DecoupledStreamBPU::makeNewPrediction(bool create_new_stream)
 {
     DPRINTF(DecoupleBP, "Try to make new prediction\n");
     FetchStream entry_new;
@@ -1239,7 +1241,7 @@ DecoupledBPU::makeNewPrediction(bool create_new_stream)
 }
 
 void
-DecoupledBPU::checkHistory(const boost::dynamic_bitset<> &history)
+DecoupledStreamBPU::checkHistory(const boost::dynamic_bitset<> &history)
 {
     unsigned ideal_size = 0;
     boost::dynamic_bitset<> ideal_hash_hist(historyBits, 0);
@@ -1272,7 +1274,7 @@ DecoupledBPU::checkHistory(const boost::dynamic_bitset<> &history)
 }
 
 bool
-DecoupledBPU::popRAS(FetchStreamId stream_id, const char *when)
+DecoupledStreamBPU::popRAS(FetchStreamId stream_id, const char *when)
 {
     if (streamRAS.empty()) {
         DPRINTF(DecoupleBPRAS || debugFlagOn,
@@ -1289,7 +1291,7 @@ DecoupledBPU::popRAS(FetchStreamId stream_id, const char *when)
 }
 
 void
-DecoupledBPU::pushRAS(FetchStreamId stream_id, const char *when, Addr ra)
+DecoupledStreamBPU::pushRAS(FetchStreamId stream_id, const char *when, Addr ra)
 {
     DPRINTF(DecoupleBPRAS || debugFlagOn,
             "Push RA: %#lx when %s, stream id: %lu, ", ra, when, stream_id);
@@ -1298,7 +1300,7 @@ DecoupledBPU::pushRAS(FetchStreamId stream_id, const char *when, Addr ra)
 }
 
 void
-DecoupledBPU::updateTAGE(FetchStream &stream)
+DecoupledStreamBPU::updateTAGE(FetchStream &stream)
 {
     defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
     if (stream.streamStart == ObservingPC) {
@@ -1332,7 +1334,7 @@ DecoupledBPU::updateTAGE(FetchStream &stream)
 }
 
 void
-DecoupledBPU::storeLoopInfo(unsigned int fsqId, FetchStream stream)
+DecoupledStreamBPU::storeLoopInfo(unsigned int fsqId, FetchStream stream)
 {
     Addr branchPC = stream.squashType == SQUASH_CTRL ? stream.exeBranchPC : stream.predBranchPC;
     if (dumpLoopPred && loopDetector->findLoop(branchPC)) {
@@ -1341,12 +1343,14 @@ DecoupledBPU::storeLoopInfo(unsigned int fsqId, FetchStream stream)
 }
 
 void
-DecoupledBPU::resetPC(Addr new_pc)
+DecoupledStreamBPU::resetPC(Addr new_pc)
 {
     s0PC = new_pc;
     s0StreamStartPC = s0PC;
     fetchTargetQueue.resetPC(new_pc);
 }
+
+}  // namespace stream_pred
 
 }  // namespace branch_prediction
 

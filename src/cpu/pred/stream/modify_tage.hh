@@ -1,5 +1,5 @@
-#ifndef __CPU_PRED_MODIFY_TAGE_HH__
-#define __CPU_PRED_MODIFY_TAGE_HH__
+#ifndef __CPU_PRED_STREAM_MODIFY_TAGE_HH__
+#define __CPU_PRED_STREAM_MODIFY_TAGE_HH__
 
 #include <deque>
 #include <map>
@@ -9,9 +9,9 @@
 #include "base/types.hh"
 #include "base/sat_counter.hh"
 #include "cpu/inst_seq.hh"
-#include "cpu/pred/stream_struct.hh"
-#include "cpu/pred/timed_pred.hh"
-#include "cpu/pred/stream_loop_predictor.hh"
+#include "cpu/pred/stream/stream_struct.hh"
+#include "cpu/pred/stream/timed_pred.hh"
+#include "cpu/pred/stream/stream_loop_predictor.hh"
 #include "params/StreamTAGE.hh"
 #include "debug/DecoupleBP.hh"
 #include "sim/sim_object.hh"
@@ -22,13 +22,16 @@ namespace gem5
 namespace branch_prediction
 {
 
+namespace stream_pred
+{
+
   enum PredSource {
     LoopButInvalid,
     LoopAndValid,
     TAGE
   };
 
-class StreamTAGE : public TimedPredictor
+class StreamTAGE : public TimedStreamPredictor
 {
     using defer = std::shared_ptr<void>;
     using bitset = boost::dynamic_bitset<>;
@@ -200,4 +203,6 @@ public:
 
 }
 
-#endif  // __CPU_PRED_MODIFY_TAGE_HH__
+}
+
+#endif  // __CPU_PRED_STREAM_MODIFY_TAGE_HH__

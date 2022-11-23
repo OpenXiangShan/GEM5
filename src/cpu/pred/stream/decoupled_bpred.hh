@@ -1,5 +1,5 @@
-#ifndef __CPU_PRED_DECOUPLED_BPRED_HH__
-#define __CPU_PRED_DECOUPLED_BPRED_HH__
+#ifndef __CPU_PRED_STREAM_DECOUPLED_BPRED_HH__
+#define __CPU_PRED_STREAM_DECOUPLED_BPRED_HH__
 
 #include <array>
 #include <queue>
@@ -8,22 +8,25 @@
 #include <vector>
 
 #include "cpu/pred/bpred_unit.hh"
-#include "cpu/pred/fetch_target_queue.hh"
-#include "cpu/pred/stream_struct.hh"
-#include "cpu/pred/ubtb.hh"
-#include "cpu/pred/modify_tage.hh"
-#include "cpu/pred/loop_detector.hh"
+#include "cpu/pred/stream/fetch_target_queue.hh"
+#include "cpu/pred/stream/stream_struct.hh"
+#include "cpu/pred/stream/ubtb.hh"
+#include "cpu/pred/stream/modify_tage.hh"
+#include "cpu/pred/stream/loop_detector.hh"
 #include "debug/DecoupleBP.hh"
 #include "debug/DecoupleBPHist.hh"
 #include "debug/DecoupleBPProbe.hh"
 #include "debug/DecoupleBPRAS.hh"
 #include "debug/DecoupleBPVerbose.hh"
-#include "params/DecoupledBPU.hh"
+#include "params/DecoupledStreamBPU.hh"
 
 namespace gem5
 {
 
 namespace branch_prediction
+{
+
+namespace stream_pred
 {
 
 class HistoryManager
@@ -169,13 +172,13 @@ class HistoryManager
     }
 };
 
-class DecoupledBPU : public BPredUnit
+class DecoupledStreamBPU : public BPredUnit
 {
     using defer = std::shared_ptr<void>;
   public:
-    typedef DecoupledBPUParams Params;
+    typedef DecoupledStreamBPUParams Params;
 
-    DecoupledBPU(const Params &params);
+    DecoupledStreamBPU(const Params &params);
 
   private:
     std::string _name;
@@ -203,7 +206,7 @@ class DecoupledBPU : public BPredUnit
 
     StreamUBTB *streamUBTB{};
 
-    std::array<TimedPredictor*, 4> components{};
+    std::array<TimedStreamPredictor*, 4> components{};
     std::array<StreamPrediction, 4> componentPreds{};
     unsigned numComponents{};
 
@@ -395,7 +398,7 @@ class DecoupledBPU : public BPredUnit
 
     void updateTAGE(FetchStream &stream);
 
-    LoopDetector *loopDetector{};
+    StreamLoopDetector *loopDetector{};
     StreamLoopPredictor *streamLoopPredictor{};
 
     void storeLoopInfo(unsigned int fsqId, FetchStream stream);
@@ -412,7 +415,8 @@ class DecoupledBPU : public BPredUnit
     void resetPC(Addr new_pc);
 };
 
+}  // namespace stream_pred
 }  // namespace branch_prediction
 }  // namespace gem5
 
-#endif  // __CPU_PRED_DECOUPLED_BPRED_HH__
+#endif  // __CPU_PRED_STREAM_DECOUPLED_BPRED_HH__

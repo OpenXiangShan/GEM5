@@ -138,7 +138,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
     branchPred = params.branchPred;
 
     if (isDecoupledFrontend) {
-        dbp = dynamic_cast<branch_prediction::DecoupledBPU*>(branchPred);
+        dbp = dynamic_cast<branch_prediction::stream_pred::DecoupledStreamBPU*>(branchPred);
         assert(dbp);
         usedUpFetchTargets = true;
     } else {

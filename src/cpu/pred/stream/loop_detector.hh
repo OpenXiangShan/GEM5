@@ -1,5 +1,5 @@
-#ifndef __CPU_PRED_LOOP_DETECTOR_HH__
-#define __CPU_PRED_LOOP_DETECTOR_HH__
+#ifndef __CPU_PRED_STREAM_LOOP_DETECTOR_HH__
+#define __CPU_PRED_STREAM_LOOP_DETECTOR_HH__
 
 #include <map>
 #include <list>
@@ -9,11 +9,11 @@
 #include "base/statistics.hh"
 #include "base/types.hh"
 #include "base/debug_helper.hh"
-#include "cpu/pred/stream_loop_predictor.hh"
+#include "cpu/pred/stream/stream_loop_predictor.hh"
 #include "debug/DecoupleBP.hh"
 #include "base/debug_helper.hh"
 #include "base/trace.hh"
-#include "params/LoopDetector.hh"
+#include "params/StreamLoopDetector.hh"
 #include "sim/sim_object.hh"
 
 namespace gem5
@@ -22,14 +22,17 @@ namespace gem5
 namespace branch_prediction
 {
 
-class LoopDetector : public SimObject
+namespace stream_pred
+{
+
+class StreamLoopDetector : public SimObject
 {
 
     using defer = std::shared_ptr<void>;
 public: 
-    typedef LoopDetectorParams Params;
+    typedef StreamLoopDetectorParams Params;
 
-    LoopDetector(const Params &params);
+    StreamLoopDetector(const Params &params);
     
 private:
 
@@ -115,4 +118,6 @@ public:
 
 }
 
-#endif  // __CPU_PRED_LOOP_DETECTOR_HH__
+}
+
+#endif  // __CPU_PRED_STREAM_LOOP_DETECTOR_HH__

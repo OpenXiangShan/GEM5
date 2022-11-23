@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "base/statistics.hh"
-#include "cpu/pred/stream_struct.hh"
+#include "cpu/pred/stream/stream_struct.hh"
 #include "base/types.hh"
 #include "debug/DecoupleBP.hh"
 #include "base/debug_helper.hh"
@@ -20,6 +20,10 @@ namespace gem5
 
 namespace branch_prediction
 {
+
+namespace stream_pred
+{
+
 class StreamLoopPredictor : public SimObject
 {
 
@@ -115,6 +119,8 @@ public:
     std::pair<bool, std::vector<DivideEntry> > updateTAGE(Addr streamStart, Addr branchAddr, Addr targetAddr);
 
 };
+
+}
 
 }
 

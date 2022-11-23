@@ -1,4 +1,4 @@
-#include "cpu/pred/loop_detector.hh"
+#include "cpu/pred/stream/loop_detector.hh"
 #include "sim/core.hh"
 #include "base/output.hh"
 
@@ -6,8 +6,10 @@ namespace gem5
 {
 namespace branch_prediction
 {
+namespace stream_pred
+{
 
-LoopDetector::LoopDetector(const Params &params)
+StreamLoopDetector::StreamLoopDetector(const Params &params)
             : SimObject(params), maxLoopQueueSize(params.maxLoopQueueSize), tableSize(params.tableSize)
 {
         registerExitCallback([this]() {
@@ -34,7 +36,7 @@ LoopDetector::LoopDetector(const Params &params)
 }
 
 bool 
-LoopDetector::adjustLoopEntry(bool taken_backward, DetectorEntry &entry, Addr branchAddr, Addr targetAddr) {
+StreamLoopDetector::adjustLoopEntry(bool taken_backward, DetectorEntry &entry, Addr branchAddr, Addr targetAddr) {
     if (!entry.valid) {
         if (branchAddr == ObservingPC2) {
             tripCountVec.push_back(std::make_pair(0, -9));
@@ -72,7 +74,7 @@ LoopDetector::adjustLoopEntry(bool taken_backward, DetectorEntry &entry, Addr br
 }
 
 void
-LoopDetector::insertEntry(Addr branchAddr, DetectorEntry loopEntry) {
+StreamLoopDetector::insertEntry(Addr branchAddr, DetectorEntry loopEntry) {
     defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
     if (branchAddr == ObservingPC2) {
         debugFlagOn = true;
@@ -95,7 +97,7 @@ LoopDetector::insertEntry(Addr branchAddr, DetectorEntry loopEntry) {
 }
 
 void
-LoopDetector::update(Addr branchAddr, Addr targetAddr, Addr fallThruPC) {
+StreamLoopDetector::update(Addr branchAddr, Addr targetAddr, Addr fallThruPC) {
     defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
     if (branchAddr == ObservingPC || branchAddr == ObservingPC2) {
         debugFlagOn = true;
@@ -181,5 +183,6 @@ LoopDetector::update(Addr branchAddr, Addr targetAddr, Addr fallThruPC) {
     }
 }
 
+} // namespace stream_pred
 } // namespace branch_prediction
 } // namespace gem5

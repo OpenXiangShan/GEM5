@@ -1,13 +1,16 @@
-#ifndef __CPU_PRED_FETCH_TARGET_QUEUE_HH__
-#define __CPU_PRED_FETCH_TARGET_QUEUE_HH__
+#ifndef __CPU_PRED_STREAM_FETCH_TARGET_QUEUE_HH__
+#define __CPU_PRED_STREAM_FETCH_TARGET_QUEUE_HH__
 
-#include "cpu/pred/stream_struct.hh"
+#include "cpu/pred/stream/stream_struct.hh"
 #include "sim/sim_object.hh"
 
 namespace gem5
 {
 
 namespace branch_prediction
+{
+
+namespace stream_pred
 {
 
 struct FetchTargetEnqState
@@ -116,5 +119,6 @@ class FetchTargetQueue
 
 }
 }
+}
 
-#endif  // __CPU_PRED_FETCH_TARGET_QUEUE_HH__
+#endif  // __CPU_PRED_STREAM_FETCH_TARGET_QUEUE_HH__

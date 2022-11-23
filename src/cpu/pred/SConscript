@@ -44,8 +44,8 @@ SimObject('BranchPredictor.py', sim_objects=[
     'MultiperspectivePerceptronTAGE', 'MPP_StatisticalCorrector_64KB',
     'MultiperspectivePerceptronTAGE64KB', 'MPP_TAGE_8KB',
     'MPP_LoopPredictor_8KB', 'MPP_StatisticalCorrector_8KB',
-    'MultiperspectivePerceptronTAGE8KB', 'TimedPredictor',
-    'StreamUBTB', 'StreamTAGE', 'LoopDetector', 'StreamLoopPredictor', 'DecoupledBPU'])
+    'MultiperspectivePerceptronTAGE8KB', 'TimedStreamPredictor',
+    'StreamUBTB', 'StreamTAGE', 'StreamLoopDetector', 'StreamLoopPredictor', 'DecoupledStreamBPU'])
 
 DebugFlag('Indirect')
 Source('bpred_unit.cc')
@@ -71,14 +71,14 @@ Source('statistical_corrector.cc')
 Source('tage_sc_l.cc')
 Source('tage_sc_l_8KB.cc')
 Source('tage_sc_l_64KB.cc')
-Source('decoupled_bpred.cc')
-Source('fetch_target_queue.cc')
-Source('ubtb.cc')
-Source('modify_tage.cc')
-Source('stream_loop_predictor.cc')
-Source('loop_detector.cc')
-Source('timed_pred.cc')
-Source('stream_common.cc')
+Source('stream/decoupled_bpred.cc')
+Source('stream/fetch_target_queue.cc')
+Source('stream/ubtb.cc')
+Source('stream/modify_tage.cc')
+Source('stream/stream_loop_predictor.cc')
+Source('stream/loop_detector.cc')
+Source('stream/timed_pred.cc')
+Source('stream/stream_common.cc')
 DebugFlag('FreeList')
 DebugFlag('Branch')
 DebugFlag('Tage')

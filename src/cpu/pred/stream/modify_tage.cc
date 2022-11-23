@@ -1,4 +1,4 @@
-#include "cpu/pred/modify_tage.hh"
+#include "cpu/pred/stream/modify_tage.hh"
 
 #include <algorithm>
 
@@ -9,14 +9,16 @@
 #include "debug/DecoupleBPVerbose.hh"
 #include "debug/DecoupleBPUseful.hh"
 #include "debug/Override.hh"
-#include "cpu/pred/stream_common.hh"
+#include "cpu/pred/stream/stream_common.hh"
 
 namespace gem5 {
 
 namespace branch_prediction {
 
+namespace stream_pred {
+
 StreamTAGE::StreamTAGE(const Params& p):
-    TimedPredictor(p),
+    TimedStreamPredictor(p),
     numPredictors(p.numPredictors),
     tableSizes(p.tableSizes),
     tableTagBits(p.TTagBitSizes),
@@ -738,6 +740,8 @@ StreamTAGE::maintainUsefulCounters(int allocated, int new_allocated)
         }
     }
 }
+
+}  // namespace stream_pred
 
 }  // namespace branch_prediction
 

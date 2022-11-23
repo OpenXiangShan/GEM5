@@ -1,5 +1,5 @@
-#ifndef __CPU_PRED_UBTB_HH__
-#define __CPU_PRED_UBTB_HH__
+#ifndef __CPU_PRED_STREAM_UBTB_HH__
+#define __CPU_PRED_STREAM_UBTB_HH__
 
 #include <map>
 #include <unordered_map>
@@ -8,8 +8,8 @@
 #include "base/statistics.hh"
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
-#include "cpu/pred/stream_struct.hh"
-#include "cpu/pred/timed_pred.hh"
+#include "cpu/pred/stream/stream_struct.hh"
+#include "cpu/pred/stream/timed_pred.hh"
 #include "params/StreamUBTB.hh"
 #include "sim/sim_object.hh"
 
@@ -19,7 +19,10 @@ namespace gem5
 namespace branch_prediction
 {
 
-class StreamUBTB : public TimedPredictor
+namespace stream_pred
+{
+
+class StreamUBTB : public TimedStreamPredictor
 {
   public:
     typedef StreamUBTBParams Params;
@@ -110,4 +113,6 @@ class StreamUBTB : public TimedPredictor
 
 }
 
-#endif  // __CPU_PRED_UBTB_HH__
+}
+
+#endif  // __CPU_PRED_STREAM_UBTB_HH__

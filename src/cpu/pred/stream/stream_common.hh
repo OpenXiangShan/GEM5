@@ -8,12 +8,16 @@ namespace gem5 {
 
 namespace branch_prediction {
 
+namespace stream_pred {
+
 extern unsigned streamChunkSize;
 
 extern unsigned fetchTargetSize;
 extern unsigned fetchTargetMask;
 
 Addr computeLastChunkStart(Addr taken_control_pc, Addr stream_start_pc);
+
+}  // namespace stream_pred
 
 }  // namespace branch_prediction
 
