@@ -209,6 +209,11 @@ void BertiPrefetcher::searchTimelyDeltas(
 void
 BertiPrefetcher::notifyFill(const PacketPtr &pkt)
 {
+    if (pkt->req->isInstFetch() ||
+        !pkt->req->hasVaddr() || !pkt->req->hasPC()) {
+        DPRINTF(BertiPrefetcher, "Skip packet: %s\n", pkt->print());
+        return;
+    }
     DPRINTF(BertiPrefetcher,
             "Cache Fill: %s isPF: %d\n",
             pkt->print(), pkt->req->isPrefetch());
@@ -223,8 +228,6 @@ BertiPrefetcher::notifyFill(const PacketPtr &pkt)
     Cycles latency = ticksToCycles(curTick() - pkt->req->time());
     // update lastFillLatency for prefetch on hit
     lastFillLatency = latency;
-
-    assert(pkt->req->hasPC() && pkt->req->hasVaddr());
 
     statsBerti.fill_pc.sample(pkt->req->getPC());
 
