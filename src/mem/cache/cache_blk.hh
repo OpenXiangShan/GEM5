@@ -202,6 +202,7 @@ class CacheBlk : public TaggedEntry
         TaggedEntry::invalidate();
 
         clearPrefetched();
+        clearPendingInvalidate();
         clearCoherenceBits(AllBits);
 
         setTaskId(context_switch_task_id::Unknown);
@@ -256,6 +257,12 @@ class CacheBlk : public TaggedEntry
 
     /** Marks this blocks as a recently prefetched block. */
     void setPrefetched() { _prefetched = true; }
+
+    bool needInvalidate() const { return _needInvalidate; }
+
+    void setPendingInvalidate() { _needInvalidate = true; }
+
+    void clearPendingInvalidate() { _needInvalidate = false; }
 
     /**
      * Get tick at which block's data will be available for access.
@@ -490,6 +497,9 @@ class CacheBlk : public TaggedEntry
 
     /** Whether this block is an unaccessed hardware prefetch. */
     bool _prefetched = 0;
+
+    /** Whether there is a pending invalidate on this block. */
+    bool _needInvalidate = 0;
 };
 
 /**

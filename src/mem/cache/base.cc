@@ -485,6 +485,10 @@ BaseCache::recvTimingReq(PacketPtr pkt)
         ppMiss->notify(pkt);
     }
 
+    if (blk && blk->needInvalidate()) {
+        invalidateBlock(blk);
+    }
+
     if (prefetcher) {
         // track time of availability of next prefetch, if any
         Tick next_pf_time = prefetcher->nextPrefetchReadyTime();
@@ -1524,7 +1528,7 @@ BaseCache::maintainClusivity(bool from_cache, CacheBlk *blk)
         // if we have responded to a cache, and our block is still
         // valid, but not dirty, and this cache is mostly exclusive
         // with respect to the cache above, drop the block
-        invalidateBlock(blk);
+        blk->setPendingInvalidate();
     }
 }
 
