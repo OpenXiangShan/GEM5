@@ -161,7 +161,7 @@ class BertiPrefetcher(QueuedPrefetcher):
     on_inst  = False
 
     aggressive_pf = Param.Bool(
-        False,
+        True,
         "Issue pf reqs as many as possible."
     )
     history_table_entries = Param.MemorySize(
