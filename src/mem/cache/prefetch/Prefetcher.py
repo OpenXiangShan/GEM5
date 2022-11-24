@@ -154,7 +154,16 @@ class BertiPrefetcher(QueuedPrefetcher):
     cxx_header = "mem/cache/prefetch/berti.hh"
 
     use_virtual_addresses = True
+    prefetch_on_pf_hit = True
+    on_read = True
+    on_write = False
+    on_data  = True
+    on_inst  = False
 
+    aggressive_pf = Param.Bool(
+        False,
+        "Issue pf reqs as many as possible."
+    )
     history_table_entries = Param.MemorySize(
         "64", "Number of history table entries."
     )
