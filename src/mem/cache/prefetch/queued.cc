@@ -70,6 +70,7 @@ Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size,
         req = std::make_shared<Request>(paddr, blk_size, 0, requestor_id);
     }
 
+    req->setFlags(Request::PREFETCH);
 
     if (pfInfo.isSecure()) {
         req->setFlags(Request::SECURE);
@@ -112,7 +113,11 @@ Queued::Queued(const QueuedPrefetcherParams &p)
       latency(p.latency), queueSquash(p.queue_squash),
       queueFilter(p.queue_filter), cacheSnoop(p.cache_snoop),
       tagPrefetch(p.tag_prefetch),
-      throttleControlPct(p.throttle_control_percentage), statsQueued(this)
+      throttleControlPct(p.throttle_control_percentage),
+      tlbReqEvent(
+          [this]{ processMissingTranslations(queueSize); },
+          name()),
+      statsQueued(this)
 {
 }
 
@@ -246,11 +251,6 @@ Queued::getPacket()
 {
     DPRINTF(HWPrefetch, "Requesting a prefetch to issue.\n");
 
-    if (pfq.empty()) {
-        // If the queue is empty, attempt first to fill it with requests
-        // from the queue of missing translations
-        processMissingTranslations(queueSize);
-    }
 
     if (pfq.empty()) {
         DPRINTF(HWPrefetch, "No hardware prefetches available.\n");
@@ -265,7 +265,6 @@ Queued::getPacket()
     assert(pkt != nullptr);
     DPRINTF(HWPrefetch, "Generating prefetch for %#x.\n", pkt->getAddr());
 
-    processMissingTranslations(queueSize - pfq.size());
     return pkt;
 }
 
@@ -496,6 +495,9 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi,
         DPRINTF(HWPrefetch, "Prefetch queued with no translation. "
                 "addr:%#x priority: %3d\n", new_pfi.getAddr(), priority);
         addToQueue(pfqMissingTranslation, dpp);
+        if (!tlbReqEvent.scheduled()) {
+            schedule(tlbReqEvent, nextCycle());
+        }
     }
 }
 
