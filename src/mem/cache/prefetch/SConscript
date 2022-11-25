@@ -30,7 +30,7 @@ Import('*')
 
 SimObject('Prefetcher.py', sim_objects=[
     'BasePrefetcher', 'MultiPrefetcher', 'QueuedPrefetcher',
-    'SMSPrefetcher',
+    'SMSPrefetcher', 'BertiPrefetcher',
     'StridePrefetcherHashedSetAssociative', 'StridePrefetcher',
     'TaggedPrefetcher', 'IndirectMemoryPrefetcher', 'SignaturePathPrefetcher',
     'SignaturePathPrefetcherV2', 'AccessMapPatternMatching', 'AMPMPrefetcher',
@@ -40,6 +40,8 @@ SimObject('Prefetcher.py', sim_objects=[
 
 
 DebugFlag('SMSPrefetcher')
+DebugFlag('BertiPrefetcher')
+
 Source('access_map_pattern_matching.cc')
 Source('base.cc')
 Source('multi.cc')
@@ -50,6 +52,7 @@ Source('indirect_memory.cc')
 Source('pif.cc')
 Source('queued.cc')
 Source('sms.cc')
+Source('berti.cc')
 Source('sbooe.cc')
 Source('signature_path.cc')
 Source('signature_path_v2.cc')

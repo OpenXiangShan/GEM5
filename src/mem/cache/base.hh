@@ -744,6 +744,9 @@ class BaseCache : public ClockedObject
                                 bool deferred_response = false,
                                 bool pending_downgrade = false);
 
+
+    bool exclusiveCacheInvalidate(bool from_cache, CacheBlk *blk);
+
     /**
      * Maintain the clusivity of this cache by potentially
      * invalidating a block. This method works in conjunction with

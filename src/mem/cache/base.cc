@@ -460,6 +460,10 @@ BaseCache::recvTimingReq(PacketPtr pkt)
             blk->clearPrefetched();
         }
 
+        if (blk && blk->needInvalidate()) {
+            invalidateBlock(blk);
+        }
+
         handleTimingReqHit(pkt, blk, request_time);
     } else {
         // ArchDB: for now we only track packet which has PC
@@ -484,6 +488,7 @@ BaseCache::recvTimingReq(PacketPtr pkt)
 
         ppMiss->notify(pkt);
     }
+
 
     if (prefetcher) {
         // track time of availability of next prefetch, if any
@@ -1495,7 +1500,10 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         }
 
         satisfyRequest(pkt, blk);
-        maintainClusivity(pkt->fromCache(), blk);
+        assert(!blk->needInvalidate());
+        if (exclusiveCacheInvalidate(pkt->fromCache(), blk)) {
+            blk->setPendingInvalidate();
+        }
 
         return true;
     }
@@ -1516,11 +1524,17 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
     return false;
 }
 
+bool
+BaseCache::exclusiveCacheInvalidate(bool from_cache, CacheBlk *blk)
+{
+    return from_cache && blk && blk->isValid() &&
+     !blk->isSet(CacheBlk::DirtyBit) && clusivity == enums::mostly_excl;
+}
+
 void
 BaseCache::maintainClusivity(bool from_cache, CacheBlk *blk)
 {
-    if (from_cache && blk && blk->isValid() &&
-        !blk->isSet(CacheBlk::DirtyBit) && clusivity == enums::mostly_excl) {
+    if (exclusiveCacheInvalidate(from_cache, blk)) {
         // if we have responded to a cache, and our block is still
         // valid, but not dirty, and this cache is mostly exclusive
         // with respect to the cache above, drop the block
