@@ -181,6 +181,9 @@ class CacheBlk : public TaggedEntry
         if (other.wasPrefetched()) {
             setPrefetched();
         }
+        if (other.needInvalidate()) {
+            setPendingInvalidate();
+        }
         setCoherenceBits(other.coherence);
         setTaskId(other.getTaskId());
         setWhenReady(curTick());
