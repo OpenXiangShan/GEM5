@@ -203,6 +203,12 @@ class SMSPrefetcher(QueuedPrefetcher):
     cxx_header = 'mem/cache/prefetch/sms.hh'
 
     use_virtual_addresses = True
+    prefetch_on_pf_hit = True
+    on_read = True
+    on_write = False
+    on_data  = True
+    on_inst  = False
+
     region_size = Param.Int(1024, "region size")
     # filter table (full-assoc)
     filter_entries = Param.MemorySize("16", "num of filter table entries")
@@ -545,6 +551,14 @@ class BOPPrefetcher(QueuedPrefetcher):
     type = "BOPPrefetcher"
     cxx_class = 'gem5::prefetch::BOP'
     cxx_header = "mem/cache/prefetch/bop.hh"
+
+    use_virtual_addresses = False
+    prefetch_on_pf_hit = True
+    on_read = True
+    on_write = False
+    on_data  = True
+    on_inst  = False
+
     score_max = Param.Unsigned(31, "Max. score to update the best offset")
     round_max = Param.Unsigned(50, "Max. round to update the best offset")
     bad_score = Param.Unsigned(1, "Score at which the HWP is disabled")
@@ -552,7 +566,7 @@ class BOPPrefetcher(QueuedPrefetcher):
     tag_bits = Param.Unsigned(12, "Bits used to store the tag")
     offset_list_size = Param.Unsigned(12,
                 "Number of entries in the offsets list")
-    negative_offsets_enable = Param.Bool(False,
+    negative_offsets_enable = Param.Bool(True,
                 "Initialize the offsets list also with negative values \
                 (i.e. the table will have half of the entries with positive \
                 offsets and the other half with negative ones)")
