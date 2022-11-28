@@ -1,0 +1,17 @@
+name: gem5 Test
+
+on:
+  push:
+    branches: [ xs-dev ]
+  pull_request:
+    branches: [ xs-dev ]
+
+jobs:
+  autotest:
+    runs-on: self-hosted
+    continue-on-error: false
+    name: run script autotets.py
+    steps:
+      - uses: actions/checkout@v2
+      - name: run autotest script
+        run: python3 /nfs/home/xuyan/action-runner/autotest/script/autotest.py -f /nfs/home/xuyan/action-runner/autotest/gem5.cfg
