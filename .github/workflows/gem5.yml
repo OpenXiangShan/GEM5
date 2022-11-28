@@ -14,4 +14,4 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: run autotest script
-        run: python3 /nfs/home/xuyan/action-runner/autotest/script/autotest.py -f /nfs/home/xuyan/action-runner/autotest/gem5.cfg
+        run: python3 .github/workflows/autotest/script/autotest.py -f .github/workflows/autotest/gem5.cfg
