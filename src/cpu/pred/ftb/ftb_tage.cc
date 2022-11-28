@@ -489,6 +489,62 @@ FTBTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * when)
     }
 }
 
+std::pair<bool, int>
+FTBTAGE::StatisticalCorrector::getPrediction(Addr pc)
+{
+    int M = scCntTable.size();
+    int countSum = 0;
+    for (int i = 0;i < M;i++) {
+        countSum += scCntTable[i].at(getIndex(pc, i));
+    }
+
+    float S = ((float) M) / 2 + countSum;
+    bool sign = S >= 0;
+
+    return std::make_pair(sign, S);
+}
+
+Addr
+FTBTAGE::StatisticalCorrector::getIndex(Addr pc, int table)
+{
+    
+}
+
+void
+FTBTAGE::StatisticalCorrector::updateGEHL(bool actualTaken, std::pair<bool, int> prediction, Addr pc)
+{
+    if (actualTaken != prediction.first || std::abs(prediction.second) <= threshold) {
+        for (int i = 0;i < scCntTable.size();i++) {
+            auto &entry = scCntTable[i].at(getIndex(pc, i));
+            int maxCounter = std::pow(2, cntSizeTable.at(i)) / 2 - 1;
+            int minCounter = -(std::pow(2, cntSizeTable.at(i)) / 2);
+            if (actualTaken) {
+                entry = std::min(maxCounter, entry + 1);
+            } else {
+                entry = std::max(minCounter, entry - 1);
+            }
+        }
+    }
+}
+
+void
+FTBTAGE::StatisticalCorrector::updateThreshold(bool actualTaken, std::pair<bool, int> prediction)
+{
+    if (actualTaken != prediction.first) {
+        TC = std::min(std::pow(2, 7) / 2 - 1, TC + 1);
+        if (TC > ??) {
+            threshold++;
+            TC = 0;
+        }
+    }
+    if (actualTaken != prediction.first && std::abs(prediction.second) <= threshold) {
+        TC = std::max(-(std::pow(2, 7) / 2), TC - 1);
+        if (TC < ??) {
+            threshold--;
+            TC = 0;
+        }
+    }
+}
 
 } // namespace ftb_pred
 

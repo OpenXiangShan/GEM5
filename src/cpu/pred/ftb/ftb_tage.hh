@@ -4,6 +4,7 @@
 #include <deque>
 #include <map>
 #include <vector>
+#include <utility>
 
 #include "base/sat_counter.hh"
 #include "base/statistics.hh"
@@ -183,6 +184,42 @@ public:
     void recoverFoldedHist(const bitset& history);
 
     // void checkFoldedHist(const bitset& history);
+public:
+    class StatisticalCorrector {
+      public:
+        StatisticalCorrector() {
+          scCntTable.resize(8);
+          tagVec.resize(2048);
+          for (int i = 0; i < 8; i++) {
+            scCntTable[i].resize(2048);
+          }
+        };
+
+      public:
+        Addr getIndex(Addr pc, int table);
+
+        void updateGEHL(bool actualTaken, std::pair<bool, int> prediction,
+                        Addr pc);
+
+        std::pair<bool, float> getPrediction(Addr pc);
+
+        void updateThreshold(bool actualTaken, std::pair<bool, int> prediction);
+
+      private:
+        float threshold = 0;
+
+        int TC = 0;
+
+        std::vector<bool> tagVec;
+
+        std::vector<std::vector<int>> scCntTable;
+
+        std::vector<unsigned> cntSizeTable {5, 5, 4, ,4 ,4 ,4 ,4 ,4};
+
+        std::vector<unsigned> shortHistLen {0, 3, 5, 8, 12, 19, 31, 49};
+
+        std::vector<unsigned> longHistLen {0, 0, 79, 0, 125, 0, 200, 0};
+    }
 };
 }
 
