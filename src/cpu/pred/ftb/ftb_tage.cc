@@ -489,19 +489,39 @@ FTBTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * when)
     }
 }
 
-std::pair<bool, int>
-FTBTAGE::StatisticalCorrector::getPrediction(Addr pc)
+bool
+FTBTAGE::StatisticalCorrector::aboveThreshold(int scSum, int tageCounterCentered)
 {
-    int M = scCntTable.size();
-    int countSum = 0;
-    for (int i = 0;i < M;i++) {
-        countSum += scCntTable[i].at(getIndex(pc, i));
+    return (scSum > (threshold - tageCounterCentered)) && (scSum + tageCounterCentered > 0) ||
+           (scSum < (-threshold - tageCounterCentered)) && (scSum + tageCounterCentered < 0);
+}
+
+bool
+FTBTAGE::StatisticalCorrector::getPrediction(bool tageTaken, int tageCounter)
+{
+    int scSum = 0;
+    for (int i = 0;i < scCntTable.size();i++) {
+        scSum += 2 * scCntTable[getIndex(i)] + 1;
     }
 
-    float S = ((float) M) / 2 + countSum;
-    bool sign = S >= 0;
+    int tageCounterCentered = (2 * (tageCounter - 4) + 1) * 8;
+    
+    if (aboveThreshold(scSum, tageCounterCentered))
+        return (scSum + tageCounterCentered) >= 0;
+    else
+        return tageTaken;
+}
 
-    return std::make_pair(sign, S);
+bool
+FTBTAGE::StatisticalCorrector::satPos(int &counter, int counterBits)
+{
+    return counter == ((1 << counterBits) - 1);
+}
+
+bool
+FTBTAGE::StatisticalCorrector::satNeg(int &counter, int counterBits)
+{
+    return counter == 0;
 }
 
 Addr
@@ -511,37 +531,56 @@ FTBTAGE::StatisticalCorrector::getIndex(Addr pc, int table)
 }
 
 void
-FTBTAGE::StatisticalCorrector::updateGEHL(bool actualTaken, std::pair<bool, int> prediction, Addr pc)
+FTBTAGE::StatisticalCorrector::counterUpdate(int &ctr, int nbits, bool taken)
 {
-    if (actualTaken != prediction.first || std::abs(prediction.second) <= threshold) {
-        for (int i = 0;i < scCntTable.size();i++) {
-            auto &entry = scCntTable[i].at(getIndex(pc, i));
-            int maxCounter = std::pow(2, cntSizeTable.at(i)) / 2 - 1;
-            int minCounter = -(std::pow(2, cntSizeTable.at(i)) / 2);
-            if (actualTaken) {
-                entry = std::min(maxCounter, entry + 1);
-            } else {
-                entry = std::max(minCounter, entry - 1);
-            }
-        }
+    if (taken) {
+		if (ctr < ((1 << nbits) - 1))
+			ctr++;
+	} else {
+		if (ctr > 0)
+			ctr--;
     }
 }
 
 void
-FTBTAGE::StatisticalCorrector::updateThreshold(bool actualTaken, std::pair<bool, int> prediction)
+FTBTAGE::StatisticalCorrector::updateThreshold(bool actualTaken)
 {
-    if (actualTaken != prediction.first) {
-        TC = std::min(std::pow(2, 7) / 2 - 1, TC + 1);
-        if (TC > ??) {
-            threshold++;
-            TC = 0;
-        }
+    // update counter
+    int tempTC = TC;
+    counterUpdate(tempTC, TCWidth, actualTaken);
+    if (satPos(tempTC, TCWidth) || satNeg(tempTC, TCWidth)) {
+        TC = neutralVal;
+    } else {
+        TC = tempTC;
     }
-    if (actualTaken != prediction.first && std::abs(prediction.second) <= threshold) {
-        TC = std::max(-(std::pow(2, 7) / 2), TC - 1);
-        if (TC < ??) {
-            threshold--;
-            TC = 0;
+
+    // update threshold
+    if (satPos(TC, TCWidth) && threshold <= maxThres) {
+        threshold += 2;
+    } else if (satNeg(TC, TCWidth) && threshold >= minThres) {
+        threshold -= 2;
+    }
+}
+
+void
+FTBTAGE::StatisticalCorrector::update(bool scPred, bool tagePred, bool actualTaken,
+                                      const std::vector<int> scOldCounters, int tageOldCounter)
+{
+    int scSum = 0;
+    for (int i = 0;i < scOldCounters.size();i++) {
+        scSum += 2 * scOldCounters[i] + 1;
+    }
+
+    int tageCounterCentered = (2 * (tageOldCounter - 4) + 1) * 8;
+    int totalSum = scSum + tageCounterCentered;
+
+    if (scPred != tagePred && std::abs(totalSum) >= threshold - 4 && std::abs(totalSum) <= threshold -2) {
+        updateThreshold(scPred != actualTaken);
+    }
+
+    if (scPred != actualTaken || std::abs(totalSum) < (21 + 8 * threshold)) {
+        for (int i = 0;i < scCntTable.size();i++) {
+            counterUpdate(scCntTable[getIndex(i)], scCounterWidth, actualTaken);
         }
     }
 }

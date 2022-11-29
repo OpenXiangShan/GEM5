@@ -179,6 +179,10 @@ class FTBTAGE : public TimedBaseFTBPredictor
 
     TageMeta meta;
 
+    std::vector<Addr> tageIndex;
+
+    std::vector<Addr> tageTag;
+
 public:
 
     void recoverFoldedHist(const bitset& history);
@@ -193,22 +197,36 @@ public:
           for (int i = 0; i < 8; i++) {
             scCntTable[i].resize(2048);
           }
+
+          // initial theshold
+          threshold = 6;
+          TC = neutralVal;
         };
 
       public:
         Addr getIndex(Addr pc, int table);
 
-        void updateGEHL(bool actualTaken, std::pair<bool, int> prediction,
-                        Addr pc);
+        bool getPrediction(bool tageTaken, int tageCounter);
 
-        std::pair<bool, float> getPrediction(Addr pc);
+        void updateThreshold(bool actualTaken);
 
-        void updateThreshold(bool actualTaken, std::pair<bool, int> prediction);
+        void update(bool scPred, bool tagePred, bool actualTaken,
+                    const std::vector<int> scOldCounters, int tageOldCounter);
 
       private:
-        float threshold = 0;
+        int scCounterWidth = 6;
+
+        int threshold;
+
+        int minThres = 5;
+
+        int maxThres = 31;
 
         int TC = 0;
+
+        int TCWidth = 6;
+
+        int neutralVal = 1 << (TCWidth - 1);
 
         std::vector<bool> tagVec;
 
@@ -219,6 +237,14 @@ public:
         std::vector<unsigned> shortHistLen {0, 3, 5, 8, 12, 19, 31, 49};
 
         std::vector<unsigned> longHistLen {0, 0, 79, 0, 125, 0, 200, 0};
+
+        bool satPos(int &counter, int counterBits);
+
+        bool satNeg(int &counter, int counterBits);
+
+        void counterUpdate(int &ctr, int nbits, bool taken);
+
+        bool aboveThreshold(int scSum, int tageCounterCentered);
     }
 };
 }
