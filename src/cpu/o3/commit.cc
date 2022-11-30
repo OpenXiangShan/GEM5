@@ -45,6 +45,8 @@
 #include <set>
 #include <string>
 
+#include "arch/riscv/regs/misc.hh"
+#include "arch/riscv/faults.hh"
 #include "base/compiler.hh"
 #include "base/loader/symtab.hh"
 #include "base/logging.hh"
@@ -60,6 +62,7 @@
 #include "debug/Activity.hh"
 #include "debug/Commit.hh"
 #include "debug/CommitRate.hh"
+#include "debug/Diff.hh"
 #include "debug/Drain.hh"
 #include "debug/ExecFaulting.hh"
 #include "debug/HtmCpu.hh"
@@ -1279,8 +1282,8 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         commitStatus[tid] = TrapPending;
 
         DPRINTF(Commit,
-            "[tid:%i] [sn:%llu] Committing instruction with fault\n",
-            tid, head_inst->seqNum);
+            "[tid:%i] [sn:%llu] %s Committing instruction with fault\n",
+            tid, head_inst->seqNum, head_inst->staticInst->disassemble(head_inst->pcState().instAddr()).c_str());
         if (head_inst->traceData) {
             // We ignore ReExecution "faults" here as they are not real
             // (architectural) faults but signal flush/replays.
@@ -1294,6 +1297,30 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
             }
             delete head_inst->traceData;
             head_inst->traceData = NULL;
+        }
+
+        auto priv = cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_PRV, tid);
+        RegVal cause = 0;
+        if (priv == RiscvISA::PRV_M) {
+            DPRINTF(Commit, "Force to raise exception at machine mode\n");
+            cause = cpu->readMiscReg(RiscvISA::MiscRegIndex::MISCREG_MCAUSE, tid);
+        } else if (priv == RiscvISA::PRV_S) {
+            DPRINTF(Commit, "Force to raise exception at supvs mode\n");
+            cause = cpu->readMiscReg(RiscvISA::MiscRegIndex::MISCREG_SCAUSE, tid);
+        } else {
+            DPRINTF(Commit, "Force to raise exception at user mode\n");
+            assert(priv == RiscvISA::PRV_U);
+            cause = cpu->readMiscReg(RiscvISA::MiscRegIndex::MISCREG_UCAUSE, tid);
+        }
+        if (cause == RiscvISA::ExceptionCode::LOAD_PAGE ||
+            cause == RiscvISA::ExceptionCode::STORE_PAGE ||
+            cause == RiscvISA::ExceptionCode::INST_PAGE) {
+            DPRINTF(Commit, "Force to raise No.%lu exception at page fault\n", cause);
+            cpu->setGuideExecInfo(
+                cause,
+                cpu->readMiscReg(RiscvISA::MiscRegIndex::MISCREG_MTVAL, tid),
+                cpu->readMiscReg(RiscvISA::MiscRegIndex::MISCREG_STVAL, tid),
+                false, 0);
         }
 
         // Generate trap squash event.

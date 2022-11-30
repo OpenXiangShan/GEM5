@@ -179,7 +179,11 @@ void
 m5exit(ThreadContext *tc, Tick delay)
 {
     DPRINTF(PseudoInst, "pseudo_inst::m5exit(%i)\n", delay);
-    if (DistIface::readyToExit(delay)) {
+    auto *sys = tc->getSystemPtr();
+    if (FullSystem && sys->xiangshanSystem) {
+        exitSimLoopNow("m5_exit instruction encountered when simulating XS", 0, 0, false);
+
+    } else if (DistIface::readyToExit(delay)) {
         Tick when = curTick() + delay * sim_clock::as_int::ns;
         exitSimLoop("m5_exit instruction encountered", 0, when, 0, true);
     }

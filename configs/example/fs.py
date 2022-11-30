@@ -84,6 +84,7 @@ def build_test_system(np):
         if args.xiangshan_system:
             test_sys = makeBareMetalXiangshanSystem(test_mem_mode, bm[0],
                                                     cmdline=cmdline)
+            test_sys.xiangshan_system = True
         else:
             test_sys = makeBareMetalRiscvSystem(test_mem_mode, bm[0],
                                                 cmdline=cmdline)

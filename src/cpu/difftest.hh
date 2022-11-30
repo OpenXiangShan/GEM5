@@ -60,6 +60,17 @@ struct DynamicConfig
     bool debug_difftest;
 };
 
+struct ExecutionGuide {
+    // force raise exception
+    bool force_raise_exception;
+    uint64_t exception_num;
+    uint64_t mtval;
+    uint64_t stval;
+    // force set jump target
+    bool force_set_jump_target;
+    uint64_t jump_target;
+};
+
 struct DiffState
 {
     // Regs and mode for single step difftest
@@ -86,6 +97,8 @@ struct DiffState
     int cpu_id;
     struct DynamicConfig dynamic_config;
     bool will_handle_intr;
+
+    ExecutionGuide guide;
 };
 
 class RefProxy

@@ -1145,6 +1145,7 @@ InstructionQueue::wakeDependents(const DynInstPtr &completed_inst)
         // Mark the scoreboard as having that register ready.
         regScoreboard[dest_reg->flatIndex()] = true;
     }
+
     return dependents;
 }
 

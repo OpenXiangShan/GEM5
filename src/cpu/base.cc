@@ -841,6 +841,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         diffAllStates->diff.will_handle_intr = false;
     }
     // difftest step start
+    DPRINTF(Diff, "Step NEMU\n");
     diffAllStates->proxy->exec(1);
     diffAllStates->proxy->regcpy(diffAllStates->diff.nemu_reg, REF_TO_DIFFTEST);
 
@@ -885,6 +886,8 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                 gem5_pc);
         if (!diff_at) {
             diff_at = PCDiff;
+            DPRINTF(Diff, "GEM5 pc: %#lx, NEMU npc: %#lx\n", gem5_pc,
+                    diffAllStates->diff.npc);
             if (diffAllStates->diff.npc == gem5_pc) {
                 npc_match = true;
             }
@@ -907,6 +910,13 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
 
             DPRINTF(Diff, "At %s Ref value: %#lx, GEM5 value: %#lx\n",
                     reg_name[dest_tag], nemu_val, gem5_val);
+
+            if (diffInfo.inst->isLoad()) {
+                DPRINTF(Diff, "Load addr: %#lx\n", diffInfo.physEffAddr);
+            }
+            if (diffInfo.inst->isStore()) {
+                DPRINTF(Diff, "Store addr: %#lx\n", diffInfo.physEffAddr);
+            }
             if (gem5_val != nemu_val) {
                 if (dest.isFloatReg() &&
                     (gem5_val ^ nemu_val) == ((0xffffffffULL) << 32)) {
@@ -1085,6 +1095,45 @@ BaseCPU::difftestRaiseIntr(uint64_t no)
     diffAllStates->proxy->raise_intr(no);
 }
 
+void
+BaseCPU::clearGuideExecInfo()
+{
+    diffAllStates->diff.guide.force_raise_exception = false;
+    diffAllStates->diff.guide.force_set_jump_target = false;
+}
+
+void
+BaseCPU::enableDiffPrint()
+{
+    diffAllStates->diff.dynamic_config.debug_difftest = true;
+    diffAllStates->proxy->update_config(&diffAllStates->diff.dynamic_config);
+}
+
+void
+BaseCPU::setGuideExecInfo(uint64_t exception_num, uint64_t mtval,
+                          uint64_t stval, bool force_set_jump_target,
+                          uint64_t jump_target)
+{
+    auto &gd = diffAllStates->diff.guide;
+    gd.force_raise_exception = true;
+    gd.exception_num = exception_num;
+    gd.mtval = mtval;
+    gd.stval = stval;
+    gd.force_set_jump_target = force_set_jump_target;
+    gd.jump_target = jump_target;
+
+    // diffAllStates->diff.dynamic_config.debug_difftest = true;
+    // diffAllStates->proxy->update_config(&diffAllStates->diff.dynamic_config);
+
+    diffAllStates->proxy->guided_exec(&(diffAllStates->diff.guide));
+
+    diffAllStates->proxy->regcpy(diffAllStates->diff.nemu_reg, REF_TO_DIFFTEST);
+    diffAllStates->diff.nemu_this_pc = diffAllStates->diff.nemu_reg[DIFFTEST_THIS_PC];
+    DPRINTF(Diff, "After guided exec on NEMU, new PC: %#lx\n", diffAllStates->diff.nemu_this_pc);
+
+    // diffAllStates->diff.dynamic_config.debug_difftest = false;
+    // diffAllStates->proxy->update_config(&diffAllStates->diff.dynamic_config);
+}
 
 
 } // namespace gem5
