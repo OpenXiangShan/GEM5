@@ -137,12 +137,16 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
 
     branchPred = params.branchPred;
 
-    if (isDecoupledFrontend) {
-        dbsp = dynamic_cast<branch_prediction::stream_pred::DecoupledBPU*>(branchPred);
+    if (isStreamPred()) {
+        dbsp = dynamic_cast<branch_prediction::stream_pred::DecoupledStreamBPU*>(branchPred);
+        dbpftb = nullptr;
         assert(dbsp);
         usedUpFetchTargets = true;
-    } else {
+    } else if (isFTBPred()) {
         dbsp = nullptr;
+        dbpftb = dynamic_cast<branch_prediction::ftb_pred::DecoupledBPUWithFTB*>(branchPred);
+        assert(dbpftb);
+        usedUpFetchTargets = true;
     }
 
     assert(params.decoder.size());
@@ -358,8 +362,10 @@ Fetch::resetStage()
     _status = Inactive;
     loopBuffer.deactivate();
 
-    if (isDecoupledFrontend) {
+    if (isStreamPred()) {
         dbsp->resetPC(pc[0]->instAddr());
+    } else if (isFTBPred()) {
+        dbpftb->resetPC(pc[0]->instAddr());
     }
 }
 
@@ -551,36 +557,36 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
 
     //  BP  =>  FSQ  =>  FTB  => Fetch
     ThreadID tid = inst->threadNumber;
-    if (isDecoupledFrontend) {
-        if (dbpType == DBP_STREAM_PRED) {
+    if (isDecoupledFrontend()) {
+        if (isStreamPred()) {
             std::tie(predict_taken, usedUpFetchTargets) =
                 dbsp->decoupledPredict(
                     inst->staticInst, inst->seqNum, next_pc, tid);
             if (usedUpFetchTargets) {
                 DPRINTF(DecoupleBP, "Used up fetch targets.\n");
             }
-        } else if (dbpType == DBP_FTB_PRED) {
+        }
+        else if (isFTBPred()) {
             std::tie(predict_taken, usedUpFetchTargets) =
                 dbpftb->decoupledPredict(
                     inst->staticInst, inst->seqNum, next_pc, tid);
             if (usedUpFetchTargets) {
                 DPRINTF(DecoupleBP, "Used up fetch targets.\n");
             }
-        } else {
-            panic("Unknown decoupled branch predictor type.");
         }
+
     }
 
     // For decoupled frontend, the instruction type is predicted with BTB
-    if ((isDecoupledFrontend && !predict_taken) ||
-        (!isDecoupledFrontend && !inst->isControl())) {
+    if ((isDecoupledFrontend() && !predict_taken) ||
+        (!isDecoupledFrontend() && !inst->isControl())) {
         inst->staticInst->advancePC(next_pc);
         inst->setPredTarg(next_pc);
         inst->setPredTaken(false);
         return false;
     }
 
-    if (!isDecoupledFrontend) {
+    if (!isDecoupledFrontend()) {
         predict_taken = branchPred->predict(inst->staticInst, inst->seqNum,
                                             next_pc, tid);
     }
@@ -1043,17 +1049,14 @@ Fetch::tick()
     // Reset the number of the instruction we've fetched.
     numInst = 0;
 
-    if (isDecoupledFrontend) {
-        if (dbpType == DBP_STREAM_PRED) {
-            assert(dbsp);
-            dbsp->tick();
-            usedUpFetchTargets = !dbsp->trySupplyFetchWithTarget(pc[0]->instAddr());
-        } else if (dbpType == DBP_FTB_PRED) {
-            assert(dbpftb);
-            dbpftb->tick();
-        } else {
-            panic("Unknown DBP type");
-        }
+    if (isStreamPred()) {
+        assert(dbsp);
+        dbsp->tick();
+        usedUpFetchTargets = !dbsp->trySupplyFetchWithTarget(pc[0]->instAddr());
+    } else if (isFTBPred()) {
+        assert(dbpftb);
+        dbpftb->tick();
+        usedUpFetchTargets = !dbpftb->trySupplyFetchWithTarget(pc[0]->instAddr());
     }
 }
 
@@ -1084,7 +1087,7 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
         // If it was a branch mispredict on a control instruction, update the
         // branch predictor with that instruction, otherwise just kill the
         // invalid state we generated in after sequence number
-        if (!isDecoupledFrontend) {
+        if (!isDecoupledFrontend()) {
             if (fromCommit->commitInfo[tid].mispredictInst &&
                 fromCommit->commitInfo[tid].mispredictInst->isControl()) {
                 branchPred->squash(fromCommit->commitInfo[tid].doneSeqNum,
@@ -1098,18 +1101,36 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
             auto mispred_inst = fromCommit->commitInfo[tid].mispredictInst;
             // TODO: write dbpftb conditions
             if (mispred_inst) {
-                dbsp->controlSquash(
-                    mispred_inst->getFtqId(), mispred_inst->getFsqId(),
-                    mispred_inst->pcState(), *fromCommit->commitInfo[tid].pc,
-                    mispred_inst->staticInst, mispred_inst->getInstBytes(),
-                    fromCommit->commitInfo[tid].branchTaken,
-                    mispred_inst->seqNum, tid);
+                if (isStreamPred()) {
+                    dbsp->controlSquash(
+                        mispred_inst->getFtqId(), mispred_inst->getFsqId(),
+                        mispred_inst->pcState(), *fromCommit->commitInfo[tid].pc,
+                        mispred_inst->staticInst, mispred_inst->getInstBytes(),
+                        fromCommit->commitInfo[tid].branchTaken,
+                        mispred_inst->seqNum, tid);
+                } else if (isFTBPred()) {
+                    dbpftb->controlSquash(
+                        mispred_inst->getFtqId(), mispred_inst->getFsqId(),
+                        mispred_inst->pcState(), *fromCommit->commitInfo[tid].pc,
+                        mispred_inst->staticInst, mispred_inst->getInstBytes(),
+                        fromCommit->commitInfo[tid].branchTaken,
+                        mispred_inst->seqNum, tid);
+                }
             } else if (fromCommit->commitInfo[tid].isTrapSquash) {
-                dbsp->trapSquash(
-                    fromCommit->commitInfo[tid].squashedTargetId,
-                    fromCommit->commitInfo[tid].squashedStreamId,
-                    fromCommit->commitInfo[tid].committedPC,
-                    *fromCommit->commitInfo[tid].pc, tid);
+                if (isStreamPred()) {
+                    dbsp->trapSquash(
+                        fromCommit->commitInfo[tid].squashedTargetId,
+                        fromCommit->commitInfo[tid].squashedStreamId,
+                        fromCommit->commitInfo[tid].committedPC,
+                        *fromCommit->commitInfo[tid].pc, tid);
+                } else if (isFTBPred()) {
+                    dbpftb->trapSquash(
+                        fromCommit->commitInfo[tid].squashedTargetId,
+                        fromCommit->commitInfo[tid].squashedStreamId,
+                        fromCommit->commitInfo[tid].committedPC,
+                        *fromCommit->commitInfo[tid].pc, tid);
+                }
+
 
             } else {
                 if (fromCommit->commitInfo[tid].pc &&
@@ -1117,10 +1138,17 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
                     DPRINTF(
                         DecoupleBP,
                         "Squash with stream id and target id from IEW\n");
-                    dbsp->nonControlSquash(
-                        fromCommit->commitInfo[tid].squashedTargetId,
-                        fromCommit->commitInfo[tid].squashedStreamId,
-                        *fromCommit->commitInfo[tid].pc, 0, tid);
+                    if (isStreamPred()) {
+                        dbsp->nonControlSquash(
+                            fromCommit->commitInfo[tid].squashedTargetId,
+                            fromCommit->commitInfo[tid].squashedStreamId,
+                            *fromCommit->commitInfo[tid].pc, 0, tid);
+                    } else if (isFTBPred()) {
+                        dbpftb->nonControlSquash(
+                            fromCommit->commitInfo[tid].squashedTargetId,
+                            fromCommit->commitInfo[tid].squashedStreamId,
+                            *fromCommit->commitInfo[tid].pc, 0, tid);
+                    }
                 } else {
                     DPRINTF(
                         DecoupleBP,
@@ -1133,19 +1161,17 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
     } else if (fromCommit->commitInfo[tid].doneSeqNum) {
         // Update the branch predictor if it wasn't a squashed instruction
         // that was broadcasted.
-        if (!isDecoupledFrontend) {
+        if (!isDecoupledFrontend()) {
             branchPred->update(fromCommit->commitInfo[tid].doneSeqNum, tid);
         } else {
             DPRINTF(DecoupleBP, "Commit stream Id: %lu\n",
                     fromCommit->commitInfo[tid].doneFsqId);
-            if (dbpType == DBP_STREAM_PRED) {
+            if (isStreamPred()) {
                 assert(dbsp);
                 dbsp->update(fromCommit->commitInfo[tid].doneFsqId, tid);
-            } else if (dbpType == DBP_FTB_PRED) {
+            } else if (isFTBPred()) {
                 assert(dbpftb);
                 dbpftb->update(fromCommit->commitInfo[tid].doneFsqId, tid);
-            } else {
-                panic("Unknown DBP type");
             }
         }
     }
@@ -1156,7 +1182,7 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
                 "from decode.\n",tid);
 
         // Update the branch predictor.
-        if (!isDecoupledFrontend) {
+        if (!isDecoupledFrontend()) {
             if (fromDecode->decodeInfo[tid].branchMispredict) {
                 branchPred->squash(fromDecode->decodeInfo[tid].doneSeqNum,
                                    *fromDecode->decodeInfo[tid].nextPC,
@@ -1170,13 +1196,23 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
         } else {
             auto mispred_inst = fromDecode->decodeInfo[tid].mispredictInst;
             if (fromDecode->decodeInfo[tid].branchMispredict) {
-                dbsp->controlSquash(
-                    mispred_inst->getFtqId(), mispred_inst->getFsqId(),
-                    mispred_inst->pcState(),
-                    *fromDecode->decodeInfo[tid].nextPC,
-                    mispred_inst->staticInst, mispred_inst->getInstBytes(),
-                    fromDecode->decodeInfo[tid].branchTaken,
-                    mispred_inst->seqNum, tid);
+                if (isStreamPred()) {
+                    dbsp->controlSquash(
+                        mispred_inst->getFtqId(), mispred_inst->getFsqId(),
+                        mispred_inst->pcState(),
+                        *fromDecode->decodeInfo[tid].nextPC,
+                        mispred_inst->staticInst, mispred_inst->getInstBytes(),
+                        fromDecode->decodeInfo[tid].branchTaken,
+                        mispred_inst->seqNum, tid);
+                } else if (isFTBPred()) {
+                    dbpftb->controlSquash(
+                        mispred_inst->getFtqId(), mispred_inst->getFsqId(),
+                        mispred_inst->pcState(),
+                        *fromDecode->decodeInfo[tid].nextPC,
+                        mispred_inst->staticInst, mispred_inst->getInstBytes(),
+                        fromDecode->decodeInfo[tid].branchTaken,
+                        mispred_inst->seqNum, tid);
+                }
             } else {
                 warn("Unexpected non-control squash from decode.\n");
             }
@@ -1250,13 +1286,17 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
     DPRINTF(Fetch, "[tid:%i] Instruction is: %s\n", tid,
             instruction->staticInst->disassemble(this_pc.instAddr()));
 
-    if (isDecoupledFrontend) {
-        DPRINTF(DecoupleBP, "Set instruction %lu with stream id %lu, fetch id %lu\n",
-                instruction->seqNum, dbsp->getSupplyingStreamId(), dbsp->getSupplyingTargetId());
-        instruction->setFsqId(dbsp->getSupplyingStreamId());
-        // FTB only use fsq (same as ftq in nanhu)
-        if (dbpType == DBP_STREAM_PRED) {
+    if (isDecoupledFrontend()) {
+        if (isStreamPred()) {
+            DPRINTF(DecoupleBP, "Set instruction %lu with stream id %lu, fetch id %lu\n",
+                    instruction->seqNum, dbsp->getSupplyingStreamId(), dbsp->getSupplyingTargetId());
+            instruction->setFsqId(dbsp->getSupplyingStreamId());
             instruction->setFtqId(dbsp->getSupplyingTargetId());
+        } else if (isFTBPred()) {
+            DPRINTF(DecoupleBP, "Set instruction %lu with stream id %lu, fetch id %lu\n",
+                    instruction->seqNum, dbpftb->getSupplyingStreamId(), dbpftb->getSupplyingTargetId());
+            instruction->setFsqId(dbpftb->getSupplyingStreamId());
+            instruction->setFtqId(dbpftb->getSupplyingTargetId());
         }
     }
 
@@ -1311,9 +1351,18 @@ Fetch::fetch(bool &status_change)
         return;
     }
 
-    if (!dbsp->fetchTargetAvailable()) {
-        DPRINTF(Fetch, "Skip fetch when FTQ head is not available\n");
-        return;
+    if (isDecoupledFrontend()) {
+        if (isStreamPred()) {
+            if (!dbsp->fetchTargetAvailable()) {
+                DPRINTF(Fetch, "Skip fetch when FTQ head is not available\n");
+                return;
+            }
+        } else if (isFTBPred()) {
+            if (!dbpftb->fetchTargetAvailable()) {
+                DPRINTF(Fetch, "Skip fetch when FTQ head is not available\n");
+                return;
+            }
+        }
     }
 
     DPRINTF(Fetch, "Attempting to fetch from [tid:%i]\n", tid);
@@ -1326,12 +1375,14 @@ Fetch::fetch(bool &status_change)
 
     bool in_rom = isRomMicroPC(this_pc.microPC());
 
-    const auto &ftq_head = dbsp->getSupplyingFetchTarget();
+    if (isStreamPred()) {
+        const auto &ftq_head = dbsp->getSupplyingFetchTarget();
 
-    if (enableLoopBuffer && !loopBuffer.isActive() && ftq_head.taken) {
-        // don't touch the state when already in loop buf
-        // look up loop buffer: whether current FTQe is loop
-        loopBuffer.tryActivateLoop(ftq_head.takenPC, ftq_head.predLoopIteration);
+        if (enableLoopBuffer && !loopBuffer.isActive() && ftq_head.taken) {
+            // don't touch the state when already in loop buf
+            // look up loop buffer: whether current FTQe is loop
+            loopBuffer.tryActivateLoop(ftq_head.takenPC, ftq_head.predLoopIteration);
+        }
     }
 
     // If returning from the delay of a cache miss, then update the status
@@ -1517,7 +1568,7 @@ Fetch::fetch(bool &status_change)
 
             // If we're branching after this instruction, quit fetching
             // from the same block.
-            if (!isDecoupledFrontend) {
+            if (!isDecoupledFrontend()) {
                 predictedBranch |= this_pc.branching();
             }
             predictedBranch |= lookupAndUpdateNextPC(instruction, *next_pc);

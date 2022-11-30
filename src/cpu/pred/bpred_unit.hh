@@ -46,10 +46,11 @@
 
 #include "base/statistics.hh"
 #include "base/types.hh"
+#include "cpu/inst_seq.hh"
+#include "cpu/pred/bp_type.hh"
 #include "cpu/pred/btb.hh"
 #include "cpu/pred/indirect.hh"
 #include "cpu/pred/ras.hh"
-#include "cpu/inst_seq.hh"
 #include "cpu/static_inst.hh"
 #include "params/BranchPredictor.hh"
 #include "sim/probe/pmu.hh"
@@ -196,6 +197,13 @@ class BPredUnit : public SimObject
 
 
     void dump();
+
+    BpType bpType;
+    bool isDecoupled() const { return bpType == DecoupledStreamType || bpType == DecoupledFTBType; }
+    bool isStream() const { return bpType == DecoupledStreamType; }
+    bool isFTB() const { return bpType == DecoupledFTBType; }
+
+  private:
 
   protected:
 

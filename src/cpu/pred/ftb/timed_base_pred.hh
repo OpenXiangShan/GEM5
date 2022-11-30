@@ -32,7 +32,7 @@ class TimedBaseFTBPredictor: public SimObject
     // make predictions, record in stage preds
     virtual void putPCHistory(Addr startAddr,
                               const boost::dynamic_bitset<> &history,
-                              std::array<FullFTBPrediction> &stagePreds) {}
+                              std::array<FullFTBPrediction, 3> &stagePreds) {}
 
     virtual void specUpdateHist(const boost::dynamic_bitset<> &history, FullFTBPrediction &pred) {}
     virtual unsigned getDelay() {return 0;}

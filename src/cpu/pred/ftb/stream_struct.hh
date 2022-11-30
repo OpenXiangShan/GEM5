@@ -3,10 +3,12 @@
 
 #include <boost/dynamic_bitset.hpp>
 
+#include "arch/generic/pcstate.hh"
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/pred/ftb/stream_common.hh"
-#include "cpu/pred/ftb/ftb.hh"
+#include "cpu/static_inst.hh"
+// #include "cpu/pred/ftb/ftb.hh"
 
 namespace gem5 {
 
@@ -29,7 +31,8 @@ enum SquashType {
     SQUASH_CTRL
 };
 
-struct BranchInfo {
+
+typedef struct BranchInfo {
     Addr pc;
     Addr target;
     bool isCond;
@@ -37,9 +40,55 @@ struct BranchInfo {
     bool isCall;
     bool isReturn;
     uint8_t size;
-    bool isUncond() { return !isCond; }
+    bool isUncond() { return !this->isCond; }
     BranchInfo() : pc(0), target(0), isCond(false), isIndirect(false), isCall(false), isReturn(false), size(0) {}
-};
+    BranchInfo (const PCStateBase &control_pc,
+                const PCStateBase &target_pc,
+                const StaticInstPtr &static_inst,
+                unsigned size) :
+        pc(control_pc.instAddr()),
+        target(target_pc.instAddr()),
+        isCond(static_inst->isCondCtrl()),
+        isIndirect(static_inst->isIndirectCtrl()),
+        isCall(static_inst->isCall()),
+        isReturn(static_inst->isReturn()),
+        size(size) {}
+    // BranchInfo(FTBSlot _e) : pc(_e.pc), target(_e.target), isCond(_e.isCond), isIndirect(_e.isIndirect), isCall(_e.isCall), isReturn(_e.isReturn), size(_e.size) {}
+}BranchInfo;
+
+
+typedef struct FTBSlot : BranchInfo
+{
+    bool valid;
+    bool uncondValid() { return this->isUncond() && this->valid; }
+    bool condValid() { return this->isCond && this->valid;}
+    FTBSlot() : valid(false) {}
+    BranchInfo getBranchInfo() { return BranchInfo(*this); }
+}FTBSlot;
+
+typedef struct FTBEntry
+{
+    /** The entry's tag. */
+    // TODO: limit width to tagBits
+    Addr tag = 0;
+
+    // TODO: parameterzie numBr
+    /** The entry's branch info. */
+    std::array<FTBSlot, 2> slots;
+
+    /** The entry's fallthrough address. */
+    Addr fallThruAddr;
+
+    /** The entry's thread id. */
+    ThreadID tid;
+
+    /** Whether or not the entry is valid. */
+    bool valid = false;
+    // TODO: always taken
+    FTBEntry(): slots{FTBSlot(), FTBSlot()}, fallThruAddr(0), tid(0), valid(false) {}
+}FTBEntry;
+
+
 
 struct BlockDecodeInfo {
     std::vector<bool> condMask;
@@ -86,7 +135,7 @@ using PredictionID = uint64_t;
 
 // NOTE: now this corresponds to an ftq entry in
 //       XiangShan nanhu architecture
-struct FetchStream
+typedef struct FetchStream
 {
     Addr startPC;
 
@@ -99,12 +148,15 @@ struct FetchStream
     // TODO: use PCState for target(gem5 specific)
     BranchInfo predBranchInfo;
     // record predicted FTB entry
+    bool isHit;
     FTBEntry predFTBEntry;
+
+    bool sentToICache;
 
     // for commit, write at redirect or fetch
     // bool exeEnded;
     bool exeTaken;
-    Addr exeEndPC;
+    // Addr exeEndPC;
     // TODO: use PCState for target(gem5 specific)
     BranchInfo exeBranchInfo;
     // TODO: remove signals below
@@ -112,7 +164,6 @@ struct FetchStream
 
     int squashType;
     // int tripCount;
-    bool isHit;
     // bool useLoopPrediction;
     // bool isLoop;
     // Addr loopTarget;
@@ -134,17 +185,18 @@ struct FetchStream
         //   predTarget(0),
         //   predBranchPC(0),
           predBranchInfo(BranchInfo()),
+          isHit(false),
           predFTBEntry(FTBEntry()),
+          sentToICache(false),
         //   exeEnded(false),
           exeTaken(false),
-          exeEndPC(0),
+        //   exeEndPC(0),
         //   exeTarget(0),
         //   exeBranchPC(0),
           exeBranchInfo(BranchInfo()),
           resolved(false),
           squashType(SquashType::SQUASH_NONE),
         //   tripCount(-1),
-          isHit(false),
         //   useLoopPrediction(false),
         //   isLoop(false),
         //   loopTarget(0),
@@ -157,7 +209,7 @@ struct FetchStream
     void setDefaultResolve() {
         resolved = false;
         // exeEnded = predEnded;
-        exeEndPC = predEndPC;
+        // exeEndPC = predEndPC;
         // exeTarget = predTarget;
         // exeBranchPC = predBranchPC;
         exeBranchInfo = predBranchInfo;
@@ -165,17 +217,18 @@ struct FetchStream
     }
 
     // bool getEnded() const { return resolved ? exeEnded : predEnded; }
-    Addr getControlPC() const { return resolved ? exeBranchInfo.pc : predBranchInfo.pc; }
-    Addr getEndPC() const { return resolved ? exeEndPC : predEndPC; }
+    BranchInfo getBranchInfo() const { return resolved ? exeBranchInfo : predBranchInfo; }
+    Addr getControlPC() const { return getBranchInfo().pc }
+    // Addr getEndPC() const { return resolved ? exeEndPC : predEndPC; }
     Addr getTaken() const { return resolved ? exeTaken : predTaken; }
-    Addr getTakenTarget() const { return resolved ? exeBranchInfo.target : predBranchInfo.target; }
-    Addr getFallThruPC() const { return getEndPC(); }
-    Addr getNextStreamStart() const {return getTaken() ? getTakenTarget() : getFallThruPC(); }
+    Addr getTakenTarget() const { return getBranchInfo().target; }
+    // Addr getFallThruPC() const { return getEndPC(); }
+    // Addr getNextStreamStart() const {return getTaken() ? getTakenTarget() : getFallThruPC(); }
     // bool isCall() const { return endType == END_CALL; }
     // bool isReturn() const { return endType == END_RET; }
-};
+}FetchStream;
 
-struct FullFTBPrediction
+typedef struct FullFTBPrediction
 {
     Addr bbStart;
     // Addr fallThru;
@@ -195,11 +248,12 @@ struct FullFTBPrediction
     unsigned predSource;
     boost::dynamic_bitset<> history;
 
-    bool isTaken() const {
+    bool isTaken() {
+        auto &ftbEntry = this->ftbEntry;
         if (valid) {
             for (int i = 0; i < 2; i++) {
                 if ((ftbEntry.slots[i].condValid() && condTakens[i]) ||
-                    ftbEntry.slots[i].uncondValid) {
+                    ftbEntry.slots[i].uncondValid()) {
                     return true;
                 }
             }
@@ -207,9 +261,60 @@ struct FullFTBPrediction
         return false;
     }
 
-    Addr controlAddr() const {
+    FTBSlot getTakenSlot() {
+        auto &ftbEntry = this->ftbEntry;
+        if (valid) {
+            for (int i = 0; i < 2; i++) {
+                if ((ftbEntry.slots[i].condValid() && condTakens[i]) ||
+                    ftbEntry.slots[i].uncondValid()) {
+                    return ftbEntry.slots[i];
+                }
+            }
+        }
+        return FTBSlot();
+    }
+
+    Addr getTarget() {
+        Addr target;
+        auto &ftbEntry = this->ftbEntry;
+        if (valid) {
+            for (int i = 0; i < 2; i++) {
+                if ((ftbEntry.slots[i].condValid() && condTakens[i]) ||
+                     ftbEntry.slots[i].uncondValid()) {
+                    target = ftbEntry.slots[i].target;
+                }
+            }
+            auto &tailSlot = ftbEntry.slots[2];
+            if (tailSlot.uncondValid()) {
+                if (tailSlot.isIndirect) {
+                    target = indirectTarget;
+                }
+                if (tailSlot.isReturn) {
+                    target = returnTarget;
+                }
+            }
+            target = ftbEntry.fallThruAddr;
+        } else {
+            target = bbStart + 32; //TODO: +predictWidth
+        }
+        return target;
+    }
+
+
+
+    Addr getFallThrough() {
+        auto &ftbEntry = this->ftbEntry;
+        if (valid) {
+            return ftbEntry.fallThruAddr;
+        } else {
+            return bbStart + 32; //TODO: +predictWidth
+        }
+    }
+
+    Addr controlAddr() {
+        auto &ftbEntry = this->ftbEntry;
         for (int i = 0; i < 2; i++) {
-            if (ftbEntry.slots[i].condValid() && condTakens(i)) {
+            if (ftbEntry.slots[i].condValid() && condTakens[i]) {
                 return ftbEntry.slots[i].pc;
             }
         }
@@ -231,16 +336,19 @@ struct FullFTBPrediction
                 // if this is invalid and chosen is valid, sure no match
                 return false;
             } else {
+                bool this_taken, other_taken;
+                int this_cond_num, other_cond_num;
+                std::tie(this_cond_num, this_taken) = this->getHistInfo();
+                std::tie(other_cond_num, other_taken) = other.getHistInfo();
+                Addr this_control_addr = this->controlAddr();
+                Addr other_control_addr = other.controlAddr();
+                Addr this_npc = this->getTarget();
+                Addr other_npc = other.getTarget();
                 // both this and chosen valid
-                if (this->isTaken != other.isTaken) {
-                    return false;
-                } else if (this->isTaken && other.isTaken) {
-                    // here bb.start is not a compare criteria, since ubtb and tage's bbStart is different
-                    return controlAddr == other.controlAddr && nextStream == other.nextStream;   // TODO consider endType and controlAddr
-                } else {
-                    return controlAddr == other.controlAddr && controlSize == other.controlSize && endType == other.endType;
-
-                }
+                return this_taken == other_taken &&
+                       this_control_addr == other_control_addr &&
+                       this_cond_num == other_cond_num &&
+                       this_npc == other_npc;
             }
         }
     }
@@ -265,9 +373,9 @@ struct FullFTBPrediction
         }
         return std::make_pair(shamt, taken);
     }
-};
+}FullFTBPrediction;
 
-// each entry corrsponds to a cache line
+// each entry corresponds to a 32Byte unaligned block
 struct FtqEntry
 {
     Addr startPC;

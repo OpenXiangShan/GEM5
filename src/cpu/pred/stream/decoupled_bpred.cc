@@ -28,6 +28,7 @@ DecoupledStreamBPU::DecoupledStreamBPU(const DecoupledStreamBPUParams &p)
     assert(streamTAGE);
     assert(streamUBTB);
 
+    bpType = DecoupledStreamType;
     numComponents = 2;
     components[0] = streamUBTB;
     components[1] = streamTAGE;
@@ -517,6 +518,7 @@ DecoupledStreamBPU::nonControlSquash(unsigned target_id, unsigned stream_id,
              "non control squash: start: %x, end: %x, target: %x\n", start,
              end_pc, next_stream_start);
 
+    // an ftq entry can contain instructions from multiple streams
     if (end_pc) {
         if (start <= inst_pc.instAddr() && inst_pc.instAddr() < end_pc) {
             // this pc is in the stream
@@ -563,6 +565,9 @@ DecoupledStreamBPU::nonControlSquash(unsigned target_id, unsigned stream_id,
     next_stream_start = stream.getNextStreamStart();
     // stream ptr might have been updated, so we need to update next stream start
 
+
+    // reuse previous prediction since this is not a misprediction
+    // thus we don't need to recover the history
     if (++it == fetchStreamQueue.end() && stream.getEnded()) {
         s0PC = next_stream_start;
         s0StreamStartPC = s0PC;

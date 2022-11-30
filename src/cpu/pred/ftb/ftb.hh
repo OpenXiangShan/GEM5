@@ -35,6 +35,8 @@
 #include "config/the_isa.hh"
 #include "cpu/pred/ftb/stream_struct.hh"
 #include "cpu/pred/ftb/timed_base_pred.hh"
+#include "params/DefaultFTB.hh"
+
 
 namespace gem5
 {
@@ -49,37 +51,11 @@ namespace ftb_pred
 class DefaultFTB : public TimedBaseFTBPredictor
 {
   private:
-    struct FTBSlot : public BranchInfo
-    {
-        bool valid;
-        bool uncondValid() { return isUncond() && valid; }
-        bool condValid() { return isCond && valid;}
-        FTBSlot() : valid(false) {}
-    };
-
-    struct FTBEntry
-    {
-        /** The entry's tag. */
-        // TODO: limit width to tagBits
-        Addr tag = 0;
-
-        // TODO: parameterzie numBr
-        /** The entry's branch info. */
-        std::array<FTBSlot, 2> slots;
-
-        /** The entry's fallthrough address. */
-        Addr fallThruAddr;
-
-        /** The entry's thread id. */
-        ThreadID tid;
-
-        /** Whether or not the entry is valid. */
-        bool valid = false;
-        // TODO: always taken
-        FTBEntry(): slots{FTBSlot(), FTBSlot()}, fallThruAddr(0), tid(0), valid(false) {}
-    };
 
   public:
+
+    typedef DefaultFTBParams Params;
+
     DefaultFTB(const Params& p);
 
     void tickStart() override;
@@ -87,9 +63,9 @@ class DefaultFTB : public TimedBaseFTBPredictor
     void tick() override;
 
     void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
-                      std::array<FullFTBPrediction> &stagePreds) {} override;
+                      std::array<FullFTBPrediction, 3> &stagePreds) override;
 
-    void specUpdateHist(const boost::dynamic_bitset<> &history, FullFTBPrediction &pred) {} override;
+    void specUpdateHist(const boost::dynamic_bitset<> &history, FullFTBPrediction &pred) override;
 
     unsigned getDelay() override {return 1;}
 

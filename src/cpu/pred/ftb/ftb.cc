@@ -26,10 +26,10 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "cpu/pred/ftb/ftb.hh"
 
 #include "base/intmath.hh"
 #include "base/trace.hh"
+#include "cpu/pred/ftb/ftb.hh"
 #include "debug/Fetch.hh"
 
 namespace gem5
@@ -41,15 +41,13 @@ namespace branch_prediction
 namespace ftb_pred
 {
 
-DefaultFTB::DefaultFTB(unsigned _numEntries,
-                       unsigned _tagBits,
-                       unsigned _instShiftAmt,
-                       unsigned _num_threads)
-    : numEntries(_numEntries),
-      tagBits(_tagBits),
-      instShiftAmt(_instShiftAmt),
-      log2NumThreads(floorLog2(_num_threads))
+DefaultFTB::DefaultFTB(const Params &p)
+    : TimedBaseFTBPredictor(p)
 {
+    numEntries = p.numEntries;
+    tagBits = p.tagBits;
+    instShiftAmt = p.instShiftAmt;
+    log2NumThreads = floorLog2(p.numThreads);
     DPRINTF(Fetch, "FTB: Creating FTB object.\n");
 
     if (!isPowerOf2(numEntries)) {
@@ -81,10 +79,9 @@ DefaultFTB::tick() {}
 void
 DefaultFTB::putPCHistory(Addr startAddr,
                          const boost::dynamic_bitset<> &history,
-                         std::array<FullFTBPrediction> &stagePreds)
+                         std::array<FullFTBPrediction, 3> &stagePreds)
 {
     // TODO: getting startAddr from pred is ugly
-    Addr pc = pred.bbStart;
     FTBEntry find_entry = lookup(startAddr, 0);
     bool hit = find_entry.valid;
     // assign prediction for s2 and later stages
@@ -169,10 +166,10 @@ DefaultFTB::update(Addr inst_pc, const PCStateBase &target, ThreadID tid)
 
     assert(ftb_idx < numEntries);
 
-    ftb[ftb_idx].tid = tid;
-    ftb[ftb_idx].valid = true;
-    set(ftb[ftb_idx].target, target);
-    ftb[ftb_idx].tag = getTag(inst_pc);
+    // ftb[ftb_idx].tid = tid;
+    // ftb[ftb_idx].valid = true;
+    // set(ftb[ftb_idx].target, target);
+    // ftb[ftb_idx].tag = getTag(inst_pc);
 }
 
 } // namespace ftb_pred

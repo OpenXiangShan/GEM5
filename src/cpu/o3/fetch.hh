@@ -430,9 +430,7 @@ class Fetch
 
     RequestPort &getInstPort() { return icachePort; }
 
-    branch_prediction::stream_pred::DecoupledStreamBPU * getDBSP() { return dbsp; }
-
-    branch_prediction::ftb_pred::DecoupledBPUWithFTB * getDBPFTB() { return dbpftb; }
+    branch_prediction::BPredUnit * getBp() { return branchPred; }
 
     void flushFetchBuffer();
 
@@ -463,7 +461,7 @@ class Fetch
     /** Profile the reasons of fetch stall. */
     void profileStall(ThreadID tid);
 
-    bool ftqEmpty() { return isDecoupledFrontend && usedUpFetchTargets; }
+    bool ftqEmpty() { return isDecoupledFrontend() && usedUpFetchTargets; }
 
   private:
     /** Pointer to the O3CPU. */
@@ -490,7 +488,7 @@ class Fetch
 
     /** BPredUnit. */
     branch_prediction::BPredUnit *branchPred;
-
+    
     branch_prediction::stream_pred::DecoupledStreamBPU *dbsp;
 
     branch_prediction::ftb_pred::DecoupledBPUWithFTB *dbpftb;
@@ -627,14 +625,11 @@ class Fetch
     FinishTranslationEvent finishTranslationEvent;
 
     /** Decoupled frontend related */
-    bool isDecoupledFrontend{true};
+    bool isDecoupledFrontend() { return branchPred->isDecoupled(); }
 
-    enum DBPType {
-      DBP_STREAM_PRED,
-      DBP_FTB_PRED
-    };
+    bool isStreamPred() { return branchPred->isStream(); }
 
-    DBPType dbpType{DBP_FTB_PRED};
+    bool isFTBPred() { return branchPred->isFTB(); }
 
     bool usedUpFetchTargets;
 

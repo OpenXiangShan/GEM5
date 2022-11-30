@@ -82,10 +82,10 @@ Commit::processTrapEvent(ThreadID tid)
     trapSquash[tid] = true;
 }
 
-Commit::Commit(CPU *_cpu, branch_prediction::stream_pred::DecoupledStreamBPU *_dbp, const BaseO3CPUParams &params)
+Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUParams &params)
     : commitPolicy(params.smtCommitPolicy),
       cpu(_cpu),
-      dbp(_dbp),
+      bp(_bp),
       iewToCommitDelay(params.iewToCommitDelay),
       commitToIEWDelay(params.commitToIEWDelay),
       renameToROBDelay(params.renameToROBDelay),
@@ -1040,14 +1040,17 @@ Commit::commitInsts()
             bool commit_success = commitHead(head_inst, num_committed);
 
             if (commit_success) {
-                Addr branchAddr = head_inst->pcState().instAddr();
-                Addr targetAddr = head_inst->pcState().clone()->as<RiscvISA::PCState>().npc();
-                Addr fallThruPC = head_inst->pcState().clone()->as<RiscvISA::PCState>().getFallThruPC();
-                if (targetAddr < branchAddr || dbp->loopDetector->findLoop(branchAddr)) {
-                    dbp->loopDetector->update(branchAddr, targetAddr, fallThruPC);
-                }
-                if (targetAddr > branchAddr && head_inst->isControl()) {
-                    dbp->loopDetector->setRecentForwardTakenPC(branchAddr, targetAddr);
+                if (bp->isStream()) {
+                    auto dbsp = dynamic_cast<branch_prediction::stream_pred::DecoupledStreamBPU*>(bp);
+                    Addr branchAddr = head_inst->pcState().instAddr();
+                    Addr targetAddr = head_inst->pcState().clone()->as<RiscvISA::PCState>().npc();
+                    Addr fallThruPC = head_inst->pcState().clone()->as<RiscvISA::PCState>().getFallThruPC();
+                    if (targetAddr < branchAddr || dbsp->loopDetector->findLoop(branchAddr)) {
+                        dbsp->loopDetector->update(branchAddr, targetAddr, fallThruPC);
+                    }
+                    if (targetAddr > branchAddr && head_inst->isControl()) {
+                        dbsp->loopDetector->setRecentForwardTakenPC(branchAddr, targetAddr);
+                    }
                 }
 
                 ++num_committed;

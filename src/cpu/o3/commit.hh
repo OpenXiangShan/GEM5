@@ -140,7 +140,7 @@ class Commit
 
   public:
     /** Construct a Commit with the given parameters. */
-    Commit(CPU *_cpu, branch_prediction::stream_pred::DecoupledStreamBPU *_dbp, const BaseO3CPUParams &params);
+    Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUParams &params);
 
     /** Returns the name of the Commit. */
     std::string name() const;
@@ -353,7 +353,7 @@ class Commit
     /** Pointer to O3CPU. */
     CPU *cpu;
 
-    branch_prediction::stream_pred::DecoupledStreamBPU *dbp;
+    branch_prediction::BPredUnit *bp;
 
     /** Vector of all of the threads. */
     std::vector<ThreadState *> thread;

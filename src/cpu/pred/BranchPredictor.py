@@ -29,6 +29,9 @@ from m5.SimObject import SimObject
 from m5.params import *
 from m5.proxy import *
 
+class BpType(Enum):
+    vals = ['Coupled', 'DecoupledStream', 'DecoupledFTB']
+
 class IndirectPredictor(SimObject):
     type = 'IndirectPredictor'
     cxx_class = 'gem5::branch_prediction::IndirectPredictor'
@@ -75,7 +78,7 @@ class BranchPredictor(SimObject):
     cxx_class = 'gem5::branch_prediction::BPredUnit'
     cxx_header = "cpu/pred/bpred_unit.hh"
     abstract = True
-
+    
     numThreads = Param.Unsigned(Parent.numThreads, "Number of threads")
     BTBEntries = Param.Unsigned(4096, "Number of BTB entries")
     BTBTagSize = Param.Unsigned(16, "Size of the BTB tags, in bits")
@@ -842,6 +845,7 @@ class DecoupledStreamBPU(BranchPredictor):
 
     # stream_pred = Param.StreamPredictor(StreamPredictor(),
     # "backing stream predictor")
+    
     stream_tage = Param.StreamTAGE(StreamTAGE(), "slower but accurate stream predictor (L2)")
     stream_ubtb = Param.StreamUBTB(StreamUBTB(), "fast stream predictor (L1)")
     loop_detector = Param.StreamLoopDetector(StreamLoopDetector(), "loop detector")
@@ -860,10 +864,17 @@ class DefaultFTB(TimedBaseFTBPredictor):
     type = 'DefaultFTB'
     cxx_class = 'gem5::branch_prediction::ftb_pred::DefaultFTB'
     cxx_header = 'cpu/pred/ftb/ftb.hh'
+    
+    numEntries = Param.Unsigned(2048, "Number of entries in the FTB")
+    tagBits = Param.Unsigned(20, "Number of bits in the tag")
+    instShiftAmt = Param.Unsigned(1, "Amount to shift PC to get inst bits")
+    numThreads = Param.Unsigned(1, "Number of threads")
 
 class DecoupledBPUWithFTB(BranchPredictor):
     type = 'DecoupledBPUWithFTB'
     cxx_class = 'gem5::branch_prediction::ftb_pred::DecoupledBPUWithFTB'
     cxx_header = "cpu/pred/ftb/decoupled_bpred.hh"
     
+    ftq_size = Param.Unsigned(128, "Fetch target queue size")
     maxHistLen = Param.Unsigned(970, "The length of history")
+    ftb = Param.DefaultFTB(DefaultFTB(), "FTB")

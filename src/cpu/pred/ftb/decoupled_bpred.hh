@@ -11,6 +11,7 @@
 #include "cpu/pred/ftb/ftb.hh"
 #include "cpu/pred/ftb/stream_struct.hh"
 #include "cpu/pred/ftb/timed_base_pred.hh"
+#include "cpu/pred/ftb/fetch_target_queue.hh"
 #include "debug/DecoupleBP.hh"
 #include "debug/DecoupleBPHist.hh"
 #include "debug/DecoupleBPProbe.hh"
@@ -213,7 +214,7 @@ class DecoupledBPUWithFTB : public BPredUnit
     bool receivedPred{false};
 
     Addr s0PC;
-    Addr s0StreamStartPC;
+    // Addr s0StreamStartPC;
     boost::dynamic_bitset<> s0History;
     FullFTBPrediction finalPred;
 
@@ -236,6 +237,11 @@ class DecoupledBPUWithFTB : public BPredUnit
         return addr & ~((1 << cacheLineOffsetBits) - 1);
     }
 
+    bool crossCacheLine(Addr addr)
+    {
+        return (addr & (1 << (cacheLineOffsetBits - 1))) != 0;
+    }
+
     Addr computePathHash(Addr br, Addr target);
 
     // TODO: compare phr and ghr
@@ -248,23 +254,25 @@ class DecoupledBPUWithFTB : public BPredUnit
         } else {
             DPRINTFR(DecoupleBP, "FSQ Resolved stream: ");
         }
+        // TODO:fix this
         DPRINTFR(DecoupleBP,
-                 "%#lx-[%#lx, %#lx) --> %#lx, ended: %i, taken: %i\n",
-                 e.startPC, e.getControlPC(), e.getEndPC(),
-                 e.getNextStreamStart(), e.getEnded(), e.getTaken());
+                 "%#lx-[%#lx, %#lx) --> %#lx, taken: %i\n",
+                 e.startPC, e.predBranchInfo.pc, e.predEndPC,
+                 e.getTakenTarget(), e.getTaken());
     }
 
     void printStreamFull(const FetchStream &e)
     {
-        DPRINTFR(
-            DecoupleBP,
-            "FSQ prediction:: %#lx-[%#lx, %#lx) --> %#lx\n",
-            e.startPC, e.predBranchPC, e.predEndPC, e.predTarget);
-        DPRINTFR(
-            DecoupleBP,
-            "Resolved: %i, resolved stream:: %#lx-[%#lx, %#lx) --> %#lx\n",
-            e.exeEnded, e.startPC, e.exeBranchPC, e.exeEndPC,
-            e.exeTarget);
+        // TODO: fix this
+        // DPRINTFR(
+        //     DecoupleBP,
+        //     "FSQ prediction:: %#lx-[%#lx, %#lx) --> %#lx\n",
+        //     e.startPC, e.predBranchPC, e.predEndPC, e.predTarget);
+        // DPRINTFR(
+        //     DecoupleBP,
+        //     "Resolved: %i, resolved stream:: %#lx-[%#lx, %#lx) --> %#lx\n",
+        //     e.exeEnded, e.startPC, e.exeBranchPC, e.exeEndPC,
+        //     e.exeTarget);
     }
 
     void printFetchTarget(const FtqEntry &e, const char *when)
@@ -288,7 +296,7 @@ class DecoupledBPUWithFTB : public BPredUnit
 
     void generateFinalPredAndCreateBubbles();
 
-    const bool dumpLoopPred;
+    // const bool dumpLoopPred;
 
   public:
     void tick();
@@ -376,10 +384,10 @@ class DecoupledBPUWithFTB : public BPredUnit
 
     std::stack<Addr> streamRAS;
     
-    void dumpRAS() {
-        for (std::stack<Addr> dump = streamRAS; !dump.empty(); dump.pop())
-            DPRINTF(DecoupleBPRAS, "RAS: %#lx\n", dump.top());
-    }
+    // void dumpRAS() {
+    //     for (std::stack<Addr> dump = streamRAS; !dump.empty(); dump.pop())
+    //         DPRINTF(DecoupleBPRAS, "RAS: %#lx\n", dump.top());
+    // }
 
     bool debugFlagOn{false};
 
@@ -398,17 +406,17 @@ class DecoupledBPUWithFTB : public BPredUnit
 
     void updateTAGE(FetchStream &stream);
 
-    LoopDetector *loopDetector{};
-    StreamLoopPredictor *streamLoopPredictor{};
+    // LoopDetector *loopDetector{};
+    // StreamLoopPredictor *streamLoopPredictor{};
 
-    void storeLoopInfo(unsigned int fsqId, FetchStream stream);
-    std::list<std::pair<unsigned int, FetchStream> > storedLoopStreams;
+    // void storeLoopInfo(unsigned int fsqId, FetchStream stream);
+    // std::list<std::pair<unsigned int, FetchStream> > storedLoopStreams;
 
-    long useLoopButInvalid = 0;
+    // long useLoopButInvalid = 0;
 
-    long useLoopAndValid = 0;
+    // long useLoopAndValid = 0;
 
-    long notUseLoop = 0;
+    // long notUseLoop = 0;
 
     std::vector<Addr> storeTargets;
 
