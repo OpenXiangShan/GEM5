@@ -183,10 +183,15 @@ namespace RiscvISA
         // Wrapper for checking for squashes before starting a translation.
         void startWalkWrapper();
 
+        // Checking for squashes
+        void handlePendingSquash();
+
         /**
          * Event used to call startWalkWrapper.
          **/
         EventFunctionWrapper startWalkWrapperEvent;
+
+        EventFunctionWrapper handlePendingSquashEvent;
 
         // Functions for dealing with packets.
         bool recvTimingResp(PacketPtr pkt);
@@ -209,7 +214,8 @@ namespace RiscvISA
             pmp(params.pmp),
             requestorId(sys->getRequestorId(this)),
             numSquashable(params.num_squash_per_cycle),
-            startWalkWrapperEvent([this]{ startWalkWrapper(); }, name())
+            startWalkWrapperEvent([this]{ startWalkWrapper(); }, name()),
+            handlePendingSquashEvent([this]{ handlePendingSquash(); }, name())
         {
         }
     };

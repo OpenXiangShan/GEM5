@@ -78,9 +78,13 @@ Walker::start(ThreadContext * _tc, BaseMMU::Translation *_translation,
     // another one (i.e. either coalesce or start walk)
     WalkerState * newState = new WalkerState(this, _translation, _req);
     newState->initState(_tc, _mode, sys->isTimingMode());
+    DPRINTF(PageTableWalker, "Starting page table walk for %#lx\n",
+            _req->getVaddr());
     if (currStates.size()) {
         assert(newState->isTiming());
-        DPRINTF(PageTableWalker, "Walks in progress: %d\n", currStates.size());
+        DPRINTF(PageTableWalker,
+                "Walks in progress: %d, push req pc: %#lx, addr: %#lx into currStates\n",
+                currStates.size(), _req->getPC(), _req->getVaddr());
         currStates.push_back(newState);
         return NoFault;
     } else {
@@ -198,38 +202,41 @@ Walker::WalkerState::initState(ThreadContext * _tc,
 void
 Walker::startWalkWrapper()
 {
-    unsigned num_squashed = 0;
+    handlePendingSquash();
     WalkerState *currState = currStates.front();
-    while ((num_squashed < numSquashable) && currState &&
-        currState->translation->squashed()) {
-        currStates.pop_front();
-        num_squashed++;
-
-        DPRINTF(PageTableWalker, "Squashing table walk for address %#x\n",
-            currState->req->getVaddr());
-
-        // finish the translation which will delete the translation object
-        currState->translation->finish(
-            std::make_shared<UnimpFault>("Squashed Inst"),
-            currState->req, currState->tc, currState->mode);
-
-        // delete the current request if there are no inflight packets.
-        // if there is something in flight, delete when the packets are
-        // received and inflight is zero.
-        if (currState->numInflight() == 0) {
-            delete currState;
-        } else {
-            currState->squash();
-        }
-
-        // check the next translation request, if it exists
-        if (currStates.size())
-            currState = currStates.front();
-        else
-            currState = NULL;
-    }
-    if (currState && !currState->wasStarted())
+    if (currState && !currState->wasStarted() && !currState->translation->squashed())
         currState->startWalk();
+}
+
+void
+Walker::handlePendingSquash()
+{
+    unsigned num_squashed = 0;
+    auto it = currStates.begin();
+    while (num_squashed < numSquashable && it != currStates.end() &&
+        (*it)->translation->squashed()) {
+        auto &ws = *it;  // walker state
+        DPRINTF(PageTableWalker, "Squashing table walk for pc: %#x, addr %#x\n",
+            ws->req->getPC(), ws->req->getVaddr());
+
+        ws->translation->finish(
+            std::make_shared<UnimpFault>("Squashed Inst"),
+            ws->req, ws->tc, ws->mode);
+
+        if (ws->numInflight() == 0) {
+            delete ws;
+        } else {
+            ws->squash();
+        }
+        it = currStates.erase(it);
+    }
+    if (it != currStates.end() && (*it)->translation->squashed()) {
+        // we have a translation squashed, but we cannot remove it this cycle
+        DPRINTF(PageTableWalker,
+                "Scheduling squash at next cycle, because squash bandwidth "
+                "used up\n");
+        schedule(handlePendingSquashEvent, nextCycle());
+    }
 }
 
 Fault
