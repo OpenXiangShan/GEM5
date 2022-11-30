@@ -70,6 +70,19 @@ def template BasicExecute {{
     }
 }};
 
+def template NoWBExecute {{
+    Fault
+    %(class_name)s::execute(ExecContext *xc,
+        Trace::InstRecord *traceData) const
+    {
+        %(op_decl)s;
+        %(op_rd)s;
+        %(code)s;
+        return NoFault;
+    }
+}};
+
+
 // Basic decode template.
 def template BasicDecode {{
     return new %(class_name)s(machInst);

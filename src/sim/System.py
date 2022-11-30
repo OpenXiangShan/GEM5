@@ -135,4 +135,5 @@ class System(SimObject):
     map_to_raw_cpt = Param.Bool(False, "Map physical memory to raw cpt with mmap")
     gcpt_restorer_file = Param.String("", "GCPT restorer image file")
 
+    xiangshan_system = Param.Bool(False, "Simulate Xiangshan system")
     arch_db = Param.ArchDBer(NULL,"arch db for this system")
