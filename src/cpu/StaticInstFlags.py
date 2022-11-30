@@ -47,6 +47,7 @@ class StaticInstFlags(Enum):
 
     vals = [
         'IsNop',            # Is a no-op (no effect at all).
+        'IsMov',
 
         'IsInteger',        # References integer regs.
         'IsFloating',       # References FP regs.

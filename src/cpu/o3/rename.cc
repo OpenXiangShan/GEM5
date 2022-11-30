@@ -706,7 +706,12 @@ Rename::renameInsts(ThreadID tid)
 
             serializeAfter(insts_to_rename, tid);
         }
-
+        if (inst->staticInst->isMov() &&
+            inst->srcRegIdx(0) == inst->destRegIdx(0)) {
+            inst->staticInst->setNop();
+            inst->staticInst->setDestRegIdx(0, RegId());
+            inst->staticInst->setSrcRegIdx(0, RegId());
+        }
         renameSrcRegs(inst, inst->threadNumber);
 
         renameDestRegs(inst, inst->threadNumber);

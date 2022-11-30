@@ -138,6 +138,8 @@ class StaticInst : public RefCounted, public StaticInstFlags
     //@{
 
     bool isNop()          const { return flags[IsNop]; }
+    void setNop()               { flags[IsNop] = true; }
+    bool isMov()          const { return flags[IsMov]; }
 
     bool
     isMemRef() const

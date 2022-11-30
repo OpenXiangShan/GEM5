@@ -331,7 +331,7 @@ decode QUADRANT default Unknown::unknown() {
                                 "source reg x0", machInst);
                     }
                     Rc1 = Rc2;
-                }});
+                }},IsMov);
             }
             0x1: decode RC1 {
                 0x0: SystemOp::c_ebreak({{
@@ -540,9 +540,14 @@ decode QUADRANT default Unknown::unknown() {
             }
 
             format IOp {
-                0x0: addi({{
-                    Rd_sd = Rs1_sd + imm;
-                }});
+                0x0: decode IMM12 {
+                    0x0: mv({{
+                        Rd_sd = Rs1_sd;
+                    }},int64_t, {{ imm = 0; }}, IsMov);
+                    default: addi({{
+                        Rd_sd = Rs1_sd + imm;
+                    }});
+                }
                 0x2: slti({{
                     Rd = (Rs1_sd < imm) ? 1 : 0;
                 }});
