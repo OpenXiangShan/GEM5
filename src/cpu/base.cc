@@ -1103,6 +1103,13 @@ BaseCPU::clearGuideExecInfo()
 }
 
 void
+BaseCPU::enableDiffPrint()
+{
+    diffAllStates->diff.dynamic_config.debug_difftest = true;
+    diffAllStates->proxy->update_config(&diffAllStates->diff.dynamic_config);
+}
+
+void
 BaseCPU::setGuideExecInfo(uint64_t exception_num, uint64_t mtval,
                           uint64_t stval, bool force_set_jump_target,
                           uint64_t jump_target)

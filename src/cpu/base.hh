@@ -717,6 +717,8 @@ class BaseCPU : public ClockedObject
 
     void clearGuideExecInfo();
 
+    void enableDiffPrint();
+
     std::pair<bool, std::shared_ptr<DiffAllStates>> getDiffAllStates()
     {
         return std::make_pair(enableDifftest, diffAllStates);
