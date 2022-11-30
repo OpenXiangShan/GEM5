@@ -10,7 +10,7 @@ jobs:
   autotest:
     runs-on: self-hosted
     continue-on-error: false
-    name: run script autotets.py
+    name: run script autotest.py
     steps:
       - uses: actions/checkout@v2
       - name: run autotest script
