@@ -138,6 +138,28 @@ protected:
     }
 };
 
+class VectorNopMicroInst : public RiscvMicroInst
+{
+public:
+    VectorNopMicroInst(ExtMachInst _machInst)
+        : RiscvMicroInst("vnop", _machInst, No_OpClass)
+    {}
+
+    Fault execute(ExecContext* xc, Trace::InstRecord* traceData)
+        const override
+    {
+        return NoFault;
+    }
+
+    std::string generateDisassembly(Addr pc, const loader::SymbolTable *symtab)
+      const override
+    {
+        std::stringstream ss;
+        ss << mnemonic;
+        return ss.str();
+    }
+};
+
 class VectorArithMicroInst : public VectorMicroInst
 {
 protected:

@@ -65,6 +65,10 @@ template<typename ElemType>
     int32_t micro_vl = std::min(tmp_vl, micro_vlmax);
     StaticInstPtr microop;
 
+    if (micro_vl == 0) {
+        microop = new VectorNopMicroInst(_machInst);
+        this->microops.push_back(microop);
+    }
     for (int i = 0; i < num_microops && micro_vl > 0; ++i) {
         microop = new %(class_name)sMicro<ElemType>(_machInst, micro_vl, i);
         microop->setDelayedCommit();
@@ -290,6 +294,10 @@ template<typename ElemType>
     int32_t micro_vl = std::min(tmp_vl, micro_vlmax);
     StaticInstPtr microop;
 
+    if (micro_vl == 0) {
+        microop = new VectorNopMicroInst(_machInst);
+        this->microops.push_back(microop);
+    }
     for (int i = 0; i < num_microops && micro_vl > 0; ++i) {
         microop = new %(class_name)sMicro<ElemType>(_machInst, micro_vl, i);
         microop->setDelayedCommit();
@@ -441,6 +449,10 @@ template<typename ElemType>
     int32_t micro_vl = std::min(tmp_vl, micro_vlmax);
     StaticInstPtr microop;
 
+    if (micro_vl == 0) {
+        microop = new VectorNopMicroInst(_machInst);
+        this->microops.push_back(microop);
+    }
     for (int i = 0; i < num_microops && micro_vl > 0; ++i) {
         microop = new %(class_name)sMicro<ElemType>(_machInst, micro_vl, i);
         microop->setDelayedCommit();
@@ -871,6 +883,10 @@ template<typename ElemType>
     int32_t micro_vl = std::min(tmp_vl, micro_vlmax);
     StaticInstPtr microop;
 
+    if (micro_vl == 0) {
+        microop = new VectorNopMicroInst(_machInst);
+        this->microops.push_back(microop);
+    }
     for (int i = 0; i < num_microops && micro_vl > 0; ++i) {
         microop = new %(class_name)sMicro<ElemType>(_machInst, micro_vl, i);
         microop->setDelayedCommit();
@@ -979,6 +995,10 @@ template<typename ElemType>
     int32_t micro_vl = std::min(tmp_vl, micro_vlmax);
     StaticInstPtr microop;
 
+    if (micro_vl == 0) {
+        microop = new VectorNopMicroInst(_machInst);
+        this->microops.push_back(microop);
+    }
     for (int i = 0; i < num_microops && micro_vl > 0; ++i) {
         microop = new %(class_name)sMicro<ElemType>(_machInst, micro_vl, i);
         microop->setDelayedCommit();
@@ -1301,6 +1321,10 @@ template<typename ElemType>
     int32_t micro_vl = std::min(tmp_vl, micro_vlmax);
     StaticInstPtr microop;
 
+    if (micro_vl == 0) {
+        microop = new VectorNopMicroInst(_machInst);
+        this->microops.push_back(microop);
+    }
     for (int i = 0; i < num_microops && micro_vl > 0; ++i) {
         microop = new %(class_name)sMicro<ElemType>(_machInst, micro_vl, i);
         microop->setDelayedCommit();
@@ -1494,6 +1518,11 @@ template<typename ElemType, typename IndexType>
     int32_t remaining_vl = this->vl;
     int32_t micro_vl = std::min(remaining_vl, micro_vlmax);
     StaticInstPtr microop;
+
+    if (micro_vl == 0) {
+        microop = new VectorNopMicroInst(_machInst);
+        this->microops.push_back(microop);
+    }
     for (uint8_t i = 0; i < std::max(vs1_vregs, vd_vregs) && micro_vl > 0;
             i++) {
         for (uint8_t j = 0; j < vs2_vregs; j++) {
@@ -1658,6 +1687,10 @@ template<typename ElemType>
     int32_t micro_vl = std::min(tmp_vl, micro_vlmax);
     StaticInstPtr microop;
 
+    if (micro_vl == 0) {
+        microop = new VectorNopMicroInst(_machInst);
+        this->microops.push_back(microop);
+    }
     for (int i = 0; i < num_microops && micro_vl > 0; ++i) {
         microop = new %(class_name)sMicro<ElemType>(_machInst,
             micro_vl, i, &vxsat);
@@ -1780,6 +1813,11 @@ template<typename ElemType>
     const int32_t micro_vlmax = vtype_VLMAX(_machInst.vtype8, true);
     int32_t micro_vl = std::min(tmp_vl, micro_vlmax);
     StaticInstPtr microop;
+
+    if (micro_vl == 0) {
+        microop = new VectorNopMicroInst(_machInst);
+        this->microops.push_back(microop);
+    }
     // Todo static filter out useless uop
     int micro_idx = 0;
     for (int i = 0; i < num_microops && micro_vl > 0; ++i) {
@@ -1810,6 +1848,11 @@ template<typename ElemType>
     const int32_t micro_vlmax = vtype_VLMAX(_machInst.vtype8, true);
     int32_t micro_vl = std::min(tmp_vl, micro_vlmax);
     StaticInstPtr microop;
+
+    if (micro_vl == 0) {
+        microop = new VectorNopMicroInst(_machInst);
+        this->microops.push_back(microop);
+    }
     // Todo static filter out useless uop
     int micro_idx = 0;
     for (int i = 0; i < num_microops && micro_vl > 0; ++i) {

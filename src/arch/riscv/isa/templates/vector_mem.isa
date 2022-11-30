@@ -39,6 +39,10 @@ def template VleConstructor {{
     int32_t micro_vl = std::min(remaining_vl, micro_vlmax);
     StaticInstPtr microop;
 
+    if (micro_vl == 0) {
+        microop = new VectorNopMicroInst(_machInst);
+        this->microops.push_back(microop);
+    }
     for (int i = 0; i < num_microops && micro_vl > 0; ++i) {
         microop = new %(class_name)sMicro(_machInst, micro_vl, i);
         microop->setDelayedCommit();
@@ -193,6 +197,10 @@ def template VseConstructor {{
 
     StaticInstPtr microop;
 
+    if (micro_vl == 0) {
+        microop = new VectorNopMicroInst(_machInst);
+        this->microops.push_back(microop);
+    }
     for (int i = 0; i < num_microops && micro_vl > 0; ++i) {
         microop = new %(class_name)sMicro(_machInst, micro_vl, i);
         microop->setDelayedCommit();
@@ -344,9 +352,13 @@ def template VlmConstructor {{
     int32_t micro_vl = (std::min(this->vl, micro_vlmax) + 7) / 8;
     StaticInstPtr microop;
 
-    microop = new Vle8_vMicro(_machInst, micro_vl, 0);
-    microop->setDelayedCommit();
-    microop->setFlag(IsLoad);
+    if (micro_vl == 0) {
+        microop = new VectorNopMicroInst(_machInst);
+    } else {
+        microop = new Vle8_vMicro(_machInst, micro_vl, 0);
+        microop->setDelayedCommit();
+        microop->setFlag(IsLoad);
+    }
     this->microops.push_back(microop);
 
     this->microops.front()->setFirstMicroop();
@@ -367,16 +379,17 @@ def template VsmConstructor {{
     int32_t micro_vl = (std::min(this->vl, micro_vlmax) + 7) / 8;
 
     StaticInstPtr microop;
-    microop = new Vse8_vMicro(_machInst, micro_vl, 0);
-    microop->setDelayedCommit();
-    microop->setFlag(IsStore);
+    if (micro_vl == 0) {
+        microop = new VectorNopMicroInst(_machInst);
+    } else {
+        microop = new Vse8_vMicro(_machInst, micro_vl, 0);
+        microop->setDelayedCommit();
+        microop->setFlag(IsStore);
+    }
     this->microops.push_back(microop);
 
     this->microops.front()->setFirstMicroop();
     this->microops.back()->setLastMicroop();
-
-    this->microops.front()->setFlag(IsFirstMicroop);
-    this->microops.back()->setFlag(IsLastMicroop);
 }
 
 }};
@@ -623,6 +636,10 @@ def template VlStrideConstructor {{
     int32_t micro_vl = std::min(remaining_vl, num_elems_per_vreg);
     StaticInstPtr microop;
 
+    if (micro_vl == 0) {
+        microop = new VectorNopMicroInst(_machInst);
+        this->microops.push_back(microop);
+    }
     for (int i = 0; micro_vl > 0; ++i) {
         for (int j = 0; j < micro_vl; ++j) {
             microop = new %(class_name)sMicro(machInst, i, j, micro_vl);
@@ -809,6 +826,10 @@ def template VsStrideConstructor {{
     int32_t micro_vl = std::min(remaining_vl, num_elems_per_vreg);
     StaticInstPtr microop;
 
+    if (micro_vl == 0) {
+        microop = new VectorNopMicroInst(_machInst);
+        this->microops.push_back(microop);
+    }
     for (int i = 0; micro_vl > 0; ++i) {
         for (int j = 0; j < micro_vl; ++j) {
             microop = new %(class_name)sMicro(machInst, i, j, micro_vl);
@@ -960,6 +981,10 @@ template<typename ElemType>
     int32_t micro_vl = std::min(remaining_vl, micro_vlmax);
     StaticInstPtr microop;
 
+    if (micro_vl == 0) {
+        microop = new VectorNopMicroInst(_machInst);
+        this->microops.push_back(microop);
+    }
     for (uint8_t i = 0; micro_vl > 0; i++) {
         for (uint8_t j = 0; j < micro_vl; ++j) {
             uint8_t vdRegIdx = i / vd_split_num;
@@ -1154,6 +1179,10 @@ template<typename ElemType>
     int32_t micro_vl = std::min(remaining_vl, micro_vlmax);
     StaticInstPtr microop;
 
+    if (micro_vl == 0) {
+        microop = new VectorNopMicroInst(_machInst);
+        this->microops.push_back(microop);
+    }
     for (uint8_t i = 0; micro_vl > 0; i++) {
         for (uint8_t j = 0; j < micro_vl; ++j) {
             uint8_t vs3RegIdx = i / vs3_split_num;
