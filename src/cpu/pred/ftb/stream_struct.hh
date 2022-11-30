@@ -218,7 +218,7 @@ typedef struct FetchStream
 
     // bool getEnded() const { return resolved ? exeEnded : predEnded; }
     BranchInfo getBranchInfo() const { return resolved ? exeBranchInfo : predBranchInfo; }
-    Addr getControlPC() const { return getBranchInfo().pc }
+    Addr getControlPC() const { return getBranchInfo().pc; }
     // Addr getEndPC() const { return resolved ? exeEndPC : predEndPC; }
     Addr getTaken() const { return resolved ? exeTaken : predTaken; }
     Addr getTakenTarget() const { return getBranchInfo().target; }

@@ -365,6 +365,12 @@ class Packet : public Printable
     /// A flag to indicate that the packet needs to send right away
     bool sendRightAway = false;
 
+    bool misalignedFetch = false;
+
+    bool waitingNextPkt = false;
+
+    bool retriedPkt = false;
+
   public:
     typedef MemCmd::Command Command;
 
@@ -838,6 +844,36 @@ class Packet : public Printable
     void setSendRightAway()
     {
         sendRightAway = true;
+    }
+
+    bool isWaitingNextPkt()
+    {
+        return waitingNextPkt;
+    }
+
+    void setWaitingNextPkt()
+    {
+        waitingNextPkt = true;
+    }
+
+    bool isMisalignedFetch()
+    {
+        return misalignedFetch;
+    }
+
+    void setMisalignedFetch()
+    {
+        misalignedFetch = true;
+    }
+
+    bool isRetriedPkt()
+    {
+        return retriedPkt;
+    }
+
+    void setRetriedPkt()
+    {
+        retriedPkt = true;
     }
 
     /**

@@ -374,11 +374,25 @@ Fetch::processCacheCompletion(PacketPtr pkt)
 {
     ThreadID tid = cpu->contextToThread(pkt->req->contextId());
 
-    if (fetchMisaligned[tid]) {
-        if (waitingNextPkt[tid]) {
+    if (pkt->isMisalignedFetch()) {
+        if (pkt->isWaitingNextPkt()) {
             DPRINTF(Fetch, "[tid:%i] Waiting for next pkt.\n", tid);
-            waitingNextPkt[tid] = false;
             firstPkt[tid] = pkt;
+            if (pkt->isRetriedPkt()) {
+                /*RequestPtr mem_req = std::make_shared<Request>(
+                                      (64 - pkt->getAddr() % 64), fetchBufferSize - pkt->getSize(),
+                                      Request::INST_FETCH, cpu->instRequestorId(), pkt->req->getPC(),
+                                      cpu->thread[tid]->contextId());
+
+                mem_req->taskId(cpu->taskId());
+
+                memReq[tid] = mem_req;
+
+                fetchStatus[tid] = ItlbWait;
+                FetchTranslation *trans = new FetchTranslation(this);
+                cpu->mmu->translateTiming(mem_req, cpu->thread[tid]->getTC(),
+                                          trans, BaseMMU::Execute);*/
+            }
             return;
         } else {
             DPRINTF(Fetch, "[tid:%i] Received next pkt.\n", tid);
@@ -400,6 +414,7 @@ Fetch::processCacheCompletion(PacketPtr pkt)
     // to return.
     if (fetchStatus[tid] != IcacheWaitResponse ||
         pkt->req != memReq[tid]) {
+        DPRINTF(Fetch, "delete pkt %#lx\n", pkt->getAddr());
         ++fetchStats.icacheSquashes;
         delete pkt;
         return;
@@ -677,6 +692,10 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
 
     accessInfo[tid] = std::make_pair(vaddr, fetchPC);
 
+    if (fetchMisaligned[tid] && waitingNextPkt[tid] && fetchStatus[tid] == IcacheWaitRetry) {
+        return true;
+    }
+
     RequestPtr mem_req = std::make_shared<Request>(
         fetchPC, fetchSize,
         Request::INST_FETCH, cpu->instRequestorId(), pc,
@@ -730,6 +749,10 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
         // Build packet here.
         PacketPtr data_pkt = new Packet(mem_req, MemCmd::ReadReq);
         data_pkt->dataDynamic(new uint8_t[fetchBufferSize]);
+        if (fetchMisaligned[tid] && waitingNextPkt[tid]) {
+            data_pkt->setMisalignedFetch();
+            data_pkt->setWaitingNextPkt();
+        }
         if (fetchMisaligned[tid] && (accessInfo[tid].second == data_pkt->getAddr()))
             data_pkt->setSendRightAway();
 
@@ -746,6 +769,7 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
             DPRINTF(Fetch, "[tid:%i] Out of MSHRs!\n", tid);
 
             fetchStatus[tid] = IcacheWaitRetry;
+            data_pkt->setRetriedPkt();
             retryPkt = data_pkt;
             retryTid = tid;
             cacheBlocked = true;
@@ -1891,6 +1915,12 @@ Fetch::IcachePort::recvTimingResp(PacketPtr pkt)
     // We shouldn't ever get a cacheable block in Modified state
     assert(pkt->req->isUncacheable() ||
            !(pkt->cacheResponding() && !pkt->hasSharers()));
+
+    DPRINTF(Fetch, "received pkt addr=%#lx\n", pkt->getAddr());
+    for (int i = 0;i < pkt->getSize();i++) {
+        DPRINTF(Fetch, "data[%d]=%#x\n", i, pkt->getConstPtr<uint8_t>()[i]);
+    }
+
     fetch->processCacheCompletion(pkt);
 
     return true;
