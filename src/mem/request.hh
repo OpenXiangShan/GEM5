@@ -470,6 +470,10 @@ class Request
     /** The cause for HTM transaction abort */
     HtmFailureFaultCause _htmAbortCause = HtmFailureFaultCause::INVALID;
 
+    bool misalignedFetch = false;
+
+    bool waitingNextReq = false;
+
   public:
 
     /**
@@ -536,6 +540,26 @@ class Request
 
         assert(mgmt_req->isMemMgmt());
         return mgmt_req;
+    }
+
+    bool isWaitingNextReq()
+    {
+        return waitingNextReq;
+    }
+
+    void setWaitingNextReq()
+    {
+        waitingNextReq = true;
+    }
+
+    bool isMisalignedFetch()
+    {
+        return misalignedFetch;
+    }
+
+    void setMisalignedFetch()
+    {
+        misalignedFetch = true;
     }
 
     /**

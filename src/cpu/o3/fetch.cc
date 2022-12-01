@@ -374,24 +374,31 @@ Fetch::processCacheCompletion(PacketPtr pkt)
 {
     ThreadID tid = cpu->contextToThread(pkt->req->contextId());
 
-    if (pkt->isMisalignedFetch()) {
-        if (pkt->isWaitingNextPkt()) {
+    if (pkt->req->isMisalignedFetch()) {
+        if (pkt->req->isWaitingNextReq()) {
             DPRINTF(Fetch, "[tid:%i] Waiting for next pkt.\n", tid);
             firstPkt[tid] = pkt;
             if (pkt->isRetriedPkt()) {
-                /*RequestPtr mem_req = std::make_shared<Request>(
-                                      (64 - pkt->getAddr() % 64), fetchBufferSize - pkt->getSize(),
+                DPRINTF(Fetch, "[tid:%i] Retried pkt.\n", tid);
+                DPRINTF(Fetch, "[tid:%i] send next pkt, addr: %#x, size: %d\n",
+                        tid, pkt->getAddr() + 64 - pkt->getAddr() % 64, 
+                        fetchBufferSize - pkt->getSize());
+                RequestPtr mem_req = std::make_shared<Request>(
+                                      pkt->getAddr() + 64 - pkt->getAddr() % 64, 
+                                      fetchBufferSize - pkt->getSize(),
                                       Request::INST_FETCH, cpu->instRequestorId(), pkt->req->getPC(),
                                       cpu->thread[tid]->contextId());
 
                 mem_req->taskId(cpu->taskId());
+
+                mem_req->setMisalignedFetch();
 
                 memReq[tid] = mem_req;
 
                 fetchStatus[tid] = ItlbWait;
                 FetchTranslation *trans = new FetchTranslation(this);
                 cpu->mmu->translateTiming(mem_req, cpu->thread[tid]->getTC(),
-                                          trans, BaseMMU::Execute);*/
+                                          trans, BaseMMU::Execute);
             }
             return;
         } else {
@@ -677,6 +684,10 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
 
         memReq[tid] = mem_req;
 
+        mem_req->setMisalignedFetch();
+
+        mem_req->setWaitingNextReq();
+
         // Initiate translation of the icache block
         fetchStatus[tid] = ItlbWait;
         FetchTranslation *trans = new FetchTranslation(this);
@@ -704,6 +715,10 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
     mem_req->taskId(cpu->taskId());
 
     memReq[tid] = mem_req;
+
+    if (fetchMisaligned[tid] && waitingNextPkt[tid]) {
+        mem_req->setMisalignedFetch();
+    }
 
     // Initiate translation of the icache block
     fetchStatus[tid] = ItlbWait;
@@ -749,11 +764,7 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
         // Build packet here.
         PacketPtr data_pkt = new Packet(mem_req, MemCmd::ReadReq);
         data_pkt->dataDynamic(new uint8_t[fetchBufferSize]);
-        if (fetchMisaligned[tid] && waitingNextPkt[tid]) {
-            data_pkt->setMisalignedFetch();
-            data_pkt->setWaitingNextPkt();
-        }
-        if (fetchMisaligned[tid] && (accessInfo[tid].second == data_pkt->getAddr()))
+        if (mem_req->isMisalignedFetch() && !mem_req->isWaitingNextReq())
             data_pkt->setSendRightAway();
 
         fetchBufferPC[tid] = fetchPC;
