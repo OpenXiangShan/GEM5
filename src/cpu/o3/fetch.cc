@@ -375,23 +375,37 @@ Fetch::processCacheCompletion(PacketPtr pkt)
     ThreadID tid = cpu->contextToThread(pkt->req->contextId());
 
     if (pkt->req->isMisalignedFetch()) {
-        if (pkt->req->isWaitingNextReq()) {
-            DPRINTF(Fetch, "[tid:%i] Waiting for next pkt.\n", tid);
+        Addr anotherPC = 0;
+        unsigned anotherSize = 0;
+        if (pkt->req->getReqNum() == 1) {
             firstPkt[tid] = pkt;
+            anotherPC = pkt->getAddr() + 64 - pkt->getAddr() % 64;
+            anotherSize = fetchBufferSize - pkt->getSize();
+        } else if (pkt->req->getReqNum() == 2) {
+            secondPkt[tid] = pkt;
+            anotherPC = pkt->getAddr() - 64 + pkt->getSize();
+            anotherSize = fetchBufferSize - pkt->getSize();
+        }
+
+        if (firstPkt[tid] == nullptr || secondPkt[tid] == nullptr) {
+            DPRINTF(Fetch, "[tid:%i] Waiting for %s pkt.\n", tid, 
+                    firstPkt[tid] == nullptr ? "first" : "second");
             if (pkt->isRetriedPkt()) {
                 DPRINTF(Fetch, "[tid:%i] Retried pkt.\n", tid);
                 DPRINTF(Fetch, "[tid:%i] send next pkt, addr: %#x, size: %d\n",
                         tid, pkt->getAddr() + 64 - pkt->getAddr() % 64, 
                         fetchBufferSize - pkt->getSize());
                 RequestPtr mem_req = std::make_shared<Request>(
-                                      pkt->getAddr() + 64 - pkt->getAddr() % 64, 
-                                      fetchBufferSize - pkt->getSize(),
-                                      Request::INST_FETCH, cpu->instRequestorId(), pkt->req->getPC(),
-                                      cpu->thread[tid]->contextId());
+                                    anotherPC, 
+                                    anotherSize,
+                                    Request::INST_FETCH, cpu->instRequestorId(), pkt->req->getPC(),
+                                    cpu->thread[tid]->contextId());
 
                 mem_req->taskId(cpu->taskId());
 
                 mem_req->setMisalignedFetch();
+
+                mem_req->setReqNum(2);
 
                 memReq[tid] = mem_req;
 
@@ -402,15 +416,15 @@ Fetch::processCacheCompletion(PacketPtr pkt)
             }
             return;
         } else {
-            DPRINTF(Fetch, "[tid:%i] Received next pkt.\n", tid);
+            DPRINTF(Fetch, "[tid:%i] Received another pkt.\n", tid);
 
             // Copy two packets data into second packet
             uint8_t* firstData = new uint8_t[fetchBufferSize];
             uint8_t* secondData = new uint8_t[fetchBufferSize];
             firstPkt[tid]->getData(firstData);
-            pkt->getData(secondData);
+            secondPkt[tid]->getData(secondData);
             pkt->setData(firstData, 0, 0, firstPkt[tid]->getSize());
-            pkt->setData(secondData, 0, firstPkt[tid]->getSize(), pkt->getSize());
+            pkt->setData(secondData, 0, firstPkt[tid]->getSize(), secondPkt[tid]->getSize());
         }
     }
 
@@ -674,6 +688,9 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
         fetchMisaligned[tid] = true;
         waitingNextPkt[tid] = true;
 
+        firstPkt[tid] = nullptr;
+        secondPkt[tid] = nullptr;
+
         fetchSize = 64 - fetchPC % 64;
         RequestPtr mem_req = std::make_shared<Request>(
             fetchPC, fetchSize,
@@ -686,7 +703,8 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
 
         mem_req->setMisalignedFetch();
 
-        mem_req->setWaitingNextReq();
+        DPRINTF(Fetch, "[tid:%i] Fetching first cache line %#x for addr %#x, pc=%#lx\n",
+                tid, fetchPC, vaddr, pc);
 
         // Initiate translation of the icache block
         fetchStatus[tid] = ItlbWait;
@@ -717,7 +735,10 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
     memReq[tid] = mem_req;
 
     if (fetchMisaligned[tid] && waitingNextPkt[tid]) {
+        DPRINTF(Fetch, "[tid:%i] Fetching second cache line %#x for addr %#x, pc=%#lx\n",
+                tid, fetchPC, vaddr, pc);
         mem_req->setMisalignedFetch();
+        mem_req->setReqNum(2);
     }
 
     // Initiate translation of the icache block
@@ -733,6 +754,12 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
 {
     ThreadID tid = cpu->contextToThread(mem_req->contextId());
     Addr fetchPC = fetchMisaligned[tid] ? accessInfo[tid].first : mem_req->getVaddr();
+
+    if (fetchStatus[tid] == ItlbWait && mem_req->isMisalignedFetch() && mem_req != memReq[tid]) {
+        DPRINTF(Fetch, "[tid:%i] re-fetch addr: %#x, pc=%#lx\n", tid, mem_req->getVaddr(), mem_req->getPC());
+        fetchCacheLine(mem_req->getVaddr(), tid, mem_req->getPC());
+        return;
+    }
 
     assert(!cpu->switchedOut());
 
@@ -764,8 +791,11 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
         // Build packet here.
         PacketPtr data_pkt = new Packet(mem_req, MemCmd::ReadReq);
         data_pkt->dataDynamic(new uint8_t[fetchBufferSize]);
-        if (mem_req->isMisalignedFetch() && !mem_req->isWaitingNextReq())
+        if (mem_req->isMisalignedFetch())
             data_pkt->setSendRightAway();
+
+        DPRINTF(Fetch, "[tid:%i] Fetching data for addr %#x, pc=%#lx\n",
+                    tid, mem_req->getVaddr(), fetchPC);
 
         fetchBufferPC[tid] = fetchPC;
         fetchBufferValid[tid] = false;

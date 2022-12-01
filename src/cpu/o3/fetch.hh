@@ -578,6 +578,8 @@ class Fetch
 
     PacketPtr firstPkt[MaxThreads];
 
+    PacketPtr secondPkt[MaxThreads];
+
     /** The size of the fetch queue in micro-ops */
     unsigned fetchQueueSize;
 

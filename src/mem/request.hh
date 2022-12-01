@@ -472,7 +472,7 @@ class Request
 
     bool misalignedFetch = false;
 
-    bool waitingNextReq = false;
+    int reqNum = 1;
 
   public:
 
@@ -542,16 +542,6 @@ class Request
         return mgmt_req;
     }
 
-    bool isWaitingNextReq()
-    {
-        return waitingNextReq;
-    }
-
-    void setWaitingNextReq()
-    {
-        waitingNextReq = true;
-    }
-
     bool isMisalignedFetch()
     {
         return misalignedFetch;
@@ -560,6 +550,16 @@ class Request
     void setMisalignedFetch()
     {
         misalignedFetch = true;
+    }
+
+    int getReqNum()
+    {
+        return reqNum;
+    }
+
+    void setReqNum(int num)
+    {
+        reqNum = num;
     }
 
     /**
