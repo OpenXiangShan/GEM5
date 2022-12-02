@@ -753,7 +753,11 @@ void
 Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
 {
     ThreadID tid = cpu->contextToThread(mem_req->contextId());
-    Addr fetchPC = fetchMisaligned[tid] ? accessInfo[tid].first : mem_req->getVaddr();
+    Addr fetchMisalignedPC = mem_req->getVaddr();
+    if (mem_req->getReqNum() == 2) {
+        fetchMisalignedPC = mem_req->getVaddr() - 64 + mem_req->getSize();
+    }
+    Addr fetchPC = mem_req->isMisalignedFetch() ? fetchMisalignedPC : mem_req->getVaddr();
 
     if (fetchStatus[tid] == ItlbWait && mem_req->isMisalignedFetch() && mem_req != memReq[tid]) {
         DPRINTF(Fetch, "[tid:%i] re-fetch addr: %#x, pc=%#lx\n", tid, mem_req->getVaddr(), mem_req->getPC());
@@ -1463,7 +1467,7 @@ Fetch::fetch(bool &status_change)
         // to the next cache block, AND we have no remaining ucode
         // from a macro-op, then start fetch from icache.
         if (!(fetchBufferValid[tid] &&
-              fetchBufferPC[tid] + fetchBufferSize > fetch_addr) &&
+              fetchBufferPC[tid] + fetchBufferSize > fetch_addr && fetchBufferPC[tid] <= fetch_addr) &&
             !in_rom && !macroop[tid] && !loopBuffer.isActive()) {
             DPRINTF(Fetch, "[tid:%i] Attempting to translate and read "
                     "instruction, starting at PC %s.\n", tid, this_pc);
