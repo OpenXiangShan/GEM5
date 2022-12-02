@@ -702,139 +702,139 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
     // do not need to dequeue when empty
     if (fetchStreamQueue.empty())
         return;
-    // auto it = fetchStreamQueue.begin();
-    // defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
-    // while (it != fetchStreamQueue.end() && stream_id >= it->first) {
-    //     auto &stream = it->second;
-    //     storeLoopInfo(it->first, stream);
-    //     if (stream.isLoop && stream.tageTarget != stream.loopTarget) {
-    //         Addr target = stream.squashType == SQUASH_CTRL ? stream.exeTarget : stream.predTarget;
-    //         streamLoopPredictor->updateLoopUseCount(stream.loopTarget == target);
-    //     }
-    //     // dequeue
-    //     DPRINTF(DecoupleBP, "dequeueing stream id: %lu, entry below:\n",
-    //             it->first);
-    //     bool miss_predicted = stream.squashType == SQUASH_CTRL;
-    //     if (stream.startPC == ObservingPC) {
-    //         debugFlagOn = true;
-    //     }
-    //     if (stream.exeBranchPC == ObservingPC2) {
-    //         debugFlagOn = true;
-    //     }
-    //     DPRINTF(DecoupleBP || debugFlagOn,
-    //             "Commit stream start %#lx, which is %s predicted, "
-    //             "final br addr: %#lx, final target: %#lx, pred br addr: %#lx, "
-    //             "pred target: %#lx\n",
-    //             stream.startPC, miss_predicted ? "miss" : "correctly",
-    //             stream.exeBranchPC, stream.exeTarget,
-    //             stream.predBranchPC, stream.predTarget);
+    auto it = fetchStreamQueue.begin();
+    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    while (it != fetchStreamQueue.end() && stream_id >= it->first) {
+        auto &stream = it->second;
+        // storeLoopInfo(it->first, stream);
+        // if (stream.isLoop && stream.tageTarget != stream.loopTarget) {
+        //     Addr target = stream.squashType == SQUASH_CTRL ? stream.exeTarget : stream.predTarget;
+        //     streamLoopPredictor->updateLoopUseCount(stream.loopTarget == target);
+        // }
+        // dequeue
+        DPRINTF(DecoupleBP, "dequeueing stream id: %lu, entry below:\n",
+                it->first);
+        bool miss_predicted = stream.squashType == SQUASH_CTRL;
+        // if (stream.startPC == ObservingPC) {
+        //     debugFlagOn = true;
+        // }
+        // if (stream.exeBranchPC == ObservingPC2) {
+        //     debugFlagOn = true;
+        // }
+        DPRINTF(DecoupleBP || debugFlagOn,
+                "Commit stream start %#lx, which is %s predicted, "
+                "final br addr: %#lx, final target: %#lx, pred br addr: %#lx, "
+                "pred target: %#lx\n",
+                stream.startPC, miss_predicted ? "miss" : "correctly",
+                stream.exeBranchInfo.pc, stream.exeBranchInfo.target,
+                stream.predBranchInfo.pc, stream.predBranchInfo.target);
 
-    //     if (stream.squashType == SQUASH_NONE || stream.squashType == SQUASH_CTRL) {
-    //         DPRINTF(DecoupleBP || debugFlagOn,
-    //                 "Update mispred stream %lu, start=%#lx, hist=%s, "
-    //                 "taken=%i, control=%#lx, target=%#lx\n",
-    //                 it->first, stream.startPC, stream.history,
-    //                 stream.getTaken(), stream.getControlPC(),
-    //                 stream.getTakenTarget());
-    //         auto cur_chunk = stream.startPC;
-    //         auto last_chunk = computeLastChunkStart(stream.getControlPC(), stream.startPC);
-    //         while (cur_chunk < last_chunk) {
-    //             auto next_chunk = cur_chunk + streamChunkSize;
-    //             DPRINTF(DecoupleBP || debugFlagOn,
-    //                     "Update fall-thru chunk %#lx\n", cur_chunk);
-    //             streamTAGE->update(
-    //                 cur_chunk, stream.startPC, next_chunk - 2, next_chunk,
-    //                 2, false /* not taken*/, stream.history, END_CONT,
-	// 	            stream.indexFoldedHist, stream.tagFoldedHist);
-    //             streamUBTB->update(
-    //                 cur_chunk, stream.startPC, next_chunk - 2, next_chunk,
-    //                 2, false /* not taken*/, stream.history, END_CONT);
-    //             cur_chunk = next_chunk;
-    //         }
-    //         updateTAGE(stream);
-    //         streamUBTB->update(last_chunk, stream.startPC,
-    //                            stream.getControlPC(),
-    //                            stream.getNextStreamStart(),
-    //                            stream.getFallThruPC() - stream.getControlPC(),
-    //                            stream.getTaken(), stream.history,
-    //                            static_cast<EndType>(stream.endType));
+        // if (stream.squashType == SQUASH_NONE || stream.squashType == SQUASH_CTRL) {
+        //     DPRINTF(DecoupleBP || debugFlagOn,
+        //             "Update mispred stream %lu, start=%#lx, hist=%s, "
+        //             "taken=%i, control=%#lx, target=%#lx\n",
+        //             it->first, stream.startPC, stream.history,
+        //             stream.getTaken(), stream.getControlPC(),
+        //             stream.getTakenTarget());
+        //     auto cur_chunk = stream.startPC;
+        //     auto last_chunk = computeLastChunkStart(stream.getControlPC(), stream.startPC);
+        //     while (cur_chunk < last_chunk) {
+        //         auto next_chunk = cur_chunk + streamChunkSize;
+        //         DPRINTF(DecoupleBP || debugFlagOn,
+        //                 "Update fall-thru chunk %#lx\n", cur_chunk);
+        //         streamTAGE->update(
+        //             cur_chunk, stream.startPC, next_chunk - 2, next_chunk,
+        //             2, false /* not taken*/, stream.history, END_CONT,
+		//             stream.indexFoldedHist, stream.tagFoldedHist);
+        //         streamUBTB->update(
+        //             cur_chunk, stream.startPC, next_chunk - 2, next_chunk,
+        //             2, false /* not taken*/, stream.history, END_CONT);
+        //         cur_chunk = next_chunk;
+        //     }
+        //     updateTAGE(stream);
+        //     streamUBTB->update(last_chunk, stream.startPC,
+        //                        stream.getControlPC(),
+        //                        stream.getNextStreamStart(),
+        //                        stream.getFallThruPC() - stream.getControlPC(),
+        //                        stream.getTaken(), stream.history,
+        //                        static_cast<EndType>(stream.endType));
 
-    //         if (stream.squashType == SQUASH_CTRL) {
-    //             if (stream.exeBranchPC == ObservingPC2) {
-    //                 storeTargets.push_back(stream.exeTarget);
-    //             }
+        //     if (stream.squashType == SQUASH_CTRL) {
+        //         if (stream.exeBranchPC == ObservingPC2) {
+        //             storeTargets.push_back(stream.exeTarget);
+        //         }
 
-    //             if (stream.predSource == LoopButInvalid) {
-    //                 useLoopButInvalid++;
-    //             } else if (stream.predSource == LoopAndValid)
-    //                 useLoopAndValid++;
-    //             else
-    //                 notUseLoop++;
+        //         if (stream.predSource == LoopButInvalid) {
+        //             useLoopButInvalid++;
+        //         } else if (stream.predSource == LoopAndValid)
+        //             useLoopAndValid++;
+        //         else
+        //             notUseLoop++;
 
-    //             auto find_it = topMispredicts.find(std::make_pair(stream.startPC, stream.exeBranchPC));
-    //             if (find_it == topMispredicts.end()) {
-    //                 topMispredicts[std::make_pair(stream.startPC, stream.exeBranchPC)] = 1;
-    //             } else {
-    //                 find_it->second++;
-    //             }
+        //         auto find_it = topMispredicts.find(std::make_pair(stream.startPC, stream.exeBranchPC));
+        //         if (find_it == topMispredicts.end()) {
+        //             topMispredicts[std::make_pair(stream.startPC, stream.exeBranchPC)] = 1;
+        //         } else {
+        //             find_it->second++;
+        //         }
 
-    //             if (stream.isMiss && stream.exeBranchPC == ObservingPC) {
-    //                 missCount++;
-    //             }
+        //         if (stream.isMiss && stream.exeBranchPC == ObservingPC) {
+        //             missCount++;
+        //         }
 
-    //             if (stream.exeBranchPC == ObservingPC) {
-    //                 debugFlagOn = true;
-    //                 auto misTripCount = misPredTripCount.find(stream.tripCount);
-    //                 if (misTripCount == misPredTripCount.end()) {
-    //                     misPredTripCount[stream.tripCount] = 1;
-    //                 } else {
-    //                     misPredTripCount[stream.tripCount]++;
-    //                 }
-    //                 DPRINTF(DecoupleBP || debugFlagOn, "commit mispredicted stream %lu\n", it->first);
-    //             }
-    //         } else {
-    //             if (stream.predBranchPC == ObservingPC2) {
-    //                 storeTargets.push_back(stream.predTarget);
-    //             }
-    //         }
+        //         if (stream.exeBranchPC == ObservingPC) {
+        //             debugFlagOn = true;
+        //             auto misTripCount = misPredTripCount.find(stream.tripCount);
+        //             if (misTripCount == misPredTripCount.end()) {
+        //                 misPredTripCount[stream.tripCount] = 1;
+        //             } else {
+        //                 misPredTripCount[stream.tripCount]++;
+        //             }
+        //             DPRINTF(DecoupleBP || debugFlagOn, "commit mispredicted stream %lu\n", it->first);
+        //         }
+        //     } else {
+        //         if (stream.predBranchPC == ObservingPC2) {
+        //             storeTargets.push_back(stream.predTarget);
+        //         }
+        //     }
 
-    //         if (stream.startPC == ObservingPC && stream.squashType == SQUASH_CTRL) {
-    //             auto hist(stream.history);
-    //             hist.resize(18);
-    //             uint64_t pattern = hist.to_ulong();
-    //             auto find_it = topMispredHist.find(pattern);
-    //             if (find_it == topMispredHist.end()) {
-    //                 topMispredHist[pattern] = 1;
-    //             } else {
-    //                 find_it->second++;
-    //             }
-    //         }
-    //     } else {
-    //         DPRINTF(DecoupleBP || debugFlagOn, "Update trap stream %lu\n", it->first);
-    //         assert(stream.squashType == SQUASH_TRAP);
-    //         // For trap squash, we expect them to always incorrectly predict
-    //         // Because correct prediction will cause strange behaviors
-    //         streamTAGE->update(computeLastChunkStart(stream.getControlPC(),
-    //                                                  stream.startPC),
-    //                            stream.startPC, stream.getControlPC(),
-    //                            stream.getFallThruPC(), 4, false /* not taken*/,
-    //                            stream.history, END_NOT_TAKEN,
-	// 		                   stream.indexFoldedHist, stream.tagFoldedHist);
+        //     if (stream.startPC == ObservingPC && stream.squashType == SQUASH_CTRL) {
+        //         auto hist(stream.history);
+        //         hist.resize(18);
+        //         uint64_t pattern = hist.to_ulong();
+        //         auto find_it = topMispredHist.find(pattern);
+        //         if (find_it == topMispredHist.end()) {
+        //             topMispredHist[pattern] = 1;
+        //         } else {
+        //             find_it->second++;
+        //         }
+        //     }
+        // } else {
+        //     DPRINTF(DecoupleBP || debugFlagOn, "Update trap stream %lu\n", it->first);
+        //     assert(stream.squashType == SQUASH_TRAP);
+        //     // For trap squash, we expect them to always incorrectly predict
+        //     // Because correct prediction will cause strange behaviors
+        //     streamTAGE->update(computeLastChunkStart(stream.getControlPC(),
+        //                                              stream.startPC),
+        //                        stream.startPC, stream.getControlPC(),
+        //                        stream.getFallThruPC(), 4, false /* not taken*/,
+        //                        stream.history, END_NOT_TAKEN,
+		// 	                   stream.indexFoldedHist, stream.tagFoldedHist);
 
-    //         streamUBTB->update(computeLastChunkStart(stream.getControlPC(),
-    //                                                  stream.startPC),
-    //                            stream.startPC, stream.getControlPC(),
-    //                            stream.getFallThruPC(), 4, false /* not taken*/,
-    //                            stream.history, END_NOT_TAKEN);
-    //     }
+        //     streamUBTB->update(computeLastChunkStart(stream.getControlPC(),
+        //                                              stream.startPC),
+        //                        stream.startPC, stream.getControlPC(),
+        //                        stream.getFallThruPC(), 4, false /* not taken*/,
+        //                        stream.history, END_NOT_TAKEN);
+        // }
 
-    //     it = fetchStreamQueue.erase(it);
-    // }
-    // DPRINTF(DecoupleBP, "after commit stream, fetchStreamQueue size: %lu\n",
-    //         fetchStreamQueue.size());
-    // printStream(it->second);
+        it = fetchStreamQueue.erase(it);
+    }
+    DPRINTF(DecoupleBP, "after commit stream, fetchStreamQueue size: %lu\n",
+            fetchStreamQueue.size());
+    printStream(it->second);
 
-    // historyManager.commit(stream_id);
+    historyManager.commit(stream_id);
 }
 
 // TODO: squash ftq entry after
