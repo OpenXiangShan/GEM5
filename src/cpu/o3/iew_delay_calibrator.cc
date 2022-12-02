@@ -61,27 +61,16 @@ DelayCalibrator::execLatencyCheck(CPU* cpu, DynInstPtr inst,
             // rs1 / rs2 : 0x80/0x8 ,delay_ = 4
             delay_ = std::max(lzc(std::labs(rs2)) - lzc(std::labs(rs1)), 0);
             if (rs2 == 1) {
-                op_latency = Cycles(5);
+                op_latency = Cycles(6);
             } else if (rs1 == rs2) {
-                op_latency = Cycles(7);
+                op_latency = Cycles(8);
             } else if (lzc(std::labs(rs2)) - lzc(std::labs(rs1)) < 0) {
-                op_latency = Cycles(5);
+                op_latency = Cycles(6);
             } else {
-                op_latency = Cycles(7 + delay_ / 4);
+                op_latency = Cycles(8 + delay_ / 4);
             }
             return true;
-        case OpClass::FloatAdd:
-            op_latency = Cycles(3);
-            return true;
-        case OpClass::FloatMult:
-            op_latency = Cycles(3);
-            return true;
-        case OpClass::FloatDiv:
-            op_latency = Cycles(19);
-            return true;
-        case OpClass::FloatCvt:
-            op_latency = Cycles(3);
-            return true;
+
 
         default:
             return false;

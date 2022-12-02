@@ -60,16 +60,16 @@ class IntMultDiv(FUDesc):
     count=2
 
 class FP_ALU(FUDesc):
-    opList = [ OpDesc(opClass='FloatAdd', opLat=2),
+    opList = [ OpDesc(opClass='FloatAdd', opLat=3),
                OpDesc(opClass='FloatCmp', opLat=2),
-               OpDesc(opClass='FloatCvt', opLat=2) ]
+               OpDesc(opClass='FloatCvt', opLat=3) ]
     count = 4
 
 class FP_MultDiv(FUDesc):
-    opList = [ OpDesc(opClass='FloatMult', opLat=4),
+    opList = [ OpDesc(opClass='FloatMult', opLat=3),
                OpDesc(opClass='FloatMultAcc', opLat=5),
                OpDesc(opClass='FloatMisc', opLat=3),
-               OpDesc(opClass='FloatDiv', opLat=12, pipelined=False),
+               OpDesc(opClass='FloatDiv', opLat=19, pipelined=False),
                OpDesc(opClass='FloatSqrt', opLat=24, pipelined=False) ]
     count = 2
 
@@ -107,12 +107,12 @@ class PredALU(FUDesc):
     count = 1
 
 class ReadPort(FUDesc):
-    opList = [ OpDesc(opClass='MemRead'),
+    opList = [ OpDesc(opClass='MemRead',opLat=2),
                OpDesc(opClass='FloatMemRead') ]
     count = 2
 
 class WritePort(FUDesc):
-    opList = [ OpDesc(opClass='MemWrite'),
+    opList = [ OpDesc(opClass='MemWrite',opLat=4),
                OpDesc(opClass='FloatMemWrite') ]
     count = 2
 
@@ -163,7 +163,7 @@ class DefaultDelayMatrix(DelayCalibrator):
         ScheduleDelayMatrixMap(dep_opclass='FloatCvt',
                                completed_opclass='IntMult', delay_tick=3),
         ScheduleDelayMatrixMap(dep_opclass='FloatCvt',
-                               completed_opclass='IntDiv', delay_tick=3),
+                               completed_opclass='IntDiv', delay_tick=2),
 
         ScheduleDelayMatrixMap(dep_opclass='FloatCvt',
                                completed_opclass='FloatAdd', delay_tick=2),
@@ -177,4 +177,13 @@ class DefaultDelayMatrix(DelayCalibrator):
         ScheduleDelayMatrixMap(dep_opclass='MemRead',
                                completed_opclass='IntAlu', delay_tick=0),
         ScheduleDelayMatrixMap(dep_opclass='MemRead',
-                               completed_opclass='MemRead', delay_tick=1)]
+                               completed_opclass='MemRead', delay_tick=1),
+        # load to use
+        # maybe we need to recalibrate in the future
+        ScheduleDelayMatrixMap(dep_opclass='MemRead',
+                               completed_opclass='MemWrite', delay_tick=3),
+        ScheduleDelayMatrixMap(dep_opclass='MemWrite',
+                               completed_opclass='MemRead', delay_tick=3),
+        ScheduleDelayMatrixMap(dep_opclass='IntMult',
+                               completed_opclass='MemRead', delay_tick=2),
+        ScheduleDelayMatrixMap(dep_opclass='IntDiv', completed_opclass='MemRead', delay_tick=1)]

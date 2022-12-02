@@ -70,9 +70,9 @@ class L1_DCache(L1Cache):
 
     # aligned latency:
     tag_latency = 1
-    data_latency = 2
+    data_latency = 1
     # This is L1 miss & L2 hit latency
-    response_latency = 15
+    response_latency = 12
 
 class L2Cache(Cache):
     mshrs = 32
@@ -83,10 +83,10 @@ class L2Cache(Cache):
     writeback_clean = True
 
     # aligned latency:
-    tag_latency = 3
+    tag_latency = 2
     data_latency = 6
     # This is L2 miss & L3 hit latency
-    response_latency = 19
+    response_latency = 20
 
 class L3Cache(Cache):
     mshrs = 64
@@ -96,7 +96,7 @@ class L3Cache(Cache):
 
     # aligned latency:
     tag_latency = 2
-    data_latency = 4
+    data_latency = 5
     # This is L3 miss latency, which should be modeled with memory controller
     response_latency = 0
 
