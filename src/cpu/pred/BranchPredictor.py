@@ -869,6 +869,8 @@ class DefaultFTB(TimedBaseFTBPredictor):
     tagBits = Param.Unsigned(20, "Number of bits in the tag")
     instShiftAmt = Param.Unsigned(1, "Amount to shift PC to get inst bits")
     numThreads = Param.Unsigned(1, "Number of threads")
+    
+    numBr = Param.Unsigned(2, "Number of maximum branches per entry")
 
 class DecoupledBPUWithFTB(BranchPredictor):
     type = 'DecoupledBPUWithFTB'
@@ -877,4 +879,6 @@ class DecoupledBPUWithFTB(BranchPredictor):
     
     ftq_size = Param.Unsigned(128, "Fetch target queue size")
     maxHistLen = Param.Unsigned(970, "The length of history")
+    numBr = Param.Unsigned(2, "Number of maximum branches per entry")
     ftb = Param.DefaultFTB(DefaultFTB(), "FTB")
+    ftb.numBr = numBr

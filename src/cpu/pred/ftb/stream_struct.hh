@@ -8,6 +8,8 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/pred/ftb/stream_common.hh"
 #include "cpu/static_inst.hh"
+#include "debug/DecoupleBP.hh"
+#include "debug/Override.hh"
 // #include "cpu/pred/ftb/ftb.hh"
 
 namespace gem5 {
@@ -41,6 +43,7 @@ typedef struct BranchInfo {
     bool isReturn;
     uint8_t size;
     bool isUncond() { return !this->isCond; }
+    Addr getEnd() { return this->pc + this->size; }
     BranchInfo() : pc(0), target(0), isCond(false), isIndirect(false), isCall(false), isReturn(false), size(0) {}
     BranchInfo (const PCStateBase &control_pc,
                 const PCStateBase &target_pc,
@@ -63,7 +66,23 @@ typedef struct FTBSlot : BranchInfo
     bool uncondValid() { return this->isUncond() && this->valid; }
     bool condValid() { return this->isCond && this->valid;}
     FTBSlot() : valid(false) {}
+    FTBSlot(const BranchInfo &bi) : BranchInfo(bi), valid(true) {}
     BranchInfo getBranchInfo() { return BranchInfo(*this); }
+
+    bool operator < (const FTBSlot &other) const
+    {
+        return this->pc < other.pc;
+    }
+
+    bool operator == (const FTBSlot &other) const
+    {
+        return this->pc == other.pc;
+    }
+
+    bool operator > (const FTBSlot &other) const
+    {
+        return this->pc > other.pc;
+    }
 }FTBSlot;
 
 typedef struct FTBEntry
@@ -74,7 +93,7 @@ typedef struct FTBEntry
 
     // TODO: parameterzie numBr
     /** The entry's branch info. */
-    std::array<FTBSlot, 2> slots;
+    std::vector<FTBSlot> slots;
 
     /** The entry's fallthrough address. */
     Addr fallThruAddr;
@@ -85,10 +104,16 @@ typedef struct FTBEntry
     /** Whether or not the entry is valid. */
     bool valid = false;
     // TODO: always taken
-    FTBEntry(): slots{FTBSlot(), FTBSlot()}, fallThruAddr(0), tid(0), valid(false) {}
+    FTBEntry(): fallThruAddr(0), tid(0), valid(false) {}
+    void dump() {
+        DPRINTF(DecoupleBP, "FTB entry: valid %d, tag %#lx, fallThruAddr:%#lx, slots:\n",
+            valid, tag, fallThruAddr);
+        for (auto &slot : slots) {
+            DPRINTF(DecoupleBP, "    pc:%#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d\n",
+                slot.pc, slot.size, slot.target, slot.isCond, slot.isIndirect, slot.isCall, slot.isReturn);
+        }
+    }
 }FTBEntry;
-
-
 
 struct BlockDecodeInfo {
     std::vector<bool> condMask;
@@ -251,11 +276,13 @@ typedef struct FullFTBPrediction
     bool isTaken() {
         auto &ftbEntry = this->ftbEntry;
         if (valid) {
-            for (int i = 0; i < 2; i++) {
-                if ((ftbEntry.slots[i].condValid() && condTakens[i]) ||
-                    ftbEntry.slots[i].uncondValid()) {
-                    return true;
-                }
+            int i = 0;
+            for (auto &slot : ftbEntry.slots) {
+                if ((slot.condValid() && condTakens[i]) ||
+                    slot.uncondValid()) {
+                        return true;
+                    }
+                i++;
             }
         }
         return false;
@@ -264,11 +291,12 @@ typedef struct FullFTBPrediction
     FTBSlot getTakenSlot() {
         auto &ftbEntry = this->ftbEntry;
         if (valid) {
-            for (int i = 0; i < 2; i++) {
-                if ((ftbEntry.slots[i].condValid() && condTakens[i]) ||
-                    ftbEntry.slots[i].uncondValid()) {
-                    return ftbEntry.slots[i];
-                }
+            int i = 0;
+            for (auto &slot : ftbEntry.slots) {
+                if ((slot.condValid() && condTakens[i]) ||
+                    slot.uncondValid()) {
+                        return slot;
+                    }
             }
         }
         return FTBSlot();
@@ -278,22 +306,21 @@ typedef struct FullFTBPrediction
         Addr target;
         auto &ftbEntry = this->ftbEntry;
         if (valid) {
-            for (int i = 0; i < 2; i++) {
-                if ((ftbEntry.slots[i].condValid() && condTakens[i]) ||
-                     ftbEntry.slots[i].uncondValid()) {
-                    target = ftbEntry.slots[i].target;
-                }
-            }
-            auto &tailSlot = ftbEntry.slots[2];
-            if (tailSlot.uncondValid()) {
-                if (tailSlot.isIndirect) {
+            auto slot = getTakenSlot();
+            if (slot.condValid()) {
+                target = slot.target;
+            } else if (slot.uncondValid()) {
+                target = slot.target;
+                if (slot.isIndirect) {
                     target = indirectTarget;
                 }
-                if (tailSlot.isReturn) {
+                if (slot.isReturn) {
                     target = returnTarget;
                 }
+            } else {
+                target = ftbEntry.fallThruAddr;
             }
-            target = ftbEntry.fallThruAddr;
+            
         } else {
             target = bbStart + 32; //TODO: +predictWidth
         }
@@ -361,17 +388,36 @@ typedef struct FullFTBPrediction
         bool taken = false;
         if (valid) {
             // TODO: numBr
-            for (int i = 0; i < 2; i++) {
-                if (ftbEntry.slots[i].condValid()) {
+            int i = 0;
+            for (auto &slot : ftbEntry.slots) {
+                DPRINTF(Override, "slot %d: condValid %d, uncondValid %d\n",
+                    i, slot.condValid(), slot.uncondValid());
+                DPRINTF(Override, "condTakens.size() %d\n", condTakens.size());
+                if (slot.condValid()) {
                     shamt++;
                 }
+                assert(condTakens.size() >= i+1);
                 if (condTakens[i]) {
                     taken = true;
                     break;
                 }
+                i++;
             }
         }
         return std::make_pair(shamt, taken);
+    }
+
+    void dump() {
+        DPRINTF(Override, "dumping FullFTBPrediction\n");
+        DPRINTF(Override, "bbStart: %#lx, ftbEntry:\n", bbStart);
+        ftbEntry.dump();
+        DPRINTF(Override, "condTakens: ");
+        for (auto taken : condTakens) {
+            DPRINTFR(Override, "%d ", taken);
+        }
+        DPRINTFR(Override, "\n");
+        DPRINTF(Override, "indirectTarget: %#lx, returnTarget: %#lx\n",
+            indirectTarget, returnTarget);
     }
 }FullFTBPrediction;
 

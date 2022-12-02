@@ -100,7 +100,64 @@ class DefaultFTB : public TimedBaseFTBPredictor
      *  @param target_pc The target address of the branch.
      *  @param tid The thread id.
      */
-    void update(Addr inst_pc, const PCStateBase &target_pc, ThreadID tid);
+    void update(FetchStream stream, ThreadID tid);
+
+    bool entryHasUncond(FTBEntry e) {
+        if (!e.slots.empty()) {
+            return e.slots.back().uncondValid();
+        } else {
+            return false;
+        }
+    }
+
+    bool entryHasCond(FTBEntry e) {
+      return numCondInEntry(e) > 0;
+    }
+
+    int numCondInEntry(FTBEntry e) {
+        int numCond = 0;
+        if (!e.slots.empty()) {
+            for (auto &slot : e.slots) {
+                if (slot.condValid()) {
+                    numCond++;
+                }
+            }
+        }
+        return numCond;
+    }
+
+    bool entryIsFull(FTBEntry e) {
+        // int validSlots = 0;
+        // if (!e.slots.empty()) {
+        //     for (auto &slot : e.slots) {
+        //         if (slot.valid) {
+        //             validSlots++;
+        //         }
+        //     }
+        // }
+        // return validSlots == numBr;
+        return e.slots.size() == numBr;
+    }
+
+    bool branchIsInEntry(FTBEntry e, Addr instPC) {
+        if (!e.slots.empty()) {
+            for (auto &slot : e.slots) {
+                if (slot.pc == instPC) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    void dumpFTBEntry(FTBEntry e) {
+        DPRINTF(DecoupleBP, "FTB entry: valid %d, tag %#lx, fallThruAddr:%#lx, slots:\n",
+            e.valid, e.tag, e.fallThruAddr);
+        for (auto &slot : e.slots) {
+            DPRINTF(DecoupleBP, "    pc:%#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d\n",
+                slot.pc, slot.size, slot.target, slot.isCond, slot.isIndirect, slot.isCall, slot.isReturn);
+        }
+    }
 
   private:
     /** Returns the index into the FTB, based on the branch's PC.
@@ -138,6 +195,9 @@ class DefaultFTB : public TimedBaseFTBPredictor
 
     /** Log2 NumThreads used for hashing threadid */
     unsigned log2NumThreads;
+
+    /** Number of branches per entry */
+    unsigned numBr;
 };
 
 } // namespace ftb_pred

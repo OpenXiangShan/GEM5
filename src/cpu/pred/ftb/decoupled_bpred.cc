@@ -402,6 +402,7 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
 
     // TODO: update exeBranchInfo
     stream.exeBranchInfo = BranchInfo(control_pc, corr_target, static_inst, control_inst_size);
+    stream.exeTaken = actually_taken;
     // We should update endtype after restoring speculatively updated states!!
     // if (is_return) {
     //     ++stats.RASIncorrect;
@@ -729,6 +730,7 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
                 stream.exeBranchInfo.pc, stream.exeBranchInfo.target,
                 stream.predBranchInfo.pc, stream.predBranchInfo.target);
 
+        ftb->update(stream, tid);
         // if (stream.squashType == SQUASH_NONE || stream.squashType == SQUASH_CTRL) {
         //     DPRINTF(DecoupleBP || debugFlagOn,
         //             "Update mispred stream %lu, start=%#lx, hist=%s, "

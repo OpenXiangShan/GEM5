@@ -84,10 +84,22 @@ DefaultFTB::putPCHistory(Addr startAddr,
     // TODO: getting startAddr from pred is ugly
     FTBEntry find_entry = lookup(startAddr, 0);
     bool hit = find_entry.valid;
+    if (hit) {
+        DPRINTF(DecoupleBP, "FTB: lookup hit, dumping hit entry\n");
+        dumpFTBEntry(find_entry);
+    } else {
+        DPRINTF(DecoupleBP, "FTB: lookup miss\n");
+    }
     // assign prediction for s2 and later stages
     for (int s = getDelay(); s < stagePreds.size(); ++s) {
         stagePreds[s].valid = hit;
         stagePreds[s].ftbEntry = find_entry;
+        for (int i = 0; i < numBr; ++i) {
+            stagePreds[s].condTakens.push_back(false);
+        }
+        DPRINTF(DecoupleBP, "after push\n");
+        DPRINTF(DecoupleBP, "condTaken size: %d\n", stagePreds[s].condTakens.size());
+        stagePreds[s].dump();
     }
 }
 
@@ -160,9 +172,68 @@ DefaultFTB::lookup(Addr inst_pc, ThreadID tid)
 
 // TODO:: generate/update FTBentry with given info
 void
-DefaultFTB::update(Addr inst_pc, const PCStateBase &target, ThreadID tid)
+DefaultFTB::update(FetchStream stream, ThreadID tid)
 {
-    unsigned ftb_idx = getIndex(inst_pc, tid);
+    DPRINTF(DecoupleBP, "FTB: Updating FTB entry\n");
+    // generate ftb entry
+    Addr startPC = stream.startPC;
+    unsigned ftb_idx = getIndex(startPC, tid);
+    Addr inst_tag = getTag(startPC);
+
+    bool pred_hit = stream.isHit;
+    bool stream_taken = stream.exeTaken;
+    FTBEntry entry_to_write;
+    if (pred_hit || stream_taken) {
+        BranchInfo branch_info = stream.exeBranchInfo;
+        bool is_uncond = branch_info.isUncond();
+        // if pred not hit, establish a new entry
+        if (!pred_hit) {
+            DPRINTF(DecoupleBP, "FTB: Pred not hit, creating new FTB entry\n");
+            FTBEntry new_entry;
+            new_entry.valid = true;
+            new_entry.tag = inst_tag;
+            new_entry.tid = tid;
+            std::vector<FTBSlot> &slots = new_entry.slots;
+            FTBSlot new_slot = FTBSlot(branch_info);
+            slots.push_back(new_slot);
+            // uncond branch should set fallThruAddr to end of that inst
+            if (is_uncond) {
+                new_entry.fallThruAddr = branch_info.getEnd();
+            } else {
+                new_entry.fallThruAddr = startPC + 32;
+            }
+            entry_to_write = new_entry;
+        } else {
+            DPRINTF(DecoupleBP, "FTB: Pred hit, updating FTB entry if necessary\n");
+            DPRINTF(DecoupleBP, "dumping old entry:\n");
+            FTBEntry old_entry = stream.predFTBEntry;
+            dumpFTBEntry(old_entry);
+            assert(old_entry.tag == inst_tag && old_entry.tid == tid && old_entry.valid);
+            std::vector<FTBSlot> &slots = old_entry.slots;
+            bool new_branch = branchIsInEntry(old_entry, branch_info.pc);
+            if (new_branch) {
+                // keep pc ascending order
+                auto it = slots.begin();
+                while (it != slots.end()) {
+                    if (*it > branch_info) {
+                        break;
+                    }
+                    ++it;
+                }
+                slots.insert(it, FTBSlot(branch_info));
+                // remove the last slot if there are more than numBr slots
+                if (slots.size() > numBr) {
+                    Addr last_slot_pc = slots.rbegin()->pc;
+                    slots.pop_back();
+                    old_entry.fallThruAddr = last_slot_pc;
+                }
+            }
+            entry_to_write = old_entry;
+        }
+        DPRINTF(DecoupleBP, "dumping new entry:\n");
+        dumpFTBEntry(entry_to_write);
+        ftb[ftb_idx] = entry_to_write;
+    }
 
     assert(ftb_idx < numEntries);
 
