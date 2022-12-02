@@ -48,6 +48,7 @@ DefaultFTB::DefaultFTB(const Params &p)
     tagBits = p.tagBits;
     instShiftAmt = p.instShiftAmt;
     log2NumThreads = floorLog2(p.numThreads);
+    numBr = p.numBr;
     DPRINTF(Fetch, "FTB: Creating FTB object.\n");
 
     if (!isPowerOf2(numEntries)) {
@@ -94,8 +95,20 @@ DefaultFTB::putPCHistory(Addr startAddr,
     for (int s = getDelay(); s < stagePreds.size(); ++s) {
         stagePreds[s].valid = hit;
         stagePreds[s].ftbEntry = find_entry;
+        DPRINTF(DecoupleBP, "FTB: numBranches %d\n", numBr);
+        stagePreds[s].condTakens.clear();
         for (int i = 0; i < numBr; ++i) {
             stagePreds[s].condTakens.push_back(false);
+        }
+        // TODO: this is a hack to get a valid target for indirect branches
+        if (!find_entry.slots.empty()) {
+            auto tail_slot = find_entry.slots.back();
+            if (tail_slot.uncondValid()) {
+                stagePreds[s].indirectTarget = tail_slot.target;
+                if (tail_slot.isReturn) {
+                    stagePreds[s].returnTarget = tail_slot.target;
+                }
+            }
         }
         DPRINTF(DecoupleBP, "after push\n");
         DPRINTF(DecoupleBP, "condTaken size: %d\n", stagePreds[s].condTakens.size());
@@ -210,8 +223,8 @@ DefaultFTB::update(FetchStream stream, ThreadID tid)
             dumpFTBEntry(old_entry);
             assert(old_entry.tag == inst_tag && old_entry.tid == tid && old_entry.valid);
             std::vector<FTBSlot> &slots = old_entry.slots;
-            bool new_branch = branchIsInEntry(old_entry, branch_info.pc);
-            if (new_branch) {
+            bool new_branch = !branchIsInEntry(old_entry, branch_info.pc);
+            if (new_branch && stream_taken) {
                 // keep pc ascending order
                 auto it = slots.begin();
                 while (it != slots.end()) {

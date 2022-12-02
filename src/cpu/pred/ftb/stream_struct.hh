@@ -339,16 +339,7 @@ typedef struct FullFTBPrediction
     }
 
     Addr controlAddr() {
-        auto &ftbEntry = this->ftbEntry;
-        for (int i = 0; i < 2; i++) {
-            if (ftbEntry.slots[i].condValid() && condTakens[i]) {
-                return ftbEntry.slots[i].pc;
-            }
-        }
-        if (ftbEntry.slots[1].valid && !ftbEntry.slots[1].isCond) {
-            return ftbEntry.slots[1].pc;
-        }
-        return 0; 
+        return getTakenSlot().pc;
     }
 
     // TODO: brNum, taken, takenPC, target, fallThruPC
