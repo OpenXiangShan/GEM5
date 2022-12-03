@@ -39,6 +39,7 @@ SimObject('Prefetcher.py', sim_objects=[
     'BOPPrefetcher', 'SBOOEPrefetcher', 'STeMSPrefetcher', 'PIFPrefetcher'])
 
 
+DebugFlag('BOPPrefetcher')
 DebugFlag('SMSPrefetcher')
 DebugFlag('BertiPrefetcher')
 
