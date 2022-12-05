@@ -505,6 +505,8 @@ class Fetch
     /** Memory request used to access cache. */
     RequestPtr memReq[MaxThreads];
 
+    RequestPtr anotherMemReq[MaxThreads];
+
     /** Variable that tracks if fetch has written to the time buffer this
      * cycle. Used to tell CPU if there is activity this cycle.
      */

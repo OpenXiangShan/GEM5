@@ -318,6 +318,7 @@ Fetch::clearStates(ThreadID tid)
     macroop[tid] = NULL;
     delayedCommit[tid] = false;
     memReq[tid] = NULL;
+    anotherMemReq[tid] = NULL;
     stalls[tid].decode = false;
     stalls[tid].drain = false;
     fetchBufferPC[tid] = 0;
@@ -346,6 +347,7 @@ Fetch::resetStage()
 
         delayedCommit[tid] = false;
         memReq[tid] = NULL;
+        anotherMemReq[tid] = NULL;
 
         stalls[tid].decode = false;
         stalls[tid].drain = false;
@@ -374,7 +376,7 @@ Fetch::processCacheCompletion(PacketPtr pkt)
 {
     ThreadID tid = cpu->contextToThread(pkt->req->contextId());
 
-    if (pkt->req->isMisalignedFetch()) {
+    if (pkt->req->isMisalignedFetch() && (pkt->req == memReq[tid] || pkt->req == anotherMemReq[tid])) {
         Addr anotherPC = 0;
         unsigned anotherSize = 0;
         if (pkt->req->getReqNum() == 1) {
@@ -407,6 +409,8 @@ Fetch::processCacheCompletion(PacketPtr pkt)
 
                 mem_req->setReqNum(2);
 
+                anotherMemReq[tid] = memReq[tid];
+
                 memReq[tid] = mem_req;
 
                 fetchStatus[tid] = ItlbWait;
@@ -416,13 +420,17 @@ Fetch::processCacheCompletion(PacketPtr pkt)
             }
             return;
         } else {
-            DPRINTF(Fetch, "[tid:%i] Received another pkt.\n", tid);
+            DPRINTF(Fetch, "[tid:%i] Received another pkt addr=%#lx, mem_req addr=%#lx.\n", tid,
+                    pkt->getAddr(), pkt->req->getVaddr());
 
             // Copy two packets data into second packet
             uint8_t* firstData = new uint8_t[fetchBufferSize];
             uint8_t* secondData = new uint8_t[fetchBufferSize];
             firstPkt[tid]->getData(firstData);
             secondPkt[tid]->getData(secondData);
+            if (pkt->req->getReqNum() == 1) {
+                pkt = secondPkt[tid];
+            }
             pkt->setData(firstData, 0, 0, firstPkt[tid]->getSize());
             pkt->setData(secondData, 0, firstPkt[tid]->getSize(), secondPkt[tid]->getSize());
         }
@@ -463,8 +471,16 @@ Fetch::processCacheCompletion(PacketPtr pkt)
     pkt->req->setAccessLatency();
     cpu->ppInstAccessComplete->notify(pkt);
     // Reset the mem req to NULL.
-    delete pkt;
+    if (!pkt->req->isMisalignedFetch()) {
+        delete pkt;
+    } else {
+        delete firstPkt[tid];
+        delete secondPkt[tid];
+        firstPkt[tid] = nullptr;
+        secondPkt[tid] = nullptr;
+    }
     memReq[tid] = NULL;
+    anotherMemReq[tid] = NULL;
 }
 
 void
@@ -701,6 +717,8 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
 
         memReq[tid] = mem_req;
 
+        anotherMemReq[tid] = mem_req;
+
         mem_req->setMisalignedFetch();
 
         DPRINTF(Fetch, "[tid:%i] Fetching first cache line %#x for addr %#x, pc=%#lx\n",
@@ -759,23 +777,30 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
     }
     Addr fetchPC = mem_req->isMisalignedFetch() ? fetchMisalignedPC : mem_req->getVaddr();
 
-    if (fetchStatus[tid] == ItlbWait && mem_req->isMisalignedFetch() && mem_req != memReq[tid]) {
-        DPRINTF(Fetch, "[tid:%i] re-fetch addr: %#x, pc=%#lx\n", tid, mem_req->getVaddr(), mem_req->getPC());
-        fetchCacheLine(mem_req->getVaddr(), tid, mem_req->getPC());
-        return;
-    }
-
     assert(!cpu->switchedOut());
 
     // Wake up CPU if it was idle
     cpu->wakeCPU();
 
-    if (fetchStatus[tid] != ItlbWait || mem_req != memReq[tid] ||
-        mem_req->getVaddr() != memReq[tid]->getVaddr()) {
-        DPRINTF(Fetch, "[tid:%i] Ignoring itlb completed after squash\n",
-                tid);
-        ++fetchStats.tlbSquashes;
-        return;
+    if (memReq[tid] != NULL) {
+        DPRINTF(Fetch, "memReq.addr=%#lx\n", memReq[tid]->getVaddr());
+    }
+
+    if (anotherMemReq[tid] != NULL) {
+        DPRINTF(Fetch, "anotherMemReq.addr=%#lx\n", anotherMemReq[tid]->getVaddr());
+    }
+
+    DPRINTF(Fetch, "fetchStatus[tid] != ItlbWait: %d\n", fetchStatus[tid] != ItlbWait);
+
+    if (!(fetchStatus[tid] == IcacheWaitResponse && mem_req->isMisalignedFetch() && (mem_req == memReq[tid] || mem_req == anotherMemReq[tid])) && 
+        (fetchStatus[tid] != ItlbWait || ((mem_req != anotherMemReq[tid] || mem_req->getVaddr() != anotherMemReq[tid]->getVaddr()) && 
+         (mem_req != memReq[tid] || mem_req->getVaddr() != memReq[tid]->getVaddr())))) {
+            DPRINTF(Fetch, "[tid:%i] Ignoring itlb completed after squash\n",
+                    tid);
+            DPRINTF(Fetch, "[tid:%i] Ignoring req addr=%#lx\n",
+                    tid, mem_req->getVaddr());
+            ++fetchStats.tlbSquashes;
+            return;
     }
 
 
@@ -789,6 +814,7 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
                     mem_req->getPaddr());
             fetchStatus[tid] = NoGoodAddr;
             memReq[tid] = NULL;
+            anotherMemReq[tid] = NULL;
             return;
         }
 
@@ -844,6 +870,7 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
                 tid, mem_req->getVaddr(), memReq[tid]->getVaddr());
         // Translation faulted, icache request won't be sent.
         memReq[tid] = NULL;
+        anotherMemReq[tid] = NULL;
 
         // Send the fault to commit.  This thread will not do anything
         // until commit handles the fault.  The only other way it can
@@ -896,10 +923,12 @@ Fetch::doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst,
         DPRINTF(Fetch, "[tid:%i] Squashing outstanding Icache miss.\n",
                 tid);
         memReq[tid] = NULL;
+        anotherMemReq[tid] = NULL;
     } else if (fetchStatus[tid] == ItlbWait) {
         DPRINTF(Fetch, "[tid:%i] Squashing outstanding ITLB miss.\n",
                 tid);
         memReq[tid] = NULL;
+        anotherMemReq[tid] = NULL;
     }
 
     // Get rid of the retrying packet if it was from this thread.
@@ -1961,7 +1990,8 @@ Fetch::IcachePort::recvTimingResp(PacketPtr pkt)
     assert(pkt->req->isUncacheable() ||
            !(pkt->cacheResponding() && !pkt->hasSharers()));
 
-    DPRINTF(Fetch, "received pkt addr=%#lx\n", pkt->getAddr());
+    DPRINTF(Fetch, "received pkt addr=%#lx, req addr=%#lx\n", pkt->getAddr(),
+            pkt->req->getVaddr());
     for (int i = 0;i < pkt->getSize();i++) {
         DPRINTF(Fetch, "data[%d]=%#x\n", i, pkt->getConstPtr<uint8_t>()[i]);
     }
