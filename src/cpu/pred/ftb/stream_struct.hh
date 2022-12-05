@@ -9,6 +9,7 @@
 #include "cpu/pred/ftb/stream_common.hh"
 #include "cpu/static_inst.hh"
 #include "debug/DecoupleBP.hh"
+#include "debug/FTB.hh"
 #include "debug/Override.hh"
 // #include "cpu/pred/ftb/ftb.hh"
 
@@ -105,13 +106,15 @@ typedef struct FTBEntry
     bool valid = false;
     // TODO: always taken
     FTBEntry(): fallThruAddr(0), tid(0), valid(false) {}
-    void dump() {
-        DPRINTF(DecoupleBP, "FTB entry: valid %d, tag %#lx, fallThruAddr:%#lx, slots:\n",
-            valid, tag, fallThruAddr);
-        for (auto &slot : slots) {
-            DPRINTF(DecoupleBP, "    pc:%#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d\n",
-                slot.pc, slot.size, slot.target, slot.isCond, slot.isIndirect, slot.isCall, slot.isReturn);
+
+    int getNumCondInEntryBefore(Addr pc) {
+        int num = 0;
+        for (auto &slot : this->slots) {
+            if (slot.condValid() && slot.pc < pc) {
+                num++;
+            }
         }
+        return num;
     }
 }FTBEntry;
 
@@ -251,6 +254,28 @@ typedef struct FetchStream
     // Addr getNextStreamStart() const {return getTaken() ? getTakenTarget() : getFallThruPC(); }
     // bool isCall() const { return endType == END_CALL; }
     // bool isReturn() const { return endType == END_RET; }
+
+    std::pair<int, bool> getHistInfoDuringSquash(Addr squash_pc, bool is_cond, bool actually_taken)
+    {
+        bool hit = isHit;
+        if (!hit) {
+            int shamt = is_cond ? 1 : 0;
+            return std::make_pair(shamt, actually_taken);
+        } else {
+            int shamt = predFTBEntry.getNumCondInEntryBefore(squash_pc);
+            assert(shamt <= 2); // TODO: numBr
+            if (is_cond) {
+                if (shamt == 2) { // TODO: numBr
+                    // current cond should not be counted into this entry
+                    return std::make_pair(2, false);
+                } else {
+                    return std::make_pair(shamt+1, actually_taken);
+                }
+            } else {
+                return std::make_pair(shamt, false);
+            }
+        }
+    }
 }FetchStream;
 
 typedef struct FullFTBPrediction
@@ -374,7 +399,8 @@ typedef struct FullFTBPrediction
     std::vector<boost::dynamic_bitset<>> indexFoldedHist;
     std::vector<boost::dynamic_bitset<>> tagFoldedHist;
 
-    std::pair<int, bool> getHistInfo() {
+    std::pair<int, bool> getHistInfo()
+    {
         int shamt = 0;
         bool taken = false;
         if (valid) {
@@ -396,19 +422,6 @@ typedef struct FullFTBPrediction
             }
         }
         return std::make_pair(shamt, taken);
-    }
-
-    void dump() {
-        DPRINTF(Override, "dumping FullFTBPrediction\n");
-        DPRINTF(Override, "bbStart: %#lx, ftbEntry:\n", bbStart);
-        ftbEntry.dump();
-        DPRINTF(Override, "condTakens: ");
-        for (auto taken : condTakens) {
-            DPRINTFR(Override, "%d ", taken);
-        }
-        DPRINTFR(Override, "\n");
-        DPRINTF(Override, "indirectTarget: %#lx, returnTarget: %#lx\n",
-            indirectTarget, returnTarget);
     }
 }FullFTBPrediction;
 

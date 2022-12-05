@@ -187,34 +187,20 @@ DecoupledBPUWithFTB::generateFinalPredAndCreateBubbles()
 {
     DPRINTF(Override, "In generateFinalPredAndCreateBubbles().\n");
     // predsOfEachStage should be ready now
-    // for (unsigned i = 0; i < numComponents; i++) {
-    //     components[i]->makePrediction(predsOfEachStage[components[i]->getDelay()]);
-    // }
-    // TODO: print each stage predictions
-    // DPRINTF(Override, "componentPreds[0]: valid: %d, (%#lx,%#lx)(%#lx)->%#lx, taken: %d, toBeCont: %d;\n"
-    //         "componentPreds[1]: valid: %d, (%#lx,%#lx)(%#lx)->%#lx, taken: %d, toBeCont: %d.\n",
-    //         componentPreds[0].valid, componentPreds[0].bbStart, componentPreds[0].controlAddr, componentPreds[0].getFallThruPC(),
-    //         componentPreds[0].nextStream, componentPreds[0].isTaken(), componentPreds[0].toBeCont(),
-    //         componentPreds[1].valid, componentPreds[1].bbStart, componentPreds[1].controlAddr, componentPreds[1].getFallThruPC(),
-    //         componentPreds[1].nextStream, componentPreds[1].isTaken(), componentPreds[1].toBeCont());
+    for (int i = 0; i < numStages; i++) {
+        printFullFTBPrediction(predsOfEachStage[i]);
+    }
     // choose the most accurate prediction
     FullFTBPrediction *chosen = &predsOfEachStage[0];
-    // int j = (int) numComponents - 1;
-    // DPRINTF(Override, "(int) numComponents - 1 : %d, numComponents: %d.\n", j, numComponents);
 
-    // TODO: numStages
     for (int i = (int) numStages - 1; i >= 0; i--) {
-        // const auto &e =predsOfEachStage[i];
-        // DPRINTF(Override,
-        //         "stage %u prediction: %#lx-[%#lx, %#lx) -> %#lx\n", i,
-        //         e.bbStart, e.controlAddr, e.getFallThruPC(), e.nextStream);
         if (predsOfEachStage[i].valid) {
             chosen = &predsOfEachStage[i];
             DPRINTF(Override, "choose stage %d.\n", i);
             break;
         }
     }
-    finalPred = *chosen;  // chosen could be invalid
+    finalPred = *chosen;  // TODO: chosen could be invalid
     // streamTAGE->recordFoldedHist(finalPred);  // store the folded history
     // calculate bubbles
     unsigned first_hit_stage = 0;
@@ -225,17 +211,11 @@ DecoupledBPUWithFTB::generateFinalPredAndCreateBubbles()
         first_hit_stage++;
     }
     // generate bubbles
-    /**
-     * @brief We don't need to generate bubbles because ubtb does not work yet
-     * @todo fix it with numOverrideBubbles = first_hit_stage;
-     */
     numOverrideBubbles = first_hit_stage;
     receivedPred = true;
-    // TODO: fix this
-    // DPRINTF(Override, "chosen is valid: %d, (%#lx,%#lx)(%#lx)->%#lx, taken: %d, toBeCont: %d;\n", 
-    //         finalPred.valid, finalPred.bbStart, finalPred.controlAddr, finalPred.getFallThruPC(),
-    //         finalPred.nextStream, finalPred.isTaken(), finalPred.toBeCont());
-    // DPRINTF(Override, "Ends generateFinalPredAndCreateBubbles(), numOverrideBubbles is %d, receivedPred is set true.\n", numOverrideBubbles);
+
+    printFullFTBPrediction(*chosen);
+    DPRINTF(Override, "Ends generateFinalPredAndCreateBubbles(), numOverrideBubbles is %d, receivedPred is set true.\n", numOverrideBubbles);
 }
 
 bool
@@ -320,8 +300,8 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
                             unsigned control_inst_size, bool actually_taken,
                             const InstSeqNum &seq, ThreadID tid)
 {
-    // bool is_conditional = static_inst->isCondCtrl();
-    // bool is_indirect = static_inst->isIndirectCtrl();
+    bool is_conditional = static_inst->isCondCtrl();
+    bool is_indirect = static_inst->isIndirectCtrl();
     // bool is_call = static_inst->isCall() && !static_inst->isNonSpeculative();
     // bool is_return = static_inst->isReturn() && !static_inst->isNonSpeculative();
 
@@ -342,8 +322,8 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
         return;
     }
 
+    // recover pc
     s0PC = corr_target.instAddr();
-    // s0StreamStartPC = s0PC;
 
     // get corresponding stream entry
     auto &stream = squashing_stream_it->second;
@@ -361,13 +341,13 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
             "stream start=%#lx, predict on hist: %s\n", stream.startPC,
             stream.history);
 
-    // DPRINTF(DecoupleBP || debugFlagOn,
-    //         "Control squash: ftq_id=%lu, fsq_id=%lu,"
-    //         " control_pc=%#lx, corr_target=%#lx, is_conditional=%u, "
-    //         "is_indirect=%u, actually_taken=%u, branch seq: %lu\n",
-    //         target_id, stream_id, control_pc.instAddr(),
-    //         corr_target.instAddr(), is_conditional, is_indirect,
-    //         actually_taken, seq);
+    DPRINTF(DecoupleBP || debugFlagOn,
+            "Control squash: ftq_id=%lu, fsq_id=%lu,"
+            " control_pc=%#lx, corr_target=%#lx, is_conditional=%u, "
+            "is_indirect=%u, actually_taken=%u, branch seq: %lu\n",
+            target_id, stream_id, control_pc.instAddr(),
+            corr_target.instAddr(), is_conditional, is_indirect,
+            actually_taken, seq);
 
     dumpFsq("Before control squash");
 
@@ -379,8 +359,8 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
     FetchTargetId ftq_demand_stream_id;
 
     // TODO: restore ras
-    DPRINTFV(this->debugFlagOn || ::gem5::debug::DecoupleBPRAS,
-             "dump ras before control squash\n");
+    // DPRINTFV(this->debugFlagOn || ::gem5::debug::DecoupleBPRAS,
+    //          "dump ras before control squash\n");
     // dumpRAS();
 
     // restore ras by traversing the stream younger than the squashing stream
@@ -420,10 +400,6 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
     squashStreamAfter(stream_id);
 
     stream.resolved = true;
-    // stream.exeEnded = true;
-    // stream.exeBranchPC = control_pc.instAddr();
-    // stream.exeTarget = corr_target.instAddr();
-    // stream.exeEndPC = stream.exeBranchPC + control_inst_size;
 
     // recover history to the moment doing prediction
     DPRINTF(DecoupleBPHist,
@@ -431,49 +407,22 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
     s0History = stream.history;
     // streamTAGE->recoverFoldedHist(s0History);
     
-    // TODO: update history again with correct branch info in all FTB entry
-    // TODO: wrap into a function
-    // int shamt;
-    // histShiftIn();
+    // recover history info
+    // TODO: recover folded hist
+    int real_shamt;
+    bool real_taken;
+    std::tie(real_shamt, real_taken) = stream.getHistInfoDuringSquash(control_pc.instAddr(), is_conditional, actually_taken);
+    histShiftIn(real_shamt, real_taken, s0History);
+    historyManager.squash(stream_id, real_shamt, real_taken);
+    checkHistory(s0History);
 
     DPRINTF(DecoupleBPHist,
                 "Shift in history %s\n", s0History);
 
     if (actually_taken) {
-
         stream.exeTaken = true;
-        // stream.endType =
-        //     is_call ? END_CALL : (is_return ? END_RET : END_OTHER_TAKEN);
-        // DPRINTF(DecoupleBP || debugFlagOn,
-        //         "Mark stream %lu is call: %u, is return: %u\n", stream_id,
-        //         is_call, is_return);
-
-        // update ras
-        // if (stream.isCall()) {
-        //     pushRAS(stream_id, "speculative update (in squash)", stream.getFallThruPC());
-        // } else if (stream.isReturn()) {
-        //     popRAS(stream_id, "speculative update (in squash)");
-        // }
-
-        // DPRINTFV(
-        //     this->debugFlagOn || ::gem5::debug::DecoupleBP,
-        //     "a %s flow was redirected by taken branch, "
-        //     "predicted: %#lx->%#lx, correct: %#lx->%#lx, new fsq entry is:\n",
-        //     stream.predEnded ? "pred-longer" : "miss", stream.predBranchPC,
-        //     stream.predTarget, control_pc.instAddr(), corr_target.instAddr());
-        
-        printStream(stream);
-
-    } else {
-        // stream.endType = END_NOT_TAKEN;
-        // DPRINTFV(
-        //     this->debugFlagOn || ::gem5::debug::DecoupleBP,
-        //     "a taken flow was redirected by NOT taken branch,"
-        //     "predicted: %#lx->%#lx, correct: %#lx->%#lx, new fsq entry is:\n",
-        //     stream.predBranchPC, stream.predTarget, control_pc.instAddr(),
-        //     corr_target.instAddr());
-        printStream(stream);
     }
+    printStream(stream);
 
     
     // inc stream id because current stream ends
@@ -483,9 +432,7 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
 
     dumpFsq("After control squash");
 
-    DPRINTF(DecoupleBPRAS, "dump ras after control squash\n");
-    // dumpRAS();
-
+    // TODO: clear prediction states
     finalPred.valid = false;
 
     fetchTargetQueue.squash(target_id + 1, ftq_demand_stream_id,
@@ -499,9 +446,7 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
             fsqId, fetchTargetQueue.getEnqState().streamId,
             fetchTargetQueue.getSupplyingTargetId());
 
-    // historyManager.squash(stream_id, actually_taken, control_pc.instAddr(),
-    //                       corr_target.instAddr());
-    // checkHistory(s0History);
+
 }
 
 void
@@ -521,75 +466,26 @@ DecoupledBPUWithFTB::nonControlSquash(unsigned target_id, unsigned stream_id,
     auto it = fetchStreamQueue.find(stream_id);
     assert(it != fetchStreamQueue.end());
 
-    // auto start = it->second.startPC;
-    // auto end_pc = it->second.getEndPC();
-    // auto next_stream_start = it->second.getNextStreamStart();
-
     auto ftq_demand_stream_id = stream_id;
 
     squashStreamAfter(stream_id);
-    // why not recover history here?
-    
 
-    // DPRINTFV(this->debugFlagOn || ::gem5::debug::DecoupleBP,
-    //          "non control squash: start: %x, end: %x, target: %x\n", start,
-    //          end_pc, next_stream_start);
-
-    // if (end_pc) {
-    //     if (start <= inst_pc.instAddr() && inst_pc.instAddr() < end_pc) {
-    //         // this pc is in the stream
-    //     } else if (inst_pc.instAddr() == next_stream_start) {
-    //         // why would this happen?
-    //         // this pc is in the next stream!
-    //         DPRINTF(DecoupleBP,
-    //                 "Redirected PC is the target of the stream, "
-    //                 "indicating that the stream is ended, switch to next "
-    //                 "stream\n");
-    //         ++it;
-    //         ftq_demand_stream_id = stream_id + 1;
-    //     } else {
-    //         // why would this happen?
-    //         ++it;
-    //         // find the containing stream
-    //         DPRINTF(DecoupleBP,
-    //                 "Redirected PC is not following stream, find it\n");
-    //         while (it != fetchStreamQueue.end()) {
-    //             if (it->second.startPC <= inst_pc.instAddr() &&
-    //                 inst_pc.instAddr() < it->second.getEndPC()) {
-    //                 DPRINTF(DecoupleBP, "Found it in stream %lu\n", it->first);
-    //                 ftq_demand_stream_id = it->first;
-    //                 break;
-    //             }
-    //             ++it;
-    //         }
-    //         assert(it != fetchStreamQueue.end());
-    //     }
-    // }
-
-    // TODO: update history again with correct branch info in all FTB entry
-    // TODO: wrap into a function
-    // auto &stream = it->second;
+    // recover history info
+    // TODO: recover folded hist
+    s0History = it->second.history;
+    auto &stream = it->second;
+    int real_shamt;
+    bool real_taken;
+    std::tie(real_shamt, real_taken) = stream.getHistInfoDuringSquash(inst_pc.instAddr(), false, false);
+    histShiftIn(real_shamt, real_taken, s0History);
+    historyManager.squash(stream_id, real_shamt, real_taken);
+    checkHistory(s0History);
     // fetching from a new fsq entry
     auto pc = inst_pc.instAddr();
     fetchTargetQueue.squash(target_id + 1, ftq_demand_stream_id + 1, pc);
 
-    // we should set s0PC to be the predTarget of the fsq entry
-    // in case that the stream is the newest entry in fsq,
-    // That's because, if an inst of this stream had been squashed due to a
-    // mispredict, and then a non-control squash was made on an inst oldder
-    // than this inst, the s0PC would be set incorrectly by the previous
-    // squash
-
-    // next_stream_start = stream.getNextStreamStart();
-    // stream ptr might have been updated, so we need to update next stream start
-
     s0PC = pc;
     fsqId = stream_id + 1;
-    // if (++it == fetchStreamQueue.end() && stream.getEnded()) {
-    //     s0PC = next_stream_start;
-    //     // s0StreamStartPC = s0PC;
-    //     fsqId = (--it)->first + 1;
-    // }
 
     if (pc == ObservingPC) dumpFsq("after non-control squash");
     DPRINTFV(this->debugFlagOn || ::gem5::debug::DecoupleBP,
@@ -617,6 +513,16 @@ DecoupledBPUWithFTB::trapSquash(unsigned target_id, unsigned stream_id,
     assert(it != fetchStreamQueue.end());
     auto &stream = it->second;
 
+    // recover history info
+    // TODO: recover folded hist
+    s0History = stream.history;
+    int real_shamt;
+    bool real_taken;
+    std::tie(real_shamt, real_taken) = stream.getHistInfoDuringSquash(inst_pc.instAddr(), false, false);
+    histShiftIn(real_shamt, real_taken, s0History);
+    historyManager.squash(stream_id, real_shamt, real_taken);
+    checkHistory(s0History);
+
     // TODO: restore ras
     DPRINTF(DecoupleBPRAS, "dump ras before trap squash\n");
     // dumpRAS();
@@ -643,32 +549,7 @@ DecoupledBPUWithFTB::trapSquash(unsigned target_id, unsigned stream_id,
     // }
 
     stream.resolved = true;
-    // stream.exeEnded = true;
-    // stream.exeBranchPC = last_committed_pc;
-    // // stream.exeBranchType = 1;
-    // stream.exeTarget = inst_pc.instAddr();
-    // stream.exeEndPC = stream.exeBranchPC + 4;
-    // stream.endType = END_NOT_TAKEN;
     stream.squashType = SQUASH_TRAP;
-
-    // TODO: update history again with correct branch info in all FTB entry
-    // TODO: wrap into a function
-    // historyManager.squash(stream_id, true, last_committed_pc, inst_pc.instAddr());
-
-    // boost::to_string(s0History, buf1);
-    // boost::to_string(stream.history, buf2);
-    // DPRINTF(DecoupleBP, "Recover history %s\nto %s\n", buf1.c_str(),
-    //         buf2.c_str());
-    // s0History = stream.history;
-    // streamTAGE->recoverFoldedHist(s0History);
-    // // streamTAGE->checkFoldedHist(s0History);
-    // auto hashed_path =
-    //     computePathHash(last_committed_pc, inst_pc.instAddr());
-    // histShiftIn(hashed_path, s0History);
-    // boost::to_string(s0History, buf1);
-    // DPRINTF(DecoupleBP, "Shift in history %s\n", buf1.c_str());
-
-    // checkHistory(s0History);
 
     squashStreamAfter(stream_id);
 
@@ -681,7 +562,6 @@ DecoupledBPUWithFTB::trapSquash(unsigned target_id, unsigned stream_id,
                             inst_pc.instAddr());
 
     s0PC = inst_pc.instAddr();
-    // s0StreamStartPC = s0PC;
 
     DPRINTF(DecoupleBP,
             "After trap squash, FSQ head Id=%lu, s0pc=%#lx, demand stream "
@@ -690,7 +570,7 @@ DecoupledBPUWithFTB::trapSquash(unsigned target_id, unsigned stream_id,
             fetchTargetQueue.getSupplyingTargetId());
 
     // restore ras
-    DPRINTF(DecoupleBPRAS, "dump ras after trap squash\n");
+    // DPRINTF(DecoupleBPRAS, "dump ras after trap squash\n");
     // dumpRAS();
 }
 
@@ -892,42 +772,7 @@ DecoupledBPUWithFTB::tryEnqFetchStream()
     assert(!streamQueueFull());
     if (true) {
         bool should_create_new_stream = true;
-        // if (!fetchStreamQueue.empty()) {
-        //     // check last entry state
-        //     auto &back = fetchStreamQueue.rbegin()->second;
-        //     if (back.getEnded()) {
-        //         should_create_new_stream = true;
-        //         DPRINTF(DecoupleBP || debugFlagOn,
-        //                 "FSQ: the latest stream has ended\n");
-        //     } else if (back.getEndPC() >= MaxAddr) {
-        //         DPRINTF(DecoupleBP,
-        //                 "stream end %#lx is insane, cannot make prediction\n",
-        //                 back.getEndPC());
-        //         return;
-        //     }
-        // }
-        // if (fetchStreamQueue.empty()) {
-        //     should_create_new_stream = true;
-        //     DPRINTF(DecoupleBP || debugFlagOn,
-        //             "FSQ: is empty\n");
-        // }
-
-        // if (!should_create_new_stream) {
-        //     DPRINTF(DecoupleBP || debugFlagOn,
-        //             "FSQ is not empty and the latest stream hasn't ended\n");
-        // }
         makeNewPrediction(should_create_new_stream);
-
-        // const auto &back = fetchStreamQueue.rbegin()->second;
-        // if (!back.getEnded()) {
-        //     // streamMiss = true;
-        //     DPRINTF(DecoupleBP || debugFlagOn, "s0PC update to %#lx\n", s0PC);
-        // } else {
-        //     DPRINTF(DecoupleBP || debugFlagOn,
-        //             "stream %lu has ended, s0PC update to %#lx\n",
-        //             fetchStreamQueue.rend()->first, s0PC);
-        // }
-
     } else {
         DPRINTF(DecoupleBP || debugFlagOn, "FSQ is full: %lu\n",
                 fetchStreamQueue.size());
@@ -992,125 +837,22 @@ DecoupledBPUWithFTB::tryEnqFetchTarget()
     // We does let ftq to goes beyond fsq now
     assert(ftq_enq_state.pc <= end);
 
-    // deal with an incompleted target entry
-    // would not happen now
-    // if (fetchTargetQueue.lastEntryIncomplete()) {
-    //     DPRINTF(DecoupleBP || debugFlagOn,
-    //             "Try filling up incompleted ftq entry\n");
-    //     fetchTargetQueue.dump("Before update last entry");
-    //     auto &last = fetchTargetQueue.getLastInsertedEntry();
-    //     bool used_up_stream = false;
-    //     if (stream_to_enq.getTaken()) {
-    //         DPRINTF(DecoupleBP || debugFlagOn,
-    //                 "mark the last target as taken\n");
-    //         setTakenEntryWithStream(stream_to_enq, last);
-    //         ftq_enq_state.pc = last.target;
-    //         used_up_stream = true;
-    //     } else {
-    //         // still a missing target, set endPC to the predicted end
-    //         // decouplePredict is only allow to predicted untial this end
-    //         Addr predicted_until = stream_to_enq.getEndPC();
-    //         if (predicted_until > ftq_enq_state.pc) {
-    //             last.endPC =
-    //                 std::min(predicted_until,
-    //                          alignToCacheLine(last.endPC + fetchTargetSize));
-    //             ftq_enq_state.pc = last.endPC;
-    //         } else {
-    //             DPRINTF(
-    //                 DecoupleBP || debugFlagOn,
-    //                 "FSQ falls behind FTQ, cannot update last FTQ entry\n");
-    //         }
-    //         used_up_stream = stream_to_enq.getEnded() &&
-    //                          ftq_enq_state.pc == stream_to_enq.getFallThruPC();
-    //         DPRINTF(
-    //             DecoupleBP || debugFlagOn,
-    //             "the last target is still not taken, can predict to %#lx\n",
-    //             ftq_enq_state.pc);
-    //     }
-    //     if (used_up_stream) {
-    //         ftq_enq_state.streamId++;
-    //     }
-    //     DPRINTF(DecoupleBP || debugFlagOn,
-    //             "After fill up last entry, Update ftqEnqPC to %#lx, "
-    //             "FTQ demand stream ID to %lu\n",
-    //             ftq_enq_state.pc, ftq_enq_state.streamId);
-    //     printFetchTarget(last, "Updated in FTQ");
-    //     fetchTargetQueue.dump("After update last entry");
-    //     return;
-    // }
     // create a new target entry
     FtqEntry ftq_entry;
     ftq_entry.startPC = ftq_enq_state.pc;
     ftq_entry.fsqID = ftq_enq_state.streamId;
 
-    Addr baddr = stream_to_enq.getControlPC();
-    // Addr line_end = alignToCacheLine(ftq_entry.startPC + fetchTargetSize);
-    // bool branch_in_line = baddr < line_end;
-    // bool end_in_line = end <= line_end;
-
+    // set prediction results to ftq entry
     bool taken = stream_to_enq.predTaken;
-    ftq_entry.endPC = end;
-    ftq_entry.takenPC = taken ? baddr : 0;
-    ftq_entry.taken = taken;
-    ftq_entry.target = taken ? stream_to_enq.predBranchInfo.target : 0;
+    if (taken) {
+        setTakenEntryWithStream(stream_to_enq, ftq_entry);
+    } else {
+        setNTEntryWithStream(ftq_entry, end);
+    }
 
-
-    // DPRINTF(DecoupleBP,
-    //         "end in line: %d, branch in line: %d, stream ended: %d\n",
-    //         end_in_line, branch_in_line, stream_to_enq.getEnded());
-
-
-    // TODO: add at most two cachelines at a time
-    // set ftq_enq_state, and ftq_entry
-
-    // first ftq entry
-    // bool used_up_stream = false;
-    // at the latter half of a cache line
-    // bool cross_two_cachelines = crossCacheLine(ftq_entry.startPC);
-    // if (stream_to_enq.getTaken() && branch_in_line) {
-    //     DPRINTF(DecoupleBP, "Enqueue FTQ with ended stream %lu\n",
-    //             ftq_enq_state.streamId);
-    //     printStream(stream_to_enq);
-        
-
-    //     setTakenEntryWithStream(stream_to_enq, ftq_entry);
-    //     ftq_enq_state.pc = ftq_entry.target;
-    //     used_up_stream = true;
-
-    // } else if (stream_to_enq.predEndPC <= ftq_enq_state.pc) {
-    //     DPRINTF(DecoupleBP || debugFlagOn,
-    //             "FSQ falls behind FTQ, cannot update last FTQ entry\n");
-
-    //     DPRINTF(DecoupleBP || debugFlagOn,
-    //             "(Unchanged) Update ftqEnqPC = %#lx, FTQ demand stream ID = %lu\n",
-    //             ftq_enq_state.pc, ftq_enq_state.streamId);
-    //     return;
-    // } else {  // not taken:  A. missing or B. ended but not taken
-    //     Addr predict_until;
-    //     // assert(!stream_to_enq.getEnded() ||
-    //     //        (stream_to_enq.getEnded() && !stream_to_enq.getTaken())||
-    //     //        (stream_to_enq.getTaken() && !branch_in_line));
-    //     used_up_stream = stream_to_enq.getEnded() && end_in_line;
-    //     if (end_in_line) {
-    //         predict_until = end;
-    //     } else {
-    //         // Taken but br not in line
-    //         // Or, miss and predicted_until goes beyond this cache line
-    //         predict_until = line_end;
-    //     }
-    //     setNTEntryWithStream(ftq_entry, predict_until);
-    //     ftq_enq_state.pc = predict_until;
-    //     DPRINTF(DecoupleBP,
-    //             "Enqueue FTQ with continuous stream %lu that can predicted "
-    //             "until %#lx. Update ftqEnqPC to %#lx\n",
-    //             ftq_enq_state.streamId, predict_until, ftq_enq_state.pc);
-    //     printStream(stream_to_enq);
-    // }
-
-    // if (used_up_stream) {
+    // update ftq_enq_state
     ftq_enq_state.pc = taken ? stream_to_enq.predBranchInfo.target : end;
     ftq_enq_state.streamId++;
-    // }
     DPRINTF(DecoupleBP,
             "Update ftqEnqPC to %#lx, FTQ demand stream ID to %lu\n",
             ftq_enq_state.pc, ftq_enq_state.streamId);
@@ -1129,7 +871,9 @@ void
 DecoupledBPUWithFTB::histShiftIn(int shamt, bool taken, boost::dynamic_bitset<> &history)
 {
     history <<= shamt;
-    history[0] = taken;
+    if (shamt > 0) {
+        history[0] = taken;
+    }
 }
 
 // this function enqueues fsq and update s0PC and s0History
@@ -1174,11 +918,10 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
     // entry.predStreamId = fsqId;
 
 
-    // TODO: history manager
-    {}
 
 
-    // update histories for components
+
+    // update (folded) histories for components
     for (int i = 0; i < numComponents; i++) {
         components[i]->specUpdateHist(s0History, finalPred);
     }
@@ -1188,6 +931,8 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
     boost::to_string(s0History, buf1);
     histShiftIn(shamt, taken, s0History);
     boost::to_string(s0History, buf2);
+
+    historyManager.addSpeculativeHist(entry.startPC, shamt, taken, fsqId);
 
     // // make new stream entry with final pred
     // if (finalPred.valid && finalPred.isTaken()) {
@@ -1303,38 +1048,35 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
     // checkHistory(s0History);
 }
 
-// void
-// DecoupledBPUWithFTB::checkHistory(const boost::dynamic_bitset<> &history)
-// {
-//     unsigned ideal_size = 0;
-//     boost::dynamic_bitset<> ideal_hash_hist(historyBits, 0);
-//     for (const auto entry: historyManager.getSpeculativeHist()) {
-//         if (entry.miss) {
-//             continue;
-//         }
-//         ideal_size += 2;
-//         Addr signature = computePathHash(entry.pc, entry.target);
-//         DPRINTF(DecoupleBPVerbose, "%#lx->%#lx, signature: %#lx\n", entry.pc,
-//                 entry.target, signature);
-//         ideal_hash_hist <<= 2;
-//         for (unsigned i = 0; i < historyTokenBits; i++) {
-//             ideal_hash_hist[i] ^= (signature >> i) & 1;
-//         }
-//     }
-//     unsigned comparable_size = std::min(ideal_size, historyBits);
-//     boost::dynamic_bitset<> sized_real_hist(history);
-//     ideal_hash_hist.resize(comparable_size);
-//     sized_real_hist.resize(comparable_size);
+void
+DecoupledBPUWithFTB::checkHistory(const boost::dynamic_bitset<> &history)
+{
+    unsigned ideal_size = 0;
+    boost::dynamic_bitset<> ideal_hash_hist(historyBits, 0);
+    for (const auto entry: historyManager.getSpeculativeHist()) {
+        if (entry.shamt == 0) {
+            continue;
+        }
+        ideal_size += entry.shamt;
+        DPRINTF(DecoupleBPVerbose, "pc: %#lx, shamt: %d, cond_taken: %d\n", entry.pc,
+                entry.shamt, entry.cond_taken);
+        ideal_hash_hist <<= entry.shamt;
+        ideal_hash_hist[0] = entry.cond_taken;
+    }
+    unsigned comparable_size = std::min(ideal_size, historyBits);
+    boost::dynamic_bitset<> sized_real_hist(history);
+    ideal_hash_hist.resize(comparable_size);
+    sized_real_hist.resize(comparable_size);
 
-//     boost::to_string(ideal_hash_hist, buf1);
-//     boost::to_string(sized_real_hist, buf2);
-//     DPRINTF(DecoupleBP,
-//             "Ideal size:\t%u, real history size:\t%u, comparable size:\t%u\n",
-//             ideal_size, historyBits, comparable_size);
-//     DPRINTF(DecoupleBP, "Ideal history:\t%s\nreal history:\t%s\n",
-//             buf1.c_str(), buf2.c_str());
-//     assert(ideal_hash_hist == sized_real_hist);
-// }
+    boost::to_string(ideal_hash_hist, buf1);
+    boost::to_string(sized_real_hist, buf2);
+    DPRINTF(DecoupleBP,
+            "Ideal size:\t%u, real history size:\t%u, comparable size:\t%u\n",
+            ideal_size, historyBits, comparable_size);
+    DPRINTF(DecoupleBP, "Ideal history:\t%s\nreal history:\t%s\n",
+            buf1.c_str(), buf2.c_str());
+    assert(ideal_hash_hist == sized_real_hist);
+}
 
 // bool
 // DecoupledBPUWithFTB::popRAS(FetchStreamId stream_id, const char *when)

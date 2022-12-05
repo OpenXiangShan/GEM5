@@ -35,6 +35,7 @@
 #include "config/the_isa.hh"
 #include "cpu/pred/ftb/stream_struct.hh"
 #include "cpu/pred/ftb/timed_base_pred.hh"
+#include "debug/FTB.hh"
 #include "params/DefaultFTB.hh"
 
 
@@ -150,11 +151,11 @@ class DefaultFTB : public TimedBaseFTBPredictor
         return false;
     }
 
-    void dumpFTBEntry(FTBEntry e) {
-        DPRINTF(DecoupleBP, "FTB entry: valid %d, tag %#lx, fallThruAddr:%#lx, slots:\n",
+    void printFTBEntry(FTBEntry e) {
+        DPRINTF(FTB, "FTB entry: valid %d, tag %#lx, fallThruAddr:%#lx, slots:\n",
             e.valid, e.tag, e.fallThruAddr);
         for (auto &slot : e.slots) {
-            DPRINTF(DecoupleBP, "    pc:%#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d\n",
+            DPRINTF(FTB, "    pc:%#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d\n",
                 slot.pc, slot.size, slot.target, slot.isCond, slot.isIndirect, slot.isCall, slot.isReturn);
         }
     }

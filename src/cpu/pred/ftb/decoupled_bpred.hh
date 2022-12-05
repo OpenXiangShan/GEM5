@@ -31,45 +31,32 @@ namespace ftb_pred
 class HistoryManager
 {
   public:
-    struct TakenEntry
+    struct HistoryEntry
     {
-        TakenEntry(Addr _pc, Addr _target, bool _miss, uint64_t stream_id)
-            : pc(_pc), target(_target), miss(_miss), streamId(stream_id)
+        HistoryEntry(Addr _pc, int _shamt, bool _cond_taken, uint64_t stream_id)
+            : pc(_pc), shamt(_shamt), cond_taken(_cond_taken), streamId(stream_id)
         {
         }
       Addr pc;
-      Addr target;
-      bool miss;
+      Addr shamt;
+      bool cond_taken;
       uint64_t streamId;
     };
 
   private:
-    std::list<TakenEntry> speculativeHists;
+    std::list<HistoryEntry> speculativeHists;
 
     unsigned IdealHistLen{246};
 
   public:
-    void addSpeculativeHist(const Addr addr, const Addr target,
-                            const uint64_t stream_id, bool is_miss)
+    void addSpeculativeHist(const Addr addr, const int shamt,
+                            bool cond_taken, const uint64_t stream_id)
     {
-        speculativeHists.emplace_back(addr, target, is_miss, stream_id);
+        speculativeHists.emplace_back(addr, shamt, cond_taken, stream_id);
 
         const auto &it = speculativeHists.back();
-        DPRINTF(DecoupleBP, "Add taken: %i, stream %lu, %#lx->%#lx\n",
-                !is_miss, it.streamId, it.pc, it.target);
-    }
-    void updateSpeculativeHist(const Addr addr, const Addr target, const uint64_t stream_id)
-    {
-        auto &it = speculativeHists.back();
-        assert(it.streamId == stream_id);
-        assert(it.miss);
-        it.miss = false;
-        it.pc = addr;
-        it.target = target;
+        printEntry("Add", it);
 
-        DPRINTF(DecoupleBP,
-                "Update taken %lu, %#lx->%#lx\n",
-                it.streamId, it.pc, it.target);
     }
 
 
@@ -79,9 +66,7 @@ class HistoryManager
         while (speculativeHists.size() > IdealHistLen &&
                it != speculativeHists.end()) {
             if (it->streamId < stream_id) {
-                DPRINTF(DecoupleBPVerbose,
-                        "Commit taken %lu, %#lx->%#lx\n",
-                        it->streamId, it->pc, it->target);
+                printEntry("Commit", *it);
                 it = speculativeHists.erase(it);
             } else {
                 ++it;
@@ -89,31 +74,22 @@ class HistoryManager
         }
     }
 
-    const std::list<TakenEntry> &getSpeculativeHist()
+    const std::list<HistoryEntry> &getSpeculativeHist()
     {
         return speculativeHists;
     }
 
-    void squash(const uint64_t stream_id, bool taken, const Addr taken_pc, const Addr target)
+    void squash(const uint64_t stream_id, const int shamt, const bool cond_taken)
     {
         dump("before squash");
         auto it = speculativeHists.begin();
         while (it != speculativeHists.end()) {
             // why is it empty in logs?
             if (it->streamId == stream_id) {
-                if (taken) {
-                    it->miss = false;
-                    it->pc = taken_pc;
-                    it->target = target;
-                } else {
-                    it->miss = true;
-                    it->pc = 0;
-                    it->target = 0;
-                }
+                it->cond_taken = cond_taken;
+                it->shamt = shamt;
             } if (it->streamId > stream_id) {
-                DPRINTF(DecoupleBPVerbose,
-                        "Squash taken %lu, %#lx->%#lx\n",
-                        it->streamId, it->pc, it->target);
+                printEntry("Squash", *it);
                 it = speculativeHists.erase(it);
             } else {
                 DPRINTF(DecoupleBPVerbose,
@@ -132,27 +108,14 @@ class HistoryManager
             return;
         }
         auto last = speculativeHists.begin();
-        if (last->miss) {
-            return;
-        }
         auto cur = speculativeHists.begin();
         cur++;
         while (cur != speculativeHists.end()) {
-            if (cur->miss) {
-                break;
-            }
-            if (last->target > cur->pc) {
-                DPRINTF(DecoupleBP,
-                        "Sanity check failed: %#lx->%#lx, %#lx->%#lx\n",
-                        last->pc, last->target, cur->pc, cur->target);
-            }
-            assert(last->target <= cur->pc);
-            if (cur->pc - last->target > 1024) {
-                warn("Stream %#lx-%#lx is too long", last->target, cur->pc);
-            }
-            if (cur->pc - last->target > 32*1024) {
-                dump("before panic");
-                panic("Stream %#lx-%#lx is too long", last->target, cur->pc);
+            // TODO: numBr
+            int numBr = 2;
+            if (cur->shamt > numBr) {
+                dump("before warn");
+                warn("entry shifted more than %d bits\n", numBr);
             }
             last = cur;
             cur++;
@@ -164,10 +127,14 @@ class HistoryManager
         DPRINTF(DecoupleBPVerbose, "Dump ideal history %s:\n", when);
         for (auto it = speculativeHists.begin(); it != speculativeHists.end();
              it++) {
-            DPRINTFR(DecoupleBPVerbose,
-                     "stream: %lu, %#lx -> %#lx, miss: %d\n",
-                     it->streamId, it->pc, it->target, it->miss);
+            printEntry("", *it);
         }
+    }
+
+    void printEntry(const char* when, const HistoryEntry& entry)
+    {
+        DPRINTF(DecoupleBPVerbose, "%s stream: %lu, pc %#lx, shamt %d, cond_taken %d\n",
+            when, entry.streamId, entry.pc, entry.shamt, entry.cond_taken);
     }
 };
 
@@ -297,6 +264,28 @@ class DecoupledBPUWithFTB : public BPredUnit
     void generateFinalPredAndCreateBubbles();
 
     // const bool dumpLoopPred;
+
+    void printFTBEntry(const FTBEntry &entry) {
+        DPRINTF(FTB, "FTB entry: valid %d, tag %#lx, fallThruAddr:%#lx, slots:\n",
+            entry.valid, entry.tag, entry.fallThruAddr);
+        for (auto &slot : entry.slots) {
+            DPRINTF(FTB, "    pc:%#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d\n",
+                slot.pc, slot.size, slot.target, slot.isCond, slot.isIndirect, slot.isCall, slot.isReturn);
+        }
+    }
+
+    void printFullFTBPrediction(const FullFTBPrediction &pred) {
+        DPRINTF(DecoupleBP, "dumping FullFTBPrediction\n");
+        DPRINTF(DecoupleBP, "bbStart: %#lx, ftbEntry:\n", pred.bbStart);
+        printFTBEntry(pred.ftbEntry);
+        DPRINTF(DecoupleBP, "condTakens: ");
+        for (auto taken : pred.condTakens) {
+            DPRINTFR(DecoupleBP, "%d ", taken);
+        }
+        DPRINTFR(DecoupleBP, "\n");
+        DPRINTF(DecoupleBP, "indirectTarget: %#lx, returnTarget: %#lx\n",
+            pred.indirectTarget, pred.returnTarget);
+    }
 
   public:
     void tick();

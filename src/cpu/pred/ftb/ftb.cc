@@ -86,17 +86,18 @@ DefaultFTB::putPCHistory(Addr startAddr,
     FTBEntry find_entry = lookup(startAddr, 0);
     bool hit = find_entry.valid;
     if (hit) {
-        DPRINTF(DecoupleBP, "FTB: lookup hit, dumping hit entry\n");
-        dumpFTBEntry(find_entry);
+        DPRINTF(FTB, "FTB: lookup hit, dumping hit entry\n");
+        printFTBEntry(find_entry);
     } else {
-        DPRINTF(DecoupleBP, "FTB: lookup miss\n");
+        DPRINTF(FTB, "FTB: lookup miss\n");
     }
     // assign prediction for s2 and later stages
     for (int s = getDelay(); s < stagePreds.size(); ++s) {
+        DPRINTF(FTB, "FTB: assigning prediction for stage %d\n", s);
         stagePreds[s].valid = hit;
         stagePreds[s].ftbEntry = find_entry;
-        DPRINTF(DecoupleBP, "FTB: numBranches %d\n", numBr);
-        stagePreds[s].condTakens.clear();
+        DPRINTF(FTB, "FTB: numBranches %d\n", numBr);
+        stagePreds[s].condTakens.clear(); // TODO: do this in generateFinalPredAndCreateOverrideBubbles
         for (int i = 0; i < numBr; ++i) {
             stagePreds[s].condTakens.push_back(false);
         }
@@ -110,9 +111,6 @@ DefaultFTB::putPCHistory(Addr startAddr,
                 }
             }
         }
-        DPRINTF(DecoupleBP, "after push\n");
-        DPRINTF(DecoupleBP, "condTaken size: %d\n", stagePreds[s].condTakens.size());
-        stagePreds[s].dump();
     }
 }
 
@@ -187,7 +185,7 @@ DefaultFTB::lookup(Addr inst_pc, ThreadID tid)
 void
 DefaultFTB::update(FetchStream stream, ThreadID tid)
 {
-    DPRINTF(DecoupleBP, "FTB: Updating FTB entry\n");
+    DPRINTF(FTB, "FTB: Updating FTB entry\n");
     // generate ftb entry
     Addr startPC = stream.startPC;
     unsigned ftb_idx = getIndex(startPC, tid);
@@ -201,7 +199,7 @@ DefaultFTB::update(FetchStream stream, ThreadID tid)
         bool is_uncond = branch_info.isUncond();
         // if pred not hit, establish a new entry
         if (!pred_hit) {
-            DPRINTF(DecoupleBP, "FTB: Pred not hit, creating new FTB entry\n");
+            DPRINTF(FTB, "pred miss, creating new FTB entry\n");
             FTBEntry new_entry;
             new_entry.valid = true;
             new_entry.tag = inst_tag;
@@ -217,14 +215,15 @@ DefaultFTB::update(FetchStream stream, ThreadID tid)
             }
             entry_to_write = new_entry;
         } else {
-            DPRINTF(DecoupleBP, "FTB: Pred hit, updating FTB entry if necessary\n");
-            DPRINTF(DecoupleBP, "dumping old entry:\n");
+            DPRINTF(FTB, "pred hit, updating FTB entry if necessary\n");
+            DPRINTF(FTB, "printing old entry:\n");
             FTBEntry old_entry = stream.predFTBEntry;
-            dumpFTBEntry(old_entry);
+            printFTBEntry(old_entry);
             assert(old_entry.tag == inst_tag && old_entry.tid == tid && old_entry.valid);
             std::vector<FTBSlot> &slots = old_entry.slots;
             bool new_branch = !branchIsInEntry(old_entry, branch_info.pc);
             if (new_branch && stream_taken) {
+                DPRINTF(FTB, "new taken branch detected, inserting into FTB entry\n");
                 // keep pc ascending order
                 auto it = slots.begin();
                 while (it != slots.end()) {
@@ -236,6 +235,7 @@ DefaultFTB::update(FetchStream stream, ThreadID tid)
                 slots.insert(it, FTBSlot(branch_info));
                 // remove the last slot if there are more than numBr slots
                 if (slots.size() > numBr) {
+                    DPRINTF(FTB, "removing last slot because there are more than %d slots", numBr);
                     Addr last_slot_pc = slots.rbegin()->pc;
                     slots.pop_back();
                     old_entry.fallThruAddr = last_slot_pc;
@@ -243,8 +243,8 @@ DefaultFTB::update(FetchStream stream, ThreadID tid)
             }
             entry_to_write = old_entry;
         }
-        DPRINTF(DecoupleBP, "dumping new entry:\n");
-        dumpFTBEntry(entry_to_write);
+        DPRINTF(FTB, "printing new entry:\n");
+        printFTBEntry(entry_to_write);
         ftb[ftb_idx] = entry_to_write;
     }
 
