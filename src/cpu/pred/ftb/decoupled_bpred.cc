@@ -924,6 +924,7 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
     // update (folded) histories for components
     for (int i = 0; i < numComponents; i++) {
         components[i]->specUpdateHist(s0History, finalPred);
+        entry.predMetas[i] = components[i]->getPredictionMeta();
     }
     // update ghr
     int shamt;

@@ -34,6 +34,8 @@ class TimedBaseFTBPredictor: public SimObject
                               const boost::dynamic_bitset<> &history,
                               std::array<FullFTBPrediction, 3> &stagePreds) {}
 
+    virtual std::shared_ptr<void> getPredictionMeta() { return nullptr; }
+
     virtual void specUpdateHist(const boost::dynamic_bitset<> &history, FullFTBPrediction &pred) {}
     virtual unsigned getDelay() {return 0;}
 

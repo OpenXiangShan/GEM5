@@ -66,6 +66,8 @@ class DefaultFTB : public TimedBaseFTBPredictor
     void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
                       std::array<FullFTBPrediction, 3> &stagePreds) override;
 
+    std::shared_ptr<void> getPredictionMeta() override;
+
     void specUpdateHist(const boost::dynamic_bitset<> &history, FullFTBPrediction &pred) override;
 
     unsigned getDelay() override {return 1;}
@@ -101,7 +103,7 @@ class DefaultFTB : public TimedBaseFTBPredictor
      *  @param target_pc The target address of the branch.
      *  @param tid The thread id.
      */
-    void update(FetchStream stream, ThreadID tid);
+    void update(FetchStream &stream, ThreadID tid);
 
     bool entryHasUncond(FTBEntry e) {
         if (!e.slots.empty()) {
@@ -199,6 +201,14 @@ class DefaultFTB : public TimedBaseFTBPredictor
 
     /** Number of branches per entry */
     unsigned numBr;
+
+    typedef struct FTBMeta {
+        bool hit;
+        FTBMeta() : hit(false) {}
+        FTBMeta(bool h) : hit(h) {}
+    }FTBMeta;
+
+    FTBMeta meta;
 };
 
 } // namespace ftb_pred

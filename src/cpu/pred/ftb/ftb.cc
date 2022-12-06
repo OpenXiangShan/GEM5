@@ -112,6 +112,14 @@ DefaultFTB::putPCHistory(Addr startAddr,
             }
         }
     }
+    meta = FTBMeta(hit);
+}
+
+std::shared_ptr<void>
+DefaultFTB::getPredictionMeta()
+{
+    std::shared_ptr<void> meta_void_ptr = std::make_shared<FTBMeta>(meta.hit);
+    return meta_void_ptr;
 }
 
 void
@@ -183,7 +191,7 @@ DefaultFTB::lookup(Addr inst_pc, ThreadID tid)
 
 // TODO:: generate/update FTBentry with given info
 void
-DefaultFTB::update(FetchStream stream, ThreadID tid)
+DefaultFTB::update(FetchStream &stream, ThreadID tid)
 {
     DPRINTF(FTB, "FTB: Updating FTB entry\n");
     // generate ftb entry
@@ -192,6 +200,9 @@ DefaultFTB::update(FetchStream stream, ThreadID tid)
     Addr inst_tag = getTag(startPC);
 
     bool pred_hit = stream.isHit;
+    bool pred_hit_from_meta = std::static_pointer_cast<FTBMeta>(stream.predMetas[0])->hit; //TODO: get component idx
+    assert(pred_hit == pred_hit_from_meta);
+
     bool stream_taken = stream.exeTaken;
     FTBEntry entry_to_write;
     if (pred_hit || stream_taken) {
