@@ -381,11 +381,11 @@ Fetch::processCacheCompletion(PacketPtr pkt)
         unsigned anotherSize = 0;
         if (pkt->req->getReqNum() == 1) {
             firstPkt[tid] = pkt;
-            anotherPC = pkt->getAddr() + 64 - pkt->getAddr() % 64;
+            anotherPC = pkt->req->getVaddr() + 64 - pkt->req->getVaddr() % 64;
             anotherSize = fetchBufferSize - pkt->getSize();
         } else if (pkt->req->getReqNum() == 2) {
             secondPkt[tid] = pkt;
-            anotherPC = pkt->getAddr() - 64 + pkt->getSize();
+            anotherPC = pkt->req->getVaddr() - 64 + pkt->getSize();
             anotherSize = fetchBufferSize - pkt->getSize();
         }
 
@@ -395,7 +395,7 @@ Fetch::processCacheCompletion(PacketPtr pkt)
             if (pkt->isRetriedPkt()) {
                 DPRINTF(Fetch, "[tid:%i] Retried pkt.\n", tid);
                 DPRINTF(Fetch, "[tid:%i] send next pkt, addr: %#x, size: %d\n",
-                        tid, pkt->getAddr() + 64 - pkt->getAddr() % 64, 
+                        tid, pkt->req->getVaddr() + 64 - pkt->req->getVaddr() % 64, 
                         fetchBufferSize - pkt->getSize());
                 RequestPtr mem_req = std::make_shared<Request>(
                                     anotherPC, 
