@@ -263,6 +263,7 @@ TLB::createPagefault(Addr vaddr, BaseMMU::Mode mode)
         code = ExceptionCode::STORE_PAGE;
     else
         code = ExceptionCode::INST_PAGE;
+    DPRINTF(TLB, "Create page fault #%i on %#lx\n", code, vaddr);
     return std::make_shared<AddressFault>(vaddr, code);
 }
 

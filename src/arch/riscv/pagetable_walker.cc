@@ -256,14 +256,23 @@ Walker::WalkerState::tryCoalesce(ThreadContext *_tc,
                 mainReq->getPC());
         // add to list of requestors
         requestors.emplace_back(_tc, req, translation);
+        auto &r = requestors.back();
+        Fault new_fault = NoFault;
         if (mainFault != NoFault) {
             // recreate fault for this txn, we don't have pmp yet
             // TODO: also consider pmp's addr fault
-            auto new_fault = pageFaultOnRequestor(requestors.back());
-            return std::make_pair(true, new_fault);
-        } else {
-            return std::make_pair(true, NoFault);
+            new_fault = pageFaultOnRequestor(r);
         }
+        if (requestors.size() == 1) {  // previous requestors are squashed
+            DPRINTF(
+                PageTableWalker,
+                "Replace %#lx(pc=%#lx) with %#lx(pc=%#lx) bc main is squashed",
+                mainReq->getVaddr(), mainReq->getPC(), r.req->getVaddr(),
+                r.req->getPC());
+            mainFault = new_fault;
+            mainReq = r.req;
+        }
+        return std::make_pair(true, new_fault);
     }
     return std::make_pair(false, NoFault);
 }
@@ -289,20 +298,29 @@ Walker::handlePendingSquash()
                 ws->mainReq->getPC(), ws->mainReq->getVaddr());
 
         auto r_it = ws->requestors.begin();
+        bool main_erased = false;
         while (r_it != ws->requestors.end()) {
             auto &r = *r_it;
             if (r.translation->squashed()) {
                 DPRINTF(PageTableWalker,
-                        "Squashing table walk for pc %#lx, addr %#lx\n",
-                        r.req->getPC(), r.req->getVaddr());
+                        "Squashing table walk for addr %#lx(pc=%#lx)\n",
+                        r.req->getVaddr(), r.req->getPC());
                 // finish it before real ``finish''
                 r.translation->finish(
                     std::make_shared<UnimpFault>("Squashed Inst"), r.req,
                     r.tc, ws->mode);
+                if (r_it == ws->requestors.begin()) {
+                    main_erased = true;
+                }
                 r_it = ws->requestors.erase(r_it);
             } else {
                 r_it++;
             }
+        }
+        // choose the first as main
+        if (main_erased && ws->requestors.size() > 0) {
+            ws->mainReq = ws->requestors.front().req;
+            ws->mainFault = ws->requestors.front().fault;
         }
 
         // After this loop, if one requestor is not squashed, it must further
@@ -315,6 +333,7 @@ Walker::handlePendingSquash()
                     "requestors\n",
                     ws->mainReq->getVaddr(), ws->mainReq->getPC());
             it = currStates.erase(it);
+            delete ws;
             num_squashed++;
             if (num_squashed >= numSquashable) {
                 break;
@@ -648,7 +667,8 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
         state = Ready;
         nextState = Waiting;
         DPRINTF(PageTableWalker,
-                "All ops finished for table walk of %#lx (pc=%#lx), requestor size: %lu",
+                "All ops finished for table walk of %#lx (pc=%#lx), requestor "
+                "size: %lu\n",
                 mainReq->getVaddr(), mainReq->getPC(), requestors.size());
         for (auto &r : requestors) {
             if (mainFault == NoFault) {
@@ -777,21 +797,27 @@ Walker::WalkerState::pageFaultOnRequestor(RequestorState &r)
             return walker->tlb->createPagefault(r.req->getPC(), mode);
         }
     } else {
-        return walker->tlb->createPagefault(entry.vaddr, mode);
+        return walker->tlb->createPagefault(r.req->getVaddr(), mode);
     }
 }
 
 Fault
 Walker::WalkerState::pageFault(bool present)
 {
+    bool found_main = false;
     for (auto &r: requestors) {
         DPRINTF(PageTableWalker, "Mark page fault for req %#lx (pc=%#lx).\n",
                 r.req->getVaddr(), r.req->getPC());
         auto _fault = pageFaultOnRequestor(r);
         if (r.req->getVaddr() == mainReq->getVaddr()) {
             mainFault = _fault;
+            found_main = true;
+        } else {
+            DPRINTF(PageTableWalker, "req addr: %#lx main addr: %#lx\n",
+                    r.req->getVaddr(), mainReq->getVaddr());
         }
     }
+    assert(found_main);
     return mainFault;
 }
 
