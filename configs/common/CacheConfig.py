@@ -145,6 +145,7 @@ def config_cache(options, system):
             icache = icache_class(**_get_cache_opts('l1i', options))
             dcache = dcache_class(**_get_cache_opts('l1d', options))
             if dcache.prefetcher != NULL:
+                print("Add dtb for L1D prefetcher")
                 dcache.prefetcher.registerTLB(system.cpu[i].mmu.dtb)
 
             # If we have a walker cache specified, instantiate two
@@ -205,6 +206,7 @@ def config_cache(options, system):
                 system.tol2bus.cpu_side_ports,
                 system.membus.cpu_side_ports, system.membus.mem_side_ports)
             if system.l2.prefetcher != NULL:
+                print("Add dtb for L2 prefetcher")
                 system.l2.prefetcher.registerTLB(system.cpu[i].mmu.dtb)
         elif options.external_memory_system:
             system.cpu[i].connectUncachedPorts(

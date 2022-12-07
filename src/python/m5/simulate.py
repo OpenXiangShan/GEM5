@@ -323,8 +323,17 @@ def switchCpus(system, cpuList, verbose=True):
 
         _changeMemoryMode(system, memory_mode)
 
+    # we only support single CPU for now
+    if not params.isNullPointer(system.l2.prefetcher):
+        print("Register new dtb to l2 pref")
+        system.l2.prefetcher.getCCObject().addTLB(cpuList[0][1].mmu.dtb.getCCObject())
+
     for old_cpu, new_cpu in cpuList:
         new_cpu.takeOverFrom(old_cpu)
+        if hasattr(new_cpu, 'dcache') and \
+                not params.isNullPointer(new_cpu.dcache.prefetcher):
+            print("Register new dtb to dcache pref")
+            new_cpu.dcache.prefetcher.getCCObject().addTLB(new_cpu.mmu.dtb.getCCObject())
 
 def notifyFork(root):
     for obj in root.descendants():
