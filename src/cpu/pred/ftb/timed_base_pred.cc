@@ -12,7 +12,6 @@ namespace ftb_pred
 TimedBaseFTBPredictor::TimedBaseFTBPredictor(const Params &p)
     : SimObject(p)
 {
-
 }
 
 } // namespace ftb_pred

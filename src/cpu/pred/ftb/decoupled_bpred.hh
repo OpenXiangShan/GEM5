@@ -9,6 +9,7 @@
 
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/ftb/ftb.hh"
+#include "cpu/pred/ftb/ftb_tage.hh"
 #include "cpu/pred/ftb/stream_struct.hh"
 #include "cpu/pred/ftb/timed_base_pred.hh"
 #include "cpu/pred/ftb/fetch_target_queue.hh"
@@ -171,6 +172,7 @@ class DecoupledBPUWithFTB : public BPredUnit
     // StreamTAGE *streamTAGE{};
 
     DefaultFTB *ftb{};
+    FTBTAGE *tage{};
 
     std::array<TimedBaseFTBPredictor*, 4> components{}; // TODO: numCompontes
     std::array<FullFTBPrediction, 3> predsOfEachStage{}; // TODO: numStages

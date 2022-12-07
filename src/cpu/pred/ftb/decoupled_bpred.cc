@@ -19,7 +19,8 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
     : BPredUnit(p),
       fetchTargetQueue(p.ftq_size),
       historyBits(p.maxHistLen),
-      ftb(p.ftb)
+      ftb(p.ftb),
+      tage(p.tage)
     //   streamTAGE(p.stream_tage),
     //   streamUBTB(p.stream_ubtb),
     //   dumpLoopPred(p.dump_loop_pred),
@@ -29,9 +30,10 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
     // assert(streamTAGE);
     // assert(streamUBTB);
     bpType = DecoupledFTBType;
-    numComponents = 1;
+    numComponents = 2;
     numStages = 3;
     components[0] = ftb;
+    components[1] = tage;
     // components[0] = streamUBTB;
     // components[1] = streamTAGE;
 
@@ -161,7 +163,7 @@ DecoupledBPUWithFTB::tick()
     if (!receivedPred && !streamQueueFull()) {
         if (s0PC == ObservingPC) {
             DPRINTFV(true, "Predicting block %#lx, id: %lu\n", s0PC, fsqId);
-        }
+        }   
         DPRINTF(DecoupleBP, "Requesting prediction for stream start=%#lx\n", s0PC);
         DPRINTF(Override, "Requesting prediction for stream start=%#lx\n", s0PC);
         // put startAddr in preds
@@ -172,6 +174,11 @@ DecoupledBPUWithFTB::tick()
             components[i]->putPCHistory(s0PC, s0History, predsOfEachStage);
         }
         sentPCHist = true;
+    }
+
+    DPRINTF(Override, "after putPCHistory\n");
+    for (int i = 0; i < numStages; i++) {
+        printFullFTBPrediction(predsOfEachStage[i]);
     }
     
     if (streamQueueFull()) {
@@ -419,9 +426,6 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
     DPRINTF(DecoupleBPHist,
                 "Shift in history %s\n", s0History);
 
-    if (actually_taken) {
-        stream.exeTaken = true;
-    }
     printStream(stream);
 
     
@@ -483,6 +487,10 @@ DecoupledBPUWithFTB::nonControlSquash(unsigned target_id, unsigned stream_id,
     // fetching from a new fsq entry
     auto pc = inst_pc.instAddr();
     fetchTargetQueue.squash(target_id + 1, ftq_demand_stream_id + 1, pc);
+
+    stream.exeTaken = false;
+    stream.resolved = true;
+    stream.squashType = SQUASH_OTHER;
 
     s0PC = pc;
     fsqId = stream_id + 1;
@@ -549,6 +557,7 @@ DecoupledBPUWithFTB::trapSquash(unsigned target_id, unsigned stream_id,
     // }
 
     stream.resolved = true;
+    stream.exeTaken = false;
     stream.squashType = SQUASH_TRAP;
 
     squashStreamAfter(stream_id);
@@ -610,7 +619,14 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
                 stream.exeBranchInfo.pc, stream.exeBranchInfo.target,
                 stream.predBranchInfo.pc, stream.predBranchInfo.target);
 
-        ftb->update(stream, tid);
+        // generate new ftb entry first
+        // each component will use info of this entry to update
+        ftb->getAndSetNewFTBEntry(stream);
+
+        for (int i = 0; i < numComponents; ++i) {
+            components[i]->update(stream);
+        }
+        
         // if (stream.squashType == SQUASH_NONE || stream.squashType == SQUASH_CTRL) {
         //     DPRINTF(DecoupleBP || debugFlagOn,
         //             "Update mispred stream %lu, start=%#lx, hist=%s, "
@@ -870,10 +886,11 @@ DecoupledBPUWithFTB::tryEnqFetchTarget()
 void
 DecoupledBPUWithFTB::histShiftIn(int shamt, bool taken, boost::dynamic_bitset<> &history)
 {
-    history <<= shamt;
-    if (shamt > 0) {
-        history[0] = taken;
+    if (shamt == 0) {
+        return;
     }
+    history <<= shamt;
+    history[0] = taken;
 }
 
 // this function enqueues fsq and update s0PC and s0History

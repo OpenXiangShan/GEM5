@@ -31,7 +31,8 @@ enum EndType {
 enum SquashType {
     SQUASH_NONE=0,
     SQUASH_TRAP,
-    SQUASH_CTRL
+    SQUASH_CTRL,
+    SQUASH_OTHER
 };
 
 
@@ -43,7 +44,7 @@ typedef struct BranchInfo {
     bool isCall;
     bool isReturn;
     uint8_t size;
-    bool isUncond() { return !this->isCond; }
+    bool isUncond() const { return !this->isCond; }
     Addr getEnd() { return this->pc + this->size; }
     BranchInfo() : pc(0), target(0), isCond(false), isIndirect(false), isCall(false), isReturn(false), size(0) {}
     BranchInfo (const PCStateBase &control_pc,
@@ -58,6 +59,21 @@ typedef struct BranchInfo {
         isReturn(static_inst->isReturn()),
         size(size) {}
     // BranchInfo(FTBSlot _e) : pc(_e.pc), target(_e.target), isCond(_e.isCond), isIndirect(_e.isIndirect), isCall(_e.isCall), isReturn(_e.isReturn), size(_e.size) {}
+
+    bool operator < (const BranchInfo &other) const
+    {
+        return this->pc < other.pc;
+    }
+
+    bool operator == (const BranchInfo &other) const
+    {
+        return this->pc == other.pc;
+    }
+
+    bool operator > (const BranchInfo &other) const
+    {
+        return this->pc > other.pc;
+    }
 }BranchInfo;
 
 
@@ -70,20 +86,6 @@ typedef struct FTBSlot : BranchInfo
     FTBSlot(const BranchInfo &bi) : BranchInfo(bi), valid(true) {}
     BranchInfo getBranchInfo() { return BranchInfo(*this); }
 
-    bool operator < (const FTBSlot &other) const
-    {
-        return this->pc < other.pc;
-    }
-
-    bool operator == (const FTBSlot &other) const
-    {
-        return this->pc == other.pc;
-    }
-
-    bool operator > (const FTBSlot &other) const
-    {
-        return this->pc > other.pc;
-    }
 }FTBSlot;
 
 typedef struct FTBEntry
@@ -111,6 +113,16 @@ typedef struct FTBEntry
         int num = 0;
         for (auto &slot : this->slots) {
             if (slot.condValid() && slot.pc < pc) {
+                num++;
+            }
+        }
+        return num;
+    }
+
+    int getTotalNumConds() {
+        int num = 0;
+        for (auto &slot : this->slots) {
+            if (slot.condValid()) {
                 num++;
             }
         }
@@ -187,10 +199,13 @@ typedef struct FetchStream
     // Addr exeEndPC;
     // TODO: use PCState for target(gem5 specific)
     BranchInfo exeBranchInfo;
+
+    FTBEntry updateFTBEntry;
     // TODO: remove signals below
     bool resolved;
 
     int squashType;
+    Addr squashPC;
     // int tripCount;
     // bool useLoopPrediction;
     // bool isLoop;
@@ -198,6 +213,9 @@ typedef struct FetchStream
     // Addr tageTarget;
     unsigned predSource;
     // std::list<std::pair<Addr, unsigned int>> mruLoop;
+
+    // prediction metas
+    std::array<std::shared_ptr<void>, 4> predMetas;
 
     // TODO: collect spec info into one struct?
     boost::dynamic_bitset<> history;
@@ -222,6 +240,7 @@ typedef struct FetchStream
         //   exeTarget(0),
         //   exeBranchPC(0),
           exeBranchInfo(BranchInfo()),
+          updateFTBEntry(FTBEntry()),
           resolved(false),
           squashType(SquashType::SQUASH_NONE),
         //   tripCount(-1),
@@ -241,6 +260,7 @@ typedef struct FetchStream
         // exeTarget = predTarget;
         // exeBranchPC = predBranchPC;
         exeBranchInfo = predBranchInfo;
+        exeTaken = predTaken;
         // exeBranchType = predBranchType;
     }
 
@@ -276,6 +296,7 @@ typedef struct FetchStream
             }
         }
     }
+
 }FetchStream;
 
 typedef struct FullFTBPrediction

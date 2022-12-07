@@ -35,16 +35,14 @@ class FTBTAGE : public TimedBaseFTBPredictor
     {
         public:
             bool valid;
-            Addr startAddr;
             Addr tag;
             short counter;
             bool useful;
 
-            TageEntry() : valid(false), pc(0), tag(0), counter(0), useful(false) {}
+            TageEntry() : valid(false), tag(0), counter(0), useful(false) {}
 
-            TageEntry(Addr startAddr, Addr tag, short counter) :
-                      valid(true), startAddr(startAddr),
-                      tag(tag), counter(counter), useful(false) {}
+            TageEntry(Addr tag, short counter) :
+                      valid(true), tag(tag), counter(counter), useful(false) {}
 
     };
 
@@ -61,13 +59,13 @@ class FTBTAGE : public TimedBaseFTBPredictor
             bool useAlt;
             bitset usefulMask;
 
-            TagePrediction() : mainFound(false), mainCounter(0), altTaken(false),
-                                table(0), index(0), tag(0), counter(0), useAlt(false) {}
+            TagePrediction() : mainFound(false), mainCounter(0), altCounter(0),
+                                table(0), index(0), tag(0), useAlt(false) {}
 
             TagePrediction(bool mainFound, short mainCounter, short altCounter, unsigned table,
-                            Addr index, Addr tag, unsigned counter, bool useAlt) :
+                            Addr index, Addr tag, bool useAlt, bitset usefulMask) :
                             mainFound(mainFound), mainCounter(mainCounter), altCounter(altCounter),
-                            table(table), index(index), tag(tag), counter(counter), useAlt(useAlt) {}
+                            table(table), index(index), tag(tag), useAlt(useAlt), usefulMask(usefulMask) {}
 
 
     };
@@ -81,32 +79,46 @@ class FTBTAGE : public TimedBaseFTBPredictor
     // make predictions, record in stage preds
     void putPCHistory(Addr startAddr,
                       const boost::dynamic_bitset<> &history,
-                      std::array<FullFTBPrediction> &stagePreds) override;
+                      std::array<FullFTBPrediction, 3> &stagePreds) override;
 
-    void update(const boost::dynamic_bitset<> &history, Addr startAddr, const TagePrediction pred, bool actualTaken);
+    std::shared_ptr<void> getPredictionMeta() override;
 
     void specUpdateHist(const boost::dynamic_bitset<> &history, FullFTBPrediction &pred) override;
+
+    void recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken) override;
+
+    void update(const FetchStream &entry) override;
 
     unsigned getDelay() override { return 1; }
 
   private:
-    void lookupHelper(Addr stream_start,
-                      TageEntry &main_entry, TageEntry &alt_entry,
-                      int& main_table, int& main_table_index,
-                      int& alt_table, int& alt_table_index,
-                      int& provider_counts, bool& use_alt_pred,
-                      bitset &usefulMask);
+
+
+    
+    // return provided
+    std::vector<bool> lookupHelper(Addr stream_start,
+                        std::vector<TageEntry> &main_entries,
+                        std::vector<int> &main_tables, std::vector<int> &main_table_indices,
+                        std::vector<bool> &use_alt_preds, std::vector<bitset> &usefulMasks);
 
     Addr getTageIndex(Addr pc, int table);
 
+    Addr getTageIndex(Addr pc, int table, bitset &foldedHist);
+
     Addr getTageTag(Addr pc, int table);
+
+    Addr getTageTag(Addr pc, int table, bitset &foldedHist);
+
+    unsigned getBaseTableIndex(Addr pc);
+
+    void doUpdateHist(const bitset &history, int shamt, bool taken);
 
     const unsigned numPredictors;
 
     std::vector<unsigned> tableSizes;
     std::vector<unsigned> tableIndexBits;
     std::vector<bitset> tableIndexMasks;
-    std::vector<uint64_t> tablePcMasks;
+    // std::vector<uint64_t> tablePcMasks;
     std::vector<unsigned> tableTagBits;
     std::vector<bitset> tableTagMasks;
     std::vector<unsigned> tablePcShifts;
@@ -116,11 +128,11 @@ class FTBTAGE : public TimedBaseFTBPredictor
 
     unsigned maxHistLen;
 
-    std::vector<std::vector<TageEntry>> tageTable;
+    std::vector<std::vector<std::vector<TageEntry>>> tageTable;
 
-    std::vector<short> baseTable;
+    std::vector<std::vector<short>> baseTable;
 
-    std::vector<int> useAlt;
+    std::vector<std::vector<short>> useAlt;
 
     bool matchTag(Addr expected, Addr found);
 
@@ -128,9 +140,13 @@ class FTBTAGE : public TimedBaseFTBPredictor
 
     bool debugFlagOn{false};
 
-    unsigned numTablesToAlloc{1};
+    unsigned numTablesToAlloc;
 
-    void updateCounter(bool actualTaken, bool predTaken, short &counter);
+    unsigned numBr;
+
+    unsigned instShiftAmt {1};
+
+    void updateCounter(bool taken, unsigned width, short &counter);
 
     bool satIncrement(int max, short &counter);
 
@@ -138,7 +154,23 @@ class FTBTAGE : public TimedBaseFTBPredictor
 
     Addr getUseAltIdx(Addr pc);
 
-    int usefulResetCnt;
+    std::vector<int> usefulResetCnt;
+
+    typedef struct TageMeta {
+        std::vector<TagePrediction> preds;
+        std::vector<bitset> tagFoldedHist;
+        std::vector<bitset> indexFoldedHist;
+        TageMeta(std::vector<TagePrediction> preds, std::vector<bitset> tagFoldedHist, std::vector<bitset> indexFoldedHist) :
+            preds(preds), tagFoldedHist(tagFoldedHist), indexFoldedHist(indexFoldedHist) {}
+        TageMeta() {}
+        TageMeta(const TageMeta &other) {
+            preds = other.preds;
+            tagFoldedHist = other.tagFoldedHist;
+            indexFoldedHist = other.indexFoldedHist;
+        }
+    } TageMeta;
+
+    TageMeta meta;
 
 public:
 

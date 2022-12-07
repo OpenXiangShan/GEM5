@@ -85,25 +85,27 @@ class DefaultFTB : public TimedBaseFTBPredictor
 
     /** Looks up an address in the FTB. Must call valid() first on the address.
      *  @param inst_PC The address of the branch to look up.
-     *  @param tid The thread id.
      *  @return Returns the FTB entry.
      */
-    FTBEntry lookup(Addr instPC, ThreadID tid);
+    FTBEntry lookup(Addr instPC);
 
     /** Checks if an block starting with the given PC is in the FTB.
      *  @param inst_PC The address of the block to look up.
-     *  @param tid The thread id.
      *  @return Whether or not the entry of the block exists in the FTB.
      */
-    bool valid(Addr instPC, ThreadID tid);
+    bool valid(Addr instPC);
 
     // TODO: add decoded info and exe result of a block
     /** Updates the FTB with the branch info of a block and execution result.
-     *  @param inst_pc The address of the branch being updated.
-     *  @param target_pc The target address of the branch.
-     *  @param tid The thread id.
      */
-    void update(FetchStream &stream, ThreadID tid);
+    void update(const FetchStream &stream) override;
+
+    /**
+     * @brief derive new ftb entry from old ones and set updateFTBEntry field in stream
+     * 
+     * @param stream 
+     */
+    void getAndSetNewFTBEntry(FetchStream &stream);
 
     bool entryHasUncond(FTBEntry e) {
         if (!e.slots.empty()) {
@@ -167,7 +169,7 @@ class DefaultFTB : public TimedBaseFTBPredictor
      *  @param inst_PC The branch to look up.
      *  @return Returns the index into the FTB.
      */
-    inline unsigned getIndex(Addr instPC, ThreadID tid);
+    inline unsigned getIndex(Addr instPC);
 
     /** Returns the tag bits of a given address.
      *  @param inst_PC The branch's address.
@@ -199,13 +201,13 @@ class DefaultFTB : public TimedBaseFTBPredictor
     /** Log2 NumThreads used for hashing threadid */
     unsigned log2NumThreads;
 
-    /** Number of branches per entry */
     unsigned numBr;
 
     typedef struct FTBMeta {
         bool hit;
         FTBMeta() : hit(false) {}
         FTBMeta(bool h) : hit(h) {}
+        FTBMeta(const FTBMeta &other) : hit(other.hit) {}
     }FTBMeta;
 
     FTBMeta meta;

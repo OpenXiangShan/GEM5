@@ -83,7 +83,7 @@ DefaultFTB::putPCHistory(Addr startAddr,
                          std::array<FullFTBPrediction, 3> &stagePreds)
 {
     // TODO: getting startAddr from pred is ugly
-    FTBEntry find_entry = lookup(startAddr, 0);
+    FTBEntry find_entry = lookup(startAddr);
     bool hit = find_entry.valid;
     if (hit) {
         DPRINTF(FTB, "FTB: lookup hit, dumping hit entry\n");
@@ -112,13 +112,13 @@ DefaultFTB::putPCHistory(Addr startAddr,
             }
         }
     }
-    meta = FTBMeta(hit);
+    meta.hit = hit;
 }
 
 std::shared_ptr<void>
 DefaultFTB::getPredictionMeta()
 {
-    std::shared_ptr<void> meta_void_ptr = std::make_shared<FTBMeta>(meta.hit);
+    std::shared_ptr<void> meta_void_ptr = std::make_shared<FTBMeta>(meta);
     return meta_void_ptr;
 }
 
@@ -135,12 +135,10 @@ DefaultFTB::reset()
 
 inline
 unsigned
-DefaultFTB::getIndex(Addr instPC, ThreadID tid)
+DefaultFTB::getIndex(Addr instPC)
 {
     // Need to shift PC over by the word offset.
-    return ((instPC >> instShiftAmt)
-            ^ (tid << (tagShiftAmt - instShiftAmt - log2NumThreads)))
-            & idxMask;
+    return (instPC >> instShiftAmt) & idxMask;
 }
 
 inline
@@ -151,17 +149,16 @@ DefaultFTB::getTag(Addr instPC)
 }
 
 bool
-DefaultFTB::valid(Addr instPC, ThreadID tid)
+DefaultFTB::valid(Addr instPC)
 {
-    unsigned ftb_idx = getIndex(instPC, tid);
+    unsigned ftb_idx = getIndex(instPC);
 
     Addr inst_tag = getTag(instPC);
 
     assert(ftb_idx < numEntries);
 
     if (ftb[ftb_idx].valid
-        && inst_tag == ftb[ftb_idx].tag
-        && ftb[ftb_idx].tid == tid) {
+        && inst_tag == ftb[ftb_idx].tag) {
         return true;
     } else {
         return false;
@@ -172,32 +169,30 @@ DefaultFTB::valid(Addr instPC, ThreadID tid)
 // address is valid, and also the address.  For now will just use addr = 0 to
 // represent invalid entry.
 FTBEntry
-DefaultFTB::lookup(Addr inst_pc, ThreadID tid)
+DefaultFTB::lookup(Addr inst_pc)
 {
-    unsigned ftb_idx = getIndex(inst_pc, tid);
+    unsigned ftb_idx = getIndex(inst_pc);
 
     Addr inst_tag = getTag(inst_pc);
 
     assert(ftb_idx < numEntries);
 
     if (ftb[ftb_idx].valid
-        && inst_tag == ftb[ftb_idx].tag
-        && ftb[ftb_idx].tid == tid) {
+        && inst_tag == ftb[ftb_idx].tag) {
         return ftb[ftb_idx];
     } else {
         return FTBEntry();
     }
 }
 
-// TODO:: generate/update FTBentry with given info
 void
-DefaultFTB::update(FetchStream &stream, ThreadID tid)
+DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
 {
-    DPRINTF(FTB, "FTB: Updating FTB entry\n");
+    DPRINTF(FTB, "generating new ftb entry\n");
     // generate ftb entry
     Addr startPC = stream.startPC;
-    unsigned ftb_idx = getIndex(startPC, tid);
     Addr inst_tag = getTag(startPC);
+
 
     bool pred_hit = stream.isHit;
     bool pred_hit_from_meta = std::static_pointer_cast<FTBMeta>(stream.predMetas[0])->hit; //TODO: get component idx
@@ -214,7 +209,6 @@ DefaultFTB::update(FetchStream &stream, ThreadID tid)
             FTBEntry new_entry;
             new_entry.valid = true;
             new_entry.tag = inst_tag;
-            new_entry.tid = tid;
             std::vector<FTBSlot> &slots = new_entry.slots;
             FTBSlot new_slot = FTBSlot(branch_info);
             slots.push_back(new_slot);
@@ -230,7 +224,7 @@ DefaultFTB::update(FetchStream &stream, ThreadID tid)
             DPRINTF(FTB, "printing old entry:\n");
             FTBEntry old_entry = stream.predFTBEntry;
             printFTBEntry(old_entry);
-            assert(old_entry.tag == inst_tag && old_entry.tid == tid && old_entry.valid);
+            assert(old_entry.tag == inst_tag && old_entry.valid);
             std::vector<FTBSlot> &slots = old_entry.slots;
             bool new_branch = !branchIsInEntry(old_entry, branch_info.pc);
             if (new_branch && stream_taken) {
@@ -256,12 +250,21 @@ DefaultFTB::update(FetchStream &stream, ThreadID tid)
         }
         DPRINTF(FTB, "printing new entry:\n");
         printFTBEntry(entry_to_write);
-        ftb[ftb_idx] = entry_to_write;
     }
+    stream.updateFTBEntry = entry_to_write;
+}
+
+void
+DefaultFTB::update(const FetchStream &stream)
+{
+    DPRINTF(FTB, "FTB: Updating FTB entry\n");
+    Addr startPC = stream.startPC;
+    unsigned ftb_idx = getIndex(startPC);
+
+    ftb[ftb_idx] = stream.updateFTBEntry;
 
     assert(ftb_idx < numEntries);
 
-    // ftb[ftb_idx].tid = tid;
     // ftb[ftb_idx].valid = true;
     // set(ftb[ftb_idx].target, target);
     // ftb[ftb_idx].tag = getTag(inst_pc);

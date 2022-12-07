@@ -37,6 +37,8 @@ class TimedBaseFTBPredictor: public SimObject
     virtual std::shared_ptr<void> getPredictionMeta() { return nullptr; }
 
     virtual void specUpdateHist(const boost::dynamic_bitset<> &history, FullFTBPrediction &pred) {}
+    virtual void recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken) {}
+    virtual void update(const FetchStream &entry) {}
     virtual unsigned getDelay() {return 0;}
 
 };
