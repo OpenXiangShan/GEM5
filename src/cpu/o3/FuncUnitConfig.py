@@ -59,19 +59,19 @@ class IntMultDiv(FUDesc):
 
     count=2
 
-class FP_ALU(FUDesc):
+class FP_MISC(FUDesc):
+    opList = [OpDesc(opClass='FloatCvt', opLat=3),
+              OpDesc(opClass='FloatDiv', opLat=19, pipelined=False),
+              OpDesc(opClass='FloatSqrt', opLat=24, pipelined=False),
+              OpDesc(opClass='FloatMisc', opLat=3),]
+    count = 2
+
+class FP_MultAdd(FUDesc):
     opList = [ OpDesc(opClass='FloatAdd', opLat=3),
                OpDesc(opClass='FloatCmp', opLat=2),
-               OpDesc(opClass='FloatCvt', opLat=3) ]
+               OpDesc(opClass='FloatMult', opLat=3),
+               OpDesc(opClass='FloatMultAcc', opLat=5),]
     count = 4
-
-class FP_MultDiv(FUDesc):
-    opList = [ OpDesc(opClass='FloatMult', opLat=3),
-               OpDesc(opClass='FloatMultAcc', opLat=5),
-               OpDesc(opClass='FloatMisc', opLat=3),
-               OpDesc(opClass='FloatDiv', opLat=19, pipelined=False),
-               OpDesc(opClass='FloatSqrt', opLat=24, pipelined=False) ]
-    count = 2
 
 class SIMD_Unit(FUDesc):
     opList = [ OpDesc(opClass='SimdAdd'),
