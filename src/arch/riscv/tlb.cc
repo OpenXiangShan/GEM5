@@ -374,7 +374,7 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
             pma->check(req);
 
             // do pmp check if any checking condition is met.
-            // timingFault will be NoFault if pmp checks are
+            // mainFault will be NoFault if pmp checks are
             // passed, otherwise an address fault will be returned.
             fault = pmp->pmpCheck(req, mode, pmode, tc);
         }

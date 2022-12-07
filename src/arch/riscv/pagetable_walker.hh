@@ -93,10 +93,34 @@ namespace RiscvISA
                 Translate,
             };
 
+            struct RequestorState
+            {
+                ThreadContext *tc;
+                RequestPtr req;
+                BaseMMU::Translation *translation;
+                Fault fault;
+                bool squashed;
+
+                RequestorState()
+                {
+                    tc = nullptr;
+                    req = nullptr;
+                    translation = nullptr;
+                    fault = NoFault;
+                    squashed = false;
+                }
+                RequestorState(ThreadContext *tc, RequestPtr req, BaseMMU::Translation *translation) :
+                    tc(tc), req(req), translation(translation), fault(NoFault), squashed(false)
+                {}
+
+                void markSquash() { squashed = true; }
+            };
+
+            std::list<RequestorState> requestors;
+
           protected:
             Walker *walker;
-            ThreadContext *tc;
-            RequestPtr req;
+            RequestPtr mainReq;  // req is renamed to main req
             State state;
             State nextState;
             int level;
@@ -104,8 +128,7 @@ namespace RiscvISA
             TlbEntry entry;
             PacketPtr read;
             std::vector<PacketPtr> writes;
-            Fault timingFault;
-            BaseMMU::Translation * translation;
+            Fault mainFault;
             BaseMMU::Mode mode;
             SATP satp;
             STATUS status;
@@ -118,15 +141,20 @@ namespace RiscvISA
           public:
             WalkerState(Walker * _walker, BaseMMU::Translation *_translation,
                         const RequestPtr &_req, bool _isFunctional = false) :
-                walker(_walker), req(_req), state(Ready),
+                walker(_walker), mainReq(_req), state(Ready),
                 nextState(Ready), level(0), inflight(0),
-                translation(_translation),
                 functional(_isFunctional), timing(false),
                 retrying(false), started(false), squashed(false)
             {
+                requestors.emplace_back(nullptr, _req, _translation);
             }
             void initState(ThreadContext * _tc, BaseMMU::Mode _mode,
                            bool _isTiming = false);
+
+            std::pair<bool, Fault> tryCoalesce(ThreadContext *_tc,
+                             BaseMMU::Translation *translation,
+                             const RequestPtr &req, BaseMMU::Mode mode);
+
             Fault startWalk();
             Fault startFunctional(Addr &addr, unsigned &logBytes);
             bool recvPacket(PacketPtr pkt);
@@ -135,8 +163,10 @@ namespace RiscvISA
             bool wasStarted();
             bool isTiming();
             void retry();
-            void squash();
             std::string name() const {return walker->name();}
+
+            bool anyRequestorSquashed() const;
+            bool allRequestorSquashed() const;
 
           private:
             void setupWalk(Addr vaddr);
@@ -144,6 +174,7 @@ namespace RiscvISA
             void sendPackets();
             void endWalk();
             Fault pageFault(bool present);
+            Fault pageFaultOnRequestor(RequestorState &requestor);
         };
 
         friend class WalkerState;
@@ -164,6 +195,12 @@ namespace RiscvISA
         // Kick off the state machine.
         Fault start(ThreadContext * _tc, BaseMMU::Translation *translation,
                 const RequestPtr &req, BaseMMU::Mode mode);
+
+        std::pair<bool, Fault> tryCoalesce(ThreadContext *_tc,
+                                           BaseMMU::Translation *translation,
+                                           const RequestPtr &req,
+                                           BaseMMU::Mode mode);
+
         Fault startFunctional(ThreadContext * _tc, Addr &addr,
                 unsigned &logBytes, BaseMMU::Mode mode);
         Port &getPort(const std::string &if_name,
