@@ -203,7 +203,13 @@ FTBTAGE::update(const FetchStream &entry)
     int cond_num = 0;
     if (entry.exeTaken) {
         cond_num = ftb_entry.getNumCondInEntryBefore(entry.exeBranchInfo.pc);
-        cond_num += !entry.exeBranchInfo.isUncond() ? 1 : 0;
+        // for case of ftb entry is not full
+        if (cond_num < numBr) {
+            cond_num += !entry.exeBranchInfo.isUncond() ? 1 : 0;
+        }
+        // if ftb entry is full, and this branch is conditional,
+        // we cannot update the last branch, as it will be removed
+        // from current ftb entry
     } else {
         // corresponding to RTL, but in fact we should consider
         // whether the branches are flushed
