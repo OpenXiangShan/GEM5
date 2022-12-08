@@ -289,6 +289,10 @@ Walker::startWalkWrapper()
 void
 Walker::handlePendingSquash()
 {
+    if (squashHandleTick == curCycle()) {  // ensure only handle only once per cycle
+        DPRINTF(PageTableWalker, "Handled squash this cycle, skip\n");
+        return;
+    }
     unsigned num_squashed = 0;
     auto it = currStates.begin();
     while (it != currStates.end()) {
@@ -342,13 +346,15 @@ Walker::handlePendingSquash()
         ++it;
     }
 
-    if (it != currStates.end() && (*it)->anyRequestorSquashed()) {
+    if (it != currStates.end() && (*it)->anyRequestorSquashed() &&
+        !handlePendingSquashEvent.scheduled()) {
         // we have a translation squashed, but we cannot remove it this cycle
         DPRINTF(PageTableWalker,
-                "Scheduling squash at next cycle, because squash bandwidth "
-                "used up\n");
+                "Scheduling squash at next cycle %lu, because squash bandwidth "
+                "used up. Last handle tick=%lu\n", nextCycle(), squashHandleTick);
         schedule(handlePendingSquashEvent, nextCycle());
     }
+    squashHandleTick = curCycle();
 }
 
 bool

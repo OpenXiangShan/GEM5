@@ -217,6 +217,8 @@ namespace RiscvISA
         // The number of outstanding walks that can be squashed per cycle.
         unsigned numSquashable;
 
+        Tick squashHandleTick;
+
         // Wrapper for checking for squashes before starting a translation.
         void startWalkWrapper();
 
