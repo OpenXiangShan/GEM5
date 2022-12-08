@@ -390,6 +390,7 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
     // TODO: update exeBranchInfo
     stream.exeBranchInfo = BranchInfo(control_pc, corr_target, static_inst, control_inst_size);
     stream.exeTaken = actually_taken;
+    stream.squashPC = control_pc.instAddr();
     // We should update endtype after restoring speculatively updated states!!
     // if (is_return) {
     //     ++stats.RASIncorrect;
@@ -419,9 +420,13 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
     int real_shamt;
     bool real_taken;
     std::tie(real_shamt, real_taken) = stream.getHistInfoDuringSquash(control_pc.instAddr(), is_conditional, actually_taken);
+    for (int i = 0; i < numComponents; ++i) {
+        components[i]->recoverHist(s0History, stream, real_shamt, real_taken);
+    }
     histShiftIn(real_shamt, real_taken, s0History);
     historyManager.squash(stream_id, real_shamt, real_taken);
     checkHistory(s0History);
+    tage->checkFoldedHist(s0History, "control squash");
 
     DPRINTF(DecoupleBPHist,
                 "Shift in history %s\n", s0History);
@@ -481,15 +486,20 @@ DecoupledBPUWithFTB::nonControlSquash(unsigned target_id, unsigned stream_id,
     int real_shamt;
     bool real_taken;
     std::tie(real_shamt, real_taken) = stream.getHistInfoDuringSquash(inst_pc.instAddr(), false, false);
+    for (int i = 0; i < numComponents; ++i) {
+        components[i]->recoverHist(s0History, stream, real_shamt, real_taken);
+    }
     histShiftIn(real_shamt, real_taken, s0History);
     historyManager.squash(stream_id, real_shamt, real_taken);
     checkHistory(s0History);
+    tage->checkFoldedHist(s0History, "non control squash");
     // fetching from a new fsq entry
     auto pc = inst_pc.instAddr();
     fetchTargetQueue.squash(target_id + 1, ftq_demand_stream_id + 1, pc);
 
     stream.exeTaken = false;
     stream.resolved = true;
+    stream.squashPC = inst_pc.instAddr();
     stream.squashType = SQUASH_OTHER;
 
     s0PC = pc;
@@ -527,9 +537,13 @@ DecoupledBPUWithFTB::trapSquash(unsigned target_id, unsigned stream_id,
     int real_shamt;
     bool real_taken;
     std::tie(real_shamt, real_taken) = stream.getHistInfoDuringSquash(inst_pc.instAddr(), false, false);
+    for (int i = 0; i < numComponents; ++i) {
+        components[i]->recoverHist(s0History, stream, real_shamt, real_taken);
+    }
     histShiftIn(real_shamt, real_taken, s0History);
     historyManager.squash(stream_id, real_shamt, real_taken);
     checkHistory(s0History);
+    tage->checkFoldedHist(s0History, "trap squash");
 
     // TODO: restore ras
     DPRINTF(DecoupleBPRAS, "dump ras before trap squash\n");
@@ -558,6 +572,7 @@ DecoupledBPUWithFTB::trapSquash(unsigned target_id, unsigned stream_id,
 
     stream.resolved = true;
     stream.exeTaken = false;
+    stream.squashPC = inst_pc.instAddr();
     stream.squashType = SQUASH_TRAP;
 
     squashStreamAfter(stream_id);
@@ -951,7 +966,7 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
     boost::to_string(s0History, buf2);
 
     historyManager.addSpeculativeHist(entry.startPC, shamt, taken, fsqId);
-
+    tage->checkFoldedHist(s0History, "speculative update");
     // // make new stream entry with final pred
     // if (finalPred.valid && finalPred.isTaken()) {
     //     DPRINTF(DecoupleBP, "TAGE predicted target: %#lx\n", finalPred.nextStream);

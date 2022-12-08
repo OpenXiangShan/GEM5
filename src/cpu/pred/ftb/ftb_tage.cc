@@ -8,9 +8,7 @@
 #include "base/intmath.hh"
 #include "base/trace.hh"
 #include "cpu/pred/ftb/stream_common.hh"
-#include "debug/DecoupleBP.hh"
-#include "debug/DecoupleBPUseful.hh"
-#include "debug/DecoupleBPVerbose.hh"
+#include "debug/FTBTAGE.hh"
 #include "debug/FTBTAGE.hh"
 
 namespace gem5 {
@@ -115,8 +113,6 @@ FTBTAGE::lookupHelper(Addr startAddr,
             DPRINTF(FTBTAGE, "table %d, index %d, lookup tag %d, tag %d, useful %d\n",
                 i, tmp_index, tmp_tag, way.tag, way.useful);
         }
-        DPRINTF(FTBTAGE, "lookup cond %d, provider_counts %d, main_table %d, main_table_index %d, use_alt %d\n",
-                    b, provider_counts, main_tables[b], main_table_indices[b], use_alt_preds[b]);
 
 
         if (provider_counts > 0) {
@@ -132,6 +128,8 @@ FTBTAGE::lookupHelper(Addr startAddr,
             use_alt_preds[b] = true;
             provided[b] = false;
         }
+        DPRINTF(FTBTAGE, "lookup cond %d, provider_counts %d, main_table %d, main_table_index %d, use_alt %d\n",
+                    b, provider_counts, main_tables[b], main_table_indices[b], use_alt_preds[b]);
     }
     return provided;
 }
@@ -277,12 +275,14 @@ FTBTAGE::update(const FetchStream &entry)
             }
         }
 
-
+        DPRINTF(FTBTAGE, "squashType %d, squashPC %#lx, slot pc %#lx\n", entry.squashType, entry.squashPC, ftb_entry.slots[b].pc);
         bool this_cond_mispred = entry.squashType == SquashType::SQUASH_CTRL && entry.squashPC == ftb_entry.slots[b].pc;
         assert(!this_cond_mispred || ftb_entry.slots[b].condValid());
         // update useful reset counter
         bool use_alt_on_main_found_correct = pred.useAlt && pred.mainFound && mainTaken == this_cond_actually_taken;
         bool needToAllocate = this_cond_mispred && !use_alt_on_main_found_correct;
+        DPRINTF(FTBTAGE, "this_cond_mispred %d, use_alt_on_main_found_correct %d, needToAllocate %d\n",
+            this_cond_mispred, use_alt_on_main_found_correct, needToAllocate);
 
         int num_tables_can_allocate = pred.usefulMask.count();
         int total_tables_to_allocate = numPredictors - (pred.table + 1);
@@ -318,13 +318,18 @@ FTBTAGE::update(const FetchStream &entry)
         std::string buf;
         boost::to_string(allocateLFSR, buf);
         DPRINTF(FTBTAGE, "allocateLFSR %s, size %d\n", buf, allocateLFSR.size());
-        boost::to_string(pred.usefulMask.flip(), buf);
+        auto flipped_usefulMask = pred.usefulMask.flip();
+        boost::to_string(flipped_usefulMask, buf);
         DPRINTF(FTBTAGE, "pred usefulmask %s, size %d\n", buf, pred.usefulMask.size());
-        bitset masked = allocateLFSR & pred.usefulMask.flip();
-        bitset allocate = masked.any() ? masked : pred.usefulMask.flip();
+        bitset masked = allocateLFSR & flipped_usefulMask;
+        boost::to_string(masked, buf);
+        DPRINTF(FTBTAGE, "masked %s, size %d\n", buf, masked.size());
+        bitset allocate = masked.any() ? masked : flipped_usefulMask;
+        boost::to_string(allocate, buf);
+        DPRINTF(FTBTAGE, "allocate %s, size %d\n", buf, allocate.size());
         short newCounter = this_cond_actually_taken ? 0 : -1;
 
-        bool allocateValid = pred.usefulMask.flip().any();
+        bool allocateValid = flipped_usefulMask.any();
         if (needToAllocate && allocateValid) {
             DPRINTF(FTBTAGE, "allocate new entry\n");
             unsigned startTable = pred.table + 1;
@@ -422,18 +427,32 @@ FTBTAGE::getUseAltIdx(Addr pc) {
 void
 FTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, int shamt, bool taken)
 {
+    std::string buf;
+    boost::to_string(history, buf);
+    DPRINTF(FTBTAGE, "in doUpdateHist, shamt %d, taken %d, history %s\n", shamt, taken, buf);
     if (shamt == 0) {
+        DPRINTF(FTBTAGE, "shamt is 0, returning\n");
         return;
     }
+
     for (int t = 0; t < numPredictors; t++) {
         for (int type = 0; type < 2; type++) {
+            DPRINTF(FTBTAGE, "t: %d, type: %d\n", t, type);
+
             auto &foldedHist = type ? tagFoldedHist[t] : indexFoldedHist[t];
             unsigned int foldedLen = type ? tableTagBits[t] : tableIndexBits[t];
 
-            bitset tempHist(history);
+            bitset tempHist(foldedHist);
+            std::string buf1, buf2;
+            boost::to_string(foldedHist, buf1);
+            DPRINTF(FTBTAGE, "before update, folded hist %s, size %d\n", buf1, foldedHist.size());
             // in this case the ghr is not folded in fact
             if (foldedLen >= histLengths[t]) {
                 tempHist <<= shamt;
+                // remove redundant bits
+                for (int i = histLengths[t]; i < foldedLen; i++) {
+                    tempHist[i] = 0;
+                }
                 tempHist[0] = taken;
                 foldedHist = tempHist;
             } else {
@@ -441,6 +460,8 @@ FTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, int shamt, bool ta
                 bitset tempFoldedHist(foldedHist);
                 tempFoldedHist.resize(foldedLen + shamt);
                 tempFoldedHist <<= shamt;
+                boost::to_string(tempFoldedHist, buf2);
+                DPRINTF(FTBTAGE, "after shifting, tempFoldedHist %s, size %d\n", buf2, tempFoldedHist.size());
 
                 std::vector<int> posHighestBitsInGhr;
                 std::vector<int> posHighestBitsInNewFoldedHist;
@@ -448,17 +469,28 @@ FTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, int shamt, bool ta
                 posHighestBitsInNewFoldedHist.resize(numBr);
                 for (int i = 0; i < shamt; i++) {
                     assert(tempFoldedHist.size() >= foldedLen + i);
+                    // do rotating
                     tempFoldedHist[i] = tempFoldedHist[foldedLen + i];
 
+                    // do calculation related to highest bits to xor
+                    // TODO: calculate in constructor
                     posHighestBitsInGhr[i] = histLengths[t] - (i + 1);
                     posHighestBitsInNewFoldedHist[i] = (histLengths[t] - (i + 1) + shamt) % foldedLen;
-
-                    tempFoldedHist[posHighestBitsInNewFoldedHist[i]] ^= tempFoldedHist[posHighestBitsInGhr[i]];
+                    DPRINTF(FTBTAGE, "shamt %d, i %d, posHighestBitsInGhr[%d] %d, posHighestBitsInNewFoldedHist[%d] %d\n",
+                        shamt, i, i, posHighestBitsInGhr[i], i, posHighestBitsInNewFoldedHist[i]);
+                    boost::to_string(tempFoldedHist, buf2);
+                    DPRINTF(FTBTAGE, "after rotating, tempFoldedHist %s, size %d\n", buf2, tempFoldedHist.size());
+                }
+                // hash oldest bits out
+                for (int i = 0; i < shamt; i++) {
+                    tempFoldedHist[posHighestBitsInNewFoldedHist[i]] ^= history[posHighestBitsInGhr[i]];
                 }
                 tempFoldedHist[0] ^= taken;
                 foldedHist = tempFoldedHist;
             }
             foldedHist.resize(foldedLen);
+            boost::to_string(foldedHist, buf1);
+            DPRINTF(FTBTAGE, "after update foldedHist %s, size %d\n", buf1, foldedHist.size());
         }
     }
 }
@@ -481,6 +513,41 @@ FTBTAGE::recoverHist(const boost::dynamic_bitset<> &history,
     tagFoldedHist = predMeta->tagFoldedHist;
     indexFoldedHist = predMeta->indexFoldedHist;
     doUpdateHist(history, shamt, cond_taken);
+}
+
+void
+FTBTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * when)
+{
+    DPRINTF(FTBTAGE, "checking folded history when %s\n", when);
+    std::string hist_str;
+    boost::to_string(hist, hist_str);
+    DPRINTF(FTBTAGE, "history:\t%s\n", hist_str.c_str());
+    for (int t = 0; t < numPredictors; t++) {
+        for (int type = 0; type < 2; type++) {
+            DPRINTF(FTBTAGE, "t: %d, type: %d\n", t, type);
+            std::string buf2, buf3;
+            auto &foldedHist = type ? tagFoldedHist[t] : indexFoldedHist[t];
+            unsigned int foldedLen = type ? tableTagBits[t] : tableIndexBits[t];
+            boost::to_string(foldedHist, buf2);
+
+            // check history
+            bitset idealHist(hist);
+            idealHist.resize(histLengths[t]);
+            std::string buf4;
+            boost::to_string(idealHist, buf4);
+            DPRINTF(FTBTAGE, "idealHist:\t%s\n", buf4.c_str());
+
+            bitset idealFoldedHist;
+            idealFoldedHist.resize(foldedLen);
+            for (int i = 0; i < histLengths[t]; i++) {
+                idealFoldedHist[i % foldedLen] ^= idealHist[i];
+            }
+            assert(foldedLen >= 8);
+            boost::to_string(idealFoldedHist, buf3);
+            DPRINTF(FTBTAGE, "idealFoldedHist:\t%s\tfoldedHist:\t%s\n", buf3.c_str(), buf2.c_str());
+            assert(idealFoldedHist == foldedHist);
+        }
+    }
 }
 
 

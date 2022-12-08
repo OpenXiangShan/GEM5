@@ -343,6 +343,7 @@ typedef struct FullFTBPrediction
                     slot.uncondValid()) {
                         return slot;
                     }
+                i++;
             }
         }
         return FTBSlot();

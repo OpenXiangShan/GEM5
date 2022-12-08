@@ -91,6 +91,9 @@ class FTBTAGE : public TimedBaseFTBPredictor
 
     unsigned getDelay() override { return 1; }
 
+    // check folded hists after speculative update and recover
+    void checkFoldedHist(const bitset &history, const char *when);
+
   private:
 
 

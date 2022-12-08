@@ -877,18 +877,12 @@ class FTBTAGE(TimedBaseFTBPredictor):
     cxx_class = 'gem5::branch_prediction::ftb_pred::FTBTAGE'
     cxx_header = "cpu/pred/ftb/ftb_tage.hh"
 
-    numPredictors = Param.Unsigned(12, "Number of TAGE predictors")
-    tableSizes = VectorParam.Unsigned(
-        [1024]*2 + [2048]*4 + [1024]*4 + [512]*2, "the ITTAGE T0~Tn length")
-    TTagBitSizes = VectorParam.Unsigned(
-        [7]*2 + [8]*2 + [9, 10, 11, 12, 12, 13, 14, 15],
-        "the T0~Tn entry's tag bit size")
-    TTagPcShifts = VectorParam.Unsigned(
-        [1] * 20, "when the T0~Tn entry's tag generating, PC right shift")
+    numPredictors = Param.Unsigned(4, "Number of TAGE predictors")
+    tableSizes = VectorParam.Unsigned([2048]*4, "the ITTAGE T0~Tn length")
+    TTagBitSizes = VectorParam.Unsigned([8]*4, "the T0~Tn entry's tag bit size")
+    TTagPcShifts = VectorParam.Unsigned([1] * 4, "when the T0~Tn entry's tag generating, PC right shift")
 
-    histLengths = VectorParam.Unsigned(
-        [4, 6, 10, 16, 25, 40, 64, 101, 160, 254, 403, 640],
-        "the Stream TAGE T0~Tn history length")
+    histLengths = VectorParam.Unsigned([8, 13, 32, 119], "the FTB TAGE T0~Tn history length")
     maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
     numTablesToAlloc = Param.Unsigned(2,"The number of table to allocated each time")
     
