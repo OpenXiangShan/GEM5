@@ -35,8 +35,6 @@ numBr(p.numBr)
     tableTagBits.resize(numPredictors);
     tableTagMasks.resize(numPredictors);
     baseTable.resize(2048); // need modify
-    tagFoldedHist.resize(numPredictors);
-    indexFoldedHist.resize(numPredictors);
     for (unsigned int i = 0; i < p.numPredictors; ++i) {
         //initialize ittage predictor
         assert(tableSizes.size() >= numPredictors);
@@ -44,6 +42,7 @@ numBr(p.numBr)
         for (int j = 0; j < tableSizes[i]; ++j) {
             tageTable[i][j].resize(numBr);
         }
+
 
         tableIndexBits[i] = ceilLog2(tableSizes[i]);
         tableIndexMasks[i].resize(tableIndexBits[i], true);
@@ -55,8 +54,8 @@ numBr(p.numBr)
 
         assert(tablePcShifts.size() >= numPredictors);
 
-        tagFoldedHist[i].resize(tableTagBits[i]);
-        indexFoldedHist[i].resize(tableIndexBits[i]);
+        tagFoldedHist.push_back(FoldedHist((int)histLengths[i], (int)tableTagBits[i], (int)numBr));
+        indexFoldedHist.push_back(FoldedHist((int)histLengths[i], (int)tableIndexBits[i], (int)numBr));
     }
     for (unsigned i = 0; i < baseTable.size(); ++i) {
         baseTable[i].resize(numBr);
@@ -341,8 +340,8 @@ FTBTAGE::update(const FetchStream &entry)
             unsigned startTable = pred.table + 1;
 
             for (int ti = startTable; ti < numPredictors; ti++) {
-                Addr newIndex = getTageIndex(startAddr, ti, updateIndexFoldedHist[ti]);
-                Addr newTag = getTageTag(startAddr, ti, updateTagFoldedHist[ti]);
+                Addr newIndex = getTageIndex(startAddr, ti, updateIndexFoldedHist[ti].get());
+                Addr newTag = getTageTag(startAddr, ti, updateTagFoldedHist[ti].get());
                 auto &entry = tageTable[ti][newIndex][b];
 
                 if (allocate[ti - startTable]) {
@@ -379,7 +378,7 @@ FTBTAGE::getTageTag(Addr pc, int t, bitset &foldedHist)
 Addr
 FTBTAGE::getTageTag(Addr pc, int t)
 {
-    return getTageTag(pc, t, tagFoldedHist[t]);
+    return getTageTag(pc, t, tagFoldedHist[t].get());
 }
 
 Addr
@@ -393,7 +392,7 @@ FTBTAGE::getTageIndex(Addr pc, int t, bitset &foldedHist)
 Addr
 FTBTAGE::getTageIndex(Addr pc, int t)
 {
-    return getTageIndex(pc, t, indexFoldedHist[t]);
+    return getTageIndex(pc, t, indexFoldedHist[t].get());
 }
 
 unsigned
@@ -446,57 +445,7 @@ FTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, int shamt, bool ta
             DPRINTF(FTBTAGE, "t: %d, type: %d\n", t, type);
 
             auto &foldedHist = type ? tagFoldedHist[t] : indexFoldedHist[t];
-            unsigned int foldedLen = type ? tableTagBits[t] : tableIndexBits[t];
-
-            bitset tempHist(foldedHist);
-            std::string buf1, buf2;
-            boost::to_string(foldedHist, buf1);
-            DPRINTF(FTBTAGE, "before update, folded hist %s, size %d\n", buf1, foldedHist.size());
-            // in this case the ghr is not folded in fact
-            if (foldedLen >= histLengths[t]) {
-                tempHist <<= shamt;
-                // remove redundant bits
-                for (int i = histLengths[t]; i < foldedLen; i++) {
-                    tempHist[i] = 0;
-                }
-                tempHist[0] = taken;
-                foldedHist = tempHist;
-            } else {
-                // do rotating
-                bitset tempFoldedHist(foldedHist);
-                tempFoldedHist.resize(foldedLen + shamt);
-                tempFoldedHist <<= shamt;
-                boost::to_string(tempFoldedHist, buf2);
-                DPRINTF(FTBTAGE, "after shifting, tempFoldedHist %s, size %d\n", buf2, tempFoldedHist.size());
-
-                std::vector<int> posHighestBitsInGhr;
-                std::vector<int> posHighestBitsInNewFoldedHist;
-                posHighestBitsInGhr.resize(numBr);
-                posHighestBitsInNewFoldedHist.resize(numBr);
-                for (int i = 0; i < shamt; i++) {
-                    assert(tempFoldedHist.size() >= foldedLen + i);
-                    // do rotating
-                    tempFoldedHist[i] = tempFoldedHist[foldedLen + i];
-
-                    // do calculation related to highest bits to xor
-                    // TODO: calculate in constructor
-                    posHighestBitsInGhr[i] = histLengths[t] - (i + 1);
-                    posHighestBitsInNewFoldedHist[i] = (histLengths[t] - (i + 1) + shamt) % foldedLen;
-                    DPRINTF(FTBTAGE, "shamt %d, i %d, posHighestBitsInGhr[%d] %d, posHighestBitsInNewFoldedHist[%d] %d\n",
-                        shamt, i, i, posHighestBitsInGhr[i], i, posHighestBitsInNewFoldedHist[i]);
-                    boost::to_string(tempFoldedHist, buf2);
-                    DPRINTF(FTBTAGE, "after rotating, tempFoldedHist %s, size %d\n", buf2, tempFoldedHist.size());
-                }
-                // hash oldest bits out
-                for (int i = 0; i < shamt; i++) {
-                    tempFoldedHist[posHighestBitsInNewFoldedHist[i]] ^= history[posHighestBitsInGhr[i]];
-                }
-                tempFoldedHist[0] ^= taken;
-                foldedHist = tempFoldedHist;
-            }
-            foldedHist.resize(foldedLen);
-            boost::to_string(foldedHist, buf1);
-            DPRINTF(FTBTAGE, "after update foldedHist %s, size %d\n", buf1, foldedHist.size());
+            foldedHist.update(history, shamt, taken);
         }
     }
 }
@@ -516,8 +465,10 @@ FTBTAGE::recoverHist(const boost::dynamic_bitset<> &history,
 {
     // TODO: need to get idx
     std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[1]);
-    tagFoldedHist = predMeta->tagFoldedHist;
-    indexFoldedHist = predMeta->indexFoldedHist;
+    for (int i = 0; i < numPredictors; i++) {
+        tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
+        indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
+    }
     doUpdateHist(history, shamt, cond_taken);
 }
 
@@ -530,28 +481,11 @@ FTBTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * when)
     DPRINTF(FTBTAGE, "history:\t%s\n", hist_str.c_str());
     for (int t = 0; t < numPredictors; t++) {
         for (int type = 0; type < 2; type++) {
+
             DPRINTF(FTBTAGE, "t: %d, type: %d\n", t, type);
             std::string buf2, buf3;
             auto &foldedHist = type ? tagFoldedHist[t] : indexFoldedHist[t];
-            unsigned int foldedLen = type ? tableTagBits[t] : tableIndexBits[t];
-            boost::to_string(foldedHist, buf2);
-
-            // check history
-            bitset idealHist(hist);
-            idealHist.resize(histLengths[t]);
-            std::string buf4;
-            boost::to_string(idealHist, buf4);
-            DPRINTF(FTBTAGE, "idealHist:\t%s\n", buf4.c_str());
-
-            bitset idealFoldedHist;
-            idealFoldedHist.resize(foldedLen);
-            for (int i = 0; i < histLengths[t]; i++) {
-                idealFoldedHist[i % foldedLen] ^= idealHist[i];
-            }
-            assert(foldedLen >= 8);
-            boost::to_string(idealFoldedHist, buf3);
-            DPRINTF(FTBTAGE, "idealFoldedHist:\t%s\tfoldedHist:\t%s\n", buf3.c_str(), buf2.c_str());
-            assert(idealFoldedHist == foldedHist);
+            foldedHist.check(hist);
         }
     }
 }

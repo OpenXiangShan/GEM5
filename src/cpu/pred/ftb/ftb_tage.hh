@@ -9,6 +9,7 @@
 #include "base/statistics.hh"
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/pred/ftb/folded_hist.hh"
 #include "cpu/pred/ftb/stream_struct.hh"
 #include "cpu/pred/ftb/timed_base_pred.hh"
 #include "debug/DecoupleBP.hh"
@@ -126,8 +127,8 @@ class FTBTAGE : public TimedBaseFTBPredictor
     std::vector<bitset> tableTagMasks;
     std::vector<unsigned> tablePcShifts;
     std::vector<unsigned> histLengths;
-    std::vector<bitset> tagFoldedHist;
-    std::vector<bitset> indexFoldedHist;
+    std::vector<FoldedHist> tagFoldedHist;
+    std::vector<FoldedHist> indexFoldedHist;
 
     unsigned maxHistLen;
 
@@ -161,9 +162,9 @@ class FTBTAGE : public TimedBaseFTBPredictor
 
     typedef struct TageMeta {
         std::vector<TagePrediction> preds;
-        std::vector<bitset> tagFoldedHist;
-        std::vector<bitset> indexFoldedHist;
-        TageMeta(std::vector<TagePrediction> preds, std::vector<bitset> tagFoldedHist, std::vector<bitset> indexFoldedHist) :
+        std::vector<FoldedHist> tagFoldedHist;
+        std::vector<FoldedHist> indexFoldedHist;
+        TageMeta(std::vector<TagePrediction> preds, std::vector<FoldedHist> tagFoldedHist, std::vector<FoldedHist> indexFoldedHist) :
             preds(preds), tagFoldedHist(tagFoldedHist), indexFoldedHist(indexFoldedHist) {}
         TageMeta() {}
         TageMeta(const TageMeta &other) {
