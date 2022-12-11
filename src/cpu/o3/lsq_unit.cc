@@ -272,9 +272,14 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
                "Number of times an access to memory failed due to the cache "
                "being blocked"),
       ADD_STAT(loadToUse, "Distribution of cycle latency between the "
-                "first time a load is issued and its completion")
+                "first time a load is issued and its completion"),
+      ADD_STAT(loadTranslationLat, "Distribution of cycle latency between the "
+                "first time a load is issued and its translation completion")
 {
     loadToUse
+        .init(0, 299, 10)
+        .flags(statistics::nozero);
+    loadTranslationLat
         .init(0, 299, 10)
         .flags(statistics::nozero);
 }
@@ -729,11 +734,24 @@ LSQUnit::commitLoad()
 
     // Update histogram with memory latency from load
     // Only take latency from load demand that where issued and did not fault
-    if (!inst->isInstPrefetch() && !inst->isDataPrefetch()
-            && inst->firstIssue != -1
-            && inst->lastWakeDependents != -1) {
-        stats.loadToUse.sample(cpu->ticksToCycles(
-                    inst->lastWakeDependents - inst->firstIssue));
+    if (!inst->isInstPrefetch() && !inst->isDataPrefetch()) {
+        uint64_t translation_lat = 0;
+        if (inst->firstIssue != -1 && inst->translatedTick != -1) {
+            translation_lat =
+                cpu->ticksToCycles(inst->translatedTick - inst->firstIssue);
+            stats.loadTranslationLat.sample(translation_lat);
+        }
+        if (inst->firstIssue != -1 && inst->lastWakeDependents != -1) {
+            auto load_to_use = cpu->ticksToCycles(
+                inst->lastWakeDependents - inst->firstIssue);
+            stats.loadToUse.sample(load_to_use);
+            if (((uint64_t) load_to_use) > 180) {
+                inst->printDisassembly();
+                DPRINTF(CommitTrace,
+                        "Inst[sn:%lu] load2use = %lu, translation lat = %lu\n",
+                        inst->seqNum, load_to_use, translation_lat);
+            }
+        }
     }
 
     loadQueue.front().clear();

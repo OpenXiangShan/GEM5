@@ -876,6 +876,7 @@ LSQ::SingleDataRequest::finish(const Fault &fault, const RequestPtr &request,
     numTranslatedFragments = 1;
     /* If the instruction has been squahsed, let the request know
      * as it may have to self-destruct. */
+    _inst->translatedTick = curTick();
     if (_inst->isSquashed()) {
         squashTranslation();
     } else {
@@ -915,6 +916,7 @@ LSQ::SplitDataRequest::finish(const Fault &fault, const RequestPtr &req,
         _mainReq->setFlags(req->getFlags());
 
     if (numTranslatedFragments == _reqs.size()) {
+        _inst->translatedTick = curTick();
         if (_inst->isSquashed()) {
             squashTranslation();
         } else {

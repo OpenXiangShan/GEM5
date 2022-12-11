@@ -62,6 +62,7 @@
 #include "debug/Activity.hh"
 #include "debug/Commit.hh"
 #include "debug/CommitRate.hh"
+#include "debug/CommitTrace.hh"
 #include "debug/Diff.hh"
 #include "debug/Drain.hh"
 #include "debug/ExecFaulting.hh"
@@ -1329,6 +1330,15 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
     }
 
     updateComInstStats(head_inst);
+
+    // head_inst->printDisassembly();
+    uint64_t delta = (curTick() - lastCommitTick) / 500;
+    if (head_inst->isLoad() && (delta > 250)) {
+        DPRINTF(CommitTrace, "Inst[sn:%lu] commit blocked cycles: %lu\n",
+                head_inst->seqNum, delta);
+    }
+    head_inst->printDisassembly();
+    lastCommitTick = curTick();
 
     DPRINTF(Commit,
             "[tid:%i] [sn:%llu] Committing instruction with PC %s\n",
