@@ -289,6 +289,14 @@ class DecoupledBPUWithFTB : public BPredUnit
             pred.indirectTarget, pred.returnTarget);
     }
 
+    struct FTBStats : public statistics::Group {
+        statistics::Scalar condMiss;
+        statistics::Scalar uncondMiss;
+        statistics::Scalar returnMiss;
+        statistics::Scalar otherMiss;
+        FTBStats(statistics::Group* parent);
+    } ftbstats;
+
   public:
     void tick();
 
@@ -412,6 +420,30 @@ class DecoupledBPUWithFTB : public BPredUnit
     std::vector<Addr> storeTargets;
 
     void resetPC(Addr new_pc);
+
+    enum MissType {
+        COND,
+        UNCOND,
+        RETURN,
+        OTHER
+    };
+
+    void addMiss(MissType type) {
+        switch (type) {
+            case COND:
+                ftbstats.condMiss++;
+                break;
+            case UNCOND:
+                ftbstats.uncondMiss++;
+                break;
+            case RETURN:
+                ftbstats.returnMiss++;
+                break;
+            case OTHER:
+                ftbstats.otherMiss++;
+                break;
+        }
+    }
 };
 
 }  // namespace ftb_pred

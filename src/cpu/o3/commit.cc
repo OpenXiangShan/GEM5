@@ -1056,6 +1056,22 @@ Commit::commitInsts()
                     }
                 }
 
+                if (bp->isFTB() && head_inst->mispredicted()) {
+                    auto dbftb = dynamic_cast<branch_prediction::ftb_pred::DecoupledBPUWithFTB*>(bp);
+                    if (head_inst->isUncondCtrl()) {
+                        dbftb->addMiss(branch_prediction::ftb_pred::DecoupledBPUWithFTB::MissType::UNCOND);
+                    }
+                    if (head_inst->isControl()) {
+                        dbftb->addMiss(branch_prediction::ftb_pred::DecoupledBPUWithFTB::MissType::COND);
+                    }
+                    if (head_inst->isReturn()) {
+                        dbftb->addMiss(branch_prediction::ftb_pred::DecoupledBPUWithFTB::MissType::RETURN);
+                    }
+                    if (!head_inst->isReturn() && !head_inst->isControl() && !head_inst->isUncondCtrl()) {
+                        dbftb->addMiss(branch_prediction::ftb_pred::DecoupledBPUWithFTB::MissType::OTHER);
+                    }
+                }
+
                 ++num_committed;
                 stats.committedInstType[tid][head_inst->opClass()]++;
                 ppCommit->notify(head_inst);

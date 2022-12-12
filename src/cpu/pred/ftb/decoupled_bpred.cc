@@ -20,7 +20,8 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
       fetchTargetQueue(p.ftq_size),
       historyBits(p.maxHistLen),
       ftb(p.ftb),
-      tage(p.tage)
+      tage(p.tage),
+      ftbstats(this)
     //   streamTAGE(p.stream_tage),
     //   streamUBTB(p.stream_ubtb),
     //   dumpLoopPred(p.dump_loop_pred),
@@ -116,6 +117,19 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
 
     //     simout.close(out_handle);
     // });
+}
+
+DecoupledBPUWithFTB::FTBStats::FTBStats(statistics::Group* parent):
+    statistics::Group(parent),
+    ADD_STAT(condMiss, statistics::units::Count::get(), "the number of cond branch misses"),
+    ADD_STAT(uncondMiss, statistics::units::Count::get(), "the number of uncond branch misses"),
+    ADD_STAT(returnMiss, statistics::units::Count::get(), "the number of return branch misses"),
+    ADD_STAT(otherMiss, statistics::units::Count::get(), "the number of other branch misses")
+{
+    condMiss.prereq(condMiss);
+    uncondMiss.prereq(uncondMiss);
+    returnMiss.prereq(returnMiss);
+    otherMiss.prereq(otherMiss);
 }
 
 // bool

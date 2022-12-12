@@ -55,6 +55,7 @@
 #include "cpu/o3/rob.hh"
 #include "cpu/timebuf.hh"
 #include "cpu/pred/bpred_unit.hh"
+#include "cpu/pred/ftb/decoupled_bpred.hh"
 #include "cpu/pred/stream/decoupled_bpred.hh"
 #include "enums/CommitPolicy.hh"
 #include "sim/probe/probe.hh"
