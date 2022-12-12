@@ -59,15 +59,19 @@ DefaultFTB::DefaultFTB(const Params &p)
     }
 
     ftb.resize(numSets);
-    for (unsigned i = 0; i < numSets; ++i) {
-        ftb[i].resize(numWays);
-    }
-
+    mruList.resize(numSets);
     for (unsigned i = 0; i < numSets; ++i) {
         for (unsigned j = 0; j < numWays; ++j) {
-            ftb[i][j].valid = false;
+            ftb[i][0xfffffff-i]; // dummy initialization
         }
+        auto &set = ftb[i];
+        for (auto it = set.begin(); it != set.end(); it++) {
+            it->second.valid = false;
+            mruList[i].push_back(it);
+        }
+        std::make_heap(mruList[i].begin(), mruList[i].end(), older());
     }
+
 
     idxMask = numSets - 1;
 
@@ -187,10 +191,13 @@ DefaultFTB::lookup(Addr inst_pc)
     Addr inst_tag = getTag(inst_pc);
 
     assert(ftb_idx < numSets);
-    for (int w = 0; w < numWays; w++) {
-        if (ftb[ftb_idx][w].valid
-            && inst_tag == ftb[ftb_idx][w].tag) {
-            return ftb[ftb_idx][w];
+
+    const auto &it = ftb[ftb_idx].find(inst_tag);
+    if (it != ftb[ftb_idx].end()) {
+        if (it->second.valid) {
+            it->second.tick = curTick();
+            std::make_heap(mruList[ftb_idx].begin(), mruList[ftb_idx].end(), older());
+            return it->second;
         }
     }
     return FTBEntry();
@@ -272,29 +279,24 @@ DefaultFTB::update(const FetchStream &stream)
     Addr startPC = stream.startPC;
     unsigned ftb_idx = getIndex(startPC);
 
-    int emptyWay = -1;
-    for (int i = 0; i < numWays; i++) {
-        if (!ftb[ftb_idx][i].valid) {
-            emptyWay = i;
-            break;
-        }
+    auto it = ftb[ftb_idx].find(getTag(startPC));
+    // if the tag is not found and the table is full
+    bool new_entry = it == ftb[ftb_idx].end();
+
+    if (new_entry) {
+        std::pop_heap(mruList[ftb_idx].begin(), mruList[ftb_idx].end(), older());
+        const auto& old_entry = mruList[ftb_idx].back();
+        DPRINTF(FTB, "FTB: Replacing entry with tag %d in set %d\n", getTag(startPC), ftb_idx);
+        ftb[ftb_idx].erase(old_entry->first);
     }
 
-    if (emptyWay >= 0) {
-        DPRINTF(FTB, "FTB: Found empty way %d in set %d\n", emptyWay, ftb_idx);
-        assert(emptyWay < numWays);
-        ftb[ftb_idx][emptyWay] = stream.updateFTBEntry;
-    } else {
-        DPRINTF(FTB, "FTB: No empty way in set %d, replacing LRU way\n", ftb_idx);
-        
-        // TODO: replace LRU way    
-        // int lruWay = 0;
-        // get a random way to replace
-        int rand_way = std::rand() % numWays;
-        assert(rand_way < numWays);
-        ftb[ftb_idx][rand_way] = stream.updateFTBEntry;
-    }
+    ftb[ftb_idx][stream.updateFTBEntry.tag] = TickedFTBEntry(stream.updateFTBEntry, curTick());
 
+    if (new_entry) {
+        auto it = ftb[ftb_idx].find(stream.updateFTBEntry.tag);
+        mruList[ftb_idx].back() = it;
+        std::push_heap(mruList[ftb_idx].begin(), mruList[ftb_idx].end(), older());
+    }
     assert(ftb_idx < numSets);
 
     // ftb[ftb_idx].valid = true;

@@ -59,6 +59,27 @@ class DefaultFTB : public TimedBaseFTBPredictor
 
     DefaultFTB(const Params& p);
 
+    struct TickedFTBEntry : public FTBEntry
+    {
+        uint64_t tick;
+        TickedFTBEntry(const FTBEntry &entry, uint64_t tick)
+            : FTBEntry(entry), tick(tick) {}
+        TickedFTBEntry() : tick(0) {}
+    };
+
+    using FTBMap = std::map<Addr, TickedFTBEntry>;
+    using FTBMapIter = typename FTBMap::iterator;
+    using FTBHeap = std::vector<FTBMapIter>;
+
+
+    struct older
+    {
+        bool operator()(const FTBMapIter &a, const FTBMapIter &b) const
+        {
+            return a->second.tick > b->second.tick;
+        }
+    };
+
     void tickStart() override;
     
     void tick() override;
@@ -178,7 +199,12 @@ class DefaultFTB : public TimedBaseFTBPredictor
     inline Addr getTag(Addr instPC);
 
     /** The actual FTB. */
-    std::vector<std::vector<FTBEntry>> ftb;
+    // TODO: make each set to be a map structure
+
+    std::vector<FTBMap> ftb;
+
+    std::vector<FTBHeap> mruList;
+
 
     /** The number of entries in the FTB. */
     unsigned numEntries;
