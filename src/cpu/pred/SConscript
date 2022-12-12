@@ -47,7 +47,7 @@ SimObject('BranchPredictor.py', sim_objects=[
     'MultiperspectivePerceptronTAGE8KB', 'TimedStreamPredictor',
     'StreamUBTB', 'StreamTAGE', 'StreamLoopDetector', 'StreamLoopPredictor',
     'DecoupledStreamBPU', 'DefaultFTB', 'DecoupledBPUWithFTB',
-    'TimedBaseFTBPredictor', 'FTBTAGE', 'RAS'], enums=["BpType"])
+    'TimedBaseFTBPredictor', 'FTBTAGE', 'RAS', 'FTBITTAGE'], enums=["BpType"])
 
 DebugFlag('Indirect')
 Source('bpred_unit.cc')
@@ -87,6 +87,7 @@ Source('ftb/stream_common.cc')
 Source('ftb/timed_base_pred.cc')
 Source('ftb/fetch_target_queue.cc')
 Source('ftb/ftb_tage.cc')
+Source('ftb/ftb_ittage.cc')
 Source('ftb/folded_hist.cc')
 Source('ftb/ras.cc')
 DebugFlag('FreeList')
@@ -104,5 +105,6 @@ DebugFlag('Override')
 DebugFlag('DecoupleBPFTB')
 DebugFlag('FTB')
 DebugFlag('FTBTAGE')
+DebugFlag('FTBITTAGE')
 DebugFlag('FTBFoldedHist')
 DebugFlag('FTBRAS')

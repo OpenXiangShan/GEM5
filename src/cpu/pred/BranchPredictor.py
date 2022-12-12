@@ -903,6 +903,20 @@ class FTBTAGE(TimedBaseFTBPredictor):
     histLengths = VectorParam.Unsigned([8, 13, 32, 119], "the FTB TAGE T0~Tn history length")
     maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
     numTablesToAlloc = Param.Unsigned(2,"The number of table to allocated each time")
+
+class FTBITTAGE(TimedBaseFTBPredictor):
+    type = 'FTBITTAGE'
+    cxx_class = 'gem5::branch_prediction::ftb_pred::FTBITTAGE'
+    cxx_header = "cpu/pred/ftb/ftb_ittage.hh"
+
+    numPredictors = Param.Unsigned(4, "Number of TAGE predictors")
+    tableSizes = VectorParam.Unsigned([2048]*4, "the ITTAGE T0~Tn length")
+    TTagBitSizes = VectorParam.Unsigned([8]*4, "the T0~Tn entry's tag bit size")
+    TTagPcShifts = VectorParam.Unsigned([1] * 4, "when the T0~Tn entry's tag generating, PC right shift")
+
+    histLengths = VectorParam.Unsigned([8, 13, 32, 119], "the FTB TAGE T0~Tn history length")
+    maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
+    numTablesToAlloc = Param.Unsigned(2,"The number of table to allocated each time")
     
 class DecoupledBPUWithFTB(BranchPredictor):
     type = 'DecoupledBPUWithFTB'
