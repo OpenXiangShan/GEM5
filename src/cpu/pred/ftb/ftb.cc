@@ -49,23 +49,31 @@ DefaultFTB::DefaultFTB(const Params &p)
     instShiftAmt = p.instShiftAmt;
     log2NumThreads = floorLog2(p.numThreads);
     numBr = p.numBr;
-    DPRINTF(Fetch, "FTB: Creating FTB object.\n");
+    numWays = p.numWays;
+    assert(numEntries % numWays == 0);
+    numSets = numEntries / numWays;
+    numDelay = p.numDelay;
 
     if (!isPowerOf2(numEntries)) {
         fatal("FTB entries is not a power of 2!");
     }
 
-    ftb.resize(numEntries);
-
-    for (unsigned i = 0; i < numEntries; ++i) {
-        ftb[i].valid = false;
+    ftb.resize(numSets);
+    for (unsigned i = 0; i < numSets; ++i) {
+        ftb[i].resize(numWays);
     }
 
-    idxMask = numEntries - 1;
+    for (unsigned i = 0; i < numSets; ++i) {
+        for (unsigned j = 0; j < numWays; ++j) {
+            ftb[i][j].valid = false;
+        }
+    }
+
+    idxMask = numSets - 1;
 
     tagMask = (1 << tagBits) - 1;
 
-    tagShiftAmt = instShiftAmt + floorLog2(numEntries);
+    tagShiftAmt = instShiftAmt + floorLog2(numSets);
 }
 
 void
@@ -128,8 +136,10 @@ DefaultFTB::specUpdateHist(const boost::dynamic_bitset<> &history, FullFTBPredic
 void
 DefaultFTB::reset()
 {
-    for (unsigned i = 0; i < numEntries; ++i) {
-        ftb[i].valid = false;
+    for (unsigned i = 0; i < numSets; ++i) {
+        for (unsigned j = 0; j < numWays; ++j) {
+            ftb[i][j].valid = false;
+        }
     }
 }
 
@@ -157,12 +167,13 @@ DefaultFTB::valid(Addr instPC)
 
     assert(ftb_idx < numEntries);
 
-    if (ftb[ftb_idx].valid
-        && inst_tag == ftb[ftb_idx].tag) {
-        return true;
-    } else {
-        return false;
+    for (int w = 0; w < numWays; w++) {
+        if (ftb[ftb_idx][w].valid
+            && inst_tag == ftb[ftb_idx][w].tag) {
+            return true;
+        }
     }
+    return false;
 }
 
 // @todo Create some sort of return struct that has both whether or not the
@@ -175,14 +186,14 @@ DefaultFTB::lookup(Addr inst_pc)
 
     Addr inst_tag = getTag(inst_pc);
 
-    assert(ftb_idx < numEntries);
-
-    if (ftb[ftb_idx].valid
-        && inst_tag == ftb[ftb_idx].tag) {
-        return ftb[ftb_idx];
-    } else {
-        return FTBEntry();
+    assert(ftb_idx < numSets);
+    for (int w = 0; w < numWays; w++) {
+        if (ftb[ftb_idx][w].valid
+            && inst_tag == ftb[ftb_idx][w].tag) {
+            return ftb[ftb_idx][w];
+        }
     }
+    return FTBEntry();
 }
 
 void
@@ -195,7 +206,7 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
 
 
     bool pred_hit = stream.isHit;
-    bool pred_hit_from_meta = std::static_pointer_cast<FTBMeta>(stream.predMetas[0])->hit; //TODO: get component idx
+    bool pred_hit_from_meta = std::static_pointer_cast<FTBMeta>(stream.predMetas[1])->hit; //TODO: get component idx
     assert(pred_hit == pred_hit_from_meta);
 
     bool stream_taken = stream.exeTaken;
@@ -261,9 +272,30 @@ DefaultFTB::update(const FetchStream &stream)
     Addr startPC = stream.startPC;
     unsigned ftb_idx = getIndex(startPC);
 
-    ftb[ftb_idx] = stream.updateFTBEntry;
+    int emptyWay = -1;
+    for (int i = 0; i < numWays; i++) {
+        if (!ftb[ftb_idx][i].valid) {
+            emptyWay = i;
+            break;
+        }
+    }
 
-    assert(ftb_idx < numEntries);
+    if (emptyWay >= 0) {
+        DPRINTF(FTB, "FTB: Found empty way %d in set %d\n", emptyWay, ftb_idx);
+        assert(emptyWay < numWays);
+        ftb[ftb_idx][emptyWay] = stream.updateFTBEntry;
+    } else {
+        DPRINTF(FTB, "FTB: No empty way in set %d, replacing LRU way\n", ftb_idx);
+        
+        // TODO: replace LRU way    
+        // int lruWay = 0;
+        // get a random way to replace
+        int rand_way = std::rand() % numWays;
+        assert(rand_way < numWays);
+        ftb[ftb_idx][rand_way] = stream.updateFTBEntry;
+    }
+
+    assert(ftb_idx < numSets);
 
     // ftb[ftb_idx].valid = true;
     // set(ftb[ftb_idx].target, target);

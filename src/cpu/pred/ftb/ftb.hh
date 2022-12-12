@@ -70,7 +70,7 @@ class DefaultFTB : public TimedBaseFTBPredictor
 
     void specUpdateHist(const boost::dynamic_bitset<> &history, FullFTBPrediction &pred) override;
 
-    unsigned getDelay() override {return 1;}
+    unsigned getDelay() override {return numDelay;}
 
     /** Creates a FTB with the given number of entries, number of bits per
      *  tag, and instruction offset amount.
@@ -178,7 +178,7 @@ class DefaultFTB : public TimedBaseFTBPredictor
     inline Addr getTag(Addr instPC);
 
     /** The actual FTB. */
-    std::vector<FTBEntry> ftb;
+    std::vector<std::vector<FTBEntry>> ftb;
 
     /** The number of entries in the FTB. */
     unsigned numEntries;
@@ -202,6 +202,12 @@ class DefaultFTB : public TimedBaseFTBPredictor
     unsigned log2NumThreads;
 
     unsigned numBr;
+
+    unsigned numWays;
+
+    unsigned numSets;
+
+    unsigned numDelay;
 
     typedef struct FTBMeta {
         bool hit;

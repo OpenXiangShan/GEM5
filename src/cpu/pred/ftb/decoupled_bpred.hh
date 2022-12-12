@@ -170,7 +170,7 @@ class DecoupledBPUWithFTB : public BPredUnit
     const Addr MaxAddr{~(0ULL)};
 
     // StreamTAGE *streamTAGE{};
-
+    DefaultFTB *uftb{};
     DefaultFTB *ftb{};
     FTBTAGE *tage{};
 

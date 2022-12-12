@@ -871,6 +871,14 @@ class DefaultFTB(TimedBaseFTBPredictor):
     tagBits = Param.Unsigned(20, "Number of bits in the tag")
     instShiftAmt = Param.Unsigned(1, "Amount to shift PC to get inst bits")
     numThreads = Param.Unsigned(1, "Number of threads")
+    numWays = Param.Unsigned(4, "Number of ways per set")
+    numDelay = Param.Unsigned(1, "Number of bubbles to put on a prediction")
+    
+class UFTB(DefaultFTB):
+    numEntries = 32
+    tagBits = 16
+    numWays = 32
+    numDelay = 0
     
 class FTBTAGE(TimedBaseFTBPredictor):
     type = 'FTBTAGE'
@@ -898,3 +906,5 @@ class DecoupledBPUWithFTB(BranchPredictor):
     ftb.numBr = numBr
     tage = Param.FTBTAGE(FTBTAGE(), "TAGE predictor")
     tage.numBr = numBr
+    uftb = Param.DefaultFTB(UFTB(), "UFTB predictor")
+    uftb.numBr = numBr

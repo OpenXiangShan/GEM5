@@ -224,7 +224,7 @@ FTBTAGE::update(const FetchStream &entry)
 
     // get tage predictions from meta
     // TODO: use component idx
-    auto meta = std::static_pointer_cast<TageMeta>(entry.predMetas[1]);
+    auto meta = std::static_pointer_cast<TageMeta>(entry.predMetas[2]);
     auto preds = meta->preds;
     auto updateTagFoldedHist = meta->tagFoldedHist;
     auto updateIndexFoldedHist = meta->indexFoldedHist;
@@ -464,7 +464,7 @@ FTBTAGE::recoverHist(const boost::dynamic_bitset<> &history,
     const FetchStream &entry, int shamt, bool cond_taken)
 {
     // TODO: need to get idx
-    std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[1]);
+    std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[2]);
     for (int i = 0; i < numPredictors; i++) {
         tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
         indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);

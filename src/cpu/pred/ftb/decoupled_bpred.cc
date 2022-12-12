@@ -19,6 +19,7 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
     : BPredUnit(p),
       fetchTargetQueue(p.ftq_size),
       historyBits(p.maxHistLen),
+      uftb(p.uftb),
       ftb(p.ftb),
       tage(p.tage),
       ftbstats(this)
@@ -31,10 +32,11 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
     // assert(streamTAGE);
     // assert(streamUBTB);
     bpType = DecoupledFTBType;
-    numComponents = 2;
+    numComponents = 3;
     numStages = 3;
-    components[0] = ftb;
-    components[1] = tage;
+    components[0] = uftb;
+    components[1] = ftb;
+    components[2] = tage;
     // components[0] = streamUBTB;
     // components[1] = streamTAGE;
 
