@@ -860,6 +860,7 @@ class TimedBaseFTBPredictor(SimObject):
     cxx_class = 'gem5::branch_prediction::ftb_pred::TimedBaseFTBPredictor'
     cxx_header = "cpu/pred/ftb/timed_base_pred.hh"
     
+    # TODO: parametrize numBr and numDelay
     numBr = Param.Unsigned(2, "Number of maximum branches per entry")
     
 class DefaultFTB(TimedBaseFTBPredictor):
@@ -879,6 +880,15 @@ class UFTB(DefaultFTB):
     tagBits = 16
     numWays = 32
     numDelay = 0
+    
+class RAS(TimedBaseFTBPredictor):
+    type = 'RAS'
+    cxx_class = 'gem5::branch_prediction::ftb_pred::RAS'
+    cxx_header = 'cpu/pred/ftb/ras.hh'
+    
+    numEntries = Param.Unsigned(32, "Number of entries in the RAS")
+    ctrWidth = Param.Unsigned(8, "Width of the counter")
+    
     
 class FTBTAGE(TimedBaseFTBPredictor):
     type = 'FTBTAGE'
@@ -908,3 +918,4 @@ class DecoupledBPUWithFTB(BranchPredictor):
     tage.numBr = numBr
     uftb = Param.DefaultFTB(UFTB(), "UFTB predictor")
     uftb.numBr = numBr
+    ras = Param.RAS(RAS(), "RAS")

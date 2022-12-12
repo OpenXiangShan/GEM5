@@ -8,11 +8,12 @@
 #include <vector>
 
 #include "cpu/pred/bpred_unit.hh"
+#include "cpu/pred/ftb/fetch_target_queue.hh"
 #include "cpu/pred/ftb/ftb.hh"
 #include "cpu/pred/ftb/ftb_tage.hh"
+#include "cpu/pred/ftb/ras.hh"
 #include "cpu/pred/ftb/stream_struct.hh"
 #include "cpu/pred/ftb/timed_base_pred.hh"
-#include "cpu/pred/ftb/fetch_target_queue.hh"
 #include "debug/DecoupleBP.hh"
 #include "debug/DecoupleBPHist.hh"
 #include "debug/DecoupleBPProbe.hh"
@@ -173,6 +174,8 @@ class DecoupledBPUWithFTB : public BPredUnit
     DefaultFTB *uftb{};
     DefaultFTB *ftb{};
     FTBTAGE *tage{};
+    
+    ftb_pred::RAS *ras{};
 
     std::array<TimedBaseFTBPredictor*, 4> components{}; // TODO: numCompontes
     std::array<FullFTBPrediction, 3> predsOfEachStage{}; // TODO: numStages

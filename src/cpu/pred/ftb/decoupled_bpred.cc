@@ -22,6 +22,7 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
       uftb(p.uftb),
       ftb(p.ftb),
       tage(p.tage),
+      ras(p.ras),
       ftbstats(this)
     //   streamTAGE(p.stream_tage),
     //   streamUBTB(p.stream_ubtb),
@@ -32,11 +33,12 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
     // assert(streamTAGE);
     // assert(streamUBTB);
     bpType = DecoupledFTBType;
-    numComponents = 3;
+    numComponents = 4;
     numStages = 3;
     components[0] = uftb;
     components[1] = ftb;
     components[2] = tage;
+    components[3] = ras;
     // components[0] = streamUBTB;
     // components[1] = streamTAGE;
 
