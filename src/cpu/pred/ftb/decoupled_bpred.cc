@@ -25,6 +25,7 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
       uftb(p.uftb),
       ftb(p.ftb),
       tage(p.tage),
+      ittage(p.ittage),
       ras(p.ras),
       numStages(p.numStages),
       historyManager(p.numBr),
@@ -38,6 +39,7 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
     components.push_back(ftb);
     components.push_back(tage);
     components.push_back(ras);
+    components.push_back(ittage);
     numComponents = components.size();
     for (int i = 0; i < numComponents; i++) {
         components[i]->setComponentIdx(i);
