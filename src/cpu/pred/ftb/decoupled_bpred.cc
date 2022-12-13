@@ -955,12 +955,13 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
     entry.predTaken = taken;
     entry.predEndPC = fallThroughAddr;
     // TODO: if taken, set branch info with corresponding ftb slot
-    if (taken) {
-        entry.predBranchInfo = finalPred.getTakenSlot().getBranchInfo();
-    }
-
     // update s0PC
     Addr nextPC = finalPred.getTarget();
+    if (taken) {
+        entry.predBranchInfo = finalPred.getTakenSlot().getBranchInfo();
+        entry.predBranchInfo.target = nextPC; // use the final target which may be not from ftb
+    }
+
 
     s0PC = nextPC;
 
