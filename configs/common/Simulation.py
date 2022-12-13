@@ -565,6 +565,14 @@ def run(options, root, testsys, cpu_class):
             switch_cpus_1[i].clk_domain = testsys.cpu[i].clk_domain
             switch_cpus[i].isa = testsys.cpu[i].isa
             switch_cpus_1[i].isa = testsys.cpu[i].isa
+            if options.bp_type:
+                bpClass = ObjectList.bp_list.get(options.bp_type)
+                switch_cpus_1[i].branchPred = bpClass()
+            if options.indirect_bp_type:
+                IndirectBPClass = ObjectList.indirect_bp_list.get(
+                    options.indirect_bp_type)
+                switch_cpus_1[i].branchPred.indirectBranchPred = \
+                    IndirectBPClass()
             if hasattr(options, "xiangshan_system") and options.xiangshan_system:
                 print("Attach decoder for xiangshan full system with standard switch")
                 switch_cpus[i].decoder = testsys.cpu[i].decoder
