@@ -1072,8 +1072,7 @@ Commit::commitInsts()
                         const auto &dest = head_inst->destRegIdx(0);
                         if ((dest.isFloatReg() || dest.isIntReg()) &&
                             !dest.isZeroReg()) {
-                            cpu->diffInfo.result =
-                                head_inst->getResult().asNoAssert<RegVal>();
+                            cpu->diffInfo.result = cpu->getArchReg(dest, tid);
                         }
                     }
                     cpu->diffInfo.curInstStrictOrdered =
