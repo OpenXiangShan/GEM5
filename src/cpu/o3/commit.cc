@@ -1359,6 +1359,9 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
     for (int i = 0; i < head_inst->numDestRegs(); i++) {
         renameMap[tid]->setEntry(head_inst->flattenedDestIdx(i),
                                  head_inst->renamedDestIdx(i));
+        DPRINTF(Commit, "Committing rename map entry x%i -> p%i\n",
+                head_inst->destRegIdx(i).index(),
+                head_inst->renamedDestIdx(i)->flatIndex());
     }
 
     // hardware transactional memory
@@ -1447,7 +1450,8 @@ Commit::updateComInstStats(const DynInstPtr &inst)
 
     // To match the old model, don't count nops and instruction
     // prefetches towards the total commit count.
-    if (!inst->isNop() && !inst->isInstPrefetch()) {
+    if ((!inst->isNop() || inst->staticInst->isMov()) &&
+        !inst->isInstPrefetch()) {
         cpu->instDone(tid, inst);
     }
 

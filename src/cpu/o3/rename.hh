@@ -320,6 +320,8 @@ class Rename
      */
     std::list<RenameHistory> historyBuffer[MaxThreads];
 
+    void tryFreePReg(PhysRegIdPtr phys_reg);
+
     /** Pointer to CPU. */
     CPU *cpu;
 

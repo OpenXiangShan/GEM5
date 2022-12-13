@@ -111,7 +111,7 @@ class SimpleRenameMap
      * @return A RenameInfo pair indicating both the new and previous
      * physical registers.
      */
-    RenameInfo rename(const RegId& arch_reg);
+    RenameInfo rename(const RegId& arch_reg, PhysRegIdPtr provided_dest);
 
     /**
      * Look up the physical register mapped to an architectural register.
@@ -201,17 +201,18 @@ class UnifiedRenameMap
      * physical registers.
      */
     RenameInfo
-    rename(const RegId& arch_reg)
+    rename(const RegId& dest_reg, const PhysRegIdPtr last_dest_phy)
     {
-        if (!arch_reg.isRenameable()) {
+        if (!dest_reg.isRenameable()) {
             // misc regs aren't really renamed, just remapped
-            PhysRegIdPtr phys_reg = lookup(arch_reg);
+            PhysRegIdPtr phys_reg = lookup(dest_reg);
             // Set the new register to the previous one to keep the same
             // mapping throughout the execution.
             return RenameInfo(phys_reg, phys_reg);
         }
 
-        return renameMaps[arch_reg.classValue()].rename(arch_reg);
+        return renameMaps[dest_reg.classValue()].rename(dest_reg,
+                                                        last_dest_phy);
     }
 
     /**

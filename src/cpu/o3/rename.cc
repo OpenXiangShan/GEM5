@@ -706,12 +706,6 @@ Rename::renameInsts(ThreadID tid)
 
             serializeAfter(insts_to_rename, tid);
         }
-        if (inst->staticInst->isMov() &&
-            inst->srcRegIdx(0) == inst->destRegIdx(0)) {
-            inst->staticInst->setNop();
-            inst->staticInst->setDestRegIdx(0, RegId());
-            inst->staticInst->setSrcRegIdx(0, RegId());
-        }
         renameSrcRegs(inst, inst->threadNumber);
 
         renameDestRegs(inst, inst->threadNumber);
@@ -914,6 +908,28 @@ Rename::unblock(ThreadID tid)
 }
 
 void
+Rename::tryFreePReg(PhysRegIdPtr preg)
+{
+    const auto preg_idx = preg->flatIndex();
+    if (preg->getRef() == 0) {
+        DPRINTF(Rename,
+                "Not to free up p%i on squash because it has already "
+                "been freed\n",
+                preg_idx);
+    } else if (preg->getRef() == 1) {
+        preg->decRef();
+        // Put the renamed physical register back on the free list.
+        DPRINTF(Rename, "Really free up p%i on squash with ref=%i\n", preg_idx,
+                preg->getRef());
+        freeList->addReg(preg);
+    } else {
+        preg->decRef();
+        DPRINTF(Rename, "Not to free up p%i on squash for ref=%i\n",
+                preg->flatIndex(), preg->getRef());
+    }
+}
+
+void
 Rename::doSquash(const InstSeqNum &squashed_seq_num, ThreadID tid)
 {
     auto hb_it = historyBuffer[tid].begin();
@@ -941,9 +957,7 @@ Rename::doSquash(const InstSeqNum &squashed_seq_num, ThreadID tid)
             // Tell the rename map to set the architected register to the
             // previous physical register that it was renamed to.
             renameMap[tid]->setEntry(hb_it->archReg, hb_it->prevPhysReg);
-
-            // Put the renamed physical register back on the free list.
-            freeList->addReg(hb_it->newPhysReg);
+            tryFreePReg(hb_it->newPhysReg);
         }
 
         // Notify potential listeners that the register mapping needs to be
@@ -988,17 +1002,18 @@ Rename::removeFromHistory(InstSeqNum inst_seq_num, ThreadID tid)
            hb_it != historyBuffer[tid].end() &&
            hb_it->instSeqNum <= inst_seq_num) {
 
-        DPRINTF(Rename, "[tid:%i] Freeing up older rename of reg %i (%s), "
+        DPRINTF(Rename,
+                "[tid:%i] try to free up older rename of reg p%i (%s), "
                 "[sn:%llu].\n",
-                tid, hb_it->prevPhysReg->index(),
-                hb_it->prevPhysReg->className(),
-                hb_it->instSeqNum);
+                tid, hb_it->prevPhysReg->flatIndex(),
+                hb_it->prevPhysReg->className(), hb_it->instSeqNum);
+
 
         // Don't free special phys regs like misc and zero regs, which
         // can be recognized because the new mapping is the same as
         // the old one.
         if (hb_it->newPhysReg != hb_it->prevPhysReg) {
-            freeList->addReg(hb_it->prevPhysReg);
+            tryFreePReg(hb_it->prevPhysReg);
         }
 
         ++stats.committedMaps;
@@ -1047,10 +1062,9 @@ Rename::renameSrcRegs(const DynInstPtr &inst, ThreadID tid)
 
         DPRINTF(Rename,
                 "[tid:%i] "
-                "Looking up %s arch reg %i, got phys reg %i (%s)\n",
+                "Looking up %s arch reg x%i, got p%i\n",
                 tid, src_reg.className(),
-                src_reg.index(), renamed_reg->index(),
-                renamed_reg->className());
+                src_reg.index(), renamed_reg->flatIndex());
 
         inst->renameSrcReg(src_idx, renamed_reg);
 
@@ -1090,17 +1104,35 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
         RegId flat_dest_regid = tc->flattenRegId(dest_reg);
         flat_dest_regid.setNumPinnedWrites(dest_reg.getNumPinnedWrites());
 
-        rename_result = map->rename(flat_dest_regid);
+        PhysRegIdPtr last_dest_phy_reg = nullptr;
+        bool produer_valid = false;
+        if (inst->staticInst->isMov()) {
+            last_dest_phy_reg =
+                map->lookup(tc->flattenRegId(inst->srcRegIdx(0)));
+            DPRINTF(Rename, "Find the last reg p%i renamed for mv x%i, x%i\n",
+                    last_dest_phy_reg->flatIndex(), dest_reg.index(),
+                    inst->srcRegIdx(0).index());
+            if (last_dest_phy_reg->getRef() > 0) {
+                produer_valid = true;
+                inst->staticInst->setNop();
+            }
+        }
+
+        // If the last register is ready, it might have been freed
+        if (inst->staticInst->isMov() && !produer_valid) {
+            DPRINTF(Rename, "Although it's move, producer has been freed\n");
+            last_dest_phy_reg = nullptr;
+        }
+        rename_result = map->rename(flat_dest_regid, last_dest_phy_reg);
 
         inst->flattenedDestIdx(dest_idx, flat_dest_regid);
 
-        scoreboard->unsetReg(rename_result.first);
-
-        DPRINTF(Rename,
-                "[tid:%i] "
-                "Renaming arch reg %i (%s) to physical reg %i (%i).\n",
-                tid, dest_reg.index(), dest_reg.className(),
-                rename_result.first->index(),
+        if (!produer_valid) {
+            scoreboard->unsetReg(rename_result.first);
+        }
+        DPRINTF(Rename, "[tid:%i] %s map arch reg x%i (%s) to p%i.\n",
+                tid, produer_valid ? "Mov" : "Rename",
+                dest_reg.index(), dest_reg.className(),
                 rename_result.first->flatIndex());
 
         // Record the rename information so that a history can be kept.

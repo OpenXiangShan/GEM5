@@ -53,6 +53,7 @@
 #include "cpu/simple_thread.hh"
 #include "cpu/thread_context.hh"
 #include "debug/Activity.hh"
+#include "debug/Commit.hh"
 #include "debug/Drain.hh"
 #include "debug/O3CPU.hh"
 #include "debug/Quiesce.hh"
@@ -1613,6 +1614,8 @@ CPU::readArchIntReg(int reg_idx, ThreadID tid)
     PhysRegIdPtr phys_reg =
         commitRenameMap[tid].lookup(RegId(IntRegClass, reg_idx));
 
+    DPRINTF(Commit, "Get map: x%i -> p%i\n", reg_idx, phys_reg->flatIndex());
+
     return regFile.getReg(phys_reg);
 }
 
@@ -1622,6 +1625,7 @@ CPU::readArchFloatReg(int reg_idx, ThreadID tid)
     cpuStats.fpRegfileReads++;
     PhysRegIdPtr phys_reg =
         commitRenameMap[tid].lookup(RegId(FloatRegClass, reg_idx));
+    DPRINTF(Commit, "Get map: f%i -> p%i\n", reg_idx, phys_reg->flatIndex());
 
     return regFile.getReg(phys_reg);
 }

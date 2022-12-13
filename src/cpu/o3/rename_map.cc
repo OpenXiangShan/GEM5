@@ -70,14 +70,28 @@ SimpleRenameMap::init(const RegClass &reg_class, SimpleFreeList *_freeList)
 }
 
 SimpleRenameMap::RenameInfo
-SimpleRenameMap::rename(const RegId& arch_reg)
+SimpleRenameMap::rename(const RegId &arch_reg,
+                        const PhysRegIdPtr provided_dest)
 {
     PhysRegIdPtr renamed_reg;
     // Record the current physical register that is renamed to the
     // requested architected register.
     PhysRegIdPtr prev_reg = map[arch_reg.index()];
 
-    if (arch_reg.is(InvalidRegClass)) {
+    if (provided_dest != nullptr) {
+        renamed_reg = provided_dest;
+        if (prev_reg != provided_dest) {
+            map[arch_reg.index()] = provided_dest;
+            renamed_reg->incRef();
+            DPRINTF(Rename, "Increment the ex ref of p%i to %i\n",
+                    renamed_reg->flatIndex(), renamed_reg->getRef());
+        } else {
+            DPRINTF(Rename,
+                    "Provided destination is the same as the previous one, "
+                    "leave ref counter untouched\n");
+        }
+
+    } else if (arch_reg.is(InvalidRegClass)) {
         assert(prev_reg->is(InvalidRegClass));
         renamed_reg = prev_reg;
     } else if (prev_reg->getNumPinnedWrites() > 0) {
@@ -90,10 +104,15 @@ SimpleRenameMap::rename(const RegId& arch_reg)
         renamed_reg->decrNumPinnedWrites();
     } else {
         renamed_reg = freeList->getReg();
+        DPRINTF(Rename, "Get free reg p%i\n", renamed_reg->flatIndex());
         map[arch_reg.index()] = renamed_reg;
         renamed_reg->setNumPinnedWrites(arch_reg.getNumPinnedWrites());
         renamed_reg->setNumPinnedWritesToComplete(
             arch_reg.getNumPinnedWrites() + 1);
+
+        renamed_reg->incRef();
+        DPRINTF(Rename, "Increment the ex ref of p%i to %i\n",
+                renamed_reg->flatIndex(), renamed_reg->getRef());
     }
 
     DPRINTF(Rename, "Renamed reg %d to physical reg %d (%d) old mapping was"
