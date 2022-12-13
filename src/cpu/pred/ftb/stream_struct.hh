@@ -207,7 +207,7 @@ typedef struct FetchStream
     unsigned predSource;
 
     // prediction metas
-    std::array<std::shared_ptr<void>, 4> predMetas;
+    std::array<std::shared_ptr<void>, 5> predMetas;
 
     Tick predTick;
     boost::dynamic_bitset<> history;

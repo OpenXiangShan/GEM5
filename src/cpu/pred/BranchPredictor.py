@@ -932,6 +932,8 @@ class DecoupledBPUWithFTB(BranchPredictor):
     ftb.numBr = numBr
     tage = Param.FTBTAGE(FTBTAGE(), "TAGE predictor")
     tage.numBr = numBr
+    ittage = Param.FTBITTAGE(FTBITTAGE(), "ITTAGE predictor")
+    ittage.numBr = 1
     uftb = Param.DefaultFTB(UFTB(), "UFTB predictor")
     uftb.numBr = numBr
     ras = Param.RAS(RAS(), "RAS")

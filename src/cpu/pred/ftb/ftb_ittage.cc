@@ -170,11 +170,8 @@ FTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Fu
     
     assert(getDelay() < stagePreds.size());
     for (int s = getDelay(); s < stagePreds.size(); ++s) { // need modify
-        // for (int i = 0; i < numBr; ++i) {
-        //     takens[i] = use_alt_preds[i] ? altRes[i].second >= 0 : entries[i].counter >= 0;
-        //     // TODO: use pred results
-        //     stagePreds[s].condTakens[i] = takens[i];
-        // }
+        Addr useTarget = use_alt_preds[0] ? altRes[0].first : entries[0].target;
+        stagePreds[s].indirectTarget = useTarget;
     }
 
     meta.preds = preds;
@@ -226,7 +223,7 @@ FTBITTAGE::update(const FetchStream &entry)
 
     // get tage predictions from meta
     // TODO: use component idx
-    auto meta = std::static_pointer_cast<TageMeta>(entry.predMetas[1]);
+    auto meta = std::static_pointer_cast<TageMeta>(entry.predMetas[4]);
     auto preds = meta->preds;
     auto updateTagFoldedHist = meta->tagFoldedHist;
     auto updateIndexFoldedHist = meta->indexFoldedHist;
@@ -462,7 +459,7 @@ FTBITTAGE::recoverHist(const boost::dynamic_bitset<> &history,
     const FetchStream &entry, int shamt, bool cond_taken)
 {
     // TODO: need to get idx
-    std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[1]);
+    std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[4]);
     for (int i = 0; i < numPredictors; i++) {
         tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
         indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
