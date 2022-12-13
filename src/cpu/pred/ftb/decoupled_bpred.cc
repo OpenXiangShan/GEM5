@@ -128,12 +128,26 @@ DecoupledBPUWithFTB::FTBStats::FTBStats(statistics::Group* parent):
     ADD_STAT(condMiss, statistics::units::Count::get(), "the number of cond branch misses"),
     ADD_STAT(uncondMiss, statistics::units::Count::get(), "the number of uncond branch misses"),
     ADD_STAT(returnMiss, statistics::units::Count::get(), "the number of return branch misses"),
-    ADD_STAT(otherMiss, statistics::units::Count::get(), "the number of other branch misses")
+    ADD_STAT(otherMiss, statistics::units::Count::get(), "the number of other branch misses"),
+    ADD_STAT(predsOfEachStage, statistics::units::Count::get(), "the number of preds of each stage that account for final pred"),
+    ADD_STAT(fsqEntryDist, statistics::units::Count::get(), "the distribution of number of entries in fsq"),
+    ADD_STAT(controlSquash, statistics::units::Count::get(), "the number of control squashes in bpu"),
+    ADD_STAT(nonControlSquash, statistics::units::Count::get(), "the number of non-control squashes in bpu"),
+    ADD_STAT(trapSquash, statistics::units::Count::get(), "the number of trap squashes in bpu"),
+    ADD_STAT(ftqNotValid, statistics::units::Count::get(), "the number of trap squashes in bpu"),
+    ADD_STAT(fsqNotValid, statistics::units::Count::get(), "the number of trap squashes in bpu"),
+    ADD_STAT(fsqFullCannotEnq, statistics::units::Count::get(), "the number of trap squashes in bpu")
 {
     condMiss.prereq(condMiss);
     uncondMiss.prereq(uncondMiss);
     returnMiss.prereq(returnMiss);
     otherMiss.prereq(otherMiss);
+
+    // TODO: parameterize
+    predsOfEachStage.init(3);
+    fsqEntryDist.init(0, 64, 1);
+    // ftqEntryDist.init(0, ftqSize, fetchStreamQueueSize+1);
+
 }
 
 // bool
@@ -154,6 +168,11 @@ DecoupledBPUWithFTB::FTBStats::FTBStats(statistics::Group* parent):
 void
 DecoupledBPUWithFTB::tick()
 {
+    ftbstats.fsqEntryDist.sample(fetchStreamQueue.size(), 1);
+    if (streamQueueFull()) {
+        ftbstats.fsqFullCannotEnq++;
+    }
+
     if (!receivedPred && numOverrideBubbles == 0 && sentPCHist) {
         generateFinalPredAndCreateBubbles();
     }
@@ -241,6 +260,8 @@ DecoupledBPUWithFTB::generateFinalPredAndCreateBubbles()
 
     printFullFTBPrediction(*chosen);
     DPRINTF(Override, "Ends generateFinalPredAndCreateBubbles(), numOverrideBubbles is %d, receivedPred is set true.\n", numOverrideBubbles);
+
+    ftbstats.predsOfEachStage[first_hit_stage]++;
 }
 
 bool
@@ -325,6 +346,8 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
                             unsigned control_inst_size, bool actually_taken,
                             const InstSeqNum &seq, ThreadID tid)
 {
+    ftbstats.controlSquash++;
+
     bool is_conditional = static_inst->isCondCtrl();
     bool is_indirect = static_inst->isIndirectCtrl();
     // bool is_call = static_inst->isCall() && !static_inst->isNonSpeculative();
@@ -481,6 +504,7 @@ DecoupledBPUWithFTB::nonControlSquash(unsigned target_id, unsigned stream_id,
                                const PCStateBase &inst_pc,
                                const InstSeqNum seq, ThreadID tid)
 {
+    ftbstats.nonControlSquash++;
     DPRINTFV(this->debugFlagOn || ::gem5::debug::DecoupleBP,
             "non control squash: target id: %lu, stream id: %lu, inst_pc: %x, "
             "seq: %lu\n",
@@ -536,6 +560,7 @@ DecoupledBPUWithFTB::trapSquash(unsigned target_id, unsigned stream_id,
                          Addr last_committed_pc, const PCStateBase &inst_pc,
                          ThreadID tid)
 {
+    ftbstats.trapSquash++;
     DPRINTF(DecoupleBP || debugFlagOn,
             "Trap squash: target id: %lu, stream id: %lu, inst_pc: %#lx\n",
             target_id, stream_id, inst_pc.instAddr());
@@ -860,6 +885,7 @@ DecoupledBPUWithFTB::tryEnqFetchTarget()
         return;
     }
     if (fetchStreamQueue.empty()) {
+        ftbstats.fsqNotValid++;
         // no stream that have not entered ftq
         DPRINTF(DecoupleBP, "No stream to enter ftq in fetchStreamQueue\n");
         return;
@@ -870,6 +896,7 @@ DecoupledBPUWithFTB::tryEnqFetchTarget()
     auto &ftq_enq_state = fetchTargetQueue.getEnqState();
     auto it = fetchStreamQueue.find(ftq_enq_state.streamId);
     if (it == fetchStreamQueue.end()) {
+        ftbstats.fsqNotValid++;
         // desired stream not found in fsq
         DPRINTF(DecoupleBP, "FTQ enq desired Stream ID %u is not found\n",
                 ftq_enq_state.streamId);

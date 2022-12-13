@@ -298,6 +298,18 @@ class DecoupledBPUWithFTB : public BPredUnit
         statistics::Scalar uncondMiss;
         statistics::Scalar returnMiss;
         statistics::Scalar otherMiss;
+
+        statistics::Vector predsOfEachStage;
+        statistics::Distribution fsqEntryDist;
+        // statistics::Distribution ftqEntryDist;
+        statistics::Scalar controlSquash;
+        statistics::Scalar nonControlSquash;
+        statistics::Scalar trapSquash;
+
+        statistics::Scalar ftqNotValid;
+        statistics::Scalar fsqNotValid;
+        statistics::Scalar fsqFullCannotEnq;
+
         FTBStats(statistics::Group* parent);
     } ftbstats;
 
@@ -448,6 +460,10 @@ class DecoupledBPUWithFTB : public BPredUnit
                 break;
         }
         DPRINTF(FTBStats, "Miss type: %d\n", type);
+    }
+
+    void addFtqNotValid() {
+        ftbstats.ftqNotValid++;
     }
 };
 

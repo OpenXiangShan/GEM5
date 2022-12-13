@@ -1457,6 +1457,7 @@ Fetch::fetch(bool &status_change)
             }
         } else if (isFTBPred()) {
             if (!dbpftb->fetchTargetAvailable()) {
+                dbpftb->addFtqNotValid();
                 DPRINTF(Fetch, "Skip fetch when FTQ head is not available\n");
                 return;
             }
