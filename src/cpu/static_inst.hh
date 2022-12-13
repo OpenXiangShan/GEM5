@@ -136,6 +136,13 @@ class StaticInst : public RefCounted, public StaticInstFlags
     /// instruction property flags.  See StaticInst::Flags for descriptions
     /// of the individual flags.
     //@{
+    uint32_t operWid() const
+    {
+        return flags[IsOper16]   ? 16
+               : flags[IsOper32] ? 32
+               : flags[IsOper64] ? 64
+                               : -1;
+    }
 
     bool isNop()          const { return flags[IsNop]; }
     bool isMov()          const { return flags[IsMov]; }

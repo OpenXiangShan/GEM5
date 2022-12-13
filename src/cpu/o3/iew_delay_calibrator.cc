@@ -70,8 +70,30 @@ DelayCalibrator::execLatencyCheck(CPU* cpu, DynInstPtr inst,
                 op_latency = Cycles(8 + delay_ / 4);
             }
             return true;
-
-
+        case OpClass::FloatSqrt:
+            switch(inst->staticInst->operWid()){
+                case 32:
+                    op_latency = Cycles(16);
+                    break;
+                case 64:
+                    op_latency = Cycles(31);
+                    break;
+                default:
+                    return false;
+            }
+            return true;
+        case OpClass::FloatDiv:
+            switch(inst->staticInst->operWid()){
+                case 32:
+                    op_latency = Cycles(9);
+                    break;
+                case 64:
+                    op_latency = Cycles(19);
+                    break;
+                default:
+                    return false;
+            }
+            return true;
         default:
             return false;
     }

@@ -1384,21 +1384,21 @@ decode QUADRANT default Unknown::unknown() {
                     fd = freg(f32_div(f32(freg(Fs1_bits)),
                                       f32(freg(Fs2_bits))));
                     Fd_bits = fd.v;
-                }}, FloatDivOp);
+                }}, FloatDivOp, IsOper32);
                 0xd: fdiv_d({{
                     RM_REQUIRED;
                     freg_t fd;
                     fd = freg(f64_div(f64(freg(Fs1_bits)),
                                       f64(freg(Fs2_bits))));
                     Fd_bits = fd.v;
-                }}, FloatDivOp);
+                }}, FloatDivOp, IsOper64);
                 0xe: fdiv_h({{
                     RM_REQUIRED;
                     freg_t fd;
                     fd = freg(f16_div(f16(freg(Fs1_bits)),
                                       f16(freg(Fs2_bits))));
                     Fd_bits = fd.v;
-                }}, FloatDivOp);
+                }}, FloatDivOp, IsOper16);
                 0x10: decode ROUND_MODE {
                     0x0: fsgnj_s({{
                         auto sign = bits(unboxF32(Fs2_bits), 31);
@@ -1589,7 +1589,7 @@ decode QUADRANT default Unknown::unknown() {
                     RM_REQUIRED;
                     fd = freg(f32_sqrt(f32(freg(Fs1_bits))));
                     Fd_bits = fd.v;
-                }}, FloatSqrtOp);
+                }}, FloatSqrtOp, IsOper32);
                 0x2d: fsqrt_d({{
                     if (RS2 != 0) {
                         return std::make_shared<IllegalInstFault>(
@@ -1599,7 +1599,7 @@ decode QUADRANT default Unknown::unknown() {
                     RM_REQUIRED;
                     fd = freg(f64_sqrt(f64(freg(Fs1_bits))));
                     Fd_bits = fd.v;
-                }}, FloatSqrtOp);
+                }}, FloatSqrtOp, IsOper64);
                 0x2e: fsqrt_h({{
                     if (RS2 != 0) {
                         return std::make_shared<IllegalInstFault>(
@@ -1609,7 +1609,7 @@ decode QUADRANT default Unknown::unknown() {
                     RM_REQUIRED;
                     fd = freg(f16_sqrt(f16(freg(Fs1_bits))));
                     Fd_bits = fd.v;
-                }}, FloatSqrtOp);
+                }}, FloatSqrtOp, IsOper16);
                 0x50: decode ROUND_MODE {
                     0x0: fle_s({{
                         Rd = f32_le(f32(freg(Fs1_bits)), f32(freg(Fs2_bits)));
