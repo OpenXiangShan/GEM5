@@ -67,6 +67,7 @@
 #include "debug/ExecFaulting.hh"
 #include "debug/HtmCpu.hh"
 #include "debug/O3PipeView.hh"
+#include "debug/FTBStats.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/faults.hh"
 #include "sim/full_system.hh"
@@ -1061,15 +1062,17 @@ Commit::commitInsts()
                     if (head_inst->isUncondCtrl()) {
                         dbftb->addMiss(branch_prediction::ftb_pred::DecoupledBPUWithFTB::MissType::UNCOND);
                     }
-                    if (head_inst->isControl()) {
+                    if (head_inst->isCondCtrl()) {
                         dbftb->addMiss(branch_prediction::ftb_pred::DecoupledBPUWithFTB::MissType::COND);
                     }
                     if (head_inst->isReturn()) {
                         dbftb->addMiss(branch_prediction::ftb_pred::DecoupledBPUWithFTB::MissType::RETURN);
-                    }
-                    if (!head_inst->isReturn() && !head_inst->isControl() && !head_inst->isUncondCtrl()) {
+                    } else if (head_inst->isIndirectCtrl()) {
                         dbftb->addMiss(branch_prediction::ftb_pred::DecoupledBPUWithFTB::MissType::OTHER);
                     }
+                    DPRINTF(FTBStats, "inst=%s\n", head_inst->staticInst->disassemble(head_inst->pcState().instAddr()));
+                    DPRINTF(FTBStats, "isUncondCtrl=%d, isCondCtrl=%d, isReturn=%d, isIndirectCtrl=%d\n",
+                            head_inst->isUncondCtrl(), head_inst->isCondCtrl(), head_inst->isReturn(), head_inst->isIndirectCtrl());
                 }
 
                 ++num_committed;

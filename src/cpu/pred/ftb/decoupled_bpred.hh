@@ -19,6 +19,7 @@
 #include "debug/DecoupleBPProbe.hh"
 #include "debug/DecoupleBPRAS.hh"
 #include "debug/DecoupleBPVerbose.hh"
+#include "debug/FTBStats.hh"
 #include "params/DecoupledBPUWithFTB.hh"
 
 namespace gem5
@@ -446,6 +447,7 @@ class DecoupledBPUWithFTB : public BPredUnit
                 ftbstats.otherMiss++;
                 break;
         }
+        DPRINTF(FTBStats, "Miss type: %d\n", type);
     }
 };
 
