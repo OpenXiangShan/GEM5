@@ -210,6 +210,7 @@ class Fetch
 
         void setFault(Fault _fault) { fault = _fault; }
         void setReq(const RequestPtr &_req) { req = _req; }
+        RequestPtr getReq() { return req; }
 
         /** Process the delayed finish translation */
         void
