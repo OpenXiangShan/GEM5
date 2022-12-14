@@ -1114,8 +1114,10 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
                     inst->srcRegIdx(0).index());
             if (last_dest_phy_reg->getRef() > 0) {
                 produer_valid = true;
-                inst->staticInst->setNop();
+                inst->setEmptyMove(true);
             }
+            DPRINTF(Rename, "Inst sn:%lu is nop: %i, is move: %i\n",
+                    inst->seqNum, inst->isNop(), inst->staticInst->isMov());
         }
 
         // If the last register is ready, it might have been freed

@@ -142,6 +142,8 @@ class DynInst : public ExecContext, public RefCounted
     /** InstRecord that tracks this instructions. */
     Trace::InstRecord *traceData = nullptr;
 
+    bool isEmptyMove{};
+
   protected:
     enum Status
     {
@@ -543,7 +545,8 @@ class DynInst : public ExecContext, public RefCounted
     //
     //  Instruction types.  Forward checks to StaticInst object.
     //
-    bool isNop()          const { return staticInst->isNop(); }
+    void setEmptyMove(bool f) { isEmptyMove = f; }
+    bool isNop()          const { return staticInst->isNop() || isEmptyMove; }
     bool isMemRef()       const { return staticInst->isMemRef(); }
     bool isLoad()         const { return staticInst->isLoad(); }
     bool isStore()        const { return staticInst->isStore(); }
