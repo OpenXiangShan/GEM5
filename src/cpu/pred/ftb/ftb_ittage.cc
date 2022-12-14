@@ -317,8 +317,7 @@ FTBITTAGE::update(const FetchStream &entry)
 
         // allocate new entry
         unsigned maskMaxNum = std::pow(2, (numPredictors - (pred.table + 1)));
-        srand((unsigned)time(NULL));
-        unsigned mask = std::rand() % maskMaxNum;
+        unsigned mask = allocLFSR.get() % maskMaxNum;
         bitset allocateLFSR(numPredictors - (pred.table + 1), mask);
         std::string buf;
         boost::to_string(allocateLFSR, buf);

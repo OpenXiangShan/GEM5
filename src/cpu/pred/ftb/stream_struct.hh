@@ -88,6 +88,23 @@ typedef struct FTBSlot : BranchInfo
 
 }FTBSlot;
 
+typedef struct LFSR64 {
+    uint64_t lfsr;
+    LFSR64() : lfsr(0x1234567887654321UL) {}
+    uint64_t get() {
+        next();
+        return lfsr;
+    }
+    void next() {
+        if (lfsr == 0) {
+            lfsr = 1;
+        } else {
+            uint64_t bit = ((lfsr >> 0) ^ (lfsr >> 1) ^ (lfsr >> 3) ^ (lfsr >> 4)) & 1;
+            lfsr = (lfsr >> 1) | (bit << 63);
+        }
+    }
+}LFSR64;
+
 typedef struct FTBEntry
 {
     /** The entry's tag. */

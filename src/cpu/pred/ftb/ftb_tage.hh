@@ -130,6 +130,8 @@ class FTBTAGE : public TimedBaseFTBPredictor
     std::vector<FoldedHist> tagFoldedHist;
     std::vector<FoldedHist> indexFoldedHist;
 
+    LFSR64 allocLFSR;
+
     unsigned maxHistLen;
 
     std::vector<std::vector<std::vector<TageEntry>>> tageTable;
