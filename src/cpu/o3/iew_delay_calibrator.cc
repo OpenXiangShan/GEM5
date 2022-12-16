@@ -71,11 +71,21 @@ DelayCalibrator::execLatencyCheck(CPU* cpu, DynInstPtr inst,
             }
             return true;
         case OpClass::FloatSqrt:
-            switch(inst->staticInst->operWid()){
+            rs1 = cpu->readArchFloatReg(inst->srcRegIdx(0).index(),
+                                        inst->threadNumber);
+            switch (inst->staticInst->operWid()) {
                 case 32:
-                    op_latency = Cycles(16);
+                    if (__isnanf(*((float*)(&rs1) + 1))) {
+                        op_latency = Cycles(4);
+                        break;
+                    }
+                    op_latency = Cycles(17);
                     break;
                 case 64:
+                    if (__isnan(*((double*)(&rs1)))) {
+                        op_latency = Cycles(4);
+                        break;
+                    }
                     op_latency = Cycles(31);
                     break;
                 default:
@@ -83,12 +93,26 @@ DelayCalibrator::execLatencyCheck(CPU* cpu, DynInstPtr inst,
             }
             return true;
         case OpClass::FloatDiv:
-            switch(inst->staticInst->operWid()){
+            rs1 = cpu->readArchFloatReg(inst->srcRegIdx(0).index(),
+                                        inst->threadNumber);
+            rs2 = cpu->readArchFloatReg(inst->srcRegIdx(1).index(),
+                                        inst->threadNumber);
+            switch (inst->staticInst->operWid()) {
                 case 32:
-                    op_latency = Cycles(9);
+                    if (__isnanf(*((float*)(&rs1) + 1)) ||
+                        __isnanf(*((float*)(&rs2) + 1))) {
+                        op_latency = Cycles(4);
+                        break;
+                    }
+                    op_latency = Cycles(11);
                     break;
                 case 64:
-                    op_latency = Cycles(19);
+                    if (__isnan(*((double*)(&rs1))) ||
+                        __isnan(*((double*)(&rs2)))) {
+                        op_latency = Cycles(4);
+                        break;
+                    }
+                    op_latency = Cycles(18);
                     break;
                 default:
                     return false;
