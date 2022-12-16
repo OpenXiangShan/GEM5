@@ -13,6 +13,7 @@
 #include "cpu/pred/ftb/stream_struct.hh"
 #include "cpu/pred/ftb/timed_base_pred.hh"
 #include "debug/DecoupleBP.hh"
+#include "debug/FTBTAGEUseful.hh"
 #include "params/FTBTAGE.hh"
 #include "sim/sim_object.hh"
 

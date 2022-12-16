@@ -9,7 +9,6 @@
 #include "base/trace.hh"
 #include "cpu/pred/ftb/stream_common.hh"
 #include "debug/FTBTAGE.hh"
-#include "debug/FTBTAGE.hh"
 
 namespace gem5 {
 
@@ -173,6 +172,7 @@ FTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::array<FullF
     // get prediction and save it
     std::vector<bool> found = lookupHelper(stream_start, entries, main_tables,
                                     main_table_indices, use_alt_preds, usefulMasks);
+
 
     std::vector<short> altRes = baseTable.at(getBaseTableIndex(stream_start));
 
@@ -354,20 +354,28 @@ FTBTAGE::update(const FetchStream &entry)
         int total_tables_to_allocate = pred.usefulMask.size();
         bool incUsefulResetCounter = num_tables_can_allocate < (total_tables_to_allocate - num_tables_can_allocate);
         bool decUsefulResetCounter = num_tables_can_allocate > (total_tables_to_allocate - num_tables_can_allocate);
-        unsigned changeVal = std::abs(num_tables_can_allocate - (total_tables_to_allocate - num_tables_can_allocate));
+        int changeVal = std::abs(num_tables_can_allocate - (total_tables_to_allocate - num_tables_can_allocate));
         if (needToAllocate) {
             if (incUsefulResetCounter) { // need modify: clear the useful bit of all entries
                 stat->updateResetUCtrInc.sample(changeVal, 1);
-                usefulResetCnt[b] = usefulResetCnt[b] + changeVal >= 128 ? 128 : usefulResetCnt[b] + changeVal;
-                DPRINTF(FTBTAGE, "incUsefulResetCounter, changeVal %d, usefulResetCnt %d\n", changeVal, usefulResetCnt[b]);
+                usefulResetCnt[b] += changeVal;
+                if (usefulResetCnt[b] >= 128) {
+                    usefulResetCnt[b] = 128;
+                }
+                // usefulResetCnt[b] = (usefulResetCnt[b] + changeVal >= 128) ? 128 : (usefulResetCnt[b] + changeVal);
+                DPRINTF(FTBTAGEUseful, "incUsefulResetCounter %d, changeVal %d, usefulResetCnt %d\n", b, changeVal, usefulResetCnt[b]);
             } else if (decUsefulResetCounter) {
                 stat->updateResetUCtrDec.sample(changeVal, 1);
-                usefulResetCnt[b] = usefulResetCnt[b] - changeVal <= 0 ? 0 : usefulResetCnt[b] - changeVal;
-                DPRINTF(FTBTAGE, "decUsefulResetCounter, changeVal %d, usefulResetCnt %d\n", changeVal, usefulResetCnt[b]);
+                usefulResetCnt[b] -= changeVal;
+                if (usefulResetCnt[b] <= 0) {
+                    usefulResetCnt[b] = 0;
+                }
+                // usefulResetCnt[b] = (usefulResetCnt[b] - changeVal <= 0) ? 0 : (usefulResetCnt[b] - changeVal);
+                DPRINTF(FTBTAGEUseful, "decUsefulResetCounter %d, changeVal %d, usefulResetCnt %d\n", b, changeVal, usefulResetCnt[b]);
             }
             if (usefulResetCnt[b] == 128) {
                 stat->updateResetU++;
-                DPRINTF(FTBTAGE, "reset useful bit of all entries\n");
+                DPRINTF(FTBTAGEUseful, "reset useful bit of all entries\n");
                 for (auto &table : tageTable) {
                     for (auto &entries : table) {
                         for (auto &entry : entries) {
@@ -387,16 +395,16 @@ FTBTAGE::update(const FetchStream &entry)
             bitset allocateLFSR(numPredictors - (pred.table + 1), mask);
             std::string buf;
             boost::to_string(allocateLFSR, buf);
-            DPRINTF(FTBTAGE, "allocateLFSR %s, size %d\n", buf, allocateLFSR.size());
+            DPRINTF(FTBTAGEUseful, "allocateLFSR %s, size %d\n", buf, allocateLFSR.size());
             auto flipped_usefulMask = ~pred.usefulMask;
             boost::to_string(flipped_usefulMask, buf);
-            DPRINTF(FTBTAGE, "pred usefulmask %s, size %d\n", buf, pred.usefulMask.size());
+            DPRINTF(FTBTAGEUseful, "pred usefulmask %s, size %d\n", buf, pred.usefulMask.size());
             bitset masked = allocateLFSR & flipped_usefulMask;
             boost::to_string(masked, buf);
-            DPRINTF(FTBTAGE, "masked %s, size %d\n", buf, masked.size());
+            DPRINTF(FTBTAGEUseful, "masked %s, size %d\n", buf, masked.size());
             bitset allocate = masked.any() ? masked : flipped_usefulMask;
             boost::to_string(allocate, buf);
-            DPRINTF(FTBTAGE, "allocate %s, size %d\n", buf, allocate.size());
+            DPRINTF(FTBTAGEUseful, "allocate %s, size %d\n", buf, allocate.size());
             short newCounter = this_cond_actually_taken ? 0 : -1;
 
             bool allocateValid = flipped_usefulMask.any();
