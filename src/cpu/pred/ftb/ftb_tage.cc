@@ -67,6 +67,8 @@ numBr(p.numBr)
     for (unsigned i = 0; i < baseTable.size(); ++i) {
         baseTable[i].resize(numBr);
     }
+    usefulResetCnt.resize(numBr, 0);
+
     useAlt.resize(128);
     for (unsigned i = 0; i < useAlt.size(); ++i) {
         useAlt[i].resize(numBr, 0);
@@ -130,7 +132,7 @@ FTBTAGE::lookupHelper(Addr startAddr,
 
         if (provider_counts > 0) {
             auto main_entry = main_entries[b];
-            if (useAlt[getUseAltIdx(startAddr>>instShiftAmt)][b] > 0 &&
+            if (useAlt[getUseAltIdx(startAddr)][b] > 0 &&
                 (main_entry.counter == -1 || main_entry.counter == 0)) {
                 use_alt_preds[b] = true;
             } else {
