@@ -28,6 +28,13 @@ maxHistLen(p.maxHistLen),
 numTablesToAlloc(p.numTablesToAlloc),
 numBr(p.numBr)
 {
+    tageBankStats = new TageBankStats * [numBr];
+    for (int i = 0; i < numBr; i++) {
+        tageBankStats[i] = new TageBankStats(this, 
+            (std::string("bank_")+std::to_string(i)).c_str(),
+            numPredictors);
+    }
+
     DPRINTF(FTBTAGE, "FTBTAGE constructor\n");
     tageTable.resize(numPredictors);
     tableIndexBits.resize(numPredictors);
@@ -64,7 +71,14 @@ numBr(p.numBr)
     for (unsigned i = 0; i < useAlt.size(); ++i) {
         useAlt[i].resize(numBr, 0);
     }
-    usefulResetCnt.resize(numBr, 128);
+}
+
+FTBTAGE::~FTBTAGE()
+{
+    for (int i = 0; i < numBr; i++) {
+        delete tageBankStats[i];
+    }
+    delete [] tageBankStats;
 }
 
 void
@@ -165,6 +179,7 @@ FTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::array<FullF
     for (int b = 0; b < numBr; ++b) {
         preds[b] = TagePrediction(found[b], entries[b].counter, altRes[b],
             main_tables[b], main_table_indices[b], entries[b].tag, use_alt_preds[b], usefulMasks[b]);
+        tageBankStats[b]->updateStatsWithTagePrediction(preds[b], true);
     }
     
     for (int s = getDelay(); s < stagePreds.size(); ++s) {
@@ -238,12 +253,16 @@ FTBTAGE::update(const FetchStream &entry)
             // will not be executed either, thus we don't need to update them
             continue;
         }
+
+        auto stat = tageBankStats[b];
+        stat->updateStatsWithTagePrediction(preds[b], false);
         bool this_cond_actually_taken = entry.exeTaken && entry.exeBranchInfo == ftb_entry.slots[b];
 
 
         TagePrediction pred = preds[b];
         bool mainFound = pred.mainFound;
         bool mainTaken = pred.mainCounter >= 0;
+        bool mainWeak = pred.mainCounter == 0 || pred.mainCounter == -1;
         bool altTaken = baseTable.at(getBaseTableIndex(startAddr))[b] >= 0;
 
         // update useful bit, counter and predTaken for main entry
@@ -268,20 +287,60 @@ FTBTAGE::update(const FetchStream &entry)
         }
 
         // update use_alt_counters
-        if (pred.mainFound && (pred.counter == 0 || pred.counter == -1) &&
-                mainTaken != altTaken) {
+        if (pred.mainFound && mainWeak && mainTaken != altTaken) {
             DPRINTF(FTBTAGE, "use_alt_on_provider_weak, alt %s, updating use_alt_counter\n",
                 altTaken == this_cond_actually_taken ? "correct" : "incorrect");
             auto &use_alt_counter = useAlt.at(getUseAltIdx(startAddr))[b];
             if (altTaken == this_cond_actually_taken) {
+                stat->updateUseAltOnNaInc++;
                 satIncrement(8, use_alt_counter);
             } else {
+                stat->updateUseAltOnNaDec++;
                 satDecrement(-7, use_alt_counter);
+            }
+        }
+
+        // stats
+        if (!pred.mainFound || pred.useAlt) {
+            bool altTaken = pred.altCounter >= 0;
+            bool mainTaken = pred.mainCounter >= 0;
+            bool altCorrect = altTaken == this_cond_actually_taken;
+            bool altDiffers = altTaken != mainTaken;
+            if (altCorrect) {
+                stat->updateUseAltCorrect++;
+            } else {
+                stat->updateUseAltWrong++;
+            }
+            if (altDiffers) {
+                stat->updateAltDiffers++;
+            }
+        }
+
+        if (pred.mainFound && mainWeak) {
+            stat->updateProviderNa++;
+            if (!pred.useAlt) {
+                bool mainCorrect = mainTaken == this_cond_actually_taken;
+                if (mainCorrect) {
+                    stat->updateUseNaCorrect++;
+                } else {
+                    stat->updateUseNaWrong++;
+                }
+            } else {
+                stat->updateUseAltOnNa++;
+                bool altCorrect = altTaken == this_cond_actually_taken;
+                if (altCorrect) {
+                    stat->updateUseAltOnNaCorrect++;
+                } else {
+                    stat->updateUseAltOnNaWrong++;
+                }
             }
         }
 
         DPRINTF(FTBTAGE, "squashType %d, squashPC %#lx, slot pc %#lx\n", entry.squashType, entry.squashPC, ftb_entry.slots[b].pc);
         bool this_cond_mispred = entry.squashType == SquashType::SQUASH_CTRL && entry.squashPC == ftb_entry.slots[b].pc;
+        if (this_cond_mispred) {
+            stat->updateMispred++; // TODO: count tage predictions instead of overall predictions
+        }
         assert(!this_cond_mispred || ftb_entry.slots[b].condValid());
         // update useful reset counter
         bool use_alt_on_main_found_correct = pred.useAlt && pred.mainFound && mainTaken == this_cond_actually_taken;
@@ -289,66 +348,75 @@ FTBTAGE::update(const FetchStream &entry)
         DPRINTF(FTBTAGE, "this_cond_mispred %d, use_alt_on_main_found_correct %d, needToAllocate %d\n",
             this_cond_mispred, use_alt_on_main_found_correct, needToAllocate);
 
-        int num_tables_can_allocate = pred.usefulMask.count();
-        int total_tables_to_allocate = numPredictors - (pred.table + 1);
+        int num_tables_can_allocate = (~pred.usefulMask).count();
+        int total_tables_to_allocate = pred.usefulMask.size();
         bool incUsefulResetCounter = num_tables_can_allocate < (total_tables_to_allocate - num_tables_can_allocate);
         bool decUsefulResetCounter = num_tables_can_allocate > (total_tables_to_allocate - num_tables_can_allocate);
         unsigned changeVal = std::abs(num_tables_can_allocate - (total_tables_to_allocate - num_tables_can_allocate));
         if (needToAllocate) {
             if (incUsefulResetCounter) { // need modify: clear the useful bit of all entries
+                stat->updateResetUCtrInc.sample(changeVal, 1);
                 usefulResetCnt[b] = usefulResetCnt[b] + changeVal >= 128 ? 128 : usefulResetCnt[b] + changeVal;
                 DPRINTF(FTBTAGE, "incUsefulResetCounter, changeVal %d, usefulResetCnt %d\n", changeVal, usefulResetCnt[b]);
             } else if (decUsefulResetCounter) {
+                stat->updateResetUCtrDec.sample(changeVal, 1);
                 usefulResetCnt[b] = usefulResetCnt[b] - changeVal <= 0 ? 0 : usefulResetCnt[b] - changeVal;
                 DPRINTF(FTBTAGE, "decUsefulResetCounter, changeVal %d, usefulResetCnt %d\n", changeVal, usefulResetCnt[b]);
             }
-        }
-
-        if (usefulResetCnt[b] == 0) {
-            DPRINTF(FTBTAGE, "reset useful bit of all entries\n");
-            for (auto &table : tageTable) {
-                for (auto &entries : table) {
-                    for (auto &entry : entries) {
-                        entry.useful = 0;
+            if (usefulResetCnt[b] == 128) {
+                stat->updateResetU++;
+                DPRINTF(FTBTAGE, "reset useful bit of all entries\n");
+                for (auto &table : tageTable) {
+                    for (auto &entries : table) {
+                        for (auto &entry : entries) {
+                            entry.useful = 0;
+                        }
                     }
                 }
+                usefulResetCnt[b] = 0;
             }
         }
 
-        // allocate new entry
-        unsigned maskMaxNum = std::pow(2, (numPredictors - (pred.table + 1)));
-        unsigned mask = allocLFSR.get() % maskMaxNum;
-        bitset allocateLFSR(numPredictors - (pred.table + 1), mask);
-        std::string buf;
-        boost::to_string(allocateLFSR, buf);
-        DPRINTF(FTBTAGE, "allocateLFSR %s, size %d\n", buf, allocateLFSR.size());
-        auto flipped_usefulMask = pred.usefulMask.flip();
-        boost::to_string(flipped_usefulMask, buf);
-        DPRINTF(FTBTAGE, "pred usefulmask %s, size %d\n", buf, pred.usefulMask.size());
-        bitset masked = allocateLFSR & flipped_usefulMask;
-        boost::to_string(masked, buf);
-        DPRINTF(FTBTAGE, "masked %s, size %d\n", buf, masked.size());
-        bitset allocate = masked.any() ? masked : flipped_usefulMask;
-        boost::to_string(allocate, buf);
-        DPRINTF(FTBTAGE, "allocate %s, size %d\n", buf, allocate.size());
-        short newCounter = this_cond_actually_taken ? 0 : -1;
 
-        bool allocateValid = flipped_usefulMask.any();
-        if (needToAllocate && allocateValid) {
-            DPRINTF(FTBTAGE, "allocate new entry\n");
-            unsigned startTable = pred.table + 1;
+        if (needToAllocate) {
+            // allocate new entry
+            unsigned maskMaxNum = std::pow(2, (numPredictors - (pred.table + 1)));
+            unsigned mask = allocLFSR.get() % maskMaxNum;
+            bitset allocateLFSR(numPredictors - (pred.table + 1), mask);
+            std::string buf;
+            boost::to_string(allocateLFSR, buf);
+            DPRINTF(FTBTAGE, "allocateLFSR %s, size %d\n", buf, allocateLFSR.size());
+            auto flipped_usefulMask = ~pred.usefulMask;
+            boost::to_string(flipped_usefulMask, buf);
+            DPRINTF(FTBTAGE, "pred usefulmask %s, size %d\n", buf, pred.usefulMask.size());
+            bitset masked = allocateLFSR & flipped_usefulMask;
+            boost::to_string(masked, buf);
+            DPRINTF(FTBTAGE, "masked %s, size %d\n", buf, masked.size());
+            bitset allocate = masked.any() ? masked : flipped_usefulMask;
+            boost::to_string(allocate, buf);
+            DPRINTF(FTBTAGE, "allocate %s, size %d\n", buf, allocate.size());
+            short newCounter = this_cond_actually_taken ? 0 : -1;
 
-            for (int ti = startTable; ti < numPredictors; ti++) {
-                Addr newIndex = getTageIndex(startAddr, ti, updateIndexFoldedHist[ti].get());
-                Addr newTag = getTageTag(startAddr, ti, updateTagFoldedHist[ti].get());
-                auto &entry = tageTable[ti][newIndex][b];
+            bool allocateValid = flipped_usefulMask.any();
+            if (allocateValid) {
+                DPRINTF(FTBTAGE, "allocate new entry\n");
+                stat->updateAllocSuccess++;
+                unsigned startTable = pred.table + 1;
 
-                if (allocate[ti - startTable]) {
-                    DPRINTF(FTBTAGE, "found allocatable entry, table %d, index %d, tag %d, counter %d\n",
-                        ti, newIndex, newTag, newCounter);
-                    entry = TageEntry(newTag, newCounter);
-                    break; // allocate only 1 entry
+                for (int ti = startTable; ti < numPredictors; ti++) {
+                    Addr newIndex = getTageIndex(startAddr, ti, updateIndexFoldedHist[ti].get());
+                    Addr newTag = getTageTag(startAddr, ti, updateTagFoldedHist[ti].get());
+                    auto &entry = tageTable[ti][newIndex][b];
+
+                    if (allocate[ti - startTable]) {
+                        DPRINTF(FTBTAGE, "found allocatable entry, table %d, index %d, tag %d, counter %d\n",
+                            ti, newIndex, newTag, newCounter);
+                        entry = TageEntry(newTag, newCounter);
+                        break; // allocate only 1 entry
+                    }
                 }
+            } else {
+                stat->updateAllocFailure++;
             }
         }
     }
@@ -485,6 +553,66 @@ FTBTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * when)
             std::string buf2, buf3;
             auto &foldedHist = type ? tagFoldedHist[t] : indexFoldedHist[t];
             foldedHist.check(hist);
+        }
+    }
+}
+
+FTBTAGE::TageBankStats::TageBankStats(statistics::Group* parent, const char *name, int numPredictors):
+    statistics::Group(parent, name),
+    ADD_STAT(predTableHits, statistics::units::Count::get(), "hit of each tage table on prediction"),
+    ADD_STAT(predNoHitUseBim, statistics::units::Count::get(), "use bimodal when no hit on prediction"),
+    ADD_STAT(predUseAlt, statistics::units::Count::get(), "use alt on prediction"),
+    ADD_STAT(updateTableHits, statistics::units::Count::get(), "hit of each tage table on update"),
+    ADD_STAT(updateNoHitUseBim, statistics::units::Count::get(), "use bimodal when no hit on update"),
+    ADD_STAT(updateUseAlt, statistics::units::Count::get(), "use alt on update"),
+    ADD_STAT(updateUseAltCorrect, statistics::units::Count::get(), "use alt on update and correct"),
+    ADD_STAT(updateUseAltWrong, statistics::units::Count::get(), "use alt on update and wrong"),
+    ADD_STAT(updateAltDiffers, statistics::units::Count::get(), "alt differs on update"),
+    ADD_STAT(updateUseAltOnNaUpdated, statistics::units::Count::get(), "use alt on na ctr updated when update"),
+    ADD_STAT(updateUseAltOnNaInc, statistics::units::Count::get(), "use alt on na ctr inc when update"),
+    ADD_STAT(updateUseAltOnNaDec, statistics::units::Count::get(), "use alt on na ctr dec when update"),
+    ADD_STAT(updateProviderNa, statistics::units::Count::get(), "provider weak when update"),
+    ADD_STAT(updateUseNaCorrect, statistics::units::Count::get(), "use na on update and correct"),
+    ADD_STAT(updateUseNaWrong, statistics::units::Count::get(), "use na on update and wrong"),
+    ADD_STAT(updateUseAltOnNa, statistics::units::Count::get(), "use alt on na when update"),
+    ADD_STAT(updateUseAltOnNaCorrect, statistics::units::Count::get(), "use alt on na correct when update"),
+    ADD_STAT(updateUseAltOnNaWrong, statistics::units::Count::get(), "use alt on na wrong when update"),
+    ADD_STAT(updateAllocFailure, statistics::units::Count::get(), "alloc failure when update"),
+    ADD_STAT(updateAllocSuccess, statistics::units::Count::get(), "alloc success when update"),
+    ADD_STAT(updateMispred, statistics::units::Count::get(), "mispred when update"),
+    ADD_STAT(updateResetU, statistics::units::Count::get(), "reset u when update"),
+    ADD_STAT(updateResetUCtrInc, statistics::units::Count::get(), "reset u ctr inc when update"),
+    ADD_STAT(updateResetUCtrDec, statistics::units::Count::get(), "reset u ctr dec when update")
+{
+    predTableHits.init(0, numPredictors-1, 1);
+    updateTableHits.init(0, numPredictors-1, 1);
+    updateResetUCtrInc.init(1, numPredictors, 1);
+    updateResetUCtrDec.init(1, numPredictors, 1);
+}
+
+void
+FTBTAGE::TageBankStats::updateStatsWithTagePrediction(const TagePrediction &pred, bool when_pred)
+{
+    bool hit = pred.mainFound;
+    unsigned hit_table = pred.table;
+    bool useAlt = pred.useAlt;
+    if (when_pred) {
+        if (hit) {
+            predTableHits.sample(hit_table, 1);
+        } else {
+            predNoHitUseBim++;
+        }
+        if (!hit || useAlt) {
+            predUseAlt++;
+        }
+    } else {
+        if (hit) {
+            updateTableHits.sample(hit_table, 1);
+        } else {
+            updateNoHitUseBim++;
+        }
+        if (!hit || useAlt) {
+            updateUseAlt++;
         }
     }
 }

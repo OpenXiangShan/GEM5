@@ -56,7 +56,6 @@ class FTBTAGE : public TimedBaseFTBPredictor
             unsigned table;
             Addr index;
             Addr tag;
-            unsigned counter;
             bool useAlt;
             bitset usefulMask;
 
@@ -73,6 +72,7 @@ class FTBTAGE : public TimedBaseFTBPredictor
 
   public:
     FTBTAGE(const Params& p);
+    ~FTBTAGE();
 
     void tickStart() override;
 
@@ -177,6 +177,42 @@ class FTBTAGE : public TimedBaseFTBPredictor
     } TageMeta;
 
     TageMeta meta;
+
+    struct TageBankStats : public statistics::Group {
+        statistics::Distribution predTableHits;
+        statistics::Scalar predNoHitUseBim;
+        statistics::Scalar predUseAlt;
+        statistics::Distribution updateTableHits;
+        statistics::Scalar updateNoHitUseBim;
+        statistics::Scalar updateUseAlt;
+    
+        statistics::Scalar updateUseAltCorrect;
+        statistics::Scalar updateUseAltWrong;
+        statistics::Scalar updateAltDiffers;
+        statistics::Scalar updateUseAltOnNaUpdated;
+        statistics::Scalar updateUseAltOnNaInc;
+        statistics::Scalar updateUseAltOnNaDec;
+        statistics::Scalar updateProviderNa;
+        statistics::Scalar updateUseNaCorrect;
+        statistics::Scalar updateUseNaWrong;
+        statistics::Scalar updateUseAltOnNa;
+        statistics::Scalar updateUseAltOnNaCorrect;
+        statistics::Scalar updateUseAltOnNaWrong;
+        statistics::Scalar updateAllocFailure;
+        statistics::Scalar updateAllocSuccess;
+        statistics::Scalar updateMispred;
+        statistics::Scalar updateResetU;
+        statistics::Distribution updateResetUCtrInc;
+        statistics::Distribution updateResetUCtrDec;
+
+        int bankIdx;
+        int numPredictors;
+
+        TageBankStats(statistics::Group* parent, const char *name, int numPredictors);
+        void updateStatsWithTagePrediction(const TagePrediction &pred, bool when_pred);
+    } ;
+    
+    TageBankStats **tageBankStats;
 
 public:
 
