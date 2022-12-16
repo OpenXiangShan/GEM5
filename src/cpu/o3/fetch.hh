@@ -573,9 +573,6 @@ class Fetch
     /** Indicating whether the fetch request is mis-aligned*/
     bool fetchMisaligned[MaxThreads];
 
-    /** Indicating whether the thread is waiting second packet*/
-    bool waitingNextPkt[MaxThreads];
-
     /** The information of access including the address of two requests*/
     std::pair<Addr, Addr> accessInfo[MaxThreads];
 

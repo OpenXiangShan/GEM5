@@ -378,6 +378,7 @@ Fetch::processCacheCompletion(PacketPtr pkt)
     ThreadID tid = cpu->contextToThread(pkt->req->contextId());
 
     if (pkt->req->isMisalignedFetch() && (pkt->req == memReq[tid] || pkt->req == anotherMemReq[tid])) {
+        DPRINTF(Fetch, "[tid:%i] Misaligned pkt receive.\n", tid);
         Addr anotherPC = 0;
         unsigned anotherSize = 0;
         if (pkt->req->getReqNum() == 1) {
@@ -408,7 +409,11 @@ Fetch::processCacheCompletion(PacketPtr pkt)
 
                 mem_req->setMisalignedFetch();
 
-                mem_req->setReqNum(2);
+                if (pkt->req->getReqNum() == 1) {
+                    mem_req->setReqNum(2);
+                } else if (pkt->req->getReqNum() == 2) {
+                    mem_req->setReqNum(1);
+                }
 
                 anotherMemReq[tid] = memReq[tid];
 
@@ -429,8 +434,10 @@ Fetch::processCacheCompletion(PacketPtr pkt)
             uint8_t* secondData = new uint8_t[fetchBufferSize];
             firstPkt[tid]->getData(firstData);
             secondPkt[tid]->getData(secondData);
-            if (pkt->req->getReqNum() == 1) {
+            if (memReq[tid]->getReqNum() == 2) {
                 pkt = secondPkt[tid];
+            } else {
+                pkt = firstPkt[tid];
             }
             pkt->setData(firstData, 0, 0, firstPkt[tid]->getSize());
             pkt->setData(secondData, 0, firstPkt[tid]->getSize(), secondPkt[tid]->getSize());
@@ -703,7 +710,6 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
     // Build request here.
     if (fetchPC % 64 + fetchBufferSize > 64) {
         fetchMisaligned[tid] = true;
-        waitingNextPkt[tid] = true;
 
         firstPkt[tid] = nullptr;
         secondPkt[tid] = nullptr;
@@ -735,12 +741,11 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
         fetchSize = fetchBufferSize - fetchSize;
     } else {
         fetchMisaligned[tid] = false;
-        waitingNextPkt[tid] = false;
     }
 
     accessInfo[tid] = std::make_pair(vaddr, fetchPC);
 
-    if (fetchMisaligned[tid] && waitingNextPkt[tid] && fetchStatus[tid] == IcacheWaitRetry) {
+    if (fetchMisaligned[tid] && fetchStatus[tid] == IcacheWaitRetry) {
         return true;
     }
 
@@ -753,7 +758,7 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
 
     memReq[tid] = mem_req;
 
-    if (fetchMisaligned[tid] && waitingNextPkt[tid]) {
+    if (fetchMisaligned[tid]) {
         DPRINTF(Fetch, "[tid:%i] Fetching second cache line %#x for addr %#x, pc=%#lx\n",
                 tid, fetchPC, vaddr, pc);
         mem_req->setMisalignedFetch();
@@ -790,8 +795,6 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
     if (anotherMemReq[tid] != NULL) {
         DPRINTF(Fetch, "anotherMemReq.addr=%#lx\n", anotherMemReq[tid]->getVaddr());
     }
-
-    DPRINTF(Fetch, "fetchStatus[tid] != ItlbWait: %d\n", fetchStatus[tid] != ItlbWait);
 
     if (!(fetchStatus[tid] == IcacheWaitResponse && mem_req->isMisalignedFetch() && (mem_req == memReq[tid] || mem_req == anotherMemReq[tid])) && 
         (fetchStatus[tid] != ItlbWait || ((mem_req != anotherMemReq[tid] || mem_req->getVaddr() != anotherMemReq[tid]->getVaddr()) && 
@@ -842,6 +845,8 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
 
             fetchStatus[tid] = IcacheWaitRetry;
             data_pkt->setRetriedPkt();
+            DPRINTF(Fetch, "[tid:%i] mem_req.addr=%#lx needs retry.\n", tid,
+                    mem_req->getVaddr());
             retryPkt = data_pkt;
             retryTid = tid;
             cacheBlocked = true;
