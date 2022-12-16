@@ -60,14 +60,16 @@ class FTBTAGE : public TimedBaseFTBPredictor
             unsigned counter;
             bool useAlt;
             bitset usefulMask;
+            bool taken;
 
             TagePrediction() : mainFound(false), mainCounter(0), altCounter(0),
-                                table(0), index(0), tag(0), useAlt(false) {}
+                                table(0), index(0), tag(0), useAlt(false), taken(false) {}
 
             TagePrediction(bool mainFound, short mainCounter, short altCounter, unsigned table,
-                            Addr index, Addr tag, bool useAlt, bitset usefulMask) :
+                            Addr index, Addr tag, bool useAlt, bitset usefulMask, bool taken) :
                             mainFound(mainFound), mainCounter(mainCounter), altCounter(altCounter),
-                            table(table), index(index), tag(tag), useAlt(useAlt), usefulMask(usefulMask) {}
+                            table(table), index(index), tag(tag), useAlt(useAlt), usefulMask(usefulMask),
+                            taken(taken) {}
 
 
     };
@@ -163,25 +165,13 @@ class FTBTAGE : public TimedBaseFTBPredictor
 
     std::vector<int> usefulResetCnt;
 
-    typedef struct TageMeta {
-        std::vector<TagePrediction> preds;
-        std::vector<FoldedHist> tagFoldedHist;
-        std::vector<FoldedHist> indexFoldedHist;
-        TageMeta(std::vector<TagePrediction> preds, std::vector<FoldedHist> tagFoldedHist, std::vector<FoldedHist> indexFoldedHist) :
-            preds(preds), tagFoldedHist(tagFoldedHist), indexFoldedHist(indexFoldedHist) {}
-        TageMeta() {}
-        TageMeta(const TageMeta &other) {
-            preds = other.preds;
-            tagFoldedHist = other.tagFoldedHist;
-            indexFoldedHist = other.indexFoldedHist;
-        }
-    } TageMeta;
 
-    TageMeta meta;
 
     std::vector<Addr> tageIndex;
 
     std::vector<Addr> tageTag;
+
+    bool enableSC;
 
 public:
 
@@ -191,52 +181,87 @@ public:
 public:
     class StatisticalCorrector {
       public:
-        StatisticalCorrector() {
-          scCntTable.resize(8);
-          tagVec.resize(2048);
-          for (int i = 0; i < 8; i++) {
-            scCntTable[i].resize(2048);
+        // TODO: parameterize
+        StatisticalCorrector(int numBr) : numBr(numBr) {
+          scCntTable.resize(numPredictors);
+          tableIndexBits.resize(numPredictors);
+          for (int i = 0; i < numPredictors; i++) {
+            tableIndexBits[i] = ceilLog2(tableSizes[i]);
+            foldedHist.push_back(FoldedHist(histLens[i], tableIndexBits[i], numBr));
+            scCntTable[i].resize(tableSizes[i]);
+            for (auto &br_counters : scCntTable[i]) {
+              br_counters.resize(numBr);
+              for (auto &tOrNt : br_counters) {
+                tOrNt.resize(2, 0);
+              }
+            }
           }
-
           // initial theshold
-          threshold = 6;
-          TC = neutralVal;
+          thresholds.resize(numBr, 6);
+          TCs.resize(numBr, neutralVal);
         };
 
+        typedef struct SCPrediction {
+            bool tageTaken;
+            bool scUsed;
+            bool scPred;
+            int scSum;
+            SCPrediction() : tageTaken(false), scUsed(false), scPred(false), scSum(0) {}
+        } SCPrediction;
+
+        typedef struct SCMeta {
+            std::vector<FoldedHist> indexFoldedHist;
+            std::vector<SCPrediction> scPreds;
+        } SCMeta;
+
       public:
-        Addr getIndex(Addr pc, int table);
+        Addr getIndex(Addr pc, int t);
 
-        bool getPrediction(bool tageTaken, int tageCounter);
+        Addr getIndex(Addr pc, int t, bitset &foldedHist);
 
-        void updateThreshold(bool actualTaken);
+        std::vector<FoldedHist> getFoldedHist();
 
-        void update(bool scPred, bool tagePred, bool actualTaken,
-                    const std::vector<int> scOldCounters, int tageOldCounter);
+        std::vector<SCPrediction> getPredictions(Addr pc, std::vector<TagePrediction> &tagePreds);
+
+        void update(Addr pc, SCMeta meta, std::vector<bool> needToUpdates, std::vector<bool> actualTakens);
+
+        void recoverHist(std::vector<FoldedHist> &fh);
+
+        void doUpdateHist(const boost::dynamic_bitset<> &history, int shamt, bool cond_taken);
 
       private:
+        int numBr;
+
+        int numPredictors = 4;
+
         int scCounterWidth = 6;
 
-        int threshold;
+        std::vector<int> thresholds;
 
         int minThres = 5;
 
         int maxThres = 31;
 
-        int TC = 0;
+        std::vector<int> TCs;
 
         int TCWidth = 6;
 
         int neutralVal = 1 << (TCWidth - 1);
 
-        std::vector<bool> tagVec;
+        std::vector<FoldedHist> foldedHist;
 
-        std::vector<std::vector<int>> scCntTable;
+        std::vector<int> tableIndexBits;
 
-        std::vector<unsigned> cntSizeTable {5, 5, 4, ,4 ,4 ,4 ,4 ,4};
+        // std::vector<bool> tagVec;
 
-        std::vector<unsigned> shortHistLen {0, 3, 5, 8, 12, 19, 31, 49};
+        // table - table index - numBr - taken/not taken
+        std::vector<std::vector<std::vector<std::vector<int>>>> scCntTable;
 
-        std::vector<unsigned> longHistLen {0, 0, 79, 0, 125, 0, 200, 0};
+        std::vector<unsigned> histLens {0, 4, 10, 16};
+
+        std::vector<int> tableSizes {256, 256, 256, 256};
+
+        std::vector<int> tablePcShifts {1, 1, 1, 1};
 
         bool satPos(int &counter, int counterBits);
 
@@ -244,8 +269,31 @@ public:
 
         void counterUpdate(int &ctr, int nbits, bool taken);
 
-        bool aboveThreshold(int scSum, int tageCounterCentered);
-    }
+    };
+
+    StatisticalCorrector sc;
+
+private:
+    using SCMeta = StatisticalCorrector::SCMeta;
+    typedef struct TageMeta {
+        std::vector<TagePrediction> preds;
+        std::vector<FoldedHist> tagFoldedHist;
+        std::vector<FoldedHist> indexFoldedHist;
+        SCMeta scMeta;
+        TageMeta(std::vector<TagePrediction> preds, std::vector<FoldedHist> tagFoldedHist,
+            std::vector<FoldedHist> indexFoldedHist, SCMeta scMeta) :
+            preds(preds), tagFoldedHist(tagFoldedHist), indexFoldedHist(indexFoldedHist),
+            scMeta(scMeta) {}
+        TageMeta() {}
+        TageMeta(const TageMeta &other) {
+            preds = other.preds;
+            tagFoldedHist = other.tagFoldedHist;
+            indexFoldedHist = other.indexFoldedHist;
+            scMeta = other.scMeta;
+        }
+    } TageMeta;
+
+    TageMeta meta;
 };
 }
 

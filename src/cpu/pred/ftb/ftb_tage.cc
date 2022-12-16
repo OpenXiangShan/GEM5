@@ -26,7 +26,8 @@ tablePcShifts(p.TTagPcShifts),
 histLengths(p.histLengths),
 maxHistLen(p.maxHistLen),
 numTablesToAlloc(p.numTablesToAlloc),
-numBr(p.numBr)
+numBr(p.numBr),
+sc(p.numBr)
 {
     DPRINTF(FTBTAGE, "FTBTAGE constructor\n");
     tageTable.resize(numPredictors);
@@ -65,6 +66,12 @@ numBr(p.numBr)
         useAlt[i].resize(numBr, 0);
     }
     usefulResetCnt.resize(numBr, 128);
+
+    // sc
+    enableSC = true;
+    // if (enableSC) {
+    //     sc = StatisticalCorrector(numBr);
+    // }
 }
 
 void
@@ -146,12 +153,11 @@ FTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::array<FullF
     std::vector<int> main_table_indices;
     std::vector<bool> use_alt_preds;
     std::vector<bitset> usefulMasks;
+    std::vector<bool> takens;
     main_tables.resize(numBr, -1);
     main_table_indices.resize(numBr, -1);
     use_alt_preds.resize(numBr, false);
     usefulMasks.resize(numBr);
-
-    std::vector<bool> takens;
     takens.resize(numBr, false);
 
     // get prediction and save it
@@ -163,14 +169,25 @@ FTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::array<FullF
     std::vector<TagePrediction> preds;
     preds.resize(numBr);
     for (int b = 0; b < numBr; ++b) {
+        takens[b] = use_alt_preds[b] ? altRes[b] >= 0 : entries[b].counter >= 0;
         preds[b] = TagePrediction(found[b], entries[b].counter, altRes[b],
-            main_tables[b], main_table_indices[b], entries[b].tag, use_alt_preds[b], usefulMasks[b]);
+            main_tables[b], main_table_indices[b], entries[b].tag, use_alt_preds[b],
+            usefulMasks[b], takens[b]);
+    }
+
+    // sc prediction
+    if (enableSC) {
+        auto scPreds = sc.getPredictions(stream_start, preds);
+        for (int i = 0; i < numBr; ++i) {
+            takens[i] = scPreds[i].scPred;
+        }
+        meta.scMeta.scPreds = scPreds;
+        meta.scMeta.indexFoldedHist = sc.getFoldedHist();
     }
     
     for (int s = getDelay(); s < stagePreds.size(); ++s) {
         stagePreds[s].condTakens.clear();
         for (int i = 0; i < numBr; ++i) {
-            takens[i] = use_alt_preds[i] ? altRes[i] >= 0 : entries[i].counter >= 0;
             // TODO: use pred results
             stagePreds[s].condTakens.push_back(takens[i]);
         }
@@ -221,11 +238,14 @@ FTBTAGE::update(const FetchStream &entry)
     }
     DPRINTF(FTBTAGE, "need to update size %d\n", need_to_update.size());
 
-
     // get tage predictions from meta
     // TODO: use component idx
     auto meta = std::static_pointer_cast<TageMeta>(entry.predMetas[2]);
     auto preds = meta->preds;
+    auto scMeta = meta->scMeta;
+    std::vector<bool> actualTakens;
+    actualTakens.resize(numBr, false);
+
     auto updateTagFoldedHist = meta->tagFoldedHist;
     auto updateIndexFoldedHist = meta->indexFoldedHist;
     for (int b = 0; b < numBr; b++) {
@@ -239,7 +259,7 @@ FTBTAGE::update(const FetchStream &entry)
             continue;
         }
         bool this_cond_actually_taken = entry.exeTaken && entry.exeBranchInfo == ftb_entry.slots[b];
-
+        actualTakens[b] = this_cond_actually_taken;
 
         TagePrediction pred = preds[b];
         bool mainFound = pred.mainFound;
@@ -352,6 +372,11 @@ FTBTAGE::update(const FetchStream &entry)
             }
         }
     }
+
+    // update sc
+    if (enableSC) {
+        sc.update(startAddr, scMeta, need_to_update, actualTakens);
+    }
     DPRINTF(FTBTAGE, "end update\n");
 }
 
@@ -456,6 +481,9 @@ FTBTAGE::specUpdateHist(const boost::dynamic_bitset<> &history, FullFTBPredictio
     bool cond_taken;
     std::tie(shamt, cond_taken) = pred.getHistInfo();
     doUpdateHist(history, shamt, cond_taken);
+    if (enableSC) {
+        sc.doUpdateHist(history, shamt, cond_taken);
+    }
 }
 
 void
@@ -469,6 +497,10 @@ FTBTAGE::recoverHist(const boost::dynamic_bitset<> &history,
         indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
     }
     doUpdateHist(history, shamt, cond_taken);
+    if (enableSC) {
+        sc.recoverHist(predMeta->scMeta.indexFoldedHist);
+        sc.doUpdateHist(history, shamt, cond_taken);
+    }
 }
 
 void
@@ -489,27 +521,40 @@ FTBTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * when)
     }
 }
 
-bool
-FTBTAGE::StatisticalCorrector::aboveThreshold(int scSum, int tageCounterCentered)
+std::vector<FTBTAGE::StatisticalCorrector::SCPrediction>
+FTBTAGE::StatisticalCorrector::getPredictions(Addr pc, std::vector<TagePrediction> &tagePreds)
 {
-    return (scSum > (threshold - tageCounterCentered)) && (scSum + tageCounterCentered > 0) ||
-           (scSum < (-threshold - tageCounterCentered)) && (scSum + tageCounterCentered < 0);
+    std::vector<int> scSums = {0,0};
+    std::vector<int> tageCtrCentereds;
+    std::vector<SCPrediction> scPreds;
+    std::vector<bool> sumAboveThresholds;
+    scPreds.resize(numBr);
+    sumAboveThresholds.resize(numBr);
+    for (int b = 0; b < numBr; b++) {
+        std::vector<int> scOldCounters;
+        tageCtrCentereds.push_back((2 * tagePreds[b].mainCounter + 1) * 8);
+        for (int i = 0;i < scCntTable.size();i++) {
+            int index = getIndex(pc, i);
+            int tOrNt = tagePreds[b].taken ? 1 : 0;
+            int ctr = scCntTable[i][index][b][tOrNt];
+            scSums[b] += 2 * ctr + 1;
+        }
+        scSums[b] += tageCtrCentereds[b];
+        sumAboveThresholds[b] = abs(scSums[b]) > thresholds[b];
+
+        scPreds[b].tageTaken = tagePreds[b].taken;
+        scPreds[b].scUsed = tagePreds[b].mainFound;
+        scPreds[b].scPred = tagePreds[b].mainFound && sumAboveThresholds[b] ?
+            scSums[b] >= 0 : tagePreds[b].taken;
+        scPreds[b].scSum = scSums[b];
+    }
+    return scPreds;
 }
 
-bool
-FTBTAGE::StatisticalCorrector::getPrediction(bool tageTaken, int tageCounter)
+std::vector<FoldedHist>
+FTBTAGE::StatisticalCorrector::getFoldedHist()
 {
-    int scSum = 0;
-    for (int i = 0;i < scCntTable.size();i++) {
-        scSum += 2 * scCntTable[getIndex(i)] + 1;
-    }
-
-    int tageCounterCentered = (2 * (tageCounter - 4) + 1) * 8;
-    
-    if (aboveThreshold(scSum, tageCounterCentered))
-        return (scSum + tageCounterCentered) >= 0;
-    else
-        return tageTaken;
+    return foldedHist;
 }
 
 bool
@@ -525,9 +570,17 @@ FTBTAGE::StatisticalCorrector::satNeg(int &counter, int counterBits)
 }
 
 Addr
-FTBTAGE::StatisticalCorrector::getIndex(Addr pc, int table)
+FTBTAGE::StatisticalCorrector::getIndex(Addr pc, int t)
 {
-    
+    return getIndex(pc, t, foldedHist[t].get());
+}
+
+Addr
+FTBTAGE::StatisticalCorrector::getIndex(Addr pc, int t, bitset &foldedHist)
+{
+    bitset buf(tableIndexBits[t], pc >> tablePcShifts[t]);  // lower bits of PC
+    buf ^= foldedHist;
+    return buf.to_ulong();
 }
 
 void
@@ -543,45 +596,61 @@ FTBTAGE::StatisticalCorrector::counterUpdate(int &ctr, int nbits, bool taken)
 }
 
 void
-FTBTAGE::StatisticalCorrector::updateThreshold(bool actualTaken)
+FTBTAGE::StatisticalCorrector::update(Addr pc, SCMeta meta, std::vector<bool> needToUpdates,
+    std::vector<bool> actualTakens)
 {
-    // update counter
-    int tempTC = TC;
-    counterUpdate(tempTC, TCWidth, actualTaken);
-    if (satPos(tempTC, TCWidth) || satNeg(tempTC, TCWidth)) {
-        TC = neutralVal;
-    } else {
-        TC = tempTC;
-    }
+    auto predHist = meta.indexFoldedHist;
+    auto preds = meta.scPreds;
 
-    // update threshold
-    if (satPos(TC, TCWidth) && threshold <= maxThres) {
-        threshold += 2;
-    } else if (satNeg(TC, TCWidth) && threshold >= minThres) {
-        threshold -= 2;
+    for (int b = 0; b < numBr; b++) {
+        auto &p = preds[b];
+        bool scTaken = p.scPred;
+        bool actualTaken = actualTakens[b];
+        int tOrNt = p.tageTaken ? 1 : 0;
+        int sumAbs = std::abs(p.scSum);
+        // perceptron update
+        if (sumAbs <= (thresholds[b] * 8 + 21) || scTaken != actualTaken) {
+            for (int i = 0; i < numPredictors; i++) {
+                auto idx = getIndex(pc, i, predHist[i].get());
+                auto &ctr = scCntTable[i][idx][b][tOrNt];
+                counterUpdate(ctr, scCounterWidth, actualTaken);
+            }
+        }
+
+        if (scTaken != p.tageTaken && sumAbs >= thresholds[b] - 4 && sumAbs <= thresholds[b] - 2) {
+
+            bool cause = scTaken != actualTaken;
+            counterUpdate(TCs[b], TCWidth, cause);
+            if (satPos(TCs[b], TCWidth) && thresholds[b] <= maxThres) {
+                thresholds[b] += 2;
+            } else if (satNeg(TCs[b], TCWidth) && thresholds[b] >= minThres) {
+                thresholds[b] -= 2;
+            }
+
+            if (satPos(TCs[b], TCWidth) || satNeg(TCs[b], TCWidth)) {
+                TCs[b] = neutralVal;
+            }
+        }
     }
 }
 
 void
-FTBTAGE::StatisticalCorrector::update(bool scPred, bool tagePred, bool actualTaken,
-                                      const std::vector<int> scOldCounters, int tageOldCounter)
+FTBTAGE::StatisticalCorrector::recoverHist(std::vector<FoldedHist> &fh)
 {
-    int scSum = 0;
-    for (int i = 0;i < scOldCounters.size();i++) {
-        scSum += 2 * scOldCounters[i] + 1;
+    for (int i = 0; i < numPredictors; i++) {
+        foldedHist[i].recover(fh[i]);
     }
+}
 
-    int tageCounterCentered = (2 * (tageOldCounter - 4) + 1) * 8;
-    int totalSum = scSum + tageCounterCentered;
-
-    if (scPred != tagePred && std::abs(totalSum) >= threshold - 4 && std::abs(totalSum) <= threshold -2) {
-        updateThreshold(scPred != actualTaken);
+void
+FTBTAGE::StatisticalCorrector::doUpdateHist(const boost::dynamic_bitset<> &history,
+    int shamt, bool cond_taken)
+{
+    if (shamt == 0) {
+        return;
     }
-
-    if (scPred != actualTaken || std::abs(totalSum) < (21 + 8 * threshold)) {
-        for (int i = 0;i < scCntTable.size();i++) {
-            counterUpdate(scCntTable[getIndex(i)], scCounterWidth, actualTaken);
-        }
+    for (int t = 0; t < numPredictors; t++) {
+        foldedHist[t].update(history, shamt, cond_taken);
     }
 }
 
