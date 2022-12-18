@@ -201,6 +201,23 @@ class FTBTAGE : public TimedBaseFTBPredictor
         statistics::Distribution updateResetUCtrInc;
         statistics::Distribution updateResetUCtrDec;
 
+        statistics::Vector updateTableMispreds;
+
+        statistics::Scalar scAgreeAtPred;
+        statistics::Scalar scAgreeAtCommit;
+        statistics::Scalar scDisagreeAtPred;
+        statistics::Scalar scDisagreeAtCommit;
+        statistics::Scalar scConfAtPred;
+        statistics::Scalar scConfAtCommit;
+        statistics::Scalar scUnconfAtPred;
+        statistics::Scalar scUnconfAtCommit;
+        statistics::Scalar scUpdateOnMispred;
+        statistics::Scalar scUpdateOnUnconf;
+        statistics::Scalar scUsedAtPred;
+        statistics::Scalar scUsedAtCommit;
+        statistics::Scalar scCorrectTageWrong;
+        statistics::Scalar scWrongTageCorrect;
+
         int bankIdx;
         int numPredictors;
 
@@ -266,6 +283,10 @@ public:
 
         void doUpdateHist(const boost::dynamic_bitset<> &history, int shamt, bool cond_taken);
 
+        void setStats(std::vector<TageBankStats *> stats) {
+          this->stats = stats;
+        }
+
       private:
         int numBr;
 
@@ -305,6 +326,8 @@ public:
         bool satNeg(int &counter, int counterBits);
 
         void counterUpdate(int &ctr, int nbits, bool taken);
+
+        std::vector<TageBankStats*> stats;
 
     };
 

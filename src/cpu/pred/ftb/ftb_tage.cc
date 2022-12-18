@@ -75,6 +75,11 @@ sc(p.numBr)
     }
     
     enableSC = true;
+    std::vector<TageBankStats *> statsPtr;
+    for (int i = 0; i < numBr; i++) {
+        statsPtr.push_back(tageBankStats[i]);
+    }
+    sc.setStats(statsPtr);
 }
 
 FTBTAGE::~FTBTAGE()
@@ -87,6 +92,9 @@ FTBTAGE::~FTBTAGE()
 
 void
 FTBTAGE::tick() {}
+
+void
+FTBTAGE::tickStart() {}
 
 std::vector<bool>
 FTBTAGE::lookupHelper(Addr startAddr,
@@ -353,6 +361,9 @@ FTBTAGE::update(const FetchStream &entry)
         bool this_cond_mispred = entry.squashType == SquashType::SQUASH_CTRL && entry.squashPC == ftb_entry.slots[b].pc;
         if (this_cond_mispred) {
             stat->updateMispred++; // TODO: count tage predictions instead of overall predictions
+            if (!pred.useAlt && pred.mainFound) {
+                stat->updateTableMispreds[pred.table]++;
+            }
         }
         assert(!this_cond_mispred || ftb_entry.slots[b].condValid());
         // update useful reset counter
@@ -616,6 +627,22 @@ FTBTAGE::StatisticalCorrector::getPredictions(Addr pc, std::vector<TagePredictio
         scPreds[b].scPred = tagePreds[b].mainFound && sumAboveThresholds[b] ?
             scSums[b] >= 0 : tagePreds[b].taken;
         scPreds[b].scSum = scSums[b];
+
+        // stats
+        auto &stat = stats[b];
+        if (tagePreds[b].mainFound) {
+            stat->scUsedAtPred++;
+            if (sumAboveThresholds[b]) {
+                stat->scConfAtPred++;
+                if (scPreds[b].scPred == scPreds[b].tageTaken) {
+                    stat->scAgreeAtPred++;
+                } else {
+                    stat->scDisagreeAtPred++;
+                }
+            } else {
+                stat->scUnconfAtPred++;
+            }
+        }
     }
     return scPreds;
 }
@@ -678,28 +705,57 @@ FTBTAGE::StatisticalCorrector::update(Addr pc, SCMeta meta, std::vector<bool> ne
         int tOrNt = p.tageTaken ? 1 : 0;
         int sumAbs = std::abs(p.scSum);
         // perceptron update
-        if (sumAbs <= (thresholds[b] * 8 + 21) || scTaken != actualTaken) {
-            for (int i = 0; i < numPredictors; i++) {
-                auto idx = getIndex(pc, i, predHist[i].get());
-                auto &ctr = scCntTable[i][idx][b][tOrNt];
-                counterUpdate(ctr, scCounterWidth, actualTaken);
+        if (p.scUsed) {
+            if (sumAbs <= (thresholds[b] * 8 + 21) || scTaken != actualTaken) {
+                for (int i = 0; i < numPredictors; i++) {
+                    auto idx = getIndex(pc, i, predHist[i].get());
+                    auto &ctr = scCntTable[i][idx][b][tOrNt];
+                    counterUpdate(ctr, scCounterWidth, actualTaken);
+                }
+                if (scTaken != actualTaken) {
+                    stats[b]->scUpdateOnMispred++;
+                } else {
+                    stats[b]->scUpdateOnUnconf++;
+                }
+            }
+
+            if (scTaken != p.tageTaken && sumAbs >= thresholds[b] - 4 && sumAbs <= thresholds[b] - 2) {
+
+                bool cause = scTaken != actualTaken;
+                counterUpdate(TCs[b], TCWidth, cause);
+                if (satPos(TCs[b], TCWidth) && thresholds[b] <= maxThres) {
+                    thresholds[b] += 2;
+                } else if (satNeg(TCs[b], TCWidth) && thresholds[b] >= minThres) {
+                    thresholds[b] -= 2;
+                }
+
+                if (satPos(TCs[b], TCWidth) || satNeg(TCs[b], TCWidth)) {
+                    TCs[b] = neutralVal;
+                }
+            }
+
+            // stats
+            auto &stat = stats[b];
+            // bool sumAboveUpdateThreshold = sumAbs >= (thresholds[b] * 8 + 21);
+            bool sumAboveUseThreshold = sumAbs >= thresholds[b];
+            stat->scUsedAtCommit++;
+            if (sumAboveUseThreshold) {
+                stat->scConfAtCommit++;
+                if (scTaken == p.tageTaken) {
+                    stat->scAgreeAtCommit++;
+                } else {
+                    stat->scDisagreeAtCommit++;
+                    if (scTaken == actualTaken) {
+                        stat->scCorrectTageWrong++;
+                    } else {
+                        stat->scWrongTageCorrect++;
+                    }
+                }
+            } else {
+                stat->scUnconfAtCommit++;
             }
         }
 
-        if (scTaken != p.tageTaken && sumAbs >= thresholds[b] - 4 && sumAbs <= thresholds[b] - 2) {
-
-            bool cause = scTaken != actualTaken;
-            counterUpdate(TCs[b], TCWidth, cause);
-            if (satPos(TCs[b], TCWidth) && thresholds[b] <= maxThres) {
-                thresholds[b] += 2;
-            } else if (satNeg(TCs[b], TCWidth) && thresholds[b] >= minThres) {
-                thresholds[b] -= 2;
-            }
-
-            if (satPos(TCs[b], TCWidth) || satNeg(TCs[b], TCWidth)) {
-                TCs[b] = neutralVal;
-            }
-        }
     }
 }
 
@@ -748,12 +804,28 @@ FTBTAGE::TageBankStats::TageBankStats(statistics::Group* parent, const char *nam
     ADD_STAT(updateMispred, statistics::units::Count::get(), "mispred when update"),
     ADD_STAT(updateResetU, statistics::units::Count::get(), "reset u when update"),
     ADD_STAT(updateResetUCtrInc, statistics::units::Count::get(), "reset u ctr inc when update"),
-    ADD_STAT(updateResetUCtrDec, statistics::units::Count::get(), "reset u ctr dec when update")
+    ADD_STAT(updateResetUCtrDec, statistics::units::Count::get(), "reset u ctr dec when update"),
+    ADD_STAT(updateTableMispreds, statistics::units::Count::get(), "mispreds of each table when update"),
+    ADD_STAT(scAgreeAtPred, statistics::units::Count::get(), "sc agrees with tage on prediction"),
+    ADD_STAT(scAgreeAtCommit, statistics::units::Count::get(), "sc agrees with tage when update"),
+    ADD_STAT(scDisagreeAtPred, statistics::units::Count::get(), "sc disagrees with tage on prediction"),
+    ADD_STAT(scDisagreeAtCommit, statistics::units::Count::get(), "sc disagrees with tage when update"),
+    ADD_STAT(scConfAtPred, statistics::units::Count::get(), "sc is confident on prediction"),
+    ADD_STAT(scConfAtCommit, statistics::units::Count::get(), "sc is confident when update"),
+    ADD_STAT(scUnconfAtPred, statistics::units::Count::get(), "sc is unconfident on prediction"),
+    ADD_STAT(scUnconfAtCommit, statistics::units::Count::get(), "sc is unconfident when update"),
+    ADD_STAT(scUpdateOnMispred, statistics::units::Count::get(), "sc update because of misprediction"),
+    ADD_STAT(scUpdateOnUnconf, statistics::units::Count::get(), "sc update because of unconfidence"),
+    ADD_STAT(scUsedAtPred, statistics::units::Count::get(), "sc used on prediction"),
+    ADD_STAT(scUsedAtCommit, statistics::units::Count::get(), "sc used when update"),
+    ADD_STAT(scCorrectTageWrong, statistics::units::Count::get(), "sc correct and tage wrong when update"),
+    ADD_STAT(scWrongTageCorrect, statistics::units::Count::get(), "sc wrong and tage correct when update")
 {
     predTableHits.init(0, numPredictors-1, 1);
     updateTableHits.init(0, numPredictors-1, 1);
     updateResetUCtrInc.init(1, numPredictors, 1);
     updateResetUCtrDec.init(1, numPredictors, 1);
+    updateTableMispreds.init(numPredictors);
 }
 
 void
