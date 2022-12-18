@@ -304,7 +304,7 @@ public:
 
         int TCWidth = 6;
 
-        int neutralVal = 1 << (TCWidth - 1);
+        int neutralVal = 0;
 
         std::vector<FoldedHist> foldedHist;
 

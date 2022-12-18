@@ -314,10 +314,10 @@ FTBTAGE::update(const FetchStream &entry)
             auto &use_alt_counter = useAlt.at(getUseAltIdx(startAddr))[b];
             if (altTaken == this_cond_actually_taken) {
                 stat->updateUseAltOnNaInc++;
-                satIncrement(8, use_alt_counter);
+                satIncrement(7, use_alt_counter);
             } else {
                 stat->updateUseAltOnNaDec++;
-                satDecrement(-7, use_alt_counter);
+                satDecrement(-8, use_alt_counter);
             }
         }
 
@@ -462,8 +462,8 @@ FTBTAGE::update(const FetchStream &entry)
 
 void
 FTBTAGE::updateCounter(bool taken, unsigned width, short &counter) {
-    int max = (1 << width) - 1;
-    int min = -(1 << width);
+    int max = (1 << (width-1)) - 1;
+    int min = -(1 << (width-1));
     if (taken) {
         satIncrement(max, counter);
     } else {
@@ -656,13 +656,13 @@ FTBTAGE::StatisticalCorrector::getFoldedHist()
 bool
 FTBTAGE::StatisticalCorrector::satPos(int &counter, int counterBits)
 {
-    return counter == ((1 << counterBits) - 1);
+    return counter == ((1 << (counterBits-1)) - 1);
 }
 
 bool
 FTBTAGE::StatisticalCorrector::satNeg(int &counter, int counterBits)
 {
-    return counter == 0;
+    return counter == -(1 << (counterBits-1));
 }
 
 Addr
@@ -683,10 +683,10 @@ void
 FTBTAGE::StatisticalCorrector::counterUpdate(int &ctr, int nbits, bool taken)
 {
     if (taken) {
-		if (ctr < ((1 << nbits) - 1))
+		if (ctr < ((1 << (nbits-1)) - 1))
 			ctr++;
 	} else {
-		if (ctr > 0)
+		if (ctr > -(1 << (nbits-1)))
 			ctr--;
     }
 }
@@ -699,6 +699,9 @@ FTBTAGE::StatisticalCorrector::update(Addr pc, SCMeta meta, std::vector<bool> ne
     auto preds = meta.scPreds;
 
     for (int b = 0; b < numBr; b++) {
+        if (!needToUpdates[b]) {
+            continue;
+        }
         auto &p = preds[b];
         bool scTaken = p.scPred;
         bool actualTaken = actualTakens[b];
