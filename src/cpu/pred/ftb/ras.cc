@@ -16,7 +16,7 @@ RAS::RAS(const Params &p)
     maxCtr = (1 << ctrWidth) - 1;
     for (auto &entry : stack) {
         entry.ctr = 0;
-        entry.retAddr = 0;
+        entry.retAddr = 0x80000000L;
     }
 }
 
