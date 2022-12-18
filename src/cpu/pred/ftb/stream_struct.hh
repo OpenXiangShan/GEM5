@@ -80,10 +80,11 @@ typedef struct BranchInfo {
 typedef struct FTBSlot : BranchInfo
 {
     bool valid;
+    bool alwaysTaken;
     bool uncondValid() { return this->isUncond() && this->valid; }
     bool condValid() { return this->isCond && this->valid;}
     FTBSlot() : valid(false) {}
-    FTBSlot(const BranchInfo &bi) : BranchInfo(bi), valid(true) {}
+    FTBSlot(const BranchInfo &bi) : BranchInfo(bi), valid(true), alwaysTaken(true) {}
     BranchInfo getBranchInfo() { return BranchInfo(*this); }
 
 }FTBSlot;

@@ -273,6 +273,17 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
                     old_entry.fallThruAddr = last_slot_pc;
                 }
             }
+            // modify always taken logic
+            auto it = slots.begin();
+            while (it != slots.end()) {
+                // set branches before current branch to alwaysTaken: false
+                if (*it < branch_info)
+                    it->alwaysTaken = false;
+                // current always taken branch not taken: alwaysTaken false
+                else if (*it == branch_info && it->alwaysTaken)
+                    it->alwaysTaken = stream_taken;
+                it++;
+            }
             entry_to_write = old_entry;
         }
         DPRINTF(FTB, "printing new entry:\n");

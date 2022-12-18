@@ -203,8 +203,15 @@ FTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::array<FullF
     
     for (int s = getDelay(); s < stagePreds.size(); ++s) {
         stagePreds[s].condTakens.clear();
+        // assume that ftb entry is provided in stagePreds
+
         for (int i = 0; i < numBr; ++i) {
-            // TODO: use pred results
+            // always taken logic
+            // TODO: move to bpu
+            auto &entry = stagePreds[s].ftbEntry;
+            if (entry.slots.size() > i) {
+                takens[i] = takens[i] || entry.slots[i].alwaysTaken;
+            }
             stagePreds[s].condTakens.push_back(takens[i]);
         }
     }
@@ -250,7 +257,9 @@ FTBTAGE::update(const FetchStream &entry)
     }
     assert(cond_num <= numBr);
     for (int i = 0; i < cond_num; i++) {
-        need_to_update[i] = true;
+        auto &slot = ftb_entry.slots[i];
+        // only update branches with both taken/not taken behaviors observed
+        need_to_update[i] = !slot.alwaysTaken;
     }
     DPRINTF(FTBTAGE, "need to update size %d\n", need_to_update.size());
 
