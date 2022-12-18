@@ -6,6 +6,7 @@
 #include "debug/DecoupleBPVerbose.hh"
 #include "debug/DecoupleBPHist.hh"
 #include "debug/Override.hh"
+#include "debug/FTB.hh"
 #include "sim/core.hh"
 
 namespace gem5
@@ -134,9 +135,11 @@ DecoupledBPUWithFTB::FTBStats::FTBStats(statistics::Group* parent):
     ADD_STAT(controlSquash, statistics::units::Count::get(), "the number of control squashes in bpu"),
     ADD_STAT(nonControlSquash, statistics::units::Count::get(), "the number of non-control squashes in bpu"),
     ADD_STAT(trapSquash, statistics::units::Count::get(), "the number of trap squashes in bpu"),
-    ADD_STAT(ftqNotValid, statistics::units::Count::get(), "the number of trap squashes in bpu"),
-    ADD_STAT(fsqNotValid, statistics::units::Count::get(), "the number of trap squashes in bpu"),
-    ADD_STAT(fsqFullCannotEnq, statistics::units::Count::get(), "the number of trap squashes in bpu")
+    ADD_STAT(ftqNotValid, statistics::units::Count::get(), "fetch needs ftq req but ftq not valid"),
+    ADD_STAT(fsqNotValid, statistics::units::Count::get(), "ftq needs fsq req but fsq not valid"),
+    ADD_STAT(fsqFullCannotEnq, statistics::units::Count::get(), "bpu has req but fsq full cannot enqueue"),
+    ADD_STAT(ftbHit, statistics::units::Count::get(), "ftb hits (in predict block)"),
+    ADD_STAT(ftbMiss, statistics::units::Count::get(), "ftb misses (in predict block)")
 {
     condMiss.prereq(condMiss);
     uncondMiss.prereq(uncondMiss);
@@ -676,13 +679,27 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
                 stream.startPC, miss_predicted ? "miss" : "correctly",
                 stream.exeBranchInfo.pc, stream.exeBranchInfo.target,
                 stream.predBranchInfo.pc, stream.predBranchInfo.target);
+        
+        if (stream.isHit) {
+            ftbstats.ftbHit++;
+        } else {
+            if (stream.exeTaken) {
+                ftbstats.ftbMiss++;
+                DPRINTF(FTB, "FTB miss detected when update, stream start %#lx, predTick %lu, printing branch info:\n", stream.startPC, stream.predTick);
+                auto &slot = stream.exeBranchInfo;
+                DPRINTF(FTB, "    pc:%#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d\n",
+                slot.pc, slot.size, slot.target, slot.isCond, slot.isIndirect, slot.isCall, slot.isReturn);
+            }
+        }
 
         // generate new ftb entry first
         // each component will use info of this entry to update
         ftb->getAndSetNewFTBEntry(stream);
 
-        for (int i = 0; i < numComponents; ++i) {
-            components[i]->update(stream);
+        if (stream.isHit || stream.exeTaken) {
+            for (int i = 0; i < numComponents; ++i) {
+                components[i]->update(stream);
+            }
         }
         
         // if (stream.squashType == SQUASH_NONE || stream.squashType == SQUASH_CTRL) {
@@ -851,6 +868,9 @@ DecoupledBPUWithFTB::tryEnqFetchStream()
         DPRINTF(DecoupleBP || debugFlagOn, "FSQ is full: %lu\n",
                 fetchStreamQueue.size());
     }
+    for (int i = 0; i < numStages; i++) {
+        predsOfEachStage[i].valid = false;
+    }
     receivedPred = false;
     DPRINTF(Override, "In tryFetchEnqStream(), receivedPred reset to false.\n");
     DPRINTF(DecoupleBP || debugFlagOn, "fsqId=%lu\n", fsqId);
@@ -993,6 +1013,7 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
     s0PC = nextPC;
 
     entry.history = s0History;
+    entry.predTick = finalPred.predTick;
     // entry.predStreamId = fsqId;
 
 

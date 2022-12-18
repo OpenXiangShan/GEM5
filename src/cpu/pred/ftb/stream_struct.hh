@@ -234,6 +234,7 @@ typedef struct FetchStream
     // prediction metas
     std::array<std::shared_ptr<void>, 4> predMetas;
 
+    Tick predTick;
     // TODO: collect spec info into one struct?
     boost::dynamic_bitset<> history;
 
@@ -334,6 +335,7 @@ typedef struct FullFTBPrediction
     // bool useLoopPrediction;
     // Addr tageTarget;
     unsigned predSource;
+    Tick predTick;
     boost::dynamic_bitset<> history;
 
     bool isTaken() {

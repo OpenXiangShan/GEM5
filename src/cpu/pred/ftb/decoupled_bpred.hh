@@ -310,6 +310,8 @@ class DecoupledBPUWithFTB : public BPredUnit
         statistics::Scalar fsqNotValid;
         statistics::Scalar fsqFullCannotEnq;
 
+        statistics::Scalar ftbHit;
+        statistics::Scalar ftbMiss;
         FTBStats(statistics::Group* parent);
     } ftbstats;
 

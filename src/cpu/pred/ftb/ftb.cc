@@ -62,7 +62,7 @@ DefaultFTB::DefaultFTB(const Params &p)
     mruList.resize(numSets);
     for (unsigned i = 0; i < numSets; ++i) {
         for (unsigned j = 0; j < numWays; ++j) {
-            ftb[i][0xfffffff-i]; // dummy initialization
+            ftb[i][0xfffffff-j]; // dummy initialization
         }
         auto &set = ftb[i];
         for (auto it = set.begin(); it != set.end(); it++) {
@@ -75,9 +75,11 @@ DefaultFTB::DefaultFTB(const Params &p)
 
     idxMask = numSets - 1;
 
-    tagMask = (1 << tagBits) - 1;
+    tagMask = (1UL << tagBits) - 1;
 
     tagShiftAmt = instShiftAmt + floorLog2(numSets);
+    DPRINTF(FTB, "numEntries %d, numSets %d, numWays %d, tagBits %d, tagShiftAmt %d, idxMask %#lx, tagMask %#lx\n",
+        numEntries, numSets, numWays, tagBits, tagShiftAmt, idxMask, tagMask);
 }
 
 void
@@ -95,7 +97,7 @@ DefaultFTB::putPCHistory(Addr startAddr,
                          std::array<FullFTBPrediction, 3> &stagePreds)
 {
     // TODO: getting startAddr from pred is ugly
-    FTBEntry find_entry = lookup(startAddr);
+    TickedFTBEntry find_entry = lookup(startAddr);
     bool hit = find_entry.valid;
     if (hit) {
         DPRINTF(FTB, "FTB: lookup hit, dumping hit entry\n");
@@ -105,6 +107,10 @@ DefaultFTB::putPCHistory(Addr startAddr,
     }
     // assign prediction for s2 and later stages
     for (int s = getDelay(); s < stagePreds.size(); ++s) {
+        if (!isL0() && !hit && stagePreds[s].valid) {
+            DPRINTF(FTB, "FTB: uftb hit and ftb miss, use uftb result");
+            break;
+        }
         DPRINTF(FTB, "FTB: assigning prediction for stage %d\n", s);
         stagePreds[s].valid = hit;
         stagePreds[s].ftbEntry = find_entry;
@@ -123,6 +129,10 @@ DefaultFTB::putPCHistory(Addr startAddr,
                 }
             }
         }
+        stagePreds[s].predTick = curTick();
+    }
+    if (getDelay() >= 1) {
+        meta.l0_hit = stagePreds[getDelay() - 1].valid;
     }
     meta.hit = hit;
 }
@@ -148,7 +158,7 @@ DefaultFTB::reset()
 }
 
 inline
-unsigned
+Addr
 DefaultFTB::getIndex(Addr instPC)
 {
     // Need to shift PC over by the word offset.
@@ -165,7 +175,7 @@ DefaultFTB::getTag(Addr instPC)
 bool
 DefaultFTB::valid(Addr instPC)
 {
-    unsigned ftb_idx = getIndex(instPC);
+    Addr ftb_idx = getIndex(instPC);
 
     Addr inst_tag = getTag(instPC);
 
@@ -183,16 +193,17 @@ DefaultFTB::valid(Addr instPC)
 // @todo Create some sort of return struct that has both whether or not the
 // address is valid, and also the address.  For now will just use addr = 0 to
 // represent invalid entry.
-FTBEntry
+DefaultFTB::TickedFTBEntry
 DefaultFTB::lookup(Addr inst_pc)
 {
-    unsigned ftb_idx = getIndex(inst_pc);
+    Addr ftb_idx = getIndex(inst_pc);
 
-    Addr inst_tag = getTag(inst_pc);
+    Addr ftb_tag = getTag(inst_pc);
+    DPRINTF(FTB, "FTB: Looking up FTB entry index %#lx tag %#lx\n", ftb_idx, ftb_tag);
 
     assert(ftb_idx < numSets);
 
-    const auto &it = ftb[ftb_idx].find(inst_tag);
+    const auto &it = ftb[ftb_idx].find(ftb_tag);
     if (it != ftb[ftb_idx].end()) {
         if (it->second.valid) {
             it->second.tick = curTick();
@@ -200,7 +211,7 @@ DefaultFTB::lookup(Addr inst_pc)
             return it->second;
         }
     }
-    return FTBEntry();
+    return TickedFTBEntry();
 }
 
 void
@@ -213,8 +224,6 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
 
 
     bool pred_hit = stream.isHit;
-    bool pred_hit_from_meta = std::static_pointer_cast<FTBMeta>(stream.predMetas[1])->hit; //TODO: get component idx
-    assert(pred_hit == pred_hit_from_meta);
 
     bool stream_taken = stream.exeTaken;
     FTBEntry entry_to_write;
@@ -241,7 +250,7 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
             DPRINTF(FTB, "pred hit, updating FTB entry if necessary\n");
             DPRINTF(FTB, "printing old entry:\n");
             FTBEntry old_entry = stream.predFTBEntry;
-            printFTBEntry(old_entry);
+            // printFTBEntry(old_entry);
             assert(old_entry.tag == inst_tag && old_entry.valid);
             std::vector<FTBSlot> &slots = old_entry.slots;
             bool new_branch = !branchIsInEntry(old_entry, branch_info.pc);
@@ -267,7 +276,7 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
             entry_to_write = old_entry;
         }
         DPRINTF(FTB, "printing new entry:\n");
-        printFTBEntry(entry_to_write);
+        // printFTBEntry(entry_to_write);
     }
     stream.updateFTBEntry = entry_to_write;
 }
@@ -275,18 +284,29 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
 void
 DefaultFTB::update(const FetchStream &stream)
 {
-    DPRINTF(FTB, "FTB: Updating FTB entry\n");
+    if (!isL0()) {
+        // TODO: get component idx
+        auto meta = std::static_pointer_cast<FTBMeta>(stream.predMetas[1]);
+        bool l0_hit_l1_miss = meta->l0_hit && !meta->hit;
+        if (l0_hit_l1_miss) {
+            DPRINTF(FTB, "FTB: skipping entry write because of l0 hit\n");
+            return;
+        }
+    }
     Addr startPC = stream.startPC;
-    unsigned ftb_idx = getIndex(startPC);
+    Addr ftb_idx = getIndex(startPC);
+    Addr ftb_tag = getTag(startPC);
 
-    auto it = ftb[ftb_idx].find(getTag(startPC));
+    DPRINTF(FTB, "FTB: Updating FTB entry index %#lx tag %#lx\n", ftb_idx, ftb_tag);
+
+    auto it = ftb[ftb_idx].find(ftb_tag);
     // if the tag is not found and the table is full
     bool new_entry = it == ftb[ftb_idx].end();
 
     if (new_entry) {
         std::pop_heap(mruList[ftb_idx].begin(), mruList[ftb_idx].end(), older());
         const auto& old_entry = mruList[ftb_idx].back();
-        DPRINTF(FTB, "FTB: Replacing entry with tag %d in set %d\n", getTag(startPC), ftb_idx);
+        DPRINTF(FTB, "FTB: Replacing entry with tag %#lx in set %#lx\n", old_entry->first, ftb_idx);
         ftb[ftb_idx].erase(old_entry->first);
     }
 
@@ -296,6 +316,8 @@ DefaultFTB::update(const FetchStream &stream)
         auto it = ftb[ftb_idx].find(stream.updateFTBEntry.tag);
         mruList[ftb_idx].back() = it;
         std::push_heap(mruList[ftb_idx].begin(), mruList[ftb_idx].end(), older());
+    } else {
+        std::make_heap(mruList[ftb_idx].begin(), mruList[ftb_idx].end(), older());
     }
     assert(ftb_idx < numSets);
 

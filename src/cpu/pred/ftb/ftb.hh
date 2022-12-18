@@ -59,13 +59,13 @@ class DefaultFTB : public TimedBaseFTBPredictor
 
     DefaultFTB(const Params& p);
 
-    struct TickedFTBEntry : public FTBEntry
+    typedef struct TickedFTBEntry : public FTBEntry
     {
         uint64_t tick;
         TickedFTBEntry(const FTBEntry &entry, uint64_t tick)
             : FTBEntry(entry), tick(tick) {}
         TickedFTBEntry() : tick(0) {}
-    };
+    }TickedFTBEntry;
 
     using FTBMap = std::map<Addr, TickedFTBEntry>;
     using FTBMapIter = typename FTBMap::iterator;
@@ -108,7 +108,7 @@ class DefaultFTB : public TimedBaseFTBPredictor
      *  @param inst_PC The address of the branch to look up.
      *  @return Returns the FTB entry.
      */
-    FTBEntry lookup(Addr instPC);
+    TickedFTBEntry lookup(Addr instPC);
 
     /** Checks if an block starting with the given PC is in the FTB.
      *  @param inst_PC The address of the block to look up.
@@ -123,6 +123,7 @@ class DefaultFTB : public TimedBaseFTBPredictor
 
     /**
      * @brief derive new ftb entry from old ones and set updateFTBEntry field in stream
+     *        only in L1FTB will this function be called when update
      * 
      * @param stream 
      */
@@ -176,9 +177,9 @@ class DefaultFTB : public TimedBaseFTBPredictor
         return false;
     }
 
-    void printFTBEntry(FTBEntry e) {
-        DPRINTF(FTB, "FTB entry: valid %d, tag %#lx, fallThruAddr:%#lx, slots:\n",
-            e.valid, e.tag, e.fallThruAddr);
+    void printFTBEntry(TickedFTBEntry e) {
+        DPRINTF(FTB, "FTB entry: valid %d, tag %#lx, fallThruAddr:%#lx, tick:%lu, slots:\n",
+            e.valid, e.tag, e.fallThruAddr, e.tick);
         for (auto &slot : e.slots) {
             DPRINTF(FTB, "    pc:%#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d\n",
                 slot.pc, slot.size, slot.target, slot.isCond, slot.isIndirect, slot.isCall, slot.isReturn);
@@ -190,13 +191,15 @@ class DefaultFTB : public TimedBaseFTBPredictor
      *  @param inst_PC The branch to look up.
      *  @return Returns the index into the FTB.
      */
-    inline unsigned getIndex(Addr instPC);
+    inline Addr getIndex(Addr instPC);
 
     /** Returns the tag bits of a given address.
      *  @param inst_PC The branch's address.
      *  @return Returns the tag bits.
      */
     inline Addr getTag(Addr instPC);
+
+    bool isL0() { return getDelay() == 0; }
 
     /** The actual FTB. */
     // TODO: make each set to be a map structure
@@ -210,13 +213,13 @@ class DefaultFTB : public TimedBaseFTBPredictor
     unsigned numEntries;
 
     /** The index mask. */
-    unsigned idxMask;
+    Addr idxMask;
 
     /** The number of tag bits per entry. */
     unsigned tagBits;
 
     /** The tag mask. */
-    unsigned tagMask;
+    Addr tagMask;
 
     /** Number of bits to shift PC when calculating index. */
     unsigned instShiftAmt;
@@ -237,9 +240,10 @@ class DefaultFTB : public TimedBaseFTBPredictor
 
     typedef struct FTBMeta {
         bool hit;
-        FTBMeta() : hit(false) {}
-        FTBMeta(bool h) : hit(h) {}
-        FTBMeta(const FTBMeta &other) : hit(other.hit) {}
+        bool l0_hit;
+        FTBMeta() : hit(false), l0_hit(false) {}
+        FTBMeta(bool h, bool h0) : hit(h), l0_hit(h0) {}
+        FTBMeta(const FTBMeta &other) : hit(other.hit), l0_hit(other.l0_hit) {}
     }FTBMeta;
 
     FTBMeta meta;
