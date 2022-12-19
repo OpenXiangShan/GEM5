@@ -60,6 +60,7 @@
 #include "debug/Mwait.hh"
 #include "debug/SyscallVerbose.hh"
 #include "debug/Thread.hh"
+#include "debug/DumpCommit.hh"
 #include "mem/page_table.hh"
 #include "params/BaseCPU.hh"
 #include "sim/clocked_object.hh"
@@ -1029,6 +1030,8 @@ void
 BaseCPU::difftestStep(ThreadID tid, InstSeqNum seq)
 {
     bool should_diff = false;
+    DPRINTF(DumpCommit, "[sn:%llu] %#lx, %s\n",
+            seq, diffInfo.pc->instAddr(), diffInfo.inst->disassemble(diffInfo.pc->instAddr()));
     DPRINTF(Diff, "DiffTest step on inst pc: %#lx: %s\n",
             diffInfo.pc->instAddr(),
             diffInfo.inst->disassemble(diffInfo.pc->instAddr()));

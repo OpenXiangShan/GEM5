@@ -69,6 +69,7 @@ DebugFlag('PCEvent')
 DebugFlag('Quiesce')
 DebugFlag('Mwait')
 DebugFlag('Diff')
+DebugFlag('DumpCommit')
 
 CompoundFlag('ExecAll', [ 'ExecEnable', 'ExecCPSeq', 'ExecEffAddr',
     'ExecFaulting', 'ExecFetchSeq', 'ExecOpClass', 'ExecRegDelta',
