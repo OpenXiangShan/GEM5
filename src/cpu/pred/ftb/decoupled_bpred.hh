@@ -19,7 +19,7 @@
 #include "debug/DecoupleBPProbe.hh"
 #include "debug/DecoupleBPRAS.hh"
 #include "debug/DecoupleBPVerbose.hh"
-#include "debug/FTBStats.hh"
+#include "debug/DBPFTBStats.hh"
 #include "params/DecoupledBPUWithFTB.hh"
 
 namespace gem5
@@ -293,7 +293,7 @@ class DecoupledBPUWithFTB : public BPredUnit
             pred.indirectTarget, pred.returnTarget);
     }
 
-    struct FTBStats : public statistics::Group {
+    struct DBPFTBStats : public statistics::Group {
         statistics::Scalar condMiss;
         statistics::Scalar uncondMiss;
         statistics::Scalar returnMiss;
@@ -312,8 +312,8 @@ class DecoupledBPUWithFTB : public BPredUnit
 
         statistics::Scalar ftbHit;
         statistics::Scalar ftbMiss;
-        FTBStats(statistics::Group* parent);
-    } ftbstats;
+        DBPFTBStats(statistics::Group* parent);
+    } dbpFtbStats;
 
   public:
     void tick();
@@ -449,23 +449,23 @@ class DecoupledBPUWithFTB : public BPredUnit
     void addMiss(MissType type) {
         switch (type) {
             case COND:
-                ftbstats.condMiss++;
+                dbpFtbStats.condMiss++;
                 break;
             case UNCOND:
-                ftbstats.uncondMiss++;
+                dbpFtbStats.uncondMiss++;
                 break;
             case RETURN:
-                ftbstats.returnMiss++;
+                dbpFtbStats.returnMiss++;
                 break;
             case OTHER:
-                ftbstats.otherMiss++;
+                dbpFtbStats.otherMiss++;
                 break;
         }
-        DPRINTF(FTBStats, "Miss type: %d\n", type);
+        DPRINTF(DBPFTBStats, "Miss type: %d\n", type);
     }
 
     void addFtqNotValid() {
-        ftbstats.ftqNotValid++;
+        dbpFtbStats.ftqNotValid++;
     }
 };
 

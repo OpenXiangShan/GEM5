@@ -24,7 +24,7 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
       ftb(p.ftb),
       tage(p.tage),
       ras(p.ras),
-      ftbstats(this)
+      dbpFtbStats(this)
     //   streamTAGE(p.stream_tage),
     //   streamUBTB(p.stream_ubtb),
     //   dumpLoopPred(p.dump_loop_pred),
@@ -124,7 +124,7 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
     // });
 }
 
-DecoupledBPUWithFTB::FTBStats::FTBStats(statistics::Group* parent):
+DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent):
     statistics::Group(parent),
     ADD_STAT(condMiss, statistics::units::Count::get(), "the number of cond branch misses"),
     ADD_STAT(uncondMiss, statistics::units::Count::get(), "the number of uncond branch misses"),
@@ -141,10 +141,10 @@ DecoupledBPUWithFTB::FTBStats::FTBStats(statistics::Group* parent):
     ADD_STAT(ftbHit, statistics::units::Count::get(), "ftb hits (in predict block)"),
     ADD_STAT(ftbMiss, statistics::units::Count::get(), "ftb misses (in predict block)")
 {
-    condMiss.prereq(condMiss);
-    uncondMiss.prereq(uncondMiss);
-    returnMiss.prereq(returnMiss);
-    otherMiss.prereq(otherMiss);
+    // condMiss.prereq(condMiss);
+    // uncondMiss.prereq(uncondMiss);
+    // returnMiss.prereq(returnMiss);
+    // otherMiss.prereq(otherMiss);
 
     // TODO: parameterize
     predsOfEachStage.init(3);
@@ -171,9 +171,9 @@ DecoupledBPUWithFTB::FTBStats::FTBStats(statistics::Group* parent):
 void
 DecoupledBPUWithFTB::tick()
 {
-    ftbstats.fsqEntryDist.sample(fetchStreamQueue.size(), 1);
+    dbpFtbStats.fsqEntryDist.sample(fetchStreamQueue.size(), 1);
     if (streamQueueFull()) {
-        ftbstats.fsqFullCannotEnq++;
+        dbpFtbStats.fsqFullCannotEnq++;
     }
 
     if (!receivedPred && numOverrideBubbles == 0 && sentPCHist) {
@@ -264,7 +264,7 @@ DecoupledBPUWithFTB::generateFinalPredAndCreateBubbles()
     printFullFTBPrediction(*chosen);
     DPRINTF(Override, "Ends generateFinalPredAndCreateBubbles(), numOverrideBubbles is %d, receivedPred is set true.\n", numOverrideBubbles);
 
-    ftbstats.predsOfEachStage[first_hit_stage]++;
+    dbpFtbStats.predsOfEachStage[first_hit_stage]++;
 }
 
 bool
@@ -349,7 +349,7 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
                             unsigned control_inst_size, bool actually_taken,
                             const InstSeqNum &seq, ThreadID tid)
 {
-    ftbstats.controlSquash++;
+    dbpFtbStats.controlSquash++;
 
     bool is_conditional = static_inst->isCondCtrl();
     bool is_indirect = static_inst->isIndirectCtrl();
@@ -507,7 +507,7 @@ DecoupledBPUWithFTB::nonControlSquash(unsigned target_id, unsigned stream_id,
                                const PCStateBase &inst_pc,
                                const InstSeqNum seq, ThreadID tid)
 {
-    ftbstats.nonControlSquash++;
+    dbpFtbStats.nonControlSquash++;
     DPRINTFV(this->debugFlagOn || ::gem5::debug::DecoupleBP,
             "non control squash: target id: %lu, stream id: %lu, inst_pc: %x, "
             "seq: %lu\n",
@@ -563,7 +563,7 @@ DecoupledBPUWithFTB::trapSquash(unsigned target_id, unsigned stream_id,
                          Addr last_committed_pc, const PCStateBase &inst_pc,
                          ThreadID tid)
 {
-    ftbstats.trapSquash++;
+    dbpFtbStats.trapSquash++;
     DPRINTF(DecoupleBP || debugFlagOn,
             "Trap squash: target id: %lu, stream id: %lu, inst_pc: %#lx\n",
             target_id, stream_id, inst_pc.instAddr());
@@ -681,10 +681,10 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
                 stream.predBranchInfo.pc, stream.predBranchInfo.target);
         
         if (stream.isHit) {
-            ftbstats.ftbHit++;
+            dbpFtbStats.ftbHit++;
         } else {
             if (stream.exeTaken) {
-                ftbstats.ftbMiss++;
+                dbpFtbStats.ftbMiss++;
                 DPRINTF(FTB, "FTB miss detected when update, stream start %#lx, predTick %lu, printing branch info:\n", stream.startPC, stream.predTick);
                 auto &slot = stream.exeBranchInfo;
                 DPRINTF(FTB, "    pc:%#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d\n",
@@ -905,7 +905,7 @@ DecoupledBPUWithFTB::tryEnqFetchTarget()
         return;
     }
     if (fetchStreamQueue.empty()) {
-        ftbstats.fsqNotValid++;
+        dbpFtbStats.fsqNotValid++;
         // no stream that have not entered ftq
         DPRINTF(DecoupleBP, "No stream to enter ftq in fetchStreamQueue\n");
         return;
@@ -916,7 +916,7 @@ DecoupledBPUWithFTB::tryEnqFetchTarget()
     auto &ftq_enq_state = fetchTargetQueue.getEnqState();
     auto it = fetchStreamQueue.find(ftq_enq_state.streamId);
     if (it == fetchStreamQueue.end()) {
-        ftbstats.fsqNotValid++;
+        dbpFtbStats.fsqNotValid++;
         // desired stream not found in fsq
         DPRINTF(DecoupleBP, "FTQ enq desired Stream ID %u is not found\n",
                 ftq_enq_state.streamId);
