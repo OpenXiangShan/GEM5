@@ -83,7 +83,7 @@ class FTBTAGE : public TimedBaseFTBPredictor
     // make predictions, record in stage preds
     void putPCHistory(Addr startAddr,
                       const boost::dynamic_bitset<> &history,
-                      std::array<FullFTBPrediction, 3> &stagePreds) override;
+                      std::vector<FullFTBPrediction> &stagePreds) override;
 
     std::shared_ptr<void> getPredictionMeta() override;
 

@@ -46,10 +46,14 @@ class HistoryManager
       uint64_t streamId;
     };
 
+    HistoryManager(unsigned _maxShamt) : maxShamt(_maxShamt) {}
+
   private:
     std::list<HistoryEntry> speculativeHists;
 
     unsigned IdealHistLen{246};
+
+    unsigned maxShamt;
 
   public:
     void addSpeculativeHist(const Addr addr, const int shamt,
@@ -114,11 +118,9 @@ class HistoryManager
         auto cur = speculativeHists.begin();
         cur++;
         while (cur != speculativeHists.end()) {
-            // TODO: numBr
-            int numBr = 2;
-            if (cur->shamt > numBr) {
+            if (cur->shamt > maxShamt) {
                 dump("before warn");
-                warn("entry shifted more than %d bits\n", numBr);
+                warn("entry shifted more than %d bits\n", maxShamt);
             }
             last = cur;
             cur++;
@@ -158,6 +160,8 @@ class DecoupledBPUWithFTB : public BPredUnit
     unsigned fetchStreamQueueSize;
     FetchStreamId fsqId{1};
 
+    unsigned numBr;
+
     unsigned cacheLineOffsetBits{6};  // TODO: parameterize this
     unsigned cacheLineSize{64};
 
@@ -178,8 +182,8 @@ class DecoupledBPUWithFTB : public BPredUnit
     
     ftb_pred::RAS *ras{};
 
-    std::vector<TimedBaseFTBPredictor*> components{}; // TODO: numCompontes
-    std::array<FullFTBPrediction, 3> predsOfEachStage{}; // TODO: numStages
+    std::vector<TimedBaseFTBPredictor*> components{};
+    std::vector<FullFTBPrediction> predsOfEachStage{};
     unsigned numComponents{};
     unsigned numStages{};
 
@@ -300,6 +304,7 @@ class DecoupledBPUWithFTB : public BPredUnit
         statistics::Scalar otherMiss;
 
         statistics::Vector predsOfEachStage;
+        statistics::Vector commitPredsFromEachStage;
         statistics::Distribution fsqEntryDist;
         // statistics::Distribution ftqEntryDist;
         statistics::Scalar controlSquash;
@@ -312,7 +317,7 @@ class DecoupledBPUWithFTB : public BPredUnit
 
         statistics::Scalar ftbHit;
         statistics::Scalar ftbMiss;
-        DBPFTBStats(statistics::Group* parent);
+        DBPFTBStats(statistics::Group* parent, unsigned numStages, unsigned fsqSize);
     } dbpFtbStats;
 
   public:
@@ -401,11 +406,6 @@ class DecoupledBPUWithFTB : public BPredUnit
 
     std::stack<Addr> streamRAS;
     
-    // void dumpRAS() {
-    //     for (std::stack<Addr> dump = streamRAS; !dump.empty(); dump.pop())
-    //         DPRINTF(DecoupleBPRAS, "RAS: %#lx\n", dump.top());
-    // }
-
     bool debugFlagOn{false};
 
     std::map<std::pair<Addr, Addr>, int> topMispredicts;
@@ -422,18 +422,6 @@ class DecoupledBPUWithFTB : public BPredUnit
     void pushRAS(FetchStreamId stream_id, const char *when, Addr ra);
 
     void updateTAGE(FetchStream &stream);
-
-    // LoopDetector *loopDetector{};
-    // StreamLoopPredictor *streamLoopPredictor{};
-
-    // void storeLoopInfo(unsigned int fsqId, FetchStream stream);
-    // std::list<std::pair<unsigned int, FetchStream> > storedLoopStreams;
-
-    // long useLoopButInvalid = 0;
-
-    // long useLoopAndValid = 0;
-
-    // long notUseLoop = 0;
 
     std::vector<Addr> storeTargets;
 

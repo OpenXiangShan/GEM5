@@ -95,7 +95,7 @@ DefaultFTB::tick() {}
 void
 DefaultFTB::putPCHistory(Addr startAddr,
                          const boost::dynamic_bitset<> &history,
-                         std::array<FullFTBPrediction, 3> &stagePreds)
+                         std::vector<FullFTBPrediction> &stagePreds)
 {
     TickedFTBEntry find_entry = lookup(startAddr);
     bool hit = find_entry.valid;
@@ -108,6 +108,7 @@ DefaultFTB::putPCHistory(Addr startAddr,
 
         DPRINTF(FTB, "FTB: lookup miss\n");
     }
+    assert(getDelay() < stagePreds.size());
     // assign prediction for s2 and later stages
     for (int s = getDelay(); s < stagePreds.size(); ++s) {
         if (!isL0() && !hit && stagePreds[s].valid) {
@@ -119,11 +120,10 @@ DefaultFTB::putPCHistory(Addr startAddr,
         stagePreds[s].valid = hit;
         stagePreds[s].ftbEntry = find_entry;
         DPRINTF(FTB, "FTB: numBranches %d\n", numBr);
-        stagePreds[s].condTakens.clear(); // TODO: do this in generateFinalPredAndCreateOverrideBubbles
         for (int i = 0; i < numBr; ++i) {
-            stagePreds[s].condTakens.push_back(false);
+            stagePreds[s].condTakens[i] = false;
         }
-        // TODO: this is a hack to get a valid target for indirect branches
+        // assign ftb prediction for indirect targets
         if (!find_entry.slots.empty()) {
             auto tail_slot = find_entry.slots.back();
             if (tail_slot.uncondValid()) {
@@ -323,7 +323,6 @@ DefaultFTB::update(const FetchStream &stream)
         ftbStats.updateMiss++;
     }
     if (!isL0()) {
-        // TODO: get component idx
         bool l0_hit_l1_miss = meta->l0_hit && !meta->hit;
         if (l0_hit_l1_miss) {
             DPRINTF(FTB, "FTB: skipping entry write because of l0 hit\n");

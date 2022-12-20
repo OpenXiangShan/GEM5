@@ -155,7 +155,7 @@ FTBTAGE::lookupHelper(Addr startAddr,
 }
 
 void
-FTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::array<FullFTBPrediction, 3> &stagePreds) {
+FTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<FullFTBPrediction> &stagePreds) {
     DPRINTF(FTBTAGE, "putPCHistory startAddr: %#lx\n", stream_start);
     std::vector<TageEntry> entries;
     entries.resize(numBr);
@@ -200,9 +200,8 @@ FTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::array<FullF
         meta.scMeta.scPreds = scPreds;
         meta.scMeta.indexFoldedHist = sc.getFoldedHist();
     }
-    
+    assert(getDelay() < stagePreds.size());
     for (int s = getDelay(); s < stagePreds.size(); ++s) {
-        stagePreds[s].condTakens.clear();
         // assume that ftb entry is provided in stagePreds
 
         for (int i = 0; i < numBr; ++i) {
@@ -212,7 +211,7 @@ FTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::array<FullF
             if (entry.slots.size() > i) {
                 takens[i] = takens[i] || entry.slots[i].alwaysTaken;
             }
-            stagePreds[s].condTakens.push_back(takens[i]);
+            stagePreds[s].condTakens[i] = takens[i];
         }
     }
 
@@ -264,7 +263,6 @@ FTBTAGE::update(const FetchStream &entry)
     DPRINTF(FTBTAGE, "need to update size %d\n", need_to_update.size());
 
     // get tage predictions from meta
-    // TODO: use component idx
     auto meta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
     auto preds = meta->preds;
     auto scMeta = meta->scMeta;
@@ -579,7 +577,6 @@ void
 FTBTAGE::recoverHist(const boost::dynamic_bitset<> &history,
     const FetchStream &entry, int shamt, bool cond_taken)
 {
-    // TODO: need to get idx
     std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
     for (int i = 0; i < numPredictors; i++) {
         tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);

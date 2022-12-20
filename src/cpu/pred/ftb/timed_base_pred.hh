@@ -33,7 +33,7 @@ class TimedBaseFTBPredictor: public SimObject
     // make predictions, record in stage preds
     virtual void putPCHistory(Addr startAddr,
                               const boost::dynamic_bitset<> &history,
-                              std::array<FullFTBPrediction, 3> &stagePreds) {}
+                              std::vector<FullFTBPrediction> &stagePreds) {}
 
     virtual std::shared_ptr<void> getPredictionMeta() { return nullptr; }
 

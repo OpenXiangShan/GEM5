@@ -22,9 +22,9 @@ RAS::RAS(const Params &p)
 
 void
 RAS::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
-                  std::array<FullFTBPrediction, 3> &stagePreds)
+                  std::vector<FullFTBPrediction> &stagePreds)
 {
-    // RAS is a 1-stage predictor
+    assert(getDelay() < stagePreds.size());
     for (int i = getDelay(); i < stagePreds.size(); i++) {
         stagePreds[i].returnTarget = stack[sp].retAddr;
     }

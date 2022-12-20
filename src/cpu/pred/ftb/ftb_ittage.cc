@@ -135,7 +135,7 @@ FTBITTAGE::lookupHelper(Addr startAddr,
 }
 
 void
-FTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::array<FullFTBPrediction, 3> &stagePreds) {
+FTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<FullFTBPrediction> &stagePreds) {
     DPRINTF(FTBITTAGE, "putPCHistory startAddr: %#lx\n", stream_start);
     std::vector<TageEntry> entries;
     entries.resize(numBr);
@@ -168,13 +168,13 @@ FTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::array<Ful
             main_tables[b], main_table_indices[b], entries[b].tag, 0, use_alt_preds[b], usefulMasks[b]);
     }
     
+    assert(getDelay() < stagePreds.size());
     for (int s = getDelay(); s < stagePreds.size(); ++s) { // need modify
-        stagePreds[s].condTakens.clear();
-        for (int i = 0; i < numBr; ++i) {
-            takens[i] = use_alt_preds[i] ? altRes[i].second >= 0 : entries[i].counter >= 0;
-            // TODO: use pred results
-            stagePreds[s].condTakens.push_back(takens[i]);
-        }
+        // for (int i = 0; i < numBr; ++i) {
+        //     takens[i] = use_alt_preds[i] ? altRes[i].second >= 0 : entries[i].counter >= 0;
+        //     // TODO: use pred results
+        //     stagePreds[s].condTakens[i] = takens[i];
+        // }
     }
 
     meta.preds = preds;

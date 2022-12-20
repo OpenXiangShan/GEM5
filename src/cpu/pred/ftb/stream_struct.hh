@@ -109,10 +109,8 @@ typedef struct LFSR64 {
 typedef struct FTBEntry
 {
     /** The entry's tag. */
-    // TODO: limit width to tagBits
     Addr tag = 0;
 
-    // TODO: parameterzie numBr
     /** The entry's branch info. */
     std::vector<FTBSlot> slots;
 
@@ -124,7 +122,6 @@ typedef struct FTBEntry
 
     /** Whether or not the entry is valid. */
     bool valid = false;
-    // TODO: always taken
     FTBEntry(): fallThruAddr(0), tid(0), valid(false) {}
 
     int getNumCondInEntryBefore(Addr pc) {
@@ -158,39 +155,6 @@ using FetchStreamId = uint64_t;
 using FetchTargetId = uint64_t;
 using PredictionID = uint64_t;
 
-// struct DivideEntry
-// {
-//     bool taken;
-//     Addr start;
-//     Addr branch;
-//     Addr next;
-//     Addr fallThruPC;
-
-//     DivideEntry() : taken(false), start(0), branch(0), next(0), fallThruPC(0) {}
-//     DivideEntry(bool taken, Addr start, Addr branch, Addr next, Addr fallThruPC) : taken(taken), start(start), branch(branch), next(next),
-//                                                                                    fallThruPC(fallThruPC) {}
-
-// };
-
-// struct LoopEntry
-// {
-//     // may need to add a valid bit
-//     bool valid;
-//     Addr branch;
-//     Addr target;
-//     Addr outTarget;
-//     Addr fallThruPC;
-//     int tripCount;
-//     int detectedCount;
-//     bool intraTaken;
-//     unsigned age;
-
-//     LoopEntry() : valid(true), branch(0), target(0), outTarget(0), fallThruPC(0), tripCount(0), detectedCount(0), intraTaken(false), age(3) {}
-//     LoopEntry(Addr branch, Addr target, Addr outTarget, Addr fallThruPC, int detectedCount, bool intraTaken) : 
-//               valid(true), branch(branch), target(target), outTarget(outTarget), fallThruPC(fallThruPC), 
-//               tripCount(0), detectedCount(detectedCount), intraTaken(intraTaken), age(3) {}
-// };
-
 // NOTE: now this corresponds to an ftq entry in
 //       XiangShan nanhu architecture
 typedef struct FetchStream
@@ -203,7 +167,6 @@ typedef struct FetchStream
 
     // predicted stream end pc (fall through pc)
     Addr predEndPC;
-    // TODO: use PCState for target(gem5 specific)
     BranchInfo predBranchInfo;
     // record predicted FTB entry
     bool isHit;
@@ -215,58 +178,34 @@ typedef struct FetchStream
     // bool exeEnded;
     bool exeTaken;
     // Addr exeEndPC;
-    // TODO: use PCState for target(gem5 specific)
     BranchInfo exeBranchInfo;
 
     FTBEntry updateFTBEntry;
-    // TODO: remove signals below
     bool resolved;
 
     int squashType;
     Addr squashPC;
-    // int tripCount;
-    // bool useLoopPrediction;
-    // bool isLoop;
-    // Addr loopTarget;
-    // Addr tageTarget;
     unsigned predSource;
-    // std::list<std::pair<Addr, unsigned int>> mruLoop;
 
     // prediction metas
     std::array<std::shared_ptr<void>, 4> predMetas;
 
     Tick predTick;
-    // TODO: collect spec info into one struct?
     boost::dynamic_bitset<> history;
-
-    std::vector<boost::dynamic_bitset<>> indexFoldedHist;
-    std::vector<boost::dynamic_bitset<>> tagFoldedHist;
 
     FetchStream()
         : startPC(0),
-        //   predEnded(false),
           predTaken(false),
           predEndPC(0),
-        //   predTarget(0),
-        //   predBranchPC(0),
           predBranchInfo(BranchInfo()),
           isHit(false),
           predFTBEntry(FTBEntry()),
           sentToICache(false),
-        //   exeEnded(false),
           exeTaken(false),
-        //   exeEndPC(0),
-        //   exeTarget(0),
-        //   exeBranchPC(0),
           exeBranchInfo(BranchInfo()),
           updateFTBEntry(FTBEntry()),
           resolved(false),
           squashType(SquashType::SQUASH_NONE),
-        //   tripCount(-1),
-        //   useLoopPrediction(false),
-        //   isLoop(false),
-        //   loopTarget(0),
-        //   tageTarget(0),
           predSource(0)
     {
     }
@@ -274,13 +213,8 @@ typedef struct FetchStream
     // the default exe result should be consistent with prediction
     void setDefaultResolve() {
         resolved = false;
-        // exeEnded = predEnded;
-        // exeEndPC = predEndPC;
-        // exeTarget = predTarget;
-        // exeBranchPC = predBranchPC;
         exeBranchInfo = predBranchInfo;
         exeTaken = predTaken;
-        // exeBranchType = predBranchType;
     }
 
     // bool getEnded() const { return resolved ? exeEnded : predEnded; }
@@ -294,7 +228,7 @@ typedef struct FetchStream
     // bool isCall() const { return endType == END_CALL; }
     // bool isReturn() const { return endType == END_RET; }
 
-    std::pair<int, bool> getHistInfoDuringSquash(Addr squash_pc, bool is_cond, bool actually_taken)
+    std::pair<int, bool> getHistInfoDuringSquash(Addr squash_pc, bool is_cond, bool actually_taken, unsigned maxShamt)
     {
         bool hit = isHit;
         if (!hit) {
@@ -302,9 +236,9 @@ typedef struct FetchStream
             return std::make_pair(shamt, actually_taken);
         } else {
             int shamt = predFTBEntry.getNumCondInEntryBefore(squash_pc);
-            assert(shamt <= 2); // TODO: numBr
+            assert(shamt <= maxShamt);
             if (is_cond) {
-                if (shamt == 2) { // TODO: numBr
+                if (shamt == maxShamt) {
                     // current cond should not be counted into this entry
                     return std::make_pair(2, false);
                 } else {
@@ -321,20 +255,13 @@ typedef struct FetchStream
 typedef struct FullFTBPrediction
 {
     Addr bbStart;
-    // Addr fallThru;
-    // BranchInfo controlInfo;
     FTBEntry ftbEntry; // for FTB
     std::vector<bool> condTakens; // for conditional branch predictors
 
     Addr indirectTarget; // for indirect predictor
     Addr returnTarget; // for RAS
 
-    // bool isCall() const { return isTaken && controlInfo.isCall; }
-    // bool isReturn() const { return isTaken && controlInfo.isReturn; }
-
     bool valid; // hit
-    // bool useLoopPrediction;
-    // Addr tageTarget;
     unsigned predSource;
     Tick predTick;
     boost::dynamic_bitset<> history;
@@ -409,7 +336,6 @@ typedef struct FullFTBPrediction
         return getTakenSlot().pc;
     }
 
-    // TODO: brNum, taken, takenPC, target, fallThruPC
     bool match(FullFTBPrediction &other)
     {
         if (!other.valid) {
@@ -446,7 +372,6 @@ typedef struct FullFTBPrediction
         int shamt = 0;
         bool taken = false;
         if (valid) {
-            // TODO: numBr
             int i = 0;
             for (auto &slot : ftbEntry.slots) {
                 DPRINTF(Override, "slot %d: condValid %d, uncondValid %d\n",

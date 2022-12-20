@@ -49,7 +49,6 @@ namespace branch_prediction
 namespace ftb_pred
 {
 
-// TODO: multiway-associative FTB
 class DefaultFTB : public TimedBaseFTBPredictor
 {
   private:
@@ -86,7 +85,7 @@ class DefaultFTB : public TimedBaseFTBPredictor
     void tick() override;
 
     void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
-                      std::array<FullFTBPrediction, 3> &stagePreds) override;
+                      std::vector<FullFTBPrediction> &stagePreds) override;
 
     std::shared_ptr<void> getPredictionMeta() override;
 
@@ -117,7 +116,6 @@ class DefaultFTB : public TimedBaseFTBPredictor
      */
     bool valid(Addr instPC);
 
-    // TODO: add decoded info and exe result of a block
     /** Updates the FTB with the branch info of a block and execution result.
      */
     void update(const FetchStream &stream) override;
@@ -203,7 +201,6 @@ class DefaultFTB : public TimedBaseFTBPredictor
     bool isL0() { return getDelay() == 0; }
 
     /** The actual FTB. */
-    // TODO: make each set to be a map structure
 
     std::vector<FTBMap> ftb;
 
