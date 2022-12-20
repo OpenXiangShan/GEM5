@@ -36,6 +36,7 @@
 #include "cpu/pred/ftb/stream_struct.hh"
 #include "cpu/pred/ftb/timed_base_pred.hh"
 #include "debug/FTB.hh"
+#include "debug/FTBStats.hh"
 #include "params/DefaultFTB.hh"
 
 

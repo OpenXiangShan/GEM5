@@ -295,9 +295,12 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
 void
 DefaultFTB::update(const FetchStream &stream)
 {
+    auto meta = std::static_pointer_cast<FTBMeta>(stream.predMetas[getComponentIdx()]);
+
+
+
     if (!isL0()) {
         // TODO: get component idx
-        auto meta = std::static_pointer_cast<FTBMeta>(stream.predMetas[1]);
         bool l0_hit_l1_miss = meta->l0_hit && !meta->hit;
         if (l0_hit_l1_miss) {
             DPRINTF(FTB, "FTB: skipping entry write because of l0 hit\n");

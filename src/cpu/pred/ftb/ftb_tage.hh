@@ -7,7 +7,6 @@
 #include <utility>
 
 #include "base/sat_counter.hh"
-#include "base/statistics.hh"
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/pred/ftb/folded_hist.hh"

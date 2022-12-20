@@ -62,7 +62,7 @@ RAS::recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entr
 {
     printStack("before recoverHist");
     // recover sp and tos first
-    auto meta_ptr = std::static_pointer_cast<RASMeta>(entry.predMetas[3]);
+    auto meta_ptr = std::static_pointer_cast<RASMeta>(entry.predMetas[getComponentIdx()]);
     sp = meta_ptr->sp;
     stack[sp] = meta_ptr->tos;
 

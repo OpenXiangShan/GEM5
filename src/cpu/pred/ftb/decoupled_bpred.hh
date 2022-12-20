@@ -178,7 +178,7 @@ class DecoupledBPUWithFTB : public BPredUnit
     
     ftb_pred::RAS *ras{};
 
-    std::array<TimedBaseFTBPredictor*, 4> components{}; // TODO: numCompontes
+    std::vector<TimedBaseFTBPredictor*> components{}; // TODO: numCompontes
     std::array<FullFTBPrediction, 3> predsOfEachStage{}; // TODO: numStages
     unsigned numComponents{};
     unsigned numStages{};

@@ -34,12 +34,17 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
     // assert(streamTAGE);
     // assert(streamUBTB);
     bpType = DecoupledFTBType;
-    numComponents = 4;
     numStages = 3;
-    components[0] = uftb;
-    components[1] = ftb;
-    components[2] = tage;
-    components[3] = ras;
+    // TODO: better impl (use vector to assign in python)
+    // problem: ftb->getAndSetNewFTBEntry
+    components.push_back(uftb);
+    components.push_back(ftb);
+    components.push_back(tage);
+    components.push_back(ras);
+    numComponents = components.size();
+    for (int i = 0; i < numComponents; i++) {
+        components[i]->setComponentIdx(i);
+    }
     // components[0] = streamUBTB;
     // components[1] = streamTAGE;
 
@@ -692,11 +697,11 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
             }
         }
 
-        // generate new ftb entry first
-        // each component will use info of this entry to update
-        ftb->getAndSetNewFTBEntry(stream);
 
         if (stream.isHit || stream.exeTaken) {
+            // generate new ftb entry first
+            // each component will use info of this entry to update
+            ftb->getAndSetNewFTBEntry(stream);
             for (int i = 0; i < numComponents; ++i) {
                 components[i]->update(stream);
             }
