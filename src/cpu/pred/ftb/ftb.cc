@@ -258,7 +258,7 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
             DPRINTF(FTB, "printing old entry:\n");
             FTBEntry old_entry = stream.predFTBEntry;
             // printFTBEntry(old_entry);
-            assert(old_entry.tag == inst_tag && old_entry.valid);
+            // assert(old_entry.tag == inst_tag && old_entry.valid);
             std::vector<FTBSlot> &slots = old_entry.slots;
             bool new_branch = !branchIsInEntry(old_entry, branch_info.pc);
             if (new_branch && stream_taken) {
