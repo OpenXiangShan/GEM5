@@ -248,6 +248,31 @@ class DefaultFTB : public TimedBaseFTBPredictor
     }FTBMeta;
 
     FTBMeta meta;
+
+    struct FTBStats : public statistics::Group {
+        statistics::Scalar newEntry;
+        statistics::Scalar newEntryWithCond;
+        statistics::Scalar newEntryWithUncond;
+        statistics::Scalar oldEntry;
+        statistics::Scalar oldEntryIndirectTargetModified;
+        statistics::Scalar oldEntryWithNewCond;
+        statistics::Scalar oldEntryWithNewUncond;
+
+        statistics::Scalar predMiss;
+        statistics::Scalar predHit;
+        statistics::Scalar updateMiss;
+        statistics::Scalar updateHit;
+
+        statistics::Scalar predUseL0OnL1Miss;
+        statistics::Scalar updateUseL0OnL1Miss;
+        FTBStats(statistics::Group* parent);
+    } ftbStats;
+
+    void incNonL0Stat(statistics::Scalar &stat) {
+        if (!isL0()) {
+            stat++;
+        }
+    }
 };
 
 } // namespace ftb_pred

@@ -42,7 +42,8 @@ namespace ftb_pred
 {
 
 DefaultFTB::DefaultFTB(const Params &p)
-    : TimedBaseFTBPredictor(p)
+    : TimedBaseFTBPredictor(p),
+    ftbStats(this)
 {
     numEntries = p.numEntries;
     tagBits = p.tagBits;
@@ -96,19 +97,22 @@ DefaultFTB::putPCHistory(Addr startAddr,
                          const boost::dynamic_bitset<> &history,
                          std::array<FullFTBPrediction, 3> &stagePreds)
 {
-    // TODO: getting startAddr from pred is ugly
     TickedFTBEntry find_entry = lookup(startAddr);
     bool hit = find_entry.valid;
     if (hit) {
         DPRINTF(FTB, "FTB: lookup hit, dumping hit entry\n");
+        ftbStats.predHit++;
         printFTBEntry(find_entry);
     } else {
+        ftbStats.predMiss++;
+
         DPRINTF(FTB, "FTB: lookup miss\n");
     }
     // assign prediction for s2 and later stages
     for (int s = getDelay(); s < stagePreds.size(); ++s) {
         if (!isL0() && !hit && stagePreds[s].valid) {
             DPRINTF(FTB, "FTB: uftb hit and ftb miss, use uftb result");
+            incNonL0Stat(ftbStats.predUseL0OnL1Miss);
             break;
         }
         DPRINTF(FTB, "FTB: assigning prediction for stage %d\n", s);
@@ -242,10 +246,13 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
             // uncond branch should set fallThruAddr to end of that inst
             if (is_uncond) {
                 new_entry.fallThruAddr = branch_info.getEnd();
+                incNonL0Stat(ftbStats.newEntryWithUncond);
             } else {
                 new_entry.fallThruAddr = startPC + 32;
+                incNonL0Stat(ftbStats.newEntryWithCond);
             }
             entry_to_write = new_entry;
+            incNonL0Stat(ftbStats.newEntry);
         } else {
             DPRINTF(FTB, "pred hit, updating FTB entry if necessary\n");
             DPRINTF(FTB, "printing old entry:\n");
@@ -272,6 +279,19 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
                     slots.pop_back();
                     old_entry.fallThruAddr = last_slot_pc;
                 }
+                if (branch_info.isCond) {
+                    incNonL0Stat(ftbStats.oldEntryWithNewCond);
+                } else {
+                    incNonL0Stat(ftbStats.oldEntryWithNewUncond);
+                }
+            }
+            if (!new_branch && branch_info.isIndirect && stream_taken) {
+                auto &tailSlot = slots.back();
+                assert(tailSlot.isIndirect);
+                if (tailSlot.target != branch_info.target) {
+                    tailSlot.target = branch_info.target;
+                    incNonL0Stat(ftbStats.oldEntryIndirectTargetModified);
+                }
             }
             // modify always taken logic
             auto it = slots.begin();
@@ -285,6 +305,7 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
                 it++;
             }
             entry_to_write = old_entry;
+            incNonL0Stat(ftbStats.oldEntry);
         }
         DPRINTF(FTB, "printing new entry:\n");
         // printFTBEntry(entry_to_write);
@@ -296,14 +317,17 @@ void
 DefaultFTB::update(const FetchStream &stream)
 {
     auto meta = std::static_pointer_cast<FTBMeta>(stream.predMetas[getComponentIdx()]);
-
-
-
+    if (meta->hit) {
+        ftbStats.updateHit++;
+    } else {
+        ftbStats.updateMiss++;
+    }
     if (!isL0()) {
         // TODO: get component idx
         bool l0_hit_l1_miss = meta->l0_hit && !meta->hit;
         if (l0_hit_l1_miss) {
             DPRINTF(FTB, "FTB: skipping entry write because of l0 hit\n");
+            incNonL0Stat(ftbStats.updateUseL0OnL1Miss);
             return;
         }
     }
@@ -338,6 +362,37 @@ DefaultFTB::update(const FetchStream &stream)
     // ftb[ftb_idx].valid = true;
     // set(ftb[ftb_idx].target, target);
     // ftb[ftb_idx].tag = getTag(inst_pc);
+}
+
+DefaultFTB::FTBStats::FTBStats(statistics::Group* parent) :
+    statistics::Group(parent),
+    ADD_STAT(newEntry, statistics::units::Count::get(), "number of new ftb entries generated"),
+    ADD_STAT(newEntryWithCond, statistics::units::Count::get(), "number of new ftb entries generated with conditional branch"),
+    ADD_STAT(newEntryWithUncond, statistics::units::Count::get(), "number of new ftb entries generated with unconditional branch"),
+    ADD_STAT(oldEntry, statistics::units::Count::get(), "number of old ftb entries updated"),
+    ADD_STAT(oldEntryIndirectTargetModified, statistics::units::Count::get(), "number of old ftb entries with indirect target modified"),
+    ADD_STAT(oldEntryWithNewCond, statistics::units::Count::get(), "number of old ftb entries with new conditional branches"),
+    ADD_STAT(oldEntryWithNewUncond, statistics::units::Count::get(), "number of old ftb entries with new unconditional branches"),
+    ADD_STAT(predMiss, statistics::units::Count::get(), "misses encountered on prediction"),
+    ADD_STAT(predHit, statistics::units::Count::get(), "hits encountered on prediction"),
+    ADD_STAT(updateMiss, statistics::units::Count::get(), "misses encountered on update"),
+    ADD_STAT(updateHit, statistics::units::Count::get(), "hits encountered on update"),
+    ADD_STAT(predUseL0OnL1Miss, statistics::units::Count::get(), "use l0 result on l1 miss when pred"),
+    ADD_STAT(updateUseL0OnL1Miss, statistics::units::Count::get(), "use l0 result on l1 miss when update")
+{
+    auto ftb = dynamic_cast<branch_prediction::ftb_pred::DefaultFTB*>(parent);
+    // do not need counter below in L0 ftb
+    if (ftb->isL0()) {
+        predUseL0OnL1Miss.prereq(predUseL0OnL1Miss);
+        updateUseL0OnL1Miss.prereq(updateUseL0OnL1Miss);
+        newEntry.prereq(newEntry);
+        newEntryWithCond.prereq(newEntryWithCond);
+        newEntryWithUncond.prereq(newEntryWithUncond);
+        oldEntry.prereq(oldEntry);
+        oldEntryIndirectTargetModified.prereq(oldEntryIndirectTargetModified);
+        oldEntryWithNewCond.prereq(oldEntryWithNewCond);
+        oldEntryWithNewUncond.prereq(oldEntryWithNewUncond);
+    }
 }
 
 } // namespace ftb_pred
