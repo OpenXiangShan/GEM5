@@ -348,7 +348,8 @@ DefaultFTB::update(const FetchStream &stream)
         ftb[ftb_idx].erase(old_entry->first);
     }
 
-    ftb[ftb_idx][stream.updateFTBEntry.tag] = TickedFTBEntry(stream.updateFTBEntry, curTick());
+    ftb[ftb_idx][ftb_tag] = TickedFTBEntry(stream.updateFTBEntry, curTick());
+    ftb[ftb_idx][ftb_tag].tag = ftb_tag; // in case different ftb has different tags
 
     if (new_entry) {
         auto it = ftb[ftb_idx].find(stream.updateFTBEntry.tag);
