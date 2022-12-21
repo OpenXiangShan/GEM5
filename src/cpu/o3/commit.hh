@@ -43,6 +43,9 @@
 
 #include <queue>
 #include <list>
+#include <map>
+#include <vector>
+#include <utility>
 
 #include "base/statistics.hh"
 #include "cpu/exetrace.hh"
@@ -525,6 +528,8 @@ class Commit
         /** Number of cycles where the commit bandwidth limit is reached. */
         statistics::Scalar commitEligibleSamples;
     } stats;
+
+    std::map<Addr, unsigned> misPredIndirect;
 };
 
 } // namespace o3
