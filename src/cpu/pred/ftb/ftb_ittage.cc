@@ -247,8 +247,21 @@ FTBITTAGE::update(const FetchStream &entry)
             DPRINTF(FTBITTAGE || debugFlag, "updating use_alt_counter %d\n", use_alt_counter);
         }
 
-        DPRINTF(FTBITTAGE || debugFlag, "squashType %d, squashPC %#lx, slot pc %#lx\n", entry.squashType, entry.squashPC, ftb_entry.slots[b].pc);
-        bool this_mispred = entry.squashType == SquashType::SQUASH_CTRL && entry.squashPC == ftb_entry.slots[b].pc;
+        Addr slotPC = 0;
+        for (auto iter : ftb_entry.slots) {
+            if (iter.getBranchInfo().isIndirect) {
+                slotPC = iter.pc;
+                break;
+            }
+        }
+
+        DPRINTF(FTBITTAGE || debugFlag, "squashType %d, squashPC %#lx, slot pc %#lx\n", entry.squashType, entry.squashPC, slotPC);
+        bool this_mispred = entry.squashType == SquashType::SQUASH_CTRL && entry.squashPC == slotPC;
+        if (this_mispred) {
+            DPRINTF(FTBITTAGE || debugFlag, "miss target=%#lx, correct target=%#lx\n", entry.predBranchInfo.target, entry.exeBranchInfo.target);
+        } else {
+            DPRINTF(FTBITTAGE || debugFlag, "hit target=%#lx, correct target=%#lx\n", entry.predBranchInfo.target, entry.exeBranchInfo.target);
+        }
         // update useful reset counter
         bool use_alt_on_main_found_correct = pred.useAlt && pred.mainFound && mainTarget == entry.exeBranchInfo.target;
         bool needToAllocate = this_mispred && !use_alt_on_main_found_correct;
@@ -272,16 +285,17 @@ FTBITTAGE::update(const FetchStream &entry)
                     usefulResetCnt[b] = 0;
                 DPRINTF(FTBITTAGE || debugFlag, "decUsefulResetCounter, changeVal %d, usefulResetCnt %d\n", changeVal, usefulResetCnt[b]);
             }
-        }
 
-        if (usefulResetCnt[b] == 0) {
-            DPRINTF(FTBITTAGE || debugFlag, "reset useful bit of all entries\n");
-            for (auto &table : tageTable) {
-                for (auto &entries : table) {
-                    for (auto &entry : entries) {
-                        entry.useful = 0;
+            if (usefulResetCnt[b] == 128) {
+                DPRINTF(FTBITTAGE || debugFlag, "reset useful bit of all entries\n");
+                for (auto &table : tageTable) {
+                    for (auto &entries : table) {
+                        for (auto &entry : entries) {
+                            entry.useful = 0;
+                        }
                     }
                 }
+                usefulResetCnt[b] = 0;
             }
         }
 
