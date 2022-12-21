@@ -176,12 +176,26 @@ class DefaultFTB : public TimedBaseFTBPredictor
         return false;
     }
 
-    void printFTBEntry(TickedFTBEntry e) {
+    void printFTBEntry(FTBEntry &e, uint64_t tick = 0) {
         DPRINTF(FTB, "FTB entry: valid %d, tag %#lx, fallThruAddr:%#lx, tick:%lu, slots:\n",
-            e.valid, e.tag, e.fallThruAddr, e.tick);
+            e.valid, e.tag, e.fallThruAddr, tick);
         for (auto &slot : e.slots) {
-            DPRINTF(FTB, "    pc:%#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d\n",
-                slot.pc, slot.size, slot.target, slot.isCond, slot.isIndirect, slot.isCall, slot.isReturn);
+            DPRINTF(FTB, "    pc:%#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d, always_taken:%d\n",
+                slot.pc, slot.size, slot.target, slot.isCond, slot.isIndirect, slot.isCall, slot.isReturn, slot.alwaysTaken);
+        }
+    }
+
+    void printTickedFTBEntry(TickedFTBEntry &e) {
+        printFTBEntry(e, e.tick);
+    }
+
+    void checkFTBEntry(FTBEntry &e) {
+        bool uncond_encountered = false;
+        for (auto &slot : e.slots) {
+            assert(!uncond_encountered);
+            if (slot.isUncond()) {
+                uncond_encountered = true;
+            }
         }
     }
 
@@ -259,6 +273,8 @@ class DefaultFTB : public TimedBaseFTBPredictor
         statistics::Scalar predHit;
         statistics::Scalar updateMiss;
         statistics::Scalar updateHit;
+
+        statistics::Scalar eraseSlotBehindUncond;
 
         statistics::Scalar predUseL0OnL1Miss;
         statistics::Scalar updateUseL0OnL1Miss;

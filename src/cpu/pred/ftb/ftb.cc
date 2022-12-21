@@ -102,7 +102,7 @@ DefaultFTB::putPCHistory(Addr startAddr,
     if (hit) {
         DPRINTF(FTB, "FTB: lookup hit, dumping hit entry\n");
         ftbStats.predHit++;
-        printFTBEntry(find_entry);
+        printTickedFTBEntry(find_entry);
     } else {
         ftbStats.predMiss++;
 
@@ -257,7 +257,7 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
             DPRINTF(FTB, "pred hit, updating FTB entry if necessary\n");
             DPRINTF(FTB, "printing old entry:\n");
             FTBEntry old_entry = stream.predFTBEntry;
-            // printFTBEntry(old_entry);
+            printFTBEntry(old_entry);
             // assert(old_entry.tag == inst_tag && old_entry.valid);
             std::vector<FTBSlot> &slots = old_entry.slots;
             bool new_branch = !branchIsInEntry(old_entry, branch_info.pc);
@@ -278,6 +278,26 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
                     Addr last_slot_pc = slots.rbegin()->pc;
                     slots.pop_back();
                     old_entry.fallThruAddr = last_slot_pc;
+                }
+                // ensure uncond slot is the tail slot
+                // Note: if an unconditional jump has a target equal to fallThruPC,
+                //       predicting it to be not taken will not be considered a mispredict
+                //       thus an ftq entry would possibly has two taken branches inside,
+                //       among which the first being an unconditional jump to its fallThruPC
+                if (branch_info.isUncond() && branchIsInEntry(old_entry, branch_info.pc)) {
+                    // check if there is other branches behind an indirect jump
+                    // remove slots behind an unconditional jump
+                    FTBSlot back = slots.back();
+                    while (slots.back() > branch_info) {
+                        DPRINTF(FTB, "erasing slot behind uncond slot:\n");
+                        DPRINTF(FTB, "    pc:%#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d, always_taken:%d\n",
+                            back.pc, back.size, back.target, back.isCond, back.isIndirect, back.isCall, back.isReturn, back.alwaysTaken);
+                        slots.pop_back();
+                        back = slots.back();
+                    }
+                    assert(back == branch_info);
+                    DPRINTF(FTB, "setting fallThruAddr to the next inst of uncond: %#lx\n", old_entry.fallThruAddr);
+                    old_entry.fallThruAddr = branch_info.pc + branch_info.size;
                 }
                 if (branch_info.isCond) {
                     incNonL0Stat(ftbStats.oldEntryWithNewCond);
@@ -308,7 +328,8 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
             incNonL0Stat(ftbStats.oldEntry);
         }
         DPRINTF(FTB, "printing new entry:\n");
-        // printFTBEntry(entry_to_write);
+        printFTBEntry(entry_to_write);
+        checkFTBEntry(entry_to_write);
     }
     stream.updateFTBEntry = entry_to_write;
 }
@@ -377,6 +398,7 @@ DefaultFTB::FTBStats::FTBStats(statistics::Group* parent) :
     ADD_STAT(predHit, statistics::units::Count::get(), "hits encountered on prediction"),
     ADD_STAT(updateMiss, statistics::units::Count::get(), "misses encountered on update"),
     ADD_STAT(updateHit, statistics::units::Count::get(), "hits encountered on update"),
+    ADD_STAT(eraseSlotBehindUncond, statistics::units::Count::get(), "erase slots behind unconditional slot"),
     ADD_STAT(predUseL0OnL1Miss, statistics::units::Count::get(), "use l0 result on l1 miss when pred"),
     ADD_STAT(updateUseL0OnL1Miss, statistics::units::Count::get(), "use l0 result on l1 miss when update")
 {
@@ -392,6 +414,7 @@ DefaultFTB::FTBStats::FTBStats(statistics::Group* parent) :
         oldEntryIndirectTargetModified.prereq(oldEntryIndirectTargetModified);
         oldEntryWithNewCond.prereq(oldEntryWithNewCond);
         oldEntryWithNewUncond.prereq(oldEntryWithNewUncond);
+        eraseSlotBehindUncond.prereq(eraseSlotBehindUncond);
     }
 }
 
