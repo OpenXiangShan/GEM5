@@ -143,6 +143,24 @@ typedef struct FTBEntry
         }
         return num;
     }
+
+    // check if the entry is reasonable with given startPC
+    // every branch slot and fallThru should be in the range of (startPC, startPC+34]
+    // every 
+    bool isReasonable(Addr start) {
+        Addr min = start;
+        Addr max = start+34;
+        bool reasonable = true;
+        for (auto &slot : slots) {
+            if (slot.pc <= min || slot.pc > max) {
+                reasonable = false;
+            }
+        }
+        if (fallThruAddr <= min || fallThruAddr > max) {
+            reasonable = false;
+        }
+        return reasonable;
+    }
 }FTBEntry;
 
 struct BlockDecodeInfo {
@@ -170,6 +188,7 @@ typedef struct FetchStream
     BranchInfo predBranchInfo;
     // record predicted FTB entry
     bool isHit;
+    bool falseHit;
     FTBEntry predFTBEntry;
 
     bool sentToICache;
@@ -199,6 +218,7 @@ typedef struct FetchStream
           predEndPC(0),
           predBranchInfo(BranchInfo()),
           isHit(false),
+          falseHit(false),
           predFTBEntry(FTBEntry()),
           sentToICache(false),
           exeTaken(false),
@@ -390,6 +410,12 @@ typedef struct FullFTBPrediction
         }
         return std::make_pair(shamt, taken);
     }
+
+    bool isReasonable() {
+        return !valid || ftbEntry.isReasonable(bbStart);
+    }
+
+
 }FullFTBPrediction;
 
 // each entry corresponds to a 32Byte unaligned block

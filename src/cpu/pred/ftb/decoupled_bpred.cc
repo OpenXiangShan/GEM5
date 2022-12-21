@@ -139,7 +139,9 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     ADD_STAT(fsqNotValid, statistics::units::Count::get(), "ftq needs fsq req but fsq not valid"),
     ADD_STAT(fsqFullCannotEnq, statistics::units::Count::get(), "bpu has req but fsq full cannot enqueue"),
     ADD_STAT(ftbHit, statistics::units::Count::get(), "ftb hits (in predict block)"),
-    ADD_STAT(ftbMiss, statistics::units::Count::get(), "ftb misses (in predict block)")
+    ADD_STAT(ftbMiss, statistics::units::Count::get(), "ftb misses (in predict block)"),
+    ADD_STAT(predFalseHit, statistics::units::Count::get(), "false hit detected at pred"),
+    ADD_STAT(commitFalseHit, statistics::units::Count::get(), "false hit detected at commit")
 {
     predsOfEachStage.init(numStages);
     commitPredsFromEachStage.init(numStages);
@@ -586,6 +588,9 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
                 DPRINTF(FTB, "    pc:%#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d\n",
                 slot.pc, slot.size, slot.target, slot.isCond, slot.isIndirect, slot.isCall, slot.isReturn);
             }
+            if (stream.falseHit) {
+                dbpFtbStats.commitFalseHit++;
+            }
         }
         dbpFtbStats.commitPredsFromEachStage[stream.predSource]++;
 
@@ -787,21 +792,36 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
              create_new_stream ? "new stream" : "last missing stream",
              finalPred.valid, finalPred.isTaken());
 
-    Addr fallThroughAddr = finalPred.getFallThrough();
     bool taken = finalPred.isTaken();
-    entry.isHit = finalPred.valid;
-    entry.predFTBEntry = finalPred.ftbEntry;
-    entry.predTaken = taken;
-    entry.predEndPC = fallThroughAddr;
-    // update s0PC
-    Addr nextPC = finalPred.getTarget();
-    if (taken) {
-        entry.predBranchInfo = finalPred.getTakenSlot().getBranchInfo();
-        entry.predBranchInfo.target = nextPC; // use the final target which may be not from ftb
+    bool predReasonable = finalPred.isReasonable();
+    if (predReasonable) {
+        Addr fallThroughAddr = finalPred.getFallThrough();
+        entry.isHit = finalPred.valid;
+        entry.falseHit = false;
+        entry.predFTBEntry = finalPred.ftbEntry;
+        entry.predTaken = taken;
+        entry.predEndPC = fallThroughAddr;
+        // update s0PC
+        Addr nextPC = finalPred.getTarget();
+        if (taken) {
+            entry.predBranchInfo = finalPred.getTakenSlot().getBranchInfo();
+            entry.predBranchInfo.target = nextPC; // use the final target which may be not from ftb
+        }
+        s0PC = nextPC;
+    } else {
+        DPRINTF(DecoupleBP || debugFlagOn, "Prediction is not reasonable, printing ftb entry\n");
+        ftb->printFTBEntry(finalPred.ftbEntry);
+        dbpFtbStats.predFalseHit++;
+        // prediction is not reasonable, use fall through
+        entry.isHit = false;
+        entry.falseHit = true;
+        entry.predTaken = false;
+        entry.predEndPC = entry.startPC + 32;
+        entry.predFTBEntry = FTBEntry();
+        s0PC = entry.startPC + 32; // TODO: parameterize
+        // TODO: when false hit, act like a miss, do not update history
     }
 
-
-    s0PC = nextPC;
 
     entry.history = s0History;
     entry.predTick = finalPred.predTick;

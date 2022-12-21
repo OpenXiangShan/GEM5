@@ -317,6 +317,10 @@ class DecoupledBPUWithFTB : public BPredUnit
 
         statistics::Scalar ftbHit;
         statistics::Scalar ftbMiss;
+
+        statistics::Scalar predFalseHit;
+        statistics::Scalar commitFalseHit;
+
         DBPFTBStats(statistics::Group* parent, unsigned numStages, unsigned fsqSize);
     } dbpFtbStats;
 
