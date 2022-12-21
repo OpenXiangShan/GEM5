@@ -7,6 +7,7 @@
 #include "debug/DecoupleBPHist.hh"
 #include "debug/Override.hh"
 #include "debug/FTB.hh"
+#include "debug/FTBITTAGE.hh"
 #include "sim/core.hh"
 
 namespace gem5
@@ -566,6 +567,9 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
         DPRINTF(DecoupleBP, "dequeueing stream id: %lu, entry below:\n",
                 it->first);
         bool miss_predicted = stream.squashType == SQUASH_CTRL;
+        if (miss_predicted) {
+            DPRINTF(FTBITTAGE || (stream.squashPC == 0x1aa51a), "miss predicted stream.startAddr=%#lx\n", stream.startPC);
+        }
         // if (stream.startPC == ObservingPC) {
         //     debugFlagOn = true;
         // }

@@ -71,6 +71,8 @@
 #include "params/BaseO3CPU.hh"
 #include "sim/faults.hh"
 #include "sim/full_system.hh"
+#include "sim/core.hh"
+#include "base/output.hh"
 
 namespace gem5
 {
@@ -136,6 +138,23 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
         htmStops[tid] = 0;
     }
     interrupt = NoFault;
+
+    registerExitCallback([this]() {
+        auto out_handle = simout.create("misPredIndirect.txt", false, true);
+        std::vector<std::pair<Addr, unsigned>> tempVec;
+        for (auto &it : misPredIndirect) {
+            tempVec.push_back(std::make_pair(it.first, it.second));
+        }
+        std::sort(tempVec.begin(), tempVec.end(),
+            [](const std::pair<Addr, unsigned> &a,
+               const std::pair<Addr, unsigned> &b) {
+                return a.second > b.second;
+            });
+        for (auto it : tempVec) {
+            *out_handle->stream() << std::oct << it.second << " " << std::hex << it.first << std::endl;
+        }
+        simout.close(out_handle);
+    });
 }
 
 std::string Commit::name() const { return cpu->name() + ".commit"; }
@@ -1069,6 +1088,7 @@ Commit::commitInsts()
                         dbftb->addMiss(branch_prediction::ftb_pred::DecoupledBPUWithFTB::MissType::RETURN);
                     } else if (head_inst->isIndirectCtrl()) {
                         dbftb->addMiss(branch_prediction::ftb_pred::DecoupledBPUWithFTB::MissType::OTHER);
+                        misPredIndirect[head_inst->pcState().instAddr()]++;
                     }
                     DPRINTF(DBPFTBStats, "inst=%s\n", head_inst->staticInst->disassemble(head_inst->pcState().instAddr()));
                     DPRINTF(DBPFTBStats, "isUncondCtrl=%d, isCondCtrl=%d, isReturn=%d, isIndirectCtrl=%d\n",
