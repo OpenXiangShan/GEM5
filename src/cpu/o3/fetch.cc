@@ -915,7 +915,22 @@ Fetch::tick()
     std::advance(tid_itr,
             random_mt.random<uint8_t>(0, activeThreads->size() - 1));
 
-    while (available_insts != 0 && insts_to_decode < decodeWidth) {
+    int decode_width = decodeWidth;
+    int count_ = 0;
+    for (auto &it0 : fetchQueue){
+        for (auto &it1 : it0) {
+            count_++;
+            if (it1->opClass() == FMAAccOp) {
+                    decode_width++;
+            }
+            if (count_ >= decodeWidth ||
+                decode_width >= decodeWidth * 2) {
+                break;
+            }
+        }
+    }
+
+    while (available_insts != 0 && insts_to_decode < decode_width) {
         ThreadID tid = *tid_itr;
         if (!stalls[tid].decode && !fetchQueue[tid].empty()) {
             const auto& inst = fetchQueue[tid].front();

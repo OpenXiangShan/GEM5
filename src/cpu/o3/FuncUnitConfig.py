@@ -66,12 +66,15 @@ class FP_MISC(FUDesc):
               OpDesc(opClass='FloatMisc', opLat=3),]
     count = 2
 
-class FP_MultAdd(FUDesc):
-    opList = [ OpDesc(opClass='FloatAdd', opLat=3),
-               OpDesc(opClass='FloatCmp', opLat=3),
-               OpDesc(opClass='FloatMult', opLat=3),
-               OpDesc(opClass='FMAMul', opLat=3),
-               OpDesc(opClass='FMAAcc', opLat=2),]
+class FP_MAM(FUDesc):
+    opList = [ OpDesc(opClass='FMAMul', opLat=3),
+               OpDesc(opClass='FloatMult', opLat=3),]
+    count = 4
+
+class FP_MAA(FUDesc):
+    opList = [ OpDesc(opClass='FMAAcc', opLat=2),
+               OpDesc(opClass='FloatAdd', opLat=3),
+               OpDesc(opClass='FloatCmp', opLat=3),]
     count = 4
 
 class SIMD_Unit(FUDesc):

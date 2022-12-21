@@ -112,7 +112,7 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
 
     updateLSQNextCycle = false;
 
-    skidBufferMax = (renameToIEWDelay + 1) * params.renameWidth;
+    skidBufferMax = (renameToIEWDelay + 1) * params.renameWidth * 2;
 }
 
 std::string
@@ -444,7 +444,7 @@ IEW::squash(ThreadID tid)
 
         toRename->iewInfo[tid].dispatched++;
 
-        skidBuffer[tid].pop();
+        skidBuffer[tid].pop_front();
     }
 
     emptyRenameInsts(tid);
@@ -602,13 +602,13 @@ IEW::skidInsert(ThreadID tid)
     while (!insts[tid].empty()) {
         inst = insts[tid].front();
 
-        insts[tid].pop();
+        insts[tid].pop_front();
 
         DPRINTF(IEW,"[tid:%i] Inserting [sn:%lli] PC:%s into "
                 "dispatch skidBuffer %i\n",tid, inst->seqNum,
                 inst->pcState(),tid);
 
-        skidBuffer[tid].push(inst);
+        skidBuffer[tid].push_back(inst);
     }
 
     assert(skidBuffer[tid].size() <= skidBufferMax &&
@@ -777,7 +777,7 @@ IEW::sortInsts()
         assert(insts[tid].empty());
 #endif
     for (int i = 0; i < insts_from_rename; ++i) {
-        insts[fromRename->insts[i]->threadNumber].push(fromRename->insts[i]);
+        insts[fromRename->insts[i]->threadNumber].push_back(fromRename->insts[i]);
     }
 }
 
@@ -798,7 +798,7 @@ IEW::emptyRenameInsts(ThreadID tid)
 
         toRename->iewInfo[tid].dispatched++;
 
-        insts[tid].pop();
+        insts[tid].pop_front();
     }
 }
 
@@ -881,7 +881,7 @@ IEW::dispatchInsts(ThreadID tid)
 {
     // Obtain instructions from skid buffer if unblocking, or queue from rename
     // otherwise.
-    std::queue<DynInstPtr> &insts_to_dispatch =
+    std::deque<DynInstPtr> &insts_to_dispatch =
         dispatchStatus[tid] == Unblocking ?
         skidBuffer[tid] : insts[tid];
 
@@ -891,10 +891,23 @@ IEW::dispatchInsts(ThreadID tid)
     bool add_to_iq = false;
     int dis_num_inst = 0;
 
+    int dispatch_width = dispatchWidth;
+    int count_ = 0;
+    for (auto& it : insts_to_dispatch) {
+        count_++ ;
+        if (it->opClass() == FMAAccOp) {
+            dispatch_width++;
+        }
+        if (count_ >= dispatchWidth ||
+            dispatch_width >= dispatchWidth * 2) {
+            break;
+        }
+    }
+
     // Loop through the instructions, putting them in the instruction
     // queue.
     for ( ; dis_num_inst < insts_to_add &&
-              dis_num_inst < dispatchWidth;
+              dis_num_inst < dispatch_width;
           ++dis_num_inst)
     {
         inst = insts_to_dispatch.front();
@@ -922,7 +935,7 @@ IEW::dispatchInsts(ThreadID tid)
 
             ++iewStats.dispSquashedInsts;
 
-            insts_to_dispatch.pop();
+            insts_to_dispatch.pop_front();
 
             //Tell Rename That An Instruction has been processed
             if (inst->isLoad()) {
@@ -1085,7 +1098,7 @@ IEW::dispatchInsts(ThreadID tid)
             instQueue.insert(inst);
         }
 
-        insts_to_dispatch.pop();
+        insts_to_dispatch.pop_front();
 
         toRename->iewInfo[tid].dispatched++;
 
@@ -1391,7 +1404,23 @@ IEW::writebackInsts()
     // mark scoreboard that this instruction is finally complete.
     // Either have IEW have direct access to scoreboard, or have this
     // as part of backwards communication.
-    for (int inst_num = 0; inst_num < wbWidth &&
+
+    int wb_width = wbWidth;
+    int count_ = 0;
+    while (toCommit->insts[count_]) {
+        DynInstPtr it = toCommit->insts[count_];
+        count_++;
+        if (it->opClass() == FMAAccOp) {
+            wb_width++;
+        }
+        if (count_ >= wbWidth ||
+            wb_width >= wbWidth * 2) {
+            break;
+        }
+    }
+
+
+    for (int inst_num = 0; inst_num < wb_width &&
              toCommit->insts[inst_num]; inst_num++) {
         DynInstPtr inst = toCommit->insts[inst_num];
         ThreadID tid = inst->threadNumber;
