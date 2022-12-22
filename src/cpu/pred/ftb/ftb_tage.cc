@@ -26,7 +26,7 @@ histLengths(p.histLengths),
 maxHistLen(p.maxHistLen),
 numTablesToAlloc(p.numTablesToAlloc),
 numBr(p.numBr),
-sc(p.numBr)
+sc(p.numBr, this)
 {
     tageBankStats = new TageBankStats * [numBr];
     for (int i = 0; i < numBr; i++) {
@@ -112,11 +112,12 @@ FTBTAGE::lookupHelper(Addr startAddr,
 
     for (int b = 0; b < numBr; b++) {
         // make main prediction
+        int phyBrIdx = getShuffledBrIndex(startAddr, b);
         int provider_counts = 0;
         for (int i = numPredictors - 1; i >= 0; --i) {
             Addr tmp_index = getTageIndex(startAddr, i);
             Addr tmp_tag = getTageTag(startAddr, i);
-            auto &way = tageTable[i][tmp_index][b];
+            auto &way = tageTable[i][tmp_index][phyBrIdx];
             bool match = way.valid && matchTag(tmp_tag, way.tag);
 
             if (match) {
@@ -137,6 +138,7 @@ FTBTAGE::lookupHelper(Addr startAddr,
 
         if (provider_counts > 0) {
             auto main_entry = main_entries[b];
+            // in RTL, we do not shuffle on useAltCtrs
             if (useAlt[getUseAltIdx(startAddr)][b] > 0 &&
                 (main_entry.counter == -1 || main_entry.counter == 0)) {
                 use_alt_preds[b] = true;
@@ -184,8 +186,9 @@ FTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Full
     std::vector<TagePrediction> preds;
     preds.resize(numBr);
     for (int b = 0; b < numBr; ++b) {
-        takens[b] = use_alt_preds[b] ? altRes[b] >= 0 : entries[b].counter >= 0;
-        preds[b] = TagePrediction(found[b], entries[b].counter, altRes[b],
+        int phyBrIdx = getShuffledBrIndex(stream_start, b);
+        takens[b] = use_alt_preds[b] ? altRes[phyBrIdx] >= 0 : entries[b].counter >= 0;
+        preds[b] = TagePrediction(found[b], entries[b].counter, altRes[phyBrIdx],
             main_tables[b], main_table_indices[b], entries[b].tag, use_alt_preds[b],
             usefulMasks[b], takens[b]);
         tageBankStats[b]->updateStatsWithTagePrediction(preds[b], true);
@@ -287,17 +290,18 @@ FTBTAGE::update(const FetchStream &entry)
         bool this_cond_actually_taken = entry.exeTaken && entry.exeBranchInfo == ftb_entry.slots[b];
         actualTakens[b] = this_cond_actually_taken;
 
+        int phyBrIdx = getShuffledBrIndex(startAddr, b);
         TagePrediction pred = preds[b];
         bool mainFound = pred.mainFound;
         bool mainTaken = pred.mainCounter >= 0;
         bool mainWeak = pred.mainCounter == 0 || pred.mainCounter == -1;
-        bool altTaken = baseTable.at(getBaseTableIndex(startAddr))[b] >= 0;
+        bool altTaken = baseTable.at(getBaseTableIndex(startAddr))[phyBrIdx] >= 0;
 
         // update useful bit, counter and predTaken for main entry
         if (mainFound) { // updateProvided
             DPRINTF(FTBTAGE, "prediction provided by table %d, idx %d, updating corresponding entry\n",
                 pred.table, pred.index);
-            auto &way = tageTable[pred.table][pred.index][b];
+            auto &way = tageTable[pred.table][pred.index][phyBrIdx];
 
             if (mainTaken != altTaken) { // updateAltDiffers
                 way.useful = this_cond_actually_taken == mainTaken; // updateProviderCorrect
@@ -311,7 +315,7 @@ FTBTAGE::update(const FetchStream &entry)
         if (pred.useAlt) {
             unsigned base_idx = getBaseTableIndex(startAddr);
             DPRINTF(FTBTAGE, "prediction provided by base table idx %d, updating corresponding entry\n", base_idx);
-            updateCounter(this_cond_actually_taken, 2, baseTable.at(base_idx)[b]);
+            updateCounter(this_cond_actually_taken, 2, baseTable.at(base_idx)[phyBrIdx]);
         }
 
         // update use_alt_counters
@@ -445,7 +449,7 @@ FTBTAGE::update(const FetchStream &entry)
                 for (int ti = startTable; ti < numPredictors; ti++) {
                     Addr newIndex = getTageIndex(startAddr, ti, updateIndexFoldedHist[ti].get());
                     Addr newTag = getTageTag(startAddr, ti, updateTagFoldedHist[ti].get());
-                    auto &entry = tageTable[ti][newIndex][b];
+                    auto &entry = tageTable[ti][newIndex][phyBrIdx];
 
                     if (allocate[ti - startTable]) {
                         DPRINTF(FTBTAGE, "found allocatable entry, table %d, index %d, tag %d, counter %d\n",
@@ -505,6 +509,19 @@ FTBTAGE::getTageIndex(Addr pc, int t)
 {
     return getTageIndex(pc, t, indexFoldedHist[t].get());
 }
+
+Addr
+FTBTAGE::getBrIndexUnshuffleBits(Addr pc)
+{
+    return (pc >> instShiftAmt) & ((1 << ceilLog2(numBr)) - 1);
+}
+
+Addr
+FTBTAGE::getShuffledBrIndex(Addr pc, int brIdxToShuffle)
+{
+    return getBrIndexUnshuffleBits(pc) ^ brIdxToShuffle;
+}
+
 
 unsigned
 FTBTAGE::getBaseTableIndex(Addr pc) {
@@ -617,12 +634,13 @@ FTBTAGE::StatisticalCorrector::getPredictions(Addr pc, std::vector<TagePredictio
     scPreds.resize(numBr);
     sumAboveThresholds.resize(numBr);
     for (int b = 0; b < numBr; b++) {
+        int phyBrIdx = tage->getShuffledBrIndex(pc, b);
         std::vector<int> scOldCounters;
         tageCtrCentereds.push_back((2 * tagePreds[b].mainCounter + 1) * 8);
         for (int i = 0;i < scCntTable.size();i++) {
             int index = getIndex(pc, i);
             int tOrNt = tagePreds[b].taken ? 1 : 0;
-            int ctr = scCntTable[i][index][b][tOrNt];
+            int ctr = scCntTable[i][index][phyBrIdx][tOrNt];
             scSums[b] += 2 * ctr + 1;
         }
         scSums[b] += tageCtrCentereds[b];
@@ -708,6 +726,7 @@ FTBTAGE::StatisticalCorrector::update(Addr pc, SCMeta meta, std::vector<bool> ne
         if (!needToUpdates[b]) {
             continue;
         }
+        int phyBrIdx = tage->getShuffledBrIndex(pc, b);
         auto &p = preds[b];
         bool scTaken = p.scPred;
         bool actualTaken = actualTakens[b];
@@ -718,7 +737,7 @@ FTBTAGE::StatisticalCorrector::update(Addr pc, SCMeta meta, std::vector<bool> ne
             if (sumAbs <= (thresholds[b] * 8 + 21) || scTaken != actualTaken) {
                 for (int i = 0; i < numPredictors; i++) {
                     auto idx = getIndex(pc, i, predHist[i].get());
-                    auto &ctr = scCntTable[i][idx][b][tOrNt];
+                    auto &ctr = scCntTable[i][idx][phyBrIdx][tOrNt];
                     counterUpdate(ctr, scCounterWidth, actualTaken);
                 }
                 if (scTaken != actualTaken) {

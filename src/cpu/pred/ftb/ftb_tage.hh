@@ -98,6 +98,12 @@ class FTBTAGE : public TimedBaseFTBPredictor
     // check folded hists after speculative update and recover
     void checkFoldedHist(const bitset &history, const char *when);
 
+    // we hash between numBr br slots, depending on lower bits of pc
+    // br slot 0 may be tage entry 0 or 1
+    Addr getBrIndexUnshuffleBits(Addr pc);
+
+    Addr getShuffledBrIndex(Addr pc, int brIdxToShuffle);
+
   private:
 
 
@@ -235,7 +241,7 @@ public:
     class StatisticalCorrector {
       public:
         // TODO: parameterize
-        StatisticalCorrector(int numBr) : numBr(numBr) {
+        StatisticalCorrector(int numBr, FTBTAGE *tage) : numBr(numBr), tage(tage) {
           scCntTable.resize(numPredictors);
           tableIndexBits.resize(numPredictors);
           for (int i = 0; i < numPredictors; i++) {
@@ -288,6 +294,8 @@ public:
 
       private:
         int numBr;
+
+        FTBTAGE *tage;
 
         int numPredictors = 4;
 
