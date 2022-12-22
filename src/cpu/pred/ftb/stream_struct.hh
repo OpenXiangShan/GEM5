@@ -152,7 +152,7 @@ typedef struct FTBEntry
         Addr max = start+34;
         bool reasonable = true;
         for (auto &slot : slots) {
-            if (slot.pc <= min || slot.pc > max) {
+            if (slot.pc < min || slot.pc > max) {
                 reasonable = false;
             }
         }
