@@ -461,6 +461,8 @@ class DecoupledBPUWithFTB : public BPredUnit
     void addFtqNotValid() {
         dbpFtbStats.ftqNotValid++;
     }
+
+    std::map<Addr, unsigned> topMispredIndirect;
 };
 
 }  // namespace ftb_pred

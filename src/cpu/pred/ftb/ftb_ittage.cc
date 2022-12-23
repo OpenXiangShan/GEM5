@@ -173,6 +173,7 @@ FTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Fu
     assert(getDelay() < stagePreds.size());
     for (int s = getDelay(); s < stagePreds.size(); ++s) { // need modify
         Addr useTarget = use_alt_preds[0] ? altRes[0].first : entries[0].target;
+        DPRINTF(FTBITTAGE || debugFlag, "indirect target=%#lx\n", useTarget);
         stagePreds[s].indirectTarget = useTarget;
     }
 
@@ -192,7 +193,7 @@ FTBITTAGE::getPredictionMeta() {
 void
 FTBITTAGE::update(const FetchStream &entry)
 {
-    if (debugPC == entry.startPC) {
+    if (debugPC == entry.startPC || debugPC2 == entry.startPC) {
         debugFlag = true;
     }
     Addr startAddr = entry.startPC;
@@ -224,7 +225,7 @@ FTBITTAGE::update(const FetchStream &entry)
             }
             DPRINTF(FTBITTAGE || debugFlag, "useful bit set to %d\n", way.useful);
 
-            updateCounter(entry.exeBranchInfo.target == mainTarget, 2, way.counter); // need modify
+            updateCounter(entry.exeBranchInfo.target == mainTarget, 3, way.counter); // need modify
         }
 
         // update base table counter
@@ -268,8 +269,8 @@ FTBITTAGE::update(const FetchStream &entry)
         DPRINTF(FTBITTAGE || debugFlag, "this_mispred %d, use_alt_on_main_found_correct %d, needToAllocate %d\n",
             this_mispred, use_alt_on_main_found_correct, needToAllocate);
 
-        int num_tables_can_allocate = pred.usefulMask.count();
-        int total_tables_to_allocate = numPredictors - (pred.table + 1);
+        int num_tables_can_allocate = (~pred.usefulMask).count();
+        int total_tables_to_allocate = pred.usefulMask.size();
         bool incUsefulResetCounter = num_tables_can_allocate < (total_tables_to_allocate - num_tables_can_allocate);
         bool decUsefulResetCounter = num_tables_can_allocate > (total_tables_to_allocate - num_tables_can_allocate);
         int changeVal = std::abs(num_tables_can_allocate - (total_tables_to_allocate - num_tables_can_allocate));
@@ -299,38 +300,40 @@ FTBITTAGE::update(const FetchStream &entry)
             }
         }
 
-        // allocate new entry
-        unsigned maskMaxNum = std::pow(2, (numPredictors - (pred.table + 1)));
-        unsigned mask = allocLFSR.get() % maskMaxNum;
-        bitset allocateLFSR(numPredictors - (pred.table + 1), mask);
-        std::string buf;
-        boost::to_string(allocateLFSR, buf);
-        DPRINTF(FTBITTAGE || debugFlag, "allocateLFSR %s, size %d\n", buf, allocateLFSR.size());
-        auto flipped_usefulMask = pred.usefulMask.flip();
-        boost::to_string(flipped_usefulMask, buf);
-        DPRINTF(FTBITTAGE || debugFlag, "pred usefulmask %s, size %d\n", buf, pred.usefulMask.size());
-        bitset masked = allocateLFSR & flipped_usefulMask;
-        boost::to_string(masked, buf);
-        DPRINTF(FTBITTAGE || debugFlag, "masked %s, size %d\n", buf, masked.size());
-        bitset allocate = masked.any() ? masked : flipped_usefulMask;
-        boost::to_string(allocate, buf);
-        DPRINTF(FTBITTAGE || debugFlag, "allocate %s, size %d\n", buf, allocate.size());
+        if (needToAllocate) {
+            // allocate new entry
+            unsigned maskMaxNum = std::pow(2, (numPredictors - (pred.table + 1)));
+            unsigned mask = allocLFSR.get() % maskMaxNum;
+            bitset allocateLFSR(numPredictors - (pred.table + 1), mask);
+            std::string buf;
+            boost::to_string(allocateLFSR, buf);
+            DPRINTF(FTBITTAGE || debugFlag, "allocateLFSR %s, size %d\n", buf, allocateLFSR.size());
+            auto flipped_usefulMask = pred.usefulMask.flip();
+            boost::to_string(flipped_usefulMask, buf);
+            DPRINTF(FTBITTAGE || debugFlag, "pred usefulmask %s, size %d\n", buf, pred.usefulMask.size());
+            bitset masked = allocateLFSR & flipped_usefulMask;
+            boost::to_string(masked, buf);
+            DPRINTF(FTBITTAGE || debugFlag, "masked %s, size %d\n", buf, masked.size());
+            bitset allocate = masked.any() ? masked : flipped_usefulMask;
+            boost::to_string(allocate, buf);
+            DPRINTF(FTBITTAGE || debugFlag, "allocate %s, size %d\n", buf, allocate.size());
 
-        bool allocateValid = flipped_usefulMask.any();
-        if (needToAllocate && allocateValid) {
-            DPRINTF(FTBITTAGE || debugFlag, "allocate new entry\n");
-            unsigned startTable = pred.table + 1;
+            bool allocateValid = flipped_usefulMask.any();
+            if (needToAllocate && allocateValid) {
+                DPRINTF(FTBITTAGE || debugFlag, "allocate new entry\n");
+                unsigned startTable = pred.table + 1;
 
-            for (int ti = startTable; ti < numPredictors; ti++) {
-                Addr newIndex = getTageIndex(startAddr, ti, updateIndexFoldedHist[ti].get());
-                Addr newTag = getTageTag(startAddr, ti, updateTagFoldedHist[ti].get());
-                auto &newEntry = tageTable[ti][newIndex][b];
+                for (int ti = startTable; ti < numPredictors; ti++) {
+                    Addr newIndex = getTageIndex(startAddr, ti, updateIndexFoldedHist[ti].get());
+                    Addr newTag = getTageTag(startAddr, ti, updateTagFoldedHist[ti].get());
+                    auto &newEntry = tageTable[ti][newIndex][b];
 
-                if (allocate[ti - startTable]) {
-                    DPRINTF(FTBITTAGE || debugFlag, "found allocatable entry, table %d, index %d, tag %d, counter %d\n",
-                        ti, newIndex, newTag, -1);
-                    newEntry = TageEntry(newTag, entry.exeBranchInfo.target, -1);
-                    break; // allocate only 1 entry
+                    if (allocate[ti - startTable]) {
+                        DPRINTF(FTBITTAGE || debugFlag, "found allocatable entry, table %d, index %d, tag %d, counter %d\n",
+                            ti, newIndex, newTag, -1);
+                        newEntry = TageEntry(newTag, entry.exeBranchInfo.target, -1);
+                        break; // allocate only 1 entry
+                    }
                 }
             }
         }
