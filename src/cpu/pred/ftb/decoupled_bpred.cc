@@ -7,6 +7,7 @@
 #include "debug/DecoupleBPHist.hh"
 #include "debug/Override.hh"
 #include "debug/FTB.hh"
+#include "debug/FTBITTAGE.hh"
 #include "sim/core.hh"
 
 namespace gem5
@@ -25,6 +26,7 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
       uftb(p.uftb),
       ftb(p.ftb),
       tage(p.tage),
+      ittage(p.ittage),
       ras(p.ras),
       numStages(p.numStages),
       historyManager(p.numBr),
@@ -38,6 +40,7 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
     components.push_back(ftb);
     components.push_back(tage);
     components.push_back(ras);
+    components.push_back(ittage);
     numComponents = components.size();
     for (int i = 0; i < numComponents; i++) {
         components[i]->setComponentIdx(i);
@@ -121,6 +124,22 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
 
     //     simout.close(out_handle);
     // });
+    registerExitCallback([this]() {
+        auto out_handle = simout.create("misPredIndirectStream.txt", false, true);
+        std::vector<std::pair<Addr, unsigned>> tempVec;
+        for (auto &it : topMispredIndirect) {
+            tempVec.push_back(std::make_pair(it.first, it.second));
+        }
+        std::sort(tempVec.begin(), tempVec.end(),
+            [](const std::pair<Addr, unsigned> &a,
+               const std::pair<Addr, unsigned> &b) {
+                return a.second > b.second;
+            });
+        for (auto it : tempVec) {
+            *out_handle->stream() << std::oct << it.second << " " << std::hex << it.first << std::endl;
+        }
+        simout.close(out_handle);
+    });
 }
 
 DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigned numStages, unsigned fsqSize):
@@ -564,6 +583,12 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
         DPRINTF(DecoupleBP, "dequeueing stream id: %lu, entry below:\n",
                 it->first);
         bool miss_predicted = stream.squashType == SQUASH_CTRL;
+        if (miss_predicted) {
+            DPRINTF(FTBITTAGE || (stream.squashPC == 0x1e0eb6), "miss predicted stream.startAddr=%#lx\n", stream.startPC);
+        }
+        if (miss_predicted && stream.exeBranchInfo.isIndirect) {
+            topMispredIndirect[stream.startPC]++;
+        }
         // if (stream.startPC == ObservingPC) {
         //     debugFlagOn = true;
         // }
@@ -731,6 +756,11 @@ DecoupledBPUWithFTB::tryEnqFetchTarget()
     
 
     // We does let ftq to goes beyond fsq now
+    if (ftq_enq_state.pc > end) {
+        warn("FTQ enq PC %#lx is beyond fsq end %#lx\n",
+         ftq_enq_state.pc, end);
+    }
+    
     assert(ftq_enq_state.pc <= end);
 
     // create a new target entry

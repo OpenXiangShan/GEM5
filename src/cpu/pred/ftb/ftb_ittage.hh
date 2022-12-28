@@ -183,6 +183,10 @@ class FTBITTAGE : public TimedBaseFTBPredictor
 
 public:
 
+    Addr debugPC = 0;
+    Addr debugPC2 = 0;
+    bool debugFlag = false;
+
     void recoverFoldedHist(const bitset& history);
 
     // void checkFoldedHist(const bitset& history);

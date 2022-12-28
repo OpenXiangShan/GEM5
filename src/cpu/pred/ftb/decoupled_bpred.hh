@@ -11,6 +11,7 @@
 #include "cpu/pred/ftb/fetch_target_queue.hh"
 #include "cpu/pred/ftb/ftb.hh"
 #include "cpu/pred/ftb/ftb_tage.hh"
+#include "cpu/pred/ftb/ftb_ittage.hh"
 #include "cpu/pred/ftb/ras.hh"
 #include "cpu/pred/ftb/stream_struct.hh"
 #include "cpu/pred/ftb/timed_base_pred.hh"
@@ -179,6 +180,7 @@ class DecoupledBPUWithFTB : public BPredUnit
     DefaultFTB *uftb{};
     DefaultFTB *ftb{};
     FTBTAGE *tage{};
+    FTBITTAGE *ittage{};
     
     ftb_pred::RAS *ras{};
 
@@ -459,6 +461,8 @@ class DecoupledBPUWithFTB : public BPredUnit
     void addFtqNotValid() {
         dbpFtbStats.ftqNotValid++;
     }
+
+    std::map<Addr, unsigned> topMispredIndirect;
 };
 
 }  // namespace ftb_pred
