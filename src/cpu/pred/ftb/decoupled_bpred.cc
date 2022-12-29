@@ -60,72 +60,69 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
     commitHistory.resize(historyBits, 0);
     squashing = true;
 
-    // registerExitCallback([this]() {
-    //     auto out_handle = simout.create("topMisPredicts.txt", false, true);
-    //     *out_handle->stream() << "startPC" << " " << "control pc" << " " << "count" << std::endl;
-    //     std::vector<std::pair<std::pair<Addr, Addr>, int>> topMisPredPC;
-    //     for (auto &it : topMispredicts) {
-    //         topMisPredPC.push_back(it);
-    //     }
-    //     std::sort(topMisPredPC.begin(), topMisPredPC.end(), [](const std::pair<std::pair<Addr, Addr>, int> &a, const std::pair<std::pair<Addr, Addr>, int> &b) {
-    //         return a.second > b.second;
-    //     });
-    //     for (auto& it : topMisPredPC) {
-    //         *out_handle->stream() << std::hex << it.first.first << " " << it.first.second << " " << std::dec << it.second << std::endl;
-    //     }
-    //     simout.close(out_handle);
-
-    //     out_handle = simout.create("topMisPredictHist.txt", false, true);
-    //     *out_handle->stream() << "use loop but invalid: " << useLoopButInvalid 
-    //                           << " use loop and valid: " << useLoopAndValid 
-    //                           << " not use loop: " << notUseLoop << std::endl;
-    //     *out_handle->stream() << "Hist" << " " << "count" << std::endl;
-    //     std::vector<std::pair<uint64_t, uint64_t>> topMisPredHistVec;
-    //     for (const auto &entry: topMispredHist) {
-    //         topMisPredHistVec.push_back(entry);
-    //     }
-    //     std::sort(topMisPredHistVec.begin(), topMisPredHistVec.end(),
-    //               [](const std::pair<uint64_t, uint64_t> &a,
-    //                  const std::pair<uint64_t, uint64_t> &b) {
-    //                   return a.second > b.second;
-    //               });
-    //     for (const auto &entry: topMisPredHistVec) {
-    //         *out_handle->stream() << std::hex << entry.first << " " << std::dec << entry.second << std::endl;
-    //     }
-
-    //     if (dumpLoopPred) {
-    //         out_handle = simout.create("misPredTripCount.txt", false, true);
-    //         *out_handle->stream() << missCount << std::endl;
-    //         for (const auto &entry : misPredTripCount) {
-    //             *out_handle->stream()
-    //                 << entry.first << " " << entry.second << std::endl;
-    //         }
-
-    //         out_handle = simout.create("loopInfo.txt", false, true);
-    //         for (const auto &entry : storedLoopStreams) {
-    //             bool misPred = entry.second.squashType == SQUASH_CTRL;
-    //             *out_handle->stream()
-    //                 << std::dec << "miss: " << misPred << " " << entry.first << " "
-    //                 << std::hex << entry.second.startPC << ", "
-    //                 << (misPred ? entry.second.exeBranchPC
-    //                             : entry.second.predBranchPC)
-    //                 << "--->"
-    //                 << (misPred ? entry.second.exeTarget : entry.second.predTarget)
-    //                 << std::dec
-    //                 << " useLoopPred: " << entry.second.useLoopPrediction
-    //                 << " tripCount: " << entry.second.tripCount << std::endl;
-    //         }
-    //     }
-
-    //     out_handle = simout.create("targets.txt", false, true);
-    //     for (const auto it : storeTargets) {
-    //         *out_handle->stream() << std::hex << it << std::endl;
-    //     }
-
-    //     simout.close(out_handle);
-    // });
     registerExitCallback([this]() {
-        auto out_handle = simout.create("misPredIndirectStream.txt", false, true);
+        auto out_handle = simout.create("topMisPredicts.txt", false, true);
+        *out_handle->stream() << "startPC" << " " << "control pc" << " " << "count" << std::endl;
+        std::vector<std::pair<std::pair<Addr, Addr>, int>> topMisPredPC;
+        for (auto &it : topMispredicts) {
+            topMisPredPC.push_back(it);
+        }
+        std::sort(topMisPredPC.begin(), topMisPredPC.end(), [](const std::pair<std::pair<Addr, Addr>, int> &a, const std::pair<std::pair<Addr, Addr>, int> &b) {
+            return a.second > b.second;
+        });
+        for (auto& it : topMisPredPC) {
+            *out_handle->stream() << std::hex << it.first.first << " " << it.first.second << " " << std::dec << it.second << std::endl;
+        }
+        simout.close(out_handle);
+
+        out_handle = simout.create("topMisPredictHist.txt", false, true);
+        // *out_handle->stream() << "use loop but invalid: " << useLoopButInvalid 
+        //                       << " use loop and valid: " << useLoopAndValid 
+        //                       << " not use loop: " << notUseLoop << std::endl;
+        *out_handle->stream() << "Hist" << " " << "count" << std::endl;
+        std::vector<std::pair<uint64_t, uint64_t>> topMisPredHistVec;
+        for (const auto &entry: topMispredHist) {
+            topMisPredHistVec.push_back(entry);
+        }
+        std::sort(topMisPredHistVec.begin(), topMisPredHistVec.end(),
+                  [](const std::pair<uint64_t, uint64_t> &a,
+                     const std::pair<uint64_t, uint64_t> &b) {
+                      return a.second > b.second;
+                  });
+        for (const auto &entry: topMisPredHistVec) {
+            *out_handle->stream() << std::hex << entry.first << " " << std::dec << entry.second << std::endl;
+        }
+
+        // if (dumpLoopPred) {
+        //     out_handle = simout.create("misPredTripCount.txt", false, true);
+        //     *out_handle->stream() << missCount << std::endl;
+        //     for (const auto &entry : misPredTripCount) {
+        //         *out_handle->stream()
+        //             << entry.first << " " << entry.second << std::endl;
+        //     }
+
+        //     out_handle = simout.create("loopInfo.txt", false, true);
+        //     for (const auto &entry : storedLoopStreams) {
+        //         bool misPred = entry.second.squashType == SQUASH_CTRL;
+        //         *out_handle->stream()
+        //             << std::dec << "miss: " << misPred << " " << entry.first << " "
+        //             << std::hex << entry.second.startPC << ", "
+        //             << (misPred ? entry.second.exeBranchPC
+        //                         : entry.second.predBranchPC)
+        //             << "--->"
+        //             << (misPred ? entry.second.exeTarget : entry.second.predTarget)
+        //             << std::dec
+        //             << " useLoopPred: " << entry.second.useLoopPrediction
+        //             << " tripCount: " << entry.second.tripCount << std::endl;
+        //     }
+        // }
+
+        // out_handle = simout.create("targets.txt", false, true);
+        // for (const auto it : storeTargets) {
+        //     *out_handle->stream() << std::hex << it << std::endl;
+        // }
+
+        out_handle = simout.create("misPredIndirectStream.txt", false, true);
         std::vector<std::pair<Addr, unsigned>> tempVec;
         for (auto &it : topMispredIndirect) {
             tempVec.push_back(std::make_pair(it.first, it.second));
@@ -138,6 +135,7 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
         for (auto it : tempVec) {
             *out_handle->stream() << std::oct << it.second << " " << std::hex << it.first << std::endl;
         }
+
         simout.close(out_handle);
     });
 }
@@ -628,6 +626,44 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
                 components[i]->update(stream);
             }
         }
+
+        if (stream.squashType == SQUASH_CTRL) {
+            auto find_it = topMispredicts.find(std::make_pair(stream.startPC, stream.exeBranchInfo.pc));
+            if (find_it == topMispredicts.end()) {
+                topMispredicts[std::make_pair(stream.startPC, stream.exeBranchInfo.pc)] = 1;
+            } else {
+                find_it->second++;
+            }
+
+            // if (stream.isMiss /* && stream.exeBranchPC == ObservingPC */) {
+            //     missCount++;
+            // }
+
+            // if (stream.exeBranchPC == ObservingPC) {
+            //     debugFlagOn = true;
+            //     auto misTripCount = misPredTripCount.find(stream.tripCount);
+            //     if (misTripCount == misPredTripCount.end()) {
+            //         misPredTripCount[stream.tripCount] = 1;
+            //     } else {
+            //         misPredTripCount[stream.tripCount]++;
+            //     }
+            //     DPRINTF(DecoupleBP || debugFlagOn, "commit mispredicted stream %lu\n", it->first);
+            // }
+        }
+
+        if (/* stream.startPC == ObservingPC &&  */stream.squashType == SQUASH_CTRL) {
+            auto hist(stream.history);
+            hist.resize(18);
+            uint64_t pattern = hist.to_ulong();
+            auto find_it = topMispredHist.find(pattern);
+            if (find_it == topMispredHist.end()) {
+                topMispredHist[pattern] = 1;
+            } else {
+                find_it->second++;
+            }
+        }
+
+
 
         it = fetchStreamQueue.erase(it);
     }

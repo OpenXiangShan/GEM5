@@ -103,7 +103,7 @@ FTBTAGE::lookupHelper(Addr startAddr,
                       std::vector<int> &main_table_indices,
                       std::vector<bool> &use_alt_preds, std::vector<bitset> &usefulMasks)
 {
-    DPRINTF(FTBTAGE, "lookupHelper startAddr: %#lx\n", startAddr);
+    // DPRINTF(FTBTAGE, "lookupHelper startAddr: %#lx\n", startAddr);
     for (auto &t : main_tables) { t = -1; }
     for (auto &t : main_table_indices) { t = -1; }
 
@@ -150,15 +150,15 @@ FTBTAGE::lookupHelper(Addr startAddr,
             use_alt_preds[b] = true;
             provided[b] = false;
         }
-        DPRINTF(FTBTAGE, "lookup cond %d, provider_counts %d, main_table %d, main_table_index %d, use_alt %d\n",
-                    b, provider_counts, main_tables[b], main_table_indices[b], use_alt_preds[b]);
+        DPRINTF(FTBTAGE, "lookup startAddr %#lx cond %d, provider_counts %d, main_table %d, main_table_index %d, use_alt %d\n",
+                    startAddr, b, provider_counts, main_tables[b], main_table_indices[b], use_alt_preds[b]);
     }
     return provided;
 }
 
 void
 FTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<FullFTBPrediction> &stagePreds) {
-    DPRINTF(FTBTAGE, "putPCHistory startAddr: %#lx\n", stream_start);
+    // DPRINTF(FTBTAGE, "putPCHistory startAddr: %#lx\n", stream_start);
     std::vector<TageEntry> entries;
     entries.resize(numBr);
 
@@ -221,7 +221,7 @@ FTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Full
     meta.preds = preds;
     meta.tagFoldedHist = tagFoldedHist;
     meta.indexFoldedHist = indexFoldedHist;
-    DPRINTF(FTBTAGE, "putPCHistory end\n");
+    // DPRINTF(FTBTAGE, "putPCHistory end\n");
 }
 
 std::shared_ptr<void>
@@ -263,7 +263,7 @@ FTBTAGE::update(const FetchStream &entry)
         // only update branches with both taken/not taken behaviors observed
         need_to_update[i] = !slot.alwaysTaken;
     }
-    DPRINTF(FTBTAGE, "need to update size %d\n", need_to_update.size());
+    // DPRINTF(FTBTAGE, "need to update size %d\n", need_to_update.size());
 
     // get tage predictions from meta
     auto meta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
@@ -284,6 +284,9 @@ FTBTAGE::update(const FetchStream &entry)
             // will not be executed either, thus we don't need to update them
             continue;
         }
+        // DPRINTF(FTBTAGE, "Update cond %d, pc %#lx, predTaken %d, actualTaken %d,"
+        //     " main found %d, main table %d, main table index %d, tag %#lx, main counter %d, main counter now %d,"
+        //     " use alt %d, alt table index %d, alt counter %d, alt counter now  %d, useful mask %#x, ")
 
         auto stat = tageBankStats[b];
         stat->updateStatsWithTagePrediction(preds[b], false);
@@ -428,16 +431,16 @@ FTBTAGE::update(const FetchStream &entry)
             bitset allocateLFSR(numPredictors - (pred.table + 1), mask);
             std::string buf;
             boost::to_string(allocateLFSR, buf);
-            DPRINTF(FTBTAGEUseful, "allocateLFSR %s, size %d\n", buf, allocateLFSR.size());
+            // DPRINTF(FTBTAGEUseful, "allocateLFSR %s, size %d\n", buf, allocateLFSR.size());
             auto flipped_usefulMask = ~pred.usefulMask;
             boost::to_string(flipped_usefulMask, buf);
-            DPRINTF(FTBTAGEUseful, "pred usefulmask %s, size %d\n", buf, pred.usefulMask.size());
+            // DPRINTF(FTBTAGEUseful, "pred usefulmask %s, size %d\n", buf, pred.usefulMask.size());
             bitset masked = allocateLFSR & flipped_usefulMask;
             boost::to_string(masked, buf);
-            DPRINTF(FTBTAGEUseful, "masked %s, size %d\n", buf, masked.size());
+            // DPRINTF(FTBTAGEUseful, "masked %s, size %d\n", buf, masked.size());
             bitset allocate = masked.any() ? masked : flipped_usefulMask;
             boost::to_string(allocate, buf);
-            DPRINTF(FTBTAGEUseful, "allocate %s, size %d\n", buf, allocate.size());
+            // DPRINTF(FTBTAGEUseful, "allocate %s, size %d\n", buf, allocate.size());
             short newCounter = this_cond_actually_taken ? 0 : -1;
 
             bool allocateValid = flipped_usefulMask.any();
@@ -609,14 +612,14 @@ FTBTAGE::recoverHist(const boost::dynamic_bitset<> &history,
 void
 FTBTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * when)
 {
-    DPRINTF(FTBTAGE, "checking folded history when %s\n", when);
+    // DPRINTF(FTBTAGE, "checking folded history when %s\n", when);
     std::string hist_str;
     boost::to_string(hist, hist_str);
-    DPRINTF(FTBTAGE, "history:\t%s\n", hist_str.c_str());
+    // DPRINTF(FTBTAGE, "history:\t%s\n", hist_str.c_str());
     for (int t = 0; t < numPredictors; t++) {
         for (int type = 0; type < 2; type++) {
 
-            DPRINTF(FTBTAGE, "t: %d, type: %d\n", t, type);
+            // DPRINTF(FTBTAGE, "t: %d, type: %d\n", t, type);
             std::string buf2, buf3;
             auto &foldedHist = type ? tagFoldedHist[t] : indexFoldedHist[t];
             foldedHist.check(hist);
