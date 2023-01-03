@@ -1707,15 +1707,12 @@ CPU::diffWithNEMU(const DynInstPtr &inst)
     bool npc_match = false;
 
     bool is_mmio = inst->strictlyOrdered();
+    bool is_nonmmio_skip = inst->difftestNeedSkip();
+    bool need_skip = is_mmio || is_nonmmio_skip; // more condition to be added
 
     if (inst->isStoreConditional()){
         diff.sync.lrscValid = inst->lockedWriteSuccess();
         proxy->uarchstatus_cpy(&diff.sync,DIFFTEST_TO_REF);
-    }
-    if (is_mmio){
-        //ismmio
-        diff.dynamic_config.ignore_illegal_mem_access = true;
-        proxy->update_config(&diff.dynamic_config);
     }
 
     if (diff.will_handle_intr){
@@ -1723,9 +1720,12 @@ CPU::diffWithNEMU(const DynInstPtr &inst)
         diff.nemu_this_pc = diff.nemu_reg[DIFFTEST_THIS_PC];
         diff.will_handle_intr = false;
     }
+
     //difftest step start
-    proxy->exec(1);
-    proxy->regcpy(diff.nemu_reg,REF_TO_DIFFTEST);
+    if (!need_skip) {
+        proxy->exec(1);
+        proxy->regcpy(diff.nemu_reg,REF_TO_DIFFTEST);
+    }
 
     uint64_t next_pc = diff.nemu_reg[DIFFTEST_THIS_PC];
 
@@ -1734,12 +1734,6 @@ CPU::diffWithNEMU(const DynInstPtr &inst)
     diff.nemu_this_pc = next_pc;
     diff.npc = next_pc;
     //difftest step end
-
-    if (is_mmio){
-        //ismmio
-        diff.dynamic_config.ignore_illegal_mem_access = false;
-        proxy->update_config(&diff.dynamic_config);
-    }
 
     auto gem5_pc = inst->pcState().instAddr();
     auto nemu_pc = diff.nemu_commit_inst_pc;
@@ -1763,7 +1757,9 @@ CPU::diffWithNEMU(const DynInstPtr &inst)
     // *reinterpret_cast<uint32_t *>(nemu_inst) =
     //     htole<uint32_t>(referenceRegFile[DIFFTEST_INST_PAYLOAD]);
 
-    if (nemu_pc != gem5_pc) {
+    if (need_skip) {
+        referenceRegFile[DIFFTEST_THIS_PC] += inst->pcState().compressed() ? 2 : 4;
+    } else if (nemu_pc != gem5_pc) {
         // warn("NEMU store addr: %#lx\n", nemu_store_addr);
         DPRINTF(ValueCommit,"Inst [sn:%lli]\n", inst->seqNum);
         DPRINTF(ValueCommit,"Diff at %s, NEMU: %#lx, GEM5: %#lx\n",
@@ -1803,12 +1799,16 @@ CPU::diffWithNEMU(const DynInstPtr &inst)
                     DPRINTF(ValueCommit,
                             "Difference might be caused by box,"
                             " ignore it\n");
-
-                } else if (is_mmio) {
-                    DPRINTF(ValueCommit,
-                            "Difference might be caused by read %s at %#lx,"
-                            " ignore it\n",
-                            "mmio", inst->physEffAddr);
+                } else if (need_skip) {
+                    if (is_mmio) {
+                        DPRINTF(ValueCommit,
+                                "Difference might be caused by read %s at %#lx,"
+                                " ignore it\n",
+                                "mmio", inst->physEffAddr);
+                    } else if (is_nonmmio_skip) {
+                        DPRINTF(ValueCommit,
+                                "Difference might be caused by hpm csr read / hardware debug, ignore it\n");
+                    }
                     referenceRegFile[dest_tag] = gem5_val;
                     proxy->regcpy(referenceRegFile, DUT_TO_REF);
                 } else {
