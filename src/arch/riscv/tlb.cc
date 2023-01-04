@@ -71,14 +71,24 @@ buildKey(Addr vpn, uint16_t asid)
 }
 
 TLB::TLB(const Params &p) :
-    BaseTLB(p), size(p.size), tlb(size),
+    BaseTLB(p), size(p.size),tlb(size),
     lruSeq(0), stats(this), pma(p.pma_checker),
-    pmp(p.pmp)
+    pmp(p.pmp),nextline_size(p.size),nextline_tlb(nextline_size)
 {
+    // printf("tlb11\n");
+    DPRINTF(TLBVerbose, "tlb11\n");
     for (size_t x = 0; x < size; x++) {
         tlb[x].trieHandle = NULL;
         freeList.push_back(&tlb[x]);
+        //  printf("for 11\n");
+        nextline_tlb[x].trieHandle = NULL;
+        // printf("for 22\n");
+        // nextline_freeList.push_back(&tlb[x]);
+        nextline_freeList.push_back(&nextline_tlb[x]);
+        // printf("x %ld\n",x);
     }
+    // printf("tlb22\n");
+    DPRINTF(TLBVerbose, "tlb11\n");
 
     walker = p.walker;
     walker->setTLB(this);
@@ -105,10 +115,26 @@ TLB::evictLRU()
     remove(lru);
 }
 
+void
+TLB::nextline_evictLRU()
+{
+    size_t lru = 0;
+    for (size_t i = 1; i < size; i++) {
+        if (nextline_tlb[i].lruSeq < nextline_tlb[lru].lruSeq) {
+            lru = i;
+        }
+    }
+    nextline_remove(lru);
+}
+
 TlbEntry *
 TLB::lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden)
 {
     TlbEntry *entry = trie.lookup(buildKey(vpn, asid));
+ /*   TlbEntry *entry1 = trie.lookup(buildKey(0x80005000, asid));
+    TlbEntry *entry2 = trie.lookup(buildKey(0x80004000, asid));
+    TlbEntry *entry3 = trie.lookup(buildKey(0x80003000, asid));
+    TlbEntry *entry4 = trie.lookup(buildKey(0x80002000, asid));*/
 
     if (!hidden) {
         if (entry)
@@ -134,6 +160,58 @@ TLB::lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden)
 
         DPRINTF(TLBVerbose, "lookup(vpn=%#x, asid=%#x): %s ppn %#x\n",
                 vpn, asid, entry ? "hit" : "miss", entry ? entry->paddr : 0);
+        /* DPRINTF(TLBVerbose, "lookup(vpn=0x80005000, asid=%#x): %s ppn
+         %#x\n", asid, entry1 ? "hit" : "miss", entry1 ? entry1->paddr : 0);
+         DPRINTF(TLBVerbose, "lookup(vpn=0x80004000, asid=%#x): %s ppn %#x\n",
+                  asid, entry2 ? "hit" : "miss", entry2 ? entry2->paddr : 0);
+         DPRINTF(TLBVerbose, "lookup(vpn=0x80003000, asid=%#x): %s ppn %#x\n",
+                  asid, entry3 ? "hit" : "miss", entry3 ? entry3->paddr : 0);
+         DPRINTF(TLBVerbose, "lookup(vpn=0x80002000, asid=%#x): %s ppn %#x\n",
+                  asid, entry4 ? "hit" : "miss", entry4 ? entry4->paddr : 0);*/
+    }
+
+    return entry;
+}
+
+TlbEntry *
+TLB::lookupPre(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden)
+{
+    TlbEntry *entry = nextline.lookup(buildKey(vpn, asid));
+    /*   TlbEntry *entry1 = nextline.lookup(buildKey(0x80005000, asid));
+       TlbEntry *entry2 = nextline.lookup(buildKey(0x80004000, asid));
+       TlbEntry *entry3 = nextline.lookup(buildKey(0x80003000, asid));
+       TlbEntry *entry4 = nextline.lookup(buildKey(0x80002000, asid));*/
+    if (!hidden) {
+        if (entry)
+            entry->lruSeq = nextSeq();
+        if (mode == BaseMMU::Write)
+            stats.writeprefetchAccesses++;
+        else
+            stats.readprefetchAccesses++;
+        if (!entry) {
+            if (mode == BaseMMU::Write) {
+                stats.writeprefetchMisses++;
+            } else {
+                stats.readprefetchMisses++;
+            }
+        } else {
+            if (mode == BaseMMU::Write) {
+                stats.writeprefetchHits++;
+            } else {
+                stats.readprefetchHits++;
+            }
+        }
+        DPRINTF(TLBVerbose, "lookup Pre (vpn=%#x, asid=%#x): %s ppn %#x\n",
+                vpn, asid, entry ? "hit" : "miss", entry ? entry->paddr : 0);
+        /*  DPRINTF(TLBVerbose, "lookup Pre (vpn=0x80005000, asid=%#x): %s
+           ppn %#x\n", asid, entry1 ? "hit" : "miss", entry1 ? entry1->paddr:
+           0); DPRINTF(TLBVerbose, "lookup Pre (vpn=0x80004000, asid=%#x): %s
+           ppn %#x\n", asid, entry2 ? "hit" : "miss", entry2 ? entry2->paddr:
+           0); DPRINTF(TLBVerbose, "lookup Pre (vpn=0x80003000, asid=%#x): %s
+           ppn %#x\n", asid, entry3 ? "hit" : "miss", entry3 ? entry3->paddr:
+           0); DPRINTF(TLBVerbose, "lookup Pre (vpn=0x80002000, asid=%#x): %s
+           ppn %#x\n", asid, entry4 ? "hit" : "miss", entry4 ? entry4->paddr:
+           0);*/
     }
 
     return entry;
@@ -166,7 +244,49 @@ TLB::insert(Addr vpn, const TlbEntry &entry)
     newEntry->vaddr = vpn;
     newEntry->trieHandle =
     trie.insert(key, TlbEntryTrie::MaxBits - entry.logBytes, newEntry);
+    DPRINTF(TLB, "trie insert key %#x logbytes %#x paddr %#x\n", key,
+            entry.logBytes, newEntry->paddr);
     return newEntry;
+}
+
+TlbEntry *
+TLB::nextline_insert(Addr vpn, const TlbEntry &entry)
+{
+    DPRINTF(TLB,
+            "nextline insert(vpn=%#x, vpn2 %#x asid=%#x): ppn=%#x pte=%#x "
+            "size=%#x\n",
+            vpn, entry.vaddr, entry.asid, entry.paddr, entry.pte,
+            entry.size());
+
+    TlbEntry *newEntry = lookupPre(vpn, entry.asid, BaseMMU::Read, true);
+    if (newEntry) {
+        // update PTE flags (maybe we set the dirty/writable flag)
+        newEntry->pte = entry.pte;
+        assert(newEntry->vaddr == vpn);
+        return newEntry;
+    }
+    // TlbEntry *newEntry;
+
+    if (nextline_freeList.empty())
+        nextline_evictLRU();
+
+    newEntry = nextline_freeList.front();
+    nextline_freeList.pop_front();
+
+    Addr key = buildKey(vpn, entry.asid);
+
+    *newEntry = entry;
+    newEntry->lruSeq = nextSeq();
+    newEntry->vaddr = vpn;
+    //  TlbEntry *aaa = NULL;
+    //  *aaa = entry;
+    newEntry->trieHandle =
+        nextline.insert(key, TlbEntryTrie::MaxBits - entry.logBytes, newEntry);
+
+    DPRINTF(TLB, " nextline trie insert key %#x logbytes %#x \n", key,
+            entry.logBytes);
+    // return newEntry;
+    return NULL;
 }
 
 void
@@ -174,22 +294,35 @@ TLB::demapPage(Addr vpn, uint64_t asid)
 {
     asid &= 0xFFFF;
 
-    if (vpn == 0 && asid == 0)
+    if (vpn == 0 && asid == 0) {
         flushAll();
+    }
+
     else {
         DPRINTF(TLB, "flush(vpn=%#x, asid=%#x)\n", vpn, asid);
+        DPRINTF(TLB, "pre flush(vpn=%#x, asid=%#x)\n", vpn, asid);
         if (vpn != 0 && asid != 0) {
             TlbEntry *newEntry = lookup(vpn, asid, BaseMMU::Read, true);
+            TlbEntry *newEntry_nextline =
+                lookupPre(vpn, asid, BaseMMU::Read, true);
             if (newEntry)
                 remove(newEntry - tlb.data());
-        }
-        else {
+            if (newEntry_nextline)
+                nextline_remove(newEntry_nextline - nextline_tlb.data());
+        } else {
             for (size_t i = 0; i < size; i++) {
                 if (tlb[i].trieHandle) {
                     Addr mask = ~(tlb[i].size() - 1);
                     if ((vpn == 0 || (vpn & mask) == tlb[i].vaddr) &&
                         (asid == 0 || tlb[i].asid == asid))
                         remove(i);
+                }
+                if (nextline_tlb[i].trieHandle) {
+                    Addr nextline_mask = ~(nextline_tlb[i].size() - 1);
+                    if ((vpn == 0 ||
+                         (vpn & nextline_mask) == nextline_tlb[i].vaddr) &&
+                        (asid == 0 || nextline_tlb[i].asid == asid))
+                        nextline_remove(i);
                 }
             }
         }
@@ -203,6 +336,8 @@ TLB::flushAll()
     for (size_t i = 0; i < size; i++) {
         if (tlb[i].trieHandle)
             remove(i);
+        if (nextline_tlb[i].trieHandle)
+            nextline_remove(i);
     }
 }
 
@@ -217,6 +352,21 @@ TLB::remove(size_t idx)
     trie.remove(tlb[idx].trieHandle);
     tlb[idx].trieHandle = NULL;
     freeList.push_back(&tlb[idx]);
+}
+
+void
+TLB::nextline_remove(size_t idx)
+{
+    DPRINTF(TLB,
+            "nextline_remove(vpn=%#x, asid=%#x): ppn=%#x pte=%#x size=%#x\n",
+            nextline_tlb[idx].vaddr, nextline_tlb[idx].asid,
+            nextline_tlb[idx].paddr, nextline_tlb[idx].pte,
+            nextline_tlb[idx].size());
+
+    assert(nextline_tlb[idx].trieHandle);
+    nextline.remove(nextline_tlb[idx].trieHandle);
+    nextline_tlb[idx].trieHandle = NULL;
+    nextline_freeList.push_back(&nextline_tlb[idx]);
 }
 
 Fault
@@ -287,14 +437,17 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
 
     TlbEntry *e = lookup(vaddr, satp.asid, mode, false);
     if (!e) {
-        Fault fault = walker->start(tc, translation, req, mode);
-        if (translation != nullptr || fault != NoFault) {
-            // This gets ignored in atomic mode.
-            delayed = true;
-            return fault;
+        e = lookupPre(vaddr, satp.asid, mode, false);
+        if (!e) {
+            Fault fault = walker->start(tc, translation, req, mode);
+            if (translation != nullptr || fault != NoFault) {
+                // This gets ignored in atomic mode.
+                delayed = true;
+                return fault;
+            }
+            e = lookup(vaddr, satp.asid, mode, false);
+            assert(e != nullptr);
         }
-        e = lookup(vaddr, satp.asid, mode, false);
-        assert(e != nullptr);
     }
 
     STATUS status = tc->readMiscReg(MISCREG_STATUS);
@@ -518,20 +671,33 @@ TLB::unserialize(CheckpointIn &cp)
 }
 
 TLB::TlbStats::TlbStats(statistics::Group *parent)
-  : statistics::Group(parent),
-    ADD_STAT(readHits, statistics::units::Count::get(), "read hits"),
-    ADD_STAT(readMisses, statistics::units::Count::get(), "read misses"),
-    ADD_STAT(readAccesses, statistics::units::Count::get(), "read accesses"),
-    ADD_STAT(writeHits, statistics::units::Count::get(), "write hits"),
-    ADD_STAT(writeMisses, statistics::units::Count::get(), "write misses"),
-    ADD_STAT(writeAccesses, statistics::units::Count::get(), "write accesses"),
-    ADD_STAT(hits, statistics::units::Count::get(),
-             "Total TLB (read and write) hits", readHits + writeHits),
-    ADD_STAT(misses, statistics::units::Count::get(),
-             "Total TLB (read and write) misses", readMisses + writeMisses),
-    ADD_STAT(accesses, statistics::units::Count::get(),
-             "Total TLB (read and write) accesses",
-             readAccesses + writeAccesses)
+    : statistics::Group(parent),
+      ADD_STAT(readHits, statistics::units::Count::get(), "read hits"),
+      ADD_STAT(readMisses, statistics::units::Count::get(), "read misses"),
+      ADD_STAT(readAccesses, statistics::units::Count::get(), "read accesses"),
+      ADD_STAT(writeHits, statistics::units::Count::get(), "write hits"),
+      ADD_STAT(writeMisses, statistics::units::Count::get(), "write misses"),
+      ADD_STAT(writeAccesses, statistics::units::Count::get(),
+               "write accesses"),
+      ADD_STAT(readprefetchHits, statistics::units::Count::get(),
+               "read prefetch Hits"),
+      ADD_STAT(writeprefetchHits, statistics::units::Count::get(),
+               "write prefetch Hits"),
+      ADD_STAT(readprefetchAccesses, statistics::units::Count::get(),
+               "read prefetch Accesses"),
+      ADD_STAT(writeprefetchAccesses, statistics::units::Count::get(),
+               "write prefetch Accesses"),
+      ADD_STAT(readprefetchMisses, statistics::units::Count::get(),
+               "read prefetch Misses"),
+      ADD_STAT(writeprefetchMisses, statistics::units::Count::get(),
+               "write prefetch Misses"),
+      ADD_STAT(hits, statistics::units::Count::get(),
+               "Total TLB (read and write) hits", readHits + writeHits),
+      ADD_STAT(misses, statistics::units::Count::get(),
+               "Total TLB (read and write) misses", readMisses + writeMisses),
+      ADD_STAT(accesses, statistics::units::Count::get(),
+               "Total TLB (read and write) accesses",
+               readAccesses + writeAccesses)
 {
 }
 

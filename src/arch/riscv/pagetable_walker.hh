@@ -138,6 +138,18 @@ namespace RiscvISA
             bool retrying;
             bool started;
             bool squashed;
+            bool next_line;
+            Addr nextline_Read;
+            int nextline_level;
+            TlbEntry nextline_entry;
+            Addr nextline_vaddr;
+
+            Addr nextline_level_mask;
+            Addr nextline_shift;
+            Addr tlb_vaddr;
+            Addr tlb_ppn;
+            Addr tlb_size_pte;
+
           public:
             WalkerState(Walker * _walker, BaseMMU::Translation *_translation,
                         const RequestPtr &_req, bool _isFunctional = false) :

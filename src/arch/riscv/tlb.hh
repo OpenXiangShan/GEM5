@@ -79,6 +79,12 @@ class TLB : public BaseTLB
         statistics::Scalar writeHits;
         statistics::Scalar writeMisses;
         statistics::Scalar writeAccesses;
+        statistics::Scalar readprefetchHits;
+        statistics::Scalar writeprefetchHits;
+        statistics::Scalar readprefetchAccesses;
+        statistics::Scalar writeprefetchAccesses;
+        statistics::Scalar readprefetchMisses;
+        statistics::Scalar writeprefetchMisses;
 
         statistics::Formula hits;
         statistics::Formula misses;
@@ -98,6 +104,7 @@ class TLB : public BaseTLB
     void takeOverFrom(BaseTLB *old) override {}
 
     TlbEntry *insert(Addr vpn, const TlbEntry &entry);
+    TlbEntry *nextline_insert(Addr vpn, const TlbEntry &entry);
     void flushAll() override;
     void demapPage(Addr vaddr, uint64_t asn) override;
 
@@ -139,9 +146,13 @@ class TLB : public BaseTLB
     uint64_t nextSeq() { return ++lruSeq; }
 
     TlbEntry *lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden);
+    TlbEntry *lookupPre(Addr vpn, uint16_t asid, BaseMMU::Mode mode,
+                        bool hidden);
 
     void evictLRU();
+    void nextline_evictLRU();
     void remove(size_t idx);
+    void nextline_remove(size_t idx);
 
     Fault translate(const RequestPtr &req, ThreadContext *tc,
                     BaseMMU::Translation *translation, BaseMMU::Mode mode,
@@ -149,6 +160,12 @@ class TLB : public BaseTLB
     Fault doTranslate(const RequestPtr &req, ThreadContext *tc,
                       BaseMMU::Translation *translation, BaseMMU::Mode mode,
                       bool &delayed);
+
+  protected:
+    size_t nextline_size;
+    std::vector<TlbEntry> nextline_tlb;  // our TLB
+    TlbEntryTrie nextline;               // for next line
+    EntryList nextline_freeList;         // free entries
 };
 
 } // namespace RiscvISA
