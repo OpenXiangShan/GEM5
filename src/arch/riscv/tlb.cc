@@ -280,13 +280,17 @@ TLB::nextline_insert(Addr vpn, const TlbEntry &entry)
     newEntry->vaddr = vpn;
     //  TlbEntry *aaa = NULL;
     //  *aaa = entry;
+    if (entry.paddr == 0) {
+        DPRINTF(TLB, " nextline pre num is outside vaddr %#x paddr %#x \n",
+                entry.vaddr, entry.paddr);
+    }
     newEntry->trieHandle =
         nextline.insert(key, TlbEntryTrie::MaxBits - entry.logBytes, newEntry);
 
     DPRINTF(TLB, " nextline trie insert key %#x logbytes %#x \n", key,
             entry.logBytes);
-    // return newEntry;
-    return NULL;
+     return newEntry;
+    //return NULL;
 }
 
 void
@@ -439,7 +443,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
     if (!e) {
         e = lookupPre(vaddr, satp.asid, mode, false);
         if (!e) {
-            Fault fault = walker->start(tc, translation, req, mode);
+            Fault fault = walker->start(tc, translation, req, mode,false);
             if (translation != nullptr || fault != NoFault) {
                 // This gets ignored in atomic mode.
                 delayed = true;

@@ -206,7 +206,7 @@ namespace RiscvISA
       public:
         // Kick off the state machine.
         Fault start(ThreadContext * _tc, BaseMMU::Translation *translation,
-                const RequestPtr &req, BaseMMU::Mode mode);
+                const RequestPtr &req, BaseMMU::Mode mode,bool pre=false);
 
         std::pair<bool, Fault> tryCoalesce(ThreadContext *_tc,
                                            BaseMMU::Translation *translation,
@@ -248,6 +248,7 @@ namespace RiscvISA
         bool recvTimingResp(PacketPtr pkt);
         void recvReqRetry();
         bool sendTiming(WalkerState * sendingState, PacketPtr pkt);
+        bool pre_ptw;
 
       public:
 

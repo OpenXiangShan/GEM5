@@ -89,13 +89,14 @@ Walker::tryCoalesce(ThreadContext *_tc, BaseMMU::Translation *translation,
 
 Fault
 Walker::start(ThreadContext * _tc, BaseMMU::Translation *_translation,
-              const RequestPtr &_req, BaseMMU::Mode _mode)
+              const RequestPtr &_req, BaseMMU::Mode _mode,bool pre)
 {
     // TODO: in timing mode, instead of blocking when there are other
     // outstanding requests, see if this request can be coalesced with
     // another one (i.e. either coalesce or start walk)
     DPRINTF(PageTableWalker, "Starting page table walk for %#lx\n",
             _req->getVaddr());
+    pre_ptw = pre;
     if (currStates.size()) {
         auto [coalesced, fault] = tryCoalesce(_tc, _translation, _req, _mode);
         if (!coalesced) {
@@ -630,14 +631,22 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                 if (!doWrite) {
                     // nextRead = nextline_Read + (0x1<<);
                     nextline_vaddr =
-                        tlb_vaddr + (0x1 << (nextline_level * 9 + 12));
+                        entry.vaddr + (0x1 << (nextline_level * 9 + 12));
                     Addr read_num =
-                        (nextline_vaddr >> (nextline_level * 9 + 12)) & 0xfff;
+                        (nextline_vaddr >> (nextline_level * 9 + 12)) & 0x1ff;
                     Addr nextline_idx;
                     nextline_idx = (nextline_vaddr >> nextline_shift) &
                                    nextline_level_mask;
                     nextRead =
                         (tlb_ppn << PageShift) + (nextline_idx * tlb_size_pte);
+
+                    DPRINTF(PageTableWalker,
+                            "nextline basis is vaddr %#x pre vaddr is %#x "
+                            "read_num is %#x\n",
+                            entry.vaddr, nextline_vaddr, read_num);
+                    DPRINTF(PageTableWalker,
+                            "nextline tlb_vaddr %#x entry.vaddr is %#x \n",
+                            tlb_vaddr, entry.vaddr);
 
                     if (read_num != 0) {
                         next_line = true;
@@ -654,12 +663,20 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                         oldRead = nullptr;
                         read = new Packet(request, MemCmd::ReadReq);
                         read->allocate();
+
+                        DPRINTF(PageTableWalker,
+                                "nextline nextline_vaddr %#x "
+                                "nextline_entry.vaddr is %#x\n",
+                                nextline_vaddr, nextline_entry.vaddr);
                         DPRINTF(PageTableWalker,
                                 "nextline level %d pte from %#x vaddr %#x "
                                 "nextline_vaddr %#x\n",
                                 nextline_level, nextRead, entry.vaddr,
                                 nextline_vaddr);
                         return fault;
+                    }
+                    else{
+                        DPRINTF(PageTableWalker,"no pre\n");
                     }
                 }
             } else {
