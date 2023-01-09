@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "cpu/pred/bpred_unit.hh"
+#include "cpu/pred/general_arch_db.hh"
 #include "cpu/pred/ftb/fetch_target_queue.hh"
 #include "cpu/pred/ftb/ftb.hh"
 #include "cpu/pred/ftb/ftb_tage.hh"
@@ -183,6 +184,9 @@ class DecoupledBPUWithFTB : public BPredUnit
     FTBITTAGE *ittage{};
     
     ftb_pred::RAS *ras{};
+
+    DataBase bpdb;
+    TraceManager *bptrace;
 
     std::vector<TimedBaseFTBPredictor*> components{};
     std::vector<FullFTBPrediction> predsOfEachStage{};

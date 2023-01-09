@@ -32,6 +32,19 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
       historyManager(p.numBr),
       dbpFtbStats(this, p.numStages, p.fsq_size)
 {
+    bpdb.init_db();
+    std::vector<std::pair<std::string, DataType>> fields_vec = {
+        std::make_pair("startPC", UINT64),
+        std::make_pair("controlPC", UINT64),
+        std::make_pair("controlType", UINT64),
+        std::make_pair("taken", UINT64),
+        std::make_pair("mispred", UINT64),
+        std::make_pair("fallThruPC", UINT64),
+        std::make_pair("source", UINT64)
+    };
+    bptrace = bpdb.addAndGetTrace("BPTRACE", fields_vec);
+    bptrace->init_table();
+
     bpType = DecoupledFTBType;
     numStages = 3;
     // TODO: better impl (use vector to assign in python)
@@ -44,6 +57,8 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
     numComponents = components.size();
     for (int i = 0; i < numComponents; i++) {
         components[i]->setComponentIdx(i);
+        components[i]->setDB(&bpdb);
+        components[i]->setTrace();
     }
 
     predsOfEachStage.resize(numStages);
@@ -137,6 +152,8 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
         }
 
         simout.close(out_handle);
+
+        bpdb.save_db("bp.db");
     });
 }
 
@@ -663,7 +680,7 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
             }
         }
 
-
+        bptrace->write_record(BpTrace(stream));
 
         it = fetchStreamQueue.erase(it);
     }

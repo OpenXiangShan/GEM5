@@ -53,6 +53,7 @@ class FTBTAGE : public TimedBaseFTBPredictor
         public:
             bool mainFound;
             short mainCounter;
+            bool mainUseful;
             short altCounter;
             unsigned table;
             Addr index;
@@ -61,12 +62,12 @@ class FTBTAGE : public TimedBaseFTBPredictor
             bitset usefulMask;
             bool taken;
 
-            TagePrediction() : mainFound(false), mainCounter(0), altCounter(0),
+            TagePrediction() : mainFound(false), mainCounter(0), mainUseful(false), altCounter(0),
                                 table(0), index(0), tag(0), useAlt(false), taken(false) {}
 
-            TagePrediction(bool mainFound, short mainCounter, short altCounter, unsigned table,
+            TagePrediction(bool mainFound, short mainCounter, bool mainUseful, short altCounter, unsigned table,
                             Addr index, Addr tag, bool useAlt, bitset usefulMask, bool taken) :
-                            mainFound(mainFound), mainCounter(mainCounter), altCounter(altCounter),
+                            mainFound(mainFound), mainCounter(mainCounter), mainUseful(mainUseful), altCounter(altCounter),
                             table(table), index(index), tag(tag), useAlt(useAlt), usefulMask(usefulMask),
                             taken(taken) {}
 
@@ -94,6 +95,8 @@ class FTBTAGE : public TimedBaseFTBPredictor
     void update(const FetchStream &entry) override;
 
     unsigned getDelay() override { return 1; }
+
+    void setTrace() override;
 
     // check folded hists after speculative update and recover
     void checkFoldedHist(const bitset &history, const char *when);
@@ -231,6 +234,8 @@ class FTBTAGE : public TimedBaseFTBPredictor
     } ;
     
     TageBankStats **tageBankStats;
+
+    TraceManager *tageMissTrace;
 
 public:
 
