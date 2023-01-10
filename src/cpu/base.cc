@@ -954,13 +954,23 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                                 diffInfo.getSrcReg(src));
                         // threadContexts[curThread]->getReg(src));
                     }
+                    bool skipCSR = false;
+                    for (auto iter : skipCSRs) {
+                        if ((machInst & 0xfff00073) == iter) {
+                            skipCSR = true;
+                            DPRINTF(Diff, "This is an csr instruction, skip!\n");
+                            diffAllStates->referenceRegFile[dest_tag] = gem5_val;
+                            diffAllStates->proxy->regcpy(diffAllStates->referenceRegFile, DUT_TO_REF);
+                            break;
+                        }
+                    }
                     DPRINTF(Diff, "Inst src count: %u, dest count: %u\n",
                             diffInfo.inst->numSrcRegs(),
                             diffInfo.inst->numDestRegs());
                     warn("Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
                     warn("Diff at %s Ref value: %#lx, GEM5 value: %#lx\n",
                          reg_name[dest_tag], nemu_val, gem5_val);
-                    if (!diff_at)
+                    if (!diff_at && !skipCSR)
                         diff_at = ValueDiff;
                 }
             }

@@ -25,6 +25,11 @@ const char *reg_name[DIFFTEST_NR_REG] = {
     "mip",    "mie",   "mscratch", "sscratch", "mideleg", "medeleg",
     "mtval",  "stval", "mtvec",    "stvec",    "mode"};
 
+const std::vector<uint64_t> skipCSRs = {
+  0xb0200073,
+  0xb0000073
+};
+
 NemuProxy::NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff)
 {
     void *handle = dlmopen(LM_ID_NEWLM, ref_so, RTLD_LAZY | RTLD_DEEPBIND);

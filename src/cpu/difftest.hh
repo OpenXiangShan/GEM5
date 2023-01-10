@@ -2,6 +2,7 @@
 #define __COMMON_H__
 
 #include <stdint.h>
+#include <vector>
 
 #include <cassert>
 #include <cstring>
@@ -142,6 +143,8 @@ enum DiffAt
     InstDiff,
     ValueDiff,
 };
+
+extern const std::vector<uint64_t> skipCSRs;
 
 extern uint8_t *pmemStart;
 extern uint64_t pmemSize;
