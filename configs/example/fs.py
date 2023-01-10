@@ -210,6 +210,11 @@ def build_test_system(np):
                         args.indirect_bp_type)
                     test_sys.cpu[i].branchPred.indirectBranchPred = \
                         IndirectBPClass()
+                if args.enable_bp_db:
+                    print("enabling bpdb")
+                    bpClass = ObjectList.bp_list.get('DecoupledBPUWithFTB')
+                    assert(isinstance(test_sys.cpu[i].branchPred, bpClass))
+                    test_sys.cpu[i].branchPred = bpClass(enableBPDB=True)
             test_sys.cpu[i].createThreads()
             print("Create threads for test sys cpu ({})".format(type(test_sys.cpu[i])))
 

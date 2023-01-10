@@ -185,6 +185,7 @@ class DecoupledBPUWithFTB : public BPredUnit
     
     ftb_pred::RAS *ras{};
 
+    bool enableDB;
     DataBase bpdb;
     TraceManager *bptrace;
 

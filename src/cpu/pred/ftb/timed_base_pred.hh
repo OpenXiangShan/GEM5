@@ -47,6 +47,7 @@ class TimedBaseFTBPredictor: public SimObject
     void setComponentIdx(int idx) { componentIdx = idx; }
 
 
+    bool enableDB {false};
     void setDB(DataBase *db) {
         _db = db;
     }

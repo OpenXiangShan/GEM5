@@ -93,30 +93,32 @@ FTBTAGE::~FTBTAGE()
 void
 FTBTAGE::setTrace()
 {
-    std::vector<std::pair<std::string, DataType>> fields_vec = {
-        std::make_pair("startPC", UINT64),
-        std::make_pair("branchPC", UINT64),
-        std::make_pair("lgcBank", UINT64),
-        std::make_pair("phyBank", UINT64),
-        std::make_pair("mainFound", UINT64),
-        std::make_pair("mainCounter", UINT64),
-        std::make_pair("mainUseful", UINT64),
-        std::make_pair("altCounter", UINT64),
-        std::make_pair("mainTable", UINT64),
-        std::make_pair("mainIndex", UINT64),
-        std::make_pair("altIndex", UINT64),
-        std::make_pair("tag", UINT64),
-        std::make_pair("useAlt", UINT64),
-        std::make_pair("predTaken", UINT64),
-        std::make_pair("actualTaken", UINT64),
-        std::make_pair("allocSuccess", UINT64),
-        std::make_pair("allocFailure", UINT64),
-        std::make_pair("predUseSC", UINT64),
-        std::make_pair("predSCDisagree", UINT64),
-        std::make_pair("predSCCorrect", UINT64)
-    };
-    tageMissTrace = _db->addAndGetTrace("TAGEMISSTRACE", fields_vec);
-    tageMissTrace->init_table();
+    if (enableDB) {
+        std::vector<std::pair<std::string, DataType>> fields_vec = {
+            std::make_pair("startPC", UINT64),
+            std::make_pair("branchPC", UINT64),
+            std::make_pair("lgcBank", UINT64),
+            std::make_pair("phyBank", UINT64),
+            std::make_pair("mainFound", UINT64),
+            std::make_pair("mainCounter", UINT64),
+            std::make_pair("mainUseful", UINT64),
+            std::make_pair("altCounter", UINT64),
+            std::make_pair("mainTable", UINT64),
+            std::make_pair("mainIndex", UINT64),
+            std::make_pair("altIndex", UINT64),
+            std::make_pair("tag", UINT64),
+            std::make_pair("useAlt", UINT64),
+            std::make_pair("predTaken", UINT64),
+            std::make_pair("actualTaken", UINT64),
+            std::make_pair("allocSuccess", UINT64),
+            std::make_pair("allocFailure", UINT64),
+            std::make_pair("predUseSC", UINT64),
+            std::make_pair("predSCDisagree", UINT64),
+            std::make_pair("predSCCorrect", UINT64)
+        };
+        tageMissTrace = _db->addAndGetTrace("TAGEMISSTRACE", fields_vec);
+        tageMissTrace->init_table();
+    }
 }
 
 void
@@ -496,14 +498,15 @@ FTBTAGE::update(const FetchStream &entry)
                 stat->updateAllocFailure++;
             }
         }
-
-        TageMissTrace t;
-        t.set(startAddr, ftb_entry.slots[b].pc, b, phyBrIdx, mainFound, pred.mainCounter,
-            pred.mainUseful, pred.altCounter, pred.table, pred.index, getBaseTableIndex(startAddr),
-            pred.tag, pred.useAlt, pred.taken, this_cond_actually_taken, allocSuccess, allocFailure,
-            scMeta.scPreds[b].scUsed, scMeta.scPreds[b].scPred != scMeta.scPreds[b].tageTaken,
-            scMeta.scPreds[b].scPred == this_cond_actually_taken);
-        tageMissTrace->write_record(t);
+        if (enableDB) {
+            TageMissTrace t;
+            t.set(startAddr, ftb_entry.slots[b].pc, b, phyBrIdx, mainFound, pred.mainCounter,
+                pred.mainUseful, pred.altCounter, pred.table, pred.index, getBaseTableIndex(startAddr),
+                pred.tag, pred.useAlt, pred.taken, this_cond_actually_taken, allocSuccess, allocFailure,
+                scMeta.scPreds[b].scUsed, scMeta.scPreds[b].scPred != scMeta.scPreds[b].tageTaken,
+                scMeta.scPreds[b].scPred == this_cond_actually_taken);
+            tageMissTrace->write_record(t);
+        }
     }
 
     // update sc

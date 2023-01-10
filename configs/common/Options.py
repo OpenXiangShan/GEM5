@@ -231,6 +231,8 @@ def addCommonOptions(parser):
     parser.add_argument("--indirect-bp-type", default=None,
                         choices=ObjectList.indirect_bp_list.get_names(),
                         help="type of indirect branch predictor to run with")
+    parser.add_argument("--enable-bp-db", default=None, action="store_true",
+                        help="enable bp database")
 
     parser.add_argument("--list-rp-types",
                         action=ListRP, nargs=0,
