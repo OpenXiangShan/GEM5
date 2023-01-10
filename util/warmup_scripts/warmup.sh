@@ -2,6 +2,7 @@
 
 set -x
 export trace_nemu=/nfs-nvme/home/zhouyaoyang/projects/func-warmup/trace_nemu
+export future_trace_nemu=/nfs-nvme/home/zhouyaoyang/projects/func-warmup/future_trace_nemu
 export rcpt_nemu=/nfs-nvme/home/zhouyaoyang/projects/func-warmup/rcpt_gen_nemu
 export gem5_home=$n/projects/xs-gem5
 export gem5=$gem5_home/build/RISCV/gem5.opt
@@ -11,7 +12,8 @@ export raw_cpt='rcpt.bin'
 export log_file='log.txt'
 export desc_dir=$n/projects/BatchTaskTemplate/resources/simpoint_cpt_desc
 
-export trace_gem5=/data/zhouyaoyang/build_cache/ff-reshape-build/RISCV/gem5.opt
+export trace_gem5=/nfs-nvme/home/zhouyaoyang/projects/func-warmup/trace_gem5
+export trace_filter=/nfs-nvme/home/zhouyaoyang/projects/xs-gem5/util/warmup_scripts/filter_lines.py
 export dumper=/nfs-nvme/home/zhouyaoyang/projects/func-warmup/tl-dumper-1t
 export REPLAYER=/nfs-nvme/home/zhouyaoyang/projects/sram-replayer/sram-replayer/replayer
 export replay_gen=/nfs-nvme/home/zhouyaoyang/projects/func-warmup/replayer.sh
@@ -23,14 +25,15 @@ export finding_sat_point=0
 # export workload_list='/simpoints06int_cover0.60_top4.lst.0'
 export exp_id=exp5
 
-export config_tag='90M'
-export workload_list=$desc_dir/spec06_rv64gc_o2_50m__cover0.50_top1-gen-naive-func-90M-5M-5M.lst
+export workload_list=/nfs-nvme/home/zhouyaoyang/projects/gem5_data_proc/results/ada-warmup.lst
+# export config_tag='90M'
+# export workload_list=$desc_dir/spec06_rv64gc_o2_50m__cover0.50_top1-gen-naive-func-90M-5M-5M.lst
 # export workload_list=$desc_dir/spec06_rv64gc_o2_50m__cover0.50_top1-gen-dw-len-find-best-${config_tag}.lst  #single conf
 # export workload_list=$desc_dir/spec06_rv64gc_o2_50m__cover0.50_top1-gen-dw-len-find-best.lst  # full configs
 # export workload_list=$desc_dir/spec06_rv64gc_o2_50m__cover1.00_top100.lst.0
 
 # export top_work_dir='bp-warmup-5M-sample-short-warmup'
-export top_work_dir="func-warmup-${config_tag}"
+export top_work_dir="ada-warmup-est-cycles"
 export ds=$dz  # data storage
 mkdir -p $ds/exec-storage/$top_work_dir
 ln -sf $ds/exec-storage/$top_work_dir .
@@ -76,8 +79,11 @@ function warmup_all_in_one() {
     task=${args[0]}
     task_path=${args[1]}
 
-    if [ $finding_sat_point -ne 0 ];
+    using_func_warmup=1
+
+    if [ $finding_sat_point -ne 0 ] || [ ${args[3]} = '0' ];
     then
+        using_func_warmup=0
         fw_M=0
         # skip_M=$(($args[2] + $args[3]))
         dw_M=${args[4]}
@@ -138,11 +144,12 @@ function warmup_all_in_one() {
     fi
 
 
-    if [ $func_warmup -ne 0 ];
+    if [ $using_func_warmup = 1 ];
     then
         date +%Y-%m-%d--%H:%M:%S
         echo "Generating traces with NEMU"
         export LD_PRELOAD=/nfs-nvme/home/share/debug/zhouyaoyang/libz.so.1.2.11.zlib-ng
+        # with map-as-outcpt to advance PC
         $trace_nemu $raw_cpt -I $fw_len -b --restore --map-img-as-outcpt \
             --etrace-inst ./inst.pbuf --etrace-data ./data.pbuf -D .
         check $?
@@ -153,8 +160,17 @@ function warmup_all_in_one() {
             --cpu-type=TraceCPU --caches \
             --inst-trace-file=./inst.pbuf --data-trace-file=./data.pbuf \
             --mem-type=SimpleMemory --mem-size=8GB --l2cache --l3cache --dump-caches
-
         check $?
+
+        date +%Y-%m-%d--%H:%M:%S
+        echo "Get used cache lines in future"
+        $future_trace_nemu $raw_cpt -I $total_detail_len -b --restore \
+            --etrace-inst ./useless_inst.pbuf --etrace-data ./useless_data.pbuf -D .
+        check $?
+
+        date +%Y-%m-%d--%H:%M:%S
+        python3 $trace_filter
+
     else
         # create empty trace
         date +%Y-%m-%d--%H:%M:%S
@@ -185,6 +201,7 @@ function warmup_all_in_one() {
         -W $dw_len -I $total_detail_len -i $raw_cpt --diff $ref_so -- +LOAD_SRAM > emu_out.txt 2> emu_err.txt
     check $?
 
+    date +%Y-%m-%d--%H:%M:%S
     touch completed
 
     set +x
