@@ -46,6 +46,13 @@ class TimedBaseFTBPredictor: public SimObject
     int getComponentIdx() { return componentIdx; }
     void setComponentIdx(int idx) { componentIdx = idx; }
 
+
+    bool enableDB {false};
+    void setDB(DataBase *db) {
+        _db = db;
+    }
+    virtual void setTrace() {}
+    DataBase *_db;
 };
 
 } // namespace ftb_pred

@@ -6,6 +6,7 @@
 #include "arch/generic/pcstate.hh"
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/pred/general_arch_db.hh"
 #include "cpu/pred/ftb/stream_common.hh"
 #include "cpu/static_inst.hh"
 #include "debug/DecoupleBP.hh"
@@ -58,6 +59,31 @@ typedef struct BranchInfo {
         isCall(static_inst->isCall()),
         isReturn(static_inst->isReturn()),
         size(size) {}
+    int getType() {
+        if (isCond) {
+            return 0;
+        } else if (!isIndirect) {
+            if (!isCall) {
+                return 1;
+            } else {
+                return 2;
+            }
+        } else {
+            if (!isCall) {
+                if (!isReturn) {
+                    return 3; // normal indirect
+                } else {
+                    return 4; // indirect return
+                }
+            } else {
+                if (!isReturn) { // indirect call
+                    return 5;
+                } else { // call & return
+                    return 6;
+                }
+            }
+        }
+    }
     // BranchInfo(FTBSlot _e) : pc(_e.pc), target(_e.target), isCond(_e.isCond), isIndirect(_e.isIndirect), isCall(_e.isCall), isReturn(_e.isReturn), size(_e.size) {}
 
     bool operator < (const BranchInfo &other) const
@@ -444,6 +470,58 @@ struct FtqEntry
     bool miss() const { return !taken; }
     // bool filledUp() const { return (endPC & fetchTargetMask) == 0; }
     // unsigned predLoopIteration;
+};
+
+
+struct BpTrace : public Record {
+    void set(uint64_t startPC, uint64_t controlPC, uint64_t controlType,
+        uint64_t taken, uint64_t mispred, uint64_t fallThruPC, uint64_t source) {
+        _uint64_data["startPC"] = startPC;
+        _uint64_data["controlPC"] = controlPC;
+        _uint64_data["controlType"] = controlType;
+        _uint64_data["taken"] = taken;
+        _uint64_data["mispred"] = mispred;
+        _uint64_data["fallThruPC"] = fallThruPC;
+        _uint64_data["source"] = source;
+    }
+    BpTrace(FetchStream &stream) {
+        _tick = curTick();
+        set(stream.startPC, stream.exeBranchInfo.pc, stream.exeBranchInfo.getType(),
+            stream.exeTaken, stream.squashType == SQUASH_CTRL, stream.updateFTBEntry.fallThruAddr, stream.predSource);
+        // for (auto it = _uint64_data.begin(); it != _uint64_data.end(); it++) {
+        //     printf("%s: %ld\n", it->first.c_str(), it->second);
+        // }
+    }
+};
+
+struct TageMissTrace : public Record {
+    void set(uint64_t startPC, uint64_t branchPC, uint64_t lgcBank, uint64_t phyBank, uint64_t mainFound, uint64_t mainCounter, uint64_t mainUseful,
+        uint64_t altCounter, uint64_t mainTable, uint64_t mainIndex, uint64_t altIndex, uint64_t tag,
+        uint64_t useAlt, uint64_t predTaken, uint64_t actualTaken, uint64_t allocSuccess, uint64_t allocFailure,
+        uint64_t predUseSC, uint64_t predSCDisagree, uint64_t predSCCorrect)
+    {
+        _tick = curTick();
+        _uint64_data["startPC"] = startPC;
+        _uint64_data["branchPC"] = branchPC;
+        _uint64_data["lgcBank"] = lgcBank;
+        _uint64_data["phyBank"] = phyBank;
+        _uint64_data["mainFound"] = mainFound;
+        _uint64_data["mainCounter"] = mainCounter;
+        _uint64_data["mainUseful"] = mainUseful;
+        _uint64_data["altCounter"] = altCounter;
+        _uint64_data["mainTable"] = mainTable;
+        _uint64_data["mainIndex"] = mainIndex;
+        _uint64_data["altIndex"] = altIndex;
+        _uint64_data["tag"] = tag;
+        _uint64_data["useAlt"] = useAlt;
+        _uint64_data["predTaken"] = predTaken;
+        _uint64_data["actualTaken"] = actualTaken;
+        _uint64_data["allocSuccess"] = allocSuccess;
+        _uint64_data["allocFailure"] = allocFailure;
+        _uint64_data["predUseSC"] = predUseSC;
+        _uint64_data["predSCDisagree"] = predSCDisagree;
+        _uint64_data["predSCCorrect"] = predSCCorrect;
+    }
 };
 
 }  // namespace ftb_pred

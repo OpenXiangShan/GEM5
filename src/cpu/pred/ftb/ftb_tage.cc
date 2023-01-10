@@ -91,6 +91,37 @@ FTBTAGE::~FTBTAGE()
 }
 
 void
+FTBTAGE::setTrace()
+{
+    if (enableDB) {
+        std::vector<std::pair<std::string, DataType>> fields_vec = {
+            std::make_pair("startPC", UINT64),
+            std::make_pair("branchPC", UINT64),
+            std::make_pair("lgcBank", UINT64),
+            std::make_pair("phyBank", UINT64),
+            std::make_pair("mainFound", UINT64),
+            std::make_pair("mainCounter", UINT64),
+            std::make_pair("mainUseful", UINT64),
+            std::make_pair("altCounter", UINT64),
+            std::make_pair("mainTable", UINT64),
+            std::make_pair("mainIndex", UINT64),
+            std::make_pair("altIndex", UINT64),
+            std::make_pair("tag", UINT64),
+            std::make_pair("useAlt", UINT64),
+            std::make_pair("predTaken", UINT64),
+            std::make_pair("actualTaken", UINT64),
+            std::make_pair("allocSuccess", UINT64),
+            std::make_pair("allocFailure", UINT64),
+            std::make_pair("predUseSC", UINT64),
+            std::make_pair("predSCDisagree", UINT64),
+            std::make_pair("predSCCorrect", UINT64)
+        };
+        tageMissTrace = _db->addAndGetTrace("TAGEMISSTRACE", fields_vec);
+        tageMissTrace->init_table();
+    }
+}
+
+void
 FTBTAGE::tick() {}
 
 void
@@ -188,7 +219,7 @@ FTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Full
     for (int b = 0; b < numBr; ++b) {
         int phyBrIdx = getShuffledBrIndex(stream_start, b);
         takens[b] = use_alt_preds[b] ? altRes[phyBrIdx] >= 0 : entries[b].counter >= 0;
-        preds[b] = TagePrediction(found[b], entries[b].counter, altRes[phyBrIdx],
+        preds[b] = TagePrediction(found[b], entries[b].counter, entries[b].useful, altRes[phyBrIdx],
             main_tables[b], main_table_indices[b], entries[b].tag, use_alt_preds[b],
             usefulMasks[b], takens[b]);
         tageBankStats[b]->updateStatsWithTagePrediction(preds[b], true);
@@ -423,7 +454,7 @@ FTBTAGE::update(const FetchStream &entry)
             }
         }
 
-
+        bool allocSuccess, allocFailure;
         if (needToAllocate) {
             // allocate new entry
             unsigned maskMaxNum = std::pow(2, (numPredictors - (pred.table + 1)));
@@ -447,6 +478,7 @@ FTBTAGE::update(const FetchStream &entry)
             if (allocateValid) {
                 DPRINTF(FTBTAGE, "allocate new entry\n");
                 stat->updateAllocSuccess++;
+                allocSuccess = true;
                 unsigned startTable = pred.table + 1;
 
                 for (int ti = startTable; ti < numPredictors; ti++) {
@@ -462,8 +494,18 @@ FTBTAGE::update(const FetchStream &entry)
                     }
                 }
             } else {
+                allocFailure = true;
                 stat->updateAllocFailure++;
             }
+        }
+        if (enableDB) {
+            TageMissTrace t;
+            t.set(startAddr, ftb_entry.slots[b].pc, b, phyBrIdx, mainFound, pred.mainCounter,
+                pred.mainUseful, pred.altCounter, pred.table, pred.index, getBaseTableIndex(startAddr),
+                pred.tag, pred.useAlt, pred.taken, this_cond_actually_taken, allocSuccess, allocFailure,
+                scMeta.scPreds[b].scUsed, scMeta.scPreds[b].scPred != scMeta.scPreds[b].tageTaken,
+                scMeta.scPreds[b].scPred == this_cond_actually_taken);
+            tageMissTrace->write_record(t);
         }
     }
 

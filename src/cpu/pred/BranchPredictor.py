@@ -937,3 +937,5 @@ class DecoupledBPUWithFTB(BranchPredictor):
     uftb = Param.DefaultFTB(UFTB(), "UFTB predictor")
     uftb.numBr = numBr
     ras = Param.RAS(RAS(), "RAS")
+    
+    enableBPDB = Param.Bool(False, "Enable trace in the form of database")
