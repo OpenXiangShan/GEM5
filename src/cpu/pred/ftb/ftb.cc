@@ -200,13 +200,16 @@ DefaultFTB::valid(Addr instPC)
 DefaultFTB::TickedFTBEntry
 DefaultFTB::lookup(Addr inst_pc)
 {
+    if (inst_pc & 0x1) {
+        return TickedFTBEntry(); // ignore false hit when lowest bit is 1
+    }
     Addr ftb_idx = getIndex(inst_pc);
 
     Addr ftb_tag = getTag(inst_pc);
     DPRINTF(FTB, "FTB: Looking up FTB entry index %#lx tag %#lx\n", ftb_idx, ftb_tag);
 
     assert(ftb_idx < numSets);
-
+    // ignore false hit when lowest bit is 1
     const auto &it = ftb[ftb_idx].find(ftb_tag);
     if (it != ftb[ftb_idx].end()) {
         if (it->second.valid) {

@@ -823,7 +823,7 @@ DecoupledBPUWithFTB::tryEnqFetchTarget()
          ftq_enq_state.pc, end);
     }
     
-    assert(ftq_enq_state.pc <= end);
+    assert(ftq_enq_state.pc <= end || (end < 0x20 && (ftq_enq_state.pc + 0x20 < 0x20)));
 
     // create a new target entry
     FtqEntry ftq_entry;
