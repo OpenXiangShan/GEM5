@@ -53,24 +53,26 @@ class FTBITTAGE : public TimedBaseFTBPredictor
     {
         public:
             bool mainFound;
-            Addr mainTarget;
-            Addr altTarget;
-            unsigned table;
-            Addr index;
-            Addr tag;
-            unsigned counter;
+            bool altFound;
+            TageEntry mainEntry;
+            TageEntry altEntry;
+            unsigned main_table;
+            unsigned alt_table;
+            Addr main_index;
+            Addr alt_index;
             bool useAlt;
+            bool useBase;
             bitset usefulMask;
 
-            TagePrediction() : mainFound(false), mainTarget(0), altTarget(0),
-                                 table(0), index(0), tag(0), counter(0), useAlt(false) {}
+            TagePrediction() : mainFound(false), altFound(false), mainEntry(TageEntry()), altEntry(TageEntry()),
+                                 main_table(0), alt_table(0), main_index(0), alt_index(0), useAlt(false), useBase(false) {}
 
-            TagePrediction(bool mainFound, Addr mainTarget, Addr altTarget,
-                            unsigned table, Addr index, Addr tag, unsigned counter,
-                            bool useAlt, bitset usefulMask) :
-                            mainFound(mainFound), mainTarget(mainTarget), altTarget(altTarget),
-                            table(table), index(index), tag(tag), counter(counter), useAlt(useAlt),
-                            usefulMask(usefulMask) {}
+            TagePrediction(bool mainFound, bool altFound, TageEntry mainEntry, TageEntry altEntry,
+                            unsigned main_table, unsigned alt_table, Addr main_index, Addr alt_index,
+                            bool useAlt, bool useBase, bitset usefulMask) :
+                            mainFound(mainFound), altFound(altFound), mainEntry(mainEntry), altEntry(altEntry),
+                            main_table(main_table), alt_table(alt_table), main_index(main_index), alt_index(alt_index),
+                            useAlt(useAlt), useBase(useBase), usefulMask(usefulMask) {}
 
     };
 
@@ -93,7 +95,7 @@ class FTBITTAGE : public TimedBaseFTBPredictor
 
     void update(const FetchStream &entry) override;
 
-    unsigned getDelay() override { return 1; }
+    unsigned getDelay() override { return 2; }
 
     // check folded hists after speculative update and recover
     void checkFoldedHist(const bitset &history, const char *when);
@@ -103,10 +105,9 @@ class FTBITTAGE : public TimedBaseFTBPredictor
 
     
     // return provided
-    std::vector<bool> lookupHelper(Addr stream_start,
-                        std::vector<TageEntry> &main_entries,
-                        std::vector<int> &main_tables, std::vector<int> &main_table_indices,
-                        std::vector<bool> &use_alt_preds, std::vector<bitset> &usefulMasks);
+    std::pair<bool, bool> lookupHelper(Addr stream_start, TageEntry &main_entry, int &main_table, int &main_table_index,
+                                       TageEntry &alt_entry, int &alt_table, int &alt_table_index, bool &use_alt_pred,
+                                       bool &use_base_table, bitset &usefulMask);
 
     Addr getTageIndex(Addr pc, int table);
 
@@ -115,8 +116,6 @@ class FTBITTAGE : public TimedBaseFTBPredictor
     Addr getTageTag(Addr pc, int table);
 
     Addr getTageTag(Addr pc, int table, bitset &foldedHist);
-
-    unsigned getBaseTableIndex(Addr pc);
 
     void doUpdateHist(const bitset &history, int shamt, bool taken);
 
@@ -137,11 +136,7 @@ class FTBITTAGE : public TimedBaseFTBPredictor
 
     unsigned maxHistLen;
 
-    std::vector<std::vector<std::vector<TageEntry>>> tageTable;
-
-    std::vector<std::vector<std::pair<Addr, short>>> baseTable;
-
-    std::vector<std::vector<short>> useAlt;
+    std::vector<std::vector<TageEntry>> tageTable;
 
     bool matchTag(Addr expected, Addr found);
 
@@ -161,19 +156,17 @@ class FTBITTAGE : public TimedBaseFTBPredictor
 
     bool satDecrement(int min, short &counter);
 
-    Addr getUseAltIdx(Addr pc);
-
-    std::vector<int> usefulResetCnt;
+    int usefulResetCnt;
 
     typedef struct TageMeta {
-        std::vector<TagePrediction> preds;
+        TagePrediction pred;
         std::vector<FoldedHist> tagFoldedHist;
         std::vector<FoldedHist> indexFoldedHist;
-        TageMeta(std::vector<TagePrediction> preds, std::vector<FoldedHist> tagFoldedHist, std::vector<FoldedHist> indexFoldedHist) :
-            preds(preds), tagFoldedHist(tagFoldedHist), indexFoldedHist(indexFoldedHist) {}
+        TageMeta(TagePrediction pred, std::vector<FoldedHist> tagFoldedHist, std::vector<FoldedHist> indexFoldedHist) :
+            pred(pred), tagFoldedHist(tagFoldedHist), indexFoldedHist(indexFoldedHist) {}
         TageMeta() {}
         TageMeta(const TageMeta &other) {
-            preds = other.preds;
+            pred = other.pred;
             tagFoldedHist = other.tagFoldedHist;
             indexFoldedHist = other.indexFoldedHist;
         }
