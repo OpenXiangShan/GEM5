@@ -62,6 +62,7 @@ sc(p.numBr, this)
         assert(tablePcShifts.size() >= numPredictors);
 
         tagFoldedHist.push_back(FoldedHist((int)histLengths[i], (int)tableTagBits[i], (int)numBr));
+        altTagFoldedHist.push_back(FoldedHist((int)histLengths[i], (int)tableTagBits[i]-1, (int)numBr));
         indexFoldedHist.push_back(FoldedHist((int)histLengths[i], (int)tableIndexBits[i], (int)numBr));
     }
     for (unsigned i = 0; i < baseTable.size(); ++i) {
@@ -251,6 +252,7 @@ FTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Full
 
     meta.preds = preds;
     meta.tagFoldedHist = tagFoldedHist;
+    meta.altTagFoldedHist = altTagFoldedHist;
     meta.indexFoldedHist = indexFoldedHist;
     // DPRINTF(FTBTAGE, "putPCHistory end\n");
 }
@@ -304,6 +306,7 @@ FTBTAGE::update(const FetchStream &entry)
     actualTakens.resize(numBr, false);
 
     auto updateTagFoldedHist = meta->tagFoldedHist;
+    auto updateAltTagFoldedHist = meta->altTagFoldedHist;
     auto updateIndexFoldedHist = meta->indexFoldedHist;
     for (int b = 0; b < numBr; b++) {
         DPRINTF(FTBTAGE, "try to update cond %d \n", b);
@@ -483,7 +486,7 @@ FTBTAGE::update(const FetchStream &entry)
 
                 for (int ti = startTable; ti < numPredictors; ti++) {
                     Addr newIndex = getTageIndex(startAddr, ti, updateIndexFoldedHist[ti].get());
-                    Addr newTag = getTageTag(startAddr, ti, updateTagFoldedHist[ti].get());
+                    Addr newTag = getTageTag(startAddr, ti, updateTagFoldedHist[ti].get(), updateAltTagFoldedHist[ti].get());
                     auto &entry = tageTable[ti][newIndex][phyBrIdx];
 
                     if (allocate[ti - startTable]) {
@@ -528,17 +531,21 @@ FTBTAGE::updateCounter(bool taken, unsigned width, short &counter) {
 }
 
 Addr
-FTBTAGE::getTageTag(Addr pc, int t, bitset &foldedHist)
+FTBTAGE::getTageTag(Addr pc, int t, bitset &foldedHist, bitset &altFoldedHist)
 {
     bitset buf(tableTagBits[t], pc >> tablePcShifts[t]);  // lower bits of PC
+    bitset altTagBuf(altFoldedHist);
+    altTagBuf.resize(tableTagBits[t]);
+    altTagBuf <<= 1;
     buf ^= foldedHist;
+    buf ^= altTagBuf;
     return buf.to_ulong();
 }
 
 Addr
 FTBTAGE::getTageTag(Addr pc, int t)
 {
-    return getTageTag(pc, t, tagFoldedHist[t].get());
+    return getTageTag(pc, t, tagFoldedHist[t].get(), altTagFoldedHist[t].get());
 }
 
 Addr
@@ -614,10 +621,10 @@ FTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, int shamt, bool ta
     }
 
     for (int t = 0; t < numPredictors; t++) {
-        for (int type = 0; type < 2; type++) {
+        for (int type = 0; type < 3; type++) {
             DPRINTF(FTBTAGE, "t: %d, type: %d\n", t, type);
 
-            auto &foldedHist = type ? tagFoldedHist[t] : indexFoldedHist[t];
+            auto &foldedHist = type == 0 ? indexFoldedHist[t] : type == 1 ? tagFoldedHist[t] : altTagFoldedHist[t];
             foldedHist.update(history, shamt, taken);
         }
     }
@@ -642,6 +649,7 @@ FTBTAGE::recoverHist(const boost::dynamic_bitset<> &history,
     std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
     for (int i = 0; i < numPredictors; i++) {
         tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
+        altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
         indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
     }
     doUpdateHist(history, shamt, cond_taken);
@@ -659,11 +667,11 @@ FTBTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * when)
     boost::to_string(hist, hist_str);
     // DPRINTF(FTBTAGE, "history:\t%s\n", hist_str.c_str());
     for (int t = 0; t < numPredictors; t++) {
-        for (int type = 0; type < 2; type++) {
+        for (int type = 0; type < 3; type++) {
 
             // DPRINTF(FTBTAGE, "t: %d, type: %d\n", t, type);
             std::string buf2, buf3;
-            auto &foldedHist = type ? tagFoldedHist[t] : indexFoldedHist[t];
+            auto &foldedHist = type == 0 ? indexFoldedHist[t] : type == 1 ? tagFoldedHist[t] : altTagFoldedHist[t];
             foldedHist.check(hist);
         }
     }
