@@ -745,7 +745,7 @@ LSQUnit::commitLoad()
             auto load_to_use = cpu->ticksToCycles(
                 inst->lastWakeDependents - inst->firstIssue);
             stats.loadToUse.sample(load_to_use);
-            if (((uint64_t) load_to_use) > 180) {
+            if (((uint64_t) load_to_use) > 2000) {
                 inst->printDisassembly();
                 DPRINTF(CommitTrace,
                         "Inst[sn:%lu] load2use = %lu, translation lat = %lu\n",
