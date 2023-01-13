@@ -626,8 +626,8 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
         // If we have, just wait around for commit to squash something and put
         // us on the right track
         if (!cpu->system->isMemAddr(mem_req->getPaddr())) {
-            warn("Address %#x is outside of physical memory, stopping fetch\n",
-                    mem_req->getPaddr());
+            warn("Address %#x is outside of physical memory, stopping fetch, %lu\n",
+                    mem_req->getPaddr(), curTick());
             fetchStatus[tid] = NoGoodAddr;
             memReq[tid] = NULL;
             return;

@@ -1153,6 +1153,7 @@ void
 InstructionQueue::addReadyMemInst(const DynInstPtr &ready_inst)
 {
     OpClass op_class = ready_inst->opClass();
+    ready_inst->readyTick = curTick();
 
     readyInsts[op_class].push(ready_inst);
 
@@ -1524,6 +1525,7 @@ InstructionQueue::addIfReady(const DynInstPtr &inst)
     // If the instruction now has all of its source registers
     // available, then add it to the list of ready instructions.
     if (inst->readyToIssue()) {
+        inst->readyTick = curTick();
 
         //Add the instruction to the proper ready list.
         if (inst->isMemRef()) {
