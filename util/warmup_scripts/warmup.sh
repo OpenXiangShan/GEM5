@@ -33,7 +33,8 @@ export workload_list=/nfs-nvme/home/zhouyaoyang/projects/gem5_data_proc/results/
 # export workload_list=$desc_dir/spec06_rv64gc_o2_50m__cover1.00_top100.lst.0
 
 # export top_work_dir='bp-warmup-5M-sample-short-warmup'
-export top_work_dir="ada-warmup-est-cycles"
+export tag="ada-warmup-est-cycles"
+export top_work_dir=$tag
 export ds=$dz  # data storage
 mkdir -p $ds/exec-storage/$top_work_dir
 ln -sf $ds/exec-storage/$top_work_dir .
@@ -262,7 +263,7 @@ export -f warmup_all_in_one
 export -f warmup_wrapper
 
 cat $workload_list | \
-    parallel --arg-file - -j 14 --jl job_log.txt warmup_wrapper "{}" {%} \$PARALLEL_JOBSLOT
+    parallel --arg-file - -j 14 --jl ${tag}_job_log.txt warmup_wrapper "{}" {%} \$PARALLEL_JOBSLOT
 
 # arg=("perlbench_checkspam_697850000000" "perlbench_checkspam_697850000000_0.142824/0/" "0" "0" "50" "50")
 # warmup_wrapper "${arg[@]}"
