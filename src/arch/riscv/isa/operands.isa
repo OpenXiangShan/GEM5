@@ -79,6 +79,9 @@ def operands {{
     'Fp2': FloatRegOp('df', 'FP2 + 8', 'IsFloating', 2),
     'Fp2_bits': FloatRegOp('ud', 'FP2 + 8', 'IsFloating', 2),
 
+    'Fx': IntReg('df', 'FMATempReg', 'IsFloating', 1),
+    'Fx_bits': IntReg('ud', 'FMATempReg', 'IsFloating', 1),
+
 #Memory Operand
     'Mem': MemOp('ud', None, (None, 'IsLoad', 'IsStore'), 5),
 

@@ -70,8 +70,54 @@ DelayCalibrator::execLatencyCheck(CPU* cpu, DynInstPtr inst,
                 op_latency = Cycles(8 + delay_ / 4);
             }
             return true;
-
-
+        case OpClass::FloatSqrt:
+            rs1 = cpu->readArchFloatReg(inst->srcRegIdx(0).index(),
+                                        inst->threadNumber);
+            switch (inst->staticInst->operWid()) {
+                case 32:
+                    if (__isnanf(*((float*)(&rs1) + 1))) {
+                        op_latency = Cycles(4);
+                        break;
+                    }
+                    op_latency = Cycles(17);
+                    break;
+                case 64:
+                    if (__isnan(*((double*)(&rs1)))) {
+                        op_latency = Cycles(4);
+                        break;
+                    }
+                    op_latency = Cycles(31);
+                    break;
+                default:
+                    return false;
+            }
+            return true;
+        case OpClass::FloatDiv:
+            rs1 = cpu->readArchFloatReg(inst->srcRegIdx(0).index(),
+                                        inst->threadNumber);
+            rs2 = cpu->readArchFloatReg(inst->srcRegIdx(1).index(),
+                                        inst->threadNumber);
+            switch (inst->staticInst->operWid()) {
+                case 32:
+                    if (__isnanf(*((float*)(&rs1) + 1)) ||
+                        __isnanf(*((float*)(&rs2) + 1))) {
+                        op_latency = Cycles(4);
+                        break;
+                    }
+                    op_latency = Cycles(11);
+                    break;
+                case 64:
+                    if (__isnan(*((double*)(&rs1))) ||
+                        __isnan(*((double*)(&rs2)))) {
+                        op_latency = Cycles(4);
+                        break;
+                    }
+                    op_latency = Cycles(18);
+                    break;
+                default:
+                    return false;
+            }
+            return true;
         default:
             return false;
     }

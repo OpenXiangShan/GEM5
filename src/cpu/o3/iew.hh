@@ -330,10 +330,10 @@ class IEW
     TimeBuffer<IEWStruct>::wire toCommit;
 
     /** Queue of all instructions coming from rename this cycle. */
-    std::queue<DynInstPtr> insts[MaxThreads];
+    std::deque<DynInstPtr> insts[MaxThreads];
 
     /** Skid buffer between rename and IEW. */
-    std::queue<DynInstPtr> skidBuffer[MaxThreads];
+    std::deque<DynInstPtr> skidBuffer[MaxThreads];
 
     /** Scoreboard pointer. */
     Scoreboard* scoreboard;

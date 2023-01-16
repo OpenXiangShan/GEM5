@@ -72,6 +72,7 @@ if env['CONF']['TARGET_ISA'] != 'null':
     DebugFlag('StoreSet')
     DebugFlag('Writeback')
     DebugFlag('CommitTrace')
+    DebugFlag('InstCommited')
 
     CompoundFlag('O3CPUAll', [ 'Fetch', 'Decode', 'Rename', 'IEW', 'Commit',
         'IQ', 'ROB', 'FreeList', 'LSQ', 'LSQUnit', 'StoreSet', 'MemDepUnit',

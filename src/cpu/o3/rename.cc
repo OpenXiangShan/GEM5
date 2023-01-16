@@ -73,7 +73,7 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
              renameWidth, static_cast<int>(MaxWidth));
 
     // @todo: Make into a parameter.
-    skidBufferMax = (decodeToRenameDelay + 1) * params.decodeWidth;
+    skidBufferMax = (decodeToRenameDelay + 1) * params.decodeWidth * 2;
     for (uint32_t tid = 0; tid < MaxThreads; tid++) {
         renameStatus[tid] = Idle;
         renameMap[tid] = nullptr;
@@ -594,7 +594,20 @@ Rename::renameInsts(ThreadID tid)
 
     int renamed_insts = 0;
 
-    while (insts_available > 0 &&  toIEWIndex < renameWidth) {
+    int rename_width = renameWidth;
+    int count_ = 0;
+    for (auto &it : insts_to_rename) {
+        count_++;
+        if (it->opClass() == FMAAccOp) {
+            rename_width++;
+        }
+        if (count_ >= renameWidth ||
+            rename_width >= renameWidth * 2) {
+            break;
+        }
+    }
+
+    while (insts_available > 0 &&  toIEWIndex < rename_width) {
         DPRINTF(Rename, "[tid:%i] Sending instructions to IEW.\n", tid);
 
         assert(!insts_to_rename.empty());
