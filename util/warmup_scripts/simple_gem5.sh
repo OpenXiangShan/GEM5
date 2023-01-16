@@ -26,10 +26,14 @@ check() {
 function run() {
     set -x
     cpt=$1
-    # dw_len=${2:-20000000}
-    dw_len=${2:-1525605}
+    dw_len=${2:-20000000}
+    # dw_len=${2:-1525605}
     total_detail_len=${3:-40000000}
-    work_dir=${4:-$cwd}
+    if [[ -n "$4" ]]; then
+        work_dir=$4
+    else
+        work_dir=$PWD
+    fi
 
     cd $work_dir
     rm -f abort
@@ -42,18 +46,28 @@ function run() {
         cpt_option="--generic-rv-cpt=$cpt --raw-cpt"
     fi
 
-    crash_tick=0
-    capture_cycles=30000
-    start=$(($crash_tick - 500*$capture_cycles))
-    start=$(($start>0 ? $start : 0))
+    if [[ -z "$crash_tick" ]]; then
+        crash_tick=-1
+    fi
+    if [[ -z "$capture_cycles" ]]; then
+        capture_cycles=30000
+    fi
+    # start=$(($crash_tick - 500*$capture_cycles))
+    # start=$(($start>0 ? $start : 0))
+    start=$crash_tick
     end=$(($crash_tick + 500*$capture_cycles))
     start_end=" --debug-start=$start --debug-end=$end "
-    debug_flag_args=" --debug-flag=CommitTrace,Fetch,Commit,IEW,LSQ,LSQUnit "
+    if [[ -n "$debug_flags" ]]; then
+        debug_flag_args=" --debug-flag=$debug_flags "
+    else
+        debug_flag_args=
+        start_end=
+    fi
     # --debug-flags=CommitTrace \
 
-    if [ $crash_tick = 0 ]; then
-        start_end=""
-        debug_flag_args=""
+    if [ $crash_tick = -1 ]; then
+        start_end=
+        debug_flag_args=
     fi
 
     $gem5 $debug_flag_args $start_end \
@@ -61,8 +75,9 @@ function run() {
         --caches --l2cache --xiangshan --cpu-type=DerivO3CPU \
         --mem-type=DRAMsim3 --dramsim3-ini=$gem5_home/xiangshan_DDR4_8Gb_x8_2400.ini \
         --mem-size=8GB --cacheline_size=64 \
-        --l1i_size=64kB --l1i_assoc=8 --l1d_size=64kB --l1d_assoc=8 \
-        --l2_size=1MB --l2_assoc=8\
+        --l1i_size=64kB --l1i_assoc=8 \
+        --l1d_size=64kB --l1d_assoc=8 \
+        --l2_size=1MB --l2_assoc=8 \
         --l3cache --l3_size=8MB --l3_assoc=8 \
         --bp-type=LTAGE --indirect-bp-type=ITTAGE \
         --enable-difftest \
@@ -70,7 +85,8 @@ function run() {
         --warmup-insts-no-switch=$dw_len \
         --maxinsts=$total_detail_len
     check $?
-        # --l2-hwp-type=SMSPrefetcher \
+        # --l1d-hwp-type=StridePrefetcher \
+        # --l2-hwp-type=StridePrefetcher \
 
     touch completed
 }
@@ -109,7 +125,17 @@ function arg_wrapper() {
 }
 
 function single_run() {
-    run /nfs-nvme/home/zhouyaoyang/projects/nexus-am/apps/cachetest_i/build/cachetest_i-riscv64-xs.bin
+    # run /nfs-nvme/home/zhouyaoyang/projects/nexus-am/apps/cachetest_i/build/cachetest_i-riscv64-xs.bin
+    top_work_dir=single_top
+    task='zeu_382'
+    work_dir=$top_work_dir/$task
+    mkdir -p $work_dir
+
+    crash_tick=$(( 25434715 * 500 ))
+    capture_cycles=50000000
+    debug_flags=
+    run /nfs-nvme/home/share/checkpoints_profiles/spec06_rv64gcb_o2_20m/take_cpt/zeusmp_382440000000_0.005552/0/_382440000000_.gz \
+        20000000 40000000 $work_dir > $work_dir/$log_file 2>&1
 }
 
 export -f check
@@ -123,5 +149,5 @@ function parallel_run() {
     cat $workload_list | parallel -a - -j 70 arg_wrapper {}
 }
 
-parallel_run
-# single_run
+# parallel_run
+single_run
