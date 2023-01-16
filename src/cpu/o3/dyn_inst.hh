@@ -63,6 +63,7 @@
 #include "cpu/reg_class.hh"
 #include "cpu/static_inst.hh"
 #include "cpu/translation.hh"
+#include "debug/CommitTrace.hh"
 #include "debug/HtmCpu.hh"
 #include "debug/RiscvMisc.hh"
 
@@ -140,6 +141,8 @@ class DynInst : public ExecContext, public RefCounted
 
     /** InstRecord that tracks this instructions. */
     Trace::InstRecord *traceData = nullptr;
+
+    bool isEmptyMove{};
 
   protected:
     enum Status
@@ -542,7 +545,8 @@ class DynInst : public ExecContext, public RefCounted
     //
     //  Instruction types.  Forward checks to StaticInst object.
     //
-    bool isNop()          const { return staticInst->isNop(); }
+    void setEmptyMove(bool f) { isEmptyMove = f; }
+    bool isNop()          const { return staticInst->isNop() || isEmptyMove; }
     bool isMemRef()       const { return staticInst->isMemRef(); }
     bool isLoad()         const { return staticInst->isLoad(); }
     bool isStore()        const { return staticInst->isStore(); }
@@ -1015,6 +1019,10 @@ class DynInst : public ExecContext, public RefCounted
     /* Values used by LoadToUse stat */
     Tick firstIssue = -1;
     Tick lastWakeDependents = -1;
+    Tick translatedTick = -1;
+
+    Tick readyTick = -1;
+    Tick completionTick = -1;
 
     /** Reads a misc. register, including any side-effects the read
      * might have as defined by the architecture.
@@ -1190,6 +1198,15 @@ class DynInst : public ExecContext, public RefCounted
             return;
         cpu->setReg(reg, val);
         //TODO setResult
+    }
+
+    void printDisassembly() const
+    {
+        DPRINTF(CommitTrace,
+                "[sn:%lu] pc:%#lx %s, rdy: %lu, comp: %lu, addr: %#lx\n",
+                seqNum, pcState().instAddr(),
+                staticInst->disassemble(pcState().instAddr()).c_str(),
+                readyTick, completionTick, physEffAddr);
     }
 };
 

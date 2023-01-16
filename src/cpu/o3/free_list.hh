@@ -97,6 +97,10 @@ class SimpleFreeList
         assert(!freeRegs.empty());
         PhysRegIdPtr free_reg = freeRegs.front();
         freeRegs.pop();
+        DPRINTF(FreeList, "Allocate p%i (%#lx), next free: p%i (%#lx)\n",
+                free_reg->flatIndex(), free_reg,
+                freeRegs.empty() ? -1 : freeRegs.front()->flatIndex(),
+                freeRegs.empty() ? nullptr : freeRegs.front());
         return free_reg;
     }
 

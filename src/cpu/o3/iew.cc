@@ -585,6 +585,8 @@ IEW::instToCommit(const DynInstPtr& inst)
         }
     }
 
+    inst->completionTick = curTick();
+
     DPRINTF(IEW, "Current wb cycle: %i, width: %i, numInst: %i\nwbActual:%i\n",
             wbCycle, wbWidth, wbNumInst, wbCycle * wbWidth + wbNumInst);
     // Add finished instruction to queue to commit.
@@ -1162,6 +1164,9 @@ IEW::executeInsts()
 
         DPRINTF(IEW, "Execute: Processing PC %s, [tid:%i] [sn:%llu].\n",
                 inst->pcState(), inst->threadNumber,inst->seqNum);
+        if (Debug::IEW) {
+            inst->printDisassembly();
+        }
 
         // Notify potential listeners that this instruction has started
         // executing

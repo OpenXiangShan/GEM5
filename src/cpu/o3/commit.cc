@@ -62,6 +62,7 @@
 #include "debug/Activity.hh"
 #include "debug/Commit.hh"
 #include "debug/CommitRate.hh"
+#include "debug/CommitTrace.hh"
 #include "debug/Diff.hh"
 #include "debug/Drain.hh"
 #include "debug/ExecFaulting.hh"
@@ -1071,8 +1072,7 @@ Commit::commitInsts()
                         const auto &dest = head_inst->destRegIdx(0);
                         if ((dest.isFloatReg() || dest.isIntReg()) &&
                             !dest.isZeroReg()) {
-                            cpu->diffInfo.result =
-                                head_inst->getResult().asNoAssert<RegVal>();
+                            cpu->diffInfo.result = cpu->getArchReg(dest, tid);
                         }
                     }
                     cpu->diffInfo.curInstStrictOrdered =
@@ -1330,6 +1330,15 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
 
     updateComInstStats(head_inst);
 
+    // head_inst->printDisassembly();
+    uint64_t delta = (curTick() - lastCommitTick) / 500;
+    if (head_inst->isLoad() && (delta > 250)) {
+        DPRINTF(CommitTrace, "Inst[sn:%lu] commit blocked cycles: %lu\n",
+                head_inst->seqNum, delta);
+    }
+    head_inst->printDisassembly();
+    lastCommitTick = curTick();
+
     DPRINTF(Commit,
             "[tid:%i] [sn:%llu] Committing instruction with PC %s\n",
             tid, head_inst->seqNum, head_inst->pcState());
@@ -1350,6 +1359,9 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
     for (int i = 0; i < head_inst->numDestRegs(); i++) {
         renameMap[tid]->setEntry(head_inst->flattenedDestIdx(i),
                                  head_inst->renamedDestIdx(i));
+        DPRINTF(Commit, "Committing rename map entry x%i -> p%i\n",
+                head_inst->destRegIdx(i).index(),
+                head_inst->renamedDestIdx(i)->flatIndex());
     }
 
     // hardware transactional memory
@@ -1438,7 +1450,8 @@ Commit::updateComInstStats(const DynInstPtr &inst)
 
     // To match the old model, don't count nops and instruction
     // prefetches towards the total commit count.
-    if (!inst->isNop() && !inst->isInstPrefetch()) {
+    if ((!inst->isNop() || inst->staticInst->isMov()) &&
+        !inst->isInstPrefetch()) {
         cpu->instDone(tid, inst);
     }
 

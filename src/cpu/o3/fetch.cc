@@ -1073,6 +1073,9 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
     DPRINTF(Fetch, "[tid:%i] Instruction is: %s\n", tid,
             instruction->staticInst->disassemble(this_pc.instAddr()));
 
+    DPRINTF(Fetch, "Is nop: %i, is move: %i\n", instruction->isNop(),
+            instruction->staticInst->isMov());
+
 #if TRACING_ON
     if (trace) {
         instruction->traceData =

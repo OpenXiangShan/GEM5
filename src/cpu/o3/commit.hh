@@ -507,6 +507,8 @@ class Commit
         /** Number of cycles where the commit bandwidth limit is reached. */
         statistics::Scalar commitEligibleSamples;
     } stats;
+
+    Tick lastCommitTick;
 };
 
 } // namespace o3

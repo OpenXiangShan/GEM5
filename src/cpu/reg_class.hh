@@ -263,6 +263,7 @@ class PhysRegId : private RegId
     RegIndex flatIdx;
     int numPinnedWritesToComplete;
     bool pinned;
+    int numRef;
 
   public:
     explicit PhysRegId() : RegId(InvalidRegClass, -1), flatIdx(-1),
@@ -273,7 +274,7 @@ class PhysRegId : private RegId
     explicit PhysRegId(RegClassType _regClass, RegIndex _regIdx,
               RegIndex _flatIdx)
         : RegId(_regClass, _regIdx), flatIdx(_flatIdx),
-          numPinnedWritesToComplete(0), pinned(false)
+          numPinnedWritesToComplete(0), pinned(false), numRef(0)
     {}
 
     /** Visible RegId methods */
@@ -333,6 +334,11 @@ class PhysRegId : private RegId
 
     void decrNumPinnedWrites() { --numPinnedWrites; }
     void incrNumPinnedWrites() { ++numPinnedWrites; }
+
+    void decRef() { numRef = numRef == 0 ? 0 : numRef - 1; }
+    void incRef() { ++numRef; }
+
+    int getRef() const { return numRef; }
 
     bool isPinned() const { return pinned; }
 
