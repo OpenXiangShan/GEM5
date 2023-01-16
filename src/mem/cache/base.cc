@@ -2069,6 +2069,8 @@ BaseCache::CacheCmdStats::CacheCmdStats(BaseCache &c,
                ("number of " + name + " hit ticks").c_str()),
       ADD_STAT(missLatency, statistics::units::Tick::get(),
                ("number of " + name + " miss ticks").c_str()),
+      ADD_STAT(missLatencyDist, statistics::units::Tick::get(),
+               ("number of " + name + " miss ticks histogram").c_str()),
       ADD_STAT(accesses, statistics::units::Count::get(),
                ("number of " + name + " accesses(hits+misses)").c_str()),
       ADD_STAT(missRate, statistics::units::Ratio::get(),
@@ -2140,6 +2142,11 @@ BaseCache::CacheCmdStats::regStatsFromParent()
     for (int i = 0; i < max_requestors; i++) {
         missLatency.subname(i, system->getRequestorName(i));
     }
+
+    missLatencyDist
+        .init(0, 999, 10)
+        .flags(total | nozero | nonan)
+        ;
 
     // access formulas
     accesses.flags(total | nozero | nonan);

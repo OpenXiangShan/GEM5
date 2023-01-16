@@ -804,6 +804,8 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
                 stats.cmdStats(tgt_pkt)
                     .missLatency[tgt_pkt->req->requestorId()] +=
                     completion_time - target.recvTime;
+                stats.cmdStats(tgt_pkt)
+                    .missLatencyDist.sample((completion_time - target.recvTime)/500);
 
                 if (tgt_pkt->cmd == MemCmd::LockedRMWReadReq) {
                     // We're going to leave a target in the MSHR until the

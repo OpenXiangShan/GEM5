@@ -55,13 +55,15 @@ class L1Cache(Cache):
     tgts_per_mshr = 20
 
 class L1_ICache(L1Cache):
+    mshrs = 2
     is_read_only = True
     # Writeback clean lines as well
     writeback_clean = True
     tag_latency = 1
     data_latency = 1
-    response_latency = 1
-    mshrs = 2
+    sequential_access = False
+
+    response_latency = 4
 
 class L1_DCache(L1Cache):
     mshrs = 16
@@ -71,8 +73,9 @@ class L1_DCache(L1Cache):
     # aligned latency:
     tag_latency = 1
     data_latency = 1
-    # This is L1 miss & L2 hit latency
-    response_latency = 12
+    sequential_access = False
+    # This is communication latency between l1 & l2
+    response_latency = 4
 
 class L2Cache(Cache):
     mshrs = 32
@@ -84,9 +87,11 @@ class L2Cache(Cache):
 
     # aligned latency:
     tag_latency = 2
-    data_latency = 6
-    # This is L2 miss & L3 hit latency
-    response_latency = 20
+    data_latency = 13
+    sequential_access = True
+
+    # This is communication latency between l2 & l3
+    response_latency = 15
 
 class L3Cache(Cache):
     mshrs = 64
@@ -96,9 +101,11 @@ class L3Cache(Cache):
 
     # aligned latency:
     tag_latency = 2
-    data_latency = 5
-    # This is L3 miss latency, which should be modeled with memory controller
-    response_latency = 0
+    data_latency = 17
+    sequential_access = True
+
+    # This is L3 miss latency, which act as padding for memory controller
+    response_latency = 112
 
 class IOCache(Cache):
     assoc = 8
