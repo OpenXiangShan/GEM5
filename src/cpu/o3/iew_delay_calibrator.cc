@@ -75,7 +75,7 @@ DelayCalibrator::execLatencyCheck(CPU* cpu, DynInstPtr inst,
                                         inst->threadNumber);
             switch (inst->staticInst->operWid()) {
                 case 32:
-                    if (__isnanf(*((float*)(&rs1) + 1))) {
+                    if (__isnanf(*((float*)(&rs1)))) {
                         op_latency = Cycles(4);
                         break;
                     }
@@ -99,8 +99,8 @@ DelayCalibrator::execLatencyCheck(CPU* cpu, DynInstPtr inst,
                                         inst->threadNumber);
             switch (inst->staticInst->operWid()) {
                 case 32:
-                    if (__isnanf(*((float*)(&rs1) + 1)) ||
-                        __isnanf(*((float*)(&rs2) + 1))) {
+                    if (__isnanf(*((float*)(&rs1))) ||
+                        __isnanf(*((float*)(&rs2)))) {
                         op_latency = Cycles(4);
                         break;
                     }
