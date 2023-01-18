@@ -88,14 +88,17 @@ Walker::tryCoalesce(ThreadContext *_tc, BaseMMU::Translation *translation,
 }
 
 Fault
-Walker::start(ThreadContext * _tc, BaseMMU::Translation *_translation,
-              const RequestPtr &_req, BaseMMU::Mode _mode,bool pre)
+Walker::start(ThreadContext *_tc, BaseMMU::Translation *_translation,
+              const RequestPtr &_req, BaseMMU::Mode _mode, bool pre,
+              int f_level, bool from_l2tlb)
 {
     // TODO: in timing mode, instead of blocking when there are other
     // outstanding requests, see if this request can be coalesced with
     // another one (i.e. either coalesce or start walk)
     DPRINTF(PageTableWalker, "Starting page table walk for %#lx\n",
             _req->getVaddr());
+    DPRINTF(PageTableWalker, "pre %d f_level %d from_l2tlb %d\n", pre, f_level,
+            from_l2tlb);
     pre_ptw = pre;
     if (currStates.size()) {
         auto [coalesced, fault] = tryCoalesce(_tc, _translation, _req, _mode);
@@ -110,7 +113,7 @@ Walker::start(ThreadContext * _tc, BaseMMU::Translation *_translation,
                     "into currStates\n",
                     currStates.size(), _req->getPC(), _req->getVaddr());
             currStates.push_back(newState);
-            Fault fault = newState->startWalk();
+            Fault fault = newState->startWalk(f_level,from_l2tlb);
             return NoFault;
         } else {
             DPRINTF(PageTableWalker,
@@ -123,7 +126,7 @@ Walker::start(ThreadContext * _tc, BaseMMU::Translation *_translation,
         WalkerState *newState = new WalkerState(this, _translation, _req);
         newState->initState(_tc, _mode, sys->isTimingMode());
         currStates.push_back(newState);
-        Fault fault = newState->startWalk();
+        Fault fault = newState->startWalk(f_level,from_l2tlb);
         if (!newState->isTiming()) {
             currStates.pop_front();
             delete newState;
@@ -131,6 +134,18 @@ Walker::start(ThreadContext * _tc, BaseMMU::Translation *_translation,
         return fault;
     }
 }
+
+
+/*Fault
+Walker::permcheck(){
+    Fault fault = NoFault;
+    PacketPtr check_req;
+    check_req->req->_size = 8;
+
+    fault = walker->pmp->pmpCheck_l2(read->req, BaseMMU::Read,
+                    RiscvISA::PrivilegeMode::PRV_S, tc, entry.vaddr);
+
+}*/
 
 Fault
 Walker::startFunctional(ThreadContext * _tc, Addr &addr, unsigned &logBytes,
@@ -290,7 +305,7 @@ Walker::startWalkWrapper()
     handlePendingSquash();
     WalkerState *currState = currStates.front();
     if (currState && !currState->wasStarted() && !currState->allRequestorSquashed())
-        currState->startWalk();
+        currState->startWalk(2,false);
 }
 
 void
@@ -387,12 +402,12 @@ Walker::WalkerState::allRequestorSquashed() const
 }
 
 Fault
-Walker::WalkerState::startWalk()
+Walker::WalkerState::startWalk(int f_level,bool from_l2tlb )
 {
     Fault fault = NoFault;
     assert(!started);
     started = true;
-    setupWalk(mainReq->getVaddr());
+    setupWalk(mainReq->getVaddr(),f_level,from_l2tlb);
     if (timing) {
         nextState = state;
         state = Waiting;
@@ -421,7 +436,7 @@ Walker::WalkerState::startFunctional(Addr &addr, unsigned &logBytes)
     Fault fault = NoFault;
     assert(!started);
     started = true;
-    setupWalk(addr);
+    setupWalk(addr,2,false);
 
     do {
         walker->port.sendFunctional(read);
@@ -445,14 +460,30 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
     assert(state != Ready && state != Waiting);
     Fault fault = NoFault;
     write = NULL;
-    PTESv39 pte = read->getLE<uint64_t>();
+    //PTESv39 pte = read->getLE<uint64_t>();
+    uint64_t vaddr_choose;
+    vaddr_choose = (entry.vaddr >> (level*9+12)) &(0x7);
+    PTESv39 pte = read->getLE_l2tlb<uint64_t>(vaddr_choose);
     Addr nextRead = 0;
     bool doWrite = false;
     bool doTLBInsert = false;
     bool doEndWalk = false;
-    //bool next_line = false;
+    bool next_line = false;
+    int l2_i =0;
+    PTESv39 l2pte;
+    int l2_level;
 
-    DPRINTF(PageTableWalker, "Got level%d PTE: %#x\n", level, pte);
+    DPRINTF(PageTableWalker,
+            "Got level%d PTE: %#x PPN: %#x choose %d vaddr %#x\n", level, pte,
+            pte.ppn, vaddr_choose, entry.vaddr);
+    DPRINTF(PageTableWalker, "PTE 0 %#x\n",read->getLE_l2tlb<uint64_t>(0));
+    DPRINTF(PageTableWalker, "PTE 1 %#x\n",read->getLE_l2tlb<uint64_t>(1));
+    DPRINTF(PageTableWalker, "PTE 2 %#x\n",read->getLE_l2tlb<uint64_t>(2));
+    DPRINTF(PageTableWalker, "PTE 3 %#x\n",read->getLE_l2tlb<uint64_t>(3));
+    DPRINTF(PageTableWalker, "PTE 4 %#x\n",read->getLE_l2tlb<uint64_t>(4));
+    DPRINTF(PageTableWalker, "PTE 5 %#x\n",read->getLE_l2tlb<uint64_t>(5));
+    DPRINTF(PageTableWalker, "PTE 6 %#x\n",read->getLE_l2tlb<uint64_t>(6));
+    DPRINTF(PageTableWalker, "PTE 7 %#x\n",read->getLE_l2tlb<uint64_t>(7));
     //printf("nextline is %d\n",next_line);
 
     DPRINTF(PageTableWalker, "nextline is %d\n",next_line);
@@ -464,6 +495,8 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
     // walks is S mode according to specs
     fault = walker->pmp->pmpCheck(read->req, BaseMMU::Read,
                     RiscvISA::PrivilegeMode::PRV_S, requestors.front().tc, entry.vaddr);
+
+    DPRINTF(PageTableWalker,"Finish pmp check\n");
 
     if ((fault == NoFault) && (!next_line)) {
         // step 3:
@@ -499,10 +532,14 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                     if (!pte.a) {
                         pte.a = 1;
                         doWrite = true;
+                        DPRINTF(PageTableWalker,"TODO pte.a write\n");
+                        assert(0);
                     }
                     if (!pte.d && mode == BaseMMU::Write) {
                         pte.d = 1;
                         doWrite = true;
+                        DPRINTF(PageTableWalker,"TODO pte.d write\n");
+                        assert(0);
                     }
                     // Performing PMA/PMP checks
 
@@ -515,11 +552,9 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
 
                         fault = walker->pmp->pmpCheck(read->req,
                                             BaseMMU::Write, pmode, requestors.back().tc, entry.vaddr);
-
                     }
                     // perform step 8 only if pmp checks pass
                     if (fault == NoFault) {
-
                         // step 8
                         entry.logBytes = PageShift + (level * LEVEL_BITS);
                         entry.paddr = pte.ppn;
@@ -545,22 +580,57 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                     doEndWalk = true;
                     fault = pageFault(true);
                 } else {
+                    // Addr shift = (PageShift + LEVEL_BITS * level);
+                    // Addr idx = (entry.vaddr >> shift) & LEVEL_MASK;
+                    // Addr
+                    inl2_entry.logBytes =
+                        PageShift + ((level + 1) * LEVEL_BITS);
+                    l2_level = level + 1;
+
+                    for (l2_i = 0; l2_i < 8; l2_i++) {
+                        inl2_entry.vaddr =
+                            (((entry.vaddr >> ((l2_level * 9 + 12 + 3)))
+                              << 3) +
+                             l2_i)
+                            << ((l2_level * 9 + 12));
+                        DPRINTF(PageTableWalker,
+                                "inl2_entry.vaddr %#x entry.vaddr %#x\n",
+                                inl2_entry.vaddr, entry.vaddr);
+                        // DPRINTF(PageTableWalker,"right offset %d left offset
+                        // %d\n",);
+                        l2pte = read->getLE_l2tlb<uint64_t>(l2_i);
+                        inl2_entry.paddr = l2pte.ppn;
+                        inl2_entry.pte = l2pte;
+                        if (l2_level == 2)
+                            walker->tlb->L2TLB_insert(inl2_entry.vaddr,
+                                                      inl2_entry, l2_level, 1);
+                        if (l2_level == 1)
+                            walker->tlb->L2TLB_insert(inl2_entry.vaddr,
+                                                      inl2_entry, l2_level, 2);
+                        if (l2_level == 0) {
+                            DPRINTF(PageTableWalker,
+                                    "l2_level is 0,may be wrong\n");
+                            assert(0);
+                        }
+                    }
                     Addr shift = (PageShift + LEVEL_BITS * level);
-                    Addr idx = (entry.vaddr >> shift) & LEVEL_MASK;
-                    nextline_level_mask = LEVEL_MASK;
-                    nextline_shift = shift;
+                    Addr idx_f = (entry.vaddr >> shift) & LEVEL_MASK;
+                    Addr idx = (idx_f >> 3) << 3;
+
+                    // nextline_level_mask = LEVEL_MASK;
+                    // nextline_shift = shift;
                     tlb_vaddr = entry.vaddr;
                     tlb_ppn = pte.ppn;
                     tlb_size_pte = sizeof(pte);
 
-                    nextRead = (pte.ppn << PageShift) + (idx * sizeof(pte));
+                    nextRead = (pte.ppn << PageShift) + (idx * 8);
                     nextState = Translate;
-                    nextline_Read = nextRead;
+                    /*nextline_Read = nextRead;
                     nextline_level = level;
                     DPRINTF(PageTableWalker,
                             "next read of pte pte.ppx %#x,idx %#x,sizeof(pte) "
                             "%#x,nextread %#x\n",
-                            pte.ppn, idx, sizeof(pte), nextRead);
+                            pte.ppn, idx, sizeof(pte), nextRead);*/
                 }
             }
         }
@@ -610,6 +680,7 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
             write->setLE<uint64_t>(pte);
             write->cmd = MemCmd::WriteReq;
             read = NULL;
+            assert(0);
         } else {
             write = NULL;
         }
@@ -617,18 +688,58 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
         if (doTLBInsert) {
             if (!functional) {
                 walker->tlb->insert(entry.vaddr, entry);
-                // printf("tlb insert finish\n");
-                /*DPRINTF(PageTableWalker, "tlb insert finish\n");
-                walker->tlb->lookup(
-                    entry.vaddr,entry.asid,BaseMMU::Read,false);
-                //printf("tlb start lookup\n");
-                DPRINTF(PageTableWalker, "tlb start lookup\n");
-                walker->tlb->lookupPre(
-                    nextline_entry.vaddr,nextline_entry.asid
-                    ,BaseMMU::Read,false);
-                //printf("tlb start lookup2\n");
-                DPRINTF(PageTableWalker, "tlb start lookup2\n");*/
-                if (!doWrite) {
+                inl2_entry.logBytes = PageShift + (level * LEVEL_BITS);
+                l2_level = level;
+                PTESv39 fpte0 = read->getLE_l2tlb<uint64_t>(0);
+                PTESv39 fpte1 = read->getLE_l2tlb<uint64_t>(1);
+                PTESv39 fpte2 = read->getLE_l2tlb<uint64_t>(2);
+                PTESv39 fpte3 = read->getLE_l2tlb<uint64_t>(3);
+                PTESv39 fpte4 = read->getLE_l2tlb<uint64_t>(4);
+                PTESv39 fpte5 = read->getLE_l2tlb<uint64_t>(5);
+                PTESv39 fpte6 = read->getLE_l2tlb<uint64_t>(6);
+                PTESv39 fpte7 = read->getLE_l2tlb<uint64_t>(7);
+
+
+                // DPRINTF(PageTableWalker, "final PTE 0 %#x PPN
+                // %#x\n",read->getLE_l2tlb<uint64_t>(0),
+                //(read->getLE_l2tlb<uint64_t>(0)).ppn);
+                DPRINTF(PageTableWalker, "final PTE 0 %#x PPN %#x\n", fpte0,
+                        fpte0.ppn);
+                DPRINTF(PageTableWalker, "final PTE 0 %#x PPN %#x\n", fpte1,
+                        fpte1.ppn);
+                DPRINTF(PageTableWalker, "final PTE 0 %#x PPN %#x\n", fpte2,
+                        fpte2.ppn);
+                DPRINTF(PageTableWalker, "final PTE 0 %#x PPN %#x\n", fpte3,
+                        fpte3.ppn);
+                DPRINTF(PageTableWalker, "final PTE 0 %#x PPN %#x\n", fpte4,
+                        fpte4.ppn);
+                DPRINTF(PageTableWalker, "final PTE 0 %#x PPN %#x\n", fpte5,
+                        fpte5.ppn);
+                DPRINTF(PageTableWalker, "final PTE 0 %#x PPN %#x\n", fpte6,
+                        fpte6.ppn);
+                DPRINTF(PageTableWalker, "final PTE 0 %#x PPN %#x\n", fpte7,
+                        fpte7.ppn);
+
+
+                for (l2_i = 0; l2_i < 8; l2_i++) {
+                    inl2_entry.vaddr =
+                        ((entry.vaddr >> ((l2_level * 9 + 12 + 3)) << 3) +
+                         l2_i)
+                        << ((l2_level * 9 + 12));
+                    l2pte = read->getLE_l2tlb<uint64_t>(l2_i);
+                    DPRINTF(PageTableWalker,
+                            "final insert vaddr %#x ppn %#x\n",
+                            inl2_entry.vaddr, l2pte.ppn);
+                    inl2_entry.paddr = l2pte.ppn;
+                    inl2_entry.pte = l2pte;
+                    if (l2_level == 0)
+                        walker->tlb->L2TLB_insert(inl2_entry.vaddr, inl2_entry,
+                                                  l2_level, 3);
+                    else
+                        walker->tlb->L2TLB_insert(inl2_entry.vaddr, inl2_entry,
+                                                  l2_level, 4);
+                }
+               /* if (!doWrite) {
                     // nextRead = nextline_Read + (0x1<<);
                     nextline_vaddr =
                         entry.vaddr + (0x1 << (nextline_level * 9 + 12));
@@ -649,7 +760,7 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                             tlb_vaddr, entry.vaddr);
 
                     if (read_num != 0) {
-                        next_line = true;
+                       // next_line = true;
                         nextState = Translate;
                         // nextline_Read =
                         // nextline_vaddr = entry.vaddr +
@@ -678,8 +789,10 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                     else{
                         DPRINTF(PageTableWalker,"no pre\n");
                     }
+                    }*/
+
                 }
-            } else {
+             else {
                 DPRINTF(PageTableWalker, "Translated %#x -> %#x\n",
                         entry.vaddr, entry.paddr << PageShift |
                         (entry.vaddr & mask(entry.logBytes)));
@@ -708,6 +821,7 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
         //If we didn't return, we're setting up another read.
         RequestPtr request = std::make_shared<Request>(
             nextRead, oldRead->getSize(), flags, walker->requestorId);
+        DPRINTF(PageTableWalker, "oldread size %d\n", oldRead->getSize());
 
         delete oldRead;
         oldRead = nullptr;
@@ -715,8 +829,8 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
         read = new Packet(request, MemCmd::ReadReq);
         read->allocate();
 
-        DPRINTF(PageTableWalker,
-                "Loading level%d PTE from %#x\n", level, nextRead);
+        DPRINTF(PageTableWalker, "Loading level%d PTE from %#x vaddr %#x\n",
+                level, nextRead, entry.vaddr);
     }
 
     return fault;
@@ -731,17 +845,40 @@ Walker::WalkerState::endWalk()
 }
 
 void
-Walker::WalkerState::setupWalk(Addr vaddr)
+Walker::WalkerState::setupWalk(Addr vaddr,int f_level ,bool from_l2tlb)
 {
     vaddr = Addr(sext<VADDR_BITS>(vaddr));
+    //level = 2;
 
-    Addr shift = PageShift + LEVEL_BITS * 2;
-    Addr idx = (vaddr >> shift) & LEVEL_MASK;
+    if (from_l2tlb){
+        //level = f_level;
+        level = 2;
+    }
+    else {
+        level = 2;
+    }
+
+    //Addr shift = PageShift + LEVEL_BITS * 2;
+    //Addr idx = (vaddr >> shift) & LEVEL_MASK;
+    //Addr topAddr = (satp.ppn << PageShift) + (idx * sizeof(PTESv39));
+
+   // Addr shift = PageShift + LEVEL_BITS * level +3;
+    //Addr idx = (vaddr >> shift) & LEVEL_MASK;
+   // Addr idx = (vaddr >> shift) & (LEVEL_MASK >> 3);
+    //Addr topAddr = (satp.ppn << PageShift) + (idx << shift);
+    Addr shift = PageShift + LEVEL_BITS * level;
+    Addr idx_f = (vaddr >> shift) & LEVEL_MASK;
+    Addr idx = (idx_f>>3)<<3;
+
     Addr topAddr = (satp.ppn << PageShift) + (idx * sizeof(PTESv39));
-    level = 2;
+    //Addr topAddr = (l2_entry.pte.ppn << PageShift) + (idx << shift);
 
-    DPRINTF(PageTableWalker, "Performing table walk for address %#x\n", vaddr);
-    DPRINTF(PageTableWalker, "Loading level%d PTE from %#x\n", level, topAddr);
+    DPRINTF(PageTableWalker,
+            "Performing table walk for address %#x shift %d idx_f %#x\n",
+            vaddr, shift, idx_f);
+    DPRINTF(PageTableWalker,
+            "Loading level%d PTE from %#x idx %#x idx_shift %#x vaddr %#x\n",
+            level, topAddr, idx, idx << shift, vaddr);
 
     state = Translate;
     nextState = Ready;
@@ -751,9 +888,13 @@ Walker::WalkerState::setupWalk(Addr vaddr)
     nextline_entry.asid = satp.asid;
 
     Request::Flags flags = Request::PHYSICAL;
+    //RequestPtr request = std::make_shared<Request>(
+    //    topAddr, sizeof(PTESv39), flags, walker->requestorId);
     RequestPtr request = std::make_shared<Request>(
-        topAddr, sizeof(PTESv39), flags, walker->requestorId);
+        topAddr, 64, flags, walker->requestorId);
+    DPRINTF(PageTableWalker," sv39 size is %d\n",sizeof(PTESv39));
 
+    //Addr
     read = new Packet(request, MemCmd::ReadReq);
     read->allocate();
 }

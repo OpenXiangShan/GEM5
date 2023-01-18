@@ -77,7 +77,9 @@ BitUnion64(PTESv39)
 EndBitUnion(PTESv39)
 
 struct TlbEntry;
+//struct L2TlbEntry;
 typedef Trie<Addr, TlbEntry> TlbEntryTrie;
+//typedef Trie<Addr, L2TlbEntry> L2TlbEntryTrie;
 
 struct TlbEntry : public Serializable
 {
@@ -98,8 +100,10 @@ struct TlbEntry : public Serializable
     // A sequence number to keep track of LRU.
     uint64_t lruSeq;
 
+    uint64_t level;
+
     TlbEntry()
-        : paddr(0), vaddr(0), logBytes(0), pte(), lruSeq(0)
+        : paddr(0), vaddr(0), logBytes(0), pte(), lruSeq(0) ,level(0)
     {}
 
     // Return the page size in bytes

@@ -1253,6 +1253,10 @@ class Packet : public Printable
     template <typename T>
     T getLE() const;
 
+
+    template <typename T>
+    T getLE_l2tlb(uint64_t offset) const;
+
     /**
      * Get the data in the packet byte swapped from the specified
      * endianness.
@@ -1394,6 +1398,10 @@ class Packet : public Printable
     /** Get the data in the packet without byte swapping. */
     template <typename T>
     T getRaw() const;
+
+
+    template <typename T>
+    T getRaw_l2tlb(uint64_t offset) const;
 
     /** Set the value in the data pointer to v without byte swapping. */
     template <typename T>
