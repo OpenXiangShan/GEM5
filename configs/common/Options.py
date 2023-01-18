@@ -193,6 +193,18 @@ def addNoISAOptions(parser):
                         default="{}/build/riscv64-nemu-interpreter-so".format(
                             os.environ['NEMU_HOME']),
                         help="The shared lib file used to do difftest")
+
+    # Dump Commit option
+    parser.add_argument("--dump-commit",
+                        action="store_true",
+                        help="dump commit instructions")
+
+    parser.add_argument("--dump-start",
+                        action="store",
+                        type=int,
+                        default=0,
+                        help="dump commit instructions from this committed number")
+
     # ArchDB option
     parser.add_argument("--enable-arch-db",
                         action="store_true",

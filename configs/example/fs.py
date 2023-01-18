@@ -265,6 +265,14 @@ def build_test_system(np):
 
     CpuConfig.config_difftest(TestCPUClass, test_sys.cpu, args)
 
+    for i in range(np):
+        if args.dump_commit:
+            test_sys.cpu[i].dump_commit = True
+            test_sys.cpu[i].dump_start = args.dump_start
+        else:
+            test_sys.cpu[i].dump_commit = False
+            test_sys.cpu[i].dump_start = 0
+
     return test_sys
 
 def build_drive_system(np):

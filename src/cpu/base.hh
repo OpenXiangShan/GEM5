@@ -668,6 +668,8 @@ class BaseCPU : public ClockedObject
     // difftest
   protected:
     bool enableDifftest;
+    bool dumpCommitFlag;
+    int dumpStartNum;
     std::shared_ptr<DiffAllStates> diffAllStates{};
 
     virtual void readGem5Regs()
@@ -728,6 +730,10 @@ class BaseCPU : public ClockedObject
     {
         this->diffAllStates = diffAllStates;
     }
+
+    int committedInstNum = 0;
+
+    std::vector<std::pair<Addr, std::string>> committedInsts;
 };
 
 } // namespace gem5
