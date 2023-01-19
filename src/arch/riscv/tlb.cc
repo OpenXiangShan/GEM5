@@ -834,6 +834,7 @@ TLB::l2TLB_remove(size_t idx, int l2l1, int l2l2, int l2l3, int l2sp)
     int i;
     if (l2l1 == 1) {
         for (i = 0; i < 8; i++) {
+            DPRINTF(TLB, "remove tlb_l2l1 idx %d idx+i %d\n", idx, idx + i);
             DPRINTF(TLB,
                     "remove tlb_l2l1 (vpn=%#x, asid=%#x): ppn=%#x pte=%#x "
                     "size=%#x\n",
@@ -848,6 +849,7 @@ TLB::l2TLB_remove(size_t idx, int l2l1, int l2l2, int l2l3, int l2sp)
     }
     if (l2l2 == 1) {
         for (i = 0; i < 8; i++) {
+            DPRINTF(TLB, "remove tlb_l2l2 idx %d idx+i %d\n", idx, idx + i);
             DPRINTF(TLB,
                     "remove tlb_l2l2 (vpn=%#x, asid=%#x): ppn=%#x pte=%#x "
                     "size=%#x\n",
@@ -862,6 +864,7 @@ TLB::l2TLB_remove(size_t idx, int l2l1, int l2l2, int l2l3, int l2sp)
     }
     if (l2l3 == 1) {
         for (i = 0; i < 8; i++) {
+            DPRINTF(TLB, "remove tlb_l2l3 idx %d idx+i %d\n", idx, idx + i);
             DPRINTF(TLB,
                     "remove tlb_l2l3 (vpn=%#x, asid=%#x): ppn=%#x pte=%#x "
                     "size=%#x\n",
@@ -876,6 +879,7 @@ TLB::l2TLB_remove(size_t idx, int l2l1, int l2l2, int l2l3, int l2sp)
     }
     if (l2sp == 1) {
         for (i = 0; i < 8; i++) {
+            DPRINTF(TLB, "remove tlb_l2sp idx %d idx+i %d\n", idx, idx + i);
             DPRINTF(TLB,
                     "remove tlb_sp (vpn=%#x, asid=%#x): ppn=%#x pte=%#x "
                     "size=%#x\n",
@@ -953,9 +957,7 @@ TLB::L2tlb_check(PTESv39 pte, int level, STATUS status, PrivilegeMode pmode,
                  ThreadContext *tc, BaseMMU::Translation *translation)
 {
     Fault fault = NoFault;
-    // bool end_pte;
     bool doWrite_l2tlb = false;
-    // *go_translate = false;
     DPRINTF(TLB, "l2tlb_check paddr %#x vaddr %#x pte %#x\n", pte.ppn, vaddr,
             pte);
     DPRINTF(TLB, "pte %#x r %d x %d \n", pte, pte.r, pte.x);
@@ -1007,8 +1009,8 @@ TLB::L2tlb_check(PTESv39 pte, int level, STATUS status, PrivilegeMode pmode,
             } else {
                 // start walk
                 //*go_translate = true;
-                fault = walker->start(tc, translation, req, mode, false, level,
-                                      true);
+                fault = walker->start(pte.ppn, tc, translation, req, mode,
+                                      false, level, true);
             }
         }
     }
@@ -1031,11 +1033,11 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
     SATP satp = tc->readMiscReg(MISCREG_SATP);
 
     TlbEntry *e = lookup(vaddr, satp.asid, mode, false);
-    //   TlbEntry *e5 = NULL;
-    //   TlbEntry *e4 = NULL;
+    TlbEntry *e5 = NULL;
+    TlbEntry *e4 = NULL;
     TlbEntry *e3 = NULL;
-    //   TlbEntry *e2 = NULL;
-    //   TlbEntry *e1 = NULL;
+    TlbEntry *e2 = NULL;
+    TlbEntry *e1 = NULL;
     Addr paddr;
     Fault fault;
     // e5->pte.v;
@@ -1045,41 +1047,53 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
 
     if (!e) {  // look up l2tlb
         // e = lookupPre(vaddr, satp.asid, mode, false);
-        //  e5 = lookup_l2tlb(vaddr,satp.asid,mode,false,5);
-        //  e4 = lookup_l2tlb(vaddr,satp.asid,mode,false,4);
+        e5 = lookup_l2tlb(vaddr, satp.asid, mode, false, 5);
+        e4 = lookup_l2tlb(vaddr, satp.asid, mode, false, 4);
         e3 = lookup_l2tlb(vaddr, satp.asid, mode, false, 3);
-        // e2 = lookup_l2tlb(vaddr,satp.asid,mode,false,2);
-        // e1 = lookup_l2tlb(vaddr,satp.asid,mode,false,1);
+        e2 = lookup_l2tlb(vaddr, satp.asid, mode, false, 2);
+        e1 = lookup_l2tlb(vaddr, satp.asid, mode, false, 1);
         if (e3) {  // if hit in l3tlb
             //  req->setPaddr()
             DPRINTF(TLB, "hit in l2TLB l3\n");
             fault = L2tlb_check(e3->pte, 0, status, pmode, vaddr, mode, req,
                                 tc, translation);
             e = e3;
-        }
-        /*      else if (e5){//hit in sp l2
-                  DPRINTF(TLB,"hit in l2 tlb l5\n");
-                  fault
-           =L2tlb_check(e5->pte,1,status,pmode,vaddr,mode,req,tc,translation);
-              }
-              else if (e4){//hit in sp l1
-                  DPRINTF(TLB,"hit in l2 tlb l4\n");
-                  fault
-           =L2tlb_check(e4->pte,2,status,pmode,vaddr,mode,req,tc,translation);
-              }
-              else if (e2){
-                  DPRINTF(TLB,"hit in l2 tlb l2\n");
-                  fault
-           =L2tlb_check(e2->pte,1,status,pmode,vaddr,mode,req,tc,translation);
-              }
-              else if (e1){
-                  DPRINTF(TLB,"hit in l2 tlb l1\n");
-                  fault
-           =L2tlb_check(e1->pte,2,status,pmode,vaddr,mode,req,tc,translation);
-              }*/
-        else {
+        } else if (e5) {  // hit in sp l2
+            DPRINTF(TLB, "hit in l2 tlb l5\n");
+            fault = L2tlb_check(e5->pte, 1, status, pmode, vaddr, mode, req,
+                                tc, translation);
+            e = e5;
+        } else if (e4) {  // hit in sp l1
+            DPRINTF(TLB, "hit in l2 tlb l4\n");
+            fault = L2tlb_check(e4->pte, 2, status, pmode, vaddr, mode, req,
+                                tc, translation);
+            e = e4;
+        } else if (e2) {
+            DPRINTF(TLB, "hit in l2 tlb l2\n");
+            fault = L2tlb_check(e2->pte, 1, status, pmode, vaddr, mode, req,
+                                tc, translation);
+            if (translation != nullptr || fault != NoFault) {
+                // This gets ignored in atomic mode.
+                delayed = true;
+                return fault;
+            }
+            e = lookup(vaddr, satp.asid, mode, false);
+            assert(e != nullptr);
+        } else if (e1) {
+            DPRINTF(TLB, "hit in l2 tlb l1\n");
+            fault = L2tlb_check(e1->pte, 2, status, pmode, vaddr, mode, req,
+                                tc, translation);
+            if (translation != nullptr || fault != NoFault) {
+                // This gets ignored in atomic mode.
+                delayed = true;
+                return fault;
+            }
+            e = lookup(vaddr, satp.asid, mode, false);
+            assert(e != nullptr);
+        } else {
             DPRINTF(TLB, "miss in l1 tlb + l2 tlb\n");
-            fault = walker->start(tc, translation, req, mode, false);
+            fault = walker->start(0,tc, translation, req, mode, false);
+            DPRINTF(TLB,"finish start\n");
             if (translation != nullptr || fault != NoFault) {
                 // This gets ignored in atomic mode.
                 delayed = true;
@@ -1102,7 +1116,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
         DPRINTF(TLB,"check is no fault\n");
         if (mode == BaseMMU::Write && !e->pte.w) {
             DPRINTF(TLB, "Dirty bit not set, repeating PT walk\n");
-            fault = walker->start(tc, translation, req, mode);
+            fault = walker->start(0, tc, translation, req, mode);
             if (translation != nullptr || fault != NoFault) {
                 delayed = true;
                 return fault;
@@ -1112,6 +1126,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
             return fault;
     }
     DPRINTF(TLB, "before paddr\n");
+    assert(e != nullptr);
     paddr = e->paddr << PageShift | (vaddr & mask(e->logBytes));
 
     DPRINTF(TLB, "after paddr\n");

@@ -168,7 +168,7 @@ namespace RiscvISA
                              BaseMMU::Translation *translation,
                              const RequestPtr &req, BaseMMU::Mode mode);
 
-            Fault startWalk(int f_level , bool from_l2tlb);
+            Fault startWalk(Addr ppn, int f_level, bool from_l2tlb);
             Fault startFunctional(Addr &addr, unsigned &logBytes);
             bool recvPacket(PacketPtr pkt);
             unsigned numInflight() const;
@@ -182,7 +182,7 @@ namespace RiscvISA
             bool allRequestorSquashed() const;
 
           private:
-            void setupWalk(Addr vaddr,int f_level,bool from_l2tlb);
+            void setupWalk(Addr ppn, Addr vaddr, int f_level, bool from_l2tlb);
             Fault stepWalk(PacketPtr &write);
             void sendPackets();
             void endWalk();
@@ -206,9 +206,9 @@ namespace RiscvISA
 
       public:
         // Kick off the state machine.
-        Fault start(ThreadContext *_tc, BaseMMU::Translation *translation,
-                    const RequestPtr &req, BaseMMU::Mode mode,
-                    bool pre = false, int f_level = 2,
+        Fault start(Addr ppn, ThreadContext *_tc,
+                    BaseMMU::Translation *translation, const RequestPtr &req,
+                    BaseMMU::Mode mode, bool pre = false, int f_level = 2,
                     bool from_l2tlb = false);
 
 
