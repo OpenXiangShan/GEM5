@@ -55,7 +55,7 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi,
         if (is_active_page) {
             // active page
             Addr pf_tgt_addr =
-                decr ? block_addr + 30 * blkSize : block_addr - 30 * blkSize;
+                decr ? block_addr - 30 * blkSize : block_addr + 30 * blkSize;
             Addr pf_tgt_region = regionAddress(pf_tgt_addr);
             Addr pf_tgt_offset = regionOffset(pf_tgt_addr);
             DPRINTF(SMSPrefetcher, "tgt addr: %x offset: %d\n", pf_tgt_addr,
