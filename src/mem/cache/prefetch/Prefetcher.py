@@ -239,6 +239,19 @@ class SMSPrefetcher(QueuedPrefetcher):
         LRURP(),
         "Replacement policy of active generation table"
     )
+    # stride table (full-assoc)
+    stride_entries = Param.MemorySize("16", "Stride Entries")
+    stride_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.act_entries,
+            size=Parent.act_entries),
+        "Indexing policy of stride table"
+    )
+    stride_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(),
+        "Replacement policy of stride table"
+    )
     # pht table (set-assoc)
     pht_entries = Param.MemorySize(
         "64",

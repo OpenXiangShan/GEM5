@@ -54,11 +54,35 @@ class SMSPrefetcher : public Queued
               region_offset(0)
         {
         }
+        bool in_active_page() {
+            // FIXME: remove hard-code 12
+            return access_cnt > 12;
+        }
     };
 
     AssociativeSet<ACTEntry> act;
 
-    ACTEntry *actLookup(const PrefetchInfo &pfi);
+    ACTEntry *actLookup(const PrefetchInfo &pfi, bool &in_active_page);
+
+    // stride table
+    class StrideEntry : public TaggedEntry
+    {
+      public:
+        int64_t stride;
+        uint64_t last_addr;
+        SatCounter8 conf;
+        StrideEntry(const SatCounter8 & _conf)
+            : TaggedEntry(),
+              stride(0),
+              last_addr(0),
+              conf(_conf)
+        {}
+    };
+
+    void strideLookup(const PrefetchInfo &pfi,
+                      std::vector<AddrPriority> &address);
+
+    AssociativeSet<StrideEntry> stride;
 
     void updatePht(ACTEntry *act_entry);
 
