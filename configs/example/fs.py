@@ -219,7 +219,8 @@ def build_test_system(np):
                     bpClass = ObjectList.bp_list.get(args.bp_type)
                     test_sys.cpu[i].branchPred = bpClass()
                     test_sys.cpu[i].branchPred.isDumpMisspredPC = True
-                    test_sys.cpu[i].branchPred.dump_loop_pred = args.dump_loop_pred
+                    if (bpClass == ObjectList.bp_list.get('DecoupledStreamBPU')):
+                        test_sys.cpu[i].branchPred.dump_loop_pred = args.dump_loop_pred
                 if args.indirect_bp_type:
                     IndirectBPClass = ObjectList.indirect_bp_list.get(
                         args.indirect_bp_type)
