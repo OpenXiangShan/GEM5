@@ -892,6 +892,8 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
             }
             // Reset the bus additional time as it is now accounted for
             tgt_pkt->headerDelay = tgt_pkt->payloadDelay = 0;
+            DPRINTF(Cache, "Scheduling %#lx to response at tick %lu\n",
+                    tgt_pkt->getAddr(), completion_time);
             cpuSidePort.schedTimingResp(tgt_pkt, completion_time);
             break;
 

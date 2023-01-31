@@ -1443,6 +1443,13 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         DPRINTF(CommitTrace, "Inst[sn:%lu] commit blocked cycles: %lu\n",
                 head_inst->seqNum, delta);
     }
+    if (head_inst->isControl() && head_inst->pcState().instAddr() == 0x229d6) {
+        DPRINTF(CommitTrace,
+                "%#lx taken: %i, predicted taken: %i, mispredicted: %i\n",
+                head_inst->pcState().instAddr(),
+                head_inst->readPredTaken() ^ head_inst->mispredicted(),
+                head_inst->readPredTaken(), head_inst->mispredicted());
+    }
     head_inst->printDisassembly();
     lastCommitTick = curTick();
 
@@ -1487,6 +1494,8 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
 #if TRACING_ON
     if (debug::O3PipeView) {
         head_inst->commitTick = curTick() - head_inst->fetchTick;
+        DPRINTF(O3PipeView, "Record commit for inst sn:%lu, commitTick=%lu\n",
+                head_inst->seqNum, head_inst->commitTick);
     }
 #endif
 

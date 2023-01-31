@@ -716,6 +716,8 @@ Decode::decodeInsts(ThreadID tid)
 #if TRACING_ON
         if (debug::O3PipeView) {
             inst->decodeTick = curTick() - inst->fetchTick;
+            DPRINTF(O3PipeView, "Record decode for inst sn:%lu\n",
+                    inst->seqNum);
         }
 #endif
 
