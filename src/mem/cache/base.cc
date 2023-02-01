@@ -542,6 +542,7 @@ BaseCache::recvTimingResp(PacketPtr pkt)
     // we have dealt with any (uncacheable) writes above, from here on
     // we know we are dealing with an MSHR due to a miss or a prefetch
     MSHR *mshr = dynamic_cast<MSHR*>(pkt->popSenderState());
+    DPRINTF(Cache, "MSHR addr: %#lx\n", mshr);
     assert(mshr);
 
     if (mshr == noTargetMSHR) {

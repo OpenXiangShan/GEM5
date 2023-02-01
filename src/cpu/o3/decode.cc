@@ -48,6 +48,7 @@
 #include "cpu/o3/limits.hh"
 #include "debug/Activity.hh"
 #include "debug/Decode.hh"
+#include "debug/DecoupleBP.hh"
 #include "debug/O3PipeView.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/full_system.hh"
@@ -298,7 +299,13 @@ Decode::squash(const DynInstPtr &inst, ThreadID tid)
     toFetch->decodeInfo[tid].mispredictInst = inst;
     toFetch->decodeInfo[tid].squash = true;
     toFetch->decodeInfo[tid].doneSeqNum = inst->seqNum;
-    set(toFetch->decodeInfo[tid].nextPC, *inst->branchTarget());
+    if (inst->isControl()) {
+        set(toFetch->decodeInfo[tid].nextPC, *inst->branchTarget());
+    } else {
+        std::unique_ptr<PCStateBase> npc_ptr(inst->pcState().clone());
+        npc_ptr->as<RiscvISA::PCState>().set(inst->pcState().getFallThruPC());
+        set(toFetch->decodeInfo[tid].nextPC, *npc_ptr);
+    }
 
     // Looking at inst->pcState().branching()
     // may yield unexpected results if the branch
@@ -715,7 +722,7 @@ Decode::decodeInsts(ThreadID tid)
         // Ensure that if it was predicted as a branch, it really is a
         // branch.
         if (inst->readPredTaken() && !inst->isControl()) {
-            panic("Instruction predicted as a branch!");
+            // panic("Instruction predicted as a branch!");
 
             ++stats.controlMispred;
 
@@ -735,6 +742,15 @@ Decode::decodeInsts(ThreadID tid)
             ++stats.branchResolved;
 
             std::unique_ptr<PCStateBase> target = inst->branchTarget();
+            auto &t = target->as<RiscvISA::PCState>();
+            auto &pred = inst->readPredTarg().as<RiscvISA::PCState>();
+            if (t.start_equals(pred) && !t.equals(pred)) {
+                DPRINTF(
+                    DecoupleBP,
+                    "Override useless npc, from %#lx->%#lx to %#lx->%#lx\n",
+                    pred.pc(), pred.npc(), t.pc(), t.npc());
+                inst->setPredTarg(t);
+            }
             if (*target != inst->readPredTarg()) {
                 ++stats.branchMispred;
 
@@ -752,14 +768,20 @@ Decode::decodeInsts(ThreadID tid)
                 squash(inst, inst->threadNumber);
 
                 DPRINTF(Decode,
-                        "[tid:%i] [sn:%llu] "
-                        "Updating predictions: Wrong predicted target: %s \
-                        PredPC: %s\n",
+                        "[tid:%i] [sn:%llu] Updating predictions:"
+                        " Wrong predicted target: %s PredPC: %s\n",
                         tid, inst->seqNum, inst->readPredTarg(), *target);
                 //The micro pc after an instruction level branch should be 0
                 inst->setPredTarg(*target);
                 break;
             }
+        }
+        if (inst->isNonSpeculative() && inst->readPredTaken()) {
+            // TODO: redirect to fall thru
+            std::unique_ptr<PCStateBase> npc(inst->pcState().clone());
+            npc->as<RiscvISA::PCState>().set(inst->pcState().getFallThruPC());
+            inst->setPredTaken(false);
+            inst->setPredTarg(*npc);
         }
     }
 

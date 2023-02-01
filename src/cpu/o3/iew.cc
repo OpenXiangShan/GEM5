@@ -54,6 +54,7 @@
 #include "cpu/o3/limits.hh"
 #include "cpu/timebuf.hh"
 #include "debug/Activity.hh"
+#include "debug/DecoupleBP.hh"
 #include "debug/Drain.hh"
 #include "debug/IEW.hh"
 #include "debug/O3PipeView.hh"
@@ -461,6 +462,8 @@ IEW::squashDueToBranch(const DynInstPtr& inst, ThreadID tid)
             inst->seqNum < toCommit->squashedSeqNum[tid]) {
         toCommit->squash[tid] = true;
         toCommit->squashedSeqNum[tid] = inst->seqNum;
+        toCommit->squashedStreamId[tid] = inst->getFsqId();
+        toCommit->squashedTargetId[tid] = inst->getFtqId();
         toCommit->branchTaken[tid] = inst->pcState().branching();
 
         set(toCommit->pc[tid], inst->pcState());
@@ -470,6 +473,13 @@ IEW::squashDueToBranch(const DynInstPtr& inst, ThreadID tid)
         toCommit->includeSquashInst[tid] = false;
 
         wroteToTimeBuffer = true;
+
+        DPRINTF(DecoupleBP,
+                "Branch misprediction (pc=%#lx) set stream id to %lu, target "
+                "id to %lu\n",
+                toCommit->pc[tid]->instAddr(),
+                toCommit->squashedStreamId[tid],
+                toCommit->squashedTargetId[tid]);
     }
 
 }
@@ -490,6 +500,8 @@ IEW::squashDueToMemOrder(const DynInstPtr& inst, ThreadID tid)
         toCommit->squash[tid] = true;
 
         toCommit->squashedSeqNum[tid] = inst->seqNum;
+        toCommit->squashedStreamId[tid] = inst->getFsqId();
+        toCommit->squashedTargetId[tid] = inst->getFtqId();
         set(toCommit->pc[tid], inst->pcState());
         toCommit->mispredictInst[tid] = NULL;
 
@@ -497,6 +509,15 @@ IEW::squashDueToMemOrder(const DynInstPtr& inst, ThreadID tid)
         toCommit->includeSquashInst[tid] = true;
 
         wroteToTimeBuffer = true;
+
+        DPRINTF(DecoupleBP,
+                "Memory violation (pc=%#lx) set stream id to %lu, target id "
+                "to %lu\n",
+                toCommit->pc[tid]->instAddr(),
+                toCommit->squashedStreamId[tid],
+                toCommit->squashedTargetId[tid]);
+
+
     }
 }
 

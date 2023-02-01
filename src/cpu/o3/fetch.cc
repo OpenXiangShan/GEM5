@@ -48,6 +48,7 @@
 #include <queue>
 
 #include "arch/generic/tlb.hh"
+#include "base/debug_helper.hh"
 #include "base/random.hh"
 #include "base/types.hh"
 #include "config/the_isa.hh"
@@ -58,10 +59,12 @@
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
 #include "debug/Activity.hh"
+#include "debug/DecoupleBPProbe.hh"
 #include "debug/Drain.hh"
 #include "debug/Fetch.hh"
 #include "debug/O3CPU.hh"
 #include "debug/O3PipeView.hh"
+#include "debug/FetchFault.hh"
 #include "mem/packet.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/byteswap.hh"
@@ -134,6 +137,18 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
     }
 
     branchPred = params.branchPred;
+
+    if (isStreamPred()) {
+        dbsp = dynamic_cast<branch_prediction::stream_pred::DecoupledStreamBPU*>(branchPred);
+        dbpftb = nullptr;
+        assert(dbsp);
+        usedUpFetchTargets = true;
+    } else if (isFTBPred()) {
+        dbsp = nullptr;
+        dbpftb = dynamic_cast<branch_prediction::ftb_pred::DecoupledBPUWithFTB*>(branchPred);
+        assert(dbpftb);
+        usedUpFetchTargets = true;
+    }
 
     assert(params.decoder.size());
     for (ThreadID tid = 0; tid < numThreads; tid++) {
@@ -304,6 +319,7 @@ Fetch::clearStates(ThreadID tid)
     macroop[tid] = NULL;
     delayedCommit[tid] = false;
     memReq[tid] = NULL;
+    anotherMemReq[tid] = NULL;
     stalls[tid].decode = false;
     stalls[tid].drain = false;
     fetchBufferPC[tid] = 0;
@@ -332,6 +348,7 @@ Fetch::resetStage()
 
         delayedCommit[tid] = false;
         memReq[tid] = NULL;
+        anotherMemReq[tid] = NULL;
 
         stalls[tid].decode = false;
         stalls[tid].drain = false;
@@ -346,12 +363,86 @@ Fetch::resetStage()
 
     wroteToTimeBuffer = false;
     _status = Inactive;
+    loopBuffer.deactivate();
+
+    if (isStreamPred()) {
+        dbsp->resetPC(pc[0]->instAddr());
+    } else if (isFTBPred()) {
+        dbpftb->resetPC(pc[0]->instAddr());
+    }
 }
 
 void
 Fetch::processCacheCompletion(PacketPtr pkt)
 {
     ThreadID tid = cpu->contextToThread(pkt->req->contextId());
+
+    if (pkt->req->isMisalignedFetch() && (pkt->req == memReq[tid] || pkt->req == anotherMemReq[tid])) {
+        DPRINTF(Fetch, "[tid:%i] Misaligned pkt receive.\n", tid);
+        Addr anotherPC = 0;
+        unsigned anotherSize = 0;
+        if (pkt->req->getReqNum() == 1) {
+            firstPkt[tid] = pkt;
+            anotherPC = pkt->req->getVaddr() + 64 - pkt->req->getVaddr() % 64;
+            anotherSize = fetchBufferSize - pkt->getSize();
+        } else if (pkt->req->getReqNum() == 2) {
+            secondPkt[tid] = pkt;
+            anotherPC = pkt->req->getVaddr() - 64 + pkt->getSize();
+            anotherSize = fetchBufferSize - pkt->getSize();
+        }
+
+        if (firstPkt[tid] == nullptr || secondPkt[tid] == nullptr) {
+            DPRINTF(Fetch, "[tid:%i] Waiting for %s pkt.\n", tid, 
+                    firstPkt[tid] == nullptr ? "first" : "second");
+            if (pkt->isRetriedPkt()) {
+                DPRINTF(Fetch, "[tid:%i] Retried pkt.\n", tid);
+                DPRINTF(Fetch, "[tid:%i] send next pkt, addr: %#x, size: %d\n",
+                        tid, pkt->req->getVaddr() + 64 - pkt->req->getVaddr() % 64, 
+                        fetchBufferSize - pkt->getSize());
+                RequestPtr mem_req = std::make_shared<Request>(
+                                    anotherPC, 
+                                    anotherSize,
+                                    Request::INST_FETCH, cpu->instRequestorId(), pkt->req->getPC(),
+                                    cpu->thread[tid]->contextId());
+
+                mem_req->taskId(cpu->taskId());
+
+                mem_req->setMisalignedFetch();
+
+                if (pkt->req->getReqNum() == 1) {
+                    mem_req->setReqNum(2);
+                } else if (pkt->req->getReqNum() == 2) {
+                    mem_req->setReqNum(1);
+                }
+
+                anotherMemReq[tid] = memReq[tid];
+
+                memReq[tid] = mem_req;
+
+                fetchStatus[tid] = ItlbWait;
+                FetchTranslation *trans = new FetchTranslation(this);
+                cpu->mmu->translateTiming(mem_req, cpu->thread[tid]->getTC(),
+                                          trans, BaseMMU::Execute);
+            }
+            return;
+        } else {
+            DPRINTF(Fetch, "[tid:%i] Received another pkt addr=%#lx, mem_req addr=%#lx.\n", tid,
+                    pkt->getAddr(), pkt->req->getVaddr());
+
+            // Copy two packets data into second packet
+            uint8_t* firstData = new uint8_t[fetchBufferSize];
+            uint8_t* secondData = new uint8_t[fetchBufferSize];
+            firstPkt[tid]->getData(firstData);
+            secondPkt[tid]->getData(secondData);
+            if (memReq[tid]->getReqNum() == 2) {
+                pkt = secondPkt[tid];
+            } else {
+                pkt = firstPkt[tid];
+            }
+            pkt->setData(firstData, 0, 0, firstPkt[tid]->getSize());
+            pkt->setData(secondData, 0, firstPkt[tid]->getSize(), secondPkt[tid]->getSize());
+        }
+    }
 
     DPRINTF(Fetch, "[tid:%i] Waking up from cache miss.\n", tid);
     assert(!cpu->switchedOut());
@@ -360,6 +451,7 @@ Fetch::processCacheCompletion(PacketPtr pkt)
     // to return.
     if (fetchStatus[tid] != IcacheWaitResponse ||
         pkt->req != memReq[tid]) {
+        DPRINTF(Fetch, "delete pkt %#lx\n", pkt->getAddr());
         ++fetchStats.icacheSquashes;
         delete pkt;
         return;
@@ -387,8 +479,16 @@ Fetch::processCacheCompletion(PacketPtr pkt)
     pkt->req->setAccessLatency();
     cpu->ppInstAccessComplete->notify(pkt);
     // Reset the mem req to NULL.
-    delete pkt;
+    if (!pkt->req->isMisalignedFetch()) {
+        delete pkt;
+    } else {
+        delete firstPkt[tid];
+        delete secondPkt[tid];
+        firstPkt[tid] = nullptr;
+        secondPkt[tid] = nullptr;
+    }
     memReq[tid] = NULL;
+    anotherMemReq[tid] = NULL;
 }
 
 void
@@ -515,16 +615,41 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     // this function updates it.
     bool predict_taken;
 
-    if (!inst->isControl()) {
+    //  BP  =>  FSQ  =>  FTB  => Fetch
+    ThreadID tid = inst->threadNumber;
+    if (isDecoupledFrontend()) {
+        if (isStreamPred()) {
+            std::tie(predict_taken, usedUpFetchTargets) =
+                dbsp->decoupledPredict(
+                    inst->staticInst, inst->seqNum, next_pc, tid);
+            if (usedUpFetchTargets) {
+                DPRINTF(DecoupleBP, "Used up fetch targets.\n");
+            }
+        }
+        else if (isFTBPred()) {
+            std::tie(predict_taken, usedUpFetchTargets) =
+                dbpftb->decoupledPredict(
+                    inst->staticInst, inst->seqNum, next_pc, tid);
+            if (usedUpFetchTargets) {
+                DPRINTF(DecoupleBP, "Used up fetch targets.\n");
+            }
+        }
+
+    }
+
+    // For decoupled frontend, the instruction type is predicted with BTB
+    if ((isDecoupledFrontend() && !predict_taken) ||
+        (!isDecoupledFrontend() && !inst->isControl())) {
         inst->staticInst->advancePC(next_pc);
         inst->setPredTarg(next_pc);
         inst->setPredTaken(false);
         return false;
     }
 
-    ThreadID tid = inst->threadNumber;
-    predict_taken = branchPred->predict(inst->staticInst, inst->seqNum,
-                                        next_pc, tid);
+    if (!isDecoupledFrontend()) {
+        predict_taken = branchPred->predict(inst->staticInst, inst->seqNum,
+                                            next_pc, tid);
+    }
 
     if (predict_taken) {
         DPRINTF(Fetch, "[tid:%i] [sn:%llu] Branch at PC %#x "
@@ -574,23 +699,71 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
         return false;
     }
 
-    // Align the fetch address to the start of a fetch buffer segment.
-    Addr fetchBufferBlockPC = fetchBufferAlignPC(vaddr);
+    Addr fetchPC = vaddr;
+    unsigned fetchSize = fetchBufferSize;
 
-    DPRINTF(Fetch, "[tid:%i] Fetching cache line %#x for addr %#x\n",
-            tid, fetchBufferBlockPC, vaddr);
+    DPRINTF(Fetch, "[tid:%i] Fetching cache line %#x for addr %#x, pc=%#lx\n",
+            tid, fetchPC, vaddr, pc);
 
     // Setup the memReq to do a read of the first instruction's address.
     // Set the appropriate read size and flags as well.
     // Build request here.
+    if (fetchPC % 64 + fetchBufferSize > 64) {
+        fetchMisaligned[tid] = true;
+
+        firstPkt[tid] = nullptr;
+        secondPkt[tid] = nullptr;
+
+        fetchSize = 64 - fetchPC % 64;
+        RequestPtr mem_req = std::make_shared<Request>(
+            fetchPC, fetchSize,
+            Request::INST_FETCH, cpu->instRequestorId(), pc,
+            cpu->thread[tid]->contextId());
+
+        mem_req->taskId(cpu->taskId());
+
+        memReq[tid] = mem_req;
+
+        anotherMemReq[tid] = mem_req;
+
+        mem_req->setMisalignedFetch();
+
+        DPRINTF(Fetch, "[tid:%i] Fetching first cache line %#x for addr %#x, pc=%#lx\n",
+                tid, fetchPC, vaddr, pc);
+
+        // Initiate translation of the icache block
+        fetchStatus[tid] = ItlbWait;
+        FetchTranslation *trans = new FetchTranslation(this);
+        cpu->mmu->translateTiming(mem_req, cpu->thread[tid]->getTC(),
+                                  trans, BaseMMU::Execute);
+
+        fetchPC += (64 - fetchPC % 64);
+        fetchSize = fetchBufferSize - fetchSize;
+    } else {
+        fetchMisaligned[tid] = false;
+    }
+
+    accessInfo[tid] = std::make_pair(vaddr, fetchPC);
+
+    if (fetchMisaligned[tid] && fetchStatus[tid] == IcacheWaitRetry) {
+        return true;
+    }
+
     RequestPtr mem_req = std::make_shared<Request>(
-        fetchBufferBlockPC, fetchBufferSize,
+        fetchPC, fetchSize,
         Request::INST_FETCH, cpu->instRequestorId(), pc,
         cpu->thread[tid]->contextId());
 
     mem_req->taskId(cpu->taskId());
 
     memReq[tid] = mem_req;
+
+    if (fetchMisaligned[tid]) {
+        DPRINTF(Fetch, "[tid:%i] Fetching second cache line %#x for addr %#x, pc=%#lx\n",
+                tid, fetchPC, vaddr, pc);
+        mem_req->setMisalignedFetch();
+        mem_req->setReqNum(2);
+    }
 
     // Initiate translation of the icache block
     fetchStatus[tid] = ItlbWait;
@@ -604,19 +777,34 @@ void
 Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
 {
     ThreadID tid = cpu->contextToThread(mem_req->contextId());
-    Addr fetchBufferBlockPC = mem_req->getVaddr();
+    Addr fetchMisalignedPC = mem_req->getVaddr();
+    if (mem_req->getReqNum() == 2) {
+        fetchMisalignedPC = mem_req->getVaddr() - 64 + mem_req->getSize();
+    }
+    Addr fetchPC = mem_req->isMisalignedFetch() ? fetchMisalignedPC : mem_req->getVaddr();
 
     assert(!cpu->switchedOut());
 
     // Wake up CPU if it was idle
     cpu->wakeCPU();
 
-    if (fetchStatus[tid] != ItlbWait || mem_req != memReq[tid] ||
-        mem_req->getVaddr() != memReq[tid]->getVaddr()) {
-        DPRINTF(Fetch, "[tid:%i] Ignoring itlb completed after squash\n",
-                tid);
-        ++fetchStats.tlbSquashes;
-        return;
+    if (memReq[tid] != NULL) {
+        DPRINTF(Fetch, "memReq.addr=%#lx\n", memReq[tid]->getVaddr());
+    }
+
+    if (anotherMemReq[tid] != NULL) {
+        DPRINTF(Fetch, "anotherMemReq.addr=%#lx\n", anotherMemReq[tid]->getVaddr());
+    }
+
+    if (!(fetchStatus[tid] == IcacheWaitResponse && mem_req->isMisalignedFetch() && (mem_req == memReq[tid] || mem_req == anotherMemReq[tid])) && 
+        (fetchStatus[tid] != ItlbWait || ((mem_req != anotherMemReq[tid] || mem_req->getVaddr() != anotherMemReq[tid]->getVaddr()) && 
+         (mem_req != memReq[tid] || mem_req->getVaddr() != memReq[tid]->getVaddr())))) {
+            DPRINTF(Fetch, "[tid:%i] Ignoring itlb completed after squash\n",
+                    tid);
+            DPRINTF(Fetch, "[tid:%i] Ignoring req addr=%#lx\n",
+                    tid, mem_req->getVaddr());
+            ++fetchStats.tlbSquashes;
+            return;
     }
 
 
@@ -630,14 +818,20 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
                     mem_req->getPaddr(), curTick());
             fetchStatus[tid] = NoGoodAddr;
             memReq[tid] = NULL;
+            anotherMemReq[tid] = NULL;
             return;
         }
 
         // Build packet here.
         PacketPtr data_pkt = new Packet(mem_req, MemCmd::ReadReq);
         data_pkt->dataDynamic(new uint8_t[fetchBufferSize]);
+        if (mem_req->isMisalignedFetch())
+            data_pkt->setSendRightAway();
 
-        fetchBufferPC[tid] = fetchBufferBlockPC;
+        DPRINTF(Fetch, "[tid:%i] Fetching data for addr %#x, pc=%#lx\n",
+                    tid, mem_req->getVaddr(), fetchPC);
+
+        fetchBufferPC[tid] = fetchPC;
         fetchBufferValid[tid] = false;
         DPRINTF(Fetch, "Fetch: Doing instruction read.\n");
 
@@ -650,6 +844,9 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
             DPRINTF(Fetch, "[tid:%i] Out of MSHRs!\n", tid);
 
             fetchStatus[tid] = IcacheWaitRetry;
+            data_pkt->setRetriedPkt();
+            DPRINTF(Fetch, "[tid:%i] mem_req.addr=%#lx needs retry.\n", tid,
+                    mem_req->getVaddr());
             retryPkt = data_pkt;
             retryTid = tid;
             cacheBlocked = true;
@@ -664,9 +861,16 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
             ppFetchRequestSent->notify(mem_req);
         }
     } else {
+        DPRINTF(FetchFault, "fault, mem_req.addr=%#lx\n", mem_req->getVaddr());
         // Don't send an instruction to decode if we can't handle it.
         if (!(numInst < fetchWidth) ||
                 !(fetchQueue[tid].size() < fetchQueueSize)) {
+            if (finishTranslationEvent.scheduled() && finishTranslationEvent.getReq() != mem_req) {
+                DPRINTF(FetchFault, "fault, mem_req.addr=%#lx, finishTranslationEvent.getReq().addr=%#lx, mem_req.addr=%#lx\n",
+                        mem_req->getVaddr(),
+                        finishTranslationEvent.getReq()->getVaddr(), mem_req->getVaddr());
+                return;
+            }
             assert(!finishTranslationEvent.scheduled());
             finishTranslationEvent.setFault(fault);
             finishTranslationEvent.setReq(mem_req);
@@ -679,6 +883,7 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
                 tid, mem_req->getVaddr(), memReq[tid]->getVaddr());
         // Translation faulted, icache request won't be sent.
         memReq[tid] = NULL;
+        anotherMemReq[tid] = NULL;
 
         // Send the fault to commit.  This thread will not do anything
         // until commit handles the fault.  The only other way it can
@@ -693,6 +898,10 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
 
         instruction->setPredTarg(fetch_pc);
         instruction->fault = fault;
+        std::unique_ptr<PCStateBase> next_pc(fetch_pc.clone());
+        instruction->staticInst->advancePC(*next_pc);
+        set(instruction->predPC, next_pc);
+
         wroteToTimeBuffer = true;
 
         DPRINTF(Activity, "Activity this cycle.\n");
@@ -727,10 +936,12 @@ Fetch::doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst,
         DPRINTF(Fetch, "[tid:%i] Squashing outstanding Icache miss.\n",
                 tid);
         memReq[tid] = NULL;
+        anotherMemReq[tid] = NULL;
     } else if (fetchStatus[tid] == ItlbWait) {
         DPRINTF(Fetch, "[tid:%i] Squashing outstanding ITLB miss.\n",
                 tid);
         memReq[tid] = NULL;
+        anotherMemReq[tid] = NULL;
     }
 
     // Get rid of the retrying packet if it was from this thread.
@@ -755,7 +966,11 @@ Fetch::doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst,
     // some opportunities to handle interrupts may be missed.
     delayedCommit[tid] = true;
 
+    usedUpFetchTargets = true;
+
     ++fetchStats.squashCycles;
+
+    loopBuffer.deactivate();
 }
 
 void
@@ -959,6 +1174,16 @@ Fetch::tick()
 
     // Reset the number of the instruction we've fetched.
     numInst = 0;
+
+    if (isStreamPred()) {
+        assert(dbsp);
+        dbsp->tick();
+        usedUpFetchTargets = !dbsp->trySupplyFetchWithTarget(pc[0]->instAddr());
+    } else if (isFTBPred()) {
+        assert(dbpftb);
+        dbpftb->tick();
+        usedUpFetchTargets = !dbpftb->trySupplyFetchWithTarget(pc[0]->instAddr());
+    }
 }
 
 bool
@@ -988,21 +1213,93 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
         // If it was a branch mispredict on a control instruction, update the
         // branch predictor with that instruction, otherwise just kill the
         // invalid state we generated in after sequence number
-        if (fromCommit->commitInfo[tid].mispredictInst &&
-            fromCommit->commitInfo[tid].mispredictInst->isControl()) {
-            branchPred->squash(fromCommit->commitInfo[tid].doneSeqNum,
-                    *fromCommit->commitInfo[tid].pc,
-                    fromCommit->commitInfo[tid].branchTaken, tid);
+        if (!isDecoupledFrontend()) {
+            if (fromCommit->commitInfo[tid].mispredictInst &&
+                fromCommit->commitInfo[tid].mispredictInst->isControl()) {
+                branchPred->squash(fromCommit->commitInfo[tid].doneSeqNum,
+                        *fromCommit->commitInfo[tid].pc,
+                        fromCommit->commitInfo[tid].branchTaken, tid);
+            } else {
+                branchPred->squash(fromCommit->commitInfo[tid].doneSeqNum,
+                                tid);
+            }
         } else {
-            branchPred->squash(fromCommit->commitInfo[tid].doneSeqNum,
-                              tid);
+            auto mispred_inst = fromCommit->commitInfo[tid].mispredictInst;
+            // TODO: write dbpftb conditions
+            if (mispred_inst) {
+                if (isStreamPred()) {
+                    dbsp->controlSquash(
+                        mispred_inst->getFtqId(), mispred_inst->getFsqId(),
+                        mispred_inst->pcState(), *fromCommit->commitInfo[tid].pc,
+                        mispred_inst->staticInst, mispred_inst->getInstBytes(),
+                        fromCommit->commitInfo[tid].branchTaken,
+                        mispred_inst->seqNum, tid);
+                } else if (isFTBPred()) {
+                    dbpftb->controlSquash(
+                        mispred_inst->getFtqId(), mispred_inst->getFsqId(),
+                        mispred_inst->pcState(), *fromCommit->commitInfo[tid].pc,
+                        mispred_inst->staticInst, mispred_inst->getInstBytes(),
+                        fromCommit->commitInfo[tid].branchTaken,
+                        mispred_inst->seqNum, tid);
+                }
+            } else if (fromCommit->commitInfo[tid].isTrapSquash) {
+                if (isStreamPred()) {
+                    dbsp->trapSquash(
+                        fromCommit->commitInfo[tid].squashedTargetId,
+                        fromCommit->commitInfo[tid].squashedStreamId,
+                        fromCommit->commitInfo[tid].committedPC,
+                        *fromCommit->commitInfo[tid].pc, tid);
+                } else if (isFTBPred()) {
+                    dbpftb->trapSquash(
+                        fromCommit->commitInfo[tid].squashedTargetId,
+                        fromCommit->commitInfo[tid].squashedStreamId,
+                        fromCommit->commitInfo[tid].committedPC,
+                        *fromCommit->commitInfo[tid].pc, tid);
+                }
+
+
+            } else {
+                if (fromCommit->commitInfo[tid].pc &&
+                    fromCommit->commitInfo[tid].squashedStreamId != 0) {
+                    DPRINTF(
+                        DecoupleBP,
+                        "Squash with stream id and target id from IEW\n");
+                    if (isStreamPred()) {
+                        dbsp->nonControlSquash(
+                            fromCommit->commitInfo[tid].squashedTargetId,
+                            fromCommit->commitInfo[tid].squashedStreamId,
+                            *fromCommit->commitInfo[tid].pc, 0, tid);
+                    } else if (isFTBPred()) {
+                        dbpftb->nonControlSquash(
+                            fromCommit->commitInfo[tid].squashedTargetId,
+                            fromCommit->commitInfo[tid].squashedStreamId,
+                            *fromCommit->commitInfo[tid].pc, 0, tid);
+                    }
+                } else {
+                    DPRINTF(
+                        DecoupleBP,
+                        "Dont squash dbq because no meaningful stream\n");
+                }
+            }
         }
 
         return true;
     } else if (fromCommit->commitInfo[tid].doneSeqNum) {
         // Update the branch predictor if it wasn't a squashed instruction
         // that was broadcasted.
-        branchPred->update(fromCommit->commitInfo[tid].doneSeqNum, tid);
+        if (!isDecoupledFrontend()) {
+            branchPred->update(fromCommit->commitInfo[tid].doneSeqNum, tid);
+        } else {
+            DPRINTF(DecoupleBP, "Commit stream Id: %lu\n",
+                    fromCommit->commitInfo[tid].doneFsqId);
+            if (isStreamPred()) {
+                assert(dbsp);
+                dbsp->update(fromCommit->commitInfo[tid].doneFsqId, tid);
+            } else if (isFTBPred()) {
+                assert(dbpftb);
+                dbpftb->update(fromCommit->commitInfo[tid].doneFsqId, tid);
+            }
+        }
     }
 
     // Check squash signals from decode.
@@ -1011,13 +1308,40 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
                 "from decode.\n",tid);
 
         // Update the branch predictor.
-        if (fromDecode->decodeInfo[tid].branchMispredict) {
-            branchPred->squash(fromDecode->decodeInfo[tid].doneSeqNum,
-                    *fromDecode->decodeInfo[tid].nextPC,
-                    fromDecode->decodeInfo[tid].branchTaken, tid);
+        if (!isDecoupledFrontend()) {
+            if (fromDecode->decodeInfo[tid].branchMispredict) {
+                branchPred->squash(fromDecode->decodeInfo[tid].doneSeqNum,
+                                   *fromDecode->decodeInfo[tid].nextPC,
+                                   fromDecode->decodeInfo[tid].branchTaken,
+                                   tid);
+            } else {
+                branchPred->squash(fromDecode->decodeInfo[tid].doneSeqNum,
+                                   tid);
+            }
+        // TODO: write dbpftb conditions
         } else {
-            branchPred->squash(fromDecode->decodeInfo[tid].doneSeqNum,
-                              tid);
+            auto mispred_inst = fromDecode->decodeInfo[tid].mispredictInst;
+            if (fromDecode->decodeInfo[tid].branchMispredict) {
+                if (isStreamPred()) {
+                    dbsp->controlSquash(
+                        mispred_inst->getFtqId(), mispred_inst->getFsqId(),
+                        mispred_inst->pcState(),
+                        *fromDecode->decodeInfo[tid].nextPC,
+                        mispred_inst->staticInst, mispred_inst->getInstBytes(),
+                        fromDecode->decodeInfo[tid].branchTaken,
+                        mispred_inst->seqNum, tid);
+                } else if (isFTBPred()) {
+                    dbpftb->controlSquash(
+                        mispred_inst->getFtqId(), mispred_inst->getFsqId(),
+                        mispred_inst->pcState(),
+                        *fromDecode->decodeInfo[tid].nextPC,
+                        mispred_inst->staticInst, mispred_inst->getInstBytes(),
+                        fromDecode->decodeInfo[tid].branchTaken,
+                        mispred_inst->seqNum, tid);
+                }
+            } else {
+                warn("Unexpected non-control squash from decode.\n");
+            }
         }
 
         if (fetchStatus[tid] != Squashing) {
@@ -1090,6 +1414,19 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
 
     DPRINTF(Fetch, "Is nop: %i, is move: %i\n", instruction->isNop(),
             instruction->staticInst->isMov());
+    if (isDecoupledFrontend()) {
+        if (isStreamPred()) {
+            DPRINTF(DecoupleBP, "Set instruction %lu with stream id %lu, fetch id %lu\n",
+                    instruction->seqNum, dbsp->getSupplyingStreamId(), dbsp->getSupplyingTargetId());
+            instruction->setFsqId(dbsp->getSupplyingStreamId());
+            instruction->setFtqId(dbsp->getSupplyingTargetId());
+        } else if (isFTBPred()) {
+            DPRINTF(DecoupleBP, "Set instruction %lu with stream id %lu, fetch id %lu\n",
+                    instruction->seqNum, dbpftb->getSupplyingStreamId(), dbpftb->getSupplyingTargetId());
+            instruction->setFsqId(dbpftb->getSupplyingStreamId());
+            instruction->setFtqId(dbpftb->getSupplyingTargetId());
+        }
+    }
 
 #if TRACING_ON
     if (trace) {
@@ -1116,6 +1453,8 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
     // Keep track of if we can take an interrupt at this boundary
     delayedCommit[tid] = instruction->isDelayedCommit();
 
+    instruction->fallThruPC = this_pc.getFallThruPC();
+
     return instruction;
 }
 
@@ -1140,15 +1479,40 @@ Fetch::fetch(bool &status_change)
         return;
     }
 
+    if (isDecoupledFrontend()) {
+        if (isStreamPred()) {
+            if (!dbsp->fetchTargetAvailable()) {
+                DPRINTF(Fetch, "Skip fetch when FTQ head is not available\n");
+                return;
+            }
+        } else if (isFTBPred()) {
+            if (!dbpftb->fetchTargetAvailable()) {
+                dbpftb->addFtqNotValid();
+                DPRINTF(Fetch, "Skip fetch when FTQ head is not available\n");
+                return;
+            }
+        }
+    }
+
     DPRINTF(Fetch, "Attempting to fetch from [tid:%i]\n", tid);
 
     // The current PC.
     PCStateBase &this_pc = *pc[tid];
 
-    Addr pcOffset = fetchOffset[tid];
-    Addr fetchAddr = (this_pc.instAddr() + pcOffset) & decoder[tid]->pcMask();
+    Addr pc_offset = fetchOffset[tid];
+    Addr fetch_addr = (this_pc.instAddr() + pc_offset) & decoder[tid]->pcMask();
 
-    bool inRom = isRomMicroPC(this_pc.microPC());
+    bool in_rom = isRomMicroPC(this_pc.microPC());
+
+    if (isStreamPred()) {
+        const auto &ftq_head = dbsp->getSupplyingFetchTarget();
+
+        if (enableLoopBuffer && !loopBuffer.isActive() && ftq_head.taken) {
+            // don't touch the state when already in loop buf
+            // look up loop buffer: whether current FTQe is loop
+            loopBuffer.tryActivateLoop(ftq_head.takenPC, ftq_head.predLoopIteration);
+        }
+    }
 
     // If returning from the delay of a cache miss, then update the status
     // to running, otherwise do the cache access.  Possibly move this up
@@ -1159,19 +1523,16 @@ Fetch::fetch(bool &status_change)
         fetchStatus[tid] = Running;
         status_change = true;
     } else if (fetchStatus[tid] == Running) {
-        // Align the fetch PC so its at the start of a fetch buffer segment.
-        Addr fetchBufferBlockPC = fetchBufferAlignPC(fetchAddr);
-
-        // If buffer is no longer valid or fetchAddr has moved to point
+        // If buffer is no longer valid or fetch_addr has moved to point
         // to the next cache block, AND we have no remaining ucode
         // from a macro-op, then start fetch from icache.
         if (!(fetchBufferValid[tid] &&
-                    fetchBufferBlockPC == fetchBufferPC[tid]) && !inRom &&
-                !macroop[tid]) {
+              fetchBufferPC[tid] + fetchBufferSize > fetch_addr && fetchBufferPC[tid] <= fetch_addr) &&
+            !in_rom && !macroop[tid] && !loopBuffer.isActive()) {
             DPRINTF(Fetch, "[tid:%i] Attempting to translate and read "
                     "instruction, starting at PC %s.\n", tid, this_pc);
 
-            fetchCacheLine(fetchAddr, tid, this_pc.instAddr());
+            fetchCacheLine(fetch_addr, tid, this_pc.instAddr());
 
             if (fetchStatus[tid] == IcacheWaitResponse)
                 ++fetchStats.icacheStallCycles;
@@ -1180,14 +1541,17 @@ Fetch::fetch(bool &status_change)
             else
                 ++fetchStats.miscStallCycles;
             return;
-        } else if (checkInterrupt(this_pc.instAddr()) &&
-                !delayedCommit[tid]) {
+        } else if (checkInterrupt(this_pc.instAddr()) && !delayedCommit[tid]) {
             // Stall CPU if an interrupt is posted and we're not issuing
             // an delayed commit micro-op currently (delayed commit
             // instructions are not interruptable by interrupts, only faults)
             ++fetchStats.miscStallCycles;
             DPRINTF(Fetch, "[tid:%i] Fetch is stalled!\n", tid);
             return;
+        }
+        if (ftqEmpty()) {
+            DPRINTF(
+                Fetch, "[tid:%i] Fetch is stalled due to ftq empty\n", tid);
         }
     } else {
         if (fetchStatus[tid] == Idle) {
@@ -1220,8 +1584,18 @@ Fetch::fetch(bool &status_change)
     // Need to halt fetch if quiesce instruction detected
     bool quiesce = false;
 
-    const unsigned numInsts = fetchBufferSize / instSize;
-    unsigned blkOffset = (fetchAddr - fetchBufferPC[tid]) / instSize;
+    // num_insts_per_buffer: number of instruction payloads (usually in 4bytes)
+    // in the fetchBuffer. Note that it does not consider RVC or x86's variable
+    // inst length. It only indicates the number of 4 byte chunks.
+    const unsigned num_insts_per_buffer = fetchBufferSize / instSize;
+
+    // block offset: offset of the fetch_addr in the fetchBuffer/loopBuffer.
+    // Note that it is counted with the number of instruction payloads
+    // instead of in bytes.
+    unsigned blk_offset =
+        loopBuffer.isActive()
+            ? (fetch_addr - loopBuffer.getActiveLoopStart()) / instSize
+            : (fetch_addr - fetchBufferPC[tid]) / instSize;
 
     auto *dec_ptr = decoder[tid];
     const Addr pc_mask = dec_ptr->pcMask();
@@ -1229,45 +1603,53 @@ Fetch::fetch(bool &status_change)
     // Loop through instruction memory from the cache.
     // Keep issuing while fetchWidth is available and branch is not
     // predicted taken
-    while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize
-           && !predictedBranch && !quiesce) {
+    bool exit_loopbuffer_this_cycle = false;
+    while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize &&
+           !(predictedBranch && !loopBuffer.isActive()) && !quiesce &&
+           !ftqEmpty() && !exit_loopbuffer_this_cycle) {
         // We need to process more memory if we aren't going to get a
         // StaticInst from the rom, the current macroop, or what's already
         // in the decoder.
-        bool needMem = !inRom && !curMacroop && !dec_ptr->instReady();
-        fetchAddr = (this_pc.instAddr() + pcOffset) & pc_mask;
-        Addr fetchBufferBlockPC = fetchBufferAlignPC(fetchAddr);
+        bool need_mem = !in_rom && !curMacroop && !dec_ptr->instReady();
+        fetch_addr = (this_pc.instAddr() + pc_offset) & pc_mask;
 
-        if (needMem) {
-            // If buffer is no longer valid or fetchAddr has moved to point
+        if (need_mem) {
+            // If buffer is no longer valid or fetch_addr has moved to point
             // to the next cache block then start fetch from icache.
-            if (!fetchBufferValid[tid] ||
-                fetchBufferBlockPC != fetchBufferPC[tid])
+            if (!loopBuffer.isActive() && !fetchBufferValid[tid]) {
                 break;
+            }
 
-            if (blkOffset >= numInsts) {
+            if (!loopBuffer.isActive() && blk_offset >= num_insts_per_buffer) {
                 // We need to process more memory, but we've run out of the
                 // current block.
                 break;
             }
 
-            DPRINTF(Fetch, "Supplying fetch from fetchBuffer\n");
+            if (loopBuffer.isActive()) {
+                memcpy(dec_ptr->moreBytesPtr(),
+                        loopBuffer.activePointer + blk_offset * instSize, instSize);
+                bool run_out_loop_entry = loopBuffer.notifyOffset(blk_offset);
+                exit_loopbuffer_this_cycle = run_out_loop_entry;
+            } else {
+                memcpy(dec_ptr->moreBytesPtr(),
+                        fetchBuffer[tid] + blk_offset * instSize, instSize);
+                DPRINTF(Fetch, "Supplying fetch from fetchBuffer\n");
+            }
 
-            memcpy(dec_ptr->moreBytesPtr(),
-                    fetchBuffer[tid] + blkOffset * instSize, instSize);
-            decoder[tid]->moreBytes(this_pc, fetchAddr);
+            decoder[tid]->moreBytes(this_pc, fetch_addr);
 
             if (dec_ptr->needMoreBytes()) {
-                blkOffset++;
-                fetchAddr += instSize;
-                pcOffset += instSize;
+                blk_offset++;
+                fetch_addr += instSize;
+                pc_offset += instSize;
             }
         }
 
         // Extract as many instructions and/or microops as we can from
         // the memory we've processed so far.
         do {
-            if (!(curMacroop || inRom)) {
+            if (!(curMacroop || in_rom)) {
                 if (dec_ptr->instReady()) {
                     staticInst = dec_ptr->decode(this_pc);
 
@@ -1277,11 +1659,11 @@ Fetch::fetch(bool &status_change)
                     if (staticInst->isMacroop()) {
                         curMacroop = staticInst;
                     } else {
-                        pcOffset = 0;
+                        pc_offset = 0;
                     }
                 } else {
-                    // We need more bytes for this instruction so blkOffset and
-                    // pcOffset will be updated
+                    // We need more bytes for this instruction so blk_offset and
+                    // pc_offset will be updated
                     break;
                 }
             }
@@ -1289,8 +1671,8 @@ Fetch::fetch(bool &status_change)
             // end of the current one, or the branch predictor incorrectly
             // thinks we are...
             bool newMacro = false;
-            if (curMacroop || inRom) {
-                if (inRom) {
+            if (curMacroop || in_rom) {
+                if (in_rom) {
                     staticInst = dec_ptr->fetchRomMicroop(
                             this_pc.microPC(), curMacroop);
                 } else {
@@ -1315,7 +1697,9 @@ Fetch::fetch(bool &status_change)
 
             // If we're branching after this instruction, quit fetching
             // from the same block.
-            predictedBranch |= this_pc.branching();
+            if (!isDecoupledFrontend()) {
+                predictedBranch |= this_pc.branching();
+            }
             predictedBranch |= lookupAndUpdateNextPC(instruction, *next_pc);
             if (predictedBranch) {
                 DPRINTF(Fetch, "Branch detected with PC = %s\n", this_pc);
@@ -1325,12 +1709,12 @@ Fetch::fetch(bool &status_change)
 
             // Move to the next instruction, unless we have a branch.
             set(this_pc, *next_pc);
-            inRom = isRomMicroPC(this_pc.microPC());
+            in_rom = isRomMicroPC(this_pc.microPC());
 
             if (newMacro) {
-                fetchAddr = this_pc.instAddr() & pc_mask;
-                blkOffset = (fetchAddr - fetchBufferPC[tid]) / instSize;
-                pcOffset = 0;
+                fetch_addr = this_pc.instAddr() & pc_mask;
+                blk_offset = (fetch_addr - fetchBufferPC[tid]) / instSize;
+                pc_offset = 0;
                 curMacroop = NULL;
             }
 
@@ -1348,7 +1732,7 @@ Fetch::fetch(bool &status_change)
 
         // Re-evaluate whether the next instruction to fetch is in micro-op ROM
         // or not.
-        inRom = isRomMicroPC(this_pc.microPC());
+        in_rom = isRomMicroPC(this_pc.microPC());
     }
 
     if (predictedBranch) {
@@ -1357,13 +1741,13 @@ Fetch::fetch(bool &status_change)
     } else if (numInst >= fetchWidth) {
         DPRINTF(Fetch, "[tid:%i] Done fetching, reached fetch bandwidth "
                 "for this cycle.\n", tid);
-    } else if (blkOffset >= fetchBufferSize) {
+    } else if (blk_offset >= fetchBufferSize) {
         DPRINTF(Fetch, "[tid:%i] Done fetching, reached the end of the"
                 "fetch buffer.\n", tid);
     }
 
     macroop[tid] = curMacroop;
-    fetchOffset[tid] = pcOffset;
+    fetchOffset[tid] = pc_offset;
 
     if (numInst > 0) {
         wroteToTimeBuffer = true;
@@ -1371,9 +1755,10 @@ Fetch::fetch(bool &status_change)
 
     // pipeline a fetch if we're crossing a fetch buffer boundary and not in
     // a state that would preclude fetching
-    fetchAddr = (this_pc.instAddr() + pcOffset) & pc_mask;
-    Addr fetchBufferBlockPC = fetchBufferAlignPC(fetchAddr);
+    fetch_addr = (this_pc.instAddr() + pc_offset) & pc_mask;
+    Addr fetchBufferBlockPC = fetchBufferAlignPC(fetch_addr);
     issuePipelinedIfetch[tid] = fetchBufferBlockPC != fetchBufferPC[tid] &&
+        !loopBuffer.isActive() &&
         fetchStatus[tid] != IcacheWaitResponse &&
         fetchStatus[tid] != ItlbWait &&
         fetchStatus[tid] != IcacheWaitRetry &&
@@ -1570,11 +1955,8 @@ Fetch::pipelineIcacheAccesses(ThreadID tid)
     Addr pcOffset = fetchOffset[tid];
     Addr fetchAddr = (this_pc.instAddr() + pcOffset) & decoder[tid]->pcMask();
 
-    // Align the fetch PC so its at the start of a fetch buffer segment.
-    Addr fetchBufferBlockPC = fetchBufferAlignPC(fetchAddr);
-
     // Unless buffer already got the block, fetch it from icache.
-    if (!(fetchBufferValid[tid] && fetchBufferBlockPC == fetchBufferPC[tid])) {
+    if (!(fetchBufferValid[tid] && (fetchBufferPC[tid] + fetchBufferSize > fetchAddr))) {
         DPRINTF(Fetch, "[tid:%i] Issuing a pipelined I-cache access, "
                 "starting at PC %s.\n", tid, this_pc);
 
@@ -1638,6 +2020,13 @@ Fetch::IcachePort::recvTimingResp(PacketPtr pkt)
     // We shouldn't ever get a cacheable block in Modified state
     assert(pkt->req->isUncacheable() ||
            !(pkt->cacheResponding() && !pkt->hasSharers()));
+
+    DPRINTF(Fetch, "received pkt addr=%#lx, req addr=%#lx\n", pkt->getAddr(),
+            pkt->req->getVaddr());
+    for (int i = 0;i < pkt->getSize();i++) {
+        DPRINTF(Fetch, "data[%d]=%#x\n", i, pkt->getConstPtr<uint8_t>()[i]);
+    }
+
     fetch->processCacheCompletion(pkt);
 
     return true;

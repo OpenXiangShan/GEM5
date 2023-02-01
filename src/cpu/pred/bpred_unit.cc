@@ -40,7 +40,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "cpu/pred/bpred_unit.hh"
 
 #include <algorithm>
 
@@ -49,6 +48,7 @@
 #include "base/output.hh"
 #include "base/trace.hh"
 #include "config/the_isa.hh"
+#include "cpu/pred/bpred_unit.hh"
 #include "debug/Branch.hh"
 #include "sim/core.hh"
 namespace gem5
@@ -71,6 +71,7 @@ BPredUnit::BPredUnit(const Params &params)
       isDumpMissPredPC(params.isDumpMisspredPC),
       instShiftAmt(params.instShiftAmt)
 {
+    bpType = CoupledType;
     for (auto& r : RAS)
         r.init(params.RASSize);
     if (isDumpMissPredPC) {

@@ -40,6 +40,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "arch/riscv/regs/misc.hh"
 #include "cpu/o3/cpu.hh"
 
 #include "arch/riscv/regs/misc.hh"
@@ -89,7 +90,7 @@ CPU::CPU(const BaseO3CPUParams &params)
       decode(this, params),
       rename(this, params),
       iew(this, params),
-      commit(this, params),
+      commit(this, fetch.getBp(), params),
 
       regFile(params.numPhysIntRegs,
               params.numPhysFloatRegs,
@@ -1258,7 +1259,6 @@ CPU::instDone(ThreadID tid, const DynInstPtr &inst)
             Stats::schedStatEvent(true, true, curTick(), 0);
             scheduleInstStop(tid,0,"Will trigger stat dump and reset");
         }
-
     }
 
     thread[tid]->numOp++;

@@ -470,6 +470,10 @@ class Request
     /** The cause for HTM transaction abort */
     HtmFailureFaultCause _htmAbortCause = HtmFailureFaultCause::INVALID;
 
+    bool misalignedFetch = false;
+
+    int reqNum = 1;
+
   public:
 
     /**
@@ -536,6 +540,26 @@ class Request
 
         assert(mgmt_req->isMemMgmt());
         return mgmt_req;
+    }
+
+    bool isMisalignedFetch()
+    {
+        return misalignedFetch;
+    }
+
+    void setMisalignedFetch()
+    {
+        misalignedFetch = true;
+    }
+
+    int getReqNum()
+    {
+        return reqNum;
+    }
+
+    void setReqNum(int num)
+    {
+        reqNum = num;
     }
 
     /**
@@ -692,6 +716,11 @@ class Request
     {
         assert(hasSize());
         return _size;
+    }
+
+    void setSize(unsigned size)
+    {
+        _size = size;
     }
 
     const std::vector<bool>&
