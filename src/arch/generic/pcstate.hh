@@ -109,6 +109,12 @@ class PCStateBase : public Serializable
         return _pc;
     }
 
+    virtual Addr
+    getFallThruPC() const
+    {
+        return _pc + 4;
+    }
+
     /**
      * Returns the current micropc.
      *

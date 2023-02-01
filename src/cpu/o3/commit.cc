@@ -71,9 +71,12 @@
 #include "debug/InstCommited.hh"
 #include "debug/O3PipeView.hh"
 #include "debug/Faults.hh"
+#include "debug/FTBStats.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/faults.hh"
 #include "sim/full_system.hh"
+#include "sim/core.hh"
+#include "base/output.hh"
 
 namespace gem5
 {
@@ -89,9 +92,10 @@ Commit::processTrapEvent(ThreadID tid)
     trapSquash[tid] = true;
 }
 
-Commit::Commit(CPU *_cpu, const BaseO3CPUParams &params)
+Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUParams &params)
     : commitPolicy(params.smtCommitPolicy),
       cpu(_cpu),
+      bp(_bp),
       iewToCommitDelay(params.iewToCommitDelay),
       commitToIEWDelay(params.commitToIEWDelay),
       renameToROBDelay(params.renameToROBDelay),
@@ -138,6 +142,23 @@ Commit::Commit(CPU *_cpu, const BaseO3CPUParams &params)
         htmStops[tid] = 0;
     }
     interrupt = NoFault;
+
+    registerExitCallback([this]() {
+        auto out_handle = simout.create("misPredIndirect.txt", false, true);
+        std::vector<std::pair<Addr, unsigned>> tempVec;
+        for (auto &it : misPredIndirect) {
+            tempVec.push_back(std::make_pair(it.first, it.second));
+        }
+        std::sort(tempVec.begin(), tempVec.end(),
+            [](const std::pair<Addr, unsigned> &a,
+               const std::pair<Addr, unsigned> &b) {
+                return a.second > b.second;
+            });
+        for (auto it : tempVec) {
+            *out_handle->stream() << std::oct << it.second << " " << std::hex << it.first << std::endl;
+        }
+        simout.close(out_handle);
+    });
 }
 
 std::string Commit::name() const { return cpu->name() + ".commit"; }
@@ -569,12 +590,18 @@ Commit::squashAll(ThreadID tid)
     toIEW->commitInfo[tid].squashInst = NULL;
 
     set(toIEW->commitInfo[tid].pc, pc[tid]);
+
+    toIEW->commitInfo[tid].squashedStreamId = committedStreamId;
+    toIEW->commitInfo[tid].squashedTargetId = committedTargetId;
 }
 
 void
 Commit::squashFromTrap(ThreadID tid)
 {
     squashAll(tid);
+
+    toIEW->commitInfo[tid].isTrapSquash = true;
+    toIEW->commitInfo[tid].committedPC = committedPC[tid];
 
     DPRINTF(Commit, "Squashing from trap, restarting at PC %s\n", *pc[tid]);
 
@@ -885,8 +912,18 @@ Commit::commit()
                 fromIEW->mispredictInst[tid];
             toIEW->commitInfo[tid].branchTaken =
                 fromIEW->branchTaken[tid];
-            toIEW->commitInfo[tid].squashInst =
-                                    rob->findInst(tid, squashed_inst);
+
+            auto squashed_inst_ptr = rob->findInst(tid, squashed_inst);
+            toIEW->commitInfo[tid].squashInst = squashed_inst_ptr;
+            if (!squashed_inst_ptr) {
+                DPRINTF(Commit,
+                        "Unable to find squashed instruction in ROB\n");
+            }
+            toIEW->commitInfo[tid].squashedStreamId = fromIEW->squashedStreamId[tid];
+            toIEW->commitInfo[tid].squashedTargetId = fromIEW->squashedTargetId[tid];
+
+            // toIEW->commitInfo[tid].doneFsqId =
+            //                         toIEW->commitInfo[tid].squashInst->getFsqId();
             if (toIEW->commitInfo[tid].mispredictInst) {
                 if (toIEW->commitInfo[tid].mispredictInst->isUncondCtrl()) {
                      toIEW->commitInfo[tid].branchTaken = true;
@@ -1046,6 +1083,38 @@ Commit::commitInsts()
             bool commit_success = commitHead(head_inst, num_committed);
 
             if (commit_success) {
+                if (bp->isStream()) {
+                    auto dbsp = dynamic_cast<branch_prediction::stream_pred::DecoupledStreamBPU*>(bp);
+                    Addr branchAddr = head_inst->pcState().instAddr();
+                    Addr targetAddr = head_inst->pcState().clone()->as<RiscvISA::PCState>().npc();
+                    Addr fallThruPC = head_inst->pcState().clone()->as<RiscvISA::PCState>().getFallThruPC();
+                    if (targetAddr < branchAddr || dbsp->loopDetector->findLoop(branchAddr)) {
+                        dbsp->loopDetector->update(branchAddr, targetAddr, fallThruPC);
+                    }
+                    if (targetAddr > branchAddr && head_inst->isControl()) {
+                        dbsp->loopDetector->setRecentForwardTakenPC(branchAddr, targetAddr);
+                    }
+                }
+
+                if (bp->isFTB() && head_inst->mispredicted()) {
+                    auto dbftb = dynamic_cast<branch_prediction::ftb_pred::DecoupledBPUWithFTB*>(bp);
+                    if (head_inst->isUncondCtrl()) {
+                        dbftb->addMiss(branch_prediction::ftb_pred::DecoupledBPUWithFTB::MissType::UNCOND);
+                    }
+                    if (head_inst->isCondCtrl()) {
+                        dbftb->addMiss(branch_prediction::ftb_pred::DecoupledBPUWithFTB::MissType::COND);
+                    }
+                    if (head_inst->isReturn()) {
+                        dbftb->addMiss(branch_prediction::ftb_pred::DecoupledBPUWithFTB::MissType::RETURN);
+                    } else if (head_inst->isIndirectCtrl()) {
+                        dbftb->addMiss(branch_prediction::ftb_pred::DecoupledBPUWithFTB::MissType::OTHER);
+                        misPredIndirect[head_inst->pcState().instAddr()]++;
+                    }
+                    DPRINTF(DBPFTBStats, "inst=%s\n", head_inst->staticInst->disassemble(head_inst->pcState().instAddr()));
+                    DPRINTF(DBPFTBStats, "isUncondCtrl=%d, isCondCtrl=%d, isReturn=%d, isIndirectCtrl=%d\n",
+                            head_inst->isUncondCtrl(), head_inst->isCondCtrl(), head_inst->isReturn(), head_inst->isIndirectCtrl());
+                }
+
                 ++num_committed;
                 stats.committedInstType[tid][head_inst->opClass()]++;
                 ppCommit->notify(head_inst);
@@ -1071,6 +1140,13 @@ Commit::commitInsts()
 
                 // Set the doneSeqNum to the youngest committed instruction.
                 toIEW->commitInfo[tid].doneSeqNum = head_inst->seqNum;
+
+                if (head_inst->getFsqId() > 1) {
+                    toIEW->commitInfo[tid].doneFsqId =
+                        head_inst->getFsqId() - 1;
+                }
+                committedStreamId = head_inst->getFsqId();
+                committedTargetId = head_inst->getFtqId();
 
                 if (tid == 0)
                     canHandleInterrupts = !head_inst->isDelayedCommit();
@@ -1357,6 +1433,8 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         return false;
     }
 
+    committedPC[tid] = head_inst->pcState().instAddr();
+
     updateComInstStats(head_inst);
 
     // head_inst->printDisassembly();
@@ -1364,6 +1442,13 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
     if (head_inst->isLoad() && (delta > 250)) {
         DPRINTF(CommitTrace, "Inst[sn:%lu] commit blocked cycles: %lu\n",
                 head_inst->seqNum, delta);
+    }
+    if (head_inst->isControl() && head_inst->pcState().instAddr() == 0x229d6) {
+        DPRINTF(CommitTrace,
+                "%#lx taken: %i, predicted taken: %i, mispredicted: %i\n",
+                head_inst->pcState().instAddr(),
+                head_inst->readPredTaken() ^ head_inst->mispredicted(),
+                head_inst->readPredTaken(), head_inst->mispredicted());
     }
     head_inst->printDisassembly();
     lastCommitTick = curTick();
@@ -1409,6 +1494,8 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
 #if TRACING_ON
     if (debug::O3PipeView) {
         head_inst->commitTick = curTick() - head_inst->fetchTick;
+        DPRINTF(O3PipeView, "Record commit for inst sn:%lu, commitTick=%lu\n",
+                head_inst->seqNum, head_inst->commitTick);
     }
 #endif
 
@@ -1492,8 +1579,36 @@ Commit::updateComInstStats(const DynInstPtr &inst)
     //
     //  Control Instructions
     //
-    if (inst->isControl())
+    //
+    if (inst->isControl()) {
+        bool mispred = inst->mispredicted();
+        std::unique_ptr<PCStateBase> tmp_next_pc(inst->pcState().clone());
+        inst->staticInst->advancePC(*tmp_next_pc);
+        // add if taken
+        if (tmp_next_pc->instAddr() != inst->fallThruPC) {
+            BranchInfo temp = {inst->pcState().instAddr(),
+                               tmp_next_pc->instAddr()};
+            if (branchLog.size() >= 20) {
+                branchLog.pop_front();
+            }
+            branchLog.push_back(temp);
+        }
+        // tracing recent taken branches
+        DPRINTF(DecoupleBP, "Control inst %lu, PC: %#lx -> target: %#lx\n",
+                inst->seqNum, inst->pcState().instAddr(),
+                tmp_next_pc->instAddr());
+        DPRINTF(DecoupleBP, "mispredicted: %i, pred taken: %i\n", mispred,
+                inst->readPredTaken());
+        DPRINTF(DecoupleBP, "Start print branch logs\n");
+        for (auto it : branchLog) {
+            DPRINTF(DecoupleBP, "control pc: %#lx -> target pc: %#lx\n,",
+                    it.pc, it.target);
+        }
+        DPRINTF(DecoupleBP, "End\n");
+        
+       
         stats.branches[tid]++;
+    }
 
     //
     //  Memory references

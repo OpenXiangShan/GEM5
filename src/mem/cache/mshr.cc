@@ -553,14 +553,17 @@ MSHR::extractServiceableTargets(PacketPtr pkt)
     // non-FromCPU target. This way the remaining FromCPU targets
     // issue a new request and get a fresh copy of the block and we
     // avoid memory consistency violations.
+    DPRINTF(Cache, "reach 1\n");
     if (pkt->cmd == MemCmd::ReadRespWithInvalidate) {
         auto it = targets.begin();
         assert((it->source == Target::FromCPU) ||
                (it->source == Target::FromPrefetcher));
         ready_targets.push_back(*it);
+    DPRINTF(Cache, "reach 2\n");
         // Leave the Locked RMW Read until the corresponding Locked Write
         // request comes in
         if (it->pkt->cmd != MemCmd::LockedRMWReadReq) {
+    DPRINTF(Cache, "reach 3\n");
             it = targets.erase(it);
             while (it != targets.end()) {
                 if (it->source == Target::FromCPU) {
@@ -574,20 +577,32 @@ MSHR::extractServiceableTargets(PacketPtr pkt)
         }
         ready_targets.populateFlags();
     } else {
+    DPRINTF(Cache, "reach 4\n");
         auto it = targets.begin();
         while (it != targets.end()) {
+    DPRINTF(Cache, "reach 5\n");
+            DPRINTF(Cache, "target's packet addr: %#lx\n", it->pkt);
+    DPRINTF(Cache, "reach 5.0.5\n");
+            DPRINTF(Cache, "Get target: %s from targets\n", it->pkt->print());
+    DPRINTF(Cache, "reach 5.1\n");
             ready_targets.push_back(*it);
             if (it->pkt->cmd == MemCmd::LockedRMWReadReq) {
+    DPRINTF(Cache, "reach 6\n");
                 // Leave the Locked RMW Read until the corresponding Locked
                 // Write comes in. Also don't service any later targets as the
                 // line is now "locked".
                 break;
             }
+    DPRINTF(Cache, "reach 7\n");
+            DPRINTF(Cache, "Erase target: %s from targets\n", it->pkt->print());
             it = targets.erase(it);
         }
         ready_targets.populateFlags();
+    DPRINTF(Cache, "reach 8\n");
     }
+    DPRINTF(Cache, "reach 9\n");
     targets.populateFlags();
+    DPRINTF(Cache, "reach 10\n");
 
     return ready_targets;
 }

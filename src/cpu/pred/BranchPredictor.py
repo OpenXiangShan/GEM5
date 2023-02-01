@@ -29,6 +29,9 @@ from m5.SimObject import SimObject
 from m5.params import *
 from m5.proxy import *
 
+class BpType(Enum):
+    vals = ['Coupled', 'DecoupledStream', 'DecoupledFTB']
+
 class IndirectPredictor(SimObject):
     type = 'IndirectPredictor'
     cxx_class = 'gem5::branch_prediction::IndirectPredictor'
@@ -75,7 +78,7 @@ class BranchPredictor(SimObject):
     cxx_class = 'gem5::branch_prediction::BPredUnit'
     cxx_header = "cpu/pred/bpred_unit.hh"
     abstract = True
-
+    
     numThreads = Param.Unsigned(Parent.numThreads, "Number of threads")
     BTBEntries = Param.Unsigned(4096, "Number of BTB entries")
     BTBTagSize = Param.Unsigned(16, "Size of the BTB tags, in bits")
@@ -779,3 +782,160 @@ class MultiperspectivePerceptronTAGE8KB(MultiperspectivePerceptronTAGE):
     tage = MPP_TAGE_8KB()
     loop_predictor = MPP_LoopPredictor_8KB()
     statistical_corrector = MPP_StatisticalCorrector_8KB()
+
+class TimedStreamPredictor(SimObject):
+    type = 'TimedStreamPredictor'
+    cxx_class = 'gem5::branch_prediction::stream_pred::TimedStreamPredictor'
+    cxx_header = "cpu/pred/stream/timed_pred.hh"
+
+# class StreamPredictor(TimedStreamPredictor):
+#     type = 'StreamPredictor'
+#     cxx_class = 'gem5::branch_prediction::StreamPredictor'
+#     cxx_header = "cpu/pred/stream_pred.hh"
+
+class StreamUBTB(TimedStreamPredictor):
+    type = 'StreamUBTB'
+    cxx_class = 'gem5::branch_prediction::stream_pred::StreamUBTB'
+    cxx_header = "cpu/pred/stream/ubtb.hh"
+
+class StreamTAGE(TimedStreamPredictor):
+    type = 'StreamTAGE'
+    cxx_class = 'gem5::branch_prediction::stream_pred::StreamTAGE'
+    cxx_header = "cpu/pred/stream/modify_tage.hh"
+
+    numPredictors = Param.Unsigned(16, "Number of TAGE predictors")
+    tableSizes = VectorParam.Unsigned(
+        [4096, 4096] + [2048, 2048, 1024] + [512]*6 + [256]*5, "the ITTAGE T0~Tn length")
+    TTagBitSizes = VectorParam.Unsigned(
+        [0] + [9]*2 + [13]*8 + [15]*5, "the T0~Tn entry's tag bit size")
+    TTagPcShifts = VectorParam.Unsigned(
+        [1] * 20, "when the T0~Tn entry's tag generating, PC right shift")
+    # histLengths = VectorParam.Unsigned(
+    #     [0, 6, 8, 12, 16, 18, 22, 26,
+    #      36, 52, 76, 110, 156,
+    #      226, 324, 464],
+    #     "the Stream TAGE T0~Tn history length")
+    histLengths = VectorParam.Unsigned(
+        [0, 12, 16, 24, 32, 36, 44, 52,
+         72, 104, 152, 220, 312,
+         452, 648, 928],
+        "the Stream TAGE T0~Tn history length")
+    maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
+    numTablesToAlloc = Param.Unsigned(2, "The number of table to allocated each time")
+
+class StreamLoopDetector(SimObject):
+    type = 'StreamLoopDetector'
+    cxx_class = 'gem5::branch_prediction::stream_pred::StreamLoopDetector'
+    cxx_header = "cpu/pred/stream/loop_detector.hh"
+
+    maxLoopQueueSize = Param.Unsigned(128, "The max size of loop queue")
+    tableSize = Param.Unsigned(256, "The size of loop table")
+
+class StreamLoopPredictor(SimObject):
+    type = 'StreamLoopPredictor'
+    cxx_class = 'gem5::branch_prediction::stream_pred::StreamLoopPredictor'
+    cxx_header = "cpu/pred/stream/stream_loop_predictor.hh"
+
+    tableSize = Param.Unsigned(128, "The size of loop table")
+
+class DecoupledStreamBPU(BranchPredictor):
+    type = 'DecoupledStreamBPU'
+    cxx_class = 'gem5::branch_prediction::stream_pred::DecoupledStreamBPU'
+    cxx_header = "cpu/pred/stream/decoupled_bpred.hh"
+
+    # stream_pred = Param.StreamPredictor(StreamPredictor(),
+    # "backing stream predictor")
+    
+    stream_tage = Param.StreamTAGE(StreamTAGE(), "slower but accurate stream predictor (L2)")
+    stream_ubtb = Param.StreamUBTB(StreamUBTB(), "fast stream predictor (L1)")
+    loop_detector = Param.StreamLoopDetector(StreamLoopDetector(), "loop detector")
+    stream_loop_predictor = Param.StreamLoopPredictor(StreamLoopPredictor(), "stream loop predictor")
+    maxHistLen = Param.Unsigned(970, "The length of history")
+
+    ftq_size = Param.Unsigned(128, "Fetch target queue size")
+    dump_loop_pred = Param.Bool(False, "Dump loop detector/predictor related traces")
+
+class TimedBaseFTBPredictor(SimObject):
+    type = 'TimedBaseFTBPredictor'
+    cxx_class = 'gem5::branch_prediction::ftb_pred::TimedBaseFTBPredictor'
+    cxx_header = "cpu/pred/ftb/timed_base_pred.hh"
+    
+    # TODO: parametrize numBr and numDelay
+    numBr = Param.Unsigned(2, "Number of maximum branches per entry")
+    
+class DefaultFTB(TimedBaseFTBPredictor):
+    type = 'DefaultFTB'
+    cxx_class = 'gem5::branch_prediction::ftb_pred::DefaultFTB'
+    cxx_header = 'cpu/pred/ftb/ftb.hh'
+    
+    numEntries = Param.Unsigned(2048, "Number of entries in the FTB")
+    tagBits = Param.Unsigned(20, "Number of bits in the tag")
+    instShiftAmt = Param.Unsigned(1, "Amount to shift PC to get inst bits")
+    numThreads = Param.Unsigned(1, "Number of threads")
+    numWays = Param.Unsigned(4, "Number of ways per set")
+    numDelay = Param.Unsigned(1, "Number of bubbles to put on a prediction")
+    
+class UFTB(DefaultFTB):
+    numEntries = 32
+    tagBits = 38
+    numWays = 32
+    numDelay = 0
+    
+class RAS(TimedBaseFTBPredictor):
+    type = 'RAS'
+    cxx_class = 'gem5::branch_prediction::ftb_pred::RAS'
+    cxx_header = 'cpu/pred/ftb/ras.hh'
+    
+    numEntries = Param.Unsigned(32, "Number of entries in the RAS")
+    ctrWidth = Param.Unsigned(8, "Width of the counter")
+    
+    
+class FTBTAGE(TimedBaseFTBPredictor):
+    type = 'FTBTAGE'
+    cxx_class = 'gem5::branch_prediction::ftb_pred::FTBTAGE'
+    cxx_header = "cpu/pred/ftb/ftb_tage.hh"
+
+    numPredictors = Param.Unsigned(4, "Number of TAGE predictors")
+    tableSizes = VectorParam.Unsigned([2048]*4, "the ITTAGE T0~Tn length")
+    TTagBitSizes = VectorParam.Unsigned([8]*4, "the T0~Tn entry's tag bit size")
+    TTagPcShifts = VectorParam.Unsigned([1] * 4, "when the T0~Tn entry's tag generating, PC right shift")
+
+    histLengths = VectorParam.Unsigned([8, 13, 32, 119], "the FTB TAGE T0~Tn history length")
+    maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
+    numTablesToAlloc = Param.Unsigned(2,"The number of table to allocated each time")
+
+class FTBITTAGE(TimedBaseFTBPredictor):
+    type = 'FTBITTAGE'
+    cxx_class = 'gem5::branch_prediction::ftb_pred::FTBITTAGE'
+    cxx_header = "cpu/pred/ftb/ftb_ittage.hh"
+
+    numPredictors = Param.Unsigned(4, "Number of TAGE predictors")
+    tableSizes = VectorParam.Unsigned([2048]*4, "the ITTAGE T0~Tn length")
+    TTagBitSizes = VectorParam.Unsigned([8]*4, "the T0~Tn entry's tag bit size")
+    TTagPcShifts = VectorParam.Unsigned([1] * 4, "when the T0~Tn entry's tag generating, PC right shift")
+
+    histLengths = VectorParam.Unsigned([8, 13, 32, 119], "the FTB TAGE T0~Tn history length")
+    maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
+    numTablesToAlloc = Param.Unsigned(2,"The number of table to allocated each time")
+    
+class DecoupledBPUWithFTB(BranchPredictor):
+    type = 'DecoupledBPUWithFTB'
+    cxx_class = 'gem5::branch_prediction::ftb_pred::DecoupledBPUWithFTB'
+    cxx_header = "cpu/pred/ftb/decoupled_bpred.hh"
+    
+    ftq_size = Param.Unsigned(128, "Fetch target queue size")
+    fsq_size = Param.Unsigned(64, "Fetch stream queue size")
+    maxHistLen = Param.Unsigned(970, "The length of history")
+    numBr = Param.Unsigned(2, "Number of maximum branches per entry")
+    numStages = Param.Unsigned(3, "Number of stages in the pipeline")
+    ftb = Param.DefaultFTB(DefaultFTB(), "FTB")
+    ftb.numBr = numBr
+    tage = Param.FTBTAGE(FTBTAGE(), "TAGE predictor")
+    tage.numBr = numBr
+    ittage = Param.FTBITTAGE(FTBITTAGE(), "ITTAGE predictor")
+    ittage.numBr = 1
+    uftb = Param.DefaultFTB(UFTB(), "UFTB predictor")
+    uftb.numBr = numBr
+    ras = Param.RAS(RAS(), "RAS")
+    
+    enableBPDB = Param.Bool(False, "Enable trace in the form of database")

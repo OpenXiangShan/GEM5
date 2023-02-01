@@ -499,6 +499,7 @@ PhysicalMemory::unserializeStoreFrom(std::string filepath,
     if (!hasGzipMagic(fd)) {
         close(fd);
         fd = open(filepath.c_str(), O_RDWR);
+
         assert(mapToRawCpt &&
                "When using raw checkpoint, the memory must be directly mapped "
                "to it to speed up init\n");

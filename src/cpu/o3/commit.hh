@@ -42,6 +42,10 @@
 #define __CPU_O3_COMMIT_HH__
 
 #include <queue>
+#include <list>
+#include <map>
+#include <vector>
+#include <utility>
 
 #include "base/statistics.hh"
 #include "cpu/exetrace.hh"
@@ -53,6 +57,9 @@
 #include "cpu/o3/rename_map.hh"
 #include "cpu/o3/rob.hh"
 #include "cpu/timebuf.hh"
+#include "cpu/pred/bpred_unit.hh"
+#include "cpu/pred/ftb/decoupled_bpred.hh"
+#include "cpu/pred/stream/decoupled_bpred.hh"
 #include "enums/CommitPolicy.hh"
 #include "sim/probe/probe.hh"
 
@@ -126,13 +133,18 @@ class Commit
     ProbePointArg<DynInstPtr> *ppCommitStall;
     /** To probe when an instruction is squashed */
     ProbePointArg<DynInstPtr> *ppSquash;
+    struct BranchInfo {
+      Addr pc=0;
+      Addr target=0;
+    };
+    std::list<BranchInfo> branchLog;
 
     /** Mark the thread as processing a trap. */
     void processTrapEvent(ThreadID tid);
 
   public:
     /** Construct a Commit with the given parameters. */
-    Commit(CPU *_cpu, const BaseO3CPUParams &params);
+    Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUParams &params);
 
     /** Returns the name of the Commit. */
     std::string name() const;
@@ -345,6 +357,8 @@ class Commit
     /** Pointer to O3CPU. */
     CPU *cpu;
 
+    branch_prediction::BPredUnit *bp;
+
     /** Vector of all of the threads. */
     std::vector<ThreadState *> thread;
 
@@ -423,6 +437,8 @@ class Commit
      */
     std::unique_ptr<PCStateBase> pc[MaxThreads];
 
+    Addr committedPC[MaxThreads];
+
     /** The sequence number of the youngest valid instruction in the ROB. */
     InstSeqNum youngestSeqNum[MaxThreads];
 
@@ -460,6 +476,11 @@ class Commit
     // HTM
     int htmStarts[MaxThreads];
     int htmStops[MaxThreads];
+
+    // committed Stream and Target
+
+    uint64_t committedStreamId{};
+    uint64_t committedTargetId{};
 
     struct CommitStats : public statistics::Group
     {
@@ -509,6 +530,8 @@ class Commit
     } stats;
 
     Tick lastCommitTick;
+
+    std::map<Addr, unsigned> misPredIndirect;
 };
 
 } // namespace o3

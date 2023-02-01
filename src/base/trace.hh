@@ -178,7 +178,7 @@ struct StringWrap
  */
 
 #define DDUMP(x, data, count) do {               \
-    if (GEM5_UNLIKELY(TRACING_ON && ::gem5::debug::x))     \
+    if (GEM5_UNLIKELY(TRACING_ON && (::gem5::debug::x)))     \
         ::gem5::Trace::getDebugLogger()->dump(           \
             ::gem5::curTick(), name(), data, count, #x); \
 } while (0)
@@ -191,7 +191,7 @@ struct StringWrap
 } while (0)
 
 #define DPRINTFS(x, s, ...) do {                        \
-    if (GEM5_UNLIKELY(TRACING_ON && ::gem5::debug::x)) {          \
+    if (GEM5_UNLIKELY(TRACING_ON && (::gem5::debug::x))) {          \
         ::gem5::Trace::getDebugLogger()->dprintf_flag(          \
                 ::gem5::curTick(), (s)->name(), #x, __VA_ARGS__); \
     }                                                   \
@@ -207,7 +207,7 @@ struct StringWrap
 #define DPRINTFV(x, ...) do {                          \
     if (GEM5_UNLIKELY(TRACING_ON && (x))) {              \
         ::gem5::Trace::getDebugLogger()->dprintf_flag(         \
-            ::gem5::curTick(), name(), x.name(), __VA_ARGS__); \
+            ::gem5::curTick(), name(), #x, __VA_ARGS__); \
     }                                                  \
 } while (0)
 

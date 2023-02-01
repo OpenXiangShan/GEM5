@@ -635,7 +635,6 @@ class CPU : public BaseCPU
 
     //difftest virtual function
     void readGem5Regs();
-
 };
 
 } // namespace o3

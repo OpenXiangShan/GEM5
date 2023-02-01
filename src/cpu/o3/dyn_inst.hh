@@ -64,6 +64,7 @@
 #include "cpu/static_inst.hh"
 #include "cpu/translation.hh"
 #include "debug/CommitTrace.hh"
+#include "debug/DecoupleBP.hh"
 #include "debug/HtmCpu.hh"
 #include "debug/RiscvMisc.hh"
 
@@ -328,6 +329,14 @@ class DynInst : public ExecContext, public RefCounted
     /** Predicted PC state after this instruction. */
     std::unique_ptr<PCStateBase> predPC;
 
+    Addr fallThruPC;
+
+    /** fsqId and ftqId are used for squashing and committing */
+    /** The fetch stream queue ID of the instruction. */
+    unsigned fsqId;
+    /** The fetch target queue ID of the instruction. */
+    unsigned ftqId;
+
     /** The Macroop if one exists */
     const StaticInstPtr macroop;
 
@@ -539,6 +548,8 @@ class DynInst : public ExecContext, public RefCounted
     {
         std::unique_ptr<PCStateBase> next_pc(pc->clone());
         staticInst->advancePC(*next_pc);
+        DPRINTF(DecoupleBP, "check misprediction next pc=%s and pred pc=%s\n",
+                *next_pc, *predPC);
         return *next_pc != *predPC;
     }
 
@@ -1207,6 +1218,35 @@ class DynInst : public ExecContext, public RefCounted
                 seqNum, pcState().instAddr(),
                 staticInst->disassemble(pcState().instAddr()).c_str(),
                 readyTick, completionTick, physEffAddr);
+    }
+    void
+    setFsqId(unsigned id)
+    {
+        fsqId = id;
+    }
+
+    unsigned
+    getFsqId()
+    {
+        return fsqId;
+    }
+
+    void
+    setFtqId(unsigned id)
+    {
+        ftqId = id;
+    }
+
+    unsigned
+    getFtqId()
+    {
+        return ftqId;
+    }
+
+    unsigned getInstBytes()
+    {
+        RiscvISA::PCState rpc = pc->as<RiscvISA::PCState>();
+        return rpc.compressed() ? 2 : 4;
     }
 };
 

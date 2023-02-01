@@ -59,12 +59,16 @@ class IntMultDiv(FUDesc):
 
     count=2
 
+class FP_SLOW(FUDesc):
+    opList = [OpDesc(opClass='FloatDiv', opLat=19, pipelined=False),
+              OpDesc(opClass='FloatSqrt', opLat=24, pipelined=False),
+              ]
+    count = 2
+
 class FP_MISC(FUDesc):
     opList = [OpDesc(opClass='FloatCvt', opLat=3),
               OpDesc(opClass='FloatCmp', opLat=3),
-              OpDesc(opClass='FloatDiv', opLat=19, pipelined=False),
-              OpDesc(opClass='FloatSqrt', opLat=24, pipelined=False),
-              OpDesc(opClass='FloatMisc', opLat=3),]
+              OpDesc(opClass='FloatMisc', opLat=2),]
     count = 2
 
 class FP_MAM(FUDesc):

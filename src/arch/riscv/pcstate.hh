@@ -77,6 +77,12 @@ class PCState : public GenericISA::UPCState<4>
     bool rv32() const { return _rv32; }
 
     bool
+    start_equals(const PCStateBase &other) const
+    {
+        return PCStateBase::equals(other);
+    }
+
+    bool
     branching() const override
     {
         if (_compressed) {
@@ -84,6 +90,12 @@ class PCState : public GenericISA::UPCState<4>
         } else {
             return npc() != pc() + 4 || nupc() != upc() + 1;
         }
+    }
+
+    Addr
+    getFallThruPC() const
+    {
+        return pc() + (compressed() ? 2 : 4);
     }
 };
 

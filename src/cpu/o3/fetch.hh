@@ -41,6 +41,8 @@
 #ifndef __CPU_O3_FETCH_HH__
 #define __CPU_O3_FETCH_HH__
 
+#include <utility>
+
 #include "arch/generic/decoder.hh"
 #include "arch/generic/mmu.hh"
 #include "base/statistics.hh"
@@ -50,6 +52,8 @@
 #include "cpu/o3/limits.hh"
 #include "cpu/pc_event.hh"
 #include "cpu/pred/bpred_unit.hh"
+#include "cpu/pred/stream/decoupled_bpred.hh"
+#include "cpu/pred/ftb/decoupled_bpred.hh"
 #include "cpu/timebuf.hh"
 #include "cpu/translation.hh"
 #include "enums/SMTFetchPolicy.hh"
@@ -76,6 +80,72 @@ class CPU;
  * It supports the idling functionality of the CPU by indicating to
  * the CPU when it is active and inactive.
  */
+
+class LoopBuffer
+{
+  public:
+    /** The loop unrolled buffer. */
+    uint8_t activeBuffer[256];
+
+    uint8_t *activePointer;
+
+    /** Find a loop entry and update the active loop entry.
+     * Unroll it until loop exit.
+     */
+
+    void tryActivateLoop(Addr control_pc, unsigned pred_iteration) {
+        /**
+         * @todo: caculation limit, singleIterSize
+         * 
+         */
+    }
+
+    unsigned limit;
+
+    unsigned singleIterSize;
+
+    bool active{false};
+
+    /** check current offset against unrolled words
+     * For example, #iteration = 5, each iteration has 10 bytes (2NC + 1C)
+     * Then limit = 5 * 10 bytes = 5 * 10 / 4 words.
+     * When offset == 12, all payloads in loop buffer is used up. 2 byte
+     * dummy payloads should be provided in activeBuffer.
+     * 
+     * Another example, #iteration = 5, each iteration has 12 bytes (3NC)
+     * Then limit = 5 * 12 bytes = 5 * 12 / 4 words.
+     * When offset == 15, all payloads in loop buffer is used up
+     * 
+     * return true if used up
+     */
+    bool notifyOffset(unsigned offset)
+    {
+        if (offset == singleIterSize) {
+            // move activePointer to activeBuffer to simulate loop unrolling
+            activePointer = activeBuffer;
+        }
+        if (offset == limit) {
+            active = false;
+            return true;
+        }
+        return false;
+    }
+
+    void deactivate()
+    {
+        activePointer = nullptr;
+        active = false;
+        limit = 0;
+        singleIterSize = 0;
+    }
+
+    bool isActive() { return active; }
+
+    Addr getActiveLoopStart() { return 0; }
+
+    Addr getActiveLoopBranch() { return 0; }
+};
+
 class Fetch
 {
   public:
@@ -140,6 +210,7 @@ class Fetch
 
         void setFault(Fault _fault) { fault = _fault; }
         void setReq(const RequestPtr &_req) { req = _req; }
+        RequestPtr getReq() { return req; }
 
         /** Process the delayed finish translation */
         void
@@ -360,6 +431,8 @@ class Fetch
 
     RequestPort &getInstPort() { return icachePort; }
 
+    branch_prediction::BPredUnit * getBp() { return branchPred; }
+
     void flushFetchBuffer();
 
   private:
@@ -389,6 +462,8 @@ class Fetch
     /** Profile the reasons of fetch stall. */
     void profileStall(ThreadID tid);
 
+    bool ftqEmpty() { return isDecoupledFrontend() && usedUpFetchTargets; }
+
   private:
     /** Pointer to the O3CPU. */
     CPU *cpu;
@@ -414,6 +489,10 @@ class Fetch
 
     /** BPredUnit. */
     branch_prediction::BPredUnit *branchPred;
+    
+    branch_prediction::stream_pred::DecoupledStreamBPU *dbsp;
+
+    branch_prediction::ftb_pred::DecoupledBPUWithFTB *dbpftb;
 
     std::unique_ptr<PCStateBase> pc[MaxThreads];
 
@@ -426,6 +505,8 @@ class Fetch
 
     /** Memory request used to access cache. */
     RequestPtr memReq[MaxThreads];
+
+    RequestPtr anotherMemReq[MaxThreads];
 
     /** Variable that tracks if fetch has written to the time buffer this
      * cycle. Used to tell CPU if there is activity this cycle.
@@ -489,6 +570,16 @@ class Fetch
     /** The PC of the first instruction loaded into the fetch buffer. */
     Addr fetchBufferPC[MaxThreads];
 
+    /** Indicating whether the fetch request is mis-aligned*/
+    bool fetchMisaligned[MaxThreads];
+
+    /** The information of access including the address of two requests*/
+    std::pair<Addr, Addr> accessInfo[MaxThreads];
+
+    PacketPtr firstPkt[MaxThreads];
+
+    PacketPtr secondPkt[MaxThreads];
+
     /** The size of the fetch queue in micro-ops */
     unsigned fetchQueueSize;
 
@@ -497,6 +588,11 @@ class Fetch
 
     /** Whether or not the fetch buffer data is valid. */
     bool fetchBufferValid[MaxThreads];
+
+    /** Loop buffer with unrolling */
+    LoopBuffer loopBuffer;
+
+    bool enableLoopBuffer{true};
 
     /** Size of instructions. */
     int instSize;
@@ -529,6 +625,15 @@ class Fetch
 
     /** Event used to delay fault generation of translation faults */
     FinishTranslationEvent finishTranslationEvent;
+
+    /** Decoupled frontend related */
+    bool isDecoupledFrontend() { return branchPred->isDecoupled(); }
+
+    bool isStreamPred() { return branchPred->isStream(); }
+
+    bool isFTBPred() { return branchPred->isFTB(); }
+
+    bool usedUpFetchTargets;
 
   protected:
     struct FetchStatGroup : public statistics::Group
