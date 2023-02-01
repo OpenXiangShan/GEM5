@@ -52,6 +52,7 @@ numBr(p.numBr)
         assert(tablePcShifts.size() >= numPredictors);
 
         tagFoldedHist.push_back(FoldedHist((int)histLengths[i], (int)tableTagBits[i], (int)numBr));
+        altTagFoldedHist.push_back(FoldedHist((int)histLengths[i], (int)tableTagBits[i]-1, (int)numBr));
         indexFoldedHist.push_back(FoldedHist((int)histLengths[i], (int)tableIndexBits[i], (int)numBr));
     }
     // useAlt.resize(128);
@@ -184,6 +185,7 @@ FTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Fu
 
     meta.pred = pred;
     meta.tagFoldedHist = tagFoldedHist;
+    meta.altTagFoldedHist = altTagFoldedHist;
     meta.indexFoldedHist = indexFoldedHist;
     DPRINTF(FTBITTAGE || debugFlag, "putPCHistory end\n");
     debugFlag = false;
@@ -210,6 +212,7 @@ FTBITTAGE::update(const FetchStream &entry)
     auto meta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
     auto pred = meta->pred;
     auto updateTagFoldedHist = meta->tagFoldedHist;
+    auto updateAltTagFoldedHist = meta->altTagFoldedHist;
     auto updateIndexFoldedHist = meta->indexFoldedHist;
     
     FTBSlot indirect_slot;
@@ -362,7 +365,7 @@ FTBITTAGE::update(const FetchStream &entry)
 
                 for (int ti = startTable; ti < numPredictors; ti++) {
                     Addr newIndex = getTageIndex(startAddr, ti, updateIndexFoldedHist[ti].get());
-                    Addr newTag = getTageTag(startAddr, ti, updateTagFoldedHist[ti].get());
+                    Addr newTag = getTageTag(startAddr, ti, updateTagFoldedHist[ti].get(), updateAltTagFoldedHist[ti].get());
                     assert(newIndex < tageTable[ti].size());
                     auto &newEntry = tageTable[ti][newIndex];
 
@@ -392,17 +395,21 @@ FTBITTAGE::updateCounter(bool taken, unsigned width, short &counter) {
 }
 
 Addr
-FTBITTAGE::getTageTag(Addr pc, int t, bitset &foldedHist)
+FTBITTAGE::getTageTag(Addr pc, int t, bitset &foldedHist, bitset &altFoldedHist)
 {
     bitset buf(tableTagBits[t], pc >> tablePcShifts[t]);  // lower bits of PC
+    bitset altTagBuf(altFoldedHist);
+    altTagBuf.resize(tableTagBits[t]);
+    altTagBuf <<= 1;
     buf ^= foldedHist;
+    buf ^= altTagBuf;
     return buf.to_ulong();
 }
 
 Addr
 FTBITTAGE::getTageTag(Addr pc, int t)
 {
-    return getTageTag(pc, t, tagFoldedHist[t].get());
+    return getTageTag(pc, t, tagFoldedHist[t].get(), altTagFoldedHist[t].get());
 }
 
 Addr
@@ -455,10 +462,10 @@ FTBITTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, int shamt, bool 
     }
 
     for (int t = 0; t < numPredictors; t++) {
-        for (int type = 0; type < 2; type++) {
+        for (int type = 0; type < 3; type++) {
             DPRINTF(FTBITTAGE || debugFlag, "t: %d, type: %d\n", t, type);
 
-            auto &foldedHist = type ? tagFoldedHist[t] : indexFoldedHist[t];
+            auto &foldedHist = type == 0 ? indexFoldedHist[t] : type == 1 ? tagFoldedHist[t] : altTagFoldedHist[t];
             foldedHist.update(history, shamt, taken);
         }
     }
@@ -481,6 +488,7 @@ FTBITTAGE::recoverHist(const boost::dynamic_bitset<> &history,
     std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
     for (int i = 0; i < numPredictors; i++) {
         tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
+        altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
         indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
     }
     doUpdateHist(history, shamt, cond_taken);
@@ -497,7 +505,7 @@ FTBITTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * whe
         for (int type = 0; type < 2; type++) {
             DPRINTF(FTBITTAGE || debugFlag, "t: %d, type: %d\n", t, type);
             std::string buf2, buf3;
-            auto &foldedHist = type ? tagFoldedHist[t] : indexFoldedHist[t];
+            auto &foldedHist = type == 0 ? indexFoldedHist[t] : type == 1 ? tagFoldedHist[t] : altTagFoldedHist[t];
             foldedHist.check(hist);
         }
     }

@@ -115,7 +115,7 @@ class FTBITTAGE : public TimedBaseFTBPredictor
 
     Addr getTageTag(Addr pc, int table);
 
-    Addr getTageTag(Addr pc, int table, bitset &foldedHist);
+    Addr getTageTag(Addr pc, int table, bitset &foldedHist, bitset &altFoldedHist);
 
     void doUpdateHist(const bitset &history, int shamt, bool taken);
 
@@ -130,6 +130,7 @@ class FTBITTAGE : public TimedBaseFTBPredictor
     std::vector<unsigned> tablePcShifts;
     std::vector<unsigned> histLengths;
     std::vector<FoldedHist> tagFoldedHist;
+    std::vector<FoldedHist> altTagFoldedHist;
     std::vector<FoldedHist> indexFoldedHist;
 
     LFSR64 allocLFSR;
@@ -161,13 +162,16 @@ class FTBITTAGE : public TimedBaseFTBPredictor
     typedef struct TageMeta {
         TagePrediction pred;
         std::vector<FoldedHist> tagFoldedHist;
+        std::vector<FoldedHist> altTagFoldedHist;
         std::vector<FoldedHist> indexFoldedHist;
-        TageMeta(TagePrediction pred, std::vector<FoldedHist> tagFoldedHist, std::vector<FoldedHist> indexFoldedHist) :
-            pred(pred), tagFoldedHist(tagFoldedHist), indexFoldedHist(indexFoldedHist) {}
+        TageMeta(TagePrediction pred, std::vector<FoldedHist> tagFoldedHist,
+            std::vector<FoldedHist> altTagFoldedHist, std::vector<FoldedHist> indexFoldedHist) :
+            pred(pred), tagFoldedHist(tagFoldedHist), altTagFoldedHist(altTagFoldedHist), indexFoldedHist(indexFoldedHist) {}
         TageMeta() {}
         TageMeta(const TageMeta &other) {
             pred = other.pred;
             tagFoldedHist = other.tagFoldedHist;
+            altTagFoldedHist = other.altTagFoldedHist;
             indexFoldedHist = other.indexFoldedHist;
         }
     } TageMeta;
