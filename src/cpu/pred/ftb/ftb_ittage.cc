@@ -80,7 +80,8 @@ FTBITTAGE::lookupHelper(Addr startAddr, TageEntry &main_entry, int &main_table, 
     main_table_index = -1;
     alt_table_index = -1;
 
-    bool provided, alt_provided = false;
+    bool provided = false;
+    bool alt_provided = false;
     // make main prediction
     int provider_counts = 0;
     for (int i = numPredictors - 1; i >= 0; --i) {
@@ -116,6 +117,11 @@ FTBITTAGE::lookupHelper(Addr startAddr, TageEntry &main_entry, int &main_table, 
     if (provider_counts > 0) {
         use_alt_pred = main_entry.counter == 0 && alt_provided;
         use_base_table = main_entry.counter == 0 && !alt_provided;
+        if (!(!use_alt_pred || (use_alt_pred && alt_provided && provider_counts > 1))) {
+            debugFlag = true;
+        }
+        DPRINTF(FTBITTAGE || debugFlag, "lookup provided %d, provider_counts %d, main_table %d, main_table_index %d, use_alt %d\n",
+                provided, provider_counts, main_table, main_table_index, use_alt_pred);
         assert(!use_alt_pred || (use_alt_pred && alt_provided && provider_counts > 1));
     } else {
         use_alt_pred = false;
