@@ -100,7 +100,7 @@ Walker::start(Addr ppn, ThreadContext *_tc, BaseMMU::Translation *_translation,
     DPRINTF(PageTableWalker, "pre %d f_level %d from_l2tlb %d\n", pre, f_level,
             from_l2tlb);
     pre_ptw = pre;
-    if (currStates.size()) {
+    if (currStates.size() &&(!from_l2tlb)) {
         auto [coalesced, fault] = tryCoalesce(_tc, _translation, _req, _mode);
         if (!coalesced) {
             // create state
@@ -476,7 +476,7 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
     */
     //printf("nextline is %d\n",next_line);
 
-    DPRINTF(PageTableWalker, "nextline is %d\n",next_line);
+
     // step 2:
     // Performing PMA/PMP checks on physical address of PTE
 
@@ -486,9 +486,10 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
     fault = walker->pmp->pmpCheck(read->req, BaseMMU::Read,
                     RiscvISA::PrivilegeMode::PRV_S, requestors.front().tc, entry.vaddr);
 
-    DPRINTF(PageTableWalker,"Finish pmp check\n");
 
-    if ((fault == NoFault) && (!next_line)) {
+
+    //if ((fault == NoFault) && (!next_line)) {
+    if (fault == NoFault) {
         // step 3:
         if (!pte.v || (!pte.r && pte.w)) {
             doEndWalk = true;
@@ -520,16 +521,22 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                 if (fault == NoFault) {
                     // step 7
                     if (!pte.a) {
-                        pte.a = 1;
-                        doWrite = true;
-                        DPRINTF(PageTableWalker,"TODO pte.a write\n");
-                        assert(0);
+                       // pte.a = 1;
+                        //doWrite = true;
+                        //DPRINTF(PageTableWalker,"TODO pte.a write\n");
+                        //assert(0);
+                        DPRINTF(PageTableWalker,
+                            "PTE needs to write pte.a,raising PF\n");
+                        fault = pageFault(true);
                     }
                     if (!pte.d && mode == BaseMMU::Write) {
-                        pte.d = 1;
-                        doWrite = true;
-                        DPRINTF(PageTableWalker,"TODO pte.d write\n");
-                        assert(0);
+                        //pte.d = 1;
+                        //doWrite = true;
+                        //DPRINTF(PageTableWalker,"TODO pte.d write\n");
+                        //assert(0);
+                        DPRINTF(PageTableWalker,
+                            "PTE needs to write pte.d,raising PF\n");
+                        fault = pageFault(true);
                     }
                     // Performing PMA/PMP checks
 
@@ -660,7 +667,8 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
     PacketPtr oldRead = read;
     Request::Flags flags = oldRead->req->getFlags();
 
-    if ((doEndWalk)&&(!next_line)) {
+    //if ((doEndWalk)&&(!next_line)) {
+    if (doEndWalk) {
         // If we need to write, adjust the read packet to write the modified
         // value back to memory.
         if (!functional && doWrite) {
@@ -680,6 +688,7 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                 walker->tlb->insert(entry.vaddr, entry);
                 inl2_entry.logBytes = PageShift + (level * LEVEL_BITS);
                 l2_level = level;
+                inl2_entry.level = level;
                 /* PTESv39 fpte0 = read->getLE_l2tlb<uint64_t>(0);
                  PTESv39 fpte1 = read->getLE_l2tlb<uint64_t>(1);
                  PTESv39 fpte2 = read->getLE_l2tlb<uint64_t>(2);
@@ -710,7 +719,6 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                  DPRINTF(PageTableWalker, "final PTE 0 %#x PPN %#x\n", fpte7,
                          fpte7.ppn);*/
 
-
                 for (l2_i = 0; l2_i < 8; l2_i++) {
                     inl2_entry.vaddr =
                         ((entry.vaddr >> ((l2_level * 9 + 12 + 3)) << 3) +
@@ -720,12 +728,17 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                     DPRINTF(PageTableWalker,
                             "final insert vaddr %#x ppn %#x\n",
                             inl2_entry.vaddr, l2pte.ppn);
+                    DPRINTF(PageTableWalker,"level %d l2_level %d\n",
+                            level,l2_level);
                     inl2_entry.paddr = l2pte.ppn;
                     inl2_entry.pte = l2pte;
                     if (l2_level == 0)
                         walker->tlb->L2TLB_insert(inl2_entry.vaddr, inl2_entry,
                                                   l2_level, 3);
-                    else
+                    else if (l2_level == 1)//hit level =1
+                        walker->tlb->L2TLB_insert(inl2_entry.vaddr, inl2_entry,
+                                                  l2_level, 5);
+                    else if (l2_level == 2)//
                         walker->tlb->L2TLB_insert(inl2_entry.vaddr, inl2_entry,
                                                   l2_level, 4);
                 }

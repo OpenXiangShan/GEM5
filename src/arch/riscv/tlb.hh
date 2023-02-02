@@ -70,6 +70,7 @@ class TLB : public BaseTLB
     TlbEntryTrie trie;          // for quick access
     EntryList freeList;         // free entries
     uint64_t lruSeq;
+    bool  hit_in_sp;
 
     Walker *walker;
 
