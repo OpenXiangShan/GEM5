@@ -239,6 +239,19 @@ class SMSPrefetcher(QueuedPrefetcher):
         LRURP(),
         "Replacement policy of active generation table"
     )
+    # stride table (full-assoc)
+    stride_entries = Param.MemorySize("16", "Stride Entries")
+    stride_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.act_entries,
+            size=Parent.act_entries),
+        "Indexing policy of stride table"
+    )
+    stride_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(),
+        "Replacement policy of stride table"
+    )
     # pht table (set-assoc)
     pht_entries = Param.MemorySize(
         "64",
@@ -564,13 +577,13 @@ class BOPPrefetcher(QueuedPrefetcher):
     bad_score = Param.Unsigned(1, "Score at which the HWP is disabled")
     rr_size = Param.Unsigned(256, "Number of entries of each RR bank")
     tag_bits = Param.Unsigned(12, "Bits used to store the tag")
-    offset_list_size = Param.Unsigned(12,
+    offset_list_size = Param.Unsigned(36,
                 "Number of entries in the offsets list")
     negative_offsets_enable = Param.Bool(True,
                 "Initialize the offsets list also with negative values \
                 (i.e. the table will have half of the entries with positive \
                 offsets and the other half with negative ones)")
-    delay_queue_enable = Param.Bool(True, "Enable the delay queue")
+    delay_queue_enable = Param.Bool(False, "Enable the delay queue")
     delay_queue_size = Param.Unsigned(15,
                 "Number of entries in the delay queue")
     delay_queue_cycles = Param.Cycles(60,

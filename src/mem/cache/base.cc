@@ -472,7 +472,7 @@ BaseCache::recvTimingReq(PacketPtr pkt)
         if (archDBer && pkt->req->hasPC() &&
             (pkt->isRead() || pkt->isWrite())){
             Addr pc = pkt->req->getPC();
-            Addr vaddr = pkt->req->getVaddr();
+            Addr vaddr = pkt->req->hasVaddr() ? pkt->req->getVaddr() : 0;
             Addr paddr = pkt->req->getPaddr();
             uint8_t source = pkt->isRead() ? 0 : 1;
             uint64_t curCycle = ticksToCycles(curTick());

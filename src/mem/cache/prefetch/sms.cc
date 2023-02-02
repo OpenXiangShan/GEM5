@@ -14,6 +14,8 @@ SMSPrefetcher::SMSPrefetcher(const SMSPrefetcherParams &p)
       region_blocks(p.region_size / p.block_size),
       act(p.act_entries, p.act_entries, p.act_indexing_policy,
           p.act_replacement_policy, ACTEntry(SatCounter8(2, 1))),
+      stride(p.stride_entries, p.stride_entries, p.stride_indexing_policy,
+             p.stride_replacement_policy, StrideEntry(SatCounter8(2, 1))),
       pht(p.pht_assoc, p.pht_entries, p.pht_indexing_policy,
           p.pht_replacement_policy,
           PhtEntry(2 * (region_blocks - 1), SatCounter8(2, 0)))
@@ -38,27 +40,22 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi,
     Addr block_addr = blockAddress(vaddr);
     // Addr region_addr = regionAddress(vaddr);
     Addr region_offset = regionOffset(vaddr);
-
-    ACTEntry *act_match_entry = actLookup(pfi);
-    bool issue_pf = false;
+    bool is_active_page = false;
+    ACTEntry *act_match_entry = actLookup(pfi, is_active_page);
     if (act_match_entry) {
         bool decr = act_match_entry->decr_mode;
         bool is_cross_region_match = act_match_entry->access_cnt == 0;
         if (is_cross_region_match) {
             act_match_entry->access_cnt = 1;
         }
-        bool is_active_page =
-            is_cross_region_match ||
-            act_match_entry->access_cnt > (region_blocks * 3 / 4);
         DPRINTF(SMSPrefetcher,
                 "ACT hit or match: pc:%x addr: %x offset: %d active: %d decr: "
                 "%d\n",
                 pc, vaddr, region_offset, is_active_page, decr);
         if (is_active_page) {
-            issue_pf = true;
             // active page
             Addr pf_tgt_addr =
-                decr ? block_addr + 30 * blkSize : block_addr - 30 * blkSize;
+                decr ? block_addr - 30 * blkSize : block_addr + 30 * blkSize;
             Addr pf_tgt_region = regionAddress(pf_tgt_addr);
             Addr pf_tgt_offset = regionOffset(pf_tgt_addr);
             DPRINTF(SMSPrefetcher, "tgt addr: %x offset: %d\n", pf_tgt_addr,
@@ -80,14 +77,15 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi,
             }
         }
     }
-    if (!issue_pf) {
+    if (!is_active_page) {
         DPRINTF(SMSPrefetcher, "Pht lookup...\n");
+        strideLookup(pfi, addresses);
         phtLookup(pfi, addresses);
     }
 }
 
 SMSPrefetcher::ACTEntry *
-SMSPrefetcher::actLookup(const PrefetchInfo &pfi)
+SMSPrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page)
 {
     Addr pc = pfi.getPC();
     Addr vaddr = pfi.getAddr();
@@ -99,6 +97,7 @@ SMSPrefetcher::actLookup(const PrefetchInfo &pfi)
     if (entry) {
         // act hit
         act.accessEntry(entry);
+        in_active_page = entry->in_active_page();
         uint64_t region_bit_accessed = 1 << region_offset;
         if (!(entry->region_bits & region_bit_accessed)) {
             entry->access_cnt += 1;
@@ -109,7 +108,7 @@ SMSPrefetcher::actLookup(const PrefetchInfo &pfi)
 
     entry = act.findEntry(region_addr - 1, secure);
     if (entry) {
-        act.accessEntry(entry);
+        in_active_page = entry->in_active_page();
         // act miss, but cur_region - 1 = entry_region, => cur_region =
         // entry_region + 1
         entry = act.findVictim(0);
@@ -128,7 +127,7 @@ SMSPrefetcher::actLookup(const PrefetchInfo &pfi)
 
     entry = act.findEntry(region_addr + 1, secure);
     if (entry) {
-        act.accessEntry(entry);
+        in_active_page = entry->in_active_page();
         // act miss, but cur_region + 1 = entry_region, => cur_region =
         // entry_region - 1
         entry = act.findVictim(0);
@@ -157,6 +156,39 @@ SMSPrefetcher::actLookup(const PrefetchInfo &pfi)
     act.insertEntry(region_addr, secure, entry);
     return nullptr;
 }
+
+void
+SMSPrefetcher::strideLookup(const PrefetchInfo &pfi,
+                            std::vector<AddrPriority> &address)
+{
+    Addr lookupAddr = blockAddress(pfi.getAddr());
+    StrideEntry *entry = stride.findEntry(pfi.getPC(), pfi.isSecure());
+    if (entry) {
+        stride.accessEntry(entry);
+        int64_t new_stride = lookupAddr - entry->last_addr;
+        bool stride_match = new_stride == entry->stride && new_stride != 0;
+        if (stride_match) {
+            entry->conf++;
+        } else {
+            if (entry->conf < 2) {
+                entry->stride = new_stride;
+            }
+            entry->conf--;
+        }
+        entry->last_addr = lookupAddr;
+        if (entry->conf >= 2) {
+            Addr pf_addr = lookupAddr + entry->stride;
+            address.push_back(AddrPriority(pf_addr, 0));
+        }
+    } else {
+        entry = stride.findVictim(0);
+        entry->conf.reset();
+        entry->last_addr = lookupAddr;
+        entry->stride = 0;
+        stride.insertEntry(pfi.getPC(), pfi.isSecure(), entry);
+    }
+}
+
 void
 SMSPrefetcher::updatePht(SMSPrefetcher::ACTEntry *act_entry)
 {
