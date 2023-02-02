@@ -58,7 +58,10 @@
 #include "debug/Drain.hh"
 #include "debug/IEW.hh"
 #include "debug/O3PipeView.hh"
+#include "debug/Counters.hh"
 #include "params/BaseO3CPU.hh"
+#include "sim/core.hh"
+#include "base/output.hh"
 
 namespace gem5
 {
@@ -114,6 +117,25 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
     updateLSQNextCycle = false;
 
     skidBufferMax = (renameToIEWDelay + 1) * params.renameWidth * 2;
+
+    for(int i = 0;i < 16;i++) {
+        std::vector<unsigned long> temp;
+        temp.resize(9,0);
+        fetchStalls.push_back(temp);
+    }
+
+    registerExitCallback([this]() {
+        {
+        auto out_handle = simout.create("fetchStall.txt", false, true);
+        for (auto& it : fetchStalls) {
+            for (int i = 0;i < 9;i++) {
+                *out_handle->stream() << it.at(i) << std::endl;
+            }
+            *out_handle->stream() << std::endl;
+        }
+        simout.close(out_handle);
+        }
+    });
 }
 
 std::string
@@ -1511,6 +1533,12 @@ IEW::writebackInsts()
 void
 IEW::tick()
 {
+    for (int i = 0;i < fromRename->fetchStallReason.size();i++) {
+        DPRINTF(Counters, "fetch Stall Reason %i: %i\n", i,
+                fromRename->fetchStallReason[i]);
+        fetchStalls.at(i).at(fromRename->fetchStallReason[i])++;
+    }
+
     wbNumInst = 0;
     wbCycle = 0;
 

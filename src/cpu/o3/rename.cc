@@ -406,6 +406,8 @@ Rename::squash(const InstSeqNum &squash_seq_num, ThreadID tid)
 void
 Rename::tick()
 {
+    toIEW->fetchStallReason = fromDecode->fetchStallReason;
+
     wroteToTimeBuffer = false;
 
     blockThisCycle = false;

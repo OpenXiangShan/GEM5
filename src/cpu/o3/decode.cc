@@ -50,6 +50,7 @@
 #include "debug/Decode.hh"
 #include "debug/DecoupleBP.hh"
 #include "debug/O3PipeView.hh"
+#include "debug/Counters.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/full_system.hh"
 
@@ -556,6 +557,8 @@ Decode::checkSignalsAndUpdate(ThreadID tid)
 void
 Decode::tick()
 {
+    toRename->fetchStallReason = fromFetch->fetchStallReason;
+
     wroteToTimeBuffer = false;
 
     bool status_change = false;

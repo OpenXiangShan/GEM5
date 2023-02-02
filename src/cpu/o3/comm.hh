@@ -58,6 +58,19 @@ namespace gem5
 namespace o3
 {
 
+/** stall reasons in each stages*/
+enum FetchStall {
+    NONE,
+    ICACHESTALL,
+    TLBSTALL,
+    BPSTALL, // stall caused by branch predictor
+    INTSTALL,
+    TRAPSTALL,
+    FRAGSTALL,
+    DECODESTALL,
+    OTHERSTALL
+};
+
 /** Struct that defines the information passed from fetch to decode. */
 struct FetchStruct
 {
@@ -67,6 +80,7 @@ struct FetchStruct
     Fault fetchFault;
     InstSeqNum fetchFaultSN;
     bool clearFetchFault;
+    std::vector<FetchStall> fetchStallReason;
 };
 
 /** Struct that defines the information passed from decode to rename. */
@@ -75,6 +89,7 @@ struct DecodeStruct
     int size;
 
     DynInstPtr insts[MaxWidth];
+    std::vector<FetchStall> fetchStallReason;
 };
 
 /** Struct that defines the information passed from rename to IEW. */
@@ -83,6 +98,7 @@ struct RenameStruct
     int size;
 
     DynInstPtr insts[MaxWidth];
+    std::vector<FetchStall> fetchStallReason;
 };
 
 /** Struct that defines the information passed from IEW to commit. */

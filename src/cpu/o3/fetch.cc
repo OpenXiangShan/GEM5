@@ -65,6 +65,7 @@
 #include "debug/O3CPU.hh"
 #include "debug/O3PipeView.hh"
 #include "debug/FetchFault.hh"
+#include "debug/Counters.hh"
 #include "mem/packet.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/byteswap.hh"
@@ -160,6 +161,8 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
 
     // Get the size of an instruction.
     instSize = decoder[0]->moreBytesSize();
+
+    stallReason.resize(fetchWidth, NONE);
 }
 
 std::string Fetch::name() const { return cpu->name() + ".fetch"; }
@@ -297,6 +300,9 @@ Fetch::setFetchQueue(TimeBuffer<FetchStruct> *ftb_ptr)
 {
     // Create wire to write information to proper place in fetch time buf.
     toDecode = ftb_ptr->getWire(0);
+
+    // initialize to toDecode stall vector
+    toDecode->fetchStallReason = stallReason;
 }
 
 void
@@ -688,6 +694,7 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
     if (cacheBlocked) {
         DPRINTF(Fetch, "[tid:%i] Can't fetch cache line, cache blocked\n",
                 tid);
+        setAllFetchStalls(ICACHESTALL);
         return false;
     } else if (checkInterrupt(pc) && !delayedCommit[tid]) {
         // Hold off fetch from getting new instructions when:
@@ -696,6 +703,7 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
         // fetch is switched out.
         DPRINTF(Fetch, "[tid:%i] Can't fetch cache line, interrupt pending\n",
                 tid);
+        setAllFetchStalls(INTSTALL);
         return false;
     }
 
@@ -767,6 +775,7 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
 
     // Initiate translation of the icache block
     fetchStatus[tid] = ItlbWait;
+    setAllFetchStalls(TLBSTALL);
     FetchTranslation *trans = new FetchTranslation(this);
     cpu->mmu->translateTiming(mem_req, cpu->thread[tid]->getTC(),
                               trans, BaseMMU::Execute);
@@ -817,6 +826,7 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
             warn("Address %#x is outside of physical memory, stopping fetch, %lu\n",
                     mem_req->getPaddr(), curTick());
             fetchStatus[tid] = NoGoodAddr;
+            setAllFetchStalls(OTHERSTALL);
             memReq[tid] = NULL;
             anotherMemReq[tid] = NULL;
             return;
@@ -850,12 +860,15 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
             retryPkt = data_pkt;
             retryTid = tid;
             cacheBlocked = true;
+
+            setAllFetchStalls(ICACHESTALL);
         } else {
             DPRINTF(Fetch, "[tid:%i] Doing Icache access.\n", tid);
             DPRINTF(Activity, "[tid:%i] Activity: Waiting on I-cache "
                     "response.\n", tid);
             lastIcacheStall[tid] = curTick();
             fetchStatus[tid] = IcacheWaitResponse;
+            setAllFetchStalls(ICACHESTALL);
             // Notify Fetch Request probe when a packet containing a fetch
             // request is successfully sent
             ppFetchRequestSent->notify(mem_req);
@@ -908,6 +921,7 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
         cpu->activityThisCycle();
 
         fetchStatus[tid] = TrapPending;
+        setAllFetchStalls(TRAPSTALL);
 
         DPRINTF(Fetch, "[tid:%i] Blocked, need to handle the trap.\n", tid);
         DPRINTF(Fetch, "[tid:%i] fault (%s) detected @ PC %s.\n",
@@ -955,6 +969,7 @@ Fetch::doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst,
     }
 
     fetchStatus[tid] = Squashing;
+    setAllFetchStalls(BPSTALL); // may caused by other stages like load and store
 
     // Empty fetch queue
     fetchQueue[tid].clear();
@@ -1099,6 +1114,8 @@ Fetch::tick()
         fetch(status_change);
     }
 
+    toDecode->fetchStallReason = stallReason;
+
     // Record number of instructions fetched this cycle for distribution.
     fetchStats.nisnDist.sample(numInst);
 
@@ -1164,6 +1181,15 @@ Fetch::tick()
         // Wrap around if at end of active threads list
         if (tid_itr == activeThreads->end())
             tid_itr = activeThreads->begin();
+    }
+
+    for (int i = 0;i < toDecode->fetchStallReason.size();i++) {
+        if (i < insts_to_decode) {
+            toDecode->fetchStallReason[i] = NONE;
+        } else if(stalls[*tid_itr].decode) {
+            toDecode->fetchStallReason[i] = DECODESTALL;
+        }
+        DPRINTF(Counters, "stallReason[%d] = %d\n", i, toDecode->fetchStallReason[i]);
     }
 
     // If there was activity this cycle, inform the CPU of it.
@@ -1521,6 +1547,7 @@ Fetch::fetch(bool &status_change)
         DPRINTF(Fetch, "[tid:%i] Icache miss is complete.\n", tid);
 
         fetchStatus[tid] = Running;
+        setAllFetchStalls(NONE);
         status_change = true;
     } else if (fetchStatus[tid] == Running) {
         // If buffer is no longer valid or fetch_addr has moved to point
@@ -1736,6 +1763,19 @@ Fetch::fetch(bool &status_change)
         // or not.
         in_rom = isRomMicroPC(this_pc.microPC());
     }
+
+    for (int i = 0;i < stallReason.size();i++) {
+        if (i < numInst)
+            stallReason[i] = NONE;
+        else {
+            if (numInst > 0) {
+                stallReason[i] = FRAGSTALL;
+            } else {
+                stallReason[i] = OTHERSTALL;
+            }
+        }
+    }
+    DPRINTF(Counters, "finish fetching %d insts\n", numInst);
 
     if (predictedBranch) {
         DPRINTF(Fetch, "[tid:%i] Done fetching, predicted branch "
@@ -2013,6 +2053,15 @@ Fetch::profileStall(ThreadID tid)
             "(Status: %i)\n",
             tid, fetchStatus[tid]);
     }
+}
+
+void
+Fetch::setAllFetchStalls(FetchStall stall)
+{
+    for (int i = 0; i < stallReason.size(); i++) {
+        stallReason[i] = stall;
+    }
+    DPRINTF(Counters, "change all fetch stalls to %d\n", stall);
 }
 
 bool

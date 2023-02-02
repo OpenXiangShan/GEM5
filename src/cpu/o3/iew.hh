@@ -44,6 +44,8 @@
 #include <map>
 #include <queue>
 #include <set>
+#include <vector>
+#include <map>
 
 #include "base/statistics.hh"
 #include "cpu/o3/comm.hh"
@@ -503,6 +505,9 @@ class IEW
 
         statistics::Vector stallEvents;
     } iewStats;
+
+    std::vector<std::vector<unsigned long>> fetchStalls;
+
 };
 
 } // namespace o3

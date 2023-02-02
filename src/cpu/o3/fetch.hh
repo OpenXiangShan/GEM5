@@ -462,7 +462,12 @@ class Fetch
     /** Profile the reasons of fetch stall. */
     void profileStall(ThreadID tid);
 
+
     bool ftqEmpty() { return isDecoupledFrontend() && usedUpFetchTargets; }
+
+    /** Set the reasons of all fetch stalls. */
+    void setAllFetchStalls(FetchStall stall);
+
 
   private:
     /** Pointer to the O3CPU. */
@@ -634,6 +639,10 @@ class Fetch
     bool isFTBPred() { return branchPred->isFTB(); }
 
     bool usedUpFetchTargets;
+
+    /** fetch stall reasons */
+    std::vector<FetchStall> stallReason;
+
 
   protected:
     struct FetchStatGroup : public statistics::Group
