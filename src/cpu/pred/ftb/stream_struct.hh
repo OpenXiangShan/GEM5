@@ -57,7 +57,7 @@ typedef struct BranchInfo {
         isCond(static_inst->isCondCtrl()),
         isIndirect(static_inst->isIndirectCtrl()),
         isCall(static_inst->isCall()),
-        isReturn(static_inst->isReturn()),
+        isReturn(static_inst->isReturn() && !static_inst->isNonSpeculative()),
         size(size) {}
     int getType() {
         if (isCond) {
