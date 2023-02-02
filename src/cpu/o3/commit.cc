@@ -1096,23 +1096,29 @@ Commit::commitInsts()
                     }
                 }
 
-                if (bp->isFTB() && head_inst->mispredicted()) {
+                if (bp->isFTB()) {
                     auto dbftb = dynamic_cast<branch_prediction::ftb_pred::DecoupledBPUWithFTB*>(bp);
-                    if (head_inst->isUncondCtrl()) {
-                        dbftb->addMiss(branch_prediction::ftb_pred::DecoupledBPUWithFTB::MissType::UNCOND);
+                    bool miss = head_inst->mispredicted();
+                    // FIXME: ignore mret/sret/uret in correspond with RTL
+                    if (!head_inst->isNonSpeculative()) {
+                        if (head_inst->isUncondCtrl()) {
+                            dbftb->addCfi(branch_prediction::ftb_pred::DecoupledBPUWithFTB::CfiType::UNCOND, miss);
+                        }
+                        if (head_inst->isCondCtrl()) {
+                            dbftb->addCfi(branch_prediction::ftb_pred::DecoupledBPUWithFTB::CfiType::COND, miss);
+                        }
+                        if (head_inst->isReturn()) {
+                            dbftb->addCfi(branch_prediction::ftb_pred::DecoupledBPUWithFTB::CfiType::RETURN, miss);
+                        } else if (head_inst->isIndirectCtrl()) {
+                            dbftb->addCfi(branch_prediction::ftb_pred::DecoupledBPUWithFTB::CfiType::OTHER, miss);
+                            if (miss) {
+                                misPredIndirect[head_inst->pcState().instAddr()]++;
+                            }
+                        }
+                        DPRINTF(DBPFTBStats, "inst=%s\n", head_inst->staticInst->disassemble(head_inst->pcState().instAddr()));
+                        DPRINTF(DBPFTBStats, "isUncondCtrl=%d, isCondCtrl=%d, isReturn=%d, isIndirectCtrl=%d\n",
+                                head_inst->isUncondCtrl(), head_inst->isCondCtrl(), head_inst->isReturn(), head_inst->isIndirectCtrl());
                     }
-                    if (head_inst->isCondCtrl()) {
-                        dbftb->addMiss(branch_prediction::ftb_pred::DecoupledBPUWithFTB::MissType::COND);
-                    }
-                    if (head_inst->isReturn()) {
-                        dbftb->addMiss(branch_prediction::ftb_pred::DecoupledBPUWithFTB::MissType::RETURN);
-                    } else if (head_inst->isIndirectCtrl()) {
-                        dbftb->addMiss(branch_prediction::ftb_pred::DecoupledBPUWithFTB::MissType::OTHER);
-                        misPredIndirect[head_inst->pcState().instAddr()]++;
-                    }
-                    DPRINTF(DBPFTBStats, "inst=%s\n", head_inst->staticInst->disassemble(head_inst->pcState().instAddr()));
-                    DPRINTF(DBPFTBStats, "isUncondCtrl=%d, isCondCtrl=%d, isReturn=%d, isIndirectCtrl=%d\n",
-                            head_inst->isUncondCtrl(), head_inst->isCondCtrl(), head_inst->isReturn(), head_inst->isIndirectCtrl());
                 }
 
                 ++num_committed;

@@ -166,6 +166,10 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
 
 DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigned numStages, unsigned fsqSize):
     statistics::Group(parent),
+    ADD_STAT(condNum, statistics::units::Count::get(), "the number of cond branches"),
+    ADD_STAT(uncondNum, statistics::units::Count::get(), "the number of uncond branches"),
+    ADD_STAT(returnNum, statistics::units::Count::get(), "the number of return branches"),
+    ADD_STAT(otherNum, statistics::units::Count::get(), "the number of other branches"),
     ADD_STAT(condMiss, statistics::units::Count::get(), "the number of cond branch misses"),
     ADD_STAT(uncondMiss, statistics::units::Count::get(), "the number of uncond branch misses"),
     ADD_STAT(returnMiss, statistics::units::Count::get(), "the number of return branch misses"),

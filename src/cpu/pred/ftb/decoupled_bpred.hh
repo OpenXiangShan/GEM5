@@ -305,6 +305,11 @@ class DecoupledBPUWithFTB : public BPredUnit
     }
 
     struct DBPFTBStats : public statistics::Group {
+        statistics::Scalar condNum;
+        statistics::Scalar uncondNum;
+        statistics::Scalar returnNum;
+        statistics::Scalar otherNum;
+
         statistics::Scalar condMiss;
         statistics::Scalar uncondMiss;
         statistics::Scalar returnMiss;
@@ -438,26 +443,34 @@ class DecoupledBPUWithFTB : public BPredUnit
 
     void resetPC(Addr new_pc);
 
-    enum MissType {
+    enum CfiType {
         COND,
         UNCOND,
         RETURN,
         OTHER
     };
 
-    void addMiss(MissType type) {
+    void addCfi(CfiType type, bool miss) {
         switch (type) {
             case COND:
-                dbpFtbStats.condMiss++;
+                dbpFtbStats.condNum++;
+                if (miss)
+                    dbpFtbStats.condMiss++;
                 break;
             case UNCOND:
-                dbpFtbStats.uncondMiss++;
+                dbpFtbStats.uncondNum++;
+                if (miss)
+                    dbpFtbStats.uncondMiss++;
                 break;
             case RETURN:
-                dbpFtbStats.returnMiss++;
+                dbpFtbStats.returnNum++;
+                if (miss)
+                    dbpFtbStats.returnMiss++;
                 break;
             case OTHER:
-                dbpFtbStats.otherMiss++;
+                dbpFtbStats.otherNum++;
+                if (miss)
+                    dbpFtbStats.otherMiss++;
                 break;
         }
         DPRINTF(DBPFTBStats, "Miss type: %d\n", type);
