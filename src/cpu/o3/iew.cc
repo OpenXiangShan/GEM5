@@ -1198,9 +1198,6 @@ IEW::executeInsts()
 
         DPRINTF(IEW, "Execute: Processing PC %s, [tid:%i] [sn:%llu].\n",
                 inst->pcState(), inst->threadNumber,inst->seqNum);
-        if (Debug::IEW) {
-            inst->printDisassembly();
-        }
 
         // Notify potential listeners that this instruction has started
         // executing
@@ -1315,6 +1312,10 @@ IEW::executeInsts()
         }
 
         updateExeInstStats(inst);
+
+        if (Debug::IEW) {
+            inst->printDisassembly();
+        }
 
         // Check if branch prediction was correct, if not then we need
         // to tell commit to squash in flight instructions.  Only

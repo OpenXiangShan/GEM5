@@ -525,6 +525,8 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
      * all instructions that will execute before the store writes back. Thus,
      * like the implementation that came before it, we're overly conservative.
      */
+    DPRINTF(LSQUnit, "Checking for violations for store [sn:%lli], addr: %#lx\n",
+            inst->seqNum, inst->effAddr);
     while (loadIt != loadQueue.end()) {
         DynInstPtr ld_inst = loadIt->instruction();
         if (!ld_inst->effAddrValid() || ld_inst->strictlyOrdered()) {
@@ -536,6 +538,8 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
         Addr ld_eff_addr2 =
             (ld_inst->effAddr + ld_inst->effSize - 1) >> depCheckShift;
 
+        DPRINTF(LSQUnit, "Checking for violations for load [sn:%lli], addr: %#lx\n",
+                ld_inst->seqNum, ld_inst->effAddr);
         if (inst_eff_addr2 >= ld_eff_addr1 && inst_eff_addr1 <= ld_eff_addr2) {
             if (inst->isLoad()) {
                 // If this load is to the same block as an external snoop
@@ -571,6 +575,11 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
                 if (memDepViolator && ld_inst->seqNum > memDepViolator->seqNum)
                     break;
 
+                DPRINTF(LSQUnit,
+                        "ld_eff_addr1: %#x, ld_eff_addr2: %#x, "
+                        "inst_eff_addr1: %#x, inst_eff_addr2: %#x\n",
+                        ld_eff_addr1, ld_eff_addr2, inst_eff_addr1,
+                        inst_eff_addr2);
                 DPRINTF(LSQUnit, "Detected fault with inst [sn:%lli] and "
                         "[sn:%lli] at address %#x\n",
                         inst->seqNum, ld_inst->seqNum, ld_eff_addr1);
