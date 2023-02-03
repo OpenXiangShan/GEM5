@@ -902,40 +902,37 @@ class FTBTAGE(TimedBaseFTBPredictor):
 
     histLengths = VectorParam.Unsigned([8, 13, 32, 119], "the FTB TAGE T0~Tn history length")
     maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
-    numTablesToAlloc = Param.Unsigned(2,"The number of table to allocated each time")
+    numTablesToAlloc = Param.Unsigned(1,"The number of table to allocated each time")
 
 class FTBITTAGE(TimedBaseFTBPredictor):
     type = 'FTBITTAGE'
     cxx_class = 'gem5::branch_prediction::ftb_pred::FTBITTAGE'
     cxx_header = "cpu/pred/ftb/ftb_ittage.hh"
 
-    numPredictors = Param.Unsigned(4, "Number of TAGE predictors")
-    tableSizes = VectorParam.Unsigned([2048]*4, "the ITTAGE T0~Tn length")
-    TTagBitSizes = VectorParam.Unsigned([8]*4, "the T0~Tn entry's tag bit size")
-    TTagPcShifts = VectorParam.Unsigned([1] * 4, "when the T0~Tn entry's tag generating, PC right shift")
+    numPredictors = Param.Unsigned(5, "Number of TAGE predictors")
+    tableSizes = VectorParam.Unsigned([256]*2 + [512]*3, "the ITTAGE T0~Tn length")
+    TTagBitSizes = VectorParam.Unsigned([9]*5, "the T0~Tn entry's tag bit size")
+    TTagPcShifts = VectorParam.Unsigned([1] * 5, "when the T0~Tn entry's tag generating, PC right shift")
 
-    histLengths = VectorParam.Unsigned([8, 13, 32, 119], "the FTB TAGE T0~Tn history length")
+    histLengths = VectorParam.Unsigned([4, 8, 13, 16, 32], "the FTB TAGE T0~Tn history length")
     maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
-    numTablesToAlloc = Param.Unsigned(2,"The number of table to allocated each time")
+    numTablesToAlloc = Param.Unsigned(1,"The number of table to allocated each time")
     
 class DecoupledBPUWithFTB(BranchPredictor):
     type = 'DecoupledBPUWithFTB'
     cxx_class = 'gem5::branch_prediction::ftb_pred::DecoupledBPUWithFTB'
     cxx_header = "cpu/pred/ftb/decoupled_bpred.hh"
     
+    # n = 2
     ftq_size = Param.Unsigned(128, "Fetch target queue size")
     fsq_size = Param.Unsigned(64, "Fetch stream queue size")
     maxHistLen = Param.Unsigned(970, "The length of history")
     numBr = Param.Unsigned(2, "Number of maximum branches per entry")
     numStages = Param.Unsigned(3, "Number of stages in the pipeline")
-    ftb = Param.DefaultFTB(DefaultFTB(), "FTB")
-    ftb.numBr = numBr
+    ftb = Param.DefaultFTB(DefaultFTB(numBr=2), "FTB")
     tage = Param.FTBTAGE(FTBTAGE(), "TAGE predictor")
-    tage.numBr = numBr
     ittage = Param.FTBITTAGE(FTBITTAGE(), "ITTAGE predictor")
-    ittage.numBr = 1
     uftb = Param.DefaultFTB(UFTB(), "UFTB predictor")
-    uftb.numBr = numBr
     ras = Param.RAS(RAS(), "RAS")
     
     enableBPDB = Param.Bool(False, "Enable trace in the form of database")
