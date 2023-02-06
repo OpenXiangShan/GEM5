@@ -41,6 +41,7 @@
 #ifndef __CPU_O3_IEW_HH__
 #define __CPU_O3_IEW_HH__
 
+#include <map>
 #include <queue>
 #include <set>
 
@@ -105,6 +106,17 @@ class IEW
         StartSquash,
         Squashing,
         Unblocking
+    };
+
+    enum StallEvent
+    {
+        CacheMiss=0,
+        Translation,
+        ROBWalk,
+        IQFull,
+        LSQFull,
+        DispBWFull,
+        StallEventCount
     };
 
   private:
@@ -488,6 +500,8 @@ class IEW
         statistics::Formula wbRate;
         /** Average number of woken instructions per writeback. */
         statistics::Formula wbFanout;
+
+        statistics::Vector stallEvents;
     } iewStats;
 };
 

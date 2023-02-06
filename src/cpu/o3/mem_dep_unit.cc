@@ -112,7 +112,9 @@ MemDepUnit::MemDepUnitStats::MemDepUnitStats(statistics::Group *parent)
       ADD_STAT(conflictingLoads, statistics::units::Count::get(),
                "Number of conflicting loads."),
       ADD_STAT(conflictingStores, statistics::units::Count::get(),
-               "Number of conflicting stores.")
+               "Number of conflicting stores."),
+      ADD_STAT(dependentLoads, statistics::units::Count::get(),
+               "Number of  predicted conflicting loads.")
 {
 }
 
@@ -465,6 +467,7 @@ MemDepUnit::wakeDependents(const DynInstPtr &inst)
     }
 
     MemDepEntryPtr inst_entry = findInHash(inst);
+    stats.dependentLoads += inst_entry->dependInsts.size();
 
     for (int i = 0; i < inst_entry->dependInsts.size(); ++i ) {
         MemDepEntryPtr woken_inst = inst_entry->dependInsts[i];

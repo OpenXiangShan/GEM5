@@ -1153,7 +1153,8 @@ void
 InstructionQueue::addReadyMemInst(const DynInstPtr &ready_inst)
 {
     OpClass op_class = ready_inst->opClass();
-    ready_inst->readyTick = curTick();
+    if (ready_inst->readyTick == -1)
+        ready_inst->readyTick = curTick();
 
     readyInsts[op_class].push(ready_inst);
 
@@ -1224,9 +1225,17 @@ InstructionQueue::getDeferredMemInstToExecute()
     for (ListIt it = deferredMemInsts.begin(); it != deferredMemInsts.end();
          ++it) {
         if ((*it)->translationCompleted() || (*it)->isSquashed()) {
+            DPRINTF(IQ, "Deferred mem inst [sn:%llu] PC %s is ready to "
+                    "execute\n", (*it)->seqNum, (*it)->pcState());
             DynInstPtr mem_inst = std::move(*it);
             deferredMemInsts.erase(it);
             return mem_inst;
+        }
+        if (!(*it)->translationCompleted()) {
+            DPRINTF(
+                IQ,
+                "Deferred mem inst [sn:%llu] PC %s has not been translated\n",
+                (*it)->seqNum, (*it)->pcState());
         }
     }
     return nullptr;
@@ -1525,7 +1534,8 @@ InstructionQueue::addIfReady(const DynInstPtr &inst)
     // If the instruction now has all of its source registers
     // available, then add it to the list of ready instructions.
     if (inst->readyToIssue()) {
-        inst->readyTick = curTick();
+        if (inst->readyTick == -1)
+            inst->readyTick = curTick();
 
         //Add the instruction to the proper ready list.
         if (inst->isMemRef()) {
@@ -1545,7 +1555,8 @@ InstructionQueue::addIfReady(const DynInstPtr &inst)
                 "the ready list, PC %s opclass:%i [sn:%llu].\n",
                 inst->pcState(), op_class, inst->seqNum);
 
-        inst->readyTick = curTick();
+        if (inst->readyTick == -1)
+            inst->readyTick = curTick();
         readyInsts[op_class].push(inst);
 
         // Will need to reorder the list if either a queue is not on the list,

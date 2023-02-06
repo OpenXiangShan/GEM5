@@ -190,7 +190,9 @@ IEW::IEWStats::IEWStats(CPU *cpu)
              "Insts written-back per cycle"),
     ADD_STAT(wbFanout, statistics::units::Rate<
                 statistics::units::Count, statistics::units::Count>::get(),
-             "Average fanout of values written-back")
+             "Average fanout of values written-back"),
+    ADD_STAT(stallEvents, statistics::units::Count::get(),
+             "Number of events the IEW has stalled")
 {
     instsToCommit
         .init(cpu->numThreads)
@@ -215,6 +217,23 @@ IEW::IEWStats::IEWStats(CPU *cpu)
     wbFanout
         .flags(statistics::total);
     wbFanout = producerInst / consumerInst;
+
+    stallEvents
+        .init(StallEventCount)
+        .flags(statistics::total);
+
+    std::map < StallEvent, const char* > stall_event_str = {
+        { CacheMiss, "CacheMiss" },
+        { Translation, "Translation" },
+        { ROBWalk, "ROBWalk" },
+        { IQFull, "IQFull" },
+        { LSQFull, "LSQFull" },
+        { DispBWFull, "DispBWFull" }
+    };
+
+    for (int i = 0; i < StallEventCount; i++) {
+        stallEvents.subname(i, stall_event_str[static_cast<StallEvent>(i)]);
+    }
 }
 
 IEW::IEWStats::ExecutedInstStats::ExecutedInstStats(CPU *cpu)
@@ -720,6 +739,7 @@ IEW::checkStall(ThreadID tid)
         ret_val = true;
     } else if (instQueue.isFull(tid)) {
         DPRINTF(IEW,"[tid:%i] Stall: IQ  is full.\n",tid);
+        iewStats.stallEvents[IQFull]++;
         ret_val = true;
     }
 
@@ -747,6 +767,7 @@ IEW::checkSignalsAndUpdate(ThreadID tid)
 
         dispatchStatus[tid] = Squashing;
         fetchRedirect[tid] = false;
+        iewStats.stallEvents[ROBWalk]++;
         return;
     }
 
@@ -756,6 +777,7 @@ IEW::checkSignalsAndUpdate(ThreadID tid)
         dispatchStatus[tid] = Squashing;
         emptyRenameInsts(tid);
         wroteToTimeBuffer = true;
+        iewStats.stallEvents[ROBWalk]++;
     }
 
     if (checkStall(tid)) {
@@ -977,7 +999,7 @@ IEW::dispatchInsts(ThreadID tid)
 
             // Call function to start blocking.
             block(tid);
-
+            iewStats.stallEvents[IQFull]++;
             // Set unblock to false. Special case where we are using
             // skidbuffer (unblocking) instructions but then we still
             // get full in the IQ.
@@ -996,6 +1018,7 @@ IEW::dispatchInsts(ThreadID tid)
 
             // Call function to start blocking.
             block(tid);
+            iewStats.stallEvents[LSQFull]++;
 
             // Set unblock to false. Special case where we are using
             // skidbuffer (unblocking) instructions but then we still
@@ -1134,6 +1157,7 @@ IEW::dispatchInsts(ThreadID tid)
     if (!insts_to_dispatch.empty()) {
         DPRINTF(IEW,"[tid:%i] Issue: Bandwidth Full. Blocking.\n", tid);
         block(tid);
+        iewStats.stallEvents[DispBWFull]++;
         toRename->iewUnblock[tid] = false;
     }
 

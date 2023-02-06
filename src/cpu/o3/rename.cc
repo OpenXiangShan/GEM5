@@ -143,7 +143,9 @@ Rename::RenameStats::RenameStats(statistics::Group *parent)
       ADD_STAT(tempSerializing, statistics::units::Count::get(),
                "count of temporary serializing insts renamed"),
       ADD_STAT(skidInsts, statistics::units::Count::get(),
-               "count of insts added to the skid buffer")
+               "count of insts added to the skid buffer"),
+      ADD_STAT(stallEvents, statistics::units::Count::get(),
+               "count of stall events")
 {
     squashCycles.prereq(squashCycles);
     idleCycles.prereq(idleCycles);
@@ -173,6 +175,22 @@ Rename::RenameStats::RenameStats(statistics::Group *parent)
     serializing.flags(statistics::total);
     tempSerializing.flags(statistics::total);
     skidInsts.flags(statistics::total);
+
+    stallEvents.init(StallEventCount).flags(statistics::total);
+    std::map < StallEvent, const char* > stall_event_str = {
+        { ROBWalk, "ROBWalk"},
+        { IEWStall, "IEWStall"},
+        { ROBFull, "ROBFull"},
+        { IQFull, "IQFull"},
+        { LSQFull, "LSQFull"},
+        { RegFull, "RegFull"},
+        { SerializeInst, "SerializeInst"},
+        { BWFull, "BWFull"},
+    };
+
+    for (int i = 0; i < StallEventCount; i++) {
+        stallEvents.subname(i, stall_event_str[static_cast<StallEvent>(i)]);
+    }
 }
 
 void
@@ -1255,24 +1273,30 @@ Rename::checkStall(ThreadID tid)
 
     if (stalls[tid].iew) {
         DPRINTF(Rename,"[tid:%i] Stall from IEW stage detected.\n", tid);
+        stats.stallEvents[IEWStall]++;
         ret_val = true;
     } else if (calcFreeROBEntries(tid) <= 0) {
         DPRINTF(Rename,"[tid:%i] Stall: ROB has 0 free entries.\n", tid);
+        stats.stallEvents[ROBFull]++;
         ret_val = true;
     } else if (calcFreeIQEntries(tid) <= 0) {
         DPRINTF(Rename,"[tid:%i] Stall: IQ has 0 free entries.\n", tid);
+        stats.stallEvents[IQFull]++;
         ret_val = true;
     } else if (calcFreeLQEntries(tid) <= 0 && calcFreeSQEntries(tid) <= 0) {
         DPRINTF(Rename,"[tid:%i] Stall: LSQ has 0 free entries.\n", tid);
+        stats.stallEvents[LSQFull]++;
         ret_val = true;
     } else if (renameMap[tid]->numFreeEntries() <= 0) {
         DPRINTF(Rename,"[tid:%i] Stall: RenameMap has 0 free entries.\n", tid);
+        stats.stallEvents[RegFull]++;
         ret_val = true;
     } else if (renameStatus[tid] == SerializeStall &&
                (!emptyROB[tid] || instsInProgress[tid])) {
         DPRINTF(Rename,"[tid:%i] Stall: Serialize stall and ROB is not "
                 "empty.\n",
                 tid);
+        stats.stallEvents[SerializeInst]++;
         ret_val = true;
     }
 
@@ -1433,15 +1457,19 @@ Rename::incrFullStat(const FullSource &source)
     switch (source) {
       case ROB:
         ++stats.ROBFullEvents;
+        stats.stallEvents[ROBFull]++;
         break;
       case IQ:
         ++stats.IQFullEvents;
+        stats.stallEvents[IQFull]++;
         break;
       case LQ:
         ++stats.LQFullEvents;
+        stats.stallEvents[LSQFull]++;
         break;
       case SQ:
         ++stats.SQFullEvents;
+        stats.stallEvents[LSQFull]++;
         break;
       default:
         panic("Rename full stall stat should be incremented for a reason!");

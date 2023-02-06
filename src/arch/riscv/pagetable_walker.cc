@@ -150,6 +150,8 @@ Walker::recvTimingResp(PacketPtr pkt)
 {
     WalkerSenderState * senderState =
         dynamic_cast<WalkerSenderState *>(pkt->popSenderState());
+    DPRINTF(PageTableWalker,
+            "Received timing response for sender state: %#lx\n", senderState);
     WalkerState * senderWalk = senderState->senderWalk;
     bool walkComplete = senderWalk->recvPacket(pkt);
     delete senderState;
@@ -197,6 +199,8 @@ Walker::recvReqRetry()
 bool Walker::sendTiming(WalkerState* sendingState, PacketPtr pkt)
 {
     WalkerSenderState* walker_state = new WalkerSenderState(sendingState);
+    DPRINTF(PageTableWalker, "Sending packet %#x with sender state: %lx\n",
+            pkt->getAddr(), walker_state);
     pkt->pushSenderState(walker_state);
     if (port.sendTimingReq(pkt)) {
         return true;
