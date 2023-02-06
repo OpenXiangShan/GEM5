@@ -1224,9 +1224,17 @@ InstructionQueue::getDeferredMemInstToExecute()
     for (ListIt it = deferredMemInsts.begin(); it != deferredMemInsts.end();
          ++it) {
         if ((*it)->translationCompleted() || (*it)->isSquashed()) {
+            DPRINTF(IQ, "Deferred mem inst [sn:%llu] PC %s is ready to "
+                    "execute\n", (*it)->seqNum, (*it)->pcState());
             DynInstPtr mem_inst = std::move(*it);
             deferredMemInsts.erase(it);
             return mem_inst;
+        }
+        if (!(*it)->translationCompleted()) {
+            DPRINTF(
+                IQ,
+                "Deferred mem inst [sn:%llu] PC %s has not been translated\n",
+                (*it)->seqNum, (*it)->pcState());
         }
     }
     return nullptr;

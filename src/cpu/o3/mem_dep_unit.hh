@@ -276,6 +276,10 @@ class MemDepUnit
         /** Stat for number of conflicting stores that had to wait for a
          *  store. */
         statistics::Scalar conflictingStores;
+
+        /** Stat for number of predicted conflicting loads
+         */
+        statistics::Scalar dependentLoads;
     } stats;
 };
 

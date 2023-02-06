@@ -897,6 +897,8 @@ LSQ::SingleDataRequest::finish(const Fault &fault, const RequestPtr &request,
 
         LSQRequest::_inst->fault = fault;
         LSQRequest::_inst->translationCompleted(true);
+        DPRINTF(LSQ, "Translation of inst %llu notified as completed\n",
+                LSQRequest::_inst->seqNum);
     }
 }
 
