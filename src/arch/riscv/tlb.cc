@@ -48,6 +48,7 @@
 #include "cpu/thread_context.hh"
 #include "debug/TLB.hh"
 #include "debug/TLBVerbose.hh"
+#include "debug/TLBVerbosel2.hh"
 #include "mem/page_table.hh"
 #include "params/RiscvTLB.hh"
 #include "sim/full_system.hh"
@@ -83,11 +84,11 @@ TLB::TLB(const Params &p) :
 {
     // printf("tlb11\n");
     DPRINTF(TLBVerbose, "tlb11\n");
+
     for (size_t x = 0; x < size; x++) {
         tlb[x].trieHandle = NULL;
         freeList.push_back(&tlb[x]);
         nextline_tlb[x].trieHandle = NULL;
-        // nextline_freeList.push_back(&tlb[x]);
         nextline_freeList.push_back(&nextline_tlb[x]);
     }
 
@@ -109,8 +110,6 @@ TLB::TLB(const Params &p) :
         freeList_l2sp.push_back(&tlb_l2sp[x_l2sp]);
     }
 
-
-    // printf("tlb22\n");
     DPRINTF(TLBVerbose, "tlb11 tlb_size %d\n",size);
 
     walker = p.walker;
@@ -154,7 +153,13 @@ void
 TLB::l2TLB_evictLRU(int l2TLBlevel,Addr vaddr){
     size_t lru;
     size_t i;
-    if (l2TLBlevel == 1){//全相联
+    Addr l2_index;
+    Addr l3_index;
+    l2_index = (vaddr >> 24) & (0x1f);
+    l3_index = (vaddr >> 15) & (0x7f);
+    int l2_index_num = 0;
+    int l3_index_num = 0;
+    if (l2TLBlevel == 1) {
         lru =0;
         for (i = 8;i< l2tlb_l1_size*8;i=i+8){
             if (tlb_l2l1[i].lruSeq < tlb_l2l1[lru].lruSeq){
@@ -164,34 +169,51 @@ TLB::l2TLB_evictLRU(int l2TLBlevel,Addr vaddr){
         l2TLB_remove(lru,1,0,0,0);
     }
 
-    else if (l2TLBlevel == 2){//2路组相联 64项
-       /* Addr index = (vaddr >> 24) & (0x1f);
-        for (i = 0;i< l2tlb_l2_size*8;i=i+8){
-            Addr re_tlb_index = ((tlb_l2l2[i].vaddr) >>24) &(0x1f);
-
-        }
-        lru =0;
-        vaddr;*/
+    else if (l2TLBlevel == 2) {
         lru = 0;
-        for (i = 8;i< l2tlb_l2_size*8;i=i+8){
-            if (tlb_l2l2[i].lruSeq < tlb_l2l2[lru].lruSeq){
-                lru = i;
+        for (i = 0; i < l2tlb_l2_size * 8; i = i + 8) {
+            if ((tlb_l2l2[i].index == l2_index) &&
+                (tlb_l2l2[i].trieHandle != NULL)) {
+                DPRINTF(TLBVerbosel2, "vaddr %#x index %#x\n",
+                        tlb_l2l2[i].vaddr, l2_index);
+                if (l2_index_num == 0) {
+                    lru = i;
+                } else if (tlb_l2l2[i].lruSeq < tlb_l2l2[lru].lruSeq) {
+                    lru = i;
+                }
+                l2_index_num++;
             }
         }
-        l2TLB_remove(lru,0,1,0,0);
+        if (l2_index_num == 2)
+            l2TLB_remove(lru, 0, 1, 0, 0);
+        else if (l2_index_num > 2) {
+            printf("l2_index_num %d\n", l2_index_num);
+            assert(0);
+        }
+
     }
 
-    else if (l2TLBlevel == 3){//4路组相联 512项 暂时全相联
-        lru =0;
-        for (i = 8;i< l2tlb_l3_size*8;i=i+8){
-            if (tlb_l2l3[i].lruSeq < tlb_l2l3[lru].lruSeq){
-                lru = i;
+    else if (l2TLBlevel == 3) {
+        lru = 0;
+        for (i = 0; i < l2tlb_l3_size * 8; i = i + 8) {
+            if ((tlb_l2l3[i].index == l3_index) &&
+                (tlb_l2l3[i].trieHandle != NULL)) {
+                if (l3_index_num == 0) {
+                    lru = i;
+                } else if (tlb_l2l3[i].lruSeq < tlb_l2l3[lru].lruSeq) {
+                    lru = i;
+                }
+                l3_index_num++;
             }
         }
-        l2TLB_remove(lru,0,0,1,0);
+        if (l3_index_num == 4)
+            l2TLB_remove(lru, 0, 0, 1, 0);
+        else if (l3_index_num > 4)
+            assert(0);
+
     }
 
-    else if ((l2TLBlevel == 4) ||(l2TLBlevel == 5)){//全相联
+    else if ((l2TLBlevel == 4) || (l2TLBlevel == 5)) {
         lru =0;
         for (i = 8;i< l2tlb_sp_size*8;i=i+8){
             if (tlb_l2sp[i].lruSeq < tlb_l2sp[lru].lruSeq){
@@ -577,20 +599,25 @@ TLB::L2TLB_insert_in(Addr vpn, const TlbEntry &entry, int choose,
             vpn, entry.vaddr, entry.asid, entry.paddr, entry.pte, entry.size(),
             choose);
     TlbEntry *newEntry;
-    //TlbEntry *newEntry_f = NULL;
     Addr key;
-    // for (size_t i =0; i<8; i++){
-    //  if (level == 2)
     newEntry = lookup_l2tlb(vpn, entry.asid, BaseMMU::Read, true, choose);
     if (newEntry) {
         newEntry->pte = entry.pte;
-        DPRINTF(TLB, "newEntry->vaddr %#x vpn %#x\n", newEntry->vaddr, vpn);
-        assert(newEntry->vaddr == vpn);
+        if (newEntry->vaddr != vpn) {
+            DPRINTF(TLBVerbosel2, "newEntry->vaddr %#x vpn %#x choose %d\n",
+                    newEntry->pte, vpn, choose);
+            assert(0);
+        }
         return newEntry;
     }
     DPRINTF(TLB, "not hit in l2 tlb\n");
-    if ((*List).empty())
+    if (choose == 2 || choose == 3) {
         l2TLB_evictLRU(choose, vpn);
+    } else {
+        if ((*List).empty())
+            l2TLB_evictLRU(choose, vpn);
+    }
+
 
     newEntry = (*List).front();
     (*List).pop_front();
@@ -1010,18 +1037,19 @@ TLB::L2tlb_check(PTESv39 pte, int level, STATUS status, PrivilegeMode pmode,
     //
     if (!pte.v || (!pte.r && pte.w)) {
         //  end_pte = true;
+        hit_in_sp = true;
         DPRINTF(TLB, "check l2 tlb PTE invalid, raising PF\n");
-       /* fault = createPagefault(vaddr, mode);
-        printf("level %d\n",level);
+        fault = createPagefault(vaddr, mode);
+        /*printf("level %d\n",level);
         printf("hit_in_sp %d\n",hit_in_sp);
         printf("fault")
         assert(0);*/
-        fault = walker->start(pte.ppn, tc, translation, req, mode,
-                                      false, level, false);
+        // fault = walker->start(pte.ppn, tc, translation, req, mode,
+        //                               false, level, false);
 
     } else {
         if (pte.r || pte.x) {
-           // hit_in_sp = true;
+            hit_in_sp = true;
             fault = checkPermissions(status, pmode, vaddr, mode, pte);
             if (fault == NoFault) {
                 if (level >= 1 && pte.ppn0 != 0) {
@@ -1036,9 +1064,7 @@ TLB::L2tlb_check(PTESv39 pte, int level, STATUS status, PrivilegeMode pmode,
                     //assert(0);
                 }
             }
-            else{
-                //assert(0);
-            }
+
 
             if (fault == NoFault) {
                 if (!pte.a) {
@@ -1061,7 +1087,7 @@ TLB::L2tlb_check(PTESv39 pte, int level, STATUS status, PrivilegeMode pmode,
                 }
             }
 
-            if (fault != NoFault){
+            /*if (fault != NoFault){
                 hit_in_sp =false;
                 fault = walker->start(pte.ppn, tc, translation, req, mode,
                                       false, level, false);
@@ -1070,14 +1096,16 @@ TLB::L2tlb_check(PTESv39 pte, int level, STATUS status, PrivilegeMode pmode,
             }
             else {
                 hit_in_sp = true;
-            }
+            }*/
+
         } else {
             level--;
             if (level < 0) {
+                hit_in_sp = true;
                 DPRINTF(TLB, "No leaf PTE found raising PF\n");
                 //        fault = PageFault(true);
                 fault = createPagefault(vaddr, mode);
-                assert(0);
+                // assert(0);
             } else {
                 // start walk
                 //*go_translate = true;
@@ -1130,10 +1158,12 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                                 tc, translation);
             e = e3;
 
-            if (hit_in_sp){
+            if (hit_in_sp) {
                 e = e3;
-            }
-            else {
+                if (fault == NoFault) {
+                    insert(e->vaddr, *e);
+                }
+            } else {
                 if (translation != nullptr || fault != NoFault) {
                     // This gets ignored in atomic mode.
                     delayed = true;
@@ -1141,7 +1171,6 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                 }
                 e = lookup(vaddr, satp.asid, mode, false);
                 assert(e != nullptr);
-
             }
         } else if (e5) {  // hit in sp l2
             DPRINTF(TLB, "hit in l2 tlb l5\n");
@@ -1227,7 +1256,10 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
 
     status = tc->readMiscReg(MISCREG_STATUS);
     pmode = getMemPriv(tc, mode);
-    fault = checkPermissions(status, pmode, vaddr, mode, e->pte);
+    if (fault == NoFault) {
+        fault = checkPermissions(status, pmode, vaddr, mode, e->pte);
+    }
+
 
     if (fault != NoFault) {
         // if we want to write and it isn't writable, do a page table walk
@@ -1420,17 +1452,6 @@ TLB::serialize(CheckpointOut &cp) const
 {
     // Only store the entries in use.
     printf("serialize\n");
-    printf("serialize\n");
-    printf("serialize\n");
-    printf("serialize\n");
-    printf("serialize\n");
-    printf("serialize\n");
-    printf("serialize\n");
-    printf("serialize\n");
-    printf("serialize\n");
-    printf("serialize\n");
-    printf("serialize\n");
-    printf("serialize\n");
     uint32_t _size = size - freeList.size();
     SERIALIZE_SCALAR(_size);
     SERIALIZE_SCALAR(lruSeq);
@@ -1446,16 +1467,6 @@ void
 TLB::unserialize(CheckpointIn &cp)
 {
     // Do not allow to restore with a smaller tlb.
-    printf("unserialize\n");
-    printf("unserialize\n");
-    printf("unserialize\n");
-    printf("unserialize\n");
-    printf("unserialize\n");
-    printf("unserialize\n");
-    printf("unserialize\n");
-    printf("unserialize\n");
-    printf("unserialize\n");
-    printf("unserialize\n");
     printf("unserialize\n");
     uint32_t _size;
     UNSERIALIZE_SCALAR(_size);

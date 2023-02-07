@@ -102,9 +102,12 @@ struct TlbEntry : public Serializable
 
     uint64_t level;
 
+    Addr index;
+
     TlbEntry()
-        : paddr(0), vaddr(0), logBytes(0), pte(), lruSeq(0) ,level(0)
-    {}
+        : paddr(0), vaddr(0), logBytes(0), pte(), lruSeq(0), level(0), index(0)
+    {
+    }
 
     // Return the page size in bytes
     Addr size() const

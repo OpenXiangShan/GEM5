@@ -233,3 +233,4 @@ CompoundFlag('Registers', [ 'IntRegs', 'FloatRegs', 'VecRegs', 'VecPredRegs',
 DebugFlag('Decoder', "Decoder debug output")
 DebugFlag('Faults', "Information about faults, exceptions, interrupts, etc")
 DebugFlag('TLBVerbose')
+DebugFlag('TLBVerbosel2')

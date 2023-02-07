@@ -598,12 +598,17 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                         l2pte = read->getLE_l2tlb<uint64_t>(l2_i);
                         inl2_entry.paddr = l2pte.ppn;
                         inl2_entry.pte = l2pte;
-                        if (l2_level == 2)
+                        if (l2_level == 2) {
+
                             walker->tlb->L2TLB_insert(inl2_entry.vaddr,
                                                       inl2_entry, l2_level, 1);
-                        if (l2_level == 1)
+                        }
+                        if (l2_level == 1) {
+                            inl2_entry.index = (entry.vaddr >> 24) & (0x1f);
                             walker->tlb->L2TLB_insert(inl2_entry.vaddr,
                                                       inl2_entry, l2_level, 2);
+                        }
+
                         if (l2_level == 0) {
                             DPRINTF(PageTableWalker,
                                     "l2_level is 0,may be wrong\n");
@@ -732,13 +737,16 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                             level,l2_level);
                     inl2_entry.paddr = l2pte.ppn;
                     inl2_entry.pte = l2pte;
-                    if (l2_level == 0)
+                    if (l2_level == 0) {
+                        inl2_entry.index = (entry.vaddr >> 15) & (0x7f);
                         walker->tlb->L2TLB_insert(inl2_entry.vaddr, inl2_entry,
                                                   l2_level, 3);
-                    else if (l2_level == 1)//hit level =1
+                    }
+
+                    else if (l2_level == 1)  // hit level =1
                         walker->tlb->L2TLB_insert(inl2_entry.vaddr, inl2_entry,
                                                   l2_level, 5);
-                    else if (l2_level == 2)//
+                    else if (l2_level == 2)  //
                         walker->tlb->L2TLB_insert(inl2_entry.vaddr, inl2_entry,
                                                   l2_level, 4);
                 }
