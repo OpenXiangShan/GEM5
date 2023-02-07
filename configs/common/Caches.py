@@ -124,6 +124,7 @@ class PageTableWalkerCache(Cache):
     mshrs = 10
     size = '1kB'
     tgts_per_mshr = 12
+    writeback_clean = True
 
     # the x86 table walker actually writes to the table-walker cache
     if buildEnv['TARGET_ISA'] in ['x86', 'riscv']:
