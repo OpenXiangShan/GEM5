@@ -520,7 +520,7 @@ TLB::insert(Addr vpn, const TlbEntry &entry)
         vpn, entry.asid, entry.paddr, entry.pte, entry.size());
 
     // If somebody beat us to it, just use that existing entry.
-    TlbEntry *newEntry = lookup(vpn, entry.asid, BaseMMU::Read, true);
+    TlbEntry *newEntry = lookup(vpn, entry.asid, BaseMMU::Read, false);
     if (newEntry) {
         // update PTE flags (maybe we set the dirty/writable flag)
         newEntry->pte = entry.pte;
@@ -1016,6 +1016,7 @@ Addr
 TLB::translateWithTLB(Addr vaddr, uint16_t asid, BaseMMU::Mode mode)
 {
     TlbEntry *e = lookup(vaddr, asid, mode, false);
+    DPRINTF(TLB,"translateWithTLB vaddr %#x \n",vaddr);
     assert(e != nullptr);
     DPRINTF(TLB,"translateWithTLB vaddr %#x paddr %#x\n",
             vaddr,e->paddr << PageShift | (vaddr & mask(e->logBytes)));

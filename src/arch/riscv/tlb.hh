@@ -163,6 +163,7 @@ class TLB : public BaseTLB
                               BaseMMU::Mode mode) override;
     Fault finalizePhysical(const RequestPtr &req, ThreadContext *tc,
                            BaseMMU::Mode mode) const override;
+    TlbEntry *lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden);
 
 
 
@@ -186,7 +187,7 @@ class TLB : public BaseTLB
   private:
     uint64_t nextSeq() { return ++lruSeq; }
 
-    TlbEntry *lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden);
+
     TlbEntry *lookupPre(Addr vpn, uint16_t asid, BaseMMU::Mode mode,
                         bool hidden);
 
