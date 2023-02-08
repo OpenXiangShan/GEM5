@@ -21,6 +21,26 @@ RAS::RAS(const Params &p)
 }
 
 void
+RAS::setTrace()
+{
+    if (enableDB) {
+        std::vector<std::pair<std::string, DataType>> fields_vec = {
+            std::make_pair("condition", UINT64),
+            std::make_pair("op", UINT64),
+            std::make_pair("startPC", UINT64),
+            std::make_pair("brPC", UINT64),
+            std::make_pair("retAddr", UINT64),
+            // before op
+            std::make_pair("sp", UINT64),
+            std::make_pair("tosAddr", UINT64),
+            std::make_pair("tosCtr", UINT64)
+        };
+        rasTrace = _db->addAndGetTrace("RASTRACE", fields_vec);
+        rasTrace->init_table();
+    }
+}
+
+void
 RAS::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
                   std::vector<FullFTBPrediction> &stagePreds)
 {
@@ -48,9 +68,13 @@ RAS::specUpdateHist(const boost::dynamic_bitset<> &history, FullFTBPrediction &p
     auto takenSlot = pred.getTakenSlot();
     if (takenSlot.isCall) {
         Addr retAddr = takenSlot.pc + takenSlot.size;
+        RASTrace rec(When::SPECULATIVE, RAS_OP::PUSH, pred.bbStart, takenSlot.pc, retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
+        rasTrace->write_record(rec);
         push(retAddr);
     }
     if (takenSlot.isReturn) {
+        RASTrace rec(When::SPECULATIVE, RAS_OP::POP, pred.bbStart, takenSlot.pc, stack[sp].retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
+        rasTrace->write_record(rec);
         // do pop
         pop();
     }
@@ -63,16 +87,22 @@ RAS::recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entr
     printStack("before recoverHist");
     // recover sp and tos first
     auto meta_ptr = std::static_pointer_cast<RASMeta>(entry.predMetas[getComponentIdx()]);
+    auto takenSlot = entry.exeBranchInfo;
+    RASTrace rec(When::REDIRECT, RAS_OP::RECOVER, entry.startPC, takenSlot.pc, 0, sp, stack[sp].retAddr, stack[sp].ctr);
+    rasTrace->write_record(rec);
     sp = meta_ptr->sp;
     stack[sp] = meta_ptr->tos;
 
     // do push & pops on control squash
-    auto takenSlot = entry.exeBranchInfo;
     if (takenSlot.isCall) {
         Addr retAddr = takenSlot.pc + takenSlot.size;
+        RASTrace rec(When::REDIRECT, RAS_OP::PUSH, entry.startPC, takenSlot.pc, retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
+        rasTrace->write_record(rec);
         push(retAddr);
     }
     if (takenSlot.isReturn) {
+        RASTrace rec(When::REDIRECT, RAS_OP::POP, entry.startPC, takenSlot.pc, stack[sp].retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
+        rasTrace->write_record(rec);
         pop();
     }
     printStack("after recoverHist");

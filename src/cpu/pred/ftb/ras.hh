@@ -46,6 +46,18 @@ class RAS : public TimedBaseFTBPredictor
 
         void recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken) override;
 
+        enum When {
+            SPECULATIVE,
+            REDIRECT
+        };
+
+        enum RAS_OP {
+            PUSH,
+            POP,
+            RECOVER
+            // PUSH_AND_POP
+        };
+
     private:
 
         void push(Addr retAddr);
@@ -67,6 +79,8 @@ class RAS : public TimedBaseFTBPredictor
             }
         }
 
+        void setTrace() override;
+
         unsigned numEntries;
 
         unsigned ctrWidth;
@@ -79,7 +93,24 @@ class RAS : public TimedBaseFTBPredictor
 
         RASMeta meta;
 
+        TraceManager *rasTrace;
 
+};
+
+struct RASTrace : public Record {
+    RASTrace(RAS::When when, RAS::RAS_OP op, Addr startPC, Addr brPC,
+        Addr retAddr, int sp, Addr tosAddr, unsigned tosCtr)
+    {
+        _tick = curTick();
+        _uint64_data["condition"] = when;
+        _uint64_data["op"] = op;
+        _uint64_data["startPC"] = startPC;
+        _uint64_data["brPC"] = brPC;
+        _uint64_data["retAddr"] = retAddr;
+        _uint64_data["sp"] = sp;
+        _uint64_data["tosAddr"] = tosAddr;
+        _uint64_data["tosCtr"] = tosCtr;
+    }
 };
 
 }  // namespace ftb_pred
