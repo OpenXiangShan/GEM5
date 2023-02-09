@@ -90,6 +90,13 @@ Multi::getPacket()
 
     return nullptr;
 }
+void
+Multi::addTLB(BaseTLB *_t)
+{
+    Base::addTLB(_t);
+    for (auto pf : prefetchers)
+        pf->addTLB(_t);
+}
 
 } // namespace prefetch
 } // namespace gem5

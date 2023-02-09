@@ -1404,28 +1404,38 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
             head_inst->traceData = NULL;
         }
 
-        auto priv = cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_PRV, tid);
-        RegVal cause = 0;
-        if (priv == RiscvISA::PRV_M) {
-            DPRINTF(Commit, "Force to raise exception at machine mode\n");
-            cause = cpu->readMiscReg(RiscvISA::MiscRegIndex::MISCREG_MCAUSE, tid);
-        } else if (priv == RiscvISA::PRV_S) {
-            DPRINTF(Commit, "Force to raise exception at supvs mode\n");
-            cause = cpu->readMiscReg(RiscvISA::MiscRegIndex::MISCREG_SCAUSE, tid);
-        } else {
-            DPRINTF(Commit, "Force to raise exception at user mode\n");
-            assert(priv == RiscvISA::PRV_U);
-            cause = cpu->readMiscReg(RiscvISA::MiscRegIndex::MISCREG_UCAUSE, tid);
-        }
-        if (cause == RiscvISA::ExceptionCode::LOAD_PAGE ||
-            cause == RiscvISA::ExceptionCode::STORE_PAGE ||
-            cause == RiscvISA::ExceptionCode::INST_PAGE) {
-            DPRINTF(Commit, "Force to raise No.%lu exception at page fault\n", cause);
-            cpu->setGuideExecInfo(
-                cause,
-                cpu->readMiscReg(RiscvISA::MiscRegIndex::MISCREG_MTVAL, tid),
-                cpu->readMiscReg(RiscvISA::MiscRegIndex::MISCREG_STVAL, tid),
-                false, 0);
+        if (cpu->difftestEnabled()) {
+            auto priv = cpu->readMiscRegNoEffect(
+                RiscvISA::MiscRegIndex::MISCREG_PRV, tid);
+            RegVal cause = 0;
+            if (priv == RiscvISA::PRV_M) {
+                DPRINTF(Commit, "Force to raise exception at machine mode\n");
+                cause = cpu->readMiscReg(
+                    RiscvISA::MiscRegIndex::MISCREG_MCAUSE, tid);
+            } else if (priv == RiscvISA::PRV_S) {
+                DPRINTF(Commit, "Force to raise exception at supvs mode\n");
+                cause = cpu->readMiscReg(
+                    RiscvISA::MiscRegIndex::MISCREG_SCAUSE, tid);
+            } else {
+                DPRINTF(Commit, "Force to raise exception at user mode\n");
+                assert(priv == RiscvISA::PRV_U);
+                cause = cpu->readMiscReg(
+                    RiscvISA::MiscRegIndex::MISCREG_UCAUSE, tid);
+            }
+            if (cause == RiscvISA::ExceptionCode::LOAD_PAGE ||
+                cause == RiscvISA::ExceptionCode::STORE_PAGE ||
+                cause == RiscvISA::ExceptionCode::INST_PAGE) {
+                DPRINTF(Commit,
+                        "Force to raise No.%lu exception at page fault\n",
+                        cause);
+                cpu->setGuideExecInfo(
+                    cause,
+                    cpu->readMiscReg(
+                        RiscvISA::MiscRegIndex::MISCREG_MTVAL, tid),
+                    cpu->readMiscReg(
+                        RiscvISA::MiscRegIndex::MISCREG_STVAL, tid),
+                    false, 0);
+            }
         }
 
         // Generate trap squash event.

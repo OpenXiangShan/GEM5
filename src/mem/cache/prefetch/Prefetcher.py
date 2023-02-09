@@ -113,12 +113,6 @@ class BasePrefetcher(ClockedObject):
             raise TypeError("argument must be a SimObject type")
         self._tlbs.append(simObj)
 
-class MultiPrefetcher(BasePrefetcher):
-    type = 'MultiPrefetcher'
-    cxx_class = 'gem5::prefetch::Multi'
-    cxx_header = 'mem/cache/prefetch/multi.hh'
-
-    prefetchers = VectorParam.BasePrefetcher([], "Array of prefetchers")
 
 class QueuedPrefetcher(BasePrefetcher):
     type = "QueuedPrefetcher"
@@ -676,3 +670,17 @@ class PIFPrefetcher(QueuedPrefetcher):
         if not isinstance(simObj, SimObject):
             raise TypeError("argument must be of SimObject type")
         self.addEvent(HWPProbeEventRetiredInsts(self, simObj,"RetiredInstsPC"))
+
+class MultiPrefetcher(BasePrefetcher):
+    type = 'MultiPrefetcher'
+    cxx_class = 'gem5::prefetch::Multi'
+    cxx_header = 'mem/cache/prefetch/multi.hh'
+
+    use_virtual_addresses = True
+    prefetch_on_pf_hit = True
+    on_read = True
+    on_write = False
+    on_data  = True
+    on_inst  = False
+
+    prefetchers = VectorParam.BasePrefetcher([], "Array of prefetchers")

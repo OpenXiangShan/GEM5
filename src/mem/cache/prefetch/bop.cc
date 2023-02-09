@@ -228,7 +228,6 @@ BOP::bestOffsetLearning(Addr x)
         } else if (bestScore <= badScore) {
             DPRINTF(BOPPrefetcher, "best score %d <= bad score %d\n",
                     bestScore, badScore);
-            issuePrefetchRequests = false;
         }
     }
 }
