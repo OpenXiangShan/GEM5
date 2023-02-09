@@ -58,6 +58,7 @@ class Multi : public Base
 
   public:
     void setCache(BaseCache *_cache) override;
+    void addTLB(BaseTLB* _t) override;
     PacketPtr getPacket() override;
     Tick nextPrefetchReadyTime() const override;
 
