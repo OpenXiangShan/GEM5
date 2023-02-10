@@ -116,7 +116,9 @@ namespace RiscvISA
                 void markSquash() { squashed = true; }
             };
 
+
             std::list<RequestorState> requestors;
+
 
           protected:
             Walker *walker;
@@ -190,6 +192,17 @@ namespace RiscvISA
             Fault pageFaultOnRequestor(RequestorState &requestor);
         };
 
+        struct L2TlbState
+        {
+              RequestPtr req;
+              ThreadContext *tc;
+
+              BaseMMU::Translation *translation;
+              BaseMMU::Mode mode;
+              Addr Paddr;
+        };
+        std::list<L2TlbState> L2TLBrequestors;
+
         friend class WalkerState;
         // State for timing and atomic accesses (need multiple per walker in
         // the case of multiple outstanding requests in timing mode)
@@ -210,6 +223,10 @@ namespace RiscvISA
                     BaseMMU::Translation *translation, const RequestPtr &req,
                     BaseMMU::Mode mode, bool pre = false, int f_level = 2,
                     bool from_l2tlb = false);
+
+        void doL2TLBHitSchedule(const RequestPtr &req, ThreadContext *tc,
+                                BaseMMU::Translation *translation,
+                                BaseMMU::Mode mode, Addr Paddr);
 
 
 
@@ -244,12 +261,15 @@ namespace RiscvISA
         // Checking for squashes
         void handlePendingSquash();
 
+        void dol2TLBHit();
+
         /**
          * Event used to call startWalkWrapper.
          **/
         EventFunctionWrapper startWalkWrapperEvent;
-
         EventFunctionWrapper handlePendingSquashEvent;
+
+        EventFunctionWrapper doL2TLBHitEvent;
 
         // Functions for dealing with packets.
         bool recvTimingResp(PacketPtr pkt);
@@ -274,7 +294,8 @@ namespace RiscvISA
             requestorId(sys->getRequestorId(this)),
             numSquashable(params.num_squash_per_cycle),
             startWalkWrapperEvent([this]{ startWalkWrapper(); }, name()),
-            handlePendingSquashEvent([this]{ handlePendingSquash(); }, name())
+            handlePendingSquashEvent([this]{ handlePendingSquash(); }, name()),
+            doL2TLBHitEvent([this]{dol2TLBHit();},name())
         {
         }
     };

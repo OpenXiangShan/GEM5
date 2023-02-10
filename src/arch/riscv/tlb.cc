@@ -604,9 +604,46 @@ TLB::L2TLB_insert_in(Addr vpn, const TlbEntry &entry, int choose,
     if (newEntry) {
         newEntry->pte = entry.pte;
         if (newEntry->vaddr != vpn) {
-            DPRINTF(TLBVerbosel2, "newEntry->vaddr %#x vpn %#x choose %d\n",
-                    newEntry->pte, vpn, choose);
-            assert(0);
+            Addr newEntryAddr = buildKey(newEntry->vaddr,newEntry->asid);
+            Addr vpnAddr = buildKey(entry.vaddr,entry.asid);
+
+
+            if (newEntryAddr == vpnAddr) {
+                DPRINTF(TLBVerbosel2,
+                        "l2tlb insert(vpn=%#x, vpn2 %#x asid=%#x): ppn=%#x "
+                        "pte=%#x "
+                        "size=%#x level %d\n",
+                        vpn, entry.vaddr, entry.asid, entry.paddr, entry.pte,
+                        entry.size(), choose);
+                DPRINTF(
+                    TLBVerbosel2,
+                    "newentry(vpn=%#x, vpn2 %#x asid=%#x): ppn=%#x pte=%#x "
+                    "size=%#x level %d\n",
+                    vpn, newEntry->vaddr, newEntry->asid, newEntry->paddr,
+                    newEntry->pte, newEntry->size(), choose);
+
+                DPRINTF(TLBVerbosel2,
+                        "newEntry->vaddr %#x vpn %#x choose %d\n",
+                        newEntry->vaddr, vpn, choose);
+            } else {
+                DPRINTF(TLBVerbosel2,
+                        "l2tlb insert(vpn=%#x, vpn2 %#x asid=%#x): ppn=%#x "
+                        "pte=%#x "
+                        "size=%#x level %d\n",
+                        vpn, entry.vaddr, entry.asid, entry.paddr, entry.pte,
+                        entry.size(), choose);
+                DPRINTF(
+                    TLBVerbosel2,
+                    "newentry(vpn=%#x, vpn2 %#x asid=%#x): ppn=%#x pte=%#x "
+                    "size=%#x level %d\n",
+                    vpn, newEntry->vaddr, newEntry->asid, newEntry->paddr,
+                    newEntry->pte, newEntry->size(), choose);
+
+                DPRINTF(TLBVerbosel2,
+                        "newEntry->vaddr %#x vpn %#x choose %d\n",
+                        newEntry->vaddr, vpn, choose);
+                assert(0);
+            }
         }
         return newEntry;
     }
@@ -1161,9 +1198,17 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
 
             if (hit_in_sp) {
                 e = e3;
+
                 if (fault == NoFault) {
+                    paddr =
+                        e->paddr << PageShift | (vaddr & mask(e->logBytes));
                     insert(e->vaddr, *e);
+                    walker->doL2TLBHitSchedule(req, tc, translation, mode,
+                                               paddr);
+                    delayed = true;
+                    return fault;
                 }
+
             } else {
                 if (translation != nullptr || fault != NoFault) {
                     // This gets ignored in atomic mode.
@@ -1179,6 +1224,15 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                                 tc, translation);
             if (hit_in_sp){
                 e = e5;
+                if (fault == NoFault) {
+                    paddr =
+                        e->paddr << PageShift | (vaddr & mask(e->logBytes));
+                    insert(e->vaddr, *e);
+                    walker->doL2TLBHitSchedule(req, tc, translation, mode,
+                                               paddr);
+                    delayed = true;
+                    return fault;
+                }
             }
             else {
                 if (translation != nullptr || fault != NoFault) {
@@ -1196,6 +1250,17 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                                 tc, translation);
             if (hit_in_sp){
                 e =  e4;
+                //printf("")
+                if (fault == NoFault) {
+                    paddr =
+                        e->paddr << PageShift | (vaddr & mask(e->logBytes));
+                    insert(e->vaddr, *e);
+                    walker->doL2TLBHitSchedule(req, tc, translation, mode,
+                                               paddr);
+                    delayed = true;
+                    return fault;
+                }
+
             }
             else{
                 if (translation != nullptr || fault != NoFault){
@@ -1212,6 +1277,15 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                                 tc, translation);
             if (hit_in_sp){
                 e = e2;
+                if (fault == NoFault) {
+                    paddr =
+                        e->paddr << PageShift | (vaddr & mask(e->logBytes));
+                    insert(e->vaddr, *e);
+                    walker->doL2TLBHitSchedule(req, tc, translation, mode,
+                                               paddr);
+                    delayed = true;
+                    return fault;
+                }
             }
             else{
                 if (translation != nullptr || fault != NoFault) {
@@ -1230,6 +1304,15 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                                 tc, translation);
             if (hit_in_sp){
                 e = e1;
+                if (fault == NoFault) {
+                    paddr =
+                        e->paddr << PageShift | (vaddr & mask(e->logBytes));
+                    insert(e->vaddr, *e);
+                    walker->doL2TLBHitSchedule(req, tc, translation, mode,
+                                               paddr);
+                    delayed = true;
+                    return fault;
+                }
             }
             else{
                 if (translation != nullptr || fault != NoFault) {

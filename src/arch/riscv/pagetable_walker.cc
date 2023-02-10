@@ -62,6 +62,7 @@
 #include "cpu/base.hh"
 #include "cpu/thread_context.hh"
 #include "debug/PageTableWalker.hh"
+#include "debug/PageTableWalker2.hh"
 #include "mem/packet_access.hh"
 #include "mem/request.hh"
 
@@ -133,6 +134,25 @@ Walker::start(Addr ppn, ThreadContext *_tc, BaseMMU::Translation *_translation,
         }
         return fault;
     }
+}
+
+void
+Walker::doL2TLBHitSchedule(const RequestPtr &req, ThreadContext *tc,
+                           BaseMMU::Translation *translation,
+                           BaseMMU::Mode mode, Addr Paddr)
+{
+    // dol2TLBHit();
+    L2TlbState l2state;
+    l2state.req = req;
+    l2state.tc = tc;
+    l2state.translation = translation;
+    l2state.mode = mode;
+    l2state.Paddr = Paddr;
+    L2TLBrequestors.push_back(l2state);
+
+    DPRINTF(PageTableWalker2, "schedule %d\n", curCycle());
+    if (!doL2TLBHitEvent.scheduled())
+        schedule(doL2TLBHitEvent, nextCycle());
 }
 
 Fault
@@ -366,7 +386,30 @@ Walker::handlePendingSquash()
     }
     squashHandleTick = curCycle();
 }
+void
+Walker::dol2TLBHit()
+{
+    DPRINTF(PageTableWalker2, "dol2tlbhit %d\n", curCycle());
+    while (!L2TLBrequestors.empty()) {
+        L2TlbState dol2TLBHitrequestors = L2TLBrequestors.front();
+        // printf("front size of %ld\n",L2TLBrequestors.size());
 
+        Fault l2tlbFault;
+        PrivilegeMode pmodel2 = tlb->getMemPriv(dol2TLBHitrequestors.tc,
+                                                dol2TLBHitrequestors.mode);
+        dol2TLBHitrequestors.req->setPaddr(dol2TLBHitrequestors.Paddr);
+        l2tlbFault =
+            pmp->pmpCheck(dol2TLBHitrequestors.req, dol2TLBHitrequestors.mode,
+                          pmodel2, dol2TLBHitrequestors.tc);
+        assert(l2tlbFault == NoFault);
+
+        dol2TLBHitrequestors.translation->finish(
+            l2tlbFault, dol2TLBHitrequestors.req, dol2TLBHitrequestors.tc,
+            dol2TLBHitrequestors.mode);
+        L2TLBrequestors.pop_front();
+        // printf("front size of %ld\n",L2TLBrequestors.size());
+    }
+}
 bool
 Walker::WalkerState::anyRequestorSquashed() const
 {
@@ -901,6 +944,7 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level,
     nextline_entry.vaddr = vaddr;
     nextline_entry.asid = satp.asid;
 
+    inl2_entry.asid = satp.asid;
     Request::Flags flags = Request::PHYSICAL;
     //RequestPtr request = std::make_shared<Request>(
     //    topAddr, sizeof(PTESv39), flags, walker->requestorId);
