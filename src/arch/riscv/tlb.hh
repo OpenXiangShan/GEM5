@@ -116,9 +116,10 @@ class TLB : public BaseTLB
     TlbEntry *insert(Addr vpn, const TlbEntry &entry);
     TlbEntry *nextline_insert(Addr vpn, const TlbEntry &entry);
     TlbEntry *L2TLB_insert(Addr vpn, const TlbEntry &entry, int level,
-                           int choose);
+                           int choose, int sign);
     TlbEntry *L2TLB_insert_in(Addr vpn, const TlbEntry &entry, int choose,
-                              EntryList *List, TlbEntryTrie *Trie_l2);
+                              EntryList *List, TlbEntryTrie *Trie_l2,
+                              int sign);
     // TlbEntry *L2TLB_insert_in(Addr vpn,const TlbEntry &entry,int level);
 
 

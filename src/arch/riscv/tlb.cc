@@ -174,7 +174,7 @@ TLB::l2TLB_evictLRU(int l2TLBlevel,Addr vaddr){
         for (i = 0; i < l2tlb_l2_size * 8; i = i + 8) {
             if ((tlb_l2l2[i].index == l2_index) &&
                 (tlb_l2l2[i].trieHandle != NULL)) {
-                DPRINTF(TLBVerbosel2, "vaddr %#x index %#x\n",
+                DPRINTF(TLBVerbose, "vaddr %#x index %#x\n",
                         tlb_l2l2[i].vaddr, l2_index);
                 if (l2_index_num == 0) {
                     lru = i;
@@ -228,10 +228,6 @@ TlbEntry *
 TLB::lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden)
 {
     TlbEntry *entry = trie.lookup(buildKey(vpn, asid));
- /*   TlbEntry *entry1 = trie.lookup(buildKey(0x80005000, asid));
-    TlbEntry *entry2 = trie.lookup(buildKey(0x80004000, asid));
-    TlbEntry *entry3 = trie.lookup(buildKey(0x80003000, asid));
-    TlbEntry *entry4 = trie.lookup(buildKey(0x80002000, asid));*/
 
     if (!hidden) {
         if (entry)
@@ -257,14 +253,6 @@ TLB::lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden)
 
         DPRINTF(TLBVerbose, "lookup(vpn=%#x, asid=%#x): %s ppn %#x\n",
                 vpn, asid, entry ? "hit" : "miss", entry ? entry->paddr : 0);
-        /* DPRINTF(TLBVerbose, "lookup(vpn=0x80005000, asid=%#x): %s ppn
-         %#x\n", asid, entry1 ? "hit" : "miss", entry1 ? entry1->paddr : 0);
-         DPRINTF(TLBVerbose, "lookup(vpn=0x80004000, asid=%#x): %s ppn %#x\n",
-                  asid, entry2 ? "hit" : "miss", entry2 ? entry2->paddr : 0);
-         DPRINTF(TLBVerbose, "lookup(vpn=0x80003000, asid=%#x): %s ppn %#x\n",
-                  asid, entry3 ? "hit" : "miss", entry3 ? entry3->paddr : 0);
-         DPRINTF(TLBVerbose, "lookup(vpn=0x80002000, asid=%#x): %s ppn %#x\n",
-                  asid, entry4 ? "hit" : "miss", entry4 ? entry4->paddr : 0);*/
     }
 
     return entry;
@@ -366,7 +354,6 @@ TLB::lookup_l2tlb(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
         }
 
     }
-    // uint64_t left_offset;
     Addr step;
     if (!hidden) {
         if (!(entry_l2l1 || entry_l2l2 || entry_l2l3 || entry_l2sp1 ||
@@ -389,7 +376,6 @@ TLB::lookup_l2tlb(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
 
             Addr vpnl2l3 = ((vpn >> 15)) << 15;
             step = 0x1000;
-            //*hitlevel = 3;
             for (i = 0; i < 8; i++) {
                 TlbEntry *m_entry_l2l3 =
                     trie_l2l3.lookup(buildKey((vpnl2l3 + step * i), asid));
@@ -432,10 +418,8 @@ TLB::lookup_l2tlb(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
             return entry_l2sp1;
         }
         if (entry_l2sp2) {
-            //Addr vpnl2sp2 = ((vpn >> 24) & (0x7fff)) << 24;
             Addr vpnl2sp2 = ((vpn >> 24)) << 24;
             step = 0x1 << 21;
-            //*hitlevel = 1;
             for (i = 0; i < 8; i++) {
                 TlbEntry *m_entry_sp2 =
                     trie_l2sp.lookup(buildKey(vpnl2sp2 + step * i, asid));
@@ -591,7 +575,7 @@ TLB::nextline_insert(Addr vpn, const TlbEntry &entry)
 
 TlbEntry *
 TLB::L2TLB_insert_in(Addr vpn, const TlbEntry &entry, int choose,
-                     EntryList *List, TlbEntryTrie *Trie_l2)
+                     EntryList *List, TlbEntryTrie *Trie_l2,int sign)
 {
     DPRINTF(TLB,
             "l2tlb insert(vpn=%#x, vpn2 %#x asid=%#x): ppn=%#x pte=%#x "
@@ -606,49 +590,26 @@ TLB::L2TLB_insert_in(Addr vpn, const TlbEntry &entry, int choose,
         if (newEntry->vaddr != vpn) {
             Addr newEntryAddr = buildKey(newEntry->vaddr,newEntry->asid);
             Addr vpnAddr = buildKey(entry.vaddr,entry.asid);
-
-
-            if (newEntryAddr == vpnAddr) {
-                DPRINTF(TLBVerbosel2,
-                        "l2tlb insert(vpn=%#x, vpn2 %#x asid=%#x): ppn=%#x "
-                        "pte=%#x "
-                        "size=%#x level %d\n",
-                        vpn, entry.vaddr, entry.asid, entry.paddr, entry.pte,
-                        entry.size(), choose);
-                DPRINTF(
-                    TLBVerbosel2,
+            DPRINTF(TLBVerbosel2, "newEntryAddr %#x vpnAddr %#x\n",
+                    newEntryAddr, vpnAddr);
+            DPRINTF(TLBVerbosel2,
+                    "l2tlb insert(vpn=%#x, vpn2 %#x asid=%#x): ppn=%#x "
+                    "pte=%#x size=%#x level %d\n",
+                    vpn, entry.vaddr, entry.asid, entry.paddr, entry.pte,
+                    entry.size(), choose);
+            DPRINTF(TLBVerbosel2,
                     "newentry(vpn=%#x, vpn2 %#x asid=%#x): ppn=%#x pte=%#x "
                     "size=%#x level %d\n",
                     vpn, newEntry->vaddr, newEntry->asid, newEntry->paddr,
                     newEntry->pte, newEntry->size(), choose);
-
-                DPRINTF(TLBVerbosel2,
-                        "newEntry->vaddr %#x vpn %#x choose %d\n",
-                        newEntry->vaddr, vpn, choose);
-            } else {
-                DPRINTF(TLBVerbosel2,
-                        "l2tlb insert(vpn=%#x, vpn2 %#x asid=%#x): ppn=%#x "
-                        "pte=%#x "
-                        "size=%#x level %d\n",
-                        vpn, entry.vaddr, entry.asid, entry.paddr, entry.pte,
-                        entry.size(), choose);
-                DPRINTF(
-                    TLBVerbosel2,
-                    "newentry(vpn=%#x, vpn2 %#x asid=%#x): ppn=%#x pte=%#x "
-                    "size=%#x level %d\n",
-                    vpn, newEntry->vaddr, newEntry->asid, newEntry->paddr,
-                    newEntry->pte, newEntry->size(), choose);
-
-                DPRINTF(TLBVerbosel2,
-                        "newEntry->vaddr %#x vpn %#x choose %d\n",
-                        newEntry->vaddr, vpn, choose);
-                assert(0);
-            }
+            DPRINTF(TLBVerbosel2, "newEntry->vaddr %#x vpn %#x choose %d\n",
+                    newEntry->vaddr, vpn, choose);
+            assert(0);
         }
         return newEntry;
     }
     DPRINTF(TLB, "not hit in l2 tlb\n");
-    if (choose == 2 || choose == 3) {
+    if ((choose == 2 || choose == 3) && (sign == 0)) {
         l2TLB_evictLRU(choose, vpn);
     } else {
         if ((*List).empty())
@@ -659,8 +620,6 @@ TLB::L2TLB_insert_in(Addr vpn, const TlbEntry &entry, int choose,
     newEntry = (*List).front();
     (*List).pop_front();
 
-    //        newEntry = freeList_l2l1.front();
-    //        freeList_l2l1.pop_front();
 
     key = buildKey(vpn, entry.asid);
 
@@ -671,57 +630,43 @@ TLB::L2TLB_insert_in(Addr vpn, const TlbEntry &entry, int choose,
         DPRINTF(TLB, " l2tlb num is outside vaddr %#x paddr %#x \n",
                 entry.vaddr, entry.paddr);
     }
-    // DPRINTF(TLB,"");
+
     newEntry->trieHandle = (*Trie_l2).insert(
         key, TlbEntryTrie::MaxBits - entry.logBytes, newEntry);
-    // newEntry->trieHandle = trie_l2l1.insert(key,TlbEntryTrie::MaxBits -
-    // entry.logBytes, newEntry);
 
 
     DPRINTF(TLB, "l2tlb trie insert key %#x logbytes %#x len %#x\n", key,
             entry.logBytes,TlbEntryTrie::MaxBits - entry.logBytes);
 
 
-    /* newEntry = lookup_l2tlb(vpn,entry.asid,BaseMMU::Read,true,choose);
-     if (newEntry == NULL)
-         assert(0);
-
-     printf("hit \n");
-
-
-
-     assert(0);*/
-
-    //newEntry_f = lookup_l2tlb(vpn, entry.asid, BaseMMU::Read, true, choose);
-    //if (newEntry_f == NULL) assert(0);
-    //DPRINTF()
 
     return newEntry;
-    // }
+
 }
 
 TlbEntry *
-TLB::L2TLB_insert(Addr vpn, const TlbEntry &entry, int level, int choose)
+TLB::L2TLB_insert(Addr vpn, const TlbEntry &entry, int level, int choose,
+                  int sign)
 {
     TlbEntry *newEntry = NULL;
     DPRINTF(TLB, "choose %d vpn %#x entry->vaddr %#x\n", choose, vpn,
             entry.vaddr);
     if (choose == 1)
-        newEntry =
-            L2TLB_insert_in(vpn, entry, choose, &freeList_l2l1, &trie_l2l1);
+        newEntry = L2TLB_insert_in(vpn, entry, choose, &freeList_l2l1,
+                                   &trie_l2l1, sign);
     else if (choose == 2)
-        newEntry =
-            L2TLB_insert_in(vpn, entry, choose, &freeList_l2l2, &trie_l2l2);
+        newEntry = L2TLB_insert_in(vpn, entry, choose, &freeList_l2l2,
+                                   &trie_l2l2, sign);
     else if (choose == 3)
-        newEntry =
-            L2TLB_insert_in(vpn, entry, choose, &freeList_l2l3, &trie_l2l3);
+        newEntry = L2TLB_insert_in(vpn, entry, choose, &freeList_l2l3,
+                                   &trie_l2l3, sign);
 
     else if (choose == 4)
-        newEntry =
-            L2TLB_insert_in(vpn, entry, choose, &freeList_l2sp, &trie_l2sp);
+        newEntry = L2TLB_insert_in(vpn, entry, choose, &freeList_l2sp,
+                                   &trie_l2sp, sign);
     else if (choose == 5)
-        newEntry =
-            L2TLB_insert_in(vpn, entry, choose, &freeList_l2sp, &trie_l2sp);
+        newEntry = L2TLB_insert_in(vpn, entry, choose, &freeList_l2sp,
+                                   &trie_l2sp, sign);
 
     assert(newEntry != nullptr);
     return newEntry;
@@ -732,15 +677,9 @@ void
 TLB::demapPage(Addr vpn, uint64_t asid)
 {
     asid &= 0xFFFF;
-    //int hitlevel;
-    size_t i;
-    /*Addr vpnl2l1 = ((vpn >> 33) & (0x3f)) << 33;
-    Addr vpnl2l2 = ((vpn >> 24) & (0x7fff)) << 24;
-    Addr vpnl2l3 = ((vpn >> 15) & (0xffffff)) << 15;
-    Addr vpnl2sp1 = ((vpn >> 33) & (0x3f)) << 33;
-    Addr vpnl2sp2 = ((vpn >> 24) & (0x7fff)) << 24;
 
-*/
+    size_t i;
+
     Addr vpnl2l1 = ((vpn >> 33) ) << 33;
     Addr vpnl2l2 = ((vpn >> 24) ) << 24;
     Addr vpnl2l3 = ((vpn >> 15) ) << 15;

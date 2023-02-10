@@ -640,12 +640,14 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                         inl2_entry.pte = l2pte;
                         if (l2_level == 2) {
                             walker->tlb->L2TLB_insert(inl2_entry.vaddr,
-                                                      inl2_entry, l2_level, 1);
+                                                      inl2_entry, l2_level, 1,
+                                                      l2_i);
                         }
                         if (l2_level == 1) {
                             inl2_entry.index = (entry.vaddr >> 24) & (0x1f);
                             walker->tlb->L2TLB_insert(inl2_entry.vaddr,
-                                                      inl2_entry, l2_level, 2);
+                                                      inl2_entry, l2_level, 2,
+                                                      l2_i);
                         }
 
                         if (l2_level == 0) {
@@ -712,6 +714,8 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                 inl2_entry.logBytes = PageShift + (level * LEVEL_BITS);
                 l2_level = level;
                 inl2_entry.level = level;
+                DPRINTF(PageTableWalker,"final l1tlb vaddr %#x\n",entry.vaddr);
+
                 for (l2_i = 0; l2_i < 8; l2_i++) {
                     inl2_entry.vaddr =
                         ((entry.vaddr >> ((l2_level * 9 + 12 + 3)) << 3) +
@@ -728,15 +732,15 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                     if (l2_level == 0) {
                         inl2_entry.index = (entry.vaddr >> 15) & (0x7f);
                         walker->tlb->L2TLB_insert(inl2_entry.vaddr, inl2_entry,
-                                                  l2_level, 3);
+                                                  l2_level, 3,l2_i);
                     }
 
                     else if (l2_level == 1)  // hit level =1
                         walker->tlb->L2TLB_insert(inl2_entry.vaddr, inl2_entry,
-                                                  l2_level, 5);
+                                                  l2_level, 5,l2_i);
                     else if (l2_level == 2)  //
                         walker->tlb->L2TLB_insert(inl2_entry.vaddr, inl2_entry,
-                                                  l2_level, 4);
+                                                  l2_level, 4,l2_i);
                 }
                 if (!doWrite) {
                     nextline_vaddr =
