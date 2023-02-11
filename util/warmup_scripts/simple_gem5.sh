@@ -98,7 +98,7 @@ function run() {
     # Note 4: Recommend to enable Difftest
     $gem5 $debug_flag_args $start_end \
         $gem5_home/configs/example/fs.py \
-        --caches --l2cache --xiangshan --cpu-type=DerivO3CPU \
+        --caches --l2cache --xiangshan-system --cpu-type=DerivO3CPU \
         --mem-type=DRAMsim3 --dramsim3-ini=$gem5_home/xiangshan_DDR4_8Gb_x8_2400.ini \
         --mem-size=8GB --cacheline_size=64 \
         --l1i_size=64kB --l1i_assoc=8 \
