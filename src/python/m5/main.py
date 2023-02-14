@@ -269,7 +269,7 @@ def main():
         done = True
         print('Readme:')
         print()
-        print(info.README)
+        print(info.READMEmd)
         print()
 
     if options.debug_help:

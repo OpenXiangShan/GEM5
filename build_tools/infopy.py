@@ -52,6 +52,7 @@ code = code_formatter()
 
 for source in args.files:
     src = os.path.basename(source)
+    src = src.replace(".", "")
     with open(source, 'r') as f:
         data = ''.join(f)
     code('${src} = ${{repr(data)}}')
