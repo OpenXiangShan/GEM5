@@ -130,6 +130,7 @@ namespace RiscvISA
             TlbEntry entry;
             TlbEntry inl2_entry;
             PacketPtr read;
+            PacketPtr read_pre;
             std::vector<PacketPtr> writes;
             Fault mainFault;
             BaseMMU::Mode mode;

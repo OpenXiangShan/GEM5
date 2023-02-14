@@ -817,6 +817,7 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
         }
         endWalk();
     } else if (next_line) {
+        walker->tlb->insert(entry.vaddr, entry);
         if (fault == NoFault){
             Addr nextline_basic_vaddr = nextline_entry.vaddr;
             for (int n_l2_i = 0; n_l2_i < 8; n_l2_i++) {
@@ -833,7 +834,7 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                         (nextline_entry.vaddr >> 15) & (0x7f);
                     walker->tlb->L2TLB_insert(nextline_entry.vaddr,
                                               nextline_entry, nextline_level,
-                                              3);
+                                              3, n_l2_i);
                 } else if (nextline_entry.level == 1) {
                     assert(0);
                 } else if (nextline_entry.level == 2) {
@@ -916,8 +917,6 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level,
         tlb_ppn = ppn;
         nextline_Read = topAddr;
         nextline_level = level;
-
-
     }
     else{
         topAddr = (satp.ppn << PageShift) + (idx * sizeof(PTESv39));
@@ -929,9 +928,6 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level,
         nextline_level = level;
 
     }
-
-
-    //Addr topAddr = (l2_entry.pte.ppn << PageShift) + (idx << shift);
 
     DPRINTF(PageTableWalker,
             "Performing table walk for address %#x shift %d idx_f %#x ppn %#x "
@@ -959,6 +955,7 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level,
     //Addr
     read = new Packet(request, MemCmd::ReadReq);
     read->allocate();
+    read_pre = NULL;
 }
 
 bool
@@ -1077,6 +1074,19 @@ Walker::WalkerState::sendPackets()
             return;
         } else {
             DPRINTF(PageTableWalker, "Send read %#lx\n", pkt->getAddr());
+        }
+    }
+    if (read_pre) {
+        PacketPtr pkt = read_pre;
+        read_pre = NULL;
+        if (!walker->sendTiming(this, pkt)) {
+            retrying = true;
+            read = pkt;
+            DPRINTF(PageTableWalker, "Port busy, defer read %#lx\n",
+                    read->getAddr());
+            return;
+        } else {
+            DPRINTF(PageTableWalker, "Send read pre %#lx\n", pkt->getAddr());
         }
     }
     //Send off as many of the writes as we can.

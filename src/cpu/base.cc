@@ -991,6 +991,18 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                 if (!diff_at)
                     diff_at = ValueDiff;
             }
+            //stval
+            gem5_val = readMiscRegNoEffect(
+                RiscvISA::MiscRegIndex::MISCREG_STVAL, tid);
+            ref_val = diffAllStates->referenceRegFile[DIFFTEST_STVAL];
+            if (gem5_val != ref_val) {
+                warn("Inst [sn:%lli] pc:%s\n", seq, diffInfo.pc);
+                warn("Diff at %s Ref value: %#lx, GEM5 value: %#lx\n", "stval",
+                     ref_val, gem5_val);
+                if (!diff_at)
+                    diff_at = ValueDiff;
+            }
+             //DIFFTEST_STVDIFFTEST_STVAL
             // mcause
             gem5_val = readMiscRegNoEffect(
                 RiscvISA::MiscRegIndex::MISCREG_MCAUSE, tid);

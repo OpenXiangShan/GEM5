@@ -150,6 +150,9 @@ class TLB : public BaseTLB
 
     Addr translateWithTLB(Addr vaddr, uint16_t asid, BaseMMU::Mode mode);
 
+    Fault L2tlb_pagefault(Addr vaddr, BaseMMU::Mode mode,
+                          const RequestPtr &req);
+
     Fault L2tlb_check(PTESv39 pte, int level, STATUS status,
                       PrivilegeMode pmode, Addr vaddr, BaseMMU::Mode mode,
                       const RequestPtr &req, ThreadContext *tc,

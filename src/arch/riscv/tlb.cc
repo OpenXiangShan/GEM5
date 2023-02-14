@@ -998,6 +998,18 @@ TLB::translateWithTLB(Addr vaddr, uint16_t asid, BaseMMU::Mode mode)
             vaddr,e->paddr << PageShift | (vaddr & mask(e->logBytes)));
     return e->paddr << PageShift | (vaddr & mask(e->logBytes));
 }
+Fault
+TLB::L2tlb_pagefault(Addr vaddr, BaseMMU::Mode mode, const RequestPtr &req)
+{
+    if (req->isInstFetch()) {
+        Addr page_l2_start = (vaddr >> 12) << 12;
+        if (req->getPC() < page_l2_start) {
+            return createPagefault(page_l2_start, mode);
+        }
+        return createPagefault(req->getPC(), mode);
+    } else
+        return createPagefault(req->getVaddr(), mode);
+}
 
 
 Fault
@@ -1015,14 +1027,24 @@ TLB::L2tlb_check(PTESv39 pte, int level, STATUS status, PrivilegeMode pmode,
     if (!pte.v || (!pte.r && pte.w)) {
         //  end_pte = true;
         hit_in_sp = true;
+        //hit_in_sp = false;
         DPRINTF(TLB, "check l2 tlb PTE invalid, raising PF\n");
-        fault = createPagefault(vaddr, mode);
+        //fault = createPagefault(vaddr, mode);
         /*printf("level %d\n",level);
         printf("hit_in_sp %d\n",hit_in_sp);
         printf("fault")
         assert(0);*/
-        // fault = walker->start(pte.ppn, tc, translation, req, mode,
-        //                               false, level, false);
+//        fault = walker->start(pte.ppn, tc, translation, req, mode,
+//                                       false, level, false);
+        if (req->isInstFetch()){
+            Addr page_l2_start = (vaddr >>12)<<12;
+            if (req->getPC() < page_l2_start){
+                return createPagefault(page_l2_start, mode);
+            }
+            return createPagefault(req->getPC(), mode);
+        }
+        else
+            return createPagefault(req->getVaddr(), mode);
 
     } else {
         if (pte.r || pte.x) {
@@ -1068,8 +1090,6 @@ TLB::L2tlb_check(PTESv39 pte, int level, STATUS status, PrivilegeMode pmode,
                 hit_in_sp =false;
                 fault = walker->start(pte.ppn, tc, translation, req, mode,
                                       false, level, false);
-
-
             }
             else {
                 hit_in_sp = true;
@@ -1082,6 +1102,10 @@ TLB::L2tlb_check(PTESv39 pte, int level, STATUS status, PrivilegeMode pmode,
                 DPRINTF(TLB, "No leaf PTE found raising PF\n");
                 //        fault = PageFault(true);
                 fault = createPagefault(vaddr, mode);
+                //hit_in_sp =false;
+                //fault = walker->start(pte.ppn, tc, translation, req, mode,
+                 //                     false, level, false);
+
                 // assert(0);
             } else {
                 // start walk
@@ -1147,6 +1171,8 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                     delayed = true;
                     return fault;
                 }
+                else
+                    return fault;
 
             } else {
                 if (translation != nullptr || fault != NoFault) {
@@ -1172,6 +1198,8 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                     delayed = true;
                     return fault;
                 }
+                else
+                    return fault;
             }
             else {
                 if (translation != nullptr || fault != NoFault) {
@@ -1199,6 +1227,8 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                     delayed = true;
                     return fault;
                 }
+                else
+                    return fault;
 
             }
             else{
@@ -1225,6 +1255,8 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                     delayed = true;
                     return fault;
                 }
+                else
+                    return fault;
             }
             else{
                 if (translation != nullptr || fault != NoFault) {
@@ -1252,6 +1284,8 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                     delayed = true;
                     return fault;
                 }
+                else
+                 return fault;
             }
             else{
                 if (translation != nullptr || fault != NoFault) {
