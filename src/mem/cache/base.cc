@@ -1719,7 +1719,15 @@ BaseCache::invalidateBlock(CacheBlk *blk)
 void
 BaseCache::evictBlock(CacheBlk *blk, PacketList &writebacks)
 {
+    if (archDBer) {
+        Addr paddr = regenerateBlkAddr(blk);
+        uint64_t curCycle = ticksToCycles(curTick());
+        archDBer->L1EvictTraceWrite(
+                paddr, curCycle, this->name().c_str());
+    }
+
     PacketPtr pkt = evictBlock(blk);
+
     if (pkt) {
         writebacks.push_back(pkt);
     }

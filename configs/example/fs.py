@@ -165,6 +165,12 @@ def build_test_system(np):
             "STAMP INT NOT NULL," \
             "SITE TEXT);"
             ,
+            "CREATE TABLE L1EvictTrace(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "PADDR INT NOT NULL," \
+            "STAMP INT NOT NULL," \
+            "SITE TEXT);"
+            ,
         ]
 
     if args.ruby:

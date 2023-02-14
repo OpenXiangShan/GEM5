@@ -51,6 +51,8 @@ class ArchDBer : public SimObject
       uint64_t stamp,
       const char * site
     );
+
+    void L1EvictTraceWrite(uint64_t paddr, uint64_t stamp, const char *site);
 };
 
 

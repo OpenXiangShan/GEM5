@@ -78,5 +78,23 @@ void ArchDBer::L1MissTrace_write(
   };
 }
 
+void ArchDBer::L1EvictTraceWrite(
+  uint64_t paddr,
+  uint64_t stamp,
+  const char * site
+) {
+  if (!dump) return;
+  char sql[512];
+  sprintf(sql,
+    "INSERT INTO L1EvictTrace(PADDR, STAMP, SITE) " \
+    "VALUES(%ld, %ld, '%s');",
+    paddr, stamp, site
+  );
+  rc = sqlite3_exec(mem_db, sql, callback, 0, &zErrMsg);
+  if (rc != SQLITE_OK) {
+    fatal("SQL error: %s\n", zErrMsg);
+  };
+}
+
 } // namespace gem5
 
