@@ -57,12 +57,16 @@ typedef struct BranchInfo {
         isCond(static_inst->isCondCtrl()),
         isIndirect(static_inst->isIndirectCtrl()),
         isCall(static_inst->isCall()),
-        isReturn(static_inst->isReturn() && !static_inst->isNonSpeculative()),
+        isReturn(static_inst->isReturn() && !static_inst->isNonSpeculative() && !static_inst->isDirectCtrl()),
         size(size) {}
     int getType() {
         if (isCond) {
             return 0;
         } else if (!isIndirect) {
+            if (isReturn) {
+                fatal("jal return detected!\n");
+                return 7;
+            }
             if (!isCall) {
                 return 1;
             } else {
