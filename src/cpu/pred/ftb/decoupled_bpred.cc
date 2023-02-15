@@ -42,7 +42,8 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
             std::make_pair("taken", UINT64),
             std::make_pair("mispred", UINT64),
             std::make_pair("fallThruPC", UINT64),
-            std::make_pair("source", UINT64)
+            std::make_pair("source", UINT64),
+            std::make_pair("target", UINT64)
         };
         bptrace = bpdb.addAndGetTrace("BPTRACE", fields_vec);
         bptrace->init_table();
