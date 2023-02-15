@@ -453,7 +453,7 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
         components[i]->recoverHist(s0History, stream, real_shamt, real_taken);
     }
     histShiftIn(real_shamt, real_taken, s0History);
-    historyManager.squash(stream_id, real_shamt, real_taken);
+    historyManager.squash(stream_id, real_shamt, real_taken, stream.exeBranchInfo);
     checkHistory(s0History);
     tage->checkFoldedHist(s0History, "control squash");
 
@@ -516,7 +516,7 @@ DecoupledBPUWithFTB::nonControlSquash(unsigned target_id, unsigned stream_id,
         components[i]->recoverHist(s0History, stream, real_shamt, real_taken);
     }
     histShiftIn(real_shamt, real_taken, s0History);
-    historyManager.squash(stream_id, real_shamt, real_taken);
+    historyManager.squash(stream_id, real_shamt, real_taken, BranchInfo());
     checkHistory(s0History);
     tage->checkFoldedHist(s0History, "non control squash");
     // fetching from a new fsq entry
@@ -567,7 +567,7 @@ DecoupledBPUWithFTB::trapSquash(unsigned target_id, unsigned stream_id,
         components[i]->recoverHist(s0History, stream, real_shamt, real_taken);
     }
     histShiftIn(real_shamt, real_taken, s0History);
-    historyManager.squash(stream_id, real_shamt, real_taken);
+    historyManager.squash(stream_id, real_shamt, real_taken, BranchInfo());
     checkHistory(s0History);
     tage->checkFoldedHist(s0History, "trap squash");
 
@@ -936,7 +936,7 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
     histShiftIn(shamt, taken, s0History);
     boost::to_string(s0History, buf2);
 
-    historyManager.addSpeculativeHist(entry.startPC, shamt, taken, fsqId);
+    historyManager.addSpeculativeHist(entry.startPC, shamt, taken, entry.predBranchInfo, fsqId);
     tage->checkFoldedHist(s0History, "speculative update");
 
     
@@ -956,15 +956,29 @@ DecoupledBPUWithFTB::checkHistory(const boost::dynamic_bitset<> &history)
 {
     unsigned ideal_size = 0;
     boost::dynamic_bitset<> ideal_hash_hist(historyBits, 0);
+    int ideal_sp = ras->getNonSpecSp();
+    std::vector<RAS::RASEntry> ideal_stack(ras->getNonSpecStack());
     for (const auto entry: historyManager.getSpeculativeHist()) {
-        if (entry.shamt == 0) {
+        if (entry.shamt == 0 && !entry.is_call && !entry.is_return) {
             continue;
         }
-        ideal_size += entry.shamt;
-        DPRINTF(DecoupleBPVerbose, "pc: %#lx, shamt: %d, cond_taken: %d\n", entry.pc,
-                entry.shamt, entry.cond_taken);
-        ideal_hash_hist <<= entry.shamt;
-        ideal_hash_hist[0] = entry.cond_taken;
+        if (entry.shamt != 0) {
+            ideal_size += entry.shamt;
+            DPRINTF(DecoupleBPVerbose, "pc: %#lx, shamt: %d, cond_taken: %d\n", entry.pc,
+                    entry.shamt, entry.cond_taken);
+            ideal_hash_hist <<= entry.shamt;
+            ideal_hash_hist[0] = entry.cond_taken;
+        }
+        if (entry.is_call || entry.is_return) {
+            DPRINTF(DecoupleBPVerbose, "pc: %#lx, is_call: %d, is_return: %d, retAddr: %#lx\n",
+                entry.pc, entry.is_call, entry.is_return, entry.retAddr);
+            if (entry.is_call) {
+                ras->push(entry.retAddr, ideal_stack, ideal_sp);
+            }
+            if (entry.is_return) {
+                ras->pop(ideal_stack, ideal_sp);
+            }
+        }
     }
     unsigned comparable_size = std::min(ideal_size, historyBits);
     boost::dynamic_bitset<> sized_real_hist(history);
@@ -978,7 +992,10 @@ DecoupledBPUWithFTB::checkHistory(const boost::dynamic_bitset<> &history)
             ideal_size, historyBits, comparable_size);
     DPRINTF(DecoupleBP, "Ideal history:\t%s\nreal history:\t%s\n",
             buf1.c_str(), buf2.c_str());
+    int sp = ras->getSp();
+    DPRINTF(DecoupleBP, "ideal sp:\t%d, real sp:\t%d\n", ideal_sp, sp);
     assert(ideal_hash_hist == sized_real_hist);
+    // assert(ideal_sp == sp);
 }
 
 void

@@ -48,6 +48,16 @@ class RAS : public TimedBaseFTBPredictor
 
         void update(const FetchStream &entry) override;
 
+        int getSp() {return specSp;}
+
+        int getNumEntries() {return numEntries;}
+
+        int getMaxCtr() {return maxCtr;}
+
+        std::vector<RASEntry> getNonSpecStack() {return nonSpecStack;}
+
+        int getNonSpecSp() {return nonSpecSp;}
+
         enum When {
             SPECULATIVE,
             REDIRECT,
@@ -61,11 +71,11 @@ class RAS : public TimedBaseFTBPredictor
             // PUSH_AND_POP
         };
 
-    private:
-
         void push(Addr retAddr, std::vector<RASEntry> &stack, int &sp);
 
         void pop(std::vector<RASEntry> &stack, int &sp);
+
+    private:
 
         void ptrInc(int &ptr);
 
