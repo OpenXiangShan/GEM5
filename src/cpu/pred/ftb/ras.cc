@@ -130,17 +130,19 @@ RAS::recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entr
     sp = meta_ptr->sp;
     stack[sp] = meta_ptr->tos;
 
-    // do push & pops on control squash
-    if (takenSlot.isCall) {
-        Addr retAddr = takenSlot.pc + takenSlot.size;
-        SpecRASTrace rec(When::REDIRECT, RAS_OP::PUSH, entry.startPC, takenSlot.pc, retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
-        specRasTrace->write_record(rec);
-        push(retAddr, stack, sp);
-    }
-    if (takenSlot.isReturn) {
-        SpecRASTrace rec(When::REDIRECT, RAS_OP::POP, entry.startPC, takenSlot.pc, stack[sp].retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
-        specRasTrace->write_record(rec);
-        pop(stack, sp);
+    if (entry.exeTaken) {
+        // do push & pops on control squash
+        if (takenSlot.isReturn) {
+            SpecRASTrace rec(When::REDIRECT, RAS_OP::POP, entry.startPC, takenSlot.pc, stack[sp].retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
+            specRasTrace->write_record(rec);
+            pop(stack, sp);
+        }
+        if (takenSlot.isCall) {
+            Addr retAddr = takenSlot.pc + takenSlot.size;
+            SpecRASTrace rec(When::REDIRECT, RAS_OP::PUSH, entry.startPC, takenSlot.pc, retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
+            specRasTrace->write_record(rec);
+            push(retAddr, stack, sp);
+        }
     }
     printStack("after recoverHist", stack, sp);
 }

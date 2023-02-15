@@ -506,9 +506,15 @@ DecoupledBPUWithFTB::nonControlSquash(unsigned target_id, unsigned stream_id,
 
     squashStreamAfter(stream_id);
 
+    auto &stream = it->second;
+
+    stream.exeTaken = false;
+    stream.resolved = true;
+    stream.squashPC = inst_pc.instAddr();
+    stream.squashType = SQUASH_OTHER;
+
     // recover history info
     s0History = it->second.history;
-    auto &stream = it->second;
     int real_shamt;
     bool real_taken;
     std::tie(real_shamt, real_taken) = stream.getHistInfoDuringSquash(inst_pc.instAddr(), false, false, numBr);
@@ -522,11 +528,6 @@ DecoupledBPUWithFTB::nonControlSquash(unsigned target_id, unsigned stream_id,
     // fetching from a new fsq entry
     auto pc = inst_pc.instAddr();
     fetchTargetQueue.squash(target_id + 1, ftq_demand_stream_id + 1, pc);
-
-    stream.exeTaken = false;
-    stream.resolved = true;
-    stream.squashPC = inst_pc.instAddr();
-    stream.squashType = SQUASH_OTHER;
 
     s0PC = pc;
     fsqId = stream_id + 1;
@@ -558,6 +559,13 @@ DecoupledBPUWithFTB::trapSquash(unsigned target_id, unsigned stream_id,
     assert(it != fetchStreamQueue.end());
     auto &stream = it->second;
 
+    stream.resolved = true;
+    stream.exeTaken = false;
+    stream.squashPC = inst_pc.instAddr();
+    stream.squashType = SQUASH_TRAP;
+
+    squashStreamAfter(stream_id);
+
     // recover history info
     s0History = stream.history;
     int real_shamt;
@@ -570,13 +578,6 @@ DecoupledBPUWithFTB::trapSquash(unsigned target_id, unsigned stream_id,
     historyManager.squash(stream_id, real_shamt, real_taken, BranchInfo());
     checkHistory(s0History);
     tage->checkFoldedHist(s0History, "trap squash");
-
-    stream.resolved = true;
-    stream.exeTaken = false;
-    stream.squashPC = inst_pc.instAddr();
-    stream.squashType = SQUASH_TRAP;
-
-    squashStreamAfter(stream_id);
 
     // inc stream id because current stream is disturbed
     auto ftq_demand_stream_id = stream_id + 1;
