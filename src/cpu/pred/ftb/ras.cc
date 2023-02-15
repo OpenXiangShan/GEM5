@@ -177,7 +177,7 @@ RAS::update(const FetchStream &entry)
 void
 RAS::push(Addr retAddr, std::vector<RASEntry> &stack, int &sp)
 {
-    auto tos = stack[sp];
+    auto &tos = stack[sp];
     if (tos.retAddr == retAddr && tos.ctr < maxCtr) {
         tos.ctr++;
     } else {
@@ -191,7 +191,7 @@ RAS::push(Addr retAddr, std::vector<RASEntry> &stack, int &sp)
 void
 RAS::pop(std::vector<RASEntry> &stack, int &sp)
 {
-    auto tos = stack[sp];
+    auto &tos = stack[sp];
     if (tos.ctr > 0) {
         tos.ctr--;
     } else {
