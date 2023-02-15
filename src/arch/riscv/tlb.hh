@@ -114,7 +114,6 @@ class TLB : public BaseTLB
     void takeOverFrom(BaseTLB *old) override {}
 
     TlbEntry *insert(Addr vpn, const TlbEntry &entry);
-    TlbEntry *nextline_insert(Addr vpn, const TlbEntry &entry);
     TlbEntry *L2TLB_insert(Addr vpn, const TlbEntry &entry, int level,
                            int choose, int sign);
     TlbEntry *L2TLB_insert_in(Addr vpn, const TlbEntry &entry, int choose,
@@ -175,7 +174,6 @@ class TLB : public BaseTLB
     TlbEntryTrie trie_l2l1;               // for next line
     EntryList freeList_l2l1;         // free entries
 
-
     std::vector<TlbEntry> tlb_l2l2;  // our TLB
     TlbEntryTrie trie_l2l2;               // for next line
     EntryList freeList_l2l2;         // free entries
@@ -191,19 +189,13 @@ class TLB : public BaseTLB
   private:
     uint64_t nextSeq() { return ++lruSeq; }
 
-
-    TlbEntry *lookupPre(Addr vpn, uint16_t asid, BaseMMU::Mode mode,
-                        bool hidden);
-
     TlbEntry *lookup_l2tlb(Addr vpn, uint16_t asid, BaseMMU::Mode mode,
                            bool hidden, int f_level);
 
     void evictLRU();
-    void nextline_evictLRU();
     void l2TLB_evictLRU(int l2TLBlevel,Addr vaddr);
 
     void remove(size_t idx);
-    void nextline_remove(size_t idx);
     void l2TLB_remove(size_t idx,int l2l1,int l2l2,int l2l3,int l2sp);
 
 
@@ -213,14 +205,6 @@ class TLB : public BaseTLB
     Fault doTranslate(const RequestPtr &req, ThreadContext *tc,
                       BaseMMU::Translation *translation, BaseMMU::Mode mode,
                       bool &delayed);
-
-  protected:
-    size_t nextline_size;
-    std::vector<TlbEntry> nextline_tlb;  // our TLB
-    TlbEntryTrie nextline;               // for next line
-    EntryList nextline_freeList;         // free entries
-
-
 
 };
 

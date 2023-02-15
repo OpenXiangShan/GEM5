@@ -392,8 +392,6 @@ Walker::dol2TLBHit()
     DPRINTF(PageTableWalker2, "dol2tlbhit %d\n", curCycle());
     while (!L2TLBrequestors.empty()) {
         L2TlbState dol2TLBHitrequestors = L2TLBrequestors.front();
-        // printf("front size of %ld\n",L2TLBrequestors.size());
-
         Fault l2tlbFault;
         PrivilegeMode pmodel2 = tlb->getMemPriv(dol2TLBHitrequestors.tc,
                                                 dol2TLBHitrequestors.mode);
@@ -407,7 +405,6 @@ Walker::dol2TLBHit()
             l2tlbFault, dol2TLBHitrequestors.req, dol2TLBHitrequestors.tc,
             dol2TLBHitrequestors.mode);
         L2TLBrequestors.pop_front();
-        // printf("front size of %ld\n",L2TLBrequestors.size());
     }
 }
 bool
@@ -491,27 +488,17 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
     assert(state != Ready && state != Waiting);
     Fault fault = NoFault;
     write = NULL;
-    //PTESv39 pte = read->getLE<uint64_t>();
     uint64_t vaddr_choose;
 
     PTESv39 pte ;
-    //b= read->getLE_l2tlb<uint64_t>(vaddr_choose);
 
-   // if (next_line){
-     //   vaddr_choose = (entry.vaddr >> (level*9+12)) &(0x7);
-
-//    }
-  //  else{
-        vaddr_choose = (entry.vaddr >> (level*9+12)) &(0x7);
-        pte = read->getLE_l2tlb<uint64_t>(vaddr_choose);
-    //}
-
+    vaddr_choose = (entry.vaddr >> (level * 9 + 12)) & (0x7);
+    pte = read->getLE_l2tlb<uint64_t>(vaddr_choose);
 
     Addr nextRead = 0;
     bool doWrite = false;
     bool doTLBInsert = false;
     bool doEndWalk = false;
-    //bool next_line = false;
     int l2_i =0;
     PTESv39 l2pte;
     int l2_level;
@@ -755,8 +742,6 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                                      nextline_level_mask;
                     nextline_idx = (nextline_idx_f >> 3) << 3;
 
-                    // nextRead = (tlb_ppn << PageShift) + (nextline_idx *
-                    // tlb_size_pte);
                     nextRead = (tlb_ppn << PageShift) + (nextline_idx * 8);
 
                     DPRINTF(PageTableWalker,
@@ -771,15 +756,11 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                             "read_num_pre%#x read_num %#x\n",
                             nextRead, tlb_ppn, read_num_pre, read_num);
 
-                    //if (read_num != 0) {
                     if ((read_num_pre == read_num) && (nextline_level == 0)) {
                         walker->tlb->lookup(entry.vaddr, entry.asid,
                                             BaseMMU::Read, false);
                         next_line = true;
                         nextState = Translate;
-                        // nextline_Read =
-                        // nextline_vaddr = entry.vaddr +
-                        // (0x1<<(nextline_level*9+12));
                         nextline_entry.vaddr =
                             entry.vaddr + (0x8 << (nextline_level * 9 + 12));
 
@@ -886,25 +867,14 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level,
 {
     vaddr = Addr(sext<VADDR_BITS>(vaddr));
     Addr topAddr;
-    //level = 2;
-
     if (from_l2tlb){
         level = f_level;
-        //level = 2;
     }
     else {
         level = 2;
     }
     next_line = false;
 
-    //Addr shift = PageShift + LEVEL_BITS * 2;
-    //Addr idx = (vaddr >> shift) & LEVEL_MASK;
-    //Addr topAddr = (satp.ppn << PageShift) + (idx * sizeof(PTESv39));
-
-   // Addr shift = PageShift + LEVEL_BITS * level +3;
-    //Addr idx = (vaddr >> shift) & LEVEL_MASK;
-   // Addr idx = (vaddr >> shift) & (LEVEL_MASK >> 3);
-    //Addr topAddr = (satp.ppn << PageShift) + (idx << shift);
     Addr shift = PageShift + LEVEL_BITS * level;
     Addr idx_f = (vaddr >> shift) & LEVEL_MASK;
     Addr idx = (idx_f>>3)<<3;
@@ -946,8 +916,6 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level,
 
     inl2_entry.asid = satp.asid;
     Request::Flags flags = Request::PHYSICAL;
-    //RequestPtr request = std::make_shared<Request>(
-    //    topAddr, sizeof(PTESv39), flags, walker->requestorId);
     RequestPtr request = std::make_shared<Request>(
         topAddr, 64, flags, walker->requestorId);
     DPRINTF(PageTableWalker," sv39 size is %d\n",sizeof(PTESv39));

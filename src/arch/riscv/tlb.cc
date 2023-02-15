@@ -78,18 +78,13 @@ TLB::TLB(const Params &p) :
     tlb(size),lruSeq(0),hit_in_sp(false),stats(this), pma(p.pma_checker),
     pmp(p.pmp),
     tlb_l2l1(l2tlb_l1_size *8 ),tlb_l2l2(l2tlb_l2_size *8),
-    tlb_l2l3(l2tlb_l3_size*8),tlb_l2sp(l2tlb_sp_size*8),
-    nextline_size(p.size),
-    nextline_tlb(nextline_size)
+    tlb_l2l3(l2tlb_l3_size*8),tlb_l2sp(l2tlb_sp_size*8)
 {
-    // printf("tlb11\n");
     DPRINTF(TLBVerbose, "tlb11\n");
 
     for (size_t x = 0; x < size; x++) {
         tlb[x].trieHandle = NULL;
         freeList.push_back(&tlb[x]);
-        nextline_tlb[x].trieHandle = NULL;
-        nextline_freeList.push_back(&nextline_tlb[x]);
     }
 
     for (size_t x_l2l1 = 0;x_l2l1 < l2tlb_l1_size*8 ;x_l2l1++){
@@ -135,18 +130,6 @@ TLB::evictLRU()
     }
 
     remove(lru);
-}
-
-void
-TLB::nextline_evictLRU()
-{
-    size_t lru = 0;
-    for (size_t i = 1; i < size; i++) {
-        if (nextline_tlb[i].lruSeq < nextline_tlb[lru].lruSeq) {
-            lru = i;
-        }
-    }
-    nextline_remove(lru);
 }
 
 void
@@ -259,50 +242,6 @@ TLB::lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden)
 }
 
 TlbEntry *
-TLB::lookupPre(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden)
-{
-    TlbEntry *entry = nextline.lookup(buildKey(vpn, asid));
-    /*   TlbEntry *entry1 = nextline.lookup(buildKey(0x80005000, asid));
-       TlbEntry *entry2 = nextline.lookup(buildKey(0x80004000, asid));
-       TlbEntry *entry3 = nextline.lookup(buildKey(0x80003000, asid));
-       TlbEntry *entry4 = nextline.lookup(buildKey(0x80002000, asid));*/
-    if (!hidden) {
-        if (entry)
-            entry->lruSeq = nextSeq();
-        if (mode == BaseMMU::Write)
-            stats.writeprefetchAccesses++;
-        else
-            stats.readprefetchAccesses++;
-        if (!entry) {
-            if (mode == BaseMMU::Write) {
-                stats.writeprefetchMisses++;
-            } else {
-                stats.readprefetchMisses++;
-            }
-        } else {
-            if (mode == BaseMMU::Write) {
-                stats.writeprefetchHits++;
-            } else {
-                stats.readprefetchHits++;
-            }
-        }
-        DPRINTF(TLBVerbose, "lookup Pre (vpn=%#x, asid=%#x): %s ppn %#x\n",
-                vpn, asid, entry ? "hit" : "miss", entry ? entry->paddr : 0);
-        /*  DPRINTF(TLBVerbose, "lookup Pre (vpn=0x80005000, asid=%#x): %s
-           ppn %#x\n", asid, entry1 ? "hit" : "miss", entry1 ? entry1->paddr:
-           0); DPRINTF(TLBVerbose, "lookup Pre (vpn=0x80004000, asid=%#x): %s
-           ppn %#x\n", asid, entry2 ? "hit" : "miss", entry2 ? entry2->paddr:
-           0); DPRINTF(TLBVerbose, "lookup Pre (vpn=0x80003000, asid=%#x): %s
-           ppn %#x\n", asid, entry3 ? "hit" : "miss", entry3 ? entry3->paddr:
-           0); DPRINTF(TLBVerbose, "lookup Pre (vpn=0x80002000, asid=%#x): %s
-           ppn %#x\n", asid, entry4 ? "hit" : "miss", entry4 ? entry4->paddr:
-           0);*/
-    }
-
-    return entry;
-}
-
-TlbEntry *
 TLB::lookup_l2tlb(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
                   int f_level)
 {
@@ -346,13 +285,12 @@ TLB::lookup_l2tlb(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
     if (f_level == 5) {
         DPRINTF(TLB, "look up l2tlb in l2sp2\n");
         entry_l2sp2 = trie_l2sp.lookup(buildKey(f_vpnl2l2, asid));
-        if (entry_l2sp2){
-            if (entry_l2sp2->level == 2){
-                DPRINTF(TLB,"hit in sp but sp1 , return\n");
+        if (entry_l2sp2) {
+            if (entry_l2sp2->level == 2) {
+                DPRINTF(TLB, "hit in sp but sp1 , return\n");
                 return NULL;
+            }
         }
-        }
-
     }
     Addr step;
     if (!hidden) {
@@ -373,7 +311,6 @@ TLB::lookup_l2tlb(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
         }
 
         if (entry_l2l3) {
-
             Addr vpnl2l3 = ((vpn >> 15)) << 15;
             step = 0x1000;
             for (i = 0; i < 8; i++) {
@@ -530,50 +467,6 @@ TLB::insert(Addr vpn, const TlbEntry &entry)
 }
 
 TlbEntry *
-TLB::nextline_insert(Addr vpn, const TlbEntry &entry)
-{
-    DPRINTF(TLB,
-            "nextline insert(vpn=%#x, vpn2 %#x asid=%#x): ppn=%#x pte=%#x "
-            "size=%#x\n",
-            vpn, entry.vaddr, entry.asid, entry.paddr, entry.pte,
-            entry.size());
-
-    TlbEntry *newEntry = lookupPre(vpn, entry.asid, BaseMMU::Read, true);
-    if (newEntry) {
-        // update PTE flags (maybe we set the dirty/writable flag)
-        newEntry->pte = entry.pte;
-        assert(newEntry->vaddr == vpn);
-        return newEntry;
-    }
-    // TlbEntry *newEntry;
-
-    if (nextline_freeList.empty())
-        nextline_evictLRU();
-
-    newEntry = nextline_freeList.front();
-    nextline_freeList.pop_front();
-
-    Addr key = buildKey(vpn, entry.asid);
-
-    *newEntry = entry;
-    newEntry->lruSeq = nextSeq();
-    newEntry->vaddr = vpn;
-    //  TlbEntry *aaa = NULL;
-    //  *aaa = entry;
-    if (entry.paddr == 0) {
-        DPRINTF(TLB, " nextline pre num is outside vaddr %#x paddr %#x \n",
-                entry.vaddr, entry.paddr);
-    }
-    newEntry->trieHandle =
-        nextline.insert(key, TlbEntryTrie::MaxBits - entry.logBytes, newEntry);
-
-    DPRINTF(TLB, " nextline trie insert key %#x logbytes %#x \n", key,
-            entry.logBytes);
-     return newEntry;
-    //return NULL;
-}
-
-TlbEntry *
 TLB::L2TLB_insert_in(Addr vpn, const TlbEntry &entry, int choose,
                      EntryList *List, TlbEntryTrie *Trie_l2,int sign)
 {
@@ -616,7 +509,6 @@ TLB::L2TLB_insert_in(Addr vpn, const TlbEntry &entry, int choose,
             l2TLB_evictLRU(choose, vpn);
     }
 
-
     newEntry = (*List).front();
     (*List).pop_front();
 
@@ -638,8 +530,6 @@ TLB::L2TLB_insert_in(Addr vpn, const TlbEntry &entry, int choose,
     DPRINTF(TLB, "l2tlb trie insert key %#x logbytes %#x len %#x\n", key,
             entry.logBytes,TlbEntryTrie::MaxBits - entry.logBytes);
 
-
-
     return newEntry;
 
 }
@@ -660,7 +550,6 @@ TLB::L2TLB_insert(Addr vpn, const TlbEntry &entry, int level, int choose,
     else if (choose == 3)
         newEntry = L2TLB_insert_in(vpn, entry, choose, &freeList_l2l3,
                                    &trie_l2l3, sign);
-
     else if (choose == 4)
         newEntry = L2TLB_insert_in(vpn, entry, choose, &freeList_l2sp,
                                    &trie_l2sp, sign);
@@ -679,7 +568,6 @@ TLB::demapPage(Addr vpn, uint64_t asid)
     asid &= 0xFFFF;
 
     size_t i;
-
     Addr vpnl2l1 = ((vpn >> 33) ) << 33;
     Addr vpnl2l2 = ((vpn >> 24) ) << 24;
     Addr vpnl2l3 = ((vpn >> 15) ) << 15;
@@ -691,12 +579,9 @@ TLB::demapPage(Addr vpn, uint64_t asid)
 
     else {
         DPRINTF(TLB, "flush(vpn=%#x, asid=%#x)\n", vpn, asid);
-        DPRINTF(TLB, "pre flush(vpn=%#x, asid=%#x)\n", vpn, asid);
         DPRINTF(TLB, "l2tlb flush(vpn=%#x, asid=%#x)\n", vpn, asid);
         if (vpn != 0 && asid != 0) {
             TlbEntry *newEntry = lookup(vpn, asid, BaseMMU::Read, true);
-            TlbEntry *newEntry_nextline =
-                lookupPre(vpn, asid, BaseMMU::Read, true);
             TlbEntry *l2l1_newEntry =
                 lookup_l2tlb(vpn, asid, BaseMMU::Read, true, 1);
             TlbEntry *l2l2_newEntry =
@@ -707,13 +592,9 @@ TLB::demapPage(Addr vpn, uint64_t asid)
                 lookup_l2tlb(vpn, asid, BaseMMU::Read, true, 4);
             TlbEntry *l2sp2_newEntry =
                 lookup_l2tlb(vpn, asid, BaseMMU::Read, true, 5);
-            /*Addr vpnl2l1 = ((vpn >> 33) &(0x3f))<<33;
-            Addr vpnl2l2 = ((vpn >> 24) &(0x7fff))<<24;
-            Addr vpnl2l3 = ((vpn >> 15) & (0xffffff))<<15;*/
+
             if (newEntry)
                 remove(newEntry - tlb.data());
-            if (newEntry_nextline)
-                nextline_remove(newEntry_nextline - nextline_tlb.data());
             if (l2l1_newEntry) {
                 TlbEntry *m_l2l1_newEntry =
                     lookup_l2tlb(vpnl2l1, asid, BaseMMU::Read, true, 1);
@@ -743,7 +624,6 @@ TLB::demapPage(Addr vpn, uint64_t asid)
                 l2TLB_remove(m_l2sp1_newEntry - tlb_l2sp.data(), 0, 0, 0, 1);
             }
             if (l2sp2_newEntry) {
-
                 TlbEntry *m_l2sp2_newEntry =
                     lookup_l2tlb(vpnl2sp2, asid, BaseMMU::Read, true, 5);
                 if (m_l2sp2_newEntry == NULL)
@@ -757,13 +637,6 @@ TLB::demapPage(Addr vpn, uint64_t asid)
                     if ((vpn == 0 || (vpn & mask) == tlb[i].vaddr) &&
                         (asid == 0 || tlb[i].asid == asid))
                         remove(i);
-                }
-                if (nextline_tlb[i].trieHandle) {
-                    Addr nextline_mask = ~(nextline_tlb[i].size() - 1);
-                    if ((vpn == 0 ||
-                         (vpn & nextline_mask) == nextline_tlb[i].vaddr) &&
-                        (asid == 0 || nextline_tlb[i].asid == asid))
-                        nextline_remove(i);
                 }
             }
             for (i = 0; i < l2tlb_l1_size * 8; i = i + 8) {
@@ -822,8 +695,6 @@ TLB::flushAll()
     for (i = 0; i < size; i++) {
         if (tlb[i].trieHandle)
             remove(i);
-        if (nextline_tlb[i].trieHandle)
-            nextline_remove(i);
     }
 
     for (i = 0; i < l2tlb_l1_size * 8; i = i + 8) {
@@ -857,22 +728,6 @@ TLB::remove(size_t idx)
     tlb[idx].trieHandle = NULL;
     freeList.push_back(&tlb[idx]);
 }
-
-void
-TLB::nextline_remove(size_t idx)
-{
-    DPRINTF(TLB,
-            "nextline_remove(vpn=%#x, asid=%#x): ppn=%#x pte=%#x size=%#x\n",
-            nextline_tlb[idx].vaddr, nextline_tlb[idx].asid,
-            nextline_tlb[idx].paddr, nextline_tlb[idx].pte,
-            nextline_tlb[idx].size());
-
-    assert(nextline_tlb[idx].trieHandle);
-    nextline.remove(nextline_tlb[idx].trieHandle);
-    nextline_tlb[idx].trieHandle = NULL;
-    nextline_freeList.push_back(&nextline_tlb[idx]);
-}
-
 
 void
 TLB::l2TLB_remove(size_t idx, int l2l1, int l2l2, int l2l3, int l2sp)
@@ -1003,14 +858,20 @@ TLB::L2tlb_pagefault(Addr vaddr, BaseMMU::Mode mode, const RequestPtr &req)
 {
     if (req->isInstFetch()) {
         Addr page_l2_start = (vaddr >> 12) << 12;
+        DPRINTF(TLBVerbosel2, "vaddr %#x,req_pc %#x,page_l2_start %#x\n",
+                vaddr, req->getPC(), page_l2_start);
         if (req->getPC() < page_l2_start) {
+            DPRINTF(TLBVerbosel2, "vaddr %#x,req_pc %#x,page_l2_start %#x\n",
+                    vaddr, req->getPC(), page_l2_start);
             return createPagefault(page_l2_start, mode);
         }
         return createPagefault(req->getPC(), mode);
-    } else
+    } else {
+        DPRINTF(TLBVerbosel2, "vaddr 2 %#x,req_pc %#x,get vaddr %#x\n", vaddr,
+                req->getPC(), req->getVaddr());
         return createPagefault(req->getVaddr(), mode);
+    }
 }
-
 
 Fault
 TLB::L2tlb_check(PTESv39 pte, int level, STATUS status, PrivilegeMode pmode,
@@ -1018,33 +879,15 @@ TLB::L2tlb_check(PTESv39 pte, int level, STATUS status, PrivilegeMode pmode,
                  ThreadContext *tc, BaseMMU::Translation *translation)
 {
     Fault fault = NoFault;
-    bool doWrite_l2tlb = false;
     hit_in_sp = false;
     DPRINTF(TLB, "l2tlb_check paddr %#x vaddr %#x pte %#x\n", pte.ppn, vaddr,
             pte);
     DPRINTF(TLB, "pte %#x r %d x %d \n", pte, pte.r, pte.x);
     //
     if (!pte.v || (!pte.r && pte.w)) {
-        //  end_pte = true;
         hit_in_sp = true;
-        //hit_in_sp = false;
         DPRINTF(TLB, "check l2 tlb PTE invalid, raising PF\n");
-        //fault = createPagefault(vaddr, mode);
-        /*printf("level %d\n",level);
-        printf("hit_in_sp %d\n",hit_in_sp);
-        printf("fault")
-        assert(0);*/
-//        fault = walker->start(pte.ppn, tc, translation, req, mode,
-//                                       false, level, false);
-        if (req->isInstFetch()){
-            Addr page_l2_start = (vaddr >>12)<<12;
-            if (req->getPC() < page_l2_start){
-                return createPagefault(page_l2_start, mode);
-            }
-            return createPagefault(req->getPC(), mode);
-        }
-        else
-            return createPagefault(req->getVaddr(), mode);
+        fault = L2tlb_pagefault(vaddr, mode, req);
 
     } else {
         if (pte.r || pte.x) {
@@ -1053,70 +896,39 @@ TLB::L2tlb_check(PTESv39 pte, int level, STATUS status, PrivilegeMode pmode,
             if (fault == NoFault) {
                 if (level >= 1 && pte.ppn0 != 0) {
                     DPRINTF(TLB, "L2TLB PTE has misaligned PPN, raising PF\n");
-                    //            fault = PageFault(true);
-                    fault = createPagefault(vaddr, mode);
-                    //assert(0);
+                    fault = L2tlb_pagefault(vaddr, mode, req);
                 } else if (level == 2 && pte.ppn1 != 0) {
                     DPRINTF(TLB, "L2TLB PTE has misaligned PPN, raising PF\n");
-                    //            fault = PageFault(true);
-                    fault = createPagefault(vaddr, mode);
-                    //assert(0);
+                    fault = L2tlb_pagefault(vaddr, mode, req);
                 }
             }
-
 
             if (fault == NoFault) {
                 if (!pte.a) {
-                    //    pte.a =1;
-                    //doWrite_l2tlb = true;
-                    DPRINTF(TLB,"L2TLB PTE needs to write pte.a\n");
-                    fault = createPagefault(vaddr,mode);
-                    //assert(0);
+                    DPRINTF(TLB, "L2TLB PTE needs to write pte.a\n");
+                    fault = L2tlb_pagefault(vaddr, mode, req);
                 }
                 if (!pte.d && mode == BaseMMU::Write) {
-                    //    pte.d = 1;
-                    //doWrite_l2tlb = true;
-                    DPRINTF(TLB,"L2TLB PTE needs to write pte.d\n");
-                    fault = createPagefault(vaddr,mode);
-                   // assert(0);
-                }
-                if (doWrite_l2tlb) {
-                    printf("todo :fix the problem of pte_a+pte_d \n");
-                   // assert(0);
+                    DPRINTF(TLB, "L2TLB PTE needs to write pte.d\n");
+                    fault = L2tlb_pagefault(vaddr, mode, req);
                 }
             }
 
-            /*if (fault != NoFault){
-                hit_in_sp =false;
-                fault = walker->start(pte.ppn, tc, translation, req, mode,
-                                      false, level, false);
-            }
-            else {
-                hit_in_sp = true;
-            }*/
 
         } else {
             level--;
             if (level < 0) {
                 hit_in_sp = true;
                 DPRINTF(TLB, "No leaf PTE found raising PF\n");
-                //        fault = PageFault(true);
-                fault = createPagefault(vaddr, mode);
-                //hit_in_sp =false;
-                //fault = walker->start(pte.ppn, tc, translation, req, mode,
-                 //                     false, level, false);
-
-                // assert(0);
+                fault = L2tlb_pagefault(vaddr, mode, req);
             } else {
-                // start walk
-                //*go_translate = true;
                 hit_in_sp = false;
                 fault = walker->start(pte.ppn, tc, translation, req, mode,
                                       false, level, true);
             }
         }
     }
-    DPRINTF(TLB, "tlb chcek final\n");
+    DPRINTF(TLB, "tlb check final\n");
     if (fault == NoFault)
         DPRINTF(TLB, "the result is nofault\n");
     else
@@ -1161,7 +973,6 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
 
             if (hit_in_sp) {
                 e = e3;
-
                 if (fault == NoFault) {
                     paddr =
                         e->paddr << PageShift | (vaddr & mask(e->logBytes));
@@ -1217,7 +1028,6 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                                 tc, translation);
             if (hit_in_sp){
                 e =  e4;
-                //printf("")
                 if (fault == NoFault) {
                     paddr =
                         e->paddr << PageShift | (vaddr & mask(e->logBytes));
@@ -1229,7 +1039,6 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                 }
                 else
                     return fault;
-
             }
             else{
                 if (translation != nullptr || fault != NoFault){
@@ -1242,7 +1051,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
             //e = e4;
         } else if (e2) {
             DPRINTF(TLB, "hit in l2 tlb l2\n");
-           fault = L2tlb_check(e2->pte, 1, status, pmode, vaddr, mode, req,
+            fault = L2tlb_check(e2->pte, 1, status, pmode, vaddr, mode, req,
                                 tc, translation);
             if (hit_in_sp){
                 e = e2;
@@ -1316,7 +1125,6 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
     if (fault == NoFault) {
         fault = checkPermissions(status, pmode, vaddr, mode, e->pte);
     }
-
 
     if (fault != NoFault) {
         // if we want to write and it isn't writable, do a page table walk
