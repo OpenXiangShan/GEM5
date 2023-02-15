@@ -248,9 +248,19 @@ def template JumpConstructor {{
         %(constructor)s;
         %(imm_code)s;
         if (QUADRANT != 0x3) {
+            bool rc1_link = (RC1 == 1 || RC1 == 5);
             // Handle "c_jr" instruction, set "IsReturn" flag if RC1 is 1 or 5
-            if (CFUNCT1 == 0 && (RC1 == 1 || RC1 == 5))
+            if (CFUNCT1 == 0 && rc1_link)
                 flags[IsReturn] = true;
+            // Handle "c_jalr" instruction, set "IsReturn" flag if RC1 is 1 or 5
+            if (CFUNCT1 != 0) {
+                // "IsCall" flag is set outside
+                // flags[IsCall] = true;
+                // only if RC1 is link and RC1 != 1, pop then push RAS
+                if (rc1_link && RC1 != 1) {
+                    flags[IsReturn] = true;
+                }
+            }
         } else {
             bool rd_link = (RD == 1 || RD == 5);
             bool rs1_link = (RS1 == 1 || RS1 == 5);
@@ -260,7 +270,7 @@ def template JumpConstructor {{
                 flags[IsCall] = true;
 
             // Handle "Jalr" instruction
-            if (FUNCT3 == 0x0) {
+            if (FUNCT3 == 0x0 && OPCODE == 0x19) {
                 // If RD is not link and RS1 is link, then pop RAS
                 if (!rd_link && rs1_link) flags[IsReturn] = true;
                 else if (rd_link) {
