@@ -902,6 +902,7 @@ InstructionQueue::scheduleReadyInsts()
             listOrder.erase(order_it++);
             iqStats.statIssuedInstType[tid][op_class]++;
         } else {
+            DPRINTF(IQ, "NoFreeFU.\n");
             iqStats.statFuBusy[op_class]++;
             iqStats.fuBusy[tid]++;
             ++order_it;

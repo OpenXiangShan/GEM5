@@ -54,6 +54,7 @@
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/lsq.hh"
 #include "cpu/o3/scoreboard.hh"
+#include "cpu/o3/rob.hh"
 #include "cpu/timebuf.hh"
 #include "debug/IEW.hh"
 #include "sim/probe/probe.hh"
@@ -508,6 +509,26 @@ class IEW
 
     std::vector<std::vector<unsigned long>> fetchStalls;
 
+    std::vector<std::vector<unsigned long>> decodeStalls;
+
+    std::vector<std::vector<unsigned long>> renameStalls;
+
+    std::vector<DispatchStall> dispatchStalls;
+
+    std::vector<std::vector<unsigned long>> dispatchStat;
+
+    DispatchStall blockReason;
+
+    ROB* rob;
+
+    void setAllStalls(DispatchStall dispatchStall);
+
+    DispatchStall checkDispatchStall(ThreadID tid);
+
+  public:
+
+    void setRob(ROB *rob);
+  
 };
 
 } // namespace o3

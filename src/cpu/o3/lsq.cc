@@ -686,6 +686,12 @@ LSQ::sqFull(ThreadID tid)
 }
 
 bool
+LSQ::isSqHeadCompleted(ThreadID tid)
+{
+    return thread[tid].storeQueue.front().completed() || thread[tid].storeQueue.empty();
+}
+
+bool
 LSQ::isStalled()
 {
     std::list<ThreadID>::iterator threads = activeThreads->begin();

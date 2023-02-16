@@ -60,15 +60,59 @@ namespace o3
 
 /** stall reasons in each stages*/
 enum FetchStall {
-    NONE,
-    ICACHESTALL,
-    TLBSTALL,
-    BPSTALL, // stall caused by branch predictor
-    INTSTALL,
-    TRAPSTALL,
-    FRAGSTALL,
-    DECODESTALL,
-    OTHERSTALL
+    NoFetchStall,
+    IcacheStall,
+    FetchTlbStall,
+    BpStall, // stall caused by branch predictor
+    IntStall,
+    TrapStall,
+    FetchFragStall,
+    FromDecodeStall,
+    FetchOtherStall
+};
+
+enum DecodeStall {
+    NoDecodeStall,
+    DecodeSquash,
+    DecodeInstSupply,
+    InstSquashed,
+    InstMisPred,
+    FromRenameStall
+}; // stall caused by other stage?
+
+enum RenameStall {
+    NoRenameStall,
+    RenameSquash,
+    SerializeStall,
+    NoFreeRegs,
+    RenameSquashed,
+    RenameLongExe,
+    RenameNotReady,
+    RenameL1Stall,
+    RenameL2Stall,
+    RenameL3Stall,
+    RenameTlbStall,
+    RenameFrag,
+    SqHeadMiss,
+    FromIEWStall,
+    RenameMapStall,
+    ResumeUnblock,
+    RenameOther
+};
+
+enum DispatchStall {
+    NoDispatchStall,
+    DispatchFrag,
+    DispatchSquashed,
+    CommitSquash,
+    DispatchlongExe,
+    DispatchNotReady,
+    DispatchL1Stall,
+    DispatchL2Stall,
+    DispatchL3Stall,
+    DispatchTlbStall,
+    DispatchSqHeadMiss,
+    DispatchOther
 };
 
 /** Struct that defines the information passed from fetch to decode. */
@@ -90,6 +134,7 @@ struct DecodeStruct
 
     DynInstPtr insts[MaxWidth];
     std::vector<FetchStall> fetchStallReason;
+    std::vector<DecodeStall> decodeStallReason;
 };
 
 /** Struct that defines the information passed from rename to IEW. */
@@ -99,6 +144,8 @@ struct RenameStruct
 
     DynInstPtr insts[MaxWidth];
     std::vector<FetchStall> fetchStallReason;
+    std::vector<DecodeStall> decodeStallReason;
+    std::vector<RenameStall> renameStallReason;
 };
 
 /** Struct that defines the information passed from IEW to commit. */
@@ -166,6 +213,9 @@ struct TimeStruct
         unsigned dispatched;
         bool usedIQ;
         bool usedLSQ;
+
+        DispatchStall robHeadStallReason;
+        bool isSqHeadMiss;
     };
 
     IewComm iewInfo[MaxThreads];

@@ -218,6 +218,7 @@ CPU::CPU(const BaseO3CPUParams &params)
 
     rename.setScoreboard(&scoreboard);
     iew.setScoreboard(&scoreboard);
+    iew.setRob(&rob);
 
     // Setup the rename map for whichever stages need it.
     for (ThreadID tid = 0; tid < numThreads; tid++) {

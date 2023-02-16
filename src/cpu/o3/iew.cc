@@ -58,6 +58,7 @@
 #include "debug/Drain.hh"
 #include "debug/IEW.hh"
 #include "debug/O3PipeView.hh"
+#include "debug/Rename.hh"
 #include "debug/Counters.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/core.hh"
@@ -118,10 +119,29 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
 
     skidBufferMax = (renameToIEWDelay + 1) * params.renameWidth * 2;
 
-    for(int i = 0;i < 16;i++) {
+    for (int i = 0;i < 16;i++) {
         std::vector<unsigned long> temp;
-        temp.resize(9,0);
+        temp.resize(9, FetchStall::NoFetchStall);
         fetchStalls.push_back(temp);
+    }
+
+    for (int i = 0;i < 6;i++) {
+        std::vector<unsigned long> temp;
+        temp.resize(6, DecodeStall::NoDecodeStall);
+        decodeStalls.push_back(temp);
+    }
+
+    for (int i = 0;i < 6;i++) {
+        std::vector<unsigned long> temp;
+        temp.resize(17, RenameStall::NoRenameStall);
+        renameStalls.push_back(temp);
+    }
+
+    dispatchStalls.resize(dispatchWidth, DispatchStall::NoDispatchStall);
+    for (int i = 0;i < dispatchWidth;i++) {
+        std::vector<unsigned long> temp;
+        temp.resize(12, DispatchStall::NoDispatchStall);
+        dispatchStat.push_back(temp);
     }
 
     registerExitCallback([this]() {
@@ -134,6 +154,33 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
             *out_handle->stream() << std::endl;
         }
         simout.close(out_handle);
+
+        auto out_handle1 = simout.create("dispatchStall.txt", false, true);
+        for (int i = 0;i < dispatchWidth;i++) {
+            for (int j = 0;j < 12;j++) {
+                *out_handle1->stream() << dispatchStat.at(i).at(j) << std::endl;
+            }
+            *out_handle1->stream() << std::endl;
+        }
+        simout.close(out_handle1);
+
+        auto out_handle3 = simout.create("decodeStall.txt", false, true);
+        for (auto& it : decodeStalls) {
+            for (int i = 0;i < 6;i++) {
+                *out_handle3->stream() << it.at(i) << std::endl;
+            }
+            *out_handle3->stream() << std::endl;
+        }
+        simout.close(out_handle3);
+
+        auto out_handle4 = simout.create("renameStall.txt", false, true);
+        for (auto& it : renameStalls) {
+            for (int i = 0;i < 17;i++) {
+                *out_handle4->stream() << it.at(i) << std::endl;
+            }
+            *out_handle4->stream() << std::endl;
+        }
+        simout.close(out_handle4);
         }
     });
 }
@@ -759,10 +806,12 @@ IEW::checkStall(ThreadID tid)
     if (fromCommit->commitInfo[tid].robSquashing) {
         DPRINTF(IEW,"[tid:%i] Stall from Commit stage detected.\n",tid);
         ret_val = true;
+        blockReason = DispatchStall::CommitSquash;
     } else if (instQueue.isFull(tid)) {
         DPRINTF(IEW,"[tid:%i] Stall: IQ  is full.\n",tid);
         iewStats.stallEvents[IQFull]++;
         ret_val = true;
+        blockReason = checkDispatchStall(tid);
     }
 
     return ret_val;
@@ -790,6 +839,7 @@ IEW::checkSignalsAndUpdate(ThreadID tid)
         dispatchStatus[tid] = Squashing;
         fetchRedirect[tid] = false;
         iewStats.stallEvents[ROBWalk]++;
+        setAllStalls(DispatchStall::CommitSquash);
         return;
     }
 
@@ -800,6 +850,7 @@ IEW::checkSignalsAndUpdate(ThreadID tid)
         emptyRenameInsts(tid);
         wroteToTimeBuffer = true;
         iewStats.stallEvents[ROBWalk]++;
+        setAllStalls(DispatchStall::CommitSquash);
     }
 
     if (checkStall(tid)) {
@@ -906,9 +957,11 @@ IEW::dispatch(ThreadID tid)
 
     if (dispatchStatus[tid] == Blocked) {
         ++iewStats.blockCycles;
+        setAllStalls(blockReason);
 
     } else if (dispatchStatus[tid] == Squashing) {
         ++iewStats.squashCycles;
+        setAllStalls(DispatchStall::CommitSquash);
     }
 
     // Dispatch should try to dispatch as many instructions as its bandwidth
@@ -969,6 +1022,9 @@ IEW::dispatchInsts(ThreadID tid)
         }
     }
 
+    std::queue<DispatchStall> dispatch_stalls;
+    DispatchStall breakDispatch = DispatchStall::NoDispatchStall;
+
     // Loop through the instructions, putting them in the instruction
     // queue.
     for ( ; dis_num_inst < insts_to_add &&
@@ -1010,6 +1066,8 @@ IEW::dispatchInsts(ThreadID tid)
                 toRename->iewInfo[tid].dispatchedToSQ++;
             }
 
+            dispatch_stalls.push(DispatchStall::DispatchSquashed);
+
             toRename->iewInfo[tid].dispatched++;
 
             continue;
@@ -1022,12 +1080,21 @@ IEW::dispatchInsts(ThreadID tid)
             // Call function to start blocking.
             block(tid);
             iewStats.stallEvents[IQFull]++;
+
+            blockReason = checkDispatchStall(tid);
+
             // Set unblock to false. Special case where we are using
             // skidbuffer (unblocking) instructions but then we still
             // get full in the IQ.
             toRename->iewUnblock[tid] = false;
 
             ++iewStats.iqFullEvents;
+
+            // check the reason of instQueue full.
+            dispatch_stalls.push(checkDispatchStall(tid));
+
+            breakDispatch = checkDispatchStall(tid);
+
             break;
         }
 
@@ -1041,6 +1108,16 @@ IEW::dispatchInsts(ThreadID tid)
             // Call function to start blocking.
             block(tid);
             iewStats.stallEvents[LSQFull]++;
+
+            if ((inst->isStore() || inst->isAtomic()) && 
+                 ldstQueue.sqFull(tid) && !ldstQueue.isSqHeadCompleted(tid)) {
+                 blockReason = DispatchStall::DispatchSqHeadMiss;
+            } else {
+                blockReason = checkDispatchStall(tid);
+            }
+
+            dispatch_stalls.push(blockReason);
+            breakDispatch = blockReason;
 
             // Set unblock to false. Special case where we are using
             // skidbuffer (unblocking) instructions but then we still
@@ -1176,10 +1253,35 @@ IEW::dispatchInsts(ThreadID tid)
         ppDispatch->notify(inst);
     }
 
+    DispatchStall lastStall = dispatch_stalls.empty() ? DispatchStall::NoDispatchStall : dispatch_stalls.back();
+    unsigned instInSufficient = dispatch_width - insts_to_add;
+    for (int i = 0;i < dispatchWidth;i++) {
+        if (i < dis_num_inst) {
+            dispatchStalls.at(i) = DispatchStall::NoDispatchStall;
+        } else {
+            if (!dispatch_stalls.empty()) {
+                dispatchStalls.at(i) = dispatch_stalls.front();
+                dispatch_stalls.pop();
+            } else if (breakDispatch != DispatchStall::NoDispatchStall) {
+                dispatchStalls.at(i) = lastStall;
+            } else if (instInSufficient > 0 && insts_to_add > 0) {
+                dispatchStalls.at(i) = DispatchStall::DispatchFrag;
+                instInSufficient--;
+            } else {
+                dispatchStalls.at(i) = DispatchStall::DispatchOther;
+            }
+        }
+    }
+
+    for (int i = 0;i < dispatchStalls.size();i++) {
+        DPRINTF(IEW,"[tid:%i] IQStallls[%d]=%d\n", tid, i, dispatchStalls.at(i));
+    }
+
     if (!insts_to_dispatch.empty()) {
         DPRINTF(IEW,"[tid:%i] Issue: Bandwidth Full. Blocking.\n", tid);
         block(tid);
         iewStats.stallEvents[DispBWFull]++;
+        blockReason = breakDispatch;
         toRename->iewUnblock[tid] = false;
     }
 
@@ -1534,9 +1636,15 @@ void
 IEW::tick()
 {
     for (int i = 0;i < fromRename->fetchStallReason.size();i++) {
-        DPRINTF(Counters, "fetch Stall Reason %i: %i\n", i,
-                fromRename->fetchStallReason[i]);
         fetchStalls.at(i).at(fromRename->fetchStallReason[i])++;
+    }
+
+    for (int i = 0;i < fromRename->decodeStallReason.size();i++) {
+        decodeStalls.at(i).at(fromRename->decodeStallReason[i])++;
+    }
+
+    for (int i = 0;i < fromRename->renameStallReason.size();i++) {
+        renameStalls.at(i).at(fromRename->renameStallReason[i])++;
     }
 
     wbNumInst = 0;
@@ -1563,6 +1671,12 @@ IEW::tick()
 
         checkSignalsAndUpdate(tid);
         dispatch(tid);
+
+        toRename->iewInfo[tid].robHeadStallReason = checkDispatchStall(tid);
+        toRename->iewInfo[tid].isSqHeadMiss = !ldstQueue.isSqHeadCompleted(tid);
+    }
+    for (int i = 0;i < dispatchWidth;i++) {
+        dispatchStat.at(i).at(dispatchStalls.at(i))++;
     }
     instQueue.delayWakeDependents();
 
@@ -1727,6 +1841,59 @@ IEW::checkMisprediction(const DynInstPtr& inst)
             }
         }
     }
+}
+
+void
+IEW::setAllStalls(DispatchStall dispatchStall)
+{
+    for (int i = 0;i < dispatchWidth;i++) {
+        dispatchStalls.at(i) = dispatchStall;
+    }
+}
+
+DispatchStall
+IEW::checkDispatchStall(ThreadID tid) {
+    DynInstPtr head_inst = rob->readHeadInst(tid);
+    if (head_inst == rob->dummyInst) {
+        return DispatchStall::NoDispatchStall;
+    }
+
+    assert(head_inst);
+
+    if (head_inst->readyTick == -1)
+        return DispatchStall::DispatchNotReady;
+
+    if (head_inst->isLoad() || head_inst->isStore() || head_inst->isAtomic()) {
+        uint64_t latency = cpu->ticksToCycles(curTick() - head_inst->translatedTick);
+        if (head_inst->firstIssue != -1 && head_inst->translatedTick == -1) {
+            return DispatchStall::DispatchTlbStall;
+        } else if (head_inst->firstIssue != -1 && head_inst->translatedTick != -1 &&
+                   latency <= 20) {
+            return DispatchStall::DispatchL1Stall;
+        } else if (head_inst->firstIssue != -1 && head_inst->translatedTick != -1 &&
+                   latency > 20 && latency <= 27) {
+            return DispatchStall::DispatchL2Stall;
+        } else if (head_inst->firstIssue != -1 && head_inst->translatedTick != -1 &&
+                   latency > 27) {
+            return DispatchStall::DispatchL3Stall;
+        } else {
+            return DispatchStall::DispatchOther;
+        }
+    } else {
+        if (head_inst->firstIssue != -1) {
+            return DispatchStall::DispatchlongExe;
+        } else {
+            return DispatchStall::DispatchOther;
+        }
+    }
+
+    return DispatchStall::DispatchOther;
+}
+
+void
+IEW::setRob(ROB *rob)
+{
+    this->rob = rob; 
 }
 
 } // namespace o3

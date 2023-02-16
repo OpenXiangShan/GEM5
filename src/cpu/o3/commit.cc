@@ -722,6 +722,7 @@ Commit::tick()
             DPRINTF(Commit,"[tid:%i] Can't commit, Instruction [sn:%llu] PC "
                     "%s is head of ROB and not ready\n",
                     tid, inst->seqNum, inst->pcState());
+            DPRINTF(Commit, "%s\n", inst->staticInst->disassemble(inst->pcState().instAddr()).c_str());
         }
 
         DPRINTF(Commit, "[tid:%i] ROB has %d insts & %d free entries.\n",
