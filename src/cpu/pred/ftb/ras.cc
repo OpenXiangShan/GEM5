@@ -101,15 +101,19 @@ RAS::specUpdateHist(const boost::dynamic_bitset<> &history, FullFTBPrediction &p
     auto takenSlot = pred.getTakenSlot();
     if (takenSlot.isCall) {
         Addr retAddr = takenSlot.pc + takenSlot.size;
-        SpecRASTrace rec(When::SPECULATIVE, RAS_OP::PUSH, pred.bbStart, takenSlot.pc,
-            retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
-        specRasTrace->write_record(rec);
+        if (enableDB) {
+            SpecRASTrace rec(When::SPECULATIVE, RAS_OP::PUSH, pred.bbStart, takenSlot.pc,
+                retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
+            specRasTrace->write_record(rec);
+        }
         push(retAddr, stack, sp);
     }
     if (takenSlot.isReturn) {
-        SpecRASTrace rec(When::SPECULATIVE, RAS_OP::POP, pred.bbStart, takenSlot.pc,
-            stack[sp].retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
-        specRasTrace->write_record(rec);
+        if (enableDB) {
+            SpecRASTrace rec(When::SPECULATIVE, RAS_OP::POP, pred.bbStart, takenSlot.pc,
+                stack[sp].retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
+            specRasTrace->write_record(rec);
+        }
         // do pop
         pop(stack, sp);
     }
@@ -125,22 +129,28 @@ RAS::recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entr
     // recover sp and tos first
     auto meta_ptr = std::static_pointer_cast<RASMeta>(entry.predMetas[getComponentIdx()]);
     auto takenSlot = entry.exeBranchInfo;
-    SpecRASTrace rec(When::REDIRECT, RAS_OP::RECOVER, entry.startPC, takenSlot.pc, 0, sp, stack[sp].retAddr, stack[sp].ctr);
-    specRasTrace->write_record(rec);
+    if (enableDB) {
+        SpecRASTrace rec(When::REDIRECT, RAS_OP::RECOVER, entry.startPC, takenSlot.pc, 0, sp, stack[sp].retAddr, stack[sp].ctr);
+        specRasTrace->write_record(rec);
+    }
     sp = meta_ptr->sp;
     stack[sp] = meta_ptr->tos;
 
     if (entry.exeTaken) {
         // do push & pops on control squash
         if (takenSlot.isReturn) {
-            SpecRASTrace rec(When::REDIRECT, RAS_OP::POP, entry.startPC, takenSlot.pc, stack[sp].retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
-            specRasTrace->write_record(rec);
+            if (enableDB) {
+                SpecRASTrace rec(When::REDIRECT, RAS_OP::POP, entry.startPC, takenSlot.pc, stack[sp].retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
+                specRasTrace->write_record(rec);
+            }
             pop(stack, sp);
         }
         if (takenSlot.isCall) {
             Addr retAddr = takenSlot.pc + takenSlot.size;
-            SpecRASTrace rec(When::REDIRECT, RAS_OP::PUSH, entry.startPC, takenSlot.pc, retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
-            specRasTrace->write_record(rec);
+            if (enableDB) {
+                SpecRASTrace rec(When::REDIRECT, RAS_OP::PUSH, entry.startPC, takenSlot.pc, retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
+                specRasTrace->write_record(rec);
+            }
             push(retAddr, stack, sp);
         }
     }
@@ -161,15 +171,19 @@ RAS::update(const FetchStream &entry)
         auto miss = entry.squashType == SQUASH_CTRL && entry.squashPC == entry.exeBranchInfo.pc;
         if (takenSlot.isCall) {
             Addr retAddr = takenSlot.pc + takenSlot.size;
-            NonSpecRASTrace rec(RAS_OP::PUSH, entry.startPC, takenSlot.pc, retAddr,
-                pred_sp, pred_tos.retAddr, pred_tos.ctr, sp, stack[sp].retAddr, stack[sp].ctr, miss);
-            nonSpecRasTrace->write_record(rec);
+            if (enableDB) {
+                NonSpecRASTrace rec(RAS_OP::PUSH, entry.startPC, takenSlot.pc, retAddr,
+                    pred_sp, pred_tos.retAddr, pred_tos.ctr, sp, stack[sp].retAddr, stack[sp].ctr, miss);
+                nonSpecRasTrace->write_record(rec);
+            }
             push(retAddr, stack, sp);
         }
         if (takenSlot.isReturn) {
-            NonSpecRASTrace rec(RAS_OP::POP, entry.startPC, takenSlot.pc, takenSlot.target,
-                pred_sp, pred_tos.retAddr, pred_tos.ctr, sp, stack[sp].retAddr, stack[sp].ctr, miss);
-            nonSpecRasTrace->write_record(rec);
+            if (enableDB) {
+                NonSpecRASTrace rec(RAS_OP::POP, entry.startPC, takenSlot.pc, takenSlot.target,
+                    pred_sp, pred_tos.retAddr, pred_tos.ctr, sp, stack[sp].retAddr, stack[sp].ctr, miss);
+                nonSpecRasTrace->write_record(rec);
+            }
             pop(stack, sp);
         }
     }
