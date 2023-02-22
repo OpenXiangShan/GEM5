@@ -43,6 +43,10 @@ class RiscvPagetableWalker(ClockedObject):
     system = Param.System(Parent.any, "system object")
     num_squash_per_cycle = Param.Unsigned(4,
             "Number of outstanding walks that can be squashed per cycle")
+    #notice :only partial testing of open ptwsquash was carried out
+    #open it may have some bugs
+    ptwSquash = Param.Bool(False,
+    "when squash xs will continue ptw until ptw finish")
     # Grab the pma_checker from the MMU
     pma_checker = Param.PMAChecker(Parent.any, "PMA Checker")
     pmp = Param.PMP(Parent.any, "PMP")
@@ -53,7 +57,10 @@ class RiscvTLB(BaseTLB):
     cxx_header = 'arch/riscv/tlb.hh'
 
     #size = Param.Int(2048, "TLB size")
-    size = Param.Int(36, "TLB size")
+    #size = Param.Int(64, "TLB size")
+    #size = Param.Int(256, "TLB size")
+    size = Param.Int(32, "TLB size")
+    #size = Param.Int(36, "TLB size")
     #l2tlb_l1_size = Param.Int(8, "l2TLB_l1 size")
     #l2tlb_l2_size = Param.Int(32, "l2TLB_l2 size")
     #l2tlb_l3_size = Param.Int(256, "l2TLB_l3 size")

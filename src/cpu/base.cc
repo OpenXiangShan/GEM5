@@ -58,6 +58,7 @@
 #include "cpu/checker/cpu.hh"
 #include "cpu/thread_context.hh"
 #include "debug/Diff.hh"
+#include "debug/Diff2.hh"
 #include "debug/Mwait.hh"
 #include "debug/SyscallVerbose.hh"
 #include "debug/Thread.hh"
@@ -907,6 +908,8 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             }
         }
     }
+    DPRINTF(Diff2, "pc %#x inst %#x @ %s\n", gem5_pc, diffInfo.pc->instAddr(),
+            diffInfo.inst->disassemble(diffInfo.pc->instAddr()));
     DPRINTF(Diff, "Inst [sn:%lli] PC, NEMU: %#lx, GEM5: %#lx\n", seq, nemu_pc,
             gem5_pc);
 

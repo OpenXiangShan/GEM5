@@ -101,7 +101,8 @@ Walker::start(Addr ppn, ThreadContext *_tc, BaseMMU::Translation *_translation,
     DPRINTF(PageTableWalker, "pre %d f_level %d from_l2tlb %d\n", pre, f_level,
             from_l2tlb);
     pre_ptw = pre;
-    if (currStates.size()) {
+    if (currStates.size() &&(!from_l2tlb)) {
+    //if (currStates.size() ) {
         auto [coalesced, fault] = tryCoalesce(_tc, _translation, _req, _mode);
         if (!coalesced) {
             // create state
@@ -139,20 +140,22 @@ Walker::start(Addr ppn, ThreadContext *_tc, BaseMMU::Translation *_translation,
 void
 Walker::doL2TLBHitSchedule(const RequestPtr &req, ThreadContext *tc,
                            BaseMMU::Translation *translation,
-                           BaseMMU::Mode mode, Addr Paddr)
+                           BaseMMU::Mode mode, Addr Paddr,
+                           const TlbEntry &entry)
 {
-    // dol2TLBHit();
+    DPRINTF(PageTableWalker2, "schedule %d\n", curCycle());
+    if (!doL2TLBHitEvent.scheduled())
+        schedule(doL2TLBHitEvent, nextCycle());
     L2TlbState l2state;
     l2state.req = req;
     l2state.tc = tc;
     l2state.translation = translation;
     l2state.mode = mode;
     l2state.Paddr = Paddr;
+    l2state.entry = entry;
+    //insert();
     L2TLBrequestors.push_back(l2state);
 
-    DPRINTF(PageTableWalker2, "schedule %d\n", curCycle());
-    if (!doL2TLBHitEvent.scheduled())
-        schedule(doL2TLBHitEvent, nextCycle());
 }
 
 Fault
@@ -194,10 +197,11 @@ Walker::recvTimingResp(PacketPtr pkt)
         delete senderWalk;
         // Since we block requests when another is outstanding, we
         // need to check if there is a waiting request to be serviced
-        if (currStates.size() && !startWalkWrapperEvent.scheduled())
+        if (currStates.size() && !startWalkWrapperEvent.scheduled()) {
             // delay sending any new requests until we are finished
             // with the responses
             schedule(startWalkWrapperEvent, clockEdge());
+        }
     }
     return true;
 }
@@ -262,7 +266,6 @@ Walker::WalkerState::initState(ThreadContext * _tc,
     pmode = walker->tlb->getMemPriv(_tc, mode);
     satp = _tc->readMiscReg(MISCREG_SATP);
     assert(satp.mode == AddrXlateMode::SV39);
-    //next_line = false;
 
 }
 
@@ -292,6 +295,7 @@ Walker::WalkerState::tryCoalesce(ThreadContext *_tc,
             // recreate fault for this txn, we don't have pmp yet
             // TODO: also consider pmp's addr fault
             new_fault = pageFaultOnRequestor(r);
+            assert(0);
         }
         if (requestors.size() == 1) {  // previous requestors are squashed
             DPRINTF(
@@ -312,8 +316,11 @@ Walker::startWalkWrapper()
 {
     handlePendingSquash();
     WalkerState *currState = currStates.front();
-    if (currState && !currState->wasStarted() && !currState->allRequestorSquashed())
-        currState->startWalk(0,2,false);
+    if (currState && !currState->wasStarted() &&
+        !currState->allRequestorSquashed()) {
+        assert(0);
+       currState->startWalk(0,2,false);
+    }
 }
 
 void
@@ -330,27 +337,30 @@ Walker::handlePendingSquash()
         DPRINTF(PageTableWalker,
                 "Try to squash table walk for pc (of main req): %#x, addr %#x\n",
                 ws->mainReq->getPC(), ws->mainReq->getVaddr());
-
-        auto r_it = ws->requestors.begin();
         bool main_erased = false;
-        while (r_it != ws->requestors.end()) {
-            auto &r = *r_it;
-            if (r.translation->squashed()) {
-                DPRINTF(PageTableWalker,
-                        "Squashing table walk for addr %#lx(pc=%#lx)\n",
-                        r.req->getVaddr(), r.req->getPC());
-                // finish it before real ``finish''
-                r.translation->finish(
-                    std::make_shared<UnimpFault>("Squashed Inst"), r.req,
-                    r.tc, ws->mode);
-                if (r_it == ws->requestors.begin()) {
-                    main_erased = true;
+        if (ptwSquash){
+            auto r_it = ws->requestors.begin();
+            while (r_it != ws->requestors.end()) {
+                auto &r = *r_it;
+                assert( r.translation!= nullptr);
+                if (r.translation->squashed()) {
+                    DPRINTF(PageTableWalker,
+                            "Squashing table walk for addr %#lx(pc=%#lx)\n",
+                            r.req->getVaddr(), r.req->getPC());
+                    // finish it before real ``finish''
+                    r.translation->finish(
+                        std::make_shared<UnimpFault>("Squashed Inst"), r.req,
+                        r.tc, ws->mode);
+                    if (r_it == ws->requestors.begin()) {
+                        main_erased = true;
+                    }
+                    r_it = ws->requestors.erase(r_it);
+                } else {
+                    r_it++;
                 }
-                r_it = ws->requestors.erase(r_it);
-            } else {
-                r_it++;
             }
         }
+
         // choose the first as main
         if (main_erased && ws->requestors.size() > 0) {
             ws->mainReq = ws->requestors.front().req;
@@ -401,11 +411,23 @@ Walker::dol2TLBHit()
                           pmodel2, dol2TLBHitrequestors.tc);
         assert(l2tlbFault == NoFault);
 
+        tlb->insert(dol2TLBHitrequestors.entry.vaddr,
+                    dol2TLBHitrequestors.entry);
         dol2TLBHitrequestors.translation->finish(
             l2tlbFault, dol2TLBHitrequestors.req, dol2TLBHitrequestors.tc,
             dol2TLBHitrequestors.mode);
+
+
+        //  tlb->insert(dol2TLBHitrequestors.entry.vaddr,
+        //  dol2TLBHitrequestors.entry);
+        DPRINTF(
+            PageTableWalker2,
+            " *********************dol2tlbhit vaddr %#x paddr %#x pc %#x\n",
+            dol2TLBHitrequestors.req->getVaddr(), dol2TLBHitrequestors.Paddr,
+            dol2TLBHitrequestors.req->getPC());
         L2TLBrequestors.pop_front();
     }
+    DPRINTF(PageTableWalker2, "finish dol2tlbhit\n");
 }
 bool
 Walker::WalkerState::anyRequestorSquashed() const
@@ -679,7 +701,6 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
     Request::Flags flags = oldRead->req->getFlags();
 
     if ((doEndWalk)&&(!next_line)) {
-    //if (doEndWalk) {
         // If we need to write, adjust the read packet to write the modified
         // value back to memory.
         if (!functional && doWrite) {
@@ -716,6 +737,11 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                             level,l2_level);
                     inl2_entry.paddr = l2pte.ppn;
                     inl2_entry.pte = l2pte;
+                    if (inl2_entry.vaddr == entry.vaddr){
+                        if (!inl2_entry.pte.d && mode != BaseMMU::Write)
+                            inl2_entry.pte.w = 0;
+
+                    }
                     if (l2_level == 0) {
                         inl2_entry.index = (entry.vaddr >> 15) & (0x7f);
                         walker->tlb->L2TLB_insert(inl2_entry.vaddr, inl2_entry,
@@ -798,7 +824,6 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
         }
         endWalk();
     } else if (next_line) {
-        walker->tlb->insert(entry.vaddr, entry);
         if (fault == NoFault){
             Addr nextline_basic_vaddr = nextline_entry.vaddr;
             for (int n_l2_i = 0; n_l2_i < 8; n_l2_i++) {
@@ -827,12 +852,9 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                         nextline_entry.pte);
             }
         } else {
-            next_line = false;
             endWalk();
             return NoFault;
         }
-
-        next_line = false;
         endWalk();
     } else {
         //If we didn't return, we're setting up another read.
@@ -867,7 +889,7 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level,
 {
     vaddr = Addr(sext<VADDR_BITS>(vaddr));
     Addr topAddr;
-    if (from_l2tlb){
+    if (from_l2tlb ){
         level = f_level;
     }
     else {
@@ -879,7 +901,7 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level,
     Addr idx_f = (vaddr >> shift) & LEVEL_MASK;
     Addr idx = (idx_f>>3)<<3;
 
-    if (from_l2tlb){
+    if (from_l2tlb ){
         topAddr = (ppn << PageShift) + (idx * sizeof(PTESv39));
         nextline_level_mask = LEVEL_MASK;
         nextline_shift = shift;
@@ -923,7 +945,6 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level,
     //Addr
     read = new Packet(request, MemCmd::ReadReq);
     read->allocate();
-    read_pre = NULL;
 }
 
 bool
@@ -974,11 +995,13 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
 
         sendPackets();
     }
-    if (inflight == 0 && read == NULL && writes.size() == 0) {
+    if ((inflight == 0 && read == NULL && writes.size() == 0) &&
+        (!next_line)) {
         state = Ready;
         nextState = Waiting;
         DPRINTF(PageTableWalker,
-                "All ops finished for table walk of %#lx (pc=%#lx), requestor "
+                " !next_line All ops finished for table walk of %#lx "
+                "(pc=%#lx), requestor "
                 "size: %lu\n",
                 mainReq->getVaddr(), mainReq->getPC(), requestors.size());
         for (auto &r : requestors) {
@@ -1018,7 +1041,58 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
         }
         return true;
     }
+    if (next_line) {
+        if ((inflight == 0 && read == NULL && writes.size() == 0)) {
+            DPRINTF(PageTableWalker,
+                    "next_line All ops finished for table walk of %#lx "
+                    "(pc=%#lx), requestor "
+                    "size: %lu\n",
+                    mainReq->getVaddr(), mainReq->getPC(), requestors.size());
+            state = Ready;
+            nextState = Waiting;
+            return true;
+        } else {
+            for (auto &r : requestors) {
+                if (mainFault == NoFault) {
+                    /*
+                     * Finish the translation. Now that we know the right entry
+                     * is in the TLB, this should work with no memory accesses.
+                     * There could be new faults unrelated to the table walk
+                     * like permissions violations, so we'll need the return
+                     * value as well.
+                     */
+                    Addr vaddr = r.req->getVaddr();
+                    vaddr = Addr(sext<VADDR_BITS>(vaddr));
+                    Addr paddr =
+                        walker->tlb->translateWithTLB(vaddr, satp.asid, mode);
+                    r.req->setPaddr(paddr);
+                    walker->pma->check(r.req);
 
+                    // do pmp check if any checking condition is met.
+                    // mainFault will be NoFault if pmp checks are
+                    // passed, otherwise an address fault will be returned.
+                    mainFault =
+                        walker->pmp->pmpCheck(r.req, mode, pmode, r.tc);
+                    assert(mainFault == NoFault);
+
+                    // Let the CPU continue.
+                    DPRINTF(PageTableWalker,
+                            "Finished walk for %#lx (pc=%#lx)\n",
+                            r.req->getVaddr(), r.req->getPC());
+                    r.translation->finish(mainFault, r.req, r.tc, mode);
+                } else {
+                    // There was a fault during the walk. Let the CPU know.
+                    DPRINTF(PageTableWalker,
+                            "Finished fault walk for %#lx (pc=%#lx)\n",
+                            r.req->getVaddr(), r.req->getPC());
+                    // recreate the fault to ensure that the faulting address
+                    // matches
+                    r.fault = pageFaultOnRequestor(r);
+                    r.translation->finish(r.fault, r.req, r.tc, mode);
+                }
+            }
+        }
+    }
     return false;
 }
 
@@ -1044,19 +1118,7 @@ Walker::WalkerState::sendPackets()
             DPRINTF(PageTableWalker, "Send read %#lx\n", pkt->getAddr());
         }
     }
-    if (read_pre) {
-        PacketPtr pkt = read_pre;
-        read_pre = NULL;
-        if (!walker->sendTiming(this, pkt)) {
-            retrying = true;
-            read = pkt;
-            DPRINTF(PageTableWalker, "Port busy, defer read %#lx\n",
-                    read->getAddr());
-            return;
-        } else {
-            DPRINTF(PageTableWalker, "Send read pre %#lx\n", pkt->getAddr());
-        }
-    }
+
     //Send off as many of the writes as we can.
     while (writes.size()) {
         PacketPtr write = writes.back();

@@ -118,7 +118,8 @@ PacketQueue::schedSendTiming(PacketPtr pkt, Tick when)
 
     // add a very basic sanity check on the port to ensure the
     // invisible buffer is not growing beyond reasonable limits
-    if (!_disableSanityCheck && transmitList.size() > 128) {
+    //if (!_disableSanityCheck && transmitList.size() > 128) {
+    if (!_disableSanityCheck && transmitList.size() > 256) {
         panic("Packet queue %s has grown beyond 128 packets\n",
               name());
     }

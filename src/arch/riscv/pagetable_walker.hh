@@ -130,7 +130,6 @@ namespace RiscvISA
             TlbEntry entry;
             TlbEntry inl2_entry;
             PacketPtr read;
-            PacketPtr read_pre;
             std::vector<PacketPtr> writes;
             Fault mainFault;
             BaseMMU::Mode mode;
@@ -201,6 +200,8 @@ namespace RiscvISA
               BaseMMU::Translation *translation;
               BaseMMU::Mode mode;
               Addr Paddr;
+              TlbEntry entry;
+
         };
         std::list<L2TlbState> L2TLBrequestors;
 
@@ -227,7 +228,8 @@ namespace RiscvISA
 
         void doL2TLBHitSchedule(const RequestPtr &req, ThreadContext *tc,
                                 BaseMMU::Translation *translation,
-                                BaseMMU::Mode mode, Addr Paddr);
+                                BaseMMU::Mode mode, Addr Paddr,
+                                const TlbEntry &entry);
 
 
 
@@ -253,6 +255,7 @@ namespace RiscvISA
 
         // The number of outstanding walks that can be squashed per cycle.
         unsigned numSquashable;
+        bool ptwSquash;
 
         Tick squashHandleTick;
 

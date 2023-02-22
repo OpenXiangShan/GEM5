@@ -82,6 +82,7 @@ class L2Cache(Cache):
     tgts_per_mshr = 20
     clusivity='mostly_excl'
     prefetch_on_access = True
+    #prefetch_on_access = False
     # always writeback clean when lower level is exclusive
     writeback_clean = True
 

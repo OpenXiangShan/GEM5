@@ -102,6 +102,7 @@ def config_cache(options, system):
             L1_DCache, L1_ICache, L2Cache, None
 
         if buildEnv['TARGET_ISA'] in ['x86', 'riscv']:
+        #if buildEnv['TARGET_ISA'] in ['x86']:
             walk_cache_class = PageTableWalkerCache
 
     # Set the cache line size of the system
