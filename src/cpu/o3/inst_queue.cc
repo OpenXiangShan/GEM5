@@ -50,6 +50,7 @@
 #include "cpu/o3/iew_delay_calibrator.hh"
 #include "cpu/o3/limits.hh"
 #include "debug/IQ.hh"
+#include "debug/Counters.hh"
 #include "enums/OpClass.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/core.hh"
@@ -1154,8 +1155,10 @@ void
 InstructionQueue::addReadyMemInst(const DynInstPtr &ready_inst)
 {
     OpClass op_class = ready_inst->opClass();
-    if (ready_inst->readyTick == -1)
+    if (ready_inst->readyTick == -1) {
         ready_inst->readyTick = curTick();
+        DPRINTF(Counters, "set ready Tick at addreadyMemInst\n");
+    }
 
     readyInsts[op_class].push(ready_inst);
 
@@ -1535,8 +1538,13 @@ InstructionQueue::addIfReady(const DynInstPtr &inst)
     // If the instruction now has all of its source registers
     // available, then add it to the list of ready instructions.
     if (inst->readyToIssue()) {
+<<<<<<< HEAD
         if (inst->readyTick == -1)
             inst->readyTick = curTick();
+=======
+        DPRINTF(Counters, "set readyTick at addIfReady\n");
+        inst->readyTick = curTick();
+>>>>>>> a04deb8fe2 (cpu: update counters)
 
         //Add the instruction to the proper ready list.
         if (inst->isMemRef()) {

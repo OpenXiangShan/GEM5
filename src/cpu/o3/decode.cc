@@ -90,7 +90,7 @@ Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
         squashAfterDelaySlot[tid] = 0;
     }
 
-    decodeStalls.resize(decodeWidth, DecodeStall::NoDecodeStall);
+    decodeStalls.resize(decodeWidth, StallReason::NoStall);
 }
 
 void
@@ -527,7 +527,7 @@ Decode::checkSignalsAndUpdate(ThreadID tid)
     }
 
     if (checkStall(tid)) {
-        blockReason = DecodeStall::FromRenameStall;
+        blockReason = fromRename->renameInfo[tid].blockReason;
         return block(tid);
     }
 
@@ -582,6 +582,8 @@ Decode::tick()
         status_change =  checkSignalsAndUpdate(tid) || status_change;
 
         decode(status_change, tid);
+
+        toFetch->decodeInfo[tid].blockReason = blockReason;
     }
 
     if (status_change) {
@@ -612,7 +614,7 @@ Decode::decode(bool &status_change, ThreadID tid)
         setAllStalls(blockReason);
     } else if (decodeStatus[tid] == Squashing) {
         ++stats.squashCycles;
-        setAllStalls(DecodeStall::DecodeSquash);
+        setAllStalls(StallReason::SquashStall);
     }
 
     // Decode should try to decode as many instructions as its bandwidth
@@ -651,16 +653,24 @@ Decode::decodeInsts(ThreadID tid)
     int insts_available = decodeStatus[tid] == Unblocking ?
         skidBuffer[tid].size() : insts[tid].size();
 
-    std::queue<DecodeStall> decode_stalls;
+    std::queue<StallReason> decode_stalls;
 
-    DecodeStall breakDecode = DecodeStall::NoDecodeStall;
+    StallReason breakDecode = StallReason::NoStall;
 
     if (insts_available == 0) {
         DPRINTF(Decode, "[tid:%i] Nothing to do, breaking out"
                 " early.\n",tid);
         // Should I change the status to idle?
         ++stats.idleCycles;
-        setAllStalls(DecodeStall::DecodeInstSupply);
+
+        StallReason stall = StallReason::NoStall;
+        for (auto iter : fromFetch->fetchStallReason) {
+            if (iter != StallReason::NoStall) {
+                stall = iter;
+                break;
+            }
+        }
+        setAllStalls(stall);
         return;
     } else if (decodeStatus[tid] == Unblocking) {
         DPRINTF(Decode, "[tid:%i] Unblocking, removing insts from skid "
@@ -708,7 +718,7 @@ Decode::decodeInsts(ThreadID tid)
 
             --insts_available;
 
-            decode_stalls.push(DecodeStall::InstSquashed);
+            decode_stalls.push(StallReason::InstSquashed);
 
             continue;
         }
@@ -750,8 +760,8 @@ Decode::decodeInsts(ThreadID tid)
             // a check at the end
             squash(inst, inst->threadNumber);
 
-            decode_stalls.push(DecodeStall::InstMisPred);
-            breakDecode = DecodeStall::InstMisPred;
+            decode_stalls.push(StallReason::InstMisPred);
+            breakDecode = StallReason::InstMisPred;
 
             break;
         }
@@ -790,8 +800,8 @@ Decode::decodeInsts(ThreadID tid)
                 // a check at the end
                 squash(inst, inst->threadNumber);
 
-                decode_stalls.push(DecodeStall::InstMisPred);
-                breakDecode = DecodeStall::InstMisPred;
+                decode_stalls.push(StallReason::InstMisPred);
+                breakDecode = StallReason::InstMisPred;
 
                 DPRINTF(Decode,
                         "[tid:%i] [sn:%llu] Updating predictions:"
@@ -813,15 +823,15 @@ Decode::decodeInsts(ThreadID tid)
 
     for (int i = 0;i < decodeWidth;i++) {
         if (i < toRenameIndex) {
-            decodeStalls.at(i) = DecodeStall::NoDecodeStall;
+            decodeStalls.at(i) = StallReason::NoStall;
         } else {
             if (!decode_stalls.empty()) {
                 decodeStalls.at(i) = decode_stalls.front();
                 decode_stalls.pop();
-            } else if (breakDecode != DecodeStall::NoDecodeStall) {
+            } else if (breakDecode != StallReason::NoStall) {
                 decodeStalls.at(i) = breakDecode;
             } else {
-                decodeStalls.at(i) = DecodeStall::NoDecodeStall;
+                decodeStalls.at(i) = StallReason::NoStall;
             }
         }
     }
@@ -841,7 +851,7 @@ Decode::decodeInsts(ThreadID tid)
 }
 
 void
-Decode::setAllStalls(DecodeStall decodeStall)
+Decode::setAllStalls(StallReason decodeStall)
 {
     for (int i = 0;i < decodeStalls.size();i++) {
         decodeStalls.at(i) = decodeStall;

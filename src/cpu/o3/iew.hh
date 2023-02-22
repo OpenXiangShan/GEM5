@@ -505,25 +505,31 @@ class IEW
         statistics::Formula wbFanout;
 
         statistics::Vector stallEvents;
+
+        /** Distribution of number of fetch stall reasons each tick. */
+        statistics::Distribution fetchStallReason;
+        /** Distribution of number of decode stall reasons each tick. */
+        statistics::Distribution decodeStallReason;
+        /** Distribution of number of fetrenamech stall reasons each tick. */
+        statistics::Distribution renameStallReason;
+        /** Distribution of number of dispatch stall reasons each tick. */
+        statistics::Distribution dispatchStallReason;
+
     } iewStats;
 
-    std::vector<std::vector<unsigned long>> fetchStalls;
+    std::vector<StallReason> dispatchStalls;
 
-    std::vector<std::vector<unsigned long>> decodeStalls;
-
-    std::vector<std::vector<unsigned long>> renameStalls;
-
-    std::vector<DispatchStall> dispatchStalls;
-
-    std::vector<std::vector<unsigned long>> dispatchStat;
-
-    DispatchStall blockReason;
+    StallReason blockReason;
 
     ROB* rob;
 
-    void setAllStalls(DispatchStall dispatchStall);
+    void setAllStalls(StallReason dispatchStall);
 
-    DispatchStall checkDispatchStall(ThreadID tid);
+    StallReason checkLoadStoreInst(DynInstPtr inst);
+
+    StallReason checkDispatchStall(ThreadID tid);
+
+    StallReason checkLSQStall(ThreadID tid, bool isLoad);
 
   public:
 

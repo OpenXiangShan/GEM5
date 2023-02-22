@@ -50,6 +50,7 @@
 #include "debug/Activity.hh"
 #include "debug/O3PipeView.hh"
 #include "debug/Rename.hh"
+#include "debug/Counters.hh"
 #include "params/BaseO3CPU.hh"
 
 namespace gem5
@@ -87,7 +88,7 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
         serializeOnNextInst[tid] = false;
     }
 
-    renameStalls.resize(renameWidth, RenameStall::NoRenameStall);
+    renameStalls.resize(renameWidth, StallReason::NoStall);
 }
 
 std::string
@@ -433,6 +434,8 @@ Rename::tick()
         status_change = checkSignalsAndUpdate(tid) || status_change;
 
         rename(status_change, tid);
+
+        toDecode->renameInfo[tid].blockReason = blockReason;
     }
 
     toIEW->renameStallReason = renameStalls;
@@ -488,22 +491,22 @@ Rename::rename(bool &status_change, ThreadID tid)
         setAllStalls(blockReason);
     } else if (renameStatus[tid] == Squashing) {
         ++stats.squashCycles;
-        setAllStalls(RenameStall::RenameSquash);
+        setAllStalls(StallReason::SquashStall);
     } else if (renameStatus[tid] == SerializeStall) {
         ++stats.serializeStallCycles;
-        setAllStalls(RenameStall::SerializeStall);
+        setAllStalls(StallReason::SerializeStall);
         // If we are currently in SerializeStall and resumeSerialize
         // was set, then that means that we are resuming serializing
         // this cycle.  Tell the previous stages to block.
         if (resumeSerialize) {
             resumeSerialize = false;
-            blockReason = RenameStall::SerializeStall;
+            blockReason = StallReason::SerializeStall;
             block(tid);
             toDecode->renameUnblock[tid] = false;
         }
     } else if (renameStatus[tid] == Unblocking) {
         if (resumeUnblocking) {
-            blockReason = RenameStall::ResumeUnblock;
+            blockReason = StallReason::ResumeUnblock;
             block(tid);
             resumeUnblocking = false;
             toDecode->renameUnblock[tid] = false;
@@ -550,6 +553,16 @@ Rename::renameInsts(ThreadID tid)
                 tid);
         // Should I change status to idle?
         ++stats.idleCycles;
+
+        StallReason stall = StallReason::NoStall;
+        for (auto iter : fromDecode->decodeStallReason) {
+            if (iter != StallReason::NoStall) {
+                stall = iter;
+                break;
+            }
+        }
+        setAllStalls(stall);
+
         return;
     } else if (renameStatus[tid] == Unblocking) {
         ++stats.unblockCycles;
@@ -648,9 +661,9 @@ Rename::renameInsts(ThreadID tid)
         }
     }
 
-    std::queue<RenameStall> rename_stalls;
+    std::queue<StallReason> rename_stalls;
 
-    RenameStall breakRename = RenameStall::NoRenameStall;
+    StallReason breakRename = StallReason::NoStall;
 
     while (insts_available > 0 &&  toIEWIndex < rename_width) {
         DPRINTF(Rename, "[tid:%i] Sending instructions to IEW.\n", tid);
@@ -708,7 +721,7 @@ Rename::renameInsts(ThreadID tid)
             // Decrement how many instructions are available.
             --insts_available;
 
-            rename_stalls.push(RenameStall::RenameSquashed);
+            rename_stalls.push(StallReason::InstSquashed);
 
             continue;
         }
@@ -728,11 +741,11 @@ Rename::renameInsts(ThreadID tid)
             insts_to_rename.push_front(inst);
             ++stats.fullRegistersEvents;
 
-            blockReason = RenameStall::NoFreeRegs;
+            blockReason = checkRenameStallFromIEW(tid);
 
-            rename_stalls.push(RenameStall::NoFreeRegs);
+            rename_stalls.push(blockReason);
 
-            breakRename = RenameStall::NoFreeRegs;
+            breakRename = blockReason;
 
             break;
         }
@@ -765,11 +778,11 @@ Rename::renameInsts(ThreadID tid)
 
             blockThisCycle = true;
 
-            blockReason = RenameStall::SerializeStall;
+            blockReason = StallReason::SerializeStall;
 
-            rename_stalls.push(RenameStall::SerializeStall);
+            rename_stalls.push(StallReason::SerializeStall);
 
-            breakRename = RenameStall::SerializeStall;
+            breakRename = StallReason::SerializeStall;
 
             break;
         } else if ((inst->isStoreConditional() || inst->isSerializeAfter()) &&
@@ -808,19 +821,29 @@ Rename::renameInsts(ThreadID tid)
         --insts_available;
     }
 
+    StallReason stall = StallReason::NoStall;
+    for (auto iter : fromDecode->decodeStallReason) {
+        if (iter != StallReason::NoStall) {
+            stall = iter;
+            break;
+        }
+    }
+
     for (int i = 0;i < renameWidth;i++) {
         if (i < renamed_insts) {
-            renameStalls.at(i) = RenameStall::NoRenameStall;
+            renameStalls.at(i) = StallReason::NoStall;
         } else {
-            if (i >= instsAvailable) {
-                renameStalls.at(i) = RenameStall::RenameFrag;
-            } else if (!rename_stalls.empty()) {
+            if (!rename_stalls.empty()) {
                 renameStalls.at(i) = rename_stalls.front();
                 rename_stalls.pop();
-            } else if (breakRename != RenameStall::NoRenameStall) {
+            } else if (breakRename != StallReason::NoStall) {
                 renameStalls.at(i) = breakRename;
-            } else {
-                renameStalls.at(i) = RenameStall::RenameOther;
+            } else if (instsAvailable < renameWidth && instsAvailable > 0) {
+                renameStalls.at(i) = StallReason::FragStall;
+            } else if (instsAvailable == 0) {
+                renameStalls.at(i) = stall;
+            }else {
+                renameStalls.at(i) = StallReason::Other;
             }
         }
     }
@@ -1337,7 +1360,7 @@ Rename::checkStall(ThreadID tid)
     if (stalls[tid].iew) {
         DPRINTF(Rename,"[tid:%i] Stall from IEW stage detected.\n", tid);
 
-        blockReason = RenameStall::FromIEWStall;
+        blockReason = fromIEW->iewInfo[tid].blockReason;
         ret_val = true;
     } else if (calcFreeROBEntries(tid) <= 0) {
         DPRINTF(Rename,"[tid:%i] Stall: ROB has 0 free entries.\n", tid);
@@ -1353,14 +1376,14 @@ Rename::checkStall(ThreadID tid)
         ret_val = true;
     } else if (renameMap[tid]->numFreeEntries() <= 0) {
         DPRINTF(Rename,"[tid:%i] Stall: RenameMap has 0 free entries.\n", tid);
-        blockReason = RenameStall::RenameMapStall;
+        blockReason = checkRenameStallFromIEW(tid);
         ret_val = true;
     } else if (renameStatus[tid] == SerializeStall &&
                (!emptyROB[tid] || instsInProgress[tid])) {
         DPRINTF(Rename,"[tid:%i] Stall: Serialize stall and ROB is not "
                 "empty.\n",
                 tid);
-        blockReason = RenameStall::SerializeStall;
+        blockReason = StallReason::SerializeStall;
         ret_val = true;
     }
 
@@ -1567,42 +1590,28 @@ Rename::dumpHistory()
 }
 
 void
-Rename::setAllStalls(RenameStall renameStall)
+Rename::setAllStalls(StallReason renameStall)
 {
     for (int i = 0;i < renameStalls.size();i++) {
         renameStalls.at(i) = renameStall;
     }
 }
 
-RenameStall
+StallReason
 Rename::checkRenameStallFromIEW(ThreadID tid)
 {
-    DispatchStall robHeadStallReason = fromIEW->iewInfo[tid].robHeadStallReason;
-    DPRINTF(Rename, "checkRenameStallFromIEW %d\n", robHeadStallReason);
+    StallReason robHeadStallReason = fromIEW->iewInfo[tid].robHeadStallReason;
 
-    switch(robHeadStallReason) {
-        case DispatchStall::DispatchlongExe:
-            return RenameStall::RenameLongExe;
-        case DispatchStall::DispatchNotReady:
-            return RenameStall::RenameNotReady;
-        case DispatchStall::DispatchL1Stall:
-            return RenameStall::RenameL1Stall;
-        case DispatchStall::DispatchL2Stall:
-            return RenameStall::RenameL2Stall;
-        case DispatchStall::DispatchL3Stall:
-            return RenameStall::RenameL3Stall;
-        case DispatchStall::DispatchTlbStall:
-            return RenameStall::RenameTlbStall;
-        case DispatchStall::NoDispatchStall: {
-            if (fromIEW->iewInfo[tid].isSqHeadMiss) {
-                return RenameStall::SqHeadMiss;
-            } else {
-                return RenameStall::RenameOther;
-            }
+    if (robHeadStallReason == StallReason::NoStall) {
+        if (calcFreeLQEntries(tid) <= 0) {
+            return fromIEW->iewInfo[tid].lqHeadStallReason;
+        } else if (calcFreeSQEntries(tid) <= 0) {
+            return fromIEW->iewInfo[tid].sqHeadStallReason;
+        } else {
+            return robHeadStallReason;
         }
-        default:
-            DPRINTF(Rename, "%d, return RenameOther\n", robHeadStallReason);
-            return RenameStall::RenameOther;
+    } else {
+        return robHeadStallReason;
     }
 }
 

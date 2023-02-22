@@ -466,7 +466,7 @@ class Fetch
     bool ftqEmpty() { return isDecoupledFrontend() && usedUpFetchTargets; }
 
     /** Set the reasons of all fetch stalls. */
-    void setAllFetchStalls(FetchStall stall);
+    void setAllFetchStalls(StallReason stall);
 
 
   private:
@@ -641,7 +641,7 @@ class Fetch
     bool usedUpFetchTargets;
 
     /** fetch stall reasons */
-    std::vector<FetchStall> stallReason;
+    std::vector<StallReason> stallReason;
 
 
   protected:

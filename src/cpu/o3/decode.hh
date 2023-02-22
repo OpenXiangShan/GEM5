@@ -326,11 +326,11 @@ class Decode
         statistics::Scalar mispredictedByNPC;
     } stats;
 
-    std::vector<DecodeStall> decodeStalls;
+    std::vector<StallReason> decodeStalls;
 
-    DecodeStall blockReason;
+    StallReason blockReason;
 
-    void setAllStalls(DecodeStall decodeStall);
+    void setAllStalls(StallReason decodeStall);
 };
 
 } // namespace o3

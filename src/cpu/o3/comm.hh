@@ -59,60 +59,32 @@ namespace o3
 {
 
 /** stall reasons in each stages*/
-enum FetchStall {
-    NoFetchStall,
+enum StallReason {
+    NoStall,
     IcacheStall,
-    FetchTlbStall,
-    BpStall, // stall caused by branch predictor
+    ITlbStall,
+    DTlbStall,
+    BpStall,
     IntStall,
     TrapStall,
-    FetchFragStall,
-    FromDecodeStall,
-    FetchOtherStall
-};
-
-enum DecodeStall {
-    NoDecodeStall,
-    DecodeSquash,
-    DecodeInstSupply,
-    InstSquashed,
+    FragStall,
+    SquashStall,
+    FetchBufferInvalid,
     InstMisPred,
-    FromRenameStall
-}; // stall caused by other stage?
-
-enum RenameStall {
-    NoRenameStall,
-    RenameSquash,
+    InstSquashed,
     SerializeStall,
-    NoFreeRegs,
-    RenameSquashed,
-    RenameLongExe,
-    RenameNotReady,
-    RenameL1Stall,
-    RenameL2Stall,
-    RenameL3Stall,
-    RenameTlbStall,
-    RenameFrag,
-    SqHeadMiss,
-    FromIEWStall,
-    RenameMapStall,
+    LongExecute,
+    InstNotReady,
+    LoadL1Stall,
+    LoadL2Stall,
+    LoadL3Stall,
+    StoreL1Stall,
+    StoreL2Stall,
+    StoreL3Stall,
     ResumeUnblock,
-    RenameOther
-};
-
-enum DispatchStall {
-    NoDispatchStall,
-    DispatchFrag,
-    DispatchSquashed,
     CommitSquash,
-    DispatchlongExe,
-    DispatchNotReady,
-    DispatchL1Stall,
-    DispatchL2Stall,
-    DispatchL3Stall,
-    DispatchTlbStall,
-    DispatchSqHeadMiss,
-    DispatchOther
+
+    Other
 };
 
 /** Struct that defines the information passed from fetch to decode. */
@@ -124,7 +96,7 @@ struct FetchStruct
     Fault fetchFault;
     InstSeqNum fetchFaultSN;
     bool clearFetchFault;
-    std::vector<FetchStall> fetchStallReason;
+    std::vector<StallReason> fetchStallReason;
 };
 
 /** Struct that defines the information passed from decode to rename. */
@@ -133,8 +105,8 @@ struct DecodeStruct
     int size;
 
     DynInstPtr insts[MaxWidth];
-    std::vector<FetchStall> fetchStallReason;
-    std::vector<DecodeStall> decodeStallReason;
+    std::vector<StallReason> fetchStallReason;
+    std::vector<StallReason> decodeStallReason;
 };
 
 /** Struct that defines the information passed from rename to IEW. */
@@ -143,9 +115,9 @@ struct RenameStruct
     int size;
 
     DynInstPtr insts[MaxWidth];
-    std::vector<FetchStall> fetchStallReason;
-    std::vector<DecodeStall> decodeStallReason;
-    std::vector<RenameStall> renameStallReason;
+    std::vector<StallReason> fetchStallReason;
+    std::vector<StallReason> decodeStallReason;
+    std::vector<StallReason> renameStallReason;
 };
 
 /** Struct that defines the information passed from IEW to commit. */
@@ -190,11 +162,16 @@ struct TimeStruct
         bool predIncorrect;
         bool branchMispredict;
         bool branchTaken;
+
+        StallReason blockReason;
     };
 
     DecodeComm decodeInfo[MaxThreads];
 
-    struct RenameComm {};
+    struct RenameComm
+    {
+        StallReason blockReason;
+    };
 
     RenameComm renameInfo[MaxThreads];
 
@@ -214,8 +191,10 @@ struct TimeStruct
         bool usedIQ;
         bool usedLSQ;
 
-        DispatchStall robHeadStallReason;
-        bool isSqHeadMiss;
+        StallReason robHeadStallReason;
+        StallReason blockReason;
+        StallReason lqHeadStallReason;
+        StallReason sqHeadStallReason;
     };
 
     IewComm iewInfo[MaxThreads];

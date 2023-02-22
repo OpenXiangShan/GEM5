@@ -685,10 +685,16 @@ LSQ::sqFull(ThreadID tid)
         return thread[tid].sqFull();
 }
 
-bool
-LSQ::isSqHeadCompleted(ThreadID tid)
+const DynInstPtr&
+LSQ::getLSQHeadInst(ThreadID tid, bool isLoad)
 {
-    return thread[tid].storeQueue.front().completed() || thread[tid].storeQueue.empty();
+    if (isLoad) {
+        assert(!thread[tid].loadQueue.empty());
+        return thread[tid].loadQueue.front().instruction();
+    } else {
+        assert(!thread[tid].storeQueue.empty());
+        return thread[tid].storeQueue.front().instruction();
+    }
 }
 
 bool

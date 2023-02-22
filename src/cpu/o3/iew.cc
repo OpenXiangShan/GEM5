@@ -119,70 +119,8 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
 
     skidBufferMax = (renameToIEWDelay + 1) * params.renameWidth * 2;
 
-    for (int i = 0;i < 16;i++) {
-        std::vector<unsigned long> temp;
-        temp.resize(9, FetchStall::NoFetchStall);
-        fetchStalls.push_back(temp);
-    }
+    dispatchStalls.resize(dispatchWidth, StallReason::NoStall);
 
-    for (int i = 0;i < 6;i++) {
-        std::vector<unsigned long> temp;
-        temp.resize(6, DecodeStall::NoDecodeStall);
-        decodeStalls.push_back(temp);
-    }
-
-    for (int i = 0;i < 6;i++) {
-        std::vector<unsigned long> temp;
-        temp.resize(17, RenameStall::NoRenameStall);
-        renameStalls.push_back(temp);
-    }
-
-    dispatchStalls.resize(dispatchWidth, DispatchStall::NoDispatchStall);
-    for (int i = 0;i < dispatchWidth;i++) {
-        std::vector<unsigned long> temp;
-        temp.resize(12, DispatchStall::NoDispatchStall);
-        dispatchStat.push_back(temp);
-    }
-
-    registerExitCallback([this]() {
-        {
-        auto out_handle = simout.create("fetchStall.txt", false, true);
-        for (auto& it : fetchStalls) {
-            for (int i = 0;i < 9;i++) {
-                *out_handle->stream() << it.at(i) << std::endl;
-            }
-            *out_handle->stream() << std::endl;
-        }
-        simout.close(out_handle);
-
-        auto out_handle1 = simout.create("dispatchStall.txt", false, true);
-        for (int i = 0;i < dispatchWidth;i++) {
-            for (int j = 0;j < 12;j++) {
-                *out_handle1->stream() << dispatchStat.at(i).at(j) << std::endl;
-            }
-            *out_handle1->stream() << std::endl;
-        }
-        simout.close(out_handle1);
-
-        auto out_handle3 = simout.create("decodeStall.txt", false, true);
-        for (auto& it : decodeStalls) {
-            for (int i = 0;i < 6;i++) {
-                *out_handle3->stream() << it.at(i) << std::endl;
-            }
-            *out_handle3->stream() << std::endl;
-        }
-        simout.close(out_handle3);
-
-        auto out_handle4 = simout.create("renameStall.txt", false, true);
-        for (auto& it : renameStalls) {
-            for (int i = 0;i < 17;i++) {
-                *out_handle4->stream() << it.at(i) << std::endl;
-            }
-            *out_handle4->stream() << std::endl;
-        }
-        simout.close(out_handle4);
-        }
-    });
 }
 
 std::string
@@ -262,6 +200,14 @@ IEW::IEWStats::IEWStats(CPU *cpu)
              "Average fanout of values written-back"),
     ADD_STAT(stallEvents, statistics::units::Count::get(),
              "Number of events the IEW has stalled")
+    ADD_STAT(fetchStallReason, statistics::units::Count::get(),
+             "Distribution of number of fetch stall reasons each tick (Total)"),
+    ADD_STAT(decodeStallReason, statistics::units::Count::get(),
+             "Distribution of number of decode stall reasons each tick (Total)"),
+    ADD_STAT(renameStallReason, statistics::units::Count::get(),
+             "Distribution of number of rename stall reasons each tick (Total)"),
+    ADD_STAT(dispatchStallReason, statistics::units::Count::get(),
+             "Distribution of number of dispatch stall reasons each tick (Total)")
 {
     instsToCommit
         .init(cpu->numThreads)
@@ -303,6 +249,31 @@ IEW::IEWStats::IEWStats(CPU *cpu)
     for (int i = 0; i < StallEventCount; i++) {
         stallEvents.subname(i, stall_event_str[static_cast<StallEvent>(i)]);
     }
+
+    fetchStallReason
+            .init(/* base value */ 0,
+              /* last value */ 23,
+              /* bucket size */ 1)
+            .flags(statistics::pdf);
+
+    decodeStallReason
+            .init(/* base value */ 0,
+              /* last value */ 23,
+              /* bucket size */ 1)
+            .flags(statistics::pdf);
+
+    renameStallReason
+            .init(/* base value */ 0,
+              /* last value */ 23,
+              /* bucket size */ 1)
+            .flags(statistics::pdf);
+
+    dispatchStallReason
+            .init(/* base value */ 0,
+              /* last value */ 23,
+              /* bucket size */ 1)
+            .flags(statistics::pdf);
+
 }
 
 IEW::IEWStats::ExecutedInstStats::ExecutedInstStats(CPU *cpu)
@@ -806,7 +777,7 @@ IEW::checkStall(ThreadID tid)
     if (fromCommit->commitInfo[tid].robSquashing) {
         DPRINTF(IEW,"[tid:%i] Stall from Commit stage detected.\n",tid);
         ret_val = true;
-        blockReason = DispatchStall::CommitSquash;
+        blockReason = StallReason::CommitSquash;
     } else if (instQueue.isFull(tid)) {
         DPRINTF(IEW,"[tid:%i] Stall: IQ  is full.\n",tid);
         iewStats.stallEvents[IQFull]++;
@@ -839,7 +810,7 @@ IEW::checkSignalsAndUpdate(ThreadID tid)
         dispatchStatus[tid] = Squashing;
         fetchRedirect[tid] = false;
         iewStats.stallEvents[ROBWalk]++;
-        setAllStalls(DispatchStall::CommitSquash);
+        setAllStalls(StallReason::CommitSquash);
         return;
     }
 
@@ -850,7 +821,7 @@ IEW::checkSignalsAndUpdate(ThreadID tid)
         emptyRenameInsts(tid);
         wroteToTimeBuffer = true;
         iewStats.stallEvents[ROBWalk]++;
-        setAllStalls(DispatchStall::CommitSquash);
+        setAllStalls(StallReason::CommitSquash);
     }
 
     if (checkStall(tid)) {
@@ -961,7 +932,7 @@ IEW::dispatch(ThreadID tid)
 
     } else if (dispatchStatus[tid] == Squashing) {
         ++iewStats.squashCycles;
-        setAllStalls(DispatchStall::CommitSquash);
+        setAllStalls(StallReason::CommitSquash);
     }
 
     // Dispatch should try to dispatch as many instructions as its bandwidth
@@ -1022,8 +993,8 @@ IEW::dispatchInsts(ThreadID tid)
         }
     }
 
-    std::queue<DispatchStall> dispatch_stalls;
-    DispatchStall breakDispatch = DispatchStall::NoDispatchStall;
+    std::queue<StallReason> dispatch_stalls;
+    StallReason breakDispatch = StallReason::NoStall;
 
     // Loop through the instructions, putting them in the instruction
     // queue.
@@ -1066,7 +1037,7 @@ IEW::dispatchInsts(ThreadID tid)
                 toRename->iewInfo[tid].dispatchedToSQ++;
             }
 
-            dispatch_stalls.push(DispatchStall::DispatchSquashed);
+            dispatch_stalls.push(StallReason::InstSquashed);
 
             toRename->iewInfo[tid].dispatched++;
 
@@ -1110,8 +1081,11 @@ IEW::dispatchInsts(ThreadID tid)
             iewStats.stallEvents[LSQFull]++;
 
             if ((inst->isStore() || inst->isAtomic()) && 
-                 ldstQueue.sqFull(tid) && !ldstQueue.isSqHeadCompleted(tid)) {
-                 blockReason = DispatchStall::DispatchSqHeadMiss;
+                 ldstQueue.sqFull(tid) && rob->isEmpty(tid)) {
+                 blockReason = checkLSQStall(tid, false);
+            } else if ((inst->isLoad() && ldstQueue.lqFull(tid)) && 
+                        rob->isEmpty(tid)) {
+                 blockReason = checkLSQStall(tid, true);
             } else {
                 blockReason = checkDispatchStall(tid);
             }
@@ -1253,28 +1227,37 @@ IEW::dispatchInsts(ThreadID tid)
         ppDispatch->notify(inst);
     }
 
-    DispatchStall lastStall = dispatch_stalls.empty() ? DispatchStall::NoDispatchStall : dispatch_stalls.back();
     unsigned instInSufficient = dispatch_width - insts_to_add;
+    StallReason stall = StallReason::NoStall;
+    for (auto iter : fromRename->renameStallReason) {
+        if (iter != StallReason::NoStall) {
+            stall = iter;
+            break;
+        }
+    }
+
     for (int i = 0;i < dispatchWidth;i++) {
         if (i < dis_num_inst) {
-            dispatchStalls.at(i) = DispatchStall::NoDispatchStall;
+            dispatchStalls.at(i) = StallReason::NoStall;
         } else {
             if (!dispatch_stalls.empty()) {
                 dispatchStalls.at(i) = dispatch_stalls.front();
                 dispatch_stalls.pop();
-            } else if (breakDispatch != DispatchStall::NoDispatchStall) {
-                dispatchStalls.at(i) = lastStall;
+            } else if (breakDispatch != StallReason::NoStall) {
+                dispatchStalls.at(i) = breakDispatch;
             } else if (instInSufficient > 0 && insts_to_add > 0) {
-                dispatchStalls.at(i) = DispatchStall::DispatchFrag;
+                dispatchStalls.at(i) = StallReason::FragStall;
                 instInSufficient--;
+            } else if (insts_to_add == 0 && stall != StallReason::NoStall) {
+                dispatchStalls.at(i) = stall;
             } else {
-                dispatchStalls.at(i) = DispatchStall::DispatchOther;
+                dispatchStalls.at(i) = StallReason::Other;
             }
         }
     }
 
     for (int i = 0;i < dispatchStalls.size();i++) {
-        DPRINTF(IEW,"[tid:%i] IQStallls[%d]=%d\n", tid, i, dispatchStalls.at(i));
+        DPRINTF(IEW,"[tid:%i] dispatchStalls[%d]=%d\n", tid, i, dispatchStalls.at(i));
     }
 
     if (!insts_to_dispatch.empty()) {
@@ -1636,15 +1619,15 @@ void
 IEW::tick()
 {
     for (int i = 0;i < fromRename->fetchStallReason.size();i++) {
-        fetchStalls.at(i).at(fromRename->fetchStallReason[i])++;
+        iewStats.fetchStallReason.sample(fromRename->fetchStallReason[i]);
     }
 
     for (int i = 0;i < fromRename->decodeStallReason.size();i++) {
-        decodeStalls.at(i).at(fromRename->decodeStallReason[i])++;
+        iewStats.decodeStallReason.sample(fromRename->decodeStallReason[i]);
     }
 
     for (int i = 0;i < fromRename->renameStallReason.size();i++) {
-        renameStalls.at(i).at(fromRename->renameStallReason[i])++;
+        iewStats.renameStallReason.sample(fromRename->renameStallReason[i]);
     }
 
     wbNumInst = 0;
@@ -1673,10 +1656,12 @@ IEW::tick()
         dispatch(tid);
 
         toRename->iewInfo[tid].robHeadStallReason = checkDispatchStall(tid);
-        toRename->iewInfo[tid].isSqHeadMiss = !ldstQueue.isSqHeadCompleted(tid);
+        toRename->iewInfo[tid].lqHeadStallReason = ldstQueue.lqEmpty() ? StallReason::NoStall : checkLSQStall(tid, true);
+        toRename->iewInfo[tid].sqHeadStallReason = ldstQueue.sqEmpty() ? StallReason::NoStall : checkLSQStall(tid, false);
+        toRename->iewInfo[tid].blockReason = blockReason;
     }
-    for (int i = 0;i < dispatchWidth;i++) {
-        dispatchStat.at(i).at(dispatchStalls.at(i))++;
+    for (int i = 0;i < dispatchStalls.size();i++) {
+        iewStats.dispatchStallReason.sample(dispatchStalls[i]);
     }
     instQueue.delayWakeDependents();
 
@@ -1844,50 +1829,77 @@ IEW::checkMisprediction(const DynInstPtr& inst)
 }
 
 void
-IEW::setAllStalls(DispatchStall dispatchStall)
+IEW::setAllStalls(StallReason dispatchStall)
 {
     for (int i = 0;i < dispatchWidth;i++) {
         dispatchStalls.at(i) = dispatchStall;
     }
 }
 
-DispatchStall
+StallReason
+IEW::checkLoadStoreInst(DynInstPtr inst)
+{
+    assert(inst->isLoad() || inst->isStore() || inst->isAtomic());
+
+    uint64_t latency = cpu->ticksToCycles(curTick() - inst->translatedTick);
+    if (inst->firstIssue != -1 && inst->translatedTick == -1) {
+        return StallReason::DTlbStall;
+    } else if (inst->firstIssue != -1 && inst->translatedTick != -1 &&
+                latency <= 20) {
+        return inst->isLoad() ? StallReason::LoadL1Stall : StallReason::StoreL1Stall;
+    } else if (inst->firstIssue != -1 && inst->translatedTick != -1 &&
+                latency > 20 && latency <= 27) {
+        return inst->isLoad() ? StallReason::LoadL2Stall : StallReason::StoreL2Stall;
+    } else if (inst->firstIssue != -1 && inst->translatedTick != -1 &&
+                   latency > 27) {
+        return inst->isLoad() ? StallReason::LoadL3Stall : StallReason::StoreL3Stall;
+    } else {
+        return StallReason::Other;
+    }
+}
+
+StallReason
 IEW::checkDispatchStall(ThreadID tid) {
     DynInstPtr head_inst = rob->readHeadInst(tid);
     if (head_inst == rob->dummyInst) {
-        return DispatchStall::NoDispatchStall;
+        return StallReason::NoStall;
     }
 
     assert(head_inst);
 
-    if (head_inst->readyTick == -1)
-        return DispatchStall::DispatchNotReady;
-
-    if (head_inst->isLoad() || head_inst->isStore() || head_inst->isAtomic()) {
-        uint64_t latency = cpu->ticksToCycles(curTick() - head_inst->translatedTick);
-        if (head_inst->firstIssue != -1 && head_inst->translatedTick == -1) {
-            return DispatchStall::DispatchTlbStall;
-        } else if (head_inst->firstIssue != -1 && head_inst->translatedTick != -1 &&
-                   latency <= 20) {
-            return DispatchStall::DispatchL1Stall;
-        } else if (head_inst->firstIssue != -1 && head_inst->translatedTick != -1 &&
-                   latency > 20 && latency <= 27) {
-            return DispatchStall::DispatchL2Stall;
-        } else if (head_inst->firstIssue != -1 && head_inst->translatedTick != -1 &&
-                   latency > 27) {
-            return DispatchStall::DispatchL3Stall;
+    if (head_inst->readyTick == -1) {
+        DPRINTF(Counters, "IEW: [tid:%i] [sn:%llu] "
+                "Dispatch: Instruction not ready. nonSpeculative:%d\n",
+                tid, head_inst->seqNum, head_inst->isNonSpeculative());
+        if (head_inst->isNonSpeculative()) {
+            return StallReason::SerializeStall;
+        } else if (head_inst->isLoad() && ldstQueue.lqFull(tid)) {
+            return checkLSQStall(tid, true);
+        } else if ((head_inst->isStore() || head_inst->isAtomic()) && ldstQueue.sqFull(tid)) {
+            return checkLSQStall(tid, false);
         } else {
-            return DispatchStall::DispatchOther;
-        }
-    } else {
-        if (head_inst->firstIssue != -1) {
-            return DispatchStall::DispatchlongExe;
-        } else {
-            return DispatchStall::DispatchOther;
+            return StallReason::InstNotReady;
         }
     }
 
-    return DispatchStall::DispatchOther;
+    if (head_inst->isLoad() || head_inst->isStore() || head_inst->isAtomic()) {
+        return checkLoadStoreInst(head_inst);
+    } else {
+        if (head_inst->firstIssue != -1) {
+            return StallReason::LongExecute;
+        } else {
+            return StallReason::Other;
+        }
+    }
+
+    return StallReason::Other;
+}
+
+StallReason
+IEW::checkLSQStall(ThreadID tid, bool isLoad)
+{
+    DynInstPtr head_inst = ldstQueue.getLSQHeadInst(tid, isLoad);
+    return checkLoadStoreInst(head_inst);
 }
 
 void

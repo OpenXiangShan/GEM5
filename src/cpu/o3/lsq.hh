@@ -805,7 +805,7 @@ class LSQ
     bool sqFull(ThreadID tid);
 
     /** Returns whether the head instruction of sq has completed*/
-    bool isSqHeadCompleted(ThreadID tid);
+    const DynInstPtr& getLSQHeadInst(ThreadID tid, bool isLoad);
 
     /**
      * Returns if the LSQ is stalled due to a memory operation that must be
