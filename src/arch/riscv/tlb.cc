@@ -481,10 +481,6 @@ TLB::insert(Addr vpn, const TlbEntry &entry)
     trie.insert(key, TlbEntryTrie::MaxBits - entry.logBytes, newEntry);
     DPRINTF(TLBVerbosel2, "trie insert key %#x logbytes %#x paddr %#x\n", key,
             entry.logBytes, newEntry->paddr);
-    if (lookup(vpn, entry.asid, BaseMMU::Read, false)) {
-        DPRINTF(TLBVerbosel2,"finish lookup\n");
-    } else
-        assert(0);
     return newEntry;
 }
 
@@ -525,6 +521,7 @@ TLB::L2TLB_insert_in(Addr vpn, const TlbEntry &entry, int choose,
     }
     DPRINTF(TLB, "not hit in l2 tlb\n");
     if ((choose == 2 || choose == 3) && (sign == 0)) {
+        DPRINTF(TLB, "choose %d sign %d\n", choose, sign);
         l2TLB_evictLRU(choose, vpn);
     } else {
         if ((*List).empty())
@@ -603,6 +600,8 @@ TLB::demapPage(Addr vpn, uint64_t asid)
         DPRINTF(TLB, "flush(vpn=%#x, asid=%#x)\n", vpn, asid);
         DPRINTF(TLB, "l2tlb flush(vpn=%#x, asid=%#x)\n", vpn, asid);
         if (vpn != 0 && asid != 0) {
+            assert(0);
+
             TlbEntry *newEntry = lookup(vpn, asid, BaseMMU::Read, true);
             TlbEntry *l2l1_newEntry =
                 lookup_l2tlb(vpn, asid, BaseMMU::Read, true, 1);
@@ -999,6 +998,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
             DPRINTF(TLB, "hit in l2TLB l3\n");
             fault = L2tlb_check(e3->pte, 0, status, pmode, vaddr, mode, req,
                                 tc, translation);
+            int sign = 0;
             //e = e3;
             if (hit_in_sp) {
                 e = e3;
@@ -1013,60 +1013,46 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                     newEntryL1.pte = e->pte;
                     newEntryL1.index = e->index;
                     if (!newEntryL1.pte.d && mode != BaseMMU::Write) {
-                        newEntryL1.pte.w = 0;
-                        // assert(0);
-                        L2TLB_insert(newEntryL1.vaddr, newEntryL1,
-                                     newEntryL1.level, 3, 1);
-                    }
+                        sign = 1;
+                    } else {
+                        paddr = e->paddr << PageShift |
+                                (vaddr & mask(e->logBytes));
+                        // insert(e->vaddr, *e);
 
-                    // insert(newEntryL1.vaddr,newEntryL1);
-
-                    paddr =
-                        e->paddr << PageShift | (vaddr & mask(e->logBytes));
-                    // insert(e->vaddr, *e);
-
-                    DPRINTF(TLBVerbosel2,
+                        DPRINTF(
+                            TLBVerbosel2,
                             "******************vaddr %#x,paddr %#x,pc %#x\n",
                             vaddr, paddr, req->getPC());
-                    walker->doL2TLBHitSchedule(req, tc, translation, mode,
-                                               paddr,newEntryL1);
-                    DPRINTF(TLBVerbosel2,"finish Schedule\n");
+                        walker->doL2TLBHitSchedule(req, tc, translation, mode,
+                                                   paddr, newEntryL1);
+                        DPRINTF(TLBVerbosel2, "finish Schedule\n");
+                        delayed = true;
+                    }
+
+                    if (sign == 0)
+                        return fault;
+                }
+            } else {
+                assert(0);
+            }
+
+            if (sign == 1) {
+                fault = walker->start(0, tc, translation, req, mode, false, 2,
+                                      false, 0);
+                DPRINTF(TLB, "finish start\n");
+                if (translation != nullptr || fault != NoFault) {
+                    // This gets ignored in atomic mode.
                     delayed = true;
-                    // insert(newEntryL1.vaddr,newEntryL1);
-                    /*TlbEntry *newEntry;
-                    if (freeList.empty())
-                     evictLRU();
-
-                    newEntry = freeList.front();
-                    freeList.pop_front();
-
-                    Addr key = buildKey(newEntryL1.vaddr, newEntryL1.asid);
-                    *newEntry = newEntryL1;
-                    newEntry->lruSeq = nextSeq();
-                    newEntry->vaddr = vaddr;
-                    newEntry->trieHandle =
-                    trie.insert(key, TlbEntryTrie::MaxBits -
-                    newEntryL1.logBytes, e);
-*/
                     return fault;
                 }
-
-            } else {
-                /*     fault = walker->start(e3->pte.ppn, tc, translation, req,
-                 mode, false, level, true); if (translation != nullptr || fault
-                 != NoFault) {
-                     // This gets ignored in atomic mode.
-                     delayed = true;
-                     return fault;
-                 }
-                 e = lookup(vaddr, satp.asid, mode, false);
-                 assert(e != nullptr);*/
-                assert(0);
+                e = lookup(vaddr, satp.asid, mode, false);
+                assert(e != nullptr);
             }
         } else if (e5) {  // hit in sp l2
             DPRINTF(TLB, "hit in l2 tlb l5\n");
             fault = L2tlb_check(e5->pte, 1, status, pmode, vaddr, mode, req,
                                 tc, translation);
+            int sign_e5 = 0;
             if (hit_in_sp){
                 e = e5;
                 if (fault == NoFault) {
@@ -1079,27 +1065,37 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                     newEntryL1.pte = e->pte;
                     newEntryL1.index = e->index;
                     if (!newEntryL1.pte.d && mode != BaseMMU::Write) {
-                        newEntryL1.pte.w = 0;
-                        assert(0);
-                        L2TLB_insert(newEntryL1.vaddr, newEntryL1,
-                                     newEntryL1.level, 5, 1);
+                        sign_e5 = 1;
+                    } else {
+                        paddr = e->paddr << PageShift |
+                                (vaddr & mask(e->logBytes));
+                        // insert(e->vaddr, *e);
+                        walker->doL2TLBHitSchedule(req, tc, translation, mode,
+                                                   paddr, newEntryL1);
+                        delayed = true;
+                        return fault;
                     }
-
-                    paddr =
-                        e->paddr << PageShift | (vaddr & mask(e->logBytes));
-                    //insert(e->vaddr, *e);
-                    walker->doL2TLBHitSchedule(req, tc, translation, mode,
-                                               paddr,newEntryL1);
-                    delayed = true;
-                    return fault;
                 }
 
             }
             else {
                 fault = walker->start(e5->pte.ppn, tc, translation, req, mode,
-                                      false, 0, true);
+                                      false, 0, true,e5->asid);
                 if (translation != nullptr || fault != NoFault) {
                     // This gets ignored in atomic mode.
+                    delayed = true;
+                    return fault;
+                }
+                e = lookup(vaddr, satp.asid, mode, false);
+                assert(e != nullptr);
+            }
+
+            if (sign_e5 == 1) {
+                fault = walker->start(0, tc, translation, req, mode, false, 2,
+                                      false, 0);
+                DPRINTF(TLB, "finish start\n");
+                if (translation != nullptr || fault != NoFault) {
+                // This gets ignored in atomic mode.
                     delayed = true;
                     return fault;
                 }
@@ -1111,6 +1107,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
             DPRINTF(TLB, "hit in l2 tlb l4\n");
             fault = L2tlb_check(e4->pte, 2, status, pmode, vaddr, mode, req,
                                 tc, translation);
+            int sign_e4 = 0;
             if (hit_in_sp){
                 e =  e4;
                 if (fault == NoFault) {
@@ -1123,82 +1120,48 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                     newEntryL1.pte = e->pte;
                     newEntryL1.index = e->index;
                     if (!newEntryL1.pte.d && mode != BaseMMU::Write) {
-                        newEntryL1.pte.w = 0;
-                        assert(0);
-                        L2TLB_insert(newEntryL1.vaddr, newEntryL1,
-                                     newEntryL1.level, 4, 1);
+                        sign_e4 = 1;
+                    } else {
+                        paddr = e->paddr << PageShift |
+                                (vaddr & mask(e->logBytes));
+                        // insert(e->vaddr, *e);
+                        walker->doL2TLBHitSchedule(req, tc, translation, mode,
+                                                   paddr, newEntryL1);
+                        delayed = true;
+                        return fault;
                     }
-                    paddr =
-                        e->paddr << PageShift | (vaddr & mask(e->logBytes));
-                    //insert(e->vaddr, *e);
-                    walker->doL2TLBHitSchedule(req, tc, translation, mode,
-                                               paddr,newEntryL1);
-                    delayed = true;
-                    return fault;
                 }
 
             }
             else{
                 fault = walker->start(e4->pte.ppn, tc, translation, req, mode,
-                                      false, 1, true);
-                if (translation != nullptr || fault != NoFault){
+                                      false, 1, true, e4->asid);
+                if (translation != nullptr || fault != NoFault) {
                     delayed = true;
                     return fault;
                 }
-                e = lookup(vaddr,satp.asid,mode,false) ;
+                e = lookup(vaddr, satp.asid, mode, false);
                 assert(e != nullptr);
             }
-            //e = e4;
+            if (sign_e4 == 1) {
+                fault = walker->start(0, tc, translation, req, mode, false, 2,
+                                      false, 0);
+                DPRINTF(TLB, "finish start\n");
+                if (translation != nullptr || fault != NoFault) {
+                    // This gets ignored in atomic mode.
+                    delayed = true;
+                    return fault;
+                }
+                e = lookup(vaddr, satp.asid, mode, false);
+                assert(e != nullptr);
+            }
+            // e = e4;
         } else if (e2) {
-            /* DPRINTF(TLB, "hit in l2 tlb l2\n");
-            // assert(0);
-             fault = L2tlb_check(e2->pte, 1, status, pmode, vaddr, mode, req,
-                                 tc, translation);
-             if (hit_in_sp){
-                 e = e2;
-
-                 if (fault == NoFault) {
-                     assert(0);
-                     TlbEntry newEntryL1;
-                     newEntryL1.logBytes = e->logBytes;
-                     newEntryL1.asid = e->asid;
-                     newEntryL1.vaddr = e->vaddr;
-                     newEntryL1.level = e->level;
-                     newEntryL1.paddr = e->paddr;
-                     newEntryL1.pte = e->pte;
-                     newEntryL1.index = e->index;
-                     if (!newEntryL1.pte.d && mode != BaseMMU::Write){
-                         newEntryL1.pte.w = 0;
-                         assert(0);
-                         L2TLB_insert
-                         (newEntryL1.vaddr,newEntryL1,newEntryL1.level,2,1);
-                     }
-                     paddr =
-                         e->paddr << PageShift | (vaddr & mask(e->logBytes));
-                     //insert(e->vaddr, *e);
-                     walker->doL2TLBHitSchedule(req, tc, translation, mode,
-                                                paddr,newEntryL1);
-                     delayed = true;
-                     return fault;
-                 }
-
-             }
-             else{
-
-                 if (translation != nullptr || fault != NoFault) {
-                     // This gets ignored in atomic mode.
-                     delayed = true;
-                     assert(0);
-                     return fault;
-                 }
-                 e = lookup(vaddr, satp.asid, mode, false);
-                 assert(e != nullptr);
-             }*/
             fault = L2tlb_check(e2->pte, 1, status, pmode, vaddr, mode, req,
                                 tc, translation);
+            int sign_e2 = 0;
             if (hit_in_sp){
                 e = e2;
-
                 if (fault == NoFault) {
                     assert(0);
                     TlbEntry newEntryL1;
@@ -1210,33 +1173,41 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                     newEntryL1.pte = e->pte;
                     newEntryL1.index = e->index;
                     if (!newEntryL1.pte.d && mode != BaseMMU::Write) {
-                        newEntryL1.pte.w = 0;
-                        assert(0);
-                        L2TLB_insert(newEntryL1.vaddr, newEntryL1,
-                                     newEntryL1.level, 2, 1);
+                        sign_e2 = 1;
+                    } else {
+                        paddr = e->paddr << PageShift |
+                                (vaddr & mask(e->logBytes));
+                        // insert(e->vaddr, *e);
+                        walker->doL2TLBHitSchedule(req, tc, translation, mode,
+                                                   paddr, newEntryL1);
+                        delayed = true;
+                        return fault;
                     }
-                    paddr =
-                        e->paddr << PageShift | (vaddr & mask(e->logBytes));
-                    // insert(e->vaddr, *e);
-                    walker->doL2TLBHitSchedule(req, tc, translation, mode,
-                                               paddr, newEntryL1);
+                }
+            } else {
+                fault = walker->start(e2->pte.ppn, tc, translation, req, mode,
+                                      false, 0, true, e2->asid);
+                DPRINTF(TLB, "finish start\n");
+                if (translation != nullptr || fault != NoFault) {
+                    // This gets ignored in atomic mode.
                     delayed = true;
                     return fault;
                 }
+                e = lookup(vaddr, satp.asid, mode, false);
+                assert(e != nullptr);
             }
-            else{
-                if (translation  == nullptr) assert(0);
-            //fault = walker->start(0,tc, translation, req, mode, false);
-            fault = walker->start(e2->pte.ppn, tc, translation, req, mode,
-                                     false, 0, true);
-            DPRINTF(TLB,"finish start\n");
-            if (translation != nullptr || fault != NoFault) {
-                // This gets ignored in atomic mode.
-                delayed = true;
-                return fault;
-            }
-            e = lookup(vaddr, satp.asid, mode, false);
-            assert(e != nullptr);
+
+            if (sign_e2 == 1) {
+                fault = walker->start(0, tc, translation, req, mode, false, 2,
+                                      false, 0);
+                DPRINTF(TLB, "finish start\n");
+                if (translation != nullptr || fault != NoFault) {
+                    // This gets ignored in atomic mode.
+                    delayed = true;
+                    return fault;
+                }
+                e = lookup(vaddr, satp.asid, mode, false);
+                assert(e != nullptr);
             }
 
 
@@ -1244,6 +1215,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
             DPRINTF(TLB, "hit in l2 tlb l1\n");
             fault = L2tlb_check(e1->pte, 2, status, pmode, vaddr, mode, req,
                                 tc, translation);
+            int sign_e1 = 0;
             if (hit_in_sp){
                 e = e1;
                 if (fault == NoFault) {
@@ -1256,26 +1228,35 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                     newEntryL1.pte = e->pte;
                     newEntryL1.index = e->index;
                     if (!newEntryL1.pte.d && mode != BaseMMU::Write) {
-                        newEntryL1.pte.w = 0;
-                        assert(0);
-                        L2TLB_insert(
-                            newEntryL1.vaddr,newEntryL1,newEntryL1.level,1,1);
+                        sign_e1 = 1;
+                    } else {
+                        paddr = e->paddr << PageShift |
+                                (vaddr & mask(e->logBytes));
+                        // insert(e->vaddr, *e);
+                        walker->doL2TLBHitSchedule(req, tc, translation, mode,
+                                                   paddr, newEntryL1);
+                        delayed = true;
+                        return fault;
                     }
-                    paddr =
-                        e->paddr << PageShift | (vaddr & mask(e->logBytes));
-                    //insert(e->vaddr, *e);
-                    walker->doL2TLBHitSchedule(req, tc, translation, mode,
-                                              paddr,newEntryL1);
+                }
+
+            } else {
+                fault = walker->start(e1->pte.ppn, tc, translation, req, mode,
+                                      false, 1, true, e1->asid);
+                if (translation != nullptr || fault != NoFault) {
+                    // This gets ignored in atomic mode.
                     delayed = true;
                     return fault;
                 }
-
+                e = lookup(vaddr, satp.asid, mode, false);
+                assert(e != nullptr);
             }
-            else{
-                fault = walker->start(e1->pte.ppn, tc, translation, req, mode,
-                                      false, 1, true);
+            if (sign_e1 == 1) {
+                fault = walker->start(0, tc, translation, req, mode, false, 2,
+                                      false, 0);
+                DPRINTF(TLB, "finish start\n");
                 if (translation != nullptr || fault != NoFault) {
-                    // This gets ignored in atomic mode.
+                // This gets ignored in atomic mode.
                     delayed = true;
                     return fault;
                 }
@@ -1285,7 +1266,8 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
 
         } else {
             DPRINTF(TLB, "miss in l1 tlb + l2 tlb\n");
-            fault = walker->start(0,tc, translation, req, mode, false);
+            fault = walker->start(0, tc, translation, req, mode, false, 2,
+                                  false, 0);
             DPRINTF(TLB,"finish start\n");
             if (translation != nullptr || fault != NoFault) {
                 // This gets ignored in atomic mode.

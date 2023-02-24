@@ -73,12 +73,14 @@ namespace RiscvISA {
 
 std::pair<bool, Fault>
 Walker::tryCoalesce(ThreadContext *_tc, BaseMMU::Translation *translation,
-                    const RequestPtr &req, BaseMMU::Mode mode)
+                    const RequestPtr &req, BaseMMU::Mode mode, bool from_l2tlb,
+                    Addr asid)
 {
     assert(currStates.size());
     for (auto it: currStates) {
         auto &ws = *it;
-        auto [coalesced, fault] = ws.tryCoalesce(_tc, translation, req, mode);
+        auto [coalesced, fault] =
+            ws.tryCoalesce(_tc, translation, req, mode, from_l2tlb, asid);
         if (coalesced) {
             return std::make_pair(true, fault);
         }
@@ -91,7 +93,7 @@ Walker::tryCoalesce(ThreadContext *_tc, BaseMMU::Translation *translation,
 Fault
 Walker::start(Addr ppn, ThreadContext *_tc, BaseMMU::Translation *_translation,
               const RequestPtr &_req, BaseMMU::Mode _mode, bool pre,
-              int f_level, bool from_l2tlb)
+              int f_level, bool from_l2tlb, Addr asid)
 {
     // TODO: in timing mode, instead of blocking when there are other
     // outstanding requests, see if this request can be coalesced with
@@ -101,9 +103,10 @@ Walker::start(Addr ppn, ThreadContext *_tc, BaseMMU::Translation *_translation,
     DPRINTF(PageTableWalker, "pre %d f_level %d from_l2tlb %d\n", pre, f_level,
             from_l2tlb);
     pre_ptw = pre;
-    if (currStates.size() &&(!from_l2tlb)) {
-    //if (currStates.size() ) {
-        auto [coalesced, fault] = tryCoalesce(_tc, _translation, _req, _mode);
+    //if (currStates.size() &&(!from_l2tlb)) {
+    if (currStates.size()) {
+        auto [coalesced, fault] =
+            tryCoalesce(_tc, _translation, _req, _mode, from_l2tlb, asid);
         if (!coalesced) {
             // create state
             WalkerState * newState = new WalkerState(this, _translation, _req);
@@ -116,6 +119,10 @@ Walker::start(Addr ppn, ThreadContext *_tc, BaseMMU::Translation *_translation,
                     currStates.size(), _req->getPC(), _req->getVaddr());
             currStates.push_back(newState);
             Fault fault = newState->startWalk(ppn,f_level,from_l2tlb);
+            //Fault fault = newState->startWalk(0,2,false);
+            if (!newState->isTiming()) {
+                assert(0);
+            }
             return NoFault;
         } else {
             DPRINTF(PageTableWalker,
@@ -272,13 +279,24 @@ Walker::WalkerState::initState(ThreadContext * _tc,
 std::pair<bool, Fault>
 Walker::WalkerState::tryCoalesce(ThreadContext *_tc,
                                  BaseMMU::Translation *translation,
-                                 const RequestPtr &req, BaseMMU::Mode _mode)
+                                 const RequestPtr &req, BaseMMU::Mode _mode,
+                                 bool from_l2tlb, Addr asid)
 {
     SATP _satp = _tc->readMiscReg(MISCREG_SATP);
     assert(_satp.mode == AddrXlateMode::SV39);
-    bool priv_match = mode == _mode && satp == _satp &&
-                      pmode == walker->tlb->getMemPriv(_tc, _mode) &&
-                      status == _tc->readMiscReg(MISCREG_STATUS);
+    bool priv_match;
+    if (from_l2tlb) {
+        priv_match = mode == _mode && satp == _satp &&
+                     pmode == walker->tlb->getMemPriv(_tc, _mode) &&
+                     status == _tc->readMiscReg(MISCREG_STATUS) &&
+                     satp.asid == asid;
+
+    } else {
+        priv_match = mode == _mode && satp == _satp &&
+                     pmode == walker->tlb->getMemPriv(_tc, _mode) &&
+                     status == _tc->readMiscReg(MISCREG_STATUS);
+    }
+
     bool addr_match = ((req->getVaddr() >> PageShift) << PageShift) ==
                       ((mainReq->getVaddr() >> PageShift) << PageShift);
     if (priv_match && addr_match) {
@@ -294,8 +312,8 @@ Walker::WalkerState::tryCoalesce(ThreadContext *_tc,
         if (mainFault != NoFault) {
             // recreate fault for this txn, we don't have pmp yet
             // TODO: also consider pmp's addr fault
-            new_fault = pageFaultOnRequestor(r);
             assert(0);
+            new_fault = pageFaultOnRequestor(r);
         }
         if (requestors.size() == 1) {  // previous requestors are squashed
             DPRINTF(
@@ -305,6 +323,7 @@ Walker::WalkerState::tryCoalesce(ThreadContext *_tc,
                 r.req->getPC());
             mainFault = new_fault;
             mainReq = r.req;
+            assert(0);
         }
         return std::make_pair(true, new_fault);
     }
@@ -737,11 +756,11 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                             level,l2_level);
                     inl2_entry.paddr = l2pte.ppn;
                     inl2_entry.pte = l2pte;
-                    if (inl2_entry.vaddr == entry.vaddr){
+                    /*if (inl2_entry.vaddr == entry.vaddr){
                         if (!inl2_entry.pte.d && mode != BaseMMU::Write)
                             inl2_entry.pte.w = 0;
 
-                    }
+                    }*/
                     if (l2_level == 0) {
                         inl2_entry.index = (entry.vaddr >> 15) & (0x7f);
                         walker->tlb->L2TLB_insert(inl2_entry.vaddr, inl2_entry,
@@ -782,7 +801,8 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                             "read_num_pre%#x read_num %#x\n",
                             nextRead, tlb_ppn, read_num_pre, read_num);
 
-                    if ((read_num_pre == read_num) && (nextline_level == 0)) {
+                    if ((read_num_pre == read_num) && (nextline_level == 0) &&
+                        timing) {
                         walker->tlb->lookup(entry.vaddr, entry.asid,
                                             BaseMMU::Read, false);
                         next_line = true;

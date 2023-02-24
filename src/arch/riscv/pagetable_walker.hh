@@ -166,9 +166,10 @@ namespace RiscvISA
             void initState(ThreadContext * _tc, BaseMMU::Mode _mode,
                            bool _isTiming = false);
 
-            std::pair<bool, Fault> tryCoalesce(ThreadContext *_tc,
-                             BaseMMU::Translation *translation,
-                             const RequestPtr &req, BaseMMU::Mode mode);
+            std::pair<bool, Fault> tryCoalesce(
+                ThreadContext *_tc, BaseMMU::Translation *translation,
+                const RequestPtr &req, BaseMMU::Mode mode, bool from_l2tlb,
+                Addr asid);
 
             Fault startWalk(Addr ppn, int f_level, bool from_l2tlb);
             Fault startFunctional(Addr &addr, unsigned &logBytes);
@@ -224,7 +225,7 @@ namespace RiscvISA
         Fault start(Addr ppn, ThreadContext *_tc,
                     BaseMMU::Translation *translation, const RequestPtr &req,
                     BaseMMU::Mode mode, bool pre = false, int f_level = 2,
-                    bool from_l2tlb = false);
+                    bool from_l2tlb = false, Addr asid = 0);
 
         void doL2TLBHitSchedule(const RequestPtr &req, ThreadContext *tc,
                                 BaseMMU::Translation *translation,
@@ -236,9 +237,10 @@ namespace RiscvISA
         std::pair<bool, Fault> tryCoalesce(ThreadContext *_tc,
                                            BaseMMU::Translation *translation,
                                            const RequestPtr &req,
-                                           BaseMMU::Mode mode);
+                                           BaseMMU::Mode mode, bool from_l2tlb,
+                                           Addr asid);
 
-       // Fault perm_check ();
+        // Fault perm_check ();
 
         Fault startFunctional(ThreadContext * _tc, Addr &addr,
                 unsigned &logBytes, BaseMMU::Mode mode);
