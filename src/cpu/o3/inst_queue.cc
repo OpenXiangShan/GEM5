@@ -1538,13 +1538,10 @@ InstructionQueue::addIfReady(const DynInstPtr &inst)
     // If the instruction now has all of its source registers
     // available, then add it to the list of ready instructions.
     if (inst->readyToIssue()) {
-<<<<<<< HEAD
-        if (inst->readyTick == -1)
+        if (inst->readyTick == -1) {
             inst->readyTick = curTick();
-=======
-        DPRINTF(Counters, "set readyTick at addIfReady\n");
-        inst->readyTick = curTick();
->>>>>>> a04deb8fe2 (cpu: update counters)
+            DPRINTF(Counters, "set readyTick at addIfReady\n");
+        }
 
         //Add the instruction to the proper ready list.
         if (inst->isMemRef()) {

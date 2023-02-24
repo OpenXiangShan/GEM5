@@ -857,12 +857,11 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
             data_pkt->setRetriedPkt();
             DPRINTF(Fetch, "[tid:%i] mem_req.addr=%#lx needs retry.\n", tid,
                     mem_req->getVaddr());
-            setAllFetchStalls(FetchStall::IcacheStall);
+            setAllFetchStalls(StallReason::IcacheStall);
             retryPkt = data_pkt;
             retryTid = tid;
             cacheBlocked = true;
 
-            setAllFetchStalls(ICACHESTALL);
         } else {
             DPRINTF(Fetch, "[tid:%i] Doing Icache access.\n", tid);
             DPRINTF(Activity, "[tid:%i] Activity: Waiting on I-cache "

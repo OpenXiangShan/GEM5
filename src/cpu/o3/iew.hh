@@ -507,14 +507,14 @@ class IEW
         statistics::Vector stallEvents;
 
         /** Distribution of number of fetch stall reasons each tick. */
-        statistics::Distribution fetchStallReason;
+        statistics::Vector fetchStallReason;
         /** Distribution of number of decode stall reasons each tick. */
-        statistics::Distribution decodeStallReason;
+        statistics::Vector decodeStallReason;
         /** Distribution of number of fetrenamech stall reasons each tick. */
-        statistics::Distribution renameStallReason;
+        statistics::Vector renameStallReason;
         /** Distribution of number of dispatch stall reasons each tick. */
-        statistics::Distribution dispatchStallReason;
 
+        statistics::Vector dispatchStallReason;
     } iewStats;
 
     std::vector<StallReason> dispatchStalls;

@@ -199,15 +199,15 @@ IEW::IEWStats::IEWStats(CPU *cpu)
                 statistics::units::Count, statistics::units::Count>::get(),
              "Average fanout of values written-back"),
     ADD_STAT(stallEvents, statistics::units::Count::get(),
-             "Number of events the IEW has stalled")
+             "Number of events the IEW has stalled"),
     ADD_STAT(fetchStallReason, statistics::units::Count::get(),
-             "Distribution of number of fetch stall reasons each tick (Total)"),
+             "Number of fetch stall reasons each tick (Total)"),
     ADD_STAT(decodeStallReason, statistics::units::Count::get(),
-             "Distribution of number of decode stall reasons each tick (Total)"),
+             "Number of decode stall reasons each tick (Total)"),
     ADD_STAT(renameStallReason, statistics::units::Count::get(),
-             "Distribution of number of rename stall reasons each tick (Total)"),
+             "Number of rename stall reasons each tick (Total)"),
     ADD_STAT(dispatchStallReason, statistics::units::Count::get(),
-             "Distribution of number of dispatch stall reasons each tick (Total)")
+             "Number of dispatch stall reasons each tick (Total)")
 {
     instsToCommit
         .init(cpu->numThreads)
@@ -251,29 +251,54 @@ IEW::IEWStats::IEWStats(CPU *cpu)
     }
 
     fetchStallReason
-            .init(/* base value */ 0,
-              /* last value */ 23,
-              /* bucket size */ 1)
-            .flags(statistics::pdf);
+            .init(24)
+            .flags(statistics::total);
 
     decodeStallReason
-            .init(/* base value */ 0,
-              /* last value */ 23,
-              /* bucket size */ 1)
-            .flags(statistics::pdf);
+            .init(24)
+            .flags(statistics::total);
 
     renameStallReason
-            .init(/* base value */ 0,
-              /* last value */ 23,
-              /* bucket size */ 1)
-            .flags(statistics::pdf);
+            .init(24)
+            .flags(statistics::total);
 
     dispatchStallReason
-            .init(/* base value */ 0,
-              /* last value */ 23,
-              /* bucket size */ 1)
-            .flags(statistics::pdf);
+            .init(24)
+            .flags(statistics::total);
 
+    std::map <StallReason, const char*> stallReasonStr = {
+        {StallReason::NoStall, "NoStall"},
+        {StallReason::IcacheStall, "IcacheStall"},
+        {StallReason::ITlbStall, "ITlbStall"},
+        {StallReason::DTlbStall, "DTlbStall"},
+        {StallReason::BpStall, "BpStall"},
+        {StallReason::IntStall, "IntStall"},
+        {StallReason::TrapStall, "TrapStall"},
+        {StallReason::FragStall, "FragStall"},
+        {StallReason::SquashStall, "SquashStall"},
+        {StallReason::FetchBufferInvalid, "FetchBufferInvalid"},
+        {StallReason::InstMisPred, "InstMisPred"},
+        {StallReason::InstSquashed, "InstSquashed"},
+        {StallReason::SerializeStall, "SerializeStall"},
+        {StallReason::LongExecute, "LongExecute"},
+        {StallReason::InstNotReady, "InstNotReady"},
+        {StallReason::LoadL1Stall, "LoadL1Stall"},
+        {StallReason::LoadL2Stall, "LoadL2Stall"},
+        {StallReason::LoadL3Stall, "LoadL3Stall"},
+        {StallReason::StoreL1Stall, "StoreL1Stall"},
+        {StallReason::StoreL2Stall, "StoreL2Stall"},
+        {StallReason::StoreL3Stall, "StoreL3Stall"},
+        {StallReason::ResumeUnblock, "ResumeUnblock"},
+        {StallReason::CommitSquash, "CommitSquash"},
+        {StallReason::Other, "Other"}
+    };
+
+    for (int i = 0;i < 24;i++) {
+        fetchStallReason.subname(i, stallReasonStr[static_cast<StallReason>(i)]);
+        decodeStallReason.subname(i, stallReasonStr[static_cast<StallReason>(i)]);
+        renameStallReason.subname(i, stallReasonStr[static_cast<StallReason>(i)]);
+        dispatchStallReason.subname(i, stallReasonStr[static_cast<StallReason>(i)]);
+    }
 }
 
 IEW::IEWStats::ExecutedInstStats::ExecutedInstStats(CPU *cpu)
@@ -1619,15 +1644,15 @@ void
 IEW::tick()
 {
     for (int i = 0;i < fromRename->fetchStallReason.size();i++) {
-        iewStats.fetchStallReason.sample(fromRename->fetchStallReason[i]);
+        iewStats.fetchStallReason[fromRename->fetchStallReason[i]]++;
     }
 
     for (int i = 0;i < fromRename->decodeStallReason.size();i++) {
-        iewStats.decodeStallReason.sample(fromRename->decodeStallReason[i]);
+        iewStats.decodeStallReason[fromRename->decodeStallReason[i]]++;
     }
 
     for (int i = 0;i < fromRename->renameStallReason.size();i++) {
-        iewStats.renameStallReason.sample(fromRename->renameStallReason[i]);
+        iewStats.renameStallReason[fromRename->renameStallReason[i]]++;
     }
 
     wbNumInst = 0;
@@ -1661,7 +1686,7 @@ IEW::tick()
         toRename->iewInfo[tid].blockReason = blockReason;
     }
     for (int i = 0;i < dispatchStalls.size();i++) {
-        iewStats.dispatchStallReason.sample(dispatchStalls[i]);
+        iewStats.dispatchStallReason[dispatchStalls[i]]++;
     }
     instQueue.delayWakeDependents();
 
