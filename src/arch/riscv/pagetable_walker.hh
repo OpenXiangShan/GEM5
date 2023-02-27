@@ -299,6 +299,7 @@ namespace RiscvISA
             pmp(params.pmp),
             requestorId(sys->getRequestorId(this)),
             numSquashable(params.num_squash_per_cycle),
+            ptwSquash(params.ptwSquash),
             startWalkWrapperEvent([this]{ startWalkWrapper(); }, name()),
             handlePendingSquashEvent([this]{ handlePendingSquash(); }, name()),
             doL2TLBHitEvent([this]{dol2TLBHit();},name())
