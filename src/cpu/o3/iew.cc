@@ -251,19 +251,19 @@ IEW::IEWStats::IEWStats(CPU *cpu)
     }
 
     fetchStallReason
-            .init(24)
+            .init(NumStallReasons)
             .flags(statistics::total);
 
     decodeStallReason
-            .init(24)
+            .init(NumStallReasons)
             .flags(statistics::total);
 
     renameStallReason
-            .init(24)
+            .init(NumStallReasons)
             .flags(statistics::total);
 
     dispatchStallReason
-            .init(24)
+            .init(NumStallReasons)
             .flags(statistics::total);
 
     std::map <StallReason, const char*> stallReasonStr = {
@@ -282,18 +282,21 @@ IEW::IEWStats::IEWStats(CPU *cpu)
         {StallReason::SerializeStall, "SerializeStall"},
         {StallReason::LongExecute, "LongExecute"},
         {StallReason::InstNotReady, "InstNotReady"},
-        {StallReason::LoadL1Stall, "LoadL1Stall"},
-        {StallReason::LoadL2Stall, "LoadL2Stall"},
-        {StallReason::LoadL3Stall, "LoadL3Stall"},
-        {StallReason::StoreL1Stall, "StoreL1Stall"},
-        {StallReason::StoreL2Stall, "StoreL2Stall"},
-        {StallReason::StoreL3Stall, "StoreL3Stall"},
+        {StallReason::LoadL1Bound, "LoadL1Bound"},
+        {StallReason::LoadL2Bound, "LoadL2Bound"},
+        {StallReason::LoadL3Bound, "LoadL3Bound"},
+        {StallReason::LoadMemBound, "LoadMemBound"},
+        {StallReason::StoreL1Bound, "StoreL1Bound"},
+        {StallReason::StoreL2Bound, "StoreL2Bound"},
+        {StallReason::StoreL3Bound, "StoreL3Bound"},
+        {StallReason::StoreMemBound, "StoreMemBound"},
         {StallReason::ResumeUnblock, "ResumeUnblock"},
         {StallReason::CommitSquash, "CommitSquash"},
-        {StallReason::Other, "Other"}
+        {StallReason::OtherStall, "OtherStall"},
+        {StallReason::OtherFetchStall, "OtherFetchStall"}
     };
 
-    for (int i = 0;i < 24;i++) {
+    for (int i = 0;i < NumStallReasons;i++) {
         fetchStallReason.subname(i, stallReasonStr[static_cast<StallReason>(i)]);
         decodeStallReason.subname(i, stallReasonStr[static_cast<StallReason>(i)]);
         renameStallReason.subname(i, stallReasonStr[static_cast<StallReason>(i)]);
@@ -1253,10 +1256,10 @@ IEW::dispatchInsts(ThreadID tid)
     }
 
     unsigned instInSufficient = dispatch_width - insts_to_add;
-    StallReason stall = StallReason::NoStall;
+    StallReason stallFromRename = StallReason::NoStall;
     for (auto iter : fromRename->renameStallReason) {
         if (iter != StallReason::NoStall) {
-            stall = iter;
+            stallFromRename = iter;
             break;
         }
     }
@@ -1273,10 +1276,10 @@ IEW::dispatchInsts(ThreadID tid)
             } else if (instInSufficient > 0 && insts_to_add > 0) {
                 dispatchStalls.at(i) = StallReason::FragStall;
                 instInSufficient--;
-            } else if (insts_to_add == 0 && stall != StallReason::NoStall) {
-                dispatchStalls.at(i) = stall;
+            } else if (insts_to_add == 0 && stallFromRename != StallReason::NoStall) {
+                dispatchStalls.at(i) = stallFromRename;
             } else {
-                dispatchStalls.at(i) = StallReason::Other;
+                dispatchStalls.at(i) = StallReason::OtherStall;
             }
         }
     }
@@ -1870,16 +1873,19 @@ IEW::checkLoadStoreInst(DynInstPtr inst)
     if (inst->firstIssue != -1 && inst->translatedTick == -1) {
         return StallReason::DTlbStall;
     } else if (inst->firstIssue != -1 && inst->translatedTick != -1 &&
-                latency <= 20) {
-        return inst->isLoad() ? StallReason::LoadL1Stall : StallReason::StoreL1Stall;
+                latency <= 4) {
+        return inst->isLoad() ? StallReason::LoadL1Bound : StallReason::StoreL1Bound;
     } else if (inst->firstIssue != -1 && inst->translatedTick != -1 &&
-                latency > 20 && latency <= 27) {
-        return inst->isLoad() ? StallReason::LoadL2Stall : StallReason::StoreL2Stall;
+                latency > 4 && latency <= 4 + 15) {
+        return inst->isLoad() ? StallReason::LoadL2Bound : StallReason::StoreL2Bound;
     } else if (inst->firstIssue != -1 && inst->translatedTick != -1 &&
-                   latency > 27) {
-        return inst->isLoad() ? StallReason::LoadL3Stall : StallReason::StoreL3Stall;
+                   latency > 4 + 15 && latency <= 4 + 15 + 19) {
+        return inst->isLoad() ? StallReason::LoadL3Bound : StallReason::StoreL3Bound;
+    } else if (inst->firstIssue != -1 && inst->translatedTick != -1 &&
+                   latency > 4 + 15 + 19) {
+        return inst->isLoad() ? StallReason::LoadMemBound : StallReason::StoreMemBound;
     } else {
-        return StallReason::Other;
+        return StallReason::OtherStall;
     }
 }
 
@@ -1913,11 +1919,11 @@ IEW::checkDispatchStall(ThreadID tid) {
         if (head_inst->firstIssue != -1) {
             return StallReason::LongExecute;
         } else {
-            return StallReason::Other;
+            return StallReason::OtherStall;
         }
     }
 
-    return StallReason::Other;
+    return StallReason::OtherStall;
 }
 
 StallReason

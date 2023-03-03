@@ -60,31 +60,36 @@ namespace o3
 
 /** stall reasons in each stages*/
 enum StallReason {
-    NoStall,
-    IcacheStall,
-    ITlbStall,
-    DTlbStall,
-    BpStall,
-    IntStall,
-    TrapStall,
-    FragStall,
-    SquashStall,
-    FetchBufferInvalid,
-    InstMisPred,
-    InstSquashed,
-    SerializeStall,
-    LongExecute,
-    InstNotReady,
-    LoadL1Stall,
-    LoadL2Stall,
-    LoadL3Stall,
-    StoreL1Stall,
-    StoreL2Stall,
-    StoreL3Stall,
-    ResumeUnblock,
-    CommitSquash,
+    NoStall,  // Base
+    IcacheStall,  // F
+    ITlbStall,  // F
+    DTlbStall,  // B
+    BpStall,  // BS, bad speculation: Frontend is squashed
+    IntStall,  // F
+    TrapStall,  // F
+    FragStall,  // F
+    SquashStall,  // BS
+    FetchBufferInvalid,  // Never used
+    InstMisPred,  // BS
+    InstSquashed,  // BS
+    SerializeStall,  // F
+    LongExecute,  // B
+    InstNotReady,  // B
 
-    Other
+    LoadL1Bound,
+    LoadL2Bound,
+    LoadL3Bound,
+    LoadMemBound,
+    StoreL1Bound,
+    StoreL2Bound,
+    StoreL3Bound,
+    StoreMemBound,
+
+    ResumeUnblock,  // B
+    CommitSquash,  // BS
+    OtherStall,  // B
+    OtherFetchStall,  // F
+    NumStallReasons
 };
 
 /** Struct that defines the information passed from fetch to decode. */

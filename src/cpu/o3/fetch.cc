@@ -826,7 +826,7 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
             warn("Address %#x is outside of physical memory, stopping fetch, %lu\n",
                     mem_req->getPaddr(), curTick());
             fetchStatus[tid] = NoGoodAddr;
-            setAllFetchStalls(StallReason::Other);
+            setAllFetchStalls(StallReason::OtherFetchStall);
             memReq[tid] = NULL;
             anotherMemReq[tid] = NULL;
             return;
@@ -1644,14 +1644,14 @@ Fetch::fetch(bool &status_change)
             // If buffer is no longer valid or fetch_addr has moved to point
             // to the next cache block then start fetch from icache.
             if (!loopBuffer.isActive() && !fetchBufferValid[tid]) {
-                stall = StallReason::FetchBufferInvalid;
+                stall = StallReason::IcacheStall;
                 break;
             }
 
             if (!loopBuffer.isActive() && blk_offset >= num_insts_per_buffer) {
                 // We need to process more memory, but we've run out of the
                 // current block.
-                stall = StallReason::FetchBufferInvalid;
+                stall = StallReason::IcacheStall;
                 break;
             }
 
@@ -1777,7 +1777,7 @@ Fetch::fetch(bool &status_change)
             } else if (stalls[tid].decode && fetchQueue[tid].size() >= fetchQueueSize) {
                 stallReason[i] = fromDecode->decodeInfo[tid].blockReason;
             } else {
-                stallReason[i] = StallReason::Other;
+                stallReason[i] = StallReason::OtherFetchStall;
             }
         }
     }

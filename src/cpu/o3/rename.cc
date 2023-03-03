@@ -598,8 +598,6 @@ Rename::renameInsts(ThreadID tid)
 
         block(tid);
 
-        blockReason = checkRenameStallFromIEW(tid);
-
         incrFullStat(source);
 
         setAllStalls(checkRenameStallFromIEW(tid));
@@ -843,7 +841,7 @@ Rename::renameInsts(ThreadID tid)
             } else if (instsAvailable == 0) {
                 renameStalls.at(i) = stall;
             }else {
-                renameStalls.at(i) = StallReason::Other;
+                renameStalls.at(i) = StallReason::OtherStall;
             }
         }
     }
