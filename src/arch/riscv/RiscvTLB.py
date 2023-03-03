@@ -59,7 +59,7 @@ class RiscvTLB(BaseTLB):
     #size = Param.Int(2048, "TLB size")
     #size = Param.Int(64, "TLB size")
     #size = Param.Int(256, "TLB size")
-    size = Param.Int(32, "TLB size")
+    size = Param.Int(64, "TLB size")
     #size = Param.Int(36, "TLB size")
     #l2tlb_l1_size = Param.Int(8, "l2TLB_l1 size")
     #l2tlb_l2_size = Param.Int(32, "l2TLB_l2 size")

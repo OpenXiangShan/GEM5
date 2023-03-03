@@ -235,6 +235,15 @@ TLB::lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden)
                 stats.readHits++;
         }
 
+        if (entry) {
+            if (entry->is_squashed) {
+                if (mode == BaseMMU::Write)
+                    stats.writeHitsSquashed++;
+                else
+                    stats.readHitsSquashed++;
+            }
+        }
+
         DPRINTF(TLBVerbose, "lookup(vpn=%#x, asid=%#x): %s ppn %#x\n",
                 vpn, asid, entry ? "hit" : "miss", entry ? entry->paddr : 0);
     }
@@ -259,11 +268,13 @@ TLB::lookup_l2tlb(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
     TlbEntry *entry_l2l3 = NULL;
     TlbEntry *entry_l2sp1 = NULL;
     TlbEntry *entry_l2sp2 = NULL;
+    bool is_squashed_flag = false;
 
     if (f_level == 1) {
         DPRINTF(TLB, "look up l2tlb in l2l1\n");
-        DPRINTF(TLB,"key %#x\n",buildKey(f_vpnl2l1, asid));
+        DPRINTF(TLB, "key %#x\n", buildKey(f_vpnl2l1, asid));
         entry_l2l1 = trie_l2l1.lookup(buildKey(f_vpnl2l1, asid));
+        // DPRINTF();
     }
     if (f_level == 2) {
         DPRINTF(TLB, "look up l2tlb in l2l2\n");
@@ -295,23 +306,8 @@ TLB::lookup_l2tlb(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
     }
     Addr step;
     if (!hidden) {
-        if (!(entry_l2l1 || entry_l2l2 || entry_l2l3 || entry_l2sp1 ||
-              entry_l2sp2)) {
-            if (mode == BaseMMU::Write) {
-                stats.writeL2TlbMisses++;
-            } else {
-                stats.ReadL2TlbMisses++;
-            }
-
-        } else {
-            if (mode == BaseMMU::Write) {
-                stats.writeL2TlbHits++;
-            } else {
-                stats.ReadL2TlbHits++;
-            }
-        }
-
         if (entry_l2l3) {
+            is_squashed_flag = entry_l2l3->is_squashed;
             Addr vpnl2l3 = ((vpn >> 15)) << 15;
             step = 0x1000;
             for (i = 0; i < 8; i++) {
@@ -329,10 +325,11 @@ TLB::lookup_l2tlb(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
                     "lookup l2l3 (vpn=%#x, asid=%#x): %s ppn %#x\n", vpn, asid,
                     entry_l2l3 ? "hit" : "miss",
                     entry_l2l3 ? entry_l2l3->paddr : 0);
-            return entry_l2l3;
+            //return entry_l2l3;
         }
 
         if (entry_l2sp1) {
+            is_squashed_flag = entry_l2sp1->is_squashed;
             Addr vpnl2sp1 = ((vpn >> 33) ) << 33;
             step = 0x1 << 30;
 
@@ -353,9 +350,10 @@ TLB::lookup_l2tlb(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
                     "lookup l2sp1 (vpn=%#x, asid=%#x): %s ppn %#x\n", vpn,
                     asid, entry_l2sp1 ? "hit" : "miss",
                     entry_l2sp1 ? entry_l2sp1->paddr : 0);
-            return entry_l2sp1;
+            //return entry_l2sp1;
         }
         if (entry_l2sp2) {
+            is_squashed_flag = entry_l2sp2->is_squashed;
             Addr vpnl2sp2 = ((vpn >> 24)) << 24;
             step = 0x1 << 21;
             for (i = 0; i < 8; i++) {
@@ -373,10 +371,11 @@ TLB::lookup_l2tlb(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
                     "lookup l2sp2 (vpn=%#x, asid=%#x): %s ppn %#x\n", vpn,
                     asid, entry_l2sp2 ? "hit" : "miss",
                     entry_l2sp2 ? entry_l2sp2->paddr : 0);
-            return entry_l2sp2;
+            //return entry_l2sp2;
         }
 
         if (entry_l2l2) {
+            is_squashed_flag = entry_l2l2->is_squashed;
             Addr vpnl2l2 = ((vpn >> 24)) << 24;
             step = 0x1 << 21;
             for (i = 0; i < 8; i++) {
@@ -394,10 +393,11 @@ TLB::lookup_l2tlb(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
                     "lookup l2l2 (vpn=%#x, asid=%#x): %s ppn %#x\n", vpn, asid,
                     entry_l2l2 ? "hit" : "miss",
                     entry_l2l2 ? entry_l2l2->paddr : 0);
-            return entry_l2l2;
+            //return entry_l2l2;
         }
 
         if (entry_l2l1) {
+            is_squashed_flag = entry_l2l1->is_squashed;
 
             Addr vpnl2l1 = ((vpn >> 33) ) << 33;
             step = 0x1 << 30;
@@ -417,8 +417,45 @@ TLB::lookup_l2tlb(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
                     "lookup l2l1 (vpn=%#x, asid=%#x): %s ppn %#x\n", vpn, asid,
                     entry_l2l1 ? "hit" : "miss",
                     entry_l2l1 ? entry_l2l1->paddr : 0);
-            return entry_l2l1;
+            // return entry_l2l1;
         }
+        if (!(entry_l2l1 || entry_l2l2 || entry_l2l3 || entry_l2sp1 ||
+              entry_l2sp2)) {
+            if (mode == BaseMMU::Write) {
+                stats.writeL2TlbMisses++;
+            } else {
+                stats.ReadL2TlbMisses++;
+            }
+
+        } else {
+            if (mode == BaseMMU::Write) {
+                stats.writeL2TlbHits++;
+            } else {
+                stats.ReadL2TlbHits++;
+            }
+            // if ((entry_l2l1->is_squashed || entry_l2l2->is_squashed ||
+            // entry_l2l3->is_squashed || entry_l2sp1->is_squashed ||
+            //   entry_l2sp2->is_squashed)){
+            if (is_squashed_flag) {
+                if (mode == BaseMMU::Write) {
+                    stats.writeL2TlbSquashedHits++;
+                } else {
+                    stats.ReadL2TlbSquashedHits++;
+                }
+            }
+        }
+
+        if (entry_l2l3)
+            return entry_l2l3;
+        else if (entry_l2sp2)
+            return entry_l2sp2;
+        else if (entry_l2sp1)
+            return entry_l2sp1;
+        else if (entry_l2l2)
+            return entry_l2l2;
+        else if (entry_l2l1)
+            return entry_l2l1;
+
 
     } else {
         if (entry_l2l3)
@@ -436,7 +473,7 @@ TLB::lookup_l2tlb(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
 }
 
 TlbEntry *
-TLB::insert(Addr vpn, const TlbEntry &entry)
+TLB::insert(Addr vpn, const TlbEntry &entry,bool squashed_update)
 {
     DPRINTF(TLBVerbosel2,
             "insert(vpn=%#x, asid=%#x): ppn=%#x pte=%#x size=%#x\n", vpn,
@@ -444,6 +481,23 @@ TLB::insert(Addr vpn, const TlbEntry &entry)
 
     // If somebody beat us to it, just use that existing entry.
     TlbEntry *newEntry = lookup(vpn, entry.asid, BaseMMU::Read, false);
+    if (squashed_update) {
+        if (newEntry) {
+            if (newEntry->is_squashed) {
+                return newEntry;
+            }
+            // update is_squashed flag
+            newEntry->is_squashed = entry.is_squashed;
+            DPRINTF(TLBVerbosel2, "update is_squashed flag\n");
+            // stats squashed num insert
+            stats.squashedInsert++;
+
+        } else {
+            DPRINTF(TLBVerbosel2, "update is_squashed flag but no entry\n");
+            // assert(0);
+        }
+        return newEntry;
+    }
     if (newEntry) {
         // update PTE flags (maybe we set the dirty/writable flag)
         newEntry->pte = entry.pte;
@@ -481,12 +535,15 @@ TLB::insert(Addr vpn, const TlbEntry &entry)
     trie.insert(key, TlbEntryTrie::MaxBits - entry.logBytes, newEntry);
     DPRINTF(TLBVerbosel2, "trie insert key %#x logbytes %#x paddr %#x\n", key,
             entry.logBytes, newEntry->paddr);
+    // stats all insert number
+    stats.ALLInsert++;
     return newEntry;
 }
 
 TlbEntry *
 TLB::L2TLB_insert_in(Addr vpn, const TlbEntry &entry, int choose,
-                     EntryList *List, TlbEntryTrie *Trie_l2,int sign)
+                     EntryList *List, TlbEntryTrie *Trie_l2, int sign,
+                     bool squashed_update)
 {
     DPRINTF(TLB,
             "l2tlb insert(vpn=%#x, vpn2 %#x asid=%#x): ppn=%#x pte=%#x "
@@ -496,6 +553,32 @@ TLB::L2TLB_insert_in(Addr vpn, const TlbEntry &entry, int choose,
     TlbEntry *newEntry;
     Addr key;
     newEntry = lookup_l2tlb(vpn, entry.asid, BaseMMU::Read, false, choose);
+    Addr step = 0;
+    if ((choose == 1) || (choose == 4)) {
+        step = 0x1 << 30;
+    } else if ((choose == 2) || (choose == 5)) {
+        step = 0x1 << 21;
+    } else if (choose == 3) {
+        step = 0x1 << 12;
+    }
+
+    if (squashed_update) {
+        if (newEntry) {
+            if (newEntry->is_squashed) {
+                return newEntry;
+            }
+            newEntry->is_squashed = true;
+            stats.squashedInsertL2++;
+            for (int i = 1; i < 8; i++) {
+                newEntry = lookup_l2tlb(vpn + step * i, entry.asid,
+                                        BaseMMU::Read, false, choose);
+                if (newEntry) {
+                    newEntry->is_squashed = true;
+                }
+            }
+        }
+        return newEntry;
+    }
     if (newEntry) {
         newEntry->pte = entry.pte;
         if (newEntry->vaddr != vpn) {
@@ -548,6 +631,7 @@ TLB::L2TLB_insert_in(Addr vpn, const TlbEntry &entry, int choose,
 
     DPRINTF(TLB, "l2tlb trie insert key %#x logbytes %#x len %#x\n", key,
             entry.logBytes,TlbEntryTrie::MaxBits - entry.logBytes);
+    stats.ALLInsertL2++;
 
     return newEntry;
 
@@ -555,28 +639,32 @@ TLB::L2TLB_insert_in(Addr vpn, const TlbEntry &entry, int choose,
 
 TlbEntry *
 TLB::L2TLB_insert(Addr vpn, const TlbEntry &entry, int level, int choose,
-                  int sign)
+                  int sign, bool squashed_update)
 {
     TlbEntry *newEntry = NULL;
     DPRINTF(TLB, "choose %d vpn %#x entry->vaddr %#x\n", choose, vpn,
             entry.vaddr);
     if (choose == 1)
         newEntry = L2TLB_insert_in(vpn, entry, choose, &freeList_l2l1,
-                                   &trie_l2l1, sign);
+                                   &trie_l2l1, sign, squashed_update);
     else if (choose == 2)
         newEntry = L2TLB_insert_in(vpn, entry, choose, &freeList_l2l2,
-                                   &trie_l2l2, sign);
+                                   &trie_l2l2, sign, squashed_update);
     else if (choose == 3)
         newEntry = L2TLB_insert_in(vpn, entry, choose, &freeList_l2l3,
-                                   &trie_l2l3, sign);
+                                   &trie_l2l3, sign, squashed_update);
     else if (choose == 4)
         newEntry = L2TLB_insert_in(vpn, entry, choose, &freeList_l2sp,
-                                   &trie_l2sp, sign);
+                                   &trie_l2sp, sign, squashed_update);
     else if (choose == 5)
         newEntry = L2TLB_insert_in(vpn, entry, choose, &freeList_l2sp,
-                                   &trie_l2sp, sign);
+                                   &trie_l2sp, sign, squashed_update);
 
-    assert(newEntry != nullptr);
+    if (!squashed_update) {
+        assert(newEntry != nullptr);
+    }
+
+
     return newEntry;
 }
 
@@ -1534,6 +1622,30 @@ TLB::TlbStats::TlbStats(statistics::Group *parent)
                "read prefetch Misses"),
       ADD_STAT(writeprefetchMisses, statistics::units::Count::get(),
                "write prefetch Misses"),
+      ADD_STAT(writeHitsSquashed, statistics::units::Count::get(),
+               "write squashed hits"),
+      ADD_STAT(readHitsSquashed, statistics::units::Count::get(),
+               "read squashed hits"),
+      ADD_STAT(squashedInsert, statistics::units::Count::get(),
+               "number of squashed pte insert"),
+      ADD_STAT(ALLInsert, statistics::units::Count::get(),
+               "number of all pte insert"),
+      ADD_STAT(writeL2TlbMisses, statistics::units::Count::get(),
+               "write misses in l2tlb"),
+      ADD_STAT(ReadL2TlbMisses, statistics::units::Count::get(),
+               "read misses in l2tlb"),
+      ADD_STAT(writeL2TlbHits, statistics::units::Count::get(),
+               "write hits in l2tlb"),
+      ADD_STAT(ReadL2TlbHits, statistics::units::Count::get(),
+               "read hits in l2tlb"),
+      ADD_STAT(squashedInsertL2, statistics::units::Count::get(),
+               "number of l2 squashe pte insert"),
+      ADD_STAT(ALLInsertL2, statistics::units::Count::get(),
+               "number of all l2 pte insert"),
+      ADD_STAT(writeL2TlbSquashedHits, statistics::units::Count::get(),
+               "l2 write squashed hits"),
+      ADD_STAT(ReadL2TlbSquashedHits, statistics::units::Count::get(),
+               "l2 read squashed hits"),
       ADD_STAT(hits, statistics::units::Count::get(),
                "Total TLB (read and write) hits", readHits + writeHits),
       ADD_STAT(misses, statistics::units::Count::get(),

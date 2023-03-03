@@ -90,11 +90,20 @@ class TLB : public BaseTLB
         statistics::Scalar writeprefetchAccesses;
         statistics::Scalar readprefetchMisses;
         statistics::Scalar writeprefetchMisses;
+        statistics::Scalar writeHitsSquashed;
+        statistics::Scalar readHitsSquashed;
+        statistics::Scalar squashedInsert;
+        statistics::Scalar ALLInsert;
+
 
         statistics::Scalar writeL2TlbMisses;
         statistics::Scalar ReadL2TlbMisses;
         statistics::Scalar writeL2TlbHits;
         statistics::Scalar ReadL2TlbHits;
+        statistics::Scalar squashedInsertL2;
+        statistics::Scalar ALLInsertL2;
+        statistics::Scalar writeL2TlbSquashedHits;
+        statistics::Scalar ReadL2TlbSquashedHits;
 
         statistics::Formula hits;
         statistics::Formula misses;
@@ -113,12 +122,12 @@ class TLB : public BaseTLB
 
     void takeOverFrom(BaseTLB *old) override {}
 
-    TlbEntry *insert(Addr vpn, const TlbEntry &entry);
+    TlbEntry *insert(Addr vpn, const TlbEntry &entry, bool suqashed_update);
     TlbEntry *L2TLB_insert(Addr vpn, const TlbEntry &entry, int level,
-                           int choose, int sign);
+                           int choose, int sign,bool squashed_update);
     TlbEntry *L2TLB_insert_in(Addr vpn, const TlbEntry &entry, int choose,
                               EntryList *List, TlbEntryTrie *Trie_l2,
-                              int sign);
+                              int sign,bool squashed_update);
     // TlbEntry *L2TLB_insert_in(Addr vpn,const TlbEntry &entry,int level);
 
 

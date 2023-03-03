@@ -104,8 +104,17 @@ struct TlbEntry : public Serializable
 
     Addr index;
 
+    bool is_squashed;
+
     TlbEntry()
-        : paddr(0), vaddr(0), logBytes(0), pte(), lruSeq(0), level(0), index(0)
+        : paddr(0),
+          vaddr(0),
+          logBytes(0),
+          pte(),
+          lruSeq(0),
+          level(0),
+          index(0),
+          is_squashed(false)
     {
     }
 
