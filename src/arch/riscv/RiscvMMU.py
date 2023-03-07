@@ -36,9 +36,10 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 from m5.params import *
+from m5.proxy import *
 
 from m5.objects.BaseMMU import BaseMMU
-from m5.objects.RiscvTLB import RiscvTLB
+from m5.objects.RiscvTLB import RiscvTLB, RiscvTLBL2
 from m5.objects.PMAChecker import PMAChecker
 from m5.objects.PMP import PMP
 
@@ -47,8 +48,10 @@ class RiscvMMU(BaseMMU):
     cxx_class = 'gem5::RiscvISA::MMU'
     cxx_header = 'arch/riscv/mmu.hh'
 
-    itb = RiscvTLB(entry_type="instruction")
-    dtb = RiscvTLB(entry_type="data")
+    l2_shared = RiscvTLBL2(entry_type="unified")
+
+    itb = RiscvTLB(entry_type="instruction",next_level=Parent.l2_shared)
+    dtb = RiscvTLB(entry_type="data",next_level=Parent.l2_shared)
     pma_checker = Param.PMAChecker(PMAChecker(), "PMA Checker")
     pmp = Param.PMP(PMP(), "Physical Memory Protection Unit")
 

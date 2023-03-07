@@ -61,6 +61,7 @@ class TLB : public BaseTLB
     typedef std::list<TlbEntry *> EntryList;
 
   protected:
+    bool is_L1tlb;
     size_t size;
     size_t l2tlb_l1_size;
     size_t l2tlb_l2_size;
@@ -133,6 +134,7 @@ class TLB : public BaseTLB
 
     void flushAll() override;
     void demapPage(Addr vaddr, uint64_t asn) override;
+    void demapPageL2(Addr vaddr,uint64_t asn);
 
     Fault checkPermissions(STATUS status, PrivilegeMode pmode, Addr vaddr,
                            BaseMMU::Mode mode, PTESv39 pte);

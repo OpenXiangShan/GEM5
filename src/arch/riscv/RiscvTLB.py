@@ -59,6 +59,7 @@ class RiscvTLB(BaseTLB):
     #size = Param.Int(2048, "TLB size")
     #size = Param.Int(64, "TLB size")
     #size = Param.Int(256, "TLB size")
+    is_L1tlb = Param.Bool(True,"the tlb is l1tlb")
     size = Param.Int(64, "TLB size")
     #size = Param.Int(36, "TLB size")
     #l2tlb_l1_size = Param.Int(8, "l2TLB_l1 size")
@@ -74,3 +75,7 @@ class RiscvTLB(BaseTLB):
     # Grab the pma_checker from the MMU
     pma_checker = Param.PMAChecker(Parent.any, "PMA Checker")
     pmp  = Param.PMP(Parent.any, "Physical Memory Protection Unit")
+
+class RiscvTLBL2(RiscvTLB):
+    is_L1tlb = False
+

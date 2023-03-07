@@ -72,7 +72,8 @@ buildKey(Addr vpn, uint16_t asid)
 }
 
 TLB::TLB(const Params &p) :
-    BaseTLB(p), size(p.size),l2tlb_l1_size(p.l2tlb_l1_size),
+    BaseTLB(p), is_L1tlb(p.is_L1tlb),size(p.size),
+    l2tlb_l1_size(p.l2tlb_l1_size),
     l2tlb_l2_size(p.l2tlb_l2_size),l2tlb_l3_size(p.l2tlb_l3_size),
     l2tlb_sp_size(p.l2tlb_sp_size),
     tlb(size),lruSeq(0),hit_in_sp(false),
@@ -81,35 +82,46 @@ TLB::TLB(const Params &p) :
     tlb_l2l1(l2tlb_l1_size *8 ),tlb_l2l2(l2tlb_l2_size *8),
     tlb_l2l3(l2tlb_l3_size*8),tlb_l2sp(l2tlb_sp_size*8)
 {
-    DPRINTF(TLBVerbose, "tlb11\n");
 
-    for (size_t x = 0; x < size; x++) {
-        tlb[x].trieHandle = NULL;
-        freeList.push_back(&tlb[x]);
-    }
+    if (is_L1tlb) {
+        DPRINTF(TLBVerbose, "tlb11\n");
+        for (size_t x = 0; x < size; x++) {
+            tlb[x].trieHandle = NULL;
+            freeList.push_back(&tlb[x]);
+        }
+        walker = p.walker;
+        walker->setTLB(this);
+        DPRINTF(TLBVerbose, "tlb11 tlb_size %d size() %d\n", size, tlb.size());
 
-    for (size_t x_l2l1 = 0;x_l2l1 < l2tlb_l1_size*8 ;x_l2l1++){
-        tlb_l2l1[x_l2l1].trieHandle = NULL;
-        freeList_l2l1.push_back(&tlb_l2l1[x_l2l1]);
-    }
+    } else {
+        DPRINTF(TLBVerbose, "tlbL2\n");
+        for (size_t x_l2l1 = 0; x_l2l1 < l2tlb_l1_size * 8; x_l2l1++) {
+            tlb_l2l1[x_l2l1].trieHandle = NULL;
+            freeList_l2l1.push_back(&tlb_l2l1[x_l2l1]);
+        }
 
-    for (size_t x_l2l2 = 0;x_l2l2 < l2tlb_l2_size*8 ;x_l2l2++){
-        tlb_l2l2[x_l2l2].trieHandle = NULL;
-        freeList_l2l2.push_back(&tlb_l2l2[x_l2l2]);
+        for (size_t x_l2l2 = 0; x_l2l2 < l2tlb_l2_size * 8; x_l2l2++) {
+            tlb_l2l2[x_l2l2].trieHandle = NULL;
+            freeList_l2l2.push_back(&tlb_l2l2[x_l2l2]);
+        }
+        for (size_t x_l2l3 = 0; x_l2l3 < l2tlb_l3_size * 8; x_l2l3++) {
+            tlb_l2l3[x_l2l3].trieHandle = NULL;
+            freeList_l2l3.push_back(&tlb_l2l3[x_l2l3]);
+        }
+        for (size_t x_l2sp = 0; x_l2sp < l2tlb_sp_size * 8; x_l2sp++) {
+            tlb_l2sp[x_l2sp].trieHandle = NULL;
+            freeList_l2sp.push_back(&tlb_l2sp[x_l2sp]);
+        }
+        DPRINTF(
+            TLBVerbose,
+            "l2l1.size() %d l2l2.size() %d l2l3.size() %d l2sp.size() %d\n",
+            tlb_l2l1.size(), tlb_l2l2.size(), tlb_l2l3.size(),
+            tlb_l2sp.size());
+        DPRINTF(TLBVerbose,
+                "tlbl2 size l2tlb_l1_size %d l2tlb_l2_size %d l2tlb_l3_size "
+                "%d l2tlb_sp_size %d\n",
+                l2tlb_l1_size, l2tlb_l2_size, l2tlb_l3_size, l2tlb_sp_size);
     }
-    for (size_t x_l2l3 = 0;x_l2l3 < l2tlb_l3_size*8 ;x_l2l3++){
-        tlb_l2l3[x_l2l3].trieHandle = NULL;
-        freeList_l2l3.push_back(&tlb_l2l3[x_l2l3]);
-    }
-    for (size_t x_l2sp = 0;x_l2sp < l2tlb_sp_size*8 ; x_l2sp++){
-        tlb_l2sp[x_l2sp].trieHandle = NULL;
-        freeList_l2sp.push_back(&tlb_l2sp[x_l2sp]);
-    }
-
-    DPRINTF(TLBVerbose, "tlb11 tlb_size %d\n",size);
-
-    walker = p.walker;
-    walker->setTLB(this);
 }
 
 Walker *
@@ -143,6 +155,8 @@ TLB::l2TLB_evictLRU(int l2TLBlevel,Addr vaddr){
     l3_index = (vaddr >> 15) & (0x7f);
     int l2_index_num = 0;
     int l3_index_num = 0;
+    DPRINTF(TLB, "l2tlb_evictLRU tlb_l2l1_size %d\n", tlb_l2l1.size());
+
     if (l2TLBlevel == 1) {
         lru =0;
         for (i = 8;i< l2tlb_l1_size*8;i=i+8){
@@ -269,6 +283,8 @@ TLB::lookup_l2tlb(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
     TlbEntry *entry_l2sp1 = NULL;
     TlbEntry *entry_l2sp2 = NULL;
     bool is_squashed_flag = false;
+    if (is_L1tlb)
+        assert(0);
 
     if (f_level == 1) {
         DPRINTF(TLB, "look up l2tlb in l2l1\n");
@@ -572,6 +588,7 @@ TLB::L2TLB_insert_in(Addr vpn, const TlbEntry &entry, int choose,
             for (int i = 1; i < 8; i++) {
                 newEntry = lookup_l2tlb(vpn + step * i, entry.asid,
                                         BaseMMU::Read, false, choose);
+                stats.squashedInsertL2++;
                 if (newEntry) {
                     newEntry->is_squashed = true;
                 }
@@ -641,24 +658,32 @@ TlbEntry *
 TLB::L2TLB_insert(Addr vpn, const TlbEntry &entry, int level, int choose,
                   int sign, bool squashed_update)
 {
+    auto l2tlb = static_cast<TLB *>(nextLevel());
+    if (l2tlb == NULL)
+        assert(0);
     TlbEntry *newEntry = NULL;
     DPRINTF(TLB, "choose %d vpn %#x entry->vaddr %#x\n", choose, vpn,
             entry.vaddr);
     if (choose == 1)
-        newEntry = L2TLB_insert_in(vpn, entry, choose, &freeList_l2l1,
-                                   &trie_l2l1, sign, squashed_update);
+        newEntry =
+            l2tlb->L2TLB_insert_in(vpn, entry, choose, &l2tlb->freeList_l2l1,
+                                   &l2tlb->trie_l2l1, sign, squashed_update);
     else if (choose == 2)
-        newEntry = L2TLB_insert_in(vpn, entry, choose, &freeList_l2l2,
-                                   &trie_l2l2, sign, squashed_update);
+        newEntry =
+            l2tlb->L2TLB_insert_in(vpn, entry, choose, &l2tlb->freeList_l2l2,
+                                   &l2tlb->trie_l2l2, sign, squashed_update);
     else if (choose == 3)
-        newEntry = L2TLB_insert_in(vpn, entry, choose, &freeList_l2l3,
-                                   &trie_l2l3, sign, squashed_update);
+        newEntry =
+            l2tlb->L2TLB_insert_in(vpn, entry, choose, &l2tlb->freeList_l2l3,
+                                   &l2tlb->trie_l2l3, sign, squashed_update);
     else if (choose == 4)
-        newEntry = L2TLB_insert_in(vpn, entry, choose, &freeList_l2sp,
-                                   &trie_l2sp, sign, squashed_update);
+        newEntry =
+            l2tlb->L2TLB_insert_in(vpn, entry, choose, &l2tlb->freeList_l2sp,
+                                   &l2tlb->trie_l2sp, sign, squashed_update);
     else if (choose == 5)
-        newEntry = L2TLB_insert_in(vpn, entry, choose, &freeList_l2sp,
-                                   &trie_l2sp, sign, squashed_update);
+        newEntry =
+            l2tlb->L2TLB_insert_in(vpn, entry, choose, &l2tlb->freeList_l2sp,
+                                   &l2tlb->trie_l2sp, sign, squashed_update);
 
     if (!squashed_update) {
         assert(newEntry != nullptr);
@@ -675,70 +700,27 @@ TLB::demapPage(Addr vpn, uint64_t asid)
     asid &= 0xFFFF;
 
     size_t i;
-    Addr vpnl2l1 = ((vpn >> 33) ) << 33;
-    Addr vpnl2l2 = ((vpn >> 24) ) << 24;
-    Addr vpnl2l3 = ((vpn >> 15) ) << 15;
-    Addr vpnl2sp1 = ((vpn >> 33) ) << 33;
-    Addr vpnl2sp2 = ((vpn >> 24) ) << 24;
+
+    auto l2tlb = static_cast<TLB *>(nextLevel());
+    if (l2tlb == NULL)
+        assert(0);
+
     if (vpn == 0 && asid == 0) {
         flushAll();
+        l2tlb->flushAll();
     }
 
     else {
         DPRINTF(TLB, "flush(vpn=%#x, asid=%#x)\n", vpn, asid);
-        DPRINTF(TLB, "l2tlb flush(vpn=%#x, asid=%#x)\n", vpn, asid);
+        DPRINTF(TLB, "l1tlb flush(vpn=%#x, asid=%#x)\n", vpn, asid);
         if (vpn != 0 && asid != 0) {
             assert(0);
 
             TlbEntry *newEntry = lookup(vpn, asid, BaseMMU::Read, true);
-            TlbEntry *l2l1_newEntry =
-                lookup_l2tlb(vpn, asid, BaseMMU::Read, true, 1);
-            TlbEntry *l2l2_newEntry =
-                lookup_l2tlb(vpn, asid, BaseMMU::Read, true, 2);
-            TlbEntry *l2l3_newEntry =
-                lookup_l2tlb(vpn, asid, BaseMMU::Read, true, 3);
-            TlbEntry *l2sp1_newEntry =
-                lookup_l2tlb(vpn, asid, BaseMMU::Read, true, 4);
-            TlbEntry *l2sp2_newEntry =
-                lookup_l2tlb(vpn, asid, BaseMMU::Read, true, 5);
-
             if (newEntry)
                 remove(newEntry - tlb.data());
-            if (l2l1_newEntry) {
-                TlbEntry *m_l2l1_newEntry =
-                    lookup_l2tlb(vpnl2l1, asid, BaseMMU::Read, true, 1);
-                if (m_l2l1_newEntry == NULL)
-                    assert(0);
-                l2TLB_remove(m_l2l1_newEntry - tlb_l2l1.data(), 1, 0, 0, 0);
-            }
-            if (l2l2_newEntry) {
-                TlbEntry *m_l2l2_newEntry =
-                    lookup_l2tlb(vpnl2l2, asid, BaseMMU::Read, true, 2);
-                if (m_l2l2_newEntry == NULL)
-                    assert(0);
-                l2TLB_remove(m_l2l2_newEntry - tlb_l2l2.data(), 0, 1, 0, 0);
-            }
-            if (l2l3_newEntry) {
-                TlbEntry *m_l2l3_newEntry =
-                    lookup_l2tlb(vpnl2l3, asid, BaseMMU::Read, true, 3);
-                if (m_l2l3_newEntry == NULL)
-                    assert(0);
-                l2TLB_remove(m_l2l3_newEntry - tlb_l2l3.data(), 0, 0, 1, 0);
-            }
-            if (l2sp1_newEntry) {
-                TlbEntry *m_l2sp1_newEntry =
-                    lookup_l2tlb(vpnl2sp1, asid, BaseMMU::Read, true, 4);
-                if (m_l2sp1_newEntry == NULL)
-                    assert(0);
-                l2TLB_remove(m_l2sp1_newEntry - tlb_l2sp.data(), 0, 0, 0, 1);
-            }
-            if (l2sp2_newEntry) {
-                TlbEntry *m_l2sp2_newEntry =
-                    lookup_l2tlb(vpnl2sp2, asid, BaseMMU::Read, true, 5);
-                if (m_l2sp2_newEntry == NULL)
-                    assert(0);
-                l2TLB_remove(m_l2sp2_newEntry - tlb_l2sp.data(), 0, 0, 0, 1);
-            }
+            l2tlb->demapPageL2(vpn, asid);
+
         } else {
             for (i = 0; i < size; i++) {
                 if (tlb[i].trieHandle) {
@@ -748,52 +730,117 @@ TLB::demapPage(Addr vpn, uint64_t asid)
                         remove(i);
                 }
             }
-            for (i = 0; i < l2tlb_l1_size * 8; i = i + 8) {
-                if (tlb_l2l1[i].trieHandle){
-                    Addr l2l1_mask = ~(tlb_l2l1[i].size() - 1);
-                    if ((vpnl2l1 == 0 ||
-                         (vpnl2l1 & l2l1_mask) == tlb_l2l1[i].vaddr) &&
-                        (asid == 0 || tlb_l2l1[i].asid == asid))
-                        l2TLB_remove(i, 1, 0, 0, 0);
-                }
+            l2tlb->demapPageL2(vpn, asid);
+        }
+    }
+}
+
+void
+TLB::demapPageL2(Addr vpn, uint64_t asid)
+{
+    asid &= 0xFFFF;
+    Addr vpnl2l1 = ((vpn >> 33)) << 33;
+    Addr vpnl2l2 = ((vpn >> 24)) << 24;
+    Addr vpnl2l3 = ((vpn >> 15)) << 15;
+    Addr vpnl2sp1 = ((vpn >> 33)) << 33;
+    Addr vpnl2sp2 = ((vpn >> 24)) << 24;
+    int i;
+
+    DPRINTF(TLB, "l2 flush(vpn=%#x, asid=%#x)\n", vpn, asid);
+    DPRINTF(TLB, "l2tlb flush(vpn=%#x, asid=%#x)\n", vpn, asid);
+    if (vpn != 0 && asid != 0) {
+        assert(0);
+        TlbEntry *l2l1_newEntry =
+            lookup_l2tlb(vpn, asid, BaseMMU::Read, true, 1);
+        TlbEntry *l2l2_newEntry =
+            lookup_l2tlb(vpn, asid, BaseMMU::Read, true, 2);
+        TlbEntry *l2l3_newEntry =
+            lookup_l2tlb(vpn, asid, BaseMMU::Read, true, 3);
+        TlbEntry *l2sp1_newEntry =
+            lookup_l2tlb(vpn, asid, BaseMMU::Read, true, 4);
+        TlbEntry *l2sp2_newEntry =
+            lookup_l2tlb(vpn, asid, BaseMMU::Read, true, 5);
+
+
+        if (l2l1_newEntry) {
+            TlbEntry *m_l2l1_newEntry =
+                lookup_l2tlb(vpnl2l1, asid, BaseMMU::Read, true, 1);
+            if (m_l2l1_newEntry == NULL)
+                assert(0);
+            l2TLB_remove(m_l2l1_newEntry - tlb_l2l1.data(), 1, 0, 0, 0);
+        }
+        if (l2l2_newEntry) {
+            TlbEntry *m_l2l2_newEntry =
+                lookup_l2tlb(vpnl2l2, asid, BaseMMU::Read, true, 2);
+            if (m_l2l2_newEntry == NULL)
+                assert(0);
+            l2TLB_remove(m_l2l2_newEntry - tlb_l2l2.data(), 0, 1, 0, 0);
+        }
+        if (l2l3_newEntry) {
+            TlbEntry *m_l2l3_newEntry =
+                lookup_l2tlb(vpnl2l3, asid, BaseMMU::Read, true, 3);
+            if (m_l2l3_newEntry == NULL)
+                assert(0);
+            l2TLB_remove(m_l2l3_newEntry - tlb_l2l3.data(), 0, 0, 1, 0);
+        }
+        if (l2sp1_newEntry) {
+            TlbEntry *m_l2sp1_newEntry =
+                lookup_l2tlb(vpnl2sp1, asid, BaseMMU::Read, true, 4);
+            if (m_l2sp1_newEntry == NULL)
+                assert(0);
+            l2TLB_remove(m_l2sp1_newEntry - tlb_l2sp.data(), 0, 0, 0, 1);
+        }
+        if (l2sp2_newEntry) {
+            TlbEntry *m_l2sp2_newEntry =
+                lookup_l2tlb(vpnl2sp2, asid, BaseMMU::Read, true, 5);
+            if (m_l2sp2_newEntry == NULL)
+                assert(0);
+            l2TLB_remove(m_l2sp2_newEntry - tlb_l2sp.data(), 0, 0, 0, 1);
+        }
+    } else {
+        for (i = 0; i < l2tlb_l1_size * 8; i = i + 8) {
+            if (tlb_l2l1[i].trieHandle) {
+                Addr l2l1_mask = ~(tlb_l2l1[i].size() - 1);
+                if ((vpnl2l1 == 0 ||
+                     (vpnl2l1 & l2l1_mask) == tlb_l2l1[i].vaddr) &&
+                    (asid == 0 || tlb_l2l1[i].asid == asid))
+                    l2TLB_remove(i, 1, 0, 0, 0);
             }
-            for (i = 0; i < l2tlb_l2_size * 8; i = i + 8) {
-            //for (i = 0; i < l2tlb_l2_size * 8; i++) {
-                if (tlb_l2l2[i].trieHandle){
-                    Addr l2l2_mask = ~(tlb_l2l2[i].size() - 1);
-                    if ((vpn == 0 ||
-                         (vpn & l2l2_mask) == tlb_l2l2[i].vaddr) &&
-                        (asid == 0 || tlb_l2l2[i].asid == asid))
-                        l2TLB_remove(i, 0, 1, 0, 0);
-                }
+        }
+        for (i = 0; i < l2tlb_l2_size * 8; i = i + 8) {
+            // for (i = 0; i < l2tlb_l2_size * 8; i++) {
+            if (tlb_l2l2[i].trieHandle) {
+                Addr l2l2_mask = ~(tlb_l2l2[i].size() - 1);
+                if ((vpn == 0 || (vpn & l2l2_mask) == tlb_l2l2[i].vaddr) &&
+                    (asid == 0 || tlb_l2l2[i].asid == asid))
+                    l2TLB_remove(i, 0, 1, 0, 0);
+            }
             //            if (tlb_l2l2[i].trieHandle)
             //                l2TLB_remove(i, 0, 1, 0, 0);
+        }
+        for (i = 0; i < l2tlb_l3_size * 8; i = i + 8) {
+            if (tlb_l2l3[i].trieHandle) {
+                Addr l2l3_mask = ~(tlb_l2l3[i].size() - 1);
+                if ((vpnl2l3 == 0 ||
+                     (vpnl2l3 & l2l3_mask) == tlb_l2l3[i].vaddr) &&
+                    (asid == 0 || tlb_l2l3[i].asid == asid))
+                    l2TLB_remove(i, 0, 0, 1, 0);
             }
-            for (i = 0; i < l2tlb_l3_size * 8; i = i + 8) {
-                if (tlb_l2l3[i].trieHandle){
-                    Addr l2l3_mask = ~(tlb_l2l3[i].size() - 1);
-                    if ((vpnl2l3 == 0 ||
-                         (vpnl2l3 & l2l3_mask) == tlb_l2l3[i].vaddr) &&
-                        (asid == 0 || tlb_l2l3[i].asid == asid))
-                        l2TLB_remove(i, 0, 0, 1, 0);
-                }
+        }
+        for (i = 0; i < l2tlb_sp_size * 8; i++) {
+            Addr l2sp_mask = ~(tlb_l2sp[i].size() - 1);
+            if (tlb_l2sp[i].trieHandle) {
+
+                if ((vpnl2l1 == 0 ||
+                     (vpnl2l1 & l2sp_mask) == tlb_l2sp[i].vaddr) &&
+                    (asid == 0 || tlb_l2sp[i].asid == asid))
+                    l2TLB_remove(i, 0, 0, 0, 1);
             }
-            for (i = 0; i < l2tlb_sp_size * 8; i++) {
-                Addr l2sp_mask = ~(tlb_l2sp[i].size() - 1);
-                if (tlb_l2sp[i].trieHandle){
-
-                    if ((vpnl2l1 == 0 ||
-                         (vpnl2l1 & l2sp_mask) == tlb_l2sp[i].vaddr) &&
-                        (asid == 0 || tlb_l2sp[i].asid == asid))
-                        l2TLB_remove(i, 0, 0, 0, 1);
-                }
-                if (tlb_l2sp[i].trieHandle){
-                    if ((vpnl2l2 == 0 ||
-                         (vpnl2l2 & l2sp_mask) == tlb_l2sp[i].vaddr) &&
-                        (asid == 0 || tlb_l2sp[i].asid == asid))
-                        l2TLB_remove(i, 0, 0, 0, 1);
-                }
-
+            if (tlb_l2sp[i].trieHandle) {
+                if ((vpnl2l2 == 0 ||
+                     (vpnl2l2 & l2sp_mask) == tlb_l2sp[i].vaddr) &&
+                    (asid == 0 || tlb_l2sp[i].asid == asid))
+                    l2TLB_remove(i, 0, 0, 0, 1);
             }
         }
     }
@@ -802,29 +849,32 @@ TLB::demapPage(Addr vpn, uint64_t asid)
 void
 TLB::flushAll()
 {
-    DPRINTF(TLB, "flushAll()\n");
     size_t i;
-    for (i = 0; i < size; i++) {
-        if (tlb[i].trieHandle)
-            remove(i);
-    }
+    if (is_L1tlb) {
+        DPRINTF(TLB, "L1tlb flushAll()\n");
+        for (i = 0; i < size; i++) {
+            if (tlb[i].trieHandle)
+                remove(i);
+        }
+    } else {
+        DPRINTF(TLB, "L2tlb FlushAll()\n");
+        for (i = 0; i < l2tlb_l1_size * 8; i = i + 8) {
+            if (tlb_l2l1[i].trieHandle)
+                l2TLB_remove(i, 1, 0, 0, 0);
+        }
 
-    for (i = 0; i < l2tlb_l1_size * 8; i = i + 8) {
-        if (tlb_l2l1[i].trieHandle)
-            l2TLB_remove(i, 1, 0, 0, 0);
-    }
-
-    for (i = 0; i < l2tlb_l2_size * 8; i = i + 8) {
-        if (tlb_l2l2[i].trieHandle)
-            l2TLB_remove(i, 0, 1, 0, 0);
-    }
-    for (i = 0; i < l2tlb_l3_size * 8; i = i + 8) {
-        if (tlb_l2l3[i].trieHandle)
-            l2TLB_remove(i, 0, 0, 1, 0);
-    }
-    for (i = 0; i < l2tlb_sp_size * 8; i = i + 8) {
-        if (tlb_l2sp[i].trieHandle)
-            l2TLB_remove(i, 0, 0, 0, 1);
+        for (i = 0; i < l2tlb_l2_size * 8; i = i + 8) {
+            if (tlb_l2l2[i].trieHandle)
+                l2TLB_remove(i, 0, 1, 0, 0);
+        }
+        for (i = 0; i < l2tlb_l3_size * 8; i = i + 8) {
+            if (tlb_l2l3[i].trieHandle)
+                l2TLB_remove(i, 0, 0, 1, 0);
+        }
+        for (i = 0; i < l2tlb_sp_size * 8; i = i + 8) {
+            if (tlb_l2sp[i].trieHandle)
+                l2TLB_remove(i, 0, 0, 0, 1);
+        }
     }
 }
 
@@ -845,6 +895,7 @@ void
 TLB::l2TLB_remove(size_t idx, int l2l1, int l2l2, int l2l3, int l2sp)
 {
     int i;
+    DPRINTF(TLB, "l2tlb_remove tlb_l2l1 %d\n", tlb_l2l1.size());
     if (l2l1 == 1) {
         for (i = 0; i < 8; i++) {
             DPRINTF(TLB, "remove tlb_l2l1 idx %d idx+i %d\n", idx, idx + i);
@@ -1035,8 +1086,6 @@ TLB::L2tlb_check(PTESv39 pte, int level, STATUS status, PrivilegeMode pmode,
                 fault = L2tlb_pagefault(vaddr, mode, req);
             } else {
                 hit_in_sp = false;
-              //  fault = walker->start(pte.ppn, tc, translation, req, mode,
-              //                        false, level, true);
             }
         }
     }
@@ -1077,11 +1126,14 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
     DPRINTF(TLBVerbosel2, "the original vaddr %#x\n", vaddr);
 
     if (!e) {  // look up l2tlb
-        e5 = lookup_l2tlb(vaddr, satp.asid, mode, false, 5);
-        e4 = lookup_l2tlb(vaddr, satp.asid, mode, false, 4);
-        e3 = lookup_l2tlb(vaddr, satp.asid, mode, false, 3);
-        e2 = lookup_l2tlb(vaddr, satp.asid, mode, false, 2);
-        e1 = lookup_l2tlb(vaddr, satp.asid, mode, false, 1);
+        auto l2tlb = static_cast<TLB *>(nextLevel());
+        if (l2tlb == NULL)
+            assert(0);
+        e5 = l2tlb->lookup_l2tlb(vaddr, satp.asid, mode, false, 5);
+        e4 = l2tlb->lookup_l2tlb(vaddr, satp.asid, mode, false, 4);
+        e3 = l2tlb->lookup_l2tlb(vaddr, satp.asid, mode, false, 3);
+        e2 = l2tlb->lookup_l2tlb(vaddr, satp.asid, mode, false, 2);
+        e1 = l2tlb->lookup_l2tlb(vaddr, satp.asid, mode, false, 1);
         if (e3) {  // if hit in l3tlb
             DPRINTF(TLB, "hit in l2TLB l3\n");
             fault = L2tlb_check(e3->pte, 0, status, pmode, vaddr, mode, req,
@@ -1100,6 +1152,8 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                     newEntryL1.paddr = e->paddr;
                     newEntryL1.pte = e->pte;
                     newEntryL1.index = e->index;
+                    if (e3->is_squashed)
+                        stats.squashedInsert++;
                     if (!newEntryL1.pte.d && mode != BaseMMU::Write) {
                         sign = 1;
                     } else {
@@ -1152,6 +1206,8 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                     newEntryL1.paddr = e->paddr;
                     newEntryL1.pte = e->pte;
                     newEntryL1.index = e->index;
+                    if (e5->is_squashed)
+                        stats.squashedInsert++;
                     if (!newEntryL1.pte.d && mode != BaseMMU::Write) {
                         sign_e5 = 1;
                     } else {
@@ -1207,6 +1263,8 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                     newEntryL1.paddr = e->paddr;
                     newEntryL1.pte = e->pte;
                     newEntryL1.index = e->index;
+                    if (e4->is_squashed)
+                        stats.squashedInsert++;
                     if (!newEntryL1.pte.d && mode != BaseMMU::Write) {
                         sign_e4 = 1;
                     } else {
@@ -1260,6 +1318,8 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                     newEntryL1.paddr = e->paddr;
                     newEntryL1.pte = e->pte;
                     newEntryL1.index = e->index;
+                    if (e2->is_squashed)
+                        stats.squashedInsert++;
                     if (!newEntryL1.pte.d && mode != BaseMMU::Write) {
                         sign_e2 = 1;
                     } else {
@@ -1315,6 +1375,8 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                     newEntryL1.paddr = e->paddr;
                     newEntryL1.pte = e->pte;
                     newEntryL1.index = e->index;
+                    if (e1->is_squashed)
+                        stats.squashedInsert++;
                     if (!newEntryL1.pte.d && mode != BaseMMU::Write) {
                         sign_e1 = 1;
                     } else {
