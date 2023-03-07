@@ -9,63 +9,22 @@ namespace ftb_pred {
 RAS::RAS(const Params &p)
     : TimedBaseFTBPredictor(p),
     numEntries(p.numEntries),
-    ctrWidth(p.ctrWidth)
+    ctrWidth(p.ctrWidth),
+    numInflightEntries(p.numInflightEntries)
 {
+    ssp = 0;
+    nsp = 0;
+    sctr = 0;
+    stack.resize(numEntries);
     maxCtr = (1 << ctrWidth) - 1;
-    // init spec stack
-    specSp = 0;
-    specStack.resize(numEntries);
-    for (auto &entry : specStack) {
-        entry.ctr = 0;
-        entry.retAddr = 0x80000000L;
-    }
-    // init non-spec stack
-    nonSpecSp = 0;
-    nonSpecStack.resize(numEntries);
-    for (auto &entry : nonSpecStack) {
-        entry.ctr = 0;
-        entry.retAddr = 0x80000000L;
-    }
-}
-
-void
-RAS::setTrace()
-{
-    if (enableDB) {
-        // record every modification to the spec-stack
-        std::vector<std::pair<std::string, DataType>> spec_fields_vec = {
-            std::make_pair("condition", UINT64),
-            std::make_pair("op", UINT64),
-            std::make_pair("startPC", UINT64),
-            std::make_pair("brPC", UINT64),
-            std::make_pair("retAddr", UINT64),
-            // before op
-            std::make_pair("sp", UINT64),
-            std::make_pair("tosAddr", UINT64),
-            std::make_pair("tosCtr", UINT64)
-        };
-        specRasTrace = _db->addAndGetTrace("SPECRASTRACE", spec_fields_vec);
-        specRasTrace->init_table();
-
-        // record every modification to the non-spec-stack, used as reference model
-        std::vector<std::pair<std::string, DataType>> nonspec_fields_vec = {
-            // real info
-            std::make_pair("op", UINT64),
-            std::make_pair("startPC", UINT64),
-            std::make_pair("brPC", UINT64),
-            std::make_pair("retAddr", UINT64),
-            // prediction info
-            std::make_pair("predSp", UINT64),
-            std::make_pair("predTosAddr", UINT64),
-            std::make_pair("predTosCtr", UINT64),
-            // before op
-            std::make_pair("sp", UINT64),
-            std::make_pair("tosAddr", UINT64),
-            std::make_pair("tosCtr", UINT64),
-            std::make_pair("miss", UINT64)
-        };
-        nonSpecRasTrace = _db->addAndGetTrace("NONSPECRASTRACE", nonspec_fields_vec);
-        nonSpecRasTrace->init_table();
+    TOSW = 0;
+    TOSR = 0;
+    inflightPtrDec(TOSR);
+    BOS = 0;
+    inflightStack.resize(numInflightEntries);
+    for (auto &entry : stack) {
+        entry.data.ctr = 0;
+        entry.data.retAddr = 0x80000000L;
     }
 }
 
@@ -73,15 +32,16 @@ void
 RAS::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
                   std::vector<FullFTBPrediction> &stagePreds)
 {
-    auto &stack = specStack;
-    auto &sp = specSp;
     assert(getDelay() < stagePreds.size());
+    DPRINTFR(FTBRAS, "putPC startAddr %x", startAddr);
     for (int i = getDelay(); i < stagePreds.size(); i++) {
-        stagePreds[i].returnTarget = stack[sp].retAddr;
+        stagePreds[i].returnTarget = getTop_meta().retAddr; // stack[sp].retAddr;
     }
-    meta.sp = sp;
-    meta.tos = stack[sp];
-    printStack("putPCHistory", stack, sp);
+    /*
+    if (stagePreds.back().ftbEntry.slots[0].isCall || stagePreds.back().ftbEntry.slots[0].isReturn || stagePreds.back().ftbEntry.slots[1].isCall || stagePreds.back().ftbEntry.slots[1].isReturn) {
+        printStack("putPCHistory");
+    }
+    */
 }
 
 std::shared_ptr<void>
@@ -94,124 +54,166 @@ RAS::getPredictionMeta()
 void
 RAS::specUpdateHist(const boost::dynamic_bitset<> &history, FullFTBPrediction &pred)
 {
-    auto &stack = specStack;
-    auto &sp = specSp;
     // do push & pops on prediction
-    pred.returnTarget = stack[sp].retAddr;
+    // pred.returnTarget = stack[sp].retAddr;
     auto takenSlot = pred.getTakenSlot();
+    DPRINTFR(FTBRAS, "Do specUpdate for PC %x pred target %x ", pred.bbStart, pred.returnTarget);
+
     if (takenSlot.isCall) {
         Addr retAddr = takenSlot.pc + takenSlot.size;
-        if (enableDB) {
-            SpecRASTrace rec(When::SPECULATIVE, RAS_OP::PUSH, pred.bbStart, takenSlot.pc,
-                retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
-            specRasTrace->write_record(rec);
-        }
-        push(retAddr, stack, sp);
+        push(retAddr);
     }
     if (takenSlot.isReturn) {
-        if (enableDB) {
-            SpecRASTrace rec(When::SPECULATIVE, RAS_OP::POP, pred.bbStart, takenSlot.pc,
-                stack[sp].retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
-            specRasTrace->write_record(rec);
-        }
         // do pop
-        pop(stack, sp);
+        pop();
     }
-    printStack("after specUpdateHist", stack, sp);
+    if (takenSlot.isCall) {
+        DPRINTFR(FTBRAS, "IsCall spec PC %x\n", takenSlot.pc);
+    }
+    if (takenSlot.isReturn) {
+        DPRINTFR(FTBRAS, "IsRet spec PC %x\n", takenSlot.pc);
+    }
+    
+    if (takenSlot.isCall || takenSlot.isReturn)
+        printStack("after specUpdateHist");
+    DPRINTFR(FTBRAS, "meta TOSR %d TOSW %d\n", meta.TOSR, meta.TOSW);
 }
 
 void
 RAS::recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken)
 {
-    auto &stack = specStack;
-    auto &sp = specSp;
-    printStack("before recoverHist", stack, sp);
+    auto takenSlot = entry.exeBranchInfo;
+    /*
+    if (takenSlot.isCall || takenSlot.isReturn) {
+        printStack("before recoverHist");
+    }*/
     // recover sp and tos first
     auto meta_ptr = std::static_pointer_cast<RASMeta>(entry.predMetas[getComponentIdx()]);
-    auto takenSlot = entry.exeBranchInfo;
-    if (enableDB) {
-        SpecRASTrace rec(When::REDIRECT, RAS_OP::RECOVER, entry.startPC, takenSlot.pc, 0, sp, stack[sp].retAddr, stack[sp].ctr);
-        specRasTrace->write_record(rec);
-    }
-    sp = meta_ptr->sp;
-    stack[sp] = meta_ptr->tos;
+    DPRINTF(FTBRAS, "recover called, meta TOSR %d TOSW %d ssp %d sctr %u entry PC %x end PC %x\n", meta_ptr->TOSR, meta_ptr->TOSW, meta_ptr->ssp, meta_ptr->sctr, entry.startPC, entry.predEndPC);
 
+    TOSR = meta_ptr->TOSR;
+    TOSW = meta_ptr->TOSW;
+    ssp = meta_ptr->ssp;
+    sctr = meta_ptr->sctr;
+
+    // do push & pops on control squash
     if (entry.exeTaken) {
-        // do push & pops on control squash
-        if (takenSlot.isReturn) {
-            if (enableDB) {
-                SpecRASTrace rec(When::REDIRECT, RAS_OP::POP, entry.startPC, takenSlot.pc, stack[sp].retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
-                specRasTrace->write_record(rec);
-            }
-            pop(stack, sp);
-        }
         if (takenSlot.isCall) {
             Addr retAddr = takenSlot.pc + takenSlot.size;
-            if (enableDB) {
-                SpecRASTrace rec(When::REDIRECT, RAS_OP::PUSH, entry.startPC, takenSlot.pc, retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
-                specRasTrace->write_record(rec);
-            }
-            push(retAddr, stack, sp);
+            push(retAddr);
+        }
+        if (takenSlot.isReturn) {
+            pop();
+            //TOSW = (TOSR + 1) % numInflightEntries;
         }
     }
-    printStack("after recoverHist", stack, sp);
+
+    
+    if (entry.exeTaken) {
+        DPRINTF(FTBRAS, "isCall %d, isRet %d\n", takenSlot.isCall, takenSlot.isReturn);
+        printStack("after recoverHist");
+    }
+    
 }
 
 void
 RAS::update(const FetchStream &entry)
 {
-    auto &stack = nonSpecStack;
-    auto &sp = nonSpecSp;
-    printStack("before update", stack, sp);
+    auto meta_ptr = std::static_pointer_cast<RASMeta>(entry.predMetas[getComponentIdx()]);
     auto takenSlot = entry.exeBranchInfo;
-    if (entry.exeTaken && (takenSlot.isReturn || takenSlot.isCall)) {
-        auto meta_ptr = std::static_pointer_cast<RASMeta>(entry.predMetas[getComponentIdx()]);
-        auto pred_sp = meta_ptr->sp;
-        auto pred_tos = meta_ptr->tos;
-        auto miss = entry.squashType == SQUASH_CTRL && entry.squashPC == entry.exeBranchInfo.pc;
+    if (entry.exeTaken) {
         if (takenSlot.isCall) {
+            DPRINTF(FTBRAS, "real update call FTB hit %d meta TOSR %d TOSW %d\n entry PC %x", entry.isHit, meta_ptr->TOSR, meta_ptr->TOSW, entry.startPC);
             Addr retAddr = takenSlot.pc + takenSlot.size;
-            if (enableDB) {
-                NonSpecRASTrace rec(RAS_OP::PUSH, entry.startPC, takenSlot.pc, retAddr,
-                    pred_sp, pred_tos.retAddr, pred_tos.ctr, sp, stack[sp].retAddr, stack[sp].ctr, miss);
-                nonSpecRasTrace->write_record(rec);
-            }
-            push(retAddr, stack, sp);
+            push_stack(retAddr);
+            BOS = inflightPtrPlus1(meta_ptr->TOSW);
         }
         if (takenSlot.isReturn) {
-            if (enableDB) {
-                NonSpecRASTrace rec(RAS_OP::POP, entry.startPC, takenSlot.pc, takenSlot.target,
-                    pred_sp, pred_tos.retAddr, pred_tos.ctr, sp, stack[sp].retAddr, stack[sp].ctr, miss);
-                nonSpecRasTrace->write_record(rec);
-            }
-            pop(stack, sp);
+            DPRINTF(FTBRAS, "update ret entry PC %x\n", entry.startPC);
+            pop_stack();
         }
     }
-    printStack("after update", stack, sp);
-}
-
-void
-RAS::push(Addr retAddr, std::vector<RASEntry> &stack, int &sp)
-{
-    auto &tos = stack[sp];
-    if (tos.retAddr == retAddr && tos.ctr < maxCtr) {
-        tos.ctr++;
-    } else {
-        // push new entry
-        ptrInc(sp);
-        stack[sp].retAddr = retAddr;
-        stack[sp].ctr = 0;
+    if (takenSlot.isCall || takenSlot.isReturn) {
+        printStack("after update(commit)");
     }
 }
 
 void
-RAS::pop(std::vector<RASEntry> &stack, int &sp)
+RAS::push_stack(Addr retAddr)
 {
-    auto &tos = stack[sp];
-    if (tos.ctr > 0) {
-        tos.ctr--;
+    auto tos = stack[nsp];
+    if (tos.data.retAddr == retAddr && tos.data.ctr < maxCtr) {
+        tos.data.ctr++;
     } else {
-        ptrDec(sp);
+        // push new entry
+        ptrInc(nsp);
+        stack[nsp].data.retAddr = retAddr;
+        stack[nsp].data.ctr = 0;
+    }
+}
+
+void
+RAS::push(Addr retAddr)
+{
+    DPRINTF(FTBRAS, "doing push ");
+    // update ssp and sctr first
+    // meta has recorded their old value
+    auto topAddr = getTop();
+    if (retAddr == topAddr.retAddr && sctr < maxCtr) {
+        sctr++;
+    } else {
+        ptrInc(ssp);
+        sctr = 0;
+        // do not update non-spec stack here
+    }
+
+    // push will always enter inflight queue
+    RASInflightEntry t;
+    t.data.retAddr = retAddr;
+    t.data.ctr = sctr;
+    t.nos = TOSR;
+    inflightStack[TOSW] = t;
+    TOSR = TOSW;
+    inflightPtrInc(TOSW);
+}
+
+void
+RAS::pop_stack()
+{
+    auto tos = stack[nsp];
+    if (tos.data.ctr > 0) {
+        tos.data.ctr--;
+    } else {
+        ptrDec(nsp);
+    }
+}
+
+void
+RAS::pop()
+{
+    DPRINTFR(FTBRAS, "doing pop ");
+
+    // pop may need to deal with committed stack
+    if (inflightInRange(TOSR)) {
+        DPRINTF(FTBRAS, "Select from inflight, addr %x\n", inflightStack[TOSR].data.retAddr);
+        TOSR = inflightStack[TOSR].nos;
+        if (sctr > 0) {
+            sctr--; 
+        } else {
+            ptrDec(ssp);
+            auto newTop = getTop();
+            sctr = newTop.ctr;
+        }
+    } else {
+        // TOSR not valid, operate on committed stack
+        DPRINTF(FTBRAS, "in committed range\n");
+        if (sctr > 0) {
+            sctr--;
+        } else {
+            ptrDec(ssp);
+            auto newTop = getTop();
+            sctr = newTop.ctr;
+        }
     }
 }
 
@@ -229,6 +231,78 @@ RAS::ptrDec(int &ptr)
     } else {
         assert(ptr == 0);
         ptr = numEntries - 1;
+    }
+}
+
+void
+RAS::inflightPtrInc(int &ptr)
+{
+    ptr = (ptr + 1) % numInflightEntries;
+}
+
+void
+RAS::inflightPtrDec(int &ptr)
+{
+    if (ptr > 0) {
+        ptr--;
+    } else {
+        assert(ptr == 0);
+        ptr = numInflightEntries - 1;
+    }
+}
+
+int
+RAS::inflightPtrPlus1(int ptr) {
+    return (ptr + 1) % numInflightEntries;
+}
+
+bool
+RAS::inflightInRange(int &ptr)
+{
+    if (TOSW > BOS) {
+        return ptr >= BOS && ptr < TOSW;
+    } else if (TOSW < BOS) {
+        return ptr < TOSW || ptr >= BOS;
+    } else {
+        // empty inflight queue
+        return false;
+    }
+}
+
+RAS::RASEssential
+RAS::getTop()
+{
+    // results may come from two sources: inflight queue and committed stack
+    if (inflightInRange(TOSR)) {
+        // result come from inflight queue
+        DPRINTF(FTBRAS, "Select from inflight, addr %x\n", inflightStack[TOSR].data.retAddr);
+        return inflightStack[TOSR].data;
+    } else {
+        // result come from commit queue
+        DPRINTF(FTBRAS, "Select from stack, addr %x\n", stack[ssp].data.retAddr);
+        return stack[ssp].data;
+    }
+}
+
+RAS::RASEssential
+RAS::getTop_meta() {
+    // results may come from two sources: inflight queue and committed stack
+    if (inflightInRange(TOSR)) {
+        // result come from inflight queue
+        DPRINTF(FTBRAS, "Select from inflight, addr %x\n", inflightStack[TOSR].data.retAddr);
+        meta.ssp = ssp;
+        meta.sctr = sctr;
+        meta.TOSR = TOSR;
+        meta.TOSW = TOSW;
+        return inflightStack[TOSR].data;
+    } else {
+        // result come from commit queue
+        meta.ssp = ssp;
+        meta.sctr = sctr;
+        meta.TOSR = TOSR;
+        meta.TOSW = TOSW;
+        DPRINTF(FTBRAS, "Select from stack, addr %x\n", stack[ssp].data.retAddr);
+        return stack[ssp].data;
     }
 }
 
