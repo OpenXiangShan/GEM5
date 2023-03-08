@@ -982,8 +982,8 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
     assert(inflight);
     assert(state == Waiting);
     inflight--;
-    Addr l2vpn_2 = 0;
-    Addr l2vpn_1 = 0;
+    //Addr l2vpn_2 = 0;
+    //Addr l2vpn_1 = 0;
     Addr l2vpn_0 = 0;
     int squashed_num = 0;
     int request_num = 0;
@@ -1053,28 +1053,15 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
                 if ((r.translation->squashed()) && (!entry.is_squashed)) {
                     entry.is_squashed = true;
                     walker->tlb->insert(entry.vaddr, entry, true);
-                    l2vpn_2 = (entry.vaddr >> 33) << 33;
-                    l2vpn_1 = (entry.vaddr >> 24) << 24;
+                    //l2vpn_2 = (entry.vaddr >> 33) << 33;
+                    //l2vpn_1 = (entry.vaddr >> 24) << 24;
                     l2vpn_0 = (entry.vaddr >> 15) << 15;
                     inl2_entry.is_squashed = true;
                     if (inl2_entry.level == 0) {
                         // printf("insert level ==0\n");
                         walker->tlb->L2TLB_insert(l2vpn_0, inl2_entry, 0, 3, 0,
                                                   true);  // l2l3
-                        walker->tlb->L2TLB_insert(l2vpn_2, inl2_entry, 2, 1, 0,
-                                                  true);  // l2l1
-                        walker->tlb->L2TLB_insert(l2vpn_1, inl2_entry, 1, 2, 0,
-                                                  true);  // l2l2
-                    } else if (inl2_entry.level == 1) {
-                        // printf("insert levle == 1 \n");
-                        walker->tlb->L2TLB_insert(l2vpn_2, inl2_entry, 1, 5, 0,
-                                                  true);
-                        walker->tlb->L2TLB_insert(l2vpn_1, inl2_entry, 2, 1, 0,
-                                                  true);
-                    } else if (inl2_entry.level == 2) {
-                        // printf("insert level ==2\n");
-                        walker->tlb->L2TLB_insert(l2vpn_1, inl2_entry, 1, 4, 0,
-                                                  true);
+
                     }
                 }
                 if (r.translation->squashed()) {
@@ -1171,19 +1158,20 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
                         entry.is_squashed = true;
                         walker->tlb->insert(entry.vaddr, entry, true);
 
-                        l2vpn_2 = (entry.vaddr >> 33) << 33;
-                        l2vpn_1 = (entry.vaddr >> 24) << 24;
+                        //l2vpn_2 = (entry.vaddr >> 33) << 33;
+                        //l2vpn_1 = (entry.vaddr >> 24) << 24;
                         l2vpn_0 = (entry.vaddr >> 15) << 15;
                         inl2_entry.is_squashed = true;
                         if (inl2_entry.level == 0) {
                             // printf("insert level ==0\n");
                             walker->tlb->L2TLB_insert(l2vpn_0, inl2_entry, 0,
                                                       3, 0, true);  // l2l3
-                            walker->tlb->L2TLB_insert(l2vpn_2, inl2_entry, 2,
-                                                      1, 0, true);  // l2l1
-                            walker->tlb->L2TLB_insert(l2vpn_1, inl2_entry, 1,
-                                                      2, 0, true);  // l2l2
-                        } else if (inl2_entry.level == 1) {
+                            //walker->tlb->L2TLB_insert(l2vpn_2, inl2_entry, 2,
+                             //                         1, 0, true);  // l2l1
+                            //walker->tlb->L2TLB_insert(l2vpn_1, inl2_entry, 1,
+                            //                          2, 0, true);  // l2l2
+                        }
+                        /*else if (inl2_entry.level == 1) {
                             // printf("insert levle == 1 \n");
                             walker->tlb->L2TLB_insert(l2vpn_2, inl2_entry, 1,
                                                       5, 0, true);
@@ -1193,7 +1181,7 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
                             // printf("insert level ==2\n");
                             walker->tlb->L2TLB_insert(l2vpn_1, inl2_entry, 1,
                                                       4, 0, true);
-                        }
+                        }*/
                     }
                     if (r.translation->squashed()) {
                         squashed_num++;

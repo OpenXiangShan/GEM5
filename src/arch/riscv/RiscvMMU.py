@@ -51,7 +51,9 @@ class RiscvMMU(BaseMMU):
     l2_shared = RiscvTLBL2(entry_type="unified")
 
     itb = RiscvTLB(entry_type="instruction",next_level=Parent.l2_shared)
+    #itb = RiscvTLB(entry_type="instruction")
     dtb = RiscvTLB(entry_type="data",next_level=Parent.l2_shared)
+    #dtb = RiscvTLB(entry_type="data")
     pma_checker = Param.PMAChecker(PMAChecker(), "PMA Checker")
     pmp = Param.PMP(PMP(), "Physical Memory Protection Unit")
 

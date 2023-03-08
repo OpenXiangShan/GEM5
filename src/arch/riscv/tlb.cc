@@ -72,7 +72,8 @@ buildKey(Addr vpn, uint16_t asid)
 }
 
 TLB::TLB(const Params &p) :
-    BaseTLB(p), is_L1tlb(p.is_L1tlb),size(p.size),
+    BaseTLB(p), is_L1tlb(p.is_L1tlb),is_stage2(p.is_stage2),
+    is_the_sharedL2(p.is_the_sharedL2),size(p.size),
     l2tlb_l1_size(p.l2tlb_l1_size),
     l2tlb_l2_size(p.l2tlb_l2_size),l2tlb_l3_size(p.l2tlb_l3_size),
     l2tlb_sp_size(p.l2tlb_sp_size),
@@ -93,7 +94,8 @@ TLB::TLB(const Params &p) :
         walker->setTLB(this);
         DPRINTF(TLBVerbose, "tlb11 tlb_size %d size() %d\n", size, tlb.size());
 
-    } else {
+    }
+    if (is_stage2 || is_the_sharedL2) {
         DPRINTF(TLBVerbose, "tlbL2\n");
         for (size_t x_l2l1 = 0; x_l2l1 < l2tlb_l1_size * 8; x_l2l1++) {
             tlb_l2l1[x_l2l1].trieHandle = NULL;
@@ -283,7 +285,7 @@ TLB::lookup_l2tlb(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
     TlbEntry *entry_l2sp1 = NULL;
     TlbEntry *entry_l2sp2 = NULL;
     bool is_squashed_flag = false;
-    if (is_L1tlb)
+    if (is_L1tlb && !is_stage2)
         assert(0);
 
     if (f_level == 1) {
@@ -342,6 +344,20 @@ TLB::lookup_l2tlb(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
                     entry_l2l3 ? "hit" : "miss",
                     entry_l2l3 ? entry_l2l3->paddr : 0);
             //return entry_l2l3;
+
+            if (mode == BaseMMU::Write) {
+                stats.writeL2Tlbl3Hits++;
+            } else {
+                stats.ReadL2Tlbl3Hits++;
+            }
+
+            if (is_squashed_flag) {
+                if (mode == BaseMMU::Write) {
+                    stats.writeL2l3TlbSquashedHits++;
+                } else {
+                    stats.ReadL2l3TlbSquashedHits++;
+                }
+            }
         }
 
         if (entry_l2sp1) {
@@ -435,7 +451,7 @@ TLB::lookup_l2tlb(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
                     entry_l2l1 ? entry_l2l1->paddr : 0);
             // return entry_l2l1;
         }
-        if (!(entry_l2l1 || entry_l2l2 || entry_l2l3 || entry_l2sp1 ||
+        /*if (!(entry_l2l1 || entry_l2l2 || entry_l2l3 || entry_l2sp1 ||
               entry_l2sp2)) {
             if (mode == BaseMMU::Write) {
                 stats.writeL2TlbMisses++;
@@ -459,7 +475,7 @@ TLB::lookup_l2tlb(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
                     stats.ReadL2TlbSquashedHits++;
                 }
             }
-        }
+        }*/
 
         if (entry_l2l3)
             return entry_l2l3;
@@ -658,9 +674,14 @@ TlbEntry *
 TLB::L2TLB_insert(Addr vpn, const TlbEntry &entry, int level, int choose,
                   int sign, bool squashed_update)
 {
-    auto l2tlb = static_cast<TLB *>(nextLevel());
-    if (l2tlb == NULL)
-        assert(0);
+    TLB *l2tlb;
+    if (is_stage2)
+        l2tlb = this;
+    else
+        l2tlb = static_cast<TLB *>(nextLevel());
+
+    //if (l2tlb == NULL)
+    //    assert(0);
     TlbEntry *newEntry = NULL;
     DPRINTF(TLB, "choose %d vpn %#x entry->vaddr %#x\n", choose, vpn,
             entry.vaddr);
@@ -701,13 +722,22 @@ TLB::demapPage(Addr vpn, uint64_t asid)
 
     size_t i;
 
-    auto l2tlb = static_cast<TLB *>(nextLevel());
-    if (l2tlb == NULL)
+    //auto l2tlb = static_cast<TLB *>(nextLevel());
+    TLB *l2tlb;
+    if (is_stage2)
+        l2tlb = this;
+    else
+        l2tlb = static_cast<TLB *>(nextLevel());
+
+    if ((l2tlb == NULL) && (!is_stage2))
         assert(0);
 
     if (vpn == 0 && asid == 0) {
         flushAll();
-        l2tlb->flushAll();
+        if (!is_stage2) {
+            l2tlb->flushAll();
+        }
+
     }
 
     else {
@@ -808,15 +838,12 @@ TLB::demapPageL2(Addr vpn, uint64_t asid)
             }
         }
         for (i = 0; i < l2tlb_l2_size * 8; i = i + 8) {
-            // for (i = 0; i < l2tlb_l2_size * 8; i++) {
             if (tlb_l2l2[i].trieHandle) {
                 Addr l2l2_mask = ~(tlb_l2l2[i].size() - 1);
                 if ((vpn == 0 || (vpn & l2l2_mask) == tlb_l2l2[i].vaddr) &&
                     (asid == 0 || tlb_l2l2[i].asid == asid))
                     l2TLB_remove(i, 0, 1, 0, 0);
             }
-            //            if (tlb_l2l2[i].trieHandle)
-            //                l2TLB_remove(i, 0, 1, 0, 0);
         }
         for (i = 0; i < l2tlb_l3_size * 8; i = i + 8) {
             if (tlb_l2l3[i].trieHandle) {
@@ -856,7 +883,8 @@ TLB::flushAll()
             if (tlb[i].trieHandle)
                 remove(i);
         }
-    } else {
+    }
+    if (is_stage2 || is_the_sharedL2) {
         DPRINTF(TLB, "L2tlb FlushAll()\n");
         for (i = 0; i < l2tlb_l1_size * 8; i = i + 8) {
             if (tlb_l2l1[i].trieHandle)
@@ -1126,7 +1154,13 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
     DPRINTF(TLBVerbosel2, "the original vaddr %#x\n", vaddr);
 
     if (!e) {  // look up l2tlb
-        auto l2tlb = static_cast<TLB *>(nextLevel());
+        TLB *l2tlb;
+        if (is_stage2)
+            l2tlb = this;
+        else
+            l2tlb = static_cast<TLB *>(nextLevel());
+
+        // auto l2tlb = static_cast<TLB *>(nextLevel());
         if (l2tlb == NULL)
             assert(0);
         e5 = l2tlb->lookup_l2tlb(vaddr, satp.asid, mode, false, 5);
@@ -1696,17 +1730,17 @@ TLB::TlbStats::TlbStats(statistics::Group *parent)
                "write misses in l2tlb"),
       ADD_STAT(ReadL2TlbMisses, statistics::units::Count::get(),
                "read misses in l2tlb"),
-      ADD_STAT(writeL2TlbHits, statistics::units::Count::get(),
+      ADD_STAT(writeL2Tlbl3Hits, statistics::units::Count::get(),
                "write hits in l2tlb"),
-      ADD_STAT(ReadL2TlbHits, statistics::units::Count::get(),
+      ADD_STAT(ReadL2Tlbl3Hits, statistics::units::Count::get(),
                "read hits in l2tlb"),
       ADD_STAT(squashedInsertL2, statistics::units::Count::get(),
                "number of l2 squashe pte insert"),
       ADD_STAT(ALLInsertL2, statistics::units::Count::get(),
                "number of all l2 pte insert"),
-      ADD_STAT(writeL2TlbSquashedHits, statistics::units::Count::get(),
+      ADD_STAT(writeL2l3TlbSquashedHits, statistics::units::Count::get(),
                "l2 write squashed hits"),
-      ADD_STAT(ReadL2TlbSquashedHits, statistics::units::Count::get(),
+      ADD_STAT(ReadL2l3TlbSquashedHits, statistics::units::Count::get(),
                "l2 read squashed hits"),
       ADD_STAT(hits, statistics::units::Count::get(),
                "Total TLB (read and write) hits", readHits + writeHits),

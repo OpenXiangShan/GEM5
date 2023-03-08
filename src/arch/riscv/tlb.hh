@@ -62,6 +62,8 @@ class TLB : public BaseTLB
 
   protected:
     bool is_L1tlb;
+    bool is_stage2;
+    bool is_the_sharedL2;
     size_t size;
     size_t l2tlb_l1_size;
     size_t l2tlb_l2_size;
@@ -99,12 +101,12 @@ class TLB : public BaseTLB
 
         statistics::Scalar writeL2TlbMisses;
         statistics::Scalar ReadL2TlbMisses;
-        statistics::Scalar writeL2TlbHits;
-        statistics::Scalar ReadL2TlbHits;
+        statistics::Scalar writeL2Tlbl3Hits;
+        statistics::Scalar ReadL2Tlbl3Hits;
         statistics::Scalar squashedInsertL2;
         statistics::Scalar ALLInsertL2;
-        statistics::Scalar writeL2TlbSquashedHits;
-        statistics::Scalar ReadL2TlbSquashedHits;
+        statistics::Scalar writeL2l3TlbSquashedHits;
+        statistics::Scalar ReadL2l3TlbSquashedHits;
 
         statistics::Formula hits;
         statistics::Formula misses;

@@ -60,6 +60,10 @@ class RiscvTLB(BaseTLB):
     #size = Param.Int(64, "TLB size")
     #size = Param.Int(256, "TLB size")
     is_L1tlb = Param.Bool(True,"the tlb is l1tlb")
+    #the tlb has private l2tlb
+    is_stage2 = Param.Bool(False,"the tlb is private l2tlb")
+    #is_stage2 = Param.Bool(True,"the tlb is private l2tlb")
+    is_the_sharedL2 = Param.Bool(False,"the tlb is shared l2tlb")
     size = Param.Int(64, "TLB size")
     #size = Param.Int(36, "TLB size")
     #l2tlb_l1_size = Param.Int(8, "l2TLB_l1 size")
@@ -78,4 +82,5 @@ class RiscvTLB(BaseTLB):
 
 class RiscvTLBL2(RiscvTLB):
     is_L1tlb = False
+    is_the_sharedL2 = True
 
