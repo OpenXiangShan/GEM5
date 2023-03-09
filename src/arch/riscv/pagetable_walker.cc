@@ -633,8 +633,8 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                         // put it non-writable into the TLB to detect
                         // writes and redo the page table walk in order
                         // to update the dirty flag.
-                        if (!pte.d && mode != BaseMMU::Write)
-                            entry.pte.w = 0;
+                        //if (!pte.d && mode != BaseMMU::Write)
+                        //    entry.pte.w = 0;
                         doTLBInsert = true;
                         DPRINTF(
                             PageTableWalker,

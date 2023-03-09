@@ -1188,9 +1188,9 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                     newEntryL1.index = e->index;
                     if (e3->is_squashed)
                         stats.squashedInsert++;
-                    if (!newEntryL1.pte.d && mode != BaseMMU::Write) {
-                        sign = 1;
-                    } else {
+                    //if (!newEntryL1.pte.d && mode != BaseMMU::Write) {
+                      //  sign = 1;
+                    //} else {
                         paddr = e->paddr << PageShift |
                                 (vaddr & mask(e->logBytes));
                         // insert(e->vaddr, *e);
@@ -1203,7 +1203,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                                                    paddr, newEntryL1);
                         DPRINTF(TLBVerbosel2, "finish Schedule\n");
                         delayed = true;
-                    }
+                    //}
 
                     if (sign == 0)
                         return fault;
@@ -1212,7 +1212,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                 assert(0);
             }
 
-            if (sign == 1) {
+            /*if (sign == 1) {
                 fault = walker->start(0, tc, translation, req, mode, false, 2,
                                       false, 0);
                 DPRINTF(TLB, "finish start\n");
@@ -1223,16 +1223,16 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                 }
                 e = lookup(vaddr, satp.asid, mode, false);
                 assert(e != nullptr);
-            }
+            }*/
         } else if (e5) {  // hit in sp l2
             DPRINTF(TLB, "hit in l2 tlb l5\n");
             fault = L2tlb_check(e5->pte, 1, status, pmode, vaddr, mode, req,
                                 tc, translation);
-            int sign_e5 = 0;
+            //int sign_e5 = 0;
             if (hit_in_sp){
                 e = e5;
                 if (fault == NoFault) {
-                    TlbEntry newEntryL1;
+                   TlbEntry newEntryL1;
                     newEntryL1.logBytes = e->logBytes;
                     newEntryL1.asid = e->asid;
                     newEntryL1.vaddr = e->vaddr;
@@ -1242,9 +1242,9 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                     newEntryL1.index = e->index;
                     if (e5->is_squashed)
                         stats.squashedInsert++;
-                    if (!newEntryL1.pte.d && mode != BaseMMU::Write) {
+                    /*if (!newEntryL1.pte.d && mode != BaseMMU::Write) {
                         sign_e5 = 1;
-                    } else {
+                    } else {*/
                         paddr = e->paddr << PageShift |
                                 (vaddr & mask(e->logBytes));
                         // insert(e->vaddr, *e);
@@ -1252,7 +1252,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                                                    paddr, newEntryL1);
                         delayed = true;
                         return fault;
-                    }
+                    //}
                 }
 
             }
@@ -1268,7 +1268,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                 assert(e != nullptr);
             }
 
-            if (sign_e5 == 1) {
+            /*if (sign_e5 == 1) {
                 fault = walker->start(0, tc, translation, req, mode, false, 2,
                                       false, 0);
                 DPRINTF(TLB, "finish start\n");
@@ -1279,13 +1279,13 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                 }
                 e = lookup(vaddr, satp.asid, mode, false);
                 assert(e != nullptr);
-            }
+            }*/
 
         } else if (e4) {  // hit in sp l1
             DPRINTF(TLB, "hit in l2 tlb l4\n");
             fault = L2tlb_check(e4->pte, 2, status, pmode, vaddr, mode, req,
                                 tc, translation);
-            int sign_e4 = 0;
+            //int sign_e4 = 0;
             if (hit_in_sp){
                 e =  e4;
                 if (fault == NoFault) {
@@ -1299,9 +1299,9 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                     newEntryL1.index = e->index;
                     if (e4->is_squashed)
                         stats.squashedInsert++;
-                    if (!newEntryL1.pte.d && mode != BaseMMU::Write) {
+                  /*  if (!newEntryL1.pte.d && mode != BaseMMU::Write) {
                         sign_e4 = 1;
-                    } else {
+                    } else {*/
                         paddr = e->paddr << PageShift |
                                 (vaddr & mask(e->logBytes));
                         // insert(e->vaddr, *e);
@@ -1309,7 +1309,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                                                    paddr, newEntryL1);
                         delayed = true;
                         return fault;
-                    }
+                    //}
                 }
 
             }
@@ -1323,7 +1323,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                 e = lookup(vaddr, satp.asid, mode, false);
                 assert(e != nullptr);
             }
-            if (sign_e4 == 1) {
+            /*if (sign_e4 == 1) {
                 fault = walker->start(0, tc, translation, req, mode, false, 2,
                                       false, 0);
                 DPRINTF(TLB, "finish start\n");
@@ -1334,12 +1334,12 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                 }
                 e = lookup(vaddr, satp.asid, mode, false);
                 assert(e != nullptr);
-            }
+            }*/
             // e = e4;
         } else if (e2) {
             fault = L2tlb_check(e2->pte, 1, status, pmode, vaddr, mode, req,
                                 tc, translation);
-            int sign_e2 = 0;
+            //int sign_e2 = 0;
             if (hit_in_sp){
                 e = e2;
                 if (fault == NoFault) {
@@ -1354,9 +1354,9 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                     newEntryL1.index = e->index;
                     if (e2->is_squashed)
                         stats.squashedInsert++;
-                    if (!newEntryL1.pte.d && mode != BaseMMU::Write) {
+                  /*  if (!newEntryL1.pte.d && mode != BaseMMU::Write) {
                         sign_e2 = 1;
-                    } else {
+                    } else {*/
                         paddr = e->paddr << PageShift |
                                 (vaddr & mask(e->logBytes));
                         // insert(e->vaddr, *e);
@@ -1364,7 +1364,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                                                    paddr, newEntryL1);
                         delayed = true;
                         return fault;
-                    }
+                    //}
                 }
             } else {
                 fault = walker->start(e2->pte.ppn, tc, translation, req, mode,
@@ -1379,7 +1379,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                 assert(e != nullptr);
             }
 
-            if (sign_e2 == 1) {
+            /*if (sign_e2 == 1) {
                 fault = walker->start(0, tc, translation, req, mode, false, 2,
                                       false, 0);
                 DPRINTF(TLB, "finish start\n");
@@ -1390,14 +1390,14 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                 }
                 e = lookup(vaddr, satp.asid, mode, false);
                 assert(e != nullptr);
-            }
+            }*/
 
 
         } else if (e1) {
             DPRINTF(TLB, "hit in l2 tlb l1\n");
             fault = L2tlb_check(e1->pte, 2, status, pmode, vaddr, mode, req,
                                 tc, translation);
-            int sign_e1 = 0;
+            //int sign_e1 = 0;
             if (hit_in_sp){
                 e = e1;
                 if (fault == NoFault) {
@@ -1411,9 +1411,9 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                     newEntryL1.index = e->index;
                     if (e1->is_squashed)
                         stats.squashedInsert++;
-                    if (!newEntryL1.pte.d && mode != BaseMMU::Write) {
-                        sign_e1 = 1;
-                    } else {
+                    //if (!newEntryL1.pte.d && mode != BaseMMU::Write) {
+                    //    sign_e1 = 1;
+                    //} else {
                         paddr = e->paddr << PageShift |
                                 (vaddr & mask(e->logBytes));
                         // insert(e->vaddr, *e);
@@ -1421,7 +1421,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                                                    paddr, newEntryL1);
                         delayed = true;
                         return fault;
-                    }
+                    //}
                 }
 
             } else {
@@ -1435,7 +1435,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                 e = lookup(vaddr, satp.asid, mode, false);
                 assert(e != nullptr);
             }
-            if (sign_e1 == 1) {
+            /*if (sign_e1 == 1) {
                 fault = walker->start(0, tc, translation, req, mode, false, 2,
                                       false, 0);
                 DPRINTF(TLB, "finish start\n");
@@ -1446,7 +1446,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                 }
                 e = lookup(vaddr, satp.asid, mode, false);
                 assert(e != nullptr);
-            }
+            }*/
 
         } else {
             DPRINTF(TLB, "miss in l1 tlb + l2 tlb\n");
@@ -1468,11 +1468,15 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
     if (fault == NoFault) {
         fault = checkPermissions(status, pmode, vaddr, mode, e->pte);
     }
+    if (fault == NoFault){
+        if (mode ==BaseMMU::Write && !e->pte.d)
+            fault = createPagefault(vaddr, mode);
+    }
 
     if (fault != NoFault) {
         // if we want to write and it isn't writable, do a page table walk
         // again to update the dirty flag.
-        DPRINTF(TLB,"check is no fault\n");
+       /* DPRINTF(TLB,"check is no fault\n");
         if (mode == BaseMMU::Write && !e->pte.w) {
             DPRINTF(TLB, "Dirty bit not set, repeating PT walk\n");
             fault = walker->start(0, tc, translation, req, mode);
@@ -1480,7 +1484,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                 delayed = true;
                 return fault;
             }
-        }
+        }*/
         if (fault != NoFault)
             return fault;
     }
