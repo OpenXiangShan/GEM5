@@ -1317,3 +1317,9 @@ def format VectorFloatSlideDownFormat(code, category, *flags) {{
         decode_template = VectorFloatDecodeBlock,
         micro_execute_template = VectorFloatSlideMicroExecute)
 }};
+
+def format VectorCompressFormat(code, category, *flags) {{
+    iop = InstObjParams(name, Name, "VCompressMacroInst", flags)
+
+    decode_block = VectorIntDecodeBlock.subst(iop)
+}};

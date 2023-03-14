@@ -2883,6 +2883,8 @@ decode QUADRANT default Unknown::unknown() {
                         Vd_vu[i] = ei;
                     }}, OPMVV, VectorMiscOp);
                 }
+                0x17: VectorCompressFormat::vcompress_vm({{
+                }}, OPMVV, VectorMiscOp);
                 format VectorMaskFormat {
                     0x18: vmandn_mm({{
                         Vd_ub[i/8] = ASSIGN_VD_BIT(i,
