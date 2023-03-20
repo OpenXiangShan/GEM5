@@ -262,18 +262,18 @@ namespace RiscvISA
         Tick squashHandleTick;
 
         // Wrapper for checking for squashes before starting a translation.
-        void startWalkWrapper();
+        //void startWalkWrapper();
 
         // Checking for squashes
-        void handlePendingSquash();
+        //void handlePendingSquash();
 
         void dol2TLBHit();
 
         /**
          * Event used to call startWalkWrapper.
          **/
-        EventFunctionWrapper startWalkWrapperEvent;
-        EventFunctionWrapper handlePendingSquashEvent;
+        //EventFunctionWrapper startWalkWrapperEvent;
+        //EventFunctionWrapper handlePendingSquashEvent;
 
         EventFunctionWrapper doL2TLBHitEvent;
 
@@ -300,8 +300,9 @@ namespace RiscvISA
             requestorId(sys->getRequestorId(this)),
             numSquashable(params.num_squash_per_cycle),
             ptwSquash(params.ptwSquash),
-            startWalkWrapperEvent([this]{ startWalkWrapper(); }, name()),
-            handlePendingSquashEvent([this]{ handlePendingSquash(); }, name()),
+            //startWalkWrapperEvent([this]{ startWalkWrapper(); }, name()),
+            //handlePendingSquashEvent([this]
+            //{ handlePendingSquash(); }, name()),
             doL2TLBHitEvent([this]{dol2TLBHit();},name())
         {
         }
