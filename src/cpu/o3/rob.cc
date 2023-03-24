@@ -60,6 +60,8 @@ ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
       cpu(_cpu),
       numEntries(params.numROBEntries),
       squashWidth(params.squashWidth),
+      redoWidth(params.redoWidth),
+      squashWithRedo(params.squashWithRedo),
       numInstsInROB(0),
       numThreads(params.numThreads),
       stats(_cpu)
@@ -326,18 +328,19 @@ ROB::doSquash(ThreadID tid)
 
     bool robTailUpdate = false;
 
-    unsigned int numInstsToSquash = squashWidth;
+    assert(dynSquashWidth);
+    unsigned int num_insts_to_squash = dynSquashWidth;
 
     // If the CPU is exiting, squash all of the instructions
     // it is told to, even if that exceeds the squashWidth.
     // Set the number to the number of entries (the max).
     if (cpu->isThreadExiting(tid))
     {
-        numInstsToSquash = numEntries;
+        num_insts_to_squash = numEntries;
     }
 
     for (int numSquashed = 0;
-         numSquashed < numInstsToSquash &&
+         numSquashed < num_insts_to_squash &&
          squashIt[tid] != instList[tid].end() &&
          (*squashIt[tid])->seqNum > squashedSeqNum[tid];
          ++numSquashed)
@@ -487,6 +490,23 @@ ROB::squash(InstSeqNum squash_num, ThreadID tid)
     doneSquashing[tid] = false;
 
     squashedSeqNum[tid] = squash_num;
+
+    // TODO: find the number of instructions to squash and
+    // the number of uncommited instructions
+    unsigned total_inst_to_squash = 0;
+    for (auto it = instList[tid].begin(); it != instList[tid].end(); ++it) {
+        if ((*it)->seqNum > squash_num) {
+            total_inst_to_squash++;
+        }
+    }
+    double num_uncommited_inst = instList[tid].size() - total_inst_to_squash;
+
+    assert((squashWithRedo && redoWidth > 0) ||
+           (!squashWithRedo && squashWidth > 0));
+    double cycles_to_squash = squashWithRedo ? num_uncommited_inst / redoWidth
+                                       : total_inst_to_squash / squashWidth;
+    dynSquashWidth = ceil(total_inst_to_squash / cycles_to_squash);
+    dynSquashWidth = std::max(dynSquashWidth, 1u);
 
     if (!instList[tid].empty()) {
         InstIt tail_thread = instList[tid].end();

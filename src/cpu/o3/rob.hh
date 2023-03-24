@@ -292,6 +292,12 @@ class ROB
     /** Number of instructions that can be squashed in a single cycle. */
     unsigned squashWidth;
 
+    unsigned redoWidth{6};
+
+    bool squashWithRedo{false};
+
+    unsigned dynSquashWidth{6};
+
   public:
     std::list<DynInstPtr>* getInstList(ThreadID tid){
         return &instList[tid];
