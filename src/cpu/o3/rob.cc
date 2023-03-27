@@ -57,11 +57,12 @@ namespace o3
 
 ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
     : robPolicy(params.smtROBPolicy),
+      robWalkPolicy(params.robWalkPolicy),
       cpu(_cpu),
       numEntries(params.numROBEntries),
-      squashWidth(params.squashWidth),
-      redoWidth(params.redoWidth),
-      squashWithRedo(params.squashWithRedo),
+      rollbackWidth(params.squashWidth),
+      replayWidth(params.replayWidth),
+      constSquashCycle(params.ConstSquashCycle),
       numInstsInROB(0),
       numThreads(params.numThreads),
       stats(_cpu)
@@ -94,6 +95,13 @@ ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
             maxEntries[tid] = threshold;
         }
     }
+
+    assert((robWalkPolicy == ROBWalkPolicy::Rollback && rollbackWidth > 0)
+           || (robWalkPolicy == ROBWalkPolicy::Replay && replayWidth > 0)
+           || (robWalkPolicy == ROBWalkPolicy::ConstCycle && constSquashCycle > 0)
+        //    || robWalkPolicy == ROBWalkPolicy::NaiveCpt
+        //    || robWalkPolicy == ROBWalkPolicy::ConfidentCpt
+           );
 
     for (ThreadID tid = numThreads; tid < MaxThreads; tid++) {
         maxEntries[tid] = 0;
@@ -499,14 +507,9 @@ ROB::squash(InstSeqNum squash_num, ThreadID tid)
             total_inst_to_squash++;
         }
     }
-    double num_uncommited_inst = instList[tid].size() - total_inst_to_squash;
+    unsigned num_uncommited_inst = instList[tid].size() - total_inst_to_squash;
 
-    assert((squashWithRedo && redoWidth > 0) ||
-           (!squashWithRedo && squashWidth > 0));
-    double cycles_to_squash = squashWithRedo ? num_uncommited_inst / redoWidth
-                                       : total_inst_to_squash / squashWidth;
-    dynSquashWidth = ceil(total_inst_to_squash / cycles_to_squash);
-    dynSquashWidth = std::max(dynSquashWidth, 1u);
+    dynSquashWidth = computeDynSquashWidth(num_uncommited_inst, total_inst_to_squash);
 
     if (!instList[tid].empty()) {
         InstIt tail_thread = instList[tid].end();
@@ -516,6 +519,32 @@ ROB::squash(InstSeqNum squash_num, ThreadID tid)
 
         doSquash(tid);
     }
+}
+
+unsigned
+ROB::computeDynSquashWidth(unsigned uncommitted_insts, unsigned to_squash)
+{
+    unsigned dyn_squash_width = 0;
+    switch (robWalkPolicy) {
+        case ROBWalkPolicy::Rollback:
+            dyn_squash_width = rollbackWidth;
+            break;
+
+        case ROBWalkPolicy::Replay:
+            dyn_squash_width = ceil((double)to_squash /
+                                    ((double)uncommitted_insts / replayWidth));
+            dyn_squash_width = std::max(dyn_squash_width, 1u);
+            break;
+
+        case ROBWalkPolicy::ConstCycle:
+            dyn_squash_width = ceil((double) to_squash / (double) constSquashCycle);
+            dyn_squash_width = std::max(dyn_squash_width, rollbackWidth);
+            break;
+
+        default:
+            break;
+    }
+    return dyn_squash_width;
 }
 
 const DynInstPtr&
