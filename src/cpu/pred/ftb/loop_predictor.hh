@@ -1,0 +1,188 @@
+#ifndef __CPU_PRED_FTB_LOOP_PREDICTOR_HH__
+#define __CPU_PRED_FTB_LOOP_PREDICTOR_HH__
+
+#include <array>
+#include <queue>
+#include <stack>
+#include <utility> 
+#include <vector>
+
+#include "cpu/pred/bpred_unit.hh"
+#include "cpu/pred/ftb/stream_struct.hh"
+#include "debug/LoopBuffer.hh"
+
+
+namespace gem5
+{
+
+namespace branch_prediction
+{
+
+namespace ftb_pred
+{
+
+class LoopPredictor
+{
+  public:
+    // index using start pc of block where the loop branch is in
+
+
+    unsigned tagSize;
+    Addr tagMask;
+
+    unsigned numSets;
+    Addr idxMask;
+    unsigned numWays;
+
+    unsigned maxConf = 7;
+    
+
+    std::vector<std::map<Addr, LoopEntry>> loopStorage;
+    std::map<Addr, LoopEntry> commitLoopStorage;
+
+    // TODO: replacement policy
+
+    int getIndex(Addr pc) {return (pc >> 1) & idxMask;}
+
+    Addr getTag(Addr pc) {return (pc >> (1)) & tagMask;}
+
+    int getRemainingIter(Addr loopPC) {return 0;}
+
+    // since we record pc in loop entry
+    // we need to check whether given prediction block
+    // has this loop branch
+    std::pair<bool, LoopRedirectInfo> shouldEndLoop(bool taken, Addr branch_pc, bool is_double) {
+      DPRINTF(LoopBuffer, "query loop branch: taken: %d, pc: %#lx, is_double: %d\n",
+        taken, branch_pc, is_double);
+      LoopRedirectInfo info;
+      info.branch_pc = branch_pc;
+      info.end_loop = false;
+      int idx = getIndex(branch_pc);
+      Addr tag = getTag(branch_pc);
+      const auto &it = loopStorage[idx].find(tag);
+      if (it != loopStorage[idx].end()) {
+        auto &way = it->second;
+        info.e = way;
+        DPRINTF(LoopBuffer, "found loop entry idx %d, tag %#x: tripCnt: %d, specCnt: %d, conf: %d\n",
+          idx, tag, way.tripCnt, way.specCnt, way.conf);
+        if (way.specCnt == way.tripCnt) {
+          DPRINTF(LoopBuffer, "loop end detected, exiting loop, setting specCnt to 0\n");
+          way.specCnt = 0;
+          info.end_loop = true;
+          return std::make_pair(true, info);
+        }
+        if (taken) {
+          way.specCnt++;
+        }
+      }
+      return std::make_pair(false, info);
+    }
+
+    // called when loop branch is committed, identification is done before calling
+    void commitLoopBranch(Addr pc, Addr target, Addr fallThruPC, bool mispredicted) {
+      DPRINTF(LoopBuffer,
+        "Commit loop branch: pc: %#lx, target: %#lx, fallThruPC: %#lx\n",
+        pc, target, fallThruPC);
+      bool takenBackward = target < pc;
+      Addr tag = getTag(pc);
+
+      // if already trained, update conf in loopStorage
+      int idx = getIndex(pc);
+      const auto &it = loopStorage[idx].find(tag);
+      if (it != loopStorage[idx].end()) {
+        auto &way = it->second;
+        if (!takenBackward) {
+          DPRINTF(LoopBuffer, "loop end and in storage, updating conf, mispred %d\n", mispredicted);
+          if (way.conf < maxConf && !mispredicted) {
+            // still in loop, inc conf
+            way.conf++;
+          } else if (way.conf > 0 && mispredicted) {
+            // mispredicted, dec conf
+            way.conf--;
+          }
+        }
+      } else {
+        // do not need to train commit storage when loop branch is in mainStorage
+        const auto &it2 = commitLoopStorage.find(tag);
+        // found training entry
+        if (it2 != commitLoopStorage.end()) {
+          auto &way = it2->second;
+          DPRINTF(LoopBuffer, "found training entry: tripCnt: %d, specCnt: %d, conf: %d\n",
+            way.tripCnt, way.specCnt, way.conf);
+          if (takenBackward) {
+            // still in loop, inc specCnt
+            way.specCnt++;
+          } else {
+            // end of loop, write into main storage
+            int idx = getIndex(pc);
+            DPRINTF(LoopBuffer, "loop end detected, specCnt %d, writting to loopStorage idx %d, tag %d\n",
+              way.specCnt, idx, tag);
+            way.tripCnt = way.specCnt;
+            way.specCnt = 0;
+            loopStorage[idx][tag] = way;
+            // TODO: log
+            // TODO: consider conf to avoid overwriting
+          }
+        } else {
+          // not found, create new entry
+          DPRINTF(LoopBuffer, "creating new entry for loop branch %#lx, tag %#x\n", pc, tag);
+          LoopEntry entry;
+          entry.valid = true;
+          entry.tripCnt = 0;
+          entry.specCnt = 1;
+          entry.conf = 0;
+          commitLoopStorage[tag] = entry;
+        }
+      }
+
+
+    }
+
+    void recover(LoopRedirectInfo info, bool actually_taken, Addr branch_pc) {
+      if (info.e.valid) {
+        DPRINTF(LoopBuffer, "redirecting loop branch: taken: %d, pc: %#lx, tripCnt: %d, specCnt: %d, conf: %d, pred use pc: %#lx\n",
+          actually_taken, branch_pc, info.e.tripCnt, info.e.specCnt, info.e.conf, info.branch_pc);
+        if (branch_pc == info.branch_pc && !actually_taken) {
+          // reset specCnt to 0
+          int idx = getIndex(branch_pc);
+          const auto &it = loopStorage[idx].find(getTag(branch_pc));
+          if (it != loopStorage[idx].end()) {
+            DPRINTF(LoopBuffer, "mispredicted loop end of idx %d, sychronizing specCnt to 0\n", idx);
+            auto &way = it->second;
+            way.specCnt = 0;
+          }
+        }
+      }
+    }
+
+    bool findLoopBranchInStorage(Addr pc) {
+      Addr tag = getTag(pc);
+      int idx = getIndex(pc);
+      return commitLoopStorage.find(tag) != commitLoopStorage.end() ||
+             loopStorage[idx].find(tag) != loopStorage[idx].end();
+    }
+
+    LoopPredictor(unsigned sets, unsigned ways) {
+      numSets = sets;
+      numWays = ways;
+      idxMask = (1 << ceilLog2(numSets)) - 1;
+      loopStorage.resize(numSets);
+      for (unsigned i = 0; i < numWays; i++) {
+        for (auto set : loopStorage) {
+          set[0xffffff-i];
+        }
+        commitLoopStorage[0xfffffef-i];
+      }
+      //       VaddrBits   instOffsetBits  log2Ceil(PredictWidth)
+      tagSize = 39 - 1 - 4 - ceilLog2(numSets);
+      tagMask = (1 << tagSize) - 1;
+    }
+
+    LoopPredictor() : LoopPredictor(64, 4) {}
+};
+
+}  // namespace ftb_pred
+}  // namespace branch_prediction
+}  // namespace gem5
+
+#endif  // __CPU_PRED_FTB_DECOUPLED_BPRED_HH__

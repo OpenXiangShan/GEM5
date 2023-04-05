@@ -1131,6 +1131,12 @@ Commit::commitInsts()
                         DPRINTF(DBPFTBStats, "isUncondCtrl=%d, isCondCtrl=%d, isReturn=%d, isIndirectCtrl=%d\n",
                                 head_inst->isUncondCtrl(), head_inst->isCondCtrl(), head_inst->isReturn(), head_inst->isIndirectCtrl());
                     }
+                    Addr branchAddr = head_inst->pcState().instAddr();
+                    Addr targetAddr = head_inst->pcState().clone()->as<RiscvISA::PCState>().npc();
+                    Addr fallThruPC = head_inst->pcState().clone()->as<RiscvISA::PCState>().getFallThruPC();
+                    if (targetAddr < branchAddr || dbftb->lp.findLoopBranchInStorage(branchAddr)) {
+                        dbftb->lp.commitLoopBranch(branchAddr, targetAddr, fallThruPC, miss);
+                    }
                 }
 
                 ++num_committed;

@@ -204,6 +204,19 @@ using FetchStreamId = uint64_t;
 using FetchTargetId = uint64_t;
 using PredictionID = uint64_t;
 
+typedef struct LoopEntry {
+    bool valid;
+    int tripCnt;
+    int specCnt;
+    int conf;
+} LoopEntry;
+
+typedef struct LoopRedirectInfo {
+    LoopEntry e;
+    Addr branch_pc;
+    bool end_loop;
+} LoopRedirectInfo;
+
 // NOTE: now this corresponds to an ftq entry in
 //       XiangShan nanhu architecture
 typedef struct FetchStream
@@ -239,6 +252,9 @@ typedef struct FetchStream
 
     // prediction metas
     std::array<std::shared_ptr<void>, 5> predMetas;
+
+    // for loop
+    LoopRedirectInfo loopRedirectInfo;
 
     Tick predTick;
     boost::dynamic_bitset<> history;
@@ -385,6 +401,21 @@ typedef struct FullFTBPrediction
 
     Addr controlAddr() {
         return getTakenSlot().pc;
+    }
+
+    int getTakenBranchIdx() {
+        auto &ftbEntry = this->ftbEntry;
+        if (valid) {
+            int i = 0;
+            for (auto &slot : ftbEntry.slots) {
+                if ((slot.condValid() && condTakens[i]) ||
+                    slot.uncondValid()) {
+                        return i;
+                    }
+                i++;
+            }
+        }
+        return -1;
     }
 
     bool match(FullFTBPrediction &other)

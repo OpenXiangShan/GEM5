@@ -13,6 +13,7 @@
 #include "cpu/pred/ftb/ftb.hh"
 #include "cpu/pred/ftb/ftb_tage.hh"
 #include "cpu/pred/ftb/ftb_ittage.hh"
+#include "cpu/pred/ftb/loop_predictor.hh"
 #include "cpu/pred/ftb/ras.hh"
 #include "cpu/pred/ftb/stream_struct.hh"
 #include "cpu/pred/ftb/timed_base_pred.hh"
@@ -22,6 +23,7 @@
 #include "debug/DecoupleBPRAS.hh"
 #include "debug/DecoupleBPVerbose.hh"
 #include "debug/DBPFTBStats.hh"
+#include "debug/LoopBuffer.hh"
 #include "params/DecoupledBPUWithFTB.hh"
 
 namespace gem5
@@ -169,6 +171,7 @@ class DecoupledBPUWithFTB : public BPredUnit
     typedef DecoupledBPUWithFTBParams Params;
 
     DecoupledBPUWithFTB(const Params &params);
+    LoopPredictor lp;
 
   private:
     std::string _name;

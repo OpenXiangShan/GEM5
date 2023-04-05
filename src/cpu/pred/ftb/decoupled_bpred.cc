@@ -82,6 +82,8 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
     commitHistory.resize(historyBits, 0);
     squashing = true;
 
+    lp = LoopPredictor(16, 4);
+
     registerExitCallback([this]() {
         auto out_handle = simout.create("topMisPredicts.txt", false, true);
         *out_handle->stream() << "startPC" << " " << "control pc" << " " << "count" << std::endl;
@@ -460,6 +462,8 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
     DPRINTF(DecoupleBPHist,
                 "Shift in history %s\n", s0History);
 
+    // recover loop predictor
+    lp.recover(stream.loopRedirectInfo, actually_taken, control_pc.instAddr());
     printStream(stream);
 
     
@@ -656,6 +660,11 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
                 components[i]->update(stream);
             }
         }
+
+        // check loop predictor prediction
+        auto lp_info = stream.loopRedirectInfo;
+        DPRINTF(LoopBuffer, "at commit fsqid %d, real_branch_pc %#lx, squash type %d, loop predcition info: specCnt %d, tripCnt %d, conf %d, branch_pc %#lx, end_loop %d\n",
+                it->first, stream.exeBranchInfo.pc, stream.squashType, lp_info.e.specCnt, lp_info.e.tripCnt, lp_info.e.conf, lp_info.branch_pc, lp_info.end_loop);
 
         if (stream.squashType == SQUASH_CTRL) {
             auto find_it = topMispredicts.find(std::make_pair(stream.startPC, stream.exeBranchInfo.pc));
@@ -872,6 +881,7 @@ DecoupledBPUWithFTB::histShiftIn(int shamt, bool taken, boost::dynamic_bitset<> 
 }
 
 // this function enqueues fsq and update s0PC and s0History
+// use loop predictor here
 void
 DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
 {
@@ -893,6 +903,21 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
     bool taken = finalPred.isTaken();
     bool predReasonable = finalPred.isReasonable();
     if (predReasonable) {
+        // query loop predictor
+        // TODO: What if loop branch is predicted not taken?
+        Addr branch_addr = finalPred.controlAddr();
+        bool endLoop;
+        LoopRedirectInfo lpRedirectInfo;
+        std::tie(endLoop, lpRedirectInfo) = lp.shouldEndLoop(taken, branch_addr, false);
+        entry.loopRedirectInfo = lpRedirectInfo; // record loop info for redirect recover
+        if (endLoop) {
+            // we should only modify the direction of the loop branch, because
+            // a latter branch (outside loop branch) may be taken
+            DPRINTF(DecoupleBP || debugFlagOn, "Loop predictor says end loop at %#lx\n", branch_addr);
+            int takenIdx = finalPred.getTakenBranchIdx();
+            finalPred.condTakens[takenIdx] = false;
+            taken = finalPred.isTaken();
+        }
         Addr fallThroughAddr = finalPred.getFallThrough();
         entry.isHit = finalPred.valid;
         entry.falseHit = false;
