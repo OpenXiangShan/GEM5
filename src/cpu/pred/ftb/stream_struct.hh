@@ -111,6 +111,7 @@ typedef struct FTBSlot : BranchInfo
 {
     bool valid;
     bool alwaysTaken;
+    int ctr;
     bool uncondValid() { return this->isUncond() && this->valid; }
     bool condValid() { return this->isCond && this->valid;}
     FTBSlot() : valid(false) {}

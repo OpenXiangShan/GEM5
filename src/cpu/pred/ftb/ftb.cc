@@ -120,8 +120,16 @@ DefaultFTB::putPCHistory(Addr startAddr,
         stagePreds[s].valid = hit;
         stagePreds[s].ftbEntry = find_entry;
         DPRINTF(FTB, "FTB: numBranches %d\n", numBr);
-        for (int i = 0; i < numBr; ++i) {
-            stagePreds[s].condTakens[i] = false;
+
+        if (isL0()) {
+            // use saturating counter of L0 FTB
+            for (int i = 0; i < numBr; ++i) {
+                if (find_entry.slots.size() > i) {
+                    stagePreds[s].condTakens[i] = find_entry.slots[i].ctr >= 0 && hit;
+                } else {
+                    stagePreds[s].condTakens[i] = false;
+                }
+            }
         }
         // assign ftb prediction for indirect targets
         if (!find_entry.slots.empty()) {
@@ -371,11 +379,50 @@ DefaultFTB::update(const FetchStream &stream)
         ftb[ftb_idx].erase(old_entry->first);
     }
 
-    ftb[ftb_idx][ftb_tag] = TickedFTBEntry(stream.updateFTBEntry, curTick());
+    auto updatedEntry = stream.updateFTBEntry;
+    // train L0 FTB ctrs
+    if (isL0()) {
+        std::vector<bool> need_to_update;
+        need_to_update.resize(numBr, false);
+        auto ftb_entry = stream.updateFTBEntry;
+        // get number of conditional branches to update
+        int cond_num = 0;
+        if (stream.exeTaken) {
+            cond_num = ftb_entry.getNumCondInEntryBefore(stream.exeBranchInfo.pc);
+            // for case of ftb entry is not full
+            if (cond_num < numBr) {
+                cond_num += !stream.exeBranchInfo.isUncond() ? 1 : 0;
+            }
+            // if ftb entry is full, and this branch is conditional,
+            // we cannot update the last branch, as it will be removed
+            // from current ftb entry
+        } else {
+            // corresponding to RTL, but in fact we should consider
+            // whether the branches are flushed
+            // TODO: fix it and check whether it can bring performance improvement
+            cond_num = ftb_entry.getTotalNumConds();
+        }
+        assert(cond_num <= numBr);
+        for (int i = 0; i < cond_num; i++) {
+            auto &slot = ftb_entry.slots[i];
+            // only update branches with both taken/not taken behaviors observed
+            need_to_update[i] = !slot.alwaysTaken;
+        }
+        for (int b = 0; b < numBr; b++) {
+            if (!need_to_update[b]) {
+                continue;
+            }
+            bool this_cond_actually_taken = stream.exeTaken && stream.exeBranchInfo == ftb_entry.slots[b];
+            updateCtr(updatedEntry.slots[b].ctr, this_cond_actually_taken);
+        }
+    }
+
+    ftb[ftb_idx][ftb_tag] = TickedFTBEntry(updatedEntry, curTick());
     ftb[ftb_idx][ftb_tag].tag = ftb_tag; // in case different ftb has different tags
 
+
     if (new_entry) {
-        auto it = ftb[ftb_idx].find(stream.updateFTBEntry.tag);
+        auto it = ftb[ftb_idx].find(updatedEntry.tag);
         mruList[ftb_idx].back() = it;
         std::push_heap(mruList[ftb_idx].begin(), mruList[ftb_idx].end(), older());
     } else {

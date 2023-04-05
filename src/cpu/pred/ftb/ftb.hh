@@ -214,6 +214,11 @@ class DefaultFTB : public TimedBaseFTBPredictor
 
     bool isL0() { return getDelay() == 0; }
 
+    void updateCtr(int &ctr, bool taken) {
+        if (taken && ctr < 1) {ctr++;}
+        if (!taken && ctr > -2) {ctr--;}
+    }
+
     /** The actual FTB. */
 
     std::vector<FTBMap> ftb;
