@@ -7,6 +7,7 @@
 #include "base/statistics.hh"
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/pred/ftb/stream_struct.hh"
 #include "sim/sim_object.hh"
 #include "params/TimedBaseFTBPredictor.hh"
@@ -19,6 +20,8 @@ namespace branch_prediction
 
 namespace ftb_pred
 {
+
+using DynInstPtr = o3::DynInstPtr;
 
 class TimedBaseFTBPredictor: public SimObject
 {
@@ -41,6 +44,8 @@ class TimedBaseFTBPredictor: public SimObject
     virtual void recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken) {}
     virtual void update(const FetchStream &entry) {}
     virtual unsigned getDelay() {return 0;}
+    // do some statistics on a per-branch and per-predictor basis
+    virtual void commitBranch(const FetchStream &entry, const DynInstPtr &inst) {}
 
     int componentIdx;
     int getComponentIdx() { return componentIdx; }

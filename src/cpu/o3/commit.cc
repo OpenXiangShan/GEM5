@@ -1112,24 +1112,10 @@ Commit::commitInsts()
                     }
                     // FIXME: ignore mret/sret/uret in correspond with RTL
                     if (!head_inst->isNonSpeculative()) {
-                        if (head_inst->isUncondCtrl()) {
-                            dbftb->addCfi(branch_prediction::ftb_pred::DecoupledBPUWithFTB::CfiType::UNCOND, miss);
+                        dbftb->commitBranch(head_inst, miss);
+                        if (!head_inst->isReturn() && head_inst->isIndirectCtrl() && miss) {
+                            misPredIndirect[head_inst->pcState().instAddr()]++;
                         }
-                        if (head_inst->isCondCtrl()) {
-                            dbftb->addCfi(branch_prediction::ftb_pred::DecoupledBPUWithFTB::CfiType::COND, miss);
-                        }
-                        if (head_inst->isReturn()) {
-                            dbftb->addCfi(branch_prediction::ftb_pred::DecoupledBPUWithFTB::CfiType::RETURN, miss);
-                            
-                        } else if (head_inst->isIndirectCtrl()) {
-                            dbftb->addCfi(branch_prediction::ftb_pred::DecoupledBPUWithFTB::CfiType::OTHER, miss);
-                            if (miss) {
-                                misPredIndirect[head_inst->pcState().instAddr()]++;
-                            }
-                        }
-                        DPRINTF(DBPFTBStats, "inst=%s\n", head_inst->staticInst->disassemble(head_inst->pcState().instAddr()));
-                        DPRINTF(DBPFTBStats, "isUncondCtrl=%d, isCondCtrl=%d, isReturn=%d, isIndirectCtrl=%d\n",
-                                head_inst->isUncondCtrl(), head_inst->isCondCtrl(), head_inst->isReturn(), head_inst->isIndirectCtrl());
                     }
                     Addr branchAddr = head_inst->pcState().instAddr();
                     Addr targetAddr = head_inst->pcState().clone()->as<RiscvISA::PCState>().npc();

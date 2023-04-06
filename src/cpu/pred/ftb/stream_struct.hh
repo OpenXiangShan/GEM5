@@ -192,6 +192,15 @@ typedef struct FTBEntry
         }
         return reasonable;
     }
+
+    FTBSlot getSlot(Addr pc) {
+        for (auto &slot : this->slots) {
+            if (slot.pc == pc) {
+                return slot;
+            }
+        }
+        return FTBSlot();
+    }
 }FTBEntry;
 
 struct BlockDecodeInfo {

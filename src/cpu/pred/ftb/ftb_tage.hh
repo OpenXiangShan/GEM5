@@ -96,6 +96,8 @@ class FTBTAGE : public TimedBaseFTBPredictor
 
     unsigned getDelay() override { return 1; }
 
+    void commitBranch(const FetchStream &stream, const DynInstPtr &inst) override;
+
     void setTrace() override;
 
     // check folded hists after speculative update and recover

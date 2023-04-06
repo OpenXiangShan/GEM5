@@ -7,11 +7,12 @@
 #include "base/debug_helper.hh"
 #include "base/intmath.hh"
 #include "base/trace.hh"
+#include "cpu/o3/dyn_inst.hh"
+#include "cpu/pred/ftb/stream_common.hh"
 #include "debug/DecoupleBP.hh"
 #include "debug/DecoupleBPVerbose.hh"
 #include "debug/DecoupleBPUseful.hh"
 #include "debug/FTBITTAGE.hh"
-#include "cpu/pred/ftb/stream_common.hh"
 
 namespace gem5 {
 
@@ -509,6 +510,11 @@ FTBITTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * whe
             foldedHist.check(hist);
         }
     }
+}
+
+void
+FTBITTAGE::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
+{
 }
 
 } // namespace ftb_pred

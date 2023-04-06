@@ -29,6 +29,7 @@
 
 #include "base/intmath.hh"
 #include "base/trace.hh"
+#include "cpu/o3/dyn_inst.hh"
 #include "cpu/pred/ftb/ftb.hh"
 #include "debug/Fetch.hh"
 
@@ -147,6 +148,7 @@ DefaultFTB::putPCHistory(Addr startAddr,
         meta.l0_hit = stagePreds[getDelay() - 1].valid;
     }
     meta.hit = hit;
+    meta.entry = FTBEntry(find_entry);
 }
 
 std::shared_ptr<void>
@@ -443,6 +445,108 @@ DefaultFTB::update(const FetchStream &stream)
     // ftb[ftb_idx].tag = getTag(inst_pc);
 }
 
+void
+DefaultFTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
+{
+    auto meta = std::static_pointer_cast<FTBMeta>(stream.predMetas[getComponentIdx()]);
+    auto &entry = meta->entry;
+    auto pc = inst->getPC();
+    auto npc = inst->getNPC();
+    // auto &static_inst = inst->staticInst();
+    bool this_branch_hit = meta->hit && branchIsInEntry(entry, pc);
+    // bool this_branch_miss = !this_branch_hit;
+    bool cond_not_taken = inst->isCondCtrl() && !inst->branching();
+    bool this_branch_taken = !cond_not_taken; // all uncond should be taken
+    Addr this_branch_target = npc;
+    const auto &slot = entry.getSlot(pc);
+    if (this_branch_hit) {
+        ftbStats.allBranchHits++;
+        if (this_branch_taken) {
+            ftbStats.allBranchHitTakens++;
+        } else {
+            ftbStats.allBranchHitNotTakens++;
+        }
+        if (inst->isCondCtrl()) {
+            ftbStats.condHits++;
+            if (this_branch_taken) {
+                ftbStats.condHitTakens++;
+            } else {
+                ftbStats.condHitNotTakens++;
+            }
+            if (isL0()) {
+                bool pred_taken = slot.ctr >= 0;
+                if (pred_taken == this_branch_taken) {
+                    ftbStats.condPredCorrect++;
+                } else {
+                    ftbStats.condPredWrong++;
+                }
+            }
+        }
+        if (inst->isUncondCtrl()) {
+            ftbStats.uncondHits++;
+        }
+        // ignore non-speculative branches (e.g. syscall)
+        if (!inst->isNonSpeculative()) {
+            if (inst->isIndirectCtrl()) {
+                ftbStats.indirectHits++;
+                Addr pred_target = slot.target;
+                if (pred_target == this_branch_target) {
+                    ftbStats.indirectPredCorrect++;
+                } else {
+                    ftbStats.indirectPredWrong++;
+                }
+            }
+            if (inst->isCall()) {
+                ftbStats.callHits++;
+            }
+            if (inst->isReturn()) {
+                ftbStats.returnHits++;
+            }
+        }
+    } else {
+        ftbStats.allBranchMisses++;
+        if (this_branch_taken) {
+            ftbStats.allBranchMissTakens++;
+        } else {
+            ftbStats.allBranchMissNotTakens++;
+        }
+        if (inst->isCondCtrl()) {
+            ftbStats.condMisses++;
+            if (this_branch_taken) {
+                ftbStats.condMissTakens++;
+                if (isL0()) {
+                    // only L0 FTB has saturating counters to predict conditional branches
+                    // taken branches that is missed in ftb must have been mispredicted
+                    ftbStats.condPredWrong++;
+                }
+            } else {
+                ftbStats.condMissNotTakens++;
+                if (isL0()) {
+                    // only L0 FTB has saturating counters to predict conditional branches
+                    // taken branches that is missed in ftb must have been mispredicted
+                    ftbStats.condPredCorrect++;
+                }
+            }
+        }
+        if (inst->isUncondCtrl()) {
+            ftbStats.uncondMisses++;
+        }
+        // ignore non-speculative branches (e.g. syscall)
+        if (!inst->isNonSpeculative()) {
+            if (inst->isIndirectCtrl()) {
+                ftbStats.indirectMisses++;
+                ftbStats.indirectPredWrong++;
+            }
+            if (inst->isCall()) {
+                ftbStats.callMisses++;
+            }
+            if (inst->isReturn()) {
+                ftbStats.returnMisses++;
+            }
+        }
+    }
+}
+
 DefaultFTB::FTBStats::FTBStats(statistics::Group* parent) :
     statistics::Group(parent),
     ADD_STAT(newEntry, statistics::units::Count::get(), "number of new ftb entries generated"),
@@ -458,7 +562,33 @@ DefaultFTB::FTBStats::FTBStats(statistics::Group* parent) :
     ADD_STAT(updateHit, statistics::units::Count::get(), "hits encountered on update"),
     ADD_STAT(eraseSlotBehindUncond, statistics::units::Count::get(), "erase slots behind unconditional slot"),
     ADD_STAT(predUseL0OnL1Miss, statistics::units::Count::get(), "use l0 result on l1 miss when pred"),
-    ADD_STAT(updateUseL0OnL1Miss, statistics::units::Count::get(), "use l0 result on l1 miss when update")
+    ADD_STAT(updateUseL0OnL1Miss, statistics::units::Count::get(), "use l0 result on l1 miss when update"),
+
+    ADD_STAT(allBranchHits, statistics::units::Count::get(), "all types of branches committed that was predicted hit"),
+    ADD_STAT(allBranchHitTakens, statistics::units::Count::get(), "all types of taken branches committed was that predicted hit"),
+    ADD_STAT(allBranchHitNotTakens, statistics::units::Count::get(), "all types of not taken branches committed was that predicted hit"),
+    ADD_STAT(allBranchMisses, statistics::units::Count::get(), "all types of branches committed that was predicted miss"),
+    ADD_STAT(allBranchMissTakens, statistics::units::Count::get(), "all types of taken branches committed was that predicted miss"),
+    ADD_STAT(allBranchMissNotTakens, statistics::units::Count::get(), "all types of not taken branches committed was that predicted miss"),
+    ADD_STAT(condHits, statistics::units::Count::get(), "conditional branches committed that was predicted hit"),
+    ADD_STAT(condHitTakens, statistics::units::Count::get(), "taken conditional branches committed was that predicted hit"),
+    ADD_STAT(condHitNotTakens, statistics::units::Count::get(), "not taken conditional branches committed was that predicted hit"),
+    ADD_STAT(condMisses, statistics::units::Count::get(), "conditional branches committed that was predicted miss"),
+    ADD_STAT(condMissTakens, statistics::units::Count::get(), "taken conditional branches committed was that predicted miss"),
+    ADD_STAT(condMissNotTakens, statistics::units::Count::get(), "not taken conditional branches committed was that predicted miss"),
+    ADD_STAT(condPredCorrect, statistics::units::Count::get(), "conditional branches committed was that correctly predicted by ftb"),
+    ADD_STAT(condPredWrong, statistics::units::Count::get(), "conditional branches committed was that mispredicted by ftb"),
+    ADD_STAT(uncondHits, statistics::units::Count::get(), "unconditional branches committed that was predicted hit"),
+    ADD_STAT(uncondMisses, statistics::units::Count::get(), "unconditional branches committed that was predicted miss"),
+    ADD_STAT(indirectHits, statistics::units::Count::get(), "indirect branches committed that was predicted hit"),
+    ADD_STAT(indirectMisses, statistics::units::Count::get(), "indirect branches committed that was predicted miss"),
+    ADD_STAT(indirectPredCorrect, statistics::units::Count::get(), "indirect branches committed whose target was correctly predicted by ftb"),
+    ADD_STAT(indirectPredWrong, statistics::units::Count::get(), "indirect branches committed whose target was mispredicted by ftb"),
+    ADD_STAT(callHits, statistics::units::Count::get(), "calls committed that was predicted hit"),
+    ADD_STAT(callMisses, statistics::units::Count::get(), "calls committed that was predicted miss"),
+    ADD_STAT(returnHits, statistics::units::Count::get(), "returns committed that was predicted hit"),
+    ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss")
+
 {
     auto ftb = dynamic_cast<branch_prediction::ftb_pred::DefaultFTB*>(parent);
     // do not need counter below in L0 ftb

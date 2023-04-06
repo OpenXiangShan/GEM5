@@ -9,6 +9,7 @@
 
 #include "arch/generic/pcstate.hh"
 #include "config/the_isa.hh"
+#include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/general_arch_db.hh"
 #include "cpu/pred/ftb/fetch_target_queue.hh"
@@ -38,6 +39,9 @@ namespace branch_prediction
 
 namespace ftb_pred
 {
+
+using DynInstPtr = o3::DynInstPtr;
+
 class HistoryManager
 {
   public:
@@ -506,6 +510,8 @@ class DecoupledBPUWithFTB : public BPredUnit
     void addFtqNotValid() {
         dbpFtbStats.ftqNotValid++;
     }
+
+    void commitBranch(const DynInstPtr &inst, bool miss);
 
     std::map<Addr, unsigned> topMispredIndirect;
 };

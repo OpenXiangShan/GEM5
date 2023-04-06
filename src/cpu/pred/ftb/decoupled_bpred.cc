@@ -2,6 +2,7 @@
 
 #include "base/output.hh"
 #include "base/debug_helper.hh"
+#include "cpu/o3/dyn_inst.hh"
 #include "cpu/pred/ftb/stream_common.hh"
 #include "debug/DecoupleBPVerbose.hh"
 #include "debug/DecoupleBPHist.hh"
@@ -784,6 +785,35 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
     printStream(it->second);
 
     historyManager.commit(stream_id);
+}
+
+void
+DecoupledBPUWithFTB::commitBranch(const DynInstPtr &inst, bool miss)
+{
+    // do overall statistics
+    if (inst->isUncondCtrl()) {
+        addCfi(branch_prediction::ftb_pred::DecoupledBPUWithFTB::CfiType::UNCOND, miss);
+    }
+    if (inst->isCondCtrl()) {
+        addCfi(branch_prediction::ftb_pred::DecoupledBPUWithFTB::CfiType::COND, miss);
+    }
+    if (inst->isReturn()) {
+        addCfi(branch_prediction::ftb_pred::DecoupledBPUWithFTB::CfiType::RETURN, miss);
+    } else if (inst->isIndirectCtrl()) {
+        addCfi(branch_prediction::ftb_pred::DecoupledBPUWithFTB::CfiType::OTHER, miss);
+    }
+    DPRINTF(DBPFTBStats, "inst=%s\n", inst->staticInst->disassemble(inst->pcState().instAddr()));
+    DPRINTF(DBPFTBStats, "isUncondCtrl=%d, isCondCtrl=%d, isReturn=%d, isIndirectCtrl=%d\n",
+            inst->isUncondCtrl(), inst->isCondCtrl(), inst->isReturn(), inst->isIndirectCtrl());
+
+    // break down into each predictor and each stage
+    // find corresponding fsq entry first
+    auto it = fetchStreamQueue.find(inst->fsqId);
+    assert(it != fetchStreamQueue.end());
+    auto entry = it->second;
+    for (auto component : components) {
+        component->commitBranch(entry, inst);
+    }
 }
 
 void

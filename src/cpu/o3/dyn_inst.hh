@@ -1262,6 +1262,21 @@ class DynInst : public ExecContext, public RefCounted
         return squashVer.getVersion();
     }
 
+
+    Addr getPC()
+    {
+        return pc->instAddr();
+    }
+
+    Addr getNPC()
+    {
+        return pc->as<RiscvISA::PCState>().npc();
+    }
+
+    bool branching()
+    {
+        return pc->as<RiscvISA::PCState>().branching();
+    }
 };
 
 } // namespace o3
