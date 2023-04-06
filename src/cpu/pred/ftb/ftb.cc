@@ -413,7 +413,15 @@ DefaultFTB::update(const FetchStream &stream)
                 continue;
             }
             bool this_cond_actually_taken = stream.exeTaken && stream.exeBranchInfo == ftb_entry.slots[b];
-            updateCtr(updatedEntry.slots[b].ctr, this_cond_actually_taken);
+            int ctr_to_be_updated;
+            // read newest ctr if hit
+            if (it != ftb[ftb_idx].end() && it->second.slots.size() > b) {
+                ctr_to_be_updated = it->second.slots[b].ctr;
+            } else {
+                ctr_to_be_updated = updatedEntry.slots[b].ctr;
+            }
+            updateCtr(ctr_to_be_updated, this_cond_actually_taken);
+            updatedEntry.slots[b].ctr = ctr_to_be_updated;
         }
     }
 
