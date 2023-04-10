@@ -53,6 +53,8 @@ DebugFlag('PageTableWalker2',
           "Page table walker state machine debugging")
 DebugFlag('PageTableWalker3',
           "Page table walker state machine debugging")
+DebugFlag('autoNextline',
+          "auto adjustment nextline")
 DebugFlag('TLB')
 
 GTest('vec_reg.test', 'vec_reg.test.cc')

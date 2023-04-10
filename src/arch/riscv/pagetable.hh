@@ -60,6 +60,12 @@ const Addr VADDR_BITS  = 39;
 const Addr LEVEL_BITS  = 9;
 const Addr LEVEL_MASK  = (1 << LEVEL_BITS) - 1;
 
+const int L_L2L1 = 1;
+const int L_L2L2 = 2;
+const int L_L2L3 = 3;
+const int L_L2sp1 = 4;
+const int L_L2sp2 = 5;
+
 BitUnion64(PTESv39)
     Bitfield<53, 10> ppn;
     Bitfield<53, 28> ppn2;
@@ -106,6 +112,10 @@ struct TlbEntry : public Serializable
 
     bool is_squashed;
 
+    bool used;
+    bool is_pre;
+    bool pre_sign;
+
     TlbEntry()
         : paddr(0),
           vaddr(0),
@@ -114,7 +124,10 @@ struct TlbEntry : public Serializable
           lruSeq(0),
           level(0),
           index(0),
-          is_squashed(false)
+          is_squashed(false),
+          used(false),
+          is_pre(false),
+          pre_sign(false)
     {
     }
 

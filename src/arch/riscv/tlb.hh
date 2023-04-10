@@ -74,6 +74,12 @@ class TLB : public BaseTLB
     EntryList freeList;         // free entries
     uint64_t lruSeq;
     bool  hit_in_sp;
+    uint64_t hitPreEntry;
+    uint64_t hitPreNum;
+    uint64_t RemovePreUnused;
+    uint64_t AllPre;
+    bool isOpenAutoNextline;
+
 
     Walker *walker;
 
@@ -107,6 +113,32 @@ class TLB : public BaseTLB
         statistics::Scalar ALLInsertL2;
         statistics::Scalar writeL2l3TlbSquashedHits;
         statistics::Scalar ReadL2l3TlbSquashedHits;
+
+        statistics::Scalar l1tlbRemove;
+        statistics::Scalar l1tlbUsedRemove;
+        statistics::Scalar l1tlbUnusedRemove;
+
+        statistics::Scalar l2l1tlbRemove;
+        statistics::Scalar l2l1tlbUsedRemove;
+        statistics::Scalar l2l1tlbUnusedRemove;
+
+        statistics::Scalar l2l2tlbRemove;
+        statistics::Scalar l2l2tlbUsedRemove;
+        statistics::Scalar l2l2tlbUnusedRemove;
+
+        statistics::Scalar l2l3tlbRemove;
+        statistics::Scalar l2l3tlbUsedRemove;
+        statistics::Scalar l2l3tlbUnusedRemove;
+
+        statistics::Scalar l2sptlbRemove;
+        statistics::Scalar l2sptlbUsedRemove;
+        statistics::Scalar l2sptlbUnusedRemove;
+
+
+        statistics::Scalar hitPreEntry;
+        statistics::Scalar hitPreNum;
+        statistics::Scalar RemovePreUnused;
+        statistics::Scalar AllPre;
 
         statistics::Formula hits;
         statistics::Formula misses;
@@ -179,7 +211,10 @@ class TLB : public BaseTLB
                               BaseMMU::Mode mode) override;
     Fault finalizePhysical(const RequestPtr &req, ThreadContext *tc,
                            BaseMMU::Mode mode) const override;
-    TlbEntry *lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden);
+    TlbEntry *lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
+                     bool sign_used);
+
+    bool auto_open_nextline();
 
 
 
@@ -203,13 +238,13 @@ class TLB : public BaseTLB
     uint64_t nextSeq() { return ++lruSeq; }
 
     TlbEntry *lookup_l2tlb(Addr vpn, uint16_t asid, BaseMMU::Mode mode,
-                           bool hidden, int f_level);
+                           bool hidden, int f_level, bool sign_used);
 
     void evictLRU();
-    void l2TLB_evictLRU(int l2TLBlevel,Addr vaddr);
+    void l2TLB_evictLRU(int l2TLBlevel, Addr vaddr);
 
     void remove(size_t idx);
-    void l2TLB_remove(size_t idx,int l2l1,int l2l2,int l2l3,int l2sp);
+    void l2TLB_remove(size_t idx, int choose);
 
 
     Fault translate(const RequestPtr &req, ThreadContext *tc,

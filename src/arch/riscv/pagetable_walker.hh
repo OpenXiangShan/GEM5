@@ -152,6 +152,8 @@ namespace RiscvISA
             Addr tlb_vaddr;
             Addr tlb_ppn;
             Addr tlb_size_pte;
+            bool open_nextline;
+            bool auto_nextline_sign;
 
           public:
             WalkerState(Walker * _walker, BaseMMU::Translation *_translation,
@@ -171,8 +173,10 @@ namespace RiscvISA
                 const RequestPtr &req, BaseMMU::Mode mode, bool from_l2tlb,
                 Addr asid);
 
-            Fault startWalk(Addr ppn, int f_level, bool from_l2tlb);
-            Fault startFunctional(Addr &addr, unsigned &logBytes);
+            Fault startWalk(Addr ppn, int f_level, bool from_l2tlb,
+                            bool OpenNextline, bool autoOpenNextline);
+            Fault startFunctional(Addr &addr, unsigned &logBytes,
+                                  bool OpenNextline, bool autoOpenNextline);
             bool recvPacket(PacketPtr pkt);
             unsigned numInflight() const;
             bool isRetrying();
@@ -185,7 +189,8 @@ namespace RiscvISA
             bool allRequestorSquashed() const;
 
           private:
-            void setupWalk(Addr ppn, Addr vaddr, int f_level, bool from_l2tlb);
+            void setupWalk(Addr ppn, Addr vaddr, int f_level, bool from_l2tlb,
+                           bool OpenNextline, bool autoOpenNextline);
             Fault stepWalk(PacketPtr &write);
             void sendPackets();
             void endWalk();
@@ -258,6 +263,8 @@ namespace RiscvISA
         // The number of outstanding walks that can be squashed per cycle.
         unsigned numSquashable;
         bool ptwSquash;
+        bool OpenNextline;
+        bool autoOpenNextline;
 
         Tick squashHandleTick;
 
@@ -272,8 +279,7 @@ namespace RiscvISA
         /**
          * Event used to call startWalkWrapper.
          **/
-        //EventFunctionWrapper startWalkWrapperEvent;
-        //EventFunctionWrapper handlePendingSquashEvent;
+
 
         EventFunctionWrapper doL2TLBHitEvent;
 
@@ -300,9 +306,8 @@ namespace RiscvISA
             requestorId(sys->getRequestorId(this)),
             numSquashable(params.num_squash_per_cycle),
             ptwSquash(params.ptwSquash),
-            //startWalkWrapperEvent([this]{ startWalkWrapper(); }, name()),
-            //handlePendingSquashEvent([this]
-            //{ handlePendingSquash(); }, name()),
+            OpenNextline(params.OpenNextline),
+            autoOpenNextline(true),
             doL2TLBHitEvent([this]{dol2TLBHit();},name())
         {
         }
