@@ -1102,6 +1102,9 @@ Commit::commitInsts()
                 if (bp->isFTB()) {
                     auto dbftb = dynamic_cast<branch_prediction::ftb_pred::DecoupledBPUWithFTB*>(bp);
                     bool miss = head_inst->mispredicted();
+                    if (head_inst->isReturn()) {
+                        DPRINTF(FTBRAS, "commit inst PC %x miss %d real target %x pred target %x\n", head_inst->pcState().instAddr(), miss, head_inst->pcState().clone()->as<RiscvISA::PCState>().npc(), *(head_inst->predPC));
+                    }
                     // FIXME: ignore mret/sret/uret in correspond with RTL
                     if (!head_inst->isNonSpeculative()) {
                         if (head_inst->isUncondCtrl()) {
@@ -1112,6 +1115,7 @@ Commit::commitInsts()
                         }
                         if (head_inst->isReturn()) {
                             dbftb->addCfi(branch_prediction::ftb_pred::DecoupledBPUWithFTB::CfiType::RETURN, miss);
+                            
                         } else if (head_inst->isIndirectCtrl()) {
                             dbftb->addCfi(branch_prediction::ftb_pred::DecoupledBPUWithFTB::CfiType::OTHER, miss);
                             if (miss) {

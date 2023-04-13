@@ -21,18 +21,46 @@ class RAS : public TimedBaseFTBPredictor
         typedef RASParams Params;
         RAS(const Params &p);
 
-        typedef struct RASEntry
+        typedef struct RASEssential
         {
             Addr retAddr;
             unsigned ctr;
-            RASEntry(Addr retAddr, unsigned ctr) : retAddr(retAddr), ctr(ctr) {}
-            RASEntry(Addr retAddr) : retAddr(retAddr), ctr(0) {}
-            RASEntry() : retAddr(0), ctr(0) {}
+        }RASEssential;
+
+        typedef struct RASEntry
+        {
+            RASEssential data;
+            RASEntry(Addr retAddr, unsigned ctr)
+            {
+                data.retAddr = retAddr;
+                data.ctr = ctr;
+            }
+            RASEntry(Addr retAddr)
+            {
+                data.retAddr = retAddr;
+                data.ctr = 0;
+            }
+            RASEntry()
+            {
+                data.retAddr = 0;
+                data.ctr = 0;
+            }
         }RASEntry;
 
+        typedef struct RASInflightEntry
+        {
+            RASEssential data;
+            int nos; // parent node pointer
+        }RASInflightEntry;
+
         typedef struct RASMeta {
-            int sp;
-            RASEntry tos; // top of stack
+            int ssp;
+            int sctr;
+            // RASEntry tos; // top of stack
+            int TOSR;
+            int TOSW;
+            bool willPush;
+            // RASInflightEntry inflight; // inflight top of stack
         }RASMeta;
 
         void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
@@ -48,107 +76,104 @@ class RAS : public TimedBaseFTBPredictor
 
         void update(const FetchStream &entry) override;
 
-        int getSp() {return specSp;}
-
-        int getNumEntries() {return numEntries;}
-
-        int getMaxCtr() {return maxCtr;}
-
-        std::vector<RASEntry> getNonSpecStack() {return nonSpecStack;}
-
-        int getNonSpecSp() {return nonSpecSp;}
-
-        enum When {
-            SPECULATIVE,
-            REDIRECT,
-            COMMIT
-        };
-
-        enum RAS_OP {
-            PUSH,
-            POP,
-            RECOVER
-            // PUSH_AND_POP
-        };
-
-        void push(Addr retAddr, std::vector<RASEntry> &stack, int &sp);
-
-        void pop(std::vector<RASEntry> &stack, int &sp);
-
     private:
+
+        void push(Addr retAddr);
+
+        void pop();
+
+        void push_stack(Addr retAddr);
+        
+        void pop_stack();
 
         void ptrInc(int &ptr);
 
         void ptrDec(int &ptr);
 
-        void printStack(const char *when, std::vector<RASEntry> &stack, int &sp) {
+        void inflightPtrInc(int &ptr);
+        
+        void inflightPtrDec(int &ptr);
+
+        bool inflightInRange(int &ptr);
+
+        int inflightPtrPlus1(int ptr);
+
+        RASEssential getTop();
+
+        RASEssential getTop_meta();
+
+        void printStack(const char *when) {
             DPRINTF(FTBRAS, "printStack when %s: \n", when);
             for (int i = 0; i < numEntries; i++) {
-                DPRINTFR(FTBRAS, "entry [%d], retAddr %#lx, ctr %d", i, stack[i].retAddr, stack[i].ctr);
-                if (sp == i) {
-                    DPRINTFR(FTBRAS, " <-- SP");
+                DPRINTFR(FTBRAS, "entry [%d], retAddr %#lx, ctr %d", i, stack[i].data.retAddr, stack[i].data.ctr);
+                if (ssp == i) {
+                    DPRINTFR(FTBRAS, " <-- SSP");
+                }
+                if (nsp == i) {
+                    DPRINTFR(FTBRAS, " <-- NSP");
                 }
                 DPRINTFR(FTBRAS, "\n");
             }
+            DPRINTFR(FTBRAS, "non-volatile stack:\n");
+            for (int i = 0; i < numInflightEntries; i++) {
+                DPRINTFR(FTBRAS, "entry [%d] retAddr %#lx, ctr %u nos %d", i, inflightStack[i].data.retAddr, inflightStack[i].data.ctr, inflightStack[i].nos);
+                if (TOSW == i) {
+                    DPRINTFR(FTBRAS, " <-- TOSW");
+                }
+                if (TOSR == i) {
+                    DPRINTFR(FTBRAS, " <-- TOSR");
+                }
+                if (BOS == i) {
+                    DPRINTFR(FTBRAS, " <-- BOS");
+                }
+                DPRINTFR(FTBRAS, "\n");
+            }
+            /*
+            DPRINTFR(FTBRAS, "non-volatile stack current data:\n");
+            int a = TOSR;
+            int inflightCurrentSz = 0;
+            while (inflightInRange(a)) {
+                DPRINTFR(FTBRAS, "retAddr %#lx, ctr %d\n", inflightStack[a].data.retAddr, inflightStack[a].data.ctr);
+                ++inflightCurrentSz;
+                a = inflightStack[a].nos;
+                if (inflightCurrentSz > 30) {
+                    DPRINTFR(FTBRAS, "...\n");
+                    break;
+                }
+            }
+            */
+            //if (ssp > nsp && (ssp - nsp != inflightCurrentSz)) {
+            //    DPRINTFR(FTBRAS, "inflight size mismatch!\n");
+            //}
         }
-
-        void setTrace() override;
 
         unsigned numEntries;
 
         unsigned ctrWidth;
 
+        unsigned numInflightEntries;
+
+        int TOSW; // inflight pointer to the write top of stack
+
+        int TOSR; // inflight pointer to the read top of stack
+
+        int BOS; // inflight pointer to the bottom of stack
+
         int maxCtr;
 
-        int specSp;
+        int ssp; // spec sp
+        
+        int nsp; // non-spec sp
 
-        int nonSpecSp;
+        int sctr;
 
-        std::vector<RASEntry> specStack;
-
-        std::vector<RASEntry> nonSpecStack;
+        std::vector<RASEntry> stack;
+        
+        std::vector<RASInflightEntry> inflightStack;
 
         RASMeta meta;
 
-        TraceManager *specRasTrace;
-        TraceManager *nonSpecRasTrace;
 
-};
-
-struct SpecRASTrace : public Record {
-    SpecRASTrace(RAS::When when, RAS::RAS_OP op, Addr startPC, Addr brPC,
-        Addr retAddr, int sp, Addr tosAddr, unsigned tosCtr)
-    {
-        _tick = curTick();
-        _uint64_data["condition"] = when;
-        _uint64_data["op"] = op;
-        _uint64_data["startPC"] = startPC;
-        _uint64_data["brPC"] = brPC;
-        _uint64_data["retAddr"] = retAddr;
-        _uint64_data["sp"] = sp;
-        _uint64_data["tosAddr"] = tosAddr;
-        _uint64_data["tosCtr"] = tosCtr;
-    }
-};
-
-struct NonSpecRASTrace : public Record {
-    NonSpecRASTrace(RAS::RAS_OP op, Addr startPC, Addr brPC, Addr retAddr,
-        int predSp, Addr predTosAddr, unsigned predTosCtr,
-        int sp, Addr tosAddr, unsigned tosCtr, bool miss)
-    {
-        _tick = curTick();
-        _uint64_data["op"] = op;
-        _uint64_data["startPC"] = startPC;
-        _uint64_data["brPC"] = brPC;
-        _uint64_data["retAddr"] = retAddr;
-        _uint64_data["predSp"] = predSp;
-        _uint64_data["predTosAddr"] = predTosAddr;
-        _uint64_data["predTosCtr"] = predTosCtr;
-        _uint64_data["sp"] = sp;
-        _uint64_data["tosAddr"] = tosAddr;
-        _uint64_data["tosCtr"] = tosCtr;
-        _uint64_data["miss"] = miss;
-    }
 };
 
 }  // namespace ftb_pred
