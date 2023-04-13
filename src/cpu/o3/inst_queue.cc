@@ -50,6 +50,7 @@
 #include "cpu/o3/iew_delay_calibrator.hh"
 #include "cpu/o3/limits.hh"
 #include "debug/IQ.hh"
+#include "debug/Counters.hh"
 #include "enums/OpClass.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/core.hh"
@@ -902,6 +903,7 @@ InstructionQueue::scheduleReadyInsts()
             listOrder.erase(order_it++);
             iqStats.statIssuedInstType[tid][op_class]++;
         } else {
+            DPRINTF(IQ, "NoFreeFU.\n");
             iqStats.statFuBusy[op_class]++;
             iqStats.fuBusy[tid]++;
             ++order_it;
@@ -1153,8 +1155,10 @@ void
 InstructionQueue::addReadyMemInst(const DynInstPtr &ready_inst)
 {
     OpClass op_class = ready_inst->opClass();
-    if (ready_inst->readyTick == -1)
+    if (ready_inst->readyTick == -1) {
         ready_inst->readyTick = curTick();
+        DPRINTF(Counters, "set ready Tick at addreadyMemInst\n");
+    }
 
     readyInsts[op_class].push(ready_inst);
 
@@ -1534,8 +1538,10 @@ InstructionQueue::addIfReady(const DynInstPtr &inst)
     // If the instruction now has all of its source registers
     // available, then add it to the list of ready instructions.
     if (inst->readyToIssue()) {
-        if (inst->readyTick == -1)
+        if (inst->readyTick == -1) {
             inst->readyTick = curTick();
+            DPRINTF(Counters, "set readyTick at addIfReady\n");
+        }
 
         //Add the instruction to the proper ready list.
         if (inst->isMemRef()) {

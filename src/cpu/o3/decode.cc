@@ -37,6 +37,7 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include <queue>
 
 #include "cpu/o3/decode.hh"
 
@@ -50,6 +51,7 @@
 #include "debug/Decode.hh"
 #include "debug/DecoupleBP.hh"
 #include "debug/O3PipeView.hh"
+#include "debug/Counters.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/full_system.hh"
 
@@ -87,6 +89,8 @@ Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
         squashInst[tid] = nullptr;
         squashAfterDelaySlot[tid] = 0;
     }
+
+    decodeStalls.resize(decodeWidth, StallReason::NoStall);
 }
 
 void
@@ -523,6 +527,7 @@ Decode::checkSignalsAndUpdate(ThreadID tid)
     }
 
     if (checkStall(tid)) {
+        blockReason = fromRename->renameInfo[tid].blockReason;
         return block(tid);
     }
 
@@ -556,6 +561,8 @@ Decode::checkSignalsAndUpdate(ThreadID tid)
 void
 Decode::tick()
 {
+    toRename->fetchStallReason = fromFetch->fetchStallReason;
+
     wroteToTimeBuffer = false;
 
     bool status_change = false;
@@ -575,11 +582,15 @@ Decode::tick()
         status_change =  checkSignalsAndUpdate(tid) || status_change;
 
         decode(status_change, tid);
+
+        toFetch->decodeInfo[tid].blockReason = blockReason;
     }
 
     if (status_change) {
         updateStatus();
     }
+
+    toRename->decodeStallReason = decodeStalls;
 
     if (wroteToTimeBuffer) {
         DPRINTF(Activity, "Activity this cycle.\n");
@@ -600,8 +611,10 @@ Decode::decode(bool &status_change, ThreadID tid)
 
     if (decodeStatus[tid] == Blocked) {
         ++stats.blockedCycles;
+        setAllStalls(blockReason);
     } else if (decodeStatus[tid] == Squashing) {
         ++stats.squashCycles;
+        setAllStalls(StallReason::SquashStall);
     }
 
     // Decode should try to decode as many instructions as its bandwidth
@@ -640,11 +653,24 @@ Decode::decodeInsts(ThreadID tid)
     int insts_available = decodeStatus[tid] == Unblocking ?
         skidBuffer[tid].size() : insts[tid].size();
 
+    std::queue<StallReason> decode_stalls;
+
+    StallReason breakDecode = StallReason::NoStall;
+
     if (insts_available == 0) {
         DPRINTF(Decode, "[tid:%i] Nothing to do, breaking out"
                 " early.\n",tid);
         // Should I change the status to idle?
         ++stats.idleCycles;
+
+        StallReason stall = StallReason::NoStall;
+        for (auto iter : fromFetch->fetchStallReason) {
+            if (iter != StallReason::NoStall) {
+                stall = iter;
+                break;
+            }
+        }
+        setAllStalls(stall);
         return;
     } else if (decodeStatus[tid] == Unblocking) {
         DPRINTF(Decode, "[tid:%i] Unblocking, removing insts from skid "
@@ -692,6 +718,8 @@ Decode::decodeInsts(ThreadID tid)
 
             --insts_available;
 
+            decode_stalls.push(StallReason::InstSquashed);
+
             continue;
         }
 
@@ -732,6 +760,9 @@ Decode::decodeInsts(ThreadID tid)
             // a check at the end
             squash(inst, inst->threadNumber);
 
+            decode_stalls.push(StallReason::InstMisPred);
+            breakDecode = StallReason::InstMisPred;
+
             break;
         }
 
@@ -769,6 +800,9 @@ Decode::decodeInsts(ThreadID tid)
                 // a check at the end
                 squash(inst, inst->threadNumber);
 
+                decode_stalls.push(StallReason::InstMisPred);
+                breakDecode = StallReason::InstMisPred;
+
                 DPRINTF(Decode,
                         "[tid:%i] [sn:%llu] Updating predictions:"
                         " Wrong predicted target: %s PredPC: %s\n",
@@ -787,9 +821,25 @@ Decode::decodeInsts(ThreadID tid)
         }
     }
 
+    for (int i = 0;i < decodeWidth;i++) {
+        if (i < toRenameIndex) {
+            decodeStalls.at(i) = StallReason::NoStall;
+        } else {
+            if (!decode_stalls.empty()) {
+                decodeStalls.at(i) = decode_stalls.front();
+                decode_stalls.pop();
+            } else if (breakDecode != StallReason::NoStall) {
+                decodeStalls.at(i) = breakDecode;
+            } else {
+                decodeStalls.at(i) = StallReason::NoStall;
+            }
+        }
+    }
+
     // If we didn't process all instructions, then we will need to block
     // and put all those instructions into the skid buffer.
     if (!insts_to_decode.empty()) {
+        blockReason = breakDecode;
         block(tid);
     }
 
@@ -797,6 +847,14 @@ Decode::decodeInsts(ThreadID tid)
     // tracking.
     if (toRenameIndex) {
         wroteToTimeBuffer = true;
+    }
+}
+
+void
+Decode::setAllStalls(StallReason decodeStall)
+{
+    for (int i = 0;i < decodeStalls.size();i++) {
+        decodeStalls.at(i) = decodeStall;
     }
 }
 

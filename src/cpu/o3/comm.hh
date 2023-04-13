@@ -58,6 +58,40 @@ namespace gem5
 namespace o3
 {
 
+/** stall reasons in each stages*/
+enum StallReason {
+    NoStall,  // Base
+    IcacheStall,  // F
+    ITlbStall,  // F
+    DTlbStall,  // B
+    BpStall,  // BS, bad speculation: Frontend is squashed
+    IntStall,  // F
+    TrapStall,  // F
+    FragStall,  // F
+    SquashStall,  // BS
+    FetchBufferInvalid,  // Never used
+    InstMisPred,  // BS
+    InstSquashed,  // BS
+    SerializeStall,  // F
+    LongExecute,  // B
+    InstNotReady,  // B
+
+    LoadL1Bound,
+    LoadL2Bound,
+    LoadL3Bound,
+    LoadMemBound,
+    StoreL1Bound,
+    StoreL2Bound,
+    StoreL3Bound,
+    StoreMemBound,
+
+    ResumeUnblock,  // B
+    CommitSquash,  // BS
+    OtherStall,  // B
+    OtherFetchStall,  // F
+    NumStallReasons
+};
+
 /** Struct that defines the information passed from fetch to decode. */
 struct FetchStruct
 {
@@ -67,6 +101,7 @@ struct FetchStruct
     Fault fetchFault;
     InstSeqNum fetchFaultSN;
     bool clearFetchFault;
+    std::vector<StallReason> fetchStallReason;
 };
 
 /** Struct that defines the information passed from decode to rename. */
@@ -75,6 +110,8 @@ struct DecodeStruct
     int size;
 
     DynInstPtr insts[MaxWidth];
+    std::vector<StallReason> fetchStallReason;
+    std::vector<StallReason> decodeStallReason;
 };
 
 /** Struct that defines the information passed from rename to IEW. */
@@ -83,6 +120,9 @@ struct RenameStruct
     int size;
 
     DynInstPtr insts[MaxWidth];
+    std::vector<StallReason> fetchStallReason;
+    std::vector<StallReason> decodeStallReason;
+    std::vector<StallReason> renameStallReason;
 };
 
 /** Struct that defines the information passed from IEW to commit. */
@@ -127,11 +167,16 @@ struct TimeStruct
         bool predIncorrect;
         bool branchMispredict;
         bool branchTaken;
+
+        StallReason blockReason;
     };
 
     DecodeComm decodeInfo[MaxThreads];
 
-    struct RenameComm {};
+    struct RenameComm
+    {
+        StallReason blockReason;
+    };
 
     RenameComm renameInfo[MaxThreads];
 
@@ -150,6 +195,11 @@ struct TimeStruct
         unsigned dispatched;
         bool usedIQ;
         bool usedLSQ;
+
+        StallReason robHeadStallReason;
+        StallReason blockReason;
+        StallReason lqHeadStallReason;
+        StallReason sqHeadStallReason;
     };
 
     IewComm iewInfo[MaxThreads];

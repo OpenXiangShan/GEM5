@@ -58,7 +58,11 @@
 #include "debug/Drain.hh"
 #include "debug/IEW.hh"
 #include "debug/O3PipeView.hh"
+#include "debug/Rename.hh"
+#include "debug/Counters.hh"
 #include "params/BaseO3CPU.hh"
+#include "sim/core.hh"
+#include "base/output.hh"
 
 namespace gem5
 {
@@ -114,6 +118,9 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
     updateLSQNextCycle = false;
 
     skidBufferMax = (renameToIEWDelay + 1) * params.renameWidth * 2;
+
+    dispatchStalls.resize(dispatchWidth, StallReason::NoStall);
+
 }
 
 std::string
@@ -192,7 +199,15 @@ IEW::IEWStats::IEWStats(CPU *cpu)
                 statistics::units::Count, statistics::units::Count>::get(),
              "Average fanout of values written-back"),
     ADD_STAT(stallEvents, statistics::units::Count::get(),
-             "Number of events the IEW has stalled")
+             "Number of events the IEW has stalled"),
+    ADD_STAT(fetchStallReason, statistics::units::Count::get(),
+             "Number of fetch stall reasons each tick (Total)"),
+    ADD_STAT(decodeStallReason, statistics::units::Count::get(),
+             "Number of decode stall reasons each tick (Total)"),
+    ADD_STAT(renameStallReason, statistics::units::Count::get(),
+             "Number of rename stall reasons each tick (Total)"),
+    ADD_STAT(dispatchStallReason, statistics::units::Count::get(),
+             "Number of dispatch stall reasons each tick (Total)")
 {
     instsToCommit
         .init(cpu->numThreads)
@@ -233,6 +248,59 @@ IEW::IEWStats::IEWStats(CPU *cpu)
 
     for (int i = 0; i < StallEventCount; i++) {
         stallEvents.subname(i, stall_event_str[static_cast<StallEvent>(i)]);
+    }
+
+    fetchStallReason
+            .init(NumStallReasons)
+            .flags(statistics::total);
+
+    decodeStallReason
+            .init(NumStallReasons)
+            .flags(statistics::total);
+
+    renameStallReason
+            .init(NumStallReasons)
+            .flags(statistics::total);
+
+    dispatchStallReason
+            .init(NumStallReasons)
+            .flags(statistics::total);
+
+    std::map <StallReason, const char*> stallReasonStr = {
+        {StallReason::NoStall, "NoStall"},
+        {StallReason::IcacheStall, "IcacheStall"},
+        {StallReason::ITlbStall, "ITlbStall"},
+        {StallReason::DTlbStall, "DTlbStall"},
+        {StallReason::BpStall, "BpStall"},
+        {StallReason::IntStall, "IntStall"},
+        {StallReason::TrapStall, "TrapStall"},
+        {StallReason::FragStall, "FragStall"},
+        {StallReason::SquashStall, "SquashStall"},
+        {StallReason::FetchBufferInvalid, "FetchBufferInvalid"},
+        {StallReason::InstMisPred, "InstMisPred"},
+        {StallReason::InstSquashed, "InstSquashed"},
+        {StallReason::SerializeStall, "SerializeStall"},
+        {StallReason::LongExecute, "LongExecute"},
+        {StallReason::InstNotReady, "InstNotReady"},
+        {StallReason::LoadL1Bound, "LoadL1Bound"},
+        {StallReason::LoadL2Bound, "LoadL2Bound"},
+        {StallReason::LoadL3Bound, "LoadL3Bound"},
+        {StallReason::LoadMemBound, "LoadMemBound"},
+        {StallReason::StoreL1Bound, "StoreL1Bound"},
+        {StallReason::StoreL2Bound, "StoreL2Bound"},
+        {StallReason::StoreL3Bound, "StoreL3Bound"},
+        {StallReason::StoreMemBound, "StoreMemBound"},
+        {StallReason::ResumeUnblock, "ResumeUnblock"},
+        {StallReason::CommitSquash, "CommitSquash"},
+        {StallReason::OtherStall, "OtherStall"},
+        {StallReason::OtherFetchStall, "OtherFetchStall"}
+    };
+
+    for (int i = 0;i < NumStallReasons;i++) {
+        fetchStallReason.subname(i, stallReasonStr[static_cast<StallReason>(i)]);
+        decodeStallReason.subname(i, stallReasonStr[static_cast<StallReason>(i)]);
+        renameStallReason.subname(i, stallReasonStr[static_cast<StallReason>(i)]);
+        dispatchStallReason.subname(i, stallReasonStr[static_cast<StallReason>(i)]);
     }
 }
 
@@ -737,10 +805,12 @@ IEW::checkStall(ThreadID tid)
     if (fromCommit->commitInfo[tid].robSquashing) {
         DPRINTF(IEW,"[tid:%i] Stall from Commit stage detected.\n",tid);
         ret_val = true;
+        blockReason = StallReason::CommitSquash;
     } else if (instQueue.isFull(tid)) {
         DPRINTF(IEW,"[tid:%i] Stall: IQ  is full.\n",tid);
         iewStats.stallEvents[IQFull]++;
         ret_val = true;
+        blockReason = checkDispatchStall(tid);
     }
 
     return ret_val;
@@ -768,6 +838,7 @@ IEW::checkSignalsAndUpdate(ThreadID tid)
         dispatchStatus[tid] = Squashing;
         fetchRedirect[tid] = false;
         iewStats.stallEvents[ROBWalk]++;
+        setAllStalls(StallReason::CommitSquash);
         return;
     }
 
@@ -778,6 +849,7 @@ IEW::checkSignalsAndUpdate(ThreadID tid)
         emptyRenameInsts(tid);
         wroteToTimeBuffer = true;
         iewStats.stallEvents[ROBWalk]++;
+        setAllStalls(StallReason::CommitSquash);
     }
 
     if (checkStall(tid)) {
@@ -884,9 +956,11 @@ IEW::dispatch(ThreadID tid)
 
     if (dispatchStatus[tid] == Blocked) {
         ++iewStats.blockCycles;
+        setAllStalls(blockReason);
 
     } else if (dispatchStatus[tid] == Squashing) {
         ++iewStats.squashCycles;
+        setAllStalls(StallReason::CommitSquash);
     }
 
     // Dispatch should try to dispatch as many instructions as its bandwidth
@@ -947,6 +1021,9 @@ IEW::dispatchInsts(ThreadID tid)
         }
     }
 
+    std::queue<StallReason> dispatch_stalls;
+    StallReason breakDispatch = StallReason::NoStall;
+
     // Loop through the instructions, putting them in the instruction
     // queue.
     for ( ; dis_num_inst < insts_to_add &&
@@ -988,6 +1065,8 @@ IEW::dispatchInsts(ThreadID tid)
                 toRename->iewInfo[tid].dispatchedToSQ++;
             }
 
+            dispatch_stalls.push(StallReason::InstSquashed);
+
             toRename->iewInfo[tid].dispatched++;
 
             continue;
@@ -1000,12 +1079,21 @@ IEW::dispatchInsts(ThreadID tid)
             // Call function to start blocking.
             block(tid);
             iewStats.stallEvents[IQFull]++;
+
+            blockReason = checkDispatchStall(tid);
+
             // Set unblock to false. Special case where we are using
             // skidbuffer (unblocking) instructions but then we still
             // get full in the IQ.
             toRename->iewUnblock[tid] = false;
 
             ++iewStats.iqFullEvents;
+
+            // check the reason of instQueue full.
+            dispatch_stalls.push(checkDispatchStall(tid));
+
+            breakDispatch = checkDispatchStall(tid);
+
             break;
         }
 
@@ -1019,6 +1107,19 @@ IEW::dispatchInsts(ThreadID tid)
             // Call function to start blocking.
             block(tid);
             iewStats.stallEvents[LSQFull]++;
+
+            if ((inst->isStore() || inst->isAtomic()) && 
+                 ldstQueue.sqFull(tid) && rob->isEmpty(tid)) {
+                 blockReason = checkLSQStall(tid, false);
+            } else if ((inst->isLoad() && ldstQueue.lqFull(tid)) && 
+                        rob->isEmpty(tid)) {
+                 blockReason = checkLSQStall(tid, true);
+            } else {
+                blockReason = checkDispatchStall(tid);
+            }
+
+            dispatch_stalls.push(blockReason);
+            breakDispatch = blockReason;
 
             // Set unblock to false. Special case where we are using
             // skidbuffer (unblocking) instructions but then we still
@@ -1154,10 +1255,44 @@ IEW::dispatchInsts(ThreadID tid)
         ppDispatch->notify(inst);
     }
 
+    unsigned instInSufficient = dispatch_width - insts_to_add;
+    StallReason stallFromRename = StallReason::NoStall;
+    for (auto iter : fromRename->renameStallReason) {
+        if (iter != StallReason::NoStall) {
+            stallFromRename = iter;
+            break;
+        }
+    }
+
+    for (int i = 0;i < dispatchWidth;i++) {
+        if (i < dis_num_inst) {
+            dispatchStalls.at(i) = StallReason::NoStall;
+        } else {
+            if (!dispatch_stalls.empty()) {
+                dispatchStalls.at(i) = dispatch_stalls.front();
+                dispatch_stalls.pop();
+            } else if (breakDispatch != StallReason::NoStall) {
+                dispatchStalls.at(i) = breakDispatch;
+            } else if (instInSufficient > 0 && insts_to_add > 0) {
+                dispatchStalls.at(i) = StallReason::FragStall;
+                instInSufficient--;
+            } else if (insts_to_add == 0 && stallFromRename != StallReason::NoStall) {
+                dispatchStalls.at(i) = stallFromRename;
+            } else {
+                dispatchStalls.at(i) = StallReason::OtherStall;
+            }
+        }
+    }
+
+    for (int i = 0;i < dispatchStalls.size();i++) {
+        DPRINTF(IEW,"[tid:%i] dispatchStalls[%d]=%d\n", tid, i, dispatchStalls.at(i));
+    }
+
     if (!insts_to_dispatch.empty()) {
         DPRINTF(IEW,"[tid:%i] Issue: Bandwidth Full. Blocking.\n", tid);
         block(tid);
         iewStats.stallEvents[DispBWFull]++;
+        blockReason = breakDispatch;
         toRename->iewUnblock[tid] = false;
     }
 
@@ -1511,6 +1646,18 @@ IEW::writebackInsts()
 void
 IEW::tick()
 {
+    for (int i = 0;i < fromRename->fetchStallReason.size();i++) {
+        iewStats.fetchStallReason[fromRename->fetchStallReason[i]]++;
+    }
+
+    for (int i = 0;i < fromRename->decodeStallReason.size();i++) {
+        iewStats.decodeStallReason[fromRename->decodeStallReason[i]]++;
+    }
+
+    for (int i = 0;i < fromRename->renameStallReason.size();i++) {
+        iewStats.renameStallReason[fromRename->renameStallReason[i]]++;
+    }
+
     wbNumInst = 0;
     wbCycle = 0;
 
@@ -1535,6 +1682,14 @@ IEW::tick()
 
         checkSignalsAndUpdate(tid);
         dispatch(tid);
+
+        toRename->iewInfo[tid].robHeadStallReason = checkDispatchStall(tid);
+        toRename->iewInfo[tid].lqHeadStallReason = ldstQueue.lqEmpty() ? StallReason::NoStall : checkLSQStall(tid, true);
+        toRename->iewInfo[tid].sqHeadStallReason = ldstQueue.sqEmpty() ? StallReason::NoStall : checkLSQStall(tid, false);
+        toRename->iewInfo[tid].blockReason = blockReason;
+    }
+    for (int i = 0;i < dispatchStalls.size();i++) {
+        iewStats.dispatchStallReason[dispatchStalls[i]]++;
     }
     instQueue.delayWakeDependents();
 
@@ -1699,6 +1854,89 @@ IEW::checkMisprediction(const DynInstPtr& inst)
             }
         }
     }
+}
+
+void
+IEW::setAllStalls(StallReason dispatchStall)
+{
+    for (int i = 0;i < dispatchWidth;i++) {
+        dispatchStalls.at(i) = dispatchStall;
+    }
+}
+
+StallReason
+IEW::checkLoadStoreInst(DynInstPtr inst)
+{
+    assert(inst->isLoad() || inst->isStore() || inst->isAtomic());
+
+    uint64_t latency = cpu->ticksToCycles(curTick() - inst->translatedTick);
+    if (inst->firstIssue != -1 && inst->translatedTick == -1) {
+        return StallReason::DTlbStall;
+    } else if (inst->firstIssue != -1 && inst->translatedTick != -1 &&
+                latency <= 4) {
+        return inst->isLoad() ? StallReason::LoadL1Bound : StallReason::StoreL1Bound;
+    } else if (inst->firstIssue != -1 && inst->translatedTick != -1 &&
+                latency > 4 && latency <= 4 + 15) {
+        return inst->isLoad() ? StallReason::LoadL2Bound : StallReason::StoreL2Bound;
+    } else if (inst->firstIssue != -1 && inst->translatedTick != -1 &&
+                   latency > 4 + 15 && latency <= 4 + 15 + 19) {
+        return inst->isLoad() ? StallReason::LoadL3Bound : StallReason::StoreL3Bound;
+    } else if (inst->firstIssue != -1 && inst->translatedTick != -1 &&
+                   latency > 4 + 15 + 19) {
+        return inst->isLoad() ? StallReason::LoadMemBound : StallReason::StoreMemBound;
+    } else {
+        return StallReason::OtherStall;
+    }
+}
+
+StallReason
+IEW::checkDispatchStall(ThreadID tid) {
+    DynInstPtr head_inst = rob->readHeadInst(tid);
+    if (head_inst == rob->dummyInst) {
+        return StallReason::NoStall;
+    }
+
+    assert(head_inst);
+
+    if (head_inst->readyTick == -1) {
+        DPRINTF(Counters, "IEW: [tid:%i] [sn:%llu] "
+                "Dispatch: Instruction not ready. nonSpeculative:%d\n",
+                tid, head_inst->seqNum, head_inst->isNonSpeculative());
+        if (head_inst->isNonSpeculative()) {
+            return StallReason::SerializeStall;
+        } else if (head_inst->isLoad() && ldstQueue.lqFull(tid)) {
+            return checkLSQStall(tid, true);
+        } else if ((head_inst->isStore() || head_inst->isAtomic()) && ldstQueue.sqFull(tid)) {
+            return checkLSQStall(tid, false);
+        } else {
+            return StallReason::InstNotReady;
+        }
+    }
+
+    if (head_inst->isLoad() || head_inst->isStore() || head_inst->isAtomic()) {
+        return checkLoadStoreInst(head_inst);
+    } else {
+        if (head_inst->firstIssue != -1) {
+            return StallReason::LongExecute;
+        } else {
+            return StallReason::OtherStall;
+        }
+    }
+
+    return StallReason::OtherStall;
+}
+
+StallReason
+IEW::checkLSQStall(ThreadID tid, bool isLoad)
+{
+    DynInstPtr head_inst = ldstQueue.getLSQHeadInst(tid, isLoad);
+    return checkLoadStoreInst(head_inst);
+}
+
+void
+IEW::setRob(ROB *rob)
+{
+    this->rob = rob; 
 }
 
 } // namespace o3

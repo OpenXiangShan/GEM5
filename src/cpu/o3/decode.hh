@@ -325,6 +325,12 @@ class Decode
         /** stat for total number of instructions that mispredicted due to npc. */
         statistics::Scalar mispredictedByNPC;
     } stats;
+
+    std::vector<StallReason> decodeStalls;
+
+    StallReason blockReason;
+
+    void setAllStalls(StallReason decodeStall);
 };
 
 } // namespace o3

@@ -44,6 +44,8 @@
 #include <map>
 #include <queue>
 #include <set>
+#include <vector>
+#include <map>
 
 #include "base/statistics.hh"
 #include "cpu/o3/comm.hh"
@@ -52,6 +54,7 @@
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/lsq.hh"
 #include "cpu/o3/scoreboard.hh"
+#include "cpu/o3/rob.hh"
 #include "cpu/timebuf.hh"
 #include "debug/IEW.hh"
 #include "sim/probe/probe.hh"
@@ -502,7 +505,36 @@ class IEW
         statistics::Formula wbFanout;
 
         statistics::Vector stallEvents;
+
+        /** Distribution of number of fetch stall reasons each tick. */
+        statistics::Vector fetchStallReason;
+        /** Distribution of number of decode stall reasons each tick. */
+        statistics::Vector decodeStallReason;
+        /** Distribution of number of fetrenamech stall reasons each tick. */
+        statistics::Vector renameStallReason;
+        /** Distribution of number of dispatch stall reasons each tick. */
+
+        statistics::Vector dispatchStallReason;
     } iewStats;
+
+    std::vector<StallReason> dispatchStalls;
+
+    StallReason blockReason;
+
+    ROB* rob;
+
+    void setAllStalls(StallReason dispatchStall);
+
+    StallReason checkLoadStoreInst(DynInstPtr inst);
+
+    StallReason checkDispatchStall(ThreadID tid);
+
+    StallReason checkLSQStall(ThreadID tid, bool isLoad);
+
+  public:
+
+    void setRob(ROB *rob);
+  
 };
 
 } // namespace o3

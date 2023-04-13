@@ -550,6 +550,14 @@ class Rename
 
         statistics::Vector stallEvents;
     } stats;
+
+    std::vector<StallReason> renameStalls;
+
+    StallReason blockReason;
+
+    void setAllStalls(StallReason renameStall);
+
+    StallReason checkRenameStallFromIEW(ThreadID tid);
 };
 
 } // namespace o3

@@ -74,6 +74,7 @@ if env['CONF']['TARGET_ISA'] != 'null':
     DebugFlag('CommitTrace')
     DebugFlag('InstCommited')
     DebugFlag('FetchFault')
+    DebugFlag('Counters')
 
     CompoundFlag('O3CPUAll', [ 'Fetch', 'Decode', 'Rename', 'IEW', 'Commit',
         'IQ', 'ROB', 'FreeList', 'LSQ', 'LSQUnit', 'StoreSet', 'MemDepUnit',

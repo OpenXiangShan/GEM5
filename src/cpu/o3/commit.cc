@@ -72,6 +72,7 @@
 #include "debug/O3PipeView.hh"
 #include "debug/Faults.hh"
 #include "debug/FTBStats.hh"
+#include "debug/Counters.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/faults.hh"
 #include "sim/full_system.hh"
@@ -722,6 +723,8 @@ Commit::tick()
             DPRINTF(Commit,"[tid:%i] Can't commit, Instruction [sn:%llu] PC "
                     "%s is head of ROB and not ready\n",
                     tid, inst->seqNum, inst->pcState());
+            DPRINTF(Counters, "instruction ready tick:%lu\n", inst->readyTick);
+            DPRINTF(Commit, "%s\n", inst->staticInst->disassemble(inst->pcState().instAddr()).c_str());
         }
 
         DPRINTF(Commit, "[tid:%i] ROB has %d insts & %d free entries.\n",
