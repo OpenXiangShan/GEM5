@@ -250,6 +250,11 @@ typedef struct FetchStream
     Addr squashPC;
     unsigned predSource;
 
+    // for loop buffer
+    bool fromLoopBuffer;
+    bool isDouble;
+    bool isExit;
+
     // prediction metas
     std::array<std::shared_ptr<void>, 5> predMetas;
 
@@ -495,13 +500,23 @@ struct FtqEntry
     bool taken;
     Addr target;  // TODO: use PCState
     FetchStreamId fsqID;
+
+    // for loop buffer
+    bool inLoop;
+    int iter;
+    bool isExit;
+    Addr loopEndPC;
     FtqEntry()
         : startPC(0)
         , endPC(0)
         , takenPC(0)
         , taken(false)
         , target(0)
-        , fsqID(0) {}
+        , fsqID(0)
+        , inLoop(false)
+        , iter(0)
+        , isExit(false)
+        , loopEndPC(0) {}
     
     bool miss() const { return !taken; }
     // bool filledUp() const { return (endPC & fetchTargetMask) == 0; }

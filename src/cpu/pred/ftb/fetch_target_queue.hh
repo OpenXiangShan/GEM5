@@ -47,6 +47,8 @@ class FetchTargetQueue
 
     FetchTargetEnqState fetchTargetEnqState;
 
+    int currentLoopIter{0};
+
     std::string _name;
 
   public:
@@ -83,7 +85,7 @@ class FetchTargetQueue
 
     void finishCurrentFetchTarget();
 
-    bool trySupplyFetchWithTarget(Addr fetch_demand_pc);
+    bool trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &in_loop);
 
 
     bool empty() const { return ftq.empty(); }
@@ -105,6 +107,16 @@ class FetchTargetQueue
     bool validSupplyFetchTargetState() const;
 
     FtqEntry &getLastInsertedEntry() { return ftq.rbegin()->second; }
+
+    int getCurrentLoopIter() { return currentLoopIter; }
+
+    void incCurrentLoopIter(int totalIter) {
+        if (currentLoopIter <= totalIter) {
+            currentLoopIter++;
+        } else {
+            currentLoopIter = 0;
+        }
+    }
 
     // bool lastEntryIncomplete() const
     // {

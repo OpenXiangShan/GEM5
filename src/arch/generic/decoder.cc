@@ -38,4 +38,10 @@ InstDecoder::fetchRomMicroop(MicroPC micropc, StaticInstPtr curMacroop)
     panic("ROM based microcode isn't implemented.");
 }
 
+void
+InstDecoder::setPCStateWithInstDesc(const bool &compressed, PCStateBase &pc)
+{
+    panic("setPCStateWithStaticInst isn't implemented.");
+}
+
 } // namespace gem5

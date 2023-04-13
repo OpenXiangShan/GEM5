@@ -149,6 +149,10 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         dbpftb = dynamic_cast<branch_prediction::ftb_pred::DecoupledBPUWithFTB*>(branchPred);
         assert(dbpftb);
         usedUpFetchTargets = true;
+        enableLoopBuffer = dbpftb->enableLoopBuffer;
+        if (enableLoopBuffer) {
+            loopBuffer = &dbpftb->lb;
+        }
     }
 
     assert(params.decoder.size());
@@ -369,7 +373,9 @@ Fetch::resetStage()
 
     wroteToTimeBuffer = false;
     _status = Inactive;
-    loopBuffer.deactivate();
+    if (enableLoopBuffer) {
+        loopBuffer->deactivate(true);
+    }
 
     if (isStreamPred()) {
         dbsp->resetPC(pc[0]->instAddr());
@@ -986,7 +992,12 @@ Fetch::doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst,
 
     ++fetchStats.squashCycles;
 
-    loopBuffer.deactivate();
+    if (enableLoopBuffer) {
+        loopBuffer->deactivate(true);
+
+        currentFtqEntryInsts.first = new_pc.instAddr();
+        currentFtqEntryInsts.second.clear();
+    }
 }
 
 void
@@ -1208,7 +1219,7 @@ Fetch::tick()
     } else if (isFTBPred()) {
         assert(dbpftb);
         dbpftb->tick();
-        usedUpFetchTargets = !dbpftb->trySupplyFetchWithTarget(pc[0]->instAddr());
+        usedUpFetchTargets = !dbpftb->trySupplyFetchWithTarget(pc[0]->instAddr(), currentFetchTargetInLoop);
     }
 }
 
@@ -1535,15 +1546,15 @@ Fetch::fetch(bool &status_change)
 
     bool in_rom = isRomMicroPC(this_pc.microPC());
 
-    if (isStreamPred()) {
-        const auto &ftq_head = dbsp->getSupplyingFetchTarget();
+    // if (isStreamPred()) {
+    //     const auto &ftq_head = dbsp->getSupplyingFetchTarget();
 
-        if (enableLoopBuffer && !loopBuffer.isActive() && ftq_head.taken) {
-            // don't touch the state when already in loop buf
-            // look up loop buffer: whether current FTQe is loop
-            loopBuffer.tryActivateLoop(ftq_head.takenPC, ftq_head.predLoopIteration);
-        }
-    }
+    //     if (enableLoopBuffer && !loopBufferisActive() && ftq_head.taken) {
+    //         // don't touch the state when already in loop buf
+    //         // look up loop buffer: whether current FTQe is loop
+    //         loopBuffer.tryActivateLoop(ftq_head.takenPC, ftq_head.predLoopIteration);
+    //     }
+    // }
 
     // If returning from the delay of a cache miss, then update the status
     // to running, otherwise do the cache access.  Possibly move this up
@@ -1560,7 +1571,7 @@ Fetch::fetch(bool &status_change)
         // from a macro-op, then start fetch from icache.
         if (!(fetchBufferValid[tid] &&
               fetchBufferPC[tid] + fetchBufferSize > fetch_addr && fetchBufferPC[tid] <= fetch_addr) &&
-            !in_rom && !macroop[tid] && !loopBuffer.isActive()) {
+            !in_rom && !macroop[tid] && !currentFetchTargetInLoop) {
             DPRINTF(Fetch, "[tid:%i] Attempting to translate and read "
                     "instruction, starting at PC %s.\n", tid, this_pc);
 
@@ -1625,8 +1636,8 @@ Fetch::fetch(bool &status_change)
     // Note that it is counted with the number of instruction payloads
     // instead of in bytes.
     unsigned blk_offset =
-        loopBuffer.isActive()
-            ? (fetch_addr - loopBuffer.getActiveLoopStart()) / instSize
+        currentFetchTargetInLoop && enableLoopBuffer
+            ? (fetch_addr - loopBuffer->getActiveLoopStart()) / instSize
             : (fetch_addr - fetchBufferPC[tid]) / instSize;
 
     auto *dec_ptr = decoder[tid];
@@ -1637,40 +1648,42 @@ Fetch::fetch(bool &status_change)
     // predicted taken
     StallReason stall = StallReason::NoStall;
     bool exit_loopbuffer_this_cycle = false;
+    bool taken_backward = false;
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize &&
-           !(predictedBranch && !loopBuffer.isActive()) && !quiesce &&
+           !(predictedBranch && !currentFetchTargetInLoop) && !quiesce &&
            !ftqEmpty() && !exit_loopbuffer_this_cycle) {
         // We need to process more memory if we aren't going to get a
         // StaticInst from the rom, the current macroop, or what's already
         // in the decoder.
-        bool need_mem = !in_rom && !curMacroop && !dec_ptr->instReady();
+        // insts from loop buffer is decoded, we do not need instruction bytes
+        bool need_mem = !in_rom && !curMacroop && !dec_ptr->instReady() && !currentFetchTargetInLoop;
         fetch_addr = (this_pc.instAddr() + pc_offset) & pc_mask;
 
         if (need_mem) {
             // If buffer is no longer valid or fetch_addr has moved to point
             // to the next cache block then start fetch from icache.
-            if (!loopBuffer.isActive() && !fetchBufferValid[tid]) {
+            if (!currentFetchTargetInLoop && !fetchBufferValid[tid]) {
                 stall = StallReason::IcacheStall;
                 break;
             }
 
-            if (!loopBuffer.isActive() && blk_offset >= num_insts_per_buffer) {
+            if (!currentFetchTargetInLoop && blk_offset >= num_insts_per_buffer) {
                 // We need to process more memory, but we've run out of the
                 // current block.
                 stall = StallReason::IcacheStall;
                 break;
             }
 
-            if (loopBuffer.isActive()) {
-                memcpy(dec_ptr->moreBytesPtr(),
-                        loopBuffer.activePointer + blk_offset * instSize, instSize);
-                bool run_out_loop_entry = loopBuffer.notifyOffset(blk_offset);
-                exit_loopbuffer_this_cycle = run_out_loop_entry;
-            } else {
-                memcpy(dec_ptr->moreBytesPtr(),
-                        fetchBuffer[tid] + blk_offset * instSize, instSize);
-                DPRINTF(Fetch, "Supplying fetch from fetchBuffer\n");
-            }
+            // if (loopBuffer->isActive()) {
+            //     memcpy(dec_ptr->moreBytesPtr(),
+            //             loopBuffer.activePointer + blk_offset * instSize, instSize);
+            //     bool run_out_loop_entry = loopBuffer.notifyOffset(blk_offset);
+            //     exit_loopbuffer_this_cycle = run_out_loop_entry;
+            // } else {
+            memcpy(dec_ptr->moreBytesPtr(),
+                    fetchBuffer[tid] + blk_offset * instSize, instSize);
+            DPRINTF(Fetch, "Supplying fetch from fetchBuffer\n");
+            // }
 
             decoder[tid]->moreBytes(this_pc, fetch_addr);
 
@@ -1685,8 +1698,15 @@ Fetch::fetch(bool &status_change)
         // the memory we've processed so far.
         do {
             if (!(curMacroop || in_rom)) {
-                if (dec_ptr->instReady()) {
-                    staticInst = dec_ptr->decode(this_pc);
+                if (dec_ptr->instReady() || (isFTBPred() && enableLoopBuffer && currentFetchTargetInLoop)) {
+                    if (isFTBPred() && enableLoopBuffer && currentFetchTargetInLoop) {
+                        auto instDesc = dbpftb->lb.supplyInst();
+                        staticInst = instDesc.inst;
+                        dec_ptr->setPCStateWithInstDesc(instDesc.compressed, this_pc);
+                        assert(this_pc.instAddr() == instDesc.pc);
+                    } else {
+                        staticInst = dec_ptr->decode(this_pc);
+                    }
 
                     // Increment stat of fetched instructions.
                     ++fetchStats.insts;
@@ -1718,7 +1738,14 @@ Fetch::fetch(bool &status_change)
 
             DynInstPtr instruction = buildInst(
                     tid, staticInst, curMacroop, this_pc, *next_pc, true);
+
             instruction->setVersion(localSquashVer);
+
+            if (enableLoopBuffer) {
+                // record this static inst of current ftq entry
+                currentFtqEntryInsts.second.push_back(loopBuffer->genInstDesc(
+                    instruction->getInstBytes() == 2, staticInst, this_pc.instAddr()));
+            }
 
             ppFetch->notify(instruction);
             numInst++;
@@ -1742,6 +1769,7 @@ Fetch::fetch(bool &status_change)
             if (predictedBranch) {
                 DPRINTF(Fetch, "Branch detected with PC = %s\n", this_pc);
             }
+            taken_backward = predictedBranch && next_pc->instAddr();
 
             newMacro |= this_pc.instAddr() != next_pc->instAddr();
 
@@ -1789,6 +1817,20 @@ Fetch::fetch(bool &status_change)
         }
     }
 
+    if (enableLoopBuffer && isFTBPred() && !currentFetchTargetInLoop) {
+        if (ftqEmpty()) {
+            // try to record static insts of current ftq entry to loop buffer spec entry
+            if (taken_backward) {
+                DPRINTF(LoopBuffer, "ftq entry ended by backward taken branch, try to record insts in loop buffer, pc %#lx\n",
+                    currentFtqEntryInsts.first);
+                loopBuffer->fillSpecLoopBuffer(currentFtqEntryInsts.first, currentFtqEntryInsts.second);
+            }
+            // try to record new ftq entry
+            currentFtqEntryInsts.first = this_pc.instAddr();
+            currentFtqEntryInsts.second.clear();
+        }
+    }
+
     if (predictedBranch) {
         DPRINTF(Fetch, "[tid:%i] Done fetching, predicted branch "
                 "instruction encountered.\n", tid);
@@ -1812,7 +1854,7 @@ Fetch::fetch(bool &status_change)
     fetch_addr = (this_pc.instAddr() + pc_offset) & pc_mask;
     Addr fetchBufferBlockPC = fetchBufferAlignPC(fetch_addr);
     issuePipelinedIfetch[tid] = fetchBufferBlockPC != fetchBufferPC[tid] &&
-        !loopBuffer.isActive() &&
+        !currentFetchTargetInLoop &&
         fetchStatus[tid] != IcacheWaitResponse &&
         fetchStatus[tid] != ItlbWait &&
         fetchStatus[tid] != IcacheWaitRetry &&

@@ -225,19 +225,32 @@ DecoupledBPUWithFTB::tick()
     sentPCHist = false;
 
     if (!receivedPred && !streamQueueFull()) {
-        if (s0PC == ObservingPC) {
-            DPRINTFV(true, "Predicting block %#lx, id: %lu\n", s0PC, fsqId);
-        }   
-        DPRINTF(DecoupleBP, "Requesting prediction for stream start=%#lx\n", s0PC);
-        DPRINTF(Override, "Requesting prediction for stream start=%#lx\n", s0PC);
-        // put startAddr in preds
-        for (int i = 0; i < numStages; i++) {
-            predsOfEachStage[i].bbStart = s0PC;
+        if (!enableLoopBuffer || (enableLoopBuffer && !lb.isActive())) {
+            if (s0PC == ObservingPC) {
+                DPRINTFV(true, "Predicting block %#lx, id: %lu\n", s0PC, fsqId);
+            }   
+            DPRINTF(DecoupleBP, "Requesting prediction for stream start=%#lx\n", s0PC);
+            DPRINTF(Override, "Requesting prediction for stream start=%#lx\n", s0PC);
+            // put startAddr in preds
+            for (int i = 0; i < numStages; i++) {
+                predsOfEachStage[i].bbStart = s0PC;
+            }
+            for (int i = 0; i < numComponents; i++) {
+                components[i]->putPCHistory(s0PC, s0History, predsOfEachStage);
+            }
+        } else {
+            DPRINTF(LoopBuffer, "Do not query bpu when loop buffer is active\n");
+            DPRINTF(DecoupleBP, "Do not query bpu when loop buffer is active\n");
         }
-        for (int i = 0; i < numComponents; i++) {
-            components[i]->putPCHistory(s0PC, s0History, predsOfEachStage);
-        }
+
+
         sentPCHist = true;
+    }
+
+    // query loop buffer with start pc
+    if (enableLoopBuffer && !lb.isActive() &&
+            lb.streamBeforeLoop.getTakenTarget() == lb.streamBeforeLoop.startPC) {
+        lb.tryActivateLoop(s0PC);
     }
 
     DPRINTF(Override, "after putPCHistory\n");
@@ -253,49 +266,58 @@ DecoupledBPUWithFTB::tick()
 }
 
 // this function collects predictions from all stages and generate bubbles
+// when loop buffer is active, predictions are from saved stream
 void
 DecoupledBPUWithFTB::generateFinalPredAndCreateBubbles()
 {
     DPRINTF(Override, "In generateFinalPredAndCreateBubbles().\n");
-    // predsOfEachStage should be ready now
-    for (int i = 0; i < numStages; i++) {
-        printFullFTBPrediction(predsOfEachStage[i]);
-    }
-    // choose the most accurate prediction
-    FullFTBPrediction *chosen = &predsOfEachStage[0];
 
-    for (int i = (int) numStages - 1; i >= 0; i--) {
-        if (predsOfEachStage[i].valid) {
-            chosen = &predsOfEachStage[i];
-            DPRINTF(Override, "choose stage %d.\n", i);
-            break;
+    if (!enableLoopBuffer || (enableLoopBuffer && !lb.isActive())) {
+        // predsOfEachStage should be ready now
+        for (int i = 0; i < numStages; i++) {
+            printFullFTBPrediction(predsOfEachStage[i]);
         }
-    }
-    finalPred = *chosen;
-    // calculate bubbles
-    unsigned first_hit_stage = 0;
-    while (first_hit_stage < numStages-1) {
-        if (predsOfEachStage[first_hit_stage].match(*chosen)) {
-            break;
-        }
-        first_hit_stage++;
-    }
-    // generate bubbles
-    numOverrideBubbles = first_hit_stage;
-    // assign pred source
-    finalPred.predSource = first_hit_stage;
-    receivedPred = true;
+        // choose the most accurate prediction
+        FullFTBPrediction *chosen = &predsOfEachStage[0];
 
-    printFullFTBPrediction(*chosen);
+        for (int i = (int) numStages - 1; i >= 0; i--) {
+            if (predsOfEachStage[i].valid) {
+                chosen = &predsOfEachStage[i];
+                DPRINTF(Override, "choose stage %d.\n", i);
+                break;
+            }
+        }
+        finalPred = *chosen;
+        // calculate bubbles
+        unsigned first_hit_stage = 0;
+        while (first_hit_stage < numStages-1) {
+            if (predsOfEachStage[first_hit_stage].match(*chosen)) {
+                break;
+            }
+            first_hit_stage++;
+        }
+        // generate bubbles
+        numOverrideBubbles = first_hit_stage;
+        // assign pred source
+        finalPred.predSource = first_hit_stage;
+        receivedPred = true;
+
+        printFullFTBPrediction(*chosen);
+        dbpFtbStats.predsOfEachStage[first_hit_stage]++;
+    } else {
+        numOverrideBubbles = 0;
+        receivedPred = true;
+        DPRINTF(LoopBuffer, "Do not generate final pred when loop buffer is active\n");
+        DPRINTF(DecoupleBP, "Do not generate final pred when loop buffer is active\n");
+    }
     DPRINTF(Override, "Ends generateFinalPredAndCreateBubbles(), numOverrideBubbles is %d, receivedPred is set true.\n", numOverrideBubbles);
 
-    dbpFtbStats.predsOfEachStage[first_hit_stage]++;
 }
 
 bool
-DecoupledBPUWithFTB::trySupplyFetchWithTarget(Addr fetch_demand_pc)
+DecoupledBPUWithFTB::trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &fetch_target_in_loop)
 {
-    return fetchTargetQueue.trySupplyFetchWithTarget(fetch_demand_pc);
+    return fetchTargetQueue.trySupplyFetchWithTarget(fetch_demand_pc, fetch_target_in_loop);
 }
 
 std::pair<bool, bool>
@@ -324,16 +346,42 @@ DecoupledBPUWithFTB::decoupledPredict(const StaticInstPtr &inst,
     auto start = target_to_fetch.startPC;
     auto end = target_to_fetch.endPC;
     auto taken_pc = target_to_fetch.takenPC;
+    auto in_loop = target_to_fetch.inLoop;
+    auto loop_iter = target_to_fetch.iter;
+    auto loop_exit = target_to_fetch.isExit;
     DPRINTF(DecoupleBP, "Responsing fetch with");
     printFetchTarget(target_to_fetch, "");
+
+    auto current_loop_iter = fetchTargetQueue.getCurrentLoopIter();
 
     // supplying ftq entry might be taken before pc
     // because it might just be updated last cycle
     // but last cycle ftq tells fetch that this is a miss stream
     assert(pc.instAddr() < end && pc.instAddr() >= start);
-    bool taken = pc.instAddr() == taken_pc && target_to_fetch.taken;
-
+    bool raw_taken = pc.instAddr() == taken_pc && target_to_fetch.taken;
+    bool taken = raw_taken;
     bool run_out_of_this_entry = false;
+    // an ftq entry may consists of multiple loop iterations,
+    // so we need to check if we are at the end of this loop iteration,
+    // since taken and not taken can both exist in the same ftq entry
+    if (in_loop) {
+        DPRINTF(LoopBuffer, "current loop iter %d, loop_iter %d, loop_exit %d\n",
+            current_loop_iter, loop_iter, loop_exit);
+        if (raw_taken) {
+            if (current_loop_iter >= loop_iter - 1) {
+                run_out_of_this_entry = true;
+                if (loop_exit) {
+                    taken = false;
+                    DPRINTF(LoopBuffer, "modifying taken to false because of loop exit\n");
+                }
+            }
+            fetchTargetQueue.incCurrentLoopIter(loop_iter);
+        }
+    } else {
+        if (taken) {
+            run_out_of_this_entry = true;
+        }
+    }
 
     if (taken) {
         auto &rtarget = target->as<GenericISA::PCStateWithNext>();
@@ -342,10 +390,9 @@ DecoupledBPUWithFTB::decoupledPredict(const StaticInstPtr &inst,
         rtarget.npc(target_to_fetch.target + 4);
         rtarget.uReset();
         DPRINTF(DecoupleBP,
-                "Predicted pc: %#lx, upc: %#lx, npc(meaningless): %#lx\n",
-                target->instAddr(), rtarget.upc(), rtarget.npc());
+                "Predicted pc: %#lx, upc: %#lx, npc(meaningless): %#lx, instSeqNum: %d\n",
+                target->instAddr(), rtarget.upc(), rtarget.npc(), seqNum);
         set(pc, *target);
-        run_out_of_this_entry = true;
     } else {
         inst->advancePC(*target);
         if (target->instAddr() >= end) {
@@ -706,6 +753,22 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
             bptrace->write_record(BpTrace(stream));
         }
 
+        if (enableLoopBuffer) {
+            // if current stream is a short loop, try to peek loop buffer
+            if (stream.startPC == lastCommittedStream.startPC &&
+                lastCommittedStream.exeTaken && stream.exeTaken &&
+                lastCommittedStream.exeBranchInfo.target == stream.exeBranchInfo.target &&
+                lastCommittedStream.exeBranchInfo.pc == stream.exeBranchInfo.pc &&
+                stream.exeBranchInfo.target == stream.startPC) {
+
+                DPRINTF(DecoupleBP, "stream %lu is a loop, lastCommittedStream:\n", it->first);
+                printStream(lastCommittedStream);
+                DPRINTF(LoopBuffer, "commit peek loop buffer\n");
+                lb.commitLoopPeek(stream.startPC, lastCommittedStream.exeBranchInfo.pc);
+            }
+            lastCommittedStream = stream;
+        }
+
         it = fetchStreamQueue.erase(it);
     }
     DPRINTF(DecoupleBP, "after commit stream, fetchStreamQueue size: %lu\n",
@@ -787,6 +850,10 @@ DecoupledBPUWithFTB::setTakenEntryWithStream(const FetchStream &stream_entry, Ft
     ftq_entry.takenPC = stream_entry.getControlPC();
     ftq_entry.endPC = stream_entry.predEndPC;
     ftq_entry.target = stream_entry.getTakenTarget();
+    ftq_entry.inLoop = stream_entry.fromLoopBuffer;
+    ftq_entry.iter = stream_entry.isDouble ? 2 : stream_entry.fromLoopBuffer ? 1 : 0;
+    ftq_entry.isExit = stream_entry.isExit;
+    ftq_entry.loopEndPC = stream_entry.getBranchInfo().getEnd();
 }
 
 void
@@ -796,6 +863,10 @@ DecoupledBPUWithFTB::setNTEntryWithStream(FtqEntry &ftq_entry, Addr end_pc)
     ftq_entry.takenPC = 0;
     ftq_entry.target = 0;
     ftq_entry.endPC = end_pc;
+    ftq_entry.inLoop = false;
+    ftq_entry.iter = 0;
+    ftq_entry.isExit = false;
+    ftq_entry.loopEndPC = 0;
 }
 
 void
@@ -847,6 +918,9 @@ DecoupledBPUWithFTB::tryEnqFetchTarget()
 
     // set prediction results to ftq entry
     bool taken = stream_to_enq.predTaken;
+    bool inLoop = stream_to_enq.fromLoopBuffer;
+    bool loopExit = stream_to_enq.isExit;
+    Addr loopEndPC = stream_to_enq.getBranchInfo().getEnd();
     if (taken) {
         setTakenEntryWithStream(stream_to_enq, ftq_entry);
     } else {
@@ -854,7 +928,10 @@ DecoupledBPUWithFTB::tryEnqFetchTarget()
     }
 
     // update ftq_enq_state
-    ftq_enq_state.pc = taken ? stream_to_enq.predBranchInfo.target : end;
+    // if in loop, next pc will either be loop exit or loop start
+    ftq_enq_state.pc = inLoop ?
+        loopExit ? loopEndPC : stream_to_enq.predBranchInfo.target :
+        taken ? stream_to_enq.predBranchInfo.target : end;
     ftq_enq_state.streamId++;
     DPRINTF(DecoupleBP,
             "Update ftqEnqPC to %#lx, FTQ demand stream ID to %lu\n",
@@ -881,7 +958,7 @@ DecoupledBPUWithFTB::histShiftIn(int shamt, bool taken, boost::dynamic_bitset<> 
 }
 
 // this function enqueues fsq and update s0PC and s0History
-// use loop predictor here
+// use loop predictor and loop buffer here
 void
 DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
 {
@@ -900,73 +977,112 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
              create_new_stream ? "new stream" : "last missing stream",
              finalPred.valid, finalPred.isTaken());
 
-    bool taken = finalPred.isTaken();
-    bool predReasonable = finalPred.isReasonable();
-    if (predReasonable) {
-        // query loop predictor
-        // TODO: What if loop branch is predicted not taken?
-        Addr branch_addr = finalPred.controlAddr();
-        bool endLoop;
-        LoopRedirectInfo lpRedirectInfo;
-        std::tie(endLoop, lpRedirectInfo) = lp.shouldEndLoop(taken, branch_addr, false);
-        entry.loopRedirectInfo = lpRedirectInfo; // record loop info for redirect recover
-        if (endLoop) {
-            // we should only modify the direction of the loop branch, because
-            // a latter branch (outside loop branch) may be taken
-            DPRINTF(DecoupleBP || debugFlagOn, "Loop predictor says end loop at %#lx\n", branch_addr);
-            int takenIdx = finalPred.getTakenBranchIdx();
-            finalPred.condTakens[takenIdx] = false;
-            taken = finalPred.isTaken();
+    // if loop buffer is not activated, use normal prediction from branch predictors
+    bool endLoop, isDouble;
+    LoopRedirectInfo lpRedirectInfo;
+    if (!enableLoopBuffer || (enableLoopBuffer && !lb.isActive())) {
+        entry.fromLoopBuffer = false;
+        entry.isDouble = false;
+        entry.isExit = false;
+
+        bool taken = finalPred.isTaken();
+        bool predReasonable = finalPred.isReasonable();
+        if (predReasonable) {
+            // query loop predictor and modify taken result
+            // TODO: What if loop branch is predicted not taken?
+            Addr branch_addr = finalPred.controlAddr();
+            std::tie(endLoop, lpRedirectInfo, isDouble) = lp.shouldEndLoop(taken, branch_addr, false);
+            entry.loopRedirectInfo = lpRedirectInfo; // record loop info for redirect recover
+            if (endLoop) {
+                // we should only modify the direction of the loop branch, because
+                // a latter branch (outside loop branch) may be taken
+                DPRINTF(DecoupleBP || debugFlagOn, "Loop predictor says end loop at %#lx\n", branch_addr);
+                int takenIdx = finalPred.getTakenBranchIdx();
+                finalPred.condTakens[takenIdx] = false;
+                taken = finalPred.isTaken();
+            }
+            entry.isExit = endLoop;
+            Addr fallThroughAddr = finalPred.getFallThrough();
+            entry.isHit = finalPred.valid;
+            entry.falseHit = false;
+            entry.predFTBEntry = finalPred.ftbEntry;
+            entry.predTaken = taken;
+            entry.predEndPC = fallThroughAddr;
+            // update s0PC
+            Addr nextPC = finalPred.getTarget();
+            if (taken) {
+                entry.predBranchInfo = finalPred.getTakenSlot().getBranchInfo();
+                entry.predBranchInfo.target = nextPC; // use the final target which may be not from ftb
+            }
+            s0PC = nextPC;
+        } else {
+            DPRINTF(DecoupleBP || debugFlagOn, "Prediction is not reasonable, printing ftb entry\n");
+            ftb->printFTBEntry(finalPred.ftbEntry);
+            dbpFtbStats.predFalseHit++;
+            // prediction is not reasonable, use fall through
+            entry.isHit = false;
+            entry.falseHit = true;
+            entry.predTaken = false;
+            entry.predEndPC = entry.startPC + 32;
+            entry.predFTBEntry = FTBEntry();
+            s0PC = entry.startPC + 32; // TODO: parameterize
+            // TODO: when false hit, act like a miss, do not update history
         }
-        Addr fallThroughAddr = finalPred.getFallThrough();
-        entry.isHit = finalPred.valid;
-        entry.falseHit = false;
-        entry.predFTBEntry = finalPred.ftbEntry;
-        entry.predTaken = taken;
-        entry.predEndPC = fallThroughAddr;
-        // update s0PC
-        Addr nextPC = finalPred.getTarget();
-        if (taken) {
-            entry.predBranchInfo = finalPred.getTakenSlot().getBranchInfo();
-            entry.predBranchInfo.target = nextPC; // use the final target which may be not from ftb
+
+        entry.history = s0History;
+        entry.predTick = finalPred.predTick;
+        entry.predSource = finalPred.predSource;
+
+        // update (folded) histories for components
+        for (int i = 0; i < numComponents; i++) {
+            components[i]->specUpdateHist(s0History, finalPred);
+            entry.predMetas[i] = components[i]->getPredictionMeta();
         }
-        s0PC = nextPC;
+        // update ghr
+        int shamt;
+        std::tie(shamt, taken) = finalPred.getHistInfo();
+        boost::to_string(s0History, buf1);
+        histShiftIn(shamt, taken, s0History);
+        boost::to_string(s0History, buf2);
+
+        historyManager.addSpeculativeHist(entry.startPC, shamt, taken, entry.predBranchInfo, fsqId);
+        tage->checkFoldedHist(s0History, "speculative update");
+
+        
+        entry.setDefaultResolve();
+
+
     } else {
-        DPRINTF(DecoupleBP || debugFlagOn, "Prediction is not reasonable, printing ftb entry\n");
-        ftb->printFTBEntry(finalPred.ftbEntry);
-        dbpFtbStats.predFalseHit++;
-        // prediction is not reasonable, use fall through
-        entry.isHit = false;
-        entry.falseHit = true;
-        entry.predTaken = false;
-        entry.predEndPC = entry.startPC + 32;
-        entry.predFTBEntry = FTBEntry();
-        s0PC = entry.startPC + 32; // TODO: parameterize
-        // TODO: when false hit, act like a miss, do not update history
+        // loop buffer is activated, use loop buffer to make prediction
+        // determine whether this stream entry has double iterations
+        std::tie(endLoop, lpRedirectInfo, isDouble) = lp.shouldEndLoop(
+            true, lb.getActiveLoopBranch(), lb.activeLoopMayBeDouble()
+        );
+        entry = lb.streamBeforeLoop;
+        entry.startPC = s0PC;
+        bool conf = lpRedirectInfo.e.conf == 7;
+        bool confExit = conf && endLoop;
+        entry.fromLoopBuffer = true;
+        entry.isDouble = isDouble;
+        entry.isExit = confExit;
+        entry.loopRedirectInfo = lpRedirectInfo;
+
+        // redirect to fall through of loop branch if loop is ended
+        if (confExit) {
+            s0PC = lb.streamBeforeLoop.predBranchInfo.getEnd();
+            lb.deactivate(false);
+        }
+        DPRINTF(LoopBuffer, "stream before loop:\n");
+        printStream(lb.streamBeforeLoop);
+    }
+
+    if (enableLoopBuffer && !lb.isActive()) {
+        lb.recordNewestStreamOutsideLoop(entry);
     }
 
 
-    entry.history = s0History;
-    entry.predTick = finalPred.predTick;
-    entry.predSource = finalPred.predSource;
 
-    // update (folded) histories for components
-    for (int i = 0; i < numComponents; i++) {
-        components[i]->specUpdateHist(s0History, finalPred);
-        entry.predMetas[i] = components[i]->getPredictionMeta();
-    }
-    // update ghr
-    int shamt;
-    std::tie(shamt, taken) = finalPred.getHistInfo();
-    boost::to_string(s0History, buf1);
-    histShiftIn(shamt, taken, s0History);
-    boost::to_string(s0History, buf2);
 
-    historyManager.addSpeculativeHist(entry.startPC, shamt, taken, entry.predBranchInfo, fsqId);
-    tage->checkFoldedHist(s0History, "speculative update");
-
-    
-    entry.setDefaultResolve();
     auto [insert_it, inserted] = fetchStreamQueue.emplace(fsqId, entry);
     assert(inserted);
 

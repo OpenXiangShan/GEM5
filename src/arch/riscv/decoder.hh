@@ -80,6 +80,9 @@ class Decoder : public InstDecoder
     void moreBytes(const PCStateBase &pc, Addr fetchPC) override;
 
     StaticInstPtr decode(PCStateBase &nextPC) override;
+
+    void setPCStateWithInstDesc(const bool &inst,
+                                  PCStateBase &pc) override;
 };
 
 } // namespace RiscvISA

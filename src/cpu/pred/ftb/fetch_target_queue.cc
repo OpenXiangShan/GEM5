@@ -18,6 +18,7 @@ FetchTargetQueue::FetchTargetQueue(unsigned size) :
     fetchTargetEnqState.pc = 0x80000000;
     fetchDemandTargetId = 0;
     supplyFetchTargetState.valid = false;
+    currentLoopIter = 0;
 }
 
 void
@@ -35,6 +36,7 @@ FetchTargetQueue::squash(FetchTargetId new_enq_target_id,
     supplyFetchTargetState.valid = false;
     supplyFetchTargetState.entry = nullptr;
     fetchDemandTargetId = new_fetch_demand_target_id;
+    currentLoopIter = 0;
     DPRINTF(DecoupleBP,
             "FTQ demand stream ID update to %lu, ftqEnqPC update to "
             "%#lx, fetch demand target Id updated to %lu\n",
@@ -63,13 +65,14 @@ FetchTargetQueue::finishCurrentFetchTarget()
     ftq.erase(supplyFetchTargetState.targetId);
     supplyFetchTargetState.valid = false;
     supplyFetchTargetState.entry = nullptr;
+    currentLoopIter = 0;
     DPRINTF(DecoupleBP,
             "Finish current fetch target: %lu, inc demand to %lu\n",
             supplyFetchTargetState.targetId, fetchDemandTargetId);
 }
 
 bool
-FetchTargetQueue::trySupplyFetchWithTarget(Addr fetch_demand_pc)
+FetchTargetQueue::trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &in_loop)
 {
     if (!supplyFetchTargetState.valid ||
         supplyFetchTargetState.targetId != fetchDemandTargetId) {
@@ -87,6 +90,7 @@ FetchTargetQueue::trySupplyFetchWithTarget(Addr fetch_demand_pc)
                 ++fetchDemandTargetId;
                 it = ftq.erase(it);
                 if (it == ftq.end()) {
+                    in_loop = false;
                     return false;
                 }
                 DPRINTFR(DecoupleBP,
@@ -101,6 +105,7 @@ FetchTargetQueue::trySupplyFetchWithTarget(Addr fetch_demand_pc)
             supplyFetchTargetState.valid = true;
             supplyFetchTargetState.targetId = fetchDemandTargetId;
             supplyFetchTargetState.entry = &(it->second);
+            in_loop = it->second.inLoop;
             return true;
         } else {
             DPRINTF(DecoupleBP, "Target id %lu not found\n",
@@ -115,6 +120,7 @@ FetchTargetQueue::trySupplyFetchWithTarget(Addr fetch_demand_pc)
                 }
                 assert(it->first < fetchDemandTargetId);
             }
+            in_loop = false;
             return false;
         }
     }
@@ -122,6 +128,7 @@ FetchTargetQueue::trySupplyFetchWithTarget(Addr fetch_demand_pc)
             "FTQ supplying, valid: %u, supply id: %u, demand id: %u\n",
             supplyFetchTargetState.valid, supplyFetchTargetState.targetId,
             fetchDemandTargetId);
+    in_loop = supplyFetchTargetState.entry->inLoop;
     return true;
 }
 

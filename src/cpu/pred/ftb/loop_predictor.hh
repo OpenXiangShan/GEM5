@@ -51,9 +51,10 @@ class LoopPredictor
     // since we record pc in loop entry
     // we need to check whether given prediction block
     // has this loop branch
-    std::pair<bool, LoopRedirectInfo> shouldEndLoop(bool taken, Addr branch_pc, bool is_double) {
+    // returns <end, info, is_double>
+    std::tuple<bool, LoopRedirectInfo, bool> shouldEndLoop(bool taken, Addr branch_pc, bool may_be_double) {
       DPRINTF(LoopBuffer, "query loop branch: taken: %d, pc: %#lx, is_double: %d\n",
-        taken, branch_pc, is_double);
+        taken, branch_pc, may_be_double);
       LoopRedirectInfo info;
       info.branch_pc = branch_pc;
       info.end_loop = false;
@@ -63,19 +64,27 @@ class LoopPredictor
       if (it != loopStorage[idx].end()) {
         auto &way = it->second;
         info.e = way;
-        DPRINTF(LoopBuffer, "found loop entry idx %d, tag %#x: tripCnt: %d, specCnt: %d, conf: %d\n",
-          idx, tag, way.tripCnt, way.specCnt, way.conf);
-        if (way.specCnt == way.tripCnt) {
-          DPRINTF(LoopBuffer, "loop end detected, exiting loop, setting specCnt to 0\n");
-          way.specCnt = 0;
-          info.end_loop = true;
-          return std::make_pair(true, info);
-        }
+      
+        int remaining_iter = way.tripCnt - way.specCnt;
+        DPRINTF(LoopBuffer, "found loop entry idx %d, tag %#x: tripCnt: %d, specCnt: %d, conf: %d\n", idx, tag, way.tripCnt, way.specCnt, way.conf);
         if (taken) {
-          way.specCnt++;
+          if (remaining_iter == 0 || (remaining_iter == 1 && may_be_double)) {
+            DPRINTF(LoopBuffer, "loop end detected, doubling is %d, exiting loop, setting specCnt to 0\n",
+              remaining_iter == 1 && may_be_double);
+            way.specCnt = 0;
+            info.end_loop = true;
+            return std::make_tuple(true, info, remaining_iter == 1 && may_be_double);
+          } else if ((remaining_iter == 1 && !may_be_double) || remaining_iter >= 2) {
+            if (may_be_double) {
+              way.specCnt += 2;
+            } else {
+              way.specCnt += 1;
+            }
+            return std::make_tuple(false, info, may_be_double);
+          }
         }
       }
-      return std::make_pair(false, info);
+      return std::make_tuple(false, info, false);
     }
 
     // called when loop branch is committed, identification is done before calling
@@ -89,53 +98,55 @@ class LoopPredictor
       // if already trained, update conf in loopStorage
       int idx = getIndex(pc);
       const auto &it = loopStorage[idx].find(tag);
-      if (it != loopStorage[idx].end()) {
-        auto &way = it->second;
-        if (!takenBackward) {
-          DPRINTF(LoopBuffer, "loop end and in storage, updating conf, mispred %d\n", mispredicted);
-          if (way.conf < maxConf && !mispredicted) {
-            // still in loop, inc conf
+      const auto &it2 = commitLoopStorage.find(tag);
+      // do not need to train commit storage when loop branch is in mainStorage
+      // found training entry
+      if (it2 != commitLoopStorage.end()) {
+        auto &way = it2->second;
+        DPRINTF(LoopBuffer, "found training entry: tripCnt: %d, specCnt: %d, conf: %d\n",
+          way.tripCnt, way.specCnt, way.conf);
+        if (takenBackward) {
+          // still in loop, inc specCnt
+          way.specCnt++;
+        } else {
+          // check if this tripCnt is identical to the last trip
+          auto currentTripCnt = way.specCnt;
+          auto identical = currentTripCnt == way.tripCnt;
+          if (way.conf < maxConf && identical) {
             way.conf++;
-          } else if (way.conf > 0 && mispredicted) {
-            // mispredicted, dec conf
+          } else if (way.conf > 0 && !identical) {
             way.conf--;
           }
-        }
-      } else {
-        // do not need to train commit storage when loop branch is in mainStorage
-        const auto &it2 = commitLoopStorage.find(tag);
-        // found training entry
-        if (it2 != commitLoopStorage.end()) {
-          auto &way = it2->second;
-          DPRINTF(LoopBuffer, "found training entry: tripCnt: %d, specCnt: %d, conf: %d\n",
-            way.tripCnt, way.specCnt, way.conf);
-          if (takenBackward) {
-            // still in loop, inc specCnt
-            way.specCnt++;
-          } else {
-            // end of loop, write into main storage
+          if (it == loopStorage[idx].end()) {
+            // not in main storage, write into main storage
             int idx = getIndex(pc);
             DPRINTF(LoopBuffer, "loop end detected, specCnt %d, writting to loopStorage idx %d, tag %d\n",
               way.specCnt, idx, tag);
-            way.tripCnt = way.specCnt;
-            way.specCnt = 0;
-            loopStorage[idx][tag] = way;
-            // TODO: log
-            // TODO: consider conf to avoid overwriting
+            int tripCnt = way.specCnt;
+            loopStorage[idx][tag].valid = true;
+            loopStorage[idx][tag].specCnt = 0;
+            loopStorage[idx][tag].tripCnt = tripCnt;
+            loopStorage[idx][tag].conf = 0;
+          } else {
+            // in main storage, update conf
+            DPRINTF(LoopBuffer, "loop end and in storage, updating conf, mispred %d\n", mispredicted);
+            loopStorage[idx][tag].conf = way.conf;
           }
-        } else {
-          // not found, create new entry
-          DPRINTF(LoopBuffer, "creating new entry for loop branch %#lx, tag %#x\n", pc, tag);
-          LoopEntry entry;
-          entry.valid = true;
-          entry.tripCnt = 0;
-          entry.specCnt = 1;
-          entry.conf = 0;
-          commitLoopStorage[tag] = entry;
+          way.tripCnt = way.specCnt;
+          way.specCnt = 0;
+          // TODO: log
+          // TODO: consider conf to avoid overwriting
         }
+      } else {
+        // not found, create new entry
+        DPRINTF(LoopBuffer, "creating new entry for loop branch %#lx, tag %#x\n", pc, tag);
+        LoopEntry entry;
+        entry.valid = true;
+        entry.tripCnt = 0;
+        entry.specCnt = 1;
+        entry.conf = 0;
+        commitLoopStorage[tag] = entry;
       }
-
-
     }
 
     void recover(LoopRedirectInfo info, bool actually_taken, Addr branch_pc) {
