@@ -196,4 +196,4 @@ class LoopPredictor
 }  // namespace branch_prediction
 }  // namespace gem5
 
-#endif  // __CPU_PRED_FTB_DECOUPLED_BPRED_HH__
+#endif  // __CPU_PRED_FTB_LOOP_PREDICTOR_HH__
