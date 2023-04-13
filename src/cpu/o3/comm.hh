@@ -84,6 +84,8 @@ enum StallReason {
     StoreL2Bound,
     StoreL3Bound,
     StoreMemBound,
+    MemSquashed,  // maybe never used
+    Atomic,
 
     ResumeUnblock,  // B
     CommitSquash,  // BS
