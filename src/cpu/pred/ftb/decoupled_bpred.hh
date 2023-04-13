@@ -334,6 +334,7 @@ class DecoupledBPUWithFTB : public BPredUnit
     LoopPredictor lp;
     LoopBuffer lb;
     bool enableLoopBuffer{false};
+    bool enableLoopPredictor{false};
 
   private:
     std::string _name;

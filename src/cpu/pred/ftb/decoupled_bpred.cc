@@ -19,6 +19,8 @@ namespace ftb_pred
 
 DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
     : BPredUnit(p),
+      enableLoopBuffer(p.enableLoopBuffer),
+      enableLoopPredictor(p.enableLoopPredictor),
       fetchTargetQueue(p.ftq_size),
       fetchStreamQueueSize(p.fsq_size),
       numBr(p.numBr),
@@ -83,6 +85,10 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
     squashing = true;
 
     lp = LoopPredictor(16, 4);
+
+    if (!enableLoopPredictor && enableLoopBuffer) {
+        fatal("loop buffer cannot be enabled without loop predictor\n");
+    }
 
     registerExitCallback([this]() {
         auto out_handle = simout.create("topMisPredicts.txt", false, true);
@@ -509,8 +515,10 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
     DPRINTF(DecoupleBPHist,
                 "Shift in history %s\n", s0History);
 
-    // recover loop predictor
-    lp.recover(stream.loopRedirectInfo, actually_taken, control_pc.instAddr());
+    if (enableLoopPredictor) {
+        // recover loop predictor
+        lp.recover(stream.loopRedirectInfo, actually_taken, control_pc.instAddr());
+    }
     printStream(stream);
 
     
@@ -988,20 +996,22 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
         bool taken = finalPred.isTaken();
         bool predReasonable = finalPred.isReasonable();
         if (predReasonable) {
-            // query loop predictor and modify taken result
-            // TODO: What if loop branch is predicted not taken?
-            Addr branch_addr = finalPred.controlAddr();
-            std::tie(endLoop, lpRedirectInfo, isDouble) = lp.shouldEndLoop(taken, branch_addr, false);
-            entry.loopRedirectInfo = lpRedirectInfo; // record loop info for redirect recover
-            if (endLoop) {
-                // we should only modify the direction of the loop branch, because
-                // a latter branch (outside loop branch) may be taken
-                DPRINTF(DecoupleBP || debugFlagOn, "Loop predictor says end loop at %#lx\n", branch_addr);
-                int takenIdx = finalPred.getTakenBranchIdx();
-                finalPred.condTakens[takenIdx] = false;
-                taken = finalPred.isTaken();
+            if (enableLoopPredictor) {
+                // query loop predictor and modify taken result
+                // TODO: What if loop branch is predicted not taken?
+                Addr branch_addr = finalPred.controlAddr();
+                std::tie(endLoop, lpRedirectInfo, isDouble) = lp.shouldEndLoop(taken, branch_addr, false);
+                entry.loopRedirectInfo = lpRedirectInfo; // record loop info for redirect recover
+                if (endLoop) {
+                    // we should only modify the direction of the loop branch, because
+                    // a latter branch (outside loop branch) may be taken
+                    DPRINTF(DecoupleBP || debugFlagOn, "Loop predictor says end loop at %#lx\n", branch_addr);
+                    int takenIdx = finalPred.getTakenBranchIdx();
+                    finalPred.condTakens[takenIdx] = false;
+                    taken = finalPred.isTaken();
+                }
+                entry.isExit = endLoop;
             }
-            entry.isExit = endLoop;
             Addr fallThroughAddr = finalPred.getFallThrough();
             entry.isHit = finalPred.valid;
             entry.falseHit = false;
@@ -1053,6 +1063,7 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
 
 
     } else {
+        assert(enableLoopPredictor);
         // loop buffer is activated, use loop buffer to make prediction
         // determine whether this stream entry has double iterations
         std::tie(endLoop, lpRedirectInfo, isDouble) = lp.shouldEndLoop(

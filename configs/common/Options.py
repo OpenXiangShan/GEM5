@@ -247,8 +247,12 @@ def addCommonOptions(parser):
     parser.add_argument("--indirect-bp-type", default=None,
                         choices=ObjectList.indirect_bp_list.get_names(),
                         help="type of indirect branch predictor to run with")
-    parser.add_argument("--enable-bp-db", default=None, action="store_true",
+    parser.add_argument("--enable-bp-db", default=False, action="store_true",
                         help="enable bp database")
+    parser.add_argument("--enable-loop-buffer", default=False, action="store_true",
+                        help="enable loop buffer (only for ftb branch predictor)")
+    parser.add_argument("--enable-loop-predictor", default=False, action="store_true",
+                        help="enable loop predictor (only for ftb branch predictor)")
 
     parser.add_argument("--list-rp-types",
                         action=ListRP, nargs=0,
