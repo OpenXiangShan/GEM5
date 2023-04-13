@@ -9,7 +9,7 @@
 
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/ftb/stream_struct.hh"
-#include "debug/LoopBuffer.hh"
+#include "debug/LoopPredictor.hh"
 
 
 namespace gem5
@@ -53,7 +53,7 @@ class LoopPredictor
     // has this loop branch
     // returns <end, info, is_double>
     std::tuple<bool, LoopRedirectInfo, bool> shouldEndLoop(bool taken, Addr branch_pc, bool may_be_double) {
-      DPRINTF(LoopBuffer, "query loop branch: taken: %d, pc: %#lx, is_double: %d\n",
+      DPRINTF(LoopPredictor, "query loop branch: taken: %d, pc: %#lx, is_double: %d\n",
         taken, branch_pc, may_be_double);
       LoopRedirectInfo info;
       info.branch_pc = branch_pc;
@@ -66,10 +66,10 @@ class LoopPredictor
         info.e = way;
       
         int remaining_iter = way.tripCnt - way.specCnt;
-        DPRINTF(LoopBuffer, "found loop entry idx %d, tag %#x: tripCnt: %d, specCnt: %d, conf: %d\n", idx, tag, way.tripCnt, way.specCnt, way.conf);
+        DPRINTF(LoopPredictor, "found loop entry idx %d, tag %#x: tripCnt: %d, specCnt: %d, conf: %d\n", idx, tag, way.tripCnt, way.specCnt, way.conf);
         if (taken) {
           if (remaining_iter == 0 || (remaining_iter == 1 && may_be_double)) {
-            DPRINTF(LoopBuffer, "loop end detected, doubling is %d, exiting loop, setting specCnt to 0\n",
+            DPRINTF(LoopPredictor, "loop end detected, doubling is %d, exiting loop, setting specCnt to 0\n",
               remaining_iter == 1 && may_be_double);
             way.specCnt = 0;
             info.end_loop = true;
@@ -89,7 +89,7 @@ class LoopPredictor
 
     // called when loop branch is committed, identification is done before calling
     void commitLoopBranch(Addr pc, Addr target, Addr fallThruPC, bool mispredicted) {
-      DPRINTF(LoopBuffer,
+      DPRINTF(LoopPredictor,
         "Commit loop branch: pc: %#lx, target: %#lx, fallThruPC: %#lx\n",
         pc, target, fallThruPC);
       bool takenBackward = target < pc;
@@ -103,7 +103,7 @@ class LoopPredictor
       // found training entry
       if (it2 != commitLoopStorage.end()) {
         auto &way = it2->second;
-        DPRINTF(LoopBuffer, "found training entry: tripCnt: %d, specCnt: %d, conf: %d\n",
+        DPRINTF(LoopPredictor, "found training entry: tripCnt: %d, specCnt: %d, conf: %d\n",
           way.tripCnt, way.specCnt, way.conf);
         if (takenBackward) {
           // still in loop, inc specCnt
@@ -120,7 +120,7 @@ class LoopPredictor
           if (it == loopStorage[idx].end()) {
             // not in main storage, write into main storage
             int idx = getIndex(pc);
-            DPRINTF(LoopBuffer, "loop end detected, specCnt %d, writting to loopStorage idx %d, tag %d\n",
+            DPRINTF(LoopPredictor, "loop end detected, specCnt %d, writting to loopStorage idx %d, tag %d\n",
               way.specCnt, idx, tag);
             int tripCnt = way.specCnt;
             loopStorage[idx][tag].valid = true;
@@ -129,7 +129,7 @@ class LoopPredictor
             loopStorage[idx][tag].conf = 0;
           } else {
             // in main storage, update conf
-            DPRINTF(LoopBuffer, "loop end and in storage, updating conf, mispred %d\n", mispredicted);
+            DPRINTF(LoopPredictor, "loop end and in storage, updating conf, mispred %d\n", mispredicted);
             loopStorage[idx][tag].conf = way.conf;
           }
           way.tripCnt = way.specCnt;
@@ -139,7 +139,7 @@ class LoopPredictor
         }
       } else {
         // not found, create new entry
-        DPRINTF(LoopBuffer, "creating new entry for loop branch %#lx, tag %#x\n", pc, tag);
+        DPRINTF(LoopPredictor, "creating new entry for loop branch %#lx, tag %#x\n", pc, tag);
         LoopEntry entry;
         entry.valid = true;
         entry.tripCnt = 0;
@@ -151,14 +151,14 @@ class LoopPredictor
 
     void recover(LoopRedirectInfo info, bool actually_taken, Addr branch_pc) {
       if (info.e.valid) {
-        DPRINTF(LoopBuffer, "redirecting loop branch: taken: %d, pc: %#lx, tripCnt: %d, specCnt: %d, conf: %d, pred use pc: %#lx\n",
+        DPRINTF(LoopPredictor, "redirecting loop branch: taken: %d, pc: %#lx, tripCnt: %d, specCnt: %d, conf: %d, pred use pc: %#lx\n",
           actually_taken, branch_pc, info.e.tripCnt, info.e.specCnt, info.e.conf, info.branch_pc);
         if (branch_pc == info.branch_pc && !actually_taken) {
           // reset specCnt to 0
           int idx = getIndex(branch_pc);
           const auto &it = loopStorage[idx].find(getTag(branch_pc));
           if (it != loopStorage[idx].end()) {
-            DPRINTF(LoopBuffer, "mispredicted loop end of idx %d, sychronizing specCnt to 0\n", idx);
+            DPRINTF(LoopPredictor, "mispredicted loop end of idx %d, sychronizing specCnt to 0\n", idx);
             auto &way = it->second;
             way.specCnt = 0;
           }

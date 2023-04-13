@@ -718,7 +718,7 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
 
         // check loop predictor prediction
         auto lp_info = stream.loopRedirectInfo;
-        DPRINTF(LoopBuffer, "at commit fsqid %d, real_branch_pc %#lx, squash type %d, loop predcition info: specCnt %d, tripCnt %d, conf %d, branch_pc %#lx, end_loop %d\n",
+        DPRINTF(LoopPredictor, "at commit fsqid %d, real_branch_pc %#lx, squash type %d, loop predcition info: specCnt %d, tripCnt %d, conf %d, branch_pc %#lx, end_loop %d\n",
                 it->first, stream.exeBranchInfo.pc, stream.squashType, lp_info.e.specCnt, lp_info.e.tripCnt, lp_info.e.conf, lp_info.branch_pc, lp_info.end_loop);
 
         if (stream.squashType == SQUASH_CTRL) {
