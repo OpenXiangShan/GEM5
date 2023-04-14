@@ -1002,7 +1002,8 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
                 Addr branch_addr = finalPred.controlAddr();
                 std::tie(endLoop, lpRedirectInfo, isDouble) = lp.shouldEndLoop(taken, branch_addr, false);
                 entry.loopRedirectInfo = lpRedirectInfo; // record loop info for redirect recover
-                if (endLoop) {
+                bool confEndLoop = endLoop && lpRedirectInfo.e.conf == 7;
+                if (confEndLoop) {
                     // we should only modify the direction of the loop branch, because
                     // a latter branch (outside loop branch) may be taken
                     DPRINTF(DecoupleBP || debugFlagOn, "Loop predictor says end loop at %#lx\n", branch_addr);
@@ -1010,7 +1011,7 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
                     finalPred.condTakens[takenIdx] = false;
                     taken = finalPred.isTaken();
                 }
-                entry.isExit = endLoop;
+                entry.isExit = confEndLoop;
             }
             Addr fallThroughAddr = finalPred.getFallThrough();
             entry.isHit = finalPred.valid;
