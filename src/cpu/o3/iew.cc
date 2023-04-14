@@ -290,6 +290,8 @@ IEW::IEWStats::IEWStats(CPU *cpu)
         {StallReason::StoreL2Bound, "StoreL2Bound"},
         {StallReason::StoreL3Bound, "StoreL3Bound"},
         {StallReason::StoreMemBound, "StoreMemBound"},
+        {StallReason::MemSquashed, "MemSquashed"},
+        {StallReason::Atomic,"Atomic"},
         {StallReason::ResumeUnblock, "ResumeUnblock"},
         {StallReason::CommitSquash, "CommitSquash"},
         {StallReason::OtherStall, "OtherStall"},
@@ -1867,22 +1869,47 @@ IEW::setAllStalls(StallReason dispatchStall)
 StallReason
 IEW::checkLoadStoreInst(DynInstPtr inst)
 {
-    assert(inst->isLoad() || inst->isStore() || inst->isAtomic());
+    if (inst->isSquashed()) {
+        return StallReason::MemSquashed;
+    }
+    if (inst->isCommitted()) {
+        return StallReason::NoStall;
+    }
+    if (inst->isAtomic()) {
+        return StallReason::Atomic;
+    }
+    if (inst->isStoreConditional()){
+        return StallReason::StoreL1Bound;
+    }
+    assert(inst->isLoad() || inst->isStore());
 
-    uint64_t latency = cpu->ticksToCycles(curTick() - inst->translatedTick);
-    if (inst->firstIssue != -1 && inst->translatedTick == -1) {
+    if (inst->isIssued() && !inst->translationCompleted()) {
         return StallReason::DTlbStall;
-    } else if (inst->firstIssue != -1 && inst->translatedTick != -1 &&
-                latency <= 4) {
+    }
+
+    bool inFlight = inst->isIssued() && inst->translationCompleted();
+    //Level of the cache hierachy where this request was responded to
+    //e.g. 0:in l1, 1:in l2
+    int depth=-1;
+    if (inFlight) {
+        assert(inst->savedRequest);
+        depth = inst->savedRequest->mainReq()->depth;
+    }
+    assert(depth < 5);
+    bool in_l1 = depth == 0;
+    bool in_l2 = depth == 1;
+    bool in_l3 = depth == 2;
+    bool otherStall = depth == -1;
+    // maybe soc does not have l3cache
+    // so we can not use in_mem = depth==3
+    bool in_mem = !(in_l1 ||  in_l2 || in_l3 || otherStall);
+    if (inFlight && in_l1) {
         return inst->isLoad() ? StallReason::LoadL1Bound : StallReason::StoreL1Bound;
-    } else if (inst->firstIssue != -1 && inst->translatedTick != -1 &&
-                latency > 4 && latency <= 4 + 15) {
+    } else if (inFlight && in_l2) {
         return inst->isLoad() ? StallReason::LoadL2Bound : StallReason::StoreL2Bound;
-    } else if (inst->firstIssue != -1 && inst->translatedTick != -1 &&
-                   latency > 4 + 15 && latency <= 4 + 15 + 19) {
+    } else if (inFlight && in_l3) {
         return inst->isLoad() ? StallReason::LoadL3Bound : StallReason::StoreL3Bound;
-    } else if (inst->firstIssue != -1 && inst->translatedTick != -1 &&
-                   latency > 4 + 15 + 19) {
+    } else if (inFlight && in_mem) {
         return inst->isLoad() ? StallReason::LoadMemBound : StallReason::StoreMemBound;
     } else {
         return StallReason::OtherStall;
