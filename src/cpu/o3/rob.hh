@@ -52,6 +52,7 @@
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/reg_class.hh"
+#include "enums/ROBWalkPolicy.hh"
 #include "enums/SMTQueuePolicy.hh"
 
 namespace gem5
@@ -89,6 +90,8 @@ class ROB
 
     /** ROB resource sharing policy for SMT mode. */
     SMTQueuePolicy robPolicy;
+
+    ROBWalkPolicy robWalkPolicy;
 
   public:
     /** ROB constructor.
@@ -290,7 +293,15 @@ class ROB
     std::list<DynInstPtr> instList[MaxThreads];
 
     /** Number of instructions that can be squashed in a single cycle. */
-    unsigned squashWidth;
+    unsigned rollbackWidth;
+
+    unsigned replayWidth{6};
+
+    unsigned dynSquashWidth{6};
+
+    unsigned constSquashCycle{1};
+
+    unsigned computeDynSquashWidth(unsigned uncommitted_insts, unsigned to_squash);
 
   public:
     std::list<DynInstPtr>* getInstList(ThreadID tid){

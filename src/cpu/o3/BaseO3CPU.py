@@ -54,6 +54,9 @@ class SMTQueuePolicy(ScopedEnum):
 class CommitPolicy(ScopedEnum):
     vals = [ 'RoundRobin', 'OldestReady' ]
 
+class ROBWalkPolicy(ScopedEnum):
+    vals = [ 'Rollback', 'Replay', 'ConstCycle', 'NaiveCpt', 'ConfidentCpt' ]
+
 class BaseO3CPU(BaseCPU):
     type = 'BaseO3CPU'
     cxx_class = 'gem5::o3::CPU'
@@ -116,7 +119,12 @@ class BaseO3CPU(BaseCPU):
                "delay")
     renameToROBDelay = Param.Cycles(1, "Rename to reorder buffer delay")
     commitWidth = Param.Unsigned(6, "Commit width")
-    squashWidth = Param.Unsigned(6, "Squash width")
+
+    squashWidth = Param.Unsigned(6, "Squash width with rollback rob walk")
+    replayWidth = Param.Unsigned(6, "Squash width with redo rob walk")
+    ConstSquashCycle = Param.Unsigned(1, "Squash width with redo rob walk")
+    robWalkPolicy = Param.ROBWalkPolicy('Replay', "Squash with a specific policy")
+
     trapLatency = Param.Cycles(13, "Trap latency")
     fetchTrapLatency = Param.Cycles(1, "Fetch trap latency")
 
