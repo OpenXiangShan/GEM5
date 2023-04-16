@@ -60,6 +60,12 @@ const Addr VADDR_BITS  = 39;
 const Addr LEVEL_BITS  = 9;
 const Addr LEVEL_MASK  = (1 << LEVEL_BITS) - 1;
 
+const int L_L2L1 = 1;
+const int L_L2L2 = 2;
+const int L_L2L3 = 3;
+const int L_L2sp1 = 4;
+const int L_L2sp2 = 5;
+
 BitUnion64(PTESv39)
     Bitfield<53, 10> ppn;
     Bitfield<53, 28> ppn2;
@@ -77,7 +83,9 @@ BitUnion64(PTESv39)
 EndBitUnion(PTESv39)
 
 struct TlbEntry;
+//struct L2TlbEntry;
 typedef Trie<Addr, TlbEntry> TlbEntryTrie;
+//typedef Trie<Addr, L2TlbEntry> L2TlbEntryTrie;
 
 struct TlbEntry : public Serializable
 {
@@ -98,9 +106,30 @@ struct TlbEntry : public Serializable
     // A sequence number to keep track of LRU.
     uint64_t lruSeq;
 
+    uint64_t level;
+
+    Addr index;
+
+    bool is_squashed;
+
+    bool used;
+    bool is_pre;
+    bool pre_sign;
+
     TlbEntry()
-        : paddr(0), vaddr(0), logBytes(0), pte(), lruSeq(0)
-    {}
+        : paddr(0),
+          vaddr(0),
+          logBytes(0),
+          pte(),
+          lruSeq(0),
+          level(0),
+          index(0),
+          is_squashed(false),
+          used(false),
+          is_pre(false),
+          pre_sign(false)
+    {
+    }
 
     // Return the page size in bytes
     Addr size() const

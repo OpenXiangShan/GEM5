@@ -116,7 +116,9 @@ namespace RiscvISA
                 void markSquash() { squashed = true; }
             };
 
+
             std::list<RequestorState> requestors;
+
 
           protected:
             Walker *walker;
@@ -126,6 +128,7 @@ namespace RiscvISA
             int level;
             unsigned inflight;
             TlbEntry entry;
+            TlbEntry inl2_entry;
             PacketPtr read;
             std::vector<PacketPtr> writes;
             Fault mainFault;
@@ -138,6 +141,20 @@ namespace RiscvISA
             bool retrying;
             bool started;
             bool squashed;
+            bool next_line;
+            Addr nextline_Read;
+            int nextline_level;
+            TlbEntry nextline_entry;
+            Addr nextline_vaddr;
+
+            Addr nextline_level_mask;
+            Addr nextline_shift;
+            Addr tlb_vaddr;
+            Addr tlb_ppn;
+            Addr tlb_size_pte;
+            bool open_nextline;
+            bool auto_nextline_sign;
+
           public:
             WalkerState(Walker * _walker, BaseMMU::Translation *_translation,
                         const RequestPtr &_req, bool _isFunctional = false) :
@@ -151,12 +168,15 @@ namespace RiscvISA
             void initState(ThreadContext * _tc, BaseMMU::Mode _mode,
                            bool _isTiming = false);
 
-            std::pair<bool, Fault> tryCoalesce(ThreadContext *_tc,
-                             BaseMMU::Translation *translation,
-                             const RequestPtr &req, BaseMMU::Mode mode);
+            std::pair<bool, Fault> tryCoalesce(
+                ThreadContext *_tc, BaseMMU::Translation *translation,
+                const RequestPtr &req, BaseMMU::Mode mode, bool from_l2tlb,
+                Addr asid);
 
-            Fault startWalk();
-            Fault startFunctional(Addr &addr, unsigned &logBytes);
+            Fault startWalk(Addr ppn, int f_level, bool from_l2tlb,
+                            bool OpenNextline, bool autoOpenNextline);
+            Fault startFunctional(Addr &addr, unsigned &logBytes,
+                                  bool OpenNextline, bool autoOpenNextline);
             bool recvPacket(PacketPtr pkt);
             unsigned numInflight() const;
             bool isRetrying();
@@ -169,13 +189,27 @@ namespace RiscvISA
             bool allRequestorSquashed() const;
 
           private:
-            void setupWalk(Addr vaddr);
+            void setupWalk(Addr ppn, Addr vaddr, int f_level, bool from_l2tlb,
+                           bool OpenNextline, bool autoOpenNextline);
             Fault stepWalk(PacketPtr &write);
             void sendPackets();
             void endWalk();
             Fault pageFault(bool present);
             Fault pageFaultOnRequestor(RequestorState &requestor);
         };
+
+        struct L2TlbState
+        {
+              RequestPtr req;
+              ThreadContext *tc;
+
+              BaseMMU::Translation *translation;
+              BaseMMU::Mode mode;
+              Addr Paddr;
+              TlbEntry entry;
+
+        };
+        std::list<L2TlbState> L2TLBrequestors;
 
         friend class WalkerState;
         // State for timing and atomic accesses (need multiple per walker in
@@ -193,13 +227,25 @@ namespace RiscvISA
 
       public:
         // Kick off the state machine.
-        Fault start(ThreadContext * _tc, BaseMMU::Translation *translation,
-                const RequestPtr &req, BaseMMU::Mode mode);
+        Fault start(Addr ppn, ThreadContext *_tc,
+                    BaseMMU::Translation *translation, const RequestPtr &req,
+                    BaseMMU::Mode mode, bool pre = false, int f_level = 2,
+                    bool from_l2tlb = false, Addr asid = 0);
+
+        void doL2TLBHitSchedule(const RequestPtr &req, ThreadContext *tc,
+                                BaseMMU::Translation *translation,
+                                BaseMMU::Mode mode, Addr Paddr,
+                                const TlbEntry &entry);
+
+
 
         std::pair<bool, Fault> tryCoalesce(ThreadContext *_tc,
                                            BaseMMU::Translation *translation,
                                            const RequestPtr &req,
-                                           BaseMMU::Mode mode);
+                                           BaseMMU::Mode mode, bool from_l2tlb,
+                                           Addr asid);
+
+        // Fault perm_check ();
 
         Fault startFunctional(ThreadContext * _tc, Addr &addr,
                 unsigned &logBytes, BaseMMU::Mode mode);
@@ -216,26 +262,32 @@ namespace RiscvISA
 
         // The number of outstanding walks that can be squashed per cycle.
         unsigned numSquashable;
+        bool ptwSquash;
+        bool OpenNextline;
+        bool autoOpenNextline;
 
         Tick squashHandleTick;
 
         // Wrapper for checking for squashes before starting a translation.
-        void startWalkWrapper();
+        //void startWalkWrapper();
 
         // Checking for squashes
-        void handlePendingSquash();
+        //void handlePendingSquash();
+
+        void dol2TLBHit();
 
         /**
          * Event used to call startWalkWrapper.
          **/
-        EventFunctionWrapper startWalkWrapperEvent;
 
-        EventFunctionWrapper handlePendingSquashEvent;
+
+        EventFunctionWrapper doL2TLBHitEvent;
 
         // Functions for dealing with packets.
         bool recvTimingResp(PacketPtr pkt);
         void recvReqRetry();
         bool sendTiming(WalkerState * sendingState, PacketPtr pkt);
+        bool pre_ptw;
 
       public:
 
@@ -253,8 +305,10 @@ namespace RiscvISA
             pmp(params.pmp),
             requestorId(sys->getRequestorId(this)),
             numSquashable(params.num_squash_per_cycle),
-            startWalkWrapperEvent([this]{ startWalkWrapper(); }, name()),
-            handlePendingSquashEvent([this]{ handlePendingSquash(); }, name())
+            ptwSquash(params.ptwSquash),
+            OpenNextline(params.OpenNextline),
+            autoOpenNextline(true),
+            doL2TLBHitEvent([this]{dol2TLBHit();},name())
         {
         }
     };

@@ -58,6 +58,7 @@
 #include "cpu/checker/cpu.hh"
 #include "cpu/thread_context.hh"
 #include "debug/Diff.hh"
+#include "debug/Diff2.hh"
 #include "debug/Mwait.hh"
 #include "debug/SyscallVerbose.hh"
 #include "debug/Thread.hh"
@@ -907,6 +908,8 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             }
         }
     }
+    DPRINTF(Diff2, "pc %#x inst %#x @ %s\n", gem5_pc, diffInfo.pc->instAddr(),
+            diffInfo.inst->disassemble(diffInfo.pc->instAddr()));
     DPRINTF(Diff, "Inst [sn:%lli] PC, NEMU: %#lx, GEM5: %#lx\n", seq, nemu_pc,
             gem5_pc);
 
@@ -991,6 +994,18 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                 if (!diff_at)
                     diff_at = ValueDiff;
             }
+            //stval
+            gem5_val = readMiscRegNoEffect(
+                RiscvISA::MiscRegIndex::MISCREG_STVAL, tid);
+            ref_val = diffAllStates->referenceRegFile[DIFFTEST_STVAL];
+            if (gem5_val != ref_val) {
+                warn("Inst [sn:%lli] pc:%s\n", seq, diffInfo.pc);
+                warn("Diff at %s Ref value: %#lx, GEM5 value: %#lx\n", "stval",
+                     ref_val, gem5_val);
+                if (!diff_at)
+                    diff_at = ValueDiff;
+            }
+             //DIFFTEST_STVDIFFTEST_STVAL
             // mcause
             gem5_val = readMiscRegNoEffect(
                 RiscvISA::MiscRegIndex::MISCREG_MCAUSE, tid);

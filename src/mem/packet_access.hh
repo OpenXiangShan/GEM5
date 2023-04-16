@@ -55,6 +55,14 @@ Packet::getRaw() const
     assert(sizeof(T) <= size);
     return *(T*)data;
 }
+template <typename T>
+inline T
+Packet::getRaw_l2tlb(uint64_t offset) const
+{
+    assert(flags.isSet(STATIC_DATA|DYNAMIC_DATA));
+    assert(sizeof(T) <= size);
+    return *(T*)(data+(offset *8));
+}
 
 template <typename T>
 inline void
@@ -78,6 +86,13 @@ inline T
 Packet::getLE() const
 {
     return letoh(getRaw<T>());
+}
+
+template <typename T>
+inline T
+Packet::getLE_l2tlb(uint64_t offset) const
+{
+    return letoh(getRaw_l2tlb<T>(offset));
 }
 
 template <typename T>

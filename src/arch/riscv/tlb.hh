@@ -61,11 +61,25 @@ class TLB : public BaseTLB
     typedef std::list<TlbEntry *> EntryList;
 
   protected:
+    bool is_L1tlb;
+    bool is_stage2;
+    bool is_the_sharedL2;
     size_t size;
+    size_t l2tlb_l1_size;
+    size_t l2tlb_l2_size;
+    size_t l2tlb_l3_size;
+    size_t l2tlb_sp_size;
     std::vector<TlbEntry> tlb;  // our TLB
     TlbEntryTrie trie;          // for quick access
     EntryList freeList;         // free entries
     uint64_t lruSeq;
+    bool  hit_in_sp;
+    uint64_t hitPreEntry;
+    uint64_t hitPreNum;
+    uint64_t RemovePreUnused;
+    uint64_t AllPre;
+    bool isOpenAutoNextline;
+
 
     Walker *walker;
 
@@ -79,6 +93,52 @@ class TLB : public BaseTLB
         statistics::Scalar writeHits;
         statistics::Scalar writeMisses;
         statistics::Scalar writeAccesses;
+        statistics::Scalar readprefetchHits;
+        statistics::Scalar writeprefetchHits;
+        statistics::Scalar readprefetchAccesses;
+        statistics::Scalar writeprefetchAccesses;
+        statistics::Scalar readprefetchMisses;
+        statistics::Scalar writeprefetchMisses;
+        statistics::Scalar writeHitsSquashed;
+        statistics::Scalar readHitsSquashed;
+        statistics::Scalar squashedInsert;
+        statistics::Scalar ALLInsert;
+
+
+        statistics::Scalar writeL2TlbMisses;
+        statistics::Scalar ReadL2TlbMisses;
+        statistics::Scalar writeL2Tlbl3Hits;
+        statistics::Scalar ReadL2Tlbl3Hits;
+        statistics::Scalar squashedInsertL2;
+        statistics::Scalar ALLInsertL2;
+        statistics::Scalar writeL2l3TlbSquashedHits;
+        statistics::Scalar ReadL2l3TlbSquashedHits;
+
+        statistics::Scalar l1tlbRemove;
+        statistics::Scalar l1tlbUsedRemove;
+        statistics::Scalar l1tlbUnusedRemove;
+
+        statistics::Scalar l2l1tlbRemove;
+        statistics::Scalar l2l1tlbUsedRemove;
+        statistics::Scalar l2l1tlbUnusedRemove;
+
+        statistics::Scalar l2l2tlbRemove;
+        statistics::Scalar l2l2tlbUsedRemove;
+        statistics::Scalar l2l2tlbUnusedRemove;
+
+        statistics::Scalar l2l3tlbRemove;
+        statistics::Scalar l2l3tlbUsedRemove;
+        statistics::Scalar l2l3tlbUnusedRemove;
+
+        statistics::Scalar l2sptlbRemove;
+        statistics::Scalar l2sptlbUsedRemove;
+        statistics::Scalar l2sptlbUnusedRemove;
+
+
+        statistics::Scalar hitPreEntry;
+        statistics::Scalar hitPreNum;
+        statistics::Scalar RemovePreUnused;
+        statistics::Scalar AllPre;
 
         statistics::Formula hits;
         statistics::Formula misses;
@@ -97,9 +157,18 @@ class TLB : public BaseTLB
 
     void takeOverFrom(BaseTLB *old) override {}
 
-    TlbEntry *insert(Addr vpn, const TlbEntry &entry);
+    TlbEntry *insert(Addr vpn, const TlbEntry &entry, bool suqashed_update);
+    TlbEntry *L2TLB_insert(Addr vpn, const TlbEntry &entry, int level,
+                           int choose, int sign,bool squashed_update);
+    TlbEntry *L2TLB_insert_in(Addr vpn, const TlbEntry &entry, int choose,
+                              EntryList *List, TlbEntryTrie *Trie_l2,
+                              int sign,bool squashed_update);
+    // TlbEntry *L2TLB_insert_in(Addr vpn,const TlbEntry &entry,int level);
+
+
     void flushAll() override;
     void demapPage(Addr vaddr, uint64_t asn) override;
+    void demapPageL2(Addr vaddr,uint64_t asn);
 
     Fault checkPermissions(STATUS status, PrivilegeMode pmode, Addr vaddr,
                            BaseMMU::Mode mode, PTESv39 pte);
@@ -125,6 +194,14 @@ class TLB : public BaseTLB
 
     Addr translateWithTLB(Addr vaddr, uint16_t asid, BaseMMU::Mode mode);
 
+    Fault L2tlb_pagefault(Addr vaddr, BaseMMU::Mode mode,
+                          const RequestPtr &req);
+
+    Fault L2tlb_check(PTESv39 pte, int level, STATUS status,
+                      PrivilegeMode pmode, Addr vaddr, BaseMMU::Mode mode,
+                      const RequestPtr &req, ThreadContext *tc,
+                      BaseMMU::Translation *translation);
+
     Fault translateAtomic(const RequestPtr &req,
                           ThreadContext *tc, BaseMMU::Mode mode) override;
     void translateTiming(const RequestPtr &req, ThreadContext *tc,
@@ -134,14 +211,41 @@ class TLB : public BaseTLB
                               BaseMMU::Mode mode) override;
     Fault finalizePhysical(const RequestPtr &req, ThreadContext *tc,
                            BaseMMU::Mode mode) const override;
+    TlbEntry *lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
+                     bool sign_used);
+
+    bool auto_open_nextline();
+
+
+
+    std::vector<TlbEntry> tlb_l2l1;  // our TLB
+    TlbEntryTrie trie_l2l1;               // for next line
+    EntryList freeList_l2l1;         // free entries
+
+    std::vector<TlbEntry> tlb_l2l2;  // our TLB
+    TlbEntryTrie trie_l2l2;               // for next line
+    EntryList freeList_l2l2;         // free entries
+
+    std::vector<TlbEntry> tlb_l2l3;  // our TLB
+    TlbEntryTrie trie_l2l3;               // for next line
+    EntryList freeList_l2l3;         // free entries
+
+    std::vector<TlbEntry> tlb_l2sp;  // our TLB
+    TlbEntryTrie trie_l2sp;               // for next line
+    EntryList freeList_l2sp;         // free entries
 
   private:
     uint64_t nextSeq() { return ++lruSeq; }
 
-    TlbEntry *lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden);
+    TlbEntry *lookup_l2tlb(Addr vpn, uint16_t asid, BaseMMU::Mode mode,
+                           bool hidden, int f_level, bool sign_used);
 
     void evictLRU();
+    void l2TLB_evictLRU(int l2TLBlevel, Addr vaddr);
+
     void remove(size_t idx);
+    void l2TLB_remove(size_t idx, int choose);
+
 
     Fault translate(const RequestPtr &req, ThreadContext *tc,
                     BaseMMU::Translation *translation, BaseMMU::Mode mode,
@@ -149,6 +253,7 @@ class TLB : public BaseTLB
     Fault doTranslate(const RequestPtr &req, ThreadContext *tc,
                       BaseMMU::Translation *translation, BaseMMU::Mode mode,
                       bool &delayed);
+
 };
 
 } // namespace RiscvISA
