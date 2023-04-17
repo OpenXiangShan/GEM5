@@ -253,6 +253,7 @@ typedef struct FetchStream
     BranchInfo exeBranchInfo;
 
     FTBEntry updateFTBEntry;
+    bool updateIsOldEntry;
     bool resolved;
 
     int squashType;
@@ -285,6 +286,7 @@ typedef struct FetchStream
           exeTaken(false),
           exeBranchInfo(BranchInfo()),
           updateFTBEntry(FTBEntry()),
+          updateIsOldEntry(false),
           resolved(false),
           squashType(SquashType::SQUASH_NONE),
           predSource(0)

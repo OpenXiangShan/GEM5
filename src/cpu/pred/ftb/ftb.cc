@@ -244,6 +244,7 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
 
     bool stream_taken = stream.exeTaken;
     FTBEntry entry_to_write;
+    bool is_old_entry = pred_hit;
     if (pred_hit || stream_taken) {
         BranchInfo branch_info = stream.exeBranchInfo;
         bool is_uncond = branch_info.isUncond();
@@ -275,6 +276,7 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
             std::vector<FTBSlot> &slots = old_entry.slots;
             bool new_branch = !branchIsInEntry(old_entry, branch_info.pc);
             if (new_branch && stream_taken) {
+                is_old_entry = false;
                 DPRINTF(FTB, "new taken branch detected, inserting into FTB entry\n");
                 // keep pc ascending order
                 auto it = slots.begin();
@@ -345,6 +347,7 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
         checkFTBEntry(entry_to_write);
     }
     stream.updateFTBEntry = entry_to_write;
+    stream.updateIsOldEntry = is_old_entry;
 }
 
 void
@@ -372,9 +375,9 @@ DefaultFTB::update(const FetchStream &stream)
 
     auto it = ftb[ftb_idx].find(ftb_tag);
     // if the tag is not found and the table is full
-    bool new_entry = it == ftb[ftb_idx].end();
+    bool not_found = it == ftb[ftb_idx].end();
 
-    if (new_entry) {
+    if (not_found) {
         std::pop_heap(mruList[ftb_idx].begin(), mruList[ftb_idx].end(), older());
         const auto& old_entry = mruList[ftb_idx].back();
         DPRINTF(FTB, "FTB: Replacing entry with tag %#lx in set %#lx\n", old_entry->first, ftb_idx);
@@ -382,6 +385,10 @@ DefaultFTB::update(const FetchStream &stream)
     }
 
     auto updatedEntry = stream.updateFTBEntry;
+    bool updatedIsOldEntry = stream.updateIsOldEntry;
+    auto entryInFtbNow = ftb[ftb_idx][ftb_tag];
+    // if this entry is old entry, use entry now in ftb to avoid overwriting entry with more branche info
+    auto entry_to_write = (updatedIsOldEntry && !not_found) ? FTBEntry(entryInFtbNow) : updatedEntry;
     // train L0 FTB ctrs
     if (isL0()) {
         std::vector<bool> need_to_update;
@@ -427,11 +434,11 @@ DefaultFTB::update(const FetchStream &stream)
         }
     }
 
-    ftb[ftb_idx][ftb_tag] = TickedFTBEntry(updatedEntry, curTick());
+    ftb[ftb_idx][ftb_tag] = TickedFTBEntry(entry_to_write, curTick());
     ftb[ftb_idx][ftb_tag].tag = ftb_tag; // in case different ftb has different tags
 
 
-    if (new_entry) {
+    if (not_found) {
         auto it = ftb[ftb_idx].find(updatedEntry.tag);
         mruList[ftb_idx].back() = it;
         std::push_heap(mruList[ftb_idx].begin(), mruList[ftb_idx].end(), older());
