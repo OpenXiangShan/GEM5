@@ -29,6 +29,8 @@ class LoopBuffer
 
     uint8_t *activePointer;
 
+    int maxLoopInsts{16};
+
     // filled at fetch time
     typedef struct InstDesc {
         StaticInstPtr inst;

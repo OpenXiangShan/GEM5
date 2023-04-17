@@ -1820,7 +1820,7 @@ Fetch::fetch(bool &status_change)
     if (enableLoopBuffer && isFTBPred() && !currentFetchTargetInLoop) {
         if (ftqEmpty()) {
             // try to record static insts of current ftq entry to loop buffer spec entry
-            if (taken_backward) {
+            if (taken_backward && currentFtqEntryInsts.second.size() <= loopBuffer->maxLoopInsts) {
                 DPRINTF(LoopBuffer, "ftq entry ended by backward taken branch, try to record insts in loop buffer, pc %#lx\n",
                     currentFtqEntryInsts.first);
                 loopBuffer->fillSpecLoopBuffer(currentFtqEntryInsts.first, currentFtqEntryInsts.second);
