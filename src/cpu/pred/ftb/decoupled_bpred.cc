@@ -196,11 +196,32 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     ADD_STAT(ftbHit, statistics::units::Count::get(), "ftb hits (in predict block)"),
     ADD_STAT(ftbMiss, statistics::units::Count::get(), "ftb misses (in predict block)"),
     ADD_STAT(predFalseHit, statistics::units::Count::get(), "false hit detected at pred"),
-    ADD_STAT(commitFalseHit, statistics::units::Count::get(), "false hit detected at commit")
+    ADD_STAT(commitFalseHit, statistics::units::Count::get(), "false hit detected at commit"),
+    ADD_STAT(predLoopPredictorExit, statistics::units::Count::get(), "loop predictor exits at pred"),
+    ADD_STAT(commitLoopPredictorExit, statistics::units::Count::get(), "loop predictor pred loop exits detected at commit"),
+    ADD_STAT(commitLoopPredictorExitCorrect, statistics::units::Count::get(), "loop predictor correctly pred loop exits detected at commit"),
+    ADD_STAT(commitLoopPredictorExitWrong, statistics::units::Count::get(), "loop predictor wrongly pred loop exits detected at commit"),
+    ADD_STAT(commitLoopExitLoopPredictorNotPredicted, statistics::units::Count::get(), "loop exit detected at commit that loop predictor did not pred exit"),
+    ADD_STAT(commitLoopExitLoopPredictorNotConf, statistics::units::Count::get(), "loop exit detected at commit that loop predictor did not pred exit because of unconfident"),
+    ADD_STAT(controlSquashOnLoopPredictorPredExit, statistics::units::Count::get(), "cotrol squash on loop predictor pred loop exits"),
+    ADD_STAT(nonControlSquashOnLoopPredictorPredExit, statistics::units::Count::get(), "non-cotrol squash on loop predictor pred loop exits"),
+    ADD_STAT(trapSquashOnLoopPredictorPredExit, statistics::units::Count::get(), "trap squash on loop predictor pred loop exits"),
+    ADD_STAT(predBlockInLoopBuffer, statistics::units::Count::get(), "predicted block is from loop buffer"),
+    ADD_STAT(predDoubleBlockInLoopBuffer, statistics::units::Count::get(), "predicted double block is from loop buffer"),
+    ADD_STAT(squashOnLoopBufferPredBlock, statistics::units::Count::get(), "squash on loop buffer provided block"),
+    ADD_STAT(squashOnLoopBufferDoublePredBlock, statistics::units::Count::get(), "squash on loop buffer provided double block"),
+    ADD_STAT(commitBlockInLoopBuffer, statistics::units::Count::get(), "committed block is from loop buffer"),
+    ADD_STAT(commitDoubleBlockInLoopBuffer, statistics::units::Count::get(), "committed double block is from loop buffer"),
+    ADD_STAT(commitBlockInLoopBufferSquashed, statistics::units::Count::get(), "committed block is from loop buffer but squashed"),
+    ADD_STAT(commitDoubleBlockInLoopBufferSquashed, statistics::units::Count::get(), "committed double block is from loop buffer but squashed"),
+    ADD_STAT(commitLoopBufferEntryInstNum, statistics::units::Count::get(), "commit block from loop buffer, buffer entry has inst num"),
+    ADD_STAT(commitLoopBufferDoubleEntryInstNum, statistics::units::Count::get(), "commit double block from loop buffer, buffer entry has inst num")
 {
     predsOfEachStage.init(numStages);
     commitPredsFromEachStage.init(numStages);
     fsqEntryDist.init(0, fsqSize, 1);
+    commitLoopBufferEntryInstNum.init(0, 16, 1);
+    commitLoopBufferDoubleEntryInstNum.init(0, 16, 1);
 }
 
 void
@@ -457,6 +478,16 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
     // get corresponding stream entry
     auto &stream = squashing_stream_it->second;
 
+    if (stream.isExit) {
+        dbpFtbStats.controlSquashOnLoopPredictorPredExit++;
+    }
+    if (stream.fromLoopBuffer) {
+        dbpFtbStats.squashOnLoopBufferPredBlock++;
+        if (stream.isDouble) {
+            dbpFtbStats.squashOnLoopBufferDoublePredBlock++;
+        }
+    }
+
     auto pc = stream.startPC;
     defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
     if (pc == ObservingPC) {
@@ -567,6 +598,15 @@ DecoupledBPUWithFTB::nonControlSquash(unsigned target_id, unsigned stream_id,
     squashStreamAfter(stream_id);
 
     auto &stream = it->second;
+    if (stream.isExit) {
+        dbpFtbStats.nonControlSquashOnLoopPredictorPredExit++;
+    }
+    if (stream.fromLoopBuffer) {
+        dbpFtbStats.squashOnLoopBufferPredBlock++;
+        if (stream.isDouble) {
+            dbpFtbStats.squashOnLoopBufferDoublePredBlock++;
+        }
+    }
 
     stream.exeTaken = false;
     stream.resolved = true;
@@ -618,6 +658,16 @@ DecoupledBPUWithFTB::trapSquash(unsigned target_id, unsigned stream_id,
     auto it = fetchStreamQueue.find(stream_id);
     assert(it != fetchStreamQueue.end());
     auto &stream = it->second;
+
+    if (stream.isExit) {
+        dbpFtbStats.trapSquashOnLoopPredictorPredExit++;
+    }
+    if (stream.fromLoopBuffer) {
+        dbpFtbStats.squashOnLoopBufferPredBlock++;
+        if (stream.isDouble) {
+            dbpFtbStats.squashOnLoopBufferDoublePredBlock++;
+        }
+    }
 
     stream.resolved = true;
     stream.exeTaken = false;
@@ -721,6 +771,35 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
         auto lp_info = stream.loopRedirectInfo;
         DPRINTF(LoopPredictor, "at commit fsqid %d, real_branch_pc %#lx, squash type %d, loop predcition info: specCnt %d, tripCnt %d, conf %d, branch_pc %#lx, end_loop %d\n",
                 it->first, stream.exeBranchInfo.pc, stream.squashType, lp_info.e.specCnt, lp_info.e.tripCnt, lp_info.e.conf, lp_info.branch_pc, lp_info.end_loop);
+        if (stream.isExit) {
+            dbpFtbStats.commitLoopPredictorExit++;
+            if (stream.squashType == SQUASH_NONE) {
+                dbpFtbStats.commitLoopPredictorExitCorrect++;
+            } else if (stream.squashType == SQUASH_CTRL) {
+                // FIXME: distinguish between squash of other branches
+                dbpFtbStats.commitLoopPredictorExitWrong++;
+            }
+        }
+        if (stream.fromLoopBuffer) {
+            dbpFtbStats.commitBlockInLoopBuffer++;
+            if (stream.isDouble) {
+                dbpFtbStats.commitDoubleBlockInLoopBuffer++;
+            }
+            if (stream.squashType != SQUASH_NONE) {
+                dbpFtbStats.commitBlockInLoopBufferSquashed++;
+                if (stream.isDouble) {
+                    dbpFtbStats.commitDoubleBlockInLoopBufferSquashed++;
+                }
+            }
+            auto instNum = lb.getLoopInstNum(stream.startPC);
+            if (instNum > 0) {
+                dbpFtbStats.commitLoopBufferEntryInstNum.sample(instNum, 1);
+                if (stream.isDouble) {
+                    dbpFtbStats.commitLoopBufferDoubleEntryInstNum.sample(instNum, 1);
+                }
+            }
+        }
+
 
         if (stream.squashType == SQUASH_CTRL) {
             auto find_it = topMispredicts.find(std::make_pair(stream.startPC, stream.exeBranchInfo.pc));
@@ -788,7 +867,7 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
 }
 
 void
-DecoupledBPUWithFTB::commitBranch(const DynInstPtr &inst, bool miss)
+DecoupledBPUWithFTB::commitBranch(const DynInstPtr &inst, bool miss, bool loop_exit)
 {
     // do overall statistics
     if (inst->isUncondCtrl()) {
@@ -811,6 +890,12 @@ DecoupledBPUWithFTB::commitBranch(const DynInstPtr &inst, bool miss)
     auto it = fetchStreamQueue.find(inst->fsqId);
     assert(it != fetchStreamQueue.end());
     auto entry = it->second;
+    if (loop_exit && !entry.isExit) {
+        dbpFtbStats.commitLoopExitLoopPredictorNotPredicted++;
+        if (entry.loopRedirectInfo.e.conf != 7) {
+            dbpFtbStats.commitLoopExitLoopPredictorNotConf++;
+        }
+    }
     for (auto component : components) {
         component->commitBranch(entry, inst);
     }
@@ -1116,6 +1201,17 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
         }
         DPRINTF(LoopBuffer, "stream before loop:\n");
         printStream(lb.streamBeforeLoop);
+
+        if (endLoop && !conf) {
+            dbpFtbStats.predLoopPredictorUnconfNotExit++;
+        }
+        if (confExit) {
+            dbpFtbStats.predLoopPredictorExit++;
+        }
+        dbpFtbStats.predBlockInLoopBuffer++;
+        if (isDouble) {
+            dbpFtbStats.predDoubleBlockInLoopBuffer++;
+        }
     }
 
     if (enableLoopBuffer && !lb.isActive()) {

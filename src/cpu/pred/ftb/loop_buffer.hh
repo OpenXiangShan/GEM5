@@ -171,6 +171,15 @@ class LoopBuffer
         }
     }
 
+    int getLoopInstNum(Addr pc) {
+        if (loopInsts.first == pc) {
+            return loopInsts.second.size();
+        } else {
+            // FIXME: record in fsq entry
+            return 0;
+        }
+    }
+
     void clearState() {
         loopInstCounter = 0;
     }

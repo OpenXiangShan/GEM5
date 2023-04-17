@@ -364,6 +364,28 @@ class DecoupledBPUWithFTB : public BPredUnit
         statistics::Scalar predFalseHit;
         statistics::Scalar commitFalseHit;
 
+        statistics::Scalar predLoopPredictorExit;
+        statistics::Scalar predLoopPredictorUnconfNotExit;
+        statistics::Scalar commitLoopPredictorExit;
+        statistics::Scalar commitLoopPredictorExitCorrect;
+        statistics::Scalar commitLoopPredictorExitWrong;
+        statistics::Scalar commitLoopExitLoopPredictorNotPredicted;
+        statistics::Scalar commitLoopExitLoopPredictorNotConf;
+        statistics::Scalar controlSquashOnLoopPredictorPredExit;
+        statistics::Scalar nonControlSquashOnLoopPredictorPredExit;
+        statistics::Scalar trapSquashOnLoopPredictorPredExit;
+
+        statistics::Scalar predBlockInLoopBuffer;
+        statistics::Scalar predDoubleBlockInLoopBuffer;
+        statistics::Scalar squashOnLoopBufferPredBlock;
+        statistics::Scalar squashOnLoopBufferDoublePredBlock;
+        statistics::Scalar commitBlockInLoopBuffer;
+        statistics::Scalar commitDoubleBlockInLoopBuffer;
+        statistics::Scalar commitBlockInLoopBufferSquashed;
+        statistics::Scalar commitDoubleBlockInLoopBufferSquashed;
+        statistics::Distribution commitLoopBufferEntryInstNum;
+        statistics::Distribution commitLoopBufferDoubleEntryInstNum;
+
         DBPFTBStats(statistics::Group* parent, unsigned numStages, unsigned fsqSize);
     } dbpFtbStats;
 
@@ -511,7 +533,7 @@ class DecoupledBPUWithFTB : public BPredUnit
         dbpFtbStats.ftqNotValid++;
     }
 
-    void commitBranch(const DynInstPtr &inst, bool miss);
+    void commitBranch(const DynInstPtr &inst, bool miss, bool loop_exit);
 
     std::map<Addr, unsigned> topMispredIndirect;
 };

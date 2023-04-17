@@ -88,12 +88,14 @@ class LoopPredictor
     }
 
     // called when loop branch is committed, identification is done before calling
-    void commitLoopBranch(Addr pc, Addr target, Addr fallThruPC, bool mispredicted) {
+    // return true if loop branch is in main storage and is exit
+    bool commitLoopBranch(Addr pc, Addr target, Addr fallThruPC, bool mispredicted) {
       DPRINTF(LoopPredictor,
         "Commit loop branch: pc: %#lx, target: %#lx, fallThruPC: %#lx\n",
         pc, target, fallThruPC);
       bool takenBackward = target < pc;
       Addr tag = getTag(pc);
+      bool loopExit = false;
 
       // if already trained, update conf in loopStorage
       int idx = getIndex(pc);
@@ -109,6 +111,7 @@ class LoopPredictor
           // still in loop, inc specCnt
           way.specCnt++;
         } else {
+          loopExit = true;
           // check if this tripCnt is identical to the last trip
           auto currentTripCnt = way.specCnt;
           auto identical = currentTripCnt == way.tripCnt;
@@ -147,6 +150,8 @@ class LoopPredictor
         entry.conf = 0;
         commitLoopStorage[tag] = entry;
       }
+
+      return loopExit;
     }
 
     void recover(LoopRedirectInfo info, bool actually_taken, Addr branch_pc) {
