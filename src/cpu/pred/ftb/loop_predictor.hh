@@ -82,6 +82,9 @@ class LoopPredictor
             }
             return std::make_tuple(false, info, may_be_double);
           }
+        } else {
+          DPRINTF(LoopPredictor, "bpu prediction is not taken, exiting loop, setting specCnt to 0\n");
+          way.specCnt = 0;
         }
       }
       return std::make_tuple(false, info, false);

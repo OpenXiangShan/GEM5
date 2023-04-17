@@ -1114,19 +1114,43 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
             if (enableLoopPredictor) {
                 // query loop predictor and modify taken result
                 // TODO: What if loop branch is predicted not taken?
-                Addr branch_addr = finalPred.controlAddr();
-                std::tie(endLoop, lpRedirectInfo, isDouble) = lp.shouldEndLoop(taken, branch_addr, false);
-                entry.loopRedirectInfo = lpRedirectInfo; // record loop info for redirect recover
-                bool confEndLoop = endLoop && lpRedirectInfo.e.conf == 7;
-                if (confEndLoop) {
-                    // we should only modify the direction of the loop branch, because
-                    // a latter branch (outside loop branch) may be taken
-                    DPRINTF(DecoupleBP || debugFlagOn, "Loop predictor says end loop at %#lx\n", branch_addr);
-                    int takenIdx = finalPred.getTakenBranchIdx();
-                    finalPred.condTakens[takenIdx] = false;
+                // Ans: assume it is loop exit indeed and 
+                //      use it to sychronize loop specCnt
+                if (finalPred.valid) {
+                    int i = 0;
+                    for (auto &slot: finalPred.ftbEntry.slots) {
+                        if (slot.isCond) {
+                            assert(finalPred.condTakens.size() > i);
+                            bool this_cond_pred_taken = finalPred.condTakens[i];
+                            std::tie(endLoop, lpRedirectInfo, isDouble) = lp.shouldEndLoop(this_cond_pred_taken, slot.pc, false);
+                            if (lpRedirectInfo.e.valid) {
+                                // record valid loop info for redirect recover
+                                entry.loopRedirectInfo = lpRedirectInfo;
+                            }
+                            // for bpu predicted taken branch we need to check
+                            // whether it is an undetected loop exit
+                            if (this_cond_pred_taken) {
+                                bool confEndLoop = endLoop && lpRedirectInfo.e.conf == 7;
+                                if (confEndLoop) {
+                                    // we should only modify the direction of the loop branch, because
+                                    // a latter branch (outside loop branch) may be taken
+                                    DPRINTF(DecoupleBP || debugFlagOn, "Loop predictor says end loop at %#lx\n", slot.pc);
+                                    finalPred.condTakens[i] = false;
+                                    entry.isExit = true;
+                                }
+                                if (endLoop && !confEndLoop) {
+                                    dbpFtbStats.predLoopPredictorUnconfNotExit++;
+                                }
+                                if (confEndLoop) {
+                                    dbpFtbStats.predLoopPredictorExit++;
+                                }
+                            }
+
+                        }
+                        i++;
+                    }
                     taken = finalPred.isTaken();
                 }
-                entry.isExit = confEndLoop;
             }
             Addr fallThroughAddr = finalPred.getFallThrough();
             entry.isHit = finalPred.valid;
