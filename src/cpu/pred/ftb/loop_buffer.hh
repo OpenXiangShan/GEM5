@@ -9,6 +9,7 @@
 
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/ftb/stream_struct.hh"
+#include "cpu/pred/ftb/loop_predictor.hh"
 #include "debug/LoopBuffer.hh"
 
 
@@ -28,6 +29,8 @@ class LoopBuffer
     uint8_t activeBuffer[256];
 
     uint8_t *activePointer;
+
+    LoopPredictor *lp;
 
     int maxLoopInsts{16};
 
@@ -68,9 +71,16 @@ class LoopBuffer
          */
         DPRINTF(LoopBuffer, "query loop buffer with start pc %#lx\n", start_pc);
         if (loopInsts.first == start_pc && streamBeforeLoop.predTaken) {
-            DPRINTF(LoopBuffer, "loop buffer activated\n");
-            active = true;
-            return true;
+            DPRINTF(LoopBuffer, "found loop buffer entry for pc %#lx, entry has %d insts\n",
+                start_pc, loopInsts.second.size());
+            if (lp->isLoopBranchConf(loopBranchPC)) {
+                DPRINTF(LoopBuffer, "loop branch %#lx conf in lp, loop buffer activated\n", loopBranchPC);
+                active = true;
+                return true;
+            } else {
+                DPRINTF(LoopBuffer, "loop branch %#lx is not confident, don't activate loop buffer\n", loopBranchPC);
+                return false;
+            }
         }
         return false;
     }
@@ -185,6 +195,8 @@ class LoopBuffer
     void clearState() {
         loopInstCounter = 0;
     }
+
+    void setLp(LoopPredictor *lp) { this->lp = lp; }
 };
 }  // namespace ftb_pred
 }  // namespace branch_prediction

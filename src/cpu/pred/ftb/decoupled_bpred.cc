@@ -86,6 +86,7 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
     squashing = true;
 
     lp = LoopPredictor(16, 4);
+    lb.setLp(&lp);
 
     if (!enableLoopPredictor && enableLoopBuffer) {
         fatal("loop buffer cannot be enabled without loop predictor\n");
