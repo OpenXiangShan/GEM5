@@ -198,9 +198,14 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     ADD_STAT(predFalseHit, statistics::units::Count::get(), "false hit detected at pred"),
     ADD_STAT(commitFalseHit, statistics::units::Count::get(), "false hit detected at commit"),
     ADD_STAT(predLoopPredictorExit, statistics::units::Count::get(), "loop predictor exits at pred"),
+    ADD_STAT(predLoopPredictorUnconfNotExit, statistics::units::Count::get(), "loop predictor does not exit at pred because of unconf"),
+    ADD_STAT(predLoopPredictorConfFixNotExit, statistics::units::Count::get(), "loop predictor confident and fix other predictor not taken in non-exit loop branch at pred"),
     ADD_STAT(commitLoopPredictorExit, statistics::units::Count::get(), "loop predictor pred loop exits detected at commit"),
     ADD_STAT(commitLoopPredictorExitCorrect, statistics::units::Count::get(), "loop predictor correctly pred loop exits detected at commit"),
     ADD_STAT(commitLoopPredictorExitWrong, statistics::units::Count::get(), "loop predictor wrongly pred loop exits detected at commit"),
+    ADD_STAT(commitLoopPredictorConfFixNotExit, statistics::units::Count::get(), "loop predictor confident and fix other predictor not taken in non-exit loop branch at commit"),
+    ADD_STAT(commitLoopPredictorConfFixNotExitCorrect, statistics::units::Count::get(), "loop predictor confident and fix other predictor not taken in non-exit loop branch correctly at commit"),
+    ADD_STAT(commitLoopPredictorConfFixNotExitWrong, statistics::units::Count::get(), "loop predictor confident and fix other predictor not taken in non-exit loop branch wrongly at commit"),
     ADD_STAT(commitLoopExitLoopPredictorNotPredicted, statistics::units::Count::get(), "loop exit detected at commit that loop predictor did not pred exit"),
     ADD_STAT(commitLoopExitLoopPredictorNotConf, statistics::units::Count::get(), "loop exit detected at commit that loop predictor did not pred exit because of unconfident"),
     ADD_STAT(controlSquashOnLoopPredictorPredExit, statistics::units::Count::get(), "cotrol squash on loop predictor pred loop exits"),
@@ -768,9 +773,24 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
         }
 
         // check loop predictor prediction
-        auto lp_info = stream.loopRedirectInfo;
-        DPRINTF(LoopPredictor, "at commit fsqid %d, real_branch_pc %#lx, squash type %d, loop predcition info: specCnt %d, tripCnt %d, conf %d, branch_pc %#lx, end_loop %d\n",
-                it->first, stream.exeBranchInfo.pc, stream.squashType, lp_info.e.specCnt, lp_info.e.tripCnt, lp_info.e.conf, lp_info.branch_pc, lp_info.end_loop);
+        auto lp_infos = stream.loopRedirectInfos;
+        DPRINTF(LoopPredictor, "at commit fsqid %d, real_branch_pc %#lx, squash type %d, loop predcition infos:\n", it->first, stream.exeBranchInfo.pc, stream.squashType);
+        for (int i = 0; i < numBr; ++i) {
+            auto &lp_info = lp_infos[i];
+            DPRINTF(LoopPredictor, "    branch_pc %#lx, end_loop %d, specCnt %d, tripCnt %d, conf %d\n",
+                lp_info.branch_pc, lp_info.end_loop, lp_info.e.specCnt, lp_info.e.tripCnt, lp_info.e.conf);
+            if (stream.fixNotExits[i]) {
+                dbpFtbStats.commitLoopPredictorConfFixNotExit++;
+                if (stream.squashType == SQUASH_CTRL && stream.squashPC == lp_info.branch_pc) {
+                    dbpFtbStats.commitLoopPredictorConfFixNotExitWrong++;
+                }
+                if (stream.squashType != SQUASH_CTRL ||
+                    (stream.squashType == SQUASH_CTRL && stream.squashPC != lp_info.branch_pc))
+                {
+                    dbpFtbStats.commitLoopPredictorConfFixNotExitCorrect++;
+                }
+            }
+        }
         if (stream.isExit) {
             dbpFtbStats.commitLoopPredictorExit++;
             if (stream.squashType == SQUASH_NONE) {
@@ -890,10 +910,18 @@ DecoupledBPUWithFTB::commitBranch(const DynInstPtr &inst, bool miss, bool loop_e
     auto it = fetchStreamQueue.find(inst->fsqId);
     assert(it != fetchStreamQueue.end());
     auto entry = it->second;
-    if (loop_exit && !entry.isExit) {
-        dbpFtbStats.commitLoopExitLoopPredictorNotPredicted++;
-        if (entry.loopRedirectInfo.e.conf != 7) {
-            dbpFtbStats.commitLoopExitLoopPredictorNotConf++;
+    for (int i = 0; i < numBr; i++) {
+        if (entry.loopRedirectInfos[i].branch_pc == inst->pcState().instAddr()) {
+            auto &loopEntry = entry.loopRedirectInfos[i].e;
+            if (loopEntry.specCnt == loopEntry.tripCnt ||
+                (loopEntry.specCnt == loopEntry.tripCnt - 1 && entry.isDouble))
+            {
+                if (loopEntry.conf != lp.maxConf) {
+                    dbpFtbStats.commitLoopExitLoopPredictorNotConf++;
+                }
+            } else {
+                dbpFtbStats.commitLoopExitLoopPredictorNotPredicted++;
+            }
         }
     }
     for (auto component : components) {
@@ -1101,8 +1129,9 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
              finalPred.valid, finalPred.isTaken());
 
     // if loop buffer is not activated, use normal prediction from branch predictors
-    bool endLoop, isDouble;
-    LoopRedirectInfo lpRedirectInfo;
+    bool endLoop, isDouble, loopConf;
+    std::vector<LoopRedirectInfo> lpRedirectInfos(numBr);
+    std::vector<bool> fixNotExits(numBr);
     if (!enableLoopBuffer || (enableLoopBuffer && !lb.isActive())) {
         entry.fromLoopBuffer = false;
         entry.isDouble = false;
@@ -1119,30 +1148,53 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
                 if (finalPred.valid) {
                     int i = 0;
                     for (auto &slot: finalPred.ftbEntry.slots) {
-                        if (slot.isCond) {
+                        if (slot.isCond && (finalPred.getTakenBranchIdx() >= i || finalPred.getTakenBranchIdx() == -1)) {
                             assert(finalPred.condTakens.size() > i);
                             bool this_cond_pred_taken = finalPred.condTakens[i];
-                            std::tie(endLoop, lpRedirectInfo, isDouble) = lp.shouldEndLoop(this_cond_pred_taken, slot.pc, false);
-                            if (lpRedirectInfo.e.valid) {
-                                // record valid loop info for redirect recover
-                                entry.loopRedirectInfo = lpRedirectInfo;
-                            }
+                            std::tie(endLoop, lpRedirectInfos[i], isDouble, loopConf) = lp.shouldEndLoop(this_cond_pred_taken, slot.pc, false);
                             // for bpu predicted taken branch we need to check
                             // whether it is an undetected loop exit
-                            if (this_cond_pred_taken) {
-                                bool confEndLoop = endLoop && lpRedirectInfo.e.conf == 7;
-                                if (confEndLoop) {
+                            // if (this_cond_pred_taken) {
+                            //     bool confEndLoop = endLoop && lpRedirectInfo.e.conf == 7;
+                            //     if (confEndLoop) {
+                            //         // we should only modify the direction of the loop branch, because
+                            //         // a latter branch (outside loop branch) may be taken
+                            //         DPRINTF(DecoupleBP || debugFlagOn, "Loop predictor says end loop at %#lx\n", slot.pc);
+                            //         finalPred.condTakens[i] = false;
+                            //         entry.isExit = true;
+                            //     }
+                            //     if (endLoop && !confEndLoop) {
+                            //         dbpFtbStats.predLoopPredictorUnconfNotExit++;
+                            //     }
+                            //     if (confEndLoop) {
+                            //         dbpFtbStats.predLoopPredictorExit++;
+                            //     }
+                            // }
+                            if (lpRedirectInfos[i].e.valid) {
+                                if (loopConf) {
                                     // we should only modify the direction of the loop branch, because
-                                    // a latter branch (outside loop branch) may be taken
-                                    DPRINTF(DecoupleBP || debugFlagOn, "Loop predictor says end loop at %#lx\n", slot.pc);
-                                    finalPred.condTakens[i] = false;
-                                    entry.isExit = true;
-                                }
-                                if (endLoop && !confEndLoop) {
-                                    dbpFtbStats.predLoopPredictorUnconfNotExit++;
-                                }
-                                if (confEndLoop) {
-                                    dbpFtbStats.predLoopPredictorExit++;
+                                    // a latter branch (outside loop branch) may have other situation
+                                    finalPred.condTakens[i] = !endLoop;
+                                    if (endLoop) {
+                                        DPRINTF(DecoupleBP || debugFlagOn, "Loop predictor says end loop at %#lx\n", slot.pc);
+                                        dbpFtbStats.predLoopPredictorExit++;
+                                        entry.isExit = true;
+                                    } else {
+                                        if (!this_cond_pred_taken) {
+                                            dbpFtbStats.predLoopPredictorConfFixNotExit++;
+                                            fixNotExits[i] = true;
+                                            DPRINTF(DecoupleBP || debugFlagOn, "Loop predictor says do not end loop at %#lx\n", slot.pc);
+                                        }
+                                    }
+                                    // if (this_cond_pred_taken) {
+                                    //     if (endLoop) {
+                                    //         finalPred.condTakens[i] = false;
+                                    //     }
+                                    // }
+                                } else {
+                                    if (endLoop) {
+                                        dbpFtbStats.predLoopPredictorUnconfNotExit++;
+                                    }
                                 }
                             }
 
@@ -1206,17 +1258,16 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
         assert(enableLoopPredictor);
         // loop buffer is activated, use loop buffer to make prediction
         // determine whether this stream entry has double iterations
-        std::tie(endLoop, lpRedirectInfo, isDouble) = lp.shouldEndLoop(
+        std::tie(endLoop, lpRedirectInfos[0], isDouble, loopConf) = lp.shouldEndLoop(
             true, lb.getActiveLoopBranch(), lb.activeLoopMayBeDouble()
         );
         entry = lb.streamBeforeLoop;
         entry.startPC = s0PC;
-        bool conf = lpRedirectInfo.e.conf == 7;
+        bool conf = loopConf;
         bool confExit = conf && endLoop;
         entry.fromLoopBuffer = true;
         entry.isDouble = isDouble;
         entry.isExit = confExit;
-        entry.loopRedirectInfo = lpRedirectInfo;
 
         // redirect to fall through of loop branch if loop is ended
         if (confExit) {
@@ -1237,6 +1288,8 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
             dbpFtbStats.predDoubleBlockInLoopBuffer++;
         }
     }
+    entry.loopRedirectInfos = lpRedirectInfos;
+    entry.fixNotExits = fixNotExits;
 
     if (enableLoopBuffer && !lb.isActive()) {
         lb.recordNewestStreamOutsideLoop(entry);

@@ -366,9 +366,13 @@ class DecoupledBPUWithFTB : public BPredUnit
 
         statistics::Scalar predLoopPredictorExit;
         statistics::Scalar predLoopPredictorUnconfNotExit;
+        statistics::Scalar predLoopPredictorConfFixNotExit;
         statistics::Scalar commitLoopPredictorExit;
         statistics::Scalar commitLoopPredictorExitCorrect;
         statistics::Scalar commitLoopPredictorExitWrong;
+        statistics::Scalar commitLoopPredictorConfFixNotExit;
+        statistics::Scalar commitLoopPredictorConfFixNotExitCorrect;
+        statistics::Scalar commitLoopPredictorConfFixNotExitWrong;
         statistics::Scalar commitLoopExitLoopPredictorNotPredicted;
         statistics::Scalar commitLoopExitLoopPredictorNotConf;
         statistics::Scalar controlSquashOnLoopPredictorPredExit;

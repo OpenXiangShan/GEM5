@@ -269,7 +269,8 @@ typedef struct FetchStream
     std::array<std::shared_ptr<void>, 5> predMetas;
 
     // for loop
-    LoopRedirectInfo loopRedirectInfo;
+    std::vector<LoopRedirectInfo> loopRedirectInfos;
+    std::vector<bool> fixNotExits;
 
     Tick predTick;
     boost::dynamic_bitset<> history;

@@ -35,6 +35,8 @@ class LoopPredictor
     unsigned numWays;
 
     unsigned maxConf = 7;
+    // do not cover loop with less than 100 iterations, since tage may predict it well
+    unsigned minTripCnt = 100;
     
 
     std::vector<std::map<Addr, LoopEntry>> loopStorage;
@@ -51,8 +53,8 @@ class LoopPredictor
     // since we record pc in loop entry
     // we need to check whether given prediction block
     // has this loop branch
-    // returns <end, info, is_double>
-    std::tuple<bool, LoopRedirectInfo, bool> shouldEndLoop(bool taken, Addr branch_pc, bool may_be_double) {
+    // returns <end, info, is_double, conf>
+    std::tuple<bool, LoopRedirectInfo, bool, bool> shouldEndLoop(bool taken, Addr branch_pc, bool may_be_double) {
       DPRINTF(LoopPredictor, "query loop branch: taken: %d, pc: %#lx, is_double: %d\n",
         taken, branch_pc, may_be_double);
       LoopRedirectInfo info;
@@ -67,27 +69,32 @@ class LoopPredictor
       
         int remaining_iter = way.tripCnt - way.specCnt;
         DPRINTF(LoopPredictor, "found loop entry idx %d, tag %#x: tripCnt: %d, specCnt: %d, conf: %d\n", idx, tag, way.tripCnt, way.specCnt, way.conf);
-        if (taken) {
+        bool exit = false;
+        bool is_double = false;
+        bool conf = way.conf == maxConf;
+        // if unconf and bpu predict not taken, we trust bpu to sychronize specCnt to 0
+        if (conf || taken) {
+          // completely use loop predictor result to predict
           if (remaining_iter == 0 || (remaining_iter == 1 && may_be_double)) {
             DPRINTF(LoopPredictor, "loop end detected, doubling is %d, exiting loop, setting specCnt to 0\n",
               remaining_iter == 1 && may_be_double);
             way.specCnt = 0;
             info.end_loop = true;
-            return std::make_tuple(true, info, remaining_iter == 1 && may_be_double);
+            exit = true;
+            is_double = remaining_iter == 1 && may_be_double;
           } else if ((remaining_iter == 1 && !may_be_double) || remaining_iter >= 2) {
-            if (may_be_double) {
-              way.specCnt += 2;
-            } else {
-              way.specCnt += 1;
-            }
-            return std::make_tuple(false, info, may_be_double);
+            way.specCnt += may_be_double ? 2 : 1;
+            is_double = may_be_double;
           }
         } else {
-          DPRINTF(LoopPredictor, "bpu prediction is not taken, exiting loop, setting specCnt to 0\n");
+          // unconf and bpu predict not taken, use bpu to synchronize specCnt
+          DPRINTF(LoopPredictor, "bpu prediction is not taken, loop predictor unconf, exiting loop, setting specCnt to 0\n");
           way.specCnt = 0;
+          is_double = false;
         }
+        return std::make_tuple(exit, info, is_double, conf);
       }
-      return std::make_tuple(false, info, false);
+      return std::make_tuple(false, info, false, false);
     }
 
     // called when loop branch is committed, identification is done before calling
@@ -104,9 +111,13 @@ class LoopPredictor
       int idx = getIndex(pc);
       const auto &it = loopStorage[idx].find(tag);
       const auto &it2 = commitLoopStorage.find(tag);
+      bool main_found = it != loopStorage[idx].end();
+      bool train_found = it2 != commitLoopStorage.end();
+      const auto main_entry = main_found ? it->second : LoopEntry();
+      const auto train_entry = train_found ? it2->second : LoopEntry();
       // do not need to train commit storage when loop branch is in mainStorage
       // found training entry
-      if (it2 != commitLoopStorage.end()) {
+      if (train_found) {
         auto &way = it2->second;
         DPRINTF(LoopPredictor, "found training entry: tripCnt: %d, specCnt: %d, conf: %d\n",
           way.tripCnt, way.specCnt, way.conf);
@@ -123,16 +134,18 @@ class LoopPredictor
           } else if (way.conf > 0 && !identical) {
             way.conf--;
           }
-          if (it == loopStorage[idx].end()) {
+          if (!main_found) {
             // not in main storage, write into main storage
-            int idx = getIndex(pc);
-            DPRINTF(LoopPredictor, "loop end detected, specCnt %d, writting to loopStorage idx %d, tag %d\n",
-              way.specCnt, idx, tag);
-            int tripCnt = way.specCnt;
-            loopStorage[idx][tag].valid = true;
-            loopStorage[idx][tag].specCnt = 0;
-            loopStorage[idx][tag].tripCnt = tripCnt;
-            loopStorage[idx][tag].conf = 0;
+            // if (way.specCnt > minTripCnt) {
+              int idx = getIndex(pc);
+              DPRINTF(LoopPredictor, "loop end detected, specCnt %d, writting to loopStorage idx %d, tag %d\n",
+                way.specCnt, idx, tag);
+              int tripCnt = way.specCnt;
+              loopStorage[idx][tag].valid = true;
+              loopStorage[idx][tag].specCnt = 0;
+              loopStorage[idx][tag].tripCnt = tripCnt;
+              loopStorage[idx][tag].conf = 0;
+            // }
           } else {
             // in main storage, update conf
             DPRINTF(LoopPredictor, "loop end and in storage, updating conf, mispred %d\n", mispredicted);
@@ -154,6 +167,10 @@ class LoopPredictor
         commitLoopStorage[tag] = entry;
       }
 
+      DPRINTF(LoopPredictor, "commit loop branch, pc: %#lx, target: %#lx, fallThruPC: %#lx, takenBackward %d, mispred %d; \
+training_entry: %d, tripCnt %d, specCnt %d, conf %d; in_main: %d, tripCnt %d, conf %d\n",
+        pc, target, fallThruPC, takenBackward, mispredicted, train_found, train_entry.tripCnt, train_entry.specCnt, train_entry.conf,
+        main_found, main_entry.tripCnt, main_entry.conf);
       return loopExit;
     }
 
