@@ -325,6 +325,7 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
                 assert(tailSlot.isIndirect);
                 if (tailSlot.target != branch_info.target) {
                     tailSlot.target = branch_info.target;
+                    is_old_entry = false;
                     incNonL0Stat(ftbStats.oldEntryIndirectTargetModified);
                 }
             }
@@ -332,11 +333,17 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
             auto it = slots.begin();
             while (it != slots.end()) {
                 // set branches before current branch to alwaysTaken: false
-                if (*it < branch_info)
-                    it->alwaysTaken = false;
+                if (*it < branch_info) {
+                    if (it->alwaysTaken) {
+                        it->alwaysTaken = false;
+                        is_old_entry = false;
+                    }
+                }
                 // current always taken branch not taken: alwaysTaken false
-                else if (*it == branch_info && it->alwaysTaken)
-                    it->alwaysTaken = stream_taken;
+                else if (*it == branch_info && it->alwaysTaken && !stream_taken) {
+                    is_old_entry = false;
+                    it->alwaysTaken = false;
+                }
                 it++;
             }
             entry_to_write = old_entry;
