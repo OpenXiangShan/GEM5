@@ -174,18 +174,54 @@ training_entry: %d, tripCnt %d, specCnt %d, conf %d; in_main: %d, tripCnt %d, co
       return loopExit;
     }
 
-    void recover(LoopRedirectInfo info, bool actually_taken, Addr branch_pc) {
+    void recover(LoopRedirectInfo info, bool actually_taken, Addr squash_inst_pc, bool is_control, bool total_flushed) {
       if (info.e.valid) {
         DPRINTF(LoopPredictor, "redirecting loop branch: taken: %d, pc: %#lx, tripCnt: %d, specCnt: %d, conf: %d, pred use pc: %#lx\n",
-          actually_taken, branch_pc, info.e.tripCnt, info.e.specCnt, info.e.conf, info.branch_pc);
-        if (branch_pc == info.branch_pc && !actually_taken) {
-          // reset specCnt to 0
-          int idx = getIndex(branch_pc);
-          const auto &it = loopStorage[idx].find(getTag(branch_pc));
-          if (it != loopStorage[idx].end()) {
-            DPRINTF(LoopPredictor, "mispredicted loop end of idx %d, sychronizing specCnt to 0\n", idx);
-            auto &way = it->second;
-            way.specCnt = 0;
+          actually_taken, squash_inst_pc, info.e.tripCnt, info.e.specCnt, info.e.conf, info.branch_pc);
+        auto &loop_pc = info.branch_pc;
+        int idx = getIndex(loop_pc);
+        const auto &it = loopStorage[idx].find(getTag(loop_pc));
+        if (it != loopStorage[idx].end()) {
+          DPRINTF(LoopPredictor, "found idx %d\n", idx);
+          auto &way = it->second;
+          if (total_flushed) {
+            if (way.repair) {
+              DPRINTF(LoopPredictor, "total flush find unrepaired entry, recover specCnt to %d\n", info.e.specCnt);
+              way.specCnt = info.e.specCnt;
+            }
+          } else {
+            // TODO: what if a loop branch incurs non-control squash or trap squash?
+            if (squash_inst_pc == info.branch_pc && !actually_taken) {
+              // reset specCnt to 0
+              DPRINTF(LoopPredictor, "mispredicted loop end of, sychronizing specCnt to 0\n");
+              way.specCnt = 0;
+            } else if (squash_inst_pc < info.branch_pc) {
+              DPRINTF(LoopPredictor, "loop branch is not in this stream, recovering specCnt to %d\n", info.e.specCnt);
+              way.specCnt = info.e.specCnt;
+            }
+          }
+          way.repair = false;
+        }
+      }
+    }
+
+    void startRepair() {
+      DPRINTF(LoopPredictor, "start repair, setting all repair bits\n");
+      for (auto &set : loopStorage) {
+        for (auto &way : set) {
+          if (way.second.valid) {
+            way.second.repair = true;
+          }
+        }
+      }
+    }
+
+    void endRepair() {
+      DPRINTF(LoopPredictor, "end repair, clearing all remaining repair bits\n");
+      for (auto &set : loopStorage) {
+        for (auto &way : set) {
+          if (way.second.valid) {
+            way.second.repair = false;
           }
         }
       }
@@ -196,6 +232,16 @@ training_entry: %d, tripCnt %d, specCnt %d, conf %d; in_main: %d, tripCnt %d, co
       int idx = getIndex(pc);
       return commitLoopStorage.find(tag) != commitLoopStorage.end() ||
              loopStorage[idx].find(tag) != loopStorage[idx].end();
+    }
+
+    bool isLoopBranchConf(Addr pc) {
+      Addr tag = getTag(pc);
+      int idx = getIndex(pc);
+      if (loopStorage[idx].find(tag) != loopStorage[idx].end()) {
+        return loopStorage[idx][tag].conf == maxConf;
+      } else {
+        return false;
+      }
     }
 
     LoopPredictor(unsigned sets, unsigned ways) {

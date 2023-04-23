@@ -218,6 +218,7 @@ typedef struct LoopEntry {
     int tripCnt;
     int specCnt;
     int conf;
+    bool repair;
 } LoopEntry;
 
 typedef struct LoopRedirectInfo {

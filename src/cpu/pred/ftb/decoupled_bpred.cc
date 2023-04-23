@@ -528,7 +528,24 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
     stream.exeTaken = actually_taken;
     stream.squashPC = control_pc.instAddr();
 
+    if (enableLoopPredictor) {
+        lp.startRepair();
+        // recover loop predictor
+        // we should check if the numBr possible loop branches should be recovered
+        for (int i = 0; i < numBr; ++i) {
+            // loop branches behind the squashed branch should be recovered
+            if (stream.loopRedirectInfos[i].e.valid && control_pc.instAddr() <= stream.loopRedirectInfos[i].branch_pc) {
+                DPRINTF(DecoupleBP, "Recover loop predictor for %#lx\n", stream.loopRedirectInfos[i].branch_pc);
+                lp.recover(stream.loopRedirectInfos[i], actually_taken, control_pc.instAddr(), true, false);
+            }
+        }
+    }
+
     squashStreamAfter(stream_id);
+
+    if (enableLoopPredictor) {
+        lp.endRepair();
+    }
 
     stream.resolved = true;
 
@@ -552,10 +569,6 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
     DPRINTF(DecoupleBPHist,
                 "Shift in history %s\n", s0History);
 
-    if (enableLoopPredictor) {
-        // recover loop predictor
-        lp.recover(stream.loopRedirectInfo, actually_taken, control_pc.instAddr());
-    }
     printStream(stream);
 
     
@@ -599,10 +612,29 @@ DecoupledBPUWithFTB::nonControlSquash(unsigned target_id, unsigned stream_id,
     assert(it != fetchStreamQueue.end());
 
     auto ftq_demand_stream_id = stream_id;
+    auto &stream = it->second;
+
+    if (enableLoopPredictor) {
+        lp.startRepair();
+        // recover loop predictor
+        // we should check if the numBr possible loop branches should be recovered
+        for (int i = 0; i < numBr; ++i) {
+            // loop branches behind the squashed branch should be recovered
+            if (stream.loopRedirectInfos[i].e.valid && inst_pc.instAddr() <= stream.loopRedirectInfos[i].branch_pc) {
+                DPRINTF(DecoupleBP, "Recover loop predictor for %#lx\n", stream.loopRedirectInfos[i].branch_pc);
+                lp.recover(stream.loopRedirectInfos[i], false, inst_pc.instAddr(), false, false);
+            }
+        }
+    }
+
 
     squashStreamAfter(stream_id);
 
-    auto &stream = it->second;
+    if (enableLoopPredictor) {
+        lp.endRepair();
+    }
+
+    
     if (stream.isExit) {
         dbpFtbStats.nonControlSquashOnLoopPredictorPredExit++;
     }
@@ -679,7 +711,23 @@ DecoupledBPUWithFTB::trapSquash(unsigned target_id, unsigned stream_id,
     stream.squashPC = inst_pc.instAddr();
     stream.squashType = SQUASH_TRAP;
 
+    if (enableLoopPredictor) {
+        // recover loop predictor
+        // we should check if the numBr possible loop branches should be recovered
+        for (int i = 0; i < numBr; ++i) {
+            // loop branches behind the squashed branch should be recovered
+            if (stream.loopRedirectInfos[i].e.valid && inst_pc.instAddr() <= stream.loopRedirectInfos[i].branch_pc) {
+                DPRINTF(DecoupleBP, "Recover loop predictor for %#lx\n", stream.loopRedirectInfos[i].branch_pc);
+                lp.recover(stream.loopRedirectInfos[i], false, inst_pc.instAddr(), false, false);
+            }
+        }
+    }
+
     squashStreamAfter(stream_id);
+
+    if (enableLoopPredictor) {
+        lp.endRepair();
+    }
 
     // recover history info
     s0History = stream.history;
@@ -700,6 +748,8 @@ DecoupledBPUWithFTB::trapSquash(unsigned target_id, unsigned stream_id,
 
     fetchTargetQueue.squash(target_id + 1, ftq_demand_stream_id,
                             inst_pc.instAddr());
+    
+
 
     s0PC = inst_pc.instAddr();
 
@@ -938,6 +988,17 @@ DecoupledBPUWithFTB::squashStreamAfter(unsigned squash_stream_id)
                 "Erasing stream %lu when squashing %lu\n", erase_it->first,
                 squash_stream_id);
         printStream(erase_it->second);
+        if (enableLoopPredictor) {
+            DPRINTF(LoopPredictor, "recovering loop entry in stream %lu\n", erase_it->first);
+            for (int i = 0; i < numBr; i++) {
+                auto &loopInfo = erase_it->second.loopRedirectInfos[i];
+                DPRINTF(LoopPredictor, "loop entry %d: pc %#lx, endLoop %d, specCnt %d, tripCnty %d, conf %d\n",
+                    i, loopInfo.branch_pc, loopInfo.end_loop, loopInfo.e.specCnt, loopInfo.e.tripCnt, loopInfo.e.conf);
+                if (loopInfo.e.valid) {
+                    lp.recover(loopInfo, false, 0, false, true);
+                }
+            }
+        }
         fetchStreamQueue.erase(erase_it++);
     }
 }
