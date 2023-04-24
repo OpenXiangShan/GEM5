@@ -74,6 +74,9 @@ BPredUnit::BPredUnit(const Params &params)
     bpType = CoupledType;
     for (auto& r : RAS)
         r.init(params.RASSize);
+    // was for classical frontend
+    //for (auto& r : uRAS)
+    //    r.init(params.uRASSize)
     if (isDumpMissPredPC) {
         registerExitCallback([this]() {
             // output to file "pcMiss.txt"

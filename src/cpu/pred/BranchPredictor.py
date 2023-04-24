@@ -83,6 +83,7 @@ class BranchPredictor(SimObject):
     BTBEntries = Param.Unsigned(4096, "Number of BTB entries")
     BTBTagSize = Param.Unsigned(16, "Size of the BTB tags, in bits")
     RASSize = Param.Unsigned(16, "RAS size")
+    uRASSize = Param.Unsigned(4, "uRAS size")
     instShiftAmt = Param.Unsigned(2, "Number of bits to shift instructions by")
     isDumpMisspredPC = Param.Bool(False, "enable dump miss pred pc")
     indirectBranchPred = Param.IndirectPredictor(ITTAGE(),
@@ -890,6 +891,14 @@ class RAS(TimedBaseFTBPredictor):
     ctrWidth = Param.Unsigned(8, "Width of the counter")
     numInflightEntries = Param.Unsigned(28, "Number of inflight entries")
 
+class uRAS(TimedBaseFTBPredictor):
+    type = 'uRAS'
+    cxx_class = 'gem5::branch_prediction::ftb_pred::uRAS'
+    cxx_header = 'cpu/pred/ftb/uras.hh'
+    
+    numEntries = Param.Unsigned(4, "Number of entries in the RAS")
+    ctrWidth = Param.Unsigned(2, "Width of the counter")
+
 class FTBTAGE(TimedBaseFTBPredictor):
     type = 'FTBTAGE'
     cxx_class = 'gem5::branch_prediction::ftb_pred::FTBTAGE'
@@ -934,6 +943,7 @@ class DecoupledBPUWithFTB(BranchPredictor):
     ittage = Param.FTBITTAGE(FTBITTAGE(), "ITTAGE predictor")
     uftb = Param.DefaultFTB(UFTB(), "UFTB predictor")
     ras = Param.RAS(RAS(), "RAS")
+    uras = Param.uRAS(uRAS(), "uRAS")
     
     enableBPDB = Param.Bool(False, "Enable trace in the form of database")
     enableLoopBuffer = Param.Bool(False, "Enable loop buffer to supply inst for loops")

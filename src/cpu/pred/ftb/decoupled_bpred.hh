@@ -19,12 +19,14 @@
 #include "cpu/pred/ftb/loop_predictor.hh"
 #include "cpu/pred/ftb/loop_buffer.hh"
 #include "cpu/pred/ftb/ras.hh"
+#include "cpu/pred/ftb/uras.hh"
 #include "cpu/pred/ftb/stream_struct.hh"
 #include "cpu/pred/ftb/timed_base_pred.hh"
 #include "debug/DecoupleBP.hh"
 #include "debug/DecoupleBPHist.hh"
 #include "debug/DecoupleBPProbe.hh"
 #include "debug/DecoupleBPRAS.hh"
+#include "debug/DecoupleBPuRAS.hh"
 #include "debug/DecoupleBPVerbose.hh"
 #include "debug/DBPFTBStats.hh"
 #include "debug/LoopBuffer.hh"
@@ -216,6 +218,7 @@ class DecoupledBPUWithFTB : public BPredUnit
     FTBITTAGE *ittage{};
     
     ftb_pred::RAS *ras{};
+    ftb_pred::uRAS *uras{};
 
     bool enableDB;
     DataBase bpdb;
