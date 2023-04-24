@@ -400,7 +400,7 @@ DefaultFTB::update(const FetchStream &stream)
     if (isL0()) {
         std::vector<bool> need_to_update;
         need_to_update.resize(numBr, false);
-        auto ftb_entry = stream.updateFTBEntry;
+        auto &ftb_entry = entry_to_write;
         // get number of conditional branches to update
         int cond_num = 0;
         if (stream.exeTaken) {
@@ -431,13 +431,13 @@ DefaultFTB::update(const FetchStream &stream)
             bool this_cond_actually_taken = stream.exeTaken && stream.exeBranchInfo == ftb_entry.slots[b];
             int ctr_to_be_updated;
             // read newest ctr if hit
-            if (it != ftb[ftb_idx].end() && it->second.slots.size() > b) {
-                ctr_to_be_updated = it->second.slots[b].ctr;
+            if (!not_found && it->second.slots.size() > b) {
+                ctr_to_be_updated = entryInFtbNow.slots[b].ctr;
             } else {
                 ctr_to_be_updated = updatedEntry.slots[b].ctr;
             }
             updateCtr(ctr_to_be_updated, this_cond_actually_taken);
-            updatedEntry.slots[b].ctr = ctr_to_be_updated;
+            entry_to_write.slots[b].ctr = ctr_to_be_updated;
         }
     }
 
