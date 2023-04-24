@@ -150,8 +150,8 @@ class LoopBuffer
     {
         // TODO: use replacement policy
         const auto &it = specLoopInsts.find(pc);
-        if (it != specLoopInsts.end()) {
-            DPRINTF(LoopBuffer, "found spec loop buffer entry for pc %#lx, don't fill, entry has %d insts\n",
+        if (it != specLoopInsts.end() && insts.size() == it->second.size()) {
+            DPRINTF(LoopBuffer, "found identical spec loop buffer entry for pc %#lx, don't fill, entry has %d insts\n",
                 pc, it->second.size());
             return false;
         } else {
@@ -165,12 +165,16 @@ class LoopBuffer
         DPRINTF(LoopBuffer, "commit loop peek, pc %#lx, branch pc %#lx\n", pc, branch_pc);
         if (!pinned) {
             if (it != specLoopInsts.end()) {
-                loopInsts.first = pc;
-                loopInsts.second = it->second;
-                loopBranchPC = branch_pc;
-                DPRINTF(LoopBuffer, "found spec loop buffer entry for pc %#lx, entry has %d insts\n",
-                    pc, loopInsts.second.size());
-                // specLoopInsts.erase(it);
+                if (it->second.back().pc == branch_pc) {
+                    loopInsts.first = pc;
+                    loopInsts.second = it->second;
+                    loopBranchPC = branch_pc;
+                    DPRINTF(LoopBuffer, "found spec loop buffer entry for pc %#lx, branch pc %#lx, entry has %d insts\n",
+                        pc, branch_pc, loopInsts.second.size());
+                    // specLoopInsts.erase(it);
+                } else {
+                    DPRINTF(LoopBuffer, "entry has different branch pc %#lx, don't write into main\n", it->second.back().pc);
+                }
             }
         } else {
             DPRINTF(LoopBuffer, "loop buffer entry is still supplying inst, don't try to write entry\n");

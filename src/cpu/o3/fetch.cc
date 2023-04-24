@@ -1648,7 +1648,7 @@ Fetch::fetch(bool &status_change)
     // predicted taken
     StallReason stall = StallReason::NoStall;
     bool exit_loopbuffer_this_cycle = false;
-    bool taken_backward = false;
+    bool cond_taken_backward = false;
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize &&
            !(predictedBranch && !currentFetchTargetInLoop) && !quiesce &&
            !ftqEmpty() && !exit_loopbuffer_this_cycle) {
@@ -1771,7 +1771,7 @@ Fetch::fetch(bool &status_change)
             if (predictedBranch) {
                 DPRINTF(Fetch, "Branch detected with PC = %s\n", this_pc);
             }
-            taken_backward = predictedBranch && next_pc->instAddr();
+            cond_taken_backward = predictedBranch && next_pc->instAddr() < this_pc.instAddr() && staticInst->isCondCtrl();
 
             newMacro |= this_pc.instAddr() != next_pc->instAddr();
 
@@ -1822,8 +1822,8 @@ Fetch::fetch(bool &status_change)
     if (enableLoopBuffer && isFTBPred() && !currentFetchTargetInLoop) {
         if (ftqEmpty()) {
             // try to record static insts of current ftq entry to loop buffer spec entry
-            if (taken_backward && currentFtqEntryInsts.second.size() <= loopBuffer->maxLoopInsts) {
-                DPRINTF(LoopBuffer, "ftq entry ended by backward taken branch, try to record insts in loop buffer, pc %#lx\n",
+            if (cond_taken_backward && currentFtqEntryInsts.second.size() <= loopBuffer->maxLoopInsts) {
+                DPRINTF(LoopBuffer, "ftq entry ended by backward taken conditional branch, try to record insts in loop buffer, pc %#lx\n",
                     currentFtqEntryInsts.first);
                 loopBuffer->fillSpecLoopBuffer(currentFtqEntryInsts.first, currentFtqEntryInsts.second);
             }
