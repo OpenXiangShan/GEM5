@@ -1335,15 +1335,16 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
         entry.falseHit = false;
         entry.predTaken = !confExit;
         entry.predEndPC = lb.streamBeforeLoop.predBranchInfo.getEnd();
-        entry.history = s0History;
+        // use s0History from streamBeforeLoop
+        // entry.history = s0History;
         entry.predTick = curTick();
         entry.predSource = numStages;
 
         // TODO: use what kind of mechanism to handle ghr?
-        // only record meta here
-        for (int i = 0; i < numComponents; i++) {
-            entry.predMetas[i] = components[i]->getPredictionMeta();
-        }
+        // use default meta from streamBeforeLoop here
+        // for (int i = 0; i < numComponents; i++) {
+        //     entry.predMetas[i] = components[i]->getPredictionMeta();
+        // }
         int shamt = 0;
         bool taken = false;
         histShiftIn(shamt, taken, s0History);
