@@ -76,6 +76,9 @@ class RAS : public TimedBaseFTBPredictor
 
         void update(const FetchStream &entry) override;
 
+        void commitBranch(const FetchStream &stream, const DynInstPtr &inst) override;
+
+
     private:
 
         void push(Addr retAddr);

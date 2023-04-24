@@ -305,6 +305,9 @@ RAS::getTop_meta() {
         DPRINTF(FTBRAS, "Select from stack, addr %x\n", stack[ssp].data.retAddr);
         return stack[ssp].data;
     }
+}
+
+void
 RAS::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 {
 }
