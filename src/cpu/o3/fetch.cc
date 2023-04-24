@@ -1703,6 +1703,8 @@ Fetch::fetch(bool &status_change)
                         auto instDesc = dbpftb->lb.supplyInst();
                         staticInst = instDesc.inst;
                         dec_ptr->setPCStateWithInstDesc(instDesc.compressed, this_pc);
+                        DPRINTF(LoopBuffer, "Supplying inst pc %#lx from loop buffer pc %#lx\n",
+                            this_pc.instAddr(), instDesc.pc);
                         assert(this_pc.instAddr() == instDesc.pc);
                     } else {
                         staticInst = dec_ptr->decode(this_pc);

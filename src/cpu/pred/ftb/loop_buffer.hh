@@ -54,6 +54,8 @@ class LoopBuffer
     // used in loop
     std::pair<Addr, std::vector<InstDesc>> loopInsts;
     Addr loopBranchPC;
+    // entry is pinned when current loop is still require by fetch
+    bool pinned{false};
     int loopInstCounter{0};
 
     // store fetch stream infos of entry before entering loop
@@ -76,6 +78,7 @@ class LoopBuffer
             if (lp->isLoopBranchConf(loopBranchPC)) {
                 DPRINTF(LoopBuffer, "loop branch %#lx conf in lp, loop buffer activated\n", loopBranchPC);
                 active = true;
+                pinned = true;
                 return true;
             } else {
                 DPRINTF(LoopBuffer, "loop branch %#lx is not confident, don't activate loop buffer\n", loopBranchPC);
@@ -91,6 +94,7 @@ class LoopBuffer
 
     unsigned singleIterSize;
 
+    // for bpu to know whether to use other predictors
     bool active{false};
 
     /** check current offset against unrolled words
@@ -158,19 +162,24 @@ class LoopBuffer
 
     void commitLoopPeek(Addr pc, Addr branch_pc) {
         const auto &it = specLoopInsts.find(pc);
-        if (it != specLoopInsts.end()) {
-            loopInsts.first = pc;
-            loopInsts.second = it->second;
-            loopBranchPC = branch_pc;
-            DPRINTF(LoopBuffer, "found spec loop buffer entry for pc %#lx, entry has %d insts\n",
-                pc, loopInsts.second.size());
-            // specLoopInsts.erase(it);
+        DPRINTF(LoopBuffer, "commit loop peek, pc %#lx, branch pc %#lx\n", pc, branch_pc);
+        if (!pinned) {
+            if (it != specLoopInsts.end()) {
+                loopInsts.first = pc;
+                loopInsts.second = it->second;
+                loopBranchPC = branch_pc;
+                DPRINTF(LoopBuffer, "found spec loop buffer entry for pc %#lx, entry has %d insts\n",
+                    pc, loopInsts.second.size());
+                // specLoopInsts.erase(it);
+            }
+        } else {
+            DPRINTF(LoopBuffer, "loop buffer entry is still supplying inst, don't try to write entry\n");
         }
     }
 
     InstDesc supplyInst() {
-        DPRINTF(LoopBuffer, "supplying inst from loop buffer, loopInstCounter %d, buffer size %d\n",
-            loopInstCounter, loopInsts.second.size());
+        DPRINTF(LoopBuffer, "supplying inst from loop buffer, loopInstCounter %d, buffer size %d, loop buffer pc %#lx\n",
+            loopInstCounter, loopInsts.second.size(), loopInsts.first);
         if (loopInstCounter < loopInsts.second.size()) {
             auto instDesc = loopInsts.second[loopInstCounter];
             if (++loopInstCounter >= loopInsts.second.size()) {
@@ -194,6 +203,17 @@ class LoopBuffer
 
     void clearState() {
         loopInstCounter = 0;
+    }
+
+    bool tryUnpin() {
+        DPRINTF(LoopBuffer, "all loop inst consumed by fetch, unpin loop buffer\n");
+        if (!isActive()) {
+            pinned = false;
+            return true;
+        } else {
+            DPRINTF(LoopBuffer, "may be activated by following loop, skip unpin\n");
+            return false;
+        }
     }
 
     void setLp(LoopPredictor *lp) { this->lp = lp; }

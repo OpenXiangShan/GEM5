@@ -224,7 +224,7 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     ADD_STAT(commitLoopBufferDoubleEntryInstNum, statistics::units::Count::get(), "commit double block from loop buffer, buffer entry has inst num")
 {
     predsOfEachStage.init(numStages);
-    commitPredsFromEachStage.init(numStages);
+    commitPredsFromEachStage.init(numStages+1);
     fsqEntryDist.init(0, fsqSize, 1);
     commitLoopBufferEntryInstNum.init(0, 16, 1);
     commitLoopBufferDoubleEntryInstNum.init(0, 16, 1);
@@ -406,6 +406,7 @@ DecoupledBPUWithFTB::decoupledPredict(const StaticInstPtr &inst,
                 run_out_of_this_entry = true;
                 if (loop_exit) {
                     taken = false;
+                    lb.tryUnpin();
                     DPRINTF(LoopBuffer, "modifying taken to false because of loop exit\n");
                 }
             }
@@ -1330,6 +1331,27 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
         entry.fromLoopBuffer = true;
         entry.isDouble = isDouble;
         entry.isExit = confExit;
+        entry.isHit = true;
+        entry.falseHit = false;
+        entry.predTaken = !confExit;
+        entry.predEndPC = lb.streamBeforeLoop.predBranchInfo.getEnd();
+        entry.history = s0History;
+        entry.predTick = curTick();
+        entry.predSource = numStages;
+
+        // TODO: use what kind of mechanism to handle ghr?
+        // only record meta here
+        for (int i = 0; i < numComponents; i++) {
+            entry.predMetas[i] = components[i]->getPredictionMeta();
+        }
+        int shamt = 0;
+        bool taken = false;
+        histShiftIn(shamt, taken, s0History);
+        historyManager.addSpeculativeHist(entry.startPC, shamt, taken, entry.predBranchInfo, fsqId);
+        tage->checkFoldedHist(s0History, "speculative update");
+        entry.setDefaultResolve();
+        
+
 
         // redirect to fall through of loop branch if loop is ended
         if (confExit) {
