@@ -31,6 +31,7 @@
 
 #include <string>
 
+#include "arch/riscv/faults.hh"
 #include "arch/riscv/insts/static_inst.hh"
 #include "arch/riscv/regs/misc.hh"
 #include "arch/riscv/utility.hh"
@@ -324,6 +325,48 @@ class VseMicroInst : public VectorMicroInst
     std::string generateDisassembly(
         Addr pc, const loader::SymbolTable *symtab) const override;
 };
+
+class Vle8ff_vMicro : public VleMicroInst
+{
+private:
+    RegId srcRegIdxArr[3];
+    RegId destRegIdxArr[2];
+public:
+    Vle8ff_vMicro(ExtMachInst _machInst, uint8_t _microVl, uint8_t _microIdx);
+
+    Fault execute(ExecContext *xc, Trace::InstRecord * traceData) const override;
+    Fault initiateAcc(ExecContext *, Trace::InstRecord *) const override;
+    Fault completeAcc(PacketPtr, ExecContext *,
+                      Trace::InstRecord *) const override;
+    using VleMicroInst::generateDisassembly;
+};
+
+class VleffEndMicroInst : public VectorMicroInst
+{
+private:
+    RegId srcRegIdxArr[8];   // vle tmp target, used to keep RAW sequence
+    RegId destRegIdxArr[1];  // vstart
+    uint8_t numSrcs;
+public:
+    VleffEndMicroInst(ExtMachInst extMachInst, uint8_t _numSrcs);
+
+    Fault execute(ExecContext* xc, Trace::InstRecord* traceData) const override;
+
+    std::string generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
+
+class Vle8ff_v : public VleMacroInst
+{
+private:
+    RegId srcRegIdxArr[2];
+    RegId destRegIdxArr[1];
+public:
+    Vle8ff_v(ExtMachInst _machInst);
+
+    using VleMacroInst::generateDisassembly;
+};
+
 
 class VlWholeMacroInst : public VectorMemMacroInst
 {

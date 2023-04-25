@@ -478,6 +478,14 @@ decode QUADRANT default Unknown::unknown() {
                     0x0b: VlmOp::vlm_v({{
                         Vd_ub[i] = Mem_vc.as<uint8_t>()[i];
                     }}, inst_flags=VectorUnitStrideMaskLoadOp);
+                    0x10: VleffOp::vle8ff_v({{
+                        if ((machInst.vm || elem_mask(v0, ei)) &&
+                            i < this->microVl) {
+                            Vd_ub[i] = Mem_vc.as<uint8_t>()[i];
+                        } else {
+                            Vd_ub[i] = Vs2_ub[i];
+                        }
+                    }});
                 }
                 0x1: VlIndexOp::vluxei8_v({{
                     Vd_vu[vdElemIdx] = Mem_vc.as<vu>()[0];

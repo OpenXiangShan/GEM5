@@ -99,6 +99,23 @@ def format VleOp(
                  'VleMacroInst', exec_template_base='Vle')
 }};
 
+def format VleffOp(
+    memacc_code,
+    ea_code={{ EA = Rs1 + VLENB * microIdx; }},
+    mem_flags=[],
+    inst_flags=[]
+) {{
+    base_class='VleffMacroInst'
+    postacc_code=''
+    iop = InstObjParams(name, Name, base_class,
+        {'ea_code': ea_code,
+         'memacc_code': memacc_code,
+         'postacc_code': postacc_code },
+        inst_flags)
+
+    decode_block = BasicDecode.subst(iop)
+}};
+
 def format VseOp(
     memacc_code,
     ea_code={{ EA = Rs1 + VLENB * microIdx; }},
