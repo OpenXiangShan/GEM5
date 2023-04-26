@@ -162,7 +162,7 @@ class MemDepUnit
     void dumpLists();
 
   private:
-
+    CPU* cpu;
     /** Completes a memory instruction. */
     void completed(const DynInstPtr &inst);
 

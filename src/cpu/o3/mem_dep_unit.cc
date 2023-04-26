@@ -57,7 +57,7 @@ MemDepUnit::MemDepUnit() : iqPtr(NULL), stats(nullptr) {}
 MemDepUnit::MemDepUnit(const BaseO3CPUParams &params)
     : _name(params.name + ".memdepunit"),
       depPred(params.store_set_clear_period, params.SSITSize,
-              params.LFSTSize),
+              params.LFSTSize,params.store_set_clear_thres,params.LFSTEntrySize),
       iqPtr(NULL),
       stats(nullptr)
 {
@@ -96,11 +96,12 @@ MemDepUnit::init(const BaseO3CPUParams &params, ThreadID tid, CPU *cpu)
     _name = csprintf("%s.memDep%d", params.name, tid);
     id = tid;
 
-    depPred.init(params.store_set_clear_period, params.SSITSize,
-            params.LFSTSize);
+    depPred.init(params.store_set_clear_period, params.store_set_clear_thres, params.SSITSize,
+            params.LFSTSize, params.LFSTEntrySize);
 
     std::string stats_group_name = csprintf("MemDepUnit__%i", tid);
     cpu->addStatGroup(stats_group_name.c_str(), &stats);
+    this->cpu = cpu;
 }
 
 MemDepUnit::MemDepUnitStats::MemDepUnitStats(statistics::Group *parent)
@@ -222,9 +223,21 @@ MemDepUnit::insert(const DynInstPtr &inst)
                                 std::begin(storeBarrierSNs),
                                 std::end(storeBarrierSNs));
     } else {
-        InstSeqNum dep = depPred.checkInst(inst->pcState().instAddr());
-        if (dep != 0)
-            producing_stores.push_back(dep);
+        // InstSeqNum dep = depPred.checkInst(inst->pcState().instAddr());
+        // if (dep != 0)
+        //     producing_stores.push_back(dep);
+        std::vector<InstSeqNum> dep = {};
+        if (inst->isLoad()) {
+            dep = depPred.checkInst(inst->pcState().instAddr());
+            if (depPred.checkInstStrict(inst->pcState().instAddr())) {
+                //inst->staticInst->setLoadStrict();
+            }
+        }
+        if (!dep.empty()) {
+            for (int i=0;i<dep.size();i++) {
+                producing_stores.push_back(dep[i]);
+            }
+        }
     }
 
     std::vector<MemDepEntryPtr> store_entries;
@@ -289,7 +302,7 @@ MemDepUnit::insert(const DynInstPtr &inst)
                 inst->pcState(), inst->seqNum);
 
         depPred.insertStore(inst->pcState().instAddr(), inst->seqNum,
-                inst->threadNumber);
+                inst->threadNumber, cpu->curCycle());
 
         ++stats.insertedStores;
     } else if (inst->isLoad()) {
@@ -311,7 +324,7 @@ MemDepUnit::insertNonSpec(const DynInstPtr &inst)
                 inst->pcState(), inst->seqNum);
 
         depPred.insertStore(inst->pcState().instAddr(), inst->seqNum,
-                inst->threadNumber);
+                inst->threadNumber, cpu->curCycle());
 
         ++stats.insertedStores;
     } else if (inst->isLoad()) {
