@@ -133,7 +133,10 @@ class LoopPredictor
           if (way.conf < maxConf && identical) {
             way.conf++;
           } else if (way.conf > 0 && !identical) {
-            way.conf--;
+            way.conf -= 4;
+            if (way.conf < 0) {
+              way.conf = 0;
+            }
           }
           if (!main_found) {
             // not in main storage, write into main storage
@@ -148,9 +151,10 @@ class LoopPredictor
               loopStorage[idx][tag].conf = 0;
             // }
           } else {
-            // in main storage, update conf
-            DPRINTF(LoopPredictor, "loop end and in storage, updating conf, mispred %d\n", mispredicted);
+            // in main storage, update conf and tripCnt
+            DPRINTF(LoopPredictor, "loop end and in storage, updating conf and tripCnt, mispred %d\n", mispredicted);
             loopStorage[idx][tag].conf = way.conf;
+            loopStorage[idx][tag].tripCnt = way.specCnt;
           }
           way.tripCnt = way.specCnt;
           way.specCnt = 0;
