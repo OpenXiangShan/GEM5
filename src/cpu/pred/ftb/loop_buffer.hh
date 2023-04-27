@@ -55,7 +55,7 @@ class LoopBuffer
     std::pair<Addr, std::vector<InstDesc>> loopInsts;
     Addr loopBranchPC;
     // entry is pinned when current loop is still require by fetch
-    bool pinned{false};
+    int pinnedCounter{0};
     int loopInstCounter{0};
 
     // store fetch stream infos of entry before entering loop
@@ -78,7 +78,7 @@ class LoopBuffer
             if (lp->isLoopBranchConf(loopBranchPC)) {
                 DPRINTF(LoopBuffer, "loop branch %#lx conf in lp, loop buffer activated\n", loopBranchPC);
                 active = true;
-                pinned = true;
+                pinnedCounter += 1;
                 return true;
             } else {
                 DPRINTF(LoopBuffer, "loop branch %#lx is not confident, don't activate loop buffer\n", loopBranchPC);
@@ -163,7 +163,7 @@ class LoopBuffer
     void commitLoopPeek(Addr pc, Addr branch_pc) {
         const auto &it = specLoopInsts.find(pc);
         DPRINTF(LoopBuffer, "commit loop peek, pc %#lx, branch pc %#lx\n", pc, branch_pc);
-        if (!pinned) {
+        if (!pinned()) {
             if (it != specLoopInsts.end()) {
                 if (it->second.back().pc == branch_pc) {
                     loopInsts.first = pc;
@@ -207,20 +207,21 @@ class LoopBuffer
 
     void clearState() {
         loopInstCounter = 0;
+        pinnedCounter = 0;
     }
 
     bool tryUnpin() {
-        DPRINTF(LoopBuffer, "all loop inst consumed by fetch, unpin loop buffer\n");
-        if (!isActive()) {
-            pinned = false;
+        DPRINTF(LoopBuffer, "all loop inst consumed by fetch, unpin loop buffer pinned counter %d for 1 time\n", pinnedCounter);
+        if (pinnedCounter > 0) {
+            pinnedCounter -= 1;
             return true;
-        } else {
-            DPRINTF(LoopBuffer, "may be activated by following loop, skip unpin\n");
-            return false;
         }
+        return false;
     }
 
     void setLp(LoopPredictor *lp) { this->lp = lp; }
+
+    bool pinned() { return pinnedCounter > 0; }
 };
 }  // namespace ftb_pred
 }  // namespace branch_prediction

@@ -551,6 +551,10 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
         lp.endRepair();
     }
 
+    if (enableLoopBuffer) {
+        lb.clearState();
+    }
+
     stream.resolved = true;
 
     // recover history to the moment doing prediction
@@ -574,6 +578,10 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
                 "Shift in history %s\n", s0History);
 
     printStream(stream);
+
+    if (enableLoopBuffer) {
+        lb.recordNewestStreamOutsideLoop(stream);
+    }
 
     
     // inc stream id because current stream ends
@@ -638,6 +646,10 @@ DecoupledBPUWithFTB::nonControlSquash(unsigned target_id, unsigned stream_id,
         lp.endRepair();
     }
 
+    if (enableLoopBuffer) {
+        lb.clearState();
+    }
+
     
     if (stream.isExit) {
         dbpFtbStats.nonControlSquashOnLoopPredictorPredExit++;
@@ -669,6 +681,10 @@ DecoupledBPUWithFTB::nonControlSquash(unsigned target_id, unsigned stream_id,
     // fetching from a new fsq entry
     auto pc = inst_pc.instAddr();
     fetchTargetQueue.squash(target_id + 1, ftq_demand_stream_id + 1, pc);
+
+    if (enableLoopBuffer) {
+        lb.recordNewestStreamOutsideLoop(stream);
+    }
 
     s0PC = pc;
     fsqId = stream_id + 1;
@@ -733,6 +749,10 @@ DecoupledBPUWithFTB::trapSquash(unsigned target_id, unsigned stream_id,
         lp.endRepair();
     }
 
+    if (enableLoopBuffer) {
+        lb.clearState();
+    }
+
     // recover history info
     s0History = stream.history;
     int real_shamt;
@@ -753,7 +773,9 @@ DecoupledBPUWithFTB::trapSquash(unsigned target_id, unsigned stream_id,
     fetchTargetQueue.squash(target_id + 1, ftq_demand_stream_id,
                             inst_pc.instAddr());
     
-
+    if (enableLoopBuffer) {
+        lb.recordNewestStreamOutsideLoop(stream);
+    }
 
     s0PC = inst_pc.instAddr();
 
@@ -1362,8 +1384,7 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
             s0PC = lb.streamBeforeLoop.predBranchInfo.getEnd();
             lb.deactivate(false);
         }
-        DPRINTF(LoopBuffer, "stream before loop:\n");
-        printStream(lb.streamBeforeLoop);
+
 
         if (endLoop && !conf) {
             dbpFtbStats.predLoopPredictorUnconfNotExit++;
@@ -1379,9 +1400,13 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
     entry.loopRedirectInfos = lpRedirectInfos;
     entry.fixNotExits = fixNotExits;
 
+    DPRINTF(LoopBuffer, "previous stream before loop:\n");
+    printStream(lb.streamBeforeLoop);
     if (enableLoopBuffer && !lb.isActive()) {
         lb.recordNewestStreamOutsideLoop(entry);
     }
+    DPRINTF(LoopBuffer, "now stream before loop:\n");
+    printStream(lb.streamBeforeLoop);
 
 
 

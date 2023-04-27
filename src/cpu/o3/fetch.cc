@@ -1776,6 +1776,11 @@ Fetch::fetch(bool &status_change)
                 DPRINTF(Fetch, "Branch detected with PC = %s\n", this_pc);
             }
             cond_taken_backward = predictedBranch && next_pc->instAddr() < this_pc.instAddr() && staticInst->isCondCtrl();
+            if (enableLoopBuffer) {
+                if (!predictedBranch && instruction->staticInst->isCondCtrl()) {
+                    notTakenBranchEncountered = true;
+                }
+            }
 
             newMacro |= this_pc.instAddr() != next_pc->instAddr();
 
@@ -1823,18 +1828,27 @@ Fetch::fetch(bool &status_change)
         }
     }
 
-    if (enableLoopBuffer && isFTBPred() && !currentFetchTargetInLoop) {
+    if (enableLoopBuffer && isFTBPred()) {
         if (ftqEmpty()) {
             currentLoopIter = 0;
-            // try to record static insts of current ftq entry to loop buffer spec entry
-            if (cond_taken_backward && currentFtqEntryInsts.second.size() <= loopBuffer->maxLoopInsts) {
-                DPRINTF(LoopBuffer, "ftq entry ended by backward taken conditional branch, try to record insts in loop buffer, pc %#lx\n",
-                    currentFtqEntryInsts.first);
-                loopBuffer->fillSpecLoopBuffer(currentFtqEntryInsts.first, currentFtqEntryInsts.second);
+            
+            if (!currentFetchTargetInLoop) {
+                // try to record static insts of current ftq entry to loop buffer spec entry
+                if (cond_taken_backward && currentFtqEntryInsts.second.size() <= loopBuffer->maxLoopInsts) {
+                    if (!notTakenBranchEncountered) {
+                        DPRINTF(LoopBuffer, "ftq entry ended by backward taken conditional branch, try to record insts in loop buffer, pc %#lx\n",
+                            currentFtqEntryInsts.first);
+                        loopBuffer->fillSpecLoopBuffer(currentFtqEntryInsts.first, currentFtqEntryInsts.second);
+                    } else {
+                        DPRINTF(LoopBuffer, "not taken branch encountered in ftq entry, not record insts in loop buffer, pc %#lx\n",
+                            currentFtqEntryInsts.first);
+                    }
+                }
+                // try to record new ftq entry
+                currentFtqEntryInsts.first = this_pc.instAddr();
+                currentFtqEntryInsts.second.clear();
+                notTakenBranchEncountered = false;
             }
-            // try to record new ftq entry
-            currentFtqEntryInsts.first = this_pc.instAddr();
-            currentFtqEntryInsts.second.clear();
         }
     }
 
