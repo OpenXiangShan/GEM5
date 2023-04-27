@@ -991,10 +991,10 @@ DecoupledBPUWithFTB::squashStreamAfter(unsigned squash_stream_id)
                 squash_stream_id);
         printStream(erase_it->second);
         if (enableLoopPredictor) {
-            DPRINTF(LoopPredictor, "recovering loop entry in stream %lu\n", erase_it->first);
+            DPRINTF(LoopPredictorVerbose, "recovering loop entry in stream %lu\n", erase_it->first);
             for (int i = 0; i < numBr; i++) {
                 auto &loopInfo = erase_it->second.loopRedirectInfos[i];
-                DPRINTF(LoopPredictor, "loop entry %d: pc %#lx, endLoop %d, specCnt %d, tripCnty %d, conf %d\n",
+                DPRINTF(LoopPredictorVerbose, "loop entry %d: pc %#lx, endLoop %d, specCnt %d, tripCnty %d, conf %d\n",
                     i, loopInfo.branch_pc, loopInfo.end_loop, loopInfo.e.specCnt, loopInfo.e.tripCnt, loopInfo.e.conf);
                 if (loopInfo.e.valid) {
                     lp.recover(loopInfo, false, 0, false, true);

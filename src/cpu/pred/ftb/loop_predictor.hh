@@ -10,6 +10,7 @@
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/ftb/stream_struct.hh"
 #include "debug/LoopPredictor.hh"
+#include "debug/LoopPredictorVerbose.hh"
 
 
 namespace gem5
@@ -206,7 +207,7 @@ training_entry: %d, tripCnt %d, specCnt %d, conf %d; in_main: %d, tripCnt %d, co
     }
 
     void startRepair() {
-      DPRINTF(LoopPredictor, "start repair, setting all repair bits\n");
+      DPRINTF(LoopPredictorVerbose, "start repair, setting all repair bits\n");
       for (auto &set : loopStorage) {
         for (auto &way : set) {
           if (way.second.valid) {
@@ -217,7 +218,7 @@ training_entry: %d, tripCnt %d, specCnt %d, conf %d; in_main: %d, tripCnt %d, co
     }
 
     void endRepair() {
-      DPRINTF(LoopPredictor, "end repair, clearing all remaining repair bits\n");
+      DPRINTF(LoopPredictorVerbose, "end repair, clearing all remaining repair bits\n");
       for (auto &set : loopStorage) {
         for (auto &way : set) {
           if (way.second.valid) {

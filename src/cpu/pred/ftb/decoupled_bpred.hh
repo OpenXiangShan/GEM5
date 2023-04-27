@@ -29,6 +29,7 @@
 #include "debug/DBPFTBStats.hh"
 #include "debug/LoopBuffer.hh"
 #include "debug/LoopPredictor.hh"
+#include "debug/LoopPredictorVerbose.hh"
 #include "params/DecoupledBPUWithFTB.hh"
 
 namespace gem5
