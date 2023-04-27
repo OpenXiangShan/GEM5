@@ -553,6 +553,7 @@ IEW::squashDueToBranch(const DynInstPtr& inst, ThreadID tid)
         toCommit->squashedSeqNum[tid] = inst->seqNum;
         toCommit->squashedStreamId[tid] = inst->getFsqId();
         toCommit->squashedTargetId[tid] = inst->getFtqId();
+        toCommit->squashedLoopIter[tid] = inst->getLoopIteration();
         toCommit->branchTaken[tid] = inst->pcState().branching();
 
         set(toCommit->pc[tid], inst->pcState());
@@ -565,10 +566,11 @@ IEW::squashDueToBranch(const DynInstPtr& inst, ThreadID tid)
 
         DPRINTF(DecoupleBP,
                 "Branch misprediction (pc=%#lx) set stream id to %lu, target "
-                "id to %lu\n",
+                "id to %lu, loop iter to %u\n",
                 toCommit->pc[tid]->instAddr(),
                 toCommit->squashedStreamId[tid],
-                toCommit->squashedTargetId[tid]);
+                toCommit->squashedTargetId[tid],
+                toCommit->squashedLoopIter[tid]);
     }
 
 }
@@ -591,6 +593,7 @@ IEW::squashDueToMemOrder(const DynInstPtr& inst, ThreadID tid)
         toCommit->squashedSeqNum[tid] = inst->seqNum;
         toCommit->squashedStreamId[tid] = inst->getFsqId();
         toCommit->squashedTargetId[tid] = inst->getFtqId();
+        toCommit->squashedLoopIter[tid] = inst->getLoopIteration();
         set(toCommit->pc[tid], inst->pcState());
         toCommit->mispredictInst[tid] = NULL;
 
@@ -601,10 +604,11 @@ IEW::squashDueToMemOrder(const DynInstPtr& inst, ThreadID tid)
 
         DPRINTF(DecoupleBP,
                 "Memory violation (pc=%#lx) set stream id to %lu, target id "
-                "to %lu\n",
+                "to %lu, loop iter to %u\n",
                 toCommit->pc[tid]->instAddr(),
                 toCommit->squashedStreamId[tid],
-                toCommit->squashedTargetId[tid]);
+                toCommit->squashedTargetId[tid],
+                toCommit->squashedLoopIter[tid]);
 
 
     }

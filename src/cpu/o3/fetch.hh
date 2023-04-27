@@ -533,6 +533,8 @@ class Fetch
 
     bool enableLoopBuffer{false};
 
+    unsigned currentLoopIter{0};
+
     /** Size of instructions. */
     int instSize;
 
@@ -580,6 +582,8 @@ class Fetch
     bool currentFetchTargetInLoop;
 
     std::pair<Addr, std::vector<branch_prediction::ftb_pred::LoopBuffer::InstDesc>> currentFtqEntryInsts;
+
+    bool notTakenBranchEncountered{false};
 
   protected:
     struct FetchStatGroup : public statistics::Group

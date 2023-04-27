@@ -412,7 +412,8 @@ class DecoupledBPUWithFTB : public BPredUnit
 
     std::pair<bool, bool> decoupledPredict(const StaticInstPtr &inst,
                                            const InstSeqNum &seqNum,
-                                           PCStateBase &pc, ThreadID tid);
+                                           PCStateBase &pc, ThreadID tid,
+                                           unsigned &currentLoopIter);
 
     // redirect the stream
     void controlSquash(unsigned ftq_id, unsigned fsq_id,
@@ -420,17 +421,17 @@ class DecoupledBPUWithFTB : public BPredUnit
                        const PCStateBase &target_pc,
                        const StaticInstPtr &static_inst, unsigned inst_bytes,
                        bool actually_taken, const InstSeqNum &squashed_sn,
-                       ThreadID tid);
+                       ThreadID tid, const unsigned &currentLoopIter);
 
     // keep the stream: original prediction might be right
     // For memory violation, stream continues after squashing
     void nonControlSquash(unsigned ftq_id, unsigned fsq_id,
                           const PCStateBase &inst_pc, const InstSeqNum seq,
-                          ThreadID tid);
+                          ThreadID tid, const unsigned &currentLoopIter);
 
     // Not a control. But stream is actually disturbed
     void trapSquash(unsigned ftq_id, unsigned fsq_id, Addr last_committed_pc,
-                    const PCStateBase &inst_pc, ThreadID tid);
+                    const PCStateBase &inst_pc, ThreadID tid, const unsigned &currentLoopIter);
 
     void update(unsigned fsqID, ThreadID tid);
 

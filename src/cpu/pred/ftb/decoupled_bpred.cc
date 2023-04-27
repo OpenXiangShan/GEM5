@@ -357,7 +357,7 @@ DecoupledBPUWithFTB::trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &fetch_
 std::pair<bool, bool>
 DecoupledBPUWithFTB::decoupledPredict(const StaticInstPtr &inst,
                                const InstSeqNum &seqNum, PCStateBase &pc,
-                               ThreadID tid)
+                               ThreadID tid, unsigned &currentLoopIter)
 {
     std::unique_ptr<PCStateBase> target(pc.clone());
 
@@ -387,6 +387,7 @@ DecoupledBPUWithFTB::decoupledPredict(const StaticInstPtr &inst,
     printFetchTarget(target_to_fetch, "");
 
     auto current_loop_iter = fetchTargetQueue.getCurrentLoopIter();
+    currentLoopIter = current_loop_iter;
 
     // supplying ftq entry might be taken before pc
     // because it might just be updated last cycle
@@ -453,7 +454,8 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
                             const PCStateBase &corr_target,
                             const StaticInstPtr &static_inst,
                             unsigned control_inst_size, bool actually_taken,
-                            const InstSeqNum &seq, ThreadID tid)
+                            const InstSeqNum &seq, ThreadID tid,
+                            const unsigned &currentLoopIter)
 {
     dbpFtbStats.controlSquash++;
 
@@ -538,7 +540,7 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
             // loop branches behind the squashed branch should be recovered
             if (stream.loopRedirectInfos[i].e.valid && control_pc.instAddr() <= stream.loopRedirectInfos[i].branch_pc) {
                 DPRINTF(DecoupleBP, "Recover loop predictor for %#lx\n", stream.loopRedirectInfos[i].branch_pc);
-                lp.recover(stream.loopRedirectInfos[i], actually_taken, control_pc.instAddr(), true, false);
+                lp.recover(stream.loopRedirectInfos[i], actually_taken, control_pc.instAddr(), true, false, currentLoopIter);
             }
         }
     }
@@ -598,7 +600,7 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
 void
 DecoupledBPUWithFTB::nonControlSquash(unsigned target_id, unsigned stream_id,
                                const PCStateBase &inst_pc,
-                               const InstSeqNum seq, ThreadID tid)
+                               const InstSeqNum seq, ThreadID tid, const unsigned &currentLoopIter)
 {
     dbpFtbStats.nonControlSquash++;
     DPRINTFV(this->debugFlagOn || ::gem5::debug::DecoupleBP,
@@ -624,7 +626,7 @@ DecoupledBPUWithFTB::nonControlSquash(unsigned target_id, unsigned stream_id,
             // loop branches behind the squashed branch should be recovered
             if (stream.loopRedirectInfos[i].e.valid && inst_pc.instAddr() <= stream.loopRedirectInfos[i].branch_pc) {
                 DPRINTF(DecoupleBP, "Recover loop predictor for %#lx\n", stream.loopRedirectInfos[i].branch_pc);
-                lp.recover(stream.loopRedirectInfos[i], false, inst_pc.instAddr(), false, false);
+                lp.recover(stream.loopRedirectInfos[i], false, inst_pc.instAddr(), false, false, currentLoopIter);
             }
         }
     }
@@ -682,7 +684,7 @@ DecoupledBPUWithFTB::nonControlSquash(unsigned target_id, unsigned stream_id,
 void
 DecoupledBPUWithFTB::trapSquash(unsigned target_id, unsigned stream_id,
                          Addr last_committed_pc, const PCStateBase &inst_pc,
-                         ThreadID tid)
+                         ThreadID tid, const unsigned &currentLoopIter)
 {
     dbpFtbStats.trapSquash++;
     DPRINTF(DecoupleBP || debugFlagOn,
@@ -720,7 +722,7 @@ DecoupledBPUWithFTB::trapSquash(unsigned target_id, unsigned stream_id,
             // loop branches behind the squashed branch should be recovered
             if (stream.loopRedirectInfos[i].e.valid && inst_pc.instAddr() <= stream.loopRedirectInfos[i].branch_pc) {
                 DPRINTF(DecoupleBP, "Recover loop predictor for %#lx\n", stream.loopRedirectInfos[i].branch_pc);
-                lp.recover(stream.loopRedirectInfos[i], false, inst_pc.instAddr(), false, false);
+                lp.recover(stream.loopRedirectInfos[i], false, inst_pc.instAddr(), false, false, currentLoopIter);
             }
         }
     }
@@ -827,6 +829,7 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
         // check loop predictor prediction
         auto lp_infos = stream.loopRedirectInfos;
         DPRINTF(LoopPredictor, "at commit fsqid %d, real_branch_pc %#lx, squash type %d, loop predcition infos:\n", it->first, stream.exeBranchInfo.pc, stream.squashType);
+        DPRINTF(LoopBuffer, "from loop buffer %d, doubling %d, exit %d\n", stream.fromLoopBuffer, stream.isDouble, stream.isExit);
         for (int i = 0; i < numBr; ++i) {
             auto &lp_info = lp_infos[i];
             DPRINTF(LoopPredictor, "    branch_pc %#lx, end_loop %d, specCnt %d, tripCnt %d, conf %d\n",
@@ -997,7 +1000,7 @@ DecoupledBPUWithFTB::squashStreamAfter(unsigned squash_stream_id)
                 DPRINTF(LoopPredictorVerbose, "loop entry %d: pc %#lx, endLoop %d, specCnt %d, tripCnty %d, conf %d\n",
                     i, loopInfo.branch_pc, loopInfo.end_loop, loopInfo.e.specCnt, loopInfo.e.tripCnt, loopInfo.e.conf);
                 if (loopInfo.e.valid) {
-                    lp.recover(loopInfo, false, 0, false, true);
+                    lp.recover(loopInfo, false, 0, false, true, 0);
                 }
             }
         }

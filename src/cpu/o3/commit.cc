@@ -594,6 +594,7 @@ Commit::squashAll(ThreadID tid)
 
     toIEW->commitInfo[tid].squashedStreamId = committedStreamId;
     toIEW->commitInfo[tid].squashedTargetId = committedTargetId;
+    toIEW->commitInfo[tid].squashedLoopIter = committedLoopIter;
 
     squashInflightAndUpdateVersion(tid);
 }
@@ -927,6 +928,7 @@ Commit::commit()
             }
             toIEW->commitInfo[tid].squashedStreamId = fromIEW->squashedStreamId[tid];
             toIEW->commitInfo[tid].squashedTargetId = fromIEW->squashedTargetId[tid];
+            toIEW->commitInfo[tid].squashedLoopIter = fromIEW->squashedLoopIter[tid];
 
             // toIEW->commitInfo[tid].doneFsqId =
             //                         toIEW->commitInfo[tid].squashInst->getFsqId();
@@ -1158,6 +1160,7 @@ Commit::commitInsts()
                 }
                 committedStreamId = head_inst->getFsqId();
                 committedTargetId = head_inst->getFtqId();
+                committedLoopIter = head_inst->getLoopIteration();
 
                 if (tid == 0)
                     canHandleInterrupts = !head_inst->isDelayedCommit();

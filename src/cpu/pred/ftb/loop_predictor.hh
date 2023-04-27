@@ -179,7 +179,7 @@ training_entry: %d, tripCnt %d, specCnt %d, conf %d; in_main: %d, tripCnt %d, co
       return loopExit;
     }
 
-    void recover(LoopRedirectInfo info, bool actually_taken, Addr squash_inst_pc, bool is_control, bool total_flushed) {
+    void recover(LoopRedirectInfo info, bool actually_taken, Addr squash_inst_pc, bool is_control, bool in_walk, unsigned intraIter) {
       if (info.e.valid) {
         DPRINTF(LoopPredictor, "redirecting loop branch: taken: %d, pc: %#lx, tripCnt: %d, specCnt: %d, conf: %d, pred use pc: %#lx\n",
           actually_taken, squash_inst_pc, info.e.tripCnt, info.e.specCnt, info.e.conf, info.branch_pc);
@@ -189,9 +189,9 @@ training_entry: %d, tripCnt %d, specCnt %d, conf %d; in_main: %d, tripCnt %d, co
         if (it != loopStorage[idx].end()) {
           DPRINTF(LoopPredictor, "found idx %d\n", idx);
           auto &way = it->second;
-          if (total_flushed) {
+          if (in_walk) {
             if (way.repair) {
-              DPRINTF(LoopPredictor, "total flush find unrepaired entry, recover specCnt to %d\n", info.e.specCnt);
+              DPRINTF(LoopPredictor, "find unrepaired entry in walk, recover specCnt to %d\n", info.e.specCnt);
               way.specCnt = info.e.specCnt;
             }
           } else {
@@ -201,8 +201,8 @@ training_entry: %d, tripCnt %d, specCnt %d, conf %d; in_main: %d, tripCnt %d, co
               DPRINTF(LoopPredictor, "mispredicted loop end of, sychronizing specCnt to 0\n");
               way.specCnt = 0;
             } else if (squash_inst_pc < info.branch_pc) {
-              DPRINTF(LoopPredictor, "loop branch is not in this stream, recovering specCnt to %d\n", info.e.specCnt);
-              way.specCnt = info.e.specCnt;
+              way.specCnt = info.e.specCnt + intraIter;
+              DPRINTF(LoopPredictor, "loop branch is not in this stream, intraIter %u, recovering specCnt to %d\n", intraIter, way.specCnt);
             }
           }
           way.repair = false;

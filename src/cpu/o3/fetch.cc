@@ -375,6 +375,8 @@ Fetch::resetStage()
     _status = Inactive;
     if (enableLoopBuffer) {
         loopBuffer->deactivate(true);
+        currentLoopIter = 0;
+        loopBuffer->clearState();
     }
 
     if (isStreamPred()) {
@@ -641,12 +643,12 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
         else if (isFTBPred()) {
             std::tie(predict_taken, usedUpFetchTargets) =
                 dbpftb->decoupledPredict(
-                    inst->staticInst, inst->seqNum, next_pc, tid);
+                    inst->staticInst, inst->seqNum, next_pc, tid, currentLoopIter);
             if (usedUpFetchTargets) {
                 DPRINTF(DecoupleBP, "Used up fetch targets.\n");
             }
+            inst->setLoopIteration(currentLoopIter);
         }
-
     }
 
     // For decoupled frontend, the instruction type is predicted with BTB
@@ -994,6 +996,8 @@ Fetch::doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst,
 
     if (enableLoopBuffer) {
         loopBuffer->deactivate(true);
+        currentLoopIter = 0;
+        loopBuffer->clearState();
 
         currentFtqEntryInsts.first = new_pc.instAddr();
         currentFtqEntryInsts.second.clear();
@@ -1282,7 +1286,7 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
                         mispred_inst->pcState(), *fromCommit->commitInfo[tid].pc,
                         mispred_inst->staticInst, mispred_inst->getInstBytes(),
                         fromCommit->commitInfo[tid].branchTaken,
-                        mispred_inst->seqNum, tid);
+                        mispred_inst->seqNum, tid, mispred_inst->getLoopIteration());
                 }
             } else if (fromCommit->commitInfo[tid].isTrapSquash) {
                 DPRINTF(Fetch, "Treating as trap squash\n",tid);
@@ -1297,7 +1301,7 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
                         fromCommit->commitInfo[tid].squashedTargetId,
                         fromCommit->commitInfo[tid].squashedStreamId,
                         fromCommit->commitInfo[tid].committedPC,
-                        *fromCommit->commitInfo[tid].pc, tid);
+                        *fromCommit->commitInfo[tid].pc, tid, fromCommit->commitInfo[tid].squashedLoopIter);
                 }
 
 
@@ -1315,7 +1319,7 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
                         dbpftb->nonControlSquash(
                             fromCommit->commitInfo[tid].squashedTargetId,
                             fromCommit->commitInfo[tid].squashedStreamId,
-                            *fromCommit->commitInfo[tid].pc, 0, tid);
+                            *fromCommit->commitInfo[tid].pc, 0, tid, fromCommit->commitInfo[tid].squashedLoopIter);
                     }
                 } else {
                     DPRINTF(
@@ -1379,7 +1383,7 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
                         *fromDecode->decodeInfo[tid].nextPC,
                         mispred_inst->staticInst, mispred_inst->getInstBytes(),
                         fromDecode->decodeInfo[tid].branchTaken,
-                        mispred_inst->seqNum, tid);
+                        mispred_inst->seqNum, tid, mispred_inst->getLoopIteration());
                 }
             } else {
                 warn("Unexpected non-control squash from decode.\n");
@@ -1821,6 +1825,7 @@ Fetch::fetch(bool &status_change)
 
     if (enableLoopBuffer && isFTBPred() && !currentFetchTargetInLoop) {
         if (ftqEmpty()) {
+            currentLoopIter = 0;
             // try to record static insts of current ftq entry to loop buffer spec entry
             if (cond_taken_backward && currentFtqEntryInsts.second.size() <= loopBuffer->maxLoopInsts) {
                 DPRINTF(LoopBuffer, "ftq entry ended by backward taken conditional branch, try to record insts in loop buffer, pc %#lx\n",

@@ -336,6 +336,8 @@ class DynInst : public ExecContext, public RefCounted
     unsigned fsqId;
     /** The fetch target queue ID of the instruction. */
     unsigned ftqId;
+    /** The number of loop iteration within an fsq entry of the instruction. */
+    unsigned loopIteration;
 
     /** The Macroop if one exists */
     const StaticInstPtr macroop;
@@ -1241,6 +1243,18 @@ class DynInst : public ExecContext, public RefCounted
     getFtqId()
     {
         return ftqId;
+    }
+
+    void
+    setLoopIteration(unsigned iter)
+    {
+        loopIteration = iter;
+    }
+
+    unsigned
+    getLoopIteration()
+    {
+        return loopIteration;
     }
 
     unsigned getInstBytes()
