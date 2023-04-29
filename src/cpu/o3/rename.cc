@@ -1403,6 +1403,8 @@ Rename::readFreeEntries(ThreadID tid)
         freeEntries[tid].robEntries =
             fromCommit->commitInfo[tid].freeROBEntries;
         emptyROB[tid] = fromCommit->commitInfo[tid].emptyROB;
+        if (emptyROB[tid])
+            DPRINTF(Rename, "[tid:%i] ROB is empty now.\n", tid);
     }
 
     DPRINTF(Rename, "[tid:%i] Free IQ: %i, Free ROB: %i, "

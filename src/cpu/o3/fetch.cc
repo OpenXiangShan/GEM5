@@ -1252,6 +1252,7 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
             auto mispred_inst = fromCommit->commitInfo[tid].mispredictInst;
             // TODO: write dbpftb conditions
             if (mispred_inst) {
+                DPRINTF(Fetch, "Use mispred inst to redirect, treating as control squash\n");
                 if (isStreamPred()) {
                     dbsp->controlSquash(
                         mispred_inst->getFtqId(), mispred_inst->getFsqId(),
@@ -1268,6 +1269,7 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
                         mispred_inst->seqNum, tid);
                 }
             } else if (fromCommit->commitInfo[tid].isTrapSquash) {
+                DPRINTF(Fetch, "Treating as trap squash\n",tid);
                 if (isStreamPred()) {
                     dbsp->trapSquash(
                         fromCommit->commitInfo[tid].squashedTargetId,
@@ -1286,9 +1288,8 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
             } else {
                 if (fromCommit->commitInfo[tid].pc &&
                     fromCommit->commitInfo[tid].squashedStreamId != 0) {
-                    DPRINTF(
-                        DecoupleBP,
-                        "Squash with stream id and target id from IEW\n");
+                    DPRINTF(Fetch,
+                            "Squash with stream id and target id from IEW\n");
                     if (isStreamPred()) {
                         dbsp->nonControlSquash(
                             fromCommit->commitInfo[tid].squashedTargetId,
@@ -1302,7 +1303,7 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
                     }
                 } else {
                     DPRINTF(
-                        DecoupleBP,
+                        Fetch,
                         "Dont squash dbq because no meaningful stream\n");
                 }
             }
@@ -2078,9 +2079,6 @@ Fetch::IcachePort::recvTimingResp(PacketPtr pkt)
 
     DPRINTF(Fetch, "received pkt addr=%#lx, req addr=%#lx\n", pkt->getAddr(),
             pkt->req->getVaddr());
-    for (int i = 0;i < pkt->getSize();i++) {
-        DPRINTF(Fetch, "data[%d]=%#x\n", i, pkt->getConstPtr<uint8_t>()[i]);
-    }
 
     fetch->processCacheCompletion(pkt);
 

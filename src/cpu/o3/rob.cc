@@ -525,20 +525,28 @@ unsigned
 ROB::computeDynSquashWidth(unsigned uncommitted_insts, unsigned to_squash)
 {
     unsigned dyn_squash_width = 0;
+    double expected_cycles;
     switch (robWalkPolicy) {
         case ROBWalkPolicy::Rollback:
             dyn_squash_width = rollbackWidth;
+            DPRINTF(ROB, "Recovery with rollback, walk ROB with width %u\n", dyn_squash_width);
             break;
 
         case ROBWalkPolicy::Replay:
-            dyn_squash_width = ceil((double)to_squash /
-                                    ((double)uncommitted_insts / replayWidth));
+            expected_cycles =
+                std::max(2.0, ((double)uncommitted_insts / replayWidth));
+            dyn_squash_width = ceil((double)to_squash / expected_cycles);
             dyn_squash_width = std::max(dyn_squash_width, 1u);
+            DPRINTF(
+                ROB,
+                "Recovery with replay, walk ROB with width %u in %f cycles\n",
+                dyn_squash_width, expected_cycles);
             break;
 
         case ROBWalkPolicy::ConstCycle:
             dyn_squash_width = ceil((double) to_squash / (double) constSquashCycle);
             dyn_squash_width = std::max(dyn_squash_width, rollbackWidth);
+            DPRINTF(ROB, "Recovery with const cycle, walk ROB with width %u\n", dyn_squash_width);
             break;
 
         default:
