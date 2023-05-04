@@ -683,4 +683,5 @@ class MultiPrefetcher(BasePrefetcher):
     on_data  = True
     on_inst  = False
 
-    prefetchers = VectorParam.BasePrefetcher([], "Array of prefetchers")
+    prefetchers = VectorParam.BasePrefetcher([SMSPrefetcher(), BOPPrefetcher()],
+        "Array of prefetchers")

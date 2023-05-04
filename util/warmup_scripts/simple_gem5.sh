@@ -103,7 +103,7 @@ function run() {
         --mem-size=8GB --cacheline_size=64 \
         --l1i_size=64kB --l1i_assoc=8 \
         --l1d_size=64kB --l1d_assoc=8 \
-        --l2_size=1MB --l2_assoc=8 --l2-hwp-type=SMSPrefetcher\
+        --l2_size=1MB --l2_assoc=8 --l2-hwp-type=MultiPrefetcher \
         --l3cache --l3_size=6MB --l3_assoc=6 \
         --bp-type=DecoupledBPUWithFTB \
         --enable-difftest \
