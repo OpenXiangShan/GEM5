@@ -37,7 +37,7 @@ class LoopPredictor
 
     unsigned maxConf = 7;
     // do not cover loop with less than 100 iterations, since tage may predict it well
-    unsigned minTripCnt = 100;
+    unsigned minTripCnt = 1;
     
 
     std::vector<std::map<Addr, LoopEntry>> loopStorage;
@@ -138,23 +138,26 @@ class LoopPredictor
               way.conf = 0;
             }
           }
-          if (!main_found) {
-            // not in main storage, write into main storage
-            // if (way.specCnt > minTripCnt) {
-              int idx = getIndex(pc);
-              DPRINTF(LoopPredictor, "loop end detected, specCnt %d, writting to loopStorage idx %d, tag %d\n",
-                way.specCnt, idx, tag);
-              int tripCnt = way.specCnt;
-              loopStorage[idx][tag].valid = true;
-              loopStorage[idx][tag].specCnt = 0;
-              loopStorage[idx][tag].tripCnt = tripCnt;
-              loopStorage[idx][tag].conf = 0;
-            // }
-          } else {
-            // in main storage, update conf and tripCnt
-            DPRINTF(LoopPredictor, "loop end and in storage, updating conf and tripCnt, mispred %d\n", mispredicted);
-            loopStorage[idx][tag].conf = way.conf;
-            loopStorage[idx][tag].tripCnt = way.specCnt;
+          int tripCnt = way.specCnt;
+          if (tripCnt >= minTripCnt) {
+            DPRINTF(LoopPredictor, "new tripCnt %d\n", tripCnt);
+            if (!main_found) {
+              // not in main storage, write into main storage
+              // if (way.specCnt > minTripCnt) {
+                int idx = getIndex(pc);
+                DPRINTF(LoopPredictor, "loop end detected, specCnt %d, writting to loopStorage idx %d, tag %d\n",
+                  way.specCnt, idx, tag);
+                loopStorage[idx][tag].valid = true;
+                loopStorage[idx][tag].specCnt = 0;
+                loopStorage[idx][tag].tripCnt = tripCnt;
+                loopStorage[idx][tag].conf = 0;
+              // }
+            } else {
+              // in main storage, update conf and tripCnt
+              DPRINTF(LoopPredictor, "loop end and in storage, updating conf and tripCnt, mispred %d\n", mispredicted);
+              loopStorage[idx][tag].conf = way.conf;
+              loopStorage[idx][tag].tripCnt = way.specCnt;
+            }
           }
           way.tripCnt = way.specCnt;
           way.specCnt = 0;
