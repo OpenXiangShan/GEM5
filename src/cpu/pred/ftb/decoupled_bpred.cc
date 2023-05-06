@@ -219,9 +219,13 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     ADD_STAT(predLoopPredictorExit, statistics::units::Count::get(), "loop predictor exits at pred"),
     ADD_STAT(predLoopPredictorUnconfNotExit, statistics::units::Count::get(), "loop predictor does not exit at pred because of unconf"),
     ADD_STAT(predLoopPredictorConfFixNotExit, statistics::units::Count::get(), "loop predictor confident and fix other predictor not taken in non-exit loop branch at pred"),
+    ADD_STAT(predFTBUnseenLoopBranchInLp, statistics::units::Count::get(), "loop predictor recorded loop branch that is not in ftb encountered"),
+    ADD_STAT(predFTBUnseenLoopBranchExitInLp, statistics::units::Count::get(), "loop predictor recorded loop branch that is not in ftb encountered and exited"),
     ADD_STAT(commitLoopPredictorExit, statistics::units::Count::get(), "loop predictor pred loop exits detected at commit"),
     ADD_STAT(commitLoopPredictorExitCorrect, statistics::units::Count::get(), "loop predictor correctly pred loop exits detected at commit"),
     ADD_STAT(commitLoopPredictorExitWrong, statistics::units::Count::get(), "loop predictor wrongly pred loop exits detected at commit"),
+    ADD_STAT(commitFTBUnseenLoopBranchInLp, statistics::units::Count::get(), "loop predictor recorded loop branch that is not in ftb encountered at commit"),
+    ADD_STAT(commitFTBUnseenLoopBranchExitInLp, statistics::units::Count::get(), "loop predictor recorded loop branch that is not in ftb encountered and exited at commit"),
     ADD_STAT(commitLoopPredictorConfFixNotExit, statistics::units::Count::get(), "loop predictor confident and fix other predictor not taken in non-exit loop branch at commit"),
     ADD_STAT(commitLoopPredictorConfFixNotExitCorrect, statistics::units::Count::get(), "loop predictor confident and fix other predictor not taken in non-exit loop branch correctly at commit"),
     ADD_STAT(commitLoopPredictorConfFixNotExitWrong, statistics::units::Count::get(), "loop predictor confident and fix other predictor not taken in non-exit loop branch wrongly at commit"),
@@ -246,6 +250,19 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     fsqEntryDist.init(0, fsqSize, 1);
     commitLoopBufferEntryInstNum.init(0, 16, 1);
     commitLoopBufferDoubleEntryInstNum.init(0, 16, 1);
+}
+
+DecoupledBPUWithFTB::BpTrace::BpTrace(FetchStream &stream, const DynInstPtr &inst, bool mispred)
+{
+    _tick = curTick();
+    Addr pc = inst->pcState().instAddr();
+    Addr target = inst->pcState().clone()->as<RiscvISA::PCState>().npc();
+    Addr fallThru = inst->pcState().clone()->as<RiscvISA::PCState>().getFallThruPC();
+    BranchInfo info(pc, target, inst->staticInst, fallThru-pc);
+    set(stream.startPC, pc, info.getType(), inst->branching(), mispred, fallThru, stream.predSource, target);
+    // for (auto it = _uint64_data.begin(); it != _uint64_data.end(); it++) {
+    //     printf("%s: %ld\n", it->first.c_str(), it->second);
+    // }
 }
 
 void
@@ -546,7 +563,7 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
     FetchTargetId ftq_demand_stream_id;
 
 
-    stream.exeBranchInfo = BranchInfo(control_pc, corr_target, static_inst, control_inst_size);
+    stream.exeBranchInfo = BranchInfo(control_pc.instAddr(), corr_target.instAddr(), static_inst, control_inst_size);
     stream.exeTaken = actually_taken;
     stream.squashPC = control_pc.instAddr();
 
@@ -559,6 +576,12 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
             if (stream.loopRedirectInfos[i].e.valid && control_pc.instAddr() <= stream.loopRedirectInfos[i].branch_pc) {
                 DPRINTF(DecoupleBP, "Recover loop predictor for %#lx\n", stream.loopRedirectInfos[i].branch_pc);
                 lp.recover(stream.loopRedirectInfos[i], actually_taken, control_pc.instAddr(), true, false, currentLoopIter);
+            }
+        }
+        for (auto &info : stream.unseenLoopRedirectInfos) {
+            if (info.e.valid && control_pc.instAddr() <= info.branch_pc) {
+                DPRINTF(DecoupleBP, "Recover loop predictor for unseen branch %#lx\n", info.branch_pc);
+                lp.recover(info, actually_taken, control_pc.instAddr(), true, false, currentLoopIter);
             }
         }
     }
@@ -653,6 +676,12 @@ DecoupledBPUWithFTB::nonControlSquash(unsigned target_id, unsigned stream_id,
             if (stream.loopRedirectInfos[i].e.valid && inst_pc.instAddr() <= stream.loopRedirectInfos[i].branch_pc) {
                 DPRINTF(DecoupleBP, "Recover loop predictor for %#lx\n", stream.loopRedirectInfos[i].branch_pc);
                 lp.recover(stream.loopRedirectInfos[i], false, inst_pc.instAddr(), false, false, currentLoopIter);
+            }
+        }
+        for (auto &info : stream.unseenLoopRedirectInfos) {
+            if (info.e.valid && inst_pc.instAddr() <= info.branch_pc) {
+                DPRINTF(DecoupleBP, "Recover loop predictor for unseen branch %#lx\n", info.branch_pc);
+                lp.recover(info, false, inst_pc.instAddr(), false, false, currentLoopIter);
             }
         }
     }
@@ -757,6 +786,12 @@ DecoupledBPUWithFTB::trapSquash(unsigned target_id, unsigned stream_id,
             if (stream.loopRedirectInfos[i].e.valid && inst_pc.instAddr() <= stream.loopRedirectInfos[i].branch_pc) {
                 DPRINTF(DecoupleBP, "Recover loop predictor for %#lx\n", stream.loopRedirectInfos[i].branch_pc);
                 lp.recover(stream.loopRedirectInfos[i], false, inst_pc.instAddr(), false, false, currentLoopIter);
+            }
+        }
+        for (auto &info : stream.unseenLoopRedirectInfos) {
+            if (info.e.valid && inst_pc.instAddr() <= info.branch_pc) {
+                DPRINTF(DecoupleBP, "Recover loop predictor for unseen branch %#lx\n", info.branch_pc);
+                lp.recover(info, false, inst_pc.instAddr(), false, false, currentLoopIter);
             }
         }
     }
@@ -952,9 +987,7 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
             }
         }
 
-        if (enableDB) {
-            bptrace->write_record(BpTrace(stream));
-        }
+
 
         if (enableLoopBuffer) {
             // if current stream is a short loop, try to peek loop buffer
@@ -982,7 +1015,7 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
 }
 
 void
-DecoupledBPUWithFTB::commitBranch(const DynInstPtr &inst, bool miss, bool loop_exit)
+DecoupledBPUWithFTB::commitBranch(const DynInstPtr &inst, bool miss)
 {
     // do overall statistics
     if (inst->isUncondCtrl()) {
@@ -1043,6 +1076,15 @@ DecoupledBPUWithFTB::commitBranch(const DynInstPtr &inst, bool miss, bool loop_e
             }
         }
     }
+    for (auto &info : entry.unseenLoopRedirectInfos) {
+        if (info.branch_pc == inst->pcState().instAddr()) {
+            auto &loopEntry = info.e;
+            dbpFtbStats.commitFTBUnseenLoopBranchInLp++;
+            if (loopEntry.specCnt == loopEntry.tripCnt) {
+                dbpFtbStats.commitFTBUnseenLoopBranchExitInLp++;
+            }
+        }
+    }
     for (auto component : components) {
         component->commitBranch(entry, inst);
     }
@@ -1066,6 +1108,15 @@ DecoupledBPUWithFTB::squashStreamAfter(unsigned squash_stream_id)
                 if (loopInfo.e.valid) {
                     lp.recover(loopInfo, false, 0, false, true, 0);
                 }
+            }
+            int j = 0;
+            for (auto &info : erase_it->second.unseenLoopRedirectInfos) {
+                DPRINTF(LoopPredictorVerbose, "ftb unseen loop entry %d: pc %#lx, endLoop %d, specCnt %d, tripCnty %d, conf %d\n",
+                    j+numBr, info.branch_pc, info.end_loop, info.e.specCnt, info.e.tripCnt, info.e.conf);
+                if (info.e.valid) {
+                    lp.recover(info, false, 0, false, true, 0);
+                }
+                j++;
             }
         }
         fetchStreamQueue.erase(erase_it++);
@@ -1262,6 +1313,7 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
     bool endLoop, isDouble, loopConf;
     std::vector<LoopRedirectInfo> lpRedirectInfos(numBr);
     std::vector<bool> fixNotExits(numBr);
+    std::vector<LoopRedirectInfo> unseenLpRedirectInfos;
     if (!enableLoopBuffer || (enableLoopBuffer && !lb.isActive())) {
         entry.fromLoopBuffer = false;
         entry.isDouble = false;
@@ -1284,22 +1336,6 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
                             std::tie(endLoop, lpRedirectInfos[i], isDouble, loopConf) = lp.shouldEndLoop(this_cond_pred_taken, slot.pc, false);
                             // for bpu predicted taken branch we need to check
                             // whether it is an undetected loop exit
-                            // if (this_cond_pred_taken) {
-                            //     bool confEndLoop = endLoop && lpRedirectInfo.e.conf == 7;
-                            //     if (confEndLoop) {
-                            //         // we should only modify the direction of the loop branch, because
-                            //         // a latter branch (outside loop branch) may be taken
-                            //         DPRINTF(DecoupleBP || debugFlagOn, "Loop predictor says end loop at %#lx\n", slot.pc);
-                            //         finalPred.condTakens[i] = false;
-                            //         entry.isExit = true;
-                            //     }
-                            //     if (endLoop && !confEndLoop) {
-                            //         dbpFtbStats.predLoopPredictorUnconfNotExit++;
-                            //     }
-                            //     if (confEndLoop) {
-                            //         dbpFtbStats.predLoopPredictorExit++;
-                            //     }
-                            // }
                             if (lpRedirectInfos[i].e.valid) {
                                 if (loopConf) {
                                     // we should only modify the direction of the loop branch, because
@@ -1332,6 +1368,23 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
                         i++;
                     }
                     taken = finalPred.isTaken();
+                }
+                // check if current prediction block has an unseen loop branch
+                Addr end = finalPred.getEnd();
+                for (Addr pc = entry.startPC; pc < end; pc += 2) {
+                    bool inFTB = finalPred.ftbEntry.getSlot(pc).valid;
+                    if (inFTB) {
+                        continue;
+                    }
+                    LoopRedirectInfo unseenLpInfo;
+                    std::tie(endLoop, unseenLpInfo, isDouble, loopConf) = lp.shouldEndLoop(false, pc, false);
+                    if (unseenLpInfo.e.valid) {
+                        dbpFtbStats.predFTBUnseenLoopBranchInLp++;
+                        if (endLoop) {
+                            dbpFtbStats.predFTBUnseenLoopBranchExitInLp++;
+                        }
+                        unseenLpRedirectInfos.push_back(unseenLpInfo);
+                    }
                 }
             }
             Addr fallThroughAddr = finalPred.getFallThrough();
@@ -1441,6 +1494,7 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
     }
     entry.loopRedirectInfos = lpRedirectInfos;
     entry.fixNotExits = fixNotExits;
+    entry.unseenLoopRedirectInfos = unseenLpRedirectInfos;
 
     DPRINTF(LoopBuffer, "previous stream before loop:\n");
     printStream(lb.streamBeforeLoop);

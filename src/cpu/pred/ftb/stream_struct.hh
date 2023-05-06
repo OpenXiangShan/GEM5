@@ -273,6 +273,7 @@ typedef struct FetchStream
     // for loop
     std::vector<LoopRedirectInfo> loopRedirectInfos;
     std::vector<bool> fixNotExits;
+    std::vector<LoopRedirectInfo> unseenLoopRedirectInfos;
 
     Tick predTick;
     boost::dynamic_bitset<> history;
@@ -405,6 +406,14 @@ typedef struct FullFTBPrediction
             target = bbStart + 32; //TODO: +predictWidth
         }
         return target;
+    }
+
+    Addr getEnd() {
+        if (isTaken()) {
+            return getTakenSlot().getEnd();
+        } else {
+            return getFallThrough();
+        }
     }
 
 
