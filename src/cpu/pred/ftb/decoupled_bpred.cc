@@ -50,6 +50,24 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
         };
         bptrace = bpdb.addAndGetTrace("BPTRACE", fields_vec);
         bptrace->init_table();
+
+        std::vector<std::pair<std::string, DataType>> loop_fields_vec = {
+            std::make_pair("pc", UINT64),
+            std::make_pair("target", UINT64),
+            std::make_pair("mispred", UINT64),
+            std::make_pair("training", UINT64),
+            std::make_pair("trainSpecCnt", UINT64),
+            std::make_pair("trainTripCnt", UINT64),
+            std::make_pair("trainConf", UINT64),
+            std::make_pair("inMain", UINT64),
+            std::make_pair("mainTripCnt", UINT64),
+            std::make_pair("mainConf", UINT64),
+            std::make_pair("predSpecCnt", UINT64),
+            std::make_pair("predTripCnt", UINT64),
+            std::make_pair("predConf", UINT64)
+        };
+        lptrace = bpdb.addAndGetTrace("LOOPTRACE", loop_fields_vec);
+        lptrace->init_table();
     }
 
     bpType = DecoupledFTBType;
@@ -85,7 +103,7 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
     commitHistory.resize(historyBits, 0);
     squashing = true;
 
-    lp = LoopPredictor(16, 4);
+    lp = LoopPredictor(16, 4, enableDB);
     lb.setLp(&lp);
 
     if (!enableLoopPredictor && enableLoopBuffer) {
@@ -987,6 +1005,30 @@ DecoupledBPUWithFTB::commitBranch(const DynInstPtr &inst, bool miss, bool loop_e
     auto it = fetchStreamQueue.find(inst->fsqId);
     assert(it != fetchStreamQueue.end());
     auto entry = it->second;
+    if (enableDB) {
+        bptrace->write_record(BpTrace(entry, inst, miss));
+    }
+
+
+    LoopTrace rec;
+    Addr branchAddr = inst->pcState().instAddr();
+    Addr targetAddr = inst->pcState().clone()->as<RiscvISA::PCState>().npc();
+    Addr fallThruPC = inst->pcState().clone()->as<RiscvISA::PCState>().getFallThruPC();
+    LoopEntry predLoopEntry = LoopEntry();
+    for (int i = 0; i < numBr; i++) {
+        if (entry.loopRedirectInfos[i].branch_pc == inst->pcState().instAddr()) {
+            predLoopEntry = entry.loopRedirectInfos[i].e;
+            break;
+        }
+    }
+    if (targetAddr < branchAddr || lp.findLoopBranchInStorage(branchAddr)) {
+        lp.commitLoopBranch(branchAddr, targetAddr, fallThruPC, miss, rec);
+        if (enableDB) {
+            rec.set_outside_lp(branchAddr, targetAddr, miss, predLoopEntry.specCnt, predLoopEntry.tripCnt, predLoopEntry.conf);
+            lptrace->write_record(rec);
+        }
+    }
+
     for (int i = 0; i < numBr; i++) {
         if (entry.loopRedirectInfos[i].branch_pc == inst->pcState().instAddr()) {
             auto &loopEntry = entry.loopRedirectInfos[i].e;

@@ -220,6 +220,9 @@ class DecoupledBPUWithFTB : public BPredUnit
     bool enableDB;
     DataBase bpdb;
     TraceManager *bptrace;
+    TraceManager *lptrace;
+
+
 
     std::vector<TimedBaseFTBPredictor*> components{};
     std::vector<FullFTBPrediction> predsOfEachStage{};
@@ -409,6 +412,21 @@ class DecoupledBPUWithFTB : public BPredUnit
         panic("Squashing decoupled BP with tightly coupled API\n");
     }
 
+    struct BpTrace : public Record {
+        void set(uint64_t startPC, uint64_t controlPC, uint64_t controlType,
+            uint64_t taken, uint64_t mispred, uint64_t fallThruPC,
+            uint64_t source, uint64_t target) {
+            _uint64_data["startPC"] = startPC;
+            _uint64_data["controlPC"] = controlPC;
+            _uint64_data["controlType"] = controlType;
+            _uint64_data["taken"] = taken;
+            _uint64_data["mispred"] = mispred;
+            _uint64_data["fallThruPC"] = fallThruPC;
+            _uint64_data["source"] = source;
+            _uint64_data["target"] = target;
+        }
+        BpTrace(FetchStream &stream, const DynInstPtr &inst, bool mispred);
+    };
 
     std::pair<bool, bool> decoupledPredict(const StaticInstPtr &inst,
                                            const InstSeqNum &seqNum,
@@ -539,7 +557,7 @@ class DecoupledBPUWithFTB : public BPredUnit
         dbpFtbStats.ftqNotValid++;
     }
 
-    void commitBranch(const DynInstPtr &inst, bool miss, bool loop_exit);
+    void commitBranch(const DynInstPtr &inst, bool miss);
 
     std::map<Addr, unsigned> topMispredIndirect;
 };

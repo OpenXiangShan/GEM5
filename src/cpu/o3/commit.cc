@@ -1112,16 +1112,10 @@ Commit::commitInsts()
                     if (head_inst->isReturn()) {
                         DPRINTF(FTBRAS, "commit inst PC %x miss %d real target %x pred target %x\n", head_inst->pcState().instAddr(), miss, head_inst->pcState().clone()->as<RiscvISA::PCState>().npc(), *(head_inst->predPC));
                     }
-                    bool loop_exit = false;
-                    Addr branchAddr = head_inst->pcState().instAddr();
-                    Addr targetAddr = head_inst->pcState().clone()->as<RiscvISA::PCState>().npc();
-                    Addr fallThruPC = head_inst->pcState().clone()->as<RiscvISA::PCState>().getFallThruPC();
-                    if (targetAddr < branchAddr || dbftb->lp.findLoopBranchInStorage(branchAddr)) {
-                        loop_exit = dbftb->lp.commitLoopBranch(branchAddr, targetAddr, fallThruPC, miss);
-                    }
+
                     // FIXME: ignore mret/sret/uret in correspond with RTL
                     if (!head_inst->isNonSpeculative()) {
-                        dbftb->commitBranch(head_inst, miss, loop_exit);
+                        dbftb->commitBranch(head_inst, miss);
                         if (!head_inst->isReturn() && head_inst->isIndirectCtrl() && miss) {
                             misPredIndirect[head_inst->pcState().instAddr()]++;
                         }

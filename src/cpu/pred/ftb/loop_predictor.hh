@@ -39,6 +39,7 @@ class LoopPredictor
     // do not cover loop with less than 100 iterations, since tage may predict it well
     unsigned minTripCnt = 1;
     
+    bool enableDB;
 
     std::vector<std::map<Addr, LoopEntry>> loopStorage;
     std::map<Addr, LoopEntry> commitLoopStorage;
@@ -100,7 +101,7 @@ class LoopPredictor
 
     // called when loop branch is committed, identification is done before calling
     // return true if loop branch is in main storage and is exit
-    bool commitLoopBranch(Addr pc, Addr target, Addr fallThruPC, bool mispredicted) {
+    bool commitLoopBranch(Addr pc, Addr target, Addr fallThruPC, bool mispredicted, LoopTrace &rec) {
       DPRINTF(LoopPredictor,
         "Commit loop branch: pc: %#lx, target: %#lx, fallThruPC: %#lx\n",
         pc, target, fallThruPC);
@@ -175,6 +176,11 @@ class LoopPredictor
         commitLoopStorage[tag] = entry;
       }
 
+
+      if (enableDB) {
+        rec.set_in_lp(train_found, train_entry.specCnt, train_entry.tripCnt, train_entry.conf,
+          main_found, main_entry.tripCnt, main_entry.conf);
+      }
       DPRINTF(LoopPredictor, "commit loop branch, pc: %#lx, target: %#lx, fallThruPC: %#lx, takenBackward %d, mispred %d; \
 training_entry: %d, tripCnt %d, specCnt %d, conf %d; in_main: %d, tripCnt %d, conf %d\n",
         pc, target, fallThruPC, takenBackward, mispredicted, train_found, train_entry.tripCnt, train_entry.specCnt, train_entry.conf,
@@ -252,7 +258,7 @@ training_entry: %d, tripCnt %d, specCnt %d, conf %d; in_main: %d, tripCnt %d, co
       }
     }
 
-    LoopPredictor(unsigned sets, unsigned ways) {
+    LoopPredictor(unsigned sets, unsigned ways, bool e) {
       numSets = sets;
       numWays = ways;
       idxMask = (1 << ceilLog2(numSets)) - 1;
@@ -266,9 +272,10 @@ training_entry: %d, tripCnt %d, specCnt %d, conf %d; in_main: %d, tripCnt %d, co
       //       VaddrBits   instOffsetBits  log2Ceil(PredictWidth)
       tagSize = 39 - 1 - 4 - ceilLog2(numSets);
       tagMask = (1 << tagSize) - 1;
+      enableDB = e;
     }
 
-    LoopPredictor() : LoopPredictor(64, 4) {}
+    LoopPredictor() : LoopPredictor(64, 4, false) {}
 };
 
 }  // namespace ftb_pred
