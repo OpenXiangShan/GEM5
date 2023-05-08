@@ -204,6 +204,9 @@ class Queued : public Base
                                    std::vector<AddrPriority> &addresses) = 0;
     PacketPtr getPacket() override;
 
+    uint64_t printPrenum();
+    uint64_t printPreIssuenum();
+
     Tick nextPrefetchReadyTime() const override
     {
         return pfq.empty() ? MaxTick : pfq.front().tick;

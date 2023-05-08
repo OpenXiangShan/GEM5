@@ -364,6 +364,9 @@ class Base : public ClockedObject
     /** Total prefetches that has been useful */
     uint64_t usefulPrefetches;
 
+    uint64_t UnUsedRemovePre0;
+    uint64_t UnUsedRemovePre1;
+
     /** Registered tlb for address translations */
     BaseTLB * tlb;
 
@@ -386,6 +389,33 @@ class Base : public ClockedObject
     virtual PacketPtr getPacket() = 0;
 
     virtual Tick nextPrefetchReadyTime() const = 0;
+
+    virtual uint64_t printPrenum() { return 1; };
+    virtual uint64_t printPreIssuenum() { return 1; };
+
+    void PreRemoveUnused0()
+    {
+        // printf("unused0\n");
+        UnUsedRemovePre0++;
+    }
+
+    uint64_t UnUsedRemovePreNum0()
+    {
+        // printf("pre UnUsedRemovePre0 %ld\n",UnUsedRemovePre0);
+        return UnUsedRemovePre0;
+    }
+
+    void PreRemovePreNum1()
+    {
+        // printf("unused1\n");
+        UnUsedRemovePre1++;
+    }
+
+    uint64_t UnUsedRemovePreNum1()
+    {
+        // printf("pre UnusedRemovePre1 %ld\n",UnUsedRemovePre1);
+        return UnUsedRemovePre1;
+    }
 
     void
     prefetchUnused()

@@ -49,7 +49,7 @@ namespace prefetch
 Multi::Multi(const MultiPrefetcherParams &p)
   : Base(p),
     prefetchers(p.prefetchers.begin(), p.prefetchers.end()),
-    lastChosenPf(0)
+    lastChosenPf(0),hasBeenChoose(false),firstChoose(0)
 {
 }
 
@@ -76,19 +76,129 @@ Multi::getPacket()
 {
     lastChosenPf = (lastChosenPf + 1) % prefetchers.size();
     uint8_t pf_turn = lastChosenPf;
+    uint64_t issuenum[prefetchers.size()];
+    uint64_t UnusedRemovePre[prefetchers.size()];
+    double precision[prefetchers.size()];
+    // double precision[prefetchers.size()];
+    for (int pf_c = 0; pf_c < prefetchers.size(); pf_c++)
+    {
+        issuenum[pf_c] = prefetchers[pf_c]->printPreIssuenum();
+        // UnusedRemovePre[pf_c] =
+        //  printf("pf_c %d %ld\n",pf_c,issuenum[pf_c]);
+    }
+    UnusedRemovePre[0] = Base::UnUsedRemovePreNum0();
+    UnusedRemovePre[1] = Base::UnUsedRemovePreNum1();
 
-    for (int pf = 0 ;  pf < prefetchers.size(); pf++) {
-        if (prefetchers[pf_turn]->nextPrefetchReadyTime() <= curTick()) {
+    precision[0] =
+            (double)(issuenum[0] - UnusedRemovePre[0]) / (issuenum[0] + 1);
+    precision[1]
+            = (double)(issuenum[1] - UnusedRemovePre[1]) / (issuenum[1] + 1);
+    // printf("precision 0 %f 1 %f\n",precision[0],precision[1]);
+
+    // if ((UnusedRemovePre[0]>10000)&&(UnusedRemovePre[1]>10000)){
+    if (!hasBeenChoose)
+    {
+        if ((UnusedRemovePre[0] > 100) && (UnusedRemovePre[1] > 100))
+        {
+            // if ((UnusedRemovePre[0]>10000)&&(UnusedRemovePre[1]>10000)){
+            if (precision[1] > precision[0])
+            {
+                firstChoose = 1;
+            }
+            else
+            {
+                firstChoose = 0;
+            }
+            hasBeenChoose = true;
+            // printf("first choose %d\n",firstChoose);
+        }
+    }
+
+    if (hasBeenChoose)
+    {
+        pf_turn = firstChoose;
+        /*if (prefetchers[pf_turn]->nextPrefetchReadyTime() <= curTick()) {
             PacketPtr pkt = prefetchers[pf_turn]->getPacket();
             panic_if(!pkt, "Prefetcher is ready but didn't return a packet.");
+            pkt->req->setpreNum(pf_turn);
             prefetchStats.pfIssued++;
             issuedPrefetches++;
             return pkt;
+
         }
-        pf_turn = (pf_turn + 1) % prefetchers.size();
+        return nullptr;*/
+        for (int pf_c = 0; pf_c < prefetchers.size(); pf_c++)
+        {
+            if (prefetchers[pf_turn]->nextPrefetchReadyTime() <= curTick())
+            {
+                PacketPtr pkt = prefetchers[pf_turn]->getPacket();
+                panic_if(!pkt,
+                 "Prefetcher is ready but didn't return a packet.");
+                pkt->req->setpreNum(pf_turn);
+                prefetchStats.pfIssued++;
+                issuedPrefetches++;
+                // assert(0);
+                return pkt;
+            }
+            pf_turn = (pf_turn + 1) % prefetchers.size();
+        }
+        return nullptr;
+    }
+    else
+    {
+        for (int pf = 0; pf < prefetchers.size(); pf++)
+        {
+            if (prefetchers[pf_turn]->nextPrefetchReadyTime() <= curTick())
+            {
+                PacketPtr pkt = prefetchers[pf_turn]->getPacket();
+                panic_if(!pkt,
+                         "Prefetcher is ready but didn't return a packet.");
+                pkt->req->setpreNum(pf_turn);
+                prefetchStats.pfIssued++;
+                issuedPrefetches++;
+                return pkt;
+            }
+            pf_turn = (pf_turn + 1) % prefetchers.size();
+        }
+        return nullptr;
     }
 
-    return nullptr;
+    /*    for (int pf = 0 ;  pf < prefetchers.size(); pf++) {
+            //issuenum[]
+            //printf("nextPrefetchReadyTime0\n");
+            if (prefetchers[pf_turn]->nextPrefetchReadyTime() <= curTick()) {
+                Base::UnUsedRemovePreNum0();
+                Base::UnUsedRemovePreNum1();
+               // printf("after printf\n");
+                printf("0 pf_turn %d unused %ld %ld\n",pf_turn,
+                Base::UnUsedRemovePreNum0(),
+                prefetchers[pf_turn]->Base::UnUsedRemovePreNum0());
+                printf("1 pf_turn %d unused %ld %ld\n",pf_turn,
+                Base::UnUsedRemovePreNum1(),
+                prefetchers[pf_turn]->Base::UnUsedRemovePreNum1());
+                PacketPtr pkt = prefetchers[pf_turn]->getPacket();
+                printf("2 pf_turn %d usefulPrefetches %ld\n",
+                pf_turn,prefetchers[pf_turn]->printPrenum());
+                printf("22 pf_turn %d usefulPrefetches %ld\n",
+                pf_turn,printPrenum());
+                printf("3 pf_turn %d issuedPrefetches %ld\n",
+                pf_turn,prefetchers[pf_turn]->printPreIssuenum());
+                printf("33 pf_turn %d issuedPrefetches %ld\n",
+                pf_turn,printPreIssuenum());
+                panic_if(!pkt,
+                "Prefetcher is ready but didn't return a packet.");
+                pkt->req->setpreNum(pf_turn);
+                printf("4 pf_turn %d\n",pkt->req->printpreNum());
+                prefetchStats.pfIssued++;
+                issuedPrefetches++;
+                return pkt;
+            }
+            pf_turn = (pf_turn + 1) % prefetchers.size();
+        }
+
+        //for (int)
+
+        return nullptr;*/
 }
 void
 Multi::addTLB(BaseTLB *_t)

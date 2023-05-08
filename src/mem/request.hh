@@ -474,8 +474,9 @@ class Request
 
     int reqNum = 1;
 
-  public:
+    int preNum = 10;
 
+public:
     /**
      * Minimal constructor. No fields are initialized. (Note that
      *  _flags and privateFlags are cleared by Flags default
@@ -560,6 +561,15 @@ class Request
     void setReqNum(int num)
     {
         reqNum = num;
+    }
+
+    void setpreNum(int num)
+    {
+        preNum = num;
+    }
+    int printpreNum()
+    {
+        return preNum;
     }
 
     /**

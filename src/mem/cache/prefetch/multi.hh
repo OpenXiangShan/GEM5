@@ -75,6 +75,10 @@ class Multi : public Base
     /** List of sub-prefetchers ordered by priority. */
     std::vector<Base*> prefetchers;
     uint8_t lastChosenPf;
+
+  public:
+    bool hasBeenChoose;
+    int firstChoose;
 };
 
 } // namespace prefetch

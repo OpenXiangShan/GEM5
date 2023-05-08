@@ -103,13 +103,15 @@ Base::Base(const BasePrefetcherParams &p)
       prefetchOnPfHit(p.prefetch_on_pf_hit),
       useVirtualAddresses(p.use_virtual_addresses),
       prefetchStats(this), issuedPrefetches(0),
-      usefulPrefetches(0), tlb(nullptr)
+      usefulPrefetches(0), UnUsedRemovePre0(0),
+      UnUsedRemovePre1(0),tlb(nullptr)
 {
 }
 
 void
 Base::setCache(BaseCache *_cache)
 {
+   // printf("set cache pre\n");
     assert(!cache);
     cache = _cache;
 

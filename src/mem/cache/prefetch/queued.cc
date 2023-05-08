@@ -267,6 +267,16 @@ Queued::getPacket()
 
     return pkt;
 }
+uint64_t
+Queued::printPrenum()
+{
+    return usefulPrefetches;
+}
+uint64_t
+Queued::printPreIssuenum()
+{
+    return issuedPrefetches;
+}
 
 Queued::QueuedStats::QueuedStats(statistics::Group *parent)
     : statistics::Group(parent),

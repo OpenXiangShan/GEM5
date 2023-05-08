@@ -252,6 +252,15 @@ class CacheBlk : public TaggedEntry
      */
     bool wasPrefetched() const { return _prefetched; }
 
+    int wasPrefetchedNum() const { return _prefetchNum; }
+
+    bool wasBeUnUsedPre()
+    {
+        return !_hasBeUsedPre;
+    }
+
+    void UsedPreSign() { _hasBeUsedPre = true; }
+
     /**
      * Clear the prefetching bit. Either because it was recently used, or due
      * to the block being invalidated.
@@ -260,6 +269,8 @@ class CacheBlk : public TaggedEntry
 
     /** Marks this blocks as a recently prefetched block. */
     void setPrefetched() { _prefetched = true; }
+
+    void setPrefetchedNum(int num) { _prefetchNum = num; }
 
     bool needInvalidate() const { return _needInvalidate; }
 
@@ -501,8 +512,11 @@ class CacheBlk : public TaggedEntry
     /** Whether this block is an unaccessed hardware prefetch. */
     bool _prefetched = 0;
 
+    int _prefetchNum = 10;
+
     /** Whether there is a pending invalidate on this block. */
     bool _needInvalidate = 0;
+    bool _hasBeUsedPre = 0;
 };
 
 /**
