@@ -307,7 +307,7 @@ typedef struct FetchStream
     // bool getEnded() const { return resolved ? exeEnded : predEnded; }
     BranchInfo getBranchInfo() const { return resolved ? exeBranchInfo : predBranchInfo; }
     Addr getControlPC() const { return getBranchInfo().pc; }
-    // Addr getEndPC() const { return resolved ? exeEndPC : predEndPC; }
+    Addr getEndPC() const { return getBranchInfo().getEnd(); } // FIXME: should be end of squash inst when non-control squash of trap squash
     Addr getTaken() const { return resolved ? exeTaken : predTaken; }
     Addr getTakenTarget() const { return getBranchInfo().target; }
     // Addr getFallThruPC() const { return getEndPC(); }

@@ -318,7 +318,8 @@ DecoupledBPUWithFTB::tick()
 
     // query loop buffer with start pc
     if (enableLoopBuffer && !lb.isActive() &&
-            lb.streamBeforeLoop.getTakenTarget() == lb.streamBeforeLoop.startPC) {
+            lb.streamBeforeLoop.getTakenTarget() == lb.streamBeforeLoop.startPC &&
+            !lb.streamBeforeLoop.resolved) { // do not activate loop buffer right after squash
         lb.tryActivateLoop(s0PC);
     }
 
@@ -1249,7 +1250,7 @@ DecoupledBPUWithFTB::tryEnqFetchTarget()
     ftq_entry.fsqID = ftq_enq_state.streamId;
 
     // set prediction results to ftq entry
-    bool taken = stream_to_enq.predTaken;
+    bool taken = stream_to_enq.getTaken();
     bool inLoop = stream_to_enq.fromLoopBuffer;
     bool loopExit = stream_to_enq.isExit;
     Addr loopEndPC = stream_to_enq.getBranchInfo().getEnd();
@@ -1262,8 +1263,8 @@ DecoupledBPUWithFTB::tryEnqFetchTarget()
     // update ftq_enq_state
     // if in loop, next pc will either be loop exit or loop start
     ftq_enq_state.pc = inLoop ?
-        loopExit ? loopEndPC : stream_to_enq.predBranchInfo.target :
-        taken ? stream_to_enq.predBranchInfo.target : end;
+        loopExit ? loopEndPC : stream_to_enq.getBranchInfo().target :
+        taken ? stream_to_enq.getBranchInfo().target : end;
     ftq_enq_state.streamId++;
     DPRINTF(DecoupleBP,
             "Update ftqEnqPC to %#lx, FTQ demand stream ID to %lu\n",

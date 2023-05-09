@@ -276,7 +276,7 @@ class DecoupledBPUWithFTB : public BPredUnit
         // TODO:fix this
         DPRINTFR(DecoupleBP,
                  "%#lx-[%#lx, %#lx) --> %#lx, taken: %i\n",
-                 e.startPC, e.predBranchInfo.pc, e.predEndPC,
+                 e.startPC, e.getBranchInfo().pc, e.getEndPC(),
                  e.getTakenTarget(), e.getTaken());
     }
 
