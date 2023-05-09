@@ -98,6 +98,11 @@ BitUnion32(VTYPE)
     Bitfield<2, 0> vlmul;
 EndBitUnion(VTYPE)
 
+inline constexpr RegId
+    VecFofTempRegId = vecRegClass[VecMemInternalReg0];
+
+inline constexpr auto
+    &VecFofTempReg = VecFofTempRegId;
 } // namespace RiscvISA
 } // namespace gem5
 

@@ -208,14 +208,52 @@ def template VleffConstructor {{
             micro_vl = std::min(remaining_vl -= micro_vlmax, micro_vlmax);
         }
         microop = new VleffEndMicroInst(_machInst, num_microops);
+        this->microops.push_back(microop);
     }
-    this->microops.push_back(microop);
     this->microops.front()->setFirstMicroop();
     this->microops.back()->setLastMicroop();
 }
 
 }};
 
+def template VleffMicroDeclare {{
+
+class %(class_name)s : public %(base_class)s
+{
+private:
+    RegId srcRegIdxArr[3];
+    RegId destRegIdxArr[2];
+    std::unique_ptr<size_t> fault_elem_idx;
+public:
+    %(class_name)s(ExtMachInst _machInst, uint8_t _microVl, uint8_t _microIdx)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s, _microVl,
+                     _microIdx)
+    {
+        %(set_reg_idx_arr)s;
+        _numSrcRegs = 0;
+        _numDestRegs = 0;
+        setDestRegIdx(_numDestRegs++, vecRegClass[_machInst.vd + _microIdx]);
+        _numTypedDestRegs[VecRegClass]++;
+        setDestRegIdx(_numDestRegs++, vecRegClass[VecMemInternalReg0 + _microIdx]);
+        _numTypedDestRegs[VecRegClass]++;
+        setSrcRegIdx(_numSrcRegs++, intRegClass[_machInst.rs1]);
+        setSrcRegIdx(_numSrcRegs++, vecRegClass[_machInst.vd + _microIdx]);
+        if (!_machInst.vm) {
+            setSrcRegIdx(_numSrcRegs++, vecRegClass[0]);
+        }
+
+        fault_elem_idx = std::make_unique<size_t>(0);
+    }
+
+    Fault execute(ExecContext *, Trace::InstRecord *) const override;
+    Fault initiateAcc(ExecContext *, Trace::InstRecord *) const override;
+    Fault completeAcc(PacketPtr, ExecContext *,
+                      Trace::InstRecord *) const override;
+    using %(base_class)s::generateDisassembly;
+
+};
+
+}};
 
 def template VleffMicroExecute {{
 
@@ -238,29 +276,80 @@ Fault
     const std::vector<bool> byte_enable(mem_size, true);
     Fault fault = xc->readMem(EA, Mem.as<uint8_t>(), mem_size, memAccessFlags,
                               byte_enable);
-    Addr fault_addr;
-    if (fault != NoFault) {
-        uint64_t fault_elem_idx;
-        
-    }
+
+    %(vfof_set_code)s;
+    %(vfof_zero_idx_check_code)s;
+    %(vfof_get_code)s;
 
     const size_t micro_vlmax = vtype_VLMAX(machInst.vtype8, true);
-    const size_t micro_elems = VLEN / width_EEW(machInst.width);
-    size_t ei;
+    size_t micro_elems = VLEN / width_EEW(machInst.width);
 
-    if (fault == NoFault) {
-        for (size_t i = 0; i < micro_elems; i++) {
-            ei = i + micro_vlmax * microIdx;
-            %(memacc_code)s;
-        }
-        %(op_wb)s;
+    size_t ei;
+    for (size_t i = 0; i < std::min(micro_elems, *fault_elem_idx); i++) {
+        ei = i + micro_vlmax * microIdx;
+        %(memacc_code)s;
     }
 
+    %(op_wb)s;
     return fault;
 }
 
 }};
 
+
+def template VleffMicroInitiateAcc {{
+Fault
+%(class_name)s::initiateAcc(ExecContext* xc,
+                            Trace::InstRecord* traceData) const
+{
+    Addr EA;
+
+    %(op_src_decl)s;
+    %(op_rd)s;
+    %(ea_code)s;
+
+    uint32_t mem_size = width_EEW(this->machInst.width) / 8 * this->microVl;
+    const std::vector<bool> byte_enable(mem_size, true);
+    Fault fault = initiateMemRead(xc, EA, mem_size, memAccessFlags,
+                                  byte_enable);
+    
+    %(vfof_set_code)s;
+    %(vfof_zero_idx_check_code)s;
+
+    return fault;
+}
+}};
+
+def template VleffMicroCompleteAcc {{
+Fault
+%(class_name)s::completeAcc(PacketPtr pkt, ExecContext *xc,
+                            Trace::InstRecord *traceData) const
+{
+    %(op_decl)s;
+    %(op_rd)s;
+
+    RiscvISA::vreg_t tmp_v0;
+    uint8_t *v0;
+    if(!machInst.vm) {
+        xc->getRegOperand(this, _numSrcRegs - 1, &tmp_v0);
+        v0 = tmp_v0.as<uint8_t>();
+    }
+
+    memcpy(Mem.as<uint8_t>(), pkt->getPtr<uint8_t>(), pkt->getSize());
+
+    const size_t micro_vlmax = vtype_VLMAX(machInst.vtype8, true);
+    const size_t micro_elems = VLEN / width_EEW(machInst.width);
+    size_t ei;
+    for (size_t i = 0; i < micro_elems; i++) {
+        ei = i + micro_vlmax * microIdx;
+        %(memacc_code)s;
+    }
+
+    %(vfof_get_code)s;
+    %(op_wb)s;
+    return NoFault;
+}
+}};
 
 def template VseConstructor {{
 

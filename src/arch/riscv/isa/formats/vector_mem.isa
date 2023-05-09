@@ -33,6 +33,7 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags,
                    inst_flags, base_class, postacc_code='',
                    declare_template_base=VMemMacroDeclare,
                    decode_template=BasicDecode, exec_template_base='',
+                   vfof=False,
                    # If it's a macroop, the corresponding microops will be
                    # generated.
                    is_macroop=True):
@@ -58,12 +59,36 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags,
     if not is_macroop:
         return (header_output, decoder_output, decode_block, exec_output)
 
+    vfof_set_code = '''
+    auto base_addr = Rs1;
+    if (fault != NoFault) {
+        auto addr_fault = dynamic_cast<AddressFault*>(fault.get());
+        assert(addr_fault != nullptr);
+        if (addr_fault) {
+            auto fault_addr = addr_fault->trap_value();
+            assert(fault_addr >= EA);
+            *fault_elem_idx = (fault_addr - base_addr) / sizeof(uint8_t);
+        }
+    } else {
+        *fault_elem_idx = mem_size;
+    }''' if vfof else ''
+
+    vfof_zero_idx_check_code = '''
+    if (fault != NoFault && *fault_elem_idx == 0)
+        return fault;''' if vfof else ''
+
+    vfof_get_code = '''
+    Vfof_ud[0] = *fault_elem_idx;''' if vfof else ''
+
     microiop = InstObjParams(name + '_micro',
         Name + 'Micro',
         exec_template_base + 'MicroInst',
         {'ea_code': ea_code,
          'memacc_code': memacc_code,
-         'postacc_code': postacc_code},
+         'postacc_code': postacc_code,
+         'vfof_set_code': vfof_set_code,
+         'vfof_zero_idx_check_code': vfof_zero_idx_check_code,
+         'vfof_get_code': vfof_get_code},
         inst_flags)
 
     if mem_flags:
@@ -105,15 +130,9 @@ def format VleffOp(
     mem_flags=[],
     inst_flags=[]
 ) {{
-    base_class='VleffMacroInst'
-    postacc_code=''
-    iop = InstObjParams(name, Name, base_class,
-        {'ea_code': ea_code,
-         'memacc_code': memacc_code,
-         'postacc_code': postacc_code },
-        inst_flags)
-
-    decode_block = BasicDecode.subst(iop)
+    (header_output, decoder_output, decode_block, exec_output) = \
+        VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
+                 'VleMacroInst', exec_template_base='Vleff', vfof=True)
 }};
 
 def format VseOp(

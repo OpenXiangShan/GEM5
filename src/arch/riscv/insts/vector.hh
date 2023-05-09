@@ -326,19 +326,20 @@ class VseMicroInst : public VectorMicroInst
         Addr pc, const loader::SymbolTable *symtab) const override;
 };
 
-class Vle8ff_vMicro : public VleMicroInst
+class VleffMicroInst : public VectorMicroInst
 {
-private:
-    RegId srcRegIdxArr[3];
-    RegId destRegIdxArr[2];
-public:
-    Vle8ff_vMicro(ExtMachInst _machInst, uint8_t _microVl, uint8_t _microIdx);
+  protected:
+    Request::Flags memAccessFlags;
 
-    Fault execute(ExecContext *xc, Trace::InstRecord * traceData) const override;
-    Fault initiateAcc(ExecContext *, Trace::InstRecord *) const override;
-    Fault completeAcc(PacketPtr, ExecContext *,
-                      Trace::InstRecord *) const override;
-    using VleMicroInst::generateDisassembly;
+    VleffMicroInst(const char *mnem, ExtMachInst _machInst, OpClass __opClass,
+                 uint8_t _microVl, uint8_t _microIdx)
+        : VectorMicroInst(mnem, _machInst, __opClass, _microVl, _microIdx)
+    {
+        this->flags[IsLoad] = true;
+    }
+
+    std::string generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const override;
 };
 
 class VleffEndMicroInst : public VectorMicroInst
@@ -354,19 +355,6 @@ public:
 
     std::string generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const override;
 };
-
-
-class Vle8ff_v : public VleMacroInst
-{
-private:
-    RegId srcRegIdxArr[2];
-    RegId destRegIdxArr[1];
-public:
-    Vle8ff_v(ExtMachInst _machInst);
-
-    using VleMacroInst::generateDisassembly;
-};
-
 
 class VlWholeMacroInst : public VectorMemMacroInst
 {
