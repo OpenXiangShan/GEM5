@@ -1454,7 +1454,7 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
         entry.isExit = confExit;
         entry.isHit = true;
         entry.falseHit = false;
-        entry.predTaken = !confExit;
+        entry.predTaken = isDouble || !confExit;
         entry.predEndPC = lb.streamBeforeLoop.predBranchInfo.getEnd();
         // use s0History from streamBeforeLoop
         // entry.history = s0History;
