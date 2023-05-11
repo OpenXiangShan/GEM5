@@ -558,6 +558,8 @@ class Rename
     void setAllStalls(StallReason renameStall);
 
     StallReason checkRenameStallFromIEW(ThreadID tid);
+
+    SquashVersion localSquashVer;
 };
 
 } // namespace o3

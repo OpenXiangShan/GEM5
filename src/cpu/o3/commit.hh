@@ -307,7 +307,7 @@ class Commit
     void getInsts();
 
     /** Squash instructions in the rename to ROB TimeBuffer. */
-    void squashInflightRenamedInsts(ThreadID tid);
+    void squashInflightAndUpdateVersion(ThreadID tid);
 
     /** Marks completed instructions using information sent from IEW. */
     void markCompletedInsts();
@@ -353,6 +353,8 @@ class Commit
 
     /** Wire to read information from rename queue. */
     TimeBuffer<RenameStruct>::wire fromRename;
+
+    SquashVersion localSquashVer;
 
   public:
     /** ROB interface. */

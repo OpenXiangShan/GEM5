@@ -595,7 +595,7 @@ Commit::squashAll(ThreadID tid)
     toIEW->commitInfo[tid].squashedStreamId = committedStreamId;
     toIEW->commitInfo[tid].squashedTargetId = committedTargetId;
 
-    squashInflightRenamedInsts(tid);
+    squashInflightAndUpdateVersion(tid);
 }
 
 void
@@ -938,7 +938,7 @@ Commit::commit()
             }
 
             set(toIEW->commitInfo[tid].pc, fromIEW->pc[tid]);
-            squashInflightRenamedInsts(tid);
+            squashInflightAndUpdateVersion(tid);
         }
 
         if (commitStatus[tid] == ROBSquashing) {
@@ -1547,6 +1547,10 @@ Commit::getInsts()
         const DynInstPtr &inst = fromRename->insts[inst_num];
         ThreadID tid = inst->threadNumber;
 
+        if (localSquashVer.largerThan(inst->getVersion())) {
+            inst->setSquashed();
+        }
+
         if (!inst->isSquashed() &&
             commitStatus[tid] != ROBSquashing &&
             commitStatus[tid] != TrapPending) {
@@ -1570,7 +1574,7 @@ Commit::getInsts()
 
 
 void
-Commit::squashInflightRenamedInsts(ThreadID tid)
+Commit::squashInflightAndUpdateVersion(ThreadID tid)
 {
     DPRINTF(Commit, "Squashing in-flight renamed instructions\n");
     int cycle = 0;  // Mark instructions renamed this cycle as squashed
@@ -1584,6 +1588,11 @@ Commit::squashInflightRenamedInsts(ThreadID tid)
                 inst->threadNumber, inst->seqNum, inst->pcState());
         inst->setSquashed();
     }
+
+    localSquashVer.update(localSquashVer.nextVersion());
+    toIEW->commitInfo[tid].squashVersion = localSquashVer;
+    DPRINTF(Commit, "Updating squash version to %u\n",
+            localSquashVer.getVersion());
 }
 
 void

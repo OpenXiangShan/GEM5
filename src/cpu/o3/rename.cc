@@ -906,7 +906,11 @@ Rename::sortInsts()
     int insts_from_decode = fromDecode->size;
     for (int i = 0; i < insts_from_decode; ++i) {
         const DynInstPtr &inst = fromDecode->insts[i];
-        insts[inst->threadNumber].push_back(inst);
+        if (localSquashVer.largerThan(inst->getVersion())) {
+            inst->setSquashed();
+        } else {
+            insts[inst->threadNumber].push_back(inst);
+        }
 #if TRACING_ON
         if (debug::O3PipeView) {
             inst->renameTick = curTick() - inst->fetchTick;
@@ -1447,6 +1451,10 @@ Rename::checkSignalsAndUpdate(ThreadID tid)
                 "commit.\n", tid);
 
         squash(fromCommit->commitInfo[tid].doneSeqNum, tid);
+
+        localSquashVer.update(fromCommit->commitInfo[tid].squashVersion.getVersion());
+        DPRINTF(Rename, "Updating squash version to %u\n",
+                localSquashVer.getVersion());
 
         return true;
     }

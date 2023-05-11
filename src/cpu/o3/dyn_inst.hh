@@ -1248,6 +1248,20 @@ class DynInst : public ExecContext, public RefCounted
         RiscvISA::PCState rpc = pc->as<RiscvISA::PCState>();
         return rpc.compressed() ? 2 : 4;
     }
+
+  protected:
+    SquashVersion squashVer;
+
+  public:
+    void setVersion(const SquashVersion &ver)
+    {
+        squashVer.update(ver.getVersion());
+    }
+    uint8_t getVersion()
+    {
+        return squashVer.getVersion();
+    }
+
 };
 
 } // namespace o3

@@ -153,6 +153,33 @@ struct IssueStruct
     DynInstPtr insts[MaxWidth];
 };
 
+struct SquashVersion
+{
+    uint8_t version;
+    const static uint8_t versionLimit = 16;
+    const static uint8_t maxVersion = versionLimit - 1;
+    const static uint8_t maxInflightSquash = 4;
+    uint8_t getVersion() const {
+        return version;
+    }
+    uint8_t nextVersion() const {
+        return (version + 1) % versionLimit;
+    }
+    bool largerThan(uint8_t other) const {
+        bool larger = version > other && version - other <= maxInflightSquash;
+        bool wrapped_larger =
+            version + versionLimit > other &&
+            version + versionLimit - other <= maxInflightSquash;
+        if (!(larger || wrapped_larger || (version == other))) {
+            panic("SquashVersion: %d, other: %d\n", version, other);
+        }
+        return larger || wrapped_larger;
+    }
+    void update(uint8_t v) {
+        version = v;
+    }
+};
+
 /** Struct that defines all backwards communication. */
 struct TimeStruct
 {
@@ -256,6 +283,8 @@ struct TimeStruct
         bool isTrapSquash;
         bool squash; // *F, D, R, I
         bool robSquashing; // *F, D, R, I
+
+        SquashVersion squashVersion; // *F, D, R, I
 
         /// Rename should re-read number of free rob entries
         bool usedROB; // *R

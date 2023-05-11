@@ -830,6 +830,9 @@ IEW::checkSignalsAndUpdate(ThreadID tid)
 
     if (fromCommit->commitInfo[tid].squash) {
         squash(tid);
+        localSquashVer.update(fromCommit->commitInfo[tid].squashVersion.getVersion());
+        DPRINTF(IEW, "Updating squash version to %u\n",
+                localSquashVer.getVersion());
 
         if (dispatchStatus[tid] == Blocked ||
             dispatchStatus[tid] == Unblocking) {
@@ -894,7 +897,11 @@ IEW::sortInsts()
         assert(insts[tid].empty());
 #endif
     for (int i = 0; i < insts_from_rename; ++i) {
-        insts[fromRename->insts[i]->threadNumber].push_back(fromRename->insts[i]);
+        const DynInstPtr &inst = fromRename->insts[i];
+        if (localSquashVer.largerThan(inst->getVersion())) {
+            inst->setSquashed();
+        }
+        insts[fromRename->insts[i]->threadNumber].push_back(inst);
     }
 }
 

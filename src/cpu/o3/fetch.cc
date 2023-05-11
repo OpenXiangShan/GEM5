@@ -907,6 +907,7 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
         // We will use a nop in ordier to carry the fault.
         DynInstPtr instruction = buildInst(tid, nopStaticInstPtr, nullptr,
                 fetch_pc, fetch_pc, false);
+        instruction->setVersion(localSquashVer);
         instruction->setNotAnInst();
 
         instruction->setPredTarg(fetch_pc);
@@ -1234,6 +1235,10 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
         squash(*fromCommit->commitInfo[tid].pc,
                fromCommit->commitInfo[tid].doneSeqNum,
                fromCommit->commitInfo[tid].squashInst, tid);
+
+        localSquashVer.update(fromCommit->commitInfo[tid].squashVersion.getVersion());
+        DPRINTF(Fetch, "Updating squash version to %u\n",
+                localSquashVer.getVersion());
 
         // If it was a branch mispredict on a control instruction, update the
         // branch predictor with that instruction, otherwise just kill the
@@ -1713,6 +1718,7 @@ Fetch::fetch(bool &status_change)
 
             DynInstPtr instruction = buildInst(
                     tid, staticInst, curMacroop, this_pc, *next_pc, true);
+            instruction->setVersion(localSquashVer);
 
             ppFetch->notify(instruction);
             numInst++;
