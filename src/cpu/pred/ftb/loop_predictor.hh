@@ -140,8 +140,8 @@ class LoopPredictor
             }
           }
           int tripCnt = way.specCnt;
+          DPRINTF(LoopPredictor, "new tripCnt %d\n", tripCnt);
           if (tripCnt >= minTripCnt) {
-            DPRINTF(LoopPredictor, "new tripCnt %d\n", tripCnt);
             if (!main_found) {
               // not in main storage, write into main storage
               // if (way.specCnt > minTripCnt) {
@@ -159,6 +159,22 @@ class LoopPredictor
               loopStorage[idx][tag].conf = way.conf;
               loopStorage[idx][tag].tripCnt = way.specCnt;
             }
+          } else { // if tripCnt < minTripCnt
+            // we only update main storage when this branch is in it.
+            // the tripCnt could change from n to a value less than minTripCnt,
+            // we should invalidate it
+            if (main_found) {
+              int idx = getIndex(pc);
+              DPRINTF(LoopPredictor, "loop end with tripCnt less than %d, invalidating loopStorage idx %d, tag %d\n",
+                minTripCnt, idx, tag);
+              loopStorage[idx][tag].valid = false;
+              loopStorage[idx][tag].conf = 0;
+            }
+            // FIXME: what if invalidate a branch that is supplying by loop buffer?
+            // provide a specCnt (remaining iteration) to loop buffer at the beginning of a loop
+            // and loop buffer will use it to predict the loop branch, as well as informing
+            // loop predictor to update specCnt
+            // this requires decoupling lookup from speculative update
           }
           way.tripCnt = way.specCnt;
           way.specCnt = 0;
