@@ -889,7 +889,7 @@ class RAS(TimedBaseFTBPredictor):
     
     numEntries = Param.Unsigned(32, "Number of entries in the RAS")
     ctrWidth = Param.Unsigned(8, "Width of the counter")
-    numInflightEntries = Param.Unsigned(28, "Number of inflight entries")
+    numInflightEntries = Param.Unsigned(384, "Number of inflight entries")
 
 class uRAS(TimedBaseFTBPredictor):
     type = 'uRAS'

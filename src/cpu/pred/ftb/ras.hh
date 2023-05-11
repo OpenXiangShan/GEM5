@@ -60,6 +60,7 @@ class RAS : public TimedBaseFTBPredictor
             int TOSR;
             int TOSW;
             bool willPush;
+            Addr target;
             // RASInflightEntry inflight; // inflight top of stack
         }RASMeta;
 
@@ -100,6 +101,8 @@ class RAS : public TimedBaseFTBPredictor
         bool inflightInRange(int &ptr);
 
         int inflightPtrPlus1(int ptr);
+
+        void checkCorrectness();
 
         RASEssential getTop();
 
@@ -169,6 +172,8 @@ class RAS : public TimedBaseFTBPredictor
         int nsp; // non-spec sp
 
         int sctr;
+
+        //int ndepth;
 
         std::vector<RASEntry> stack;
         

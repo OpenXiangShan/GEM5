@@ -13,6 +13,7 @@ RAS::RAS(const Params &p)
     ctrWidth(p.ctrWidth),
     numInflightEntries(p.numInflightEntries)
 {
+    //ssp = numEntries - 1;
     ssp = 0;
     nsp = 0;
     sctr = 0;
@@ -27,6 +28,30 @@ RAS::RAS(const Params &p)
         entry.data.ctr = 0;
         entry.data.retAddr = 0x80000000L;
     }
+    for (auto &entry : inflightStack) {
+        entry.data.ctr = 0;
+        entry.data.retAddr = 0x80000000L;
+    }
+    //ndepth = 0;
+}
+
+void
+RAS::checkCorrectness() {
+    /*
+    auto tosr = TOSR;
+    int checkssp = ssp;
+    while (inflightInRange(tosr)) {
+        if (!inflightStack[tosr].data.ctr) {
+            checkssp = (checkssp - 1 + numEntries) % numEntries;
+        } else {
+            // just dec sctr, fixme here
+        }
+        tosr = inflightStack[tosr].nos;
+    }
+    if (checkssp != (nsp + numEntries - 1) % numEntries) {
+        DPRINTF(FTBRAS, "NSP and SSP check failed\n");
+        printStack("checkCorrectness");
+    }*/
 }
 
 void
@@ -35,6 +60,7 @@ RAS::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
 {
     assert(getDelay() < stagePreds.size());
     DPRINTFR(FTBRAS, "putPC startAddr %x", startAddr);
+    // checkCorrectness();
     for (int i = getDelay(); i < stagePreds.size(); i++) {
         stagePreds[i].returnTarget = getTop_meta().retAddr; // stack[sp].retAddr;
     }
@@ -96,11 +122,11 @@ RAS::recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entr
     TOSW = meta_ptr->TOSW;
     ssp = meta_ptr->ssp;
     sctr = meta_ptr->sctr;
+    Addr retAddr = takenSlot.pc + takenSlot.size;
 
     // do push & pops on control squash
     if (entry.exeTaken) {
         if (takenSlot.isCall) {
-            Addr retAddr = takenSlot.pc + takenSlot.size;
             push(retAddr);
         }
         if (takenSlot.isReturn) {
@@ -112,6 +138,9 @@ RAS::recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entr
     
     if (entry.exeTaken) {
         DPRINTF(FTBRAS, "isCall %d, isRet %d\n", takenSlot.isCall, takenSlot.isReturn);
+        if (takenSlot.isReturn) {
+            DPRINTF(FTBRAS, "IsRet expect target %llx, preded %llx, pred taken %d pred target %llx\n", takenSlot.target, meta_ptr->target, entry.predTaken, entry.predBranchInfo.target);
+        }
         printStack("after recoverHist");
     }
     
@@ -123,6 +152,11 @@ RAS::update(const FetchStream &entry)
     auto meta_ptr = std::static_pointer_cast<RASMeta>(entry.predMetas[getComponentIdx()]);
     auto takenSlot = entry.exeBranchInfo;
     if (entry.exeTaken) {
+        if (meta_ptr->ssp != nsp || meta_ptr->sctr != stack[nsp].data.ctr) {
+            DPRINTF(FTBRAS, "ssp and nsp mismatch, recovering, ssp = %d, sctr = %d, nsp = %d, nctr = %d\n", meta_ptr->ssp, meta_ptr->sctr, nsp, stack[nsp].data.ctr);
+            nsp = meta_ptr->ssp;
+        } else
+            DPRINTF(FTBRAS, "ssp and nsp match, ssp = %d, sctr = %d, nsp = %d, nctr = %d\n", meta_ptr->ssp, meta_ptr->sctr, nsp, stack[nsp].data.ctr);
         if (takenSlot.isCall) {
             DPRINTF(FTBRAS, "real update call FTB hit %d meta TOSR %d TOSW %d\n entry PC %x", entry.isHit, meta_ptr->TOSR, meta_ptr->TOSW, entry.startPC);
             Addr retAddr = takenSlot.pc + takenSlot.size;
@@ -144,13 +178,14 @@ RAS::push_stack(Addr retAddr)
 {
     auto tos = stack[nsp];
     if (tos.data.retAddr == retAddr && tos.data.ctr < maxCtr) {
-        tos.data.ctr++;
+        stack[nsp].data.ctr++;
     } else {
         // push new entry
         ptrInc(nsp);
         stack[nsp].data.retAddr = retAddr;
         stack[nsp].data.ctr = 0;
     }
+    // ++ndepth;
 }
 
 void
@@ -181,18 +216,24 @@ RAS::push(Addr retAddr)
 void
 RAS::pop_stack()
 {
+    //if (ndepth) {
     auto tos = stack[nsp];
     if (tos.data.ctr > 0) {
-        tos.data.ctr--;
+        stack[nsp].data.ctr--;
     } else {
         ptrDec(nsp);
     }
+    //--ndepth;
+    //} else {
+        // unmatched pop, do not move
+    //}
+    
 }
 
 void
 RAS::pop()
 {
-    DPRINTFR(FTBRAS, "doing pop ");
+    DPRINTFR(FTBRAS, "doing pop ndepth = %d", ndepth);
 
     // pop may need to deal with committed stack
     if (inflightInRange(TOSR)) {
@@ -205,7 +246,7 @@ RAS::pop()
             auto newTop = getTop();
             sctr = newTop.ctr;
         }
-    } else {
+    } else /*if (ndepth)*/ {
         // TOSR not valid, operate on committed stack
         DPRINTF(FTBRAS, "in committed range\n");
         if (sctr > 0) {
@@ -216,6 +257,9 @@ RAS::pop()
             sctr = newTop.ctr;
         }
     }
+    //else {
+        // ssp should not move here
+    //}
 }
 
 void
@@ -277,6 +321,17 @@ RAS::getTop()
     if (inflightInRange(TOSR)) {
         // result come from inflight queue
         DPRINTF(FTBRAS, "Select from inflight, addr %x\n", inflightStack[TOSR].data.retAddr);
+        // additional check: if nos is out of bound, check if commit stack top == inflight[nos]
+        /*
+        if (!inflightInRange(inflightStack[TOSR].nos)) {
+            auto top = stack[nsp];
+            if (top.data.retAddr != inflightStack[inflightStack[TOSR].nos].data.retAddr || top.data.ctr != inflightStack[inflightStack[TOSR].nos].data.ctr) {
+                // inflight[nos] is not the same as stack[nsp]
+                DPRINTF(FTBRAS, "Error: inflight[nos] is not the same as stack[nsp]\n");
+                printStack("Error case stack dump");
+            }
+        }*/
+
         return inflightStack[TOSR].data;
     } else {
         // result come from commit queue
@@ -295,6 +350,19 @@ RAS::getTop_meta() {
         meta.sctr = sctr;
         meta.TOSR = TOSR;
         meta.TOSW = TOSW;
+        meta.target = inflightStack[TOSR].data.retAddr;
+
+        // additional check: if nos is out of bound, check if commit stack top == inflight[nos]
+        /*
+        if (!inflightInRange(inflightStack[TOSR].nos)) {
+            auto top = stack[nsp];
+            if (top.data.retAddr != inflightStack[inflightStack[TOSR].nos].data.retAddr || top.data.ctr != inflightStack[inflightStack[TOSR].nos].data.ctr) {
+                // inflight[nos] is not the same as stack[nsp]
+                DPRINTF(FTBRAS, "Error: inflight[nos] is not the same as stack[nsp]\n");
+                printStack("Error case stack dump");
+            }
+        }*/
+
         return inflightStack[TOSR].data;
     } else {
         // result come from commit queue
@@ -303,6 +371,7 @@ RAS::getTop_meta() {
         meta.TOSR = TOSR;
         meta.TOSW = TOSW;
         DPRINTF(FTBRAS, "Select from stack, addr %x\n", stack[ssp].data.retAddr);
+        meta.target = stack[ssp].data.retAddr;
         return stack[ssp].data;
     }
 }

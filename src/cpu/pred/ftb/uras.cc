@@ -77,7 +77,7 @@ uRAS::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
     auto &sp = specSp;
     assert(getDelay() < stagePreds.size());
     for (int i = getDelay(); i < stagePreds.size(); i++) {
-        stagePreds[i].returnTarget = stack[sp].retAddr;
+        //stagePreds[i].returnTarget = stack[sp].retAddr;
     }
     meta.sp = sp;
     meta.tos = stack[sp];
