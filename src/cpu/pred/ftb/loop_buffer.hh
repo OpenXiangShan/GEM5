@@ -71,10 +71,12 @@ class LoopBuffer
          * @todo: caculation limit, singleIterSize
          * 
          */
+        Addr branch_pc = streamBeforeLoop.getControlPC();
         DPRINTF(LoopBuffer, "query loop buffer with start pc %#lx\n", start_pc);
-        if (loopInsts.first == start_pc && streamBeforeLoop.predTaken) {
-            DPRINTF(LoopBuffer, "found loop buffer entry for pc %#lx, entry has %d insts\n",
-                start_pc, loopInsts.second.size());
+        if (loopInsts.first == start_pc && streamBeforeLoop.predTaken &&
+                loopBranchPC == branch_pc) {
+            DPRINTF(LoopBuffer, "found loop buffer entry for pc %#lx, branch_pc %#lx, entry has %d insts\n",
+                start_pc, branch_pc, loopInsts.second.size());
             if (lp->isLoopBranchConf(loopBranchPC)) {
                 DPRINTF(LoopBuffer, "loop branch %#lx conf in lp, loop buffer activated\n", loopBranchPC);
                 active = true;
