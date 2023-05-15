@@ -517,6 +517,16 @@ class DecoupledBPUWithFTB : public BPredUnit
     std::map<std::pair<Addr, int>, std::pair<int, int>> topMispredictsByBranch;
     std::map<uint64_t, uint64_t> topMispredHist;
     std::map<int, int> misPredTripCount;
+
+    int phaseIdToDump{1};
+    int numInstCommitted{0};
+    int phaseSizeByInst{100000};
+    std::vector<int> lastPhaseFsqEntryNumCommittedInstDist;
+    std::vector<int> commitFsqEntryHasInstsVector;
+    std::vector<std::vector<int>> fsqEntryNumCommittedInstDistByPhase;
+    std::vector<int> lastPhaseFsqEntryNumFetchedInstDist;
+    std::vector<int> commitFsqEntryFetchedInstsVector;
+    std::vector<std::vector<int>> fsqEntryNumFetchedInstDistByPhase;
     unsigned int missCount{0};
 
     void setTakenEntryWithStream(const FetchStream &stream_entry, FtqEntry &ftq_entry);

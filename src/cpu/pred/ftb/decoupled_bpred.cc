@@ -111,6 +111,10 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
     if (!enableLoopPredictor && enableLoopBuffer) {
         fatal("loop buffer cannot be enabled without loop predictor\n");
     }
+    commitFsqEntryHasInstsVector.resize(16+1, 0);
+    lastPhaseFsqEntryNumCommittedInstDist.resize(16+1, 0);
+    commitFsqEntryFetchedInstsVector.resize(16+1, 0);
+    lastPhaseFsqEntryNumFetchedInstDist.resize(16+1, 0);
 
     registerExitCallback([this]() {
         auto out_handle = simout.create("topMisPredicts.txt", false, true);
@@ -153,7 +157,6 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
             *out_handle->stream() << std::hex << std::get<0>(it) << std::dec << " " << std::get<1>(it) << " " << std::get<2>(it) << " " << std::get<3>(it) << " " << (int)std::get<4>(it) << std::endl;
         }
         simout.close(out_handle);
-
 
 
         out_handle = simout.create("topMisPredictHist.txt", false, true);
@@ -218,6 +221,47 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
         }
 
         simout.close(out_handle);
+
+        // dump fsq entry committed insts
+        out_handle = simout.create("fsqEntryCommittedInstNumDistsByPhase.txt", false, true);
+        *out_handle->stream() << "phaseID";
+        for (int i = 0; i <= 16; i++) {
+            *out_handle->stream() << " " << i;
+        }
+        *out_handle->stream() << " " << "average" << std::endl;
+        int phaseID = 0;
+        for (auto& it : fsqEntryNumCommittedInstDistByPhase) {
+            *out_handle->stream() << phaseID;
+            int numFsqEntries = 0;
+            for (int i = 0; i <= 16; i++) {
+                *out_handle->stream() << " " << it[i];
+                numFsqEntries += it[i];
+            }
+            *out_handle->stream() << " " << (double)phaseSizeByInst / (double)numFsqEntries << std::endl;
+            phaseID++;
+        }
+        simout.close(out_handle);
+
+        // dump fsq entry fetched insts
+        out_handle = simout.create("fsqEntryFetchedInstNumDistsByPhase.txt", false, true);
+        *out_handle->stream() << "phaseID";
+        for (int i = 0; i <= 16; i++) {
+            *out_handle->stream() << " " << i;
+        }
+        *out_handle->stream() << " " << "average" << std::endl;
+        phaseID = 0;
+        for (auto& it : fsqEntryNumFetchedInstDistByPhase) {
+            *out_handle->stream() << phaseID;
+            int numFsqEntries = 0;
+            for (int i = 0; i <= 16; i++) {
+                *out_handle->stream() << " " << it[i];
+                numFsqEntries += it[i];
+            }
+            *out_handle->stream() << " " << (double)phaseSizeByInst / (double)numFsqEntries << std::endl;
+            phaseID++;
+        }
+        simout.close(out_handle);
+
         if (enableDB) {
             bpdb.save_db("bp.db");
         }
@@ -1017,7 +1061,13 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
             }
         }
         dbpFtbStats.commitFsqEntryHasInsts.sample(stream.commitInstNum, 1);
+        if (stream.commitInstNum >= 0 && stream.commitInstNum <= 16) {
+            commitFsqEntryHasInstsVector[stream.commitInstNum]++;
+        }
         dbpFtbStats.commitFsqEntryFetchedInsts.sample(stream.fetchInstNum, 1);
+        if (stream.fetchInstNum >= 0 && stream.fetchInstNum <= 16) {
+            commitFsqEntryFetchedInstsVector[stream.fetchInstNum]++;
+        }
 
 
         if (stream.squashType == SQUASH_CTRL) {
@@ -1175,6 +1225,31 @@ DecoupledBPUWithFTB::notifyInstCommit(const DynInstPtr &inst)
     auto it = fetchStreamQueue.find(inst->fsqId);
     assert(it != fetchStreamQueue.end());
     it->second.commitInstNum++;
+    numInstCommitted++;
+    DPRINTF(DecoupleBP, "notifyInstCommit, inst=%s, commitInstNum=%d\n",
+            inst->staticInst->disassemble(inst->pcState().instAddr()),
+            it->second.commitInstNum);
+    if (numInstCommitted % phaseSizeByInst == 0) {
+        int currentPhaseID = numInstCommitted / phaseSizeByInst;
+        // dump current phase only once
+        if (phaseIdToDump <= currentPhaseID) {
+            DPRINTF(DecoupleBP, "dump phase %d\n", phaseIdToDump);
+            std::vector<int> currentPhaseFsqEntryNumCommittedInstDist;
+            std::vector<int> currentPhaseFsqEntryNumFetchedInstDist;
+            currentPhaseFsqEntryNumCommittedInstDist.resize(16+1, 0);
+            currentPhaseFsqEntryNumFetchedInstDist.resize(16+1, 0);
+            // FIXME: parameterize
+            for (int i = 0; i <= 16; i++) {
+                currentPhaseFsqEntryNumCommittedInstDist[i] = commitFsqEntryHasInstsVector[i] - lastPhaseFsqEntryNumCommittedInstDist[i];
+                lastPhaseFsqEntryNumCommittedInstDist[i] = commitFsqEntryHasInstsVector[i];
+                currentPhaseFsqEntryNumFetchedInstDist[i] = commitFsqEntryFetchedInstsVector[i] - lastPhaseFsqEntryNumFetchedInstDist[i];
+                lastPhaseFsqEntryNumFetchedInstDist[i] = commitFsqEntryFetchedInstsVector[i];
+            }
+            fsqEntryNumCommittedInstDistByPhase.push_back(currentPhaseFsqEntryNumCommittedInstDist);
+            fsqEntryNumFetchedInstDistByPhase.push_back(currentPhaseFsqEntryNumFetchedInstDist);
+            phaseIdToDump++;
+        }
+    }
 }
 
 void
