@@ -371,9 +371,11 @@ class DecoupledBPUWithFTB : public BPredUnit
         statistics::Distribution commitFsqEntryHasInsts;
         // write back once an fsq entry finishes fetch
         statistics::Distribution commitFsqEntryFetchedInsts;
+        statistics::Scalar commitFsqEntryOnlyHasOneJump;
 
         statistics::Scalar ftbHit;
         statistics::Scalar ftbMiss;
+        statistics::Scalar ftbEntriesWithDifferentStart;
 
         statistics::Scalar predFalseHit;
         statistics::Scalar commitFalseHit;
@@ -527,6 +529,11 @@ class DecoupledBPUWithFTB : public BPredUnit
     std::map<std::pair<Addr, int>, std::pair<int, int>> lastPhaseTopMispredictsByBranch;
     std::vector<std::map<std::pair<Addr, int>, std::pair<int, int>>> topMispredictsByBranchByPhase;
     std::vector<std::map<Addr, int>> takenBranchesByPhase;
+
+    //      startPC          entry    visited
+    std::map<Addr, std::pair<FTBEntry, int>> lastPhaseFTBEntries;
+    std::map<Addr, std::pair<FTBEntry, int>> totalFTBEntries;
+    std::vector<std::map<Addr, std::pair<FTBEntry, int>>> FTBEntriesByPhase;
 
     int phaseIdToDump{1};
     int numInstCommitted{0};

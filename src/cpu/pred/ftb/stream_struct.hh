@@ -104,6 +104,11 @@ typedef struct BranchInfo {
     {
         return this->pc > other.pc;
     }
+
+    bool operator != (const BranchInfo &other) const
+    {
+        return this->pc != other.pc;
+    }
 }BranchInfo;
 
 
@@ -200,6 +205,20 @@ typedef struct FTBEntry
             }
         }
         return FTBSlot();
+    }
+
+    bool operator == (const FTBEntry &other) const
+    {
+        // startPC and slots pc
+        if (this->tag != other.tag || this->slots.size() != other.slots.size()) {
+            return false;
+        }
+        for (int i = 0; i < this->slots.size(); i++) {
+            if (this->slots[i] != other.slots[i]) {
+                return false;
+            }
+        }
+        return true;
     }
 }FTBEntry;
 

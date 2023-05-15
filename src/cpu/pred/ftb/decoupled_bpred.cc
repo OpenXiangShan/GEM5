@@ -293,6 +293,47 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
         }
         simout.close(out_handle);
 
+        // dump ftb entries
+        int outputTopNEntries = 1;
+        out_handle = simout.create("ftbEntriesByPhase.txt", false, true);
+        *out_handle->stream() << "phaseID"<< " " << "numFTBEntries";
+        for (int i = 0; i <= outputTopNEntries; i++) {
+            *out_handle->stream() << " " << "entry_" << i << "_pc";
+            for (int n = 0; n < numBr; n++) {
+                *out_handle->stream() << " " << "entry_" << i << "_br_" << n << "_pc";
+                *out_handle->stream() << " " << "entry_" << i << "_br_" << n << "_type";
+            }
+        }
+        *out_handle->stream() << std::endl;
+        phaseID = 0;
+
+        for (auto& it : FTBEntriesByPhase) {
+            *out_handle->stream() << std::dec << phaseID;
+            *out_handle->stream() << " " << it.size();
+            std::vector<std::tuple<Addr, FTBEntry, int>> ftbEntryTempVec;
+            for (auto& rec : it) {
+                ftbEntryTempVec.push_back(std::make_tuple(rec.first, rec.second.first, rec.second.second));
+            }
+            std::sort(ftbEntryTempVec.begin(), ftbEntryTempVec.end(),
+                [](const std::tuple<Addr, FTBEntry, int> &a,
+                const std::tuple<Addr, FTBEntry, int> &b) {
+                    return std::get<2>(a) > std::get<2>(b);
+                });
+            for (int i = 0; i <= outputTopNEntries; i++) {
+                auto &rec = ftbEntryTempVec[i];
+                *out_handle->stream() << " " << std::hex << std::get<0>(rec);
+                auto &entry = std::get<1>(rec);
+                for (int n = 0; n < numBr; n++) {
+                    auto slot = entry.slots.size() <= n ? FTBSlot() : entry.slots[n];
+                    *out_handle->stream() << " " << slot.pc;
+                    *out_handle->stream() << " " << slot.getType();
+                }
+            }
+            *out_handle->stream() << std::endl;
+            phaseID++;
+        }
+        simout.close(out_handle);
+
         if (enableDB) {
             bpdb.save_db("bp.db");
         }
@@ -322,8 +363,10 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     ADD_STAT(fsqFullCannotEnq, statistics::units::Count::get(), "bpu has req but fsq full cannot enqueue"),
     ADD_STAT(commitFsqEntryHasInsts, statistics::units::Count::get(), "number of insts that commit fsq entries have"),
     ADD_STAT(commitFsqEntryFetchedInsts, statistics::units::Count::get(), "number of insts that commit fsq entries fetched"),
+    ADD_STAT(commitFsqEntryOnlyHasOneJump, statistics::units::Count::get(), "number of fsq entries with only one instruction (jump)"),
     ADD_STAT(ftbHit, statistics::units::Count::get(), "ftb hits (in predict block)"),
     ADD_STAT(ftbMiss, statistics::units::Count::get(), "ftb misses (in predict block)"),
+    ADD_STAT(ftbEntriesWithDifferentStart, statistics::units::Count::get(), "number of fsq entries with different start PC"),
     ADD_STAT(predFalseHit, statistics::units::Count::get(), "false hit detected at pred"),
     ADD_STAT(commitFalseHit, statistics::units::Count::get(), "false hit detected at commit"),
     ADD_STAT(predLoopPredictorExit, statistics::units::Count::get(), "loop predictor exits at pred"),
@@ -1043,6 +1086,15 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
             for (int i = 0; i < numComponents; ++i) {
                 components[i]->update(stream);
             }
+            // ftb entry stats
+            auto it = totalFTBEntries.find(stream.startPC);
+            if (it == totalFTBEntries.end()) {
+                totalFTBEntries[stream.startPC] = std::make_pair(stream.updateFTBEntry, 1);
+                dbpFtbStats.ftbEntriesWithDifferentStart++;
+            } else {
+                it->second.second++;
+                it->second.first = stream.updateFTBEntry;
+            }
         }
 
         // check loop predictor prediction
@@ -1096,6 +1148,9 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
         dbpFtbStats.commitFsqEntryHasInsts.sample(stream.commitInstNum, 1);
         if (stream.commitInstNum >= 0 && stream.commitInstNum <= 16) {
             commitFsqEntryHasInstsVector[stream.commitInstNum]++;
+            if (stream.commitInstNum == 1 && stream.exeBranchInfo.isUncond()) {
+                dbpFtbStats.commitFsqEntryOnlyHasOneJump++;
+            }
         }
         dbpFtbStats.commitFsqEntryFetchedInsts.sample(stream.fetchInstNum, 1);
         if (stream.fetchInstNum >= 0 && stream.fetchInstNum <= 16) {
@@ -1317,6 +1372,25 @@ DecoupledBPUWithFTB::notifyInstCommit(const DynInstPtr &inst)
             topMispredictsByBranchByPhase.push_back(currentPhaseTopMispredictsByBranch);
 
             takenBranchesByPhase.push_back(currentPhaseTakenBranches);
+            currentPhaseTakenBranches.clear();
+
+            // per phase FTB entries
+            std::map<Addr, std::pair<FTBEntry, int>> currentPhaseFTBEntries;
+            for (auto &it : totalFTBEntries) {
+                auto &entry = it.second.first;
+                auto &visit_cnt = it.second.second;
+                auto last_it = lastPhaseFTBEntries.find(it.first);
+                if (last_it != lastPhaseFTBEntries.end()) {
+                    visit_cnt -= last_it->second.second;
+                }
+                // use new entries, what if entry of the same start addr changes?
+                if (visit_cnt > 0) {
+                    currentPhaseFTBEntries[it.first] = std::make_pair(entry, visit_cnt);
+                }
+            }
+            lastPhaseFTBEntries = totalFTBEntries;
+            FTBEntriesByPhase.push_back(currentPhaseFTBEntries);
+
             phaseIdToDump++;
         }
     }
