@@ -353,6 +353,9 @@ class DecoupledBPUWithFTB : public BPredUnit
         statistics::Scalar returnMiss;
         statistics::Scalar otherMiss;
 
+        statistics::Scalar staticBranchNum;
+        statistics::Scalar staticBranchNumEverTaken;
+
         statistics::Vector predsOfEachStage;
         statistics::Vector commitPredsFromEachStage;
         statistics::Distribution fsqEntryDist;
@@ -512,11 +515,18 @@ class DecoupledBPUWithFTB : public BPredUnit
     
     bool debugFlagOn{false};
 
+    std::map<Addr, int> takenBranches;
+    std::map<Addr, int> currentPhaseTakenBranches;
+
     std::map<std::pair<Addr, Addr>, int> topMispredicts;
     //                (pc, type)            (mispredict, total)
     std::map<std::pair<Addr, int>, std::pair<int, int>> topMispredictsByBranch;
     std::map<uint64_t, uint64_t> topMispredHist;
     std::map<int, int> misPredTripCount;
+
+    std::map<std::pair<Addr, int>, std::pair<int, int>> lastPhaseTopMispredictsByBranch;
+    std::vector<std::map<std::pair<Addr, int>, std::pair<int, int>>> topMispredictsByBranchByPhase;
+    std::vector<std::map<Addr, int>> takenBranchesByPhase;
 
     int phaseIdToDump{1};
     int numInstCommitted{0};
@@ -528,6 +538,7 @@ class DecoupledBPUWithFTB : public BPredUnit
     std::vector<int> commitFsqEntryFetchedInstsVector;
     std::vector<std::vector<int>> fsqEntryNumFetchedInstDistByPhase;
     unsigned int missCount{0};
+    
 
     void setTakenEntryWithStream(const FetchStream &stream_entry, FtqEntry &ftq_entry);
 

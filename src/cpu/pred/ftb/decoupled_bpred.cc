@@ -148,6 +148,7 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
         }
         simout.close(out_handle);
 
+        // top misrate branches
         out_handle = simout.create("topMisrateByBranch.txt", false, true);
         // sort by misrate (permil)
         std::sort(topMisPredPCByBranch.begin(), topMisPredPCByBranch.end(), [](const std::tuple<Addr, int, int, int, double> &a, const std::tuple<Addr, int, int, int, double> &b) {
@@ -155,6 +156,35 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
         });
         for (auto& it : topMisPredPCByBranch) {
             *out_handle->stream() << std::hex << std::get<0>(it) << std::dec << " " << std::get<1>(it) << " " << std::get<2>(it) << " " << std::get<3>(it) << " " << (int)std::get<4>(it) << std::endl;
+        }
+        simout.close(out_handle);
+
+        int phaseID = 0;
+        int outputTopN = 5;
+        out_handle = simout.create("topMispredictByPhase.txt", false, true);
+        *out_handle->stream() << "phaseID" << " " << "numBranches" << " " << "numEverTakenBranches";
+        for (int i = 0; i < outputTopN; i++) {
+            *out_handle->stream() << " " << "topMispPC_" << i;
+        }
+        *out_handle->stream()<< std::endl;
+        for (auto& it : topMispredictsByBranchByPhase) {
+            int numStaticBranches = it.size();
+            int numEverTakenStaticBranches = takenBranchesByPhase[phaseID].size();
+            *out_handle->stream() << phaseID << " " << numStaticBranches << " " << numEverTakenStaticBranches;
+            std::vector<std::pair<Addr, int>> temp;
+            for (auto& it2 : it) {
+                temp.push_back(std::make_pair(it2.first.first, it2.second.first));
+            }
+            // sort by mispredicts
+            std::sort(temp.begin(), temp.end(), [](const std::pair<Addr, int> &a, const std::pair<Addr, int> &b) {
+                return a.second > b.second;
+            });
+            *out_handle->stream() << std::hex;
+            for (int i = 0; i < outputTopN; i++) {
+                *out_handle->stream() << " " << temp[i].first;
+            }
+            *out_handle->stream() << std::dec << std::endl;
+            phaseID++;
         }
         simout.close(out_handle);
 
@@ -229,7 +259,8 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
             *out_handle->stream() << " " << i;
         }
         *out_handle->stream() << " " << "average" << std::endl;
-        int phaseID = 0;
+
+        phaseID = 0;
         for (auto& it : fsqEntryNumCommittedInstDistByPhase) {
             *out_handle->stream() << phaseID;
             int numFsqEntries = 0;
@@ -278,6 +309,8 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     ADD_STAT(uncondMiss, statistics::units::Count::get(), "the number of uncond branch misses"),
     ADD_STAT(returnMiss, statistics::units::Count::get(), "the number of return branch misses"),
     ADD_STAT(otherMiss, statistics::units::Count::get(), "the number of other branch misses"),
+    ADD_STAT(staticBranchNum, statistics::units::Count::get(), "the number of all (different) static branches"),
+    ADD_STAT(staticBranchNumEverTaken, statistics::units::Count::get(), "the number of all (different) static branches that are once taken"),
     ADD_STAT(predsOfEachStage, statistics::units::Count::get(), "the number of preds of each stage that account for final pred"),
     ADD_STAT(commitPredsFromEachStage, statistics::units::Count::get(), "the number of preds of each stage that account for a committed stream"),
     ADD_STAT(fsqEntryDist, statistics::units::Count::get(), "the distribution of number of entries in fsq"),
@@ -1167,10 +1200,27 @@ DecoupledBPUWithFTB::commitBranch(const DynInstPtr &inst, bool miss)
     auto find_it = topMispredictsByBranch.find(std::make_pair(branchAddr, info.getType()));
     if (find_it == topMispredictsByBranch.end()) {
         topMispredictsByBranch[std::make_pair(branchAddr, info.getType())] = std::make_pair(miss,1);
+        dbpFtbStats.staticBranchNum++;
     } else {
         find_it->second.second++;
         if (miss) {
             find_it->second.first++;
+        }
+    }
+    bool taken = inst->pcState().clone()->as<RiscvISA::PCState>().branching();
+    if (taken) {
+        auto itt = takenBranches.find(branchAddr);
+        if (itt == takenBranches.end()) {
+            takenBranches[branchAddr] = 1;
+            dbpFtbStats.staticBranchNumEverTaken++;
+        } else {
+            itt->second++;
+        }
+        auto ittt = currentPhaseTakenBranches.find(branchAddr);
+        if (ittt == currentPhaseTakenBranches.end()) {
+            currentPhaseTakenBranches[branchAddr] = 1;
+        } else {
+            ittt->second++;
         }
     }
 
@@ -1234,6 +1284,7 @@ DecoupledBPUWithFTB::notifyInstCommit(const DynInstPtr &inst)
         // dump current phase only once
         if (phaseIdToDump <= currentPhaseID) {
             DPRINTF(DecoupleBP, "dump phase %d\n", phaseIdToDump);
+            // fsq entry inst num distribution
             std::vector<int> currentPhaseFsqEntryNumCommittedInstDist;
             std::vector<int> currentPhaseFsqEntryNumFetchedInstDist;
             currentPhaseFsqEntryNumCommittedInstDist.resize(16+1, 0);
@@ -1247,6 +1298,25 @@ DecoupledBPUWithFTB::notifyInstCommit(const DynInstPtr &inst)
             }
             fsqEntryNumCommittedInstDistByPhase.push_back(currentPhaseFsqEntryNumCommittedInstDist);
             fsqEntryNumFetchedInstDistByPhase.push_back(currentPhaseFsqEntryNumFetchedInstDist);
+
+            // per phase topMispredicts, can be used to calculate static branch
+            std::map<std::pair<Addr, int>, std::pair<int, int>> currentPhaseTopMispredictsByBranch;
+            for (auto &it : topMispredictsByBranch) {
+                auto &miss = it.second.first;
+                auto &total = it.second.second;
+                auto last_it = lastPhaseTopMispredictsByBranch.find(it.first);
+                if (last_it != lastPhaseTopMispredictsByBranch.end()) {
+                    miss -= last_it->second.first;
+                    total -= last_it->second.second;
+                }
+                if (total > 0) {
+                    currentPhaseTopMispredictsByBranch[it.first] = std::make_pair(miss, total);
+                }
+            }
+            lastPhaseTopMispredictsByBranch = topMispredictsByBranch;
+            topMispredictsByBranchByPhase.push_back(currentPhaseTopMispredictsByBranch);
+
+            takenBranchesByPhase.push_back(currentPhaseTakenBranches);
             phaseIdToDump++;
         }
     }
