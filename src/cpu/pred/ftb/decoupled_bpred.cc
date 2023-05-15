@@ -127,6 +127,35 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
         }
         simout.close(out_handle);
 
+        // at a per branch basis
+        out_handle = simout.create("topMispredictsByBranch.txt", false, true);
+        std::vector<std::tuple<Addr, int, int, int, double>> topMisPredPCByBranch;
+        *out_handle->stream() << "pc" << " " << "type" << " " << "mispredicts" << " " << "total" << " " << "misPermil" << std::endl;
+        for (auto &it : topMispredictsByBranch) {
+            topMisPredPCByBranch.push_back(std::make_tuple(
+                it.first.first, it.first.second, it.second.first, it.second.second,
+                (double)(it.second.first * 1000) / (double)it.second.second));
+        }
+        std::sort(topMisPredPCByBranch.begin(), topMisPredPCByBranch.end(), [](const std::tuple<Addr, int, int, int, double> &a, const std::tuple<Addr, int, int, int, double> &b) {
+            return std::get<2>(a) > std::get<2>(b);
+        });
+        for (auto& it : topMisPredPCByBranch) {
+            *out_handle->stream() << std::hex << std::get<0>(it) << std::dec << " " << std::get<1>(it) << " " << std::get<2>(it) << " " << std::get<3>(it) << " " << (int)std::get<4>(it) << std::endl;
+        }
+        simout.close(out_handle);
+
+        out_handle = simout.create("topMisrateByBranch.txt", false, true);
+        // sort by misrate (permil)
+        std::sort(topMisPredPCByBranch.begin(), topMisPredPCByBranch.end(), [](const std::tuple<Addr, int, int, int, double> &a, const std::tuple<Addr, int, int, int, double> &b) {
+            return std::get<4>(a) > std::get<4>(b);
+        });
+        for (auto& it : topMisPredPCByBranch) {
+            *out_handle->stream() << std::hex << std::get<0>(it) << std::dec << " " << std::get<1>(it) << " " << std::get<2>(it) << " " << std::get<3>(it) << " " << (int)std::get<4>(it) << std::endl;
+        }
+        simout.close(out_handle);
+
+
+
         out_handle = simout.create("topMisPredictHist.txt", false, true);
         // *out_handle->stream() << "use loop but invalid: " << useLoopButInvalid 
         //                       << " use loop and valid: " << useLoopAndValid 
@@ -1067,12 +1096,22 @@ DecoupledBPUWithFTB::commitBranch(const DynInstPtr &inst, bool miss)
     if (enableDB) {
         bptrace->write_record(BpTrace(entry, inst, miss));
     }
-
-
-    LoopTrace rec;
     Addr branchAddr = inst->pcState().instAddr();
     Addr targetAddr = inst->pcState().clone()->as<RiscvISA::PCState>().npc();
     Addr fallThruPC = inst->pcState().clone()->as<RiscvISA::PCState>().getFallThruPC();
+    BranchInfo info(branchAddr, targetAddr, inst->staticInst, fallThruPC-branchAddr);
+    auto find_it = topMispredictsByBranch.find(std::make_pair(branchAddr, info.getType()));
+    if (find_it == topMispredictsByBranch.end()) {
+        topMispredictsByBranch[std::make_pair(branchAddr, info.getType())] = std::make_pair(miss,1);
+    } else {
+        find_it->second.second++;
+        if (miss) {
+            find_it->second.first++;
+        }
+    }
+
+
+    LoopTrace rec;
     LoopEntry predLoopEntry = LoopEntry();
     for (int i = 0; i < numBr; i++) {
         if (entry.loopRedirectInfos[i].branch_pc == inst->pcState().instAddr()) {

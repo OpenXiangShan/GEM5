@@ -509,6 +509,8 @@ class DecoupledBPUWithFTB : public BPredUnit
     bool debugFlagOn{false};
 
     std::map<std::pair<Addr, Addr>, int> topMispredicts;
+    //                (pc, type)            (mispredict, total)
+    std::map<std::pair<Addr, int>, std::pair<int, int>> topMispredictsByBranch;
     std::map<uint64_t, uint64_t> topMispredHist;
     std::map<int, int> misPredTripCount;
     unsigned int missCount{0};
