@@ -364,6 +364,10 @@ class DecoupledBPUWithFTB : public BPredUnit
         statistics::Scalar ftqNotValid;
         statistics::Scalar fsqNotValid;
         statistics::Scalar fsqFullCannotEnq;
+        // 
+        statistics::Distribution commitFsqEntryHasInsts;
+        // write back once an fsq entry finishes fetch
+        statistics::Distribution commitFsqEntryFetchedInsts;
 
         statistics::Scalar ftbHit;
         statistics::Scalar ftbMiss;
@@ -568,7 +572,11 @@ class DecoupledBPUWithFTB : public BPredUnit
 
     void commitBranch(const DynInstPtr &inst, bool miss);
 
+    void notifyInstCommit(const DynInstPtr &inst);
+
     std::map<Addr, unsigned> topMispredIndirect;
+    int currentFtqEntryInstNum;
+
 };
 
 }  // namespace ftb_pred

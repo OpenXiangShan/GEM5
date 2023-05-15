@@ -1120,6 +1120,7 @@ Commit::commitInsts()
                             misPredIndirect[head_inst->pcState().instAddr()]++;
                         }
                     }
+                    dbftb->notifyInstCommit(head_inst);
                 }
 
                 ++num_committed;

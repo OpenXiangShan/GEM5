@@ -243,6 +243,8 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     ADD_STAT(ftqNotValid, statistics::units::Count::get(), "fetch needs ftq req but ftq not valid"),
     ADD_STAT(fsqNotValid, statistics::units::Count::get(), "ftq needs fsq req but fsq not valid"),
     ADD_STAT(fsqFullCannotEnq, statistics::units::Count::get(), "bpu has req but fsq full cannot enqueue"),
+    ADD_STAT(commitFsqEntryHasInsts, statistics::units::Count::get(), "number of insts that commit fsq entries have"),
+    ADD_STAT(commitFsqEntryFetchedInsts, statistics::units::Count::get(), "number of insts that commit fsq entries fetched"),
     ADD_STAT(ftbHit, statistics::units::Count::get(), "ftb hits (in predict block)"),
     ADD_STAT(ftbMiss, statistics::units::Count::get(), "ftb misses (in predict block)"),
     ADD_STAT(predFalseHit, statistics::units::Count::get(), "false hit detected at pred"),
@@ -281,6 +283,8 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     fsqEntryDist.init(0, fsqSize, 1);
     commitLoopBufferEntryInstNum.init(0, 16, 1);
     commitLoopBufferDoubleEntryInstNum.init(0, 16, 1);
+    commitFsqEntryHasInsts.init(0, 16, 1);
+    commitFsqEntryFetchedInsts.init(0, 16, 1);
 }
 
 DecoupledBPUWithFTB::BpTrace::BpTrace(FetchStream &stream, const DynInstPtr &inst, bool mispred)
@@ -464,8 +468,10 @@ DecoupledBPUWithFTB::decoupledPredict(const StaticInstPtr &inst,
         // TODO: do we need to update PC if not taken?
         return std::make_pair(false, true);
     }
+    currentFtqEntryInstNum++;
 
     const auto &target_to_fetch = fetchTargetQueue.getTarget();
+
     // found corresponding entry
     auto start = target_to_fetch.startPC;
     auto end = target_to_fetch.endPC;
@@ -530,9 +536,15 @@ DecoupledBPUWithFTB::decoupledPredict(const StaticInstPtr &inst,
 
     if (run_out_of_this_entry) {
         // dequeue the entry
-        DPRINTF(DecoupleBP, "running out of ftq entry %lu\n",
-                fetchTargetQueue.getSupplyingTargetId());
+        const auto &fsqId = target_to_fetch.fsqID;
+        DPRINTF(DecoupleBP, "running out of ftq entry %lu with %d insts\n",
+                fetchTargetQueue.getSupplyingTargetId(), currentFtqEntryInstNum);
         fetchTargetQueue.finishCurrentFetchTarget();
+        // record inst fetched in fsq entry
+        auto it = fetchStreamQueue.find(fsqId);
+        assert(it != fetchStreamQueue.end());
+        it->second.fetchInstNum = currentFtqEntryInstNum;
+        currentFtqEntryInstNum = 0;
     }
 
     return std::make_pair(taken, run_out_of_this_entry);
@@ -1004,6 +1016,8 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
                 }
             }
         }
+        dbpFtbStats.commitFsqEntryHasInsts.sample(stream.commitInstNum, 1);
+        dbpFtbStats.commitFsqEntryFetchedInsts.sample(stream.fetchInstNum, 1);
 
 
         if (stream.squashType == SQUASH_CTRL) {
@@ -1153,6 +1167,14 @@ DecoupledBPUWithFTB::commitBranch(const DynInstPtr &inst, bool miss)
     for (auto component : components) {
         component->commitBranch(entry, inst);
     }
+}
+
+void
+DecoupledBPUWithFTB::notifyInstCommit(const DynInstPtr &inst)
+{
+    auto it = fetchStreamQueue.find(inst->fsqId);
+    assert(it != fetchStreamQueue.end());
+    it->second.commitInstNum++;
 }
 
 void

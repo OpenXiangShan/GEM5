@@ -279,6 +279,10 @@ typedef struct FetchStream
     Tick predTick;
     boost::dynamic_bitset<> history;
 
+    // for profiling
+    int fetchInstNum;
+    int commitInstNum;
+
     FetchStream()
         : startPC(0),
           predTaken(false),
@@ -294,7 +298,9 @@ typedef struct FetchStream
           updateIsOldEntry(false),
           resolved(false),
           squashType(SquashType::SQUASH_NONE),
-          predSource(0)
+          predSource(0),
+          fetchInstNum(0),
+          commitInstNum(0)
     {
     }
 
