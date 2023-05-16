@@ -376,6 +376,7 @@ class DecoupledBPUWithFTB : public BPredUnit
         statistics::Scalar ftbHit;
         statistics::Scalar ftbMiss;
         statistics::Scalar ftbEntriesWithDifferentStart;
+        statistics::Scalar ftbEntriesWithOnlyOneJump;
 
         statistics::Scalar predFalseHit;
         statistics::Scalar commitFalseHit;

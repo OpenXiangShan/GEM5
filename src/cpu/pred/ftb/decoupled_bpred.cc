@@ -9,6 +9,7 @@
 #include "debug/Override.hh"
 #include "debug/FTB.hh"
 #include "debug/FTBITTAGE.hh"
+#include "debug/Profiling.hh"
 #include "sim/core.hh"
 
 namespace gem5
@@ -366,7 +367,8 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     ADD_STAT(commitFsqEntryOnlyHasOneJump, statistics::units::Count::get(), "number of fsq entries with only one instruction (jump)"),
     ADD_STAT(ftbHit, statistics::units::Count::get(), "ftb hits (in predict block)"),
     ADD_STAT(ftbMiss, statistics::units::Count::get(), "ftb misses (in predict block)"),
-    ADD_STAT(ftbEntriesWithDifferentStart, statistics::units::Count::get(), "number of fsq entries with different start PC"),
+    ADD_STAT(ftbEntriesWithDifferentStart, statistics::units::Count::get(), "number of ftb entries with different start PC"),
+    ADD_STAT(ftbEntriesWithOnlyOneJump, statistics::units::Count::get(), "number of ftb entries with different start PC starting with a jump"),
     ADD_STAT(predFalseHit, statistics::units::Count::get(), "false hit detected at pred"),
     ADD_STAT(commitFalseHit, statistics::units::Count::get(), "false hit detected at commit"),
     ADD_STAT(predLoopPredictorExit, statistics::units::Count::get(), "loop predictor exits at pred"),
@@ -1089,8 +1091,14 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
             // ftb entry stats
             auto it = totalFTBEntries.find(stream.startPC);
             if (it == totalFTBEntries.end()) {
-                totalFTBEntries[stream.startPC] = std::make_pair(stream.updateFTBEntry, 1);
+                auto &ftb_entry = stream.updateFTBEntry;
+                totalFTBEntries[stream.startPC] = std::make_pair(ftb_entry, 1);
                 dbpFtbStats.ftbEntriesWithDifferentStart++;
+                if (ftb_entry.slots.size() == 1) {
+                    if (ftb_entry.slots[0].pc == stream.startPC && ftb_entry.slots[0].isUncond()) {
+                        dbpFtbStats.ftbEntriesWithOnlyOneJump++;
+                    }
+                }
             } else {
                 it->second.second++;
                 it->second.first = stream.updateFTBEntry;
@@ -1253,10 +1261,14 @@ DecoupledBPUWithFTB::commitBranch(const DynInstPtr &inst, bool miss)
     Addr fallThruPC = inst->pcState().clone()->as<RiscvISA::PCState>().getFallThruPC();
     BranchInfo info(branchAddr, targetAddr, inst->staticInst, fallThruPC-branchAddr);
     auto find_it = topMispredictsByBranch.find(std::make_pair(branchAddr, info.getType()));
+    DPRINTF(Profiling, "lookup topMispredictsByBranch for branchAddr %#lx, type %d\n",
+            branchAddr, info.getType());
     if (find_it == topMispredictsByBranch.end()) {
+        DPRINTF(Profiling, "not found, insert miss %d\n", miss);
         topMispredictsByBranch[std::make_pair(branchAddr, info.getType())] = std::make_pair(miss,1);
         dbpFtbStats.staticBranchNum++;
     } else {
+        DPRINTF(Profiling, "found, total %d, miss %d\n", find_it->second.second, find_it->second.first);
         find_it->second.second++;
         if (miss) {
             find_it->second.first++;
@@ -1265,16 +1277,22 @@ DecoupledBPUWithFTB::commitBranch(const DynInstPtr &inst, bool miss)
     bool taken = inst->pcState().clone()->as<RiscvISA::PCState>().branching();
     if (taken) {
         auto itt = takenBranches.find(branchAddr);
+        DPRINTF(Profiling, "lookup takenBranches for taken branchAddr %#lx\n", branchAddr);
         if (itt == takenBranches.end()) {
+            DPRINTF(Profiling, "not found, insert\n");
             takenBranches[branchAddr] = 1;
             dbpFtbStats.staticBranchNumEverTaken++;
         } else {
+            DPRINTF(Profiling, "found, inc count %d to %d\n", itt->second, itt->second+1);
             itt->second++;
         }
+        DPRINTF(Profiling, "lookup currentPhaseTakenBranches for taken branchAddr %#lx\n", branchAddr);
         auto ittt = currentPhaseTakenBranches.find(branchAddr);
         if (ittt == currentPhaseTakenBranches.end()) {
+            DPRINTF(Profiling, "not found, insert\n");
             currentPhaseTakenBranches[branchAddr] = 1;
         } else {
+            DPRINTF(Profiling, "found, inc count %d to %d\n", ittt->second, ittt->second+1);
             ittt->second++;
         }
     }
@@ -1331,14 +1349,15 @@ DecoupledBPUWithFTB::notifyInstCommit(const DynInstPtr &inst)
     assert(it != fetchStreamQueue.end());
     it->second.commitInstNum++;
     numInstCommitted++;
-    DPRINTF(DecoupleBP, "notifyInstCommit, inst=%s, commitInstNum=%d\n",
+    DPRINTF(Profiling, "notifyInstCommit, inst=%s, commitInstNum=%d\n",
             inst->staticInst->disassemble(inst->pcState().instAddr()),
             it->second.commitInstNum);
     if (numInstCommitted % phaseSizeByInst == 0) {
+        DPRINTF(Profiling, "numInstCommitted %d\n", numInstCommitted);
         int currentPhaseID = numInstCommitted / phaseSizeByInst;
         // dump current phase only once
         if (phaseIdToDump <= currentPhaseID) {
-            DPRINTF(DecoupleBP, "dump phase %d\n", phaseIdToDump);
+            DPRINTF(Profiling, "dump phase %d\n", phaseIdToDump);
             // fsq entry inst num distribution
             std::vector<int> currentPhaseFsqEntryNumCommittedInstDist;
             std::vector<int> currentPhaseFsqEntryNumFetchedInstDist;
@@ -1357,8 +1376,8 @@ DecoupledBPUWithFTB::notifyInstCommit(const DynInstPtr &inst)
             // per phase topMispredicts, can be used to calculate static branch
             std::map<std::pair<Addr, int>, std::pair<int, int>> currentPhaseTopMispredictsByBranch;
             for (auto &it : topMispredictsByBranch) {
-                auto &miss = it.second.first;
-                auto &total = it.second.second;
+                auto miss = it.second.first;
+                auto total = it.second.second;
                 auto last_it = lastPhaseTopMispredictsByBranch.find(it.first);
                 if (last_it != lastPhaseTopMispredictsByBranch.end()) {
                     miss -= last_it->second.first;
@@ -1378,7 +1397,7 @@ DecoupledBPUWithFTB::notifyInstCommit(const DynInstPtr &inst)
             std::map<Addr, std::pair<FTBEntry, int>> currentPhaseFTBEntries;
             for (auto &it : totalFTBEntries) {
                 auto &entry = it.second.first;
-                auto &visit_cnt = it.second.second;
+                auto visit_cnt = it.second.second;
                 auto last_it = lastPhaseFTBEntries.find(it.first);
                 if (last_it != lastPhaseFTBEntries.end()) {
                     visit_cnt -= last_it->second.second;
