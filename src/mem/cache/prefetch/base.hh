@@ -333,6 +333,8 @@ class Base : public ClockedObject
         StatGroup(statistics::Group *parent);
         statistics::Scalar demandMshrMisses;
         statistics::Scalar pfIssued;
+        statistics::Scalar pfIssued0;
+        statistics::Scalar pfIssued1;
         /** The number of times a HW-prefetched block is evicted w/o
          * reference. */
         statistics::Scalar pfUnused;
@@ -357,15 +359,42 @@ class Base : public ClockedObject
         /** The number of times a HW-prefetch is late
          * (hit in cache, MSHR, WB). */
         statistics::Formula pfLate;
+
+        statistics::Scalar pf_hitincache0;
+        statistics::Scalar pf_hitincache1;
+        statistics::Scalar pf_hitinmshr0;
+        statistics::Scalar pf_hitinmshr1;
+        statistics::Scalar pf_hitinwb0;
+        statistics::Scalar pf_hitinwb1;
+        statistics::Scalar pf_useful0;
+        statistics::Scalar pf_useful1;
+        statistics::Scalar pf_UnUsedRemovePre0;
+        statistics::Scalar pf_UnUsedRemovePre1;
+        statistics::Formula precision0;
+        statistics::Formula precision1;
+        statistics::Formula recall0;
+        statistics::Formula recall1;
+        statistics::Formula f10;
+        statistics::Formula f11;
+
     } prefetchStats;
 
     /** Total prefetches issued */
     uint64_t issuedPrefetches;
+    uint64_t issuedPrefetches_m;
     /** Total prefetches that has been useful */
     uint64_t usefulPrefetches;
 
     uint64_t UnUsedRemovePre0;
     uint64_t UnUsedRemovePre1;
+
+    std::vector<uint64_t> PF_hitInCache;
+    std::vector<uint64_t> PF_hitInMshr;
+    std::vector<uint64_t> PF_hitInWb;
+    //std::vector<uint64_t> demandMshrMisses;
+    uint64_t demandMshrMisses;
+    std::vector<uint64_t> PF_UseFul;
+
 
     /** Registered tlb for address translations */
     BaseTLB * tlb;
@@ -392,11 +421,98 @@ class Base : public ClockedObject
 
     virtual uint64_t printPrenum() { return 1; };
     virtual uint64_t printPreIssuenum() { return 1; };
+    virtual void cleanPreIssuenum() {};
+
+    void addreg(){
+        PF_hitInCache.push_back(0);
+        PF_hitInMshr.push_back(0);
+        PF_hitInWb.push_back(0);
+        //demandMshrMisses.push_back(0);
+        PF_UseFul.push_back(0);
+    }
+
+    void PreHitInCache(int PreNum){
+        PF_hitInCache[PreNum]++;
+        if (PreNum == 0)
+        {
+            prefetchStats.pf_hitincache0++;
+        }
+        else if (PreNum == 1)
+        {
+            prefetchStats.pf_hitincache1++;
+        }
+    }
+
+    void PreHitInMshr(int PreNum){
+        PF_hitInMshr[PreNum]++;
+        if (PreNum == 0)
+            prefetchStats.pf_hitinmshr0++;
+        else if (PreNum == 1)
+            prefetchStats.pf_hitinmshr1++;
+    }
+
+    void PreHitInWb(int PreNum){
+        PF_hitInWb[PreNum]++;
+        if (PreNum == 0)
+            prefetchStats.pf_hitinwb0++;
+        else if (PreNum == 1)
+            prefetchStats.pf_hitinwb1++;
+    }
+
+    void Pre_demandMshrMisses(){
+        //demandMshrMisses[PreNum]++;
+        demandMshrMisses++;
+    }
+
+    void PreUseful(int PreNum){
+        PF_UseFul[PreNum]++;
+        if (PreNum == 0)
+            prefetchStats.pf_useful0++;
+        else if (PreNum == 1)
+            prefetchStats.pf_useful1++;
+    }
+
+    uint64_t PreHitInCacheNum(int PreNum){
+        return PF_hitInCache[PreNum];
+    }
+
+    uint64_t PreHitInMshrNum(int PreNum){
+        return PF_hitInMshr[PreNum];
+    }
+
+    uint64_t PreHitInWbNum(int PreNum){
+        return PF_hitInWb[PreNum];
+    }
+
+    uint64_t Pre_demandMshrMissesNum(){
+        //return demandMshrMisses[PreNum];
+        return demandMshrMisses;
+    }
+
+    uint64_t Pre_UsefulNum(int PreNum){
+        return PF_UseFul[PreNum];
+    }
+
+    void cleanMultiNum(int PreNum){
+        PF_hitInCache[PreNum]=0;
+        PF_hitInMshr[PreNum]=0;
+        PF_hitInWb[PreNum]=0;
+        PF_UseFul[PreNum]=0;
+    }
+
+    void cleanMultiDemand(){
+        demandMshrMisses = 0;
+    }
+
+    void clean_count(){
+
+    }
 
     void PreRemoveUnused0()
     {
         // printf("unused0\n");
         UnUsedRemovePre0++;
+        prefetchStats.pf_UnUsedRemovePre0++;
     }
 
     uint64_t UnUsedRemovePreNum0()
@@ -409,6 +525,7 @@ class Base : public ClockedObject
     {
         // printf("unused1\n");
         UnUsedRemovePre1++;
+        prefetchStats.pf_UnUsedRemovePre1++;
     }
 
     uint64_t UnUsedRemovePreNum1()

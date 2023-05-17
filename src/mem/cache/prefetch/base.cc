@@ -102,9 +102,9 @@ Base::Base(const BasePrefetcherParams &p)
       prefetchOnAccess(p.prefetch_on_access),
       prefetchOnPfHit(p.prefetch_on_pf_hit),
       useVirtualAddresses(p.use_virtual_addresses),
-      prefetchStats(this), issuedPrefetches(0),
+      prefetchStats(this), issuedPrefetches(0),issuedPrefetches_m(0),
       usefulPrefetches(0), UnUsedRemovePre0(0),
-      UnUsedRemovePre1(0),tlb(nullptr)
+      UnUsedRemovePre1(0), demandMshrMisses(0),tlb(nullptr)
 {
 }
 
@@ -126,6 +126,10 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
         "demands not covered by prefetchs"),
     ADD_STAT(pfIssued, statistics::units::Count::get(),
         "number of hwpf issued"),
+    ADD_STAT(pfIssued0, statistics::units::Count::get(),
+        "number of hwpf0 issued"),
+    ADD_STAT(pfIssued1, statistics::units::Count::get(),
+        "number of hwpf1 issued"),
     ADD_STAT(pfUnused, statistics::units::Count::get(),
              "number of HardPF blocks evicted w/o reference"),
     ADD_STAT(pfUseful, statistics::units::Count::get(),
@@ -144,7 +148,35 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
     ADD_STAT(pfHitInWB, statistics::units::Count::get(),
         "number of prefetches hit in the Write Buffer"),
     ADD_STAT(pfLate, statistics::units::Count::get(),
-        "number of late prefetches (hitting in cache, MSHR or WB)")
+        "number of late prefetches (hitting in cache, MSHR or WB)"),
+    ADD_STAT(pf_hitincache0, statistics::units::Count::get(),
+        "number of prefetches0 hitting in cache"),
+    ADD_STAT(pf_hitincache1, statistics::units::Count::get(),
+        "number of prefetches1 hitting in cache"),
+    ADD_STAT(pf_hitinmshr0, statistics::units::Count::get(),
+        "number of prefetches0 hitting in mshr"),
+    ADD_STAT(pf_hitinmshr1, statistics::units::Count::get(),
+        "number of prefetches1 hitting in mshr"),
+    ADD_STAT(pf_hitinwb0, statistics::units::Count::get(),
+        "number of prefetches0 hitting in wb"),
+    ADD_STAT(pf_hitinwb1, statistics::units::Count::get(),
+        "number of prefetches1 hitting in wb"),
+    ADD_STAT(pf_useful0, statistics::units::Count::get(),
+        "number of useful prefetches0"),
+    ADD_STAT(pf_useful1, statistics::units::Count::get(),
+        "number of useful prefetches1"),
+    ADD_STAT(precision0, statistics::units::Count::get(),
+        "precision0"),
+    ADD_STAT(precision1, statistics::units::Count::get(),
+        "precision1"),
+    ADD_STAT(recall0, statistics::units::Count::get(),
+        "recall0"),
+    ADD_STAT(recall1, statistics::units::Count::get(),
+        "recall1"),
+    ADD_STAT(f10, statistics::units::Count::get(),
+        "f10"),
+    ADD_STAT(f11, statistics::units::Count::get(),
+        "f11")
 {
     using namespace statistics;
 
@@ -157,6 +189,38 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
     coverage = pfUseful / (pfUseful + demandMshrMisses);
 
     pfLate = pfHitInCache + pfHitInMSHR + pfHitInWB;
+
+    pfIssued0.flags(total);
+    pfIssued1.flags(total);
+    pf_hitincache0.flags(total);
+    pf_hitincache1.flags(total);
+    pf_hitinmshr0.flags(total);
+    pf_hitinmshr1.flags(total);
+    pf_hitinwb0.flags(total);
+    pf_hitinwb1.flags(total);
+    pf_useful0.flags(total);
+    pf_useful1.flags(total);
+    precision0.flags(total);
+    precision0 = (pfIssued0 - pf_UnUsedRemovePre0 - pf_hitincache0 -
+                  pf_hitinmshr0 - pf_hitinwb0) /
+                 (pfIssued0 + 1);
+    precision1.flags(total);
+    precision1 = (pfIssued1 - pf_UnUsedRemovePre1 - pf_hitincache1 -
+                  pf_hitinmshr1 - pf_hitinwb1) /
+                 (pfIssued1 + 1);
+
+    recall0.flags(total);
+    recall0 = (pfIssued0 - pf_UnUsedRemovePre0 - pf_hitincache0 -
+               pf_hitinmshr0 - pf_hitinwb0) /
+              (pf_useful0 + pf_hitincache0 + pf_hitinmshr0 + demandMshrMisses);
+    recall1.flags(total);
+    recall1 = (pfIssued1 - pf_UnUsedRemovePre1 - pf_hitincache1 -
+               pf_hitinmshr1 - pf_hitinwb1) /
+              (pf_useful1 + pf_hitincache1 + pf_hitinmshr1 + demandMshrMisses);
+    f10.flags(total);
+    f10 = 2 * precision0 * recall0 / (precision0 + recall0);
+    f11.flags(total);
+    f11 = 2 * precision1 * recall1 / (precision1 + recall1);
 }
 
 bool

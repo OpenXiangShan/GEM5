@@ -79,6 +79,7 @@ class Multi : public Base
   public:
     bool hasBeenChoose;
     int firstChoose;
+    std::vector<uint64_t> lastremove;
 };
 
 } // namespace prefetch

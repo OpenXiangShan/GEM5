@@ -206,6 +206,7 @@ class Queued : public Base
 
     uint64_t printPrenum();
     uint64_t printPreIssuenum();
+    void cleanPreIssuenum();
 
     Tick nextPrefetchReadyTime() const override
     {

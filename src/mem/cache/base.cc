@@ -367,8 +367,12 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
         // no MSHR
         assert(pkt->req->requestorId() < system->maxRequestors());
         stats.cmdStats(pkt).mshrMisses[pkt->req->requestorId()]++;
-        if (prefetcher && pkt->isDemand())
+        if (prefetcher && pkt->isDemand()){
             prefetcher->incrDemandMhsrMisses();
+            //prefetcher->Pre_demandMshrMisses(pkt->req->printpreNum());
+            prefetcher->Pre_demandMshrMisses();
+        }
+
 
         if (pkt->isEviction() || pkt->cmd == MemCmd::WriteClean) {
             // We use forward_time here because there is an
@@ -458,6 +462,13 @@ BaseCache::recvTimingReq(PacketPtr pkt)
             DPRINTF(Cache, "Hit on prefetch for addr %#x (%s)\n",
                     pkt->getAddr(), pkt->isSecure() ? "s" : "ns");
             blk->clearPrefetched();
+            //printf("pre useful before\n");
+            //prefetcher->Pre_UsefulNum(pkt->req->printpreNum());
+            //printf("useful %d\n",pkt->req->printpreNum());
+            //printf("useful %d\n",blk->wasPrefetchedNum());
+            prefetcher->PreUseful(blk->wasPrefetchedNum());
+            //assert(0);
+            //printf("pre useful after\n");
         }
 
         if (blk && blk->needInvalidate()) {
@@ -487,6 +498,13 @@ BaseCache::recvTimingReq(PacketPtr pkt)
         handleTimingReqMiss(pkt, blk, forward_time, request_time);
 
         ppMiss->notify(pkt);
+
+        if (!pkt->req->isCacheMaintenance()){
+            if (hasBeenPrefetched(pkt->getAddr(),pkt->isSecure())){
+                prefetcher->PreUseful(blk->wasPrefetchedNum());
+
+            }
+        }
     }
 
 
@@ -933,18 +951,21 @@ BaseCache::getNextQueueEntry()
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in cache, "
                         "dropped.\n", pf_addr);
                 prefetcher->pfHitInCache();
+                prefetcher->PreHitInCache(pkt->req->printpreNum());
                 // free the request and packet
                 delete pkt;
             } else if (mshrQueue.findMatch(pf_addr, pkt->isSecure())) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in a MSHR, "
                         "dropped.\n", pf_addr);
                 prefetcher->pfHitInMSHR();
+                prefetcher->PreHitInMshr(pkt->req->printpreNum());
                 // free the request and packet
                 delete pkt;
             } else if (writeBuffer.findMatch(pf_addr, pkt->isSecure())) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in the "
                         "Write Buffer, dropped.\n", pf_addr);
                 prefetcher->pfHitInWB();
+                prefetcher->PreHitInWb(pkt->req->printpreNum());
                 // free the request and packet
                 delete pkt;
             } else {
@@ -1702,7 +1723,18 @@ BaseCache::invalidateBlock(CacheBlk *blk)
     // If block is still marked as prefetched, then it hasn't been used
     if (blk->wasPrefetched()) {
         prefetcher->prefetchUnused();
-        blk->UsedPreSign();
+        blk->UnUsedPreSign();
+        if (blk->wasBeUnUsedPre())
+        {
+            if (blk->wasPrefetchedNum() == 0)
+            {
+                prefetcher->PreRemoveUnused0();
+            }
+            else if (blk->wasPrefetchedNum() == 1)
+            {
+                prefetcher->PreRemovePreNum1();
+            }
+        }
     }
 
     // Notify that the data contents for this address are no longer present
@@ -1720,24 +1752,6 @@ BaseCache::invalidateBlock(CacheBlk *blk)
 void
 BaseCache::evictBlock(CacheBlk *blk, PacketList &writebacks)
 {
-    if (blk->wasPrefetched())
-    {
-        if (blk->wasBeUnUsedPre())
-        {
-            if (blk->wasPrefetchedNum() == 0)
-            {
-                prefetcher->PreRemoveUnused0();
-            }
-            else if (blk->wasPrefetchedNum() == 1)
-            {
-                prefetcher->PreRemovePreNum1();
-            }
-            // prefetcher->PreRemoveUnused();
-            //   printf("unused in cache 0: %ld 1: %ld\n",
-            //prefetcher->UnUsedRemovePreNum0(),
-            //prefetcher->UnUsedRemovePreNum1());
-        }
-    }
     if (archDBer) {
         Addr paddr = regenerateBlkAddr(blk);
         uint64_t curCycle = ticksToCycles(curTick());

@@ -262,6 +262,7 @@ Queued::getPacket()
 
     prefetchStats.pfIssued++;
     issuedPrefetches += 1;
+    issuedPrefetches_m += 1;
     assert(pkt != nullptr);
     DPRINTF(HWPrefetch, "Generating prefetch for %#x.\n", pkt->getAddr());
 
@@ -275,7 +276,11 @@ Queued::printPrenum()
 uint64_t
 Queued::printPreIssuenum()
 {
-    return issuedPrefetches;
+    return issuedPrefetches_m;
+}
+void
+Queued::cleanPreIssuenum(){
+    issuedPrefetches_m = 0;
 }
 
 Queued::QueuedStats::QueuedStats(statistics::Group *parent)

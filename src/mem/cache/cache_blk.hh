@@ -256,10 +256,10 @@ class CacheBlk : public TaggedEntry
 
     bool wasBeUnUsedPre()
     {
-        return !_hasBeUsedPre;
+        return _hasBeUnUsedPre;
     }
 
-    void UsedPreSign() { _hasBeUsedPre = true; }
+    void UnUsedPreSign() { _hasBeUnUsedPre = true; }
 
     /**
      * Clear the prefetching bit. Either because it was recently used, or due
@@ -516,7 +516,7 @@ class CacheBlk : public TaggedEntry
 
     /** Whether there is a pending invalidate on this block. */
     bool _needInvalidate = 0;
-    bool _hasBeUsedPre = 0;
+    bool _hasBeUnUsedPre = 0;
 };
 
 /**
