@@ -381,7 +381,7 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
                 const std::tuple<Addr, FTBEntry, int> &b) {
                     return std::get<2>(a) > std::get<2>(b);
                 });
-            for (int i = 0; i <= outputTopNEntries; i++) {
+            for (int i = 0; i <= outputTopNEntries && i < ftbEntryTempVec.size(); i++) {
                 auto &rec = ftbEntryTempVec[i];
                 *out_handle->stream() << " " << std::hex << std::get<0>(rec);
                 auto &entry = std::get<1>(rec);
