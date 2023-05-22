@@ -520,6 +520,7 @@ class DecoupledBPUWithFTB : public BPredUnit
 
     std::map<Addr, int> takenBranches;
     std::map<Addr, int> currentPhaseTakenBranches;
+    std::map<Addr, int> currentSubPhaseTakenBranches;
 
     std::map<std::pair<Addr, Addr>, int> topMispredicts;
     //                (pc, type)            (mispredict, total)
@@ -539,6 +540,10 @@ class DecoupledBPUWithFTB : public BPredUnit
     int phaseIdToDump{1};
     int numInstCommitted{0};
     int phaseSizeByInst{100000};
+    int subPhaseIdToDump{1};
+    int subPhaseRatio{10};
+    int subPhaseSizeByInst() { return phaseSizeByInst/subPhaseRatio; }
+
     std::vector<int> lastPhaseFsqEntryNumCommittedInstDist;
     std::vector<int> commitFsqEntryHasInstsVector;
     std::vector<std::vector<int>> fsqEntryNumCommittedInstDistByPhase;
@@ -546,6 +551,10 @@ class DecoupledBPUWithFTB : public BPredUnit
     std::vector<int> commitFsqEntryFetchedInstsVector;
     std::vector<std::vector<int>> fsqEntryNumFetchedInstDistByPhase;
     unsigned int missCount{0};
+
+    std::map<std::pair<Addr, int>, std::pair<int, int>> lastSubPhaseTopMispredictsByBranch;
+    std::vector<std::map<std::pair<Addr, int>, std::pair<int, int>>> topMispredictsByBranchBySubPhase;
+    std::vector<std::map<Addr, int>> takenBranchesBySubPhase;
     
 
     void setTakenEntryWithStream(const FetchStream &stream_entry, FtqEntry &ftq_entry);

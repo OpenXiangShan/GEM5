@@ -163,26 +163,73 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
         int phaseID = 0;
         int outputTopN = 5;
         out_handle = simout.create("topMispredictByPhase.txt", false, true);
-        *out_handle->stream() << "phaseID" << " " << "numBranches" << " " << "numEverTakenBranches";
+        *out_handle->stream() << "phaseID" << " " << "numBranches" << " " << "numEverTakenBranches" << " " << "totalMispredicts";
         for (int i = 0; i < outputTopN; i++) {
             *out_handle->stream() << " " << "topMispPC_" << i;
+            *out_handle->stream() << " " << "type_" << i;
+            *out_handle->stream() << " " << "misCnt_" << i;
+            // *out_handle->stream() << " " << "topReason" << i;
         }
         *out_handle->stream()<< std::endl;
         for (auto& it : topMispredictsByBranchByPhase) {
             int numStaticBranches = it.size();
             int numEverTakenStaticBranches = takenBranchesByPhase[phaseID].size();
-            *out_handle->stream() << phaseID << " " << numStaticBranches << " " << numEverTakenStaticBranches;
-            std::vector<std::pair<Addr, int>> temp;
+            int totalMispredicts = 0;
+            std::vector<std::pair<std::pair<Addr, int>, std::pair<int, int>>> temp;
             for (auto& it2 : it) {
-                temp.push_back(std::make_pair(it2.first.first, it2.second.first));
+                temp.push_back(it2);
             }
+            for (auto& it2 : temp) {
+                totalMispredicts += it2.second.first;
+            }
+            *out_handle->stream() << phaseID << " " << numStaticBranches << " " << numEverTakenStaticBranches << " " << totalMispredicts;
             // sort by mispredicts
-            std::sort(temp.begin(), temp.end(), [](const std::pair<Addr, int> &a, const std::pair<Addr, int> &b) {
-                return a.second > b.second;
+            std::sort(temp.begin(), temp.end(), [](const std::pair<std::pair<Addr, int>, std::pair<int, int>> &a, const std::pair<std::pair<Addr, int>, std::pair<int, int>> &b) {
+                return a.second.first > b.second.first;
             });
             *out_handle->stream() << std::hex;
             for (int i = 0; i < outputTopN; i++) {
-                *out_handle->stream() << " " << temp[i].first;
+                *out_handle->stream() << " " << std::hex << temp[i].first.first;
+                *out_handle->stream() << " " << std::dec << temp[i].first.second;
+                *out_handle->stream() << " " << std::dec << temp[i].second.first;
+                // *out_handle->stream() << " " << temp[i].first.first;
+            }
+            *out_handle->stream() << std::dec << std::endl;
+            phaseID++;
+        }
+        simout.close(out_handle);
+
+        phaseID = 0;
+        out_handle = simout.create("topMispredictBySubPhase.txt", false, true);
+        *out_handle->stream() << "subPhaseID" << " " << "numBranches" << " " << "numEverTakenBranches" << " " << "totalMispredicts";
+        for (int i = 0; i < outputTopN; i++) {
+            *out_handle->stream() << " " << "topMispPC_" << i;
+            *out_handle->stream() << " " << "type_" << i;
+            *out_handle->stream() << " " << "misCnt_" << i;
+        }
+        *out_handle->stream()<< std::endl;
+        for (auto& it : topMispredictsByBranchBySubPhase) {
+            int numStaticBranches = it.size();
+            int numEverTakenStaticBranches = takenBranchesBySubPhase[phaseID].size();
+            int totalMispredicts = 0;
+            std::vector<std::pair<std::pair<Addr, int>, std::pair<int, int>>> temp;
+            for (auto& it2 : it) {
+                temp.push_back(it2);
+            }
+            for (auto& it2 : temp) {
+                totalMispredicts += it2.second.first;
+            }
+            *out_handle->stream() << phaseID << " " << numStaticBranches << " " << numEverTakenStaticBranches << " " << totalMispredicts;
+            // sort by mispredicts
+            std::sort(temp.begin(), temp.end(), [](const std::pair<std::pair<Addr, int>, std::pair<int, int>> &a, const std::pair<std::pair<Addr, int>, std::pair<int, int>> &b) {
+                return a.second.first > b.second.first;
+            });
+            *out_handle->stream() << std::hex;
+            for (int i = 0; i < outputTopN; i++) {
+                *out_handle->stream() << " " << std::hex << temp[i].first.first;
+                *out_handle->stream() << " " << std::dec << temp[i].first.second;
+                *out_handle->stream() << " " << std::dec << temp[i].second.first;
+                // *out_handle->stream() << " " << temp[i].first.first;
             }
             *out_handle->stream() << std::dec << std::endl;
             phaseID++;
@@ -1295,6 +1342,15 @@ DecoupledBPUWithFTB::commitBranch(const DynInstPtr &inst, bool miss)
             DPRINTF(Profiling, "found, inc count %d to %d\n", ittt->second, ittt->second+1);
             ittt->second++;
         }
+        DPRINTF(Profiling, "lookup currentSubPhaseTakenBranches for taken branchAddr %#lx\n", branchAddr);
+        auto ittts = currentSubPhaseTakenBranches.find(branchAddr);
+        if (ittts == currentSubPhaseTakenBranches.end()) {
+            DPRINTF(Profiling, "not found, insert\n");
+            currentSubPhaseTakenBranches[branchAddr] = 1;
+        } else {
+            DPRINTF(Profiling, "found, inc count %d to %d\n", ittts->second, ittt->second+1);
+            ittts->second++;
+        }
     }
 
 
@@ -1411,6 +1467,34 @@ DecoupledBPUWithFTB::notifyInstCommit(const DynInstPtr &inst)
             FTBEntriesByPhase.push_back(currentPhaseFTBEntries);
 
             phaseIdToDump++;
+        }
+    }
+
+    if (numInstCommitted % subPhaseSizeByInst()) {
+        DPRINTF(Profiling, "numInstCommitted %d\n", numInstCommitted);
+        int currentSubPhaseID = numInstCommitted / subPhaseSizeByInst();
+        if (subPhaseIdToDump <= currentSubPhaseID) {
+            DPRINTF(Profiling, "dump sub phase %d\n", subPhaseIdToDump);
+            // per phase topMispredicts, can be used to calculate static branch
+            std::map<std::pair<Addr, int>, std::pair<int, int>> currentSubPhaseTopMispredictsByBranch;
+            for (auto &it : topMispredictsByBranch) {
+                auto miss = it.second.first;
+                auto total = it.second.second;
+                auto last_it = lastSubPhaseTopMispredictsByBranch.find(it.first);
+                if (last_it != lastSubPhaseTopMispredictsByBranch.end()) {
+                    miss -= last_it->second.first;
+                    total -= last_it->second.second;
+                }
+                if (total > 0) {
+                    currentSubPhaseTopMispredictsByBranch[it.first] = std::make_pair(miss, total);
+                }
+            }
+            lastSubPhaseTopMispredictsByBranch = topMispredictsByBranch;
+            topMispredictsByBranchBySubPhase.push_back(currentSubPhaseTopMispredictsByBranch);
+
+            takenBranchesBySubPhase.push_back(currentSubPhaseTakenBranches);
+            currentSubPhaseTakenBranches.clear();
+            subPhaseIdToDump++;
         }
     }
 }
