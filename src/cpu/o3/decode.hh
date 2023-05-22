@@ -331,6 +331,8 @@ class Decode
     StallReason blockReason;
 
     void setAllStalls(StallReason decodeStall);
+
+    SquashVersion localSquashVer;
 };
 
 } // namespace o3

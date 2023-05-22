@@ -907,6 +907,7 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
         // We will use a nop in ordier to carry the fault.
         DynInstPtr instruction = buildInst(tid, nopStaticInstPtr, nullptr,
                 fetch_pc, fetch_pc, false);
+        instruction->setVersion(localSquashVer);
         instruction->setNotAnInst();
 
         instruction->setPredTarg(fetch_pc);
@@ -1235,6 +1236,10 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
                fromCommit->commitInfo[tid].doneSeqNum,
                fromCommit->commitInfo[tid].squashInst, tid);
 
+        localSquashVer.update(fromCommit->commitInfo[tid].squashVersion.getVersion());
+        DPRINTF(Fetch, "Updating squash version to %u\n",
+                localSquashVer.getVersion());
+
         // If it was a branch mispredict on a control instruction, update the
         // branch predictor with that instruction, otherwise just kill the
         // invalid state we generated in after sequence number
@@ -1252,6 +1257,7 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
             auto mispred_inst = fromCommit->commitInfo[tid].mispredictInst;
             // TODO: write dbpftb conditions
             if (mispred_inst) {
+                DPRINTF(Fetch, "Use mispred inst to redirect, treating as control squash\n");
                 if (isStreamPred()) {
                     dbsp->controlSquash(
                         mispred_inst->getFtqId(), mispred_inst->getFsqId(),
@@ -1268,6 +1274,7 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
                         mispred_inst->seqNum, tid);
                 }
             } else if (fromCommit->commitInfo[tid].isTrapSquash) {
+                DPRINTF(Fetch, "Treating as trap squash\n",tid);
                 if (isStreamPred()) {
                     dbsp->trapSquash(
                         fromCommit->commitInfo[tid].squashedTargetId,
@@ -1286,9 +1293,8 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
             } else {
                 if (fromCommit->commitInfo[tid].pc &&
                     fromCommit->commitInfo[tid].squashedStreamId != 0) {
-                    DPRINTF(
-                        DecoupleBP,
-                        "Squash with stream id and target id from IEW\n");
+                    DPRINTF(Fetch,
+                            "Squash with stream id and target id from IEW\n");
                     if (isStreamPred()) {
                         dbsp->nonControlSquash(
                             fromCommit->commitInfo[tid].squashedTargetId,
@@ -1302,7 +1308,7 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
                     }
                 } else {
                     DPRINTF(
-                        DecoupleBP,
+                        Fetch,
                         "Dont squash dbq because no meaningful stream\n");
                 }
             }
@@ -1712,6 +1718,7 @@ Fetch::fetch(bool &status_change)
 
             DynInstPtr instruction = buildInst(
                     tid, staticInst, curMacroop, this_pc, *next_pc, true);
+            instruction->setVersion(localSquashVer);
 
             ppFetch->notify(instruction);
             numInst++;
@@ -2078,9 +2085,6 @@ Fetch::IcachePort::recvTimingResp(PacketPtr pkt)
 
     DPRINTF(Fetch, "received pkt addr=%#lx, req addr=%#lx\n", pkt->getAddr(),
             pkt->req->getVaddr());
-    for (int i = 0;i < pkt->getSize();i++) {
-        DPRINTF(Fetch, "data[%d]=%#x\n", i, pkt->getConstPtr<uint8_t>()[i]);
-    }
 
     fetch->processCacheCompletion(pkt);
 

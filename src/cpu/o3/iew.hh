@@ -353,6 +353,8 @@ class IEW
     /** Scoreboard pointer. */
     Scoreboard* scoreboard;
 
+    SquashVersion localSquashVer;
+
   private:
     /** CPU pointer. */
     CPU *cpu;

@@ -594,6 +594,8 @@ Commit::squashAll(ThreadID tid)
 
     toIEW->commitInfo[tid].squashedStreamId = committedStreamId;
     toIEW->commitInfo[tid].squashedTargetId = committedTargetId;
+
+    squashInflightAndUpdateVersion(tid);
 }
 
 void
@@ -685,6 +687,7 @@ Commit::tick()
 
             if (rob->isDoneSquashing(tid)) {
                 commitStatus[tid] = Running;
+                DPRINTF(Commit,"[tid:%i] Switch from ROB squashing to Running.\n", tid);
             } else {
                 DPRINTF(Commit,"[tid:%i] Still Squashing, cannot commit any"
                         " insts this cycle.\n", tid);
@@ -935,6 +938,7 @@ Commit::commit()
             }
 
             set(toIEW->commitInfo[tid].pc, fromIEW->pc[tid]);
+            squashInflightAndUpdateVersion(tid);
         }
 
         if (commitStatus[tid] == ROBSquashing) {
@@ -978,10 +982,11 @@ Commit::commit()
         // committed.
         // c) is checked by making sure to not consider the ROB empty
         // on the same cycle as when stores have been committed.
+        // d) no squashAfter is pending
         // @todo: Make this handle multi-cycle communication between
         // commit and IEW.
         if (checkEmptyROB[tid] && rob->isEmpty(tid) &&
-            !iewStage->hasStoresToWB(tid) && !committedStores[tid]) {
+            !iewStage->hasStoresToWB(tid) && !committedStores[tid] && commitStatus[tid] != SquashAfterPending) {
             checkEmptyROB[tid] = false;
             toIEW->commitInfo[tid].usedROB = true;
             toIEW->commitInfo[tid].emptyROB = true;
@@ -1542,6 +1547,10 @@ Commit::getInsts()
         const DynInstPtr &inst = fromRename->insts[inst_num];
         ThreadID tid = inst->threadNumber;
 
+        if (localSquashVer.largerThan(inst->getVersion())) {
+            inst->setSquashed();
+        }
+
         if (!inst->isSquashed() &&
             commitStatus[tid] != ROBSquashing &&
             commitStatus[tid] != TrapPending) {
@@ -1561,6 +1570,29 @@ Commit::getInsts()
                     tid, inst->seqNum, inst->pcState());
         }
     }
+}
+
+
+void
+Commit::squashInflightAndUpdateVersion(ThreadID tid)
+{
+    DPRINTF(Commit, "Squashing in-flight renamed instructions\n");
+    int cycle = 0;  // Mark instructions renamed this cycle as squashed
+    auto tb_ptr = renameQueue->getWire(cycle);
+    DPRINTF(Commit, "%u insts in flight at cycle %d\n", tb_ptr->size,
+            cycle);
+    for (unsigned i_idx = 0; i_idx < tb_ptr->size; i_idx++) {
+        const DynInstPtr &inst = tb_ptr->insts[i_idx];
+        DPRINTF(Commit, "[tid:%i] [sn:%llu] Squashing in-flight "
+                "instruction PC %s\n",
+                inst->threadNumber, inst->seqNum, inst->pcState());
+        inst->setSquashed();
+    }
+
+    localSquashVer.update(localSquashVer.nextVersion());
+    toIEW->commitInfo[tid].squashVersion = localSquashVer;
+    DPRINTF(Commit, "Updating squash version to %u\n",
+            localSquashVer.getVersion());
 }
 
 void

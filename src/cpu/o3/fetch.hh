@@ -703,6 +703,8 @@ class Fetch
         /** Number of instruction fetched per cycle. */
         statistics::Formula rate;
     } fetchStats;
+
+    SquashVersion localSquashVer;
 };
 
 } // namespace o3

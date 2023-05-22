@@ -125,6 +125,8 @@ class Commit
     CommitStatus _nextStatus;
     /** Per-thread status. */
     ThreadStatus commitStatus[MaxThreads];
+
+    bool robSquashHolding{false};
     /** Commit policy used in SMT mode. */
     CommitPolicy commitPolicy;
 
@@ -304,6 +306,9 @@ class Commit
     /** Gets instructions from rename and inserts them into the ROB. */
     void getInsts();
 
+    /** Squash instructions in the rename to ROB TimeBuffer. */
+    void squashInflightAndUpdateVersion(ThreadID tid);
+
     /** Marks completed instructions using information sent from IEW. */
     void markCompletedInsts();
 
@@ -348,6 +353,8 @@ class Commit
 
     /** Wire to read information from rename queue. */
     TimeBuffer<RenameStruct>::wire fromRename;
+
+    SquashVersion localSquashVer;
 
   public:
     /** ROB interface. */

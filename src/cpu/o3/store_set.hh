@@ -29,6 +29,7 @@
 #ifndef __CPU_O3_STORE_SET_HH__
 #define __CPU_O3_STORE_SET_HH__
 
+#include <cmath>
 #include <list>
 #include <map>
 #include <utility>
@@ -69,13 +70,13 @@ class StoreSet
     StoreSet() { };
 
     /** Creates store set predictor with given table sizes. */
-    StoreSet(uint64_t clear_period, int SSIT_size, int LFST_size);
+    StoreSet(uint64_t clear_period, int SSIT_size, int LFST_size,int _store_set_clear_thres, int _LFSTEntrySize);
 
     /** Default destructor. */
     ~StoreSet();
 
     /** Initializes the store set predictor with the given table sizes. */
-    void init(uint64_t clear_period, int SSIT_size, int LFST_size);
+    void init(uint64_t clear_period, int clear_period_thres, int _SSIT_size, int _LFST_size, int _LFST_entry_size);
 
     /** Records a memory ordering violation between the younger load
      * and the older store. */
@@ -85,22 +86,22 @@ class StoreSet
      * entries aren't used and stores are constantly predicted as
      * conflicting.
      */
-    void checkClear();
+    void checkClear(Cycles curCycle);
 
     /** Inserts a load into the store set predictor.  This does nothing but
      * is included in case other predictors require a similar function.
      */
-    void insertLoad(Addr load_PC, InstSeqNum load_seq_num);
+    void insertLoad(Addr load_PC, InstSeqNum load_seq_num,Cycles curCycle);
 
     /** Inserts a store into the store set predictor.  Updates the
      * LFST if the store has a valid SSID. */
-    void insertStore(Addr store_PC, InstSeqNum store_seq_num, ThreadID tid);
+    void insertStore(Addr store_PC, InstSeqNum store_seq_num, ThreadID tid, Cycles curCycle);
 
     /** Checks if the instruction with the given PC is dependent upon
      * any store.  @return Returns the sequence number of the store
      * instruction this PC is dependent upon.  Returns 0 if none.
      */
-    InstSeqNum checkInst(Addr PC);
+    std::vector<InstSeqNum> checkInst(Addr PC);
 
     /** Records this PC/sequence number as issued. */
     void issued(Addr issued_PC, InstSeqNum issued_seq_num, bool is_store);
@@ -113,32 +114,42 @@ class StoreSet
 
     /** Debug function to dump the contents of the store list. */
     void dump();
-
+    bool checkInstStrict(Addr pc);
   private:
+
+    uint64_t lastClearPeriodCycle=0;
+    Addr XORFold(Addr pc, uint64_t resetWidth);
+    int findVictimInLFSTEntry(int store_SSID);
+
     /** Calculates the index into the SSIT based on the PC. */
-    inline int calcIndex(Addr PC)
-    { return (PC >> offsetBits) & indexMask; }
+    // inline int calcIndex(Addr PC)
+    // { return (PC >> offsetBits) & indexMask; }
+    inline int calcIndexSSIT(Addr pc)
+    { return XORFold(pc,log2(SSITSize)); }
 
     /** Calculates a Store Set ID based on the PC. */
-    inline SSID calcSSID(Addr PC)
-    { return ((PC ^ (PC >> 10)) % LFSTSize); }
+    // inline SSID calcSSID(Addr PC)
+    // { return ((PC ^ (PC >> 10)) % LFSTSize); }
+    inline SSID calcSSID(Addr pc)
+    { return XORFold(XORFold(pc,log2(SSITSize)),log2(LFSTSize)); }
 
     /** The Store Set ID Table. */
     std::vector<SSID> SSIT;
 
     /** Bit vector to tell if the SSIT has a valid entry. */
-    std::vector<bool> validSSIT;
+    std::vector<bool> validSSIT,SSITStrict;
 
     /** Last Fetched Store Table. */
-    std::vector<InstSeqNum> LFST;
+    std::vector<std::vector<InstSeqNum>> LFSTLarge,LFSTLargePC;
+    std::vector<InstSeqNum> VictimEntryID;
 
     /** Bit vector to tell if the LFST has a valid entry. */
-    std::vector<bool> validLFST;
+    std::vector<std::vector<bool>> validLFSTLarge;
 
     /** Map of stores that have been inserted into the store set, but
      * not yet issued or squashed.
      */
-    std::map<InstSeqNum, int, ltseqnum> storeList;
+    // std::map<InstSeqNum, int, ltseqnum> storeList;
 
     typedef std::map<InstSeqNum, int, ltseqnum>::iterator SeqNumMapIt;
 
@@ -152,6 +163,9 @@ class StoreSet
 
     /** Last Fetched Store Table size, in entries. */
     int LFSTSize;
+
+    int LFSTEntrySize;
+    uint64_t clearPeriodThreshold;
 
     /** Mask to obtain the index. */
     int indexMask;

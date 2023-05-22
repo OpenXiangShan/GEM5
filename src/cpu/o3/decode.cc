@@ -484,7 +484,11 @@ Decode::sortInsts()
 {
     int insts_from_fetch = fromFetch->size;
     for (int i = 0; i < insts_from_fetch; ++i) {
-        insts[fromFetch->insts[i]->threadNumber].push_back(fromFetch->insts[i]);
+        const DynInstPtr &inst = fromFetch->insts[i];
+        if (localSquashVer.largerThan(inst->getVersion())) {
+            inst->setSquashed();
+        }
+        insts[inst->threadNumber].push_back(inst);
     }
 }
 
@@ -522,6 +526,10 @@ Decode::checkSignalsAndUpdate(ThreadID tid)
                 "from commit.\n", tid);
 
         squash(tid);
+
+        localSquashVer.update(fromCommit->commitInfo[tid].squashVersion.getVersion());
+        DPRINTF(Decode, "Updating squash version to %u\n",
+                localSquashVer.getVersion());
 
         return true;
     }
