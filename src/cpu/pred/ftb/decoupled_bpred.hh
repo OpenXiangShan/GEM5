@@ -522,14 +522,31 @@ class DecoupledBPUWithFTB : public BPredUnit
     std::map<Addr, int> currentPhaseTakenBranches;
     std::map<Addr, int> currentSubPhaseTakenBranches;
 
+    enum MispredType {
+        DIR_WRONG,
+        TARGET_WRONG,
+        NO_PRED,
+        FAKE_LAST
+    };
+    using MispredReasonMap = std::map<MispredType, int>;
+    //                         mispred cnt
+    using MispredDesc = std::pair<int, MispredReasonMap>;
+    //                                    ((mispredict, reason_map),        total)
+    using MispredData = std::pair<MispredDesc, int>;
+    //                             (pc, type) 
+    using MispredIndex = std::pair<Addr, int>;
+    using MispredRecord = std::pair<MispredIndex, MispredData>;
+    using MispredMap = std::map<MispredIndex, MispredData>;
+    // int getMispredCount(MispredData &data) { return data.first.first; }
+    int getMispredCount(const MispredRecord &data) { return data.second.first.first; }
+    
     std::map<std::pair<Addr, Addr>, int> topMispredicts;
-    //                (pc, type)            (mispredict, total)
-    std::map<std::pair<Addr, int>, std::pair<int, int>> topMispredictsByBranch;
+    MispredMap topMispredictsByBranch;
     std::map<uint64_t, uint64_t> topMispredHist;
     std::map<int, int> misPredTripCount;
 
-    std::map<std::pair<Addr, int>, std::pair<int, int>> lastPhaseTopMispredictsByBranch;
-    std::vector<std::map<std::pair<Addr, int>, std::pair<int, int>>> topMispredictsByBranchByPhase;
+    MispredMap lastPhaseTopMispredictsByBranch;
+    std::vector<MispredMap> topMispredictsByBranchByPhase;
     std::vector<std::map<Addr, int>> takenBranchesByPhase;
 
     //      startPC          entry    visited
@@ -552,8 +569,8 @@ class DecoupledBPUWithFTB : public BPredUnit
     std::vector<std::vector<int>> fsqEntryNumFetchedInstDistByPhase;
     unsigned int missCount{0};
 
-    std::map<std::pair<Addr, int>, std::pair<int, int>> lastSubPhaseTopMispredictsByBranch;
-    std::vector<std::map<std::pair<Addr, int>, std::pair<int, int>>> topMispredictsByBranchBySubPhase;
+    MispredMap lastSubPhaseTopMispredictsByBranch;
+    std::vector<MispredMap> topMispredictsByBranchBySubPhase;
     std::vector<std::map<Addr, int>> takenBranchesBySubPhase;
     
 
