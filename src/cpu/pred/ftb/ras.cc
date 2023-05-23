@@ -1,3 +1,4 @@
+#include "cpu/o3/dyn_inst.hh"
 #include "cpu/pred/ftb/ras.hh"
 
 namespace gem5 {
@@ -304,6 +305,11 @@ RAS::getTop_meta() {
         DPRINTF(FTBRAS, "Select from stack, addr %x\n", stack[ssp].data.retAddr);
         return stack[ssp].data;
     }
+}
+
+void
+RAS::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
+{
 }
 
 }  // namespace ftb_pred

@@ -7,6 +7,7 @@
 #include "base/debug_helper.hh"
 #include "base/intmath.hh"
 #include "base/trace.hh"
+#include "cpu/o3/dyn_inst.hh"
 #include "cpu/pred/ftb/stream_common.hh"
 #include "debug/FTBTAGE.hh"
 
@@ -934,6 +935,11 @@ FTBTAGE::TageBankStats::updateStatsWithTagePrediction(const TagePrediction &pred
             updateUseAlt++;
         }
     }
+}
+
+void
+FTBTAGE::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
+{
 }
 
 } // namespace ftb_pred

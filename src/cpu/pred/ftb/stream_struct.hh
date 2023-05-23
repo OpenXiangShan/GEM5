@@ -48,12 +48,12 @@ typedef struct BranchInfo {
     bool isUncond() const { return !this->isCond; }
     Addr getEnd() { return this->pc + this->size; }
     BranchInfo() : pc(0), target(0), isCond(false), isIndirect(false), isCall(false), isReturn(false), size(0) {}
-    BranchInfo (const PCStateBase &control_pc,
-                const PCStateBase &target_pc,
+    BranchInfo (const Addr &control_pc,
+                const Addr &target_pc,
                 const StaticInstPtr &static_inst,
                 unsigned size) :
-        pc(control_pc.instAddr()),
-        target(target_pc.instAddr()),
+        pc(control_pc),
+        target(target_pc),
         isCond(static_inst->isCondCtrl()),
         isIndirect(static_inst->isIndirectCtrl()),
         isCall(static_inst->isCall()),
@@ -192,6 +192,15 @@ typedef struct FTBEntry
         }
         return reasonable;
     }
+
+    FTBSlot getSlot(Addr pc) {
+        for (auto &slot : this->slots) {
+            if (slot.pc == pc) {
+                return slot;
+            }
+        }
+        return FTBSlot();
+    }
 }FTBEntry;
 
 struct BlockDecodeInfo {
@@ -203,6 +212,21 @@ struct BlockDecodeInfo {
 using FetchStreamId = uint64_t;
 using FetchTargetId = uint64_t;
 using PredictionID = uint64_t;
+
+typedef struct LoopEntry {
+    bool valid;
+    int tripCnt;
+    int specCnt;
+    int conf;
+    bool repair;
+    LoopEntry() : valid(false), tripCnt(0), specCnt(0), conf(0), repair(false) {}
+} LoopEntry;
+
+typedef struct LoopRedirectInfo {
+    LoopEntry e;
+    Addr branch_pc;
+    bool end_loop;
+} LoopRedirectInfo;
 
 // NOTE: now this corresponds to an ftq entry in
 //       XiangShan nanhu architecture
@@ -231,14 +255,25 @@ typedef struct FetchStream
     BranchInfo exeBranchInfo;
 
     FTBEntry updateFTBEntry;
+    bool updateIsOldEntry;
     bool resolved;
 
     int squashType;
     Addr squashPC;
     unsigned predSource;
 
+    // for loop buffer
+    bool fromLoopBuffer;
+    bool isDouble;
+    bool isExit;
+
     // prediction metas
     std::array<std::shared_ptr<void>, 5> predMetas;
+
+    // for loop
+    std::vector<LoopRedirectInfo> loopRedirectInfos;
+    std::vector<bool> fixNotExits;
+    std::vector<LoopRedirectInfo> unseenLoopRedirectInfos;
 
     Tick predTick;
     boost::dynamic_bitset<> history;
@@ -255,6 +290,7 @@ typedef struct FetchStream
           exeTaken(false),
           exeBranchInfo(BranchInfo()),
           updateFTBEntry(FTBEntry()),
+          updateIsOldEntry(false),
           resolved(false),
           squashType(SquashType::SQUASH_NONE),
           predSource(0)
@@ -271,7 +307,7 @@ typedef struct FetchStream
     // bool getEnded() const { return resolved ? exeEnded : predEnded; }
     BranchInfo getBranchInfo() const { return resolved ? exeBranchInfo : predBranchInfo; }
     Addr getControlPC() const { return getBranchInfo().pc; }
-    // Addr getEndPC() const { return resolved ? exeEndPC : predEndPC; }
+    Addr getEndPC() const { return getBranchInfo().getEnd(); } // FIXME: should be end of squash inst when non-control squash of trap squash
     Addr getTaken() const { return resolved ? exeTaken : predTaken; }
     Addr getTakenTarget() const { return getBranchInfo().target; }
     // Addr getFallThruPC() const { return getEndPC(); }
@@ -372,6 +408,14 @@ typedef struct FullFTBPrediction
         return target;
     }
 
+    Addr getEnd() {
+        if (isTaken()) {
+            return getTakenSlot().getEnd();
+        } else {
+            return getFallThrough();
+        }
+    }
+
 
 
     Addr getFallThrough() {
@@ -385,6 +429,21 @@ typedef struct FullFTBPrediction
 
     Addr controlAddr() {
         return getTakenSlot().pc;
+    }
+
+    int getTakenBranchIdx() {
+        auto &ftbEntry = this->ftbEntry;
+        if (valid) {
+            int i = 0;
+            for (auto &slot : ftbEntry.slots) {
+                if ((slot.condValid() && condTakens[i]) ||
+                    slot.uncondValid()) {
+                        return i;
+                    }
+                i++;
+            }
+        }
+        return -1;
     }
 
     bool match(FullFTBPrediction &other)
@@ -464,43 +523,29 @@ struct FtqEntry
     bool taken;
     Addr target;  // TODO: use PCState
     FetchStreamId fsqID;
+
+    // for loop buffer
+    bool inLoop;
+    int iter;
+    bool isExit;
+    Addr loopEndPC;
     FtqEntry()
         : startPC(0)
         , endPC(0)
         , takenPC(0)
         , taken(false)
         , target(0)
-        , fsqID(0) {}
+        , fsqID(0)
+        , inLoop(false)
+        , iter(0)
+        , isExit(false)
+        , loopEndPC(0) {}
     
     bool miss() const { return !taken; }
     // bool filledUp() const { return (endPC & fetchTargetMask) == 0; }
     // unsigned predLoopIteration;
 };
 
-
-struct BpTrace : public Record {
-    void set(uint64_t startPC, uint64_t controlPC, uint64_t controlType,
-        uint64_t taken, uint64_t mispred, uint64_t fallThruPC,
-        uint64_t source, uint64_t target) {
-        _uint64_data["startPC"] = startPC;
-        _uint64_data["controlPC"] = controlPC;
-        _uint64_data["controlType"] = controlType;
-        _uint64_data["taken"] = taken;
-        _uint64_data["mispred"] = mispred;
-        _uint64_data["fallThruPC"] = fallThruPC;
-        _uint64_data["source"] = source;
-        _uint64_data["target"] = target;
-    }
-    BpTrace(FetchStream &stream) {
-        _tick = curTick();
-        set(stream.startPC, stream.exeBranchInfo.pc, stream.exeBranchInfo.getType(),
-            stream.exeTaken, stream.squashType == SQUASH_CTRL, stream.updateFTBEntry.fallThruAddr,
-            stream.predSource, stream.exeBranchInfo.target);
-        // for (auto it = _uint64_data.begin(); it != _uint64_data.end(); it++) {
-        //     printf("%s: %ld\n", it->first.c_str(), it->second);
-        // }
-    }
-};
 
 struct TageMissTrace : public Record {
     void set(uint64_t startPC, uint64_t branchPC, uint64_t lgcBank, uint64_t phyBank, uint64_t mainFound, uint64_t mainCounter, uint64_t mainUseful,
@@ -529,6 +574,52 @@ struct TageMissTrace : public Record {
         _uint64_data["predUseSC"] = predUseSC;
         _uint64_data["predSCDisagree"] = predSCDisagree;
         _uint64_data["predSCCorrect"] = predSCCorrect;
+    }
+};
+
+struct LoopTrace : public Record {
+    void set(uint64_t pc, uint64_t target, uint64_t mispred, uint64_t training,
+        uint64_t trainSpecCnt, uint64_t trainTripCnt, uint64_t trainConf,
+        uint64_t inMain, uint64_t mainTripCnt, uint64_t mainConf, uint64_t predSpecCnt,
+        uint64_t predTripCnt, uint64_t predConf)
+    {
+        _tick = curTick();
+        _uint64_data["pc"] = pc;
+        _uint64_data["target"] = target;
+        _uint64_data["mispred"] = mispred;
+        _uint64_data["predSpecCnt"] = predSpecCnt;
+        _uint64_data["predTripCnt"] = predTripCnt;
+        _uint64_data["predConf"] = predConf;
+        // from lp
+        _uint64_data["training"] = training;
+        _uint64_data["trainSpecCnt"] = trainSpecCnt;
+        _uint64_data["trainTripCnt"] = trainTripCnt;
+        _uint64_data["trainConf"] = trainConf;
+        _uint64_data["inMain"] = inMain;
+        _uint64_data["mainTripCnt"] = mainTripCnt;
+        _uint64_data["mainConf"] = mainConf;
+    }
+    void set_in_lp(uint64_t training, uint64_t trainSpecCnt, uint64_t trainTripCnt, uint64_t trainConf,
+        uint64_t inMain, uint64_t mainTripCnt, uint64_t mainConf)
+    {
+        _uint64_data["training"] = training;
+        _uint64_data["trainSpecCnt"] = trainSpecCnt;
+        _uint64_data["trainTripCnt"] = trainTripCnt;
+        _uint64_data["trainConf"] = trainConf;
+        _uint64_data["inMain"] = inMain;
+        _uint64_data["mainTripCnt"] = mainTripCnt;
+        _uint64_data["mainConf"] = mainConf;
+    }
+    void set_outside_lp(uint64_t pc, uint64_t target, uint64_t mispred,
+        uint64_t predSpecCnt, uint64_t predTripCnt, uint64_t predConf)
+    {
+        _tick = curTick();
+        _uint64_data["pc"] = pc;
+        _uint64_data["target"] = target;
+        _uint64_data["mispred"] = mispred;
+        _uint64_data["predSpecCnt"] = predSpecCnt;
+        _uint64_data["predTripCnt"] = predTripCnt;
+        _uint64_data["predConf"] = predConf;
     }
 };
 

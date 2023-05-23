@@ -120,6 +120,8 @@ class DefaultFTB : public TimedBaseFTBPredictor
      */
     void update(const FetchStream &stream) override;
 
+    void commitBranch(const FetchStream &stream, const DynInstPtr &inst) override;
+
     /**
      * @brief derive new ftb entry from old ones and set updateFTBEntry field in stream
      *        only in L1FTB will this function be called when update
@@ -258,9 +260,10 @@ class DefaultFTB : public TimedBaseFTBPredictor
     typedef struct FTBMeta {
         bool hit;
         bool l0_hit;
-        FTBMeta() : hit(false), l0_hit(false) {}
-        FTBMeta(bool h, bool h0) : hit(h), l0_hit(h0) {}
-        FTBMeta(const FTBMeta &other) : hit(other.hit), l0_hit(other.l0_hit) {}
+        FTBEntry entry;
+        FTBMeta() : hit(false), l0_hit(false), entry(FTBEntry()) {}
+        FTBMeta(bool h, bool h0, FTBEntry e) : hit(h), l0_hit(h0), entry(e) {}
+        FTBMeta(const FTBMeta &other) : hit(other.hit), l0_hit(other.l0_hit), entry(other.entry) {}
     }FTBMeta;
 
     FTBMeta meta;
@@ -283,6 +286,38 @@ class DefaultFTB : public TimedBaseFTBPredictor
 
         statistics::Scalar predUseL0OnL1Miss;
         statistics::Scalar updateUseL0OnL1Miss;
+
+        // per branch statistics
+        statistics::Scalar allBranchHits;
+        statistics::Scalar allBranchHitTakens;
+        statistics::Scalar allBranchHitNotTakens;
+        statistics::Scalar allBranchMisses;
+        statistics::Scalar allBranchMissTakens;
+        statistics::Scalar allBranchMissNotTakens;
+
+        statistics::Scalar condHits;
+        statistics::Scalar condHitTakens;
+        statistics::Scalar condHitNotTakens;
+        statistics::Scalar condMisses;
+        statistics::Scalar condMissTakens;
+        statistics::Scalar condMissNotTakens;
+        statistics::Scalar condPredCorrect;
+        statistics::Scalar condPredWrong;
+
+        statistics::Scalar uncondHits;
+        statistics::Scalar uncondMisses;
+
+        statistics::Scalar indirectHits;
+        statistics::Scalar indirectMisses;
+        statistics::Scalar indirectPredCorrect;
+        statistics::Scalar indirectPredWrong;
+
+        statistics::Scalar callHits;
+        statistics::Scalar callMisses;
+
+        statistics::Scalar returnHits;
+        statistics::Scalar returnMisses;
+
         FTBStats(statistics::Group* parent);
     } ftbStats;
 

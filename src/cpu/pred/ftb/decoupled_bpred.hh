@@ -7,12 +7,17 @@
 #include <utility> 
 #include <vector>
 
+#include "arch/generic/pcstate.hh"
+#include "config/the_isa.hh"
+#include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/general_arch_db.hh"
 #include "cpu/pred/ftb/fetch_target_queue.hh"
 #include "cpu/pred/ftb/ftb.hh"
 #include "cpu/pred/ftb/ftb_tage.hh"
 #include "cpu/pred/ftb/ftb_ittage.hh"
+#include "cpu/pred/ftb/loop_predictor.hh"
+#include "cpu/pred/ftb/loop_buffer.hh"
 #include "cpu/pred/ftb/ras.hh"
 #include "cpu/pred/ftb/stream_struct.hh"
 #include "cpu/pred/ftb/timed_base_pred.hh"
@@ -22,6 +27,9 @@
 #include "debug/DecoupleBPRAS.hh"
 #include "debug/DecoupleBPVerbose.hh"
 #include "debug/DBPFTBStats.hh"
+#include "debug/LoopBuffer.hh"
+#include "debug/LoopPredictor.hh"
+#include "debug/LoopPredictorVerbose.hh"
 #include "params/DecoupledBPUWithFTB.hh"
 
 namespace gem5
@@ -32,6 +40,8 @@ namespace branch_prediction
 
 namespace ftb_pred
 {
+
+using DynInstPtr = o3::DynInstPtr;
 
 class HistoryManager
 {
@@ -169,6 +179,10 @@ class DecoupledBPUWithFTB : public BPredUnit
     typedef DecoupledBPUWithFTBParams Params;
 
     DecoupledBPUWithFTB(const Params &params);
+    LoopPredictor lp;
+    LoopBuffer lb;
+    bool enableLoopBuffer{false};
+    bool enableLoopPredictor{false};
 
   private:
     std::string _name;
@@ -178,6 +192,7 @@ class DecoupledBPUWithFTB : public BPredUnit
     std::map<FetchStreamId, FetchStream> fetchStreamQueue;
     unsigned fetchStreamQueueSize;
     FetchStreamId fsqId{1};
+    FetchStream lastCommittedStream;
 
     unsigned numBr;
 
@@ -205,6 +220,9 @@ class DecoupledBPUWithFTB : public BPredUnit
     bool enableDB;
     DataBase bpdb;
     TraceManager *bptrace;
+    TraceManager *lptrace;
+
+
 
     std::vector<TimedBaseFTBPredictor*> components{};
     std::vector<FullFTBPrediction> predsOfEachStage{};
@@ -258,7 +276,7 @@ class DecoupledBPUWithFTB : public BPredUnit
         // TODO:fix this
         DPRINTFR(DecoupleBP,
                  "%#lx-[%#lx, %#lx) --> %#lx, taken: %i\n",
-                 e.startPC, e.predBranchInfo.pc, e.predEndPC,
+                 e.startPC, e.getBranchInfo().pc, e.getEndPC(),
                  e.getTakenTarget(), e.getTaken());
     }
 
@@ -279,9 +297,9 @@ class DecoupledBPUWithFTB : public BPredUnit
     void printFetchTarget(const FtqEntry &e, const char *when)
     {
         DPRINTFR(DecoupleBP,
-                 "%s:: %#lx - [%#lx, %#lx) --> %#lx, taken: %d, fsqID: %lu\n",
+                 "%s:: %#lx - [%#lx, %#lx) --> %#lx, taken: %d, fsqID: %lu, loop: %d, iter: %d, exit: %d\n",
                  when, e.startPC, e.takenPC, e.endPC, e.target, e.taken,
-                 e.fsqID);
+                 e.fsqID, e.inLoop, e.iter, e.isExit);
     }
 
     void printFetchTargetFull(const FtqEntry &e)
@@ -350,13 +368,43 @@ class DecoupledBPUWithFTB : public BPredUnit
         statistics::Scalar predFalseHit;
         statistics::Scalar commitFalseHit;
 
+        statistics::Scalar predLoopPredictorExit;
+        statistics::Scalar predLoopPredictorUnconfNotExit;
+        statistics::Scalar predLoopPredictorConfFixNotExit;
+        statistics::Scalar predFTBUnseenLoopBranchInLp;
+        statistics::Scalar predFTBUnseenLoopBranchExitInLp;
+        statistics::Scalar commitLoopPredictorExit;
+        statistics::Scalar commitLoopPredictorExitCorrect;
+        statistics::Scalar commitLoopPredictorExitWrong;
+        statistics::Scalar commitFTBUnseenLoopBranchInLp;
+        statistics::Scalar commitFTBUnseenLoopBranchExitInLp;
+        statistics::Scalar commitLoopPredictorConfFixNotExit;
+        statistics::Scalar commitLoopPredictorConfFixNotExitCorrect;
+        statistics::Scalar commitLoopPredictorConfFixNotExitWrong;
+        statistics::Scalar commitLoopExitLoopPredictorNotPredicted;
+        statistics::Scalar commitLoopExitLoopPredictorNotConf;
+        statistics::Scalar controlSquashOnLoopPredictorPredExit;
+        statistics::Scalar nonControlSquashOnLoopPredictorPredExit;
+        statistics::Scalar trapSquashOnLoopPredictorPredExit;
+
+        statistics::Scalar predBlockInLoopBuffer;
+        statistics::Scalar predDoubleBlockInLoopBuffer;
+        statistics::Scalar squashOnLoopBufferPredBlock;
+        statistics::Scalar squashOnLoopBufferDoublePredBlock;
+        statistics::Scalar commitBlockInLoopBuffer;
+        statistics::Scalar commitDoubleBlockInLoopBuffer;
+        statistics::Scalar commitBlockInLoopBufferSquashed;
+        statistics::Scalar commitDoubleBlockInLoopBufferSquashed;
+        statistics::Distribution commitLoopBufferEntryInstNum;
+        statistics::Distribution commitLoopBufferDoubleEntryInstNum;
+
         DBPFTBStats(statistics::Group* parent, unsigned numStages, unsigned fsqSize);
     } dbpFtbStats;
 
   public:
     void tick();
 
-    bool trySupplyFetchWithTarget(Addr fetch_demand_pc);
+    bool trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &fetchTargetInLoop);
 
     void squash(const InstSeqNum &squashed_sn, ThreadID tid)
     {
@@ -368,10 +416,26 @@ class DecoupledBPUWithFTB : public BPredUnit
         panic("Squashing decoupled BP with tightly coupled API\n");
     }
 
+    struct BpTrace : public Record {
+        void set(uint64_t startPC, uint64_t controlPC, uint64_t controlType,
+            uint64_t taken, uint64_t mispred, uint64_t fallThruPC,
+            uint64_t source, uint64_t target) {
+            _uint64_data["startPC"] = startPC;
+            _uint64_data["controlPC"] = controlPC;
+            _uint64_data["controlType"] = controlType;
+            _uint64_data["taken"] = taken;
+            _uint64_data["mispred"] = mispred;
+            _uint64_data["fallThruPC"] = fallThruPC;
+            _uint64_data["source"] = source;
+            _uint64_data["target"] = target;
+        }
+        BpTrace(FetchStream &stream, const DynInstPtr &inst, bool mispred);
+    };
 
     std::pair<bool, bool> decoupledPredict(const StaticInstPtr &inst,
                                            const InstSeqNum &seqNum,
-                                           PCStateBase &pc, ThreadID tid);
+                                           PCStateBase &pc, ThreadID tid,
+                                           unsigned &currentLoopIter);
 
     // redirect the stream
     void controlSquash(unsigned ftq_id, unsigned fsq_id,
@@ -379,17 +443,17 @@ class DecoupledBPUWithFTB : public BPredUnit
                        const PCStateBase &target_pc,
                        const StaticInstPtr &static_inst, unsigned inst_bytes,
                        bool actually_taken, const InstSeqNum &squashed_sn,
-                       ThreadID tid);
+                       ThreadID tid, const unsigned &currentLoopIter);
 
     // keep the stream: original prediction might be right
     // For memory violation, stream continues after squashing
     void nonControlSquash(unsigned ftq_id, unsigned fsq_id,
                           const PCStateBase &inst_pc, const InstSeqNum seq,
-                          ThreadID tid);
+                          ThreadID tid, const unsigned &currentLoopIter);
 
     // Not a control. But stream is actually disturbed
     void trapSquash(unsigned ftq_id, unsigned fsq_id, Addr last_committed_pc,
-                    const PCStateBase &inst_pc, ThreadID tid);
+                    const PCStateBase &inst_pc, ThreadID tid, const unsigned &currentLoopIter);
 
     void update(unsigned fsqID, ThreadID tid);
 
@@ -496,6 +560,8 @@ class DecoupledBPUWithFTB : public BPredUnit
     void addFtqNotValid() {
         dbpFtbStats.ftqNotValid++;
     }
+
+    void commitBranch(const DynInstPtr &inst, bool miss);
 
     std::map<Addr, unsigned> topMispredIndirect;
 };

@@ -138,6 +138,7 @@ struct IEWStruct
     InstSeqNum squashedSeqNum[MaxThreads];
     uint64_t squashedStreamId[MaxThreads];
     uint64_t squashedTargetId[MaxThreads];
+    uint64_t squashedLoopIter[MaxThreads];
     std::unique_ptr<PCStateBase> pc[MaxThreads];
 
     bool squash[MaxThreads];
@@ -276,6 +277,7 @@ struct TimeStruct
         uint64_t doneFsqId; // F
         uint64_t squashedStreamId; // F
         uint64_t squashedTargetId; // F
+        unsigned squashedLoopIter; // F
 
         /// Tell Rename how many free entries it has in the ROB
         unsigned freeROBEntries; // *R

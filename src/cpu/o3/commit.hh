@@ -488,6 +488,7 @@ class Commit
 
     uint64_t committedStreamId{};
     uint64_t committedTargetId{};
+    uint64_t committedLoopIter{};
 
     struct CommitStats : public statistics::Group
     {

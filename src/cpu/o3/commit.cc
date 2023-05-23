@@ -594,6 +594,7 @@ Commit::squashAll(ThreadID tid)
 
     toIEW->commitInfo[tid].squashedStreamId = committedStreamId;
     toIEW->commitInfo[tid].squashedTargetId = committedTargetId;
+    toIEW->commitInfo[tid].squashedLoopIter = committedLoopIter;
 
     squashInflightAndUpdateVersion(tid);
 }
@@ -927,6 +928,7 @@ Commit::commit()
             }
             toIEW->commitInfo[tid].squashedStreamId = fromIEW->squashedStreamId[tid];
             toIEW->commitInfo[tid].squashedTargetId = fromIEW->squashedTargetId[tid];
+            toIEW->commitInfo[tid].squashedLoopIter = fromIEW->squashedLoopIter[tid];
 
             // toIEW->commitInfo[tid].doneFsqId =
             //                         toIEW->commitInfo[tid].squashInst->getFsqId();
@@ -1110,26 +1112,13 @@ Commit::commitInsts()
                     if (head_inst->isReturn()) {
                         DPRINTF(FTBRAS, "commit inst PC %x miss %d real target %x pred target %x\n", head_inst->pcState().instAddr(), miss, head_inst->pcState().clone()->as<RiscvISA::PCState>().npc(), *(head_inst->predPC));
                     }
+
                     // FIXME: ignore mret/sret/uret in correspond with RTL
                     if (!head_inst->isNonSpeculative()) {
-                        if (head_inst->isUncondCtrl()) {
-                            dbftb->addCfi(branch_prediction::ftb_pred::DecoupledBPUWithFTB::CfiType::UNCOND, miss);
+                        dbftb->commitBranch(head_inst, miss);
+                        if (!head_inst->isReturn() && head_inst->isIndirectCtrl() && miss) {
+                            misPredIndirect[head_inst->pcState().instAddr()]++;
                         }
-                        if (head_inst->isCondCtrl()) {
-                            dbftb->addCfi(branch_prediction::ftb_pred::DecoupledBPUWithFTB::CfiType::COND, miss);
-                        }
-                        if (head_inst->isReturn()) {
-                            dbftb->addCfi(branch_prediction::ftb_pred::DecoupledBPUWithFTB::CfiType::RETURN, miss);
-                            
-                        } else if (head_inst->isIndirectCtrl()) {
-                            dbftb->addCfi(branch_prediction::ftb_pred::DecoupledBPUWithFTB::CfiType::OTHER, miss);
-                            if (miss) {
-                                misPredIndirect[head_inst->pcState().instAddr()]++;
-                            }
-                        }
-                        DPRINTF(DBPFTBStats, "inst=%s\n", head_inst->staticInst->disassemble(head_inst->pcState().instAddr()));
-                        DPRINTF(DBPFTBStats, "isUncondCtrl=%d, isCondCtrl=%d, isReturn=%d, isIndirectCtrl=%d\n",
-                                head_inst->isUncondCtrl(), head_inst->isCondCtrl(), head_inst->isReturn(), head_inst->isIndirectCtrl());
                     }
                 }
 
@@ -1165,6 +1154,7 @@ Commit::commitInsts()
                 }
                 committedStreamId = head_inst->getFsqId();
                 committedTargetId = head_inst->getFtqId();
+                committedLoopIter = head_inst->getLoopIteration();
 
                 if (tid == 0)
                     canHandleInterrupts = !head_inst->isDelayedCommit();

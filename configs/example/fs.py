@@ -232,11 +232,22 @@ def build_test_system(np):
                         args.indirect_bp_type)
                     test_sys.cpu[i].branchPred.indirectBranchPred = \
                         IndirectBPClass()
-                if args.enable_bp_db:
-                    print("enabling bpdb")
-                    bpClass = ObjectList.bp_list.get('DecoupledBPUWithFTB')
-                    assert(isinstance(test_sys.cpu[i].branchPred, bpClass))
-                    test_sys.cpu[i].branchPred = bpClass(enableBPDB=True)
+                        
+                bpClass = ObjectList.bp_list.get('DecoupledBPUWithFTB')
+                if isinstance(test_sys.cpu[i].branchPred, bpClass):
+                    test_sys.cpu[i].branchPred = bpClass(
+                                                    enableBPDB=args.enable_bp_db,
+                                                    enableLoopBuffer=args.enable_loop_buffer,
+                                                    enableLoopPredictor=args.enable_loop_predictor
+                                                    )
+                else:
+                    if args.enable_bp_db:
+                        print("bpdb not supported for this branch predictor")
+                    if args.enable_loop_buffer:
+                        print("loop buffer not supported for this branch predictor")
+                    if args.enable_loop_predictor:
+                        print("loop predictor not supported for this branch predictor")
+                    assert(False)
             test_sys.cpu[i].createThreads()
             print("Create threads for test sys cpu ({})".format(type(test_sys.cpu[i])))
 

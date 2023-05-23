@@ -114,5 +114,18 @@ Decoder::decode(PCStateBase &_next_pc)
     return decode(emi, next_pc.instAddr());
 }
 
+void
+Decoder::setPCStateWithInstDesc(const bool &compressed, PCStateBase &_next_pc)
+{
+    auto &next_pc = _next_pc.as<PCState>();
+    if (compressed) {
+        next_pc.npc(next_pc.instAddr() + sizeof(machInst) / 2);
+        next_pc.compressed(true);
+    } else {
+        next_pc.npc(next_pc.instAddr() + sizeof(machInst));
+        next_pc.compressed(false);
+    }
+}
+
 } // namespace RiscvISA
 } // namespace gem5
