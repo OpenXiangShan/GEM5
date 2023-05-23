@@ -972,6 +972,7 @@ LSQ::SingleDataRequest::initiateTranslation()
 
     if (_reqs.size() > 0) {
         _reqs.back()->setReqInstSeqNum(_inst->seqNum);
+        _reqs.back()->setXsMetadata(Request::XsMetadata(_inst->xsMeta));
         _reqs.back()->taskId(_taskId);
         _inst->translationStarted(true);
         setState(State::Translation);
@@ -1046,6 +1047,7 @@ LSQ::SplitDataRequest::initiateTranslation()
         /* Setup the requests and send them to translation. */
         for (auto& r: _reqs) {
             r->setReqInstSeqNum(_inst->seqNum);
+            r->setXsMetadata(Request::XsMetadata(_inst->xsMeta));
             r->taskId(_taskId);
         }
 
@@ -1470,6 +1472,7 @@ LSQ::UnsquashableDirectRequest::initiateTranslation()
 
     if (_reqs.size() > 0) {
         _reqs.back()->setReqInstSeqNum(_inst->seqNum);
+        _reqs.back()->setXsMetadata(Request::XsMetadata(_inst->xsMeta));
         _reqs.back()->taskId(_taskId);
         _reqs.back()->setPaddr(_addr);
         _reqs.back()->setInstCount(_inst->getCpuPtr()->totalInsts());

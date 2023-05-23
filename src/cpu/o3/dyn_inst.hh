@@ -58,6 +58,7 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
+#include "cpu/o3/dyn_inst_xsmeta.hh"
 #include "cpu/o3/lsq_unit.hh"
 #include "cpu/op_class.hh"
 #include "cpu/reg_class.hh"
@@ -128,6 +129,9 @@ class DynInst : public ExecContext, public RefCounted
 
     /** The StaticInst used by this BaseDynInst. */
     const StaticInstPtr staticInst;
+
+    /** the xs metadata for this instruction */
+    const XsDynInstMetaPtr xsMeta;
 
     /** Pointer to the Impl's CPU object. */
     CPU *cpu = nullptr;

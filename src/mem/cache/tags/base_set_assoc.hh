@@ -145,6 +145,10 @@ class BaseSetAssoc : public BaseTags
             // Update number of references to accessed block
             blk->increaseRefCount();
 
+            if (pkt->isDemand()) {
+                blk->increaseDemandHits();
+            }
+
             // Update replacement data of accessed block
             replacementPolicy->touch(blk->replacementData, pkt);
         }

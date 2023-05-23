@@ -61,6 +61,7 @@
 #include "base/flags.hh"
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/o3/dyn_inst_xsmeta.hh"
 #include "mem/htm.hh"
 #include "sim/cur_tick.hh"
 
@@ -342,6 +343,22 @@ class Request
     using LocalAccessor =
         std::function<Cycles(ThreadContext *tc, Packet *pkt)>;
 
+    typedef struct XsMetadata
+    {
+        bool validXsMetadata;
+        o3::XsDynInstMetaPtr instXsMetadata;
+        XsMetadata() :
+            validXsMetadata(false),
+            instXsMetadata(NULL) {};
+        XsMetadata(o3::XsDynInstMetaPtr instMeta) :
+            validXsMetadata(true),
+            instXsMetadata(instMeta) {};
+        void invalidate() {
+            validXsMetadata = false;
+            instXsMetadata = NULL;
+        }
+    } XsMetadata;
+
   private:
     typedef uint16_t PrivateFlagsType;
     typedef gem5::Flags<PrivateFlagsType> PrivateFlags;
@@ -370,6 +387,8 @@ class Request
         VALID_HTM_ABORT_CAUSE = 0x00000400,
         /** Whether or not the instruction count is valid. */
         VALID_INST_COUNT      = 0x00000800,
+        /** Whether or not the XS metadata is valid. */
+        VALID_XS_METADATA     = 0x00001000,
         /**
          * These flags are *not* cleared when a Request object is reused
          * (assigned a new address).
@@ -459,6 +478,9 @@ class Request
     /** Sequence number of the instruction that creates the request */
     InstSeqNum _reqInstSeqNum = 0;
 
+    /** metadata for xs */
+    XsMetadata _xsMetadata;
+
     /** A pointer to an atomic operation */
     AtomicOpFunctorPtr atomicOpFunctor = nullptr;
 
@@ -516,6 +538,7 @@ class Request
           _taskId(other._taskId), _vaddr(other._vaddr),
           _extraData(other._extraData), _contextId(other._contextId),
           _pc(other._pc), _reqInstSeqNum(other._reqInstSeqNum),
+          _xsMetadata(other._xsMetadata),
           _localAccessor(other._localAccessor),
           translateDelta(other.translateDelta),
           accessDelta(other.accessDelta), depth(other.depth)
@@ -1027,6 +1050,30 @@ class Request
     {
         privateFlags.set(VALID_INST_SEQ_NUM);
         _reqInstSeqNum = seq_num;
+    }
+
+    /**
+     * Accessor for the metadata from xiangshan CPU attached to this
+     * request.
+     */
+    bool
+    hasXsMetadata() const
+    {
+        return privateFlags.isSet(VALID_XS_METADATA);
+    }
+
+    XsMetadata
+    getXsMetadata() const
+    {
+        assert(hasXsMetadata());
+        return _xsMetadata;
+    }
+
+    void
+    setXsMetadata(const XsMetadata xs_metadata)
+    {
+        privateFlags.set(VALID_XS_METADATA);
+        _xsMetadata = xs_metadata;
     }
 
     /** Accessor functions for flags. Note that these are for testing
