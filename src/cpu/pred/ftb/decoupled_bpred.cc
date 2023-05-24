@@ -719,7 +719,7 @@ DecoupledBPUWithFTB::decoupledPredict(const StaticInstPtr &inst,
 
     if (run_out_of_this_entry) {
         // dequeue the entry
-        const auto &fsqId = target_to_fetch.fsqID;
+        const auto fsqId = target_to_fetch.fsqID;
         DPRINTF(DecoupleBP, "running out of ftq entry %lu with %d insts\n",
                 fetchTargetQueue.getSupplyingTargetId(), currentFtqEntryInstNum);
         fetchTargetQueue.finishCurrentFetchTarget();
