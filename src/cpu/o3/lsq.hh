@@ -55,6 +55,7 @@
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
+#include "cpu/o3/dyn_inst_xsmeta.hh"
 #include "cpu/utils.hh"
 #include "enums/SMTQueuePolicy.hh"
 #include "mem/port.hh"
@@ -358,6 +359,13 @@ class LSQ
         }
 
         uint32_t taskId() const { return _taskId; }
+
+        void
+        setXsMetadata(const Request::XsMetadata &v)
+        {
+            for (auto& r: _reqs)
+                r->setXsMetadata(v);
+        }
 
         RequestPtr req(int idx = 0) { return _reqs.at(idx); }
         const RequestPtr req(int idx = 0) const { return _reqs.at(idx); }

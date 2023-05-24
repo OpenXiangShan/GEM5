@@ -974,6 +974,7 @@ Cache::cleanEvictBlk(CacheBlk *blk)
         req->setFlags(Request::SECURE);
 
     req->taskId(blk->getTaskId());
+    req->setXsMetadata(blk->getXsMetadata());
 
     PacketPtr pkt = new Packet(req, MemCmd::CleanEvict);
     pkt->allocate();

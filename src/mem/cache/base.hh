@@ -988,6 +988,8 @@ class BaseCache : public ClockedObject
     /** ArchDB */
     ArchDBer *archDBer;
 
+    int squashedWays;
+
   public:
     /** System we are currently operating in. */
     System *system;
@@ -1141,6 +1143,21 @@ class BaseCache : public ClockedObject
 
         /** Number of replacements of valid blocks. */
         statistics::Scalar replacements;
+
+        /** Number of replacements of dead blocks */
+        statistics::Scalar deadBlockReplacements;
+
+        /** Number of replacements of live blocks */
+        statistics::Scalar liveBlockReplacements;
+
+        /** Number of replacements of blocks from squashed inst and unused. */
+        statistics::Scalar squashedDeadBlockReplacements;
+
+        /** Number of replacements of blocks from squashed inst but reused. */
+        statistics::Scalar squashedLiveBlockReplacements;
+
+        /** Number of demand hits that accessed squashed inst blocks. */
+        statistics::Scalar squashedDemandHits;
 
         /** Number of data expansions. */
         statistics::Scalar dataExpansions;
@@ -1317,6 +1334,21 @@ class BaseCache : public ClockedObject
     {
         assert(pkt->req->requestorId() < system->maxRequestors());
         stats.cmdStats(pkt).hits[pkt->req->requestorId()]++;
+    }
+
+    void incSquashedDemandHitCount(PacketPtr pkt, CacheBlk *blk)
+    {
+        if (!pkt->isDemand())
+        {
+            return;
+        }
+
+        auto tmp_meta = blk->getXsMetadata();
+        if (tmp_meta.validXsMetadata) {
+            if (tmp_meta.instXsMetadata->squashed){
+                stats.squashedDemandHits++;
+            }
+        }
     }
 
     /**

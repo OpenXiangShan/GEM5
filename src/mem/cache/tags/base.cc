@@ -112,8 +112,16 @@ BaseTags::insertBlock(const PacketPtr pkt, CacheBlk *blk)
     stats.occupancies[requestor_id]++;
 
     // Insert block with tag, src requestor id and task id
-    blk->insert(extractTag(pkt->getAddr()), pkt->isSecure(), requestor_id,
-                pkt->req->taskId());
+    if (pkt->req->hasXsMetadata())
+    {
+        blk->insert(extractTag(pkt->getAddr()), pkt->isSecure(), requestor_id,
+                    pkt->req->taskId(),
+                    pkt->req->getXsMetadata());
+    }
+    else {
+        blk->insert(extractTag(pkt->getAddr()), pkt->isSecure(), requestor_id,
+                    pkt->req->taskId());
+    }
 
     // Check if cache warm up is done
     if (!warmedUp && stats.tagsInUse.value() >= warmupBound) {

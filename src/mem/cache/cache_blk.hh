@@ -186,8 +186,10 @@ class CacheBlk : public TaggedEntry
         }
         setCoherenceBits(other.coherence);
         setTaskId(other.getTaskId());
+        setXsMetadata(other.getXsMetadata());
         setWhenReady(curTick());
         setRefCount(other.getRefCount());
+        setDemandHits(other.getDemandHits());
         setSrcRequestorId(other.getSrcRequestorId());
         std::swap(lockList, other.lockList);
 
@@ -209,8 +211,10 @@ class CacheBlk : public TaggedEntry
         clearCoherenceBits(AllBits);
 
         setTaskId(context_switch_task_id::Unknown);
+        this->_xsMeta.invalidate();
         setWhenReady(MaxTick);
         setRefCount(0);
+        setDemandHits(0);
         setSrcRequestorId(Request::invldRequestorId);
         lockList.clear();
     }
@@ -294,14 +298,23 @@ class CacheBlk : public TaggedEntry
     /** Get the task id associated to this block. */
     uint32_t getTaskId() const { return _taskId; }
 
+    /** get the XS metadata associated to this block. */
+    Request::XsMetadata getXsMetadata() const { return _xsMeta; }
+
     /** Get the requestor id associated to this block. */
     uint32_t getSrcRequestorId() const { return _srcRequestorId; }
 
     /** Get the number of references to this block since insertion. */
     unsigned getRefCount() const { return _refCount; }
 
+    /** Get the number of demand hits to this block since insertion. */
+    unsigned getDemandHits() const { return _refDemandHits; }
+
     /** Get the number of references to this block since insertion. */
     void increaseRefCount() { _refCount++; }
+
+    /** increase one demand hits to this block since insertion. */
+    void increaseDemandHits() { _refDemandHits++; }
 
     /**
      * Get the block's age, that is, the number of ticks since its insertion.
@@ -328,6 +341,9 @@ class CacheBlk : public TaggedEntry
      */
     void insert(const Addr tag, const bool is_secure,
         const int src_requestor_ID, const uint32_t task_ID);
+    void insert(const Addr tag, const bool is_secure,
+        const int src_requestor_ID, const uint32_t task_ID,
+        const Request::XsMetadata &xs_meta);
     using TaggedEntry::insert;
 
     /**
@@ -461,6 +477,12 @@ class CacheBlk : public TaggedEntry
         }
     }
 
+    /** Set the XS metadata. */
+    void setXsMetadata(const Request::XsMetadata &xs_meta)
+    {
+        _xsMeta = xs_meta;
+    }
+
   protected:
     /** The current coherence status of this block. @sa CoherenceBits */
     unsigned coherence;
@@ -479,6 +501,9 @@ class CacheBlk : public TaggedEntry
     /** Set the number of references to this block since insertion. */
     void setRefCount(const unsigned count) { _refCount = count; }
 
+    /** Set the number of demand hits to this block since insertion. */
+    void setDemandHits(const unsigned count) { _refDemandHits = count; }
+
     /** Set the current tick as this block's insertion tick. */
     void setTickInserted() { _tickInserted = curTick(); }
 
@@ -486,11 +511,16 @@ class CacheBlk : public TaggedEntry
     /** Task Id associated with this block */
     uint32_t _taskId = 0;
 
+    Request::XsMetadata _xsMeta;
+
     /** holds the source requestor ID for this block. */
     int _srcRequestorId = 0;
 
     /** Number of references to this block since it was brought in. */
     unsigned _refCount = 0;
+
+    /** Number of demand hits to this block since it was brought in. */
+    unsigned _refDemandHits = 0;
 
     /**
      * Tick on which the block was inserted in the cache. Its value is only

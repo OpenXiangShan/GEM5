@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2012-2013 ARM Limited
+ * Copyright (c) 2010, 2016 ARM Limited
+ * Copyright (c) 2013 Advanced Micro Devices, Inc.
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -11,8 +12,7 @@
  * unmodified and in its entirety in all distributions of the software,
  * modified or unmodified, in source code or in binary form.
  *
- * Copyright (c) 2020 Inria
- * Copyright (c) 2007 The Regents of The University of Michigan
+ * Copyright (c) 2004-2006 The Regents of The University of Michigan
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -39,56 +39,38 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "mem/cache/cache_blk.hh"
+#ifndef __CPU_O3_DYN_INST_XSMETA_HH__
+#define __CPU_O3_DYN_INST_XSMETA_HH__
 
-#include "base/cprintf.hh"
+#include <algorithm>
+#include <array>
+#include <deque>
+#include <list>
+#include <string>
+
+#include "base/refcnt.hh"
+#include "base/types.hh"
 
 namespace gem5
 {
 
-void
-CacheBlk::insert(const Addr tag, const bool is_secure,
-                 const int src_requestor_ID, const uint32_t task_ID)
+namespace o3
 {
-    // Make sure that the block has been properly invalidated
-    assert(!isValid());
 
-    insert(tag, is_secure);
-
-    // Set source requestor ID
-    setSrcRequestorId(src_requestor_ID);
-
-    // Set task ID
-    setTaskId(task_ID);
-
-    // Set insertion tick as current tick
-    setTickInserted();
-
-    // Insertion counts as a reference to the block
-    increaseRefCount();
-}
-
-void
-CacheBlk::insert(const Addr tag, const bool is_secure,
-                 const int src_requestor_ID, const uint32_t task_ID,
-                 const Request::XsMetadata &xs_metadata)
+class XsDynInstMeta : public RefCounted
 {
-    insert(tag, is_secure, src_requestor_ID, task_ID);
+public:
+        bool squashed;
+        Addr instAddr;
 
-    // Set extended XS metadata
-    setXsMetadata(xs_metadata);
-}
+public:
+    XsDynInstMeta(): squashed(false),instAddr(0) {}
+};
 
+using XsDynInstMetaPtr = RefCountingPtr<XsDynInstMeta>;
+using XsDynInstMetaConstPtr = RefCountingPtr<const XsDynInstMeta>;
 
-void
-CacheBlkPrintWrapper::print(std::ostream &os, int verbosity,
-                            const std::string &prefix) const
-{
-    ccprintf(os, "%sblk %c%c%c%c\n", prefix,
-             blk->isValid()    ? 'V' : '-',
-             blk->isSet(CacheBlk::WritableBit) ? 'E' : '-',
-             blk->isSet(CacheBlk::DirtyBit)    ? 'M' : '-',
-             blk->isSecure()   ? 'S' : '-');
-}
-
+} // namespace o3
 } // namespace gem5
+
+#endif // __CPU_O3_DYN_INST_XSMETA_HH__

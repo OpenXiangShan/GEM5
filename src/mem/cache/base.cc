@@ -993,6 +993,23 @@ BaseCache::handleEvictions(std::vector<CacheBlk*> &evict_blks,
         // Evict valid blocks associated to this victim block
         for (auto& blk : evict_blks) {
             if (blk->isValid()) {
+                if (blk->getDemandHits() == 0) {
+                    stats.deadBlockReplacements++;
+                }
+                else {
+                    stats.liveBlockReplacements++;
+                }
+                Request::XsMetadata xsm = blk->getXsMetadata();
+                if (xsm.validXsMetadata){
+                    if (xsm.instXsMetadata->squashed){
+                        if (blk->getDemandHits() == 0) {
+                            stats.squashedDeadBlockReplacements++;
+                        }
+                        else {
+                            stats.squashedLiveBlockReplacements++;
+                        }
+                    }
+                }
                 evictBlock(blk, writebacks);
             }
         }
@@ -1396,6 +1413,7 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         updateBlockData(blk, pkt, has_old_data);
         DPRINTF(Cache, "%s new state is %s\n", __func__, blk->print());
         incHitCount(pkt);
+        incSquashedDemandHitCount(pkt, blk);
 
         // When the packet metadata arrives, the tag lookup will be done while
         // the payload is arriving. Then the block will be ready to access as
@@ -1472,6 +1490,7 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         DPRINTF(Cache, "%s new state is %s\n", __func__, blk->print());
 
         incHitCount(pkt);
+        incSquashedDemandHitCount(pkt, blk);
 
         // When the packet metadata arrives, the tag lookup will be done while
         // the payload is arriving. Then the block will be ready to access as
@@ -1486,6 +1505,7 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
             blk->isSet(CacheBlk::ReadableBit))) {
         // OK to satisfy access
         incHitCount(pkt);
+        incSquashedDemandHitCount(pkt, blk);
 
         // Calculate access latency based on the need to access the data array
         if (pkt->isRead()) {
@@ -1750,6 +1770,7 @@ BaseCache::writebackBlk(CacheBlk *blk)
         req->setFlags(Request::SECURE);
 
     req->taskId(blk->getTaskId());
+    req->setXsMetadata(blk->getXsMetadata());
 
     PacketPtr pkt =
         new Packet(req, blk->isSet(CacheBlk::DirtyBit) ?
@@ -1793,6 +1814,7 @@ BaseCache::writecleanBlk(CacheBlk *blk, Request::Flags dest, PacketId id)
         req->setFlags(Request::SECURE);
     }
     req->taskId(blk->getTaskId());
+    req->setXsMetadata(blk->getXsMetadata());
 
     PacketPtr pkt = new Packet(req, MemCmd::WriteClean, blkSize, id);
 
@@ -1864,6 +1886,7 @@ BaseCache::writebackVisitor(CacheBlk &blk)
             regenerateBlkAddr(&blk), blkSize, 0, Request::funcRequestorId);
 
         request->taskId(blk.getTaskId());
+        request->setXsMetadata(blk.getXsMetadata());
         if (blk.isSecure()) {
             request->setFlags(Request::SECURE);
         }
@@ -2320,6 +2343,16 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "average overall mshr uncacheable latency"),
     ADD_STAT(replacements, statistics::units::Count::get(),
              "number of replacements"),
+    ADD_STAT(deadBlockReplacements, statistics::units::Count::get(),
+             "number of dead block replacements"),
+    ADD_STAT(liveBlockReplacements, statistics::units::Count::get(),
+             "number of live block replacements"),
+    ADD_STAT(squashedDeadBlockReplacements, statistics::units::Count::get(),
+             "number of squashed dead block replacements"),
+    ADD_STAT(squashedLiveBlockReplacements, statistics::units::Count::get(),
+                "number of squashed live block replacements"),
+    ADD_STAT(squashedDemandHits, statistics::units::Count::get(),
+             "number of squashed inst block demand hits"),
     ADD_STAT(dataExpansions, statistics::units::Count::get(),
              "number of data expansions"),
     ADD_STAT(dataContractions, statistics::units::Count::get(),
