@@ -419,6 +419,9 @@ DefaultFTB::update(const FetchStream &stream)
             cond_num = ftb_entry.getTotalNumConds();
         }
         assert(cond_num <= numBr);
+
+        // assert(cond_num <= ftb_entry.slots.size());
+        cond_num = std::min(cond_num, (int)ftb_entry.slots.size());
         for (int i = 0; i < cond_num; i++) {
             auto &slot = ftb_entry.slots[i];
             // only update branches with both taken/not taken behaviors observed
