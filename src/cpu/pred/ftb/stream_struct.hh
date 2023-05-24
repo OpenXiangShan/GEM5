@@ -451,13 +451,11 @@ typedef struct FullFTBPrediction
     {
         if (!other.valid) {
             // chosen is invalid, means all predictors invalid, match
-            printf("match 1\n");
             return true;
         } else {
             // chosen is valid
             if (!this->valid) {
                 // if this is invalid and chosen is valid, sure no match
-                printf("match 2\n");
                 return false;
             } else {
                 bool this_taken, other_taken;
@@ -469,15 +467,6 @@ typedef struct FullFTBPrediction
                 Addr this_npc = this->getTarget();
                 Addr other_npc = other.getTarget();
                 // both this and chosen valid
-                if (this_taken != other_taken) {
-                    printf("match 3\n");
-                }
-                if (this_control_addr != other_control_addr) {
-                    printf("match 4\n");
-                }
-                if (this_cond_num != other_cond_num) {
-                    printf("match 5\n");
-                }
                 return this_taken == other_taken &&
                        this_control_addr == other_control_addr &&
                        this_cond_num == other_cond_num &&

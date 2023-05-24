@@ -233,7 +233,7 @@ RAS::pop_stack()
 void
 RAS::pop()
 {
-    DPRINTFR(FTBRAS, "doing pop ndepth = %d", ndepth);
+    // DPRINTFR(FTBRAS, "doing pop ndepth = %d", ndepth);
 
     // pop may need to deal with committed stack
     if (inflightInRange(TOSR)) {
