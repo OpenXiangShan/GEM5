@@ -105,7 +105,7 @@ function run() {
         --l1d_size=64kB --l1d_assoc=8 \
         --l2_size=1MB --l2_assoc=8 --l2-hwp-type=MultiPrefetcher \
         --l3cache --l3_size=6MB --l3_assoc=6 \
-        --bp-type=DecoupledBPUWithFTB \
+        --bp-type=DecoupledBPUWithFTB --enable-loop-predictor \
         --enable-difftest \
         $cpt_option \
         --warmup-insts-no-switch=$dw_len \
@@ -155,8 +155,13 @@ function single_run() {
     work_dir=$top_work_dir/$task
     mkdir -p $work_dir
 
+    # Note: If you are debugging with single run, following 3 variables are mandatory.
+    # - It prints debug info in tick range: (crash_tick - 500 * capture_cycles, crash_tick + 500 * capture_cycles)
+    # - If you want to print debug info from beginning, set crash_tick to 0, and set capture_cycles to a large number
+    crash_tick=$(( 0 ))
     capture_cycles=$(( 250000 ))
     debug_flags=CommitTrace  # If you unset debug_flags, no debug print will be there
+
     # Common used flags for debug/tuning
     # debug_flags=CommitTrace,IEW,Fetch,LSQUnit,Cache,Commit,IQ,LSQ,PageTableWalker,TLB,MSHR
     warmup_inst=$(( 20 * 10**6 ))
