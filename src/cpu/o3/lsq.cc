@@ -970,6 +970,8 @@ LSQ::SingleDataRequest::initiateTranslation()
 
     addReq(_addr, _size, _byteEnable);
 
+    _inst->xsMeta->instAddr = _inst->pcState().instAddr();
+
     if (_reqs.size() > 0) {
         _reqs.back()->setReqInstSeqNum(_inst->seqNum);
         _reqs.back()->setXsMetadata(Request::XsMetadata(_inst->xsMeta));
@@ -1010,6 +1012,8 @@ LSQ::SplitDataRequest::initiateTranslation()
                 _size, _flags, _inst->requestorId(),
                 _inst->pcState().instAddr(), _inst->contextId());
     _mainReq->setByteEnable(_byteEnable);
+
+    _inst->xsMeta->instAddr = _inst->pcState().instAddr();
 
     // Paddr is not used in _mainReq. However, we will accumulate the flags
     // from the sub requests into _mainReq by calling setFlags() in finish().
@@ -1469,6 +1473,8 @@ LSQ::UnsquashableDirectRequest::initiateTranslation()
     assert(_reqs.size() == 0);
 
     addReq(_addr, _size, _byteEnable);
+
+    _inst->xsMeta->instAddr = _inst->pcState().instAddr();
 
     if (_reqs.size() > 0) {
         _reqs.back()->setReqInstSeqNum(_inst->seqNum);

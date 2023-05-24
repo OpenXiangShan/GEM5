@@ -61,9 +61,10 @@ class XsDynInstMeta : public RefCounted
 {
 public:
         bool squashed;
+        Addr instAddr;
 
 public:
-    XsDynInstMeta(): squashed(false) {}
+    XsDynInstMeta(): squashed(false),instAddr(0) {}
 };
 
 using XsDynInstMetaPtr = RefCountingPtr<XsDynInstMeta>;
