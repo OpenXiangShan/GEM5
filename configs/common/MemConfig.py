@@ -124,6 +124,10 @@ def config_mem(options, system):
     if not opt_mem_type and not opt_nvm_type:
         fatal("Must have option for either mem-type or nvm-type, or both")
 
+    if options.ideal_cache:
+        assert opt_mem_type == "SimpleMemory", \
+            "Ideal caches can only be used with SimpleMemory"
+
     # Optional options
     opt_tlm_memory = getattr(options, "tlm_memory", None)
     opt_external_memory_system = getattr(options, "external_memory_system",
@@ -265,5 +269,12 @@ def config_mem(options, system):
         else:
             # Connect the controllers to the membus
             mem_ctrls[i].port = xbar.mem_side_ports
+
+    if options.ideal_cache:
+        # Set latency of the memory bus to 0
+        for i in range(len(mem_ctrls)):
+            mem_ctrls[i].port.snoop_latency = '0ns'
+            mem_ctrls[i].port.response_latency = '0ns'
+            mem_ctrls[i].latency = '0ns'
 
     subsystem.mem_ctrls = mem_ctrls
