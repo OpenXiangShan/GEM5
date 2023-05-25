@@ -750,6 +750,7 @@ TLB::L2TLB_insert(Addr vpn, const TlbEntry &entry, int level, int choose,
 void
 TLB::demapPage(Addr vpn, uint64_t asid)
 {
+    DPRINTF(TLBVerbose3, "flush(vpn=%#x, asid=%#x)\n", vpn, asid);
     asid &= 0xFFFF;
 
     size_t i;
@@ -808,9 +809,39 @@ TLB::demapPageL2(Addr vpn, uint64_t asid)
     int i;
 
     DPRINTF(TLB, "l2 flush(vpn=%#x, asid=%#x)\n", vpn, asid);
-    DPRINTF(TLB, "l2tlb flush(vpn=%#x, asid=%#x)\n", vpn, asid);
+    DPRINTF(TLBVerbose3, "l2tlb flush(vpn=%#x, asid=%#x)\n", vpn, asid);
+    TlbEntry *l2l1_newEntry =
+        lookup_l2tlb(vpnl2l1, asid, BaseMMU::Read, true, L_L2L1, false);
+    TlbEntry *l2l2_newEntry =
+        lookup_l2tlb(vpnl2l2, asid, BaseMMU::Read, true, L_L2L2, false);
+    TlbEntry *l2l3_newEntry =
+        lookup_l2tlb(vpn, asid, BaseMMU::Read, true, L_L2L3, false);
+    TlbEntry *l2sp1_newEntry =
+        lookup_l2tlb(vpnl2l1, asid, BaseMMU::Read, true, L_L2sp1, false);
+    TlbEntry *l2sp2_newEntry =
+        lookup_l2tlb(vpnl2l2, asid, BaseMMU::Read, true, L_L2sp2, false);
+    if (l2l1_newEntry)
+    {
+        DPRINTF(TLBVerbose3, "l2l1hit\n");
+    }
+    if (l2l2_newEntry)
+    {
+        DPRINTF(TLBVerbose3, "l2l2hit\n");
+    }
+    if (l2l3_newEntry)
+    {
+        DPRINTF(TLBVerbose3, "l2l3hit\n");
+    }
+    if (l2sp1_newEntry)
+    {
+        DPRINTF(TLBVerbose3, "l2sp1hit\n");
+    }
+    if (l2sp2_newEntry)
+    {
+        DPRINTF(TLBVerbose3, "l2sp2hit\n");
+    }
     if (vpn != 0 && asid != 0) {
-        TlbEntry *l2l1_newEntry =
+    /*    TlbEntry *l2l1_newEntry =
             lookup_l2tlb(vpn, asid, BaseMMU::Read, true, L_L2L1, false);
         TlbEntry *l2l2_newEntry =
             lookup_l2tlb(vpn, asid, BaseMMU::Read, true, L_L2L2, false);
@@ -820,7 +851,7 @@ TLB::demapPageL2(Addr vpn, uint64_t asid)
             lookup_l2tlb(vpn, asid, BaseMMU::Read, true, L_L2sp1, false);
         TlbEntry *l2sp2_newEntry =
             lookup_l2tlb(vpn, asid, BaseMMU::Read, true, L_L2sp2, false);
-
+*/
 
         if (l2l1_newEntry) {
             TlbEntry *m_l2l1_newEntry = lookup_l2tlb(
@@ -871,19 +902,29 @@ TLB::demapPageL2(Addr vpn, uint64_t asid)
         for (i = 0; i < l2tlb_l2_size * 8; i = i + 8) {
             if (tlb_l2l2[i].trieHandle) {
                 Addr l2l2_mask = ~(tlb_l2l2[i].size() - 1);
-                if ((vpn == 0 || (vpn & l2l2_mask) == tlb_l2l2[i].vaddr) &&
-                    (asid == 0 || tlb_l2l2[i].asid == asid)) {
+                if ((vpnl2l2 == 0 ||
+                     (vpnl2l2 & l2l2_mask) == tlb_l2l2[i].vaddr) &&
+                    (asid == 0 || tlb_l2l2[i].asid == asid))
+                {
                     l2TLB_remove(i, L_L2L2);
+                    DPRINTF(TLBVerbose3,
+                            "l2l2 remove vaddr %#x vpn %#x vpnl2l3\n",
+                            tlb_l2l2[i].vaddr, vpn, vpnl2l2);
                 }
             }
         }
         for (i = 0; i < l2tlb_l3_size * 8; i = i + 8) {
-            if (tlb_l2l3[i].trieHandle) {
+            if (tlb_l2l3[i].trieHandle)
+            {
                 Addr l2l3_mask = ~(tlb_l2l3[i].size() - 1);
                 if ((vpnl2l3 == 0 ||
                      (vpnl2l3 & l2l3_mask) == tlb_l2l3[i].vaddr) &&
-                    (asid == 0 || tlb_l2l3[i].asid == asid)) {
+                    (asid == 0 || tlb_l2l3[i].asid == asid))
+                {
                     l2TLB_remove(i, L_L2L3);
+                    DPRINTF(TLBVerbose3,
+                            "l2l3 remove vaddr %#x vpn %#x vpnl2l3\n",
+                            tlb_l2l3[i].vaddr, vpn, vpnl2l3);
                 }
             }
         }
@@ -1196,6 +1237,10 @@ TLB::L2tlb_check(PTESv39 pte, int level, STATUS status, PrivilegeMode pmode,
         DPRINTF(TLB, "the result is nofault\n");
     else
         DPRINTF(TLB, "the result is fault for some reason\n");
+    if (fault != NoFault)
+    {
+        DPRINTF(TLBVerbose3, "hit in l2 vaddr is %#x\n", vaddr);
+    }
     return fault;
 }
 
@@ -1221,8 +1266,6 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
     STATUS status = tc->readMiscReg(MISCREG_STATUS);
     PrivilegeMode pmode = getMemPriv(tc, mode);
     DPRINTF(TLB, "the original vaddr %#x\n", vaddr);
-    DPRINTF(TLBVerbose3, "the original vaddr %#x the original Dec %d\n", vaddr,
-            vaddr);
 
 
     if (!e) {  // look up l2tlb
@@ -1401,6 +1444,13 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
         // if we want to write and it isn't writable, do a page table walk
         // again to update the dirty flag.
         //change update a/d not need to do a pagetable walker
+        DPRINTF(TLBVerbose3,
+                "raise pf pc%#x vaddr %#x\n", req->getPC(), vaddr);
+        DPRINTF(TLBVerbose3,
+                "mode %i pte.d %d pte.w %d pte.r %d pte.x %d pte.u %d\n",
+                mode, e->pte.d, e->pte.w, e->pte.r, e->pte.x, e->pte.u);
+        DPRINTF(TLBVerbose3,
+                "paddr %#x ppn %#x\n", e->paddr, e->pte.ppn);
         DPRINTF(TLB, "raise pf pc%#x\n", req->getPC());
         return fault;
     }
