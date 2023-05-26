@@ -268,7 +268,8 @@ typedef struct FetchStream
     bool isExit;
 
     // prediction metas
-    std::array<std::shared_ptr<void>, 5> predMetas;
+    // FIXME: use vec
+    std::array<std::shared_ptr<void>, 6> predMetas;
 
     // for loop
     std::vector<LoopRedirectInfo> loopRedirectInfos;
@@ -489,12 +490,13 @@ typedef struct FullFTBPrediction
                 DPRINTF(Override, "condTakens.size() %d\n", condTakens.size());
                 if (slot.condValid()) {
                     shamt++;
+                    if (condTakens[i]) {
+                        taken = true;
+                        break;
+                    }
                 }
                 assert(condTakens.size() >= i+1);
-                if (condTakens[i]) {
-                    taken = true;
-                    break;
-                }
+                
                 i++;
             }
         }

@@ -888,7 +888,15 @@ class RAS(TimedBaseFTBPredictor):
     
     numEntries = Param.Unsigned(32, "Number of entries in the RAS")
     ctrWidth = Param.Unsigned(8, "Width of the counter")
-    numInflightEntries = Param.Unsigned(28, "Number of inflight entries")
+    numInflightEntries = Param.Unsigned(384, "Number of inflight entries")
+
+class uRAS(TimedBaseFTBPredictor):
+    type = 'uRAS'
+    cxx_class = 'gem5::branch_prediction::ftb_pred::uRAS'
+    cxx_header = 'cpu/pred/ftb/uras.hh'
+    
+    numEntries = Param.Unsigned(4, "Number of entries in the RAS")
+    ctrWidth = Param.Unsigned(2, "Width of the counter")
 
 class FTBTAGE(TimedBaseFTBPredictor):
     type = 'FTBTAGE'
@@ -934,6 +942,7 @@ class DecoupledBPUWithFTB(BranchPredictor):
     ittage = Param.FTBITTAGE(FTBITTAGE(), "ITTAGE predictor")
     uftb = Param.DefaultFTB(UFTB(), "UFTB predictor")
     ras = Param.RAS(RAS(), "RAS")
+    uras = Param.uRAS(uRAS(), "uRAS")
     
     enableBPDB = Param.Bool(False, "Enable trace in the form of database")
     enableLoopBuffer = Param.Bool(False, "Enable loop buffer to supply inst for loops")

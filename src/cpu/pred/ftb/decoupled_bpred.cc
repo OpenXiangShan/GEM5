@@ -31,6 +31,7 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
       tage(p.tage),
       ittage(p.ittage),
       ras(p.ras),
+      uras(p.uras),
       enableDB(p.enableBPDB),
       numStages(p.numStages),
       historyManager(p.numBr),
@@ -75,6 +76,7 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
     // TODO: better impl (use vector to assign in python)
     // problem: ftb->getAndSetNewFTBEntry
     components.push_back(uftb);
+    components.push_back(uras);
     components.push_back(ftb);
     components.push_back(tage);
     components.push_back(ras);
@@ -315,6 +317,7 @@ DecoupledBPUWithFTB::tick()
 
         sentPCHist = true;
     }
+    
 
     // query loop buffer with start pc
     if (enableLoopBuffer && !lb.isActive() &&
@@ -372,6 +375,27 @@ DecoupledBPUWithFTB::generateFinalPredAndCreateBubbles()
         finalPred.predSource = first_hit_stage;
         receivedPred = true;
 
+        // if stage 2 has ret (handled by main RAS)
+        // check if we have handled in stage 1
+        auto taken_slot_s1 = predsOfEachStage[1].getTakenSlot();
+        if (taken_slot_s1.isReturn) {
+            for (int i = 0; i < predsOfEachStage[1].ftbEntry.slots.size(); i++) {
+                DPRINTF(FTBuRAS, "s2 slot valid %d isCond %d\n", predsOfEachStage[1].ftbEntry.slots[i].valid, predsOfEachStage[1].ftbEntry.slots[i].isCond);
+            }
+            DPRINTF(FTBuRAS, "pred to be ret on s2 with choose stage %d\n", first_hit_stage);
+            DPRINTF(FTBuRAS, "s1 ftbEntry valid %d\n", predsOfEachStage[0].ftbEntry.valid);
+            auto taken_slot_s0 = predsOfEachStage[0].getTakenSlot();
+            for (int i = 0; i < predsOfEachStage[0].ftbEntry.slots.size(); i++) {
+                DPRINTF(FTBuRAS, "s1 slot valid %d isCond %d\n", predsOfEachStage[0].ftbEntry.slots[i].valid, predsOfEachStage[0].ftbEntry.slots[i].isCond);
+            }
+            if (!taken_slot_s0.isReturn) {
+                DPRINTF(FTBuRAS, "pc %llx pred to be ret on s2, but not on s1\n", predsOfEachStage[1].bbStart);
+            }
+            if (predsOfEachStage[1].returnTarget != predsOfEachStage[0].returnTarget) {
+                DPRINTF(FTBuRAS, "pc %llx pred to be ret but s1 target %llx, s2 target %llx\n", predsOfEachStage[1].bbStart, predsOfEachStage[0].returnTarget, predsOfEachStage[1].returnTarget);
+            }
+        }
+
         printFullFTBPrediction(*chosen);
         dbpFtbStats.predsOfEachStage[first_hit_stage]++;
     } else {
@@ -380,6 +404,7 @@ DecoupledBPUWithFTB::generateFinalPredAndCreateBubbles()
         DPRINTF(LoopBuffer, "Do not generate final pred when loop buffer is active\n");
         DPRINTF(DecoupleBP, "Do not generate final pred when loop buffer is active\n");
     }
+
     DPRINTF(Override, "Ends generateFinalPredAndCreateBubbles(), numOverrideBubbles is %d, receivedPred is set true.\n", numOverrideBubbles);
 
 }
