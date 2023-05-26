@@ -9,6 +9,7 @@
 #include "debug/Override.hh"
 #include "debug/FTB.hh"
 #include "debug/FTBITTAGE.hh"
+#include "debug/Profiling.hh"
 #include "sim/core.hh"
 
 namespace gem5
@@ -111,6 +112,10 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
     if (!enableLoopPredictor && enableLoopBuffer) {
         fatal("loop buffer cannot be enabled without loop predictor\n");
     }
+    commitFsqEntryHasInstsVector.resize(16+1, 0);
+    lastPhaseFsqEntryNumCommittedInstDist.resize(16+1, 0);
+    commitFsqEntryFetchedInstsVector.resize(16+1, 0);
+    lastPhaseFsqEntryNumFetchedInstDist.resize(16+1, 0);
 
     registerExitCallback([this]() {
         auto out_handle = simout.create("topMisPredicts.txt", false, true);
@@ -126,6 +131,125 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
             *out_handle->stream() << std::hex << it.first.first << " " << it.first.second << " " << std::dec << it.second << std::endl;
         }
         simout.close(out_handle);
+
+        // at a per branch basis
+        out_handle = simout.create("topMispredictsByBranch.txt", false, true);
+        std::vector<std::tuple<Addr, int, int, int, double, int, int, int>> topMisPredPCByBranch;
+        *out_handle->stream() << "pc" << " " << "type" << " " << "mispredicts" << " " << "total" << " " << "misPermil" << " " << "dirMiss" << " " << "tgtMiss" << " " << "noPredMiss" << std::endl;
+        for (auto &it : topMispredictsByBranch) {
+            topMisPredPCByBranch.push_back(std::make_tuple(
+                it.first.first, it.first.second, it.second.first.first, it.second.second,
+                (double)(it.second.first.first * 1000) / (double)it.second.second,
+                it.second.first.second.at(DIR_WRONG), it.second.first.second.at(TARGET_WRONG), it.second.first.second.at(NO_PRED)));
+        }
+        std::sort(topMisPredPCByBranch.begin(), topMisPredPCByBranch.end(), [](
+            const std::tuple<Addr, int, int, int, double, int, int, int> &a,
+            const std::tuple<Addr, int, int, int, double, int, int, int> &b) {
+                return std::get<2>(a) > std::get<2>(b);
+        });
+        for (auto& it : topMisPredPCByBranch) {
+            *out_handle->stream() << std::hex << std::get<0>(it) << std::dec << " " << std::get<1>(it) << " " << std::get<2>(it) << " " << std::get<3>(it);
+            *out_handle->stream() << " " << (int)std::get<4>(it) << " " << (int)std::get<5>(it) << " " << (int)std::get<6>(it) << " " << (int)std::get<7>(it) << std::endl;
+        }
+        simout.close(out_handle);
+
+        // top misrate branches
+        out_handle = simout.create("topMisrateByBranch.txt", false, true);
+        // sort by misrate (permil), filter by total count
+        *out_handle->stream() << "pc" << " " << "type" << " " << "mispredicts" << " " << "total" << " " << "misPermil" << " " << "dirMiss" << " " << "tgtMiss" << " " << "noPredMiss" << std::endl;
+        std::sort(topMisPredPCByBranch.begin(), topMisPredPCByBranch.end(), [](
+            const std::tuple<Addr, int, int, int, double, int, int, int> &a,
+            const std::tuple<Addr, int, int, int, double, int, int, int> &b) {
+                return std::get<4>(a) > std::get<4>(b);
+        });
+
+        int mispCntThres = 100;
+        for (auto& it : topMisPredPCByBranch) {
+            if (std::get<3>(it) < mispCntThres) {
+                continue;
+            }
+            *out_handle->stream() << std::hex << std::get<0>(it) << std::dec << " " << std::get<1>(it) << " " << std::get<2>(it) << " " << std::get<3>(it);
+            *out_handle->stream() << " " << (int)std::get<4>(it) << " " << (int)std::get<5>(it) << " " << (int)std::get<6>(it) << " " << (int)std::get<7>(it) << std::endl;
+        }
+        simout.close(out_handle);
+
+        int phaseID = 0;
+        int outputTopN = 5;
+        out_handle = simout.create("topMispredictByPhase.txt", false, true);
+        *out_handle->stream() << "phaseID" << " " << "numBranches" << " " << "numEverTakenBranches" << " " << "totalMispredicts";
+        for (int i = 0; i < outputTopN; i++) {
+            *out_handle->stream() << " " << "topMispPC_" << i;
+            *out_handle->stream() << " " << "type_" << i;
+            *out_handle->stream() << " " << "misCnt_" << i;
+            // *out_handle->stream() << " " << "topReason" << i;
+        }
+        *out_handle->stream()<< std::endl;
+        for (auto& it : topMispredictsByBranchByPhase) {
+            int numStaticBranches = it.size();
+            int numEverTakenStaticBranches = takenBranchesByPhase[phaseID].size();
+            int totalMispredicts = 0;
+            std::vector<MispredRecord> temp;
+            for (auto& it2 : it) {
+                temp.push_back(it2);
+            }
+            for (auto& it2 : temp) {
+                totalMispredicts += getMispredCount(it2);
+            }
+            *out_handle->stream() << phaseID << " " << numStaticBranches << " " << numEverTakenStaticBranches << " " << totalMispredicts;
+            // sort by mispredicts
+            std::sort(temp.begin(), temp.end(), [&](const MispredRecord &a, const MispredRecord &b) {
+                return gem5::branch_prediction::ftb_pred::DecoupledBPUWithFTB::getMispredCount(a) >
+                gem5::branch_prediction::ftb_pred::DecoupledBPUWithFTB::getMispredCount(b);
+            });
+            for (int i = 0; i < outputTopN; i++) {
+                *out_handle->stream() << " " << std::hex << temp[i].first.first; // pc
+                *out_handle->stream() << " " << std::dec << temp[i].first.second; // type
+                *out_handle->stream() << " " << std::dec << getMispredCount(temp[i]); // mispred count
+                // *out_handle->stream() << " " << temp[i].first.first;
+            }
+            *out_handle->stream() << std::dec << std::endl;
+            phaseID++;
+        }
+        simout.close(out_handle);
+
+        phaseID = 0;
+        out_handle = simout.create("topMispredictBySubPhase.txt", false, true);
+        *out_handle->stream() << "subPhaseID" << " " << "numBranches" << " " << "numEverTakenBranches" << " " << "totalMispredicts";
+        for (int i = 0; i < outputTopN; i++) {
+            *out_handle->stream() << " " << "topMispPC_" << i;
+            *out_handle->stream() << " " << "type_" << i;
+            *out_handle->stream() << " " << "misCnt_" << i;
+        }
+        *out_handle->stream()<< std::endl;
+        for (auto& it : topMispredictsByBranchBySubPhase) {
+            int numStaticBranches = it.size();
+            int numEverTakenStaticBranches = takenBranchesBySubPhase[phaseID].size();
+            int totalMispredicts = 0;
+            std::vector<MispredRecord> temp;
+            for (auto& it2 : it) {
+                temp.push_back(it2);
+            }
+            for (auto& it2 : temp) {
+                totalMispredicts += getMispredCount(it2);
+            }
+            *out_handle->stream() << phaseID << " " << numStaticBranches << " " << numEverTakenStaticBranches << " " << totalMispredicts;
+            // sort by mispredicts
+            std::sort(temp.begin(), temp.end(), [&](const MispredRecord &a, const MispredRecord &b) {
+                return gem5::branch_prediction::ftb_pred::DecoupledBPUWithFTB::getMispredCount(a) >
+                gem5::branch_prediction::ftb_pred::DecoupledBPUWithFTB::getMispredCount(b);
+            });
+            *out_handle->stream() << std::hex;
+            for (int i = 0; i < outputTopN; i++) {
+                *out_handle->stream() << " " << std::hex << temp[i].first.first; // pc
+                *out_handle->stream() << " " << std::dec << temp[i].first.second; // type
+                *out_handle->stream() << " " << std::dec << getMispredCount(temp[i]); // mispred count
+                // *out_handle->stream() << " " << temp[i].first.first;
+            }
+            *out_handle->stream() << std::dec << std::endl;
+            phaseID++;
+        }
+        simout.close(out_handle);
+
 
         out_handle = simout.create("topMisPredictHist.txt", false, true);
         // *out_handle->stream() << "use loop but invalid: " << useLoopButInvalid 
@@ -189,6 +313,89 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
         }
 
         simout.close(out_handle);
+
+        // dump fsq entry committed insts
+        out_handle = simout.create("fsqEntryCommittedInstNumDistsByPhase.txt", false, true);
+        *out_handle->stream() << "phaseID";
+        for (int i = 0; i <= 16; i++) {
+            *out_handle->stream() << " " << i;
+        }
+        *out_handle->stream() << " " << "average" << std::endl;
+
+        phaseID = 0;
+        for (auto& it : fsqEntryNumCommittedInstDistByPhase) {
+            *out_handle->stream() << phaseID;
+            int numFsqEntries = 0;
+            for (int i = 0; i <= 16; i++) {
+                *out_handle->stream() << " " << it[i];
+                numFsqEntries += it[i];
+            }
+            *out_handle->stream() << " " << (double)phaseSizeByInst / (double)numFsqEntries << std::endl;
+            phaseID++;
+        }
+        simout.close(out_handle);
+
+        // dump fsq entry fetched insts
+        out_handle = simout.create("fsqEntryFetchedInstNumDistsByPhase.txt", false, true);
+        *out_handle->stream() << "phaseID";
+        for (int i = 0; i <= 16; i++) {
+            *out_handle->stream() << " " << i;
+        }
+        *out_handle->stream() << " " << "average" << std::endl;
+        phaseID = 0;
+        for (auto& it : fsqEntryNumFetchedInstDistByPhase) {
+            *out_handle->stream() << phaseID;
+            int numFsqEntries = 0;
+            for (int i = 0; i <= 16; i++) {
+                *out_handle->stream() << " " << it[i];
+                numFsqEntries += it[i];
+            }
+            *out_handle->stream() << " " << (double)phaseSizeByInst / (double)numFsqEntries << std::endl;
+            phaseID++;
+        }
+        simout.close(out_handle);
+
+        // dump ftb entries
+        int outputTopNEntries = 1;
+        out_handle = simout.create("ftbEntriesByPhase.txt", false, true);
+        *out_handle->stream() << "phaseID"<< " " << "numFTBEntries";
+        for (int i = 0; i <= outputTopNEntries; i++) {
+            *out_handle->stream() << " " << "entry_" << i << "_pc";
+            for (int n = 0; n < numBr; n++) {
+                *out_handle->stream() << " " << "entry_" << i << "_br_" << n << "_pc";
+                *out_handle->stream() << " " << "entry_" << i << "_br_" << n << "_type";
+            }
+        }
+        *out_handle->stream() << std::endl;
+        phaseID = 0;
+
+        for (auto& it : FTBEntriesByPhase) {
+            *out_handle->stream() << std::dec << phaseID;
+            *out_handle->stream() << " " << it.size();
+            std::vector<std::tuple<Addr, FTBEntry, int>> ftbEntryTempVec;
+            for (auto& rec : it) {
+                ftbEntryTempVec.push_back(std::make_tuple(rec.first, rec.second.first, rec.second.second));
+            }
+            std::sort(ftbEntryTempVec.begin(), ftbEntryTempVec.end(),
+                [](const std::tuple<Addr, FTBEntry, int> &a,
+                const std::tuple<Addr, FTBEntry, int> &b) {
+                    return std::get<2>(a) > std::get<2>(b);
+                });
+            for (int i = 0; i <= outputTopNEntries && i < ftbEntryTempVec.size(); i++) {
+                auto &rec = ftbEntryTempVec[i];
+                *out_handle->stream() << " " << std::hex << std::get<0>(rec);
+                auto &entry = std::get<1>(rec);
+                for (int n = 0; n < numBr; n++) {
+                    auto slot = entry.slots.size() <= n ? FTBSlot() : entry.slots[n];
+                    *out_handle->stream() << " " << slot.pc;
+                    *out_handle->stream() << " " << slot.getType();
+                }
+            }
+            *out_handle->stream() << std::endl;
+            phaseID++;
+        }
+        simout.close(out_handle);
+
         if (enableDB) {
             bpdb.save_db("bp.db");
         }
@@ -205,6 +412,8 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     ADD_STAT(uncondMiss, statistics::units::Count::get(), "the number of uncond branch misses"),
     ADD_STAT(returnMiss, statistics::units::Count::get(), "the number of return branch misses"),
     ADD_STAT(otherMiss, statistics::units::Count::get(), "the number of other branch misses"),
+    ADD_STAT(staticBranchNum, statistics::units::Count::get(), "the number of all (different) static branches"),
+    ADD_STAT(staticBranchNumEverTaken, statistics::units::Count::get(), "the number of all (different) static branches that are once taken"),
     ADD_STAT(predsOfEachStage, statistics::units::Count::get(), "the number of preds of each stage that account for final pred"),
     ADD_STAT(commitPredsFromEachStage, statistics::units::Count::get(), "the number of preds of each stage that account for a committed stream"),
     ADD_STAT(fsqEntryDist, statistics::units::Count::get(), "the distribution of number of entries in fsq"),
@@ -214,8 +423,13 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     ADD_STAT(ftqNotValid, statistics::units::Count::get(), "fetch needs ftq req but ftq not valid"),
     ADD_STAT(fsqNotValid, statistics::units::Count::get(), "ftq needs fsq req but fsq not valid"),
     ADD_STAT(fsqFullCannotEnq, statistics::units::Count::get(), "bpu has req but fsq full cannot enqueue"),
+    ADD_STAT(commitFsqEntryHasInsts, statistics::units::Count::get(), "number of insts that commit fsq entries have"),
+    ADD_STAT(commitFsqEntryFetchedInsts, statistics::units::Count::get(), "number of insts that commit fsq entries fetched"),
+    ADD_STAT(commitFsqEntryOnlyHasOneJump, statistics::units::Count::get(), "number of fsq entries with only one instruction (jump)"),
     ADD_STAT(ftbHit, statistics::units::Count::get(), "ftb hits (in predict block)"),
     ADD_STAT(ftbMiss, statistics::units::Count::get(), "ftb misses (in predict block)"),
+    ADD_STAT(ftbEntriesWithDifferentStart, statistics::units::Count::get(), "number of ftb entries with different start PC"),
+    ADD_STAT(ftbEntriesWithOnlyOneJump, statistics::units::Count::get(), "number of ftb entries with different start PC starting with a jump"),
     ADD_STAT(predFalseHit, statistics::units::Count::get(), "false hit detected at pred"),
     ADD_STAT(commitFalseHit, statistics::units::Count::get(), "false hit detected at commit"),
     ADD_STAT(predLoopPredictorExit, statistics::units::Count::get(), "loop predictor exits at pred"),
@@ -252,6 +466,8 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     fsqEntryDist.init(0, fsqSize, 1);
     commitLoopBufferEntryInstNum.init(0, 16, 1);
     commitLoopBufferDoubleEntryInstNum.init(0, 16, 1);
+    commitFsqEntryHasInsts.init(0, 16, 1);
+    commitFsqEntryFetchedInsts.init(0, 16, 1);
 }
 
 DecoupledBPUWithFTB::BpTrace::BpTrace(FetchStream &stream, const DynInstPtr &inst, bool mispred)
@@ -435,8 +651,10 @@ DecoupledBPUWithFTB::decoupledPredict(const StaticInstPtr &inst,
         // TODO: do we need to update PC if not taken?
         return std::make_pair(false, true);
     }
+    currentFtqEntryInstNum++;
 
     const auto &target_to_fetch = fetchTargetQueue.getTarget();
+
     // found corresponding entry
     auto start = target_to_fetch.startPC;
     auto end = target_to_fetch.endPC;
@@ -501,9 +719,15 @@ DecoupledBPUWithFTB::decoupledPredict(const StaticInstPtr &inst,
 
     if (run_out_of_this_entry) {
         // dequeue the entry
-        DPRINTF(DecoupleBP, "running out of ftq entry %lu\n",
-                fetchTargetQueue.getSupplyingTargetId());
+        const auto fsqId = target_to_fetch.fsqID;
+        DPRINTF(DecoupleBP, "running out of ftq entry %lu with %d insts\n",
+                fetchTargetQueue.getSupplyingTargetId(), currentFtqEntryInstNum);
         fetchTargetQueue.finishCurrentFetchTarget();
+        // record inst fetched in fsq entry
+        auto it = fetchStreamQueue.find(fsqId);
+        assert(it != fetchStreamQueue.end());
+        it->second.fetchInstNum = currentFtqEntryInstNum;
+        currentFtqEntryInstNum = 0;
     }
 
     return std::make_pair(taken, run_out_of_this_entry);
@@ -925,6 +1149,21 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
             for (int i = 0; i < numComponents; ++i) {
                 components[i]->update(stream);
             }
+            // ftb entry stats
+            auto it = totalFTBEntries.find(stream.startPC);
+            if (it == totalFTBEntries.end()) {
+                auto &ftb_entry = stream.updateFTBEntry;
+                totalFTBEntries[stream.startPC] = std::make_pair(ftb_entry, 1);
+                dbpFtbStats.ftbEntriesWithDifferentStart++;
+                if (ftb_entry.slots.size() == 1) {
+                    if (ftb_entry.slots[0].pc == stream.startPC && ftb_entry.slots[0].isUncond()) {
+                        dbpFtbStats.ftbEntriesWithOnlyOneJump++;
+                    }
+                }
+            } else {
+                it->second.second++;
+                it->second.first = stream.updateFTBEntry;
+            }
         }
 
         // check loop predictor prediction
@@ -974,6 +1213,17 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
                     dbpFtbStats.commitLoopBufferDoubleEntryInstNum.sample(instNum, 1);
                 }
             }
+        }
+        dbpFtbStats.commitFsqEntryHasInsts.sample(stream.commitInstNum, 1);
+        if (stream.commitInstNum >= 0 && stream.commitInstNum <= 16) {
+            commitFsqEntryHasInstsVector[stream.commitInstNum]++;
+            if (stream.commitInstNum == 1 && stream.exeBranchInfo.isUncond()) {
+                dbpFtbStats.commitFsqEntryOnlyHasOneJump++;
+            }
+        }
+        dbpFtbStats.commitFsqEntryFetchedInsts.sample(stream.fetchInstNum, 1);
+        if (stream.fetchInstNum >= 0 && stream.fetchInstNum <= 16) {
+            commitFsqEntryFetchedInstsVector[stream.fetchInstNum]++;
         }
 
 
@@ -1067,12 +1317,97 @@ DecoupledBPUWithFTB::commitBranch(const DynInstPtr &inst, bool miss)
     if (enableDB) {
         bptrace->write_record(BpTrace(entry, inst, miss));
     }
-
-
-    LoopTrace rec;
     Addr branchAddr = inst->pcState().instAddr();
     Addr targetAddr = inst->pcState().clone()->as<RiscvISA::PCState>().npc();
     Addr fallThruPC = inst->pcState().clone()->as<RiscvISA::PCState>().getFallThruPC();
+    BranchInfo info(branchAddr, targetAddr, inst->staticInst, fallThruPC-branchAddr);
+    bool taken = inst->pcState().clone()->as<RiscvISA::PCState>().branching();
+    taken |= inst->isUncondCtrl();
+    auto find_it = topMispredictsByBranch.find(std::make_pair(branchAddr, info.getType()));
+    MispredType mtype = FAKE_LAST;
+    if (miss) {
+        // not taken can only be
+        if (!taken) {
+            assert(info.isCond);
+            mtype = DIR_WRONG;
+        } else {
+            bool predBranchInFTB = false;
+            if (entry.isHit) {
+                for (auto &slot : entry.predFTBEntry.slots) {
+                    if (slot.pc == branchAddr && slot.getType() == info.getType()) {
+                        predBranchInFTB = true;
+                    }
+                }
+            }
+            if (!predBranchInFTB) {
+                mtype = NO_PRED;
+            } else {
+                if (entry.predTaken && entry.predBranchInfo.pc == branchAddr) {
+                    mtype = TARGET_WRONG;
+                } else {
+                    // pred stream not taken or taken with other branch
+                    mtype = DIR_WRONG;
+                }
+            }
+        }
+        DPRINTF(Profiling, "branchAddr %#lx is mispredicted, taken %d, type %d, missType %d\n",
+            branchAddr, taken, info.getType(), mtype);
+        assert(mtype != FAKE_LAST);
+    }
+    DPRINTF(Profiling, "lookup topMispredictsByBranch for branchAddr %#lx, type %d\n",
+            branchAddr, info.getType());
+    if (find_it == topMispredictsByBranch.end()) {
+        DPRINTF(Profiling, "not found, insert miss %d\n", miss);
+        MispredReasonMap rm;
+        for (int i = 0; i < FAKE_LAST; i++) {
+            rm[MispredType(i)] = mtype == i ? 1 : 0;
+        }
+        MispredDesc desc = std::make_pair((int)miss, rm);
+        topMispredictsByBranch[std::make_pair(branchAddr, info.getType())] = std::make_pair(desc,1);
+        dbpFtbStats.staticBranchNum++;
+    } else {
+        DPRINTF(Profiling, "found, total %d, miss %d\n", find_it->second.second, find_it->second.first.first);
+        find_it->second.second++;
+        if (miss) {
+            find_it->second.first.first++;
+            auto it = find_it->second.first.second.find(mtype);
+            assert(it != find_it->second.first.second.end());
+            it->second++;
+        }
+    }
+    if (taken) {
+        auto itt = takenBranches.find(branchAddr);
+        DPRINTF(Profiling, "lookup takenBranches for taken branchAddr %#lx\n", branchAddr);
+        if (itt == takenBranches.end()) {
+            DPRINTF(Profiling, "not found, insert\n");
+            takenBranches[branchAddr] = 1;
+            dbpFtbStats.staticBranchNumEverTaken++;
+        } else {
+            DPRINTF(Profiling, "found, inc count %d to %d\n", itt->second, itt->second+1);
+            itt->second++;
+        }
+        DPRINTF(Profiling, "lookup currentPhaseTakenBranches for taken branchAddr %#lx\n", branchAddr);
+        auto ittt = currentPhaseTakenBranches.find(branchAddr);
+        if (ittt == currentPhaseTakenBranches.end()) {
+            DPRINTF(Profiling, "not found, insert\n");
+            currentPhaseTakenBranches[branchAddr] = 1;
+        } else {
+            DPRINTF(Profiling, "found, inc count %d to %d\n", ittt->second, ittt->second+1);
+            ittt->second++;
+        }
+        DPRINTF(Profiling, "lookup currentSubPhaseTakenBranches for taken branchAddr %#lx\n", branchAddr);
+        auto ittts = currentSubPhaseTakenBranches.find(branchAddr);
+        if (ittts == currentSubPhaseTakenBranches.end()) {
+            DPRINTF(Profiling, "not found, insert\n");
+            currentSubPhaseTakenBranches[branchAddr] = 1;
+        } else {
+            DPRINTF(Profiling, "found, inc count %d to %d\n", ittts->second, ittt->second+1);
+            ittts->second++;
+        }
+    }
+
+
+    LoopTrace rec;
     LoopEntry predLoopEntry = LoopEntry();
     for (int i = 0; i < numBr; i++) {
         if (entry.loopRedirectInfos[i].branch_pc == inst->pcState().instAddr()) {
@@ -1113,6 +1448,115 @@ DecoupledBPUWithFTB::commitBranch(const DynInstPtr &inst, bool miss)
     }
     for (auto component : components) {
         component->commitBranch(entry, inst);
+    }
+}
+
+void
+DecoupledBPUWithFTB::notifyInstCommit(const DynInstPtr &inst)
+{
+    auto it = fetchStreamQueue.find(inst->fsqId);
+    assert(it != fetchStreamQueue.end());
+    it->second.commitInstNum++;
+    numInstCommitted++;
+    DPRINTF(Profiling, "notifyInstCommit, inst=%s, commitInstNum=%d\n",
+            inst->staticInst->disassemble(inst->pcState().instAddr()),
+            it->second.commitInstNum);
+    if (numInstCommitted % phaseSizeByInst == 0) {
+        DPRINTF(Profiling, "numInstCommitted %d\n", numInstCommitted);
+        int currentPhaseID = numInstCommitted / phaseSizeByInst;
+        // dump current phase only once
+        if (phaseIdToDump <= currentPhaseID) {
+            DPRINTF(Profiling, "dump phase %d\n", phaseIdToDump);
+            // fsq entry inst num distribution
+            std::vector<int> currentPhaseFsqEntryNumCommittedInstDist;
+            std::vector<int> currentPhaseFsqEntryNumFetchedInstDist;
+            currentPhaseFsqEntryNumCommittedInstDist.resize(16+1, 0);
+            currentPhaseFsqEntryNumFetchedInstDist.resize(16+1, 0);
+            // FIXME: parameterize
+            for (int i = 0; i <= 16; i++) {
+                currentPhaseFsqEntryNumCommittedInstDist[i] = commitFsqEntryHasInstsVector[i] - lastPhaseFsqEntryNumCommittedInstDist[i];
+                lastPhaseFsqEntryNumCommittedInstDist[i] = commitFsqEntryHasInstsVector[i];
+                currentPhaseFsqEntryNumFetchedInstDist[i] = commitFsqEntryFetchedInstsVector[i] - lastPhaseFsqEntryNumFetchedInstDist[i];
+                lastPhaseFsqEntryNumFetchedInstDist[i] = commitFsqEntryFetchedInstsVector[i];
+            }
+            fsqEntryNumCommittedInstDistByPhase.push_back(currentPhaseFsqEntryNumCommittedInstDist);
+            fsqEntryNumFetchedInstDistByPhase.push_back(currentPhaseFsqEntryNumFetchedInstDist);
+
+            // per phase topMispredicts, can be used to calculate static branch
+            MispredMap currentPhaseTopMispredictsByBranch;
+            for (auto &it : topMispredictsByBranch) {
+                auto miss = it.second.first.first;
+                auto missMap = it.second.first.second;
+                auto total = it.second.second;
+                auto last_it = lastPhaseTopMispredictsByBranch.find(it.first);
+                if (last_it != lastPhaseTopMispredictsByBranch.end()) {
+                    miss -= last_it->second.first.first;
+                    total -= last_it->second.second;
+                    for (int i = 0; i < FAKE_LAST; i++) {
+                        missMap[MispredType(i)] -= last_it->second.first.second[MispredType(i)];
+                    }
+                }
+                if (total > 0) {
+                    currentPhaseTopMispredictsByBranch[it.first] = std::make_pair(std::make_pair(miss, missMap), total);
+                }
+            }
+            lastPhaseTopMispredictsByBranch = topMispredictsByBranch;
+            topMispredictsByBranchByPhase.push_back(currentPhaseTopMispredictsByBranch);
+
+            takenBranchesByPhase.push_back(currentPhaseTakenBranches);
+            currentPhaseTakenBranches.clear();
+
+            // per phase FTB entries
+            std::map<Addr, std::pair<FTBEntry, int>> currentPhaseFTBEntries;
+            for (auto &it : totalFTBEntries) {
+                auto &entry = it.second.first;
+                auto visit_cnt = it.second.second;
+                auto last_it = lastPhaseFTBEntries.find(it.first);
+                if (last_it != lastPhaseFTBEntries.end()) {
+                    visit_cnt -= last_it->second.second;
+                }
+                // use new entries, what if entry of the same start addr changes?
+                if (visit_cnt > 0) {
+                    currentPhaseFTBEntries[it.first] = std::make_pair(entry, visit_cnt);
+                }
+            }
+            lastPhaseFTBEntries = totalFTBEntries;
+            FTBEntriesByPhase.push_back(currentPhaseFTBEntries);
+
+            phaseIdToDump++;
+        }
+    }
+
+    if (numInstCommitted % subPhaseSizeByInst()) {
+        DPRINTF(Profiling, "numInstCommitted %d\n", numInstCommitted);
+        int currentSubPhaseID = numInstCommitted / subPhaseSizeByInst();
+        if (subPhaseIdToDump <= currentSubPhaseID) {
+            DPRINTF(Profiling, "dump sub phase %d\n", subPhaseIdToDump);
+            // per phase topMispredicts, can be used to calculate static branch
+            MispredMap currentSubPhaseTopMispredictsByBranch;
+            for (auto &it : topMispredictsByBranch) {
+                auto miss = it.second.first.first;
+                auto missMap = it.second.first.second;
+                auto total = it.second.second;
+                auto last_it = lastSubPhaseTopMispredictsByBranch.find(it.first);
+                if (last_it != lastSubPhaseTopMispredictsByBranch.end()) {
+                    miss -= last_it->second.first.first;
+                    total -= last_it->second.second;
+                    for (int i = 0; i < FAKE_LAST; i++) {
+                        missMap[MispredType(i)] -= last_it->second.first.second[MispredType(i)];
+                    }
+                }
+                if (total > 0) {
+                    currentSubPhaseTopMispredictsByBranch[it.first] = std::make_pair(std::make_pair(miss, missMap), total);
+                }
+            }
+            lastSubPhaseTopMispredictsByBranch = topMispredictsByBranch;
+            topMispredictsByBranchBySubPhase.push_back(currentSubPhaseTopMispredictsByBranch);
+
+            takenBranchesBySubPhase.push_back(currentSubPhaseTakenBranches);
+            currentSubPhaseTakenBranches.clear();
+            subPhaseIdToDump++;
+        }
     }
 }
 

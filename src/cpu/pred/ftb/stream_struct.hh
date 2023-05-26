@@ -104,6 +104,11 @@ typedef struct BranchInfo {
     {
         return this->pc > other.pc;
     }
+
+    bool operator != (const BranchInfo &other) const
+    {
+        return this->pc != other.pc;
+    }
 }BranchInfo;
 
 
@@ -201,6 +206,20 @@ typedef struct FTBEntry
         }
         return FTBSlot();
     }
+
+    bool operator == (const FTBEntry &other) const
+    {
+        // startPC and slots pc
+        if (this->tag != other.tag || this->slots.size() != other.slots.size()) {
+            return false;
+        }
+        for (int i = 0; i < this->slots.size(); i++) {
+            if (this->slots[i] != other.slots[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
 }FTBEntry;
 
 struct BlockDecodeInfo {
@@ -279,6 +298,10 @@ typedef struct FetchStream
     Tick predTick;
     boost::dynamic_bitset<> history;
 
+    // for profiling
+    int fetchInstNum;
+    int commitInstNum;
+
     FetchStream()
         : startPC(0),
           predTaken(false),
@@ -294,7 +317,9 @@ typedef struct FetchStream
           updateIsOldEntry(false),
           resolved(false),
           squashType(SquashType::SQUASH_NONE),
-          predSource(0)
+          predSource(0),
+          fetchInstNum(0),
+          commitInstNum(0)
     {
     }
 

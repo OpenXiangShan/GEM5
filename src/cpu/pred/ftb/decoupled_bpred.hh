@@ -353,6 +353,9 @@ class DecoupledBPUWithFTB : public BPredUnit
         statistics::Scalar returnMiss;
         statistics::Scalar otherMiss;
 
+        statistics::Scalar staticBranchNum;
+        statistics::Scalar staticBranchNumEverTaken;
+
         statistics::Vector predsOfEachStage;
         statistics::Vector commitPredsFromEachStage;
         statistics::Distribution fsqEntryDist;
@@ -364,9 +367,16 @@ class DecoupledBPUWithFTB : public BPredUnit
         statistics::Scalar ftqNotValid;
         statistics::Scalar fsqNotValid;
         statistics::Scalar fsqFullCannotEnq;
+        // 
+        statistics::Distribution commitFsqEntryHasInsts;
+        // write back once an fsq entry finishes fetch
+        statistics::Distribution commitFsqEntryFetchedInsts;
+        statistics::Scalar commitFsqEntryOnlyHasOneJump;
 
         statistics::Scalar ftbHit;
         statistics::Scalar ftbMiss;
+        statistics::Scalar ftbEntriesWithDifferentStart;
+        statistics::Scalar ftbEntriesWithOnlyOneJump;
 
         statistics::Scalar predFalseHit;
         statistics::Scalar commitFalseHit;
@@ -508,10 +518,61 @@ class DecoupledBPUWithFTB : public BPredUnit
     
     bool debugFlagOn{false};
 
+    std::map<Addr, int> takenBranches;
+    std::map<Addr, int> currentPhaseTakenBranches;
+    std::map<Addr, int> currentSubPhaseTakenBranches;
+
+    enum MispredType {
+        DIR_WRONG,
+        TARGET_WRONG,
+        NO_PRED,
+        FAKE_LAST
+    };
+    using MispredReasonMap = std::map<MispredType, int>;
+    //                         mispred cnt
+    using MispredDesc = std::pair<int, MispredReasonMap>;
+    //                                    ((mispredict, reason_map),        total)
+    using MispredData = std::pair<MispredDesc, int>;
+    //                             (pc, type) 
+    using MispredIndex = std::pair<Addr, int>;
+    using MispredRecord = std::pair<MispredIndex, MispredData>;
+    using MispredMap = std::map<MispredIndex, MispredData>;
+    // int getMispredCount(MispredData &data) { return data.first.first; }
+    int getMispredCount(const MispredRecord &data) { return data.second.first.first; }
+    
     std::map<std::pair<Addr, Addr>, int> topMispredicts;
+    MispredMap topMispredictsByBranch;
     std::map<uint64_t, uint64_t> topMispredHist;
     std::map<int, int> misPredTripCount;
+
+    MispredMap lastPhaseTopMispredictsByBranch;
+    std::vector<MispredMap> topMispredictsByBranchByPhase;
+    std::vector<std::map<Addr, int>> takenBranchesByPhase;
+
+    //      startPC          entry    visited
+    std::map<Addr, std::pair<FTBEntry, int>> lastPhaseFTBEntries;
+    std::map<Addr, std::pair<FTBEntry, int>> totalFTBEntries;
+    std::vector<std::map<Addr, std::pair<FTBEntry, int>>> FTBEntriesByPhase;
+
+    int phaseIdToDump{1};
+    int numInstCommitted{0};
+    int phaseSizeByInst{100000};
+    int subPhaseIdToDump{1};
+    int subPhaseRatio{10};
+    int subPhaseSizeByInst() { return phaseSizeByInst/subPhaseRatio; }
+
+    std::vector<int> lastPhaseFsqEntryNumCommittedInstDist;
+    std::vector<int> commitFsqEntryHasInstsVector;
+    std::vector<std::vector<int>> fsqEntryNumCommittedInstDistByPhase;
+    std::vector<int> lastPhaseFsqEntryNumFetchedInstDist;
+    std::vector<int> commitFsqEntryFetchedInstsVector;
+    std::vector<std::vector<int>> fsqEntryNumFetchedInstDistByPhase;
     unsigned int missCount{0};
+
+    MispredMap lastSubPhaseTopMispredictsByBranch;
+    std::vector<MispredMap> topMispredictsByBranchBySubPhase;
+    std::vector<std::map<Addr, int>> takenBranchesBySubPhase;
+    
 
     void setTakenEntryWithStream(const FetchStream &stream_entry, FtqEntry &ftq_entry);
 
@@ -566,7 +627,11 @@ class DecoupledBPUWithFTB : public BPredUnit
 
     void commitBranch(const DynInstPtr &inst, bool miss);
 
+    void notifyInstCommit(const DynInstPtr &inst);
+
     std::map<Addr, unsigned> topMispredIndirect;
+    int currentFtqEntryInstNum;
+
 };
 
 }  // namespace ftb_pred
