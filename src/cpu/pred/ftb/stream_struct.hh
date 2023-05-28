@@ -361,7 +361,7 @@ typedef struct FetchStream
         if (jaHit && squashType == SQUASH_CTRL) {
             Addr realStart = startPC;
             Addr squashBranchPC = exeBranchInfo.pc;
-            while (realStart + 0x20 < squashBranchPC) {
+            while (realStart + 0x20 <= squashBranchPC) {
                 realStart += 0x20;
             }
             return realStart;
