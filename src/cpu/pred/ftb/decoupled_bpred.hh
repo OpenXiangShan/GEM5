@@ -16,6 +16,7 @@
 #include "cpu/pred/ftb/ftb.hh"
 #include "cpu/pred/ftb/ftb_tage.hh"
 #include "cpu/pred/ftb/ftb_ittage.hh"
+#include "cpu/pred/ftb/jump_ahead_predictor.hh"
 #include "cpu/pred/ftb/loop_predictor.hh"
 #include "cpu/pred/ftb/loop_buffer.hh"
 #include "cpu/pred/ftb/ras.hh"
@@ -29,6 +30,7 @@
 #include "debug/DecoupleBPuRAS.hh"
 #include "debug/DecoupleBPVerbose.hh"
 #include "debug/DBPFTBStats.hh"
+#include "debug/JumpAheadPredictor.hh"
 #include "debug/LoopBuffer.hh"
 #include "debug/LoopPredictor.hh"
 #include "debug/LoopPredictorVerbose.hh"
@@ -186,6 +188,9 @@ class DecoupledBPUWithFTB : public BPredUnit
     bool enableLoopBuffer{false};
     bool enableLoopPredictor{false};
 
+    JumpAheadPredictor jap;
+    bool enableJumpAheadPredictor{true};
+
   private:
     std::string _name;
 
@@ -248,11 +253,19 @@ class DecoupledBPUWithFTB : public BPredUnit
 
     unsigned numOverrideBubbles{0};
 
+
+    using JAInfo = JumpAheadPredictor::JAInfo;
+    JAInfo jaInfo;
+
     void tryEnqFetchStream();
 
     void tryEnqFetchTarget();
 
     void makeNewPrediction(bool create_new_stream);
+
+    void makeLoopPredictions(FetchStream &entry, bool &endLoop, bool &isDouble, bool &loopConf,
+        std::vector<LoopRedirectInfo> &lpRedirectInfos, std::vector<bool> &fixNotExits,
+        std::vector<LoopRedirectInfo> &unseenLpRedirectInfos, bool &taken);
 
     Addr alignToCacheLine(Addr addr)
     {
@@ -410,6 +423,19 @@ class DecoupledBPUWithFTB : public BPredUnit
         statistics::Scalar commitDoubleBlockInLoopBufferSquashed;
         statistics::Distribution commitLoopBufferEntryInstNum;
         statistics::Distribution commitLoopBufferDoubleEntryInstNum;
+
+        statistics::Scalar predJATotalSkippedBlocks;
+        statistics::Scalar commitJATotalSkippedBlocks;
+        statistics::Scalar squashOnJaHitBlocks;
+        statistics::Scalar controlSquashOnJaHitBlocks;
+        statistics::Scalar nonControlSquashOnJaHitBlocks;
+        statistics::Scalar trapSquashOnJaHitBlocks;
+        statistics::Scalar commitSquashedOnJaHitBlocks;
+        statistics::Scalar commitControlSquashedOnJaHitBlocks;
+        statistics::Scalar commitNonControlSquashedOnJaHitBlocks;
+        statistics::Scalar commitTrapSquashedOnJaHitBlocks;
+        statistics::Distribution predJASkippedBlockNum;
+        statistics::Distribution commitJASkippedBlockNum;
 
         DBPFTBStats(statistics::Group* parent, unsigned numStages, unsigned fsqSize);
     } dbpFtbStats;

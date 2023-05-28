@@ -268,7 +268,7 @@ void
 FTBTAGE::update(const FetchStream &entry)
 {
 
-    Addr startAddr = entry.startPC;
+    Addr startAddr = entry.getRealStartPC();
     DPRINTF(FTBTAGE, "update startAddr: %#lx\n", startAddr);
     std::vector<bool> need_to_update;
     need_to_update.resize(numBr, false);

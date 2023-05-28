@@ -238,7 +238,8 @@ def build_test_system(np):
                     test_sys.cpu[i].branchPred = bpClass(
                                                     enableBPDB=args.enable_bp_db,
                                                     enableLoopBuffer=args.enable_loop_buffer,
-                                                    enableLoopPredictor=args.enable_loop_predictor
+                                                    enableLoopPredictor=args.enable_loop_predictor,
+                                                    enableJumpAheadPredictor=args.enable_jump_ahead_predictor
                                                     )
                 else:
                     if args.enable_bp_db:
@@ -247,6 +248,8 @@ def build_test_system(np):
                         print("loop buffer not supported for this branch predictor")
                     if args.enable_loop_predictor:
                         print("loop predictor not supported for this branch predictor")
+                    if args.enable_jump_ahead_predictor:
+                        print("jump ahead predictor not supported for this branch predictor")
                     assert(False)
             test_sys.cpu[i].createThreads()
             print("Create threads for test sys cpu ({})".format(type(test_sys.cpu[i])))

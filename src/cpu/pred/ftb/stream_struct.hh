@@ -247,6 +247,16 @@ typedef struct LoopRedirectInfo {
     bool end_loop;
 } LoopRedirectInfo;
 
+typedef struct JAEntry {
+    // jump target: indexPC + jumpAheadBlockNum * blockSize
+    int jumpAheadBlockNum;
+    int conf;
+    JAEntry() : jumpAheadBlockNum(0), conf(0) {}
+    Addr getJumpTarget(Addr indexPC, int blockSize) {
+        return indexPC + jumpAheadBlockNum * blockSize;
+    }
+} JAEntry;
+
 // NOTE: now this corresponds to an ftq entry in
 //       XiangShan nanhu architecture
 typedef struct FetchStream
@@ -285,6 +295,11 @@ typedef struct FetchStream
     bool fromLoopBuffer;
     bool isDouble;
     bool isExit;
+
+    // for ja predictor
+    bool jaHit;
+    JAEntry jaEntry;
+    int currentSentBlock;
 
     // prediction metas
     // FIXME: use vec
@@ -340,6 +355,20 @@ typedef struct FetchStream
     // Addr getNextStreamStart() const {return getTaken() ? getTakenTarget() : getFallThruPC(); }
     // bool isCall() const { return endType == END_CALL; }
     // bool isReturn() const { return endType == END_RET; }
+
+    // for ja hit blocks, should be the biggest addr of startPC + k*blockSize where k is interger
+    Addr getRealStartPC() const {
+        if (jaHit && squashType == SQUASH_CTRL) {
+            Addr realStart = startPC;
+            Addr squashBranchPC = exeBranchInfo.pc;
+            while (realStart + 0x20 < squashBranchPC) {
+                realStart += 0x20;
+            }
+            return realStart;
+        } else {
+            return startPC;
+        }
+    }
 
     std::pair<int, bool> getHistInfoDuringSquash(Addr squash_pc, bool is_cond, bool actually_taken, unsigned maxShamt)
     {
@@ -556,6 +585,10 @@ struct FtqEntry
     int iter;
     bool isExit;
     Addr loopEndPC;
+
+    // for ja predictor
+    int noPredBlocks;
+
     FtqEntry()
         : startPC(0)
         , endPC(0)
@@ -566,7 +599,8 @@ struct FtqEntry
         , inLoop(false)
         , iter(0)
         , isExit(false)
-        , loopEndPC(0) {}
+        , loopEndPC(0)
+        , noPredBlocks(0) {}
     
     bool miss() const { return !taken; }
     // bool filledUp() const { return (endPC & fetchTargetMask) == 0; }

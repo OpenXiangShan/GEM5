@@ -9,6 +9,7 @@
 #include "debug/Override.hh"
 #include "debug/FTB.hh"
 #include "debug/FTBITTAGE.hh"
+#include "debug/JumpAheadPredictor.hh"
 #include "debug/Profiling.hh"
 #include "sim/core.hh"
 
@@ -23,6 +24,7 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
     : BPredUnit(p),
       enableLoopBuffer(p.enableLoopBuffer),
       enableLoopPredictor(p.enableLoopPredictor),
+      enableJumpAheadPredictor(p.enableJumpAheadPredictor),
       fetchTargetQueue(p.ftq_size),
       fetchStreamQueueSize(p.fsq_size),
       numBr(p.numBr),
@@ -108,6 +110,8 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
 
     lp = LoopPredictor(16, 4, enableDB);
     lb.setLp(&lp);
+
+    jap = JumpAheadPredictor(16, 4, enableDB);
 
     if (!enableLoopPredictor && enableLoopBuffer) {
         fatal("loop buffer cannot be enabled without loop predictor\n");
@@ -459,7 +463,19 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     ADD_STAT(commitBlockInLoopBufferSquashed, statistics::units::Count::get(), "committed block is from loop buffer but squashed"),
     ADD_STAT(commitDoubleBlockInLoopBufferSquashed, statistics::units::Count::get(), "committed double block is from loop buffer but squashed"),
     ADD_STAT(commitLoopBufferEntryInstNum, statistics::units::Count::get(), "commit block from loop buffer, buffer entry has inst num"),
-    ADD_STAT(commitLoopBufferDoubleEntryInstNum, statistics::units::Count::get(), "commit double block from loop buffer, buffer entry has inst num")
+    ADD_STAT(commitLoopBufferDoubleEntryInstNum, statistics::units::Count::get(), "commit double block from loop buffer, buffer entry has inst num"),
+    ADD_STAT(predJATotalSkippedBlocks, statistics::units::Count::get(), "jump ahead skipped total block numbers at pred"),
+    ADD_STAT(commitJATotalSkippedBlocks, statistics::units::Count::get(), "jump ahead skipped total block numbers at commit"),
+    ADD_STAT(squashOnJaHitBlocks, statistics::units::Count::get(), "total number of squashes on ja hit blocks"),
+    ADD_STAT(controlSquashOnJaHitBlocks, statistics::units::Count::get(), "total number of control squashes on ja hit blocks"),
+    ADD_STAT(nonControlSquashOnJaHitBlocks, statistics::units::Count::get(), "total number of non-control squashes on ja hit blocks"),
+    ADD_STAT(trapSquashOnJaHitBlocks, statistics::units::Count::get(), "total number of trap squashes on ja hit blocks"),
+    ADD_STAT(commitSquashedOnJaHitBlocks, statistics::units::Count::get(), "total number of squashes on ja hit committed blocks"),
+    ADD_STAT(commitControlSquashedOnJaHitBlocks, statistics::units::Count::get(), "total number of control squashes on ja hit committed blocks"),
+    ADD_STAT(commitNonControlSquashedOnJaHitBlocks, statistics::units::Count::get(), "total number of non-control squashes on ja hit committed blocks"),
+    ADD_STAT(commitTrapSquashedOnJaHitBlocks, statistics::units::Count::get(), "total number of trap squashes on ja hit committed blocks"),
+    ADD_STAT(predJASkippedBlockNum, statistics::units::Count::get(), "distribution of ja skipped block numbers at pred"),
+    ADD_STAT(commitJASkippedBlockNum, statistics::units::Count::get(), "distribution of ja skipped block numbers at commit")
 {
     predsOfEachStage.init(numStages);
     commitPredsFromEachStage.init(numStages+1);
@@ -468,6 +484,8 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     commitLoopBufferDoubleEntryInstNum.init(0, 16, 1);
     commitFsqEntryHasInsts.init(0, 16, 1);
     commitFsqEntryFetchedInsts.init(0, 16, 1);
+    predJASkippedBlockNum.init(0, 16, 1);
+    commitJASkippedBlockNum.init(0, 16, 1);
 }
 
 DecoupledBPUWithFTB::BpTrace::BpTrace(FetchStream &stream, const DynInstPtr &inst, bool mispred)
@@ -810,6 +828,10 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
 
     stream.squashType = SQUASH_CTRL;
 
+    if (enableJumpAheadPredictor && stream.jaHit) {
+        dbpFtbStats.controlSquashOnJaHitBlocks++;
+    }
+
     FetchTargetId ftq_demand_stream_id;
 
 
@@ -852,7 +874,7 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
     DPRINTF(DecoupleBPHist,
              "Recover history %s\nto %s\n", s0History, stream.history);
     s0History = stream.history;
-    
+
     // recover history info
     int real_shamt;
     bool real_taken;
@@ -963,6 +985,11 @@ DecoupledBPUWithFTB::nonControlSquash(unsigned target_id, unsigned stream_id,
     stream.squashPC = inst_pc.instAddr();
     stream.squashType = SQUASH_OTHER;
 
+    if (enableJumpAheadPredictor && stream.jaHit) {
+        jap.invalidate(stream.startPC);
+        dbpFtbStats.nonControlSquashOnJaHitBlocks++;
+    }
+
     // recover history info
     s0History = it->second.history;
     int real_shamt;
@@ -1027,6 +1054,10 @@ DecoupledBPUWithFTB::trapSquash(unsigned target_id, unsigned stream_id,
     stream.exeTaken = false;
     stream.squashPC = inst_pc.instAddr();
     stream.squashType = SQUASH_TRAP;
+
+    if (enableJumpAheadPredictor && stream.jaHit) {
+        dbpFtbStats.trapSquashOnJaHitBlocks++;
+    }
 
     if (enableLoopPredictor) {
         // recover loop predictor
@@ -1165,6 +1196,44 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
                 it->second.first = stream.updateFTBEntry;
             }
         }
+
+        if (stream.isHit || stream.exeTaken || stream.squashType != SQUASH_NONE) {
+            if (enableJumpAheadPredictor) {
+                // this block predicted, if we already recorded enough non-pred blocks,
+                // then we should write into storage
+                // update predicted blocks of ja info
+                jap.tryUpdate(jaInfo, stream.startPC);
+                jaInfo.setPredictedBlock(stream.startPC, stream.updateFTBEntry);
+            }
+        } else {
+            if (enableJumpAheadPredictor) {
+                // this block has no pred, increment non-pred count
+                jaInfo.incrementNoPredBlockCount(stream.startPC);
+            }
+        }
+
+        if (enableJumpAheadPredictor) {
+            if (stream.jaHit) {
+                int skippedBlocks = stream.jaEntry.jumpAheadBlockNum - 1;
+                dbpFtbStats.commitJATotalSkippedBlocks += skippedBlocks;
+                dbpFtbStats.commitJASkippedBlockNum.sample(skippedBlocks, 1);
+                switch (stream.squashType) {
+                    case SQUASH_CTRL:
+                        dbpFtbStats.commitControlSquashedOnJaHitBlocks++;
+                        break;
+                    case SQUASH_OTHER:
+                        dbpFtbStats.commitNonControlSquashedOnJaHitBlocks++;
+                        break;
+                    case SQUASH_TRAP:
+                        dbpFtbStats.commitTrapSquashedOnJaHitBlocks++;
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
+
+
 
         // check loop predictor prediction
         auto lp_infos = stream.loopRedirectInfos;
@@ -1719,22 +1788,36 @@ DecoupledBPUWithFTB::tryEnqFetchTarget()
     ftq_entry.fsqID = ftq_enq_state.streamId;
 
     // set prediction results to ftq entry
+    Addr thisFtqEntryShouldEndPC = end;
     bool taken = stream_to_enq.getTaken();
     bool inLoop = stream_to_enq.fromLoopBuffer;
     bool loopExit = stream_to_enq.isExit;
+    if (enableJumpAheadPredictor) {
+        bool jaHit = stream_to_enq.jaHit;
+        if (jaHit) {
+            int &currentSentBlock = stream_to_enq.currentSentBlock;
+            thisFtqEntryShouldEndPC = stream_to_enq.startPC + (currentSentBlock + 1) * 0x20;
+            currentSentBlock++;
+        }
+    }
     Addr loopEndPC = stream_to_enq.getBranchInfo().getEnd();
     if (taken) {
         setTakenEntryWithStream(stream_to_enq, ftq_entry);
     } else {
-        setNTEntryWithStream(ftq_entry, end);
+        setNTEntryWithStream(ftq_entry, thisFtqEntryShouldEndPC);
     }
 
     // update ftq_enq_state
     // if in loop, next pc will either be loop exit or loop start
     ftq_enq_state.pc = inLoop ?
         loopExit ? loopEndPC : stream_to_enq.getBranchInfo().target :
-        taken ? stream_to_enq.getBranchInfo().target : end;
-    ftq_enq_state.streamId++;
+        taken ? stream_to_enq.getBranchInfo().target : thisFtqEntryShouldEndPC;
+    
+    // we should not increment streamId to enqueue when ja blocks are not fully consumed
+    if (!(enableJumpAheadPredictor && stream_to_enq.jaHit && stream_to_enq.jaHit &&
+            stream_to_enq.currentSentBlock < stream_to_enq.jaEntry.jumpAheadBlockNum)) {
+        ftq_enq_state.streamId++;
+    }
     DPRINTF(DecoupleBP,
             "Update ftqEnqPC to %#lx, FTQ demand stream ID to %lu\n",
             ftq_enq_state.pc, ftq_enq_state.streamId);
@@ -1757,6 +1840,76 @@ DecoupledBPUWithFTB::histShiftIn(int shamt, bool taken, boost::dynamic_bitset<> 
     }
     history <<= shamt;
     history[0] = taken;
+}
+
+void
+DecoupledBPUWithFTB::makeLoopPredictions(FetchStream &entry, bool &endLoop, bool &isDouble, bool &loopConf,
+    std::vector<LoopRedirectInfo> &lpRedirectInfos, std::vector<bool> &fixNotExits,
+    std::vector<LoopRedirectInfo> &unseenLpRedirectInfos, bool &taken)
+{
+    // query loop predictor and modify taken result
+    // TODO: What if loop branch is predicted not taken?
+    // Ans: assume it is loop exit indeed and 
+    //      use it to sychronize loop specCnt
+    if (finalPred.valid) {
+        int i = 0;
+        for (auto &slot: finalPred.ftbEntry.slots) {
+            if (slot.isCond && (finalPred.getTakenBranchIdx() >= i || finalPred.getTakenBranchIdx() == -1)) {
+                assert(finalPred.condTakens.size() > i);
+                bool this_cond_pred_taken = finalPred.condTakens[i];
+                std::tie(endLoop, lpRedirectInfos[i], isDouble, loopConf) = lp.shouldEndLoop(this_cond_pred_taken, slot.pc, false);
+                // for bpu predicted taken branch we need to check
+                // whether it is an undetected loop exit
+                if (lpRedirectInfos[i].e.valid) {
+                    if (loopConf) {
+                        // we should only modify the direction of the loop branch, because
+                        // a latter branch (outside loop branch) may have other situation
+                        finalPred.condTakens[i] = !endLoop;
+                        if (endLoop) {
+                            DPRINTF(DecoupleBP || debugFlagOn, "Loop predictor says end loop at %#lx\n", slot.pc);
+                            dbpFtbStats.predLoopPredictorExit++;
+                            entry.isExit = true;
+                        } else {
+                            if (!this_cond_pred_taken) {
+                                dbpFtbStats.predLoopPredictorConfFixNotExit++;
+                                fixNotExits[i] = true;
+                                DPRINTF(DecoupleBP || debugFlagOn, "Loop predictor says do not end loop at %#lx\n", slot.pc);
+                            }
+                        }
+                        // if (this_cond_pred_taken) {
+                        //     if (endLoop) {
+                        //         finalPred.condTakens[i] = false;
+                        //     }
+                        // }
+                    } else {
+                        if (endLoop) {
+                            dbpFtbStats.predLoopPredictorUnconfNotExit++;
+                        }
+                    }
+                }
+
+            }
+            i++;
+        }
+        taken = finalPred.isTaken();
+    }
+    // check if current prediction block has an unseen loop branch
+    Addr end = finalPred.getEnd();
+    for (Addr pc = entry.startPC; pc < end; pc += 2) {
+        bool inFTB = finalPred.ftbEntry.getSlot(pc).valid;
+        if (inFTB) {
+            continue;
+        }
+        LoopRedirectInfo unseenLpInfo;
+        std::tie(endLoop, unseenLpInfo, isDouble, loopConf) = lp.shouldEndLoop(false, pc, false);
+        if (unseenLpInfo.e.valid) {
+            dbpFtbStats.predFTBUnseenLoopBranchInLp++;
+            if (endLoop) {
+                dbpFtbStats.predFTBUnseenLoopBranchExitInLp++;
+            }
+            unseenLpRedirectInfos.push_back(unseenLpInfo);
+        }
+    }
 }
 
 // this function enqueues fsq and update s0PC and s0History
@@ -1793,69 +1946,8 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
         bool predReasonable = finalPred.isReasonable();
         if (predReasonable) {
             if (enableLoopPredictor) {
-                // query loop predictor and modify taken result
-                // TODO: What if loop branch is predicted not taken?
-                // Ans: assume it is loop exit indeed and 
-                //      use it to sychronize loop specCnt
-                if (finalPred.valid) {
-                    int i = 0;
-                    for (auto &slot: finalPred.ftbEntry.slots) {
-                        if (slot.isCond && (finalPred.getTakenBranchIdx() >= i || finalPred.getTakenBranchIdx() == -1)) {
-                            assert(finalPred.condTakens.size() > i);
-                            bool this_cond_pred_taken = finalPred.condTakens[i];
-                            std::tie(endLoop, lpRedirectInfos[i], isDouble, loopConf) = lp.shouldEndLoop(this_cond_pred_taken, slot.pc, false);
-                            // for bpu predicted taken branch we need to check
-                            // whether it is an undetected loop exit
-                            if (lpRedirectInfos[i].e.valid) {
-                                if (loopConf) {
-                                    // we should only modify the direction of the loop branch, because
-                                    // a latter branch (outside loop branch) may have other situation
-                                    finalPred.condTakens[i] = !endLoop;
-                                    if (endLoop) {
-                                        DPRINTF(DecoupleBP || debugFlagOn, "Loop predictor says end loop at %#lx\n", slot.pc);
-                                        dbpFtbStats.predLoopPredictorExit++;
-                                        entry.isExit = true;
-                                    } else {
-                                        if (!this_cond_pred_taken) {
-                                            dbpFtbStats.predLoopPredictorConfFixNotExit++;
-                                            fixNotExits[i] = true;
-                                            DPRINTF(DecoupleBP || debugFlagOn, "Loop predictor says do not end loop at %#lx\n", slot.pc);
-                                        }
-                                    }
-                                    // if (this_cond_pred_taken) {
-                                    //     if (endLoop) {
-                                    //         finalPred.condTakens[i] = false;
-                                    //     }
-                                    // }
-                                } else {
-                                    if (endLoop) {
-                                        dbpFtbStats.predLoopPredictorUnconfNotExit++;
-                                    }
-                                }
-                            }
-
-                        }
-                        i++;
-                    }
-                    taken = finalPred.isTaken();
-                }
-                // check if current prediction block has an unseen loop branch
-                Addr end = finalPred.getEnd();
-                for (Addr pc = entry.startPC; pc < end; pc += 2) {
-                    bool inFTB = finalPred.ftbEntry.getSlot(pc).valid;
-                    if (inFTB) {
-                        continue;
-                    }
-                    LoopRedirectInfo unseenLpInfo;
-                    std::tie(endLoop, unseenLpInfo, isDouble, loopConf) = lp.shouldEndLoop(false, pc, false);
-                    if (unseenLpInfo.e.valid) {
-                        dbpFtbStats.predFTBUnseenLoopBranchInLp++;
-                        if (endLoop) {
-                            dbpFtbStats.predFTBUnseenLoopBranchExitInLp++;
-                        }
-                        unseenLpRedirectInfos.push_back(unseenLpInfo);
-                    }
-                }
+                makeLoopPredictions(entry, endLoop, isDouble, loopConf, lpRedirectInfos,
+                    fixNotExits, unseenLpRedirectInfos, taken);
             }
             Addr fallThroughAddr = finalPred.getFallThrough();
             entry.isHit = finalPred.valid;
@@ -1883,6 +1975,28 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
             s0PC = entry.startPC + 32; // TODO: parameterize
             // TODO: when false hit, act like a miss, do not update history
         }
+
+        // jump ahead lookups
+        if (enableJumpAheadPredictor) {
+            bool jaHit = false;
+            bool jaConf = false;
+            JAEntry jaEntry;
+            Addr jaTarget;
+            std::tie(jaHit, jaConf, jaEntry, jaTarget) = jap.lookup(entry.startPC);
+            // ensure this block does not hit ftb
+            if (!finalPred.valid) {
+                if (jaHit && jaConf) {
+                    entry.jaHit = true;
+                    entry.predEndPC = jaTarget;
+                    entry.jaEntry = jaEntry;
+                    entry.currentSentBlock = 0;
+                    s0PC = jaTarget;
+                    dbpFtbStats.predJATotalSkippedBlocks += jaEntry.jumpAheadBlockNum - 1;
+                    dbpFtbStats.predJASkippedBlockNum.sample(jaEntry.jumpAheadBlockNum - 1, 1);
+                }
+            }
+        }
+
 
         entry.history = s0History;
         entry.predTick = finalPred.predTick;

@@ -236,7 +236,7 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
 {
     DPRINTF(FTB, "generating new ftb entry\n");
     // generate ftb entry
-    Addr startPC = stream.startPC;
+    Addr startPC = stream.getRealStartPC();
     Addr inst_tag = getTag(startPC);
 
 
@@ -374,7 +374,7 @@ DefaultFTB::update(const FetchStream &stream)
             return;
         }
     }
-    Addr startPC = stream.startPC;
+    Addr startPC = stream.getRealStartPC();
     Addr ftb_idx = getIndex(startPC);
     Addr ftb_tag = getTag(startPC);
 

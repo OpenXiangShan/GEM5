@@ -253,6 +253,8 @@ def addCommonOptions(parser):
                         help="enable loop buffer (only for ftb branch predictor)")
     parser.add_argument("--enable-loop-predictor", default=False, action="store_true",
                         help="enable loop predictor (only for ftb branch predictor)")
+    parser.add_argument("--enable-jump-ahead-predictor", default=False, action="store_true",
+                        help="enable jump ahead predictor (only for ftb branch predictor)")
 
     parser.add_argument("--list-rp-types",
                         action=ListRP, nargs=0,
