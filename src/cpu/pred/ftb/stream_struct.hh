@@ -333,6 +333,12 @@ typedef struct FetchStream
           resolved(false),
           squashType(SquashType::SQUASH_NONE),
           predSource(0),
+          fromLoopBuffer(false),
+          isDouble(false),
+          isExit(false),
+          jaHit(false),
+          jaEntry(JAEntry()),
+          currentSentBlock(0),
           fetchInstNum(0),
           commitInstNum(0)
     {
