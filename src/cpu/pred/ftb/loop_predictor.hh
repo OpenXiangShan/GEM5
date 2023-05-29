@@ -264,14 +264,15 @@ training_entry: %d, tripCnt %d, specCnt %d, conf %d; in_main: %d, tripCnt %d, co
              loopStorage[idx].find(tag) != loopStorage[idx].end();
     }
 
-    bool isLoopBranchConf(Addr pc) {
+    bool isInStorage(Addr pc) {
       Addr tag = getTag(pc);
       int idx = getIndex(pc);
-      if (loopStorage[idx].find(tag) != loopStorage[idx].end()) {
-        return loopStorage[idx][tag].conf == maxConf;
-      } else {
-        return false;
-      }
+      // if (loopStorage[idx].find(tag) != loopStorage[idx].end()) {
+      //   return loopStorage[idx][tag].conf == maxConf;
+      // } else {
+      //   return false;
+      // }
+      return loopStorage[idx].find(tag) != loopStorage[idx].end();
     }
 
     LoopPredictor(unsigned sets, unsigned ways, bool e) {
