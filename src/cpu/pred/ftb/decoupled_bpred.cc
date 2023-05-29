@@ -421,6 +421,8 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     ADD_STAT(predsOfEachStage, statistics::units::Count::get(), "the number of preds of each stage that account for final pred"),
     ADD_STAT(commitPredsFromEachStage, statistics::units::Count::get(), "the number of preds of each stage that account for a committed stream"),
     ADD_STAT(fsqEntryDist, statistics::units::Count::get(), "the distribution of number of entries in fsq"),
+    ADD_STAT(fsqEntryEnqueued, statistics::units::Count::get(), "the number of fsq entries enqueued"),
+    ADD_STAT(fsqEntryCommitted, statistics::units::Count::get(), "the number of fsq entries committed at last"),
     ADD_STAT(controlSquash, statistics::units::Count::get(), "the number of control squashes in bpu"),
     ADD_STAT(nonControlSquash, statistics::units::Count::get(), "the number of non-control squashes in bpu"),
     ADD_STAT(trapSquash, statistics::units::Count::get(), "the number of trap squashes in bpu"),
@@ -1347,6 +1349,8 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
         }
 
         it = fetchStreamQueue.erase(it);
+
+        dbpFtbStats.fsqEntryCommitted++;
     }
     DPRINTF(DecoupleBP, "after commit stream, fetchStreamQueue size: %lu\n",
             fetchStreamQueue.size());
@@ -2095,6 +2099,8 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
 
     fsqId++;
     printStream(entry);
+
+    dbpFtbStats.fsqEntryEnqueued++;
 }
 
 void

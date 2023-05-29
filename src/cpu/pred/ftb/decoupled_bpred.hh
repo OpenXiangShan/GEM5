@@ -372,6 +372,8 @@ class DecoupledBPUWithFTB : public BPredUnit
         statistics::Vector predsOfEachStage;
         statistics::Vector commitPredsFromEachStage;
         statistics::Distribution fsqEntryDist;
+        statistics::Scalar fsqEntryEnqueued;
+        statistics::Scalar fsqEntryCommitted;
         // statistics::Distribution ftqEntryDist;
         statistics::Scalar controlSquash;
         statistics::Scalar nonControlSquash;
