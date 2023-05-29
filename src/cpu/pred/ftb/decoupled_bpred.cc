@@ -829,6 +829,7 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
     stream.squashType = SQUASH_CTRL;
 
     if (enableJumpAheadPredictor && stream.jaHit) {
+        jap.invalidate(stream.startPC);
         dbpFtbStats.controlSquashOnJaHitBlocks++;
     }
 
@@ -986,7 +987,6 @@ DecoupledBPUWithFTB::nonControlSquash(unsigned target_id, unsigned stream_id,
     stream.squashType = SQUASH_OTHER;
 
     if (enableJumpAheadPredictor && stream.jaHit) {
-        jap.invalidate(stream.startPC);
         dbpFtbStats.nonControlSquashOnJaHitBlocks++;
     }
 
@@ -1197,22 +1197,19 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
             }
         }
 
-        if (stream.isHit || stream.exeTaken || stream.squashType != SQUASH_NONE) {
-            if (enableJumpAheadPredictor) {
+        if (enableJumpAheadPredictor) {
+            if (stream.isHit || stream.exeTaken || stream.squashType != SQUASH_NONE) {
                 // this block predicted, if we already recorded enough non-pred blocks,
                 // then we should write into storage
                 // update predicted blocks of ja info
                 jap.tryUpdate(jaInfo, stream.startPC);
                 jaInfo.setPredictedBlock(stream.startPC, stream.updateFTBEntry);
-            }
-        } else {
-            if (enableJumpAheadPredictor) {
+            } else {
                 // this block has no pred, increment non-pred count
                 jaInfo.incrementNoPredBlockCount(stream.startPC);
             }
-        }
 
-        if (enableJumpAheadPredictor) {
+            // do some statistics
             if (stream.jaHit) {
                 int skippedBlocks = stream.jaEntry.jumpAheadBlockNum - 1;
                 dbpFtbStats.commitJATotalSkippedBlocks += skippedBlocks;
@@ -1232,7 +1229,6 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
                 }
             }
         }
-
 
 
         // check loop predictor prediction
