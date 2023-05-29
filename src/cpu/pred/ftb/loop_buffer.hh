@@ -57,6 +57,10 @@ class LoopBuffer
     // entry is pinned when current loop is still require by fetch
     int pinnedCounter{0};
     int loopInstCounter{0};
+    // record whether current loop branch is conf in lp
+    // write when activating loop buffer, and used during
+    // the whole loop
+    bool currentLoopBranchConfInLp{false};
 
     // store fetch stream infos of entry before entering loop
     FetchStream streamBeforeLoop;
@@ -81,6 +85,7 @@ class LoopBuffer
                 DPRINTF(LoopBuffer, "loop branch %#lx in lp, loop buffer activated\n", loopBranchPC);
                 active = true;
                 pinnedCounter += 1;
+                currentLoopBranchConfInLp = lp->isConf(loopBranchPC);
                 return true;
             } else {
                 DPRINTF(LoopBuffer, "loop branch %#lx is not in lp, don't activate loop buffer\n", loopBranchPC);
@@ -131,6 +136,7 @@ class LoopBuffer
         if (squash) {
             loopInstCounter = 0;
         }
+        currentLoopBranchConfInLp = false;
         // limit = 0;
         // singleIterSize = 0;
         DPRINTF(LoopBuffer, "deactivating loop buffer\n");
@@ -145,6 +151,8 @@ class LoopBuffer
     Addr getActiveLoopBranch() { return loopBranchPC; }
 
     bool activeLoopMayBeDouble() { return getActiveLoopInstsSize() <= 16 / 2; }
+
+    bool currentLoopBranchConf() { return currentLoopBranchConfInLp; }
 
     // called at fetchQueue enqueue, after a full ftq entry is enqueued,
     // and the entry is ended by a backward taken branch
@@ -210,6 +218,7 @@ class LoopBuffer
     void clearState() {
         loopInstCounter = 0;
         pinnedCounter = 0;
+        currentLoopBranchConfInLp = false;
     }
 
     bool tryUnpin() {
