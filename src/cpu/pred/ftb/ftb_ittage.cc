@@ -204,7 +204,7 @@ FTBITTAGE::update(const FetchStream &entry)
     if (debugPC == entry.startPC || debugPC2 == entry.startPC) {
         debugFlag = true;
     }
-    Addr startAddr = entry.startPC;
+    Addr startAddr = entry.getRealStartPC();
     DPRINTF(FTBITTAGE || debugFlag, "update startAddr: %#lx\n", startAddr);
     auto ftb_entry = entry.updateFTBEntry;
 
