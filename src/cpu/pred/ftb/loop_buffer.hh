@@ -81,12 +81,19 @@ class LoopBuffer
                 loopBranchPC == branch_pc) {
             DPRINTF(LoopBuffer, "found loop buffer entry for pc %#lx, branch_pc %#lx, entry has %d insts\n",
                 start_pc, branch_pc, loopInsts.second.size());
-            if (lp->isInStorage(loopBranchPC)) {
-                DPRINTF(LoopBuffer, "loop branch %#lx in lp, loop buffer activated\n", loopBranchPC);
-                active = true;
-                pinnedCounter += 1;
-                currentLoopBranchConfInLp = lp->isConf(loopBranchPC);
-                return true;
+            const auto lentry = lp->lookUp(loopBranchPC);
+            if (lentry.valid) {
+                bool conf = lp->isConf(lentry);
+                if (conf || !lp->tripCntTooSmall(lentry)) {
+                    DPRINTF(LoopBuffer, "loop branch %#lx in lp, loop buffer activated\n", loopBranchPC);
+                    active = true;
+                    pinnedCounter += 1;
+                    currentLoopBranchConfInLp = conf;
+                    return true;
+                } else {
+                    DPRINTF(LoopBuffer, "loop branch %#lx is not conf %d in lp, tripCnt %d is too small as well, don't activate loop buffer\n",
+                        loopBranchPC, lentry.conf, lentry.tripCnt);
+                }
             } else {
                 DPRINTF(LoopBuffer, "loop branch %#lx is not in lp, don't activate loop buffer\n", loopBranchPC);
                 return false;

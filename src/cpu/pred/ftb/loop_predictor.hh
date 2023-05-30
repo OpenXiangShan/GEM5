@@ -38,6 +38,8 @@ class LoopPredictor
     unsigned maxConf = 7;
     // do not cover loop with less than 100 iterations, since tage may predict it well
     unsigned minTripCnt = 1;
+    // do not use loop buffer if not conf and tripCnt is too small
+    unsigned minTripCntWhenNotConf = 20;
     
     bool enableDB;
 
@@ -275,15 +277,19 @@ training_entry: %d, tripCnt %d, specCnt %d, conf %d; in_main: %d, tripCnt %d, co
       return loopStorage[idx].find(tag) != loopStorage[idx].end();
     }
 
-    bool isConf(Addr pc) {
+    LoopEntry lookUp(Addr pc) {
       Addr tag = getTag(pc);
       int idx = getIndex(pc);
       if (loopStorage[idx].find(tag) != loopStorage[idx].end()) {
-        return loopStorage[idx][tag].conf == maxConf;
+        return loopStorage[idx][tag];
       } else {
-        return false;
+        return LoopEntry();
       }
     }
+
+    bool isConf(const LoopEntry &entry) { return entry.conf == maxConf; }
+
+    bool tripCntTooSmall(const LoopEntry &entry) { return entry.tripCnt <= minTripCntWhenNotConf; }
 
     LoopPredictor(unsigned sets, unsigned ways, bool e) {
       numSets = sets;
