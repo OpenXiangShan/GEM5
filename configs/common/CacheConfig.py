@@ -135,17 +135,23 @@ def config_cache(options, system):
             system.tol2bus.frontend_latency = 0
             system.tol2bus.response_latency = 0
             system.tol2bus.forward_latency = 0
+            system.tol2bus.header_latency = 0
             system.tol2bus.snoop_response_latency = 0
+            system.tol2bus.width = 128 # byte per cycle
 
             system.l2.response_latency = 0
             system.l2.tag_latency = 1
             system.l2.data_latency = 1
             system.l2.sequential_access = False
+            system.l2.writeback_clean = False
+            system.l2.mshrs = 64
 
             system.membus.frontend_latency = 0
             system.membus.response_latency = 0
             system.membus.forward_latency = 0
+            system.membus.header_latency = 0
             system.membus.snoop_response_latency = 0
+            system.membus.width = 128 # byte per cycle
 
         if options.l3cache:
           system.l3 = L3Cache(clk_domain=system.cpu_clk_domain,

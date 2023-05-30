@@ -276,5 +276,8 @@ def config_mem(options, system):
             mem_ctrls[i].port.snoop_latency = '0ns'
             mem_ctrls[i].port.response_latency = '0ns'
             mem_ctrls[i].latency = '0ns'
+            mem_ctrls[i].bandwidth = '128GiB/s'
+            print('Setting memory controller latency to 0ns and bandwidth to ',
+                  '128GiB/s to model an ideal cache')
 
     subsystem.mem_ctrls = mem_ctrls
