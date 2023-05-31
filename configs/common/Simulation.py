@@ -81,7 +81,7 @@ def setCPUClass(options):
         TmpClass = AtomicSimpleCPU
         test_mem_mode = 'atomic'
     # TODO
-    elif options.generic_rv_cpt and options.standard_switch:
+    elif options.standard_switch and hasattr(options, "generic_rv_cpt") and options.generic_rv_cpt:
         CPUClass = TmpClass
         TmpClass = TimingSimpleCPU
 
