@@ -254,6 +254,7 @@ ROB::retireHead(ThreadID tid)
     instList[tid].erase(head_it);
 
     assert(head_inst->readyToCommit());
+    assert(!head_inst->isSquashed());
 
     DPRINTF(ROB, "[tid:%i] Retiring head instruction, "
             "instruction PC %s, [sn:%llu]\n", tid, head_inst->pcState(),
@@ -364,8 +365,17 @@ ROB::doSquash(ThreadID tid)
 
         (*squashIt[tid])->setCanCommit();
 
+        // printf("[ROB] squash seqNum %ld\n", (*squashIt[tid])->seqNum);
 
-        if (squashIt[tid] == instList[tid].begin()) {
+        instList[tid].erase(squashIt[tid]);
+        --numInstsInROB;
+        --threadEntries[tid];
+
+        (*squashIt[tid])->clearInROB();
+        // head_inst->setCommitted();
+        cpu->removeFrontInst(*squashIt[tid]);
+
+        if (instList[tid].empty() || squashIt[tid] == instList[tid].begin()) {
             DPRINTF(ROB, "Reached head of instruction list while "
                     "squashing.\n");
 
