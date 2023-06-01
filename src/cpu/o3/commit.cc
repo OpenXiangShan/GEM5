@@ -1094,11 +1094,12 @@ Commit::commitInsts()
             bool commit_success = commitHead(head_inst, num_committed);
 
             if (commit_success) {
+                const auto &head_rv_pc = head_inst->pcState().as<RiscvISA::PCState>();
                 if (bp->isStream()) {
                     auto dbsp = dynamic_cast<branch_prediction::stream_pred::DecoupledStreamBPU*>(bp);
                     Addr branchAddr = head_inst->pcState().instAddr();
-                    Addr targetAddr = head_inst->pcState().clone()->as<RiscvISA::PCState>().npc();
-                    Addr fallThruPC = head_inst->pcState().clone()->as<RiscvISA::PCState>().getFallThruPC();
+                    Addr targetAddr = head_rv_pc.npc();
+                    Addr fallThruPC = head_rv_pc.getFallThruPC();
                     if (targetAddr < branchAddr || dbsp->loopDetector->findLoop(branchAddr)) {
                         dbsp->loopDetector->update(branchAddr, targetAddr, fallThruPC);
                     }
@@ -1111,7 +1112,9 @@ Commit::commitInsts()
                     auto dbftb = dynamic_cast<branch_prediction::ftb_pred::DecoupledBPUWithFTB*>(bp);
                     bool miss = head_inst->mispredicted();
                     if (head_inst->isReturn()) {
-                        DPRINTF(FTBRAS, "commit inst PC %x miss %d real target %x pred target %x\n", head_inst->pcState().instAddr(), miss, head_inst->pcState().clone()->as<RiscvISA::PCState>().npc(), *(head_inst->predPC));
+                        DPRINTF(FTBRAS, "commit inst PC %x miss %d real target %x pred target %x\n",
+                                head_inst->pcState().instAddr(), miss,
+                                head_rv_pc.npc(), *(head_inst->predPC));
                     }
 
                     // FIXME: ignore mret/sret/uret in correspond with RTL

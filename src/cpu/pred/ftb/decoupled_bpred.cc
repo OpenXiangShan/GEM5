@@ -494,8 +494,9 @@ DecoupledBPUWithFTB::BpTrace::BpTrace(FetchStream &stream, const DynInstPtr &ins
 {
     _tick = curTick();
     Addr pc = inst->pcState().instAddr();
-    Addr target = inst->pcState().clone()->as<RiscvISA::PCState>().npc();
-    Addr fallThru = inst->pcState().clone()->as<RiscvISA::PCState>().getFallThruPC();
+    const auto &rv_pc = inst->pcState().as<RiscvISA::PCState>();
+    Addr target = rv_pc.npc();
+    Addr fallThru = rv_pc.getFallThruPC();
     BranchInfo info(pc, target, inst->staticInst, fallThru-pc);
     set(stream.startPC, pc, info.getType(), inst->branching(), mispred, fallThru, stream.predSource, target);
     // for (auto it = _uint64_data.begin(); it != _uint64_data.end(); it++) {
@@ -1387,10 +1388,11 @@ DecoupledBPUWithFTB::commitBranch(const DynInstPtr &inst, bool miss)
         bptrace->write_record(BpTrace(entry, inst, miss));
     }
     Addr branchAddr = inst->pcState().instAddr();
-    Addr targetAddr = inst->pcState().clone()->as<RiscvISA::PCState>().npc();
-    Addr fallThruPC = inst->pcState().clone()->as<RiscvISA::PCState>().getFallThruPC();
+    const auto &rv_pc = inst->pcState().as<RiscvISA::PCState>();
+    Addr targetAddr = rv_pc.npc();
+    Addr fallThruPC = rv_pc.getFallThruPC();
     BranchInfo info(branchAddr, targetAddr, inst->staticInst, fallThruPC-branchAddr);
-    bool taken = inst->pcState().clone()->as<RiscvISA::PCState>().branching();
+    bool taken = rv_pc.branching();
     taken |= inst->isUncondCtrl();
     auto find_it = topMispredictsByBranch.find(std::make_pair(branchAddr, info.getType()));
     MispredType mtype = FAKE_LAST;

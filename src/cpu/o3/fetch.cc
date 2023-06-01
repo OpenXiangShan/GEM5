@@ -167,6 +167,9 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
     instSize = decoder[0]->moreBytesSize();
 
     stallReason.resize(fetchWidth, StallReason::NoStall);
+
+    firstDataBuf = new uint8_t[fetchBufferSize];
+    secondDataBuf = new uint8_t[fetchBufferSize];
 }
 
 std::string Fetch::name() const { return cpu->name() + ".fetch"; }
@@ -444,17 +447,15 @@ Fetch::processCacheCompletion(PacketPtr pkt)
                     pkt->getAddr(), pkt->req->getVaddr());
 
             // Copy two packets data into second packet
-            uint8_t* firstData = new uint8_t[fetchBufferSize];
-            uint8_t* secondData = new uint8_t[fetchBufferSize];
-            firstPkt[tid]->getData(firstData);
-            secondPkt[tid]->getData(secondData);
+            firstPkt[tid]->getData(firstDataBuf);
+            secondPkt[tid]->getData(secondDataBuf);
             if (memReq[tid]->getReqNum() == 2) {
                 pkt = secondPkt[tid];
             } else {
                 pkt = firstPkt[tid];
             }
-            pkt->setData(firstData, 0, 0, firstPkt[tid]->getSize());
-            pkt->setData(secondData, 0, firstPkt[tid]->getSize(), secondPkt[tid]->getSize());
+            pkt->setData(firstDataBuf, 0, 0, firstPkt[tid]->getSize());
+            pkt->setData(secondDataBuf, 0, firstPkt[tid]->getSize(), secondPkt[tid]->getSize());
         }
     }
 
