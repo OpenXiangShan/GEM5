@@ -646,6 +646,10 @@ class Fetch
     } fetchStats;
 
     SquashVersion localSquashVer;
+
+  private:
+    uint8_t* firstDataBuf;
+    uint8_t* secondDataBuf;
 };
 
 } // namespace o3
