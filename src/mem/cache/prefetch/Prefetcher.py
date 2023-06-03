@@ -290,6 +290,10 @@ class StridePrefetcher(QueuedPrefetcher):
 
     # Do not consult stride prefetcher on instruction accesses
     on_inst = False
+    on_data = True
+    on_miss = True
+
+    prefetch_on_pf_hit = True
 
     confidence_counter_bits = Param.Unsigned(3,
         "Number of bits of the confidence counter")

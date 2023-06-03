@@ -54,6 +54,8 @@ class L1Cache(Cache):
     mshrs = 4
     tgts_per_mshr = 20
 
+    cache_level = 1
+
 class L1_ICache(L1Cache):
     mshrs = 2
     is_read_only = True
@@ -95,6 +97,8 @@ class L2Cache(Cache):
     # This is communication latency between l2 & l3
     response_latency = 15
 
+    cache_level = 2
+
 class L3Cache(Cache):
     mshrs = 64
     tgts_per_mshr = 20
@@ -109,6 +113,8 @@ class L3Cache(Cache):
 
     # This is L3 miss latency, which act as padding for memory controller
     response_latency = 112
+
+    cache_level = 3
 
 class IOCache(Cache):
     assoc = 8

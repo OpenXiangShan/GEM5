@@ -47,6 +47,7 @@
 
 #include "base/compiler.hh"
 #include "base/logging.hh"
+#include "base/output.hh"
 #include "debug/ArchDB.hh"
 #include "debug/Cache.hh"
 #include "debug/CacheComp.hh"
@@ -114,7 +115,8 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       addrRanges(p.addr_ranges.begin(), p.addr_ranges.end()),
       archDBer(p.arch_db),
       system(p.system),
-      stats(*this)
+      stats(*this),
+      cacheLevel(p.cache_level)
 {
     // the MSHR queue has no reserve entries as we check the MSHR
     // queue on every single allocation, whereas the write queue has
@@ -138,6 +140,30 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
         "Compressed cache %s does not have a compression algorithm", name());
     if (compressor)
         compressor->setCache(this);
+
+    if (dumpMissPC && cacheLevel) {
+        registerExitCallback([this]() {
+            if (pcMissCount.empty())
+                return;
+            auto out_handle =
+                simout.create(std::string("L") + std::to_string(cacheLevel) + "PCMissCount.txt", false, true);
+            *out_handle->stream() << "Mem Access PC" << ", " << "Count" << std::endl;
+            std::vector<std::pair<Addr, uint32_t>> sorted_miss_pc;
+            for (const auto& it : pcMissCount) {
+                sorted_miss_pc.push_back(it);
+            }
+            std::sort(sorted_miss_pc.begin(), sorted_miss_pc.end(),
+                      [](const std::pair<Addr, uint32_t> &a,
+                         const std::pair<Addr, uint32_t> &b) {
+                          return a.second > b.second;
+                      });
+            for (const auto& it : sorted_miss_pc) {
+                *out_handle->stream() << std::hex << it.first << " "
+                                      << std::dec << it.second << std::endl;
+            }
+            simout.close(out_handle);
+        });
+    }
 
 }
 
@@ -1529,6 +1555,12 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         return true;
     }
 
+    if (blk && (pkt->needsWritable() && !blk->isSet(CacheBlk::WritableBit))) {
+        // Can't satisfy access normally... need writable
+        DPRINTF(Cache, "%s: %#lx wants writable but is not\n", __func__,
+                regenerateBlkAddr(blk));
+    }
+
     // Can't satisfy access normally... either no block (blk == nullptr)
     // or have block but need writable
 
@@ -1745,6 +1777,8 @@ BaseCache::evictBlock(CacheBlk *blk, PacketList &writebacks)
         archDBer->L1EvictTraceWrite(
                 paddr, curCycle, this->name().c_str());
     }
+
+    DPRINTF(CacheTrace, "Evicting block %#llx\n", regenerateBlkAddr(blk));
 
     PacketPtr pkt = evictBlock(blk);
 

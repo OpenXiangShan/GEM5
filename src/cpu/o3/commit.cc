@@ -1475,7 +1475,7 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
                 head_inst->readPredTaken(), head_inst->mispredicted());
     }
     head_inst->printDisassembly();
-    if (head_inst->isMemRef())
+    if (archDBer && head_inst->isMemRef())
         dumpTicks(head_inst);
     lastCommitTick = curTick();
 

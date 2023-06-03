@@ -57,6 +57,7 @@
 #include "base/types.hh"
 #include "debug/Cache.hh"
 #include "debug/CachePort.hh"
+#include "debug/CacheTrace.hh"
 #include "enums/Clusivity.hh"
 #include "mem/cache/cache_blk.hh"
 #include "mem/cache/compressors/base.hh"
@@ -1329,11 +1330,32 @@ class BaseCache : public ClockedObject
             if (missCount == 0)
                 exitSimLoop("A cache reached the maximum miss count");
         }
+
+        if (cacheLevel == 1 && !pkt->req->isInstFetch() && pkt->req->hasPC()) {
+            Addr pc = pkt->req->getPC();
+            auto it = pcMissCount.find(pc);
+            if (it == pcMissCount.end()) {
+                pcMissCount[pc] = 1;
+            } else {
+                it->second++;
+            }
+
+            if (pc == 0x2f59a) {
+                DPRINTF(CacheTrace, "PC %#x access %#x not fulfilled\n", pc, pkt->getBlockAddr(blkSize));
+            }
+        }
     }
     void incHitCount(PacketPtr pkt)
     {
         assert(pkt->req->requestorId() < system->maxRequestors());
         stats.cmdStats(pkt).hits[pkt->req->requestorId()]++;
+
+        if (cacheLevel == 1 && !pkt->req->isInstFetch() && pkt->req->hasPC()) {
+            Addr pc = pkt->req->getPC();
+            if (pc == 0x2f59a) {
+                DPRINTF(CacheTrace, "PC %#x access %#x hit\n", pc, pkt->getBlockAddr(blkSize));
+            }
+        }
     }
 
     void incSquashedDemandHitCount(PacketPtr pkt, CacheBlk *blk)
@@ -1399,6 +1421,14 @@ class BaseCache : public ClockedObject
      */
     void serialize(CheckpointOut &cp) const override;
     void unserialize(CheckpointIn &cp) override;
+
+  private:
+
+    const unsigned cacheLevel{0};
+
+    const bool dumpMissPC{false};
+
+    std::unordered_map<Addr, uint64_t> pcMissCount;
 };
 
 /**

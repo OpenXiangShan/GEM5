@@ -52,7 +52,8 @@
 #include "base/logging.hh"
 #include "base/random.hh"
 #include "base/trace.hh"
-#include "debug/HWPrefetch.hh"
+#include "debug/CacheTrace.hh"
+#include "debug/StridePrefetcher.hh"
 #include "mem/cache/prefetch/associative_set_impl.hh"
 #include "mem/cache/replacement_policies/base.hh"
 #include "params/StridePrefetcher.hh"
@@ -86,7 +87,8 @@ Stride::Stride(const StridePrefetcherParams &p)
     useRequestorId(p.use_requestor_id),
     degree(p.degree),
     pcTableInfo(p.table_assoc, p.table_entries, p.table_indexing_policy,
-        p.table_replacement_policy)
+        p.table_replacement_policy),
+    blockLRUFilter(filterSize)
 {
 }
 
@@ -111,7 +113,7 @@ Stride::allocateNewContext(int context)
         pcTableInfo.indexingPolicy, pcTableInfo.replacementPolicy,
         StrideEntry(initConfidence))));
 
-    DPRINTF(HWPrefetch, "Adding context %i with stride entries\n", context);
+    DPRINTF(StridePrefetcher, "Adding context %i with stride entries\n", context);
 
     // Get iterator to new pc table, and then return a pointer to the new table
     return &(insertion_result.first->second);
@@ -122,12 +124,20 @@ Stride::calculatePrefetch(const PrefetchInfo &pfi,
                                     std::vector<AddrPriority> &addresses)
 {
     if (!pfi.hasPC()) {
-        DPRINTF(HWPrefetch, "Ignoring request with no PC.\n");
+        DPRINTF(StridePrefetcher, "Ignoring request with no PC.\n");
         return;
     }
 
     // Get required packet info
-    Addr pf_addr = pfi.getAddr();
+    Addr pf_addr = blockAddress(pfi.getAddr());
+
+    if (blockLRUFilter.contains(pf_addr)) {
+        DPRINTF(StridePrefetcher, "Ignoring recently prefetched address %#x.\n", pf_addr);
+        return;
+    } else {
+        blockLRUFilter.insert(pf_addr, pf_addr);
+    }
+
     Addr pc = pfi.getPC();
     bool is_secure = pfi.isSecure();
     RequestorID requestor_id = useRequestorId ? pfi.getRequestorId() : 0;
@@ -156,7 +166,7 @@ Stride::calculatePrefetch(const PrefetchInfo &pfi,
             }
         }
 
-        DPRINTF(HWPrefetch, "Hit: PC %x pkt_addr %x (%s) stride %d (%s), "
+        DPRINTF(StridePrefetcher, "Hit: PC %x pkt_addr %x (%s) stride %d (%s), "
                 "conf %d\n", pc, pf_addr, is_secure ? "s" : "ns",
                 new_stride, stride_match ? "match" : "change",
                 (int)entry->confidence);
@@ -177,11 +187,12 @@ Stride::calculatePrefetch(const PrefetchInfo &pfi,
             }
 
             Addr new_addr = pf_addr + d * prefetch_stride;
+            DPRINTF(StridePrefetcher, "Prefetch: PC %#x for addr %#x\n", pc, new_addr);
             addresses.push_back(AddrPriority(new_addr, 0));
         }
     } else {
         // Miss in table
-        DPRINTF(HWPrefetch, "Miss: PC %x pkt_addr %x (%s)\n", pc, pf_addr,
+        DPRINTF(StridePrefetcher, "Miss: PC %x pkt_addr %x (%s)\n", pc, pf_addr,
                 is_secure ? "s" : "ns");
 
         StrideEntry* entry = pcTable->findVictim(pc);

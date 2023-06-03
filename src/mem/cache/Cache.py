@@ -154,6 +154,8 @@ class BaseCache(ClockedObject):
 
     arch_db = Param.ArchDBer(Parent.any, "Arch DB")
 
+    cache_level = Param.Unsigned(0, "Cache level (L1 is 1, L2 is 2, etc.)")
+
 class Cache(BaseCache):
     type = 'Cache'
     cxx_header = 'mem/cache/cache.hh'
