@@ -381,7 +381,10 @@ for variant_path in variant_paths:
         # Enable -Wall and -Wextra and then disable the few warnings that
         # we consistently violate
         env.Append(CCFLAGS=['-Wall', '-Wundef', '-Wextra',
-                            '-Wno-sign-compare', '-Wno-unused-parameter'])
+                            '-Wno-sign-compare', '-Wno-unused-parameter',
+                            '-Wno-unused-variable',
+                            '-Wno-unused-but-set-variable'
+                            ])
 
         # We always compile using C++17
         env.Append(CXXFLAGS=['-std=c++17'])
