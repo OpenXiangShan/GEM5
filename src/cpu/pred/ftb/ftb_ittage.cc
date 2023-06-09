@@ -177,6 +177,7 @@ FTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Fu
             taken = true;
             useTarget = base_target;
         } else {
+            useTarget = base_target;
             warn("no target found\n");
         }
         if (taken) {
