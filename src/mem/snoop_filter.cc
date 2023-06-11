@@ -206,6 +206,11 @@ SnoopFilter::lookupSnoop(const Packet* cpkt)
     if (!is_hit)
         return snoopDown(lookupLatency);
 
+    if (is_hit && cpkt->req->isPrefetch()) {
+        DPRINTF(SnoopFilter, "%s: Ignore snoop generated from prefetch on addr %s\n", __func__, cpkt->print());
+        return snoopDown(lookupLatency);
+    }
+
     SnoopItem& sf_item = sf_it->second;
 
     SnoopMask interested = (sf_item.holder | sf_item.requested);

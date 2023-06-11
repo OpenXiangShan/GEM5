@@ -396,7 +396,7 @@ Queued::createPrefetchRequest(Addr addr, PrefetchInfo const &pfi,
     RequestPtr translation_req = std::make_shared<Request>(
             addr, blkSize, pkt->req->getFlags(), requestorId, pfi.getPC(),
             pkt->req->contextId());
-    translation_req->setFlags(Request::PREFETCH);
+    translation_req->setFlags(Request::PF_EXCLUSIVE);
     return translation_req;
 }
 

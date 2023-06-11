@@ -48,6 +48,7 @@
 #include <cassert>
 
 #include "base/intmath.hh"
+#include "debug/HWPrefetch.hh"
 #include "mem/cache/base.hh"
 #include "params/BasePrefetcher.hh"
 #include "sim/system.hh"
@@ -242,6 +243,8 @@ Base::pageIthBlockAddress(Addr page, uint32_t blockIndex) const
 void
 Base::probeNotify(const PacketPtr &pkt, bool miss)
 {
+    DPRINTF(HWPrefetch, "ProbeNotify: %s for %s\n", miss ? "miss" : "hit",
+            pkt->print());
     // Don't notify prefetcher on SWPrefetch, cache maintenance
     // operations or for writes that we are coaslescing.
     if (pkt->cmd.isSWPrefetch()) return;
