@@ -22,6 +22,51 @@ namespace branch_prediction
 namespace ftb_pred
 {
 
+struct LoopTrace : public Record {
+    void set(uint64_t pc, uint64_t target, uint64_t mispred, uint64_t training,
+        uint64_t trainSpecCnt, uint64_t trainTripCnt, uint64_t trainConf,
+        uint64_t inMain, uint64_t mainTripCnt, uint64_t mainConf, uint64_t predSpecCnt,
+        uint64_t predTripCnt, uint64_t predConf)
+    {
+        _tick = curTick();
+        _uint64_data["pc"] = pc;
+        _uint64_data["target"] = target;
+        _uint64_data["mispred"] = mispred;
+        _uint64_data["predSpecCnt"] = predSpecCnt;
+        _uint64_data["predTripCnt"] = predTripCnt;
+        _uint64_data["predConf"] = predConf;
+        // from lp
+        _uint64_data["training"] = training;
+        _uint64_data["trainSpecCnt"] = trainSpecCnt;
+        _uint64_data["trainTripCnt"] = trainTripCnt;
+        _uint64_data["trainConf"] = trainConf;
+        _uint64_data["inMain"] = inMain;
+        _uint64_data["mainTripCnt"] = mainTripCnt;
+        _uint64_data["mainConf"] = mainConf;
+    }
+    void set_in_lp(uint64_t training, uint64_t trainSpecCnt, uint64_t trainTripCnt, uint64_t trainConf,
+        uint64_t inMain, uint64_t mainTripCnt, uint64_t mainConf)
+    {
+        _uint64_data["training"] = training;
+        _uint64_data["trainSpecCnt"] = trainSpecCnt;
+        _uint64_data["trainTripCnt"] = trainTripCnt;
+        _uint64_data["trainConf"] = trainConf;
+        _uint64_data["inMain"] = inMain;
+        _uint64_data["mainTripCnt"] = mainTripCnt;
+        _uint64_data["mainConf"] = mainConf;
+    }
+    void set_outside_lp(uint64_t pc, uint64_t target, uint64_t mispred,
+        uint64_t predSpecCnt, uint64_t predTripCnt, uint64_t predConf)
+    {
+        _tick = curTick();
+        _uint64_data["pc"] = pc;
+        _uint64_data["target"] = target;
+        _uint64_data["mispred"] = mispred;
+        _uint64_data["predSpecCnt"] = predSpecCnt;
+        _uint64_data["predTripCnt"] = predTripCnt;
+        _uint64_data["predConf"] = predConf;
+    }
+};
 class LoopPredictor
 {
   public:
@@ -293,6 +338,7 @@ training_entry: %d, tripCnt %d, specCnt %d, conf %d; in_main: %d, tripCnt %d, co
 
     LoopPredictor() : LoopPredictor(64, 4, false) {}
 };
+
 
 }  // namespace ftb_pred
 }  // namespace branch_prediction

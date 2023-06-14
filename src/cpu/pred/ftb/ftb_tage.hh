@@ -245,6 +245,37 @@ public:
     void recoverFoldedHist(const bitset& history);
 
     // void checkFoldedHist(const bitset& history);
+
+
+    struct TageMissTrace : public Record {
+        void set(uint64_t startPC, uint64_t branchPC, uint64_t lgcBank, uint64_t phyBank, uint64_t mainFound, uint64_t mainCounter, uint64_t mainUseful,
+            uint64_t altCounter, uint64_t mainTable, uint64_t mainIndex, uint64_t altIndex, uint64_t tag,
+            uint64_t useAlt, uint64_t predTaken, uint64_t actualTaken, uint64_t allocSuccess, uint64_t allocFailure,
+            uint64_t predUseSC, uint64_t predSCDisagree, uint64_t predSCCorrect)
+        {
+            _tick = curTick();
+            _uint64_data["startPC"] = startPC;
+            _uint64_data["branchPC"] = branchPC;
+            _uint64_data["lgcBank"] = lgcBank;
+            _uint64_data["phyBank"] = phyBank;
+            _uint64_data["mainFound"] = mainFound;
+            _uint64_data["mainCounter"] = mainCounter;
+            _uint64_data["mainUseful"] = mainUseful;
+            _uint64_data["altCounter"] = altCounter;
+            _uint64_data["mainTable"] = mainTable;
+            _uint64_data["mainIndex"] = mainIndex;
+            _uint64_data["altIndex"] = altIndex;
+            _uint64_data["tag"] = tag;
+            _uint64_data["useAlt"] = useAlt;
+            _uint64_data["predTaken"] = predTaken;
+            _uint64_data["actualTaken"] = actualTaken;
+            _uint64_data["allocSuccess"] = allocSuccess;
+            _uint64_data["allocFailure"] = allocFailure;
+            _uint64_data["predUseSC"] = predUseSC;
+            _uint64_data["predSCDisagree"] = predSCDisagree;
+            _uint64_data["predSCCorrect"] = predSCCorrect;
+        }
+    };
 public:
     class StatisticalCorrector {
       public:
