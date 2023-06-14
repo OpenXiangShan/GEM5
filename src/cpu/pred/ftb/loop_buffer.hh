@@ -57,6 +57,7 @@ class LoopBuffer
     // entry is pinned when current loop is still require by fetch
     int pinnedCounter{0};
     int loopInstCounter{0};
+
     // record whether current loop branch is conf in lp
     // write when activating loop buffer, and used during
     // the whole loop
@@ -144,6 +145,7 @@ class LoopBuffer
             loopInstCounter = 0;
         }
         currentLoopBranchConfInLp = false;
+
         // limit = 0;
         // singleIterSize = 0;
         DPRINTF(LoopBuffer, "deactivating loop buffer\n");

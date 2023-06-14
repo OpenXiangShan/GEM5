@@ -177,6 +177,7 @@ FTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Fu
             taken = true;
             useTarget = base_target;
         } else {
+            useTarget = base_target;
             warn("no target found\n");
         }
         if (taken) {
@@ -204,7 +205,7 @@ FTBITTAGE::update(const FetchStream &entry)
     if (debugPC == entry.startPC || debugPC2 == entry.startPC) {
         debugFlag = true;
     }
-    Addr startAddr = entry.startPC;
+    Addr startAddr = entry.getRealStartPC();
     DPRINTF(FTBITTAGE || debugFlag, "update startAddr: %#lx\n", startAddr);
     auto ftb_entry = entry.updateFTBEntry;
 
