@@ -2027,19 +2027,39 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
         assert(enableLoopPredictor);
         // loop buffer is activated, use loop buffer to make prediction
         // determine whether this stream entry has double iterations
-        std::tie(endLoop, lpRedirectInfos[0], isDouble, loopConf) = lp.shouldEndLoop(
-            true, lb.getActiveLoopBranch(), lb.activeLoopMayBeDouble()
-        );
         entry = lb.streamBeforeLoop;
+        bool mayBeDouble = lb.activeLoopMayBeDouble();
+        // this is a condition read from lp while activating lb
+        bool loopBranchConf = lb.currentLoopBranchConf();
+        bool twoOrMoreItersRemaining = false;
+        std::tie(endLoop, lpRedirectInfos[0], twoOrMoreItersRemaining, loopConf) = lp.shouldEndLoop(
+            true, lb.getActiveLoopBranch(), mayBeDouble
+        );
+        bool confExit = false;
+        bool provideDoubleBlock = false;
+        // loop branch confident in lp when activating lb
+        // let lp decide whether to end loop
+        if (loopBranchConf) {
+            bool lpConfNow = loopConf;
+            confExit = lpConfNow && endLoop;
+            provideDoubleBlock = twoOrMoreItersRemaining || !lpConfNow;
+            entry.isExit = confExit;
+            entry.predTaken = twoOrMoreItersRemaining || !confExit;
+        } else {
+            // loop branch not confident in lp when activating lb
+            // do not proactively deactivate loop buffer
+
+            // provide double block if possible
+            provideDoubleBlock = mayBeDouble;
+            // do not exit until squash
+            entry.isExit = false;
+            entry.predTaken = true;
+        }
+        entry.isDouble = provideDoubleBlock;
         entry.startPC = s0PC;
-        bool conf = loopConf;
-        bool confExit = conf && endLoop;
         entry.fromLoopBuffer = true;
-        entry.isDouble = isDouble;
-        entry.isExit = confExit;
         entry.isHit = true;
         entry.falseHit = false;
-        entry.predTaken = isDouble || !confExit;
         entry.predEndPC = lb.streamBeforeLoop.predBranchInfo.getEnd();
         // use s0History from streamBeforeLoop
         // entry.history = s0History;
@@ -2067,14 +2087,14 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
         }
 
 
-        if (endLoop && !conf) {
+        if (endLoop && !loopConf) {
             dbpFtbStats.predLoopPredictorUnconfNotExit++;
         }
         if (confExit) {
             dbpFtbStats.predLoopPredictorExit++;
         }
         dbpFtbStats.predBlockInLoopBuffer++;
-        if (isDouble) {
+        if (provideDoubleBlock) {
             dbpFtbStats.predDoubleBlockInLoopBuffer++;
         }
     }

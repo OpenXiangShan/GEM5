@@ -58,6 +58,11 @@ class LoopBuffer
     int pinnedCounter{0};
     int loopInstCounter{0};
 
+    // record whether current loop branch is conf in lp
+    // write when activating loop buffer, and used during
+    // the whole loop
+    bool currentLoopBranchConfInLp{false};
+
     // store fetch stream infos of entry before entering loop
     FetchStream streamBeforeLoop;
 
@@ -77,13 +82,21 @@ class LoopBuffer
                 loopBranchPC == branch_pc) {
             DPRINTF(LoopBuffer, "found loop buffer entry for pc %#lx, branch_pc %#lx, entry has %d insts\n",
                 start_pc, branch_pc, loopInsts.second.size());
-            if (lp->isLoopBranchConf(loopBranchPC)) {
-                DPRINTF(LoopBuffer, "loop branch %#lx conf in lp, loop buffer activated\n", loopBranchPC);
-                active = true;
-                pinnedCounter += 1;
-                return true;
+            const auto lentry = lp->lookUp(loopBranchPC);
+            if (lentry.valid) {
+                bool conf = lp->isConf(lentry);
+                if (conf || !lp->tripCntTooSmall(lentry)) {
+                    DPRINTF(LoopBuffer, "loop branch %#lx in lp, loop buffer activated\n", loopBranchPC);
+                    active = true;
+                    pinnedCounter += 1;
+                    currentLoopBranchConfInLp = conf;
+                    return true;
+                } else {
+                    DPRINTF(LoopBuffer, "loop branch %#lx is not conf %d in lp, tripCnt %d is too small as well, don't activate loop buffer\n",
+                        loopBranchPC, lentry.conf, lentry.tripCnt);
+                }
             } else {
-                DPRINTF(LoopBuffer, "loop branch %#lx is not confident, don't activate loop buffer\n", loopBranchPC);
+                DPRINTF(LoopBuffer, "loop branch %#lx is not in lp, don't activate loop buffer\n", loopBranchPC);
                 return false;
             }
         }
@@ -131,6 +144,8 @@ class LoopBuffer
         if (squash) {
             loopInstCounter = 0;
         }
+        currentLoopBranchConfInLp = false;
+
         // limit = 0;
         // singleIterSize = 0;
         DPRINTF(LoopBuffer, "deactivating loop buffer\n");
@@ -145,6 +160,8 @@ class LoopBuffer
     Addr getActiveLoopBranch() { return loopBranchPC; }
 
     bool activeLoopMayBeDouble() { return getActiveLoopInstsSize() <= 16 / 2; }
+
+    bool currentLoopBranchConf() { return currentLoopBranchConfInLp; }
 
     // called at fetchQueue enqueue, after a full ftq entry is enqueued,
     // and the entry is ended by a backward taken branch
@@ -210,6 +227,7 @@ class LoopBuffer
     void clearState() {
         loopInstCounter = 0;
         pinnedCounter = 0;
+        currentLoopBranchConfInLp = false;
     }
 
     bool tryUnpin() {

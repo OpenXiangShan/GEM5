@@ -38,6 +38,8 @@ class LoopPredictor
     unsigned maxConf = 7;
     // do not cover loop with less than 100 iterations, since tage may predict it well
     unsigned minTripCnt = 1;
+    // do not use loop buffer if not conf and tripCnt is too small
+    unsigned minTripCntWhenNotConf = 20;
     
     bool enableDB;
 
@@ -55,7 +57,7 @@ class LoopPredictor
     // since we record pc in loop entry
     // we need to check whether given prediction block
     // has this loop branch
-    // returns <end, info, is_double, conf>
+    // returns <end, info, two_or_more_iter_remaining, conf>
     std::tuple<bool, LoopRedirectInfo, bool, bool> shouldEndLoop(bool taken, Addr branch_pc, bool may_be_double) {
       DPRINTF(LoopPredictor, "query loop branch: taken: %d, pc: %#lx, is_double: %d\n",
         taken, branch_pc, may_be_double);
@@ -72,7 +74,7 @@ class LoopPredictor
         int remaining_iter = way.tripCnt - way.specCnt;
         DPRINTF(LoopPredictor, "found loop entry idx %d, tag %#x: tripCnt: %d, specCnt: %d, conf: %d\n", idx, tag, way.tripCnt, way.specCnt, way.conf);
         bool exit = false;
-        bool is_double = false;
+        bool two_or_more_iter_remaining = false;
         bool conf = way.conf == maxConf;
         // if unconf and bpu predict not taken, we trust bpu to sychronize specCnt to 0
         if (conf || taken) {
@@ -83,18 +85,18 @@ class LoopPredictor
             way.specCnt = 0;
             info.end_loop = true;
             exit = true;
-            is_double = remaining_iter == 1 && may_be_double;
+            two_or_more_iter_remaining = remaining_iter == 1 && may_be_double;
           } else if ((remaining_iter == 1 && !may_be_double) || remaining_iter >= 2) {
             way.specCnt += may_be_double ? 2 : 1;
-            is_double = may_be_double;
+            two_or_more_iter_remaining = may_be_double;
           }
         } else {
           // unconf and bpu predict not taken, use bpu to synchronize specCnt
           DPRINTF(LoopPredictor, "bpu prediction is not taken, loop predictor unconf, exiting loop, setting specCnt to 0\n");
           way.specCnt = 0;
-          is_double = false;
+          two_or_more_iter_remaining = false;
         }
-        return std::make_tuple(exit, info, is_double, conf);
+        return std::make_tuple(exit, info, two_or_more_iter_remaining, conf);
       }
       return std::make_tuple(false, info, false, false);
     }
@@ -264,15 +266,30 @@ training_entry: %d, tripCnt %d, specCnt %d, conf %d; in_main: %d, tripCnt %d, co
              loopStorage[idx].find(tag) != loopStorage[idx].end();
     }
 
-    bool isLoopBranchConf(Addr pc) {
+    bool isInStorage(Addr pc) {
+      Addr tag = getTag(pc);
+      int idx = getIndex(pc);
+      // if (loopStorage[idx].find(tag) != loopStorage[idx].end()) {
+      //   return loopStorage[idx][tag].conf == maxConf;
+      // } else {
+      //   return false;
+      // }
+      return loopStorage[idx].find(tag) != loopStorage[idx].end();
+    }
+
+    LoopEntry lookUp(Addr pc) {
       Addr tag = getTag(pc);
       int idx = getIndex(pc);
       if (loopStorage[idx].find(tag) != loopStorage[idx].end()) {
-        return loopStorage[idx][tag].conf == maxConf;
+        return loopStorage[idx][tag];
       } else {
-        return false;
+        return LoopEntry();
       }
     }
+
+    bool isConf(const LoopEntry &entry) { return entry.conf == maxConf; }
+
+    bool tripCntTooSmall(const LoopEntry &entry) { return entry.tripCnt <= minTripCntWhenNotConf; }
 
     LoopPredictor(unsigned sets, unsigned ways, bool e) {
       numSets = sets;
