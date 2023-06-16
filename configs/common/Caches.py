@@ -100,6 +100,7 @@ class L3Cache(Cache):
     tgts_per_mshr = 20
     clusivity='mostly_excl'
     writeback_clean = False
+    prefetch_on_access = True
 
     # aligned latency:
     tag_latency = 2

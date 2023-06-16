@@ -286,6 +286,12 @@ def addCommonOptions(parser):
                         type of hardware prefetcher to use with the L2 cache.
                         (if not set, use the default prefetcher of
                         the selected cache)""")
+    parser.add_argument("--l3-hwp-type", default=None,
+                        choices=ObjectList.hwp_list.get_names(),
+                        help="""
+                        type of hardware prefetcher to use with the L3 cache.
+                        (if not set, use the default prefetcher of
+                        the selected cache)""")
     parser.add_argument("--checker", action="store_true")
     parser.add_argument("--cpu-clock", action="store", type=str,
                         default='2GHz',
