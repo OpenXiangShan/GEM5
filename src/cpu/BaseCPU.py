@@ -157,6 +157,8 @@ class BaseCPU(ClockedObject):
     nemuSDimg = Param.String("", "Nemu MMC img path for diff")
     nemuSDCptBin = Param.String("", "Nemu MMC cpt bin path for diff")
 
+    arch_db = Param.ArchDBer(Parent.any, "Arch DB")
+
     def createInterruptController(self):
         self.interrupts = [
                 self.ArchInterrupts() for i in range(self.numThreads)]
