@@ -27,8 +27,7 @@ SMSPrefetcher::SMSPrefetcher(const SMSPrefetcherParams &p)
 }
 
 void
-SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi,
-                                 std::vector<AddrPriority> &addresses)
+SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late)
 {
 
     bool can_prefetch = !pfi.isWrite() && pfi.hasPC();
@@ -79,9 +78,9 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi,
         }
     }
     if (!is_active_page) {
-        DPRINTF(SMSPrefetcher, "Pht lookup...\n");
-        strideLookup(pfi, addresses);
-        phtLookup(pfi, addresses);
+        DPRINTF(SMSPrefetcher, "Do stride and pht lookup...\n");
+        strideLookup(pfi, addresses, late);
+        phtLookup(pfi, addresses, late);
     }
 }
 
@@ -160,33 +159,68 @@ SMSPrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page)
 
 void
 SMSPrefetcher::strideLookup(const PrefetchInfo &pfi,
-                            std::vector<AddrPriority> &addresses)
+                            std::vector<AddrPriority> &addresses, bool late)
 {
-    Addr lookupAddr = blockAddress(pfi.getAddr());
+    Addr lookupAddr = pfi.getAddr();
     StrideEntry *entry = stride.findEntry(pfi.getPC(), pfi.isSecure());
+    // TODO: add DPRINFT for stride
+    DPRINTF(SMSPrefetcher, "Stride lookup: pc:%x addr: %x\n", pfi.getPC(),
+            lookupAddr);
     if (entry) {
         stride.accessEntry(entry);
         int64_t new_stride = lookupAddr - entry->last_addr;
-        bool stride_match = new_stride == entry->stride && new_stride != 0;
+        if (new_stride == 0) {
+            DPRINTF(SMSPrefetcher, "Stride = 0, ignore redundant req\n");
+            return;
+        }
+        bool stride_match = new_stride == entry->stride;
+        DPRINTF(SMSPrefetcher, "Stride hit, with stride: %d, old stride: %d\n", new_stride, entry->stride);
         if (stride_match) {
             entry->conf++;
+            if (late) {
+                entry->depth++;
+            }
+            DPRINTF(SMSPrefetcher, "Stride match, inc conf to %d, late: %i, depth: %i\n",
+             (int) entry->conf, late, entry->depth);
         } else {
             if (entry->conf < 2) {
                 entry->stride = new_stride;
+                entry->depth = 1;
             }
             entry->conf--;
+            DPRINTF(SMSPrefetcher, "Stride unmatch, dec conf to %d\n", (int) entry->conf);
         }
         entry->last_addr = lookupAddr;
         if (entry->conf >= 2) {
-            Addr pf_addr = lookupAddr + entry->stride;
+            Addr pf_addr = lookupAddr + entry->stride * entry->depth;
+            DPRINTF(SMSPrefetcher, "Stride conf >= 2, send pf: %x with depth %i\n", pf_addr, entry->depth);
             sendPFWithFilter(pf_addr, addresses, 0);
         }
     } else {
+        DPRINTF(SMSPrefetcher, "Stride miss, insert it\n");
         entry = stride.findVictim(0);
         entry->conf.reset();
         entry->last_addr = lookupAddr;
         entry->stride = 0;
+        entry->depth = 1;
+        DPRINTF(SMSPrefetcher, "Stride miss, insert with stride 0\n");
         stride.insertEntry(pfi.getPC(), pfi.isSecure(), entry);
+    }
+    periodStrideDepthDown();
+}
+
+void
+SMSPrefetcher::periodStrideDepthDown()
+{
+    if (depthDownCounter < depthDownPeriod) {
+        depthDownCounter++;
+    } else {
+        for (StrideEntry &entry : stride) {
+            if (entry.conf >= 2) {
+                entry.depth = std::max(entry.depth - 1, 1);
+            }
+        }
+        depthDownCounter = 0;
     }
 }
 
@@ -233,7 +267,7 @@ SMSPrefetcher::updatePht(SMSPrefetcher::ACTEntry *act_entry)
 }
 void
 SMSPrefetcher::phtLookup(const Base::PrefetchInfo &pfi,
-                         std::vector<AddrPriority> &addresses)
+                         std::vector<AddrPriority> &addresses, bool late)
 {
     Addr pc = pfi.getPC();
     Addr vaddr = pfi.getAddr();

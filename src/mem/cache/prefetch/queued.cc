@@ -183,10 +183,19 @@ Queued::getMaxPermittedPrefetches(size_t total) const
 }
 
 void
+Queued::calculatePrefetch(const PrefetchInfo &pfi,
+    std::vector<AddrPriority> &addresses, bool late)
+{
+    this->calculatePrefetch(pfi, addresses);
+}
+
+void
 Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
 {
     Addr blk_addr = blockAddress(pfi.getAddr());
     bool is_secure = pfi.isSecure();
+
+    bool late = pkt->missOnLatePf;
 
     // Squash queued prefetches if demand miss to same line
     if (queueSquash) {
@@ -198,6 +207,7 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
                         "(cl: %#x), demand request going to the same addr\n",
                         itr->pfInfo.getAddr(),
                         blockAddress(itr->pfInfo.getAddr()));
+                late = true;
                 delete itr->pkt;
                 itr = pfq.erase(itr);
                 statsQueued.pfRemovedDemand++;
@@ -209,7 +219,7 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
 
     // Calculate prefetches given this access
     std::vector<AddrPriority> addresses;
-    calculatePrefetch(pfi, addresses);
+    calculatePrefetch(pfi, addresses, late);
 
     // Get the maximu number of prefetches that we are allowed to generate
     size_t max_pfs = getMaxPermittedPrefetches(addresses.size());

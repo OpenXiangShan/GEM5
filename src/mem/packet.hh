@@ -1558,6 +1558,8 @@ class Packet : public Printable
      * failed transaction, this function returns the failure reason.
      */
     HtmCacheFailure getHtmTransactionFailedInCacheRC() const;
+
+    bool missOnLatePf{false};
 };
 
 } // namespace gem5

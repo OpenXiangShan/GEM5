@@ -73,16 +73,24 @@ class SMSPrefetcher : public Queued
         int64_t stride;
         uint64_t last_addr;
         SatCounter8 conf;
+        int32_t depth;
         StrideEntry(const SatCounter8 & _conf)
             : TaggedEntry(),
               stride(0),
               last_addr(0),
-              conf(_conf)
+              conf(_conf),
+              depth(1)
         {}
     };
 
+    int depthDownCounter{0};
+
+    const int depthDownPeriod{1024};
+
+    void periodStrideDepthDown();
+
     void strideLookup(const PrefetchInfo &pfi,
-                      std::vector<AddrPriority> &address);
+                      std::vector<AddrPriority> &address, bool late);
 
     AssociativeSet<StrideEntry> stride;
 
@@ -102,13 +110,19 @@ class SMSPrefetcher : public Queued
     AssociativeSet<PhtEntry> pht;
 
     void phtLookup(const PrefetchInfo &pfi,
-                   std::vector<AddrPriority> &addresses);
+                   std::vector<AddrPriority> &addresses, bool late);
 
   public:
     SMSPrefetcher(const SMSPrefetcherParams &p);
 
-    void calculatePrefetch(const PrefetchInfo &pfi,
-                           std::vector<AddrPriority> &addresses) override;
+    // dummy implementation, calc(3 args) will not call it
+    void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses) override
+    {
+        panic("not implemented");
+    };
+
+    void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late) override;
+
   private:
     const unsigned filterSize{128};
     boost::compute::detail::lru_cache<Addr, Addr> blockLRUFilter;

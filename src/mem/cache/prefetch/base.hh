@@ -257,6 +257,8 @@ class Base : public ClockedObject
         {
             delete[] data;
         }
+
+        bool lastPfLate{false};
     };
 
   protected:
