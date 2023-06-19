@@ -234,15 +234,22 @@ def build_test_system(np):
                         IndirectBPClass()
                         
                 bpClass = ObjectList.bp_list.get('DecoupledBPUWithFTB')
+                print(args.enable_bp_db)
+                enable_bp_db = len(args.enable_bp_db) > 1
+                if enable_bp_db:
+                    bp_db_switches = args.enable_bp_db[1] + ['basic']
+                else:
+                    bp_db_switches = []
                 if isinstance(test_sys.cpu[i].branchPred, bpClass):
                     test_sys.cpu[i].branchPred = bpClass(
-                                                    enableBPDB=args.enable_bp_db,
+                                                    bpDBSwitches=bp_db_switches,
                                                     enableLoopBuffer=args.enable_loop_buffer,
                                                     enableLoopPredictor=args.enable_loop_predictor,
                                                     enableJumpAheadPredictor=args.enable_jump_ahead_predictor
                                                     )
+                    print("db_switches:", bp_db_switches)
                 else:
-                    if args.enable_bp_db:
+                    if enable_bp_db:
                         print("bpdb not supported for this branch predictor")
                     if args.enable_loop_buffer:
                         print("loop buffer not supported for this branch predictor")

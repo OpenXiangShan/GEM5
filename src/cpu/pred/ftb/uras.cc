@@ -26,6 +26,8 @@ uRAS::uRAS(const Params &p)
         entry.ctr = 0;
         entry.retAddr = 0x80000000L;
     }
+    hasDB = true;
+    dbName = std::string("ras");
 }
 
 void
