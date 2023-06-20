@@ -199,10 +199,12 @@ SMSPrefetcher::strideLookup(const PrefetchInfo &pfi,
     } else {
         DPRINTF(SMSPrefetcher, "Stride miss, insert it\n");
         entry = stride.findVictim(0);
+        DPRINTF(SMSPrefetcher, "Found victim pc = %x, stride = %i\n", entry->pc, entry->stride);
         entry->conf.reset();
         entry->last_addr = lookupAddr;
         entry->stride = 0;
         entry->depth = 1;
+        entry->pc = pfi.getPC();
         DPRINTF(SMSPrefetcher, "Stride miss, insert with stride 0\n");
         stride.insertEntry(pfi.getPC(), pfi.isSecure(), entry);
     }
