@@ -761,7 +761,7 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
                             const StaticInstPtr &static_inst,
                             unsigned control_inst_size, bool actually_taken,
                             const InstSeqNum &seq, ThreadID tid,
-                            const unsigned &currentLoopIter)
+                            const unsigned &currentLoopIter, const bool fromCommit)
 {
     dbpFtbStats.controlSquash++;
 
@@ -792,6 +792,13 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
 
     // get corresponding stream entry
     auto &stream = squashing_stream_it->second;
+
+
+    if (!fromCommit) {
+        if (stream.isHit) {
+            stream.falseHit = true;
+        }
+    }
 
     if (stream.isExit) {
         dbpFtbStats.controlSquashOnLoopPredictorPredExit++;
@@ -1159,7 +1166,7 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
                 stream.exeBranchInfo.pc, stream.exeBranchInfo.target,
                 stream.predBranchInfo.pc, stream.predBranchInfo.target);
         
-        if (stream.isHit) {
+        if (stream.isHit && !stream.falseHit) {
             dbpFtbStats.ftbHit++;
         } else {
             if (stream.exeTaken) {

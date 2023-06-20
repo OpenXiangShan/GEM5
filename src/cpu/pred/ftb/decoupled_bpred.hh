@@ -484,7 +484,7 @@ class DecoupledBPUWithFTB : public BPredUnit
                        const PCStateBase &target_pc,
                        const StaticInstPtr &static_inst, unsigned inst_bytes,
                        bool actually_taken, const InstSeqNum &squashed_sn,
-                       ThreadID tid, const unsigned &currentLoopIter);
+                       ThreadID tid, const unsigned &currentLoopIter, const bool fromCommit);
 
     // keep the stream: original prediction might be right
     // For memory violation, stream continues after squashing

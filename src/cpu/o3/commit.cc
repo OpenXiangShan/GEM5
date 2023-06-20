@@ -1118,7 +1118,7 @@ Commit::commitInsts()
                     }
 
                     // FIXME: ignore mret/sret/uret in correspond with RTL
-                    if (!head_inst->isNonSpeculative()) {
+                    if (!head_inst->isNonSpeculative() && head_inst->isControl()) {
                         dbftb->commitBranch(head_inst, miss);
                         if (!head_inst->isReturn() && head_inst->isIndirectCtrl() && miss) {
                             misPredIndirect[head_inst->pcState().instAddr()]++;

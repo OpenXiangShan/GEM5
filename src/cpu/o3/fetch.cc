@@ -1287,7 +1287,8 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
                         mispred_inst->pcState(), *fromCommit->commitInfo[tid].pc,
                         mispred_inst->staticInst, mispred_inst->getInstBytes(),
                         fromCommit->commitInfo[tid].branchTaken,
-                        mispred_inst->seqNum, tid, mispred_inst->getLoopIteration());
+                        mispred_inst->seqNum, tid, mispred_inst->getLoopIteration(),
+                        true);
                 }
             } else if (fromCommit->commitInfo[tid].isTrapSquash) {
                 DPRINTF(Fetch, "Treating as trap squash\n",tid);
@@ -1384,7 +1385,8 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
                         *fromDecode->decodeInfo[tid].nextPC,
                         mispred_inst->staticInst, mispred_inst->getInstBytes(),
                         fromDecode->decodeInfo[tid].branchTaken,
-                        mispred_inst->seqNum, tid, mispred_inst->getLoopIteration());
+                        mispred_inst->seqNum, tid, mispred_inst->getLoopIteration(),
+                        false);
                 }
             } else {
                 warn("Unexpected non-control squash from decode.\n");
