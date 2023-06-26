@@ -37,6 +37,7 @@
 #define __MEM_CACHE_PREFETCH_BOP_HH__
 
 #include <queue>
+#include <set>
 
 #include "mem/cache/prefetch/queued.hh"
 #include "mem/packet.hh"
@@ -78,6 +79,10 @@ class BOP : public Queued
         /** Structure to save the offset and the score */
         typedef std::pair<int16_t, uint8_t> OffsetListEntry;
         std::vector<OffsetListEntry> offsetsList;
+
+        size_t maxOffsetCount{32};
+
+        std::set<int16_t> offsets;
 
         /** In a first implementation of the BO prefetcher, both banks of the
          *  RR were written simultaneously when a prefetched line is inserted
@@ -148,16 +153,17 @@ class BOP : public Queued
             round and update the best offset if found */
         void bestOffsetLearning(Addr);
 
+    public:
         /** Update the RR right table after a prefetch fill */
         void notifyFill(const PacketPtr& pkt) override;
-
-    public:
 
         BOP(const BOPPrefetcherParams &p);
         ~BOP() = default;
 
         void calculatePrefetch(const PrefetchInfo &pfi,
                                std::vector<AddrPriority> &addresses) override;
+        
+        void tryAddOffset(int64_t offset);
 };
 
 } // namespace prefetch

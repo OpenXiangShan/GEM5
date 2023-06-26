@@ -111,10 +111,15 @@ MemCmd::commandInfo[] =
     { {IsRead, IsRequest, IsHWPrefetch, NeedsResponse, FromCache,
             NeedsWritable, IsInvalidate},
             HardPFResp, "HardPFReq" },
+    { {IsRead, IsRequest, IsHWPrefetch, NeedsResponse, FromCache,
+            NeedsWritable, IsInvalidate, FromBOP},
+            BOPResp, "BOPReq" },
     /* SoftPFResp */
     { {IsRead, IsResponse, IsSWPrefetch, HasData}, InvalidCmd, "SoftPFResp" },
     /* HardPFResp */
     { {IsRead, IsResponse, IsHWPrefetch, HasData}, InvalidCmd, "HardPFResp" },
+
+    { {IsRead, IsResponse, IsHWPrefetch, HasData, FromBOP}, InvalidCmd, "BOPResp" },
     /* WriteLineReq */
     { {IsWrite, NeedsWritable, IsRequest, NeedsResponse, HasData},
             WriteResp, "WriteLineReq" },

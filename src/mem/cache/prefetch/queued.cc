@@ -56,10 +56,11 @@ namespace prefetch
 {
 
 void
-Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size,
-                                            RequestorID requestor_id,
-                                            bool tag_prefetch,
-                                            Tick t) {
+Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size, RequestorID requestor_id, bool tag_prefetch, Tick t,
+                                  bool is_bop)
+{
+    // TODO: mark from BOP here
+
     /* Create a prefetch memory request */
     RequestPtr req;
     if (owner->useVirtualAddresses && pfInfo.hasPC()) {
@@ -229,9 +230,9 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
     for (AddrPriority& addr_prio : addresses) {
 
         // Block align prefetch address
-        addr_prio.first = blockAddress(addr_prio.first);
+        addr_prio.addr = blockAddress(addr_prio.addr);
 
-        if (!samePage(addr_prio.first, pfi.getAddr())) {
+        if (!samePage(addr_prio.addr, pfi.getAddr())) {
             statsQueued.pfSpanPage += 1;
 
             if (hasBeenPrefetched(pkt->getAddr(), pkt->isSecure())) {
@@ -240,13 +241,13 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
         }
 
         bool can_cross_page = (tlb != nullptr);
-        if (can_cross_page || samePage(addr_prio.first, pfi.getAddr())) {
-            PrefetchInfo new_pfi(pfi,addr_prio.first);
+        if (can_cross_page || samePage(addr_prio.addr, pfi.getAddr())) {
+            PrefetchInfo new_pfi(pfi,addr_prio.addr);
             statsQueued.pfIdentified++;
             DPRINTF(HWPrefetch, "Found a pf candidate addr: %#x, "
                     "inserting into prefetch queue.\n", new_pfi.getAddr());
             // Create and insert the request
-            insert(pkt, new_pfi, addr_prio.second);
+            insert(pkt, new_pfi, addr_prio);
             num_pfs += 1;
             if (num_pfs == max_pfs) {
                 break;
@@ -355,7 +356,7 @@ Queued::translationComplete(DeferredPacket *dp, bool failed)
             } else {
                 Tick pf_time = curTick() + clockPeriod() * latency;
                 it->createPkt(target_paddr, blkSize, requestorId, tagPrefetch,
-                            pf_time);
+                            pf_time, it->translationRequest->isFromBOP());
                 addToQueue(pfq, *it);
             }
         } else {
@@ -400,20 +401,21 @@ Queued::alreadyInQueue(std::list<DeferredPacket> &queue,
 }
 
 RequestPtr
-Queued::createPrefetchRequest(Addr addr, PrefetchInfo const &pfi,
-                                        PacketPtr pkt)
+Queued::createPrefetchRequest(Addr addr, PrefetchInfo const &pfi, PacketPtr pkt, bool is_bop)
 {
     RequestPtr translation_req = std::make_shared<Request>(
             addr, blkSize, pkt->req->getFlags(), requestorId, pfi.getPC(),
             pkt->req->contextId());
     translation_req->setFlags(Request::PF_EXCLUSIVE);
+    if (is_bop)
+        translation_req->setFlags(Request::PF_BOP);
     return translation_req;
 }
 
 void
-Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi,
-                         int32_t priority)
+Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &addr_prio)
 {
+    int32_t priority = addr_prio.priority;
     if (queueFilter) {
         if (alreadyInQueue(pfq, new_pfi, priority)) {
             return;
@@ -464,16 +466,14 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi,
         }
         if (useVirtualAddresses) {
             has_target_pa = false;
-            translation_req = createPrefetchRequest(new_pfi.getAddr(), new_pfi,
-                                                    pkt);
+            translation_req = createPrefetchRequest(new_pfi.getAddr(), new_pfi, pkt, addr_prio.isBOP);
         } else if (pkt->req->hasVaddr()) {
             has_target_pa = false;
             // Compute the target VA using req->getVaddr + stride
             Addr target_vaddr = positive_stride ?
                 (pkt->req->getVaddr() + stride) :
                 (pkt->req->getVaddr() - stride);
-            translation_req = createPrefetchRequest(target_vaddr, new_pfi,
-                                                    pkt);
+            translation_req = createPrefetchRequest(target_vaddr, new_pfi, pkt, addr_prio.isBOP);
         } else {
             // Using PA for training but the request does not have a VA,
             // unable to process this page crossing prefetch.
@@ -494,7 +494,7 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi,
     if (has_target_pa) {
         Tick pf_time = curTick() + clockPeriod() * latency;
         dpp.createPkt(target_paddr, blkSize, requestorId, tagPrefetch,
-                      pf_time);
+                      pf_time, addr_prio.isBOP);
         DPRINTF(HWPrefetch, "Prefetch queued. "
                 "addr:%#x priority: %3d tick:%lld.\n",
                 new_pfi.getAddr(), priority, pf_time);

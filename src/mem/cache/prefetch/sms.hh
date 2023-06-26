@@ -12,6 +12,7 @@
 #include "base/sat_counter.hh"
 #include "base/types.hh"
 #include "mem/cache/prefetch/associative_set.hh"
+#include "mem/cache/prefetch/bop.hh"
 #include "mem/cache/prefetch/queued.hh"
 #include "mem/cache/prefetch/stride.hh"
 #include "mem/cache/tags/tagged_entry.hh"
@@ -112,7 +113,7 @@ class SMSPrefetcher : public Queued
 
     AssociativeSet<PhtEntry> pht;
 
-    void phtLookup(const PrefetchInfo &pfi,
+    bool phtLookup(const PrefetchInfo &pfi,
                    std::vector<AddrPriority> &addresses, bool late);
 
   public:
@@ -126,10 +127,15 @@ class SMSPrefetcher : public Queued
 
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late) override;
 
+    /** Update the RR right table after a prefetch fill */
+    void notifyFill(const PacketPtr& pkt) override;
+
   private:
-    const unsigned filterSize{128};
-    boost::compute::detail::lru_cache<Addr, Addr> blockLRUFilter;
+    const unsigned pfFilterSize{128};
+    boost::compute::detail::lru_cache<Addr, Addr> pfBlockLRUFilter;
     bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio);
+
+    BOP *bop;
 };
 
 }

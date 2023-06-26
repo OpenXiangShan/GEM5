@@ -115,7 +115,7 @@ class Queued : public Base
          * @param t time when the prefetch becomes ready
          */
         void createPkt(Addr paddr, unsigned blk_size, RequestorID requestor_id,
-                       bool tag_prefetch, Tick t);
+                       bool tag_prefetch, Tick t, bool is_bop);
 
         /**
          * Sets the translation request needed to obtain the physical address
@@ -191,14 +191,26 @@ class Queued : public Base
         statistics::Scalar pfUsefulSpanPage;
     } statsQueued;
   public:
-    using AddrPriority = std::pair<Addr, int32_t>;
+    struct PrefetchCmd
+    {
+        Addr addr;
+        int32_t priority;
+        bool isVA;
+        bool isBOP;
+        PrefetchCmd(Addr a, int32_t p) :
+            addr(a), priority(p), isVA(true), isBOP(false) {}
+        PrefetchCmd(Addr a, int32_t p, bool va, bool bop) :
+            addr(a), priority(p), isVA(va), isBOP(bop) {}
+    };
+    // using AddrPriority = std::pair<Addr, int32_t>;
+    using AddrPriority = PrefetchCmd;
 
     Queued(const QueuedPrefetcherParams &p);
     virtual ~Queued();
 
     void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) override;
 
-    void insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, int32_t priority);
+    void insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &addr_prio);
 
     virtual void calculatePrefetch(const PrefetchInfo &pfi,
                                    std::vector<AddrPriority> &addresses) = 0;
@@ -262,7 +274,7 @@ class Queued : public Base
     size_t getMaxPermittedPrefetches(size_t total) const;
 
     RequestPtr createPrefetchRequest(Addr addr, PrefetchInfo const &pfi,
-                                        PacketPtr pkt);
+                                        PacketPtr pkt, bool is_bop);
 };
 
 } // namespace prefetch

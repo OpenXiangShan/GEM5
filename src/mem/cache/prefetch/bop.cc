@@ -64,37 +64,9 @@ BOP::BOP(const BOPPrefetcherParams &p)
     rrLeft.resize(rrEntries);
     rrRight.resize(rrEntries);
 
-    // Following the paper implementation, a list with the specified number
-    // of offsets which are of the form 2^i * 3^j * 5^k with i,j,k >= 0
-    const int factors[] = { 2, 3, 5 };
-    unsigned int i = 0;
-    int64_t offset_i = 1;
-
-    while (i < p.offset_list_size)
-    {
-        int64_t offset = offset_i;
-
-        for (int n : factors) {
-            while ((offset % n) == 0) {
-                offset /= n;
-            }
-        }
-
-        if (offset == 1) {
-            offsetsList.push_back(OffsetListEntry(offset_i, 0));
-            DPRINTF(BOPPrefetcher, "add %d to offset list\n", offset_i);
-            i++;
-            // If we want to use negative offsets, add also the negative value
-            // of the offset just calculated
-            if (p.negative_offsets_enable)  {
-                offsetsList.push_back(OffsetListEntry(-offset_i, 0));
-                DPRINTF(BOPPrefetcher, "add %d to offset list\n", -offset_i);
-                i++;
-            }
-        }
-
-        offset_i++;
-    }
+    int64_t default_offset = 16;  // 1kB / 64B = 16, as an complement for SMS.stream
+    offsetsList.push_back(OffsetListEntry(default_offset, 0));
+    DPRINTF(BOPPrefetcher, "add %d to offset list\n", default_offset);
 
     offsetsListIterator = offsetsList.begin();
 }
@@ -188,6 +160,38 @@ BOP::testRR(Addr addr) const
 }
 
 void
+BOP::tryAddOffset(int64_t offset)
+{
+    if (offsets.find(offset) == offsets.end()) {
+        offsets.insert(offset);
+        offsetsList.insert(offsetsListIterator, OffsetListEntry(offset, 0));
+        DPRINTF(BOPPrefetcher, "add %d to offset list\n", offset);
+    }
+    if (offsets.size() > maxOffsetCount) {
+        auto it = offsetsList.begin();
+        while (it != offsetsList.end()) {
+            if (it->second <= badScore) {
+                // erase it from set and list
+                offsets.erase(it->first);
+                offsetsList.erase(it);
+                break;
+            }
+        }
+        if (it == offsetsList.end()) {
+            // all offsets are good, erase the one before the iterator
+            if (offsetsListIterator == offsetsList.begin()) {
+                // the iterator is the first element, erase the last one
+                offsets.erase(offsetsList.rbegin()->first);
+                offsetsList.erase(--offsetsList.end());
+            } else {
+                offsets.erase((--offsetsListIterator)->first);
+                offsetsList.erase(offsetsListIterator++);
+            }
+        }
+    }
+}
+
+void
 BOP::bestOffsetLearning(Addr x)
 {
     Addr offset_addr = (*offsetsListIterator).first;
@@ -268,8 +272,8 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
 void
 BOP::notifyFill(const PacketPtr& pkt)
 {
-    // Only insert into the RR right way if it's the pkt is a HWP
-    if (!pkt->cmd.isHWPrefetch()) return;
+    // Only insert into the RR right way if it's the pkt is from BOP
+    if (!pkt->cmd.fromBOP()) return;
 
     Addr tag_y = tag(pkt->getAddr());
     DPRINTF(BOPPrefetcher, "Notify fill, addr: %#lx tag: %#lx issuePf: %d\n",

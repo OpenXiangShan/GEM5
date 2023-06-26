@@ -20,8 +20,10 @@ SMSPrefetcher::SMSPrefetcher(const SMSPrefetcherParams &p)
       pht(p.pht_assoc, p.pht_entries, p.pht_indexing_policy,
           p.pht_replacement_policy,
           PhtEntry(2 * (region_blocks - 1), SatCounter8(2, 0))),
-          blockLRUFilter(filterSize)
+          pfBlockLRUFilter(pfFilterSize),
+      bop(dynamic_cast<BOP *>(p.bop))
 {
+    assert(bop);
     assert(isPowerOf2(region_size));
     DPRINTF(SMSPrefetcher, "SMS: region_size: %d region_blocks: %d\n",
             region_size, region_blocks);
@@ -79,9 +81,13 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
         }
     }
     if (!is_active_page) {
-        DPRINTF(SMSPrefetcher, "Do stride and pht lookup...\n");
-        strideLookup(pfi, addresses, late);
-        phtLookup(pfi, addresses, late);
+        // bop->calculatePrefetch(pfi, addresses);
+        DPRINTF(SMSPrefetcher, "Do pht lookup...\n");
+        bool found_in_pht = phtLookup(pfi, addresses, late);
+        if ((!found_in_pht) || (found_in_pht && pfi.isCacheMiss() && !late)) {
+            DPRINTF(SMSPrefetcher, "Do stride lookup...\n");
+            strideLookup(pfi, addresses, late);
+        }
     }
 }
 
@@ -181,17 +187,22 @@ SMSPrefetcher::strideLookup(const PrefetchInfo &pfi,
             if (strideDynDepth && late) {
                 entry->depth++;
             }
-            DPRINTF(SMSPrefetcher, "Stride match, inc conf to %d, late: %i, depth: %i\n",
-             (int) entry->conf, late, entry->depth);
+            DPRINTF(SMSPrefetcher, "Stride match, inc conf to %d, late: %i, depth: %i\n", (int)entry->conf, late,
+                    entry->depth);
+            entry->last_addr = lookupAddr;
+
+        } else if (entry->stride > 64 && new_stride < 64) {  // different stride, but in the same cache line
+            DPRINTF(SMSPrefetcher, "Stride unmatch, but access goes to the same line, ignore\n");
+
         } else {
             if (entry->conf < 2) {
                 entry->stride = new_stride;
                 entry->depth = 1;
             }
             entry->conf--;
+            entry->last_addr = lookupAddr;
             DPRINTF(SMSPrefetcher, "Stride unmatch, dec conf to %d\n", (int) entry->conf);
         }
-        entry->last_addr = lookupAddr;
         if (entry->conf >= 2) {
             Addr pf_addr = lookupAddr + entry->stride * entry->depth;
             DPRINTF(SMSPrefetcher, "Stride conf >= 2, send pf: %x with depth %i\n", pf_addr, entry->depth);
@@ -201,6 +212,10 @@ SMSPrefetcher::strideLookup(const PrefetchInfo &pfi,
         DPRINTF(SMSPrefetcher, "Stride miss, insert it\n");
         entry = stride.findVictim(0);
         DPRINTF(SMSPrefetcher, "Found victim pc = %x, stride = %i\n", entry->pc, entry->stride);
+        // if (entry->conf >= 1 && entry->stride > 1024) { // > 1k
+        //     DPRINTF(SMSPrefetcher, "Evicting a useful stride, send it to BOP with offset %i\n", entry->stride / 64);
+        //     bop->tryAddOffset(entry->stride / 64);
+        // }
         entry->conf.reset();
         entry->last_addr = lookupAddr;
         entry->stride = 0;
@@ -268,7 +283,7 @@ SMSPrefetcher::updatePht(SMSPrefetcher::ACTEntry *act_entry)
         pht.insertEntry(act_entry->pc, act_entry->is_secure, pht_entry);
     }
 }
-void
+bool
 SMSPrefetcher::phtLookup(const Base::PrefetchInfo &pfi,
                          std::vector<AddrPriority> &addresses, bool late)
 {
@@ -279,6 +294,7 @@ SMSPrefetcher::phtLookup(const Base::PrefetchInfo &pfi,
     Addr region_offset = regionOffset(vaddr);
     bool secure = pfi.isSecure();
     PhtEntry *pht_entry = pht.findEntry(pc, secure);
+    bool found = pht_entry != nullptr;
     if (pht_entry) {
         pht.accessEntry(pht_entry);
         DPRINTF(SMSPrefetcher,
@@ -300,20 +316,27 @@ SMSPrefetcher::phtLookup(const Base::PrefetchInfo &pfi,
             }
         }
     }
+    return found;
 }
 
 bool
 SMSPrefetcher::sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio)
 {
-    if (blockLRUFilter.contains(addr)) {
+    if (pfBlockLRUFilter.contains(addr)) {
         DPRINTF(SMSPrefetcher, "Skip recently prefetched: %lx\n", addr);
         return false;
     } else {
         DPRINTF(SMSPrefetcher, "Send pf: %lx\n", addr);
-        blockLRUFilter.insert(addr, 0);
+        pfBlockLRUFilter.insert(addr, 0);
         addresses.push_back(AddrPriority(addr, prio));
         return true;
     }
+}
+
+void
+SMSPrefetcher::notifyFill(const PacketPtr &pkt)
+{
+    // bop->notifyFill(pkt);
 }
 
 
