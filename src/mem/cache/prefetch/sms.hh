@@ -84,6 +84,7 @@ class SMSPrefetcher : public Queued
               pc(0)
         {}
     };
+    const bool strideDynDepth{false};
 
     int depthDownCounter{0};
 

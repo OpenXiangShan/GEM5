@@ -14,6 +14,7 @@ SMSPrefetcher::SMSPrefetcher(const SMSPrefetcherParams &p)
       region_blocks(p.region_size / p.block_size),
       act(p.act_entries, p.act_entries, p.act_indexing_policy,
           p.act_replacement_policy, ACTEntry(SatCounter8(2, 1))),
+      strideDynDepth(p.stride_dyn_depth),
       stride(p.stride_entries, p.stride_entries, p.stride_indexing_policy,
              p.stride_replacement_policy, StrideEntry(SatCounter8(2, 1))),
       pht(p.pht_assoc, p.pht_entries, p.pht_indexing_policy,
@@ -177,7 +178,7 @@ SMSPrefetcher::strideLookup(const PrefetchInfo &pfi,
         DPRINTF(SMSPrefetcher, "Stride hit, with stride: %d, old stride: %d\n", new_stride, entry->stride);
         if (stride_match) {
             entry->conf++;
-            if (late) {
+            if (strideDynDepth && late) {
                 entry->depth++;
             }
             DPRINTF(SMSPrefetcher, "Stride match, inc conf to %d, late: %i, depth: %i\n",

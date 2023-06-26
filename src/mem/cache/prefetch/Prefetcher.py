@@ -234,6 +234,7 @@ class SMSPrefetcher(QueuedPrefetcher):
         "Replacement policy of active generation table"
     )
     # stride table (full-assoc)
+    stride_dyn_depth = Param.Bool(False, "Dynamic depth of stride table")
     stride_entries = Param.MemorySize("32", "Stride Entries")
     stride_indexing_policy = Param.BaseIndexingPolicy(
         SetAssociative(
