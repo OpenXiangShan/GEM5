@@ -369,7 +369,9 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
 
                 assert(pkt->req->requestorId() < system->maxRequestors());
                 stats.cmdStats(pkt).mshrHits[pkt->req->requestorId()]++;
-                pkt->missOnLatePf = true;
+                if (!mshr->hasFromCache()) {
+                    pkt->missOnLatePf = true;
+                }
 
                 // We use forward_time here because it is the same
                 // considering new targets. We have multiple
