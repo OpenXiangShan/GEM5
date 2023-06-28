@@ -69,7 +69,7 @@ class L1_ICache(L1Cache):
     response_latency = 4
 
 class L1_DCache(L1Cache):
-    mshrs = 16
+    mshrs = 32
 
     writeback_clean = False
 

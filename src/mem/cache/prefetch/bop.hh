@@ -39,6 +39,7 @@
 #include <queue>
 #include <set>
 
+#include "base/sat_counter.hh"
 #include "mem/cache/prefetch/queued.hh"
 #include "mem/packet.hh"
 
@@ -77,8 +78,23 @@ class BOP : public Queued
         std::vector<Addr> rrRight;
 
         /** Structure to save the offset and the score */
-        typedef std::pair<int16_t, uint8_t> OffsetListEntry;
-        std::vector<OffsetListEntry> offsetsList;
+        // typedef std::pair<int16_t, uint8_t> OffsetListEntry;
+        struct OffsetListEntry{
+            int16_t first;  // offset, name it as first to make it compatible with pair
+            uint8_t second;  // offset, name it as second to make it compatible with pair
+            int16_t depth;
+            SatCounter8 late;
+
+            OffsetListEntry(int16_t x, uint8_t y)
+                : first(x), second(y), depth(1), late(6, 0)
+            {}
+
+            int16_t calcOffset() const
+            {
+                return first * depth;
+            }
+        };
+        std::list<OffsetListEntry> offsetsList;
 
         size_t maxOffsetCount{32};
 
@@ -112,7 +128,7 @@ class BOP : public Queued
         /** Current best offset found in the learning phase */
         Addr phaseBestOffset;
         /** Current test offset index */
-        std::vector<OffsetListEntry>::iterator offsetsListIterator;
+        std::list<OffsetListEntry>::iterator offsetsListIterator;
         /** Max score found so far */
         unsigned int bestScore;
         /** Current round */
@@ -151,7 +167,9 @@ class BOP : public Queued
 
         /** Learning phase of the BOP. Update the intermediate values of the
             round and update the best offset if found */
-        void bestOffsetLearning(Addr);
+        void bestOffsetLearning(Addr addr, bool late);
+
+        unsigned missCount{0};
 
     public:
         /** Update the RR right table after a prefetch fill */
@@ -161,9 +179,14 @@ class BOP : public Queued
         ~BOP() = default;
 
         void calculatePrefetch(const PrefetchInfo &pfi,
-                               std::vector<AddrPriority> &addresses) override;
+                               std::vector<AddrPriority> &addresses) override
+        {
+            panic("not implemented");
+        };
+
+        void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late) override;
         
-        void tryAddOffset(int64_t offset);
+        void tryAddOffset(int64_t offset, bool late = false);
 };
 
 } // namespace prefetch

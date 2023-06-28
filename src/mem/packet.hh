@@ -1565,6 +1565,8 @@ class Packet : public Printable
     HtmCacheFailure getHtmTransactionFailedInCacheRC() const;
 
     bool missOnLatePf{false};
+
+    bool coalescingMSHR{false};
 };
 
 } // namespace gem5

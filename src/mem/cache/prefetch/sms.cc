@@ -81,13 +81,25 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
         }
     }
     if (!is_active_page) {
-        // bop->calculatePrefetch(pfi, addresses);
+
+        DPRINTF(SMSPrefetcher, "Do BOP traing/prefetching...\n");
+        size_t old_addr_size = addresses.size();
+        bop->calculatePrefetch(pfi, addresses, late);
+        if (addresses.size() > old_addr_size) {
+            // BOP hit
+            AddrPriority addr = addresses.back();
+            addresses.pop_back();
+            // Filter
+            sendPFWithFilter(addr.addr, addresses, addr.priority);
+        }
+
         DPRINTF(SMSPrefetcher, "Do pht lookup...\n");
         bool found_in_pht = phtLookup(pfi, addresses, late);
-        if ((!found_in_pht) || (found_in_pht && pfi.isCacheMiss() && !late)) {
-            DPRINTF(SMSPrefetcher, "Do stride lookup...\n");
-            strideLookup(pfi, addresses, late);
-        }
+        // if ((!found_in_pht) || (found_in_pht && pfi.isCacheMiss() && !late)) {
+
+        DPRINTF(SMSPrefetcher, "Do stride lookup...\n");
+        strideLookup(pfi, addresses, late);
+        // }
     }
 }
 
@@ -298,13 +310,12 @@ SMSPrefetcher::phtLookup(const Base::PrefetchInfo &pfi,
     if (pht_entry) {
         pht.accessEntry(pht_entry);
         DPRINTF(SMSPrefetcher,
-                "Pht lookup hit: pc: %x, vaddr: %x, offset: %x\n", pc, vaddr,
-                region_offset);
+                "Pht lookup hit: pc: %x, vaddr: %x, offset: %x, late: %i\n", pc, vaddr,
+                region_offset, late);
         int priority = 2 * (region_blocks - 1);
         // find incr pattern
         for (uint8_t i = 0; i < region_blocks - 1; i++) {
-            if (pht_entry->hist[i + region_blocks - 1].calcSaturation() >
-                0.5) {
+            if (pht_entry->hist[i + region_blocks - 1].calcSaturation() > 0.5) {
                 Addr pf_tgt_addr = blk_addr + (i + 1) * blkSize;
                 sendPFWithFilter(pf_tgt_addr, addresses, priority--);
             }
@@ -315,8 +326,59 @@ SMSPrefetcher::phtLookup(const Base::PrefetchInfo &pfi,
                 sendPFWithFilter(pf_tgt_addr, addresses, priority--);
             }
         }
+        DPRINTF(SMSPrefetcher, "pht entry pattern:\n");
+        for (uint8_t i = 0; i < 2 * (region_blocks - 1); i++) {
+            DPRINTFR(SMSPrefetcher, "%.2f ", pht_entry->hist[i].calcSaturation());
+        }
+        DPRINTFR(SMSPrefetcher, "\n");
+
+        if (late) {
+            int period = calcPeriod(pht_entry->hist, late);
+        }
     }
     return found;
+}
+
+int
+SMSPrefetcher::calcPeriod(const std::vector<SatCounter8> &bit_vec, bool late)
+{
+    std::vector<int> bit_vec_full(2 * (region_blocks - 1) + 1);
+    // copy bit_vec to bit_vec_full, with mid point = 1
+    for (int i = 0; i < region_blocks - 1; i++) {
+        bit_vec_full.at(i) = bit_vec.at(i).calcSaturation() > 0.5;
+    }
+    bit_vec_full[region_blocks - 1] = 1;
+    for (int i = region_blocks, j = region_blocks - 1; i < 2 * (region_blocks - 1);
+         i++, j++) {
+        bit_vec_full.at(i) = bit_vec.at(j).calcSaturation() > 0.5;
+    }
+
+    DPRINTF(SMSPrefetcher, "bit_vec_full: ");
+    for (int i = 0; i < 2 * (region_blocks - 1) + 1; i++) {
+        DPRINTFR(SMSPrefetcher, "%i ", bit_vec_full[i]);
+    }
+    DPRINTFR(SMSPrefetcher, "\n");
+
+    int max_dot_prod = 0;
+    int max_shamt = -1;
+    for (int shamt = 2; shamt < 2 * (region_blocks - 1) + 1; shamt++) {
+        int dot_prod = 0;
+        for (int i = 0; i < 2 * (region_blocks - 1) + 1; i++) {
+            if (i + shamt < 2 * (region_blocks - 1) + 1) {
+                dot_prod += bit_vec_full[i] * bit_vec_full[i + shamt];
+            }
+        }
+        if (dot_prod >= max_dot_prod) {
+            max_dot_prod = dot_prod;
+            max_shamt = shamt;
+        }
+    }
+    DPRINTF(SMSPrefetcher, "max_dot_prod: %i, max_shamt: %i\n", max_dot_prod,
+            max_shamt);
+    if (max_dot_prod > 0 && max_shamt > 3) {
+        bop->tryAddOffset(max_shamt, late);
+    }
+    return max_shamt;
 }
 
 bool
@@ -336,7 +398,7 @@ SMSPrefetcher::sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses,
 void
 SMSPrefetcher::notifyFill(const PacketPtr &pkt)
 {
-    // bop->notifyFill(pkt);
+    bop->notifyFill(pkt);
 }
 
 

@@ -116,6 +116,8 @@ class SMSPrefetcher : public Queued
     bool phtLookup(const PrefetchInfo &pfi,
                    std::vector<AddrPriority> &addresses, bool late);
 
+    int calcPeriod(const std::vector<SatCounter8> &bit_vec, bool late);
+
   public:
     SMSPrefetcher(const SMSPrefetcherParams &p);
 

@@ -364,14 +364,21 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                 // uncached memory write, forwarded to WriteBuffer.
                 allocateWriteBuffer(pkt, forward_time);
             } else {
-                DPRINTF(Cache, "%s coalescing MSHR for %s\n", __func__,
-                        pkt->print());
+                DPRINTF(Cache, "%s coalescing MSHR for %s, va: %lx\n", __func__,
+                        pkt->print(), pkt->req->hasVaddr() ? pkt->req->getVaddr() : 0);
 
                 assert(pkt->req->requestorId() < system->maxRequestors());
                 stats.cmdStats(pkt).mshrHits[pkt->req->requestorId()]++;
-                if (!mshr->hasFromCache()) {
+                if (!mshr->hasFromCPU() && mshr->hasFromPref() &&  // and from cpu
+                    (pkt->cmd != MemCmd::HardPFReq && pkt->cmd != MemCmd::BOPPFReq)) {
                     pkt->missOnLatePf = true;
+
+                } else if (mshr->hasFromCPU()) {
+                    // no pkt in mshr originated from cache; all of them are from cpu
+                    pkt->coalescingMSHR = true;
                 }
+                DPRINTF(Cache, "%s: miss on late pref: %i, coalescing cpu requests: %i\n", __func__, pkt->missOnLatePf,
+                        pkt->coalescingMSHR);
 
                 // We use forward_time here because it is the same
                 // considering new targets. We have multiple
@@ -985,6 +992,7 @@ BaseCache::getNextQueueEntry()
                 // allocate an MSHR and return it, note
                 // that we send the packet straight away, so do not
                 // schedule the send
+                DPRINTF(HWPrefetch, "Allocating MSHR for prefetching addr %#x\n", pf_addr);
                 return allocateMissBuffer(pkt, curTick(), false);
             }
         }
