@@ -307,8 +307,7 @@ typedef struct FetchStream
     int currentSentBlock;
 
     // prediction metas
-    // FIXME: use vec
-    std::array<std::shared_ptr<void>, 6> predMetas;
+    std::vector<std::shared_ptr<void>> predMetas;
 
     // for loop
     std::vector<LoopRedirectInfo> loopRedirectInfos;
@@ -621,83 +620,6 @@ struct FtqEntry
     bool miss() const { return !taken; }
     // bool filledUp() const { return (endPC & fetchTargetMask) == 0; }
     // unsigned predLoopIteration;
-};
-
-
-struct TageMissTrace : public Record {
-    void set(uint64_t startPC, uint64_t branchPC, uint64_t lgcBank, uint64_t phyBank, uint64_t mainFound, uint64_t mainCounter, uint64_t mainUseful,
-        uint64_t altCounter, uint64_t mainTable, uint64_t mainIndex, uint64_t altIndex, uint64_t tag,
-        uint64_t useAlt, uint64_t predTaken, uint64_t actualTaken, uint64_t allocSuccess, uint64_t allocFailure,
-        uint64_t predUseSC, uint64_t predSCDisagree, uint64_t predSCCorrect)
-    {
-        _tick = curTick();
-        _uint64_data["startPC"] = startPC;
-        _uint64_data["branchPC"] = branchPC;
-        _uint64_data["lgcBank"] = lgcBank;
-        _uint64_data["phyBank"] = phyBank;
-        _uint64_data["mainFound"] = mainFound;
-        _uint64_data["mainCounter"] = mainCounter;
-        _uint64_data["mainUseful"] = mainUseful;
-        _uint64_data["altCounter"] = altCounter;
-        _uint64_data["mainTable"] = mainTable;
-        _uint64_data["mainIndex"] = mainIndex;
-        _uint64_data["altIndex"] = altIndex;
-        _uint64_data["tag"] = tag;
-        _uint64_data["useAlt"] = useAlt;
-        _uint64_data["predTaken"] = predTaken;
-        _uint64_data["actualTaken"] = actualTaken;
-        _uint64_data["allocSuccess"] = allocSuccess;
-        _uint64_data["allocFailure"] = allocFailure;
-        _uint64_data["predUseSC"] = predUseSC;
-        _uint64_data["predSCDisagree"] = predSCDisagree;
-        _uint64_data["predSCCorrect"] = predSCCorrect;
-    }
-};
-
-struct LoopTrace : public Record {
-    void set(uint64_t pc, uint64_t target, uint64_t mispred, uint64_t training,
-        uint64_t trainSpecCnt, uint64_t trainTripCnt, uint64_t trainConf,
-        uint64_t inMain, uint64_t mainTripCnt, uint64_t mainConf, uint64_t predSpecCnt,
-        uint64_t predTripCnt, uint64_t predConf)
-    {
-        _tick = curTick();
-        _uint64_data["pc"] = pc;
-        _uint64_data["target"] = target;
-        _uint64_data["mispred"] = mispred;
-        _uint64_data["predSpecCnt"] = predSpecCnt;
-        _uint64_data["predTripCnt"] = predTripCnt;
-        _uint64_data["predConf"] = predConf;
-        // from lp
-        _uint64_data["training"] = training;
-        _uint64_data["trainSpecCnt"] = trainSpecCnt;
-        _uint64_data["trainTripCnt"] = trainTripCnt;
-        _uint64_data["trainConf"] = trainConf;
-        _uint64_data["inMain"] = inMain;
-        _uint64_data["mainTripCnt"] = mainTripCnt;
-        _uint64_data["mainConf"] = mainConf;
-    }
-    void set_in_lp(uint64_t training, uint64_t trainSpecCnt, uint64_t trainTripCnt, uint64_t trainConf,
-        uint64_t inMain, uint64_t mainTripCnt, uint64_t mainConf)
-    {
-        _uint64_data["training"] = training;
-        _uint64_data["trainSpecCnt"] = trainSpecCnt;
-        _uint64_data["trainTripCnt"] = trainTripCnt;
-        _uint64_data["trainConf"] = trainConf;
-        _uint64_data["inMain"] = inMain;
-        _uint64_data["mainTripCnt"] = mainTripCnt;
-        _uint64_data["mainConf"] = mainConf;
-    }
-    void set_outside_lp(uint64_t pc, uint64_t target, uint64_t mispred,
-        uint64_t predSpecCnt, uint64_t predTripCnt, uint64_t predConf)
-    {
-        _tick = curTick();
-        _uint64_data["pc"] = pc;
-        _uint64_data["target"] = target;
-        _uint64_data["mispred"] = mispred;
-        _uint64_data["predSpecCnt"] = predSpecCnt;
-        _uint64_data["predTripCnt"] = predTripCnt;
-        _uint64_data["predConf"] = predConf;
-    }
 };
 
 }  // namespace ftb_pred

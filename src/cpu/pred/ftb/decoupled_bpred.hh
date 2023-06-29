@@ -231,7 +231,23 @@ class DecoupledBPUWithFTB : public BPredUnit
     ftb_pred::RAS *ras{};
     ftb_pred::uRAS *uras{};
 
-    bool enableDB;
+    // bool enableDB;
+    std::vector<std::string> bpDBSwitches;
+    bool someDBenabled{false};
+    bool enableBranchTrace{false};
+    bool enableLoopDB{false};
+    bool checkGivenSwitch(std::vector<std::string> switches, std::string switchName) {
+        for (auto &sw : switches) {
+            if (sw == switchName) {
+                return true;
+            }
+        }
+        return false;
+    }
+    void removeGivenSwitch(std::vector<std::string> &switches, std::string switchName) {
+        auto it = std::remove(switches.begin(), switches.end(), switchName);
+        switches.erase(it, switches.end());
+    }
     DataBase bpdb;
     TraceManager *bptrace;
     TraceManager *lptrace;

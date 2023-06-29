@@ -69,7 +69,6 @@ class JumpAheadPredictor
     unsigned maxConf = 7;
     int minNoPredBlockNum = 2;
     
-    bool enableDB;
     int blockSize = 32; // TODO: parameterize
 
 
@@ -149,7 +148,7 @@ class JumpAheadPredictor
       }
     }
 
-    JumpAheadPredictor(unsigned sets, unsigned ways, bool e) {
+    JumpAheadPredictor(unsigned sets, unsigned ways) {
       numSets = sets;
       numWays = ways;
       idxMask = (1 << ceilLog2(numSets)) - 1;
@@ -163,12 +162,11 @@ class JumpAheadPredictor
       //       VaddrBits   instOffsetBits  log2Ceil(PredictWidth)
       tagSize = 39 - 1 - ceilLog2(numSets);
       tagMask = (1ULL << tagSize) - 1;
-      enableDB = e;
       DPRINTF(JumpAheadPredictor, "JumpAheadPredictor: sets: %d, ways: %d, tagSize: %d, tagMask: %#lx, idxMask: %#lx\n",
         numSets, numWays, tagSize, tagMask, idxMask);
     }
 
-    JumpAheadPredictor() : JumpAheadPredictor(64, 4, false) {}
+    JumpAheadPredictor() : JumpAheadPredictor(64, 4) {}
 };
 
 }  // namespace ftb_pred

@@ -37,43 +37,56 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
       ittage(p.ittage),
       ras(p.ras),
       uras(p.uras),
-      enableDB(p.enableBPDB),
+    //   enableDB(p.enableBPDB),
+      bpDBSwitches(p.bpDBSwitches),
       numStages(p.numStages),
       historyManager(p.numBr),
       dbpFtbStats(this, p.numStages, p.fsq_size)
 {
-    if (enableDB) {
+    if (bpDBSwitches.size() > 0) {
+        
         bpdb.init_db();
-        std::vector<std::pair<std::string, DataType>> fields_vec = {
-            std::make_pair("startPC", UINT64),
-            std::make_pair("controlPC", UINT64),
-            std::make_pair("controlType", UINT64),
-            std::make_pair("taken", UINT64),
-            std::make_pair("mispred", UINT64),
-            std::make_pair("fallThruPC", UINT64),
-            std::make_pair("source", UINT64),
-            std::make_pair("target", UINT64)
-        };
-        bptrace = bpdb.addAndGetTrace("BPTRACE", fields_vec);
-        bptrace->init_table();
+        enableBranchTrace = checkGivenSwitch(bpDBSwitches, std::string("basic"));
+        if (enableBranchTrace) {
+            std::vector<std::pair<std::string, DataType>> fields_vec = {
+                std::make_pair("startPC", UINT64),
+                std::make_pair("controlPC", UINT64),
+                std::make_pair("controlType", UINT64),
+                std::make_pair("taken", UINT64),
+                std::make_pair("mispred", UINT64),
+                std::make_pair("fallThruPC", UINT64),
+                std::make_pair("source", UINT64),
+                std::make_pair("target", UINT64)
+            };
+            bptrace = bpdb.addAndGetTrace("BPTRACE", fields_vec);
+            bptrace->init_table(); 
+            removeGivenSwitch(bpDBSwitches, std::string("basic"));
+            someDBenabled = true;
+        }
 
-        std::vector<std::pair<std::string, DataType>> loop_fields_vec = {
-            std::make_pair("pc", UINT64),
-            std::make_pair("target", UINT64),
-            std::make_pair("mispred", UINT64),
-            std::make_pair("training", UINT64),
-            std::make_pair("trainSpecCnt", UINT64),
-            std::make_pair("trainTripCnt", UINT64),
-            std::make_pair("trainConf", UINT64),
-            std::make_pair("inMain", UINT64),
-            std::make_pair("mainTripCnt", UINT64),
-            std::make_pair("mainConf", UINT64),
-            std::make_pair("predSpecCnt", UINT64),
-            std::make_pair("predTripCnt", UINT64),
-            std::make_pair("predConf", UINT64)
-        };
-        lptrace = bpdb.addAndGetTrace("LOOPTRACE", loop_fields_vec);
-        lptrace->init_table();
+        // check whether "loop" is in bpDBSwitches
+        enableLoopDB = checkGivenSwitch(bpDBSwitches, std::string("loop"));
+        if (enableLoopDB) {
+            std::vector<std::pair<std::string, DataType>> loop_fields_vec = {
+                std::make_pair("pc", UINT64),
+                std::make_pair("target", UINT64),
+                std::make_pair("mispred", UINT64),
+                std::make_pair("training", UINT64),
+                std::make_pair("trainSpecCnt", UINT64),
+                std::make_pair("trainTripCnt", UINT64),
+                std::make_pair("trainConf", UINT64),
+                std::make_pair("inMain", UINT64),
+                std::make_pair("mainTripCnt", UINT64),
+                std::make_pair("mainConf", UINT64),
+                std::make_pair("predSpecCnt", UINT64),
+                std::make_pair("predTripCnt", UINT64),
+                std::make_pair("predConf", UINT64)
+            };
+            lptrace = bpdb.addAndGetTrace("LOOPTRACE", loop_fields_vec);
+            lptrace->init_table();
+            removeGivenSwitch(bpDBSwitches, std::string("loop"));
+            someDBenabled = true;
+        }
     }
 
     bpType = DecoupledFTBType;
@@ -89,11 +102,24 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
     numComponents = components.size();
     for (int i = 0; i < numComponents; i++) {
         components[i]->setComponentIdx(i);
-        if (enableDB) {
-            components[i]->enableDB = true;
-            components[i]->setDB(&bpdb);
-            components[i]->setTrace();
+        if (components[i]->hasDB) {
+            bool enableDB = checkGivenSwitch(bpDBSwitches, components[i]->dbName);
+            if (enableDB) {
+                components[i]->enableDB = true;
+                components[i]->setDB(&bpdb);
+                components[i]->setTrace();
+                removeGivenSwitch(bpDBSwitches, components[i]->dbName);
+                someDBenabled = true;
+            }
         }
+    }
+    if (bpDBSwitches.size() > 0) {
+        warn("bpDBSwitches contains unknown switches\n");
+        printf("unknown switches: ");
+        for (auto it = bpDBSwitches.begin(); it != bpDBSwitches.end(); it++) {
+            printf("%s ", it->c_str());
+        }
+        printf("\n");
     }
 
     predsOfEachStage.resize(numStages);
@@ -110,10 +136,10 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
     commitHistory.resize(historyBits, 0);
     squashing = true;
 
-    lp = LoopPredictor(16, 4, enableDB);
+    lp = LoopPredictor(16, 4, enableLoopDB);
     lb.setLp(&lp);
 
-    jap = JumpAheadPredictor(16, 4, enableDB);
+    jap = JumpAheadPredictor(16, 4);
 
     if (!enableLoopPredictor && enableLoopBuffer) {
         fatal("loop buffer cannot be enabled without loop predictor\n");
@@ -402,7 +428,7 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
         }
         simout.close(out_handle);
 
-        if (enableDB) {
+        if (someDBenabled) {
             bpdb.save_db("bp.db");
         }
     });
@@ -1658,8 +1684,10 @@ DecoupledBPUWithFTB::commitBranch(const DynInstPtr &inst, bool miss)
     // find corresponding fsq entry first
     auto it = fetchStreamQueue.find(inst->fsqId);
     assert(it != fetchStreamQueue.end());
+
     auto &entry = it->second;
-    if (enableDB) {
+    if (enableBranchTrace) {
+
         bptrace->write_record(BpTrace(entry, inst, miss));
     }
     Addr branchAddr = inst->pcState().instAddr();
@@ -1764,7 +1792,7 @@ DecoupledBPUWithFTB::commitBranch(const DynInstPtr &inst, bool miss)
     }
     if (targetAddr < branchAddr || lp.findLoopBranchInStorage(branchAddr)) {
         lp.commitLoopBranch(branchAddr, targetAddr, fallThruPC, miss, rec);
-        if (enableDB) {
+        if (enableLoopDB) {
             rec.set_outside_lp(branchAddr, targetAddr, miss, predLoopEntry.specCnt, predLoopEntry.tripCnt, predLoopEntry.conf);
             lptrace->write_record(rec);
         }
@@ -2199,6 +2227,7 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
     FetchStream entry_new;
     auto &entry = entry_new;
     entry.startPC = s0PC;
+    entry.predMetas.resize(numComponents);
     defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
     if (s0PC == ObservingPC) {
         debugFlagOn = true;
@@ -2304,19 +2333,39 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
         assert(enableLoopPredictor);
         // loop buffer is activated, use loop buffer to make prediction
         // determine whether this stream entry has double iterations
-        std::tie(endLoop, lpRedirectInfos[0], isDouble, loopConf) = lp.shouldEndLoop(
-            true, lb.getActiveLoopBranch(), lb.activeLoopMayBeDouble()
-        );
         entry = lb.streamBeforeLoop;
+        bool mayBeDouble = lb.activeLoopMayBeDouble();
+        // this is a condition read from lp while activating lb
+        bool loopBranchConf = lb.currentLoopBranchConf();
+        bool twoOrMoreItersRemaining = false;
+        std::tie(endLoop, lpRedirectInfos[0], twoOrMoreItersRemaining, loopConf) = lp.shouldEndLoop(
+            true, lb.getActiveLoopBranch(), mayBeDouble
+        );
+        bool confExit = false;
+        bool provideDoubleBlock = false;
+        // loop branch confident in lp when activating lb
+        // let lp decide whether to end loop
+        if (loopBranchConf) {
+            bool lpConfNow = loopConf;
+            confExit = lpConfNow && endLoop;
+            provideDoubleBlock = twoOrMoreItersRemaining || !lpConfNow;
+            entry.isExit = confExit;
+            entry.predTaken = twoOrMoreItersRemaining || !confExit;
+        } else {
+            // loop branch not confident in lp when activating lb
+            // do not proactively deactivate loop buffer
+
+            // provide double block if possible
+            provideDoubleBlock = mayBeDouble;
+            // do not exit until squash
+            entry.isExit = false;
+            entry.predTaken = true;
+        }
+        entry.isDouble = provideDoubleBlock;
         entry.startPC = s0PC;
-        bool conf = loopConf;
-        bool confExit = conf && endLoop;
         entry.fromLoopBuffer = true;
-        entry.isDouble = isDouble;
-        entry.isExit = confExit;
         entry.isHit = true;
         entry.falseHit = false;
-        entry.predTaken = isDouble || !confExit;
         entry.predEndPC = lb.streamBeforeLoop.predBranchInfo.getEnd();
         // use s0History from streamBeforeLoop
         // entry.history = s0History;
@@ -2345,14 +2394,14 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
         }
 
 
-        if (endLoop && !conf) {
+        if (endLoop && !loopConf) {
             dbpFtbStats.predLoopPredictorUnconfNotExit++;
         }
         if (confExit) {
             dbpFtbStats.predLoopPredictorExit++;
         }
         dbpFtbStats.predBlockInLoopBuffer++;
-        if (isDouble) {
+        if (provideDoubleBlock) {
             dbpFtbStats.predDoubleBlockInLoopBuffer++;
         }
     }

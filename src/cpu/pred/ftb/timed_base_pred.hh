@@ -51,7 +51,8 @@ class TimedBaseFTBPredictor: public SimObject
     int getComponentIdx() { return componentIdx; }
     void setComponentIdx(int idx) { componentIdx = idx; }
 
-
+    bool hasDB {false};
+    std::string dbName;
     bool enableDB {false};
     void setDB(DataBase *db) {
         _db = db;

@@ -82,6 +82,9 @@ sc(p.numBr, this)
         statsPtr.push_back(tageBankStats[i]);
     }
     sc.setStats(statsPtr);
+
+    hasDB = true;
+    dbName = std::string("tage");
 }
 
 FTBTAGE::~FTBTAGE()
