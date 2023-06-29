@@ -675,6 +675,7 @@ class SMSPrefetcher(QueuedPrefetcher):
         "Replacement policy of pf_gen"
     )
     bop = Param.BasePrefetcher(BOPPrefetcher(), "BOP used in SMS")
+    spp = Param.BasePrefetcher(SignaturePathPrefetcher(), "SPP used in SMS")
 
 class MultiPrefetcher(BasePrefetcher):
     type = 'MultiPrefetcher'

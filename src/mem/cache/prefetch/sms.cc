@@ -21,7 +21,8 @@ SMSPrefetcher::SMSPrefetcher(const SMSPrefetcherParams &p)
           p.pht_replacement_policy,
           PhtEntry(2 * (region_blocks - 1), SatCounter8(2, 0))),
           pfBlockLRUFilter(pfFilterSize),
-      bop(dynamic_cast<BOP *>(p.bop))
+      bop(dynamic_cast<BOP *>(p.bop)),
+      spp(dynamic_cast<SignaturePath *>(p.spp))
 {
     assert(bop);
     assert(isPowerOf2(region_size));
@@ -85,12 +86,14 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
         DPRINTF(SMSPrefetcher, "Do BOP traing/prefetching...\n");
         size_t old_addr_size = addresses.size();
         bop->calculatePrefetch(pfi, addresses, late);
+        bool covered_by_bop;
         if (addresses.size() > old_addr_size) {
             // BOP hit
             AddrPriority addr = addresses.back();
             addresses.pop_back();
             // Filter
             sendPFWithFilter(addr.addr, addresses, addr.priority);
+            covered_by_bop = true;
         }
 
         DPRINTF(SMSPrefetcher, "Do pht lookup...\n");
@@ -98,8 +101,17 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
         // if ((!found_in_pht) || (found_in_pht && pfi.isCacheMiss() && !late)) {
 
         DPRINTF(SMSPrefetcher, "Do stride lookup...\n");
-        strideLookup(pfi, addresses, late);
+        bool covered_by_stride = strideLookup(pfi, addresses, late);
         // }
+
+        if ((!covered_by_stride && !found_in_pht) || (pfi.isCacheMiss() && !late)) {
+            int32_t spp_best_offset = 0;
+            bool coverd_by_spp = spp->calculatePrefetch(pfi, addresses, pfBlockLRUFilter, spp_best_offset);
+            
+            if (coverd_by_spp && spp_best_offset != 0) {
+                bop->tryAddOffset(spp_best_offset, late);
+            }
+        }
     }
 }
 
@@ -176,7 +188,7 @@ SMSPrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page)
     return nullptr;
 }
 
-void
+bool
 SMSPrefetcher::strideLookup(const PrefetchInfo &pfi,
                             std::vector<AddrPriority> &addresses, bool late)
 {
@@ -185,12 +197,13 @@ SMSPrefetcher::strideLookup(const PrefetchInfo &pfi,
     // TODO: add DPRINFT for stride
     DPRINTF(SMSPrefetcher, "Stride lookup: pc:%x addr: %x\n", pfi.getPC(),
             lookupAddr);
+    bool should_cover = false;
     if (entry) {
         stride.accessEntry(entry);
         int64_t new_stride = lookupAddr - entry->last_addr;
         if (new_stride == 0) {
             DPRINTF(SMSPrefetcher, "Stride = 0, ignore redundant req\n");
-            return;
+            return false;
         }
         bool stride_match = new_stride == entry->stride;
         DPRINTF(SMSPrefetcher, "Stride hit, with stride: %d, old stride: %d\n", new_stride, entry->stride);
@@ -219,6 +232,7 @@ SMSPrefetcher::strideLookup(const PrefetchInfo &pfi,
             Addr pf_addr = lookupAddr + entry->stride * entry->depth;
             DPRINTF(SMSPrefetcher, "Stride conf >= 2, send pf: %x with depth %i\n", pf_addr, entry->depth);
             sendPFWithFilter(pf_addr, addresses, 0);
+            should_cover = true;
         }
     } else {
         DPRINTF(SMSPrefetcher, "Stride miss, insert it\n");
@@ -237,6 +251,7 @@ SMSPrefetcher::strideLookup(const PrefetchInfo &pfi,
         stride.insertEntry(pfi.getPC(), pfi.isSecure(), entry);
     }
     periodStrideDepthDown();
+    return should_cover;
 }
 
 void
@@ -306,7 +321,7 @@ SMSPrefetcher::phtLookup(const Base::PrefetchInfo &pfi,
     Addr region_offset = regionOffset(vaddr);
     bool secure = pfi.isSecure();
     PhtEntry *pht_entry = pht.findEntry(pc, secure);
-    bool found = pht_entry != nullptr;
+    bool found = false;
     if (pht_entry) {
         pht.accessEntry(pht_entry);
         DPRINTF(SMSPrefetcher,
@@ -318,12 +333,14 @@ SMSPrefetcher::phtLookup(const Base::PrefetchInfo &pfi,
             if (pht_entry->hist[i + region_blocks - 1].calcSaturation() > 0.5) {
                 Addr pf_tgt_addr = blk_addr + (i + 1) * blkSize;
                 sendPFWithFilter(pf_tgt_addr, addresses, priority--);
+                found = true;
             }
         }
         for (int i = region_blocks - 2, j = 1; i >= 0; i--, j++) {
             if (pht_entry->hist[i].calcSaturation() > 0.5) {
                 Addr pf_tgt_addr = blk_addr - j * blkSize;
                 sendPFWithFilter(pf_tgt_addr, addresses, priority--);
+                found = true;
             }
         }
         DPRINTF(SMSPrefetcher, "pht entry pattern:\n");

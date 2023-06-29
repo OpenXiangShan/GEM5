@@ -14,6 +14,7 @@
 #include "mem/cache/prefetch/associative_set.hh"
 #include "mem/cache/prefetch/bop.hh"
 #include "mem/cache/prefetch/queued.hh"
+#include "mem/cache/prefetch/signature_path.hh"
 #include "mem/cache/prefetch/stride.hh"
 #include "mem/cache/tags/tagged_entry.hh"
 #include "mem/packet.hh"
@@ -93,7 +94,7 @@ class SMSPrefetcher : public Queued
 
     void periodStrideDepthDown();
 
-    void strideLookup(const PrefetchInfo &pfi,
+    bool strideLookup(const PrefetchInfo &pfi,
                       std::vector<AddrPriority> &address, bool late);
 
     AssociativeSet<StrideEntry> stride;
@@ -138,6 +139,8 @@ class SMSPrefetcher : public Queued
     bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio);
 
     BOP *bop;
+
+    SignaturePath  *spp;
 };
 
 }

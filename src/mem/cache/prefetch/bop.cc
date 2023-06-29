@@ -244,6 +244,8 @@ BOP::tryAddOffset(int64_t offset, bool late)
                     DPRINTF(BOPPrefetcher, "Late is few, offset updated to %d * %d\n", it->first, it->depth);
                 }
                 break;
+            } else {
+                DPRINTF(BOPPrefetcher, "offset %d != %ld\n", offset, it->first);
             }
         }
         assert(found);
@@ -257,8 +259,7 @@ BOP::bestOffsetLearning(Addr x, bool late)
     DPRINTF(BOPPrefetcher, "Reach %s entry, iter offset: %d\n", __FUNCTION__, offsetsListIterator->calcOffset());
     Addr offset_addr = offsetsListIterator->calcOffset();
     Addr lookup_addr = x - offset_addr;
-    DPRINTF(BOPPrefetcher, "%s: offset: %d lookup addr: %#lx\n",
-            __FUNCTION__, offset_addr, lookup_addr);
+    DPRINTF(BOPPrefetcher, "%s: offset: %d lookup addr: %#lx\n", __FUNCTION__, offset_addr, lookup_addr);
     // There was a hit in the RR table, increment the score for this offset
     if (testRR(lookup_addr)) {
         DPRINTF(BOPPrefetcher, "Address %#lx found in the RR table\n", x);
@@ -327,7 +328,7 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
     // prefetch at most per access
     if (issuePrefetchRequests) {
         Addr prefetch_addr = addr + (bestOffset << lBlkSize);
-        addresses.push_back(AddrPriority(prefetch_addr, 0));
+        addresses.push_back(AddrPriority(prefetch_addr, 32));
         DPRINTF(BOPPrefetcher,
                 "Generated prefetch %#lx offset: %d\n",
                 prefetch_addr, bestOffset);

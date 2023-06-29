@@ -42,6 +42,7 @@ SimObject('Prefetcher.py', sim_objects=[
 DebugFlag('BOPPrefetcher')
 DebugFlag('SMSPrefetcher')
 DebugFlag('BertiPrefetcher')
+DebugFlag('SPP')
 
 Source('access_map_pattern_matching.cc')
 Source('base.cc')
