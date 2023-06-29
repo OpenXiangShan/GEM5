@@ -396,11 +396,56 @@ class DecoupledBPUWithFTB : public BPredUnit
 
         statistics::Scalar ftbHit;
         statistics::Scalar ftbMiss;
+        statistics::Scalar ftbMissInstNotCommitted;
+        statistics::Scalar ftbMissInstNotMispredicted;
+        statistics::Scalar ftbMissInstMispredicted;
+        statistics::Scalar ftbMissWithNoMispreds;
+        statistics::Scalar ftbMissWithNoBranches;
+        statistics::Scalar ftbMissWithNoHarm;
         statistics::Scalar ftbEntriesWithDifferentStart;
         statistics::Scalar ftbEntriesWithOnlyOneJump;
 
         statistics::Scalar predFalseHit;
         statistics::Scalar commitFalseHit;
+
+        statistics::Scalar committedSquashedCondNotMispredicted;
+        statistics::Scalar committedDecodeSquashedCondNotMispredicted;
+        statistics::Scalar committedCommitSquashedCondNotMispredicted;
+        statistics::Scalar committedSquashedUncondNotMispredicted;
+        statistics::Scalar committedDecodeSquashedUncondNotMispredicted;
+        statistics::Scalar committedCommitSquashedUncondNotMispredicted;
+        statistics::Scalar committedSquashedBranchFinallyMispredicted;
+
+        statistics::Scalar controlSquashedCommitted;
+        statistics::Scalar controlDecodeSquashedCondCommitted;
+        statistics::Scalar controlDecodeSquashedUncondCommitted;
+        statistics::Scalar controlDecodeSquashedUncondDirectCommitted;
+        statistics::Scalar controlDecodeSquashedUncondIndirectCommitted;
+        statistics::Scalar controlDecodeSquashedUncondReturnCommitted;
+        statistics::Scalar controlCommitSquashedCondCommitted;
+        statistics::Scalar controlCommitSquashedUncondCommitted;
+        statistics::Scalar controlCommitSquashedUncondDirectCommitted;
+        statistics::Scalar controlCommitSquashedUncondIndirectCommitted;
+        statistics::Scalar controlCommitSquashedUncondReturnCommitted;
+        statistics::Scalar controlSquashedNotCommitted;
+        statistics::Scalar controlDecodeSquashedCondNotCommitted;
+        statistics::Scalar controlDecodeSquashedUncondNotCommitted;
+        statistics::Scalar controlDecodeSquashedUncondDirectNotCommitted;
+        statistics::Scalar controlDecodeSquashedUncondIndirectNotCommitted;
+        statistics::Scalar controlDecodeSquashedUncondReturnNotCommitted;
+        statistics::Scalar controlCommitSquashedCondNotCommitted;
+        statistics::Scalar controlCommitSquashedUncondNotCommitted;
+        statistics::Scalar controlCommitSquashedUncondDirectNotCommitted;
+        statistics::Scalar controlCommitSquashedUncondIndirectNotCommitted;
+        statistics::Scalar controlCommitSquashedUncondReturnNotCommitted;
+        // statistics::Scalar nonControlSquashedCommitted;
+        // statistics::Scalar nonControlSquashedNotCommitted;
+        // statistics::Scalar trapSquashedCommitted;
+        // statistics::Scalar trapSquashedNotCommitted;
+
+        statistics::Scalar committedStreamHadReceivedSquash;
+        statistics::Scalar committedStreamSquashFromDecode;
+        statistics::Scalar committedStreamSquashFromCommit;
 
         statistics::Scalar predLoopPredictorExit;
         statistics::Scalar predLoopPredictorUnconfNotExit;
@@ -445,6 +490,24 @@ class DecoupledBPUWithFTB : public BPredUnit
         statistics::Distribution predJASkippedBlockNum;
         statistics::Distribution commitJASkippedBlockNum;
 
+        statistics::Distribution decodeControlSquashLatencyDist;
+        statistics::Distribution commitControlSquashLatencyDist;
+        statistics::Distribution commitTrapSquashLatencyDist;
+        statistics::Distribution commitNonControlSquashLatencyDist;
+
+        statistics::Scalar controlDecodeSquashOfCond;
+        statistics::Scalar controlDecodeSquashOfUncond;
+        statistics::Scalar controlDecodeSquashOfUncondDirect;
+        statistics::Scalar controlDecodeSquashOfUncondIndirect;
+        statistics::Scalar controlDecodeSquashOfUncondReturn;
+        statistics::Scalar controlCommitSquashOfCond;
+        statistics::Scalar controlCommitSquashOfUncond;
+        statistics::Scalar controlCommitSquashOfUncondDirect;
+        statistics::Scalar controlCommitSquashOfUncondIndirect;
+        statistics::Scalar controlCommitSquashOfUncondReturn;
+
+
+
         DBPFTBStats(statistics::Group* parent, unsigned numStages, unsigned fsqSize);
     } dbpFtbStats;
 
@@ -464,6 +527,8 @@ class DecoupledBPUWithFTB : public BPredUnit
     }
 
     void setCpu(CPU *_cpu) { cpu = _cpu; }
+
+    Cycles curCycle();
 
     struct BpTrace : public Record {
         void set(uint64_t startPC, uint64_t controlPC, uint64_t controlType,
