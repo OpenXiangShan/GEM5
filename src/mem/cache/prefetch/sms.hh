@@ -94,8 +94,7 @@ class SMSPrefetcher : public Queued
 
     void periodStrideDepthDown();
 
-    bool strideLookup(const PrefetchInfo &pfi,
-                      std::vector<AddrPriority> &address, bool late);
+    bool strideLookup(const PrefetchInfo &pfi, std::vector<AddrPriority> &address, bool late, Addr &pf_addr);
 
     AssociativeSet<StrideEntry> stride;
 
@@ -115,7 +114,7 @@ class SMSPrefetcher : public Queued
     AssociativeSet<PhtEntry> pht;
 
     bool phtLookup(const PrefetchInfo &pfi,
-                   std::vector<AddrPriority> &addresses, bool late);
+                   std::vector<AddrPriority> &addresses, bool late, Addr look_ahead_addr);
 
     int calcPeriod(const std::vector<SatCounter8> &bit_vec, bool late);
 

@@ -173,6 +173,7 @@ SignaturePath::getSignatureEntry(Addr ppn, bool is_secure,
         signatureTable.accessEntry(signature_entry);
         miss = false;
         stride = block - signature_entry->lastBlock;
+        DPRINTF(SPP, "Signature found in page %lx, stride is %#x(%u) blocks.\n", ppn, stride, stride);
     } else {
         signature_entry = signatureTable.findVictim(ppn);
         assert(signature_entry != nullptr);
@@ -182,6 +183,7 @@ SignaturePath::getSignatureEntry(Addr ppn, bool is_secure,
             initial_confidence, stride);
 
         signatureTable.insertEntry(ppn, is_secure, signature_entry);
+        DPRINTF(SPP, "Create signature for page %lx\n", ppn);
         miss = true;
     }
     signature_entry->lastBlock = block;
@@ -241,6 +243,8 @@ SignaturePath::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
 
     bool sent = false;
     unsigned init_addr_size = addresses.size();
+
+    DPRINTF(SPP, "Prefetch request for %#x, page %lx, block %#x.\n", request_addr, ppn, current_block);
 
     // Get the SignatureEntry of this page to:
     // - compute the current stride

@@ -96,13 +96,14 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
             covered_by_bop = true;
         }
 
-        DPRINTF(SMSPrefetcher, "Do pht lookup...\n");
-        bool found_in_pht = phtLookup(pfi, addresses, late);
-        // if ((!found_in_pht) || (found_in_pht && pfi.isCacheMiss() && !late)) {
+        // DPRINTF(SMSPrefetcher, "Do pht lookup...\n");
+        // bool found_in_pht = phtLookup(pfi, addresses, late);
 
         DPRINTF(SMSPrefetcher, "Do stride lookup...\n");
-        bool covered_by_stride = strideLookup(pfi, addresses, late);
-        // }
+        Addr stride_pf_addr = 0;
+        bool covered_by_stride = strideLookup(pfi, addresses, late, stride_pf_addr);
+
+        bool found_in_pht = phtLookup(pfi, addresses, late, stride_pf_addr);
 
         if ((!covered_by_stride && !found_in_pht) || (pfi.isCacheMiss() && !late)) {
             int32_t spp_best_offset = 0;
@@ -190,7 +191,7 @@ SMSPrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page)
 
 bool
 SMSPrefetcher::strideLookup(const PrefetchInfo &pfi,
-                            std::vector<AddrPriority> &addresses, bool late)
+                            std::vector<AddrPriority> &addresses, bool late, Addr &stride_pf)
 {
     Addr lookupAddr = pfi.getAddr();
     StrideEntry *entry = stride.findEntry(pfi.getPC(), pfi.isSecure());
@@ -232,6 +233,7 @@ SMSPrefetcher::strideLookup(const PrefetchInfo &pfi,
             Addr pf_addr = lookupAddr + entry->stride * entry->depth;
             DPRINTF(SMSPrefetcher, "Stride conf >= 2, send pf: %x with depth %i\n", pf_addr, entry->depth);
             sendPFWithFilter(pf_addr, addresses, 0);
+            stride_pf = pf_addr;
             should_cover = true;
         }
     } else {
@@ -311,11 +313,11 @@ SMSPrefetcher::updatePht(SMSPrefetcher::ACTEntry *act_entry)
     }
 }
 bool
-SMSPrefetcher::phtLookup(const Base::PrefetchInfo &pfi,
-                         std::vector<AddrPriority> &addresses, bool late)
+SMSPrefetcher::phtLookup(const Base::PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
+                         Addr look_ahead_addr)
 {
     Addr pc = pfi.getPC();
-    Addr vaddr = pfi.getAddr();
+    Addr vaddr = look_ahead_addr ? look_ahead_addr : pfi.getAddr();
     Addr blk_addr = blockAddress(vaddr);
     // Addr region_addr = regionAddress(vaddr);
     Addr region_offset = regionOffset(vaddr);
@@ -324,9 +326,8 @@ SMSPrefetcher::phtLookup(const Base::PrefetchInfo &pfi,
     bool found = false;
     if (pht_entry) {
         pht.accessEntry(pht_entry);
-        DPRINTF(SMSPrefetcher,
-                "Pht lookup hit: pc: %x, vaddr: %x, offset: %x, late: %i\n", pc, vaddr,
-                region_offset, late);
+        DPRINTF(SMSPrefetcher, "Pht lookup hit: pc: %x, vaddr: %x (%s), offset: %x, late: %i\n", pc, vaddr,
+                look_ahead_addr ? "ahead" : "current", region_offset, late);
         int priority = 2 * (region_blocks - 1);
         // find incr pattern
         for (uint8_t i = 0; i < region_blocks - 1; i++) {
