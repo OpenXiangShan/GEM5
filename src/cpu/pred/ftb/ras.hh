@@ -79,6 +79,7 @@ class RAS : public TimedBaseFTBPredictor
 
         void commitBranch(const FetchStream &stream, const DynInstPtr &inst) override;
 
+        Addr getTopAddrFromMetas(const FetchStream &stream);
 
     private:
 

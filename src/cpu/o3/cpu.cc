@@ -178,6 +178,7 @@ CPU::CPU(const BaseO3CPUParams &params)
     commit.setIEWQueue(&iewQueue);
     commit.setRenameQueue(&renameQueue);
 
+    decode.setFetchStage(&fetch);
     commit.setIEWStage(&iew);
     rename.setIEWStage(&iew);
     rename.setCommitStage(&commit);

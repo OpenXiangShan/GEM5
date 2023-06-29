@@ -304,7 +304,13 @@ Decode::squash(const DynInstPtr &inst, ThreadID tid)
     toFetch->decodeInfo[tid].squash = true;
     toFetch->decodeInfo[tid].doneSeqNum = inst->seqNum;
     if (inst->isControl()) {
-        set(toFetch->decodeInfo[tid].nextPC, *inst->branchTarget());
+        if (!inst->isReturn()) {
+            set(toFetch->decodeInfo[tid].nextPC, *inst->branchTarget());
+        } else {
+            // if it is return, the target must have already been set in pred target now
+            std::unique_ptr<PCStateBase> tgt_ptr(inst->readPredTarg().clone());
+            set(toFetch->decodeInfo[tid].nextPC, *tgt_ptr);
+        }
     } else {
         std::unique_ptr<PCStateBase> npc_ptr(inst->pcState().clone());
         npc_ptr->as<RiscvISA::PCState>().set(inst->pcState().getFallThruPC());
@@ -819,6 +825,24 @@ Decode::decodeInsts(ThreadID tid)
                 inst->setPredTarg(*target);
                 break;
             }
+        }
+        // unpredicted return can make use of ras results to get earlier resteer
+        if (inst->isReturn() && !inst->isNonSpeculative() && !inst->readPredTaken()) {
+            ++stats.branchMispred;
+            decode_stalls.push(StallReason::InstMisPred);
+            breakDecode = StallReason::InstMisPred;
+            // return target cannot be computed in decode stage since it is an indirect branch
+            // need to inquire bpu to get the target
+            auto return_addr = fetch_ptr->getPreservedReturnAddr(inst);
+            auto target = std::make_unique<RiscvISA::PCState>(return_addr);
+            DPRINTF(Decode, "[tid:%i] [sn:%llu] Updating predictions:"
+                    " Return not identified by bp: predTaken %d, PredPC: %s Now PC %s\n",
+                    tid, inst->seqNum, inst->readPredTaken(), inst->readPredTarg(), *target);
+            inst->setPredTaken(true);
+            inst->setPredTarg(*target);
+            // must squash after setting inst real target because it cannot be computed from static inst
+            squash(inst, inst->threadNumber);
+            break;
         }
         if (inst->isNonSpeculative() && inst->readPredTaken()) {
             // TODO: redirect to fall thru

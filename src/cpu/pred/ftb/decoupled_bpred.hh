@@ -9,7 +9,10 @@
 
 #include "arch/generic/pcstate.hh"
 #include "config/the_isa.hh"
+// #include "cpu/base.hh"
+#include "cpu/o3/cpu_def.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
+// #include "cpu/o3/fetch.hh"
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/general_arch_db.hh"
 #include "cpu/pred/ftb/fetch_target_queue.hh"
@@ -46,6 +49,7 @@ namespace ftb_pred
 {
 
 using DynInstPtr = o3::DynInstPtr;
+using CPU = o3::CPU;
 
 class HistoryManager
 {
@@ -200,6 +204,8 @@ class DecoupledBPUWithFTB : public BPredUnit
     unsigned fetchStreamQueueSize;
     FetchStreamId fsqId{1};
     FetchStream lastCommittedStream;
+
+    CPU *cpu;
 
     unsigned numBr;
 
@@ -457,6 +463,8 @@ class DecoupledBPUWithFTB : public BPredUnit
         panic("Squashing decoupled BP with tightly coupled API\n");
     }
 
+    void setCpu(CPU *_cpu) { cpu = _cpu; }
+
     struct BpTrace : public Record {
         void set(uint64_t startPC, uint64_t controlPC, uint64_t controlType,
             uint64_t taken, uint64_t mispred, uint64_t fallThruPC,
@@ -539,6 +547,8 @@ class DecoupledBPUWithFTB : public BPredUnit
     void checkHistory(const boost::dynamic_bitset<> &history);
 
     bool useStreamRAS(FetchStreamId sid);
+
+    Addr getPreservedReturnAddr(const DynInstPtr &dynInst);
 
     std::string buf1, buf2;
 

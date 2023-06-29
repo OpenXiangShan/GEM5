@@ -2,6 +2,8 @@
 
 #include "base/output.hh"
 #include "base/debug_helper.hh"
+// #include "cpu/base.hh"
+#include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/pred/ftb/stream_common.hh"
 #include "debug/DecoupleBPVerbose.hh"
@@ -787,13 +789,22 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
         return;
     }
 
-    // recover pc
-    s0PC = corr_target.instAddr();
-
     // get corresponding stream entry
     auto &stream = squashing_stream_it->second;
+    // get target from ras preserved info for decode-detected unpredicted returns
+    Addr real_target = corr_target.instAddr();
+    if (!fromCommit && static_inst->isReturn() && !static_inst->isNonSpeculative()) {
+        // get ret addr from ras meta
+        real_target = ras->getTopAddrFromMetas(stream);
+        // TODO: set real target to dynamic inst
+    }
 
 
+    // recover pc
+    s0PC = real_target;
+
+
+    auto squashBranchInfo = BranchInfo(control_pc.instAddr(), real_target, static_inst, control_inst_size);
     if (!fromCommit) {
         if (stream.isHit) {
             stream.falseHit = true;
@@ -825,10 +836,10 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
 
     DPRINTF(DecoupleBP || debugFlagOn,
             "Control squash: ftq_id=%lu, fsq_id=%lu,"
-            " control_pc=%#lx, corr_target=%#lx, is_conditional=%u, "
+            " control_pc=%#lx, real_target=%#lx, is_conditional=%u, "
             "is_indirect=%u, actually_taken=%u, branch seq: %lu\n",
             target_id, stream_id, control_pc.instAddr(),
-            corr_target.instAddr(), is_conditional, is_indirect,
+            real_target, is_conditional, is_indirect,
             actually_taken, seq);
 
     dumpFsq("Before control squash");
@@ -846,7 +857,7 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
     FetchTargetId ftq_demand_stream_id;
 
 
-    stream.exeBranchInfo = BranchInfo(control_pc.instAddr(), corr_target.instAddr(), static_inst, control_inst_size);
+    stream.exeBranchInfo = squashBranchInfo;
     stream.exeTaken = actually_taken;
     stream.squashPC = control_pc.instAddr();
 
@@ -916,7 +927,7 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
     dumpFsq("After control squash");
 
     fetchTargetQueue.squash(target_id + 1, ftq_demand_stream_id,
-                            corr_target.instAddr());
+                            real_target);
 
     fetchTargetQueue.dump("After control squash");
 
@@ -2165,6 +2176,17 @@ DecoupledBPUWithFTB::resetPC(Addr new_pc)
 {
     s0PC = new_pc;
     fetchTargetQueue.resetPC(new_pc);
+}
+
+Addr
+DecoupledBPUWithFTB::getPreservedReturnAddr(const DynInstPtr &dynInst)
+{
+    DPRINTF(DecoupleBP, "acquiring reutrn address for inst pc %#lx from decode\n", dynInst->pcState().instAddr());
+    auto fsqid = dynInst->getFsqId();
+    auto it = fetchStreamQueue.find(fsqid);
+    auto retAddr = ras->getTopAddrFromMetas(it->second);
+    DPRINTF(DecoupleBP, "get ret addr %#lx\n", retAddr);
+    return retAddr;
 }
 
 }  // namespace ftb_pred

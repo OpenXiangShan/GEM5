@@ -46,6 +46,7 @@
 #include "base/statistics.hh"
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
+#include "cpu/o3/fetch.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/timebuf.hh"
 
@@ -202,10 +203,18 @@ class Decode
      */
     unsigned squash(ThreadID tid);
 
+    void setFetchStage(Fetch *fetch_stage)
+    {
+        fetch_ptr = fetch_stage;
+    }
+
   private:
     // Interfaces to objects outside of decode.
     /** CPU interface. */
     CPU *cpu;
+
+    /** Fetch interface. */
+    Fetch *fetch_ptr;
 
     /** Time buffer interface. */
     TimeBuffer<TimeStruct> *timeBuffer;

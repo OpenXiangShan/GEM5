@@ -150,6 +150,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         assert(dbpftb);
         usedUpFetchTargets = true;
         enableLoopBuffer = dbpftb->enableLoopBuffer;
+        dbpftb->setCpu(_cpu);
         if (enableLoopBuffer) {
             loopBuffer = &dbpftb->lb;
         }
@@ -1010,6 +1011,17 @@ Fetch::flushFetchBuffer()
 {
     for (ThreadID i = 0; i < numThreads; ++i) {
         fetchBufferValid[i] = false;
+    }
+}
+
+Addr
+Fetch::getPreservedReturnAddr(const DynInstPtr &dynInst)
+{
+    if (isFTBPred()) {
+        return dbpftb->getPreservedReturnAddr(dynInst);
+    } else {
+        panic("getPreservedReturnAddr not implemented for this bpu");
+        return 0;
     }
 }
 
