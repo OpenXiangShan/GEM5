@@ -931,6 +931,8 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
 
     if (blk && !from_core && from_pref) {
         blk->setPrefetched();
+        blk->setXsMetadata(pkt->req->getXsMetadata());
+        DPRINTF(Cache, "Marking block as prefetched from prefetcher %i\n", blk->getXsMetadata().prefetchSource);
     }
 
     if (!mshr->hasLockedRMWReadTarget()) {

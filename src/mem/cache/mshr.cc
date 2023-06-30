@@ -101,6 +101,9 @@ MSHR::TargetList::updateFlags(PacketPtr pkt, Target::Source source,
             hasFromCache = hasFromCache || pkt->fromCache();
 
             updateWriteFlags(pkt);
+        } else if (!hasFromPref) {  // first pkt && is pref
+            pfSource = pkt->req->getXsMetadata().prefetchSource;
+            DPRINTF(Cache, "MSHR: set source as prefetcher %i\n", pfSource);
         }
 
         if (source == Target::FromPrefetcher) {
@@ -328,7 +331,7 @@ MSHR::allocate(Addr blk_addr, unsigned blk_size, PacketPtr target,
 
     // Don't know of a case where we would allocate a new MSHR for a
     // snoop (mem-side request), so set source according to request here
-    Target::Source source = (target->cmd == MemCmd::HardPFReq || target->cmd == MemCmd::BOPPFReq) ?
+    Target::Source source = (target->cmd == MemCmd::HardPFReq) ?
         Target::FromPrefetcher : Target::FromCPU;
     DPRINTF(MSHR, "New MSHR allocated: %s, from cpu: %i\n", target->print(), Target::FromCPU);
     targets.add(target, when_ready, _order, source, true, alloc_on_fill);

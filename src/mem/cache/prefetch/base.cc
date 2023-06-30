@@ -76,6 +76,24 @@ Base::PrefetchInfo::PrefetchInfo(PacketPtr pkt, Addr addr, bool miss)
     }
 }
 
+Base::PrefetchInfo::PrefetchInfo(
+    PacketPtr pkt, Addr addr, bool miss,
+    Request::XsMetadata xsMeta
+) : address(addr), pc(pkt->req->hasPC() ? pkt->req->getPC() : 0),
+    requestorId(pkt->req->requestorId()), validPC(pkt->req->hasPC()),
+    secure(pkt->isSecure()), size(pkt->req->getSize()), write(pkt->isWrite()),
+    paddress(pkt->req->getPaddr()), cacheMiss(miss), xsMetadata(xsMeta)
+{
+    unsigned int req_size = pkt->req->getSize();
+    if (!write && miss) {
+        data = nullptr;
+    } else {
+        data = new uint8_t[req_size];
+        Addr offset = pkt->req->getPaddr() - pkt->getAddr();
+        std::memcpy(data, &(pkt->getConstPtr<uint8_t>()[offset]), req_size);
+    }
+}
+
 Base::PrefetchInfo::PrefetchInfo(PrefetchInfo const &pfi, Addr addr)
   : address(addr), pc(pfi.pc), requestorId(pfi.requestorId),
     validPC(pfi.validPC), secure(pfi.secure), size(pfi.size),
@@ -265,11 +283,17 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
 
     // Verify this access type is observed by prefetcher
     if (observeAccess(pkt, miss)) {
+        PrefetchSourceType pf_source;
+        if (!miss) {
+            pf_source = cache->getHitBlkXsMetadata(pkt).prefetchSource;
+        } else {  // miss & late
+            pf_source = pkt->getPFSource();
+        }
         if (useVirtualAddresses && pkt->req->hasVaddr()) {
-            PrefetchInfo pfi(pkt, pkt->req->getVaddr(), miss);
+            PrefetchInfo pfi(pkt, pkt->req->getVaddr(), miss, Request::XsMetadata(pf_source));
             notify(pkt, pfi);
         } else if (!useVirtualAddresses) {
-            PrefetchInfo pfi(pkt, pkt->req->getPaddr(), miss);
+            PrefetchInfo pfi(pkt, pkt->req->getPaddr(), miss, Request::XsMetadata(pf_source));
             notify(pkt, pfi);
         }
     }

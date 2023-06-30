@@ -1316,6 +1316,20 @@ class BaseCache : public ClockedObject
         }
     }
 
+    Request::XsMetadata getHitBlkXsMetadata(PacketPtr pkt)
+    {
+        CacheBlk *block = tags->findBlock(pkt->getAddr(), pkt->isSecure());
+        assert(block);
+        /* clean prefetchSource if the block was not prefetched */
+        if (!block->wasPrefetched()) {
+            Request::XsMetadata blkMeta = block->getXsMetadata();
+            blkMeta.prefetchSource = PrefetchSourceType::PF_NONE;
+            block->setXsMetadata(blkMeta);
+        }
+        return block->getXsMetadata();
+    }
+
+
     bool inMissQueue(Addr addr, bool is_secure) const {
         return mshrQueue.findMatch(addr, is_secure);
     }
@@ -1366,7 +1380,7 @@ class BaseCache : public ClockedObject
         }
 
         auto tmp_meta = blk->getXsMetadata();
-        if (tmp_meta.validXsMetadata) {
+        if (tmp_meta.validXsMetadata && tmp_meta.instXsMetadata) {
             if (tmp_meta.instXsMetadata->squashed){
                 stats.squashedDemandHits++;
             }

@@ -328,7 +328,7 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
     // prefetch at most per access
     if (issuePrefetchRequests) {
         Addr prefetch_addr = addr + (bestOffset << lBlkSize);
-        addresses.push_back(AddrPriority(prefetch_addr, 32));
+        addresses.push_back(AddrPriority(prefetch_addr, 32, PrefetchSourceType::HWP_BOP));
         DPRINTF(BOPPrefetcher,
                 "Generated prefetch %#lx offset: %d\n",
                 prefetch_addr, bestOffset);
@@ -346,7 +346,7 @@ void
 BOP::notifyFill(const PacketPtr& pkt)
 {
     // Only insert into the RR right way if it's the pkt is from BOP
-    if (!pkt->cmd.fromBOP()) return;
+    if (!pkt->fromBOP()) return;
 
     Addr tag_y = tag(pkt->getAddr());
     DPRINTF(BOPPrefetcher, "Notify fill, addr: %#lx tag: %#lx issuePf: %d\n",

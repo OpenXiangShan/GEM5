@@ -127,7 +127,8 @@ class SMSPrefetcher : public Queued
         panic("not implemented");
     };
 
-    void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late) override;
+    void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
+                           PrefetchSourceType pf_source) override;
 
     /** Update the RR right table after a prefetch fill */
     void notifyFill(const PacketPtr& pkt) override;
@@ -135,7 +136,7 @@ class SMSPrefetcher : public Queued
   private:
     const unsigned pfFilterSize{128};
     boost::compute::detail::lru_cache<Addr, Addr> pfBlockLRUFilter;
-    bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio);
+    bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType src);
 
     BOP *bop;
 

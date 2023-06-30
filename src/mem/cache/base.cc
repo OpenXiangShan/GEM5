@@ -370,15 +370,16 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                 assert(pkt->req->requestorId() < system->maxRequestors());
                 stats.cmdStats(pkt).mshrHits[pkt->req->requestorId()]++;
                 if (!mshr->hasFromCPU() && mshr->hasFromPref() &&  // and from cpu
-                    (pkt->cmd != MemCmd::HardPFReq && pkt->cmd != MemCmd::BOPPFReq)) {
+                    (pkt->cmd != MemCmd::HardPFReq)) {
                     pkt->missOnLatePf = true;
+                    pkt->pfSource = mshr->getPFSource();
 
                 } else if (mshr->hasFromCPU()) {
                     // no pkt in mshr originated from cache; all of them are from cpu
                     pkt->coalescingMSHR = true;
                 }
-                DPRINTF(Cache, "%s: miss on late pref: %i, coalescing cpu requests: %i\n", __func__, pkt->missOnLatePf,
-                        pkt->coalescingMSHR);
+                DPRINTF(Cache, "%s: miss on late pref: %i, pref source: %i, coalescing cpu requests: %i\n", __func__,
+                        pkt->missOnLatePf, pkt->pfSource, pkt->coalescingMSHR);
 
                 // We use forward_time here because it is the same
                 // considering new targets. We have multiple
@@ -1037,7 +1038,7 @@ BaseCache::handleEvictions(std::vector<CacheBlk*> &evict_blks,
                     stats.liveBlockReplacements++;
                 }
                 Request::XsMetadata xsm = blk->getXsMetadata();
-                if (xsm.validXsMetadata){
+                if (xsm.validXsMetadata && xsm.instXsMetadata){
                     if (xsm.instXsMetadata->squashed){
                         if (blk->getDemandHits() == 0) {
                             stats.squashedDeadBlockReplacements++;

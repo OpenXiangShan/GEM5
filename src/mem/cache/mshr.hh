@@ -184,6 +184,8 @@ class MSHR : public QueueEntry, public Printable
 
         bool hasFromCPU;
 
+        PrefetchSourceType pfSource;
+
         TargetList(const std::string &name = ".unnamedTargetList");
 
         /**
@@ -362,6 +364,10 @@ class MSHR : public QueueEntry, public Printable
 
     bool hasFromCPU() const {
         return targets.hasFromCPU;
+    }
+
+    PrefetchSourceType getPFSource() const {
+        return targets.pfSource;
     }
 
     /**

@@ -59,6 +59,30 @@ namespace prefetch
 
 class Queued : public Base
 {
+  public:
+    struct PrefetchCmd
+    {
+        Addr addr;
+        int32_t priority;
+        bool isVA;
+        bool isBOP;
+        PrefetchSourceType pfSource;
+        PrefetchCmd(Addr a, int32_t p) : addr(a), priority(p), isVA(true), isBOP(false)
+        {
+            panic("PrefetchCmd: no source specified");
+        }
+        PrefetchCmd(Addr a, int32_t p, PrefetchSourceType src)
+            : addr(a), priority(p), isVA(true), isBOP(false), pfSource(src)
+        {
+        }
+        PrefetchCmd(Addr a, int32_t p, PrefetchSourceType src, bool va, bool bop)
+            : addr(a), priority(p), isVA(va), isBOP(bop), pfSource(src)
+        {
+        }
+    };
+    // using AddrPriority = std::pair<Addr, int32_t>;
+    using AddrPriority = PrefetchCmd;
+
   protected:
     struct DeferredPacket : public BaseMMU::Translation
     {
@@ -113,9 +137,10 @@ class Queued : public Base
          * @param tag_prefetch flag to indicate if the packet needs to be
          *        tagged
          * @param t time when the prefetch becomes ready
+         * @param pf_desc prefetch info associated to this packet
          */
         void createPkt(Addr paddr, unsigned blk_size, RequestorID requestor_id,
-                       bool tag_prefetch, Tick t, bool is_bop);
+                       bool tag_prefetch, Tick t, PrefetchSourceType pf_src);
 
         /**
          * Sets the translation request needed to obtain the physical address
@@ -190,20 +215,8 @@ class Queued : public Base
         statistics::Scalar pfSpanPage;
         statistics::Scalar pfUsefulSpanPage;
     } statsQueued;
+
   public:
-    struct PrefetchCmd
-    {
-        Addr addr;
-        int32_t priority;
-        bool isVA;
-        bool isBOP;
-        PrefetchCmd(Addr a, int32_t p) :
-            addr(a), priority(p), isVA(true), isBOP(false) {}
-        PrefetchCmd(Addr a, int32_t p, bool va, bool bop) :
-            addr(a), priority(p), isVA(va), isBOP(bop) {}
-    };
-    // using AddrPriority = std::pair<Addr, int32_t>;
-    using AddrPriority = PrefetchCmd;
 
     Queued(const QueuedPrefetcherParams &p);
     virtual ~Queued();
@@ -215,7 +228,7 @@ class Queued : public Base
     virtual void calculatePrefetch(const PrefetchInfo &pfi,
                                    std::vector<AddrPriority> &addresses) = 0;
     virtual void calculatePrefetch(const PrefetchInfo &pfi,
-                                   std::vector<AddrPriority> &addresses, bool late);
+                                   std::vector<AddrPriority> &addresses, bool late, PrefetchSourceType source);
     PacketPtr getPacket() override;
 
     Tick nextPrefetchReadyTime() const override
@@ -273,8 +286,7 @@ class Queued : public Base
      */
     size_t getMaxPermittedPrefetches(size_t total) const;
 
-    RequestPtr createPrefetchRequest(Addr addr, PrefetchInfo const &pfi,
-                                        PacketPtr pkt, bool is_bop);
+    RequestPtr createPrefetchRequest(Addr addr, PrefetchInfo const &pfi, PacketPtr pkt, PrefetchSourceType pf_src);
 };
 
 } // namespace prefetch

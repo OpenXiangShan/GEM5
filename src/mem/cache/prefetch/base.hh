@@ -116,6 +116,8 @@ class Base : public ClockedObject
         bool cacheMiss;
         /** Pointer to the associated request data */
         uint8_t *data;
+        /** XiangShan metadata of the block*/
+        Request::XsMetadata xsMetadata;
 
       public:
         /**
@@ -236,6 +238,16 @@ class Base : public ClockedObject
                 this->isSecure() == pfi.isSecure();
         }
 
+        Request::XsMetadata getXsMetadata() const
+        {
+            return xsMetadata;
+        }
+
+        void setXsMetadata(const Request::XsMetadata &xs_metadata)
+        {
+            this->xsMetadata = xs_metadata;
+        }
+
         /**
          * Constructs a PrefetchInfo using a PacketPtr.
          * @param pkt PacketPtr used to generate the PrefetchInfo
@@ -244,6 +256,8 @@ class Base : public ClockedObject
          * @param miss whether this event comes from a cache miss
          */
         PrefetchInfo(PacketPtr pkt, Addr addr, bool miss);
+
+        PrefetchInfo(PacketPtr pkt, Addr addr, bool miss, Request::XsMetadata xsMeta);
 
         /**
          * Constructs a PrefetchInfo using a new address value and

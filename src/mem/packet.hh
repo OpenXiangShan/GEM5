@@ -96,10 +96,8 @@ class MemCmd
         SoftPFReq,
         SoftPFExReq,
         HardPFReq,
-        BOPPFReq,
         SoftPFResp,
         HardPFResp,
-        BOPResp,
         WriteLineReq,
         UpgradeReq,
         SCUpgradeReq,           // Special "weak" upgrade for StoreCond
@@ -176,7 +174,6 @@ class MemCmd
         IsPrint,        //!< Print state matching address (for debugging)
         IsFlush,        //!< Flush the address from caches
         FromCache,      //!< Request originated from a caching agent
-        FromBOP,
         NUM_COMMAND_ATTRIBUTES
     };
 
@@ -235,7 +232,6 @@ class MemCmd
     bool isEviction() const        { return testCmdAttrib(IsEviction); }
     bool isClean() const           { return testCmdAttrib(IsClean); }
     bool fromCache() const         { return testCmdAttrib(FromCache); }
-    bool fromBOP() const           { return testCmdAttrib(FromBOP); }
 
     /**
      * A writeback is an eviction that carries data.
@@ -616,7 +612,6 @@ class Packet : public Printable
     bool isEviction() const          { return cmd.isEviction(); }
     bool isClean() const             { return cmd.isClean(); }
     bool fromCache() const           { return cmd.fromCache(); }
-    bool fromBOP() const           { return cmd.fromBOP(); }
     bool isWriteback() const         { return cmd.isWriteback(); }
     bool hasData() const             { return cmd.hasData(); }
     bool hasRespData() const
@@ -926,6 +921,7 @@ class Packet : public Printable
             size = req->getSize();
             flags.set(VALID_SIZE);
         }
+        pfSource = req->getPFSource();
     }
 
     /**
@@ -1567,6 +1563,12 @@ class Packet : public Printable
     bool missOnLatePf{false};
 
     bool coalescingMSHR{false};
+
+    int pfSource{PrefetchSourceType::PF_NONE};
+
+    bool fromBOP() const { return pfSource == PrefetchSourceType::HWP_BOP; }
+    
+    PrefetchSourceType getPFSource() const { return static_cast<PrefetchSourceType>(pfSource); }
 };
 
 } // namespace gem5

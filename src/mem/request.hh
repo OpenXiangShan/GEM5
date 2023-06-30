@@ -68,6 +68,17 @@
 namespace gem5
 {
 
+enum PrefetchSourceType
+{
+    PF_NONE = 0,
+    SStream,
+    SStride,
+    SPht,
+    HWP_BOP,
+    SPP,
+    NUM_PF_SOURCES
+};
+
 /**
  * Special TaskIds that are used for per-context-switch stats dumps
  * and Cache Occupancy. Having too many tasks seems to be a problem
@@ -167,8 +178,6 @@ class Request
         PF_EXCLUSIVE                = 0x02000000,
         /** The request should be marked as LRU. */
         EVICT_NEXT                  = 0x04000000,
-        /** The request should be marked as sent from BOP. */
-        PF_BOP                      = 0x08000000,
         /** The request should be marked with ACQUIRE. */
         ACQUIRE                     = 0x00020000,
         /** The request should be marked with RELEASE. */
@@ -349,15 +358,27 @@ class Request
     {
         bool validXsMetadata;
         o3::XsDynInstMetaPtr instXsMetadata;
+        PrefetchSourceType prefetchSource;
+
         XsMetadata() :
             validXsMetadata(false),
-            instXsMetadata(NULL) {};
+            instXsMetadata(nullptr),
+            prefetchSource(PF_NONE) {}
+
         XsMetadata(o3::XsDynInstMetaPtr instMeta) :
             validXsMetadata(true),
-            instXsMetadata(instMeta) {};
+            instXsMetadata(instMeta),
+            prefetchSource(PF_NONE) {}
+
+        XsMetadata(PrefetchSourceType pfSource) :
+            validXsMetadata(true),
+            instXsMetadata(nullptr),
+            prefetchSource(pfSource) {}
+
         void invalidate() {
             validXsMetadata = false;
-            instXsMetadata = NULL;
+            instXsMetadata = nullptr;
+            prefetchSource = PF_NONE;
         }
     } XsMetadata;
 
@@ -1179,7 +1200,13 @@ class Request
     bool isCacheMaintenance() const { return _flags.isSet(CLEAN|INVALIDATE); }
     /** @} */
 
-    bool isFromBOP() const { return _flags.isSet(PF_BOP); }
+
+    int pfSource{PrefetchSourceType::PF_NONE};
+
+    void setPFSource(PrefetchSourceType pf_source) { pfSource = pf_source; }
+    PrefetchSourceType getPFSource() const { return static_cast<PrefetchSourceType>(pfSource); }
+
+    bool isFromBOP() const { return pfSource == PrefetchSourceType::HWP_BOP; }
 };
 
 } // namespace gem5
