@@ -86,7 +86,7 @@ class BOP : public Queued
             SatCounter8 late;
 
             OffsetListEntry(int16_t x, uint8_t y)
-                : first(x), second(y), depth(1), late(6, 0)
+                : first(x), second(y), depth(1), late(6, 32)
             {}
 
             int16_t calcOffset() const
@@ -133,6 +133,8 @@ class BOP : public Queued
         unsigned int bestScore;
         /** Current round */
         unsigned int round;
+
+        std::list<OffsetListEntry>::iterator getBestOffsetIter();
 
         /** Generate a hash for the specified address to index the RR table
          *  @param addr: address to hash

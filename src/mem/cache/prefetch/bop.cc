@@ -68,6 +68,8 @@ BOP::BOP(const BOPPrefetcherParams &p)
     offsetsList.emplace_back(default_offset, (uint8_t) 0);
     DPRINTF(BOPPrefetcher, "add %d to offset list\n", default_offset);
 
+    bestOffset = offsetsList.back().calcOffset();
+
     offsetsListIterator = offsetsList.begin();
 }
 
@@ -213,6 +215,13 @@ BOP::tryAddOffset(int64_t offset, bool late)
         }
     }
 
+    auto best_it = getBestOffsetIter();
+
+    if (best_it != offsetsList.end() && offset % best_it->first == 0) {
+        DPRINTF(BOPPrefetcher, "offset %d is a multiple of best offset %d, skip\n", offset, best_it->first);
+        return;
+    }
+
     auto offset_it = offsets.find(offset);
     if (offset_it == offsets.end()) {
         offsets.insert(offset);
@@ -234,15 +243,6 @@ BOP::tryAddOffset(int64_t offset, bool late)
         for (auto it = offsetsList.begin(); it != offsetsList.end(); it++) {
             if (it->first == offset) {
                 found = true;
-                if (it->late.calcSaturation() > 0.7) {
-                    it->depth++;
-                    it->late.reset();
-                    DPRINTF(BOPPrefetcher, "Late saturates, offset updated to %d * %d\n", it->first, it->depth);
-                } else if (it->late.calcSaturation() < 0.2) {
-                    it->depth = std::max(1, it->depth - 1);
-                    it->late.reset();
-                    DPRINTF(BOPPrefetcher, "Late is few, offset updated to %d * %d\n", it->first, it->depth);
-                }
                 break;
             } else {
                 DPRINTF(BOPPrefetcher, "offset %d != %ld\n", offset, it->first);
@@ -251,6 +251,22 @@ BOP::tryAddOffset(int64_t offset, bool late)
         assert(found);
     }
     DPRINTF(BOPPrefetcher, "Reach %s end, iter offset: %d\n", __FUNCTION__, offsetsListIterator->calcOffset());
+}
+
+std::list<BOP::OffsetListEntry>::iterator
+BOP::getBestOffsetIter()
+{
+    if (bestOffset == 0)
+        return offsetsList.end();
+    // find best offset iter
+    auto best_it = offsetsList.begin();
+    while (best_it != offsetsList.end()) {
+        if (best_it->calcOffset() == bestOffset) {
+            break;
+        }
+        best_it++;
+    }
+    return best_it;
 }
 
 void
@@ -264,11 +280,37 @@ BOP::bestOffsetLearning(Addr x, bool late)
     if (testRR(lookup_addr)) {
         DPRINTF(BOPPrefetcher, "Address %#lx found in the RR table\n", x);
         offsetsListIterator->second++;
-        if (late) {
-            offsetsListIterator->late++;
-        } else {
-            offsetsListIterator->late--;
+
+        if (offsetsListIterator->second >= round / 2) {
+            if (late) {
+                offsetsListIterator->late += 2;
+            } else {
+                offsetsListIterator->late--;
+            }
+
+            auto best_it = getBestOffsetIter();
+            bool update_depth = false;
+            if (offsetsListIterator->late > (uint8_t)42) {
+                offsetsListIterator->depth++;
+                update_depth = true;
+            }
+            if (offsetsListIterator->late < (uint8_t)4) {
+                offsetsListIterator->depth = std::max(1, offsetsListIterator->depth - 1);
+                update_depth = true;
+            }
+
+            if (update_depth) {
+                if (best_it == offsetsListIterator) {
+                    bestOffset = best_it->calcOffset();
+                }
+                DPRINTF(BOPPrefetcher, "Late saturates %u, offset updated to %d * %d\n",
+                        (uint8_t)offsetsListIterator->late, offsetsListIterator->first, offsetsListIterator->depth);
+                offsetsListIterator->late.reset();
+            }
         }
+
+        DPRINTF(BOPPrefetcher, "Offset %d score: %i, late: %i, depth: %i, late sat: %u\n", offsetsListIterator->first,
+                offsetsListIterator->second, late, offsetsListIterator->depth, (uint8_t)offsetsListIterator->late);
         if (offsetsListIterator->second > bestScore) {
             bestScore = (*offsetsListIterator).second;
             phaseBestOffset = offsetsListIterator->calcOffset();
