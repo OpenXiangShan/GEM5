@@ -90,8 +90,7 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
         }
     }
 
-    if (!is_active_page) {
-
+    if (pfi.isCacheMiss() || pf_source != PrefetchSourceType::SStream) {
         bool use_bop = pf_source == PrefetchSourceType::HWP_BOP || pfi.isCacheMiss();
         if (use_bop) {
             DPRINTF(SMSPrefetcher, "Do BOP traing/prefetching...\n");
@@ -117,7 +116,8 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
                 strideLookup(pfi, addresses, late && pf_source == PrefetchSourceType::SStride, stride_pf_addr);
         }
 
-        bool use_pht = pf_source == PrefetchSourceType::SPht || pfi.isCacheMiss();
+        bool use_pht =
+            pf_source == PrefetchSourceType::SPP || pf_source == PrefetchSourceType::SPht || pfi.isCacheMiss();
         bool trigger_pht = false;
         if (use_pht) {
             DPRINTF(SMSPrefetcher, "Do PHT lookup...\n");
@@ -126,8 +126,6 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
 
         bool use_spp = false;
         if (!pfi.isCacheMiss()) {
-            // pref hit, don't know source
-            // ideally, we should check its prefetching source
             if (pf_source == PrefetchSourceType::SPP) {
                 use_spp = true;
             }
