@@ -107,7 +107,8 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
             }
         }
 
-        bool use_stride = pf_source == PrefetchSourceType::SStride || pfi.isCacheMiss();
+        bool use_stride =
+            pf_source == PrefetchSourceType::SStride || pf_source == PrefetchSourceType::HWP_BOP || pfi.isCacheMiss();
         Addr stride_pf_addr = 0;
         bool covered_by_stride = false;
         if (use_stride) {
@@ -116,8 +117,8 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
                 strideLookup(pfi, addresses, late && pf_source == PrefetchSourceType::SStride, stride_pf_addr);
         }
 
-        bool use_pht =
-            pf_source == PrefetchSourceType::SPP || pf_source == PrefetchSourceType::SPht || pfi.isCacheMiss();
+        bool use_pht = pf_source == PrefetchSourceType::SPP || pf_source == PrefetchSourceType::SPht ||
+                       pf_source == PrefetchSourceType::SStride || pfi.isCacheMiss();
         bool trigger_pht = false;
         if (use_pht) {
             DPRINTF(SMSPrefetcher, "Do PHT lookup...\n");
