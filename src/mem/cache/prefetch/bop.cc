@@ -64,9 +64,16 @@ BOP::BOP(const BOPPrefetcherParams &p)
     rrLeft.resize(rrEntries);
     rrRight.resize(rrEntries);
 
-    int16_t default_offset = 16;  // 1kB / 64B = 16, as an complement for SMS.stream
-    offsetsList.emplace_back(default_offset, (uint8_t) 0);
-    DPRINTF(BOPPrefetcher, "add %d to offset list\n", default_offset);
+    strictOffset = 16;
+    strictBadScore = 10;
+
+    int16_t offset_list[] = {1, 16};
+    // 1kB / 64B = 16, as an complement for SMS.stream
+    // as an complement for SMS.stream when too many PCs
+    for (int i = 0; i < sizeof(offset_list) / sizeof(offset_list[0]); i++) {
+        offsetsList.emplace_back(offset_list[i], (uint8_t) 0);
+        DPRINTF(BOPPrefetcher, "add %d to offset list\n", offset_list[i]);
+    }
 
     bestOffset = offsetsList.back().calcOffset();
 
@@ -338,9 +345,9 @@ BOP::bestOffsetLearning(Addr x, bool late)
             phaseBestOffset = 0;
             resetScores();
             issuePrefetchRequests = true;
-        } else if (bestScore <= badScore) {
-            DPRINTF(BOPPrefetcher, "best score %d <= bad score %d\n",
-                    bestScore, badScore);
+        } else if (bestOffset < strictOffset ? bestScore <= strictBadScore : bestScore <= badScore) {
+            DPRINTF(BOPPrefetcher, "best score %d <= bad score %d, strict bad stcore: %d\n",
+                    bestScore, badScore, strictBadScore);
         }
     }
     DPRINTF(BOPPrefetcher, "Reach %s end, iter offset: %d\n", __FUNCTION__, offsetsListIterator->calcOffset());

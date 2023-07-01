@@ -173,6 +173,10 @@ class BOP : public Queued
 
         unsigned missCount{0};
 
+        unsigned strictOffset;
+
+        unsigned strictBadScore;
+
     public:
         /** Update the RR right table after a prefetch fill */
         void notifyFill(const PacketPtr& pkt) override;

@@ -67,14 +67,13 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
         if (is_active_page) {
             // active page
             Addr pf_tgt_addr =
-                decr ? block_addr - 30 * blkSize : block_addr + 30 * blkSize;
+                decr ? block_addr - 32 * blkSize : block_addr + 32 * blkSize;
             Addr pf_tgt_region = regionAddress(pf_tgt_addr);
             Addr pf_tgt_offset = regionOffset(pf_tgt_addr);
             DPRINTF(SMSPrefetcher, "tgt addr: %x offset: %d\n", pf_tgt_addr,
                     pf_tgt_offset);
             if (decr) {
-                for (int i = (int)region_blocks - 1;
-                     i >= pf_tgt_offset && i >= 0; i--) {
+                for (int i = (int)region_blocks - 1; i >= pf_tgt_offset && i >= 0; i--) {
                     Addr cur = pf_tgt_region * region_size + i * blkSize;
                     sendPFWithFilter(cur, addresses, i, PrefetchSourceType::SStream);
                     DPRINTF(SMSPrefetcher, "pf addr: %x [%d]\n", cur, i);
@@ -120,6 +119,7 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
         bool use_pht = pf_source == PrefetchSourceType::SPP || pf_source == PrefetchSourceType::SPht ||
                        pf_source == PrefetchSourceType::SStride || pfi.isCacheMiss();
         bool trigger_pht = false;
+        // stride_pf_addr = 0;
         if (use_pht) {
             DPRINTF(SMSPrefetcher, "Do PHT lookup...\n");
             bool trigger_pht = phtLookup(pfi, addresses, late && pf_source == PrefetchSourceType::SPht, stride_pf_addr);
@@ -143,6 +143,7 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
                 }
             }
         }
+        // use_spp = false;
         if (use_spp) {
             int32_t spp_best_offset = 0;
             bool coverd_by_spp = spp->calculatePrefetch(pfi, addresses, pfBlockLRUFilter, spp_best_offset);
@@ -268,20 +269,27 @@ SMSPrefetcher::strideLookup(const PrefetchInfo &pfi,
             DPRINTF(SMSPrefetcher, "Stride unmatch, dec conf to %d\n", (int) entry->conf);
         }
         if (entry->conf >= 2) {
-            Addr pf_addr = lookupAddr + entry->stride * entry->depth;
-            DPRINTF(SMSPrefetcher, "Stride conf >= 2, send pf: %x with depth %i\n", pf_addr, entry->depth);
-            sendPFWithFilter(pf_addr, addresses, 0, PrefetchSourceType::SStride);
-            stride_pf = pf_addr;
+            // if miss send 1*stride ~ depth*stride, else send depth*stride
+            unsigned start_depth = pfi.isCacheMiss() ? 1 : entry->depth;
+            Addr pf_addr = 0;
+            for (unsigned i = start_depth; i <= entry->depth; i++) {
+                pf_addr = lookupAddr + entry->stride * i;
+                DPRINTF(SMSPrefetcher, "Stride conf >= 2, send pf: %x with depth %i\n", pf_addr, i);
+                sendPFWithFilter(pf_addr, addresses, 0, PrefetchSourceType::SStride);
+            }
+            if (!pfi.isCacheMiss()) {
+                stride_pf = pf_addr;
+            }
             should_cover = true;
         }
     } else {
         DPRINTF(SMSPrefetcher, "Stride miss, insert it\n");
         entry = stride.findVictim(0);
         DPRINTF(SMSPrefetcher, "Found victim pc = %x, stride = %i\n", entry->pc, entry->stride);
-        // if (entry->conf >= 1 && entry->stride > 1024) { // > 1k
-        //     DPRINTF(SMSPrefetcher, "Evicting a useful stride, send it to BOP with offset %i\n", entry->stride / 64);
-        //     bop->tryAddOffset(entry->stride / 64);
-        // }
+        if (entry->conf >= 2 && entry->stride > 1024) { // > 1k
+            DPRINTF(SMSPrefetcher, "Evicting a useful stride, send it to BOP with offset %i\n", entry->stride / 64);
+            bop->tryAddOffset(entry->stride / 64);
+        }
         entry->conf.reset();
         entry->last_addr = lookupAddr;
         entry->stride = 0;
