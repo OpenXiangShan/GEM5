@@ -36,6 +36,10 @@ enum SquashType {
     SQUASH_OTHER
 };
 
+enum SquashSource {
+    SQUASH_SRC_DECODE=0,
+    SQUASH_SRC_COMMIT
+};
 
 typedef struct BranchInfo {
     Addr pc;
@@ -289,6 +293,7 @@ typedef struct FetchStream
 
     int squashType;
     Addr squashPC;
+    int squashSource;
     unsigned predSource;
 
     // for loop buffer
@@ -310,11 +315,14 @@ typedef struct FetchStream
     std::vector<LoopRedirectInfo> unseenLoopRedirectInfos;
 
     Tick predTick;
+    Cycles predCycle;
     boost::dynamic_bitset<> history;
 
     // for profiling
     int fetchInstNum;
     int commitInstNum;
+    std::map<Addr, bool> commitMispredictions; // per committed branch
+    std::map<Addr, std::tuple<SquashType, SquashSource, BranchInfo>> squashInfos; // per committed inst if there is squash
 
     FetchStream()
         : startPC(0),
@@ -331,6 +339,7 @@ typedef struct FetchStream
           updateIsOldEntry(false),
           resolved(false),
           squashType(SquashType::SQUASH_NONE),
+          squashSource(SquashSource::SQUASH_SRC_COMMIT),
           predSource(0),
           fromLoopBuffer(false),
           isDouble(false),
@@ -411,6 +420,7 @@ typedef struct FullFTBPrediction
     bool valid; // hit
     unsigned predSource;
     Tick predTick;
+    Cycles predCycle;
     boost::dynamic_bitset<> history;
 
     bool isTaken() {

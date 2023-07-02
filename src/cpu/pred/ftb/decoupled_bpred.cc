@@ -2,6 +2,8 @@
 
 #include "base/output.hh"
 #include "base/debug_helper.hh"
+// #include "cpu/base.hh"
+#include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/pred/ftb/stream_common.hh"
 #include "debug/DecoupleBPVerbose.hh"
@@ -231,7 +233,7 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
                 return gem5::branch_prediction::ftb_pred::DecoupledBPUWithFTB::getMispredCount(a) >
                 gem5::branch_prediction::ftb_pred::DecoupledBPUWithFTB::getMispredCount(b);
             });
-            for (int i = 0; i < outputTopN; i++) {
+            for (int i = 0; i < outputTopN && i < temp.size(); i++) {
                 *out_handle->stream() << " " << std::hex << temp[i].first.first; // pc
                 *out_handle->stream() << " " << std::dec << temp[i].first.second; // type
                 *out_handle->stream() << " " << std::dec << getMispredCount(temp[i]); // mispred count
@@ -269,7 +271,7 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
                 gem5::branch_prediction::ftb_pred::DecoupledBPUWithFTB::getMispredCount(b);
             });
             *out_handle->stream() << std::hex;
-            for (int i = 0; i < outputTopN; i++) {
+            for (int i = 0; i < outputTopN && i < temp.size(); i++) {
                 *out_handle->stream() << " " << std::hex << temp[i].first.first; // pc
                 *out_handle->stream() << " " << std::dec << temp[i].first.second; // type
                 *out_handle->stream() << " " << std::dec << getMispredCount(temp[i]); // mispred count
@@ -460,10 +462,52 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     ADD_STAT(commitFsqEntryOnlyHasOneJump, statistics::units::Count::get(), "number of fsq entries with only one instruction (jump)"),
     ADD_STAT(ftbHit, statistics::units::Count::get(), "ftb hits (in predict block)"),
     ADD_STAT(ftbMiss, statistics::units::Count::get(), "ftb misses (in predict block)"),
+    ADD_STAT(ftbMissInstNotCommitted, statistics::units::Count::get(), "inst causing ftb miss but not committed"),
+    ADD_STAT(ftbMissInstNotMispredicted, statistics::units::Count::get(), "inst causing ftb miss but not mispredicted"),
+    ADD_STAT(ftbMissInstMispredicted, statistics::units::Count::get(), "inst causing ftb miss actually mispredicted"),
+    ADD_STAT(ftbMissWithNoMispreds, statistics::units::Count::get(), "ftb miss with no branch mispreds"),
+    ADD_STAT(ftbMissWithNoBranches, statistics::units::Count::get(), "ftb miss with no branches committed"),
+    ADD_STAT(ftbMissWithNoHarm, statistics::units::Count::get(), "not harmful ftb misses, miss with no actually taken branches in it"),
     ADD_STAT(ftbEntriesWithDifferentStart, statistics::units::Count::get(), "number of ftb entries with different start PC"),
     ADD_STAT(ftbEntriesWithOnlyOneJump, statistics::units::Count::get(), "number of ftb entries with different start PC starting with a jump"),
     ADD_STAT(predFalseHit, statistics::units::Count::get(), "false hit detected at pred"),
     ADD_STAT(commitFalseHit, statistics::units::Count::get(), "false hit detected at commit"),
+    ADD_STAT(committedSquashedCondNotMispredicted, statistics::units::Count::get(), "control squashed cond branch but no commit mispreds recorded (should not happen)"),
+    ADD_STAT(committedDecodeSquashedCondNotMispredicted, statistics::units::Count::get(), "control squashed (from decode) cond branch but no commit mispreds recorded (should not happen)"),
+    ADD_STAT(committedCommitSquashedCondNotMispredicted, statistics::units::Count::get(), "control squashed (from commit) cond branchbut no commit mispreds recorded (should not happen)"),
+    ADD_STAT(committedSquashedUncondNotMispredicted, statistics::units::Count::get(), "control squashed uncond branch but no commit mispreds recorded (possibly ftb unseen jals)"),
+    ADD_STAT(committedDecodeSquashedUncondNotMispredicted, statistics::units::Count::get(), "control squashed (from decode) uncond branch but no commit mispreds recorded (possibly ftb unseen jals corrected by decode)"),
+    ADD_STAT(committedCommitSquashedUncondNotMispredicted, statistics::units::Count::get(), "control squashed (from decode) uncond branch but no commit mispreds recorded (should not happen)"),
+    ADD_STAT(committedSquashedBranchFinallyMispredicted, statistics::units::Count::get(), "control squashed branch finally mispredicted"),
+    ADD_STAT(controlSquashedCommitted, statistics::units::Count::get(), "control squashed and committed insts"),
+    ADD_STAT(controlDecodeSquashedCondCommitted, statistics::units::Count::get(), "control squashed from decode and committed conditional branches"),
+    ADD_STAT(controlDecodeSquashedUncondCommitted, statistics::units::Count::get(), "control squashed from decode and committed unconditional branches"),
+    ADD_STAT(controlDecodeSquashedUncondDirectCommitted, statistics::units::Count::get(), "control squashed from decode and committed unconditional direct branches"),
+    ADD_STAT(controlDecodeSquashedUncondIndirectCommitted, statistics::units::Count::get(), "control squashed from decode and committed indirect branches"),
+    ADD_STAT(controlDecodeSquashedUncondReturnCommitted, statistics::units::Count::get(), "control squashed from decode and committed return branches"),
+    ADD_STAT(controlCommitSquashedCondCommitted, statistics::units::Count::get(), "control squashed from commit and committed conditional branches"),
+    ADD_STAT(controlCommitSquashedUncondCommitted, statistics::units::Count::get(), "control squashed from commit and committed unconditional branches"),
+    ADD_STAT(controlCommitSquashedUncondDirectCommitted, statistics::units::Count::get(), "control squashed from commit and committed unconditional direct branches"),
+    ADD_STAT(controlCommitSquashedUncondIndirectCommitted, statistics::units::Count::get(), "control squashed from commit and committed indirect branches"),
+    ADD_STAT(controlCommitSquashedUncondReturnCommitted, statistics::units::Count::get(), "control squashed from commit and committed return branches"),
+    ADD_STAT(controlSquashedNotCommitted, statistics::units::Count::get(), "control squashed but not committed insts"),
+    ADD_STAT(controlDecodeSquashedCondNotCommitted, statistics::units::Count::get(), "control squashed from decode but not committed conditional branches"),
+    ADD_STAT(controlDecodeSquashedUncondNotCommitted, statistics::units::Count::get(), "control squashed from decode but not committed unconditional branches"),
+    ADD_STAT(controlDecodeSquashedUncondDirectNotCommitted, statistics::units::Count::get(), "control squashed from decode but not committed unconditional direct branches"),
+    ADD_STAT(controlDecodeSquashedUncondIndirectNotCommitted, statistics::units::Count::get(), "control squashed from decode but not committed indirect branches"),
+    ADD_STAT(controlDecodeSquashedUncondReturnNotCommitted, statistics::units::Count::get(), "control squashed from decode but not committed return branches"),
+    ADD_STAT(controlCommitSquashedCondNotCommitted, statistics::units::Count::get(), "control squashed from commit but not committed conditional branches"),
+    ADD_STAT(controlCommitSquashedUncondNotCommitted, statistics::units::Count::get(), "control squashed from commit but not committed unconditional branches"),
+    ADD_STAT(controlCommitSquashedUncondDirectNotCommitted, statistics::units::Count::get(), "control squashed from commit but not committed unconditional direct branches"),
+    ADD_STAT(controlCommitSquashedUncondIndirectNotCommitted, statistics::units::Count::get(), "control squashed from commit but not committed indirect branches"),
+    ADD_STAT(controlCommitSquashedUncondReturnNotCommitted, statistics::units::Count::get(), "control squashed from commit but not committed return branches"),
+    // ADD_STAT(nonControlSquashedCommitted, statistics::units::Count::get(), "non-control squashed and committed insts"),
+    // ADD_STAT(nonControlSquashedNotCommitted, statistics::units::Count::get(), "non-control squashed but not committed insts"),
+    // ADD_STAT(trapSquashedCommitted, statistics::units::Count::get(), "trap squashed and committed insts"),
+    // ADD_STAT(trapSquashedNotCommitted, statistics::units::Count::get(), "trap squashed but not committed insts"),
+    ADD_STAT(committedStreamHadReceivedSquash, statistics::units::Count::get(), "committed stream had received squash"),
+    ADD_STAT(committedStreamSquashFromDecode, statistics::units::Count::get(), "committed stream had received squash from decode"),
+    ADD_STAT(committedStreamSquashFromCommit, statistics::units::Count::get(), "committed stream had received squash from commit"),
     ADD_STAT(predLoopPredictorExit, statistics::units::Count::get(), "loop predictor exits at pred"),
     ADD_STAT(predLoopPredictorUnconfNotExit, statistics::units::Count::get(), "loop predictor does not exit at pred because of unconf"),
     ADD_STAT(predLoopPredictorConfFixNotExit, statistics::units::Count::get(), "loop predictor confident and fix other predictor not taken in non-exit loop branch at pred"),
@@ -503,7 +547,21 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     ADD_STAT(commitNonControlSquashedOnJaHitBlocks, statistics::units::Count::get(), "total number of non-control squashes on ja hit committed blocks"),
     ADD_STAT(commitTrapSquashedOnJaHitBlocks, statistics::units::Count::get(), "total number of trap squashes on ja hit committed blocks"),
     ADD_STAT(predJASkippedBlockNum, statistics::units::Count::get(), "distribution of ja skipped block numbers at pred"),
-    ADD_STAT(commitJASkippedBlockNum, statistics::units::Count::get(), "distribution of ja skipped block numbers at commit")
+    ADD_STAT(commitJASkippedBlockNum, statistics::units::Count::get(), "distribution of ja skipped block numbers at commit"),
+    ADD_STAT(decodeControlSquashLatencyDist, statistics::units::Count::get(), "distribution of cycles count from pred to decode control squash"),
+    ADD_STAT(commitControlSquashLatencyDist, statistics::units::Count::get(), "distribution of cycles count from pred to commit control squash"),
+    ADD_STAT(commitTrapSquashLatencyDist, statistics::units::Count::get(), "distribution of cycles count from pred to commit trap squash"),
+    ADD_STAT(commitNonControlSquashLatencyDist, statistics::units::Count::get(), "distribution of cycles count from pred to commit non-control squash"),
+    ADD_STAT(controlDecodeSquashOfCond, statistics::units::Count::get(), "control squash of cond branch at decode"),
+    ADD_STAT(controlDecodeSquashOfUncond, statistics::units::Count::get(), "control squash of uncond branch at decode"),
+    ADD_STAT(controlDecodeSquashOfUncondDirect, statistics::units::Count::get(), "control squash of uncond direct branch at decode"),
+    ADD_STAT(controlDecodeSquashOfUncondIndirect, statistics::units::Count::get(), "control squash of indirect branch at decode"),
+    ADD_STAT(controlDecodeSquashOfUncondReturn, statistics::units::Count::get(), "control squash of return branch at decode"),
+    ADD_STAT(controlCommitSquashOfCond, statistics::units::Count::get(), "control squash of cond branch at commit"),
+    ADD_STAT(controlCommitSquashOfUncond, statistics::units::Count::get(), "control squash of uncond branch at commit"),
+    ADD_STAT(controlCommitSquashOfUncondDirect, statistics::units::Count::get(), "control squash of uncond direct branch at commit"),
+    ADD_STAT(controlCommitSquashOfUncondIndirect, statistics::units::Count::get(), "control squash of indirect branch at commit"),
+    ADD_STAT(controlCommitSquashOfUncondReturn, statistics::units::Count::get(), "control squash of return branch at commit")
 {
     predsOfEachStage.init(numStages);
     commitPredsFromEachStage.init(numStages+1);
@@ -514,6 +572,10 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     commitFsqEntryFetchedInsts.init(0, 16, 1);
     predJASkippedBlockNum.init(0, 16, 1);
     commitJASkippedBlockNum.init(0, 16, 1);
+    decodeControlSquashLatencyDist.init(1,16,1);
+    commitControlSquashLatencyDist.init(1,16,1);
+    commitTrapSquashLatencyDist.init(1,16,1);
+    commitNonControlSquashLatencyDist.init(1,16,1);
 }
 
 DecoupledBPUWithFTB::BpTrace::BpTrace(FetchStream &stream, const DynInstPtr &inst, bool mispred)
@@ -638,6 +700,8 @@ DecoupledBPUWithFTB::generateFinalPredAndCreateBubbles()
         finalPred.predSource = first_hit_stage;
         receivedPred = true;
 
+        finalPred.predCycle = curCycle();
+
         // if stage 2 has ret (handled by main RAS)
         // check if we have handled in stage 1
         auto taken_slot_s1 = predsOfEachStage[1].getTakenSlot();
@@ -761,8 +825,8 @@ DecoupledBPUWithFTB::decoupledPredict(const StaticInstPtr &inst,
             run_out_of_this_entry = true;
         }
     }
-    DPRINTF(DecoupleBP, "Predict it %staken to %#lx\n", taken ? "" : "not ",
-            target->instAddr());
+        DPRINTF(DecoupleBP, "Predict it %staken to %#lx\n", taken ? "" : "not ",
+                target->instAddr());
 
     if (run_out_of_this_entry) {
         // dequeue the entry
@@ -787,7 +851,7 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
                             const StaticInstPtr &static_inst,
                             unsigned control_inst_size, bool actually_taken,
                             const InstSeqNum &seq, ThreadID tid,
-                            const unsigned &currentLoopIter)
+                            const unsigned &currentLoopIter, const bool fromCommit)
 {
     dbpFtbStats.controlSquash++;
 
@@ -813,11 +877,65 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
         return;
     }
 
-    // recover pc
-    s0PC = corr_target.instAddr();
-
     // get corresponding stream entry
     auto &stream = squashing_stream_it->second;
+    // get target from ras preserved info for decode-detected unpredicted returns
+    Addr real_target = corr_target.instAddr();
+    if (!fromCommit && static_inst->isReturn() && !static_inst->isNonSpeculative()) {
+        // get ret addr from ras meta
+        real_target = ras->getTopAddrFromMetas(stream);
+        // TODO: set real target to dynamic inst
+    }
+
+
+    // recover pc
+    s0PC = real_target;
+
+
+    auto squashSrc = SQUASH_SRC_COMMIT;
+    auto squashBranchInfo = BranchInfo(control_pc.instAddr(), real_target, static_inst, control_inst_size);
+    auto predCycle = stream.predCycle;
+    auto squashLat = curCycle() - predCycle;
+    if (!fromCommit) {
+        if (stream.isHit) {
+            stream.falseHit = true;
+        }
+        squashSrc = SQUASH_SRC_DECODE;
+        stream.squashSource = squashSrc;
+        dbpFtbStats.decodeControlSquashLatencyDist.sample(squashLat, 1);
+
+        // per branch type
+        if (squashBranchInfo.isCond) {
+            dbpFtbStats.controlDecodeSquashOfCond++;
+        } else {
+            dbpFtbStats.controlDecodeSquashOfUncond++;
+            if (!squashBranchInfo.isIndirect) {
+                dbpFtbStats.controlDecodeSquashOfUncondDirect++;
+            } else {
+                dbpFtbStats.controlDecodeSquashOfUncondIndirect++;
+                if (squashBranchInfo.isReturn) {
+                    dbpFtbStats.controlDecodeSquashOfUncondReturn++;
+                }
+            }
+        }
+    } else {
+        dbpFtbStats.commitControlSquashLatencyDist.sample(squashLat, 1);
+        // per branch type
+        if (squashBranchInfo.isCond) {
+            dbpFtbStats.controlCommitSquashOfCond++;
+        } else {
+            dbpFtbStats.controlCommitSquashOfUncond++;
+            if (!squashBranchInfo.isIndirect) {
+                dbpFtbStats.controlCommitSquashOfUncondDirect++;
+            } else {
+                dbpFtbStats.controlCommitSquashOfUncondIndirect++;
+                if (squashBranchInfo.isReturn) {
+                    dbpFtbStats.controlCommitSquashOfUncondReturn++;
+                }
+            }
+        }
+    }
+    stream.squashInfos[control_pc.instAddr()] = std::make_tuple(SQUASH_CTRL, squashSrc, squashBranchInfo);
 
     if (stream.isExit) {
         dbpFtbStats.controlSquashOnLoopPredictorPredExit++;
@@ -844,10 +962,10 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
 
     DPRINTF(DecoupleBP || debugFlagOn,
             "Control squash: ftq_id=%lu, fsq_id=%lu,"
-            " control_pc=%#lx, corr_target=%#lx, is_conditional=%u, "
+            " control_pc=%#lx, real_target=%#lx, is_conditional=%u, "
             "is_indirect=%u, actually_taken=%u, branch seq: %lu\n",
             target_id, stream_id, control_pc.instAddr(),
-            corr_target.instAddr(), is_conditional, is_indirect,
+            real_target, is_conditional, is_indirect,
             actually_taken, seq);
 
     dumpFsq("Before control squash");
@@ -865,7 +983,7 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
     FetchTargetId ftq_demand_stream_id;
 
 
-    stream.exeBranchInfo = BranchInfo(control_pc.instAddr(), corr_target.instAddr(), static_inst, control_inst_size);
+    stream.exeBranchInfo = squashBranchInfo;
     stream.exeTaken = actually_taken;
     stream.squashPC = control_pc.instAddr();
 
@@ -935,7 +1053,7 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
     dumpFsq("After control squash");
 
     fetchTargetQueue.squash(target_id + 1, ftq_demand_stream_id,
-                            corr_target.instAddr());
+                            real_target);
 
     fetchTargetQueue.dump("After control squash");
 
@@ -968,6 +1086,10 @@ DecoupledBPUWithFTB::nonControlSquash(unsigned target_id, unsigned stream_id,
 
     auto ftq_demand_stream_id = stream_id;
     auto &stream = it->second;
+    stream.squashInfos[inst_pc.instAddr()] = std::make_tuple(SQUASH_OTHER, SQUASH_SRC_COMMIT, BranchInfo());
+    auto predCycle = stream.predCycle;
+    auto squashLat = curCycle() - predCycle;
+    dbpFtbStats.commitNonControlSquashLatencyDist.sample(squashLat, 1);
 
     if (enableLoopPredictor) {
         lp.startRepair();
@@ -1068,6 +1190,10 @@ DecoupledBPUWithFTB::trapSquash(unsigned target_id, unsigned stream_id,
     auto it = fetchStreamQueue.find(stream_id);
     assert(it != fetchStreamQueue.end());
     auto &stream = it->second;
+    stream.squashInfos[inst_pc.instAddr()] = std::make_tuple(SQUASH_TRAP, SQUASH_SRC_COMMIT, BranchInfo());
+    auto predCycle = stream.predCycle;
+    auto squashLat = curCycle() - predCycle;
+    dbpFtbStats.commitTrapSquashLatencyDist.sample(squashLat, 1);
 
     if (stream.isExit) {
         dbpFtbStats.trapSquashOnLoopPredictorPredExit++;
@@ -1185,7 +1311,7 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
                 stream.exeBranchInfo.pc, stream.exeBranchInfo.target,
                 stream.predBranchInfo.pc, stream.predBranchInfo.target);
         
-        if (stream.isHit) {
+        if (stream.isHit && !stream.falseHit) {
             dbpFtbStats.ftbHit++;
         } else {
             if (stream.exeTaken) {
@@ -1194,6 +1320,39 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
                 auto &slot = stream.exeBranchInfo;
                 DPRINTF(FTB, "    pc:%#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d\n",
                 slot.pc, slot.size, slot.target, slot.isCond, slot.isIndirect, slot.isCall, slot.isReturn);
+                // try to find branch indentified by exeBranchInfo in commitMispredictions
+                const auto misp_it = stream.commitMispredictions.find(slot.pc);
+                bool found = misp_it != stream.commitMispredictions.end();
+                DPRINTF(DBPFTBStats, "fsqID: %d, inst causing ftb miss: %#lx, found in commitMispredictions: %d\n", it->first, slot.pc, found);
+                if (!found) {
+                    dbpFtbStats.ftbMissInstNotCommitted++;
+                    DPRINTF(DBPFTBStats, "fsqID: %d, pc: %#lx not found in commitMispredictions\n", it->first, slot.pc);
+                    DPRINTF(DBPFTBStats, "dumping commitMispredictions:\n");
+                    for (auto &pair : stream.commitMispredictions) {
+                        DPRINTF(DBPFTBStats, "    pc: %#lx, mispred: %d\n", pair.first, pair.second);
+                    }
+                    if (stream.commitMispredictions.empty()) {
+                        dbpFtbStats.ftbMissWithNoBranches++;
+                    } else {
+                        bool someBranchesMispredicted = false;
+                        for (auto pc_misp_pair : stream.commitMispredictions) {
+                            someBranchesMispredicted |= pc_misp_pair.second;
+                        }
+                        if (!someBranchesMispredicted) {
+                            dbpFtbStats.ftbMissWithNoMispreds++;
+                        }
+                    }
+                } else {
+                    bool miss = misp_it->second;
+                    if (!miss) {
+                        dbpFtbStats.ftbMissInstNotMispredicted++;
+                        DPRINTF(DBPFTBStats, "fsqID: %d, pc: %#lx found in commitMispredictions, but not mispredicted\n", it->first, slot.pc);
+                    } else {
+                        dbpFtbStats.ftbMissInstMispredicted++;
+                    }
+                }
+            } else {
+                dbpFtbStats.ftbMissWithNoHarm++;
             }
             if (stream.falseHit) {
                 dbpFtbStats.commitFalseHit++;
@@ -1201,6 +1360,122 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
         }
         dbpFtbStats.commitPredsFromEachStage[stream.predSource]++;
 
+        if (stream.squashType != SQUASH_NONE) {
+            dbpFtbStats.committedStreamHadReceivedSquash++;
+            if (stream.squashSource == SQUASH_SRC_DECODE) {
+                dbpFtbStats.committedStreamSquashFromDecode++;
+            } else if (stream.squashSource == SQUASH_SRC_COMMIT ) {
+                dbpFtbStats.committedStreamSquashFromCommit++;
+            }
+        }
+
+        for (auto &kv : stream.squashInfos) {
+            auto &pc = kv.first;
+            auto &squash_tuple = kv.second;
+            auto &squashType = std::get<0>(squash_tuple);
+            auto &squashSrc = std::get<1>(squash_tuple);
+            auto &squashBranchInfo = std::get<2>(squash_tuple);
+            DPRINTF(DBPFTBStats, "fsqID %d, squash info: pc=%#lx, squashType=%d, squashSrc=%d\n", it->first, pc, squashType, squashSrc);
+            // make sure the instruction triggering squash is actually committed
+            const auto mis_it = stream.commitMispredictions.find(pc);
+            if (mis_it != stream.commitMispredictions.end()) {
+                // previously control squashed
+                if (squashType == SQUASH_CTRL) {
+                    dbpFtbStats.controlSquashedCommitted++;
+                    // this squashed inst not mispredicted?
+                    if (!mis_it->second) {
+                        if (stream.exeBranchInfo.isCond) {
+                            dbpFtbStats.committedSquashedCondNotMispredicted++;
+                            if (squashSrc == SQUASH_SRC_DECODE) {
+                                dbpFtbStats.committedDecodeSquashedCondNotMispredicted++;
+                            } else if (squashSrc == SQUASH_SRC_COMMIT) {
+                                dbpFtbStats.committedCommitSquashedCondNotMispredicted++;
+                            }
+                        } else if (stream.exeBranchInfo.isUncond()) {
+                            dbpFtbStats.committedSquashedUncondNotMispredicted++;
+                            if (squashSrc == SQUASH_SRC_DECODE) {
+                                dbpFtbStats.committedDecodeSquashedUncondNotMispredicted++;
+                            } else if (squashSrc == SQUASH_SRC_COMMIT) {
+                                dbpFtbStats.committedCommitSquashedUncondNotMispredicted++;
+                            }
+                        }
+                    } else {
+                        dbpFtbStats.committedSquashedBranchFinallyMispredicted++;
+                    }
+
+                    // per branch type
+                    if (squashSrc == SQUASH_SRC_DECODE) {
+                        if (squashBranchInfo.isCond) {
+                            dbpFtbStats.controlDecodeSquashedCondCommitted++;
+                        }
+                        if (squashBranchInfo.isUncond()) {
+                            dbpFtbStats.controlDecodeSquashedUncondCommitted++;
+                            if (!squashBranchInfo.isIndirect) {
+                                dbpFtbStats.controlDecodeSquashedUncondDirectCommitted++;
+                            } else {
+                                dbpFtbStats.controlDecodeSquashedUncondIndirectCommitted++;
+                                if (squashBranchInfo.isReturn) {
+                                    dbpFtbStats.controlDecodeSquashedUncondReturnCommitted++;
+                                }
+                            }
+                        }
+                    } else if (squashSrc == SQUASH_SRC_COMMIT) {
+                        if (squashBranchInfo.isCond) {
+                            dbpFtbStats.controlCommitSquashedCondCommitted++;
+                        }
+                        if (squashBranchInfo.isUncond()) {
+                            dbpFtbStats.controlCommitSquashedUncondCommitted++;
+                            if (!squashBranchInfo.isIndirect) {
+                                dbpFtbStats.controlCommitSquashedUncondDirectCommitted++;
+                            } else {
+                                dbpFtbStats.controlCommitSquashedUncondIndirectCommitted++;
+                                if (squashBranchInfo.isReturn) {
+                                    dbpFtbStats.controlCommitSquashedUncondReturnCommitted++;
+                                }
+                            }
+                        }
+                    }
+
+                }
+            } else {
+                // not committed, it means this instruction is on a wrong path
+                if (squashType == SQUASH_CTRL) {
+                    dbpFtbStats.controlSquashedNotCommitted++;
+                    // per branch type
+                    if (squashSrc == SQUASH_SRC_DECODE) {
+                        if (squashBranchInfo.isCond) {
+                            dbpFtbStats.controlDecodeSquashedCondNotCommitted++;
+                        }
+                        if (squashBranchInfo.isUncond()) {
+                            dbpFtbStats.controlDecodeSquashedUncondNotCommitted++;
+                            if (!squashBranchInfo.isIndirect) {
+                                dbpFtbStats.controlDecodeSquashedUncondDirectNotCommitted++;
+                            } else {
+                                dbpFtbStats.controlDecodeSquashedUncondIndirectNotCommitted++;
+                                if (squashBranchInfo.isReturn) {
+                                    dbpFtbStats.controlDecodeSquashedUncondReturnNotCommitted++;
+                                }
+                            }
+                        }
+                    } else if (squashSrc == SQUASH_SRC_COMMIT) {
+                        if (squashBranchInfo.isCond) {
+                            dbpFtbStats.controlCommitSquashedCondNotCommitted++;
+                        }
+                        if (squashBranchInfo.isUncond()) {
+                            dbpFtbStats.controlCommitSquashedUncondNotCommitted++;
+                            if (!squashBranchInfo.isIndirect) {
+                                dbpFtbStats.controlCommitSquashedUncondDirectNotCommitted++;
+                            } else {
+                                dbpFtbStats.controlCommitSquashedUncondIndirectNotCommitted++;
+                                if (squashBranchInfo.isReturn) {
+                                    dbpFtbStats.controlCommitSquashedUncondReturnNotCommitted++;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         if (stream.isHit || stream.exeTaken) {
             // generate new ftb entry first
@@ -1409,8 +1684,10 @@ DecoupledBPUWithFTB::commitBranch(const DynInstPtr &inst, bool miss)
     // find corresponding fsq entry first
     auto it = fetchStreamQueue.find(inst->fsqId);
     assert(it != fetchStreamQueue.end());
-    auto entry = it->second;
+
+    auto &entry = it->second;
     if (enableBranchTrace) {
+
         bptrace->write_record(BpTrace(entry, inst, miss));
     }
     Addr branchAddr = inst->pcState().instAddr();
@@ -1502,7 +1779,8 @@ DecoupledBPUWithFTB::commitBranch(const DynInstPtr &inst, bool miss)
             ittts->second++;
         }
     }
-
+    entry.commitMispredictions[branchAddr] = miss;
+    DPRINTF(DBPFTBStats, "commit branchAddr %#lx, miss %d, fsqID %d\n", branchAddr, miss, inst->fsqId);
 
     LoopTrace rec;
     LoopEntry predLoopEntry = LoopEntry();
@@ -2029,6 +2307,7 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
 
         entry.history = s0History;
         entry.predTick = finalPred.predTick;
+        entry.predCycle = finalPred.predCycle;
         entry.predSource = finalPred.predSource;
 
         // update (folded) histories for components
@@ -2091,6 +2370,7 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
         // use s0History from streamBeforeLoop
         // entry.history = s0History;
         entry.predTick = curTick();
+        entry.predCycle = curCycle();
         entry.predSource = numStages;
 
         // TODO: use what kind of mechanism to handle ghr?
@@ -2205,6 +2485,23 @@ DecoupledBPUWithFTB::resetPC(Addr new_pc)
 {
     s0PC = new_pc;
     fetchTargetQueue.resetPC(new_pc);
+}
+
+Cycles
+DecoupledBPUWithFTB::curCycle()
+{
+    return cpu->curCycle();
+}
+
+Addr
+DecoupledBPUWithFTB::getPreservedReturnAddr(const DynInstPtr &dynInst)
+{
+    DPRINTF(DecoupleBP, "acquiring reutrn address for inst pc %#lx from decode\n", dynInst->pcState().instAddr());
+    auto fsqid = dynInst->getFsqId();
+    auto it = fetchStreamQueue.find(fsqid);
+    auto retAddr = ras->getTopAddrFromMetas(it->second);
+    DPRINTF(DecoupleBP, "get ret addr %#lx\n", retAddr);
+    return retAddr;
 }
 
 }  // namespace ftb_pred

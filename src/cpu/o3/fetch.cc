@@ -150,6 +150,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         assert(dbpftb);
         usedUpFetchTargets = true;
         enableLoopBuffer = dbpftb->enableLoopBuffer;
+        dbpftb->setCpu(_cpu);
         if (enableLoopBuffer) {
             loopBuffer = &dbpftb->lb;
         }
@@ -1013,6 +1014,17 @@ Fetch::flushFetchBuffer()
     }
 }
 
+Addr
+Fetch::getPreservedReturnAddr(const DynInstPtr &dynInst)
+{
+    if (isFTBPred()) {
+        return dbpftb->getPreservedReturnAddr(dynInst);
+    } else {
+        panic("getPreservedReturnAddr not implemented for this bpu");
+        return 0;
+    }
+}
+
 void
 Fetch::squashFromDecode(const PCStateBase &new_pc, const DynInstPtr squashInst,
         const InstSeqNum seq_num, ThreadID tid)
@@ -1287,7 +1299,8 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
                         mispred_inst->pcState(), *fromCommit->commitInfo[tid].pc,
                         mispred_inst->staticInst, mispred_inst->getInstBytes(),
                         fromCommit->commitInfo[tid].branchTaken,
-                        mispred_inst->seqNum, tid, mispred_inst->getLoopIteration());
+                        mispred_inst->seqNum, tid, mispred_inst->getLoopIteration(),
+                        true);
                 }
             } else if (fromCommit->commitInfo[tid].isTrapSquash) {
                 DPRINTF(Fetch, "Treating as trap squash\n",tid);
@@ -1384,7 +1397,8 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
                         *fromDecode->decodeInfo[tid].nextPC,
                         mispred_inst->staticInst, mispred_inst->getInstBytes(),
                         fromDecode->decodeInfo[tid].branchTaken,
-                        mispred_inst->seqNum, tid, mispred_inst->getLoopIteration());
+                        mispred_inst->seqNum, tid, mispred_inst->getLoopIteration(),
+                        false);
                 }
             } else {
                 warn("Unexpected non-control squash from decode.\n");

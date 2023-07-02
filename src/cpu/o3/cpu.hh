@@ -57,6 +57,7 @@
 #include "cpu/difftest.hh"
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/commit.hh"
+#include "cpu/o3/cpu_def.hh"
 #include "cpu/o3/decode.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/fetch.hh"

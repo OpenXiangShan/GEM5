@@ -9,7 +9,10 @@
 
 #include "arch/generic/pcstate.hh"
 #include "config/the_isa.hh"
+// #include "cpu/base.hh"
+#include "cpu/o3/cpu_def.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
+// #include "cpu/o3/fetch.hh"
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/general_arch_db.hh"
 #include "cpu/pred/ftb/fetch_target_queue.hh"
@@ -46,6 +49,7 @@ namespace ftb_pred
 {
 
 using DynInstPtr = o3::DynInstPtr;
+using CPU = o3::CPU;
 
 class HistoryManager
 {
@@ -200,6 +204,8 @@ class DecoupledBPUWithFTB : public BPredUnit
     unsigned fetchStreamQueueSize;
     FetchStreamId fsqId{1};
     FetchStream lastCommittedStream;
+
+    CPU *cpu;
 
     unsigned numBr;
 
@@ -406,11 +412,56 @@ class DecoupledBPUWithFTB : public BPredUnit
 
         statistics::Scalar ftbHit;
         statistics::Scalar ftbMiss;
+        statistics::Scalar ftbMissInstNotCommitted;
+        statistics::Scalar ftbMissInstNotMispredicted;
+        statistics::Scalar ftbMissInstMispredicted;
+        statistics::Scalar ftbMissWithNoMispreds;
+        statistics::Scalar ftbMissWithNoBranches;
+        statistics::Scalar ftbMissWithNoHarm;
         statistics::Scalar ftbEntriesWithDifferentStart;
         statistics::Scalar ftbEntriesWithOnlyOneJump;
 
         statistics::Scalar predFalseHit;
         statistics::Scalar commitFalseHit;
+
+        statistics::Scalar committedSquashedCondNotMispredicted;
+        statistics::Scalar committedDecodeSquashedCondNotMispredicted;
+        statistics::Scalar committedCommitSquashedCondNotMispredicted;
+        statistics::Scalar committedSquashedUncondNotMispredicted;
+        statistics::Scalar committedDecodeSquashedUncondNotMispredicted;
+        statistics::Scalar committedCommitSquashedUncondNotMispredicted;
+        statistics::Scalar committedSquashedBranchFinallyMispredicted;
+
+        statistics::Scalar controlSquashedCommitted;
+        statistics::Scalar controlDecodeSquashedCondCommitted;
+        statistics::Scalar controlDecodeSquashedUncondCommitted;
+        statistics::Scalar controlDecodeSquashedUncondDirectCommitted;
+        statistics::Scalar controlDecodeSquashedUncondIndirectCommitted;
+        statistics::Scalar controlDecodeSquashedUncondReturnCommitted;
+        statistics::Scalar controlCommitSquashedCondCommitted;
+        statistics::Scalar controlCommitSquashedUncondCommitted;
+        statistics::Scalar controlCommitSquashedUncondDirectCommitted;
+        statistics::Scalar controlCommitSquashedUncondIndirectCommitted;
+        statistics::Scalar controlCommitSquashedUncondReturnCommitted;
+        statistics::Scalar controlSquashedNotCommitted;
+        statistics::Scalar controlDecodeSquashedCondNotCommitted;
+        statistics::Scalar controlDecodeSquashedUncondNotCommitted;
+        statistics::Scalar controlDecodeSquashedUncondDirectNotCommitted;
+        statistics::Scalar controlDecodeSquashedUncondIndirectNotCommitted;
+        statistics::Scalar controlDecodeSquashedUncondReturnNotCommitted;
+        statistics::Scalar controlCommitSquashedCondNotCommitted;
+        statistics::Scalar controlCommitSquashedUncondNotCommitted;
+        statistics::Scalar controlCommitSquashedUncondDirectNotCommitted;
+        statistics::Scalar controlCommitSquashedUncondIndirectNotCommitted;
+        statistics::Scalar controlCommitSquashedUncondReturnNotCommitted;
+        // statistics::Scalar nonControlSquashedCommitted;
+        // statistics::Scalar nonControlSquashedNotCommitted;
+        // statistics::Scalar trapSquashedCommitted;
+        // statistics::Scalar trapSquashedNotCommitted;
+
+        statistics::Scalar committedStreamHadReceivedSquash;
+        statistics::Scalar committedStreamSquashFromDecode;
+        statistics::Scalar committedStreamSquashFromCommit;
 
         statistics::Scalar predLoopPredictorExit;
         statistics::Scalar predLoopPredictorUnconfNotExit;
@@ -455,6 +506,24 @@ class DecoupledBPUWithFTB : public BPredUnit
         statistics::Distribution predJASkippedBlockNum;
         statistics::Distribution commitJASkippedBlockNum;
 
+        statistics::Distribution decodeControlSquashLatencyDist;
+        statistics::Distribution commitControlSquashLatencyDist;
+        statistics::Distribution commitTrapSquashLatencyDist;
+        statistics::Distribution commitNonControlSquashLatencyDist;
+
+        statistics::Scalar controlDecodeSquashOfCond;
+        statistics::Scalar controlDecodeSquashOfUncond;
+        statistics::Scalar controlDecodeSquashOfUncondDirect;
+        statistics::Scalar controlDecodeSquashOfUncondIndirect;
+        statistics::Scalar controlDecodeSquashOfUncondReturn;
+        statistics::Scalar controlCommitSquashOfCond;
+        statistics::Scalar controlCommitSquashOfUncond;
+        statistics::Scalar controlCommitSquashOfUncondDirect;
+        statistics::Scalar controlCommitSquashOfUncondIndirect;
+        statistics::Scalar controlCommitSquashOfUncondReturn;
+
+
+
         DBPFTBStats(statistics::Group* parent, unsigned numStages, unsigned fsqSize);
     } dbpFtbStats;
 
@@ -472,6 +541,10 @@ class DecoupledBPUWithFTB : public BPredUnit
     {
         panic("Squashing decoupled BP with tightly coupled API\n");
     }
+
+    void setCpu(CPU *_cpu) { cpu = _cpu; }
+
+    Cycles curCycle();
 
     struct BpTrace : public Record {
         void set(uint64_t startPC, uint64_t controlPC, uint64_t controlType,
@@ -500,7 +573,7 @@ class DecoupledBPUWithFTB : public BPredUnit
                        const PCStateBase &target_pc,
                        const StaticInstPtr &static_inst, unsigned inst_bytes,
                        bool actually_taken, const InstSeqNum &squashed_sn,
-                       ThreadID tid, const unsigned &currentLoopIter);
+                       ThreadID tid, const unsigned &currentLoopIter, const bool fromCommit);
 
     // keep the stream: original prediction might be right
     // For memory violation, stream continues after squashing
@@ -555,6 +628,8 @@ class DecoupledBPUWithFTB : public BPredUnit
     void checkHistory(const boost::dynamic_bitset<> &history);
 
     bool useStreamRAS(FetchStreamId sid);
+
+    Addr getPreservedReturnAddr(const DynInstPtr &dynInst);
 
     std::string buf1, buf2;
 

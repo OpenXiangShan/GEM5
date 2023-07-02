@@ -369,6 +369,8 @@ class Fetch
 
     void flushFetchBuffer();
 
+    Addr getPreservedReturnAddr(const DynInstPtr &dynInst);
+
   private:
     DynInstPtr buildInst(ThreadID tid, StaticInstPtr staticInst,
             StaticInstPtr curMacroop, const PCStateBase &this_pc,

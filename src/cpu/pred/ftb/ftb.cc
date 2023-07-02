@@ -449,13 +449,16 @@ DefaultFTB::update(const FetchStream &stream)
 
 
     if (not_found) {
-        auto it = ftb[ftb_idx].find(updatedEntry.tag);
+        auto it = ftb[ftb_idx].find(ftb_tag);
+        assert(it != ftb[ftb_idx].end());
         mruList[ftb_idx].back() = it;
         std::push_heap(mruList[ftb_idx].begin(), mruList[ftb_idx].end(), older());
     } else {
         std::make_heap(mruList[ftb_idx].begin(), mruList[ftb_idx].end(), older());
     }
     assert(ftb_idx < numSets);
+    assert(ftb[ftb_idx].size() <= numWays);
+    assert(mruList[ftb_idx].size() <= numWays);
 
     // ftb[ftb_idx].valid = true;
     // set(ftb[ftb_idx].target, target);

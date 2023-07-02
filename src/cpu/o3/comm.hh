@@ -159,7 +159,7 @@ struct SquashVersion
     uint8_t version;
     const static uint8_t versionLimit = 16;
     const static uint8_t maxVersion = versionLimit - 1;
-    const static uint8_t maxInflightSquash = 4;
+    const static uint8_t maxInflightSquash = 7;
     uint8_t getVersion() const {
         return version;
     }

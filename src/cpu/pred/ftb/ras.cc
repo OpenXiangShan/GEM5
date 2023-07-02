@@ -381,6 +381,13 @@ RAS::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 {
 }
 
+Addr
+RAS::getTopAddrFromMetas(const FetchStream &stream)
+{
+    auto meta_ptr = std::static_pointer_cast<RASMeta>(stream.predMetas[getComponentIdx()]);
+    return meta_ptr->target;
+}
+
 }  // namespace ftb_pred
 
 }  // namespace branch_prediction
