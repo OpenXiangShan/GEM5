@@ -312,7 +312,7 @@ SignaturePath::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
         unsigned match_start = 0;
         for (unsigned i = 0; i < strides.size(); i++) {
             for (unsigned j = i + 1; j < strides.size(); j++) {
-                if (strides[i] == strides[j]) {
+                if (strides[i] > 8 && strides[i] == strides[j]) {
                     if (!preferLongPattern) {  // find simple match
                         DPRINTF(SPP, "Found simple match: %d\n", strides[i]);
                         best_block_offset = strides[i];

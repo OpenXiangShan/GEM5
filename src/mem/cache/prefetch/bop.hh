@@ -80,16 +80,16 @@ class BOP : public Queued
         /** Structure to save the offset and the score */
         // typedef std::pair<int16_t, uint8_t> OffsetListEntry;
         struct OffsetListEntry{
-            int16_t first;  // offset, name it as first to make it compatible with pair
-            uint8_t second;  // offset, name it as second to make it compatible with pair
+            int32_t first;  // offset, name it as first to make it compatible with pair
+            uint8_t second;  // score, name it as second to make it compatible with pair
             int16_t depth;
             SatCounter8 late;
 
-            OffsetListEntry(int16_t x, uint8_t y)
+            OffsetListEntry(int32_t x, uint8_t y)
                 : first(x), second(y), depth(1), late(6, 32)
             {}
 
-            int16_t calcOffset() const
+            int64_t calcOffset() const
             {
                 return first * depth;
             }
@@ -98,7 +98,7 @@ class BOP : public Queued
 
         size_t maxOffsetCount{32};
 
-        std::set<int16_t> offsets;
+        std::set<int32_t> offsets;
 
         /** In a first implementation of the BO prefetcher, both banks of the
          *  RR were written simultaneously when a prefetched line is inserted

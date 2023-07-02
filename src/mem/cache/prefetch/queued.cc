@@ -235,7 +235,7 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
     // Calculate prefetches given this access
     std::vector<AddrPriority> addresses;
     if (!pkt->coalescingMSHR) {  // hit to Other cpu access
-        calculatePrefetch(pfi, addresses, late_in_mshr || late_in_pfq, pf_source);
+        calculatePrefetch(pfi, addresses, pfi.isCacheMiss() && (late_in_mshr || late_in_pfq), pf_source);
     }
 
     // Get the maximu number of prefetches that we are allowed to generate

@@ -76,6 +76,7 @@ class SMSPrefetcher : public Queued
         uint64_t last_addr;
         SatCounter8 conf;
         int32_t depth;
+        SatCounter8 lateConf;
         Addr pc;
         StrideEntry(const SatCounter8 & _conf)
             : TaggedEntry(),
@@ -83,6 +84,7 @@ class SMSPrefetcher : public Queued
               last_addr(0),
               conf(_conf),
               depth(1),
+              lateConf(3, 4),
               pc(0)
         {}
     };
@@ -90,11 +92,12 @@ class SMSPrefetcher : public Queued
 
     int depthDownCounter{0};
 
-    const int depthDownPeriod{1024};
+    const int depthDownPeriod{256};
 
     void periodStrideDepthDown();
 
-    bool strideLookup(const PrefetchInfo &pfi, std::vector<AddrPriority> &address, bool late, Addr &pf_addr);
+    bool strideLookup(const PrefetchInfo &pfi, std::vector<AddrPriority> &address, bool late, Addr &pf_addr,
+                      PrefetchSourceType src);
 
     AssociativeSet<StrideEntry> stride;
 

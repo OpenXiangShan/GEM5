@@ -224,7 +224,7 @@ BOP::tryAddOffset(int64_t offset, bool late)
 
     auto best_it = getBestOffsetIter();
 
-    if (best_it != offsetsList.end() && offset % best_it->first == 0) {
+    if (best_it != offsetsList.end() && (offset % best_it->first == 0 && best_it->first != 1)) {
         DPRINTF(BOPPrefetcher, "offset %d is a multiple of best offset %d, skip\n", offset, best_it->first);
         return;
     }
@@ -242,7 +242,7 @@ BOP::tryAddOffset(int64_t offset, bool late)
         assert(found);
         // insert it next to the offsetsListIterator
         auto next_it = std::next(offsetsListIterator);
-        offsetsList.emplace(next_it, (int16_t) offset, (uint8_t) 0);
+        offsetsList.emplace(next_it, (int32_t) offset, (uint8_t) 0);
         DPRINTF(BOPPrefetcher, "add %d to offset list\n", offset);
 
     } else {
