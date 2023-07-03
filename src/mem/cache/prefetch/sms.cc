@@ -251,7 +251,7 @@ SMSPrefetcher::strideLookup(const PrefetchInfo &pfi, std::vector<AddrPriority> &
             entry->conf++;
             if (strideDynDepth) {
                 if (!pfi.isCacheMiss() && last_pf_source == PrefetchSourceType::SStride) {  // stride pref hit
-                    entry->lateConf++;
+                    entry->lateConf--;
                 } else if (late) {  // stride pf late or other prefetcher late
                     entry->lateConf += 3;
                 }
