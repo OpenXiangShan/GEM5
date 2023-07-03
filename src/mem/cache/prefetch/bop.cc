@@ -67,7 +67,7 @@ BOP::BOP(const BOPPrefetcherParams &p)
     strictOffset = 16;
     strictBadScore = 10;
 
-    int16_t offset_list[] = {1, 16};
+    int16_t offset_list[] = {1, 2, 4, 8, 16, 32, 64, 128};
     // 1kB / 64B = 16, as an complement for SMS.stream
     // as an complement for SMS.stream when too many PCs
     for (int i = 0; i < sizeof(offset_list) / sizeof(offset_list[0]); i++) {
