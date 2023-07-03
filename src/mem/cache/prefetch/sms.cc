@@ -259,7 +259,7 @@ SMSPrefetcher::strideLookup(const PrefetchInfo &pfi, std::vector<AddrPriority> &
                     entry->depth++;
                     entry->lateConf.reset();
                 } else if ((uint8_t)entry->lateConf == 0) {
-                    entry->depth--;
+                    entry->depth = std::max(1, entry->depth - 1);
                     entry->lateConf.reset();
                 }
             }
