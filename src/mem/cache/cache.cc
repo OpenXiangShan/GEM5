@@ -1111,6 +1111,7 @@ Cache::handleSnoop(PacketPtr pkt, CacheBlk *blk, bool is_timing,
 
     bool respond = false;
     bool blk_valid = blk && blk->isValid();
+    DPRINTF(Cache, "pkt %s is clean: %i\n", pkt->print(), pkt->isClean());
     if (pkt->isClean()) {
         if (blk_valid && blk->isSet(CacheBlk::DirtyBit)) {
             DPRINTF(CacheVerbose, "%s: packet (snoop) %s found block: %s\n",
@@ -1158,7 +1159,8 @@ Cache::handleSnoop(PacketPtr pkt, CacheBlk *blk, bool is_timing,
         // invalidation itself is taken care of below. We don't respond to
         // cache maintenance operations as this is done by the destination
         // xbar.
-        respond = blk->isSet(CacheBlk::DirtyBit) && pkt->needsResponse();
+        respond = pkt->needsResponse() &&
+                  (blk->isSet(CacheBlk::DirtyBit) || (blk->isSet(CacheBlk::WritableBit)));
 
         gem5_assert(!(isReadOnly && blk->isSet(CacheBlk::DirtyBit)),
             "Should never have a dirty block in a read-only cache %s\n",
