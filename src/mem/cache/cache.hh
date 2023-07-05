@@ -135,7 +135,7 @@ class Cache : public BaseCache
      * @return The snoop delay incurred by the upwards snoop
      */
     uint32_t handleSnoop(PacketPtr pkt, CacheBlk *blk,
-                         bool is_timing, bool is_deferred, bool pending_inval);
+                         bool is_timing, bool is_deferred, bool pending_inval, MSHR *deferring_mshr);
 
     [[nodiscard]] PacketPtr evictBlock(CacheBlk *blk) override;
 

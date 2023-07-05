@@ -95,6 +95,9 @@ Cache::satisfyRequest(PacketPtr pkt, CacheBlk *blk,
                 // if we have a dirty copy, make sure the recipient
                 // keeps it marked dirty (in the modified state)
                 if (blk->isSet(CacheBlk::DirtyBit)) {
+                    DPRINTF(CacheVerbose,
+                            "%s set packet %s as cache responding, when blk is dirty and pkt need writable\n", __func__,
+                            pkt->print());
                     pkt->setCacheResponding();
                     blk->clearCoherenceBits(CacheBlk::DirtyBit);
                 }
@@ -116,6 +119,8 @@ Cache::satisfyRequest(PacketPtr pkt, CacheBlk *blk,
                     if (!deferred_response) {
                         // respond with the line in Modified state
                         // (cacheResponding set, hasSharers not set)
+                        DPRINTF(CacheVerbose, "%s set packet %s as cache responding, when blk is dirty 2\n", __func__,
+                                pkt->print());
                         pkt->setCacheResponding();
 
                         // if this cache is mostly inclusive, we
@@ -451,6 +456,8 @@ Cache::recvTimingReq(PacketPtr pkt)
         // data
         snoop_pkt->setExpressSnoop();
         snoop_pkt->setCacheResponding();
+        DPRINTF(CacheVerbose, "%s set packet %s as cache responding, when cache above responding\n", __func__,
+                snoop_pkt->print());
 
         // this express snoop travels towards the memory, and at
         // every crossbar it is snooped upwards thus reaching
@@ -921,7 +928,7 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
             assert(!is_invalidate || pkt->cmd == MemCmd::InvalidateResp ||
                    pkt->req->isCacheMaintenance() ||
                    mshr->hasPostInvalidate());
-            handleSnoop(tgt_pkt, blk, true, true, mshr->hasPostInvalidate());
+            handleSnoop(tgt_pkt, blk, true, true, mshr->hasPostInvalidate(), mshr);
             break;
 
           default:
@@ -1003,16 +1010,21 @@ Cache::doTimingSupplyResponse(PacketPtr req_pkt, const uint8_t *blk_data,
     // timing-mode snoop responses require a new packet, unless we
     // already made a copy...
     PacketPtr pkt = req_pkt;
-    if (!already_copied)
+    if (!already_copied) {
         // do not clear flags, and allocate space for data if the
         // packet needs it (the only packets that carry data are read
         // responses)
+        DPRINTF(Cache, "%s: copied: %i, creating new packet for snoop response\n",
+                __func__, already_copied);
         pkt = new Packet(req_pkt, false, req_pkt->isRead());
+    }
 
     assert(req_pkt->req->isUncacheable() || req_pkt->isInvalidate() ||
            pkt->hasSharers());
     pkt->makeTimingResponse();
     if (pkt->isRead()) {
+        DPRINTF(Cache, "%s: pkt static data: %i, dyn data: %i\n", __func__, pkt->flags.isSet(Packet::STATIC_DATA),
+                pkt->flags.isSet(Packet::DYNAMIC_DATA));
         pkt->setDataFromBlock(blk_data, blkSize);
     }
     if (pkt->cmd == MemCmd::ReadResp && pending_inval) {
@@ -1038,9 +1050,9 @@ Cache::doTimingSupplyResponse(PacketPtr req_pkt, const uint8_t *blk_data,
 
 uint32_t
 Cache::handleSnoop(PacketPtr pkt, CacheBlk *blk, bool is_timing,
-                   bool is_deferred, bool pending_inval)
+                   bool is_deferred, bool pending_inval, MSHR *deferring_mshr)
 {
-    DPRINTF(CacheVerbose, "%s: for %s\n", __func__, pkt->print());
+    DPRINTF(CacheVerbose, "%s: for %s, deferred: %i\n", __func__, pkt->print(), is_deferred);
     // deferred snoops can only happen in timing mode
     assert(!(is_deferred && !is_timing));
     // pending_inval only makes sense on deferred snoops
@@ -1159,8 +1171,17 @@ Cache::handleSnoop(PacketPtr pkt, CacheBlk *blk, bool is_timing,
         // invalidation itself is taken care of below. We don't respond to
         // cache maintenance operations as this is done by the destination
         // xbar.
-        respond = pkt->needsResponse() &&
-                  (blk->isSet(CacheBlk::DirtyBit) || (blk->isSet(CacheBlk::WritableBit)));
+        respond = pkt->needsResponse() && blk->isSet(CacheBlk::DirtyBit);
+
+        // print conditions below
+        DPRINTF(Cache, "%s: need response: %i, cache responding: %i, deferring mshr: %lx, responding by: %lx\n",
+                __func__, pkt->needsResponse(), pkt->cacheResponding(), (uint64_t)deferring_mshr,
+                (uint64_t)pkt->getCacheRespondingBy());
+        if (pkt->needsResponse() && deferring_mshr && (uint64_t)deferring_mshr == pkt->getCacheRespondingBy()) {
+            respond = true;
+            DPRINTF(Cache, "%s: respond because mshr %lx has promised to respond\n", __func__,
+                    (uint64_t)deferring_mshr);
+        }
 
         gem5_assert(!(isReadOnly && blk->isSet(CacheBlk::DirtyBit)),
             "Should never have a dirty block in a read-only cache %s\n",
@@ -1198,6 +1219,8 @@ Cache::handleSnoop(PacketPtr pkt, CacheBlk *blk, bool is_timing,
         // prevent anyone else from responding, cache as well as
         // memory, and also prevent any memory from even seeing the
         // request
+        DPRINTF(CacheVerbose, "%s set packet %s as cache responding, because pkt needs and blk is dirty\n", __func__,
+                pkt->print());
         pkt->setCacheResponding();
         if (!pkt->isClean() && blk->isSet(CacheBlk::WritableBit)) {
             // inform the cache hierarchy that this cache had the line
@@ -1222,6 +1245,7 @@ Cache::handleSnoop(PacketPtr pkt, CacheBlk *blk, bool is_timing,
                  "but keeping the block", name(), pkt->print());
 
         if (is_timing) {
+            DPRINTF(Cache, "Doing time supply, is_deferred: %i, pending inval: %i\n", is_deferred, pending_inval);
             doTimingSupplyResponse(pkt, blk->data, is_deferred, pending_inval);
         } else {
             pkt->makeAtomicResponse();
@@ -1341,6 +1365,8 @@ Cache::recvTimingSnoopReq(PacketPtr pkt)
         }
 
         if (respond) {
+            DPRINTF(CacheVerbose, "%s set packet %s as cache responding, when dirty blk found in wb entry\n",
+                    __func__, pkt->print());
             pkt->setCacheResponding();
 
             if (have_writable) {
@@ -1364,7 +1390,7 @@ Cache::recvTimingSnoopReq(PacketPtr pkt)
     // We could be more selective and return here if the
     // request is non-exclusive or if the writeback is
     // exclusive.
-    uint32_t snoop_delay = handleSnoop(pkt, blk, true, false, false);
+    uint32_t snoop_delay = handleSnoop(pkt, blk, true, false, false, nullptr);
 
     // Override what we did when we first saw the snoop, as we now
     // also have the cost of the upwards snoops to account for
@@ -1381,7 +1407,7 @@ Cache::recvAtomicSnoop(PacketPtr pkt)
     }
 
     CacheBlk *blk = tags->findBlock(pkt->getAddr(), pkt->isSecure());
-    uint32_t snoop_delay = handleSnoop(pkt, blk, false, false, false);
+    uint32_t snoop_delay = handleSnoop(pkt, blk, false, false, false, nullptr);
     return snoop_delay + lookupLatency * clockPeriod();
 }
 

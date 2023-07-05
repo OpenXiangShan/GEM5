@@ -254,7 +254,7 @@ BaseCache::inRange(Addr addr) const
 void
 BaseCache::handleTimingReqHit(PacketPtr pkt, CacheBlk *blk, Tick request_time)
 {
-
+    DPRINTF(Cache, "%s for %s hit\n", __func__, pkt->print());
     // handle special cases for LockedRMW transactions
     if (pkt->isLockedRMW()) {
         Addr blk_addr = pkt->getBlockAddr(blkSize);
@@ -313,6 +313,8 @@ BaseCache::handleTimingReqHit(PacketPtr pkt, CacheBlk *blk, Tick request_time)
         assert(pkt->payloadDelay == 0);
 
         pkt->makeTimingResponse();
+        DPRINTF(Cache, "Making timing response for %s, schedule it at %llu\n",
+                pkt->print(), request_time);
 
         // In this case we are considering request_time that takes
         // into account the delay of the xbar, if any, and just
@@ -1182,6 +1184,8 @@ BaseCache::satisfyRequest(PacketPtr pkt, CacheBlk *blk, bool, bool)
     // assert(!pkt->needsWritable() || blk->isSet(CacheBlk::WritableBit));
     assert(pkt->getOffset(blkSize) + pkt->getSize() <= blkSize);
 
+    DPRINTF(Cache, "satisfyRequest for %s\n", pkt->print());
+
     // Check RMW operations first since both isRead() and
     // isWrite() will be true for them
     if (pkt->cmd == MemCmd::SwapReq) {
@@ -1391,6 +1395,7 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
     // Writeback handling is special case.  We can write the block into
     // the cache without having a writeable copy (or any copy at all).
     if (pkt->isWriteback()) {
+        DPRINTF(Cache, "Writeback for %s\n", pkt->print());
         assert(blkSize == pkt->getSize());
 
         // we could get a clean writeback while we are having
@@ -1461,6 +1466,7 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
 
         return true;
     } else if (pkt->cmd == MemCmd::CleanEvict) {
+        DPRINTF(Cache, "CleanEvict for %s\n", pkt->print());
         // A CleanEvict does not need to access the data array
         lat = calculateTagOnlyLatency(pkt->headerDelay, tag_latency);
 
@@ -1477,6 +1483,7 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         // go to next level.
         return false;
     } else if (pkt->cmd == MemCmd::WriteClean) {
+        DPRINTF(Cache, "WriteClean for %s\n", pkt->print());
         // WriteClean handling is a special case. We can allocate a
         // block directly if it doesn't exist and we can update the
         // block immediately. The WriteClean transfers the ownership
@@ -1541,6 +1548,8 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
     } else if (blk && (pkt->needsWritable() ?
             blk->isSet(CacheBlk::WritableBit) :
             blk->isSet(CacheBlk::ReadableBit))) {
+        DPRINTF(Cache, "need writable: %d, is writable: %d\n",
+                pkt->needsWritable(), blk->isSet(CacheBlk::WritableBit));
         // OK to satisfy access
         incHitCount(pkt);
         incSquashedDemandHitCount(pkt, blk);

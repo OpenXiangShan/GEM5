@@ -290,6 +290,8 @@ CoherentXBar::recvTimingReq(PacketPtr pkt, PortID cpu_side_port_id)
             }
 
             // since it is a normal request, attempt to send the packet
+            DPRINTF(CoherentXBar, "%s: Forwarding %s to port %s\n", __func__,
+                    pkt->print(), memSidePorts[mem_side_port_id]->name());
             success = memSidePorts[mem_side_port_id]->sendTimingReq(pkt);
         } else {
             // no need to forward, turn this packet around and respond
@@ -715,6 +717,7 @@ CoherentXBar::forwardTiming(PacketPtr pkt, PortID exclude_cpu_side_port_id,
         if (exclude_cpu_side_port_id == InvalidPortID ||
             p->getId() != exclude_cpu_side_port_id) {
             // cache is not allowed to refuse snoop
+            DPRINTF(CoherentXBar, "%s: send packet %s to %s\n", __func__, pkt->print(), p->name());
             p->sendTimingSnoopReq(pkt);
             fanout++;
         }
@@ -1092,6 +1095,17 @@ CoherentXBar::sinkPacket(const PacketPtr pkt) const
     //    that has promised to respond (setting the cache responding
     //    flag) is providing writable and thus had a Modified block,
     //    and no further action is needed
+
+    // print 4 conditions:
+    DPRINTF(CoherentXBar, "sinkPacket: pointOfCoherency=%d, "
+            "cacheResponding=%d, isRead=%d, isWrite=%d, "
+            "needsResponse=%d, isCleanEviction=%d, isBlockCached=%d, "
+            "needsWritable=%d, responderHadWritable=%d\n",
+            pointOfCoherency, pkt->cacheResponding(), pkt->isRead(),
+            pkt->isWrite(), pkt->needsResponse(), pkt->isCleanEviction(),
+            pkt->isBlockCached(), pkt->needsWritable(),
+            pkt->responderHadWritable());
+
     return (pointOfCoherency && pkt->cacheResponding()) ||
         (pointOfCoherency && !(pkt->isRead() || pkt->isWrite()) &&
          !pkt->needsResponse()) ||

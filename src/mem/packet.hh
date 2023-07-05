@@ -294,7 +294,6 @@ class Packet : public Printable
     typedef uint32_t FlagsType;
     typedef gem5::Flags<FlagsType> Flags;
 
-  private:
     enum : FlagsType
     {
         // Flags to transfer across when copying a packet
@@ -362,6 +361,7 @@ class Packet : public Printable
 
     Flags flags;
 
+  private:
     /// A flag to indicate that the packet needs to send right away
     bool sendRightAway = false;
 
@@ -656,6 +656,15 @@ class Packet : public Printable
         assert(isRequest());
         assert(!flags.isSet(CACHE_RESPONDING));
         flags.set(CACHE_RESPONDING);
+    }
+    uint64_t promisingResponder{0};
+    void setCacheRespondingBy(uint64_t by)
+    {
+        promisingResponder = by;
+    }
+    uint64_t getCacheRespondingBy()
+    {
+        return promisingResponder;
     }
     bool cacheResponding() const { return flags.isSet(CACHE_RESPONDING); }
     /**

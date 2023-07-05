@@ -487,6 +487,11 @@ MSHR::handleSnoop(PacketPtr pkt, Counter _order)
     // matching the conditions checked in Cache::handleSnoop
     const bool will_respond = isPendingModified() && pkt->needsResponse() &&
         !pkt->isClean();
+    DPRINTF(MSHR, "%s isPendingModified: %d pkt->needsResponse(): %d "
+            "pkt->isClean(): %d pkt->isInvalidate(): %d will_respond: %d\n",
+            __func__, isPendingModified(), pkt->needsResponse(),
+            pkt->isClean(), pkt->isInvalidate(), will_respond);
+
     if (isPendingModified() || pkt->isInvalidate()) {
         // We need to save and replay the packet in two cases:
         // 1. We're awaiting a writable copy (Modified or Exclusive),
@@ -516,6 +521,10 @@ MSHR::handleSnoop(PacketPtr pkt, Counter _order)
             // needsWritable or not we either pass a Shared line or a
             // Modified line
             pkt->setCacheResponding();
+            cp_pkt->setCacheRespondingBy((uint64_t) this);
+            DPRINTF(MSHR,
+                    "%s set packet %s as cache responding, when cache pendign mod or inval, responding by mshr %lx\n",
+                    __func__, pkt->print(), (uint64_t)this);
 
             // inform the cache hierarchy that this cache had the line
             // in the Modified state, even if the response is passed
