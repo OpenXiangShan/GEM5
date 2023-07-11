@@ -81,7 +81,7 @@ class L1_DCache(L1Cache):
     response_latency = 4
 
 class L2Cache(Cache):
-    mshrs = 32
+    mshrs = 64
     tgts_per_mshr = 20
     clusivity='mostly_incl'
     prefetch_on_access = True
@@ -100,7 +100,7 @@ class L2Cache(Cache):
     cache_level = 2
 
 class L3Cache(Cache):
-    mshrs = 64
+    mshrs = 128
     tgts_per_mshr = 20
     clusivity='mostly_excl'
     writeback_clean = False
