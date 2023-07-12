@@ -1,4 +1,5 @@
 # DO NOT track your local updates in this script!
+set -x
 
 export gem5_home=$n/projects/xs-gem5 # The root of GEM5 project
 export gem5=$gem5_home/build/RISCV/gem5.opt # GEM5 executable
@@ -23,7 +24,8 @@ export tag="an-example-tag-like-test-perf-for-ptw"
 
 export log_file='log.txt'
 
-export ds=$lz  # data storage. It is specific for BOSC machines, you can ignore it
+export ds=$(pwd)  # data storage. It is specific for BOSC machines, you can ignore it
+
 export top_work_dir=$tag
 export full_work_dir=$ds/exec-storage/$top_work_dir  # work dir wheter stats data stored
 
@@ -49,8 +51,15 @@ function run() {
     else
         work_dir=$PWD
     fi
+    arch_db=${5:-0}
 
     cd $work_dir
+
+    if test -f "completed"; then
+        echo "Already completed; skip $cpt"
+        return
+    fi
+
     rm -f abort
     rm -f completed
 
@@ -67,6 +76,12 @@ function run() {
         cpt_option="--generic-rv-cpt=$cpt --raw-cpt"
     fi
 
+    if [[ "$arch_db" -eq "0" ]]; then
+        arch_db_args=
+    else
+        arch_db_args="--enable-arch-db --arch-db-file=mem_trace.db --arch-db-fromstart=True"
+    fi
+
     if [[ -z "$crash_tick" ]]; then
         crash_tick=-1
     fi
@@ -81,36 +96,61 @@ function run() {
     if [[ -n "$debug_flags" ]]; then
         debug_flag_args=" --debug-flag=$debug_flags "
     else
+        echo "No debug flag set"
         debug_flag_args=
         start_end=
     fi
     # --debug-flags=CommitTrace \
 
-    if [ $crash_tick = -1 ]; then
+    if [[ $crash_tick = -1 ]]; then
         start_end=
         debug_flag_args=
     fi
 
+    # gdb -ex run --args \
+
     # Note 1: Use DecoupledBPUWithFTB to enable nanhu's decoupled frontend
     # Note 2: MUST use DRAMsim3, or performance is skewed
     # To enable DRAMSim3, follow ext/dramsim3/README
-    # Note 3: By default use SMS or Berti as L2 prefetcher
+    # Note 3: By default use MultiPrefetcher (SMS + BOP) as L2 prefetcher
     # Note 4: Recommend to enable Difftest
+    ######## Some additional args:
     $gem5 $debug_flag_args $start_end \
         $gem5_home/configs/example/fs.py \
-        --caches --l2cache --xiangshan-system --cpu-type=DerivO3CPU \
-        --mem-type=DRAMsim3 --dramsim3-ini=$gem5_home/xiangshan_DDR4_8Gb_x8_2400.ini \
-        --mem-size=8GB --cacheline_size=64 \
+        --xiangshan-system --cpu-type=DerivO3CPU \
+        --mem-size=8GB \
+        --caches --cacheline_size=64 \
         --l1i_size=64kB --l1i_assoc=8 \
         --l1d_size=64kB --l1d_assoc=8 \
-        --l2_size=1MB --l2_assoc=8 --l2-hwp-type=MultiPrefetcher \
+        --l1d-hwp-type=SMSPrefetcher \
+        --l2cache --l2_size=1MB --l2_assoc=8 \
         --l3cache --l3_size=6MB --l3_assoc=6 \
+        --mem-type=DRAMsim3 --dramsim3-ini=$gem5_home/xiangshan_DDR4_8Gb_x8_2400.ini \
         --bp-type=DecoupledBPUWithFTB --enable-loop-predictor \
         --enable-difftest \
-        $cpt_option \
+        $arch_db_args $cpt_option \
         --warmup-insts-no-switch=$dw_len \
         --maxinsts=$total_detail_len
     check $?
+
+    # Here is a scratchpad for frequently used options
+
+        # Use SMS+BOP as L2 prefetcher
+        # --l2-hwp-type=MultiPrefetcher \
+
+        # Record arch db traces only after warmup
+        #  --arch-db-fromstart=False 
+
+        # Enable loop predictor and loop buffer
+        # --enable-loop-predictor \
+        # --enable-loop-buffer \
+
+        # Employ an ideal L2 cache with nearly-perfetch hit rate and low-access latency
+        # --mem-type=SimpleMemory \
+        # --ideal-cache \
+
+    # Debugging memory corruption or memory leak
+    # valgrind -s --track-origins=yes --leak-check=full --show-leak-kinds=all --log-file=valgrind-out-2.txt --error-limit=no -v \
 
     touch completed
 }
@@ -145,29 +185,35 @@ function arg_wrapper() {
     total_M=$(( ($dw + $sample)*$M ))
     dw_M=$(( $dw*$M ))
 
-    run $gz $dw_M $total_M $work_dir >$work_dir/$log_file 2>&1
+    run $gz $dw_M $total_M $work_dir 0 >$work_dir/$log_file 2>&1
 }
 
 function single_run() {
     # run /nfs-nvme/home/zhouyaoyang/projects/nexus-am/apps/cachetest_i/build/cachetest_i-riscv64-xs.bin
-    top_work_dir=single_top
-    task='GemsFDTD_12966'
-    work_dir=$top_work_dir/$task
+    task=$tag
+    work_dir=$full_work_dir
     mkdir -p $work_dir
 
     # Note: If you are debugging with single run, following 3 variables are mandatory.
     # - It prints debug info in tick range: (crash_tick - 500 * capture_cycles, crash_tick + 500 * capture_cycles)
     # - If you want to print debug info from beginning, set crash_tick to 0, and set capture_cycles to a large number
-    crash_tick=$(( 0 ))
-    capture_cycles=$(( 250000 ))
-    debug_flags=CommitTrace  # If you unset debug_flags, no debug print will be there
 
+    # crash_tick=$(( 0 ))
+    # capture_cycles=$(( 250000 ))
+    # debug_flags=CommitTrace  # If you unset debug_flags, no debug print will be there
+
+    # If you unset debug_flags or crash_tick, no debug print will be there
     # Common used flags for debug/tuning
     # debug_flags=CommitTrace,IEW,Fetch,LSQUnit,Cache,Commit,IQ,LSQ,PageTableWalker,TLB,MSHR
     warmup_inst=$(( 20 * 10**6 ))
     max_inst=$(( 40 * 10**6 ))
-    run /nfs-nvme/home/share/checkpoints_profiles/spec06_rv64gcb_o2_20m/take_cpt/GemsFDTD_1296600000000_0.243608/0/_1296600000000_.gz \
-        $warmup_inst $max_inst $work_dir > $work_dir/$log_file 2>&1
+
+
+    # debug_gz=/nfs-nvme/home/share/checkpoints_profiles/spec06_rv64gcb_o2_20m/take_cpt/mcf_191500000000_0.105600/0/_191500000000_.gz
+    debug_gz=/nfs-nvme/home/share/checkpoints_profiles/spec06_rv64gcb_o2_20m/take_cpt/libquantum_1006500000000_0.149838/0/_1006500000000_.gz
+    rm -f $work_dir/completed
+    rm -f $work_dir/abort
+    run $debug_gz $warmup_inst $max_inst $work_dir 1 > $work_dir/$log_file 2>&1
 }
 
 export -f check
@@ -185,5 +231,5 @@ function parallel_run() {
 }
 
 # Usually, I use paralell run to benchmark, and use single_run to debug
-parallel_run
-# single_run
+# parallel_run
+single_run
