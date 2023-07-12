@@ -23,7 +23,19 @@ which performance better than LTAGE and TAGE-SCL shipped in official version on 
 ### GCC & libboost
 
 - Use GCC > 9.4.0.
-- Install libboost.
+- Install libboost and valgrind
+
+## Clone and build DRAMSim3
+
+Refer to [The readme for DRAMSim3](ext/dramsim3/README) to install DRAMSim3.
+
+Notes:
+- If you have already built GEM5, you should rebuild gem5 after install DRAMSim3
+- If simulating Xiangshan system, use DRAMSim3 with our costumized config
+
+Usage:
+
+`$gem5_home/build/gem5.opt ...fs.py ... --mem-type=DRAMsim3 --dramsim3-ini=$gem5_home/xiangshan_DDR4_8Gb_x8_2400.ini ...`
 
 ## Build GEM5
 
@@ -32,6 +44,30 @@ cd gem5
 scons build/RISCV/gem5.opt --gold-linker
 export gem5_home=`pwd`
 ```
+
+## Run Gem5
+
+See [The example running script](util/warmup_scripts/simple_gem5.sh).
+
+This script runs GEM5 with single thread (`function single_run`) or multiple threads (`function parallel_run`).
+Both `single_run` and `parallel_run` calls `function run`.
+`function run` provides the default parameters for XS-GEM5.
+
+For debugging or performance tuning, we usually call `single_run` and modify parameters for `function run`.
+`run` takes 5 parameters:
+- `debug_gz`: the path to the debug binary (usually checkpoint) of the program to run.
+- `warmup_inst`: the number of instructions to warmup the cache, usually 20M.
+- `max_inst`: the number of instructions to run, usually 40M. The first half is used for warmup, and the second half is used for statistics collection.
+- `work_dir`: the directory to store the output files.
+- the last parameter: whether enable Arch DB. Arch DB is a database to store the micro-architectural trace of the program. It is used for debugging and performance tuning.
+
+More details can be found in comments and code of [the example running script](util/warmup_scripts/simple_gem5.sh).
+
+## Play with Arch DB
+
+Arch DB is a database to store the micro-architectural trace of the program with SQLite.
+You can access it with Python or other languages.
+A Python example is given [here](util/arch_db/mem_trace.py).
 
 ## Produce RVGCpt checkpoints with NEMU
 
@@ -76,22 +112,6 @@ export ref_so=`realpath build/riscv64-nemu-interpreter-so`
 # This is not full command, but a piece of example.
 $gem5_home/build/gem5.opt ... --enable-difftest --difftest-ref-so $ref_so ...
 ```
-
-
-## DRAMSim3
-
-Refer to [The readme for DRAMSim3](ext/dramsim3/README) to install DRAMSim3.
-
-Notes:
-- Must rebuild gem5 after install DRAMSim3
-- Must use DRAMSim3 with our costumized config
-
-`$gem5_home/build/gem5.opt ... --mem-type=DRAMsim3 --dramsim3-ini=$gem5_home/xiangshan_DDR4_8Gb_x8_2400.ini ...`
-
-## Default command to run
-
-see [The example running script](util/warmup_scripts/simple_gem5.sh)
-
 
 # Original README
 
