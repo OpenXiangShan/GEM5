@@ -287,6 +287,11 @@ class Queued : public Base
     size_t getMaxPermittedPrefetches(size_t total) const;
 
     RequestPtr createPrefetchRequest(Addr addr, PrefetchInfo const &pfi, PacketPtr pkt, PrefetchSourceType pf_src);
+
+  public:
+    void rxHint(BaseMMU::Translation *dpp) override {
+        panic("QueuedPrefetcher: rxHint not implemented");
+    }
 };
 
 } // namespace prefetch

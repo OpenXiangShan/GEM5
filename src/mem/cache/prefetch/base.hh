@@ -459,6 +459,16 @@ class Base : public ClockedObject
      * @param tlb pointer to the BaseTLB object to add
      */
     virtual void addTLB(BaseTLB *tlb);
+
+  protected:
+    Base *hintDownStream{nullptr};
+
+  public:
+    void addHintDownStream(Base* down_stream)
+    {
+        hintDownStream = down_stream;
+    }
+    virtual void rxHint(BaseMMU::Translation *dpp) = 0;
 };
 
 } // namespace prefetch

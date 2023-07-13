@@ -64,6 +64,7 @@ class BasePrefetcher(ClockedObject):
     cxx_exports = [
         PyBindMethod("addEventProbe"),
         PyBindMethod("addTLB"),
+        PyBindMethod("addHintDownStream"),
     ]
     sys = Param.System(Parent.any, "System this prefetcher belongs to")
 
@@ -88,6 +89,7 @@ class BasePrefetcher(ClockedObject):
         super().__init__(**kwargs)
         self._events = []
         self._tlbs = []
+        self._downstream_pf = []
 
     def addEvent(self, newObject):
         self._events.append(newObject)
@@ -95,8 +97,14 @@ class BasePrefetcher(ClockedObject):
     # Override the normal SimObject::regProbeListeners method and
     # register deferred event handlers.
     def regProbeListeners(self):
+        print("Registering probe listeners for Prefetcher {}".format(self))
         for tlb in self._tlbs:
             self.getCCObject().addTLB(tlb.getCCObject())
+
+        assert len(self._downstream_pf) <= 1
+        if len(self._downstream_pf):
+            self.getCCObject().addHintDownStream(self._downstream_pf[0].getCCObject())
+
         for event in self._events:
             event.register()
         self.getCCObject().regProbeListeners()
@@ -112,6 +120,11 @@ class BasePrefetcher(ClockedObject):
         if not isinstance(simObj, SimObject):
             raise TypeError("argument must be a SimObject type")
         self._tlbs.append(simObj)
+
+    def add_pf_downstream(self, other_prefetcher):
+        if not isinstance(other_prefetcher, SimObject):
+            raise TypeError("other_prefetcher must be a SimObject type")
+        self._downstream_pf.append(other_prefetcher)
 
 
 class QueuedPrefetcher(BasePrefetcher):

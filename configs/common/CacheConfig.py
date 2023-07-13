@@ -181,6 +181,11 @@ def config_cache(options, system):
                 icache.response_latency = 0
                 dcache.response_latency = 0
 
+            if options.l1_to_l2_pf_hint:
+                assert dcache.prefetcher != NULL and \
+                    system.l2.prefetcher != NULL
+                dcache.prefetcher.add_pf_downstream(system.l2.prefetcher)
+
             # If we have a walker cache specified, instantiate two
             # instances here
             if walk_cache_class:
@@ -247,6 +252,7 @@ def config_cache(options, system):
         else:
             system.cpu[i].connectBus(system.membus)
 
+    print('Finish memory system configuration')
     return system
 
 # ExternalSlave provides a "port", but when that port connects to a cache,
