@@ -190,6 +190,8 @@ class BOP : public Queued
             panic("not implemented");
         };
 
+        using Queued::calculatePrefetch;
+
         void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late);
         
         void tryAddOffset(int64_t offset, bool late = false);

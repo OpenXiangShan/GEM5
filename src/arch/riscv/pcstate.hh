@@ -93,7 +93,7 @@ class PCState : public GenericISA::UPCState<4>
     }
 
     Addr
-    getFallThruPC() const
+    getFallThruPC() const override
     {
         return pc() + (compressed() ? 2 : 4);
     }

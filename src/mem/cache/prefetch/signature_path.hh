@@ -293,6 +293,8 @@ class SignaturePath : public Queued
         panic("Not implemented\n");
     };
 
+    using Queued::calculatePrefetch;
+
     bool calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses,
                            boost::compute::detail::lru_cache<Addr, Addr> &filter, int32_t &best_block_offset);
 
