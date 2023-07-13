@@ -406,6 +406,9 @@ SMSPrefetcher::phtLookup(const Base::PrefetchInfo &pfi, std::vector<AddrPriority
         DPRINTF(SMSPrefetcher, "pht entry pattern:\n");
         for (uint8_t i = 0; i < 2 * (region_blocks - 1); i++) {
             DPRINTFR(SMSPrefetcher, "%.2f ", pht_entry->hist[i].calcSaturation());
+            if (i == region_blocks - 1) {
+                DPRINTFR(SMSPrefetcher, "| ");
+            }
         }
         DPRINTFR(SMSPrefetcher, "\n");
 
