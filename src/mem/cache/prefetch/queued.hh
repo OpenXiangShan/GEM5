@@ -238,7 +238,7 @@ class Queued : public Base
 
     void printQueue(const std::list<DeferredPacket> &queue) const;
 
-  private:
+  protected:
 
     /**
      * Adds a DeferredPacket to the specified queue
@@ -288,10 +288,13 @@ class Queued : public Base
 
     RequestPtr createPrefetchRequest(Addr addr, PrefetchInfo const &pfi, PacketPtr pkt, PrefetchSourceType pf_src);
 
+    unsigned offloadBandwidth{1};
+
   public:
     void rxHint(BaseMMU::Translation *dpp) override {
         panic("QueuedPrefetcher: rxHint not implemented");
     }
+    void offloadToDownStream() override;
 };
 
 } // namespace prefetch

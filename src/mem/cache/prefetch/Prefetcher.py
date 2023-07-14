@@ -208,6 +208,17 @@ class StridePrefetcherHashedSetAssociative(SetAssociative):
     cxx_class = 'gem5::prefetch::StridePrefetcherHashedSetAssociative'
     cxx_header = "mem/cache/prefetch/stride.hh"
 
+class WorkerPrefetcher(QueuedPrefetcher):
+    type = 'WorkerPrefetcher'
+    cxx_class = 'gem5::prefetch::WorkerPrefetcher'
+    cxx_header = "mem/cache/prefetch/worker.hh"
+
+    on_inst = False
+    on_data = True
+    on_miss = False
+
+    prefetch_on_pf_hit = True
+
 class StridePrefetcher(QueuedPrefetcher):
     type = 'StridePrefetcher'
     cxx_class = 'gem5::prefetch::Stride'

@@ -1001,6 +1001,10 @@ BaseCache::getNextQueueEntry()
         }
     }
 
+    if (prefetcher && (!mshrQueue.canPrefetch() || isBlocked()) && prefetcher->hasHintDownStream()) {
+        prefetcher->offloadToDownStream();
+    }
+
     return nullptr;
 }
 

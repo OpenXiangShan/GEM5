@@ -601,5 +601,28 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
         printQueue(queue);
 }
 
+void
+Queued::offloadToDownStream()
+{
+    assert(hintDownStream);
+
+    if (pfq.empty()) {
+        DPRINTF(HWPrefetch, "No hardware prefetches available.\n");
+        return;
+    }
+
+    unsigned offloaded = 0;
+    auto dpp_it = pfq.begin();
+    while (offloaded < offloadBandwidth && dpp_it != pfq.end()) {
+        prefetchStats.pfOffloaded++;
+        assert(dpp_it->pkt != nullptr);
+        DPRINTF(HWPrefetch, "Offload prefetch for %#x.\n", dpp_it->pkt->getAddr());
+        // down stream must copy it instead of store its pointer
+        hintDownStream->rxHint(&(*dpp_it));
+
+        dpp_it = pfq.erase(dpp_it);
+    }
+}
+
 } // namespace prefetch
 } // namespace gem5

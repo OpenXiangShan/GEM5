@@ -349,6 +349,7 @@ class Base : public ClockedObject
         StatGroup(statistics::Group *parent);
         statistics::Scalar demandMshrMisses;
         statistics::Scalar pfIssued;
+        statistics::Scalar pfOffloaded;
         /** The number of times a HW-prefetched block is evicted w/o
          * reference. */
         statistics::Scalar pfUnused;
@@ -469,6 +470,13 @@ class Base : public ClockedObject
         hintDownStream = down_stream;
     }
     virtual void rxHint(BaseMMU::Translation *dpp) = 0;
+
+    bool hasHintDownStream() const
+    {
+        return hintDownStream != nullptr;
+    }
+
+    virtual void offloadToDownStream() { panic("offloadToDownStream() not implemented"); }
 };
 
 } // namespace prefetch
