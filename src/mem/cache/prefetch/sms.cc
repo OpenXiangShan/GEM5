@@ -66,26 +66,56 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
                 pc, vaddr, region_offset, is_active_page, decr);
         if (is_active_page) {
             // active page
-            Addr pf_tgt_addr =
-                decr ? block_addr - 32 * blkSize : block_addr + 32 * blkSize;
+            Addr pf_tgt_addr = decr ? block_addr - act_match_entry->depth * blkSize
+                                    : block_addr + act_match_entry->depth * blkSize;  // depth here?
             Addr pf_tgt_region = regionAddress(pf_tgt_addr);
             Addr pf_tgt_offset = regionOffset(pf_tgt_addr);
-            DPRINTF(SMSPrefetcher, "tgt addr: %x offset: %d\n", pf_tgt_addr,
-                    pf_tgt_offset);
+            DPRINTF(SMSPrefetcher, "tgt addr: %x, offset: %d, current depth: %u\n", pf_tgt_addr, pf_tgt_offset,
+                    act_match_entry->depth);
             if (decr) {
-                for (int i = (int)region_blocks - 1; i >= pf_tgt_offset && i >= 0; i--) {
+                // for (int i = (int)region_blocks - 1; i >= pf_tgt_offset && i >= 0; i--) {
+                for (int i = region_blocks - 1; i >= 0; i--) {
                     Addr cur = pf_tgt_region * region_size + i * blkSize;
                     sendPFWithFilter(cur, addresses, i, PrefetchSourceType::SStream);
                     DPRINTF(SMSPrefetcher, "pf addr: %x [%d]\n", cur, i);
                     fatal_if(i < 0, "i < 0\n");
                 }
             } else {
-                for (int i = std::max(1, ((int) pf_tgt_offset) - 4); i <= pf_tgt_offset; i++) {
+                // for (int i = std::max(1, ((int) pf_tgt_offset) - 4); i <= pf_tgt_offset; i++) {
+                for (int i = 0; i < region_blocks; i++) {
                     Addr cur = pf_tgt_region * region_size + i * blkSize;
                     sendPFWithFilter(cur, addresses, region_blocks - i, PrefetchSourceType::SStream);
                     DPRINTF(SMSPrefetcher, "pf addr: %x [%d]\n", cur, i);
                 }
             }
+        }
+    }
+
+    if (pf_source == PrefetchSourceType::SStream || act_match_entry) {
+        auto it = act.begin();
+        while (it != act.end()) {
+            ACTEntry *it_entry = &(*it);
+            if (late) {
+                it_entry->lateConf += 3;
+                if (it_entry->lateConf.isSaturated()) {
+                    it_entry->depth++;
+                    it_entry->lateConf.reset();
+                }
+            } else if (!pfi.isCacheMiss()) {
+                it_entry->lateConf--;
+                if ((int)it_entry->lateConf == 0) {
+                    it_entry->depth = std::max(1U, (unsigned)it_entry->depth - 1);
+                    it_entry->lateConf.reset();
+                }
+            }
+
+            it++;
+        }
+        it = act.begin();
+        ACTEntry *it_entry = &(*it);
+        if (late || !pfi.isCacheMiss()) {
+            DPRINTF(SMSPrefetcher, "act entry %lx, late or hit, now depth: %d, lateConf: %d\n",
+                    it_entry->getTag(), it_entry->depth, (int)it_entry->lateConf);
         }
     }
 
@@ -176,9 +206,9 @@ SMSPrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page)
         return entry;
     }
 
-    entry = act.findEntry(region_addr - 1, secure);
-    if (entry) {
-        in_active_page = entry->in_active_page();
+    ACTEntry *old_entry = act.findEntry(region_addr - 1, secure);
+    if (old_entry) {
+        in_active_page = old_entry->in_active_page();
         // act miss, but cur_region - 1 = entry_region, => cur_region =
         // entry_region + 1
         entry = act.findVictim(0);
@@ -191,13 +221,17 @@ SMSPrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page)
         entry->region_bits = 1 << region_offset;
         entry->access_cnt = 0;
         entry->region_offset = region_offset;
+        entry->lateConf = old_entry->lateConf;
+        entry->depth = old_entry->depth;
+        DPRINTF(SMSPrefetcher, "act miss, but cur_region - 1 = entry_region, copy depth = %u, lateConf = %i\n",
+                entry->depth, (int) entry->lateConf);
         act.insertEntry(region_addr, secure, entry);
         return entry;
     }
 
-    entry = act.findEntry(region_addr + 1, secure);
-    if (entry) {
-        in_active_page = entry->in_active_page();
+    old_entry = act.findEntry(region_addr + 1, secure);
+    if (old_entry) {
+        in_active_page = old_entry->in_active_page();
         // act miss, but cur_region + 1 = entry_region, => cur_region =
         // entry_region - 1
         entry = act.findVictim(0);
@@ -210,6 +244,10 @@ SMSPrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page)
         entry->region_bits = 1 << region_offset;
         entry->access_cnt = 0;
         entry->region_offset = region_offset;
+        entry->lateConf = old_entry->lateConf;
+        entry->depth = old_entry->depth;
+        DPRINTF(SMSPrefetcher, "act miss, but cur_region + 1 = entry_region, copy depth = %u, lateConf = %i\n",
+                entry->depth, (int) entry->lateConf);
         act.insertEntry(region_addr, secure, entry);
         return entry;
     }

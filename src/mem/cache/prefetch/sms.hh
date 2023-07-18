@@ -50,12 +50,16 @@ class SMSPrefetcher : public Queued
         bool decr_mode;
         uint8_t access_cnt;
         uint64_t region_offset;
+        uint32_t depth;
+        SatCounter8 lateConf;
         ACTEntry(const SatCounter8 &conf)
             : TaggedEntry(),
               region_bits(0),
               decr_mode(false),
               access_cnt(0),
-              region_offset(0)
+              region_offset(0),
+              depth(32),
+              lateConf(4, 7)
         {
         }
         bool in_active_page() {
@@ -67,6 +71,8 @@ class SMSPrefetcher : public Queued
     AssociativeSet<ACTEntry> act;
 
     ACTEntry *actLookup(const PrefetchInfo &pfi, bool &in_active_page);
+
+    const unsigned streamDepthStep{4};  // # block changed in one step
 
     // stride table
     class StrideEntry : public TaggedEntry
