@@ -80,7 +80,7 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
                     fatal_if(i < 0, "i < 0\n");
                 }
             } else {
-                for (uint8_t i = 0; i <= pf_tgt_offset; i++) {
+                for (int i = std::max(1, ((int) pf_tgt_offset) - 4); i <= pf_tgt_offset; i++) {
                     Addr cur = pf_tgt_region * region_size + i * blkSize;
                     sendPFWithFilter(cur, addresses, region_blocks - i, PrefetchSourceType::SStream);
                     DPRINTF(SMSPrefetcher, "pf addr: %x [%d]\n", cur, i);
@@ -271,14 +271,15 @@ SMSPrefetcher::strideLookup(const PrefetchInfo &pfi, std::vector<AddrPriority> &
             DPRINTF(SMSPrefetcher, "Stride unmatch, but access goes to the same line, ignore\n");
 
         } else {
-            if (entry->conf < 2) {
+            entry->conf--;
+            entry->last_addr = lookupAddr;
+            DPRINTF(SMSPrefetcher, "Stride unmatch, dec conf to %d\n", (int) entry->conf);
+            if ((int) entry->conf == 0) {
+                DPRINTF(SMSPrefetcher, "Stride conf = 0, reset stride to %ld\n", new_stride);
                 entry->stride = new_stride;
                 entry->depth = 1;
                 entry->lateConf.reset();
             }
-            entry->conf--;
-            entry->last_addr = lookupAddr;
-            DPRINTF(SMSPrefetcher, "Stride unmatch, dec conf to %d\n", (int) entry->conf);
         }
         if (entry->conf >= 2) {
             // if miss send 1*stride ~ depth*stride, else send depth*stride
@@ -297,9 +298,10 @@ SMSPrefetcher::strideLookup(const PrefetchInfo &pfi, std::vector<AddrPriority> &
     } else {
         DPRINTF(SMSPrefetcher, "Stride miss, insert it\n");
         entry = stride.findVictim(0);
-        DPRINTF(SMSPrefetcher, "Found victim pc = %x, stride = %i\n", entry->pc, entry->stride);
+        DPRINTF(SMSPrefetcher, "Stride found victim pc = %x, stride = %i\n", entry->pc, entry->stride);
         if (entry->conf >= 2 && entry->stride > 1024) { // > 1k
-            DPRINTF(SMSPrefetcher, "Evicting a useful stride, send it to BOP with offset %i\n", entry->stride / 64);
+            DPRINTF(SMSPrefetcher, "Stride Evicting a useful stride, send it to BOP with offset %i\n",
+                    entry->stride / 64);
             bop->tryAddOffset(entry->stride / 64);
         }
         entry->conf.reset();

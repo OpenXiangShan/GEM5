@@ -84,7 +84,7 @@ class SMSPrefetcher : public Queued
               last_addr(0),
               conf(_conf),
               depth(1),
-              lateConf(3, 4),
+              lateConf(4, 7),
               pc(0)
         {}
     };
