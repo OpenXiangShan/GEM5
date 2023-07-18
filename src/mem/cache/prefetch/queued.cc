@@ -622,6 +622,7 @@ Queued::offloadToDownStream()
 
         dpp_it = pfq.erase(dpp_it);
     }
+    DPRINTF(HWPrefetch, "Prefetch requests left in pfq: %lu\n", pfq.size());
 }
 
 } // namespace prefetch

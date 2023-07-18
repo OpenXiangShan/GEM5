@@ -477,6 +477,8 @@ class Base : public ClockedObject
     }
 
     virtual void offloadToDownStream() { panic("offloadToDownStream() not implemented"); }
+
+    virtual bool hasHintsWaiting() { return false; }
 };
 
 } // namespace prefetch

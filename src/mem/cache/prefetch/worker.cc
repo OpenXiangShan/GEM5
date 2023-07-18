@@ -26,9 +26,10 @@ WorkerPrefetcher::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
     unsigned count = 0;
     auto dpp_it = localBuffer.begin();
     while (count < depth && !localBuffer.empty()) {
-        DPRINTF(WorkerPref, "Prefetching %s\n", dpp_it->pkt->print());
+        DPRINTF(WorkerPref, "Add prefetching req %s to queue in worker prefetcher\n", dpp_it->pkt->print());
         addToQueue(pfq, *dpp_it);
         dpp_it = localBuffer.erase(dpp_it);
+        count++;
     }
 }
 

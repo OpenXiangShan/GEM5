@@ -39,6 +39,8 @@ class WorkerPrefetcher: public Queued
 
     void rxHint(BaseMMU::Translation *dpp) override;
 
+    bool hasHintsWaiting() override { return !localBuffer.empty(); }
+
   protected:
     std::list<DeferredPacket> localBuffer;
 

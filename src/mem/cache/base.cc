@@ -912,9 +912,16 @@ BaseCache::cmpAndSwap(CacheBlk *blk, PacketPtr pkt)
     }
 }
 
+bool
+BaseCache::hasHintsWaiting()
+{
+    return prefetcher && prefetcher->hasHintsWaiting();
+}
+
 QueueEntry*
 BaseCache::getNextQueueEntry()
 {
+    DPRINTF(Cache, "Enter getNextQueueEntry\n");
     // Check both MSHR queue and write buffer for potential requests,
     // note that null does not mean there is no request, it could
     // simply be that it is not ready
@@ -996,12 +1003,20 @@ BaseCache::getNextQueueEntry()
                 // that we send the packet straight away, so do not
                 // schedule the send
                 DPRINTF(HWPrefetch, "Allocating MSHR for prefetching addr %#x\n", pf_addr);
-                return allocateMissBuffer(pkt, curTick(), false);
+                auto buf = allocateMissBuffer(pkt, curTick(), false);
+                return buf;
             }
+            // if (prefetcher->hasHintsWaiting() && !memSidePort.hasSchedSendEvent()) {
+            //     DPRINTF(HWPrefetch, "Prefetcher has hints waiting, issuing them next cycle (%llu).\n", nextCycle());
+            //     memSidePort.schedSendEvent(nextCycle());
+            // }
+        } else {
+            DPRINTF(HWPrefetch, "No prefetch packet obtained\n");
         }
     }
 
     if (prefetcher && (!mshrQueue.canPrefetch() || isBlocked()) && prefetcher->hasHintDownStream()) {
+        DPRINTF(HWPrefetch, "Offloading prefetch to downstream cache\n");
         prefetcher->offloadToDownStream();
     }
 
@@ -2795,6 +2810,7 @@ BaseCache::MemSidePort::recvFunctionalSnoop(PacketPtr pkt)
 void
 BaseCache::CacheReqPacketQueue::sendDeferredPacket()
 {
+    DPRINTF(Cache, "Enter sendDeferredPacket()\n");
     // sanity check
     assert(!waitingOnRetry);
 
@@ -2805,6 +2821,8 @@ BaseCache::CacheReqPacketQueue::sendDeferredPacket()
 
     // check for request packets (requests & writebacks)
     QueueEntry* entry = cache.getNextQueueEntry();
+
+    Tick to_schedule = 0;
 
     if (!entry) {
         // can happen if e.g. we attempt a writeback and fail, but
@@ -2817,6 +2835,10 @@ BaseCache::CacheReqPacketQueue::sendDeferredPacket()
             return;
         }
         waitingOnRetry = entry->sendPacket(cache);
+
+        if (!waitingOnRetry && cache.hasHintsWaiting()) {
+            to_schedule = cache.nextCycle();
+        }
     }
 
     // if we succeeded and are not waiting for a retry, schedule the
@@ -2824,7 +2846,8 @@ BaseCache::CacheReqPacketQueue::sendDeferredPacket()
     // snoop responses have their own packet queue and thus schedule
     // their own events
     if (!waitingOnRetry) {
-        schedSendEvent(cache.nextQueueReadyTime());
+        to_schedule = to_schedule ? to_schedule : cache.nextQueueReadyTime();
+        schedSendEvent(to_schedule);
     }
 }
 

@@ -230,6 +230,8 @@ class BaseCache : public ClockedObject
             }
             return false;
         }
+
+        bool hasSchedSendEvent() const { return sendEvent.scheduled(); }
     };
 
 
@@ -263,6 +265,8 @@ class BaseCache : public ClockedObject
 
         MemSidePort(const std::string &_name, BaseCache *_cache,
                     const std::string &_label);
+
+        bool hasSchedSendEvent() const { return _reqQueue.hasSchedSendEvent(); }
     };
 
     /**
@@ -637,6 +641,8 @@ class BaseCache : public ClockedObject
      * for prioritizing among those sources on the fly.
      */
     QueueEntry* getNextQueueEntry();
+
+    bool hasHintsWaiting();
 
     /**
      * Insert writebacks into the write buffer
@@ -1207,8 +1213,9 @@ class BaseCache : public ClockedObject
             setBlocked((BlockedCause)MSHRQueue_MSHRs);
         }
 
-        if (sched_send) {
+        if (sched_send && !memSidePort.hasSchedSendEvent()) {
             // schedule the send
+            DPRINTF(Cache, "Scheduling a send for addr %llx after alloc MSHR\n", pkt->getAddr());
             schedMemSideSendEvent(time);
         }
 
