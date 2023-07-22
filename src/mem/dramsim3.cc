@@ -191,13 +191,24 @@ DRAMsim3::recvTimingReq(PacketPtr pkt)
     // we should not get a new request after committing to retry the
     // current one, but unfortunately the CPU violates this rule, so
     // simply ignore it for now
-    if (retryReq)
+    if (retryReq) {
+        DPRINTF(DRAMsim3, "Ignoring request while waiting for retry\n");
         return false;
+    }
 
     // if we cannot accept we need to send a retry once progress can
     // be made
-    bool can_accept = (nbrOutstanding() < wrapper.queueSize()) &&
-                      wrapper.canAccept(pkt->getAddr(), pkt->isWrite());
+    bool outstanding_full = (nbrOutstanding() >= wrapper.queueSize());
+    // bool can_accept = (nbrOutstanding() < wrapper.queueSize()) &&
+    //                   wrapper.canAccept(pkt->getAddr(), pkt->isWrite());
+    bool wrapper_can_acc = true;
+    if (!outstanding_full) {
+        wrapper_can_acc = wrapper.canAccept(pkt->getAddr(), pkt->isWrite());
+    }
+    bool can_accept = !outstanding_full && wrapper_can_acc;
+
+    DPRINTF(DRAMsim3, "Can accept: %i, outstanding: %u, queue size: %u, wrapper can acc: %i, is write: %i\n",
+            can_accept, nbrOutstanding(), wrapper.queueSize(), wrapper_can_acc, pkt->isWrite());
 
     // keep track of the transaction
     if (pkt->isRead()) {
