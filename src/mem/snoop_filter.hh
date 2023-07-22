@@ -162,7 +162,7 @@ class SnoopFilter : public SimObject
      * @return Pair with a vector of ResponsePorts that need snooping and a
      * lookup latency.
      */
-    std::pair<SnoopList, Cycles> lookupSnoop(const Packet* cpkt);
+    std::pair<SnoopList, Cycles> lookupSnoop(Packet* cpkt);
 
     /**
      * Let the snoop filter see any snoop responses that turn into

@@ -183,7 +183,7 @@ SnoopFilter::finishRequest(bool will_retry, Addr addr, bool is_secure)
 }
 
 std::pair<SnoopFilter::SnoopList, Cycles>
-SnoopFilter::lookupSnoop(const Packet* cpkt)
+SnoopFilter::lookupSnoop(Packet* cpkt)
 {
     DPRINTF(SnoopFilter, "%s: packet %s\n", __func__, cpkt->print());
 
@@ -203,11 +203,17 @@ SnoopFilter::lookupSnoop(const Packet* cpkt)
     // If the snoop filter has no entry, simply return a NULL
     // portlist, there is no point creating an entry only to remove it
     // later
+    // When the caller receives a NULL snoop list, it will send the
+    // original req down the memory hierarchy.
     if (!is_hit)
         return snoopDown(lookupLatency);
 
+    // If pf snoop hits, we always want to keep the hit block in upper level caches and suppress the pf req.
+
     if (is_hit && cpkt->req->isPrefetch()) {
-        DPRINTF(SnoopFilter, "%s: Ignore snoop generated from prefetch on addr %s\n", __func__, cpkt->print());
+        cpkt->setBlockCached();
+        DPRINTF(SnoopFilter, "%s: Suppress snoop from prefetch: %s, and mark it as cached\n", __func__,
+                cpkt->print());
         return snoopDown(lookupLatency);
     }
 
