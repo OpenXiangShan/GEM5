@@ -20,7 +20,8 @@ SMSPrefetcher::SMSPrefetcher(const SMSPrefetcherParams &p)
       pht(p.pht_assoc, p.pht_entries, p.pht_indexing_policy,
           p.pht_replacement_policy,
           PhtEntry(2 * (region_blocks - 1), SatCounter8(2, 0))),
-          pfBlockLRUFilter(pfFilterSize),
+      pfBlockLRUFilter(pfFilterSize),
+      pfPageLRUFilter(pfFilterSize),
       bop(dynamic_cast<BOP *>(p.bop)),
       spp(dynamic_cast<SignaturePath *>(p.spp))
 {
@@ -88,6 +89,7 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
                     DPRINTF(SMSPrefetcher, "pf addr: %x [%d]\n", cur, i);
                 }
             }
+            pfPageLRUFilter.insert(pf_tgt_region, 0);
         }
     }
 
@@ -504,7 +506,10 @@ SMSPrefetcher::calcPeriod(const std::vector<SatCounter8> &bit_vec, bool late)
 bool
 SMSPrefetcher::sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType src)
 {
-    if (pfBlockLRUFilter.contains(addr)) {
+    if (pfPageLRUFilter.contains(regionAddress(addr))) {
+        DPRINTF(SMSPrefetcher, "Skip recently prefetched page: %lx\n", regionAddress(addr));
+        return false;
+    } else if (pfBlockLRUFilter.contains(addr)) {
         DPRINTF(SMSPrefetcher, "Skip recently prefetched: %lx\n", addr);
         return false;
     } else {

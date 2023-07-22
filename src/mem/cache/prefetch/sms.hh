@@ -145,6 +145,9 @@ class SMSPrefetcher : public Queued
   private:
     const unsigned pfFilterSize{128};
     boost::compute::detail::lru_cache<Addr, Addr> pfBlockLRUFilter;
+
+    boost::compute::detail::lru_cache<Addr, Addr> pfPageLRUFilter;
+
     bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType src);
 
     BOP *bop;

@@ -134,7 +134,7 @@ class QueuedPrefetcher(BasePrefetcher):
     cxx_header = "mem/cache/prefetch/queued.hh"
     latency = Param.Int(1, "Latency for generated prefetches")
     queue_size = Param.Int(64, "Maximum number of queued prefetches")
-    max_prefetch_requests_with_pending_translation = Param.Int(32,
+    max_prefetch_requests_with_pending_translation = Param.Int(128,
         "Maximum number of queued prefetches that have a missing translation")
     queue_squash = Param.Bool(True, "Squash queued prefetch on demand access")
     queue_filter = Param.Bool(True, "Don't queue redundant prefetches")
