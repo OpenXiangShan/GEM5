@@ -128,6 +128,8 @@ BaseXBar::calcPacketTiming(PacketPtr pkt, Tick header_delay)
         // deliver the payload of the packet, after the header delay,
         // we take the maximum since the payload delay could already
         // be longer than what this parcitular crossbar enforces.
+        DPRINTF(BaseXBar, "Payload delay: %lu, packet size: %lu, width: %lu, clock period: %lu\n", pkt->payloadDelay,
+                pkt->getSize(), width, clockPeriod());
         pkt->payloadDelay = std::max<Tick>(pkt->payloadDelay,
                                            divCeil(pkt->getSize(), width) *
                                            clockPeriod());

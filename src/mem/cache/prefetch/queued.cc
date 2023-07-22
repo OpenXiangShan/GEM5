@@ -537,11 +537,14 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
 {
     /* Verify prefetch buffer space for request */
     unsigned queue_size;
+    const char *queue_name;
     if (&queue == &pfq) {
         queue_size = queueSize;
+        queue_name = "PFQ";
     } else {
         assert(&queue == &pfqMissingTranslation);
         queue_size = missingTranslationQueueSize;
+        queue_name = "PFTransQ";
     }
     if (queue.size() == queue_size) {
         statsQueued.pfRemovedFull++;
@@ -564,8 +567,8 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
                 /* update pointer */
                 it = prev;
         }
-        DPRINTF(HWPrefetch, "Prefetch queue full, removing lowest priority "
-                            "oldest packet, addr: %#x\n",it->pfInfo.getAddr());
+        DPRINTF(HWPrefetch, "%s full (sz=%lu), removing lowest priority oldest packet, addr: %#x\n", queue_name,
+                queue.size(), it->pfInfo.getAddr());
         if (&queue == &pfq || !it->ongoingTranslation){
             delete it->pkt;
             queue.erase(it);
@@ -622,7 +625,8 @@ Queued::offloadToDownStream()
 
         dpp_it = pfq.erase(dpp_it);
     }
-    DPRINTF(HWPrefetch, "Prefetch requests left in pfq: %lu\n", pfq.size());
+    DPRINTF(HWPrefetch, "Prefetch requests left in pfq: %lu, trans pfq: %lu\n", pfq.size(),
+            pfqMissingTranslation.size());
 }
 
 } // namespace prefetch

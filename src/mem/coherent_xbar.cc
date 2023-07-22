@@ -206,7 +206,7 @@ CoherentXBar::recvTimingReq(PacketPtr pkt, PortID cpu_side_port_id)
             // below is not busy and the cache clean request can be
             // forwarded to it
             if (!memSidePorts[mem_side_port_id]->tryTiming(pkt)) {
-                DPRINTF(CoherentXBar, "%s: src %s packet %s RETRY\n", __func__,
+                DPRINTF(CoherentXBar, "%s: src %s packet %s RETRY (snoop)\n", __func__,
                         src_port->name(), pkt->print());
 
                 // update the layer state and schedule an idle event
@@ -482,6 +482,7 @@ CoherentXBar::recvTimingResp(PacketPtr pkt, PortID mem_side_port_id)
 
     // determine how long to be crossbar layer is busy
     Tick packetFinishTime = clockEdge(headerLatency) + pkt->payloadDelay;
+    DPRINTF(CoherentXBar, "Payload delay: %lu, header delay: %lu\n", pkt->payloadDelay, clockEdge(headerLatency));
 
     if (snoopFilter && !system->bypassCaches()) {
         // let the snoop filter inspect the response and update its state
@@ -498,6 +499,7 @@ CoherentXBar::recvTimingResp(PacketPtr pkt, PortID mem_side_port_id)
     // remove the request from the routing table
     routeTo.erase(route_lookup);
 
+    DPRINTF(CoherentXBar, "%s: will holdin the resp layer until %d\n", __func__, packetFinishTime);
     respLayers[cpu_side_port_id]->succeededTiming(packetFinishTime);
 
     // stats updates

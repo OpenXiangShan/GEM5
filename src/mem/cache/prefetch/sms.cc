@@ -70,8 +70,8 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
                                     : block_addr + act_match_entry->depth * blkSize;  // depth here?
             Addr pf_tgt_region = regionAddress(pf_tgt_addr);
             Addr pf_tgt_offset = regionOffset(pf_tgt_addr);
-            DPRINTF(SMSPrefetcher, "tgt addr: %x, offset: %d, current depth: %u\n", pf_tgt_addr, pf_tgt_offset,
-                    act_match_entry->depth);
+            DPRINTF(SMSPrefetcher, "tgt addr: %x, offset: %d, current depth: %u, page: %lx\n", pf_tgt_addr,
+                    pf_tgt_offset, act_match_entry->depth, pf_tgt_region);
             if (decr) {
                 // for (int i = (int)region_blocks - 1; i >= pf_tgt_offset && i >= 0; i--) {
                 for (int i = region_blocks - 1; i >= 0; i--) {

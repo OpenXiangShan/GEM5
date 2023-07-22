@@ -2815,7 +2815,7 @@ BaseCache::CacheReqPacketQueue::sendDeferredPacket()
     assert(!waitingOnRetry);
 
     // there should never be any deferred request packets in the
-    // queue, instead we resly on the cache to provide the packets
+    // queue, instead we rely on the cache to provide the packets
     // from the MSHR queue or write queue
     assert(deferredPacketReadyTime() == MaxTick);
 
@@ -2834,7 +2834,11 @@ BaseCache::CacheReqPacketQueue::sendDeferredPacket()
         if (checkConflictingSnoop(entry->getTarget()->pkt)) {
             return;
         }
+        DPRINTF(Cache, "Sending pkt %s\n", entry->getTarget()->pkt->print());
+
         waitingOnRetry = entry->sendPacket(cache);
+
+        DPRINTF(Cache, "Need retry: %i\n", waitingOnRetry);
 
         if (!waitingOnRetry && cache.hasHintsWaiting()) {
             to_schedule = cache.nextCycle();
