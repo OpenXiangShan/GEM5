@@ -185,6 +185,13 @@ def config_cache(options, system):
                 assert dcache.prefetcher != NULL and \
                     system.l2.prefetcher != NULL
                 dcache.prefetcher.add_pf_downstream(system.l2.prefetcher)
+                print("Add L2 prefetcher as downstream of L1D prefetcher")
+
+            if options.l3cache and options.l2_to_l3_pf_hint:
+                assert system.l2.prefetcher != NULL and \
+                    system.l3.prefetcher != NULL
+                system.l2.prefetcher.add_pf_downstream(system.l3.prefetcher)
+                print("Add L3 prefetcher as downstream of L2 prefetcher")
 
             # If we have a walker cache specified, instantiate two
             # instances here
