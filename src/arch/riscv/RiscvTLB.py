@@ -50,7 +50,7 @@ class RiscvPagetableWalker(ClockedObject):
     # Grab the pma_checker from the MMU
     pma_checker = Param.PMAChecker(Parent.any, "PMA Checker")
     pmp = Param.PMP(Parent.any, "PMP")
-    #OpenNextline = Param.Bool(False,"open nextline pre")
+   # OpenNextline = Param.Bool(False,"open nextline pre")
     OpenNextline = Param.Bool(True, "open nextline pre")
 
 class RiscvTLB(BaseTLB):
@@ -82,6 +82,8 @@ class RiscvTLB(BaseTLB):
     pma_checker = Param.PMAChecker(Parent.any, "PMA Checker")
     pmp  = Param.PMP(Parent.any, "Physical Memory Protection Unit")
     isOpenNextline = Param.Bool(True, "open auto adjustment nextline")
+    G_pre_size = Param.Int(64,"g_pre size")
+    open_g_pre = Param.Bool(True,"open g_pre")
 
 class RiscvTLBL2(RiscvTLB):
     is_L1tlb = False

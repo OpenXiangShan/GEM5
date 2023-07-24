@@ -113,7 +113,7 @@ struct TlbEntry : public Serializable
     bool is_squashed;
 
     bool used;
-    bool is_pre;
+    bool from_pre_req;
     bool pre_sign;
 
     TlbEntry()
@@ -126,7 +126,7 @@ struct TlbEntry : public Serializable
           index(0),
           is_squashed(false),
           used(false),
-          is_pre(false),
+          from_pre_req(false),
           pre_sign(false)
     {
     }

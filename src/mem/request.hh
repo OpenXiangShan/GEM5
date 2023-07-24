@@ -506,6 +506,7 @@ class Request
 
     /** The virtual address of the request. */
     Addr _vaddr = MaxAddr;
+    Addr _pre_vaddr = MaxAddr;
 
     /**
      * Extra data for the request, such as the return value of
@@ -538,6 +539,7 @@ class Request
     bool misalignedFetch = false;
 
     int reqNum = 1;
+    bool pre_tlb = false;
 
   public:
 
@@ -929,6 +931,18 @@ class Request
     {
         assert(privateFlags.isSet(VALID_VADDR));
         return _vaddr;
+    }
+
+    Addr getPreVaddr() const
+    {
+        //    assert(!pre_tlb);
+        return _pre_vaddr;
+    }
+    bool getPre_tlb() const { return pre_tlb; }
+    void setPreVaddr(Addr pre_vaddr)
+    {
+        _pre_vaddr = pre_vaddr;
+        pre_tlb = true;
     }
 
     /** Accesssor for the requestor id. */

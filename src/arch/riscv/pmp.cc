@@ -236,6 +236,8 @@ PMP::shouldCheckPMP(RiscvISA::PrivilegeMode pmode,
             (pmode != RiscvISA::PrivilegeMode::PRV_M));
 
     // data access in S and U mode when MPRV in mstatus is clear
+    if (tc == nullptr)
+        assert(0);
     RiscvISA::STATUS status =
             tc->readMiscRegNoEffect(RiscvISA::MISCREG_STATUS);
     bool cond2 = (mode != BaseMMU::Execute &&
