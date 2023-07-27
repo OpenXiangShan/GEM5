@@ -182,7 +182,8 @@ def build_test_system(np):
             "Translated INT NOT NULL," \
             "Completed INT NOT NULL," \
             "Committed INT NOT NULL," \
-            "Writenback INT NOT NULL);" \
+            "Writenback INT NOT NULL," \
+            "PFSrc INT NOT NULL);"
             ,
         ]
 

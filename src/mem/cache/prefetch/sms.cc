@@ -23,10 +23,14 @@ SMSPrefetcher::SMSPrefetcher(const SMSPrefetcherParams &p)
       pfBlockLRUFilter(pfFilterSize),
       pfPageLRUFilter(pfFilterSize),
       bop(dynamic_cast<BOP *>(p.bop)),
-      spp(dynamic_cast<SignaturePath *>(p.spp))
+      spp(dynamic_cast<SignaturePath *>(p.spp)),
+      ipcp(dynamic_cast<IPCP *>(p.ipcp))
 {
     assert(bop);
     assert(isPowerOf2(region_size));
+
+    ipcp->rrf = &this->pfBlockLRUFilter;
+
     DPRINTF(SMSPrefetcher, "SMS: region_size: %d region_blocks: %d\n",
             region_size, region_blocks);
 }
@@ -50,6 +54,8 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
     if (!pfi.isCacheMiss()) {
         assert(pf_source != PrefetchSourceType::PF_NONE);
     }
+
+    ipcp->calculatePrefetch(pfi,addresses);
 
     // Addr region_addr = regionAddress(vaddr);
     Addr region_offset = regionOffset(vaddr);
@@ -122,24 +128,25 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
     }
 
     if (pfi.isCacheMiss() || pf_source != PrefetchSourceType::SStream) {
-        bool use_bop = pf_source == PrefetchSourceType::HWP_BOP || pfi.isCacheMiss();
-        if (use_bop) {
-            DPRINTF(SMSPrefetcher, "Do BOP traing/prefetching...\n");
-            size_t old_addr_size = addresses.size();
-            bop->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
-            bool covered_by_bop;
-            if (addresses.size() > old_addr_size) {
-                // BOP hit
-                AddrPriority addr = addresses.back();
-                addresses.pop_back();
-                // Filter
-                sendPFWithFilter(addr.addr, addresses, addr.priority, PrefetchSourceType::HWP_BOP);
-                covered_by_bop = true;
-            }
-        }
+
+        // bool use_bop = pf_source == PrefetchSourceType::HWP_BOP || pfi.isCacheMiss();
+        // if (use_bop) {
+        //     DPRINTF(SMSPrefetcher, "Do BOP traing/prefetching...\n");
+        //     size_t old_addr_size = addresses.size();
+        //     bop->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
+        //     bool covered_by_bop;
+        //     if (addresses.size() > old_addr_size) {
+        //         // BOP hit
+        //         AddrPriority addr = addresses.back();
+        //         addresses.pop_back();
+        //         // Filter
+        //         sendPFWithFilter(addr.addr, addresses, addr.priority, PrefetchSourceType::HWP_BOP);
+        //         covered_by_bop = true;
+        //     }
+        // }
 
         bool use_stride =
-            pf_source == PrefetchSourceType::SStride || pf_source == PrefetchSourceType::HWP_BOP || pfi.isCacheMiss();
+            pf_source == PrefetchSourceType::SStride || pf_source == PrefetchSourceType::IPCP || pfi.isCacheMiss();
         Addr stride_pf_addr = 0;
         bool covered_by_stride = false;
         if (use_stride) {
@@ -148,7 +155,7 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
         }
 
         bool use_pht = pf_source == PrefetchSourceType::SPP || pf_source == PrefetchSourceType::SPht ||
-                       pf_source == PrefetchSourceType::SStride || pfi.isCacheMiss();
+                       use_stride;
         bool trigger_pht = false;
         // stride_pf_addr = 0;
         if (use_pht) {

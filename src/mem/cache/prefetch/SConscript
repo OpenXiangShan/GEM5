@@ -37,7 +37,7 @@ SimObject('Prefetcher.py', sim_objects=[
     'DeltaCorrelatingPredictionTables', 'DCPTPrefetcher',
     'IrregularStreamBufferPrefetcher', 'SlimAMPMPrefetcher',
     'WorkerPrefetcher',
-    'BOPPrefetcher', 'SBOOEPrefetcher', 'STeMSPrefetcher', 'PIFPrefetcher'])
+    'BOPPrefetcher', 'SBOOEPrefetcher', 'STeMSPrefetcher', 'PIFPrefetcher', 'IPCPrefetcher'])
 
 
 DebugFlag('BOPPrefetcher')
@@ -45,6 +45,7 @@ DebugFlag('SMSPrefetcher')
 DebugFlag('BertiPrefetcher')
 DebugFlag('SPP')
 DebugFlag('WorkerPref')
+DebugFlag('IPCP')
 
 Source('access_map_pattern_matching.cc')
 Source('base.cc')
@@ -56,6 +57,7 @@ Source('indirect_memory.cc')
 Source('pif.cc')
 Source('queued.cc')
 Source('sms.cc')
+Source('ipcp.cc')
 Source('berti.cc')
 Source('sbooe.cc')
 Source('signature_path.cc')

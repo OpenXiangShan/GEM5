@@ -55,7 +55,7 @@ class ArchDBer : public SimObject
     void L1EvictTraceWrite(uint64_t paddr, uint64_t stamp, const char *site);
 
     void memTraceWrite(Tick tick, bool is_load, Addr pc, Addr vaddr, Addr paddr, uint64_t issued, uint64_t translated,
-                       uint64_t completed, uint64_t committed, uint64_t writenback);
+                       uint64_t completed, uint64_t committed, uint64_t writenback, int pf_src);
 
     char memTraceSQLBuf[1024];
 };

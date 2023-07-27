@@ -367,6 +367,8 @@ class Base : public ClockedObject
         statistics::Scalar pfUnused;
         /** The number of times a HW-prefetch is useful. */
         statistics::Scalar pfUseful;
+
+        statistics::Vector pfUseful_srcs;
         /** The number of times there is a hit on prefetch but cache block
          * is not in an usable state */
         statistics::Scalar pfUsefulButMiss;

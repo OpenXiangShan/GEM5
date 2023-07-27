@@ -13,6 +13,7 @@
 #include "base/types.hh"
 #include "mem/cache/prefetch/associative_set.hh"
 #include "mem/cache/prefetch/bop.hh"
+#include "mem/cache/prefetch/ipcp.hh"
 #include "mem/cache/prefetch/queued.hh"
 #include "mem/cache/prefetch/signature_path.hh"
 #include "mem/cache/prefetch/stride.hh"
@@ -153,6 +154,8 @@ class SMSPrefetcher : public Queued
     BOP *bop;
 
     SignaturePath  *spp;
+
+    IPCP *ipcp;
 };
 
 }

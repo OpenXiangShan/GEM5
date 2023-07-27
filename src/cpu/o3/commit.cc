@@ -1805,7 +1805,7 @@ Commit::dumpTicks(const DynInstPtr &inst)
 {
     assert(archDBer);
     archDBer->memTraceWrite(curTick(), inst->isLoad(), inst->pcState().instAddr(), inst->effAddr, inst->physEffAddr,
-                            inst->firstIssue, inst->translatedTick, inst->completionTick, curTick(), 0);
+                            inst->firstIssue, inst->translatedTick, inst->completionTick, curTick(), 0, inst->pf_source);
 }
 
 } // namespace o3

@@ -147,6 +147,8 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
              "number of HardPF blocks evicted w/o reference"),
     ADD_STAT(pfUseful, statistics::units::Count::get(),
         "number of useful prefetch"),
+    ADD_STAT(pfUseful_srcs, statistics::units::Count::get(),
+        "number of useful prefetch"),
     ADD_STAT(pfUsefulButMiss, statistics::units::Count::get(),
         "number of hit on prefetch but cache block is not in an usable "
         "state"),
@@ -166,6 +168,9 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
     using namespace statistics;
 
     pfUnused.flags(nozero);
+    pfUseful_srcs
+        .init(NUM_PF_SOURCES)
+        .flags(total);
 
     accuracy.flags(total);
     accuracy = pfUseful / pfIssued;
@@ -280,6 +285,7 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
     if (hasBeenPrefetched(pkt->getAddr(), pkt->isSecure())) {
         usefulPrefetches += 1;
         prefetchStats.pfUseful++;
+        prefetchStats.pfUseful_srcs[cache->getHitBlkXsMetadata(pkt).prefetchSource]++;
         if (miss)
             // This case happens when a demand hits on a prefetched line
             // that's not in the requested coherency state.

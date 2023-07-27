@@ -611,6 +611,18 @@ class PIFPrefetcher(QueuedPrefetcher):
             raise TypeError("argument must be of SimObject type")
         self.addEvent(HWPProbeEventRetiredInsts(self, simObj,"RetiredInstsPC"))
 
+
+class IPCPrefetcher(QueuedPrefetcher):
+    type = 'IPCPrefetcher'
+    cxx_class = 'gem5::prefetch::IPCP'
+    cxx_header = 'mem/cache/prefetch/ipcp.hh'
+
+    use_rrf = Param.Bool(True,"")
+    degree = Param.Int(4, "Number of prefetches to generate")
+    ipt_size = Param.Int(64, "Size of IP Table")
+    cspt_size = Param.Int(256, "Szie of CSP Table")
+
+
 class SMSPrefetcher(QueuedPrefetcher):
     type = "SMSPrefetcher"
     cxx_class = 'gem5::prefetch::SMSPrefetcher'
@@ -700,6 +712,7 @@ class SMSPrefetcher(QueuedPrefetcher):
     )
     bop = Param.BasePrefetcher(BOPPrefetcher(), "BOP used in SMS")
     spp = Param.BasePrefetcher(SignaturePathPrefetcher(), "SPP used in SMS")
+    ipcp = Param.IPCPrefetcher(IPCPrefetcher(use_rrf = False), "")
 
 class MultiPrefetcher(BasePrefetcher):
     type = 'MultiPrefetcher'

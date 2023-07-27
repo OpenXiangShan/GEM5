@@ -520,6 +520,7 @@ BaseCache::recvTimingReq(PacketPtr pkt)
         if (prefetcher && blk && blk->wasPrefetched()) {
             DPRINTF(Cache, "Hit on prefetch for addr %#x (%s)\n",
                     pkt->getAddr(), pkt->isSecure() ? "s" : "ns");
+            pkt->req->pfSource = blk->getXsMetadata().prefetchSource;
             blk->clearPrefetched();
         }
 
