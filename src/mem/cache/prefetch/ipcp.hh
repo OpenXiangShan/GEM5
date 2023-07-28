@@ -32,7 +32,7 @@ class IPCP : public Queued
     int lipt_size;
     int cspt_size;
     int rst_size = 0;
-    int stride_mask = (1<<7) - 1;
+    int stride_mask = (1<<8) - 1;
     int tag_width = 7;
 
 
@@ -56,12 +56,10 @@ class IPCP : public Queued
         Addr last_addr;
         uint8_t cs_stride; // 7 bits
         uint8_t cs_confidence; // 2 bits (used for cs class)
-        bool stream_valid;
-        bool direction;
         uint16_t signature;
         void cs_incConf() {cs_confidence = cs_confidence == 3 ? 3 : cs_confidence + 1;}
         void cs_decConf() {cs_confidence = cs_confidence == 0 ? 0 : cs_confidence - 1;}
-        void sign(Addr stride, int cspt_size) {signature = ((signature << 1) ^ stride) & (cspt_size - 1);}
+        void sign(Addr stride, int cspt_size) {signature = ((signature << 2) ^ stride) & (cspt_size - 1);}
     };
 
     class CSPEntry
@@ -73,27 +71,10 @@ class IPCP : public Queued
         void incConf() {confidence = confidence == 3 ? 3 : confidence + 1;}
         void decConf() {confidence = confidence == 0 ? 0 : confidence - 1;}
     };
-    class RSEntry
-    {
-      public:
-        uint8_t region_id;
-        Addr last_addr;
-        uint32_t bit_vector;
-        uint16_t counter;
-        bool dense;
-        bool trained;
-        bool tentative;
-        bool direction;
-
-    };
 
     Addr last_addr;
     std::vector<IPEntry> ipt;
     std::vector<CSPEntry> cspt;
-    std::vector<RSEntry> rst;
-
-
-
 
     struct StatGroup : public statistics::Group
     {
@@ -103,11 +84,13 @@ class IPCP : public Queued
         statistics::Scalar class_cplx;
         statistics::Scalar class_nl;
         statistics::Scalar cplx_issued;
-        statistics::Scalar cplx_filtered;
+        statistics::Scalar pf_filtered;
     } ipcpStats;
 
-    IPEntry trained_ip;
-    CSPEntry trained_csp;
+    IPEntry* saved_ip;
+    Classifier saved_type;
+    int saved_stride;
+    Addr saved_pfAddr;
 
   public:
 
@@ -126,11 +109,11 @@ class IPCP : public Queued
     void calculatePrefetch(const PrefetchInfo &pfi,
                            std::vector<AddrPriority> &addresses) override;
 
+    void doLookup(const PrefetchInfo &pfi);
 
-    // void traing(const PrefetchInfo &pfi);
+    void doPrefetch(std::vector<AddrPriority> &addresses);
 
-    // void calculatePrefetch_forSMS(const PrefetchInfo &pfi,
-    //                        std::vector<AddrPriority> &addresses);
+    void dotraining();
 
 };
 

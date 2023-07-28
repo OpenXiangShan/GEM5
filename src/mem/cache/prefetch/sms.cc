@@ -55,7 +55,7 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
         assert(pf_source != PrefetchSourceType::PF_NONE);
     }
 
-    ipcp->calculatePrefetch(pfi,addresses);
+
 
     // Addr region_addr = regionAddress(vaddr);
     Addr region_offset = regionOffset(vaddr);
@@ -126,8 +126,16 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
                     it_entry->getTag(), it_entry->depth, (int)it_entry->lateConf);
         }
     }
+    // ipcp->calculatePrefetch(pfi,addresses);
+    ipcp->doLookup(pfi);
+    ipcp->doPrefetch(addresses);
+    ipcp->dotraining();
 
     if (pfi.isCacheMiss() || pf_source != PrefetchSourceType::SStream) {
+        bool use_ipcp = pf_source == PrefetchSourceType::IPCP || pfi.isCacheMiss();
+        if (use_ipcp) {
+
+        }
 
         // bool use_bop = pf_source == PrefetchSourceType::HWP_BOP || pfi.isCacheMiss();
         // if (use_bop) {
@@ -146,7 +154,7 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
         // }
 
         bool use_stride =
-            pf_source == PrefetchSourceType::SStride || pf_source == PrefetchSourceType::IPCP || pfi.isCacheMiss();
+            pf_source == PrefetchSourceType::SStride || pf_source == PrefetchSourceType::HWP_BOP || pf_source == PrefetchSourceType::IPCP || pfi.isCacheMiss();
         Addr stride_pf_addr = 0;
         bool covered_by_stride = false;
         if (use_stride) {
@@ -164,6 +172,7 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
         }
 
         bool use_spp = true;
+
         if (use_spp) {
             int32_t spp_best_offset = 0;
             bool coverd_by_spp = spp->calculatePrefetch(pfi, addresses, pfBlockLRUFilter, spp_best_offset);
