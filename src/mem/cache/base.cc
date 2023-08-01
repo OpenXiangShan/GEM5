@@ -116,7 +116,8 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       archDBer(p.arch_db),
       system(p.system),
       stats(*this),
-      cacheLevel(p.cache_level)
+      cacheLevel(p.cache_level),
+      forceHit(p.force_hit)
 {
     // the MSHR queue has no reserve entries as we check the MSHR
     // queue on every single allocation, whereas the write queue has
@@ -307,14 +308,19 @@ BaseCache::handleTimingReqHit(PacketPtr pkt, CacheBlk *blk, Tick request_time)
         }
     }
 
-    if (pkt->needsResponse()) {
+    if (pkt->needsResponse() || pkt->isResponse()) {
         // These delays should have been consumed by now
-        assert(pkt->headerDelay == 0);
-        assert(pkt->payloadDelay == 0);
+        if (pkt->needsResponse()) {
+            assert(pkt->headerDelay == 0);
+            assert(pkt->payloadDelay == 0);
 
-        pkt->makeTimingResponse();
-        DPRINTF(Cache, "Making timing response for %s, schedule it at %llu\n",
-                pkt->print(), request_time);
+            pkt->makeTimingResponse();
+        } else {
+            // It is a force hit
+            assert(pkt->isResponse());
+        }
+        DPRINTF(Cache, "Making timing response for %s, schedule it at %llu, is force hit: %i\n",
+                pkt->print(), request_time, pkt->isResponse());
 
         // In this case we are considering request_time that takes
         // into account the delay of the xbar, if any, and just
@@ -478,6 +484,24 @@ BaseCache::recvTimingReq(PacketPtr pkt)
         // happening below
         doWritebacks(writebacks, clockEdge(lat + forwardLatency));
     }
+
+    if (!satisfied && forceHit && !pkt->req->isInstFetch() && pkt->isRead() && pkt->req->hasPC() &&
+        forceHitPCs.count(pkt->req->getPC())) {
+        bool mshr_hit = mshrQueue.findMatch(pkt->getAddr(), pkt->isSecure()) != nullptr;
+        bool wb_hit = writeBuffer.findMatch(pkt->getBlockAddr(blkSize), pkt->isSecure()) != nullptr;
+
+        if (!(mshr_hit || wb_hit)) {
+            DPRINTF(Cache, "%s: generate functional access for PC %#lx\n", __func__, pkt->req->getPC());
+            DPRINTF(Cache, "need writable: %d, need resp: %d\n", pkt->needsWritable(), pkt->needsResponse());
+
+            memSidePort.sendFunctional(pkt);
+            satisfied = true;
+        } else {
+            DPRINTF(Cache, "%s: mshr/wb_buffer hit for force hit PC %#lx, forced to miss\n", __func__,
+                    pkt->req->getPC());
+        }
+    }
+
 
     // Here we charge the headerDelay that takes into account the latencies
     // of the bus, if the packet comes from it.
@@ -1567,8 +1591,8 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
     } else if (blk && (pkt->needsWritable() ?
             blk->isSet(CacheBlk::WritableBit) :
             blk->isSet(CacheBlk::ReadableBit))) {
-        DPRINTF(Cache, "need writable: %d, is writable: %d\n",
-                pkt->needsWritable(), blk->isSet(CacheBlk::WritableBit));
+        DPRINTF(Cache, "need writable: %d, is writable: %d, need resp: %d\n",
+                pkt->needsWritable(), blk->isSet(CacheBlk::WritableBit), pkt->needsResponse());
         // OK to satisfy access
         incHitCount(pkt);
         incSquashedDemandHitCount(pkt, blk);
@@ -1593,6 +1617,16 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         }
 
         return true;
+    } else if (forceHit && !pkt->req->isInstFetch() && pkt->req->hasPC() &&
+               forceHitPCs.count(pkt->req->getPC())) {
+        bool mshr_hit = mshrQueue.findMatch(pkt->getAddr(), pkt->isSecure()) != nullptr;
+
+        if (!mshr_hit) {
+            DPRINTF(Cache, "Force hit, return\n");
+            return false;
+        } else {
+            DPRINTF(Cache, "%s: mshr hit for force hit PC %#lx, forced to miss\n", __func__, pkt->req->getPC());
+        }
     }
 
     if (blk && (pkt->needsWritable() && !blk->isSet(CacheBlk::WritableBit))) {

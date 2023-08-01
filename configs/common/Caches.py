@@ -80,6 +80,8 @@ class L1_DCache(L1Cache):
     # This is communication latency between l1 & l2
     response_latency = 4
 
+    # force_hit = True
+
 class L2Cache(Cache):
     mshrs = 64
     tgts_per_mshr = 20

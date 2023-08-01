@@ -156,6 +156,8 @@ class BaseCache(ClockedObject):
 
     cache_level = Param.Unsigned(0, "Cache level (L1 is 1, L2 is 2, etc.)")
 
+    force_hit = Param.Bool(False, "Force some PC to hit in L1")
+
 class Cache(BaseCache):
     type = 'Cache'
     cxx_header = 'mem/cache/cache.hh'

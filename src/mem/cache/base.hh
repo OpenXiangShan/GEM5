@@ -1450,6 +1450,11 @@ class BaseCache : public ClockedObject
     const bool dumpMissPC{false};
 
     std::unordered_map<Addr, uint64_t> pcMissCount;
+
+    // std::set<Addr> forceHitPCs{0x11474, 0x11470, 0x11472, 0x119fa, 0x119fe, 0x119ea};
+    std::set<Addr> forceHitPCs{};
+
+    const bool forceHit;
 };
 
 /**
