@@ -307,7 +307,8 @@ SMSPrefetcher::strideLookup(const PrefetchInfo &pfi, std::vector<AddrPriority> &
                     (int)entry->conf, late, (uint8_t)entry->lateConf, entry->depth);
             entry->last_addr = lookupAddr;
 
-        } else if (entry->stride > 64 && new_stride < 64) {  // different stride, but in the same cache line
+        } else if (labs(entry->stride) > 64L && labs(new_stride) < 64L) {
+            // different stride, but in the same cache line
             DPRINTF(SMSPrefetcher, "Stride unmatch, but access goes to the same line, ignore\n");
 
         } else {
