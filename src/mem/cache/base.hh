@@ -1360,10 +1360,6 @@ class BaseCache : public ClockedObject
             } else {
                 it->second++;
             }
-
-            if (pc == 0x2f59a) {
-                DPRINTF(CacheTrace, "PC %#x access %#x not fulfilled\n", pc, pkt->getBlockAddr(blkSize));
-            }
         }
     }
     void incHitCount(PacketPtr pkt)
@@ -1373,9 +1369,6 @@ class BaseCache : public ClockedObject
 
         if (cacheLevel == 1 && !pkt->req->isInstFetch() && pkt->req->hasPC()) {
             Addr pc = pkt->req->getPC();
-            if (pc == 0x2f59a) {
-                DPRINTF(CacheTrace, "PC %#x access %#x hit\n", pc, pkt->getBlockAddr(blkSize));
-            }
         }
     }
 
