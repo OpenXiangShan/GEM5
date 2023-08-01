@@ -267,6 +267,11 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
     // operations or for writes that we are coaslescing.
     if (pkt->cmd.isSWPrefetch()) return;
     if (pkt->req->isCacheMaintenance()) return;
+
+    if (pkt->req->isFirstReqAfterSquash()) {
+        squashMark = true;
+    }
+
     if (pkt->isWrite() && cache != nullptr && cache->coalesce()) return;
     if (!pkt->req->hasPaddr()) {
         panic("Request must have a physical address");
@@ -291,9 +296,13 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
         }
         if (useVirtualAddresses && pkt->req->hasVaddr()) {
             PrefetchInfo pfi(pkt, pkt->req->getVaddr(), miss, Request::XsMetadata(pf_source));
+            pfi.setReqAfterSquash(squashMark);
+            squashMark = false;
             notify(pkt, pfi);
         } else if (!useVirtualAddresses) {
             PrefetchInfo pfi(pkt, pkt->req->getPaddr(), miss, Request::XsMetadata(pf_source));
+            pfi.setReqAfterSquash(squashMark);
+            squashMark = false;
             notify(pkt, pfi);
         }
     }

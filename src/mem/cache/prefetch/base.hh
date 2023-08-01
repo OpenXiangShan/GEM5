@@ -119,6 +119,8 @@ class Base : public ClockedObject
         /** XiangShan metadata of the block*/
         Request::XsMetadata xsMetadata;
 
+        bool reqAfterSquash{false};
+
       public:
         /**
          * Obtains the address value of this Prefetcher address.
@@ -246,6 +248,16 @@ class Base : public ClockedObject
         void setXsMetadata(const Request::XsMetadata &xs_metadata)
         {
             this->xsMetadata = xs_metadata;
+        }
+
+        bool isReqAfterSquash() const
+        {
+            return reqAfterSquash;
+        }
+
+        void setReqAfterSquash(bool req_after_squash)
+        {
+            reqAfterSquash = req_after_squash;
         }
 
         /**
@@ -463,6 +475,8 @@ class Base : public ClockedObject
 
   protected:
     Base *hintDownStream{nullptr};
+
+    bool squashMark{false};
 
   public:
     void addHintDownStream(Base* down_stream)

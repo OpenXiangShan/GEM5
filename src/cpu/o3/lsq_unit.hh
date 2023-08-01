@@ -543,6 +543,8 @@ class LSQUnit
         statistics::Distribution loadTranslationLat;
     } stats;
 
+    bool squashMark{false};
+
   public:
     /** Executes the load at the given index. */
     Fault read(LSQRequest *request, ssize_t load_idx);

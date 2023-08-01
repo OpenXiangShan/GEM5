@@ -955,6 +955,8 @@ LSQUnit::squash(const InstSeqNum &squashed_num)
             "(Loads:%i Stores:%i)\n", squashed_num, loadQueue.size(),
             storeQueue.size());
 
+    squashMark = true;
+
     while (loadQueue.size() != 0 &&
             loadQueue.back().instruction()->seqNum > squashed_num) {
         DPRINTF(LSQUnit,"Load Instruction PC %s squashed, "
@@ -1396,6 +1398,11 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
             load_idx - 1, load_inst->sqIt._idx, storeQueue.head() - 1,
             request->mainReq()->getPaddr(), request->isSplit() ? " split" :
             "");
+
+    if (squashMark) {
+        request->mainReq()->setFirstReqAfterSquash();
+        squashMark = false;
+    }
 
     if (request->mainReq()->isLLSC()) {
         // Disable recording the result temporarily.  Writing to misc

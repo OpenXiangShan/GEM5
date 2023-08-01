@@ -1201,12 +1201,19 @@ class Request
     /** @} */
 
 
+  protected:
     int pfSource{PrefetchSourceType::PF_NONE};
 
+    bool firstReqAfterSquash{false};
+
+  public:
     void setPFSource(PrefetchSourceType pf_source) { pfSource = pf_source; }
     PrefetchSourceType getPFSource() const { return static_cast<PrefetchSourceType>(pfSource); }
 
     bool isFromBOP() const { return pfSource == PrefetchSourceType::HWP_BOP; }
+
+    bool isFirstReqAfterSquash() { return firstReqAfterSquash; }
+    void setFirstReqAfterSquash() { firstReqAfterSquash = true; }
 };
 
 } // namespace gem5
