@@ -26,40 +26,45 @@ namespace prefetch{
 
 class IPCP : public Queued
 {
-
+  public:
+    enum Classifier
+    {
+      NO_PREFETCH,
+      CLASS_CS,
+      CLASS_CPLX
+    };
+  private:
     int degree;
+    int cs_degree=0;
+    int cs_thre = 1;
+    int cplx_thre = 0;
+    int signature_width = 8;
+    int signature_shift = 2;
+
     int ipt_size;
     int lipt_size;
     int cspt_size;
     int rst_size = 0;
     int stride_mask = (1<<8) - 1;
-    int tag_width = 7;
+    int tag_width = 10;
 
 
     uint16_t getIndex(Addr pc);
     uint16_t getTag(Addr pc);
 
-    enum Classifier
-    {
-      NO_PREFETCH,
-      CLASS_GS,
-      CLASS_CS,
-      CLASS_CPLX,
-      CLASS_NL
-    };
+
 
     class IPEntry
     {
       public:
-        uint16_t tag; // 9 bits
-        bool hysteresis; // 1 bit
+        uint32_t tag;
+        bool hysteresis;
         Addr last_addr;
-        uint8_t cs_stride; // 7 bits
-        uint8_t cs_confidence; // 2 bits (used for cs class)
-        uint16_t signature;
+        uint8_t cs_stride;
+        uint8_t cs_confidence;
+        uint32_t signature;
         void cs_incConf() {cs_confidence = cs_confidence == 3 ? 3 : cs_confidence + 1;}
         void cs_decConf() {cs_confidence = cs_confidence == 0 ? 0 : cs_confidence - 1;}
-        void sign(Addr stride, int cspt_size) {signature = ((signature << 2) ^ stride) & (cspt_size - 1);}
     };
 
     class CSPEntry
@@ -67,32 +72,34 @@ class IPCP : public Queued
       public:
         int stride; // 7 bits
         uint8_t confidence; // 2bits
-
+        bool abort;
         void incConf() {confidence = confidence == 3 ? 3 : confidence + 1;}
         void decConf() {confidence = confidence == 0 ? 0 : confidence - 1;}
     };
-
-    Addr last_addr;
     std::vector<IPEntry> ipt;
     std::vector<CSPEntry> cspt;
 
     struct StatGroup : public statistics::Group
     {
         StatGroup(statistics::Group *parent);
-        statistics::Scalar class_none;
         statistics::Scalar class_cs;
         statistics::Scalar class_cplx;
-        statistics::Scalar class_nl;
         statistics::Scalar cplx_issued;
         statistics::Scalar pf_filtered;
     } ipcpStats;
 
     IPEntry* saved_ip;
-    Classifier saved_type;
-    int saved_stride;
     Addr saved_pfAddr;
 
+    void sign(uint32_t &signature, int stride) {signature = ((signature << signature_shift) ^ stride) & (cspt_size - 1);}
+    //IPCP lookup pc: 47fda
+    uint32_t compressSignature(uint32_t signature)
+    {
+        return signature;
+    }
   public:
+    Classifier saved_type;
+    int saved_stride;
 
     // prefetch filter (32RR filter)
     boost::compute::detail::lru_cache<Addr, Addr> *rrf = nullptr;
@@ -104,16 +111,14 @@ class IPCP : public Queued
     // lookup ip table and return the best ip-class
     IPEntry* ipLookup(Addr pc, Addr pf_addr, Classifier &type, int &new_stride);
 
-    bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio);
+    bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType pfSource);
 
     void calculatePrefetch(const PrefetchInfo &pfi,
                            std::vector<AddrPriority> &addresses) override;
 
-    void doLookup(const PrefetchInfo &pfi);
+    void doLookup(const PrefetchInfo &pfi, PrefetchSourceType pf_source);
 
     void doPrefetch(std::vector<AddrPriority> &addresses);
-
-    void dotraining();
 
 };
 

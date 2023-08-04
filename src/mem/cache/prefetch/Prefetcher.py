@@ -619,7 +619,7 @@ class IPCPrefetcher(QueuedPrefetcher):
 
     use_rrf = Param.Bool(True,"")
     degree = Param.Int(4, "Number of prefetches to generate")
-    ipt_size = Param.Int(128, "Size of IP Table")
+    ipt_size = Param.Int(64, "Size of IP Table")
     cspt_size = Param.Int(256, "Szie of CSP Table")
 
 

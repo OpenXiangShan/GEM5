@@ -1828,7 +1828,7 @@ BaseCache::invalidateBlock(CacheBlk *blk)
 {
     // If block is still marked as prefetched, then it hasn't been used
     if (blk->wasPrefetched()) {
-        prefetcher->prefetchUnused();
+        prefetcher->prefetchUnused(blk->getXsMetadata().prefetchSource);
     }
 
     // Notify that the data contents for this address are no longer present

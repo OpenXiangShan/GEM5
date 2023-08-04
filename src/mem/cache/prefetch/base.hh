@@ -361,10 +361,14 @@ class Base : public ClockedObject
         StatGroup(statistics::Group *parent);
         statistics::Scalar demandMshrMisses;
         statistics::Scalar pfIssued;
+
         statistics::Scalar pfOffloaded;
+        statistics::Vector pfIssued_srcs;
+
         /** The number of times a HW-prefetched block is evicted w/o
          * reference. */
         statistics::Scalar pfUnused;
+        statistics::Vector pfUnused_srcs;
         /** The number of times a HW-prefetch is useful. */
         statistics::Scalar pfUseful;
 
@@ -419,9 +423,10 @@ class Base : public ClockedObject
     virtual Tick nextPrefetchReadyTime() const = 0;
 
     void
-    prefetchUnused()
+    prefetchUnused(PrefetchSourceType pfSource)
     {
         prefetchStats.pfUnused++;
+        prefetchStats.pfUnused_srcs[pfSource]++;
     }
 
     void

@@ -126,35 +126,31 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
                     it_entry->getTag(), it_entry->depth, (int)it_entry->lateConf);
         }
     }
+
     // ipcp->calculatePrefetch(pfi,addresses);
-    ipcp->doLookup(pfi);
+    ipcp->doLookup(pfi, pf_source);
     ipcp->doPrefetch(addresses);
-    ipcp->dotraining();
 
     if (pfi.isCacheMiss() || pf_source != PrefetchSourceType::SStream) {
-        bool use_ipcp = pf_source == PrefetchSourceType::IPCP || pfi.isCacheMiss();
-        if (use_ipcp) {
 
+        bool use_bop = pf_source == PrefetchSourceType::HWP_BOP || pfi.isCacheMiss();
+        if (use_bop) {
+            DPRINTF(SMSPrefetcher, "Do BOP traing/prefetching...\n");
+            size_t old_addr_size = addresses.size();
+            bop->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
+            bool covered_by_bop;
+            if (addresses.size() > old_addr_size) {
+                // BOP hit
+                AddrPriority addr = addresses.back();
+                addresses.pop_back();
+                // Filter
+                sendPFWithFilter(addr.addr, addresses, addr.priority, PrefetchSourceType::HWP_BOP);
+                covered_by_bop = true;
+            }
         }
 
-        // bool use_bop = pf_source == PrefetchSourceType::HWP_BOP || pfi.isCacheMiss();
-        // if (use_bop) {
-        //     DPRINTF(SMSPrefetcher, "Do BOP traing/prefetching...\n");
-        //     size_t old_addr_size = addresses.size();
-        //     bop->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
-        //     bool covered_by_bop;
-        //     if (addresses.size() > old_addr_size) {
-        //         // BOP hit
-        //         AddrPriority addr = addresses.back();
-        //         addresses.pop_back();
-        //         // Filter
-        //         sendPFWithFilter(addr.addr, addresses, addr.priority, PrefetchSourceType::HWP_BOP);
-        //         covered_by_bop = true;
-        //     }
-        // }
-
         bool use_stride =
-            pf_source == PrefetchSourceType::SStride || pf_source == PrefetchSourceType::HWP_BOP || pf_source == PrefetchSourceType::IPCP || pfi.isCacheMiss();
+            pf_source == PrefetchSourceType::SStride || pf_source == PrefetchSourceType::HWP_BOP || pfi.isCacheMiss();
         Addr stride_pf_addr = 0;
         bool covered_by_stride = false;
         if (use_stride) {
@@ -163,12 +159,12 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
         }
 
         bool use_pht = pf_source == PrefetchSourceType::SPP || pf_source == PrefetchSourceType::SPht ||
-                       use_stride;
+                       pf_source == PrefetchSourceType::SStride || pfi.isCacheMiss();
         bool trigger_pht = false;
         // stride_pf_addr = 0;
         if (use_pht) {
             DPRINTF(SMSPrefetcher, "Do PHT lookup...\n");
-            bool trigger_pht = phtLookup(pfi, addresses, late && pf_source == PrefetchSourceType::SPht, stride_pf_addr);
+            trigger_pht = phtLookup(pfi, addresses, late && pf_source == PrefetchSourceType::SPht, stride_pf_addr);
         }
 
         bool use_spp = true;

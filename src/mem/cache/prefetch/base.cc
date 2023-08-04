@@ -143,7 +143,11 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
         "demands not covered by prefetchs"),
     ADD_STAT(pfIssued, statistics::units::Count::get(),
         "number of hwpf issued"),
+    ADD_STAT(pfIssued_srcs, statistics::units::Count::get(),
+        "number of hwpf issued"),
     ADD_STAT(pfUnused, statistics::units::Count::get(),
+             "number of HardPF blocks evicted w/o reference"),
+    ADD_STAT(pfUnused_srcs, statistics::units::Count::get(),
              "number of HardPF blocks evicted w/o reference"),
     ADD_STAT(pfUseful, statistics::units::Count::get(),
         "number of useful prefetch"),
@@ -167,7 +171,14 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
 {
     using namespace statistics;
 
+    pfIssued_srcs
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+
     pfUnused.flags(nozero);
+    pfUnused_srcs
+        .init(NUM_PF_SOURCES)
+        .flags(total);
     pfUseful_srcs
         .init(NUM_PF_SOURCES)
         .flags(total);

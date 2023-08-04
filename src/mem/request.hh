@@ -77,6 +77,8 @@ enum PrefetchSourceType
     HWP_BOP,
     SPP,
     IPCP,
+    IPCP_CS,
+    IPCP_CPLX,
     NUM_PF_SOURCES
 };
 

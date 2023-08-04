@@ -290,6 +290,7 @@ Queued::getPacket()
     pfq.pop_front();
 
     prefetchStats.pfIssued++;
+    prefetchStats.pfIssued_srcs[pkt->req->getXsMetadata().prefetchSource]++;
     issuedPrefetches += 1;
     assert(pkt != nullptr);
     DPRINTF(HWPrefetch, "Generating prefetch for %#x.\n", pkt->getAddr());
