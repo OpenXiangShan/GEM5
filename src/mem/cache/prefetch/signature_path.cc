@@ -166,14 +166,15 @@ SignaturePath::updatePatternTable(Addr signature, stride_t stride)
 SignaturePath::SignatureEntry &
 SignaturePath::getSignatureEntry(Addr ppn, bool is_secure,
         stride_t block, bool &miss, stride_t &stride,
-        double &initial_confidence)
+        double &initial_confidence, const PrefetchInfo &pfi)
 {
     SignatureEntry* signature_entry = signatureTable.findEntry(ppn, is_secure);
     if (signature_entry != nullptr) {
         signatureTable.accessEntry(signature_entry);
         miss = false;
         stride = block - signature_entry->lastBlock;
-        DPRINTF(SPP, "Signature found in page %lx, stride is %#x(%u) blocks.\n", ppn, stride, stride);
+        DPRINTF(SPP, "Signature found in page %lx, pc: %lx, stride is %#x(%u) blocks.\n", ppn, pfi.getPC(), stride,
+                stride);
     } else {
         signature_entry = signatureTable.findVictim(ppn);
         assert(signature_entry != nullptr);
@@ -251,7 +252,7 @@ SignaturePath::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
     // - obtain the current signature of accesses
     bool miss;
     SignatureEntry &signature_entry = getSignatureEntry(ppn, is_secure,
-            current_block, miss, stride, initial_confidence);
+            current_block, miss, stride, initial_confidence, pfi);
 
     if (miss) {
         DPRINTF(SPP, "No history for this page, ignoring request.\n");

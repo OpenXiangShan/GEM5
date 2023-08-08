@@ -197,7 +197,7 @@ class SignaturePath : public Queued
      * @result a reference to the SignatureEntry
      */
     SignatureEntry &getSignatureEntry(Addr ppn, bool is_secure, stride_t block,
-            bool &miss, stride_t &stride, double &initial_confidence);
+            bool &miss, stride_t &stride, double &initial_confidence, const PrefetchInfo &pfi);
     /**
      * Obtains the PatternEntry of the given signature, if the signature is
      * not found, it allocates a new one, replacing an existing entry if needed

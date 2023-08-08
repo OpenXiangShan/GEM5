@@ -156,25 +156,7 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
             bool trigger_pht = phtLookup(pfi, addresses, late && pf_source == PrefetchSourceType::SPht, stride_pf_addr);
         }
 
-        bool use_spp = false;
-        if (!pfi.isCacheMiss()) {
-            if (pf_source == PrefetchSourceType::SPP) {
-                use_spp = true;
-            }
-        } else {
-            // cache miss
-            if (late) {
-                if (pf_source != PrefetchSourceType::SStride && pf_source != PrefetchSourceType::HWP_BOP) {
-                    // other components cannot adjust depth
-                    use_spp = true;
-                }
-            } else {  // no prefetch issued
-                if (!covered_by_stride) {
-                    use_spp = true;
-                }
-            }
-        }
-        use_spp = false;
+        bool use_spp = true;
         if (use_spp) {
             int32_t spp_best_offset = 0;
             bool coverd_by_spp = spp->calculatePrefetch(pfi, addresses, pfBlockLRUFilter, spp_best_offset);
