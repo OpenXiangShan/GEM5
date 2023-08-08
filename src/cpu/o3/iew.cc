@@ -1620,7 +1620,7 @@ IEW::writebackInsts()
         ThreadID tid = inst->threadNumber;
 
         if (inst->savedRequest && inst->isLoad()) {
-            inst->pf_source = inst->savedRequest->mainReq()->pfSource;
+            inst->pf_source = inst->savedRequest->mainReq()->getPFSource();
         }
 
         DPRINTF(IEW, "Sending instructions to commit, [sn:%lli] PC %s.\n",
