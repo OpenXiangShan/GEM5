@@ -52,7 +52,8 @@ class IPCP : public Queued
     uint16_t getIndex(Addr pc);
     uint16_t getTag(Addr pc);
 
-
+    uint32_t signIdentifyLen{16};
+    uint32_t signMask{(1U << signIdentifyLen) - 1};
 
     class IPEntry
     {
@@ -91,7 +92,10 @@ class IPCP : public Queued
     IPEntry* saved_ip;
     Addr saved_pfAddr;
 
-    void sign(uint32_t &signature, int stride) {signature = ((signature << signature_shift) ^ stride) & (cspt_size - 1);}
+    void sign(uint32_t &signature, int stride);
+
+    void sign(IPEntry &ipe, int stride);
+
     //IPCP lookup pc: 47fda
     uint32_t compressSignature(uint32_t signature)
     {
@@ -113,12 +117,14 @@ class IPCP : public Queued
 
     bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType pfSource);
 
-    void calculatePrefetch(const PrefetchInfo &pfi,
-                           std::vector<AddrPriority> &addresses) override;
+    void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses) override
+    {
+        panic("Not implemented\n");
+    }
 
     void doLookup(const PrefetchInfo &pfi, PrefetchSourceType pf_source);
 
-    void doPrefetch(std::vector<AddrPriority> &addresses);
+    bool doPrefetch(std::vector<AddrPriority> &addresses, Addr &best_block_offset);
 
 };
 

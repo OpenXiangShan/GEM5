@@ -127,9 +127,7 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
         }
     }
 
-    // ipcp->calculatePrefetch(pfi,addresses);
     ipcp->doLookup(pfi, pf_source);
-    ipcp->doPrefetch(addresses);
 
     if (pfi.isCacheMiss() || pf_source != PrefetchSourceType::SStream) {
 
@@ -167,6 +165,16 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
         if (use_pht) {
             DPRINTF(SMSPrefetcher, "Do PHT lookup...\n");
             trigger_pht = phtLookup(pfi, addresses, late && pf_source == PrefetchSourceType::SPht, stride_pf_addr);
+        }
+
+        bool use_cplx = true;
+        if (use_cplx) {
+            Addr cplx_best_offset = 0;
+            bool send_cplx_pf = ipcp->doPrefetch(addresses, cplx_best_offset);
+
+            if (send_cplx_pf && cplx_best_offset != 0) {
+                bop->tryAddOffset(cplx_best_offset, late);
+            }
         }
 
         bool use_spp = true;
