@@ -133,7 +133,8 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
 
     if (pfi.isCacheMiss() || pf_source != PrefetchSourceType::SStream) {
 
-        bool use_bop = pf_source == PrefetchSourceType::HWP_BOP || pfi.isCacheMiss();
+        bool use_bop = pf_source == PrefetchSourceType::HWP_BOP || pf_source == PrefetchSourceType::IPCP_CPLX ||
+                       pfi.isCacheMiss();
         if (use_bop) {
             DPRINTF(SMSPrefetcher, "Do BOP traing/prefetching...\n");
             size_t old_addr_size = addresses.size();

@@ -184,6 +184,11 @@ BOP::tryAddOffset(int64_t offset, bool late)
     }
     DPRINTFR(BOPPrefetcher, "\n");
 
+    if (labs(offset) < 16) {
+        DPRINTF(BOPPrefetcher, "offset %ld < 16, skip\n", offset);
+        return;
+    }
+
     if (offsets.size() >= maxOffsetCount) {
         auto it = offsetsList.begin();
         while (it != offsetsList.end()) {

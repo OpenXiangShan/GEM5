@@ -124,9 +124,9 @@ class BOP : public Queued
         /** Hardware prefetcher enabled */
         bool issuePrefetchRequests;
         /** Current best offset to issue prefetches */
-        Addr bestOffset;
+        int64_t bestOffset;
         /** Current best offset found in the learning phase */
-        Addr phaseBestOffset;
+        int64_t phaseBestOffset;
         /** Current test offset index */
         std::list<OffsetListEntry>::iterator offsetsListIterator;
         /** Max score found so far */
