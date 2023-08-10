@@ -684,7 +684,7 @@ class SMSPrefetcher(QueuedPrefetcher):
         "64",
         "num of pattern history table entries"
     )
-    pht_assoc = Param.Int(2, "Associativity of the pattern history table")
+    pht_assoc = Param.Int(4, "Associativity of the pattern history table")
     pht_indexing_policy = Param.BaseIndexingPolicy(
         SetAssociative(
             entry_size=1,

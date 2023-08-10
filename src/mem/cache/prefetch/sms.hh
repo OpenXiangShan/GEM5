@@ -46,6 +46,7 @@ class SMSPrefetcher : public Queued
     {
       public:
         Addr pc;
+        Addr regionAddr;
         bool is_secure;
         uint64_t region_bits;
         bool decr_mode;
@@ -108,13 +109,14 @@ class SMSPrefetcher : public Queued
 
     AssociativeSet<StrideEntry> stride;
 
-    void updatePht(ACTEntry *act_entry);
+    void updatePht(ACTEntry *act_entry, Addr region_addr);
 
     // pattern history table
     class PhtEntry : public TaggedEntry
     {
       public:
         std::vector<SatCounter8> hist;
+        Addr pc;
         PhtEntry(const size_t sz, const SatCounter8 &conf)
             : TaggedEntry(), hist(sz, conf)
         {
@@ -122,6 +124,8 @@ class SMSPrefetcher : public Queued
     };
 
     AssociativeSet<PhtEntry> pht;
+
+    Addr phtHash(Addr pc) { return pc >> 1; }
 
     bool phtLookup(const PrefetchInfo &pfi,
                    std::vector<AddrPriority> &addresses, bool late, Addr look_ahead_addr);

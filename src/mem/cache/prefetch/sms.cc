@@ -19,7 +19,7 @@ SMSPrefetcher::SMSPrefetcher(const SMSPrefetcherParams &p)
              p.stride_replacement_policy, StrideEntry(SatCounter8(2, 0))),
       pht(p.pht_assoc, p.pht_entries, p.pht_indexing_policy,
           p.pht_replacement_policy,
-          PhtEntry(2 * (region_blocks - 1), SatCounter8(2, 0))),
+          PhtEntry(2 * (region_blocks - 1), SatCounter8(2, 1))),
       pfBlockLRUFilter(pfFilterSize),
       pfPageLRUFilter(pfFilterSize),
       bop(dynamic_cast<BOP *>(p.bop)),
@@ -160,7 +160,8 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
         }
 
         bool use_pht = pf_source == PrefetchSourceType::SPP || pf_source == PrefetchSourceType::SPht ||
-                       pf_source == PrefetchSourceType::SStride || pfi.isCacheMiss();
+                       pf_source == PrefetchSourceType::SStride || pf_source == PrefetchSourceType::IPCP_CPLX ||
+                       pfi.isCacheMiss();
         bool trigger_pht = false;
         // stride_pf_addr = 0;
         if (use_pht) {
@@ -187,6 +188,7 @@ SMSPrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page)
     Addr pc = pfi.getPC();
     Addr vaddr = pfi.getAddr();
     Addr region_addr = regionAddress(vaddr);
+    Addr region_start = regionAddress(vaddr) * region_size;
     Addr region_offset = regionOffset(vaddr);
     bool secure = pfi.isSecure();
 
@@ -210,9 +212,10 @@ SMSPrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page)
         // entry_region + 1
         entry = act.findVictim(0);
         // evict victim entry to pht
-        updatePht(entry);
+        updatePht(entry, region_start);
         // alloc new act entry
         entry->pc = pc;
+        entry->regionAddr = region_start;
         entry->is_secure = secure;
         entry->decr_mode = false;
         entry->region_bits = 1 << region_offset;
@@ -233,9 +236,10 @@ SMSPrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page)
         // entry_region - 1
         entry = act.findVictim(0);
         // evict victim entry to pht
-        updatePht(entry);
+        updatePht(entry, region_start);
         // alloc new act entry
         entry->pc = pc;
+        entry->regionAddr = region_start;
         entry->is_secure = secure;
         entry->decr_mode = true;
         entry->region_bits = 1 << region_offset;
@@ -251,8 +255,9 @@ SMSPrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page)
 
     // no matched entry, alloc new entry
     entry = act.findVictim(0);
-    updatePht(entry);
+    updatePht(entry, region_start);
     entry->pc = pc;
+    entry->regionAddr = region_start;
     entry->is_secure = secure;
     entry->decr_mode = false;
     entry->region_bits = 1 << region_offset;
@@ -369,27 +374,29 @@ SMSPrefetcher::periodStrideDepthDown()
 }
 
 void
-SMSPrefetcher::updatePht(SMSPrefetcher::ACTEntry *act_entry)
+SMSPrefetcher::updatePht(SMSPrefetcher::ACTEntry *act_entry, Addr current_region_addr)
 {
-    if (!act_entry->region_bits) {
+    if (popCount(act_entry->region_bits) <= 1) {
         return;
     }
-    PhtEntry *pht_entry = pht.findEntry(act_entry->pc, act_entry->is_secure);
+    PhtEntry *pht_entry = pht.findEntry(phtHash(act_entry->pc), act_entry->is_secure);
     bool is_update = pht_entry != nullptr;
     if (!pht_entry) {
-        pht_entry = pht.findVictim(act_entry->pc);
+        pht_entry = pht.findVictim(phtHash(act_entry->pc));
+        DPRINTF(SMSPrefetcher, "Evict PHT entry for PC %lx\n", pht_entry->pc);
         for (uint8_t i = 0; i < 2 * (region_blocks - 1); i++) {
             pht_entry->hist[i].reset();
         }
-    } else {
-        pht.accessEntry(pht_entry);
+        pht_entry->pc = act_entry->pc;
     }
+    pht.accessEntry(pht_entry);
     Addr region_offset = act_entry->region_offset;
     // incr part
     for (uint8_t i = region_offset + 1, j = 0; i < region_blocks; i++, j++) {
         uint8_t hist_idx = j + (region_blocks - 1);
         bool accessed = (act_entry->region_bits >> i) & 1;
         if (accessed) {
+            DPRINTF(SMSPrefetcher, "Inc conf for region offset: %d, hist_idx: %d\n", i, hist_idx);
             pht_entry->hist[hist_idx]++;
         } else {
             pht_entry->hist[hist_idx]--;
@@ -400,14 +407,31 @@ SMSPrefetcher::updatePht(SMSPrefetcher::ACTEntry *act_entry)
          i--, j--) {
         bool accessed = (act_entry->region_bits >> i) & 1;
         if (accessed) {
+            DPRINTF(SMSPrefetcher, "Inc conf for region offset: %d, hist_idx: %d\n", i, j);
             pht_entry->hist[j]++;
         } else {
             pht_entry->hist[j]--;
         }
     }
     if (!is_update) {
-        pht.insertEntry(act_entry->pc, act_entry->is_secure, pht_entry);
+        DPRINTF(SMSPrefetcher, "ACT region bits: %lx\n", act_entry->region_bits);
+        DPRINTF(SMSPrefetcher, "Insert SMS PHT entry for PC %lx on region %lx, evict by region %lx:\n", act_entry->pc,
+                act_entry->regionAddr, current_region_addr);
+        pht.insertEntry(phtHash(act_entry->pc), act_entry->is_secure, pht_entry);
+
+    } else {
+        DPRINTF(SMSPrefetcher, "Evict ACT region: %lx, offset: %lx\n", act_entry->regionAddr,
+                act_entry->region_offset);
+        DPRINTF(SMSPrefetcher, "Update SMS PHT entry for PC %lx, after update:\n", act_entry->pc);
     }
+
+    for (uint8_t i = 0; i < 2 * (region_blocks - 1); i++) {
+        DPRINTFR(SMSPrefetcher, "%.2f ", pht_entry->hist[i].calcSaturation());
+        if (i == region_blocks - 1) {
+            DPRINTFR(SMSPrefetcher, "| ");
+        }
+    }
+    DPRINTFR(SMSPrefetcher, "\n");
 }
 bool
 SMSPrefetcher::phtLookup(const Base::PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
@@ -419,7 +443,7 @@ SMSPrefetcher::phtLookup(const Base::PrefetchInfo &pfi, std::vector<AddrPriority
     // Addr region_addr = regionAddress(vaddr);
     Addr region_offset = regionOffset(vaddr);
     bool secure = pfi.isSecure();
-    PhtEntry *pht_entry = pht.findEntry(pc, secure);
+    PhtEntry *pht_entry = pht.findEntry(phtHash(pc), secure);
     bool found = false;
     if (pht_entry) {
         pht.accessEntry(pht_entry);
