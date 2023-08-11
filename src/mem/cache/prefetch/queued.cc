@@ -43,6 +43,7 @@
 #include "base/logging.hh"
 #include "base/trace.hh"
 #include "debug/HWPrefetch.hh"
+#include "debug/HWPrefetchOther.hh"
 #include "debug/HWPrefetchQueue.hh"
 #include "mem/cache/base.hh"
 #include "mem/request.hh"
@@ -288,6 +289,9 @@ Queued::getPacket()
     }
 
     PacketPtr pkt = pfq.front().pkt;
+    if (pfq.front().pfahead) {
+        prefetchStats.pfaheadProcess++;
+    }
     pfq.pop_front();
 
     prefetchStats.pfIssued++;
@@ -512,6 +516,11 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
 
     /* Create the packet and find the spot to insert it */
     DeferredPacket dpp(this, new_pfi, 0, priority);
+    dpp.pfahead = addr_prio.pfahead;
+    dpp.pfahead_host = addr_prio.pfahead_host;
+    if (dpp.pfahead) {
+        DPRINTF(HWPrefetchOther, "Create one pfahead request\n");
+    }
     if (has_target_pa) {
         Tick pf_time = curTick() + clockPeriod() * latency;
         dpp.createPkt(target_paddr, blkSize, requestorId, tagPrefetch,
@@ -541,6 +550,20 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
     unsigned queue_size;
     const char *queue_name;
     if (&queue == &pfq) {
+        // if found the dpp is pfahead marked
+        // send it to next level pfq
+        if (hasHintDownStream() && dpp.pfahead && (dpp.pfahead_host > cache->level())) {
+            hintDownStream->rxHint(&dpp);
+            prefetchStats.pfOffloaded++;
+            DPRINTF(HWPrefetchOther,
+                    "Prefetch ahead host: %d, will send to cache l%s\n",dpp.pfahead_host, cache->level() + 1);
+            return;
+        }
+        if (dpp.pfahead) {
+            // l1 can not process l3 pfahead request
+            // but l3 can process l1 request
+            assert(dpp.pfahead_host <= cache->level());
+        }
         queue_size = queueSize;
         queue_name = "PFQ";
     } else {
@@ -590,6 +613,9 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
 
     if ((queue.size() == 0) || (dpp <= queue.back())) {
         queue.emplace_back(dpp);
+        if (&queue == &pfq && dpp.pfahead) {
+            DPRINTF(HWPrefetchOther, "insert one pfahead request host by self\n");
+        }
     } else {
         iterator it = queue.end();
         do {
@@ -600,6 +626,9 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
         if (it == queue.begin() && dpp <= *it)
             it++;
         queue.insert(it, dpp);
+        if (&queue == &pfq && dpp.pfahead) {
+            DPRINTF(HWPrefetchOther, "insert one pfahead request host by self\n");
+        }
     }
 
     if (debug::HWPrefetchQueue)
@@ -624,7 +653,6 @@ Queued::offloadToDownStream()
         DPRINTF(HWPrefetch, "Offload prefetch for %#x.\n", dpp_it->pkt->getAddr());
         // down stream must copy it instead of store its pointer
         hintDownStream->rxHint(&(*dpp_it));
-
         dpp_it = pfq.erase(dpp_it);
     }
     DPRINTF(HWPrefetch, "Prefetch requests left in pfq: %lu, trans pfq: %lu\n", pfq.size(),

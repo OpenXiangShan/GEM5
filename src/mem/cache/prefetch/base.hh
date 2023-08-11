@@ -361,9 +361,10 @@ class Base : public ClockedObject
         StatGroup(statistics::Group *parent);
         statistics::Scalar demandMshrMisses;
         statistics::Scalar pfIssued;
+        statistics::Vector pfIssued_srcs;
 
         statistics::Scalar pfOffloaded;
-        statistics::Vector pfIssued_srcs;
+        statistics::Scalar pfaheadProcess;
 
         /** The number of times a HW-prefetched block is evicted w/o
          * reference. */

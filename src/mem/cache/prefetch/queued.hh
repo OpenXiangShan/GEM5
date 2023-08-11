@@ -66,6 +66,8 @@ class Queued : public Base
         int32_t priority;
         bool isVA;
         bool isBOP;
+        int pfahead_host; // which level should process pfahead (e.g 2 is l2...)
+        bool pfahead = false;
         PrefetchSourceType pfSource;
         PrefetchCmd(Addr a, int32_t p) : addr(a), priority(p), isVA(true), isBOP(false)
         {
@@ -96,6 +98,8 @@ class Queued : public Base
         PacketPtr pkt;
         /** The priority of this prefetch */
         int32_t priority;
+        bool pfahead;
+        int pfahead_host;
         /** Request used when a translation is needed */
         RequestPtr translationRequest;
         ThreadContext *tc;

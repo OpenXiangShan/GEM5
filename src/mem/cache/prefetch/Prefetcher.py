@@ -154,6 +154,8 @@ class QueuedPrefetcher(BasePrefetcher):
     throttle_control_percentage = Param.Percent(0, "Percentage of requests \
         that can be throttled depending on the accuracy of the prefetcher.")
 
+    max_pfahead_recv = Param.Int(1,"Maximum number of pfahead received")
+
 
 class BertiPrefetcher(QueuedPrefetcher):
     type = "BertiPrefetcher"

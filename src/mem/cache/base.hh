@@ -1448,6 +1448,9 @@ class BaseCache : public ClockedObject
     std::set<Addr> forceHitPCs{};
 
     const bool forceHit;
+
+public:
+    unsigned level() { return cacheLevel; }
 };
 
 /**
