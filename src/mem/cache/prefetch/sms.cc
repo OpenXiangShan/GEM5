@@ -215,6 +215,13 @@ SMSPrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page, bool &al
             entry->access_cnt += 1;
         }
         entry->region_bits |= region_bit_accessed;
+        // print bits
+        DPRINTF(SMSPrefetcher, "Access region %lx, after access bit %lu, new act entry bits:\n", region_start,
+                region_offset);
+        for (uint8_t i = 0; i < region_blocks; i++) {
+            DPRINTFR(SMSPrefetcher, "%lu ", (entry->region_bits >> i) & 1);
+        }
+        DPRINTFR(SMSPrefetcher, "\n");
         return entry;
     }
 
@@ -440,15 +447,12 @@ SMSPrefetcher::updatePht(SMSPrefetcher::ACTEntry *act_entry, Addr current_region
             pht_entry->hist[j]--;
         }
     }
+    DPRINTF(SMSPrefetcher, "Evict ACT region: %lx, offset: %lx, evicted by region %lx\n", act_entry->regionAddr,
+            act_entry->region_offset, current_region_addr);
     if (!is_update) {
-        DPRINTF(SMSPrefetcher, "ACT region bits: %lx\n", act_entry->region_bits);
-        DPRINTF(SMSPrefetcher, "Insert SMS PHT entry for PC %lx on region %lx, evict by region %lx:\n", act_entry->pc,
-                act_entry->regionAddr, current_region_addr);
+        DPRINTF(SMSPrefetcher, "Insert SMS PHT entry for PC %lx\n", act_entry->pc);
         pht.insertEntry(phtHash(act_entry->pc), act_entry->is_secure, pht_entry);
-
     } else {
-        DPRINTF(SMSPrefetcher, "Evict ACT region: %lx, offset: %lx\n", act_entry->regionAddr,
-                act_entry->region_offset);
         DPRINTF(SMSPrefetcher, "Update SMS PHT entry for PC %lx, after update:\n", act_entry->pc);
     }
 
