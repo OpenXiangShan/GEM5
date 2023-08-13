@@ -153,8 +153,9 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
             }
         }
 
-        bool use_stride =
-            pf_source == PrefetchSourceType::SStride || pf_source == PrefetchSourceType::HWP_BOP || pfi.isCacheMiss();
+        bool use_stride = pfi.isCacheMiss() || pf_source == PrefetchSourceType::SStride ||
+                          pf_source == PrefetchSourceType::HWP_BOP || pf_source == PrefetchSourceType::SPht ||
+                          pf_source == PrefetchSourceType::IPCP_CPLX;
         Addr stride_pf_addr = 0;
         bool covered_by_stride = false;
         if (use_stride) {
@@ -162,9 +163,9 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
             covered_by_stride = strideLookup(pfi, addresses, late, stride_pf_addr, pf_source, enter_new_region);
         }
 
-        bool use_pht = pf_source == PrefetchSourceType::SPP || pf_source == PrefetchSourceType::SPht ||
-                       pf_source == PrefetchSourceType::SStride || pf_source == PrefetchSourceType::IPCP_CPLX ||
-                       pfi.isCacheMiss();
+        bool use_pht = pfi.isCacheMiss() || pf_source == PrefetchSourceType::SStride ||
+                       pf_source == PrefetchSourceType::HWP_BOP || pf_source == PrefetchSourceType::SPht ||
+                       pf_source == PrefetchSourceType::IPCP_CPLX || pf_source == PrefetchSourceType::SPP;
         bool trigger_pht = false;
         // stride_pf_addr = 0;
         if (use_pht) {
