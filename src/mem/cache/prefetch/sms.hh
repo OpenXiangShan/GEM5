@@ -160,6 +160,9 @@ class SMSPrefetcher : public Queued
     SignaturePath  *spp;
 
     IPCP *ipcp;
+
+    const bool enableCPLX;
+    const bool enableSPP;
 };
 
 }

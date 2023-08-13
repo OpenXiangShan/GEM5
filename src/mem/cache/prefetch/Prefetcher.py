@@ -714,6 +714,9 @@ class SMSPrefetcher(QueuedPrefetcher):
     spp = Param.BasePrefetcher(SignaturePathPrefetcher(), "SPP used in SMS")
     ipcp = Param.IPCPrefetcher(IPCPrefetcher(use_rrf = False), "")
 
+    enable_cplx = Param.Bool(False, "Enable CPLX component")
+    enable_spp = Param.Bool(False, "Enable SPP component")
+
 class MultiPrefetcher(BasePrefetcher):
     type = 'MultiPrefetcher'
     cxx_class = 'gem5::prefetch::Multi'

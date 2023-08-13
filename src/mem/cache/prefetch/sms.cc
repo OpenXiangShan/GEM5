@@ -24,7 +24,9 @@ SMSPrefetcher::SMSPrefetcher(const SMSPrefetcherParams &p)
       pfPageLRUFilter(pfFilterSize),
       bop(dynamic_cast<BOP *>(p.bop)),
       spp(dynamic_cast<SignaturePath *>(p.spp)),
-      ipcp(dynamic_cast<IPCP *>(p.ipcp))
+      ipcp(dynamic_cast<IPCP *>(p.ipcp)),
+      enableCPLX(p.enable_cplx),
+      enableSPP(p.enable_spp)
 {
     assert(bop);
     assert(isPowerOf2(region_size));
@@ -127,7 +129,9 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
         }
     }
 
-    ipcp->doLookup(pfi, pf_source);
+    if (enableCPLX) {
+        ipcp->doLookup(pfi, pf_source);
+    }
 
     if (pfi.isCacheMiss() || pf_source != PrefetchSourceType::SStream) {
 
@@ -167,7 +171,7 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
             trigger_pht = phtLookup(pfi, addresses, late && pf_source == PrefetchSourceType::SPht, stride_pf_addr);
         }
 
-        bool use_cplx = true;
+        bool use_cplx = enableCPLX && true;
         if (use_cplx) {
             Addr cplx_best_offset = 0;
             bool send_cplx_pf = ipcp->doPrefetch(addresses, cplx_best_offset);
@@ -177,8 +181,7 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
             }
         }
 
-        bool use_spp = true;
-
+        bool use_spp = enableSPP && true;
         if (use_spp) {
             int32_t spp_best_offset = 0;
             bool coverd_by_spp = spp->calculatePrefetch(pfi, addresses, pfBlockLRUFilter, spp_best_offset);
