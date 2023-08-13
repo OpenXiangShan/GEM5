@@ -62,7 +62,8 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
     // Addr region_addr = regionAddress(vaddr);
     Addr region_offset = regionOffset(vaddr);
     bool is_active_page = false;
-    ACTEntry *act_match_entry = actLookup(pfi, is_active_page);
+    bool enter_new_region = false;
+    ACTEntry *act_match_entry = actLookup(pfi, is_active_page, enter_new_region);
     if (act_match_entry) {
         bool decr = act_match_entry->decr_mode;
         bool is_cross_region_match = act_match_entry->access_cnt == 0;
@@ -158,7 +159,7 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
         bool covered_by_stride = false;
         if (use_stride) {
             DPRINTF(SMSPrefetcher, "Do stride lookup...\n");
-            covered_by_stride = strideLookup(pfi, addresses, late, stride_pf_addr, pf_source);
+            covered_by_stride = strideLookup(pfi, addresses, late, stride_pf_addr, pf_source, enter_new_region);
         }
 
         bool use_pht = pf_source == PrefetchSourceType::SPP || pf_source == PrefetchSourceType::SPht ||
@@ -194,7 +195,7 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
 }
 
 SMSPrefetcher::ACTEntry *
-SMSPrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page)
+SMSPrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page, bool &alloc_new_region)
 {
     Addr pc = pfi.getPC();
     Addr vaddr = pfi.getAddr();
@@ -215,6 +216,8 @@ SMSPrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page)
         entry->region_bits |= region_bit_accessed;
         return entry;
     }
+
+    alloc_new_region = true;
 
     ACTEntry *old_entry = act.findEntry(region_addr - 1, secure);
     if (old_entry) {
@@ -280,7 +283,7 @@ SMSPrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page)
 
 bool
 SMSPrefetcher::strideLookup(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late, Addr &stride_pf,
-                            PrefetchSourceType last_pf_source)
+                            PrefetchSourceType last_pf_source, bool enter_new_region)
 {
     Addr lookupAddr = pfi.getAddr();
     StrideEntry *entry = stride.findEntry(pfi.getPC(), pfi.isSecure());
@@ -298,6 +301,18 @@ SMSPrefetcher::strideLookup(const PrefetchInfo &pfi, std::vector<AddrPriority> &
         bool stride_match = new_stride == entry->stride || (entry->stride > 64 && new_stride % entry->stride == 0);
         DPRINTF(SMSPrefetcher, "Stride hit, with stride: %ld(%lx), old stride: %ld(%lx)\n", new_stride, new_stride,
                 entry->stride, entry->stride);
+
+        if (labs(new_stride) > region_size/2) {
+            entry->longStride += 3;
+        } else {
+            entry->longStride--;
+        }
+
+        if (entry->longStride.calcSaturation() > 0.5 && labs(new_stride) < region_size/2) {
+            DPRINTF(SMSPrefetcher, "Ignore short stride %li for long stride pattern\n", new_stride);
+            return false;
+        }
+
         if (stride_match) {
             entry->conf++;
             if (strideDynDepth) {

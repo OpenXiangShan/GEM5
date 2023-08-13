@@ -72,7 +72,7 @@ class SMSPrefetcher : public Queued
 
     AssociativeSet<ACTEntry> act;
 
-    ACTEntry *actLookup(const PrefetchInfo &pfi, bool &in_active_page);
+    ACTEntry *actLookup(const PrefetchInfo &pfi, bool &in_active_page, bool &alloc_new_region);
 
     const unsigned streamDepthStep{4};  // # block changed in one step
 
@@ -107,7 +107,7 @@ class SMSPrefetcher : public Queued
     void periodStrideDepthDown();
 
     bool strideLookup(const PrefetchInfo &pfi, std::vector<AddrPriority> &address, bool late, Addr &pf_addr,
-                      PrefetchSourceType src);
+                      PrefetchSourceType src, bool enter_new_region);
 
     AssociativeSet<StrideEntry> stride;
 
