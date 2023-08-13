@@ -85,14 +85,16 @@ class SMSPrefetcher : public Queued
         SatCounter8 conf;
         int32_t depth;
         SatCounter8 lateConf;
+        SatCounter8 longStride;
         Addr pc;
-        StrideEntry(const SatCounter8 & _conf)
+        StrideEntry()
             : TaggedEntry(),
               stride(0),
               last_addr(0),
-              conf(_conf),
+              conf(2, 0),
               depth(1),
               lateConf(4, 7),
+              longStride(3, 3),
               pc(0)
         {}
     };

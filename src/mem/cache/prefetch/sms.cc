@@ -16,7 +16,7 @@ SMSPrefetcher::SMSPrefetcher(const SMSPrefetcherParams &p)
           p.act_replacement_policy, ACTEntry(SatCounter8(2, 1))),
       strideDynDepth(p.stride_dyn_depth),
       stride(p.stride_entries, p.stride_entries, p.stride_indexing_policy,
-             p.stride_replacement_policy, StrideEntry(SatCounter8(2, 0))),
+             p.stride_replacement_policy, StrideEntry()),
       pht(p.pht_assoc, p.pht_entries, p.pht_indexing_policy,
           p.pht_replacement_policy,
           PhtEntry(2 * (region_blocks - 1), SatCounter8(2, 1))),
