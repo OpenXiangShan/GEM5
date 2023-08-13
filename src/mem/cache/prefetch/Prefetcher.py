@@ -651,7 +651,7 @@ class SMSPrefetcher(QueuedPrefetcher):
     )
     # active generation table (full-assoc)
     act_entries = Param.MemorySize(
-        "16",
+        "32",
         "num of active generation table entries"
     )
     act_indexing_policy = Param.BaseIndexingPolicy(
