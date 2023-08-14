@@ -1470,6 +1470,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                         if (e2_pre || e5_pre) {
                             // if (e2_pre ) {
                             pre_req->setPreVaddr(g_pre_block);
+                            l2tlb->insert_g_pre(g_pre_block, g_pre_entry);
                             if (e5_pre) {
                                 e_pre = e5_pre;
                                 // printf("1472 e5_pre\n");
@@ -1486,9 +1487,38 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                                 //            %lx\n",g_pre_block);
                                 DPRINTF(TLBGPre, "pre_vaddr 1467 %#x\n",
                                         g_pre_block);
-                                l2tlb->insert_g_pre(g_pre_block, g_pre_entry);
                                 walker->start(e_pre->pte.ppn, tc, translation,
                                               pre_req, mode, true, 0, true,
+                                              e_pre->asid);
+                            }
+                        }
+                        else if (e1_pre || e4_pre)
+                        {
+                            pre_req->setPreVaddr(g_pre_block);
+                            l2tlb->insert_g_pre(g_pre_block, g_pre_entry);
+                            if (e4_pre)
+                            {
+                                e_pre = e4_pre;
+                                // printf("1472 e5_pre\n");
+                            }
+                            else
+                            {
+                                e_pre = e1_pre;
+                                // printf("1476 e2_pre\n");
+                            }
+
+                            pre_fault =
+                                L2tlb_check(e_pre->pte, 2, status, pmode,
+                                            g_pre_block, mode, pre_req, true);
+                            if ((pre_fault == NoFault) && (!hit_in_sp))
+                            {
+                                //            printf("pre_vaddr 1467
+                                //            %lx\n",g_pre_block);
+                                DPRINTF(TLBGPre, "pre_vaddr 1511 %#x\n",
+                                        g_pre_block);
+
+                                walker->start(e_pre->pte.ppn, tc, translation,
+                                              pre_req, mode, true, 1, true,
                                               e_pre->asid);
                             }
                         }
@@ -1709,6 +1739,23 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                     DPRINTF(TLBGPre, "pre_vaddr 1431 %#x\n", g_pre_block);
                     walker->start(e_pre->pte.ppn, tc, translation, pre_req,
                                   mode, true, 0, true, e_pre->asid);
+                }
+            }
+            if (e4_pre || e1_pre)
+            {
+                pre_req->setPreVaddr(g_pre_block);
+                if (e4_pre)
+                    e_pre = e4_pre;
+                else
+                    e_pre = e1_pre;
+                pre_fault = L2tlb_check(e_pre->pte, 2, status, pmode,
+                                        g_pre_block, mode, pre_req, true);
+                if ((pre_fault == NoFault) && (!hit_in_sp))
+                {
+                    // printf("pre_vaddr 1421 %lx\n",g_pre_block);
+                    DPRINTF(TLBGPre, "pre_vaddr 1431 %#x\n", g_pre_block);
+                    walker->start(e_pre->pte.ppn, tc, translation, pre_req,
+                                  mode, true, 1, true, e_pre->asid);
                 }
             }
             // walker->
