@@ -165,6 +165,7 @@ class SMSPrefetcher : public Queued
 
     const bool enableCPLX;
     const bool enableSPP;
+    const bool shortStrideThres;
 };
 
 }

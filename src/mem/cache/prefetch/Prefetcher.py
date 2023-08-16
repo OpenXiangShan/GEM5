@@ -717,6 +717,8 @@ class SMSPrefetcher(QueuedPrefetcher):
     enable_cplx = Param.Bool(False, "Enable CPLX component")
     enable_spp = Param.Bool(False, "Enable SPP component")
 
+    short_stride_thres = Param.Unsigned(512, "Ignore short strides when there are long strides (Bytes)")
+
 class MultiPrefetcher(BasePrefetcher):
     type = 'MultiPrefetcher'
     cxx_class = 'gem5::prefetch::Multi'

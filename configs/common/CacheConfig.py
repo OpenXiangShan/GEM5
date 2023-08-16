@@ -180,6 +180,7 @@ def config_cache(options, system):
                     dcache.prefetcher.enable_spp = True
                 if options.l1d_enable_cplx:
                     dcache.prefetcher.enable_cplx = True
+                dcache.prefetcher.short_stride_thres  = options.short_stride_thres
 
             if options.ideal_cache:
                 icache.response_latency = 0

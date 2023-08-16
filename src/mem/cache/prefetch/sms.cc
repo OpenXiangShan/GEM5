@@ -26,7 +26,8 @@ SMSPrefetcher::SMSPrefetcher(const SMSPrefetcherParams &p)
       spp(dynamic_cast<SignaturePath *>(p.spp)),
       ipcp(dynamic_cast<IPCP *>(p.ipcp)),
       enableCPLX(p.enable_cplx),
-      enableSPP(p.enable_spp)
+      enableSPP(p.enable_spp),
+      shortStrideThres(p.short_stride_thres)
 {
     assert(bop);
     assert(isPowerOf2(region_size));
@@ -310,13 +311,15 @@ SMSPrefetcher::strideLookup(const PrefetchInfo &pfi, std::vector<AddrPriority> &
         DPRINTF(SMSPrefetcher, "Stride hit, with stride: %ld(%lx), old stride: %ld(%lx)\n", new_stride, new_stride,
                 entry->stride, entry->stride);
 
-        if (labs(new_stride) > region_size/2) {
-            entry->longStride += 3;
-        } else {
-            entry->longStride--;
+        if (shortStrideThres) {
+            if (labs(new_stride) > shortStrideThres) {
+                entry->longStride += 3;
+            } else {
+                entry->longStride--;
+            }
         }
 
-        if (entry->longStride.calcSaturation() > 0.5 && labs(new_stride) < region_size/2) {
+        if (shortStrideThres && entry->longStride.calcSaturation() > 0.5 && labs(new_stride) < shortStrideThres) {
             DPRINTF(SMSPrefetcher, "Ignore short stride %li for long stride pattern\n", new_stride);
             return false;
         }

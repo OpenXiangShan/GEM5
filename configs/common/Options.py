@@ -300,6 +300,9 @@ def addCommonOptions(parser):
     parser.add_argument("--l1d-enable-cplx", action="store_true", default=False,
                         help="""
                         Enable complex stride component for L1 data prefetcher""")
+    parser.add_argument("--short-stride-thres", action="store", default=0, type=int,
+                        help="""
+                        Ignore short strides when seen long strides for stride, 0 for turning off""")
 
     parser.add_argument("--checker", action="store_true")
     parser.add_argument("--cpu-clock", action="store", type=str,
