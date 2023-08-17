@@ -147,6 +147,8 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
         "number of hwpf issued"),
     ADD_STAT(pfOffloaded, statistics::units::Count::get(),
         "number of hwpf issued"),
+    ADD_STAT(pfaheadOffloaded, statistics::units::Count::get(),
+        "number of hwpf issued"),
     ADD_STAT(pfaheadProcess, statistics::units::Count::get(),
         "number of hwpf issued"),
     ADD_STAT(pfUnused, statistics::units::Count::get(),

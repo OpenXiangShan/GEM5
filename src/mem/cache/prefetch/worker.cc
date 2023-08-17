@@ -1,6 +1,7 @@
 #include "mem/cache/prefetch/worker.hh"
 
 #include "debug/WorkerPref.hh"
+#include "mem/cache/base.hh"
 
 namespace gem5
 {
@@ -9,28 +10,62 @@ GEM5_DEPRECATED_NAMESPACE(Prefetcher, prefetch);
 namespace prefetch
 {
 
-WorkerPrefetcher::WorkerPrefetcher(const WorkerPrefetcherParams &p) : Queued(p) {}
+WorkerPrefetcher::WorkerPrefetcher(const WorkerPrefetcherParams &p)
+    : Queued(p),
+      pfLRUFilter(128)
+{
+    //Event *event = new EventFunctionWrapper([this]{ enableFunctionTrace(); }, name(), true);
+    transfer_event = new EventFunctionWrapper([this](){
+        transfer();
+    },name(),false);
+}
 
 void
 WorkerPrefetcher::rxHint(BaseMMU::Translation *dpp)
 {
     auto ptr = reinterpret_cast<DeferredPacket *>(dpp);
-    DPRINTF(WorkerPref, "Put %s into local buffer\n", ptr->pkt->print());
+
+    // ignore if pfahead_host > itself level
+    if ((ptr->pfahead ? (ptr->pfahead_host <= cache->level()) : true)
+        && (ptr->pfInfo.getXsMetadata().prefetchSource == PrefetchSourceType::SStream)) {
+        if (pfLRUFilter.contains(ptr->pfInfo.getAddr())) {
+            DPRINTF(WorkerPref, "Worker: offload: [%lx, %d] skip recently in localBuffer\n", ptr->pfInfo.getAddr(), ptr->pfahead_host);
+            return;
+        }
+        pfLRUFilter.insert(ptr->pfInfo.getAddr(),0);
+    }
+
+    DPRINTF(WorkerPref, "Worker: put [%lx, %d] into localBuffer(size:%lu)\n", ptr->pfInfo.getAddr(), ptr->pfahead_host,localBuffer.size());
     localBuffer.push_back(*ptr);
 }
 
 void
-WorkerPrefetcher::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
+WorkerPrefetcher::transfer()
 {
     // ignore information of pfi, grab the information from the local buffer
     unsigned count = 0;
     auto dpp_it = localBuffer.begin();
     while (count < depth && !localBuffer.empty()) {
-        DPRINTF(WorkerPref, "Add prefetching req %s to queue in worker prefetcher\n", dpp_it->pkt->print());
-        addToQueue(pfq, *dpp_it);
+        if (queueFilter) {
+            if (alreadyInQueue(pfq, dpp_it->pfInfo.getAddr(), dpp_it->pfInfo.isSecure(), dpp_it->priority)) {
+                DPRINTF(WorkerPref, "Worker: [%lx, %d] was already in pfq\n", dpp_it->pfInfo.getAddr(), dpp_it->pfahead_host);
+            }
+            else if (alreadyInQueue(pfqMissingTranslation, dpp_it->pfInfo.getAddr(), dpp_it->pfInfo.isSecure(), dpp_it->priority)) {
+                DPRINTF(WorkerPref, "Worker: [%lx, %d] was already in pfq\n", dpp_it->pfInfo.getAddr(), dpp_it->pfahead_host);
+            }
+            else {
+                addToQueue(pfq, *dpp_it);
+                DPRINTF(WorkerPref, "Worker: put [%lx, %d] into local pfq\n", dpp_it->pfInfo.getAddr(), dpp_it->pfahead_host);
+            }
+        }
+        else {
+            addToQueue(pfq, *dpp_it);
+            DPRINTF(WorkerPref, "Worker: put [%lx, %d] into local pfq\n", dpp_it->pfInfo.getAddr(), dpp_it->pfahead_host);
+        }
         dpp_it = localBuffer.erase(dpp_it);
         count++;
     }
+    schedule(transfer_event,nextCycle());
 }
 
 }

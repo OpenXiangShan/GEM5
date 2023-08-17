@@ -422,6 +422,38 @@ Queued::alreadyInQueue(std::list<DeferredPacket> &queue,
     }
     return found;
 }
+bool
+
+Queued::alreadyInQueue(std::list<DeferredPacket> &queue,
+                                 Addr addr, bool isSecure, int32_t priority)
+{
+    bool found = false;
+    iterator it;
+    for (it = queue.begin(); it != queue.end() && !found; it++) {
+        found = it->pfInfo.sameAddr(addr, isSecure);
+    }
+
+    /* If the address is already in the queue, update priority and leave */
+    if (it != queue.end()) {
+        statsQueued.pfBufferHit++;
+        if (it->priority < priority) {
+            /* Update priority value and position in the queue */
+            it->priority = priority;
+            /* Because swap() will cause the translationComplete
+             * run into wrong DeferredPacket, we use std::list::sort
+             * to update this queue */
+            queue.sort(std::greater<DeferredPacket>());
+            DPRINTF(HWPrefetch, "Prefetch addr already in "
+                "prefetch queue, priority updated\n");
+        } else {
+            DPRINTF(HWPrefetch, "Prefetch addr already in "
+                "prefetch queue\n");
+        }
+    }
+    return found;
+}
+
+
 
 RequestPtr
 Queued::createPrefetchRequest(Addr addr, PrefetchInfo const &pfi, PacketPtr pkt, PrefetchSourceType pf_src)
@@ -554,7 +586,7 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
         // send it to next level pfq
         if (hasHintDownStream() && dpp.pfahead && (dpp.pfahead_host > cache->level())) {
             hintDownStream->rxHint(&dpp);
-            prefetchStats.pfOffloaded++;
+            prefetchStats.pfaheadOffloaded++;
             DPRINTF(HWPrefetchOther,
                     "Prefetch ahead host: %d, will send to cache l%s\n",dpp.pfahead_host, cache->level() + 1);
             return;

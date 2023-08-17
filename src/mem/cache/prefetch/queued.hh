@@ -66,7 +66,7 @@ class Queued : public Base
         int32_t priority;
         bool isVA;
         bool isBOP;
-        int pfahead_host; // which level should process pfahead (e.g 2 is l2...)
+        int pfahead_host = 0; // which level should process pfahead (e.g 2 is l2...)
         bool pfahead = false;
         PrefetchSourceType pfSource;
         PrefetchCmd(Addr a, int32_t p) : addr(a), priority(p), isVA(true), isBOP(false)
@@ -279,6 +279,8 @@ class Queued : public Base
      */
     bool alreadyInQueue(std::list<DeferredPacket> &queue,
                         const PrefetchInfo &pfi, int32_t priority);
+    bool alreadyInQueue(std::list<DeferredPacket> &queue,
+                                    Addr addr, bool isSecure, int32_t priority);
 
     /**
      * Returns the maxmimum number of prefetch requests that are allowed

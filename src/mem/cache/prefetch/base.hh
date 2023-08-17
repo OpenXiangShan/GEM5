@@ -240,6 +240,12 @@ class Base : public ClockedObject
                 this->isSecure() == pfi.isSecure();
         }
 
+        bool sameAddr(Addr addr, bool isSecure) const
+        {
+            return this->getAddr() == addr &&
+                this->isSecure() == isSecure;
+        }
+
         Request::XsMetadata getXsMetadata() const
         {
             return xsMetadata;
@@ -364,6 +370,7 @@ class Base : public ClockedObject
         statistics::Vector pfIssued_srcs;
 
         statistics::Scalar pfOffloaded;
+        statistics::Scalar pfaheadOffloaded;
         statistics::Scalar pfaheadProcess;
 
         /** The number of times a HW-prefetched block is evicted w/o
