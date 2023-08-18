@@ -107,7 +107,7 @@ class SMSPrefetcher : public Queued
     void periodStrideDepthDown();
 
     bool strideLookup(const PrefetchInfo &pfi, std::vector<AddrPriority> &address, bool late, Addr &pf_addr,
-                      PrefetchSourceType src, bool enter_new_region);
+                      PrefetchSourceType src, bool enter_new_region, bool miss_repeat);
 
     AssociativeSet<StrideEntry> stride;
 
@@ -144,7 +144,7 @@ class SMSPrefetcher : public Queued
     };
 
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
-                           PrefetchSourceType pf_source) override;
+                           PrefetchSourceType pf_source, bool miss_repeat) override;
 
     /** Update the RR right table after a prefetch fill */
     void notifyFill(const PacketPtr& pkt) override;

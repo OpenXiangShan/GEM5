@@ -40,7 +40,7 @@ SMSPrefetcher::SMSPrefetcher(const SMSPrefetcherParams &p)
 
 void
 SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
-                                 PrefetchSourceType pf_source)
+                                 PrefetchSourceType pf_source, bool miss_repeat)
 {
     bool can_prefetch = !pfi.isWrite() && pfi.hasPC();
     if (!can_prefetch) {
@@ -135,10 +135,11 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
         ipcp->doLookup(pfi, pf_source);
     }
 
-    if (pfi.isCacheMiss() || pf_source != PrefetchSourceType::SStream) {
+    if (pf_source != PrefetchSourceType::SStream && !is_active_page) {
 
         bool use_bop = pf_source == PrefetchSourceType::HWP_BOP || pf_source == PrefetchSourceType::IPCP_CPLX ||
                        pfi.isCacheMiss();
+        use_bop &= !miss_repeat; // miss repeat should not be handled by stride
         if (use_bop) {
             DPRINTF(SMSPrefetcher, "Do BOP traing/prefetching...\n");
             size_t old_addr_size = addresses.size();
@@ -161,7 +162,8 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
         bool covered_by_stride = false;
         if (use_stride) {
             DPRINTF(SMSPrefetcher, "Do stride lookup...\n");
-            covered_by_stride = strideLookup(pfi, addresses, late, stride_pf_addr, pf_source, enter_new_region);
+            covered_by_stride =
+                strideLookup(pfi, addresses, late, stride_pf_addr, pf_source, enter_new_region, miss_repeat);
         }
 
         bool use_pht = pfi.isCacheMiss() || pf_source == PrefetchSourceType::SStride ||
@@ -292,7 +294,7 @@ SMSPrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page, bool &al
 
 bool
 SMSPrefetcher::strideLookup(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late, Addr &stride_pf,
-                            PrefetchSourceType last_pf_source, bool enter_new_region)
+                            PrefetchSourceType last_pf_source, bool enter_new_region, bool miss_repeat)
 {
     Addr lookupAddr = pfi.getAddr();
     StrideEntry *entry = stride.findEntry(pfi.getPC(), pfi.isSecure());

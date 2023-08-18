@@ -227,8 +227,8 @@ class Queued : public Base
 
     virtual void calculatePrefetch(const PrefetchInfo &pfi,
                                    std::vector<AddrPriority> &addresses) = 0;
-    virtual void calculatePrefetch(const PrefetchInfo &pfi,
-                                   std::vector<AddrPriority> &addresses, bool late, PrefetchSourceType source);
+    virtual void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
+                                   PrefetchSourceType source, bool miss_repeat);
     PacketPtr getPacket() override;
 
     Tick nextPrefetchReadyTime() const override
