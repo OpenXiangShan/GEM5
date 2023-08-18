@@ -107,30 +107,30 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
         }
     }
 
-    // if (act_match_entry && is_active_page && pfi.isCacheMiss()) {
-    //     if (1) {
-    //         pf_tgt_addr += 512 * blkSize;  // depth here?
-    //         Addr pf_tgt_region = regionAddress(pf_tgt_addr);
-    //         DPRINTF(SMSPrefetcher, "ACT pf ahead region: %lx\n", pf_tgt_region);
-    //         for (int i = 0; i < region_blocks; i++) {
-    //             Addr cur = pf_tgt_region * region_size + i * blkSize;
-    //             addresses.push_back(AddrPriority(cur, region_blocks - i, PrefetchSourceType::SStream));
-    //             addresses.back().pfahead = true;
-    //             addresses.back().pfahead_host = 2;// send to l2
-    //         }
-    //     }
-    //     if (1) {
-    //         pf_tgt_addr += (5096) * blkSize;  // depth here?
-    //         Addr pf_tgt_region = regionAddress(pf_tgt_addr);
-    //         DPRINTF(SMSPrefetcher, "ACT pf ahead region: %lx\n", pf_tgt_region);
-    //         for (int i = 0; i < region_blocks; i++) {
-    //             Addr cur = pf_tgt_region * region_size + i * blkSize;
-    //             addresses.push_back(AddrPriority(cur, region_blocks - i, PrefetchSourceType::SStream));
-    //             addresses.back().pfahead = true;
-    //             addresses.back().pfahead_host = 3;// send to l3
-    //         }
-    //     }
-    // }
+    if (act_match_entry && is_active_page) {
+        if (1) {
+            pf_tgt_addr += 512 * blkSize;  // depth here?
+            Addr pf_tgt_region = regionAddress(pf_tgt_addr);
+            DPRINTF(SMSPrefetcher, "ACT pf ahead region: %lx\n", pf_tgt_region);
+            for (int i = 0; i < region_blocks; i++) {
+                Addr cur = pf_tgt_region * region_size + i * blkSize;
+                addresses.push_back(AddrPriority(cur, region_blocks - i, PrefetchSourceType::SStream));
+                addresses.back().pfahead = true;
+                addresses.back().pfahead_host = 2;// send to l2
+            }
+        }
+        if (1) {
+            pf_tgt_addr += (5096) * blkSize;  // depth here?
+            Addr pf_tgt_region = regionAddress(pf_tgt_addr);
+            DPRINTF(SMSPrefetcher, "ACT pf ahead region: %lx\n", pf_tgt_region);
+            for (int i = 0; i < region_blocks; i++) {
+                Addr cur = pf_tgt_region * region_size + i * blkSize;
+                addresses.push_back(AddrPriority(cur, region_blocks - i, PrefetchSourceType::SStream));
+                addresses.back().pfahead = true;
+                addresses.back().pfahead_host = 3;// send to l3
+            }
+        }
+    }
 
     if (pf_source == PrefetchSourceType::SStream || act_match_entry) {
         auto it = act.begin();
