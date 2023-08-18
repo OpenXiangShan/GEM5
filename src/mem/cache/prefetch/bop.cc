@@ -342,7 +342,7 @@ BOP::bestOffsetLearning(Addr x, bool late)
         // (1) One of the scores equals SCORE_MAX
         // (2) The number of rounds equals ROUND_MAX
         if ((bestScore >= scoreMax) || (round == roundMax)) {
-            DPRINTF(BOPPrefetcher, "update new score: %d round: %d bop: %d\n",
+            DPRINTF(BOPPrefetcher, "update new score: %d round: %d phase best offset: %d\n",
                     bestScore, round, phaseBestOffset);
             bestOffset = phaseBestOffset;
             round = 0;

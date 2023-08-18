@@ -517,10 +517,10 @@ class BOPPrefetcher(QueuedPrefetcher):
                 "Initialize the offsets list also with negative values \
                 (i.e. the table will have half of the entries with positive \
                 offsets and the other half with negative ones)")
-    delay_queue_enable = Param.Bool(False, "Enable the delay queue")
-    delay_queue_size = Param.Unsigned(15,
+    delay_queue_enable = Param.Bool(True, "Enable the delay queue")
+    delay_queue_size = Param.Unsigned(64,
                 "Number of entries in the delay queue")
-    delay_queue_cycles = Param.Cycles(60,
+    delay_queue_cycles = Param.Cycles(200,
                 "Cycles to delay a write in the left RR table from the delay \
                 queue")
 
