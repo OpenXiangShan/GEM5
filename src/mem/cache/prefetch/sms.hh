@@ -94,7 +94,7 @@ class SMSPrefetcher : public Queued
               conf(2, 0),
               depth(1),
               lateConf(4, 7),
-              longStride(3, 3),
+              longStride(4, 7),
               pc(0)
         {}
     };
@@ -165,7 +165,7 @@ class SMSPrefetcher : public Queued
 
     const bool enableCPLX;
     const bool enableSPP;
-    const bool shortStrideThres;
+    const unsigned shortStrideThres;
 };
 
 }

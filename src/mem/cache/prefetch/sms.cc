@@ -110,7 +110,7 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
             if (late) {
                 it_entry->lateConf += 3;
                 if (it_entry->lateConf.isSaturated()) {
-                    it_entry->depth++;
+                    it_entry->depth = std::min(128U, (unsigned)it_entry->depth + 1);
                     it_entry->lateConf.reset();
                 }
             } else if (!pfi.isCacheMiss()) {
@@ -305,17 +305,17 @@ SMSPrefetcher::strideLookup(const PrefetchInfo &pfi, std::vector<AddrPriority> &
     if (entry) {
         stride.accessEntry(entry);
         int64_t new_stride = lookupAddr - entry->last_addr;
-        if (new_stride == 0) {
-            DPRINTF(SMSPrefetcher, "Stride = 0, ignore redundant req\n");
+        if (new_stride == 0 || (labs(new_stride) < 64 && (miss_repeat || entry->longStride.calcSaturation() >= 0.5))) {
+            DPRINTF(SMSPrefetcher, "Stride touch in the same blk, ignore redundant req\n");
             return false;
         }
         bool stride_match = new_stride == entry->stride || (entry->stride > 64 && new_stride % entry->stride == 0);
-        DPRINTF(SMSPrefetcher, "Stride hit, with stride: %ld(%lx), old stride: %ld(%lx)\n", new_stride, new_stride,
-                entry->stride, entry->stride);
+        DPRINTF(SMSPrefetcher, "Stride hit, with stride: %ld(%lx), old stride: %ld(%lx), long stride: %.2f\n",
+                new_stride, new_stride, entry->stride, entry->stride, entry->longStride.calcSaturation());
 
         if (shortStrideThres) {
             if (labs(new_stride) > shortStrideThres) {
-                entry->longStride += 3;
+                entry->longStride.saturate();
             } else {
                 entry->longStride--;
             }
@@ -324,6 +324,9 @@ SMSPrefetcher::strideLookup(const PrefetchInfo &pfi, std::vector<AddrPriority> &
         if (shortStrideThres && entry->longStride.calcSaturation() > 0.5 && labs(new_stride) < shortStrideThres) {
             DPRINTF(SMSPrefetcher, "Ignore short stride %li for long stride pattern\n", new_stride);
             return false;
+        } else {
+            DPRINTF(SMSPrefetcher, "Stride long stride pattern: %.2f, short thres: %lu\n",
+                    entry->longStride.calcSaturation(), shortStrideThres);
         }
 
         if (stride_match) {
@@ -370,9 +373,7 @@ SMSPrefetcher::strideLookup(const PrefetchInfo &pfi, std::vector<AddrPriority> &
                 DPRINTF(SMSPrefetcher, "Stride conf >= 2, send pf: %x with depth %i\n", pf_addr, i);
                 sendPFWithFilter(pf_addr, addresses, 0, PrefetchSourceType::SStride);
             }
-            if (!pfi.isCacheMiss()) {
-                stride_pf = pf_addr;
-            }
+            stride_pf = pf_addr;  // the longest lookahead
             should_cover = true;
         }
     } else {
