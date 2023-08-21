@@ -79,7 +79,7 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
                 pc, vaddr, region_offset, is_active_page, decr);
         if (is_active_page) {
             origin_depth = act_match_entry->depth;
-            int depth = origin_depth;
+            int depth = 16;
             // active page
             pf_tgt_addr = decr ? block_addr - depth * blkSize
                                     : block_addr + depth * blkSize;  // depth here?
@@ -109,7 +109,7 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
 
     if (act_match_entry && is_active_page) {
         if (1) {
-            pf_tgt_addr += 512 * blkSize;  // depth here?
+            pf_tgt_addr += 48 * blkSize;  // depth here?
             Addr pf_tgt_region = regionAddress(pf_tgt_addr);
             DPRINTF(SMSPrefetcher, "ACT pf ahead region: %lx\n", pf_tgt_region);
             for (int i = 0; i < region_blocks; i++) {
@@ -120,7 +120,7 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
             }
         }
         if (1) {
-            pf_tgt_addr += (5096) * blkSize;  // depth here?
+            pf_tgt_addr += 256 * blkSize;  // depth here?
             Addr pf_tgt_region = regionAddress(pf_tgt_addr);
             DPRINTF(SMSPrefetcher, "ACT pf ahead region: %lx\n", pf_tgt_region);
             for (int i = 0; i < region_blocks; i++) {
