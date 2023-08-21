@@ -154,6 +154,9 @@ DRAMsim3::tick()
 
     schedule(tickEvent,
         curTick() + wrapper.clockPeriod() * sim_clock::as_int::ns);
+
+    DPRINTF(DRAMsim3, "Scheduled Dramsim after %d ns, at tick %lu\n", wrapper.clockPeriod(),
+            curTick() + wrapper.clockPeriod() * sim_clock::as_int::ns);
 }
 
 Tick
@@ -267,7 +270,7 @@ DRAMsim3::recvRespRetry()
 void
 DRAMsim3::accessAndRespond(PacketPtr pkt)
 {
-    DPRINTF(DRAMsim3, "Access for address %lld\n", pkt->getAddr());
+    DPRINTF(DRAMsim3, "Access for address %lx\n", pkt->getAddr());
 
     bool needsResponse = pkt->needsResponse();
 
@@ -304,7 +307,7 @@ DRAMsim3::accessAndRespond(PacketPtr pkt)
 void DRAMsim3::readComplete(unsigned id, uint64_t addr)
 {
 
-    DPRINTF(DRAMsim3, "Read to address %lld complete\n", addr);
+    DPRINTF(DRAMsim3, "Read to address %lx complete\n", addr);
 
     // get the outstanding reads for the address in question
     auto p = outstandingReads.find(addr);
