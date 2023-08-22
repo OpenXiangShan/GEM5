@@ -163,6 +163,7 @@ namespace RiscvISA
             bool open_nextline;
             bool auto_nextline_sign;
             bool finish_default_translate;
+            bool pre_hit_in_ptw;
 
 
           public:

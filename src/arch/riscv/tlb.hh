@@ -61,10 +61,12 @@ class TLB : public BaseTLB
     typedef std::list<TlbEntry *> EntryList;
 
   protected:
+    bool is_dtlb;
     bool is_L1tlb;
     bool is_stage2;
     bool is_the_sharedL2;
     size_t size;
+    size_t size_forward;
     size_t Gpre_size;
     size_t l2tlb_l1_size;
     size_t l2tlb_l2_size;
@@ -84,10 +86,14 @@ class TLB : public BaseTLB
     bool open_g_pre;
     uint64_t all_g_pre;
     uint64_t remove_no_use_g_pre;
+    uint64_t remove_no_use_f_pre;
+    uint64_t used_f_pre;
     uint64_t all_used;
     uint64_t all_used_pre;
     uint64_t pre_sign;
-
+    uint64_t last_vaddr;
+    uint64_t last_pc;
+    uint64_t trace_flag;
 
 
     Walker *walker;
@@ -112,10 +118,11 @@ class TLB : public BaseTLB
         statistics::Scalar readHitsSquashed;
         statistics::Scalar squashedInsert;
         statistics::Scalar ALLInsert;
+        statistics::Scalar forwardHits;
 
 
-        statistics::Scalar writeL2TlbMisses;
-        statistics::Scalar ReadL2TlbMisses;
+        statistics::Scalar writeL2l3TlbMisses;
+        statistics::Scalar ReadL2l3TlbMisses;
         statistics::Scalar writeL2Tlbl3Hits;
         statistics::Scalar ReadL2Tlbl3Hits;
         statistics::Scalar squashedInsertL2;
@@ -168,6 +175,7 @@ class TLB : public BaseTLB
 
     TlbEntry *insert(Addr vpn, const TlbEntry &entry, bool suqashed_update);
     TlbEntry *insert_g_pre(Addr vpn, const TlbEntry &entry);
+    TlbEntry *insert_forward_pre(Addr vpn, const TlbEntry &entry);
 
     TlbEntry *L2TLB_insert(Addr vpn, const TlbEntry &entry, int level,
                            int choose, int sign,bool squashed_update);
@@ -224,6 +232,7 @@ class TLB : public BaseTLB
     TlbEntry *lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
                      bool sign_used);
     TlbEntry *lookup_g_pre(Addr vpn, uint64_t asid, bool hidden);
+    TlbEntry *lookup_forward_pre(Addr vpn, uint64_t asid, bool hidden);
     //bool auto_open_g_pre();
     bool auto_open_nextline();
 
@@ -250,6 +259,10 @@ class TLB : public BaseTLB
     TlbEntryTrie trie_g_pre;
     EntryList freeList_g_pre;
 
+    std::vector<TlbEntry> forward_pre;
+    TlbEntryTrie trie_forward_pre;
+    EntryList freeList_forward_pre;
+
   private:
     uint64_t nextSeq() { return ++lruSeq; }
 
@@ -258,10 +271,13 @@ class TLB : public BaseTLB
 
     void evictLRU();
     void evict_G_pre();
+    void evict_forward_pre();
+
     void l2TLB_evictLRU(int l2TLBlevel, Addr vaddr);
 
     void remove(size_t idx);
     void remove_G_pre(size_t idx);
+    void remove_forward_pre(size_t idx);
     void l2TLB_remove(size_t idx, int choose);
 
 

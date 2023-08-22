@@ -299,14 +299,14 @@ Walker::WalkerState::tryCoalesce(ThreadContext *_tc,
         priv_match = mode == _mode && satp == _satp &&
                      pmode == walker->tlb->getMemPriv(_tc, _mode) &&
                      status == _tc->readMiscReg(MISCREG_STATUS) &&
-                     satp.asid == asid &&
-                     from_pre_req == mainReq->getPre_tlb();
+                     satp.asid == asid;
+        //&&from_pre_req == mainReq->getPre_tlb();
 
     } else {
         priv_match = mode == _mode && satp == _satp &&
                      pmode == walker->tlb->getMemPriv(_tc, _mode) &&
-                     status == _tc->readMiscReg(MISCREG_STATUS) &&
-                     from_pre_req == mainReq->getPre_tlb();
+                     status == _tc->readMiscReg(MISCREG_STATUS);
+        //&&from_pre_req == mainReq->getPre_tlb();
     }
 
     // bool addr_match = ((req->getVaddr() >> PageShift) << PageShift) ==
@@ -339,6 +339,11 @@ Walker::WalkerState::tryCoalesce(ThreadContext *_tc,
             return std::make_pair(true, NoFault);
 
         } else {
+            if (mainReq->getPre_tlb() && (!from_pre_req)) {
+                DPRINTF(PageTableWalker, "from_pre_req be coalesced\n");
+                // return std
+                pre_hit_in_ptw = true;
+            }
             DPRINTF(PageTableWalker,
                     "Coalescing walk for %#lx(pc=%#lx) into %#lx(pc=%#lx)\n",
                     req->getVaddr(), req->getPC(), mainReq->getVaddr(),
@@ -719,8 +724,7 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
 
         if (doTLBInsert) {
             if (!functional) {
-
-                if (!entry.from_pre_req) {
+                if ((!entry.from_pre_req) || (pre_hit_in_ptw)) {
                     // printf("insert 698\n");
                     walker->tlb->insert(entry.vaddr, entry, false);
                 }
@@ -911,6 +915,7 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level,
     next_line = false;
     open_nextline = OpenNextline;
     auto_nextline_sign = autoOpenNextline;
+    pre_hit_in_ptw = false;
 
     Addr shift = PageShift + LEVEL_BITS * level;
     Addr idx_f = (vaddr >> shift) & LEVEL_MASK;

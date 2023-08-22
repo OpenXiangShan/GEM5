@@ -61,6 +61,7 @@ class RiscvTLB(BaseTLB):
     #size = Param.Int(2048, "TLB size")
     #size = Param.Int(64, "TLB size")
     #size = Param.Int(256, "TLB size")
+    is_dtlb = Param.Bool(False, "the tlb is dtlb")
     is_L1tlb = Param.Bool(True,"the tlb is l1tlb")
     #the tlb has private l2tlb
     is_stage2 = Param.Bool(False,"the tlb is private l2tlb")
