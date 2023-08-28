@@ -114,7 +114,11 @@ class L3Cache(Cache):
     sequential_access = True
 
     # This is L3 miss latency, which act as padding for memory controller
-    response_latency = 112
+
+    # 5950x L3 miss latency (rand) = 70ns, L3 hit latency = 15ns, so Mem-->L3 = 55ns (165 cycle in 3GHz)
+    # But XS's miss latency on mcf (less random) is averagely 211 on padding=112.
+    # To make XS's L3 miss latency similar to 5950x, we reduce padding from 112 to (112 - (211-165)) = 66 cycle
+    response_latency = 66
 
     cache_level = 3
 

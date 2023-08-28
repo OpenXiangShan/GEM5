@@ -109,7 +109,7 @@ def addNoISAOptions(parser):
                         help="""Top-level voltage for blocks running at system
                       power supply""")
     parser.add_argument("--sys-clock", action="store", type=str,
-                        default='2GHz',
+                        default='3GHz',
                         help="""Top-level clock for blocks running at system
                       speed""")
 
@@ -306,7 +306,7 @@ def addCommonOptions(parser):
 
     parser.add_argument("--checker", action="store_true")
     parser.add_argument("--cpu-clock", action="store", type=str,
-                        default='2GHz',
+                        default='3GHz',
                         help="Clock for blocks running at CPU speed")
     parser.add_argument("--smt", action="store_true", default=False,
                         help="""
