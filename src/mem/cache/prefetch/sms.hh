@@ -156,7 +156,7 @@ class SMSPrefetcher : public Queued
     void notifyFill(const PacketPtr& pkt) override;
 
   private:
-    const unsigned pfFilterSize{128};
+    const unsigned pfFilterSize{32};
     boost::compute::detail::lru_cache<Addr, Addr> pfBlockLRUFilter;
 
     boost::compute::detail::lru_cache<Addr, Addr> pfPageLRUFilter;
