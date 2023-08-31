@@ -176,11 +176,15 @@ def config_cache(options, system):
             if dcache.prefetcher != NULL:
                 print("Add dtb for L1D prefetcher")
                 dcache.prefetcher.registerTLB(system.cpu[i].mmu.dtb)
-                if options.l1d_enable_spp:
-                    dcache.prefetcher.enable_spp = True
-                if options.l1d_enable_cplx:
-                    dcache.prefetcher.enable_cplx = True
-                dcache.prefetcher.short_stride_thres  = options.short_stride_thres
+                if options.l1d_hwp_type == 'SMSPrefetcher':
+                    if options.l1d_enable_spp:
+                        dcache.prefetcher.enable_spp = True
+                    if options.l1d_enable_cplx:
+                        dcache.prefetcher.enable_cplx = True
+                    dcache.prefetcher.short_stride_thres = options.short_stride_thres
+                    dcache.prefetcher.fuzzy_stride_matching = True
+                    dcache.prefetcher.stream_pf_ahead = True
+                    dcache.prefetcher.bop.delay_queue_enable = True
 
             if options.ideal_cache:
                 icache.response_latency = 0
