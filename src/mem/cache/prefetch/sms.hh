@@ -72,6 +72,8 @@ class SMSPrefetcher : public Queued
 
     AssociativeSet<ACTEntry> act;
 
+    const bool streamPFAhead;
+
     ACTEntry *actLookup(const PrefetchInfo &pfi, bool &in_active_page, bool &alloc_new_region);
 
     const unsigned streamDepthStep{4};  // # block changed in one step
@@ -110,6 +112,8 @@ class SMSPrefetcher : public Queued
                       PrefetchSourceType src, bool enter_new_region, bool miss_repeat);
 
     AssociativeSet<StrideEntry> stride;
+
+    const bool fuzzyStrideMatching;
 
     void updatePht(ACTEntry *act_entry, Addr region_addr);
 

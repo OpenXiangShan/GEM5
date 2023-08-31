@@ -667,6 +667,7 @@ class SMSPrefetcher(QueuedPrefetcher):
         LRURP(),
         "Replacement policy of active generation table"
     )
+    stream_pf_ahead = Param.Bool(True, "Prefetch stream region ahead of current region")
     # stride table (full-assoc)
     stride_dyn_depth = Param.Bool(True, "Dynamic depth of stride table")
     stride_entries = Param.MemorySize("32", "Stride Entries")
@@ -681,6 +682,7 @@ class SMSPrefetcher(QueuedPrefetcher):
         LRURP(),
         "Replacement policy of stride table"
     )
+    fuzzy_stride_matching = Param.Bool(False, "Match stride with fuzzy condition")
     # pht table (set-assoc)
     pht_entries = Param.MemorySize(
         "64",

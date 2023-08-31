@@ -14,9 +14,11 @@ SMSPrefetcher::SMSPrefetcher(const SMSPrefetcherParams &p)
       region_blocks(p.region_size / p.block_size),
       act(p.act_entries, p.act_entries, p.act_indexing_policy,
           p.act_replacement_policy, ACTEntry(SatCounter8(2, 1))),
+      streamPFAhead(p.stream_pf_ahead),
       strideDynDepth(p.stride_dyn_depth),
       stride(p.stride_entries, p.stride_entries, p.stride_indexing_policy,
              p.stride_replacement_policy, StrideEntry()),
+      fuzzyStrideMatching(p.fuzzy_stride_matching),
       pht(p.pht_assoc, p.pht_entries, p.pht_indexing_policy,
           p.pht_replacement_policy,
           PhtEntry(2 * (region_blocks - 1), SatCounter8(2, 1))),
@@ -108,7 +110,7 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
     }
 
     if (act_match_entry && is_active_page) {
-        if (1) {
+        if (streamPFAhead) {
             pf_tgt_addr += 48 * blkSize;  // depth here?
             Addr pf_tgt_region = regionAddress(pf_tgt_addr);
             DPRINTF(SMSPrefetcher, "ACT pf ahead region: %lx\n", pf_tgt_region);
@@ -119,7 +121,8 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
                 addresses.back().pfahead_host = 2;// send to l2
             }
         }
-        if (1) {
+
+        if (streamPFAhead) {
             pf_tgt_addr += 256 * blkSize;  // depth here?
             Addr pf_tgt_region = regionAddress(pf_tgt_addr);
             DPRINTF(SMSPrefetcher, "ACT pf ahead region: %lx\n", pf_tgt_region);
@@ -338,7 +341,8 @@ SMSPrefetcher::strideLookup(const PrefetchInfo &pfi, std::vector<AddrPriority> &
             DPRINTF(SMSPrefetcher, "Stride touch in the same blk, ignore redundant req\n");
             return false;
         }
-        bool stride_match = new_stride == entry->stride || (entry->stride > 64 && new_stride % entry->stride == 0);
+        bool stride_match = fuzzyStrideMatching ? (entry->stride > 64 && new_stride % entry->stride == 0) : false;
+        stride_match |= new_stride == entry->stride;
         DPRINTF(SMSPrefetcher, "Stride hit, with stride: %ld(%lx), old stride: %ld(%lx), long stride: %.2f\n",
                 new_stride, new_stride, entry->stride, entry->stride, entry->longStride.calcSaturation());
 
