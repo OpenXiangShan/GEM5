@@ -22,6 +22,7 @@ SMSPrefetcher::SMSPrefetcher(const SMSPrefetcherParams &p)
       pht(p.pht_assoc, p.pht_entries, p.pht_indexing_policy,
           p.pht_replacement_policy,
           PhtEntry(2 * (region_blocks - 1), SatCounter8(2, 1))),
+      phtPFAhead(p.pht_pf_ahead),
       pfBlockLRUFilter(pfFilterSize),
       pfPageLRUFilter(pfFilterSize),
       bop(dynamic_cast<BOP *>(p.bop)),
@@ -202,7 +203,7 @@ SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
                        pf_source == PrefetchSourceType::HWP_BOP || pf_source == PrefetchSourceType::SPht ||
                        pf_source == PrefetchSourceType::IPCP_CPLX || pf_source == PrefetchSourceType::SPP;
         bool trigger_pht = false;
-        // stride_pf_addr = 0;
+        stride_pf_addr = phtPFAhead ? stride_pf_addr : 0;  // trigger addr sent to pht
         if (use_pht) {
             DPRINTF(SMSPrefetcher, "Do PHT lookup...\n");
             trigger_pht = phtLookup(pfi, addresses, late && pf_source == PrefetchSourceType::SPht, stride_pf_addr);

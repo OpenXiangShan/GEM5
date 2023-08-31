@@ -700,6 +700,7 @@ class SMSPrefetcher(QueuedPrefetcher):
         LRURP(),
         "Replacement policy of pattern history table"
     )
+    pht_pf_ahead = Param.Bool(True, "Prefetch pattern region ahead with stride")
     # pf gen table (full-assoc)
     # not implemented now, because queued prefetcher already had a filter
     pf_gen_entries = Param.MemorySize("16", "num of pf_gen entries")

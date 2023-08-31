@@ -131,6 +131,8 @@ class SMSPrefetcher : public Queued
 
     AssociativeSet<PhtEntry> pht;
 
+    const bool phtPFAhead;
+
     Addr phtHash(Addr pc) { return pc >> 1; }
 
     bool phtLookup(const PrefetchInfo &pfi,
