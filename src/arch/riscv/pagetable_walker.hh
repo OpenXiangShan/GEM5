@@ -99,6 +99,7 @@ namespace RiscvISA
                 RequestPtr req;
                 BaseMMU::Translation *translation;
                 bool from_pre_req;
+                bool from_forward_pre_req;
                 Fault fault;
                 bool squashed;
 
@@ -108,6 +109,7 @@ namespace RiscvISA
                     req = nullptr;
                     translation = nullptr;
                     from_pre_req = false;
+                    from_forward_pre_req = false;
                     fault = NoFault;
                     squashed = false;
                 }
@@ -117,6 +119,7 @@ namespace RiscvISA
                       req(req),
                       translation(translation),
                       from_pre_req(false),
+                      from_forward_pre_req(false),
                       fault(NoFault),
                       squashed(false)
                 {}
@@ -164,6 +167,8 @@ namespace RiscvISA
             bool auto_nextline_sign;
             bool finish_default_translate;
             bool pre_hit_in_ptw;
+            bool from_pre;
+            bool from_forward_pre;
 
 
           public:
@@ -177,19 +182,21 @@ namespace RiscvISA
                 requestors.emplace_back(nullptr, _req, _translation);
             }
             void initState(ThreadContext *_tc, BaseMMU::Mode _mode,
-                           bool _isTiming = false, bool _from_pre_req = false);
+                           bool _isTiming = false, bool _from_pre_req = false,
+                           bool _from_forward_pre_req = false);
 
             std::pair<bool, Fault> tryCoalesce(
                 ThreadContext *_tc, BaseMMU::Translation *translation,
                 const RequestPtr &req, BaseMMU::Mode mode, bool from_l2tlb,
-                Addr asid, bool from_pre_req);
+                Addr asid, bool from_pre_req, bool from_forward_pre_req);
 
             Fault startWalk(Addr ppn, int f_level, bool from_l2tlb,
                             bool OpenNextline, bool autoOpenNextline,
-                            bool from_pre_req);
+                            bool from_pre_req, bool from_forward_req);
             Fault startFunctional(Addr &addr, unsigned &logBytes,
                                   bool OpenNextline, bool autoOpenNextline,
-                                  bool from_pre_req);
+                                  bool from_pre_req,
+                                  bool from_forward_pre_req);
             bool recvPacket(PacketPtr pkt);
             unsigned numInflight() const;
             bool isRetrying();
@@ -204,7 +211,7 @@ namespace RiscvISA
           private:
             void setupWalk(Addr ppn, Addr vaddr, int f_level, bool from_l2tlb,
                            bool OpenNextline, bool autoOpenNextline,
-                           bool from_pre_req);
+                           bool from_pre_req, bool from_forward_pre_req);
             Fault stepWalk(PacketPtr &write);
             void sendPackets();
             void endWalk();
@@ -244,7 +251,8 @@ namespace RiscvISA
         Fault start(Addr ppn, ThreadContext *_tc,
                     BaseMMU::Translation *translation, const RequestPtr &req,
                     BaseMMU::Mode mode, bool from_pre_req = false,
-                    int f_level = 2, bool from_l2tlb = false, Addr asid = 0);
+                    bool from_forward_pre_req = false, int f_level = 2,
+                    bool from_l2tlb = false, Addr asid = 0);
 
         void doL2TLBHitSchedule(const RequestPtr &req, ThreadContext *tc,
                                 BaseMMU::Translation *translation,
@@ -257,7 +265,8 @@ namespace RiscvISA
                                            BaseMMU::Translation *translation,
                                            const RequestPtr &req,
                                            BaseMMU::Mode mode, bool from_l2tlb,
-                                           Addr asid, bool from_pre_req);
+                                           Addr asid, bool from_pre_req,
+                                           bool from_forward_pre_req);
 
         // Fault perm_check ();
 

@@ -119,6 +119,8 @@ class TLB : public BaseTLB
         statistics::Scalar squashedInsert;
         statistics::Scalar ALLInsert;
         statistics::Scalar forwardHits;
+        statistics::Scalar used_f_pre;
+        statistics::Scalar remove_no_use_f_pre;
 
 
         statistics::Scalar writeL2l3TlbMisses;
@@ -214,11 +216,12 @@ class TLB : public BaseTLB
     Addr translateWithTLB(Addr vaddr, uint16_t asid, BaseMMU::Mode mode);
 
     Fault L2tlb_pagefault(Addr vaddr, BaseMMU::Mode mode,
-                          const RequestPtr &req, bool is_pre);
+                          const RequestPtr &req, bool is_pre,
+                          bool is_forward_pre);
 
     Fault L2tlb_check(PTESv39 pte, int level, STATUS status,
                       PrivilegeMode pmode, Addr vaddr, BaseMMU::Mode mode,
-                      const RequestPtr &req, bool is_pre);
+                      const RequestPtr &req, bool is_pre, bool is_forward_pre);
 
     Fault translateAtomic(const RequestPtr &req,
                           ThreadContext *tc, BaseMMU::Mode mode) override;
