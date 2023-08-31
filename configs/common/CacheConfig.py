@@ -185,6 +185,8 @@ def config_cache(options, system):
                     dcache.prefetcher.fuzzy_stride_matching = True
                     dcache.prefetcher.stream_pf_ahead = True
                     dcache.prefetcher.bop.delay_queue_enable = True
+                    dcache.prefetcher.queue_size = 128
+                    dcache.prefetcher.max_prefetch_requests_with_pending_translation = 128
 
             if options.ideal_cache:
                 icache.response_latency = 0
@@ -194,12 +196,16 @@ def config_cache(options, system):
                 assert dcache.prefetcher != NULL and \
                     system.l2.prefetcher != NULL
                 dcache.prefetcher.add_pf_downstream(system.l2.prefetcher)
+                system.l2.prefetcher.queue_size = 64
+                system.l2.prefetcher.max_prefetch_requests_with_pending_translation = 128
                 print("Add L2 prefetcher as downstream of L1D prefetcher")
 
             if options.l3cache and options.l2_to_l3_pf_hint:
                 assert system.l2.prefetcher != NULL and \
                     system.l3.prefetcher != NULL
                 system.l2.prefetcher.add_pf_downstream(system.l3.prefetcher)
+                system.l3.prefetcher.queue_size = 64
+                system.l3.prefetcher.max_prefetch_requests_with_pending_translation = 128
                 print("Add L3 prefetcher as downstream of L2 prefetcher")
 
             # If we have a walker cache specified, instantiate two
