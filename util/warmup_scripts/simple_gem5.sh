@@ -17,10 +17,10 @@ export workload_list=$desc_dir/spec06_rv64gcb_o2_20m__cover1.00_top100-normal-0-
 
 # The checkpoint directory. We will find checkpoint_path in workload_list
 # under this directory to get the checkpoint path.
-export cpt_dir='/nfs-nvme/home/share/checkpoints_profiles/spec06_rv64gcb_o2_20m'
+export cpt_dir='/nfs-nvme/home/share/checkpoints_profiles/spec06_rv64gcb_o3_20m_gcc12-fpcontr-off/take_cpt'
 
 # A tag to identify current batch run
-export tag="an-example-tag-like-test-perf-for-ptw"
+export tag="an-example-to-run-gem5-with-composite-prefetcher"
 
 export log_file='log.txt'
 
@@ -122,10 +122,16 @@ function run() {
         --caches --cacheline_size=64 \
         --l1i_size=64kB --l1i_assoc=8 \
         --l1d_size=64kB --l1d_assoc=8 \
-        --l1d-hwp-type=SMSPrefetcher \
+        --l1d-hwp-type=XSCompositePrefetcher \
+        --short-stride-thres=0 \
         --l2cache --l2_size=1MB --l2_assoc=8 \
-        --l3cache --l3_size=6MB --l3_assoc=6 \
-        --mem-type=DRAMsim3 --dramsim3-ini=$gem5_home/xiangshan_DDR4_8Gb_x8_2400.ini \
+        --l3cache --l3_size=16MB --l3_assoc=16 \
+        --l1-to-l2-pf-hint \
+        --l2-hwp-type=WorkerPrefetcher \
+        --l2-to-l3-pf-hint \
+        --l3-hwp-type=WorkerPrefetcher \
+        --mem-type=DRAMsim3 \
+        --dramsim3-ini=$gem5_home/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini \
         --bp-type=DecoupledBPUWithFTB --enable-loop-predictor \
         --enable-difftest \
         $arch_db_args $cpt_option \
@@ -135,8 +141,9 @@ function run() {
 
     # Here is a scratchpad for frequently used options
 
-        # Use SMS+BOP as L2 prefetcher
-        # --l2-hwp-type=MultiPrefetcher \
+        # Enable complex stride component or SPP component in composite prefetcher
+        # --l1d-enable-cplx \
+        # --l1d-enable-spp \
 
         # Record arch db traces only after warmup
         #  --arch-db-fromstart=False 
@@ -226,10 +233,10 @@ export -f prepare_env
 function parallel_run() {
     # We use gnu parallel to control the parallelism.
     # If your server has 32 core and 64 SMT threads, we suggest to run with no more than 32 threads.
-    export num_threads=90
+    export num_threads=30
     cat $workload_list | parallel -a - -j $num_threads arg_wrapper {}
 }
 
 # Usually, I use paralell run to benchmark, and use single_run to debug
-# parallel_run
-single_run
+parallel_run
+# single_run
