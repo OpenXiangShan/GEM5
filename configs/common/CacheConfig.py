@@ -176,7 +176,7 @@ def config_cache(options, system):
             if dcache.prefetcher != NULL:
                 print("Add dtb for L1D prefetcher")
                 dcache.prefetcher.registerTLB(system.cpu[i].mmu.dtb)
-                if options.l1d_hwp_type == 'SMSPrefetcher':
+                if options.l1d_hwp_type == 'XSCompositePrefetcher':
                     if options.l1d_enable_spp:
                         dcache.prefetcher.enable_spp = True
                     if options.l1d_enable_cplx:

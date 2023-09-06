@@ -19,17 +19,17 @@
 #include "mem/cache/prefetch/stride.hh"
 #include "mem/cache/tags/tagged_entry.hh"
 #include "mem/packet.hh"
-#include "params/SMSPrefetcher.hh"
+#include "params/XSCompositePrefetcher.hh"
 
 namespace gem5
 {
-struct SMSPrefetcherParams;
+struct XSCompositePrefetcherParams;
 
 GEM5_DEPRECATED_NAMESPACE(Prefetcher, prefetch);
 namespace prefetch
 {
 
-class SMSPrefetcher : public Queued
+class XSCompositePrefetcher : public Queued
 {
   protected:
     const unsigned int region_size;
@@ -141,7 +141,7 @@ class SMSPrefetcher : public Queued
     int calcPeriod(const std::vector<SatCounter8> &bit_vec, bool late);
 
   public:
-    SMSPrefetcher(const SMSPrefetcherParams &p);
+    XSCompositePrefetcher(const XSCompositePrefetcherParams &p);
 
     // dummy implementation, calc(3 args) will not call it
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses) override

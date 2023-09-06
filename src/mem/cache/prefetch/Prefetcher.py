@@ -625,9 +625,9 @@ class IPCPrefetcher(QueuedPrefetcher):
     cspt_size = Param.Int(256, "Szie of CSP Table")
 
 
-class SMSPrefetcher(QueuedPrefetcher):
-    type = "SMSPrefetcher"
-    cxx_class = 'gem5::prefetch::SMSPrefetcher'
+class XSCompositePrefetcher(QueuedPrefetcher):
+    type = "XSCompositePrefetcher"
+    cxx_class = 'gem5::prefetch::XSCompositePrefetcher'
     cxx_header = 'mem/cache/prefetch/sms.hh'
 
     use_virtual_addresses = True
@@ -715,8 +715,8 @@ class SMSPrefetcher(QueuedPrefetcher):
         LRURP(),
         "Replacement policy of pf_gen"
     )
-    bop = Param.BasePrefetcher(BOPPrefetcher(), "BOP used in SMS")
-    spp = Param.BasePrefetcher(SignaturePathPrefetcher(), "SPP used in SMS")
+    bop = Param.BasePrefetcher(BOPPrefetcher(), "BOP used in composite prefetcher ")
+    spp = Param.BasePrefetcher(SignaturePathPrefetcher(), "SPP used in composite prefetcher")
     ipcp = Param.IPCPrefetcher(IPCPrefetcher(use_rrf = False), "")
 
     enable_cplx = Param.Bool(False, "Enable CPLX component")
@@ -736,5 +736,5 @@ class MultiPrefetcher(BasePrefetcher):
     on_data  = True
     on_inst  = False
 
-    prefetchers = VectorParam.BasePrefetcher([SMSPrefetcher(), BOPPrefetcher()],
+    prefetchers = VectorParam.BasePrefetcher([XSCompositePrefetcher(), BOPPrefetcher()],
         "Array of prefetchers")

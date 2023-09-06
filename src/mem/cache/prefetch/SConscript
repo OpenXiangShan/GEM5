@@ -30,7 +30,7 @@ Import('*')
 
 SimObject('Prefetcher.py', sim_objects=[
     'BasePrefetcher', 'MultiPrefetcher', 'QueuedPrefetcher',
-    'SMSPrefetcher', 'BertiPrefetcher',
+    'XSCompositePrefetcher', 'BertiPrefetcher',
     'StridePrefetcherHashedSetAssociative', 'StridePrefetcher',
     'TaggedPrefetcher', 'IndirectMemoryPrefetcher', 'SignaturePathPrefetcher',
     'SignaturePathPrefetcherV2', 'AccessMapPatternMatching', 'AMPMPrefetcher',
@@ -41,7 +41,7 @@ SimObject('Prefetcher.py', sim_objects=[
 
 
 DebugFlag('BOPPrefetcher')
-DebugFlag('SMSPrefetcher')
+DebugFlag('XSCompositePrefetcher')
 DebugFlag('BertiPrefetcher')
 DebugFlag('SPP')
 DebugFlag('WorkerPref')
