@@ -206,7 +206,7 @@ CoherentXBar::recvTimingReq(PacketPtr pkt, PortID cpu_side_port_id)
             // below is not busy and the cache clean request can be
             // forwarded to it
             if (!memSidePorts[mem_side_port_id]->tryTiming(pkt)) {
-                DPRINTF(CoherentXBar, "%s: src %s packet %s RETRY\n", __func__,
+                DPRINTF(CoherentXBar, "%s: src %s packet %s RETRY (snoop)\n", __func__,
                         src_port->name(), pkt->print());
 
                 // update the layer state and schedule an idle event
@@ -290,6 +290,8 @@ CoherentXBar::recvTimingReq(PacketPtr pkt, PortID cpu_side_port_id)
             }
 
             // since it is a normal request, attempt to send the packet
+            DPRINTF(CoherentXBar, "%s: Forwarding %s to port %s\n", __func__,
+                    pkt->print(), memSidePorts[mem_side_port_id]->name());
             success = memSidePorts[mem_side_port_id]->sendTimingReq(pkt);
         } else {
             // no need to forward, turn this packet around and respond
@@ -480,6 +482,7 @@ CoherentXBar::recvTimingResp(PacketPtr pkt, PortID mem_side_port_id)
 
     // determine how long to be crossbar layer is busy
     Tick packetFinishTime = clockEdge(headerLatency) + pkt->payloadDelay;
+    DPRINTF(CoherentXBar, "Payload delay: %lu, header delay: %lu\n", pkt->payloadDelay, clockEdge(headerLatency));
 
     if (snoopFilter && !system->bypassCaches()) {
         // let the snoop filter inspect the response and update its state
@@ -496,6 +499,7 @@ CoherentXBar::recvTimingResp(PacketPtr pkt, PortID mem_side_port_id)
     // remove the request from the routing table
     routeTo.erase(route_lookup);
 
+    DPRINTF(CoherentXBar, "%s: will holdin the resp layer until %d\n", __func__, packetFinishTime);
     respLayers[cpu_side_port_id]->succeededTiming(packetFinishTime);
 
     // stats updates
@@ -715,6 +719,7 @@ CoherentXBar::forwardTiming(PacketPtr pkt, PortID exclude_cpu_side_port_id,
         if (exclude_cpu_side_port_id == InvalidPortID ||
             p->getId() != exclude_cpu_side_port_id) {
             // cache is not allowed to refuse snoop
+            DPRINTF(CoherentXBar, "%s: send packet %s to %s\n", __func__, pkt->print(), p->name());
             p->sendTimingSnoopReq(pkt);
             fanout++;
         }
@@ -1092,6 +1097,17 @@ CoherentXBar::sinkPacket(const PacketPtr pkt) const
     //    that has promised to respond (setting the cache responding
     //    flag) is providing writable and thus had a Modified block,
     //    and no further action is needed
+
+    // print 4 conditions:
+    DPRINTF(CoherentXBar, "sinkPacket: pointOfCoherency=%d, "
+            "cacheResponding=%d, isRead=%d, isWrite=%d, "
+            "needsResponse=%d, isCleanEviction=%d, isBlockCached=%d, "
+            "needsWritable=%d, responderHadWritable=%d\n",
+            pointOfCoherency, pkt->cacheResponding(), pkt->isRead(),
+            pkt->isWrite(), pkt->needsResponse(), pkt->isCleanEviction(),
+            pkt->isBlockCached(), pkt->needsWritable(),
+            pkt->responderHadWritable());
+
     return (pointOfCoherency && pkt->cacheResponding()) ||
         (pointOfCoherency && !(pkt->isRead() || pkt->isWrite()) &&
          !pkt->needsResponse()) ||

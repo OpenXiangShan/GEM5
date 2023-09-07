@@ -68,6 +68,20 @@
 namespace gem5
 {
 
+enum PrefetchSourceType
+{
+    PF_NONE = 0,
+    SStream,
+    SStride,
+    SPht,
+    HWP_BOP,
+    SPP,
+    IPCP,
+    IPCP_CS,
+    IPCP_CPLX,
+    NUM_PF_SOURCES
+};
+
 /**
  * Special TaskIds that are used for per-context-switch stats dumps
  * and Cache Occupancy. Having too many tasks seems to be a problem
@@ -347,15 +361,27 @@ class Request
     {
         bool validXsMetadata;
         o3::XsDynInstMetaPtr instXsMetadata;
+        PrefetchSourceType prefetchSource;
+
         XsMetadata() :
             validXsMetadata(false),
-            instXsMetadata(NULL) {};
+            instXsMetadata(nullptr),
+            prefetchSource(PF_NONE) {}
+
         XsMetadata(o3::XsDynInstMetaPtr instMeta) :
             validXsMetadata(true),
-            instXsMetadata(instMeta) {};
+            instXsMetadata(instMeta),
+            prefetchSource(PF_NONE) {}
+
+        XsMetadata(PrefetchSourceType pfSource) :
+            validXsMetadata(true),
+            instXsMetadata(nullptr),
+            prefetchSource(pfSource) {}
+
         void invalidate() {
             validXsMetadata = false;
-            instXsMetadata = NULL;
+            instXsMetadata = nullptr;
+            prefetchSource = PF_NONE;
         }
     } XsMetadata;
 
@@ -1176,6 +1202,21 @@ class Request
     bool isCacheInvalidate() const { return _flags.isSet(INVALIDATE); }
     bool isCacheMaintenance() const { return _flags.isSet(CLEAN|INVALIDATE); }
     /** @} */
+
+
+  protected:
+    int pfSource{PrefetchSourceType::PF_NONE};
+
+    bool firstReqAfterSquash{false};
+
+  public:
+    void setPFSource(PrefetchSourceType pf_source) { pfSource = pf_source; }
+    PrefetchSourceType getPFSource() const { return static_cast<PrefetchSourceType>(pfSource); }
+
+    bool isFromBOP() const { return pfSource == PrefetchSourceType::HWP_BOP; }
+
+    bool isFirstReqAfterSquash() { return firstReqAfterSquash; }
+    void setFirstReqAfterSquash() { firstReqAfterSquash = true; }
 };
 
 } // namespace gem5

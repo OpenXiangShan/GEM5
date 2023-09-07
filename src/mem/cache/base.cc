@@ -47,6 +47,7 @@
 
 #include "base/compiler.hh"
 #include "base/logging.hh"
+#include "base/output.hh"
 #include "debug/ArchDB.hh"
 #include "debug/Cache.hh"
 #include "debug/CacheComp.hh"
@@ -114,7 +115,9 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       addrRanges(p.addr_ranges.begin(), p.addr_ranges.end()),
       archDBer(p.arch_db),
       system(p.system),
-      stats(*this)
+      stats(*this),
+      cacheLevel(p.cache_level),
+      forceHit(p.force_hit)
 {
     // the MSHR queue has no reserve entries as we check the MSHR
     // queue on every single allocation, whereas the write queue has
@@ -138,6 +141,30 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
         "Compressed cache %s does not have a compression algorithm", name());
     if (compressor)
         compressor->setCache(this);
+
+    if (dumpMissPC && cacheLevel) {
+        registerExitCallback([this]() {
+            if (pcMissCount.empty())
+                return;
+            auto out_handle =
+                simout.create(std::string("L") + std::to_string(cacheLevel) + "PCMissCount.txt", false, true);
+            *out_handle->stream() << "Mem Access PC" << ", " << "Count" << std::endl;
+            std::vector<std::pair<Addr, uint32_t>> sorted_miss_pc;
+            for (const auto& it : pcMissCount) {
+                sorted_miss_pc.push_back(it);
+            }
+            std::sort(sorted_miss_pc.begin(), sorted_miss_pc.end(),
+                      [](const std::pair<Addr, uint32_t> &a,
+                         const std::pair<Addr, uint32_t> &b) {
+                          return a.second > b.second;
+                      });
+            for (const auto& it : sorted_miss_pc) {
+                *out_handle->stream() << std::hex << it.first << " "
+                                      << std::dec << it.second << std::endl;
+            }
+            simout.close(out_handle);
+        });
+    }
 
 }
 
@@ -228,7 +255,7 @@ BaseCache::inRange(Addr addr) const
 void
 BaseCache::handleTimingReqHit(PacketPtr pkt, CacheBlk *blk, Tick request_time)
 {
-
+    DPRINTF(Cache, "%s for %s hit\n", __func__, pkt->print());
     // handle special cases for LockedRMW transactions
     if (pkt->isLockedRMW()) {
         Addr blk_addr = pkt->getBlockAddr(blkSize);
@@ -281,12 +308,19 @@ BaseCache::handleTimingReqHit(PacketPtr pkt, CacheBlk *blk, Tick request_time)
         }
     }
 
-    if (pkt->needsResponse()) {
+    if (pkt->needsResponse() || pkt->isResponse()) {
         // These delays should have been consumed by now
-        assert(pkt->headerDelay == 0);
-        assert(pkt->payloadDelay == 0);
+        if (pkt->needsResponse()) {
+            assert(pkt->headerDelay == 0);
+            assert(pkt->payloadDelay == 0);
 
-        pkt->makeTimingResponse();
+            pkt->makeTimingResponse();
+        } else {
+            // It is a force hit
+            assert(pkt->isResponse());
+        }
+        DPRINTF(Cache, "Making timing response for %s, schedule it at %llu, is force hit: %i\n",
+                pkt->print(), request_time, pkt->isResponse());
 
         // In this case we are considering request_time that takes
         // into account the delay of the xbar, if any, and just
@@ -338,11 +372,22 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                 // uncached memory write, forwarded to WriteBuffer.
                 allocateWriteBuffer(pkt, forward_time);
             } else {
-                DPRINTF(Cache, "%s coalescing MSHR for %s\n", __func__,
-                        pkt->print());
+                DPRINTF(Cache, "%s coalescing MSHR for %s, va: %lx\n", __func__,
+                        pkt->print(), pkt->req->hasVaddr() ? pkt->req->getVaddr() : 0);
 
                 assert(pkt->req->requestorId() < system->maxRequestors());
                 stats.cmdStats(pkt).mshrHits[pkt->req->requestorId()]++;
+                if (!mshr->hasFromCPU() && mshr->hasFromPref() &&  // and from cpu
+                    (pkt->cmd != MemCmd::HardPFReq)) {
+                    pkt->missOnLatePf = true;
+                    pkt->pfSource = mshr->getPFSource();
+
+                } else if (mshr->hasFromCPU()) {
+                    // no pkt in mshr originated from cache; all of them are from cpu
+                    pkt->coalescingMSHR = true;
+                }
+                DPRINTF(Cache, "%s: miss on late pref: %i, pref source: %i, coalescing cpu requests: %i\n", __func__,
+                        pkt->missOnLatePf, pkt->pfSource, pkt->coalescingMSHR);
 
                 // We use forward_time here because it is the same
                 // considering new targets. We have multiple
@@ -440,6 +485,24 @@ BaseCache::recvTimingReq(PacketPtr pkt)
         doWritebacks(writebacks, clockEdge(lat + forwardLatency));
     }
 
+    if (!satisfied && forceHit && !pkt->req->isInstFetch() && pkt->isRead() && pkt->req->hasPC() &&
+        forceHitPCs.count(pkt->req->getPC())) {
+        bool mshr_hit = mshrQueue.findMatch(pkt->getAddr(), pkt->isSecure()) != nullptr;
+        bool wb_hit = writeBuffer.findMatch(pkt->getBlockAddr(blkSize), pkt->isSecure()) != nullptr;
+
+        if (!(mshr_hit || wb_hit)) {
+            DPRINTF(Cache, "%s: generate functional access for PC %#lx\n", __func__, pkt->req->getPC());
+            DPRINTF(Cache, "need writable: %d, need resp: %d\n", pkt->needsWritable(), pkt->needsResponse());
+
+            memSidePort.sendFunctional(pkt);
+            satisfied = true;
+        } else {
+            DPRINTF(Cache, "%s: mshr/wb_buffer hit for force hit PC %#lx, forced to miss\n", __func__,
+                    pkt->req->getPC());
+        }
+    }
+
+
     // Here we charge the headerDelay that takes into account the latencies
     // of the bus, if the packet comes from it.
     // The latency charged is just the value set by the access() function.
@@ -457,6 +520,7 @@ BaseCache::recvTimingReq(PacketPtr pkt)
         if (prefetcher && blk && blk->wasPrefetched()) {
             DPRINTF(Cache, "Hit on prefetch for addr %#x (%s)\n",
                     pkt->getAddr(), pkt->isSecure() ? "s" : "ns");
+            pkt->req->setPFSource(blk->getXsMetadata().prefetchSource);
             blk->clearPrefetched();
         }
 
@@ -873,9 +937,16 @@ BaseCache::cmpAndSwap(CacheBlk *blk, PacketPtr pkt)
     }
 }
 
+bool
+BaseCache::hasHintsWaiting()
+{
+    return prefetcher && prefetcher->hasHintsWaiting();
+}
+
 QueueEntry*
 BaseCache::getNextQueueEntry()
 {
+    DPRINTF(Cache, "Enter getNextQueueEntry\n");
     // Check both MSHR queue and write buffer for potential requests,
     // note that null does not mean there is no request, it could
     // simply be that it is not ready
@@ -956,9 +1027,22 @@ BaseCache::getNextQueueEntry()
                 // allocate an MSHR and return it, note
                 // that we send the packet straight away, so do not
                 // schedule the send
-                return allocateMissBuffer(pkt, curTick(), false);
+                DPRINTF(HWPrefetch, "Allocating MSHR for prefetching addr %#x\n", pf_addr);
+                auto buf = allocateMissBuffer(pkt, curTick(), false);
+                return buf;
             }
+            // if (prefetcher->hasHintsWaiting() && !memSidePort.hasSchedSendEvent()) {
+            //     DPRINTF(HWPrefetch, "Prefetcher has hints waiting, issuing them next cycle (%llu).\n", nextCycle());
+            //     memSidePort.schedSendEvent(nextCycle());
+            // }
+        } else {
+            DPRINTF(HWPrefetch, "No prefetch packet obtained\n");
         }
+    }
+
+    if (prefetcher && (!mshrQueue.canPrefetch() || isBlocked()) && prefetcher->hasHintDownStream()) {
+        DPRINTF(HWPrefetch, "Offloading prefetch to downstream cache\n");
+        prefetcher->offloadToDownStream();
     }
 
     return nullptr;
@@ -1000,7 +1084,7 @@ BaseCache::handleEvictions(std::vector<CacheBlk*> &evict_blks,
                     stats.liveBlockReplacements++;
                 }
                 Request::XsMetadata xsm = blk->getXsMetadata();
-                if (xsm.validXsMetadata){
+                if (xsm.validXsMetadata && xsm.instXsMetadata){
                     if (xsm.instXsMetadata->squashed){
                         if (blk->getDemandHits() == 0) {
                             stats.squashedDeadBlockReplacements++;
@@ -1143,6 +1227,8 @@ BaseCache::satisfyRequest(PacketPtr pkt, CacheBlk *blk, bool, bool)
     // invalidate their blocks after receiving them.
     // assert(!pkt->needsWritable() || blk->isSet(CacheBlk::WritableBit));
     assert(pkt->getOffset(blkSize) + pkt->getSize() <= blkSize);
+
+    DPRINTF(Cache, "satisfyRequest for %s\n", pkt->print());
 
     // Check RMW operations first since both isRead() and
     // isWrite() will be true for them
@@ -1353,6 +1439,7 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
     // Writeback handling is special case.  We can write the block into
     // the cache without having a writeable copy (or any copy at all).
     if (pkt->isWriteback()) {
+        DPRINTF(Cache, "Writeback for %s\n", pkt->print());
         assert(blkSize == pkt->getSize());
 
         // we could get a clean writeback while we are having
@@ -1423,6 +1510,7 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
 
         return true;
     } else if (pkt->cmd == MemCmd::CleanEvict) {
+        DPRINTF(Cache, "CleanEvict for %s\n", pkt->print());
         // A CleanEvict does not need to access the data array
         lat = calculateTagOnlyLatency(pkt->headerDelay, tag_latency);
 
@@ -1439,6 +1527,7 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         // go to next level.
         return false;
     } else if (pkt->cmd == MemCmd::WriteClean) {
+        DPRINTF(Cache, "WriteClean for %s\n", pkt->print());
         // WriteClean handling is a special case. We can allocate a
         // block directly if it doesn't exist and we can update the
         // block immediately. The WriteClean transfers the ownership
@@ -1503,6 +1592,8 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
     } else if (blk && (pkt->needsWritable() ?
             blk->isSet(CacheBlk::WritableBit) :
             blk->isSet(CacheBlk::ReadableBit))) {
+        DPRINTF(Cache, "need writable: %d, is writable: %d, need resp: %d\n",
+                pkt->needsWritable(), blk->isSet(CacheBlk::WritableBit), pkt->needsResponse());
         // OK to satisfy access
         incHitCount(pkt);
         incSquashedDemandHitCount(pkt, blk);
@@ -1527,6 +1618,22 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         }
 
         return true;
+    } else if (forceHit && !pkt->req->isInstFetch() && pkt->req->hasPC() &&
+               forceHitPCs.count(pkt->req->getPC())) {
+        bool mshr_hit = mshrQueue.findMatch(pkt->getAddr(), pkt->isSecure()) != nullptr;
+
+        if (!mshr_hit) {
+            DPRINTF(Cache, "Force hit, return\n");
+            return false;
+        } else {
+            DPRINTF(Cache, "%s: mshr hit for force hit PC %#lx, forced to miss\n", __func__, pkt->req->getPC());
+        }
+    }
+
+    if (blk && (pkt->needsWritable() && !blk->isSet(CacheBlk::WritableBit))) {
+        // Can't satisfy access normally... need writable
+        DPRINTF(Cache, "%s: %#lx wants writable but is not\n", __func__,
+                regenerateBlkAddr(blk));
     }
 
     // Can't satisfy access normally... either no block (blk == nullptr)
@@ -1721,7 +1828,7 @@ BaseCache::invalidateBlock(CacheBlk *blk)
 {
     // If block is still marked as prefetched, then it hasn't been used
     if (blk->wasPrefetched()) {
-        prefetcher->prefetchUnused();
+        prefetcher->prefetchUnused(blk->getXsMetadata().prefetchSource);
     }
 
     // Notify that the data contents for this address are no longer present
@@ -1745,6 +1852,8 @@ BaseCache::evictBlock(CacheBlk *blk, PacketList &writebacks)
         archDBer->L1EvictTraceWrite(
                 paddr, curCycle, this->name().c_str());
     }
+
+    DPRINTF(CacheTrace, "Evicting block %#llx\n", regenerateBlkAddr(blk));
 
     PacketPtr pkt = evictBlock(blk);
 
@@ -2736,16 +2845,19 @@ BaseCache::MemSidePort::recvFunctionalSnoop(PacketPtr pkt)
 void
 BaseCache::CacheReqPacketQueue::sendDeferredPacket()
 {
+    DPRINTF(Cache, "Enter sendDeferredPacket()\n");
     // sanity check
     assert(!waitingOnRetry);
 
     // there should never be any deferred request packets in the
-    // queue, instead we resly on the cache to provide the packets
+    // queue, instead we rely on the cache to provide the packets
     // from the MSHR queue or write queue
     assert(deferredPacketReadyTime() == MaxTick);
 
     // check for request packets (requests & writebacks)
     QueueEntry* entry = cache.getNextQueueEntry();
+
+    Tick to_schedule = 0;
 
     if (!entry) {
         // can happen if e.g. we attempt a writeback and fail, but
@@ -2757,7 +2869,15 @@ BaseCache::CacheReqPacketQueue::sendDeferredPacket()
         if (checkConflictingSnoop(entry->getTarget()->pkt)) {
             return;
         }
+        DPRINTF(Cache, "Sending pkt %s\n", entry->getTarget()->pkt->print());
+
         waitingOnRetry = entry->sendPacket(cache);
+
+        DPRINTF(Cache, "Need retry: %i\n", waitingOnRetry);
+
+        if (!waitingOnRetry && cache.hasHintsWaiting()) {
+            to_schedule = cache.nextCycle();
+        }
     }
 
     // if we succeeded and are not waiting for a retry, schedule the
@@ -2765,7 +2885,8 @@ BaseCache::CacheReqPacketQueue::sendDeferredPacket()
     // snoop responses have their own packet queue and thus schedule
     // their own events
     if (!waitingOnRetry) {
-        schedSendEvent(cache.nextQueueReadyTime());
+        to_schedule = to_schedule ? to_schedule : cache.nextQueueReadyTime();
+        schedSendEvent(to_schedule);
     }
 }
 

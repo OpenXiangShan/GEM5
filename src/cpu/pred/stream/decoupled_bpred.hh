@@ -366,7 +366,7 @@ class DecoupledStreamBPU : public BPredUnit
     {
     }
 
-    bool lookup(ThreadID tid, Addr instPC, void *&bp_history) { return false; }
+    bool lookup(ThreadID tid, Addr instPC, void *&bp_history) override { return false; }
 
     void checkHistory(const boost::dynamic_bitset<> &history);
 

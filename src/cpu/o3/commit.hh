@@ -61,6 +61,7 @@
 #include "cpu/pred/ftb/decoupled_bpred.hh"
 #include "cpu/pred/stream/decoupled_bpred.hh"
 #include "enums/CommitPolicy.hh"
+#include "sim/arch_db.hh"
 #include "sim/probe/probe.hh"
 
 namespace gem5
@@ -540,6 +541,10 @@ class Commit
     Tick lastCommitTick;
 
     std::map<Addr, unsigned> misPredIndirect;
+
+    ArchDBer *archDBer;
+
+    void dumpTicks(const DynInstPtr &inst);
 };
 
 } // namespace o3

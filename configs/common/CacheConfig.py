@@ -176,10 +176,37 @@ def config_cache(options, system):
             if dcache.prefetcher != NULL:
                 print("Add dtb for L1D prefetcher")
                 dcache.prefetcher.registerTLB(system.cpu[i].mmu.dtb)
+                if options.l1d_hwp_type == 'XSCompositePrefetcher':
+                    if options.l1d_enable_spp:
+                        dcache.prefetcher.enable_spp = True
+                    if options.l1d_enable_cplx:
+                        dcache.prefetcher.enable_cplx = True
+                    dcache.prefetcher.short_stride_thres = options.short_stride_thres
+                    dcache.prefetcher.fuzzy_stride_matching = True
+                    dcache.prefetcher.stream_pf_ahead = True
+                    dcache.prefetcher.bop.delay_queue_enable = True
+                    dcache.prefetcher.queue_size = 128
+                    dcache.prefetcher.max_prefetch_requests_with_pending_translation = 128
 
             if options.ideal_cache:
                 icache.response_latency = 0
                 dcache.response_latency = 0
+
+            if options.l1_to_l2_pf_hint:
+                assert dcache.prefetcher != NULL and \
+                    system.l2.prefetcher != NULL
+                dcache.prefetcher.add_pf_downstream(system.l2.prefetcher)
+                system.l2.prefetcher.queue_size = 64
+                system.l2.prefetcher.max_prefetch_requests_with_pending_translation = 128
+                print("Add L2 prefetcher as downstream of L1D prefetcher")
+
+            if options.l3cache and options.l2_to_l3_pf_hint:
+                assert system.l2.prefetcher != NULL and \
+                    system.l3.prefetcher != NULL
+                system.l2.prefetcher.add_pf_downstream(system.l3.prefetcher)
+                system.l3.prefetcher.queue_size = 64
+                system.l3.prefetcher.max_prefetch_requests_with_pending_translation = 128
+                print("Add L3 prefetcher as downstream of L2 prefetcher")
 
             # If we have a walker cache specified, instantiate two
             # instances here
@@ -247,6 +274,7 @@ def config_cache(options, system):
         else:
             system.cpu[i].connectBus(system.membus)
 
+    print('Finish memory system configuration')
     return system
 
 # ExternalSlave provides a "port", but when that port connects to a cache,

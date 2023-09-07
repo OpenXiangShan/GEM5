@@ -416,7 +416,7 @@ class LineLength(LineVerifier):
     opt_name = 'length'
 
     def check_line(self, line, **kwargs):
-        return style.normalized_len(line) <= 79
+        return style.normalized_len(line) <= 119
 
     def fix(self, filename, regions=all_regions, **kwargs):
         self.ui.write("Warning: cannot automatically fix overly long lines.\n")

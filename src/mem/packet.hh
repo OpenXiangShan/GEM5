@@ -294,7 +294,6 @@ class Packet : public Printable
     typedef uint32_t FlagsType;
     typedef gem5::Flags<FlagsType> Flags;
 
-  private:
     enum : FlagsType
     {
         // Flags to transfer across when copying a packet
@@ -362,6 +361,7 @@ class Packet : public Printable
 
     Flags flags;
 
+  private:
     /// A flag to indicate that the packet needs to send right away
     bool sendRightAway = false;
 
@@ -657,6 +657,15 @@ class Packet : public Printable
         assert(!flags.isSet(CACHE_RESPONDING));
         flags.set(CACHE_RESPONDING);
     }
+    uint64_t promisingResponder{0};
+    void setCacheRespondingBy(uint64_t by)
+    {
+        promisingResponder = by;
+    }
+    uint64_t getCacheRespondingBy()
+    {
+        return promisingResponder;
+    }
     bool cacheResponding() const { return flags.isSet(CACHE_RESPONDING); }
     /**
      * On fills, the hasSharers flag is used by the caches in
@@ -921,6 +930,7 @@ class Packet : public Printable
             size = req->getSize();
             flags.set(VALID_SIZE);
         }
+        pfSource = req->getPFSource();
     }
 
     /**
@@ -1558,6 +1568,16 @@ class Packet : public Printable
      * failed transaction, this function returns the failure reason.
      */
     HtmCacheFailure getHtmTransactionFailedInCacheRC() const;
+
+    bool missOnLatePf{false};
+
+    bool coalescingMSHR{false};
+
+    int pfSource{PrefetchSourceType::PF_NONE};
+
+    bool fromBOP() const { return pfSource == PrefetchSourceType::HWP_BOP; }
+    
+    PrefetchSourceType getPFSource() const { return static_cast<PrefetchSourceType>(pfSource); }
 };
 
 } // namespace gem5

@@ -48,6 +48,7 @@
 #include <cassert>
 
 #include "base/intmath.hh"
+#include "debug/HWPrefetch.hh"
 #include "mem/cache/base.hh"
 #include "params/BasePrefetcher.hh"
 #include "sim/system.hh"
@@ -64,6 +65,24 @@ Base::PrefetchInfo::PrefetchInfo(PacketPtr pkt, Addr addr, bool miss)
     requestorId(pkt->req->requestorId()), validPC(pkt->req->hasPC()),
     secure(pkt->isSecure()), size(pkt->req->getSize()), write(pkt->isWrite()),
     paddress(pkt->req->getPaddr()), cacheMiss(miss)
+{
+    unsigned int req_size = pkt->req->getSize();
+    if (!write && miss) {
+        data = nullptr;
+    } else {
+        data = new uint8_t[req_size];
+        Addr offset = pkt->req->getPaddr() - pkt->getAddr();
+        std::memcpy(data, &(pkt->getConstPtr<uint8_t>()[offset]), req_size);
+    }
+}
+
+Base::PrefetchInfo::PrefetchInfo(
+    PacketPtr pkt, Addr addr, bool miss,
+    Request::XsMetadata xsMeta
+) : address(addr), pc(pkt->req->hasPC() ? pkt->req->getPC() : 0),
+    requestorId(pkt->req->requestorId()), validPC(pkt->req->hasPC()),
+    secure(pkt->isSecure()), size(pkt->req->getSize()), write(pkt->isWrite()),
+    paddress(pkt->req->getPaddr()), cacheMiss(miss), xsMetadata(xsMeta)
 {
     unsigned int req_size = pkt->req->getSize();
     if (!write && miss) {
@@ -124,9 +143,21 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
         "demands not covered by prefetchs"),
     ADD_STAT(pfIssued, statistics::units::Count::get(),
         "number of hwpf issued"),
+    ADD_STAT(pfIssued_srcs, statistics::units::Count::get(),
+        "number of hwpf issued"),
+    ADD_STAT(pfOffloaded, statistics::units::Count::get(),
+        "number of hwpf issued"),
+    ADD_STAT(pfaheadOffloaded, statistics::units::Count::get(),
+        "number of hwpf issued"),
+    ADD_STAT(pfaheadProcess, statistics::units::Count::get(),
+        "number of hwpf issued"),
     ADD_STAT(pfUnused, statistics::units::Count::get(),
              "number of HardPF blocks evicted w/o reference"),
+    ADD_STAT(pfUnused_srcs, statistics::units::Count::get(),
+             "number of HardPF blocks evicted w/o reference"),
     ADD_STAT(pfUseful, statistics::units::Count::get(),
+        "number of useful prefetch"),
+    ADD_STAT(pfUseful_srcs, statistics::units::Count::get(),
         "number of useful prefetch"),
     ADD_STAT(pfUsefulButMiss, statistics::units::Count::get(),
         "number of hit on prefetch but cache block is not in an usable "
@@ -146,7 +177,17 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
 {
     using namespace statistics;
 
+    pfIssued_srcs
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+
     pfUnused.flags(nozero);
+    pfUnused_srcs
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfUseful_srcs
+        .init(NUM_PF_SOURCES)
+        .flags(total);
 
     accuracy.flags(total);
     accuracy = pfUseful / pfIssued;
@@ -242,10 +283,17 @@ Base::pageIthBlockAddress(Addr page, uint32_t blockIndex) const
 void
 Base::probeNotify(const PacketPtr &pkt, bool miss)
 {
+    DPRINTF(HWPrefetch, "ProbeNotify: %s for %s\n", miss ? "miss" : "hit",
+            pkt->print());
     // Don't notify prefetcher on SWPrefetch, cache maintenance
     // operations or for writes that we are coaslescing.
     if (pkt->cmd.isSWPrefetch()) return;
     if (pkt->req->isCacheMaintenance()) return;
+
+    if (pkt->req->isFirstReqAfterSquash()) {
+        squashMark = true;
+    }
+
     if (pkt->isWrite() && cache != nullptr && cache->coalesce()) return;
     if (!pkt->req->hasPaddr()) {
         panic("Request must have a physical address");
@@ -254,6 +302,7 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
     if (hasBeenPrefetched(pkt->getAddr(), pkt->isSecure())) {
         usefulPrefetches += 1;
         prefetchStats.pfUseful++;
+        prefetchStats.pfUseful_srcs[cache->getHitBlkXsMetadata(pkt).prefetchSource]++;
         if (miss)
             // This case happens when a demand hits on a prefetched line
             // that's not in the requested coherency state.
@@ -262,11 +311,21 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
 
     // Verify this access type is observed by prefetcher
     if (observeAccess(pkt, miss)) {
+        PrefetchSourceType pf_source;
+        if (!miss) {
+            pf_source = cache->getHitBlkXsMetadata(pkt).prefetchSource;
+        } else {  // miss & late
+            pf_source = pkt->getPFSource();
+        }
         if (useVirtualAddresses && pkt->req->hasVaddr()) {
-            PrefetchInfo pfi(pkt, pkt->req->getVaddr(), miss);
+            PrefetchInfo pfi(pkt, pkt->req->getVaddr(), miss, Request::XsMetadata(pf_source));
+            pfi.setReqAfterSquash(squashMark);
+            squashMark = false;
             notify(pkt, pfi);
         } else if (!useVirtualAddresses) {
-            PrefetchInfo pfi(pkt, pkt->req->getPaddr(), miss);
+            PrefetchInfo pfi(pkt, pkt->req->getPaddr(), miss, Request::XsMetadata(pf_source));
+            pfi.setReqAfterSquash(squashMark);
+            squashMark = false;
             notify(pkt, pfi);
         }
     }

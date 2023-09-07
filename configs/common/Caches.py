@@ -54,11 +54,14 @@ class L1Cache(Cache):
     mshrs = 4
     tgts_per_mshr = 20
 
+    cache_level = 1
+
 class L1_ICache(L1Cache):
     mshrs = 2
     is_read_only = True
-    # Writeback clean lines as well
-    writeback_clean = True
+
+    writeback_clean = False
+
     tag_latency = 1
     data_latency = 1
     sequential_access = False
@@ -66,9 +69,9 @@ class L1_ICache(L1Cache):
     response_latency = 4
 
 class L1_DCache(L1Cache):
-    mshrs = 16
-    # always writeback clean when lower level is exclusive
-    writeback_clean = True
+    mshrs = 32
+
+    writeback_clean = False
 
     # aligned latency:
     tag_latency = 1
@@ -77,10 +80,14 @@ class L1_DCache(L1Cache):
     # This is communication latency between l1 & l2
     response_latency = 4
 
+    force_hit = False
+
+    demand_mshr_reserve = 8
+
 class L2Cache(Cache):
-    mshrs = 32
+    mshrs = 64
     tgts_per_mshr = 20
-    clusivity='mostly_excl'
+    clusivity='mostly_incl'
     prefetch_on_access = True
     #prefetch_on_access = False
     # always writeback clean when lower level is exclusive
@@ -94,11 +101,14 @@ class L2Cache(Cache):
     # This is communication latency between l2 & l3
     response_latency = 15
 
+    cache_level = 2
+
 class L3Cache(Cache):
-    mshrs = 64
+    mshrs = 128
     tgts_per_mshr = 20
     clusivity='mostly_excl'
     writeback_clean = False
+    prefetch_on_access = True
 
     # aligned latency:
     tag_latency = 2
@@ -106,7 +116,13 @@ class L3Cache(Cache):
     sequential_access = True
 
     # This is L3 miss latency, which act as padding for memory controller
-    response_latency = 112
+
+    # 5950x L3 miss latency (rand) = 70ns, L3 hit latency = 15ns, so Mem-->L3 = 55ns (165 cycle in 3GHz)
+    # But XS's miss latency on mcf (less random) is averagely 211 on padding=112.
+    # To make XS's L3 miss latency similar to 5950x, we reduce padding from 112 to (112 - (211-165)) = 66 cycle
+    response_latency = 66
+
+    cache_level = 3
 
 class IOCache(Cache):
     assoc = 8

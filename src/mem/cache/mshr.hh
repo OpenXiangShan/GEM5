@@ -180,6 +180,12 @@ class MSHR : public QueueEntry, public Printable
          */
         bool hasFromCache;
 
+        bool hasFromPref;
+
+        bool hasFromCPU;
+
+        PrefetchSourceType pfSource;
+
         TargetList(const std::string &name = ".unnamedTargetList");
 
         /**
@@ -215,6 +221,8 @@ class MSHR : public QueueEntry, public Printable
             hasUpgrade = false;
             allocOnFill = false;
             hasFromCache = false;
+            hasFromPref = false;
+            hasFromCPU = false;
         }
 
         /**
@@ -348,6 +356,18 @@ class MSHR : public QueueEntry, public Printable
      */
     bool hasFromCache() const {
         return targets.hasFromCache;
+    }
+
+    bool hasFromPref() const {
+        return targets.hasFromPref;
+    }
+
+    bool hasFromCPU() const {
+        return targets.hasFromCPU;
+    }
+
+    PrefetchSourceType getPFSource() const {
+        return targets.pfSource;
     }
 
     /**

@@ -57,6 +57,7 @@
 #include "base/types.hh"
 #include "debug/Cache.hh"
 #include "debug/CachePort.hh"
+#include "debug/CacheTrace.hh"
 #include "enums/Clusivity.hh"
 #include "mem/cache/cache_blk.hh"
 #include "mem/cache/compressors/base.hh"
@@ -229,6 +230,8 @@ class BaseCache : public ClockedObject
             }
             return false;
         }
+
+        bool hasSchedSendEvent() const { return sendEvent.scheduled(); }
     };
 
 
@@ -262,6 +265,8 @@ class BaseCache : public ClockedObject
 
         MemSidePort(const std::string &_name, BaseCache *_cache,
                     const std::string &_label);
+
+        bool hasSchedSendEvent() const { return _reqQueue.hasSchedSendEvent(); }
     };
 
     /**
@@ -636,6 +641,8 @@ class BaseCache : public ClockedObject
      * for prioritizing among those sources on the fly.
      */
     QueueEntry* getNextQueueEntry();
+
+    bool hasHintsWaiting();
 
     /**
      * Insert writebacks into the write buffer
@@ -1206,8 +1213,9 @@ class BaseCache : public ClockedObject
             setBlocked((BlockedCause)MSHRQueue_MSHRs);
         }
 
-        if (sched_send) {
+        if (sched_send && !memSidePort.hasSchedSendEvent()) {
             // schedule the send
+            DPRINTF(Cache, "Scheduling a send for addr %llx after alloc MSHR\n", pkt->getAddr());
             schedMemSideSendEvent(time);
         }
 
@@ -1315,6 +1323,20 @@ class BaseCache : public ClockedObject
         }
     }
 
+    Request::XsMetadata getHitBlkXsMetadata(PacketPtr pkt)
+    {
+        CacheBlk *block = tags->findBlock(pkt->getAddr(), pkt->isSecure());
+        assert(block);
+        /* clean prefetchSource if the block was not prefetched */
+        if (!block->wasPrefetched()) {
+            Request::XsMetadata blkMeta = block->getXsMetadata();
+            blkMeta.prefetchSource = PrefetchSourceType::PF_NONE;
+            block->setXsMetadata(blkMeta);
+        }
+        return block->getXsMetadata();
+    }
+
+
     bool inMissQueue(Addr addr, bool is_secure) const {
         return mshrQueue.findMatch(addr, is_secure);
     }
@@ -1329,11 +1351,25 @@ class BaseCache : public ClockedObject
             if (missCount == 0)
                 exitSimLoop("A cache reached the maximum miss count");
         }
+
+        if (cacheLevel == 1 && !pkt->req->isInstFetch() && pkt->req->hasPC()) {
+            Addr pc = pkt->req->getPC();
+            auto it = pcMissCount.find(pc);
+            if (it == pcMissCount.end()) {
+                pcMissCount[pc] = 1;
+            } else {
+                it->second++;
+            }
+        }
     }
     void incHitCount(PacketPtr pkt)
     {
         assert(pkt->req->requestorId() < system->maxRequestors());
         stats.cmdStats(pkt).hits[pkt->req->requestorId()]++;
+
+        if (cacheLevel == 1 && !pkt->req->isInstFetch() && pkt->req->hasPC()) {
+            Addr pc = pkt->req->getPC();
+        }
     }
 
     void incSquashedDemandHitCount(PacketPtr pkt, CacheBlk *blk)
@@ -1344,7 +1380,7 @@ class BaseCache : public ClockedObject
         }
 
         auto tmp_meta = blk->getXsMetadata();
-        if (tmp_meta.validXsMetadata) {
+        if (tmp_meta.validXsMetadata && tmp_meta.instXsMetadata) {
             if (tmp_meta.instXsMetadata->squashed){
                 stats.squashedDemandHits++;
             }
@@ -1399,6 +1435,22 @@ class BaseCache : public ClockedObject
      */
     void serialize(CheckpointOut &cp) const override;
     void unserialize(CheckpointIn &cp) override;
+
+  private:
+
+    const unsigned cacheLevel{0};
+
+    const bool dumpMissPC{false};
+
+    std::unordered_map<Addr, uint64_t> pcMissCount;
+
+    // std::set<Addr> forceHitPCs{0x11474, 0x11470, 0x11472, 0x119fa, 0x119fe, 0x119ea};
+    std::set<Addr> forceHitPCs{};
+
+    const bool forceHit;
+
+public:
+    unsigned level() { return cacheLevel; }
 };
 
 /**

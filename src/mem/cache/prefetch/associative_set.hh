@@ -111,8 +111,9 @@ class AssociativeSet
      * @param addr key of the container
      * @param is_secure tag component of the container
      * @param entry pointer to the container entry to be inserted
+     * @param reset indicates if the replacement data should be reset, for example, place to the MRU position
      */
-    void insertEntry(Addr addr, bool is_secure, Entry* entry);
+    void insertEntry(Addr addr, bool is_secure, Entry* entry, bool with_reset = true);
 
     /**
      * Invalidate an entry and its respective replacement data.

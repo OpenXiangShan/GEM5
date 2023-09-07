@@ -282,11 +282,15 @@ class CheckerCPU : public BaseCPU, public ExecContext
     }
     //////////////////////////////////////////
 
+    using BaseCPU::readMiscRegNoEffect;
+
     RegVal
     readMiscRegNoEffect(int misc_reg) const
     {
         return thread->readMiscRegNoEffect(misc_reg);
     }
+
+    using BaseCPU::readMiscReg;
 
     RegVal
     readMiscReg(int misc_reg) override

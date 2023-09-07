@@ -96,5 +96,21 @@ void ArchDBer::L1EvictTraceWrite(
   };
 }
 
+void
+ArchDBer::memTraceWrite(Tick tick, bool is_load, Addr pc, Addr vaddr, Addr paddr, uint64_t issued, uint64_t translated,
+                        uint64_t completed, uint64_t committed, uint64_t writenback, int pf_src)
+{
+  if (!dump) return;
+
+  sprintf(memTraceSQLBuf,
+          "INSERT INTO MemTrace(Tick,IsLoad,PC,VADDR,PADDR,Issued,Translated,Completed,Committed,Writenback,PFSrc) "
+          "VALUES(%ld,%d,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%d);",
+          tick, is_load, pc, vaddr, paddr, issued, translated, completed, committed, writenback,pf_src);
+  rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
+  if (rc != SQLITE_OK) {
+    fatal("SQL error: %s\n", zErrMsg);
+  };
+}
+
 } // namespace gem5
 

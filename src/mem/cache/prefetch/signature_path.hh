@@ -40,6 +40,8 @@
 #ifndef __MEM_CACHE_PREFETCH_SIGNATURE_PATH_HH__
 #define __MEM_CACHE_PREFETCH_SIGNATURE_PATH_HH__
 
+#include <boost/compute/detail/lru_cache.hpp>
+
 #include "base/sat_counter.hh"
 #include "mem/cache/prefetch/associative_set.hh"
 #include "mem/cache/prefetch/queued.hh"
@@ -177,10 +179,9 @@ class SignaturePath : public Queued
      * @param is_secure whether this page is inside the secure memory area
      * @param addresses addresses to prefetch will be added to this vector
      */
-    void addPrefetch(Addr ppn, stride_t last_block, stride_t delta,
-                          double path_confidence, signature_t signature,
-                          bool is_secure,
-                          std::vector<AddrPriority> &addresses);
+    void addPrefetch(Addr ppn, stride_t last_block, stride_t delta, double path_confidence, signature_t signature,
+                     bool is_secure, std::vector<AddrPriority> &addresses,
+                     boost::compute::detail::lru_cache<Addr, Addr> &filter);
 
     /**
      * Obtains the SignatureEntry of the given page, if the page is not found,
@@ -196,7 +197,7 @@ class SignaturePath : public Queued
      * @result a reference to the SignatureEntry
      */
     SignatureEntry &getSignatureEntry(Addr ppn, bool is_secure, stride_t block,
-            bool &miss, stride_t &stride, double &initial_confidence);
+            bool &miss, stride_t &stride, double &initial_confidence, const PrefetchInfo &pfi);
     /**
      * Obtains the PatternEntry of the given signature, if the signature is
      * not found, it allocates a new one, replacing an existing entry if needed
@@ -264,8 +265,9 @@ class SignaturePath : public Queued
      * @param updated_filter_entries set of addresses containing these that
      *        their filter has been updated, if this call updates a new entry
      */
-    virtual void auxiliaryPrefetcher(Addr ppn, stride_t current_block,
-            bool is_secure, std::vector<AddrPriority> &addresses);
+    virtual void auxiliaryPrefetcher(Addr ppn, stride_t current_block, bool is_secure,
+                                     std::vector<AddrPriority> &addresses,
+                                     boost::compute::detail::lru_cache<Addr, Addr> &filter);
 
     /**
      * Handles the situation when the lookahead process has crossed the
@@ -287,8 +289,22 @@ class SignaturePath : public Queued
     SignaturePath(const SignaturePathPrefetcherParams &p);
     ~SignaturePath() = default;
 
-    void calculatePrefetch(const PrefetchInfo &pfi,
-                           std::vector<AddrPriority> &addresses) override;
+    void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses) {
+        panic("Not implemented\n");
+    };
+
+    using Queued::calculatePrefetch;
+
+    bool calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses,
+                           boost::compute::detail::lru_cache<Addr, Addr> &filter, int32_t &best_block_offset);
+
+  private:
+    bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio,
+                          boost::compute::detail::lru_cache<Addr, Addr> &filter);
+    unsigned sPageBytes;
+
+    bool preferLongPattern{false};
+
 };
 
 } // namespace prefetch

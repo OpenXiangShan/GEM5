@@ -13,5 +13,17 @@ jobs:
     name: run script autotest.py
     steps:
       - uses: actions/checkout@v2
-      - name: run autotest script
+      - name: Build DRAMSim
+        run: |
+          export GEM5_HOME=$(pwd)
+          cd ext/dramsim3
+          git clone git@github.com:umd-memsys/DRAMSim3.git DRAMsim3
+          cd DRAMsim3 && mkdir build
+          cd build
+          cmake ..
+          make -j 48
+          cd $GEM5_HOME
+      - name: Build GEM5
+        run: scons build/RISCV/gem5.opt -j 48 --gold-linker
+      - name: Run paralel autotest script
         run: python3 .github/workflows/autotest/script/autotest.py -f .github/workflows/autotest/gem5.cfg

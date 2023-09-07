@@ -32,6 +32,7 @@
 #include <climits>
 
 #include "debug/HWPrefetch.hh"
+#include "debug/SPP.hh"
 #include "mem/cache/prefetch/associative_set_impl.hh"
 #include "params/SignaturePathPrefetcher.hh"
 
@@ -55,7 +56,8 @@ SignaturePath::SignaturePath(const SignaturePathPrefetcherParams &p)
       patternTable(p.pattern_table_assoc, p.pattern_table_entries,
                    p.pattern_table_indexing_policy,
                    p.pattern_table_replacement_policy,
-                   PatternEntry(stridesPerPatternEntry, p.num_counter_bits))
+                   PatternEntry(stridesPerPatternEntry, p.num_counter_bits)),
+      sPageBytes(p.page_bytes * 8)
 {
     fatal_if(prefetchConfidenceThreshold < 0,
         "The prefetch confidence threshold must be greater than 0\n");
@@ -95,32 +97,32 @@ SignaturePath::PatternEntry::getStrideEntry(stride_t stride)
 }
 
 void
-SignaturePath::addPrefetch(Addr ppn, stride_t last_block,
-    stride_t delta, double path_confidence, signature_t signature,
-    bool is_secure, std::vector<AddrPriority> &addresses)
+SignaturePath::addPrefetch(Addr ppn, stride_t last_block, stride_t delta, double path_confidence,
+                           signature_t signature, bool is_secure, std::vector<AddrPriority> &addresses,
+                           boost::compute::detail::lru_cache<Addr, Addr> &filter)
 {
     stride_t block = last_block + delta;
 
     Addr pf_ppn;
     stride_t pf_block;
     if (block < 0) {
-        stride_t num_cross_pages = 1 + (-block) / (pageBytes/blkSize);
+        stride_t num_cross_pages = 1 + (-block) / (sPageBytes/blkSize);
         if (num_cross_pages > ppn) {
             // target address smaller than page 0, ignore this request;
             return;
         }
         pf_ppn = ppn - num_cross_pages;
-        pf_block = block + (pageBytes/blkSize) * num_cross_pages;
+        pf_block = block + (sPageBytes/blkSize) * num_cross_pages;
         handlePageCrossingLookahead(signature, last_block, delta,
                                     path_confidence);
-    } else if (block >= (pageBytes/blkSize)) {
-        stride_t num_cross_pages = block / (pageBytes/blkSize);
-        if (MaxAddr/pageBytes < (ppn + num_cross_pages)) {
+    } else if (block >= (sPageBytes/blkSize)) {
+        stride_t num_cross_pages = block / (sPageBytes/blkSize);
+        if (MaxAddr/sPageBytes < (ppn + num_cross_pages)) {
             // target address goes beyond MaxAddr, ignore this request;
             return;
         }
         pf_ppn = ppn + num_cross_pages;
-        pf_block = block - (pageBytes/blkSize) * num_cross_pages;
+        pf_block = block - (sPageBytes/blkSize) * num_cross_pages;
         handlePageCrossingLookahead(signature, last_block, delta,
                                     path_confidence);
     } else {
@@ -128,11 +130,11 @@ SignaturePath::addPrefetch(Addr ppn, stride_t last_block,
         pf_block = block;
     }
 
-    Addr new_addr = pf_ppn * pageBytes;
+    Addr new_addr = pf_ppn * sPageBytes;
     new_addr += pf_block * (Addr)blkSize;
 
-    DPRINTF(HWPrefetch, "Queuing prefetch to %#x.\n", new_addr);
-    addresses.push_back(AddrPriority(new_addr, 0));
+    DPRINTF(SPP, "Queuing prefetch to %#x, with stride of %#x(%u) blocks.\n", new_addr, delta, delta);
+    sendPFWithFilter(new_addr, addresses, 0, filter);
 }
 
 void
@@ -164,13 +166,15 @@ SignaturePath::updatePatternTable(Addr signature, stride_t stride)
 SignaturePath::SignatureEntry &
 SignaturePath::getSignatureEntry(Addr ppn, bool is_secure,
         stride_t block, bool &miss, stride_t &stride,
-        double &initial_confidence)
+        double &initial_confidence, const PrefetchInfo &pfi)
 {
     SignatureEntry* signature_entry = signatureTable.findEntry(ppn, is_secure);
     if (signature_entry != nullptr) {
         signatureTable.accessEntry(signature_entry);
         miss = false;
         stride = block - signature_entry->lastBlock;
+        DPRINTF(SPP, "Signature found in page %lx, pc: %lx, stride is %#x(%u) blocks.\n", ppn, pfi.getPC(), stride,
+                stride);
     } else {
         signature_entry = signatureTable.findVictim(ppn);
         assert(signature_entry != nullptr);
@@ -180,6 +184,7 @@ SignaturePath::getSignatureEntry(Addr ppn, bool is_secure,
             initial_confidence, stride);
 
         signatureTable.insertEntry(ppn, is_secure, signature_entry);
+        DPRINTF(SPP, "Create signature for page %lx\n", ppn);
         miss = true;
     }
     signature_entry->lastBlock = block;
@@ -226,32 +231,37 @@ SignaturePath::calculateLookaheadConfidence(PatternEntry const &sig,
     return lookahead_confidence;
 }
 
-void
-SignaturePath::calculatePrefetch(const PrefetchInfo &pfi,
-                                 std::vector<AddrPriority> &addresses)
+bool
+SignaturePath::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses,
+                                 boost::compute::detail::lru_cache<Addr, Addr> &filter, int32_t &best_block_offset)
 {
     Addr request_addr = pfi.getAddr();
-    Addr ppn = request_addr / pageBytes;
-    stride_t current_block = (request_addr % pageBytes) / blkSize;
+    Addr ppn = request_addr / sPageBytes;
+    stride_t current_block = (request_addr % sPageBytes) / blkSize;
     stride_t stride;
     bool is_secure = pfi.isSecure();
     double initial_confidence = 1.0;
+
+    bool sent = false;
+    unsigned init_addr_size = addresses.size();
+
+    DPRINTF(SPP, "Prefetch request for %#x, page %lx, block %#x.\n", request_addr, ppn, current_block);
 
     // Get the SignatureEntry of this page to:
     // - compute the current stride
     // - obtain the current signature of accesses
     bool miss;
     SignatureEntry &signature_entry = getSignatureEntry(ppn, is_secure,
-            current_block, miss, stride, initial_confidence);
+            current_block, miss, stride, initial_confidence, pfi);
 
     if (miss) {
-        // No history for this page, can't continue
-        return;
+        DPRINTF(SPP, "No history for this page, ignoring request.\n");
+        return sent;
     }
 
     if (stride == 0) {
-        // Can't continue with a stride 0
-        return;
+        DPRINTF(SPP, "Stride is 0, ignoring request.\n");
+        return sent;
     }
 
     // Update the confidence of the current signature
@@ -267,6 +277,7 @@ SignaturePath::calculatePrefetch(const PrefetchInfo &pfi,
 
     // Look for prefetch candidates while the current path confidence is
     // high enough
+    std::vector<stride_t> strides;
     while (current_confidence > lookaheadConfidenceThreshold) {
         // With the updated signature, attempt to generate prefetches
         // - search the PatternTable and select all entries with enough
@@ -289,12 +300,45 @@ SignaturePath::calculatePrefetch(const PrefetchInfo &pfi,
                 if (prefetch_confidence >= prefetchConfidenceThreshold) {
                     assert(entry.stride != 0);
                     //prefetch candidate
+                    strides.push_back(entry.stride);
                     addPrefetch(ppn, current_stride, entry.stride,
                                 current_confidence, current_signature,
-                                is_secure, addresses);
+                                is_secure, addresses, filter);
                 }
             }
         }
+
+        // find the repeated stride pattern
+        unsigned shamt = 0;
+        unsigned match_start = 0;
+        for (unsigned i = 0; i < strides.size(); i++) {
+            for (unsigned j = i + 1; j < strides.size(); j++) {
+                if (strides[i] > 8 && strides[i] == strides[j]) {
+                    if (!preferLongPattern) {  // find simple match
+                        DPRINTF(SPP, "Found simple match: %d\n", strides[i]);
+                        best_block_offset = strides[i];
+                        break;
+                    } else {  // find long pattern match
+                        if (j - i > shamt) {
+                            shamt = j - i;
+                            match_start = i;
+                            DPRINTF(SPP, "Found long pattern match start: %d, len: %d\n", match_start, shamt);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (preferLongPattern && shamt > 0) {
+            best_block_offset = 0;
+            for (unsigned i = match_start; i < match_start + shamt; i++) {
+                DPRINTF(SPP, "Add long pattern match [%u]: %d\n", i, strides[i]);
+                best_block_offset += strides[i];
+            }
+        }
+
+        // toggle preferLongPattern
+        preferLongPattern = !preferLongPattern;
 
         if (lookahead != nullptr) {
             current_confidence *= calculateLookaheadConfidence(
@@ -307,17 +351,35 @@ SignaturePath::calculatePrefetch(const PrefetchInfo &pfi,
         }
     }
 
-    auxiliaryPrefetcher(ppn, current_block, is_secure, addresses);
+    auxiliaryPrefetcher(ppn, current_block, is_secure, addresses, filter);
+    sent = addresses.size() > init_addr_size;
+    return sent;
 }
 
 void
-SignaturePath::auxiliaryPrefetcher(Addr ppn, stride_t current_block,
-        bool is_secure, std::vector<AddrPriority> &addresses)
+SignaturePath::auxiliaryPrefetcher(Addr ppn, stride_t current_block, bool is_secure,
+                                   std::vector<AddrPriority> &addresses,
+                                   boost::compute::detail::lru_cache<Addr, Addr> &filter)
 {
     if (addresses.empty()) {
         // Enable the next line prefetcher if no prefetch candidates are found
         addPrefetch(ppn, current_block, 1, 0.0 /* unused*/, 0 /* unused */,
-                    is_secure, addresses);
+                    is_secure, addresses, filter);
+    }
+}
+
+bool
+SignaturePath::sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio,
+                                boost::compute::detail::lru_cache<Addr, Addr> &filter)
+{
+    if (filter.contains(addr)) {
+        DPRINTF(SPP, "Skip recently prefetched: %lx\n", addr);
+        return false;
+    } else {
+        DPRINTF(SPP, "Send pf: %lx\n", addr);
+        filter.insert(addr, 0);
+        addresses.push_back(AddrPriority(addr, prio, PrefetchSourceType::SPP));
+        return true;
     }
 }
 

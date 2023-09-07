@@ -37,7 +37,9 @@
 #define __MEM_CACHE_PREFETCH_BOP_HH__
 
 #include <queue>
+#include <set>
 
+#include "base/sat_counter.hh"
 #include "mem/cache/prefetch/queued.hh"
 #include "mem/packet.hh"
 
@@ -76,8 +78,27 @@ class BOP : public Queued
         std::vector<Addr> rrRight;
 
         /** Structure to save the offset and the score */
-        typedef std::pair<int16_t, uint8_t> OffsetListEntry;
-        std::vector<OffsetListEntry> offsetsList;
+        // typedef std::pair<int16_t, uint8_t> OffsetListEntry;
+        struct OffsetListEntry{
+            int32_t first;  // offset, name it as first to make it compatible with pair
+            uint8_t second;  // score, name it as second to make it compatible with pair
+            int16_t depth;
+            SatCounter8 late;
+
+            OffsetListEntry(int32_t x, uint8_t y)
+                : first(x), second(y), depth(1), late(6, 32)
+            {}
+
+            int64_t calcOffset() const
+            {
+                return first * depth;
+            }
+        };
+        std::list<OffsetListEntry> offsetsList;
+
+        size_t maxOffsetCount{32};
+
+        std::set<int32_t> offsets;
 
         /** In a first implementation of the BO prefetcher, both banks of the
          *  RR were written simultaneously when a prefetched line is inserted
@@ -103,15 +124,17 @@ class BOP : public Queued
         /** Hardware prefetcher enabled */
         bool issuePrefetchRequests;
         /** Current best offset to issue prefetches */
-        Addr bestOffset;
+        int64_t bestOffset;
         /** Current best offset found in the learning phase */
-        Addr phaseBestOffset;
+        int64_t phaseBestOffset;
         /** Current test offset index */
-        std::vector<OffsetListEntry>::iterator offsetsListIterator;
+        std::list<OffsetListEntry>::iterator offsetsListIterator;
         /** Max score found so far */
         unsigned int bestScore;
         /** Current round */
         unsigned int round;
+
+        std::list<OffsetListEntry>::iterator getBestOffsetIter();
 
         /** Generate a hash for the specified address to index the RR table
          *  @param addr: address to hash
@@ -146,18 +169,32 @@ class BOP : public Queued
 
         /** Learning phase of the BOP. Update the intermediate values of the
             round and update the best offset if found */
-        void bestOffsetLearning(Addr);
+        void bestOffsetLearning(Addr addr, bool late);
 
-        /** Update the RR right table after a prefetch fill */
-        void notifyFill(const PacketPtr& pkt) override;
+        unsigned missCount{0};
+
+        unsigned strictOffset;
+
+        unsigned strictBadScore;
 
     public:
+        /** Update the RR right table after a prefetch fill */
+        void notifyFill(const PacketPtr& pkt) override;
 
         BOP(const BOPPrefetcherParams &p);
         ~BOP() = default;
 
         void calculatePrefetch(const PrefetchInfo &pfi,
-                               std::vector<AddrPriority> &addresses) override;
+                               std::vector<AddrPriority> &addresses) override
+        {
+            panic("not implemented");
+        };
+
+        using Queued::calculatePrefetch;
+
+        void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late);
+        
+        void tryAddOffset(int64_t offset, bool late = false);
 };
 
 } // namespace prefetch

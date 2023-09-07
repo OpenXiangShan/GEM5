@@ -109,7 +109,7 @@ def addNoISAOptions(parser):
                         help="""Top-level voltage for blocks running at system
                       power supply""")
     parser.add_argument("--sys-clock", action="store", type=str,
-                        default='1GHz',
+                        default='3GHz',
                         help="""Top-level clock for blocks running at system
                       speed""")
 
@@ -145,6 +145,8 @@ def addNoISAOptions(parser):
     parser.add_argument("--caches", action="store_true")
     parser.add_argument("--l2cache", action="store_true")
     parser.add_argument("--l3cache", action="store_true")
+    parser.add_argument("--l1-to-l2-pf-hint", action="store_true")
+    parser.add_argument("--l2-to-l3-pf-hint", action="store_true")
     parser.add_argument("--num-dirs", type=int, default=1)
     parser.add_argument("--num-l2caches", type=int, default=1)
     parser.add_argument("--num-l3caches", type=int, default=1)
@@ -286,9 +288,25 @@ def addCommonOptions(parser):
                         type of hardware prefetcher to use with the L2 cache.
                         (if not set, use the default prefetcher of
                         the selected cache)""")
+    parser.add_argument("--l3-hwp-type", default=None,
+                        choices=ObjectList.hwp_list.get_names(),
+                        help="""
+                        type of hardware prefetcher to use with the L3 cache.
+                        (if not set, use the default prefetcher of
+                        the selected cache)""")
+    parser.add_argument("--l1d-enable-spp", action="store_true", default=False,
+                        help="""
+                        Enable SPP component for L1 data prefetcher""")
+    parser.add_argument("--l1d-enable-cplx", action="store_true", default=False,
+                        help="""
+                        Enable complex stride component for L1 data prefetcher""")
+    parser.add_argument("--short-stride-thres", action="store", default=0, type=int,
+                        help="""
+                        Ignore short strides when seen long strides for stride, 0 for turning off""")
+
     parser.add_argument("--checker", action="store_true")
     parser.add_argument("--cpu-clock", action="store", type=str,
-                        default='2GHz',
+                        default='3GHz',
                         help="Clock for blocks running at CPU speed")
     parser.add_argument("--smt", action="store_true", default=False,
                         help="""

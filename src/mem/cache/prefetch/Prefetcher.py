@@ -64,6 +64,7 @@ class BasePrefetcher(ClockedObject):
     cxx_exports = [
         PyBindMethod("addEventProbe"),
         PyBindMethod("addTLB"),
+        PyBindMethod("addHintDownStream"),
     ]
     sys = Param.System(Parent.any, "System this prefetcher belongs to")
 
@@ -88,6 +89,7 @@ class BasePrefetcher(ClockedObject):
         super().__init__(**kwargs)
         self._events = []
         self._tlbs = []
+        self._downstream_pf = []
 
     def addEvent(self, newObject):
         self._events.append(newObject)
@@ -95,8 +97,14 @@ class BasePrefetcher(ClockedObject):
     # Override the normal SimObject::regProbeListeners method and
     # register deferred event handlers.
     def regProbeListeners(self):
+        print("Registering probe listeners for Prefetcher {}".format(self))
         for tlb in self._tlbs:
             self.getCCObject().addTLB(tlb.getCCObject())
+
+        assert len(self._downstream_pf) <= 1
+        if len(self._downstream_pf):
+            self.getCCObject().addHintDownStream(self._downstream_pf[0].getCCObject())
+
         for event in self._events:
             event.register()
         self.getCCObject().regProbeListeners()
@@ -112,6 +120,11 @@ class BasePrefetcher(ClockedObject):
         if not isinstance(simObj, SimObject):
             raise TypeError("argument must be a SimObject type")
         self._tlbs.append(simObj)
+
+    def add_pf_downstream(self, other_prefetcher):
+        if not isinstance(other_prefetcher, SimObject):
+            raise TypeError("other_prefetcher must be a SimObject type")
+        self._downstream_pf.append(other_prefetcher)
 
 
 class QueuedPrefetcher(BasePrefetcher):
@@ -140,6 +153,8 @@ class QueuedPrefetcher(BasePrefetcher):
     #   remaining 60% will be generated depending on the current accuracy
     throttle_control_percentage = Param.Percent(0, "Percentage of requests \
         that can be throttled depending on the accuracy of the prefetcher.")
+
+    max_pfahead_recv = Param.Int(1,"Maximum number of pfahead received")
 
 
 class BertiPrefetcher(QueuedPrefetcher):
@@ -190,98 +205,21 @@ class BertiPrefetcher(QueuedPrefetcher):
         "Replacement policy of table of deltas"
     )
 
-
-class SMSPrefetcher(QueuedPrefetcher):
-    type = "SMSPrefetcher"
-    cxx_class = 'gem5::prefetch::SMSPrefetcher'
-    cxx_header = 'mem/cache/prefetch/sms.hh'
-
-    use_virtual_addresses = True
-    prefetch_on_pf_hit = True
-    on_read = True
-    on_write = False
-    on_data  = True
-    on_inst  = False
-
-    region_size = Param.Int(1024, "region size")
-    # filter table (full-assoc)
-    filter_entries = Param.MemorySize("16", "num of filter table entries")
-    filter_indexing_policy = Param.BaseIndexingPolicy(
-        SetAssociative(
-            entry_size=1,
-            assoc=Parent.filter_entries,
-            size=Parent.filter_entries),
-        "Indexing policy of filter table"
-    )
-    filter_replacement_policy = Param.BaseReplacementPolicy(
-        FIFORP(),
-        "Replacement policy of filter table"
-    )
-    # active generation table (full-assoc)
-    act_entries = Param.MemorySize(
-        "16",
-        "num of active generation table entries"
-    )
-    act_indexing_policy = Param.BaseIndexingPolicy(
-        SetAssociative(
-            entry_size=1,
-            assoc=Parent.act_entries,
-            size=Parent.act_entries),
-        "Indexing policy of active generation table"
-    )
-    act_replacement_policy = Param.BaseReplacementPolicy(
-        LRURP(),
-        "Replacement policy of active generation table"
-    )
-    # stride table (full-assoc)
-    stride_entries = Param.MemorySize("16", "Stride Entries")
-    stride_indexing_policy = Param.BaseIndexingPolicy(
-        SetAssociative(
-            entry_size=1,
-            assoc=Parent.act_entries,
-            size=Parent.act_entries),
-        "Indexing policy of stride table"
-    )
-    stride_replacement_policy = Param.BaseReplacementPolicy(
-        LRURP(),
-        "Replacement policy of stride table"
-    )
-    # pht table (set-assoc)
-    pht_entries = Param.MemorySize(
-        "64",
-        "num of pattern history table entries"
-    )
-    pht_assoc = Param.Int(2, "Associativity of the pattern history table")
-    pht_indexing_policy = Param.BaseIndexingPolicy(
-        SetAssociative(
-            entry_size=1,
-            assoc=Parent.pht_assoc,
-            size=Parent.pht_entries),
-        "Indexing policy of pattern history table"
-    )
-    pht_replacement_policy = Param.BaseReplacementPolicy(
-        LRURP(),
-        "Replacement policy of pattern history table"
-    )
-    # pf gen table (full-assoc)
-    # not implemented now, because queued prefetcher already had a filter
-    pf_gen_entries = Param.MemorySize("16", "num of pf_gen entries")
-    pf_gen_indexing_policy = Param.BaseIndexingPolicy(
-        SetAssociative(
-            entry_size=1,
-            assoc=Parent.pf_gen_entries,
-            size=Parent.pf_gen_entries),
-        "Indexing policy of pf_gen"
-    )
-    pf_gen_replacement_policy = Param.BaseReplacementPolicy(
-        LRURP(),
-        "Replacement policy of pf_gen"
-    )
-
 class StridePrefetcherHashedSetAssociative(SetAssociative):
     type = 'StridePrefetcherHashedSetAssociative'
     cxx_class = 'gem5::prefetch::StridePrefetcherHashedSetAssociative'
     cxx_header = "mem/cache/prefetch/stride.hh"
+
+class WorkerPrefetcher(QueuedPrefetcher):
+    type = 'WorkerPrefetcher'
+    cxx_class = 'gem5::prefetch::WorkerPrefetcher'
+    cxx_header = "mem/cache/prefetch/worker.hh"
+
+    on_inst = False
+    on_data = True
+    on_miss = False
+
+    prefetch_on_pf_hit = True
 
 class StridePrefetcher(QueuedPrefetcher):
     type = 'StridePrefetcher'
@@ -290,6 +228,10 @@ class StridePrefetcher(QueuedPrefetcher):
 
     # Do not consult stride prefetcher on instruction accesses
     on_inst = False
+    on_data = True
+    on_miss = True
+
+    prefetch_on_pf_hit = True
 
     confidence_counter_bits = Param.Unsigned(3,
         "Number of bits of the confidence counter")
@@ -577,10 +519,10 @@ class BOPPrefetcher(QueuedPrefetcher):
                 "Initialize the offsets list also with negative values \
                 (i.e. the table will have half of the entries with positive \
                 offsets and the other half with negative ones)")
-    delay_queue_enable = Param.Bool(False, "Enable the delay queue")
-    delay_queue_size = Param.Unsigned(15,
+    delay_queue_enable = Param.Bool(True, "Enable the delay queue")
+    delay_queue_size = Param.Unsigned(64,
                 "Number of entries in the delay queue")
-    delay_queue_cycles = Param.Cycles(60,
+    delay_queue_cycles = Param.Cycles(200,
                 "Cycles to delay a write in the left RR table from the delay \
                 queue")
 
@@ -671,6 +613,117 @@ class PIFPrefetcher(QueuedPrefetcher):
             raise TypeError("argument must be of SimObject type")
         self.addEvent(HWPProbeEventRetiredInsts(self, simObj,"RetiredInstsPC"))
 
+
+class IPCPrefetcher(QueuedPrefetcher):
+    type = 'IPCPrefetcher'
+    cxx_class = 'gem5::prefetch::IPCP'
+    cxx_header = 'mem/cache/prefetch/ipcp.hh'
+
+    use_rrf = Param.Bool(True,"")
+    degree = Param.Int(4, "Number of prefetches to generate")
+    ipt_size = Param.Int(64, "Size of IP Table")
+    cspt_size = Param.Int(256, "Szie of CSP Table")
+
+
+class XSCompositePrefetcher(QueuedPrefetcher):
+    type = "XSCompositePrefetcher"
+    cxx_class = 'gem5::prefetch::XSCompositePrefetcher'
+    cxx_header = 'mem/cache/prefetch/sms.hh'
+
+    use_virtual_addresses = True
+    prefetch_on_pf_hit = True
+    on_read = True
+    on_write = False
+    on_data  = True
+    on_inst  = False
+
+    region_size = Param.Int(1024, "region size")
+    # filter table (full-assoc)
+    filter_entries = Param.MemorySize("16", "num of filter table entries")
+    filter_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.filter_entries,
+            size=Parent.filter_entries),
+        "Indexing policy of filter table"
+    )
+    filter_replacement_policy = Param.BaseReplacementPolicy(
+        FIFORP(),
+        "Replacement policy of filter table"
+    )
+    # active generation table (full-assoc)
+    act_entries = Param.MemorySize(
+        "32",
+        "num of active generation table entries"
+    )
+    act_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.act_entries,
+            size=Parent.act_entries),
+        "Indexing policy of active generation table"
+    )
+    act_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(),
+        "Replacement policy of active generation table"
+    )
+    stream_pf_ahead = Param.Bool(True, "Prefetch stream region ahead of current region")
+    # stride table (full-assoc)
+    stride_dyn_depth = Param.Bool(True, "Dynamic depth of stride table")
+    stride_entries = Param.MemorySize("32", "Stride Entries")
+    stride_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.stride_entries,
+            size=Parent.stride_entries),
+        "Indexing policy of stride table"
+    )
+    stride_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(),
+        "Replacement policy of stride table"
+    )
+    fuzzy_stride_matching = Param.Bool(False, "Match stride with fuzzy condition")
+    # pht table (set-assoc)
+    pht_entries = Param.MemorySize(
+        "64",
+        "num of pattern history table entries"
+    )
+    pht_assoc = Param.Int(4, "Associativity of the pattern history table")
+    pht_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.pht_assoc,
+            size=Parent.pht_entries),
+        "Indexing policy of pattern history table"
+    )
+    pht_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(),
+        "Replacement policy of pattern history table"
+    )
+    pht_pf_ahead = Param.Bool(True, "Prefetch pattern region ahead with stride")
+    # pf gen table (full-assoc)
+    # not implemented now, because queued prefetcher already had a filter
+    pf_gen_entries = Param.MemorySize("16", "num of pf_gen entries")
+    pf_gen_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.pf_gen_entries,
+            size=Parent.pf_gen_entries),
+        "Indexing policy of pf_gen"
+    )
+    pf_gen_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(),
+        "Replacement policy of pf_gen"
+    )
+    bop = Param.BasePrefetcher(BOPPrefetcher(), "BOP used in composite prefetcher ")
+    spp = Param.BasePrefetcher(SignaturePathPrefetcher(), "SPP used in composite prefetcher")
+    ipcp = Param.IPCPrefetcher(IPCPrefetcher(use_rrf = False), "")
+
+    enable_cplx = Param.Bool(False, "Enable CPLX component")
+    enable_spp = Param.Bool(False, "Enable SPP component")
+
+    short_stride_thres = Param.Unsigned(512, "Ignore short strides when there are long strides (Bytes)")
+
 class MultiPrefetcher(BasePrefetcher):
     type = 'MultiPrefetcher'
     cxx_class = 'gem5::prefetch::Multi'
@@ -683,5 +736,5 @@ class MultiPrefetcher(BasePrefetcher):
     on_data  = True
     on_inst  = False
 
-    prefetchers = VectorParam.BasePrefetcher([SMSPrefetcher(), BOPPrefetcher()],
+    prefetchers = VectorParam.BasePrefetcher([XSCompositePrefetcher(), BOPPrefetcher()],
         "Array of prefetchers")

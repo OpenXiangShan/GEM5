@@ -301,12 +301,12 @@ class CPU : public BaseCPU
     /** Register accessors.  Index refers to the physical register index. */
 
     /** Reads a miscellaneous register. */
-    RegVal readMiscRegNoEffect(int misc_reg, ThreadID tid) const;
+    RegVal readMiscRegNoEffect(int misc_reg, ThreadID tid) const override;
 
     /** Reads a misc. register, including any side effects the read
      * might have as defined by the architecture.
      */
-    RegVal readMiscReg(int misc_reg, ThreadID tid);
+    RegVal readMiscReg(int misc_reg, ThreadID tid) override;
 
     /** Sets a miscellaneous register. */
     void setMiscRegNoEffect(int misc_reg, RegVal val, ThreadID tid);
@@ -635,7 +635,7 @@ class CPU : public BaseCPU
                             HtmFailureFaultCause cause) override;
 
     //difftest virtual function
-    void readGem5Regs();
+    void readGem5Regs() override;
 };
 
 } // namespace o3

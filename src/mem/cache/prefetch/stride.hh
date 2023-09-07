@@ -51,6 +51,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include <boost/compute/detail/lru_cache.hpp>
+
 #include "base/sat_counter.hh"
 #include "base/types.hh"
 #include "mem/cache/prefetch/associative_set.hh"
@@ -163,6 +165,11 @@ class Stride : public Queued
 
     void calculatePrefetch(const PrefetchInfo &pfi,
                            std::vector<AddrPriority> &addresses) override;
+  private:
+
+    const unsigned filterSize{32};
+    boost::compute::detail::lru_cache<Addr, Addr> blockLRUFilter;
+
 };
 
 } // namespace prefetch

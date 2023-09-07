@@ -110,10 +110,11 @@ AssociativeSet<Entry>::getPossibleEntries(const Addr addr) const
 
 template<class Entry>
 void
-AssociativeSet<Entry>::insertEntry(Addr addr, bool is_secure, Entry* entry)
+AssociativeSet<Entry>::insertEntry(Addr addr, bool is_secure, Entry* entry, bool with_reset)
 {
    entry->insert(indexingPolicy->extractTag(addr), is_secure);
-   replacementPolicy->reset(entry->replacementData);
+   if (with_reset)
+        replacementPolicy->reset(entry->replacementData);
 }
 
 template<class Entry>

@@ -101,6 +101,17 @@ MSHR::TargetList::updateFlags(PacketPtr pkt, Target::Source source,
             hasFromCache = hasFromCache || pkt->fromCache();
 
             updateWriteFlags(pkt);
+        } else if (!hasFromPref) {  // first pkt && is pref
+            pfSource = pkt->req->getXsMetadata().prefetchSource;
+            DPRINTF(Cache, "MSHR: set source as prefetcher %i\n", pfSource);
+        }
+
+        if (source == Target::FromPrefetcher) {
+            hasFromPref = true;
+        }
+
+        if (source == Target::FromCPU) {
+            hasFromCPU = true;
         }
     }
 }
@@ -322,6 +333,7 @@ MSHR::allocate(Addr blk_addr, unsigned blk_size, PacketPtr target,
     // snoop (mem-side request), so set source according to request here
     Target::Source source = (target->cmd == MemCmd::HardPFReq) ?
         Target::FromPrefetcher : Target::FromCPU;
+    DPRINTF(MSHR, "New MSHR allocated: %s, from cpu: %i\n", target->print(), Target::FromCPU);
     targets.add(target, when_ready, _order, source, true, alloc_on_fill);
 
     // All targets must refer to the same block
@@ -475,6 +487,11 @@ MSHR::handleSnoop(PacketPtr pkt, Counter _order)
     // matching the conditions checked in Cache::handleSnoop
     const bool will_respond = isPendingModified() && pkt->needsResponse() &&
         !pkt->isClean();
+    DPRINTF(MSHR, "%s isPendingModified: %d pkt->needsResponse(): %d "
+            "pkt->isClean(): %d pkt->isInvalidate(): %d will_respond: %d\n",
+            __func__, isPendingModified(), pkt->needsResponse(),
+            pkt->isClean(), pkt->isInvalidate(), will_respond);
+
     if (isPendingModified() || pkt->isInvalidate()) {
         // We need to save and replay the packet in two cases:
         // 1. We're awaiting a writable copy (Modified or Exclusive),
@@ -504,6 +521,10 @@ MSHR::handleSnoop(PacketPtr pkt, Counter _order)
             // needsWritable or not we either pass a Shared line or a
             // Modified line
             pkt->setCacheResponding();
+            cp_pkt->setCacheRespondingBy((uint64_t) this);
+            DPRINTF(MSHR,
+                    "%s set packet %s as cache responding, when cache pendign mod or inval, responding by mshr %lx\n",
+                    __func__, pkt->print(), (uint64_t)this);
 
             // inform the cache hierarchy that this cache had the line
             // in the Modified state, even if the response is passed
@@ -553,17 +574,14 @@ MSHR::extractServiceableTargets(PacketPtr pkt)
     // non-FromCPU target. This way the remaining FromCPU targets
     // issue a new request and get a fresh copy of the block and we
     // avoid memory consistency violations.
-    DPRINTF(Cache, "reach 1\n");
     if (pkt->cmd == MemCmd::ReadRespWithInvalidate) {
         auto it = targets.begin();
         assert((it->source == Target::FromCPU) ||
                (it->source == Target::FromPrefetcher));
         ready_targets.push_back(*it);
-    DPRINTF(Cache, "reach 2\n");
         // Leave the Locked RMW Read until the corresponding Locked Write
         // request comes in
         if (it->pkt->cmd != MemCmd::LockedRMWReadReq) {
-    DPRINTF(Cache, "reach 3\n");
             it = targets.erase(it);
             while (it != targets.end()) {
                 if (it->source == Target::FromCPU) {
@@ -577,32 +595,23 @@ MSHR::extractServiceableTargets(PacketPtr pkt)
         }
         ready_targets.populateFlags();
     } else {
-    DPRINTF(Cache, "reach 4\n");
         auto it = targets.begin();
         while (it != targets.end()) {
-    DPRINTF(Cache, "reach 5\n");
             DPRINTF(Cache, "target's packet addr: %#lx\n", it->pkt);
-    DPRINTF(Cache, "reach 5.0.5\n");
             DPRINTF(Cache, "Get target: %s from targets\n", it->pkt->print());
-    DPRINTF(Cache, "reach 5.1\n");
             ready_targets.push_back(*it);
             if (it->pkt->cmd == MemCmd::LockedRMWReadReq) {
-    DPRINTF(Cache, "reach 6\n");
                 // Leave the Locked RMW Read until the corresponding Locked
                 // Write comes in. Also don't service any later targets as the
                 // line is now "locked".
                 break;
             }
-    DPRINTF(Cache, "reach 7\n");
             DPRINTF(Cache, "Erase target: %s from targets\n", it->pkt->print());
             it = targets.erase(it);
         }
         ready_targets.populateFlags();
-    DPRINTF(Cache, "reach 8\n");
     }
-    DPRINTF(Cache, "reach 9\n");
     targets.populateFlags();
-    DPRINTF(Cache, "reach 10\n");
 
     return ready_targets;
 }

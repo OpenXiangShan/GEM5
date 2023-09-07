@@ -116,6 +116,10 @@ class Base : public ClockedObject
         bool cacheMiss;
         /** Pointer to the associated request data */
         uint8_t *data;
+        /** XiangShan metadata of the block*/
+        Request::XsMetadata xsMetadata;
+
+        bool reqAfterSquash{false};
 
       public:
         /**
@@ -236,6 +240,32 @@ class Base : public ClockedObject
                 this->isSecure() == pfi.isSecure();
         }
 
+        bool sameAddr(Addr addr, bool isSecure) const
+        {
+            return this->getAddr() == addr &&
+                this->isSecure() == isSecure;
+        }
+
+        Request::XsMetadata getXsMetadata() const
+        {
+            return xsMetadata;
+        }
+
+        void setXsMetadata(const Request::XsMetadata &xs_metadata)
+        {
+            this->xsMetadata = xs_metadata;
+        }
+
+        bool isReqAfterSquash() const
+        {
+            return reqAfterSquash;
+        }
+
+        void setReqAfterSquash(bool req_after_squash)
+        {
+            reqAfterSquash = req_after_squash;
+        }
+
         /**
          * Constructs a PrefetchInfo using a PacketPtr.
          * @param pkt PacketPtr used to generate the PrefetchInfo
@@ -244,6 +274,8 @@ class Base : public ClockedObject
          * @param miss whether this event comes from a cache miss
          */
         PrefetchInfo(PacketPtr pkt, Addr addr, bool miss);
+
+        PrefetchInfo(PacketPtr pkt, Addr addr, bool miss, Request::XsMetadata xsMeta);
 
         /**
          * Constructs a PrefetchInfo using a new address value and
@@ -257,6 +289,8 @@ class Base : public ClockedObject
         {
             delete[] data;
         }
+
+        bool lastPfLate{false};
     };
 
   protected:
@@ -333,11 +367,20 @@ class Base : public ClockedObject
         StatGroup(statistics::Group *parent);
         statistics::Scalar demandMshrMisses;
         statistics::Scalar pfIssued;
+        statistics::Vector pfIssued_srcs;
+
+        statistics::Scalar pfOffloaded;
+        statistics::Scalar pfaheadOffloaded;
+        statistics::Scalar pfaheadProcess;
+
         /** The number of times a HW-prefetched block is evicted w/o
          * reference. */
         statistics::Scalar pfUnused;
+        statistics::Vector pfUnused_srcs;
         /** The number of times a HW-prefetch is useful. */
         statistics::Scalar pfUseful;
+
+        statistics::Vector pfUseful_srcs;
         /** The number of times there is a hit on prefetch but cache block
          * is not in an usable state */
         statistics::Scalar pfUsefulButMiss;
@@ -388,9 +431,10 @@ class Base : public ClockedObject
     virtual Tick nextPrefetchReadyTime() const = 0;
 
     void
-    prefetchUnused()
+    prefetchUnused(PrefetchSourceType pfSource)
     {
         prefetchStats.pfUnused++;
+        prefetchStats.pfUnused_srcs[pfSource]++;
     }
 
     void
@@ -443,6 +487,27 @@ class Base : public ClockedObject
      * @param tlb pointer to the BaseTLB object to add
      */
     virtual void addTLB(BaseTLB *tlb);
+
+  protected:
+    Base *hintDownStream{nullptr};
+
+    bool squashMark{false};
+
+  public:
+    void addHintDownStream(Base* down_stream)
+    {
+        hintDownStream = down_stream;
+    }
+    virtual void rxHint(BaseMMU::Translation *dpp) = 0;
+
+    bool hasHintDownStream() const
+    {
+        return hintDownStream != nullptr;
+    }
+
+    virtual void offloadToDownStream() { panic("offloadToDownStream() not implemented"); }
+
+    virtual bool hasHintsWaiting() { return false; }
 };
 
 } // namespace prefetch

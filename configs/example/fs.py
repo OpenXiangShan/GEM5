@@ -171,6 +171,20 @@ def build_test_system(np):
             "STAMP INT NOT NULL," \
             "SITE TEXT);"
             ,
+            "CREATE TABLE MemTrace(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "Tick INT NOT NULL," \
+            "IsLoad BOOL NOT NULL," \
+            "PC INT NOT NULL," \
+            "VADDR INT NOT NULL," \
+            "PADDR INT NOT NULL," \
+            "Issued INT NOT NULL," \
+            "Translated INT NOT NULL," \
+            "Completed INT NOT NULL," \
+            "Committed INT NOT NULL," \
+            "Writenback INT NOT NULL," \
+            "PFSrc INT NOT NULL);"
+            ,
         ]
 
     if args.ruby:

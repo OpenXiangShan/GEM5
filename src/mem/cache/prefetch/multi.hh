@@ -71,6 +71,11 @@ class Multi : public Base
     void notifyFill(const PacketPtr &pkt) override {};
     /** @} */
 
+  public:
+    void rxHint(BaseMMU::Translation *dpp) override {
+        panic("MultiPrefetcher: rxHint not implemented");
+    }
+
   protected:
     /** List of sub-prefetchers ordered by priority. */
     std::vector<Base*> prefetchers;

@@ -154,6 +154,9 @@ DRAMsim3::tick()
 
     schedule(tickEvent,
         curTick() + wrapper.clockPeriod() * sim_clock::as_int::ns);
+
+    DPRINTF(DRAMsim3, "Scheduled Dramsim after %d ns, at tick %lu\n", wrapper.clockPeriod(),
+            curTick() + wrapper.clockPeriod() * sim_clock::as_int::ns);
 }
 
 Tick
@@ -191,13 +194,24 @@ DRAMsim3::recvTimingReq(PacketPtr pkt)
     // we should not get a new request after committing to retry the
     // current one, but unfortunately the CPU violates this rule, so
     // simply ignore it for now
-    if (retryReq)
+    if (retryReq) {
+        DPRINTF(DRAMsim3, "Ignoring request while waiting for retry\n");
         return false;
+    }
 
     // if we cannot accept we need to send a retry once progress can
     // be made
-    bool can_accept = (nbrOutstanding() < wrapper.queueSize()) &&
-                      wrapper.canAccept(pkt->getAddr(), pkt->isWrite());
+    bool outstanding_full = (nbrOutstanding() >= wrapper.queueSize());
+    // bool can_accept = (nbrOutstanding() < wrapper.queueSize()) &&
+    //                   wrapper.canAccept(pkt->getAddr(), pkt->isWrite());
+    bool wrapper_can_acc = true;
+    if (!outstanding_full) {
+        wrapper_can_acc = wrapper.canAccept(pkt->getAddr(), pkt->isWrite());
+    }
+    bool can_accept = !outstanding_full && wrapper_can_acc;
+
+    DPRINTF(DRAMsim3, "Can accept: %i, outstanding: %u, queue size: %u, wrapper can acc: %i, is write: %i\n",
+            can_accept, nbrOutstanding(), wrapper.queueSize(), wrapper_can_acc, pkt->isWrite());
 
     // keep track of the transaction
     if (pkt->isRead()) {
@@ -256,7 +270,7 @@ DRAMsim3::recvRespRetry()
 void
 DRAMsim3::accessAndRespond(PacketPtr pkt)
 {
-    DPRINTF(DRAMsim3, "Access for address %lld\n", pkt->getAddr());
+    DPRINTF(DRAMsim3, "Access for address %lx\n", pkt->getAddr());
 
     bool needsResponse = pkt->needsResponse();
 
@@ -293,7 +307,7 @@ DRAMsim3::accessAndRespond(PacketPtr pkt)
 void DRAMsim3::readComplete(unsigned id, uint64_t addr)
 {
 
-    DPRINTF(DRAMsim3, "Read to address %lld complete\n", addr);
+    DPRINTF(DRAMsim3, "Read to address %lx complete\n", addr);
 
     // get the outstanding reads for the address in question
     auto p = outstandingReads.find(addr);

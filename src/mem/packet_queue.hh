@@ -64,7 +64,7 @@ namespace gem5
  */
 class PacketQueue : public Drainable
 {
-  private:
+  protected:
     /** A deferred packet, buffered to transmit later. */
     class DeferredPacket
     {
