@@ -683,6 +683,22 @@ class XSCompositePrefetcher(QueuedPrefetcher):
         "Replacement policy of stride table"
     )
     fuzzy_stride_matching = Param.Bool(False, "Match stride with fuzzy condition")
+
+    # stride black list
+    non_stride_entries = Param.MemorySize("256", "Non-Stride Entries")
+    non_stride_assoc = Param.Int(4, "Associativity of the non-stride pc table")
+    non_stride_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.non_stride_assoc,
+            size=Parent.non_stride_entries),
+        "Indexing policy of non-stride PC table"
+    )
+    non_stride_replacement_policy = Param.BaseReplacementPolicy(
+        TreePLRURP(num_leaves=Parent.non_stride_assoc),
+        "Replacement policy of non-stride pc table"
+    )
+
     # pht table (set-assoc)
     pht_entries = Param.MemorySize(
         "64",

@@ -89,6 +89,8 @@ class XSCompositePrefetcher : public Queued
         SatCounter8 lateConf;
         SatCounter8 longStride;
         Addr pc;
+        std::list<Addr> histStrides;
+        bool matchedSinceAlloc;
         StrideEntry()
             : TaggedEntry(),
               stride(0),
@@ -100,6 +102,9 @@ class XSCompositePrefetcher : public Queued
               pc(0)
         {}
     };
+
+    const unsigned maxHistStrides{12};
+
     const bool strideDynDepth{false};
 
     int depthDownCounter{0};
@@ -108,10 +113,28 @@ class XSCompositePrefetcher : public Queued
 
     void periodStrideDepthDown();
 
-    bool strideLookup(const PrefetchInfo &pfi, std::vector<AddrPriority> &address, bool late, Addr &pf_addr,
+    bool strideLookup(AssociativeSet<StrideEntry> &stride, const PrefetchInfo &pfi,
+                      std::vector<AddrPriority> &address, bool late, Addr &pf_addr,
                       PrefetchSourceType src, bool enter_new_region, bool miss_repeat);
 
-    AssociativeSet<StrideEntry> stride;
+    AssociativeSet<StrideEntry> strideUnique;
+
+    AssociativeSet<StrideEntry> strideRedundant;
+
+    class NonStrideEntry: public TaggedEntry
+    {
+      public:
+        Addr pc;
+        NonStrideEntry() : TaggedEntry(), pc(0) {}
+    };
+
+    AssociativeSet<NonStrideEntry> nonStridePCs;
+
+    void markNonStridePC(Addr pc);
+
+    bool isNonStridePC(Addr pc);
+
+    Addr nonStrideHash(Addr pc) { return pc >> 1; }
 
     const bool fuzzyStrideMatching;
 
