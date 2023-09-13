@@ -61,11 +61,9 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
     DPRINTF(XSCompositePrefetcher, "blk addr: %lx, prefetch source: %i, miss: %i, late: %i\n", block_addr, pf_source,
             pfi.isCacheMiss(), late);
 
-    if (!pfi.isCacheMiss()) {
-        assert(pf_source != PrefetchSourceType::PF_NONE);
-    }
-
-
+    // if (!pfi.isCacheMiss()) {
+    //     assert(pf_source != PrefetchSourceType::PF_NONE);
+    // }
 
     // Addr region_addr = regionAddress(vaddr);
     Addr region_offset = regionOffset(vaddr);

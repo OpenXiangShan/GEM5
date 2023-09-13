@@ -289,6 +289,7 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
     // operations or for writes that we are coaslescing.
     if (pkt->cmd.isSWPrefetch()) return;
     if (pkt->req->isCacheMaintenance()) return;
+    if (!pkt->isDemand() && !pkt->cmd.isHWPrefetch()) return;
 
     if (pkt->req->isFirstReqAfterSquash()) {
         squashMark = true;
@@ -328,6 +329,9 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
             squashMark = false;
             notify(pkt, pfi);
         }
+    } else {
+        DPRINTF(HWPrefetch, "Skip req addr %x, miss: %x for prefetcher\n",
+                pkt->req->hasVaddr() ? pkt->req->getVaddr() : pkt->req->getPaddr(), miss);
     }
 }
 
