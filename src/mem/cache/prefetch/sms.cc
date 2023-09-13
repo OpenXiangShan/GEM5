@@ -39,6 +39,7 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       smallBOP(dynamic_cast<BOP *>(p.bop_small)),
       spp(dynamic_cast<SignaturePath *>(p.spp)),
       ipcp(dynamic_cast<IPCP *>(p.ipcp)),
+      cmc(p.cmc),
       enableNonStrideFilter(p.enable_non_stride_filter),
       enableCPLX(p.enable_cplx),
       enableSPP(p.enable_spp),
@@ -261,6 +262,8 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             }
         }
     }
+
+    cmc->doPrefetch(pfi, addresses, late, pf_source, false);
 }
 
 XSCompositePrefetcher::ACTEntry *

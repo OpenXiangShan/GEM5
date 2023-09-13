@@ -29,7 +29,7 @@
 Import('*')
 
 SimObject('Prefetcher.py', sim_objects=[
-    'BasePrefetcher', 'MultiPrefetcher', 'QueuedPrefetcher',
+    'CMCPrefetcher', 'BasePrefetcher', 'MultiPrefetcher', 'QueuedPrefetcher',
     'XSCompositePrefetcher', 'BertiPrefetcher', 'CDP',
     'StridePrefetcherHashedSetAssociative', 'StridePrefetcher',
     'TaggedPrefetcher', 'IndirectMemoryPrefetcher', 'SignaturePathPrefetcher',
@@ -49,6 +49,7 @@ DebugFlag('IPCP')
 DebugFlag('CDPUseful')
 DebugFlag('CDPdebug')
 DebugFlag('CDPdepth')
+DebugFlag('CMCPrefetcher')
 
 Source('access_map_pattern_matching.cc')
 Source('base.cc')
@@ -71,3 +72,4 @@ Source('spatio_temporal_memory_streaming.cc')
 Source('stride.cc')
 Source('tagged.cc')
 Source('worker.cc')
+Source('cmc.cc')

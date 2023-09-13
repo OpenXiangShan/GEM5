@@ -653,6 +653,48 @@ class IPCPrefetcher(QueuedPrefetcher):
     cspt_size = Param.Int(256, "Szie of CSP Table")
 
 
+class CMCPrefetcher(QueuedPrefetcher):
+    type = "CMCPrefetcher"
+    cxx_class = "gem5::prefetch::CMCPrefetcher"
+    cxx_header = "mem/cache/prefetch/cmc.hh"
+
+    use_virtual_addresses = True
+    prefetch_on_pf_hit = True
+    on_read = True
+    on_write = False
+    on_data  = True
+    on_inst  = False
+
+    storage_entries = Param.MemorySize(
+        "16384",
+        "Number of CMC storage entries"
+    )
+    storage_assoc = Param.Int(16, "Associativity of the CMC storage table")
+    storage_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.storage_assoc,
+            size=Parent.storage_entries),
+        "Indexing policy of active generation table"
+    )
+    # constituency_size = Param.Unsigned(32, "constituency_size")
+    # team_size = Param.Unsigned(16, "Associativity of the CMC storage table")
+    # storage_replacement_policy = Param.BaseReplacementPolicy(
+    #     DRRIPRP(constituency_size = Parent.constituency_size,
+    #       team_size = Parent.team_size),
+    #     "Replacement policy of active generation table"
+    # )
+    storage_replacement_policy = Param.BaseReplacementPolicy(
+        BRRIPRP(),
+        "Replacement policy of active generation table"
+    )
+
+    degree = Param.Int(4, "prefetch degree")
+    enablePrefetchDB = Param.Bool(
+        False,
+        "Enable prefetch database"
+    )
+
 class XSCompositePrefetcher(QueuedPrefetcher):
     type = "XSCompositePrefetcher"
     cxx_class = 'gem5::prefetch::XSCompositePrefetcher'
@@ -780,11 +822,13 @@ class XSCompositePrefetcher(QueuedPrefetcher):
     bop_small = Param.BasePrefetcher(SmallBOPPrefetcher(), "Small BOP used in composite prefetcher ")
     spp = Param.BasePrefetcher(SignaturePathPrefetcher(), "SPP used in composite prefetcher")
     ipcp = Param.IPCPrefetcher(IPCPrefetcher(use_rrf = False), "")
+    cmc = Param.CMCPrefetcher(CMCPrefetcher(), "")
 
     enable_cplx = Param.Bool(False, "Enable CPLX component")
     enable_spp = Param.Bool(False, "Enable SPP component")
 
     short_stride_thres = Param.Unsigned(512, "Ignore short strides when there are long strides (Bytes)")
+
 
 class MultiPrefetcher(BasePrefetcher):
     type = 'MultiPrefetcher'
