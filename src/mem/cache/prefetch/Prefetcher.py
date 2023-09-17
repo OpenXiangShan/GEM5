@@ -510,7 +510,7 @@ class BOPPrefetcher(QueuedPrefetcher):
 
     score_max = Param.Unsigned(31, "Max. score to update the best offset")
     round_max = Param.Unsigned(50, "Max. round to update the best offset")
-    bad_score = Param.Unsigned(1, "Score at which the HWP is disabled")
+    bad_score = Param.Unsigned(20, "Score at which the HWP is disabled")
     rr_size = Param.Unsigned(256, "Number of entries of each RR bank")
     tag_bits = Param.Unsigned(12, "Bits used to store the tag")
     offset_list_size = Param.Unsigned(36,

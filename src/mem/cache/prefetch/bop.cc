@@ -353,6 +353,7 @@ BOP::bestOffsetLearning(Addr x, bool late)
         } else if (bestOffset < strictOffset ? bestScore <= strictBadScore : bestScore <= badScore) {
             DPRINTF(BOPPrefetcher, "best score %d <= bad score %d, strict bad stcore: %d\n",
                     bestScore, badScore, strictBadScore);
+            issuePrefetchRequests = false;
         }
     }
     DPRINTF(BOPPrefetcher, "Reach %s end, iter offset: %d\n", __FUNCTION__, offsetsListIterator->calcOffset());
