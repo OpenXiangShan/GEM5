@@ -253,7 +253,7 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
         if (!samePage(addr_prio.addr, pfi.getAddr())) {
             statsQueued.pfSpanPage += 1;
 
-            if (hasBeenPrefetched(pkt->getAddr(), pkt->isSecure())) {
+            if (hasBeenPrefetchedAndNotAccessed(pkt->getAddr(), pkt->isSecure())) {
                 statsQueued.pfUsefulSpanPage += 1;
             }
         }

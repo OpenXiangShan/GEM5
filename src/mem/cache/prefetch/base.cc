@@ -207,7 +207,7 @@ Base::observeAccess(const PacketPtr &pkt, bool miss) const
 
     if (!miss) {
         if (prefetchOnPfHit)
-            return hasBeenPrefetched(pkt->getAddr(), pkt->isSecure());
+            return hasBeenPrefetchedAndNotAccessed(pkt->getAddr(), pkt->isSecure());
         if (!prefetchOnAccess)
             return false;
     }
@@ -242,6 +242,12 @@ bool
 Base::hasBeenPrefetched(Addr addr, bool is_secure) const
 {
     return cache->hasBeenPrefetched(addr, is_secure);
+}
+
+bool
+Base::hasBeenPrefetchedAndNotAccessed(Addr addr, bool is_secure) const
+{
+    return cache->hasBeenPrefetchedAndNotAccessed(addr, is_secure);
 }
 
 bool
@@ -300,7 +306,7 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
         panic("Request must have a physical address");
     }
 
-    if (hasBeenPrefetched(pkt->getAddr(), pkt->isSecure())) {
+    if (hasBeenPrefetchedAndNotAccessed(pkt->getAddr(), pkt->isSecure())) {
         usefulPrefetches += 1;
         prefetchStats.pfUseful++;
         prefetchStats.pfUseful_srcs[cache->getHitBlkXsMetadata(pkt).prefetchSource]++;

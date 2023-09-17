@@ -1323,6 +1323,15 @@ class BaseCache : public ClockedObject
         }
     }
 
+    bool hasBeenPrefetchedAndNotAccessed(Addr addr, bool is_secure) const {
+        CacheBlk *block = tags->findBlock(addr, is_secure);
+        if (block) {
+            return block->wasPrefetched();
+        } else {
+            return false;
+        }
+    }
+
     Request::XsMetadata getHitBlkXsMetadata(PacketPtr pkt)
     {
         CacheBlk *block = tags->findBlock(pkt->getAddr(), pkt->isSecure());

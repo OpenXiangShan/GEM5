@@ -349,6 +349,7 @@ class Base : public ClockedObject
     bool inMissQueue(Addr addr, bool is_secure) const;
 
     bool hasBeenPrefetched(Addr addr, bool is_secure) const;
+    bool hasBeenPrefetchedAndNotAccessed(Addr addr, bool is_secure) const;
 
     /** Determine if addresses are on the same page */
     bool samePage(Addr a, Addr b) const;
