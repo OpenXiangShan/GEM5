@@ -1,6 +1,9 @@
 #ifndef GEM5_NEXTLINE_HH
 #define GEM5_NEXTLINE_HH
 
+#include <boost/circular_buffer.hpp>
+#include <boost/compute/detail/lru_cache.hpp>
+
 #include "base/types.hh"
 #include "cpu/pred/general_arch_db.hh"
 #include "mem/cache/prefetch/associative_set.hh"
@@ -18,29 +21,30 @@ GEM5_DEPRECATED_NAMESPACE(Prefetcher, prefetch);
 namespace prefetch
 {
 
-class RecordEntry
-{
-    public:
-        Addr addr;
-        Addr pc;
-        bool is_secure;
-        bool valid;
-        RecordEntry(Addr a, bool s, bool v)
-            : addr(a), is_secure(s), valid(v) {}
-        RecordEntry() : addr(0), is_secure(true), valid(false) {}
-};
 
 class CMCPrefetcher : public Queued
 {
+  public:
+    class StorageEntry;
+    class RecordEntry
+    {
+        public:
+            Addr pc;
+            Addr addr;
+            bool is_secure;
+            RecordEntry(Addr p, Addr a, bool s)
+                : pc(p), addr(a), is_secure(s) {}
+            RecordEntry() : addr(0), is_secure(true) {}
+    };
     class Recorder
     {
         public:
-            std::vector<RecordEntry> entries;
+            std::vector<Addr> entries;
             int index;
             const int degree;
             Recorder(int d) : entries(), index(0), degree(d) {}
             bool entry_empty() { return entries.empty(); }
-            Addr get_base_addr() { return entries[0].addr; }
+            Addr get_base_addr() { return entries[0]; }
 
             bool train_entry(Addr, bool, bool*);
             void reset();
@@ -56,7 +60,7 @@ class CMCPrefetcher : public Queued
             uint64_t id;
             void invalidate() override;
     };
-
+  private:
     Recorder *recorder;
     AssociativeSet<StorageEntry> storage;
     const int degree;
@@ -69,18 +73,27 @@ class CMCPrefetcher : public Queued
     TraceManager *entryTraceManager;
     TraceManager *prefetchTraceManager;
 
-    public:
-        CMCPrefetcher(const CMCPrefetcherParams &p);
+  public:
+    CMCPrefetcher(const CMCPrefetcherParams &p);
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses) override
     {
         panic("not implemented");
     };
 
+    boost::compute::detail::lru_cache<Addr, Addr> *filter;
+
     void doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
-                           PrefetchSourceType pf_source, bool miss_repeat);
-    private:
-        static const int STACK_SIZE = 4;
-        RecordEntry trigger_stack[STACK_SIZE];
+                           PrefetchSourceType pf_source, bool coveredByprefetch);
+  private:
+    uint64_t hash(Addr addr, Addr pc) {
+        return addr ^ (pc<<8);
+    }
+
+    bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType src);
+
+    static const int STACK_SIZE = 4;
+    boost::circular_buffer<RecordEntry> trigger;
+    // RecordEntry trigger_stack[STACK_SIZE];
 };
 
 struct TriggerTrace : public Record
@@ -111,7 +124,7 @@ struct EntryTrace : public Record
         uint64_t pc,
         uint64_t trigger,
         uint64_t id,
-        std::vector<RecordEntry> *entries
+        std::vector<CMCPrefetcher::RecordEntry> *entries
     ) {
         _tick = curTick();
         _uint64_data["triggerPC"] = pc;

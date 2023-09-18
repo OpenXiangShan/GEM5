@@ -49,8 +49,11 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
     assert(smallBOP);
     assert(isPowerOf2(regionSize));
 
+
     largeBOP->filter = &this->pfBlockLRUFilter;
     smallBOP->filter = &this->pfBlockLRUFilter;
+
+    cmc->filter = &this->pfBlockLRUFilter;
 
     ipcp->rrf = &this->pfBlockLRUFilter;
 
@@ -263,7 +266,10 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
         }
     }
 
-    cmc->doPrefetch(pfi, addresses, late, pf_source, false);
+    if (is_first_shot) {
+        cmc->doPrefetch(pfi, addresses, late, pf_source, false);
+    }
+
 }
 
 XSCompositePrefetcher::ACTEntry *

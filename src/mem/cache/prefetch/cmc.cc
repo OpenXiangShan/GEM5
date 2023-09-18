@@ -13,11 +13,10 @@ CMCPrefetcher::CMCPrefetcher(const CMCPrefetcherParams &p)
     recorder(new Recorder(p.degree)),
     storage(p.storage_entries, p.storage_entries, p.storage_indexing_policy,
             p.storage_replacement_policy, StorageEntry()),
-    degree(p.degree), enableDB(p.enablePrefetchDB)
+    degree(p.degree),
+    enableDB(p.enablePrefetchDB),
+    trigger(STACK_SIZE)
 {
-    for (int i = 0; i < STACK_SIZE; i++) {
-        trigger_stack[i].valid = false;
-    }
     if (enableDB) {
         db.init_db();
         std::vector<std::pair<std::string, DataType>> fields_vec = {
@@ -74,7 +73,7 @@ CMCPrefetcher::CMCPrefetcher(const CMCPrefetcherParams &p)
 
 void
 CMCPrefetcher::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
-                           PrefetchSourceType pf_source, bool miss_repeat)
+                           PrefetchSourceType pf_source, bool coveredByprefetch)
 {
     bool can_prefetch = !pfi.isWrite() && pfi.hasPC();
     if (!can_prefetch) {
@@ -113,26 +112,38 @@ CMCPrefetcher::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &ad
         }
     }
 
-    DPRINTF(CMCPrefetcher, "CMC train: addr: %x\n", block_addr);
+    DPRINTF(CMCPrefetcher, "CMC train: pc: %lx, addr: %lx\n", pc, block_addr);
+
+    // not covered by other prefetcher
+    bool nocovered = (pfi.isCacheMiss() && (!late)) ||
+            (pf_source == PrefetchSourceType::CMC); // if cmc send pf to l2/3, this code line doesn't actually work
 
     // Prefetch: check if there is a match
-    StorageEntry *match_entry = storage.findEntry(block_addr>>6, is_secure);
-    if (pfi.isCacheMiss() && match_entry) {
+    StorageEntry *match_entry = storage.findEntry(hash(block_addr>>6, pc), is_secure);
+    if (nocovered && match_entry) {
+        storage.accessEntry(match_entry);
         // prefetch on cache miss only
-        DPRINTF(CMCPrefetcher, "Storage hit, trigger addr: %lx\n",
-                block_addr);
+        DPRINTF(CMCPrefetcher, "Storage hit, trigger pc: %lx, addr: %lx\n",
+                pc, block_addr);
         // printf("=== Storage hit, trigger addr: %lx\n", block_addr);
         match_entry->refcnt++;
         int priority = recorder->nr_entry;
         uint32_t id = match_entry->id;
 
+        int num_send = 0;
         for (auto addr: match_entry->addresses) {
-            /* !Perf degradation feature!
-                if (addr == block_addr) break;
-            */
-            uint32_t mixedNum = (id << 7);
-            mixedNum += priority;
-            addresses.push_back(AddrPriority(addr, mixedNum, PrefetchSourceType::CMC));
+            // addresses.push_back(AddrPriority(addr, mixedNum, PrefetchSourceType::CMC));
+            if (sendPFWithFilter(addr, addresses, priority, PrefetchSourceType::CMC)) {
+                num_send++;
+                if (num_send > 24) {
+                    addresses.back().pfahead = true;
+                    addresses.back().pfahead_host = 3;
+                }
+                else if (num_send > 4) {
+                    addresses.back().pfahead = true;
+                    addresses.back().pfahead_host = 2;
+                }
+            }
             if (enableDB) {
                 prefetchTraceManager->write_record(
                     PrefetchTrace(addr, id, priority)
@@ -140,7 +151,12 @@ CMCPrefetcher::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &ad
             }
             priority--;
         }
-        return; // do not train on cmc hit?
+    }
+    else if (match_entry) {
+        // if storage entry can be covered by other prefetcher, shall we need to remove this entry?
+        storage.invalidate(match_entry);
+        DPRINTF(CMCPrefetcher, "Storage hit, but unused, trigger addr: %lx\n",
+                block_addr);
     }
 
     // Train: update temporal access chain
@@ -149,77 +165,73 @@ CMCPrefetcher::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &ad
     /* 1. Train trigger */
     bool sms_hit = !pfi.isCacheMiss() && (prefetchSource == PrefetchSourceType::SStream || prefetchSource == PrefetchSourceType::SPht);
     bool train_trigger =
-        (!trigger_stack[1].valid || match_entry) && !trigger_stack[3].valid;
-    //(trigger_stack.size() <= 1 || match_entry) && !trigger_stack.full()
+        (trigger.size() < 1 || match_entry) && !trigger.full();
     bool do_training =
-        !train_trigger && trigger_stack[0].valid; // && !sms_hit;
-    // !train_trigger && !trigger_stack.empty()
+        !train_trigger && !trigger.empty() && nocovered;
     if (train_trigger) {
-        int i = 0;
-        for (i = 0; i < STACK_SIZE; i++) {
-            if (!trigger_stack[i].valid) {
-                trigger_stack[i].valid = true;
-                trigger_stack[i].addr = block_addr;
-                trigger_stack[i].pc = pc;
-                trigger_stack[i].is_secure = is_secure;
-                for (int j = i+1; j < STACK_SIZE; j++) {
-                    assert(!trigger_stack[j].valid);
-                }
-                break;
-            }
-        }
         DPRINTF(CMCPrefetcher, "train_trigger index: %d, addr: %lx\n",
-                i, block_addr);
+                trigger.size()-1, block_addr);
+        assert(!trigger.full());
+
+        trigger.push_back(RecordEntry(pc, block_addr, is_secure));
     }
 
     /* 2. Train entry */
     if (do_training) {
         bool trained = recorder->train_entry(block_addr, is_secure, &finished);
+        auto &trigger_head = trigger.front();
         if (trained) {
             DPRINTF(CMCPrefetcher, "trained %x\n", block_addr);
         }
         if (finished) {
-            // TODO
-            StorageEntry *entry = storage.findVictim(trigger_stack[0].addr>>6);
-            for (auto recorder_entry: recorder->entries) {
-                entry->addresses.push_back(recorder_entry.addr);
-            }
-            entry->refcnt = 0;
-            entry->id = acc_id;
+            DPRINTF(CMCPrefetcher, "trigger train finished, pc: %lx, addr: %lx\n",
+                    trigger_head.pc, trigger_head.addr);
 
-            DPRINTF(CMCPrefetcher, "storage insert, trigger addr: %lx\n",
-                    trigger_stack[0].addr);
+            StorageEntry *entry = storage.findEntry(hash(trigger_head.addr>>6, trigger_head.pc), trigger_head.is_secure);
+            if (entry) {
+                // storage.accessEntry(entry); do not update replacement
+                DPRINTF(CMCPrefetcher, "CMC: enter the same trigger, pc: %lx, addr: %lx\n",
+                                    trigger_head.pc, trigger_head.addr);
+                entry->addresses = recorder->entries;
 
-            if (enableDB) {
-                triggerTraceManager->write_record(
-                    TriggerTrace(trigger_stack[0].pc, trigger_stack[0].addr)
+                entry->refcnt++;
+                entry->id = acc_id;
+            } else {
+                entry = storage.findVictim(hash(trigger_head.addr>>6, trigger_head.pc));
+                entry->addresses = recorder->entries;
+
+                entry->refcnt = 0;
+                entry->id = acc_id;
+
+                storage.insertEntry(
+                    hash(trigger_head.addr>>6, trigger_head.pc),
+                    trigger_head.is_secure,
+                    entry
                 );
-                entryTraceManager->write_record(
-                    EntryTrace(
-                        trigger_stack[0].pc,
-                        trigger_stack[0].addr,
-                        acc_id,
-                        &recorder->entries
-                    )
-                );
             }
 
-            for (auto recorder_entry: recorder->entries) {
+            for (auto addr: recorder->entries) {
                 DPRINTF(CMCPrefetcher, "entry addr: 0x%lx\n",
-                        recorder_entry.addr);
+                        addr);
             }
-            storage.insertEntry(
-                trigger_stack[0].addr>>6,
-                trigger_stack[0].is_secure,
-                entry
-            );
+            trigger.pop_front();
 
-            for (int i = 0; i < STACK_SIZE-1; i++) {
-                trigger_stack[i] = trigger_stack[i+1];
-            }
-            trigger_stack[STACK_SIZE-1].valid = false;
             recorder->reset();
             acc_id++;
+
+            // if (enableDB) {
+            //     triggerTraceManager->write_record(
+            //         TriggerTrace(trigger_head.pc, trigger_head.addr)
+            //     );
+            //     entryTraceManager->write_record(
+            //         EntryTrace(
+            //             trigger_head.pc,
+            //             trigger_head.addr,
+            //             acc_id,
+            //             &recorder->entries
+            //         )
+            //     );
+            // }
         }
     }
 }
@@ -238,7 +250,7 @@ CMCPrefetcher::Recorder::train_entry(
     if (index == 0) {
         // first entry
         assert(entry_empty());
-        entries.push_back(RecordEntry(addr, is_secure, true));
+        entries.push_back(addr);
         index++;
         return true;
     }
@@ -251,10 +263,26 @@ CMCPrefetcher::Recorder::train_entry(
         index++;
         *finished = true;
     } else {
-        entries.push_back(RecordEntry(addr, is_secure, true));
+        entries.push_back(addr);
         index++;
     }
     return true;
+}
+
+bool
+CMCPrefetcher::sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio,
+                                        PrefetchSourceType src)
+{
+    if (filter->contains(addr)) {
+        DPRINTF(CMCPrefetcher, "Skip recently prefetched: %lx\n", addr);
+        return false;
+    } else {
+        DPRINTF(CMCPrefetcher, "CMC: send pf: %lx\n", addr);
+        filter->insert(addr, 0);
+        addresses.push_back(AddrPriority(addr, prio, src));
+        return true;
+    }
+    return false;
 }
 
 void
