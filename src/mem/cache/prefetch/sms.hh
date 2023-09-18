@@ -186,7 +186,9 @@ class XSCompositePrefetcher : public Queued
 
     bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType src);
 
-    BOP *bop;
+    BOP *largeBOP;
+
+    BOP *smallBOP;
 
     SignaturePath  *spp;
 

@@ -182,9 +182,10 @@ def config_cache(options, system):
                     if options.l1d_enable_cplx:
                         dcache.prefetcher.enable_cplx = True
                     dcache.prefetcher.short_stride_thres = options.short_stride_thres
-                    dcache.prefetcher.fuzzy_stride_matching = True
+                    dcache.prefetcher.fuzzy_stride_matching = False
                     dcache.prefetcher.stream_pf_ahead = True
-                    dcache.prefetcher.bop.delay_queue_enable = True
+                    dcache.prefetcher.bop_large.delay_queue_enable = True
+                    dcache.prefetcher.bop_small.delay_queue_enable = False
                     dcache.prefetcher.queue_size = 128
                     dcache.prefetcher.max_prefetch_requests_with_pending_translation = 128
 

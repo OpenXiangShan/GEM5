@@ -80,18 +80,18 @@ class BOP : public Queued
         /** Structure to save the offset and the score */
         // typedef std::pair<int16_t, uint8_t> OffsetListEntry;
         struct OffsetListEntry{
-            int32_t first;  // offset, name it as first to make it compatible with pair
-            uint8_t second;  // score, name it as second to make it compatible with pair
+            int32_t offset;  // offset, name it as first to make it compatible with pair
+            uint8_t score;  // score, name it as second to make it compatible with pair
             int16_t depth;
             SatCounter8 late;
 
             OffsetListEntry(int32_t x, uint8_t y)
-                : first(x), second(y), depth(1), late(6, 32)
+                : offset(x), score(y), depth(1), late(6, 32)
             {}
 
             int64_t calcOffset() const
             {
-                return first * depth;
+                return offset * depth;
             }
         };
         std::list<OffsetListEntry> offsetsList;
@@ -172,10 +172,6 @@ class BOP : public Queued
         void bestOffsetLearning(Addr addr, bool late);
 
         unsigned missCount{0};
-
-        unsigned strictOffset;
-
-        unsigned strictBadScore;
 
     public:
         /** Update the RR right table after a prefetch fill */
