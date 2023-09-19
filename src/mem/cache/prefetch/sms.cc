@@ -264,12 +264,11 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
                 largeBOP->tryAddOffset(spp_best_offset, late);
             }
         }
-    }
 
-    if (is_first_shot && (pfi.isCacheMiss() || pfi.isPfFirstHit())) {
-        cmc->doPrefetch(pfi, addresses, late, pf_source, false);
+        if (is_first_shot && (pfi.isCacheMiss() || pfi.isPfFirstHit() || pf_source == PrefetchSourceType::CMC)) {
+            cmc->doPrefetch(pfi, addresses, late, pf_source, false);
+        }
     }
-
 }
 
 XSCompositePrefetcher::ACTEntry *
