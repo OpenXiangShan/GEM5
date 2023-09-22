@@ -1337,7 +1337,7 @@ class BaseCache : public ClockedObject
         CacheBlk *block = tags->findBlock(pkt->getAddr(), pkt->isSecure());
         assert(block);
         /* clean prefetchSource if the block was not prefetched */
-        if (!block->wasPrefetched()) {
+        if (!block->wasEverPrefetched()) {
             Request::XsMetadata blkMeta = block->getXsMetadata();
             blkMeta.prefetchSource = PrefetchSourceType::PF_NONE;
             block->setXsMetadata(blkMeta);

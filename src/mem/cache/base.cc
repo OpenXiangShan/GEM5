@@ -518,9 +518,11 @@ BaseCache::recvTimingReq(PacketPtr pkt)
         ppHit->notify(pkt);
 
         if (prefetcher && blk && blk->wasPrefetched()) {
-            DPRINTF(Cache, "Hit on prefetch for addr %#x (%s)\n",
-                    pkt->getAddr(), pkt->isSecure() ? "s" : "ns");
+            DPRINTF(Cache, "Hit on prefetch for addr %#x (%s), source: %i\n", pkt->getAddr(),
+                    pkt->isSecure() ? "s" : "ns", blk->getXsMetadata().prefetchSource);
+            // pass the pf source from block to req, it may be used by either load inst or L(n-1) cache
             pkt->req->setPFSource(blk->getXsMetadata().prefetchSource);
+            DPRINTF(Cache, "Mark req %p pf source: %i\n", pkt->req, pkt->req->getPFSource());
             blk->clearPrefetched();
         }
 
@@ -1762,6 +1764,12 @@ BaseCache::handleFill(PacketPtr pkt, CacheBlk *blk, PacketList &writebacks,
     // The block will be ready when the payload arrives and the fill is done
     blk->setWhenReady(clockEdge(fillLatency) + pkt->headerDelay +
                       pkt->payloadDelay);
+
+    Request::XsMetadata blk_meta = blk->getXsMetadata();
+    blk_meta.prefetchSource = pkt->req->getPFSource();
+    blk->setXsMetadata(blk_meta);
+    DPRINTF(Cache, "%s: Mark blk as prefetched by source %i, form req %p\n", __func__,
+            pkt->req->getPFSource(), pkt->req);
 
     return blk;
 }
