@@ -74,7 +74,7 @@ class XSCompositePrefetcher : public Queued
 
     const bool streamPFAhead;
 
-    ACTEntry *actLookup(const PrefetchInfo &pfi, bool &in_active_page, bool &alloc_new_region);
+    ACTEntry *actLookup(const PrefetchInfo &pfi, bool &in_active_page, bool &alloc_new_region, bool &is_first_shot);
 
     const unsigned streamDepthStep{4};  // # block changed in one step
 

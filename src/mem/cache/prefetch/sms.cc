@@ -67,7 +67,8 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
     Addr region_offset = regionOffset(vaddr);
     bool is_active_page = false;
     bool enter_new_region = false;
-    ACTEntry *act_match_entry = actLookup(pfi, is_active_page, enter_new_region);
+    bool is_first_shot = false;
+    ACTEntry *act_match_entry = actLookup(pfi, is_active_page, enter_new_region, is_first_shot);
     int origin_depth = 0;
     Addr pf_tgt_addr = 0;
     if (act_match_entry) {
@@ -172,7 +173,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
 
         bool use_bop = pf_source == PrefetchSourceType::HWP_BOP || pf_source == PrefetchSourceType::IPCP_CPLX ||
                        pfi.isCacheMiss();
-        use_bop &= !miss_repeat; // miss repeat should not be handled by stride
+        use_bop &= !miss_repeat && is_first_shot; // miss repeat should not be handled by stride
         if (use_bop) {
             DPRINTF(XSCompositePrefetcher, "Do BOP traing/prefetching...\n");
             size_t old_addr_size = addresses.size();
@@ -232,7 +233,8 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
 }
 
 XSCompositePrefetcher::ACTEntry *
-XSCompositePrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page, bool &alloc_new_region)
+XSCompositePrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page, bool &alloc_new_region,
+                                 bool &is_first_shot)
 {
     Addr pc = pfi.getPC();
     Addr vaddr = pfi.getAddr();
@@ -249,6 +251,7 @@ XSCompositePrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page, 
         uint64_t region_bit_accessed = 1 << region_offset;
         if (!(entry->region_bits & region_bit_accessed)) {
             entry->access_cnt += 1;
+            is_first_shot = true;
         }
         entry->region_bits |= region_bit_accessed;
         // print bits
@@ -262,6 +265,7 @@ XSCompositePrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page, 
     }
 
     alloc_new_region = true;
+    is_first_shot = true;
 
     ACTEntry *old_entry = act.findEntry(region_addr - 1, secure);
     if (old_entry) {
