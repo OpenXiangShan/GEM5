@@ -56,6 +56,12 @@ void ArchDBer::save_db() {
   sqlite3_close(disk_db);
 }
 
+DBTraceManager *
+ArchDBer::addAndGetTrace(const char *name, std::vector<std::pair<std::string, DataType>> fields)
+{
+  _traces[name] = DBTraceManager(name, fields, mem_db);
+  return &_traces[name];
+}
 
 void ArchDBer::L1MissTrace_write(
   uint64_t pc,
@@ -107,6 +113,86 @@ ArchDBer::memTraceWrite(Tick tick, bool is_load, Addr pc, Addr vaddr, Addr paddr
           "VALUES(%ld,%d,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%d);",
           tick, is_load, pc, vaddr, paddr, issued, translated, completed, committed, writenback,pf_src);
   rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
+  if (rc != SQLITE_OK) {
+    fatal("SQL error: %s\n", zErrMsg);
+  };
+}
+
+void
+DBTraceManager::init_table() {
+  // create table
+  char sql[1024];
+  int pos = 0;
+  pos = sprintf(sql,
+    "CREATE TABLE %s(" \
+    "ID INTEGER PRIMARY KEY AUTOINCREMENT, " \
+    "TICK INT NOT NULL", _name.c_str());
+  for (auto it = _fields.begin(); it != _fields.end(); it++) {
+    switch (it->second) {
+      case UINT64:
+        pos += sprintf(sql+pos, ",%s INT NOT NULL", it->first.c_str());
+        break;
+      case TEXT:
+        pos += sprintf(sql+pos, ",%s TEXT", it->first.c_str());
+        break;
+      default:
+        fatal("Unknown data type");
+    }
+  }
+  pos += sprintf(sql+pos, ");");
+  assert(pos < 1024);
+  printf("%s\n", sql);
+  char *zErrMsg;
+  int rc = sqlite3_exec(_db, sql, callback, 0, &zErrMsg);
+  if (rc != SQLITE_OK) {
+    fatal("SQL error: %s\n", zErrMsg);
+  } else {
+    warn("Table created: %s\n", _name.c_str());
+  }
+}
+
+void
+DBTraceManager::write_record(const Record &record)
+{
+  char sql[1024];
+  int pos = 0;
+  pos = sprintf(sql, "INSERT INTO %s(TICK", _name.c_str());
+  for (auto it = _fields.begin(); it != _fields.end(); it++) {
+    pos += sprintf(sql+pos, ",%s", it->first.c_str());
+  }
+  pos += sprintf(sql+pos, ") VALUES(%ld", record._tick);
+  for (auto it = _fields.begin(); it != _fields.end(); it++) {
+    switch (it->second) {
+      case UINT64:
+      {
+        auto &m = record._uint64_data;
+        auto data = m.find(it->first);
+        if (data == m.end()) {
+          fatal("Can't find data for %s\n", it->first.c_str());
+        }
+        assert(data != m.end());
+        pos += sprintf(sql+pos, ",%ld", data->second);
+        break;
+      }
+      case TEXT:
+      {
+        auto &m = record._text_data;
+        auto data = m.find(it->first);
+        if (data == m.end()) {
+          fatal("Can't find data for %s\n", it->first.c_str());
+        }
+        assert(data != m.end());
+        pos += sprintf(sql+pos, ",'%s'", data->second.c_str());
+        break;
+      }
+      default:
+        fatal("Unknown data type!\n");
+    }
+  }
+  pos += sprintf(sql+pos, ");");
+  assert(pos < 1024);
+  char *zErrMsg;
+  int rc = sqlite3_exec(_db, sql, callback, 0, &zErrMsg);
   if (rc != SQLITE_OK) {
     fatal("SQL error: %s\n", zErrMsg);
   };

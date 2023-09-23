@@ -183,3 +183,5 @@ class BaseO3CPU(BaseCPU):
 
     iewDelayCalibrator = Param.DelayCalibrator(DefaultDelayMatrix(),
                                                "iew schedule and execute tick calibrator ")
+
+    arch_db = Param.ArchDBer(Parent.any, "Arch DB")
