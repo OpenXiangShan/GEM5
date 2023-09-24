@@ -48,5 +48,6 @@ class ArchDBer(SimObject):
 
     arch_db_file = Param.String("", "Where to save arch db")
     dump_from_start = Param.Bool(True, "Dump arch db from start")
+    enable_rolling = Param.Bool(False, "Dump rolling perfcnt")
 
     table_cmds = VectorParam.String([], "Tables to create")

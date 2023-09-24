@@ -7,6 +7,7 @@ namespace gem5{
 
 ArchDBer::ArchDBer(const Params &p)
     : SimObject(p), dump(p.dump_from_start),
+    dump_rolling(p.enable_rolling),
     mem_db(nullptr), zErrMsg(nullptr),rc(0),
     db_path(p.arch_db_file)
 {
@@ -63,6 +64,23 @@ ArchDBer::addAndGetTrace(const char *name, std::vector<std::pair<std::string, Da
   return &_traces[name];
 }
 
+void
+ArchDBer::memTraceWrite(Tick tick, bool is_load, Addr pc, Addr vaddr, Addr paddr, uint64_t issued, uint64_t translated,
+                        uint64_t completed, uint64_t committed, uint64_t writenback, int pf_src)
+{
+  if (!dump) return;
+
+  sprintf(memTraceSQLBuf,
+          "INSERT INTO MemTrace(Tick,IsLoad,PC,VADDR,PADDR,Issued,Translated,Completed,Committed,Writenback,PFSrc) "
+          "VALUES(%ld,%d,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%d);",
+          tick, is_load, pc, vaddr, paddr, issued, translated, completed, committed, writenback,pf_src);
+  rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
+  if (rc != SQLITE_OK) {
+    fatal("SQL error: %s\n", zErrMsg);
+  };
+}
+
+
 void ArchDBer::L1MissTrace_write(
   uint64_t pc,
   uint64_t source,
@@ -97,22 +115,6 @@ void ArchDBer::L1EvictTraceWrite(
     paddr, stamp, site
   );
   rc = sqlite3_exec(mem_db, sql, callback, 0, &zErrMsg);
-  if (rc != SQLITE_OK) {
-    fatal("SQL error: %s\n", zErrMsg);
-  };
-}
-
-void
-ArchDBer::memTraceWrite(Tick tick, bool is_load, Addr pc, Addr vaddr, Addr paddr, uint64_t issued, uint64_t translated,
-                        uint64_t completed, uint64_t committed, uint64_t writenback, int pf_src)
-{
-  if (!dump) return;
-
-  sprintf(memTraceSQLBuf,
-          "INSERT INTO MemTrace(Tick,IsLoad,PC,VADDR,PADDR,Issued,Translated,Completed,Committed,Writenback,PFSrc) "
-          "VALUES(%ld,%d,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%d);",
-          tick, is_load, pc, vaddr, paddr, issued, translated, completed, committed, writenback,pf_src);
-  rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
   if (rc != SQLITE_OK) {
     fatal("SQL error: %s\n", zErrMsg);
   };

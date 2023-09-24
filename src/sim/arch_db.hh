@@ -52,6 +52,7 @@ class ArchDBer : public SimObject
   private:
     //variables from chisel generate cpp
     bool dump;
+    bool dump_rolling;
     sqlite3 *mem_db;
     char * zErrMsg;
     int rc;
@@ -65,6 +66,8 @@ class ArchDBer : public SimObject
     void save_db();
   public:
     DBTraceManager *addAndGetTrace(const char *name, std::vector<std::pair<std::string, DataType>> fields);
+
+    bool get_dump_rolling() { return dump_rolling; }
 
     void L1MissTrace_write(
       uint64_t pc,

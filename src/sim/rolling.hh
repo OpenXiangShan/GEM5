@@ -30,7 +30,11 @@ class Rolling
     Rolling(const char *name, const char *desc = nullptr,
            Counter intv = 1000, ArchDBer *db = nullptr)
     {
-      if (db == nullptr) { enabled = false; return; }
+      if (db == nullptr || !db->get_dump_rolling()) {
+        enabled = false;
+        return;
+      }
+
       interval = intv;
       archDBer = db;
       std::vector<std::pair<std::string, DataType>> fields_vec = {
