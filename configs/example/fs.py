@@ -155,6 +155,7 @@ def build_test_system(np):
     if args.enable_arch_db:
         test_sys.arch_db = ArchDBer(arch_db_file=args.arch_db_file)
         test_sys.arch_db.dump_from_start = args.arch_db_fromstart
+        test_sys.arch_db.enable_rolling = args.enable_rolling
         test_sys.arch_db.table_cmds = [
             "CREATE TABLE L1MissTrace(" \
             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \

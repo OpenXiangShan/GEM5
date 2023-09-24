@@ -12,6 +12,7 @@
 
 #include "base/logging.hh"
 #include "base/types.hh"
+#include "cpu/pred/general_arch_db.hh"
 #include "params/ArchDBer.hh"
 #include "sim/sim_exit.hh"
 #include "sim/sim_object.hh"
@@ -20,6 +21,24 @@
 namespace gem5{
 
 class BaseCache;
+
+class DBTraceManager
+{
+  std::string _name;
+  std::map<std::string, DataType> _fields;
+  sqlite3 *_db;
+public:
+  DBTraceManager(const char *name, std::vector<std::pair<std::string, DataType>> fields, sqlite3 *db) {
+    _name = name;
+    for (auto it = fields.begin(); it != fields.end(); it++) {
+      _fields[it->first] = it->second;
+    }
+    _db = db;
+  }
+  DBTraceManager() {}
+  void init_table();
+  void write_record(const Record &record);
+};
 
 class ArchDBer : public SimObject
 {
@@ -33,16 +52,23 @@ class ArchDBer : public SimObject
   private:
     //variables from chisel generate cpp
     bool dump;
+    bool dump_rolling;
     sqlite3 *mem_db;
     char * zErrMsg;
     int rc;
     //path to save
     std::string db_path;
+    // a trace corrsponds to a table
+    std::map<std::string, DBTraceManager> _traces;
 
     void create_table(const std::string &sql);
 
     void save_db();
   public:
+    DBTraceManager *addAndGetTrace(const char *name, std::vector<std::pair<std::string, DataType>> fields);
+
+    bool get_dump_rolling() { return dump_rolling; }
+
     void L1MissTrace_write(
       uint64_t pc,
       uint64_t source,
