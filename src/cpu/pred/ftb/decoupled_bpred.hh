@@ -404,7 +404,7 @@ class DecoupledBPUWithFTB : public BPredUnit
         statistics::Scalar ftqNotValid;
         statistics::Scalar fsqNotValid;
         statistics::Scalar fsqFullCannotEnq;
-        // 
+        statistics::Scalar fsqFullFetchHungry;
         statistics::Distribution commitFsqEntryHasInsts;
         // write back once an fsq entry finishes fetch
         statistics::Distribution commitFsqEntryFetchedInsts;
@@ -510,6 +510,7 @@ class DecoupledBPUWithFTB : public BPredUnit
         statistics::Distribution commitControlSquashLatencyDist;
         statistics::Distribution commitTrapSquashLatencyDist;
         statistics::Distribution commitNonControlSquashLatencyDist;
+        statistics::Distribution updateLatencyDist;
 
         statistics::Scalar controlDecodeSquashOfCond;
         statistics::Scalar controlDecodeSquashOfUncond;

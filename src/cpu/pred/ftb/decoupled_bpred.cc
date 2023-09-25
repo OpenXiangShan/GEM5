@@ -457,6 +457,7 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     ADD_STAT(ftqNotValid, statistics::units::Count::get(), "fetch needs ftq req but ftq not valid"),
     ADD_STAT(fsqNotValid, statistics::units::Count::get(), "ftq needs fsq req but fsq not valid"),
     ADD_STAT(fsqFullCannotEnq, statistics::units::Count::get(), "bpu has req but fsq full cannot enqueue"),
+    ADD_STAT(fsqFullFetchHungry, statistics::units::Count::get(), "fetch hungry when fsq full and bpu cannot enqueue"),
     ADD_STAT(commitFsqEntryHasInsts, statistics::units::Count::get(), "number of insts that commit fsq entries have"),
     ADD_STAT(commitFsqEntryFetchedInsts, statistics::units::Count::get(), "number of insts that commit fsq entries fetched"),
     ADD_STAT(commitFsqEntryOnlyHasOneJump, statistics::units::Count::get(), "number of fsq entries with only one instruction (jump)"),
@@ -552,6 +553,7 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     ADD_STAT(commitControlSquashLatencyDist, statistics::units::Count::get(), "distribution of cycles count from pred to commit control squash"),
     ADD_STAT(commitTrapSquashLatencyDist, statistics::units::Count::get(), "distribution of cycles count from pred to commit trap squash"),
     ADD_STAT(commitNonControlSquashLatencyDist, statistics::units::Count::get(), "distribution of cycles count from pred to commit non-control squash"),
+    ADD_STAT(updateLatencyDist, statistics::units::Count::get(), "distribution of cycles count from pred to commit update"),
     ADD_STAT(controlDecodeSquashOfCond, statistics::units::Count::get(), "control squash of cond branch at decode"),
     ADD_STAT(controlDecodeSquashOfUncond, statistics::units::Count::get(), "control squash of uncond branch at decode"),
     ADD_STAT(controlDecodeSquashOfUncondDirect, statistics::units::Count::get(), "control squash of uncond direct branch at decode"),
@@ -576,6 +578,7 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     commitControlSquashLatencyDist.init(1,16,1);
     commitTrapSquashLatencyDist.init(1,16,1);
     commitNonControlSquashLatencyDist.init(1,16,1);
+    updateLatencyDist.init(1,64,2);
 }
 
 DecoupledBPUWithFTB::BpTrace::BpTrace(FetchStream &stream, const DynInstPtr &inst, bool mispred)
@@ -1478,6 +1481,10 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
         }
 
         if (stream.isHit || stream.exeTaken) {
+            // update latency stats
+            auto updateLat = curCycle() - stream.predCycle;
+            dbpFtbStats.updateLatencyDist.sample(updateLat, 1);
+
             // generate new ftb entry first
             // each component will use info of this entry to update
             ftb->getAndSetNewFTBEntry(stream);
@@ -1649,6 +1656,9 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
             }
             lastCommittedStream = stream;
         }
+
+
+
 
         it = fetchStreamQueue.erase(it);
 
@@ -2070,6 +2080,9 @@ DecoupledBPUWithFTB::tryEnqFetchTarget()
         // desired stream not found in fsq
         DPRINTF(DecoupleBP, "FTQ enq desired Stream ID %u is not found\n",
                 ftq_enq_state.streamId);
+        if (streamQueueFull()) {
+            dbpFtbStats.fsqFullFetchHungry++;
+        }
         return;
     }
 
