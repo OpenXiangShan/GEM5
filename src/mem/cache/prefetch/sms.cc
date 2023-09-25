@@ -60,8 +60,8 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
     Addr vaddr = pfi.getAddr();
     Addr block_addr = blockAddress(vaddr);
 
-    DPRINTF(XSCompositePrefetcher, "blk addr: %lx, prefetch source: %i, miss: %i, late: %i\n", block_addr, pf_source,
-            pfi.isCacheMiss(), late);
+    DPRINTF(XSCompositePrefetcher, "blk addr: %lx, prefetch source: %i, miss: %i, late: %i, ever pf: %i, pc: %lx\n",
+            block_addr, pf_source, pfi.isCacheMiss(), late, pfi.isEverPrefetched(), pfi.getPC());
 
     // if (!pfi.isCacheMiss()) {
     //     assert(pf_source != PrefetchSourceType::PF_NONE);
@@ -364,7 +364,6 @@ XSCompositePrefetcher::markNonStridePC(Addr pc)
         entry->pc = pc;
         nonStridePCs.insertEntry(nonStrideHash(pc), false, entry);
     }
-    DPRINTF(XSCompositePrefetcher, "Reach x\n");
 }
 
 bool
