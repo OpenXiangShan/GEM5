@@ -91,6 +91,7 @@ class BOP : public Queued
 
             int64_t calcOffset() const
             {
+                assert(offset != 0);
                 return offset * depth;
             }
         };

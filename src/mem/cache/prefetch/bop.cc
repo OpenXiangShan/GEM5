@@ -167,6 +167,7 @@ BOP::testRR(Addr addr) const
 void
 BOP::tryAddOffset(int64_t offset, bool late)
 {
+    assert(offset != 0);
     if (missCount < 128) {
         return;
     } else {
