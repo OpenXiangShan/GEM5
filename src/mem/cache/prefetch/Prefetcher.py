@@ -508,7 +508,7 @@ class BOPPrefetcher(QueuedPrefetcher):
     on_data  = True
     on_inst  = False
 
-    score_max = Param.Unsigned(31, "Max. score to update the best offset")
+    score_max = Param.Unsigned(20, "Max. score to update the best offset")
     round_max = Param.Unsigned(50, "Max. round to update the best offset")
     bad_score = Param.Unsigned(10, "Score at which the HWP is disabled")
     rr_size = Param.Unsigned(256, "Number of entries of each RR bank")
@@ -529,19 +529,17 @@ class BOPPrefetcher(QueuedPrefetcher):
 
 class SmallBOPPrefetcher(BOPPrefetcher):
 
-    score_max = Param.Unsigned(31, "Max. score to update the best offset")
-    round_max = Param.Unsigned(50, "Max. round to update the best offset")
-    bad_score = Param.Unsigned(5, "Score at which the HWP is disabled")
-    rr_size = Param.Unsigned(256, "Number of entries of each RR bank")
-    tag_bits = Param.Unsigned(12, "Bits used to store the tag")
-    negative_offsets_enable = Param.Bool(True,
-                "Initialize the offsets list also with negative values \
-                (i.e. the table will have half of the entries with positive \
-                offsets and the other half with negative ones)")
-    delay_queue_enable = Param.Bool(False, "Enable the delay queue")
+    score_max = 20
+    round_max = 50
+    bad_score = 2
+    rr_size = 256
+    tag_bits = 12
+    negative_offsets_enable = True
+    delay_queue_enable = True
+    delay_queue_cycles = 30
 
-    offsets = VectorParam.Int([1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 16, 18, 20,
-                              24, 25, 27, 30, 32, 36, 40, 45, 48, 50, 54, 60, 64], "Predefined offsets")
+    offsets = [1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 16, 18, 20,
+               24, 25, 27, 30, 32, 36, 40, 45, 48, 50, 54, 60, 64]
 
 class SBOOEPrefetcher(QueuedPrefetcher):
     type = 'SBOOEPrefetcher'

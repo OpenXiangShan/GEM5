@@ -60,7 +60,7 @@ BOP::BOP(const BOPPrefetcherParams &p)
     rrLeft.resize(rrEntries);
     rrRight.resize(rrEntries);
 
-    int offset_count = p.negative_offsets_enable ? p.offsets.size() * 2 : p.offsets.size();
+    int offset_count = p.offsets.size();
 
     for (int i = 0; i < offset_count; i++) {
         offsetsList.emplace_back(p.offsets[i], (uint8_t) 0);
@@ -395,16 +395,7 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
 void
 BOP::notifyFill(const PacketPtr& pkt)
 {
-    // Only insert into the RR right way if it's the pkt is from BOP
-    if (!pkt->fromBOP()) return;
 
-    Addr tag_y = tag(pkt->getAddr());
-    DPRINTF(BOPPrefetcher, "Notify fill, addr: %#lx tag: %#lx issuePf: %d\n",
-            pkt->getAddr(), tag(pkt->getAddr()), issuePrefetchRequests);
-
-    if (issuePrefetchRequests) {
-        insertIntoRR(tag_y - bestOffset, RRWay::Right);
-    }
 }
 
 } // namespace prefetch
