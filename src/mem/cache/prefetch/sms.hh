@@ -180,11 +180,15 @@ class XSCompositePrefetcher : public Queued
 
   private:
     const unsigned pfFilterSize{128};
+    const unsigned pfPageFilterSize{16};
     boost::compute::detail::lru_cache<Addr, Addr> pfBlockLRUFilter;
 
     boost::compute::detail::lru_cache<Addr, Addr> pfPageLRUFilter;
+    boost::compute::detail::lru_cache<Addr, Addr> pfPageLRUFilterL2;
+    boost::compute::detail::lru_cache<Addr, Addr> pfPageLRUFilterL3;
 
-    bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType src);
+    bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType src,
+                          int ahead_level=-1);
 
     BOP *largeBOP;
 

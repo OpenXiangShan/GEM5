@@ -28,7 +28,9 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
           PhtEntry(2 * (region_blocks - 1), SatCounter8(2, 1))),
       phtPFAhead(p.pht_pf_ahead),
       pfBlockLRUFilter(pfFilterSize),
-      pfPageLRUFilter(pfFilterSize),
+      pfPageLRUFilter(pfPageFilterSize),
+      pfPageLRUFilterL2(pfPageFilterSize),
+      pfPageLRUFilterL3(pfPageFilterSize),
       largeBOP(dynamic_cast<BOP *>(p.bop_large)),
       smallBOP(dynamic_cast<BOP *>(p.bop_small)),
       spp(dynamic_cast<SignaturePath *>(p.spp)),
@@ -115,17 +117,16 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
         }
     }
 
-    if (act_match_entry && is_active_page) {
+    if (act_match_entry && is_active_page && pf_tgt_addr && enter_new_region) {
         if (streamPFAhead) {
             pf_tgt_addr += 48 * blkSize;  // depth here?
             Addr pf_tgt_region = regionAddress(pf_tgt_addr);
             DPRINTF(XSCompositePrefetcher, "ACT pf ahead region: %lx\n", pf_tgt_region);
             for (int i = 0; i < region_blocks; i++) {
                 Addr cur = pf_tgt_region * region_size + i * blkSize;
-                addresses.push_back(AddrPriority(cur, region_blocks - i, PrefetchSourceType::SStream));
-                addresses.back().pfahead = true;
-                addresses.back().pfahead_host = 2;// send to l2
+                sendPFWithFilter(cur, addresses, region_blocks - i, PrefetchSourceType::SStream, 2);
             }
+            pfPageLRUFilterL2.insert(pf_tgt_region, 0);
         }
 
         if (streamPFAhead) {
@@ -134,10 +135,9 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             DPRINTF(XSCompositePrefetcher, "ACT pf ahead region: %lx\n", pf_tgt_region);
             for (int i = 0; i < region_blocks; i++) {
                 Addr cur = pf_tgt_region * region_size + i * blkSize;
-                addresses.push_back(AddrPriority(cur, region_blocks - i, PrefetchSourceType::SStream));
-                addresses.back().pfahead = true;
-                addresses.back().pfahead_host = 3;// send to l3
+                sendPFWithFilter(cur, addresses, region_blocks - i, PrefetchSourceType::SStream, 3);
             }
+            pfPageLRUFilterL3.insert(pf_tgt_region, 0);
         }
     }
 
@@ -677,18 +677,35 @@ XSCompositePrefetcher::calcPeriod(const std::vector<SatCounter8> &bit_vec, bool 
 
 bool
 XSCompositePrefetcher::sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio,
-                                        PrefetchSourceType src)
+                                        PrefetchSourceType src, int ahead_level)
 {
-    if (pfPageLRUFilter.contains(regionAddress(addr))) {
-        DPRINTF(XSCompositePrefetcher, "Skip recently prefetched page: %lx\n", regionAddress(addr));
+    if (ahead_level < 2 && pfPageLRUFilter.contains(regionAddress(addr))) {
+        DPRINTF(XSCompositePrefetcher, "Skip recently L1 prefetched page: %lx\n", regionAddress(addr));
         return false;
+
+    } else if (ahead_level == 2 && pfPageLRUFilterL2.contains(regionAddress(addr))) {
+        DPRINTF(XSCompositePrefetcher, "Skip recently L2 prefetched page: %lx\n", regionAddress(addr));
+        return false;
+
+    } else if (ahead_level == 3 && pfPageLRUFilterL3.contains(regionAddress(addr))) {
+        DPRINTF(XSCompositePrefetcher, "Skip recently L3 prefetched page: %lx\n", regionAddress(addr));
+        return false;
+
     } else if (pfBlockLRUFilter.contains(addr)) {
         DPRINTF(XSCompositePrefetcher, "Skip recently prefetched: %lx\n", addr);
         return false;
+
     } else {
-        DPRINTF(XSCompositePrefetcher, "Send pf: %lx\n", addr);
-        pfBlockLRUFilter.insert(addr, 0);
+        if (src != PrefetchSourceType::SStream) {
+            pfBlockLRUFilter.insert(addr, 0);
+        }
         addresses.push_back(AddrPriority(addr, prio, src));
+        if (ahead_level > 0) {
+            assert(ahead_level == 2 || ahead_level == 3);
+            addresses.back().pfahead_host = ahead_level;
+            addresses.back().pfahead = true;
+        }
+        DPRINTF(XSCompositePrefetcher, "Send pf: %lx, ahead %i\n", addr, ahead_level);
         return true;
     }
 }
