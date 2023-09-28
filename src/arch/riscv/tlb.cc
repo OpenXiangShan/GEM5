@@ -86,6 +86,7 @@ TLB::TLB(const Params &p) :
     RemovePreUnused(0),AllPre(0),
     isOpenAutoNextline(p.isOpenNextline),
     G_pre_size(p.G_pre_size),open_g_pre(p.open_g_pre),
+    open_forward_pre(p.open_forward_pre),
     all_g_pre(0),remove_no_use_g_pre(0),remove_no_use_f_pre(0),
     used_f_pre(0),all_used(0),all_used_pre(0),
     pre_sign(0),last_vaddr(0),last_pc(0), trace_flag(false),
@@ -1548,7 +1549,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                         }
                     }
                     if ((forward_pre_block != g_vaddr_block) && (!f3_pre) &&
-                        open_g_pre && (!pre_f)) {
+                        open_forward_pre && (!pre_f)) {
                         if (f2_pre || f5_pre) {
                             pre_req->setForwardPreVaddr(forward_pre_block);
                             l2tlb->insert_forward_pre(forward_pre_block,
@@ -1821,8 +1822,8 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                 }
             }
         }
-        if ((forward_pre_block != g_vaddr_block) && (!f3_pre) && open_g_pre &&
-            (!pre_f)) {
+        if ((forward_pre_block != g_vaddr_block) && (!f3_pre) &&
+            open_forward_pre && (!pre_f)) {
             l2tlb->insert_forward_pre(forward_pre_block, f_pre_entry);
             if (f2_pre || f5_pre) {
                 pre_req->setForwardPreVaddr(forward_pre_block);

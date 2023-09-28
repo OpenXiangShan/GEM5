@@ -84,6 +84,7 @@ class TLB : public BaseTLB
     bool isOpenAutoNextline;
     uint64_t G_pre_size;
     bool open_g_pre;
+    bool open_forward_pre;
     uint64_t all_g_pre;
     uint64_t remove_no_use_g_pre;
     uint64_t remove_no_use_f_pre;
