@@ -32,13 +32,13 @@ namespace prefetch
 class XSCompositePrefetcher : public Queued
 {
   protected:
-    const unsigned int region_size;
-    const unsigned int region_blocks;
+    const unsigned int regionSize;
+    const unsigned int regionBlks;
 
 
-    Addr regionAddress(Addr a) { return a / region_size; };
+    Addr regionAddress(Addr a) { return a / regionSize; };
 
-    Addr regionOffset(Addr a) { return (a / blkSize) % region_blocks; }
+    Addr regionOffset(Addr a) { return (a / blkSize) % regionBlks; }
 
 
     // active generation table
@@ -64,9 +64,8 @@ class XSCompositePrefetcher : public Queued
               lateConf(4, 7)
         {
         }
-        bool in_active_page() {
-            // FIXME: remove hard-code 12
-            return access_cnt > 12;
+        bool in_active_page(unsigned region_blocks) {
+            return access_cnt > region_blocks / 4 * 3;
         }
     };
 
