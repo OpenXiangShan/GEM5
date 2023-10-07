@@ -157,6 +157,8 @@ class XSCompositePrefetcher : public Queued
 
     Addr phtHash(Addr pc) { return pc >> 1; }
 
+    Addr phtHash(Addr pc, Addr region_offset) { return pc >> 1; }
+
     bool phtLookup(const PrefetchInfo &pfi,
                    std::vector<AddrPriority> &addresses, bool late, Addr look_ahead_addr);
 

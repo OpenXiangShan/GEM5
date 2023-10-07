@@ -25,7 +25,7 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       fuzzyStrideMatching(p.fuzzy_stride_matching),
       pht(p.pht_assoc, p.pht_entries, p.pht_indexing_policy,
           p.pht_replacement_policy,
-          PhtEntry(2 * (regionBlks - 1), SatCounter8(2, 1))),
+          PhtEntry(2 * (regionBlks - 1), SatCounter8(3, 2))),
       phtPFAhead(p.pht_pf_ahead),
       pfBlockLRUFilter(pfFilterSize),
       pfPageLRUFilter(pfPageFilterSize),
@@ -521,10 +521,10 @@ XSCompositePrefetcher::updatePht(XSCompositePrefetcher::ACTEntry *act_entry, Add
     if (popCount(act_entry->region_bits) <= 1) {
         return;
     }
-    PhtEntry *pht_entry = pht.findEntry(phtHash(act_entry->pc), act_entry->is_secure);
+    PhtEntry *pht_entry = pht.findEntry(phtHash(act_entry->pc, act_entry->region_offset), act_entry->is_secure);
     bool is_update = pht_entry != nullptr;
     if (!pht_entry) {
-        pht_entry = pht.findVictim(phtHash(act_entry->pc));
+        pht_entry = pht.findVictim(phtHash(act_entry->pc, act_entry->region_offset));
         DPRINTF(XSCompositePrefetcher, "Evict PHT entry for PC %lx\n", pht_entry->pc);
         for (uint8_t i = 0; i < 2 * (regionBlks - 1); i++) {
             pht_entry->hist[i].reset();
@@ -534,32 +534,39 @@ XSCompositePrefetcher::updatePht(XSCompositePrefetcher::ACTEntry *act_entry, Add
     pht.accessEntry(pht_entry);
     Addr region_offset = act_entry->region_offset;
     // incr part
-    for (uint8_t i = region_offset + 1, j = 0; i < regionBlks; i++, j++) {
+    for (int i = region_offset + 1, j = 0; j < regionBlks - 1; i++, j++) {
         uint8_t hist_idx = j + (regionBlks - 1);
-        bool accessed = (act_entry->region_bits >> i) & 1;
-        if (accessed) {
-            DPRINTF(XSCompositePrefetcher, "Inc conf for region offset: %d, hist_idx: %d\n", i, hist_idx);
-            pht_entry->hist[hist_idx]++;
+        if (i < regionBlks) {
+            bool accessed = (act_entry->region_bits >> i) & 1;
+            if (accessed) {
+                DPRINTF(XSCompositePrefetcher, "Inc conf for region offset: %d, hist_idx: %d\n", i, hist_idx);
+                pht_entry->hist.at(hist_idx) += 2;
+            } else {
+                pht_entry->hist.at(hist_idx) -= 2;
+            }
         } else {
-            pht_entry->hist[hist_idx]--;
+            pht_entry->hist.at(hist_idx) -= 1;
         }
     }
     // decr part
-    for (int i = int(region_offset) - 1, j = regionBlks - 2; i >= 0;
-         i--, j--) {
-        bool accessed = (act_entry->region_bits >> i) & 1;
-        if (accessed) {
-            DPRINTF(XSCompositePrefetcher, "Inc conf for region offset: %d, hist_idx: %d\n", i, j);
-            pht_entry->hist[j]++;
+    for (int i = int(region_offset) - 1, j = regionBlks - 2; j >= 0; i--, j--) {
+        if (i >= 0) {
+            bool accessed = (act_entry->region_bits >> i) & 1;
+            if (accessed) {
+                DPRINTF(XSCompositePrefetcher, "Inc conf for region offset: %d, hist_idx: %d\n", i, j);
+                pht_entry->hist.at(j) += 2;
+            } else {
+                pht_entry->hist.at(j) -= 2;
+            }
         } else {
-            pht_entry->hist[j]--;
+            // leave unseen untouched
         }
     }
     DPRINTF(XSCompositePrefetcher, "Evict ACT region: %lx, offset: %lx, evicted by region %lx\n",
             act_entry->regionAddr, act_entry->region_offset, current_region_addr);
     if (!is_update) {
         DPRINTF(XSCompositePrefetcher, "Insert SMS PHT entry for PC %lx\n", act_entry->pc);
-        pht.insertEntry(phtHash(act_entry->pc), act_entry->is_secure, pht_entry);
+        pht.insertEntry(phtHash(act_entry->pc, act_entry->region_offset), act_entry->is_secure, pht_entry);
     } else {
         DPRINTF(XSCompositePrefetcher, "Update SMS PHT entry for PC %lx, after update:\n", act_entry->pc);
     }
@@ -582,7 +589,7 @@ XSCompositePrefetcher::phtLookup(const Base::PrefetchInfo &pfi, std::vector<Addr
     // Addr region_addr = regionAddress(vaddr);
     Addr region_offset = regionOffset(vaddr);
     bool secure = pfi.isSecure();
-    PhtEntry *pht_entry = pht.findEntry(phtHash(pc), secure);
+    PhtEntry *pht_entry = pht.findEntry(phtHash(pc, region_offset), secure);
     bool found = false;
     if (pht_entry) {
         pht.accessEntry(pht_entry);
