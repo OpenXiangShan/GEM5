@@ -733,6 +733,7 @@ class XSCompositePrefetcher(QueuedPrefetcher):
         "Replacement policy of pattern history table"
     )
     pht_pf_ahead = Param.Bool(True, "Prefetch pattern region ahead with stride")
+    pht_pf_level = Param.Int(2, "Prefetch target level")
     # pf gen table (full-assoc)
     # not implemented now, because queued prefetcher already had a filter
     pf_gen_entries = Param.MemorySize("16", "num of pf_gen entries")

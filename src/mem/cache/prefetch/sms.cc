@@ -27,6 +27,7 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
           p.pht_replacement_policy,
           PhtEntry(2 * (regionBlks - 1), SatCounter8(3, 2))),
       phtPFAhead(p.pht_pf_ahead),
+      phtPFLevel(p.pht_pf_level),
       pfBlockLRUFilter(pfFilterSize),
       pfPageLRUFilter(pfPageFilterSize),
       pfPageLRUFilterL2(pfPageFilterSize),
@@ -600,14 +601,14 @@ XSCompositePrefetcher::phtLookup(const Base::PrefetchInfo &pfi, std::vector<Addr
         for (uint8_t i = 0; i < regionBlks - 1; i++) {
             if (pht_entry->hist[i + regionBlks - 1].calcSaturation() > 0.5) {
                 Addr pf_tgt_addr = blk_addr + (i + 1) * blkSize;
-                sendPFWithFilter(pf_tgt_addr, addresses, priority--, PrefetchSourceType::SPht);
+                sendPFWithFilter(pf_tgt_addr, addresses, priority--, PrefetchSourceType::SPht, phtPFLevel);
                 found = true;
             }
         }
         for (int i = regionBlks - 2, j = 1; i >= 0; i--, j++) {
             if (pht_entry->hist[i].calcSaturation() > 0.5) {
                 Addr pf_tgt_addr = blk_addr - j * blkSize;
-                sendPFWithFilter(pf_tgt_addr, addresses, priority--, PrefetchSourceType::SPht);
+                sendPFWithFilter(pf_tgt_addr, addresses, priority--, PrefetchSourceType::SPht, phtPFLevel);
                 found = true;
             }
         }
@@ -694,12 +695,14 @@ XSCompositePrefetcher::sendPFWithFilter(Addr addr, std::vector<AddrPriority> &ad
             pfBlockLRUFilter.insert(addr, 0);
         }
         addresses.push_back(AddrPriority(addr, prio, src));
-        if (ahead_level > 0) {
+        if (ahead_level > 1) {
             assert(ahead_level == 2 || ahead_level == 3);
             addresses.back().pfahead_host = ahead_level;
             addresses.back().pfahead = true;
+        } else {
+            addresses.back().pfahead = false;
         }
-        DPRINTF(XSCompositePrefetcher, "Send pf: %lx, ahead %i\n", addr, ahead_level);
+        DPRINTF(XSCompositePrefetcher, "Send pf: %lx, target level: %i\n", addr, ahead_level);
         return true;
     }
 }

@@ -307,6 +307,9 @@ def addCommonOptions(parser):
     parser.add_argument("--short-stride-thres", action="store", default=0, type=int,
                         help="""
                         Ignore short strides when seen long strides for stride, 0 for turning off""")
+    parser.add_argument("--pht-pf-level", action="store", default=1,
+                        help="""
+                        Prefetching cache level for SMS'pht""")
 
     parser.add_argument("--checker", action="store_true")
     parser.add_argument("--cpu-clock", action="store", type=str,

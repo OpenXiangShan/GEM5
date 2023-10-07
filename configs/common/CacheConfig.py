@@ -181,6 +181,7 @@ def config_cache(options, system):
                         dcache.prefetcher.enable_spp = True
                     if options.l1d_enable_cplx:
                         dcache.prefetcher.enable_cplx = True
+                    dcache.prefetcher.pht_pf_level = options.pht_pf_level
                     dcache.prefetcher.short_stride_thres = options.short_stride_thres
                     dcache.prefetcher.fuzzy_stride_matching = False
                     dcache.prefetcher.stream_pf_ahead = True

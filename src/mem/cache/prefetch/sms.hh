@@ -155,7 +155,9 @@ class XSCompositePrefetcher : public Queued
 
     const bool phtPFAhead;
 
-    Addr phtHash(Addr pc) { return pc >> 1; }
+    const int phtPFLevel;
+
+    Addr pcHash(Addr pc) { return pc >> 1; }
 
     Addr phtHash(Addr pc, Addr region_offset) { return pc >> 1; }
 
