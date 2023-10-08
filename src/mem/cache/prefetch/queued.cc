@@ -81,6 +81,9 @@ Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size, RequestorID req
     }
     req->taskId(context_switch_task_id::Prefetcher);
     //TODO: Xiangshan Metadata insert?
+    if (pkt != nullptr) {
+        DPRINTFR(HWPrefetch, "Overwriting existing prefetch pkt when it is NOT null!\n");
+    }
     pkt = new Packet(req, MemCmd::HardPFReq);
     pkt->allocate();
     if (tag_prefetch && pfInfo.hasPC()) {
@@ -629,6 +632,7 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
         if (&queue == &pfq || !it->ongoingTranslation){
             delete it->pkt;
             queue.erase(it);
+            DPRINTF(HWPrefetch, "Deleted pkt without translation\n");
         } else {
             /* If the packet's translation is on going,
              * we can't erase it here. Just put it into
@@ -640,6 +644,8 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
             it = pfqSquashed.end();
             it--;
             assert(&(*it) == old_ptr);
+            DPRINTF(HWPrefetch, "After moving pkt from transMissQueue to squashQueue, squashQueue sz=%lu\n",
+                    pfqSquashed.size());
         }
     }
 
