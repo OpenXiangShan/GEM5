@@ -38,6 +38,7 @@
 
 #include <queue>
 #include <set>
+#include <boost/compute/detail/lru_cache.hpp>
 
 #include "base/sat_counter.hh"
 #include "mem/cache/prefetch/queued.hh"
@@ -177,7 +178,12 @@ class BOP : public Queued
 
         unsigned missCount{0};
 
+        bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio,
+                                        PrefetchSourceType src);
+
     public:
+        boost::compute::detail::lru_cache<Addr, Addr> *filter;
+
         /** Update the RR right table after a prefetch fill */
         void notifyFill(const PacketPtr& pkt) override;
 

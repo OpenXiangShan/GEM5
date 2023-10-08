@@ -371,7 +371,7 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
     // prefetch at most per access
     if (issuePrefetchRequests) {
         Addr prefetch_addr = addr + (bestOffset << lBlkSize);
-        addresses.push_back(AddrPriority(prefetch_addr, 32, PrefetchSourceType::HWP_BOP));
+        sendPFWithFilter(prefetch_addr, addresses, 32, PrefetchSourceType::HWP_BOP);
         DPRINTF(BOPPrefetcher,
                 "Generated prefetch %#lx offset: %d\n",
                 prefetch_addr, bestOffset);
@@ -380,6 +380,21 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
     }
 
     DPRINTF(BOPPrefetcher, "Reach %s end, iter offset: %d\n", __FUNCTION__, offsetsListIterator->calcOffset());
+}
+
+bool
+BOP::sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio,
+                                        PrefetchSourceType src)
+{
+    if (filter->contains(addr)) {
+        DPRINTF(BOPPrefetcher, "Skip recently prefetched: %lx\n", addr);
+        return false;
+    } else {
+        DPRINTF(BOPPrefetcher, "Send pf: %lx\n", addr);
+        filter->insert(addr, 0);
+        addresses.push_back(AddrPriority(addr, prio, src));
+        return true;
+    }
 }
 
 void
