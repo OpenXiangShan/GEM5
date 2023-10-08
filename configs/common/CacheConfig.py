@@ -186,9 +186,12 @@ def config_cache(options, system):
                     dcache.prefetcher.fuzzy_stride_matching = False
                     dcache.prefetcher.stream_pf_ahead = True
                     dcache.prefetcher.bop_large.delay_queue_enable = True
-                    dcache.prefetcher.bop_small.delay_queue_enable = False
+                    dcache.prefetcher.bop_large.bad_score = 10
+                    dcache.prefetcher.bop_small.delay_queue_enable = True
+                    dcache.prefetcher.bop_small.bad_score = 5
                     dcache.prefetcher.queue_size = 128
                     dcache.prefetcher.max_prefetch_requests_with_pending_translation = 128
+                    dcache.prefetcher.region_size = 64*16  # 64B * blocks per region
 
             if options.ideal_cache:
                 icache.response_latency = 0
