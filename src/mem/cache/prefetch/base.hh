@@ -121,6 +121,12 @@ class Base : public ClockedObject
 
         bool reqAfterSquash{false};
 
+        bool everPrefetched{false};
+
+        bool pfFirstHit{false};
+
+        bool pfHit{false};
+
       public:
         /**
          * Obtains the address value of this Prefetcher address.
@@ -265,6 +271,18 @@ class Base : public ClockedObject
         {
             reqAfterSquash = req_after_squash;
         }
+
+        bool isEverPrefetched() const { return everPrefetched; }
+
+        void setEverPrefetched(bool prefetched) { everPrefetched = prefetched; }
+
+        bool isPfHit() const { return pfHit; }
+
+        void setPfHit(bool hit) { pfHit = hit; }
+
+        bool isPfFirstHit() const { return pfFirstHit; }
+
+        void setPfFirstHit(bool hit) { pfFirstHit = hit; }
 
         /**
          * Constructs a PrefetchInfo using a PacketPtr.

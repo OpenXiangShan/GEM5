@@ -207,7 +207,7 @@ Base::observeAccess(const PacketPtr &pkt, bool miss) const
 
     if (!miss) {
         if (prefetchOnPfHit)
-            return hasBeenPrefetchedAndNotAccessed(pkt->getAddr(), pkt->isSecure());
+            return hasBeenPrefetched(pkt->getAddr(), pkt->isSecure());
         if (!prefetchOnAccess)
             return false;
     }
@@ -324,14 +324,15 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
         } else {  // miss & late
             pf_source = pkt->getPFSource();
         }
-        if (useVirtualAddresses && pkt->req->hasVaddr()) {
-            PrefetchInfo pfi(pkt, pkt->req->getVaddr(), miss, Request::XsMetadata(pf_source));
+        if (!useVirtualAddresses || pkt->req->hasVaddr()) {
+            // condition1:  useVirtualAddresses && pkt->req->hasVaddr()
+            // condition2: !useVirtualAddresses
+            PrefetchInfo pfi(pkt, pkt->req->hasVaddr() ? pkt->req->getVaddr() : pkt->req->getPaddr(), miss,
+                             Request::XsMetadata(pf_source));
             pfi.setReqAfterSquash(squashMark);
-            squashMark = false;
-            notify(pkt, pfi);
-        } else if (!useVirtualAddresses) {
-            PrefetchInfo pfi(pkt, pkt->req->getPaddr(), miss, Request::XsMetadata(pf_source));
-            pfi.setReqAfterSquash(squashMark);
+            pfi.setEverPrefetched(hasBeenPrefetched(pkt->getAddr(), pkt->isSecure()));
+            pfi.setPfFirstHit(!miss && hasBeenPrefetchedAndNotAccessed(pkt->getAddr(), pkt->isSecure()));
+            pfi.setPfHit(!miss && hasBeenPrefetched(pkt->getAddr(), pkt->isSecure()));
             squashMark = false;
             notify(pkt, pfi);
         }

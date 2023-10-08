@@ -74,46 +74,48 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
     bool is_active_page = false;
     bool enter_new_region = false;
     bool is_first_shot = false;
-    ACTEntry *act_match_entry = actLookup(pfi, is_active_page, enter_new_region, is_first_shot);
-    int origin_depth = 0;
+    ACTEntry *act_match_entry = nullptr;
     Addr pf_tgt_addr = 0;
-    if (act_match_entry) {
-        bool decr = act_match_entry->decr_mode;
-        bool is_cross_region_match = act_match_entry->access_cnt == 0;
-        if (is_cross_region_match) {
-            act_match_entry->access_cnt = 1;
-        }
-        DPRINTF(XSCompositePrefetcher,
-                "ACT hit or match: pc:%x addr: %x offset: %d active: %d decr: "
-                "%d\n",
-                pc, vaddr, region_offset, is_active_page, decr);
-        if (is_active_page) {
-            origin_depth = act_match_entry->depth;
-            int depth = 16;
-            // active page
-            pf_tgt_addr = decr ? block_addr - depth * blkSize
-                                    : block_addr + depth * blkSize;  // depth here?
-            Addr pf_tgt_region = regionAddress(pf_tgt_addr);
-            Addr pf_tgt_offset = regionOffset(pf_tgt_addr);
-            DPRINTF(XSCompositePrefetcher, "tgt addr: %x, offset: %d, current depth: %u, page: %lx\n", pf_tgt_addr,
-                    pf_tgt_offset, depth, pf_tgt_region);
-            if (decr) {
-                // for (int i = (int)region_blocks - 1; i >= pf_tgt_offset && i >= 0; i--) {
-                for (int i = region_blocks - 1; i >= 0; i--) {
-                    Addr cur = pf_tgt_region * region_size + i * blkSize;
-                    sendPFWithFilter(cur, addresses, i, PrefetchSourceType::SStream);
-                    DPRINTF(XSCompositePrefetcher, "pf addr: %x [%d]\n", cur, i);
-                    fatal_if(i < 0, "i < 0\n");
-                }
-            } else {
-                // for (int i = std::max(1, ((int) pf_tgt_offset) - 4); i <= pf_tgt_offset; i++) {
-                for (int i = 0; i < region_blocks; i++) {
-                    Addr cur = pf_tgt_region * region_size + i * blkSize;
-                    sendPFWithFilter(cur, addresses, region_blocks - i, PrefetchSourceType::SStream);
-                    DPRINTF(XSCompositePrefetcher, "pf addr: %x [%d]\n", cur, i);
-                }
+    if (pfi.isCacheMiss() || pfi.isPfFirstHit()) {
+        act_match_entry = actLookup(pfi, is_active_page, enter_new_region, is_first_shot);
+        int origin_depth = 0;
+        if (act_match_entry) {
+            bool decr = act_match_entry->decr_mode;
+            bool is_cross_region_match = act_match_entry->access_cnt == 0;
+            if (is_cross_region_match) {
+                act_match_entry->access_cnt = 1;
             }
-            pfPageLRUFilter.insert(pf_tgt_region, 0);
+            DPRINTF(XSCompositePrefetcher,
+                    "ACT hit or match: pc:%x addr: %x offset: %d active: %d decr: "
+                    "%d\n",
+                    pc, vaddr, region_offset, is_active_page, decr);
+            if (is_active_page) {
+                origin_depth = act_match_entry->depth;
+                int depth = 16;
+                // active page
+                pf_tgt_addr = decr ? block_addr - depth * blkSize : block_addr + depth * blkSize;  // depth here?
+                Addr pf_tgt_region = regionAddress(pf_tgt_addr);
+                Addr pf_tgt_offset = regionOffset(pf_tgt_addr);
+                DPRINTF(XSCompositePrefetcher, "tgt addr: %x, offset: %d, current depth: %u, page: %lx\n", pf_tgt_addr,
+                        pf_tgt_offset, depth, pf_tgt_region);
+                if (decr) {
+                    // for (int i = (int)region_blocks - 1; i >= pf_tgt_offset && i >= 0; i--) {
+                    for (int i = region_blocks - 1; i >= 0; i--) {
+                        Addr cur = pf_tgt_region * region_size + i * blkSize;
+                        sendPFWithFilter(cur, addresses, i, PrefetchSourceType::SStream);
+                        DPRINTF(XSCompositePrefetcher, "pf addr: %x [%d]\n", cur, i);
+                        fatal_if(i < 0, "i < 0\n");
+                    }
+                } else {
+                    // for (int i = std::max(1, ((int) pf_tgt_offset) - 4); i <= pf_tgt_offset; i++) {
+                    for (int i = 0; i < region_blocks; i++) {
+                        Addr cur = pf_tgt_region * region_size + i * blkSize;
+                        sendPFWithFilter(cur, addresses, region_blocks - i, PrefetchSourceType::SStream);
+                        DPRINTF(XSCompositePrefetcher, "pf addr: %x [%d]\n", cur, i);
+                    }
+                }
+                pfPageLRUFilter.insert(pf_tgt_region, 0);
+            }
         }
     }
 
@@ -175,7 +177,8 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
 
     if (pf_source != PrefetchSourceType::SStream && !is_active_page) {
 
-        bool use_bop = pf_source == PrefetchSourceType::HWP_BOP || pf_source == PrefetchSourceType::IPCP_CPLX ||
+        bool use_bop = (pfi.isPfFirstHit() &&
+                        (pf_source == PrefetchSourceType::HWP_BOP || pf_source == PrefetchSourceType::IPCP_CPLX)) ||
                        pfi.isCacheMiss();
         use_bop &= !miss_repeat && is_first_shot; // miss repeat should not be handled by stride
         if (use_bop) {
@@ -201,9 +204,10 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             }
         }
 
-        bool use_stride = pfi.isCacheMiss() || pf_source == PrefetchSourceType::SStride ||
-                          pf_source == PrefetchSourceType::HWP_BOP || pf_source == PrefetchSourceType::SPht ||
-                          pf_source == PrefetchSourceType::IPCP_CPLX;
+        bool use_stride = pfi.isCacheMiss() ||
+                          (pfi.isPfFirstHit() &&
+                           (pf_source == PrefetchSourceType::SStride || pf_source == PrefetchSourceType::HWP_BOP ||
+                            pf_source == PrefetchSourceType::SPht || pf_source == PrefetchSourceType::IPCP_CPLX));
         Addr stride_pf_addr = 0, stride_pf_addr2 = 0;
         bool covered_by_stride = false;
         if (isNonStridePC(pc)) {
@@ -221,9 +225,11 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             }
         }
 
-        bool use_pht = pfi.isCacheMiss() || pf_source == PrefetchSourceType::SStride ||
-                       pf_source == PrefetchSourceType::HWP_BOP || pf_source == PrefetchSourceType::SPht ||
-                       pf_source == PrefetchSourceType::IPCP_CPLX || pf_source == PrefetchSourceType::SPP;
+        bool use_pht = pfi.isCacheMiss() ||
+                       ((pf_source == PrefetchSourceType::SStride || pf_source == PrefetchSourceType::HWP_BOP ||
+                         pf_source == PrefetchSourceType::SPht || pf_source == PrefetchSourceType::IPCP_CPLX ||
+                         pf_source == PrefetchSourceType::SPP));
+
         bool trigger_pht = false;
         stride_pf_addr =
             phtPFAhead ? (stride_pf_addr ? stride_pf_addr : stride_pf_addr2) : 0;  // trigger addr sent to pht

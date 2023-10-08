@@ -220,6 +220,7 @@ class WorkerPrefetcher(QueuedPrefetcher):
     on_miss = False
 
     prefetch_on_pf_hit = True
+    use_virtual_addresses = True
 
 class StridePrefetcher(QueuedPrefetcher):
     type = 'StridePrefetcher'
