@@ -73,7 +73,7 @@ CMCPrefetcher::CMCPrefetcher(const CMCPrefetcherParams &p)
 
 void
 CMCPrefetcher::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
-                           PrefetchSourceType pf_source, bool coveredByprefetch)
+                           PrefetchSourceType pf_source, bool is_first_shot)
 {
     bool can_prefetch = !pfi.isWrite() && pfi.hasPC();
     if (!can_prefetch) {

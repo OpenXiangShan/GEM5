@@ -83,7 +83,7 @@ class CMCPrefetcher : public Queued
     boost::compute::detail::lru_cache<Addr, Addr> *filter;
 
     void doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
-                           PrefetchSourceType pf_source, bool coveredByprefetch);
+                           PrefetchSourceType pf_source, bool is_first_shot);
   private:
     uint64_t hash(Addr addr, Addr pc) {
         return addr ^ (pc<<8);

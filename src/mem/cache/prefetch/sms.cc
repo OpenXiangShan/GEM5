@@ -266,7 +266,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
         }
     }
 
-    if (is_first_shot) {
+    if (is_first_shot && (pfi.isCacheMiss() || pfi.isPfFirstHit())) {
         cmc->doPrefetch(pfi, addresses, late, pf_source, false);
     }
 
