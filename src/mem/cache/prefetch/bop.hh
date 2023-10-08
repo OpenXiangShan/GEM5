@@ -130,6 +130,9 @@ class BOP : public Queued
         int64_t phaseBestOffset;
         /** Current test offset index */
         std::list<OffsetListEntry>::iterator offsetsListIterator;
+
+        std::list<OffsetListEntry>::iterator bestoffsetsListIterator;
+
         /** Max score found so far */
         unsigned int bestScore;
         /** Current round */
@@ -170,7 +173,7 @@ class BOP : public Queued
 
         /** Learning phase of the BOP. Update the intermediate values of the
             round and update the best offset if found */
-        void bestOffsetLearning(Addr addr, bool late);
+        bool bestOffsetLearning(Addr addr, bool late);
 
         unsigned missCount{0};
 

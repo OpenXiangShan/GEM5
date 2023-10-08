@@ -74,6 +74,7 @@ BOP::BOP(const BOPPrefetcherParams &p)
     bestOffset = offsetsList.back().calcOffset();
 
     offsetsListIterator = offsetsList.begin();
+    bestoffsetsListIterator = offsetsListIterator;
 }
 
 void
@@ -149,16 +150,11 @@ BOP::tag(Addr addr) const
 bool
 BOP::testRR(Addr addr) const
 {
-    for (auto& it : rrLeft) {
-        if (it == addr) {
-            return true;
-        }
+    if (rrLeft[hash(addr, RRWay::Left)] == addr) {
+        return true;
     }
-
-    for (auto& it : rrRight) {
-        if (it == addr) {
-            return true;
-        }
+    if (rrRight[hash(addr, RRWay::Right)] == addr) {
+        return true;
     }
 
     return false;
@@ -168,11 +164,6 @@ void
 BOP::tryAddOffset(int64_t offset, bool late)
 {
     assert(offset != 0);
-    if (missCount < 128) {
-        return;
-    } else {
-        missCount = 0;
-    }
     DPRINTF(BOPPrefetcher, "Reach %s entry, iter offset: %d\n", __FUNCTION__, offsetsListIterator->calcOffset());
     // dump offsets:
     DPRINTF(BOPPrefetcher, "offsets: ");
@@ -180,11 +171,6 @@ BOP::tryAddOffset(int64_t offset, bool late)
         DPRINTFR(BOPPrefetcher, "%d*%d ", it.offset, it.depth);
     }
     DPRINTFR(BOPPrefetcher, "\n");
-
-    // if (labs(offset) < 16) {
-    //     DPRINTF(BOPPrefetcher, "offset %ld < 16, skip\n", offset);
-    //     return;
-    // }
 
     if (offsets.size() >= maxOffsetCount) {
         auto it = offsetsList.begin();
@@ -201,7 +187,7 @@ BOP::tryAddOffset(int64_t offset, bool late)
                 DPRINTF(BOPPrefetcher, "erase offset %d from offset list\n", offsetsList.rbegin()->offset);
                 offsets.erase(offsetsList.rbegin()->offset);
                 offsetsList.erase(--offsetsList.end());
-                
+
             } else {
                 offsets.erase((--offsetsListIterator)->offset);
                 DPRINTF(BOPPrefetcher, "erase offset %d from offset list\n", offsetsListIterator->offset);
@@ -265,20 +251,10 @@ BOP::tryAddOffset(int64_t offset, bool late)
 std::list<BOP::OffsetListEntry>::iterator
 BOP::getBestOffsetIter()
 {
-    if (bestOffset == 0)
-        return offsetsList.end();
-    // find best offset iter
-    auto best_it = offsetsList.begin();
-    while (best_it != offsetsList.end()) {
-        if (best_it->calcOffset() == bestOffset) {
-            break;
-        }
-        best_it++;
-    }
-    return best_it;
+    return bestoffsetsListIterator;
 }
 
-void
+bool
 BOP::bestOffsetLearning(Addr x, bool late)
 {
     DPRINTF(BOPPrefetcher, "Reach %s entry, iter offset: %d\n", __FUNCTION__, offsetsListIterator->calcOffset());
@@ -321,6 +297,7 @@ BOP::bestOffsetLearning(Addr x, bool late)
         DPRINTF(BOPPrefetcher, "Offset %d score: %i, late: %i, depth: %i, late sat: %u\n", offsetsListIterator->offset,
                 offsetsListIterator->score, late, offsetsListIterator->depth, (uint8_t)offsetsListIterator->late);
         if (offsetsListIterator->score > bestScore) {
+            bestoffsetsListIterator = offsetsListIterator;
             bestScore = (*offsetsListIterator).score;
             phaseBestOffset = offsetsListIterator->calcOffset();
             DPRINTF(BOPPrefetcher, "New best score is %lu, phase best offset is %lu\n", bestScore, phaseBestOffset);
@@ -341,18 +318,31 @@ BOP::bestOffsetLearning(Addr x, bool late)
         if ((bestScore >= scoreMax) || (round == roundMax)) {
             DPRINTF(BOPPrefetcher, "update new score: %d round: %d phase best offset: %d\n",
                     bestScore, round, phaseBestOffset);
+
+            if (bestScore > badScore) {
+                issuePrefetchRequests = true;
+                DPRINTF(BOPPrefetcher, "Enable prefetch\n");
+            }
+            else {
+                issuePrefetchRequests = false;
+                DPRINTF(BOPPrefetcher, "Disable prefetch\n");
+            }
+
             bestOffset = phaseBestOffset;
             round = 0;
             bestScore = 0;
             phaseBestOffset = 0;
             resetScores();
-            issuePrefetchRequests = true;
-        } else if (bestScore <= badScore) {
-            DPRINTF(BOPPrefetcher, "best score %d <= bad score %d\n", bestScore, badScore);
+            //issuePrefetchRequests = true;
+            return true;
+        } else if ((round >= roundMax/2) && (bestOffset != phaseBestOffset) && (bestScore <= badScore)) {
+            DPRINTF(BOPPrefetcher, "last round offset has not enough confidence, early stop\n");
+            DPRINTF(BOPPrefetcher, "score %u <  badScore %u\n", bestScore, badScore);
             issuePrefetchRequests = false;
         }
     }
     DPRINTF(BOPPrefetcher, "Reach %s end, iter offset: %d\n", __FUNCTION__, offsetsListIterator->calcOffset());
+    return false;
 }
 
 void
@@ -373,7 +363,9 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
 
     // Go through the nth offset and update the score, the best score and the
     // current best offset if a better one is found
+    //if (!bestOffsetLearning(tag_x, late)) {
     bestOffsetLearning(tag_x, late);
+    //}
 
     // This prefetcher is a degree 1 prefetch, so it will only generate one
     // prefetch at most per access
@@ -387,9 +379,6 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
         DPRINTF(BOPPrefetcher, "Issue prefetch is false, can't issue\n");
     }
 
-    if (pfi.isCacheMiss()) {
-        missCount++;
-    }
     DPRINTF(BOPPrefetcher, "Reach %s end, iter offset: %d\n", __FUNCTION__, offsetsListIterator->calcOffset());
 }
 
