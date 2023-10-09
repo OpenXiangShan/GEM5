@@ -31,3 +31,11 @@ m5out
 configs/example/memcheck.cfg
 configs/dram/lowp_sweep.cfg
 .pyenv
+
+/util/warmup_scripts/*
+/util/arch_db/*.txt
+/*debug*
+/*build*
+/*test*
+/*txt*
+/ext/dramsim3/DRAMsim3/

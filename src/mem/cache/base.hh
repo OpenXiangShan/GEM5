@@ -1317,6 +1317,15 @@ class BaseCache : public ClockedObject
     bool hasBeenPrefetched(Addr addr, bool is_secure) const {
         CacheBlk *block = tags->findBlock(addr, is_secure);
         if (block) {
+            return block->wasEverPrefetched();
+        } else {
+            return false;
+        }
+    }
+
+    bool hasBeenPrefetchedAndNotAccessed(Addr addr, bool is_secure) const {
+        CacheBlk *block = tags->findBlock(addr, is_secure);
+        if (block) {
             return block->wasPrefetched();
         } else {
             return false;
@@ -1328,7 +1337,7 @@ class BaseCache : public ClockedObject
         CacheBlk *block = tags->findBlock(pkt->getAddr(), pkt->isSecure());
         assert(block);
         /* clean prefetchSource if the block was not prefetched */
-        if (!block->wasPrefetched()) {
+        if (!block->wasEverPrefetched()) {
             Request::XsMetadata blkMeta = block->getXsMetadata();
             blkMeta.prefetchSource = PrefetchSourceType::PF_NONE;
             block->setXsMetadata(blkMeta);

@@ -10,35 +10,45 @@ namespace prefetch
 
 XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &p)
     : Queued(p),
-      region_size(p.region_size),
-      region_blocks(p.region_size / p.block_size),
+      regionSize(p.region_size),
+      regionBlks(p.region_size / p.block_size),
       act(p.act_entries, p.act_entries, p.act_indexing_policy,
           p.act_replacement_policy, ACTEntry(SatCounter8(2, 1))),
       streamPFAhead(p.stream_pf_ahead),
       strideDynDepth(p.stride_dyn_depth),
-      stride(p.stride_entries, p.stride_entries, p.stride_indexing_policy,
+      strideUnique(p.stride_entries, p.stride_entries, p.stride_indexing_policy,
              p.stride_replacement_policy, StrideEntry()),
+      strideRedundant(p.stride_entries, p.stride_entries, p.stride_indexing_policy,
+             p.stride_replacement_policy, StrideEntry()),
+      nonStridePCs(p.non_stride_assoc, p.non_stride_entries, p.non_stride_indexing_policy,
+             p.non_stride_replacement_policy, NonStrideEntry()),
       fuzzyStrideMatching(p.fuzzy_stride_matching),
       pht(p.pht_assoc, p.pht_entries, p.pht_indexing_policy,
           p.pht_replacement_policy,
-          PhtEntry(2 * (region_blocks - 1), SatCounter8(2, 1))),
+          PhtEntry(2 * (regionBlks - 1), SatCounter8(3, 2))),
       phtPFAhead(p.pht_pf_ahead),
+      phtPFLevel(p.pht_pf_level),
       pfBlockLRUFilter(pfFilterSize),
-      pfPageLRUFilter(pfFilterSize),
-      bop(dynamic_cast<BOP *>(p.bop)),
+      pfPageLRUFilter(pfPageFilterSize),
+      pfPageLRUFilterL2(pfPageFilterSize),
+      pfPageLRUFilterL3(pfPageFilterSize),
+      largeBOP(dynamic_cast<BOP *>(p.bop_large)),
+      smallBOP(dynamic_cast<BOP *>(p.bop_small)),
       spp(dynamic_cast<SignaturePath *>(p.spp)),
       ipcp(dynamic_cast<IPCP *>(p.ipcp)),
+      enableNonStrideFilter(p.enable_non_stride_filter),
       enableCPLX(p.enable_cplx),
       enableSPP(p.enable_spp),
       shortStrideThres(p.short_stride_thres)
 {
-    assert(bop);
-    assert(isPowerOf2(region_size));
+    assert(largeBOP);
+    assert(smallBOP);
+    assert(isPowerOf2(regionSize));
 
     ipcp->rrf = &this->pfBlockLRUFilter;
 
-    DPRINTF(XSCompositePrefetcher, "SMS: region_size: %d region_blocks: %d\n",
-            region_size, region_blocks);
+    DPRINTF(XSCompositePrefetcher, "SMS: region_size: %d regionBlks: %d\n",
+            regionSize, regionBlks);
 }
 
 void
@@ -54,86 +64,78 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
     Addr vaddr = pfi.getAddr();
     Addr block_addr = blockAddress(vaddr);
 
-    DPRINTF(XSCompositePrefetcher, "blk addr: %lx, prefetch source: %i, miss: %i, late: %i\n", block_addr, pf_source,
-            pfi.isCacheMiss(), late);
+    DPRINTF(XSCompositePrefetcher, "blk addr: %lx, prefetch source: %i, miss: %i, late: %i, ever pf: %i, pc: %lx\n",
+            block_addr, pf_source, pfi.isCacheMiss(), late, pfi.isEverPrefetched(), pfi.getPC());
 
-    if (!pfi.isCacheMiss()) {
-        assert(pf_source != PrefetchSourceType::PF_NONE);
-    }
-
-
+    // if (!pfi.isCacheMiss()) {
+    //     assert(pf_source != PrefetchSourceType::PF_NONE);
+    // }
 
     // Addr region_addr = regionAddress(vaddr);
     Addr region_offset = regionOffset(vaddr);
     bool is_active_page = false;
     bool enter_new_region = false;
     bool is_first_shot = false;
-    ACTEntry *act_match_entry = actLookup(pfi, is_active_page, enter_new_region, is_first_shot);
-    int origin_depth = 0;
+    ACTEntry *act_match_entry = nullptr;
     Addr pf_tgt_addr = 0;
-    if (act_match_entry) {
-        bool decr = act_match_entry->decr_mode;
-        bool is_cross_region_match = act_match_entry->access_cnt == 0;
-        if (is_cross_region_match) {
-            act_match_entry->access_cnt = 1;
-        }
-        DPRINTF(XSCompositePrefetcher,
-                "ACT hit or match: pc:%x addr: %x offset: %d active: %d decr: "
-                "%d\n",
-                pc, vaddr, region_offset, is_active_page, decr);
-        if (is_active_page) {
-            origin_depth = act_match_entry->depth;
-            int depth = 16;
-            // active page
-            pf_tgt_addr = decr ? block_addr - depth * blkSize
-                                    : block_addr + depth * blkSize;  // depth here?
-            Addr pf_tgt_region = regionAddress(pf_tgt_addr);
-            Addr pf_tgt_offset = regionOffset(pf_tgt_addr);
-            DPRINTF(XSCompositePrefetcher, "tgt addr: %x, offset: %d, current depth: %u, page: %lx\n", pf_tgt_addr,
-                    pf_tgt_offset, depth, pf_tgt_region);
-            if (decr) {
-                // for (int i = (int)region_blocks - 1; i >= pf_tgt_offset && i >= 0; i--) {
-                for (int i = region_blocks - 1; i >= 0; i--) {
-                    Addr cur = pf_tgt_region * region_size + i * blkSize;
-                    sendPFWithFilter(cur, addresses, i, PrefetchSourceType::SStream);
-                    DPRINTF(XSCompositePrefetcher, "pf addr: %x [%d]\n", cur, i);
-                    fatal_if(i < 0, "i < 0\n");
+    if (pfi.isCacheMiss() || pfi.isPfFirstHit()) {
+        act_match_entry = actLookup(pfi, is_active_page, enter_new_region, is_first_shot);
+        int origin_depth = 0;
+        if (act_match_entry) {
+            bool decr = act_match_entry->decr_mode;
+            DPRINTF(XSCompositePrefetcher, "ACT hit or match: pc:%x addr: %x offset: %d active: %d decr: %d\n", pc,
+                    vaddr, region_offset, is_active_page, decr);
+            if (is_active_page) {
+                origin_depth = act_match_entry->depth;
+                int depth = 16;
+                // active page
+                pf_tgt_addr = decr ? block_addr - depth * blkSize : block_addr + depth * blkSize;  // depth here?
+                Addr pf_tgt_region = regionAddress(pf_tgt_addr);
+                Addr pf_tgt_offset = regionOffset(pf_tgt_addr);
+                DPRINTF(XSCompositePrefetcher, "tgt addr: %x, offset: %d, current depth: %u, page: %lx\n", pf_tgt_addr,
+                        pf_tgt_offset, depth, pf_tgt_region);
+                if (decr) {
+                    // for (int i = (int)regionBlks - 1; i >= pf_tgt_offset && i >= 0; i--) {
+                    for (int i = regionBlks - 1; i >= 0; i--) {
+                        Addr cur = pf_tgt_region * regionSize + i * blkSize;
+                        sendPFWithFilter(cur, addresses, i, PrefetchSourceType::SStream);
+                        DPRINTF(XSCompositePrefetcher, "pf addr: %x [%d]\n", cur, i);
+                        fatal_if(i < 0, "i < 0\n");
+                    }
+                } else {
+                    // for (int i = std::max(1, ((int) pf_tgt_offset) - 4); i <= pf_tgt_offset; i++) {
+                    for (int i = 0; i < regionBlks; i++) {
+                        Addr cur = pf_tgt_region * regionSize + i * blkSize;
+                        sendPFWithFilter(cur, addresses, regionBlks - i, PrefetchSourceType::SStream);
+                        DPRINTF(XSCompositePrefetcher, "pf addr: %x [%d]\n", cur, i);
+                    }
                 }
-            } else {
-                // for (int i = std::max(1, ((int) pf_tgt_offset) - 4); i <= pf_tgt_offset; i++) {
-                for (int i = 0; i < region_blocks; i++) {
-                    Addr cur = pf_tgt_region * region_size + i * blkSize;
-                    sendPFWithFilter(cur, addresses, region_blocks - i, PrefetchSourceType::SStream);
-                    DPRINTF(XSCompositePrefetcher, "pf addr: %x [%d]\n", cur, i);
-                }
+                pfPageLRUFilter.insert(pf_tgt_region, 0);
             }
-            pfPageLRUFilter.insert(pf_tgt_region, 0);
         }
     }
 
-    if (act_match_entry && is_active_page) {
+    if (act_match_entry && is_active_page && pf_tgt_addr && enter_new_region) {
         if (streamPFAhead) {
             pf_tgt_addr += 48 * blkSize;  // depth here?
             Addr pf_tgt_region = regionAddress(pf_tgt_addr);
             DPRINTF(XSCompositePrefetcher, "ACT pf ahead region: %lx\n", pf_tgt_region);
-            for (int i = 0; i < region_blocks; i++) {
-                Addr cur = pf_tgt_region * region_size + i * blkSize;
-                addresses.push_back(AddrPriority(cur, region_blocks - i, PrefetchSourceType::SStream));
-                addresses.back().pfahead = true;
-                addresses.back().pfahead_host = 2;// send to l2
+            for (int i = 0; i < regionBlks; i++) {
+                Addr cur = pf_tgt_region * regionSize + i * blkSize;
+                sendPFWithFilter(cur, addresses, regionBlks - i, PrefetchSourceType::SStream, 2);
             }
+            pfPageLRUFilterL2.insert(pf_tgt_region, 0);
         }
 
         if (streamPFAhead) {
             pf_tgt_addr += 256 * blkSize;  // depth here?
             Addr pf_tgt_region = regionAddress(pf_tgt_addr);
             DPRINTF(XSCompositePrefetcher, "ACT pf ahead region: %lx\n", pf_tgt_region);
-            for (int i = 0; i < region_blocks; i++) {
-                Addr cur = pf_tgt_region * region_size + i * blkSize;
-                addresses.push_back(AddrPriority(cur, region_blocks - i, PrefetchSourceType::SStream));
-                addresses.back().pfahead = true;
-                addresses.back().pfahead_host = 3;// send to l3
+            for (int i = 0; i < regionBlks; i++) {
+                Addr cur = pf_tgt_region * regionSize + i * blkSize;
+                sendPFWithFilter(cur, addresses, regionBlks - i, PrefetchSourceType::SStream, 3);
             }
+            pfPageLRUFilterL3.insert(pf_tgt_region, 0);
         }
     }
 
@@ -171,62 +173,89 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
 
     if (pf_source != PrefetchSourceType::SStream && !is_active_page) {
 
-        bool use_bop = pf_source == PrefetchSourceType::HWP_BOP || pf_source == PrefetchSourceType::IPCP_CPLX ||
+        bool use_bop = (pfi.isPfFirstHit() &&
+                        (pf_source == PrefetchSourceType::HWP_BOP || pf_source == PrefetchSourceType::IPCP_CPLX)) ||
                        pfi.isCacheMiss();
         use_bop &= !miss_repeat && is_first_shot; // miss repeat should not be handled by stride
         if (use_bop) {
             DPRINTF(XSCompositePrefetcher, "Do BOP traing/prefetching...\n");
             size_t old_addr_size = addresses.size();
-            bop->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
-            bool covered_by_bop;
+            largeBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
             if (addresses.size() > old_addr_size) {
                 // BOP hit
                 AddrPriority addr = addresses.back();
                 addresses.pop_back();
-                // Filter
+                // Resend with filter
                 sendPFWithFilter(addr.addr, addresses, addr.priority, PrefetchSourceType::HWP_BOP);
-                covered_by_bop = true;
+            }
+
+            old_addr_size = addresses.size();
+            smallBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
+            if (addresses.size() > old_addr_size) {
+                // BOP hit
+                AddrPriority addr = addresses.back();
+                addresses.pop_back();
+                // Resend with filter
+                sendPFWithFilter(addr.addr, addresses, addr.priority, PrefetchSourceType::HWP_BOP);
             }
         }
 
-        bool use_stride = pfi.isCacheMiss() || pf_source == PrefetchSourceType::SStride ||
-                          pf_source == PrefetchSourceType::HWP_BOP || pf_source == PrefetchSourceType::SPht ||
-                          pf_source == PrefetchSourceType::IPCP_CPLX;
-        Addr stride_pf_addr = 0;
+        bool use_stride = pfi.isCacheMiss() ||
+                          (pfi.isPfFirstHit() &&
+                           (pf_source == PrefetchSourceType::SStride || pf_source == PrefetchSourceType::HWP_BOP ||
+                            pf_source == PrefetchSourceType::SPht || pf_source == PrefetchSourceType::IPCP_CPLX));
+
+        if (enableNonStrideFilter) {
+            use_stride &= !isNonStridePC(pc);
+            if (isNonStridePC(pc)) {
+                DPRINTF(XSCompositePrefetcher, "Skip stride lookup for non-stride pc %x\n", pc);
+            }
+        }
+        Addr stride_pf_addr = 0, stride_pf_addr2 = 0;
         bool covered_by_stride = false;
         if (use_stride) {
-            DPRINTF(XSCompositePrefetcher, "Do stride lookup...\n");
-            covered_by_stride =
-                strideLookup(pfi, addresses, late, stride_pf_addr, pf_source, enter_new_region, miss_repeat);
+            if (is_first_shot) {
+                DPRINTF(XSCompositePrefetcher, "Do stride lookup for first shot acc ...\n");
+                covered_by_stride |= strideLookup(strideUnique, pfi, addresses, late, stride_pf_addr, pf_source,
+                                                  enter_new_region, miss_repeat);
+            } else {
+                DPRINTF(XSCompositePrefetcher, "Do stride lookup for repeat acc ...\n");
+                covered_by_stride |= strideLookup(strideRedundant, pfi, addresses, late, stride_pf_addr2, pf_source,
+                                                  enter_new_region, miss_repeat);
+            }
         }
 
-        bool use_pht = pfi.isCacheMiss() || pf_source == PrefetchSourceType::SStride ||
-                       pf_source == PrefetchSourceType::HWP_BOP || pf_source == PrefetchSourceType::SPht ||
-                       pf_source == PrefetchSourceType::IPCP_CPLX || pf_source == PrefetchSourceType::SPP;
+        bool use_pht = pfi.isCacheMiss() ||
+                       (pfi.isPfFirstHit() &&
+                        (pf_source == PrefetchSourceType::SStride || pf_source == PrefetchSourceType::HWP_BOP ||
+                         pf_source == PrefetchSourceType::SPht || pf_source == PrefetchSourceType::IPCP_CPLX ||
+                         pf_source == PrefetchSourceType::SPP));
+
         bool trigger_pht = false;
-        stride_pf_addr = phtPFAhead ? stride_pf_addr : 0;  // trigger addr sent to pht
+        stride_pf_addr =
+            phtPFAhead ? (stride_pf_addr ? stride_pf_addr : stride_pf_addr2) : 0;  // trigger addr sent to pht
         if (use_pht) {
             DPRINTF(XSCompositePrefetcher, "Do PHT lookup...\n");
             trigger_pht = phtLookup(pfi, addresses, late && pf_source == PrefetchSourceType::SPht, stride_pf_addr);
         }
 
-        bool use_cplx = enableCPLX && true;
+        bool use_cplx = enableCPLX;
         if (use_cplx) {
             Addr cplx_best_offset = 0;
             bool send_cplx_pf = ipcp->doPrefetch(addresses, cplx_best_offset);
 
             if (send_cplx_pf && cplx_best_offset != 0) {
-                bop->tryAddOffset(cplx_best_offset, late);
+                largeBOP->tryAddOffset(cplx_best_offset, late);
             }
         }
 
-        bool use_spp = enableSPP && true;
+        bool use_spp = enableSPP;
         if (use_spp) {
             int32_t spp_best_offset = 0;
             bool coverd_by_spp = spp->calculatePrefetch(pfi, addresses, pfBlockLRUFilter, spp_best_offset);
             if (coverd_by_spp && spp_best_offset != 0) {
                 // TODO: Let BOP to adjust depth by itself
-                bop->tryAddOffset(spp_best_offset, late);
+                largeBOP->tryAddOffset(spp_best_offset, late);
             }
         }
     }
@@ -239,7 +268,7 @@ XSCompositePrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page, 
     Addr pc = pfi.getPC();
     Addr vaddr = pfi.getAddr();
     Addr region_addr = regionAddress(vaddr);
-    Addr region_start = regionAddress(vaddr) * region_size;
+    Addr region_start = regionAddress(vaddr) * regionSize;
     Addr region_offset = regionOffset(vaddr);
     bool secure = pfi.isSecure();
 
@@ -247,8 +276,8 @@ XSCompositePrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page, 
     if (entry) {
         // act hit
         act.accessEntry(entry);
-        in_active_page = entry->in_active_page();
-        uint64_t region_bit_accessed = 1 << region_offset;
+        in_active_page = entry->in_active_page(regionBlks);
+        uint64_t region_bit_accessed = 1UL << region_offset;
         if (!(entry->region_bits & region_bit_accessed)) {
             entry->access_cnt += 1;
             is_first_shot = true;
@@ -257,7 +286,7 @@ XSCompositePrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page, 
         // print bits
         DPRINTF(XSCompositePrefetcher, "Access region %lx, after access bit %lu, new act entry bits:\n", region_start,
                 region_offset);
-        for (uint8_t i = 0; i < region_blocks; i++) {
+        for (uint8_t i = 0; i < regionBlks; i++) {
             DPRINTFR(XSCompositePrefetcher, "%lu ", (entry->region_bits >> i) & 1);
         }
         DPRINTFR(XSCompositePrefetcher, "\n");
@@ -267,78 +296,86 @@ XSCompositePrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page, 
     alloc_new_region = true;
     is_first_shot = true;
 
-    ACTEntry *old_entry = act.findEntry(region_addr - 1, secure);
-    if (old_entry) {
-        in_active_page = old_entry->in_active_page();
-        // act miss, but cur_region - 1 = entry_region, => cur_region =
-        // entry_region + 1
-        entry = act.findVictim(0);
-        // evict victim entry to pht
-        updatePht(entry, region_start);
-        // alloc new act entry
-        entry->pc = pc;
-        entry->regionAddr = region_start;
-        entry->is_secure = secure;
-        entry->decr_mode = false;
-        entry->region_bits = 1 << region_offset;
-        entry->access_cnt = 0;
-        entry->region_offset = region_offset;
-        entry->lateConf = old_entry->lateConf;
-        entry->depth = old_entry->depth;
-        DPRINTF(XSCompositePrefetcher, "act miss, but cur_region - 1 = entry_region, copy depth = %u, lateConf = %i\n",
-                entry->depth, (int) entry->lateConf);
-        act.insertEntry(region_addr, secure, entry);
-        return entry;
+    bool found = false;
+    bool forward = true;
+
+    ACTEntry *old_neighbor_entry = act.findEntry(region_addr - 1, secure);
+    if (old_neighbor_entry) {
+        // act miss, but cur_region - 1 = entry_region found, => cur_region = entry_region + 1
+        in_active_page = old_neighbor_entry->in_active_page(regionBlks);
+        found = true;
+        forward = true;
+    } else if ((old_neighbor_entry = act.findEntry(region_addr + 1, secure))) {
+        // act miss, but cur_region + 1 = entry_region found, => cur_region = entry_region - 1
+        in_active_page = old_neighbor_entry->in_active_page(regionBlks);
+        found = true;
+        forward = false;
     }
 
-    old_entry = act.findEntry(region_addr + 1, secure);
-    if (old_entry) {
-        in_active_page = old_entry->in_active_page();
-        // act miss, but cur_region + 1 = entry_region, => cur_region =
-        // entry_region - 1
-        entry = act.findVictim(0);
-        // evict victim entry to pht
-        updatePht(entry, region_start);
-        // alloc new act entry
-        entry->pc = pc;
-        entry->regionAddr = region_start;
-        entry->is_secure = secure;
-        entry->decr_mode = true;
-        entry->region_bits = 1 << region_offset;
-        entry->access_cnt = 0;
-        entry->region_offset = region_offset;
-        entry->lateConf = old_entry->lateConf;
-        entry->depth = old_entry->depth;
-        DPRINTF(XSCompositePrefetcher, "act miss, but cur_region + 1 = entry_region, copy depth = %u, lateConf = %i\n",
-                entry->depth, (int) entry->lateConf);
-        act.insertEntry(region_addr, secure, entry);
-        return entry;
-    }
-
-    // no matched entry, alloc new entry
     entry = act.findVictim(0);
-    updatePht(entry, region_start);
+    updatePht(entry, region_start);  // update pht with evicted entry
     entry->pc = pc;
-    entry->regionAddr = region_start;
     entry->is_secure = secure;
-    entry->decr_mode = false;
-    entry->region_bits = 1 << region_offset;
-    entry->access_cnt = 1;
+    entry->decr_mode = !forward;
+    entry->regionAddr = region_start;
     entry->region_offset = region_offset;
+    entry->region_bits = 1UL << region_offset;
+    entry->access_cnt = 1;
     act.insertEntry(region_addr, secure, entry);
-    return nullptr;
+
+    // print bits
+    DPRINTF(XSCompositePrefetcher, "Access new region %lx, after access bit %lu, new act entry bits:\n", region_start,
+            region_offset);
+    for (uint8_t i = 0; i < regionBlks; i++) {
+        DPRINTFR(XSCompositePrefetcher, "%lu ", (entry->region_bits >> i) & 1);
+    }
+    DPRINTFR(XSCompositePrefetcher, "\n");
+
+    if (found) {
+        DPRINTF(XSCompositePrefetcher, "ACT miss, but %s region is active, copy depth = %u, lateConf = %i\n",
+                forward ? "last" : "next", entry->depth, (int)entry->lateConf);
+        entry->lateConf = old_neighbor_entry->lateConf;
+        entry->depth = old_neighbor_entry->depth;
+        return entry;
+
+    } else {
+        DPRINTF(XSCompositePrefetcher, "ACT miss, allocate new region\n");
+        return nullptr;
+    }
+}
+
+void
+XSCompositePrefetcher::markNonStridePC(Addr pc)
+{
+    DPRINTF(XSCompositePrefetcher, "Mark non-stride pc %x\n", pc);
+    auto *entry = nonStridePCs.findEntry(nonStrideHash(pc), false);
+    if (entry) {
+        nonStridePCs.accessEntry(entry);
+    } else {
+        entry = nonStridePCs.findVictim(nonStrideHash(pc));
+        assert(entry);
+        entry->pc = pc;
+        nonStridePCs.insertEntry(nonStrideHash(pc), false, entry);
+    }
 }
 
 bool
-XSCompositePrefetcher::strideLookup(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
-                                    Addr &stride_pf, PrefetchSourceType last_pf_source, bool enter_new_region,
-                                    bool miss_repeat)
+XSCompositePrefetcher::isNonStridePC(Addr pc)
+{
+    auto *entry = nonStridePCs.findEntry(nonStrideHash(pc), false);
+    return entry != nullptr;
+}
+
+bool
+XSCompositePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const PrefetchInfo &pfi,
+                                    std::vector<AddrPriority> &addresses, bool late, Addr &stride_pf,
+                                    PrefetchSourceType last_pf_source, bool enter_new_region, bool miss_repeat)
 {
     Addr lookupAddr = pfi.getAddr();
     StrideEntry *entry = stride.findEntry(pfi.getPC(), pfi.isSecure());
     // TODO: add DPRINFT for stride
-    DPRINTF(XSCompositePrefetcher, "Stride lookup: pc:%x addr: %x\n", pfi.getPC(),
-            lookupAddr);
+    DPRINTF(XSCompositePrefetcher, "Stride lookup: pc:%x addr: %x, miss repeat: %i\n", pfi.getPC(), lookupAddr,
+            miss_repeat);
     bool should_cover = false;
     if (entry) {
         stride.accessEntry(entry);
@@ -387,6 +424,8 @@ XSCompositePrefetcher::strideLookup(const PrefetchInfo &pfi, std::vector<AddrPri
             DPRINTF(XSCompositePrefetcher, "Stride match, inc conf to %d, late: %i, late sat:%i, depth: %i\n",
                     (int)entry->conf, late, (uint8_t)entry->lateConf, entry->depth);
             entry->last_addr = lookupAddr;
+            entry->histStrides.clear();
+            entry->matchedSinceAlloc = true;
 
         } else if (labs(entry->stride) > 64L && labs(new_stride) < 64L) {
             // different stride, but in the same cache line
@@ -398,9 +437,35 @@ XSCompositePrefetcher::strideLookup(const PrefetchInfo &pfi, std::vector<AddrPri
             DPRINTF(XSCompositePrefetcher, "Stride unmatch, dec conf to %d\n", (int) entry->conf);
             if ((int) entry->conf == 0) {
                 DPRINTF(XSCompositePrefetcher, "Stride conf = 0, reset stride to %ld\n", new_stride);
-                entry->stride = new_stride;
-                entry->depth = 1;
-                entry->lateConf.reset();
+
+                bool found_in_hist = false;
+
+                if (enableNonStrideFilter) {
+                    if (entry->stride != 0) {
+                        entry->histStrides.push_back(entry->stride);
+                    }
+                    for (auto it = entry->histStrides.begin(); it != entry->histStrides.end(); it++) {
+                        DPRINTF(XSCompositePrefetcher, "Stride hist: %ld, match: %i\n", *it, *it == new_stride);
+                        if (*it == new_stride) {
+                            found_in_hist = true;
+                            entry->histStrides.erase(it);
+                            break;
+                        }
+                    }
+                    if (found_in_hist) {
+                        entry->histStrides.clear();
+                    }
+                }
+
+                if (enableNonStrideFilter && !found_in_hist && entry->histStrides.size() >= maxHistStrides) {
+                    markNonStridePC(entry->pc);
+                    entry->histStrides.clear();
+                    entry->invalidate();
+                } else {
+                    entry->stride = new_stride;
+                    entry->depth = 1;
+                    entry->lateConf.reset();
+                }
             }
         }
         if (entry->conf >= 2) {
@@ -410,7 +475,7 @@ XSCompositePrefetcher::strideLookup(const PrefetchInfo &pfi, std::vector<AddrPri
             for (unsigned i = start_depth; i <= entry->depth; i++) {
                 pf_addr = lookupAddr + entry->stride * i;
                 DPRINTF(XSCompositePrefetcher, "Stride conf >= 2, send pf: %x with depth %i\n", pf_addr, i);
-                sendPFWithFilter(pf_addr, addresses, 0, PrefetchSourceType::SStride);
+                sendPFWithFilter(blockAddress(pf_addr), addresses, 0, PrefetchSourceType::SStride);
             }
             stride_pf = pf_addr;  // the longest lookahead
             should_cover = true;
@@ -419,10 +484,15 @@ XSCompositePrefetcher::strideLookup(const PrefetchInfo &pfi, std::vector<AddrPri
         DPRINTF(XSCompositePrefetcher, "Stride miss, insert it\n");
         entry = stride.findVictim(0);
         DPRINTF(XSCompositePrefetcher, "Stride found victim pc = %x, stride = %i\n", entry->pc, entry->stride);
+        if (enableNonStrideFilter && (entry->histStrides.size() >= maxHistStrides - 1 || !entry->matchedSinceAlloc)) {
+            DPRINTF(XSCompositePrefetcher, "Stride hist %u >= %u, mark pc %x as non-stride\n",
+                    entry->histStrides.size(), maxHistStrides - 1, entry->pc);
+            markNonStridePC(entry->pc);
+        }
         if (entry->conf >= 2 && entry->stride > 1024) { // > 1k
             DPRINTF(XSCompositePrefetcher, "Stride Evicting a useful stride, send it to BOP with offset %i\n",
                     entry->stride / 64);
-            bop->tryAddOffset(entry->stride / 64);
+            largeBOP->tryAddOffset(entry->stride / 64);
         }
         entry->conf.reset();
         entry->last_addr = lookupAddr;
@@ -430,6 +500,8 @@ XSCompositePrefetcher::strideLookup(const PrefetchInfo &pfi, std::vector<AddrPri
         entry->depth = 1;
         entry->lateConf.reset();
         entry->pc = pfi.getPC();
+        entry->histStrides.clear();
+        entry->matchedSinceAlloc = false;
         DPRINTF(XSCompositePrefetcher, "Stride miss, insert with stride 0\n");
         stride.insertEntry(pfi.getPC(), pfi.isSecure(), entry);
     }
@@ -443,9 +515,11 @@ XSCompositePrefetcher::periodStrideDepthDown()
     if (depthDownCounter < depthDownPeriod) {
         depthDownCounter++;
     } else {
-        for (StrideEntry &entry : stride) {
-            if (entry.conf >= 2) {
-                entry.depth = std::max(entry.depth - 1, 1);
+        for (auto stride: {&strideUnique, &strideRedundant}) {
+            for (StrideEntry &entry : *stride) {
+                if (entry.conf >= 2) {
+                    entry.depth = std::max(entry.depth - 1, 1);
+                }
             }
         }
         depthDownCounter = 0;
@@ -458,12 +532,12 @@ XSCompositePrefetcher::updatePht(XSCompositePrefetcher::ACTEntry *act_entry, Add
     if (popCount(act_entry->region_bits) <= 1) {
         return;
     }
-    PhtEntry *pht_entry = pht.findEntry(phtHash(act_entry->pc), act_entry->is_secure);
+    PhtEntry *pht_entry = pht.findEntry(phtHash(act_entry->pc, act_entry->region_offset), act_entry->is_secure);
     bool is_update = pht_entry != nullptr;
     if (!pht_entry) {
-        pht_entry = pht.findVictim(phtHash(act_entry->pc));
+        pht_entry = pht.findVictim(phtHash(act_entry->pc, act_entry->region_offset));
         DPRINTF(XSCompositePrefetcher, "Evict PHT entry for PC %lx\n", pht_entry->pc);
-        for (uint8_t i = 0; i < 2 * (region_blocks - 1); i++) {
+        for (uint8_t i = 0; i < 2 * (regionBlks - 1); i++) {
             pht_entry->hist[i].reset();
         }
         pht_entry->pc = act_entry->pc;
@@ -471,39 +545,46 @@ XSCompositePrefetcher::updatePht(XSCompositePrefetcher::ACTEntry *act_entry, Add
     pht.accessEntry(pht_entry);
     Addr region_offset = act_entry->region_offset;
     // incr part
-    for (uint8_t i = region_offset + 1, j = 0; i < region_blocks; i++, j++) {
-        uint8_t hist_idx = j + (region_blocks - 1);
-        bool accessed = (act_entry->region_bits >> i) & 1;
-        if (accessed) {
-            DPRINTF(XSCompositePrefetcher, "Inc conf for region offset: %d, hist_idx: %d\n", i, hist_idx);
-            pht_entry->hist[hist_idx]++;
+    for (int i = region_offset + 1, j = 0; j < regionBlks - 1; i++, j++) {
+        uint8_t hist_idx = j + (regionBlks - 1);
+        if (i < regionBlks) {
+            bool accessed = (act_entry->region_bits >> i) & 1;
+            if (accessed) {
+                DPRINTF(XSCompositePrefetcher, "Inc conf for region offset: %d, hist_idx: %d\n", i, hist_idx);
+                pht_entry->hist.at(hist_idx) += 2;
+            } else {
+                pht_entry->hist.at(hist_idx) -= 2;
+            }
         } else {
-            pht_entry->hist[hist_idx]--;
+            pht_entry->hist.at(hist_idx) -= 1;
         }
     }
     // decr part
-    for (int i = int(region_offset) - 1, j = region_blocks - 2; i >= 0;
-         i--, j--) {
-        bool accessed = (act_entry->region_bits >> i) & 1;
-        if (accessed) {
-            DPRINTF(XSCompositePrefetcher, "Inc conf for region offset: %d, hist_idx: %d\n", i, j);
-            pht_entry->hist[j]++;
+    for (int i = int(region_offset) - 1, j = regionBlks - 2; j >= 0; i--, j--) {
+        if (i >= 0) {
+            bool accessed = (act_entry->region_bits >> i) & 1;
+            if (accessed) {
+                DPRINTF(XSCompositePrefetcher, "Inc conf for region offset: %d, hist_idx: %d\n", i, j);
+                pht_entry->hist.at(j) += 2;
+            } else {
+                pht_entry->hist.at(j) -= 2;
+            }
         } else {
-            pht_entry->hist[j]--;
+            // leave unseen untouched
         }
     }
     DPRINTF(XSCompositePrefetcher, "Evict ACT region: %lx, offset: %lx, evicted by region %lx\n",
             act_entry->regionAddr, act_entry->region_offset, current_region_addr);
     if (!is_update) {
         DPRINTF(XSCompositePrefetcher, "Insert SMS PHT entry for PC %lx\n", act_entry->pc);
-        pht.insertEntry(phtHash(act_entry->pc), act_entry->is_secure, pht_entry);
+        pht.insertEntry(phtHash(act_entry->pc, act_entry->region_offset), act_entry->is_secure, pht_entry);
     } else {
         DPRINTF(XSCompositePrefetcher, "Update SMS PHT entry for PC %lx, after update:\n", act_entry->pc);
     }
 
-    for (uint8_t i = 0; i < 2 * (region_blocks - 1); i++) {
+    for (uint8_t i = 0; i < 2 * (regionBlks - 1); i++) {
         DPRINTFR(XSCompositePrefetcher, "%.2f ", pht_entry->hist[i].calcSaturation());
-        if (i == region_blocks - 1) {
+        if (i == regionBlks - 1) {
             DPRINTFR(XSCompositePrefetcher, "| ");
         }
     }
@@ -519,40 +600,40 @@ XSCompositePrefetcher::phtLookup(const Base::PrefetchInfo &pfi, std::vector<Addr
     // Addr region_addr = regionAddress(vaddr);
     Addr region_offset = regionOffset(vaddr);
     bool secure = pfi.isSecure();
-    PhtEntry *pht_entry = pht.findEntry(phtHash(pc), secure);
+    PhtEntry *pht_entry = pht.findEntry(phtHash(pc, region_offset), secure);
     bool found = false;
     if (pht_entry) {
         pht.accessEntry(pht_entry);
         DPRINTF(XSCompositePrefetcher, "Pht lookup hit: pc: %x, vaddr: %x (%s), offset: %x, late: %i\n", pc, vaddr,
                 look_ahead_addr ? "ahead" : "current", region_offset, late);
-        int priority = 2 * (region_blocks - 1);
+        int priority = 2 * (regionBlks - 1);
         // find incr pattern
-        for (uint8_t i = 0; i < region_blocks - 1; i++) {
-            if (pht_entry->hist[i + region_blocks - 1].calcSaturation() > 0.5) {
+        for (uint8_t i = 0; i < regionBlks - 1; i++) {
+            if (pht_entry->hist[i + regionBlks - 1].calcSaturation() > 0.5) {
                 Addr pf_tgt_addr = blk_addr + (i + 1) * blkSize;
-                sendPFWithFilter(pf_tgt_addr, addresses, priority--, PrefetchSourceType::SPht);
+                sendPFWithFilter(pf_tgt_addr, addresses, priority--, PrefetchSourceType::SPht, phtPFLevel);
                 found = true;
             }
         }
-        for (int i = region_blocks - 2, j = 1; i >= 0; i--, j++) {
+        for (int i = regionBlks - 2, j = 1; i >= 0; i--, j++) {
             if (pht_entry->hist[i].calcSaturation() > 0.5) {
                 Addr pf_tgt_addr = blk_addr - j * blkSize;
-                sendPFWithFilter(pf_tgt_addr, addresses, priority--, PrefetchSourceType::SPht);
+                sendPFWithFilter(pf_tgt_addr, addresses, priority--, PrefetchSourceType::SPht, phtPFLevel);
                 found = true;
             }
         }
         DPRINTF(XSCompositePrefetcher, "pht entry pattern:\n");
-        for (uint8_t i = 0; i < 2 * (region_blocks - 1); i++) {
+        for (uint8_t i = 0; i < 2 * (regionBlks - 1); i++) {
             DPRINTFR(XSCompositePrefetcher, "%.2f ", pht_entry->hist[i].calcSaturation());
-            if (i == region_blocks - 1) {
+            if (i == regionBlks - 1) {
                 DPRINTFR(XSCompositePrefetcher, "| ");
             }
         }
         DPRINTFR(XSCompositePrefetcher, "\n");
 
-        if (late) {
-            int period = calcPeriod(pht_entry->hist, late);
-        }
+        // if (late) {
+        //     int period = calcPeriod(pht_entry->hist, late);
+        // }
     }
     return found;
 }
@@ -560,29 +641,29 @@ XSCompositePrefetcher::phtLookup(const Base::PrefetchInfo &pfi, std::vector<Addr
 int
 XSCompositePrefetcher::calcPeriod(const std::vector<SatCounter8> &bit_vec, bool late)
 {
-    std::vector<int> bit_vec_full(2 * (region_blocks - 1) + 1);
+    std::vector<int> bit_vec_full(2 * (regionBlks - 1) + 1);
     // copy bit_vec to bit_vec_full, with mid point = 1
-    for (int i = 0; i < region_blocks - 1; i++) {
+    for (int i = 0; i < regionBlks - 1; i++) {
         bit_vec_full.at(i) = bit_vec.at(i).calcSaturation() > 0.5;
     }
-    bit_vec_full[region_blocks - 1] = 1;
-    for (int i = region_blocks, j = region_blocks - 1; i < 2 * (region_blocks - 1);
+    bit_vec_full[regionBlks - 1] = 1;
+    for (int i = regionBlks, j = regionBlks - 1; i < 2 * (regionBlks - 1);
          i++, j++) {
         bit_vec_full.at(i) = bit_vec.at(j).calcSaturation() > 0.5;
     }
 
     DPRINTF(XSCompositePrefetcher, "bit_vec_full: ");
-    for (int i = 0; i < 2 * (region_blocks - 1) + 1; i++) {
+    for (int i = 0; i < 2 * (regionBlks - 1) + 1; i++) {
         DPRINTFR(XSCompositePrefetcher, "%i ", bit_vec_full[i]);
     }
     DPRINTFR(XSCompositePrefetcher, "\n");
 
     int max_dot_prod = 0;
     int max_shamt = -1;
-    for (int shamt = 2; shamt < 2 * (region_blocks - 1) + 1; shamt++) {
+    for (int shamt = 2; shamt < 2 * (regionBlks - 1) + 1; shamt++) {
         int dot_prod = 0;
-        for (int i = 0; i < 2 * (region_blocks - 1) + 1; i++) {
-            if (i + shamt < 2 * (region_blocks - 1) + 1) {
+        for (int i = 0; i < 2 * (regionBlks - 1) + 1; i++) {
+            if (i + shamt < 2 * (regionBlks - 1) + 1) {
                 dot_prod += bit_vec_full[i] * bit_vec_full[i + shamt];
             }
         }
@@ -594,25 +675,44 @@ XSCompositePrefetcher::calcPeriod(const std::vector<SatCounter8> &bit_vec, bool 
     DPRINTF(XSCompositePrefetcher, "max_dot_prod: %i, max_shamt: %i\n", max_dot_prod,
             max_shamt);
     if (max_dot_prod > 0 && max_shamt > 3) {
-        bop->tryAddOffset(max_shamt, late);
+        largeBOP->tryAddOffset(max_shamt, late);
     }
     return max_shamt;
 }
 
 bool
 XSCompositePrefetcher::sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio,
-                                        PrefetchSourceType src)
+                                        PrefetchSourceType src, int ahead_level)
 {
-    if (pfPageLRUFilter.contains(regionAddress(addr))) {
-        DPRINTF(XSCompositePrefetcher, "Skip recently prefetched page: %lx\n", regionAddress(addr));
+    if (ahead_level < 2 && pfPageLRUFilter.contains(regionAddress(addr))) {
+        DPRINTF(XSCompositePrefetcher, "Skip recently L1 prefetched page: %lx\n", regionAddress(addr));
         return false;
+
+    } else if (ahead_level == 2 && pfPageLRUFilterL2.contains(regionAddress(addr))) {
+        DPRINTF(XSCompositePrefetcher, "Skip recently L2 prefetched page: %lx\n", regionAddress(addr));
+        return false;
+
+    } else if (ahead_level == 3 && pfPageLRUFilterL3.contains(regionAddress(addr))) {
+        DPRINTF(XSCompositePrefetcher, "Skip recently L3 prefetched page: %lx\n", regionAddress(addr));
+        return false;
+
     } else if (pfBlockLRUFilter.contains(addr)) {
         DPRINTF(XSCompositePrefetcher, "Skip recently prefetched: %lx\n", addr);
         return false;
+
     } else {
-        DPRINTF(XSCompositePrefetcher, "Send pf: %lx\n", addr);
-        pfBlockLRUFilter.insert(addr, 0);
+        if (src != PrefetchSourceType::SStream) {
+            pfBlockLRUFilter.insert(addr, 0);
+        }
         addresses.push_back(AddrPriority(addr, prio, src));
+        if (ahead_level > 1) {
+            assert(ahead_level == 2 || ahead_level == 3);
+            addresses.back().pfahead_host = ahead_level;
+            addresses.back().pfahead = true;
+        } else {
+            addresses.back().pfahead = false;
+        }
+        DPRINTF(XSCompositePrefetcher, "Send pf: %lx, target level: %i\n", addr, ahead_level);
         return true;
     }
 }
@@ -620,7 +720,6 @@ XSCompositePrefetcher::sendPFWithFilter(Addr addr, std::vector<AddrPriority> &ad
 void
 XSCompositePrefetcher::notifyFill(const PacketPtr &pkt)
 {
-    bop->notifyFill(pkt);
     pfBlockLRUFilter.insert(pkt->req->getVaddr(), 0);
 }
 

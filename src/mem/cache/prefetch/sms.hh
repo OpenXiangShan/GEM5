@@ -32,13 +32,13 @@ namespace prefetch
 class XSCompositePrefetcher : public Queued
 {
   protected:
-    const unsigned int region_size;
-    const unsigned int region_blocks;
+    const unsigned int regionSize;
+    const unsigned int regionBlks;
 
 
-    Addr regionAddress(Addr a) { return a / region_size; };
+    Addr regionAddress(Addr a) { return a / regionSize; };
 
-    Addr regionOffset(Addr a) { return (a / blkSize) % region_blocks; }
+    Addr regionOffset(Addr a) { return (a / blkSize) % regionBlks; }
 
 
     // active generation table
@@ -64,9 +64,8 @@ class XSCompositePrefetcher : public Queued
               lateConf(4, 7)
         {
         }
-        bool in_active_page() {
-            // FIXME: remove hard-code 12
-            return access_cnt > 12;
+        bool in_active_page(unsigned region_blocks) {
+            return access_cnt > region_blocks / 4 * 3;
         }
     };
 
@@ -89,6 +88,8 @@ class XSCompositePrefetcher : public Queued
         SatCounter8 lateConf;
         SatCounter8 longStride;
         Addr pc;
+        std::list<Addr> histStrides;
+        bool matchedSinceAlloc;
         StrideEntry()
             : TaggedEntry(),
               stride(0),
@@ -100,6 +101,9 @@ class XSCompositePrefetcher : public Queued
               pc(0)
         {}
     };
+
+    const unsigned maxHistStrides{12};
+
     const bool strideDynDepth{false};
 
     int depthDownCounter{0};
@@ -108,10 +112,28 @@ class XSCompositePrefetcher : public Queued
 
     void periodStrideDepthDown();
 
-    bool strideLookup(const PrefetchInfo &pfi, std::vector<AddrPriority> &address, bool late, Addr &pf_addr,
+    bool strideLookup(AssociativeSet<StrideEntry> &stride, const PrefetchInfo &pfi,
+                      std::vector<AddrPriority> &address, bool late, Addr &pf_addr,
                       PrefetchSourceType src, bool enter_new_region, bool miss_repeat);
 
-    AssociativeSet<StrideEntry> stride;
+    AssociativeSet<StrideEntry> strideUnique;
+
+    AssociativeSet<StrideEntry> strideRedundant;
+
+    class NonStrideEntry: public TaggedEntry
+    {
+      public:
+        Addr pc;
+        NonStrideEntry() : TaggedEntry(), pc(0) {}
+    };
+
+    AssociativeSet<NonStrideEntry> nonStridePCs;
+
+    void markNonStridePC(Addr pc);
+
+    bool isNonStridePC(Addr pc);
+
+    Addr nonStrideHash(Addr pc) { return pc >> 1; }
 
     const bool fuzzyStrideMatching;
 
@@ -133,7 +155,11 @@ class XSCompositePrefetcher : public Queued
 
     const bool phtPFAhead;
 
-    Addr phtHash(Addr pc) { return pc >> 1; }
+    const int phtPFLevel;
+
+    Addr pcHash(Addr pc) { return pc >> 1; }
+
+    Addr phtHash(Addr pc, Addr region_offset) { return pc >> 1; }
 
     bool phtLookup(const PrefetchInfo &pfi,
                    std::vector<AddrPriority> &addresses, bool late, Addr look_ahead_addr);
@@ -157,18 +183,26 @@ class XSCompositePrefetcher : public Queued
 
   private:
     const unsigned pfFilterSize{128};
+    const unsigned pfPageFilterSize{16};
     boost::compute::detail::lru_cache<Addr, Addr> pfBlockLRUFilter;
 
     boost::compute::detail::lru_cache<Addr, Addr> pfPageLRUFilter;
+    boost::compute::detail::lru_cache<Addr, Addr> pfPageLRUFilterL2;
+    boost::compute::detail::lru_cache<Addr, Addr> pfPageLRUFilterL3;
 
-    bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType src);
+    bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType src,
+                          int ahead_level=-1);
 
-    BOP *bop;
+    BOP *largeBOP;
+
+    BOP *smallBOP;
 
     SignaturePath  *spp;
 
     IPCP *ipcp;
 
+
+    const bool enableNonStrideFilter;
     const bool enableCPLX;
     const bool enableSPP;
     const unsigned shortStrideThres;

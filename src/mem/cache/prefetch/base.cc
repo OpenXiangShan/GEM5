@@ -245,6 +245,12 @@ Base::hasBeenPrefetched(Addr addr, bool is_secure) const
 }
 
 bool
+Base::hasBeenPrefetchedAndNotAccessed(Addr addr, bool is_secure) const
+{
+    return cache->hasBeenPrefetchedAndNotAccessed(addr, is_secure);
+}
+
+bool
 Base::samePage(Addr a, Addr b) const
 {
     return roundDown(a, pageBytes) == roundDown(b, pageBytes);
@@ -289,6 +295,7 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
     // operations or for writes that we are coaslescing.
     if (pkt->cmd.isSWPrefetch()) return;
     if (pkt->req->isCacheMaintenance()) return;
+    if (!pkt->isDemand() && !pkt->cmd.isHWPrefetch()) return;
 
     if (pkt->req->isFirstReqAfterSquash()) {
         squashMark = true;
@@ -299,7 +306,7 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
         panic("Request must have a physical address");
     }
 
-    if (hasBeenPrefetched(pkt->getAddr(), pkt->isSecure())) {
+    if (hasBeenPrefetchedAndNotAccessed(pkt->getAddr(), pkt->isSecure())) {
         usefulPrefetches += 1;
         prefetchStats.pfUseful++;
         prefetchStats.pfUseful_srcs[cache->getHitBlkXsMetadata(pkt).prefetchSource]++;
@@ -317,17 +324,21 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
         } else {  // miss & late
             pf_source = pkt->getPFSource();
         }
-        if (useVirtualAddresses && pkt->req->hasVaddr()) {
-            PrefetchInfo pfi(pkt, pkt->req->getVaddr(), miss, Request::XsMetadata(pf_source));
+        if (!useVirtualAddresses || pkt->req->hasVaddr()) {
+            // condition1:  useVirtualAddresses && pkt->req->hasVaddr()
+            // condition2: !useVirtualAddresses
+            PrefetchInfo pfi(pkt, pkt->req->hasVaddr() ? pkt->req->getVaddr() : pkt->req->getPaddr(), miss,
+                             Request::XsMetadata(pf_source));
             pfi.setReqAfterSquash(squashMark);
-            squashMark = false;
-            notify(pkt, pfi);
-        } else if (!useVirtualAddresses) {
-            PrefetchInfo pfi(pkt, pkt->req->getPaddr(), miss, Request::XsMetadata(pf_source));
-            pfi.setReqAfterSquash(squashMark);
+            pfi.setEverPrefetched(hasBeenPrefetched(pkt->getAddr(), pkt->isSecure()));
+            pfi.setPfFirstHit(!miss && hasBeenPrefetchedAndNotAccessed(pkt->getAddr(), pkt->isSecure()));
+            pfi.setPfHit(!miss && hasBeenPrefetched(pkt->getAddr(), pkt->isSecure()));
             squashMark = false;
             notify(pkt, pfi);
         }
+    } else {
+        DPRINTF(HWPrefetch, "Skip req addr %x, miss: %x for prefetcher\n",
+                pkt->req->hasVaddr() ? pkt->req->getVaddr() : pkt->req->getPaddr(), miss);
     }
 }
 

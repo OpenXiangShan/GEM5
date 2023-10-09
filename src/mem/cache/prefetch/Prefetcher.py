@@ -220,6 +220,7 @@ class WorkerPrefetcher(QueuedPrefetcher):
     on_miss = False
 
     prefetch_on_pf_hit = True
+    use_virtual_addresses = True
 
 class StridePrefetcher(QueuedPrefetcher):
     type = 'StridePrefetcher'
@@ -508,23 +509,38 @@ class BOPPrefetcher(QueuedPrefetcher):
     on_data  = True
     on_inst  = False
 
-    score_max = Param.Unsigned(31, "Max. score to update the best offset")
+    score_max = Param.Unsigned(20, "Max. score to update the best offset")
     round_max = Param.Unsigned(50, "Max. round to update the best offset")
-    bad_score = Param.Unsigned(1, "Score at which the HWP is disabled")
+    bad_score = Param.Unsigned(10, "Score at which the HWP is disabled")
     rr_size = Param.Unsigned(256, "Number of entries of each RR bank")
     tag_bits = Param.Unsigned(12, "Bits used to store the tag")
-    offset_list_size = Param.Unsigned(36,
-                "Number of entries in the offsets list")
-    negative_offsets_enable = Param.Bool(True,
+    negative_offsets_enable = Param.Bool(False,
                 "Initialize the offsets list also with negative values \
                 (i.e. the table will have half of the entries with positive \
                 offsets and the other half with negative ones)")
     delay_queue_enable = Param.Bool(True, "Enable the delay queue")
     delay_queue_size = Param.Unsigned(64,
                 "Number of entries in the delay queue")
-    delay_queue_cycles = Param.Cycles(200,
+    delay_queue_cycles = Param.Cycles(150,
                 "Cycles to delay a write in the left RR table from the delay \
                 queue")
+
+    offsets = VectorParam.Int([72, 75, 80, 81, 90, 96, 100, 108, 120, 125, 128, 135, 144,
+                              150, 160, 162, 180, 192, 200, 216, 225, 240, 243, 250, 256], "Predefined offsets")
+
+class SmallBOPPrefetcher(BOPPrefetcher):
+
+    score_max = 20
+    round_max = 50
+    bad_score = 2
+    rr_size = 256
+    tag_bits = 12
+    negative_offsets_enable = True
+    delay_queue_enable = True
+    delay_queue_cycles = 30
+
+    offsets = [1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 16, 18, 20,
+               24, 25, 27, 30, 32, 36, 40, 45, 48, 50, 54, 60, 64]
 
 class SBOOEPrefetcher(QueuedPrefetcher):
     type = 'SBOOEPrefetcher'
@@ -683,6 +699,23 @@ class XSCompositePrefetcher(QueuedPrefetcher):
         "Replacement policy of stride table"
     )
     fuzzy_stride_matching = Param.Bool(False, "Match stride with fuzzy condition")
+
+    # stride black list
+    enable_non_stride_filter= Param.Bool(False, "Prevent non-stride PCs to touch stride table")
+    non_stride_entries = Param.MemorySize("256", "Non-Stride Entries")
+    non_stride_assoc = Param.Int(4, "Associativity of the non-stride pc table")
+    non_stride_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.non_stride_assoc,
+            size=Parent.non_stride_entries),
+        "Indexing policy of non-stride PC table"
+    )
+    non_stride_replacement_policy = Param.BaseReplacementPolicy(
+        TreePLRURP(num_leaves=Parent.non_stride_assoc),
+        "Replacement policy of non-stride pc table"
+    )
+
     # pht table (set-assoc)
     pht_entries = Param.MemorySize(
         "64",
@@ -701,6 +734,7 @@ class XSCompositePrefetcher(QueuedPrefetcher):
         "Replacement policy of pattern history table"
     )
     pht_pf_ahead = Param.Bool(True, "Prefetch pattern region ahead with stride")
+    pht_pf_level = Param.Int(2, "Prefetch target level")
     # pf gen table (full-assoc)
     # not implemented now, because queued prefetcher already had a filter
     pf_gen_entries = Param.MemorySize("16", "num of pf_gen entries")
@@ -715,7 +749,8 @@ class XSCompositePrefetcher(QueuedPrefetcher):
         LRURP(),
         "Replacement policy of pf_gen"
     )
-    bop = Param.BasePrefetcher(BOPPrefetcher(), "BOP used in composite prefetcher ")
+    bop_large = Param.BasePrefetcher(BOPPrefetcher(), "Large BOP used in composite prefetcher ")
+    bop_small = Param.BasePrefetcher(SmallBOPPrefetcher(), "Small BOP used in composite prefetcher ")
     spp = Param.BasePrefetcher(SignaturePathPrefetcher(), "SPP used in composite prefetcher")
     ipcp = Param.IPCPrefetcher(IPCPrefetcher(use_rrf = False), "")
 
