@@ -465,7 +465,7 @@ XSCompositePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const P
             for (unsigned i = start_depth; i <= entry->depth; i++) {
                 pf_addr = lookupAddr + entry->stride * i;
                 DPRINTF(XSCompositePrefetcher, "Stride conf >= 2, send pf: %x with depth %i\n", pf_addr, i);
-                sendPFWithFilter(pf_addr, addresses, 0, PrefetchSourceType::SStride);
+                sendPFWithFilter(blockAddress(pf_addr), addresses, 0, PrefetchSourceType::SStride);
             }
             stride_pf = pf_addr;  // the longest lookahead
             should_cover = true;
