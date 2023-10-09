@@ -201,6 +201,8 @@ class XSCompositePrefetcher : public Queued
 
     IPCP *ipcp;
 
+
+    const bool enableNonStrideFilter;
     const bool enableCPLX;
     const bool enableSPP;
     const unsigned shortStrideThres;

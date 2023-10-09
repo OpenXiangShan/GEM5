@@ -36,6 +36,7 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       smallBOP(dynamic_cast<BOP *>(p.bop_small)),
       spp(dynamic_cast<SignaturePath *>(p.spp)),
       ipcp(dynamic_cast<IPCP *>(p.ipcp)),
+      enableNonStrideFilter(p.enable_non_stride_filter),
       enableCPLX(p.enable_cplx),
       enableSPP(p.enable_spp),
       shortStrideThres(p.short_stride_thres)
@@ -203,12 +204,16 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
                           (pfi.isPfFirstHit() &&
                            (pf_source == PrefetchSourceType::SStride || pf_source == PrefetchSourceType::HWP_BOP ||
                             pf_source == PrefetchSourceType::SPht || pf_source == PrefetchSourceType::IPCP_CPLX));
+
+        if (enableNonStrideFilter) {
+            use_stride &= !isNonStridePC(pc);
+            if (isNonStridePC(pc)) {
+                DPRINTF(XSCompositePrefetcher, "Skip stride lookup for non-stride pc %x\n", pc);
+            }
+        }
         Addr stride_pf_addr = 0, stride_pf_addr2 = 0;
         bool covered_by_stride = false;
-        if (isNonStridePC(pc)) {
-            DPRINTF(XSCompositePrefetcher, "Skip stride lookup for non-stride pc %x\n", pc);
-        }
-        if (use_stride && !isNonStridePC(pc)) {
+        if (use_stride) {
             if (is_first_shot) {
                 DPRINTF(XSCompositePrefetcher, "Do stride lookup for first shot acc ...\n");
                 covered_by_stride |= strideLookup(strideUnique, pfi, addresses, late, stride_pf_addr, pf_source,
@@ -234,7 +239,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             trigger_pht = phtLookup(pfi, addresses, late && pf_source == PrefetchSourceType::SPht, stride_pf_addr);
         }
 
-        bool use_cplx = enableCPLX && true;
+        bool use_cplx = enableCPLX;
         if (use_cplx) {
             Addr cplx_best_offset = 0;
             bool send_cplx_pf = ipcp->doPrefetch(addresses, cplx_best_offset);
@@ -244,7 +249,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             }
         }
 
-        bool use_spp = enableSPP && true;
+        bool use_spp = enableSPP;
         if (use_spp) {
             int32_t spp_best_offset = 0;
             bool coverd_by_spp = spp->calculatePrefetch(pfi, addresses, pfBlockLRUFilter, spp_best_offset);
@@ -432,22 +437,27 @@ XSCompositePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const P
             DPRINTF(XSCompositePrefetcher, "Stride unmatch, dec conf to %d\n", (int) entry->conf);
             if ((int) entry->conf == 0) {
                 DPRINTF(XSCompositePrefetcher, "Stride conf = 0, reset stride to %ld\n", new_stride);
-                if (entry->stride != 0) {
-                    entry->histStrides.push_back(entry->stride);
-                }
+
                 bool found_in_hist = false;
-                for (auto it = entry->histStrides.begin(); it != entry->histStrides.end(); it++) {
-                    DPRINTF(XSCompositePrefetcher, "Stride hist: %ld, match: %i\n", *it, *it == new_stride);
-                    if (*it == new_stride) {
-                        found_in_hist = true;
-                        entry->histStrides.erase(it);
-                        break;
+
+                if (enableNonStrideFilter) {
+                    if (entry->stride != 0) {
+                        entry->histStrides.push_back(entry->stride);
+                    }
+                    for (auto it = entry->histStrides.begin(); it != entry->histStrides.end(); it++) {
+                        DPRINTF(XSCompositePrefetcher, "Stride hist: %ld, match: %i\n", *it, *it == new_stride);
+                        if (*it == new_stride) {
+                            found_in_hist = true;
+                            entry->histStrides.erase(it);
+                            break;
+                        }
+                    }
+                    if (found_in_hist) {
+                        entry->histStrides.clear();
                     }
                 }
-                if (found_in_hist) {
-                    entry->histStrides.clear();
-                }
-                if (!found_in_hist && entry->histStrides.size() >= maxHistStrides) {
+
+                if (enableNonStrideFilter && !found_in_hist && entry->histStrides.size() >= maxHistStrides) {
                     markNonStridePC(entry->pc);
                     entry->histStrides.clear();
                     entry->invalidate();
@@ -474,7 +484,7 @@ XSCompositePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const P
         DPRINTF(XSCompositePrefetcher, "Stride miss, insert it\n");
         entry = stride.findVictim(0);
         DPRINTF(XSCompositePrefetcher, "Stride found victim pc = %x, stride = %i\n", entry->pc, entry->stride);
-        if (entry->histStrides.size() >= maxHistStrides - 1 || !entry->matchedSinceAlloc) {
+        if (enableNonStrideFilter && (entry->histStrides.size() >= maxHistStrides - 1 || !entry->matchedSinceAlloc)) {
             DPRINTF(XSCompositePrefetcher, "Stride hist %u >= %u, mark pc %x as non-stride\n",
                     entry->histStrides.size(), maxHistStrides - 1, entry->pc);
             markNonStridePC(entry->pc);

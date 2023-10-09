@@ -701,6 +701,7 @@ class XSCompositePrefetcher(QueuedPrefetcher):
     fuzzy_stride_matching = Param.Bool(False, "Match stride with fuzzy condition")
 
     # stride black list
+    enable_non_stride_filter= Param.Bool(False, "Prevent non-stride PCs to touch stride table")
     non_stride_entries = Param.MemorySize("256", "Non-Stride Entries")
     non_stride_assoc = Param.Int(4, "Associativity of the non-stride pc table")
     non_stride_indexing_policy = Param.BaseIndexingPolicy(
