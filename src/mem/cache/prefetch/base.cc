@@ -321,7 +321,15 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
     if (hasBeenPrefetchedAndNotAccessed(pkt->getAddr(), pkt->isSecure())) {
         usefulPrefetches += 1;
         prefetchStats.pfUseful++;
-        prefetchStats.pfUseful_srcs[cache->getHitBlkXsMetadata(pkt).prefetchSource]++;
+        PrefetchSourceType pf_source = cache->getHitBlkXsMetadata(pkt).prefetchSource;
+        prefetchStats.pfUseful_srcs[pf_source]++;
+        if (hasHintDownStream()){
+            float acc =
+                (prefetchStats.pfUseful_srcs[pf_source].value())
+                / (prefetchStats.pfIssued_srcs[pf_source].value());
+            if ((prefetchStats.pfUseful_srcs[pf_source].value())>100)
+                hintDownStream->rxNotify(acc, pf_source, pkt);
+        }
         if (miss)
             // This case happens when a demand hits on a prefetched line
             // that's not in the requested coherency state.

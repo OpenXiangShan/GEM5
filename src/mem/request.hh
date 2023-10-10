@@ -75,12 +75,12 @@ enum PrefetchSourceType
     SStride,
     SPht,
     HWP_BOP,
-    CDP,
     SPP,
     IPCP,
     IPCP_CS,
     IPCP_CPLX,
     StoreStream,
+    CDP,
     NUM_PF_SOURCES
 };
 

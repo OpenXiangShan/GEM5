@@ -57,6 +57,9 @@ namespace gem5
             transfer_event = new EventFunctionWrapper([this](){
                 transfer();
             },name(),false);
+            for (int i=0;i<PrefetchSourceType::NUM_PF_SOURCES;i++){
+                enable_prf_filter.push_back(false);
+            }
         }
         void
         CDP::calculatePrefetch(const PrefetchInfo &pfi,
@@ -71,9 +74,16 @@ namespace gem5
             Addr addr = pfi.getAddr();
             bool miss = pfi.isCacheMiss();
             int page_offset,vpn0,vpn1,vpn2;
+            PrefetchSourceType pf_source = pfi.getXsMetadata().prefetchSource;
+            int pf_depth = pfi.getXsMetadata().prefetchDepth;
             if (!miss&&pfi.getDataPtr()!=nullptr){
+                size_t found = cache->system->getRequestorName(pfi.getRequestorId()).find("dcache.prefetcher");
+                if (found!=std::string::npos){
+                    if (enable_prf_filter[pf_source])
+                        return;
+                }
                 DPRINTF(CDPdepth,"HIT Depth: %d\n",pfi.getXsMetadata().prefetchDepth);
-                if (pfi.getXsMetadata().prefetchDepth==4||pfi.getXsMetadata().prefetchDepth==2){
+                if (((pf_depth==4||pf_depth==2))){
                     uint64_t* test_addrs=pfi.getDataPtr();
                     std::queue<std::pair<CacheBlk*,Addr>> pt_blks;
                     std::vector<uint64_t> addrs;
@@ -97,38 +107,9 @@ namespace gem5
                             CDP::notifyFill(const PacketPtr &pkt)\n");
                     }
                     for (Addr pt_addr:scanPointer(addr,addrs)){
-                        CacheBlk* blk=cache->findBlock(pt_addr, is_secure);
                         AddrPriority addrprio=AddrPriority(pt_addr, 30, PrefetchSourceType::CDP);
                         addrprio.depth=1;
-                        if (blk==nullptr){
-                            addresses.push_back(addrprio);
-                        }
-                        else
-                            pt_blks.push(std::pair<CacheBlk*,Addr>(blk,pt_addr));
-                    }
-                    for (int d=2;d<4;d++){
-                        if (pt_blks.empty()){
-                            break;
-                        }
-                        int size=pt_blks.size();
-                        for (int i=0;i<size;i++){
-                            CacheBlk * blk=pt_blks.front().first;
-                            addr=pt_blks.front().second;
-                            pt_blks.pop();
-                            addrs = std::vector<uint64_t>(blk->data,
-                                blk->data + (blkSize / sizeof(uint64_t)));
-                            for (Addr pt_addr:scanPointer(addr,addrs)){
-                                CacheBlk* blk2=cache->findBlock(pt_addr, is_secure);
-                                AddrPriority addrprio=AddrPriority(pt_addr, 29+d, PrefetchSourceType::CDP);
-                                addrprio.depth=d;
-                                if (blk2==nullptr){
-                                    addresses.push_back(addrprio);
-                                }
-                                else
-                                    pt_blks.push(std::pair<CacheBlk*,Addr>(blk2,pt_addr));
-                            }
-
-                        }
+                        addresses.push_back(addrprio);
                     }
 
                 }
@@ -162,10 +143,16 @@ namespace gem5
                 (prefetchStats.pfUseful.total() +
                 prefetchStats.demandMshrMisses.total());
             uint64_t test_addr = 0;
-
             std::vector<uint64_t> addrs;
             if (pkt->hasData()&&pkt->req->hasVaddr()){
-                int pf_depth = cache->getHitBlkXsMetadata(pkt).prefetchDepth;
+                Request::XsMetadata pkt_meta = cache->getHitBlkXsMetadata(pkt);
+                size_t found = cache->system->getRequestorName(pkt->req->requestorId()).find("dcache.prefetcher");
+                int pf_depth = pkt_meta.prefetchDepth;
+                PrefetchSourceType pf_source = pkt_meta.prefetchSource;
+                if (found!=std::string::npos){
+                    if (enable_prf_filter[pkt->req->getXsMetadata().prefetchSource])
+                        return;
+                }
                 uint64_t* test_addrs=(uint64_t*)pkt->getPtr<uint64_t>();
                 switch (byteOrder) {
                 case ByteOrder::big:
@@ -285,6 +272,15 @@ namespace gem5
 
             DPRINTF(WorkerPref, "Worker: put [%lx, %d] into localBuffer(size:%lu)\n", ptr->pfInfo.getAddr(), ptr->pfahead_host,localBuffer.size());
             localBuffer.push_back(*ptr);
+        }
+        void
+        CDP::rxNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt)
+        {
+            if (accuracy<0.1){
+                enable_prf_filter[pf_source]=true;
+                // notifyFill(pkt);
+            }
+            else enable_prf_filter[pf_source]=false;
         }
         void
         CDP::transfer()

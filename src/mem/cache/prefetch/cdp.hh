@@ -74,7 +74,7 @@ class CDP : public Queued
 
         bool first_call = false;
         Event *transfer_event;
-
+        std::vector<bool> enable_prf_filter;
         int depth_threshold;
         /** Byte order used to access the cache */
         /** Update the RR right table after a prefetch fill */
@@ -161,6 +161,7 @@ class CDP : public Queued
         void transfer();
 
         void rxHint(BaseMMU::Translation *dpp) override;
+        void rxNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt) override;
 
         bool hasHintsWaiting() override { return !localBuffer.empty(); }
         boost::compute::detail::lru_cache<Addr, Addr> pfLRUFilter;

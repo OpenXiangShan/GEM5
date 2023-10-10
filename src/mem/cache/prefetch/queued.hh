@@ -301,6 +301,8 @@ class Queued : public Base
     void rxHint(BaseMMU::Translation *dpp) override {
         panic("QueuedPrefetcher: rxHint not implemented");
     }
+    void rxNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt) override {
+    }
     void offloadToDownStream() override;
 };
 
