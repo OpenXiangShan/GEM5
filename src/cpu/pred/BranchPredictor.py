@@ -881,7 +881,7 @@ class UFTB(DefaultFTB):
     tagBits = 38
     numWays = 32
     numDelay = 0
-    
+    aheadPipelined = 0
 class RAS(TimedBaseFTBPredictor):
     type = 'RAS'
     cxx_class = 'gem5::branch_prediction::ftb_pred::RAS'
@@ -953,3 +953,5 @@ class DecoupledBPUWithFTB(BranchPredictor):
     enableLoopBuffer = Param.Bool(False, "Enable loop buffer to supply inst for loops")
     enableLoopPredictor = Param.Bool(False, "Use loop predictor to predict loop exit")
     enableJumpAheadPredictor = Param.Bool(False, "Use jump ahead predictor to skip no-need-to-predict blocks")
+
+    enableTwoTaken = Param.Bool(False, "Enable predicting two taken blocks per cycle")

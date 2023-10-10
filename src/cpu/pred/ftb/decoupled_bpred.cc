@@ -27,6 +27,7 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
       enableLoopBuffer(p.enableLoopBuffer),
       enableLoopPredictor(p.enableLoopPredictor),
       enableJumpAheadPredictor(p.enableJumpAheadPredictor),
+      enableTwoTaken(p.enableTwoTaken),
       fetchTargetQueue(p.ftq_size),
       fetchStreamQueueSize(p.fsq_size),
       numBr(p.numBr),
@@ -603,74 +604,95 @@ DecoupledBPUWithFTB::tick()
         dbpFtbStats.fsqFullCannotEnq++;
     }
 
-    if (!receivedPred && numOverrideBubbles == 0 && sentPCHist) {
-        generateFinalPredAndCreateBubbles();
-    }
-    if (!squashing) {
-        DPRINTF(DecoupleBP, "DecoupledBPUWithFTB::tick()\n");
-        DPRINTF(Override, "DecoupledBPUWithFTB::tick()\n");
-        tryEnqFetchTarget();
-        tryEnqFetchStream();
-    } else {
-        receivedPred = false;
-        DPRINTF(DecoupleBP, "Squashing, skip this cycle, receivedPred is %d.\n", receivedPred);
-        DPRINTF(Override, "Squashing, skip this cycle, receivedPred is %d.\n", receivedPred);
-    }
+
+    int predsRemainsToBeMade = enableTwoTaken ? 2 : 1;
+    // in two taken roofline model, we create max(bubblesOfPreds1, bubblesOfPreds2) bubbles
+    int tempNumOverrideBubbles = 0;
 
     if (numOverrideBubbles > 0) {
         numOverrideBubbles--;
     }
 
-    sentPCHist = false;
-
-    if (!receivedPred && !streamQueueFull()) {
-        if (!enableLoopBuffer || (enableLoopBuffer && !lb.isActive())) {
-            if (s0PC == ObservingPC) {
-                DPRINTFV(true, "Predicting block %#lx, id: %lu\n", s0PC, fsqId);
-            }   
-            DPRINTF(DecoupleBP, "Requesting prediction for stream start=%#lx\n", s0PC);
-            DPRINTF(Override, "Requesting prediction for stream start=%#lx\n", s0PC);
-            // put startAddr in preds
-            for (int i = 0; i < numStages; i++) {
-                predsOfEachStage[i].bbStart = s0PC;
-            }
-            for (int i = 0; i < numComponents; i++) {
-                components[i]->putPCHistory(s0PC, s0History, predsOfEachStage);
-            }
+    while (predsRemainsToBeMade > 0) {
+        // make one prediction
+        if (!squashing) {
+            DPRINTF(DecoupleBP, "DecoupledBPUWithFTB::tick()\n");
+            DPRINTF(Override, "DecoupledBPUWithFTB::tick()\n");
+            tryEnqFetchTarget();
+            tryEnqFetchStream();
         } else {
-            DPRINTF(LoopBuffer, "Do not query bpu when loop buffer is active\n");
-            DPRINTF(DecoupleBP, "Do not query bpu when loop buffer is active\n");
+            receivedPred = false;
+            DPRINTF(DecoupleBP, "Squashing, skip this cycle, receivedPred is %d.\n", receivedPred);
+            DPRINTF(Override, "Squashing, skip this cycle, receivedPred is %d.\n", receivedPred);
         }
 
 
-        sentPCHist = true;
-    }
-    
+        sentPCHist = false;
 
-    // query loop buffer with start pc
-    if (enableLoopBuffer && !lb.isActive() &&
-            lb.streamBeforeLoop.getTakenTarget() == lb.streamBeforeLoop.startPC &&
-            !lb.streamBeforeLoop.resolved) { // do not activate loop buffer right after squash
-        lb.tryActivateLoop(s0PC);
-    }
+        if (!receivedPred && !streamQueueFull()) {
+            if (!enableLoopBuffer || (enableLoopBuffer && !lb.isActive())) {
+                if (s0PC == ObservingPC) {
+                    DPRINTFV(true, "Predicting block %#lx, id: %lu\n", s0PC, fsqId);
+                }
+                DPRINTF(DecoupleBP, "Requesting prediction for stream start=%#lx\n", s0PC);
+                DPRINTF(Override, "Requesting prediction for stream start=%#lx\n", s0PC);
+                // put startAddr in preds
+                for (int i = 0; i < numStages; i++) {
+                    predsOfEachStage[i].bbStart = s0PC;
+                }
+                for (int i = 0; i < numComponents; i++) {
+                    components[i]->putPCHistory(s0PC, s0History, predsOfEachStage);
+                }
+            } else {
+                DPRINTF(LoopBuffer, "Do not query bpu when loop buffer is active\n");
+                DPRINTF(DecoupleBP, "Do not query bpu when loop buffer is active\n");
+            }
 
-    DPRINTF(Override, "after putPCHistory\n");
-    for (int i = 0; i < numStages; i++) {
-        printFullFTBPrediction(predsOfEachStage[i]);
+
+            sentPCHist = true;
+        }
+
+
+        // query loop buffer with start pc
+        if (enableLoopBuffer && !lb.isActive() &&
+                lb.streamBeforeLoop.getTakenTarget() == lb.streamBeforeLoop.startPC &&
+                !lb.streamBeforeLoop.resolved) { // do not activate loop buffer right after squash
+            lb.tryActivateLoop(s0PC);
+        }
+
+        DPRINTF(Override, "after putPCHistory\n");
+        for (int i = 0; i < numStages; i++) {
+            printFullFTBPrediction(predsOfEachStage[i]);
+        }
+
+        if (streamQueueFull()) {
+            DPRINTF(DecoupleBP, "Stream queue is full, don't request prediction\n");
+            DPRINTF(Override, "Stream queue is full, don't request prediction\n");
+        }
+        squashing = false;
+
+
+        if (!receivedPred && numOverrideBubbles == 0 && sentPCHist) {
+            tempNumOverrideBubbles = std::max(generateFinalPredAndCreateBubbles(), tempNumOverrideBubbles);
+            if (!enableTwoTaken) {
+                numOverrideBubbles = tempNumOverrideBubbles;
+            } else {
+                if (predsRemainsToBeMade == 1) {
+                    numOverrideBubbles = tempNumOverrideBubbles;
+                }
+            }
+        }
+
+        predsRemainsToBeMade--;
     }
-    
-    if (streamQueueFull()) {
-        DPRINTF(DecoupleBP, "Stream queue is full, don't request prediction\n");
-        DPRINTF(Override, "Stream queue is full, don't request prediction\n");
-    }
-    squashing = false;
 }
 
 // this function collects predictions from all stages and generate bubbles
 // when loop buffer is active, predictions are from saved stream
-void
+int
 DecoupledBPUWithFTB::generateFinalPredAndCreateBubbles()
 {
+    int bubblesToCreate = 0;
     DPRINTF(Override, "In generateFinalPredAndCreateBubbles().\n");
 
     if (!enableLoopBuffer || (enableLoopBuffer && !lb.isActive())) {
@@ -698,7 +720,7 @@ DecoupledBPUWithFTB::generateFinalPredAndCreateBubbles()
             first_hit_stage++;
         }
         // generate bubbles
-        numOverrideBubbles = first_hit_stage;
+        bubblesToCreate = first_hit_stage;
         // assign pred source
         finalPred.predSource = first_hit_stage;
         receivedPred = true;
@@ -729,14 +751,18 @@ DecoupledBPUWithFTB::generateFinalPredAndCreateBubbles()
         printFullFTBPrediction(*chosen);
         dbpFtbStats.predsOfEachStage[first_hit_stage]++;
     } else {
-        numOverrideBubbles = 0;
+        bubblesToCreate = 0;
         receivedPred = true;
         DPRINTF(LoopBuffer, "Do not generate final pred when loop buffer is active\n");
         DPRINTF(DecoupleBP, "Do not generate final pred when loop buffer is active\n");
     }
 
-    DPRINTF(Override, "Ends generateFinalPredAndCreateBubbles(), numOverrideBubbles is %d, receivedPred is set true.\n", numOverrideBubbles);
+    DPRINTF(Override, "Ends generateFinalPredAndCreateBubbles(), numOverrideBubbles is %d,"
+                      "receivedPred is set true.\n", bubblesToCreate);
 
+    generateAndSetNewFetchStream();
+
+    return bubblesToCreate;
 }
 
 bool
@@ -2014,13 +2040,10 @@ DecoupledBPUWithFTB::tryEnqFetchStream()
         return;
     }
     assert(!streamQueueFull());
-    if (true) {
-        bool should_create_new_stream = true;
-        makeNewPrediction(should_create_new_stream);
-    } else {
-        DPRINTF(DecoupleBP || debugFlagOn, "FSQ is full: %lu\n",
-                fetchStreamQueue.size());
-    }
+
+    // enqueue fetch stream
+    enqueueFetchStream();
+
     for (int i = 0; i < numStages; i++) {
         predsOfEachStage[i].valid = false;
     }
@@ -2230,10 +2253,11 @@ DecoupledBPUWithFTB::makeLoopPredictions(FetchStream &entry, bool &endLoop, bool
     }
 }
 
+
 // this function enqueues fsq and update s0PC and s0History
 // use loop predictor and loop buffer here
 void
-DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
+DecoupledBPUWithFTB::generateAndSetNewFetchStream()
 {
     DPRINTF(DecoupleBP, "Try to make new prediction\n");
     FetchStream entry_new;
@@ -2247,9 +2271,6 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
     if (finalPred.controlAddr() == ObservingPC || finalPred.controlAddr() == ObservingPC2) {
         debugFlagOn = true;
     }
-    DPRINTF(DecoupleBP || debugFlagOn, "Make pred with %s, pred valid: %i, taken: %i\n",
-             create_new_stream ? "new stream" : "last missing stream",
-             finalPred.valid, finalPred.isTaken());
 
     // if loop buffer is not activated, use normal prediction from branch predictors
     bool endLoop, isDouble, loopConf;
@@ -2427,14 +2448,23 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
     DPRINTF(LoopBuffer, "now stream before loop:\n");
     printStream(lb.streamBeforeLoop);
 
-    auto [insert_it, inserted] = fetchStreamQueue.emplace(fsqId, entry);
+
+    streamToEnqueue = entry;
+}
+
+
+void
+DecoupledBPUWithFTB::enqueueFetchStream()
+{
+
+    auto [insert_it, inserted] = fetchStreamQueue.emplace(fsqId, streamToEnqueue);
     assert(inserted);
 
     dumpFsq("after insert new stream");
     DPRINTF(DecoupleBP || debugFlagOn, "Insert fetch stream %lu\n", fsqId);
 
     fsqId++;
-    printStream(entry);
+    printStream(streamToEnqueue);
 
     dbpFtbStats.fsqEntryEnqueued++;
 }
