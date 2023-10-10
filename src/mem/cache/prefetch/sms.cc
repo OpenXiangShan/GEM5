@@ -81,11 +81,12 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
     bool is_first_shot = false;
     ACTEntry *act_match_entry = nullptr;
     Addr pf_tgt_addr = 0;
+    bool decr = false;
     if (pfi.isCacheMiss() || pfi.isPfFirstHit()) {
         act_match_entry = actLookup(pfi, is_active_page, enter_new_region, is_first_shot);
         int origin_depth = 0;
         if (act_match_entry) {
-            bool decr = act_match_entry->decr_mode;
+            decr = act_match_entry->decr_mode;
             DPRINTF(XSCompositePrefetcher, "ACT hit or match: pc:%x addr: %x offset: %d active: %d decr: %d\n", pc,
                     vaddr, region_offset, is_active_page, decr);
             if (is_active_page) {
@@ -120,7 +121,8 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
 
     if (act_match_entry && is_active_page && pf_tgt_addr && enter_new_region) {
         if (streamPFAhead) {
-            pf_tgt_addr += 48 * blkSize;  // depth here?
+            pf_tgt_addr = decr ? pf_tgt_addr - 48 * blkSize
+                               : pf_tgt_addr + 48 * blkSize;  // depth here?
             Addr pf_tgt_region = regionAddress(pf_tgt_addr);
             DPRINTF(XSCompositePrefetcher, "ACT pf ahead region: %lx\n", pf_tgt_region);
             for (int i = 0; i < regionBlks; i++) {
@@ -131,7 +133,8 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
         }
 
         if (streamPFAhead) {
-            pf_tgt_addr += 256 * blkSize;  // depth here?
+            pf_tgt_addr = decr ? pf_tgt_addr - 256 * blkSize
+                               : pf_tgt_addr + 256 * blkSize;  // depth here?
             Addr pf_tgt_region = regionAddress(pf_tgt_addr);
             DPRINTF(XSCompositePrefetcher, "ACT pf ahead region: %lx\n", pf_tgt_region);
             for (int i = 0; i < regionBlks; i++) {
