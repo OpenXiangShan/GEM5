@@ -681,6 +681,21 @@ class XSCompositePrefetcher(QueuedPrefetcher):
         LRURP(),
         "Replacement policy of active generation table"
     )
+    re_act_entries = Param.MemorySize(
+        "32",
+        "num of recently active generation table entries"
+    )
+    re_act_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.re_act_entries,
+            size=Parent.re_act_entries),
+        "Indexing policy of recently active generation table"
+    )
+    re_act_replacement_policy = Param.BaseReplacementPolicy(
+        FIFORP(),
+        "Replacement policy of recently active generation table"
+    )
     stream_pf_ahead = Param.Bool(True, "Prefetch stream region ahead of current region")
     # stride table (full-assoc)
     stride_dyn_depth = Param.Bool(True, "Dynamic depth of stride table")

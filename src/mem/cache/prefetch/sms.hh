@@ -10,6 +10,7 @@
 #include <boost/compute/detail/lru_cache.hpp>
 
 #include "base/sat_counter.hh"
+#include "base/statistics.hh"
 #include "base/types.hh"
 #include "mem/cache/prefetch/associative_set.hh"
 #include "mem/cache/prefetch/bop.hh"
@@ -70,6 +71,16 @@ class XSCompositePrefetcher : public Queued
     };
 
     AssociativeSet<ACTEntry> act;
+
+    class ReACTEntry : public TaggedEntry
+    {
+      public:
+        Addr pc;
+        Addr regionAddr;
+        bool is_secure;
+        ReACTEntry() : TaggedEntry(), pc(0), regionAddr(0), is_secure(false) {}
+    };
+    AssociativeSet<ReACTEntry> re_act;
 
     const bool streamPFAhead;
 
@@ -137,7 +148,7 @@ class XSCompositePrefetcher : public Queued
 
     const bool fuzzyStrideMatching;
 
-    void updatePht(ACTEntry *act_entry, Addr region_addr);
+    void updatePht(ACTEntry *act_entry, Addr region_addr,bool re_act_mode);
 
     // pattern history table
     class PhtEntry : public TaggedEntry
@@ -165,6 +176,13 @@ class XSCompositePrefetcher : public Queued
                    std::vector<AddrPriority> &addresses, bool late, Addr look_ahead_addr);
 
     int calcPeriod(const std::vector<SatCounter8> &bit_vec, bool late);
+
+    struct XSCompositeStats : public statistics::Group
+    {
+        XSCompositeStats(statistics::Group *parent);
+        statistics::Scalar allCntNum;
+        statistics::Scalar actMNum;
+    } stats;
 
   public:
     XSCompositePrefetcher(const XSCompositePrefetcherParams &p);
