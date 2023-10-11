@@ -1442,7 +1442,7 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
                 DPRINTF(Commit,
                         "Force to raise No.%lu exception at page fault\n",
                         cause);
-                cpu->setGuideExecInfo(
+                cpu->setExceptionGuideExecInfo(
                     cause,
                     cpu->readMiscReg(
                         RiscvISA::MiscRegIndex::MISCREG_MTVAL, tid),
@@ -1498,6 +1498,12 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         DPRINTF(Commit,
                 "[tid:%i] [sn:%llu] Return Instruction Committed PC %s \n",
                 tid, head_inst->seqNum, head_inst->pcState());
+    }
+
+    if (head_inst->isStoreConditional()) {
+        DPRINTF(Commit, "[tid:%i] [sn:%llu] Store Conditional success: %i\n", tid, head_inst->seqNum,
+                head_inst->lockedWriteSuccess());
+        cpu->setSCSuccess(head_inst->lockedWriteSuccess());
     }
 
     // Update the commit rename map

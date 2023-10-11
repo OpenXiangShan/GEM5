@@ -841,7 +841,6 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
     bool is_mmio = diffInfo.curInstStrictOrdered;
 
     if (diffInfo.inst->isStoreConditional()) {
-        diffAllStates->diff.sync.lrscValid = true;
         diffAllStates->proxy->uarchstatus_cpy(&diffAllStates->diff.sync, DIFFTEST_TO_REF);
     }
     if (is_mmio) {
@@ -1158,8 +1157,13 @@ BaseCPU::enableDiffPrint()
     diffAllStates->proxy->update_config(&diffAllStates->diff.dynamic_config);
 }
 
+void BaseCPU::setSCSuccess(bool success)
+{
+    diffAllStates->diff.sync.lrscValid = success;
+}
+
 void
-BaseCPU::setGuideExecInfo(uint64_t exception_num, uint64_t mtval,
+BaseCPU::setExceptionGuideExecInfo(uint64_t exception_num, uint64_t mtval,
                           uint64_t stval, bool force_set_jump_target,
                           uint64_t jump_target)
 {
