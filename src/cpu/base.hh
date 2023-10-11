@@ -712,7 +712,9 @@ class BaseCPU : public ClockedObject
 
     void difftestRaiseIntr(uint64_t no);
 
-    void setGuideExecInfo(uint64_t exception_num, uint64_t mtval,
+    void setSCSuccess(bool success);
+
+    void setExceptionGuideExecInfo(uint64_t exception_num, uint64_t mtval,
                           uint64_t stval,
                           // force set jump target
                           bool force_set_jump_target, uint64_t jump_target);
