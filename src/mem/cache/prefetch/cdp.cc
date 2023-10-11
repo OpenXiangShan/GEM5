@@ -137,12 +137,18 @@ namespace gem5
         {
 
             float trueAccuracy =
-                (prefetchStats.pfUseful.total()
-                / (prefetchStats.pfIssued.total()));
+                (prefetchStats.pfUseful_srcs[PrefetchSourceType::CDP].value())
+                / (prefetchStats.pfIssued_srcs[PrefetchSourceType::CDP].value());
             float coverage = prefetchStats.pfUseful.total() /
                 (prefetchStats.pfUseful.total() +
                 prefetchStats.demandMshrMisses.total());
             uint64_t test_addr = 0;
+            // if (trueAccuracy<0.1){
+            //     depth_threshold=1;
+            // }
+            // else{
+            //     depth_threshold=3;
+            // }
             std::vector<uint64_t> addrs;
             if (pkt->hasData()&&pkt->req->hasVaddr()){
                 Request::XsMetadata pkt_meta = cache->getHitBlkXsMetadata(pkt);
@@ -199,15 +205,18 @@ namespace gem5
                         }
                         int next_depth=0;
                         if (pf_depth==0){
-                            next_depth=4;
+                            // if (trueAccuracy<0.1)
+                            //     next_depth=5;
+                            // else
+                                next_depth=4;
                         }
                         else next_depth=pf_depth+1;
                         AddrPriority addrprio=AddrPriority(blockAddress(test_addr2), 29+next_depth, PrefetchSourceType::CDP);
                         addrprio.depth=next_depth;
                         addresses.push_back(addrprio);
-                        addrprio=AddrPriority(blockAddress(test_addr2)+0x40, 29+next_depth-10, PrefetchSourceType::CDP);
-                        addrprio.depth=next_depth;
-                        addresses.push_back(addrprio);
+                        AddrPriority addrprio2=AddrPriority(blockAddress(test_addr2)+0x40, 29+next_depth-10, PrefetchSourceType::CDP);
+                        addrprio2.depth=next_depth;
+                        addresses.push_back(addrprio2);
                     }
 
 
@@ -278,7 +287,7 @@ namespace gem5
         {
             if (accuracy<0.1){
                 enable_prf_filter[pf_source]=true;
-                // notifyFill(pkt);
+                notifyFill(pkt);
             }
             else enable_prf_filter[pf_source]=false;
         }
