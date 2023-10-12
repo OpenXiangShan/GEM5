@@ -75,6 +75,7 @@ class CDP : public Queued
         bool first_call = false;
         Event *transfer_event;
         std::vector<bool> enable_prf_filter;
+        std::vector<bool> enable_prf_filter2;
         int depth_threshold;
         /** Byte order used to access the cache */
         /** Update the RR right table after a prefetch fill */
@@ -127,6 +128,7 @@ class CDP : public Queued
             }
         }vpnTable ;
     public:
+        bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType pfSource, int pf_depth);
 
         CDP(const CDPParams &p);
         ~CDP() = default;

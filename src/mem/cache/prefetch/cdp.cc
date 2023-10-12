@@ -109,7 +109,8 @@ namespace gem5
                     for (Addr pt_addr:scanPointer(addr,addrs)){
                         AddrPriority addrprio=AddrPriority(pt_addr, 30, PrefetchSourceType::CDP);
                         addrprio.depth=1;
-                        addresses.push_back(addrprio);
+                        // addresses.push_back(addrprio);
+                        sendPFWithFilter(pt_addr, addresses, 30, PrefetchSourceType::CDP,1);
                     }
 
                 }
@@ -213,10 +214,12 @@ namespace gem5
                         else next_depth=pf_depth+1;
                         AddrPriority addrprio=AddrPriority(blockAddress(test_addr2), 29+next_depth, PrefetchSourceType::CDP);
                         addrprio.depth=next_depth;
-                        addresses.push_back(addrprio);
+                        sendPFWithFilter(blockAddress(test_addr2), addresses, 29+next_depth, PrefetchSourceType::CDP, next_depth);
+                        // addresses.push_back(addrprio);
                         AddrPriority addrprio2=AddrPriority(blockAddress(test_addr2)+0x40, 29+next_depth-10, PrefetchSourceType::CDP);
                         addrprio2.depth=next_depth;
-                        addresses.push_back(addrprio2);
+                        // addresses.push_back(addrprio2);
+                        sendPFWithFilter(blockAddress(test_addr2)+0x40, addresses, 29+next_depth-10, PrefetchSourceType::CDP, next_depth);
                     }
 
 
@@ -268,6 +271,17 @@ namespace gem5
         CDP::rxHint(BaseMMU::Translation *dpp)
         {
             auto ptr = reinterpret_cast<DeferredPacket *>(dpp);
+            float cdp_ratio =
+                (prefetchStats.pfIssued_srcs[PrefetchSourceType::CDP].value())
+                / (prefetchStats.pfIssued.total());
+            float acc =
+                (prefetchStats.pfUseful_srcs[ptr->pfInfo.getXsMetadata().prefetchSource].value())
+                / (prefetchStats.pfIssued_srcs[ptr->pfInfo.getXsMetadata().prefetchSource].value());
+
+            if (hasHintDownStream()&&cdp_ratio>0.5&&acc<0.5) {
+                hintDownStream->rxHint(dpp);
+                return;
+            }
 
             // ignore if pfahead_host > itself level
             if ((ptr->pfahead ? (ptr->pfahead_host <= cache->level()) : true)
@@ -318,6 +332,20 @@ namespace gem5
                 count++;
             }
             schedule(transfer_event,nextCycle());
+        }
+        bool
+        CDP::sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType pfSource, int pf_depth)
+        {
+            if (pfLRUFilter.contains((addr))) {
+                return false;
+            } else {
+                pfLRUFilter.insert((addr), 0);
+                AddrPriority addrprio=AddrPriority(addr, prio, pfSource);
+                addrprio.depth=pf_depth;
+                addresses.push_back(addrprio);
+                return true;
+            }
+            return false;
         }
 
     } // namespace prefetch

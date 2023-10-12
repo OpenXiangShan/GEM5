@@ -1366,7 +1366,7 @@ class BaseCache : public ClockedObject
                 exitSimLoop("A cache reached the maximum miss count");
         }
 
-        if (cacheLevel == 1 && !pkt->req->isInstFetch() && pkt->req->hasPC()) {
+        if (cacheLevel != 0 && !pkt->req->isInstFetch() && pkt->req->hasPC()) {
             Addr pc = pkt->req->getPC();
             auto it = pcMissCount.find(pc);
             if (it == pcMissCount.end()) {
