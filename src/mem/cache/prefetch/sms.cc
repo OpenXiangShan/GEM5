@@ -45,6 +45,9 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
     assert(smallBOP);
     assert(isPowerOf2(regionSize));
 
+    largeBOP->filter = &this->pfBlockLRUFilter;
+    smallBOP->filter = &this->pfBlockLRUFilter;
+
     ipcp->rrf = &this->pfBlockLRUFilter;
 
     DPRINTF(XSCompositePrefetcher, "SMS: region_size: %d regionBlks: %d\n",
@@ -181,23 +184,9 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             DPRINTF(XSCompositePrefetcher, "Do BOP traing/prefetching...\n");
             size_t old_addr_size = addresses.size();
             largeBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
-            if (addresses.size() > old_addr_size) {
-                // BOP hit
-                AddrPriority addr = addresses.back();
-                addresses.pop_back();
-                // Resend with filter
-                sendPFWithFilter(addr.addr, addresses, addr.priority, PrefetchSourceType::HWP_BOP);
-            }
 
             old_addr_size = addresses.size();
             smallBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
-            if (addresses.size() > old_addr_size) {
-                // BOP hit
-                AddrPriority addr = addresses.back();
-                addresses.pop_back();
-                // Resend with filter
-                sendPFWithFilter(addr.addr, addresses, addr.priority, PrefetchSourceType::HWP_BOP);
-            }
         }
 
         bool use_stride = pfi.isCacheMiss() ||
