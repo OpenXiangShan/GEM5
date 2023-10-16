@@ -20,10 +20,84 @@ which performance better than LTAGE and TAGE-SCL shipped in official version on 
 
 # A Short Doc
 
-### GCC & libboost
+## Basic build env
 
-- Use GCC > 9.4.0.
-- Install libboost and valgrind
+Install dependencies as [official GEM5 tutorial](https://www.gem5.org/documentation/general_docs/building) says:
+
+### Setup on Ubuntu 22.04
+If compiling gem5 on Ubuntu 22.04, or related Linux distributions, you may install all these dependencies using APT:
+
+``` shell
+sudo apt install build-essential git m4 scons zlib1g zlib1g-dev \
+    libprotobuf-dev protobuf-compiler libprotoc-dev libgoogle-perftools-dev \
+    python3-dev libboost-all-dev pkg-config
+```
+
+### Setup on Ubuntu 20.04
+If compiling gem5 on Ubuntu 20.04, or related Linux distributions, you may install all these dependencies using APT:
+
+``` shell
+sudo apt install build-essential git m4 scons zlib1g zlib1g-dev \
+    libprotobuf-dev protobuf-compiler libprotoc-dev libgoogle-perftools-dev \
+    python3-dev python-is-python3 libboost-all-dev pkg-config
+```
+
+### Setup on Ubuntu 18.04
+If compiling gem5 on Ubuntu 18.04, or related Linux distributions, you may install all these dependencies using APT:
+
+``` shell
+sudo apt install build-essential git m4 scons zlib1g zlib1g-dev \
+    libprotobuf-dev protobuf-compiler libprotoc-dev libgoogle-perftools-dev \
+    python3-dev python libboost-all-dev pkg-config
+```
+
+## If Python version is too high, pybind11 is broken, or scons is broken
+
+If your machine has a Python with very high version, you may need to install a lower version of Python
+to avoid some compatibility issues. We recommend to use miniconda to install Python 3.8.
+
+Installation command, copied from official [miniconda website](https://docs.conda.io/projects/miniconda/en/latest/)
+
+``` shell
+mkdir -p ~/miniconda3
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda3/miniconda.sh
+bash ~/miniconda3/miniconda.sh -b -u -p ~/miniconda3
+rm -rf ~/miniconda3/miniconda.sh
+```
+
+Then add conda to path in `~/.bashrc` or `~/.zshrc`. Note this will hide the system Python.
+
+``` shell
+# for bash
+~/miniconda3/bin/conda init bash
+# for zsh
+~/miniconda3/bin/conda init zsh
+```
+Restart your terminal, and you should be able to use conda. Then create a Python 3.8 env:
+
+``` shell
+# create env
+conda create --name py38 --file $gem5_home/ext/xs_env/gem5-py38.txt
+
+# This is mudatory to avoid conda auto activate base env
+conda config --set auto_activate_base false
+```
+
+Each time login, you need to activate the conda env before building GEM5:
+
+``` shell
+conda activate py38
+```
+
+In case that you don't like this or it causes problem, to completely remove Python and conda from your PATH, run:
+
+``` shell
+# for bash
+conda init bash --reverse
+# for zsh
+conda init zsh --reverse
+```
+
 
 ## Clone and build DRAMSim3
 
@@ -35,7 +109,11 @@ Notes:
 
 Usage:
 
-`$gem5_home/build/gem5.opt ...fs.py ... --mem-type=DRAMsim3 --dramsim3-ini=$gem5_home/xiangshan_DDR4_8Gb_x8_2400.ini ...`
+``` shell
+$gem5_home/build/gem5.opt ... fs.py ... \
+    --mem-type=DRAMsim3 \
+    --dramsim3-ini=$gem5_home/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini ...
+```
 
 ## Build GEM5
 
@@ -112,6 +190,33 @@ export ref_so=`realpath build/riscv64-nemu-interpreter-so`
 # This is not full command, but a piece of example.
 $gem5_home/build/gem5.opt ... --enable-difftest --difftest-ref-so $ref_so ...
 ```
+
+# FAQ
+
+## It complains `Python not found`
+
+This is often not Python missing, but other problems.
+Because the build scripts (and scons) uses a strange way to find Python, see `site_scons/gem5_scons/configure.py` for more detail.
+For example, when building with clang10, I encountered this problem:
+
+```
+Error: Check failed for Python.h header.
+        Two possible reasons:
+       1. Python headers are not installed (You can install the package python-dev on Ubuntu and RedHat)
+       2. SCons is using a wrong C compiler. This can happen if CC has the wrong value.
+       CC = clang
+```
+
+This is not becaues of Python, but because GCC and clang have different warning suppression flags.
+To fix it, I apply this path:
+
+``` shell
+git apply ext/xs_env/clang-warning-suppress.patch
+```
+
+But Python complaints are also possible caused by other problems,
+For similar errors, check `build/RISCV/gem5.build/scons_config.log` to get the real error message.
+
 
 # Original README
 
