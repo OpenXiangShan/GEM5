@@ -669,6 +669,28 @@ LSQUnit::executeLoad(const DynInstPtr &inst)
     return load_fault;
 }
 
+bool
+LSQUnit::storePFtrain(int sq_idx)
+{
+    auto inst = storeQueue[sq_idx].instruction();
+    assert(inst->translationCompleted());
+    Addr vaddr = inst->effAddr;
+    Addr pc = inst->pcState().instAddr();
+    // create request
+    RequestPtr req =
+        std::make_shared<Request>(vaddr, 1, Request::STORE_PFTRAIN, inst->requestorId(), pc, inst->contextId());
+    req->setPaddr(inst->physEffAddr);
+
+    // create packet
+    PacketPtr pkt = Packet::createPFtrain(req);
+
+    // send packet
+    bool success = dcachePort->sendTimingReq(pkt);
+    assert(success); // must be true
+
+    return true;
+}
+
 Fault
 LSQUnit::executeStore(const DynInstPtr &store_inst)
 {
@@ -725,6 +747,9 @@ LSQUnit::executeStore(const DynInstPtr &store_inst)
         storeQueue[store_idx].canWB() = true;
 
         ++storesToWB;
+    }
+    else {
+        storePFtrain(store_idx);
     }
 
     return checkViolations(loadIt, store_inst);
@@ -809,7 +834,7 @@ LSQUnit::writebackBlockedStore()
 {
     assert(isStoreBlocked);
     storeWBIt->request()->sendPacketToCache();
-    if (storeWBIt->request()->isSent()){
+    if (storeWBIt->request()->isSent()) {
         storePostSend();
     }
 }

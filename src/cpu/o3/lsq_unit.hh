@@ -264,8 +264,11 @@ class LSQUnit
     Fault executeLoad(const DynInstPtr &inst);
 
     Fault executeLoad(int lq_idx) { panic("Not implemented"); return NoFault; }
+
+    bool storePFtrain(int sq_idx);
+
     /** Executes a store instruction. */
-    Fault executeStore(const DynInstPtr &inst);
+    Fault executeStore(const DynInstPtr& inst);
 
     /** Commits the head load. */
     void commitLoad();

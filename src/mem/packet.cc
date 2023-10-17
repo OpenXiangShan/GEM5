@@ -234,6 +234,7 @@ MemCmd::commandInfo[] =
     { {IsRead, IsResponse}, InvalidCmd, "HTMReqResp" },
     { {IsRead, IsRequest}, InvalidCmd, "HTMAbort" },
     { {IsRequest}, InvalidCmd, "TlbiExtSync" },
+    { {IsRequest}, InvalidCmd, "Store_PFtrain" },
 };
 
 AddrRange

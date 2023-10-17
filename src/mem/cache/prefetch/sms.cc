@@ -69,7 +69,11 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
     Addr pc = pfi.getPC();
     Addr vaddr = pfi.getAddr();
     Addr block_addr = blockAddress(vaddr);
-
+    PrefetchSourceType streamtype = PrefetchSourceType::SStream;
+    if (pfi.isStore()) {
+        streamtype = PrefetchSourceType::StoreStream;
+        DPRINTF(XSCompositePrefetcher, "prefetch trigger come from store unit\n");
+    }
     DPRINTF(XSCompositePrefetcher, "blk addr: %lx, prefetch source: %i, miss: %i, late: %i, ever pf: %i, pc: %lx\n",
             block_addr, pf_source, pfi.isCacheMiss(), late, pfi.isEverPrefetched(), pfi.getPC());
 
@@ -105,7 +109,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
                     // for (int i = (int)regionBlks - 1; i >= pf_tgt_offset && i >= 0; i--) {
                     for (int i = regionBlks - 1; i >= 0; i--) {
                         Addr cur = pf_tgt_region * regionSize + i * blkSize;
-                        sendPFWithFilter(cur, addresses, i, PrefetchSourceType::SStream);
+                        sendPFWithFilter(cur, addresses, i, streamtype);
                         DPRINTF(XSCompositePrefetcher, "pf addr: %x [%d]\n", cur, i);
                         fatal_if(i < 0, "i < 0\n");
                     }
@@ -113,7 +117,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
                     // for (int i = std::max(1, ((int) pf_tgt_offset) - 4); i <= pf_tgt_offset; i++) {
                     for (int i = 0; i < regionBlks; i++) {
                         Addr cur = pf_tgt_region * regionSize + i * blkSize;
-                        sendPFWithFilter(cur, addresses, regionBlks - i, PrefetchSourceType::SStream);
+                        sendPFWithFilter(cur, addresses, regionBlks - i, streamtype);
                         DPRINTF(XSCompositePrefetcher, "pf addr: %x [%d]\n", cur, i);
                     }
                 }
@@ -130,7 +134,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             DPRINTF(XSCompositePrefetcher, "ACT pf ahead region: %lx\n", pf_tgt_region);
             for (int i = 0; i < regionBlks; i++) {
                 Addr cur = pf_tgt_region * regionSize + i * blkSize;
-                sendPFWithFilter(cur, addresses, regionBlks - i, PrefetchSourceType::SStream, 2);
+                sendPFWithFilter(cur, addresses, regionBlks - i, streamtype, 2);
             }
             pfPageLRUFilterL2.insert(pf_tgt_region, 0);
         }
@@ -142,13 +146,13 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             DPRINTF(XSCompositePrefetcher, "ACT pf ahead region: %lx\n", pf_tgt_region);
             for (int i = 0; i < regionBlks; i++) {
                 Addr cur = pf_tgt_region * regionSize + i * blkSize;
-                sendPFWithFilter(cur, addresses, regionBlks - i, PrefetchSourceType::SStream, 3);
+                sendPFWithFilter(cur, addresses, regionBlks - i, streamtype, 3);
             }
             pfPageLRUFilterL3.insert(pf_tgt_region, 0);
         }
     }
 
-    if (pf_source == PrefetchSourceType::SStream || act_match_entry) {
+    if ((pf_source == PrefetchSourceType::SStream || pf_source == PrefetchSourceType::StoreStream) || act_match_entry) {
         auto it = act.begin();
         while (it != act.end()) {
             ACTEntry *it_entry = &(*it);
@@ -175,6 +179,11 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
                     it_entry->getTag(), it_entry->depth, (int)it_entry->lateConf);
         }
     }
+
+    if (pfi.isStore()) {
+        return;
+    }
+
 
     if (enableCPLX) {
         ipcp->doLookup(pfi, pf_source);
@@ -723,7 +732,7 @@ XSCompositePrefetcher::sendPFWithFilter(Addr addr, std::vector<AddrPriority> &ad
         return false;
 
     } else {
-        if (src != PrefetchSourceType::SStream) {
+        if (!(src == PrefetchSourceType::SStream || src == PrefetchSourceType::StoreStream)) {
             pfBlockLRUFilter.insert(addr, 0);
         }
         addresses.push_back(AddrPriority(addr, prio, src));

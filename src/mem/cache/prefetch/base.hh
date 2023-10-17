@@ -76,14 +76,15 @@ class Base : public ClockedObject
       public:
         PrefetchListener(Base &_parent, ProbeManager *pm,
                          const std::string &name, bool _isFill = false,
-                         bool _miss = false)
+                         bool _miss = false, bool _pftrain = false)
             : ProbeListenerArgBase(pm, name),
-              parent(_parent), isFill(_isFill), miss(_miss) {}
+              parent(_parent), isFill(_isFill), miss(_miss), pftrain(_pftrain) {}
         void notify(const PacketPtr &pkt) override;
       protected:
-        Base &parent;
-        const bool isFill;
-        const bool miss;
+          Base& parent;
+          const bool isFill;
+          const bool miss;
+          const bool pftrain;
     };
 
     std::vector<PrefetchListener *> listeners;
@@ -126,6 +127,8 @@ class Base : public ClockedObject
         bool pfFirstHit{false};
 
         bool pfHit{false};
+
+        bool storePFtrain{ false };
 
       public:
         /**
@@ -185,12 +188,18 @@ class Base : public ClockedObject
 
         /**
          * Checks if the request that caused this prefetch event was a write
-         * request
+         * request come from committed store inst
          * @return true if the request causing this event is a write request
          */
         bool isWrite() const
         {
             return write;
+        }
+
+        // is come from store prefetch train trigger
+        bool isStore() const
+        {
+            return storePFtrain;
         }
 
         /**
@@ -283,6 +292,8 @@ class Base : public ClockedObject
         bool isPfFirstHit() const { return pfFirstHit; }
 
         void setPfFirstHit(bool hit) { pfFirstHit = hit; }
+
+        void setStorePftrain(bool s) { storePFtrain = s; }
 
         /**
          * Constructs a PrefetchInfo using a PacketPtr.
@@ -490,7 +501,9 @@ class Base : public ClockedObject
      * @param pkt The memory request causing the event
      * @param miss whether this event comes from a cache miss
      */
-    void probeNotify(const PacketPtr &pkt, bool miss);
+    void probeNotify(const PacketPtr& pkt, bool miss);
+
+    void storePFtrainNotify(const PacketPtr& pkt);
 
     /**
      * Add a SimObject and a probe name to listen events from

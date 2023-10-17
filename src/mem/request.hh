@@ -79,6 +79,7 @@ enum PrefetchSourceType
     IPCP,
     IPCP_CS,
     IPCP_CPLX,
+    StoreStream,
     NUM_PF_SOURCES
 };
 
@@ -270,7 +271,10 @@ class Request
          * These flags are *not* cleared when a Request object is
          * reused (assigned a new address).
          */
-        STICKY_FLAGS = INST_FETCH
+        STICKY_FLAGS = INST_FETCH,
+
+        // this request is used for store pf train
+        STORE_PFTRAIN = 0x1000000000000000
     };
     static const FlagsType STORE_NO_DATA = CACHE_BLOCK_ZERO |
         CLEAN | INVALIDATE;
@@ -1102,6 +1106,7 @@ class Request
         _xsMetadata = xs_metadata;
     }
 
+    bool isStorePFtrain() const { return _flags.isSet(STORE_PFTRAIN); }
     /** Accessor functions for flags. Note that these are for testing
         only; setting flags should be done via setFlags(). */
     bool isUncacheable() const { return _flags.isSet(UNCACHEABLE); }
