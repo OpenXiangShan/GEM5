@@ -265,7 +265,7 @@ class LSQUnit
 
     Fault executeLoad(int lq_idx) { panic("Not implemented"); return NoFault; }
 
-    bool storePFtrain(int sq_idx);
+    bool triggerStorePFTrain(int sq_idx);
 
     /** Executes a store instruction. */
     Fault executeStore(const DynInstPtr& inst);

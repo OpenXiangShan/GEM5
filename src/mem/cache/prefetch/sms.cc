@@ -69,9 +69,9 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
     Addr pc = pfi.getPC();
     Addr vaddr = pfi.getAddr();
     Addr block_addr = blockAddress(vaddr);
-    PrefetchSourceType streamtype = PrefetchSourceType::SStream;
+    PrefetchSourceType stream_type = PrefetchSourceType::SStream;
     if (pfi.isStore()) {
-        streamtype = PrefetchSourceType::StoreStream;
+        stream_type = PrefetchSourceType::StoreStream;
         DPRINTF(XSCompositePrefetcher, "prefetch trigger come from store unit\n");
     }
     DPRINTF(XSCompositePrefetcher, "blk addr: %lx, prefetch source: %i, miss: %i, late: %i, ever pf: %i, pc: %lx\n",
@@ -109,7 +109,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
                     // for (int i = (int)regionBlks - 1; i >= pf_tgt_offset && i >= 0; i--) {
                     for (int i = regionBlks - 1; i >= 0; i--) {
                         Addr cur = pf_tgt_region * regionSize + i * blkSize;
-                        sendPFWithFilter(cur, addresses, i, streamtype);
+                        sendPFWithFilter(cur, addresses, i, stream_type);
                         DPRINTF(XSCompositePrefetcher, "pf addr: %x [%d]\n", cur, i);
                         fatal_if(i < 0, "i < 0\n");
                     }
@@ -117,7 +117,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
                     // for (int i = std::max(1, ((int) pf_tgt_offset) - 4); i <= pf_tgt_offset; i++) {
                     for (int i = 0; i < regionBlks; i++) {
                         Addr cur = pf_tgt_region * regionSize + i * blkSize;
-                        sendPFWithFilter(cur, addresses, regionBlks - i, streamtype);
+                        sendPFWithFilter(cur, addresses, regionBlks - i, stream_type);
                         DPRINTF(XSCompositePrefetcher, "pf addr: %x [%d]\n", cur, i);
                     }
                 }
@@ -134,7 +134,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             DPRINTF(XSCompositePrefetcher, "ACT pf ahead region: %lx\n", pf_tgt_region);
             for (int i = 0; i < regionBlks; i++) {
                 Addr cur = pf_tgt_region * regionSize + i * blkSize;
-                sendPFWithFilter(cur, addresses, regionBlks - i, streamtype, 2);
+                sendPFWithFilter(cur, addresses, regionBlks - i, stream_type, 2);
             }
             pfPageLRUFilterL2.insert(pf_tgt_region, 0);
         }
@@ -146,7 +146,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             DPRINTF(XSCompositePrefetcher, "ACT pf ahead region: %lx\n", pf_tgt_region);
             for (int i = 0; i < regionBlks; i++) {
                 Addr cur = pf_tgt_region * regionSize + i * blkSize;
-                sendPFWithFilter(cur, addresses, regionBlks - i, streamtype, 3);
+                sendPFWithFilter(cur, addresses, regionBlks - i, stream_type, 3);
             }
             pfPageLRUFilterL3.insert(pf_tgt_region, 0);
         }

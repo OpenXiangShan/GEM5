@@ -453,10 +453,10 @@ void
 BaseCache::recvTimingReq(PacketPtr pkt)
 {
 
-    if (pkt->isStorePFtrain()) {
+    if (pkt->isStorePFTrain()) {
         // send store prefetch train request
-        ppStorePFtrain->notify(pkt);
-        // storePFtrain pkt no need to response
+        ppStorePFTrain->notify(pkt);
+        // storePFTrain pkt no need to response
         pendingDelete.reset(pkt);
         return;
     }
@@ -2720,7 +2720,7 @@ BaseCache::regProbePoints()
     ppHit = new ProbePointArg<PacketPtr>(this->getProbeManager(), "Hit");
     ppMiss = new ProbePointArg<PacketPtr>(this->getProbeManager(), "Miss");
     ppFill = new ProbePointArg<PacketPtr>(this->getProbeManager(), "Fill");
-    ppStorePFtrain = new ProbePointArg<PacketPtr>(this->getProbeManager(), "StorePFtrain");
+    ppStorePFTrain = new ProbePointArg<PacketPtr>(this->getProbeManager(), "StorePFtrain");
     ppDataUpdate =
         new ProbePointArg<DataUpdate>(this->getProbeManager(), "Data Update");
 }
@@ -2748,7 +2748,7 @@ bool
 BaseCache::CpuSidePort::tryTiming(PacketPtr pkt)
 {
     if (cache->system->bypassCaches() || pkt->isExpressSnoop()
-        || pkt->isStorePFtrain()) {
+        || pkt->isStorePFTrain()) {
         // always let express snoop packets through even if blocked
         return true;
     } else if (blocked || mustSendRetry) {

@@ -670,7 +670,7 @@ LSQUnit::executeLoad(const DynInstPtr &inst)
 }
 
 bool
-LSQUnit::storePFtrain(int sq_idx)
+LSQUnit::triggerStorePFTrain(int sq_idx)
 {
     auto inst = storeQueue[sq_idx].instruction();
     assert(inst->translationCompleted());
@@ -678,7 +678,7 @@ LSQUnit::storePFtrain(int sq_idx)
     Addr pc = inst->pcState().instAddr();
     // create request
     RequestPtr req =
-        std::make_shared<Request>(vaddr, 1, Request::STORE_PFTRAIN, inst->requestorId(), pc, inst->contextId());
+        std::make_shared<Request>(vaddr, 1, Request::STORE_PF_TRAIN, inst->requestorId(), pc, inst->contextId());
     req->setPaddr(inst->physEffAddr);
 
     // create packet
@@ -747,9 +747,8 @@ LSQUnit::executeStore(const DynInstPtr &store_inst)
         storeQueue[store_idx].canWB() = true;
 
         ++storesToWB;
-    }
-    else {
-        storePFtrain(store_idx);
+    } else {
+        triggerStorePFTrain(store_idx);
     }
 
     return checkViolations(loadIt, store_inst);

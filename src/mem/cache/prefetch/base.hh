@@ -78,13 +78,15 @@ class Base : public ClockedObject
                          const std::string &name, bool _isFill = false,
                          bool _miss = false, bool _pftrain = false)
             : ProbeListenerArgBase(pm, name),
-              parent(_parent), isFill(_isFill), miss(_miss), pftrain(_pftrain) {}
+              parent(_parent), isFill(_isFill), miss(_miss), coreDirectNotify(_pftrain) {}
         void notify(const PacketPtr &pkt) override;
       protected:
-          Base& parent;
-          const bool isFill;
-          const bool miss;
-          const bool pftrain;
+        Base& parent;
+        const bool isFill;
+        const bool miss;
+
+        // Core can directly pass address to train or trigger prefetchers, for example, store prefetch
+        const bool coreDirectNotify;
     };
 
     std::vector<PrefetchListener *> listeners;
@@ -128,7 +130,7 @@ class Base : public ClockedObject
 
         bool pfHit{false};
 
-        bool storePFtrain{ false };
+        bool storePFTrain{ false };
 
       public:
         /**
@@ -199,7 +201,7 @@ class Base : public ClockedObject
         // is come from store prefetch train trigger
         bool isStore() const
         {
-            return storePFtrain;
+            return storePFTrain;
         }
 
         /**
@@ -293,7 +295,7 @@ class Base : public ClockedObject
 
         void setPfFirstHit(bool hit) { pfFirstHit = hit; }
 
-        void setStorePftrain(bool s) { storePFtrain = s; }
+        void setStorePftrain(bool s) { storePFTrain = s; }
 
         /**
          * Constructs a PrefetchInfo using a PacketPtr.
@@ -503,7 +505,7 @@ class Base : public ClockedObject
      */
     void probeNotify(const PacketPtr& pkt, bool miss);
 
-    void storePFtrainNotify(const PacketPtr& pkt);
+    void coreDirectAddrNotify(const PacketPtr& pkt);
 
     /**
      * Add a SimObject and a probe name to listen events from

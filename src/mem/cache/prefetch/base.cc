@@ -69,11 +69,9 @@ Base::PrefetchInfo::PrefetchInfo(PacketPtr pkt, Addr addr, bool miss)
     unsigned int req_size = pkt->req->getSize();
     if (!write && miss) {
         data = nullptr;
-    }
-    else if (pkt->isStorePFtrain()) {
+    } else if (pkt->isStorePFTrain()) {
         data = nullptr;
-    }
-    else {
+    } else {
         data = new uint8_t[req_size];
         Addr offset = pkt->req->getPaddr() - pkt->getAddr();
         std::memcpy(data, &(pkt->getConstPtr<uint8_t>()[offset]), req_size);
@@ -91,11 +89,9 @@ Base::PrefetchInfo::PrefetchInfo(
     unsigned int req_size = pkt->req->getSize();
     if (!write && miss) {
         data = nullptr;
-    }
-    else if (pkt->isStorePFtrain()) {
+    } else if (pkt->isStorePFTrain()) {
         data = nullptr;
-    }
-    else {
+    } else {
         data = new uint8_t[req_size];
         Addr offset = pkt->req->getPaddr() - pkt->getAddr();
         std::memcpy(data, &(pkt->getConstPtr<uint8_t>()[offset]), req_size);
@@ -113,10 +109,9 @@ Base::PrefetchInfo::PrefetchInfo(PrefetchInfo const &pfi, Addr addr)
 void
 Base::PrefetchListener::notify(const PacketPtr &pkt)
 {
-    if (pftrain) {
-        parent.storePFtrainNotify(pkt);
-    }
-    else if (isFill) {
+    if (coreDirectNotify) {
+        parent.coreDirectAddrNotify(pkt);
+    } else if (isFill) {
         parent.notifyFill(pkt);
     } else {
         parent.probeNotify(pkt, miss);
@@ -354,9 +349,9 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
 }
 
 void
-Base::storePFtrainNotify(const PacketPtr& pkt)
+Base::coreDirectAddrNotify(const PacketPtr& pkt)
 {
-    assert(pkt->isStorePFtrain());
+    assert(pkt->isStorePFTrain());
 
     DPRINTF(HWPrefetch, "prefetch train request from store\n");
 
@@ -385,14 +380,10 @@ Base::regProbeListeners()
      */
     if (listeners.empty() && cache != nullptr) {
         ProbeManager* pm(cache->getProbeManager());
-        listeners.push_back(new PrefetchListener(*this, pm, "StorePFtrain", false,
-                                                 true, true));
-        listeners.push_back(new PrefetchListener(*this, pm, "Miss", false,
-                                                true));
-        listeners.push_back(new PrefetchListener(*this, pm, "Fill", true,
-                                                 false));
-        listeners.push_back(new PrefetchListener(*this, pm, "Hit", false,
-                                                 false));
+        listeners.push_back(new PrefetchListener(*this, pm, "StorePFtrain", false, true, true));
+        listeners.push_back(new PrefetchListener(*this, pm, "Miss", false, true, false));
+        listeners.push_back(new PrefetchListener(*this, pm, "Fill", true, false, false));
+        listeners.push_back(new PrefetchListener(*this, pm, "Hit", false, false, false));
     }
 }
 

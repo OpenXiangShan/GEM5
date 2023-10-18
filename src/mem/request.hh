@@ -267,14 +267,14 @@ class Request
             remote TLB Sync request has completed */
         TLBI_EXT_SYNC_COMP          = 0x0000800000000000,
 
+
+        // this request is used for store pf train
+        STORE_PF_TRAIN              = 0x0001000000000000,
         /**
          * These flags are *not* cleared when a Request object is
          * reused (assigned a new address).
          */
-        STICKY_FLAGS = INST_FETCH,
-
-        // this request is used for store pf train
-        STORE_PFTRAIN = 0x1000000000000000
+        STICKY_FLAGS = INST_FETCH
     };
     static const FlagsType STORE_NO_DATA = CACHE_BLOCK_ZERO |
         CLEAN | INVALIDATE;
@@ -1106,7 +1106,7 @@ class Request
         _xsMetadata = xs_metadata;
     }
 
-    bool isStorePFtrain() const { return _flags.isSet(STORE_PFTRAIN); }
+    bool isStorePFTrain() const { return _flags.isSet(STORE_PF_TRAIN); }
     /** Accessor functions for flags. Note that these are for testing
         only; setting flags should be done via setFlags(). */
     bool isUncacheable() const { return _flags.isSet(UNCACHEABLE); }

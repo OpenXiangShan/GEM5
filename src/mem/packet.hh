@@ -147,7 +147,7 @@ class MemCmd
         // Tlb shootdown
         TlbiExtSync,
 
-        Store_PFtrain,
+        StorePFTrain,
         NUM_MEM_CMDS
     };
 
@@ -263,7 +263,7 @@ class MemCmd
         return (cmd == ReadReq || cmd == WriteReq ||
                 cmd == WriteLineReq || cmd == ReadExReq ||
                 cmd == ReadCleanReq || cmd == ReadSharedReq ||
-                cmd == Store_PFtrain);
+                cmd == StorePFTrain);
     }
 
     Command
@@ -595,7 +595,7 @@ class Packet : public Printable
     /// Return the index of this command.
     inline int cmdToIndex() const { return cmd.toInt(); }
 
-    bool isStorePFtrain() const     { return cmd == MemCmd::Store_PFtrain;  }
+    bool isStorePFTrain() const     { return cmd == MemCmd::StorePFTrain;  }
 
     bool isRead() const              { return cmd.isRead(); }
     bool isWrite() const             { return cmd.isWrite(); }
@@ -1059,8 +1059,8 @@ class Packet : public Printable
 
     static MemCmd
     makePFtrainCmd(const RequestPtr& req) {
-        assert(req->isStorePFtrain());
-        return MemCmd::Store_PFtrain;
+        assert(req->isStorePFTrain());
+        return MemCmd::StorePFTrain;
     }
 
     /**
