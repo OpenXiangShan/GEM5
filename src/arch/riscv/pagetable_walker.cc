@@ -302,8 +302,7 @@ Walker::WalkerState::tryCoalesce(ThreadContext *_tc,
     bool addr_match = ((req->getVaddr() >> PageShift) << PageShift) ==
                       ((mainReq->getVaddr() >> PageShift) << PageShift);
 
-
-    if (priv_match && addr_match) {
+    if (priv_match && addr_match && (!finish_default_translate)) {
         // add to list of requestors
         requestors.emplace_back(_tc, req, translation);
         // coalesce
@@ -656,6 +655,7 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
         if (doTLBInsert) {
             if (!functional) {
                 walker->tlb->insert(entry.vaddr, entry, false);
+                finish_default_translate = true;
                 DPRINTF(PageTableWalker,"l1tlb vaddr %#x \n",entry.vaddr);
                 inl2_entry.logBytes = PageShift + (level * LEVEL_BITS);
                 l2_level = level;
@@ -892,6 +892,7 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level,
     inl2_entry.used = false;
     inl2_entry.is_pre = false;
     inl2_entry.pre_sign = false;
+    finish_default_translate = false;
 
 
     Request::Flags flags = Request::PHYSICAL;
