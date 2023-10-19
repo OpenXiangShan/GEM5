@@ -304,13 +304,12 @@ Walker::WalkerState::tryCoalesce(ThreadContext *_tc,
 
 
     if (priv_match && addr_match) {
-        // coalesce
-        DPRINTF(PageTableWalker,
-                "Coalescing walk for %#lx(pc=%#lx) into %#lx(pc=%#lx)\n",
-                req->getVaddr(), req->getPC(), mainReq->getVaddr(),
-                mainReq->getPC());
         // add to list of requestors
         requestors.emplace_back(_tc, req, translation);
+        // coalesce
+        DPRINTF(PageTableWalker,
+                "Coalescing walk for %#lx(pc=%#lx) into %#lx(pc=%#lx), requestors size: %lu, ws: %p\n",
+                req->getVaddr(), req->getPC(), mainReq->getVaddr(), mainReq->getPC(), requestors.size(), this);
         auto &r = requestors.back();
         Fault new_fault = NoFault;
         if (mainFault != NoFault) {
@@ -1082,14 +1081,14 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
 
                     // Let the CPU continue.
                     DPRINTF(PageTableWalker,
-                            "Finished walk for %#lx (pc=%#lx)\n",
-                            r.req->getVaddr(), r.req->getPC());
+                            "Finished walk for %#lx (pc=%#lx), requestors size: %lu, ws: %p\n",
+                            r.req->getVaddr(), r.req->getPC(), requestors.size(), this);
                     r.translation->finish(mainFault, r.req, r.tc, mode);
                 } else {
                     // There was a fault during the walk. Let the CPU know.
                     DPRINTF(PageTableWalker,
-                            "Finished fault walk for %#lx (pc=%#lx)\n",
-                            r.req->getVaddr(), r.req->getPC());
+                            "Finished fault walk for %#lx (pc=%#lx), requestors size: %lu\n",
+                            r.req->getVaddr(), r.req->getPC(), requestors.size());
                     // recreate the fault to ensure that the faulting address
                     // matches
                     r.fault = pageFaultOnRequestor(r);
