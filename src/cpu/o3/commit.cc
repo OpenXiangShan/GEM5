@@ -1392,10 +1392,10 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
 
         DPRINTF(
             Commit,
-            "[tid:%i] [sn:%llu] %s Committing instruction with fault\n",
+            "[tid:%i] [sn:%llu] %s Committing instruction with fault %s\n",
             tid, head_inst->seqNum,
             head_inst->staticInst->disassemble(
-                head_inst->pcState().instAddr()).c_str());
+                head_inst->pcState().instAddr()).c_str(), inst_fault->name());
 
         DPRINTF(
             Faults, "[tid:%i] [sn:%llu] Fault instruction machInst: %lx\n",
@@ -1418,7 +1418,7 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
             head_inst->traceData = NULL;
         }
 
-        if (cpu->difftestEnabled()) {
+        if (cpu->difftestEnabled() && inst_fault->isFromISA()) {
             auto priv = cpu->readMiscRegNoEffect(
                 RiscvISA::MiscRegIndex::MISCREG_PRV, tid);
             RegVal cause = 0;
