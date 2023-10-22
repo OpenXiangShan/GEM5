@@ -69,6 +69,8 @@ Base::PrefetchInfo::PrefetchInfo(PacketPtr pkt, Addr addr, bool miss)
     unsigned int req_size = pkt->req->getSize();
     if (!write && miss) {
         data = nullptr;
+    } else if (pkt->isStorePFTrain()) {
+        data = nullptr;
     } else {
         data = new uint8_t[req_size];
         Addr offset = pkt->req->getPaddr() - pkt->getAddr();
@@ -86,6 +88,8 @@ Base::PrefetchInfo::PrefetchInfo(
 {
     unsigned int req_size = pkt->req->getSize();
     if (!write && miss) {
+        data = nullptr;
+    } else if (pkt->isStorePFTrain()) {
         data = nullptr;
     } else {
         data = new uint8_t[req_size];
@@ -105,7 +109,9 @@ Base::PrefetchInfo::PrefetchInfo(PrefetchInfo const &pfi, Addr addr)
 void
 Base::PrefetchListener::notify(const PacketPtr &pkt)
 {
-    if (isFill) {
+    if (coreDirectNotify) {
+        parent.coreDirectAddrNotify(pkt);
+    } else if (isFill) {
         parent.notifyFill(pkt);
     } else {
         parent.probeNotify(pkt, miss);
@@ -343,6 +349,28 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
 }
 
 void
+Base::coreDirectAddrNotify(const PacketPtr& pkt)
+{
+    assert(pkt->isStorePFTrain());
+
+    DPRINTF(HWPrefetch, "prefetch train request from store\n");
+
+    PrefetchSourceType pf_source = PrefetchSourceType::StoreStream;
+    bool miss = true;
+    PrefetchInfo pfi(pkt, pkt->req->hasVaddr() ? pkt->req->getVaddr() : pkt->req->getPaddr(), miss,
+                     Request::XsMetadata(pf_source));
+    pkt->missOnLatePf = true;
+    pkt->pfSource = pf_source;
+    pfi.setReqAfterSquash(false);
+    pfi.setEverPrefetched(false);
+    pfi.setPfFirstHit(false);
+    pfi.setPfHit(false);
+    pfi.setStorePftrain(true);
+    notify(pkt, pfi);
+}
+
+
+void
 Base::regProbeListeners()
 {
     /**
@@ -351,13 +379,11 @@ Base::regProbeListeners()
      * cache is configured to prefetch on accesses.
      */
     if (listeners.empty() && cache != nullptr) {
-        ProbeManager *pm(cache->getProbeManager());
-        listeners.push_back(new PrefetchListener(*this, pm, "Miss", false,
-                                                true));
-        listeners.push_back(new PrefetchListener(*this, pm, "Fill", true,
-                                                 false));
-        listeners.push_back(new PrefetchListener(*this, pm, "Hit", false,
-                                                 false));
+        ProbeManager* pm(cache->getProbeManager());
+        listeners.push_back(new PrefetchListener(*this, pm, "StorePFtrain", false, true, true));
+        listeners.push_back(new PrefetchListener(*this, pm, "Miss", false, true, false));
+        listeners.push_back(new PrefetchListener(*this, pm, "Fill", true, false, false));
+        listeners.push_back(new PrefetchListener(*this, pm, "Hit", false, false, false));
     }
 }
 

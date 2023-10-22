@@ -154,6 +154,7 @@ namespace RiscvISA
             Addr tlb_size_pte;
             bool open_nextline;
             bool auto_nextline_sign;
+            bool finish_default_translate;
 
           public:
             WalkerState(Walker * _walker, BaseMMU::Translation *_translation,

@@ -146,6 +146,8 @@ class MemCmd
         HTMAbort,
         // Tlb shootdown
         TlbiExtSync,
+
+        StorePFTrain,
         NUM_MEM_CMDS
     };
 
@@ -260,7 +262,8 @@ class MemCmd
     {
         return (cmd == ReadReq || cmd == WriteReq ||
                 cmd == WriteLineReq || cmd == ReadExReq ||
-                cmd == ReadCleanReq || cmd == ReadSharedReq);
+                cmd == ReadCleanReq || cmd == ReadSharedReq ||
+                cmd == StorePFTrain);
     }
 
     Command
@@ -591,6 +594,8 @@ class Packet : public Printable
 
     /// Return the index of this command.
     inline int cmdToIndex() const { return cmd.toInt(); }
+
+    bool isStorePFTrain() const     { return cmd == MemCmd::StorePFTrain;  }
 
     bool isRead() const              { return cmd.isRead(); }
     bool isWrite() const             { return cmd.isWrite(); }
@@ -1052,6 +1057,12 @@ class Packet : public Printable
             return MemCmd::WriteReq;
     }
 
+    static MemCmd
+    makePFtrainCmd(const RequestPtr& req) {
+        assert(req->isStorePFTrain());
+        return MemCmd::StorePFTrain;
+    }
+
     /**
      * Constructor-like methods that return Packets based on Request objects.
      * Fine-tune the MemCmd type if it's not a vanilla read or write.
@@ -1066,6 +1077,11 @@ class Packet : public Printable
     createWrite(const RequestPtr &req)
     {
         return new Packet(req, makeWriteCmd(req));
+    }
+
+    static PacketPtr
+    createPFtrain(const RequestPtr& req) {
+        return new Packet(req, makePFtrainCmd(req));
     }
 
     /**

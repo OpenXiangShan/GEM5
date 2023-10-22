@@ -58,6 +58,7 @@ typedef statistics::Scalar FaultStat;
 class FaultBase
 {
   public:
+    virtual bool isFromISA() const { return true; };
     virtual FaultName name() const = 0;
     virtual void invoke(ThreadContext * tc, const StaticInstPtr &inst=
                         nullStaticInstPtr);
@@ -92,6 +93,7 @@ class SESyscallFault : public FaultBase
 class ReExec : public FaultBase
 {
   public:
+    bool isFromISA() const override { return false; };
     virtual FaultName name() const override { return "Re-execution fault"; }
     void invoke(ThreadContext *tc, const StaticInstPtr &inst=
                 nullStaticInstPtr) override;

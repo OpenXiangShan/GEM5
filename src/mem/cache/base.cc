@@ -452,6 +452,15 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
 void
 BaseCache::recvTimingReq(PacketPtr pkt)
 {
+
+    if (pkt->isStorePFTrain()) {
+        // send store prefetch train request
+        ppStorePFTrain->notify(pkt);
+        // storePFTrain pkt no need to response
+        pendingDelete.reset(pkt);
+        return;
+    }
+
     // anything that is merely forwarded pays for the forward latency and
     // the delay provided by the crossbar
     Tick forward_time = clockEdge(forwardLatency) + pkt->headerDelay;
@@ -2711,6 +2720,7 @@ BaseCache::regProbePoints()
     ppHit = new ProbePointArg<PacketPtr>(this->getProbeManager(), "Hit");
     ppMiss = new ProbePointArg<PacketPtr>(this->getProbeManager(), "Miss");
     ppFill = new ProbePointArg<PacketPtr>(this->getProbeManager(), "Fill");
+    ppStorePFTrain = new ProbePointArg<PacketPtr>(this->getProbeManager(), "StorePFtrain");
     ppDataUpdate =
         new ProbePointArg<DataUpdate>(this->getProbeManager(), "Data Update");
 }
@@ -2737,7 +2747,8 @@ BaseCache::CpuSidePort::recvTimingSnoopResp(PacketPtr pkt)
 bool
 BaseCache::CpuSidePort::tryTiming(PacketPtr pkt)
 {
-    if (cache->system->bypassCaches() || pkt->isExpressSnoop()) {
+    if (cache->system->bypassCaches() || pkt->isExpressSnoop()
+        || pkt->isStorePFTrain()) {
         // always let express snoop packets through even if blocked
         return true;
     } else if (blocked || mustSendRetry) {

@@ -79,6 +79,7 @@ enum PrefetchSourceType
     IPCP,
     IPCP_CS,
     IPCP_CPLX,
+    StoreStream,
     NUM_PF_SOURCES
 };
 
@@ -266,6 +267,9 @@ class Request
             remote TLB Sync request has completed */
         TLBI_EXT_SYNC_COMP          = 0x0000800000000000,
 
+
+        // this request is used for store pf train
+        STORE_PF_TRAIN              = 0x0001000000000000,
         /**
          * These flags are *not* cleared when a Request object is
          * reused (assigned a new address).
@@ -1102,6 +1106,7 @@ class Request
         _xsMetadata = xs_metadata;
     }
 
+    bool isStorePFTrain() const { return _flags.isSet(STORE_PF_TRAIN); }
     /** Accessor functions for flags. Note that these are for testing
         only; setting flags should be done via setFlags(). */
     bool isUncacheable() const { return _flags.isSet(UNCACHEABLE); }
