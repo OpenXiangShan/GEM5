@@ -936,6 +936,7 @@ class Packet : public Printable
             flags.set(VALID_SIZE);
         }
         pfSource = req->getPFSource();
+        pfDepth = req->getPFDepth();
     }
 
     /**
@@ -1591,9 +1592,12 @@ class Packet : public Printable
 
     int pfSource{PrefetchSourceType::PF_NONE};
 
+    int pfDepth = 0;
+
     bool fromBOP() const { return pfSource == PrefetchSourceType::HWP_BOP; }
     
     PrefetchSourceType getPFSource() const { return static_cast<PrefetchSourceType>(pfSource); }
+    int getPFDepth() const { return pfDepth; }
 };
 
 } // namespace gem5

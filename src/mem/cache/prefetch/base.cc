@@ -69,12 +69,15 @@ Base::PrefetchInfo::PrefetchInfo(PacketPtr pkt, Addr addr, bool miss)
     unsigned int req_size = pkt->req->getSize();
     if (!write && miss) {
         data = nullptr;
+        data_ptr = nullptr;
     } else if (pkt->isStorePFTrain()) {
         data = nullptr;
+        data_ptr = nullptr;
     } else {
         data = new uint8_t[req_size];
         Addr offset = pkt->req->getPaddr() - pkt->getAddr();
         std::memcpy(data, &(pkt->getConstPtr<uint8_t>()[offset]), req_size);
+        data_ptr=(uint64_t*)pkt->getPtr<uint64_t>();
     }
 }
 
@@ -89,12 +92,15 @@ Base::PrefetchInfo::PrefetchInfo(
     unsigned int req_size = pkt->req->getSize();
     if (!write && miss) {
         data = nullptr;
+        data_ptr = nullptr;
     } else if (pkt->isStorePFTrain()) {
         data = nullptr;
+        data_ptr = nullptr;
     } else {
         data = new uint8_t[req_size];
         Addr offset = pkt->req->getPaddr() - pkt->getAddr();
         std::memcpy(data, &(pkt->getConstPtr<uint8_t>()[offset]), req_size);
+        data_ptr=(uint64_t*)pkt->getPtr<uint64_t>();
     }
 }
 
@@ -102,7 +108,7 @@ Base::PrefetchInfo::PrefetchInfo(PrefetchInfo const &pfi, Addr addr)
   : address(addr), pc(pfi.pc), requestorId(pfi.requestorId),
     validPC(pfi.validPC), secure(pfi.secure), size(pfi.size),
     write(pfi.write), paddress(pfi.paddress), cacheMiss(pfi.cacheMiss),
-    data(nullptr)
+    data(nullptr),data_ptr(nullptr)
 {
 }
 
@@ -325,16 +331,19 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
     // Verify this access type is observed by prefetcher
     if (observeAccess(pkt, miss)) {
         PrefetchSourceType pf_source;
+        int pf_depth;
         if (!miss) {
             pf_source = cache->getHitBlkXsMetadata(pkt).prefetchSource;
+            pf_depth = cache->getHitBlkXsMetadata(pkt).prefetchDepth;
         } else {  // miss & late
             pf_source = pkt->getPFSource();
+            pf_depth = pkt->getPFDepth();
         }
         if (!useVirtualAddresses || pkt->req->hasVaddr()) {
             // condition1:  useVirtualAddresses && pkt->req->hasVaddr()
             // condition2: !useVirtualAddresses
             PrefetchInfo pfi(pkt, pkt->req->hasVaddr() ? pkt->req->getVaddr() : pkt->req->getPaddr(), miss,
-                             Request::XsMetadata(pf_source));
+                             Request::XsMetadata(pf_source, pf_depth));
             pfi.setReqAfterSquash(squashMark);
             pfi.setEverPrefetched(hasBeenPrefetched(pkt->getAddr(), pkt->isSecure()));
             pfi.setPfFirstHit(!miss && hasBeenPrefetchedAndNotAccessed(pkt->getAddr(), pkt->isSecure()));

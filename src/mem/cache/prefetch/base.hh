@@ -132,7 +132,12 @@ class Base : public ClockedObject
 
         bool storePFTrain{ false };
 
+        uint64_t *data_ptr;
+
       public:
+        uint64_t * getDataPtr()const{
+            return data_ptr;
+        }
         /**
          * Obtains the address value of this Prefetcher address.
          * @return the addres value.

@@ -262,7 +262,7 @@ class CacheBlk : public TaggedEntry
      * Clear the prefetching bit. Either because it was recently used, or due
      * to the block being invalidated.
      */
-    void clearPrefetched() { _prefetched = false; }
+    void clearPrefetched() { _prefetched = false; _xsMeta.prefetchDepth=0;}
 
     /** Marks this blocks as a recently prefetched block. */
     void setPrefetched()

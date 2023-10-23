@@ -1333,6 +1333,10 @@ class BaseCache : public ClockedObject
         }
     }
 
+    CacheBlk* findBlock(Addr addr, bool is_secure){
+        return tags->findBlock(addr, is_secure);
+    }
+
     Request::XsMetadata getHitBlkXsMetadata(PacketPtr pkt)
     {
         CacheBlk *block = tags->findBlock(pkt->getAddr(), pkt->isSecure());
