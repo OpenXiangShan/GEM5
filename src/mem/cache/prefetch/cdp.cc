@@ -33,6 +33,7 @@
 #include "debug/CDPUseful.hh"
 #include "debug/CDPdebug.hh"
 #include "debug/CDPdepth.hh"
+#include "debug/HWPrefetch.hh"
 #include "debug/WorkerPref.hh"
 #include "mem/cache/base.hh"
 #include "mem/packet.hh"
@@ -71,7 +72,6 @@ namespace gem5
             bool miss = pfi.isCacheMiss();
             int page_offset,vpn0,vpn1,vpn2;
             if (!miss&&pfi.getDataPtr()!=nullptr){
-                // std::cout<<"HIT depth:"<<int(pfi.getXsMetadata().prefetchDepth)<<std::endl;
                 DPRINTF(CDPdepth,"HIT Depth: %d\n",pfi.getXsMetadata().prefetchDepth);
                 if (pfi.getXsMetadata().prefetchDepth==4||pfi.getXsMetadata().prefetchDepth==2){
                     uint64_t* test_addrs=pfi.getDataPtr();
@@ -98,10 +98,11 @@ namespace gem5
                     }
                     for (Addr pt_addr:scanPointer(addr,addrs)){
                         CacheBlk* blk=cache->findBlock(pt_addr, is_secure);
-                        AddrPriority addrprio=AddrPriority(pt_addr, 1, PrefetchSourceType::CDP);
+                        AddrPriority addrprio=AddrPriority(pt_addr, 30, PrefetchSourceType::CDP);
                         addrprio.depth=1;
-                        if (blk==nullptr)
+                        if (blk==nullptr){
                             addresses.push_back(addrprio);
+                        }
                         else
                             pt_blks.push(std::pair<CacheBlk*,Addr>(blk,pt_addr));
                     }
@@ -118,10 +119,11 @@ namespace gem5
                                 blk->data + (blkSize / sizeof(uint64_t)));
                             for (Addr pt_addr:scanPointer(addr,addrs)){
                                 CacheBlk* blk2=cache->findBlock(pt_addr, is_secure);
-                                AddrPriority addrprio=AddrPriority(pt_addr, 1, PrefetchSourceType::CDP);
+                                AddrPriority addrprio=AddrPriority(pt_addr, 29+d, PrefetchSourceType::CDP);
                                 addrprio.depth=d;
-                                if (blk2==nullptr)
+                                if (blk2==nullptr){
                                     addresses.push_back(addrprio);
+                                }
                                 else
                                     pt_blks.push(std::pair<CacheBlk*,Addr>(blk2,pt_addr));
                             }
@@ -155,17 +157,10 @@ namespace gem5
 
             float trueAccuracy =
                 (prefetchStats.pfUseful.total()
-                / (prefetchStats.pfIssued.total()
-                    - prefetchStats.pfLate.total()));
+                / (prefetchStats.pfIssued.total()));
             float coverage = prefetchStats.pfUseful.total() /
                 (prefetchStats.pfUseful.total() +
                 prefetchStats.demandMshrMisses.total());
-            // if (trueAccuracy<0.09&&prefetchStats.pfIssued.total()>1000){
-            //     depth_threshold=1;
-            // }
-            // else{
-            //     depth_threshold=3;
-            // }
             uint64_t test_addr = 0;
 
             std::vector<uint64_t> addrs;
@@ -192,6 +187,7 @@ namespace gem5
                         CDP::notifyFill(const PacketPtr &pkt)\n");
                 };
 
+                std::vector<AddrPriority> addresses;
                 for (int of=0;of<8;of++){
                     test_addr=addrs[of];
                     int align_bit = BITS(test_addr, 1, 0);
@@ -206,20 +202,10 @@ namespace gem5
                     vpn0=BITS(test_addr, 20, 12);
                     page_offset=BITS(test_addr, 11, 0);
                     bool flag=true;
-                    bool next_line_enbale=false;
                     if ((check_bit != 0) || (!vpnTable.search(vpn2,vpn1))||
                         (vpn0==0) || (align_bit != 0))
                         flag=false;
-                    if (trueAccuracy<0.1&&filter_bit!=0){
-                        flag=false;
-                    }
-                    if (trueAccuracy>0.2){
-                        next_line_enbale=true;
-                    }
                     Addr test_addr2=Addr(test_addr);
-                    PrefetchInfo pfi(pkt, pkt->req->getVaddr(), false);
-                    size_t max_pfs = getMaxPermittedPrefetches(8);
-                    size_t num_pfs=0;
                     if (flag){
                         if (pf_depth>=depth_threshold){
                             return;
@@ -227,29 +213,53 @@ namespace gem5
                         int next_depth=0;
                         if (pf_depth==0){
                             next_depth=4;
-                            next_line_enbale=false;
                         }
                         else next_depth=pf_depth+1;
-                        PrefetchInfo new_pfi(pfi, blockAddress(test_addr2));
-                        AddrPriority addrprio=AddrPriority(blockAddress(test_addr2), 1, PrefetchSourceType::CDP);
+                        AddrPriority addrprio=AddrPriority(blockAddress(test_addr2), 29+next_depth, PrefetchSourceType::CDP);
                         addrprio.depth=next_depth;
-                        insert(pkt, new_pfi,addrprio);
-                        if ((test_addr2-blockAddress(test_addr2))>0x20){
-                            next_line_enbale=true;
+                        addresses.push_back(addrprio);
+                        addrprio=AddrPriority(blockAddress(test_addr2)+0x40, 29+next_depth-10, PrefetchSourceType::CDP);
+                        addrprio.depth=next_depth;
+                        addresses.push_back(addrprio);
+                    }
+
+
+                }
+                PrefetchInfo pfi(pkt, pkt->req->getVaddr(), false);
+                size_t max_pfs = getMaxPermittedPrefetches(addresses.size());
+
+                // Queue up generated prefetches
+                size_t num_pfs = 0;
+                for (AddrPriority& addr_prio : addresses) {
+
+                    // Block align prefetch address
+                    addr_prio.addr = blockAddress(addr_prio.addr);
+
+                    if (!samePage(addr_prio.addr, pfi.getAddr())) {
+                        statsQueued.pfSpanPage += 1;
+
+                        if (hasBeenPrefetched(pkt->getAddr(), pkt->isSecure())) {
+                            statsQueued.pfUsefulSpanPage += 1;
                         }
-                        if (next_line_enbale){
-                            addrprio=AddrPriority(blockAddress(test_addr2)+0x40, 1, PrefetchSourceType::CDP);
-                            addrprio.depth=next_depth;
-                            PrefetchInfo new_pfi2(pfi, blockAddress(test_addr2)+0x40);
-                            insert(pkt, new_pfi2, addrprio);
-                        }
+                    }
+
+                    bool can_cross_page = (tlb != nullptr);
+                    if (can_cross_page || samePage(addr_prio.addr, pfi.getAddr())) {
+                        PrefetchInfo new_pfi(pfi, addr_prio.addr);
+                        new_pfi.setXsMetadata(Request::XsMetadata(addr_prio.pfSource,addr_prio.depth));
+                        statsQueued.pfIdentified++;
+                        DPRINTF(HWPrefetch, "Found a pf candidate addr: %#x, "
+                                "inserting into prefetch queue.\n", new_pfi.getAddr());
+                        // Create and insert the request
+                        insert(pkt, new_pfi, addr_prio);
                         num_pfs += 1;
                         if (num_pfs == max_pfs) {
                             break;
                         }
+                    } else {
+                        DPRINTF(HWPrefetch, "Ignoring page crossing prefetch.\n");
                     }
                 }
-                DPRINTF(CDPdepth,"Fill Depth: %d\n",pf_depth);
             }
             if (!first_call) {
                 first_call = true;

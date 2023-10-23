@@ -525,7 +525,7 @@ BaseCache::recvTimingReq(PacketPtr pkt)
     if (satisfied) {
         // notify before anything else as later handleTimingReqHit might turn
         // the packet in a response
-        if (blk){
+        if (blk&&!pkt->isWrite()){
             pkt->req->setPFDepth(blk->getXsMetadata().prefetchDepth);
 
         }

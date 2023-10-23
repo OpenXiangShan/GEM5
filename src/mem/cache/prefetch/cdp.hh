@@ -48,10 +48,12 @@
 
 #include "base/sat_counter.hh"
 #include "base/types.hh"
+#include "mem/cache/base.hh"
 #include "mem/cache/prefetch/associative_set.hh"
 #include "mem/cache/prefetch/queued.hh"
 #include "mem/packet.hh"
 #include "params/CDP.hh"
+#include "sim/system.hh"
 
 #ifdef SIG_DEBUG_PRINT
 #define SIG_DP(x) x
@@ -75,9 +77,7 @@ class CDP : public Queued
 
         int depth_threshold;
         /** Byte order used to access the cache */
-        const ByteOrder byteOrder;
         /** Update the RR right table after a prefetch fill */
-        void notifyFill(const PacketPtr& pkt) override;
 
         class VpnTable
         {
@@ -130,6 +130,8 @@ class CDP : public Queued
 
         CDP(const CDPParams &p);
         ~CDP() = default;
+        ByteOrder byteOrder;
+        void notifyFill(const PacketPtr& pkt) override;
         void calculatePrefetch(const PrefetchInfo &pfi,
                                std::vector<AddrPriority> &addresses) override;
         std::vector<Addr> scanPointer(Addr addr, std::vector<uint64_t> addrs){
