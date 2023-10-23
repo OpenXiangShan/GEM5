@@ -180,11 +180,6 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
         }
     }
 
-    if (pfi.isStore()) {
-        return;
-    }
-
-
     if (enableCPLX) {
         ipcp->doLookup(pfi, pf_source);
     }
@@ -208,6 +203,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
                           (pfi.isPfFirstHit() &&
                            (pf_source == PrefetchSourceType::SStride || pf_source == PrefetchSourceType::HWP_BOP ||
                             pf_source == PrefetchSourceType::SPht || pf_source == PrefetchSourceType::IPCP_CPLX));
+        use_stride &= !pfi.isStore();
 
         if (enableNonStrideFilter) {
             use_stride &= !isNonStridePC(pc);
@@ -235,6 +231,8 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
                          pf_source == PrefetchSourceType::SPht || pf_source == PrefetchSourceType::IPCP_CPLX ||
                          pf_source == PrefetchSourceType::SPP));
 
+        use_pht &= !pfi.isStore();
+
         bool trigger_pht = false;
         stride_pf_addr =
             phtPFAhead ? (stride_pf_addr ? stride_pf_addr : stride_pf_addr2) : 0;  // trigger addr sent to pht
@@ -243,7 +241,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             trigger_pht = phtLookup(pfi, addresses, late && pf_source == PrefetchSourceType::SPht, stride_pf_addr);
         }
 
-        bool use_cplx = enableCPLX;
+        bool use_cplx = enableCPLX && !pfi.isStore();
         if (use_cplx) {
             Addr cplx_best_offset = 0;
             bool send_cplx_pf = ipcp->doPrefetch(addresses, cplx_best_offset);
@@ -253,7 +251,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             }
         }
 
-        bool use_spp = enableSPP;
+        bool use_spp = enableSPP && !pfi.isStore();
         if (use_spp) {
             int32_t spp_best_offset = 0;
             bool coverd_by_spp = spp->calculatePrefetch(pfi, addresses, pfBlockLRUFilter, spp_best_offset);
