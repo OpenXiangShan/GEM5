@@ -367,10 +367,6 @@ ROB::doSquash(ThreadID tid)
 
         // printf("[ROB] squash seqNum %ld\n", (*squashIt[tid])->seqNum);
 
-        instList[tid].erase(squashIt[tid]);
-        --numInstsInROB;
-        --threadEntries[tid];
-
         (*squashIt[tid])->clearInROB();
         // head_inst->setCommitted();
         cpu->removeFrontInst(*squashIt[tid]);
@@ -392,7 +388,10 @@ ROB::doSquash(ThreadID tid)
         if ((*squashIt[tid]) == (*tail_thread))
             robTailUpdate = true;
 
-        squashIt[tid]--;
+        auto delIt = squashIt[tid]--;
+        instList[tid].erase(delIt);
+        --numInstsInROB;
+        --threadEntries[tid];
     }
 
 
