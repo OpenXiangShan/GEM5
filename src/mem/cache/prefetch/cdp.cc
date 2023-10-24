@@ -152,6 +152,7 @@ namespace gem5
             // }
             std::vector<uint64_t> addrs;
             if (pkt->hasData()&&pkt->req->hasVaddr()){
+                if (cache->findBlock(pkt->getAddr(), pkt->isSecure())==nullptr)return;
                 Request::XsMetadata pkt_meta = cache->getHitBlkXsMetadata(pkt);
                 size_t found = cache->system->getRequestorName(pkt->req->requestorId()).find("dcache.prefetcher");
                 int pf_depth = pkt_meta.prefetchDepth;
