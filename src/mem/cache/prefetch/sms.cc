@@ -622,8 +622,20 @@ XSCompositePrefetcher::updatePht(XSCompositePrefetcher::ACTEntry *act_entry,
         }
         return;
     }
-    if (signal_update)
-        return;
+    if (signal_update) {
+        if (act_entry->access_cnt > 5 && (!pht_entry)) {
+            pht_entry = pht.findVictim(
+                phtHash(act_entry->pc, act_entry->region_offset));
+            for (uint8_t i = 0; i < 2 * (regionBlks - 1); i++) {
+                pht_entry->hist[i].reset();
+            }
+            pht_entry->pc = act_entry->pc;
+            act_entry->signal_update = true;
+        } else {
+            return;
+        }
+    }
+       // return;
     //}
     if (!pht_entry) {
         pht_entry = pht.findVictim(phtHash(act_entry->pc, act_entry->region_offset));
@@ -645,16 +657,21 @@ XSCompositePrefetcher::updatePht(XSCompositePrefetcher::ACTEntry *act_entry,
             if (accessed) {
                 DPRINTF(XSCompositePrefetcher, "Inc conf for region offset: %d, hist_idx: %d\n", i, hist_idx);
                 //if ((!act_entry->signal_update) || (act_entry->signal_update && repeated_accessed) )
-                if ((!act_entry->signal_update))
+                if (signal_update) {
                     pht_entry->hist.at(hist_idx) += 2;
-                if (re_act_mode)
-                    pht_entry->hist.at(hist_idx) += 2;
+                } else {
+                    if ((!act_entry->signal_update))
+                        pht_entry->hist.at(hist_idx) += 2;
+                    if (re_act_mode)
+                        pht_entry->hist.at(hist_idx) += 2;
+                }
             } else {
-                if (!re_act_mode)
+                if ((!re_act_mode) && (!signal_update))
                     pht_entry->hist.at(hist_idx) -= 2;
             }
         } else {
-            pht_entry->hist.at(hist_idx) -= 1;
+            if (!signal_update)
+                pht_entry->hist.at(hist_idx) -= 1;
         }
     }
     // decr part
@@ -667,12 +684,16 @@ XSCompositePrefetcher::updatePht(XSCompositePrefetcher::ACTEntry *act_entry,
                         "Inc conf for region offset: %d, hist_idx: %d\n", i,
                         j);
                 //if ((!act_entry->signal_update) || (act_entry->signal_update && repeated_acessed))
-                if ((!act_entry->signal_update))
+                if (signal_update) {
                     pht_entry->hist.at(j) += 2;
-                if (re_act_mode)
-                    pht_entry->hist.at(j) += 2;
+                } else {
+                    if ((!act_entry->signal_update))
+                        pht_entry->hist.at(j) += 2;
+                    if (re_act_mode)
+                        pht_entry->hist.at(j) += 2;
+                }
             } else {
-                if (!re_act_mode)
+                if ((!re_act_mode) && (!signal_update))
                     pht_entry->hist.at(j) -= 2;
             }
         } else {
