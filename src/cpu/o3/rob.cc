@@ -367,6 +367,7 @@ ROB::doSquash(ThreadID tid)
 
         // printf("[ROB] squash seqNum %ld\n", (*squashIt[tid])->seqNum);
 
+        auto prevIt = std::prev(squashIt[tid]);
         instList[tid].erase(squashIt[tid]);
         --numInstsInROB;
         --threadEntries[tid];
@@ -392,7 +393,7 @@ ROB::doSquash(ThreadID tid)
         if ((*squashIt[tid]) == (*tail_thread))
             robTailUpdate = true;
 
-        squashIt[tid]--;
+        squashIt[tid] = prevIt;
     }
 
 
