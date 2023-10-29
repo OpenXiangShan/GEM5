@@ -43,6 +43,7 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       enableNonStrideFilter(p.enable_non_stride_filter),
       enableCPLX(p.enable_cplx),
       enableSPP(p.enable_spp),
+      enableTemporal(p.enable_temporal),
       shortStrideThres(p.short_stride_thres)
 {
     assert(largeBOP);
@@ -265,8 +266,11 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             }
         }
 
-        if (is_first_shot && (pfi.isCacheMiss() || pfi.isPfFirstHit() || pf_source == PrefetchSourceType::CMC)) {
-            cmc->doPrefetch(pfi, addresses, late, pf_source, false);
+        bool use_cmc = enableTemporal;
+        if (use_cmc) {
+            if (is_first_shot && (pfi.isCacheMiss() || pfi.isPfFirstHit() || pf_source == PrefetchSourceType::CMC)) {
+                cmc->doPrefetch(pfi, addresses, late, pf_source, false);
+            }
         }
     }
 }

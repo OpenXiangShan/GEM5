@@ -826,6 +826,7 @@ class XSCompositePrefetcher(QueuedPrefetcher):
 
     enable_cplx = Param.Bool(False, "Enable CPLX component")
     enable_spp = Param.Bool(False, "Enable SPP component")
+    enable_temporal = Param.Bool(False, "Enable temporal component")
 
     short_stride_thres = Param.Unsigned(512, "Ignore short strides when there are long strides (Bytes)")
 

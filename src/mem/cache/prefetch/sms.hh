@@ -225,6 +225,7 @@ class XSCompositePrefetcher : public Queued
     const bool enableNonStrideFilter;
     const bool enableCPLX;
     const bool enableSPP;
+    const bool enableTemporal;
     const unsigned shortStrideThres;
 };
 
