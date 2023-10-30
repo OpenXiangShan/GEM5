@@ -40,6 +40,7 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       spp(dynamic_cast<SignaturePath *>(p.spp)),
       ipcp(dynamic_cast<IPCP *>(p.ipcp)),
       cmc(p.cmc),
+      berti(p.berti),
       enableNonStrideFilter(p.enable_non_stride_filter),
       enableCPLX(p.enable_cplx),
       enableSPP(p.enable_spp),
@@ -53,6 +54,7 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
 
     largeBOP->filter = &this->pfBlockLRUFilter;
     smallBOP->filter = &this->pfBlockLRUFilter;
+    berti->filter = &this->pfBlockLRUFilter;
 
     cmc->filter = &this->pfBlockLRUFilter;
 
@@ -189,10 +191,24 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
         ipcp->doLookup(pfi, pf_source);
     }
 
-    if (pf_source != PrefetchSourceType::SStream && !is_active_page) {
 
+    bool use_berti = !pfi.isStore() && !miss_repeat && is_first_shot;
+    if (use_berti) {
+        berti->calculatePrefetch(pfi, addresses, late, pf_source, miss_repeat);
+        uint64_t t = berti->getEvictBestDelta();
+        if (t) {
+            if (t>64) {
+                largeBOP->tryAddOffset(t);
+            }
+            else {
+                smallBOP->tryAddOffset(t);
+            }
+        }
+    }
+
+    if (pf_source != PrefetchSourceType::SStream && !is_active_page) {
         bool use_bop = (pfi.isPfFirstHit() &&
-                        (pf_source == PrefetchSourceType::HWP_BOP || pf_source == PrefetchSourceType::IPCP_CPLX)) ||
+                        (pf_source == PrefetchSourceType::HWP_BOP || pf_source == PrefetchSourceType::IPCP_CPLX || pf_source == PrefetchSourceType::Berti)) ||
                        pfi.isCacheMiss();
         use_bop &= !miss_repeat && is_first_shot; // miss repeat should not be handled by stride
         if (use_bop) {
@@ -207,7 +223,8 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
         bool use_stride = pfi.isCacheMiss() ||
                           (pfi.isPfFirstHit() &&
                            (pf_source == PrefetchSourceType::SStride || pf_source == PrefetchSourceType::HWP_BOP ||
-                            pf_source == PrefetchSourceType::SPht || pf_source == PrefetchSourceType::IPCP_CPLX));
+                            pf_source == PrefetchSourceType::SPht || pf_source == PrefetchSourceType::IPCP_CPLX ||
+                            pf_source == PrefetchSourceType::Berti));
         use_stride &= !pfi.isStore();
 
         if (enableNonStrideFilter) {
@@ -216,25 +233,25 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
                 DPRINTF(XSCompositePrefetcher, "Skip stride lookup for non-stride pc %x\n", pc);
             }
         }
-        Addr stride_pf_addr = 0, stride_pf_addr2 = 0;
+        Addr stride_pf_addr = berti->getBestDelta(), stride_pf_addr2 = 0;
         bool covered_by_stride = false;
-        if (use_stride) {
-            if (is_first_shot) {
-                DPRINTF(XSCompositePrefetcher, "Do stride lookup for first shot acc ...\n");
-                covered_by_stride |= strideLookup(strideUnique, pfi, addresses, late, stride_pf_addr, pf_source,
-                                                  enter_new_region, miss_repeat);
-            } else {
-                DPRINTF(XSCompositePrefetcher, "Do stride lookup for repeat acc ...\n");
-                covered_by_stride |= strideLookup(strideRedundant, pfi, addresses, late, stride_pf_addr2, pf_source,
-                                                  enter_new_region, miss_repeat);
-            }
-        }
+        // if (use_stride) {
+        //     if (is_first_shot) {
+        //         DPRINTF(XSCompositePrefetcher, "Do stride lookup for first shot acc ...\n");
+        //         covered_by_stride |= strideLookup(strideUnique, pfi, addresses, late, stride_pf_addr, pf_source,
+        //                                           enter_new_region, miss_repeat);
+        //     } else {
+        //         DPRINTF(XSCompositePrefetcher, "Do stride lookup for repeat acc ...\n");
+        //         covered_by_stride |= strideLookup(strideRedundant, pfi, addresses, late, stride_pf_addr2, pf_source,
+        //                                           enter_new_region, miss_repeat);
+        //     }
+        // }
 
         bool use_pht = pfi.isCacheMiss() ||
                        (pfi.isPfFirstHit() &&
                         (pf_source == PrefetchSourceType::SStride || pf_source == PrefetchSourceType::HWP_BOP ||
                          pf_source == PrefetchSourceType::SPht || pf_source == PrefetchSourceType::IPCP_CPLX ||
-                         pf_source == PrefetchSourceType::SPP));
+                         pf_source == PrefetchSourceType::SPP || pf_source == PrefetchSourceType::Berti));
 
         use_pht &= !pfi.isStore();
 
@@ -761,6 +778,7 @@ XSCompositePrefetcher::sendPFWithFilter(Addr addr, std::vector<AddrPriority> &ad
 void
 XSCompositePrefetcher::notifyFill(const PacketPtr &pkt)
 {
+    berti->notifyFill(pkt);
     pfBlockLRUFilter.insert(pkt->req->getVaddr(), 0);
 }
 

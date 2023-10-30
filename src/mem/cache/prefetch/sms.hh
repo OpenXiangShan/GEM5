@@ -13,6 +13,7 @@
 #include "base/statistics.hh"
 #include "base/types.hh"
 #include "mem/cache/prefetch/associative_set.hh"
+#include "mem/cache/prefetch/berti.hh"
 #include "mem/cache/prefetch/bop.hh"
 #include "mem/cache/prefetch/ipcp.hh"
 #include "mem/cache/prefetch/queued.hh"
@@ -120,7 +121,7 @@ class XSCompositePrefetcher : public Queued
 
     int depthDownCounter{0};
 
-    const int depthDownPeriod{256};
+    const int depthDownPeriod{128};
 
     void periodStrideDepthDown();
 
@@ -201,7 +202,7 @@ class XSCompositePrefetcher : public Queued
     void notifyFill(const PacketPtr& pkt) override;
 
   private:
-    const unsigned pfFilterSize{128};
+    const unsigned pfFilterSize{256};
     const unsigned pfPageFilterSize{16};
     boost::compute::detail::lru_cache<Addr, Addr> pfBlockLRUFilter;
 
@@ -221,6 +222,7 @@ class XSCompositePrefetcher : public Queued
     IPCP *ipcp;
 
     CMCPrefetcher* cmc;
+    BertiPrefetcher *berti;
 
     const bool enableNonStrideFilter;
     const bool enableCPLX;

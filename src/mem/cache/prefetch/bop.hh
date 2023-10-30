@@ -95,12 +95,16 @@ class BOP : public Queued
                 assert(offset != 0);
                 return offset * depth;
             }
+
+            bool operator==(const int64_t t){
+                return offset == t;
+            }
         };
         std::list<OffsetListEntry> offsetsList;
 
         size_t maxOffsetCount{32};
 
-        std::set<int32_t> offsets;
+        // std::set<int32_t> offsets;
 
         /** In a first implementation of the BO prefetcher, both banks of the
          *  RR were written simultaneously when a prefetched line is inserted

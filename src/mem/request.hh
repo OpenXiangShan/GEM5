@@ -80,6 +80,7 @@ enum PrefetchSourceType
     IPCP,
     IPCP_CS,
     IPCP_CPLX,
+    Berti,
     StoreStream,
     CDP,
     NUM_PF_SOURCES

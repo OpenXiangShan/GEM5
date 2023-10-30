@@ -174,13 +174,13 @@ class BertiPrefetcher(QueuedPrefetcher):
         "Issue pf reqs as many as possible."
     )
     history_table_entries = Param.MemorySize(
-        "64", "Number of history table entries."
+        "16", "Number of history table entries."
     )
-    history_table_assoc = Param.Int(2, "Associativity of the history table.")
+    history_table_assoc = Param.Int(16, "Associativity of the history table.")
     history_table_indexing_policy = Param.BaseIndexingPolicy(
         SetAssociative(
             entry_size=1,
-            assoc=Parent.history_table_assoc,
+            assoc=Parent.history_table_entries,
             size=Parent.history_table_entries
         ),
         "Indexing policy of history table."
@@ -188,21 +188,6 @@ class BertiPrefetcher(QueuedPrefetcher):
     history_table_replacement_policy = Param.BaseReplacementPolicy(
         LRURP(),
         "Replacement policy of history table"
-    )
-
-    table_of_deltas_entries = Param.MemorySize(
-        "16", "Number of table of deltas entries."
-    )
-    table_of_deltas_indexing_policy = Param.BaseIndexingPolicy(
-        SetAssociative(
-            entry_size=1,
-            assoc=Parent.table_of_deltas_entries,
-            size=Parent.table_of_deltas_entries),
-        "Indexing policy of table of deltas"
-    )
-    table_of_deltas_replacement_policy = Param.BaseReplacementPolicy(
-        LRURP(),
-        "Replacement policy of table of deltas"
     )
 
 class StridePrefetcherHashedSetAssociative(SetAssociative):
@@ -539,6 +524,8 @@ class BOPPrefetcher(QueuedPrefetcher):
                 "Cycles to delay a write in the left RR table from the delay \
                 queue")
 
+    autoLearning = Param.Bool(False," auto learn offset")
+
     offsets = VectorParam.Int([72, 75, 80, 81, 90, 96, 100, 108, 120, 125, 128, 135, 144,
                               150, 160, 162, 180, 192, 200, 216, 225, 240, 243, 250, 256], "Predefined offsets")
 
@@ -823,6 +810,7 @@ class XSCompositePrefetcher(QueuedPrefetcher):
     spp = Param.BasePrefetcher(SignaturePathPrefetcher(), "SPP used in composite prefetcher")
     ipcp = Param.IPCPrefetcher(IPCPrefetcher(use_rrf = False), "")
     cmc = Param.CMCPrefetcher(CMCPrefetcher(), "")
+    berti = Param.BertiPrefetcher(BertiPrefetcher(), "")
 
     enable_cplx = Param.Bool(False, "Enable CPLX component")
     enable_spp = Param.Bool(False, "Enable SPP component")
