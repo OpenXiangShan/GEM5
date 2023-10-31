@@ -210,9 +210,9 @@ namespace
 {
 
 /* Not applicable to RISCV */
-RegClass vecPredRegClass(VecPredRegClass, VecPredRegClassName, 1,
+RegClass vecPredRegClass(VecPredRegClass, 1,
         debug::IntRegs);
-RegClass ccRegClass(CCRegClass, CCRegClassName, 0, debug::IntRegs);
+RegClass ccRegClass(CCRegClass, 0, debug::IntRegs);
 
 } // anonymous namespace
 

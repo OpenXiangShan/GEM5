@@ -146,11 +146,7 @@ Decoder::setPCStateWithInstDesc(const bool &compressed, PCStateBase &_next_pc)
     }
 }
 
-Decoder::setVl(uint32_t new_vl)
-{
-    this->vl = vl;
-}
-
+void
 Decoder::setVlAndVtype(uint32_t vl, VTYPE vtype)
 {
     this->machVtype = vtype;

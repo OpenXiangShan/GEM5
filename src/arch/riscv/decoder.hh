@@ -95,12 +95,6 @@ class Decoder : public InstDecoder
     void setPCStateWithInstDesc(const bool &inst,
                                   PCStateBase &pc) override;
 
-    void setVl(uint32_t new_vl);
-
-    void setVtype(uint64_t new_vtype);
-
-    void setVConfigDone();
-
     void setVlAndVtype(uint32_t vl, VTYPE vtype);
 };
 

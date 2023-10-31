@@ -574,10 +574,10 @@ class VMaskMergeMicroInst : public VectorArithMicroInst
         _numSrcRegs = 0;
         _numDestRegs = 0;
 
-        setDestRegIdx(_numDestRegs++, vecRegClass[_dstReg]);
+        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, _dstReg));
         _numTypedDestRegs[VecRegClass]++;
         for (uint8_t i=0; i<_numSrcs; i++) {
-            setSrcRegIdx(_numSrcRegs++, vecRegClass[VecMemInternalReg0 + i]);
+            setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, VecMemInternalReg0 + i));
         }
     }
 
@@ -670,9 +670,9 @@ private:
             &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
         _numSrcRegs = 0;
         _numDestRegs = 0;
-        setDestRegIdx(_numDestRegs++, vecRegClass[VecMemInternalReg0]);
+        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, VecMemInternalReg0));
         _numTypedDestRegs[VecRegClass]++;
-        setSrcRegIdx(_numSrcRegs++, vecRegClass[extMachInst.vs1]);
+        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, extMachInst.vs1));
     }
 
     Fault execute(ExecContext* xc, Trace::InstRecord* traceData) const override
@@ -756,16 +756,16 @@ class VCompressMicroInst : public VectorArithMicroInst
 
         _numSrcRegs = 0;
         _numDestRegs = 0;
-        setDestRegIdx(_numDestRegs++, vecRegClass[extMachInst.vd + _vdIdx]);
+        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, extMachInst.vd + _vdIdx));
         _numTypedDestRegs[VecRegClass]++;
         // vs
-        setSrcRegIdx(_numSrcRegs++, vecRegClass[extMachInst.vs2 + _vsIdx]);
+        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, extMachInst.vs2 + _vsIdx));
         // vcnt
-        setSrcRegIdx(_numSrcRegs++, vecRegClass[VecMemInternalReg0]);
+        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, VecMemInternalReg0));
         // vm
-        setSrcRegIdx(_numSrcRegs++, vecRegClass[extMachInst.vs1]);
+        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, extMachInst.vs1));
         // old_vd
-        setSrcRegIdx(_numSrcRegs++, vecRegClass[extMachInst.vd + _vdIdx]);
+        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, extMachInst.vd + _vdIdx));
     }
 
     Fault execute(ExecContext* xc, Trace::InstRecord* traceData) const override
@@ -842,10 +842,10 @@ class Vcompress_vm : public VectorArithMacroInst
                 &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
         _numSrcRegs = 0;
         _numDestRegs = 0;
-        setDestRegIdx(_numDestRegs++, vecRegClass[_machInst.vd]);
+        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, _machInst.vd));
         _numTypedDestRegs[VecRegClass]++;
-        setSrcRegIdx(_numSrcRegs++, vecRegClass[_machInst.vs1]);
-        setSrcRegIdx(_numSrcRegs++, vecRegClass[_machInst.vs2]);
+        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _machInst.vs1));
+        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _machInst.vs2));
 
         const uint32_t num_microops = vtype_regs_per_group(vtype);
         int32_t tmp_vl = this->vl;

@@ -81,14 +81,10 @@ static inline VecElemRegClassOps<RiscvISA::VecElem>
 static inline TypedRegClassOps<RiscvISA::VecRegContainer> vecRegClassOps;
 
 inline constexpr RegClass vecRegClass =
-    RegClass(VecRegClass, VecRegClassName, NumVecRegs, debug::VecRegs).
-        ops(vecRegClassOps).
-        regType<VecRegContainer>();
+    RegClass(VecRegClass, NumVecRegs, debug::VecRegs);
 inline constexpr RegClass vecElemClass =
-    RegClass(VecElemClass, VecElemClassName, NumVecRegs * NumVecElemPerVecReg,
-            debug::VecRegs).
-        ops(vecRegElemClassOps);
-
+    RegClass(VecElemClass, NumVecRegs * NumVecElemPerVecReg,
+            debug::VecRegs);
 BitUnion32(VTYPE)
     Bitfield<31> vill;
     Bitfield<7, 0> vtype8;
@@ -98,11 +94,6 @@ BitUnion32(VTYPE)
     Bitfield<2, 0> vlmul;
 EndBitUnion(VTYPE)
 
-inline constexpr RegId
-    VecFofTempRegId = vecRegClass[VecMemInternalReg0];
-
-inline constexpr auto
-    &VecFofTempReg = VecFofTempRegId;
 } // namespace RiscvISA
 } // namespace gem5
 

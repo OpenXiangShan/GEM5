@@ -410,7 +410,7 @@ VleffEndMicroInst::VleffEndMicroInst(ExtMachInst extMachInst, uint8_t _numSrcs)
     _numSrcRegs = 0;
     _numDestRegs = 0;
     for (uint8_t i = 0; i < _numSrcs; i++) {
-        setSrcRegIdx(_numSrcRegs++, vecRegClass[VecMemInternalReg0 + i]);
+        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, VecMemInternalReg0 + i));
     }
     this->numSrcs = _numSrcs;
     printf("VleffEndMicroInst numSrc: %hhu, numDestRegs: %hhu\n", this->numSrcs, _numDestRegs);
