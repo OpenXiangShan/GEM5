@@ -72,106 +72,103 @@ class CDP : public Queued
 {
 
 
-        bool first_call = false;
-        Event *transfer_event;
-        std::vector<bool> enable_prf_filter;
-        std::vector<bool> enable_prf_filter2;
-        int depth_threshold;
-        /** Byte order used to access the cache */
-        /** Update the RR right table after a prefetch fill */
+    bool first_call = false;
+    Event *transfer_event;
+    std::vector<bool> enable_prf_filter;
+    std::vector<bool> enable_prf_filter2;
+    int depth_threshold;
+    /** Byte order used to access the cache */
+    /** Update the RR right table after a prefetch fill */
 
-        class VpnTable
+    class VpnTable
+    {
+      public:
+        std::map<int, std::map<int, int>> vpns;
+        std::map<int, std::map<int, int>> hot_vpns;
+        int counter;
+        void add(int vpn2, int vpn1)
         {
-        public:
-            std::map<int,std::map<int,int>> vpns;
-            std::map<int,std::map<int,int>> hot_vpns;
-            int counter;
-            void add(int vpn2, int vpn1){
-                counter++;
-                if (vpns.find(vpn2)==vpns.end()){
-                    std::map<int,int> sub_map;
-                    sub_map[vpn1]=1;
-                    vpns[vpn2]=sub_map;
-                }
-                else if (vpns[vpn2].find(vpn1)==vpns[vpn2].end()){
-                    vpns[vpn2][vpn1]=1;
-                }
-                else{
-                    vpns[vpn2][vpn1]+=1;
-                }
-
+            counter++;
+            if (vpns.find(vpn2) == vpns.end()) {
+                std::map<int, int> sub_map;
+                sub_map[vpn1] = 1;
+                vpns[vpn2] = sub_map;
+            } else if (vpns[vpn2].find(vpn1) == vpns[vpn2].end()) {
+                vpns[vpn2][vpn1] = 1;
+            } else {
+                vpns[vpn2][vpn1] += 1;
             }
-            void resetConfidence()
-            {
-                if (counter<128)return;
-                hot_vpns.clear();
-                for (auto pair2:vpns){
-                    for (auto pair1:pair2.second){
-                        if (pair1.second>counter/16){
-                            hot_vpns[pair2.first][pair1.first]=pair1.second;
-                        }
+        }
+        void resetConfidence()
+        {
+            if (counter < 128)
+                return;
+            hot_vpns.clear();
+            for (auto pair2 : vpns) {
+                for (auto pair1 : pair2.second) {
+                    if (pair1.second > counter / 16) {
+                        hot_vpns[pair2.first][pair1.first] = pair1.second;
                     }
                 }
-                counter = 0;
-                vpns.clear();
             }
-            bool search(int vpn2,int vpn1){
-                if (hot_vpns.find(vpn2)!=hot_vpns.end()&&
-                    hot_vpns[vpn2].find(vpn1)!=hot_vpns[vpn2].end()){
-                    return true;
-                }
-                return false;
+            counter = 0;
+            vpns.clear();
+        }
+        bool search(int vpn2, int vpn1)
+        {
+            if (hot_vpns.find(vpn2) != hot_vpns.end() && hot_vpns[vpn2].find(vpn1) != hot_vpns[vpn2].end()) {
+                return true;
             }
-            VpnTable()
-            {
-                resetConfidence();
-            }
-        }vpnTable ;
-    public:
-        bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType pfSource, int pf_depth);
+            return false;
+        }
+        VpnTable() { resetConfidence(); }
+    } vpnTable;
 
-        CDP(const CDPParams &p);
-        ~CDP() = default;
-        ByteOrder byteOrder;
-        void notifyFill(const PacketPtr& pkt) override;
-        void calculatePrefetch(const PrefetchInfo &pfi,
-                               std::vector<AddrPriority> &addresses) override;
-        std::vector<Addr> scanPointer(Addr addr, std::vector<uint64_t> addrs){
-            uint64_t test_addr;
-            std::vector<Addr> ans;
-            for (int of=0;of<8;of++){
-                test_addr=addrs[of];
-                int align_bit = BITS(test_addr, 1, 0);
-                int filter_bit = BITS(test_addr, 5, 0);
-                int page_offset,vpn0,vpn1,
-                    vpn2,check_bit;
-                check_bit=BITS(test_addr, 63, 39);
-                vpn2=BITS(test_addr, 38, 30);
-                vpn1=BITS(test_addr, 29, 21);
-                vpn0=BITS(test_addr, 20, 12);
-                page_offset=BITS(test_addr, 11, 0);
-                bool flag=true;
-                if ((check_bit != 0) || (!vpnTable.search(vpn2,vpn1))||
-                    (vpn0==0) || (align_bit != 0))
-                    flag=false;
-                Addr test_addr2=Addr(test_addr);
-                if (flag)ans.push_back(test_addr2);
-            }
-            return ans;
-        };
+  public:
+    bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType pfSource,
+                          int pf_depth);
 
-        void transfer();
+    CDP(const CDPParams &p);
+    ~CDP() = default;
+    ByteOrder byteOrder;
+    void notifyFill(const PacketPtr &pkt) override;
+    void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses) override;
+    std::vector<Addr> scanPointer(Addr addr, std::vector<uint64_t> addrs)
+    {
+        uint64_t test_addr;
+        std::vector<Addr> ans;
+        for (int of = 0; of < 8; of++) {
+            test_addr = addrs[of];
+            int align_bit = BITS(test_addr, 1, 0);
+            int filter_bit = BITS(test_addr, 5, 0);
+            int page_offset, vpn0, vpn1, vpn2, check_bit;
+            check_bit = BITS(test_addr, 63, 39);
+            vpn2 = BITS(test_addr, 38, 30);
+            vpn1 = BITS(test_addr, 29, 21);
+            vpn0 = BITS(test_addr, 20, 12);
+            page_offset = BITS(test_addr, 11, 0);
+            bool flag = true;
+            if ((check_bit != 0) || (!vpnTable.search(vpn2, vpn1)) || (vpn0 == 0) || (align_bit != 0))
+                flag = false;
+            Addr test_addr2 = Addr(test_addr);
+            if (flag)
+                ans.push_back(test_addr2);
+        }
+        return ans;
+    };
 
-        void rxHint(BaseMMU::Translation *dpp) override;
-        void rxNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt) override;
+    void transfer();
 
-        bool hasHintsWaiting() override { return !localBuffer.empty(); }
-        boost::compute::detail::lru_cache<Addr, Addr> pfLRUFilter;
-        std::list<DeferredPacket> localBuffer;
-        unsigned depth{4};
+    void rxHint(BaseMMU::Translation *dpp) override;
+    void rxNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt) override;
+
+    bool hasHintsWaiting() override { return !localBuffer.empty(); }
+    boost::compute::detail::lru_cache<Addr, Addr> pfLRUFilter;
+    std::list<DeferredPacket> localBuffer;
+    unsigned depth{4};
 };
 
-} // namespace prefetch
-} // namespace gem5
+}  // namespace prefetch
+}  // namespace gem5
 
 #endif /* __MEM_CACHE_PREFETCH_IPCP_FIRST_LEVEL_HH__ */
