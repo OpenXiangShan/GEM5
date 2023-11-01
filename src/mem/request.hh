@@ -76,6 +76,7 @@ enum PrefetchSourceType
     SPht,
     HWP_BOP,
     SPP,
+    CMC,
     IPCP,
     IPCP_CS,
     IPCP_CPLX,

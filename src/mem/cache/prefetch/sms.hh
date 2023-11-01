@@ -18,6 +18,7 @@
 #include "mem/cache/prefetch/queued.hh"
 #include "mem/cache/prefetch/signature_path.hh"
 #include "mem/cache/prefetch/stride.hh"
+#include "mem/cache/prefetch/cmc.hh"
 #include "mem/cache/tags/tagged_entry.hh"
 #include "mem/packet.hh"
 #include "params/XSCompositePrefetcher.hh"
@@ -219,10 +220,12 @@ class XSCompositePrefetcher : public Queued
 
     IPCP *ipcp;
 
+    CMCPrefetcher* cmc;
 
     const bool enableNonStrideFilter;
     const bool enableCPLX;
     const bool enableSPP;
+    const bool enableTemporal;
     const unsigned shortStrideThres;
 };
 

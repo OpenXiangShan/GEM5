@@ -39,17 +39,22 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       smallBOP(dynamic_cast<BOP *>(p.bop_small)),
       spp(dynamic_cast<SignaturePath *>(p.spp)),
       ipcp(dynamic_cast<IPCP *>(p.ipcp)),
+      cmc(p.cmc),
       enableNonStrideFilter(p.enable_non_stride_filter),
       enableCPLX(p.enable_cplx),
       enableSPP(p.enable_spp),
+      enableTemporal(p.enable_temporal),
       shortStrideThres(p.short_stride_thres)
 {
     assert(largeBOP);
     assert(smallBOP);
     assert(isPowerOf2(regionSize));
 
+
     largeBOP->filter = &this->pfBlockLRUFilter;
     smallBOP->filter = &this->pfBlockLRUFilter;
+
+    cmc->filter = &this->pfBlockLRUFilter;
 
     ipcp->rrf = &this->pfBlockLRUFilter;
 
@@ -258,6 +263,13 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             if (coverd_by_spp && spp_best_offset != 0) {
                 // TODO: Let BOP to adjust depth by itself
                 largeBOP->tryAddOffset(spp_best_offset, late);
+            }
+        }
+
+        bool use_cmc = enableTemporal;
+        if (use_cmc) {
+            if (is_first_shot && (pfi.isCacheMiss() || pfi.isPfFirstHit() || pf_source == PrefetchSourceType::CMC)) {
+                cmc->doPrefetch(pfi, addresses, late, pf_source, false);
             }
         }
     }
