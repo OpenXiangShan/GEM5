@@ -69,12 +69,15 @@ Base::PrefetchInfo::PrefetchInfo(PacketPtr pkt, Addr addr, bool miss)
     unsigned int req_size = pkt->req->getSize();
     if (!write && miss) {
         data = nullptr;
+        data_ptr = nullptr;
     } else if (pkt->isStorePFTrain()) {
         data = nullptr;
+        data_ptr = nullptr;
     } else {
         data = new uint8_t[req_size];
         Addr offset = pkt->req->getPaddr() - pkt->getAddr();
         std::memcpy(data, &(pkt->getConstPtr<uint8_t>()[offset]), req_size);
+        data_ptr=(uint64_t*)pkt->getPtr<uint64_t>();
     }
 }
 
@@ -89,12 +92,15 @@ Base::PrefetchInfo::PrefetchInfo(
     unsigned int req_size = pkt->req->getSize();
     if (!write && miss) {
         data = nullptr;
+        data_ptr = nullptr;
     } else if (pkt->isStorePFTrain()) {
         data = nullptr;
+        data_ptr = nullptr;
     } else {
         data = new uint8_t[req_size];
         Addr offset = pkt->req->getPaddr() - pkt->getAddr();
         std::memcpy(data, &(pkt->getConstPtr<uint8_t>()[offset]), req_size);
+        data_ptr=(uint64_t*)pkt->getPtr<uint64_t>();
     }
 }
 
@@ -102,7 +108,7 @@ Base::PrefetchInfo::PrefetchInfo(PrefetchInfo const &pfi, Addr addr)
   : address(addr), pc(pfi.pc), requestorId(pfi.requestorId),
     validPC(pfi.validPC), secure(pfi.secure), size(pfi.size),
     write(pfi.write), paddress(pfi.paddress), cacheMiss(pfi.cacheMiss),
-    data(nullptr)
+    data(nullptr),data_ptr(nullptr)
 {
 }
 
@@ -315,7 +321,15 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
     if (hasBeenPrefetchedAndNotAccessed(pkt->getAddr(), pkt->isSecure())) {
         usefulPrefetches += 1;
         prefetchStats.pfUseful++;
-        prefetchStats.pfUseful_srcs[cache->getHitBlkXsMetadata(pkt).prefetchSource]++;
+        PrefetchSourceType pf_source = cache->getHitBlkXsMetadata(pkt).prefetchSource;
+        prefetchStats.pfUseful_srcs[pf_source]++;
+        if (hasHintDownStream()){
+            float acc =
+                (prefetchStats.pfUseful_srcs[pf_source].value())
+                / (prefetchStats.pfIssued_srcs[pf_source].value());
+            if ((prefetchStats.pfUseful_srcs[pf_source].value())>100)
+                hintDownStream->rxNotify(acc, pf_source, pkt);
+        }
         if (miss)
             // This case happens when a demand hits on a prefetched line
             // that's not in the requested coherency state.
@@ -325,16 +339,19 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
     // Verify this access type is observed by prefetcher
     if (observeAccess(pkt, miss)) {
         PrefetchSourceType pf_source;
+        int pf_depth;
         if (!miss) {
             pf_source = cache->getHitBlkXsMetadata(pkt).prefetchSource;
+            pf_depth = cache->getHitBlkXsMetadata(pkt).prefetchDepth;
         } else {  // miss & late
             pf_source = pkt->getPFSource();
+            pf_depth = pkt->getPFDepth();
         }
         if (!useVirtualAddresses || pkt->req->hasVaddr()) {
             // condition1:  useVirtualAddresses && pkt->req->hasVaddr()
             // condition2: !useVirtualAddresses
             PrefetchInfo pfi(pkt, pkt->req->hasVaddr() ? pkt->req->getVaddr() : pkt->req->getPaddr(), miss,
-                             Request::XsMetadata(pf_source));
+                             Request::XsMetadata(pf_source, pf_depth));
             pfi.setReqAfterSquash(squashMark);
             pfi.setEverPrefetched(hasBeenPrefetched(pkt->getAddr(), pkt->isSecure()));
             pfi.setPfFirstHit(!miss && hasBeenPrefetchedAndNotAccessed(pkt->getAddr(), pkt->isSecure()));

@@ -48,6 +48,9 @@ class WorkerPrefetcher: public Queued
     };
 
     void rxHint(BaseMMU::Translation *dpp) override;
+    void rxNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt) override {
+        return;
+    }
 
     bool hasHintsWaiting() override { return !localBuffer.empty(); }
 

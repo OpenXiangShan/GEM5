@@ -80,6 +80,7 @@ enum PrefetchSourceType
     IPCP_CS,
     IPCP_CPLX,
     StoreStream,
+    CDP,
     NUM_PF_SOURCES
 };
 
@@ -366,21 +367,31 @@ class Request
         bool validXsMetadata;
         o3::XsDynInstMetaPtr instXsMetadata;
         PrefetchSourceType prefetchSource;
+        int prefetchDepth;
 
         XsMetadata() :
             validXsMetadata(false),
             instXsMetadata(nullptr),
-            prefetchSource(PF_NONE) {}
+            prefetchSource(PF_NONE),
+            prefetchDepth(0) {}
 
         XsMetadata(o3::XsDynInstMetaPtr instMeta) :
             validXsMetadata(true),
             instXsMetadata(instMeta),
-            prefetchSource(PF_NONE) {}
+            prefetchSource(PF_NONE) ,
+            prefetchDepth(0) {}
 
         XsMetadata(PrefetchSourceType pfSource) :
             validXsMetadata(true),
             instXsMetadata(nullptr),
-            prefetchSource(pfSource) {}
+            prefetchSource(pfSource) ,
+            prefetchDepth(0) {}
+
+        XsMetadata(PrefetchSourceType pfSource,int pfDepth) :
+            validXsMetadata(true),
+            instXsMetadata(nullptr),
+            prefetchSource(pfSource) ,
+            prefetchDepth(pfDepth) {}
 
         void invalidate() {
             validXsMetadata = false;
@@ -1212,11 +1223,16 @@ class Request
   protected:
     int pfSource{PrefetchSourceType::PF_NONE};
 
+    int pfDepth = 0;
+
     bool firstReqAfterSquash{false};
 
   public:
     void setPFSource(PrefetchSourceType pf_source) { pfSource = pf_source; }
     PrefetchSourceType getPFSource() const { return static_cast<PrefetchSourceType>(pfSource); }
+
+    void setPFDepth(int pf_depth) { pfDepth = pf_depth; }
+    int getPFDepth() const { return pfDepth; }
 
     bool isFromBOP() const { return pfSource == PrefetchSourceType::HWP_BOP; }
 

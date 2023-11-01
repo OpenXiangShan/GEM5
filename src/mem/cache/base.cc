@@ -381,6 +381,7 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                     (pkt->cmd != MemCmd::HardPFReq)) {
                     pkt->missOnLatePf = true;
                     pkt->pfSource = mshr->getPFSource();
+                    pkt->pfDepth = mshr->getPFDepth();
 
                 } else if (mshr->hasFromCPU()) {
                     // no pkt in mshr originated from cache; all of them are from cpu
@@ -524,6 +525,10 @@ BaseCache::recvTimingReq(PacketPtr pkt)
     if (satisfied) {
         // notify before anything else as later handleTimingReqHit might turn
         // the packet in a response
+        if (blk&&!pkt->isWrite()){
+            pkt->req->setPFDepth(blk->getXsMetadata().prefetchDepth);
+
+        }
         ppHit->notify(pkt);
 
         if (prefetcher && blk && blk->wasPrefetched()) {
@@ -532,6 +537,7 @@ BaseCache::recvTimingReq(PacketPtr pkt)
             // pass the pf source from block to req, it may be used by either load inst or L(n-1) cache
             pkt->req->setPFSource(blk->getXsMetadata().prefetchSource);
             DPRINTF(Cache, "Mark req %p pf source: %i\n", pkt->req, pkt->req->getPFSource());
+            pkt->req->setPFDepth(0);
             blk->clearPrefetched();
         }
 

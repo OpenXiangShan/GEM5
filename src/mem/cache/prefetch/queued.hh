@@ -68,6 +68,7 @@ class Queued : public Base
         bool isBOP;
         int pfahead_host = 0; // which level should process pfahead (e.g 2 is l2...)
         bool pfahead = false;
+        int depth=0;
         PrefetchSourceType pfSource;
         PrefetchCmd(Addr a, int32_t p) : addr(a), priority(p), isVA(true), isBOP(false)
         {
@@ -144,7 +145,7 @@ class Queued : public Base
          * @param pf_desc prefetch info associated to this packet
          */
         void createPkt(Addr paddr, unsigned blk_size, RequestorID requestor_id,
-                       bool tag_prefetch, Tick t, PrefetchSourceType pf_src);
+                       bool tag_prefetch, Tick t, PrefetchSourceType pf_src, int prf_depth);
 
         /**
          * Sets the translation request needed to obtain the physical address
@@ -292,13 +293,15 @@ class Queued : public Base
      */
     size_t getMaxPermittedPrefetches(size_t total) const;
 
-    RequestPtr createPrefetchRequest(Addr addr, PrefetchInfo const &pfi, PacketPtr pkt, PrefetchSourceType pf_src);
+    RequestPtr createPrefetchRequest(Addr addr, PrefetchInfo const &pfi, PacketPtr pkt, PrefetchSourceType pf_src, int prf_depth);
 
     unsigned offloadBandwidth{1};
 
   public:
     void rxHint(BaseMMU::Translation *dpp) override {
         panic("QueuedPrefetcher: rxHint not implemented");
+    }
+    void rxNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt) override {
     }
     void offloadToDownStream() override;
 };

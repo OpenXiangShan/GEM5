@@ -359,6 +359,20 @@ class SignaturePathPrefetcherV2(SignaturePathPrefetcher):
     global_history_register_replacement_policy = Param.BaseReplacementPolicy(
         LRURP(), "Replacement policy of the global history register")
 
+class CDP(QueuedPrefetcher):
+    type = 'CDP'
+    cxx_class = 'gem5::prefetch::CDP'
+    cxx_header = "mem/cache/prefetch/cdp.hh"
+    use_virtual_addresses = True
+    prefetch_on_access = False
+    prefetch_on_pf_hit = True
+    on_read = True
+    on_write = False
+    on_data  = True
+    on_inst  = False
+    use_rrf = Param.Bool(True,"")
+    use_byteorder = Param.Bool(True,"")
+
 class AccessMapPatternMatching(ClockedObject):
     type = 'AccessMapPatternMatching'
     cxx_class = 'gem5::prefetch::AccessMapPatternMatching'

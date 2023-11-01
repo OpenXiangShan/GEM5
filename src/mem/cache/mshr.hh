@@ -186,6 +186,8 @@ class MSHR : public QueueEntry, public Printable
 
         PrefetchSourceType pfSource;
 
+        int pfDepth = 0;
+
         TargetList(const std::string &name = ".unnamedTargetList");
 
         /**
@@ -368,6 +370,11 @@ class MSHR : public QueueEntry, public Printable
 
     PrefetchSourceType getPFSource() const {
         return targets.pfSource;
+    }
+
+
+    int getPFDepth() const {
+        return targets.pfDepth;
     }
 
     /**

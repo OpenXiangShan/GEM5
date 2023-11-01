@@ -132,7 +132,12 @@ class Base : public ClockedObject
 
         bool storePFTrain{ false };
 
+        uint64_t *data_ptr;
+
       public:
+        uint64_t * getDataPtr()const{
+            return data_ptr;
+        }
         /**
          * Obtains the address value of this Prefetcher address.
          * @return the addres value.
@@ -533,6 +538,7 @@ class Base : public ClockedObject
         hintDownStream = down_stream;
     }
     virtual void rxHint(BaseMMU::Translation *dpp) = 0;
+    virtual void rxNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt) = 0;
 
     bool hasHintDownStream() const
     {
