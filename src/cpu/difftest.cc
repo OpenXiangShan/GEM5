@@ -9,7 +9,7 @@
 #include "cpu/nemu_common.hh"
 #include "debug/ValueCommit.hh"
 
-const char *reg_name[DIFFTEST_NR_REG] = {
+const char *reg_name[] = {
     "$0",     "ra",    "sp",       "gp",       "tp",      "t0",
     "t1",     "t2",    "s0",       "s1",       "a0",      "a1",
     "a2",     "a3",    "a4",       "a5",       "a6",      "a7",

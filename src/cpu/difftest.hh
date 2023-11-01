@@ -7,10 +7,16 @@
 #include <cassert>
 #include <cstring>
 
+
+#include "arch/riscv/types.hh"
+
 #ifndef NUM_CORES
 #define NUM_CORES 1
 #endif
-enum { DIFFTEST_TO_DUT, DIFFTEST_TO_REF };
+
+enum
+{
+    DIFFTEST_TO_DUT, DIFFTEST_TO_REF };
 enum { REF_TO_DUT, DUT_TO_REF };
 enum { REF_TO_DIFFTEST, DUT_TO_DIFFTEST };
 
@@ -23,30 +29,86 @@ typedef uint16_t ioaddr_t;
 
 #include "nemu_macro.hh"
 
-// 0~31: GPRs, 32~63 FPRs
-enum
+
+#define VENUM64 (gem5::RiscvISA::VLEN/64)
+#define VENUM32 (gem5::RiscvISA::VLEN/32)
+#define VENUM16 (gem5::RiscvISA::VLEN/16)
+#define VENUM8 (gem5::RiscvISA::VLEN/8)
+
+
+
+typedef struct
 {
-    DIFFTEST_THIS_PC = 64,
-    DIFFTEST_MSTATUS,
-    DIFFTEST_MCAUSE,
-    DIFFTEST_MEPC,
-    DIFFTEST_SSTATUS,
-    DIFFTEST_SCAUSE,
-    DIFFTEST_SEPC,
-    DIFFTEST_SATP,
-    DIFFTEST_MIP,
-    DIFFTEST_MIE,
-    DIFFTEST_MSCRATCH,
-    DIFFTEST_SSCRATCH,
-    DIFFTEST_MIDELEG,
-    DIFFTEST_MEDELEG,
-    DIFFTEST_MTVAL,
-    DIFFTEST_STVAL,
-    DIFFTEST_MTVEC,
-    DIFFTEST_STVEC,
-    DIFFTEST_MODE,
-    DIFFTEST_NR_REG
-};
+    union
+    {
+      uint64_t _64;
+    } gpr[32];
+
+    union
+    {
+      uint64_t _64;
+    } fpr[32];
+
+    // shadow CSRs for difftest
+    uint64_t mode;
+    uint64_t mstatus, sstatus;
+    uint64_t mepc, sepc;
+    uint64_t mtval, stval;
+    uint64_t mtvec, stvec;
+    uint64_t mcause, scause;
+    uint64_t satp;
+    uint64_t mip, mie;
+    uint64_t mscratch, sscratch;
+    uint64_t mideleg, medeleg;
+    uint64_t pc;
+
+    //vector
+    union
+    {
+      uint64_t _64[VENUM64];
+      uint32_t _32[VENUM32];
+      uint16_t _16[VENUM16];
+      uint8_t  _8[VENUM8];
+    } vr[32];
+
+    uint64_t vstart;
+    uint64_t vxsat, vxrm, vcsr;
+    uint64_t vl, vtype, vlenb;
+
+
+    uint64_t& operator[](int x) {
+        assert(x<64);
+        return ((uint64_t*)this)[x];
+    }
+
+} riscv64_CPU_regfile;
+
+
+// 0~31: GPRs, 32~63 FPRs
+//
+// enum
+// {
+//     DIFFTEST_THIS_PC = 64,
+//     DIFFTEST_MSTATUS,
+//     DIFFTEST_MCAUSE,
+//     DIFFTEST_MEPC,
+//     DIFFTEST_SSTATUS,
+//     DIFFTEST_SCAUSE,
+//     DIFFTEST_SEPC,
+//     DIFFTEST_SATP,
+//     DIFFTEST_MIP,
+//     DIFFTEST_MIE,
+//     DIFFTEST_MSCRATCH,
+//     DIFFTEST_SSCRATCH,
+//     DIFFTEST_MIDELEG,
+//     DIFFTEST_MEDELEG,
+//     DIFFTEST_MTVAL,
+//     DIFFTEST_STVAL,
+//     DIFFTEST_MTVEC,
+//     DIFFTEST_STVEC,
+//     DIFFTEST_MODE,
+//     DIFFTEST_NR_REG
+// };
 
 
 struct SyncState
@@ -76,8 +138,8 @@ struct DiffState
 {
     // Regs and mode for single step difftest
     int commit;
-    uint64_t *nemu_reg;
-    uint64_t *gem5_reg;
+    riscv64_CPU_regfile *nemu_reg;
+    riscv64_CPU_regfile *gem5_reg;
     uint32_t this_inst;
     int skip;
     int isRVC;

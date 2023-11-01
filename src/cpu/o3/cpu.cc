@@ -1613,6 +1613,9 @@ CPU::readGem5Regs()
     for (int i = 0; i < 32; i++) {
         diffAllStates->gem5RegFile[i] = readArchIntReg(i, 0);
         diffAllStates->gem5RegFile[i + 32] = readArchFloatReg(i, 0);
+        // set vec regfile
+        cpuStats.vecRegfileReads++;
+        regFile.getReg(commitRenameMap[0].lookup(RegId(VecRegClass, 0)), &diffAllStates->gem5RegFile.vr[i]);
     }
 }
 

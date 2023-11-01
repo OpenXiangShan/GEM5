@@ -200,8 +200,10 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
 
     diffAllStates = std::make_shared<DiffAllStates>();
     if (enableDifftest) {
+        // 651 bytes
+        std::cout<< sizeof(diffAllStates->referenceRegFile) <<std::endl;
         assert(params().difftest_ref_so.length() > 2);
-        diffAllStates->diff.nemu_reg = diffAllStates->referenceRegFile;
+        diffAllStates->diff.nemu_reg = &(diffAllStates->referenceRegFile);
         diffAllStates->diff.nemu_this_pc = 0x80000000u;
         diffAllStates->diff.cpu_id = params().cpu_id;
         warn("cpu_id set to %d\n", params().cpu_id);
@@ -210,7 +212,7 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
             params().nemuSDimg.size() && params().nemuSDCptBin.size());
         warn("Difftest is enabled with ref so: %s.\n",
              params().difftest_ref_so.c_str());
-        diffAllStates->proxy->regcpy(diffAllStates->gem5RegFile, REF_TO_DUT);
+        diffAllStates->proxy->regcpy(&(diffAllStates->gem5RegFile), REF_TO_DUT);
         diffAllStates->diff.dynamic_config.ignore_illegal_mem_access = false;
         diffAllStates->diff.dynamic_config.debug_difftest = false;
         diffAllStates->proxy->update_config(&diffAllStates->diff.dynamic_config);
@@ -851,7 +853,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
 
     if (diffAllStates->diff.will_handle_intr) {
         diffAllStates->proxy->regcpy(diffAllStates->diff.nemu_reg, REF_TO_DIFFTEST);
-        diffAllStates->diff.nemu_this_pc = diffAllStates->diff.nemu_reg[DIFFTEST_THIS_PC];
+        diffAllStates->diff.nemu_this_pc = diffAllStates->diff.nemu_reg->pc;
         diffAllStates->diff.will_handle_intr = false;
     }
     // difftest step start
@@ -859,7 +861,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
     diffAllStates->proxy->exec(1);
     diffAllStates->proxy->regcpy(diffAllStates->diff.nemu_reg, REF_TO_DIFFTEST);
 
-    uint64_t next_pc = diffAllStates->diff.nemu_reg[DIFFTEST_THIS_PC];
+    uint64_t next_pc = diffAllStates->diff.nemu_reg->pc;
 
     // replace with "this pc" for checking
     diffAllStates->diff.nemu_commit_inst_pc = diffAllStates->diff.nemu_this_pc;
@@ -917,7 +919,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             diffInfo.inst->disassemble(diffInfo.pc->instAddr()));
     auto machInst = dynamic_cast<RiscvISA::RiscvStaticInst &>(*diffInfo.inst).machInst;
     DPRINTF(Diff, "MachInst: %#lx\n", machInst);
-    if (diffInfo.inst->numDestRegs() > 0) {
+    if (diffInfo.inst->numDestRegs() > 0 && !diffInfo.inst->isVector()) {
         const auto &dest = diffInfo.inst->destRegIdx(0);
         auto dest_tag = dest.index() + dest.isFloatReg() * 32;
 
@@ -948,7 +950,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                             " ignore it\n",
                             "mmio", diffInfo.physEffAddr);
                     diffAllStates->referenceRegFile[dest_tag] = gem5_val;
-                    diffAllStates->proxy->regcpy(diffAllStates->referenceRegFile, DUT_TO_REF);
+                    diffAllStates->proxy->regcpy(&(diffAllStates->referenceRegFile), DUT_TO_REF);
                 } else {
                     for (int i = 0; i < diffInfo.inst->numSrcRegs(); i++) {
                         const auto &src = diffInfo.inst->srcRegIdx(i);
@@ -963,7 +965,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                             skipCSR = true;
                             DPRINTF(Diff, "This is an csr instruction, skip!\n");
                             diffAllStates->referenceRegFile[dest_tag] = gem5_val;
-                            diffAllStates->proxy->regcpy(diffAllStates->referenceRegFile, DUT_TO_REF);
+                            diffAllStates->proxy->regcpy(&(diffAllStates->referenceRegFile), DUT_TO_REF);
                             break;
                         }
                     }
@@ -985,7 +987,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             auto gem5_val = readMiscRegNoEffect(
                 RiscvISA::MiscRegIndex::MISCREG_STATUS, tid);
             // readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_STATUS, 0);
-            auto ref_val = diffAllStates->referenceRegFile[DIFFTEST_MSTATUS];
+            auto ref_val = diffAllStates->referenceRegFile.mstatus;
             if (gem5_val != ref_val) {
                 warn("Inst [sn:%lli] pc:%s\n", seq, diffInfo.pc);
                 warn("Diff at %s Ref value: %#lx, GEM5 value: %#lx\n",
@@ -996,7 +998,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             //stval
             gem5_val = readMiscRegNoEffect(
                 RiscvISA::MiscRegIndex::MISCREG_STVAL, tid);
-            ref_val = diffAllStates->referenceRegFile[DIFFTEST_STVAL];
+            ref_val = diffAllStates->referenceRegFile.stval;
             if (gem5_val != ref_val) {
                 warn("Inst [sn:%lli] pc:%s\n", seq, diffInfo.pc);
                 warn("Diff at %s Ref value: %#lx, GEM5 value: %#lx\n", "stval",
@@ -1009,7 +1011,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             gem5_val = readMiscRegNoEffect(
                 RiscvISA::MiscRegIndex::MISCREG_MCAUSE, tid);
             // readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_MCAUSE, 0);
-            ref_val = diffAllStates->referenceRegFile[DIFFTEST_MCAUSE];
+            ref_val = diffAllStates->referenceRegFile.mcause;
             if (gem5_val != ref_val) {
                 warn("Inst [sn:%lli] pc:%s\n", seq, diffInfo.pc);
                 warn("Diff at %s Ref value: %#lx, GEM5 value: %#lx\n",
@@ -1021,7 +1023,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             gem5_val =
                 readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_SATP, tid);
             // readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_SATP, 0);
-            ref_val = diffAllStates->referenceRegFile[DIFFTEST_SATP];
+            ref_val = diffAllStates->referenceRegFile.satp;
             if (gem5_val != ref_val) {
                 warn("Inst [sn:%lli] pc:%s\n", seq, diffInfo.pc);
                 warn("Diff at %s Ref value: %#lx, GEM5 value: %#lx\n", "satp",
@@ -1033,7 +1035,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             // mie
             gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_IE, tid);
             // readMiscReg(RiscvISA::MiscRegIndex::MISCREG_IE, 0);
-            ref_val = diffAllStates->referenceRegFile[DIFFTEST_MIE];
+            ref_val = diffAllStates->referenceRegFile.mie;
             if (gem5_val != ref_val) {
                 warn("Inst [sn:%lli] pc:%s\n", seq, diffInfo.pc);
                 warn("Diff at %s Ref value: %#lx, GEM5 value: %#lx\n", "mie",
@@ -1044,7 +1046,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             // mip
             gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_IP, tid);
             // readMiscReg(RiscvISA::MiscRegIndex::MISCREG_IP, 0);
-            ref_val = diffAllStates->referenceRegFile[DIFFTEST_MIP];
+            ref_val = diffAllStates->referenceRegFile.mip;
             if (gem5_val != ref_val) {
                 DPRINTF(Diff, "Inst [sn:%lli] pc:%s\n", seq, diffInfo.pc);
                 DPRINTF(Diff, "Diff at %s Ref value: %#lx, GEM5 value: %#lx\n",
@@ -1080,14 +1082,14 @@ BaseCPU::difftestStep(ThreadID tid, InstSeqNum seq)
         if (!diffAllStates->hasCommit && diffInfo.pc->instAddr() == 0x80000000u) {
             diffAllStates->hasCommit = true;
             readGem5Regs();
-            diffAllStates->gem5RegFile[DIFFTEST_THIS_PC] = diffInfo.pc->instAddr();
+            diffAllStates->gem5RegFile.pc = diffInfo.pc->instAddr();
             fprintf(stderr, "Will start memcpy to NEMU from %#lx, size=%lu\n",
                     (uint64_t)pmemStart, pmemSize);
             diffAllStates->proxy->memcpy(
                 0x80000000u, pmemStart + pmemSize * diffAllStates->diff.cpu_id,
                 pmemSize, DUT_TO_REF);
             fprintf(stderr, "Will start regcpy to NEMU\n");
-            diffAllStates->proxy->regcpy(diffAllStates->gem5RegFile, DUT_TO_REF);
+            diffAllStates->proxy->regcpy(&(diffAllStates->gem5RegFile), DUT_TO_REF);
         }
 
         if (diffAllStates->scFenceInFlight) {
@@ -1181,7 +1183,7 @@ BaseCPU::setExceptionGuideExecInfo(uint64_t exception_num, uint64_t mtval,
     diffAllStates->proxy->guided_exec(&(diffAllStates->diff.guide));
 
     diffAllStates->proxy->regcpy(diffAllStates->diff.nemu_reg, REF_TO_DIFFTEST);
-    diffAllStates->diff.nemu_this_pc = diffAllStates->diff.nemu_reg[DIFFTEST_THIS_PC];
+    diffAllStates->diff.nemu_this_pc = diffAllStates->diff.nemu_reg->pc;
     DPRINTF(Diff, "After guided exec on NEMU, new PC: %#lx\n", diffAllStates->diff.nemu_this_pc);
 
     // diffAllStates->diff.dynamic_config.debug_difftest = false;

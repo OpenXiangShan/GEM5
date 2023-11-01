@@ -272,12 +272,11 @@ void ISA::clear()
     miscRegFile[MISCREG_IMPID] = 0;
     if (FullSystem) {
         // Xiangshan assume machine boots with FS off
-        miscRegFile[MISCREG_STATUS] = (2ULL << UXL_OFFSET) | (2ULL << SXL_OFFSET) |
-                                    (1ULL << VS_OFFSET);
+        miscRegFile[MISCREG_STATUS] = (2ULL << UXL_OFFSET) | (2ULL << SXL_OFFSET);
     } else {
         // SE assumes process starts with FS on
         miscRegFile[MISCREG_STATUS] = (2ULL << UXL_OFFSET) | (2ULL << SXL_OFFSET) |
-                                    (1ULL << FS_OFFSET) | (1ULL << VS_OFFSET);
+                                    (1ULL << FS_OFFSET);
     }
     miscRegFile[MISCREG_MCOUNTEREN] = 0x7;
     miscRegFile[MISCREG_SCOUNTEREN] = 0x7;

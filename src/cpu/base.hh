@@ -109,8 +109,8 @@ class CPUProgressEvent : public Event
 
 struct DiffAllStates
 {
-    uint64_t gem5RegFile[DIFFTEST_NR_REG];
-    uint64_t referenceRegFile[DIFFTEST_NR_REG];
+    riscv64_CPU_regfile gem5RegFile;
+    riscv64_CPU_regfile referenceRegFile;
     DiffState diff;
     NemuProxy *proxy;
 
