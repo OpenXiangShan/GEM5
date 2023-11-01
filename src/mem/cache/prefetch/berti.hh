@@ -29,7 +29,9 @@ namespace prefetch
 class BertiPrefetcher : public Queued
 {
 
-    int maxHistorySize = 12;
+    int maxAddrListSize = 6;
+    int maxDeltaListSize = 4;
+    int maxDeltafound = 4;
 
   protected:
     struct HistoryInfo
@@ -42,7 +44,7 @@ class BertiPrefetcher : public Queued
     struct DeltaInfo
     {
         uint8_t coverageCounter = 0;
-        int64_t delta = 0;
+        int delta = 0;
         DeltaStatus status = NO_PREF;
     };
 
@@ -51,7 +53,7 @@ class BertiPrefetcher : public Queued
       public:
         std::vector<DeltaInfo> deltas;
         uint8_t counter = 0;
-        int64_t best_delta = 0;
+        int best_delta = 0;
         DeltaStatus best_status = NO_PREF;
 
         void resetConfidence(bool reset_status)
@@ -87,8 +89,8 @@ class BertiPrefetcher : public Queued
             }
         }
 
-        TableOfDeltasEntry() {
-            deltas.resize(12);
+        TableOfDeltasEntry(int size) {
+            deltas.resize(size);
         }
     };
 
@@ -98,7 +100,9 @@ class BertiPrefetcher : public Queued
         bool hysteresis = false;
         Addr pc;
         /** FIFO of demand miss history. */
-        std::vector<HistoryInfo> history;
+        std::list<HistoryInfo> history;
+
+        HistoryTableEntry(int deltaTableSize) : TableOfDeltasEntry(deltaTableSize) {}
     };
 
     AssociativeSet<HistoryTableEntry> historyTable;
@@ -110,16 +114,6 @@ class BertiPrefetcher : public Queued
     struct BertiStats : public statistics::Group
     {
         BertiStats(statistics::Group *parent);
-        // train
-        statistics::Scalar num_train_hit;
-        statistics::Scalar num_train_miss;
-        statistics::SparseHistogram train_pc;
-        // fill
-        statistics::Scalar num_fill_prefetch;
-        statistics::Scalar num_fill_miss;
-        statistics::SparseHistogram fill_pc;
-        statistics::SparseHistogram fill_latency;
-        // prefetch
         statistics::SparseHistogram pf_delta;
     } statsBerti;
 
@@ -147,8 +141,8 @@ class BertiPrefetcher : public Queued
         return (pc>>1);
     }
 
-    uint64_t temp_bestDelta;
-    uint64_t evict_bestDelta;
+    int temp_bestDelta;
+    int evict_bestDelta;
 
   public:
 
@@ -164,9 +158,9 @@ class BertiPrefetcher : public Queued
     void calculatePrefetch(const PrefetchInfo &pfi,
                            std::vector<AddrPriority> &addresses, bool late, PrefetchSourceType pf_source, bool miss_repeat) override;
 
-    uint64_t getEvictBestDelta() { return evict_bestDelta; }
+    int getEvictBestDelta() { return evict_bestDelta; }
 
-    uint64_t getBestDelta() { return temp_bestDelta; }
+    int getBestDelta() { return temp_bestDelta; }
 
     bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType src);
 

@@ -192,20 +192,6 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
     }
 
 
-    bool use_berti = !pfi.isStore() && !miss_repeat && is_first_shot;
-    if (use_berti) {
-        berti->calculatePrefetch(pfi, addresses, late, pf_source, miss_repeat);
-        uint64_t t = berti->getEvictBestDelta();
-        if (t) {
-            if (t>64) {
-                largeBOP->tryAddOffset(t);
-            }
-            else {
-                smallBOP->tryAddOffset(t);
-            }
-        }
-    }
-
     if (pf_source != PrefetchSourceType::SStream && !is_active_page) {
         bool use_bop = (pfi.isPfFirstHit() &&
                         (pf_source == PrefetchSourceType::HWP_BOP || pf_source == PrefetchSourceType::IPCP_CPLX || pf_source == PrefetchSourceType::Berti)) ||
@@ -233,19 +219,23 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
                 DPRINTF(XSCompositePrefetcher, "Skip stride lookup for non-stride pc %x\n", pc);
             }
         }
-        Addr stride_pf_addr = berti->getBestDelta(), stride_pf_addr2 = 0;
+        Addr stride_pf_addr = 0, stride_pf_addr2 = 0;
         bool covered_by_stride = false;
-        // if (use_stride) {
-        //     if (is_first_shot) {
-        //         DPRINTF(XSCompositePrefetcher, "Do stride lookup for first shot acc ...\n");
-        //         covered_by_stride |= strideLookup(strideUnique, pfi, addresses, late, stride_pf_addr, pf_source,
-        //                                           enter_new_region, miss_repeat);
-        //     } else {
-        //         DPRINTF(XSCompositePrefetcher, "Do stride lookup for repeat acc ...\n");
-        //         covered_by_stride |= strideLookup(strideRedundant, pfi, addresses, late, stride_pf_addr2, pf_source,
-        //                                           enter_new_region, miss_repeat);
-        //     }
-        // }
+
+        bool use_berti = !pfi.isStore() && !miss_repeat && is_first_shot;
+        if (use_berti) {
+            berti->calculatePrefetch(pfi, addresses, late, pf_source, miss_repeat);
+            stride_pf_addr = berti->getBestDelta();
+            int t = berti->getEvictBestDelta();
+            if (t) {
+                if (abs(t)>64) {
+                    largeBOP->tryAddOffset(t);
+                }
+                else {
+                    smallBOP->tryAddOffset(t);
+                }
+            }
+        }
 
         bool use_pht = pfi.isCacheMiss() ||
                        (pfi.isPfFirstHit() &&
