@@ -29,9 +29,9 @@ namespace prefetch
 class BertiPrefetcher : public Queued
 {
 
-    int maxAddrListSize = 6;
-    int maxDeltaListSize = 4;
-    int maxDeltafound = 4;
+    int maxAddrListSize;
+    int maxDeltaListSize;
+    int maxDeltafound;
 
   protected:
     struct HistoryInfo

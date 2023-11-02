@@ -21,6 +21,9 @@ BertiPrefetcher::BertiStats::BertiStats(statistics::Group *parent)
 
 BertiPrefetcher::BertiPrefetcher(const BertiPrefetcherParams &p)
     : Queued(p),
+      maxAddrListSize(p.addrlist_size),
+      maxDeltaListSize(p.deltalist_size),
+      maxDeltafound(p.max_deltafound),
       historyTable(p.history_table_assoc, p.history_table_entries,
                    p.history_table_indexing_policy,
                    p.history_table_replacement_policy,

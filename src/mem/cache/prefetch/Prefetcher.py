@@ -169,6 +169,12 @@ class BertiPrefetcher(QueuedPrefetcher):
     on_data  = True
     on_inst  = False
 
+    addrlist_size = Param.Int(6, "The size of address list")
+
+    deltalist_size = Param.Int(4, "The size of delta list")
+
+    max_deltafound = Param.Int(4, "The maximum number of delta can be found")
+
     aggressive_pf = Param.Bool(
         True,
         "Issue pf reqs as many as possible."
