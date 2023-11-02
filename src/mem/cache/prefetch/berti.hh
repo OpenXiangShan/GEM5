@@ -6,6 +6,7 @@
 #define __MEM_CACHE_PREFETCH_BERTI_HH__
 
 #include <vector>
+#include <boost/compute/detail/lru_cache.hpp>
 
 #include "base/statistics.hh"
 #include "base/types.hh"
@@ -27,6 +28,11 @@ namespace prefetch
 
 class BertiPrefetcher : public Queued
 {
+
+    int maxAddrListSize;
+    int maxDeltaListSize;
+    int maxDeltafound;
+
   protected:
     struct HistoryInfo
     {
@@ -34,32 +40,21 @@ class BertiPrefetcher : public Queued
         Cycles timestamp;
     };
 
-    class HistoryTableEntry : public TaggedEntry
-    {
-      public:
-        /** FIFO of demand miss history. */
-        std::vector<HistoryInfo> history;
-
-        HistoryTableEntry() { history = std::vector<HistoryInfo>(); }
-    };
-
-    AssociativeSet<HistoryTableEntry> historyTable;
-
     enum DeltaStatus { L1_PREF, L2_PREF, NO_PREF };
-
     struct DeltaInfo
     {
-        uint8_t coverageCounter;
-        int64_t delta;
-        DeltaStatus status;
+        uint8_t coverageCounter = 0;
+        int delta = 0;
+        DeltaStatus status = NO_PREF;
     };
 
-    class TableOfDeltasEntry : public TaggedEntry
+    class TableOfDeltasEntry
     {
       public:
         std::vector<DeltaInfo> deltas;
-        uint8_t counter;
-        int64_t best_delta;
+        uint8_t counter = 0;
+        int best_delta = 0;
+        DeltaStatus best_status = NO_PREF;
 
         void resetConfidence(bool reset_status)
         {
@@ -72,6 +67,7 @@ class BertiPrefetcher : public Queued
             }
             if (reset_status) {
                 best_delta = 0;
+                best_status = NO_PREF;
             }
         }
 
@@ -79,64 +75,57 @@ class BertiPrefetcher : public Queued
         {
             uint8_t min_cov = 0;
             for (auto &info : deltas) {
-                info.status = info.coverageCounter >=
-                                      counter * 0.35 ? L2_PREF : NO_PREF;
-                if (info.status == L2_PREF && info.coverageCounter > min_cov) {
+                info.status = (info.coverageCounter >= 3) ? L2_PREF : NO_PREF;
+                info.status = (info.coverageCounter >= 6) ? L1_PREF : info.status;
+                if (info.status != NO_PREF && info.coverageCounter > min_cov) {
                     min_cov = info.coverageCounter;
                     best_delta = info.delta;
+                    best_status = info.status;
                 }
             }
             if (min_cov == 0) {
                 best_delta = 0;
+                best_status = NO_PREF;
             }
         }
 
-        TableOfDeltasEntry()
-        {
-            deltas = std::vector<DeltaInfo>(16);
-            resetConfidence(true);
-            best_delta = 0;
+        TableOfDeltasEntry(int size) {
+            deltas.resize(size);
         }
     };
 
-    AssociativeSet<TableOfDeltasEntry> tableOfDeltas;
+    class HistoryTableEntry : public TableOfDeltasEntry, public TaggedEntry
+    {
+      public:
+        bool hysteresis = false;
+        Addr pc;
+        /** FIFO of demand miss history. */
+        std::list<HistoryInfo> history;
+
+        HistoryTableEntry(int deltaTableSize) : TableOfDeltasEntry(deltaTableSize) {}
+    };
+
+    AssociativeSet<HistoryTableEntry> historyTable;
+
 
     Cycles lastFillLatency;
     bool aggressive_pf;
 
-
     struct BertiStats : public statistics::Group
     {
         BertiStats(statistics::Group *parent);
-        // train
-        statistics::Scalar num_train_hit;
-        statistics::Scalar num_train_miss;
-        statistics::SparseHistogram train_pc;
-        // fill
-        statistics::Scalar num_fill_prefetch;
-        statistics::Scalar num_fill_miss;
-        statistics::SparseHistogram fill_pc;
-        statistics::SparseHistogram fill_latency;
-        // prefetch
         statistics::SparseHistogram pf_delta;
     } statsBerti;
 
 
     /** Update history table on demand miss. */
-    void updateHistoryTable(const PrefetchInfo &pfi);
-
-    /** Update table of deltas on cache fill. */
-    void updateTableOfDeltas(const Addr pc, const bool isSecure,
-                             const std::vector<int64_t> &new_deltas);
+    HistoryTableEntry* updateHistoryTable(const PrefetchInfo &pfi);
 
     /** Search for timely deltas. */
-    void searchTimelyDeltas(const HistoryTableEntry &entry,
+    void searchTimelyDeltas(HistoryTableEntry &entry,
                             const Cycles &latency,
                             const Cycles &demand_cycle,
-                            const Addr &blk_addr,
-                            std::vector<int64_t> &deltas);
-
-    void notifyFill(const PacketPtr &pkt) override;
+                            const Addr &blk_addr);
 
 
     void printDeltaTableEntry(const TableOfDeltasEntry &entry) {
@@ -148,11 +137,34 @@ class BertiPrefetcher : public Queued
         }
     }
 
+    Addr pcHash(Addr pc) {
+        return (pc>>1);
+    }
+
+    int temp_bestDelta;
+    int evict_bestDelta;
+
   public:
+
+    boost::compute::detail::lru_cache<Addr, Addr> *filter;
+
     BertiPrefetcher(const BertiPrefetcherParams &p);
 
+    void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses) override
+    {
+        panic("not implemented");
+    };
+
     void calculatePrefetch(const PrefetchInfo &pfi,
-                           std::vector<AddrPriority> &addressed) override;
+                           std::vector<AddrPriority> &addresses, bool late, PrefetchSourceType pf_source, bool miss_repeat) override;
+
+    int getEvictBestDelta() { return evict_bestDelta; }
+
+    int getBestDelta() { return temp_bestDelta; }
+
+    bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType src);
+
+    void notifyFill(const PacketPtr &pkt) override;
 };
 
 }

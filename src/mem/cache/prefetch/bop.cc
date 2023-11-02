@@ -61,6 +61,11 @@ BOP::BOP(const BOPPrefetcherParams &p)
     rrRight.resize(rrEntries);
 
     int offset_count = p.offsets.size();
+    maxOffsetCount = p.negative_offsets_enable ? 2*p.offsets.size() : p.offsets.size();
+    if (p.autoLearning) {
+        maxOffsetCount = 8;
+    }
+
 
     for (int i = 0; i < offset_count; i++) {
         offsetsList.emplace_back(p.offsets[i], (uint8_t) 0);
@@ -166,13 +171,12 @@ BOP::tryAddOffset(int64_t offset, bool late)
     assert(offset != 0);
     DPRINTF(BOPPrefetcher, "Reach %s entry, iter offset: %d\n", __FUNCTION__, offsetsListIterator->calcOffset());
     // dump offsets:
-    DPRINTF(BOPPrefetcher, "offsets: ");
+    DPRINTF(BOPPrefetcher, "offset list:\n");
     for (const auto& it : offsetsList) {
-        DPRINTFR(BOPPrefetcher, "%d*%d ", it.offset, it.depth);
+        DPRINTF(BOPPrefetcher, "%d*%d\n", it.offset, it.depth);
     }
-    DPRINTFR(BOPPrefetcher, "\n");
 
-    if (offsets.size() >= maxOffsetCount) {
+    if (offsetsList.size() >= maxOffsetCount) {
         auto it = offsetsList.begin();
         while (it != offsetsList.end()) {
             if (it->score <= badScore) {
@@ -185,18 +189,15 @@ BOP::tryAddOffset(int64_t offset, bool late)
             if (offsetsListIterator == offsetsList.begin()) {
                 // the iterator is the first element, erase the last one
                 DPRINTF(BOPPrefetcher, "erase offset %d from offset list\n", offsetsList.rbegin()->offset);
-                offsets.erase(offsetsList.rbegin()->offset);
-                offsetsList.erase(--offsetsList.end());
-
+                auto end_offset = (offsetsList.end()--);
+                offsetsList.erase(end_offset);
             } else {
-                offsets.erase((--offsetsListIterator)->offset);
                 DPRINTF(BOPPrefetcher, "erase offset %d from offset list\n", offsetsListIterator->offset);
                 offsetsListIterator = offsetsList.erase(offsetsListIterator);
             }
         } else {
             // erase it from set and list
             DPRINTF(BOPPrefetcher, "erase unused offset %d from offset list\n", it->offset);
-            offsets.erase(it->offset);
             if (it == offsetsListIterator) {
                 offsetsListIterator = offsetsList.erase(it);  // update iterator
                 if (offsetsListIterator == offsetsList.end()) {
@@ -217,9 +218,8 @@ BOP::tryAddOffset(int64_t offset, bool late)
         return;
     }
 
-    auto offset_it = offsets.find(offset);
-    if (offset_it == offsets.end()) {
-        offsets.insert(offset);
+    auto offset_it = std::find(offsetsList.begin(), offsetsList.end(), offset);
+    if (offset_it == offsetsList.end()) {
         bool found = false;
         for (auto it = offsetsList.begin(); it != offsetsList.end(); it++) {
             if (it == offsetsListIterator) {
@@ -251,7 +251,7 @@ BOP::tryAddOffset(int64_t offset, bool late)
 std::list<BOP::OffsetListEntry>::iterator
 BOP::getBestOffsetIter()
 {
-    return bestoffsetsListIterator;
+    return std::find(offsetsList.begin(), offsetsList.end(), bestOffset);
 }
 
 bool
