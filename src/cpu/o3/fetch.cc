@@ -1662,7 +1662,7 @@ Fetch::fetch(bool &status_change)
     auto *dec_ptr = decoder[tid];
     const Addr pc_mask = dec_ptr->pcMask();
 
-    auto fetchStall = false;
+    auto stallDuetoVset = false;
 
     // Loop through instruction memory from the cache.
     // Keep issuing while fetchWidth is available and branch is not
@@ -1672,7 +1672,7 @@ Fetch::fetch(bool &status_change)
     bool cond_taken_backward = false;
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize &&
            !(predictedBranch && !currentFetchTargetInLoop) && !quiesce &&
-           !ftqEmpty() && !exit_loopbuffer_this_cycle) {
+           !ftqEmpty() && !exit_loopbuffer_this_cycle && !stallDuetoVset) {
         // We need to process more memory if we aren't going to get a
         // StaticInst from the rom, the current macroop, or what's already
         // in the decoder.
@@ -1740,7 +1740,7 @@ Fetch::fetch(bool &status_change)
                         pc_offset = 0;
                     }
                 } else {
-                    fetchStall = dec_ptr->isStalled();
+                    stallDuetoVset = dec_ptr->isStalled();
                     // We need more bytes for this instruction so blkOffset and
                     // pcOffset will be updated
                     break;
@@ -1828,6 +1828,11 @@ Fetch::fetch(bool &status_change)
         // Re-evaluate whether the next instruction to fetch is in micro-op ROM
         // or not.
         in_rom = isRomMicroPC(this_pc.microPC());
+    }
+
+    DPRINTF(Fetch, "FetchQue start dumping\n");
+    for (auto it : fetchQueue[tid]) {
+        DPRINTF(Fetch, "inst: %s\n", it->staticInst->disassemble(it->pcState().instAddr()));
     }
 
     for (int i = 0;i < fetchWidth;i++) {

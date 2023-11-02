@@ -337,7 +337,7 @@ def template CSRExecute {{
             return std::make_shared<IllegalInstFault>(
                     csprintf("Illegal CSR index %#x\n", csr), machInst);
         }
-        DPRINTF(RiscvMisc, "Executing inst: %s\n", mnemonic);
+        DPRINTF(RiscvMisc, "Executing inst: %s\n", disassemble(0));
 
         %(op_decl)s;
         %(op_rd)s;
@@ -386,7 +386,7 @@ def template CSRExecute {{
         %(code)s;
 
         data &= maskVal;
-        if (data != olddata || csr == CSR_FCSR) {
+        if (data != olddata || csr == CSR_FCSR || csr == CSR_VCSR) {
             if (bits(csr, 11, 10) == 0x3) {
                 return std::make_shared<IllegalInstFault>(
                         csprintf("CSR %s is read-only\n", csrName), machInst);

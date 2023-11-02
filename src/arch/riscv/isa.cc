@@ -206,27 +206,15 @@ namespace RiscvISA
 }};
 
 
-namespace
-{
-
-/* Not applicable to RISCV */
-RegClass vecPredRegClass(VecPredRegClass, 1,
-        debug::IntRegs);
-RegClass ccRegClass(CCRegClass, 0, debug::IntRegs);
-
-} // anonymous namespace
-
 
 ISA::ISA(const Params &p) : BaseISA(p)
 {
     _regClasses.emplace_back(IntRegClass, int_reg::NumRegs, debug::IntRegs);
-    _regClasses.emplace_back(FloatRegClass, float_reg::NumRegs,
-            debug::FloatRegs);
+    _regClasses.emplace_back(FloatRegClass, float_reg::NumRegs, debug::FloatRegs);
 
-    /* Not applicable to RISCV */
-    _regClasses.emplace_back(VecRegClass, 1, debug::IntRegs);
-    _regClasses.emplace_back(VecElemClass, 2, debug::IntRegs);
-    _regClasses.emplace_back(VecPredRegClass, 1, debug::IntRegs);
+    _regClasses.emplace_back(VecRegClass, NumVecRegs, debug::VecRegs);
+    _regClasses.emplace_back(VecElemClass, NumVecElemPerVecReg * NumVecRegs, debug::VecRegs);
+    _regClasses.emplace_back(VecPredRegClass, 1, debug::VecRegs);
     _regClasses.emplace_back(CCRegClass, 0, debug::IntRegs);
 
     _regClasses.emplace_back(MiscRegClass, NUM_MISCREGS, debug::MiscRegs);
@@ -561,16 +549,34 @@ ISA::setMiscReg(int misc_reg, RegVal val)
             break;
           case MISCREG_VXSAT:
             {
+                DPRINTF(RiscvMisc, "Will set vs\n");
+                STATUS mstatus = readMiscRegNoEffect(MISCREG_STATUS);
+                mstatus.vs = 3;
+                mstatus.sd = 1;
+                setMiscRegNoEffect(MISCREG_STATUS, mstatus);
+
                 setMiscRegNoEffect(misc_reg, val & 0x1);
             }
             break;
           case MISCREG_VXRM:
             {
+                DPRINTF(RiscvMisc, "Will set vs\n");
+                STATUS mstatus = readMiscRegNoEffect(MISCREG_STATUS);
+                mstatus.vs = 3;
+                mstatus.sd = 1;
+                setMiscRegNoEffect(MISCREG_STATUS, mstatus);
+
                 setMiscRegNoEffect(misc_reg, val & 0x3);
             }
             break;
           case MISCREG_VCSR:
             {
+                DPRINTF(RiscvMisc, "Will set vs\n");
+                STATUS mstatus = readMiscRegNoEffect(MISCREG_STATUS);
+                mstatus.vs = 3;
+                mstatus.sd = 1;
+                setMiscRegNoEffect(MISCREG_STATUS, mstatus);
+
                 setMiscRegNoEffect(MISCREG_VXSAT, val & 0x1);
                 setMiscRegNoEffect(MISCREG_VXRM, (val & 0x6) >> 1);
             }
