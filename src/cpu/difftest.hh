@@ -169,21 +169,21 @@ class RefProxy
   public:
     // public callable functions
     void (*memcpy)(paddr_t nemu_addr, void *dut_buf, size_t n,
-                   bool direction) = NULL;
-    void (*regcpy)(void *dut, bool direction) = NULL;
-    void (*csrcpy)(void *dut, bool direction) = NULL;
-    void (*uarchstatus_cpy)(void *dut, bool direction) = NULL;
+                   bool direction) = nullptr;
+    void (*regcpy)(void *dut, bool direction) = nullptr;
+    void (*csrcpy)(void *dut, bool direction) = nullptr;
+    void (*uarchstatus_cpy)(void *dut, bool direction) = nullptr;
     int (*store_commit)(uint64_t *saddr, uint64_t *sdata,
-                        uint8_t *smask) = NULL;
-    void (*exec)(uint64_t n) = NULL;
-    vaddr_t (*guided_exec)(void *disambiguate_para) = NULL;
-    vaddr_t (*update_config)(void *config) = NULL;
-    void (*raise_intr)(uint64_t no) = NULL;
-    void (*isa_reg_display)() = NULL;
-    void (*query)(void *result_buffer, uint64_t type) = NULL;
-    void (*debug_mem_sync)(paddr_t addr, void *bytes, size_t size) = NULL;
+                        uint8_t *smask) = nullptr;
+    void (*exec)(uint64_t n) = nullptr;
+    vaddr_t (*guided_exec)(void *disambiguate_para) = nullptr;
+    vaddr_t (*update_config)(void *config) = nullptr;
+    void (*raise_intr)(uint64_t no) = nullptr;
+    void (*isa_reg_display)() = nullptr;
+    void (*query)(void *result_buffer, uint64_t type) = nullptr;
+    void (*debug_mem_sync)(paddr_t addr, void *bytes, size_t size) = nullptr;
     void (*sdcard_init)(const char *img_path,
-                        const char *sd_cpt_bin_path) = NULL;
+                        const char *sd_cpt_bin_path) = nullptr;
 };
 
 class NemuProxy : public RefProxy
@@ -194,6 +194,12 @@ class NemuProxy : public RefProxy
   private:
 };
 
+
+class SpikeProxy : public RefProxy
+{
+  public:
+    SpikeProxy(int coreid, const char *ref_so, bool enable_sdcard_diff);
+};
 
 #define DIFFTEST_WIDTH 8
 

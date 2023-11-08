@@ -200,18 +200,26 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
 
     diffAllStates = std::make_shared<DiffAllStates>();
     if (enableDifftest) {
-        // 651 bytes
-        std::cout<< sizeof(diffAllStates->referenceRegFile) <<std::endl;
         assert(params().difftest_ref_so.length() > 2);
         diffAllStates->diff.nemu_reg = &(diffAllStates->referenceRegFile);
         diffAllStates->diff.nemu_this_pc = 0x80000000u;
         diffAllStates->diff.cpu_id = params().cpu_id;
         warn("cpu_id set to %d\n", params().cpu_id);
-        diffAllStates->proxy = new NemuProxy(
-            params().cpu_id, params().difftest_ref_so.c_str(),
-            params().nemuSDimg.size() && params().nemuSDCptBin.size());
+
+        if (params().difftest_ref_so.find("spike") > 0) {
+            diffAllStates->proxy = new SpikeProxy(
+                params().cpu_id, params().difftest_ref_so.c_str(),
+                params().nemuSDimg.size() && params().nemuSDCptBin.size());
+        }
+        else {
+            diffAllStates->proxy = new NemuProxy(
+                params().cpu_id, params().difftest_ref_so.c_str(),
+                params().nemuSDimg.size() && params().nemuSDCptBin.size());
+        }
+
         warn("Difftest is enabled with ref so: %s.\n",
              params().difftest_ref_so.c_str());
+
         diffAllStates->proxy->regcpy(&(diffAllStates->gem5RegFile), REF_TO_DUT);
         diffAllStates->diff.dynamic_config.ignore_illegal_mem_access = false;
         diffAllStates->diff.dynamic_config.debug_difftest = false;

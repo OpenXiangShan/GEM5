@@ -112,7 +112,7 @@ struct DiffAllStates
     riscv64_CPU_regfile gem5RegFile;
     riscv64_CPU_regfile referenceRegFile;
     DiffState diff;
-    NemuProxy *proxy;
+    RefProxy *proxy;
 
     bool scFenceInFlight{false};
     bool hasCommit{false};
