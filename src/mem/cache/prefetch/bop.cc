@@ -48,7 +48,7 @@ BOP::BOP(const BOPPrefetcherParams &p)
       delayTicks(cyclesToTicks(p.delay_queue_cycles)),
       delayQueueEvent([this]{ delayQueueEventWrapper(); }, name()),
       issuePrefetchRequests(false), bestOffset(1), phaseBestOffset(0),
-      bestScore(0), round(0)
+      bestScore(0), round(0), stats(this)
 {
     if (!isPowerOf2(rrEntries)) {
         fatal("%s: number of RR entries is not power of 2\n", name());
@@ -371,6 +371,7 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
     // prefetch at most per access
     if (issuePrefetchRequests) {
         Addr prefetch_addr = addr + (bestOffset << lBlkSize);
+        stats.issuedOffsetDist.sample(bestOffset);
         sendPFWithFilter(prefetch_addr, addresses, 32, PrefetchSourceType::HWP_BOP);
         DPRINTF(BOPPrefetcher,
                 "Generated prefetch %#lx offset: %d\n",
@@ -401,6 +402,14 @@ void
 BOP::notifyFill(const PacketPtr& pkt)
 {
 
+}
+
+BOP::BopStats::BopStats(statistics::Group *parent)
+    : statistics::Group(parent),
+      ADD_STAT(issuedOffsetDist, statistics::units::Count::get(),
+               "Distribution of issued offsets")
+{
+    issuedOffsetDist.init(-256, 256, 1).prereq(issuedOffsetDist);
 }
 
 } // namespace prefetch
