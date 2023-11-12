@@ -41,6 +41,7 @@ SimObject('Prefetcher.py', sim_objects=[
 
 
 DebugFlag('BOPPrefetcher')
+DebugFlag('BOPOffsets')
 DebugFlag('XSCompositePrefetcher')
 DebugFlag('BertiPrefetcher')
 DebugFlag('SPP')

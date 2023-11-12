@@ -1,5 +1,6 @@
 #include "mem/cache/prefetch/sms.hh"
 
+#include "debug/BOPOffsets.hh"
 #include "debug/XSCompositePrefetcher.hh"
 #include "mem/cache/prefetch/associative_set_impl.hh"
 
