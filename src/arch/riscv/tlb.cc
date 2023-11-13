@@ -1261,7 +1261,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
     TlbEntry *e3 = NULL;
     TlbEntry *e2 = NULL;
     TlbEntry *e1 = NULL;
-    Addr paddr;
+    Addr paddr = 0;
     Fault fault;
     STATUS status = tc->readMiscReg(MISCREG_STATUS);
     PrivilegeMode pmode = getMemPriv(tc, mode);
