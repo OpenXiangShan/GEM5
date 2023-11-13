@@ -1156,7 +1156,7 @@ TLB::translateWithTLB(Addr vaddr, uint16_t asid, BaseMMU::Mode mode)
     assert(e != nullptr);
     DPRINTF(TLB, "translateWithTLB vaddr %#x paddr %#x\n", vaddr,
             e->paddr << PageShift | (vaddr & mask(e->logBytes)));
-    return e->paddr << PageShift | (vaddr & mask(e->logBytes));
+    return (e->paddr << PageShift) | (vaddr & mask(e->logBytes));
 }
 Fault
 TLB::L2tlb_pagefault(Addr vaddr, BaseMMU::Mode mode, const RequestPtr &req)
