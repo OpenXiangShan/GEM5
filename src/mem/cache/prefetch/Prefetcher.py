@@ -180,13 +180,13 @@ class BertiPrefetcher(QueuedPrefetcher):
         "Issue pf reqs as many as possible."
     )
     history_table_entries = Param.MemorySize(
-        "16", "Number of history table entries."
+        "64", "Number of history table entries."
     )
-    history_table_assoc = Param.Int(16, "Associativity of the history table.")
+    history_table_assoc = Param.Int(4, "Associativity of the history table.")
     history_table_indexing_policy = Param.BaseIndexingPolicy(
         SetAssociative(
             entry_size=1,
-            assoc=Parent.history_table_entries,
+            assoc=Parent.history_table_assoc,
             size=Parent.history_table_entries
         ),
         "Indexing policy of history table."
@@ -527,8 +527,7 @@ class BOPPrefetcher(QueuedPrefetcher):
     delay_queue_size = Param.Unsigned(64,
                 "Number of entries in the delay queue")
     delay_queue_cycles = Param.Cycles(150,
-                "Cycles to delay a write in the left RR table from the delay \
-                queue")
+                "Cycles to delay a write in the left RR table from the delay queue")
 
     autoLearning = Param.Bool(False," auto learn offset")
 
@@ -546,6 +545,22 @@ class SmallBOPPrefetcher(BOPPrefetcher):
 
     offsets = [1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 16, 18, 20,
                24, 25, 27, 30, 32, 36, 40, 45, 48, 50, 54, 60, 64]
+
+class LearnedBOPPrefetcher(BOPPrefetcher):
+    score_max = 31
+    round_max = 30
+    bad_score = 8
+    rr_size = 256
+    tag_bits = 12
+    negative_offsets_enable = True
+    delay_queue_enable = True
+    delay_queue_size = Param.Unsigned(16,
+                "Number of entries in the delay queue")
+    delay_queue_cycles = Param.Cycles(30,
+                "Cycles to delay a write in the left RR table from the delay queue")
+
+    autoLearning = True
+    offsets = [95]
 
 class SBOOEPrefetcher(QueuedPrefetcher):
     type = 'SBOOEPrefetcher'
@@ -813,6 +828,7 @@ class XSCompositePrefetcher(QueuedPrefetcher):
     )
     bop_large = Param.BasePrefetcher(BOPPrefetcher(), "Large BOP used in composite prefetcher ")
     bop_small = Param.BasePrefetcher(SmallBOPPrefetcher(), "Small BOP used in composite prefetcher ")
+    bop_learned = Param.BasePrefetcher(LearnedBOPPrefetcher(), "Learned BOP used in composite prefetcher ")
     spp = Param.BasePrefetcher(SignaturePathPrefetcher(), "SPP used in composite prefetcher")
     ipcp = Param.IPCPrefetcher(IPCPrefetcher(use_rrf = False), "")
     cmc = Param.CMCPrefetcher(CMCPrefetcher(), "")

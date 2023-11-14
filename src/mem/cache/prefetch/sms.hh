@@ -217,6 +217,8 @@ class XSCompositePrefetcher : public Queued
 
     BOP *smallBOP;
 
+    BOP *learnedBOP;
+
     SignaturePath  *spp;
 
     IPCP *ipcp;

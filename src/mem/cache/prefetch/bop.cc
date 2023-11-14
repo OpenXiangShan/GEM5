@@ -64,7 +64,7 @@ BOP::BOP(const BOPPrefetcherParams &p)
     int offset_count = p.offsets.size();
     maxOffsetCount = p.negative_offsets_enable ? 2*p.offsets.size() : p.offsets.size();
     if (p.autoLearning) {
-        maxOffsetCount = 8;
+        maxOffsetCount = 32;
     }
 
 

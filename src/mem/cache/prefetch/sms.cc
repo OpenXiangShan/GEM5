@@ -38,6 +38,7 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       pfPageLRUFilterL3(pfPageFilterSize),
       largeBOP(dynamic_cast<BOP *>(p.bop_large)),
       smallBOP(dynamic_cast<BOP *>(p.bop_small)),
+      learnedBOP(dynamic_cast<BOP *>(p.bop_learned)),
       spp(dynamic_cast<SignaturePath *>(p.spp)),
       ipcp(dynamic_cast<IPCP *>(p.ipcp)),
       cmc(p.cmc),
@@ -50,11 +51,14 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
 {
     assert(largeBOP);
     assert(smallBOP);
+    assert(learnedBOP);
     assert(isPowerOf2(regionSize));
 
 
     largeBOP->filter = &this->pfBlockLRUFilter;
     smallBOP->filter = &this->pfBlockLRUFilter;
+    learnedBOP->filter = &this->pfBlockLRUFilter;
+
     berti->filter = &this->pfBlockLRUFilter;
 
     cmc->filter = &this->pfBlockLRUFilter;
@@ -200,41 +204,43 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
         use_bop &= !miss_repeat && is_first_shot; // miss repeat should not be handled by stride
         if (use_bop) {
             DPRINTF(XSCompositePrefetcher, "Do BOP traing/prefetching...\n");
-            size_t old_addr_size = addresses.size();
             largeBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
 
-            old_addr_size = addresses.size();
             smallBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
+
+            learnedBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
         }
 
-        bool use_stride = pfi.isCacheMiss() ||
-                          (pfi.isPfFirstHit() &&
-                           (pf_source == PrefetchSourceType::SStride || pf_source == PrefetchSourceType::HWP_BOP ||
-                            pf_source == PrefetchSourceType::SPht || pf_source == PrefetchSourceType::IPCP_CPLX ||
-                            pf_source == PrefetchSourceType::Berti));
-        use_stride &= !pfi.isStore();
+        // bool use_stride = pfi.isCacheMiss() ||
+        //                   (pfi.isPfFirstHit() &&
+        //                    (pf_source == PrefetchSourceType::SStride || pf_source == PrefetchSourceType::HWP_BOP ||
+        //                     pf_source == PrefetchSourceType::SPht || pf_source == PrefetchSourceType::IPCP_CPLX ||
+        //                     pf_source == PrefetchSourceType::Berti));
+        // use_stride &= !pfi.isStore();
 
-        if (enableNonStrideFilter) {
-            use_stride &= !isNonStridePC(pc);
-            if (isNonStridePC(pc)) {
-                DPRINTF(XSCompositePrefetcher, "Skip stride lookup for non-stride pc %x\n", pc);
-            }
-        }
-        Addr stride_pf_addr = 0, stride_pf_addr2 = 0;
+        // if (enableNonStrideFilter) {
+        //     use_stride &= !isNonStridePC(pc);
+        //     if (isNonStridePC(pc)) {
+        //         DPRINTF(XSCompositePrefetcher, "Skip stride lookup for non-stride pc %x\n", pc);
+        //     }
+        // }
+
+        Addr stride_pf_addr = 0;
         bool covered_by_stride = false;
 
-        bool use_berti = !pfi.isStore() && !miss_repeat && is_first_shot;
+        bool pc_found_in_berti = berti->containsPC(pfi);
+        bool use_berti =
+            !pfi.isStore() && (pfi.isCacheMiss() || pfi.isPfFirstHit() || (!pfi.isCacheMiss() && pc_found_in_berti));
         if (use_berti) {
-            berti->calculatePrefetch(pfi, addresses, late, pf_source, miss_repeat);
-            stride_pf_addr = berti->getBestDelta();
-            int t = berti->getEvictBestDelta();
-            if (t) {
-                if (abs(t)>64) {
-                    largeBOP->tryAddOffset(t);
-                }
-                else {
-                    smallBOP->tryAddOffset(t);
-                }
+            berti->calculatePrefetch(pfi, addresses, late, pf_source, miss_repeat, stride_pf_addr);
+            int t;
+            if ((t = berti->getBestDelta()) != 0) {
+                DPRINTF(BOPOffsets, "PC %lx add best delta %u\n", pfi.getPC(), t);
+                learnedBOP->tryAddOffset(t);
+            }
+            if ((t = berti->getEvictBestDelta()) != 0) {
+                DPRINTF(BOPOffsets, "PC %lx add evict delta %u\n", pfi.getPC(), t);
+                learnedBOP->tryAddOffset(t);
             }
         }
 
@@ -247,8 +253,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
         use_pht &= !pfi.isStore();
 
         bool trigger_pht = false;
-        stride_pf_addr =
-            phtPFAhead ? (stride_pf_addr ? stride_pf_addr : stride_pf_addr2) : 0;  // trigger addr sent to pht
+        stride_pf_addr = phtPFAhead ? stride_pf_addr : 0;  // trigger addr sent to pht
         if (use_pht) {
             DPRINTF(XSCompositePrefetcher, "Do PHT lookup...\n");
             trigger_pht = phtLookup(pfi, addresses, late && pf_source == PrefetchSourceType::SPht, stride_pf_addr);
@@ -260,7 +265,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             bool send_cplx_pf = ipcp->doPrefetch(addresses, cplx_best_offset);
 
             if (send_cplx_pf && cplx_best_offset != 0) {
-                largeBOP->tryAddOffset(cplx_best_offset, late);
+                learnedBOP->tryAddOffset(cplx_best_offset, late);
             }
         }
 
@@ -270,7 +275,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             bool coverd_by_spp = spp->calculatePrefetch(pfi, addresses, pfBlockLRUFilter, spp_best_offset);
             if (coverd_by_spp && spp_best_offset != 0) {
                 // TODO: Let BOP to adjust depth by itself
-                largeBOP->tryAddOffset(spp_best_offset, late);
+                learnedBOP->tryAddOffset(spp_best_offset, late);
             }
         }
 
@@ -533,7 +538,7 @@ XSCompositePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const P
         if (entry->conf >= 2 && entry->stride > 1024) { // > 1k
             DPRINTF(XSCompositePrefetcher, "Stride Evicting a useful stride, send it to BOP with offset %i\n",
                     entry->stride / 64);
-            largeBOP->tryAddOffset(entry->stride / 64);
+            learnedBOP->tryAddOffset(entry->stride / 64);
         }
         entry->conf.reset();
         entry->last_addr = lookupAddr;
@@ -724,7 +729,7 @@ XSCompositePrefetcher::calcPeriod(const std::vector<SatCounter8> &bit_vec, bool 
     DPRINTF(XSCompositePrefetcher, "max_dot_prod: %i, max_shamt: %i\n", max_dot_prod,
             max_shamt);
     if (max_dot_prod > 0 && max_shamt > 3) {
-        largeBOP->tryAddOffset(max_shamt, late);
+        learnedBOP->tryAddOffset(max_shamt, late);
     }
     return max_shamt;
 }
