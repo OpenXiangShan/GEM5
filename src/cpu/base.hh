@@ -73,6 +73,16 @@ struct BaseCPUParams;
 class CheckerCPU;
 class ThreadContext;
 
+enum CsrRegIndex
+{
+  mode , mstatus, sstatus, mepc, sepc, mtval, stval,
+  mtvec, stvec  , mcause , scause, satp,
+  mip, mie,
+  mscratch, sscratch,
+  mideleg, medeleg,
+  pc
+};
+
 struct AddressMonitor
 {
     AddressMonitor();
@@ -684,11 +694,16 @@ class BaseCPU : public ClockedObject
         gem5::StaticInstPtr inst;
         // the result of currently inst
         gem5::RegVal result;
+        uint64_t vecResult[RiscvISA::NumVecElemPerVecReg];
         // the lambda expr of get srcOperand
         gem5::RegVal getSrcReg(const gem5::RegId &regid) { return 0; };
         const gem5::PCStateBase *pc;
         bool curInstStrictOrdered{false};
         gem5::Addr physEffAddr;
+        // Register address causing difftest error
+        bool errorRegsValue[96];// 32 regs + 32fprs +32 vprs
+        bool errorCsrsValue[32];// CsrRegIndex
+        bool errorPcValue;
     } diffInfo;
 
 
@@ -709,6 +724,8 @@ class BaseCPU : public ClockedObject
     void difftestStep(ThreadID tid, InstSeqNum seq);
 
     inline bool difftestEnabled() const { return enableDifftest; }
+
+    void displayGem5Regs();
 
     void difftestRaiseIntr(uint64_t no);
 

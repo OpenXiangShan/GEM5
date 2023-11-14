@@ -1379,7 +1379,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
     DPRINTF(LSQUnit, "request: size: %u, Addr: %#lx\n",
             request->mainReq()->getSize(), request->mainReq()->getVaddr());
 
-    if (request->mainReq()->getSize() > 1 &&
+    if (!load_inst->isVector() && request->mainReq()->getSize() > 1 &&
         request->mainReq()->getVaddr() % request->mainReq()->getSize() != 0) {
         DPRINTF(LSQUnit, "request: size: %u, Addr: %#lx, code: %d\n",
                 request->mainReq()->getSize(), request->mainReq()->getVaddr(), RiscvISA::ExceptionCode::LOAD_ADDR_MISALIGNED);

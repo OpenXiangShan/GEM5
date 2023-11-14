@@ -385,6 +385,8 @@ class CPU : public BaseCPU
 
     RegVal readArchFloatReg(int reg_idx, ThreadID tid);
 
+    void readArchVecReg(int reg_idx, uint64_t *val,ThreadID tid);
+
   public:
 #ifndef NDEBUG
     /** Count of total number of dynamic instructions in flight. */

@@ -1613,9 +1613,7 @@ CPU::readGem5Regs()
     for (int i = 0; i < 32; i++) {
         diffAllStates->gem5RegFile[i] = readArchIntReg(i, 0);
         diffAllStates->gem5RegFile[i + 32] = readArchFloatReg(i, 0);
-        // set vec regfile
-        cpuStats.vecRegfileReads++;
-        regFile.getReg(commitRenameMap[0].lookup(RegId(VecRegClass, 0)), &diffAllStates->gem5RegFile.vr[i]);
+        readArchVecReg(i, (uint64_t*)&diffAllStates->gem5RegFile.vr[i], 0);
     }
 }
 
@@ -1641,6 +1639,17 @@ CPU::readArchFloatReg(int reg_idx, ThreadID tid)
     DPRINTF(Commit, "Get map: f%i -> p%i\n", reg_idx, phys_reg->flatIndex());
 
     return regFile.getReg(phys_reg);
+}
+
+void
+CPU::readArchVecReg(int reg_idx, uint64_t *val,ThreadID tid)
+{
+    cpuStats.vecRegfileReads++;
+    PhysRegIdPtr phys_reg =
+        commitRenameMap[tid].lookup(RegId(VecRegClass, reg_idx));
+    DPRINTF(Commit, "Get map: v%i -> p%i\n", reg_idx, phys_reg->flatIndex());
+
+    regFile.getReg(phys_reg, val);
 }
 
 } // namespace o3

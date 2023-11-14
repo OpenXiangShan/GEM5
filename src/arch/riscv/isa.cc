@@ -209,15 +209,15 @@ namespace RiscvISA
 
 ISA::ISA(const Params &p) : BaseISA(p)
 {
-    _regClasses.emplace_back(IntRegClass, int_reg::NumRegs, debug::IntRegs);
-    _regClasses.emplace_back(FloatRegClass, float_reg::NumRegs, debug::FloatRegs);
+    _regClasses.emplace_back(IntRegClass, int_reg::NumRegs, debug::IntRegs, sizeof(RegVal));
+    _regClasses.emplace_back(FloatRegClass, float_reg::NumRegs, debug::FloatRegs, sizeof(RegVal));
 
-    _regClasses.emplace_back(VecRegClass, NumVecRegs, debug::VecRegs);
-    _regClasses.emplace_back(VecElemClass, NumVecElemPerVecReg * NumVecRegs, debug::VecRegs);
-    _regClasses.emplace_back(VecPredRegClass, 1, debug::VecRegs);
-    _regClasses.emplace_back(CCRegClass, 0, debug::IntRegs);
+    _regClasses.emplace_back(VecRegClass, NumVecRegs, debug::VecRegs, RiscvISA::VLENB);
+    _regClasses.emplace_back(VecElemClass, NumVecElemPerVecReg * NumVecRegs, debug::VecRegs, sizeof(RegVal));
+    _regClasses.emplace_back(VecPredRegClass, 1, debug::VecRegs, RiscvISA::VLENB);
+    _regClasses.emplace_back(CCRegClass, 0, debug::IntRegs, sizeof(RegVal));
 
-    _regClasses.emplace_back(MiscRegClass, NUM_MISCREGS, debug::MiscRegs);
+    _regClasses.emplace_back(MiscRegClass, NUM_MISCREGS, debug::MiscRegs, sizeof(RegVal));
 
     miscRegFile.resize(NUM_MISCREGS);
     clear();
@@ -254,7 +254,7 @@ void ISA::clear()
     std::fill(miscRegFile.begin(), miscRegFile.end(), 0);
 
     miscRegFile[MISCREG_PRV] = PRV_M;
-    miscRegFile[MISCREG_ISA] = (2ULL << MXL_OFFSET) | 0x14112D;
+    miscRegFile[MISCREG_ISA] = (2ULL << MXL_OFFSET) | 0x34112D;
     miscRegFile[MISCREG_VENDORID] = 0;
     miscRegFile[MISCREG_ARCHID] = 0;
     miscRegFile[MISCREG_IMPID] = 0;
@@ -273,6 +273,8 @@ void ISA::clear()
     miscRegFile[MISCREG_TSELECT] = 1;
     // NMI is always enabled.
     miscRegFile[MISCREG_NMIE] = 1;
+    // sync with NEMU
+    miscRegFile[MISCREG_VTYPE] = (1lu<<63);
 }
 
 bool

@@ -1095,6 +1095,7 @@ Commit::commitInsts()
             bool commit_success = commitHead(head_inst, num_committed);
 
             if (commit_success) {
+                head_inst->printDisassembly();
                 const auto &head_rv_pc = head_inst->pcState().as<RiscvISA::PCState>();
                 if (bp->isStream()) {
                     auto dbsp = dynamic_cast<branch_prediction::stream_pred::DecoupledStreamBPU*>(bp);
@@ -1182,6 +1183,9 @@ Commit::commitInsts()
                         if ((dest.isFloatReg() || dest.isIntReg()) &&
                             !dest.isZeroReg()) {
                             cpu->diffInfo.result = cpu->getArchReg(dest, tid);
+                        }
+                        else if (dest.isVecReg()) {
+                            cpu->getArchReg(dest, &(cpu->diffInfo.vecResult), tid);
                         }
                     }
                     cpu->diffInfo.curInstStrictOrdered =
@@ -1474,7 +1478,7 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
                 head_inst->readPredTaken() ^ head_inst->mispredicted(),
                 head_inst->readPredTaken(), head_inst->mispredicted());
     }
-    head_inst->printDisassembly();
+
     if (archDBer && head_inst->isMemRef())
         dumpTicks(head_inst);
     lastCommitTick = curTick();

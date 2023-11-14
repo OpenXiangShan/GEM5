@@ -79,6 +79,8 @@ public:
         if (!_machInst.vm) {
             setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, 0));
         }
+
+        this->flags[IsVector] = true;
     }
 
     Fault execute(ExecContext *, Trace::InstRecord *) const override;

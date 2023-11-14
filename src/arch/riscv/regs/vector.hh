@@ -75,11 +75,6 @@ static inline VecElemRegClassOps<RiscvISA::VecElem>
     vecRegElemClassOps(NumVecElemPerVecReg);
 static inline TypedRegClassOps<RiscvISA::VecRegContainer> vecRegClassOps;
 
-inline constexpr RegClass vecRegClass =
-    RegClass(VecRegClass, NumVecRegs, debug::VecRegs);
-inline constexpr RegClass vecElemClass =
-    RegClass(VecElemClass, NumVecRegs * NumVecElemPerVecReg,
-            debug::VecRegs);
 BitUnion32(VTYPE)
     Bitfield<31> vill;
     Bitfield<7, 0> vtype8;
