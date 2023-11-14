@@ -79,8 +79,8 @@ class BertiPrefetcher : public Queued
         {
             uint8_t max_cov = 0;
             for (auto &info : deltas) {
-                info.status = (info.coverageCounter >= 3) ? L2_PREF : NO_PREF;
-                info.status = (info.coverageCounter >= 6) ? L1_PREF : info.status;
+                info.status = (info.coverageCounter >= 2) ? L2_PREF : NO_PREF;
+                info.status = (info.coverageCounter >= 4) ? L1_PREF : info.status;
                 if (info.status != NO_PREF && info.coverageCounter > max_cov) {
                     max_cov = info.coverageCounter;
                     bestDelta = info;
