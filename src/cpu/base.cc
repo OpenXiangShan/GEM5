@@ -1120,10 +1120,12 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             diffAllStates->gem5RegFile.vtype = gem5_val;
             ref_val = diffAllStates->referenceRegFile.vtype;
             if (gem5_val != ref_val) {
-                warn("Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
-                warn("May be diff at \033[31m%s\033[0m Ref value: \033[31m"
+                warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
                         "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
                         "vtype", ref_val, gem5_val);
+                if (!diff_at) {
+                    diff_at = ValueDiff;
+                }
             }
 
             // vstart
@@ -1131,10 +1133,12 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             diffAllStates->gem5RegFile.vstart = gem5_val;
             ref_val = diffAllStates->referenceRegFile.vstart;
             if (gem5_val != ref_val) {
-                warn("Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
-                warn("May be diff at \033[31m%s\033[0m Ref value: \033[31m"
+                warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
                         "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
                         "vstart", ref_val, gem5_val);
+                if (!diff_at) {
+                    diff_at = ValueDiff;
+                }
             }
 
             // vxsat
@@ -1146,10 +1150,12 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             diffAllStates->gem5RegFile.vcsr = gem5_val;
             ref_val = diffAllStates->referenceRegFile.vcsr;
             if (gem5_val != ref_val) {
-                warn("Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
-                warn("May be diff at \033[31m%s\033[0m Ref value: \033[31m"
+                warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
                         "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
                         "vcsr", ref_val, gem5_val);
+                if (!diff_at) {
+                    diff_at = ValueDiff;
+                }
             }
 
             // vl
@@ -1157,10 +1163,12 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             diffAllStates->gem5RegFile.vl = gem5_val;
             ref_val = diffAllStates->referenceRegFile.vl;
             if (gem5_val != ref_val) {
-                warn("Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
-                warn("May be diff at \033[31m%s\033[0m Ref value: \033[31m"
+                warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
                         "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
                         "vl", ref_val, gem5_val);
+                if (!diff_at) {
+                    diff_at = ValueDiff;
+                }
             }
 
 
@@ -1238,6 +1246,12 @@ BaseCPU::difftestStep(ThreadID tid, InstSeqNum seq)
             } else {
                 diffAllStates->proxy->isa_reg_display();
                 displayGem5Regs();
+                warn("start dump last 10 committed msg\n");
+                while (diffInfo.lastCommittedMsg.size()) {
+                    auto& msg = diffInfo.lastCommittedMsg.front();
+                    warn("V %s\n", msg);
+                    diffInfo.lastCommittedMsg.pop();
+                }
                 panic("Difftest failed!\n");
             }
         }

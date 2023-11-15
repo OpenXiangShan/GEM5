@@ -42,6 +42,7 @@
 #ifndef __CPU_BASE_HH__
 #define __CPU_BASE_HH__
 
+#include <queue>
 #include <vector>
 
 // Before we do anything else, check if this build is the NULL ISA,
@@ -704,6 +705,8 @@ class BaseCPU : public ClockedObject
         bool errorRegsValue[96];// 32 regs + 32fprs +32 vprs
         bool errorCsrsValue[32];// CsrRegIndex
         bool errorPcValue;
+
+        std::queue<std::string> lastCommittedMsg;
     } diffInfo;
 
 

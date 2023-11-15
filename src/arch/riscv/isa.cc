@@ -534,7 +534,7 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 val |= cur & (STATUS_SXL_MASK | STATUS_UXL_MASK);
                 DPRINTF(RiscvMisc, "Value after or: %#lx\n", val);
                 STATUS mstatus = val;
-                mstatus.sd = mstatus.fs == 0x3;
+                mstatus.sd = mstatus.fs == 0x3 || mstatus.vs == 0x3;
                 setMiscRegNoEffect(misc_reg, mstatus);
             }
             break;

@@ -601,16 +601,26 @@ PhysicalMemory::unserializeStoreFrom(std::string filepath,
 
     if (restoreFromXiangshanCpt && !gCptRestorerPath.empty()) {
         warn("Overriding Gcpt restorer\n");
-        warn("gCptRestorerPath： %s\n", gCptRestorerPath.c_str());
+        warn("gCptRestorerPath: %s\n", gCptRestorerPath.c_str());
+
+        uint32_t restorer_size = 0x700;
 
         FILE *fp = fopen(gCptRestorerPath.c_str(), "rb");
         if (!fp) {
             panic("Can not open '%s'", gCptRestorerPath);
         }
+        uint32_t file_len=0;
+        // fseek(fp, 0, SEEK_END);
+        // file_len = ftell(fp);
+        // if (file_len > restorer_size) {
+        //     panic("gcpt restore file size %u is larger than %u!!\n", file_len, restorer_size);
+        // }
 
-        uint32_t restorer_size = 0x400;
         fseek(fp, 0, SEEK_SET);
-        assert(restorer_size == fread(pmem, 1, restorer_size, fp));
+        file_len = fread(pmem, 1, restorer_size, fp);
+        if (file_len > 0) {
+            warn("gcpt restore size: %u\n", restorer_size);
+        }
         fclose(fp);
     }
 

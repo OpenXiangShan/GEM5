@@ -1176,6 +1176,10 @@ Commit::commitInsts()
                 head_inst->updateMiscRegs();
 
                 if (cpu->difftestEnabled()) {
+                    cpu->diffInfo.lastCommittedMsg.push(head_inst->genDisassembly());
+                    if (cpu->diffInfo.lastCommittedMsg.size() > 10) {
+                        cpu->diffInfo.lastCommittedMsg.pop();
+                    }
                     cpu->diffInfo.inst = head_inst->staticInst;
                     cpu->diffInfo.pc = &head_inst->pcState();
                     if (head_inst->numDestRegs() > 0) {
