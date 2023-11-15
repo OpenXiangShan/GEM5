@@ -208,7 +208,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
 
             smallBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
 
-            learnedBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
+            // learnedBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
         }
 
         // bool use_stride = pfi.isCacheMiss() ||
@@ -234,13 +234,17 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
         if (use_berti) {
             berti->calculatePrefetch(pfi, addresses, late, pf_source, miss_repeat, stride_pf_addr);
             int t;
-            if ((t = berti->getBestDelta()) != 0) {
-                DPRINTF(BOPOffsets, "PC %lx add best delta %u\n", pfi.getPC(), t);
-                learnedBOP->tryAddOffset(t);
-            }
+            // if ((t = berti->getBestDelta()) != 0) {
+            //     DPRINTF(BOPOffsets, "PC %lx add best delta %u\n", pfi.getPC(), t);
+            //     learnedBOP->tryAddOffset(t);
+            // }
             if ((t = berti->getEvictBestDelta()) != 0) {
                 DPRINTF(BOPOffsets, "PC %lx add evict delta %u\n", pfi.getPC(), t);
-                learnedBOP->tryAddOffset(t);
+                if (labs(t) > 64) {
+                    largeBOP->tryAddOffset(t);
+                } else {
+                    smallBOP->tryAddOffset(t);
+                }
             }
         }
 
