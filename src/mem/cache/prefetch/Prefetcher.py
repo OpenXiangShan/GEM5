@@ -178,7 +178,7 @@ class BertiPrefetcher(QueuedPrefetcher):
     max_deltafound = Param.Int(4, "The maximum number of delta can be found")
 
     aggressive_pf = Param.Bool(
-        True,
+        False,
         "Issue pf reqs as many as possible."
     )
     history_table_entries = Param.MemorySize(
