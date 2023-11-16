@@ -85,6 +85,22 @@ ArchDBer::memTraceWrite(Tick tick, bool is_load, Addr pc, Addr vaddr, Addr paddr
   };
 }
 
+void
+ArchDBer::l1PFTraceWrite(Tick tick, Addr trigger_pc, Addr trigger_vaddr, Addr pf_vaddr, int pf_src)
+{
+  bool dump_me = dumpGlobal && dumpL1PfTrace;
+  if (!dump_me) return;
+
+  sprintf(memTraceSQLBuf,
+          "INSERT INTO L1PFTrace(Tick,TriggerPC,TriggerVAddr,PFVAddr,PFSrc) "
+          "VALUES(%ld,%ld,%ld,%ld,%d);",
+          tick, trigger_pc, trigger_vaddr, pf_vaddr, pf_src);
+  rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
+  if (rc != SQLITE_OK) {
+    fatal("SQL error: %s\n", zErrMsg);
+  };
+}
+
 
 void ArchDBer::L1MissTrace_write(
   uint64_t pc,

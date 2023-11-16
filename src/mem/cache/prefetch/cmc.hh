@@ -89,7 +89,8 @@ class CMCPrefetcher : public Queued
         return addr ^ (pc<<8);
     }
 
-    bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType src);
+    bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
+                          PrefetchSourceType src);
 
     static const int STACK_SIZE = 4;
     boost::circular_buffer<RecordEntry> trigger;

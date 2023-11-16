@@ -115,7 +115,8 @@ class IPCP : public Queued
     // lookup ip table and return the best ip-class
     IPEntry* ipLookup(Addr pc, Addr pf_addr, Classifier &type, int &new_stride);
 
-    bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType pfSource);
+    bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
+                          PrefetchSourceType pfSource);
 
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses) override
     {
@@ -124,7 +125,7 @@ class IPCP : public Queued
 
     void doLookup(const PrefetchInfo &pfi, PrefetchSourceType pf_source);
 
-    bool doPrefetch(std::vector<AddrPriority> &addresses, Addr &best_block_offset);
+    bool doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, Addr &best_block_offset);
 
 };
 

@@ -61,9 +61,11 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
 
     berti->filter = &this->pfBlockLRUFilter;
 
-    cmc->filter = &this->pfBlockLRUFilter;
+    if (cmc)
+        cmc->filter = &this->pfBlockLRUFilter;
 
-    ipcp->rrf = &this->pfBlockLRUFilter;
+    if (ipcp)
+        ipcp->rrf = &this->pfBlockLRUFilter;
 
     DPRINTF(XSCompositePrefetcher, "SMS: region_size: %d regionBlks: %d\n",
             regionSize, regionBlks);
@@ -121,7 +123,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
                     // for (int i = (int)regionBlks - 1; i >= pf_tgt_offset && i >= 0; i--) {
                     for (int i = regionBlks - 1; i >= 0; i--) {
                         Addr cur = pf_tgt_region * regionSize + i * blkSize;
-                        sendPFWithFilter(cur, addresses, i, stream_type);
+                        sendPFWithFilter(pfi, cur, addresses, i, stream_type);
                         DPRINTF(XSCompositePrefetcher, "pf addr: %x [%d]\n", cur, i);
                         fatal_if(i < 0, "i < 0\n");
                     }
@@ -129,7 +131,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
                     // for (int i = std::max(1, ((int) pf_tgt_offset) - 4); i <= pf_tgt_offset; i++) {
                     for (int i = 0; i < regionBlks; i++) {
                         Addr cur = pf_tgt_region * regionSize + i * blkSize;
-                        sendPFWithFilter(cur, addresses, regionBlks - i, stream_type);
+                        sendPFWithFilter(pfi, cur, addresses, regionBlks - i, stream_type);
                         DPRINTF(XSCompositePrefetcher, "pf addr: %x [%d]\n", cur, i);
                     }
                 }
@@ -146,7 +148,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             DPRINTF(XSCompositePrefetcher, "ACT pf ahead region: %lx\n", pf_tgt_region);
             for (int i = 0; i < regionBlks; i++) {
                 Addr cur = pf_tgt_region * regionSize + i * blkSize;
-                sendPFWithFilter(cur, addresses, regionBlks - i, stream_type, 2);
+                sendPFWithFilter(pfi, cur, addresses, regionBlks - i, stream_type, 2);
             }
             pfPageLRUFilterL2.insert(pf_tgt_region, 0);
         }
@@ -158,7 +160,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             DPRINTF(XSCompositePrefetcher, "ACT pf ahead region: %lx\n", pf_tgt_region);
             for (int i = 0; i < regionBlks; i++) {
                 Addr cur = pf_tgt_region * regionSize + i * blkSize;
-                sendPFWithFilter(cur, addresses, regionBlks - i, stream_type, 3);
+                sendPFWithFilter(pfi, cur, addresses, regionBlks - i, stream_type, 3);
             }
             pfPageLRUFilterL3.insert(pf_tgt_region, 0);
         }
@@ -232,6 +234,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
         bool use_berti =
             !pfi.isStore() && (pfi.isCacheMiss() || pfi.isPfFirstHit() || (!pfi.isCacheMiss() && pc_found_in_berti));
         if (use_berti) {
+            DPRINTF(XSCompositePrefetcher, "Do Berti traing/prefetching...\n");
             berti->calculatePrefetch(pfi, addresses, late, pf_source, miss_repeat, stride_pf_addr);
             int t;
             // if ((t = berti->getBestDelta()) != 0) {
@@ -266,7 +269,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
         bool use_cplx = enableCPLX && !pfi.isStore();
         if (use_cplx) {
             Addr cplx_best_offset = 0;
-            bool send_cplx_pf = ipcp->doPrefetch(addresses, cplx_best_offset);
+            bool send_cplx_pf = ipcp->doPrefetch(pfi, addresses, cplx_best_offset);
 
             if (send_cplx_pf && cplx_best_offset != 0) {
                 learnedBOP->tryAddOffset(cplx_best_offset, late);
@@ -525,7 +528,7 @@ XSCompositePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const P
             for (unsigned i = start_depth; i <= entry->depth; i++) {
                 pf_addr = lookupAddr + entry->stride * i;
                 DPRINTF(XSCompositePrefetcher, "Stride conf >= 2, send pf: %x with depth %i\n", pf_addr, i);
-                sendPFWithFilter(blockAddress(pf_addr), addresses, 0, PrefetchSourceType::SStride);
+                sendPFWithFilter(pfi, blockAddress(pf_addr), addresses, 0, PrefetchSourceType::SStride);
             }
             stride_pf = pf_addr;  // the longest lookahead
             should_cover = true;
@@ -669,14 +672,14 @@ XSCompositePrefetcher::phtLookup(const Base::PrefetchInfo &pfi, std::vector<Addr
         for (uint8_t i = 0; i < regionBlks - 1; i++) {
             if (pht_entry->hist[i + regionBlks - 1].calcSaturation() > 0.5) {
                 Addr pf_tgt_addr = blk_addr + (i + 1) * blkSize;
-                sendPFWithFilter(pf_tgt_addr, addresses, priority--, PrefetchSourceType::SPht, phtPFLevel);
+                sendPFWithFilter(pfi, pf_tgt_addr, addresses, priority--, PrefetchSourceType::SPht, phtPFLevel);
                 found = true;
             }
         }
         for (int i = regionBlks - 2, j = 1; i >= 0; i--, j++) {
             if (pht_entry->hist[i].calcSaturation() > 0.5) {
                 Addr pf_tgt_addr = blk_addr - j * blkSize;
-                sendPFWithFilter(pf_tgt_addr, addresses, priority--, PrefetchSourceType::SPht, phtPFLevel);
+                sendPFWithFilter(pfi, pf_tgt_addr, addresses, priority--, PrefetchSourceType::SPht, phtPFLevel);
                 found = true;
             }
         }
@@ -739,8 +742,8 @@ XSCompositePrefetcher::calcPeriod(const std::vector<SatCounter8> &bit_vec, bool 
 }
 
 bool
-XSCompositePrefetcher::sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio,
-                                        PrefetchSourceType src, int ahead_level)
+XSCompositePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses,
+                                        int prio, PrefetchSourceType src, int ahead_level)
 {
     if (ahead_level < 2 && pfPageLRUFilter.contains(regionAddress(addr))) {
         DPRINTF(XSCompositePrefetcher, "Skip recently L1 prefetched page: %lx\n", regionAddress(addr));

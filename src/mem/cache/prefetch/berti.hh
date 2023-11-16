@@ -170,7 +170,8 @@ class BertiPrefetcher : public Queued
 
     int getBestDelta() { return tempBestDelta; }
 
-    bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType src);
+    bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
+                          PrefetchSourceType src);
 
     void notifyFill(const PacketPtr &pkt) override;
 

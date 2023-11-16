@@ -210,8 +210,8 @@ class XSCompositePrefetcher : public Queued
     boost::compute::detail::lru_cache<Addr, Addr> pfPageLRUFilterL2;
     boost::compute::detail::lru_cache<Addr, Addr> pfPageLRUFilterL3;
 
-    bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType src,
-                          int ahead_level=-1);
+    bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
+                          PrefetchSourceType src, int ahead_level = -1);
 
     BOP *largeBOP;
 

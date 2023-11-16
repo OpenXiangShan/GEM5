@@ -184,9 +184,8 @@ BertiPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPrio
                             delta_info.delta);
                     int64_t delta = delta_info.delta;
                     statsBerti.pf_delta.sample(delta);
-                    Addr pf_addr =
-                        (blockIndex(pfi.getAddr()) + delta) << lBlkSize;
-                    sendPFWithFilter(pf_addr, addresses, 32, PrefetchSourceType::Berti);
+                    Addr pf_addr = (blockIndex(pfi.getAddr()) + delta) << lBlkSize;
+                    sendPFWithFilter(pfi, pf_addr, addresses, 32, PrefetchSourceType::Berti);
                 }
             }
         } else {
@@ -195,12 +194,12 @@ BertiPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPrio
                         entry->bestDelta.delta);
                 statsBerti.pf_delta.sample(entry->bestDelta.delta);
                 Addr pf_addr = (blockIndex(pfi.getAddr()) + entry->bestDelta.delta) << lBlkSize;
-                sendPFWithFilter(pf_addr, addresses, 32, PrefetchSourceType::Berti);
-                if (entry->bestDelta.coverageCounter > 6) {
-                    local_delta_pf_addr = pf_addr;
-                } else {
-                    local_delta_pf_addr = 0;
-                }
+                sendPFWithFilter(pfi, pf_addr, addresses, 32, PrefetchSourceType::Berti);
+                // if (entry->bestDelta.coverageCounter > 8) {
+                //     local_delta_pf_addr = pf_addr;
+                // } else {
+                //     local_delta_pf_addr = 0;
+                // }
             }
         }
 
@@ -211,9 +210,12 @@ BertiPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPrio
 }
 
 bool
-BertiPrefetcher::sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio,
-                                        PrefetchSourceType src)
+BertiPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
+                                  PrefetchSourceType src)
 {
+    if (archDBer && cache->level() == 1) {
+        archDBer->l1PFTraceWrite(curTick(), pfi.getPC(), pfi.getAddr(), addr, src);
+    }
     if (filter->contains(addr)) {
         DPRINTF(BertiPrefetcher, "Skip recently prefetched: %lx\n", addr);
         return false;
