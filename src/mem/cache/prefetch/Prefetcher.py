@@ -560,7 +560,7 @@ class LearnedBOPPrefetcher(BOPPrefetcher):
                 "Cycles to delay a write in the left RR table from the delay queue")
 
     autoLearning = True
-    offsets = [95]
+    offsets = [64]
 
 class SBOOEPrefetcher(QueuedPrefetcher):
     type = 'SBOOEPrefetcher'
