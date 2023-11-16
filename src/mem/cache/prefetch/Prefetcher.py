@@ -85,6 +85,8 @@ class BasePrefetcher(ClockedObject):
     page_bytes = Param.MemorySize('4KiB',
             "Size of pages for virtual addresses")
 
+    is_sub_prefetcher = Param.Bool(False, "Is this a sub-prefetcher")
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._events = []
@@ -826,13 +828,17 @@ class XSCompositePrefetcher(QueuedPrefetcher):
         LRURP(),
         "Replacement policy of pf_gen"
     )
-    bop_large = Param.BasePrefetcher(BOPPrefetcher(), "Large BOP used in composite prefetcher ")
-    bop_small = Param.BasePrefetcher(SmallBOPPrefetcher(), "Small BOP used in composite prefetcher ")
-    bop_learned = Param.BasePrefetcher(LearnedBOPPrefetcher(), "Learned BOP used in composite prefetcher ")
-    spp = Param.BasePrefetcher(SignaturePathPrefetcher(), "SPP used in composite prefetcher")
-    ipcp = Param.IPCPrefetcher(IPCPrefetcher(use_rrf = False), "")
-    cmc = Param.CMCPrefetcher(CMCPrefetcher(), "")
-    berti = Param.BertiPrefetcher(BertiPrefetcher(), "")
+    bop_large = Param.BasePrefetcher(BOPPrefetcher(is_sub_prefetcher=True),
+                                     "Large BOP used in composite prefetcher ")
+    bop_small = Param.BasePrefetcher(SmallBOPPrefetcher(is_sub_prefetcher=True),
+                                     "Small BOP used in composite prefetcher ")
+    bop_learned = Param.BasePrefetcher(LearnedBOPPrefetcher(is_sub_prefetcher=True),
+                                       "Learned BOP used in composite prefetcher ")
+    spp = Param.BasePrefetcher(SignaturePathPrefetcher(is_sub_prefetcher=True),
+                               "SPP used in composite prefetcher")
+    ipcp = Param.IPCPrefetcher(IPCPrefetcher(use_rrf = False, is_sub_prefetcher=True), "")
+    cmc = Param.CMCPrefetcher(CMCPrefetcher(is_sub_prefetcher=True), "")
+    berti = Param.BertiPrefetcher(BertiPrefetcher(is_sub_prefetcher=True), "")
 
     enable_cplx = Param.Bool(False, "Enable CPLX component")
     enable_spp = Param.Bool(False, "Enable SPP component")

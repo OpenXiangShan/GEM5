@@ -6,8 +6,12 @@
 namespace gem5{
 
 ArchDBer::ArchDBer(const Params &p)
-    : SimObject(p), dump(p.dump_from_start),
-    dump_rolling(p.enable_rolling),
+    : SimObject(p), dumpGlobal(p.dump_from_start),
+    dumpRolling(p.enable_rolling),
+    dumpMemTrace(p.dump_mem_trace),
+    dumpL1PfTrace(p.dump_l1_pf_trace),
+    dumpL1EvictTrace(p.dump_l1_evict_trace),
+    dumpL1MissTrace(p.dump_l1_miss_trace),
     mem_db(nullptr), zErrMsg(nullptr),rc(0),
     db_path(p.arch_db_file)
 {
@@ -38,7 +42,7 @@ void ArchDBer::create_table(const std::string &sql) {
 }
 
 void ArchDBer::start_recording() {
-  dump = true;
+  dumpGlobal = true;
 }
 
 void ArchDBer::save_db() {
@@ -68,7 +72,8 @@ void
 ArchDBer::memTraceWrite(Tick tick, bool is_load, Addr pc, Addr vaddr, Addr paddr, uint64_t issued, uint64_t translated,
                         uint64_t completed, uint64_t committed, uint64_t writenback, int pf_src)
 {
-  if (!dump) return;
+  bool dump_me = dumpGlobal && dumpMemTrace;
+  if (!dump_me) return;
 
   sprintf(memTraceSQLBuf,
           "INSERT INTO MemTrace(Tick,IsLoad,PC,VADDR,PADDR,Issued,Translated,Completed,Committed,Writenback,PFSrc) "
@@ -89,7 +94,8 @@ void ArchDBer::L1MissTrace_write(
   uint64_t stamp,
   const char * site
 ) {
-  if (!dump) return;
+  bool dump_me = dumpGlobal && dumpL1EvictTrace;
+  if (!dump_me) return;
   char sql[512];
   sprintf(sql,
     "INSERT INTO L1MissTrace(PC,SOURCE,PADDR,VADDR, STAMP, SITE) " \
@@ -107,7 +113,8 @@ void ArchDBer::L1EvictTraceWrite(
   uint64_t stamp,
   const char * site
 ) {
-  if (!dump) return;
+  bool dump_me = dumpGlobal && dumpL1EvictTrace;
+  if (!dump_me) return;
   char sql[512];
   sprintf(sql,
     "INSERT INTO L1EvictTrace(PADDR, STAMP, SITE) " \

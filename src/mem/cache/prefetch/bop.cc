@@ -30,6 +30,7 @@
 
 #include "debug/BOPOffsets.hh"
 #include "debug/BOPPrefetcher.hh"
+#include "mem/cache/base.hh"
 #include "params/BOPPrefetcher.hh"
 
 namespace gem5

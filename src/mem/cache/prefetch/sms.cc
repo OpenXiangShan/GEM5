@@ -786,9 +786,44 @@ XSCompositePrefetcher::XSCompositeStats::XSCompositeStats(statistics::Group *par
     :statistics::Group(parent),
     ADD_STAT(allCntNum,statistics::units::Count::get(),"victim act access num"),
     ADD_STAT(actMNum,statistics::units::Count::get(),"victim act match num")
-    {
-    }
+{
+}
 
+void
+XSCompositePrefetcher::setCache(BaseCache *_cache)
+{
+    Base::setCache(_cache);
+
+    largeBOP->setCache(_cache);
+    smallBOP->setCache(_cache);
+    learnedBOP->setCache(_cache);
+
+    berti->setCache(_cache);
+
+    if (cmc)
+        cmc->setCache(_cache);
+
+    if (ipcp)
+        ipcp->setCache(_cache);
+}
+
+void
+XSCompositePrefetcher::setArchDBer(ArchDBer *arch_db_er)
+{
+    Base::setArchDBer(arch_db_er);
+
+    largeBOP->setArchDBer(arch_db_er);
+    smallBOP->setArchDBer(arch_db_er);
+    learnedBOP->setArchDBer(arch_db_er);
+
+    berti->setArchDBer(arch_db_er);
+
+    if (cmc)
+        cmc->setArchDBer(arch_db_er);
+
+    if (ipcp)
+        ipcp->setArchDBer(arch_db_er);
+}
 
 }  // prefetch
 }  // gem5

@@ -231,6 +231,12 @@ class XSCompositePrefetcher : public Queued
     const bool enableSPP;
     const bool enableTemporal;
     const unsigned shortStrideThres;
+
+  public:
+    void setCache(BaseCache *_cache) override;
+
+    void setArchDBer(ArchDBer *arch_db_er) override;
+
 };
 
 }

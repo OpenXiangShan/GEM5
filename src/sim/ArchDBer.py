@@ -51,3 +51,7 @@ class ArchDBer(SimObject):
     enable_rolling = Param.Bool(False, "Dump rolling perfcnt")
 
     table_cmds = VectorParam.String([], "Tables to create")
+    dump_mem_trace = Param.Bool(False, "Dump memory trace")
+    dump_l1_pf_trace = Param.Bool(False, "Dump prefetch trace")
+    dump_l1_evict_trace = Param.Bool(False, "Dump l1 evict trace")
+    dump_l1_miss_trace = Param.Bool(False, "Dump l1 miss trace")

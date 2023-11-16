@@ -125,7 +125,8 @@ Base::PrefetchListener::notify(const PacketPtr &pkt)
 }
 
 Base::Base(const BasePrefetcherParams &p)
-    : ClockedObject(p), listeners(), cache(nullptr), blkSize(p.block_size),
+    : ClockedObject(p),
+      listeners(), cache(nullptr), isSubPrefetcher(p.is_sub_prefetcher), blkSize(p.block_size),
       lBlkSize(floorLog2(blkSize)), onMiss(p.on_miss), onRead(p.on_read),
       onWrite(p.on_write), onData(p.on_data), onInst(p.on_inst),
       requestorId(p.sys->getRequestorId(this)),
@@ -395,7 +396,7 @@ Base::regProbeListeners()
      * parent cache using the probe "Miss". Also connect to "Hit", if the
      * cache is configured to prefetch on accesses.
      */
-    if (listeners.empty() && cache != nullptr) {
+    if (listeners.empty() && cache != nullptr && !isSubPrefetcher) {
         ProbeManager* pm(cache->getProbeManager());
         listeners.push_back(new PrefetchListener(*this, pm, "StorePFtrain", false, true, true));
         listeners.push_back(new PrefetchListener(*this, pm, "Miss", false, true, false));

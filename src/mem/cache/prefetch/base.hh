@@ -55,6 +55,7 @@
 #include "mem/cache/cache_blk.hh"
 #include "mem/packet.hh"
 #include "mem/request.hh"
+#include "sim/arch_db.hh"
 #include "sim/byteswap.hh"
 #include "sim/clocked_object.hh"
 #include "sim/probe/probe.hh"
@@ -336,6 +337,10 @@ class Base : public ClockedObject
     /** Pointr to the parent cache. */
     BaseCache* cache;
 
+    bool isSubPrefetcher;
+
+    ArchDBer* archDBer;
+
     /** The block size of the parent cache. */
     unsigned blkSize;
 
@@ -452,6 +457,10 @@ class Base : public ClockedObject
     virtual ~Base() = default;
 
     virtual void setCache(BaseCache *_cache);
+
+    virtual void setArchDBer(ArchDBer *arch_db_er) {
+        archDBer = arch_db_er;
+    }
 
     /**
      * Notify prefetcher of cache access (may be any access or just

@@ -5,6 +5,7 @@
 #include "mem/cache/prefetch/berti.hh"
 
 #include "debug/BertiPrefetcher.hh"
+#include "mem/cache/base.hh"
 #include "mem/cache/prefetch/associative_set_impl.hh"
 
 namespace gem5
