@@ -162,15 +162,12 @@ BertiPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPrio
             pfi.getPC(), blockAddress(pfi.getAddr()),
             pfi.isCacheMiss(), lastFillLatency);
 
-    // if (!pfi.isCacheMiss()) {
-    //     HistoryTableEntry *hist_entry = historyTable.findEntry(
-    //         pcHash(pfi.getPC()), pfi.isSecure());
-    //     if (hist_entry) {
-    //         searchTimelyDeltas(*hist_entry, lastFillLatency,
-    //                            curCycle(),
-    //                            blockIndex(pfi.getAddr()));
-    //     }
-    // }
+    if (!pfi.isCacheMiss()) {
+        HistoryTableEntry *hist_entry = historyTable.findEntry(pcHash(pfi.getPC()), pfi.isSecure());
+        if (hist_entry) {
+            searchTimelyDeltas(*hist_entry, lastFillLatency, curCycle(), blockIndex(pfi.getAddr()));
+        }
+    }
 
     /** 1.train: update history table */
     auto entry = updateHistoryTable(pfi);
