@@ -245,7 +245,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
                 DPRINTF(BOPOffsets, "PC %lx add evict delta %u\n", pfi.getPC(), t);
                 if (labs(t) > 64) {
                     largeBOP->tryAddOffset(t);
-                } else {
+                } else if (labs(t) > 8) {
                     smallBOP->tryAddOffset(t);
                 }
             }

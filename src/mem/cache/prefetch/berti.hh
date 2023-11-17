@@ -36,12 +36,12 @@ class BertiPrefetcher : public Queued
   protected:
     struct HistoryInfo
     {
-        Addr lineAddr;
+        Addr vAddr;
         Cycles timestamp;
 
         bool operator == (const HistoryInfo &rhs) const
         {
-            return lineAddr == rhs.lineAddr;
+            return vAddr == rhs.vAddr;
         }
     };
 
@@ -112,7 +112,9 @@ class BertiPrefetcher : public Queued
 
 
     Cycles lastFillLatency;
-    bool aggressive_pf;
+    const bool aggressivePF;
+    const bool useByteAddr;
+    const bool triggerPht;
 
     struct BertiStats : public statistics::Group
     {
@@ -144,7 +146,7 @@ class BertiPrefetcher : public Queued
         return (pc>>1);
     }
 
-    int tempBestDelta;
+    int lastUsedBestDelta;
     int evictedBestDelta;
 
   public:
@@ -168,10 +170,10 @@ class BertiPrefetcher : public Queued
 
     int getEvictBestDelta() { return evictedBestDelta; }
 
-    int getBestDelta() { return tempBestDelta; }
+    int getBestDelta() { return lastUsedBestDelta; }
 
     bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
-                          PrefetchSourceType src);
+                          PrefetchSourceType src, bool using_best_delta_and_confident);
 
     void notifyFill(const PacketPtr &pkt) override;
 

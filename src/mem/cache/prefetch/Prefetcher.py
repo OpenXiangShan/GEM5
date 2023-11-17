@@ -177,10 +177,7 @@ class BertiPrefetcher(QueuedPrefetcher):
 
     max_deltafound = Param.Int(4, "The maximum number of delta can be found")
 
-    aggressive_pf = Param.Bool(
-        False,
-        "Issue pf reqs as many as possible."
-    )
+    aggressive_pf = Param.Bool(False, "Issue pf reqs as many as possible.")
     history_table_entries = Param.MemorySize(
         "64", "Number of history table entries."
     )
@@ -197,6 +194,8 @@ class BertiPrefetcher(QueuedPrefetcher):
         LRURP(),
         "Replacement policy of history table"
     )
+    use_byte_addr = Param.Bool(True, "Use byte address")
+    trigger_pht = Param.Bool(True, "Use Berti's prediction to trigger PHT")
 
 class StridePrefetcherHashedSetAssociative(SetAssociative):
     type = 'StridePrefetcherHashedSetAssociative'

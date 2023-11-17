@@ -193,6 +193,10 @@ def config_cache(options, system):
                     dcache.prefetcher.max_prefetch_requests_with_pending_translation = 128
                     dcache.prefetcher.region_size = 64*16  # 64B * blocks per region
 
+                    dcache.prefetcher.berti.use_byte_addr = True
+                    dcache.prefetcher.berti.aggressive_pf = False
+                    dcache.prefetcher.berti.trigger_pht = True
+
             if options.ideal_cache:
                 icache.response_latency = 0
                 dcache.response_latency = 0
