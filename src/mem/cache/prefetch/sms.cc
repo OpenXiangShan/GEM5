@@ -230,9 +230,9 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
         Addr stride_pf_addr = 0;
         bool covered_by_stride = false;
 
-        bool pc_found_in_berti = berti->containsPC(pfi);
+        bool pc_found_in_berti = berti->shouldTrain(pfi.isCacheMiss(), pfi);
         bool use_berti =
-            !pfi.isStore() && (pfi.isCacheMiss() || pfi.isPfFirstHit() || (!pfi.isCacheMiss() && pc_found_in_berti));
+            !pfi.isStore() && (pfi.isCacheMiss() || pfi.isPfFirstHit());
         if (use_berti) {
             DPRINTF(XSCompositePrefetcher, "Do Berti traing/prefetching...\n");
             berti->calculatePrefetch(pfi, addresses, late, pf_source, miss_repeat, stride_pf_addr);

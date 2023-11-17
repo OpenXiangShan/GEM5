@@ -149,6 +149,8 @@ class BertiPrefetcher : public Queued
     int lastUsedBestDelta;
     int evictedBestDelta;
 
+    boost::compute::detail::lru_cache<Addr, Addr> trainBlockFilter;
+
   public:
 
     boost::compute::detail::lru_cache<Addr, Addr> *filter;
@@ -177,8 +179,18 @@ class BertiPrefetcher : public Queued
 
     void notifyFill(const PacketPtr &pkt) override;
 
-    bool containsPC(const PrefetchInfo &pfi) {
-        return historyTable.findEntry(pcHash(pfi.getPC()), pfi.isSecure()) != nullptr;
+    bool shouldTrain(bool is_miss, const PrefetchInfo &pfi) {
+        if (is_miss) {
+            // Currently, XSCompositePrefetcher lets multiple accesses to the same block be seen by prefetchers.
+            // Maybe, we should filter them out
+            // return !trainBlockFilter.contains(blockIndex(pfi.getAddr()));
+            return true;
+        } else {
+            // This is to let multiple accessses into the same block be seen by different PC entryeis
+            // return !trainBlockFilter.contains(blockIndex(pfi.getAddr())) &&
+            //        historyTable.findEntry(pcHash(pfi.getPC()), pfi.isSecure()) != nullptr;
+            return historyTable.findEntry(pcHash(pfi.getPC()), pfi.isSecure()) != nullptr;
+        }
     }
 
 };

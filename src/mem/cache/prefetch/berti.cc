@@ -32,7 +32,8 @@ BertiPrefetcher::BertiPrefetcher(const BertiPrefetcherParams &p)
       aggressivePF(p.aggressive_pf),
       useByteAddr(p.use_byte_addr),
       triggerPht(p.trigger_pht),
-      statsBerti(this)
+      statsBerti(this),
+      trainBlockFilter(8)
 {
 }
 
@@ -99,12 +100,16 @@ void BertiPrefetcher::searchTimelyDeltas(
     DPRINTF(BertiPrefetcher, "latency: %lu, demand_cycle: %lu, history count: %lu\n", latency, demand_cycle,
             entry.history.size());
     std::list<int64_t> new_deltas;
+    int delta_thres = useByteAddr ? blkSize : 8;
     for (auto it = entry.history.rbegin(); it != entry.history.rend(); it++) {
         int64_t delta = trigger_addr - it->vAddr;
         DPRINTF(BertiPrefetcher, "delta (%x - %x) = %ld\n", trigger_addr, it->vAddr, delta);
-        if (labs(delta) <= (1<<3)) {
+
+        // skip short deltas
+        if (labs(delta) <= delta_thres) {
             continue;
         }
+
         // if not timely, skip and continue
         if (it->timestamp + latency >= demand_cycle) {
             DPRINTF(BertiPrefetcher, "skip untimely delta: %lu + %lu <= %u : %ld\n", it->timestamp, latency,
@@ -168,6 +173,8 @@ BertiPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPrio
             "Train prefetcher, pc: %lx, addr: %lx miss: %d last lat: [%d]\n",
             pfi.getPC(), blockAddress(pfi.getAddr()),
             pfi.isCacheMiss(), lastFillLatency);
+
+    trainBlockFilter.insert(blockIndex(pfi.getAddr()), 0);
 
     if (!pfi.isCacheMiss()) {
         HistoryTableEntry *hist_entry = historyTable.findEntry(pcHash(pfi.getPC()), pfi.isSecure());
