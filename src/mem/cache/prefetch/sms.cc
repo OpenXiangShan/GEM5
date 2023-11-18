@@ -47,7 +47,9 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       enableCPLX(p.enable_cplx),
       enableSPP(p.enable_spp),
       enableTemporal(p.enable_temporal),
-      shortStrideThres(p.short_stride_thres)
+      shortStrideThres(p.short_stride_thres),
+      pht_s_update(p.pht_signal_update),
+      beside_pht_update(p.beside_pht_update)
 {
     assert(largeBOP);
     assert(smallBOP);
@@ -315,7 +317,8 @@ XSCompositePrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page, 
         act.accessEntry(entry);
         in_active_page = entry->in_active_page(regionBlks);
         uint64_t region_bit_accessed = 1UL << region_offset;
-        updatePht(entry, region_start, re_act_entry, true, region_offset);
+        if (pht_s_update)
+            updatePht(entry, region_start, re_act_entry, true, region_offset);
         if (!(entry->region_bits & region_bit_accessed)) {
             entry->access_cnt += 1;
             is_first_shot = true;
@@ -645,12 +648,12 @@ XSCompositePrefetcher::updatePht(XSCompositePrefetcher::ACTEntry *act_entry,
     pht.accessEntry(pht_entry);
     Addr region_offset = act_entry->region_offset;
     Addr region_addr_find = act_entry->regionAddr / regionSize;
-    ACTEntry *act_entry_f =
-        act.findEntry(region_addr_find + 1, act_entry->is_secure);
-    ACTEntry *act_entry_b =
-        act.findEntry(region_addr_find - 1, act_entry->is_secure);
-    // ACTEntry *act_entry_f = nullptr;
-    // ACTEntry *act_entry_b = nullptr;
+    ACTEntry *act_entry_f = nullptr;
+    ACTEntry *act_entry_b = nullptr;
+    if (beside_pht_update){
+        act_entry_f = act.findEntry(region_addr_find + 1, act_entry->is_secure);
+        act_entry_b = act.findEntry(region_addr_find - 1, act_entry->is_secure);
+    }
     //  incr part
     if (act_entry_f) {
         for (int i = region_offset + 1, j = 0; j < regionBlks - 1; i++, j++) {

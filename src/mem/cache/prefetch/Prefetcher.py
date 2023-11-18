@@ -844,6 +844,8 @@ class XSCompositePrefetcher(QueuedPrefetcher):
     enable_temporal = Param.Bool(False, "Enable temporal component")
 
     short_stride_thres = Param.Unsigned(512, "Ignore short strides when there are long strides (Bytes)")
+    pht_signal_update = Param.Bool(True, "Enable signal bits update pht")
+    beside_pht_update = Param.Bool(True, "Enable use beside act update pht")
 
 
 class MultiPrefetcher(BasePrefetcher):

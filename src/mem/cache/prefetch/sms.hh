@@ -237,11 +237,13 @@ class XSCompositePrefetcher : public Queued
     const bool enableTemporal;
     const unsigned shortStrideThres;
 
+    const bool pht_s_update;
+    const bool beside_pht_update;
+
   public:
     void setCache(BaseCache *_cache) override;
 
     void setArchDBer(ArchDBer *arch_db_er) override;
-
 };
 
 }
