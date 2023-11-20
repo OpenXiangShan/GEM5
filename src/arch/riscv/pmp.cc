@@ -137,7 +137,7 @@ PMP::createAddrfault(Addr vaddr, BaseMMU::Mode mode)
     } else {
         code = RiscvISA::ExceptionCode::INST_ACCESS;
     }
-    warn("pmp access fault.\n");
+    warn("pmp access fault.mode %d  vaddr %lx \n",mode , vaddr);
     return std::make_shared<RiscvISA::AddressFault>(vaddr, code);
 }
 
@@ -146,7 +146,7 @@ PMP::pmpGetAField(uint8_t cfg)
 {
     // to get a field from pmpcfg register
     uint8_t a = cfg >> 3;
-    return a & 0x03;
+    return (a & 0x03);
 }
 
 

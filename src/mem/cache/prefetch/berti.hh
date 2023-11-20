@@ -36,8 +36,13 @@ class BertiPrefetcher : public Queued
   protected:
     struct HistoryInfo
     {
-        Addr lineAddr;
+        Addr vAddr;
         Cycles timestamp;
+
+        bool operator == (const HistoryInfo &rhs) const
+        {
+            return vAddr == rhs.vAddr;
+        }
     };
 
     enum DeltaStatus { L1_PREF, L2_PREF, NO_PREF };
@@ -53,8 +58,7 @@ class BertiPrefetcher : public Queued
       public:
         std::vector<DeltaInfo> deltas;
         uint8_t counter = 0;
-        int best_delta = 0;
-        DeltaStatus best_status = NO_PREF;
+        DeltaInfo bestDelta;
 
         void resetConfidence(bool reset_status)
         {
@@ -66,26 +70,25 @@ class BertiPrefetcher : public Queued
                 }
             }
             if (reset_status) {
-                best_delta = 0;
-                best_status = NO_PREF;
+                bestDelta.delta = 0;
+                bestDelta.status = NO_PREF;
             }
         }
 
         void updateStatus()
         {
-            uint8_t min_cov = 0;
+            uint8_t max_cov = 0;
             for (auto &info : deltas) {
-                info.status = (info.coverageCounter >= 3) ? L2_PREF : NO_PREF;
-                info.status = (info.coverageCounter >= 6) ? L1_PREF : info.status;
-                if (info.status != NO_PREF && info.coverageCounter > min_cov) {
-                    min_cov = info.coverageCounter;
-                    best_delta = info.delta;
-                    best_status = info.status;
+                info.status = (info.coverageCounter >= 2) ? L2_PREF : NO_PREF;
+                info.status = (info.coverageCounter >= 4) ? L1_PREF : info.status;
+                if (info.status != NO_PREF && info.coverageCounter > max_cov) {
+                    max_cov = info.coverageCounter;
+                    bestDelta = info;
                 }
             }
-            if (min_cov == 0) {
-                best_delta = 0;
-                best_status = NO_PREF;
+            if (max_cov == 0) {
+                bestDelta.delta = 0;
+                bestDelta.status = NO_PREF;
             }
         }
 
@@ -109,7 +112,9 @@ class BertiPrefetcher : public Queued
 
 
     Cycles lastFillLatency;
-    bool aggressive_pf;
+    const bool aggressivePF;
+    const bool useByteAddr;
+    const bool triggerPht;
 
     struct BertiStats : public statistics::Group
     {
@@ -141,8 +146,10 @@ class BertiPrefetcher : public Queued
         return (pc>>1);
     }
 
-    int temp_bestDelta;
-    int evict_bestDelta;
+    int lastUsedBestDelta;
+    int evictedBestDelta;
+
+    boost::compute::detail::lru_cache<Addr, Addr> trainBlockFilter;
 
   public:
 
@@ -155,16 +162,37 @@ class BertiPrefetcher : public Queued
         panic("not implemented");
     };
 
-    void calculatePrefetch(const PrefetchInfo &pfi,
-                           std::vector<AddrPriority> &addresses, bool late, PrefetchSourceType pf_source, bool miss_repeat) override;
+    void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
+                           PrefetchSourceType pf_source, bool miss_repeat) override
+    {
+        panic("not implemented");
+    };
+    void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
+                           PrefetchSourceType pf_source, bool miss_repeat, Addr &local_delta_pf_addr);
 
-    int getEvictBestDelta() { return evict_bestDelta; }
+    int getEvictBestDelta() { return evictedBestDelta; }
 
-    int getBestDelta() { return temp_bestDelta; }
+    int getBestDelta() { return lastUsedBestDelta; }
 
-    bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType src);
+    bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
+                          PrefetchSourceType src, bool using_best_delta_and_confident);
 
     void notifyFill(const PacketPtr &pkt) override;
+
+    bool shouldTrain(bool is_miss, const PrefetchInfo &pfi) {
+        if (is_miss) {
+            // Currently, XSCompositePrefetcher lets multiple accesses to the same block be seen by prefetchers.
+            // Maybe, we should filter them out
+            // return !trainBlockFilter.contains(blockIndex(pfi.getAddr()));
+            return true;
+        } else {
+            // This is to let multiple accessses into the same block be seen by different PC entryeis
+            // return !trainBlockFilter.contains(blockIndex(pfi.getAddr())) &&
+            //        historyTable.findEntry(pcHash(pfi.getPC()), pfi.isSecure()) != nullptr;
+            return historyTable.findEntry(pcHash(pfi.getPC()), pfi.isSecure()) != nullptr;
+        }
+    }
+
 };
 
 }

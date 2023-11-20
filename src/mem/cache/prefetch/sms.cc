@@ -1,5 +1,6 @@
 #include "mem/cache/prefetch/sms.hh"
 
+#include "debug/BOPOffsets.hh"
 #include "debug/XSCompositePrefetcher.hh"
 #include "mem/cache/prefetch/associative_set_impl.hh"
 
@@ -37,6 +38,7 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       pfPageLRUFilterL3(pfPageFilterSize),
       largeBOP(dynamic_cast<BOP *>(p.bop_large)),
       smallBOP(dynamic_cast<BOP *>(p.bop_small)),
+      learnedBOP(dynamic_cast<BOP *>(p.bop_learned)),
       spp(dynamic_cast<SignaturePath *>(p.spp)),
       ipcp(dynamic_cast<IPCP *>(p.ipcp)),
       cmc(p.cmc),
@@ -49,16 +51,21 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
 {
     assert(largeBOP);
     assert(smallBOP);
+    assert(learnedBOP);
     assert(isPowerOf2(regionSize));
 
 
     largeBOP->filter = &this->pfBlockLRUFilter;
     smallBOP->filter = &this->pfBlockLRUFilter;
+    learnedBOP->filter = &this->pfBlockLRUFilter;
+
     berti->filter = &this->pfBlockLRUFilter;
 
-    cmc->filter = &this->pfBlockLRUFilter;
+    if (cmc)
+        cmc->filter = &this->pfBlockLRUFilter;
 
-    ipcp->rrf = &this->pfBlockLRUFilter;
+    if (ipcp)
+        ipcp->rrf = &this->pfBlockLRUFilter;
 
     DPRINTF(XSCompositePrefetcher, "SMS: region_size: %d regionBlks: %d\n",
             regionSize, regionBlks);
@@ -116,7 +123,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
                     // for (int i = (int)regionBlks - 1; i >= pf_tgt_offset && i >= 0; i--) {
                     for (int i = regionBlks - 1; i >= 0; i--) {
                         Addr cur = pf_tgt_region * regionSize + i * blkSize;
-                        sendPFWithFilter(cur, addresses, i, stream_type);
+                        sendPFWithFilter(pfi, cur, addresses, i, stream_type);
                         DPRINTF(XSCompositePrefetcher, "pf addr: %x [%d]\n", cur, i);
                         fatal_if(i < 0, "i < 0\n");
                     }
@@ -124,7 +131,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
                     // for (int i = std::max(1, ((int) pf_tgt_offset) - 4); i <= pf_tgt_offset; i++) {
                     for (int i = 0; i < regionBlks; i++) {
                         Addr cur = pf_tgt_region * regionSize + i * blkSize;
-                        sendPFWithFilter(cur, addresses, regionBlks - i, stream_type);
+                        sendPFWithFilter(pfi, cur, addresses, regionBlks - i, stream_type);
                         DPRINTF(XSCompositePrefetcher, "pf addr: %x [%d]\n", cur, i);
                     }
                 }
@@ -141,7 +148,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             DPRINTF(XSCompositePrefetcher, "ACT pf ahead region: %lx\n", pf_tgt_region);
             for (int i = 0; i < regionBlks; i++) {
                 Addr cur = pf_tgt_region * regionSize + i * blkSize;
-                sendPFWithFilter(cur, addresses, regionBlks - i, stream_type, 2);
+                sendPFWithFilter(pfi, cur, addresses, regionBlks - i, stream_type, 2);
             }
             pfPageLRUFilterL2.insert(pf_tgt_region, 0);
         }
@@ -153,7 +160,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             DPRINTF(XSCompositePrefetcher, "ACT pf ahead region: %lx\n", pf_tgt_region);
             for (int i = 0; i < regionBlks; i++) {
                 Addr cur = pf_tgt_region * regionSize + i * blkSize;
-                sendPFWithFilter(cur, addresses, regionBlks - i, stream_type, 3);
+                sendPFWithFilter(pfi, cur, addresses, regionBlks - i, stream_type, 3);
             }
             pfPageLRUFilterL3.insert(pf_tgt_region, 0);
         }
@@ -199,39 +206,46 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
         use_bop &= !miss_repeat && is_first_shot; // miss repeat should not be handled by stride
         if (use_bop) {
             DPRINTF(XSCompositePrefetcher, "Do BOP traing/prefetching...\n");
-            size_t old_addr_size = addresses.size();
             largeBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
 
-            old_addr_size = addresses.size();
             smallBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
+
+            // learnedBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
         }
 
-        bool use_stride = pfi.isCacheMiss() ||
-                          (pfi.isPfFirstHit() &&
-                           (pf_source == PrefetchSourceType::SStride || pf_source == PrefetchSourceType::HWP_BOP ||
-                            pf_source == PrefetchSourceType::SPht || pf_source == PrefetchSourceType::IPCP_CPLX ||
-                            pf_source == PrefetchSourceType::Berti));
-        use_stride &= !pfi.isStore();
+        // bool use_stride = pfi.isCacheMiss() ||
+        //                   (pfi.isPfFirstHit() &&
+        //                    (pf_source == PrefetchSourceType::SStride || pf_source == PrefetchSourceType::HWP_BOP ||
+        //                     pf_source == PrefetchSourceType::SPht || pf_source == PrefetchSourceType::IPCP_CPLX ||
+        //                     pf_source == PrefetchSourceType::Berti));
+        // use_stride &= !pfi.isStore();
 
-        if (enableNonStrideFilter) {
-            use_stride &= !isNonStridePC(pc);
-            if (isNonStridePC(pc)) {
-                DPRINTF(XSCompositePrefetcher, "Skip stride lookup for non-stride pc %x\n", pc);
-            }
-        }
-        Addr stride_pf_addr = 0, stride_pf_addr2 = 0;
+        // if (enableNonStrideFilter) {
+        //     use_stride &= !isNonStridePC(pc);
+        //     if (isNonStridePC(pc)) {
+        //         DPRINTF(XSCompositePrefetcher, "Skip stride lookup for non-stride pc %x\n", pc);
+        //     }
+        // }
+
+        Addr stride_pf_addr = 0;
         bool covered_by_stride = false;
 
-        bool use_berti = !pfi.isStore() && !miss_repeat && is_first_shot;
+        bool pc_found_in_berti = berti->shouldTrain(pfi.isCacheMiss(), pfi);
+        bool use_berti =
+            !pfi.isStore() && (pfi.isCacheMiss() || pfi.isPfFirstHit());
         if (use_berti) {
-            berti->calculatePrefetch(pfi, addresses, late, pf_source, miss_repeat);
-            stride_pf_addr = berti->getBestDelta();
-            int t = berti->getEvictBestDelta();
-            if (t) {
-                if (abs(t)>64) {
+            DPRINTF(XSCompositePrefetcher, "Do Berti traing/prefetching...\n");
+            berti->calculatePrefetch(pfi, addresses, late, pf_source, miss_repeat, stride_pf_addr);
+            int t;
+            // if ((t = berti->getBestDelta()) != 0) {
+            //     DPRINTF(BOPOffsets, "PC %lx add best delta %u\n", pfi.getPC(), t);
+            //     learnedBOP->tryAddOffset(t);
+            // }
+            if ((t = berti->getEvictBestDelta()) != 0) {
+                DPRINTF(BOPOffsets, "PC %lx add evict delta %u\n", pfi.getPC(), t);
+                if (labs(t) > 64) {
                     largeBOP->tryAddOffset(t);
-                }
-                else {
+                } else if (labs(t) > 8) {
                     smallBOP->tryAddOffset(t);
                 }
             }
@@ -246,8 +260,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
         use_pht &= !pfi.isStore();
 
         bool trigger_pht = false;
-        stride_pf_addr =
-            phtPFAhead ? (stride_pf_addr ? stride_pf_addr : stride_pf_addr2) : 0;  // trigger addr sent to pht
+        stride_pf_addr = phtPFAhead ? stride_pf_addr : 0;  // trigger addr sent to pht
         if (use_pht) {
             DPRINTF(XSCompositePrefetcher, "Do PHT lookup...\n");
             trigger_pht = phtLookup(pfi, addresses, late && pf_source == PrefetchSourceType::SPht, stride_pf_addr);
@@ -256,10 +269,10 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
         bool use_cplx = enableCPLX && !pfi.isStore();
         if (use_cplx) {
             Addr cplx_best_offset = 0;
-            bool send_cplx_pf = ipcp->doPrefetch(addresses, cplx_best_offset);
+            bool send_cplx_pf = ipcp->doPrefetch(pfi, addresses, cplx_best_offset);
 
             if (send_cplx_pf && cplx_best_offset != 0) {
-                largeBOP->tryAddOffset(cplx_best_offset, late);
+                learnedBOP->tryAddOffset(cplx_best_offset, late);
             }
         }
 
@@ -269,7 +282,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             bool coverd_by_spp = spp->calculatePrefetch(pfi, addresses, pfBlockLRUFilter, spp_best_offset);
             if (coverd_by_spp && spp_best_offset != 0) {
                 // TODO: Let BOP to adjust depth by itself
-                largeBOP->tryAddOffset(spp_best_offset, late);
+                learnedBOP->tryAddOffset(spp_best_offset, late);
             }
         }
 
@@ -515,7 +528,7 @@ XSCompositePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const P
             for (unsigned i = start_depth; i <= entry->depth; i++) {
                 pf_addr = lookupAddr + entry->stride * i;
                 DPRINTF(XSCompositePrefetcher, "Stride conf >= 2, send pf: %x with depth %i\n", pf_addr, i);
-                sendPFWithFilter(blockAddress(pf_addr), addresses, 0, PrefetchSourceType::SStride);
+                sendPFWithFilter(pfi, blockAddress(pf_addr), addresses, 0, PrefetchSourceType::SStride);
             }
             stride_pf = pf_addr;  // the longest lookahead
             should_cover = true;
@@ -532,7 +545,7 @@ XSCompositePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const P
         if (entry->conf >= 2 && entry->stride > 1024) { // > 1k
             DPRINTF(XSCompositePrefetcher, "Stride Evicting a useful stride, send it to BOP with offset %i\n",
                     entry->stride / 64);
-            largeBOP->tryAddOffset(entry->stride / 64);
+            learnedBOP->tryAddOffset(entry->stride / 64);
         }
         entry->conf.reset();
         entry->last_addr = lookupAddr;
@@ -659,14 +672,14 @@ XSCompositePrefetcher::phtLookup(const Base::PrefetchInfo &pfi, std::vector<Addr
         for (uint8_t i = 0; i < regionBlks - 1; i++) {
             if (pht_entry->hist[i + regionBlks - 1].calcSaturation() > 0.5) {
                 Addr pf_tgt_addr = blk_addr + (i + 1) * blkSize;
-                sendPFWithFilter(pf_tgt_addr, addresses, priority--, PrefetchSourceType::SPht, phtPFLevel);
+                sendPFWithFilter(pfi, pf_tgt_addr, addresses, priority--, PrefetchSourceType::SPht, phtPFLevel);
                 found = true;
             }
         }
         for (int i = regionBlks - 2, j = 1; i >= 0; i--, j++) {
             if (pht_entry->hist[i].calcSaturation() > 0.5) {
                 Addr pf_tgt_addr = blk_addr - j * blkSize;
-                sendPFWithFilter(pf_tgt_addr, addresses, priority--, PrefetchSourceType::SPht, phtPFLevel);
+                sendPFWithFilter(pfi, pf_tgt_addr, addresses, priority--, PrefetchSourceType::SPht, phtPFLevel);
                 found = true;
             }
         }
@@ -723,14 +736,14 @@ XSCompositePrefetcher::calcPeriod(const std::vector<SatCounter8> &bit_vec, bool 
     DPRINTF(XSCompositePrefetcher, "max_dot_prod: %i, max_shamt: %i\n", max_dot_prod,
             max_shamt);
     if (max_dot_prod > 0 && max_shamt > 3) {
-        largeBOP->tryAddOffset(max_shamt, late);
+        learnedBOP->tryAddOffset(max_shamt, late);
     }
     return max_shamt;
 }
 
 bool
-XSCompositePrefetcher::sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio,
-                                        PrefetchSourceType src, int ahead_level)
+XSCompositePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses,
+                                        int prio, PrefetchSourceType src, int ahead_level)
 {
     if (ahead_level < 2 && pfPageLRUFilter.contains(regionAddress(addr))) {
         DPRINTF(XSCompositePrefetcher, "Skip recently L1 prefetched page: %lx\n", regionAddress(addr));
@@ -776,9 +789,44 @@ XSCompositePrefetcher::XSCompositeStats::XSCompositeStats(statistics::Group *par
     :statistics::Group(parent),
     ADD_STAT(allCntNum,statistics::units::Count::get(),"victim act access num"),
     ADD_STAT(actMNum,statistics::units::Count::get(),"victim act match num")
-    {
-    }
+{
+}
 
+void
+XSCompositePrefetcher::setCache(BaseCache *_cache)
+{
+    Base::setCache(_cache);
+
+    largeBOP->setCache(_cache);
+    smallBOP->setCache(_cache);
+    learnedBOP->setCache(_cache);
+
+    berti->setCache(_cache);
+
+    if (cmc)
+        cmc->setCache(_cache);
+
+    if (ipcp)
+        ipcp->setCache(_cache);
+}
+
+void
+XSCompositePrefetcher::setArchDBer(ArchDBer *arch_db_er)
+{
+    Base::setArchDBer(arch_db_er);
+
+    largeBOP->setArchDBer(arch_db_er);
+    smallBOP->setArchDBer(arch_db_er);
+    learnedBOP->setArchDBer(arch_db_er);
+
+    berti->setArchDBer(arch_db_er);
+
+    if (cmc)
+        cmc->setArchDBer(arch_db_er);
+
+    if (ipcp)
+        ipcp->setArchDBer(arch_db_er);
+}
 
 }  // prefetch
 }  // gem5

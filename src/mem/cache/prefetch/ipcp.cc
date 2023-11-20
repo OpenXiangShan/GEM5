@@ -53,7 +53,8 @@ IPCP::StatGroup::StatGroup(statistics::Group *parent)
 
 
 bool
-IPCP::sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType pfSource)
+IPCP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
+                       PrefetchSourceType pfSource)
 {
     assert(rrf);
     if (rrf->contains(addr)) {
@@ -220,7 +221,7 @@ IPCP::sign(uint32_t &signature, int stride)
 }
 
 bool
-IPCP::doPrefetch(std::vector<AddrPriority> &addresses, Addr &best_block_offset)
+IPCP::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, Addr &best_block_offset)
 {
     bool send_cplx_pf = false;
     if (saved_type == CLASS_CS) {
@@ -229,7 +230,7 @@ IPCP::doPrefetch(std::vector<AddrPriority> &addresses, Addr &best_block_offset)
         for (int i = 1; i <= cs_degree; i++) {
             base_addr = base_addr + (saved_ip->cs_stride << lBlkSize);
             DPRINTF(IPCP, "IPCP CS Send pf: %lx, cur stride: %d, conf: %d\n", base_addr, saved_ip->cs_stride, saved_ip->cs_confidence);
-            sendPFWithFilter(base_addr, addresses, 1, PrefetchSourceType::IPCP_CS);
+            sendPFWithFilter(pfi, base_addr, addresses, 1, PrefetchSourceType::IPCP_CS);
         }
     } else if (saved_type == CLASS_CPLX) {
         assert(saved_ip);
@@ -248,7 +249,7 @@ IPCP::doPrefetch(std::vector<AddrPriority> &addresses, Addr &best_block_offset)
             base_addr = base_addr + (csp.stride << lBlkSize);
             total_block_stride += csp.stride;
             DPRINTF(IPCP, "IPCP CPLX Send pf: %lx, cur stride: %d, conf: %d\n", base_addr, csp.stride, csp.confidence);
-            if (sendPFWithFilter(base_addr, addresses, 32, PrefetchSourceType::IPCP_CPLX)) {
+            if (sendPFWithFilter(pfi, base_addr, addresses, 32, PrefetchSourceType::IPCP_CPLX)) {
                 ipcpStats.cplx_issued++;
             }
             send_cplx_pf = true;

@@ -28,7 +28,9 @@
 
 #include "mem/cache/prefetch/bop.hh"
 
+#include "debug/BOPOffsets.hh"
 #include "debug/BOPPrefetcher.hh"
+#include "mem/cache/base.hh"
 #include "params/BOPPrefetcher.hh"
 
 namespace gem5
@@ -48,7 +50,7 @@ BOP::BOP(const BOPPrefetcherParams &p)
       delayTicks(cyclesToTicks(p.delay_queue_cycles)),
       delayQueueEvent([this]{ delayQueueEventWrapper(); }, name()),
       issuePrefetchRequests(false), bestOffset(1), phaseBestOffset(0),
-      bestScore(0), round(0)
+      bestScore(0), round(0), stats(this)
 {
     if (!isPowerOf2(rrEntries)) {
         fatal("%s: number of RR entries is not power of 2\n", name());
@@ -63,7 +65,7 @@ BOP::BOP(const BOPPrefetcherParams &p)
     int offset_count = p.offsets.size();
     maxOffsetCount = p.negative_offsets_enable ? 2*p.offsets.size() : p.offsets.size();
     if (p.autoLearning) {
-        maxOffsetCount = 8;
+        maxOffsetCount = 32;
     }
 
 
@@ -188,16 +190,20 @@ BOP::tryAddOffset(int64_t offset, bool late)
             // all offsets are good, erase the one before the iterator
             if (offsetsListIterator == offsetsList.begin()) {
                 // the iterator is the first element, erase the last one
-                DPRINTF(BOPPrefetcher, "erase offset %d from offset list\n", offsetsList.rbegin()->offset);
-                auto end_offset = (offsetsList.end()--);
+                DPRINTFV(debug::BOPPrefetcher || debug::BOPOffsets, "erase offset %d from offset list\n",
+                        offsetsList.rbegin()->offset);
+                auto end_offset = --offsetsList.end();
                 offsetsList.erase(end_offset);
             } else {
-                DPRINTF(BOPPrefetcher, "erase offset %d from offset list\n", offsetsListIterator->offset);
-                offsetsListIterator = offsetsList.erase(offsetsListIterator);
+                auto temp = --offsetsListIterator;
+                DPRINTFV(debug::BOPPrefetcher || debug::BOPOffsets, "erase offset %d from offset list\n",
+                        temp->offset);
+                offsetsListIterator = offsetsList.erase(temp);
             }
         } else {
             // erase it from set and list
-            DPRINTF(BOPPrefetcher, "erase unused offset %d from offset list\n", it->offset);
+            DPRINTFV(debug::BOPPrefetcher || debug::BOPOffsets, "erase unused offset %d from offset list\n",
+                     it->offset);
             if (it == offsetsListIterator) {
                 offsetsListIterator = offsetsList.erase(it);  // update iterator
                 if (offsetsListIterator == offsetsList.end()) {
@@ -206,8 +212,8 @@ BOP::tryAddOffset(int64_t offset, bool late)
             } else {
                 offsetsList.erase(it);
             }
-            DPRINTF(BOPPrefetcher, "%s after erase: iter offset: %d\n", __FUNCTION__,
-                    offsetsListIterator->calcOffset());
+            DPRINTFV(debug::BOPPrefetcher || debug::BOPOffsets, "%s after erase: iter offset: %d\n", __FUNCTION__,
+                     offsetsListIterator->calcOffset());
         }
     }
 
@@ -231,7 +237,7 @@ BOP::tryAddOffset(int64_t offset, bool late)
         // insert it next to the offsetsListIterator
         auto next_it = std::next(offsetsListIterator);
         offsetsList.emplace(next_it, (int32_t) offset, (uint8_t) 0);
-        DPRINTF(BOPPrefetcher, "add %d to offset list\n", offset);
+        DPRINTFV(debug::BOPPrefetcher || debug::BOPOffsets, "add %d to offset list\n", offset);
 
     } else {
         bool found = false;
@@ -240,7 +246,7 @@ BOP::tryAddOffset(int64_t offset, bool late)
                 found = true;
                 break;
             } else {
-                DPRINTF(BOPPrefetcher, "offset %d != %ld\n", offset, it->offset);
+                DPRINTF(BOPPrefetcher || debug::BOPOffsets, "offset %d != %ld\n", offset, it->offset);
             }
         }
         assert(found);
@@ -371,7 +377,8 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
     // prefetch at most per access
     if (issuePrefetchRequests) {
         Addr prefetch_addr = addr + (bestOffset << lBlkSize);
-        sendPFWithFilter(prefetch_addr, addresses, 32, PrefetchSourceType::HWP_BOP);
+        stats.issuedOffsetDist.sample(bestOffset);
+        sendPFWithFilter(pfi, prefetch_addr, addresses, 32, PrefetchSourceType::HWP_BOP);
         DPRINTF(BOPPrefetcher,
                 "Generated prefetch %#lx offset: %d\n",
                 prefetch_addr, bestOffset);
@@ -383,9 +390,12 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
 }
 
 bool
-BOP::sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio,
-                                        PrefetchSourceType src)
+BOP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
+                      PrefetchSourceType src)
 {
+    if (archDBer && cache->level() == 1) {
+        archDBer->l1PFTraceWrite(curTick(), pfi.getPC(), pfi.getAddr(), addr, src);
+    }
     if (filter->contains(addr)) {
         DPRINTF(BOPPrefetcher, "Skip recently prefetched: %lx\n", addr);
         return false;
@@ -401,6 +411,14 @@ void
 BOP::notifyFill(const PacketPtr& pkt)
 {
 
+}
+
+BOP::BopStats::BopStats(statistics::Group *parent)
+    : statistics::Group(parent),
+      ADD_STAT(issuedOffsetDist, statistics::units::Count::get(),
+               "Distribution of issued offsets")
+{
+    issuedOffsetDist.init(-64, 256, 1).prereq(issuedOffsetDist);
 }
 
 } // namespace prefetch

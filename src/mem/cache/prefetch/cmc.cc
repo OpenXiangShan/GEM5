@@ -133,7 +133,7 @@ CMCPrefetcher::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &ad
         int num_send = 0;
         for (auto addr: match_entry->addresses) {
             // addresses.push_back(AddrPriority(addr, mixedNum, PrefetchSourceType::CMC));
-            if (sendPFWithFilter(addr, addresses, priority, PrefetchSourceType::CMC)) {
+            if (sendPFWithFilter(pfi, addr, addresses, priority, PrefetchSourceType::CMC)) {
                 num_send++;
                 if (num_send > 24) {
                     addresses.back().pfahead = true;
@@ -270,8 +270,8 @@ CMCPrefetcher::Recorder::train_entry(
 }
 
 bool
-CMCPrefetcher::sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio,
-                                        PrefetchSourceType src)
+CMCPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
+                                PrefetchSourceType src)
 {
     if (filter->contains(addr)) {
         DPRINTF(CMCPrefetcher, "Skip recently prefetched: %lx\n", addr);

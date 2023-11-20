@@ -210,12 +210,14 @@ class XSCompositePrefetcher : public Queued
     boost::compute::detail::lru_cache<Addr, Addr> pfPageLRUFilterL2;
     boost::compute::detail::lru_cache<Addr, Addr> pfPageLRUFilterL3;
 
-    bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType src,
-                          int ahead_level=-1);
+    bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
+                          PrefetchSourceType src, int ahead_level = -1);
 
     BOP *largeBOP;
 
     BOP *smallBOP;
+
+    BOP *learnedBOP;
 
     SignaturePath  *spp;
 
@@ -229,6 +231,12 @@ class XSCompositePrefetcher : public Queued
     const bool enableSPP;
     const bool enableTemporal;
     const unsigned shortStrideThres;
+
+  public:
+    void setCache(BaseCache *_cache) override;
+
+    void setArchDBer(ArchDBer *arch_db_er) override;
+
 };
 
 }

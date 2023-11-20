@@ -182,8 +182,14 @@ class BOP : public Queued
 
         unsigned missCount{0};
 
-        bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio,
-                                        PrefetchSourceType src);
+        bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
+                              PrefetchSourceType src);
+
+        struct BopStats : public statistics::Group
+        {
+            BopStats(statistics::Group *parent);
+            statistics::Distribution issuedOffsetDist;
+        } stats;
 
     public:
         boost::compute::detail::lru_cache<Addr, Addr> *filter;

@@ -85,6 +85,8 @@ class BasePrefetcher(ClockedObject):
     page_bytes = Param.MemorySize('4KiB',
             "Size of pages for virtual addresses")
 
+    is_sub_prefetcher = Param.Bool(False, "Is this a sub-prefetcher")
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._events = []
@@ -175,18 +177,15 @@ class BertiPrefetcher(QueuedPrefetcher):
 
     max_deltafound = Param.Int(4, "The maximum number of delta can be found")
 
-    aggressive_pf = Param.Bool(
-        True,
-        "Issue pf reqs as many as possible."
-    )
+    aggressive_pf = Param.Bool(False, "Issue pf reqs as many as possible.")
     history_table_entries = Param.MemorySize(
-        "16", "Number of history table entries."
+        "64", "Number of history table entries."
     )
-    history_table_assoc = Param.Int(16, "Associativity of the history table.")
+    history_table_assoc = Param.Int(4, "Associativity of the history table.")
     history_table_indexing_policy = Param.BaseIndexingPolicy(
         SetAssociative(
             entry_size=1,
-            assoc=Parent.history_table_entries,
+            assoc=Parent.history_table_assoc,
             size=Parent.history_table_entries
         ),
         "Indexing policy of history table."
@@ -195,6 +194,8 @@ class BertiPrefetcher(QueuedPrefetcher):
         LRURP(),
         "Replacement policy of history table"
     )
+    use_byte_addr = Param.Bool(True, "Use byte address")
+    trigger_pht = Param.Bool(True, "Use Berti's prediction to trigger PHT")
 
 class StridePrefetcherHashedSetAssociative(SetAssociative):
     type = 'StridePrefetcherHashedSetAssociative'
@@ -527,8 +528,7 @@ class BOPPrefetcher(QueuedPrefetcher):
     delay_queue_size = Param.Unsigned(64,
                 "Number of entries in the delay queue")
     delay_queue_cycles = Param.Cycles(150,
-                "Cycles to delay a write in the left RR table from the delay \
-                queue")
+                "Cycles to delay a write in the left RR table from the delay queue")
 
     autoLearning = Param.Bool(False," auto learn offset")
 
@@ -546,6 +546,22 @@ class SmallBOPPrefetcher(BOPPrefetcher):
 
     offsets = [1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 16, 18, 20,
                24, 25, 27, 30, 32, 36, 40, 45, 48, 50, 54, 60, 64]
+
+class LearnedBOPPrefetcher(BOPPrefetcher):
+    score_max = 31
+    round_max = 30
+    bad_score = 8
+    rr_size = 256
+    tag_bits = 12
+    negative_offsets_enable = True
+    delay_queue_enable = True
+    delay_queue_size = Param.Unsigned(16,
+                "Number of entries in the delay queue")
+    delay_queue_cycles = Param.Cycles(30,
+                "Cycles to delay a write in the left RR table from the delay queue")
+
+    autoLearning = True
+    offsets = [64]
 
 class SBOOEPrefetcher(QueuedPrefetcher):
     type = 'SBOOEPrefetcher'
@@ -811,12 +827,17 @@ class XSCompositePrefetcher(QueuedPrefetcher):
         LRURP(),
         "Replacement policy of pf_gen"
     )
-    bop_large = Param.BasePrefetcher(BOPPrefetcher(), "Large BOP used in composite prefetcher ")
-    bop_small = Param.BasePrefetcher(SmallBOPPrefetcher(), "Small BOP used in composite prefetcher ")
-    spp = Param.BasePrefetcher(SignaturePathPrefetcher(), "SPP used in composite prefetcher")
-    ipcp = Param.IPCPrefetcher(IPCPrefetcher(use_rrf = False), "")
-    cmc = Param.CMCPrefetcher(CMCPrefetcher(), "")
-    berti = Param.BertiPrefetcher(BertiPrefetcher(), "")
+    bop_large = Param.BasePrefetcher(BOPPrefetcher(is_sub_prefetcher=True),
+                                     "Large BOP used in composite prefetcher ")
+    bop_small = Param.BasePrefetcher(SmallBOPPrefetcher(is_sub_prefetcher=True),
+                                     "Small BOP used in composite prefetcher ")
+    bop_learned = Param.BasePrefetcher(LearnedBOPPrefetcher(is_sub_prefetcher=True),
+                                       "Learned BOP used in composite prefetcher ")
+    spp = Param.BasePrefetcher(SignaturePathPrefetcher(is_sub_prefetcher=True),
+                               "SPP used in composite prefetcher")
+    ipcp = Param.IPCPrefetcher(IPCPrefetcher(use_rrf = False, is_sub_prefetcher=True), "")
+    cmc = Param.CMCPrefetcher(CMCPrefetcher(is_sub_prefetcher=True), "")
+    berti = Param.BertiPrefetcher(BertiPrefetcher(is_sub_prefetcher=True), "")
 
     enable_cplx = Param.Bool(False, "Enable CPLX component")
     enable_spp = Param.Bool(False, "Enable SPP component")

@@ -51,8 +51,13 @@ class ArchDBer : public SimObject
 
   private:
     //variables from chisel generate cpp
-    bool dump;
-    bool dump_rolling;
+    bool dumpGlobal;
+    bool dumpRolling;
+    bool dumpMemTrace;
+    bool dumpL1PfTrace;
+    bool dumpL1EvictTrace;
+    bool dumpL1MissTrace;
+
     sqlite3 *mem_db;
     char * zErrMsg;
     int rc;
@@ -67,7 +72,7 @@ class ArchDBer : public SimObject
   public:
     DBTraceManager *addAndGetTrace(const char *name, std::vector<std::pair<std::string, DataType>> fields);
 
-    bool get_dump_rolling() { return dump_rolling; }
+    bool get_dump_rolling() { return dumpRolling; }
 
     void L1MissTrace_write(
       uint64_t pc,
@@ -82,6 +87,8 @@ class ArchDBer : public SimObject
 
     void memTraceWrite(Tick tick, bool is_load, Addr pc, Addr vaddr, Addr paddr, uint64_t issued, uint64_t translated,
                        uint64_t completed, uint64_t committed, uint64_t writenback, int pf_src);
+
+    void l1PFTraceWrite(Tick tick, Addr trigger_pc, Addr trigger_vaddr, Addr pf_vaddr, int pf_src);
 
     char memTraceSQLBuf[1024];
 };
