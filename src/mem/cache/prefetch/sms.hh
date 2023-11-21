@@ -237,8 +237,8 @@ class XSCompositePrefetcher : public Queued
     const bool enableTemporal;
     const unsigned shortStrideThres;
 
-    const bool pht_s_update;
-    const bool beside_pht_update;
+    const bool phtEarlyUpdate;
+    const bool neighborPhtUpdate;
 
   public:
     void setCache(BaseCache *_cache) override;
