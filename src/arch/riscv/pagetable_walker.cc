@@ -1005,21 +1005,48 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
                 r.req->setPaddr(paddr);
                 walker->pma->check(r.req);
 
-                // do pmp check if any checking condition is met.
-                // mainFault will be NoFault if pmp checks are
-                // passed, otherwise an address fault will be returned.
-                mainFault = walker->pmp->pmpCheck(r.req, mode, pmode, r.tc);
-                assert(mainFault == NoFault);
-                // Let the CPU continue.
-                r.translation->finish(mainFault, r.req, r.tc, mode);
+                    // do pmp check if any checking condition is met.
+                    // mainFault will be NoFault if pmp checks are
+                    // passed, otherwise an address fault will be returned.
+                    mainFault =
+                        walker->pmp->pmpCheck(r.req, mode, pmode, r.tc);
+                    if (mainFault != NoFault) {
+                        // Prefetched assert is ignored
+                        if (entry.from_pre_req || entry.from_forward_pre_req) {
+                            // TLB are not finished to prevent memory leaks
+                            warn("tlb-req paddr overflow "
+                                "vaddr: %lx paddr: %lx\n", vaddr, paddr);
+                            return true;
+                        } else {
+                            warn("paddr overflow "
+                                "vaddr: %lx paddr: %lx\n", vaddr, paddr);
+                            r.translation->finish(mainFault, r.req, r.tc, mode);
+                            return false;
+                        }
+                    }
+                    // Let the CPU continue.
+                    DPRINTF(PageTableWalker,
+                            "Finished walk for %#lx (pc=%#lx) Paddr %#x\n",
+                            r.req->getVaddr(), r.req->getPC(), paddr);
+                    r.translation->finish(mainFault, r.req, r.tc, mode);
+                } else {
+                    // There was a fault during the walk. Let the CPU know.
+                    DPRINTF(PageTableWalker,
+                            "Finished fault walk for %#lx (pc=%#lx)\n",
+                            r.req->getVaddr(), r.req->getPC());
+                    // recreate the fault to ensure that the faulting address
+                    // matches
+                    r.fault = pageFaultOnRequestor(r);
+                    r.translation->finish(r.fault, r.req, r.tc, mode);
+                }
+
             } else {
-                // There was a fault during the walk. Let the CPU know.
-                DPRINTF(PageTableWalker, "Finished fault walk for %#lx (pc=%#lx)\n",
+                // printf("1062 ii %d\n",ii);
+                DPRINTF(PageTableWalker,
+                        "the req from pre Finished walk for %#lx (pc=%#lx)\n",
                         r.req->getVaddr(), r.req->getPC());
-                // recreate the fault to ensure that the faulting address matches
-                r.fault = pageFaultOnRequestor(r);
-                r.translation->finish(r.fault, r.req, r.tc, mode);
             }
+            // ii++;
         }
 
         return true;

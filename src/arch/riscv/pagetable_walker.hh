@@ -252,7 +252,6 @@ namespace RiscvISA
                 unsigned &logBytes, BaseMMU::Mode mode);
         Port &getPort(const std::string &if_name,
                       PortID idx=InvalidPortID) override;
-
       protected:
         // The TLB we're supposed to load.
         TLB * tlb;
