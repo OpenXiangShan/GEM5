@@ -85,6 +85,8 @@ class TLB : public BaseTLB
     uint64_t G_pre_size;
     bool open_g_pre;
     bool open_forward_pre;
+    bool f_pre_precision;
+    bool g_pre_precision;
     uint64_t all_g_pre;
     uint64_t remove_no_use_g_pre;
     uint64_t remove_no_use_f_pre;
@@ -122,6 +124,8 @@ class TLB : public BaseTLB
         statistics::Scalar forwardHits;
         statistics::Scalar used_f_pre;
         statistics::Scalar remove_no_use_f_pre;
+        statistics::Scalar used_g_pre;
+        statistics::Scalar remove_no_use_g_pre;
 
 
         statistics::Scalar writeL2l3TlbMisses;

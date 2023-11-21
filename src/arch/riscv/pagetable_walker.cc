@@ -1001,6 +1001,7 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level,
     entry.asid = satp.asid;
     entry.is_squashed = false;
     entry.used = false;
+    entry.is_pre = false;
     entry.from_pre_req = from_pre_req;
     entry.from_forward_pre_req = from_forward_pre_req;
     entry.pre_sign = false;
@@ -1010,12 +1011,14 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level,
     nextline_entry.asid = satp.asid;
     nextline_entry.is_squashed = false;
     nextline_entry.used = false;
+    nextline_entry.is_pre = true;
     nextline_entry.from_forward_pre_req = from_forward_pre_req;
     nextline_entry.pre_sign = false;
 
     inl2_entry.asid = satp.asid;
     inl2_entry.is_squashed = false;
     inl2_entry.used = false;
+    inl2_entry.is_pre = false;
     inl2_entry.from_forward_pre_req = from_forward_pre_req;
     inl2_entry.pre_sign = false;
     finish_default_translate = false;

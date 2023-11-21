@@ -87,6 +87,8 @@ TLB::TLB(const Params &p) :
     isOpenAutoNextline(p.isOpenNextline),
     G_pre_size(p.G_pre_size),open_g_pre(p.open_g_pre),
     open_forward_pre(p.open_forward_pre),
+    f_pre_precision(p.initial_f_pre_precision_value),
+    g_pre_precision(p.initial_g_pre_precision_value),
     all_g_pre(0),remove_no_use_g_pre(0),remove_no_use_f_pre(0),
     used_f_pre(0),all_used(0),all_used_pre(0),
     pre_sign(0),last_vaddr(0),last_pc(0), trace_flag(false),
@@ -171,7 +173,7 @@ void
 TLB::evict_G_pre()
 {
     size_t lru = 0;
-    for (size_t i = 1; i < size; i++) {
+    for (size_t i = 1; i < G_pre_size; i++) {
         if (g_pre[i].lruSeq < g_pre[lru].lruSeq) {
             lru = i;
         }
@@ -452,6 +454,18 @@ TLB::lookup_l2tlb(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
         Addr vpnl2l3 = ((vpn >> 15)) << 15;
         step = 0x1000;
         bool write_sign = false;
+        if (sign_used) {
+            if (entry_l2l3->is_pre && (!entry_l2l3->pre_sign)) {
+                write_sign = true;
+                stats.hitPreEntry++;
+                hitPreEntry++;
+            }
+            if (entry_l2l3->is_pre) {
+                stats.hitPreNum++;
+                hitPreNum++;
+            }
+        }
+
         for (i = 0; i < 8; i++) {
             TlbEntry *m_entry_l2l3 =
                 trie_l2l3.lookup(buildKey((vpnl2l3 + step * i), asid));
@@ -800,6 +814,10 @@ TLB::L2TLB_insert_in(Addr vpn, const TlbEntry &entry, int choose,
     stats.ALLInsertL2++;
     if (choose == L_L2L3)
         all_used++;
+    if (entry.is_pre){
+        stats.AllPre++;
+        AllPre++;
+    }
 
     return newEntry;
 
@@ -1101,8 +1119,10 @@ TLB::remove_G_pre(size_t idx)
     assert(g_pre[idx].trieHandle);
     if (!g_pre[idx].used) {
         remove_no_use_g_pre++;
+        stats.remove_no_use_g_pre++;
     } else {
         all_used_pre++;
+        stats.used_g_pre++;
     }
     trie_g_pre.remove(g_pre[idx].trieHandle);
     g_pre[idx].trieHandle = NULL;
@@ -1113,7 +1133,7 @@ void
 TLB::remove_forward_pre(size_t idx)
 {
     assert(forward_pre[idx].trieHandle);
-    if (!g_pre[idx].used) {
+    if (!forward_pre[idx].used) {
         remove_no_use_f_pre++;
         stats.remove_no_use_f_pre++;
     } else {
@@ -1179,6 +1199,10 @@ TLB::l2TLB_remove(size_t idx, int choose)
             stats.l2l3tlbUsedRemove++;
         } else {
             stats.l2l3tlbUnusedRemove++;
+        }
+        if (tlb_l2l3[idx].is_pre && !tlb_l2l3[idx].pre_sign) {
+            stats.RemovePreUnused++;
+            RemovePreUnused++;
         }
 
         EntryList::iterator iterl2l3 = freeList_l2l3.begin();
@@ -1440,22 +1464,33 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
     f_pre_entry.logBytes = PageShift;
     f_pre_entry.used = false;
 
+    l2tlb->lookup_g_pre(g_vaddr_block, satp.asid, false);
+    TlbEntry *pre_g = l2tlb->lookup_g_pre(g_pre_block, satp.asid, true);
 
-    TlbEntry *pre_g = l2tlb->lookup_g_pre(g_pre_block, satp.asid, false);
     l2tlb->lookup_forward_pre(g_vaddr_block, satp.asid, false);
     TlbEntry *pre_f =
-        l2tlb->lookup_forward_pre(forward_pre_block, satp.asid, false);
+        l2tlb->lookup_forward_pre(forward_pre_block, satp.asid, true);
 
-    bool f_pre_precision;
-    if ((l2tlb->remove_no_use_f_pre + l2tlb->used_f_pre) > 10000) {
-        if (((double)(l2tlb->used_f_pre / (l2tlb->remove_no_use_f_pre +
-                                           l2tlb->used_f_pre))) > 0.8) {
+    if ((l2tlb->remove_no_use_f_pre + l2tlb->used_f_pre) > 500) {
+        if ((((double)(l2tlb->remove_no_use_f_pre + 1) /
+              (l2tlb->remove_no_use_f_pre + l2tlb->used_f_pre))) < 0.1) {
             f_pre_precision = true;
         } else {
             f_pre_precision = false;
         }
-    } else {
-        f_pre_precision = true;
+        l2tlb->remove_no_use_f_pre = 0;
+        l2tlb->used_f_pre = 0;
+    }
+
+    if ((l2tlb->remove_no_use_g_pre + l2tlb->all_used_pre) > 500) {
+        if ((((double)(l2tlb->remove_no_use_g_pre + 1) /
+              (l2tlb->remove_no_use_g_pre + l2tlb->all_used_pre))) < 0.08) {
+            g_pre_precision = true;
+        } else {
+            g_pre_precision = false;
+        }
+        l2tlb->remove_no_use_g_pre = 0;
+        l2tlb->all_used_pre = 0;
     }
 
     TlbEntry *e3_pre =
@@ -1519,7 +1554,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                             pre_fault = L2tlb_check(e_pre->pte, 1, status,
                                                     pmode, g_pre_block, mode,
                                                     pre_req, true, false);
-                            if ((pre_fault == NoFault) && (!hit_in_sp)) {
+                            if ((pre_fault == NoFault) && (!hit_in_sp) && g_pre_precision) {
                                 DPRINTF(TLBGPre, "pre_vaddr 1467 %#x\n",
                                         g_pre_block);
                                 walker->start(e_pre->pte.ppn, tc, translation,
@@ -1538,7 +1573,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                             pre_fault = L2tlb_check(e_pre->pte, 2, status,
                                                     pmode, g_pre_block, mode,
                                                     pre_req, true, false);
-                            if ((pre_fault == NoFault) && (!hit_in_sp)) {
+                            if ((pre_fault == NoFault) && (!hit_in_sp) && g_pre_precision) {
                                 DPRINTF(TLBGPre, "pre_vaddr 1511 %#x\n",
                                         g_pre_block);
 
@@ -1798,14 +1833,13 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                 pre_fault =
                     L2tlb_check(e_pre->pte, 1, status, pmode, g_pre_block,
                                 mode, pre_req, true, false);
-                if ((pre_fault == NoFault) && (!hit_in_sp)) {
+                if ((pre_fault == NoFault) && (!hit_in_sp) && g_pre_precision) {
                     DPRINTF(TLBGPre, "pre_vaddr 1431 %#x\n", g_pre_block);
                     walker->start(e_pre->pte.ppn, tc, translation, pre_req,
                                   mode, true, false, 0, true, e_pre->asid);
                 }
             }
-            if (e4_pre || e1_pre)
-            {
+            if (e4_pre || e1_pre) {
                 pre_req->setPreVaddr(g_pre_block);
                 if (e4_pre)
                     e_pre = e4_pre;
@@ -1814,8 +1848,8 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                 pre_fault =
                     L2tlb_check(e_pre->pte, 2, status, pmode, g_pre_block,
                                 mode, pre_req, true, false);
-                if ((pre_fault == NoFault) && (!hit_in_sp))
-                {
+                if ((pre_fault == NoFault) && (!hit_in_sp) &&
+                    g_pre_precision) {
                     DPRINTF(TLBGPre, "pre_vaddr 1431 %#x\n", g_pre_block);
                     walker->start(e_pre->pte.ppn, tc, translation, pre_req,
                                   mode, true, false, 1, true, e_pre->asid);
@@ -2082,6 +2116,10 @@ TLB::TlbStats::TlbStats(statistics::Group *parent)
       ADD_STAT(used_f_pre, statistics::units::Count::get(),
                "number of used front pre"),
       ADD_STAT(remove_no_use_f_pre, statistics::units::Count::get(),
+               "number of unused front pre"),
+      ADD_STAT(used_g_pre, statistics::units::Count::get(),
+               "number of used front pre"),
+      ADD_STAT(remove_no_use_g_pre, statistics::units::Count::get(),
                "number of unused front pre"),
       ADD_STAT(writeL2l3TlbMisses, statistics::units::Count::get(),
                "write misses in l2tlb"),
