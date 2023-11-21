@@ -1134,7 +1134,20 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
                     // passed, otherwise an address fault will be returned.
                     mainFault =
                         walker->pmp->pmpCheck(r.req, mode, pmode, r.tc);
-                    assert(mainFault == NoFault);
+                    if (mainFault != NoFault) {
+                        // Prefetched assert is ignored
+                        if (entry.from_pre_req || entry.from_forward_pre_req) {
+                            // TLB are not finished to prevent memory leaks
+                            warn("tlb-req paddr overflow "
+                                "vaddr: %lx paddr: %lx\n", vaddr, paddr);
+                            return true;
+                        } else {
+                            warn("paddr overflow "
+                                "vaddr: %lx paddr: %lx\n", vaddr, paddr);
+                            r.translation->finish(mainFault, r.req, r.tc, mode);
+                            return false;
+                        }
+                    }
                     // Let the CPU continue.
                     DPRINTF(PageTableWalker,
                             "Finished walk for %#lx (pc=%#lx) Paddr %#x\n",
