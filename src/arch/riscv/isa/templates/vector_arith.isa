@@ -893,10 +893,11 @@ template<typename ElemType>
         this->microops.push_back(microop);
         micro_vl = std::min(tmp_vl -= micro_vlmax, micro_vlmax);
     }
-    microop = new VMaskMergeMicroInst<ElemType>(_machInst, _machInst.vd,
-        this->microops.size());
-    this->microops.push_back(microop);
-
+    if (this->vl) {
+        microop = new VMaskMergeMicroInst<ElemType>(_machInst, _machInst.vd,
+            this->microops.size());
+        this->microops.push_back(microop);
+    }
     this->microops.front()->setFirstMicroop();
     this->microops.back()->setLastMicroop();
 }
@@ -1005,9 +1006,12 @@ template<typename ElemType>
         this->microops.push_back(microop);
         micro_vl = std::min(tmp_vl -= micro_vlmax, micro_vlmax);
     }
-    microop = new VMaskMergeMicroInst<ElemType>(_machInst, _machInst.vd,
-        this->microops.size());
-    this->microops.push_back(microop);
+    if (this->vl) {
+        microop = new VMaskMergeMicroInst<ElemType>(_machInst, _machInst.vd,
+            this->microops.size());
+        this->microops.push_back(microop);
+    }
+
 
     this->microops.front()->setFirstMicroop();
     this->microops.back()->setLastMicroop();
@@ -1698,11 +1702,13 @@ template<typename ElemType>
         this->microops.push_back(microop);
         micro_vl = std::min(tmp_vl -= micro_vlmax, micro_vlmax);
     }
+    if (this->vl) {
+        microop = new VxsatMicroInst(&vxsat, _machInst);
+        microop->setFlag(StaticInst::IsSerializeAfter);
+        microop->setFlag(StaticInst::IsNonSpeculative);
+        this->microops.push_back(microop);
+    }
 
-    microop = new VxsatMicroInst(&vxsat, _machInst);
-    microop->setFlag(StaticInst::IsSerializeAfter);
-    microop->setFlag(StaticInst::IsNonSpeculative);
-    this->microops.push_back(microop);
     this->microops.front()->setFirstMicroop();
     this->microops.back()->setLastMicroop();
 }

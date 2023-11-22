@@ -42,7 +42,7 @@ const std::vector<uint64_t> skipCSRs = {
 NemuProxy::NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff)
 {
     void *handle = dlmopen(LM_ID_NEWLM, ref_so, RTLD_LAZY | RTLD_DEEPBIND);
-    printf("Using %s for difftest", ref_so);
+    printf("Using %s for difftest\n", ref_so);
     if (!handle) {
         printf("%s\n", dlerror());
         assert(0);
@@ -108,7 +108,7 @@ NemuProxy::NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff)
 SpikeProxy::SpikeProxy(int coreid, const char *ref_so, bool enable_sdcard_diff)
 {
     void *handle = dlmopen(LM_ID_NEWLM, ref_so, RTLD_LAZY | RTLD_DEEPBIND);
-    printf("Using %s for difftest", ref_so);
+    printf("Using %s for difftest\n", ref_so);
     if (!handle) {
         printf("%s\n", dlerror());
         assert(0);

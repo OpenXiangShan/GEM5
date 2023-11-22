@@ -1137,6 +1137,10 @@ Fetch::tick()
         }
     }
 
+    if (cpu->instList.size() == 0) {
+        waitForVset = false;
+    }
+
     for (threadFetched = 0; threadFetched < numFetchingThreads;
          threadFetched++) {
         // Fetch each of the actively fetching threads.
@@ -1499,6 +1503,10 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
     instruction->traceData = NULL;
 #endif
 
+    if (instruction->staticInst->isVectorConfig()) {
+        waitForVset = true;
+    }
+
     // Add instruction to the CPU's list of instructions.
     instruction->setInstListIt(cpu->addInst(instruction));
 
@@ -1672,7 +1680,7 @@ Fetch::fetch(bool &status_change)
     bool cond_taken_backward = false;
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize &&
            !(predictedBranch && !currentFetchTargetInLoop) && !quiesce &&
-           !ftqEmpty() && !exit_loopbuffer_this_cycle && !stallDuetoVset) {
+           !ftqEmpty() && !exit_loopbuffer_this_cycle && !waitForVset) {
         // We need to process more memory if we aren't going to get a
         // StaticInst from the rom, the current macroop, or what's already
         // in the decoder.
@@ -1740,7 +1748,11 @@ Fetch::fetch(bool &status_change)
                         pc_offset = 0;
                     }
                 } else {
-                    stallDuetoVset = dec_ptr->isStalled();
+                    // stallDuetoVset = dec_ptr->isStalled();
+                    // if (stallDuetoVset) {
+                    //     // wait for vset commit
+                    //     waitForVset = true;
+                    // }
                     // We need more bytes for this instruction so blkOffset and
                     // pcOffset will be updated
                     break;

@@ -2340,7 +2340,7 @@ decode QUADRANT default Unknown::unknown() {
 
                         if (res & sign_mask) {
                             res = max;
-                            // TODO: vxsat
+                            xc->setMiscReg(MISCREG_VXSAT, 1);
                         }
 
                         Vd_vu[i + offset] = (vu)res;
@@ -2356,10 +2356,10 @@ decode QUADRANT default Unknown::unknown() {
 
                         if (res < min) {
                             res = min;
-                            // TODO: vxsat
+                            xc->setMiscReg(MISCREG_VXSAT, 1);
                         } else if (res > max) {
                             res = max;
-                            // TODO: vxsat
+                            xc->setMiscReg(MISCREG_VXSAT, 1);
                         }
 
                         Vd_vi[i + offset] = (vi)res;
@@ -3198,7 +3198,8 @@ decode QUADRANT default Unknown::unknown() {
                 }
                 format VectorIntVxsatFormat{
                     0x20: vsaddu_vi({{
-                        Vd_vu[i] = sat_addu<vu>(Vs2_vu[i], (vu)SIMM5,
+                        uint64_t simm5 = (int64_t)sext<5>(SIMM5) & (__UINT64_MAX__ >> (64 - sizeof(vu)*8));
+                        Vd_vu[i] = sat_addu<vu>(Vs2_vu[i], simm5,
                             vxsatptr);
                     }}, OPIVI, VectorIntegerArithOp);
                     0x21: vsadd_vi({{
@@ -3308,7 +3309,7 @@ decode QUADRANT default Unknown::unknown() {
                             res, 0 /* TODO */, shift) >> shift;
 
                         if (res & sign_mask) {
-                            // TODO: vxsat
+                            xc->setMiscReg(MISCREG_VXSAT, 1);
                             res = max;
                         }
 
@@ -3325,10 +3326,10 @@ decode QUADRANT default Unknown::unknown() {
 
                         if (res < min) {
                             res = min;
-                            // TODO: vxsat
+                            xc->setMiscReg(MISCREG_VXSAT, 1);
                         } else if (res > max) {
                             res = max;
-                            // TODO: vxsat
+                            xc->setMiscReg(MISCREG_VXSAT, 1);
                         }
 
                         Vd_vi[i + offset] = (vi)res;
@@ -3395,7 +3396,8 @@ decode QUADRANT default Unknown::unknown() {
                     }
                 }}, OPIVX, VectorMiscOp);
                 0x0f: VectorSlideDownFormat::vslidedown_vx({{
-                    const int offset = (int)Rs1_vu;
+                    uint32_t offset = (uint32_t)Rs1_vu;
+                    offset = offset % (gem5::RiscvISA::VLEN/ 8 / sizeof(vu));
                     const int microVlmax = vtype_VLMAX(machInst.vtype8, true);
                     const int vregOffset = vs2Idx - vdIdx;
                     const int offsetInVreg = offset - vregOffset * microVlmax;
@@ -3546,7 +3548,7 @@ decode QUADRANT default Unknown::unknown() {
                             res, 0 /* TODO */, shift) >> shift;
 
                         if (res & sign_mask) {
-                            // TODO: vxsat
+                            xc->setMiscReg(MISCREG_VXSAT, 1);
                             res = max;
                         }
 
@@ -3563,10 +3565,10 @@ decode QUADRANT default Unknown::unknown() {
 
                         if (res < min) {
                             res = min;
-                            // TODO: vxsat
+                            xc->setMiscReg(MISCREG_VXSAT, 1);
                         } else if (res > max) {
                             res = max;
-                            // TODO: vxsat
+                            xc->setMiscReg(MISCREG_VXSAT, 1);
                         }
 
                         Vd_vi[i + offset] = (vi)res;
@@ -3747,7 +3749,9 @@ decode QUADRANT default Unknown::unknown() {
                         0x1: VectorNonSplitFormat::vfmv_s_f({{
                             auto fd = ftype_freg<et>(freg(Fs1_bits));
                             std::memcpy(Vd_vu, Vd_merger, RiscvISA::VLENB);
-                            Vd_vu[0] = fd.v;
+                            if (machInst.vl) {
+                                Vd_vu[0] = fd.v;
+                            }
                         }}, OPFVV, VectorMiscOp);
                     }
                 }
@@ -4018,7 +4022,9 @@ decode QUADRANT default Unknown::unknown() {
                         // (vm=0) of vmv.s.x are reserved.
                         0x1: VectorNonSplitFormat::vmv_s_x({{
                             std::memcpy(Vd_vu, Vd_merger, RiscvISA::VLENB);
-                            Vd_vu[0] = Rs1_vu;
+                            if (machInst.vl) {
+                                Vd_vu[0] = Rs1_vu;
+                            }
                         }}, OPMVX, VectorMiscOp);
                     }
                 }

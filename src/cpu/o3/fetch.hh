@@ -652,6 +652,8 @@ class Fetch
   private:
     uint8_t* firstDataBuf;
     uint8_t* secondDataBuf;
+
+    bool waitForVset = false;
 };
 
 } // namespace o3

@@ -108,6 +108,7 @@ static const OpClass InstPrefetchOp = enums::InstPrefetch;
 static const OpClass FMAMulOp = enums::FMAMul;
 static const OpClass FMAAccOp = enums::FMAAcc;
 
+// riscv vload/store
 static const OpClass VectorUnitStrideLoadOp = enums::VectorUnitStrideLoad;
 static const OpClass VectorUnitStrideStoreOp = enums::VectorUnitStrideStore;
 static const OpClass VectorUnitStrideMaskLoadOp
@@ -124,6 +125,7 @@ static const OpClass VectorWholeRegisterLoadOp
              = enums::VectorWholeRegisterLoad;
 static const OpClass VectorWholeRegisterStoreOp
              = enums::VectorWholeRegisterStore;
+
 static const OpClass VectorIntegerArithOp = enums::VectorIntegerArith;
 static const OpClass VectorFloatArithOp = enums::VectorFloatArith;
 static const OpClass VectorFloatConvertOp = enums::VectorFloatConvert;

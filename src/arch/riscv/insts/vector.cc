@@ -113,7 +113,7 @@ VectorNonSplitInst::generateDisassembly(Addr pc,
 {
     std::stringstream ss;
     ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
-        << registerName(srcRegIdx(0));
+        << registerName(srcRegIdx(1));
     if (machInst.vm == 0) ss << ", v0.t";
     return ss.str();
 }
@@ -413,7 +413,7 @@ VleffEndMicroInst::VleffEndMicroInst(ExtMachInst extMachInst, uint8_t _numSrcs)
         setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, VecMemInternalReg0 + i));
     }
     this->numSrcs = _numSrcs;
-    printf("VleffEndMicroInst numSrc: %hhu, numDestRegs: %hhu\n", this->numSrcs, _numDestRegs);
+    // printf("VleffEndMicroInst numSrc: %hhu, numDestRegs: %hhu\n", this->numSrcs, _numDestRegs);
 
     flags[IsNonSpeculative] = true;
     flags[IsSerializeAfter] = true;
@@ -422,31 +422,31 @@ VleffEndMicroInst::VleffEndMicroInst(ExtMachInst extMachInst, uint8_t _numSrcs)
 Fault
 VleffEndMicroInst::execute(ExecContext* xc, Trace::InstRecord* traceData) const
 {
-    printf("VleffEndMicroInst::execute begin\n");
+    // printf("VleffEndMicroInst::execute begin\n");
     vreg_t cnt[8];
     for (uint8_t i = 0; i < this->numSrcs; i++) {
         xc->getRegOperand(this, i, cnt + i);
     }
 
-    printf("VleffEndMicroInst::execute getRegOperand done\n");
+    // printf("VleffEndMicroInst::execute getRegOperand done\n");
 
     // [[maybe_unused]]uint64_t vl = *(uint64_t*)xc->getWritableRegOperand(this, 0);
-    printf("VleffEndMicroInst::execute getWritableRegOperand done\n");
-    
+    // printf("VleffEndMicroInst::execute getWritableRegOperand done\n");
+
     uint64_t new_vl = 0;
     for (uint8_t i = 0; i < this->numSrcs; i++) {
         new_vl += cnt[i].as<uint64_t>()[0];
     }
-    printf("VleffEndMicroInst::execute new_vl sum done\n");
+    // printf("VleffEndMicroInst::execute new_vl sum done\n");
 
     // xc->setRegOperand(this, 0, new_vl);
     xc->setMiscReg(MISCREG_VL, new_vl);
 
-    printf("VleffEndMicroInst::execute setRegOperand done\n");
+    // printf("VleffEndMicroInst::execute setRegOperand done\n");
 
     if (traceData)
         traceData->setData(new_vl);
-    printf("VleffEndMicroInst::execute end\n");
+    // printf("VleffEndMicroInst::execute end\n");
     return NoFault;
 }
 

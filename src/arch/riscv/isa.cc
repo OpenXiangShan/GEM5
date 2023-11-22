@@ -378,7 +378,7 @@ ISA::readMiscReg(int misc_reg)
         break;
       case MISCREG_VCSR:
         {
-            return readMiscRegNoEffect(MISCREG_VXSAT) &
+            return readMiscRegNoEffect(MISCREG_VXSAT) |
                   (readMiscRegNoEffect(MISCREG_VXRM) << 1);
         }
         break;

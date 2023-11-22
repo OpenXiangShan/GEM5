@@ -639,9 +639,11 @@ class VxsatMicroInst : public VectorArithMicroInst
     Fault execute(ExecContext* xc, Trace::InstRecord* traceData)
     const override
     {
-        xc->setMiscReg(MISCREG_VXSAT,*vxsat);
-        auto vcsr = xc->readMiscReg(MISCREG_VCSR);
-        xc->setMiscReg(MISCREG_VCSR, ((vcsr&~1)|*vxsat));
+        if (*vxsat) {
+            xc->setMiscReg(MISCREG_VXSAT,*vxsat);
+            auto vcsr = xc->readMiscReg(MISCREG_VCSR);
+            xc->setMiscReg(MISCREG_VCSR, ((vcsr&~1)|*vxsat));
+        }
         return NoFault;
     }
     std::string generateDisassembly(Addr pc, const loader::SymbolTable *symtab)

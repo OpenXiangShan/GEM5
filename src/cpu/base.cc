@@ -883,6 +883,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         diffAllStates->proxy->update_config(&diffAllStates->diff.dynamic_config);
     }
     auto gem5_pc = diffInfo.pc->instAddr();
+    diffAllStates->gem5RegFile.pc = gem5_pc;
     auto nemu_pc = diffAllStates->diff.nemu_commit_inst_pc;
     DPRINTF(Diff, "NEMU PC: %#10lx, GEM5 PC: %#10lx, inst: %s\n", nemu_pc,
             gem5_pc,
@@ -952,10 +953,9 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                             " ignore it\n");
 
                 } else if (is_mmio) {
-                    DPRINTF(Diff,
-                            "Difference might be caused by read %s at %#lx,"
-                            " ignore it\n",
-                            "mmio", diffInfo.physEffAddr);
+                    warn("Difference might be caused by read %s at %#lx,"
+                         " ignore it\n",
+                         "mmio", diffInfo.physEffAddr);
                     diffAllStates->referenceRegFile[dest_tag] = gem5_val;
                     diffAllStates->proxy->regcpy(&(diffAllStates->referenceRegFile), DUT_TO_REF);
                 } else {
@@ -997,12 +997,16 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             }
         }
         else if (dest.isVecReg()) {
-            uint64_t* nemu_val = (uint64_t*)&(diffAllStates->referenceRegFile.vr[dest.index()]);
+            readGem5Regs();
+            uint64_t* nemu_val = (uint64_t*)&(diffAllStates->referenceRegFile.vr[0]);
+            uint64_t* gem5_val = (uint64_t*)&(diffAllStates->gem5RegFile.vr[0]);
             bool maybe_error = false;
-            for (int i=0; i<RiscvISA::NumVecElemPerVecReg; i++) {
-                if (nemu_val[i] != diffInfo.vecResult[i]) {
+            int error_idx = 0;
+            for (int i=0; i < RiscvISA::NumVecElemPerVecReg * 32; i++) {
+                if (nemu_val[i] != gem5_val[i]) {
                     // diff_at = ValueDiff;
                     maybe_error = true;
+                    error_idx = (i >> 1) * 2;
                     break;
                 }
             }
@@ -1010,20 +1014,22 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             if (maybe_error) {
                 std::string gem5_val_, nemu_val_;
                 for (int j=RiscvISA::NumVecElemPerVecReg-1; j>=0; j--) {
-                    gem5_val_ += csprintf("%016lx", diffInfo.vecResult[j]);
+                    gem5_val_ += csprintf("%016lx", gem5_val[j + error_idx]);
                     if (j != 0) {
                         gem5_val_+="_";
                     }
                 }
                 for (int j=RiscvISA::NumVecElemPerVecReg-1; j>=0; j--) {
-                    nemu_val_ += csprintf("%016lx", diffAllStates->referenceRegFile.vr[dest.index()]._64[j]);
+                    nemu_val_ += csprintf("%016lx", nemu_val[j + error_idx]);
                     if (j != 0) {
                         nemu_val_ += "_";
                     }
                 }
-                warn("Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
-                warn("May be diff at v%d\n Ref value: %s\n GEM5 value: %s\n",
-                    dest.index(), nemu_val_, gem5_val_);
+                warn("Inst [sn:%lli] pc: %#lx, msg: %s\n", seq, diffInfo.pc->instAddr(),
+                     diffInfo.lastCommittedMsg.back().c_str());
+                warn("May be diff at v%d\n Ref  value: %s\n GEM5 value: %s\n",
+                    (error_idx>>1), nemu_val_, gem5_val_);
+                diff_at = ValueDiff;
             }
         }
 
@@ -1246,7 +1252,7 @@ BaseCPU::difftestStep(ThreadID tid, InstSeqNum seq)
             } else {
                 diffAllStates->proxy->isa_reg_display();
                 displayGem5Regs();
-                warn("start dump last 10 committed msg\n");
+                warn("start dump last %lu committed msg\n", diffInfo.lastCommittedMsg.size());
                 while (diffInfo.lastCommittedMsg.size()) {
                     auto& msg = diffInfo.lastCommittedMsg.front();
                     warn("V %s\n", msg);

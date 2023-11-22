@@ -1177,7 +1177,7 @@ Commit::commitInsts()
 
                 if (cpu->difftestEnabled()) {
                     cpu->diffInfo.lastCommittedMsg.push(head_inst->genDisassembly());
-                    if (cpu->diffInfo.lastCommittedMsg.size() > 10) {
+                    if (cpu->diffInfo.lastCommittedMsg.size() > 20) {
                         cpu->diffInfo.lastCommittedMsg.pop();
                     }
                     cpu->diffInfo.inst = head_inst->staticInst;
