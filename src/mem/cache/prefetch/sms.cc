@@ -47,7 +47,9 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       enableCPLX(p.enable_cplx),
       enableSPP(p.enable_spp),
       enableTemporal(p.enable_temporal),
-      shortStrideThres(p.short_stride_thres)
+      shortStrideThres(p.short_stride_thres),
+      phtEarlyUpdate(p.pht_early_update),
+      neighborPhtUpdate(p.neighbor_pht_update)
 {
     assert(largeBOP);
     assert(smallBOP);
@@ -315,6 +317,8 @@ XSCompositePrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page, 
         act.accessEntry(entry);
         in_active_page = entry->in_active_page(regionBlks);
         uint64_t region_bit_accessed = 1UL << region_offset;
+        if (phtEarlyUpdate)
+            updatePht(entry, region_start, re_act_entry, true, region_offset);
         if (!(entry->region_bits & region_bit_accessed)) {
             entry->access_cnt += 1;
             is_first_shot = true;
@@ -366,14 +370,16 @@ XSCompositePrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page, 
                            re_act_entry);
     }
 
-    updatePht(entry, region_start,re_act_mode);  // update pht with evicted entry
+    updatePht(entry, region_start, re_act_mode, false, 0);  // update pht with evicted entry
     entry->pc = pc;
     entry->is_secure = secure;
     entry->decr_mode = !forward;
     entry->regionAddr = region_start;
     entry->region_offset = region_offset;
     entry->region_bits = 1UL << region_offset;
+    //entry->repeat_region_bits = 0;
     entry->access_cnt = 1;
+    entry->signal_update = false;
     act.insertEntry(region_addr, secure, entry);
 
     // print bits
@@ -580,13 +586,43 @@ XSCompositePrefetcher::periodStrideDepthDown()
 }
 
 void
-XSCompositePrefetcher::updatePht(XSCompositePrefetcher::ACTEntry *act_entry, Addr current_region_addr,bool re_act_mode)
+XSCompositePrefetcher::updatePht(XSCompositePrefetcher::ACTEntry *act_entry, Addr current_region_addr,
+                                 bool re_act_mode, bool early_update, Addr region_offset_now)
 {
     if (popCount(act_entry->region_bits) <= 1) {
         return;
     }
     PhtEntry *pht_entry = pht.findEntry(phtHash(act_entry->pc, act_entry->region_offset), act_entry->is_secure);
     bool is_update = pht_entry != nullptr;
+    if (pht_entry && early_update) {
+        if (region_offset_now > act_entry->region_offset) {
+            assert ((region_offset_now - act_entry->region_offset + regionBlks - 2) > 14);
+            assert ((region_offset_now - act_entry->region_offset + regionBlks - 2) <= 30);
+            pht_entry->hist[region_offset_now - act_entry->region_offset + regionBlks - 2] += 2;
+            act_entry->signal_update = true;
+        }
+        if (region_offset_now < act_entry->region_offset) {
+            assert(regionBlks - 1 >= (act_entry->region_offset - region_offset_now));
+            assert((regionBlks - 1 - (act_entry->region_offset - region_offset_now)) <= 14);
+            pht_entry->hist[regionBlks - 1 - (act_entry->region_offset - region_offset_now)] += 2;
+            act_entry->signal_update = true;
+        }
+        return;
+    }
+    if (early_update) {
+        const int access_cnt_thres = 5;
+        if (act_entry->access_cnt > access_cnt_thres && (!pht_entry)) {
+            pht_entry = pht.findVictim(phtHash(act_entry->pc, act_entry->region_offset));
+            for (uint8_t i = 0; i < 2 * (regionBlks - 1); i++) {
+                pht_entry->hist[i].reset();
+            }
+            pht_entry->pc = act_entry->pc;
+            act_entry->signal_update = true;
+        } else {
+            return;
+        }
+    }
+
     if (!pht_entry) {
         pht_entry = pht.findVictim(phtHash(act_entry->pc, act_entry->region_offset));
         DPRINTF(XSCompositePrefetcher, "Evict PHT entry for PC %lx\n", pht_entry->pc);
@@ -595,43 +631,142 @@ XSCompositePrefetcher::updatePht(XSCompositePrefetcher::ACTEntry *act_entry, Add
         }
         pht_entry->pc = act_entry->pc;
     }
+
     pht.accessEntry(pht_entry);
     Addr region_offset = act_entry->region_offset;
-    // incr part
-    for (int i = region_offset + 1, j = 0; j < regionBlks - 1; i++, j++) {
-        uint8_t hist_idx = j + (regionBlks - 1);
-        if (i < regionBlks) {
-            bool accessed = (act_entry->region_bits >> i) & 1;
-            if (accessed) {
-                DPRINTF(XSCompositePrefetcher, "Inc conf for region offset: %d, hist_idx: %d\n", i, hist_idx);
-                pht_entry->hist.at(hist_idx) += 2;
-                if (re_act_mode)
-                    pht_entry->hist.at(hist_idx) += 2;
-            } else {
-                if (!re_act_mode)
-                    pht_entry->hist.at(hist_idx) -= 2;
-            }
-        } else {
-            pht_entry->hist.at(hist_idx) -= 1;
-        }
+    Addr region_addr_find = act_entry->regionAddr / regionSize;
+    ACTEntry *act_entry_f = nullptr;
+    ACTEntry *act_entry_b = nullptr;
+    if (neighborPhtUpdate){
+        act_entry_f = act.findEntry(region_addr_find + 1, act_entry->is_secure);
+        act_entry_b = act.findEntry(region_addr_find - 1, act_entry->is_secure);
     }
-    // decr part
-    for (int i = int(region_offset) - 1, j = regionBlks - 2; j >= 0; i--, j--) {
-        if (i >= 0) {
-            bool accessed = (act_entry->region_bits >> i) & 1;
+    //  incr part
+    if (act_entry_f) {
+        for (int i = region_offset + 1, j = 0; j < regionBlks - 1; i++, j++) {
+            uint8_t hist_idx = j + (regionBlks - 1);
+            bool accessed;
+            if (i > 15)
+                accessed = (act_entry_f->region_bits >> (i - 16)) & 1;
+            else
+                accessed = (act_entry->region_bits >> i) & 1;
+
             if (accessed) {
                 DPRINTF(XSCompositePrefetcher,
                         "Inc conf for region offset: %d, hist_idx: %d\n", i,
-                        j);
-                pht_entry->hist.at(j) += 2;
-                if (re_act_mode)
-                    pht_entry->hist.at(j) += 2;
+                        hist_idx);
+                if (early_update) {
+                    pht_entry->hist.at(hist_idx) += 2;
+                } else {
+                    if ((!act_entry->signal_update))
+                        pht_entry->hist.at(hist_idx) += 2;
+                    if (re_act_mode)
+                        pht_entry->hist.at(hist_idx) += 2;
+                }
             } else {
-                if (!re_act_mode)
-                    pht_entry->hist.at(j) -= 2;
+                if ((!re_act_mode) && (!early_update)) {
+                    pht_entry->hist.at(hist_idx) -= 2;
+                }
             }
-        } else {
-            // leave unseen untouched
+        }
+    } else {
+        for (int i = region_offset + 1, j = 0; j < regionBlks - 1; i++, j++) {
+            uint8_t hist_idx = j + (regionBlks - 1);
+            if (i < regionBlks) {
+                bool accessed = (act_entry->region_bits >> i) & 1;
+                if (accessed) {
+                    DPRINTF(XSCompositePrefetcher,
+                            "Inc conf for region offset: %d, hist_idx: %d\n",
+                            i, hist_idx);
+                    if (early_update) {
+                        pht_entry->hist.at(hist_idx) += 2;
+                    } else {
+                        if ((!act_entry->signal_update))
+                            pht_entry->hist.at(hist_idx) += 2;
+                        if (re_act_mode)
+                            pht_entry->hist.at(hist_idx) += 2;
+                    }
+                } else {
+                    if ((!re_act_mode) && (!early_update))
+                        pht_entry->hist.at(hist_idx) -= 2;
+                }
+            } else {
+                if (!early_update)
+                    pht_entry->hist.at(hist_idx) -= 1;
+            }
+        }
+    }
+
+    // decr part
+    int i_b = 0;
+    if (act_entry_b) {
+        for (int i = int(region_offset) - 1, j = regionBlks - 2; j >= 0;
+             i--, j--) {
+            if (i >= 0) {
+                bool accessed = (act_entry->region_bits >> i) & 1;
+                if (accessed) {
+                    DPRINTF(XSCompositePrefetcher,
+                            "Inc conf for region offset: %d, hist_idx: %d\n",
+                            i, j);
+                    if (early_update) {
+                        pht_entry->hist.at(j) += 2;
+                    } else {
+                        if ((!act_entry->signal_update))
+                            pht_entry->hist.at(j) += 2;
+                        if (re_act_mode)
+                            pht_entry->hist.at(j) += 2;
+                    }
+                } else {
+                    if ((!re_act_mode) && (!early_update))
+                        pht_entry->hist.at(j) -= 2;
+                }
+            } else {
+                // TODO: unseen should be untouch?
+                bool accessed = (act_entry_b->region_bits >> (15 - i_b)) & 1;
+                i_b++;
+                if (accessed) {
+                    DPRINTF(XSCompositePrefetcher,
+                            "Inc conf for region offset: %d, hist_idx: %d\n",
+                            i, j);
+                    if (early_update) {
+                        pht_entry->hist.at(j) += 2;
+                    } else {
+                        if ((!act_entry->signal_update))
+                            pht_entry->hist.at(j) += 2;
+                        if (re_act_mode)
+                            pht_entry->hist.at(j) += 2;
+                    }
+                } else {
+                    if ((!re_act_mode) && (!early_update))
+                        pht_entry->hist.at(j) -= 2;
+                }
+            }
+        }
+
+    } else {
+        for (int i = int(region_offset) - 1, j = regionBlks - 2; j >= 0;
+             i--, j--) {
+            if (i >= 0) {
+                bool accessed = (act_entry->region_bits >> i) & 1;
+                if (accessed) {
+                    DPRINTF(XSCompositePrefetcher,
+                            "Inc conf for region offset: %d, hist_idx: %d\n",
+                            i, j);
+                    if (early_update) {
+                        pht_entry->hist.at(j) += 2;
+                    } else {
+                        if ((!act_entry->signal_update))
+                            pht_entry->hist.at(j) += 2;
+                        if (re_act_mode)
+                            pht_entry->hist.at(j) += 2;
+                    }
+                } else {
+                    if ((!re_act_mode) && (!early_update))
+                        pht_entry->hist.at(j) -= 2;
+                }
+            } else {
+                // leave unseen untouched
+            }
         }
     }
     DPRINTF(XSCompositePrefetcher, "Evict ACT region: %lx, offset: %lx, evicted by region %lx\n",

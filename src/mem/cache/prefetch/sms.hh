@@ -57,6 +57,8 @@ class XSCompositePrefetcher : public Queued
         uint64_t region_offset;
         uint32_t depth;
         SatCounter8 lateConf;
+        bool signal_update;
+       // uint64_t repeat_region_bits;
         ACTEntry(const SatCounter8 &conf)
             : TaggedEntry(),
               region_bits(0),
@@ -64,7 +66,9 @@ class XSCompositePrefetcher : public Queued
               access_cnt(0),
               region_offset(0),
               depth(32),
-              lateConf(4, 7)
+              lateConf(4, 7),
+              signal_update(false)
+        //      repeat_region_bits(0)
         {
         }
         bool in_active_page(unsigned region_blocks) {
@@ -150,7 +154,7 @@ class XSCompositePrefetcher : public Queued
 
     const bool fuzzyStrideMatching;
 
-    void updatePht(ACTEntry *act_entry, Addr region_addr,bool re_act_mode);
+    void updatePht(ACTEntry *act_entry, Addr region_addr,bool re_act_mode,bool signal_update,Addr region_offset_now);
 
     // pattern history table
     class PhtEntry : public TaggedEntry
@@ -158,6 +162,7 @@ class XSCompositePrefetcher : public Queued
       public:
         std::vector<SatCounter8> hist;
         Addr pc;
+       // bool signal_update;
         PhtEntry(const size_t sz, const SatCounter8 &conf)
             : TaggedEntry(), hist(sz, conf)
         {
@@ -232,11 +237,13 @@ class XSCompositePrefetcher : public Queued
     const bool enableTemporal;
     const unsigned shortStrideThres;
 
+    const bool phtEarlyUpdate;
+    const bool neighborPhtUpdate;
+
   public:
     void setCache(BaseCache *_cache) override;
 
     void setArchDBer(ArchDBer *arch_db_er) override;
-
 };
 
 }
