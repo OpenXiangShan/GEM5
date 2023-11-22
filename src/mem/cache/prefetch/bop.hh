@@ -75,8 +75,17 @@ class BOP : public Queued
         const unsigned int delayQueueSize;
         const unsigned int delayTicks;
 
-        std::vector<Addr> rrLeft;
-        std::vector<Addr> rrRight;
+        struct RREntryDebug
+        {
+            Addr fullAddr;
+            Addr hashAddr;
+
+            RREntryDebug(Addr full_addr, Addr hash_addr) : fullAddr(full_addr), hashAddr(hash_addr) {}
+            RREntryDebug() : fullAddr(0), hashAddr(0) {}
+        };
+
+        std::vector<RREntryDebug> rrLeft;
+        std::vector<RREntryDebug> rrRight;
 
         /** Structure to save the offset and the score */
         // typedef std::pair<int16_t, uint8_t> OffsetListEntry;
@@ -114,10 +123,10 @@ class BOP : public Queued
          */
         struct DelayQueueEntry
         {
-            Addr baseAddr;
+            RREntryDebug rrEntry;
             Tick processTick;
 
-            DelayQueueEntry(Addr x, Tick t) : baseAddr(x), processTick(t)
+            DelayQueueEntry(const RREntryDebug &other, Tick t) : rrEntry(other), processTick(t)
             {}
         };
 
@@ -152,16 +161,24 @@ class BOP : public Queued
         unsigned int hash(Addr addr, unsigned int way) const;
 
         /** Insert the specified address into the RR table
-         *  @param addr: address to insert
+         *  @param addr: full address to insert
+         *  @param tag: hashed address to insert
          *  @param way: RR table to which the address will be inserted
          */
-        void insertIntoRR(Addr addr, unsigned int way);
+        void insertIntoRR(Addr full_addr, Addr tag, unsigned int way);
+
+        /** Insert the specified address into the RR table
+         *  @param rr_entry: rr_entry to insert
+         *  @param way: RR table to which the address will be inserted
+         */
+        void insertIntoRR(RREntryDebug rr_entry, unsigned int way);
 
         /** Insert the specified address into the delay queue. This will
          *  trigger an event after the delay cycles pass
-         *  @param addr: address to insert into the delay queue
+         *  @param addr: full address to insert
+         *  @param tag: hashed address to insert
          */
-        void insertIntoDelayQueue(Addr addr);
+        void insertIntoDelayQueue(Addr full_addr, Addr tag);
 
         /** Reset all the scores from the offset list */
         void resetScores();
@@ -174,11 +191,11 @@ class BOP : public Queued
 
         /** Test if @X-O is hitting in the RR table to update the
             offset score */
-        bool testRR(Addr) const;
+        std::pair<bool, RREntryDebug> testRR(Addr tag) const;
 
         /** Learning phase of the BOP. Update the intermediate values of the
             round and update the best offset if found */
-        bool bestOffsetLearning(Addr addr, bool late);
+        bool bestOffsetLearning(Addr hashed_addr, bool late, const PrefetchInfo &pfi);
 
         unsigned missCount{0};
 

@@ -12,6 +12,7 @@ ArchDBer::ArchDBer(const Params &p)
     dumpL1PfTrace(p.dump_l1_pf_trace),
     dumpL1EvictTrace(p.dump_l1_evict_trace),
     dumpL1MissTrace(p.dump_l1_miss_trace),
+    dumpBopTrainTrace(p.dump_bop_train_trace),
     mem_db(nullptr), zErrMsg(nullptr),rc(0),
     db_path(p.arch_db_file)
 {
@@ -101,6 +102,21 @@ ArchDBer::l1PFTraceWrite(Tick tick, Addr trigger_pc, Addr trigger_vaddr, Addr pf
   };
 }
 
+void
+ArchDBer::bopTrainTraceWrite(Tick tick, Addr old_addr, Addr cur_addr, Addr offset, int score, bool miss)
+{
+  bool dump_me = dumpGlobal && dumpBopTrainTrace;
+  if (!dump_me) return;
+
+  sprintf(memTraceSQLBuf,
+          "INSERT INTO BOPTrainTrace(Tick,Type,OldAddr,CurAddr,Offset,Score,Miss) "
+          "VALUES(%ld,'%s',%ld,%ld,%ld,%d,%d);",
+          tick, "BOPTrain", old_addr, cur_addr, offset, score, miss);
+  rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
+  if (rc != SQLITE_OK) {
+    fatal("SQL error: %s\n", zErrMsg);
+  };
+}
 
 void ArchDBer::L1MissTrace_write(
   uint64_t pc,
