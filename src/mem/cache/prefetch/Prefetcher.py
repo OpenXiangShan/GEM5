@@ -520,7 +520,7 @@ class BOPPrefetcher(QueuedPrefetcher):
     round_max = Param.Unsigned(50, "Max. round to update the best offset")
     bad_score = Param.Unsigned(12, "Score at which the HWP is disabled")
     rr_size = Param.Unsigned(256, "Number of entries of each RR bank")
-    tag_bits = Param.Unsigned(12, "Bits used to store the tag")
+    tag_bits = Param.Unsigned(24, "Bits used to store the tag")
     negative_offsets_enable = Param.Bool(False,
                 "Initialize the offsets list also with negative values \
                 (i.e. the table will have half of the entries with positive \
@@ -541,7 +541,7 @@ class SmallBOPPrefetcher(BOPPrefetcher):
     round_max = 30
     bad_score = 8
     rr_size = 256
-    tag_bits = 12
+    tag_bits = 24
     negative_offsets_enable = True
     delay_queue_enable = False
 
@@ -553,7 +553,7 @@ class LearnedBOPPrefetcher(BOPPrefetcher):
     round_max = 30
     bad_score = 8
     rr_size = 256
-    tag_bits = 12
+    tag_bits = 24
     negative_offsets_enable = True
     delay_queue_enable = True
     delay_queue_size = Param.Unsigned(16,
