@@ -113,7 +113,7 @@ class BertiPrefetcher : public Queued
     AssociativeSet<HistoryTableEntry> historyTable;
 
 
-    Cycles lastFillLatency;
+    Cycles hitSearchLatency;
     const bool aggressivePF;
     const bool useByteAddr;
     const bool triggerPht;

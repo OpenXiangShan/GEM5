@@ -122,11 +122,11 @@ BertiPrefetcher::updateHistoryTable(const PrefetchInfo &pfi)
 
 void BertiPrefetcher::searchTimelyDeltas(
     HistoryTableEntry &entry,
-    const Cycles &latency,
+    const Cycles &search_latency,
     const Cycles &demand_cycle,
     const Addr &trigger_addr)
 {
-    DPRINTF(BertiPrefetcher, "latency: %lu, demand_cycle: %lu, history count: %lu\n", latency, demand_cycle,
+    DPRINTF(BertiPrefetcher, "latency: %lu, demand_cycle: %lu, history count: %lu\n", search_latency, demand_cycle,
             entry.history.size());
     std::list<int64_t> new_deltas;
     int delta_thres = useByteAddr ? blkSize : 8;
@@ -140,8 +140,8 @@ void BertiPrefetcher::searchTimelyDeltas(
         }
 
         // if not timely, skip and continue
-        if (it->timestamp + latency >= demand_cycle) {
-            DPRINTF(BertiPrefetcher, "skip untimely delta: %lu + %lu <= %u : %ld\n", it->timestamp, latency,
+        if (it->timestamp + search_latency >= demand_cycle) {
+            DPRINTF(BertiPrefetcher, "skip untimely delta: %lu + %lu <= %u : %ld\n", it->timestamp, search_latency,
                     demand_cycle, delta);
             continue;
         }
@@ -201,14 +201,14 @@ BertiPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPrio
     DPRINTF(BertiPrefetcher,
             "Train prefetcher, pc: %lx, addr: %lx miss: %d last lat: [%d]\n",
             pfi.getPC(), blockAddress(pfi.getAddr()),
-            pfi.isCacheMiss(), lastFillLatency);
+            pfi.isCacheMiss(), hitSearchLatency);
 
     trainBlockFilter.insert(blockIndex(pfi.getAddr()), 0);
 
     if (!pfi.isCacheMiss()) {
         HistoryTableEntry *hist_entry = historyTable.findEntry(pcHash(pfi.getPC()), pfi.isSecure());
         if (hist_entry) {
-            searchTimelyDeltas(*hist_entry, lastFillLatency, curCycle(),
+            searchTimelyDeltas(*hist_entry, hitSearchLatency, curCycle(),
                                useByteAddr ? pfi.getAddr() : blockIndex(pfi.getAddr()));
             statsBerti.trainOnHit++;
         }
@@ -290,9 +290,8 @@ BertiPrefetcher::notifyFill(const PacketPtr &pkt)
     }
 
     // fill latency
-    // Cycles latency = ticksToCycles(curTick() - pkt->req->time());
-    Cycles latency = Cycles(1);
-    lastFillLatency = latency;
+    Cycles miss_refill_search_lat = ticksToCycles(200);
+    hitSearchLatency = ticksToCycles(50);
 
     HistoryTableEntry *entry =
         historyTable.findEntry(pcHash(pkt->req->getPC()), pkt->req->isSecure());
@@ -305,12 +304,12 @@ BertiPrefetcher::notifyFill(const PacketPtr &pkt)
     Cycles demand_cycle = ticksToCycles(pkt->req->time());
 
     DPRINTF(BertiPrefetcher, "Search delta for PC %lx\n", pkt->req->getPC());
-    searchTimelyDeltas(*entry, latency, demand_cycle,
+    searchTimelyDeltas(*entry, miss_refill_search_lat, demand_cycle,
                        useByteAddr ? pkt->req->getVaddr() : blockIndex(pkt->req->getVaddr()));
     statsBerti.trainOnMiss++;
 
     DPRINTF(BertiPrefetcher, "Updating table of deltas, latency [%d]\n",
-            latency);
+            miss_refill_search_lat);
 }
 
 }
