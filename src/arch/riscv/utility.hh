@@ -189,7 +189,7 @@ vtype_vlmul(const uint64_t vtype)
 inline uint64_t
 vtype_regs_per_group(const uint64_t vtype)
 {
-    int64_t lmul = (int64_t)sext<3>(bits(vtype, 2, 0));
+    int64_t lmul = vtype_vlmul(vtype);
     return 1 << std::max<int64_t>(0, lmul);
 }
 
@@ -209,6 +209,46 @@ width_EEW(uint64_t width)
     case 0b111: return 64;
     default: GEM5_UNREACHABLE;
     }
+}
+
+inline uint32_t
+getSew(uint32_t vsew)
+{
+    assert(vsew <= 3);
+    return (8 << vsew);
+}
+
+inline float
+getVflmul(uint32_t vlmul_encoding)
+{
+    int vlmul = (int32_t)sext<3>(vlmul_encoding);
+    float vflmul = vlmul >= 0 ? 1 << vlmul : 1.0 / (1 << -vlmul);
+    return vflmul;
+}
+
+inline uint32_t
+getVlmax(VTYPE vtype, uint32_t vlen)
+{
+    uint32_t sew = getSew(vtype.vsew);
+    uint32_t vlmax = (vlen/sew) * getVflmul(vtype.vlmul);
+    return vlmax;
+}
+
+inline uint32_t
+get_emul(uint32_t eew, uint32_t sew, float vflmul, bool is_mask_ldst)
+{
+    eew = is_mask_ldst ? 1 : eew;
+    float vemul = is_mask_ldst ? 1 : (float)eew / sew * vflmul;
+    uint32_t emul = vemul < 1 ? 1 : vemul;
+    return emul;
+}
+
+inline uint32_t
+elem_gen_idx(uint32_t vd, uint32_t n, uint32_t elem_size)
+{
+    uint32_t elts_per_reg = (RiscvISA::VLEN>>3) / elem_size;
+    vd += n / elts_per_reg;
+    return vd;
 }
 
 /*

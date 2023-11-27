@@ -30,25 +30,53 @@ def template VleConstructor {{
 %(class_name)s::%(class_name)s(ExtMachInst _machInst)
     : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
-    %(set_reg_idx_arr)s;
-    %(constructor)s;
+    const int32_t nf = _machInst.nf + 1;
+    const uint32_t eew = width_EEW(_machInst.width);
+    const uint32_t sew = getSew(_machInst.vtype8.vsew);
+    float vflmul = getVflmul(_machInst.vtype8.vlmul);
+    const uint32_t emul = get_emul(eew, sew, vflmul, false);
+    const uint32_t elem_num_per_vreg = VLEN / eew;
+    panic_if(nf * emul > 8, "invalid nf and emul");
 
-    const int32_t micro_vlmax = VLEN / width_EEW(_machInst.width);
-    const uint32_t num_microops = ceil((float) this->vl / (micro_vlmax));
-    int32_t remaining_vl = this->vl;
-    int32_t micro_vl = std::min(remaining_vl, micro_vlmax);
+
     StaticInstPtr microop;
-
-    if (micro_vl == 0) {
+    if (this->vl == 0) {
         microop = new VectorNopMicroInst(_machInst);
         this->microops.push_back(microop);
     }
-    for (int i = 0; i < num_microops && micro_vl > 0; ++i) {
-        microop = new %(class_name)sMicro(_machInst, micro_vl, i);
-        microop->setDelayedCommit();
-        microop->setFlag(IsLoad);
-        this->microops.push_back(microop);
-        micro_vl = std::min(remaining_vl -= micro_vlmax, micro_vlmax);
+    VectorMicroInfo vmi;
+    if (nf == 1) { // sequence load
+        const uint32_t num_microops = ceil((float)this->vl / elem_num_per_vreg);
+        for (int i = 0; i < num_microops; ++i) {
+            vmi.rs = i * elem_num_per_vreg;
+            vmi.re = std::min((i+1) * elem_num_per_vreg, this->vl);
+            vmi.microVd = VD + i;
+            vmi.fn = 0;
+            vmi.offset = (i * VLEN) / 8;
+            assert(vmi.re > vmi.rs);
+            assert(vmi.microVd < 32);
+            microop = new %(class_name)sMicro(_machInst, i, vmi);
+            microop->setDelayedCommit();
+            microop->setFlag(IsLoad);
+            this->microops.push_back(microop);
+        }
+    }
+    else { // segment load
+        for (int i=0; i < this->vl; i++) {
+            for (int fn=0; fn < nf; fn++) {
+                // baseAddr = Rs1 + (i*nf + fn) * eew / 8
+                // (vd + fn * emul)<eew>[i] = mem<eew>[baseAddr];
+                vmi.rs = i;
+                vmi.re = i+1;
+                vmi.fn = fn;
+                vmi.microVd = elem_gen_idx(VD + fn * emul, i, eew/8);
+                vmi.offset = (i*nf+fn) * eew / 8;
+                microop = new %(class_name)sMicro(_machInst, i*fn, vmi);
+                microop->setDelayedCommit();
+                microop->setFlag(IsLoad);
+                this->microops.push_back(microop);
+            }
+        }
     }
 
     this->microops.front()->setFirstMicroop();
@@ -65,17 +93,20 @@ private:
     RegId srcRegIdxArr[3];
     RegId destRegIdxArr[1];
 public:
-    %(class_name)s(ExtMachInst _machInst, uint8_t _microVl, uint8_t _microIdx)
-    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s, _microVl,
+    %(class_name)s(ExtMachInst _machInst, uint8_t _microIdx, VectorMicroInfo& _vmi)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s, 0,
                      _microIdx)
     {
         %(set_reg_idx_arr)s;
+        vmi = _vmi;
+        assert(~vmi.microVd);
+        assert(~vmi.offset);
         _numSrcRegs = 0;
         _numDestRegs = 0;
-        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, _machInst.vd + _microIdx));
+        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, vmi.microVd));
         _numTypedDestRegs[VecRegClass]++;
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
-        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _machInst.vd + _microIdx));
+        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, vmi.microVd));
         if (!_machInst.vm) {
             setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, 0));
         }
@@ -98,10 +129,13 @@ def template VleMicroExecute {{
 Fault
 %(class_name)s::execute(ExecContext *xc, Trace::InstRecord *traceData) const
 {
-    Addr EA;
     %(op_decl)s;
     %(op_rd)s;
-    %(ea_code)s;
+
+    Addr EA;
+    const uint32_t eew = width_EEW(this->machInst.width);
+    EA = Rs1 + vmi.offset;
+    uint32_t mem_size = (vmi.re - vmi.rs) * eew / 8;
 
     RiscvISA::vreg_t tmp_v0;
     uint8_t *v0;
@@ -110,18 +144,18 @@ Fault
         v0 = tmp_v0.as<uint8_t>();
     }
 
-    uint32_t mem_size = width_EEW(machInst.width) / 8 * this->microVl;
     const std::vector<bool> byte_enable(mem_size, true);
     Fault fault = xc->readMem(EA, Mem.as<uint8_t>(), mem_size, memAccessFlags,
                               byte_enable);
     if (fault != NoFault)
         return fault;
 
-    const size_t micro_vlmax = vtype_VLMAX(machInst.vtype8, true);
-    const size_t micro_elems = VLEN / width_EEW(machInst.width);
+    COPY_OLD_VD(1);
+
     size_t ei;
-    for (size_t i = 0; i < micro_elems; i++) {
-        ei = i + micro_vlmax * microIdx;
+    for (size_t i = 0; i < vmi.re - vmi.rs; i++) {
+        uint32_t vdElemIdx = (vmi.rs % (VLEN / eew)) + i;
+        ei = i + vmi.rs;
         %(memacc_code)s;
     }
 
@@ -137,13 +171,14 @@ Fault
 %(class_name)s::initiateAcc(ExecContext* xc,
                             Trace::InstRecord* traceData) const
 {
-    Addr EA;
-
     %(op_src_decl)s;
     %(op_rd)s;
-    %(ea_code)s;
 
-    uint32_t mem_size = width_EEW(this->machInst.width) / 8 * this->microVl;
+    Addr EA;
+    const uint32_t eew = width_EEW(this->machInst.width);
+    EA = Rs1 + vmi.offset;
+    uint32_t mem_size = (vmi.re - vmi.rs) * eew / 8;
+
     const std::vector<bool> byte_enable(mem_size, true);
     Fault fault = initiateMemRead(xc, EA, mem_size, memAccessFlags,
                                   byte_enable);
@@ -170,11 +205,13 @@ Fault
 
     memcpy(Mem.as<uint8_t>(), pkt->getPtr<uint8_t>(), pkt->getSize());
 
-    const size_t micro_vlmax = vtype_VLMAX(machInst.vtype8, true);
-    const size_t micro_elems = VLEN / width_EEW(machInst.width);
+    COPY_OLD_VD(1);
+
+    const uint32_t eew = width_EEW(this->machInst.width);
     size_t ei;
-    for (size_t i = 0; i < micro_elems; i++) {
-        ei = i + micro_vlmax * microIdx;
+    for (size_t i = 0; i < vmi.re - vmi.rs; i++) {
+        uint32_t vdElemIdx = (vmi.rs % (VLEN / eew)) + i;
+        ei = i + vmi.rs;
         %(memacc_code)s;
     }
 
@@ -358,26 +395,50 @@ def template VseConstructor {{
 %(class_name)s::%(class_name)s(ExtMachInst _machInst)
     : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
-    %(set_reg_idx_arr)s;
-    %(constructor)s;
-
-    const int32_t micro_vlmax = VLEN / width_EEW(_machInst.width);
-    const uint32_t num_microops = ceil((float) this->vl / (micro_vlmax));
-    int32_t remaining_vl = this->vl;
-    int32_t micro_vl = std::min(remaining_vl, micro_vlmax);
+    const int32_t nf = _machInst.nf + 1;
+    const uint32_t eew = width_EEW(_machInst.width);
+    const uint32_t sew = getSew(_machInst.vtype8.vsew);
+    float vflmul = getVflmul(_machInst.vtype8.vlmul);
+    const uint32_t emul = get_emul(eew, sew, vflmul, false);
+    const uint32_t elem_num_per_vreg = VLEN / eew;
+    panic_if(nf * emul > 8, "invalid nf and emul");
 
     StaticInstPtr microop;
-
-    if (micro_vl == 0) {
+    if (this->vl == 0) {
         microop = new VectorNopMicroInst(_machInst);
         this->microops.push_back(microop);
     }
-    for (int i = 0; i < num_microops && micro_vl > 0; ++i) {
-        microop = new %(class_name)sMicro(_machInst, micro_vl, i);
-        microop->setDelayedCommit();
-        microop->setFlag(IsStore);
-        this->microops.push_back(microop);
-        micro_vl = std::min(remaining_vl -= micro_vlmax, micro_vlmax);
+    VectorMicroInfo vmi;
+    if (nf == 1) {
+        const uint32_t num_microops = ceil((float)this->vl / elem_num_per_vreg);
+        for (int i = 0; i < num_microops; ++i) {
+            vmi.rs = i * elem_num_per_vreg;
+            vmi.re = std::min((i+1) * elem_num_per_vreg, this->vl);
+            vmi.microVs3 = VS3 + i;
+            vmi.fn = 0;
+            vmi.offset = (i * VLEN) / 8;
+            microop = new %(class_name)sMicro(_machInst, i, vmi);
+            microop->setDelayedCommit();
+            microop->setFlag(IsStore);
+            this->microops.push_back(microop);
+        }
+    }
+    else {
+        for (int i=0; i < this->vl; i++) {
+            for (int fn=0; fn < nf; fn++) {
+                // baseAddr = Rs1 + (i*nf + fn) * eew / 8
+                // mem<eew>[baseAddr] = (vs3 + fn * emul)<eew>[i];
+                vmi.rs = i;
+                vmi.re = i+1;
+                vmi.fn = fn;
+                vmi.microVs3 = elem_gen_idx(VS3 + fn * emul, i, eew/8);
+                vmi.offset = (i*nf+fn) * eew / 8;
+                microop = new %(class_name)sMicro(_machInst, i*fn, vmi);
+                microop->setDelayedCommit();
+                microop->setFlag(IsStore);
+                this->microops.push_back(microop);
+            }
+        }
     }
 
     this->microops.front()->setFlag(IsFirstMicroop);
@@ -394,15 +455,18 @@ private:
     RegId srcRegIdxArr[3];
     RegId destRegIdxArr[0];
 public:
-    %(class_name)s(ExtMachInst _machInst, uint8_t _microVl, uint8_t _microIdx)
+    %(class_name)s(ExtMachInst _machInst, uint8_t _microIdx, VectorMicroInfo& _vmi)
         : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s,
-                         _microVl, _microIdx)
+                         0, _microIdx)
     {
         %(set_reg_idx_arr)s;
+        vmi = _vmi;
+        assert(~vmi.microVs3);
+        assert(~vmi.offset);
         _numSrcRegs = 0;
         _numDestRegs = 0;
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
-        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _machInst.vs3 + _microIdx));
+        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, vmi.microVs3));
         if (!_machInst.vm) {
             setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, 0));
         }
@@ -426,6 +490,14 @@ Fault
 {
     Addr EA;
 
+    %(op_decl)s;
+    %(op_rd)s;
+
+    const uint32_t eew = width_EEW(this->machInst.width);
+    const uint32_t eewb = eew/8;
+    EA = Rs1 + vmi.offset;
+    uint32_t mem_size = (vmi.re - vmi.rs) * eew / 8;
+
     RiscvISA::vreg_t tmp_v0;
     uint8_t *v0;
     if(!machInst.vm) {
@@ -433,17 +505,12 @@ Fault
         v0 = tmp_v0.as<uint8_t>();
     }
 
-    %(op_decl)s;
-    %(op_rd)s;
-    %(ea_code)s;
-
-    const size_t micro_vlmax = vtype_VLMAX(machInst.vtype8, true);
-    const size_t eewb = width_EEW(machInst.width) / 8;
-    const size_t mem_size = eewb * microVl;
     std::vector<bool> byte_enable(mem_size, false);
+
     size_t ei;
-    for (size_t i = 0; i < microVl; i++) {
-        ei = i + micro_vlmax * microIdx;
+    for (size_t i = 0; i < vmi.re - vmi.rs; i++) {
+        uint32_t vs3ElemIdx = (vmi.rs % (VLEN / eew)) + i;
+        ei = i + vmi.rs;
         if (machInst.vm || elem_mask(v0, ei)) {
             %(memacc_code)s;
             auto it = byte_enable.begin() + i * eewb;
@@ -467,6 +534,14 @@ Fault
 {
     Addr EA;
 
+    %(op_decl)s;
+    %(op_rd)s;
+
+    const uint32_t eew = width_EEW(this->machInst.width);
+    const uint32_t eewb = eew/8;
+    EA = Rs1 + vmi.offset;
+    uint32_t mem_size = (vmi.re - vmi.rs) * eew / 8;
+
     RiscvISA::vreg_t tmp_v0;
     uint8_t *v0;
     if(!machInst.vm) {
@@ -474,17 +549,12 @@ Fault
         v0 = tmp_v0.as<uint8_t>();
     }
 
-    %(op_decl)s;
-    %(op_rd)s;
-    %(ea_code)s;
-
-    const size_t micro_vlmax = vtype_VLMAX(machInst.vtype8, true);
-    const size_t eewb = width_EEW(machInst.width) / 8;
-    const size_t mem_size = eewb * microVl;
     std::vector<bool> byte_enable(mem_size, false);
+
     size_t ei;
-    for (size_t i = 0; i < microVl; i++) {
-        ei = i + micro_vlmax * microIdx;
+    for (size_t i = 0; i < vmi.re - vmi.rs; i++) {
+        uint32_t vs3ElemIdx = (vmi.rs % (VLEN / eew)) + i;
+        ei = i + vmi.rs;
         if (machInst.vm || elem_mask(v0, ei)) {
             %(memacc_code)s;
             auto it = byte_enable.begin() + i * eewb;
@@ -516,19 +586,33 @@ def template VlmConstructor {{
 %(class_name)s::%(class_name)s(ExtMachInst _machInst)
     : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
-    %(set_reg_idx_arr)s;
-    %(constructor)s;
+    const int32_t nf = _machInst.nf + 1;
+    const uint32_t eew = 8;
+    const uint32_t sew = getSew(_machInst.vtype8.vsew);
+    float vflmul = getVflmul(_machInst.vtype8.vlmul);
+    const uint32_t emul = 1;
+    const uint32_t elem_num_per_vreg = VLEN / eew;
+    panic_if(nf * emul > 8, "invalid nf and emul");
 
-    const uint32_t micro_vlmax = VLEN / width_EEW(_machInst.width);
-    int32_t micro_vl = (std::min(this->vl, micro_vlmax) + 7) / 8;
+    this->vl = (this->vl + 7) / 8;
     StaticInstPtr microop;
 
-    if (micro_vl == 0) {
+    VectorMicroInfo vmi;
+    if (this->vl == 0) {
         microop = new VectorNopMicroInst(_machInst);
-    } else {
-        microop = new Vle8_vMicro(_machInst, micro_vl, 0);
+    }
+    else if (nf == 1) {
+        vmi.rs = 0;
+        vmi.re = this->vl;
+        vmi.microVd = VD;
+        vmi.offset = 0;
+        microop = new Vle8_vMicro(_machInst, 0, vmi);
         microop->setDelayedCommit();
         microop->setFlag(IsLoad);
+    }
+    else {
+        // TODO
+        panic("not implemented");
     }
     this->microops.push_back(microop);
 
@@ -543,17 +627,27 @@ def template VsmConstructor {{
 %(class_name)s::%(class_name)s(ExtMachInst _machInst)
     : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
-    %(set_reg_idx_arr)s;
-    %(constructor)s;
+    const int32_t nf = _machInst.nf + 1;
+    const uint32_t eew = 8;
+    const uint32_t sew = getSew(_machInst.vtype8.vsew);
+    float vflmul = getVflmul(_machInst.vtype8.vlmul);
+    const uint32_t emul = 1;
+    const uint32_t elem_num_per_vreg = VLEN / eew;
+    panic_if(nf * emul > 8, "invalid nf and emul");
 
-    const uint32_t micro_vlmax = VLEN / width_EEW(_machInst.width);
-    int32_t micro_vl = (std::min(this->vl, micro_vlmax) + 7) / 8;
+    this->vl = (this->vl + 7) / 8;
 
     StaticInstPtr microop;
-    if (micro_vl == 0) {
+
+    VectorMicroInfo vmi;
+    if (this->vl == 0) {
         microop = new VectorNopMicroInst(_machInst);
     } else {
-        microop = new Vse8_vMicro(_machInst, micro_vl, 0);
+        vmi.rs = 0;
+        vmi.re = this->vl;
+        vmi.microVs3 = VS3;
+        vmi.offset = 0;
+        microop = new Vse8_vMicro(_machInst, 0, vmi);
         microop->setDelayedCommit();
         microop->setFlag(IsStore);
     }
@@ -798,33 +892,39 @@ def template VlStrideConstructor {{
 %(class_name)s::%(class_name)s(ExtMachInst _machInst)
     : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
-    %(set_reg_idx_arr)s;
-    %(constructor)s;
+    const int32_t nf = _machInst.nf + 1;
+    const uint32_t eew = width_EEW(_machInst.width);
+    const uint32_t sew = getSew(_machInst.vtype8.vsew);
+    float vflmul = getVflmul(_machInst.vtype8.vlmul);
+    const uint32_t emul = get_emul(eew, sew, vflmul, false);
+    const uint32_t elem_num_per_vreg = VLEN / eew;
+    panic_if(nf * emul > 8, "invalid nf and emul");
 
-    const int32_t num_elems_per_vreg = VLEN / width_EEW(_machInst.width);
-    int32_t remaining_vl = this->vl;
-    // Num of elems in one vreg
-    int32_t micro_vl = std::min(remaining_vl, num_elems_per_vreg);
+
     StaticInstPtr microop;
-
-    if (micro_vl == 0) {
+    if (this->vl == 0) {
         microop = new VectorNopMicroInst(_machInst);
         this->microops.push_back(microop);
     }
-    for (int i = 0; micro_vl > 0; ++i) {
-        for (int j = 0; j < micro_vl; ++j) {
-            microop = new %(class_name)sMicro(machInst, i, j, micro_vl);
-            microop->setFlag(IsDelayedCommit);
+    VectorMicroInfo vmi;
+    for (int i=0; i < this->vl; i++) {
+        for (int fn=0; fn < nf; fn++) {
+            // baseAddr = Rs1 + i*Rs2 + fn * eew / 8
+            // mem<eew>[baseAddr] = (vd + fn * emul)<eew>[i]
+            vmi.rs = i;
+            vmi.re = i+1;
+            vmi.fn = fn;
+            vmi.microVd = elem_gen_idx(VD + fn * emul, i, eew/8);
+            vmi.offset = fn * eew / 8;
+            microop = new %(class_name)sMicro(_machInst, i*fn, vmi);
+            microop->setDelayedCommit();
             microop->setFlag(IsLoad);
             this->microops.push_back(microop);
         }
-        remaining_vl -= num_elems_per_vreg;
-        micro_vl = std::min(remaining_vl, num_elems_per_vreg);
     }
 
-    this->microops.front()->setFlag(IsFirstMicroop);
-    this->microops.back()->setFlag(IsLastMicroop);
-    this->flags[IsVector] = true;
+    this->microops.front()->setFirstMicroop();
+    this->microops.back()->setLastMicroop();
 }
 
 }};
@@ -838,20 +938,21 @@ private:
     RegId srcRegIdxArr[4];
     RegId destRegIdxArr[1];
 public:
-    %(class_name)s(ExtMachInst _machInst, uint8_t _regIdx, uint8_t _microIdx,
-        uint8_t _microVl)
-    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s,
-        _regIdx, _microIdx, _microVl)
+    %(class_name)s(ExtMachInst _machInst, uint8_t _microIdx, VectorMicroInfo& _vmi)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s, _microIdx)
     {
         %(set_reg_idx_arr)s;
+        vmi = _vmi;
+        assert(~vmi.microVd);
+        assert(~vmi.offset);
         _numSrcRegs = 0;
         _numDestRegs = 0;
-        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, _machInst.vd + _regIdx));
+        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, vmi.microVd));
         _numTypedDestRegs[VecRegClass]++;
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs2));
         // We treat agnostic as undistrubed
-        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _machInst.vd + _regIdx));
+        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, vmi.microVd));
         if (!_machInst.vm) {
             setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, 0));
         }
@@ -872,13 +973,14 @@ def template VlStrideMicroExecute {{
 Fault
 %(class_name)s::execute(ExecContext *xc, Trace::InstRecord *traceData) const
 {
-    Fault fault = NoFault;
-    Addr EA;
-
     %(op_decl)s;
     %(op_rd)s;
-    constexpr uint8_t elem_size = sizeof(Vd[0]);
-    %(ea_code)s; // ea_code depends on elem_size
+
+    Fault fault = NoFault;
+    Addr EA;
+    const uint32_t eew = width_EEW(this->machInst.width);
+    EA = Rs1 + Rs2*vmi.rs + vmi.offset;
+    uint32_t mem_size = (vmi.re - vmi.rs) * eew / 8;
 
     RiscvISA::vreg_t tmp_v0;
     uint8_t *v0;
@@ -887,16 +989,17 @@ Fault
         v0 = tmp_v0.as<uint8_t>();
     }
 
-    uint32_t mem_size = elem_size;
-    const std::vector<bool> byte_enable(mem_size, true);
+    COPY_OLD_VD(2);
 
-    size_t ei = this->regIdx * VLENB / elem_size + this->microIdx;
+    uint32_t vdElemIdx = (vmi.rs % (VLEN / eew));
+    size_t ei = vmi.rs;
     if (machInst.vm || elem_mask(v0, ei)) {
+        const std::vector<bool> byte_enable(mem_size, true);
         fault = xc->readMem(EA, Mem.as<uint8_t>(), mem_size,
                                 memAccessFlags, byte_enable);
         if (fault != NoFault)
             return fault;
-        %(memacc_code)s; /* Vd[this->microIdx] = Mem[0]; */
+        %(memacc_code)s;
     }
 
     %(op_wb)s;
@@ -911,13 +1014,14 @@ Fault
 %(class_name)s::initiateAcc(ExecContext* xc,
                             Trace::InstRecord* traceData) const
 {
-    Fault fault = NoFault;
-    Addr EA;
-
     %(op_src_decl)s;
     %(op_rd)s;
-    constexpr uint8_t elem_size = sizeof(Vd[0]);
-    %(ea_code)s; // ea_code depends on elem_size
+
+    Fault fault = NoFault;
+    Addr EA;
+    const uint32_t eew = width_EEW(this->machInst.width);
+    EA = Rs1 + Rs2*vmi.rs + vmi.offset;
+    uint32_t mem_size = (vmi.re - vmi.rs) * eew / 8;
 
     RiscvISA::vreg_t tmp_v0;
     uint8_t *v0;
@@ -926,11 +1030,11 @@ Fault
         v0 = tmp_v0.as<uint8_t>();
     }
 
-    uint32_t mem_size = elem_size;
-    size_t ei = this->regIdx * VLENB / elem_size + this->microIdx;
+    size_t ei = vmi.rs;
     bool need_load = machInst.vm || elem_mask(v0, ei);
     const std::vector<bool> byte_enable(mem_size, need_load);
     fault = initiateMemRead(xc, EA, mem_size, memAccessFlags, byte_enable);
+
     return fault;
 }
 
@@ -945,14 +1049,6 @@ Fault
     %(op_decl)s;
     %(op_rd)s;
 
-    constexpr uint8_t elem_size = sizeof(Vd[0]);
-
-    RiscvISA::vreg_t old_vd;
-    decltype(Vd) old_Vd = nullptr;
-    // We treat agnostic as undistrubed
-    xc->getRegOperand(this, 2, &old_vd);
-    old_Vd = old_vd.as<std::remove_reference_t<decltype(Vd[0])> >();
-
     RiscvISA::vreg_t tmp_v0;
     uint8_t *v0;
     if (!machInst.vm) {
@@ -960,21 +1056,14 @@ Fault
         v0 = tmp_v0.as<uint8_t>();
     }
 
-    if (microIdx == 0) {
-        // treat vma as vmu
-        // if (machInst.vtype8.vma == 0)
-        memcpy(Vd, old_Vd, microVl * elem_size);
-        // treat vta as vtu
-        // if (machInst.vtype8.vta == 0)
-        memcpy(Vd + microVl, old_Vd + microVl, VLENB - microVl * elem_size);
-    } else {
-        memcpy(Vd, old_Vd, VLENB);
-    }
+    COPY_OLD_VD(2);
 
-    size_t ei = this->regIdx * VLENB / sizeof(Vd[0]) + this->microIdx;
+    const uint32_t eew = width_EEW(this->machInst.width);
+    uint32_t vdElemIdx = (vmi.rs % (VLEN / eew));
+    size_t ei = vmi.rs;
     if (machInst.vm || elem_mask(v0, ei)) {
         memcpy(Mem.as<uint8_t>(), pkt->getPtr<uint8_t>(), pkt->getSize());
-        %(memacc_code)s; /* Vd[this->microIdx] = Mem[0]; */
+        %(memacc_code)s;
     }
 
     %(op_wb)s;
@@ -988,33 +1077,38 @@ def template VsStrideConstructor {{
 %(class_name)s::%(class_name)s(ExtMachInst _machInst)
     : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
-    %(set_reg_idx_arr)s;
-    %(constructor)s;
+    const int32_t nf = _machInst.nf + 1;
+    const uint32_t eew = width_EEW(_machInst.width);
+    const uint32_t sew = getSew(_machInst.vtype8.vsew);
+    float vflmul = getVflmul(_machInst.vtype8.vlmul);
+    const uint32_t emul = get_emul(eew, sew, vflmul, false);
+    const uint32_t elem_num_per_vreg = VLEN / eew;
+    panic_if(nf * emul > 8, "invalid nf and emul");
 
-    const int32_t num_elems_per_vreg = VLEN / width_EEW(_machInst.width);
-    int32_t remaining_vl = this->vl;
-    // Num of elems in one vreg
-    int32_t micro_vl = std::min(remaining_vl, num_elems_per_vreg);
     StaticInstPtr microop;
-
-    if (micro_vl == 0) {
+    if (this->vl == 0) {
         microop = new VectorNopMicroInst(_machInst);
         this->microops.push_back(microop);
     }
-    for (int i = 0; micro_vl > 0; ++i) {
-        for (int j = 0; j < micro_vl; ++j) {
-            microop = new %(class_name)sMicro(machInst, i, j, micro_vl);
-            microop->setFlag(IsDelayedCommit);
+    VectorMicroInfo vmi;
+    for (int i=0; i < this->vl; i++) {
+        for (int fn=0; fn < nf; fn++) {
+            // baseAddr = Rs1 + i*Rs2 + fn * eew / 8
+            // mem<eew>[baseAddr] = (vs3 + fn * emul)<eew>[i];
+            vmi.rs = i;
+            vmi.re = i+1;
+            vmi.fn = fn;
+            vmi.microVs3 = elem_gen_idx(VS3 + fn * emul, i, eew/8);
+            vmi.offset = fn * eew / 8;
+            microop = new %(class_name)sMicro(_machInst, i*fn, vmi);
+            microop->setDelayedCommit();
             microop->setFlag(IsStore);
             this->microops.push_back(microop);
         }
-        remaining_vl -= num_elems_per_vreg;
-        micro_vl = std::min(remaining_vl, num_elems_per_vreg);
     }
 
     this->microops.front()->setFlag(IsFirstMicroop);
     this->microops.back()->setFlag(IsLastMicroop);
-    this->flags[IsVector] = true;
 }
 
 }};
@@ -1028,17 +1122,18 @@ private:
     RegId srcRegIdxArr[4];
     RegId destRegIdxArr[0];
 public:
-    %(class_name)s(ExtMachInst _machInst, uint8_t _regIdx, uint8_t _microIdx,
-            uint8_t _microVl)
-        : %(base_class)s("%(mnemonic)s""_micro", _machInst, %(op_class)s,
-            _regIdx, _microIdx, _microVl)
+    %(class_name)s(ExtMachInst _machInst, uint8_t _microIdx, VectorMicroInfo& _vmi)
+        : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s,  _microIdx)
     {
         %(set_reg_idx_arr)s;
+        vmi = _vmi;
+        assert(~vmi.microVs3);
+        assert(~vmi.offset);
         _numSrcRegs = 0;
         _numDestRegs = 0;
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs2));
-        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _machInst.vs3 + _regIdx));
+        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, vmi.microVs3));
         if (!_machInst.vm) {
             setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, 0));
         }
@@ -1059,13 +1154,15 @@ def template VsStrideMicroExecute {{
 Fault
 %(class_name)s::execute(ExecContext *xc, Trace::InstRecord *traceData) const
 {
-    Fault fault = NoFault;
-    Addr EA;
-
     %(op_decl)s;
     %(op_rd)s;
-    constexpr uint8_t elem_size = sizeof(Vs3[0]);
-    %(ea_code)s;
+
+    Fault fault = NoFault;
+    Addr EA;
+    const uint32_t eew = width_EEW(this->machInst.width);
+    const uint32_t eewb = eew/8;
+    EA = Rs1 + Rs2 * vmi.rs + vmi.offset;
+    uint32_t mem_size = (vmi.re - vmi.rs) * eew / 8;
 
     RiscvISA::vreg_t tmp_v0;
     uint8_t *v0;
@@ -1074,11 +1171,10 @@ Fault
         v0 = tmp_v0.as<uint8_t>();
     }
 
-    uint32_t mem_size = elem_size;
-    const std::vector<bool> byte_enable(mem_size, true);
-
-    size_t ei = this->regIdx * VLENB / elem_size + this->microIdx;
+    uint32_t vs3ElemIdx = (vmi.rs % (VLEN / eew));
+    size_t ei = vmi.rs;
     if (machInst.vm || elem_mask(v0, ei)) {
+        const std::vector<bool> byte_enable(mem_size, true);
         %(memacc_code)s;
         fault = xc->writeMem(Mem.as<uint8_t>(), mem_size, EA,
                              memAccessFlags, nullptr, byte_enable);
@@ -1094,8 +1190,16 @@ Fault
 %(class_name)s::initiateAcc(ExecContext* xc,
                             Trace::InstRecord* traceData) const
 {
+    %(op_decl)s;
+    %(op_rd)s;
+
     Fault fault = NoFault;
     Addr EA;
+
+    const uint32_t eew = width_EEW(this->machInst.width);
+    const uint32_t eewb = eew/8;
+    EA = Rs1 + Rs2 * vmi.rs + vmi.offset;
+    uint32_t mem_size = (vmi.re - vmi.rs) * eew / 8;
 
     RiscvISA::vreg_t tmp_v0;
     uint8_t *v0;
@@ -1104,16 +1208,10 @@ Fault
         v0 = tmp_v0.as<uint8_t>();
     }
 
-    %(op_decl)s;
-    %(op_rd)s;
-    constexpr uint8_t elem_size = sizeof(Vs3[0]);
-    %(ea_code)s;
-
-    uint32_t mem_size = elem_size;
-    size_t ei = this->regIdx * VLENB / elem_size + this->microIdx;
-    bool need_store = machInst.vm || elem_mask(v0, ei);
-    if (need_store) {
-        const std::vector<bool> byte_enable(mem_size, need_store);
+    uint32_t vs3ElemIdx = (vmi.rs % (VLEN / eew));
+    size_t ei = vmi.rs;
+    if (machInst.vm || elem_mask(v0, ei)) {
+        const std::vector<bool> byte_enable(mem_size, true);
         %(memacc_code)s;
         fault = xc->writeMem(Mem.as<uint8_t>(), mem_size, EA,
                             memAccessFlags, nullptr, byte_enable);
@@ -1140,36 +1238,37 @@ template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
     : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
-    %(set_reg_idx_arr)s;
-    %(constructor)s;
+    const int32_t nf = _machInst.nf + 1;
+    const uint32_t eew = width_EEW(_machInst.width); // vs2 : index[i]
+    const uint32_t sew = getSew(_machInst.vtype8.vsew); // vs3 : stored elem
+    float vflmul = getVflmul(_machInst.vtype8.vlmul);
+    const uint32_t emul = get_emul(eew, sew, vflmul, false);
+    uint32_t flmul = vflmul < 1 ? 1 : vflmul;
+    const uint32_t elem_num_per_vreg = VLEN / sew;
+    panic_if(nf * flmul > 8, "invalid nf and emul");
 
-    const uint32_t vd_eewb = sizeof(ElemType);
-    const uint32_t vs2_eewb = width_EEW(_machInst.width) / 8;
-    const uint8_t vs2_split_num = (vd_eewb + vs2_eewb - 1) / vs2_eewb;
-    const uint8_t vd_split_num = (vs2_eewb + vd_eewb - 1) / vd_eewb;
-    const int32_t micro_vlmax = VLENB / std::max(vd_eewb, vs2_eewb);
-    int32_t remaining_vl = this->vl;
-    int32_t micro_vl = std::min(remaining_vl, micro_vlmax);
     StaticInstPtr microop;
-
-    if (micro_vl == 0) {
+    if (this->vl == 0) {
         microop = new VectorNopMicroInst(_machInst);
         this->microops.push_back(microop);
     }
-    for (uint8_t i = 0; micro_vl > 0; i++) {
-        for (uint8_t j = 0; j < micro_vl; ++j) {
-            uint8_t vdRegIdx = i / vd_split_num;
-            uint8_t vs2RegIdx = i / vs2_split_num;
-            uint8_t vdElemIdx = j + micro_vlmax * (i % vd_split_num);
-            uint8_t vs2ElemIdx = j + micro_vlmax * (i % vs2_split_num);
-            microop = new %(class_name)sMicro<ElemType>(machInst,
-                vdRegIdx, vdElemIdx, vs2RegIdx, vs2ElemIdx);
+    VectorMicroInfo vmi;
+    for (int i = 0; i < this->vl; i++) {
+        for (int fn = 0; fn < nf; fn++) {
+            // baseAddr = Rs1 + fn * sew / 8
+            // (vd + fn * flmul)<sew>[i] = mem<sew>[baseAddr + vs2<eew>[i]]
+            vmi.fn = fn;
+            vmi.rs = i;
+            vmi.re = i+1;
+            vmi.microVd = elem_gen_idx(VD + fn * flmul, i, sew/8);
+            vmi.microVs2 = elem_gen_idx(VS2, i, eew / 8);
+            vmi.offset = fn * sew / 8;
+            assert(vmi.microVd < 32);
+            microop = new %(class_name)sMicro<ElemType>(machInst, i * fn, vmi);
             microop->setFlag(IsDelayedCommit);
             microop->setFlag(IsLoad);
             this->microops.push_back(microop);
         }
-        remaining_vl -= micro_vlmax;
-        micro_vl = std::min(remaining_vl, micro_vlmax);
     }
 
     this->microops.front()->setFlag(IsFirstMicroop);
@@ -1189,21 +1288,24 @@ private:
     RegId srcRegIdxArr[4];
     RegId destRegIdxArr[1];
 public:
-    %(class_name)s(ExtMachInst _machInst,
-        uint8_t _vdRegIdx, uint8_t _vdElemIdx,
-        uint8_t _vs2RegIdx, uint8_t _vs2ElemIdx)
-    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s,
-        _vdRegIdx, _vdElemIdx, _vs2RegIdx, _vs2ElemIdx)
+    %(class_name)s(ExtMachInst _machInst, uint32_t _microIdx, VectorMicroInfo& _vmi)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s, _microIdx)
     {
         %(set_reg_idx_arr)s;
+        vmi = _vmi;
+        vmi = _vmi;
+        assert(~vmi.fn);
+        assert(~vmi.microVd);
+        assert(~vmi.microVs2);
+        assert(~vmi.offset);
         _numSrcRegs = 0;
         _numDestRegs = 0;
-        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, _machInst.vd + _vdRegIdx));
+        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, vmi.microVd));
         _numTypedDestRegs[VecRegClass]++;
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
-        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _machInst.vs2 + _vs2RegIdx));
+        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, vmi.microVs2));
         // We treat agnostic as undistrubed
-        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _machInst.vd + _vdRegIdx));
+        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, vmi.microVd));
         if (!_machInst.vm) {
             setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, 0));
         }
@@ -1227,13 +1329,15 @@ Fault
     Trace::InstRecord *traceData)const
 {
     using vu = std::make_unsigned_t<ElemType>;
-    Fault fault = NoFault;
-    Addr EA;
-
     %(op_decl)s;
     %(op_rd)s;
+
+    Fault fault = NoFault;
+    Addr EA;
+    uint32_t vs2ElemIdx = vmi.rs % (VLEN / width_EEW(machInst.width));
     %(ea_code)s;
-    constexpr uint8_t elem_size = sizeof(Vd[0]);
+
+
     RiscvISA::vreg_t tmp_v0;
     uint8_t *v0;
     if (!machInst.vm) {
@@ -1241,16 +1345,20 @@ Fault
         v0 = tmp_v0.as<uint8_t>();
     }
 
+    COPY_OLD_VD(2);
+
+    constexpr uint8_t elem_size = sizeof(vu);
     uint32_t mem_size = elem_size;
     const std::vector<bool> byte_enable(mem_size, true);
 
-    size_t ei = this->vdRegIdx * VLENB / elem_size + this->vdElemIdx;
+    uint32_t vdElemIdx = vmi.rs % (VLENB / elem_size);
+    size_t ei = vmi.rs;
     if (machInst.vm || elem_mask(v0, ei)) {
         fault = xc->readMem(EA, Mem.as<uint8_t>(), mem_size,
                                 memAccessFlags, byte_enable);
         if (fault != NoFault)
             return fault;
-        %(memacc_code)s; /* Vd[this->vdElemIdx] = Mem[0]; */
+        %(memacc_code)s;
     }
 
     %(op_wb)s;
@@ -1267,13 +1375,13 @@ Fault
                             Trace::InstRecord* traceData) const
 {
     using vu = std::make_unsigned_t<ElemType>;
-    Fault fault = NoFault;
-    Addr EA;
-
     %(op_src_decl)s;
     %(op_rd)s;
-    constexpr uint8_t elem_size = sizeof(Vd[0]);
-    %(ea_code)s; // ea_code depends on elem_size
+
+    Fault fault = NoFault;
+    Addr EA;
+    uint32_t vs2ElemIdx = vmi.rs % (VLEN / width_EEW(machInst.width));
+    %(ea_code)s;
 
     RiscvISA::vreg_t tmp_v0;
     uint8_t *v0;
@@ -1282,8 +1390,9 @@ Fault
         v0 = tmp_v0.as<uint8_t>();
     }
 
+    constexpr uint8_t elem_size = sizeof(vu);
     uint32_t mem_size = elem_size;
-    size_t ei = this->vdRegIdx * VLENB / elem_size + this->vdElemIdx;
+    size_t ei = vmi.rs;
     bool need_load = machInst.vm || elem_mask(v0, ei);
     const std::vector<bool> byte_enable(mem_size, need_load);
     fault = initiateMemRead(xc, EA, mem_size, memAccessFlags, byte_enable);
@@ -1303,14 +1412,6 @@ Fault
     %(op_decl)s;
     %(op_rd)s;
 
-    constexpr uint8_t elem_size = sizeof(Vd[0]);
-
-    RiscvISA::vreg_t old_vd;
-    decltype(Vd) old_Vd = nullptr;
-    // We treat agnostic as undistrubed
-    xc->getRegOperand(this, 2, &old_vd);
-    old_Vd = old_vd.as<std::remove_reference_t<decltype(Vd[0])> >();
-
     RiscvISA::vreg_t tmp_v0;
     uint8_t *v0;
     if (!machInst.vm) {
@@ -1318,12 +1419,14 @@ Fault
         v0 = tmp_v0.as<uint8_t>();
     }
 
-    memcpy(Vd, old_Vd, VLENB);
+    COPY_OLD_VD(2);
 
-    size_t ei = this->vdRegIdx * VLENB / elem_size + this->vdElemIdx;
+    constexpr uint32_t elem_size = sizeof(vu);
+    uint32_t vdElemIdx = vmi.rs % (VLENB / elem_size);
+    size_t ei = vmi.rs;
     if (machInst.vm || elem_mask(v0, ei)) {
         memcpy(Mem.as<uint8_t>(), pkt->getPtr<uint8_t>(), pkt->getSize());
-        %(memacc_code)s; /* Vd[this->microIdx] = Mem[0]; */
+        %(memacc_code)s;
     }
 
     %(op_wb)s;
@@ -1338,38 +1441,40 @@ template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
     : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
-    %(set_reg_idx_arr)s;
-    %(constructor)s;
+    const int32_t nf = _machInst.nf + 1;
+    const uint32_t eew = width_EEW(_machInst.width); // vs2 : index[i]
+    const uint32_t sew = getSew(_machInst.vtype8.vsew); // vs3 : stored elem
+    float vflmul = getVflmul(_machInst.vtype8.vlmul);
+    const uint32_t emul = get_emul(eew, sew, vflmul, false);
+    uint32_t flmul = vflmul < 1 ? 1 : vflmul;
+    const uint32_t elem_num_per_vreg = VLEN / sew;
+    panic_if(nf * flmul > 8, "invalid nf and emul");
 
-    const uint32_t vs3_eewb = sizeof(ElemType);
-    const uint32_t vs2_eewb = width_EEW(_machInst.width) / 8;
-    const uint8_t vs2_split_num = (vs3_eewb + vs2_eewb - 1) / vs2_eewb;
-    const uint8_t vs3_split_num = (vs2_eewb + vs3_eewb - 1) / vs3_eewb;
-    const int32_t micro_vlmax = VLENB / std::max(vs3_eewb, vs2_eewb);
-    int32_t remaining_vl = this->vl;
-    int32_t micro_vl = std::min(remaining_vl, micro_vlmax);
     StaticInstPtr microop;
-
-    if (micro_vl == 0) {
+    if (this->vl == 0) {
         microop = new VectorNopMicroInst(_machInst);
         this->microops.push_back(microop);
     }
-    for (uint8_t i = 0; micro_vl > 0; i++) {
-        for (uint8_t j = 0; j < micro_vl; ++j) {
-            uint8_t vs3RegIdx = i / vs3_split_num;
-            uint8_t vs2RegIdx = i / vs2_split_num;
-            uint8_t vs3ElemIdx = j + micro_vlmax * (i % vs3_split_num);
-            uint8_t vs2ElemIdx = j + micro_vlmax * (i % vs2_split_num);
-            microop = new %(class_name)sMicro<ElemType>(machInst,
-                vs3RegIdx, vs3ElemIdx, vs2RegIdx, vs2ElemIdx);
+    VectorMicroInfo vmi;
+    for (int i=0; i<this->vl; i++) {
+        // can be optimized
+        for (int fn=0; fn<nf; fn++) {
+            // baseAddr = Rs1 + fn * sew / 8
+            // mem<sew>[baseAddr + vs2<eew>[i]] = (vs3 + fn * flmul)<sew>[i]
+            vmi.fn = fn;
+            vmi.rs = i;
+            vmi.re = i+1;
+            vmi.microVs2 = elem_gen_idx(VS2, i, eew / 8);
+            vmi.microVs3 = elem_gen_idx(VS3 + fn * flmul, i, sew / 8);
+            vmi.offset = fn * sew / 8;
+            assert(vmi.microVs2 < 32);
+            assert(vmi.microVs3 < 32);
+            microop = new %(class_name)sMicro<ElemType>(machInst, i * fn, vmi);
             microop->setFlag(IsDelayedCommit);
             microop->setFlag(IsStore);
             this->microops.push_back(microop);
         }
-        remaining_vl -= micro_vlmax;
-        micro_vl = std::min(remaining_vl, micro_vlmax);
     }
-
     this->microops.front()->setFlag(IsFirstMicroop);
     this->microops.back()->setFlag(IsLastMicroop);
     this->flags[IsVector] = true;
@@ -1387,19 +1492,21 @@ private:
     RegId srcRegIdxArr[4];
     RegId destRegIdxArr[0];
 public:
-    %(class_name)s(ExtMachInst _machInst,
-        uint8_t _vs3RegIdx, uint8_t _vs3ElemIdx,
-        uint8_t _vs2RegIdx, uint8_t _vs2ElemIdx)
-    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s,
-        _vs3RegIdx, _vs3ElemIdx, _vs2RegIdx, _vs2ElemIdx)
+    %(class_name)s(ExtMachInst _machInst, uint32_t _microIdx, VectorMicroInfo& _vmi)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s, _microIdx)
     {
         %(set_reg_idx_arr)s;
+        vmi = _vmi;
+        assert(~vmi.fn);
+        assert(~vmi.microVs2);
+        assert(~vmi.microVs3);
+        assert(~vmi.offset);
         _numSrcRegs = 0;
         _numDestRegs = 0;
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
-        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _machInst.vs2 + _vs2RegIdx));
+        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, vmi.microVs2));
         // We treat agnostic as undistrubed
-        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _machInst.vs3 + _vs3RegIdx));
+        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, vmi.microVs3));
         if (!_machInst.vm) {
             setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, 0));
         }
@@ -1423,13 +1530,15 @@ Fault
     Trace::InstRecord *traceData)const
 {
     using vu = std::make_unsigned_t<ElemType>;
-    Fault fault = NoFault;
-    Addr EA;
 
     %(op_decl)s;
     %(op_rd)s;
+
+    Fault fault = NoFault;
+    Addr EA;
+    uint32_t vs2ElemIdx = vmi.rs % (VLEN / width_EEW(machInst.width));
     %(ea_code)s;
-    constexpr uint8_t elem_size = sizeof(Vs3[0]);
+    constexpr uint8_t elem_size = sizeof(vu);
     RiscvISA::vreg_t tmp_v0;
     uint8_t *v0;
     if (!machInst.vm) {
@@ -1440,9 +1549,10 @@ Fault
     uint32_t mem_size = elem_size;
     const std::vector<bool> byte_enable(mem_size, true);
 
-    size_t ei = this->vs3RegIdx * VLENB / elem_size + this->vs3ElemIdx;
+    uint32_t vs3ElemIdx = vmi.rs % (VLEN / getSew(machInst.vtype8.vsew));
+    size_t ei = vmi.rs;
     if (machInst.vm || elem_mask(v0, ei)) {
-        %(memacc_code)s; /* Mem[0] = Vs3[this->vs3ElemIdx] */
+        %(memacc_code)s;
         fault = xc->writeMem(Mem.as<uint8_t>(), mem_size, EA,
                              memAccessFlags, nullptr, byte_enable);
     }
@@ -1459,13 +1569,14 @@ Fault
                             Trace::InstRecord* traceData) const
 {
     using vu = std::make_unsigned_t<ElemType>;
-    Fault fault = NoFault;
-    Addr EA;
-
     %(op_src_decl)s;
     %(op_rd)s;
+
+    Fault fault = NoFault;
+    Addr EA;
+    uint32_t vs2ElemIdx = vmi.rs % (VLEN / width_EEW(machInst.width));
     %(ea_code)s;
-    constexpr uint8_t elem_size = sizeof(Vs3[0]);
+    constexpr uint8_t elem_size = sizeof(vu);
     RiscvISA::vreg_t tmp_v0;
     uint8_t *v0;
     if (!machInst.vm) {
@@ -1476,9 +1587,10 @@ Fault
     constexpr uint8_t mem_size = elem_size;
     const std::vector<bool> byte_enable(mem_size, true);
 
-    size_t ei = this->vs3RegIdx * VLENB / elem_size + this->vs3ElemIdx;
+    uint32_t vs3ElemIdx = vmi.rs % (VLEN / getSew(machInst.vtype8.vsew));
+    size_t ei = vmi.rs;
     if (machInst.vm || elem_mask(v0, ei)) {
-        %(memacc_code)s; /* Mem[0] = Vs3[this->vs3ElemIdx] */
+        %(memacc_code)s;
         fault = xc->writeMem(Mem.as<uint8_t>(), mem_size, EA,
                              memAccessFlags, nullptr, byte_enable);
     }

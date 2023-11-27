@@ -41,20 +41,6 @@ namespace gem5
 namespace RiscvISA
 {
 
-float
-getVflmul(uint32_t vlmul_encoding) {
-  int vlmul = int8_t(vlmul_encoding << 5) >> 5;
-  float vflmul = vlmul >= 0 ? 1 << vlmul : 1.0 / (1 << -vlmul);
-  return vflmul;
-}
-
-uint32_t
-getVlmax(VTYPE vtype, uint32_t vlen) {
-  uint32_t sew = getSew(vtype.vsew);
-  uint32_t vlmax = (vlen/sew) * getVflmul(vtype.vlmul);
-  return vlmax;
-}
-
 std::string
 VConfOp::generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const
 {
@@ -199,7 +185,7 @@ std::string VleMicroInst::generateDisassembly(Addr pc,
 {
     std::stringstream ss;
     ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
-       << VLENB * microIdx << '(' << registerName(srcRegIdx(0)) << ')' << ", "
+       << vmi.offset << '(' << registerName(srcRegIdx(0)) << ')' << ", "
        << registerName(srcRegIdx(1));
     if (!machInst.vm) ss << ", v0.t";
     return ss.str();
@@ -230,7 +216,7 @@ std::string VseMicroInst::generateDisassembly(Addr pc,
 {
     std::stringstream ss;
     ss << mnemonic << ' ' << registerName(srcRegIdx(1)) << ", "
-       << VLENB * microIdx  << '(' << registerName(srcRegIdx(0)) << ')';
+       << vmi.offset  << '(' << registerName(srcRegIdx(0)) << ')';
     if (!machInst.vm) ss << ", v0.t";
     return ss.str();
 }
@@ -345,6 +331,8 @@ std::string VlIndexMicroInst::generateDisassembly(Addr pc,
         const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
+    uint32_t vdElemIdx = vmi.rs % (VLEN / getSew(machInst.vtype8.vsew));
+    uint32_t vs2ElemIdx = vmi.rs % (VLEN / width_EEW(machInst.width));
     ss << mnemonic << ' '
         << registerName(destRegIdx(0)) << "[" << uint16_t(vdElemIdx) << "], "
         << '(' << registerName(srcRegIdx(0)) << "), "
@@ -370,6 +358,8 @@ std::string VsIndexMicroInst::generateDisassembly(Addr pc,
         const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
+    uint32_t vs3ElemIdx = vmi.rs % (VLEN / getSew(machInst.vtype8.vsew));
+    uint32_t vs2ElemIdx = vmi.rs % (VLEN / width_EEW(machInst.width));
     ss << mnemonic << ' '
         << registerName(srcRegIdx(2)) << "[" << uint16_t(vs3ElemIdx) << "], "
         << '(' << registerName(srcRegIdx(0)) << "), "

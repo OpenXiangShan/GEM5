@@ -45,16 +45,23 @@ namespace gem5
 namespace RiscvISA
 {
 
-float
-getVflmul(uint32_t vlmul_encoding);
+struct VectorMicroInfo
+{
+    // the element operation range of each microop
+    // range is in [vstart,vl)
+    uint32_t rs = ~0; // range start
+    uint32_t re = ~0; // range end
 
-inline uint32_t getSew(uint32_t vsew) {
-    assert(vsew <= 3);
-    return (8 << vsew);
-}
+    uint32_t microVd = ~0;
+    uint32_t microVs1 = ~0;
+    uint32_t microVs2 = ~0;
+    uint32_t microVs3 = ~0;
 
-uint32_t
-getVlmax(VTYPE vtype, uint32_t vlen);
+    uint32_t fn = ~0; // segment idx
+    uint32_t offset = ~0; // vload/store baseAddr offset
+};
+
+
 
 /**
  * Base class for Vector Config operations
@@ -125,6 +132,8 @@ class VectorMacroInst : public RiscvMacroInst
 
 class VectorMicroInst : public RiscvMicroInst
 {
+public:
+    VectorMicroInfo vmi;
 protected:
     uint8_t microVl;
     uint8_t microIdx;
@@ -420,16 +429,14 @@ class VlStrideMacroInst : public VectorMemMacroInst
             Addr pc, const loader::SymbolTable *symtab) const override;
 };
 
-class VlStrideMicroInst : public VectorMemMicroInst
+class VlStrideMicroInst : public VectorMicroInst
 {
   protected:
-  uint8_t regIdx;
+    Request::Flags memAccessFlags{0};
+
     VlStrideMicroInst(const char *mnem, ExtMachInst _machInst,
-                      OpClass __opClass, uint8_t _regIdx,
-                      uint8_t _microIdx, uint8_t _microVl)
-        : VectorMemMicroInst(mnem, _machInst, __opClass, _microVl,
-                             _microIdx, 0)
-        , regIdx(_regIdx)
+                      OpClass __opClass, uint8_t _microIdx)
+        : VectorMicroInst(mnem, _machInst, __opClass, 0, _microIdx)
     {}
 
     std::string generateDisassembly(
@@ -448,16 +455,14 @@ class VsStrideMacroInst : public VectorMemMacroInst
             Addr pc, const loader::SymbolTable *symtab) const override;
 };
 
-class VsStrideMicroInst : public VectorMemMicroInst
+class VsStrideMicroInst : public VectorMicroInst
 {
   protected:
-  uint8_t regIdx;
+    Request::Flags memAccessFlags{0};
+
     VsStrideMicroInst(const char *mnem, ExtMachInst _machInst,
-                      OpClass __opClass, uint8_t _regIdx,
-                      uint8_t _microIdx, uint8_t _microVl)
-        : VectorMemMicroInst(mnem, _machInst, __opClass, _microVl,
-                             _microIdx, 0)
-        , regIdx(_regIdx)
+                      OpClass __opClass, uint8_t _microIdx)
+        : VectorMicroInst(mnem, _machInst, __opClass, 0, _microIdx)
     {}
 
     std::string generateDisassembly(
@@ -476,20 +481,14 @@ class VlIndexMacroInst : public VectorMemMacroInst
             Addr pc, const loader::SymbolTable *symtab) const override;
 };
 
-class VlIndexMicroInst : public VectorMemMicroInst
+class VlIndexMicroInst : public VectorMicroInst
 {
   protected:
-    uint8_t vdRegIdx;
-    uint8_t vdElemIdx;
-    uint8_t vs2RegIdx;
-    uint8_t vs2ElemIdx;
+    Request::Flags memAccessFlags{0};
+
     VlIndexMicroInst(const char *mnem, ExtMachInst _machInst,
-                    OpClass __opClass, uint8_t _vdRegIdx, uint8_t _vdElemIdx,
-                    uint8_t _vs2RegIdx, uint8_t _vs2ElemIdx)
-        : VectorMemMicroInst(mnem, _machInst, __opClass, 1,
-                             0, 0)
-        , vdRegIdx(_vdRegIdx), vdElemIdx(_vdElemIdx)
-        , vs2RegIdx(_vs2RegIdx), vs2ElemIdx(_vs2ElemIdx)
+                    OpClass __opClass, uint32_t _microIdx)
+        : VectorMicroInst(mnem, _machInst, __opClass, 0, _microIdx)
     {}
 
     std::string generateDisassembly(
@@ -508,19 +507,14 @@ class VsIndexMacroInst : public VectorMemMacroInst
             Addr pc, const loader::SymbolTable *symtab) const override;
 };
 
-class VsIndexMicroInst : public VectorMemMicroInst
+class VsIndexMicroInst : public VectorMicroInst
 {
   protected:
-    uint8_t vs3RegIdx;
-    uint8_t vs3ElemIdx;
-    uint8_t vs2RegIdx;
-    uint8_t vs2ElemIdx;
+    Request::Flags memAccessFlags{0};
+
     VsIndexMicroInst(const char *mnem, ExtMachInst _machInst,
-                    OpClass __opClass, uint8_t _vs3RegIdx, uint8_t _vs3ElemIdx,
-                    uint8_t _vs2RegIdx, uint8_t _vs2ElemIdx)
-        : VectorMemMicroInst(mnem, _machInst, __opClass, 1, 0, 0)
-        , vs3RegIdx(_vs3RegIdx), vs3ElemIdx(_vs3ElemIdx)
-        , vs2RegIdx(_vs2RegIdx), vs2ElemIdx(_vs2ElemIdx)
+                    OpClass __opClass, uint32_t _microIdx)
+        : VectorMicroInst(mnem, _machInst, __opClass, 0, _microIdx)
     {}
 
     std::string generateDisassembly(

@@ -929,6 +929,44 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             diffInfo.inst->disassemble(diffInfo.pc->instAddr()));
     auto machInst = dynamic_cast<RiscvISA::RiscvStaticInst &>(*diffInfo.inst).machInst;
     DPRINTF(Diff, "MachInst: %#lx\n", machInst);
+
+
+
+    readGem5Regs();
+    uint64_t* nemu_val = (uint64_t*)&(diffAllStates->referenceRegFile.vr[0]);
+    uint64_t* gem5_val = (uint64_t*)&(diffAllStates->gem5RegFile.vr[0]);
+    bool maybe_error = false;
+    int error_idx = 0;
+    for (int i=0; i < RiscvISA::NumVecElemPerVecReg * 32; i++) {
+        if (nemu_val[i] != gem5_val[i]) {
+            // diff_at = ValueDiff;
+            maybe_error = true;
+            error_idx = (i >> 1) * 2;
+            break;
+        }
+    }
+
+    if (maybe_error) {
+        std::string gem5_val_, nemu_val_;
+        for (int j=RiscvISA::NumVecElemPerVecReg-1; j>=0; j--) {
+            gem5_val_ += csprintf("%016lx", gem5_val[j + error_idx]);
+            if (j != 0) {
+                gem5_val_+="_";
+            }
+        }
+        for (int j=RiscvISA::NumVecElemPerVecReg-1; j>=0; j--) {
+            nemu_val_ += csprintf("%016lx", nemu_val[j + error_idx]);
+            if (j != 0) {
+                nemu_val_ += "_";
+            }
+        }
+        warn("Inst [sn:%lli] pc: %#lx, msg: %s\n", seq, diffInfo.pc->instAddr(),
+                diffInfo.lastCommittedMsg.back().c_str());
+        warn("May be diff at v%d\n Ref  value: %s\n GEM5 value: %s\n",
+            (error_idx>>1), nemu_val_, gem5_val_);
+        diff_at = ValueDiff;
+    }
+
     if (diffInfo.inst->numDestRegs() > 0) {
         const auto &dest = diffInfo.inst->destRegIdx(0);
         auto dest_tag = dest.index() + dest.isFloatReg() * 32;
@@ -996,42 +1034,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                 }
             }
         }
-        else if (dest.isVecReg()) {
-            readGem5Regs();
-            uint64_t* nemu_val = (uint64_t*)&(diffAllStates->referenceRegFile.vr[0]);
-            uint64_t* gem5_val = (uint64_t*)&(diffAllStates->gem5RegFile.vr[0]);
-            bool maybe_error = false;
-            int error_idx = 0;
-            for (int i=0; i < RiscvISA::NumVecElemPerVecReg * 32; i++) {
-                if (nemu_val[i] != gem5_val[i]) {
-                    // diff_at = ValueDiff;
-                    maybe_error = true;
-                    error_idx = (i >> 1) * 2;
-                    break;
-                }
-            }
 
-            if (maybe_error) {
-                std::string gem5_val_, nemu_val_;
-                for (int j=RiscvISA::NumVecElemPerVecReg-1; j>=0; j--) {
-                    gem5_val_ += csprintf("%016lx", gem5_val[j + error_idx]);
-                    if (j != 0) {
-                        gem5_val_+="_";
-                    }
-                }
-                for (int j=RiscvISA::NumVecElemPerVecReg-1; j>=0; j--) {
-                    nemu_val_ += csprintf("%016lx", nemu_val[j + error_idx]);
-                    if (j != 0) {
-                        nemu_val_ += "_";
-                    }
-                }
-                warn("Inst [sn:%lli] pc: %#lx, msg: %s\n", seq, diffInfo.pc->instAddr(),
-                     diffInfo.lastCommittedMsg.back().c_str());
-                warn("May be diff at v%d\n Ref  value: %s\n GEM5 value: %s\n",
-                    (error_idx>>1), nemu_val_, gem5_val_);
-                diff_at = ValueDiff;
-            }
-        }
 
         // always check some CSR regs
         {

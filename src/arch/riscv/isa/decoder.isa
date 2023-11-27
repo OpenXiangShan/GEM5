@@ -452,11 +452,8 @@ decode QUADRANT default Unknown::unknown() {
             0x0: decode MOP {
                 0x0: decode LUMOP {
                     0x00: VleOp::vle8_v({{
-                        if ((machInst.vm || elem_mask(v0, ei)) &&
-                            i < this->microVl) {
-                            Vd_ub[i] = Mem_vc.as<uint8_t>()[i];
-                        } else {
-                            Vd_ub[i] = Vs2_ub[i];
+                        if ((machInst.vm || elem_mask(v0, ei))) {
+                            Vd_ub[vdElemIdx] = Mem_vc.as<uint8_t>()[i];
                         }
                     }}, inst_flags=VectorUnitStrideLoadOp);
                     0x08: decode NF {
@@ -490,25 +487,22 @@ decode QUADRANT default Unknown::unknown() {
                 0x1: VlIndexOp::vluxei8_v({{
                     Vd_vu[vdElemIdx] = Mem_vc.as<vu>()[0];
                 }}, {{
-                    EA = Rs1 + Vs2_ub[vs2ElemIdx];
+                    EA = Rs1 + Vs2_ub[vs2ElemIdx] + vmi.offset;
                 }}, inst_flags=VectorIndexedLoadOp);
                 0x2: VlStrideOp::vlse8_v({{
-                    Vd_ub[microIdx] = Mem_vc.as<uint8_t>()[0];
+                    Vd_ub[vdElemIdx] = Mem_vc.as<uint8_t>()[0];
                 }}, inst_flags=VectorStridedLoadOp);
                 0x3: VlIndexOp::vloxei8_v({{
                     Vd_vu[vdElemIdx] = Mem_vc.as<vu>()[0];
                 }}, {{
-                    EA = Rs1 + Vs2_ub[vs2ElemIdx];
+                    EA = Rs1 + Vs2_ub[vs2ElemIdx] + vmi.offset;
                 }}, inst_flags=VectorIndexedLoadOp);
             }
             0x5: decode MOP {
                 0x0: decode LUMOP {
                     0x00: VleOp::vle16_v({{
-                        if ((machInst.vm || elem_mask(v0, ei)) &&
-                            i < this->microVl) {
-                            Vd_uh[i] = Mem_vc.as<uint16_t>()[i];
-                        } else {
-                            Vd_uh[i] = Vs2_uh[i];
+                        if ((machInst.vm || elem_mask(v0, ei))) {
+                            Vd_uh[vdElemIdx] = Mem_vc.as<uint16_t>()[i];
                         }
                     }}, inst_flags=VectorUnitStrideLoadOp);
                     0x08: decode NF {
@@ -539,25 +533,22 @@ decode QUADRANT default Unknown::unknown() {
                 0x1: VlIndexOp::vluxei16_v({{
                     Vd_vu[vdElemIdx] = Mem_vc.as<vu>()[0];
                 }}, {{
-                    EA = Rs1 + Vs2_uh[vs2ElemIdx];
+                    EA = Rs1 + Vs2_uh[vs2ElemIdx] + vmi.offset;
                 }}, inst_flags=VectorIndexedLoadOp);
                 0x2: VlStrideOp::vlse16_v({{
-                    Vd_uh[microIdx] = Mem_vc.as<uint16_t>()[0];
+                    Vd_uh[vdElemIdx] = Mem_vc.as<uint16_t>()[0];
                 }}, inst_flags=VectorStridedLoadOp);
                 0x3: VlIndexOp::vloxei16_v({{
                     Vd_vu[vdElemIdx] = Mem_vc.as<vu>()[0];
                 }}, {{
-                    EA = Rs1 + Vs2_uh[vs2ElemIdx];
+                    EA = Rs1 + Vs2_uh[vs2ElemIdx] + vmi.offset;
                 }}, inst_flags=VectorIndexedLoadOp);
             }
             0x6: decode MOP {
                 0x0: decode LUMOP {
                     0x00: VleOp::vle32_v({{
-                        if ((machInst.vm || elem_mask(v0, ei)) &&
-                            i < this->microVl) {
-                            Vd_uw[i] = Mem_vc.as<uint32_t>()[i];
-                        } else {
-                            Vd_uw[i] = Vs2_uw[i];
+                        if ((machInst.vm || elem_mask(v0, ei))) {
+                            Vd_uw[vdElemIdx] = Mem_vc.as<uint32_t>()[i];
                         }
                     }}, inst_flags=VectorUnitStrideLoadOp);
                     0x08: decode NF {
@@ -588,25 +579,22 @@ decode QUADRANT default Unknown::unknown() {
                 0x1: VlIndexOp::vluxei32_v({{
                     Vd_vu[vdElemIdx] = Mem_vc.as<vu>()[0];
                 }}, {{
-                    EA = Rs1 + Vs2_uw[vs2ElemIdx];
+                    EA = Rs1 + Vs2_uw[vs2ElemIdx] + vmi.offset;
                 }}, inst_flags=VectorIndexedLoadOp);
                 0x2: VlStrideOp::vlse32_v({{
-                    Vd_uw[microIdx] = Mem_vc.as<uint32_t>()[0];
+                    Vd_uw[vdElemIdx] = Mem_vc.as<uint32_t>()[0];
                 }}, inst_flags=VectorStridedLoadOp);
                 0x3: VlIndexOp::vloxei32_v({{
                     Vd_vu[vdElemIdx] = Mem_vc.as<vu>()[0];
                 }}, {{
-                    EA = Rs1 + Vs2_uw[vs2ElemIdx];
+                    EA = Rs1 + Vs2_uw[vs2ElemIdx] + vmi.offset;
                 }}, inst_flags=VectorIndexedLoadOp);
             }
             0x7: decode MOP {
                 0x0: decode LUMOP {
                     0x00: VleOp::vle64_v({{
-                        if ((machInst.vm || elem_mask(v0, ei)) &&
-                            i < this->microVl) {
-                            Vd_ud[i] = Mem_vc.as<uint64_t>()[i];
-                        } else {
-                            Vd_ud[i] = Vs2_ud[i];
+                        if ((machInst.vm || elem_mask(v0, ei))) {
+                            Vd_ud[vdElemIdx] = Mem_vc.as<uint64_t>()[i];
                         }
                     }}, inst_flags=VectorUnitStrideLoadOp);
                     0x08: decode NF {
@@ -637,15 +625,15 @@ decode QUADRANT default Unknown::unknown() {
                 0x1: VlIndexOp::vluxei64_v({{
                     Vd_vu[vdElemIdx] = Mem_vc.as<vu>()[0];
                 }}, {{
-                    EA = Rs1 + Vs2_ud[vs2ElemIdx];
+                    EA = Rs1 + Vs2_ud[vs2ElemIdx] + vmi.offset;
                 }}, inst_flags=VectorIndexedLoadOp);
                 0x2: VlStrideOp::vlse64_v({{
-                    Vd_ud[microIdx] = Mem_vc.as<uint64_t>()[0];
+                    Vd_ud[vdElemIdx] = Mem_vc.as<uint64_t>()[0];
                 }}, inst_flags=VectorStridedLoadOp);
                 0x3: VlIndexOp::vloxei64_v({{
                     Vd_vu[vdElemIdx] = Mem_vc.as<vu>()[0];
                 }}, {{
-                    EA = Rs1 + Vs2_ud[vs2ElemIdx];
+                    EA = Rs1 + Vs2_ud[vs2ElemIdx] + vmi.offset;
                 }}, inst_flags=VectorIndexedLoadOp);
             }
         }
@@ -891,7 +879,7 @@ decode QUADRANT default Unknown::unknown() {
             0x0: decode MOP {
                 0x0: decode SUMOP {
                     0x00: VseOp::vse8_v({{
-                        Mem_vc.as<uint8_t>()[i] = Vs3_ub[i];
+                        Mem_vc.as<uint8_t>()[i] = Vs3_ub[vs3ElemIdx];
                     }}, inst_flags=VectorUnitStrideStoreOp);
                     format VsWholeOp {
                         0x8: decode NF {
@@ -916,75 +904,75 @@ decode QUADRANT default Unknown::unknown() {
                 0x1: VsIndexOp::vsuxei8_v({{
                     Mem_vc.as<vu>()[0] = Vs3_vu[vs3ElemIdx];
                 }}, {{
-                    EA = Rs1 + Vs2_ub[vs2ElemIdx];
+                    EA = Rs1 + Vs2_ub[vs2ElemIdx] + vmi.offset;
                 }}, inst_flags=VectorIndexedStoreOp);
                 0x2: VsStrideOp::vsse8_v({{
-                    Mem_vc.as<uint8_t>()[0] = Vs3_ub[microIdx];
+                    Mem_vc.as<uint8_t>()[0] = Vs3_ub[vs3ElemIdx];
                 }}, inst_flags=VectorStridedStoreOp);
                 0x3: VsIndexOp::vsoxei8_v({{
                     Mem_vc.as<vu>()[0] = Vs3_vu[vs3ElemIdx];
                 }}, {{
-                    EA = Rs1 + Vs2_ub[vs2ElemIdx];
+                    EA = Rs1 + Vs2_ub[vs2ElemIdx] + vmi.offset;
                 }}, inst_flags=VectorIndexedStoreOp);
             }
             0x5: decode MOP {
                 0x0: decode SUMOP {
                     0x00: VseOp::vse16_v({{
-                        Mem_vc.as<uint16_t>()[i] = Vs3_uh[i];
+                        Mem_vc.as<uint16_t>()[i] = Vs3_uh[vs3ElemIdx];
                     }}, inst_flags=VectorUnitStrideStoreOp);
                 }
                 0x1: VsIndexOp::vsuxei16_v({{
                     Mem_vc.as<vu>()[0] = Vs3_vu[vs3ElemIdx];
                 }}, {{
-                    EA = Rs1 + Vs2_uh[vs2ElemIdx];
+                    EA = Rs1 + Vs2_uh[vs2ElemIdx] + vmi.offset;
                 }}, inst_flags=VectorIndexedStoreOp);
                 0x2: VsStrideOp::vsse16_v({{
-                    Mem_vc.as<uint16_t>()[0] = Vs3_uh[microIdx];
+                    Mem_vc.as<uint16_t>()[0] = Vs3_uh[vs3ElemIdx];
                 }}, inst_flags=VectorStridedStoreOp);
                 0x3: VsIndexOp::vsoxei16_v({{
                     Mem_vc.as<vu>()[0] = Vs3_vu[vs3ElemIdx];
                 }}, {{
-                    EA = Rs1 + Vs2_uh[vs2ElemIdx];
+                    EA = Rs1 + Vs2_uh[vs2ElemIdx] + vmi.offset;
                 }}, inst_flags=VectorIndexedStoreOp);
             }
             0x6: decode MOP {
                 0x0: decode SUMOP {
                     0x00: VseOp::vse32_v({{
-                        Mem_vc.as<uint32_t>()[i] = Vs3_uw[i];
+                        Mem_vc.as<uint32_t>()[i] = Vs3_uw[vs3ElemIdx];
                     }}, inst_flags=VectorUnitStrideStoreOp);
                 }
                 0x1: VsIndexOp::vsuxei32_v({{
                     Mem_vc.as<vu>()[0] = Vs3_vu[vs3ElemIdx];
                 }}, {{
-                    EA = Rs1 + Vs2_uw[vs2ElemIdx];
+                    EA = Rs1 + Vs2_uw[vs2ElemIdx] + vmi.offset;
                 }}, inst_flags=VectorIndexedStoreOp);
                 0x2: VsStrideOp::vsse32_v({{
-                    Mem_vc.as<uint32_t>()[0] = Vs3_uw[microIdx];
+                    Mem_vc.as<uint32_t>()[0] = Vs3_uw[vs3ElemIdx];
                 }}, inst_flags=VectorStridedStoreOp);
                 0x3: VsIndexOp::vsoxei32_v({{
                     Mem_vc.as<vu>()[0] = Vs3_vu[vs3ElemIdx];
                 }}, {{
-                    EA = Rs1 + Vs2_uw[vs2ElemIdx];
+                    EA = Rs1 + Vs2_uw[vs2ElemIdx] + vmi.offset;
                 }}, inst_flags=VectorIndexedStoreOp);
             }
             0x7: decode MOP {
                 0x0: decode SUMOP {
                     0x00: VseOp::vse64_v({{
-                        Mem_vc.as<uint64_t>()[i] = Vs3_ud[i];
+                        Mem_vc.as<uint64_t>()[i] = Vs3_ud[vs3ElemIdx];
                     }}, inst_flags=VectorUnitStrideStoreOp);
                 }
                 0x1: VsIndexOp::vsuxei64_v({{
                     Mem_vc.as<vu>()[0] = Vs3_vu[vs3ElemIdx];
                 }}, {{
-                    EA = Rs1 + Vs2_ud[vs2ElemIdx];
+                    EA = Rs1 + Vs2_ud[vs2ElemIdx] + vmi.offset;
                 }}, inst_flags=VectorIndexedStoreOp);
                 0x2: VsStrideOp::vsse64_v({{
-                    Mem_vc.as<uint64_t>()[0] = Vs3_ud[microIdx];
+                    Mem_vc.as<uint64_t>()[0] = Vs3_ud[vs3ElemIdx];
                 }}, inst_flags=VectorStridedStoreOp);
                 0x3: VsIndexOp::vsoxei64_v({{
                     Mem_vc.as<vu>()[0] = Vs3_vu[vs3ElemIdx];
                 }}, {{
-                    EA = Rs1 + Vs2_ud[vs2ElemIdx];
+                    EA = Rs1 + Vs2_ud[vs2ElemIdx] + vmi.offset;
                 }}, inst_flags=VectorIndexedStoreOp);
             }
         }
