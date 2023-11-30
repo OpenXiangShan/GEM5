@@ -189,6 +189,7 @@ class XSCompositePrefetcher : public Queued
         XSCompositeStats(statistics::Group *parent);
         statistics::Scalar allCntNum;
         statistics::Scalar actMNum;
+        statistics::Scalar refillNotifyCount;
     } stats;
 
   public:

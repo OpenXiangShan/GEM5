@@ -916,14 +916,16 @@ XSCompositePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std:
 void
 XSCompositePrefetcher::notifyFill(const PacketPtr &pkt)
 {
+    stats.refillNotifyCount++;
     berti->notifyFill(pkt);
     pfBlockLRUFilter.insert(pkt->req->getVaddr(), 0);
 }
 
 XSCompositePrefetcher::XSCompositeStats::XSCompositeStats(statistics::Group *parent)
-    :statistics::Group(parent),
-    ADD_STAT(allCntNum,statistics::units::Count::get(),"victim act access num"),
-    ADD_STAT(actMNum,statistics::units::Count::get(),"victim act match num")
+    : statistics::Group(parent),
+      ADD_STAT(allCntNum, statistics::units::Count::get(), "victim act access num"),
+      ADD_STAT(actMNum, statistics::units::Count::get(), "victim act match num"),
+      ADD_STAT(refillNotifyCount, statistics::units::Count::get(), "refill notify count")
 {
 }
 

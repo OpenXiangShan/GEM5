@@ -16,7 +16,11 @@ namespace prefetch
 
 BertiPrefetcher::BertiStats::BertiStats(statistics::Group *parent)
     : statistics::Group(parent),
-      ADD_STAT(pf_delta, statistics::units::Count::get(), "")
+      ADD_STAT(trainOnHit, statistics::units::Count::get(), "Count of train on hit"),
+      ADD_STAT(trainOnMiss, statistics::units::Count::get(), "Count of train on miss"),
+      ADD_STAT(notifySkippedCond1, statistics::units::Count::get(), "Count of notify skipped on mixed condition"),
+      ADD_STAT(notifySkippedIsPF, statistics::units::Count::get(), "Count of notify skipped isPF"),
+      ADD_STAT(notifySkippedNoEntry, statistics::units::Count::get(), "Count of notify skipped no Berti entry")
 {
 }
 
@@ -206,6 +210,7 @@ BertiPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPrio
         if (hist_entry) {
             searchTimelyDeltas(*hist_entry, lastFillLatency, curCycle(),
                                useByteAddr ? pfi.getAddr() : blockIndex(pfi.getAddr()));
+            statsBerti.trainOnHit++;
         }
     }
 
@@ -271,6 +276,7 @@ BertiPrefetcher::notifyFill(const PacketPtr &pkt)
     if (pkt->req->isInstFetch() ||
         !pkt->req->hasVaddr() || !pkt->req->hasPC()) {
         DPRINTF(BertiPrefetcher, "Skip packet: %s\n", pkt->print());
+        statsBerti.notifySkippedCond1++;
         return;
     }
 
@@ -279,6 +285,7 @@ BertiPrefetcher::notifyFill(const PacketPtr &pkt)
             pkt->print(), pkt->req->isPrefetch(), pkt->req->getPC());
 
     if (pkt->req->isPrefetch()) {
+        statsBerti.notifySkippedIsPF++;
         return;
     }
 
@@ -289,8 +296,10 @@ BertiPrefetcher::notifyFill(const PacketPtr &pkt)
 
     HistoryTableEntry *entry =
         historyTable.findEntry(pcHash(pkt->req->getPC()), pkt->req->isSecure());
-    if (!entry)
+    if (!entry) {
+        statsBerti.notifySkippedNoEntry++;
         return;
+    }
 
     /** Search history table, find deltas. */
     Cycles demand_cycle = ticksToCycles(pkt->req->time());
@@ -298,6 +307,7 @@ BertiPrefetcher::notifyFill(const PacketPtr &pkt)
     DPRINTF(BertiPrefetcher, "Search delta for PC %lx\n", pkt->req->getPC());
     searchTimelyDeltas(*entry, latency, demand_cycle,
                        useByteAddr ? pkt->req->getVaddr() : blockIndex(pkt->req->getVaddr()));
+    statsBerti.trainOnMiss++;
 
     DPRINTF(BertiPrefetcher, "Updating table of deltas, latency [%d]\n",
             latency);

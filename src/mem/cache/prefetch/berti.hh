@@ -121,7 +121,12 @@ class BertiPrefetcher : public Queued
     struct BertiStats : public statistics::Group
     {
         BertiStats(statistics::Group *parent);
-        statistics::SparseHistogram pf_delta;
+
+        statistics::Scalar trainOnHit;
+        statistics::Scalar trainOnMiss;
+        statistics::Scalar notifySkippedCond1;
+        statistics::Scalar notifySkippedIsPF;
+        statistics::Scalar notifySkippedNoEntry;
     } statsBerti;
 
 
