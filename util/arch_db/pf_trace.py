@@ -7,7 +7,8 @@ parser = argparse.ArgumentParser()
 # add a positional argument
 parser.add_argument('tick', type=int, help='roi start tick')
 parser.add_argument('--pc', type=str, help='observe_pc', action='store')
-parser.add_argument('--show', type=str, help='observe_pc', action='store', default='unseen')
+parser.add_argument('--show', type=str, help='contents to show', action='store', default='unseen')
+parser.add_argument('--show-global-delta', help='show global delta', action='store_true')
 args = parser.parse_args()
 
 con = sqlite3.connect('../../util/warmup_scripts/Default-tag-2023-11-16-03-55-33/mem_trace.db')
@@ -39,12 +40,15 @@ for x in res:
     if PFSrc != 10:
         continue
     deltas = []
-    for i in range(recent_len):
-        deltas.append(vaddr - recent_cold_misses[-1-i])
-    recent_cold_misses.append(vaddr)
-
+    if args.show_global_delta:
+        for i in range(recent_len):
+            deltas.append(vaddr - recent_cold_misses[-1-i])
+        recent_cold_misses.append(vaddr)
+        deltas_str = str(deltas)
+    else:
+        deltas_str = ''
     print(tick, hex(pc), hex(vaddr), hex(aligned_vaddr), hex(pf_addr), str(PFSrc).ljust(5),
-          (pf_addr - vaddr)//64, deltas, file=outf)
+          (pf_addr - vaddr)//64, deltas_str, file=outf)
 outf.close()
 
 top_trigger_pc = sorted(trigger_pcs.items(), key=lambda x: x[1], reverse=True)[:20]
