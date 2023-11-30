@@ -1874,8 +1874,7 @@ BaseCache::evictBlock(CacheBlk *blk, PacketList &writebacks)
     if (archDBer) {
         Addr paddr = regenerateBlkAddr(blk);
         uint64_t curCycle = ticksToCycles(curTick());
-        archDBer->L1EvictTraceWrite(
-                paddr, curCycle, this->name().c_str());
+        archDBer->evictTraceWrite(cacheLevel, curTick(), paddr, curCycle, this->name().c_str());
     }
 
     DPRINTF(CacheTrace, "Evicting block %#llx\n", regenerateBlkAddr(blk));

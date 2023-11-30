@@ -156,11 +156,13 @@ def build_test_system(np):
         test_sys.arch_db = ArchDBer(arch_db_file=args.arch_db_file)
         test_sys.arch_db.dump_from_start = args.arch_db_fromstart
         test_sys.arch_db.enable_rolling = args.enable_rolling
-        test_sys.arch_db.dump_l1_pf_trace = True
+        test_sys.arch_db.dump_l1_pf_trace = False
         test_sys.arch_db.dump_mem_trace = False
         test_sys.arch_db.dump_l1_evict_trace = False
+        test_sys.arch_db.dump_l2_evict_trace = False
+        test_sys.arch_db.dump_l3_evict_trace = False
         test_sys.arch_db.dump_l1_miss_trace = False
-        test_sys.arch_db.dump_bop_train_trace = True
+        test_sys.arch_db.dump_bop_train_trace = False
         test_sys.arch_db.table_cmds = [
             "CREATE TABLE L1MissTrace(" \
             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
@@ -171,10 +173,12 @@ def build_test_system(np):
             "STAMP INT NOT NULL," \
             "SITE TEXT);"
             ,
-            "CREATE TABLE L1EvictTrace(" \
+            "CREATE TABLE CacheEvictTrace(" \
             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "Tick INT NOT NULL," \
             "PADDR INT NOT NULL," \
             "STAMP INT NOT NULL," \
+            "Level INT NOT NULL," \
             "SITE TEXT);"
             ,
             "CREATE TABLE MemTrace(" \

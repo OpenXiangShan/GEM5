@@ -11,6 +11,8 @@ ArchDBer::ArchDBer(const Params &p)
     dumpMemTrace(p.dump_mem_trace),
     dumpL1PfTrace(p.dump_l1_pf_trace),
     dumpL1EvictTrace(p.dump_l1_evict_trace),
+    dumpL2EvictTrace(p.dump_l2_evict_trace),
+    dumpL3EvictTrace(p.dump_l3_evict_trace),
     dumpL1MissTrace(p.dump_l1_miss_trace),
     dumpBopTrainTrace(p.dump_bop_train_trace),
     mem_db(nullptr), zErrMsg(nullptr),rc(0),
@@ -126,7 +128,7 @@ void ArchDBer::L1MissTrace_write(
   uint64_t stamp,
   const char * site
 ) {
-  bool dump_me = dumpGlobal && dumpL1EvictTrace;
+  bool dump_me = dumpGlobal && dumpL1MissTrace;
   if (!dump_me) return;
   char sql[512];
   sprintf(sql,
@@ -140,18 +142,17 @@ void ArchDBer::L1MissTrace_write(
   };
 }
 
-void ArchDBer::L1EvictTraceWrite(
-  uint64_t paddr,
-  uint64_t stamp,
-  const char * site
-) {
-  bool dump_me = dumpGlobal && dumpL1EvictTrace;
+void
+ArchDBer::evictTraceWrite(int cache_level, Tick tick, uint64_t paddr, uint64_t stamp, const char *site)
+{
+  bool dump_me = dumpGlobal && ((dumpL1EvictTrace && cache_level == 1) || (dumpL2EvictTrace && cache_level == 2) ||
+                                (dumpL3EvictTrace && cache_level == 3));
   if (!dump_me) return;
   char sql[512];
   sprintf(sql,
-    "INSERT INTO L1EvictTrace(PADDR, STAMP, SITE) " \
-    "VALUES(%ld, %ld, '%s');",
-    paddr, stamp, site
+    "INSERT INTO CacheEvictTrace(Tick, PADDR, STAMP, Level, SITE) " \
+    "VALUES(%ld, %ld, %ld, %ld, '%s');",
+    tick, paddr, stamp, (int64_t) cache_level, site
   );
   rc = sqlite3_exec(mem_db, sql, callback, 0, &zErrMsg);
   if (rc != SQLITE_OK) {
