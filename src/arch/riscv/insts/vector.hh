@@ -52,10 +52,10 @@ struct VectorMicroInfo
     uint32_t rs = ~0; // range start
     uint32_t re = ~0; // range end
 
-    uint32_t microVd = ~0;
-    uint32_t microVs1 = ~0;
-    uint32_t microVs2 = ~0;
-    uint32_t microVs3 = ~0;
+    int32_t microVd = ~0;
+    int32_t microVs1 = ~0;
+    int32_t microVs2 = ~0;
+    int32_t microVs3 = ~0;
 
     uint32_t fn = ~0; // segment idx
     uint32_t offset = ~0; // vload/store baseAddr offset
@@ -138,12 +138,14 @@ protected:
     uint8_t microVl;
     uint8_t microIdx;
     uint8_t vtype;
+    bool vm;
     VectorMicroInst(const char *mnem, ExtMachInst _machInst, OpClass __opClass,
                     uint8_t _microVl, uint8_t _microIdx)
         : RiscvMicroInst(mnem, _machInst, __opClass),
         microVl(_microVl),
         microIdx(_microIdx),
-        vtype(_machInst.vtype8)
+        vtype(_machInst.vtype8),
+        vm(_machInst.vm)
     {
         this->flags[IsVector] = true;
     }
@@ -242,13 +244,9 @@ class VectorSlideMacroInst : public VectorMacroInst
 class VectorSlideMicroInst : public VectorMicroInst
 {
   protected:
-    uint8_t vdIdx;
-    uint8_t vs2Idx;
     VectorSlideMicroInst(const char *mnem, ExtMachInst _machInst,
-                         OpClass __opClass, uint8_t _microVl,
-                         uint8_t _microIdx, uint8_t _vdIdx, uint8_t _vs2Idx)
-        : VectorMicroInst(mnem, _machInst, __opClass, _microVl, _microIdx)
-        , vdIdx(_vdIdx), vs2Idx(_vs2Idx)
+                         OpClass __opClass, uint8_t _microIdx)
+        : VectorMicroInst(mnem, _machInst, __opClass, 0, _microIdx)
     {}
 
     std::string generateDisassembly(
@@ -571,7 +569,7 @@ class VMaskMergeMicroInst : public VectorArithMicroInst
         setDestRegIdx(_numDestRegs++, RegId(VecRegClass, _dstReg));
         _numTypedDestRegs[VecRegClass]++;
         for (uint8_t i=0; i<_numSrcs; i++) {
-            setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, VecMemInternalReg0 + i));
+            setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, VecTempReg0 + i));
         }
     }
 
@@ -666,7 +664,7 @@ private:
             &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
         _numSrcRegs = 0;
         _numDestRegs = 0;
-        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, VecMemInternalReg0));
+        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, VecTempReg0));
         _numTypedDestRegs[VecRegClass]++;
         setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, extMachInst.vs1));
     }
@@ -757,7 +755,7 @@ class VCompressMicroInst : public VectorArithMicroInst
         // vs
         setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, extMachInst.vs2 + _vsIdx));
         // vcnt
-        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, VecMemInternalReg0));
+        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, VecTempReg0));
         // vm
         setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, extMachInst.vs1));
         // old_vd

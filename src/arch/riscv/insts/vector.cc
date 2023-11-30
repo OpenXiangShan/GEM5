@@ -158,9 +158,9 @@ std::string VectorSlideMicroInst::generateDisassembly(Addr pc,
     std::stringstream ss;
     ss << mnemonic << ' ' << registerName(destRegIdx(0)) <<  ", ";
     if (machInst.funct3 == 0x3) {
-      ss  << registerName(srcRegIdx(0)) << ", " << machInst.vecimm;
+      ss  << registerName(srcRegIdx(0)) << "|" << registerName(srcRegIdx(1)) << ", " << machInst.vecimm;
     } else {
-      ss  << registerName(srcRegIdx(1)) << ", " << registerName(srcRegIdx(0));
+      ss  << registerName(srcRegIdx(1)) << "|" << registerName(srcRegIdx(2)) << ", " << registerName(srcRegIdx(0));
     }
     if (machInst.vm == 0) ss << ", v0.t";
     return ss.str();
@@ -400,7 +400,7 @@ VleffEndMicroInst::VleffEndMicroInst(ExtMachInst extMachInst, uint8_t _numSrcs)
     _numSrcRegs = 0;
     _numDestRegs = 0;
     for (uint8_t i = 0; i < _numSrcs; i++) {
-        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, VecMemInternalReg0 + i));
+        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, VecTempReg0 + i));
     }
     this->numSrcs = _numSrcs;
     // printf("VleffEndMicroInst numSrc: %hhu, numDestRegs: %hhu\n", this->numSrcs, _numDestRegs);

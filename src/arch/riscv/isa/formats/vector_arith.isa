@@ -384,7 +384,7 @@ def format VectorIntMaskFormat(code, category, *flags) {{
     need_elem_idx = mask_cond or code.find("ei") != -1
 
     old_vd_idx = 2
-    dest_reg_id = "RegId(VecRegClass, VecMemInternalReg0 + _microIdx)"
+    dest_reg_id = "RegId(VecRegClass, VecTempReg0 + _microIdx)"
     src1_reg_id = ""
     if category == "OPIVV":
         src1_reg_id = "RegId(VecRegClass, _machInst.vs1 + _microIdx)"
@@ -766,7 +766,7 @@ def format VectorFloatMaskFormat(code, category, *flags) {{
         'VectorArithMacroInst',
         {'code': code},
         flags)
-    dest_reg_id = "RegId(VecRegClass, VecMemInternalReg0 + _microIdx)"
+    dest_reg_id = "RegId(VecRegClass, VecTempReg0 + _microIdx)"
     src1_reg_id = ""
     if category == "OPFVV":
         src1_reg_id = "RegId(VecRegClass, _machInst.vs1 + _microIdx)"
@@ -855,8 +855,7 @@ def format ViotaFormat(code, category, *flags){{
          'set_dest_reg_idx': set_dest_reg_idx,
          'set_src_reg_idx': set_src_reg_idx,
          'vm_decl_rd': vm_decl_rd,
-         'set_vm_idx': set_vm_idx,
-         'copy_old_vd': copyOldVd(1)},
+         'set_vm_idx': set_vm_idx},
         flags)
     # Because of the use of templates, we had to put all parts in header to
     # keep the compiler happy.
@@ -1236,8 +1235,10 @@ def VectorSlideBase(name, Name, category, code, flags, macro_construtor,
     iop = InstObjParams(name, Name, macroop_class_name, {'code': code},
                         flags)
     inst_name, inst_suffix = name.split("_", maxsplit=1)
-    dest_reg_id = "RegId(VecRegClass, _machInst.vd + vdIdx)"
-    src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + vs2Idx)"
+    dest_reg_id = "RegId(VecRegClass, vmi.microVd)"
+    src2_reg_id = "RegId(VecRegClass, vmi.microVs2)"
+    src3_reg_id = "RegId(VecRegClass, vmi.microVs2 + 1)"
+
     src1_ireg_id = "RegId(IntRegClass, _machInst.rs1)"
     src1_freg_id = "RegId(FloatRegClass, _machInst.rs1)"
 
@@ -1246,7 +1247,7 @@ def VectorSlideBase(name, Name, category, code, flags, macro_construtor,
     # the test suits only support undisturbed policy.
     num_src_regs = 0
 
-    old_dest_reg_id = "RegId(VecRegClass, _machInst.vd + vdIdx)"
+    old_dest_reg_id = "RegId(VecRegClass, vmi.microVd)"
     set_src_reg_idx = ""
     if category in ["OPIVX", "OPMVX"]:
         set_src_reg_idx += setSrcWrapper(src1_ireg_id)
@@ -1254,7 +1255,10 @@ def VectorSlideBase(name, Name, category, code, flags, macro_construtor,
     elif category in ["OPFVF"]:
         set_src_reg_idx += setSrcWrapper(src1_freg_id)
         num_src_regs += 1
-    set_src_reg_idx += setSrcWrapper(src2_reg_id)
+
+    set_src_reg_idx += setSrcWrapper(src2_reg_id) # 1
+    num_src_regs += 1
+    set_src_reg_idx += setSrcWrapper(src3_reg_id) # 2
     num_src_regs += 1
     old_vd_idx = num_src_regs
     set_src_reg_idx += setSrcWrapper(old_dest_reg_id)

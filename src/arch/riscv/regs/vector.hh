@@ -69,7 +69,7 @@ const std::vector<std::string> VecRegNames = {
     "vtmp0", "vtmp1", "vtmp2", "vtmp3", "vtmp4", "vtmp5", "vtmp6", "vtmp7"
 };
 
-const int VecMemInternalReg0 = NumVecStandardRegs;
+const int VecTempReg0 = NumVecStandardRegs;
 
 static inline VecElemRegClassOps<RiscvISA::VecElem>
     vecRegElemClassOps(NumVecElemPerVecReg);

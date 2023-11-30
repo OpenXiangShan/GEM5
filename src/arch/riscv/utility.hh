@@ -243,11 +243,11 @@ get_emul(uint32_t eew, uint32_t sew, float vflmul, bool is_mask_ldst)
     return emul;
 }
 
-inline uint32_t
-elem_gen_idx(uint32_t vd, uint32_t n, uint32_t elem_size)
+inline int
+elem_gen_idx(int vd, int n, int elem_size)
 {
-    uint32_t elts_per_reg = (RiscvISA::VLEN>>3) / elem_size;
-    vd += n / elts_per_reg;
+    int elts_per_reg = (RiscvISA::VLEN>>3) / elem_size;
+    vd = vd + n / elts_per_reg;
     return vd;
 }
 

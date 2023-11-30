@@ -667,8 +667,8 @@ def template ViotaMacroDeclare {{
 template<typename ElemType>
 class %(class_name)s : public %(base_class)s {
 private:
-    int cnt = 0;
-    %(reg_idx_arr_decl)s;
+    RegId srcRegIdxArr[4];
+    RegId destRegIdxArr[2];
 public:
     %(class_name)s(ExtMachInst _machInst);
     using %(base_class)s::generateDisassembly;
@@ -683,9 +683,9 @@ template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
     : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
-    %(set_reg_idx_arr)s;
-    %(constructor)s;
-    const uint32_t num_microops = vtype_regs_per_group(vtype);
+    const uint32_t sew = getSew(_machInst.vtype8.vsew);
+    const uint32_t elem_num_per_vreg = VLEN / sew;
+    const uint32_t num_microops = ceil((float) this->vl / (elem_num_per_vreg));
     int32_t tmp_vl = this->vl;
     const int32_t micro_vlmax = vtype_VLMAX(_machInst.vtype8, true);
     int32_t micro_vl = std::min(tmp_vl, micro_vlmax);
@@ -693,12 +693,20 @@ template<typename ElemType>
     StaticInstPtr microop;
 
     // Allow one empty micro op to hold IsLastMicroop flag
-    for (int i = 0; i < num_microops && micro_vl >= 0; ++i) {
-        microop = new %(class_name)sMicro<ElemType>(_machInst, micro_vl, i,
-            &cnt);
-        microop->setDelayedCommit();
+    if (this->vl == 0) {
+        microop = new VectorNopMicroInst(_machInst);
         this->microops.push_back(microop);
-        micro_vl = std::min(tmp_vl -= micro_vlmax, micro_vlmax);
+    }
+    else {
+        VectorMicroInfo vmi;
+        for (int i = 0; i < num_microops; ++i) {
+            vmi.rs = i * elem_num_per_vreg;
+            vmi.re = std::min((i+1) * elem_num_per_vreg, this->vl);
+            vmi.microVd = VD + i;
+            microop = new %(class_name)sMicro<ElemType>(_machInst, i, vmi);
+            microop->setDelayedCommit();
+            this->microops.push_back(microop);
+        }
     }
 
     this->microops.front()->setFirstMicroop();
@@ -714,12 +722,9 @@ class %(class_name)s : public %(base_class)s
 {
 private:
     RegId srcRegIdxArr[4];
-    RegId destRegIdxArr[1];
-    bool vm;
-    int* cnt;
+    RegId destRegIdxArr[2];
 public:
-    %(class_name)s(ExtMachInst _machInst, uint8_t _microVl,
-                   uint8_t _microIdx, int* cnt);
+    %(class_name)s(ExtMachInst _machInst, uint8_t _microIdx, VectorMicroInfo& _vmi);
     Fault execute(ExecContext* xc, Trace::InstRecord* traceData)const override;
     using %(base_class)s::generateDisassembly;
 };
@@ -729,19 +734,29 @@ public:
 def template ViotaMicroConstructor {{
 
 template<typename ElemType>
-%(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst,
-    uint8_t _microVl, uint8_t _microIdx, int* cnt)
+%(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst, uint8_t _microIdx, VectorMicroInfo& _vmi)
     : %(base_class)s("%(mnemonic)s", _machInst,
-                     %(op_class)s, _microVl, _microIdx)
+                     %(op_class)s, 0, _microIdx)
 {
-    this->vm = _machInst.vm;
-    this->cnt = cnt;
     %(set_reg_idx_arr)s;
-    _numSrcRegs = 0;
+    vmi = _vmi;
+    assert(~vmi.microVd);
     _numDestRegs = 0;
-    %(set_dest_reg_idx)s;
-    %(set_src_reg_idx)s;
+    _numSrcRegs = 0;
+    setDestRegIdx(_numDestRegs++, RegId(VecRegClass, vmi.microVd));
+    _numTypedDestRegs[VecRegClass]++;
+    setDestRegIdx(_numDestRegs++, RegId(VecRegClass, VecTempReg0)); // has_one cnt
+    _numTypedDestRegs[VecRegClass]++;
+
     setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _machInst.vs2));
+    setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, vmi.microVd));
+    if (_microIdx != 0) {
+        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, VecTempReg0));
+    }
+    if (!_machInst.vm) {
+        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, 0));
+    }
+
 }
 
 }};
@@ -760,7 +775,7 @@ Fault
     %(op_decl)s;
     %(op_rd)s;
     %(vm_decl_rd)s;
-    %(copy_old_vd)s;
+    COPY_OLD_VD(1);
     %(code)s;
     %(op_wb)s;
     return NoFault;
@@ -810,7 +825,7 @@ def template Vector1Vs1RdMaskDeclare {{
 template<typename ElemType>
 class %(class_name)s : public %(base_class)s {
 private:
-    RegId srcRegIdxArr[2];
+    RegId srcRegIdxArr[3];
     RegId destRegIdxArr[1];
     bool vm;
 public:
@@ -1812,29 +1827,66 @@ template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
     : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
-    %(set_reg_idx_arr)s;
-    %(constructor)s;
-    const uint32_t num_microops = vtype_regs_per_group(vtype);
-    int32_t tmp_vl = this->vl;
-    const int32_t micro_vlmax = vtype_VLMAX(_machInst.vtype8, true);
-    int32_t micro_vl = std::min(tmp_vl, micro_vlmax);
+    const uint32_t sew = getSew(_machInst.vtype8.vsew);
+    const uint32_t elem_num_per_vreg = VLEN / sew;
+    const uint32_t num_microops = ceil((float)this->vl / elem_num_per_vreg);
     StaticInstPtr microop;
 
-    if (micro_vl == 0) {
+    if (this->vl == 0) {
         microop = new VectorNopMicroInst(_machInst);
         this->microops.push_back(microop);
     }
-    // Todo static filter out useless uop
-    int micro_idx = 0;
-    for (int i = 0; i < num_microops && micro_vl > 0; ++i) {
-        for (int j = 0; j <= i; ++j) {
-            microop = new %(class_name)sMicro<ElemType>(
-                _machInst, micro_vl, micro_idx++, i, j);
-            microop->setDelayedCommit();
-            this->microops.push_back(microop);
+    else {
+        int micro_idx = 0;
+        VectorMicroInfo vmi;
+        uint32_t off = machInst.vecimm;
+        bool slide1up = false;
+        if (strcmp("%(mnemonic)s", "vslide1up_vx") == 0
+            || strcmp("%(mnemonic)s", "vfslide1up_vf") == 0) {
+            off = 1;
+            slide1up = true;
         }
-        micro_vl = std::min(tmp_vl -= micro_vlmax, micro_vlmax);
+
+        if (strcmp("%(mnemonic)s", "vslideup_vi") == 0 || slide1up) {
+            // if i + off < elem_num_per_vreg: vd[i] = vs2[i + off]
+            // if i < elem_num_per_vreg && i + off > elem_num_per_vreg: vd[i] = (vs2 + 1)[off - (i % elem_num_per_vreg)]
+            for (int i = 0; i < num_microops; ++i) {
+                int new_vs2 = VS2 + i - ((off + elem_num_per_vreg)/elem_num_per_vreg);
+                if (new_vs2 < 0) {
+                    new_vs2 = 0;
+                }
+                vmi.rs = i * elem_num_per_vreg;
+                vmi.re = std::min((i+1) * elem_num_per_vreg, this->vl);
+                vmi.microVd = VD + i;
+                vmi.microVs2 = new_vs2;
+                if (vmi.microVs2 >= 32) {
+                    break;
+                }
+                microop = new %(class_name)sMicro<ElemType>(
+                    _machInst, micro_idx++, vmi);
+                microop->setDelayedCommit();
+                this->microops.push_back(microop);
+            }
+        }
+        else {
+            for (int i = 0; i < num_microops; ++i) {
+                for (int j = 0; j < num_microops; ++j) {
+                    vmi.rs = i * elem_num_per_vreg;
+                    vmi.re = std::min((i+1) * elem_num_per_vreg, this->vl);
+                    vmi.microVd = VD + i;
+                    vmi.microVs2 = VS2 + i - j - 1;
+                    if (vmi.microVs2 < 0) {
+                        vmi.microVs2 = 0;
+                    }
+                    microop = new %(class_name)sMicro<ElemType>(
+                        _machInst, micro_idx++, vmi);
+                    microop->setDelayedCommit();
+                    this->microops.push_back(microop);
+                }
+            }
+        }
     }
+
     this->microops.front()->setFirstMicroop();
     this->microops.back()->setLastMicroop();
 }
@@ -1847,29 +1899,62 @@ template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
     : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
-    %(set_reg_idx_arr)s;
-    %(constructor)s;
-    const uint32_t num_microops = vtype_regs_per_group(vtype);
-    int32_t tmp_vl = this->vl;
-    const int32_t micro_vlmax = vtype_VLMAX(_machInst.vtype8, true);
-    int32_t micro_vl = std::min(tmp_vl, micro_vlmax);
+    const uint32_t sew = getSew(_machInst.vtype8.vsew);
+    const uint32_t elem_num_per_vreg = VLEN / sew;
+    const uint32_t num_microops = ceil((float)this->vl / elem_num_per_vreg);
     StaticInstPtr microop;
 
-    if (micro_vl == 0) {
+    if (this->vl == 0) {
         microop = new VectorNopMicroInst(_machInst);
         this->microops.push_back(microop);
     }
-    // Todo static filter out useless uop
-    int micro_idx = 0;
-    for (int i = 0; i < num_microops && micro_vl > 0; ++i) {
-        for (int j = i; j < num_microops; ++j) {
-            microop = new %(class_name)sMicro<ElemType>(
-                _machInst, micro_vl, micro_idx++, i, j);
-            microop->setDelayedCommit();
-            this->microops.push_back(microop);
+    else {
+        int micro_idx = 0;
+        VectorMicroInfo vmi;
+        uint32_t off = machInst.vecimm;
+        bool slide1down = false;
+        if (strcmp("%(mnemonic)s", "vslide1down_vx")==0
+            || strcmp("%(mnemonic)s", "vfslide1down_vf")==0) {
+            off = 1;
+            slide1down = true;
         }
-        micro_vl = std::min(tmp_vl -= micro_vlmax, micro_vlmax);
+
+        if (strcmp("%(mnemonic)s", "vslidedown_vi")==0 || slide1down) {
+            // if i + off < elem_num_per_vreg: vd[i] = vs2[i + off]
+            // if i < elem_num_per_vreg && i + off > elem_num_per_vreg: vd[i] = (vs2 + 1)[off - (i % elem_num_per_vreg)]
+            for (int i = 0; i < num_microops; ++i) {
+                vmi.rs = i * elem_num_per_vreg;
+                vmi.re = std::min((i+1) * elem_num_per_vreg, this->vl);
+                vmi.microVd = VD + i;
+                vmi.microVs2 = elem_gen_idx(VS2 + i, off, sew/8);
+                if (vmi.microVs2 >= 32) {
+                    vmi.microVs2 = 31;
+                }
+                microop = new %(class_name)sMicro<ElemType>(
+                    _machInst, micro_idx++, vmi);
+                microop->setDelayedCommit();
+                this->microops.push_back(microop);
+            }
+        }
+        else {
+            for (int i = 0; i < num_microops; ++i) {
+                for (int j = i; j < RiscvISA::VLEN/8; ++j) {
+                    vmi.rs = i * elem_num_per_vreg;
+                    vmi.re = std::min((i+1) * elem_num_per_vreg, this->vl);
+                    vmi.microVd = VD + i;
+                    vmi.microVs2 = VS2 + j;
+                    if (vmi.microVs2 >= 32) {
+                        vmi.microVs2 = 31;
+                    }
+                    microop = new %(class_name)sMicro<ElemType>(
+                        _machInst, micro_idx++, vmi);
+                    microop->setDelayedCommit();
+                    this->microops.push_back(microop);
+                }
+            }
+        }
     }
+
     this->microops.front()->setFirstMicroop();
     this->microops.back()->setLastMicroop();
 }
@@ -1884,12 +1969,10 @@ class %(class_name)s : public %(base_class)s
 private:
     // vs2, vs1, vs3(old_vd), vm for *.vv, *.vx
     // vs2, (old_vd), vm for *.vi
-    RegId srcRegIdxArr[4];
+    RegId srcRegIdxArr[5];
     RegId destRegIdxArr[1];
-    bool vm;
 public:
-    %(class_name)s(ExtMachInst _machInst, uint8_t _microVl,
-        uint8_t _microIdx, uint8_t _vdIdx, uint8_t _vs2Idx);
+    %(class_name)s(ExtMachInst _machInst, uint8_t _microIdx, VectorMicroInfo& _vmi);
     Fault execute(ExecContext* xc, Trace::InstRecord* traceData)const override;
     using %(base_class)s::generateDisassembly;
 };
@@ -1899,13 +1982,13 @@ public:
 def template VectorSlideMicroConstructor {{
 
 template<typename ElemType>
-%(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst,
-        uint8_t _microVl, uint8_t _microIdx, uint8_t _vdIdx, uint8_t _vs2Idx)
-    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s, _microVl,
-        _microIdx, _vdIdx, _vs2Idx)
+%(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst, uint8_t _microIdx, VectorMicroInfo& _vmi)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s, _microIdx)
 {
-    this->vm = _machInst.vm;
     %(set_reg_idx_arr)s;
+    vmi = _vmi;
+    assert(~vmi.microVd);
+    assert(~vmi.microVs2);
     _numSrcRegs = 0;
     _numDestRegs = 0;
     %(set_dest_reg_idx)s;
@@ -1927,6 +2010,8 @@ Fault
     if (machInst.vill)
         return std::make_shared<IllegalInstFault>("VILL is set", machInst);
     [[maybe_unused]]const uint32_t vlmax = vtype_VLMAX(vtype);
+    const uint32_t sew = getSew(machInst.vtype8.vsew);
+    const int elem_num_per_vreg = VLEN / sew;
 
     %(op_decl)s;
     %(op_rd)s;
@@ -1953,6 +2038,8 @@ Fault
     if (machInst.vill)
         return std::make_shared<IllegalInstFault>("VILL is set", machInst);
     [[maybe_unused]]const uint32_t vlmax = vtype_VLMAX(vtype);
+    const uint32_t sew = getSew(machInst.vtype8.vsew);
+    const uint32_t elem_num_per_vreg = VLEN / sew;
 
     %(op_decl)s;
     %(op_rd)s;
