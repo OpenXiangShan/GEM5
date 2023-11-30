@@ -5,7 +5,9 @@
 #ifndef __MEM_CACHE_PREFETCH_BERTI_HH__
 #define __MEM_CACHE_PREFETCH_BERTI_HH__
 
+#include <unordered_map>
 #include <vector>
+
 #include <boost/compute/detail/lru_cache.hpp>
 
 #include "base/statistics.hh"
@@ -150,6 +152,10 @@ class BertiPrefetcher : public Queued
     int evictedBestDelta;
 
     boost::compute::detail::lru_cache<Addr, Addr> trainBlockFilter;
+
+    std::unordered_map<int64_t, uint64_t> topDeltas;
+
+    const bool dumpTopDeltas;
 
   public:
 

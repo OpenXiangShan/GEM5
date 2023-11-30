@@ -196,6 +196,7 @@ class BertiPrefetcher(QueuedPrefetcher):
     )
     use_byte_addr = Param.Bool(True, "Use byte address")
     trigger_pht = Param.Bool(True, "Use Berti's prediction to trigger PHT")
+    dump_top_deltas = Param.Bool(True, "Dump top deltas on exit")
 
 class StridePrefetcherHashedSetAssociative(SetAssociative):
     type = 'StridePrefetcherHashedSetAssociative'
