@@ -506,8 +506,8 @@ class Request
 
     /** The virtual address of the request. */
     Addr _vaddr = MaxAddr;
-    Addr _pre_vaddr = MaxAddr;
     Addr _forward_pre_vaddr = MaxAddr;
+    Addr _back_pre_vaddr = MaxAddr;
 
     /**
      * Extra data for the request, such as the return value of
@@ -540,8 +540,8 @@ class Request
     bool misalignedFetch = false;
 
     int reqNum = 1;
-    bool pre_tlb = false;
     bool forward_pre_tlb = false;
+    bool back_pre_tlb = false;
 
   public:
 
@@ -935,27 +935,23 @@ class Request
         return _vaddr;
     }
 
-    Addr getPreVaddr() const
-    {
-        //    assert(!pre_tlb);
-        return _pre_vaddr;
-    }
-    bool getPre_tlb() const { return pre_tlb; }
-
-    void setPreVaddr(Addr pre_vaddr)
-    {
-        _pre_vaddr = pre_vaddr;
-        pre_tlb = true;
-    }
-
     Addr getForwardPreVaddr() const { return _forward_pre_vaddr; }
-
     bool get_forward_pre_tlb() const { return forward_pre_tlb; }
 
     void setForwardPreVaddr(Addr forward_pre_vaddr)
     {
         _forward_pre_vaddr = forward_pre_vaddr;
         forward_pre_tlb = true;
+    }
+
+    Addr getBackPreVaddr() const { return _back_pre_vaddr; }
+
+    bool get_back_pre_tlb() const { return back_pre_tlb; }
+
+    void setBackPreVaddr(Addr back_pre_vaddr)
+    {
+        _back_pre_vaddr = back_pre_vaddr;
+        back_pre_tlb = true;
     }
 
     /** Accesssor for the requestor id. */

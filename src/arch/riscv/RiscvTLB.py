@@ -83,11 +83,12 @@ class RiscvTLB(BaseTLB):
     pma_checker = Param.PMAChecker(Parent.any, "PMA Checker")
     pmp  = Param.PMP(Parent.any, "Physical Memory Protection Unit")
     isOpenNextline = Param.Bool(True, "open auto adjustment nextline")
-    G_pre_size = Param.Int(32,"g_pre size")
-    open_g_pre = Param.Bool(True,"open g_pre")
-    open_forward_pre = Param.Bool(True,"open forward_pre")
-    initial_f_pre_precision_value = Param.Bool(False,"initial value of f_pre_precision")
-    initial_g_pre_precision_value = Param.Bool(False,"initial value of g_pre_precision")
+    #G_pre_size = Param.Int(32,"g_pre size")
+    forward_pre_size = Param.Int(32,"g_pre size")
+    open_forward_pre = Param.Bool(True,"open g_pre")
+    open_back_pre = Param.Bool(True,"open back_pre")
+    initial_back_pre_precision_value = Param.Bool(False,"initial value of back_pre_precision")
+    initial_forward_pre_precision_value = Param.Bool(False,"initial value of forward_pre_precision")
 
 class RiscvTLBL2(RiscvTLB):
     is_L1tlb = False

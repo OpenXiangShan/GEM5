@@ -75,14 +75,13 @@ namespace RiscvISA {
 std::pair<bool, Fault>
 Walker::tryCoalesce(ThreadContext *_tc, BaseMMU::Translation *translation,
                     const RequestPtr &req, BaseMMU::Mode mode, bool from_l2tlb,
-                    Addr asid, bool from_pre_req, bool from_forward_pre_req)
+                    Addr asid, bool from_forward_pre_req, bool from_back_pre_req)
 {
     assert(currStates.size());
     for (auto it: currStates) {
         auto &ws = *it;
         auto [coalesced, fault] =
-            ws.tryCoalesce(_tc, translation, req, mode, from_l2tlb, asid,
-                           from_pre_req, from_forward_pre_req);
+            ws.tryCoalesce(_tc, translation, req, mode, from_l2tlb, asid, from_forward_pre_req, from_back_pre_req);
         if (coalesced) {
             return std::make_pair(true, fault);
         }
@@ -94,8 +93,8 @@ Walker::tryCoalesce(ThreadContext *_tc, BaseMMU::Translation *translation,
 
 Fault
 Walker::start(Addr ppn, ThreadContext *_tc, BaseMMU::Translation *_translation,
-              const RequestPtr &_req, BaseMMU::Mode _mode, bool from_pre_req,
-              bool from_forward_pre_req, int f_level, bool from_l2tlb,
+              const RequestPtr &_req, BaseMMU::Mode _mode, bool from_forward_pre_req,
+              bool from_back_pre_req, int f_level, bool from_l2tlb,
               Addr asid)
 {
     // TODO: in timing mode, instead of blocking when there are other
@@ -103,22 +102,8 @@ Walker::start(Addr ppn, ThreadContext *_tc, BaseMMU::Translation *_translation,
     // another one (i.e. either coalesce or start walk)
     DPRINTF(PageTableWalker, "Starting page table walk for %#lx\n",
             _req->getVaddr());
-    DPRINTF(PageTableWalker, "from_pre_req %d f_level %d from_l2tlb %d\n",
-            from_pre_req, f_level, from_l2tlb);
+    DPRINTF(PageTableWalker, "from_pre_req %d f_level %d from_l2tlb %d\n", from_forward_pre_req, f_level, from_l2tlb);
     // pre_ptw = pre;
-    if ((from_pre_req != _req->getPre_tlb()) &&
-        (from_forward_pre_req != _req->get_forward_pre_tlb())) {
-        printf("Pre_vaddr %lx vaddr %lx\n", _req->getPreVaddr(),
-               _req->getVaddr());
-        printf("from %d get %d\n", from_pre_req, _req->getPre_tlb());
-        printf("forward_Prevaddr %lx vaddr %lx\n", _req->getPreVaddr(),
-               _req->getVaddr());
-        printf("from %d get %d\n", from_pre_req, _req->getPre_tlb());
-    }
-    if (from_forward_pre_req && from_pre_req) {
-        printf("pre flag is wrong\n");
-        assert(0);
-    }
 
     if (autoOpenNextline) {
         auto regulate = tlb->auto_open_nextline();
@@ -127,13 +112,11 @@ Walker::start(Addr ppn, ThreadContext *_tc, BaseMMU::Translation *_translation,
     }
     if (currStates.size()) {
         auto [coalesced, fault] =
-            tryCoalesce(_tc, _translation, _req, _mode, from_l2tlb, asid,
-                        from_pre_req, from_forward_pre_req);
+            tryCoalesce(_tc, _translation, _req, _mode, from_l2tlb, asid, from_forward_pre_req, from_back_pre_req);
         if (!coalesced) {
             // create state
             WalkerState * newState = new WalkerState(this, _translation, _req);
-            newState->initState(_tc, _mode, sys->isTimingMode(), from_pre_req,
-                                from_forward_pre_req);
+            newState->initState(_tc, _mode, sys->isTimingMode(), from_forward_pre_req, from_back_pre_req);
             assert(newState->isTiming());
             // TODO: add to requestors
             DPRINTF(PageTableWalker,
@@ -141,9 +124,8 @@ Walker::start(Addr ppn, ThreadContext *_tc, BaseMMU::Translation *_translation,
                     "into currStates\n",
                     currStates.size(), _req->getPC(), _req->getVaddr());
             currStates.push_back(newState);
-            Fault fault = newState->startWalk(
-                ppn, f_level, from_l2tlb, OpenNextline, autoOpenNextline,
-                from_pre_req, from_forward_pre_req);
+            Fault fault = newState->startWalk(ppn, f_level, from_l2tlb, OpenNextline, autoOpenNextline,
+                                              from_forward_pre_req, from_back_pre_req);
             if (!newState->isTiming()) {
                 assert(0);
             }
@@ -157,12 +139,10 @@ Walker::start(Addr ppn, ThreadContext *_tc, BaseMMU::Translation *_translation,
         }
     } else {
         WalkerState *newState = new WalkerState(this, _translation, _req);
-        newState->initState(_tc, _mode, sys->isTimingMode(), from_pre_req,
-                            from_forward_pre_req);
+        newState->initState(_tc, _mode, sys->isTimingMode(), from_forward_pre_req, from_back_pre_req);
         currStates.push_back(newState);
-        Fault fault = newState->startWalk(ppn, f_level, from_l2tlb,
-                                          OpenNextline, autoOpenNextline,
-                                          from_pre_req, from_forward_pre_req);
+        Fault fault = newState->startWalk(ppn, f_level, from_l2tlb, OpenNextline, autoOpenNextline,
+                                          from_forward_pre_req, from_back_pre_req);
         if (!newState->isTiming()) {
             currStates.pop_front();
             delete newState;
@@ -282,16 +262,15 @@ Walker::getPort(const std::string &if_name, PortID idx)
 }
 
 void
-Walker::WalkerState::initState(ThreadContext *_tc, BaseMMU::Mode _mode,
-                               bool _isTiming, bool _from_pre_req,
-                               bool _from_forward_pre_req)
+Walker::WalkerState::initState(ThreadContext *_tc, BaseMMU::Mode _mode, bool _isTiming, bool _from_forward_pre_req,
+                               bool _from_back_pre_req)
 {
     assert(state == Ready);
     started = false;
     assert(requestors.back().tc == nullptr);
     requestors.back().tc = _tc;
-    requestors.back().from_pre_req = _from_pre_req;
     requestors.back().from_forward_pre_req = _from_forward_pre_req;
+    requestors.back().from_back_pre_req = _from_back_pre_req;
     mode = _mode;
     timing = _isTiming;
     // fetch these now in case they change during the walk
@@ -299,21 +278,15 @@ Walker::WalkerState::initState(ThreadContext *_tc, BaseMMU::Mode _mode,
     pmode = walker->tlb->getMemPriv(_tc, mode);
     satp = _tc->readMiscReg(MISCREG_SATP);
     assert(satp.mode == AddrXlateMode::SV39);
-    from_pre = _from_pre_req;
-    from_forward_pre = _from_forward_pre_req;
+    from_pre = _from_forward_pre_req;
+    from_back_pre = _from_back_pre_req;
 }
 
 std::pair<bool, Fault>
-Walker::WalkerState::tryCoalesce(ThreadContext *_tc,
-                                 BaseMMU::Translation *translation,
-                                 const RequestPtr &req, BaseMMU::Mode _mode,
-                                 bool from_l2tlb, Addr asid, bool from_pre_req,
-                                 bool from_forward_pre_req)
+Walker::WalkerState::tryCoalesce(ThreadContext *_tc, BaseMMU::Translation *translation, const RequestPtr &req,
+                                 BaseMMU::Mode _mode, bool from_l2tlb, Addr asid, bool from_forward_pre_req,
+                                 bool from_back_pre_req)
 {
-    if (from_pre_req && from_forward_pre_req) {
-        printf("pre flag is wrong\n");
-        assert(0);
-    }
 
     SATP _satp = _tc->readMiscReg(MISCREG_SATP);
     assert(_satp.mode == AddrXlateMode::SV39);
@@ -323,38 +296,29 @@ Walker::WalkerState::tryCoalesce(ThreadContext *_tc,
                      pmode == walker->tlb->getMemPriv(_tc, _mode) &&
                      status == _tc->readMiscReg(MISCREG_STATUS) &&
                      satp.asid == asid;
-        //&&from_pre_req == mainReq->getPre_tlb();
 
     } else {
         priv_match = mode == _mode && satp == _satp &&
                      pmode == walker->tlb->getMemPriv(_tc, _mode) &&
                      status == _tc->readMiscReg(MISCREG_STATUS);
-        //&&from_pre_req == mainReq->getPre_tlb();
     }
 
-    // bool addr_match = ((req->getVaddr() >> PageShift) << PageShift) ==
-    //                   ((mainReq->getVaddr() >> PageShift) << PageShift);
     bool addr_match;
     Addr addr_match_num;
     Addr pre_match_num;
-    /*if (mainReq->getPre_tlb()) {
-        addr_match_num = mainReq->getPreVaddr();
-    } else {
-        addr_match_num = mainReq->getVaddr();
-    }*/
     if (from_pre) {
-        addr_match_num = mainReq->getPreVaddr();
-    } else if (from_forward_pre) {
         addr_match_num = mainReq->getForwardPreVaddr();
+    } else if (from_back_pre) {
+        addr_match_num = mainReq->getBackPreVaddr();
     } else {
         addr_match_num = mainReq->getVaddr();
     }
 
 
-    if (from_forward_pre_req) {
+    if (from_back_pre_req) {
+        pre_match_num = req->getBackPreVaddr();
+    } else if (from_forward_pre_req) {
         pre_match_num = req->getForwardPreVaddr();
-    } else if (from_pre_req) {
-        pre_match_num = req->getPreVaddr();
     } else {
         pre_match_num = req->getVaddr();
     }
@@ -364,25 +328,22 @@ Walker::WalkerState::tryCoalesce(ThreadContext *_tc,
 
     if (priv_match && addr_match && (!finish_default_translate)) {
         // coalesce
-        if (from_pre_req || from_forward_pre_req) {
-            DPRINTF(PageTableWalker, "from_pre_req be coalesced\n");
+        if (from_forward_pre_req || from_back_pre_req) {
+            DPRINTF(PageTableWalker, "from_forward_pre_req be coalesced\n");
             return std::make_pair(true, NoFault);
 
         } else {
-            if ((from_pre || from_forward_pre) && (!from_pre_req) &&
-                (!from_forward_pre_req)) {
-                DPRINTF(PageTableWalker, "from_pre_req be coalesced\n");
+            if ((from_pre || from_back_pre) && (!from_forward_pre_req) && (!from_back_pre_req)) {
+                DPRINTF(PageTableWalker, "from_forward_pre_req be coalesced\n");
                 // return std
                 pre_hit_in_ptw = true;
             }
-            DPRINTF(PageTableWalker,
-                    "Coalescing walk for %#lx(pc=%#lx) into %#lx(pc=%#lx)\n",
-                    req->getVaddr(), req->getPC(), mainReq->getVaddr(),
-                    mainReq->getPC());
+            DPRINTF(PageTableWalker, "Coalescing walk for %#lx(pc=%#lx) into %#lx(pc=%#lx)\n", req->getVaddr(),
+                    req->getPC(), mainReq->getVaddr(), mainReq->getPC());
             // add to list of requestors
             requestors.emplace_back(_tc, req, translation);
-            requestors.back().from_pre_req = from_pre_req;
             requestors.back().from_forward_pre_req = from_forward_pre_req;
+            requestors.back().from_back_pre_req = from_back_pre_req;
             auto &r = requestors.back();
             Fault new_fault = NoFault;
             if (mainFault != NoFault) {
@@ -401,7 +362,6 @@ Walker::WalkerState::tryCoalesce(ThreadContext *_tc,
                 assert(0);
             }
             return std::make_pair(true, new_fault);
-
         }
     }
     return std::make_pair(false, NoFault);
@@ -422,7 +382,6 @@ Walker::dol2TLBHit()
                           pmodel2, dol2TLBHitrequestors.tc);
         assert(l2tlbFault == NoFault);
 
-      //  printf("insert 379\n");
 
         tlb->insert(dol2TLBHitrequestors.entry.vaddr,
                     dol2TLBHitrequestors.entry, false);
@@ -464,29 +423,22 @@ Walker::WalkerState::allRequestorSquashed() const
 Fault
 Walker::WalkerState::startWalk(Addr ppn, int f_level, bool from_l2tlb,
                                bool OpenNextline, bool autoOpenNextline,
-                               bool from_pre_req,bool from_forward_req)
+                               bool from_forward_req,bool from_back_req)
 {
     Fault fault = NoFault;
     assert(!started);
     started = true;
-    // setupWalk(ppn, mainReq->getVaddr(), f_level, from_l2tlb, OpenNextline,
-    //           autoOpenNextline,from_pre_req);
-    if (from_pre_req && from_forward_req) {
-        printf("pre flag is wrong\n");
-        assert(0);
-    }
+    assert(!(from_forward_req && from_back_req));
 
-    if (from_forward_req) {
-        setupWalk(ppn, mainReq->getForwardPreVaddr(), f_level, from_l2tlb,
-                  OpenNextline, autoOpenNextline, from_pre_req,
-                  from_forward_req);
-    } else if (from_pre_req) {
-        setupWalk(ppn, mainReq->getPreVaddr(), f_level, from_l2tlb,
-                  OpenNextline, autoOpenNextline, from_pre_req,
-                  from_forward_req);
+    if (from_back_req) {
+        setupWalk(ppn, mainReq->getBackPreVaddr(), f_level, from_l2tlb, OpenNextline, autoOpenNextline,
+                  from_forward_req, from_back_req);
+    } else if (from_forward_req) {
+        setupWalk(ppn, mainReq->getForwardPreVaddr(), f_level, from_l2tlb, OpenNextline, autoOpenNextline,
+                  from_forward_req, from_back_req);
     } else {
-        setupWalk(ppn, mainReq->getVaddr(), f_level, from_l2tlb, OpenNextline,
-                  autoOpenNextline, from_pre_req, from_forward_req);
+        setupWalk(ppn, mainReq->getVaddr(), f_level, from_l2tlb, OpenNextline, autoOpenNextline, from_forward_req,
+                  from_back_req);
     }
     if (timing) {
         nextState = state;
@@ -513,14 +465,14 @@ Walker::WalkerState::startWalk(Addr ppn, int f_level, bool from_l2tlb,
 Fault
 Walker::WalkerState::startFunctional(Addr &addr, unsigned &logBytes,
                                      bool OpenNextline, bool autoOpenNextline,
-                                     bool from_pre_req,
-                                     bool from_forward_pre_req)
+                                     bool from_forward_pre_req,
+                                     bool from_back_pre_req)
 {
     Fault fault = NoFault;
     assert(!started);
     started = true;
-    setupWalk(0, addr, 2, false, OpenNextline, autoOpenNextline, from_pre_req,
-              from_forward_pre_req);
+    setupWalk(0, addr, 2, false, OpenNextline, autoOpenNextline, from_forward_pre_req,
+              from_back_pre_req);
 
     do {
         walker->port.sendFunctional(read);
@@ -563,7 +515,7 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
             "Got level%d PTE: %#x PPN: %#x choose %d vaddr %#x next_line %d "
             "next_vaddr %#x pre %d\n",
             level, pte, pte.ppn, vaddr_choose, entry.vaddr, next_line,
-            nextline_entry.vaddr, entry.from_pre_req);
+            nextline_entry.vaddr, entry.from_forward_pre_req);
     // step 2:
     // Performing PMA/PMP checks on physical address of PTE
 
@@ -660,7 +612,7 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                                 "tlb read paddr %#x vaddr %#x pte %#x level "
                                 "%d pre %d\n",
                                 entry.paddr, entry.vaddr, entry.pte, level,
-                                entry.from_pre_req);
+                                entry.from_forward_pre_req);
                     }
                 }
             } else {
@@ -687,7 +639,7 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                         DPRINTF(
                             PageTableWalker3,
                             "inl2_entry.vaddr %#x entry.vaddr %#x pre %d\n",
-                            inl2_entry.vaddr, entry.vaddr, entry.from_pre_req);
+                            inl2_entry.vaddr, entry.vaddr, entry.from_forward_pre_req);
 
                         DPRINTF(PageTableWalker3,
                                 "no final insert vaddr %#x ppn %#x pte %#x\n",
@@ -768,8 +720,7 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
 
         if (doTLBInsert) {
             if (!functional) {
-                if (((!entry.from_pre_req) && (!entry.from_forward_pre_req)) ||
-                    (pre_hit_in_ptw)) {
+                if (((!entry.from_forward_pre_req) && (!entry.from_back_pre_req)) || (pre_hit_in_ptw)) {
                     walker->tlb->insert(entry.vaddr, entry, false);
                 }
                 finish_default_translate = true;
@@ -779,7 +730,7 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                 l2_level = level;
                 inl2_entry.level = level;
                 DPRINTF(PageTableWalker3, "final l1tlb vaddr %#x pre %d\n",
-                        entry.vaddr, entry.from_pre_req);
+                        entry.vaddr, entry.from_forward_pre_req);
 
                 for (l2_i = 0; l2_i < 8; l2_i++) {
                     inl2_entry.vaddr =
@@ -790,7 +741,7 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                     DPRINTF(PageTableWalker3,
                             "final insert vaddr %#x ppn %#x pte %#x pre %d\n",
                             inl2_entry.vaddr, l2pte.ppn, l2pte,
-                            entry.from_pre_req);
+                            entry.from_forward_pre_req);
                     DPRINTF(PageTableWalker3, "level %d l2_level %d\n", level,
                             l2_level);
                     inl2_entry.paddr = l2pte.ppn;
@@ -827,7 +778,7 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                             "nextline basis is vaddr %#x pre vaddr is %#x "
                             "read_num is %#x pre %d\n",
                             entry.vaddr, nextline_vaddr, read_num,
-                            entry.from_pre_req);
+                            entry.from_forward_pre_req);
                     DPRINTF(PageTableWalker3,
                             "nextline tlb_vaddr %#x entry.vaddr is %#x \n",
                             tlb_vaddr, entry.vaddr);
@@ -836,10 +787,8 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                             "read_num_pre%#x read_num %#x\n",
                             nextRead, tlb_ppn, read_num_pre, read_num);
 
-                    if ((read_num_pre == read_num) && (nextline_level == 0) &&
-                        timing && open_nextline && auto_nextline_sign &&
-                        (!entry.from_pre_req) &&
-                        (!entry.from_forward_pre_req)) {
+                    if ((read_num_pre == read_num) && (nextline_level == 0) && timing && open_nextline &&
+                        auto_nextline_sign && (!entry.from_forward_pre_req) && (!entry.from_back_pre_req)) {
 
                         next_line = true;
                         nextState = Translate;
@@ -945,10 +894,8 @@ Walker::WalkerState::endWalk()
 }
 
 void
-Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level,
-                               bool from_l2tlb, bool OpenNextline,
-                               bool autoOpenNextline, bool from_pre_req,
-                               bool from_forward_pre_req)
+Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level, bool from_l2tlb, bool OpenNextline,
+                               bool autoOpenNextline, bool from_forward_pre_req, bool from_back_pre_req)
 {
     vaddr = Addr(sext<VADDR_BITS>(vaddr));
     Addr topAddr;
@@ -1002,8 +949,8 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level,
     entry.is_squashed = false;
     entry.used = false;
     entry.is_pre = false;
-    entry.from_pre_req = from_pre_req;
     entry.from_forward_pre_req = from_forward_pre_req;
+    entry.from_back_pre_req = from_back_pre_req;
     entry.pre_sign = false;
 
 
@@ -1012,14 +959,14 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level,
     nextline_entry.is_squashed = false;
     nextline_entry.used = false;
     nextline_entry.is_pre = true;
-    nextline_entry.from_forward_pre_req = from_forward_pre_req;
+    nextline_entry.from_back_pre_req = from_back_pre_req;
     nextline_entry.pre_sign = false;
 
     inl2_entry.asid = satp.asid;
     inl2_entry.is_squashed = false;
     inl2_entry.used = false;
     inl2_entry.is_pre = false;
-    inl2_entry.from_forward_pre_req = from_forward_pre_req;
+    inl2_entry.from_back_pre_req = from_back_pre_req;
     inl2_entry.pre_sign = false;
     finish_default_translate = false;
 
@@ -1107,8 +1054,7 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
         // int ii =0;
         for (auto &r : requestors) {
 
-            if ((!r.from_pre_req) && (!r.from_forward_pre_req)) {
-                // printf("1011 ii %d\n",ii);
+            if ((!r.from_forward_pre_req) && (!r.from_back_pre_req)) {
                 if (mainFault == NoFault) {
                     /*
                      * Finish the translation. Now that we know the right entry
@@ -1136,7 +1082,7 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
                         walker->pmp->pmpCheck(r.req, mode, pmode, r.tc);
                     if (mainFault != NoFault) {
                         // Prefetched assert is ignored
-                        if (entry.from_pre_req || entry.from_forward_pre_req) {
+                        if (entry.from_forward_pre_req || entry.from_back_pre_req) {
                             // TLB are not finished to prevent memory leaks
                             warn("tlb-req paddr overflow "
                                 "vaddr: %lx paddr: %lx\n", vaddr, paddr);
@@ -1165,7 +1111,6 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
                 }
 
             } else {
-                // printf("1062 ii %d\n",ii);
                 DPRINTF(PageTableWalker,
                         "the req from pre Finished walk for %#lx (pc=%#lx)\n",
                         r.req->getVaddr(), r.req->getPC());
@@ -1191,11 +1136,10 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
             return true;
         } else {
             for (auto &r : requestors) {
-                if (r.from_pre_req != r.req->getPre_tlb()) {
-                    printf("vaddr %lx prevaddr %lx\n", r.req->getVaddr(),
-                           r.req->getPreVaddr());
-                    printf("from %d get %d\n", r.from_pre_req,
-                           r.req->getPre_tlb());
+                if (r.from_forward_pre_req != r.req->get_forward_pre_tlb()) {
+                    DPRINTF(PageTableWalker, "vaddr %lx prevaddr %lx\n", r.req->getVaddr(),
+                            r.req->getForwardPreVaddr());
+                    DPRINTF(PageTableWalker, "from %d get %d\n", r.from_forward_pre_req, r.req->get_forward_pre_tlb());
                     assert(0);
                 }
                 if (mainFault == NoFault) {

@@ -66,8 +66,7 @@ class TLB : public BaseTLB
     bool is_stage2;
     bool is_the_sharedL2;
     size_t size;
-    size_t size_forward;
-    size_t Gpre_size;
+    size_t size_back;
     size_t l2tlb_l1_size;
     size_t l2tlb_l2_size;
     size_t l2tlb_l3_size;
@@ -82,18 +81,17 @@ class TLB : public BaseTLB
     uint64_t RemovePreUnused;
     uint64_t AllPre;
     bool isOpenAutoNextline;
-    uint64_t G_pre_size;
-    bool open_g_pre;
+    uint64_t forward_pre_size;
     bool open_forward_pre;
-    bool f_pre_precision;
-    bool g_pre_precision;
-    uint64_t all_g_pre;
-    uint64_t remove_no_use_g_pre;
-    uint64_t remove_no_use_f_pre;
-    uint64_t used_f_pre;
+    bool open_back_pre;
+    bool back_pre_precision;
+    bool forward_pre_precision;
+    uint64_t all_forward_pre;
+    uint64_t remove_no_use_forward_pre;
+    uint64_t remove_no_use_back_pre;
+    uint64_t used_back_pre;
     uint64_t all_used;
-    uint64_t all_used_pre;
-    uint64_t pre_sign;
+    uint64_t forward_used_pre;
     uint64_t last_vaddr;
     uint64_t last_pc;
     uint64_t trace_flag;
@@ -121,11 +119,11 @@ class TLB : public BaseTLB
         statistics::Scalar readHitsSquashed;
         statistics::Scalar squashedInsert;
         statistics::Scalar ALLInsert;
-        statistics::Scalar forwardHits;
-        statistics::Scalar used_f_pre;
-        statistics::Scalar remove_no_use_f_pre;
-        statistics::Scalar used_g_pre;
-        statistics::Scalar remove_no_use_g_pre;
+        statistics::Scalar backHits;
+        statistics::Scalar used_back_pre;
+        statistics::Scalar remove_no_use_back_pre;
+        statistics::Scalar used_forward_pre;
+        statistics::Scalar remove_no_use_forward_pre;
 
 
         statistics::Scalar writeL2l3TlbMisses;
@@ -181,8 +179,8 @@ class TLB : public BaseTLB
     void takeOverFrom(BaseTLB *old) override {}
 
     TlbEntry *insert(Addr vpn, const TlbEntry &entry, bool suqashed_update);
-    TlbEntry *insert_g_pre(Addr vpn, const TlbEntry &entry);
     TlbEntry *insert_forward_pre(Addr vpn, const TlbEntry &entry);
+    TlbEntry *insert_back_pre(Addr vpn, const TlbEntry &entry);
 
     TlbEntry *L2TLB_insert(Addr vpn, const TlbEntry &entry, int level,
                            int choose, int sign,bool squashed_update);
@@ -220,13 +218,10 @@ class TLB : public BaseTLB
 
     Addr translateWithTLB(Addr vaddr, uint16_t asid, BaseMMU::Mode mode);
 
-    Fault L2tlb_pagefault(Addr vaddr, BaseMMU::Mode mode,
-                          const RequestPtr &req, bool is_pre,
-                          bool is_forward_pre);
+    Fault L2tlb_pagefault(Addr vaddr, BaseMMU::Mode mode, const RequestPtr &req, bool is_pre, bool is_back_pre);
 
-    Fault L2tlb_check(PTESv39 pte, int level, STATUS status,
-                      PrivilegeMode pmode, Addr vaddr, BaseMMU::Mode mode,
-                      const RequestPtr &req, bool is_pre, bool is_forward_pre);
+    Fault L2tlb_check(PTESv39 pte, int level, STATUS status, PrivilegeMode pmode, Addr vaddr, BaseMMU::Mode mode,
+                      const RequestPtr &req, bool is_pre, bool is_back_pre);
 
     Fault translateAtomic(const RequestPtr &req,
                           ThreadContext *tc, BaseMMU::Mode mode) override;
@@ -239,9 +234,8 @@ class TLB : public BaseTLB
                            BaseMMU::Mode mode) const override;
     TlbEntry *lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
                      bool sign_used);
-    TlbEntry *lookup_g_pre(Addr vpn, uint64_t asid, bool hidden);
     TlbEntry *lookup_forward_pre(Addr vpn, uint64_t asid, bool hidden);
-    //bool auto_open_g_pre();
+    TlbEntry *lookup_back_pre(Addr vpn, uint64_t asid, bool hidden);
     bool auto_open_nextline();
 
 
@@ -263,13 +257,13 @@ class TLB : public BaseTLB
     EntryList freeList_l2sp;         // free entries
 
 
-    std::vector<TlbEntry> g_pre;
-    TlbEntryTrie trie_g_pre;
-    EntryList freeList_g_pre;
-
     std::vector<TlbEntry> forward_pre;
     TlbEntryTrie trie_forward_pre;
     EntryList freeList_forward_pre;
+
+    std::vector<TlbEntry> back_pre;
+    TlbEntryTrie trie_back_pre;
+    EntryList freeList_back_pre;
 
   private:
     uint64_t nextSeq() { return ++lruSeq; }
@@ -278,14 +272,14 @@ class TLB : public BaseTLB
                            bool hidden, int f_level, bool sign_used);
 
     void evictLRU();
-    void evict_G_pre();
     void evict_forward_pre();
+    void evict_back_pre();
 
     void l2TLB_evictLRU(int l2TLBlevel, Addr vaddr);
 
     void remove(size_t idx);
-    void remove_G_pre(size_t idx);
     void remove_forward_pre(size_t idx);
+    void remove_back_pre(size_t idx);
     void l2TLB_remove(size_t idx, int choose);
 
 
