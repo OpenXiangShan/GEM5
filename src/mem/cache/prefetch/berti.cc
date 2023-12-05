@@ -4,6 +4,7 @@
 
 #include "mem/cache/prefetch/berti.hh"
 
+#include "base/output.hh"
 #include "debug/BertiPrefetcher.hh"
 #include "mem/cache/base.hh"
 #include "mem/cache/prefetch/associative_set_impl.hh"
@@ -15,9 +16,12 @@ namespace prefetch
 
 BertiPrefetcher::BertiStats::BertiStats(statistics::Group *parent)
     : statistics::Group(parent),
-      ADD_STAT(pf_delta, statistics::units::Count::get(), "")
+      ADD_STAT(trainOnHit, statistics::units::Count::get(), "Count of train on hit"),
+      ADD_STAT(trainOnMiss, statistics::units::Count::get(), "Count of train on miss"),
+      ADD_STAT(notifySkippedCond1, statistics::units::Count::get(), "Count of notify skipped on mixed condition"),
+      ADD_STAT(notifySkippedIsPF, statistics::units::Count::get(), "Count of notify skipped isPF"),
+      ADD_STAT(notifySkippedNoEntry, statistics::units::Count::get(), "Count of notify skipped no Berti entry")
 {
-    pf_delta.init(0);
 }
 
 BertiPrefetcher::BertiPrefetcher(const BertiPrefetcherParams &p)
@@ -33,8 +37,33 @@ BertiPrefetcher::BertiPrefetcher(const BertiPrefetcherParams &p)
       useByteAddr(p.use_byte_addr),
       triggerPht(p.trigger_pht),
       statsBerti(this),
-      trainBlockFilter(8)
+      trainBlockFilter(8),
+      dumpTopDeltas(p.dump_top_deltas)
 {
+    registerExitCallback([this]() {
+        if (this->dumpTopDeltas) {
+            std::vector<std::pair<int64_t, uint64_t>> top_delta_vec;
+            for (const auto &entry: topDeltas) {
+                top_delta_vec.push_back(entry);
+            }
+            std::sort(top_delta_vec.begin(), top_delta_vec.end(),
+                      [](const std::pair<int64_t, uint64_t> &a, const std::pair<int64_t, uint64_t> &b) {
+                          return a.second > b.second;
+                      });
+
+            auto out_handle = simout.create("topBertiDeltas.txt", false, true);
+            *out_handle->stream() << "Delta" << " " << "count" << std::endl;
+            unsigned count = 0;
+            for (const auto &it: top_delta_vec) {
+                *out_handle->stream() << it.first << " " << it.second << std::endl;
+                count++;
+                if (count >= 1000) {
+                    break;
+                }
+            }
+            simout.close(out_handle);
+        }
+    });
 }
 
 BertiPrefetcher::HistoryTableEntry*
@@ -93,11 +122,11 @@ BertiPrefetcher::updateHistoryTable(const PrefetchInfo &pfi)
 
 void BertiPrefetcher::searchTimelyDeltas(
     HistoryTableEntry &entry,
-    const Cycles &latency,
+    const Cycles &search_latency,
     const Cycles &demand_cycle,
     const Addr &trigger_addr)
 {
-    DPRINTF(BertiPrefetcher, "latency: %lu, demand_cycle: %lu, history count: %lu\n", latency, demand_cycle,
+    DPRINTF(BertiPrefetcher, "latency: %lu, demand_cycle: %lu, history count: %lu\n", search_latency, demand_cycle,
             entry.history.size());
     std::list<int64_t> new_deltas;
     int delta_thres = useByteAddr ? blkSize : 8;
@@ -111,8 +140,8 @@ void BertiPrefetcher::searchTimelyDeltas(
         }
 
         // if not timely, skip and continue
-        if (it->timestamp + latency >= demand_cycle) {
-            DPRINTF(BertiPrefetcher, "skip untimely delta: %lu + %lu <= %u : %ld\n", it->timestamp, latency,
+        if (it->timestamp + search_latency >= demand_cycle) {
+            DPRINTF(BertiPrefetcher, "skip untimely delta: %lu + %lu <= %u : %ld\n", it->timestamp, search_latency,
                     demand_cycle, delta);
             continue;
         }
@@ -172,15 +201,16 @@ BertiPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPrio
     DPRINTF(BertiPrefetcher,
             "Train prefetcher, pc: %lx, addr: %lx miss: %d last lat: [%d]\n",
             pfi.getPC(), blockAddress(pfi.getAddr()),
-            pfi.isCacheMiss(), lastFillLatency);
+            pfi.isCacheMiss(), hitSearchLatency);
 
     trainBlockFilter.insert(blockIndex(pfi.getAddr()), 0);
 
     if (!pfi.isCacheMiss()) {
         HistoryTableEntry *hist_entry = historyTable.findEntry(pcHash(pfi.getPC()), pfi.isSecure());
         if (hist_entry) {
-            searchTimelyDeltas(*hist_entry, lastFillLatency, curCycle(),
+            searchTimelyDeltas(*hist_entry, hitSearchLatency, curCycle(),
                                useByteAddr ? pfi.getAddr() : blockIndex(pfi.getAddr()));
+            statsBerti.trainOnHit++;
         }
     }
 
@@ -195,7 +225,6 @@ BertiPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPrio
                 if (delta_info.status != NO_PREF) {
                     DPRINTF(BertiPrefetcher, "Using delta %d to prefetch\n", delta_info.delta);
                     int64_t delta = delta_info.delta;
-                    statsBerti.pf_delta.sample(delta);
                     Addr pf_addr =
                         useByteAddr ? pfi.getAddr() + delta : (blockIndex(pfi.getAddr()) + delta) << lBlkSize;
                     sendPFWithFilter(pfi, pf_addr, addresses, 32, PrefetchSourceType::Berti,
@@ -205,7 +234,6 @@ BertiPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPrio
         } else {
             if (entry->bestDelta.status != NO_PREF) {
                 DPRINTF(BertiPrefetcher, "Using best delta %d to prefetch\n", entry->bestDelta.delta);
-                statsBerti.pf_delta.sample(entry->bestDelta.delta);
                 Addr pf_addr = useByteAddr ? pfi.getAddr() + entry->bestDelta.delta
                                            : (blockIndex(pfi.getAddr()) + entry->bestDelta.delta) << lBlkSize;
                 sendPFWithFilter(pfi, pf_addr, addresses, 32, PrefetchSourceType::Berti,
@@ -232,6 +260,8 @@ BertiPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vecto
         DPRINTF(BertiPrefetcher, "Skip recently prefetched: %lx\n", addr);
         return false;
     } else {
+        int64_t blk_delta = (int64_t)blockIndex(addr) - blockIndex(pfi.getAddr());
+        topDeltas[blk_delta] = topDeltas.count(blk_delta) ? topDeltas[blk_delta] + 1 : 1;
         DPRINTF(BertiPrefetcher, "Send pf: %lx\n", addr);
         filter->insert(addr, 0);
         addresses.push_back(AddrPriority(addr, prio, src));
@@ -246,6 +276,7 @@ BertiPrefetcher::notifyFill(const PacketPtr &pkt)
     if (pkt->req->isInstFetch() ||
         !pkt->req->hasVaddr() || !pkt->req->hasPC()) {
         DPRINTF(BertiPrefetcher, "Skip packet: %s\n", pkt->print());
+        statsBerti.notifySkippedCond1++;
         return;
     }
 
@@ -254,28 +285,31 @@ BertiPrefetcher::notifyFill(const PacketPtr &pkt)
             pkt->print(), pkt->req->isPrefetch(), pkt->req->getPC());
 
     if (pkt->req->isPrefetch()) {
+        statsBerti.notifySkippedIsPF++;
         return;
     }
 
     // fill latency
-    // Cycles latency = ticksToCycles(curTick() - pkt->req->time());
-    Cycles latency = Cycles(1);
-    lastFillLatency = latency;
+    Cycles miss_refill_search_lat = ticksToCycles(200);
+    hitSearchLatency = ticksToCycles(50);
 
     HistoryTableEntry *entry =
         historyTable.findEntry(pcHash(pkt->req->getPC()), pkt->req->isSecure());
-    if (!entry)
+    if (!entry) {
+        statsBerti.notifySkippedNoEntry++;
         return;
+    }
 
     /** Search history table, find deltas. */
     Cycles demand_cycle = ticksToCycles(pkt->req->time());
 
     DPRINTF(BertiPrefetcher, "Search delta for PC %lx\n", pkt->req->getPC());
-    searchTimelyDeltas(*entry, latency, demand_cycle,
+    searchTimelyDeltas(*entry, miss_refill_search_lat, demand_cycle,
                        useByteAddr ? pkt->req->getVaddr() : blockIndex(pkt->req->getVaddr()));
+    statsBerti.trainOnMiss++;
 
     DPRINTF(BertiPrefetcher, "Updating table of deltas, latency [%d]\n",
-            latency);
+            miss_refill_search_lat);
 }
 
 }

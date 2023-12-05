@@ -5,7 +5,9 @@
 #ifndef __MEM_CACHE_PREFETCH_BERTI_HH__
 #define __MEM_CACHE_PREFETCH_BERTI_HH__
 
+#include <unordered_map>
 #include <vector>
+
 #include <boost/compute/detail/lru_cache.hpp>
 
 #include "base/statistics.hh"
@@ -111,7 +113,7 @@ class BertiPrefetcher : public Queued
     AssociativeSet<HistoryTableEntry> historyTable;
 
 
-    Cycles lastFillLatency;
+    Cycles hitSearchLatency;
     const bool aggressivePF;
     const bool useByteAddr;
     const bool triggerPht;
@@ -119,7 +121,12 @@ class BertiPrefetcher : public Queued
     struct BertiStats : public statistics::Group
     {
         BertiStats(statistics::Group *parent);
-        statistics::SparseHistogram pf_delta;
+
+        statistics::Scalar trainOnHit;
+        statistics::Scalar trainOnMiss;
+        statistics::Scalar notifySkippedCond1;
+        statistics::Scalar notifySkippedIsPF;
+        statistics::Scalar notifySkippedNoEntry;
     } statsBerti;
 
 
@@ -150,6 +157,10 @@ class BertiPrefetcher : public Queued
     int evictedBestDelta;
 
     boost::compute::detail::lru_cache<Addr, Addr> trainBlockFilter;
+
+    std::unordered_map<int64_t, uint64_t> topDeltas;
+
+    const bool dumpTopDeltas;
 
   public:
 

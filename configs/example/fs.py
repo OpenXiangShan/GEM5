@@ -159,7 +159,10 @@ def build_test_system(np):
         test_sys.arch_db.dump_l1_pf_trace = False
         test_sys.arch_db.dump_mem_trace = False
         test_sys.arch_db.dump_l1_evict_trace = False
+        test_sys.arch_db.dump_l2_evict_trace = False
+        test_sys.arch_db.dump_l3_evict_trace = False
         test_sys.arch_db.dump_l1_miss_trace = False
+        test_sys.arch_db.dump_bop_train_trace = False
         test_sys.arch_db.table_cmds = [
             "CREATE TABLE L1MissTrace(" \
             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
@@ -170,10 +173,12 @@ def build_test_system(np):
             "STAMP INT NOT NULL," \
             "SITE TEXT);"
             ,
-            "CREATE TABLE L1EvictTrace(" \
+            "CREATE TABLE CacheEvictTrace(" \
             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "Tick INT NOT NULL," \
             "PADDR INT NOT NULL," \
             "STAMP INT NOT NULL," \
+            "Level INT NOT NULL," \
             "SITE TEXT);"
             ,
             "CREATE TABLE MemTrace(" \
@@ -198,6 +203,16 @@ def build_test_system(np):
             "PFVAddr INT NOT NULL," \
             "PFSrc INT NOT NULL);"
             ,
+
+            "CREATE TABLE BOPTrainTrace(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "Tick INT NOT NULL," \
+            "Type STRING NOT NULL," \
+            "OldAddr INT NOT NULL," \
+            "CurAddr INT NOT NULL," \
+            "Offset INT NOT NULL," \
+            "Score INT NOT NULL," \
+            "Miss BOOL NOT NULL);"
         ]
 
     if args.ruby:

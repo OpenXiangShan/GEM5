@@ -90,8 +90,7 @@ BOP::delayQueueEventWrapper()
     while (!delayQueue.empty() &&
             delayQueue.front().processTick <= curTick())
     {
-        Addr addr_x = delayQueue.front().baseAddr;
-        insertIntoRR(addr_x, RRWay::Left);
+        insertIntoRR(delayQueue.front().rrEntry, RRWay::Left);
         delayQueue.pop_front();
     }
 
@@ -110,20 +109,26 @@ BOP::hash(Addr addr, unsigned int way) const
 }
 
 void
-BOP::insertIntoRR(Addr addr, unsigned int way)
+BOP::insertIntoRR(Addr full_addr, Addr tag, unsigned int way)
+{
+    insertIntoRR(RREntryDebug(full_addr, tag), way);
+}
+
+void
+BOP::insertIntoRR(RREntryDebug rr_entry, unsigned int way)
 {
     switch (way) {
         case RRWay::Left:
-            rrLeft[hash(addr, RRWay::Left)] = addr;
+            rrLeft[hash(rr_entry.hashAddr, RRWay::Left)] = rr_entry;
             break;
         case RRWay::Right:
-            rrRight[hash(addr, RRWay::Right)] = addr;
+            rrRight[hash(rr_entry.hashAddr, RRWay::Right)] = rr_entry;
             break;
     }
 }
 
 void
-BOP::insertIntoDelayQueue(Addr x)
+BOP::insertIntoDelayQueue(Addr full_addr, Addr tag)
 {
     if (delayQueue.size() == delayQueueSize) {
         return;
@@ -133,7 +138,7 @@ BOP::insertIntoDelayQueue(Addr x)
     // it after the specified delay cycles
     Tick process_tick = curTick() + delayTicks;
 
-    delayQueue.push_back(DelayQueueEntry(x, process_tick));
+    delayQueue.push_back(DelayQueueEntry({full_addr, tag}, process_tick));
 
     if (!delayQueueEvent.scheduled()) {
         schedule(delayQueueEvent, process_tick);
@@ -154,17 +159,17 @@ BOP::tag(Addr addr) const
     return (addr >> lBlkSize) & tagMask;
 }
 
-bool
-BOP::testRR(Addr addr) const
+std::pair<bool, BOP::RREntryDebug>
+BOP::testRR(Addr tag) const
 {
-    if (rrLeft[hash(addr, RRWay::Left)] == addr) {
-        return true;
+    if (rrLeft[hash(tag, RRWay::Left)].hashAddr == tag) {
+        return std::make_pair(true, rrLeft[hash(tag, RRWay::Left)]);
     }
-    if (rrRight[hash(addr, RRWay::Right)] == addr) {
-        return true;
+    if (rrRight[hash(tag, RRWay::Right)].hashAddr == tag) {
+        return std::make_pair(true, rrRight[hash(tag, RRWay::Right)]);
     }
 
-    return false;
+    return std::make_pair(false, RREntryDebug());
 }
 
 void
@@ -261,14 +266,20 @@ BOP::getBestOffsetIter()
 }
 
 bool
-BOP::bestOffsetLearning(Addr x, bool late)
+BOP::bestOffsetLearning(Addr x, bool late, const PrefetchInfo &pfi)
 {
     DPRINTF(BOPPrefetcher, "Reach %s entry, iter offset: %d\n", __FUNCTION__, offsetsListIterator->calcOffset());
-    Addr offset_addr = offsetsListIterator->calcOffset();
-    Addr lookup_addr = x - offset_addr;
-    DPRINTF(BOPPrefetcher, "%s: offset: %d lookup addr: %#lx\n", __FUNCTION__, offset_addr, lookup_addr);
+    Addr offset = offsetsListIterator->calcOffset();
+    Addr lookup_addr = x - offset;
+    DPRINTF(BOPPrefetcher, "%s: offset: %d lookup addr: %#lx\n", __FUNCTION__, offset, lookup_addr);
     // There was a hit in the RR table, increment the score for this offset
-    if (testRR(lookup_addr)) {
+    auto [exist, rr_entry] = testRR(lookup_addr);
+    if (exist) {
+        if (archDBer) {
+            archDBer->bopTrainTraceWrite(curTick(), rr_entry.fullAddr, pfi.getAddr(), offset,
+                                        offsetsListIterator->score + 1, pfi.isCacheMiss());
+        }
+
         DPRINTF(BOPPrefetcher, "Address %#lx found in the RR table\n", x);
         offsetsListIterator->score++;
 
@@ -362,16 +373,14 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
             "Train prefetcher with addr %#lx tag %#lx\n", addr, tag_x);
 
     if (delayQueueEnabled) {
-        insertIntoDelayQueue(tag_x);
+        insertIntoDelayQueue(addr, tag_x);
     } else {
-        insertIntoRR(tag_x, RRWay::Left);
+        insertIntoRR(addr, tag_x, RRWay::Left);
     }
 
     // Go through the nth offset and update the score, the best score and the
     // current best offset if a better one is found
-    //if (!bestOffsetLearning(tag_x, late)) {
-    bestOffsetLearning(tag_x, late);
-    //}
+    bestOffsetLearning(tag_x, late, pfi);
 
     // This prefetcher is a degree 1 prefetch, so it will only generate one
     // prefetch at most per access
