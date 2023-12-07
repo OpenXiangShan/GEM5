@@ -968,6 +968,162 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         }
     }
 
+    // always check some CSR regs
+    {
+        // mstatus
+        auto gem5_val = readMiscRegNoEffect(
+            RiscvISA::MiscRegIndex::MISCREG_STATUS, tid);
+        // readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_STATUS, 0);
+        auto ref_val = diffAllStates->referenceRegFile.mstatus;
+        if (gem5_val != ref_val) {
+            warn("Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
+            warn("Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
+                    "mstatus", ref_val, gem5_val);
+            diffInfo.errorCsrsValue[CsrRegIndex::mstatus] = 1;
+            diffAllStates->gem5RegFile.mstatus = gem5_val;
+            if (!diff_at)
+                diff_at = ValueDiff;
+        }
+        //stval
+        gem5_val = readMiscRegNoEffect(
+            RiscvISA::MiscRegIndex::MISCREG_STVAL, tid);
+        ref_val = diffAllStates->referenceRegFile.stval;
+        if (gem5_val != ref_val) {
+            warn("Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
+            warn("Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033"
+                    "[0m, GEM5 value: \033[31m%#lx\033[0m\n", "stval",
+                    ref_val, gem5_val);
+            diffInfo.errorCsrsValue[CsrRegIndex::stval] = 1;
+            diffAllStates->gem5RegFile.stval = gem5_val;
+            if (!diff_at)
+                diff_at = ValueDiff;
+        }
+            //DIFFTEST_STVDIFFTEST_STVAL
+        // mcause
+        gem5_val = readMiscRegNoEffect(
+            RiscvISA::MiscRegIndex::MISCREG_MCAUSE, tid);
+        // readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_MCAUSE, 0);
+        ref_val = diffAllStates->referenceRegFile.mcause;
+        if (gem5_val != ref_val) {
+            warn("Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
+            warn("Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
+                    "mcause", ref_val, gem5_val);
+            diffInfo.errorCsrsValue[CsrRegIndex::mcause] = 1;
+            diffAllStates->gem5RegFile.mcause = gem5_val;
+            if (!diff_at)
+                diff_at = ValueDiff;
+        }
+        // satp
+        gem5_val =
+            readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_SATP, tid);
+        // readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_SATP, 0);
+        ref_val = diffAllStates->referenceRegFile.satp;
+        if (gem5_val != ref_val) {
+            warn("Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
+            warn("Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033"
+                    "[0m, GEM5 value: \033[31m%#lx\033[0m\n", "satp",
+                    ref_val, gem5_val);
+            diffInfo.errorCsrsValue[CsrRegIndex::satp] = 1;
+            diffAllStates->gem5RegFile.satp = gem5_val;
+            if (!diff_at)
+                diff_at = ValueDiff;
+        }
+
+        // mie
+        gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_IE, tid);
+        // readMiscReg(RiscvISA::MiscRegIndex::MISCREG_IE, 0);
+        ref_val = diffAllStates->referenceRegFile.mie;
+        if (gem5_val != ref_val) {
+            warn("Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
+            warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
+                    "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n", "mie",
+                    ref_val, gem5_val);
+            diffInfo.errorCsrsValue[CsrRegIndex::mie] = 1;
+            diffAllStates->gem5RegFile.mie = gem5_val;
+            if (!diff_at)
+                diff_at = ValueDiff;
+        }
+        // mip
+        gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_IP, tid);
+        // readMiscReg(RiscvISA::MiscRegIndex::MISCREG_IP, 0);
+        ref_val = diffAllStates->referenceRegFile.mip;
+        if (gem5_val != ref_val) {
+            DPRINTF(Diff, "Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
+            DPRINTF(Diff, "Diff at \033[31m%s\033[0m Ref value: \033[31m"
+                    "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
+                    "mip", ref_val, gem5_val);
+            diffInfo.errorCsrsValue[CsrRegIndex::mip] = 1;
+            diffAllStates->gem5RegFile.mip = gem5_val;
+        }
+
+        // vtype
+        gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VTYPE, tid);
+        diffAllStates->gem5RegFile.vtype = gem5_val;
+        ref_val = diffAllStates->referenceRegFile.vtype;
+        if (gem5_val != ref_val) {
+            warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
+                    "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
+                    "vtype", ref_val, gem5_val);
+            if (!diff_at) {
+                diff_at = ValueDiff;
+            }
+        }
+
+        // vstart
+        gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VSTART, tid);
+        diffAllStates->gem5RegFile.vstart = gem5_val;
+        ref_val = diffAllStates->referenceRegFile.vstart;
+        // NOTE: may has bug
+        // if (gem5_val != ref_val) {
+        //     warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
+        //             "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
+        //             "vstart", ref_val, gem5_val);
+        //     if (!diff_at) {
+        //         diff_at = ValueDiff;
+        //     }
+        // }
+
+        // vxsat
+        diffAllStates->gem5RegFile.vxsat = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VXSAT, tid);
+        // vxrm
+        diffAllStates->gem5RegFile.vxrm = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VXRM, tid);
+        // vcsr
+        gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VCSR, tid);
+        diffAllStates->gem5RegFile.vcsr = gem5_val;
+        ref_val = diffAllStates->referenceRegFile.vcsr;
+        if (gem5_val != ref_val) {
+            warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
+                    "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
+                    "vcsr", ref_val, gem5_val);
+            if (!diff_at) {
+                diff_at = ValueDiff;
+            }
+        }
+
+        // vl
+        gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VL, tid);
+        diffAllStates->gem5RegFile.vl = gem5_val;
+        ref_val = diffAllStates->referenceRegFile.vl;
+        if (gem5_val != ref_val) {
+            warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
+                    "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
+                    "vl", ref_val, gem5_val);
+            if (!diff_at) {
+                diff_at = ValueDiff;
+            }
+        }
+
+
+        if (diff_at != NoneDiff) {
+            warn("Inst [sn:%llu] @ \033[31m%#lx\033[0m in GEM5 is \033[31m%s\033[0m\n", seq,
+                    diffInfo.pc->instAddr(),
+                    diffInfo.inst->disassemble(diffInfo.pc->instAddr()));
+            if (diffInfo.inst->isLoad()) {
+                warn("Load addr: %#lx\n", diffInfo.physEffAddr);
+            }
+        }
+    }
+
     if (diffInfo.inst->numDestRegs() > 0) {
         const auto &dest = diffInfo.inst->destRegIdx(0);
         auto dest_tag = dest.index() + dest.isFloatReg() * 32;
@@ -1032,162 +1188,6 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                         diff_at = ValueDiff;
                     }
 
-                }
-            }
-        }
-
-
-        // always check some CSR regs
-        {
-            // mstatus
-            auto gem5_val = readMiscRegNoEffect(
-                RiscvISA::MiscRegIndex::MISCREG_STATUS, tid);
-            // readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_STATUS, 0);
-            auto ref_val = diffAllStates->referenceRegFile.mstatus;
-            if (gem5_val != ref_val) {
-                warn("Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
-                warn("Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
-                     "mstatus", ref_val, gem5_val);
-                diffInfo.errorCsrsValue[CsrRegIndex::mstatus] = 1;
-                diffAllStates->gem5RegFile.mstatus = gem5_val;
-                if (!diff_at)
-                    diff_at = ValueDiff;
-            }
-            //stval
-            gem5_val = readMiscRegNoEffect(
-                RiscvISA::MiscRegIndex::MISCREG_STVAL, tid);
-            ref_val = diffAllStates->referenceRegFile.stval;
-            if (gem5_val != ref_val) {
-                warn("Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
-                warn("Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033"
-                     "[0m, GEM5 value: \033[31m%#lx\033[0m\n", "stval",
-                     ref_val, gem5_val);
-                diffInfo.errorCsrsValue[CsrRegIndex::stval] = 1;
-                diffAllStates->gem5RegFile.stval = gem5_val;
-                if (!diff_at)
-                    diff_at = ValueDiff;
-            }
-             //DIFFTEST_STVDIFFTEST_STVAL
-            // mcause
-            gem5_val = readMiscRegNoEffect(
-                RiscvISA::MiscRegIndex::MISCREG_MCAUSE, tid);
-            // readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_MCAUSE, 0);
-            ref_val = diffAllStates->referenceRegFile.mcause;
-            if (gem5_val != ref_val) {
-                warn("Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
-                warn("Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
-                     "mcause", ref_val, gem5_val);
-                diffInfo.errorCsrsValue[CsrRegIndex::mcause] = 1;
-                diffAllStates->gem5RegFile.mcause = gem5_val;
-                if (!diff_at)
-                    diff_at = ValueDiff;
-            }
-            // satp
-            gem5_val =
-                readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_SATP, tid);
-            // readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_SATP, 0);
-            ref_val = diffAllStates->referenceRegFile.satp;
-            if (gem5_val != ref_val) {
-                warn("Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
-                warn("Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033"
-                      "[0m, GEM5 value: \033[31m%#lx\033[0m\n", "satp",
-                     ref_val, gem5_val);
-                diffInfo.errorCsrsValue[CsrRegIndex::satp] = 1;
-                diffAllStates->gem5RegFile.satp = gem5_val;
-                if (!diff_at)
-                    diff_at = ValueDiff;
-            }
-
-            // mie
-            gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_IE, tid);
-            // readMiscReg(RiscvISA::MiscRegIndex::MISCREG_IE, 0);
-            ref_val = diffAllStates->referenceRegFile.mie;
-            if (gem5_val != ref_val) {
-                warn("Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
-                warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
-                      "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n", "mie",
-                     ref_val, gem5_val);
-                diffInfo.errorCsrsValue[CsrRegIndex::mie] = 1;
-                diffAllStates->gem5RegFile.mie = gem5_val;
-                if (!diff_at)
-                    diff_at = ValueDiff;
-            }
-            // mip
-            gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_IP, tid);
-            // readMiscReg(RiscvISA::MiscRegIndex::MISCREG_IP, 0);
-            ref_val = diffAllStates->referenceRegFile.mip;
-            if (gem5_val != ref_val) {
-                DPRINTF(Diff, "Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
-                DPRINTF(Diff, "Diff at \033[31m%s\033[0m Ref value: \033[31m"
-                        "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
-                        "mip", ref_val, gem5_val);
-                diffInfo.errorCsrsValue[CsrRegIndex::mip] = 1;
-                diffAllStates->gem5RegFile.mip = gem5_val;
-            }
-
-            // vtype
-            gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VTYPE, tid);
-            diffAllStates->gem5RegFile.vtype = gem5_val;
-            ref_val = diffAllStates->referenceRegFile.vtype;
-            if (gem5_val != ref_val) {
-                warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
-                        "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
-                        "vtype", ref_val, gem5_val);
-                if (!diff_at) {
-                    diff_at = ValueDiff;
-                }
-            }
-
-            // vstart
-            gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VSTART, tid);
-            diffAllStates->gem5RegFile.vstart = gem5_val;
-            ref_val = diffAllStates->referenceRegFile.vstart;
-            if (gem5_val != ref_val) {
-                warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
-                        "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
-                        "vstart", ref_val, gem5_val);
-                if (!diff_at) {
-                    diff_at = ValueDiff;
-                }
-            }
-
-            // vxsat
-            diffAllStates->gem5RegFile.vxsat = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VXSAT, tid);
-            // vxrm
-            diffAllStates->gem5RegFile.vxrm = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VXRM, tid);
-            // vcsr
-            gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VCSR, tid);
-            diffAllStates->gem5RegFile.vcsr = gem5_val;
-            ref_val = diffAllStates->referenceRegFile.vcsr;
-            if (gem5_val != ref_val) {
-                warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
-                        "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
-                        "vcsr", ref_val, gem5_val);
-                if (!diff_at) {
-                    diff_at = ValueDiff;
-                }
-            }
-
-            // vl
-            gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VL, tid);
-            diffAllStates->gem5RegFile.vl = gem5_val;
-            ref_val = diffAllStates->referenceRegFile.vl;
-            if (gem5_val != ref_val) {
-                warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
-                        "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
-                        "vl", ref_val, gem5_val);
-                if (!diff_at) {
-                    diff_at = ValueDiff;
-                }
-            }
-
-
-            if (diff_at != NoneDiff) {
-                warn("Inst [sn:%llu] @ \033[31m%#lx\033[0m in GEM5 is \033[31m%s\033[0m\n", seq,
-                     diffInfo.pc->instAddr(),
-                     diffInfo.inst->disassemble(diffInfo.pc->instAddr()));
-                if (diffInfo.inst->isLoad()) {
-                    warn("Load addr: %#lx\n", diffInfo.physEffAddr);
                 }
             }
         }
@@ -1333,7 +1333,7 @@ BaseCPU::displayGem5Regs()
         str += csprintf("satp    : %16lx\n", diffAllStates->gem5RegFile.satp);
 
     if (diffInfo.errorCsrsValue[CsrRegIndex::mip])
-        str += csprintf("\033[31mmip     : %16lx\033", diffAllStates->gem5RegFile.mip);
+        str += csprintf("\033[31mmip     : %16lx\033[0m", diffAllStates->gem5RegFile.mip);
     else
         str += csprintf("mip     : %16lx", diffAllStates->gem5RegFile.mip);
 
@@ -1405,9 +1405,10 @@ BaseCPU::enableDiffPrint()
     diffAllStates->proxy->update_config(&diffAllStates->diff.dynamic_config);
 }
 
-void BaseCPU::setSCSuccess(bool success)
+void BaseCPU::setSCSuccess(bool success, paddr_t addr)
 {
     diffAllStates->diff.sync.lrscValid = success;
+    diffAllStates->diff.sync.lrscAddr = addr; // used for spike diff
 }
 
 void

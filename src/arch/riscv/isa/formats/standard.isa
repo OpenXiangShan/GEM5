@@ -382,11 +382,13 @@ def template CSRExecute {{
         olddata &= maskVal;
         DPRINTF(RiscvMisc, "Reading CSR %s: %#x\n", csrName, olddata);
         data = olddata;
+        bool write = false;
 
         %(code)s;
 
         data &= maskVal;
-        if (data != olddata || csr == CSR_FCSR || csr == CSR_VCSR) {
+        // NOTE: may has bug
+        if (data != olddata || csr == CSR_FCSR || (csr == CSR_FRM && write) || csr == CSR_VCSR) {
             if (bits(csr, 11, 10) == 0x3) {
                 return std::make_shared<IllegalInstFault>(
                         csprintf("CSR %s is read-only\n", csrName), machInst);

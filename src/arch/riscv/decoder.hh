@@ -52,7 +52,6 @@ class Decoder : public InstDecoder
   private:
     bool aligned;
     bool mid;
-    bool vConfigDone;
   protected:
     //The extended machine instruction being generated
     ExtMachInst emi;

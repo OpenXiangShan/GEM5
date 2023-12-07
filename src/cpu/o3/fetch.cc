@@ -1097,6 +1097,8 @@ Fetch::squash(const PCStateBase &new_pc, const InstSeqNum seq_num,
 {
     DPRINTF(Fetch, "[tid:%i] Squash from commit.\n", tid);
 
+    waitForVset = false;
+
     doSquash(new_pc, squashInst, tid);
 
     // Tell the CPU to remove any instructions that are not in the ROB.
@@ -1748,11 +1750,6 @@ Fetch::fetch(bool &status_change)
                         pc_offset = 0;
                     }
                 } else {
-                    // stallDuetoVset = dec_ptr->isStalled();
-                    // if (stallDuetoVset) {
-                    //     // wait for vset commit
-                    //     waitForVset = true;
-                    // }
                     // We need more bytes for this instruction so blkOffset and
                     // pcOffset will be updated
                     break;

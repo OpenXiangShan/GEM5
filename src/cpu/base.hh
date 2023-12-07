@@ -732,7 +732,7 @@ class BaseCPU : public ClockedObject
 
     void difftestRaiseIntr(uint64_t no);
 
-    void setSCSuccess(bool success);
+    void setSCSuccess(bool success, paddr_t addr);
 
     void setExceptionGuideExecInfo(uint64_t exception_num, uint64_t mtval,
                           uint64_t stval,

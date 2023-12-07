@@ -45,12 +45,14 @@
 #include <set>
 #include <string>
 
-#include "arch/riscv/regs/misc.hh"
+#include "arch/riscv/decoder.hh"
 #include "arch/riscv/faults.hh"
+#include "arch/riscv/insts/static_inst.hh"
+#include "arch/riscv/regs/misc.hh"
 #include "base/compiler.hh"
 #include "base/loader/symtab.hh"
 #include "base/logging.hh"
-#include "arch/riscv/insts/static_inst.hh"
+#include "base/output.hh"
 #include "config/the_isa.hh"
 #include "cpu/base.hh"
 #include "cpu/checker/cpu.hh"
@@ -64,20 +66,19 @@
 #include "debug/Commit.hh"
 #include "debug/CommitRate.hh"
 #include "debug/CommitTrace.hh"
+#include "debug/Counters.hh"
 #include "debug/Diff.hh"
 #include "debug/Drain.hh"
 #include "debug/ExecFaulting.hh"
+#include "debug/FTBStats.hh"
+#include "debug/Faults.hh"
 #include "debug/HtmCpu.hh"
 #include "debug/InstCommited.hh"
 #include "debug/O3PipeView.hh"
-#include "debug/Faults.hh"
-#include "debug/FTBStats.hh"
-#include "debug/Counters.hh"
 #include "params/BaseO3CPU.hh"
+#include "sim/core.hh"
 #include "sim/faults.hh"
 #include "sim/full_system.hh"
-#include "sim/core.hh"
-#include "base/output.hh"
 
 namespace gem5
 {
@@ -1174,6 +1175,12 @@ Commit::commitInsts()
 
                 // Updates misc. registers.
                 head_inst->updateMiscRegs();
+                if (head_inst->staticInst->isVectorConfig()) {
+                    auto tc = head_inst->tcBase();
+                    uint32_t new_vl = head_inst->readMiscReg(RiscvISA::MISCREG_VL);
+                    RiscvISA::VTYPE new_vtype = head_inst->readMiscReg(RiscvISA::MISCREG_VTYPE);
+                    tc->getDecoderPtr()->as<RiscvISA::Decoder>().setVlAndVtype(new_vl, new_vtype);
+                }
 
                 if (cpu->difftestEnabled()) {
                     cpu->diffInfo.lastCommittedMsg.push(head_inst->genDisassembly());
@@ -1511,7 +1518,7 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
     if (head_inst->isStoreConditional()) {
         DPRINTF(Commit, "[tid:%i] [sn:%llu] Store Conditional success: %i\n", tid, head_inst->seqNum,
                 head_inst->lockedWriteSuccess());
-        cpu->setSCSuccess(head_inst->lockedWriteSuccess());
+        cpu->setSCSuccess(head_inst->lockedWriteSuccess(), head_inst->physEffAddr);
     }
 
     // Update the commit rename map

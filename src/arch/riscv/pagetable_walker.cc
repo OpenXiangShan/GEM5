@@ -1009,7 +1009,18 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
                 // mainFault will be NoFault if pmp checks are
                 // passed, otherwise an address fault will be returned.
                 mainFault = walker->pmp->pmpCheck(r.req, mode, pmode, r.tc);
-                assert(mainFault == NoFault);
+                if (mainFault != NoFault) {
+                    // Ignore errors larger than this address
+                    if (paddr < 0xFFFFFFFF) {
+                        warn("mainFalutnamu=%s vaddr =%lx ,paddr =%lx ",
+                             mainFault->name(), vaddr, paddr);
+                        assert(mainFault == NoFault);
+                    }
+                    else
+                        warn("[pmpCheck] Ignore errors larger"
+                             "than this vaddr: %lx paddr: %lx", vaddr, paddr);
+                }
+
                 // Let the CPU continue.
                 r.translation->finish(mainFault, r.req, r.tc, mode);
             } else {

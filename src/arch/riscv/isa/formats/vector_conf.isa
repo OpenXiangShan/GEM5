@@ -86,8 +86,6 @@ def template VConfExecute {{
 
         xc->setMiscReg(MISCREG_VL, new_vl);
 
-        tc->getDecoderPtr()->as<Decoder>().setVlAndVtype(new_vl, new_vtype);
-
         Rd = new_vl;
 
         %(op_wb)s;
