@@ -96,13 +96,13 @@ class RegClass
 
   public:
     constexpr RegClass(RegClassType type, size_t num_regs,
-            const debug::Flag &debug_flag, size_t reg_bytes=sizeof(RegVal)) :
+            const debug::Flag &debug_flag, size_t reg_bytes) :
         _type(type), _numRegs(num_regs), _regBytes(reg_bytes),
         _regShift(ceilLog2(reg_bytes)), debugFlag(debug_flag)
     {}
     constexpr RegClass(RegClassType type, size_t num_regs,
             RegClassOps &new_ops, const debug::Flag &debug_flag,
-            size_t reg_bytes=sizeof(RegVal)) :
+            size_t reg_bytes) :
         RegClass(type, num_regs, debug_flag, reg_bytes)
     {
         _ops = &new_ops;
@@ -190,6 +190,9 @@ class RegId
 
     /** @return true if it is a floating-point physical register. */
     bool isFloatReg() const { return regClass == FloatRegClass; }
+
+    /** @return true if it is a vector physical register. */
+    bool isVecReg()  const { return regClass == VecRegClass; }
 
     /** @return true if it is of the specified class. */
     constexpr bool

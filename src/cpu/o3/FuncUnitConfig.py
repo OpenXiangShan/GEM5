@@ -107,7 +107,15 @@ class SIMD_Unit(FUDesc):
                OpDesc(opClass='SimdReduceAlu'),
                OpDesc(opClass='SimdReduceCmp'),
                OpDesc(opClass='SimdFloatReduceAdd'),
-               OpDesc(opClass='SimdFloatReduceCmp') ]
+
+               OpDesc(opClass='VectorIntegerArith'),
+               OpDesc(opClass='VectorFloatArith'),
+               OpDesc(opClass='VectorFloatConvert'),
+               OpDesc(opClass='VectorIntegerReduce'),
+               OpDesc(opClass='VectorFloatReduce'),
+               OpDesc(opClass='VectorMisc'),
+               OpDesc(opClass='VectorIntegerExtension'),
+               OpDesc(opClass='VectorConfig')]
     count = 4
 
 class PredALU(FUDesc):
@@ -116,12 +124,22 @@ class PredALU(FUDesc):
 
 class ReadPort(FUDesc):
     opList = [ OpDesc(opClass='MemRead',opLat=2),
-               OpDesc(opClass='FloatMemRead') ]
+               OpDesc(opClass='FloatMemRead'),
+               OpDesc(opClass='VectorUnitStrideLoad'),
+               OpDesc(opClass='VectorUnitStrideMaskLoad'),
+               OpDesc(opClass='VectorStridedLoad'),
+               OpDesc(opClass='VectorIndexedLoad'),
+               OpDesc(opClass='VectorUnitStrideFaultOnlyFirstLoad'),
+               OpDesc(opClass='VectorWholeRegisterLoad')]
     count = 2
 
 class WritePort(FUDesc):
     opList = [ OpDesc(opClass='MemWrite',opLat=4),
-               OpDesc(opClass='FloatMemWrite') ]
+               OpDesc(opClass='VectorUnitStrideStore'),
+               OpDesc(opClass='VectorUnitStrideMaskStore'),
+               OpDesc(opClass='VectorStridedStore'),
+               OpDesc(opClass='VectorIndexedStore'),
+               OpDesc(opClass='VectorWholeRegisterStore')]
     count = 2
 
 class RdWrPort(FUDesc):

@@ -38,10 +38,13 @@ namespace gem5
 namespace RiscvISA
 {
 
+GenericISA::BasicDecodeCache<Decoder, ExtMachInst> Decoder::defaultCache;
+
 void Decoder::reset()
 {
     aligned = true;
     mid = false;
+    machInst = 0;
     emi = 0;
 }
 
@@ -58,24 +61,29 @@ Decoder::moreBytes(const PCStateBase &pc, Addr fetchPC)
 
     bool aligned = pc.instAddr() % sizeof(machInst) == 0;
     if (aligned) {
-        emi = inst;
-        if (compressed(emi))
-            emi = bits(emi, mid_bit, 0);
+        emi.instBits = inst;
+        if (compressed(inst))
+            emi.instBits = bits(inst, mid_bit, 0);
         outOfBytes = !compressed(emi);
         instDone = true;
     } else {
         if (mid) {
-            assert(bits(emi, max_bit, mid_bit + 1) == 0);
-            replaceBits(emi, max_bit, mid_bit + 1, inst);
+            assert(bits(emi.instBits, max_bit, mid_bit + 1) == 0);
+            replaceBits(emi.instBits, max_bit, mid_bit + 1, inst);
             mid = false;
             outOfBytes = false;
             instDone = true;
         } else {
-            emi = bits(inst, max_bit, mid_bit + 1);
+            emi.instBits = bits(inst, max_bit, mid_bit + 1);
             mid = !compressed(emi);
             outOfBytes = true;
             instDone = compressed(emi);
         }
+    }
+    if (instDone) {
+        emi.vl      = this->machVl;
+        emi.vtype8   = this->machVtype & 0xff;
+        emi.vill    = this->machVtype.vill;
     }
 }
 
@@ -83,11 +91,9 @@ StaticInstPtr
 Decoder::decode(ExtMachInst mach_inst, Addr addr)
 {
     DPRINTF(Decode, "Decoding instruction 0x%08x at address %#x\n",
-            mach_inst, addr);
+            mach_inst.instBits, addr);
 
-    StaticInstPtr &si = instMap[mach_inst];
-    if (!si)
-        si = decodeInst(mach_inst);
+    StaticInstPtr si = defaultCache.decode(this, mach_inst, addr);
 
     DPRINTF(Decode, "Decode: Decoded %s instruction: %#x\n",
             si->getName(), mach_inst);
@@ -125,6 +131,13 @@ Decoder::setPCStateWithInstDesc(const bool &compressed, PCStateBase &_next_pc)
         next_pc.npc(next_pc.instAddr() + sizeof(machInst));
         next_pc.compressed(false);
     }
+}
+
+void
+Decoder::setVlAndVtype(uint32_t vl, VTYPE vtype)
+{
+    this->machVtype = vtype;
+    this->machVl = vl;
 }
 
 } // namespace RiscvISA

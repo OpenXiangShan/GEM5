@@ -1097,6 +1097,8 @@ Fetch::squash(const PCStateBase &new_pc, const InstSeqNum seq_num,
 {
     DPRINTF(Fetch, "[tid:%i] Squash from commit.\n", tid);
 
+    waitForVset = false;
+
     doSquash(new_pc, squashInst, tid);
 
     // Tell the CPU to remove any instructions that are not in the ROB.
@@ -1135,6 +1137,10 @@ Fetch::tick()
         if (fromCommit->commitInfo[0].clearInterrupt) {
             interruptPending = false;
         }
+    }
+
+    if (cpu->instList.size() == 0) {
+        waitForVset = false;
     }
 
     for (threadFetched = 0; threadFetched < numFetchingThreads;
@@ -1499,6 +1505,10 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
     instruction->traceData = NULL;
 #endif
 
+    if (instruction->staticInst->isVectorConfig()) {
+        waitForVset = true;
+    }
+
     // Add instruction to the CPU's list of instructions.
     instruction->setInstListIt(cpu->addInst(instruction));
 
@@ -1662,6 +1672,8 @@ Fetch::fetch(bool &status_change)
     auto *dec_ptr = decoder[tid];
     const Addr pc_mask = dec_ptr->pcMask();
 
+    auto stallDuetoVset = false;
+
     // Loop through instruction memory from the cache.
     // Keep issuing while fetchWidth is available and branch is not
     // predicted taken
@@ -1670,7 +1682,7 @@ Fetch::fetch(bool &status_change)
     bool cond_taken_backward = false;
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize &&
            !(predictedBranch && !currentFetchTargetInLoop) && !quiesce &&
-           !ftqEmpty() && !exit_loopbuffer_this_cycle) {
+           !ftqEmpty() && !exit_loopbuffer_this_cycle && !waitForVset) {
         // We need to process more memory if we aren't going to get a
         // StaticInst from the rom, the current macroop, or what's already
         // in the decoder.
@@ -1738,8 +1750,8 @@ Fetch::fetch(bool &status_change)
                         pc_offset = 0;
                     }
                 } else {
-                    // We need more bytes for this instruction so blk_offset and
-                    // pc_offset will be updated
+                    // We need more bytes for this instruction so blkOffset and
+                    // pcOffset will be updated
                     break;
                 }
             }
@@ -1825,6 +1837,11 @@ Fetch::fetch(bool &status_change)
         // Re-evaluate whether the next instruction to fetch is in micro-op ROM
         // or not.
         in_rom = isRomMicroPC(this_pc.microPC());
+    }
+
+    DPRINTF(Fetch, "FetchQue start dumping\n");
+    for (auto it : fetchQueue[tid]) {
+        DPRINTF(Fetch, "inst: %s\n", it->staticInst->disassemble(it->pcState().instAddr()));
     }
 
     for (int i = 0;i < fetchWidth;i++) {

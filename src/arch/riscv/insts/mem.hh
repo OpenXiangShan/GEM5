@@ -48,8 +48,8 @@ class MemInst : public RiscvStaticInst
     int64_t offset;
     Request::Flags memAccessFlags;
 
-    MemInst(const char *mnem, ExtMachInst _machInst, OpClass __opClass)
-        : RiscvStaticInst(mnem, _machInst, __opClass), offset(0)
+    MemInst(const char *mnem, ExtMachInst _extMachInst, OpClass __opClass)
+        : RiscvStaticInst(mnem, _extMachInst, __opClass), offset(0)
     {}
 };
 

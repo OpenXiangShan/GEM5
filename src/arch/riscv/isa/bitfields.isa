@@ -129,3 +129,27 @@ def bitfield BIT24         <24>;
 def bitfield RNUM       <23:20>;
 def bitfield KFUNCT5    <29:25>;
 def bitfield BS         <31:30>;
+
+// Vector instructions
+def bitfield VFUNCT6    <31:26>;
+def bitfield VFUNCT5    <31:27>;
+def bitfield VFUNCT3    <27:25>;
+def bitfield VFUNCT2    <26:25>;
+
+def bitfield VS3        <11:7>;
+def bitfield VS2        <24:20>;
+def bitfield VS1        <19:15>;
+def bitfield VD         <11:7>;
+
+def bitfield NF         <31:29>;
+def bitfield MEW        <28:28>;
+def bitfield MOP        <27:26>;
+def bitfield VM         <25>;
+def bitfield LUMOP      <24:20>;
+def bitfield SUMOP      <24:20>;
+def bitfield WIDTH      <14:12>;
+
+def bitfield BIT31      <31>;
+def bitfield BIT30      <30>;
+def bitfield SIMM5     <19:15>;
+def bitfield SIMM3     <17:15>;

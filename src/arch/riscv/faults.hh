@@ -169,7 +169,7 @@ class InstFault : public RiscvFault
         : RiscvFault(n, FaultType::OTHERS, INST_ILLEGAL), _inst(inst)
     {}
 
-    RegVal trap_value() const override { return _inst; }
+    RegVal trap_value() const override { return _inst.instBits; }
 };
 
 class UnknownInstFault : public InstFault

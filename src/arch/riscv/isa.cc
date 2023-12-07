@@ -41,6 +41,7 @@
 #include "arch/riscv/regs/float.hh"
 #include "arch/riscv/regs/int.hh"
 #include "arch/riscv/regs/misc.hh"
+#include "arch/riscv/regs/vector.hh"
 #include "base/bitfield.hh"
 #include "base/compiler.hh"
 #include "base/logging.hh"
@@ -52,6 +53,7 @@
 #include "debug/LLSC.hh"
 #include "debug/MiscRegs.hh"
 #include "debug/RiscvMisc.hh"
+#include "debug/VecRegs.hh"
 #include "mem/packet.hh"
 #include "mem/request.hh"
 #include "params/RiscvISA.hh"
@@ -190,24 +192,32 @@ namespace RiscvISA
     [MISCREG_FFLAGS]        = "FFLAGS",
     [MISCREG_FRM]           = "FRM",
 
+    [MISCREG_VSTART]        = "VSTART",
+    [MISCREG_VXSAT]         = "VXSAT",
+    [MISCREG_VXRM]          = "VXRM",
+    [MISCREG_VCSR]          = "VCSR",
+    [MISCREG_VL]            = "VL",
+    [MISCREG_VTYPE]         = "VTYPE",
+    [MISCREG_VLENB]         = "VLENB",
+
     [MISCREG_NMIVEC]        = "NMIVEC",
     [MISCREG_NMIE]          = "NMIE",
     [MISCREG_NMIP]          = "NMIP",
 }};
 
+
+
 ISA::ISA(const Params &p) : BaseISA(p)
 {
-    _regClasses.emplace_back(IntRegClass, int_reg::NumRegs, debug::IntRegs);
-    _regClasses.emplace_back(FloatRegClass, float_reg::NumRegs,
-            debug::FloatRegs);
+    _regClasses.emplace_back(IntRegClass, int_reg::NumRegs, debug::IntRegs, sizeof(RegVal));
+    _regClasses.emplace_back(FloatRegClass, float_reg::NumRegs, debug::FloatRegs, sizeof(RegVal));
 
-    /* Not applicable to RISCV */
-    _regClasses.emplace_back(VecRegClass, 1, debug::IntRegs);
-    _regClasses.emplace_back(VecElemClass, 2, debug::IntRegs);
-    _regClasses.emplace_back(VecPredRegClass, 1, debug::IntRegs);
-    _regClasses.emplace_back(CCRegClass, 0, debug::IntRegs);
+    _regClasses.emplace_back(VecRegClass, NumVecRegs, debug::VecRegs, RiscvISA::VLENB);
+    _regClasses.emplace_back(VecElemClass, NumVecElemPerVecReg * NumVecRegs, debug::VecRegs, sizeof(RegVal));
+    _regClasses.emplace_back(VecPredRegClass, 1, debug::VecRegs, RiscvISA::VLENB);
+    _regClasses.emplace_back(CCRegClass, 0, debug::IntRegs, sizeof(RegVal));
 
-    _regClasses.emplace_back(MiscRegClass, NUM_MISCREGS, debug::MiscRegs);
+    _regClasses.emplace_back(MiscRegClass, NUM_MISCREGS, debug::MiscRegs, sizeof(RegVal));
 
     miscRegFile.resize(NUM_MISCREGS);
     clear();
@@ -233,6 +243,8 @@ ISA::copyRegsFrom(ThreadContext *src)
         tc->setReg(reg, src->getReg(reg));
     }
 
+    // TODO: Copy vector regs.
+
     // Lastly copy PC/NPC
     tc->pcState(src->pcState());
 }
@@ -242,7 +254,7 @@ void ISA::clear()
     std::fill(miscRegFile.begin(), miscRegFile.end(), 0);
 
     miscRegFile[MISCREG_PRV] = PRV_M;
-    miscRegFile[MISCREG_ISA] = (2ULL << MXL_OFFSET) | 0x14112D;
+    miscRegFile[MISCREG_ISA] = (2ULL << MXL_OFFSET) | 0x34112D;
     miscRegFile[MISCREG_VENDORID] = 0;
     miscRegFile[MISCREG_ARCHID] = 0;
     miscRegFile[MISCREG_IMPID] = 0;
@@ -251,7 +263,8 @@ void ISA::clear()
         miscRegFile[MISCREG_STATUS] = (2ULL << UXL_OFFSET) | (2ULL << SXL_OFFSET);
     } else {
         // SE assumes process starts with FS on
-        miscRegFile[MISCREG_STATUS] = (2ULL << UXL_OFFSET) | (2ULL << SXL_OFFSET) | (1ULL << FS_OFFSET);
+        miscRegFile[MISCREG_STATUS] = (2ULL << UXL_OFFSET) | (2ULL << SXL_OFFSET) |
+                                    (1ULL << FS_OFFSET);
     }
     miscRegFile[MISCREG_MCOUNTEREN] = 0x7;
     miscRegFile[MISCREG_SCOUNTEREN] = 0x7;
@@ -260,6 +273,8 @@ void ISA::clear()
     miscRegFile[MISCREG_TSELECT] = 1;
     // NMI is always enabled.
     miscRegFile[MISCREG_NMIE] = 1;
+    // sync with NEMU
+    miscRegFile[MISCREG_VTYPE] = (1lu<<63);
 }
 
 bool
@@ -356,6 +371,17 @@ ISA::readMiscReg(int misc_reg)
             else
                 return mbits(val, 63, 1);
         }
+      case MISCREG_VLENB:
+        {
+            return VLENB;
+        }
+        break;
+      case MISCREG_VCSR:
+        {
+            return readMiscRegNoEffect(MISCREG_VXSAT) |
+                  (readMiscRegNoEffect(MISCREG_VXRM) << 1);
+        }
+        break;
       default:
         // Try reading HPM counters
         // As a placeholder, all HPM counters are just cycle counters
@@ -508,7 +534,7 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 val |= cur & (STATUS_SXL_MASK | STATUS_UXL_MASK);
                 DPRINTF(RiscvMisc, "Value after or: %#lx\n", val);
                 STATUS mstatus = val;
-                mstatus.sd = mstatus.fs == 0x3;
+                mstatus.sd = mstatus.fs == 0x3 || mstatus.vs == 0x3;
                 setMiscRegNoEffect(misc_reg, mstatus);
             }
             break;
@@ -518,6 +544,50 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 DPRINTF(RiscvMisc, "Will set fs\n");
                 STATUS mstatus = readMiscRegNoEffect(MISCREG_STATUS);
                 mstatus.fs = 3;
+                mstatus.sd = 1;
+                setMiscRegNoEffect(MISCREG_STATUS, mstatus);
+                setMiscRegNoEffect(misc_reg, val);
+            }
+            break;
+          case MISCREG_VXSAT:
+            {
+                DPRINTF(RiscvMisc, "Will set vs\n");
+                STATUS mstatus = readMiscRegNoEffect(MISCREG_STATUS);
+                mstatus.vs = 3;
+                mstatus.sd = 1;
+                setMiscRegNoEffect(MISCREG_STATUS, mstatus);
+
+                setMiscRegNoEffect(misc_reg, val & 0x1);
+            }
+            break;
+          case MISCREG_VXRM:
+            {
+                DPRINTF(RiscvMisc, "Will set vs\n");
+                STATUS mstatus = readMiscRegNoEffect(MISCREG_STATUS);
+                mstatus.vs = 3;
+                mstatus.sd = 1;
+                setMiscRegNoEffect(MISCREG_STATUS, mstatus);
+
+                setMiscRegNoEffect(misc_reg, val & 0x3);
+            }
+            break;
+          case MISCREG_VCSR:
+            {
+                DPRINTF(RiscvMisc, "Will set vs\n");
+                STATUS mstatus = readMiscRegNoEffect(MISCREG_STATUS);
+                mstatus.vs = 3;
+                mstatus.sd = 1;
+                setMiscRegNoEffect(MISCREG_STATUS, mstatus);
+
+                setMiscRegNoEffect(MISCREG_VXSAT, val & 0x1);
+                setMiscRegNoEffect(MISCREG_VXRM, (val & 0x6) >> 1);
+            }
+            break;
+          case MISCREG_VTYPE:
+            {
+                DPRINTF(RiscvMisc, "Will set vs\n");
+                STATUS mstatus = readMiscRegNoEffect(MISCREG_STATUS);
+                mstatus.vs = 3;
                 mstatus.sd = 1;
                 setMiscRegNoEffect(MISCREG_STATUS, mstatus);
                 setMiscRegNoEffect(misc_reg, val);

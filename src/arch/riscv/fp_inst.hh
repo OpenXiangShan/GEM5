@@ -40,4 +40,5 @@
             return std::make_shared<IllegalInstFault>("RM fault", machInst);\
         softfloat_roundingMode = rm;                                        \
 
+
 #endif // __ARCH_RISCV_FP_INST_HH__

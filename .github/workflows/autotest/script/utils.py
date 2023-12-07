@@ -12,16 +12,17 @@ import multiprocessing
 # 初始化线程池(实际上是核数)
 
 manger = multiprocessing.Manager()
-tpoolId = manger.dict({0:[]})
+tpoolId = manger.dict({0: []})
 tlock = manger.Lock()
 tcfgfile = {}
 
 def tpool_init(cfgfile):
-    global tpoolId,tlock,tcfgfile
+    global tpoolId, tlock, tcfgfile
     tcfgfile = cfgfile
     srange = cfgfile['iteration']['srange'].split(',')
-    
-    tpoolId = manger.dict({0:[i for i in range(int(srange[0]), int(srange[-1]))]})
+
+    tpoolId = manger.dict(
+        {0: [i for i in range(int(srange[0]), int(srange[-1]))]})
     tlock = manger.Lock()
 
 def __dy_alloc(n):
@@ -42,22 +43,22 @@ def __dy_alloc(n):
             print('no free cores found. will wait for free cores')
         tlock.release()
         time.sleep(1)
-        
+
 #numa_args = f"numactl -m {numa_info[0]} -C {numa_info[1]}-{numa_info[2]}"
+
 def __st_alloc(n):
     global tpoolId, tlock, tcfgfile
-    temp_flag=False
+    temp_flag = False
     while True:
         tlock.acquire()
         if len(tpoolId[0]) >= n:
-            tpoolId[0].sort()
             alloced = [tpoolId[0][0]]
             if n == 1:
                 tpoolId[0] = tpoolId[0][1:]
                 tlock.release()
-                return (alloced[0],alloced[-1])
+                return (alloced[0], alloced[-1])
             st = 0
-            for i in range(1,len(tpoolId[0])):
+            for i in range(1, len(tpoolId[0])):
                 if tpoolId[0][i-1]+1 == tpoolId[0][i]:
                     alloced.append(tpoolId[0][i])
                     if len(alloced) == n:
@@ -72,34 +73,36 @@ def __st_alloc(n):
             print('no free cores found. will wait for free cores')
         tlock.release()
         time.sleep(1)
-            
+
 def tpool_alloc(n):
-    if n is None :
+    if n is None:
         warning("can't find the numacores specArg,using numacores=0")
         return '', [-1, -1]
     if int(n) < 1:
-        return '',[-1,-1]
-    numa_args=''
-    M=None
-    C=None
+        return '', [-1, -1]
+    numa_args = ''
+    M = None
+    C = None
     if tcfgfile['iteration']['smode'] == 'st':
         C = __st_alloc(int(n))
         M = str(((C[0]) % 128) // 64)
     elif tcfgfile['iteration']['smode'] == 'dy':
-        M,C = __dy_alloc(int(n))
+        M, C = __dy_alloc(int(n))
     else:
         print("error iteration-smode")
         exit(-1)
     numa_args = f"numactl -m {M} -C {C[0]}-{C[1]}"
-    return numa_args , C
+    return numa_args, C
+
 def tpool_free(n):
     global tpoolId, tlock, tcfgfile
     if n[0] < 0:
         return
     if tcfgfile['iteration']['smode'] == 'st':
         tlock.acquire()
-        for i in range(n[0],n[1]+1):
-            tpoolId[0]+=[i]
+        for i in range(n[0], n[1]+1):
+            tpoolId[0] += [i]
+        tpoolId[0].sort()
         tlock.release()
 
 
@@ -136,6 +139,8 @@ class CFGReader:
                         warning(
                             'cfgReader: [can\'t fint the var] ' + section + ":" + rep)
                 self.cfg_map[section].update({options[0]: result})
+        self.cfg_map['global'].update(
+            {'runtime': time.strftime('%Y-%m-%d-%H-%M-%S', time.localtime())})
 
     def __getitem__(self, index):
         return self.cfg_map[index]
@@ -159,6 +164,7 @@ def splitfile(str: str, i):
     return str[subidx+2:]
 
 # 返回文件名和子log文件路径
+
 def get_file_list(path: str):
     subpaths = path.split(';')
     sargs = []
@@ -175,7 +181,7 @@ def get_file_list(path: str):
         dual = dual.strip()
         dual = ' '.join(dual.split())
         # 参数输入模式,格式:'参数 log路径 0(必选) '
-        #比如: -d=0 -w=1 test 0
+        # 比如: -d=0 -w=1 test 0
         if len(dual.split(' ')) > 2:
             info = dual[0:dual.rfind(' ')]
             idx = info.rfind(' ')
@@ -184,12 +190,12 @@ def get_file_list(path: str):
             sargs.append(info)
             sublogs.append(name)
             continue
-        #路径搜索模式,格式:'bin路径 分类级数'
-        #比如: test/binfile.bin 2
+        # 路径搜索模式,格式:'bin路径 分类级数'
+        # 比如: test/binfile.bin 2
         if dual == '':
             continue
         idx = dual.rfind(' ')
-        info = dual 
+        info = dual
         ser = 1
         if idx > 0 and dual[idx+1:].isdigit():
             info = dual[0:idx]
@@ -204,9 +210,6 @@ def get_file_list(path: str):
             name = os.path.splitext(name)[0]
             sublogs.append(name)
     return sargs, sublogs
-
-
-
 
 
 def free_numa_cores(n):

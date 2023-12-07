@@ -159,6 +159,7 @@ class BaseO3CPU(BaseCPU):
                                       "registers")
     numPhysVecPredRegs = Param.Unsigned(32, "Number of physical predicate "
                                       "registers")
+
     # most ISAs don't use condition-code regs, so default is 0
     numPhysCCRegs = Param.Unsigned(0, "Number of physical cc registers")
     numIQEntries = Param.Unsigned(192, "Number of instruction queue entries")

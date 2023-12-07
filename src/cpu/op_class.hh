@@ -107,6 +107,33 @@ static const OpClass IprAccessOp = enums::IprAccess;
 static const OpClass InstPrefetchOp = enums::InstPrefetch;
 static const OpClass FMAMulOp = enums::FMAMul;
 static const OpClass FMAAccOp = enums::FMAAcc;
+
+// riscv vload/store
+static const OpClass VectorUnitStrideLoadOp = enums::VectorUnitStrideLoad;
+static const OpClass VectorUnitStrideStoreOp = enums::VectorUnitStrideStore;
+static const OpClass VectorUnitStrideMaskLoadOp
+             = enums::VectorUnitStrideMaskLoad;
+static const OpClass VectorUnitStrideMaskStoreOp
+             = enums::VectorUnitStrideMaskStore;
+static const OpClass VectorStridedLoadOp = enums::VectorStridedLoad;
+static const OpClass VectorStridedStoreOp = enums::VectorStridedStore;
+static const OpClass VectorIndexedLoadOp = enums::VectorIndexedLoad;
+static const OpClass VectorIndexedStoreOp = enums::VectorIndexedStore;
+static const OpClass VectorUnitStrideFaultOnlyFirstLoadOp
+             = enums::VectorUnitStrideFaultOnlyFirstLoad;
+static const OpClass VectorWholeRegisterLoadOp
+             = enums::VectorWholeRegisterLoad;
+static const OpClass VectorWholeRegisterStoreOp
+             = enums::VectorWholeRegisterStore;
+
+static const OpClass VectorIntegerArithOp = enums::VectorIntegerArith;
+static const OpClass VectorFloatArithOp = enums::VectorFloatArith;
+static const OpClass VectorFloatConvertOp = enums::VectorFloatConvert;
+static const OpClass VectorIntegerReduceOp = enums::VectorIntegerReduce;
+static const OpClass VectorFloatReduceOp = enums::VectorFloatReduce;
+static const OpClass VectorMiscOp = enums::VectorMisc;
+static const OpClass VectorIntegerExtensionOp = enums::VectorIntegerExtension;
+static const OpClass VectorConfigOp = enums::VectorConfig;
 static const OpClass Num_OpClasses = enums::Num_OpClass;
 
 } // namespace gem5

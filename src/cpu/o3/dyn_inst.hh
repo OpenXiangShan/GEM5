@@ -1220,11 +1220,58 @@ class DynInst : public ExecContext, public RefCounted
     void printDisassembly() const
     {
         DPRINTF(CommitTrace,
-                "[sn:%lu] pc:%#lx %s, rdy: %lu, comp: %lu, addr: %#lx\n",
+                "[sn:%lu pc:%#lx] %s",
                 seqNum, pcState().instAddr(),
-                staticInst->disassemble(pcState().instAddr()).c_str(),
-                readyTick, completionTick, physEffAddr);
+                staticInst->disassemble(pcState().instAddr()));
+        if (instResult.size() > 0) {
+            DPRINTFR(CommitTrace, ", res: %#lx", instResult.front().as<uint64_t>());
+        }
+        else if (numDestRegs() > 0 && isVector()) {
+            uint64_t val[RiscvISA::NumVecElemPerVecReg];
+            cpu->getArchReg(destRegIdx(0), val, threadNumber);
+            std::string s_val;
+            for (int j=RiscvISA::NumVecElemPerVecReg-1; j>=0; j--) {
+                s_val += csprintf("%016lx", val[j]);
+                if (j != 0) {
+                    s_val+="_";
+                }
+            }
+            DPRINTFR(CommitTrace, ", res: %s", s_val);
+        }
+        if (isMemRef()) {
+            DPRINTFR(CommitTrace, ", paddr: %#lx", physEffAddr);
+        }
+        DPRINTFR(CommitTrace, "\n");
     }
+
+    std::string genDisassembly() const
+    {
+        std::string str = "";
+        str += csprintf("[sn:%lu pc:%#lx] %s",
+                seqNum, pcState().instAddr(),
+                staticInst->disassemble(pcState().instAddr()));
+        if (instResult.size() > 0) {
+            str += csprintf(", res: %#lx", instResult.front().as<uint64_t>());
+        }
+        else if (numDestRegs() > 0 && isVector()) {
+            uint64_t val[RiscvISA::NumVecElemPerVecReg];
+            cpu->getArchReg(destRegIdx(0), val, threadNumber);
+            std::string s_val;
+            for (int j=RiscvISA::NumVecElemPerVecReg-1; j>=0; j--) {
+                s_val += csprintf("%016lx", val[j]);
+                if (j != 0) {
+                    s_val+="_";
+                }
+            }
+            str += csprintf(", res: %s", s_val);
+        }
+        if (isMemRef()) {
+            str += csprintf(", paddr: %#lx", physEffAddr);
+        }
+        return str;
+    }
+
+
     void
     setFsqId(unsigned id)
     {

@@ -42,6 +42,7 @@
 #ifndef __CPU_BASE_HH__
 #define __CPU_BASE_HH__
 
+#include <queue>
 #include <vector>
 
 // Before we do anything else, check if this build is the NULL ISA,
@@ -72,6 +73,16 @@ class BaseCPU;
 struct BaseCPUParams;
 class CheckerCPU;
 class ThreadContext;
+
+enum CsrRegIndex
+{
+  mode , mstatus, sstatus, mepc, sepc, mtval, stval,
+  mtvec, stvec  , mcause , scause, satp,
+  mip, mie,
+  mscratch, sscratch,
+  mideleg, medeleg,
+  pc
+};
 
 struct AddressMonitor
 {
@@ -109,10 +120,10 @@ class CPUProgressEvent : public Event
 
 struct DiffAllStates
 {
-    uint64_t gem5RegFile[DIFFTEST_NR_REG];
-    uint64_t referenceRegFile[DIFFTEST_NR_REG];
+    riscv64_CPU_regfile gem5RegFile;
+    riscv64_CPU_regfile referenceRegFile;
     DiffState diff;
-    NemuProxy *proxy;
+    RefProxy *proxy;
 
     bool scFenceInFlight{false};
     bool hasCommit{false};
@@ -684,11 +695,18 @@ class BaseCPU : public ClockedObject
         gem5::StaticInstPtr inst;
         // the result of currently inst
         gem5::RegVal result;
+        uint64_t vecResult[RiscvISA::NumVecElemPerVecReg];
         // the lambda expr of get srcOperand
         gem5::RegVal getSrcReg(const gem5::RegId &regid) { return 0; };
         const gem5::PCStateBase *pc;
         bool curInstStrictOrdered{false};
         gem5::Addr physEffAddr;
+        // Register address causing difftest error
+        bool errorRegsValue[96];// 32 regs + 32fprs +32 vprs
+        bool errorCsrsValue[32];// CsrRegIndex
+        bool errorPcValue;
+
+        std::queue<std::string> lastCommittedMsg;
     } diffInfo;
 
 
@@ -710,9 +728,11 @@ class BaseCPU : public ClockedObject
 
     inline bool difftestEnabled() const { return enableDifftest; }
 
+    void displayGem5Regs();
+
     void difftestRaiseIntr(uint64_t no);
 
-    void setSCSuccess(bool success);
+    void setSCSuccess(bool success, paddr_t addr);
 
     void setExceptionGuideExecInfo(uint64_t exception_num, uint64_t mtval,
                           uint64_t stval,
