@@ -107,6 +107,7 @@ class SIMD_Unit(FUDesc):
                OpDesc(opClass='SimdReduceAlu'),
                OpDesc(opClass='SimdReduceCmp'),
                OpDesc(opClass='SimdFloatReduceAdd'),
+               OpDesc(opClass='SimdFloatReduceCmp'),
 
                OpDesc(opClass='VectorIntegerArith'),
                OpDesc(opClass='VectorFloatArith'),
@@ -135,6 +136,7 @@ class ReadPort(FUDesc):
 
 class WritePort(FUDesc):
     opList = [ OpDesc(opClass='MemWrite',opLat=4),
+               OpDesc(opClass='FloatMemWrite'),
                OpDesc(opClass='VectorUnitStrideStore'),
                OpDesc(opClass='VectorUnitStrideMaskStore'),
                OpDesc(opClass='VectorStridedStore'),
