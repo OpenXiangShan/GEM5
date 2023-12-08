@@ -380,14 +380,20 @@ Walker::dol2TLBHit()
         l2tlbFault =
             pmp->pmpCheck(dol2TLBHitrequestors.req, dol2TLBHitrequestors.mode,
                           pmodel2, dol2TLBHitrequestors.tc);
-        assert(l2tlbFault == NoFault);
-
-
-        tlb->insert(dol2TLBHitrequestors.entry.vaddr,
+        //assert(l2tlbFault == NoFault);
+        if (l2tlbFault == NoFault){
+            tlb->insert(dol2TLBHitrequestors.entry.vaddr,
                     dol2TLBHitrequestors.entry, false);
-        dol2TLBHitrequestors.translation->finish(
-            l2tlbFault, dol2TLBHitrequestors.req, dol2TLBHitrequestors.tc,
-            dol2TLBHitrequestors.mode);
+            dol2TLBHitrequestors.translation->finish(
+                l2tlbFault, dol2TLBHitrequestors.req, dol2TLBHitrequestors.tc,
+                dol2TLBHitrequestors.mode);
+        }
+        else{
+            warn("pmp fault in l2tlb\n");
+            dol2TLBHitrequestors.translation->finish(
+                l2tlbFault, dol2TLBHitrequestors.req, dol2TLBHitrequestors.tc,
+                dol2TLBHitrequestors.mode);
+        }
 
         DPRINTF(
             PageTableWalker2,

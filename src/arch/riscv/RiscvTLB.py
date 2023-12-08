@@ -85,8 +85,8 @@ class RiscvTLB(BaseTLB):
     isOpenNextline = Param.Bool(True, "open auto adjustment nextline")
     #G_pre_size = Param.Int(32,"g_pre size")
     forward_pre_size = Param.Int(32,"g_pre size")
-    open_forward_pre = Param.Bool(True,"open g_pre")
-    open_back_pre = Param.Bool(True,"open back_pre")
+    open_forward_pre = Param.Bool(False,"open g_pre")
+    open_back_pre = Param.Bool(False,"open back_pre")
     initial_back_pre_precision_value = Param.Bool(False,"initial value of back_pre_precision")
     initial_forward_pre_precision_value = Param.Bool(False,"initial value of forward_pre_precision")
 
