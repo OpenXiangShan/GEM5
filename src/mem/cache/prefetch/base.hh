@@ -458,10 +458,6 @@ class Base : public ClockedObject
 
     virtual void setCache(BaseCache *_cache);
 
-    virtual void setArchDBer(ArchDBer *arch_db_er) {
-        archDBer = arch_db_er;
-    }
-
     /**
      * Notify prefetcher of cache access (may be any access or just
      * misses, depending on cache parameters.)

@@ -947,23 +947,5 @@ XSCompositePrefetcher::setCache(BaseCache *_cache)
         ipcp->setCache(_cache);
 }
 
-void
-XSCompositePrefetcher::setArchDBer(ArchDBer *arch_db_er)
-{
-    Base::setArchDBer(arch_db_er);
-
-    largeBOP->setArchDBer(arch_db_er);
-    smallBOP->setArchDBer(arch_db_er);
-    learnedBOP->setArchDBer(arch_db_er);
-
-    berti->setArchDBer(arch_db_er);
-
-    if (cmc)
-        cmc->setArchDBer(arch_db_er);
-
-    if (ipcp)
-        ipcp->setArchDBer(arch_db_er);
-}
-
 }  // prefetch
 }  // gem5
