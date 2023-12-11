@@ -167,7 +167,6 @@ FTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Fu
     Addr base_target = stagePreds[getDelay()-1].indirectTarget;
     for (int s = getDelay(); s < stagePreds.size(); ++s) { // need modify
         Addr useTarget;
-        DPRINTF(FTBITTAGE || debugFlag, "indirect target=%#lx\n", useTarget);
         if (main_found && !use_alt_pred && !use_base_table) {
             taken = main_entry.counter >= 2;
             useTarget = main_entry.target;
@@ -181,6 +180,7 @@ FTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Fu
             useTarget = base_target;
             warn("no target found\n");
         }
+        DPRINTF(FTBITTAGE || debugFlag, "indirect target=%#lx\n", useTarget);
         if (taken) {
             stagePreds[s].indirectTarget = useTarget;
         }

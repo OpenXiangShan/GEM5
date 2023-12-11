@@ -37,7 +37,7 @@ typedef uint16_t ioaddr_t;
 
 
 
-typedef struct
+struct riscv64_CPU_regfile
 {
     union
     {
@@ -81,8 +81,7 @@ typedef struct
         return ((uint64_t*)this)[x];
     }
 
-} riscv64_CPU_regfile;
-
+};
 
 // 0~31: GPRs, 32~63 FPRs
 //
