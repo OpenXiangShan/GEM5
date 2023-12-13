@@ -133,6 +133,9 @@ class BaseCPU : public ClockedObject
 {
   protected:
 
+    const unsigned IntRegIndexBase = 0;
+    const unsigned FPRegIndexBase = 32;
+
     /// Instruction count used for SPARC misc register
     /// @todo unify this with the counters that cpus individually keep
     Tick instCnt;
