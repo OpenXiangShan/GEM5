@@ -853,56 +853,51 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
     if (diffInfo.inst->isStoreConditional()) {
         diffAllStates->proxy->uarchstatus_cpy(&diffAllStates->diff.sync, DIFFTEST_TO_REF);
     }
-    if (is_mmio) {
-        // ismmio
-        diffAllStates->diff.dynamic_config.ignore_illegal_mem_access = true;
-        diffAllStates->proxy->update_config(&diffAllStates->diff.dynamic_config);
-    }
 
     if (diffAllStates->diff.will_handle_intr) {
         diffAllStates->proxy->regcpy(diffAllStates->diff.nemu_reg, REF_TO_DIFFTEST);
         diffAllStates->diff.nemu_this_pc = diffAllStates->diff.nemu_reg->pc;
         diffAllStates->diff.will_handle_intr = false;
     }
-    // difftest step start
-    DPRINTF(Diff, "Step NEMU\n");
-    diffAllStates->proxy->exec(1);
-    diffAllStates->proxy->regcpy(diffAllStates->diff.nemu_reg, REF_TO_DIFFTEST);
-
-    uint64_t next_pc = diffAllStates->diff.nemu_reg->pc;
-
-    // replace with "this pc" for checking
-    diffAllStates->diff.nemu_commit_inst_pc = diffAllStates->diff.nemu_this_pc;
-    diffAllStates->diff.nemu_this_pc = next_pc;
-    diffAllStates->diff.npc = next_pc;
-    // difftest step end
 
     if (is_mmio) {
-        // ismmio
-        diffAllStates->diff.dynamic_config.ignore_illegal_mem_access = false;
-        diffAllStates->proxy->update_config(&diffAllStates->diff.dynamic_config);
+        DPRINTF(Diff, "Skip step NEMU due to mmio access\n");
+        diffAllStates->referenceRegFile.pc = diffInfo.pc->as<RiscvISA::PCState>().npc();
+        if (diffInfo.inst->numDestRegs() > 0) {
+            assert(diffInfo.inst->numDestRegs()==1);
+            const auto &dest = diffInfo.inst->destRegIdx(0);
+            unsigned index = dest.index() + (dest.isFloatReg() ? FPRegIndexBase : IntRegIndexBase);
+            diffAllStates->referenceRegFile[index] = diffInfo.result;
+        }
+        diffAllStates->proxy->regcpy(&(diffAllStates->referenceRegFile), DUT_TO_REF);
+
+        uint64_t next_pc = diffAllStates->diff.nemu_reg->pc;
+        // replace with "this pc" for checking
+        diffAllStates->diff.nemu_commit_inst_pc = diffInfo.pc->instAddr();
+        diffAllStates->diff.nemu_this_pc = next_pc;
+        diffAllStates->diff.npc = next_pc;
+        return std::make_pair(NoneDiff, true);
     }
+    else {
+        // difftest step start
+        DPRINTF(Diff, "Step NEMU\n");
+        diffAllStates->proxy->exec(1);
+        diffAllStates->proxy->regcpy(diffAllStates->diff.nemu_reg, REF_TO_DIFFTEST);
+
+        uint64_t next_pc = diffAllStates->diff.nemu_reg->pc;
+        // replace with "this pc" for checking
+        diffAllStates->diff.nemu_commit_inst_pc = diffAllStates->diff.nemu_this_pc;
+        diffAllStates->diff.nemu_this_pc = next_pc;
+        diffAllStates->diff.npc = next_pc;
+    }
+    // difftest step end
+
     auto gem5_pc = diffInfo.pc->instAddr();
     diffAllStates->gem5RegFile.pc = gem5_pc;
     auto nemu_pc = diffAllStates->diff.nemu_commit_inst_pc;
     DPRINTF(Diff, "NEMU PC: %#10lx, GEM5 PC: %#10lx, inst: %s\n", nemu_pc,
             gem5_pc,
             diffInfo.inst->disassemble(diffInfo.pc->instAddr()).c_str());
-
-    // auto nemu_store_addr = referenceRegFile[DIFFTEST_STORE_ADDR];
-    // if (nemu_store_addr) {
-    //     DPRINTF(ValueCommit, "NEMU store addr: %#lx\n", nemu_store_addr);
-    // }
-
-    // uint8_t gem5_inst[5];
-    // uint8_t nemu_inst[9];
-
-    // int nemu_inst_len = referenceRegFile[DIFFTEST_RVC] ? 2 : 4;
-    // int gem5_inst_len = inst->pcState().compressed() ? 2 : 4;
-
-    // assert(inst->staticInst->asBytes(gem5_inst, 8));
-    // *reinterpret_cast<uint32_t *>(nemu_inst) =
-    //     htole<uint32_t>(referenceRegFile[DIFFTEST_INST_PAYLOAD]);
 
     if (nemu_pc != gem5_pc) {
         // warn("NEMU store addr: %#lx\n", nemu_store_addr);
@@ -1147,12 +1142,6 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                             "Difference might be caused by box,"
                             " ignore it\n");
 
-                } else if (is_mmio) {
-                    warn("Difference might be caused by read %s at %#lx,"
-                         " ignore it\n",
-                         "mmio", diffInfo.physEffAddr);
-                    diffAllStates->referenceRegFile[dest_tag] = gem5_val;
-                    diffAllStates->proxy->regcpy(&(diffAllStates->referenceRegFile), DUT_TO_REF);
                 } else {
                     for (int i = 0; i < diffInfo.inst->numSrcRegs(); i++) {
                         const auto &src = diffInfo.inst->srcRegIdx(i);
