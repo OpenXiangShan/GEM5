@@ -145,6 +145,10 @@ AddOption('--gprof', action='store_true',
           help='Enable support for the gprof profiler')
 AddOption('--pprof', action='store_true',
           help='Enable support for the pprof profiler')
+AddOption('--pgo-prof', action='store_true',
+          help='Enable pgo profiling generation')
+AddOption('--pgo-use', action='store', default=None,
+          help='Use pgo profiling results')
 
 # Inject the built_tools directory into the python path.
 sys.path[1:1] = [ Dir('#build_tools').abspath ]
@@ -383,7 +387,8 @@ for variant_path in variant_paths:
         env.Append(CCFLAGS=['-Wall', '-Wundef', '-Wextra',
                             '-Wno-sign-compare', '-Wno-unused-parameter',
                             '-Wno-unused-variable',
-                            '-Wno-unused-but-set-variable'
+                            '-Wno-unused-private-field',
+                            '-Wno-unused-but-set-variable',
                             ])
 
         # We always compile using C++17
