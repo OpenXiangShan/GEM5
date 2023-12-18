@@ -33,10 +33,11 @@ checkForVariable GEM5_PGO_CPT
 checkForVariable GCPT_RESTORER
 
 printf "\n\nWARNING: I will delete current build directory in 30s!!!\n\n"
-# sleep 30
+sleep 30
 
 # link to pgo gen
 rm -f build
+mkdir -p ./build_pgo_gen
 ln -sf ./build_pgo_gen build
 check $?
 
@@ -64,7 +65,7 @@ $gem5_home/build/RISCV/gem5.opt \
  --mem-type=DRAMsim3 \
  --dramsim3-ini=$gem5_home/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini \
  --bp-type=DecoupledBPUWithFTB --enable-loop-predictor \
- --generic-rv-cpt= \
+ --generic-rv-cpt=$GEM5_PGO_CPT \
  --gcpt-restorer=$GCPT_RESTORER \
  --warmup-insts-no-switch=1000000 --maxinsts=3000000
 check $?
@@ -77,6 +78,7 @@ cd ..
 
 # link build to pgo use
 rm -f build
+mkdir -p ./build_pgo_use
 ln -sf ./build_pgo_use build
 check $?
 

@@ -49,7 +49,7 @@ class Rolling
 
     void operator++(int) { value++; value_interval++; }
 
-    void operator++() { ++*this; }
+    void operator++() { assert(false && "Not implemented\n"); }
 
     void operator+=(Counter v) { value += v; value_interval += v; }
 
