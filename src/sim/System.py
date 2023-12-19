@@ -137,3 +137,5 @@ class System(SimObject):
 
     xiangshan_system = Param.Bool(False, "Simulate Xiangshan system")
     arch_db = Param.ArchDBer(NULL,"arch db for this system")
+
+    enable_riscv_vector = Param.Bool(False, "Enable riscv vector extension")

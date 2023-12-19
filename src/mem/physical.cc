@@ -87,13 +87,14 @@ PhysicalMemory::PhysicalMemory(const std::string& _name,
                                const std::string& gcpt_restorer_path,
                                const std::string& gcpt_path,
                                bool map_to_raw_cpt,
-                               bool auto_unlink_shared_backstore) :
+                               bool auto_unlink_shared_backstore,
+                               bool enable_riscv_vector) :
     _name(_name), size(0), mmapUsingNoReserve(mmap_using_noreserve),
     sharedBackstore(shared_backstore), sharedBackstoreSize(0),
     pageSize(sysconf(_SC_PAGE_SIZE)),
     restoreFromXiangshanCpt(restore_from_gcpt),
     gCptRestorerPath(gcpt_restorer_path),
-    xsCptPath(gcpt_path), mapToRawCpt(map_to_raw_cpt)
+    xsCptPath(gcpt_path), mapToRawCpt(map_to_raw_cpt), riscvVectorGCPTrestore(enable_riscv_vector)
 {
     // Register cleanup callback if requested.
     if (auto_unlink_shared_backstore && !sharedBackstore.empty()) {
@@ -604,6 +605,9 @@ PhysicalMemory::unserializeStoreFrom(std::string filepath,
         warn("gCptRestorerPath: %s\n", gCptRestorerPath.c_str());
 
         uint32_t restorer_size = 0x700;
+        if (riscvVectorGCPTrestore) {
+            restorer_size = 0x1000;
+        }
 
         FILE *fp = fopen(gCptRestorerPath.c_str(), "rb");
         if (!fp) {
