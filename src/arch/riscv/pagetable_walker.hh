@@ -191,10 +191,10 @@ namespace RiscvISA
                 Addr asid, bool from_forward_pre_req, bool from_back_pre_req);
 
             Fault startWalk(Addr ppn, int f_level, bool from_l2tlb,
-                            bool OpenNextline, bool autoOpenNextline,
+                            bool open_nextline, bool auto_openNextline,
                             bool from_forward_pre_req, bool from_back_req);
             Fault startFunctional(Addr &addr, unsigned &logBytes,
-                                  bool OpenNextline, bool autoOpenNextline,
+                                  bool open_nextline, bool auto_openNextline,
                                   bool from_forward_pre_req,
                                   bool from_back_pre_req);
             bool recvPacket(PacketPtr pkt);
@@ -210,7 +210,7 @@ namespace RiscvISA
 
           private:
             void setupWalk(Addr ppn, Addr vaddr, int f_level, bool from_l2tlb,
-                           bool OpenNextline, bool autoOpenNextline,
+                           bool open_nextline, bool auto_openNextline,
                            bool from_forward_pre_req, bool from_back_pre_req);
             Fault stepWalk(PacketPtr &write);
             void sendPackets();
@@ -285,8 +285,8 @@ namespace RiscvISA
         // The number of outstanding walks that can be squashed per cycle.
         unsigned numSquashable;
         bool ptwSquash;
-        bool OpenNextline;
-        bool autoOpenNextline;
+        bool open_nextline;
+        bool auto_openNextline;
         bool is_from_pre_req;
 
         Tick squashHandleTick;
@@ -329,8 +329,8 @@ namespace RiscvISA
             requestorId(sys->getRequestorId(this)),
             numSquashable(params.num_squash_per_cycle),
             ptwSquash(params.ptwSquash),
-            OpenNextline(params.OpenNextline),
-            autoOpenNextline(true),
+            open_nextline(params.OpenNextline),
+            auto_openNextline(true),
             doL2TLBHitEvent([this]{dol2TLBHit();},name())
         {
         }

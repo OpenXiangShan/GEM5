@@ -71,6 +71,8 @@ class TLB : public BaseTLB
     size_t l2tlb_l2_size;
     size_t l2tlb_l3_size;
     size_t l2tlb_sp_size;
+    size_t l2tlb_line_size;
+    uint64_t regulation_num;
     std::vector<TlbEntry> tlb;  // our TLB
     TlbEntryTrie trie;          // for quick access
     EntryList freeList;         // free entries

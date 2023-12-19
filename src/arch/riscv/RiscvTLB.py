@@ -77,6 +77,8 @@ class RiscvTLB(BaseTLB):
     l2tlb_l2_size = Param.Int(64, "l2TLB_l2 size")
     l2tlb_l3_size = Param.Int(512, "l2TLB_l3 size")
     l2tlb_sp_size = Param.Int(16, "l2TLB_sp size")
+    l2tlb_line_size = Param.Int(8, "l2TLB_line size")
+    regulation_num = Param.Int(70000, "train nextline num")
     walker = Param.RiscvPagetableWalker(\
             RiscvPagetableWalker(), "page table walker")
     # Grab the pma_checker from the MMU

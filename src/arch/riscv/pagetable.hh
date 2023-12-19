@@ -65,6 +65,7 @@ const int L_L2L2 = 2;
 const int L_L2L3 = 3;
 const int L_L2sp1 = 4;
 const int L_L2sp2 = 5;
+const double default_nextline_precision = 0.09;
 
 BitUnion64(PTESv39)
     Bitfield<53, 10> ppn;
