@@ -491,6 +491,9 @@ def addCommonOptions(parser):
     parser.add_argument("--dump-loop-pred", action='store_true', default=False,
             help="Dump loop predictor logs at exit")
 
+    parser.add_argument("--enable-riscv-vector", action="store_true", default=False,
+            help="enable riscv vector extension (need vector-supported gcpt restore and diff-ref-so)")
+
 
 def addSEOptions(parser):
     # Benchmark options

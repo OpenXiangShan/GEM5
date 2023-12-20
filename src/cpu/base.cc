@@ -158,7 +158,8 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
       warmupInstCount(p.warmupInstCount),
       enableDifftest(p.enable_difftest),
       dumpCommitFlag(p.dump_commit),
-      dumpStartNum(p.dump_start)
+      dumpStartNum(p.dump_start),
+      enableRVV(p.enable_riscv_vector)
 {
     // if Python did not provide a valid ID, do it here
     if (_cpuId == -1 ) {
@@ -926,40 +927,90 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
     DPRINTF(Diff, "MachInst: %#lx\n", machInst);
 
 
-    if (diffInfo.inst->isVector()) {
-        readGem5Regs();
-        uint64_t* nemu_val = (uint64_t*)&(diffAllStates->referenceRegFile.vr[0]);
-        uint64_t* gem5_val = (uint64_t*)&(diffAllStates->gem5RegFile.vr[0]);
-        bool maybe_error = false;
-        int error_idx = 0;
-        for (int i=0; i < RiscvISA::NumVecElemPerVecReg * 32; i++) {
-            if (nemu_val[i] != gem5_val[i]) {
-                // diff_at = ValueDiff;
-                maybe_error = true;
-                error_idx = (i >> 1) * 2;
-                break;
+    if (enableRVV) {
+        if (diffInfo.inst->isVector()) {
+            readGem5Regs();
+            uint64_t* nemu_val = (uint64_t*)&(diffAllStates->referenceRegFile.vr[0]);
+            uint64_t* gem5_val = (uint64_t*)&(diffAllStates->gem5RegFile.vr[0]);
+            bool maybe_error = false;
+            int error_idx = 0;
+            for (int i=0; i < RiscvISA::NumVecElemPerVecReg * 32; i++) {
+                if (nemu_val[i] != gem5_val[i]) {
+                    // diff_at = ValueDiff;
+                    maybe_error = true;
+                    error_idx = (i >> 1) * 2;
+                    break;
+                }
+            }
+
+            if (maybe_error) {
+                std::string gem5_val_, nemu_val_;
+                for (int j=RiscvISA::NumVecElemPerVecReg-1; j>=0; j--) {
+                    gem5_val_ += csprintf("%016lx", gem5_val[j + error_idx]);
+                    if (j != 0) {
+                        gem5_val_+="_";
+                    }
+                }
+                for (int j=RiscvISA::NumVecElemPerVecReg-1; j>=0; j--) {
+                    nemu_val_ += csprintf("%016lx", nemu_val[j + error_idx]);
+                    if (j != 0) {
+                        nemu_val_ += "_";
+                    }
+                }
+                warn("Inst [sn:%lli] pc: %#lx, msg: %s\n", seq, diffInfo.pc->instAddr(),
+                        diffInfo.lastCommittedMsg.back().c_str());
+                warn("May be diff at v%d\n Ref  value: %s\n GEM5 value: %s\n",
+                    (error_idx>>1), nemu_val_, gem5_val_);
+                diff_at = ValueDiff;
             }
         }
 
-        if (maybe_error) {
-            std::string gem5_val_, nemu_val_;
-            for (int j=RiscvISA::NumVecElemPerVecReg-1; j>=0; j--) {
-                gem5_val_ += csprintf("%016lx", gem5_val[j + error_idx]);
-                if (j != 0) {
-                    gem5_val_+="_";
-                }
+        // vtype
+        uint64_t gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VTYPE, tid);
+        diffAllStates->gem5RegFile.vtype = gem5_val;
+        uint64_t ref_val = diffAllStates->referenceRegFile.vtype;
+        if (gem5_val != ref_val) {
+            warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
+                    "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
+                    "vtype", ref_val, gem5_val);
+            if (!diff_at) {
+                diff_at = ValueDiff;
             }
-            for (int j=RiscvISA::NumVecElemPerVecReg-1; j>=0; j--) {
-                nemu_val_ += csprintf("%016lx", nemu_val[j + error_idx]);
-                if (j != 0) {
-                    nemu_val_ += "_";
-                }
+        }
+
+        // vstart now do not diff
+        gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VSTART, tid);
+        diffAllStates->gem5RegFile.vstart = gem5_val;
+        ref_val = diffAllStates->referenceRegFile.vstart;
+
+        // vxsat
+        diffAllStates->gem5RegFile.vxsat = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VXSAT, tid);
+        // vxrm
+        diffAllStates->gem5RegFile.vxrm = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VXRM, tid);
+        // vcsr
+        gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VCSR, tid);
+        diffAllStates->gem5RegFile.vcsr = gem5_val;
+        ref_val = diffAllStates->referenceRegFile.vcsr;
+        if (gem5_val != ref_val) {
+            warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
+                    "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
+                    "vcsr", ref_val, gem5_val);
+            if (!diff_at) {
+                diff_at = ValueDiff;
             }
-            warn("Inst [sn:%lli] pc: %#lx, msg: %s\n", seq, diffInfo.pc->instAddr(),
-                    diffInfo.lastCommittedMsg.back().c_str());
-            warn("May be diff at v%d\n Ref  value: %s\n GEM5 value: %s\n",
-                (error_idx>>1), nemu_val_, gem5_val_);
-            diff_at = ValueDiff;
+        }
+
+        // vl
+        gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VL, tid);
+        diffAllStates->gem5RegFile.vl = gem5_val;
+        ref_val = diffAllStates->referenceRegFile.vl;
+        if (gem5_val != ref_val) {
+            warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
+                    "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
+                    "vl", ref_val, gem5_val);
+            if (!diff_at) {
+                diff_at = ValueDiff;
+            }
         }
     }
 
@@ -1050,64 +1101,6 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             diffInfo.errorCsrsValue[CsrRegIndex::mip] = 1;
             diffAllStates->gem5RegFile.mip = gem5_val;
         }
-
-        // vtype
-        gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VTYPE, tid);
-        diffAllStates->gem5RegFile.vtype = gem5_val;
-        ref_val = diffAllStates->referenceRegFile.vtype;
-        if (gem5_val != ref_val) {
-            warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
-                    "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
-                    "vtype", ref_val, gem5_val);
-            if (!diff_at) {
-                diff_at = ValueDiff;
-            }
-        }
-
-        // vstart
-        gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VSTART, tid);
-        diffAllStates->gem5RegFile.vstart = gem5_val;
-        ref_val = diffAllStates->referenceRegFile.vstart;
-        // NOTE: may has bug
-        // if (gem5_val != ref_val) {
-        //     warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
-        //             "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
-        //             "vstart", ref_val, gem5_val);
-        //     if (!diff_at) {
-        //         diff_at = ValueDiff;
-        //     }
-        // }
-
-        // vxsat
-        diffAllStates->gem5RegFile.vxsat = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VXSAT, tid);
-        // vxrm
-        diffAllStates->gem5RegFile.vxrm = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VXRM, tid);
-        // vcsr
-        gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VCSR, tid);
-        diffAllStates->gem5RegFile.vcsr = gem5_val;
-        ref_val = diffAllStates->referenceRegFile.vcsr;
-        if (gem5_val != ref_val) {
-            warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
-                    "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
-                    "vcsr", ref_val, gem5_val);
-            if (!diff_at) {
-                diff_at = ValueDiff;
-            }
-        }
-
-        // vl
-        gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VL, tid);
-        diffAllStates->gem5RegFile.vl = gem5_val;
-        ref_val = diffAllStates->referenceRegFile.vl;
-        if (gem5_val != ref_val) {
-            warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
-                    "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
-                    "vl", ref_val, gem5_val);
-            if (!diff_at) {
-                diff_at = ValueDiff;
-            }
-        }
-
 
         if (diff_at != NoneDiff) {
             warn("Inst [sn:%llu] @ \033[31m%#lx\033[0m in GEM5 is \033[31m%s\033[0m\n", seq,

@@ -177,6 +177,8 @@ class PhysicalMemory : public Serializable
 
     bool mapToRawCpt{false};
 
+    bool riscvVectorGCPTrestore{false};
+
     /**
      * Create the memory region providing the backing store for a
      * given address range that corresponds to a set of memories in
@@ -204,7 +206,8 @@ class PhysicalMemory : public Serializable
                    const std::string& gcpt_restorer_path,
                    const std::string&gcpt_path,
                    bool map_to_raw_cpt,
-                   bool auto_unlink_shared_backstore);
+                   bool auto_unlink_shared_backstore,
+                   bool enable_riscv_vector);
 
     /**
      * Unmap all the backing store we have used.

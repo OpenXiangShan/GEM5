@@ -158,6 +158,7 @@ class BaseCPU(ClockedObject):
     nemuSDCptBin = Param.String("", "Nemu MMC cpt bin path for diff")
 
     arch_db = Param.ArchDBer(Parent.any, "Arch DB")
+    enable_riscv_vector = Param.Bool(False, "Enable riscv vector extension")
 
     def createInterruptController(self):
         self.interrupts = [

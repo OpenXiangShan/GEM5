@@ -456,6 +456,11 @@ if args.generic_rv_cpt is not None:
     test_sys.restore_from_gcpt = True
     test_sys.gcpt_file = args.generic_rv_cpt
     test_sys.gcpt_restorer_file = args.gcpt_restorer
+if args.enable_riscv_vector:
+    print("Enable riscv vector difftest, need riscv vector-supported gcpt restore and diff-ref-so")
+    test_sys.enable_riscv_vector = True
+    for cpu in test_sys.cpu:
+        cpu.enable_riscv_vector = True
 
 if len(bm) == 2:
     drive_sys = build_drive_system(np)
