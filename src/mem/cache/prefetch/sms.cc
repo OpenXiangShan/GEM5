@@ -211,23 +211,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             largeBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
 
             smallBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
-
-            // learnedBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
         }
-
-        // bool use_stride = pfi.isCacheMiss() ||
-        //                   (pfi.isPfFirstHit() &&
-        //                    (pf_source == PrefetchSourceType::SStride || pf_source == PrefetchSourceType::HWP_BOP ||
-        //                     pf_source == PrefetchSourceType::SPht || pf_source == PrefetchSourceType::IPCP_CPLX ||
-        //                     pf_source == PrefetchSourceType::Berti));
-        // use_stride &= !pfi.isStore();
-
-        // if (enableNonStrideFilter) {
-        //     use_stride &= !isNonStridePC(pc);
-        //     if (isNonStridePC(pc)) {
-        //         DPRINTF(XSCompositePrefetcher, "Skip stride lookup for non-stride pc %x\n", pc);
-        //     }
-        // }
 
         Addr stride_pf_addr = 0;
         bool covered_by_stride = false;
@@ -239,10 +223,6 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             DPRINTF(XSCompositePrefetcher, "Do Berti traing/prefetching...\n");
             berti->calculatePrefetch(pfi, addresses, late, pf_source, miss_repeat, stride_pf_addr);
             int t;
-            // if ((t = berti->getBestDelta()) != 0) {
-            //     DPRINTF(BOPOffsets, "PC %lx add best delta %u\n", pfi.getPC(), t);
-            //     learnedBOP->tryAddOffset(t);
-            // }
             if ((t = berti->getEvictBestDelta()) != 0) {
                 DPRINTF(BOPOffsets, "PC %lx add evict delta %u\n", pfi.getPC(), t);
                 if (labs(t) > 64) {
@@ -826,10 +806,6 @@ XSCompositePrefetcher::phtLookup(const Base::PrefetchInfo &pfi, std::vector<Addr
             }
         }
         DPRINTFR(XSCompositePrefetcher, "\n");
-
-        // if (late) {
-        //     int period = calcPeriod(pht_entry->hist, late);
-        // }
     }
     return found;
 }
@@ -899,6 +875,9 @@ XSCompositePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std:
     } else {
         if (!(src == PrefetchSourceType::SStream || src == PrefetchSourceType::StoreStream)) {
             pfBlockLRUFilter.insert(addr, 0);
+        }
+        if (archDBer) {
+            archDBer->l1PFTraceWrite(curTick(), pfi.getPC(), pfi.getAddr(), addr, src);
         }
         addresses.push_back(AddrPriority(addr, prio, src));
         if (ahead_level > 1) {
