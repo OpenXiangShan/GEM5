@@ -129,6 +129,9 @@ PhysRegFile::PhysRegFile(unsigned _numPhysicalIntRegs,
             phys_reg++) {
         miscRegIds.emplace_back(MiscRegClass, phys_reg, 0);
     }
+
+    // must clear with zero
+    rMiscRegFile.clear();
 }
 
 

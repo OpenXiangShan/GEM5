@@ -57,7 +57,7 @@ def template VConfDeclare {{
     class %(class_name)s : public %(base_class)s
     {
       private:
-        RegId srcRegIdxArr[2];
+        RegId srcRegIdxArr[4];
         RegId destRegIdxArr[2];
 
       public:
@@ -76,6 +76,7 @@ def template VConfConstructor {{
         %(constructor)s;
         setDestRegIdx(_numDestRegs++, RegId(RMiscRegClass, 0));
             _numTypedDestRegs[RMiscRegClass]++;
+        SET_VL_SRC();
         vtypeIsImm = %(vtypeIsImm)s;
         earlyVtype = %(earlyVtype)s;
     }
@@ -118,7 +119,7 @@ def template VConfExecute {{
             xc->setMiscReg(MISCREG_VTYPE, new_vtype);
         }
 
-        uint32_t current_vl = xc->readMiscReg(MISCREG_VL);
+        uint32_t current_vl = rVl;
         uint32_t new_vl = 0;
         if (vlmax == 0) {
             new_vl = 0;

@@ -70,6 +70,7 @@ class VConfOp : public RiscvStaticInst
     bool vtypeIsImm = false;
     uint8_t earlyVtype = -1;
   protected:
+    int vlsrcIdx = -1;
     uint64_t bit30;
     uint64_t bit31;
     uint64_t zimm10;
