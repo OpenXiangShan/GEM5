@@ -234,7 +234,7 @@ CPU::CPU(const BaseO3CPUParams &params)
     // Initialize rename map to assign physical registers to the
     // architectural registers for active threads only.
     for (ThreadID tid = 0; tid < active_threads; tid++) {
-        for (auto type = (RegClassType)0; type <= CCRegClass;
+        for (auto type = (RegClassType)0; type <= RMiscRegClass;
                 type = (RegClassType)(type + 1)) {
             for (RegIndex ridx = 0; ridx < regClasses.at(type).numRegs();
                     ++ridx) {
@@ -707,7 +707,7 @@ CPU::insertThread(ThreadID tid)
     //Bind Int Regs to Rename Map
     const auto &regClasses = isa[tid]->regClasses();
 
-    for (auto type = (RegClassType)0; type <= CCRegClass;
+    for (auto type = (RegClassType)0; type <= RMiscRegClass;
             type = (RegClassType)(type + 1)) {
         for (RegIndex idx = 0; idx < regClasses.at(type).numRegs(); idx++) {
             PhysRegIdPtr phys_reg = freeList.getReg(type);

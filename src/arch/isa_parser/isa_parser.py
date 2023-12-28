@@ -517,6 +517,7 @@ class ISAParser(Grammar):
             'ControlRegOp': ControlRegOperandDesc,
             'MemOp': MemOperandDesc,
             'PCStateOp': PCStateOperandDesc,
+            'RMiscRegOp' : RMiscRegOperandDesc
         })
 
         self.maxMiscDestRegs = 0

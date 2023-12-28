@@ -452,9 +452,7 @@ decode QUADRANT default Unknown::unknown() {
             0x0: decode MOP {
                 0x0: decode LUMOP {
                     0x00: VleOp::vle8_v({{
-                        if ((machInst.vm || elem_mask(v0, ei))) {
-                            Vd_ub[vdElemIdx] = Mem_vc.as<uint8_t>()[i];
-                        }
+                        Vd_ub[vdElemIdx] = Mem_vc.as<uint8_t>()[i];
                     }}, inst_flags=VectorUnitStrideLoadOp);
                     0x08: decode NF {
                         format VlWholeOp {
@@ -476,12 +474,7 @@ decode QUADRANT default Unknown::unknown() {
                         Vd_ub[i] = Mem_vc.as<uint8_t>()[i];
                     }}, inst_flags=VectorUnitStrideMaskLoadOp);
                     0x10: VleffOp::vle8ff_v({{
-                        if ((machInst.vm || elem_mask(v0, ei)) &&
-                            i < this->microVl) {
-                            Vd_ub[i] = Mem_vc.as<uint8_t>()[i];
-                        } else {
-                            Vd_ub[i] = Vs2_ub[i];
-                        }
+                        Vd_ub[i] = Mem_vc.as<uint8_t>()[i];
                     }}, inst_flags=VectorUnitStrideLoadOp);
                 }
                 0x1: VlIndexOp::vluxei8_v({{
@@ -501,9 +494,7 @@ decode QUADRANT default Unknown::unknown() {
             0x5: decode MOP {
                 0x0: decode LUMOP {
                     0x00: VleOp::vle16_v({{
-                        if ((machInst.vm || elem_mask(v0, ei))) {
-                            Vd_uh[vdElemIdx] = Mem_vc.as<uint16_t>()[i];
-                        }
+                        Vd_uh[vdElemIdx] = Mem_vc.as<uint16_t>()[i];
                     }}, inst_flags=VectorUnitStrideLoadOp);
                     0x08: decode NF {
                         format VlWholeOp {
@@ -522,12 +513,7 @@ decode QUADRANT default Unknown::unknown() {
                         }
                     }
                     0x10: VleffOp::vle16ff_v({{
-                        if ((machInst.vm || elem_mask(v0, ei)) &&
-                            i < this->microVl) {
-                            Vd_uh[i] = Mem_vc.as<uint16_t>()[i];
-                        } else {
-                            Vd_uh[i] = Vs2_uh[i];
-                        }
+                        Vd_uh[i] = Mem_vc.as<uint16_t>()[i];
                     }}, inst_flags=VectorUnitStrideLoadOp);
                 }
                 0x1: VlIndexOp::vluxei16_v({{
@@ -547,9 +533,7 @@ decode QUADRANT default Unknown::unknown() {
             0x6: decode MOP {
                 0x0: decode LUMOP {
                     0x00: VleOp::vle32_v({{
-                        if ((machInst.vm || elem_mask(v0, ei))) {
-                            Vd_uw[vdElemIdx] = Mem_vc.as<uint32_t>()[i];
-                        }
+                        Vd_uw[vdElemIdx] = Mem_vc.as<uint32_t>()[i];
                     }}, inst_flags=VectorUnitStrideLoadOp);
                     0x08: decode NF {
                         format VlWholeOp {
@@ -568,12 +552,7 @@ decode QUADRANT default Unknown::unknown() {
                         }
                     }
                     0x10: VleffOp::vle32ff_v({{
-                        if ((machInst.vm || elem_mask(v0, ei)) &&
-                            i < this->microVl) {
-                            Vd_uw[i] = Mem_vc.as<uint32_t>()[i];
-                        } else {
-                            Vd_uw[i] = Vs2_uw[i];
-                        }
+                        Vd_uw[i] = Mem_vc.as<uint32_t>()[i];
                     }}, inst_flags=VectorUnitStrideLoadOp);
                 }
                 0x1: VlIndexOp::vluxei32_v({{
@@ -593,9 +572,7 @@ decode QUADRANT default Unknown::unknown() {
             0x7: decode MOP {
                 0x0: decode LUMOP {
                     0x00: VleOp::vle64_v({{
-                        if ((machInst.vm || elem_mask(v0, ei))) {
-                            Vd_ud[vdElemIdx] = Mem_vc.as<uint64_t>()[i];
-                        }
+                        Vd_ud[vdElemIdx] = Mem_vc.as<uint64_t>()[i];
                     }}, inst_flags=VectorUnitStrideLoadOp);
                     0x08: decode NF {
                         format VlWholeOp {
@@ -614,12 +591,7 @@ decode QUADRANT default Unknown::unknown() {
                         }
                     }
                     0x10: VleffOp::vle64ff_v({{
-                        if ((machInst.vm || elem_mask(v0, ei)) &&
-                            i < this->microVl) {
-                            Vd_ud[i] = Mem_vc.as<uint64_t>()[i];
-                        } else {
-                            Vd_ud[i] = Vs2_ud[i];
-                        }
+                        Vd_ud[i] = Mem_vc.as<uint64_t>()[i];
                     }}, inst_flags=VectorUnitStrideLoadOp);
                 }
                 0x1: VlIndexOp::vluxei64_v({{
@@ -2136,9 +2108,9 @@ decode QUADRANT default Unknown::unknown() {
                     }}, OPIVV, VectorIntegerArithOp);
                 }
                 0x0c: VectorGatherFormat::vrgather_vv({{
-                    for (uint32_t i = 0; i < microVl; i++) {
+                    for (uint32_t i = 0; i < elem_num_per_vreg; i++) {
                         uint32_t ei = i + vs1_idx * vs1_elems + vs1_bias;
-                        if (this->vm || elem_mask(v0, ei)) {
+                        if ((ei < rVl) && (this->vm || elem_mask(v0, ei))) {
                             const uint64_t idx = Vs1_vu[i]
                                 - vs2_elems * vs2_idx;
                             auto res = (Vs1_vu[i] >= vlmax) ? 0
@@ -2149,9 +2121,9 @@ decode QUADRANT default Unknown::unknown() {
                     }
                 }}, OPIVV, VectorMiscOp);
                 0x0e: VectorGatherFormat::vrgatherei16_vv({{
-                    for (uint32_t i = 0; i < microVl; i++) {
+                    for (uint32_t i = 0; i < elem_num_per_vreg; i++) {
                         uint32_t ei = i + vs1_idx * vs1_elems + vs1_bias;
-                        if (this->vm || elem_mask(v0, ei)) {
+                        if ((ei < rVl) && (this->vm || elem_mask(v0, ei))) {
                             const uint16_t idx = Vs1_uh[i + vs1_bias]
                                 - vs2_elems * vs2_idx;
                             auto res = (Vs1_uh[i + vs1_bias] >= vlmax) ? 0
@@ -2253,10 +2225,12 @@ decode QUADRANT default Unknown::unknown() {
                     0x30: vwredsumu_vs({{
                         Vd_vwu[0] = reduce_loop(std::plus<vwu>(),
                             Vs1_vwu, Vs2_vu);
+                        uint32_t ignore_this = rVl;
                     }}, OPIVV, VectorIntegerReduceOp);
                     0x31: vwredsum_vs({{
                         Vd_vwu[0] = reduce_loop(std::plus<vwi>(),
                             Vs1_vwi, Vs2_vi);
+                        uint32_t ignore_this = rVl;
                     }}, OPIVV, VectorIntegerReduceOp);
                 }
                 format VectorIntMaskFormat {
@@ -2365,6 +2339,7 @@ decode QUADRANT default Unknown::unknown() {
                     Vd_vu[0] = reduce_loop([](const vu& src1, const vu& src2) {
                         return fadd<et>(ftype<et>(src1), ftype<et>(src2));
                     }, Vs1_vu, Vs2_vu);
+                    uint32_t ignore_this = rVl;
                 }}, OPFVV, VectorFloatReduceOp);
                 0x02: VectorFloatFormat::vfsub_vv({{
                     auto fd = fsub<et>(ftype<et>(Vs2_vu[i]),
@@ -2375,6 +2350,7 @@ decode QUADRANT default Unknown::unknown() {
                     Vd_vu[0] = reduce_loop([](const vu& src1, const vu& src2) {
                         return fadd<et>(ftype<et>(src1), ftype<et>(src2));
                     }, Vs1_vu, Vs2_vu);
+                    uint32_t ignore_this = rVl;
                 }}, OPFVV, VectorFloatReduceOp);
                 0x04: VectorFloatFormat::vfmin_vv({{
                     auto fd = fmin<et>(ftype<et>(Vs2_vu[i]),
@@ -2385,6 +2361,7 @@ decode QUADRANT default Unknown::unknown() {
                     Vd_vu[0] = reduce_loop([](const vu& src1, const vu& src2) {
                         return fmin<et>(ftype<et>(src1), ftype<et>(src2));
                     }, Vs1_vu, Vs2_vu);
+                    uint32_t ignore_this = rVl;
                 }}, OPFVV, VectorFloatReduceOp);
                 0x06: VectorFloatFormat::vfmax_vv({{
                     auto fd = fmax<et>(ftype<et>(Vs2_vu[i]),
@@ -2395,6 +2372,7 @@ decode QUADRANT default Unknown::unknown() {
                     Vd_vu[0] = reduce_loop([](const vu& src1, const vu& src2) {
                         return fmax<et>(ftype<et>(src1), ftype<et>(src2));
                     }, Vs1_vu, Vs2_vu);
+                    uint32_t ignore_this = rVl;
                 }}, OPFVV, VectorFloatReduceOp);
                 0x08: VectorFloatFormat::vfsgnj_vv({{
                     Vd_vu[i] = fsgnj<et>(ftype<et>(Vs2_vu[i]),
@@ -2630,11 +2608,13 @@ decode QUADRANT default Unknown::unknown() {
                         Vd_vwu[0] = reduce_loop([](const vwu& src1, const vu& src2) {
                             return fadd<ewt>(ftype<ewt>(src1), f_to_wf<et>(ftype<et>(src2)));
                         }, Vs1_vwu, Vs2_vu);
+                        uint32_t ignore_this = rVl;
                     }}, OPFVV, VectorFloatReduceOp);
                     0x33: VectorReduceFloatWideningFormat::vfwredosum_vs({{
                         Vd_vwu[0] = reduce_loop([](const vwu& src1, const vu& src2) {
                             return fadd<ewt>(ftype<ewt>(src1), f_to_wf<et>(ftype<et>(src2)));
                         }, Vs1_vwu, Vs2_vu);
+                        uint32_t ignore_this = rVl;
                     }}, OPFVV, VectorFloatReduceOp);
                 }
                 format VectorFloatWideningFormat {
@@ -2704,42 +2684,50 @@ decode QUADRANT default Unknown::unknown() {
                     0x0: vredsum_vs({{
                         Vd_vi[0] =
                             reduce_loop(std::plus<vi>(), Vs1_vi, Vs2_vi);
+                        uint32_t ignore_this = rVl;
                     }}, OPMVV, VectorIntegerReduceOp);
                     0x1: vredand_vs({{
                         Vd_vi[0] =
                             reduce_loop(std::bit_and<vi>(), Vs1_vi, Vs2_vi);
+                        uint32_t ignore_this = rVl;
                     }}, OPMVV, VectorIntegerReduceOp);
                     0x2: vredor_vs({{
                         Vd_vi[0] =
                             reduce_loop(std::bit_or<vi>(), Vs1_vi, Vs2_vi);
+                        uint32_t ignore_this = rVl;
                     }}, OPMVV, VectorIntegerReduceOp);
                     0x3: vredxor_vs({{
                         Vd_vi[0] =
                             reduce_loop(std::bit_xor<vi>(), Vs1_vi, Vs2_vi);
+                        uint32_t ignore_this = rVl;
                     }}, OPMVV, VectorIntegerReduceOp);
                     0x4: vredminu_vs({{
                         Vd_vu[0] =
                             reduce_loop([](const vu& src1, const vu& src2) {
                                 return std::min<vu>(src1, src2);
                             }, Vs1_vu, Vs2_vu);
+                        uint32_t ignore_this = rVl;
                     }}, OPMVV, VectorIntegerReduceOp);
                     0x5: vredmin_vs({{
                         Vd_vi[0] =
                             reduce_loop([](const vi& src1, const vi& src2) {
                                 return std::min<vi>(src1, src2);
                             }, Vs1_vi, Vs2_vi);
+                        uint32_t ignore_this = rVl;
                     }}, OPMVV, VectorIntegerReduceOp);
                     0x6: vredmaxu_vs({{
                         Vd_vu[0] =
                             reduce_loop([](const vu& src1, const vu& src2) {
                                 return std::max<vu>(src1, src2);
                             }, Vs1_vu, Vs2_vu);
+                        uint32_t ignore_this = rVl;
                     }}, OPMVV, VectorIntegerReduceOp);
                     0x7: vredmax_vs({{
                         Vd_vi[0] =
                             reduce_loop([](const vi& src1, const vi& src2) {
                                 return std::max<vi>(src1, src2);
                             }, Vs1_vi, Vs2_vi);
+                        uint32_t ignore_this = rVl;
                     }}, OPMVV, VectorIntegerReduceOp);
                 }
                 format VectorIntFormat {
@@ -2775,7 +2763,7 @@ decode QUADRANT default Unknown::unknown() {
                     }
                     0x10: Vector1Vs1RdMaskFormat::vcpop_m({{
                         uint64_t popcount = 0;
-                        for (uint32_t i = 0; i < (uint32_t)machInst.vl; i++) {
+                        for (uint32_t i = 0; i < rVl; i++) {
                             bool vs2_lsb = elem_mask(Vs2_vu, i);
                             if(this->vm){
                                 popcount += vs2_lsb;
@@ -2788,7 +2776,7 @@ decode QUADRANT default Unknown::unknown() {
                     }}, OPMVV, VectorMiscOp);
                     0x11: Vector1Vs1RdMaskFormat::vfirst_m({{
                         int64_t pos = -1;
-                        for (uint32_t i = 0; i < (uint32_t)machInst.vl; i++) {
+                        for (uint32_t i = 0; i < rVl; i++) {
                             if(this->vm == 0){
                                 if(elem_mask(v0, i)==0){
                                     continue;
@@ -2828,10 +2816,11 @@ decode QUADRANT default Unknown::unknown() {
                 0x14: decode VS1 {
                     0x01: Vector1Vs1VdMaskFormat::vmsbf_m({{
                         bool has_one = false;
-                        for (uint32_t i = 0; i < (uint32_t)machInst.vl; i++) {
+                        for (uint32_t i = 0; i < rVl; i++) {
                             bool vs2_lsb = elem_mask(Vs2_vu, i);
                             bool do_mask = elem_mask(v0, i);
-                            if(this->vm||(this->vm == 0&&do_mask)){
+                            uint32_t ei = i;
+                            if((ei < rVl) && (this->vm || (this->vm == 0 && do_mask))){
                                 uint64_t res = 0;
                                 if (!has_one && !vs2_lsb) {
                                     res = 1;
@@ -2844,10 +2833,11 @@ decode QUADRANT default Unknown::unknown() {
                     }}, OPMVV, VectorMiscOp);
                     0x02: Vector1Vs1VdMaskFormat::vmsof_m({{
                         bool has_one = false;
-                        for (uint32_t i = 0; i < (uint32_t)machInst.vl; i++) {
+                        for (uint32_t i = 0; i < rVl; i++) {
                             bool vs2_lsb = elem_mask(Vs2_vu, i);
                             bool do_mask = elem_mask(v0, i);
-                            if (this->vm || (this->vm == 0 && do_mask)){
+                            uint32_t ei = i;
+                            if ((ei < rVl) && (this->vm || (this->vm == 0 && do_mask))){
                                 uint64_t res = 0;
                                 if(!has_one && vs2_lsb) {
                                     has_one = true;
@@ -2859,10 +2849,11 @@ decode QUADRANT default Unknown::unknown() {
                     }}, OPMVV, VectorMiscOp);
                     0x03: Vector1Vs1VdMaskFormat::vmsif_m({{
                         bool has_one = false;
-                        for (uint32_t i = 0; i < (uint32_t)machInst.vl; i++) {
+                        for (uint32_t i = 0; i < rVl; i++) {
                             bool vs2_lsb = elem_mask(Vs2_vu, i);
                             bool do_mask = elem_mask(v0, i);
-                            if(this->vm||(this->vm == 0&&do_mask)){
+                            uint32_t ei = i;
+                            if((ei < rVl) && (this->vm||(this->vm == 0&&do_mask))){
                                 uint64_t res = 0;
                                 if (!has_one && !vs2_lsb) {
                                     res = 1;
@@ -2891,6 +2882,9 @@ decode QUADRANT default Unknown::unknown() {
                             bool vs2_lsb = elem_mask(Vs2bit, ei);
                             bool do_mask = elem_mask(v0, ei);
                             bool has_one = false;
+                            if (!(ei < rVl)) {
+                                break;
+                            }
                             if (machInst.vm || (do_mask && !machInst.vm)) {
                                 if (vs2_lsb) {
                                     has_one = true;
@@ -3099,9 +3093,9 @@ decode QUADRANT default Unknown::unknown() {
                     }}, OPIVI, VectorIntegerArithOp);
                 }
                 0x0c: VectorGatherFormat::vrgather_vi({{
-                    for (uint32_t i = 0; i < microVl; i++) {
+                    for (uint32_t i = 0; i < elem_num_per_vreg; i++) {
                         uint32_t ei = i + vs1_idx * vs1_elems + vs1_bias;
-                        if (this->vm || elem_mask(v0, ei)) {
+                        if ((ei < rVl) && (this->vm || elem_mask(v0, ei))) {
                             const uint64_t idx =
                                 (uint64_t)sext<5>(SIMM5) - vs2_elems * vs2_idx;
                             Vd_vu[i] = ((uint64_t)sext<5>(SIMM5) >= vlmax) ? 0
@@ -3118,7 +3112,7 @@ decode QUADRANT default Unknown::unknown() {
                     RiscvISA::vreg_t temp;
                     xc->getRegOperand(this, 0, &temp);
                     for (int i=0; i<offset; i++) {
-                        if (ei >= vmi.re) {
+                        if (ei >= vmi.re || (ei >= rVl)) {
                             break;
                         }
                         if ((machInst.vm || elem_mask(v0, ei)) && (ei >= offset_)) {
@@ -3129,7 +3123,7 @@ decode QUADRANT default Unknown::unknown() {
                     // set back segment
                     xc->getRegOperand(this, 1, &temp);
                     for (int i=0; i<elem_num_per_vreg - offset; i++) {
-                        if (ei >= vmi.re) {
+                        if (ei >= vmi.re || (ei >= rVl)) {
                             break;
                         }
                         if ((machInst.vm || elem_mask(v0, ei)) && (ei >= offset_)) {
@@ -3147,7 +3141,7 @@ decode QUADRANT default Unknown::unknown() {
                     xc->getRegOperand(this, 0, &temp);
                     std::cout<<temp<<std::endl;
                     for (int i=0; i<elem_num_per_vreg-offset; i++) {
-                        if (ei >= vmi.re) {
+                        if (ei >= vmi.re || (ei >= rVl)) {
                             break;
                         }
                         if (machInst.vm || elem_mask(v0, ei)) {
@@ -3159,7 +3153,7 @@ decode QUADRANT default Unknown::unknown() {
                     if (offset != 0) {
                         xc->getRegOperand(this, 1, &temp);
                         for (int i=0; i<offset; i++) {
-                            if (ei >= vmi.re) {
+                            if (ei >= vmi.re || (ei >= rVl)) {
                                 break;
                             }
                             if (machInst.vm || elem_mask(v0, ei)) {
@@ -3207,7 +3201,7 @@ decode QUADRANT default Unknown::unknown() {
                         Vd_vu[i] = Vs2_vu[i] >> ((vu)SIMM5 & (sew - 1) & 0x1f);
                     }}, OPIVI, VectorIntegerArithOp);
                     0x2a: vssrl_vi({{
-                        int sh = SIMM5 & (vtype_SEW(vtype) - 1);
+                        int sh = SIMM5 & (sew - 1);
                         __uint128_t res = Vs2_vu[i];
 
                         res = int_rounding<__uint128_t>(
@@ -3373,7 +3367,7 @@ decode QUADRANT default Unknown::unknown() {
                         RiscvISA::vreg_t temp;
                         xc->getRegOperand(this, 1, &temp);
                         for (int i=0; i<offset; i++) {
-                            if (ei >= vmi.re) {
+                            if (ei >= vmi.re || (ei >= rVl)) {
                                 break;
                             }
                             if ((machInst.vm || elem_mask(v0, ei)) && (ei >= offset_)) {
@@ -3384,7 +3378,7 @@ decode QUADRANT default Unknown::unknown() {
                         // set back segment
                         xc->getRegOperand(this, 2, &temp);
                         for (int i=0; i<elem_num_per_vreg - offset; i++) {
-                            if (ei >= vmi.re) {
+                            if (ei >= vmi.re || (ei >= rVl)) {
                                 break;
                             }
                             if ((machInst.vm || elem_mask(v0, ei)) && (ei >= offset_)) {
@@ -3403,7 +3397,7 @@ decode QUADRANT default Unknown::unknown() {
                         RiscvISA::vreg_t temp;
                         xc->getRegOperand(this, 1, &temp);
                         for (int i=0; i<elem_num_per_vreg-offset; i++) {
-                            if (ei >= vmi.re) {
+                            if (ei >= vmi.re || (ei >= rVl)) {
                                 break;
                             }
                             if (machInst.vm || elem_mask(v0, ei)) {
@@ -3415,7 +3409,7 @@ decode QUADRANT default Unknown::unknown() {
                         if (offset != 0) {
                             xc->getRegOperand(this, 2, &temp);
                             for (int i=0; i<offset; i++) {
-                                if (ei >= vmi.re) {
+                                if (ei >= vmi.re || (ei >= rVl)) {
                                     break;
                                 }
                                 if (machInst.vm || elem_mask(v0, ei)) {
@@ -3429,16 +3423,16 @@ decode QUADRANT default Unknown::unknown() {
                         for (int i=0; i< vmi.re-vmi.rs;i++) {
                             uint32_t ei = i + vmi.rs;
                             uint32_t vdElemIdx = (i + vmi.rs) % elem_num_per_vreg;
-                            if (machInst.vm || elem_mask(v0, ei)) {
+                            if ((ei < rVl) && (machInst.vm || elem_mask(v0, ei))) {
                                 Vd_vu[vdElemIdx] = 0;
                             }
                         }
                     }
                 }}, OPIVX, VectorMiscOp);
                 0x0c: VectorGatherFormat::vrgather_vx({{
-                    for (uint32_t i = 0; i < microVl; i++) {
+                    for (uint32_t i = 0; i < elem_num_per_vreg; i++) {
                         uint32_t ei = i + vs1_idx * vs1_elems + vs1_bias;
-                        if (this->vm || elem_mask(v0, ei)) {
+                        if ((ei < rVl) && (this->vm || elem_mask(v0, ei))) {
                             const uint64_t idx = Rs1_vu - vs2_elems * vs2_idx;
                             Vd_vu[i] = (Rs1_vu >= vlmax) ? 0
                                 : (idx < vs2_elems) ? Vs2_vu[idx]
@@ -3679,7 +3673,7 @@ decode QUADRANT default Unknown::unknown() {
                     RiscvISA::vreg_t temp;
                     xc->getRegOperand(this, 1, &temp);
                     // set front segment
-                    if (machInst.vm || elem_mask(v0, ei)) {
+                    if ((ei < rVl) && (machInst.vm || elem_mask(v0, ei))) {
                         if (first_elem) {
                             Vd_vu[0] = Rs1_vu;
                         }
@@ -3691,7 +3685,7 @@ decode QUADRANT default Unknown::unknown() {
                     // set back segment
                     xc->getRegOperand(this, 2, &temp);
                     for (int i=1; i < elem_num_per_vreg; i++) {
-                        if (ei >= vmi.re) {
+                        if (ei >= vmi.re || (ei >= rVl)) {
                             break;
                         }
                         if (machInst.vm || elem_mask(v0, ei)) {
@@ -3703,10 +3697,10 @@ decode QUADRANT default Unknown::unknown() {
                 0x0f: VectorFloatSlideDownFormat::vfslide1down_vf({{
                     const int offset = 1;
                     uint32_t ei = vmi.rs;
-                    uint32_t re = vmi.re;
-                    bool last_elem = (vmi.re == machInst.vl);
+                    int re = vmi.re;
+                    bool last_elem = vmi.re >= rVl;
                     if (last_elem) {
-                        re -= 1;
+                        re = rVl - 1;
                     }
                     // set front segment
                     RiscvISA::vreg_t temp;
@@ -3722,7 +3716,7 @@ decode QUADRANT default Unknown::unknown() {
                     }
                     // set back segment
                     xc->getRegOperand(this, 2, &temp);
-                    if (ei < vmi.re && (machInst.vm || elem_mask(v0, ei))) {
+                    if ((ei < rVl) && (machInst.vm || elem_mask(v0, ei))) {
                         if (last_elem) {
                             Vd_vu[ei - vmi.rs] = Rs1_vu;
                         }
@@ -3740,7 +3734,7 @@ decode QUADRANT default Unknown::unknown() {
                         0x1: VectorNonSplitFormat::vfmv_s_f({{
                             auto fd = ftype_freg<et>(freg(Fs1_bits));
                             std::memcpy(Vd_vu, Vd_merger, RiscvISA::VLENB);
-                            if (machInst.vl) {
+                            if (rVl) {
                                 Vd_vu[0] = fd.v;
                             }
                         }}, OPFVV, VectorMiscOp);
@@ -3749,7 +3743,7 @@ decode QUADRANT default Unknown::unknown() {
                 format VectorFloatFormat{
                     0x17: decode VM {
                         0x0: vfmerge_vfm({{
-                            Vd_vu[i] = elem_mask(v0, ei)
+                            Vd_vu[i] = ((ei < rVl) && elem_mask(v0, ei))
                                     ? ftype_freg<et>(freg(Fs1_bits)).v
                                     : Vs2_vu[i];
                         }}, OPFVF, VectorFloatArithOp);
@@ -3943,7 +3937,7 @@ decode QUADRANT default Unknown::unknown() {
                     RiscvISA::vreg_t temp;
                     xc->getRegOperand(this, 1, &temp);
                     // set front segment
-                    if (machInst.vm || elem_mask(v0, ei)) {
+                    if ((ei < rVl) && (machInst.vm || elem_mask(v0, ei))) {
                         if (first_elem) {
                             Vd_vu[0] = Rs1_vu;
                         }
@@ -3955,7 +3949,7 @@ decode QUADRANT default Unknown::unknown() {
                     // set back segment
                     xc->getRegOperand(this, 2, &temp);
                     for (int i=1; i < elem_num_per_vreg; i++) {
-                        if (ei >= vmi.re) {
+                        if (ei >= vmi.re || (ei >= rVl)) {
                             break;
                         }
                         if (machInst.vm || elem_mask(v0, ei)) {
@@ -3967,16 +3961,16 @@ decode QUADRANT default Unknown::unknown() {
                 0x0f: VectorSlideDownFormat::vslide1down_vx({{
                     const int offset = 1;
                     uint32_t ei = vmi.rs;
-                    uint32_t re = vmi.re;
-                    bool last_elem = (vmi.re == machInst.vl);
+                    int re = vmi.re;
+                    bool last_elem = (vmi.re >= rVl);
                     if (last_elem) {
-                        re -= 1;
+                        re = rVl - 1;
                     }
                     // set front segment
                     RiscvISA::vreg_t temp;
                     xc->getRegOperand(this, 1, &temp);
                     for (int i=0; i<elem_num_per_vreg-offset; i++) {
-                        if (ei >= re) {
+                        if (ei >= re || ei >= rVl) {
                             break;
                         }
                         if (machInst.vm || elem_mask(v0, ei)) {
@@ -3986,7 +3980,7 @@ decode QUADRANT default Unknown::unknown() {
                     }
                     // set back segment
                     xc->getRegOperand(this, 2, &temp);
-                    if (ei < vmi.re && (machInst.vm || elem_mask(v0, ei))) {
+                    if ((ei < rVl) && (machInst.vm || elem_mask(v0, ei))) {
                         if (last_elem) {
                             Vd_vu[ei - vmi.rs] = Rs1_vu;
                         }
@@ -4003,7 +3997,7 @@ decode QUADRANT default Unknown::unknown() {
                         // (vm=0) of vmv.s.x are reserved.
                         0x1: VectorNonSplitFormat::vmv_s_x({{
                             std::memcpy(Vd_vu, Vd_merger, RiscvISA::VLENB);
-                            if (machInst.vl) {
+                            if (rVl) {
                                 Vd_vu[0] = Rs1_vu;
                             }
                         }}, OPMVX, VectorMiscOp);

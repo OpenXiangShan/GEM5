@@ -364,9 +364,38 @@ class VecRegOperand(RegOperand):
         if self.is_dest:
             self.op_rd = self.makeReadW() + self.op_rd
 
+class RMiscRegOperand(RegOperand):
+    reg_class = 'RMiscRegClass'
+
+    def __init__(self, parser, full_name, ext, is_src, is_dest):
+        super().__init__(parser, full_name, ext, True, False)
+        self.elemExt = None
+
+    def makeConstructor(self):
+        return """
+        SET_VL_SRC();
+        """
+
+    def makeDecl(self):
+        return ''
+    def makeRead(self):
+        return """
+        uint64_t %s = 0;
+        assert(vlsrcIdx > 0);
+        %s = xc->getRegOperand(this, vlsrcIdx);
+        """ % (self.base_name, self.base_name)
+    def makeWrite(self):
+        return ''
+    def finalize(self):
+        super().finalize()
+
 class VecRegOperandDesc(RegOperandDesc):
     def __init__(self, *args, **kwargs):
         super().__init__('VecRegClass', VecRegOperand, *args, **kwargs)
+
+class RMiscRegOperandDesc(RegOperandDesc):
+    def __init__(self, *args, **kwargs):
+        super().__init__('RMiscRegClass', RMiscRegOperand, *args, **kwargs)
 
 class VecPredRegOperand(RegOperand):
     reg_class = 'VecPredRegClass'

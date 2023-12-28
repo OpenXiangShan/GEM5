@@ -63,6 +63,7 @@ enum RegClassType
     VecElemClass,
     VecPredRegClass,
     CCRegClass,         ///< Condition-code register
+    RMiscRegClass,      ///< Renameable misc/temp register
     MiscRegClass,       ///< Control (misc) register
     InvalidRegClass = -1
 };

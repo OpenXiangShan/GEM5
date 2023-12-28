@@ -311,7 +311,7 @@ class Fetch
     bool checkInterrupt(Addr pc) { return interruptPending; }
 
     /** Squashes a specific thread and resets the PC. */
-    void doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst,
+    void doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst, const uint64_t seqNum,
             ThreadID tid);
 
     /** Squashes a specific thread and resets the PC. Also tells the CPU to
@@ -653,7 +653,7 @@ class Fetch
     uint8_t* firstDataBuf;
     uint8_t* secondDataBuf;
 
-    bool waitForVset = false;
+    bool waitForVsetvl = false;
 };
 
 } // namespace o3

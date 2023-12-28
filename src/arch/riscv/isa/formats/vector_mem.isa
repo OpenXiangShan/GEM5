@@ -29,15 +29,20 @@
 
 let {{
 
-def VMemBase(name, Name, ea_code, memacc_code, mem_flags,
-                   inst_flags, base_class, postacc_code='',
-                   declare_template_base=VMemMacroDeclare,
-                   decode_template=BasicDecode, exec_template_base='',
-                   vfof=False,
-                   # If it's a macroop, the corresponding microops will be
-                   # generated.
-                   is_macroop=True):
+def VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
+                base_class,
+                postacc_code='',
+                declare_template_base=VMemMacroDeclare,
+                decode_template=BasicDecode,
+                exec_template_base='',
+                vfof=False,
+                is_macroop=True):
+    # If it's a macroop, the corresponding microops will be
+    # generated.
     # Make sure flags are in lists (convert to lists if not).
+    base_type = base_class
+    base_class += 'MacroInst'
+
     mem_flags = makeList(mem_flags)
     inst_flags = makeList(inst_flags)
     iop = InstObjParams(name, Name, base_class,
@@ -59,37 +64,77 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags,
     if not is_macroop:
         return (header_output, decoder_output, decode_block, exec_output)
 
-    vfof_set_code = '''
-    auto base_addr = Rs1;
-    uint32_t elem_size = (width_EEW(this->machInst.width) / 8);
-    if (fault != NoFault) {
-        auto addr_fault = dynamic_cast<AddressFault*>(fault.get());
-        assert(addr_fault != nullptr);
-        if (addr_fault) {
-            auto fault_addr = addr_fault->trap_value();
-            assert(fault_addr >= EA);
-            *fault_elem_idx = (fault_addr - base_addr) / elem_size;
+    vfof_set_code = ''
+    vfof_zero_idx_check_code = ''
+    vfof_get_code = ''
+    if vfof:
+        vfof_set_code = '''
+        auto base_addr = Rs1;
+        uint32_t elem_size = (eew / 8);
+        if (fault != NoFault) {
+            auto addr_fault = dynamic_cast<AddressFault*>(fault.get());
+            assert(addr_fault != nullptr);
+            if (addr_fault) {
+                auto fault_addr = addr_fault->trap_value();
+                assert(fault_addr >= EA);
+                *fault_elem_idx = (fault_addr - base_addr) / elem_size;
+            }
+        } else {
+            *fault_elem_idx = mem_size / elem_size;
         }
-    } else {
-        *fault_elem_idx = mem_size / elem_size;
-    }''' if vfof else ''
+        '''
+        vfof_zero_idx_check_code = '''
+        if (fault != NoFault && *fault_elem_idx == 0)
+            return fault;
+        '''
+        vfof_get_code = '''
+        Vfof_ud[0] = *fault_elem_idx;
+        '''
 
-    vfof_zero_idx_check_code = '''
-    if (fault != NoFault && *fault_elem_idx == 0)
-        return fault;''' if vfof else ''
+    vecWhole = base_type == 'VlWhole' or base_type == 'VsWhole'
+    vecIndex = base_type == 'VlIndex' or base_type == 'VsIndex'
+    vecSMask = exec_template_base == 'Vlm' or exec_template_base == 'Vsm'
 
-    vfof_get_code = '''
-    Vfof_ud[0] = *fault_elem_idx;''' if vfof else ''
+    if vecWhole:
+        calc_memsize_code = 'VLENB'
+        is_vecWhole = 'true'
+        wb_elem_mask = 'true'
+    else:
+        calc_memsize_code = 'calc_memsize(vmi.rs, vmi.re, eew_, rVl)'
+        is_vecWhole = 'false'
+        wb_elem_mask = '(ei < rVl) && (this->vm || elem_mask(v0, ei))'
+
+
+    if vecIndex:
+        is_vecIndex = 'true';
+    else:
+        is_vecIndex = 'false';
+
+    if vecSMask:
+        divrVl = 'rVl = (rVl + 7) / 8'
+    else:
+        divrVl = ''
 
     microiop = InstObjParams(name + '_micro',
         Name + 'Micro',
         exec_template_base + 'MicroInst',
-        {'ea_code': ea_code,
-         'memacc_code': memacc_code,
-         'postacc_code': postacc_code,
-         'vfof_set_code': vfof_set_code,
-         'vfof_zero_idx_check_code': vfof_zero_idx_check_code,
-         'vfof_get_code': vfof_get_code},
+        {
+            'ea_code'       : ea_code,
+            'memacc_code'   : memacc_code,
+            'postacc_code'  : postacc_code,
+
+            'vfof_set_code' : vfof_set_code,
+            'vfof_zero_idx_check_code' : vfof_zero_idx_check_code,
+            'vfof_get_code' : vfof_get_code,
+
+            'calc_memsize_code' : calc_memsize_code,
+            'is_vecWhole'   : is_vecWhole,
+            'is_vecIndex'   : is_vecIndex,
+
+            'wb_elem_mask'  : wb_elem_mask,
+
+            'divrVl'        : divrVl
+        },
         inst_flags)
 
     if mem_flags:
@@ -97,10 +142,19 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags,
         s = '\n\tmemAccessFlags = ' + '|'.join(mem_flags) + ';'
         microiop.constructor += s
 
+    if base_type.startswith('Vl'):
+        exe_template_base  = exec_template_base
+        init_template_base = 'Vload'
+        comp_template_base = 'Vload'
+    else:
+        exe_template_base  = 'Vstore'
+        init_template_base = 'Vstore'
+        comp_template_base = 'Vstore'
+
     microDeclTemplate = eval(exec_template_base + 'Micro' + 'Declare')
-    microExecTemplate = eval(exec_template_base + 'Micro' + 'Execute')
-    microInitTemplate = eval(exec_template_base + 'Micro' + 'InitiateAcc')
-    microCompTemplate = eval(exec_template_base + 'Micro' + 'CompleteAcc')
+    microExecTemplate = eval(exe_template_base + 'Micro' + 'Execute')
+    microInitTemplate = eval(init_template_base + 'Micro' + 'InitiateAcc')
+    microCompTemplate = eval(comp_template_base + 'Micro' + 'CompleteAcc')
     header_output = microDeclTemplate.subst(microiop) + header_output
     micro_exec_output = (microExecTemplate.subst(microiop) +
         microInitTemplate.subst(microiop) +
@@ -116,13 +170,14 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags,
 
 def format VleOp(
     memacc_code,
-    ea_code={{ EA = Rs1 + VLENB * microIdx; }},
+    ea_code={{ EA = Rs1 + vmi.offset; }},
     mem_flags=[],
     inst_flags=[]
 ) {{
     (header_output, decoder_output, decode_block, exec_output) = \
         VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
-                 'VleMacroInst', exec_template_base='Vle')
+                'Vle',
+                exec_template_base='Vle')
 }};
 
 def format VleffOp(
@@ -133,18 +188,9 @@ def format VleffOp(
 ) {{
     (header_output, decoder_output, decode_block, exec_output) = \
         VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
-                 'VleMacroInst', exec_template_base='Vleff', vfof=True)
-}};
-
-def format VseOp(
-    memacc_code,
-    ea_code={{ EA = Rs1 + VLENB * microIdx; }},
-    mem_flags=[],
-    inst_flags=[]
-) {{
-    (header_output, decoder_output, decode_block, exec_output) = \
-        VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
-                 'VseMacroInst', exec_template_base='Vse')
+                'Vle',
+                exec_template_base='Vleff',
+                vfof=True)
 }};
 
 def format VlmOp(
@@ -155,18 +201,8 @@ def format VlmOp(
 ) {{
     (header_output, decoder_output, decode_block, exec_output) = \
         VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
-                 'VleMacroInst', exec_template_base='Vlm', is_macroop=False)
-}};
-
-def format VsmOp(
-  memacc_code,
-  ea_code={{ EA = Rs1; }},
-  mem_flags=[],
-  inst_flags=[]
-) {{
-    (header_output, decoder_output, decode_block, exec_output) = \
-        VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
-                 'VseMacroInst', exec_template_base='Vsm', is_macroop=False)
+                'Vle',
+                exec_template_base='Vlm')
 }};
 
 def format VlWholeOp(
@@ -177,40 +213,20 @@ def format VlWholeOp(
 ) {{
     (header_output, decoder_output, decode_block, exec_output) = \
         VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
-                 'VlWholeMacroInst', exec_template_base='VlWhole')
-}};
-
-def format VsWholeOp(
-    memacc_code,
-    ea_code={{ EA = Rs1 + VLENB * microIdx; }},
-    mem_flags=[],
-    inst_flags=[]
-) {{
-    (header_output, decoder_output, decode_block, exec_output) = \
-        VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
-                 'VsWholeMacroInst', exec_template_base='VsWhole')
+                'VlWhole',
+                exec_template_base='VlWhole')
 }};
 
 def format VlStrideOp(
     memacc_code,
-    ea_code={{ EA = Rs1 + Rs2 * (regIdx * VLENB / elem_size + microIdx); }},
+    ea_code={{ EA = Rs1 + Rs2*vmi.rs + vmi.offset; }},
     mem_flags=[],
     inst_flags=[]
 ) {{
     (header_output, decoder_output, decode_block, exec_output) = \
         VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
-                 'VlStrideMacroInst', exec_template_base='VlStride')
-}};
-
-def format VsStrideOp(
-    memacc_code,
-    ea_code={{ EA = Rs1 + Rs2 * (regIdx * VLENB / elem_size + microIdx); }},
-    mem_flags=[],
-    inst_flags=[]
-) {{
-    (header_output, decoder_output, decode_block, exec_output) = \
-        VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
-                 'VsStrideMacroInst', exec_template_base='VsStride')
+                'VlStride',
+                exec_template_base='VlStride')
 }};
 
 def format VlIndexOp(
@@ -221,10 +237,58 @@ def format VlIndexOp(
 ) {{
     (header_output, decoder_output, decode_block, exec_output) = \
         VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
-                 'VlIndexMacroInst', exec_template_base='VlIndex',
-                 declare_template_base=VMemTemplateMacroDeclare,
-                 decode_template=VMemTemplateDecodeBlock
-                 )
+                'VlIndex',
+                declare_template_base=VMemTemplateMacroDeclare,
+                decode_template=VMemTemplateDecodeBlock,
+                exec_template_base='VlIndex')
+}};
+
+def format VseOp(
+    memacc_code,
+    ea_code={{ EA = Rs1 + vmi.offset; }},
+    mem_flags=[],
+    inst_flags=[]
+) {{
+    (header_output, decoder_output, decode_block, exec_output) = \
+        VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
+                'Vse',
+                exec_template_base='Vse')
+}};
+
+def format VsmOp(
+  memacc_code,
+  ea_code={{ EA = Rs1; }},
+  mem_flags=[],
+  inst_flags=[]
+) {{
+    (header_output, decoder_output, decode_block, exec_output) = \
+        VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
+                'Vse',
+                exec_template_base='Vsm')
+}};
+
+def format VsWholeOp(
+    memacc_code,
+    ea_code={{ EA = Rs1 + VLENB * microIdx; }},
+    mem_flags=[],
+    inst_flags=[]
+) {{
+    (header_output, decoder_output, decode_block, exec_output) = \
+        VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
+                'VsWhole',
+                exec_template_base='VsWhole')
+}};
+
+def format VsStrideOp(
+    memacc_code,
+    ea_code={{ EA = Rs1 + Rs2*vmi.rs + vmi.offset; }},
+    mem_flags=[],
+    inst_flags=[]
+) {{
+    (header_output, decoder_output, decode_block, exec_output) = \
+        VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
+                'VsStride',
+                exec_template_base='VsStride')
 }};
 
 def format VsIndexOp(
@@ -235,8 +299,8 @@ def format VsIndexOp(
 ) {{
     (header_output, decoder_output, decode_block, exec_output) = \
         VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
-                 'VsIndexMacroInst', exec_template_base='VsIndex',
-                 declare_template_base=VMemTemplateMacroDeclare,
-                 decode_template=VMemTemplateDecodeBlock
-                 )
+                'VsIndex',
+                declare_template_base=VMemTemplateMacroDeclare,
+                decode_template=VMemTemplateDecodeBlock,
+                exec_template_base='VsIndex')
 }};
