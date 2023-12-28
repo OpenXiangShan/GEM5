@@ -113,9 +113,9 @@ ArchDBer::bopTrainTraceWrite(Tick tick, Addr old_addr, Addr cur_addr, Addr offse
   if (!dump_me) return;
 
   sprintf(memTraceSQLBuf,
-          "INSERT INTO BOPTrainTrace(Tick,SITE,OldAddr,CurAddr,Offset,Score,Miss) "
-          "VALUES(%ld,'%s',%ld,%ld,%ld,%d,%d);",
-          tick, "BOPTrain", old_addr, cur_addr, offset, score, miss);
+          "INSERT INTO BOPTrainTrace(Tick,OldAddr,CurAddr,Offset,Score,Miss,SITE) "
+          "VALUES(%ld,%ld,%ld,%ld,%d,%d,'%s');",
+          tick, old_addr, cur_addr, offset, score, miss, "BOPTrain");
   rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
   if (rc != SQLITE_OK) {
     fatal("SQL error: %s\n", zErrMsg);
@@ -129,9 +129,9 @@ ArchDBer::smsTrainTraceWrite(Tick tick, Addr old_addr, Addr cur_addr, Addr trigg
   if (!dump_me) return;
 
   sprintf(memTraceSQLBuf,
-          "INSERT INTO SMSTrainTrace(Tick,SITE,OldAddr,CurAddr,TriggerOffset,Conf,Miss) "
-          "VALUES(%ld,'%s',%ld,%ld,%ld,%d,%d);",
-          tick, "SMSTrain", old_addr, cur_addr, trigger_offset, conf, miss);
+          "INSERT INTO SMSTrainTrace(Tick,OldAddr,CurAddr,TriggerOffset,Conf,Miss,SITE) "
+          "VALUES(%ld,%ld,%ld,%ld,%d,%d,'%s');",
+          tick, old_addr, cur_addr, trigger_offset, conf, miss, "SMSTrain");
   rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
   if (rc != SQLITE_OK) {
     fatal("SQL error: %s\n", zErrMsg);

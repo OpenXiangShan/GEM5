@@ -210,22 +210,22 @@ def build_test_system(np):
             "CREATE TABLE BOPTrainTrace(" \
             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
             "Tick INT NOT NULL," \
-            "SITE STRING NOT NULL," \
             "OldAddr INT NOT NULL," \
             "CurAddr INT NOT NULL," \
             "Offset INT NOT NULL," \
             "Score INT NOT NULL," \
-            "Miss BOOL NOT NULL);" \
+            "Miss BOOL NOT NULL," \
+            "SITE TEXT);"
 
             "CREATE TABLE SMSTrainTrace(" \
             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
             "Tick INT NOT NULL," \
-            "SITE STRING NOT NULL," \
             "OldAddr INT NOT NULL," \
             "CurAddr INT NOT NULL," \
             "TriggerOffset INT NOT NULL," \
             "Conf INT NOT NULL," \
-            "Miss BOOL NOT NULL);" \
+            "Miss BOOL NOT NULL," \
+            "SITE TEXT);"
 
         ]
 
