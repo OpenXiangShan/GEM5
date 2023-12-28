@@ -13,6 +13,7 @@ parser.add_argument('--db', type=str, help='db file', action='store')
 parser.add_argument('-o', '--output', type=str, help='output file', action='store')
 parser.add_argument('--show-global-delta', action='store_true')
 parser.add_argument('-M', '--max-trace', type=int, help='max count of trace to analyze', action='store')
+parser.add_argument('--dont-gen-trace', help='generate trace', action='store_true')
 args = parser.parse_args()
 
 db_path = '/no/where'
