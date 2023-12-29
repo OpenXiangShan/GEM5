@@ -2873,7 +2873,7 @@ decode QUADRANT default Unknown::unknown() {
                         uint32_t cnt = 0;
                         if (microIdx != 0) {
                             vreg_t vcnt;
-                            xc->getRegOperand(this, 2, &vcnt);
+                            xc->getRegOperand(this, 3, &vcnt);
                             cnt = vcnt.as<uint32_t>()[0];
                         }
                         vreg_t new_vcnt = *(vreg_t *)xc->getWritableRegOperand(this, 1);
@@ -3698,7 +3698,7 @@ decode QUADRANT default Unknown::unknown() {
                     const int offset = 1;
                     uint32_t ei = vmi.rs;
                     int re = vmi.re;
-                    bool last_elem = vmi.re >= rVl;
+                    bool last_elem = (vmi.re >= rVl);
                     if (last_elem) {
                         re = rVl - 1;
                     }
@@ -3706,7 +3706,7 @@ decode QUADRANT default Unknown::unknown() {
                     RiscvISA::vreg_t temp;
                     xc->getRegOperand(this, 1, &temp);
                     for (int i=0; i<elem_num_per_vreg-offset; i++) {
-                        if (ei >= re) {
+                        if (ei >= re || ei >= rVl) {
                             break;
                         }
                         if (machInst.vm || elem_mask(v0, ei)) {

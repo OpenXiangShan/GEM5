@@ -782,6 +782,8 @@ class VCompressMicroInst : public VectorArithMicroInst
         setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, extMachInst.vs1));
         // old_vd
         setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, extMachInst.vd + _vdIdx));
+        // rVl
+        setSrcRegIdx(_numSrcRegs++, VecRenamedVLReg);
     }
 
     Fault execute(ExecContext* xc, Trace::InstRecord* traceData) const override
@@ -790,10 +792,12 @@ class VCompressMicroInst : public VectorArithMicroInst
         uint32_t elem_num_per_vreg = VLEN / sew;
 
         vreg_t vs, vcnt, vm, old_vd;
+        uint32_t rVl;
         xc->getRegOperand(this, 0, &vs);
         xc->getRegOperand(this, 1, &vcnt);
         xc->getRegOperand(this, 2, &vm);
         xc->getRegOperand(this, 3, &old_vd);
+        rVl = xc->getRegOperand(this, 4);
 
         vreg_t vd = *(vreg_t *)xc->getWritableRegOperand(this, 0);
         memcpy(vd.as<uint8_t>(), old_vd.as<uint8_t>(), VLENB);
@@ -812,16 +816,20 @@ class VCompressMicroInst : public VectorArithMicroInst
 
         int vtmpIdx = 0;
         for (int i = 0; i < elem_num_per_vreg; i++) {
-            if (elem_mask(vm.as<uint8_t>(), i + vsIdx * uvlmax)) {
+            uint32_t ei = i + vsIdx * uvlmax;
+            if ((ei < rVl) && elem_mask(vm.as<uint8_t>(), ei)) {
                 vtmp.as<Type>()[vtmpIdx++] = vs.as<Type>()[i];
             }
         }
         int vsElemIdxBase = std::max(0, num_vd_elem_moved - num_vs_elem_moved);
         int vdElemIdxBase = std::max(0, num_vs_elem_moved - num_vd_elem_moved);
 
-        for (; vsElemIdxBase < vtmpIdx && vdElemIdxBase < elem_num_per_vreg;) {
+        uint32_t ei_ = vdElemIdxBase + vsIdx * uvlmax;
+        for (; vsElemIdxBase < vtmpIdx && vdElemIdxBase < elem_num_per_vreg && ei_ < rVl;) {
             vd.as<Type>()[vdElemIdxBase++] = vtmp.as<Type>()[vsElemIdxBase++];
+            ei_ = vdElemIdxBase + vsIdx * uvlmax;
         }
+
         xc->setRegOperand(this, 0, &vd);
         if (traceData)
             traceData->setData(vd);
@@ -851,15 +859,8 @@ class Vcompress_vm : public VectorArithMacroInst
     Vcompress_vm(ExtMachInst _machInst)
         : VectorArithMacroInst("vcompress_vm", _machInst, VectorIntegerArithOp)
     {
-        _numSrcRegs = 0;
-        _numDestRegs = 0;
-        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, _machInst.vd));
-        _numTypedDestRegs[VecRegClass]++;
-        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _machInst.vs1));
-        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _machInst.vs2));
-
         const uint32_t num_microops = vflmul < 1 ? 1 : vflmul;
-        const int32_t vlmax = VLEN / sew * (vflmul < 1 ? 1 : vflmul);
+        const int32_t vlmax = VLEN / sew * vflmul;
 
         StaticInstPtr microop;
         microop = new VCompressPopcMicroInst(_machInst);

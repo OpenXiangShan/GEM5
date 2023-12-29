@@ -669,7 +669,7 @@ template<typename ElemType>
     : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
     const uint32_t elem_num_per_vreg = VLEN / sew;
-    const uint32_t num_microops = VLEN / sew * (vflmul < 1 ? 1 : vflmul);
+    const uint32_t num_microops = (vflmul < 1 ? 1 : vflmul);
 
     StaticInstPtr microop;
 
@@ -725,6 +725,7 @@ template<typename ElemType>
 
     setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _machInst.vs2));
     SET_OLDDST_SRC();
+    SET_VL_SRC();
     if (_microIdx != 0) {
         setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, VecTempReg0));
     }
@@ -1399,22 +1400,24 @@ Fault
     %(vm_decl_rd)s;
     COPY_OLD_VD();
 
-    Vd[0] = this->microIdx != 0 ? old_Vd[0] : Vs1[0];
-    uint32_t vlmax = VLEN / sew * (vflmul < 1 ? 1 : vflmul);
-    uint32_t elem_num_per_vreg = VLEN / sew;
-    auto reduce_loop =
-        [&, this](const auto& f, const auto* _, const auto* vs2) {
-            vu tmp_val = Vd[0];
-            for (uint32_t i = 0; i < elem_num_per_vreg; i++) {
-                uint32_t ei = i + vlmax * this->microIdx;
-                if ((ei < rVl) && (this->vm || elem_mask(v0, ei))) {
-                    tmp_val = f(tmp_val, Vs2[i]).v;
-                }
-            }
-            return tmp_val;
-        };
+    uint32_t micro_vlmax = VLEN / sew * (vflmul > 0 ? 1 : vflmul);
+    if (micro_vlmax * this->microIdx < rVl) {
+        Vd[0] = this->microIdx != 0 ? old_Vd[0] : Vs1[0];
 
-    %(code)s;
+        auto reduce_loop =
+            [&, this](const auto& f, const auto* _, const auto* vs2) {
+                vu tmp_val = Vd[0];
+                for (uint32_t i = 0; i < micro_vlmax; i++) {
+                    uint32_t ei = i + micro_vlmax * this->microIdx;
+                    if ((ei < rVl) && (this->vm || elem_mask(v0, ei))) {
+                        tmp_val = f(tmp_val, Vs2[i]).v;
+                    }
+                }
+                return tmp_val;
+            };
+        %(code)s;
+    }
+
     %(op_wb)s;
     return NoFault;
 }
@@ -1438,22 +1441,24 @@ Fault
     %(vm_decl_rd)s;
     COPY_OLD_VD();
 
-    Vd[0] = this->microIdx != 0 ? old_Vd[0] : Vs1[0];
-    uint32_t vlmax = VLEN / sew * (vflmul < 1 ? 1 : vflmul);
-    uint32_t elem_num_per_vreg = VLEN / sew;
-    auto reduce_loop =
-        [&, this](const auto& f, const auto* _, const auto* vs2) {
-            vwu tmp_val = Vd[0];
-            for (uint32_t i = 0; i < elem_num_per_vreg; i++) {
-                uint32_t ei = i + vlmax * this->microIdx;
-                if ((ei < rVl) && (this->vm || elem_mask(v0, ei))) {
-                    tmp_val = f(tmp_val, Vs2[i]).v;
-                }
-            }
-            return tmp_val;
-        };
+    uint32_t micro_vlmax = VLEN / sew * (vflmul > 0 ? 1 : vflmul);
+    if (micro_vlmax * this->microIdx < rVl) {
+        Vd[0] = this->microIdx != 0 ? old_Vd[0] : Vs1[0];
 
-    %(code)s;
+        auto reduce_loop =
+            [&, this](const auto& f, const auto* _, const auto* vs2) {
+                vwu tmp_val = Vd[0];
+                for (uint32_t i = 0; i < micro_vlmax; i++) {
+                    uint32_t ei = i + micro_vlmax * this->microIdx;
+                    if ((ei < rVl) && (this->vm || elem_mask(v0, ei))) {
+                        tmp_val = f(tmp_val, Vs2[i]).v;
+                    }
+                }
+                return tmp_val;
+            };
+        %(code)s;
+    }
+
     %(op_wb)s;
     return NoFault;
 }
@@ -1587,7 +1592,7 @@ Fault
         vs1_elems * (vd_idx % vs1_split_num) / vs1_split_num;
     [[maybe_unused]] const uint16_t vd_bias =
         vd_elems * (vs1_idx % vd_split_num) / vd_split_num;
-    uint32_t elem_num_per_vreg = VLEN / sew;
+    uint32_t elem_num_per_vreg = VLENB / std::max(vd_eewb, vs1_eewb);
 
     %(code)s;
     %(op_wb)s;

@@ -856,6 +856,8 @@ def format ViotaFormat(code, category, *flags){{
     set_src_reg_idx = ""
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
     set_src_reg_idx += setOldDestWrapper(old_dest_reg_id)
+    set_src_reg_idx += setSrcVL()
+
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
     vm_decl_rd = vmDeclAndReadData()
     set_vm_idx = setSrcVm()
@@ -1081,6 +1083,7 @@ def format VectorReduceFloatFormat(code, category, *flags) {{
     # Treat tail undisturbed/agnostic as the same
     # We always need old rd as src vreg
     set_src_reg_idx += setOldDestWrapper(old_dest_reg_id)
+    set_src_reg_idx += setSrcVL()
     set_src_reg_idx += setSrcVm()
     vm_decl_rd = vmDeclAndReadData()
     type_def = '''
@@ -1126,6 +1129,7 @@ def format VectorReduceFloatWideningFormat(code, category, *flags) {{
     # Treat tail undisturbed/agnostic as the same
     # We always need old rd as src vreg
     set_src_reg_idx += setOldDestWrapper(old_dest_reg_id)
+    set_src_reg_idx += setSrcVL()
     set_src_reg_idx += setSrcVm()
     vm_decl_rd = vmDeclAndReadData()
     type_def = '''
