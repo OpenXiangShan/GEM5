@@ -84,8 +84,8 @@ class PfInfo:
     total_used = 0
     def __init__(self, blk_addr):
         self.pf_blk = blk_addr
-        self.evict_to_l2 = False
-        self.evict_to_l3 = False
+        self.evict_from_l2 = False
+        self.evict_from_l3 = False
         self.used = False
         PfInfo.prefetched_addr[blk_addr] = self
 
@@ -143,9 +143,9 @@ def analyze_pf_hit():
             aligned_addr = (paddr >> 6) << 6
             if aligned_addr in PfInfo.prefetched_addr and not PfInfo.prefetched_addr[aligned_addr].used:
                 if level == 2:
-                    PfInfo.prefetched_addr[aligned_addr].evict_to_l2 = True
+                    PfInfo.prefetched_addr[aligned_addr].evict_from_l2 = True
                 elif level == 3:
-                    PfInfo.prefetched_addr[aligned_addr].evict_to_l3 = True
+                    PfInfo.prefetched_addr[aligned_addr].evict_from_l3 = True
 
         elif x[-1] == 'CommitMemTrace':  # memory access trace
             id_, tick, is_load, pc, vaddr, paddr, issued, translated, completed, committed, wb, pf_source, site = x
@@ -162,17 +162,17 @@ def analyze_pf_hit():
     evict_to_l2_before_used = 0
     evict_to_l3_before_used = 0
     for x in PfInfo.prefetched_addr.values():
-        if x.evict_to_l2:
+        if x.evict_from_l2:
             evict_to_l2_before_used += 1
-        if x.evict_to_l3:
+        if x.evict_from_l3:
             evict_to_l3_before_used += 1
     total = len(PfInfo.prefetched_addr)
     print(f'Total: {total}, total used: {PfInfo.total_used},'
-          f' evict to l2: {evict_to_l2_before_used},'
-          f' evict to l3: {evict_to_l3_before_used}')
+          f' evict from l2: {evict_to_l2_before_used},'
+          f' evict from l3: {evict_to_l3_before_used}')
     print(f'Total used: {PfInfo.total_used / total * 100:.2f}%,'
-          f' evict to l2: {evict_to_l2_before_used / total * 100:.2f}%,'
-          f' evict to l3: {evict_to_l3_before_used / total * 100:.2f}%')
+          f' evict from l2: {evict_to_l2_before_used / total * 100:.2f}%,'
+          f' evict from l3: {evict_to_l3_before_used / total * 100:.2f}%')
 
 if args.dont_gen_trace:
     analyze_pf_hit()
