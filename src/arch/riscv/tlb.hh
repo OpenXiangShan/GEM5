@@ -63,40 +63,40 @@ class TLB : public BaseTLB
   protected:
     bool is_dtlb;
     bool is_L1tlb;
-    bool is_stage2;
-    bool is_the_sharedL2;
+    bool isStage2;
+    bool isTheSharedL2;
     size_t size;
-    size_t size_back;
-    size_t l2tlb_l1_size;
-    size_t l2tlb_l2_size;
-    size_t l2tlb_l3_size;
-    size_t l2tlb_sp_size;
-    size_t l2tlb_line_size;
-    uint64_t regulation_num;
+    size_t sizeBack;
+    size_t l2TlbL1Size;
+    size_t l2TlbL2Size;
+    size_t l2TlbL3Size;
+    size_t l2TlbSpSize;
+    size_t l2tlbLineSize;
+    uint64_t regulationNum;
     std::vector<TlbEntry> tlb;  // our TLB
     TlbEntryTrie trie;          // for quick access
     EntryList freeList;         // free entries
     uint64_t lruSeq;
-    bool  hit_in_sp;
+    bool  hitInSp;
     uint64_t hitPreEntry;
     uint64_t hitPreNum;
     uint64_t RemovePreUnused;
     uint64_t AllPre;
-    bool isOpenAutoNextline;
-    uint64_t forward_pre_size;
-    bool open_forward_pre;
-    bool open_back_pre;
-    bool back_pre_precision;
-    bool forward_pre_precision;
-    uint64_t all_forward_pre;
-    uint64_t remove_no_use_forward_pre;
-    uint64_t remove_no_use_back_pre;
-    uint64_t used_back_pre;
-    uint64_t all_used;
-    uint64_t forward_used_pre;
-    uint64_t last_vaddr;
-    uint64_t last_pc;
-    uint64_t trace_flag;
+    bool isOpenAutoNextLine;
+    uint64_t forwardPreSize;
+    bool openForwardPre;
+    bool openBackPre;
+    bool backPrePrecision;
+    bool forwardPrePrecision;
+    uint64_t allForwardPre;
+    uint64_t removeNoUseForwardPre;
+    uint64_t removeNoUseBackPre;
+    uint64_t usedBackPre;
+    uint64_t allUsed;
+    uint64_t forwardUsedPre;
+    uint64_t lastVaddr;
+    uint64_t lastPc;
+    uint64_t traceFlag;
 
 
     Walker *walker;
@@ -122,10 +122,10 @@ class TLB : public BaseTLB
         statistics::Scalar squashedInsert;
         statistics::Scalar ALLInsert;
         statistics::Scalar backHits;
-        statistics::Scalar used_back_pre;
-        statistics::Scalar remove_no_use_back_pre;
-        statistics::Scalar used_forward_pre;
-        statistics::Scalar remove_no_use_forward_pre;
+        statistics::Scalar usedBackPre;
+        statistics::Scalar removeNoUseBackPre;
+        statistics::Scalar usedForwardPre;
+        statistics::Scalar removeNoUseForwardPre;
 
 
         statistics::Scalar writeL2l3TlbMisses;
@@ -242,28 +242,28 @@ class TLB : public BaseTLB
 
 
 
-    std::vector<TlbEntry> tlb_l2l1;  // our TLB
+    std::vector<TlbEntry> tlbL2L1;  // our TLB
     TlbEntryTrie trie_l2l1;               // for next line
     EntryList freeList_l2l1;         // free entries
 
-    std::vector<TlbEntry> tlb_l2l2;  // our TLB
+    std::vector<TlbEntry> tlbL2L2;  // our TLB
     TlbEntryTrie trie_l2l2;               // for next line
     EntryList freeList_l2l2;         // free entries
 
-    std::vector<TlbEntry> tlb_l2l3;  // our TLB
+    std::vector<TlbEntry> tlbL2L3;  // our TLB
     TlbEntryTrie trie_l2l3;               // for next line
     EntryList freeList_l2l3;         // free entries
 
-    std::vector<TlbEntry> tlb_l2sp;  // our TLB
+    std::vector<TlbEntry> tlbL2Sp;  // our TLB
     TlbEntryTrie trie_l2sp;               // for next line
     EntryList freeList_l2sp;         // free entries
 
 
-    std::vector<TlbEntry> forward_pre;
+    std::vector<TlbEntry> forwardPre;
     TlbEntryTrie trie_forward_pre;
     EntryList freeList_forward_pre;
 
-    std::vector<TlbEntry> back_pre;
+    std::vector<TlbEntry> backPre;
     TlbEntryTrie trie_back_pre;
     EntryList freeList_back_pre;
 

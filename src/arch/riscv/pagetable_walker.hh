@@ -285,8 +285,8 @@ namespace RiscvISA
         // The number of outstanding walks that can be squashed per cycle.
         unsigned numSquashable;
         bool ptwSquash;
-        bool open_nextline;
-        bool auto_openNextline;
+        bool openNextLine;
+        bool autoOpenNextLine;
         bool is_from_pre_req;
 
         Tick squashHandleTick;
@@ -328,9 +328,9 @@ namespace RiscvISA
             pmp(params.pmp),
             requestorId(sys->getRequestorId(this)),
             numSquashable(params.num_squash_per_cycle),
-            ptwSquash(params.ptwSquash),
-            open_nextline(params.OpenNextline),
-            auto_openNextline(true),
+            ptwSquash(params.ptw_squash),
+            openNextLine(params.open_nextline),
+            autoOpenNextLine(true),
             doL2TLBHitEvent([this]{dol2TLBHit();},name())
         {
         }

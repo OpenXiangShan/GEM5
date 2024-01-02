@@ -60,11 +60,15 @@ const Addr VADDR_BITS  = 39;
 const Addr LEVEL_BITS  = 9;
 const Addr LEVEL_MASK  = (1 << LEVEL_BITS) - 1;
 
-const int L_L2L1 = 1;
-const int L_L2L2 = 2;
-const int L_L2L3 = 3;
-const int L_L2sp1 = 4;
-const int L_L2sp2 = 5;
+enum l2TLBPage
+{
+    L_L2L1 =1,
+    L_L2L2 =2,
+    L_L2L3 ,
+    L_L2sp1,
+    L_L2sp2
+
+};
 const double default_nextline_precision = 0.09;
 
 BitUnion64(PTESv39)

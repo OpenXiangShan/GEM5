@@ -104,10 +104,10 @@ Walker::start(Addr ppn, ThreadContext *_tc, BaseMMU::Translation *_translation,
             _req->getVaddr());
     DPRINTF(PageTableWalker, "from_pre_req %d f_level %d from_l2tlb %d\n", from_forward_pre_req, f_level, from_l2tlb);
 
-    if (auto_openNextline) {
+    if (autoOpenNextLine) {
         auto regulate = tlb->auto_open_nextline();
         if (!regulate)
-            auto_openNextline = false;
+            autoOpenNextLine = false;
     }
     if (currStates.size()) {
         auto [coalesced, fault] =
@@ -123,7 +123,7 @@ Walker::start(Addr ppn, ThreadContext *_tc, BaseMMU::Translation *_translation,
                     "into currStates\n",
                     currStates.size(), _req->getPC(), _req->getVaddr());
             currStates.push_back(newState);
-            Fault fault = newState->startWalk(ppn, f_level, from_l2tlb, open_nextline, auto_openNextline,
+            Fault fault = newState->startWalk(ppn, f_level, from_l2tlb, openNextLine, autoOpenNextLine,
                                               from_forward_pre_req, from_back_pre_req);
             if (!newState->isTiming()) {
                 assert(0);
@@ -140,7 +140,7 @@ Walker::start(Addr ppn, ThreadContext *_tc, BaseMMU::Translation *_translation,
         WalkerState *newState = new WalkerState(this, _translation, _req);
         newState->initState(_tc, _mode, sys->isTimingMode(), from_forward_pre_req, from_back_pre_req);
         currStates.push_back(newState);
-        Fault fault = newState->startWalk(ppn, f_level, from_l2tlb, open_nextline, auto_openNextline,
+        Fault fault = newState->startWalk(ppn, f_level, from_l2tlb, openNextLine, autoOpenNextLine,
                                           from_forward_pre_req, from_back_pre_req);
         if (!newState->isTiming()) {
             currStates.pop_front();
@@ -175,8 +175,8 @@ Walker::startFunctional(ThreadContext * _tc, Addr &addr, unsigned &logBytes,
               BaseMMU::Mode _mode)
 {
     funcState.initState(_tc, _mode);
-    return funcState.startFunctional(addr, logBytes, open_nextline,
-                                     auto_openNextline, false, false);
+    return funcState.startFunctional(addr, logBytes, openNextLine,
+                                     autoOpenNextLine, false, false);
 }
 
 bool
@@ -375,6 +375,7 @@ Walker::dol2TLBHit()
         PrivilegeMode pmodel2 = tlb->getMemPriv(dol2TLBHitrequestors.tc,
                                                 dol2TLBHitrequestors.mode);
         dol2TLBHitrequestors.req->setPaddr(dol2TLBHitrequestors.Paddr);
+        pma->check(dol2TLBHitrequestors.req);
         l2tlbFault =
             pmp->pmpCheck(dol2TLBHitrequestors.req, dol2TLBHitrequestors.mode,
                           pmodel2, dol2TLBHitrequestors.tc);

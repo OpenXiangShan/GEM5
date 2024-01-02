@@ -76,29 +76,29 @@ buildKey(Addr vpn, uint16_t asid)
 }
 
 TLB::TLB(const Params &p) :
-    BaseTLB(p), is_dtlb(p.is_dtlb),is_L1tlb(p.is_L1tlb),is_stage2(p.is_stage2),
-    is_the_sharedL2(p.is_the_sharedL2),size(p.size),size_back(32),
-    l2tlb_l1_size(p.l2tlb_l1_size),
-    l2tlb_l2_size(p.l2tlb_l2_size),l2tlb_l3_size(p.l2tlb_l3_size),
-    l2tlb_sp_size(p.l2tlb_sp_size),
-    l2tlb_line_size(p.l2tlb_line_size),
-    regulation_num(p.regulation_num),
-    tlb(size),lruSeq(0),hit_in_sp(false),
+    BaseTLB(p), is_dtlb(p.is_dtlb),is_L1tlb(p.is_L1tlb),isStage2(p.is_stage2),
+    isTheSharedL2(p.is_the_sharedL2),size(p.size),sizeBack(32),
+    l2TlbL1Size(p.l2tlb_l1_size),
+    l2TlbL2Size(p.l2tlb_l2_size),l2TlbL3Size(p.l2tlb_l3_size),
+    l2TlbSpSize(p.l2tlb_sp_size),
+    l2tlbLineSize(p.l2tlb_line_size),
+    regulationNum(p.regulation_num),
+    tlb(size),lruSeq(0),hitInSp(false),
     hitPreEntry(0),hitPreNum(0),
     RemovePreUnused(0),AllPre(0),
-    isOpenAutoNextline(p.isOpenNextline),
-    forward_pre_size(p.forward_pre_size),open_forward_pre(p.open_forward_pre),
-    open_back_pre(p.open_back_pre),
-    back_pre_precision(p.initial_back_pre_precision_value),
-    forward_pre_precision(p.initial_forward_pre_precision_value),
-    all_forward_pre(0),remove_no_use_forward_pre(0),remove_no_use_back_pre(0),
-    used_back_pre(0),all_used(0),forward_used_pre(0),
-    last_vaddr(0),last_pc(0), trace_flag(false),
+    isOpenAutoNextLine(p.is_open_nextline),
+    forwardPreSize(p.forward_pre_size),openForwardPre(p.open_forward_pre),
+    openBackPre(p.open_back_pre),
+    backPrePrecision(p.initial_back_pre_precision_value),
+    forwardPrePrecision(p.initial_forward_pre_precision_value),
+    allForwardPre(0),removeNoUseForwardPre(0),removeNoUseBackPre(0),
+    usedBackPre(0),allUsed(0),forwardUsedPre(0),
+    lastVaddr(0),lastPc(0), traceFlag(false),
     stats(this), pma(p.pma_checker),
     pmp(p.pmp),
-    tlb_l2l1(l2tlb_l1_size *l2tlb_line_size),tlb_l2l2(l2tlb_l2_size *l2tlb_line_size),
-    tlb_l2l3(l2tlb_l3_size *l2tlb_line_size),tlb_l2sp(l2tlb_sp_size *l2tlb_line_size),
-    forward_pre(forward_pre_size),back_pre(32)
+    tlbL2L1(l2TlbL1Size *l2tlbLineSize),tlbL2L2(l2TlbL2Size *l2tlbLineSize),
+    tlbL2L3(l2TlbL3Size *l2tlbLineSize),tlbL2Sp(l2TlbSpSize *l2tlbLineSize),
+    forwardPre(forwardPreSize),backPre(32)
 {
 
     if (is_L1tlb) {
@@ -112,39 +112,39 @@ TLB::TLB(const Params &p) :
         DPRINTF(TLBVerbose, "tlb11 tlb_size %d size() %d\n", size, tlb.size());
 
     }
-    if (is_stage2 || is_the_sharedL2) {
+    if (isStage2 || isTheSharedL2) {
         DPRINTF(TLBVerbose, "tlbL2\n");
-        for (size_t x_l2l1 = 0; x_l2l1 < l2tlb_l1_size * l2tlb_line_size; x_l2l1++) {
-            tlb_l2l1[x_l2l1].trieHandle = nullptr;
-            freeList_l2l1.push_back(&tlb_l2l1[x_l2l1]);
+        for (size_t x_l2l1 = 0; x_l2l1 < l2TlbL1Size * l2tlbLineSize; x_l2l1++) {
+            tlbL2L1[x_l2l1].trieHandle = nullptr;
+            freeList_l2l1.push_back(&tlbL2L1[x_l2l1]);
         }
 
-        for (size_t x_l2l2 = 0; x_l2l2 < l2tlb_l2_size * l2tlb_line_size; x_l2l2++) {
-            tlb_l2l2[x_l2l2].trieHandle = nullptr;
-            freeList_l2l2.push_back(&tlb_l2l2[x_l2l2]);
+        for (size_t x_l2l2 = 0; x_l2l2 < l2TlbL2Size * l2tlbLineSize; x_l2l2++) {
+            tlbL2L2[x_l2l2].trieHandle = nullptr;
+            freeList_l2l2.push_back(&tlbL2L2[x_l2l2]);
         }
-        for (size_t x_l2l3 = 0; x_l2l3 < l2tlb_l3_size * l2tlb_line_size; x_l2l3++) {
-            tlb_l2l3[x_l2l3].trieHandle = nullptr;
-            freeList_l2l3.push_back(&tlb_l2l3[x_l2l3]);
+        for (size_t x_l2l3 = 0; x_l2l3 < l2TlbL3Size * l2tlbLineSize; x_l2l3++) {
+            tlbL2L3[x_l2l3].trieHandle = nullptr;
+            freeList_l2l3.push_back(&tlbL2L3[x_l2l3]);
         }
-        for (size_t x_l2sp = 0; x_l2sp < l2tlb_sp_size * l2tlb_line_size; x_l2sp++) {
-            tlb_l2sp[x_l2sp].trieHandle = nullptr;
-            freeList_l2sp.push_back(&tlb_l2sp[x_l2sp]);
+        for (size_t x_l2sp = 0; x_l2sp < l2TlbSpSize * l2tlbLineSize; x_l2sp++) {
+            tlbL2Sp[x_l2sp].trieHandle = nullptr;
+            freeList_l2sp.push_back(&tlbL2Sp[x_l2sp]);
         }
-        for (size_t x_g = 0; x_g < forward_pre_size; x_g++) {
-            forward_pre[x_g].trieHandle = nullptr;
-            freeList_forward_pre.push_back(&forward_pre[x_g]);
+        for (size_t x_g = 0; x_g < forwardPreSize; x_g++) {
+            forwardPre[x_g].trieHandle = nullptr;
+            freeList_forward_pre.push_back(&forwardPre[x_g]);
         }
         for (size_t x_f = 0; x_f < 32; x_f++) {
-            back_pre[x_f].trieHandle = nullptr;
-            freeList_back_pre.push_back(&back_pre[x_f]);
+            backPre[x_f].trieHandle = nullptr;
+            freeList_back_pre.push_back(&backPre[x_f]);
         }
-        DPRINTF(TLBVerbose, "l2l1.size() %d l2l2.size() %d l2l3.size() %d l2sp.size() %d\n", tlb_l2l1.size(),
-                tlb_l2l2.size(), tlb_l2l3.size(), tlb_l2sp.size());
+        DPRINTF(TLBVerbose, "l2l1.size() %d l2l2.size() %d l2l3.size() %d l2sp.size() %d\n", tlbL2L1.size(),
+                tlbL2L2.size(), tlbL2L3.size(), tlbL2Sp.size());
         DPRINTF(TLBVerbose,
                 "tlbl2 size l2tlb_l1_size %d l2tlb_l2_size %d l2tlb_l3_size "
                 "%d l2tlb_sp_size %d\n",
-                l2tlb_l1_size, l2tlb_l2_size, l2tlb_l3_size, l2tlb_sp_size);
+                l2TlbL1Size, l2TlbL2Size, l2TlbL3Size, l2TlbSpSize);
     }
 }
 
@@ -172,8 +172,8 @@ void
 TLB::evict_forward_pre()
 {
     size_t lru = 0;
-    for (size_t i = 1; i < forward_pre_size; i++) {
-        if (forward_pre[i].lruSeq < forward_pre[lru].lruSeq) {
+    for (size_t i = 1; i < forwardPreSize; i++) {
+        if (forwardPre[i].lruSeq < forwardPre[lru].lruSeq) {
             lru = i;
         }
     }
@@ -184,8 +184,8 @@ void
 TLB::evict_back_pre()
 {
     size_t lru = 0;
-    for (size_t i = 1; i < size_back; i++) {
-        if (back_pre[i].lruSeq < back_pre[lru].lruSeq) {
+    for (size_t i = 1; i < sizeBack; i++) {
+        if (backPre[i].lruSeq < backPre[lru].lruSeq) {
             lru = i;
         }
     }
@@ -202,12 +202,12 @@ TLB::l2TLB_evictLRU(int l2TLBlevel,Addr vaddr){
     l3_index = (vaddr >> 15) & (0x7f);
     int l2_index_num = 0;
     int l3_index_num = 0;
-    DPRINTF(TLB, "l2tlb_evictLRU tlb_l2l1_size %d\n", tlb_l2l1.size());
+    DPRINTF(TLB, "l2tlb_evictLRU tlb_l2l1_size %d\n", tlbL2L1.size());
 
     if (l2TLBlevel == L_L2L1) {
         lru =0;
-        for (i = l2tlb_line_size;i< l2tlb_l1_size*l2tlb_line_size;i=i+l2tlb_line_size){
-            if (tlb_l2l1[i].lruSeq < tlb_l2l1[lru].lruSeq){
+        for (i = l2tlbLineSize;i< l2TlbL1Size*l2tlbLineSize;i=i+l2tlbLineSize){
+            if (tlbL2L1[i].lruSeq < tlbL2L1[lru].lruSeq){
                 lru = i;
             }
         }
@@ -216,13 +216,13 @@ TLB::l2TLB_evictLRU(int l2TLBlevel,Addr vaddr){
 
     else if (l2TLBlevel == L_L2L2) {
         lru = 0;
-        for (i = 0; i < l2tlb_l2_size * l2tlb_line_size; i = i + l2tlb_line_size) {
-            if ((tlb_l2l2[i].index == l2_index) && (tlb_l2l2[i].trieHandle != nullptr)) {
+        for (i = 0; i < l2TlbL2Size * l2tlbLineSize; i = i + l2tlbLineSize) {
+            if ((tlbL2L2[i].index == l2_index) && (tlbL2L2[i].trieHandle != nullptr)) {
                 DPRINTF(TLBVerbose, "vaddr %#x index %#x\n",
-                        tlb_l2l2[i].vaddr, l2_index);
+                        tlbL2L2[i].vaddr, l2_index);
                 if (l2_index_num == 0) {
                     lru = i;
-                } else if (tlb_l2l2[i].lruSeq < tlb_l2l2[lru].lruSeq) {
+                } else if (tlbL2L2[i].lruSeq < tlbL2L2[lru].lruSeq) {
                     lru = i;
                 }
                 l2_index_num++;
@@ -240,11 +240,11 @@ TLB::l2TLB_evictLRU(int l2TLBlevel,Addr vaddr){
 
     else if (l2TLBlevel == L_L2L3) {
         lru = 0;
-        for (i = 0; i < l2tlb_l3_size * l2tlb_line_size; i = i + l2tlb_line_size) {
-            if ((tlb_l2l3[i].index == l3_index) && (tlb_l2l3[i].trieHandle != nullptr)) {
+        for (i = 0; i < l2TlbL3Size * l2tlbLineSize; i = i + l2tlbLineSize) {
+            if ((tlbL2L3[i].index == l3_index) && (tlbL2L3[i].trieHandle != nullptr)) {
                 if (l3_index_num == 0) {
                     lru = i;
-                } else if (tlb_l2l3[i].lruSeq < tlb_l2l3[lru].lruSeq) {
+                } else if (tlbL2L3[i].lruSeq < tlbL2L3[lru].lruSeq) {
                     lru = i;
                 }
                 l3_index_num++;
@@ -261,8 +261,8 @@ TLB::l2TLB_evictLRU(int l2TLBlevel,Addr vaddr){
 
     else if ((l2TLBlevel == L_L2sp1) || (l2TLBlevel == L_L2sp2)) {
         lru =0;
-        for (i = l2tlb_line_size; i < l2tlb_sp_size * l2tlb_line_size; i = i + l2tlb_line_size) {
-            if (tlb_l2sp[i].lruSeq < tlb_l2sp[lru].lruSeq) {
+        for (i = l2tlbLineSize; i < l2TlbSpSize * l2tlbLineSize; i = i + l2tlbLineSize) {
+            if (tlbL2Sp[i].lruSeq < tlbL2Sp[lru].lruSeq) {
                 lru = i;
             }
         }
@@ -350,7 +350,7 @@ TLB::auto_open_nextline()
 {
     TLB *l2tlb;
 
-    if (is_stage2)
+    if (isStage2)
         l2tlb = this;
     else
         l2tlb = static_cast<TLB *>(nextLevel());
@@ -361,8 +361,8 @@ TLB::auto_open_nextline()
     bool auto_nextline;
     double precision =
         (double)((pre_num_c - removePreUnused_c) / (pre_num_c + 1));
-    if (isOpenAutoNextline) {
-        if (removePreUnused_c > regulation_num) {
+    if (isOpenAutoNextLine) {
+        if (removePreUnused_c > regulationNum) {
             if (precision < 0.09) {
                 DPRINTF(autoNextline,
                         "pre_num %d removePreUnused %d precision %f\n",
@@ -402,7 +402,7 @@ TLB::lookup_l2tlb(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
     TlbEntry *entry_l2 = NULL;
 
     bool is_squashed_flag = false;
-    if (is_L1tlb && !is_stage2)
+    if (is_L1tlb && !isStage2)
         assert(0);
 
     if (f_level == L_L2L1) {
@@ -664,7 +664,7 @@ TLB::insert(Addr vpn, const TlbEntry &entry,bool squashed_update)
             entry.logBytes, newEntry->paddr);
     // stats all insert number
     stats.ALLInsert++;
-    all_used++;
+    allUsed++;
     return newEntry;
 }
 
@@ -686,7 +686,7 @@ TLB::insert_forward_pre(Addr vpn, const TlbEntry &entry)
     newEntry->vaddr = vpn;
     newEntry->used = false;
     newEntry->trieHandle = trie_forward_pre.insert(key, TlbEntryTrie::MaxBits - entry.logBytes, newEntry);
-    all_forward_pre++;
+    allForwardPre++;
     return newEntry;
 }
 
@@ -806,7 +806,7 @@ TLB::L2TLB_insert_in(Addr vpn, const TlbEntry &entry, int choose,
             entry.logBytes,TlbEntryTrie::MaxBits - entry.logBytes);
     stats.ALLInsertL2++;
     if (choose == L_L2L3)
-        all_used++;
+        allUsed++;
     if (entry.is_pre){
         stats.AllPre++;
         AllPre++;
@@ -821,7 +821,7 @@ TLB::L2TLB_insert(Addr vpn, const TlbEntry &entry, int level, int choose,
                   int sign, bool squashed_update)
 {
     TLB *l2tlb;
-    if (is_stage2)
+    if (isStage2)
         l2tlb = this;
     else
         l2tlb = static_cast<TLB *>(nextLevel());
@@ -868,17 +868,17 @@ TLB::demapPage(Addr vpn, uint64_t asid)
     size_t i;
 
     TLB *l2tlb;
-    if (is_stage2)
+    if (isStage2)
         l2tlb = this;
     else
         l2tlb = static_cast<TLB *>(nextLevel());
 
-    if ((l2tlb == NULL) && (!is_stage2))
+    if ((l2tlb == NULL) && (!isStage2))
         assert(0);
 
     if (vpn == 0 && asid == 0) {
         flushAll();
-        if (!is_stage2) {
+        if (!isStage2) {
             l2tlb->flushAll();
         }
 
@@ -953,107 +953,95 @@ TLB::demapPageL2(Addr vpn, uint64_t asid)
         DPRINTF(TLBVerbose3, "l2sp2hit\n");
     }
     if (vpn != 0 && asid != 0) {
-    /*    TlbEntry *l2l1_newEntry =
-            lookup_l2tlb(vpn, asid, BaseMMU::Read, true, L_L2L1, false);
-        TlbEntry *l2l2_newEntry =
-            lookup_l2tlb(vpn, asid, BaseMMU::Read, true, L_L2L2, false);
-        TlbEntry *l2l3_newEntry =
-            lookup_l2tlb(vpn, asid, BaseMMU::Read, true, L_L2L3, false);
-        TlbEntry *l2sp1_newEntry =
-            lookup_l2tlb(vpn, asid, BaseMMU::Read, true, L_L2sp1, false);
-        TlbEntry *l2sp2_newEntry =
-            lookup_l2tlb(vpn, asid, BaseMMU::Read, true, L_L2sp2, false);
-*/
-
         if (l2l1_newEntry) {
             TlbEntry *m_l2l1_newEntry = lookup_l2tlb(
                 vpnl2l1, asid, BaseMMU::Read, true, L_L2L1, false);
             if (m_l2l1_newEntry == NULL)
                 assert(0);
-            l2TLB_remove(m_l2l1_newEntry - tlb_l2l1.data(), L_L2L1);
+            l2TLB_remove(m_l2l1_newEntry - tlbL2L1.data(), L_L2L1);
         }
         if (l2l2_newEntry) {
             TlbEntry *m_l2l2_newEntry = lookup_l2tlb(
                 vpnl2l2, asid, BaseMMU::Read, true, L_L2L2, false);
             if (m_l2l2_newEntry == NULL)
                 assert(0);
-            l2TLB_remove(m_l2l2_newEntry - tlb_l2l2.data(), L_L2L2);
+            l2TLB_remove(m_l2l2_newEntry - tlbL2L2.data(), L_L2L2);
         }
         if (l2l3_newEntry) {
             TlbEntry *m_l2l3_newEntry = lookup_l2tlb(
                 vpnl2l3, asid, BaseMMU::Read, true, L_L2L3, false);
             if (m_l2l3_newEntry == NULL)
                 assert(0);
-            l2TLB_remove(m_l2l3_newEntry - tlb_l2l3.data(), L_L2L3);
+            l2TLB_remove(m_l2l3_newEntry - tlbL2L3.data(), L_L2L3);
         }
         if (l2sp1_newEntry) {
             TlbEntry *m_l2sp1_newEntry = lookup_l2tlb(
                 vpnl2sp1, asid, BaseMMU::Read, true, L_L2sp1, false);
             if (m_l2sp1_newEntry == NULL)
                 assert(0);
-            l2TLB_remove(m_l2sp1_newEntry - tlb_l2sp.data(), L_L2sp1);
+            l2TLB_remove(m_l2sp1_newEntry - tlbL2Sp.data(), L_L2sp1);
         }
         if (l2sp2_newEntry) {
             TlbEntry *m_l2sp2_newEntry = lookup_l2tlb(
                 vpnl2sp2, asid, BaseMMU::Read, true, L_L2sp2, false);
             if (m_l2sp2_newEntry == NULL)
                 assert(0);
-            l2TLB_remove(m_l2sp2_newEntry - tlb_l2sp.data(), L_L2sp2);
+            l2TLB_remove(m_l2sp2_newEntry - tlbL2Sp.data(), L_L2sp2);
         }
     } else {
-        for (i = 0; i < l2tlb_l1_size * 8; i = i + 8) {
-            if (tlb_l2l1[i].trieHandle) {
-                Addr l2l1_mask = ~(tlb_l2l1[i].size() - 1);
+        for (i = 0; i < l2TlbL1Size * 8; i = i + 8) {
+            if (tlbL2L1[i].trieHandle) {
+                Addr l2l1_mask = ~(tlbL2L1[i].size() - 1);
                 if ((vpnl2l1 == 0 ||
-                     (vpnl2l1 & l2l1_mask) == tlb_l2l1[i].vaddr) &&
-                    (asid == 0 || tlb_l2l1[i].asid == asid)) {
+                     (vpnl2l1 & l2l1_mask) == tlbL2L1[i].vaddr) &&
+                    (asid == 0 || tlbL2L1[i].asid == asid)) {
                     l2TLB_remove(i, L_L2L1);
                 }
             }
         }
-        for (i = 0; i < l2tlb_l2_size * 8; i = i + 8) {
-            if (tlb_l2l2[i].trieHandle) {
-                Addr l2l2_mask = ~(tlb_l2l2[i].size() - 1);
+        for (i = 0; i < l2TlbL2Size * 8; i = i + 8) {
+            if (tlbL2L2[i].trieHandle) {
+                Addr l2l2_mask = ~(tlbL2L2[i].size() - 1);
                 if ((vpnl2l2 == 0 ||
-                     (vpnl2l2 & l2l2_mask) == tlb_l2l2[i].vaddr) &&
-                    (asid == 0 || tlb_l2l2[i].asid == asid))
+                     (vpnl2l2 & l2l2_mask) == tlbL2L2[i].vaddr) &&
+                    (asid == 0 || tlbL2L2[i].asid == asid))
                 {
                     l2TLB_remove(i, L_L2L2);
                     DPRINTF(TLBVerbose3,
                             "l2l2 remove vaddr %#x vpn %#x vpnl2l3\n",
-                            tlb_l2l2[i].vaddr, vpn, vpnl2l2);
+                            tlbL2L2[i].vaddr, vpn, vpnl2l2);
                 }
             }
         }
-        for (i = 0; i < l2tlb_l3_size * 8; i = i + 8) {
-            if (tlb_l2l3[i].trieHandle)
+        for (i = 0; i < l2TlbL3Size * 8; i = i + 8) {
+            if (tlbL2L3[i].trieHandle)
             {
-                Addr l2l3_mask = ~(tlb_l2l3[i].size() - 1);
+                Addr l2l3_mask = ~(tlbL2L3[i].size() - 1);
                 if ((vpnl2l3 == 0 ||
-                     (vpnl2l3 & l2l3_mask) == tlb_l2l3[i].vaddr) &&
-                    (asid == 0 || tlb_l2l3[i].asid == asid))
+                     (vpnl2l3 & l2l3_mask) == tlbL2L3[i].vaddr) &&
+                    (asid == 0 || tlbL2L3[i].asid == asid))
                 {
                     l2TLB_remove(i, L_L2L3);
                     DPRINTF(TLBVerbose3,
                             "l2l3 remove vaddr %#x vpn %#x vpnl2l3\n",
-                            tlb_l2l3[i].vaddr, vpn, vpnl2l3);
+                            tlbL2L3[i].vaddr, vpn, vpnl2l3);
                 }
             }
         }
-        for (i = 0; i < l2tlb_sp_size * 8; i++) {
-            Addr l2sp_mask = ~(tlb_l2sp[i].size() - 1);
-            if (tlb_l2sp[i].trieHandle) {
+        for (i = 0; i < l2TlbSpSize * 8; i++) {
+            Addr l2sp_mask = ~(tlbL2Sp[i].size() - 1);
+            if (tlbL2Sp[i].trieHandle) {
 
                 if ((vpnl2l1 == 0 ||
-                     (vpnl2l1 & l2sp_mask) == tlb_l2sp[i].vaddr) &&
-                    (asid == 0 || tlb_l2sp[i].asid == asid)) {
+                     (vpnl2l1 & l2sp_mask) == tlbL2Sp[i].vaddr) &&
+                    (asid == 0 || tlbL2Sp[i].asid == asid)) {
                     l2TLB_remove(i, L_L2sp1);
                 }
             }
-            if (tlb_l2sp[i].trieHandle) {
+            if (tlbL2Sp[i].trieHandle) {
                 if ((vpnl2l2 == 0 ||
-                     (vpnl2l2 & l2sp_mask) == tlb_l2sp[i].vaddr) &&
-                    (asid == 0 || tlb_l2sp[i].asid == asid)) {
+                     (vpnl2l2 & l2sp_mask) == tlbL2Sp[i].vaddr) &&
+                    (asid == 0 || tlbL2Sp[i].asid == asid)) {
                     l2TLB_remove(i, L_L2sp2);
                 }
             }
@@ -1071,21 +1059,21 @@ TLB::flushAll()
                 remove(i);
         }
     }
-    if (is_stage2 || is_the_sharedL2) {
-        for (i = 0; i < l2tlb_l1_size * 8; i = i + 8) {
-            if (tlb_l2l1[i].trieHandle)
+    if (isStage2 || isTheSharedL2) {
+        for (i = 0; i < l2TlbL1Size * 8; i = i + 8) {
+            if (tlbL2L1[i].trieHandle)
                 l2TLB_remove(i, L_L2L1);
         }
-        for (i = 0; i < l2tlb_l2_size * 8; i = i + 8) {
-            if (tlb_l2l2[i].trieHandle)
+        for (i = 0; i < l2TlbL2Size * 8; i = i + 8) {
+            if (tlbL2L2[i].trieHandle)
                 l2TLB_remove(i, L_L2L2);
         }
-        for (i = 0; i < l2tlb_l3_size * 8; i = i + 8) {
-            if (tlb_l2l3[i].trieHandle)
+        for (i = 0; i < l2TlbL3Size * 8; i = i + 8) {
+            if (tlbL2L3[i].trieHandle)
                 l2TLB_remove(i, L_L2L3);
         }
-        for (i = 0; i < l2tlb_sp_size * 8; i = i + 8) {
-            if (tlb_l2sp[i].trieHandle)
+        for (i = 0; i < l2TlbSpSize * 8; i = i + 8) {
+            if (tlbL2Sp[i].trieHandle)
                 l2TLB_remove(i, L_L2sp1);
         }
     }
@@ -1109,33 +1097,33 @@ TLB::remove(size_t idx)
 void
 TLB::remove_forward_pre(size_t idx)
 {
-    assert(forward_pre[idx].trieHandle);
-    if (!forward_pre[idx].used) {
-        remove_no_use_forward_pre++;
-        stats.remove_no_use_forward_pre++;
+    assert(forwardPre[idx].trieHandle);
+    if (!forwardPre[idx].used) {
+        removeNoUseForwardPre++;
+        stats.removeNoUseForwardPre++;
     } else {
-        forward_used_pre++;
-        stats.used_forward_pre++;
+        forwardUsedPre++;
+        stats.usedForwardPre++;
     }
-    trie_forward_pre.remove(forward_pre[idx].trieHandle);
-    forward_pre[idx].trieHandle = NULL;
-    freeList_forward_pre.push_back(&forward_pre[idx]);
+    trie_forward_pre.remove(forwardPre[idx].trieHandle);
+    forwardPre[idx].trieHandle = NULL;
+    freeList_forward_pre.push_back(&forwardPre[idx]);
 }
 
 void
 TLB::remove_back_pre(size_t idx)
 {
-    assert(back_pre[idx].trieHandle);
-    if (!back_pre[idx].used) {
-        remove_no_use_back_pre++;
-        stats.remove_no_use_back_pre++;
+    assert(backPre[idx].trieHandle);
+    if (!backPre[idx].used) {
+        removeNoUseBackPre++;
+        stats.removeNoUseBackPre++;
     } else {
-        used_back_pre++;
-        stats.used_back_pre++;
+        usedBackPre++;
+        stats.usedBackPre++;
     }
-    trie_back_pre.remove(back_pre[idx].trieHandle);
-    back_pre[idx].trieHandle = NULL;
-    freeList_back_pre.push_back(&back_pre[idx]);
+    trie_back_pre.remove(backPre[idx].trieHandle);
+    backPre[idx].trieHandle = NULL;
+    freeList_back_pre.push_back(&backPre[idx]);
 }
 
 void
@@ -1144,7 +1132,7 @@ TLB::l2TLB_remove(size_t idx, int choose)
     int i;
     if (choose == L_L2L1) {
         stats.l2l1tlbRemove++;
-        if (tlb_l2l1[idx].used) {
+        if (tlbL2L1[idx].used) {
             stats.l2l1tlbUsedRemove++;
         } else {
             stats.l2l1tlbUnusedRemove++;
@@ -1152,21 +1140,17 @@ TLB::l2TLB_remove(size_t idx, int choose)
 
         for (i = 0; i < 8; i++) {
             DPRINTF(TLB, "remove tlb_l2l1 idx %d idx+i %d\n", idx, idx + i);
-            DPRINTF(TLB,
-                    "remove tlb_l2l1 (vpn=%#x, asid=%#x): ppn=%#x pte=%#x "
-                    "size=%#x\n",
-                    tlb_l2l1[idx + i].vaddr, tlb_l2l1[idx + i].asid,
-                    tlb_l2l1[idx + i].paddr, tlb_l2l1[idx + i].pte,
-                    tlb_l2l1[idx + i].size());
-            assert(tlb_l2l1[idx + i].trieHandle);
-            trie_l2l1.remove(tlb_l2l1[idx + i].trieHandle);
-            tlb_l2l1[idx + i].trieHandle = NULL;
-            freeList_l2l1.push_back(&tlb_l2l1[idx + i]);
+            DPRINTF(TLB, "remove tlb_l2l1 (vpn=%#x, asid=%#x): ppn=%#x pte=%#x size=%#x\n", tlbL2L1[idx + i].vaddr,
+                    tlbL2L1[idx + i].asid, tlbL2L1[idx + i].paddr, tlbL2L1[idx + i].pte, tlbL2L1[idx + i].size());
+            assert(tlbL2L1[idx + i].trieHandle);
+            trie_l2l1.remove(tlbL2L1[idx + i].trieHandle);
+            tlbL2L1[idx + i].trieHandle = NULL;
+            freeList_l2l1.push_back(&tlbL2L1[idx + i]);
         }
     }
     if (choose == L_L2L2) {
         stats.l2l2tlbRemove++;
-        if (tlb_l2l2[idx].used) {
+        if (tlbL2L2[idx].used) {
             stats.l2l2tlbUsedRemove++;
         } else {
             stats.l2l2tlbUnusedRemove++;
@@ -1174,26 +1158,22 @@ TLB::l2TLB_remove(size_t idx, int choose)
         EntryList::iterator iterl2l2 = freeList_l2l2.begin();
         for (i = 0; i < 8; i++) {
             DPRINTF(TLB, "remove tlb_l2l2 idx %d idx+i %d\n", idx, idx + i);
-            DPRINTF(TLB,
-                    "remove tlb_l2l2 (vpn=%#x, asid=%#x): ppn=%#x pte=%#x "
-                    "size=%#x\n",
-                    tlb_l2l2[idx + i].vaddr, tlb_l2l2[idx + i].asid,
-                    tlb_l2l2[idx + i].paddr, tlb_l2l2[idx + i].pte,
-                    tlb_l2l2[idx + i].size());
-            assert(tlb_l2l2[idx + i].trieHandle);
-            trie_l2l2.remove(tlb_l2l2[idx + i].trieHandle);
-            tlb_l2l2[idx + i].trieHandle = NULL;
-            freeList_l2l2.insert(iterl2l2, &tlb_l2l2[idx + i]);
+            DPRINTF(TLB, "remove tlb_l2l2 (vpn=%#x, asid=%#x): ppn=%#x pte=%#x size=%#x\n", tlbL2L2[idx + i].vaddr,
+                    tlbL2L2[idx + i].asid, tlbL2L2[idx + i].paddr, tlbL2L2[idx + i].pte, tlbL2L2[idx + i].size());
+            assert(tlbL2L2[idx + i].trieHandle);
+            trie_l2l2.remove(tlbL2L2[idx + i].trieHandle);
+            tlbL2L2[idx + i].trieHandle = NULL;
+            freeList_l2l2.insert(iterl2l2, &tlbL2L2[idx + i]);
         }
     }
     if (choose == L_L2L3) {
         stats.l2l3tlbRemove++;
-        if (tlb_l2l3[idx].used) {
+        if (tlbL2L3[idx].used) {
             stats.l2l3tlbUsedRemove++;
         } else {
             stats.l2l3tlbUnusedRemove++;
         }
-        if (tlb_l2l3[idx].is_pre && !tlb_l2l3[idx].pre_sign) {
+        if (tlbL2L3[idx].is_pre && !tlbL2L3[idx].pre_sign) {
             stats.RemovePreUnused++;
             RemovePreUnused++;
         }
@@ -1201,37 +1181,29 @@ TLB::l2TLB_remove(size_t idx, int choose)
         EntryList::iterator iterl2l3 = freeList_l2l3.begin();
         for (i = 0; i < 8; i++) {
             DPRINTF(TLB, "remove tlb_l2l3 idx %d idx+i %d\n", idx, idx + i);
-            DPRINTF(TLB,
-                    "remove tlb_l2l3 (vpn=%#x, asid=%#x): ppn=%#x pte=%#x "
-                    "size=%#x\n",
-                    tlb_l2l3[idx + i].vaddr, tlb_l2l3[idx + i].asid,
-                    tlb_l2l3[idx + i].paddr, tlb_l2l3[idx + i].pte,
-                    tlb_l2l3[idx + i].size());
-            assert(tlb_l2l3[idx + i].trieHandle);
-            trie_l2l3.remove(tlb_l2l3[idx + i].trieHandle);
-            tlb_l2l3[idx + i].trieHandle = NULL;
-            freeList_l2l3.insert(iterl2l3, &tlb_l2l3[idx + i]);
+            DPRINTF(TLB, "remove tlb_l2l3 (vpn=%#x, asid=%#x): ppn=%#x pte=%#x size=%#x\n", tlbL2L3[idx + i].vaddr,
+                    tlbL2L3[idx + i].asid, tlbL2L3[idx + i].paddr, tlbL2L3[idx + i].pte, tlbL2L3[idx + i].size());
+            assert(tlbL2L3[idx + i].trieHandle);
+            trie_l2l3.remove(tlbL2L3[idx + i].trieHandle);
+            tlbL2L3[idx + i].trieHandle = NULL;
+            freeList_l2l3.insert(iterl2l3, &tlbL2L3[idx + i]);
         }
     }
     if (choose == L_L2sp1 || choose == L_L2sp2) {
         stats.l2sptlbRemove++;
-        if (tlb_l2sp[idx].used) {
+        if (tlbL2Sp[idx].used) {
             stats.l2sptlbUsedRemove++;
         } else {
             stats.l2sptlbUnusedRemove++;
         }
         for (i = 0; i < 8; i++) {
             DPRINTF(TLB, "remove tlb_l2sp idx %d idx+i %d\n", idx, idx + i);
-            DPRINTF(TLB,
-                    "remove tlb_sp (vpn=%#x, asid=%#x): ppn=%#x pte=%#x "
-                    "size=%#x\n",
-                    tlb_l2sp[idx + i].vaddr, tlb_l2sp[idx + i].asid,
-                    tlb_l2sp[idx + i].paddr, tlb_l2sp[idx + i].pte,
-                    tlb_l2sp[idx + i].size());
-            assert(tlb_l2sp[idx + i].trieHandle);
-            trie_l2sp.remove(tlb_l2sp[idx + i].trieHandle);
-            tlb_l2sp[idx + i].trieHandle = NULL;
-            freeList_l2sp.push_back(&tlb_l2sp[idx + i]);
+            DPRINTF(TLB, "remove tlb_sp (vpn=%#x, asid=%#x): ppn=%#x pte=%#x size=%#x\n", tlbL2Sp[idx + i].vaddr,
+                    tlbL2Sp[idx + i].asid, tlbL2Sp[idx + i].paddr, tlbL2Sp[idx + i].pte, tlbL2Sp[idx + i].size());
+            assert(tlbL2Sp[idx + i].trieHandle);
+            trie_l2sp.remove(tlbL2Sp[idx + i].trieHandle);
+            tlbL2Sp[idx + i].trieHandle = NULL;
+            freeList_l2sp.push_back(&tlbL2Sp[idx + i]);
         }
     }
 }
@@ -1316,20 +1288,19 @@ TLB::L2tlb_check(PTESv39 pte, int level, STATUS status, PrivilegeMode pmode, Add
                  const RequestPtr &req, bool is_pre, bool is_back_pre)
 {
     Fault fault = NoFault;
-    hit_in_sp = false;
+    hitInSp = false;
     if (is_pre) {
         DPRINTF(TLBGPre, "l2tlb_check paddr %#x vaddr %#x pte %#x\n", pte.ppn,
                 vaddr, pte);
     }
 
-
     if (!pte.v || (!pte.r && pte.w)) {
-        hit_in_sp = true;
+        hitInSp = true;
         fault = L2tlb_pagefault(vaddr, mode, req, is_pre, is_back_pre);
 
     } else {
         if (pte.r || pte.x) {
-            hit_in_sp = true;
+            hitInSp = true;
             fault = checkPermissions(status, pmode, vaddr, mode, pte);
             if (fault == NoFault) {
                 if (level >= 1 && pte.ppn0 != 0) {
@@ -1348,14 +1319,13 @@ TLB::L2tlb_check(PTESv39 pte, int level, STATUS status, PrivilegeMode pmode, Add
                 }
             }
 
-
         } else {
             level--;
             if (level < 0) {
-                hit_in_sp = true;
+                hitInSp = true;
                 fault = L2tlb_pagefault(vaddr, mode, req, is_pre, is_back_pre);
             } else {
-                hit_in_sp = false;
+                hitInSp = false;
             }
         }
     }
@@ -1380,22 +1350,19 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
     Addr vaddr = Addr(sext<VADDR_BITS>(req->getVaddr()));
     SATP satp = tc->readMiscReg(MISCREG_SATP);
     Addr vaddr_trace = (vaddr >> 15) << 15;
-    if (((vaddr_trace != last_vaddr) || (req->getPC() != last_pc)) &&
+    if (((vaddr_trace != lastVaddr) || (req->getPC() != lastPc)) &&
         is_dtlb) {
-        trace_flag = true;
-        last_vaddr = vaddr_trace;
-        last_pc = req->getPC();
+        traceFlag = true;
+        lastVaddr = vaddr_trace;
+        lastPc = req->getPC();
     } else {
-        trace_flag = false;
+        traceFlag = false;
     }
 
-    TlbEntry *e = lookup(vaddr, satp.asid, mode, false, true);
-
-    TlbEntry *e5 = NULL;
-    TlbEntry *e4 = NULL;
-    TlbEntry *e3 = NULL;
-    TlbEntry *e2 = NULL;
-    TlbEntry *e1 = NULL;
+    TlbEntry *e[6] = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
+    TlbEntry *forward_pre[6] = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
+    TlbEntry *back_pre[6] = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
+    e[0] = lookup(vaddr, satp.asid, mode, false, true);
     Addr paddr;
     Fault fault;
     Fault forward_pre_fault;
@@ -1404,17 +1371,17 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
     PrivilegeMode pmode = getMemPriv(tc, mode);
 
     TLB *l2tlb;
-    if (is_stage2)
+    if (isStage2)
         l2tlb = this;
     else
         l2tlb = static_cast<TLB *>(nextLevel());
 
     assert(l2tlb != nullptr);
 
-    uint64_t remove_unused_forward_pre = l2tlb->remove_no_use_forward_pre;
-    uint64_t all_forward_pre_num = l2tlb->all_forward_pre;
-    uint64_t all_used_num = l2tlb->all_used / 8;
-    uint64_t all_used_forward_pre_num = l2tlb->forward_used_pre;
+    uint64_t remove_unused_forward_pre = l2tlb->removeNoUseForwardPre;
+    uint64_t all_forward_pre_num = l2tlb->allForwardPre;
+    uint64_t all_used_num = l2tlb->allUsed / 8;
+    uint64_t all_used_forward_pre_num = l2tlb->forwardUsedPre;
     auto precision = (double)(all_forward_pre_num - remove_unused_forward_pre) / (all_forward_pre_num + 1);
 
     auto recall = (double)all_used_forward_pre_num / (all_used_num + 1);
@@ -1445,119 +1412,107 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
     l2tlb->lookup_back_pre(vaddr_block, satp.asid, false);
     TlbEntry *pre_back = l2tlb->lookup_back_pre(back_pre_block, satp.asid, true);
 
-    if ((l2tlb->remove_no_use_back_pre + l2tlb->used_back_pre) > 500) {
-        if ((((double)(l2tlb->remove_no_use_back_pre + 1) / (l2tlb->remove_no_use_back_pre + l2tlb->used_back_pre))) <
-            0.1) {
-            back_pre_precision = true;
+    if ((l2tlb->removeNoUseBackPre + l2tlb->usedBackPre) > 500) {
+        if ((((double)(l2tlb->removeNoUseBackPre + 1) / (l2tlb->removeNoUseBackPre + l2tlb->usedBackPre))) < 0.1) {
+            backPrePrecision = true;
         } else {
-            back_pre_precision = false;
+            backPrePrecision = false;
         }
-        l2tlb->remove_no_use_back_pre = 0;
-        l2tlb->used_back_pre = 0;
+        l2tlb->removeNoUseBackPre = 0;
+        l2tlb->usedBackPre = 0;
     }
 
-    if ((l2tlb->remove_no_use_forward_pre + l2tlb->forward_used_pre) > 500) {
-        if ((((double)(l2tlb->remove_no_use_forward_pre + 1) /
-              (l2tlb->remove_no_use_forward_pre + l2tlb->forward_used_pre))) < 0.08) {
-            forward_pre_precision = true;
+    if ((l2tlb->removeNoUseForwardPre + l2tlb->forwardUsedPre) > 500) {
+        if ((((double)(l2tlb->removeNoUseForwardPre + 1) / (l2tlb->removeNoUseForwardPre + l2tlb->forwardUsedPre))) <
+            0.08) {
+            forwardPrePrecision = true;
         } else {
-            forward_pre_precision = false;
+            forwardPrePrecision = false;
         }
-        l2tlb->remove_no_use_forward_pre = 0;
-        l2tlb->forward_used_pre = 0;
+        l2tlb->removeNoUseForwardPre = 0;
+        l2tlb->forwardUsedPre = 0;
     }
 
-    TlbEntry *forward3_pre = l2tlb->lookup_l2tlb(forward_pre_block, satp.asid, mode, true, L_L2L3, true);
-    TlbEntry *forward2_pre = nullptr, *forward1_pre = nullptr, *forward4_pre = nullptr, *forward5_pre = nullptr;
-    TlbEntry *forward_pre = nullptr;
 
-    TlbEntry *back3_pre = l2tlb->lookup_l2tlb(back_pre_block, satp.asid, mode, true, L_L2L3, true);
-    TlbEntry *back2_pre = nullptr, *back1_pre = nullptr, *back4_pre = nullptr, *back5_pre = nullptr;
-    TlbEntry *back_pre = nullptr;
+    for (int i_e = 1; i_e < 6; i_e++) {
+        if (!e[0])
+            e[i_e] = l2tlb->lookup_l2tlb(vaddr, satp.asid, mode, false, i_e, true);
 
+        forward_pre[i_e] = l2tlb->lookup_l2tlb(forward_pre_block, satp.asid, mode, true, i_e, true);
+        back_pre[i_e] = l2tlb->lookup_l2tlb(back_pre_block, satp.asid, mode, true, i_e, true);
+    }
 
-    if (!e) {  // look up l2tlb
-        e5 = l2tlb->lookup_l2tlb(vaddr, satp.asid, mode, false, L_L2sp2, true);
-        e4 = l2tlb->lookup_l2tlb(vaddr, satp.asid, mode, false, L_L2sp1, true);
-        e3 = l2tlb->lookup_l2tlb(vaddr, satp.asid, mode, false, L_L2L3, true);
-        e2 = l2tlb->lookup_l2tlb(vaddr, satp.asid, mode, false, L_L2L2, true);
-        e1 = l2tlb->lookup_l2tlb(vaddr, satp.asid, mode, false, L_L2L1, true);
-        if (e3) {  // if hit in l3tlb
+    if (!e[0]) {  // look up l2tlb
+        if (e[3]) {  // if hit in l3tlb
             DPRINTF(TLBVerbosel2, "hit in l2TLB l3\n");
-            fault = L2tlb_check(e3->pte, 0, status, pmode, vaddr, mode, req, false, false);
-            if (hit_in_sp) {
-                e = e3;
+            fault = L2tlb_check(e[3]->pte, 0, status, pmode, vaddr, mode, req, false, false);
+            if (hitInSp) {
+                e[0] = e[3];
                 if (fault == NoFault) {
-                    paddr = e->paddr << PageShift | (vaddr & mask(e->logBytes));
-                    DPRINTF(TLBVerbosel2, "vaddr %#x,paddr %#x,pc %#x\n", vaddr, paddr,req->getPC());
-                    walker->doL2TLBHitSchedule(req, tc, translation, mode, paddr, *e3);
+                    paddr = e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes));
+                    DPRINTF(TLBVerbosel2, "vaddr %#x,paddr %#x,pc %#x\n", vaddr, paddr, req->getPC());
+                    walker->doL2TLBHitSchedule(req, tc, translation, mode, paddr, *e[3]);
                     DPRINTF(TLBVerbosel2, "finish Schedule\n");
                     delayed = true;
-                    if ((forward_pre_block != vaddr_block) && (!forward3_pre) && open_forward_pre && (!pre_forward)) {
-                        forward2_pre = l2tlb->lookup_l2tlb(forward_pre_block, satp.asid, mode, true, L_L2L2, true);
-                        forward5_pre = l2tlb->lookup_l2tlb(forward_pre_block, satp.asid, mode, true, L_L2sp2, true);
-                        if (forward2_pre || forward5_pre) {
+                    if ((forward_pre_block != vaddr_block) && (!forward_pre[3]) && openForwardPre && (!pre_forward)) {
+                        if (forward_pre[2] || forward_pre[5]) {
                             pre_req->setForwardPreVaddr(forward_pre_block);
                             l2tlb->insert_forward_pre(forward_pre_block, forward_pre_entry);
-                            if (forward5_pre) {
-                                forward_pre = forward5_pre;
+                            if (forward_pre[5]) {
+                                forward_pre[0] = forward_pre[5];
                             } else {
-                                forward_pre = forward2_pre;
+                                forward_pre[0] = forward_pre[2];
                             }
-                            forward_pre_fault = L2tlb_check(forward_pre->pte, 1, status, pmode, forward_pre_block,
+                            forward_pre_fault = L2tlb_check(forward_pre[0]->pte, 1, status, pmode, forward_pre_block,
                                                             mode, pre_req, true, false);
-                            if ((forward_pre_fault == NoFault) && (!hit_in_sp) && forward_pre_precision) {
+                            if ((forward_pre_fault == NoFault) && (!hitInSp) && forwardPrePrecision) {
                                 DPRINTF(TLBGPre, "pre_vaddr %#x\n", forward_pre_block);
-                                walker->start(forward_pre->pte.ppn, tc, translation, pre_req, mode, true, false, 0,
-                                              true, forward_pre->asid);
+                                walker->start(forward_pre[0]->pte.ppn, tc, translation, pre_req, mode, true, false, 0,
+                                              true, forward_pre[0]->asid);
                             }
-                        } else{
-                            forward1_pre = l2tlb->lookup_l2tlb(forward_pre_block, satp.asid, mode, true, L_L2L1, true);
-                            forward4_pre =
-                                l2tlb->lookup_l2tlb(forward_pre_block, satp.asid, mode, true, L_L2sp1, true);
-                            if (forward1_pre || forward4_pre) {
+                        } else {
+                            forward_pre[1] =
+                                l2tlb->lookup_l2tlb(forward_pre_block, satp.asid, mode, true, L_L2L1, true);
+                            if (forward_pre[1] || forward_pre[4]) {
                                 pre_req->setForwardPreVaddr(forward_pre_block);
                                 l2tlb->insert_forward_pre(forward_pre_block, forward_pre_entry);
-                                if (forward4_pre) {
-                                    forward_pre = forward4_pre;
+                                if (forward_pre[4]) {
+                                    forward_pre[0] = forward_pre[4];
                                 } else {
-                                    forward_pre = forward1_pre;
+                                    forward_pre[0] = forward_pre[1];
                                 }
 
-                                forward_pre_fault = L2tlb_check(forward_pre->pte, 2, status, pmode, forward_pre_block,
-                                                                mode, pre_req, true, false);
-                                if ((forward_pre_fault == NoFault) && (!hit_in_sp) && forward_pre_precision) {
+                                forward_pre_fault = L2tlb_check(forward_pre[0]->pte, 2, status, pmode,
+                                                                forward_pre_block, mode, pre_req, true, false);
+                                if ((forward_pre_fault == NoFault) && (!hitInSp) && forwardPrePrecision) {
                                     DPRINTF(TLBGPre, "pre_vaddr %#x\n", forward_pre_block);
 
-                                    walker->start(forward_pre->pte.ppn, tc, translation, pre_req, mode, true, false, 1,
-                                                  true, forward_pre->asid);
+                                    walker->start(forward_pre[0]->pte.ppn, tc, translation, pre_req, mode, true, false,
+                                                  1, true, forward_pre[0]->asid);
                                 }
                             }
                         }
-
                     }
-                    if ((back_pre_block != vaddr_block) && (!back3_pre) && open_back_pre && (!pre_back)) {
-                        back2_pre = l2tlb->lookup_l2tlb(back_pre_block, satp.asid, mode, true, L_L2L2, true);
-                        back5_pre = l2tlb->lookup_l2tlb(back_pre_block, satp.asid, mode, true, L_L2sp2, true);
-                        if (back2_pre || back5_pre) {
+                    if ((back_pre_block != vaddr_block) && (!back_pre[3]) && openBackPre && (!pre_back)) {
+                        if (back_pre[2] || back_pre[5]) {
                             pre_req->setBackPreVaddr(back_pre_block);
                             l2tlb->insert_back_pre(back_pre_block, back_pre_entry);
-                            if (back5_pre) {
-                                back_pre = back5_pre;
+                            if (back_pre[5]) {
+                                back_pre[0] = back_pre[5];
                             } else {
-                                back_pre = back2_pre;
+                                back_pre[0] = back_pre[2];
                             }
 
-                            back_pre_fault = L2tlb_check(back_pre->pte, 1, status, pmode, back_pre_block, mode,
+                            back_pre_fault = L2tlb_check(back_pre[0]->pte, 1, status, pmode, back_pre_block, mode,
                                                          pre_req, false, true);
-                            if ((back_pre_fault == NoFault) && (!hit_in_sp) && back_pre_precision) {
+                            if ((back_pre_fault == NoFault) && (!hitInSp) && backPrePrecision) {
                                 DPRINTF(TLBGPre, "pre_vaddr %#x\n", back_pre_block);
-                                walker->start(back_pre->pte.ppn, tc, translation, pre_req, mode, false, true, 0, true,
-                                              back_pre->asid);
+                                walker->start(back_pre[0]->pte.ppn, tc, translation, pre_req, mode, false, true, 0,
+                                              true, back_pre[0]->asid);
                             }
                         }
                     }
-                    if (trace_flag)
+                    if (traceFlag)
                         DPRINTF(TLBtrace, "tlb hit in vaddr %#x pc %#x\n", vaddr_trace, req->getPC());
                     return fault;
                 }
@@ -1565,14 +1520,14 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                 assert(0);
             }
 
-        } else if (e5) {  // hit in sp l2
+        } else if (e[5]) {  // hit in sp l2
             DPRINTF(TLBVerbosel2, "hit in l2 tlb l5\n");
-            fault = L2tlb_check(e5->pte, 1, status, pmode, vaddr, mode, req, false, false);
-            if (hit_in_sp){
-                e = e5;
+            fault = L2tlb_check(e[5]->pte, 1, status, pmode, vaddr, mode, req, false, false);
+            if (hitInSp){
+                e[0] = e[5];
                 if (fault == NoFault) {
-                    paddr = e->paddr << PageShift | (vaddr & mask(e->logBytes));
-                    walker->doL2TLBHitSchedule(req, tc, translation, mode, paddr, *e5);
+                    paddr = e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes));
+                    walker->doL2TLBHitSchedule(req, tc, translation, mode, paddr, *e[5]);
                     delayed = true;
                     return fault;
                 }
@@ -1580,26 +1535,26 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
             else {
                 DPRINTF(TLBGPre, "pre_req %d vaddr %#x req_vaddr %#x pc %#x\n", req->get_forward_pre_tlb(), vaddr,
                         req->getVaddr(), req->getPC());
-                if (trace_flag)
+                if (traceFlag)
                     DPRINTF(TLBtrace, "tlb miss vaddr %#x pc %#x\n", vaddr_trace, req->getPC());
-                fault = walker->start(e5->pte.ppn, tc, translation, req, mode,
-                                      false, false, 0, true, e5->asid);
+                fault = walker->start(e[5]->pte.ppn, tc, translation, req, mode,
+                                      false, false, 0, true, e[5]->asid);
                 if (translation != nullptr || fault != NoFault) {
                     // This gets ignored in atomic mode.
                     delayed = true;
                     return fault;
                 }
-                e = lookup(vaddr, satp.asid, mode, false, true);
-                assert(e != nullptr);
+                e[0] = lookup(vaddr, satp.asid, mode, false, true);
+                assert(e[0] != nullptr);
             }
-        } else if (e4) {  // hit in sp l1
+        } else if (e[4]) {  // hit in sp l1
             DPRINTF(TLBVerbosel2, "hit in l2 tlb l4\n");
-            fault = L2tlb_check(e4->pte, 2, status, pmode, vaddr, mode, req, false, false);
-            if (hit_in_sp) {
-                e = e4;
+            fault = L2tlb_check(e[4]->pte, 2, status, pmode, vaddr, mode, req, false, false);
+            if (hitInSp) {
+                e[0] = e[4];
                 if (fault == NoFault) {
-                    paddr = e->paddr << PageShift | (vaddr & mask(e->logBytes));
-                    walker->doL2TLBHitSchedule(req, tc, translation, mode, paddr, *e4);
+                    paddr = e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes));
+                    walker->doL2TLBHitSchedule(req, tc, translation, mode, paddr, *e[4]);
                     delayed = true;
                     return fault;
                 }
@@ -1607,51 +1562,51 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
             } else {
                 DPRINTF(TLBGPre, "pre_req %d vaddr %#x req_vaddr %#x pc %#x\n", req->get_forward_pre_tlb(), vaddr,
                         req->getVaddr(), req->getPC());
-                if (trace_flag)
+                if (traceFlag)
                     DPRINTF(TLBtrace, "tlb miss vaddr %#x pc %#x\n", vaddr_trace, req->getPC());
-                fault = walker->start(e4->pte.ppn, tc, translation, req, mode, false, false, 1, true, e4->asid);
+                fault = walker->start(e[4]->pte.ppn, tc, translation, req, mode, false, false, 1, true, e[4]->asid);
                 if (translation != nullptr || fault != NoFault) {
                     delayed = true;
                     return fault;
                 }
-                e = lookup(vaddr, satp.asid, mode, false, true);
-                assert(e != nullptr);
+                e[0] = lookup(vaddr, satp.asid, mode, false, true);
+                assert(e[0] != nullptr);
             }
 
-        } else if (e2) {
+        } else if (e[2]) {
             DPRINTF(TLBVerbosel2, "hit in l2 tlb l2\n");
-            fault = L2tlb_check(e2->pte, 1, status, pmode, vaddr, mode, req, false, false);
-            if (hit_in_sp) {
-                e = e2;
+            fault = L2tlb_check(e[2]->pte, 1, status, pmode, vaddr, mode, req, false, false);
+            if (hitInSp) {
+                e[0] = e[2];
                 if (fault == NoFault) {
-                    paddr = e->paddr << PageShift | (vaddr & mask(e->logBytes));
-                    walker->doL2TLBHitSchedule(req, tc, translation, mode, paddr, *e2);
+                    paddr = e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes));
+                    walker->doL2TLBHitSchedule(req, tc, translation, mode, paddr, *e[2]);
                     delayed = true;
                     return fault;
                 }
             } else {
                 DPRINTF(TLBGPre, "pre_req %d vaddr %#x req_vaddr %#x pc %#x\n", req->get_forward_pre_tlb(), vaddr,
                         req->getVaddr(), req->getPC());
-                if (trace_flag)
+                if (traceFlag)
                     DPRINTF(TLBtrace, "tlb miss vaddr %#x pc %#x\n", vaddr_trace, req->getPC());
-                fault = walker->start(e2->pte.ppn, tc, translation, req, mode, false, false, 0, true, e2->asid);
+                fault = walker->start(e[2]->pte.ppn, tc, translation, req, mode, false, false, 0, true, e[2]->asid);
                 DPRINTF(TLB, "finish start\n");
                 if (translation != nullptr || fault != NoFault) {
                     // This gets ignored in atomic mode.
                     delayed = true;
                     return fault;
                 }
-                e = lookup(vaddr, satp.asid, mode, false, true);
-                assert(e != nullptr);
+                e[0] = lookup(vaddr, satp.asid, mode, false, true);
+                assert(e[0] != nullptr);
             }
-        } else if (e1) {
+        } else if (e[1]) {
             DPRINTF(TLBVerbosel2, "hit in l2 tlb l1\n");
-            fault = L2tlb_check(e1->pte, 2, status, pmode, vaddr, mode, req, false, false);
-            if (hit_in_sp) {
-                e = e1;
+            fault = L2tlb_check(e[1]->pte, 2, status, pmode, vaddr, mode, req, false, false);
+            if (hitInSp) {
+                e[0] = e[1];
                 if (fault == NoFault) {
-                    paddr = e->paddr << PageShift | (vaddr & mask(e->logBytes));
-                    walker->doL2TLBHitSchedule(req, tc, translation, mode, paddr, *e1);
+                    paddr = e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes));
+                    walker->doL2TLBHitSchedule(req, tc, translation, mode, paddr, *e[1]);
                     delayed = true;
                     return fault;
                 }
@@ -1659,23 +1614,23 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
             } else {
                 DPRINTF(TLBGPre, "pre_req %d vaddr %#x req_vaddr %#x pc %#x\n", req->get_forward_pre_tlb(), vaddr,
                         req->getVaddr(), req->getPC());
-                if (trace_flag)
+                if (traceFlag)
                     DPRINTF(TLBtrace, "tlb miss vaddr %#x pc %#x\n", vaddr_trace, req->getPC());
-                fault = walker->start(e1->pte.ppn, tc, translation, req, mode, false, false, 1, true, e1->asid);
+                fault = walker->start(e[1]->pte.ppn, tc, translation, req, mode, false, false, 1, true, e[1]->asid);
                 if (translation != nullptr || fault != NoFault) {
                     // This gets ignored in atomic mode.
                     delayed = true;
                     return fault;
                 }
-                e = lookup(vaddr, satp.asid, mode, false, true);
-                assert(e != nullptr);
+                e[0] = lookup(vaddr, satp.asid, mode, false, true);
+                assert(e[0] != nullptr);
             }
         } else {
             DPRINTF(TLB, "miss in l1 tlb + l2 tlb\n");
             DPRINTF(TLBGPre, "pre_req %d vaddr %#x req_vaddr %#x pc %#x\n", req->get_forward_pre_tlb(), vaddr,
                     req->getVaddr(), req->getPC());
 
-            if (trace_flag)
+            if (traceFlag)
                 DPRINTF(TLBtrace, "tlb miss vaddr %#x pc %#x\n", vaddr_trace, req->getPC());
             fault = walker->start(0, tc, translation, req, mode, false, false, 2, false, 0);
             DPRINTF(TLB, "finish start\n");
@@ -1684,22 +1639,22 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                 delayed = true;
                 return fault;
             }
-            e = lookup(vaddr, satp.asid, mode, false, true);
-            assert(e != nullptr);
+            e[0] = lookup(vaddr, satp.asid, mode, false, true);
+            assert(e[0] != nullptr);
         }
     }
 
     status = tc->readMiscReg(MISCREG_STATUS);
     pmode = getMemPriv(tc, mode);
-    if (mode == BaseMMU::Write && !e->pte.d) {
+    if (mode == BaseMMU::Write && !e[0]->pte.d) {
         fault = createPagefault(vaddr, mode);
     }
 
     if (fault == NoFault) {
         DPRINTF(TLB, "final checkpermission\n");
         DPRINTF(TLB, "translate(vpn=%#x, asid=%#x): %#x pc %#x mode %i pte.d %\n", vaddr, satp.asid, paddr,
-                req->getPC(), mode, e->pte.d);
-        fault = checkPermissions(status, pmode, vaddr, mode, e->pte);
+                req->getPC(), mode, e[0]->pte.d);
+        fault = checkPermissions(status, pmode, vaddr, mode, e[0]->pte);
     }
 
 
@@ -1708,83 +1663,73 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
         // again to update the dirty flag.
         //change update a/d not need to do a pagetable walker
         DPRINTF(TLB, "raise pf pc%#x vaddr %#x\n", req->getPC(), vaddr);
-        DPRINTF(TLBVerbose3, "mode %i pte.d %d pte.w %d pte.r %d pte.x %d pte.u %d\n", mode, e->pte.d, e->pte.w,
-                e->pte.r, e->pte.x, e->pte.u);
-        DPRINTF(TLBVerbose3, "paddr %#x ppn %#x\n", e->paddr, e->pte.ppn);
-        if (trace_flag)
+        DPRINTF(TLBVerbose3, "mode %i pte.d %d pte.w %d pte.r %d pte.x %d pte.u %d\n", mode, e[0]->pte.d, e[0]->pte.w,
+                e[0]->pte.r, e[0]->pte.x, e[0]->pte.u);
+        DPRINTF(TLBVerbose3, "paddr %#x ppn %#x\n", e[0]->paddr, e[0]->pte.ppn);
+        if (traceFlag)
             DPRINTF(TLBtrace, "tlb hit in l1 but pf vaddr %#x,pc%#x\n", vaddr_trace, req->getPC());
         return fault;
     }
-    assert(e != nullptr);
-    paddr = e->paddr << PageShift | (vaddr & mask(e->logBytes));
-    if (req->getPC() == 0x3fd36 || vaddr == 0x85f80ac) {
-        DPRINTF(TLBGPre, "translate pc %#x (vpn=%#x, asid=%#x): %#x\n",
-                req->getPC(), vaddr, satp.asid, paddr);
-    }
+    assert(e[0] != nullptr);
+    paddr = e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes));
 
     DPRINTF(TLBVerbosel2, "translate(vpn=%#x, asid=%#x): %#x pc%#x\n", vaddr,
             satp.asid, paddr, req->getPC());
     req->setPaddr(paddr);
 
-    if (e) {
+    if (e[0]) {
         // same block
-        if (trace_flag)
+        if (traceFlag)
             DPRINTF(TLBtrace, "tlb hit in l1 vaddr %#x,pc%#x\n", vaddr_trace,
                     req->getPC());
-        if ((forward_pre_block != vaddr_block) && (!forward3_pre) && open_forward_pre && (!pre_forward)) {
+        if ((forward_pre_block != vaddr_block) && (!forward_pre[3]) && openForwardPre && (!pre_forward)) {
             l2tlb->insert_forward_pre(forward_pre_block, forward_pre_entry);
-            forward2_pre = l2tlb->lookup_l2tlb(forward_pre_block, satp.asid, mode, true, L_L2L2, true);
-            forward5_pre = l2tlb->lookup_l2tlb(forward_pre_block, satp.asid, mode, true, L_L2sp2, true);
-            if (forward2_pre || forward5_pre) {
+            if (forward_pre[2] || forward_pre[5]) {
                 pre_req->setForwardPreVaddr(forward_pre_block);
-                if (forward2_pre)
-                    forward_pre = forward2_pre;
+                if (forward_pre[2])
+                    forward_pre[0] = forward_pre[2];
                 else
-                    forward_pre = forward5_pre;
+                    forward_pre[0] = forward_pre[5];
                 forward_pre_fault =
-                    L2tlb_check(forward_pre->pte, 1, status, pmode, forward_pre_block, mode, pre_req, true, false);
-                if ((forward_pre_fault == NoFault) && (!hit_in_sp) && forward_pre_precision) {
+                    L2tlb_check(forward_pre[0]->pte, 1, status, pmode, forward_pre_block, mode, pre_req, true, false);
+                if ((forward_pre_fault == NoFault) && (!hitInSp) && forwardPrePrecision) {
                     DPRINTF(TLBGPre, "pre_vaddr %#x\n", forward_pre_block);
-                    walker->start(forward_pre->pte.ppn, tc, translation, pre_req, mode, true, false, 0, true,
-                                  forward_pre->asid);
+                    walker->start(forward_pre[0]->pte.ppn, tc, translation, pre_req, mode, true, false, 0, true,
+                                  forward_pre[0]->asid);
                 }
             }
             else{
-                forward1_pre = l2tlb->lookup_l2tlb(forward_pre_block, satp.asid, mode, true, L_L2L1, true);
-                forward4_pre = l2tlb->lookup_l2tlb(forward_pre_block, satp.asid, mode, true, L_L2sp1, true);
-                if (forward4_pre || forward1_pre) {
+                if (forward_pre[4] || forward_pre[1]) {
                     pre_req->setForwardPreVaddr(forward_pre_block);
-                    if (forward4_pre)
-                        forward_pre = forward4_pre;
+                    if (forward_pre[4])
+                        forward_pre[0] = forward_pre[4];
                     else
-                        forward_pre = forward1_pre;
-                    forward_pre_fault =
-                        L2tlb_check(forward_pre->pte, 2, status, pmode, forward_pre_block, mode, pre_req, true, false);
-                    if ((forward_pre_fault == NoFault) && (!hit_in_sp) && forward_pre_precision) {
+                        forward_pre[0] = forward_pre[1];
+                    forward_pre_fault = L2tlb_check(forward_pre[0]->pte, 2, status, pmode, forward_pre_block, mode,
+                                                    pre_req, true, false);
+                    if ((forward_pre_fault == NoFault) && (!hitInSp) && forwardPrePrecision) {
                         DPRINTF(TLBGPre, "pre_vaddr %#x\n", forward_pre_block);
-                        walker->start(forward_pre->pte.ppn, tc, translation, pre_req, mode, true, false, 1, true,
-                                      forward_pre->asid);
+                        walker->start(forward_pre[0]->pte.ppn, tc, translation, pre_req, mode, true, false, 1, true,
+                                      forward_pre[0]->asid);
                     }
                 }
             }
 
         }
-        if ((back_pre_block != vaddr_block) && (!back3_pre) && open_back_pre && (!pre_back)) {
+        if ((back_pre_block != vaddr_block) && (!back_pre[3]) && openBackPre && (!pre_back)) {
             l2tlb->insert_back_pre(back_pre_block, back_pre_entry);
-            back2_pre = l2tlb->lookup_l2tlb(back_pre_block, satp.asid, mode, true, L_L2L2, true);
-            back5_pre = l2tlb->lookup_l2tlb(back_pre_block, satp.asid, mode, true, L_L2sp2, true);
-            if (back2_pre || back5_pre) {
+            if (back_pre [2] || back_pre[5]) {
                 pre_req->setBackPreVaddr(back_pre_block);
-                if (back2_pre)
-                    back_pre = back2_pre;
+                if (back_pre[2])
+                    back_pre[0] = back_pre[2];
                 else
-                    back_pre = back5_pre;
+                    back_pre[0] = back_pre[5];
                 back_pre_fault =
-                    L2tlb_check(back_pre->pte, 1, status, pmode, back_pre_block, mode, pre_req, false, true);
-                if ((back_pre_fault == NoFault) && (!hit_in_sp) && back_pre_precision) {
+                    L2tlb_check(back_pre[0]->pte, 1, status, pmode, back_pre_block, mode, pre_req, false, true);
+                if ((back_pre_fault == NoFault) && (!hitInSp) && backPrePrecision) {
                     DPRINTF(TLBGPre, "pre_vaddr %#x\n", forward_pre_block);
-                    walker->start(back_pre->pte.ppn, tc, translation, pre_req, mode, false, true, 0, true,
-                                  back_pre->asid);
+                    walker->start(back_pre[0]->pte.ppn, tc, translation, pre_req, mode, false, true, 0, true,
+                                  back_pre[0]->asid);
                 }
             }
         }
@@ -2023,13 +1968,13 @@ TLB::TlbStats::TlbStats(statistics::Group *parent)
                "number of all pte insert"),
       ADD_STAT(backHits, statistics::units::Count::get(),
                "number of backHitst"),
-      ADD_STAT(used_back_pre, statistics::units::Count::get(),
+      ADD_STAT(usedBackPre, statistics::units::Count::get(),
                "number of used back pre"),
-      ADD_STAT(remove_no_use_back_pre, statistics::units::Count::get(),
+      ADD_STAT(removeNoUseBackPre, statistics::units::Count::get(),
                "number of unused back pre"),
-      ADD_STAT(used_forward_pre, statistics::units::Count::get(),
+      ADD_STAT(usedForwardPre, statistics::units::Count::get(),
                "number of used forward pre"),
-      ADD_STAT(remove_no_use_forward_pre, statistics::units::Count::get(),
+      ADD_STAT(removeNoUseForwardPre, statistics::units::Count::get(),
                "number of unused forward pre"),
       ADD_STAT(writeL2l3TlbMisses, statistics::units::Count::get(),
                "write misses in l2tlb"),
