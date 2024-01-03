@@ -207,7 +207,7 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
         diffAllStates->diff.cpu_id = params().cpu_id;
         warn("cpu_id set to %d\n", params().cpu_id);
 
-        if (params().difftest_ref_so.find("spike") > 0) {
+        if (params().difftest_ref_so.find("spike") != std::string::npos) {
             diffAllStates->proxy = new SpikeProxy(
                 params().cpu_id, params().difftest_ref_so.c_str(),
                 params().nemuSDimg.size() && params().nemuSDCptBin.size());
