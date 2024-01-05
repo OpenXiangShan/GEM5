@@ -71,6 +71,7 @@ class VConfOp : public RiscvStaticInst
     uint8_t earlyVtype = -1;
   protected:
     int vlsrcIdx = -1;
+    int vtypesrcIdx = -1;
     uint64_t bit30;
     uint64_t bit31;
     uint64_t zimm10;
@@ -689,47 +690,38 @@ private:
             &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
         _numSrcRegs = 0;
         _numDestRegs = 0;
-        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, VecTempReg0));
+        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, VecCompressCntReg));
         _numTypedDestRegs[VecRegClass]++;
         setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, extMachInst.vs1));
+        setSrcRegIdx(_numSrcRegs++, VecRenamedVLReg);
     }
 
     Fault execute(ExecContext* xc, Trace::InstRecord* traceData) const override
     {
-        const size_t countN = VLEN / sew;
-        const uint32_t numVRegs = 1 << std::max<int64_t>(0, vlmul);
+        const int countN = VLEN / sew;
+        const int numVRegs = 1 << std::max<int64_t>(0, vlmul);
 
-        size_t cnt[8] = {0};
-        auto popcount_in_byte = [](uint8_t* addr, uint8_t msb, uint8_t lsb)
-             -> int {
-            return popCount(mask(msb, lsb) & *addr);
-        };
-
-        auto popcount_byte = [](uint8_t* l_addr, uint8_t* r_addr) -> int {
-            size_t res = 0;
-            while (l_addr < r_addr) {
-                res += popCount(*l_addr);
-                l_addr++;
-            }
-            return res;
-        };
-
-        vreg_t vs;
-        xc->getRegOperand(this, 0, &vs);
+        vreg_t vs1;
+        xc->getRegOperand(this, 0, &vs1);
+        int rVl = xc->getRegOperand(this, 1);
         vreg_t vd = *(vreg_t *)xc->getWritableRegOperand(this, 0);
 
-        for (int i = 0; i < std::max<int8_t>(1, numVRegs); i++) {
-            uint8_t* base_addr = vs.as<uint8_t>() + i*countN/8;
-            if (countN < 8) {
-                cnt[i] = popcount_in_byte(base_addr, i * countN % 8,
-                    (i + 1)*countN % 8);
-            } else {
-                cnt[i] = popcount_byte(base_addr, base_addr + countN / 8);
-            }
+        int popCnt = 0;
+        int cnt[8] = {0};
+        for (int i=0; i<numVRegs; i++) {
+            cnt[i] = popcount_in_byte(vs1.as<uint64_t>(), i * countN, (i+1) * countN);
+            popCnt += cnt[i];
+        }
+        popCnt = std::min(popCnt, rVl);
+
+        // vd [popCount(vs1 + numVRegs)...] + [num of each Vd should compress]
+        for (int i=0; i<numVRegs; i++) {
+            vd.as<uint8_t>()[i] = std::min(popCnt, countN);
+            popCnt = std::max(0, popCnt - countN);
         }
 
-        for (int i = 0; i < std::max<int8_t>(1, numVRegs); i++) {
-            vd.as<uint8_t>()[i] = cnt[i];
+        for (int i=0; i<numVRegs; i++) {
+            vd.as<uint8_t>()[i+8] = std::min(rVl, cnt[i]);
         }
 
         xc->setRegOperand(this, 0, &vd);
@@ -777,7 +769,7 @@ class VCompressMicroInst : public VectorArithMicroInst
         // vs
         setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, extMachInst.vs2 + _vsIdx));
         // vcnt
-        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, VecTempReg0));
+        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, VecCompressCntReg));
         // vm
         setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, extMachInst.vs1));
         // old_vd
@@ -802,32 +794,44 @@ class VCompressMicroInst : public VectorArithMicroInst
         vreg_t vd = *(vreg_t *)xc->getWritableRegOperand(this, 0);
         memcpy(vd.as<uint8_t>(), old_vd.as<uint8_t>(), VLENB);
 
-        vreg_t vtmp;
 
-        auto vcnt_get_elem = [&](int idx) -> size_t {
-            return vcnt.as<uint8_t>()[idx];
-        };
+        uint16_t vd_should_compress = vcnt.as<uint8_t>()[vdIdx];
+        uint16_t vs2_popCnt = vcnt.as<uint8_t>()[8 + vsIdx];
 
-        int num_vs_elem_moved = 0;
-        int num_vd_elem_moved = vdIdx * uvlmax;
-        for (int i = 0; i < vsIdx; i++) {
-            num_vs_elem_moved += vcnt_get_elem(i);
-        }
-
-        int vtmpIdx = 0;
-        for (int i = 0; i < elem_num_per_vreg; i++) {
-            uint32_t ei = i + vsIdx * uvlmax;
-            if ((ei < rVl) && elem_mask(vm.as<uint8_t>(), ei)) {
-                vtmp.as<Type>()[vtmpIdx++] = vs.as<Type>()[i];
+        uint32_t vd_has_compressed = 0;
+        uint32_t cur_compressed = 0;
+        uint32_t lower_num = 0;
+        uint32_t upper_num = 0;
+        for (int i=0; i<8; i++) {
+            if (i < vdIdx) {
+                vd_has_compressed += vcnt.as<uint8_t>()[i];
+            }
+            if (i < vsIdx) {
+                lower_num += vcnt.as<uint8_t>()[8+i];
             }
         }
-        int vsElemIdxBase = std::max(0, num_vd_elem_moved - num_vs_elem_moved);
-        int vdElemIdxBase = std::max(0, num_vs_elem_moved - num_vd_elem_moved);
+        upper_num = lower_num + vcnt.as<uint8_t>()[8+vsIdx];
+        cur_compressed = vd_has_compressed + vcnt.as<uint8_t>()[vdIdx];
 
-        uint32_t ei_ = vdElemIdxBase + vsIdx * uvlmax;
-        for (; vsElemIdxBase < vtmpIdx && vdElemIdxBase < elem_num_per_vreg && ei_ < rVl;) {
-            vd.as<Type>()[vdElemIdxBase++] = vtmp.as<Type>()[vsElemIdxBase++];
-            ei_ = vdElemIdxBase + vsIdx * uvlmax;
+        bool satisfaction = (cur_compressed > lower_num) && (cur_compressed - lower_num <= uvlmax);
+        if (satisfaction) {
+            uint32_t vs2rs = vd_has_compressed > lower_num ? vd_has_compressed - lower_num : 0;
+            uint32_t need_compress_num = cur_compressed > upper_num ?
+                  cur_compressed - upper_num : cur_compressed - lower_num;
+            uint32_t vdrs = lower_num > vd_has_compressed ? lower_num - vd_has_compressed : 0;
+            assert(need_compress_num <= uvlmax);
+            assert(vdrs < uvlmax);
+
+            uint32_t compressed = 0;
+            for (int i=0; i < uvlmax && compressed < need_compress_num; i++) {
+                uint32_t ei = vd_has_compressed + vdrs + compressed;
+                uint32_t vdElemIdx = vdrs + compressed;
+                uint32_t vs2ElemIdx = vs2rs + i;
+                if ((ei < rVl) && elem_mask(vm.as<uint8_t>(), ei)) {
+                    vd.as<Type>()[vdElemIdx] = vs.as<Type>()[i];
+                    compressed++;
+                }
+            }
         }
 
         xc->setRegOperand(this, 0, &vd);

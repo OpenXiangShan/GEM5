@@ -6,8 +6,7 @@ calc_memsize(uint32_t rs, uint32_t re, uint32_t sew, uint32_t rVl) {
     uint32_t mem_size;
     if (rs < vend) {
         mem_size = (vend - rs) * sew / 8;
-    }
-    else {
+    } else {
         mem_size = 0;
     }
     return mem_size;
@@ -51,7 +50,7 @@ def template VleConstructor {{
     const int32_t nf = _machInst.nf + 1;
     const uint32_t emul = get_emul(eew, sew, vflmul, false);
     const uint32_t elem_num_per_vreg = VLEN / eew;
-    panic_if(nf * emul > 8, "invalid nf and emul");
+    // panic_if(nf * emul > 8, "invalid nf and emul");
 
     StaticInstPtr microop;
     VectorMicroInfo vmi;
@@ -63,15 +62,15 @@ def template VleConstructor {{
             vmi.microVd = VD + i;
             vmi.fn = 0;
             vmi.offset = (i * VLEN) / 8;
-            assert(vmi.re > vmi.rs);
-            assert(vmi.microVd < 32);
+            if (vmi.microVd >= 32) {
+                break;
+            }
             microop = new %(class_name)sMicro(_machInst, i, vmi);
             microop->setDelayedCommit();
             microop->setFlag(IsLoad);
             this->microops.push_back(microop);
         }
-    }
-    else {
+    } else {
         // segment load
         uint32_t vlmax = VLEN / sew * vflmul;
         for (int i=0; i < vlmax; i++) {
@@ -195,11 +194,18 @@ Fault
     %(op_src_decl)s;
     %(op_rd)s;
 
+#if %(is_vecWhole)s
+    bool vm_zero = false;
+#else
+    VM_REQUIRED();
+    bool vm_zero = !this->vm && popcount_in_byte(tmp_v0.as<uint64_t>(), vmi.rs, vmi.re) == 0;
+#endif
+
     Fault fault = NoFault;
 
     uint32_t eew_ = eew;
 #if %(is_vecIndex)s
-    eew_ = sizeof(vu) * 8;
+    eew_ = sizeof(vu) * 8;// eew_ = sew
     uint32_t vs2ElemIdx = vmi.rs % (VLEN / eew);
 #endif
     uint32_t elem_num_per_vreg = VLEN / eew_;
@@ -211,6 +217,7 @@ Fault
     // mem_size = calc_memsize(vmi.rs, vmi.re, eew_, rVl);
     // if is vecWhole l/s mem_size = VLENB
     uint32_t mem_size = %(calc_memsize_code)s;
+    mem_size = vm_zero ? 0 : mem_size;
 
     std::vector<bool> byte_enable(mem_size, true);
 
@@ -250,9 +257,11 @@ Fault
 #if %(is_vecWhole)s
     // VM_REQUIRED();
     // COPY_OLD_VD();
+    bool vm_zero = false;
 #else
     VM_REQUIRED();
     COPY_OLD_VD();
+    bool vm_zero = !this->vm && popcount_in_byte(tmp_v0.as<uint64_t>(), vmi.rs, vmi.re) == 0;
 #endif
 
     uint32_t eew_ = eew;
@@ -263,11 +272,11 @@ Fault
     uint32_t elem_num_per_vreg = VLEN / eew_;
     uint32_t eewb = eew_ / 8;
     uint32_t mem_size = %(calc_memsize_code)s;
+    mem_size = vm_zero ? 0 : mem_size;
     if (pkt) {
         memcpy(Mem.as<uint8_t>(), pkt->getPtr<uint8_t>(), pkt->getSize());
         assert(mem_size == pkt->getSize());
-    }
-    else {
+    } else {
         assert(mem_size == 0);
     }
 
@@ -389,8 +398,7 @@ Fault
             ei = i + elem_num_per_vreg * microIdx;
             %(memacc_code)s;
         }
-    }
-    else {
+    } else {
         %(vfof_get_code)s;
         assert(fault == NoFault);
     }
@@ -491,7 +499,7 @@ def template VlStrideConstructor {{
     const int32_t nf = _machInst.nf + 1;
     const uint32_t emul = get_emul(eew, sew, vflmul, false);
     const uint32_t elem_num_per_vreg = VLEN / eew;
-    panic_if(nf * emul > 8, "invalid nf and emul");
+    // panic_if(nf * emul > 8, "invalid nf and emul");
 
 
     StaticInstPtr microop;
@@ -606,7 +614,7 @@ template<typename ElemType>
     const uint32_t emul = get_emul(eew, sew, vflmul, false);
     uint32_t flmul = vflmul < 1 ? 1 : vflmul;
     const uint32_t elem_num_per_vreg = VLEN / sew;
-    panic_if(nf * flmul > 8, "invalid nf and emul");
+    // panic_if(nf * flmul > 8, "invalid nf and emul");
 
     StaticInstPtr microop;
     VectorMicroInfo vmi;
@@ -621,7 +629,9 @@ template<typename ElemType>
             vmi.microVd = elem_gen_idx(VD + fn * flmul, i, sew/8);
             vmi.microVs2 = elem_gen_idx(VS2, i, eew / 8);
             vmi.offset = fn * sew / 8;
-            assert(vmi.microVd < 32);
+            if (vmi.microVd >= 32) {
+                break;
+            }
             microop = new %(class_name)sMicro<ElemType>(machInst, i * fn, vmi);
             microop->setFlag(IsDelayedCommit);
             microop->setFlag(IsLoad);
@@ -727,7 +737,7 @@ def template VseConstructor {{
     const int32_t nf = _machInst.nf + 1;
     const uint32_t emul = get_emul(eew, sew, vflmul, false);
     const uint32_t elem_num_per_vreg = VLEN / eew;
-    panic_if(nf * emul > 8, "invalid nf and emul");
+    // panic_if(nf * emul > 8, "invalid nf and emul");
 
     StaticInstPtr microop;
 
@@ -745,8 +755,7 @@ def template VseConstructor {{
             microop->setFlag(IsStore);
             this->microops.push_back(microop);
         }
-    }
-    else {
+    } else {
         uint32_t vlmax = VLEN / sew * vflmul;
         for (int i=0; i < vlmax; i++) {
             for (int fn=0; fn < nf; fn++) {
@@ -974,7 +983,7 @@ def template VlmConstructor {{
     _machInst.width = 0;
     const uint32_t emul = 1;
     const uint32_t elem_num_per_vreg = VLEN / eew;
-    panic_if(nf * emul > 8, "invalid nf and emul");
+    // panic_if(nf * emul > 8, "invalid nf and emul");
 
     uint32_t vlmax = VLENB;
     StaticInstPtr microop;
@@ -988,8 +997,7 @@ def template VlmConstructor {{
         microop = new Vlm_vMicro(_machInst, 0, vmi);
         microop->setDelayedCommit();
         microop->setFlag(IsLoad);
-    }
-    else {
+    } else {
         // TODO
         panic("not implemented");
     }
@@ -1088,7 +1096,7 @@ def template VsmConstructor {{
     _machInst.width = 0;
     const uint32_t emul = 1;
     const uint32_t elem_num_per_vreg = VLEN / eew;
-    panic_if(nf * emul > 8, "invalid nf and emul");
+    // panic_if(nf * emul > 8, "invalid nf and emul");
 
     uint32_t vlmax = 16;
     StaticInstPtr microop;
@@ -1102,8 +1110,7 @@ def template VsmConstructor {{
         microop = new Vsm_vMicro(_machInst, 0, vmi);
         microop->setDelayedCommit();
         microop->setFlag(IsStore);
-    }
-    else {
+    } else {
         // TODO
         panic("not implemented");
     }
@@ -1212,7 +1219,7 @@ def template VsStrideConstructor {{
     const uint32_t sew = getSew(_machInst.vtype8.vsew);
     const uint32_t emul = get_emul(eew, sew, vflmul, false);
     const uint32_t elem_num_per_vreg = VLEN / eew;
-    panic_if(nf * emul > 8, "invalid nf and emul");
+    // panic_if(nf * emul > 8, "invalid nf and emul");
 
     StaticInstPtr microop;
     VectorMicroInfo vmi;
@@ -1284,7 +1291,7 @@ template<typename ElemType>
     const uint32_t emul = get_emul(eew, sew, vflmul, false);
     uint32_t flmul = vflmul < 1 ? 1 : vflmul;
     const uint32_t elem_num_per_vreg = VLEN / sew;
-    panic_if(nf * flmul > 8, "invalid nf and emul");
+    // panic_if(nf * flmul > 8, "invalid nf and emul");
 
     StaticInstPtr microop;
     VectorMicroInfo vmi;
@@ -1300,8 +1307,9 @@ template<typename ElemType>
             vmi.microVs2 = elem_gen_idx(VS2, i, eew / 8);
             vmi.microVs3 = elem_gen_idx(VS3 + fn * flmul, i, sew / 8);
             vmi.offset = fn * sew / 8;
-            assert(vmi.microVs2 < 32);
-            assert(vmi.microVs3 < 32);
+            if (vmi.microVs2 >= 32 || vmi.microVs3 >= 32) {
+                break;
+            }
             microop = new %(class_name)sMicro<ElemType>(machInst, i * fn, vmi);
             microop->setFlag(IsDelayedCommit);
             microop->setFlag(IsStore);

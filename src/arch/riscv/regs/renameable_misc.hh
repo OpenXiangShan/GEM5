@@ -10,9 +10,12 @@ namespace RiscvISA
 namespace rmisc_reg
 {
 
-const int max_rmisc_num = 10;
-
-const int renameable_vl_idx = 0;
+enum : RegIndex
+{
+    _VlIdx,
+    _VtypeIdx,
+    NumRegs=10
+};
 
 }
 

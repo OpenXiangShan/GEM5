@@ -1368,8 +1368,7 @@ Fault
                 uint32_t ei = i + microvlmax * this->microIdx;
                 if ((ei < rVl) && (this->vm || elem_mask(v0, ei))) {
                     microop_result = f(microop_result, Vs2[i]);
-                }
-                else if (ei >= rVl) {
+                } else if (ei >= rVl) {
                     break;
                 }
             }
@@ -1651,8 +1650,7 @@ template<typename ElemType>
     StaticInstPtr microop;
 
     for (int i = 0; i < num_microops; ++i) {
-        microop = new %(class_name)sMicro<ElemType>(_machInst,
-            i, &vxsat);
+        microop = new %(class_name)sMicro<ElemType>(_machInst, i, &vxsat);
         microop->setDelayedCommit();
         this->microops.push_back(microop);
     }
@@ -1796,13 +1794,11 @@ template<typename ElemType>
             if (vmi.microVs2 >= 32) {
                 break;
             }
-            microop = new %(class_name)sMicro<ElemType>(
-                _machInst, micro_idx++, vmi);
+            microop = new %(class_name)sMicro<ElemType>(_machInst, micro_idx++, vmi);
             microop->setDelayedCommit();
             this->microops.push_back(microop);
         }
-    }
-    else {
+    } else {
         for (int i = 0; i < num_microops; ++i) {
             for (int j = 0; j < num_microops; ++j) {
                 vmi.rs = i * elem_num_per_vreg;
@@ -1812,8 +1808,7 @@ template<typename ElemType>
                 if (vmi.microVs2 < 0) {
                     vmi.microVs2 = 0;
                 }
-                microop = new %(class_name)sMicro<ElemType>(
-                    _machInst, micro_idx++, vmi);
+                microop = new %(class_name)sMicro<ElemType>(_machInst, micro_idx++, vmi);
                 microop->setDelayedCommit();
                 this->microops.push_back(microop);
             }
@@ -1857,13 +1852,11 @@ template<typename ElemType>
             if (vmi.microVs2 >= 32) {
                 vmi.microVs2 = 31;
             }
-            microop = new %(class_name)sMicro<ElemType>(
-                _machInst, micro_idx++, vmi);
+            microop = new %(class_name)sMicro<ElemType>(_machInst, micro_idx++, vmi);
             microop->setDelayedCommit();
             this->microops.push_back(microop);
         }
-    }
-    else {
+    } else {
         for (int i = 0; i < num_microops; ++i) {
             for (int j = i; j < RiscvISA::VLEN/8; ++j) {
                 vmi.rs = i * elem_num_per_vreg;
@@ -1873,8 +1866,7 @@ template<typename ElemType>
                 if (vmi.microVs2 >= 32) {
                     vmi.microVs2 = 31;
                 }
-                microop = new %(class_name)sMicro<ElemType>(
-                    _machInst, micro_idx++, vmi);
+                microop = new %(class_name)sMicro<ElemType>(_machInst, micro_idx++, vmi);
                 microop->setDelayedCommit();
                 this->microops.push_back(microop);
             }

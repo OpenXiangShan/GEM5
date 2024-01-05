@@ -76,7 +76,10 @@ static inline VecElemRegClassOps<RiscvISA::VecElem>
     vecRegElemClassOps(NumVecElemPerVecReg);
 static inline TypedRegClassOps<RiscvISA::VecRegContainer> vecRegClassOps;
 
-inline const auto VecRenamedVLReg = RegId(RMiscRegClass, rmisc_reg::renameable_vl_idx);
+inline const auto VecCompressCntReg = RegId(VecRegClass, NumVecRegs - 1);
+
+inline const auto VecRenamedVLReg = RegId(RMiscRegClass, rmisc_reg::_VlIdx);
+inline const auto VecRenamedVTYPEReg = RegId(RMiscRegClass, rmisc_reg::_VtypeIdx);
 
 BitUnion64(VTYPE)
     Bitfield<63> vill;

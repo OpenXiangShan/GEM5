@@ -218,7 +218,7 @@ ISA::ISA(const Params &p) : BaseISA(p)
     _regClasses.emplace_back(VecPredRegClass, 1, debug::VecRegs, RiscvISA::VLENB);
     _regClasses.emplace_back(CCRegClass, 0, debug::IntRegs, sizeof(RegVal));
     _regClasses.emplace_back(RMiscRegClass,
-                rmisc_reg::max_rmisc_num, debug::MiscRegs, sizeof(RegVal));
+                rmisc_reg::NumRegs, debug::MiscRegs, sizeof(RegVal));
 
     _regClasses.emplace_back(MiscRegClass, NUM_MISCREGS, debug::MiscRegs, sizeof(RegVal));
 

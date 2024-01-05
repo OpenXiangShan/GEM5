@@ -57,8 +57,8 @@ def template VConfDeclare {{
     class %(class_name)s : public %(base_class)s
     {
       private:
-        RegId srcRegIdxArr[4];
-        RegId destRegIdxArr[2];
+        RegId srcRegIdxArr[8];
+        RegId destRegIdxArr[3];
 
       public:
         /// Constructor.
@@ -74,9 +74,15 @@ def template VConfConstructor {{
     {
         %(set_reg_idx_arr)s;
         %(constructor)s;
-        setDestRegIdx(_numDestRegs++, RegId(RMiscRegClass, 0));
-            _numTypedDestRegs[RMiscRegClass]++;
+        setDestRegIdx(_numDestRegs++, VecRenamedVLReg); // 1
+        _numTypedDestRegs[RMiscRegClass]++;
+        setDestRegIdx(_numDestRegs++, VecRenamedVTYPEReg); // 2
+        _numTypedDestRegs[RMiscRegClass]++;
+
         SET_VL_SRC();
+        // renamed vtype
+        vtypesrcIdx = _numSrcRegs;
+        setSrcRegIdx(_numSrcRegs++, VecRenamedVTYPEReg);
         vtypeIsImm = %(vtypeIsImm)s;
         earlyVtype = %(earlyVtype)s;
     }
@@ -93,13 +99,16 @@ def template VConfExecute {{
         %(op_rd)s;
         %(code)s;
 
+        assert(vtypesrcIdx > 0);
+        uint32_t current_vtype = xc->getRegOperand(this, vtypesrcIdx);
+
         tc->setMiscReg(MISCREG_VSTART, 0);
 
         uint32_t vlen = xc->readMiscReg(MISCREG_VLENB) * 8;
-        uint32_t vlmax = getVlmax(xc->readMiscReg(MISCREG_VTYPE), vlen);
+        uint32_t vlmax = getVlmax(requested_vtype, vlen);
 
         VTYPE new_vtype = requested_vtype;
-        if (true) {
+        if (current_vtype != (uint32_t)requested_vtype) {
             vlmax = getVlmax(new_vtype, vlen);
 
             float vflmul = getVflmul(new_vtype.vlmul);
@@ -136,6 +145,8 @@ def template VConfExecute {{
         Rd = new_vl;
         // renamed vl
         xc->setRegOperand(this, 1, new_vl);
+        // renamed vtype
+        xc->setRegOperand(this, 2, (uint32_t)new_vtype);
 
         %(op_wb)s;
         return NoFault;

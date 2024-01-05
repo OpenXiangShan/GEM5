@@ -943,7 +943,7 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
 }
 
 void
-Fetch::doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst, const uint64_t seqNum,
+Fetch::doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqNum seqNum,
         ThreadID tid)
 {
     DPRINTF(Fetch, "[tid:%i] Squashing, setting PC to: %s.\n",

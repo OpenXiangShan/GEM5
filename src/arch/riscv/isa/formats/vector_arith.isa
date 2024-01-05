@@ -85,6 +85,7 @@ let {{
             ''' + code
 
     def wideningOpRegisterConstraintChecks(code):
+        return code
         return '''
             const uint32_t num_microops = 1 << std::max<int64_t>(0, vtype_vlmul(machInst.vtype8) + 1);
             if ((machInst.vd % alignToPowerOfTwo(num_microops)) != 0) {
