@@ -28,11 +28,64 @@
 
 
 def format VConfOp(code, *flags) {{
-    iop = InstObjParams(name, Name, 'VConfOp', code, flags)
-    header_output = BasicDeclare.subst(iop)
-    decoder_output = BasicConstructor.subst(iop)
+
+    if name == "vsetvli" or name == "vsetivli":
+        vtypeIsImm = 'true'
+    else:
+        vtypeIsImm = 'false'
+
+    earlyVtype = "-1";
+    if name == "vsetvli":
+        earlyVtype = "zimm11"
+    elif name == "vsetivli":
+        earlyVtype = "zimm10"
+
+    iop = InstObjParams(name, Name, 'VConfOp',
+                        {
+                            'code' : code,
+                            'vtypeIsImm' : vtypeIsImm,
+                            'earlyVtype' : earlyVtype
+                        },
+                       flags)
+    header_output = VConfDeclare.subst(iop)
+    decoder_output = VConfConstructor.subst(iop)
     decode_block = BasicDecode.subst(iop)
     exec_output = VConfExecute.subst(iop)
+}};
+
+def template VConfDeclare {{
+    class %(class_name)s : public %(base_class)s
+    {
+      private:
+        RegId srcRegIdxArr[8];
+        RegId destRegIdxArr[3];
+
+      public:
+        /// Constructor.
+        %(class_name)s(ExtMachInst machInst);
+        Fault execute(ExecContext *, Trace::InstRecord *) const override;
+        using %(base_class)s::generateDisassembly;
+    };
+}};
+
+def template VConfConstructor {{
+    %(class_name)s::%(class_name)s(ExtMachInst machInst)
+        : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s)
+    {
+        %(set_reg_idx_arr)s;
+        %(constructor)s;
+        setDestRegIdx(_numDestRegs++, VecRenamedVLReg); // 1
+        _numTypedDestRegs[RMiscRegClass]++;
+        setDestRegIdx(_numDestRegs++, VecRenamedVTYPEReg); // 2
+        _numTypedDestRegs[RMiscRegClass]++;
+
+        SET_VL_SRC();
+        // renamed vtype
+        vtypesrcIdx = _numSrcRegs;
+        setSrcRegIdx(_numSrcRegs++, VecRenamedVTYPEReg);
+        vtypeIsImm = %(vtypeIsImm)s;
+        earlyVtype = %(earlyVtype)s;
+    }
 }};
 
 def template VConfExecute {{
@@ -46,13 +99,16 @@ def template VConfExecute {{
         %(op_rd)s;
         %(code)s;
 
+        assert(vtypesrcIdx > 0);
+        uint32_t current_vtype = xc->getRegOperand(this, vtypesrcIdx);
+
         tc->setMiscReg(MISCREG_VSTART, 0);
 
         uint32_t vlen = xc->readMiscReg(MISCREG_VLENB) * 8;
-        uint32_t vlmax = getVlmax(xc->readMiscReg(MISCREG_VTYPE), vlen);
+        uint32_t vlmax = getVlmax(requested_vtype, vlen);
 
         VTYPE new_vtype = requested_vtype;
-        if (xc->readMiscReg(MISCREG_VTYPE) != new_vtype) {
+        if (current_vtype != (uint32_t)requested_vtype) {
             vlmax = getVlmax(new_vtype, vlen);
 
             float vflmul = getVflmul(new_vtype.vlmul);
@@ -72,7 +128,7 @@ def template VConfExecute {{
             xc->setMiscReg(MISCREG_VTYPE, new_vtype);
         }
 
-        uint32_t current_vl = xc->readMiscReg(MISCREG_VL);
+        uint32_t current_vl = rVl;
         uint32_t new_vl = 0;
         if (vlmax == 0) {
             new_vl = 0;
@@ -87,6 +143,10 @@ def template VConfExecute {{
         xc->setMiscReg(MISCREG_VL, new_vl);
 
         Rd = new_vl;
+        // renamed vl
+        xc->setRegOperand(this, 1, new_vl);
+        // renamed vtype
+        xc->setRegOperand(this, 2, (uint32_t)new_vtype);
 
         %(op_wb)s;
         return NoFault;

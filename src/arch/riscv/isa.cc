@@ -41,6 +41,7 @@
 #include "arch/riscv/regs/float.hh"
 #include "arch/riscv/regs/int.hh"
 #include "arch/riscv/regs/misc.hh"
+#include "arch/riscv/regs/renameable_misc.hh"
 #include "arch/riscv/regs/vector.hh"
 #include "base/bitfield.hh"
 #include "base/compiler.hh"
@@ -216,6 +217,8 @@ ISA::ISA(const Params &p) : BaseISA(p)
     _regClasses.emplace_back(VecElemClass, NumVecElemPerVecReg * NumVecRegs, debug::VecRegs, sizeof(RegVal));
     _regClasses.emplace_back(VecPredRegClass, 1, debug::VecRegs, RiscvISA::VLENB);
     _regClasses.emplace_back(CCRegClass, 0, debug::IntRegs, sizeof(RegVal));
+    _regClasses.emplace_back(RMiscRegClass,
+                rmisc_reg::NumRegs, debug::MiscRegs, sizeof(RegVal));
 
     _regClasses.emplace_back(MiscRegClass, NUM_MISCREGS, debug::MiscRegs, sizeof(RegVal));
 

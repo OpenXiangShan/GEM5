@@ -117,7 +117,7 @@ class SIMD_Unit(FUDesc):
                OpDesc(opClass='VectorMisc'),
                OpDesc(opClass='VectorIntegerExtension'),
                OpDesc(opClass='VectorConfig')]
-    count = 4
+    count = 2
 
 class PredALU(FUDesc):
     opList = [ OpDesc(opClass='SimdPredAlu') ]

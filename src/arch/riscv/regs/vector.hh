@@ -36,6 +36,7 @@
 
 #include "arch/generic/vec_pred_reg.hh"
 #include "arch/generic/vec_reg.hh"
+#include "arch/riscv/regs/renameable_misc.hh"
 #include "arch/riscv/types.hh"
 #include "base/bitunion.hh"
 #include "cpu/reg_class.hh"
@@ -74,6 +75,11 @@ const int VecTempReg0 = NumVecStandardRegs;
 static inline VecElemRegClassOps<RiscvISA::VecElem>
     vecRegElemClassOps(NumVecElemPerVecReg);
 static inline TypedRegClassOps<RiscvISA::VecRegContainer> vecRegClassOps;
+
+inline const auto VecCompressCntReg = RegId(VecRegClass, NumVecRegs - 1);
+
+inline const auto VecRenamedVLReg = RegId(RMiscRegClass, rmisc_reg::_VlIdx);
+inline const auto VecRenamedVTYPEReg = RegId(RMiscRegClass, rmisc_reg::_VtypeIdx);
 
 BitUnion64(VTYPE)
     Bitfield<63> vill;

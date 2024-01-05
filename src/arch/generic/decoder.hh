@@ -157,6 +157,9 @@ class InstDecoder : public SimObject
 
     virtual void setPCStateWithInstDesc(const bool &compressed,
                                            PCStateBase &pc);
+
+
+    virtual bool stall() { return false; };
 };
 
 } // namespace gem5

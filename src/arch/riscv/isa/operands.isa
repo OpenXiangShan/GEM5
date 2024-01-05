@@ -97,6 +97,8 @@ def operands {{
     'Vs3': VecRegOp('vc', 'VS3', 'IsVector', 4),
     'Vfof': VecRegOp('vc', 'VecFofTempReg', 'IsVector', 5),
 
+    'rVl' : RMiscRegOp('ud', 'VecRenamedVLReg', None, 10),
+
 
 #Memory Operand
     'Mem': MemOp('ud', None, (None, 'IsLoad', 'IsStore'), 5),

@@ -48,6 +48,7 @@
 #include <queue>
 
 #include "arch/generic/tlb.hh"
+#include "arch/riscv/decoder.hh"
 #include "base/debug_helper.hh"
 #include "base/random.hh"
 #include "base/types.hh"
@@ -59,13 +60,13 @@
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
 #include "debug/Activity.hh"
+#include "debug/Counters.hh"
 #include "debug/DecoupleBPProbe.hh"
 #include "debug/Drain.hh"
 #include "debug/Fetch.hh"
+#include "debug/FetchFault.hh"
 #include "debug/O3CPU.hh"
 #include "debug/O3PipeView.hh"
-#include "debug/FetchFault.hh"
-#include "debug/Counters.hh"
 #include "mem/packet.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/byteswap.hh"
@@ -942,11 +943,25 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
 }
 
 void
-Fetch::doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst,
+Fetch::doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqNum seqNum,
         ThreadID tid)
 {
     DPRINTF(Fetch, "[tid:%i] Squashing, setting PC to: %s.\n",
             tid, new_pc);
+
+    // restore vtype
+    uint8_t restored_vtype = cpu->readMiscReg(RiscvISA::MISCREG_VTYPE, tid);
+    for (auto& it : cpu->instList) {
+        if (!it->isSquashed() &&
+            it->seqNum <= seqNum &&
+            it->staticInst->isVectorConfig()) {
+            auto vset = static_cast<RiscvISA::VConfOp*>(it->staticInst.get());
+            if (vset->vtypeIsImm) {
+                restored_vtype = vset->earlyVtype;
+            }
+        }
+    }
+    decoder[tid]->as<RiscvISA::Decoder>().setVtype(restored_vtype);
 
     set(pc[tid], new_pc);
     fetchOffset[tid] = 0;
@@ -1031,7 +1046,7 @@ Fetch::squashFromDecode(const PCStateBase &new_pc, const DynInstPtr squashInst,
 {
     DPRINTF(Fetch, "[tid:%i] Squashing from decode.\n", tid);
 
-    doSquash(new_pc, squashInst, tid);
+    doSquash(new_pc, squashInst, seq_num, tid);
 
     // Tell the CPU to remove any instructions that are in flight between
     // fetch and decode.
@@ -1097,9 +1112,7 @@ Fetch::squash(const PCStateBase &new_pc, const InstSeqNum seq_num,
 {
     DPRINTF(Fetch, "[tid:%i] Squash from commit.\n", tid);
 
-    waitForVset = false;
-
-    doSquash(new_pc, squashInst, tid);
+    doSquash(new_pc, squashInst, seq_num, tid);
 
     // Tell the CPU to remove any instructions that are not in the ROB.
     cpu->removeInstsNotInROB(tid);
@@ -1139,8 +1152,8 @@ Fetch::tick()
         }
     }
 
-    if (cpu->instList.size() == 0) {
-        waitForVset = false;
+    if (fromCommit->commitInfo[0].emptyROB) {
+        waitForVsetvl = false;
     }
 
     for (threadFetched = 0; threadFetched < numFetchingThreads;
@@ -1505,10 +1518,6 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
     instruction->traceData = NULL;
 #endif
 
-    if (instruction->staticInst->isVectorConfig()) {
-        waitForVset = true;
-    }
-
     // Add instruction to the CPU's list of instructions.
     instruction->setInstListIt(cpu->addInst(instruction));
 
@@ -1682,7 +1691,7 @@ Fetch::fetch(bool &status_change)
     bool cond_taken_backward = false;
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize &&
            !(predictedBranch && !currentFetchTargetInLoop) && !quiesce &&
-           !ftqEmpty() && !exit_loopbuffer_this_cycle && !waitForVset) {
+           !ftqEmpty() && !exit_loopbuffer_this_cycle && !waitForVsetvl) {
         // We need to process more memory if we aren't going to get a
         // StaticInst from the rom, the current macroop, or what's already
         // in the decoder.
@@ -1771,6 +1780,10 @@ Fetch::fetch(bool &status_change)
 
             DynInstPtr instruction = buildInst(
                     tid, staticInst, curMacroop, this_pc, *next_pc, true);
+
+            if (staticInst->isVectorConfig()) {
+                waitForVsetvl = dec_ptr->stall();
+            }
 
             instruction->setVersion(localSquashVer);
 

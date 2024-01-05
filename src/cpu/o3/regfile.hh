@@ -100,6 +100,10 @@ class PhysRegFile
     /** Misc Reg Ids */
     std::vector<PhysRegId> miscRegIds;
 
+    /** Renameable-Misc register file. */
+    RegFile rMiscRegFile;
+    std::vector<PhysRegId> rMiscRegIds;
+
     /**
      * Number of physical general purpose registers
      */
@@ -129,6 +133,8 @@ class PhysRegFile
      * Number of physical CC registers
      */
     unsigned numPhysicalCCRegs;
+
+    unsigned numPhysicalRMiscRegs;
 
     /** Total number of physical registers. */
     unsigned totalNumRegs;
@@ -189,6 +195,9 @@ class PhysRegFile
             DPRINTF(IEW, "RegFile: Access to cc register %i has data %#x\n",
                     idx, val);
             return val;
+          case RMiscRegClass:
+            val = rMiscRegFile.reg(idx);
+            return val;
           default:
             panic("Unsupported register class type %d.", type);
         }
@@ -221,6 +230,9 @@ class PhysRegFile
                     "data %s\n", idx, vecPredRegFile.regClass.valString(val));
             break;
           case CCRegClass:
+            *(RegVal *)val = getReg(phys_reg);
+            break;
+          case RMiscRegClass:
             *(RegVal *)val = getReg(phys_reg);
             break;
           default:
@@ -273,6 +285,9 @@ class PhysRegFile
             DPRINTF(IEW, "RegFile: Setting cc register %i to %#x\n",
                     idx, val);
             break;
+          case RMiscRegClass:
+            rMiscRegFile.reg(idx) = val;
+            break;
           default:
             panic("Unsupported register class type %d.", type);
         }
@@ -305,6 +320,9 @@ class PhysRegFile
             vecPredRegFile.set(idx, val);
             break;
           case CCRegClass:
+            setReg(phys_reg, *(RegVal *)val);
+            break;
+          case RMiscRegClass:
             setReg(phys_reg, *(RegVal *)val);
             break;
           default:

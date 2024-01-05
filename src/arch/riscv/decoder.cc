@@ -80,11 +80,6 @@ Decoder::moreBytes(const PCStateBase &pc, Addr fetchPC)
             instDone = compressed(emi);
         }
     }
-    if (instDone) {
-        emi.vl      = this->machVl;
-        emi.vtype8   = this->machVtype & 0xff;
-        emi.vill    = this->machVtype.vill;
-    }
 }
 
 StaticInstPtr
@@ -117,7 +112,20 @@ Decoder::decode(PCStateBase &_next_pc)
         next_pc.compressed(false);
     }
 
-    return decode(emi, next_pc.instAddr());
+    emi.vtype8 = this->machVtype & 0xff;
+    StaticInstPtr inst = decode(emi, next_pc.instAddr());
+    if (inst->isVectorConfig()) {
+        auto vset = static_cast<VConfOp*>(inst.get());
+        if (vset->vtypeIsImm) {
+            this->setVtype(vset->earlyVtype);
+            VTYPE new_vtype = vset->earlyVtype;
+        }
+        else {
+            this->clearVtype();
+        }
+    }
+
+    return inst;
 }
 
 void
@@ -134,10 +142,19 @@ Decoder::setPCStateWithInstDesc(const bool &compressed, PCStateBase &_next_pc)
 }
 
 void
-Decoder::setVlAndVtype(uint32_t vl, VTYPE vtype)
-{
+Decoder::setVtype(VTYPE vtype) {
+    vtypeReady = true;
     this->machVtype = vtype;
-    this->machVl = vl;
+}
+
+void
+Decoder::clearVtype() {
+    vtypeReady = false;
+}
+
+bool
+Decoder::stall() {
+    return !vtypeReady;
 }
 
 } // namespace RiscvISA

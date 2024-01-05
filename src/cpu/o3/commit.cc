@@ -1176,10 +1176,12 @@ Commit::commitInsts()
                 // Updates misc. registers.
                 head_inst->updateMiscRegs();
                 if (head_inst->staticInst->isVectorConfig()) {
-                    auto tc = head_inst->tcBase();
-                    uint32_t new_vl = head_inst->readMiscReg(RiscvISA::MISCREG_VL);
-                    RiscvISA::VTYPE new_vtype = head_inst->readMiscReg(RiscvISA::MISCREG_VTYPE);
-                    tc->getDecoderPtr()->as<RiscvISA::Decoder>().setVlAndVtype(new_vl, new_vtype);
+                    auto vset = static_cast<RiscvISA::VConfOp*>(head_inst->staticInst.get());
+                    if (!(vset->vtypeIsImm)) {
+                        auto tc = head_inst->tcBase();
+                        RiscvISA::VTYPE new_vtype = head_inst->readMiscReg(RiscvISA::MISCREG_VTYPE);
+                        tc->getDecoderPtr()->as<RiscvISA::Decoder>().setVtype(new_vtype);
+                    }
                 }
 
                 if (cpu->difftestEnabled()) {
@@ -1525,8 +1527,8 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
     for (int i = 0; i < head_inst->numDestRegs(); i++) {
         renameMap[tid]->setEntry(head_inst->flattenedDestIdx(i),
                                  head_inst->renamedDestIdx(i));
-        DPRINTF(Commit, "Committing rename map entry x%i -> p%i\n",
-                head_inst->destRegIdx(i).index(),
+        DPRINTF(Commit, "Committing rename map entry %s -> p%i\n",
+                head_inst->destRegIdx(i),
                 head_inst->renamedDestIdx(i)->flatIndex());
     }
 

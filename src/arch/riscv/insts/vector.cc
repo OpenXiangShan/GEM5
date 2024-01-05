@@ -390,7 +390,7 @@ VMvWholeMicroInst::generateDisassembly(Addr pc,
 
 VleffEndMicroInst::VleffEndMicroInst(ExtMachInst extMachInst, uint8_t _numSrcs)
     : VectorMicroInst("VleffEnd", extMachInst,
-    VectorIntegerArithOp, 0, 0)
+    VectorIntegerArithOp, 0)
 {
     setRegIdxArrays(
         reinterpret_cast<RegIdArrayPtr>(

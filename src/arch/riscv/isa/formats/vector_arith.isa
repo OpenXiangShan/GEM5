@@ -33,33 +33,47 @@ let {{
                "_numTypedDestRegs[VecRegClass]++;\n"
     def setSrcWrapper(srcRegId):
         return "setSrcRegIdx(_numSrcRegs++, " + srcRegId + ");\n"
+    def setOldDestWrapper(destRegId):
+        return """
+        oldDstIdx = _numSrcRegs;
+        setSrcRegIdx(_numSrcRegs++, %s);
+        """ % destRegId
+    def setSrcVL():
+        return 'SET_VL_SRC();'
     def setSrcVm():
-        return "if (!this->vm)\n" + \
-               "    setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, 0));"
+        return """
+        SET_VM_SRC();
+        """
     def vmDeclAndReadData():
         return '''
-            [[maybe_unused]] RiscvISA::vreg_t tmp_v0;
-            [[maybe_unused]] uint8_t* v0;
-            if(!machInst.vm) {
-                xc->getRegOperand(this, _numSrcRegs-1, &tmp_v0);
-                v0 = tmp_v0.as<uint8_t>();
-            }
+        VM_REQUIRED();
         '''
     def copyOldVd(vd_idx):
-        return 'COPY_OLD_VD(%d);' % vd_idx
+        return ''
     def loopWrapper(code, micro_inst = True):
         if micro_inst:
-            upper_bound = "this->microVl"
+            upper_bound = "elem_num_per_vreg"
         else:
-            upper_bound = "(uint32_t)machInst.vl"
+            upper_bound = "rVl"
         return '''
             for (uint32_t i = 0; i < %s; i++) {
                 %s
             }
         ''' % (upper_bound, code)
-    def maskCondWrapper(code):
-        return "if (this->vm || elem_mask(v0, ei)) {\n" + \
-               code + "}\n"
+    def maskCondWrapper(code, withvm = True):
+        if withvm:
+            return """
+            if ((ei < rVl) && (this->vm || elem_mask(v0, ei))) {
+                %s
+            }
+            """ % (code)
+        else:
+            return """
+            if (ei < rVl) {
+                %s
+            }
+            """ % (code)
+
     def eiDeclarePrefix(code, widening = False):
         if widening:
             return '''
@@ -67,10 +81,11 @@ let {{
             ''' + code
         else:
             return '''
-            uint32_t ei = i + vtype_VLMAX(vtype, true) * this->microIdx;
+            uint32_t ei = i + elem_num_per_vreg * this->microIdx;
             ''' + code
 
     def wideningOpRegisterConstraintChecks(code):
+        return code
         return '''
             const uint32_t num_microops = 1 << std::max<int64_t>(0, vtype_vlmul(machInst.vtype8) + 1);
             if ((machInst.vd % alignToPowerOfTwo(num_microops)) != 0) {
@@ -155,7 +170,6 @@ def format VectorIntFormat(code, category, *flags) {{
         error("not supported category for VectorIntFormat: %s" % category)
 
     old_vd_idx = num_src_regs
-    src3_reg_id = "RegId(VecRegClass, _machInst.vd + _microIdx)"
 
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
 
@@ -163,15 +177,14 @@ def format VectorIntFormat(code, category, *flags) {{
     if category != "OPIVI":
         set_src_reg_idx += setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
-    set_src_reg_idx += setSrcWrapper(src3_reg_id)
+    set_src_reg_idx += setOldDestWrapper(dest_reg_id)
+    set_src_reg_idx += setSrcVL()
     if v0_required:
         set_src_reg_idx += setSrcVm()
 
     # code
-    if mask_cond:
-        code = maskCondWrapper(code)
-    if need_elem_idx:
-        code = eiDeclarePrefix(code)
+    code = maskCondWrapper(code, mask_cond)
+    code = eiDeclarePrefix(code)
     code = loopWrapper(code)
 
     vm_decl_rd = ""
@@ -217,7 +230,8 @@ def format VectorIntExtFormat(code, category, *flags) {{
 
     set_src_reg_idx = ""
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
-    set_src_reg_idx += setSrcWrapper(src3_reg_id)
+    set_src_reg_idx += setOldDestWrapper(dest_reg_id)
+    set_src_reg_idx += setSrcVL()
     set_src_reg_idx += setSrcVm()
 
     code = maskCondWrapper(code)
@@ -269,22 +283,20 @@ def format VectorIntWideningFormat(code, category, *flags) {{
         src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx / 2)"
     elif inst_suffix in ["wv", "wx"]:
         src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
-    src3_reg_id = "RegId(VecRegClass, _machInst.vs3 + _microIdx)"
 
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
 
     set_src_reg_idx = ""
     set_src_reg_idx += setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
-    set_src_reg_idx += setSrcWrapper(src3_reg_id)
+    set_src_reg_idx += setOldDestWrapper(dest_reg_id)
+    set_src_reg_idx += setSrcVL()
     if v0_required:
         set_src_reg_idx += setSrcVm()
 
     # code
-    if mask_cond:
-        code = maskCondWrapper(code)
-    if need_elem_idx:
-        code = eiDeclarePrefix(code, widening=True)
+    code = maskCondWrapper(code, mask_cond)
+    code = eiDeclarePrefix(code, widening=True)
     code = loopWrapper(code)
 
     code = wideningOpRegisterConstraintChecks(code)
@@ -339,7 +351,8 @@ def format VectorIntNarrowingFormat(code, category, *flags) {{
     if category != "OPIVI":
         set_src_reg_idx += setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
-    set_src_reg_idx += setSrcWrapper(old_dest_reg_id)
+    set_src_reg_idx += setOldDestWrapper(old_dest_reg_id)
+    set_src_reg_idx += setSrcVL()
     set_src_reg_idx += setSrcVm()
     # code
     code = maskCondWrapper(code)
@@ -401,15 +414,14 @@ def format VectorIntMaskFormat(code, category, *flags) {{
     if category != "OPIVI":
         set_src_reg_idx += setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
-    set_src_reg_idx += setSrcWrapper(old_dest_reg_id)
+    set_src_reg_idx += setSrcVL()
+    set_src_reg_idx += setOldDestWrapper(old_dest_reg_id)
     if v0_required:
         set_src_reg_idx += setSrcVm()
 
     #code
-    if mask_cond:
-        code = maskCondWrapper(code)
-    if need_elem_idx:
-        code = eiDeclarePrefix(code)
+    code = maskCondWrapper(code, mask_cond)
+    code = eiDeclarePrefix(code)
     code = loopWrapper(code)
 
     vm_decl_rd = ""
@@ -459,7 +471,6 @@ def format VectorGatherFormat(code, category, *flags) {{
     else:
         error("not supported category for VectorIntFormat: %s" % category)
     src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + vs2_idx)"
-    src3_reg_id = "RegId(VecRegClass, _machInst.vs3 + vd_idx)"
 
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
 
@@ -467,7 +478,8 @@ def format VectorGatherFormat(code, category, *flags) {{
     if category != "OPIVI":
         set_src_reg_idx += setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
-    set_src_reg_idx += setSrcWrapper(src3_reg_id)
+    set_src_reg_idx += setOldDestWrapper(dest_reg_id)
+    set_src_reg_idx += setSrcVL()
     set_src_reg_idx += setSrcVm()
 
     # code
@@ -523,13 +535,13 @@ def format VectorFloatFormat(code, category, *flags) {{
     set_src_reg_idx += setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
     set_src_reg_idx += setSrcWrapper(src3_reg_id)
+    set_src_reg_idx += setOldDestWrapper(dest_reg_id)
+    set_src_reg_idx += setSrcVL()
     if v0_required:
         set_src_reg_idx += setSrcVm()
     # code
-    if mask_cond:
-        code = maskCondWrapper(code)
-    if need_elem_idx:
-        code = eiDeclarePrefix(code)
+    code = maskCondWrapper(code, mask_cond)
+    code = eiDeclarePrefix(code)
     code = loopWrapper(code)
     code = fflags_wrapper(code)
 
@@ -566,13 +578,13 @@ def format VectorFloatCvtFormat(code, category, *flags) {{
     old_vd_idx = 1
     dest_reg_id = "RegId(VecRegClass, _machInst.vd + _microIdx)"
     src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
-    src3_reg_id = "RegId(VecRegClass, _machInst.vs3 + _microIdx)"
 
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
 
     set_src_reg_idx = ""
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
-    set_src_reg_idx += setSrcWrapper(src3_reg_id)
+    set_src_reg_idx += setOldDestWrapper(dest_reg_id)
+    set_src_reg_idx += setSrcVL()
     set_src_reg_idx += setSrcVm()
     code = maskCondWrapper(code)
     code = eiDeclarePrefix(code)
@@ -632,14 +644,14 @@ def format VectorFloatWideningFormat(code, category, *flags) {{
     set_src_reg_idx += setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
     set_src_reg_idx += setSrcWrapper(src3_reg_id)
+    set_src_reg_idx += setOldDestWrapper(dest_reg_id)
+    set_src_reg_idx += setSrcVL()
     if v0_required:
         set_src_reg_idx += setSrcVm()
 
     # code
-    if mask_cond:
-        code = maskCondWrapper(code)
-    if need_elem_idx:
-        code = eiDeclarePrefix(code, widening=True)
+    code = maskCondWrapper(code, mask_cond)
+    code = eiDeclarePrefix(code, widening=True)
     code = loopWrapper(code)
     code = fflags_wrapper(code)
 
@@ -678,13 +690,13 @@ def format VectorFloatWideningCvtFormat(code, category, *flags) {{
     old_vd_idx = 1
     dest_reg_id = "RegId(VecRegClass, _machInst.vd + _microIdx)"
     src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx / 2)"
-    src3_reg_id = "RegId(VecRegClass, _machInst.vs3 + _microIdx)"
 
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
 
     set_src_reg_idx = ""
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
-    set_src_reg_idx += setSrcWrapper(src3_reg_id)
+    set_src_reg_idx += setOldDestWrapper(dest_reg_id)
+    set_src_reg_idx += setSrcVL()
     set_src_reg_idx += setSrcVm()
     code = maskCondWrapper(code)
     code = eiDeclarePrefix(code, widening=True)
@@ -722,13 +734,13 @@ def format VectorFloatNarrowingCvtFormat(code, category, *flags) {{
     old_vd_idx = 1
     dest_reg_id = "RegId(VecRegClass, _machInst.vd + _microIdx / 2)"
     src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
-    src3_reg_id = "RegId(VecRegClass, _machInst.vs3 + _microIdx / 2)"
 
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
 
     set_src_reg_idx = ""
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
-    set_src_reg_idx += setSrcWrapper(src3_reg_id)
+    set_src_reg_idx += setOldDestWrapper(dest_reg_id)
+    set_src_reg_idx += setSrcVL()
     set_src_reg_idx += setSrcVm()
     code = maskCondWrapper(code)
     code = eiDeclarePrefix(code, widening=True)
@@ -780,7 +792,8 @@ def format VectorFloatMaskFormat(code, category, *flags) {{
     set_src_reg_idx = ""
     set_src_reg_idx += setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
-    set_src_reg_idx += setSrcWrapper(old_dest_reg_id)
+    set_src_reg_idx += setOldDestWrapper(old_dest_reg_id)
+    set_src_reg_idx += setSrcVL()
     set_src_reg_idx += setSrcVm()
     vm_decl_rd = vmDeclAndReadData()
 
@@ -843,7 +856,9 @@ def format ViotaFormat(code, category, *flags){{
 
     set_src_reg_idx = ""
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
-    set_src_reg_idx += setSrcWrapper(old_dest_reg_id)
+    set_src_reg_idx += setOldDestWrapper(old_dest_reg_id)
+    set_src_reg_idx += setSrcVL()
+
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
     vm_decl_rd = vmDeclAndReadData()
     set_vm_idx = setSrcVm()
@@ -880,7 +895,9 @@ def format Vector1Vs1VdMaskFormat(code, category, *flags){{
     old_dest_reg_id = "RegId(VecRegClass, _machInst.vd)"
     set_src_reg_idx = ""
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
-    set_src_reg_idx += setSrcWrapper(old_dest_reg_id)
+    set_src_reg_idx += setOldDestWrapper(old_dest_reg_id)
+    set_src_reg_idx += setSrcVL()
+
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
     vm_decl_rd = vmDeclAndReadData()
     set_vm_idx = setSrcVm()
@@ -974,12 +991,12 @@ def format VectorMaskFormat(code, category, *flags) {{
     # We treat it with tail-undisturbed policy, since
     # the test suits only support undisturbed policy.
     # TODO: remove it
-    old_dest_reg_id = "RegId(VecRegClass, _machInst.vd)"
 
     set_src_reg_idx = ""
     set_src_reg_idx += setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
-    set_src_reg_idx += setSrcWrapper(old_dest_reg_id)
+    set_src_reg_idx += setOldDestWrapper(dest_reg_id)
+    set_src_reg_idx += setSrcVL()
 
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
 
@@ -1016,13 +1033,21 @@ def format VectorReduceIntFormat(code, category, *flags) {{
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
     # Treat tail undisturbed/agnostic as the same
     # We always need old rd as src vreg
-    set_src_reg_idx += setSrcWrapper(old_dest_reg_id)
+    set_src_reg_idx += setOldDestWrapper(old_dest_reg_id)
+    set_src_reg_idx += setSrcVL()
     set_src_reg_idx += setSrcVm()
     vm_decl_rd = vmDeclAndReadData()
     type_def = '''
         using vu [[maybe_unused]] = std::make_unsigned_t<ElemType>;
         using vi [[maybe_unused]] = std::make_signed_t<ElemType>;
     '''
+
+    code = """
+    if (microIdx * elem_num_per_vreg < rVl) {
+        %s
+    }
+    """ % (code)
+
     microiop = InstObjParams(name + "_micro",
         Name + "Micro",
         'VectorArithMicroInst',
@@ -1058,7 +1083,8 @@ def format VectorReduceFloatFormat(code, category, *flags) {{
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
     # Treat tail undisturbed/agnostic as the same
     # We always need old rd as src vreg
-    set_src_reg_idx += setSrcWrapper(old_dest_reg_id)
+    set_src_reg_idx += setOldDestWrapper(old_dest_reg_id)
+    set_src_reg_idx += setSrcVL()
     set_src_reg_idx += setSrcVm()
     vm_decl_rd = vmDeclAndReadData()
     type_def = '''
@@ -1103,7 +1129,8 @@ def format VectorReduceFloatWideningFormat(code, category, *flags) {{
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
     # Treat tail undisturbed/agnostic as the same
     # We always need old rd as src vreg
-    set_src_reg_idx += setSrcWrapper(old_dest_reg_id)
+    set_src_reg_idx += setOldDestWrapper(old_dest_reg_id)
+    set_src_reg_idx += setSrcVL()
     set_src_reg_idx += setSrcVm()
     vm_decl_rd = vmDeclAndReadData()
     type_def = '''
@@ -1158,6 +1185,8 @@ def format VectorIntVxsatFormat(code, category, *flags) {{
         set_src_reg_idx += setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
     set_src_reg_idx += setSrcWrapper(src3_reg_id)
+    set_src_reg_idx += setOldDestWrapper(dest_reg_id)
+    set_src_reg_idx += setSrcVL()
     set_src_reg_idx += setSrcVm()
     vm_decl_rd = vmDeclAndReadData()
 
@@ -1200,9 +1229,11 @@ def format VectorReduceIntWideningFormat(code, category, *flags) {{
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
     # Treat tail undisturbed/agnostic as the same
     # We always need old rd as src vreg
-    set_src_reg_idx += setSrcWrapper(old_dest_reg_id)
+    set_src_reg_idx += setOldDestWrapper(old_dest_reg_id)
+    set_src_reg_idx += setSrcVL()
     set_src_reg_idx += setSrcVm()
     vm_decl_rd = vmDeclAndReadData()
+
     microiop = InstObjParams(name + "_micro",
         Name + "Micro",
         'VectorArithMicroInst',
@@ -1261,10 +1292,11 @@ def VectorSlideBase(name, Name, category, code, flags, macro_construtor,
     set_src_reg_idx += setSrcWrapper(src3_reg_id) # 2
     num_src_regs += 1
     old_vd_idx = num_src_regs
-    set_src_reg_idx += setSrcWrapper(old_dest_reg_id)
+    set_src_reg_idx += setOldDestWrapper(old_dest_reg_id)
+    set_src_reg_idx += setSrcVL()
+    set_src_reg_idx += setSrcVm()
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
     vm_decl_rd = vmDeclAndReadData()
-    set_src_reg_idx += setSrcVm()
     microiop = InstObjParams(name + "_micro",
         Name + "Micro",
         microop_class_name,

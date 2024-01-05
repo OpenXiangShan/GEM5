@@ -57,8 +57,8 @@ class Decoder : public InstDecoder
     ExtMachInst emi;
     uint32_t machInst;
 
+    bool vtypeReady = true;
     VTYPE machVtype;
-    uint32_t machVl;
 
     /// A cache of decoded instruction objects.
     static GenericISA::BasicDecodeCache<Decoder, ExtMachInst> defaultCache;
@@ -94,7 +94,11 @@ class Decoder : public InstDecoder
     void setPCStateWithInstDesc(const bool &inst,
                                   PCStateBase &pc) override;
 
-    void setVlAndVtype(uint32_t vl, VTYPE vtype);
+    void setVtype(VTYPE vtype);
+
+    void clearVtype();
+
+    bool stall() override;
 };
 
 } // namespace RiscvISA

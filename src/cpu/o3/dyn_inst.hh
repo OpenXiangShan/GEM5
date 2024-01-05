@@ -380,7 +380,7 @@ class DynInst : public ExecContext, public RefCounted
      * Saved memory request (needed when the DTB address translation is
      * delayed due to a hw page table walk).
      */
-    LSQ::LSQRequest *savedRequest;
+    LSQ::LSQRequest *savedRequest = nullptr;
 
     /////////////////////// Checker //////////////////////
     // Need a copy of main request pointer to verify on writes.
@@ -1123,6 +1123,7 @@ class DynInst : public ExecContext, public RefCounted
               case IntRegClass:
               case FloatRegClass:
               case CCRegClass:
+              case RMiscRegClass:
                 setRegOperand(staticInst.get(), idx,
                         cpu->getReg(prev_phys_reg));
                 break;

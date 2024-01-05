@@ -111,7 +111,7 @@ class StaticInst : public RefCounted, public StaticInstFlags
     /// See numDestRegs().
     uint8_t _numDestRegs = 0;
 
-    std::array<uint8_t, MiscRegClass + 1> _numTypedDestRegs = {};
+    std::array<uint8_t, RMiscRegClass + 1> _numTypedDestRegs = {};
 
   public:
 

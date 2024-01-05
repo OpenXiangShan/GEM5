@@ -63,6 +63,7 @@ PhysRegFile::PhysRegFile(unsigned _numPhysicalIntRegs,
                   reg_classes.at(VecRegClass).numRegs())),
       vecPredRegFile(reg_classes.at(VecPredRegClass), _numPhysicalVecPredRegs),
       ccRegFile(reg_classes.at(CCRegClass), _numPhysicalCCRegs),
+      rMiscRegFile(reg_classes.at(RMiscRegClass), reg_classes.at(RMiscRegClass).numRegs() * 2),
       numPhysicalIntRegs(_numPhysicalIntRegs),
       numPhysicalFloatRegs(_numPhysicalFloatRegs),
       numPhysicalVecRegs(_numPhysicalVecRegs),
@@ -71,12 +72,14 @@ PhysRegFile::PhysRegFile(unsigned _numPhysicalIntRegs,
                   reg_classes.at(VecRegClass).numRegs())),
       numPhysicalVecPredRegs(_numPhysicalVecPredRegs),
       numPhysicalCCRegs(_numPhysicalCCRegs),
+      numPhysicalRMiscRegs(reg_classes.at(RMiscRegClass).numRegs() * 2),
       totalNumRegs(_numPhysicalIntRegs
                    + _numPhysicalFloatRegs
                    + _numPhysicalVecRegs
                    + numPhysicalVecElemRegs
                    + _numPhysicalVecPredRegs
-                   + _numPhysicalCCRegs)
+                   + _numPhysicalCCRegs
+                   + numPhysicalRMiscRegs)
 {
     RegIndex phys_reg;
     RegIndex flat_reg_idx = 0;
@@ -115,11 +118,20 @@ PhysRegFile::PhysRegFile(unsigned _numPhysicalIntRegs,
         ccRegIds.emplace_back(CCRegClass, phys_reg, flat_reg_idx++);
     }
 
+    // Renameable misc regs
+    for (phys_reg = 0; phys_reg < numPhysicalRMiscRegs;
+            phys_reg++) {
+        rMiscRegIds.emplace_back(RMiscRegClass, phys_reg, flat_reg_idx++);
+    }
+
     // Misc regs have a fixed mapping but still need PhysRegIds.
     for (phys_reg = 0; phys_reg < reg_classes.at(MiscRegClass).numRegs();
             phys_reg++) {
         miscRegIds.emplace_back(MiscRegClass, phys_reg, 0);
     }
+
+    // must clear with zero
+    rMiscRegFile.clear();
 }
 
 
@@ -166,6 +178,11 @@ PhysRegFile::initFreeList(UnifiedFreeList *freeList)
         assert(ccRegIds[reg_idx].index() == reg_idx);
     }
     freeList->addRegs(ccRegIds.begin(), ccRegIds.end());
+
+    for (reg_idx = 0; reg_idx < numPhysicalRMiscRegs; reg_idx++) {
+        assert(rMiscRegIds[reg_idx].index() == reg_idx);
+    }
+    freeList->addRegs(rMiscRegIds.begin(), rMiscRegIds.end());
 }
 
 PhysRegFile::IdRange
@@ -187,6 +204,8 @@ PhysRegFile::getRegIds(RegClassType cls)
         return std::make_pair(ccRegIds.begin(), ccRegIds.end());
       case MiscRegClass:
         return std::make_pair(miscRegIds.begin(), miscRegIds.end());
+      case RMiscRegClass:
+        return std::make_pair(rMiscRegIds.begin(), rMiscRegIds.end());
       case InvalidRegClass:
         panic("Tried to get register IDs for the invalid class.");
     }

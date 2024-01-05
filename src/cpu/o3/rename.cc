@@ -1172,6 +1172,7 @@ Rename::renameSrcRegs(const DynInstPtr &inst, ThreadID tid)
             stats.vecPredLookups++;
             break;
           case CCRegClass:
+          case RMiscRegClass:
           case MiscRegClass:
             break;
 

@@ -78,7 +78,8 @@ const char *RegId::regClassStrings[] = {
     "VecElemClass",
     "VecPredRegClass",
     "CCRegClass",
-    "MiscRegClass"
+    "RMiscRegClass",
+    "MiscRegClass",
 };
 
 } // namespace gem5

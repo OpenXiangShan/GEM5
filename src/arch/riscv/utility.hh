@@ -251,6 +251,25 @@ elem_gen_idx(int vd, int n, int elem_size)
     return vd;
 }
 
+inline int
+popcount_in_byte(uint64_t* addr, uint32_t st, uint32_t en)
+{
+    assert(en - st <= 64);
+    uint32_t size = en - st;
+    addr += (st / 64);
+    st = st % 64;
+    en = en % 64;
+    uint64_t data = addr[0];
+    data >>= st;
+    if (en <= st && en != 0) {
+        data |= (addr[1] << (64 - st));
+    }
+    if (size < 64) {
+        data &= ((1<<size) - 1);
+    }
+    return popCount(data);
+};
+
 /*
   *  Spec Section 4.5
   *  Ref:
