@@ -98,8 +98,8 @@ namespace RiscvISA
                 ThreadContext *tc;
                 RequestPtr req;
                 BaseMMU::Translation *translation;
-                bool from_forward_pre_req;
-                bool from_back_pre_req;
+                bool fromForwardPreReq;
+                bool fromBackPreReq;
                 Fault fault;
                 bool squashed;
 
@@ -108,18 +108,17 @@ namespace RiscvISA
                     tc = nullptr;
                     req = nullptr;
                     translation = nullptr;
-                    from_forward_pre_req = false;
-                    from_back_pre_req = false;
+                    fromForwardPreReq = false;
+                    fromBackPreReq = false;
                     fault = NoFault;
                     squashed = false;
                 }
-                RequestorState(ThreadContext *tc, RequestPtr req,
-                               BaseMMU::Translation *translation)
+                RequestorState(ThreadContext *tc, RequestPtr req, BaseMMU::Translation *translation)
                     : tc(tc),
                       req(req),
                       translation(translation),
-                      from_forward_pre_req(false),
-                      from_back_pre_req(false),
+                      fromForwardPreReq(false),
+                      fromBackPreReq(false),
                       fault(NoFault),
                       squashed(false)
                 {}
@@ -139,7 +138,7 @@ namespace RiscvISA
             int level;
             unsigned inflight;
             TlbEntry entry;
-            TlbEntry inl2_entry;
+            TlbEntry inl2Entry;
             PacketPtr read;
             std::vector<PacketPtr> writes;
             Fault mainFault;
@@ -152,23 +151,23 @@ namespace RiscvISA
             bool retrying;
             bool started;
             bool squashed;
-            bool next_line;
-            Addr nextline_Read;
-            int nextline_level;
-            TlbEntry nextline_entry;
-            Addr nextline_vaddr;
+            bool nextline;
+            Addr nextlineRead;
+            int nextlineLevel;
+            TlbEntry nextlineEntry;
+            Addr nextlineVaddr;
 
-            Addr nextline_level_mask;
-            Addr nextline_shift;
-            Addr tlb_vaddr;
-            Addr tlb_ppn;
-            Addr tlb_size_pte;
-            bool open_nextline;
-            bool auto_nextline_sign;
-            bool finish_default_translate;
-            bool pre_hit_in_ptw;
-            bool from_pre;
-            bool from_back_pre;
+            Addr nextlineLevelMask;
+            Addr nextlineShift;
+            Addr tlbVaddr;
+            Addr tlbppn;
+            Addr tlbSizePte;
+            bool openNextline;
+            bool autoNextlineSign;
+            bool finishDefaultTranslate;
+            bool preHitInPtw;
+            bool fromPre;
+            bool fromBackPre;
 
 
           public:

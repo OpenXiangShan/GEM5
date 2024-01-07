@@ -60,16 +60,35 @@ const Addr VADDR_BITS  = 39;
 const Addr LEVEL_BITS  = 9;
 const Addr LEVEL_MASK  = (1 << LEVEL_BITS) - 1;
 
+const Addr L2TLB_BLK_OFFSET = 3;
+const Addr VADDR_CHOOSE_MASK = 7;
+const Addr L2TLB_L2_MASK = 0x1f;
+const Addr L2TLB_L3_MASK = 0x7f;
+const Addr l2tlbLineSize = 8;
+
+const Addr preHitOnHitLNum = 500;
+const double preHitOnHitPrecision = 0.08;
+const double nextlinePrecision = 0.09;
+
+const int L2L1CheckLevel = 2;
+const int L2L2CheckLevel = 1;
+const int L2L3CheckLevel = 0;
+
+
+// L2L1 :L2TLB L1Page
+// L2L2 :L2TLB L2Page
+// L2L3 :L2TLB L3Page
+// L2sp1 :L2TLB L1Page(leaf)
+// L2sp2 :L2TLB L2Page(leaf)
 enum l2TLBPage
 {
     L_L2L1 =1,
-    L_L2L2 =2,
+    L_L2L2 ,
     L_L2L3 ,
     L_L2sp1,
     L_L2sp2
 
 };
-const double default_nextline_precision = 0.09;
 
 BitUnion64(PTESv39)
     Bitfield<53, 10> ppn;
@@ -115,13 +134,13 @@ struct TlbEntry : public Serializable
 
     Addr index;
 
-    bool is_squashed;
+    bool isSquashed;
 
     bool used;
-    bool is_pre;
-    bool from_forward_pre_req;
-    bool from_back_pre_req;
-    bool pre_sign;
+    bool isPre;
+    bool fromForwardPreReq;
+    bool fromBackPreReq;
+    bool preSign;
 
     TlbEntry()
         : paddr(0),
@@ -131,12 +150,12 @@ struct TlbEntry : public Serializable
           lruSeq(0),
           level(0),
           index(0),
-          is_squashed(false),
+          isSquashed(false),
           used(false),
-          is_pre(false),
-          from_forward_pre_req(false),
-          from_back_pre_req(false),
-          pre_sign(false)
+          isPre(false),
+          fromForwardPreReq(false),
+          fromBackPreReq(false),
+          preSign(false)
     {
     }
 
