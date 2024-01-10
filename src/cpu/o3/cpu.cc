@@ -97,6 +97,7 @@ CPU::CPU(const BaseO3CPUParams &params)
               params.numPhysVecRegs,
               params.numPhysVecPredRegs,
               params.numPhysCCRegs,
+              params.numPhysRMiscRegs,
               params.isa[0]->regClasses()),
 
       freeList(name() + ".freelist", &regFile),

@@ -111,7 +111,8 @@ InstructionQueue::InstructionQueue(CPU *cpu_ptr, IEW *iew_ptr,
                             reg_classes.at(VecElemClass).numRegs() /
                             reg_classes.at(VecRegClass).numRegs()) +
                     params.numPhysVecPredRegs +
-                    params.numPhysCCRegs;
+                    params.numPhysCCRegs +
+                    params.numPhysRMiscRegs;
 
     //Create an entry for each physical register within the
     //dependency graph.
