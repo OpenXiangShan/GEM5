@@ -28,8 +28,8 @@ namespace prefetch
 
 class WorkerPrefetcher: public Queued
 {
-    bool first_call = false;
-    Event *transfer_event;
+    bool firstCall = false;
+    Event *transferEvent;
   public:
     WorkerPrefetcher(const WorkerPrefetcherParams &p);
 
@@ -37,22 +37,33 @@ class WorkerPrefetcher: public Queued
     void calculatePrefetch(const PrefetchInfo &pfi,
                            std::vector<AddrPriority> &addresses) override {}
 
-    void transfer();
+    virtual void transfer();
 
     void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) override
     {
-        if (!first_call) {
-            first_call = true;
-            schedule(transfer_event, nextCycle());
+        if (!firstCall) {
+            firstCall = true;
+            schedule(transferEvent, nextCycle());
         }
     };
 
     void rxHint(BaseMMU::Translation *dpp) override;
-    void rxNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt) override {
+
+    // dummy
+    void pfHitNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt) override {
         return;
     }
 
     bool hasHintsWaiting() override { return !localBuffer.empty(); }
+
+    struct WorkerStats : public statistics::Group
+    {
+        WorkerStats(statistics::Group *parent);
+
+        statistics::Scalar hintsReceived;
+        statistics::Scalar hintsOffloaded;
+
+    } workerStats;
 
   protected:
     boost::compute::detail::lru_cache<Addr, Addr> pfLRUFilter;

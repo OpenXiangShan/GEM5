@@ -49,13 +49,39 @@ namespace gem5
 GEM5_DEPRECATED_NAMESPACE(Prefetcher, prefetch);
 namespace prefetch
 {
-CDP::CDP(const CDPParams &p) : Queued(p), depth_threshold(3), byteOrder(p.sys->getGuestByteOrder()), pfLRUFilter(128)
+CDP::CDP(const CDPParams &p) : Queued(p), depth_threshold(3), byteOrder(p.sys->getGuestByteOrder()),
+                               cdpStats(this)
 {
-    transfer_event = new EventFunctionWrapper([this]() { transfer(); }, name(), false);
     for (int i = 0; i < PrefetchSourceType::NUM_PF_SOURCES; i++) {
         enable_prf_filter.push_back(false);
     }
 }
+
+CDP::CDPStats::CDPStats(statistics::Group *parent)
+    : statistics::Group(parent),
+      ADD_STAT(triggeredInRxNotify, statistics::units::Count::get(),
+               "Number of times the prefetcher was triggered in rxNotify"),
+      ADD_STAT(triggeredInCalcPf, statistics::units::Count::get(),
+               "Number of times the prefetcher was triggered in calculatePrefetch"),
+      ADD_STAT(hitNotifyCalled, statistics::units::Count::get(),
+               "Number of times the prefetcher was called in hitNotify"),
+      ADD_STAT(hitNotifyExitBlockNotFound, statistics::units::Count::get(),
+               "Number of times the prefetcher exited hitNotify due to block not found"),
+      ADD_STAT(hitNotifyExitFilter, statistics::units::Count::get(),
+               "Number of times the prefetcher exited hitNotify due to filter"),
+      ADD_STAT(hitNotifyExitDepth, statistics::units::Count::get(),
+               "Number of times the prefetcher exited hitNotify due to depth"),
+      ADD_STAT(hitNotifyNoAddrFound, statistics::units::Count::get(),
+               "Number of times the prefetcher exited hitNotify due to no address found"),
+      ADD_STAT(hitNotifyNoVA, statistics::units::Count::get(),
+               "Number of times the prefetcher exited hitNotify due to no VA"),
+      ADD_STAT(hitNotifyNoData, statistics::units::Count::get(),
+               "Number of times the prefetcher exited hitNotify due to no data"),
+      ADD_STAT(missNotifyCalled, statistics::units::Count::get(),
+               "Number of times the prefetcher was called in missNotify")
+{
+}
+
 void
 CDP::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses)
 {
@@ -98,9 +124,11 @@ CDP::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addre
                 addrprio.depth = 1;
                 // addresses.push_back(addrprio);
                 sendPFWithFilter(pt_addr, addresses, 30, PrefetchSourceType::CDP, 1);
+                cdpStats.triggeredInCalcPf++;
             }
         }
     } else if (miss) {
+        cdpStats.missNotifyCalled++;
         DPRINTF(CDPUseful, "Miss addr: %#llx\n", addr);
         vpn2 = BITS(addr, 38, 30);
         vpn1 = BITS(addr, 29, 21);
@@ -109,8 +137,7 @@ CDP::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addre
         vpnTable.add(vpn2, vpn1);
         vpnTable.resetConfidence();
         DPRINTF(CDPdebug,
-                "Sv39, ADDR:%#llx, vpn2:%#llx, \
-                    vpn1:%#llx, vpn0:%#llx, page offset:%#llx\n",
+                "Sv39, ADDR:%#llx, vpn2:%#llx, vpn1:%#llx, vpn0:%#llx, page offset:%#llx\n",
                 addr, Addr(vpn2), Addr(vpn1), Addr(vpn0), Addr(page_offset));
     }
     return;
@@ -119,29 +146,26 @@ CDP::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addre
 void
 CDP::notifyFill(const PacketPtr &pkt)
 {
-
-    float trueAccuracy = (prefetchStats.pfUseful_srcs[PrefetchSourceType::CDP].value()) /
-                         (prefetchStats.pfIssued_srcs[PrefetchSourceType::CDP].value());
-    float coverage =
-        prefetchStats.pfUseful.total() / (prefetchStats.pfUseful.total() + prefetchStats.demandMshrMisses.total());
+    cdpStats.hitNotifyCalled++;
+    assert(pkt);
+    assert(cache);
     uint64_t test_addr = 0;
-    // if (trueAccuracy<0.1){
-    //     depth_threshold=1;
-    // }
-    // else{
-    //     depth_threshold=3;
-    // }
     std::vector<uint64_t> addrs;
     if (pkt->hasData() && pkt->req->hasVaddr()) {
-        if (cache->findBlock(pkt->getAddr(), pkt->isSecure()) == nullptr)
+        DPRINTF(CDPdebug, "Hit notify received for addr: %#llx\n", pkt->req->getVaddr());
+        if (cache->findBlock(pkt->getAddr(), pkt->isSecure()) == nullptr) {
+            cdpStats.hitNotifyExitBlockNotFound++;
             return;
+        }
         Request::XsMetadata pkt_meta = cache->getHitBlkXsMetadata(pkt);
         size_t found = cache->system->getRequestorName(pkt->req->requestorId()).find("dcache.prefetcher");
         int pf_depth = pkt_meta.prefetchDepth;
         PrefetchSourceType pf_source = pkt_meta.prefetchSource;
         if (found != std::string::npos) {
-            if (enable_prf_filter[pkt->req->getXsMetadata().prefetchSource])
+            if (enable_prf_filter[pkt->req->getXsMetadata().prefetchSource]) {
+                cdpStats.hitNotifyExitFilter++;
                 return;
+            }
         }
         uint64_t *test_addr_start = (uint64_t *)pkt->getPtr<uint64_t>();
         unsigned max_offset = pkt->getSize() / 8;
@@ -184,16 +208,15 @@ CDP::notifyFill(const PacketPtr &pkt)
             Addr test_addr2 = Addr(test_addr);
             if (flag) {
                 if (pf_depth >= depth_threshold) {
+                    cdpStats.hitNotifyExitDepth++;
                     return;
                 }
                 int next_depth = 0;
                 if (pf_depth == 0) {
-                    // if (trueAccuracy<0.1)
-                    //     next_depth=5;
-                    // else
                     next_depth = 4;
-                } else
+                } else {
                     next_depth = pf_depth + 1;
+                }
                 AddrPriority addrprio =
                     AddrPriority(blockAddress(test_addr2), 29 + next_depth, PrefetchSourceType::CDP);
                 addrprio.depth = next_depth;
@@ -206,7 +229,12 @@ CDP::notifyFill(const PacketPtr &pkt)
                 // addresses.push_back(addrprio2);
                 sendPFWithFilter(blockAddress(test_addr2) + 0x40, addresses, 29 + next_depth - 10,
                                  PrefetchSourceType::CDP, next_depth);
+                cdpStats.triggeredInRxNotify++;
+                sentCount++;
             }
+        }
+        if (sentCount == 0) {
+            cdpStats.hitNotifyNoAddrFound++;
         }
         PrefetchInfo pfi(pkt, pkt->req->getVaddr(), false);
         size_t max_pfs = getMaxPermittedPrefetches(addresses.size());
@@ -246,88 +274,30 @@ CDP::notifyFill(const PacketPtr &pkt)
             }
         }
     }
-    if (!first_call) {
-        first_call = true;
-        schedule(transfer_event, nextCycle());
-    }
+    if (!pkt->req->hasVaddr()) cdpStats.hitNotifyNoVA++;
+    if (!pkt->hasData()) cdpStats.hitNotifyNoData++;
     return;
 }
+
 void
-CDP::rxHint(BaseMMU::Translation *dpp)
-{
-    auto ptr = reinterpret_cast<DeferredPacket *>(dpp);
-    float cdp_ratio =
-        (prefetchStats.pfIssued_srcs[PrefetchSourceType::CDP].value()) / (prefetchStats.pfIssued.total());
-    float acc = (prefetchStats.pfUseful_srcs[ptr->pfInfo.getXsMetadata().prefetchSource].value()) /
-                (prefetchStats.pfIssued_srcs[ptr->pfInfo.getXsMetadata().prefetchSource].value());
-
-    if (hasHintDownStream() && cdp_ratio > 0.5 && acc < 0.5) {
-        hintDownStream->rxHint(dpp);
-        return;
-    }
-
-    // ignore if pfahead_host > itself level
-    if ((ptr->pfahead ? (ptr->pfahead_host <= cache->level()) : true) &&
-        (ptr->pfInfo.getXsMetadata().prefetchSource == PrefetchSourceType::SStream)) {
-        if (pfLRUFilter.contains(ptr->pfInfo.getAddr())) {
-            DPRINTF(WorkerPref, "Worker: offload: [%lx, %d] skip recently in localBuffer\n", ptr->pfInfo.getAddr(),
-                    ptr->pfahead_host);
-            return;
-        }
-        pfLRUFilter.insert(ptr->pfInfo.getAddr(), 0);
-    }
-
-    DPRINTF(WorkerPref, "Worker: put [%lx, %d] into localBuffer(size:%lu)\n", ptr->pfInfo.getAddr(), ptr->pfahead_host,
-            localBuffer.size());
-    localBuffer.push_back(*ptr);
-}
-void
-CDP::rxNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt)
+CDP::pfHitNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt)
 {
     if (accuracy < 0.1) {
         enable_prf_filter[pf_source] = true;
-        notifyFill(pkt);
-    } else
+    } else {
         enable_prf_filter[pf_source] = false;
-}
-void
-CDP::transfer()
-{
-    // ignore information of pfi, grab the information from the local buffer
-    unsigned count = 0;
-    auto dpp_it = localBuffer.begin();
-    while (count < depth && !localBuffer.empty()) {
-        if (queueFilter) {
-            if (alreadyInQueue(pfq, dpp_it->pfInfo.getAddr(), dpp_it->pfInfo.isSecure(), dpp_it->priority)) {
-                DPRINTF(WorkerPref, "Worker: [%lx, %d] was already in pfq\n", dpp_it->pfInfo.getAddr(),
-                        dpp_it->pfahead_host);
-            } else if (alreadyInQueue(pfqMissingTranslation, dpp_it->pfInfo.getAddr(), dpp_it->pfInfo.isSecure(),
-                                      dpp_it->priority)) {
-                DPRINTF(WorkerPref, "Worker: [%lx, %d] was already in pfq\n", dpp_it->pfInfo.getAddr(),
-                        dpp_it->pfahead_host);
-            } else {
-                addToQueue(pfq, *dpp_it);
-                DPRINTF(WorkerPref, "Worker: put [%lx, %d] into local pfq\n", dpp_it->pfInfo.getAddr(),
-                        dpp_it->pfahead_host);
-            }
-        } else {
-            addToQueue(pfq, *dpp_it);
-            DPRINTF(WorkerPref, "Worker: put [%lx, %d] into local pfq\n", dpp_it->pfInfo.getAddr(),
-                    dpp_it->pfahead_host);
-        }
-        dpp_it = localBuffer.erase(dpp_it);
-        count++;
     }
-    schedule(transfer_event, nextCycle());
+    notifyFill(pkt);
 }
+
 bool
 CDP::sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType pfSource,
                       int pf_depth)
 {
-    if (pfLRUFilter.contains((addr))) {
+    if (pfLRUFilter->contains((addr))) {
         return false;
     } else {
-        pfLRUFilter.insert((addr), 0);
+        pfLRUFilter->insert((addr), 0);
         AddrPriority addrprio = AddrPriority(addr, prio, pfSource);
         addrprio.depth = pf_depth;
         addresses.push_back(addrprio);

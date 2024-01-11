@@ -315,14 +315,14 @@ Cache::promoteWholeLineWrites(PacketPtr pkt)
 }
 
 void
-Cache::handleTimingReqHit(PacketPtr pkt, CacheBlk *blk, Tick request_time)
+Cache::handleTimingReqHit(PacketPtr pkt, CacheBlk *blk, Tick request_time, bool first_acc_after_pf)
 {
     // should never be satisfying an uncacheable access as we
     // flush and invalidate any existing block as part of the
     // lookup
     assert(!pkt->req->isUncacheable());
 
-    BaseCache::handleTimingReqHit(pkt, blk, request_time);
+    BaseCache::handleTimingReqHit(pkt, blk, request_time, first_acc_after_pf);
 }
 
 void

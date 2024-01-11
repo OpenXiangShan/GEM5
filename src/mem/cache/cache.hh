@@ -88,8 +88,7 @@ class Cache : public BaseCache
     bool access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
                 PacketList &writebacks) override;
 
-    void handleTimingReqHit(PacketPtr pkt, CacheBlk *blk,
-                            Tick request_time) override;
+    void handleTimingReqHit(PacketPtr pkt, CacheBlk *blk, Tick request_time, bool first_acc_after_pf) override;
 
     void handleTimingReqMiss(PacketPtr pkt, CacheBlk *blk,
                              Tick forward_time,

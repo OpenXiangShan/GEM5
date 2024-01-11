@@ -72,8 +72,6 @@ class CDP : public Queued
 {
 
 
-    bool first_call = false;
-    Event *transfer_event;
     std::vector<bool> enable_prf_filter;
     std::vector<bool> enable_prf_filter2;
     int depth_threshold;
@@ -157,15 +155,27 @@ class CDP : public Queued
         return ans;
     };
 
-    void transfer();
+    void pfHitNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt) override;
 
-    void rxHint(BaseMMU::Translation *dpp) override;
-    void rxNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt) override;
-
-    bool hasHintsWaiting() override { return !localBuffer.empty(); }
-    boost::compute::detail::lru_cache<Addr, Addr> pfLRUFilter;
+    boost::compute::detail::lru_cache<Addr, Addr> *pfLRUFilter;
     std::list<DeferredPacket> localBuffer;
     unsigned depth{4};
+
+    struct CDPStats : public statistics::Group
+    {
+        CDPStats(statistics::Group *parent);
+        // STATS
+        statistics::Scalar triggeredInRxNotify;
+        statistics::Scalar triggeredInCalcPf;
+        statistics::Scalar hitNotifyCalled;
+        statistics::Scalar hitNotifyExitBlockNotFound;
+        statistics::Scalar hitNotifyExitFilter;
+        statistics::Scalar hitNotifyExitDepth;
+        statistics::Scalar hitNotifyNoAddrFound;
+        statistics::Scalar hitNotifyNoVA;
+        statistics::Scalar hitNotifyNoData;
+        statistics::Scalar missNotifyCalled;
+    } cdpStats;
 };
 
 }  // namespace prefetch

@@ -446,8 +446,21 @@ class CDP(QueuedPrefetcher):
     on_write = False
     on_data  = True
     on_inst  = False
-    use_rrf = Param.Bool(True,"")
     use_byteorder = Param.Bool(True,"")
+
+class CompositeWithWorkerPrefetcher(WorkerPrefetcher):
+    type = 'CompositeWithWorkerPrefetcher'
+    cxx_class = 'gem5::prefetch::CompositeWithWorkerPrefetcher'
+    cxx_header = "mem/cache/prefetch/composite_with_worker.hh"
+    use_virtual_addresses = True
+    prefetch_on_access = False
+    prefetch_on_pf_hit = True
+    on_read = True
+    on_write = False
+    on_data  = True
+    on_inst  = False
+
+    cdp = Param.CDP(CDP(is_sub_prefetcher=True), "")
 
 class AccessMapPatternMatching(ClockedObject):
     type = 'AccessMapPatternMatching'

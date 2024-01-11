@@ -253,7 +253,7 @@ BaseCache::inRange(Addr addr) const
 }
 
 void
-BaseCache::handleTimingReqHit(PacketPtr pkt, CacheBlk *blk, Tick request_time)
+BaseCache::handleTimingReqHit(PacketPtr pkt, CacheBlk *blk, Tick request_time, bool first_acc_after_pf)
 {
     DPRINTF(Cache, "%s for %s hit\n", __func__, pkt->print());
     // handle special cases for LockedRMW transactions
@@ -310,6 +310,7 @@ BaseCache::handleTimingReqHit(PacketPtr pkt, CacheBlk *blk, Tick request_time)
 
     if (pkt->needsResponse() || pkt->isResponse()) {
         // These delays should have been consumed by now
+        DPRINTF(Cache, "In handle timing hit, before make resp, pkt has data: %i\n", pkt->hasData());
         if (pkt->needsResponse()) {
             assert(pkt->headerDelay == 0);
             assert(pkt->payloadDelay == 0);
@@ -322,11 +323,21 @@ BaseCache::handleTimingReqHit(PacketPtr pkt, CacheBlk *blk, Tick request_time)
         DPRINTF(Cache, "Making timing response for %s, schedule it at %llu, is force hit: %i\n",
                 pkt->print(), request_time, pkt->isResponse());
 
+        if (pkt->isRead() && first_acc_after_pf && prefetcher && prefetcher->hasHintDownStream()) {
+            DPRINTF(Cache, "Notify down stream on pf hit\n");
+            // hit hint here, miss hint in cache/base.cc
+            prefetcher->nofityHitToDownStream(pkt);
+        }
+
         // In this case we are considering request_time that takes
         // into account the delay of the xbar, if any, and just
         // lat, neglecting responseLatency, modelling hit latency
         // just as the value of lat overriden by access(), which calls
         // the calculateAccessLatency() function.
+        if (cacheLevel == 1 && pkt->isRead()) {
+            assert(pkt->hasData());
+        }
+        DPRINTF(Cache, "In handle timing hit, pkt has data: %i\n", pkt->hasData());
         cpuSidePort.schedTimingResp(pkt, request_time);
     } else {
         DPRINTF(Cache, "%s satisfied %s, no response needed\n", __func__,
@@ -525,12 +536,13 @@ BaseCache::recvTimingReq(PacketPtr pkt)
     if (satisfied) {
         // notify before anything else as later handleTimingReqHit might turn
         // the packet in a response
-        if (blk&&!pkt->isWrite()){
+        if (blk && !pkt->isWrite()) {
             pkt->req->setPFDepth(blk->getXsMetadata().prefetchDepth);
-
         }
+        DPRINTF(Cache, "Before hit notify, pkt has data: %i\n", pkt->hasData());
         ppHit->notify(pkt);
 
+        bool first_acc_after_pf = false;
         if (prefetcher && blk && blk->wasPrefetched()) {
             DPRINTF(Cache, "Hit on prefetch for addr %#x (%s), source: %i\n", pkt->getAddr(),
                     pkt->isSecure() ? "s" : "ns", blk->getXsMetadata().prefetchSource);
@@ -539,13 +551,14 @@ BaseCache::recvTimingReq(PacketPtr pkt)
             DPRINTF(Cache, "Mark req %p pf source: %i\n", pkt->req, pkt->req->getPFSource());
             pkt->req->setPFDepth(0);
             blk->clearPrefetched();
+            first_acc_after_pf = true;
         }
 
         if (blk && blk->needInvalidate()) {
             invalidateBlock(blk);
         }
 
-        handleTimingReqHit(pkt, blk, request_time);
+        handleTimingReqHit(pkt, blk, request_time, first_acc_after_pf);
     } else {
         // ArchDB: for now we only track packet which has PC
         // and is normal load/store
@@ -1854,6 +1867,8 @@ BaseCache::invalidateBlock(CacheBlk *blk)
     if (blk->wasPrefetched()) {
         prefetcher->prefetchUnused(blk->getXsMetadata().prefetchSource);
     }
+
+    blk->clearAllPrefetched();
 
     // Notify that the data contents for this address are no longer present
     updateBlockData(blk, nullptr, blk->isValid());

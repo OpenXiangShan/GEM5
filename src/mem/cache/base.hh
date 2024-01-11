@@ -505,8 +505,7 @@ class BaseCache : public ClockedObject
      * @param blk The referenced block
      * @param request_time The tick at which the block lookup is compete
      */
-    virtual void handleTimingReqHit(PacketPtr pkt, CacheBlk *blk,
-                                    Tick request_time);
+    virtual void handleTimingReqHit(PacketPtr pkt, CacheBlk *blk, Tick request_time, bool first_acc_after_pf);
 
     /*
      * Handle a timing request that missed in the cache
