@@ -91,6 +91,7 @@ class TLB : public BaseTLB
     uint64_t removeNoUseForwardPre;
     uint64_t removeNoUseBackPre;
     uint64_t usedBackPre;
+    uint64_t test_num;
     uint64_t allUsed;
     uint64_t forwardUsedPre;
     uint64_t lastVaddr;
@@ -221,6 +222,13 @@ class TLB : public BaseTLB
 
     Fault L2TLBCheck(PTESv39 pte, int level, STATUS status, PrivilegeMode pmode, Addr vaddr, BaseMMU::Mode mode,
                      const RequestPtr &req, bool is_pre, bool is_back_pre);
+    bool checkPrePrecision(uint64_t &removeNoUsePre, uint64_t &usedPre);
+    void sendPreHitOnHitRequest(TlbEntry *e_pre_1, TlbEntry *e_pre_2, const RequestPtr &req, Addr pre_block,
+                                uint16_t asid, bool forward, int check_level, STATUS status, PrivilegeMode pmode,
+                                BaseMMU::Mode mode, ThreadContext *tc, BaseMMU::Translation *translation);
+    std::pair<bool, Fault> L2TLBSendRequest(Fault fault, TlbEntry *e_l2tlb, const RequestPtr &req, ThreadContext *tc,
+                                            BaseMMU::Translation *translation, BaseMMU::Mode mode, Addr vaddr,
+                                            bool &delayed, int level);
 
     Fault translateAtomic(const RequestPtr &req,
                           ThreadContext *tc, BaseMMU::Mode mode) override;
@@ -266,7 +274,7 @@ class TLB : public BaseTLB
 
   private:
     uint64_t nextSeq() { return ++lruSeq; }
-
+    void updateL2TLBSeq(TlbEntryTrie *Trie_l2,Addr vpn,Addr step, uint16_t asid);
     TlbEntry *lookupL2TLB(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden, int f_level, bool sign_used);
 
     void evictLRU();
@@ -278,6 +286,7 @@ class TLB : public BaseTLB
     void remove(size_t idx);
     void removeForwardPre(size_t idx);
     void removeBackPre(size_t idx);
+    void l2tlbRemoveIn(EntryList *List, TlbEntryTrie *Trie_l2,std::vector<TlbEntry>&tlb,size_t idx, int choose);
     void l2TLBRemove(size_t idx, int choose);
 
 
