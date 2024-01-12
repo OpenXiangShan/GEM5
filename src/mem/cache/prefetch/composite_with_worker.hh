@@ -1,6 +1,8 @@
 #ifndef __MEM_CACHE_PREFETCH_COMPOITE_WITH_WORKER_HH__
 #define __MEM_CACHE_PREFETCH_COMPOITE_WITH_WORKER_HH__
 
+#include <vector>
+
 #include "mem/cache/prefetch/cdp.hh"
 #include "mem/cache/prefetch/worker.hh"
 #include "params/CompositeWithWorkerPrefetcher.hh"
@@ -28,11 +30,19 @@ class CompositeWithWorkerPrefetcher: public WorkerPrefetcher
     void setCache(BaseCache *_cache) override;
 
     void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) override;
+
+    void notifyFill(const PacketPtr &pkt) override;
+
+    void postNotifyInsert(const PacketPtr &trigger_pkt, std::vector<AddrPriority> &addresses);
+    // TODO: This code is redundant with queued.cc, seperate it in queued
+
   private:
 
     CDP *cdp;
 
     bool offloadLowAccuracy = true;
+
+    std::vector<AddrPriority> addressGenBuffer;
 
 };
 

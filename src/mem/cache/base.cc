@@ -1868,8 +1868,6 @@ BaseCache::invalidateBlock(CacheBlk *blk)
         prefetcher->prefetchUnused(blk->getXsMetadata().prefetchSource);
     }
 
-    blk->clearAllPrefetched();
-
     // Notify that the data contents for this address are no longer present
     updateBlockData(blk, nullptr, blk->isValid());
 

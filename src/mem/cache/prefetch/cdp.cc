@@ -28,8 +28,11 @@
 
 #include "mem/cache/prefetch/cdp.hh"
 
+#include <cstdint>
 #include <queue>
 
+#include "base/stats/group.hh"
+#include "base/trace.hh"
 #include "debug/CDPUseful.hh"
 #include "debug/CDPdebug.hh"
 #include "debug/CDPdepth.hh"
@@ -63,22 +66,26 @@ CDP::CDPStats::CDPStats(statistics::Group *parent)
                "Number of times the prefetcher was triggered in rxNotify"),
       ADD_STAT(triggeredInCalcPf, statistics::units::Count::get(),
                "Number of times the prefetcher was triggered in calculatePrefetch"),
-      ADD_STAT(hitNotifyCalled, statistics::units::Count::get(),
+      ADD_STAT(dataNotifyCalled, statistics::units::Count::get(),
                "Number of times the prefetcher was called in hitNotify"),
-      ADD_STAT(hitNotifyExitBlockNotFound, statistics::units::Count::get(),
+      ADD_STAT(dataNotifyExitBlockNotFound, statistics::units::Count::get(),
                "Number of times the prefetcher exited hitNotify due to block not found"),
-      ADD_STAT(hitNotifyExitFilter, statistics::units::Count::get(),
+      ADD_STAT(dataNotifyExitFilter, statistics::units::Count::get(),
                "Number of times the prefetcher exited hitNotify due to filter"),
-      ADD_STAT(hitNotifyExitDepth, statistics::units::Count::get(),
+      ADD_STAT(dataNotifyExitDepth, statistics::units::Count::get(),
                "Number of times the prefetcher exited hitNotify due to depth"),
-      ADD_STAT(hitNotifyNoAddrFound, statistics::units::Count::get(),
+      ADD_STAT(dataNotifyNoAddrFound, statistics::units::Count::get(),
                "Number of times the prefetcher exited hitNotify due to no address found"),
-      ADD_STAT(hitNotifyNoVA, statistics::units::Count::get(),
+      ADD_STAT(dataNotifyNoVA, statistics::units::Count::get(),
                "Number of times the prefetcher exited hitNotify due to no VA"),
-      ADD_STAT(hitNotifyNoData, statistics::units::Count::get(),
+      ADD_STAT(dataNotifyNoData, statistics::units::Count::get(),
                "Number of times the prefetcher exited hitNotify due to no data"),
       ADD_STAT(missNotifyCalled, statistics::units::Count::get(),
-               "Number of times the prefetcher was called in missNotify")
+               "Number of times the prefetcher was called in missNotify"),
+      ADD_STAT(passedFilter, statistics::units::Count::get(),
+               "Number of prefetch requests passed the filter"),
+      ADD_STAT(inserted, statistics::units::Count::get(),
+               "Number of prefetches inserted")
 {
 }
 
@@ -90,11 +97,11 @@ CDP::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addre
     int page_offset, vpn0, vpn1, vpn2;
     PrefetchSourceType pf_source = pfi.getXsMetadata().prefetchSource;
     int pf_depth = pfi.getXsMetadata().prefetchDepth;
+    bool is_prefetch =
+        cache->system->getRequestorName(pfi.getRequestorId()).find("dcache.prefetcher") != std::string::npos;
     if (!miss && pfi.getDataPtr() != nullptr) {
-        size_t found = cache->system->getRequestorName(pfi.getRequestorId()).find("dcache.prefetcher");
-        if (found != std::string::npos) {
-            if (enable_prf_filter[pf_source])
-                return;
+        if (is_prefetch && enable_prf_filter[pf_source]) {
+            return;
         }
         DPRINTF(CDPdepth, "HIT Depth: %d\n", pfi.getXsMetadata().prefetchDepth);
         if (((pf_depth == 4 || pf_depth == 2))) {
@@ -120,9 +127,8 @@ CDP::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addre
                             CDP::notifyFill(const PacketPtr &pkt)\n");
             }
             for (Addr pt_addr : scanPointer(addr, addrs)) {
-                AddrPriority addrprio = AddrPriority(pt_addr, 30, PrefetchSourceType::CDP);
-                addrprio.depth = 1;
-                // addresses.push_back(addrprio);
+                AddrPriority addr_prio = AddrPriority(pt_addr, 30, PrefetchSourceType::CDP);
+                addr_prio.depth = 1;
                 sendPFWithFilter(pt_addr, addresses, 30, PrefetchSourceType::CDP, 1);
                 cdpStats.triggeredInCalcPf++;
             }
@@ -130,40 +136,42 @@ CDP::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addre
     } else if (miss) {
         cdpStats.missNotifyCalled++;
         DPRINTF(CDPUseful, "Miss addr: %#llx\n", addr);
-        vpn2 = BITS(addr, 38, 30);
-        vpn1 = BITS(addr, 29, 21);
-        vpn0 = BITS(addr, 20, 12);
-        page_offset = BITS(addr, 11, 0);
-        vpnTable.add(vpn2, vpn1);
-        vpnTable.resetConfidence();
-        DPRINTF(CDPdebug,
-                "Sv39, ADDR:%#llx, vpn2:%#llx, vpn1:%#llx, vpn0:%#llx, page offset:%#llx\n",
-                addr, Addr(vpn2), Addr(vpn1), Addr(vpn0), Addr(page_offset));
+    }
+    if (!is_prefetch) {
+        addToVpnTable(pfi.getAddr());
     }
     return;
 }
 
 void
-CDP::notifyFill(const PacketPtr &pkt)
+CDP::notifyFill(const PacketPtr &pkt, std::vector<AddrPriority> &addresses)
 {
-    cdpStats.hitNotifyCalled++;
+    // on refill
+    notifyWithData(pkt, false, addresses);
+}
+
+void
+CDP::notifyWithData(const PacketPtr &pkt, bool is_l1_use, std::vector<AddrPriority> &addresses)
+{
+    cdpStats.dataNotifyCalled++;
     assert(pkt);
     assert(cache);
     uint64_t test_addr = 0;
     std::vector<uint64_t> addrs;
     if (pkt->hasData() && pkt->req->hasVaddr()) {
-        DPRINTF(CDPdebug, "Hit notify received for addr: %#llx\n", pkt->req->getVaddr());
+        DPRINTF(CDPdebug, "Notify with data received for addr: %#llx, pkt size: %lu\n", pkt->req->getVaddr(),
+                pkt->getSize());
         if (cache->findBlock(pkt->getAddr(), pkt->isSecure()) == nullptr) {
-            cdpStats.hitNotifyExitBlockNotFound++;
+            cdpStats.dataNotifyExitBlockNotFound++;
             return;
         }
         Request::XsMetadata pkt_meta = cache->getHitBlkXsMetadata(pkt);
         size_t found = cache->system->getRequestorName(pkt->req->requestorId()).find("dcache.prefetcher");
         int pf_depth = pkt_meta.prefetchDepth;
         PrefetchSourceType pf_source = pkt_meta.prefetchSource;
-        if (found != std::string::npos) {
+        if (!is_l1_use && found != std::string::npos) {
             if (enable_prf_filter[pkt->req->getXsMetadata().prefetchSource]) {
-                cdpStats.hitNotifyExitFilter++;
+                cdpStats.dataNotifyExitFilter++;
                 return;
             }
         }
@@ -208,7 +216,7 @@ CDP::notifyFill(const PacketPtr &pkt)
             Addr test_addr2 = Addr(test_addr);
             if (flag) {
                 if (pf_depth >= depth_threshold) {
-                    cdpStats.hitNotifyExitDepth++;
+                    cdpStats.dataNotifyExitDepth++;
                     return;
                 }
                 int next_depth = 0;
@@ -217,16 +225,14 @@ CDP::notifyFill(const PacketPtr &pkt)
                 } else {
                     next_depth = pf_depth + 1;
                 }
-                AddrPriority addrprio =
+                AddrPriority addr_prio =
                     AddrPriority(blockAddress(test_addr2), 29 + next_depth, PrefetchSourceType::CDP);
-                addrprio.depth = next_depth;
+                addr_prio.depth = next_depth;
                 sendPFWithFilter(blockAddress(test_addr2), addresses, 29 + next_depth, PrefetchSourceType::CDP,
                                  next_depth);
-                // addresses.push_back(addrprio);
-                AddrPriority addrprio2 =
+                AddrPriority addr_prio2 =
                     AddrPriority(blockAddress(test_addr2) + 0x40, 29 + next_depth - 10, PrefetchSourceType::CDP);
-                addrprio2.depth = next_depth;
-                // addresses.push_back(addrprio2);
+                addr_prio2.depth = next_depth;
                 sendPFWithFilter(blockAddress(test_addr2) + 0x40, addresses, 29 + next_depth - 10,
                                  PrefetchSourceType::CDP, next_depth);
                 cdpStats.triggeredInRxNotify++;
@@ -234,60 +240,27 @@ CDP::notifyFill(const PacketPtr &pkt)
             }
         }
         if (sentCount == 0) {
-            cdpStats.hitNotifyNoAddrFound++;
-        }
-        PrefetchInfo pfi(pkt, pkt->req->getVaddr(), false);
-        size_t max_pfs = getMaxPermittedPrefetches(addresses.size());
-
-        // Queue up generated prefetches
-        size_t num_pfs = 0;
-        for (AddrPriority &addr_prio : addresses) {
-
-            // Block align prefetch address
-            addr_prio.addr = blockAddress(addr_prio.addr);
-
-            if (!samePage(addr_prio.addr, pfi.getAddr())) {
-                statsQueued.pfSpanPage += 1;
-
-                if (hasBeenPrefetched(pkt->getAddr(), pkt->isSecure())) {
-                    statsQueued.pfUsefulSpanPage += 1;
-                }
-            }
-
-            bool can_cross_page = (tlb != nullptr);
-            if (can_cross_page || samePage(addr_prio.addr, pfi.getAddr())) {
-                PrefetchInfo new_pfi(pfi, addr_prio.addr);
-                new_pfi.setXsMetadata(Request::XsMetadata(addr_prio.pfSource, addr_prio.depth));
-                statsQueued.pfIdentified++;
-                DPRINTF(HWPrefetch,
-                        "Found a pf candidate addr: %#x, "
-                        "inserting into prefetch queue.\n",
-                        new_pfi.getAddr());
-                // Create and insert the request
-                insert(pkt, new_pfi, addr_prio);
-                num_pfs += 1;
-                if (num_pfs == max_pfs) {
-                    break;
-                }
-            } else {
-                DPRINTF(HWPrefetch, "Ignoring page crossing prefetch.\n");
-            }
+            cdpStats.dataNotifyNoAddrFound++;
         }
     }
-    if (!pkt->req->hasVaddr()) cdpStats.hitNotifyNoVA++;
-    if (!pkt->hasData()) cdpStats.hitNotifyNoData++;
+    if (!pkt->req->hasVaddr()) cdpStats.dataNotifyNoVA++;
+    if (!pkt->hasData()) cdpStats.dataNotifyNoData++;
     return;
 }
 
 void
-CDP::pfHitNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt)
+CDP::pfHitNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt,
+                 std::vector<AddrPriority> &addresses)
 {
     if (accuracy < 0.1) {
         enable_prf_filter[pf_source] = true;
     } else {
         enable_prf_filter[pf_source] = false;
     }
-    notifyFill(pkt);
+    notifyWithData(pkt, true, addresses);
+    if (pkt->req->hasVaddr()) {
+        addToVpnTable(pkt->req->getVaddr());
+    }
 }
 
 bool
@@ -298,12 +271,27 @@ CDP::sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio,
         return false;
     } else {
         pfLRUFilter->insert((addr), 0);
-        AddrPriority addrprio = AddrPriority(addr, prio, pfSource);
-        addrprio.depth = pf_depth;
-        addresses.push_back(addrprio);
+        AddrPriority addr_prio = AddrPriority(addr, prio, pfSource);
+        addr_prio.depth = pf_depth;
+        addresses.push_back(addr_prio);
+        cdpStats.passedFilter++;
         return true;
     }
     return false;
+}
+
+void
+CDP::addToVpnTable(Addr addr)
+{
+    int page_offset, vpn0, vpn1, vpn2;
+    vpn2 = BITS(addr, 38, 30);
+    vpn1 = BITS(addr, 29, 21);
+    vpn0 = BITS(addr, 20, 12);
+    page_offset = BITS(addr, 11, 0);
+    vpnTable.add(vpn2, vpn1);
+    vpnTable.resetConfidence();
+    DPRINTF(CDPdebug, "Sv39, ADDR:%#llx, vpn2:%#llx, vpn1:%#llx, vpn0:%#llx, page offset:%#llx\n", addr, Addr(vpn2),
+            Addr(vpn1), Addr(vpn0), Addr(page_offset));
 }
 
 }  // namespace prefetch

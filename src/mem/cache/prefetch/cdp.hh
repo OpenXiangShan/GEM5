@@ -129,8 +129,20 @@ class CDP : public Queued
     CDP(const CDPParams &p);
     ~CDP() = default;
     ByteOrder byteOrder;
-    void notifyFill(const PacketPtr &pkt) override;
+
+    using Queued::notifyFill;
+    void notifyFill(const PacketPtr &pkt, std::vector<AddrPriority> &addresses);
+
+    void notifyWithData(const PacketPtr &pkt, bool is_l1_use, std::vector<AddrPriority> &addresses);
+
+    using Queued::pfHitNotify;
+    void pfHitNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt,
+                     std::vector<AddrPriority> &addresses);
+
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses) override;
+
+    void addToVpnTable(Addr vaddr);
+
     std::vector<Addr> scanPointer(Addr addr, std::vector<uint64_t> addrs)
     {
         uint64_t test_addr;
@@ -155,7 +167,6 @@ class CDP : public Queued
         return ans;
     };
 
-    void pfHitNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt) override;
 
     boost::compute::detail::lru_cache<Addr, Addr> *pfLRUFilter;
     std::list<DeferredPacket> localBuffer;
@@ -167,14 +178,16 @@ class CDP : public Queued
         // STATS
         statistics::Scalar triggeredInRxNotify;
         statistics::Scalar triggeredInCalcPf;
-        statistics::Scalar hitNotifyCalled;
-        statistics::Scalar hitNotifyExitBlockNotFound;
-        statistics::Scalar hitNotifyExitFilter;
-        statistics::Scalar hitNotifyExitDepth;
-        statistics::Scalar hitNotifyNoAddrFound;
-        statistics::Scalar hitNotifyNoVA;
-        statistics::Scalar hitNotifyNoData;
+        statistics::Scalar dataNotifyCalled;
+        statistics::Scalar dataNotifyExitBlockNotFound;
+        statistics::Scalar dataNotifyExitFilter;
+        statistics::Scalar dataNotifyExitDepth;
+        statistics::Scalar dataNotifyNoAddrFound;
+        statistics::Scalar dataNotifyNoVA;
+        statistics::Scalar dataNotifyNoData;
         statistics::Scalar missNotifyCalled;
+        statistics::Scalar passedFilter;
+        statistics::Scalar inserted;
     } cdpStats;
 };
 
