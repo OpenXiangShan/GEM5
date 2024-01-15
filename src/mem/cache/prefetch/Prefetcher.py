@@ -141,7 +141,7 @@ class QueuedPrefetcher(BasePrefetcher):
         "Maximum number of queued prefetches that have a missing translation")
     queue_squash = Param.Bool(True, "Squash queued prefetch on demand access")
     queue_filter = Param.Bool(True, "Don't queue redundant prefetches")
-    cache_snoop = Param.Bool(False, "Snoop cache to eliminate redundant request")
+    cache_snoop = Param.Bool(True, "Snoop cache to eliminate redundant request")
 
     tag_prefetch = Param.Bool(True, "Tag prefetch with PC of generating access")
 
@@ -844,6 +844,7 @@ class XSCompositePrefetcher(QueuedPrefetcher):
     enable_cplx = Param.Bool(False, "Enable CPLX component")
     enable_spp = Param.Bool(False, "Enable SPP component")
     enable_temporal = Param.Bool(False, "Enable temporal component")
+    enable_berti = Param.Bool(True,"Enable berti component")
 
     short_stride_thres = Param.Unsigned(512, "Ignore short strides when there are long strides (Bytes)")
     pht_early_update = Param.Bool(True, "Enable update pht earlier")

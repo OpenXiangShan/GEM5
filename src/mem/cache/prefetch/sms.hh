@@ -58,7 +58,6 @@ class XSCompositePrefetcher : public Queued
         uint32_t depth;
         SatCounter8 lateConf;
         bool signal_update;
-       // uint64_t repeat_region_bits;
         ACTEntry(const SatCounter8 &conf)
             : TaggedEntry(),
               region_bits(0),
@@ -68,7 +67,6 @@ class XSCompositePrefetcher : public Queued
               depth(32),
               lateConf(4, 7),
               signal_update(false)
-        //      repeat_region_bits(0)
         {
         }
         bool in_active_page(unsigned region_blocks) {
@@ -119,41 +117,7 @@ class XSCompositePrefetcher : public Queued
         {}
     };
 
-    const unsigned maxHistStrides{12};
-
-    const bool strideDynDepth{false};
-
-    int depthDownCounter{0};
-
-    const int depthDownPeriod{128};
-
-    void periodStrideDepthDown();
-
-    bool strideLookup(AssociativeSet<StrideEntry> &stride, const PrefetchInfo &pfi,
-                      std::vector<AddrPriority> &address, bool late, Addr &pf_addr,
-                      PrefetchSourceType src, bool enter_new_region, bool miss_repeat);
-
-    AssociativeSet<StrideEntry> strideUnique;
-
-    AssociativeSet<StrideEntry> strideRedundant;
-
-    class NonStrideEntry: public TaggedEntry
-    {
-      public:
-        Addr pc;
-        NonStrideEntry() : TaggedEntry(), pc(0) {}
-    };
-
-    AssociativeSet<NonStrideEntry> nonStridePCs;
-
-    void markNonStridePC(Addr pc);
-
-    bool isNonStridePC(Addr pc);
-
     Addr nonStrideHash(Addr pc) { return pc >> 1; }
-
-    const bool fuzzyStrideMatching;
-
     void updatePht(ACTEntry *act_entry, Addr region_addr,bool re_act_mode,bool signal_update,Addr region_offset_now);
 
     // pattern history table
@@ -162,7 +126,6 @@ class XSCompositePrefetcher : public Queued
       public:
         std::vector<SatCounter8> hist;
         Addr pc;
-       // bool signal_update;
         PhtEntry(const size_t sz, const SatCounter8 &conf)
             : TaggedEntry(), hist(sz, conf)
         {
@@ -181,8 +144,6 @@ class XSCompositePrefetcher : public Queued
 
     bool phtLookup(const PrefetchInfo &pfi,
                    std::vector<AddrPriority> &addresses, bool late, Addr look_ahead_addr);
-
-    int calcPeriod(const std::vector<SatCounter8> &bit_vec, bool late);
 
     struct XSCompositeStats : public statistics::Group
     {
@@ -218,6 +179,10 @@ class XSCompositePrefetcher : public Queued
 
     bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
                           PrefetchSourceType src, int ahead_level = -1);
+    void sendStreamPF(const PrefetchInfo &pfi, Addr pf_tgt_addr, std::vector<AddrPriority> &addresses,
+                      boost::compute::detail::lru_cache<Addr, Addr> &Filter, bool decr, int pf_level);
+    void updatePhtBits(bool accessed, bool early_update, bool re_act_mode, uint8_t hist_idx,
+                       XSCompositePrefetcher::ACTEntry *act_entry, XSCompositePrefetcher::PhtEntry *pht_entry);
 
     BOP *largeBOP;
 
@@ -232,12 +197,10 @@ class XSCompositePrefetcher : public Queued
     CMCPrefetcher* cmc;
     BertiPrefetcher *berti;
 
-    const bool enableNonStrideFilter;
     const bool enableCPLX;
     const bool enableSPP;
     const bool enableTemporal;
-    const unsigned shortStrideThres;
-
+    const bool enableBerti;
     const bool phtEarlyUpdate;
     const bool neighborPhtUpdate;
 
