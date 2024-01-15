@@ -36,11 +36,13 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       cmc(p.cmc),
       berti(p.berti),
       Sstride(p.sstride),
+      Opt(p.opt),
       enableCPLX(p.enable_cplx),
       enableSPP(p.enable_spp),
       enableTemporal(p.enable_temporal),
       enableSstride(p.enable_sstride),
       enableBerti(p.enable_berti),
+      enableOpt(p.enable_opt),
       phtEarlyUpdate(p.pht_early_update),
       neighborPhtUpdate(p.neighbor_pht_update)
 {
@@ -63,6 +65,8 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
 
     if (ipcp)
         ipcp->rrf = &this->pfBlockLRUFilter;
+    if (Opt)
+        Opt->filter = &this->pfBlockLRUFilter;
 
     DPRINTF(XSCompositePrefetcher, "SMS: region_size: %d regionBlks: %d\n",
             regionSize, regionBlks);
@@ -95,8 +99,13 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
     ACTEntry *act_match_entry = nullptr;
     Addr pf_tgt_addr = 0;
     bool decr = false;
+    bool is_first_64 = false;
     if (pfi.isCacheMiss() || pfi.isPfFirstHit()) {
         act_match_entry = actLookup(pfi, is_active_page, enter_new_region, is_first_shot);
+        if (enableOpt){
+            assert(Opt);
+            Opt->calculatePrefetch(pfi, addresses, is_first_64);
+        }
         int origin_depth = 0;
         if (act_match_entry) {
             decr = act_match_entry->decr_mode;
@@ -208,6 +217,10 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
         if (use_pht) {
             DPRINTF(XSCompositePrefetcher, "Do PHT lookup...\n");
             trigger_pht = phtLookup(pfi, addresses, late && pf_source == PrefetchSourceType::SPht, stride_pf_addr);
+        }
+        bool use_opt = enableOpt && !pfi.isStore() && is_first_64;
+        if (use_opt){
+            Opt->optLookup(pfi, addresses);
         }
 
         bool use_cplx = enableCPLX && !pfi.isStore();

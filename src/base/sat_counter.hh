@@ -276,6 +276,17 @@ class GenericSatCounter
         }
         return *this;
     }
+    GenericSatCounter&
+    operator/=(const long long& value)
+    {
+        if ((value > 0) && (this->counter > 0)) {
+            this->counter /= value;
+        } else {
+            this->counter = 0;
+        }
+        return *this;
+    }
+
 
     /**
      * Read the counter's value.
@@ -301,6 +312,7 @@ class GenericSatCounter
      * @ingroup api_sat_counter
      */
     double calcSaturation() const { return (double) counter / maxVal; }
+    uint r_counter() { return counter; }
 
     /**
      * Whether the counter has achieved its maximum value or not.

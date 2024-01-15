@@ -83,6 +83,7 @@ enum PrefetchSourceType
     Berti,
     StoreStream,
     CDP,
+    SOpt,
     NUM_PF_SOURCES
 };
 

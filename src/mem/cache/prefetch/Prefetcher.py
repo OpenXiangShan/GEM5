@@ -206,6 +206,41 @@ class XSStridePrefetcher(QueuedPrefetcher):
         "Replacement policy of non-stride pc table"
     )
 
+class OptPrefetcher(QueuedPrefetcher):
+    type = 'OptPrefetcher'
+    cxx_class = 'gem5::prefetch::OptPrefetcher'
+    cxx_header = "mem/cache/prefetch/opt.hh"
+    region_size_64 = Param.Int(4096, "region size")
+    opt_pf_level = Param.Int(3, "Prefetch target level")
+
+    act_64_entries = Param.MemorySize(
+        "64",
+        "num of active generation table entries"
+    )
+    act_64_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.act_64_entries,
+            size=Parent.act_64_entries),
+        "Indexing policy of active generation table"
+    )
+    act_64_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(),
+        "Replacement policy of active generation table"
+    )
+    opt_entries = Param.MemorySize("64","num of offset history table entried")
+    opt_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.opt_entries,
+            size=Parent.opt_entries),
+        "Indexing policy of offset history table"
+    )
+    opt_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(),
+        "Replacement policy of opt table"
+    )
+
 class BertiPrefetcher(QueuedPrefetcher):
     type = "BertiPrefetcher"
     cxx_class = "gem5::prefetch::BertiPrefetcher"
@@ -887,6 +922,7 @@ class XSCompositePrefetcher(QueuedPrefetcher):
     cmc = Param.CMCPrefetcher(CMCPrefetcher(is_sub_prefetcher=True), "")
     berti = Param.BertiPrefetcher(BertiPrefetcher(is_sub_prefetcher=True), "")
     sstride = Param.XSStridePrefetcher(XSStridePrefetcher(is_sub_prefetcher=True), "")
+    opt = Param.OptPrefetcher(OptPrefetcher(is_sub_prefetcher=True), "")
 
     enable_cplx = Param.Bool(False, "Enable CPLX component")
     enable_spp = Param.Bool(False, "Enable SPP component")
@@ -894,6 +930,7 @@ class XSCompositePrefetcher(QueuedPrefetcher):
     enable_berti = Param.Bool(True,"Enable berti component")
 
     enable_sstride = Param.Bool(False,"Enable sms stride component")
+    enable_opt = Param.Bool(False,"Enable opt component")
     short_stride_thres = Param.Unsigned(512, "Ignore short strides when there are long strides (Bytes)")
     pht_early_update = Param.Bool(True, "Enable update pht earlier")
     neighbor_pht_update = Param.Bool(True, "Enable use nearby act entry to update pht")
