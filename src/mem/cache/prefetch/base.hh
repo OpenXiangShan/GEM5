@@ -423,6 +423,10 @@ class Base : public ClockedObject
         statistics::Scalar pfUseful;
 
         statistics::Vector pfUseful_srcs;
+        statistics::Vector pfHitInCache_srcs;
+        statistics::Vector pfHitInMSHR_srcs;
+        statistics::Vector pfHitInWB_srcs;
+        statistics::Vector late_srcs;
         /** The number of times there is a hit on prefetch but cache block
          * is not in an usable state */
         statistics::Scalar pfUsefulButMiss;
@@ -486,21 +490,27 @@ class Base : public ClockedObject
     }
 
     void
-    pfHitInCache()
+    pfHitInCache(int pf_num)
     {
         prefetchStats.pfHitInCache++;
+        prefetchStats.pfHitInCache_srcs[pf_num]++;
+        prefetchStats.late_srcs[pf_num]++;
     }
 
     void
-    pfHitInMSHR()
+    pfHitInMSHR(int pf_num)
     {
         prefetchStats.pfHitInMSHR++;
+        prefetchStats.pfHitInMSHR_srcs[pf_num]++;
+        prefetchStats.late_srcs[pf_num]++;
     }
 
     void
-    pfHitInWB()
+    pfHitInWB(int pf_num)
     {
         prefetchStats.pfHitInWB++;
+        prefetchStats.pfHitInWB_srcs[pf_num]++;
+        prefetchStats.late_srcs[pf_num]++;
     }
 
     /**
