@@ -35,9 +35,11 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       ipcp(dynamic_cast<IPCP *>(p.ipcp)),
       cmc(p.cmc),
       berti(p.berti),
+      Sstride(p.sstride),
       enableCPLX(p.enable_cplx),
       enableSPP(p.enable_spp),
       enableTemporal(p.enable_temporal),
+      enableSstride(p.enable_sstride),
       enableBerti(p.enable_berti),
       phtEarlyUpdate(p.pht_early_update),
       neighborPhtUpdate(p.neighbor_pht_update)
@@ -53,6 +55,8 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
     learnedBOP->filter = &this->pfBlockLRUFilter;
     if (berti)
         berti->filter = &this->pfBlockLRUFilter;
+    if (Sstride)
+        Sstride->filter = &this->pfBlockLRUFilter;
 
     if (cmc)
         cmc->filter = &this->pfBlockLRUFilter;
@@ -164,7 +168,8 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
 
         Addr stride_pf_addr = 0;
         bool covered_by_stride = false;
-
+        //NOTICE:don't open berti & stride at the same time
+        assert(!(enableBerti && enableSstride));
         bool use_berti = !pfi.isStore() && (pfi.isCacheMiss() || pfi.isPfFirstHit()) && enableBerti;
         if (use_berti) {
             DPRINTF(XSCompositePrefetcher, "Do Berti traing/prefetching...\n");
@@ -178,6 +183,16 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
                     smallBOP->tryAddOffset(t);
                 }
             }
+        }
+
+        bool use_stride = !pfi.isStore() && (pfi.isCacheMiss() || pfi.isPfFirstHit()) && enableSstride;
+        if (use_stride){
+            DPRINTF(XSCompositePrefetcher, "Do Sstride traing/prefetching...\n");
+            int64_t learned_bop_offset = 0;
+            Sstride->calculatePrefetch(pfi, addresses, late, pf_source, miss_repeat, enter_new_region, is_first_shot,
+                                       stride_pf_addr, learned_bop_offset);
+            if (learned_bop_offset != 0)
+                learnedBOP->tryAddOffset(learned_bop_offset);
         }
 
         bool use_pht = pfi.isCacheMiss() ||

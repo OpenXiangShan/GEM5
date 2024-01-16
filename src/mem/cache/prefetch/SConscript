@@ -30,7 +30,7 @@ Import('*')
 
 SimObject('Prefetcher.py', sim_objects=[
     'CMCPrefetcher', 'BasePrefetcher', 'MultiPrefetcher', 'QueuedPrefetcher',
-    'XSCompositePrefetcher', 'BertiPrefetcher', 'CDP',
+    'XSCompositePrefetcher', 'XSStridePrefetcher', 'BertiPrefetcher', 'CDP',
     'StridePrefetcherHashedSetAssociative', 'StridePrefetcher',
     'TaggedPrefetcher', 'IndirectMemoryPrefetcher', 'SignaturePathPrefetcher',
     'SignaturePathPrefetcherV2', 'AccessMapPatternMatching', 'AMPMPrefetcher',
@@ -43,6 +43,7 @@ SimObject('Prefetcher.py', sim_objects=[
 DebugFlag('BOPPrefetcher')
 DebugFlag('BOPOffsets')
 DebugFlag('XSCompositePrefetcher')
+DebugFlag('XSStridePrefetcher')
 DebugFlag('BertiPrefetcher')
 DebugFlag('SPP')
 DebugFlag('WorkerPref')
@@ -63,6 +64,7 @@ Source('pif.cc')
 Source('queued.cc')
 Source('sms.cc')
 Source('ipcp.cc')
+Source('xs_stride.cc')
 Source('berti.cc')
 Source('sbooe.cc')
 Source('signature_path.cc')
