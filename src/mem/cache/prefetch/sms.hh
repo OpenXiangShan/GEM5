@@ -243,8 +243,6 @@ class XSCompositePrefetcher : public Queued
 
   public:
     void setCache(BaseCache *_cache) override;
-
-    void setArchDBer(ArchDBer *arch_db_er) override;
 };
 
 }

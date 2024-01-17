@@ -1278,7 +1278,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
     TlbEntry *forward_pre[6] = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
     TlbEntry *back_pre[6] = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
     e[0] = lookup(vaddr, satp.asid, mode, false, true);
-    Addr paddr;
+    Addr paddr = 0;
     Fault fault = NoFault;
     Fault fault_return = NoFault;
     Fault forward_pre_fault;

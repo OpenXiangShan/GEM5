@@ -67,6 +67,7 @@ class BasePrefetcher(ClockedObject):
         PyBindMethod("addHintDownStream"),
     ]
     sys = Param.System(Parent.any, "System this prefetcher belongs to")
+    arch_db = Param.ArchDBer(Parent.any, "Arch DB")
 
     # Get the block size from the parent (system)
     block_size = Param.Int(Parent.cache_line_size, "Block size in bytes")

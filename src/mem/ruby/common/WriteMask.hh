@@ -113,7 +113,7 @@ class WriteMask
         bool tmp = true;
         assert(mSize >= (offset + len));
         for (int i = 0; i < len; i++) {
-            tmp = tmp & mMask.at(offset + i);
+            tmp = tmp && mMask.at(offset + i);
         }
         return tmp;
     }
@@ -125,7 +125,7 @@ class WriteMask
         assert(mSize == readMask.mSize);
         for (int i = 0; i < mSize; i++) {
             if (readMask.mMask.at(i)) {
-                tmp = tmp | mMask.at(i);
+                tmp = tmp || mMask.at(i);
             }
         }
         return tmp;
@@ -138,7 +138,7 @@ class WriteMask
         assert(mSize == readMask.mSize);
         for (int i = 0; i < mSize; i++) {
             if (readMask.mMask.at(i)) {
-                tmp = tmp & mMask.at(i);
+                tmp = tmp && mMask.at(i);
             }
         }
         return tmp;
@@ -170,7 +170,7 @@ class WriteMask
     {
         assert(mSize == writeMask.mSize);
         for (int i = 0; i < mSize; i++) {
-            mMask[i] = (mMask.at(i)) & (writeMask.mMask.at(i));
+            mMask[i] = (mMask.at(i)) && (writeMask.mMask.at(i));
         }
 
         if (writeMask.mAtomic) {
@@ -184,7 +184,7 @@ class WriteMask
     {
         assert(mSize == writeMask.mSize);
         for (int i = 0; i < mSize; i++) {
-            mMask[i] = (mMask.at(i)) | (writeMask.mMask.at(i));
+            mMask[i] = (mMask.at(i)) || (writeMask.mMask.at(i));
         }
 
         if (writeMask.mAtomic) {

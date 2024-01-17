@@ -126,7 +126,8 @@ Base::PrefetchListener::notify(const PacketPtr &pkt)
 
 Base::Base(const BasePrefetcherParams &p)
     : ClockedObject(p),
-      listeners(), cache(nullptr), isSubPrefetcher(p.is_sub_prefetcher), blkSize(p.block_size),
+      listeners(), cache(nullptr), isSubPrefetcher(p.is_sub_prefetcher),
+      archDBer(p.arch_db), blkSize(p.block_size),
       lBlkSize(floorLog2(blkSize)), onMiss(p.on_miss), onRead(p.on_read),
       onWrite(p.on_write), onData(p.on_data), onInst(p.on_inst),
       requestorId(p.sys->getRequestorId(this)),
