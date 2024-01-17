@@ -163,6 +163,7 @@ def build_test_system(np):
         test_sys.arch_db.dump_l3_evict_trace = False
         test_sys.arch_db.dump_l1_miss_trace = False
         test_sys.arch_db.dump_bop_train_trace = False
+        test_sys.arch_db.dump_sms_train_trace = False
         test_sys.arch_db.table_cmds = [
             "CREATE TABLE L1MissTrace(" \
             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
@@ -193,7 +194,8 @@ def build_test_system(np):
             "Completed INT NOT NULL," \
             "Committed INT NOT NULL," \
             "Writenback INT NOT NULL," \
-            "PFSrc INT NOT NULL);"
+            "PFSrc INT NOT NULL," \
+            "SITE TEXT);"
             ,
             "CREATE TABLE L1PFTrace(" \
             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
@@ -201,18 +203,30 @@ def build_test_system(np):
             "TriggerPC INT NOT NULL," \
             "TriggerVAddr INT NOT NULL," \
             "PFVAddr INT NOT NULL," \
-            "PFSrc INT NOT NULL);"
+            "PFSrc INT NOT NULL," \
+            "SITE TEXT);"
             ,
 
             "CREATE TABLE BOPTrainTrace(" \
             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
             "Tick INT NOT NULL," \
-            "Type STRING NOT NULL," \
             "OldAddr INT NOT NULL," \
             "CurAddr INT NOT NULL," \
             "Offset INT NOT NULL," \
             "Score INT NOT NULL," \
-            "Miss BOOL NOT NULL);"
+            "Miss BOOL NOT NULL," \
+            "SITE TEXT);"
+
+            "CREATE TABLE SMSTrainTrace(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "Tick INT NOT NULL," \
+            "OldAddr INT NOT NULL," \
+            "CurAddr INT NOT NULL," \
+            "TriggerOffset INT NOT NULL," \
+            "Conf INT NOT NULL," \
+            "Miss BOOL NOT NULL," \
+            "SITE TEXT);"
+
         ]
 
     if args.ruby:
