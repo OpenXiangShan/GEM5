@@ -98,6 +98,8 @@ namespace RiscvISA
                 ThreadContext *tc;
                 RequestPtr req;
                 BaseMMU::Translation *translation;
+                bool fromForwardPreReq;
+                bool fromBackPreReq;
                 Fault fault;
                 bool squashed;
 
@@ -106,11 +108,19 @@ namespace RiscvISA
                     tc = nullptr;
                     req = nullptr;
                     translation = nullptr;
+                    fromForwardPreReq = false;
+                    fromBackPreReq = false;
                     fault = NoFault;
                     squashed = false;
                 }
-                RequestorState(ThreadContext *tc, RequestPtr req, BaseMMU::Translation *translation) :
-                    tc(tc), req(req), translation(translation), fault(NoFault), squashed(false)
+                RequestorState(ThreadContext *tc, RequestPtr req, BaseMMU::Translation *translation)
+                    : tc(tc),
+                      req(req),
+                      translation(translation),
+                      fromForwardPreReq(false),
+                      fromBackPreReq(false),
+                      fault(NoFault),
+                      squashed(false)
                 {}
 
                 void markSquash() { squashed = true; }
@@ -128,7 +138,7 @@ namespace RiscvISA
             int level;
             unsigned inflight;
             TlbEntry entry;
-            TlbEntry inl2_entry;
+            TlbEntry inl2Entry;
             PacketPtr read;
             std::vector<PacketPtr> writes;
             Fault mainFault;
@@ -141,20 +151,24 @@ namespace RiscvISA
             bool retrying;
             bool started;
             bool squashed;
-            bool next_line;
-            Addr nextline_Read;
-            int nextline_level;
-            TlbEntry nextline_entry;
-            Addr nextline_vaddr;
+            bool nextline;
+            Addr nextlineRead;
+            int nextlineLevel;
+            TlbEntry nextlineEntry;
+            Addr nextlineVaddr;
 
-            Addr nextline_level_mask;
-            Addr nextline_shift;
-            Addr tlb_vaddr;
-            Addr tlb_ppn;
-            Addr tlb_size_pte;
-            bool open_nextline;
-            bool auto_nextline_sign;
-            bool finish_default_translate;
+            Addr nextlineLevelMask;
+            Addr nextlineShift;
+            Addr tlbVaddr;
+            Addr tlbppn;
+            Addr tlbSizePte;
+            bool openNextline;
+            bool autoNextlineSign;
+            bool finishDefaultTranslate;
+            bool preHitInPtw;
+            bool fromPre;
+            bool fromBackPre;
+
 
           public:
             WalkerState(Walker * _walker, BaseMMU::Translation *_translation,
@@ -166,18 +180,22 @@ namespace RiscvISA
             {
                 requestors.emplace_back(nullptr, _req, _translation);
             }
-            void initState(ThreadContext * _tc, BaseMMU::Mode _mode,
-                           bool _isTiming = false);
+            void initState(ThreadContext *_tc, BaseMMU::Mode _mode,
+                           bool _isTiming = false, bool _from_forward_pre_req = false,
+                           bool _from_back_pre_req = false);
 
             std::pair<bool, Fault> tryCoalesce(
                 ThreadContext *_tc, BaseMMU::Translation *translation,
                 const RequestPtr &req, BaseMMU::Mode mode, bool from_l2tlb,
-                Addr asid);
+                Addr asid, bool from_forward_pre_req, bool from_back_pre_req);
 
             Fault startWalk(Addr ppn, int f_level, bool from_l2tlb,
-                            bool OpenNextline, bool autoOpenNextline);
+                            bool open_nextline, bool auto_openNextline,
+                            bool from_forward_pre_req, bool from_back_req);
             Fault startFunctional(Addr &addr, unsigned &logBytes,
-                                  bool OpenNextline, bool autoOpenNextline);
+                                  bool open_nextline, bool auto_openNextline,
+                                  bool from_forward_pre_req,
+                                  bool from_back_pre_req);
             bool recvPacket(PacketPtr pkt);
             unsigned numInflight() const;
             bool isRetrying();
@@ -191,7 +209,8 @@ namespace RiscvISA
 
           private:
             void setupWalk(Addr ppn, Addr vaddr, int f_level, bool from_l2tlb,
-                           bool OpenNextline, bool autoOpenNextline);
+                           bool open_nextline, bool auto_openNextline,
+                           bool from_forward_pre_req, bool from_back_pre_req);
             Fault stepWalk(PacketPtr &write);
             void sendPackets();
             void endWalk();
@@ -230,7 +249,8 @@ namespace RiscvISA
         // Kick off the state machine.
         Fault start(Addr ppn, ThreadContext *_tc,
                     BaseMMU::Translation *translation, const RequestPtr &req,
-                    BaseMMU::Mode mode, bool pre = false, int f_level = 2,
+                    BaseMMU::Mode mode, bool from_forward_pre_req = false,
+                    bool frm_back_pre_req = false, int f_level = 2,
                     bool from_l2tlb = false, Addr asid = 0);
 
         void doL2TLBHitSchedule(const RequestPtr &req, ThreadContext *tc,
@@ -244,7 +264,8 @@ namespace RiscvISA
                                            BaseMMU::Translation *translation,
                                            const RequestPtr &req,
                                            BaseMMU::Mode mode, bool from_l2tlb,
-                                           Addr asid);
+                                           Addr asid, bool from_forward_pre_req,
+                                           bool from_back_pre_req);
 
         // Fault perm_check ();
 
@@ -252,7 +273,6 @@ namespace RiscvISA
                 unsigned &logBytes, BaseMMU::Mode mode);
         Port &getPort(const std::string &if_name,
                       PortID idx=InvalidPortID) override;
-
       protected:
         // The TLB we're supposed to load.
         TLB * tlb;
@@ -264,8 +284,9 @@ namespace RiscvISA
         // The number of outstanding walks that can be squashed per cycle.
         unsigned numSquashable;
         bool ptwSquash;
-        bool OpenNextline;
-        bool autoOpenNextline;
+        bool openNextLine;
+        bool autoOpenNextLine;
+        bool is_from_pre_req;
 
         Tick squashHandleTick;
 
@@ -288,7 +309,7 @@ namespace RiscvISA
         bool recvTimingResp(PacketPtr pkt);
         void recvReqRetry();
         bool sendTiming(WalkerState * sendingState, PacketPtr pkt);
-        bool pre_ptw;
+        //bool pre_ptw;
 
       public:
 
@@ -306,9 +327,9 @@ namespace RiscvISA
             pmp(params.pmp),
             requestorId(sys->getRequestorId(this)),
             numSquashable(params.num_squash_per_cycle),
-            ptwSquash(params.ptwSquash),
-            OpenNextline(params.OpenNextline),
-            autoOpenNextline(true),
+            ptwSquash(params.ptw_squash),
+            openNextLine(params.open_nextline),
+            autoOpenNextLine(true),
             doL2TLBHitEvent([this]{dol2TLBHit();},name())
         {
         }

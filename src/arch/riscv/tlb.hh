@@ -61,24 +61,42 @@ class TLB : public BaseTLB
     typedef std::list<TlbEntry *> EntryList;
 
   protected:
+    bool is_dtlb;
     bool is_L1tlb;
-    bool is_stage2;
-    bool is_the_sharedL2;
+    bool isStage2;
+    bool isTheSharedL2;
     size_t size;
-    size_t l2tlb_l1_size;
-    size_t l2tlb_l2_size;
-    size_t l2tlb_l3_size;
-    size_t l2tlb_sp_size;
+    size_t sizeBack;
+    size_t l2TlbL1Size;
+    size_t l2TlbL2Size;
+    size_t l2TlbL3Size;
+    size_t l2TlbSpSize;
+    uint64_t regulationNum;
     std::vector<TlbEntry> tlb;  // our TLB
     TlbEntryTrie trie;          // for quick access
     EntryList freeList;         // free entries
     uint64_t lruSeq;
-    bool  hit_in_sp;
+    bool  hitInSp;
     uint64_t hitPreEntry;
     uint64_t hitPreNum;
     uint64_t RemovePreUnused;
     uint64_t AllPre;
-    bool isOpenAutoNextline;
+    bool isOpenAutoNextLine;
+    uint64_t forwardPreSize;
+    bool openForwardPre;
+    bool openBackPre;
+    bool backPrePrecision;
+    bool forwardPrePrecision;
+    uint64_t allForwardPre;
+    uint64_t removeNoUseForwardPre;
+    uint64_t removeNoUseBackPre;
+    uint64_t usedBackPre;
+    uint64_t test_num;
+    uint64_t allUsed;
+    uint64_t forwardUsedPre;
+    uint64_t lastVaddr;
+    uint64_t lastPc;
+    uint64_t traceFlag;
 
 
     Walker *walker;
@@ -103,10 +121,15 @@ class TLB : public BaseTLB
         statistics::Scalar readHitsSquashed;
         statistics::Scalar squashedInsert;
         statistics::Scalar ALLInsert;
+        statistics::Scalar backHits;
+        statistics::Scalar usedBackPre;
+        statistics::Scalar removeNoUseBackPre;
+        statistics::Scalar usedForwardPre;
+        statistics::Scalar removeNoUseForwardPre;
 
 
-        statistics::Scalar writeL2TlbMisses;
-        statistics::Scalar ReadL2TlbMisses;
+        statistics::Scalar writeL2l3TlbMisses;
+        statistics::Scalar ReadL2l3TlbMisses;
         statistics::Scalar writeL2Tlbl3Hits;
         statistics::Scalar ReadL2Tlbl3Hits;
         statistics::Scalar squashedInsertL2;
@@ -158,11 +181,12 @@ class TLB : public BaseTLB
     void takeOverFrom(BaseTLB *old) override {}
 
     TlbEntry *insert(Addr vpn, const TlbEntry &entry, bool suqashed_update);
-    TlbEntry *L2TLB_insert(Addr vpn, const TlbEntry &entry, int level,
-                           int choose, int sign,bool squashed_update);
-    TlbEntry *L2TLB_insert_in(Addr vpn, const TlbEntry &entry, int choose,
-                              EntryList *List, TlbEntryTrie *Trie_l2,
-                              int sign,bool squashed_update);
+    TlbEntry *insertForwardPre(Addr vpn, const TlbEntry &entry);
+    TlbEntry *insertBackPre(Addr vpn, const TlbEntry &entry);
+
+    TlbEntry *L2TLBInsert(Addr vpn, const TlbEntry &entry, int level, int choose, int sign, bool squashed_update);
+    TlbEntry *L2TLBInsertIn(Addr vpn, const TlbEntry &entry, int choose, EntryList *List, TlbEntryTrie *Trie_l2,
+                            int sign, bool squashed_update);
     // TlbEntry *L2TLB_insert_in(Addr vpn,const TlbEntry &entry,int level);
 
 
@@ -194,13 +218,17 @@ class TLB : public BaseTLB
 
     Addr translateWithTLB(Addr vaddr, uint16_t asid, BaseMMU::Mode mode);
 
-    Fault L2tlb_pagefault(Addr vaddr, BaseMMU::Mode mode,
-                          const RequestPtr &req);
+    Fault L2TLBPagefault(Addr vaddr, BaseMMU::Mode mode, const RequestPtr &req, bool is_pre, bool is_back_pre);
 
-    Fault L2tlb_check(PTESv39 pte, int level, STATUS status,
-                      PrivilegeMode pmode, Addr vaddr, BaseMMU::Mode mode,
-                      const RequestPtr &req, ThreadContext *tc,
-                      BaseMMU::Translation *translation);
+    Fault L2TLBCheck(PTESv39 pte, int level, STATUS status, PrivilegeMode pmode, Addr vaddr, BaseMMU::Mode mode,
+                     const RequestPtr &req, bool is_pre, bool is_back_pre);
+    bool checkPrePrecision(uint64_t &removeNoUsePre, uint64_t &usedPre);
+    void sendPreHitOnHitRequest(TlbEntry *e_pre_1, TlbEntry *e_pre_2, const RequestPtr &req, Addr pre_block,
+                                uint16_t asid, bool forward, int check_level, STATUS status, PrivilegeMode pmode,
+                                BaseMMU::Mode mode, ThreadContext *tc, BaseMMU::Translation *translation);
+    std::pair<bool, Fault> L2TLBSendRequest(Fault fault, TlbEntry *e_l2tlb, const RequestPtr &req, ThreadContext *tc,
+                                            BaseMMU::Translation *translation, BaseMMU::Mode mode, Addr vaddr,
+                                            bool &delayed, int level);
 
     Fault translateAtomic(const RequestPtr &req,
                           ThreadContext *tc, BaseMMU::Mode mode) override;
@@ -213,38 +241,53 @@ class TLB : public BaseTLB
                            BaseMMU::Mode mode) const override;
     TlbEntry *lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
                      bool sign_used);
+    TlbEntry *lookupForwardPre(Addr vpn, uint64_t asid, bool hidden);
+    TlbEntry *lookupBackPre(Addr vpn, uint64_t asid, bool hidden);
+    bool autoOpenNextline();
 
-    bool auto_open_nextline();
 
 
+    std::vector<TlbEntry> tlbL2L1;  // our TLB
+    TlbEntryTrie trieL2L1;          // for next line
+    EntryList freeListL2L1;         // free entries
 
-    std::vector<TlbEntry> tlb_l2l1;  // our TLB
-    TlbEntryTrie trie_l2l1;               // for next line
-    EntryList freeList_l2l1;         // free entries
+    std::vector<TlbEntry> tlbL2L2;  // our TLB
+    TlbEntryTrie trieL2L2;          // for next line
+    EntryList freeListL2L2;         // free entries
 
-    std::vector<TlbEntry> tlb_l2l2;  // our TLB
-    TlbEntryTrie trie_l2l2;               // for next line
-    EntryList freeList_l2l2;         // free entries
+    std::vector<TlbEntry> tlbL2L3;  // our TLB
+    TlbEntryTrie trieL2L3;          // for next line
+    EntryList freeListL2L3;         // free entries
 
-    std::vector<TlbEntry> tlb_l2l3;  // our TLB
-    TlbEntryTrie trie_l2l3;               // for next line
-    EntryList freeList_l2l3;         // free entries
+    std::vector<TlbEntry> tlbL2Sp;  // our TLB
+    TlbEntryTrie trieL2sp;          // for next line
+    EntryList freeListL2sp;         // free entries
 
-    std::vector<TlbEntry> tlb_l2sp;  // our TLB
-    TlbEntryTrie trie_l2sp;               // for next line
-    EntryList freeList_l2sp;         // free entries
+
+    std::vector<TlbEntry> forwardPre;
+    TlbEntryTrie trieForwardPre;
+    EntryList freeListForwardPre;
+
+    std::vector<TlbEntry> backPre;
+    TlbEntryTrie trieBackPre;
+    EntryList freeListBackPre;
 
   private:
     uint64_t nextSeq() { return ++lruSeq; }
-
-    TlbEntry *lookup_l2tlb(Addr vpn, uint16_t asid, BaseMMU::Mode mode,
-                           bool hidden, int f_level, bool sign_used);
+    void updateL2TLBSeq(TlbEntryTrie *Trie_l2,Addr vpn,Addr step, uint16_t asid);
+    TlbEntry *lookupL2TLB(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden, int f_level, bool sign_used);
 
     void evictLRU();
-    void l2TLB_evictLRU(int l2TLBlevel, Addr vaddr);
+    void evictForwardPre();
+    void evictBackPre();
+
+    void l2TLBEvictLRU(int l2TLBlevel, Addr vaddr);
 
     void remove(size_t idx);
-    void l2TLB_remove(size_t idx, int choose);
+    void removeForwardPre(size_t idx);
+    void removeBackPre(size_t idx);
+    void l2tlbRemoveIn(EntryList *List, TlbEntryTrie *Trie_l2,std::vector<TlbEntry>&tlb,size_t idx, int choose);
+    void l2TLBRemove(size_t idx, int choose);
 
 
     Fault translate(const RequestPtr &req, ThreadContext *tc,

@@ -45,13 +45,12 @@ class RiscvPagetableWalker(ClockedObject):
             "Number of outstanding walks that can be squashed per cycle")
     #notice :only partial testing of open ptwsquash was carried out
     #open it may have some bugs
-    ptwSquash = Param.Bool(False,
+    ptw_squash = Param.Bool(False,
     "when squash xs will continue ptw until ptw finish")
     # Grab the pma_checker from the MMU
     pma_checker = Param.PMAChecker(Parent.any, "PMA Checker")
     pmp = Param.PMP(Parent.any, "PMP")
-    #OpenNextline = Param.Bool(False,"open nextline pre")
-    OpenNextline = Param.Bool(True, "open nextline pre")
+    open_nextline = Param.Bool(True, "open nextline pre")
 
 class RiscvTLB(BaseTLB):
     type = 'RiscvTLB'
@@ -61,6 +60,7 @@ class RiscvTLB(BaseTLB):
     #size = Param.Int(2048, "TLB size")
     #size = Param.Int(64, "TLB size")
     #size = Param.Int(256, "TLB size")
+    is_dtlb = Param.Bool(False, "the tlb is dtlb")
     is_L1tlb = Param.Bool(True,"the tlb is l1tlb")
     #the tlb has private l2tlb
     is_stage2 = Param.Bool(False,"the tlb is private l2tlb")
@@ -76,12 +76,20 @@ class RiscvTLB(BaseTLB):
     l2tlb_l2_size = Param.Int(64, "l2TLB_l2 size")
     l2tlb_l3_size = Param.Int(512, "l2TLB_l3 size")
     l2tlb_sp_size = Param.Int(16, "l2TLB_sp size")
+    l2tlb_line_size = Param.Int(8, "l2TLB_line size")
+    regulation_num = Param.Int(70000, "train nextline num")
     walker = Param.RiscvPagetableWalker(\
             RiscvPagetableWalker(), "page table walker")
     # Grab the pma_checker from the MMU
     pma_checker = Param.PMAChecker(Parent.any, "PMA Checker")
     pmp  = Param.PMP(Parent.any, "Physical Memory Protection Unit")
-    isOpenNextline = Param.Bool(True, "open auto adjustment nextline")
+    is_open_nextline = Param.Bool(True, "open auto adjustment nextline")
+    #G_pre_size = Param.Int(32,"g_pre size")
+    forward_pre_size = Param.Int(32,"g_pre size")
+    open_forward_pre = Param.Bool(False,"open g_pre")
+    open_back_pre = Param.Bool(False,"open back_pre")
+    initial_back_pre_precision_value = Param.Bool(False,"initial value of back_pre_precision")
+    initial_forward_pre_precision_value = Param.Bool(False,"initial value of forward_pre_precision")
 
 class RiscvTLBL2(RiscvTLB):
     is_L1tlb = False
