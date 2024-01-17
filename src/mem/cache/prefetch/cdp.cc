@@ -59,12 +59,6 @@ CDP::CDP(const CDPParams &p) : Queued(p), depth_threshold(3), byteOrder(p.sys->g
 void
 CDP::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses)
 {
-    // This prefetcher requires a PC
-    if (!pfi.hasPC()) {
-        return;
-    }
-    bool is_secure = pfi.isSecure();
-    Addr pc = pfi.getPC();
     Addr addr = pfi.getAddr();
     bool miss = pfi.isCacheMiss();
     int page_offset, vpn0, vpn1, vpn2;
@@ -115,9 +109,9 @@ CDP::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addre
         vpnTable.add(vpn2, vpn1);
         vpnTable.resetConfidence();
         DPRINTF(CDPdebug,
-                "Sv39,PC:#%llx ADDR:%#llx, vpn2:%#llx, \
+                "Sv39, ADDR:%#llx, vpn2:%#llx, \
                     vpn1:%#llx, vpn0:%#llx, page offset:%#llx\n",
-                pc, addr, Addr(vpn2), Addr(vpn1), Addr(vpn0), Addr(page_offset));
+                addr, Addr(vpn2), Addr(vpn1), Addr(vpn0), Addr(page_offset));
     }
     return;
 }
@@ -149,17 +143,18 @@ CDP::notifyFill(const PacketPtr &pkt)
             if (enable_prf_filter[pkt->req->getXsMetadata().prefetchSource])
                 return;
         }
-        uint64_t *test_addrs = (uint64_t *)pkt->getPtr<uint64_t>();
+        uint64_t *test_addr_start = (uint64_t *)pkt->getPtr<uint64_t>();
+        unsigned max_offset = pkt->getSize() / 8;
         switch (byteOrder) {
             case ByteOrder::big:
-                for (int of = 0; of < 8; of++) {
-                    addrs.push_back(Addr(betoh(*(uint64_t *)(test_addrs + of))));
+                for (unsigned of = 0; of < max_offset; of++) {
+                    addrs.push_back(Addr(betoh(*(uint64_t *)(test_addr_start + of))));
                 }
                 break;
 
             case ByteOrder::little:
-                for (int of = 0; of < 8; of++) {
-                    addrs.push_back(Addr(letoh(*(uint64_t *)(test_addrs + of))));
+                for (unsigned of = 0; of < max_offset; of++) {
+                    addrs.push_back(Addr(letoh(*(uint64_t *)(test_addr_start + of))));
                 }
                 break;
 
@@ -169,8 +164,9 @@ CDP::notifyFill(const PacketPtr &pkt)
                         CDP::notifyFill(const PacketPtr &pkt)\n");
         };
 
+        unsigned sentCount = 0;
         std::vector<AddrPriority> addresses;
-        for (int of = 0; of < 8; of++) {
+        for (int of = 0; of < max_offset; of++) {
             test_addr = addrs[of];
             int align_bit = BITS(test_addr, 1, 0);
             int filter_bit = BITS(test_addr, 5, 0);

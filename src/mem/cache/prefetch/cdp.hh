@@ -84,8 +84,8 @@ class CDP : public Queued
     {
       public:
         std::map<int, std::map<int, int>> vpns;
-        std::map<int, std::map<int, int>> hot_vpns;
-        int counter;
+        std::map<int, std::map<int, int>> hotVpns;
+        int counter{0};
         void add(int vpn2, int vpn1)
         {
             counter++;
@@ -103,11 +103,11 @@ class CDP : public Queued
         {
             if (counter < 128)
                 return;
-            hot_vpns.clear();
+            hotVpns.clear();
             for (auto pair2 : vpns) {
                 for (auto pair1 : pair2.second) {
                     if (pair1.second > counter / 16) {
-                        hot_vpns[pair2.first][pair1.first] = pair1.second;
+                        hotVpns[pair2.first][pair1.first] = pair1.second;
                     }
                 }
             }
@@ -116,7 +116,7 @@ class CDP : public Queued
         }
         bool search(int vpn2, int vpn1)
         {
-            if (hot_vpns.find(vpn2) != hot_vpns.end() && hot_vpns[vpn2].find(vpn1) != hot_vpns[vpn2].end()) {
+            if (hotVpns.find(vpn2) != hotVpns.end() && hotVpns[vpn2].find(vpn1) != hotVpns[vpn2].end()) {
                 return true;
             }
             return false;
