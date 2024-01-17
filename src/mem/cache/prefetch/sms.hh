@@ -132,6 +132,7 @@ class XSCompositePrefetcher : public Queued
         statistics::Scalar allCntNum;
         statistics::Scalar actMNum;
         statistics::Scalar refillNotifyCount;
+        statistics::Scalar bopTrainCount;
     } stats;
 
   public:

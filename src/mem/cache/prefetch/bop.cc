@@ -28,6 +28,7 @@
 
 #include "mem/cache/prefetch/bop.hh"
 
+#include "base/stats/group.hh"
 #include "debug/BOPOffsets.hh"
 #include "debug/BOPPrefetcher.hh"
 #include "mem/cache/base.hh"
@@ -242,6 +243,7 @@ BOP::tryAddOffset(int64_t offset, bool late)
         // insert it next to the offsetsListIterator
         auto next_it = std::next(offsetsListIterator);
         offsetsList.emplace(next_it, (int32_t) offset, (uint8_t) 0);
+        stats.learnOffsetCount++;
         DPRINTFV(debug::BOPPrefetcher || debug::BOPOffsets, "add %d to offset list\n", offset);
 
     } else {
@@ -339,8 +341,7 @@ BOP::bestOffsetLearning(Addr x, bool late, const PrefetchInfo &pfi)
             if (bestScore > badScore) {
                 issuePrefetchRequests = true;
                 DPRINTF(BOPPrefetcher, "Enable prefetch\n");
-            }
-            else {
+            } else {
                 issuePrefetchRequests = false;
                 DPRINTF(BOPPrefetcher, "Disable prefetch\n");
             }
@@ -392,6 +393,7 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
                 "Generated prefetch %#lx offset: %d\n",
                 prefetch_addr, bestOffset);
     } else {
+        stats.throttledCount++;
         DPRINTF(BOPPrefetcher, "Issue prefetch is false, can't issue\n");
     }
 
@@ -424,8 +426,9 @@ BOP::notifyFill(const PacketPtr& pkt)
 
 BOP::BopStats::BopStats(statistics::Group *parent)
     : statistics::Group(parent),
-      ADD_STAT(issuedOffsetDist, statistics::units::Count::get(),
-               "Distribution of issued offsets")
+      ADD_STAT(issuedOffsetDist, statistics::units::Count::get(), "Distribution of issued offsets"),
+      ADD_STAT(learnOffsetCount, statistics::units::Count::get(), "Number of learning offsets"),
+      ADD_STAT(throttledCount, statistics::units::Count::get(), "Number of throttled prefetches")
 {
     issuedOffsetDist.init(-64, 256, 1).prereq(issuedOffsetDist);
 }
