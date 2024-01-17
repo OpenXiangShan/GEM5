@@ -162,6 +162,8 @@ class BaseO3CPU(BaseCPU):
 
     # most ISAs don't use condition-code regs, so default is 0
     numPhysCCRegs = Param.Unsigned(0, "Number of physical cc registers")
+    numPhysRMiscRegs = Param.Unsigned(40, "Number of physical renameable misc registers")
+
     numIQEntries = Param.Unsigned(192, "Number of instruction queue entries")
     numROBEntries = Param.Unsigned(256, "Number of reorder buffer entries")
 

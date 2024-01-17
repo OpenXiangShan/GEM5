@@ -149,6 +149,7 @@ class PhysRegFile
                 unsigned _numPhysicalVecRegs,
                 unsigned _numPhysicalVecPredRegs,
                 unsigned _numPhysicalCCRegs,
+                unsigned _numPhysicalRMiscRegs,
                 const BaseISA::RegClasses &classes);
 
     /**
