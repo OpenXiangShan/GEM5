@@ -213,8 +213,14 @@ class RegValOperand(RegOperand):
             reg_val = f'bitsToFloat32({reg_val})'
         elif self.ctype == 'double':
             reg_val = f'bitsToFloat64({reg_val})'
+        elif self.ctype == 'int32_t':
+            reg_val = f'(uint32_t){reg_val}'
 
-        return f'{self.base_name} = {reg_val};\n'
+        if self.ctype == 'int32_t':
+            return f'uint32_t {self.base_name}_tmp_val = {reg_val};\n' + \
+                f'{self.base_name} = *(int32_t*)&{self.base_name}_tmp_val;\n'
+        else:
+            return f'{self.base_name} = {reg_val};\n'
 
     def makeWrite(self):
         reg_val = self.base_name
@@ -224,14 +230,25 @@ class RegValOperand(RegOperand):
         elif self.ctype == 'double':
             reg_val = f'floatToBits64({reg_val})'
 
-        return f'''
-        {{
-            RegVal final_val = {reg_val};
-            xc->setRegOperand(this, {self.dest_reg_idx}, final_val);
-            if (traceData) {{
-                traceData->setData(final_val);
-            }}
-        }}'''
+        if self.ctype == 'int32_t':
+            return f'''
+            {{
+                RegVal final_val = {reg_val} > 0 ? (uint32_t){reg_val} : (int64_t){reg_val};
+                xc->setRegOperand(this, {self.dest_reg_idx}, final_val);
+                if (traceData) {{
+                    traceData->setData(final_val);
+                }}
+            }}'''
+
+        else:
+            return f'''
+            {{
+                RegVal final_val = {reg_val};
+                xc->setRegOperand(this, {self.dest_reg_idx}, final_val);
+                if (traceData) {{
+                    traceData->setData(final_val);
+                }}
+            }}'''
 
 class RegOperandDesc(OperandDesc):
     def __init__(self, reg_class, *args, **kwargs):

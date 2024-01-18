@@ -684,8 +684,27 @@ if env['GCC']:
 elif env['CLANG']:
     envs['debug'].Append(CCFLAGS=['-g', '-O0'])
     # opt and fast share the same cc flags
-    for target in ['opt', 'fast']:
-        envs[target].Append(CCFLAGS=['-O3'])
+    if os.getenv('AOCC_SH') is not None:
+        for target in ['opt', 'fast']:
+            envs[target].Append(CCFLAGS=['-O3', '${LTO_CCFLAGS}',
+            '-march=znver3', '-zopt', '-ffast-math', '${PGO}',
+            ])
+            envs[target].Append(LINKFLAGS=['-O3', '${LTO_LINKFLAGS}',
+            '-L/libm-install-dir/lib', '-lamdlibm',
+            '-lamdlibm', '-fsclrlib=AMDLIBM', '-lamdlibmfast', '-lm'
+            '${PGO}',
+            ])
+
+            if GetOption('pgo_prof'):
+                envs[target].Append(CCFLAGS=['-fprofile-generate',])
+                envs[target].Append(LINKFLAGS=['-fprofile-generate',])
+            elif GetOption('pgo_use') is not None:
+                envs[target].Append(CCFLAGS=['-fprofile-use={}'.format(GetOption('pgo_use')),
+                                    '-fsplit-machine-functions'])
+                envs[target].Append(LINKFLAGS=['-fprofile-use={}'.format(GetOption('pgo_use')),])
+    else:
+        for target in ['opt', 'fast']:
+            envs[target].Append(CCFLAGS=['-O3'])
 else:
     error('Unknown compiler, please fix compiler options')
 
