@@ -141,7 +141,7 @@ class QueuedPrefetcher(BasePrefetcher):
         "Maximum number of queued prefetches that have a missing translation")
     queue_squash = Param.Bool(True, "Squash queued prefetch on demand access")
     queue_filter = Param.Bool(True, "Don't queue redundant prefetches")
-    cache_snoop = Param.Bool(False, "Snoop cache to eliminate redundant request")
+    cache_snoop = Param.Bool(True, "Snoop cache to eliminate redundant request")
 
     tag_prefetch = Param.Bool(True, "Tag prefetch with PC of generating access")
 
@@ -159,6 +159,88 @@ class QueuedPrefetcher(BasePrefetcher):
 
     max_pfahead_recv = Param.Int(1,"Maximum number of pfahead received")
 
+
+class XSStridePrefetcher(QueuedPrefetcher):
+    type = 'XSStridePrefetcher'
+    cxx_class = 'gem5::prefetch::XSStridePrefetcher'
+    cxx_header = "mem/cache/prefetch/xs_stride.hh"
+
+    use_virtual_addresses = True
+    prefetch_on_pf_hit = True
+    on_read = True
+    on_write = False
+    on_data = True
+    on_inst = False
+
+    use_xs_depth = Param.Bool(True,"use xs rtl stride depth")
+    fuzzy_stride_matching = Param.Bool(False, "Match stride with fuzzy condition")
+    short_stride_thres = Param.Unsigned(512, "Ignore short strides when there are long strides (Bytes)")
+    stride_dyn_depth = Param.Bool(False, "Dynamic depth of stride table")
+    stride_entries = Param.MemorySize("32", "Stride Entries")
+    stride_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.stride_entries,
+            size=Parent.stride_entries),
+        "Indexing policy of stride table"
+    )
+    stride_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(),
+        "Replacement policy of stride table"
+    )
+    fuzzy_stride_matching = Param.Bool(False, "Match stride with fuzzy condition")
+
+    # stride black list
+    enable_non_stride_filter= Param.Bool(False, "Prevent non-stride PCs to touch stride table")
+    non_stride_entries = Param.MemorySize("256", "Non-Stride Entries")
+    non_stride_assoc = Param.Int(4, "Associativity of the non-stride pc table")
+    non_stride_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.non_stride_assoc,
+            size=Parent.non_stride_entries),
+        "Indexing policy of non-stride PC table"
+    )
+    non_stride_replacement_policy = Param.BaseReplacementPolicy(
+        TreePLRURP(num_leaves=Parent.non_stride_assoc),
+        "Replacement policy of non-stride pc table"
+    )
+
+class OptPrefetcher(QueuedPrefetcher):
+    # Opt is short for Offset pattern table prefetcher, a variant of SMS' pattern history table
+    type = 'OptPrefetcher'
+    cxx_class = 'gem5::prefetch::OptPrefetcher'
+    cxx_header = "mem/cache/prefetch/opt.hh"
+    region_size_64 = Param.Int(4096, "region size")
+    opt_pf_level = Param.Int(3, "Prefetch target level")
+
+    act_64_entries = Param.MemorySize(
+        "64",
+        "num of active generation table entries"
+    )
+    act_64_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.act_64_entries,
+            size=Parent.act_64_entries),
+        "Indexing policy of active generation table"
+    )
+    act_64_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(),
+        "Replacement policy of active generation table"
+    )
+    opt_entries = Param.MemorySize("64","num of offset history table entried")
+    opt_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.opt_entries,
+            size=Parent.opt_entries),
+        "Indexing policy of offset history table"
+    )
+    opt_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(),
+        "Replacement policy of opt table"
+    )
 
 class BertiPrefetcher(QueuedPrefetcher):
     type = "BertiPrefetcher"
@@ -840,11 +922,16 @@ class XSCompositePrefetcher(QueuedPrefetcher):
     ipcp = Param.IPCPrefetcher(IPCPrefetcher(use_rrf = False, is_sub_prefetcher=True), "")
     cmc = Param.CMCPrefetcher(CMCPrefetcher(is_sub_prefetcher=True), "")
     berti = Param.BertiPrefetcher(BertiPrefetcher(is_sub_prefetcher=True), "")
+    sstride = Param.XSStridePrefetcher(XSStridePrefetcher(is_sub_prefetcher=True), "")
+    opt = Param.OptPrefetcher(OptPrefetcher(is_sub_prefetcher=True), "")
 
     enable_cplx = Param.Bool(False, "Enable CPLX component")
     enable_spp = Param.Bool(False, "Enable SPP component")
     enable_temporal = Param.Bool(False, "Enable temporal component")
+    enable_berti = Param.Bool(True,"Enable berti component")
 
+    enable_sstride = Param.Bool(False,"Enable sms stride component")
+    enable_opt = Param.Bool(False,"Enable opt component")
     short_stride_thres = Param.Unsigned(512, "Ignore short strides when there are long strides (Bytes)")
     pht_early_update = Param.Bool(True, "Enable update pht earlier")
     neighbor_pht_update = Param.Bool(True, "Enable use nearby act entry to update pht")

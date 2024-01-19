@@ -15,11 +15,13 @@
 #include "mem/cache/prefetch/associative_set.hh"
 #include "mem/cache/prefetch/berti.hh"
 #include "mem/cache/prefetch/bop.hh"
+#include "mem/cache/prefetch/cmc.hh"
 #include "mem/cache/prefetch/ipcp.hh"
+#include "mem/cache/prefetch/opt.hh"
 #include "mem/cache/prefetch/queued.hh"
 #include "mem/cache/prefetch/signature_path.hh"
 #include "mem/cache/prefetch/stride.hh"
-#include "mem/cache/prefetch/cmc.hh"
+#include "mem/cache/prefetch/xs_stride.hh"
 #include "mem/cache/tags/tagged_entry.hh"
 #include "mem/packet.hh"
 #include "params/XSCompositePrefetcher.hh"
@@ -50,29 +52,29 @@ class XSCompositePrefetcher : public Queued
       public:
         Addr pc;
         Addr regionAddr;
-        bool is_secure;
-        uint64_t region_bits;
-        bool decr_mode;
-        uint8_t access_cnt;
-        uint64_t region_offset;
+        uint64_t regionBits;
+        bool inBackwardMode;
+        uint8_t accessCount;
+        uint64_t regionOffset;
         uint32_t depth;
         SatCounter8 lateConf;
-        bool signal_update;
-       // uint64_t repeat_region_bits;
+        bool hasIncreasedPht;
         ACTEntry(const SatCounter8 &conf)
             : TaggedEntry(),
-              region_bits(0),
-              decr_mode(false),
-              access_cnt(0),
-              region_offset(0),
+              regionBits(0),
+              inBackwardMode(false),
+              accessCount(0),
+              regionOffset(0),
               depth(32),
               lateConf(4, 7),
-              signal_update(false)
-        //      repeat_region_bits(0)
+              hasIncreasedPht(false)
         {
         }
-        bool in_active_page(unsigned region_blocks) {
-            return access_cnt > region_blocks / 4 * 3;
+        bool inActivePage(unsigned region_blocks) {
+            return accessCount > region_blocks / 4 * 3;
+        }
+        void _setSecure(bool is_secure) {
+            if (is_secure) TaggedEntry::setSecure();
         }
     };
 
@@ -83,8 +85,10 @@ class XSCompositePrefetcher : public Queued
       public:
         Addr pc;
         Addr regionAddr;
-        bool is_secure;
-        ReACTEntry() : TaggedEntry(), pc(0), regionAddr(0), is_secure(false) {}
+        ReACTEntry() : TaggedEntry(), pc(0), regionAddr(0) {}
+        void _setSecure(bool is_secure) {
+            if (is_secure) TaggedEntry::setSecure();
+        }
     };
     AssociativeSet<ReACTEntry> re_act;
 
@@ -94,66 +98,6 @@ class XSCompositePrefetcher : public Queued
 
     const unsigned streamDepthStep{4};  // # block changed in one step
 
-    // stride table
-    class StrideEntry : public TaggedEntry
-    {
-      public:
-        int64_t stride;
-        uint64_t last_addr;
-        SatCounter8 conf;
-        int32_t depth;
-        SatCounter8 lateConf;
-        SatCounter8 longStride;
-        Addr pc;
-        std::list<Addr> histStrides;
-        bool matchedSinceAlloc;
-        StrideEntry()
-            : TaggedEntry(),
-              stride(0),
-              last_addr(0),
-              conf(2, 0),
-              depth(1),
-              lateConf(4, 7),
-              longStride(4, 7),
-              pc(0)
-        {}
-    };
-
-    const unsigned maxHistStrides{12};
-
-    const bool strideDynDepth{false};
-
-    int depthDownCounter{0};
-
-    const int depthDownPeriod{128};
-
-    void periodStrideDepthDown();
-
-    bool strideLookup(AssociativeSet<StrideEntry> &stride, const PrefetchInfo &pfi,
-                      std::vector<AddrPriority> &address, bool late, Addr &pf_addr,
-                      PrefetchSourceType src, bool enter_new_region, bool miss_repeat);
-
-    AssociativeSet<StrideEntry> strideUnique;
-
-    AssociativeSet<StrideEntry> strideRedundant;
-
-    class NonStrideEntry: public TaggedEntry
-    {
-      public:
-        Addr pc;
-        NonStrideEntry() : TaggedEntry(), pc(0) {}
-    };
-
-    AssociativeSet<NonStrideEntry> nonStridePCs;
-
-    void markNonStridePC(Addr pc);
-
-    bool isNonStridePC(Addr pc);
-
-    Addr nonStrideHash(Addr pc) { return pc >> 1; }
-
-    const bool fuzzyStrideMatching;
-
     void updatePht(ACTEntry *act_entry, Addr region_addr,bool re_act_mode,bool signal_update,Addr region_offset_now);
 
     // pattern history table
@@ -162,7 +106,6 @@ class XSCompositePrefetcher : public Queued
       public:
         std::vector<SatCounter8> hist;
         Addr pc;
-       // bool signal_update;
         PhtEntry(const size_t sz, const SatCounter8 &conf)
             : TaggedEntry(), hist(sz, conf)
         {
@@ -181,8 +124,6 @@ class XSCompositePrefetcher : public Queued
 
     bool phtLookup(const PrefetchInfo &pfi,
                    std::vector<AddrPriority> &addresses, bool late, Addr look_ahead_addr);
-
-    int calcPeriod(const std::vector<SatCounter8> &bit_vec, bool late);
 
     struct XSCompositeStats : public statistics::Group
     {
@@ -218,6 +159,10 @@ class XSCompositePrefetcher : public Queued
 
     bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
                           PrefetchSourceType src, int ahead_level = -1);
+    void sendStreamPF(const PrefetchInfo &pfi, Addr pf_tgt_addr, std::vector<AddrPriority> &addresses,
+                      boost::compute::detail::lru_cache<Addr, Addr> &Filter, bool decr, int pf_level);
+    void updatePhtBits(bool accessed, bool early_update, bool re_act_mode, uint8_t hist_idx,
+                       XSCompositePrefetcher::ACTEntry *act_entry, XSCompositePrefetcher::PhtEntry *pht_entry);
 
     BOP *largeBOP;
 
@@ -231,13 +176,15 @@ class XSCompositePrefetcher : public Queued
 
     CMCPrefetcher* cmc;
     BertiPrefetcher *berti;
+    XSStridePrefetcher *Sstride;
+    OptPrefetcher *Opt;
 
-    const bool enableNonStrideFilter;
     const bool enableCPLX;
     const bool enableSPP;
     const bool enableTemporal;
-    const unsigned shortStrideThres;
-
+    const bool enableSstride;
+    const bool enableBerti;
+    const bool enableOpt;
     const bool phtEarlyUpdate;
     const bool neighborPhtUpdate;
 

@@ -173,6 +173,14 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
         "number of useful prefetch"),
     ADD_STAT(pfUseful_srcs, statistics::units::Count::get(),
         "number of useful prefetch"),
+    ADD_STAT(pfHitInCache_srcs, statistics::units::Count::get(),
+        "number of prefetches hitting in cache"),
+    ADD_STAT(pfHitInMSHR_srcs, statistics::units::Count::get(),
+        "number of prefetches hitting in a MSHR"),
+    ADD_STAT(pfHitInWB_srcs, statistics::units::Count::get(),
+        "number of prefetches hit in the Write Buffer"),
+    ADD_STAT(late_srcs, statistics::units::Count::get(),
+        "number of prefetches late"),
     ADD_STAT(pfUsefulButMiss, statistics::units::Count::get(),
         "number of hit on prefetch but cache block is not in an usable "
         "state"),
@@ -202,6 +210,20 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
     pfUseful_srcs
         .init(NUM_PF_SOURCES)
         .flags(total);
+
+    pfHitInCache_srcs
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfHitInMSHR_srcs
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfHitInWB_srcs
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    late_srcs
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+
 
     accuracy.flags(total);
     accuracy = pfUseful / pfIssued;
