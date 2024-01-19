@@ -161,22 +161,24 @@ CDP::notifyWithData(const PacketPtr &pkt, bool is_l1_use, std::vector<AddrPriori
     if (pkt->hasData() && pkt->req->hasVaddr()) {
         DPRINTF(CDPdebug, "Notify with data received for addr: %#llx, pkt size: %lu\n", pkt->req->getVaddr(),
                 pkt->getSize());
-        if (cache->findBlock(pkt->getAddr(), pkt->isSecure()) == nullptr) {
+
+        auto *blk = cache->findBlock(pkt->getAddr(), pkt->isSecure());
+        if (!blk) {
             cdpStats.dataNotifyExitBlockNotFound++;
             return;
         }
         Request::XsMetadata pkt_meta = cache->getHitBlkXsMetadata(pkt);
-        size_t found = cache->system->getRequestorName(pkt->req->requestorId()).find("dcache.prefetcher");
+        size_t prefetch_type = cache->system->getRequestorName(pkt->req->requestorId()).find("dcache.prefetcher");
         int pf_depth = pkt_meta.prefetchDepth;
         PrefetchSourceType pf_source = pkt_meta.prefetchSource;
-        if (!is_l1_use && found != std::string::npos) {
+        if (!is_l1_use && prefetch_type != std::string::npos) {
             if (enable_prf_filter[pkt->req->getXsMetadata().prefetchSource]) {
                 cdpStats.dataNotifyExitFilter++;
                 return;
             }
         }
-        uint64_t *test_addr_start = (uint64_t *)pkt->getPtr<uint64_t>();
-        unsigned max_offset = pkt->getSize() / 8;
+        uint64_t *test_addr_start = (uint64_t *)blk->data;
+        unsigned max_offset = blkSize / sizeof(uint64_t);
         switch (byteOrder) {
             case ByteOrder::big:
                 for (unsigned of = 0; of < max_offset; of++) {
@@ -197,7 +199,6 @@ CDP::notifyWithData(const PacketPtr &pkt, bool is_l1_use, std::vector<AddrPriori
         };
 
         unsigned sentCount = 0;
-        std::vector<AddrPriority> addresses;
         for (int of = 0; of < max_offset; of++) {
             test_addr = addrs[of];
             int align_bit = BITS(test_addr, 1, 0);
