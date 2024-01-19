@@ -207,6 +207,7 @@ class XSStridePrefetcher(QueuedPrefetcher):
     )
 
 class OptPrefetcher(QueuedPrefetcher):
+    # Opt is short for Offset pattern table prefetcher, a variant of SMS' pattern history table
     type = 'OptPrefetcher'
     cxx_class = 'gem5::prefetch::OptPrefetcher'
     cxx_header = "mem/cache/prefetch/opt.hh"

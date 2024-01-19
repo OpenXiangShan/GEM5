@@ -42,7 +42,7 @@ class XSStridePrefetcher : public Queued
     {
       public:
         int64_t stride;
-        uint64_t last_addr;
+        uint64_t lastAddr;
         SatCounter8 conf;
         int32_t depth;
         SatCounter8 lateConf;
@@ -53,7 +53,7 @@ class XSStridePrefetcher : public Queued
         StrideEntry()
             : TaggedEntry(),
               stride(0),
-              last_addr(0),
+              lastAddr(0),
               conf(2, 0),
               depth(1),
               lateConf(4, 7),

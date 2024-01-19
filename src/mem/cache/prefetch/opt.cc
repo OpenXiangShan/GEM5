@@ -113,7 +113,7 @@ OptPrefetcher::updateOpt(OptPrefetcher::ACT64Entry *act_64_entry, Addr current_r
         bool accessed_64 = (region_bit_accessed_64 >> i) & 1;
         if (accessed_64) {
             opt_entry->hist.at(hist_idx) += 1;
-            if (opt_entry->hist[hist_idx].r_counter() > 4)
+            if (opt_entry->hist[hist_idx].rawCounter() > 4)
                 incr_full = true;
         }
     }
@@ -123,8 +123,8 @@ OptPrefetcher::updateOpt(OptPrefetcher::ACT64Entry *act_64_entry, Addr current_r
         if (incr_full) {
             opt_entry->hist[hist_idx] /= 2;
         }
-        cof_num(opt_entry, hist_idx);
-        front_all_num = front_all_num + opt_entry->hist[hist_idx].r_counter();
+        cofNum(opt_entry, hist_idx);
+        front_all_num = front_all_num + opt_entry->hist[hist_idx].rawCounter();
     }
 
     bool decr_full = false;
@@ -133,7 +133,7 @@ OptPrefetcher::updateOpt(OptPrefetcher::ACT64Entry *act_64_entry, Addr current_r
             bool accessed_64 = (region_bit_accessed_64 >> i) & 1;
             if (accessed_64) {
                 opt_entry->hist.at(j) += 1;
-                if (opt_entry->hist[j].r_counter() > 4)
+                if (opt_entry->hist[j].rawCounter() > 4)
                     decr_full = true;
             }
         }
@@ -143,9 +143,9 @@ OptPrefetcher::updateOpt(OptPrefetcher::ACT64Entry *act_64_entry, Addr current_r
         if (decr_full) {
             opt_entry->hist[j] /= 2;
         }
-        cof_num(opt_entry, j);
+        cofNum(opt_entry, j);
 
-        back_all_num = back_all_num + opt_entry->hist[j].r_counter();
+        back_all_num = back_all_num + opt_entry->hist[j].rawCounter();
     }
     if (!is_update) {
         opt.insertEntry(region_tag, secure, opt_entry);
@@ -153,15 +153,15 @@ OptPrefetcher::updateOpt(OptPrefetcher::ACT64Entry *act_64_entry, Addr current_r
     }
 }
 void
-OptPrefetcher::cof_num(OptEntry *opt_entry, int j)
+OptPrefetcher::cofNum(OptEntry *opt_entry, int j)
 {
-    if (opt_entry->hist[j].r_counter() == 4)
+    if (opt_entry->hist[j].rawCounter() == 4)
         opt_entry->cof_4++;
-    else if (opt_entry->hist[j].r_counter() == 3)
+    else if (opt_entry->hist[j].rawCounter() == 3)
         opt_entry->cof_3++;
-    else if (opt_entry->hist[j].r_counter() == 2)
+    else if (opt_entry->hist[j].rawCounter() == 2)
         opt_entry->cof_2++;
-    else if (opt_entry->hist[j].r_counter() == 1)
+    else if (opt_entry->hist[j].rawCounter() == 1)
         opt_entry->cof_1++;
 }
 bool
@@ -192,21 +192,21 @@ OptPrefetcher::optLookup(const Base::PrefetchInfo &pfi, std::vector<AddrPriority
 
         int priority = 2 * (OptLines - 1);
         for (int i = 0; i < OptLines - 1; i++) {
-            if (opt_entry->hist[i + OptLines - 1].r_counter() >= con_opt) {
+            if (opt_entry->hist[i + OptLines - 1].rawCounter() >= con_opt) {
                 Addr pf_tgt_addr = blk_addr + (i + 1) * blkSize;
                 bool send_r = sendPFWithFilter(pfi, pf_tgt_addr, addresses, 1, PrefetchSourceType::SOpt, optPFLevel);
                 DPRINTF(OptPrefetcher, "opt sub blk size %lx i %d pf_tgt_addr %lx region_offset %lx ca %d\n", blk_addr,
-                        i, pf_tgt_addr, region_offset_64, opt_entry->hist[i + 64 - 1].r_counter());
+                        i, pf_tgt_addr, region_offset_64, opt_entry->hist[i + 64 - 1].rawCounter());
                 found = true;
                 send_num_front++;
             }
         }
         for (int i = OptLines - 2, j = 1; i >= 0; i--, j++) {
-            if (opt_entry->hist[i].r_counter() >= con_opt) {
+            if (opt_entry->hist[i].rawCounter() >= con_opt) {
                 Addr pf_tgt_addr = blk_addr - j * blkSize;
                 bool send_r = sendPFWithFilter(pfi, pf_tgt_addr, addresses, 1, PrefetchSourceType::SOpt, optPFLevel);
                 DPRINTF(OptPrefetcher, "opt sub blk size %lx j %d pf_tgt_addr %lx region_offset %lx ca %d\n", blk_addr,
-                        j, pf_tgt_addr, region_offset_64, opt_entry->hist[i].r_counter());
+                        j, pf_tgt_addr, region_offset_64, opt_entry->hist[i].rawCounter());
                 found = true;
                 send_num_back++;
             }

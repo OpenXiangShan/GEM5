@@ -312,7 +312,7 @@ class GenericSatCounter
      * @ingroup api_sat_counter
      */
     double calcSaturation() const { return (double) counter / maxVal; }
-    uint r_counter() { return counter; }
+    uint rawCounter() { return counter; }
 
     /**
      * Whether the counter has achieved its maximum value or not.

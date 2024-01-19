@@ -52,27 +52,29 @@ class XSCompositePrefetcher : public Queued
       public:
         Addr pc;
         Addr regionAddr;
-        bool is_secure;
-        uint64_t region_bits;
-        bool decr_mode;
-        uint8_t access_cnt;
-        uint64_t region_offset;
+        uint64_t regionBits;
+        bool inBackwardMode;
+        uint8_t accessCount;
+        uint64_t regionOffset;
         uint32_t depth;
         SatCounter8 lateConf;
-        bool signal_update;
+        bool hasIncreasedPht;
         ACTEntry(const SatCounter8 &conf)
             : TaggedEntry(),
-              region_bits(0),
-              decr_mode(false),
-              access_cnt(0),
-              region_offset(0),
+              regionBits(0),
+              inBackwardMode(false),
+              accessCount(0),
+              regionOffset(0),
               depth(32),
               lateConf(4, 7),
-              signal_update(false)
+              hasIncreasedPht(false)
         {
         }
-        bool in_active_page(unsigned region_blocks) {
-            return access_cnt > region_blocks / 4 * 3;
+        bool inActivePage(unsigned region_blocks) {
+            return accessCount > region_blocks / 4 * 3;
+        }
+        void _setSecure(bool is_secure) {
+            if (is_secure) TaggedEntry::setSecure();
         }
     };
 
@@ -83,8 +85,10 @@ class XSCompositePrefetcher : public Queued
       public:
         Addr pc;
         Addr regionAddr;
-        bool is_secure;
-        ReACTEntry() : TaggedEntry(), pc(0), regionAddr(0), is_secure(false) {}
+        ReACTEntry() : TaggedEntry(), pc(0), regionAddr(0) {}
+        void _setSecure(bool is_secure) {
+            if (is_secure) TaggedEntry::setSecure();
+        }
     };
     AssociativeSet<ReACTEntry> re_act;
 
@@ -94,32 +98,6 @@ class XSCompositePrefetcher : public Queued
 
     const unsigned streamDepthStep{4};  // # block changed in one step
 
-    // stride table
-    class StrideEntry : public TaggedEntry
-    {
-      public:
-        int64_t stride;
-        uint64_t last_addr;
-        SatCounter8 conf;
-        int32_t depth;
-        SatCounter8 lateConf;
-        SatCounter8 longStride;
-        Addr pc;
-        std::list<Addr> histStrides;
-        bool matchedSinceAlloc;
-        StrideEntry()
-            : TaggedEntry(),
-              stride(0),
-              last_addr(0),
-              conf(2, 0),
-              depth(1),
-              lateConf(4, 7),
-              longStride(4, 7),
-              pc(0)
-        {}
-    };
-
-    Addr nonStrideHash(Addr pc) { return pc >> 1; }
     void updatePht(ACTEntry *act_entry, Addr region_addr,bool re_act_mode,bool signal_update,Addr region_offset_now);
 
     // pattern history table

@@ -21,6 +21,8 @@ struct OptPrefetcherParams;
 GEM5_DEPRECATED_NAMESPACE(Prefetcher, prefetch);
 namespace prefetch
 {
+
+// Opt is short for Offset pattern table prefetcher, a variant of SMS' pattern history table
 class OptPrefetcher : public Queued
 {
     protected:
@@ -71,21 +73,21 @@ class OptPrefetcher : public Queued
       };
       AssociativeSet<OptEntry> opt;
       bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
-                              PrefetchSourceType src,int ahead_level);
+                            PrefetchSourceType src, int ahead_level);
+
     public:
       boost::compute::detail::lru_cache<Addr, Addr> *filter;
       OptPrefetcher(const OptPrefetcherParams &p);
+
       void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses) override
       {
           panic("not implemented");
       };
-      void calculatePrefetch(const PrefetchInfo &pfi,std::vector<AddrPriority> &addresses,bool & is_first_64);
-      void updateOpt(ACT64Entry *act_64_entry,Addr region_addr,Addr region_bit_accessed_64);
-      void cof_num(OptEntry *opt_entry,int j);
+      void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool &is_first_64);
+
+      void updateOpt(ACT64Entry *act_64_entry, Addr region_addr, Addr region_bit_accessed_64);
+      void cofNum(OptEntry *opt_entry, int j);
       bool optLookup(const Base::PrefetchInfo &pfi, std::vector<AddrPriority> &addresses);
-
-
-
 };
 }
 }

@@ -57,7 +57,7 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
     bool should_cover = false;
     if (entry) {
         stride.accessEntry(entry);
-        int64_t new_stride = lookupAddr - entry->last_addr;
+        int64_t new_stride = lookupAddr - entry->lastAddr;
         if (new_stride == 0 || (labs(new_stride) < 64 && (miss_repeat || entry->longStride.calcSaturation() >= 0.5))) {
             DPRINTF(XSStridePrefetcher, "Stride touch in the same blk, ignore redundant req\n");
             return false;
@@ -101,7 +101,7 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
             }
             DPRINTF(XSStridePrefetcher, "Stride match, inc conf to %d, late: %i, late sat:%i, depth: %i\n",
                     (int)entry->conf, late, (uint8_t)entry->lateConf, entry->depth);
-            entry->last_addr = lookupAddr;
+            entry->lastAddr = lookupAddr;
             entry->histStrides.clear();
             entry->matchedSinceAlloc = true;
 
@@ -111,7 +111,7 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
 
         } else {
             entry->conf--;
-            entry->last_addr = lookupAddr;
+            entry->lastAddr = lookupAddr;
             DPRINTF(XSStridePrefetcher, "Stride unmatch, dec conf to %d\n", (int)entry->conf);
             if ((int)entry->conf == 0) {
                 DPRINTF(XSStridePrefetcher, "Stride conf = 0, reset stride to %ld\n", new_stride);
@@ -182,7 +182,7 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
             learned_bop_offset = entry->stride / 64;
         }
         entry->conf.reset();
-        entry->last_addr = lookupAddr;
+        entry->lastAddr = lookupAddr;
         entry->stride = 0;
         entry->depth = 1;
         entry->lateConf.reset();
