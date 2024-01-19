@@ -61,11 +61,12 @@ class XSCompositePrefetcher : public Queued
         bool hasIncreasedPht;
         ACTEntry(const SatCounter8 &conf)
             : TaggedEntry(),
+              pc(~(0UL)),
+              regionAddr(0),
               regionBits(0),
               inBackwardMode(false),
               accessCount(0),
               regionOffset(0),
-              depth(32),
               lateConf(4, 7),
               hasIncreasedPht(false)
         {
