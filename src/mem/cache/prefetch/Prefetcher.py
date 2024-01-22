@@ -1118,3 +1118,18 @@ class L3CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
     cxx_header = "mem/cache/prefetch/l3_composite_with_worker.hh"
 
     bop = Param.BasePrefetcher(FallenBOPPrefetcher(is_sub_prefetcher=True), "")
+
+class FDIPPrefetcher(BasePrefetcher):
+    type = "FDIPPrefetcher"
+    cxx_class = 'gem5::prefetch::FDIP'
+    cxx_header = "mem/cache/prefetch/fdip.hh"
+
+    # ensure all acess request are notified to prefetcher
+    prefetch_on_pf_hit = False
+    prefetch_on_access = True
+    on_inst = True
+    on_miss = False
+
+    numPIQEntry = Param.Unsigned(12, "Number of prefetch request entries")
+    piq_latency = Param.Cycles(3, "The latency from filter prefetch req")
+

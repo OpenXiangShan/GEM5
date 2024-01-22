@@ -115,7 +115,9 @@ Base::PrefetchInfo::PrefetchInfo(PrefetchInfo const &pfi, Addr addr)
 void
 Base::PrefetchListener::notify(const PacketPtr &pkt)
 {
-    if (coreDirectNotify) {
+    if (fdip) {
+        parent.fdipNotify(pkt);
+    } else if (coreDirectNotify) {
         parent.coreDirectAddrNotify(pkt);
     } else if (isFill) {
         parent.notifyFill(pkt);
@@ -423,6 +425,12 @@ Base::coreDirectAddrNotify(const PacketPtr& pkt)
     notify(pkt, pfi);
 }
 
+void
+Base::fdipNotify(const PacketPtr& pkt)
+{
+    assert(pkt->isFromFetchPF());
+    notify(pkt);
+}
 
 void
 Base::regProbeListeners()
@@ -437,6 +445,7 @@ Base::regProbeListeners()
         listeners.push_back(new PrefetchListener(*this, probeManager, "Miss", false, true, false));
         listeners.push_back(new PrefetchListener(*this, probeManager, "Fill", true, false, false));
         listeners.push_back(new PrefetchListener(*this, probeManager, "Hit", false, false, false));
+        listeners.push_back(new PrefetchListener(*this, probeManager, "FDIPReq", false, false, false, true));
     }
 }
 

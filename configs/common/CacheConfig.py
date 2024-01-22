@@ -198,6 +198,19 @@ def config_cache(options, system):
                     system.l3.prefetcher != NULL
                 system.l2_caches[i].prefetcher.add_pf_downstream(system.l3.prefetcher)
 
+            if options.l1i_hwp_type == 'FDIPPrefetcher':
+                icache.mshrs = 12
+                icache.demand_mshr_reserve = 4
+                icache.prefetcher.registerTLB(system.cpu[i].mmu.itb)
+                icache.prefetcher.piq_latency = 2
+                icache.prefetcher.numPIQEntry = 12
+                system.cpu[i].FDIPEnable = True
+                if options.maxPrefetchWidth:
+                    system.cpu[i].branchPred.maxDistanceFromIFU = options.maxPrefetchWidth
+
+            if options.l1i_mshr:
+                icache.mshrs = options.l1i_mshr
+
             # If we have a walker cache specified, instantiate two
             # instances here
             if walk_cache_class:

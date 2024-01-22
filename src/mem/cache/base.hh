@@ -411,6 +411,9 @@ class BaseCache : public ClockedObject, CacheAccessor
     ProbePointArg<PacketPtr> *ppFill;
 
     ProbePointArg<PacketPtr>* ppStorePFTrain;
+
+    ProbePointArg<PacketPtr>* ppFDIPReq;
+
     /**
      * To probe when the contents of a block are updated. Content updates
      * include data fills, overwrites, and invalidations, which means that

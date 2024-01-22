@@ -502,6 +502,8 @@ def addCommonOptions(parser, configure_xiangshan=False):
     parser.add_argument("--arm-iset", default="arm",
                         choices=["arm", "thumb", "aarch64"],
                         help="ARM instruction set.")
+    parser.add_argument("--maxPrefetchWidth", action="store", type=int, default=None)
+    parser.add_argument("--l1i-mshr", action="store", type=int, default=None)
 
 def addSEOptions(parser):
     # Benchmark options

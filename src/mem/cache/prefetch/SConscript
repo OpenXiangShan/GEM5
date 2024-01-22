@@ -39,7 +39,8 @@ SimObject('Prefetcher.py', sim_objects=[
     'IrregularStreamBufferPrefetcher', 'SlimAMPMPrefetcher',
     'WorkerPrefetcher',
     'BOPPrefetcher', 'SBOOEPrefetcher', 'STeMSPrefetcher', 'PIFPrefetcher', 'IPCPrefetcher',
-    'CompositeWithWorkerPrefetcher', 'L2CompositeWithWorkerPrefetcher'])
+    'CompositeWithWorkerPrefetcher', 'L2CompositeWithWorkerPrefetcher',
+    'FDIPPrefetcher'])
 
 
 DebugFlag('BOPPrefetcher')
@@ -58,6 +59,7 @@ DebugFlag('CDPHotVpns')
 DebugFlag('CDPdebug')
 DebugFlag('CDPdepth')
 DebugFlag('CMCPrefetcher')
+DebugFlag('FDIPPrefetch')
 
 Source('access_map_pattern_matching.cc')
 Source('base.cc')
@@ -86,4 +88,4 @@ Source('worker.cc')
 Source('cmc.cc')
 Source('composite_with_worker.cc')
 Source('l2_composite_with_worker.cc')
-
+Source('fdip.cc')

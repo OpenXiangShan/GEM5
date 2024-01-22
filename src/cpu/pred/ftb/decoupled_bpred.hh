@@ -285,6 +285,21 @@ class DecoupledBPUWithFTB : public BPredUnit
     using JAInfo = JumpAheadPredictor::JAInfo;
     JAInfo jaInfo;
 
+    // max distance from prefethPtr to IFUPtr
+    uint64_t maxDistanceFromIFU;
+    // prefetch FSQ ID
+    FetchStreamId prefetchID{0};
+    // a flush has occurred, prefetch need to handle
+    bool fsqFlushFlag{true};
+
+    bool enablePrefetch{false};
+
+    unsigned fetchStallCycles{0};
+
+    Addr lastPrefetchAddr{0};
+
+    FetchStreamId lastFetchID{0};
+
     void tryEnqFetchStream();
 
     void tryEnqFetchTarget();
@@ -522,6 +537,7 @@ class DecoupledBPUWithFTB : public BPredUnit
         statistics::Distribution commitTrapSquashLatencyDist;
         statistics::Distribution commitNonControlSquashLatencyDist;
         statistics::Distribution updateLatencyDist;
+        statistics::Distribution fetchStallDist;
 
         statistics::Scalar controlDecodeSquashOfCond;
         statistics::Scalar controlDecodeSquashOfUncond;
@@ -552,6 +568,19 @@ class DecoupledBPUWithFTB : public BPredUnit
     void ideal_tick();
 
     bool trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &fetchTargetInLoop);
+
+    /**
+     * Get instruction prefetch addr from FSQ.
+     * @param prefetchAddr the virual address of prefetch request
+     * @param flush need send flush request
+     * @param fetch_stall fetch is stall
+     * @return param is valid when true
+     */
+    bool getPrefetchAddr(Addr &prefetchAddr, bool &flush, bool fetchIsStall);
+
+    bool prefetchAvailable();
+
+    void updatePrefetch(Addr prefetchAddr);
 
     void squash(const InstSeqNum &squashed_sn, ThreadID tid)
     {

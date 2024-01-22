@@ -583,6 +583,12 @@ BaseCache::recvTimingReq(PacketPtr pkt)
         return;
     }
 
+    if (pkt->isFromFetchPF()) {
+        ppFDIPReq->notify(pkt);
+        pendingDelete.reset(pkt);
+        return;
+    }
+
     // anything that is merely forwarded pays for the forward latency and
     // the delay provided by the crossbar
     Tick forward_time = clockEdge(forwardLatency) + pkt->headerDelay;
@@ -3116,6 +3122,7 @@ BaseCache::regProbePoints()
     ppMiss = new ProbePointArg<PacketPtr>(this->getProbeManager(), "Miss");
     ppFill = new ProbePointArg<PacketPtr>(this->getProbeManager(), "Fill");
     ppStorePFTrain = new ProbePointArg<PacketPtr>(this->getProbeManager(), "StorePFtrain");
+    ppFDIPReq = new ProbePointArg<PacketPtr>(this->getProbeManager(), "FDIPReq");
     ppDataUpdate =
         new ProbePointArg<DataUpdate>(this->getProbeManager(), "Data Update");
 }
@@ -3143,9 +3150,12 @@ bool
 BaseCache::CpuSidePort::tryTiming(PacketPtr pkt)
 {
     if (cache->system->bypassCaches() || pkt->isExpressSnoop()
-        || pkt->isStorePFTrain()) {
+        || pkt->isStorePFTrain() || pkt->isPFFlush()) {
         // always let express snoop packets through even if blocked
         return true;
+    } else if (pkt->isFromFetchPF()) {
+        // disable receive prefetch req when piq is full fro FDIP prefetcher
+        return cache->prefetcher->enable();
     } else if (blocked || mustSendRetry) {
         // either already committed to send a retry, or blocked
         mustSendRetry = true;

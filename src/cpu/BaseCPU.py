@@ -144,6 +144,8 @@ class BaseCPU(ClockedObject):
     dcache_port = RequestPort("Data Port")
     _cached_ports = ['icache_port', 'dcache_port']
 
+    FDIPEnable = Param.Bool(False, "Enable FDIP instruction prefetch.")
+
     _uncached_interrupt_response_ports = []
     _uncached_interrupt_request_ports = []
 

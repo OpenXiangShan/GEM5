@@ -43,11 +43,12 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
       bpDBSwitches(p.bpDBSwitches),
       numStages(p.numStages),
       historyManager(p.numBr),
+      maxDistanceFromIFU(p.maxDistanceFromIFU),
       dbpFtbStats(this, p.numStages, p.fsq_size)
 {
     gem5::branch_prediction::ftb_pred::predictWidth = p.predictWidth;
     if (bpDBSwitches.size() > 0) {
-        
+
         bpdb.init_db();
         enableBranchTrace = checkGivenSwitch(bpDBSwitches, std::string("basic"));
         if (enableBranchTrace) {
@@ -62,7 +63,7 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
                 std::make_pair("target", UINT64)
             };
             bptrace = bpdb.addAndGetTrace("BPTRACE", fields_vec);
-            bptrace->init_table(); 
+            bptrace->init_table();
             removeGivenSwitch(bpDBSwitches, std::string("basic"));
             someDBenabled = true;
         }
@@ -287,8 +288,8 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
 
 
         out_handle = simout.create("topMisPredictHist.txt", false, true);
-        // *out_handle->stream() << "use loop but invalid: " << useLoopButInvalid 
-        //                       << " use loop and valid: " << useLoopAndValid 
+        // *out_handle->stream() << "use loop but invalid: " << useLoopButInvalid
+        //                       << " use loop and valid: " << useLoopAndValid
         //                       << " not use loop: " << notUseLoop << std::endl;
         *out_handle->stream() << "Hist" << " " << "count" << std::endl;
         std::vector<std::pair<uint64_t, uint64_t>> topMisPredHistVec;
@@ -559,6 +560,7 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     ADD_STAT(commitTrapSquashLatencyDist, statistics::units::Count::get(), "distribution of cycles count from pred to commit trap squash"),
     ADD_STAT(commitNonControlSquashLatencyDist, statistics::units::Count::get(), "distribution of cycles count from pred to commit non-control squash"),
     ADD_STAT(updateLatencyDist, statistics::units::Count::get(), "distribution of cycles count from pred to commit update"),
+    ADD_STAT(fetchStallDist, statistics::units::Count::get(), "distribution of cycles count from every fetch stall"),
     ADD_STAT(controlDecodeSquashOfCond, statistics::units::Count::get(), "control squash of cond branch at decode"),
     ADD_STAT(controlDecodeSquashOfUncond, statistics::units::Count::get(), "control squash of uncond branch at decode"),
     ADD_STAT(controlDecodeSquashOfUncondDirect, statistics::units::Count::get(), "control squash of uncond direct branch at decode"),
@@ -590,6 +592,7 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     ftqEndReasonDist.subname(static_cast<int>(FTQEndReason::TAKEN), "taken");
     ftqEndReasonDist.subname(static_cast<int>(FTQEndReason::SIZE_LIMIT), "size_limit");
     ftqEndReasonDist.subname(static_cast<int>(FTQEndReason::LOOP_END), "loop_end");
+    fetchStallDist.init(1, 200, 5);
 }
 
 DecoupledBPUWithFTB::BpTrace::BpTrace(FetchStream &stream, const DynInstPtr &inst, bool mispred)
@@ -639,7 +642,7 @@ DecoupledBPUWithFTB::tick()
         if (!enableLoopBuffer || (enableLoopBuffer && !lb.isActive())) {
             if (s0PC == ObservingPC) {
                 DPRINTFV(true, "Predicting block %#lx, id: %lu\n", s0PC, fsqId);
-            }   
+            }
             DPRINTF(DecoupleBP, "Requesting prediction for stream start=%#lx\n", s0PC);
             DPRINTF(Override, "Requesting prediction for stream start=%#lx\n", s0PC);
             // put startAddr in preds
@@ -858,6 +861,59 @@ DecoupledBPUWithFTB::trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &fetch_
     return fetchTargetQueue.trySupplyFetchWithTarget(fetch_demand_pc, fetch_target_in_loop);
 }
 
+bool
+DecoupledBPUWithFTB::prefetchAvailable()
+{
+    return prefetchID < fetchTargetQueue.getSupplyingStreamId() + maxDistanceFromIFU;
+}
+
+bool
+DecoupledBPUWithFTB::getPrefetchAddr(Addr &prefetchAddr, bool &flush, bool fetchIsStall)
+{
+    FetchStreamId fetchID = fetchTargetQueue.getSupplyingStreamId();
+    flush = fsqFlushFlag;
+
+    // send flush req and disable prefetch when redirect
+    if (fsqFlushFlag) {
+        fsqFlushFlag = false;
+        enablePrefetch = false;
+        fetchStallCycles = 0;
+        prefetchID = fetchID;
+        return true;
+    }
+    // allow prefetching only when fetch is blocked after redirect
+    if (fetchIsStall) {
+        dbpFtbStats.fetchStallDist.sample(fetchStallCycles, 1);
+        enablePrefetch = true;
+    }
+    // stop prefetch when prefetchID is out of the bound
+    if (prefetchID > fetchID + maxDistanceFromIFU || !enablePrefetch) {
+        fetchStallCycles++;
+        return false;
+    }
+    if (prefetchID < fetchID) {
+        prefetchID = fetchID;
+    }
+    // try to get prefetch address
+    auto it = fetchStreamQueue.find(prefetchID);
+    if (it != fetchStreamQueue.end() && fetchTargetAvailable()) {
+        prefetchAddr = alignToCacheLine(it->second.startPC);
+        if (lastPrefetchAddr == prefetchAddr) {
+            prefetchID++;
+        } else {
+            return true;
+        }
+    }
+    return false;
+}
+
+void
+DecoupledBPUWithFTB::updatePrefetch(Addr prefetchAddr)
+{
+    prefetchID++;
+    lastPrefetchAddr = prefetchAddr;
+}
+
 std::pair<bool, bool>
 DecoupledBPUWithFTB::decoupledPredict(const StaticInstPtr &inst,
                                const InstSeqNum &seqNum, PCStateBase &pc,
@@ -972,6 +1028,7 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
                             const InstSeqNum &seq, ThreadID tid,
                             const unsigned &currentLoopIter, const bool fromCommit)
 {
+    fsqFlushFlag = true;
     dbpFtbStats.controlSquash++;
 
     bool is_conditional = static_inst->isCondCtrl();
@@ -1163,7 +1220,7 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
         lb.recordNewestStreamOutsideLoop(stream);
     }
 
-    
+
     // inc stream id because current stream ends
     // now stream always ends
     ftq_demand_stream_id = stream_id + 1;
@@ -1190,6 +1247,7 @@ DecoupledBPUWithFTB::nonControlSquash(unsigned target_id, unsigned stream_id,
                                const PCStateBase &inst_pc,
                                const InstSeqNum seq, ThreadID tid, const unsigned &currentLoopIter)
 {
+    fsqFlushFlag = true;
     dbpFtbStats.nonControlSquash++;
     DPRINTFV(this->debugFlagOn || ::gem5::debug::DecoupleBP,
             "non control squash: target id: %lu, stream id: %lu, inst_pc: %x, "
@@ -1240,7 +1298,7 @@ DecoupledBPUWithFTB::nonControlSquash(unsigned target_id, unsigned stream_id,
         lb.clearState();
     }
 
-    
+
     if (stream.isExit) {
         dbpFtbStats.nonControlSquashOnLoopPredictorPredExit++;
     }
@@ -1296,6 +1354,7 @@ DecoupledBPUWithFTB::trapSquash(unsigned target_id, unsigned stream_id,
                          Addr last_committed_pc, const PCStateBase &inst_pc,
                          ThreadID tid, const unsigned &currentLoopIter)
 {
+    fsqFlushFlag = true;
     dbpFtbStats.trapSquash++;
     DPRINTF(DecoupleBP || debugFlagOn,
             "Trap squash: target id: %lu, stream id: %lu, inst_pc: %#lx\n",
@@ -1380,7 +1439,7 @@ DecoupledBPUWithFTB::trapSquash(unsigned target_id, unsigned stream_id,
 
     fetchTargetQueue.squash(target_id + 1, ftq_demand_stream_id,
                             inst_pc.instAddr());
-    
+
     if (enableLoopBuffer) {
         lb.recordNewestStreamOutsideLoop(stream);
     }
@@ -1429,7 +1488,7 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
                 stream.startPC, miss_predicted ? "miss" : "correctly",
                 stream.exeBranchInfo.pc, stream.exeBranchInfo.target,
                 stream.predBranchInfo.pc, stream.predBranchInfo.target);
-        
+
         if (stream.isHit && !stream.falseHit) {
             dbpFtbStats.ftbHit++;
         } else {
@@ -2211,14 +2270,14 @@ DecoupledBPUWithFTB::tryEnqFetchTarget()
     DPRINTF(DecoupleBP, "Serve enq PC: %#lx with stream %lu:\n",
             ftq_enq_state.pc, it->first);
     printStream(stream_to_enq);
-    
+
 
     // We does let ftq to goes beyond fsq now
     if (ftq_enq_state.pc > end) {
         warn("FTQ enq PC %#lx is beyond fsq end %#lx\n",
          ftq_enq_state.pc, end);
     }
-    
+
     assert(ftq_enq_state.pc <= end || (end < predictWidth && (ftq_enq_state.pc + predictWidth < predictWidth)));
 
     // create a new target entry
@@ -2251,7 +2310,7 @@ DecoupledBPUWithFTB::tryEnqFetchTarget()
     ftq_enq_state.pc = inLoop ?
         loopExit ? loopEndPC : stream_to_enq.getBranchInfo().target :
         taken ? stream_to_enq.getBranchInfo().target : thisFtqEntryShouldEndPC;
-    
+
     // we should not increment streamId to enqueue when ja blocks are not fully consumed
     if (!(enableJumpAheadPredictor && stream_to_enq.jaHit && stream_to_enq.jaHit &&
             stream_to_enq.currentSentBlock < stream_to_enq.jaEntry.jumpAheadBlockNum)) {
@@ -2288,7 +2347,7 @@ DecoupledBPUWithFTB::makeLoopPredictions(FetchStream &entry, bool &endLoop, bool
 {
     // query loop predictor and modify taken result
     // TODO: What if loop branch is predicted not taken?
-    // Ans: assume it is loop exit indeed and 
+    // Ans: assume it is loop exit indeed and
     //      use it to sychronize loop specCnt
     if (finalPred.valid) {
         int i = 0;
@@ -2453,7 +2512,7 @@ DecoupledBPUWithFTB::generateAndSetNewFetchStream()
         historyManager.addSpeculativeHist(entry.startPC, shamt, taken, entry.predBranchInfo, fsqId);
         tage->checkFoldedHist(s0History, "speculative update");
 
-        
+
         entry.setDefaultResolve();
 
 
@@ -2512,7 +2571,7 @@ DecoupledBPUWithFTB::generateAndSetNewFetchStream()
         historyManager.addSpeculativeHist(entry.startPC, shamt, taken, entry.predBranchInfo, fsqId);
         tage->checkFoldedHist(s0History, "speculative update");
         entry.setDefaultResolve();
-        
+
 
 
         // redirect to fall through of loop branch if loop is ended

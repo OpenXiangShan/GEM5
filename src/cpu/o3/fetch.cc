@@ -63,6 +63,7 @@
 #include "debug/Counters.hh"
 #include "debug/DecoupleBPProbe.hh"
 #include "debug/Drain.hh"
+#include "debug/FDIPPrefetch.hh"
 #include "debug/Fetch.hh"
 #include "debug/FetchFault.hh"
 #include "debug/FetchVerbose.hh"
@@ -106,6 +107,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       numThreads(params.numThreads),
       numFetchingThreads(params.smtNumFetchingThreads),
       icachePort(this, _cpu),
+      FDIPEnable(params.FDIPEnable),
       finishTranslationEvent(this), fetchStats(_cpu, this)
 {
     if (numThreads > MaxThreads)
@@ -222,6 +224,12 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Number of stall cycles due to full MSHR"),
     ADD_STAT(cacheLines, statistics::units::Count::get(),
              "Number of cache lines fetched"),
+    ADD_STAT(cacheAccess, statistics::units::Count::get(),
+             "Number of accesses to the cache"),
+    ADD_STAT(trySendPrefetch, statistics::units::Count::get(),
+             "Number of try to send prefetch req"),
+    ADD_STAT(demandSendPrefetch, statistics::units::Count::get(),
+             "Number of demand send prefetch req"),
     ADD_STAT(icacheSquashes, statistics::units::Count::get(),
              "Number of outstanding Icache misses that were squashed"),
     ADD_STAT(tlbSquashes, statistics::units::Count::get(),
@@ -283,6 +291,12 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .prereq(blockedCycles);
         cacheLines
             .prereq(cacheLines);
+        cacheAccess
+            .prereq(cacheAccess);
+        trySendPrefetch
+            .prereq(trySendPrefetch);
+        demandSendPrefetch
+            .prereq(demandSendPrefetch);
         miscStallCycles
             .prereq(miscStallCycles);
         pendingDrainCycles
@@ -467,7 +481,7 @@ Fetch::processCacheCompletion(PacketPtr pkt)
             anotherSize = fetchBufferSize - pkt->getSize();
         } else if (pkt->req->getReqNum() == 2) {
             secondPkt[tid] = pkt;
-            anotherPC = pkt->req->getVaddr() - 64 + pkt->getSize();
+            anotherPC = pkt->req->getVaddr() - fetchBufferSize + pkt->getSize();
             anotherSize = fetchBufferSize - pkt->getSize();
         }
 
@@ -779,6 +793,9 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
         return false;
     }
 
+    fetchStats.cacheAccess++;
+    hasCacheAccess = true;
+
     Addr fetchPC = vaddr;
     unsigned fetchSize = fetchBufferSize;
 
@@ -861,7 +878,7 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
     ThreadID tid = cpu->contextToThread(mem_req->contextId());
     Addr fetchMisalignedPC = mem_req->getVaddr();
     if (mem_req->getReqNum() == 2) {
-        fetchMisalignedPC = mem_req->getVaddr() - 64 + mem_req->getSize();
+        fetchMisalignedPC = mem_req->getVaddr() - fetchBufferSize + mem_req->getSize();
     }
     Addr fetchPC = mem_req->isMisalignedFetch() ? fetchMisalignedPC : mem_req->getVaddr();
 
@@ -1088,6 +1105,10 @@ Fetch::flushFetchBuffer()
 {
     for (ThreadID i = 0; i < numThreads; ++i) {
         fetchBufferValid[i] = false;
+        if (FDIPEnable) {
+            DPRINTF(FDIPPrefetch, "flush prefetch queue when flushFetchBuffer\n");
+            sendFlushReq(i, pc[i]->instAddr());
+        }
     }
 }
 
@@ -1227,6 +1248,12 @@ Fetch::tick()
         _status = updateFetchStatus();
     }
 
+    if (FDIPEnable) {
+        bool fetchIsStall = getFetchingThread() == InvalidThreadID;
+        for (ThreadID i = 0; i < numThreads; ++i) {
+            handlePrefetch(i, fetchIsStall);
+        }
+    }
 
     if (FullSystem) {
         if (fromCommit->commitInfo[0].interruptPending) {
@@ -1325,6 +1352,14 @@ Fetch::tick()
 
     if (stalls[*tid_itr].decode) {
         fetchStats.decodeStalls++;
+    }
+
+    // If prefetching is available, the CPU needs to be activated.
+    if (FDIPEnable && isFTBPred()) {
+        assert(dbpftb);
+        if (dbpftb->prefetchAvailable()) {
+            wroteToTimeBuffer = true;
+        }
     }
 
     // If there was activity this cycle, inform the CPU of it.
@@ -2275,6 +2310,56 @@ Fetch::setAllFetchStalls(StallReason stall)
     for (int i = 0; i < stallReason.size(); i++) {
         stallReason[i] = stall;
     }
+}
+
+void
+Fetch::handlePrefetch(ThreadID tid, bool fetchIsStall)
+{
+    Addr prefetchAddr;
+    bool flushPIQ;
+    bool getReq = dbpftb->getPrefetchAddr(prefetchAddr, flushPIQ, fetchIsStall);
+
+    if (getReq) {
+        if (flushPIQ) {
+            assert(sendFlushReq(tid, pc[tid]->instAddr()));
+        }
+        else {
+            ++fetchStats.trySendPrefetch;
+            if (sendPrefetchReq(prefetchAddr, tid, pc[tid]->instAddr())) {
+                ++fetchStats.demandSendPrefetch;
+                dbpftb->updatePrefetch(prefetchAddr);
+            }
+        }
+    }
+}
+
+bool
+Fetch::sendPrefetchReq(Addr prefetchAddr, ThreadID tid, Addr pc) {
+    RequestPtr mem_req = std::make_shared<Request>(
+                    prefetchAddr, cacheBlkSize, Request::INST_FETCH,
+                    cpu->instRequestorId(), pc, cpu->thread[tid]->contextId());
+    mem_req->taskId(cpu->taskId());
+    PacketPtr data_pkt;
+    data_pkt = new Packet(mem_req, MemCmd::PFFetchReq);
+    DPRINTF(FDIPPrefetch, "try send PFFetchReq req from fetch vaddr: 0x%#x\n",\
+            prefetchAddr);
+    bool success = icachePort.sendTimingReq(data_pkt);
+    DPRINTF(FDIPPrefetch, "send PFFetchReq vaddr: 0x%#x, succsee: %d\n",\
+            prefetchAddr,success);
+    return success;
+}
+
+bool
+Fetch::sendFlushReq(ThreadID tid, Addr pc) {
+    RequestPtr mem_req = std::make_shared<Request>(
+                    0, cacheBlkSize, Request::INST_FETCH,
+                    cpu->instRequestorId(), pc, cpu->thread[tid]->contextId());
+    mem_req->taskId(cpu->taskId());
+    PacketPtr data_pkt;
+    data_pkt = new Packet(mem_req, MemCmd::PFFlushReq);
+    DPRINTF(FDIPPrefetch, "send PFFlushReq req from fetch\n");
+    bool success = icachePort.sendTimingReq(data_pkt);
+    return success;
 }
 
 bool

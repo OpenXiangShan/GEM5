@@ -952,7 +952,9 @@ class DecoupledBPUWithFTB(BranchPredictor):
     uftb = Param.DefaultFTB(UFTB(), "UFTB predictor")
     ras = Param.RAS(RAS(), "RAS")
     uras = Param.uRAS(uRAS(), "uRAS")
-    
+
+    maxDistanceFromIFU = Param.Unsigned(32, "max distance from prefethPtr to IFUPtr")
+
     bpDBSwitches = VectorParam.String([], "Enable which traces in the form of database")
     enableLoopBuffer = Param.Bool(False, "Enable loop buffer to supply inst for loops")
     enableLoopPredictor = Param.Bool(False, "Use loop predictor to predict loop exit")
