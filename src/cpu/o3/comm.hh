@@ -179,6 +179,8 @@ struct SquashVersion
     void update(uint8_t v) {
         version = v;
     }
+    SquashVersion(uint8_t v) : version(v) {}
+    SquashVersion() : version(0) {}
 };
 
 /** Struct that defines all backwards communication. */

@@ -44,17 +44,17 @@ namespace ftb_pred
 
 DefaultFTB::DefaultFTB(const Params &p)
     : TimedBaseFTBPredictor(p),
+    numEntries(p.numEntries),
+    tagBits(p.tagBits),
+    instShiftAmt(p.instShiftAmt),
+    log2NumThreads(floorLog2(p.numThreads)),
+    numBr(p.numBr),
+    numWays(p.numWays),
+    numSets(numEntries / numWays),
+    numDelay(p.numDelay),
     ftbStats(this)
 {
-    numEntries = p.numEntries;
-    tagBits = p.tagBits;
-    instShiftAmt = p.instShiftAmt;
-    log2NumThreads = floorLog2(p.numThreads);
-    numBr = p.numBr;
-    numWays = p.numWays;
     assert(numEntries % numWays == 0);
-    numSets = numEntries / numWays;
-    numDelay = p.numDelay;
 
     if (!isPowerOf2(numEntries)) {
         fatal("FTB entries is not a power of 2!");

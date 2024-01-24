@@ -67,6 +67,7 @@ class XSCompositePrefetcher : public Queued
               inBackwardMode(false),
               accessCount(0),
               regionOffset(0),
+              depth(0),
               lateConf(4, 7),
               hasIncreasedPht(false)
         {

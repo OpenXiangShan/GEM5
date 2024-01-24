@@ -38,8 +38,8 @@ class BertiPrefetcher : public Queued
   protected:
     struct HistoryInfo
     {
-        Addr vAddr;
-        Cycles timestamp;
+        Addr vAddr{0};
+        Cycles timestamp{0};
 
         bool operator == (const HistoryInfo &rhs) const
         {
@@ -103,7 +103,7 @@ class BertiPrefetcher : public Queued
     {
       public:
         bool hysteresis = false;
-        Addr pc;
+        Addr pc = ~(0UL);
         /** FIFO of demand miss history. */
         std::list<HistoryInfo> history;
 
@@ -150,9 +150,7 @@ class BertiPrefetcher : public Queued
         }
     }
 
-    Addr pcHash(Addr pc) {
-        return (pc>>1);
-    }
+    Addr pcHash(Addr pc) { return (pc >> 1); }
 
     int lastUsedBestDelta;
     int evictedBestDelta;
