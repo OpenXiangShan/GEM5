@@ -127,6 +127,7 @@ class BertiPrefetcher : public Queued
         statistics::Scalar notifySkippedCond1;
         statistics::Scalar notifySkippedIsPF;
         statistics::Scalar notifySkippedNoEntry;
+        statistics::Scalar entryEvicts;
     } statsBerti;
 
 
@@ -159,6 +160,8 @@ class BertiPrefetcher : public Queued
     boost::compute::detail::lru_cache<Addr, Addr> trainBlockFilter;
 
     std::unordered_map<int64_t, uint64_t> topDeltas;
+
+    std::unordered_map<int64_t, uint64_t> evictedDeltas;
 
     const bool dumpTopDeltas;
 
