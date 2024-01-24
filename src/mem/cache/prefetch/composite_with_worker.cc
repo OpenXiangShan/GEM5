@@ -9,33 +9,13 @@ namespace prefetch
 {
 
 CompositeWithWorkerPrefetcher::CompositeWithWorkerPrefetcher(const CompositeWithWorkerPrefetcherParams &p)
-    : WorkerPrefetcher(p), cdp(p.cdp)
+    : WorkerPrefetcher(p)
 {
-    cdp->pfLRUFilter = &pfLRUFilter;
-}
-
-void
-CompositeWithWorkerPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses)
-{
-    cdp->calculatePrefetch(pfi, addresses);
 }
 
 void
 CompositeWithWorkerPrefetcher::rxHint(BaseMMU::Translation *dpp)
 {
-    if (offloadLowAccuracy) {
-        auto ptr = reinterpret_cast<DeferredPacket *>(dpp);
-        float cdp_ratio =
-            (prefetchStats.pfIssued_srcs[PrefetchSourceType::CDP].value()) / (prefetchStats.pfIssued.total());
-        float acc = (prefetchStats.pfUseful_srcs[ptr->pfInfo.getXsMetadata().prefetchSource].value()) /
-                    (prefetchStats.pfIssued_srcs[ptr->pfInfo.getXsMetadata().prefetchSource].value());
-
-        if (hasHintDownStream() && cdp_ratio > 0.5 && acc < 0.5) {
-            hintDownStream->rxHint(dpp);
-            return;
-        }
-    }
-
     WorkerPrefetcher::rxHint(dpp);
 }
 
@@ -44,17 +24,6 @@ CompositeWithWorkerPrefetcher::notify(const PacketPtr &pkt, const PrefetchInfo &
 {
     WorkerPrefetcher::notify(pkt, pfi);
     Queued::notify(pkt, pfi);
-}
-
-void
-CompositeWithWorkerPrefetcher::pfHitNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt)
-{
-    cdp->pfHitNotify(accuracy, pf_source, pkt, addressGenBuffer);
-    if (addressGenBuffer.size()) {
-        assert(pkt->req->hasVaddr());
-        postNotifyInsert(pkt, addressGenBuffer);
-    }
-    addressGenBuffer.clear();
 }
 
 void
@@ -99,18 +68,6 @@ void
 CompositeWithWorkerPrefetcher::setCache(BaseCache *_cache)
 {
     Base::setCache(_cache);
-    cdp->setCache(_cache);
-}
-
-void
-CompositeWithWorkerPrefetcher::notifyFill(const PacketPtr &pkt)
-{
-    cdp->notifyFill(pkt, addressGenBuffer);
-    if (addressGenBuffer.size()) {
-        assert(pkt->req->hasVaddr());
-        postNotifyInsert(pkt, addressGenBuffer);
-    }
-    addressGenBuffer.clear();
 }
 
 }  // namespace prefetch

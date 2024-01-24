@@ -19,11 +19,7 @@ class CompositeWithWorkerPrefetcher: public WorkerPrefetcher
   public:
     CompositeWithWorkerPrefetcher(const CompositeWithWorkerPrefetcherParams &p);
 
-    void calculatePrefetch(const PrefetchInfo &pfi,
-                           std::vector<AddrPriority> &addresses) override;
-
     void rxHint(BaseMMU::Translation *dpp) override;
-    void pfHitNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt) override;
 
     bool hasHintsWaiting() override { return !localBuffer.empty(); }
 
@@ -31,16 +27,10 @@ class CompositeWithWorkerPrefetcher: public WorkerPrefetcher
 
     void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) override;
 
-    void notifyFill(const PacketPtr &pkt) override;
-
     void postNotifyInsert(const PacketPtr &trigger_pkt, std::vector<AddrPriority> &addresses);
     // TODO: This code is redundant with queued.cc, seperate it in queued
 
-  private:
-
-    CDP *cdp;
-
-    bool offloadLowAccuracy = true;
+  protected:
 
     std::vector<AddrPriority> addressGenBuffer;
 
