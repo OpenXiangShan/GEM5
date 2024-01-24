@@ -379,6 +379,9 @@ Queued::translationComplete(DeferredPacket *dp, bool failed)
                 statsQueued.pfInCache++;
                 DPRINTF(HWPrefetch, "Dropping redundant in "
                         "cache/MSHR prefetch addr:%#x\n", target_paddr);
+            } else if (target_paddr < 0x80000000) {
+                DPRINTF(HWPrefetch, "wrong paddr of prefetch:%#x\n", target_paddr);
+
             } else {
                 Tick pf_time = curTick() + clockPeriod() * latency;
                 it->createPkt(target_paddr, blkSize, requestorId, tagPrefetch,
@@ -547,6 +550,10 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
         statsQueued.pfInCache++;
         DPRINTF(HWPrefetch, "Dropping redundant in "
                 "cache/MSHR prefetch addr:%#x\n", target_paddr);
+        return;
+    }
+    if (has_target_pa && (target_paddr < 0x80000000)) {
+        DPRINTF(HWPrefetch, "wrong paddr of prefetch:%#x\n", target_paddr);
         return;
     }
 
