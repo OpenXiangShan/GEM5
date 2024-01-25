@@ -1657,16 +1657,15 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
             lastCommittedStream = stream;
         }
 
-
-
-
         it = fetchStreamQueue.erase(it);
 
         dbpFtbStats.fsqEntryCommitted++;
     }
     DPRINTF(DecoupleBP, "after commit stream, fetchStreamQueue size: %lu\n",
             fetchStreamQueue.size());
-    printStream(it->second);
+    if (it != fetchStreamQueue.end()) {
+        printStream(it->second);
+    }
 
     historyManager.commit(stream_id);
 }
@@ -2429,9 +2428,6 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
     }
     DPRINTF(LoopBuffer, "now stream before loop:\n");
     printStream(lb.streamBeforeLoop);
-
-
-
 
     auto [insert_it, inserted] = fetchStreamQueue.emplace(fsqId, entry);
     assert(inserted);

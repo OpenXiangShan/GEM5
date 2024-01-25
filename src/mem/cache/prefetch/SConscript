@@ -37,7 +37,8 @@ SimObject('Prefetcher.py', sim_objects=[
     'DeltaCorrelatingPredictionTables', 'DCPTPrefetcher',
     'IrregularStreamBufferPrefetcher', 'SlimAMPMPrefetcher',
     'WorkerPrefetcher',
-    'BOPPrefetcher', 'SBOOEPrefetcher', 'STeMSPrefetcher', 'PIFPrefetcher', 'IPCPrefetcher'])
+    'BOPPrefetcher', 'SBOOEPrefetcher', 'STeMSPrefetcher', 'PIFPrefetcher', 'IPCPrefetcher',
+    'CompositeWithWorkerPrefetcher', 'L2CompositeWithWorkerPrefetcher'])
 
 
 DebugFlag('BOPPrefetcher')
@@ -78,3 +79,6 @@ Source('stride.cc')
 Source('tagged.cc')
 Source('worker.cc')
 Source('cmc.cc')
+Source('composite_with_worker.cc')
+Source('l2_composite_with_worker.cc')
+

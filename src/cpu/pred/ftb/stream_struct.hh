@@ -263,7 +263,7 @@ typedef struct JAEntry {
 
 // NOTE: now this corresponds to an ftq entry in
 //       XiangShan nanhu architecture
-typedef struct FetchStream
+struct FetchStream
 {
     Addr startPC;
 
@@ -314,8 +314,8 @@ typedef struct FetchStream
     std::vector<bool> fixNotExits;
     std::vector<LoopRedirectInfo> unseenLoopRedirectInfos;
 
-    Tick predTick;
-    Cycles predCycle;
+    Tick predTick{};
+    Cycles predCycle{};
     boost::dynamic_bitset<> history;
 
     // for profiling
@@ -406,7 +406,7 @@ typedef struct FetchStream
         }
     }
 
-}FetchStream;
+};
 
 typedef struct FullFTBPrediction
 {

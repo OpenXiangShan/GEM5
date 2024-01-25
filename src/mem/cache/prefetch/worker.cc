@@ -10,14 +10,21 @@ GEM5_DEPRECATED_NAMESPACE(Prefetcher, prefetch);
 namespace prefetch
 {
 
-WorkerPrefetcher::WorkerPrefetcher(const WorkerPrefetcherParams &p)
-    : Queued(p),
-      pfLRUFilter(128)
+WorkerPrefetcher::WorkerPrefetcher(const WorkerPrefetcherParams &p) : Queued(p), workerStats(this), pfLRUFilter(128)
 {
     //Event *event = new EventFunctionWrapper([this]{ enableFunctionTrace(); }, name(), true);
-    transfer_event = new EventFunctionWrapper([this](){
+    transferEvent = new EventFunctionWrapper([this](){
         transfer();
     },name(),false);
+}
+
+WorkerPrefetcher::WorkerStats::WorkerStats(statistics::Group *parent)
+    : statistics::Group(parent),
+      ADD_STAT(hintsReceived, statistics::units::Count::get(),
+               "Number of hints received"),
+      ADD_STAT(hintsOffloaded, statistics::units::Count::get(),
+               "Number of hints offloaded")
+{
 }
 
 void
@@ -26,8 +33,8 @@ WorkerPrefetcher::rxHint(BaseMMU::Translation *dpp)
     auto ptr = reinterpret_cast<DeferredPacket *>(dpp);
 
     // ignore if pfahead_host > itself level
-    if ((ptr->pfahead ? (ptr->pfahead_host <= cache->level()) : true)
-        && (ptr->pfInfo.getXsMetadata().prefetchSource == PrefetchSourceType::SStream)) {
+    if ((ptr->pfahead ? (ptr->pfahead_host <= cache->level()) : true) &&
+        (ptr->pfInfo.getXsMetadata().prefetchSource == PrefetchSourceType::SStream)) {
         if (pfLRUFilter.contains(ptr->pfInfo.getAddr())) {
             DPRINTF(WorkerPref, "Worker: offload: [%lx, %d] skip recently in localBuffer\n", ptr->pfInfo.getAddr(), ptr->pfahead_host);
             return;
@@ -35,7 +42,10 @@ WorkerPrefetcher::rxHint(BaseMMU::Translation *dpp)
         pfLRUFilter.insert(ptr->pfInfo.getAddr(),0);
     }
 
-    DPRINTF(WorkerPref, "Worker: put [%lx, %d] into localBuffer(size:%lu)\n", ptr->pfInfo.getAddr(), ptr->pfahead_host,localBuffer.size());
+    workerStats.hintsReceived++;
+
+    DPRINTF(WorkerPref, "Worker: put [%lx, %d] into localBuffer(size:%lu)\n", ptr->pfInfo.getAddr(), ptr->pfahead_host,
+            localBuffer.size());
     localBuffer.push_back(*ptr);
 }
 
@@ -48,25 +58,27 @@ WorkerPrefetcher::transfer()
     while (count < depth && !localBuffer.empty()) {
         if (queueFilter) {
             if (alreadyInQueue(pfq, dpp_it->pfInfo.getAddr(), dpp_it->pfInfo.isSecure(), dpp_it->priority)) {
-                DPRINTF(WorkerPref, "Worker: [%lx, %d] was already in pfq\n", dpp_it->pfInfo.getAddr(), dpp_it->pfahead_host);
-            }
-            else if (alreadyInQueue(pfqMissingTranslation, dpp_it->pfInfo.getAddr(), dpp_it->pfInfo.isSecure(), dpp_it->priority)) {
-                DPRINTF(WorkerPref, "Worker: [%lx, %d] was already in pfq\n", dpp_it->pfInfo.getAddr(), dpp_it->pfahead_host);
-            }
-            else {
+                DPRINTF(WorkerPref, "Worker: [%lx, %d] was already in pfq\n", dpp_it->pfInfo.getAddr(),
+                        dpp_it->pfahead_host);
+            } else if (alreadyInQueue(pfqMissingTranslation, dpp_it->pfInfo.getAddr(), dpp_it->pfInfo.isSecure(),
+                                      dpp_it->priority)) {
+                DPRINTF(WorkerPref, "Worker: [%lx, %d] was already in pfq\n", dpp_it->pfInfo.getAddr(),
+                        dpp_it->pfahead_host);
+            } else {
                 addToQueue(pfq, *dpp_it);
-                DPRINTF(WorkerPref, "Worker: put [%lx, %d] into local pfq\n", dpp_it->pfInfo.getAddr(), dpp_it->pfahead_host);
+                DPRINTF(WorkerPref, "Worker: put [%lx, %d] into local pfq\n", dpp_it->pfInfo.getAddr(),
+                        dpp_it->pfahead_host);
             }
-        }
-        else {
+        } else {
             addToQueue(pfq, *dpp_it);
-            DPRINTF(WorkerPref, "Worker: put [%lx, %d] into local pfq\n", dpp_it->pfInfo.getAddr(), dpp_it->pfahead_host);
+            DPRINTF(WorkerPref, "Worker: put [%lx, %d] into local pfq\n", dpp_it->pfInfo.getAddr(),
+                    dpp_it->pfahead_host);
         }
         dpp_it = localBuffer.erase(dpp_it);
         count++;
     }
-    schedule(transfer_event,nextCycle());
+    schedule(transferEvent, nextCycle());
 }
 
-}
-}
+}  // namespace prefetch
+}  // namespace gem5

@@ -61,11 +61,13 @@ class XSCompositePrefetcher : public Queued
         bool hasIncreasedPht;
         ACTEntry(const SatCounter8 &conf)
             : TaggedEntry(),
+              pc(~(0UL)),
+              regionAddr(0),
               regionBits(0),
               inBackwardMode(false),
               accessCount(0),
               regionOffset(0),
-              depth(32),
+              depth(0),
               lateConf(4, 7),
               hasIncreasedPht(false)
         {
@@ -131,6 +133,7 @@ class XSCompositePrefetcher : public Queued
         statistics::Scalar allCntNum;
         statistics::Scalar actMNum;
         statistics::Scalar refillNotifyCount;
+        statistics::Scalar bopTrainCount;
     } stats;
 
   public:

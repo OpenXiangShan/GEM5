@@ -1,5 +1,6 @@
 #include "mem/cache/prefetch/sms.hh"
 
+#include "base/stats/group.hh"
 #include "debug/BOPOffsets.hh"
 #include "debug/XSCompositePrefetcher.hh"
 #include "mem/cache/prefetch/associative_set_impl.hh"
@@ -173,6 +174,8 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             largeBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
 
             smallBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
+
+            stats.bopTrainCount++;
         }
 
         Addr stride_pf_addr = 0;
@@ -619,7 +622,8 @@ XSCompositePrefetcher::XSCompositeStats::XSCompositeStats(statistics::Group *par
     : statistics::Group(parent),
       ADD_STAT(allCntNum, statistics::units::Count::get(), "victim act access num"),
       ADD_STAT(actMNum, statistics::units::Count::get(), "victim act match num"),
-      ADD_STAT(refillNotifyCount, statistics::units::Count::get(), "refill notify count")
+      ADD_STAT(refillNotifyCount, statistics::units::Count::get(), "refill notify count"),
+      ADD_STAT(bopTrainCount, statistics::units::Count::get(), "bop train count")
 {
 }
 

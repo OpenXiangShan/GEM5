@@ -176,7 +176,12 @@ namespace RiscvISA
                 walker(_walker), mainReq(_req), state(Ready),
                 nextState(Ready), level(0), inflight(0),
                 functional(_isFunctional), timing(false),
-                retrying(false), started(false), squashed(false)
+                retrying(false), started(false), squashed(false), nextline(false),
+                nextlineRead(0), nextlineLevel(0), nextlineVaddr(0),
+                nextlineLevelMask(0), nextlineShift(0), tlbVaddr(0), tlbppn(0),
+                tlbSizePte(0), openNextline(false), autoNextlineSign(false),
+                finishDefaultTranslate(false), preHitInPtw(false), fromPre(false),
+                fromBackPre(false)
             {
                 requestors.emplace_back(nullptr, _req, _translation);
             }

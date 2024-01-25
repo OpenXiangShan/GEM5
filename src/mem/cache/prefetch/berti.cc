@@ -20,7 +20,8 @@ BertiPrefetcher::BertiStats::BertiStats(statistics::Group *parent)
       ADD_STAT(trainOnMiss, statistics::units::Count::get(), "Count of train on miss"),
       ADD_STAT(notifySkippedCond1, statistics::units::Count::get(), "Count of notify skipped on mixed condition"),
       ADD_STAT(notifySkippedIsPF, statistics::units::Count::get(), "Count of notify skipped isPF"),
-      ADD_STAT(notifySkippedNoEntry, statistics::units::Count::get(), "Count of notify skipped no Berti entry")
+      ADD_STAT(notifySkippedNoEntry, statistics::units::Count::get(), "Count of notify skipped no Berti entry"),
+      ADD_STAT(entryEvicts, statistics::units::Count::get(), "Count of Berti entry evicted")
 {
 }
 
@@ -61,6 +62,20 @@ BertiPrefetcher::BertiPrefetcher(const BertiPrefetcherParams &p)
                     break;
                 }
             }
+
+            simout.close(out_handle);
+
+            out_handle = simout.create("topBertiEvictDeltas.txt", false, true);
+            *out_handle->stream() << "EvcitedDelta" << " " << "count" << std::endl;
+            count = 0;
+            for (const auto &it: evictedDeltas) {
+                *out_handle->stream() << it.first << " " << it.second << std::endl;
+                count++;
+                if (count >= 100) {
+                    break;
+                }
+            }
+
             simout.close(out_handle);
         }
     });
@@ -103,11 +118,15 @@ BertiPrefetcher::updateHistoryTable(const PrefetchInfo &pfi)
             historyTable.insertEntry(pcHash(entry->pc), entry->isSecure(), entry, false);
         } else {
             if (entry->bestDelta.status != NO_PREF) {
+                int64_t blk_delta =
+                    (int64_t)blockIndex(pfi.getAddr() + entry->bestDelta.delta) - blockIndex(pfi.getAddr());
                 if (!useByteAddr) {
                     evictedBestDelta = entry->bestDelta.delta;
                 } else {
-                    evictedBestDelta = blockIndex(pfi.getAddr() + entry->bestDelta.delta) - blockIndex(pfi.getAddr());
+                    evictedBestDelta = blk_delta;
                 }
+                statsBerti.entryEvicts++;
+                evictedDeltas[blk_delta] = evictedDeltas.count(blk_delta) ? evictedDeltas[blk_delta] + 1 : 1;
             }
             // only when hysteresis is false
             entry->pc = pfi.getPC();

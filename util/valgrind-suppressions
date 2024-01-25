@@ -1,56 +1,67 @@
 {
    python error
    Memcheck:Cond
+   ...
    obj:*libpython3*
 }
 {
    python error
    Memcheck:Addr1
+   ...
    obj:*libpython3*
 }
 {
    python error
    Memcheck:Addr2
+   ...
    obj:*libpython3*
 }
 {
    python error
    Memcheck:Addr4
+   ...
    obj:*libpython3*
 }
 {
    python error
    Memcheck:Addr8
+   ...
    obj:*libpython3*
 }
 {
    python error
    Memcheck:Addr16
+   ...
    obj:*libpython3*
 }
 {
    python error
    Memcheck:Value1
+   ...
    obj:*libpython3*
 }
 {
    python error
    Memcheck:Value2
+   ...
    obj:*libpython3*
 }
 {
    python error
    Memcheck:Value4
+   ...
    obj:*libpython3*
 }
 {
    python error
    Memcheck:Value8
+   ...
    obj:*libpython3*
 }
 {
    python error
    Memcheck:Value16
+   ...
    obj:*libpython3*
 }
 {
@@ -58,3 +69,40 @@
    Memcheck:Cond
    fun:inflateReset2
 }
+{
+   proto error
+   Memcheck:Free
+   ...
+   obj:*libprotobuf.so*
+}
+{
+   tcmalloc error
+   Memcheck:Free
+   ...
+   obj:*libtcmalloc.so*
+}
+{
+   static_init error
+   Memcheck:Free
+   ...
+   fun:*static_initialization_and_destruction*
+}
+{
+   reg_stats error
+   Memcheck:Free
+   ...
+   fun:*gem5*statistics*Group*regStats*
+}
+{
+   python error
+   Memcheck:Free
+   ...
+   obj:*libpython3*
+}
+{
+   exit error
+   Memcheck:Free
+   ...
+   fun:__run_exit_handlers
+}
+

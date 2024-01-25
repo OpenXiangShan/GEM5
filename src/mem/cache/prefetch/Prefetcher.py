@@ -446,8 +446,19 @@ class CDP(QueuedPrefetcher):
     on_write = False
     on_data  = True
     on_inst  = False
-    use_rrf = Param.Bool(True,"")
     use_byteorder = Param.Bool(True,"")
+
+class CompositeWithWorkerPrefetcher(WorkerPrefetcher):
+    type = 'CompositeWithWorkerPrefetcher'
+    cxx_class = 'gem5::prefetch::CompositeWithWorkerPrefetcher'
+    cxx_header = "mem/cache/prefetch/composite_with_worker.hh"
+    use_virtual_addresses = True
+    prefetch_on_access = False
+    prefetch_on_pf_hit = True
+    on_read = True
+    on_write = False
+    on_data  = True
+    on_inst  = False
 
 class AccessMapPatternMatching(ClockedObject):
     type = 'AccessMapPatternMatching'
@@ -639,13 +650,25 @@ class LearnedBOPPrefetcher(BOPPrefetcher):
     tag_bits = 24
     negative_offsets_enable = True
     delay_queue_enable = True
-    delay_queue_size = Param.Unsigned(16,
-                "Number of entries in the delay queue")
-    delay_queue_cycles = Param.Cycles(30,
-                "Cycles to delay a write in the left RR table from the delay queue")
+    delay_queue_size = 16
+    delay_queue_cycles = 30
 
     autoLearning = True
     offsets = [64]
+
+class FallenBOPPrefetcher(BOPPrefetcher):
+    score_max = 31
+    round_max = 30
+    bad_score = 8
+    rr_size = 256
+    tag_bits = 24
+    negative_offsets_enable = False
+    delay_queue_enable = True
+    delay_queue_size = 16
+    delay_queue_cycles = 30
+
+    autoLearning = False
+    offsets = [24]
 
 class SBOOEPrefetcher(QueuedPrefetcher):
     type = 'SBOOEPrefetcher'
@@ -951,3 +974,17 @@ class MultiPrefetcher(BasePrefetcher):
 
     prefetchers = VectorParam.BasePrefetcher([XSCompositePrefetcher(), BOPPrefetcher()],
         "Array of prefetchers")
+
+class L2CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
+    type = 'L2CompositeWithWorkerPrefetcher'
+    cxx_class = 'gem5::prefetch::L2CompositeWithWorkerPrefetcher'
+    cxx_header = "mem/cache/prefetch/l2_composite_with_worker.hh"
+
+    cdp = Param.CDP(CDP(is_sub_prefetcher=True), "")
+
+class L3CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
+    type = 'L3CompositeWithWorkerPrefetcher'
+    cxx_class = 'gem5::prefetch::L3CompositeWithWorkerPrefetcher'
+    cxx_header = "mem/cache/prefetch/l3_composite_with_worker.hh"
+
+    bop = Param.BasePrefetcher(FallenBOPPrefetcher(is_sub_prefetcher=True), "")

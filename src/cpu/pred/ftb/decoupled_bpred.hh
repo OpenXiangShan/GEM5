@@ -750,7 +750,8 @@ class DecoupledBPUWithFTB : public BPredUnit
     void notifyInstCommit(const DynInstPtr &inst);
 
     std::map<Addr, unsigned> topMispredIndirect;
-    int currentFtqEntryInstNum;
+
+    int currentFtqEntryInstNum{0};
 
 };
 

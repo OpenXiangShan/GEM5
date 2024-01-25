@@ -75,7 +75,7 @@ class Multi : public Base
     void rxHint(BaseMMU::Translation *dpp) override {
         panic("MultiPrefetcher: rxHint not implemented");
     }
-    void rxNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt) override {
+    void pfHitNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt) override {
         panic("MultiPrefetcher: rxNotify not implemented");
     }
 

@@ -368,7 +368,6 @@ ROB::doSquash(ThreadID tid)
         // printf("[ROB] squash seqNum %ld\n", (*squashIt[tid])->seqNum);
 
         auto prevIt = std::prev(squashIt[tid]);
-        instList[tid].erase(squashIt[tid]);
         --numInstsInROB;
         --threadEntries[tid];
 
@@ -379,6 +378,8 @@ ROB::doSquash(ThreadID tid)
         if (instList[tid].empty() || squashIt[tid] == instList[tid].begin()) {
             DPRINTF(ROB, "Reached head of instruction list while "
                     "squashing.\n");
+
+            instList[tid].erase(squashIt[tid]);
 
             squashIt[tid] = instList[tid].end();
 
@@ -392,6 +393,8 @@ ROB::doSquash(ThreadID tid)
 
         if ((*squashIt[tid]) == (*tail_thread))
             robTailUpdate = true;
+
+        instList[tid].erase(squashIt[tid]);
 
         squashIt[tid] = prevIt;
     }

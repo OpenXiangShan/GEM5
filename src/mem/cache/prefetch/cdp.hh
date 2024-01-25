@@ -72,8 +72,6 @@ class CDP : public Queued
 {
 
 
-    bool first_call = false;
-    Event *transfer_event;
     std::vector<bool> enable_prf_filter;
     std::vector<bool> enable_prf_filter2;
     int depth_threshold;
@@ -84,8 +82,8 @@ class CDP : public Queued
     {
       public:
         std::map<int, std::map<int, int>> vpns;
-        std::map<int, std::map<int, int>> hot_vpns;
-        int counter;
+        std::map<int, std::map<int, int>> hotVpns;
+        int counter{0};
         void add(int vpn2, int vpn1)
         {
             counter++;
@@ -103,11 +101,11 @@ class CDP : public Queued
         {
             if (counter < 128)
                 return;
-            hot_vpns.clear();
+            hotVpns.clear();
             for (auto pair2 : vpns) {
                 for (auto pair1 : pair2.second) {
                     if (pair1.second > counter / 16) {
-                        hot_vpns[pair2.first][pair1.first] = pair1.second;
+                        hotVpns[pair2.first][pair1.first] = pair1.second;
                     }
                 }
             }
@@ -116,7 +114,7 @@ class CDP : public Queued
         }
         bool search(int vpn2, int vpn1)
         {
-            if (hot_vpns.find(vpn2) != hot_vpns.end() && hot_vpns[vpn2].find(vpn1) != hot_vpns[vpn2].end()) {
+            if (hotVpns.find(vpn2) != hotVpns.end() && hotVpns[vpn2].find(vpn1) != hotVpns[vpn2].end()) {
                 return true;
             }
             return false;
@@ -131,8 +129,20 @@ class CDP : public Queued
     CDP(const CDPParams &p);
     ~CDP() = default;
     ByteOrder byteOrder;
-    void notifyFill(const PacketPtr &pkt) override;
+
+    using Queued::notifyFill;
+    void notifyFill(const PacketPtr &pkt, std::vector<AddrPriority> &addresses);
+
+    void notifyWithData(const PacketPtr &pkt, bool is_l1_use, std::vector<AddrPriority> &addresses);
+
+    using Queued::pfHitNotify;
+    void pfHitNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt,
+                     std::vector<AddrPriority> &addresses);
+
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses) override;
+
+    void addToVpnTable(Addr vaddr);
+
     std::vector<Addr> scanPointer(Addr addr, std::vector<uint64_t> addrs)
     {
         uint64_t test_addr;
@@ -157,15 +167,28 @@ class CDP : public Queued
         return ans;
     };
 
-    void transfer();
 
-    void rxHint(BaseMMU::Translation *dpp) override;
-    void rxNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt) override;
-
-    bool hasHintsWaiting() override { return !localBuffer.empty(); }
-    boost::compute::detail::lru_cache<Addr, Addr> pfLRUFilter;
+    boost::compute::detail::lru_cache<Addr, Addr> *pfLRUFilter;
     std::list<DeferredPacket> localBuffer;
     unsigned depth{4};
+
+    struct CDPStats : public statistics::Group
+    {
+        CDPStats(statistics::Group *parent);
+        // STATS
+        statistics::Scalar triggeredInRxNotify;
+        statistics::Scalar triggeredInCalcPf;
+        statistics::Scalar dataNotifyCalled;
+        statistics::Scalar dataNotifyExitBlockNotFound;
+        statistics::Scalar dataNotifyExitFilter;
+        statistics::Scalar dataNotifyExitDepth;
+        statistics::Scalar dataNotifyNoAddrFound;
+        statistics::Scalar dataNotifyNoVA;
+        statistics::Scalar dataNotifyNoData;
+        statistics::Scalar missNotifyCalled;
+        statistics::Scalar passedFilter;
+        statistics::Scalar inserted;
+    } cdpStats;
 };
 
 }  // namespace prefetch

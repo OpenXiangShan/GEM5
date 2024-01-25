@@ -41,6 +41,7 @@
 #include <boost/compute/detail/lru_cache.hpp>
 
 #include "base/sat_counter.hh"
+#include "base/statistics.hh"
 #include "mem/cache/prefetch/queued.hh"
 #include "mem/packet.hh"
 
@@ -206,6 +207,8 @@ class BOP : public Queued
         {
             BopStats(statistics::Group *parent);
             statistics::Distribution issuedOffsetDist;
+            statistics::Scalar learnOffsetCount;
+            statistics::Scalar throttledCount;
         } stats;
 
     public:

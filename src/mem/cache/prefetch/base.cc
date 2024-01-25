@@ -323,6 +323,15 @@ Base::pageIthBlockAddress(Addr page, uint32_t blockIndex) const
 }
 
 void
+Base::nofityHitToDownStream(const PacketPtr &pkt)
+{
+    // allow non-demand notify for downstream
+    PrefetchSourceType pf_source = cache->getHitBlkXsMetadata(pkt).prefetchSource;
+    float acc = (prefetchStats.pfUseful_srcs[pf_source].value()) / (prefetchStats.pfIssued_srcs[pf_source].value());
+    DPRINTF(HWPrefetch, "Notify data read resp pkt to down stream prefetch, especially for CDP\n");
+    hintDownStream->pfHitNotify(acc, pf_source, pkt);
+}
+void
 Base::probeNotify(const PacketPtr &pkt, bool miss)
 {
     DPRINTF(HWPrefetch, "ProbeNotify: %s for %s\n", miss ? "miss" : "hit",
@@ -331,7 +340,11 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
     // operations or for writes that we are coaslescing.
     if (pkt->cmd.isSWPrefetch()) return;
     if (pkt->req->isCacheMaintenance()) return;
-    if (!pkt->isDemand() && !pkt->cmd.isHWPrefetch()) return;
+
+    if (!pkt->isDemand() && !pkt->cmd.isHWPrefetch()) {
+        DPRINTF(HWPrefetch, "Skip pf calc because not demand\n");
+        return;
+    }
 
     if (pkt->req->isFirstReqAfterSquash()) {
         squashMark = true;
@@ -342,18 +355,13 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
         panic("Request must have a physical address");
     }
 
+    DPRINTF(HWPrefetch, "Reach condition checked\n");
+
     if (hasBeenPrefetchedAndNotAccessed(pkt->getAddr(), pkt->isSecure())) {
         usefulPrefetches += 1;
         prefetchStats.pfUseful++;
         PrefetchSourceType pf_source = cache->getHitBlkXsMetadata(pkt).prefetchSource;
         prefetchStats.pfUseful_srcs[pf_source]++;
-        if (hasHintDownStream()){
-            float acc =
-                (prefetchStats.pfUseful_srcs[pf_source].value())
-                / (prefetchStats.pfIssued_srcs[pf_source].value());
-            if ((prefetchStats.pfUseful_srcs[pf_source].value())>100)
-                hintDownStream->rxNotify(acc, pf_source, pkt);
-        }
         if (miss)
             // This case happens when a demand hits on a prefetched line
             // that's not in the requested coherency state.
@@ -382,6 +390,9 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
             pfi.setPfHit(!miss && hasBeenPrefetched(pkt->getAddr(), pkt->isSecure()));
             squashMark = false;
             notify(pkt, pfi);
+        } else {
+            DPRINTF(HWPrefetch, "Skip req addr %x, has vaddr: %i\n",
+                    pkt->req->hasVaddr() ? pkt->req->getVaddr() : pkt->req->getPaddr(), pkt->req->hasVaddr());
         }
     } else {
         DPRINTF(HWPrefetch, "Skip req addr %x, miss: %x for prefetcher\n",

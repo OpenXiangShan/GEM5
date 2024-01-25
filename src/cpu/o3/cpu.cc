@@ -466,8 +466,6 @@ CPU::tick()
     assert(drainState() != DrainState::Drained);
 
     ++baseStats.numCycles;
-    ipc_r.roll(1);
-    cpi_r++;
     updateCycleCounters(BaseCPU::CPU_STATE_ON);
 
 //    activity = false;
@@ -1248,8 +1246,6 @@ CPU::instDone(ThreadID tid, const DynInstPtr &inst)
         thread[tid]->numInst++;
         thread[tid]->threadStats.numInsts++;
         cpuStats.committedInsts[tid]++;
-        ipc_r++;
-        cpi_r.roll(1);
 
         if (this->nextDumpInstCount
                 && totalInsts() == this->nextDumpInstCount) {
