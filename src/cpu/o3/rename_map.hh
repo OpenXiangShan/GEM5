@@ -247,7 +247,7 @@ class UnifiedRenameMap
     void
     setEntry(const RegId& arch_reg, PhysRegIdPtr phys_reg)
     {
-        assert(phys_reg->is(arch_reg.classValue()));
+        assert(phys_reg->is(arch_reg.classValue()) || phys_reg->is(InvalidRegClass));
         if (!arch_reg.isRenameable()) {
             // Misc registers do not actually rename, so don't change
             // their mappings.  We end up here when a commit or squash

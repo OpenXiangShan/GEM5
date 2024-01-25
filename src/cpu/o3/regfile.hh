@@ -50,6 +50,7 @@
 #include "base/trace.hh"
 #include "config/the_isa.hh"
 #include "cpu/o3/comm.hh"
+#include "cpu/reg_class.hh"
 #include "cpu/regfile.hh"
 #include "debug/IEW.hh"
 
@@ -198,6 +199,9 @@ class PhysRegFile
             return val;
           case RMiscRegClass:
             val = rMiscRegFile.reg(idx);
+            return val;
+          case InvalidRegClass:
+            val = 0;
             return val;
           default:
             panic("Unsupported register class type %d.", type);

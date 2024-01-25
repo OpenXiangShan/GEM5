@@ -78,7 +78,10 @@ SimpleRenameMap::rename(const RegId &arch_reg,
     // requested architected register.
     PhysRegIdPtr prev_reg = map[arch_reg.index()];
 
-    if (provided_dest != nullptr) {
+    if (arch_reg.is(InvalidRegClass)) {
+        assert(prev_reg->is(InvalidRegClass));
+        renamed_reg = prev_reg;
+    } else if (provided_dest != nullptr) {
         renamed_reg = provided_dest;
         if (prev_reg != provided_dest) {
             map[arch_reg.index()] = provided_dest;
@@ -91,9 +94,6 @@ SimpleRenameMap::rename(const RegId &arch_reg,
                     "leave ref counter untouched\n");
         }
 
-    } else if (arch_reg.is(InvalidRegClass)) {
-        assert(prev_reg->is(InvalidRegClass));
-        renamed_reg = prev_reg;
     } else if (prev_reg->getNumPinnedWrites() > 0) {
         // Do not rename if the register is pinned
         assert(arch_reg.getNumPinnedWrites() == 0);  // Prevent pinning the
@@ -109,8 +109,6 @@ SimpleRenameMap::rename(const RegId &arch_reg,
         renamed_reg->setNumPinnedWrites(arch_reg.getNumPinnedWrites());
         renamed_reg->setNumPinnedWritesToComplete(
             arch_reg.getNumPinnedWrites() + 1);
-
-        renamed_reg->incRef();
         DPRINTF(Rename, "Increment the ex ref of p%i to %i\n",
                 renamed_reg->flatIndex(), renamed_reg->getRef());
     }

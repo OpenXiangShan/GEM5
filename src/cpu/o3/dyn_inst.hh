@@ -147,7 +147,7 @@ class DynInst : public ExecContext, public RefCounted
     /** InstRecord that tracks this instructions. */
     Trace::InstRecord *traceData = nullptr;
 
-    bool isEmptyMove{};
+    bool isEmptyMove{false};
 
   protected:
     enum Status
