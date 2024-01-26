@@ -90,6 +90,23 @@ LSQUnit::WritebackEvent::description() const
     return "Store writeback";
 }
 
+LSQUnit::bankConflictReplayEvent::bankConflictReplayEvent(LSQUnit *lsq_ptr)
+    : Event(Default_Pri, AutoDelete), lsqPtr(lsq_ptr)
+{
+}
+
+void
+LSQUnit::bankConflictReplayEvent::process()
+{
+    lsqPtr->bankConflictReplay();
+}
+
+const char *
+LSQUnit::bankConflictReplayEvent::description() const
+{
+    return "bankConflictReplayEvent";
+}
+
 bool
 LSQUnit::recvTimingResp(PacketPtr pkt)
 {
@@ -223,6 +240,18 @@ LSQUnit::init(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params,
     resetState();
 }
 
+void
+LSQUnit::bankConflictReplay()
+{
+    lsq->recvReqRetry();
+}
+
+void
+LSQUnit::bankConflictReplaySchedule()
+{
+    bankConflictReplayEvent *bk = new bankConflictReplayEvent(this);
+    cpu->schedule(bk, curTick() + 1);
+}
 
 void
 LSQUnit::resetState()
@@ -1253,15 +1282,29 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx)
 }
 
 bool
-LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt)
+LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict)
 {
+    if (lsq->returnlastConflictCheckTick() != curTick()) {
+        lsq->clearAddresses(curTick());
+    }
     bool ret = true;
     bool cache_got_blocked = false;
 
     LSQRequest *request = dynamic_cast<LSQRequest*>(data_pkt->senderState);
+    bool now_bank_conflict = lsq->bankConflictedCheck(data_pkt->req->getVaddr());
+
 
     if (!lsq->cacheBlocked() &&
         lsq->cachePortAvailable(isLoad)) {
+        if (now_bank_conflict) {
+            if (!isLoad) {
+                assert(request == storeWBIt->request());
+                isStoreBlocked = true;
+            }
+            bank_conflict = true;
+            request->packetNotSent();
+            return true;
+        }
         if (!dcachePort->sendTimingReq(data_pkt)) {
             ret = false;
             cache_got_blocked = true;
@@ -1291,6 +1334,7 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt)
             " %ssent (cache is blocked: %d, cache_got_blocked: %d)\n",
             data_pkt->print(), request->instruction()->seqNum,
             ret ? "": "not ", lsq->cacheBlocked(), cache_got_blocked);
+    bank_conflict = now_bank_conflict;
     return ret;
 }
 
@@ -1682,8 +1726,9 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
     // if we the cache is not blocked, do cache access
     request->buildPackets();
     request->sendPacketToCache();
-    if (!request->isSent())
+    if (!request->isSent()) {
         iewStage->blockMemInst(load_inst);
+    }
 
     return NoFault;
 }

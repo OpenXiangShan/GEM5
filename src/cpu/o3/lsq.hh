@@ -890,6 +890,13 @@ class LSQ
 
     /** The IEW stage pointer. */
     IEW *iewStage;
+    Tick returnlastConflictCheckTick();
+
+    void clearAddresses(Tick time);
+
+    Addr bankNum(Addr a) { return (a >> 3) & 0x7; };
+
+    bool bankConflictedCheck(Addr vaddr);
 
     /** Is D-cache blocked? */
     bool cacheBlocked() const;
@@ -913,6 +920,12 @@ class LSQ
     int cacheLoadPorts;
     /** The number of used cache ports in this cycle by loads. */
     int usedLoadPorts;
+
+    Tick lastConflictCheckTick;
+
+    std::vector<int64_t> l1d_bank_addr_addresses;
+
+    bool openBankConflictCheck;
 
     /** If the LSQ is currently waiting for stale translations */
     bool waitingForStaleTranslation;
