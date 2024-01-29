@@ -59,6 +59,7 @@
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/dyn_inst_xsmeta.hh"
+#include "cpu/o3/issue_queue.hh"
 #include "cpu/o3/lsq_unit.hh"
 #include "cpu/op_class.hh"
 #include "cpu/reg_class.hh"
@@ -76,6 +77,8 @@ class Packet;
 
 namespace o3
 {
+
+class IssueQue;
 
 class DynInst : public ExecContext, public RefCounted
 {
@@ -309,6 +312,7 @@ class DynInst : public ExecContext, public RefCounted
         _srcIdx[idx] = phys_reg_id;
     }
 
+    // after dispatch, it's status was speculative
     bool
     readySrcIdx(int idx) const
     {
@@ -385,6 +389,8 @@ class DynInst : public ExecContext, public RefCounted
     /////////////////////// Checker //////////////////////
     // Need a copy of main request pointer to verify on writes.
     RequestPtr reqToVerify;
+
+    IssueQue* issueQue = nullptr;
 
   public:
     /** Records changes to result? */
@@ -762,6 +768,10 @@ class DynInst : public ExecContext, public RefCounted
 
     /** Marks a specific register as ready. */
     void markSrcRegReady(RegIndex src_idx);
+
+    uint8_t getNumSrcRegReady() { return readyRegs; }
+
+    void resetNumSrcRegReady(uint8_t n);
 
     /** Sets this instruction as completed. */
     void setCompleted() { status.set(Completed); }

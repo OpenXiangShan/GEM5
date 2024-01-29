@@ -40,8 +40,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "arch/riscv/regs/misc.hh"
 #include "cpu/o3/cpu.hh"
+
+#include <cassert>
 
 #include "arch/riscv/regs/misc.hh"
 #include "config/the_isa.hh"
@@ -51,6 +52,7 @@
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/thread_context.hh"
+#include "cpu/reg_class.hh"
 #include "cpu/simple_thread.hh"
 #include "cpu/thread_context.hh"
 #include "debug/Activity.hh"
@@ -90,6 +92,7 @@ CPU::CPU(const BaseO3CPUParams &params)
       decode(this, params),
       rename(this, params),
       iew(this, params),
+      scheduler(params.scheduler),
       commit(this, fetch.getBp(), params),
 
       regFile(params.numPhysIntRegs,

@@ -106,10 +106,10 @@ class BaseO3CPU(BaseCPU):
 
     commitToIEWDelay = Param.Cycles(1, "Commit to "
                "Issue/Execute/Writeback delay")
-    renameToIEWDelay = Param.Cycles(2, "Rename to "
+    renameToIEWDelay = Param.Cycles(1, "Rename to "
                "Issue/Execute/Writeback delay")
-    issueToExecuteDelay = Param.Cycles(1, "Issue to execute delay (internal "
-              "to the IEW stage)")
+    executeToWriteBackDelay = Param.Cycles(1, "Execute to issue delay")
+
     dispatchWidth = Param.Unsigned(6, "Dispatch width")
     issueWidth = Param.Unsigned(8, "Issue width")
     wbWidth = Param.Unsigned(8, "Writeback width")
@@ -185,7 +185,6 @@ class BaseO3CPU(BaseCPU):
                                        "Branch Predictor")
     needsTSO = Param.Bool(False, "Enable TSO Memory model")
 
-    iewDelayCalibrator = Param.DelayCalibrator(DefaultDelayMatrix(),
-                                               "iew schedule and execute tick calibrator ")
+    scheduler = Param.Scheduler(KunminghuScheduler(), "")
 
     arch_db = Param.ArchDBer(Parent.any, "Arch DB")

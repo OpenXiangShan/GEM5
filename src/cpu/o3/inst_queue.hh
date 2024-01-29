@@ -53,6 +53,7 @@
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/dep_graph.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
+#include "cpu/o3/issue_queue.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/mem_dep_unit.hh"
 #include "cpu/o3/store_set.hh"
@@ -77,7 +78,6 @@ namespace o3
 class FUPool;
 class CPU;
 class IEW;
-class DelayCalibrator;
 
 struct compare_function
 {
@@ -156,6 +156,8 @@ class InstructionQueue
     /** Sets the timer buffer between issue and execute. */
     void setIssueToExecuteQueue(TimeBuffer<IssueStruct> *i2eQueue);
 
+    void setScheduler(Scheduler* scheduler);
+
     /** Sets the global time buffer. */
     void setTimeBuffer(TimeBuffer<TimeStruct> *tb_ptr);
 
@@ -168,23 +170,8 @@ class InstructionQueue
     /** Takes over execution from another CPU's thread. */
     void takeOverFrom();
 
-    /** Number of entries needed for given amount of threads. */
-    int entryAmount(ThreadID num_threads);
-
-    /** Resets max entries for all threads. */
-    void resetEntries();
-
-    /** Returns total number of free entries. */
-    unsigned numFreeEntries();
-
-    /** Returns number of free entries for a thread. */
-    unsigned numFreeEntries(ThreadID tid);
-
-    /** Returns whether or not the IQ is full. */
-    bool isFull();
-
     /** Returns whether or not the IQ is full for a specific thread. */
-    bool isFull(ThreadID tid);
+    bool isFull(DynInstPtr& inst);
 
     /** Returns if there are any ready instructions in the IQ. */
     bool hasReadyInsts();
@@ -215,16 +202,6 @@ class InstructionQueue
      */
     DynInstPtr getBlockedMemInstToExecute();
 
-    /**
-     * Records the instruction as the producer of a register without
-     * adding it to the rest of the IQ.
-     */
-    void
-    recordProducer(const DynInstPtr &inst)
-    {
-        addToProducers(inst);
-    }
-
     /** Process FU completion event. */
     void processFUCompletion(const DynInstPtr &inst, int fu_idx);
 
@@ -245,9 +222,6 @@ class InstructionQueue
 
     /** Wakes all dependents of a completed instruction. */
     int wakeDependents(const DynInstPtr &completed_inst);
-
-    /** Adds a ready memory instruction to the ready list. */
-    void addReadyMemInst(const DynInstPtr &ready_inst);
 
     /**
      * Reschedules a memory instruction. It will be ready to issue once
@@ -285,22 +259,11 @@ class InstructionQueue
     /** Debug function to print all instructions. */
     void printInsts();
 
-    void delayWakeDependents();
-
     void notifyExecuted(const DynInstPtr &inst);
 
   private:
     /** Does the actual squashing. */
     void doSquash(ThreadID tid);
-
-    // inst:delaywaketick,insert times
-    // it may insert multiple identical elements
-    std::map<DynInstPtr, std::pair<uint32_t, uint32_t>, compare_function>
-        delayedScheduleQue;
-
-    uint32_t delayMatrix(DynInstPtr dep_inst, DynInstPtr completed_inst);
-
-    void addToDelayedScheduleQueue(DynInstPtr dep_inst, uint32_t delay_tick);
 
     /////////////////////////
     // Various pointers
@@ -334,7 +297,7 @@ class InstructionQueue
     /** Function unit pool. */
     FUPool *fuPool;
 
-    DelayCalibrator *delayCalibrator;
+    Scheduler* scheduler;
 
     //////////////////////////////////////
     // Instruction lists, ready queues, and ordering
@@ -416,15 +379,6 @@ class InstructionQueue
      */
     ListOrderIt readyIt[Num_OpClasses];
 
-    /** Add an op class to the age order list. */
-    void addToOrderList(OpClass op_class);
-
-    /**
-     * Called when the oldest instruction has been removed from a ready queue;
-     * this places that ready queue into the proper spot in the age order list.
-     */
-    void moveToYoungerInst(ListOrderIt age_order_it);
-
     DependencyGraph<DynInstPtr> dependGraph;
 
     //////////////////////////////////////
@@ -476,12 +430,6 @@ class InstructionQueue
      *  the scoreboard that exists in the rename map.
      */
     std::vector<bool> regScoreboard;
-
-    /** Adds an instruction to the dependency graph, as a consumer. */
-    bool addToDependents(const DynInstPtr &new_inst);
-
-    /** Adds an instruction to the dependency graph, as a producer. */
-    void addToProducers(const DynInstPtr &new_inst);
 
     /** Moves an instruction to the ready queue if it is ready. */
     void addIfReady(const DynInstPtr &inst);

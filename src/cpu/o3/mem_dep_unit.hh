@@ -200,8 +200,6 @@ class MemDepUnit
         /** A vector of any dependent instructions. */
         std::vector<MemDepEntryPtr> dependInsts;
 
-        /** If the registers are ready or not. */
-        bool regsReady = false;
         /** Number of memory dependencies that need to be satisfied. */
         int memDeps = 0;
         /** If the instruction is completed. */
@@ -219,9 +217,6 @@ class MemDepUnit
 
     /** Finds the memory dependence entry in the hash map. */
     MemDepEntryPtr &findInHash(const DynInstConstPtr& inst);
-
-    /** Moves an entry to the ready list. */
-    void moveToReady(MemDepEntryPtr &ready_inst_entry);
 
     typedef std::unordered_map<InstSeqNum, MemDepEntryPtr, SNHash> MemDepHash;
 

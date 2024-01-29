@@ -77,6 +77,7 @@
 #include "debug/O3PipeView.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/core.hh"
+#include "sim/cur_tick.hh"
 #include "sim/faults.hh"
 #include "sim/full_system.hh"
 
@@ -674,6 +675,17 @@ Commit::tick()
     if (activeThreads->empty())
         return;
 
+    if (cpu->curCycle() - lastCommitCycle > 5000) {
+        if (maybeStucked) {
+            panic("cpu stucked!!\n");
+        }
+        warn("cpu may be stucked\n");
+        maybeStucked = true;
+    }
+    else {
+        maybeStucked = false;
+    }
+
     std::list<ThreadID>::iterator threads = activeThreads->begin();
     std::list<ThreadID>::iterator end = activeThreads->end();
 
@@ -1096,6 +1108,7 @@ Commit::commitInsts()
             bool commit_success = commitHead(head_inst, num_committed);
 
             if (commit_success) {
+                lastCommitCycle = cpu->curCycle();
                 head_inst->printDisassembly();
                 const auto &head_rv_pc = head_inst->pcState().as<RiscvISA::PCState>();
                 if (bp->isStream()) {

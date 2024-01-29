@@ -45,16 +45,16 @@
 #include <queue>
 #include <set>
 #include <vector>
-#include <map>
 
 #include "base/statistics.hh"
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/inst_queue.hh"
+#include "cpu/o3/issue_queue.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/lsq.hh"
-#include "cpu/o3/scoreboard.hh"
 #include "cpu/o3/rob.hh"
+#include "cpu/o3/scoreboard.hh"
 #include "cpu/timebuf.hh"
 #include "debug/IEW.hh"
 #include "sim/probe/probe.hh"
@@ -164,6 +164,8 @@ class IEW
 
     /** Sets time buffer to pass on instructions to commit. */
     void setIEWQueue(TimeBuffer<IEWStruct> *iq_ptr);
+
+    void setScheduler(Scheduler* schedueler) { this->scheduler = schedueler; }
 
     /** Sets pointer to list of active threads. */
     void setActiveThreads(std::list<ThreadID> *at_ptr);
@@ -344,6 +346,9 @@ class IEW
     /** Wire to write infromation heading to commit. */
     TimeBuffer<IEWStruct>::wire toCommit;
 
+    TimeBuffer<IEWStruct>::wire execBypass;
+    TimeBuffer<IEWStruct>::wire execWB;
+
     /** Queue of all instructions coming from rename this cycle. */
     std::deque<DynInstPtr> insts[MaxThreads];
 
@@ -358,6 +363,8 @@ class IEW
   private:
     /** CPU pointer. */
     CPU *cpu;
+
+    Scheduler* scheduler;
 
     /** Records if IEW has written to the time buffer this cycle, so that the
      * CPU can deschedule itself if there is no activity.
@@ -396,13 +403,6 @@ class IEW
     /** Rename to IEW delay. */
     Cycles renameToIEWDelay;
 
-    /**
-     * Issue to execute delay. What this actually represents is
-     * the amount of time it takes for an instruction to wake up, be
-     * scheduled, and sent to a FU for execution.
-     */
-    Cycles issueToExecuteDelay;
-
     /** Width of dispatch, in instructions. */
     unsigned dispatchWidth;
 
@@ -418,6 +418,8 @@ class IEW
      * in instToCommit().
      */
     unsigned wbCycle;
+
+    const unsigned wbDelay;
 
     /** Writeback width. */
     unsigned wbWidth;

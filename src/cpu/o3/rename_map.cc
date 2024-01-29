@@ -93,7 +93,6 @@ SimpleRenameMap::rename(const RegId &arch_reg,
                     "Provided destination is the same as the previous one, "
                     "leave ref counter untouched\n");
         }
-
     } else if (prev_reg->getNumPinnedWrites() > 0) {
         // Do not rename if the register is pinned
         assert(arch_reg.getNumPinnedWrites() == 0);  // Prevent pinning the

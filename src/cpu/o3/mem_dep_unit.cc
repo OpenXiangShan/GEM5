@@ -256,24 +256,13 @@ MemDepUnit::insert(const DynInstPtr &inst)
 
         assert(inst_entry->memDeps == 0);
 
-        if (inst->readyToIssue()) {
-            inst_entry->regsReady = true;
-
-            moveToReady(inst_entry);
-        }
+        inst->issueQue->markMemDepDone(inst);
     } else {
         // Otherwise make the instruction dependent on the store/barrier.
         DPRINTF(MemDepUnit, "Adding to dependency list\n");
         for ([[maybe_unused]] auto producing_store : producing_stores)
             DPRINTF(MemDepUnit, "\tinst PC %s is dependent on [sn:%lli].\n",
                 inst->pcState(), producing_store);
-
-        if (inst->readyToIssue()) {
-            inst_entry->regsReady = true;
-        }
-
-        // Clear the bit saying this instruction can issue.
-        inst->clearCanIssue();
 
         // Add this instruction to the list of dependents.
         for (auto store_entry : store_entries)
@@ -353,35 +342,13 @@ MemDepUnit::insertBarrier(const DynInstPtr &barr_inst)
 void
 MemDepUnit::regsReady(const DynInstPtr &inst)
 {
-    DPRINTF(MemDepUnit, "Marking registers as ready for "
-            "instruction PC %s [sn:%lli].\n",
-            inst->pcState(), inst->seqNum);
 
-    MemDepEntryPtr inst_entry = findInHash(inst);
-
-    inst_entry->regsReady = true;
-
-    if (inst_entry->memDeps == 0) {
-        DPRINTF(MemDepUnit, "Instruction has its memory "
-                "dependencies resolved, adding it to the ready list.\n");
-
-        moveToReady(inst_entry);
-    } else {
-        DPRINTF(MemDepUnit, "Instruction still waiting on "
-                "memory dependency.\n");
-    }
 }
 
 void
 MemDepUnit::nonSpecInstReady(const DynInstPtr &inst)
 {
-    DPRINTF(MemDepUnit, "Marking non speculative "
-            "instruction PC %s as ready [sn:%lli].\n",
-            inst->pcState(), inst->seqNum);
 
-    MemDepEntryPtr inst_entry = findInHash(inst);
-
-    moveToReady(inst_entry);
 }
 
 void
@@ -404,7 +371,7 @@ MemDepUnit::replay()
         DPRINTF(MemDepUnit, "Replaying mem instruction PC %s [sn:%lli].\n",
                 temp_inst->pcState(), temp_inst->seqNum);
 
-        moveToReady(inst_entry);
+        inst_entry->inst->issueQue->retryMem(inst_entry->inst);
 
         instsToReplay.pop_front();
     }
@@ -492,9 +459,8 @@ MemDepUnit::wakeDependents(const DynInstPtr &inst)
         woken_inst->memDeps -= 1;
 
         if ((woken_inst->memDeps == 0) &&
-            woken_inst->regsReady &&
             !woken_inst->squashed) {
-            moveToReady(woken_inst);
+            woken_inst->inst->issueQue->markMemDepDone(woken_inst->inst);
         }
     }
 
@@ -607,18 +573,6 @@ MemDepUnit::findInHash(const DynInstConstPtr &inst)
 
     return (*hash_it).second;
 }
-
-void
-MemDepUnit::moveToReady(MemDepEntryPtr &woken_inst_entry)
-{
-    DPRINTF(MemDepUnit, "Adding instruction [sn:%lli] "
-            "to the ready list.\n", woken_inst_entry->inst->seqNum);
-
-    assert(!woken_inst_entry->squashed);
-
-    iqPtr->addReadyMemInst(woken_inst_entry->inst);
-}
-
 
 void
 MemDepUnit::dumpLists()

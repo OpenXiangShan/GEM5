@@ -63,6 +63,7 @@
 #include "cpu/o3/fetch.hh"
 #include "cpu/o3/free_list.hh"
 #include "cpu/o3/iew.hh"
+#include "cpu/o3/issue_queue.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/rename.hh"
 #include "cpu/o3/rob.hh"
@@ -71,6 +72,7 @@
 #include "cpu/simple_thread.hh"
 #include "cpu/timebuf.hh"
 #include "params/BaseO3CPU.hh"
+#include "params/Scheduler.hh"
 #include "sim/process.hh"
 #include "sim/rolling.hh"
 
@@ -425,6 +427,8 @@ class CPU : public BaseCPU
 
     /** The issue/execute/writeback stages. */
     IEW iew;
+
+    Scheduler* scheduler;
 
     /** The commit stage. */
     Commit commit;
