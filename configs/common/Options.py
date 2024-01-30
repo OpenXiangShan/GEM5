@@ -194,7 +194,7 @@ def addNoISAOptions(parser):
     parser.add_argument("--difftest-ref-so",
                         action="store",
                         default="{}/build/riscv64-nemu-interpreter-so".format(
-                            os.environ['NEMU_HOME']),
+                            os.environ.get('NEMU_HOME')),
                         help="The shared lib file used to do difftest")
 
     # Dump Commit option
