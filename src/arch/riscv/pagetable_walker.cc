@@ -873,7 +873,6 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level, bool from_l2tl
         level = 2;
     }
     nextline = false;
-    open_nextline = open_nextline;
     autoNextlineSign = auto_open_nextline;
     preHitInPtw = false;
 
