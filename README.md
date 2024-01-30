@@ -30,7 +30,7 @@ If compiling gem5 on Ubuntu 22.04, or related Linux distributions, you may insta
 ``` shell
 sudo apt install build-essential git m4 scons zlib1g zlib1g-dev \
     libprotobuf-dev protobuf-compiler libprotoc-dev libgoogle-perftools-dev \
-    python3-dev libboost-all-dev pkg-config
+    python3-dev libboost-all-dev pkg-config libsqlite3-dev
 ```
 
 ### Setup on Ubuntu 20.04
@@ -39,7 +39,7 @@ If compiling gem5 on Ubuntu 20.04, or related Linux distributions, you may insta
 ``` shell
 sudo apt install build-essential git m4 scons zlib1g zlib1g-dev \
     libprotobuf-dev protobuf-compiler libprotoc-dev libgoogle-perftools-dev \
-    python3-dev python-is-python3 libboost-all-dev pkg-config
+    python3-dev python-is-python3 libboost-all-dev pkg-config libsqlite3-dev
 ```
 
 ### Setup on Ubuntu 18.04
@@ -48,7 +48,7 @@ If compiling gem5 on Ubuntu 18.04, or related Linux distributions, you may insta
 ``` shell
 sudo apt install build-essential git m4 scons zlib1g zlib1g-dev \
     libprotobuf-dev protobuf-compiler libprotoc-dev libgoogle-perftools-dev \
-    python3-dev python libboost-all-dev pkg-config
+    python3-dev python libboost-all-dev pkg-config libsqlite3-dev
 ```
 
 ## If Python version is too high, pybind11 is broken, or scons is broken
@@ -118,9 +118,17 @@ $gem5_home/build/gem5.opt ... fs.py ... \
 ## Build GEM5
 
 ```shell
-cd gem5
-scons build/RISCV/gem5.opt --gold-linker
+cd GEM5
+scons build/RISCV/gem5.opt --gold-linker -j8
 export gem5_home=`pwd`
+```
+
+Press enter if you saw
+```
+You're missing the gem5 style or commit message hook. These hooks help
+to ensure that your code follows gem5's style rules on git commit.
+This script will now install the hook in your .git/hooks/ directory.
+Press enter to continue, or ctrl-c to abort:
 ```
 
 ## Run Gem5
