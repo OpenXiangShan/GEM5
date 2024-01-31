@@ -101,6 +101,7 @@ class SimpleFreeList
                 free_reg->flatIndex(), free_reg,
                 freeRegs.empty() ? -1 : freeRegs.front()->flatIndex(),
                 freeRegs.empty() ? nullptr : freeRegs.front());
+        free_reg->incRef();
         return free_reg;
     }
 
@@ -173,7 +174,9 @@ class UnifiedFreeList
         std::for_each(first, last, [this](auto &reg) { addReg(&reg); });
     }
 
-    /** Adds a register back to the free list. */
+    /** Adds a register back to the free list.
+        NOTE: freed_reg's refCnt must is 0
+     */
     void
     addReg(PhysRegIdPtr freed_reg)
     {

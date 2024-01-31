@@ -1030,19 +1030,17 @@ void
 Rename::tryFreePReg(PhysRegIdPtr preg)
 {
     const auto preg_idx = preg->flatIndex();
+    if (preg->getRef() == 0 || preg->classValue() == InvalidRegClass) {
+        return;
+    }
+
+    preg->decRef();
     if (preg->getRef() == 0) {
-        DPRINTF(Rename,
-                "Not to free up p%i on squash because it has already "
-                "been freed\n",
-                preg_idx);
-    } else if (preg->getRef() == 1) {
-        preg->decRef();
         // Put the renamed physical register back on the free list.
         DPRINTF(Rename, "Really free up p%i on squash with ref=%i\n", preg_idx,
                 preg->getRef());
         freeList->addReg(preg);
     } else {
-        preg->decRef();
         DPRINTF(Rename, "Not to free up p%i on squash for ref=%i\n",
                 preg->flatIndex(), preg->getRef());
     }
@@ -1232,19 +1230,12 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
             DPRINTF(Rename, "Find the last reg p%i renamed for mv x%i, x%i\n",
                     last_dest_phy_reg->flatIndex(), dest_reg.index(),
                     inst->srcRegIdx(0).index());
-            if (last_dest_phy_reg->getRef() > 0) {
-                produer_valid = true;
-                inst->setEmptyMove(true);
-            }
+            produer_valid = true;
+            inst->setEmptyMove(true);
             DPRINTF(Rename, "Inst sn:%lu is nop: %i, is move: %i\n",
                     inst->seqNum, inst->isNop(), inst->staticInst->isMov());
         }
 
-        // If the last register is ready, it might have been freed
-        if (inst->staticInst->isMov() && !produer_valid) {
-            DPRINTF(Rename, "Although it's move, producer has been freed\n");
-            last_dest_phy_reg = nullptr;
-        }
         rename_result = map->rename(flat_dest_regid, last_dest_phy_reg);
 
         inst->flattenedDestIdx(dest_idx, flat_dest_regid);
