@@ -136,7 +136,7 @@ Base::Base(const BasePrefetcherParams &p)
       prefetchOnPfHit(p.prefetch_on_pf_hit),
       useVirtualAddresses(p.use_virtual_addresses),
       prefetchStats(this), issuedPrefetches(0),
-      usefulPrefetches(0), tlb(nullptr)
+      usefulPrefetches(0), tlb(nullptr), maxCacheLevel(p.max_cache_level)
 {
 }
 

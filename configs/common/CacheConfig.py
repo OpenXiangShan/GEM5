@@ -154,17 +154,20 @@ def config_cache(options, system):
             system.membus.width = 128 # byte per cycle
 
         if options.l3cache:
-          system.l3 = L3Cache(clk_domain=system.cpu_clk_domain,
-                                     **_get_cache_opts('l3', options))
+            system.l3 = L3Cache(clk_domain=system.cpu_clk_domain,
+                                        **_get_cache_opts('l3', options))
 
-          # l2 -> tol3bus -> l3
-          system.tol3bus = L2XBar(clk_domain=system.cpu_clk_domain, width=256)
-          system.l3.cpu_side = system.tol3bus.mem_side_ports
-          system.l2.mem_side = system.tol3bus.cpu_side_ports
-          # l3 -> membus
-          system.l3.mem_side = system.membus.cpu_side_ports
+            # l2 -> tol3bus -> l3
+            system.tol3bus = L2XBar(clk_domain=system.cpu_clk_domain, width=256)
+            system.l3.cpu_side = system.tol3bus.mem_side_ports
+            system.l2.mem_side = system.tol3bus.cpu_side_ports
+            # l3 -> membus
+            system.l3.mem_side = system.membus.cpu_side_ports
+            system.l2.max_cache_level = 3
+            system.l3.max_cache_level = 3
         else:
-          system.l2.mem_side = system.membus.cpu_side_ports
+            system.l2.mem_side = system.membus.cpu_side_ports
+            system.l2.max_cache_level = 2
 
     if options.memchecker:
         system.memchecker = MemChecker()
@@ -173,6 +176,12 @@ def config_cache(options, system):
         if options.caches:
             icache = icache_class(**_get_cache_opts('l1i', options))
             dcache = dcache_class(**_get_cache_opts('l1d', options))
+            if options.l2cache:
+                icache.max_cache_level = 2
+                dcache.max_cache_level = 2
+            if options.l3cache:
+                icache.max_cache_level = 3
+                dcache.max_cache_level = 3
             if dcache.prefetcher != NULL:
                 print("Add dtb for L1D prefetcher")
                 dcache.prefetcher.registerTLB(system.cpu[i].mmu.dtb)
@@ -196,6 +205,9 @@ def config_cache(options, system):
                     dcache.prefetcher.berti.use_byte_addr = True
                     dcache.prefetcher.berti.aggressive_pf = False
                     dcache.prefetcher.berti.trigger_pht = True
+
+                    if options.ideal_cache:
+                        dcache.prefetcher.stream_pf_ahead = False
 
             if options.ideal_cache:
                 icache.response_latency = 0
