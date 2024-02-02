@@ -142,9 +142,6 @@ IssueQue::issueToFu()
 void
 IssueQue::wakeup(PhysRegIdPtr dst, bool speculative)
 {
-    if (dst->isFixedMapping()) {
-        return;
-    }
     if (!speculative && dst->getNumPinnedWritesToComplete() != 0) {
         return;
     }
@@ -323,8 +320,16 @@ IssueQue::insert(const DynInstPtr& inst)
     if (!addToDepGraph) {
         assert(inst->readyToIssue());
     }
-
     inst->archReadySrcs = inst->getNumSrcRegReady();
+
+    for (int i=0; i<inst->numSrcRegs(); i++) {
+        auto src = inst->renamedSrcIdx(i);
+        if (!inst->readySrcIdx(i) && !src->isFixedMapping()) {
+            if (scheduler->specScoreboard[src->flatIndex()]) {
+                inst->markSrcRegReady(i);
+            }
+        }
+    }
 
     if (inst->isMemRef()) {
         // insert and check memDep
@@ -437,8 +442,13 @@ WakeupQue::SpecWakeupCompletion::process()
         inst->seqNum, enums::OpClassStrings[inst->opClass()], to->getName());
     for (int i=0; i<inst->numDestRegs(); i++) {
         auto dst = inst->renamedDestIdx(i);
+        if (dst->isFixedMapping()) {
+            continue;
+        }
+        que->scheduler->specScoreboard[dst->flatIndex()] = true;
         to->specWakeup(dst);
     }
+
     que->freeEventList.push_back(this);
     inst = NULL;
     to = nullptr;
@@ -576,6 +586,7 @@ Scheduler::setCPU(CPU* cpu)
 void
 Scheduler::resetDepGraph(uint64_t numPhysRegs)
 {
+    specScoreboard.resize(numPhysRegs, true);
     noSpecScoreboard.resize(numPhysRegs, true);
     bypassScoreboard.resize(numPhysRegs, true);
     for (auto it : issueQues) {
@@ -630,6 +641,7 @@ Scheduler::insert(const DynInstPtr& inst)
         if (dst->isFixedMapping()) {
             continue;
         }
+        specScoreboard[dst->flatIndex()] = false;
         noSpecScoreboard[dst->flatIndex()] = false;
         bypassScoreboard[dst->flatIndex()] = false;
         DPRINTF(Schedule, "mark scoreboard p%lu not ready\n", dst->flatIndex());
@@ -654,6 +666,7 @@ Scheduler::insertNonSpec(const DynInstPtr& inst)
         if (dst->isFixedMapping()) {
             continue;
         }
+        specScoreboard[dst->flatIndex()] = false;
         noSpecScoreboard[dst->flatIndex()] = false;
         bypassScoreboard[dst->flatIndex()] = false;
     }
@@ -689,7 +702,7 @@ Scheduler::allocFu(const DynInstPtr& inst)
 }
 
 void
-Scheduler::writebackWakeup(DynInstPtr& inst)
+Scheduler::writebackWakeup(const DynInstPtr& inst)
 {
     DPRINTF(Schedule, "[sn %lu] was writeback\n", inst->seqNum);
     inst->issueQue = nullptr;// clear in issueQue

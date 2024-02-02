@@ -212,6 +212,7 @@ class WakeupQue
 class Scheduler : public SimObject
 {
     friend class IssueQue;
+    friend class WakeupQue;
 
     MemDepUnit *memDepUnit;
 
@@ -225,6 +226,7 @@ class Scheduler : public SimObject
 
     std::vector<bool> bypassScoreboard;
     std::vector<bool> noSpecScoreboard;
+    std::vector<bool> specScoreboard;
 
   public:
     Scheduler(const SchedulerParams& params);
@@ -243,7 +245,7 @@ class Scheduler : public SimObject
     bool checkFuReady(const DynInstPtr& inst);
     void allocFu(const DynInstPtr& inst);
 
-    void writebackWakeup(DynInstPtr& inst);
+    void writebackWakeup(const DynInstPtr& inst);
     void bypassWriteback(const DynInstPtr& inst);
 
     void doCommit(const InstSeqNum seqNum);
