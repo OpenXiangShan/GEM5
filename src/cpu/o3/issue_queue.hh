@@ -12,21 +12,10 @@
 
 #include "base/statistics.hh"
 #include "base/stats/group.hh"
-#include "base/trace.hh"
-#include "base/types.hh"
 #include "cpu/inst_seq.hh"
-#include "cpu/o3/comm.hh"
-#include "cpu/o3/dep_graph.hh"
-#include "cpu/o3/dyn_inst_ptr.hh"
-#include "cpu/o3/limits.hh"
 #include "cpu/o3/mem_dep_unit.hh"
-#include "cpu/o3/store_set.hh"
-#include "cpu/op_class.hh"
 #include "cpu/reg_class.hh"
 #include "cpu/timebuf.hh"
-#include "enums/OpClass.hh"
-#include "enums/SMTQueuePolicy.hh"
-#include "mem/cache/queue_entry.hh"
 #include "params/IssueQue.hh"
 #include "params/Scheduler.hh"
 #include "params/SpecWakeupChannel.hh"
@@ -87,48 +76,33 @@ class IssueQue : public SimObject
 
     int IQID = -1;
 
-    struct QueEntry
-    {
-        DynInstPtr inst;
-        int archReadySrcs = -1;
-        bool memDepResovled = false;
-        bool readyOnce = false;// if specwakeup failed, do not specwake
-        bool scheduled = false;
-        bool issued = false;
-        QueEntry(const DynInstPtr& inst);
-    };
-
     struct compare_priority
     {
-        bool operator()(const QueEntry* a, const QueEntry* b);
+        bool operator()(const DynInstPtr& a, const DynInstPtr& b);
     };
 
-    class IssueCompletion : public Event
+    struct IssueStream
     {
-        QueEntry* entry = nullptr;
-        IssueQue* que = nullptr;
-      public:
-        IssueCompletion(IssueQue* que);
-        void reset(QueEntry* entry) { this->entry = entry; }
-        void process() override;
-        const char *description() const override;
+        int size;
+        DynInstPtr insts[8];
+        void push(const DynInstPtr& inst);
+        DynInstPtr pop();
     };
-    std::vector<IssueCompletion*> freeEventList;
+    TimeBuffer<IssueStream> inflightIssues;
+    TimeBuffer<IssueStream>::wire toIssue;
+    TimeBuffer<IssueStream>::wire toFu;
 
-    std::deque<QueEntry> instList;// just a buffer, not represent actual IQ's num of inst
+    std::deque<DynInstPtr> instList;
     uint64_t instNumInsert = 0;
     uint64_t instNum = 0;
 
     // s0: wakeup inst, add ready inst to readyInstsQue
-    std::priority_queue<QueEntry*, std::vector<QueEntry*>, compare_priority> readyInsts;
+    std::priority_queue<DynInstPtr, std::vector<DynInstPtr>, compare_priority> readyInsts;
     // s1: schedule readyInsts
-    std::vector<QueEntry*> selectedInst;
-
-    TimeBuffer<int> replayNum;
-    std::deque<QueEntry*> instNeedReplay;
+    std::vector<DynInstPtr> selectedInst;
 
     // srcIdx : inst
-    std::vector<std::vector<std::pair<int, QueEntry*>>> subDepGraph;
+    std::vector<std::vector<std::pair<int, DynInstPtr>>> subDepGraph;
     // update at writeback, delay one cycle by execute
     std::vector<bool>* noSpecScoreboard;
     // update at execute
@@ -149,19 +123,19 @@ class IssueQue : public SimObject
         statistics::Vector issueDist;
     } *iqstats = nullptr;
 
-    void replayNextCycle(QueEntry* entry);
-    void issueToFu(QueEntry* entry);
-    bool checkResource(DynInstPtr& inst);
+    void replay(const DynInstPtr& inst);
+    void addToFu(const DynInstPtr& inst);
+    bool checkResource(const DynInstPtr& inst);
+    void issueToFu();
     void wakeup(PhysRegIdPtr dst, bool speculative);
     void scheduleInst();
-    void addIfReady(QueEntry* entry);
-    QueEntry* findEntry(const DynInstPtr& inst);
+    void addIfReady(const DynInstPtr& inst);
 
   public:
     IssueQue(const IssueQueParams &params);
     void setIQID(int id) { IQID = id; }
     void setCPU(CPU* cpu);
-    void resetDepGraph(int numPhysRegs) { subDepGraph.resize(numPhysRegs); }
+    void resetDepGraph(int numPhysRegs);
     void setnoSpecScoreboard(std::vector<bool>* scoreboard) { noSpecScoreboard = scoreboard; }
     void setBypassScoreboard(std::vector<bool>* scoreboard) { bypassScoreboard = scoreboard; }
     void setWakeupQue(WakeupQue* que) { this->wakeupQue = que; }
@@ -190,14 +164,10 @@ class IssueQue : public SimObject
 class SpecWakeupChannel : public SimObject
 {
   public:
-    bool autoAdjust;
-    uint32_t delay;
     std::string srcIQ;
     std::vector<std::string> dstIQ;
     SpecWakeupChannel(const SpecWakeupChannelParams& params)
       : SimObject(params),
-        autoAdjust(params.autoAdjust),
-        delay(params.delay),
         srcIQ(params.srcIQ),
         dstIQ(params.dstIQ)
     { }
@@ -226,7 +196,7 @@ class WakeupQue
     // if enable, specWakeupMatrix[from][to] >= 0;
     // auto adjust, specWakeupMatrix[from][to] = -1;
     // if disable, specWakeupMatrix[from][to] < -1;
-    std::vector<std::vector<int>> specWakeupMatrix;
+    std::vector<std::vector<bool>> specWakeupMatrix;
 
   public:
     void init(std::vector<IssueQue*>* issueQues,
@@ -234,7 +204,7 @@ class WakeupQue
     void setCPU(CPU* cpu) { this->cpu = cpu; }
     void setScheduler(Scheduler* scheduler) { this->scheduler = scheduler; }
     // call by IssueQue sch
-    void insert(DynInstPtr& inst, IssueQue* from);
+    void insert(const DynInstPtr& inst, IssueQue* from);
     void cancel();
     std::string name() { return "wakeupQue"; }
 };

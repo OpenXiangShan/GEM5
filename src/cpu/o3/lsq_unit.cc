@@ -1448,7 +1448,6 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         // Tell IQ/mem dep unit that this instruction will need to be
         // rescheduled eventually
         iewStage->rescheduleMemInst(load_inst);
-        load_inst->clearIssued();
         load_inst->effAddrValid(false);
         ++stats.rescheduledLoads;
         DPRINTF(LSQUnit, "Strictly ordered load [sn:%lli] PC %s\n",
@@ -1684,7 +1683,6 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                 // Tell IQ/mem dep unit that this instruction will need to be
                 // rescheduled eventually
                 iewStage->rescheduleMemInst(load_inst);
-                load_inst->clearIssued();
                 load_inst->effAddrValid(false);
                 ++stats.rescheduledLoads;
 

@@ -161,6 +161,9 @@ class DynInst : public ExecContext, public RefCounted
         Completed,               /// Instruction has completed
         ResultReady,             /// Instruction has its result
         CanIssue,                /// Instruction can issue and execute
+        MemDepSolved,
+        ReadyOnce,
+        Scheduled,
         Issued,                  /// Instruction has issued
         Executed,                /// Instruction has executed
         CanCommit,               /// Instruction can commit
@@ -391,6 +394,8 @@ class DynInst : public ExecContext, public RefCounted
     RequestPtr reqToVerify;
 
     IssueQue* issueQue = nullptr;
+
+    int archReadySrcs = -1;// set when insert into IQ
 
   public:
     /** Records changes to result? */
@@ -793,6 +798,23 @@ class DynInst : public ExecContext, public RefCounted
 
     /** Clears this instruction being able to issue. */
     void clearCanIssue() { status.reset(CanIssue); }
+
+    // mem only, dependencies was solved
+    void setMemDepDone() { status.set(MemDepSolved); }
+
+    bool memDepSolved() const { return status[MemDepSolved]; }
+
+    // set ready once, can not be spec woken again
+    void setReadyOnce() { status.set(ReadyOnce); }
+
+    bool readyOnce() const { return status[ReadyOnce]; }
+
+    // set was scheduled in IQ
+    void setScheduled() { status.set(Scheduled); }
+
+    void resetScheduled() { status.reset(Scheduled); }
+
+    bool scheduled() const { return status[Scheduled]; }
 
     /** Sets this instruction as issued from the IQ. */
     void setIssued() { status.set(Issued); }

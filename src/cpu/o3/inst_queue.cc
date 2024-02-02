@@ -668,7 +668,6 @@ InstructionQueue::scheduleReadyInsts()
             cpu->schedule(execution, cpu->clockEdge(Cycles(op_latency-2))+1);
             scheduler->allocFu(issued_inst);
         }
-        issued_inst->setIssued();
         ++total_issued;
 #if TRACING_ON
         issued_inst->issueTick = curTick() - issued_inst->fetchTick;
@@ -833,7 +832,6 @@ InstructionQueue::deferMemInst(const DynInstPtr &deferred_inst)
 void
 InstructionQueue::blockMemInst(const DynInstPtr &blocked_inst)
 {
-    blocked_inst->clearIssued();
     blocked_inst->clearCanIssue();
     blockedMemInsts.push_back(blocked_inst);
     DPRINTF(IQ, "Memory inst [sn:%llu] PC %s is blocked, will be "

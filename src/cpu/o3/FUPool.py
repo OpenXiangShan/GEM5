@@ -95,8 +95,6 @@ class SpecWakeupChannel(SimObject):
     cxx_class = 'gem5::o3::SpecWakeupChannel'
     cxx_header = "cpu/o3/issue_queue.hh"
 
-    autoAdjust = Param.Bool(True, "auto adjust wakeup delay according to opClass execute cycle")
-    delay = Param.Int(0, "scheduled to specWakeup delay (deprecated if autoAdjust)")
     srcIQ = Param.String("dest IQ name (data path: srcIQ -> dstIQ)")
     dstIQ = VectorParam.String("dest IQ name")
 
@@ -137,7 +135,7 @@ class DefaultScheduler(Scheduler):
 
 class SimpleScheduler(Scheduler):
     IQs = [
-        IssueQue(name='IQ_all', inoutPorts=10, size=512,
+        IssueQue(name='IQ_all', inoutPorts=8, size=192,
             fuType=[IntALU(), IntMultDiv(), FP_MISC(), FP_SLOW(), FP_MAM(),
                FP_MAA(), ReadPort(), SIMD_Unit(), PredALU(), WritePort(),
                RdWrPort(), IprPort()])
