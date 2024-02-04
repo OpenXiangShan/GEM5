@@ -553,6 +553,9 @@ class LSQUnit
         /** Number of loads that were rescheduled. */
         statistics::Scalar rescheduledLoads;
 
+        /**Number of bank conflict times**/
+        statistics::Scalar bankConflictTimes;
+
         /** Number of times the LSQ is blocked due to the cache. */
         statistics::Scalar blockedByCache;
 

@@ -297,6 +297,8 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
                "Number of stores squashed"),
       ADD_STAT(rescheduledLoads, statistics::units::Count::get(),
                "Number of loads that were rescheduled"),
+      ADD_STAT(bankConflictTimes, statistics::units::Count::get(),
+               "Number of bank conflict times"),
       ADD_STAT(blockedByCache, statistics::units::Count::get(),
                "Number of times an access to memory failed due to the cache "
                "being blocked"),
@@ -1297,6 +1299,7 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict)
     if (!lsq->cacheBlocked() &&
         lsq->cachePortAvailable(isLoad)) {
         if (now_bank_conflict) {
+            ++stats.bankConflictTimes;
             if (!isLoad) {
                 assert(request == storeWBIt->request());
                 isStoreBlocked = true;
