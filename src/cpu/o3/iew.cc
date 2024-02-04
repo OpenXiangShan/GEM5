@@ -47,6 +47,7 @@
 
 #include <queue>
 
+#include "base/stats/info.hh"
 #include "config/the_isa.hh"
 #include "cpu/checker/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
@@ -184,6 +185,8 @@ IEW::IEWStats::IEWStats(CPU *cpu)
     ADD_STAT(branchMispredicts, statistics::units::Count::get(),
              "Number of branch mispredicts detected at execute",
              predictedTakenIncorrect + predictedNotTakenIncorrect),
+    ADD_STAT(dispDist, statistics::units::Count::get(),
+             "Number of branch mispredicts detected at execute"),
     executedInstStats(cpu),
     ADD_STAT(instsToCommit, statistics::units::Count::get(),
              "Cumulative count of insts sent to commit"),
@@ -237,6 +240,8 @@ IEW::IEWStats::IEWStats(CPU *cpu)
     stallEvents
         .init(StallEventCount)
         .flags(statistics::total);
+
+    dispDist.init(0,10,1).flags(statistics::nozero);
 
     std::map < StallEvent, const char* > stall_event_str = {
         { CacheMiss, "CacheMiss" },
@@ -362,8 +367,6 @@ IEW::startupStage()
 {
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         toRename->iewInfo[tid].usedIQ = true;
-        toRename->iewInfo[tid].freeIQEntries =
-            100;
 
         toRename->iewInfo[tid].usedLSQ = true;
         toRename->iewInfo[tid].freeLQEntries =
@@ -384,8 +387,6 @@ void
 IEW::clearStates(ThreadID tid)
 {
     toRename->iewInfo[tid].usedIQ = true;
-    toRename->iewInfo[tid].freeIQEntries =
-        100;
 
     toRename->iewInfo[tid].usedLSQ = true;
     toRename->iewInfo[tid].freeLQEntries = ldstQueue.numFreeLoadEntries(tid);
@@ -1015,35 +1016,37 @@ IEW::dispatchInsts(ThreadID tid)
         dispatchStatus[tid] == Unblocking ?
         skidBuffer[tid] : insts[tid];
 
-    int insts_to_add = insts_to_dispatch.size();
+    while (!insts_to_dispatch.empty()) {
+        if (dispQue.size()<32) {
+            dispQue.push_back(insts_to_dispatch.front());
+            insts_to_dispatch.pop_front();
+        }
+        else {
+            break;
+        }
+    }
+
+    if (!insts_to_dispatch.empty()) {
+        DPRINTF(IEW,"[tid:%i] Issue: Bandwidth Full. Blocking.\n", tid);
+        block(tid);
+        iewStats.stallEvents[DispBWFull]++;
+        toRename->iewUnblock[tid] = false;
+    }
 
     DynInstPtr inst;
     bool add_to_iq = false;
     int dis_num_inst = 0;
 
     int dispatch_width = dispatchWidth;
-    int count_ = 0;
-    for (auto& it : insts_to_dispatch) {
-        count_++ ;
-        if (it->opClass() == FMAAccOp) {
-            dispatch_width++;
-        }
-        if (count_ >= dispatchWidth ||
-            dispatch_width >= dispatchWidth * 2) {
-            break;
-        }
-    }
 
     std::queue<StallReason> dispatch_stalls;
     StallReason breakDispatch = StallReason::NoStall;
 
     // Loop through the instructions, putting them in the instruction
     // queue.
-    for ( ; dis_num_inst < insts_to_add &&
-              dis_num_inst < dispatch_width;
-          ++dis_num_inst)
+    for (; !dispQue.empty() && dis_num_inst < dispatch_width; ++dis_num_inst)
     {
-        inst = insts_to_dispatch.front();
+        inst = dispQue.front();
 
         if (dispatchStatus[tid] == Unblocking) {
             DPRINTF(IEW, "[tid:%i] Issue: Examining instruction from skid "
@@ -1068,7 +1071,7 @@ IEW::dispatchInsts(ThreadID tid)
 
             ++iewStats.dispSquashedInsts;
 
-            insts_to_dispatch.pop_front();
+            dispQue.pop_front();
 
             //Tell Rename That An Instruction has been processed
             if (inst->isLoad()) {
@@ -1090,7 +1093,7 @@ IEW::dispatchInsts(ThreadID tid)
             DPRINTF(IEW, "[tid:%i] Issue: IQ has become full.\n", tid);
 
             // Call function to start blocking.
-            block(tid);
+            // block(tid);
             iewStats.stallEvents[IQFull]++;
 
             blockReason = checkDispatchStall(tid);
@@ -1098,7 +1101,7 @@ IEW::dispatchInsts(ThreadID tid)
             // Set unblock to false. Special case where we are using
             // skidbuffer (unblocking) instructions but then we still
             // get full in the IQ.
-            toRename->iewUnblock[tid] = false;
+            // toRename->iewUnblock[tid] = false;
 
             ++iewStats.iqFullEvents;
 
@@ -1254,7 +1257,7 @@ IEW::dispatchInsts(ThreadID tid)
             instQueue.insert(inst);
         }
 
-        insts_to_dispatch.pop_front();
+        dispQue.pop_front();
 
         toRename->iewInfo[tid].dispatched++;
 
@@ -1266,7 +1269,10 @@ IEW::dispatchInsts(ThreadID tid)
         ppDispatch->notify(inst);
     }
 
-    unsigned instInSufficient = dispatch_width - insts_to_add;
+    iewStats.dispDist.sample(dis_num_inst);
+    blockReason = breakDispatch;
+
+    unsigned instInSufficient = dispatch_width - dis_num_inst;
     StallReason stallFromRename = StallReason::NoStall;
     for (auto iter : fromRename->renameStallReason) {
         if (iter != StallReason::NoStall) {
@@ -1284,10 +1290,10 @@ IEW::dispatchInsts(ThreadID tid)
                 dispatch_stalls.pop();
             } else if (breakDispatch != StallReason::NoStall) {
                 dispatchStalls.at(i) = breakDispatch;
-            } else if (instInSufficient > 0 && insts_to_add > 0) {
+            } else if (instInSufficient > 0 && dis_num_inst > 0) {
                 dispatchStalls.at(i) = StallReason::FragStall;
                 instInSufficient--;
-            } else if (insts_to_add == 0 && stallFromRename != StallReason::NoStall) {
+            } else if (dis_num_inst == 0 && stallFromRename != StallReason::NoStall) {
                 dispatchStalls.at(i) = stallFromRename;
             } else {
                 dispatchStalls.at(i) = StallReason::OtherStall;
@@ -1297,14 +1303,6 @@ IEW::dispatchInsts(ThreadID tid)
 
     for (int i = 0;i < dispatchStalls.size();i++) {
         DPRINTF(IEW,"[tid:%i] dispatchStalls[%d]=%d\n", tid, i, dispatchStalls.at(i));
-    }
-
-    if (!insts_to_dispatch.empty()) {
-        DPRINTF(IEW,"[tid:%i] Issue: Bandwidth Full. Blocking.\n", tid);
-        block(tid);
-        iewStats.stallEvents[DispBWFull]++;
-        blockReason = breakDispatch;
-        toRename->iewUnblock[tid] = false;
     }
 
     if (dispatchStatus[tid] == Idle && dis_num_inst) {
@@ -1777,14 +1775,10 @@ IEW::tick()
         }
 
         if (broadcast_free_entries) {
-            toFetch->iewInfo[tid].iqCount =
-                instQueue.getCount(tid);
             toFetch->iewInfo[tid].ldstqCount =
                 ldstQueue.getCount(tid);
 
             toRename->iewInfo[tid].usedIQ = true;
-            toRename->iewInfo[tid].freeIQEntries =
-                100;
             toRename->iewInfo[tid].usedLSQ = true;
 
             toRename->iewInfo[tid].freeLQEntries =

@@ -99,7 +99,6 @@ InstructionQueue::InstructionQueue(CPU *cpu_ptr, IEW *iew_ptr,
       iewStage(iew_ptr),
       fuPool(params.fuPool),
       scheduler(params.scheduler),
-      iqPolicy(params.smtIQPolicy),
       numThreads(params.numThreads),
       numEntries(params.numIQEntries),
       totalWidth(params.issueWidth),
@@ -121,13 +120,6 @@ InstructionQueue::InstructionQueue(CPU *cpu_ptr, IEW *iew_ptr,
                     params.numPhysCCRegs +
                     params.numPhysRMiscRegs;
 
-    //Create an entry for each physical register within the
-    //dependency graph.
-    dependGraph.resize(numPhysRegs);
-
-    // Resize the register scoreboard.
-    regScoreboard.resize(numPhysRegs);
-
     //Initialize Mem Dependence Units
     for (ThreadID tid = 0; tid < MaxThreads; tid++) {
         memDepUnit[tid].init(params, tid, cpu_ptr);
@@ -139,50 +131,10 @@ InstructionQueue::InstructionQueue(CPU *cpu_ptr, IEW *iew_ptr,
     scheduler->setMemDepUnit(memDepUnit);
 
     resetState();
-
-    //Figure out resource sharing policy
-    if (iqPolicy == SMTQueuePolicy::Dynamic) {
-        //Set Max Entries to Total ROB Capacity
-        for (ThreadID tid = 0; tid < numThreads; tid++) {
-            maxEntries[tid] = numEntries;
-        }
-
-    } else if (iqPolicy == SMTQueuePolicy::Partitioned) {
-        //@todo:make work if part_amt doesnt divide evenly.
-        int part_amt = numEntries / numThreads;
-
-        //Divide ROB up evenly
-        for (ThreadID tid = 0; tid < numThreads; tid++) {
-            maxEntries[tid] = part_amt;
-        }
-
-        DPRINTF(IQ, "IQ sharing policy set to Partitioned:"
-                "%i entries per thread.\n",part_amt);
-    } else if (iqPolicy == SMTQueuePolicy::Threshold) {
-        double threshold =  (double)params.smtIQThreshold / 100;
-
-        int thresholdIQ = (int)((double)threshold * numEntries);
-
-        //Divide up by threshold amount
-        for (ThreadID tid = 0; tid < numThreads; tid++) {
-            maxEntries[tid] = thresholdIQ;
-        }
-
-        DPRINTF(IQ, "IQ sharing policy set to Threshold:"
-                "%i entries per thread.\n",thresholdIQ);
-    }
-    for (ThreadID tid = numThreads; tid < MaxThreads; tid++) {
-        maxEntries[tid] = 0;
-    }
 }
 
 InstructionQueue::~InstructionQueue()
 {
-    dependGraph.reset();
-#ifdef DEBUG
-    cprintf("Nodes traversed: %i, removed: %i\n",
-            dependGraph.nodesTraversed, dependGraph.nodesRemoved);
-#endif
 }
 
 std::string
@@ -407,33 +359,11 @@ InstructionQueue::IQIOStats::IQIOStats(statistics::Group *parent)
 void
 InstructionQueue::resetState()
 {
-    //Initialize thread IQ counts
-    for (ThreadID tid = 0; tid < MaxThreads; tid++) {
-        count[tid] = 0;
-        instList[tid].clear();
-    }
-
-    // Note that in actuality, the registers corresponding to the logical
-    // registers start off as ready.  However this doesn't matter for the
-    // IQ as the instruction should have been correctly told if those
-    // registers are ready in rename.  Thus it can all be initialized as
-    // unready.
-    for (int i = 0; i < numPhysRegs; ++i) {
-        regScoreboard[i] = false;
-    }
-
     for (ThreadID tid = 0; tid < MaxThreads; ++tid) {
         squashedSeqNum[tid] = 0;
     }
 
-    for (int i = 0; i < Num_OpClasses; ++i) {
-        while (!readyInsts[i].empty())
-            readyInsts[i].pop();
-        queueOnList[i] = false;
-        readyIt[i] = listOrder.end();
-    }
     nonSpecInsts.clear();
-    listOrder.clear();
     deferredMemInsts.clear();
     blockedMemInsts.clear();
     retryMemInsts.clear();
@@ -469,7 +399,7 @@ InstructionQueue::setTimeBuffer(TimeBuffer<TimeStruct> *tb_ptr)
 bool
 InstructionQueue::isDrained() const
 {
-    bool drained = dependGraph.empty() &&
+    bool drained = scheduler->isDrained() &&
                    instsToExecute.empty() &&
                    wbOutstanding == 0;
     for (ThreadID tid = 0; tid < numThreads; ++tid)
@@ -481,7 +411,6 @@ InstructionQueue::isDrained() const
 void
 InstructionQueue::drainSanityCheck() const
 {
-    assert(dependGraph.empty());
     assert(instsToExecute.empty());
     for (ThreadID tid = 0; tid < numThreads; ++tid)
         memDepUnit[tid].drainSanityCheck();
@@ -502,8 +431,7 @@ InstructionQueue::isFull(DynInstPtr& inst)
 bool
 InstructionQueue::hasReadyInsts()
 {
-
-    return true;
+    return scheduler->hasReadyInsts();
 }
 
 void
@@ -630,8 +558,6 @@ InstructionQueue::scheduleReadyInsts()
     // This will avoid trying to schedule a certain op class if there are no
     // FUs that handle it.
     int total_issued = 0;
-    ListOrderIt order_it = listOrder.begin();
-    ListOrderIt order_end_it = listOrder.end();
     DynInstPtr issued_inst;
     while ((issued_inst = scheduler->getInstToFU())) {
 
@@ -958,139 +884,6 @@ InstructionQueue::doSquash(ThreadID tid)
         else {
             it++;
         }
-    }
-}
-
-bool
-InstructionQueue::PqCompare::operator()(
-        const DynInstPtr &lhs, const DynInstPtr &rhs) const
-{
-    return lhs->seqNum > rhs->seqNum;
-}
-
-void
-InstructionQueue::dumpLists()
-{
-    for (int i = 0; i < Num_OpClasses; ++i) {
-        cprintf("Ready list %i size: %i\n", i, readyInsts[i].size());
-
-        cprintf("\n");
-    }
-
-    cprintf("Non speculative list size: %i\n", nonSpecInsts.size());
-
-    NonSpecMapIt non_spec_it = nonSpecInsts.begin();
-    NonSpecMapIt non_spec_end_it = nonSpecInsts.end();
-
-    cprintf("Non speculative list: ");
-
-    while (non_spec_it != non_spec_end_it) {
-        cprintf("%s [sn:%llu]", (*non_spec_it).second->pcState(),
-                (*non_spec_it).second->seqNum);
-        ++non_spec_it;
-    }
-
-    cprintf("\n");
-
-    ListOrderIt list_order_it = listOrder.begin();
-    ListOrderIt list_order_end_it = listOrder.end();
-    int i = 1;
-
-    cprintf("List order: ");
-
-    while (list_order_it != list_order_end_it) {
-        cprintf("%i OpClass:%i [sn:%llu] ", i, (*list_order_it).queueType,
-                (*list_order_it).oldestInst);
-
-        ++list_order_it;
-        ++i;
-    }
-
-    cprintf("\n");
-}
-
-
-void
-InstructionQueue::dumpInsts()
-{
-    for (ThreadID tid = 0; tid < numThreads; ++tid) {
-        int num = 0;
-        int valid_num = 0;
-        ListIt inst_list_it = instList[tid].begin();
-
-        while (inst_list_it != instList[tid].end()) {
-            cprintf("Instruction:%i\n", num);
-            if (!(*inst_list_it)->isSquashed()) {
-                if (!(*inst_list_it)->isIssued()) {
-                    ++valid_num;
-                    cprintf("Count:%i\n", valid_num);
-                } else if ((*inst_list_it)->isMemRef() &&
-                           !(*inst_list_it)->memOpDone()) {
-                    // Loads that have not been marked as executed
-                    // still count towards the total instructions.
-                    ++valid_num;
-                    cprintf("Count:%i\n", valid_num);
-                }
-            }
-
-            cprintf("PC: %s\n[sn:%llu]\n[tid:%i]\n"
-                    "Issued:%i\nSquashed:%i\n",
-                    (*inst_list_it)->pcState(),
-                    (*inst_list_it)->seqNum,
-                    (*inst_list_it)->threadNumber,
-                    (*inst_list_it)->isIssued(),
-                    (*inst_list_it)->isSquashed());
-
-            if ((*inst_list_it)->isMemRef()) {
-                cprintf("MemOpDone:%i\n", (*inst_list_it)->memOpDone());
-            }
-
-            cprintf("\n");
-
-            inst_list_it++;
-            ++num;
-        }
-    }
-
-    cprintf("Insts to Execute list:\n");
-
-    int num = 0;
-    int valid_num = 0;
-    ListIt inst_list_it = instsToExecute.begin();
-
-    while (inst_list_it != instsToExecute.end())
-    {
-        cprintf("Instruction:%i\n",
-                num);
-        if (!(*inst_list_it)->isSquashed()) {
-            if (!(*inst_list_it)->isIssued()) {
-                ++valid_num;
-                cprintf("Count:%i\n", valid_num);
-            } else if ((*inst_list_it)->isMemRef() &&
-                       !(*inst_list_it)->memOpDone()) {
-                // Loads that have not been marked as executed
-                // still count towards the total instructions.
-                ++valid_num;
-                cprintf("Count:%i\n", valid_num);
-            }
-        }
-
-        cprintf("PC: %s\n[sn:%llu]\n[tid:%i]\n"
-                "Issued:%i\nSquashed:%i\n",
-                (*inst_list_it)->pcState(),
-                (*inst_list_it)->seqNum,
-                (*inst_list_it)->threadNumber,
-                (*inst_list_it)->isIssued(),
-                (*inst_list_it)->isSquashed());
-
-        if ((*inst_list_it)->isMemRef()) {
-            cprintf("MemOpDone:%i\n", (*inst_list_it)->memOpDone());
-        }
-
-        cprintf("\n");
-
-        inst_list_it++;
-        ++num;
     }
 }
 

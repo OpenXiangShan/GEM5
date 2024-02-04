@@ -18,6 +18,7 @@
 #include "cpu/o3/iew_delay_calibrator.hh"
 #include "cpu/o3/limits.hh"
 #include "debug/Counters.hh"
+#include "debug/Dispatch.hh"
 #include "debug/IQ.hh"
 #include "debug/Schedule.hh"
 #include "enums/OpClass.hh"
@@ -57,6 +58,8 @@ IssueQue::IssueQueStats::IssueQueStats(statistics::Group* parent, IssueQue* que,
     : Group(parent, name.c_str()),
       ADD_STAT(issueSuccess, statistics::units::Count::get(), ""),
       ADD_STAT(issueFailed, statistics::units::Count::get(), ""),
+      ADD_STAT(full, statistics::units::Count::get(), ""),
+      ADD_STAT(bwfull, statistics::units::Count::get(), ""),
       ADD_STAT(issueRate, statistics::units::Count::get(), ""),
       ADD_STAT(retryMem, statistics::units::Count::get(), ""),
       ADD_STAT(insertDist, statistics::units::Count::get(), ""),
@@ -276,6 +279,7 @@ IssueQue::full()
     bool full = instNumInsert + instNum >= iqsize;
     bool dispBottleneck = instNumInsert >= inoutPorts;
     if (full) {
+        iqstats->full++;
         DPRINTF(Schedule, "has full!\n");
         DPRINTF(Schedule, "start dump insts\n");
         for (auto& it : instList) {
@@ -288,6 +292,7 @@ IssueQue::full()
         }
     }
     if (dispBottleneck) {
+        iqstats->bwfull++;
         DPRINTF(Schedule, "can't insert more due to inports exhausted\n");
     }
     return full || dispBottleneck;
@@ -391,23 +396,19 @@ IssueQue::doCommit(const InstSeqNum seqNum)
 void
 IssueQue::doSquash(const InstSeqNum seqNum)
 {
-    for (auto it=instList.begin(); it!=instList.end();) {
-        if ((*it)->seqNum > seqNum) {
-            (*it)->setSquashedInIQ();
-            (*it)->setCanCommit();
-            (*it)->clearInIQ();
-            (*it)->setScheduled();
-            if (!(*it)->isIssued()) {
-                DPRINTF(Schedule, "[sn %lu] instNum--\n", (*it)->seqNum);
-                assert(instNum != 0);
-                instNum--;
-                (*it)->setIssued();
-            }
-            it = instList.erase(it);
+    while (!instList.empty() && (instList.back()->seqNum > seqNum)) {
+        auto it = instList.back();
+        it->setSquashedInIQ();
+        it->setCanCommit();
+        it->clearInIQ();
+        it->setScheduled();
+        if (!it->isIssued()) {
+            DPRINTF(Schedule, "[sn %lu] instNum--\n", it->seqNum);
+            assert(instNum != 0);
+            instNum--;
+            it->setIssued();
         }
-        else {
-            it++;
-        }
+        instList.pop_back();
     }
 
     // clear in depGraph
@@ -620,6 +621,7 @@ Scheduler::full(const DynInstPtr& inst)
             return false;
         }
     }
+    DPRINTF(Dispatch, "IQ full, opclass: %s\n", enums::OpClassStrings[inst->opClass()]);
     return true;
 }
 
@@ -629,12 +631,29 @@ Scheduler::insert(const DynInstPtr& inst)
     inst->setInIQ();
     auto iqs = dispTable[inst->opClass()];
     assert(!iqs.empty());
-    for (auto iq : iqs) {
-        if (!iq->full()) {
-            iq->insert(inst);
-            break;
+    bool inserted = false;
+
+    if (forwardDisp) {
+        for (auto iq : iqs) {
+            if (!iq->full()) {
+                iq->insert(inst);
+                inserted = true;
+                break;
+            }
         }
     }
+    else {
+        for (auto iq = iqs.rbegin(); iq != iqs.rend(); iq++) {
+            if (!(*iq)->full()) {
+                (*iq)->insert(inst);
+                inserted = true;
+                break;
+            }
+        }
+    }
+    assert(inserted);
+    forwardDisp = !forwardDisp;
+    DPRINTF(Dispatch, "[sn %lu] dispatch: %s\n", inst->seqNum, inst->staticInst->disassemble(0));
 
     for (int i=0; i<inst->numDestRegs(); i++) {
         auto dst = inst->renamedDestIdx(i);
@@ -697,8 +716,28 @@ Scheduler::checkFuReady(const DynInstPtr& inst)
 
 void
 Scheduler::allocFu(const DynInstPtr& inst)
-{
+{ }
 
+bool
+Scheduler::hasReadyInsts()
+{
+    for (auto it : issueQues) {
+        if (!it->readyInsts.empty()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool
+Scheduler::isDrained()
+{
+    for (auto it : issueQues) {
+        if (!it->instList.empty()) {
+            return false;
+        }
+    }
+    return true;
 }
 
 void

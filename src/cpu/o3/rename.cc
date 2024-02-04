@@ -81,7 +81,6 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
         instsInProgress[tid] = 0;
         loadsInProgress[tid] = 0;
         storesInProgress[tid] = 0;
-        freeEntries[tid] = {0, 0, 0, 0};
         emptyROB[tid] = true;
         stalls[tid] = {false, false};
         serializeInst[tid] = nullptr;
@@ -249,7 +248,6 @@ Rename::clearStates(ThreadID tid)
 {
     renameStatus[tid] = Idle;
 
-    freeEntries[tid].iqEntries = 100;
     freeEntries[tid].lqEntries = iew_ptr->ldstQueue.numFreeLoadEntries(tid);
     freeEntries[tid].sqEntries = iew_ptr->ldstQueue.numFreeStoreEntries(tid);
     freeEntries[tid].robEntries = commit_ptr->numROBFreeEntries(tid);
@@ -276,8 +274,6 @@ Rename::resetStage()
     // Grab the number of free entries directly from the stages.
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         renameStatus[tid] = Idle;
-
-        freeEntries[tid].iqEntries = 100;
         freeEntries[tid].lqEntries =
             iew_ptr->ldstQueue.numFreeLoadEntries(tid);
         freeEntries[tid].sqEntries =
@@ -1384,9 +1380,6 @@ Rename::checkStall(ThreadID tid)
 void
 Rename::readFreeEntries(ThreadID tid)
 {
-    if (fromIEW->iewInfo[tid].usedIQ)
-        freeEntries[tid].iqEntries = fromIEW->iewInfo[tid].freeIQEntries;
-
     if (fromIEW->iewInfo[tid].usedLSQ) {
         freeEntries[tid].lqEntries = fromIEW->iewInfo[tid].freeLQEntries;
         freeEntries[tid].sqEntries = fromIEW->iewInfo[tid].freeSQEntries;
@@ -1400,10 +1393,9 @@ Rename::readFreeEntries(ThreadID tid)
             DPRINTF(Rename, "[tid:%i] ROB is empty now.\n", tid);
     }
 
-    DPRINTF(Rename, "[tid:%i] Free IQ: %i, Free ROB: %i, "
+    DPRINTF(Rename, "[tid:%i] Free ROB: %i, "
                     "Free LQ: %i, Free SQ: %i, FreeRM %i(%i %i %i %i %i %i)\n",
             tid,
-            freeEntries[tid].iqEntries,
             freeEntries[tid].robEntries,
             freeEntries[tid].lqEntries,
             freeEntries[tid].sqEntries,

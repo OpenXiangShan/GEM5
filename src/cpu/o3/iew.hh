@@ -41,6 +41,7 @@
 #ifndef __CPU_O3_IEW_HH__
 #define __CPU_O3_IEW_HH__
 
+#include <deque>
 #include <map>
 #include <queue>
 #include <set>
@@ -355,6 +356,8 @@ class IEW
     /** Skid buffer between rename and IEW. */
     std::deque<DynInstPtr> skidBuffer[MaxThreads];
 
+    std::deque<DynInstPtr> dispQue;
+
     /** Scoreboard pointer. */
     Scoreboard* scoreboard;
 
@@ -469,6 +472,8 @@ class IEW
         /** Stat for total number of mispredicted branches detected at
          *  execute. */
         statistics::Formula branchMispredicts;
+
+        statistics::Distribution dispDist;
 
         struct ExecutedInstStats : public statistics::Group
         {

@@ -2035,7 +2035,7 @@ Fetch::iqCount()
 
     while (threads != end) {
         ThreadID tid = *threads++;
-        unsigned iqCount = fromIEW->iewInfo[tid].iqCount;
+        unsigned iqCount = 1;
 
         //we can potentially get tid collisions if two threads
         //have the same iqCount, but this should be rare.

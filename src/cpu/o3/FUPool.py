@@ -164,9 +164,9 @@ class NanhuScheduler(Scheduler):
 
 class KunminghuScheduler(Scheduler):
     IQs = [
-        IssueQue(name='IQ_si' , inoutPorts=2, size=2*24, fuType=[IntALU()]),
-        IssueQue(name='IQ_ci0', inoutPorts=1, size=1*24, fuType=[IntALU(), IntMultDiv()]),
-        IssueQue(name='IQ_ci1', inoutPorts=1, size=1*24, fuType=[IntALU(), IntMult()]),
+        IssueQue(name='IQ_misc' , inoutPorts=1, size=1*24, fuType=[IntDiv()]),
+        IssueQue(name='IQ_si', inoutPorts=2, size=2*24, fuType=[IntALU()]),
+        IssueQue(name='IQ_ci', inoutPorts=2, size=2*24, fuType=[IntALU(), IntMult()]),
         IssueQue(name='IQ_stu', inoutPorts=2, size=2*24, fuType=[WritePort()]),
         IssueQue(name='IQ_ldu', inoutPorts=2, size=2*24, fuType=[ReadPort()]),
         IssueQue(name='IQ_cplx',inoutPorts=2, size=2*24,

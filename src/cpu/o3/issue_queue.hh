@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <list>
 #include <map>
 #include <queue>
@@ -117,6 +118,8 @@ class IssueQue : public SimObject
         IssueQueStats(statistics::Group* parent, IssueQue* que, std::string name);
         statistics::Scalar issueSuccess;
         statistics::Scalar issueFailed;
+        statistics::Scalar full;
+        statistics::Scalar bwfull;
         statistics::Formula issueRate;
         statistics::Scalar retryMem;
         statistics::Vector insertDist;
@@ -228,6 +231,8 @@ class Scheduler : public SimObject
     std::vector<bool> noSpecScoreboard;
     std::vector<bool> specScoreboard;
 
+    bool forwardDisp = false;
+
   public:
     Scheduler(const SchedulerParams& params);
     void setCPU(CPU* cpu);
@@ -244,6 +249,8 @@ class Scheduler : public SimObject
     uint32_t getOpLatency(const DynInstPtr& inst);
     bool checkFuReady(const DynInstPtr& inst);
     void allocFu(const DynInstPtr& inst);
+    bool hasReadyInsts();
+    bool isDrained();
 
     void writebackWakeup(const DynInstPtr& inst);
     void bypassWriteback(const DynInstPtr& inst);

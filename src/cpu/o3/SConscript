@@ -78,6 +78,7 @@ if env['CONF']['TARGET_ISA'] != 'null':
     DebugFlag('FetchFault')
     DebugFlag('Counters')
     DebugFlag('Schedule')
+    DebugFlag('Dispatch')
 
     CompoundFlag('O3CPUAll', [ 'Fetch', 'Decode', 'Rename', 'IEW', 'Commit',
         'IQ', 'ROB', 'FreeList', 'LSQ', 'LSQUnit', 'StoreSet', 'MemDepUnit',

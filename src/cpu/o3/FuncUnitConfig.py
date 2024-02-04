@@ -59,9 +59,13 @@ class IntMultDiv(FUDesc):
 
     count=2
 
+class IntDiv(FUDesc):
+    opList = [ OpDesc(opClass='IntDiv', opLat=20) ]
+    count=2
+
+
 class IntMult(FUDesc):
     opList = [ OpDesc(opClass='IntMult', opLat=3) ]
-
     count=2
 
 class FP_SLOW(FUDesc):
