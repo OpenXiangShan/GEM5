@@ -51,6 +51,7 @@
 #include <string>
 
 #include "base/intmath.hh"
+#include "base/logging.hh"
 #include "base/trace.hh"
 #include "debug/AddrRanges.hh"
 #include "debug/Checkpoint.hh"
@@ -472,6 +473,7 @@ PhysicalMemory::unserializeStore(CheckpointIn &cp)
 void
 PhysicalMemory::unserializeStoreFromFile(std::string filepath)
 {
+    warn("Unserializing physical memory from file %s\n", filepath.c_str());
     unserializeStoreFrom(filepath, 0, 0);
 }
 

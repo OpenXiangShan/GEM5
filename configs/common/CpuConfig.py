@@ -67,4 +67,9 @@ def config_difftest(cpu_cls, cpu_list, options):
     else:
         assert len(cpu_list) == 1
         cpu_list[0].enable_difftest = True
+        if options.difftest_ref_so.startswith('/no/where'):
+            fatal("No valid ref_so file specified for the functional model to "
+                  "compare against. Please 1) either specify a valid ref_so file using "
+                  "the --difftest-ref-so option, 2) or specify NEMU_HOME that contains "
+                  "build/riscv64-nemu-interpreter-so")
         cpu_list[0].difftest_ref_so = options.difftest_ref_so

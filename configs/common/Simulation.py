@@ -264,7 +264,7 @@ def scriptCheckpoints(options, maxtick, cptdir):
 
     return exit_event
 
-def benchCheckpoints(testsys,options, maxtick, cptdir):
+def benchCheckpoints(testsys, options, maxtick, cptdir):
     exit_event = m5.simulate(maxtick - m5.curTick())
     exit_cause = exit_event.getCause()
     while exit_cause == "Will trigger stat dump and reset":
@@ -275,7 +275,8 @@ def benchCheckpoints(testsys,options, maxtick, cptdir):
         exit_cause = exit_event.getCause()
 
     num_checkpoints = 0
-    max_checkpoints = options.max_checkpoints
+    if hasattr(options, 'max_checkpoints'):
+        max_checkpoints = options.max_checkpoints
 
     while exit_cause == "checkpoint":
         m5.checkpoint(joinpath(cptdir, "cpt.%d"))
@@ -766,6 +767,90 @@ def run(options, root, testsys, cpu_class):
           (m5.curTick(), exit_event.getCause()))
     if options.checkpoint_at_end:
         m5.checkpoint(joinpath(cptdir, "cpt.%d"))
+
+    if exit_event.getCode() != 0:
+        print("Simulated exit code not 0! Exit code is", exit_event.getCode())
+
+def run_vanilla(options, root, testsys, cpu_class):
+    # Setup global stat filtering.
+    stat_root_simobjs = []
+    for stat_root_str in options.stats_root:
+        stat_root_simobjs.extend(root.get_simobj(stat_root_str))
+    m5.stats.global_dump_roots = stat_root_simobjs
+
+    np = options.num_cpus
+    switch_cpus = None
+
+    if options.maxinsts:
+        for i in range(np):
+            testsys.cpu[i].max_insts_any_thread = options.maxinsts
+
+    if cpu_class:
+        switch_cpus = [cpu_class(switched_out=True, cpu_id=(i))
+                       for i in range(np)]
+
+        for i in range(np):
+            switch_cpus[i].system = testsys
+            switch_cpus[i].workload = testsys.cpu[i].workload
+            switch_cpus[i].clk_domain = testsys.cpu[i].clk_domain
+            switch_cpus[i].progress_interval = \
+                testsys.cpu[i].progress_interval
+            switch_cpus[i].isa = testsys.cpu[i].isa
+            # simulation period
+            if options.maxinsts:
+                switch_cpus[i].max_insts_any_thread = options.maxinsts
+            if options.bp_type:
+                bpClass = ObjectList.bp_list.get(options.bp_type)
+                switch_cpus[i].branchPred = bpClass()
+            if options.indirect_bp_type:
+                IndirectBPClass = ObjectList.indirect_bp_list.get(
+                    options.indirect_bp_type)
+                switch_cpus[i].branchPred.indirectBranchPred = \
+                    IndirectBPClass()
+            switch_cpus[i].createThreads()
+            print("Create threads for switch cpu ({})".format(switch_cpus[i]))
+
+        testsys.switch_cpus = switch_cpus
+        switch_cpu_list = [(testsys.cpu[i], switch_cpus[i]) for i in range(np)]
+    else:
+        print("No switch cpu_class provided")
+
+    for i in range(np):
+        if options.warmup_insts_no_switch != None:
+            testsys.cpu[i].warmupInstCount = options.warmup_insts_no_switch
+
+    checkpoint_dir = None
+    root.apply_config(options.param)
+    m5.instantiate(checkpoint_dir)
+
+    # Handle the max tick settings now that tick frequency was resolved
+    # during system instantiation
+    # NOTE: the maxtick variable here is in absolute ticks, so it must
+    # include any simulated ticks before a checkpoint
+    explicit_maxticks = 0
+    maxtick_from_abs = m5.MaxTick
+    maxtick_from_rel = m5.MaxTick
+    maxtick_from_maxtime = m5.MaxTick
+    if options.abs_max_tick:
+        maxtick_from_abs = options.abs_max_tick
+        explicit_maxticks += 1
+
+    if options.maxtime:
+        maxtick_from_maxtime = m5.ticks.fromSeconds(options.maxtime)
+        explicit_maxticks += 1
+    if explicit_maxticks > 1:
+        warn("Specified multiple of --abs-max-tick, --rel-max-tick, --maxtime."\
+             " Using least")
+    maxtick = min([maxtick_from_abs, maxtick_from_rel, maxtick_from_maxtime])
+
+    print("**** REAL SIMULATION ****")
+
+    # If checkpoints are being taken, then the checkpoint instruction
+    # will occur in the benchmark code it self.
+    exit_event = benchCheckpoints(testsys, options, maxtick, cptdir=None)
+
+    print('Exiting @ tick %i because %s' %
+          (m5.curTick(), exit_event.getCause()))
 
     if exit_event.getCode() != 0:
         print("Simulated exit code not 0! Exit code is", exit_event.getCode())

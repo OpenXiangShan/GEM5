@@ -430,6 +430,7 @@ def build_drive_system(np):
 parser = argparse.ArgumentParser()
 Options.addCommonOptions(parser)
 Options.addFSOptions(parser)
+Options.addXiangshanFSOptions(parser)
 
 # Add the ruby specific and protocol specific args
 if '--ruby' in sys.argv:

@@ -102,7 +102,7 @@ class ListPlatform(argparse.Action):
 # testers and traffic generators.
 
 
-def addNoISAOptions(parser):
+def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("-n", "--num-cpus", type=int, default=1)
     parser.add_argument("--sys-voltage", action="store", type=str,
                         default='1.0V',
@@ -117,7 +117,7 @@ def addNoISAOptions(parser):
     parser.add_argument("--list-mem-types",
                         action=ListMem, nargs=0,
                         help="List available memory types")
-    parser.add_argument("--mem-type", default="DDR3_1600_8x8",
+    parser.add_argument("--mem-type", default="DRAMsim3",
                         choices=ObjectList.mem_list.get_names(),
                         help="type of memory to use")
     parser.add_argument("--mem-channels", type=int, default=1,
@@ -125,54 +125,57 @@ def addNoISAOptions(parser):
     parser.add_argument("--mem-ranks", type=int, default=None,
                         help="number of memory ranks per channel")
     parser.add_argument(
-        "--mem-size", action="store", type=str, default="512MB",
+        "--mem-size", action="store", type=str, default="8GB",
         help="Specify the physical memory size (single memory)")
     parser.add_argument("--enable-dram-powerdown", action="store_true",
                         help="Enable low-power states in DRAMInterface")
     parser.add_argument("--mem-channels-intlv", type=int, default=0,
                         help="Memory channels interleave")
 
-    parser.add_argument("--memchecker", action="store_true")
     # DRAMsim3 option
-    parser.add_argument("--dramsim3-ini",type=str,default=None,
+    parser.add_argument("--dramsim3-ini", type=str, default=None,
                         help = "dramsim3 config file")
 
     # Cache Options
-    parser.add_argument("--external-memory-system", type=str,
-                        help="use external ports of this port_type for caches")
-    parser.add_argument("--tlm-memory", type=str,
-                        help="use external port for SystemC TLM cosimulation")
     parser.add_argument("--caches", action="store_true")
     parser.add_argument("--l2cache", action="store_true")
     parser.add_argument("--l3cache", action="store_true")
+    parser.add_argument("--no-l3cache", action="store_true")
     parser.add_argument("--l1-to-l2-pf-hint", action="store_true")
     parser.add_argument("--l2-to-l3-pf-hint", action="store_true")
+
     parser.add_argument("--num-dirs", type=int, default=1)
     parser.add_argument("--num-l2caches", type=int, default=1)
     parser.add_argument("--num-l3caches", type=int, default=1)
+
     parser.add_argument("--l1d_size", type=str, default="64kB")
-    parser.add_argument("--l1i_size", type=str, default="32kB")
-    parser.add_argument("--l2_size", type=str, default="2MB")
-    parser.add_argument("--l3_size", type=str, default="16MB")
-    parser.add_argument("--l1d_assoc", type=int, default=2)
-    parser.add_argument("--l1i_assoc", type=int, default=2)
+    parser.add_argument("--l1d_assoc", type=int, default=8)
+
+    parser.add_argument("--l1i_size", type=str, default="64kB")
+    parser.add_argument("--l1i_assoc", type=int, default=8)
+
+    parser.add_argument("--l2_size", type=str, default="1MB")
     parser.add_argument("--l2_assoc", type=int, default=8)
+
+    parser.add_argument("--l3_size", type=str, default="16MB")
     parser.add_argument("--l3_assoc", type=int, default=16)
+
     parser.add_argument("--cacheline_size", type=int, default=64)
     parser.add_argument("--ideal-cache", action="store_true")
 
-    # Enable Ruby
-    parser.add_argument("--ruby", action="store_true")
+    parser.add_argument("--l1i-hwp-type", default=None,
+                        choices=ObjectList.hwp_list.get_names(), help="L1 icache hardware prefetcher")
+    parser.add_argument("--l1d-hwp-type", default='XSCompositePrefetcher',
+                        choices=ObjectList.hwp_list.get_names(), help="L1 dcache hardware prefetcher")
+    parser.add_argument("--l2-hwp-type", default='L2CompositeWithWorkerPrefetcher',
+                        choices=ObjectList.hwp_list.get_names(), help="L2 cache hardware prefetcher")
+    parser.add_argument("--l3-hwp-type", default='WorkerPrefetcher',
+                        choices=ObjectList.hwp_list.get_names(), help="L3 cache hardware prefetcher")
 
     # Run duration options
     parser.add_argument("-m", "--abs-max-tick", type=int, default=m5.MaxTick,
                         metavar="TICKS", help="Run to absolute simulated tick "
                         "specified including ticks from a restored checkpoint")
-    parser.add_argument(
-        "--rel-max-tick", type=int, default=None, metavar="TICKS",
-        help="Simulate for specified number of"
-        " ticks relative to the simulation start tick (e.g. if "
-        "restoring a checkpoint)")
     parser.add_argument("--maxtime", type=float, default=None,
                         help="Run to the specified absolute simulated time in "
                         "seconds")
@@ -186,18 +189,7 @@ def addNoISAOptions(parser):
         "Direct parameters of the root object are not accessible, "
         "only parameters of its children.")
 
-    # Difftest option
-    parser.add_argument("--enable-difftest",
-                        action="store_true",
-                        help="use NEMU as ref to do difftest")
-
-    parser.add_argument("--difftest-ref-so",
-                        action="store",
-                        default="{}/build/riscv64-nemu-interpreter-so".format(
-                            os.environ['NEMU_HOME']),
-                        help="The shared lib file used to do difftest")
-
-    # Dump Commit option
+    # Dump options
     parser.add_argument("--dump-commit",
                         action="store_true",
                         help="dump commit instructions")
@@ -207,6 +199,8 @@ def addNoISAOptions(parser):
                         type=int,
                         default=0,
                         help="dump commit instructions from this committed number")
+    parser.add_argument("--dump-loop-pred", action='store_true', default=False,
+            help="Dump loop predictor logs at exit")
 
     # ArchDB option
     parser.add_argument("--enable-arch-db",
@@ -224,13 +218,30 @@ def addNoISAOptions(parser):
                         help="enable rolling perfcnt "
                         "(note that rolling is dependent on archdb)")
 
+    parser.add_argument("--memchecker", action="store_true")
 
-# Add common options that assume a non-NULL ISA.
+    parser.add_argument("--external-memory-system", type=str,
+                        help="use external ports of this port_type for caches")
 
+    if configure_xiangshan:
+        return
 
-def addCommonOptions(parser):
+    # Following options are not available in XiangShan
+    # Enable Ruby
+    parser.add_argument("--ruby", action="store_true")
+
+    parser.add_argument(
+        "--rel-max-tick", type=int, default=None, metavar="TICKS",
+        help="Simulate for specified number of"
+        " ticks relative to the simulation start tick (e.g. if "
+        "restoring a checkpoint)")
+
+    parser.add_argument("--tlm-memory", type=str,
+                        help="use external port for SystemC TLM cosimulation")
+
+def addCommonOptions(parser, configure_xiangshan=False):
     # start by adding the base options that do not assume an ISA
-    addNoISAOptions(parser)
+    addNoISAOptions(parser,configure_xiangshan=configure_xiangshan)
 
     # system options
     parser.add_argument("--list-cpu-types",
@@ -272,32 +283,7 @@ def addCommonOptions(parser):
     parser.add_argument("--list-hwp-types",
                         action=ListHWP, nargs=0,
                         help="List available hardware prefetcher types")
-    parser.add_argument("--l1i-hwp-type", default=None,
-                        choices=ObjectList.hwp_list.get_names(),
-                        help="""
-                        type of hardware prefetcher to use with the L1
-                        instruction cache.
-                        (if not set, use the default prefetcher of
-                        the selected cache)""")
-    parser.add_argument("--l1d-hwp-type", default=None,
-                        choices=ObjectList.hwp_list.get_names(),
-                        help="""
-                        type of hardware prefetcher to use with the L1
-                        data cache.
-                        (if not set, use the default prefetcher of
-                        the selected cache)""")
-    parser.add_argument("--l2-hwp-type", default=None,
-                        choices=ObjectList.hwp_list.get_names(),
-                        help="""
-                        type of hardware prefetcher to use with the L2 cache.
-                        (if not set, use the default prefetcher of
-                        the selected cache)""")
-    parser.add_argument("--l3-hwp-type", default=None,
-                        choices=ObjectList.hwp_list.get_names(),
-                        help="""
-                        type of hardware prefetcher to use with the L3 cache.
-                        (if not set, use the default prefetcher of
-                        the selected cache)""")
+
     parser.add_argument("--l1d-enable-spp", action="store_true", default=False,
                         help="""
                         Enable SPP component for L1 data prefetcher""")
@@ -311,10 +297,39 @@ def addCommonOptions(parser):
                         help="""
                         Prefetching cache level for SMS'pht""")
 
-    parser.add_argument("--checker", action="store_true")
     parser.add_argument("--cpu-clock", action="store", type=str,
                         default='3GHz',
                         help="Clock for blocks running at CPU speed")
+
+    parser.add_argument("-I", "--maxinsts", action="store", type=int,
+                        default=None, help="""Total number of instructions to
+                                            simulate (default: run forever)""")
+
+    parser.add_argument("--enable-riscv-vector", action="store_true", default=False,
+            help="enable riscv vector extension (need vector-supported gcpt restore and diff-ref-so)")
+
+    parser.add_argument("--xiangshan-ecore", action= "store_true",
+                        help="Use efficient core of xiangshan")
+
+    # for warmup without switching cpu
+    parser.add_argument("--warmup-insts-no-switch", action="store", type=int,
+        default=None,
+        help="Warmup period in total instructions, reset stats without switch")
+
+    parser.add_argument(
+        "--stats-root", action="append", default=[],
+        help="If given, dump only stats of objects under the given SimObject. "
+        "SimObjects are identified with Python notation as in: "
+        "system.cpu[0].mmu. All elements of an array can be selected at "
+        "once with: system.cpu[:].mmu. If given multiple times, dump stats "
+        "that are present under any of the roots. If not given, dump all "
+        "stats. ")
+
+    if configure_xiangshan:
+        return
+    # Following options are not available in XiangShan
+
+    parser.add_argument("--checker", action="store_true")
     parser.add_argument("--smt", action="store_true", default=False,
                         help="""
                       Only used if multiple programs are specified. If true,
@@ -374,9 +389,6 @@ def addCommonOptions(parser):
                         help="Link delay in seconds\nDEFAULT: 10us")
 
     # Run duration options
-    parser.add_argument("-I", "--maxinsts", action="store", type=int,
-                        default=None, help="""Total number of instructions to
-                                            simulate (default: run forever)""")
     parser.add_argument("--work-item-id", action="store", type=int,
                         help="the specific work id for exit & checkpointing")
     parser.add_argument("--num-work-ids", action="store", type=int,
@@ -450,10 +462,6 @@ def addCommonOptions(parser):
     parser.add_argument("-p", "--prog-interval", type=str,
                         help="CPU Progress Interval")
 
-    # for warmup without switching cpu
-    parser.add_argument("--warmup-insts-no-switch", action="store", type=int,
-        default=None,
-        help="Warmup period in total instructions, reset stats without switch")
     # Fastforwarding and simpoint related materials
     parser.add_argument(
         "-W", "--warmup-insts", action="store", type=int, default=None,
@@ -479,21 +487,6 @@ def addCommonOptions(parser):
     parser.add_argument("--arm-iset", default="arm",
                         choices=["arm", "thumb", "aarch64"],
                         help="ARM instruction set.")
-    parser.add_argument(
-        "--stats-root", action="append", default=[],
-        help="If given, dump only stats of objects under the given SimObject. "
-        "SimObjects are identified with Python notation as in: "
-        "system.cpu[0].mmu. All elements of an array can be selected at "
-        "once with: system.cpu[:].mmu. If given multiple times, dump stats "
-        "that are present under any of the roots. If not given, dump all "
-        "stats. ")
-
-    parser.add_argument("--dump-loop-pred", action='store_true', default=False,
-            help="Dump loop predictor logs at exit")
-
-    parser.add_argument("--enable-riscv-vector", action="store_true", default=False,
-            help="enable riscv vector extension (need vector-supported gcpt restore and diff-ref-so)")
-
 
 def addSEOptions(parser):
     # Benchmark options
@@ -617,6 +610,7 @@ def addFSOptions(parser):
     parser.add_argument("--wait-gdb", default=False, action='store_true',
                         help="Wait for remote GDB to connect.")
 
+def addXiangshanFSOptions(parser):
     # Xiangshan related options
     parser.add_argument("--xiangshan-system", action= "store_true",
                         help="Use memory layout of Xiangshan system")
@@ -635,3 +629,15 @@ def addFSOptions(parser):
                         default=None, help="The path of mmc img")
     parser.add_argument("--mmc-cptbin", action="store",
                         type=str, default=None, help="The path of mmc cptbin")
+
+    # Difftest option
+    parser.add_argument("--enable-difftest",
+                        action="store_true",
+                        help="use NEMU as ref to do difftest")
+
+    parser.add_argument("--difftest-ref-so",
+                        action="store",
+                        default="{}/build/riscv64-nemu-interpreter-so".format(
+                            os.environ.get('NEMU_HOME', '/no/where')),
+                        help="The shared lib file used to do difftest")
+

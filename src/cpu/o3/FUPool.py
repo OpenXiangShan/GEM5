@@ -51,3 +51,29 @@ class DefaultFUPool(FUPool):
     FUList = [ IntALU(), IntMultDiv(), FP_MISC(), FP_SLOW(), FP_MAM(),
                FP_MAA(), ReadPort(), SIMD_Unit(), PredALU(), WritePort(),
                RdWrPort(), IprPort() ]
+
+class XSCoreFUPool(FUPool):
+    FUList = [
+        IntALU(count=6),
+        IntMultDiv(count=2),
+        FP_MISC(count=2),
+        FP_SLOW(count=2),
+        FP_MAM(count=4),
+        FP_MAA(count=4),
+        ReadPort(count=2),
+        WritePort(count=2),
+        SIMD_Unit(count=2),
+    ]
+
+class XSECoreFUPool(FUPool):
+    FUList = [
+        IntALU(count=4),
+        IntMultDiv(count=1),
+        FP_MISC(count=2),
+        FP_SLOW(count=1),
+        FP_MAM(count=2),
+        FP_MAA(count=2),
+        ReadPort(count=2),
+        WritePort(count=1),
+        SIMD_Unit(count=2),
+    ]

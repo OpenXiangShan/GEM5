@@ -32,6 +32,7 @@ from m5.objects.RiscvDecoder import RiscvDecoder
 from m5.objects.RiscvMMU import RiscvMMU
 from m5.objects.RiscvInterrupts import RiscvInterrupts
 from m5.objects.RiscvISA import RiscvISA
+from m5.objects.FUPool import *
 
 class RiscvCPU:
     ArchDecoder = RiscvDecoder
@@ -53,3 +54,27 @@ class RiscvO3CPU(BaseO3CPU, RiscvCPU):
 
 class RiscvMinorCPU(BaseMinorCPU, RiscvCPU):
     mmu = RiscvMMU()
+
+class XiangshanCore(RiscvO3CPU):
+    fuPool = XSCoreFUPool()
+
+class XiangshanECore(XiangshanCore):
+    fuPool = XSECoreFUPool()
+
+    fetchWidth = 8
+    decodeWidth = 4
+    renameWidth = 4
+    dispatchWidth = 4
+    issueWidth = 6
+    wbWidth = 6
+
+    numROBEntries = 150
+    numIQEntries = 60
+    LQEntries = 48
+    SQEntries = 32
+    numPhysIntRegs = 108
+    numPhysFloatRegs = 112
+    numPhysVecRegs = 112
+    numPhysVecPredRegs = 36
+    numPhysCCRegs = 0
+    numPhysRMiscRegs = 40
