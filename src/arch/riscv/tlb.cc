@@ -1371,7 +1371,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
             fault = L2TLBCheck(e[5]->pte, L2L2CheckLevel, status, pmode, vaddr, mode, req, false, false);
             if (hitInSp)
                 e[0] = e[5];
-            std::pair[return_flag, fault_return] =
+            auto [return_flag, fault_return] =
                 L2TLBSendRequest(fault, e[5], req, tc, translation, mode, vaddr, delayed, 0);
             if (return_flag)
                 return fault_return;
@@ -1380,7 +1380,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
             fault = L2TLBCheck(e[4]->pte, L2L1CheckLevel, status, pmode, vaddr, mode, req, false, false);
             if (hitInSp)
                 e[0] = e[4];
-            std::pair[return_flag, fault_return] =
+            auto [return_flag, fault_return] =
                 L2TLBSendRequest(fault, e[4], req, tc, translation, mode, vaddr, delayed, 1);
             if (return_flag)
                 return fault_return;
@@ -1389,7 +1389,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
             fault = L2TLBCheck(e[2]->pte, L2L2CheckLevel, status, pmode, vaddr, mode, req, false, false);
             if (hitInSp)
                 e[0] = e[2];
-            std::pair[return_flag, fault_return] =
+            auto [return_flag, fault_return] =
                 L2TLBSendRequest(fault, e[2], req, tc, translation, mode, vaddr, delayed, 0);
             if (return_flag)
                 return fault_return;
@@ -1398,7 +1398,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
             fault = L2TLBCheck(e[1]->pte, L2L1CheckLevel, status, pmode, vaddr, mode, req, false, false);
             if (hitInSp)
                 e[0] = e[1];
-            std::pair[return_flag, fault_return] =
+            auto [return_flag, fault_return] =
                 L2TLBSendRequest(fault, e[1], req, tc, translation, mode, vaddr, delayed, 1);
             if (return_flag)
                 return fault_return;

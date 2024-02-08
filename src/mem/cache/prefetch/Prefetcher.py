@@ -88,6 +88,8 @@ class BasePrefetcher(ClockedObject):
 
     is_sub_prefetcher = Param.Bool(False, "Is this a sub-prefetcher")
 
+    max_cache_level = Param.Unsigned(Parent.max_cache_level , "Max Cache level (L1 is 1, L2 is 2, etc.)")
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._events = []

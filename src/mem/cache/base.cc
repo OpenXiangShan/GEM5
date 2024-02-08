@@ -117,6 +117,7 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       system(p.system),
       stats(*this),
       cacheLevel(p.cache_level),
+      maxCacheLevel(p.max_cache_level),
       forceHit(p.force_hit)
 {
     // the MSHR queue has no reserve entries as we check the MSHR

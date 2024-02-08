@@ -598,7 +598,10 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
         if (dpp.pfahead) {
             // l1 can not process l3 pfahead request
             // but l3 can process l1 request
-            assert(dpp.pfahead_host <= cache->level());
+            if (dpp.pfahead_host > cache->level()) {
+                panic("Prefetch req from src %i heading to l%i, but l%i can not process it\n",
+                      dpp.pfInfo.getXsMetadata().prefetchSource, dpp.pfahead_host, cache->level());
+            }
         }
         queue_size = queueSize;
         queue_name = "PFQ";

@@ -109,6 +109,8 @@ class XSStridePrefetcher : public Queued
     {
         panic("not implemented");
     };
+    using Queued::calculatePrefetch;
+
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
                            PrefetchSourceType pf_source, bool miss_repeat, bool enter_new_region, bool is_first_shot,
                            Addr &pf_addr, int64_t &learned_bop_offset);

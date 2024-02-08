@@ -1453,6 +1453,8 @@ class BaseCache : public ClockedObject
 
     const unsigned cacheLevel{0};
 
+    const unsigned maxCacheLevel;
+
     const bool dumpMissPC{false};
 
     std::unordered_map<Addr, uint64_t> pcMissCount;

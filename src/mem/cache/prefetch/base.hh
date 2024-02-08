@@ -456,6 +456,8 @@ class Base : public ClockedObject
     /** Registered tlb for address translations */
     BaseTLB * tlb;
 
+    const unsigned maxCacheLevel;
+
   public:
     Base(const BasePrefetcherParams &p);
     virtual ~Base() = default;

@@ -79,6 +79,8 @@ class OptPrefetcher : public Queued
       boost::compute::detail::lru_cache<Addr, Addr> *filter;
       OptPrefetcher(const OptPrefetcherParams &p);
 
+      using Queued::calculatePrefetch;
+
       void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses) override
       {
           panic("not implemented");

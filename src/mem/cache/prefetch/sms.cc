@@ -23,7 +23,7 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
           p.pht_replacement_policy,
           PhtEntry(2 * (regionBlks - 1), SatCounter8(3, 2))),
       phtPFAhead(p.pht_pf_ahead),
-      phtPFLevel(p.pht_pf_level),
+      phtPFLevel(std::min(p.pht_pf_level, (int) maxCacheLevel)),
       stats(this),
       pfBlockLRUFilter(pfFilterSize),
       pfPageLRUFilter(pfPageFilterSize),
@@ -126,8 +126,10 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
         if (streamPFAhead) {
             Addr pf_tgt_addr_l2 = decr ? pf_tgt_addr - 48 * blkSize : pf_tgt_addr + 48 * blkSize;  // depth here?
             sendStreamPF(pfi, pf_tgt_addr_l2, addresses, pfPageLRUFilterL2, decr, 2);
-            Addr pf_tgt_addr_l3 = decr ? pf_tgt_addr - 256 * blkSize : pf_tgt_addr + 256 * blkSize;  // depth here?
-            sendStreamPF(pfi,pf_tgt_addr_l3,addresses,pfPageLRUFilterL3,decr,3);
+            if (maxCacheLevel >= 3) {
+                Addr pf_tgt_addr_l3 = decr ? pf_tgt_addr - 256 * blkSize : pf_tgt_addr + 256 * blkSize;  // depth here?
+                sendStreamPF(pfi, pf_tgt_addr_l3, addresses, pfPageLRUFilterL3, decr, 3);
+            }
         }
     }
 
