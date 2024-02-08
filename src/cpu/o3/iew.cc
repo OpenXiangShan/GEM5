@@ -1460,6 +1460,8 @@ IEW::executeInsts()
                     activityThisCycle();
                 }
 
+                instQueue.notifyExecuted(inst);
+
                 // Store conditionals will mark themselves as
                 // executed, and their writeback event will add the
                 // instruction to the queue to commit.

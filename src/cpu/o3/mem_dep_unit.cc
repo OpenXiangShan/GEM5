@@ -223,15 +223,9 @@ MemDepUnit::insert(const DynInstPtr &inst)
                                 std::begin(storeBarrierSNs),
                                 std::end(storeBarrierSNs));
     } else {
-        // InstSeqNum dep = depPred.checkInst(inst->pcState().instAddr());
-        // if (dep != 0)
-        //     producing_stores.push_back(dep);
         std::vector<InstSeqNum> dep = {};
         if (inst->isLoad()) {
             dep = depPred.checkInst(inst->pcState().instAddr());
-            if (depPred.checkInstStrict(inst->pcState().instAddr())) {
-                //inst->staticInst->setLoadStrict();
-            }
         }
         if (!dep.empty()) {
             for (int i=0;i<dep.size();i++) {

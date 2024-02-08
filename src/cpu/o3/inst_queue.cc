@@ -897,8 +897,6 @@ InstructionQueue::scheduleReadyInsts()
                 ++freeEntries;
                 count[tid]--;
                 issuing_inst->clearInIQ();
-            } else {
-                memDepUnit[tid].issue(issuing_inst);
             }
 
             listOrder.erase(order_it++);
@@ -923,6 +921,12 @@ InstructionQueue::scheduleReadyInsts()
     } else {
         DPRINTF(IQ, "Not able to schedule any instructions.\n");
     }
+}
+
+void
+InstructionQueue::notifyExecuted(const DynInstPtr &inst)
+{
+    memDepUnit[inst->threadNumber].issue(inst);
 }
 
 void

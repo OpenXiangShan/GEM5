@@ -285,8 +285,8 @@ StoreSet::insertStore(Addr store_PC, InstSeqNum store_seq_num, ThreadID tid, Cyc
         // storeList[store_seq_num] = store_SSID;
         validLFSTLarge[store_SSID][victim_inst] = 1;
 
-        DPRINTF(StoreSet, "Store %#x updated the LFST, SSID: %i\n",
-                store_PC, store_SSID);
+        DPRINTF(StoreSet, "Store %#x sn:%lu updated the LFST[SSID=%i][%i]\n",
+                store_PC, store_seq_num, store_SSID, victim_inst);
         dump();
     }
 }
@@ -339,11 +339,13 @@ StoreSet::checkInst(Addr PC)
 
         //     return LFST[inst_SSID];
         // }
-        for (int j=0;j<LFSTEntrySize;++j) {
+        for (int j = 0; j < LFSTEntrySize; ++j) {
             if (validLFSTLarge[inst_SSID][j]) {
                 vec.push_back(LFSTLarge[inst_SSID][j]);
             }
         }
+        DPRINTF(StoreSet, "Inst %#x with index=%i, ssid=%i, had %lu valid producer\n",
+                PC, index, inst_SSID, vec.size());
         return vec;
     }
 }

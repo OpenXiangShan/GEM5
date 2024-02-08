@@ -287,6 +287,8 @@ class InstructionQueue
 
     void delayWakeDependents();
 
+    void notifyExecuted(const DynInstPtr &inst);
+
   private:
     /** Does the actual squashing. */
     void doSquash(ThreadID tid);
