@@ -890,7 +890,7 @@ class LSQ
 
     /** The IEW stage pointer. */
     IEW *iewStage;
-    Tick returnlastConflictCheckTick();
+    Tick getLastConflictCheckTick();
 
     void clearAddresses(Tick time);
 
@@ -923,7 +923,7 @@ class LSQ
 
     Tick lastConflictCheckTick;
 
-    std::vector<int64_t> l1d_bank_addr_addresses;
+    std::vector<int64_t> l1dBankAddresses;
 
     bool openBankConflictCheck;
 

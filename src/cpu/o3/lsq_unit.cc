@@ -250,7 +250,7 @@ void
 LSQUnit::bankConflictReplaySchedule()
 {
     bankConflictReplayEvent *bk = new bankConflictReplayEvent(this);
-    cpu->schedule(bk, curTick() + 1);
+    cpu->schedule(bk, cpu->clockEdge(Cycles(1)));
 }
 
 void
@@ -1286,7 +1286,7 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx)
 bool
 LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict)
 {
-    if (lsq->returnlastConflictCheckTick() != curTick()) {
+    if (lsq->getLastConflictCheckTick() != curTick()) {
         lsq->clearAddresses(curTick());
     }
     bool ret = true;

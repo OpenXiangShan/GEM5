@@ -183,7 +183,7 @@ LSQ::tick()
     usedStorePorts = 0;
 }
 Tick
-LSQ::returnlastConflictCheckTick()
+LSQ::getLastConflictCheckTick()
 {
     return lastConflictCheckTick;
 }
@@ -192,7 +192,7 @@ void
 LSQ::clearAddresses(Tick time)
 {
     lastConflictCheckTick = time;
-    l1d_bank_addr_addresses.clear();
+    l1dBankAddresses.clear();
 }
 
 bool
@@ -200,12 +200,12 @@ LSQ::bankConflictedCheck(Addr vaddr)
 {
     bool now_bank_conflict = false;
     if (openBankConflictCheck) {
-        if (l1d_bank_addr_addresses.size() == 0) {
-            l1d_bank_addr_addresses.push_back(bankNum(vaddr));
+        if (l1dBankAddresses.size() == 0) {
+            l1dBankAddresses.push_back(bankNum(vaddr));
         } else {
-            auto bank_it = std::find(l1d_bank_addr_addresses.begin(), l1d_bank_addr_addresses.end(), bankNum(vaddr));
-            if (bank_it == l1d_bank_addr_addresses.end()) {
-                l1d_bank_addr_addresses.push_back(bankNum(vaddr));
+            auto bank_it = std::find(l1dBankAddresses.begin(), l1dBankAddresses.end(), bankNum(vaddr));
+            if (bank_it == l1dBankAddresses.end()) {
+                l1dBankAddresses.push_back(bankNum(vaddr));
             } else {
                 now_bank_conflict = true;
             }
