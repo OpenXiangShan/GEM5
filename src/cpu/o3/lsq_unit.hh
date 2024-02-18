@@ -387,7 +387,9 @@ class LSQUnit
      * Check if there are ports available. Return true if
      * there are, false if there are not.
      */
-    bool trySendPacket(bool isLoad, PacketPtr data_pkt);
+    void bankConflictReplaySchedule();
+
+    bool trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict);
 
 
     /** Debugging function to dump instructions in the LSQ. */
@@ -435,6 +437,22 @@ class LSQUnit
         /** The pointer to the LSQ unit that issued the store. */
         LSQUnit *lsqPtr;
     };
+    class bankConflictReplayEvent : public Event
+    {
+      public:
+        /** Constructs a bankConflict event. */
+        bankConflictReplayEvent(LSQUnit *lsq_ptr);
+
+        /** Processes the bankConflict event. */
+        void process();
+
+        /** Returns the description of this event. */
+        const char *description() const;
+
+      private:
+        /** The pointer to the LSQ unit that issued the bankConflictReplayEvent. */
+        LSQUnit *lsqPtr;
+    };
 
   public:
     /**
@@ -451,7 +469,6 @@ class LSQUnit
   public:
     /** The store queue. */
     StoreQueue storeQueue;
-
     /** The load queue. */
     LoadQueue loadQueue;
 
@@ -536,6 +553,9 @@ class LSQUnit
         /** Number of loads that were rescheduled. */
         statistics::Scalar rescheduledLoads;
 
+        /**Number of bank conflict times**/
+        statistics::Scalar bankConflictTimes;
+
         /** Number of times the LSQ is blocked due to the cache. */
         statistics::Scalar blockedByCache;
 
@@ -545,6 +565,8 @@ class LSQUnit
 
         statistics::Distribution loadTranslationLat;
     } stats;
+
+    void bankConflictReplay();
 
     bool squashMark{false};
 

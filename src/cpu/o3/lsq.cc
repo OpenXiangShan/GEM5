@@ -72,7 +72,8 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
     : cpu(cpu_ptr), iewStage(iew_ptr),
       _cacheBlocked(false),
       cacheStorePorts(params.cacheStorePorts), usedStorePorts(0),
-      cacheLoadPorts(params.cacheLoadPorts), usedLoadPorts(0),
+      cacheLoadPorts(params.cacheLoadPorts), usedLoadPorts(0),lastConflictCheckTick(0),
+      openBankConflictCheck(params.BankConflictCheck),
       waitingForStaleTranslation(false),
       staleTranslationWaitTxnId(0),
       lsqPolicy(params.smtLSQPolicy),
@@ -180,6 +181,37 @@ LSQ::tick()
 
     usedLoadPorts = 0;
     usedStorePorts = 0;
+}
+Tick
+LSQ::getLastConflictCheckTick()
+{
+    return lastConflictCheckTick;
+}
+
+void
+LSQ::clearAddresses(Tick time)
+{
+    lastConflictCheckTick = time;
+    l1dBankAddresses.clear();
+}
+
+bool
+LSQ::bankConflictedCheck(Addr vaddr)
+{
+    bool now_bank_conflict = false;
+    if (openBankConflictCheck) {
+        if (l1dBankAddresses.size() == 0) {
+            l1dBankAddresses.push_back(bankNum(vaddr));
+        } else {
+            auto bank_it = std::find(l1dBankAddresses.begin(), l1dBankAddresses.end(), bankNum(vaddr));
+            if (bank_it == l1dBankAddresses.end()) {
+                l1dBankAddresses.push_back(bankNum(vaddr));
+            } else {
+                now_bank_conflict = true;
+            }
+        }
+    }
+    return now_bank_conflict;
 }
 
 bool
@@ -826,11 +858,10 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
             assert(size == 8);
             request = new UnsquashableDirectRequest(&thread[tid], inst, flags);
         } else if (needs_burst) {
-            request = new SplitDataRequest(&thread[tid], inst, isLoad, addr,
-                    size, flags, data, res);
+            request = new SplitDataRequest(&thread[tid], inst, isLoad, addr, size, flags, data, res);
         } else {
-            request = new SingleDataRequest(&thread[tid], inst, isLoad, addr,
-                    size, flags, data, res, std::move(amo_op));
+            request = new SingleDataRequest(&thread[tid], inst, isLoad, addr, size, flags, data, res,
+                                            std::move(amo_op));
         }
         assert(request);
         request->_byteEnable = byte_enable;
@@ -1345,19 +1376,37 @@ void
 LSQ::SingleDataRequest::sendPacketToCache()
 {
     assert(_numOutstandingPackets == 0);
-    if (lsqUnit()->trySendPacket(isLoad(), _packets.at(0)))
-        _numOutstandingPackets = 1;
+    bool bank_conflict = false;
+
+    if (lsqUnit()->trySendPacket(isLoad(), _packets.at(0), bank_conflict)) {
+        if (!bank_conflict) {
+            _numOutstandingPackets = 1;
+        }
+    }
+    if (bank_conflict)
+        lsqUnit()->bankConflictReplaySchedule();
 }
 
 void
 LSQ::SplitDataRequest::sendPacketToCache()
 {
     /* Try to send the packets. */
-    while (numReceivedPackets + _numOutstandingPackets < _packets.size() &&
-            lsqUnit()->trySendPacket(isLoad(),
-                _packets.at(numReceivedPackets + _numOutstandingPackets))) {
-        _numOutstandingPackets++;
+    int bank_conflict_num = 0;
+    bool bank_conflict = false;
+    while (numReceivedPackets + _numOutstandingPackets + bank_conflict_num < _packets.size()) {
+        if (lsqUnit()->trySendPacket(isLoad(),
+                                     _packets.at(numReceivedPackets + _numOutstandingPackets + bank_conflict_num),
+                                      bank_conflict)) {
+            return;
+        }
+        if (!bank_conflict)
+            _numOutstandingPackets++;
+        else {
+            bank_conflict_num++;
+        }
     }
+    if (bank_conflict_num > 0)
+        lsqUnit()->bankConflictReplaySchedule();
 }
 
 Cycles
