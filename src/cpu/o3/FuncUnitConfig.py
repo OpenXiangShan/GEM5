@@ -124,18 +124,18 @@ class PredALU(FUDesc):
     count = 1
 
 class ReadPort(FUDesc):
-    opList = [ OpDesc(opClass='MemRead',opLat=2),
+    opList = [ OpDesc(opClass='MemRead', opLat=2),
                OpDesc(opClass='FloatMemRead'),
-               OpDesc(opClass='VectorUnitStrideLoad'),
-               OpDesc(opClass='VectorUnitStrideMaskLoad'),
-               OpDesc(opClass='VectorStridedLoad'),
-               OpDesc(opClass='VectorIndexedLoad'),
-               OpDesc(opClass='VectorUnitStrideFaultOnlyFirstLoad'),
-               OpDesc(opClass='VectorWholeRegisterLoad')]
+               OpDesc(opClass='VectorUnitStrideLoad', opLat=2),
+               OpDesc(opClass='VectorUnitStrideMaskLoad', opLat=2),
+               OpDesc(opClass='VectorStridedLoad', opLat=2),
+               OpDesc(opClass='VectorIndexedLoad', opLat=2),
+               OpDesc(opClass='VectorUnitStrideFaultOnlyFirstLoad', opLat=2),
+               OpDesc(opClass='VectorWholeRegisterLoad', opLat=2)]
     count = 2
 
 class WritePort(FUDesc):
-    opList = [ OpDesc(opClass='MemWrite',opLat=4),
+    opList = [ OpDesc(opClass='MemWrite', opLat=4),
                OpDesc(opClass='FloatMemWrite'),
                OpDesc(opClass='VectorUnitStrideStore'),
                OpDesc(opClass='VectorUnitStrideMaskStore'),
@@ -145,8 +145,22 @@ class WritePort(FUDesc):
     count = 2
 
 class RdWrPort(FUDesc):
-    opList = [ OpDesc(opClass='MemRead'), OpDesc(opClass='MemWrite'),
-               OpDesc(opClass='FloatMemRead'), OpDesc(opClass='FloatMemWrite')]
+    opList = [ OpDesc(opClass='MemRead', opLat=2),
+               OpDesc(opClass='MemWrite', opLat=4),
+               OpDesc(opClass='FloatMemRead'),
+               OpDesc(opClass='FloatMemWrite'),
+               OpDesc(opClass='VectorUnitStrideLoad', opLat=2),
+               OpDesc(opClass='VectorUnitStrideMaskLoad', opLat=2),
+               OpDesc(opClass='VectorStridedLoad', opLat=2),
+               OpDesc(opClass='VectorIndexedLoad', opLat=2),
+               OpDesc(opClass='VectorUnitStrideFaultOnlyFirstLoad', opLat=2),
+               OpDesc(opClass='VectorWholeRegisterLoad', opLat=2),
+               OpDesc(opClass='VectorUnitStrideStore'),
+               OpDesc(opClass='VectorUnitStrideMaskStore'),
+               OpDesc(opClass='VectorStridedStore'),
+               OpDesc(opClass='VectorIndexedStore'),
+               OpDesc(opClass='VectorWholeRegisterStore')
+               ]
     count = 0
 
 class IprPort(FUDesc):

@@ -78,3 +78,24 @@ class XiangshanECore(XiangshanCore):
     numPhysVecPredRegs = 36
     numPhysCCRegs = 0
     numPhysRMiscRegs = 40
+
+class XiangshanECore2Read(XiangshanCore):
+    fuPool = XSECore2ReadFUPool()
+
+    fetchWidth = 8
+    decodeWidth = 4
+    renameWidth = 4
+    dispatchWidth = 4
+    issueWidth = 6
+    wbWidth = 6
+
+    numROBEntries = 150
+    numIQEntries = 60
+    LQEntries = 48
+    SQEntries = 32
+    numPhysIntRegs = 108
+    numPhysFloatRegs = 112
+    numPhysVecRegs = 112
+    numPhysVecPredRegs = 36
+    numPhysCCRegs = 0
+    numPhysRMiscRegs = 40

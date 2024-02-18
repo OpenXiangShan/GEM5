@@ -73,6 +73,19 @@ class XSECoreFUPool(FUPool):
         FP_SLOW(count=1),
         FP_MAM(count=2),
         FP_MAA(count=2),
+        ReadPort(count=1),
+        RdWrPort(count=1),
+        SIMD_Unit(count=2),
+    ]
+
+class XSECore2ReadFUPool(FUPool):
+    FUList = [
+        IntALU(count=4),
+        IntMultDiv(count=1),
+        FP_MISC(count=2),
+        FP_SLOW(count=1),
+        FP_MAM(count=2),
+        FP_MAA(count=2),
         ReadPort(count=2),
         WritePort(count=1),
         SIMD_Unit(count=2),
