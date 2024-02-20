@@ -14,6 +14,7 @@
 #include "base/statistics.hh"
 #include "base/stats/group.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/mem_dep_unit.hh"
 #include "cpu/reg_class.hh"
 #include "cpu/timebuf.hh"
@@ -93,7 +94,7 @@ class IssueQue : public SimObject
     TimeBuffer<IssueStream>::wire toIssue;
     TimeBuffer<IssueStream>::wire toFu;
 
-    std::deque<DynInstPtr> instList;
+    std::list<DynInstPtr> instList;
     uint64_t instNumInsert = 0;
     uint64_t instNum = 0;
 
@@ -241,6 +242,7 @@ class Scheduler : public SimObject
 
     void tick();
     bool full(const DynInstPtr& inst);
+    void addProducer(const DynInstPtr& inst);
     // return true if insert successful
     void insert(const DynInstPtr& inst);
     void insertNonSpec(const DynInstPtr& inst);

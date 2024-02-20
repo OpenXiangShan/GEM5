@@ -81,6 +81,7 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
         instsInProgress[tid] = 0;
         loadsInProgress[tid] = 0;
         storesInProgress[tid] = 0;
+        freeEntries[tid] = {0, 0, 0};
         emptyROB[tid] = true;
         stalls[tid] = {false, false};
         serializeInst[tid] = nullptr;

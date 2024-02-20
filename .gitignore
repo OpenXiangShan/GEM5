@@ -39,3 +39,4 @@ configs/dram/lowp_sweep.cfg
 /*test*
 /*txt*
 /ext/dramsim3/DRAMsim3/
+.cache

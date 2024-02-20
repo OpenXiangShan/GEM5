@@ -356,7 +356,7 @@ class IEW
     /** Skid buffer between rename and IEW. */
     std::deque<DynInstPtr> skidBuffer[MaxThreads];
 
-    std::deque<DynInstPtr> dispQue;
+    std::deque<DynInstPtr> dispQue[3];
 
     /** Scoreboard pointer. */
     Scoreboard* scoreboard;

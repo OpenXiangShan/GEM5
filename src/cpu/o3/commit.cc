@@ -675,7 +675,7 @@ Commit::tick()
     if (activeThreads->empty())
         return;
 
-    if (cpu->curCycle() - lastCommitCycle > 5000) {
+    if (cpu->curCycle() - lastCommitCycle > 10000) {
         if (maybeStucked) {
             panic("cpu stucked!!\n");
         }

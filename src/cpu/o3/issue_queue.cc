@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "base/cprintf.hh"
 #include "base/logging.hh"
 #include "base/stats/group.hh"
 #include "base/stats/info.hh"
@@ -281,15 +282,6 @@ IssueQue::full()
     if (full) {
         iqstats->full++;
         DPRINTF(Schedule, "has full!\n");
-        DPRINTF(Schedule, "start dump insts\n");
-        for (auto& it : instList) {
-            DPRINTF(Schedule, "[sn %lu], %s ready: %d issued: %d squashed: %d\n",
-                it->seqNum,
-                enums::OpClassStrings[it->opClass()],
-                it->readyToIssue(),
-                it->isIssued(),
-                it->isSquashed());
-        }
     }
     if (dispBottleneck) {
         iqstats->bwfull++;
@@ -349,7 +341,6 @@ void
 IssueQue::insertNonSpec(const DynInstPtr& inst)
 {
     DPRINTF(Schedule, "[sn %lu] insertNonSpec into %s\n", inst->seqNum, iqname);
-    DPRINTF(Schedule, "[sn %lu] instNum++\n", inst->seqNum);
     inst->issueQue = this;
     if (inst->isMemRef()) {
         scheduler->memDepUnit[inst->threadNumber].insertNonSpec(inst);
@@ -360,7 +351,7 @@ void
 IssueQue::markMemDepDone(const DynInstPtr& inst)
 {
     assert(inst->isMemRef());
-    DPRINTF(Schedule, "[sn %lu] has resloved memdependency\n", inst->seqNum);
+    DPRINTF(Schedule, "[sn %lu] has solved memdependency\n", inst->seqNum);
     inst->setMemDepDone();
     addIfReady(inst);
 }
@@ -389,6 +380,7 @@ void
 IssueQue::doCommit(const InstSeqNum seqNum)
 {
     while (!instList.empty() && instList.front()->seqNum <= seqNum) {
+        assert(instList.front()->isIssued());
         instList.pop_front();
     }
 }
@@ -396,19 +388,23 @@ IssueQue::doCommit(const InstSeqNum seqNum)
 void
 IssueQue::doSquash(const InstSeqNum seqNum)
 {
-    while (!instList.empty() && (instList.back()->seqNum > seqNum)) {
-        auto it = instList.back();
-        it->setSquashedInIQ();
-        it->setCanCommit();
-        it->clearInIQ();
-        it->setScheduled();
-        if (!it->isIssued()) {
-            DPRINTF(Schedule, "[sn %lu] instNum--\n", it->seqNum);
-            assert(instNum != 0);
-            instNum--;
-            it->setIssued();
+    for (auto it=instList.begin(); it!=instList.end();) {
+        if ((*it)->seqNum > seqNum) {
+            (*it)->setSquashedInIQ();
+            (*it)->setCanCommit();
+            (*it)->clearInIQ();
+            (*it)->setScheduled();
+            if (!(*it)->isIssued()) {
+                DPRINTF(Schedule, "[sn %lu] instNum--\n", (*it)->seqNum);
+                assert(instNum != 0);
+                instNum--;
+                (*it)->setIssued();
+            }
+            it = instList.erase(it);
         }
-        instList.pop_back();
+        else {
+            it++;
+        }
     }
 
     // clear in depGraph
@@ -518,9 +514,14 @@ WakeupQue::init(std::vector<IssueQue*>* issueQues,
 void
 WakeupQue::insert(const DynInstPtr& inst, IssueQue* from)
 {
+    if (inst->numDestRegs() == 0) {
+        return;
+    }
+
     if (inst->isMemRef()) {
         return;
     }
+
     for (auto to : *issueQues) {
         bool wakeup = specWakeupMatrix[from->getId()][to->getId()];
         int wakeupDelay = 0;
@@ -626,6 +627,22 @@ Scheduler::full(const DynInstPtr& inst)
 }
 
 void
+Scheduler::addProducer(const DynInstPtr& inst)
+{
+    DPRINTF(Schedule, "[sn %lu] addProdecer\n", inst->seqNum);
+    for (int i=0; i<inst->numDestRegs(); i++) {
+        auto dst = inst->renamedDestIdx(i);
+        if (dst->isFixedMapping()) {
+            continue;
+        }
+        specScoreboard[dst->flatIndex()] = false;
+        noSpecScoreboard[dst->flatIndex()] = false;
+        bypassScoreboard[dst->flatIndex()] = false;
+        DPRINTF(Schedule, "mark scoreboard p%lu not ready\n", dst->flatIndex());
+    }
+}
+
+void
 Scheduler::insert(const DynInstPtr& inst)
 {
     inst->setInIQ();
@@ -654,17 +671,6 @@ Scheduler::insert(const DynInstPtr& inst)
     assert(inserted);
     forwardDisp = !forwardDisp;
     DPRINTF(Dispatch, "[sn %lu] dispatch: %s\n", inst->seqNum, inst->staticInst->disassemble(0));
-
-    for (int i=0; i<inst->numDestRegs(); i++) {
-        auto dst = inst->renamedDestIdx(i);
-        if (dst->isFixedMapping()) {
-            continue;
-        }
-        specScoreboard[dst->flatIndex()] = false;
-        noSpecScoreboard[dst->flatIndex()] = false;
-        bypassScoreboard[dst->flatIndex()] = false;
-        DPRINTF(Schedule, "mark scoreboard p%lu not ready\n", dst->flatIndex());
-    }
 }
 
 void
@@ -678,16 +684,6 @@ Scheduler::insertNonSpec(const DynInstPtr& inst)
             iq->insertNonSpec(inst);
             break;
         }
-    }
-
-    for (int i=0; i<inst->numDestRegs(); i++) {
-        auto dst = inst->renamedDestIdx(i);
-        if (dst->isFixedMapping()) {
-            continue;
-        }
-        specScoreboard[dst->flatIndex()] = false;
-        noSpecScoreboard[dst->flatIndex()] = false;
-        bypassScoreboard[dst->flatIndex()] = false;
     }
 }
 
