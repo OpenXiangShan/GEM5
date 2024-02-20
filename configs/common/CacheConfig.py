@@ -112,8 +112,9 @@ def config_cache(options, system):
     # minimal so that compute delays do not include memory access latencies.
     # Configure the compulsory L1 caches for the O3CPU, do not configure
     # any more caches.
-    if options.l2cache and options.elastic_trace_en:
-        fatal("When elastic trace is enabled, do not configure L2 caches.")
+    if options.l2cache:
+        assert (not hasattr(options, 'elastic_trace_en') or
+                not options.elastic_trace_en)
 
     if options.l2cache:
         # Provide a clock for the L2 and the L1-to-L2 bus here as they
@@ -152,6 +153,10 @@ def config_cache(options, system):
             system.membus.header_latency = 0
             system.membus.snoop_response_latency = 0
             system.membus.width = 128 # byte per cycle
+
+        if options.xiangshan_ecore:
+            system.l2.response_latency = 66
+            system.l2.writeback_clean = False
 
         if options.l3cache:
             system.l3 = L3Cache(clk_domain=system.cpu_clk_domain,
