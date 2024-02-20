@@ -1293,22 +1293,21 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict)
     bool cache_got_blocked = false;
 
     LSQRequest *request = dynamic_cast<LSQRequest*>(data_pkt->senderState);
-    bool now_bank_conflict = lsq->bankConflictedCheck(data_pkt->req->getVaddr());
+    bank_conflict = lsq->bankConflictedCheck(data_pkt->req->getVaddr());
 
 
     if (!lsq->cacheBlocked() &&
         lsq->cachePortAvailable(isLoad)) {
-        if (now_bank_conflict) {
+        if (bank_conflict) {
             ++stats.bankConflictTimes;
             if (!isLoad) {
                 assert(request == storeWBIt->request());
                 isStoreBlocked = true;
             }
             bank_conflict = true;
-            request->packetNotSent();
-            return true;
+            ret = false;
         }
-        if (!dcachePort->sendTimingReq(data_pkt)) {
+        if (!bank_conflict && !dcachePort->sendTimingReq(data_pkt)) {
             ret = false;
             cache_got_blocked = true;
         }
@@ -1334,10 +1333,9 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict)
         request->packetNotSent();
     }
     DPRINTF(LSQUnit, "Memory request (pkt: %s) from inst [sn:%llu] was"
-            " %ssent (cache is blocked: %d, cache_got_blocked: %d)\n",
+            " %ssent (cache is blocked: %d, cache_got_blocked: %d, bank conflict: %d)\n",
             data_pkt->print(), request->instruction()->seqNum,
-            ret ? "": "not ", lsq->cacheBlocked(), cache_got_blocked);
-    bank_conflict = now_bank_conflict;
+            ret ? "": "not ", lsq->cacheBlocked(), cache_got_blocked, bank_conflict);
     return ret;
 }
 

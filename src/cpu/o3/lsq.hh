@@ -894,7 +894,7 @@ class LSQ
 
     void clearAddresses(Tick time);
 
-    Addr bankNum(Addr a) { return (a >> 3) & 0x7; };
+    Addr bankNum(Addr a) const { return (a >> 3) & 0x7; };
 
     bool bankConflictedCheck(Addr vaddr);
 

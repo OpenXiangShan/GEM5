@@ -1241,6 +1241,9 @@ LSQ::SplitDataRequest::markAsStaleTranslation()
 bool
 LSQ::SingleDataRequest::recvTimingResp(PacketPtr pkt)
 {
+    // Dump inst num, request addr, and packet addr
+    DPRINTF(LSQ, "Single Req::recvTimingResp: inst: %llu, pkt: %#lx\n", pkt->req->getReqInstSeqNum(),
+            pkt->getAddr());
     assert(_numOutstandingPackets == 1);
     flags.set(Flag::Complete);
     assert(pkt == _packets.front());
@@ -1391,22 +1394,19 @@ void
 LSQ::SplitDataRequest::sendPacketToCache()
 {
     /* Try to send the packets. */
-    int bank_conflict_num = 0;
     bool bank_conflict = false;
-    while (numReceivedPackets + _numOutstandingPackets + bank_conflict_num < _packets.size()) {
-        if (lsqUnit()->trySendPacket(isLoad(),
-                                     _packets.at(numReceivedPackets + _numOutstandingPackets + bank_conflict_num),
-                                      bank_conflict)) {
-            return;
-        }
-        if (!bank_conflict)
+    while (numReceivedPackets + _numOutstandingPackets < _packets.size()) {
+        bool success = lsqUnit()->trySendPacket(isLoad(), _packets.at(numReceivedPackets + _numOutstandingPackets),
+                                                bank_conflict);
+        if (success) {
             _numOutstandingPackets++;
-        else {
-            bank_conflict_num++;
+        } else {
+            break;
         }
     }
-    if (bank_conflict_num > 0)
+    if (bank_conflict) {
         lsqUnit()->bankConflictReplaySchedule();
+    }
 }
 
 Cycles
