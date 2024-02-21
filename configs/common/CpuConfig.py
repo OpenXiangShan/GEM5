@@ -61,7 +61,7 @@ def config_etrace(cpu_cls, cpu_list, options):
               " type or inherited from DerivO3CPU.", cpu_cls)
 
 
-def config_difftest(cpu_cls, cpu_list, options):
+def deprecated_config_difftest(cpu_cls, cpu_list, options):
     if not options.enable_difftest:
         return
     else:

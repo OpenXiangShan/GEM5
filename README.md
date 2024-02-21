@@ -142,7 +142,7 @@ If compiling gem5 on Ubuntu 22.04, or related Linux distributions, you may insta
 ``` shell
 sudo apt install build-essential git m4 scons zlib1g zlib1g-dev \
     libprotobuf-dev protobuf-compiler libprotoc-dev libgoogle-perftools-dev \
-    python3-dev libboost-all-dev pkg-config libsqlite3-dev
+    python3-dev libboost-all-dev pkg-config libsqlite3-dev zstd libzstd-dev
 ```
 
 ### Setup on Ubuntu 20.04
@@ -151,19 +151,8 @@ If compiling gem5 on Ubuntu 20.04, or related Linux distributions, you may insta
 ``` shell
 sudo apt install build-essential git m4 scons zlib1g zlib1g-dev \
     libprotobuf-dev protobuf-compiler libprotoc-dev libgoogle-perftools-dev \
-    python3-dev python-is-python3 libboost-all-dev pkg-config libsqlite3-dev
+    python3-dev python-is-python3 libboost-all-dev pkg-config libsqlite3-dev zstd libzstd-dev
 ```
-
-### Setup on Ubuntu 18.04
-If compiling gem5 on Ubuntu 18.04, or related Linux distributions, you may install all these dependencies using APT:
-
-``` shell
-sudo apt install build-essential git m4 scons zlib1g zlib1g-dev \
-    libprotobuf-dev protobuf-compiler libprotoc-dev libgoogle-perftools-dev \
-    python3-dev python libboost-all-dev pkg-config libsqlite3-dev
-```
-
-
 
 ## Clone and build DRAMSim3
 
@@ -172,14 +161,6 @@ Refer to [The readme for DRAMSim3](ext/dramsim3/README) to install DRAMSim3.
 Notes:
 - If you have already built GEM5, you should rebuild gem5 after install DRAMSim3
 - If simulating Xiangshan system, use DRAMSim3 with our costumized config
-
-Usage:
-
-``` shell
-$gem5_home/build/gem5.opt ... fs.py ... \
-    --mem-type=DRAMsim3 \
-    --dramsim3-ini=$gem5_home/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini ...
-```
 
 ## Build GEM5
 
@@ -201,27 +182,55 @@ Press enter to continue, or ctrl-c to abort:
 
 Users must properly prepare workloads before running GEM5, plz read [Workflows](#workflows-how-to-run-workloads) first.
 
-[The example running script](util/warmup_scripts/simple_gem5.sh) contains the default configuration for XS-GEM5,
-and a simple batch running function.
+[The example running script](util/xs_scripts/kmh_6wide.sh) contains the default command for simulate XS-GEM5.
+[The example batch running script](util/xs_scripts/parallel_sim.sh) shows an example to simulate multiple workloads in parallel.
 
-**NOTE**: If you want to cosimulate against NEMU, please refer to [Difftest with NEMU](#difftest-with-nemu) before running,
-and set NEUM_HOME to the root directory of NEMU.
-If not, please delete the line containing `--enable-difftest \` in the example running script.
+### Environment variables
+
+Users should set the following environment variables before running GEM5:
+
+- $GCB_REF_SO: The reference design used in Difftest, which is the path to the `.so` file of NEMU or spike.
+- $GCB_RESTORER: A piece of RISC-V code to restore the checkpoint.
+- $GCBV_REF_SO: Reference design of RVV version.
+- $GCBV_RESTORER: Restorer of RVV version.
+
+These files can be found in the release page.
+
+**NOTE**: Current scripts enforce Difftest (cosimulating against NEMU or spike),
+either download the pre-built reference design from the release page or
+build a reference design from source([Difftest with NEMU](#difftest-with-nemu)).
+
+If a user does not want Difftest, please manually edit `configs/example/xiangshan.py` and `configs/common/XSConfig.py` to disable it.
+Simulation error without Difftest **will NOT be responded.**
+
+### Example command
+
+Firstly, one should ensure GEM5 is properly built and workloads are prepared by running a single workload:
+``` shel
+mkdir util/xs_scripts/example
+cd util/xs_scripts/example
+bash ../kmh_6wide.sh /path/to/a/single/checkpoint.gz
+```
+
+Then, for running multiple workloads in parallel, one can use the batch running script:
+``` shel
+mkdir util/xs_scripts/example
+cd util/xs_scripts/example
+bash ../parallel_sim.sh `realpath ../kmh_6wide.sh` $workloads_lst /top/dir/of/checkpoints a_fancy_simulation_tag
+```
+In this example, parallel_sim.sh will invoke kmh_6wide.sh with GNU parallel to run multiple workloads.
+Through this, parallel simulation infrastructure is decouple from the simulation script.
+
+### About workload_lst
+
+A line of `workload_lst` is a space-separated list of workload parameters.
+For example, "hmmer_nph3_15858 hmmer_nph3/15858 0 0 20 20" represents the workload name, checkpoint path, skip insts (usually 0), functional warmup insts (usually 0),
+detailed warmup insts (usually 20), and sample insts (usually 20), respectively.
+`parallel_sim.sh` will `find hmmer_nph3/15858/*.gz` in the /top/dir/of/checkpoints to obtain the checkpoint gz file.
+Then the gz file will be passed to `kmh_6wide.sh` to run the simulation.
 
 
-[The example running script](util/warmup_scripts/simple_gem5.sh) runs GEM5 with single thread (`function single_run`) or multiple threads (`function parallel_run`).
-Both `single_run` and `parallel_run` calls `function run`.
-`function run` provides the default parameters for XS-GEM5.
-
-For debugging or performance tuning, we usually call `single_run` and modify parameters for `function run`.
-`run` takes 5 parameters:
-- `debug_gz`: the path to the debug binary (usually checkpoint) of the program to run.
-- `warmup_inst`: the number of instructions to warmup the cache, usually 20M.
-- `max_inst`: the number of instructions to run, usually 40M. The first half is used for warmup, and the second half is used for statistics collection.
-- `work_dir`: the directory to store the output files.
-- the last parameter: whether enable Arch DB. Arch DB is a database to store the micro-architectural trace of the program. It is used for debugging and performance tuning.
-
-More details can be found in comments and code of the example running script.
+More details can be found in comments and code of the example running scripts.
 
 ## Play with Arch DB
 
@@ -244,7 +253,6 @@ build-->so
 so-->cosim
 ```
 
-
 We the [gem5-ref-main branch of NEMU](https://github.com/OpenXiangShan/NEMU/tree/gem5-ref-main) for difftest with XS-GEM5.
 
 ``` shell
@@ -266,10 +274,9 @@ build
 
 then use `riscv64-nemu-interpreter-so` as reference for GEM5,
 ``` shell
-export ref_so=`realpath build/riscv64-nemu-interpreter-so`
+export GCB_REF_SO=`realpath build/riscv64-nemu-interpreter-so`
 
-# This is not full command, but a piece of example.
-$gem5_home/build/gem5.opt ... --enable-difftest --difftest-ref-so $ref_so ...
+# Then run gem5
 ```
 
 # FAQ

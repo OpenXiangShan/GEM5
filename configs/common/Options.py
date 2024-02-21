@@ -302,7 +302,7 @@ def addCommonOptions(parser, configure_xiangshan=False):
                         help="Clock for blocks running at CPU speed")
 
     parser.add_argument("-I", "--maxinsts", action="store", type=int,
-                        default=None, help="""Total number of instructions to
+                        default=20*10**6, help="""Total number of instructions to
                                             simulate (default: run forever)""")
 
     parser.add_argument("--enable-riscv-vector", action="store_true", default=False,
@@ -313,7 +313,7 @@ def addCommonOptions(parser, configure_xiangshan=False):
 
     # for warmup without switching cpu
     parser.add_argument("--warmup-insts-no-switch", action="store", type=int,
-        default=None,
+        default=20*10**6,
         help="Warmup period in total instructions, reset stats without switch")
 
     parser.add_argument(
@@ -616,10 +616,10 @@ def addXiangshanFSOptions(parser):
                         help="Use memory layout of Xiangshan system")
 
     parser.add_argument("--generic-rv-cpt", action= "store", type = str,
-                        default=None,
+                        default=None, required=True,
                         help="The path of Xiangshan risc-v checkpoint")
     parser.add_argument("--gcpt-restorer", action="store", type = str,
-                      default="",
+                      default=None,
                       help="The path of generic risc-v checkpoint restorer")
 
     parser.add_argument("--raw-cpt", action= "store_true",
@@ -637,7 +637,6 @@ def addXiangshanFSOptions(parser):
 
     parser.add_argument("--difftest-ref-so",
                         action="store",
-                        default="{}/build/riscv64-nemu-interpreter-so".format(
-                            os.environ.get('NEMU_HOME', '/no/where')),
+                        default=None,
                         help="The shared lib file used to do difftest")
 

@@ -353,7 +353,7 @@ def build_test_system(np):
             cpu.eventq_index = i + 1
         test_sys.kvm_vm = KvmVM()
 
-    CpuConfig.config_difftest(TestCPUClass, test_sys.cpu, args)
+    CpuConfig.deprecated_config_difftest(TestCPUClass, test_sys.cpu, args)
 
     for i in range(np):
         if args.dump_commit:
