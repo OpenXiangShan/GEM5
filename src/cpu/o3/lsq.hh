@@ -100,6 +100,7 @@ class LSQ
          * memory. */
         virtual bool recvTimingResp(PacketPtr pkt);
         virtual void recvTimingSnoopReq(PacketPtr pkt);
+        virtual void recvFunctionalCustomSignal(PacketPtr pkt, int sig);
 
         virtual void
         recvFunctionalSnoop(PacketPtr pkt)
@@ -879,6 +880,8 @@ class LSQ
     bool recvTimingResp(PacketPtr pkt);
 
     void recvTimingSnoopReq(PacketPtr pkt);
+
+    void recvFunctionalCustomSignal(PacketPtr pkt, int sig);
 
     Fault pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
                       unsigned int size, Addr addr, Request::Flags flags,

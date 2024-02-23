@@ -53,6 +53,12 @@ FunctionalRequestProtocol::send(
     return peer->recvFunctional(pkt);
 }
 
+void FunctionalRequestProtocol::sendFunctionalCustomSignal(
+    FunctionalResponseProtocol *peer, PacketPtr pkt, int sig) const
+{
+    return peer->recvFunctionalCustomSignal(pkt, sig);
+}
+
 /* The response protocol. */
 
 void
@@ -61,6 +67,12 @@ FunctionalResponseProtocol::sendSnoop(
 {
     assert(pkt->isRequest());
     return peer->recvFunctionalSnoop(pkt);
+}
+
+void FunctionalResponseProtocol::sendFunctionalCustomSignal(
+    FunctionalRequestProtocol *peer, PacketPtr pkt, int sig) const
+{
+    return peer->recvFunctionalCustomSignal(pkt, sig);
 }
 
 } // namespace gem5

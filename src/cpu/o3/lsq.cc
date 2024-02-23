@@ -501,6 +501,17 @@ LSQ::recvTimingSnoopReq(PacketPtr pkt)
     }
 }
 
+void
+LSQ::recvFunctionalCustomSignal(PacketPtr pkt, int sig)
+{
+    if (sig != 1) {
+        return;
+    }
+    LSQRequest *request = dynamic_cast<LSQRequest*>(pkt->senderState);
+    panic_if(!request, "Got packet back with unknown sender state\n");
+    // notify cache hit
+}
+
 int
 LSQ::getCount()
 {
@@ -1494,6 +1505,12 @@ LSQ::DcachePort::recvTimingSnoopReq(PacketPtr pkt)
         }
     }
     lsq->recvTimingSnoopReq(pkt);
+}
+
+void
+LSQ::DcachePort::recvFunctionalCustomSignal(PacketPtr pkt, int sig)
+{
+    lsq->recvFunctionalCustomSignal(pkt, sig);
 }
 
 void
