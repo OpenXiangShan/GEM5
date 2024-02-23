@@ -504,12 +504,15 @@ LSQ::recvTimingSnoopReq(PacketPtr pkt)
 void
 LSQ::recvFunctionalCustomSignal(PacketPtr pkt, int sig)
 {
-    if (sig != 1) {
+    if (sig <= 0) {
         return;
     }
+
     LSQRequest *request = dynamic_cast<LSQRequest*>(pkt->senderState);
     panic_if(!request, "Got packet back with unknown sender state\n");
     // notify cache hit
+    uint32_t request_cycle = sig - 1;
+    iewStage->loadCachehit(request->instruction(), request_cycle);
 }
 
 int

@@ -463,7 +463,7 @@ WakeupQue::init(std::vector<IssueQue*>* issueQues,
 {
     this->issueQues = issueQues;
     int totalOutports = 0;
-    int maxExecCycle = 30;
+    int maxExecCycle = 50;
     for (auto it : *issueQues) {
         totalOutports += it->inoutPorts;
     }
@@ -514,11 +514,7 @@ WakeupQue::init(std::vector<IssueQue*>* issueQues,
 void
 WakeupQue::insert(const DynInstPtr& inst, IssueQue* from)
 {
-    if (inst->numDestRegs() == 0) {
-        return;
-    }
-
-    if (inst->isMemRef()) {
+    if (inst->numDestRegs() == 0 || inst->isMemRef()) {
         return;
     }
 
@@ -538,6 +534,27 @@ WakeupQue::insert(const DynInstPtr& inst, IssueQue* from)
 
         DPRINTF(Schedule, "%s create wakeupEvent to %s, delay %d cycles\n",
             from->getName(), to->getName(), wakeupDelay);
+        assert(!freeEventList.empty());
+        auto wakeupEvent = freeEventList.back();
+        freeEventList.pop_back();
+        wakeupEvent->reset(inst, to);
+        cpu->schedule(wakeupEvent, cpu->clockEdge(Cycles(wakeupDelay)) + 1);
+    }
+}
+
+void
+WakeupQue::insertLoad(const DynInstPtr& inst, uint32_t delay_cycle)
+{
+    if (!inst->isLoad()) {
+        return;
+    }
+    int wakeupDelay = 0;
+    if (delay_cycle > inst->issueQue->getIssueStages()) {
+        wakeupDelay = delay_cycle - inst->issueQue->getIssueStages();
+    }
+    for (auto to : *issueQues) {
+        DPRINTF(Schedule, "create load wakeupEvent to %s, delay %d cycles\n",
+            to->getName(), wakeupDelay);
         assert(!freeEventList.empty());
         auto wakeupEvent = freeEventList.back();
         freeEventList.pop_back();
@@ -782,6 +799,11 @@ Scheduler::doSquash(const InstSeqNum seqNum)
     for (auto it : issueQues) {
         it->doSquash(seqNum);
     }
+}
+
+void Scheduler::loadCachehit(const DynInstPtr& inst, uint32_t delay_cycle)
+{
+    wakeupQue.insertLoad(inst, delay_cycle);
 }
 
 }

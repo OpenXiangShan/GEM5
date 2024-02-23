@@ -337,8 +337,8 @@ BaseCache::handleTimingReqHit(PacketPtr pkt, CacheBlk *blk, Tick request_time, b
         // the calculateAccessLatency() function.
         if (cacheLevel == 1 && pkt->isRead()) {
             assert(pkt->hasData());
-            // send cachehit signal
-            cpuSidePort.sendCustomSignal(pkt, 1);
+            // send cachehit signal and request cycle
+            cpuSidePort.sendCustomSignal(pkt, 1 + ticksToCycles(request_time - curTick()));
         }
         DPRINTF(Cache, "In handle timing hit, pkt has data: %i\n", pkt->hasData());
         cpuSidePort.schedTimingResp(pkt, request_time);

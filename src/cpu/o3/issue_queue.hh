@@ -209,6 +209,7 @@ class WakeupQue
     void setScheduler(Scheduler* scheduler) { this->scheduler = scheduler; }
     // call by IssueQue sch
     void insert(const DynInstPtr& inst, IssueQue* from);
+    void insertLoad(const DynInstPtr& inst, uint32_t delay_cycle);
     void cancel();
     std::string name() { return "wakeupQue"; }
 };
@@ -259,6 +260,8 @@ class Scheduler : public SimObject
 
     void doCommit(const InstSeqNum seqNum);
     void doSquash(const InstSeqNum seqNum);
+
+    void loadCachehit(const DynInstPtr& inst, uint32_t delay_cycle);
 };
 
 

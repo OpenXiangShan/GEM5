@@ -254,6 +254,11 @@ class IEW
         ldstQueue.setLastRetiredHtmUid(tid, htmUid);
     }
 
+    void loadCachehit(const DynInstPtr &inst, uint32_t delay_cycle)
+    {
+        scheduler->loadCachehit(inst, delay_cycle);
+    }
+
   private:
     /** Sends commit proper information for a squash due to a branch
      * mispredict.
