@@ -46,6 +46,10 @@ class IntALU(FUDesc):
     opList = [ OpDesc(opClass='IntAlu') ]
     count = 6
 
+class IntBRU(FUDesc):
+    opList = [ OpDesc(opClass='IntBr') ]
+    count = 1
+
 class IntMultDiv(FUDesc):
     opList = [ OpDesc(opClass='IntMult', opLat=3),
                OpDesc(opClass='IntDiv', opLat=20, pipelined=False) ]
