@@ -256,8 +256,10 @@ class XsStreamPrefetcher(QueuedPrefetcher):
     on_data  = True
     on_inst  = False
     xs_stream_depth = Param.Int(32, "The depth of xs_stream_depth")
+    enable_auto_depth = Param.Bool(False, "enable autp depth.")
+    enable_l3_stream_pre = Param.Bool(False, "enable l3 stream pre.")
     xs_stream_entries = Param.MemorySize(
-        "32",
+        "16",
         "num of active generation table entries"
     )
     xs_stream_indexing_policy = Param.BaseIndexingPolicy(

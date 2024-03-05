@@ -11,7 +11,9 @@ namespace prefetch
 XsStreamPrefetcher::XsStreamPrefetcher(const XsStreamPrefetcherParams &p)
     : Queued(p),
       depth(p.xs_stream_depth),
-      bad_pre_num(0),
+      badPreNum(0),
+      enableAutoDepth(p.enable_auto_depth),
+      enableL3StreamPre(p.enable_l3_stream_pre),
       stream_array(p.xs_stream_entries, p.xs_stream_entries, p.xs_stream_indexing_policy,
                    p.xs_stream_replacement_policy, STREAMEntry()),
       streamBlkFilter(pfFilterSize)
@@ -31,27 +33,35 @@ XsStreamPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrP
         DPRINTF(XsStreamPrefetcher, "prefetch trigger come from store unit\n");
     }
     if (pfi.isCacheMiss() && (streamBlkFilter.contains(block_addr))) {
-        bad_pre_num++;
+        badPreNum++;
     }
     STREAMEntry *entry = streamLookup(pfi, in_active_page, decr);
-    if (issuedPrefetches % VALIDITY_CHECK_INTERVAL == 0) {
-        if (((double)late_num / issuedPrefetches >= 0.4)) {
-            if (depth != (1 << 9))
-                depth = depth << 1;
+    if ((issuedPrefetches >= VALIDITYCHECKINTERVAL) && (enableAutoDepth)) {
+        if ((double)late_num / issuedPrefetches >= LATECOVERAGE) {
+            if (depth != DEPTHRIGHT)
+                depth = depth << DEPTHSTEP;
         }
-        if (bad_pre_num > LATE_MISS_THRESHOLD) {
-            bad_pre_num = 0;
-            if (depth != 1) {
-                depth = depth >> 1;
+        if (badPreNum > LATEMISSTHRESHOLD) {
+            badPreNum = 0;
+            if (depth != DEPTHLEFT) {
+                depth = depth >> DEPTHSTEP;
             }
         }
+        issuedPrefetches = 0;
     }
-    Addr pf_stream_l1 = decr ? block_addr - depth * blkSize : block_addr + depth * blkSize;
-    sendPFWithFilter(pfi, pf_stream_l1, addresses, 1, stream_type);
-    Addr pf_stream_l2 = decr ? block_addr - (depth << l2Ratio) * blkSize : block_addr + (depth << l2Ratio) * blkSize;
-    sendPFWithFilter(pfi, pf_stream_l2, addresses, 1, stream_type);
-    Addr pf_stream_l3 = decr ? block_addr - (depth << l3Ratio) * blkSize : block_addr + (depth << l3Ratio) * blkSize;
-    sendPFWithFilter(pfi, pf_stream_l3, addresses, 1, stream_type);
+
+    if (in_active_page) {
+        Addr pf_stream_l1 = decr ? block_addr - depth * blkSize : block_addr + depth * blkSize;
+        sendPFWithFilter(pfi, pf_stream_l1, addresses, 1, stream_type);
+        Addr pf_stream_l2 =
+            decr ? block_addr - (depth << l2Ratio) * blkSize : block_addr + (depth << l2Ratio) * blkSize;
+        sendPFWithFilter(pfi, pf_stream_l2, addresses, 1, stream_type);
+        if (enableL3StreamPre) {
+            Addr pf_stream_l3 =
+                decr ? block_addr - (depth << l3Ratio) * blkSize : block_addr + (depth << l3Ratio) * blkSize;
+            sendPFWithFilter(pfi, pf_stream_l3, addresses, 1, stream_type);
+        }
+    }
 }
 
 XsStreamPrefetcher::STREAMEntry *
@@ -59,22 +69,22 @@ XsStreamPrefetcher::streamLookup(const PrefetchInfo &pfi, bool &in_active_page, 
 {
     Addr pc = pfi.getPC();
     Addr vaddr = pfi.getAddr();
-    Addr vaddr_tag = tagAddress(vaddr);
+    Addr vaddr_tag_num = tagAddress(vaddr);
     Addr vaddr_offset = tagOffset(vaddr);
 
-    STREAMEntry *entry = stream_array.findEntry(vaddr_tag, pfi.isSecure());
-    STREAMEntry *entry_plus = stream_array.findEntry(vaddr_tag + 1, pfi.isSecure());
-    STREAMEntry *entry_min = stream_array.findEntry(vaddr_tag - 1, pfi.isSecure());
+    STREAMEntry *entry = stream_array.findEntry(regionHashTag(vaddr_tag_num), pfi.isSecure());
+    STREAMEntry *entry_plus = stream_array.findEntry(regionHashTag(vaddr_tag_num + 1), pfi.isSecure());
+    STREAMEntry *entry_min = stream_array.findEntry(regionHashTag(vaddr_tag_num - 1), pfi.isSecure());
 
     if (entry) {
         stream_array.accessEntry(entry);
         uint64_t region_bit_accessed = 1UL << vaddr_offset;
         if (entry_plus)
-            entry->decr_mode = true;
-        if ((entry_plus || entry_min) || (entry->cnt > ACTIVE_THRESHOLD))
+            entry->decrMode = true;
+        if ((entry_plus || entry_min) || (entry->cnt > ACTIVETHRESHOLD))
             entry->active = true;
         in_active_page = entry->active;
-        decr = entry->decr_mode;
+        decr = entry->decrMode;
         if (!(entry->bitVec & region_bit_accessed)) {
             entry->cnt += 1;
         }
@@ -84,10 +94,10 @@ XsStreamPrefetcher::streamLookup(const PrefetchInfo &pfi, bool &in_active_page, 
 
     in_active_page = (entry_plus || entry_min);
     decr = entry_plus != nullptr;
-    entry->tag = vaddr_tag;
-    entry->decr_mode = entry_plus != nullptr;
+    entry->tag = regionHashTag(vaddr_tag_num);
+    entry->decrMode = entry_plus != nullptr;
     entry->bitVec = 1UL << vaddr_offset;
-    entry->decr_mode = entry_plus != nullptr;
+    entry->cnt = 1;
     entry->active = (entry_plus != nullptr) || (entry_min != nullptr);
     return entry;
 }

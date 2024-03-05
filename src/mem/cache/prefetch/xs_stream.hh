@@ -24,21 +24,45 @@ class XsStreamPrefetcher : public Queued
 {
   protected:
     int depth;
-    int bad_pre_num;
+    int badPreNum;
+    bool enableAutoDepth;
+    bool enableL3StreamPre;
     const int l2Ratio = 2;
     const int l3Ratio = 3;
-    const int BLOCK_OFFST = 6;
-    const int BIT_VEC_WIDTH = 128;
-    const int REGION_BITS = 7;
-    const int REGION_TAG_OFFSET = 10;
-    const int REGION_TAG_NUM = 16;
-    const int ACTIVE_THRESHOLD = 12;
-    const int VALIDITY_CHECK_INTERVAL = 1000;
-    const int LATE_MISS_THRESHOLD = 200;
-    const int LATE_HIT_THRESHOLD = 900;
+    const int DEPTHRIGHT = 1 << 9;
+    const int DEPTHLEFT = 1;
+    const int DEPTHSTEP = 1;
+    const int BLOCKOFFST = 6;
+    const int BITVECWIDTH = 128;
+    const int REGIONBITS = 7;
+    const int REGIONTAGOFFSET = 10;
+    const int REGIONTAGNUM = 16;
+    const int ACTIVETHRESHOLD = 12;
+    const int VALIDITYCHECKINTERVAL = 1000;
+    const double LATECOVERAGE = 0.4;
+    const int LATEMISSTHRESHOLD = 200;
+    const int LATEHITTHRESHOLD = 900;
+    const int LOWMASK = 0x3ff;
+    const int HIGHMASK = 0x7ff;
+    const int VADDRHASHOFFSET = 5;
+    const int VADDRHASHOFFSETMASK = 0x1f;
 
-    Addr tagAddress(Addr a) { return a >> REGION_TAG_OFFSET; };
-    Addr tagOffset(Addr a) { return (a / blkSize) % REGION_TAG_NUM; };
+
+    Addr tagAddress(Addr a) { return a >> REGIONTAGOFFSET; };
+    Addr vaddrHash(Addr a)
+    {
+        int low = a & VADDRHASHOFFSETMASK;
+        int mid = (a >> VADDRHASHOFFSET) & VADDRHASHOFFSETMASK;
+        int high = (a >> (2 * VADDRHASHOFFSET)) & VADDRHASHOFFSETMASK;
+        return low ^ mid ^ high;
+    }
+    Addr regionHashTag(Addr a)
+    {
+        int low = a & LOWMASK;
+        int high = vaddrHash(a >> REGIONTAGOFFSET);
+        return high << REGIONTAGOFFSET | low;
+    }
+    Addr tagOffset(Addr a) { return (a / blkSize) % REGIONTAGNUM; };
 
     class STREAMEntry : public TaggedEntry
     {
@@ -47,8 +71,8 @@ class XsStreamPrefetcher : public Queued
         Addr bitVec;
         bool active;
         int cnt;
-        bool decr_mode;
-        STREAMEntry() : TaggedEntry(), tag(0), bitVec(0), active(false), cnt(0), decr_mode(false) {}
+        bool decrMode;
+        STREAMEntry() : TaggedEntry(), tag(0), bitVec(0), active(false), cnt(0), decrMode(false) {}
     };
     AssociativeSet<STREAMEntry> stream_array;
     STREAMEntry *streamLookup(const PrefetchInfo &pfi, bool &in_active_page, bool &decr);
