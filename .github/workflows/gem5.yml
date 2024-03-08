@@ -24,7 +24,9 @@ jobs:
           make -j 48
           cd $GEM5_HOME
       - name: Build GEM5 opt
-        run: scons build/RISCV/gem5.opt -j 48 --gold-linker
+        run: |
+          source /nfs-nvme/home/share/zyy/shared_apps/setenv_AOCC.sh
+          CC=clang CXX=clang++ scons build/RISCV/gem5.opt -j 48 --gold-linker
       - name: Run paralel autotest script
         run: python3 .github/workflows/autotest/script/autotest.py -f .github/workflows/autotest/gem5.cfg
 
