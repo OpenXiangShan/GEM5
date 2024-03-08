@@ -84,6 +84,7 @@ class XsStreamPrefetcher : public Queued
     const unsigned pfFilterSize{256};
     boost::compute::detail::lru_cache<Addr, Addr> streamBlkFilter;
     XsStreamPrefetcher(const XsStreamPrefetcherParams &p);
+    using Queued::calculatePrefetch;
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses) override
     {
         panic("not implemented");

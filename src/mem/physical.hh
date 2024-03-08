@@ -193,6 +193,12 @@ class PhysicalMemory : public Serializable
                             bool conf_table_reported,
                             bool in_addr_map, bool kvm_map);
 
+    void unserializeFromGz(std::string filepath, unsigned store_id, long range_size);
+
+    void unserializeFromZstd(std::string filepath, unsigned store_id, long range_size);
+
+    void overrideGCptRestorer(unsigned store_id);
+
   public:
 
     /**

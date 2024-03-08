@@ -1,44 +1,3 @@
-# Copyright (c) 2010-2013, 2016, 2019-2020 ARM Limited
-# Copyright (c) 2020 Barkhausen Institut
-# All rights reserved.
-#
-# The license below extends only to copyright in the software and shall
-# not be construed as granting a license to any other intellectual
-# property including but not limited to intellectual property relating
-# to a hardware implementation of the functionality of the software
-# licensed hereunder.  You may use the software subject to the license
-# terms below provided that you ensure that this notice is replicated
-# unmodified and in its entirety in all distributions of the software,
-# modified or unmodified, in source code or in binary form.
-#
-# Copyright (c) 2012-2014 Mark D. Hill and David A. Wood
-# Copyright (c) 2009-2011 Advanced Micro Devices, Inc.
-# Copyright (c) 2006-2007 The Regents of The University of Michigan
-# All rights reserved.
-#
-# Redistribution and use in source and binary forms, with or without
-# modification, are permitted provided that the following conditions are
-# met: redistributions of source code must retain the above copyright
-# notice, this list of conditions and the following disclaimer;
-# redistributions in binary form must reproduce the above copyright
-# notice, this list of conditions and the following disclaimer in the
-# documentation and/or other materials provided with the distribution;
-# neither the name of the copyright holders nor the names of its
-# contributors may be used to endorse or promote products derived from
-# this software without specific prior written permission.
-#
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-# A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-# OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-# LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-# DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
 import argparse
 import sys
 
@@ -60,13 +19,19 @@ from common import CacheConfig
 from common import CpuConfig
 from common import MemConfig
 from common import ObjectList
+from common import XSConfig
 from common.Caches import *
 from common import Options
 
 def build_test_system(np):
     assert buildEnv['TARGET_ISA'] == "riscv"
     test_sys = makeBareMetalXiangshanSystem(test_mem_mode, SysConfig(mem=args.mem_size), None)
+
     test_sys.xiangshan_system = True
+    args.enable_difftest = True
+
+    XSConfig.config_xiangshan_inputs(args, test_sys)
+
      # Set the cache line size for the entire system
     test_sys.cache_line_size = args.cacheline_size
 
@@ -85,14 +50,6 @@ def build_test_system(np):
                                              voltage_domain =
                                              test_sys.cpu_voltage_domain)
 
-    if args.generic_rv_cpt is not None :
-        test_sys.workload.bootloader = ''
-        test_sys.workload.xiangshan_cpt = True
-        if args.raw_cpt:
-            test_sys.map_to_raw_cpt = True
-            print('Using raw bbl', args.kernel)
-            test_sys.workload.raw_bootloader = True
-
     # For now, assign all the CPUs to the same clock domain
     test_sys.cpu = [TestCPUClass(clk_domain=test_sys.cpu_clk_domain, cpu_id=i)
                     for i in range(np)]
@@ -101,6 +58,10 @@ def build_test_system(np):
             uncacheable=[AddrRange(0, size=0x80000000)])
 
     # configure BP
+    args.enable_loop_predictor = True
+    if args.enable_riscv_vector:
+        args.enable_loop_buffer = True
+
     for i in range(np):
         if args.bp_type is None or args.bp_type == 'DecoupledBPUWithFTB':
             enable_bp_db = len(args.enable_bp_db) > 1
@@ -190,7 +151,13 @@ def build_test_system(np):
             cpu.nemuSDCptBin = mmc.cpt_bin_path
             cpu.nemuSDimg = mmc.img_path
 
-    CpuConfig.config_difftest(TestCPUClass, test_sys.cpu, args)
+    XSConfig.config_difftest(test_sys.cpu, args)
+
+    # configure vector
+    if args.enable_riscv_vector:
+        test_sys.enable_riscv_vector = True
+        for cpu in test_sys.cpu:
+            cpu.enable_riscv_vector = True
 
     # config arch db
     if args.enable_arch_db:
@@ -287,6 +254,7 @@ Options.addXiangshanFSOptions(parser)
 
 # Add the ruby specific and protocol specific args
 if '--ruby' in sys.argv:
+    fatal("XS-GEM5 currently doesn't support the ruby memory system")
     Ruby.define_options(parser)
 
 args = parser.parse_args()
@@ -312,19 +280,6 @@ TestMemClass = Simulation.setMemClass(args)
 np = args.num_cpus
 
 test_sys = build_test_system(np)
-
-if args.generic_rv_cpt is not None:
-    assert(buildEnv['TARGET_ISA'] == "riscv")
-    test_sys.restore_from_gcpt = True
-    test_sys.gcpt_file = args.generic_rv_cpt
-    test_sys.gcpt_restorer_file = args.gcpt_restorer
-
-if args.enable_riscv_vector:
-    print("Enable riscv vector difftest, need riscv vector-supported gcpt restore and diff-ref-so")
-    test_sys.enable_riscv_vector = True
-    for cpu in test_sys.cpu:
-        cpu.enable_riscv_vector = True
-
 
 root = Root(full_system=True, system=test_sys)
 

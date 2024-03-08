@@ -7,10 +7,10 @@ on:
     branches: [ xs-dev ]
 
 jobs:
-  autotest:
+  paralel_cpt_test:
     runs-on: self-hosted
     continue-on-error: false
-    name: run script autotest.py
+    name: XS-GEM5 - Running test checkpoints
     steps:
       - uses: actions/checkout@v2
       - name: Build DRAMSim
@@ -18,7 +18,30 @@ jobs:
           export GEM5_HOME=$(pwd)
           cd ext/dramsim3
           git clone git@github.com:umd-memsys/DRAMSim3.git DRAMsim3
-          cd DRAMsim3 && mkdir build
+          cd DRAMsim3 && mkdir -p build
+          cd build
+          cmake ..
+          make -j 48
+          cd $GEM5_HOME
+      - name: Build GEM5 opt
+        run: |
+          source /nfs-nvme/home/share/zyy/shared_apps/setenv_AOCC.sh
+          CC=clang CXX=clang++ scons build/RISCV/gem5.opt -j 48 --gold-linker
+      - name: Run paralel autotest script
+        run: python3 .github/workflows/autotest/script/autotest.py -f .github/workflows/autotest/gem5.cfg
+
+  valgrind_memory_check:
+    runs-on: self-hosted
+    continue-on-error: false
+    name: XS-GEM5 - Check memory corruption
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build DRAMSim
+        run: |
+          export GEM5_HOME=$(pwd)
+          cd ext/dramsim3
+          git clone git@github.com:umd-memsys/DRAMSim3.git DRAMsim3
+          cd DRAMsim3 && mkdir -p build
           cd build
           cmake ..
           make -j 48
@@ -30,7 +53,57 @@ jobs:
           export GEM5_HOME=$(pwd)
           bash util/memory_check/run-xs-with-valgrind.sh
           cd $GEM5_HOME
+
+  new_sim_script_test_gcb:
+    runs-on: self-hosted
+    continue-on-error: false
+    name: XS-GEM5 - Test new simulation script on RV64GCB
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build DRAMSim
+        run: |
+          export GEM5_HOME=$(pwd)
+          cd ext/dramsim3
+          git clone git@github.com:umd-memsys/DRAMSim3.git DRAMsim3
+          cd DRAMsim3 && mkdir -p build
+          cd build
+          cmake ..
+          make -j 48
+          cd $GEM5_HOME
       - name: Build GEM5 opt
-        run: scons build/RISCV/gem5.opt -j 48 --gold-linker
-      - name: Run paralel autotest script
-        run: python3 .github/workflows/autotest/script/autotest.py -f .github/workflows/autotest/gem5.cfg
+        run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
+      - name: XS-GEM5 - Test xiangshan.py simulation scripts
+        run: |
+          export GCB_REF_SO="/nfs-nvme/home/share/zyy/shared_payloads/rv64gcb-nemu-288c9231.so"
+          export GCB_RESTORER="/nfs-nvme/home/share/zyy/shared_payloads/rv64gcb-gcpt-restorer-fe61fbfb.bin"
+          export GEM5_HOME=$(pwd)
+          mkdir -p $GEM5_HOME/util/xs_scripts/test
+          cd $GEM5_HOME/util/xs_scripts/test
+          bash ../kmh_6wide.sh /nfs/home/share/jiaxiaoyu/simpoint_checkpoint_archive/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc/zstd-checkpoint-0-0-0/xalancbmk/133/_133_0.006424_.zstd
+
+  new_sim_script_test_gcbv:
+    runs-on: self-hosted
+    continue-on-error: false
+    name: XS-GEM5 - Test new simulation script on RV64GCBV
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build DRAMSim
+        run: |
+          export GEM5_HOME=$(pwd)
+          cd ext/dramsim3
+          git clone git@github.com:umd-memsys/DRAMSim3.git DRAMsim3
+          cd DRAMsim3 && mkdir -p build
+          cd build
+          cmake ..
+          make -j 48
+          cd $GEM5_HOME
+      - name: Build GEM5 opt
+        run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
+      - name: XS-GEM5 - Test xiangshan.py simulation scripts
+        run: |
+          export GCBV_REF_SO="/nfs-nvme/home/share/zyy/shared_payloads/rv64gcbv-spike-d179549f.so"
+          export GCBV_RESTORER="/nfs-nvme/home/share/zyy/shared_payloads/rv64gcbv-gcpt-restorer-96ce67b2.bin"
+          export GEM5_HOME=$(pwd)
+          mkdir -p $GEM5_HOME/util/xs_scripts/test_v
+          cd $GEM5_HOME/util/xs_scripts/test_v
+          bash ../kmh_6wide_vector.sh /nfs/home/share/jiaxiaoyu/20240226_vector_checkpoint_archive/disdain-practical-toll-2023-12-25-11-26/zstd-checkpoint-0-0-0/hmmer_nph3/102/_102_0.0243576.zstd
