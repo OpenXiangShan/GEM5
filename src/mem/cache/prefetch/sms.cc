@@ -38,12 +38,15 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       berti(p.berti),
       Sstride(p.sstride),
       Opt(p.opt),
+      Xsstream(p.xsstream),
+      enableActivepage(p.enable_activepage),
       enableCPLX(p.enable_cplx),
       enableSPP(p.enable_spp),
       enableTemporal(p.enable_temporal),
       enableSstride(p.enable_sstride),
       enableBerti(p.enable_berti),
       enableOpt(p.enable_opt),
+      enableXsstream(p.enable_xsstream),
       phtEarlyUpdate(p.pht_early_update),
       neighborPhtUpdate(p.neighbor_pht_update)
 {
@@ -68,6 +71,8 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
         ipcp->rrf = &this->pfBlockLRUFilter;
     if (Opt)
         Opt->filter = &this->pfBlockLRUFilter;
+    if (Xsstream)
+        Xsstream->filter = &this->pfBlockLRUFilter;
 
     DPRINTF(XSCompositePrefetcher, "SMS: region_size: %d regionBlks: %d\n",
             regionSize, regionBlks);
@@ -102,6 +107,9 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
     bool decr = false;
     bool is_first_64 = false;
     if (pfi.isCacheMiss() || pfi.isPfFirstHit()) {
+        assert(!(enableActivepage && enableXsstream));
+        if (enableXsstream)
+            Xsstream->calculatePrefetch(pfi, addresses, streamlatenum);
         act_match_entry = actLookup(pfi, is_active_page, enter_new_region, is_first_shot);
         if (enableOpt){
             assert(Opt);
@@ -112,7 +120,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             decr = act_match_entry->inBackwardMode;
             DPRINTF(XSCompositePrefetcher, "ACT hit or match: pc:%x addr: %x offset: %d active: %d decr: %d\n", pc,
                     vaddr, region_offset, is_active_page, decr);
-            if (is_active_page) {
+            if (is_active_page && enableActivepage) {
                 origin_depth = act_match_entry->depth;
                 int depth = 16;
                 // active page
@@ -122,7 +130,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
         }
     }
 
-    if (act_match_entry && is_active_page && pf_tgt_addr && enter_new_region) {
+    if (act_match_entry && is_active_page && pf_tgt_addr && enter_new_region && enableActivepage) {
         if (streamPFAhead) {
             Addr pf_tgt_addr_l2 = decr ? pf_tgt_addr - 48 * blkSize : pf_tgt_addr + 48 * blkSize;  // depth here?
             sendStreamPF(pfi, pf_tgt_addr_l2, addresses, pfPageLRUFilterL2, decr, 2);

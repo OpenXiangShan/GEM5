@@ -453,6 +453,8 @@ class Base : public ClockedObject
     /** Total prefetches that has been useful */
     uint64_t usefulPrefetches;
 
+    uint64_t streamlatenum;
+
     /** Registered tlb for address translations */
     BaseTLB * tlb;
 
@@ -514,6 +516,7 @@ class Base : public ClockedObject
         prefetchStats.pfHitInWB_srcs[pf_num]++;
         prefetchStats.late_srcs[pf_num]++;
     }
+    void streamPflate() { streamlatenum++; }
 
     /**
      * Register probe points for this object.

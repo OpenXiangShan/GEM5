@@ -244,6 +244,38 @@ class OptPrefetcher(QueuedPrefetcher):
         "Replacement policy of opt table"
     )
 
+class XsStreamPrefetcher(QueuedPrefetcher):
+    type = "XsStreamPrefetcher"
+    cxx_class = "gem5::prefetch::XsStreamPrefetcher"
+    cxx_header = "mem/cache/prefetch/xs_stream.hh"
+
+    use_virtual_addresses = True
+    prefetch_on_pf_hit = True
+    on_read = True
+    on_write = False
+    on_data  = True
+    on_inst  = False
+    xs_stream_depth = Param.Int(32, "The depth of xs_stream_depth")
+    enable_auto_depth = Param.Bool(False, "enable autp depth.")
+    enable_l3_stream_pre = Param.Bool(False, "enable l3 stream pre.")
+    xs_stream_entries = Param.MemorySize(
+        "16",
+        "num of active generation table entries"
+    )
+    xs_stream_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.xs_stream_entries,
+            size=Parent.xs_stream_entries),
+        "Indexing policy of active generation table"
+    )
+    xs_stream_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(),
+        "Replacement policy of active generation table"
+    )
+
+
+
 class BertiPrefetcher(QueuedPrefetcher):
     type = "BertiPrefetcher"
     cxx_class = "gem5::prefetch::BertiPrefetcher"
@@ -949,7 +981,9 @@ class XSCompositePrefetcher(QueuedPrefetcher):
     berti = Param.BertiPrefetcher(BertiPrefetcher(is_sub_prefetcher=True), "")
     sstride = Param.XSStridePrefetcher(XSStridePrefetcher(is_sub_prefetcher=True), "")
     opt = Param.OptPrefetcher(OptPrefetcher(is_sub_prefetcher=True), "")
+    xsstream = Param.XsStreamPrefetcher(XsStreamPrefetcher(is_sub_prefetcher=True), "")
 
+    enable_activepage = Param.Bool(True,"Enable activepage stream prefetcher")
     enable_cplx = Param.Bool(False, "Enable CPLX component")
     enable_spp = Param.Bool(False, "Enable SPP component")
     enable_temporal = Param.Bool(False, "Enable temporal component")
@@ -957,6 +991,7 @@ class XSCompositePrefetcher(QueuedPrefetcher):
 
     enable_sstride = Param.Bool(False,"Enable sms stride component")
     enable_opt = Param.Bool(False,"Enable opt component")
+    enable_xsstream = Param.Bool(False,"Enable xs_stream component")
     short_stride_thres = Param.Unsigned(512, "Ignore short strides when there are long strides (Bytes)")
     pht_early_update = Param.Bool(True, "Enable update pht earlier")
     neighbor_pht_update = Param.Bool(True, "Enable use nearby act entry to update pht")
