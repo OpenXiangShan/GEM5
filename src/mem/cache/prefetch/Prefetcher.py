@@ -536,6 +536,9 @@ class BOPPrefetcher(QueuedPrefetcher):
     offsets = VectorParam.Int([72, 75, 80, 81, 90, 96, 100, 108, 120, 125, 128, 135, 144,
                               150, 160, 162, 180, 192, 200, 216, 225, 240, 243, 250, 256], "Predefined offsets")
 
+    victimOffsetsListSize = Param.Int(10, "The size of victimOffsetsList")
+    restoreCycle = Param.Int(250000, "Cycles which Restore one offset from victimOffsetsList")
+
 class SmallBOPPrefetcher(BOPPrefetcher):
     score_max = 31
     round_max = 30

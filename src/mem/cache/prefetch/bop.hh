@@ -75,6 +75,12 @@ class BOP : public Queued
         const unsigned int delayQueueSize;
         const unsigned int delayTicks;
 
+        const int victimListSize;
+        const int restoreCycle;
+
+        bool victimRestoreScheduled = false;
+        Event *restore_event;
+
         struct RREntryDebug
         {
             Addr fullAddr;
@@ -109,7 +115,9 @@ class BOP : public Queued
                 return offset == t;
             }
         };
+        std::vector<int> originOffsets;
         std::list<OffsetListEntry> offsetsList;
+        std::list<int> victimOffsetsList;
 
         size_t maxOffsetCount{32};
 
@@ -227,7 +235,7 @@ class BOP : public Queued
 
         void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late);
         
-        void tryAddOffset(int64_t offset, bool late = false);
+        bool tryAddOffset(int64_t offset, bool late = false);
 };
 
 } // namespace prefetch

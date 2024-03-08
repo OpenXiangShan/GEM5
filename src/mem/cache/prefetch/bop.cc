@@ -48,6 +48,8 @@ BOP::BOP(const BOPPrefetcherParams &p)
       delayQueueEnabled(p.delay_queue_enable),
       delayQueueSize(p.delay_queue_size),
       delayTicks(cyclesToTicks(p.delay_queue_cycles)),
+      victimListSize(p.victimOffsetsListSize),
+      restoreCycle(p.restoreCycle),
       delayQueueEvent([this]{ delayQueueEventWrapper(); }, name()),
       issuePrefetchRequests(false), bestOffset(1), phaseBestOffset(0),
       bestScore(0), round(0), stats(this)
@@ -71,9 +73,11 @@ BOP::BOP(const BOPPrefetcherParams &p)
 
     for (int i = 0; i < offset_count; i++) {
         offsetsList.emplace_back(p.offsets[i], (uint8_t) 0);
+        originOffsets.push_back(p.offsets[i]);
         DPRINTF(BOPPrefetcher, "add %d to offset list\n", p.offsets[i]);
         if (p.negative_offsets_enable) {
             offsetsList.emplace_back(-p.offsets[i], (uint8_t) 0);
+            originOffsets.push_back(-p.offsets[i]);
             DPRINTF(BOPPrefetcher, "add %d to offset list\n", -p.offsets[i]);
         }
     }
@@ -82,6 +86,21 @@ BOP::BOP(const BOPPrefetcherParams &p)
 
     offsetsListIterator = offsetsList.begin();
     bestoffsetsListIterator = offsetsListIterator;
+
+    restore_event = new EventFunctionWrapper([this](){
+        assert(victimOffsetsList.size() > 0);
+        int offset = victimOffsetsList.front();
+        victimOffsetsList.pop_front();
+        DPRINTF(BOPPrefetcher, "restore offset %d to offsetsList\n", offset);
+        tryAddOffset(offset);
+        if (victimOffsetsList.size() > 0) {
+            DPRINTF(BOPPrefetcher, "start victimOffset restore\n");
+            schedule(restore_event, cyclesToTicks(curCycle() + Cycles(restoreCycle)));
+        }
+        else {
+            victimRestoreScheduled = false;
+        }
+    },name(),false);
 }
 
 void
@@ -172,18 +191,32 @@ BOP::testRR(Addr tag) const
     return std::make_pair(false, RREntryDebug());
 }
 
-void
+bool
 BOP::tryAddOffset(int64_t offset, bool late)
 {
     assert(offset != 0);
+    bool find_it = std::find(offsetsList.begin(), offsetsList.end(), offset) != offsetsList.end();
+    if (find_it) {
+        return false;
+    }
+    if (victimOffsetsList.size() >= victimListSize) {
+        DPRINTF(BOPPrefetcher, "victimOffsetsList is full, can't add offset\n");
+        return false;
+    }
+
     DPRINTF(BOPPrefetcher, "Reach %s entry, iter offset: %d\n", __FUNCTION__, offsetsListIterator->calcOffset());
     // dump offsets:
     DPRINTF(BOPPrefetcher, "offset list:\n");
     for (const auto& it : offsetsList) {
         DPRINTF(BOPPrefetcher, "%d*%d\n", it.offset, it.depth);
     }
+    DPRINTF(BOPPrefetcher, "victim offset list:\n");
+    for (const auto& it : victimOffsetsList) {
+        DPRINTF(BOPPrefetcher, "%d\n", it);
+    }
 
     if (offsetsList.size() >= maxOffsetCount) {
+        int evict_offset = 0;
         auto it = offsetsList.begin();
         while (it != offsetsList.end()) {
             if (it->score <= badScore) {
@@ -198,17 +231,20 @@ BOP::tryAddOffset(int64_t offset, bool late)
                 DPRINTFV(debug::BOPPrefetcher || debug::BOPOffsets, "erase offset %d from offset list\n",
                         offsetsList.rbegin()->offset);
                 auto end_offset = --offsetsList.end();
+                evict_offset = end_offset->offset;
                 offsetsList.erase(end_offset);
             } else {
                 auto temp = --offsetsListIterator;
                 DPRINTFV(debug::BOPPrefetcher || debug::BOPOffsets, "erase offset %d from offset list\n",
                         temp->offset);
+                evict_offset = temp->offset;
                 offsetsListIterator = offsetsList.erase(temp);
             }
         } else {
             // erase it from set and list
             DPRINTFV(debug::BOPPrefetcher || debug::BOPOffsets, "erase unused offset %d from offset list\n",
                      it->offset);
+            evict_offset = it->offset;
             if (it == offsetsListIterator) {
                 offsetsListIterator = offsetsList.erase(it);  // update iterator
                 if (offsetsListIterator == offsetsList.end()) {
@@ -220,14 +256,14 @@ BOP::tryAddOffset(int64_t offset, bool late)
             DPRINTFV(debug::BOPPrefetcher || debug::BOPOffsets, "%s after erase: iter offset: %d\n", __FUNCTION__,
                      offsetsListIterator->calcOffset());
         }
+        assert(evict_offset != 0);
+        if (std::find(originOffsets.begin(), originOffsets.end(), evict_offset) != originOffsets.end()) {
+            DPRINTF(BOPPrefetcher, "add offset %d to victimOffsetsList\n", evict_offset);
+            victimOffsetsList.push_back(evict_offset);
+        }
     }
 
     auto best_it = getBestOffsetIter();
-
-    if (best_it != offsetsList.end() && (offset % best_it->offset == 0 && best_it->offset != 1)) {
-        DPRINTF(BOPPrefetcher, "offset %d is a multiple of best offset %d, skip\n", offset, best_it->offset);
-        return;
-    }
 
     auto offset_it = std::find(offsetsList.begin(), offsetsList.end(), offset);
     if (offset_it == offsetsList.end()) {
@@ -257,6 +293,7 @@ BOP::tryAddOffset(int64_t offset, bool late)
         assert(found);
     }
     DPRINTF(BOPPrefetcher, "Reach %s end, iter offset: %d\n", __FUNCTION__, offsetsListIterator->calcOffset());
+    return true;
 }
 
 std::list<BOP::OffsetListEntry>::iterator
@@ -393,6 +430,12 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
                 prefetch_addr, bestOffset);
     } else {
         DPRINTF(BOPPrefetcher, "Issue prefetch is false, can't issue\n");
+    }
+
+    if (!victimRestoreScheduled && victimOffsetsList.size() > 0) {
+        victimRestoreScheduled = true;
+        DPRINTF(BOPPrefetcher, "start victimOffset restore\n");
+        schedule(restore_event, cyclesToTicks(curCycle() + Cycles(restoreCycle)));
     }
 
     DPRINTF(BOPPrefetcher, "Reach %s end, iter offset: %d\n", __FUNCTION__, offsetsListIterator->calcOffset());
