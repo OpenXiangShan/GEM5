@@ -64,7 +64,7 @@ function run() {
     touch running
 
     script_dir=$(dirname -- "$( readlink -f -- "$0"; )")
-    bash $arch_script $1 # cpt.gz
+    bash $arch_script $1 # checkpoint
     check $?
 
     rm running
@@ -77,8 +77,9 @@ function prepare_env() {
     all_args=("$@")
     task=${all_args[0]}
     task_path=${all_args[1]}
-    gz=$(find -L $cpt_dir -wholename "*${task_path}*gz" | head -n 1)
-    echo $gz
+    suffix="zstd"
+    checkpoint=$(find -L $cpt_dir -wholename "*${task_path}*${suffix}" | head -n 1)
+    echo $checkpoint
 
     export work_dir=$full_work_dir/$task
     echo $work_dir
@@ -96,7 +97,7 @@ function arg_wrapper() {
     dw=${args[4]}
     sample=${args[5]}
 
-    run $gz $work_dir >$work_dir/$log_file 2>&1
+    run $checkpoint $work_dir >$work_dir/$log_file 2>&1
 }
 
 
