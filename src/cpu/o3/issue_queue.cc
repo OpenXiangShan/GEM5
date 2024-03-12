@@ -1,3 +1,5 @@
+#include "cpu/o3/issue_queue.hh"
+
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
@@ -6,7 +8,6 @@
 #include <stack>
 #include <string>
 #include <vector>
-
 
 #include "base/logging.hh"
 #include "base/stats/group.hh"
@@ -24,7 +25,6 @@
 #include "debug/Dispatch.hh"
 #include "debug/Schedule.hh"
 #include "enums/OpClass.hh"
-#include "issue_queue.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/eventq.hh"
 #include "sim/sim_object.hh"
@@ -430,7 +430,8 @@ Scheduler::compare_priority::operator()(const Slot& a, const Slot& b) const
 
 Scheduler::Scheduler(const SchedulerParams& params)
     : SimObject(params),
-      issueQues(params.IQs)
+      issueQues(params.IQs),
+      slotNum(params.slotNum)
 {
     dispTable.resize(enums::OpClass::Num_OpClass);
 
@@ -538,8 +539,6 @@ Scheduler::issueAndSelect(){
         DPRINTF(Schedule, "[sn %lu] remove from slot\n", slot.inst->seqNum);
         intSlot.pop();
     }
-    std::deque<int> nullQ;
-    nullQ.clear();
 
     // reset slot status
     slotOccupied = 0;

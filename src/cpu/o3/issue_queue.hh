@@ -1,21 +1,16 @@
 #ifndef __CPU_O3_ISSUE_QUEUE_HH__
 #define __CPU_O3_ISSUE_QUEUE_HH__
 
-#include <cstddef>
 #include <cstdint>
-#include <deque>
 #include <list>
-#include <map>
-#include <queue>
 #include <string>
-#include <utility>
-#include <vector>
 
 #include <boost/heap/priority_queue.hpp>
 
 #include "base/statistics.hh"
 #include "base/stats/group.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/timebuf.hh"
 #include "params/IssueQue.hh"
@@ -189,7 +184,7 @@ class Scheduler : public SimObject
 
     struct Slot
     {
-        uint32_t priority;
+        uint32_t priority;// smaller is lower priority
         uint32_t needed;
         DynInstPtr inst;
         Slot(uint32_t priority, uint32_t needed, const DynInstPtr& inst);
@@ -198,7 +193,8 @@ class Scheduler : public SimObject
     {
         bool operator()(const Slot& a, const Slot& b) const;
     };
-    // ascending order, the first is the lowest weight
+
+    const uint32_t slotNum;
     uint32_t slotOccupied = 0;
     // interger slot
     boost::heap::priority_queue<Slot, boost::heap::compare<compare_priority>> intSlot;

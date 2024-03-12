@@ -116,6 +116,7 @@ class Scheduler(SimObject):
     cxx_header = "cpu/o3/issue_queue.hh"
 
     IQs = VectorParam.IssueQue([], "")
+    slotNum = Param.Int(16, "number of schedule slots")
     specWakeupNetwork = VectorParam.SpecWakeupChannel([], "")
     xbarWakeup = Param.Bool(False, "use xbar wakeup network, (will override specWakeupNetwork)")
 
@@ -173,4 +174,5 @@ class KunminghuScheduler(Scheduler):
         IssueQue(name='IQ_cplx',inoutPorts=2, size=2*24,
             scheduleToExecDelay=3, fuType=[FP_MISC(), FP_SLOW(), FP_MAM(), FP_MAA(), SIMD_Unit()])
     ]
+    slotNum = 12
     xbarWakeup = True

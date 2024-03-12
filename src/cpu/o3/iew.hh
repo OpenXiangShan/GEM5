@@ -51,7 +51,6 @@
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/inst_queue.hh"
-#include "cpu/o3/issue_queue.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/lsq.hh"
 #include "cpu/o3/rob.hh"
@@ -69,6 +68,7 @@ namespace o3
 {
 
 class FUPool;
+class Scheduler;
 
 /**
  * IEW handles both single threaded and SMT IEW
@@ -166,8 +166,6 @@ class IEW
     /** Sets time buffer to pass on instructions to commit. */
     void setIEWQueue(TimeBuffer<IEWStruct> *iq_ptr);
 
-    void setScheduler(Scheduler* schedueler) { this->scheduler = schedueler; }
-
     /** Sets pointer to list of active threads. */
     void setActiveThreads(std::list<ThreadID> *at_ptr);
 
@@ -255,11 +253,7 @@ class IEW
     }
 
     // if load tlb miss or cache miss
-    void loadCancel(const DynInstPtr &inst)
-    {
-        scheduler->loadCancel(inst);
-    }
-
+    void loadCancel(const DynInstPtr &inst);
   private:
     /** Sends commit proper information for a squash due to a branch
      * mispredict.

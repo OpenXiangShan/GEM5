@@ -53,7 +53,6 @@
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/dep_graph.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
-#include "cpu/o3/issue_queue.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/mem_dep_unit.hh"
 #include "cpu/o3/store_set.hh"
@@ -78,6 +77,7 @@ namespace o3
 class FUPool;
 class CPU;
 class IEW;
+class Scheduler;
 
 struct compare_function
 {

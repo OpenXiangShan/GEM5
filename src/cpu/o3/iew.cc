@@ -53,6 +53,7 @@
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/fu_pool.hh"
+#include "cpu/o3/issue_queue.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/timebuf.hh"
 #include "debug/Activity.hh"
@@ -1860,6 +1861,12 @@ IEW::checkMisprediction(const DynInstPtr& inst)
             }
         }
     }
+}
+
+void
+IEW::loadCancel(const DynInstPtr &inst)
+{
+    scheduler->loadCancel(inst);
 }
 
 void

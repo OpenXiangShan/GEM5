@@ -92,7 +92,6 @@ CPU::CPU(const BaseO3CPUParams &params)
       decode(this, params),
       rename(this, params),
       iew(this, params),
-      scheduler(params.scheduler),
       commit(this, fetch.getBp(), params),
 
       regFile(params.numPhysIntRegs,

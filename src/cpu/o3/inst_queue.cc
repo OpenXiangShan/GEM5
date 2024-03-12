@@ -54,6 +54,7 @@
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/fu_pool.hh"
 #include "cpu/o3/iew_delay_calibrator.hh"
+#include "cpu/o3/issue_queue.hh"
 #include "cpu/o3/limits.hh"
 #include "debug/IQ.hh"
 #include "debug/Counters.hh"
