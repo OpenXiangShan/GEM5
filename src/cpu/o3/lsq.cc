@@ -73,7 +73,7 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
       _cacheBlocked(false),
       cacheStorePorts(params.cacheStorePorts), usedStorePorts(0),
       cacheLoadPorts(params.cacheLoadPorts), usedLoadPorts(0),lastConflictCheckTick(0),
-      openBankConflictCheck(params.BankConflictCheck),
+      enableBankConflictCheck(params.BankConflictCheck),
       waitingForStaleTranslation(false),
       staleTranslationWaitTxnId(0),
       lsqPolicy(params.smtLSQPolicy),
@@ -199,7 +199,7 @@ bool
 LSQ::bankConflictedCheck(Addr vaddr)
 {
     bool now_bank_conflict = false;
-    if (openBankConflictCheck) {
+    if (enableBankConflictCheck) {
         if (l1dBankAddresses.size() == 0) {
             l1dBankAddresses.push_back(bankNum(vaddr));
         } else {
