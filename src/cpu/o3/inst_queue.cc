@@ -41,6 +41,7 @@
 
 #include "cpu/o3/inst_queue.hh"
 
+#include <cassert>
 #include <cstdint>
 #include <cstdio>
 #include <limits>
@@ -591,8 +592,7 @@ InstructionQueue::scheduleReadyInsts()
         else {
             ++wbOutstanding;
             FUCompletion *execution = new FUCompletion(issued_inst, 0, this);
-            cpu->schedule(execution, cpu->clockEdge(Cycles(op_latency-2))+1);
-            scheduler->allocFu(issued_inst);
+            cpu->schedule(execution, cpu->clockEdge(Cycles(op_latency - 1))-1);
         }
         ++total_issued;
 #if TRACING_ON

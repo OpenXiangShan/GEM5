@@ -254,9 +254,10 @@ class IEW
         ldstQueue.setLastRetiredHtmUid(tid, htmUid);
     }
 
-    void loadCachehit(const DynInstPtr &inst, uint32_t delay_cycle)
+    // if load tlb miss or cache miss
+    void loadCancel(const DynInstPtr &inst)
     {
-        scheduler->loadCachehit(inst, delay_cycle);
+        scheduler->loadCancel(inst);
     }
 
   private:

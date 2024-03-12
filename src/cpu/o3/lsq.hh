@@ -427,7 +427,7 @@ class LSQ
         }
         /** @} */
         virtual bool recvTimingResp(PacketPtr pkt) = 0;
-        virtual void sendPacketToCache() = 0;
+        virtual bool sendPacketToCache() = 0;
         virtual void buildPackets() = 0;
 
         /**
@@ -591,7 +591,7 @@ class LSQ
         virtual void finish(const Fault &fault, const RequestPtr &req,
                 gem5::ThreadContext* tc, BaseMMU::Mode mode);
         virtual bool recvTimingResp(PacketPtr pkt);
-        virtual void sendPacketToCache();
+        virtual bool sendPacketToCache();
         virtual void buildPackets();
         virtual Cycles handleLocalAccess(
                 gem5::ThreadContext *thread, PacketPtr pkt);
@@ -657,7 +657,7 @@ class LSQ
                 gem5::ThreadContext* tc, BaseMMU::Mode mode);
         virtual bool recvTimingResp(PacketPtr pkt);
         virtual void initiateTranslation();
-        virtual void sendPacketToCache();
+        virtual bool sendPacketToCache();
         virtual void buildPackets();
 
         virtual Cycles handleLocalAccess(

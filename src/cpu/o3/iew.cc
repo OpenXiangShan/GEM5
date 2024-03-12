@@ -1355,6 +1355,7 @@ IEW::executeInsts()
 
     // Execute/writeback any instructions that are available.
     int insts_to_execute = fromIssue->size;
+    fromIssue->size = 0;
     int inst_num = 0;
     for (; inst_num < insts_to_execute;
           ++inst_num) {
@@ -1636,8 +1637,8 @@ IEW::writebackInsts()
         if (!inst->isSquashed() && inst->isExecuted() &&
                 inst->getFault() == NoFault) {
 
-            int dependents = instQueue.wakeDependents(inst);
             scheduler->writebackWakeup(inst);
+            int dependents = instQueue.wakeDependents(inst);
 
             for (int i = 0; i < inst->numDestRegs(); i++) {
                 // Mark register as ready if not pinned
@@ -1710,19 +1711,14 @@ IEW::tick()
     }
 
     if (exeStatus != Squashing) {
-        // Have the instruction queue try to schedule any ready instructions.
-        // (In actuality, this scheduling is for instructions that will
-        // be executed next cycle.)
         instQueue.scheduleReadyInsts();
 
         executeInsts();
 
         writebackInsts();
-
-        // Also should advance its own time buffers if the stage ran.
-        // Not the best place for it, but this works (hopefully).
-        issueToExecQueue.advance();
     }
+
+    scheduler->issueAndSelect();
 
     bool broadcast_free_entries = false;
 

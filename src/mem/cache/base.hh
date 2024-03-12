@@ -344,6 +344,18 @@ class BaseCache : public ClockedObject
     CpuSidePort cpuSidePort;
     MemSidePort memSidePort;
 
+    class SendTimingRespEvent : public Event
+    {
+      private:
+        BaseCache* cache;
+        PacketPtr pkt;
+      public:
+        SendTimingRespEvent(BaseCache* cache, PacketPtr pkt);
+        void process() override;
+        const char* description() const override;
+    };
+
+
   protected:
 
     /** Miss status registers */

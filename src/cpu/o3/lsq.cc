@@ -47,6 +47,7 @@
 
 #include "base/compiler.hh"
 #include "base/logging.hh"
+#include "base/trace.hh"
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/iew.hh"
@@ -55,6 +56,7 @@
 #include "debug/Fetch.hh"
 #include "debug/HtmCpu.hh"
 #include "debug/LSQ.hh"
+#include "debug/Schedule.hh"
 #include "debug/Writeback.hh"
 #include "params/BaseO3CPU.hh"
 
@@ -510,9 +512,8 @@ LSQ::recvFunctionalCustomSignal(PacketPtr pkt, int sig)
 
     LSQRequest *request = dynamic_cast<LSQRequest*>(pkt->senderState);
     panic_if(!request, "Got packet back with unknown sender state\n");
-    // notify cache hit
-    uint32_t request_cycle = sig - 1;
-    iewStage->loadCachehit(request->instruction(), request_cycle);
+    // notify cache miss
+    iewStage->loadCancel(request->instruction());
 }
 
 int
@@ -1269,6 +1270,8 @@ LSQ::SingleDataRequest::recvTimingResp(PacketPtr pkt)
 bool
 LSQ::SplitDataRequest::recvTimingResp(PacketPtr pkt)
 {
+    DPRINTF(LSQ, "Spilt Req::recvTimingResp: inst: %llu, pkt: %#lx\n", pkt->req->getReqInstSeqNum(),
+            pkt->getAddr());
     uint32_t pktIdx = 0;
     while (pktIdx < _packets.size() && pkt != _packets[pktIdx])
         pktIdx++;
@@ -1389,22 +1392,24 @@ LSQ::SplitDataRequest::buildPackets()
     assert(_packets.size() > 0);
 }
 
-void
+bool
 LSQ::SingleDataRequest::sendPacketToCache()
 {
     assert(_numOutstandingPackets == 0);
     bool bank_conflict = false;
-
-    if (lsqUnit()->trySendPacket(isLoad(), _packets.at(0), bank_conflict)) {
+    bool success = lsqUnit()->trySendPacket(isLoad(), _packets.at(0), bank_conflict);
+    if (success) {
         if (!bank_conflict) {
             _numOutstandingPackets = 1;
         }
     }
-    if (bank_conflict)
+    if (bank_conflict) {
         lsqUnit()->bankConflictReplaySchedule();
+    }
+    return success;
 }
 
-void
+bool
 LSQ::SplitDataRequest::sendPacketToCache()
 {
     /* Try to send the packets. */
@@ -1421,6 +1426,11 @@ LSQ::SplitDataRequest::sendPacketToCache()
     if (bank_conflict) {
         lsqUnit()->bankConflictReplaySchedule();
     }
+
+    if (_numOutstandingPackets == _packets.size()) {
+        return true;
+    }
+    return false;
 }
 
 Cycles

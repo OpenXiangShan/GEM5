@@ -1,33 +1,33 @@
-#include <algorithm>
 #include <cassert>
-#include <cstddef>
 #include <cstdint>
-#include <limits>
+#include <cstdlib>
+#include <deque>
+#include <queue>
+#include <stack>
 #include <string>
 #include <vector>
 
-#include "base/cprintf.hh"
+
 #include "base/logging.hh"
 #include "base/stats/group.hh"
 #include "base/stats/info.hh"
 #include "base/trace.hh"
+#include "base/types.hh"
 #include "cpu/func_unit.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/fu_pool.hh"
 #include "cpu/o3/iew_delay_calibrator.hh"
-#include "cpu/o3/limits.hh"
+#include "cpu/reg_class.hh"
 #include "debug/Counters.hh"
 #include "debug/Dispatch.hh"
-#include "debug/IQ.hh"
 #include "debug/Schedule.hh"
 #include "enums/OpClass.hh"
 #include "issue_queue.hh"
 #include "params/BaseO3CPU.hh"
-#include "sim/core.hh"
+#include "sim/eventq.hh"
 #include "sim/sim_object.hh"
-#include "sim/syscall_return.hh"
 
 namespace gem5
 {
@@ -36,7 +36,7 @@ namespace o3
 {
 
 bool
-IssueQue::compare_priority::operator()(const DynInstPtr& a, const DynInstPtr& b)
+IssueQue::compare_priority::operator()(const DynInstPtr& a, const DynInstPtr& b) const
 {
     return a->seqNum > b->seqNum;
 }
@@ -57,181 +57,21 @@ IssueQue::IssueStream::pop()
 
 IssueQue::IssueQueStats::IssueQueStats(statistics::Group* parent, IssueQue* que, std::string name)
     : Group(parent, name.c_str()),
-      ADD_STAT(issueSuccess, statistics::units::Count::get(), ""),
-      ADD_STAT(issueFailed, statistics::units::Count::get(), ""),
       ADD_STAT(full, statistics::units::Count::get(), ""),
       ADD_STAT(bwfull, statistics::units::Count::get(), ""),
-      ADD_STAT(issueRate, statistics::units::Count::get(), ""),
       ADD_STAT(retryMem, statistics::units::Count::get(), ""),
+      ADD_STAT(canceledInst, statistics::units::Count::get(), ""),
+      ADD_STAT(loadmiss, statistics::units::Count::get(), ""),
+      ADD_STAT(arbFailed, statistics::units::Count::get(), ""),
       ADD_STAT(insertDist, statistics::units::Count::get(), ""),
       ADD_STAT(issueDist, statistics::units::Count::get(), "")
 {
     insertDist.init(que->inoutPorts + 1).flags(statistics::nozero);
     issueDist.init(que->inoutPorts + 1).flags(statistics::nozero);
-    issueRate.flags(statistics::total);
-    issueRate = issueSuccess / (issueSuccess + issueFailed);
-}
-
-void
-IssueQue::replay(const DynInstPtr& inst)
-{
-    assert (!inst->isIssued());
-    iqstats->issueFailed++;
-    DPRINTF(Schedule, "[sn %lu] replay reset archReadySrcs\n", inst->seqNum);
-    inst->resetScheduled();
-    inst->resetNumSrcRegReady(inst->archReadySrcs);
-    // try again
-    addIfReady(inst);
-}
-
-void
-IssueQue::addToFu(const DynInstPtr& inst)
-{
-    assert (!inst->isIssued());
-    iqstats->issueSuccess++;
-    inst->setIssued();
-    scheduler->addToFU(inst);
-    DPRINTF(Schedule, "[sn %lu] instNum--\n", inst->seqNum);
-    assert(instNum != 0);
-    instNum--;
-}
-
-bool
-IssueQue::checkResource(const DynInstPtr& inst)
-{
-    for (int i=0; i<inst->numSrcRegs(); i++) {
-        auto src = inst->renamedSrcIdx(i);
-        if (src->isFixedMapping()) {
-            continue;
-        }
-        // check bypass data ready or not
-        if (!(*bypassScoreboard)[src->flatIndex()]) {
-            DPRINTF(Schedule, "[sn %lu] p%lu can't get data from bypassNetwork\n", inst->seqNum, src->flatIndex());
-            return false;
-        }
-        // check others ready or not
-        // TODO
-        if (!scheduler->checkFuReady(inst)) {
-            DPRINTF(Schedule, "[sn %lu] fu is not ready\n");
-            return false;
-        }
-    }
-    return true;
-}
-
-void
-IssueQue::issueToFu()
-{
-    int size = toFu->size;
-    for (int i=0; i<size;i++) {
-        auto inst = toFu->pop();
-        if (inst->isSquashed()) {
-            continue;
-        }
-
-        bool successful = checkResource(inst);
-        if (successful) {
-            // add to instToExecuteQue
-            DPRINTF(Schedule, "[sn %lu] issue successful\n", inst->seqNum);
-            addToFu(inst);
-        }
-        else {
-            // replay
-            DPRINTF(Schedule, "[sn %lu] issue failed, replay\n", inst->seqNum);
-            replay(inst);
-        }
-    }
-}
-
-void
-IssueQue::wakeup(PhysRegIdPtr dst, bool speculative)
-{
-    if (!speculative && dst->getNumPinnedWritesToComplete() != 0) {
-        return;
-    }
-
-    DPRINTF(Schedule, "was %s woken by p%lu\n", speculative ? "spec" : "wb", dst->flatIndex());
-    for (auto& it: subDepGraph[dst->flatIndex()]) {
-        int srcIdx = it.first;
-        auto inst = it.second;
-
-        if (speculative) {
-            if (inst->readyOnce()) {
-                continue;
-            }
-        }
-        else {
-            inst->archReadySrcs++;
-        }
-
-        if (!inst->readySrcIdx(srcIdx)) {
-            inst->markSrcRegReady(srcIdx);
-        }
-
-        if (inst->scheduled()) {
-            continue;
-        }
-
-        DPRINTF(Schedule, "[sn %lu] was woken\n", inst->seqNum);
-        addIfReady(inst);
-    }
-
-    if (!speculative) {
-        subDepGraph[dst->flatIndex()].clear();
-    }
-}
-
-void
-IssueQue::scheduleInst()
-{
-    for (int i=0; i<inoutPorts && !readyInsts.empty();) {
-        auto inst = readyInsts.top();
-        if (inst->scheduled()) {
-            readyInsts.pop();
-            continue;
-        }
-        i++;
-        inst->setScheduled();
-        selectedInst.push_back(inst);
-        readyInsts.pop();
-    }
-    iqstats->issueDist[selectedInst.size()]++;
-    for (int i=0; i<selectedInst.size(); i++) {
-        assert(i < inoutPorts);
-        DPRINTF(Schedule, "[sn %ld] was scheduled, insert into wakeupQue\n", selectedInst[i]->seqNum);
-        // insert into wakeupQue
-        wakeupQue->insert(selectedInst[i], this);
-
-        DPRINTF(Schedule, "start issue inst, need %d cycles\n", scheduleToExecDelay);
-        toIssue->push(selectedInst[i]);
-    }
-    selectedInst.clear();
-}
-
-void
-IssueQue::addIfReady(const DynInstPtr& inst)
-{
-    if (inst->readyToIssue()) {
-        if (inst->readyTick == -1) {
-            inst->readyTick = curTick();
-            DPRINTF(Counters, "set readyTick at addIfReady\n");
-        }
-
-        //Add the instruction to the proper ready list.
-        if (inst->isMemRef()) {
-            if (inst->memDepSolved()) {
-                DPRINTF(Schedule, "memRef Dependency was solved can issue\n");
-            }
-            else {
-                DPRINTF(Schedule, "memRef Dependency was not solved can't issue\n");
-                return;
-            }
-        }
-
-        DPRINTF(Schedule, "[sn %lu] add to readyInstsQue\n", inst->seqNum);
-        readyInsts.push(inst);
-        inst->setReadyOnce();
-    }
+    retryMem.flags(statistics::nozero);
+    canceledInst.flags(statistics::nozero);
+    loadmiss.flags(statistics::nozero);
+    arbFailed.flags(statistics::nozero);
 }
 
 IssueQue::IssueQue(const IssueQueParams &params)
@@ -261,17 +101,186 @@ IssueQue::resetDepGraph(int numPhysRegs)
     subDepGraph.resize(numPhysRegs);
 }
 
+bool
+IssueQue::checkScoreboard(const DynInstPtr& inst)
+{
+    for (int i=0; i<inst->numSrcRegs(); i++) {
+        auto src = inst->renamedSrcIdx(i);
+        if (src->isFixedMapping()) {
+            continue;
+        }
+        // check bypass data ready or not
+        if (!scheduler->bypassScoreboard[src->flatIndex()]) {
+            DPRINTF(Schedule, "[sn %lu] p%lu can't get data from bypassNetwork\n", inst->seqNum, src->flatIndex());
+            return false;
+        }
+    }
+    return true;
+}
+
+void
+IssueQue::addToFu(const DynInstPtr& inst)
+{
+    assert (!inst->isIssued());
+    inst->setIssued();
+    scheduler->addToFU(inst);
+    DPRINTF(Schedule, "[sn %lu] instNum--\n", inst->seqNum);
+    assert(instNum != 0);
+    instNum--;
+}
+
+void
+IssueQue::
+issueToFu()
+{
+    int size = toFu->size;
+    for (int i=0; i<size;i++) {
+        auto inst = toFu->pop();
+        if (!inst) {
+            continue;
+        }
+        assert(checkScoreboard(inst));
+        addToFu(inst);
+        if (scheduler->getCorrectedOpLat(inst) > 1) {
+            scheduler->wakeOthers(inst, this);
+        }
+    }
+}
+
+void
+IssueQue::retryMem(const DynInstPtr& inst)
+{
+    assert(!inst->isNonSpeculative());
+    iqstats->retryMem++;
+    DPRINTF(Schedule, "retry %s [sn %lu]\n", enums::OpClassStrings[inst->opClass()], inst->seqNum);
+    // scheduler->loadCancel(inst);
+    scheduler->addToFU(inst);
+}
+
+void
+IssueQue::markMemDepDone(const DynInstPtr& inst)
+{
+    assert(inst->isMemRef());
+    DPRINTF(Schedule, "[sn %lu] has solved memdependency\n", inst->seqNum);
+    inst->setMemDepDone();
+    addIfReady(inst);
+}
+
+void
+IssueQue::woken(const DynInstPtr& inst, bool speculative)
+{
+    if (speculative && inst->canceled()) {
+        return;
+    }
+    for (int i=0; i<inst->numDestRegs(); i++) {
+        PhysRegIdPtr dst = inst->renamedDestIdx(i);
+        if (dst->isFixedMapping() || dst->getNumPinnedWritesToComplete() != 1) {
+            continue;;
+        }
+
+        DPRINTF(Schedule, "was %s woken by p%lu [sn %lu]\n",
+            speculative ? "spec" : "wb", dst->flatIndex(), inst->seqNum);
+        for (auto& it: subDepGraph[dst->flatIndex()]) {
+            int srcIdx = it.first;
+            auto inst = it.second;
+            if (inst->readySrcIdx(srcIdx)) {
+                continue;
+            }
+
+            inst->markSrcRegReady(srcIdx);
+            DPRINTF(Schedule, "[sn %lu] src%d was woken\n", inst->seqNum, srcIdx);
+            addIfReady(inst);
+        }
+
+        if (!speculative) {
+            subDepGraph[dst->flatIndex()].clear();
+        }
+    }
+}
+
+void
+IssueQue::addIfReady(const DynInstPtr& inst)
+{
+    if (inst->readyToIssue()) {
+        if (inst->readyTick == -1) {
+            inst->readyTick = curTick();
+            DPRINTF(Counters, "set readyTick at addIfReady\n");
+        }
+
+        //Add the instruction to the proper ready list.
+        if (inst->isMemRef()) {
+            if (inst->memDepSolved()) {
+                DPRINTF(Schedule, "memRef Dependency was solved can issue\n");
+            }
+            else {
+                DPRINTF(Schedule, "memRef Dependency was not solved can't issue\n");
+                return;
+            }
+        }
+
+        DPRINTF(Schedule, "[sn %lu] add to readyInstsQue\n", inst->seqNum);
+        inst->clearCancel();
+        if (!inst->inReadyQ()) {
+            inst->setInReadyQ();
+            readyInsts.push(inst);
+        }
+    }
+}
+
+void
+IssueQue::selectInst()
+{
+    selectedInst.clear();
+    while (selectedInst.size() < inoutPorts && !readyInsts.empty()) {
+        auto& inst = readyInsts.top();
+        if (inst->canceled()) {
+            inst->clearInReadyQ();
+            readyInsts.pop();
+            continue;
+        }
+        DPRINTF(Schedule, "[sn %ld] was selected\n", inst->seqNum);
+        scheduler->insertSlot(inst);
+        selectedInst.push_back(inst);
+        readyInsts.pop();
+    }
+}
+
+void
+IssueQue::scheduleInst()
+{
+    // here is issueStage 0
+    for (auto& inst : selectedInst) {
+        inst->clearInReadyQ();
+        if (inst->canceled()) {
+            DPRINTF(Schedule, "[sn %ld] was canceled\n", inst->seqNum);
+        }
+        else if (inst->arbFailed()) {
+            DPRINTF(Schedule, "[sn %ld] arbitration failed, retry\n", inst->seqNum);
+            assert(inst->readyToIssue());
+            inst->setInReadyQ();
+            readyInsts.push(inst);// retry
+            iqstats->arbFailed++;
+        }
+        else {
+            DPRINTF(Schedule, "[sn %ld] no conflict, scheduled\n", inst->seqNum);
+            toIssue->push(inst);
+            if (scheduler->getCorrectedOpLat(inst) <= 1) {
+                scheduler->wakeOthers(inst, this);
+            }
+        }
+        inst->clearArbFailed();
+    }
+    iqstats->issueDist[toIssue->size]++;
+}
+
 void
 IssueQue::tick()
 {
     iqstats->insertDist[instNumInsert]++;
     instNumInsert = 0;
 
-    inflightIssues.advance();
-
     scheduleInst();
-
-    issueToFu();
+    inflightIssues.advance();
 }
 
 bool
@@ -305,7 +314,7 @@ IssueQue::insert(const DynInstPtr& inst)
     for (int i=0; i<inst->numSrcRegs(); i++) {
         auto src = inst->renamedSrcIdx(i);
         if (!inst->readySrcIdx(i) && !src->isFixedMapping()) {
-            if ((*noSpecScoreboard)[src->flatIndex()]) {
+            if (scheduler->scoreboard[src->flatIndex()]) {
                 inst->markSrcRegReady(i);
             } else {
                 DPRINTF(Schedule, "[sn %lu] src p%d add to depGraph\n", inst->seqNum, src->flatIndex());
@@ -316,16 +325,6 @@ IssueQue::insert(const DynInstPtr& inst)
     }
     if (!addToDepGraph) {
         assert(inst->readyToIssue());
-    }
-    inst->archReadySrcs = inst->getNumSrcRegReady();
-
-    for (int i=0; i<inst->numSrcRegs(); i++) {
-        auto src = inst->renamedSrcIdx(i);
-        if (!inst->readySrcIdx(i) && !src->isFixedMapping()) {
-            if (scheduler->specScoreboard[src->flatIndex()]) {
-                inst->markSrcRegReady(i);
-            }
-        }
     }
 
     if (inst->isMemRef()) {
@@ -348,35 +347,6 @@ IssueQue::insertNonSpec(const DynInstPtr& inst)
 }
 
 void
-IssueQue::markMemDepDone(const DynInstPtr& inst)
-{
-    assert(inst->isMemRef());
-    DPRINTF(Schedule, "[sn %lu] has solved memdependency\n", inst->seqNum);
-    inst->setMemDepDone();
-    addIfReady(inst);
-}
-
-void
-IssueQue::retryMem(const DynInstPtr& inst)
-{
-    iqstats->retryMem++;
-    DPRINTF(Schedule, "retry %s [sn %lu]\n", enums::OpClassStrings[inst->opClass()], inst->seqNum);
-    scheduler->addToFU(inst);
-}
-
-void
-IssueQue::specWakeup(PhysRegIdPtr dst)
-{
-    wakeup(dst, true);
-}
-
-void
-IssueQue::writebackWakeup(PhysRegIdPtr dst)
-{
-    wakeup(dst, false);
-}
-
-void
 IssueQue::doCommit(const InstSeqNum seqNum)
 {
     while (!instList.empty() && instList.front()->seqNum <= seqNum) {
@@ -393,7 +363,7 @@ IssueQue::doSquash(const InstSeqNum seqNum)
             (*it)->setSquashedInIQ();
             (*it)->setCanCommit();
             (*it)->clearInIQ();
-            (*it)->setScheduled();
+            (*it)->setCancel();
             if (!(*it)->isIssued()) {
                 DPRINTF(Schedule, "[sn %lu] instNum--\n", (*it)->seqNum);
                 assert(instNum != 0);
@@ -404,6 +374,16 @@ IssueQue::doSquash(const InstSeqNum seqNum)
         }
         else {
             it++;
+        }
+    }
+
+    for (int i=0; i<=getIssueStages(); i++) {
+        int size = inflightIssues[-i].size;
+        for (int j=0; j<size; j++) {
+            auto& inst = inflightIssues[-i].insts[j];
+            if (inst && inst->isSquashed()) {
+                inst = nullptr;
+            }
         }
     }
 
@@ -420,147 +400,32 @@ IssueQue::doSquash(const InstSeqNum seqNum)
     }
 }
 
-WakeupQue::SpecWakeupCompletion::SpecWakeupCompletion(WakeupQue* que)
-    : Event(Stat_Event_Pri, 0),
-      que(que)
-{ }
+Scheduler::Slot::Slot(uint32_t priority, uint32_t needed, const DynInstPtr& inst)
+    : priority(priority), needed(needed), inst(inst)
+{}
+
+Scheduler::SpecWakeupCompletion::SpecWakeupCompletion(const DynInstPtr& inst, IssueQue* to)
+    : Event(Stat_Event_Pri, AutoDelete),
+      inst(inst),
+      to(to)
+{}
 
 void
-WakeupQue::SpecWakeupCompletion::reset(const DynInstPtr& inst, IssueQue* to)
+Scheduler::SpecWakeupCompletion::process()
 {
-    this->inst = inst;
-    this->to = to;
+    to->woken(inst, true);
 }
 
-void
-WakeupQue::SpecWakeupCompletion::process()
-{
-    DPRINTF(Schedule, "[sn %lu] %s specwakeup to %s\n",
-        inst->seqNum, enums::OpClassStrings[inst->opClass()], to->getName());
-    for (int i=0; i<inst->numDestRegs(); i++) {
-        auto dst = inst->renamedDestIdx(i);
-        if (dst->isFixedMapping()) {
-            continue;
-        }
-        que->scheduler->specScoreboard[dst->flatIndex()] = true;
-        to->specWakeup(dst);
-    }
-
-    que->freeEventList.push_back(this);
-    inst = NULL;
-    to = nullptr;
-}
-
-const char*
-WakeupQue::SpecWakeupCompletion::description() const
+const char *
+Scheduler::SpecWakeupCompletion::description() const
 {
     return "Spec wakeup completion";
 }
 
-void
-WakeupQue::init(std::vector<IssueQue*>* issueQues,
-    std::vector<SpecWakeupChannel*> matrix, bool xbar)
+bool
+Scheduler::compare_priority::operator()(const Slot& a, const Slot& b) const
 {
-    this->issueQues = issueQues;
-    int totalOutports = 0;
-    int maxExecCycle = 50;
-    for (auto it : *issueQues) {
-        totalOutports += it->inoutPorts;
-    }
-    for (int i=0;i<totalOutports * maxExecCycle;i++) {
-        freeEventList.push_back(new SpecWakeupCompletion(this));
-    }
-
-
-    auto findIQbyname = [this](std::string name) -> IssueQue*{
-        for (auto it : *this->issueQues) {
-            if (it->getName().compare(name) == 0) {
-                return it;
-            }
-        }
-        return nullptr;
-    };
-    specWakeupMatrix.resize(issueQues->size());
-    for (int i=0; i<specWakeupMatrix.size(); i++) {
-        specWakeupMatrix[i].resize(issueQues->size(), false);
-    }
-
-    if (xbar) {
-        for (auto srcIQ : *issueQues) {
-            for (auto dstIQ : *issueQues) {
-                specWakeupMatrix[srcIQ->getId()][dstIQ->getId()] = true;
-                DPRINTF(Schedule, "build wakeup/bypass channel: %s -> %s\n", srcIQ->getName(), dstIQ->getName());
-            }
-        }
-        return;
-    }
-
-    for (auto it : matrix) {
-        auto srcIQ = findIQbyname(it->srcIQ);
-        if (!srcIQ) {
-            continue;
-        }
-        for (auto dstIQname : it->dstIQ) {
-            auto dstIQ = findIQbyname(dstIQname);
-            if (!dstIQ) {
-                continue;
-            }
-            specWakeupMatrix[srcIQ->getId()][dstIQ->getId()] = true;
-            DPRINTF(Schedule, "build wakeup/bypass channel: %s -> %s\n", srcIQ->getName(), dstIQ->getName());
-        }
-    }
-}
-
-void
-WakeupQue::insert(const DynInstPtr& inst, IssueQue* from)
-{
-    if (inst->numDestRegs() == 0 || inst->isMemRef()) {
-        return;
-    }
-
-    for (auto to : *issueQues) {
-        bool wakeup = specWakeupMatrix[from->getId()][to->getId()];
-        int wakeupDelay = 0;
-        if (wakeup) {
-            wakeupDelay = scheduler->getOpLatency(inst) - 1;
-            assert(wakeupDelay >= 0);
-            if (from->getIssueStages() > to->getIssueStages()) {
-                wakeupDelay += from->getIssueStages() - to->getIssueStages();
-            }
-        }
-        else {
-            continue;
-        }
-
-        DPRINTF(Schedule, "%s create wakeupEvent to %s, delay %d cycles\n",
-            from->getName(), to->getName(), wakeupDelay);
-        assert(!freeEventList.empty());
-        auto wakeupEvent = freeEventList.back();
-        freeEventList.pop_back();
-        wakeupEvent->reset(inst, to);
-        cpu->schedule(wakeupEvent, cpu->clockEdge(Cycles(wakeupDelay)) + 1);
-    }
-}
-
-void
-WakeupQue::insertLoad(const DynInstPtr& inst, uint32_t delay_cycle)
-{
-    if (!inst->isLoad()) {
-        return;
-    }
-    int wakeupDelay = 0;
-    if (delay_cycle > inst->issueQue->getIssueStages()) {
-        wakeupDelay = delay_cycle - inst->issueQue->getIssueStages();
-    }
-    for (auto to : *issueQues) {
-        DPRINTF(Schedule, "create load wakeupEvent to %s, delay %d cycles\n",
-            to->getName(), wakeupDelay);
-        assert(!freeEventList.empty());
-        auto wakeupEvent = freeEventList.back();
-        freeEventList.pop_back();
-        wakeupEvent->reset(inst, to);
-        cpu->schedule(wakeupEvent, cpu->clockEdge(Cycles(wakeupDelay)) + 1);
-    }
+    return a.priority > b.priority;
 }
 
 Scheduler::Scheduler(const SchedulerParams& params)
@@ -573,7 +438,6 @@ Scheduler::Scheduler(const SchedulerParams& params)
 
     for (int i=0; i< issueQues.size(); i++) {
         issueQues[i]->setIQID(i);
-        issueQues[i]->setWakeupQue(&wakeupQue);
         issueQues[i]->scheduler = this;
         combinedFus += issueQues[i]->inoutPorts;
         for (auto fu : issueQues[i]->fuDescs) {
@@ -589,28 +453,55 @@ Scheduler::Scheduler(const SchedulerParams& params)
         }
     }
 
-    wakeupQue.setScheduler(this);
-    wakeupQue.init(&issueQues, params.specWakeupNetwork, params.xbarWakeup);
+    wakeMatrix.resize(issueQues.size());
+    auto findIQbyname = [this](std::string name) -> IssueQue*{
+        IssueQue* ret = nullptr;
+        for (auto it : this->issueQues) {
+            if (it->getName().compare(name) == 0) {
+                if (ret) {
+                    panic("has duplicate IQ name: %s\n", name);
+                }
+                ret = it;
+            }
+        }
+        panic_if(!ret, "can't find IQ by name: %s\n", name);
+        return ret;
+    };
+    if (params.xbarWakeup) {
+        for (auto srcIQ : issueQues) {
+            for (auto dstIQ : issueQues) {
+                wakeMatrix[srcIQ->getId()].push_back(dstIQ);
+                DPRINTF(Schedule, "build wakeup channel: %s -> %s\n", srcIQ->getName(), dstIQ->getName());
+            }
+        }
+    }
+    else {
+        for (auto it : params.specWakeupNetwork) {
+            auto srcIQ = findIQbyname(it->srcIQ);
+            for (auto dstIQname : it->dstIQ) {
+                auto dstIQ = findIQbyname(dstIQname);
+                wakeMatrix[srcIQ->getId()].push_back(dstIQ);
+                DPRINTF(Schedule, "build wakeup channel: %s -> %s\n", srcIQ->getName(), dstIQ->getName());
+            }
+        }
+    }
 }
 
 void
 Scheduler::setCPU(CPU* cpu)
 {
+    this->cpu = cpu;
     for (auto it : issueQues) {
         it->setCPU(cpu);
     }
-    wakeupQue.setCPU(cpu);
 }
 
 void
 Scheduler::resetDepGraph(uint64_t numPhysRegs)
 {
-    specScoreboard.resize(numPhysRegs, true);
-    noSpecScoreboard.resize(numPhysRegs, true);
+    scoreboard.resize(numPhysRegs, true);
     bypassScoreboard.resize(numPhysRegs, true);
     for (auto it : issueQues) {
-        it->setBypassScoreboard(&bypassScoreboard);
-        it->setnoSpecScoreboard(&noSpecScoreboard);
         it->resetDepGraph(numPhysRegs);
     }
 }
@@ -628,6 +519,31 @@ Scheduler::tick()
     for (auto it : issueQues) {
         it->tick();
     }
+}
+
+void
+Scheduler::issueAndSelect(){
+    for (auto it : issueQues) {
+        it->issueToFu();
+    }
+    // must wait for all insts was issued
+    for (auto it : issueQues) {
+        it->selectInst();
+    }
+    // inst arbitration
+    while (slotOccupied > 12) {
+        auto& slot = intSlot.top();
+        slot.inst->setArbFailed();
+        slotOccupied -= slot.needed;
+        DPRINTF(Schedule, "[sn %lu] remove from slot\n", slot.inst->seqNum);
+        intSlot.pop();
+    }
+    std::deque<int> nullQ;
+    nullQ.clear();
+
+    // reset slot status
+    slotOccupied = 0;
+    intSlot.clear();
 }
 
 bool
@@ -652,8 +568,7 @@ Scheduler::addProducer(const DynInstPtr& inst)
         if (dst->isFixedMapping()) {
             continue;
         }
-        specScoreboard[dst->flatIndex()] = false;
-        noSpecScoreboard[dst->flatIndex()] = false;
+        scoreboard[dst->flatIndex()] = false;
         bypassScoreboard[dst->flatIndex()] = false;
         DPRINTF(Schedule, "mark scoreboard p%lu not ready\n", dst->flatIndex());
     }
@@ -704,6 +619,37 @@ Scheduler::insertNonSpec(const DynInstPtr& inst)
     }
 }
 
+void
+Scheduler::wakeOthers(const DynInstPtr& inst, IssueQue* from)
+{
+    if (inst->numDestRegs() == 0 || (inst->isVector() && inst->isLoad())) {
+        // ignore if vector load
+        return;
+    }
+
+    for (auto to : wakeMatrix[from->getId()]) {
+        int wakeDelay = 0;
+        int oplat = getCorrectedOpLat(inst);
+
+        if (oplat == 1 && (from->getIssueStages() > to->getIssueStages())) {
+            wakeDelay = from->getIssueStages() - to->getIssueStages();
+        }
+        else if (oplat > to->getIssueStages()) {
+            wakeDelay = oplat - to->getIssueStages();
+        }
+
+        DPRINTF(Schedule, "[sn %lu] %s create wakeupEvent to %s, delay %d cycles\n",
+            inst->seqNum, from->getName(), to->getName(), wakeDelay);
+        if (wakeDelay==0) {
+            to->woken(inst, true);
+        }
+        else {
+            auto wakeEvent = new SpecWakeupCompletion(inst, to);
+            cpu->schedule(wakeEvent, cpu->clockEdge(Cycles(wakeDelay)) - 1);
+        }
+    }
+}
+
 DynInstPtr
 Scheduler::getInstToFU()
 {
@@ -715,21 +661,118 @@ Scheduler::getInstToFU()
     return ret;
 }
 
+void
+Scheduler::insertSlot(const DynInstPtr& inst)
+{
+    if (inst->isFloating() || inst->isVector()) {
+        // floating point and vector insts are not participate in arbitration
+        return;
+    }
+    uint32_t priority = getARBPriority(inst);
+    uint32_t needed = inst->numSrcRegs();
+    slotOccupied += needed;
+    intSlot.push(Slot(priority, needed, inst));
+    DPRINTF(Schedule, "[sn %lu] insert slot, priority: %u, needed: %u\n", inst->seqNum, priority, needed);
+}
+
+void Scheduler::loadCancel(const DynInstPtr& inst)
+{
+    DPRINTF(Schedule, "[sn %lu] %s cache miss, cancel others\n", inst->seqNum, enums::OpClassStrings[inst->opClass()]);
+    inst->setCancel();
+    if (inst->issueQue) {
+        inst->issueQue->iqstats->loadmiss++;
+    }
+    //cancel(inst);
+    bfs.push(inst);
+    while (!bfs.empty()) {
+        auto top = bfs.top();
+        bfs.pop();
+        for (int i=0; i<top->numDestRegs(); i++) {
+            auto dst = top->renamedDestIdx(i);
+            if (dst->isFixedMapping()) {
+                continue;
+            }
+            for (auto iq : issueQues) {
+                for (auto& it : iq->subDepGraph[dst->flatIndex()]) {
+                    int srcIdx = it.first;
+                    auto& depInst = it.second;
+                    if (depInst->readySrcIdx(srcIdx)) {
+                        assert(!depInst->isIssued());
+                        DPRINTF(Schedule, "cancel [sn %lu], clear src p%d ready\n",
+                            depInst->seqNum, depInst->renamedSrcIdx(srcIdx)->flatIndex());
+                        depInst->setCancel();
+                        iq->iqstats->canceledInst++;
+                        depInst->clearSrcRegReady(srcIdx);
+                        bfs.push(depInst);
+                    }
+                }
+            }
+        }
+    }
+
+    for (auto iq : issueQues) {
+        for (int i=0; i<=iq->getIssueStages(); i++) {
+            int size = iq->inflightIssues[-i].size;
+            for (int j=0; j<size; j++) {
+                auto& inst = iq->inflightIssues[-i].insts[j];
+                if (inst && inst->canceled()) {
+                    inst = nullptr;
+                }
+            }
+        }
+    }
+}
+
+void
+Scheduler::writebackWakeup(const DynInstPtr& inst)
+{
+    DPRINTF(Schedule, "[sn %lu] was writeback\n", inst->seqNum);
+    inst->issueQue = nullptr;// clear in issueQue
+    for (int i=0; i<inst->numDestRegs(); i++) {
+        auto dst = inst->renamedDestIdx(i);
+        if (dst->isFixedMapping()) {
+            continue;
+        }
+        scoreboard[dst->flatIndex()] = true;
+    }
+    for (auto it : issueQues) {
+        it->woken(inst, false);
+    }
+}
+
+void
+Scheduler::bypassWriteback(const DynInstPtr& inst)
+{
+    DPRINTF(Schedule, "[sn %lu] bypass write\n", inst->seqNum);
+    for (int i=0; i<inst->numDestRegs(); i++) {
+        auto dst = inst->renamedDestIdx(i);
+        if (dst->isFixedMapping()) {
+            continue;
+        }
+        bypassScoreboard[dst->flatIndex()] = true;
+        DPRINTF(Schedule, "p%lu in bypassNetwork ready\n", dst->flatIndex());
+    }
+}
+
+uint32_t
+Scheduler::getARBPriority(const DynInstPtr& inst)
+{
+    return (uint32_t)rand() % 10;
+}
+
 uint32_t
 Scheduler::getOpLatency(const DynInstPtr& inst)
 {
     return opExecTimeTable[inst->opClass()];
 }
 
-bool
-Scheduler::checkFuReady(const DynInstPtr& inst)
+uint32_t
+Scheduler::getCorrectedOpLat(const DynInstPtr& inst)
 {
-    return true;
+    uint32_t oplat = opExecTimeTable[inst->opClass()];
+    oplat += inst->isLoad() ? 1 : 0;
+    return oplat;
 }
-
-void
-Scheduler::allocFu(const DynInstPtr& inst)
-{ }
 
 bool
 Scheduler::hasReadyInsts()
@@ -754,37 +797,6 @@ Scheduler::isDrained()
 }
 
 void
-Scheduler::writebackWakeup(const DynInstPtr& inst)
-{
-    DPRINTF(Schedule, "[sn %lu] was writeback\n", inst->seqNum);
-    inst->issueQue = nullptr;// clear in issueQue
-    for (int i=0; i<inst->numDestRegs(); i++) {
-        auto dst = inst->renamedDestIdx(i);
-        if (dst->isFixedMapping()) {
-            continue;
-        }
-        noSpecScoreboard[dst->flatIndex()] = true;
-        for (auto it : issueQues) {
-            it->writebackWakeup(dst);
-        }
-    }
-}
-
-void
-Scheduler::bypassWriteback(const DynInstPtr& inst)
-{
-    DPRINTF(Schedule, "[sn %lu] bypass write\n", inst->seqNum);
-    for (int i=0; i<inst->numDestRegs(); i++) {
-        auto dst = inst->renamedDestIdx(i);
-        if (dst->isFixedMapping()) {
-            continue;
-        }
-        bypassScoreboard[dst->flatIndex()] = true;
-         DPRINTF(Schedule, "p%lu in bypassNetwork ready\n", dst->flatIndex());
-    }
-}
-
-void
 Scheduler::doCommit(const InstSeqNum seqNum)
 {
     for (auto it : issueQues) {
@@ -799,11 +811,6 @@ Scheduler::doSquash(const InstSeqNum seqNum)
     for (auto it : issueQues) {
         it->doSquash(seqNum);
     }
-}
-
-void Scheduler::loadCachehit(const DynInstPtr& inst, uint32_t delay_cycle)
-{
-    wakeupQue.insertLoad(inst, delay_cycle);
 }
 
 }

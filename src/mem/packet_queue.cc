@@ -106,9 +106,6 @@ PacketQueue::trySatisfyFunctional(PacketPtr pkt)
 void
 PacketQueue::schedSendTiming(PacketPtr pkt, Tick when)
 {
-    DPRINTF(PacketQueue, "%s for %s address %x size %d when %lu ord: %i\n",
-            __func__, pkt->cmdString(), pkt->getAddr(), pkt->getSize(), when,
-            forceOrder);
 
     // we can still send a packet before the end of this tick
     assert(when >= curTick());
@@ -143,9 +140,15 @@ PacketQueue::schedSendTiming(PacketPtr pkt, Tick when)
             // emplace inserts the element before the position pointed to by
             // the iterator, so advance it one step
             transmitList.emplace(++it, when, pkt);
+            DPRINTF(PacketQueue, "%s for %s address %x size %d when %lu ord: %i (reordered)\n",
+                    __func__, pkt->cmdString(), pkt->getAddr(), pkt->getSize(), when,
+                    forceOrder);
             return;
         }
     }
+    DPRINTF(PacketQueue, "%s for %s address %x size %d when %lu ord: %i\n",
+            __func__, pkt->cmdString(), pkt->getAddr(), pkt->getSize(), when,
+            forceOrder);
     // either the packet list is empty or this has to be inserted
     // before every other packet
     transmitList.emplace_front(when, pkt);

@@ -161,9 +161,10 @@ class DynInst : public ExecContext, public RefCounted
         Completed,               /// Instruction has completed
         ResultReady,             /// Instruction has its result
         CanIssue,                /// Instruction can issue and execute
-        MemDepSolved,
-        ReadyOnce,
-        Scheduled,
+        MemDepSolved,            /// Memory dependencies are solved
+        InReadyQue,              /// Instruction is in the ready queue
+        Canceled,                /// Instruction is canceled
+        ArbFailed,
         Issued,                  /// Instruction has issued
         Executed,                /// Instruction has executed
         CanCommit,               /// Instruction can commit
@@ -394,8 +395,6 @@ class DynInst : public ExecContext, public RefCounted
     RequestPtr reqToVerify;
 
     IssueQue* issueQue = nullptr;
-
-    int archReadySrcs = -1;// set when insert into IQ
 
   public:
     /** Records changes to result? */
@@ -774,6 +773,8 @@ class DynInst : public ExecContext, public RefCounted
     /** Marks a specific register as ready. */
     void markSrcRegReady(RegIndex src_idx);
 
+    void clearSrcRegReady(RegIndex src_idx);
+
     uint8_t getNumSrcRegReady() { return readyRegs; }
 
     void resetNumSrcRegReady(uint8_t n);
@@ -804,17 +805,24 @@ class DynInst : public ExecContext, public RefCounted
 
     bool memDepSolved() const { return status[MemDepSolved]; }
 
+    void setInReadyQ() { status.set(InReadyQue); }
+
+    void clearInReadyQ() { status.reset(InReadyQue); }
+
+    bool inReadyQ() const { return status[InReadyQue]; }
+
     // set ready once, can not be spec woken again
-    void setReadyOnce() { status.set(ReadyOnce); }
+    void setCancel() { status.set(Canceled); }
 
-    bool readyOnce() const { return status[ReadyOnce]; }
+    void clearCancel() { status.reset(Canceled); }
 
-    // set was scheduled in IQ
-    void setScheduled() { status.set(Scheduled); }
+    bool canceled() const { return status[Canceled]; }
 
-    void resetScheduled() { status.reset(Scheduled); }
+    void setArbFailed() { status.set(ArbFailed); }
 
-    bool scheduled() const { return status[Scheduled]; }
+    void clearArbFailed() { status.reset(ArbFailed); }
+
+    bool arbFailed() const { return status[ArbFailed]; }
 
     /** Sets this instruction as issued from the IQ. */
     void setIssued() { status.set(Issued); }
