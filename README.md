@@ -195,11 +195,25 @@ Users should set the following environment variables before running GEM5:
 - $GCBV_RESTORER: Restorer of RVV version.
 
 These files can be found in the release page.
+Users can also opt to build them from source ([Difftest with NEMU](#difftest-with-nemu) and
+[Build GCPT restorer](#build-gcpt-restorer)).
+A tested working matrix of repos & revisions is here:
 
-**NOTE**: Current scripts enforce Difftest (cosimulating against NEMU or spike),
-either download the pre-built reference design from the release page or
-build a reference design from source([Difftest with NEMU](#difftest-with-nemu)).
+<!-- table -->
+|  | reference design | GCPT restorer 
+| ---------- | --------- | --------- |
+| RV64GCB | NEMU master | NEMU master |
+| RV64GCBV      | Spike gem5-ref | NEMU gcpt_new_mem_layout |
 
+If above branches are not working, you can try the following commits:
+
+|  | reference design | GCPT restorer 
+| ---------- | --------- | --------- |
+| RV64GCB | NEMU e475285f | NEMU e475285f |
+| RV64GCBV | Spike d179549f  | NEMU 96ce67b2|
+
+
+**NOTE**: Current scripts enforce Difftest (cosimulating against NEMU or spike).
 If a user does not want Difftest, please manually edit `configs/example/xiangshan.py` and `configs/common/XSConfig.py` to disable it.
 Simulation error without Difftest **will NOT be responded.**
 
@@ -238,6 +252,25 @@ Arch DB is a database to store the micro-architectural trace of the program with
 You can access it with Python or other languages.
 A Python example is given [here](util/arch_db/mem_trace.py).
 
+## Build GCPT restorer
+
+``` shell
+git clone https://github.com/OpenXiangShan/NEMU.git
+cd NEMU/resource/gcpt_restore
+make
+export GCB_RESTORER=`realpath build/gcpt.bin`
+```
+
+If users want to build RVV version, run the following command:
+
+``` shell
+
+git clone https://github.com/OpenXiangShan/NEMU.git -b gcpt_new_mem_layout
+# Then similar as above
+# ...
+export GCBV_RESTORER=`realpath build/gcpt.bin`
+```
+
 ## Difftest with NEMU
 
 NEMU is used as a reference design for XS-GEM5.
@@ -256,11 +289,10 @@ so-->cosim
 We the [gem5-ref-main branch of NEMU](https://github.com/OpenXiangShan/NEMU/tree/gem5-ref-main) for difftest with XS-GEM5.
 
 ``` shell
-git clone https://github.com/OpenXiangShan/NEMU.git -b gem5-ref-main
+git clone https://github.com/OpenXiangShan/NEMU.git
 cd NEMU
 export NEMU_HOME=`pwd`
-make riscv64-nohype-ref_defconfig
-make menuconfig  # then save configs
+make riscv64-gem5-ref_defconfig
 make -j 10
 ```
 
@@ -275,10 +307,18 @@ build
 then use `riscv64-nemu-interpreter-so` as reference for GEM5,
 ``` shell
 export GCB_REF_SO=`realpath build/riscv64-nemu-interpreter-so`
-
-# Then run gem5
 ```
 
+## Difftest with spike
+
+``` shell
+git clone https://github.com/OpenXiangShan/riscv-isa-sim.git -b gem5-ref spike
+cd spike/difftest && make CPU=XIANGSHAN
+```
+Then use `difftest/build/riscv64-spike-so` similarly as NEMU.
+``` shell
+export GCBV_REF_SO=`realpath difftest/build/riscv64-spike-so`
+```
 # FAQ
 
 ## Python problems

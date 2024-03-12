@@ -1293,7 +1293,9 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict)
     bool cache_got_blocked = false;
 
     LSQRequest *request = dynamic_cast<LSQRequest*>(data_pkt->senderState);
-    bank_conflict = lsq->bankConflictedCheck(data_pkt->req->getVaddr());
+    if (isLoad) {
+        bank_conflict = lsq->bankConflictedCheck(data_pkt->req->getVaddr());
+    }
 
 
     if (!lsq->cacheBlocked() &&

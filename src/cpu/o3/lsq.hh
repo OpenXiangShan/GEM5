@@ -925,7 +925,7 @@ class LSQ
 
     std::vector<int64_t> l1dBankAddresses;
 
-    bool openBankConflictCheck;
+    bool enableBankConflictCheck;
 
     /** If the LSQ is currently waiting for stale translations */
     bool waitingForStaleTranslation;
