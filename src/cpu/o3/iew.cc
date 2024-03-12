@@ -1034,6 +1034,14 @@ IEW::dispatchInsts(ThreadID tid)
     unsigned dispatched = 0;
     while (!insts_to_dispatch.empty()) {
         auto& inst = insts_to_dispatch.front();
+        
+        float ipc = 0;
+        int ins =cpu->cpuStats.committedInsts.total();
+        if (cpu->hasHintDownStream() && ins%10000 == 1 && ins>10000000)
+        {
+            ipc=float(cpu->cpuStats.committedInsts.total()/cpu->baseStats.numCycles.value());
+            cpu->hintDownStream->transferIPC(ipc);
+        }
         int id = dispClassify(inst);
         if (dispQue[id].size() < dqSize) {
             if (inst->isSquashed()) {

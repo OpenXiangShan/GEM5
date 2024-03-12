@@ -22,6 +22,11 @@ class L2CompositeWithWorkerPrefetcher: public CompositeWithWorkerPrefetcher
     void calculatePrefetch(const PrefetchInfo &pfi,
                            std::vector<AddrPriority> &addresses) override;
 
+    void addHintDownStream(Base* down_stream) override
+    {
+        hintDownStream = down_stream;
+        cdp->addHintDownStream(down_stream);
+    }
     void rxHint(BaseMMU::Translation *dpp) override;
     void pfHitNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt) override;
 
@@ -30,6 +35,9 @@ class L2CompositeWithWorkerPrefetcher: public CompositeWithWorkerPrefetcher
     void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) override;
 
     void notifyFill(const PacketPtr &pkt) override;
+    void transferIPC(float _ipc) override{
+          cdp->transferIPC(_ipc);
+    }
 
   private:
 

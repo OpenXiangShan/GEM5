@@ -13,6 +13,7 @@
 
 #include "base/sat_counter.hh"
 #include "base/types.hh"
+#include "mem/cache/base.hh"
 #include "mem/cache/prefetch/queued.hh"
 #include "mem/packet.hh"
 #include "params/WorkerPrefetcher.hh"
@@ -48,6 +49,21 @@ class WorkerPrefetcher: public Queued
     };
 
     void rxHint(BaseMMU::Translation *dpp) override;
+    float rxMembusRatio(RequestorID requestorId) override
+    {
+      long totalMissCount = cache->stats.cmd[MemCmd::ReadExReq]->misses.total()
+            + cache->stats.cmd[MemCmd::ReadSharedReq]->misses.total();
+      long missCount = cache->stats.cmd[MemCmd::ReadExReq]->misses[requestorId].value()
+            + cache->stats.cmd[MemCmd::ReadSharedReq]->misses[requestorId].value();
+      if (totalMissCount > 100)
+        return missCount * 1.0 / totalMissCount;
+      else
+        return 0;
+    };
+    void transferIPC(float _ipc) override{
+        if (hasHintDownStream())
+          hintDownStream->transferIPC(_ipc);
+    }
 
     // dummy
     void pfHitNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt) override {

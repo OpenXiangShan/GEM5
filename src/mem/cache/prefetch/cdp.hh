@@ -75,6 +75,8 @@ class CDP : public Queued
     std::vector<bool> enable_prf_filter;
     std::vector<bool> enable_prf_filter2;
     int depth_threshold;
+    float throttle_agreessive;
+    bool enable_thro;
     /** Byte order used to access the cache */
     /** Update the RR right table after a prefetch fill */
 
@@ -97,15 +99,15 @@ class CDP : public Queued
                 vpns[vpn2][vpn1] += 1;
             }
         }
-        void resetConfidence()
+        void resetConfidence(float throttle_agreessive, bool enable_thro)
         {
             if (counter < 128)
                 return;
             hotVpns.clear();
             for (auto pair2 : vpns) {
                 for (auto pair1 : pair2.second) {
-                    if (pair1.second > counter / 16) {
-                        hotVpns[pair2.first][pair1.first] = pair1.second;
+                    if (pair1.second > counter / 16||enable_thro) {
+                        hotVpns[pair2.first][pair1.first] = pair1.second * throttle_agreessive;
                     }
                 }
             }
@@ -115,14 +117,29 @@ class CDP : public Queued
         bool search(int vpn2, int vpn1)
         {
             if (hotVpns.find(vpn2) != hotVpns.end() && hotVpns[vpn2].find(vpn1) != hotVpns[vpn2].end()) {
-                return true;
+                if (hotVpns[vpn2][vpn1] > 0){
+                    return true;
+                }
             }
             return false;
         }
-        VpnTable() { resetConfidence(); }
+        void update(int vpn2, int vpn1, bool enable_thro){
+            if (enable_thro)
+                hotVpns[vpn2][vpn1]--;
+        }
+        VpnTable() { resetConfidence(2, false); }
     } vpnTable;
 
   public:
+    StatGroup* prefetchStatsPtr = nullptr;
+    RequestorID parentRid;
+    float ipc = 0;
+    void setStatsPtr(StatGroup* ptr){
+        prefetchStatsPtr = ptr;
+    }
+    void transferIPC(float _ipc) override{
+        ipc = _ipc;
+    }
     bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType pfSource,
                           int pf_depth);
 
