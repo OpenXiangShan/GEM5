@@ -83,6 +83,7 @@ def template VleConstructor {{
                 vmi.microVd = elem_gen_idx(VD + fn * emul, i, eew/8);
                 vmi.offset = (i*nf+fn) * eew / 8;
                 microop = new %(class_name)sMicro(_machInst, i*(fn+1), vmi);
+                microop->resetOpClass(VectorSegmentLoadOp);
                 microop->setDelayedCommit();
                 microop->setFlag(IsLoad);
                 this->microops.push_back(microop);
@@ -767,6 +768,7 @@ def template VseConstructor {{
                 vmi.microVs3 = elem_gen_idx(VS3 + fn * emul, i, eew/8);
                 vmi.offset = (i*nf+fn) * eew / 8;
                 microop = new %(class_name)sMicro(_machInst, i*(fn+1), vmi);
+                microop->resetOpClass(VectorSegmentStoreOp);
                 microop->setDelayedCommit();
                 microop->setFlag(IsStore);
                 this->microops.push_back(microop);
