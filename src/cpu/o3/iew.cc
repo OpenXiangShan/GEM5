@@ -74,7 +74,8 @@ namespace o3
 {
 
 IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
-    : issueToExecQueue(params.backComSize, params.forwardComSize),
+    : dqSize(params.numDQEntries),
+      issueToExecQueue(params.backComSize, params.forwardComSize),
       cpu(_cpu),
       scheduler(params.scheduler),
       instQueue(_cpu, this, params),
@@ -82,8 +83,7 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
       fuPool(params.fuPool),
       commitToIEWDelay(params.commitToIEWDelay),
       renameToIEWDelay(params.renameToIEWDelay),
-      dispatchWidth(params.dispatchWidth),
-      issueWidth(params.issueWidth),
+      renameWidth(params.renameWidth),
       wbNumInst(0),
       wbCycle(0),
       wbDelay(params.executeToWriteBackDelay),
@@ -91,14 +91,6 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
       numThreads(params.numThreads),
       iewStats(cpu)
 {
-    if (dispatchWidth > MaxWidth)
-        fatal("dispatchWidth (%d) is larger than compiled limit (%d),\n"
-             "\tincrease MaxWidth in src/cpu/o3/limits.hh\n",
-             dispatchWidth, static_cast<int>(MaxWidth));
-    if (issueWidth > MaxWidth)
-        fatal("issueWidth (%d) is larger than compiled limit (%d),\n"
-             "\tincrease MaxWidth in src/cpu/o3/limits.hh\n",
-             issueWidth, static_cast<int>(MaxWidth));
     if (wbWidth > MaxWidth)
         fatal("wbWidth (%d) is larger than compiled limit (%d),\n"
              "\tincrease MaxWidth in src/cpu/o3/limits.hh\n",
@@ -123,7 +115,7 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
 
     skidBufferMax = (renameToIEWDelay + 1) * params.renameWidth * 2;
 
-    dispatchStalls.resize(dispatchWidth, StallReason::NoStall);
+    dispatchStalls.resize(renameWidth, StallReason::NoStall);
 
 }
 
@@ -1022,28 +1014,28 @@ IEW::dispatchInsts(ThreadID tid)
 {
     auto dispClassify = [](const DynInstPtr& inst) -> int{
         if (inst->isMemRef() || inst->isReadBarrier() || inst->isWriteBarrier() || inst->isNonSpeculative()) {
-            return 2;
+            return MemDQ;
         }
         if (inst->isFloating() || inst->isVector()) {
-            return 1;
+            return FVDQ;
         }
-        return 0;
+        return IntDQ;
     };
 
-
-    // Obtain instructions from skid buffer if unblocking, or queue from rename
-    // otherwise.
     std::deque<DynInstPtr> &insts_to_dispatch =
         dispatchStatus[tid] == Unblocking ?
         skidBuffer[tid] : insts[tid];
 
     bool emptyROB = fromCommit->commitInfo[tid].emptyROB;
 
+    int insts_to_add = insts_to_dispatch.size();
+    std::queue<StallReason> dispatch_stalls;
+    StallReason breakDispatch = StallReason::NoStall;
+    unsigned dispatched = 0;
     while (!insts_to_dispatch.empty()) {
         auto& inst = insts_to_dispatch.front();
         int id = dispClassify(inst);
-        if (dispQue[id].size() < 16) {
-
+        if (dispQue[id].size() < dqSize) {
             if (inst->isSquashed()) {
                 ++iewStats.dispSquashedInsts;
                 //Tell Rename That An Instruction has been processed
@@ -1055,10 +1047,15 @@ IEW::dispatchInsts(ThreadID tid)
                 }
                 toRename->iewInfo[tid].dispatched++;
                 insts_to_dispatch.pop_front();
+
+                dispatch_stalls.push(StallReason::InstSquashed);
                 continue;
             }
 
             if ((inst->isSerializeBefore() && !inst->isSerializeHandled()) ? !emptyROB : false) {
+                dispatch_stalls.push(StallReason::SerializeStall);
+                breakDispatch = StallReason::SerializeStall;
+                blockReason = breakDispatch;
                 break;
             }
 
@@ -1078,12 +1075,10 @@ IEW::dispatchInsts(ThreadID tid)
                 ++iewStats.dispStoreInsts;
                 ++iewStats.dispNonSpecInsts;
                 toRename->iewInfo[tid].dispatchedToSQ++;
-            }
-            else if (inst->isLoad()) {
+            } else if (inst->isLoad()) {
                 ++iewStats.dispLoadInsts;
                 toRename->iewInfo[tid].dispatchedToLQ++;
-            }
-            else if (inst->isStore()) {
+            } else if (inst->isStore()) {
                 ++iewStats.dispStoreInsts;
                 if (inst->isStoreConditional()) {
                     ++iewStats.dispNonSpecInsts;
@@ -1104,20 +1099,47 @@ IEW::dispatchInsts(ThreadID tid)
             ppDispatch->notify(inst);
 
             insts_to_dispatch.pop_front();
-        }
-        else {
+            dispatched++;
+        } else {
+            dispatch_stalls.push(checkDispatchStall(tid));
+            breakDispatch = dispatch_stalls.back();
+            blockReason = breakDispatch;
             break;
         }
     }
 
+    if (insts_to_add == 0) {
+        dispatchStalls = fromRename->renameStallReason;
+    }
+    else {
+        for (int i=0; i<renameWidth; i++) {
+            if (i < dispatched) {
+                dispatchStalls.at(i) = StallReason::NoStall;
+            } else {
+                if (!dispatch_stalls.empty()) {
+                    dispatchStalls.at(i) = dispatch_stalls.front();
+                    dispatch_stalls.pop();
+                } else if (breakDispatch != StallReason::NoStall) {
+                    dispatchStalls.at(i) = breakDispatch;
+                } else if (i >= dispatched) {
+                    dispatchStalls.at(i) = StallReason::FragStall;
+                }
+            }
+        }
+    }
+
+    for (int i = 0;i < dispatchStalls.size();i++) {
+        DPRINTF(IEW,"[tid:%i] dispatchStalls[%d]=%d\n", tid, i, dispatchStalls.at(i));
+    }
+
     if (!insts_to_dispatch.empty()) {
-        DPRINTF(IEW,"[tid:%i] Issue: Bandwidth Full. Blocking.\n", tid);
+        DPRINTF(IEW,"[tid:%i] Dispatch: Bandwidth Full. Blocking.\n", tid);
         block(tid);
         iewStats.stallEvents[DispBWFull]++;
         toRename->iewUnblock[tid] = false;
     }
 
-    if (dispatchStatus[tid] == Idle && !dispQue[0].empty()) {
+    if (dispatchStatus[tid] == Idle && insts_to_add) {
         dispatchStatus[tid] = Running;
         updatedQueues = true;
     }
@@ -1126,37 +1148,25 @@ IEW::dispatchInsts(ThreadID tid)
     bool add_to_iq = false;
     int dis_num_inst = 0;
 
-    std::queue<StallReason> dispatch_stalls;
-    StallReason breakDispatch = StallReason::NoStall;
-
-    // Loop through the instructions, putting them in the instruction
-    // queue.
-    for (int i=0; i<3; i++) {
-        for (; !dispQue[i].empty();)
-        {
+    for (int i=0; i<=MemDQ; i++) {
+        while (!dispQue[i].empty()) {
             inst = dispQue[i].front();
 
             // Check for squashed instructions.
             if (inst->isSquashed()) {
-                DPRINTF(IEW, "[tid:%i] Issue: Squashed instruction encountered, "
+                DPRINTF(IEW, "[tid:%i] Dispatch: Squashed instruction encountered, "
                         "not adding to IQ.\n", tid);
 
                 dispQue[i].pop_front();
-
-                dispatch_stalls.push(StallReason::InstSquashed);
                 continue;
             }
 
             // Check for full conditions.
             if (instQueue.isFull(inst)) {
-                DPRINTF(IEW, "[tid:%i] Issue: IQ has become full.\n", tid);
+                DPRINTF(IEW, "[tid:%i] Dispatch: IQ has become full.\n", tid);
 
                 iewStats.stallEvents[IQFull]++;
                 ++iewStats.iqFullEvents;
-
-                blockReason = checkDispatchStall(tid);
-                dispatch_stalls.push(checkDispatchStall(tid));
-                breakDispatch = blockReason;
                 break;
             }
 
@@ -1164,31 +1174,18 @@ IEW::dispatchInsts(ThreadID tid)
             if ((inst->isAtomic() && ldstQueue.sqFull(tid)) ||
                 (inst->isLoad() && ldstQueue.lqFull(tid)) ||
                 (inst->isStore() && ldstQueue.sqFull(tid))) {
-                DPRINTF(IEW, "[tid:%i] Issue: %s has become full.\n",tid,
+                DPRINTF(IEW, "[tid:%i] Dispatch: %s has become full.\n",tid,
                         inst->isLoad() ? "LQ" : "SQ");
 
                 iewStats.stallEvents[LSQFull]++;
 
                 ++iewStats.lsqFullEvents;
-
-                if ((inst->isStore() || inst->isAtomic()) &&
-                    ldstQueue.sqFull(tid) && rob->isEmpty(tid)) {
-                    blockReason = checkLSQStall(tid, false);
-                } else if ((inst->isLoad() && ldstQueue.lqFull(tid)) &&
-                            rob->isEmpty(tid)) {
-                    blockReason = checkLSQStall(tid, true);
-                } else {
-                    blockReason = checkDispatchStall(tid);
-                }
-
-                dispatch_stalls.push(blockReason);
-                breakDispatch = blockReason;
                 break;
             }
 
             // Otherwise issue the instruction just fine.
             if (inst->isAtomic()) {
-                DPRINTF(IEW, "[tid:%i] Issue: Memory instruction "
+                DPRINTF(IEW, "[tid:%i] Dispatch: Memory instruction "
                         "encountered, adding to LSQ.\n", tid);
 
                 ldstQueue.insertStore(inst);
@@ -1200,7 +1197,7 @@ IEW::dispatchInsts(ThreadID tid)
                 instQueue.insertNonSpec(inst);
                 add_to_iq = false;
             } else if (inst->isLoad()) {
-                DPRINTF(IEW, "[tid:%i] Issue: Memory instruction "
+                DPRINTF(IEW, "[tid:%i] Dispatch: Memory instruction "
                         "encountered, adding to LSQ.\n", tid);
 
                 // Reserve a spot in the load store queue for this
@@ -1210,7 +1207,7 @@ IEW::dispatchInsts(ThreadID tid)
                 add_to_iq = true;
 
             } else if (inst->isStore()) {
-                DPRINTF(IEW, "[tid:%i] Issue: Memory instruction "
+                DPRINTF(IEW, "[tid:%i] Dispatch: Memory instruction "
                         "encountered, adding to LSQ.\n", tid);
 
                 ldstQueue.insertStore(inst);
@@ -1233,7 +1230,7 @@ IEW::dispatchInsts(ThreadID tid)
                 instQueue.insertBarrier(inst);
                 add_to_iq = false;
             } else if (inst->isNop()) {
-                DPRINTF(IEW, "[tid:%i] Issue: Nop instruction encountered, "
+                DPRINTF(IEW, "[tid:%i] Dispatch: Nop instruction encountered, "
                         "skipping.\n", tid);
 
                 inst->setIssued();
@@ -1249,7 +1246,7 @@ IEW::dispatchInsts(ThreadID tid)
             }
 
             if (add_to_iq && inst->isNonSpeculative()) {
-                DPRINTF(IEW, "[tid:%i] Issue: Nonspeculative instruction "
+                DPRINTF(IEW, "[tid:%i] Dispatch: Nonspeculative instruction "
                         "encountered, skipping.\n", tid);
 
                 // Same as non-speculative stores.
@@ -1276,42 +1273,7 @@ IEW::dispatchInsts(ThreadID tid)
             dispQue[i].pop_front();
         }
     }
-
     iewStats.dispDist.sample(dis_num_inst);
-    blockReason = breakDispatch;
-
-    // unsigned instInSufficient = 12 - dis_num_inst;
-    // StallReason stallFromRename = StallReason::NoStall;
-    // for (auto iter : fromRename->renameStallReason) {
-    //     if (iter != StallReason::NoStall) {
-    //         stallFromRename = iter;
-    //         break;
-    //     }
-    // }
-
-    // for (int i = 0;i < dispatchWidth;i++) {
-    //     if (i < dis_num_inst) {
-    //         dispatchStalls.at(i) = StallReason::NoStall;
-    //     } else {
-    //         if (!dispatch_stalls.empty()) {
-    //             dispatchStalls.at(i) = dispatch_stalls.front();
-    //             dispatch_stalls.pop();
-    //         } else if (breakDispatch != StallReason::NoStall) {
-    //             dispatchStalls.at(i) = breakDispatch;
-    //         } else if (instInSufficient > 0 && dis_num_inst > 0) {
-    //             dispatchStalls.at(i) = StallReason::FragStall;
-    //             instInSufficient--;
-    //         } else if (dis_num_inst == 0 && stallFromRename != StallReason::NoStall) {
-    //             dispatchStalls.at(i) = stallFromRename;
-    //         } else {
-    //             dispatchStalls.at(i) = StallReason::OtherStall;
-    //         }
-    //     }
-    // }
-
-    // for (int i = 0;i < dispatchStalls.size();i++) {
-    //     DPRINTF(IEW,"[tid:%i] dispatchStalls[%d]=%d\n", tid, i, dispatchStalls.at(i));
-    // }
 }
 
 void
@@ -1869,10 +1831,16 @@ IEW::loadCancel(const DynInstPtr &inst)
     scheduler->loadCancel(inst);
 }
 
+uint32_t
+IEW::getIQInsts()
+{
+    return scheduler->getIQInsts();
+}
+
 void
 IEW::setAllStalls(StallReason dispatchStall)
 {
-    for (int i = 0;i < dispatchWidth;i++) {
+    for (int i = 0;i < dispatchStalls.size();i++) {
         dispatchStalls.at(i) = dispatchStall;
     }
 }

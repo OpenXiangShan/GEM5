@@ -387,6 +387,8 @@ class CPU : public BaseCPU
 
     void readArchVecReg(int reg_idx, uint64_t *val,ThreadID tid);
 
+    uint32_t getIQInsts() { return iew.getIQInsts(); }
+
   public:
 #ifndef NDEBUG
     /** Count of total number of dynamic instructions in flight. */

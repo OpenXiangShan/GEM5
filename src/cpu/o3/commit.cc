@@ -681,8 +681,7 @@ Commit::tick()
         }
         warn("cpu may be stucked\n");
         maybeStucked = true;
-    }
-    else {
+    } else {
         maybeStucked = false;
     }
 

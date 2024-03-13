@@ -651,8 +651,7 @@ LSQUnit::executeLoad(const DynInstPtr &inst)
 
     if (!inst->translationCompleted()) {
         iewStage->loadCancel(inst);
-    }
-    else {
+    } else {
         DPRINTF(LSQUnit, "load tlb hit [sn:%lli]\n",
                 inst->seqNum);
     }

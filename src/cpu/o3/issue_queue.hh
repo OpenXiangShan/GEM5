@@ -113,7 +113,7 @@ class IssueQue : public SimObject
     void addToFu(const DynInstPtr& inst);
     bool checkScoreboard(const DynInstPtr& inst);
     void issueToFu();
-    void woken(const DynInstPtr& inst, bool speculative);
+    void wakeUpDependents(const DynInstPtr& inst, bool speculative);
     void selectInst();
     void scheduleInst();
     void addIfReady(const DynInstPtr& inst);
@@ -185,9 +185,9 @@ class Scheduler : public SimObject
     struct Slot
     {
         uint32_t priority;// smaller is lower priority
-        uint32_t needed;
+        uint32_t resourceDemand;
         DynInstPtr inst;
-        Slot(uint32_t priority, uint32_t needed, const DynInstPtr& inst);
+        Slot(uint32_t priority, uint32_t demand, const DynInstPtr& inst);
     };
     struct compare_priority
     {
@@ -201,10 +201,11 @@ class Scheduler : public SimObject
 
     bool forwardDisp = false;
 
-    std::stack<DynInstPtr> bfs;
+    // used for searching dependency chain
+    std::stack<DynInstPtr> dfs;
 
     // should call at issue first/last cycle,
-    void wakeOthers(const DynInstPtr& inst, IssueQue* from);
+    void wakeUpDependents(const DynInstPtr& inst, IssueQue* from);
 
   public:
     Scheduler(const SchedulerParams& params);
@@ -230,13 +231,14 @@ class Scheduler : public SimObject
     void writebackWakeup(const DynInstPtr& inst);
     void bypassWriteback(const DynInstPtr& inst);
 
-    uint32_t getARBPriority(const DynInstPtr& inst);
+    uint32_t getArbPriority(const DynInstPtr& inst);
     uint32_t getOpLatency(const DynInstPtr& inst);
     uint32_t getCorrectedOpLat(const DynInstPtr& inst);
     bool hasReadyInsts();
     bool isDrained();
     void doCommit(const InstSeqNum seqNum);
     void doSquash(const InstSeqNum seqNum);
+    uint32_t getIQInsts();
 };
 
 

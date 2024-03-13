@@ -57,14 +57,14 @@ IssueQue::IssueStream::pop()
 
 IssueQue::IssueQueStats::IssueQueStats(statistics::Group* parent, IssueQue* que, std::string name)
     : Group(parent, name.c_str()),
-      ADD_STAT(full, statistics::units::Count::get(), ""),
-      ADD_STAT(bwfull, statistics::units::Count::get(), ""),
-      ADD_STAT(retryMem, statistics::units::Count::get(), ""),
-      ADD_STAT(canceledInst, statistics::units::Count::get(), ""),
-      ADD_STAT(loadmiss, statistics::units::Count::get(), ""),
-      ADD_STAT(arbFailed, statistics::units::Count::get(), ""),
-      ADD_STAT(insertDist, statistics::units::Count::get(), ""),
-      ADD_STAT(issueDist, statistics::units::Count::get(), "")
+      ADD_STAT(full, statistics::units::Count::get(), "count of iq full"),
+      ADD_STAT(bwfull, statistics::units::Count::get(), "count of bandwidth full"),
+      ADD_STAT(retryMem, statistics::units::Count::get(), "count of load/store retry"),
+      ADD_STAT(canceledInst, statistics::units::Count::get(), "count of canceled insts"),
+      ADD_STAT(loadmiss, statistics::units::Count::get(), "count of load miss"),
+      ADD_STAT(arbFailed, statistics::units::Count::get(), "count of arbitration failed"),
+      ADD_STAT(insertDist, statistics::units::Count::get(), "distruibution of insert"),
+      ADD_STAT(issueDist, statistics::units::Count::get(), "distruibution of issue")
 {
     insertDist.init(que->inoutPorts + 1).flags(statistics::nozero);
     issueDist.init(que->inoutPorts + 1).flags(statistics::nozero);
@@ -142,7 +142,7 @@ issueToFu()
         assert(checkScoreboard(inst));
         addToFu(inst);
         if (scheduler->getCorrectedOpLat(inst) > 1) {
-            scheduler->wakeOthers(inst, this);
+            scheduler->wakeUpDependents(inst, this);
         }
     }
 }
@@ -167,7 +167,7 @@ IssueQue::markMemDepDone(const DynInstPtr& inst)
 }
 
 void
-IssueQue::woken(const DynInstPtr& inst, bool speculative)
+IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
 {
     if (speculative && inst->canceled()) {
         return;
@@ -211,8 +211,7 @@ IssueQue::addIfReady(const DynInstPtr& inst)
         if (inst->isMemRef()) {
             if (inst->memDepSolved()) {
                 DPRINTF(Schedule, "memRef Dependency was solved can issue\n");
-            }
-            else {
+            } else {
                 DPRINTF(Schedule, "memRef Dependency was not solved can't issue\n");
                 return;
             }
@@ -253,19 +252,17 @@ IssueQue::scheduleInst()
         inst->clearInReadyQ();
         if (inst->canceled()) {
             DPRINTF(Schedule, "[sn %ld] was canceled\n", inst->seqNum);
-        }
-        else if (inst->arbFailed()) {
+        } else if (inst->arbFailed()) {
             DPRINTF(Schedule, "[sn %ld] arbitration failed, retry\n", inst->seqNum);
             assert(inst->readyToIssue());
             inst->setInReadyQ();
             readyInsts.push(inst);// retry
             iqstats->arbFailed++;
-        }
-        else {
+        } else {
             DPRINTF(Schedule, "[sn %ld] no conflict, scheduled\n", inst->seqNum);
             toIssue->push(inst);
             if (scheduler->getCorrectedOpLat(inst) <= 1) {
-                scheduler->wakeOthers(inst, this);
+                scheduler->wakeUpDependents(inst, this);
             }
         }
         inst->clearArbFailed();
@@ -330,8 +327,7 @@ IssueQue::insert(const DynInstPtr& inst)
     if (inst->isMemRef()) {
         // insert and check memDep
         scheduler->memDepUnit[inst->threadNumber].insert(inst);
-    }
-    else {
+    } else {
         addIfReady(inst);
     }
 }
@@ -371,15 +367,14 @@ IssueQue::doSquash(const InstSeqNum seqNum)
                 (*it)->setIssued();
             }
             it = instList.erase(it);
-        }
-        else {
+        } else {
             it++;
         }
     }
 
-    for (int i=0; i<=getIssueStages(); i++) {
+    for (int i = 0; i <= getIssueStages(); i++) {
         int size = inflightIssues[-i].size;
-        for (int j=0; j<size; j++) {
+        for (int j = 0; j < size; j++) {
             auto& inst = inflightIssues[-i].insts[j];
             if (inst && inst->isSquashed()) {
                 inst = nullptr;
@@ -392,16 +387,15 @@ IssueQue::doSquash(const InstSeqNum seqNum)
         for (auto it = entrys.begin(); it != entrys.end();) {
             if ((*it).second->isSquashed()) {
                 it = entrys.erase(it);
-            }
-            else {
+            } else {
                 it++;
             }
         }
     }
 }
 
-Scheduler::Slot::Slot(uint32_t priority, uint32_t needed, const DynInstPtr& inst)
-    : priority(priority), needed(needed), inst(inst)
+Scheduler::Slot::Slot(uint32_t priority, uint32_t demand, const DynInstPtr& inst)
+    : priority(priority), resourceDemand(demand), inst(inst)
 {}
 
 Scheduler::SpecWakeupCompletion::SpecWakeupCompletion(const DynInstPtr& inst, IssueQue* to)
@@ -413,7 +407,7 @@ Scheduler::SpecWakeupCompletion::SpecWakeupCompletion(const DynInstPtr& inst, Is
 void
 Scheduler::SpecWakeupCompletion::process()
 {
-    to->woken(inst, true);
+    to->wakeUpDependents(inst, true);
 }
 
 const char *
@@ -475,8 +469,7 @@ Scheduler::Scheduler(const SchedulerParams& params)
                 DPRINTF(Schedule, "build wakeup channel: %s -> %s\n", srcIQ->getName(), dstIQ->getName());
             }
         }
-    }
-    else {
+    } else {
         for (auto it : params.specWakeupNetwork) {
             auto srcIQ = findIQbyname(it->srcIQ);
             for (auto dstIQname : it->dstIQ) {
@@ -532,10 +525,10 @@ Scheduler::issueAndSelect(){
         it->selectInst();
     }
     // inst arbitration
-    while (slotOccupied > 12) {
+    while (slotOccupied > slotNum) {
         auto& slot = intSlot.top();
         slot.inst->setArbFailed();
-        slotOccupied -= slot.needed;
+        slotOccupied -= slot.resourceDemand;
         DPRINTF(Schedule, "[sn %lu] remove from slot\n", slot.inst->seqNum);
         intSlot.pop();
     }
@@ -589,8 +582,7 @@ Scheduler::insert(const DynInstPtr& inst)
                 break;
             }
         }
-    }
-    else {
+    } else {
         for (auto iq = iqs.rbegin(); iq != iqs.rend(); iq++) {
             if (!(*iq)->full()) {
                 (*iq)->insert(inst);
@@ -619,7 +611,7 @@ Scheduler::insertNonSpec(const DynInstPtr& inst)
 }
 
 void
-Scheduler::wakeOthers(const DynInstPtr& inst, IssueQue* from)
+Scheduler::wakeUpDependents(const DynInstPtr& inst, IssueQue* from)
 {
     if (inst->numDestRegs() == 0 || (inst->isVector() && inst->isLoad())) {
         // ignore if vector load
@@ -632,17 +624,15 @@ Scheduler::wakeOthers(const DynInstPtr& inst, IssueQue* from)
 
         if (oplat == 1 && (from->getIssueStages() > to->getIssueStages())) {
             wakeDelay = from->getIssueStages() - to->getIssueStages();
-        }
-        else if (oplat > to->getIssueStages()) {
+        } else if (oplat > to->getIssueStages()) {
             wakeDelay = oplat - to->getIssueStages();
         }
 
         DPRINTF(Schedule, "[sn %lu] %s create wakeupEvent to %s, delay %d cycles\n",
             inst->seqNum, from->getName(), to->getName(), wakeDelay);
         if (wakeDelay==0) {
-            to->woken(inst, true);
-        }
-        else {
+            to->wakeUpDependents(inst, true);
+        } else {
             auto wakeEvent = new SpecWakeupCompletion(inst, to);
             cpu->schedule(wakeEvent, cpu->clockEdge(Cycles(wakeDelay)) - 1);
         }
@@ -667,7 +657,7 @@ Scheduler::insertSlot(const DynInstPtr& inst)
         // floating point and vector insts are not participate in arbitration
         return;
     }
-    uint32_t priority = getARBPriority(inst);
+    uint32_t priority = getArbPriority(inst);
     uint32_t needed = inst->numSrcRegs();
     slotOccupied += needed;
     intSlot.push(Slot(priority, needed, inst));
@@ -681,11 +671,11 @@ void Scheduler::loadCancel(const DynInstPtr& inst)
     if (inst->issueQue) {
         inst->issueQue->iqstats->loadmiss++;
     }
-    //cancel(inst);
-    bfs.push(inst);
-    while (!bfs.empty()) {
-        auto top = bfs.top();
-        bfs.pop();
+
+    dfs.push(inst);
+    while (!dfs.empty()) {
+        auto top = dfs.top();
+        dfs.pop();
         for (int i=0; i<top->numDestRegs(); i++) {
             auto dst = top->renamedDestIdx(i);
             if (dst->isFixedMapping()) {
@@ -702,7 +692,7 @@ void Scheduler::loadCancel(const DynInstPtr& inst)
                         depInst->setCancel();
                         iq->iqstats->canceledInst++;
                         depInst->clearSrcRegReady(srcIdx);
-                        bfs.push(depInst);
+                        dfs.push(depInst);
                     }
                 }
             }
@@ -735,7 +725,7 @@ Scheduler::writebackWakeup(const DynInstPtr& inst)
         scoreboard[dst->flatIndex()] = true;
     }
     for (auto it : issueQues) {
-        it->woken(inst, false);
+        it->wakeUpDependents(inst, false);
     }
 }
 
@@ -754,7 +744,7 @@ Scheduler::bypassWriteback(const DynInstPtr& inst)
 }
 
 uint32_t
-Scheduler::getARBPriority(const DynInstPtr& inst)
+Scheduler::getArbPriority(const DynInstPtr& inst)
 {
     return (uint32_t)rand() % 10;
 }
@@ -810,6 +800,16 @@ Scheduler::doSquash(const InstSeqNum seqNum)
     for (auto it : issueQues) {
         it->doSquash(seqNum);
     }
+}
+
+uint32_t
+Scheduler::getIQInsts()
+{
+    uint32_t total=0;
+    for (auto iq : issueQues) {
+        total += iq->instNum;
+    }
+    return total;
 }
 
 }

@@ -123,7 +123,17 @@ class IEW
         StallEventCount
     };
 
+    enum DQType
+    {
+        IntDQ,
+        FVDQ,
+        MemDQ
+    };
+
   private:
+
+    const unsigned dqSize;
+
     /** Overall stage status. */
     Status _status;
     /** Dispatch status. */
@@ -254,6 +264,8 @@ class IEW
 
     // if load tlb miss or cache miss
     void loadCancel(const DynInstPtr &inst);
+
+    uint32_t getIQInsts();
   private:
     /** Sends commit proper information for a squash due to a branch
      * mispredict.
@@ -406,11 +418,7 @@ class IEW
     /** Rename to IEW delay. */
     Cycles renameToIEWDelay;
 
-    /** Width of dispatch, in instructions. */
-    unsigned dispatchWidth;
-
-    /** Width of issue, in instructions. */
-    unsigned issueWidth;
+    unsigned renameWidth;
 
     /** Index into queue of instructions being written back. */
     unsigned wbNumInst;
@@ -528,7 +536,7 @@ class IEW
 
     std::vector<StallReason> dispatchStalls;
 
-    StallReason blockReason;
+    StallReason blockReason{NoStall};
 
     ROB* rob;
 

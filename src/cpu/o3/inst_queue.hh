@@ -333,9 +333,6 @@ class InstructionQueue
     /** Number of free IQ entries left. */
     unsigned freeEntries;
 
-    /** The number of entries in the instruction queue. */
-    unsigned numEntries;
-
     /** The total number of instructions that can be issued in one cycle. */
     unsigned totalWidth;
 

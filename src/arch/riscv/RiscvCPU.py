@@ -69,7 +69,6 @@ class XiangshanECore(XiangshanCore):
     wbWidth = 6
 
     numROBEntries = 150
-    numIQEntries = 60
     LQEntries = 48
     SQEntries = 32
     numPhysIntRegs = 108
@@ -90,7 +89,6 @@ class XiangshanECore2Read(XiangshanCore):
     wbWidth = 6
 
     numROBEntries = 150
-    numIQEntries = 60
     LQEntries = 48
     SQEntries = 32
     numPhysIntRegs = 108

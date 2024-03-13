@@ -165,7 +165,7 @@ class BaseO3CPU(BaseCPU):
     numPhysCCRegs = Param.Unsigned(0, "Number of physical cc registers")
     numPhysRMiscRegs = Param.Unsigned(40, "Number of physical renameable misc registers")
 
-    numIQEntries = Param.Unsigned(192, "Number of instruction queue entries")
+    numDQEntries = Param.Unsigned(16, "Number of entries in the dispQue")
     numROBEntries = Param.Unsigned(256, "Number of reorder buffer entries")
 
     smtNumFetchingThreads = Param.Unsigned(1, "SMT Number of Fetching Threads")
