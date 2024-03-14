@@ -41,11 +41,11 @@
 #ifndef __CPU_O3_IEW_HH__
 #define __CPU_O3_IEW_HH__
 
+#include <deque>
 #include <map>
 #include <queue>
 #include <set>
 #include <vector>
-#include <map>
 
 #include "base/statistics.hh"
 #include "cpu/o3/comm.hh"
@@ -53,8 +53,8 @@
 #include "cpu/o3/inst_queue.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/lsq.hh"
-#include "cpu/o3/scoreboard.hh"
 #include "cpu/o3/rob.hh"
+#include "cpu/o3/scoreboard.hh"
 #include "cpu/timebuf.hh"
 #include "debug/IEW.hh"
 #include "sim/probe/probe.hh"
@@ -68,6 +68,7 @@ namespace o3
 {
 
 class FUPool;
+class Scheduler;
 
 /**
  * IEW handles both single threaded and SMT IEW
@@ -122,7 +123,17 @@ class IEW
         StallEventCount
     };
 
+    enum DQType
+    {
+        IntDQ,
+        FVDQ,
+        MemDQ
+    };
+
   private:
+
+    const unsigned dqSize;
+
     /** Overall stage status. */
     Status _status;
     /** Dispatch status. */
@@ -251,6 +262,10 @@ class IEW
         ldstQueue.setLastRetiredHtmUid(tid, htmUid);
     }
 
+    // if load tlb miss or cache miss
+    void loadCancel(const DynInstPtr &inst);
+
+    uint32_t getIQInsts();
   private:
     /** Sends commit proper information for a squash due to a branch
      * mispredict.
@@ -344,11 +359,16 @@ class IEW
     /** Wire to write infromation heading to commit. */
     TimeBuffer<IEWStruct>::wire toCommit;
 
+    TimeBuffer<IEWStruct>::wire execBypass;
+    TimeBuffer<IEWStruct>::wire execWB;
+
     /** Queue of all instructions coming from rename this cycle. */
     std::deque<DynInstPtr> insts[MaxThreads];
 
     /** Skid buffer between rename and IEW. */
     std::deque<DynInstPtr> skidBuffer[MaxThreads];
+
+    std::deque<DynInstPtr> dispQue[3];
 
     /** Scoreboard pointer. */
     Scoreboard* scoreboard;
@@ -358,6 +378,8 @@ class IEW
   private:
     /** CPU pointer. */
     CPU *cpu;
+
+    Scheduler* scheduler;
 
     /** Records if IEW has written to the time buffer this cycle, so that the
      * CPU can deschedule itself if there is no activity.
@@ -396,18 +418,7 @@ class IEW
     /** Rename to IEW delay. */
     Cycles renameToIEWDelay;
 
-    /**
-     * Issue to execute delay. What this actually represents is
-     * the amount of time it takes for an instruction to wake up, be
-     * scheduled, and sent to a FU for execution.
-     */
-    Cycles issueToExecuteDelay;
-
-    /** Width of dispatch, in instructions. */
-    unsigned dispatchWidth;
-
-    /** Width of issue, in instructions. */
-    unsigned issueWidth;
+    unsigned renameWidth;
 
     /** Index into queue of instructions being written back. */
     unsigned wbNumInst;
@@ -418,6 +429,8 @@ class IEW
      * in instToCommit().
      */
     unsigned wbCycle;
+
+    const unsigned wbDelay;
 
     /** Writeback width. */
     unsigned wbWidth;
@@ -467,6 +480,8 @@ class IEW
         /** Stat for total number of mispredicted branches detected at
          *  execute. */
         statistics::Formula branchMispredicts;
+
+        statistics::Distribution dispDist;
 
         struct ExecutedInstStats : public statistics::Group
         {
@@ -521,7 +536,7 @@ class IEW
 
     std::vector<StallReason> dispatchStalls;
 
-    StallReason blockReason;
+    StallReason blockReason{NoStall};
 
     ROB* rob;
 

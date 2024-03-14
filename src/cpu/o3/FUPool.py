@@ -90,3 +90,89 @@ class XSECore2ReadFUPool(FUPool):
         WritePort(count=1),
         SIMD_Unit(count=2),
     ]
+class SpecWakeupChannel(SimObject):
+    type = 'SpecWakeupChannel'
+    cxx_class = 'gem5::o3::SpecWakeupChannel'
+    cxx_header = "cpu/o3/issue_queue.hh"
+
+    srcIQ = Param.String("dest IQ name (data path: srcIQ -> dstIQ)")
+    dstIQ = VectorParam.String("dest IQ name")
+
+class IssueQue(SimObject):
+    type = 'IssueQue'
+    cxx_class = 'gem5::o3::IssueQue'
+    cxx_header = "cpu/o3/issue_queue.hh"
+
+    name = Param.String("IQ name")
+    inoutPorts = Param.Int("num of insert/issue ports")
+    size = Param.Int(16, "")
+    scheduleToExecDelay = Param.Cycles(2, "")
+    fuType = VectorParam.FUDesc("Combined FU"
+        "each output port mount one CombinedFu")
+
+class Scheduler(SimObject):
+    type = 'Scheduler'
+    cxx_class = 'gem5::o3::Scheduler'
+    cxx_header = "cpu/o3/issue_queue.hh"
+
+    IQs = VectorParam.IssueQue([], "")
+    slotNum = Param.Int(16, "number of schedule slots")
+    specWakeupNetwork = VectorParam.SpecWakeupChannel([], "")
+    xbarWakeup = Param.Bool(False, "use xbar wakeup network, (will override specWakeupNetwork)")
+
+class DefaultScheduler(Scheduler):
+    IQs = [
+        IssueQue(name='IQ_alu', inoutPorts=6, size=6*16, fuType=[IntALU()]),
+        IssueQue(name='IQ_mdu', inoutPorts=2, size=2*16, fuType=[IntMultDiv()]),
+        IssueQue(name='IQ_stu', inoutPorts=2, size=2*16, fuType=[WritePort()]),
+        IssueQue(name='IQ_ldu', inoutPorts=2, size=2*16, fuType=[ReadPort()]),
+        IssueQue(name='IQ_cplx',inoutPorts=2, size=2*16,
+            scheduleToExecDelay=3, fuType=[FP_MISC(), FP_SLOW(), FP_MAM(), FP_MAA(), SIMD_Unit()])
+    ]
+    specWakeupNetwork = [
+        SpecWakeupChannel(srcIQ='IQ_alu', dstIQ=['IQ_alu', 'IQ_mdu', 'IQ_stu', 'IQ_ldu', 'IQ_cplx']),
+        SpecWakeupChannel(srcIQ='IQ_ld',  dstIQ=['IQ_alu'])
+    ]
+
+class SimpleScheduler(Scheduler):
+    IQs = [
+        IssueQue(name='IQ_all', inoutPorts=8, size=192,
+            fuType=[IntALU(), IntMultDiv(), FP_MISC(), FP_SLOW(), FP_MAM(),
+               FP_MAA(), ReadPort(), SIMD_Unit(), PredALU(), WritePort(),
+               RdWrPort(), IprPort()])
+    ]
+    xbarWakeup = True
+
+class NanhuScheduler(Scheduler):
+    IQs = [
+        IssueQue(name='IQ_alu', inoutPorts=4, size=4*24,
+            scheduleToExecDelay=1, fuType=[IntALU()]),
+        IssueQue(name='IQ_mdu', inoutPorts=2, size=2*24,
+            scheduleToExecDelay=1, fuType=[IntMultDiv()]),
+        IssueQue(name='IQ_stu', inoutPorts=2, size=2*24,
+            scheduleToExecDelay=1, fuType=[WritePort()]),
+        IssueQue(name='IQ_ldu', inoutPorts=2, size=2*24,
+            scheduleToExecDelay=1, fuType=[ReadPort()]),
+        IssueQue(name='IQ_fmac',inoutPorts=4, size=4*24,
+            scheduleToExecDelay=1, fuType=[FP_MAM(), FP_MAA()]),
+        IssueQue(name='IQ_fmisc',inoutPorts=2, size=2*24,
+            scheduleToExecDelay=1, fuType=[FP_MISC(), FP_SLOW(), SIMD_Unit()])
+    ]
+    specWakeupNetwork = [
+        SpecWakeupChannel(srcIQ='IQ_alu', dstIQ=['IQ_alu', 'IQ_mdu', 'IQ_stu', 'IQ_ldu', 'IQ_fmac']),
+        SpecWakeupChannel(srcIQ='IQ_ldu', dstIQ=['IQ_alu', 'IQ_mdu', 'IQ_fmac', 'IQ_fmisc'])
+    ]
+
+class KunminghuScheduler(Scheduler):
+    IQs = [
+        IssueQue(name='IQ_misc' , inoutPorts=1, size=1*24, fuType=[IntDiv()]),
+        IssueQue(name='IQ_br', inoutPorts=2, size=2*24, fuType=[IntBRU()]),
+        IssueQue(name='IQ_si', inoutPorts=2, size=2*24, fuType=[IntALU()]),
+        IssueQue(name='IQ_ci', inoutPorts=2, size=2*24, fuType=[IntALU(), IntMult()]),
+        IssueQue(name='IQ_stu', inoutPorts=2, size=2*24, fuType=[WritePort()]),
+        IssueQue(name='IQ_ldu', inoutPorts=2, size=2*24, fuType=[ReadPort()]),
+        IssueQue(name='IQ_cplx',inoutPorts=2, size=2*24,
+            scheduleToExecDelay=3, fuType=[FP_MISC(), FP_SLOW(), FP_MAM(), FP_MAA(), SIMD_Unit()])
+    ]
+    slotNum = 12
+    xbarWakeup = True

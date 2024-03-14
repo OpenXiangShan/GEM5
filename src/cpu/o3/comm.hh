@@ -215,13 +215,11 @@ struct TimeStruct
     struct IewComm
     {
         // Also eventually include skid buffer space.
-        unsigned freeIQEntries;
         unsigned freeLQEntries;
         unsigned freeSQEntries;
         unsigned dispatchedToLQ;
         unsigned dispatchedToSQ;
 
-        unsigned iqCount;
         unsigned ldstqCount;
 
         unsigned dispatched;

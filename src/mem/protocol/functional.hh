@@ -66,6 +66,13 @@ class FunctionalRequestProtocol
      * Receive a functional snoop request packet from the peer.
      */
     virtual void recvFunctionalSnoop(PacketPtr pkt) = 0;
+
+    void sendFunctionalCustomSignal(FunctionalResponseProtocol *peer, PacketPtr pkt, int sig) const;
+
+    /**
+     * Receive a functional custom signals
+     */
+    virtual void recvFunctionalCustomSignal(PacketPtr pkt, int sig) {};
 };
 
 class FunctionalResponseProtocol
@@ -86,6 +93,13 @@ class FunctionalResponseProtocol
      * Receive a functional request packet from the peer.
      */
     virtual void recvFunctional(PacketPtr pkt) = 0;
+
+    void sendFunctionalCustomSignal(FunctionalRequestProtocol *peer, PacketPtr pkt, int sig) const;
+
+    /**
+     * Receive a functional custom signals
+     */
+    virtual void recvFunctionalCustomSignal(PacketPtr pkt, int sig) {};
 };
 
 } // namespace gem5

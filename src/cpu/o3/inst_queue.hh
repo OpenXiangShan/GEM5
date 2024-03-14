@@ -77,7 +77,7 @@ namespace o3
 class FUPool;
 class CPU;
 class IEW;
-class DelayCalibrator;
+class Scheduler;
 
 struct compare_function
 {
@@ -156,6 +156,8 @@ class InstructionQueue
     /** Sets the timer buffer between issue and execute. */
     void setIssueToExecuteQueue(TimeBuffer<IssueStruct> *i2eQueue);
 
+    void setScheduler(Scheduler* scheduler);
+
     /** Sets the global time buffer. */
     void setTimeBuffer(TimeBuffer<TimeStruct> *tb_ptr);
 
@@ -168,23 +170,8 @@ class InstructionQueue
     /** Takes over execution from another CPU's thread. */
     void takeOverFrom();
 
-    /** Number of entries needed for given amount of threads. */
-    int entryAmount(ThreadID num_threads);
-
-    /** Resets max entries for all threads. */
-    void resetEntries();
-
-    /** Returns total number of free entries. */
-    unsigned numFreeEntries();
-
-    /** Returns number of free entries for a thread. */
-    unsigned numFreeEntries(ThreadID tid);
-
-    /** Returns whether or not the IQ is full. */
-    bool isFull();
-
     /** Returns whether or not the IQ is full for a specific thread. */
-    bool isFull(ThreadID tid);
+    bool isFull(DynInstPtr& inst);
 
     /** Returns if there are any ready instructions in the IQ. */
     bool hasReadyInsts();
@@ -215,16 +202,6 @@ class InstructionQueue
      */
     DynInstPtr getBlockedMemInstToExecute();
 
-    /**
-     * Records the instruction as the producer of a register without
-     * adding it to the rest of the IQ.
-     */
-    void
-    recordProducer(const DynInstPtr &inst)
-    {
-        addToProducers(inst);
-    }
-
     /** Process FU completion event. */
     void processFUCompletion(const DynInstPtr &inst, int fu_idx);
 
@@ -245,9 +222,6 @@ class InstructionQueue
 
     /** Wakes all dependents of a completed instruction. */
     int wakeDependents(const DynInstPtr &completed_inst);
-
-    /** Adds a ready memory instruction to the ready list. */
-    void addReadyMemInst(const DynInstPtr &ready_inst);
 
     /**
      * Reschedules a memory instruction. It will be ready to issue once
@@ -279,28 +253,11 @@ class InstructionQueue
      */
     void squash(ThreadID tid);
 
-    /** Returns the number of used entries for a thread. */
-    unsigned getCount(ThreadID tid) { return count[tid]; };
-
-    /** Debug function to print all instructions. */
-    void printInsts();
-
-    void delayWakeDependents();
-
     void notifyExecuted(const DynInstPtr &inst);
 
   private:
     /** Does the actual squashing. */
     void doSquash(ThreadID tid);
-
-    // inst:delaywaketick,insert times
-    // it may insert multiple identical elements
-    std::map<DynInstPtr, std::pair<uint32_t, uint32_t>, compare_function>
-        delayedScheduleQue;
-
-    uint32_t delayMatrix(DynInstPtr dep_inst, DynInstPtr completed_inst);
-
-    void addToDelayedScheduleQueue(DynInstPtr dep_inst, uint32_t delay_tick);
 
     /////////////////////////
     // Various pointers
@@ -334,14 +291,7 @@ class InstructionQueue
     /** Function unit pool. */
     FUPool *fuPool;
 
-    DelayCalibrator *delayCalibrator;
-
-    //////////////////////////////////////
-    // Instruction lists, ready queues, and ordering
-    //////////////////////////////////////
-
-    /** List of all the instructions in the IQ (some of which may be issued). */
-    std::list<DynInstPtr> instList[MaxThreads];
+    Scheduler* scheduler;
 
     /** List of instructions that are ready to be executed. */
     std::list<DynInstPtr> instsToExecute;
@@ -359,26 +309,6 @@ class InstructionQueue
      */
     std::list<DynInstPtr> retryMemInsts;
 
-    /**
-     * Struct for comparing entries to be added to the priority queue.
-     * This gives reverse ordering to the instructions in terms of
-     * sequence numbers: the instructions with smaller sequence
-     * numbers (and hence are older) will be at the top of the
-     * priority queue.
-     */
-    struct PqCompare
-    {
-        bool operator()(const DynInstPtr &lhs, const DynInstPtr &rhs) const;
-    };
-
-    typedef std::priority_queue<
-        DynInstPtr, std::vector<DynInstPtr>, PqCompare> ReadyInstQueue;
-
-    /** List of ready instructions, per op class.  They are separated by op
-     *  class to allow for easy mapping to FUs.
-     */
-    ReadyInstQueue readyInsts[Num_OpClasses];
-
     /** List of non-speculative instructions that will be scheduled
      *  once the IQ gets a signal from commit.  While it's redundant to
      *  have the key be a part of the value (the sequence number is stored
@@ -390,49 +320,9 @@ class InstructionQueue
 
     typedef std::map<InstSeqNum, DynInstPtr>::iterator NonSpecMapIt;
 
-    /** Entry for the list age ordering by op class. */
-    struct ListOrderEntry
-    {
-        OpClass queueType;
-        InstSeqNum oldestInst;
-    };
-
-    /** List that contains the age order of the oldest instruction of each
-     *  ready queue.  Used to select the oldest instruction available
-     *  among op classes.
-     *  @todo: Might be better to just move these entries around instead
-     *  of creating new ones every time the position changes due to an
-     *  instruction issuing.  Not sure std::list supports this.
-     */
-    std::list<ListOrderEntry> listOrder;
-
-    typedef typename std::list<ListOrderEntry>::iterator ListOrderIt;
-
-    /** Tracks if each ready queue is on the age order list. */
-    bool queueOnList[Num_OpClasses];
-
-    /** Iterators of each ready queue.  Points to their spot in the age order
-     *  list.
-     */
-    ListOrderIt readyIt[Num_OpClasses];
-
-    /** Add an op class to the age order list. */
-    void addToOrderList(OpClass op_class);
-
-    /**
-     * Called when the oldest instruction has been removed from a ready queue;
-     * this places that ready queue into the proper spot in the age order list.
-     */
-    void moveToYoungerInst(ListOrderIt age_order_it);
-
-    DependencyGraph<DynInstPtr> dependGraph;
-
     //////////////////////////////////////
     // Various parameters
     //////////////////////////////////////
-
-    /** IQ sharing policy for SMT. */
-    SMTQueuePolicy iqPolicy;
 
     /** Number of Total Threads*/
     ThreadID numThreads;
@@ -440,17 +330,8 @@ class InstructionQueue
     /** Pointer to list of active threads. */
     std::list<ThreadID> *activeThreads;
 
-    /** Per Thread IQ count */
-    unsigned count[MaxThreads];
-
-    /** Max IQ Entries Per Thread */
-    unsigned maxEntries[MaxThreads];
-
     /** Number of free IQ entries left. */
     unsigned freeEntries;
-
-    /** The number of entries in the instruction queue. */
-    unsigned numEntries;
 
     /** The total number of instructions that can be issued in one cycle. */
     unsigned totalWidth;
@@ -468,40 +349,6 @@ class InstructionQueue
 
     /** The sequence number of the squashed instruction. */
     InstSeqNum squashedSeqNum[MaxThreads];
-
-    /** A cache of the recently woken registers.  It is 1 if the register
-     *  has been woken up recently, and 0 if the register has been added
-     *  to the dependency graph and has not yet received its value.  It
-     *  is basically a secondary scoreboard, and should pretty much mirror
-     *  the scoreboard that exists in the rename map.
-     */
-    std::vector<bool> regScoreboard;
-
-    /** Adds an instruction to the dependency graph, as a consumer. */
-    bool addToDependents(const DynInstPtr &new_inst);
-
-    /** Adds an instruction to the dependency graph, as a producer. */
-    void addToProducers(const DynInstPtr &new_inst);
-
-    /** Moves an instruction to the ready queue if it is ready. */
-    void addIfReady(const DynInstPtr &inst);
-
-    /** Debugging function to count how many entries are in the IQ.  It does
-     *  a linear walk through the instructions, so do not call this function
-     *  during normal execution.
-     */
-    int countInsts();
-
-    /** Debugging function to dump all the list sizes, as well as print
-     *  out the list of nonspeculative instructions.  Should not be used
-     *  in any other capacity, but it has no harmful sideaffects.
-     */
-    void dumpLists();
-
-    /** Debugging function to dump out all instructions that are in the
-     *  IQ.
-     */
-    void dumpInsts();
 
     struct IQStats : public statistics::Group
     {

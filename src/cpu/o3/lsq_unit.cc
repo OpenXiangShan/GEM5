@@ -44,6 +44,7 @@
 #include "arch/generic/debugfaults.hh"
 #include "arch/riscv/faults.hh"
 #include "base/str.hh"
+#include "base/trace.hh"
 #include "config/the_isa.hh"
 #include "cpu/checker/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
@@ -112,6 +113,8 @@ LSQUnit::recvTimingResp(PacketPtr pkt)
 {
     LSQRequest *request = dynamic_cast<LSQRequest*>(pkt->senderState);
     assert(request != nullptr);
+
+    DPRINTF(LSQUnit, "LSQUnit::recvTimingResp [sn:%lu] pkt: %s\n", request->instruction()->seqNum, pkt->print());
     bool ret = true;
     /* Check that the request is still alive before any further action. */
     if (!request->isReleased()) {
@@ -646,6 +649,13 @@ LSQUnit::executeLoad(const DynInstPtr &inst)
 
     load_fault = inst->initiateAcc();
 
+    if (!inst->translationCompleted()) {
+        iewStage->loadCancel(inst);
+    } else {
+        DPRINTF(LSQUnit, "load tlb hit [sn:%lli]\n",
+                inst->seqNum);
+    }
+
     if (load_fault == NoFault && !inst->readMemAccPredicate()) {
         assert(inst->readPredicate());
         inst->setExecuted();
@@ -655,8 +665,9 @@ LSQUnit::executeLoad(const DynInstPtr &inst)
         return NoFault;
     }
 
-    if (inst->isTranslationDelayed() && load_fault == NoFault)
+    if (inst->isTranslationDelayed() && load_fault == NoFault) {
         return load_fault;
+    }
 
     if (load_fault != NoFault && inst->translationCompleted() &&
             inst->savedRequest->isPartialFault()
@@ -793,8 +804,8 @@ LSQUnit::commitLoad()
 
     DynInstPtr inst = loadQueue.front().instruction();
 
-    DPRINTF(LSQUnit, "Committing head load instruction, PC %s\n",
-            inst->pcState());
+    DPRINTF(LSQUnit, "Committing head load instruction, PC %s, [sn:%lu]\n",
+            inst->pcState(), inst->seqNum);
 
     // Update histogram with memory latency from load
     // Only take latency from load demand that where issued and did not fault
@@ -1448,7 +1459,6 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         // Tell IQ/mem dep unit that this instruction will need to be
         // rescheduled eventually
         iewStage->rescheduleMemInst(load_inst);
-        load_inst->clearIssued();
         load_inst->effAddrValid(false);
         ++stats.rescheduledLoads;
         DPRINTF(LSQUnit, "Strictly ordered load [sn:%lli] PC %s\n",
@@ -1534,7 +1544,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
 
             DPRINTF(LSQUnit, "req_s:%x,req_e:%x,st_s:%x,st_e:%x\n", req_s,
                     req_e, st_s, st_e);
-            DPRINTF(LSQUnit, "store_size:%x,store_pc:%s,req_size:%x,req_pc:%s",
+            DPRINTF(LSQUnit, "store_size:%x,store_pc:%s,req_size:%x,req_pc:%s\n",
                     store_size, store_it->instruction()->pcState(),
                     request->mainReq()->getSize(),
                     request->instruction()->pcState());
@@ -1684,7 +1694,6 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                 // Tell IQ/mem dep unit that this instruction will need to be
                 // rescheduled eventually
                 iewStage->rescheduleMemInst(load_inst);
-                load_inst->clearIssued();
                 load_inst->effAddrValid(false);
                 ++stats.rescheduledLoads;
 
@@ -1728,7 +1737,9 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
 
     // if we the cache is not blocked, do cache access
     request->buildPackets();
-    request->sendPacketToCache();
+    if (!request->sendPacketToCache()) {
+        iewStage->loadCancel(load_inst);
+    }
     if (!request->isSent()) {
         iewStage->blockMemInst(load_inst);
     }

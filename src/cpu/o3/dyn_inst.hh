@@ -77,6 +77,8 @@ class Packet;
 namespace o3
 {
 
+class IssueQue;
+
 class DynInst : public ExecContext, public RefCounted
 {
   private:
@@ -158,6 +160,10 @@ class DynInst : public ExecContext, public RefCounted
         Completed,               /// Instruction has completed
         ResultReady,             /// Instruction has its result
         CanIssue,                /// Instruction can issue and execute
+        MemDepSolved,            /// Memory dependencies are solved
+        InReadyQue,              /// Instruction is in the ready queue
+        Canceled,                /// Instruction is canceled
+        ArbFailed,
         Issued,                  /// Instruction has issued
         Executed,                /// Instruction has executed
         CanCommit,               /// Instruction can commit
@@ -309,6 +315,7 @@ class DynInst : public ExecContext, public RefCounted
         _srcIdx[idx] = phys_reg_id;
     }
 
+    // after dispatch, it's status was speculative
     bool
     readySrcIdx(int idx) const
     {
@@ -385,6 +392,8 @@ class DynInst : public ExecContext, public RefCounted
     /////////////////////// Checker //////////////////////
     // Need a copy of main request pointer to verify on writes.
     RequestPtr reqToVerify;
+
+    IssueQue* issueQue = nullptr;
 
   public:
     /** Records changes to result? */
@@ -763,6 +772,12 @@ class DynInst : public ExecContext, public RefCounted
     /** Marks a specific register as ready. */
     void markSrcRegReady(RegIndex src_idx);
 
+    void clearSrcRegReady(RegIndex src_idx);
+
+    uint8_t getNumSrcRegReady() { return readyRegs; }
+
+    void resetNumSrcRegReady(uint8_t n);
+
     /** Sets this instruction as completed. */
     void setCompleted() { status.set(Completed); }
 
@@ -783,6 +798,30 @@ class DynInst : public ExecContext, public RefCounted
 
     /** Clears this instruction being able to issue. */
     void clearCanIssue() { status.reset(CanIssue); }
+
+    // mem only, dependencies was solved
+    void setMemDepDone() { status.set(MemDepSolved); }
+
+    bool memDepSolved() const { return status[MemDepSolved]; }
+
+    void setInReadyQ() { status.set(InReadyQue); }
+
+    void clearInReadyQ() { status.reset(InReadyQue); }
+
+    bool inReadyQ() const { return status[InReadyQue]; }
+
+    // set ready once, can not be spec woken again
+    void setCancel() { status.set(Canceled); }
+
+    void clearCancel() { status.reset(Canceled); }
+
+    bool canceled() const { return status[Canceled]; }
+
+    void setArbFailed() { status.set(ArbFailed); }
+
+    void clearArbFailed() { status.reset(ArbFailed); }
+
+    bool arbFailed() const { return status[ArbFailed]; }
 
     /** Sets this instruction as issued from the IQ. */
     void setIssued() { status.set(Issued); }

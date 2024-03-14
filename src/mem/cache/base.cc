@@ -48,6 +48,7 @@
 #include "base/compiler.hh"
 #include "base/logging.hh"
 #include "base/output.hh"
+#include "base/trace.hh"
 #include "debug/ArchDB.hh"
 #include "debug/Cache.hh"
 #include "debug/CacheComp.hh"
@@ -61,14 +62,33 @@
 #include "mem/cache/queue_entry.hh"
 #include "mem/cache/tags/compressed_tags.hh"
 #include "mem/cache/tags/super_blk.hh"
+#include "mem/packet.hh"
 #include "params/BaseCache.hh"
 #include "params/WriteAllocator.hh"
 #include "sim/arch_db.hh"
 #include "sim/core.hh"
 #include "sim/cur_tick.hh"
+#include "sim/eventq.hh"
 
 namespace gem5
 {
+
+BaseCache::SendTimingRespEvent::SendTimingRespEvent(BaseCache* cache, PacketPtr pkt)
+    : Event(Stat_Event_Pri, AutoDelete),
+      cache(cache),
+      pkt(pkt) {}
+
+void
+BaseCache::SendTimingRespEvent::process()
+{
+    cache->cpuSidePort.sendTimingResp(pkt);
+}
+
+const char*
+BaseCache::SendTimingRespEvent::description() const
+{
+    return "BaseCache response event";
+}
 
 BaseCache::CacheResponsePort::CacheResponsePort(const std::string &_name,
                                           BaseCache *_cache,
@@ -335,11 +355,15 @@ BaseCache::handleTimingReqHit(PacketPtr pkt, CacheBlk *blk, Tick request_time, b
         // lat, neglecting responseLatency, modelling hit latency
         // just as the value of lat overriden by access(), which calls
         // the calculateAccessLatency() function.
+        DPRINTF(Cache, "In handle timing hit, pkt has data: %i\n", pkt->hasData());
         if (cacheLevel == 1 && pkt->isRead()) {
             assert(pkt->hasData());
+            // load pipe shoud have fixed delay
+            this->schedule(new SendTimingRespEvent(this, pkt), request_time - 1);
         }
-        DPRINTF(Cache, "In handle timing hit, pkt has data: %i\n", pkt->hasData());
-        cpuSidePort.schedTimingResp(pkt, request_time);
+        else {
+            cpuSidePort.schedTimingResp(pkt, request_time);
+        }
     } else {
         DPRINTF(Cache, "%s satisfied %s, no response needed\n", __func__,
                 pkt->print());
@@ -560,7 +584,16 @@ BaseCache::recvTimingReq(PacketPtr pkt)
         }
 
         handleTimingReqHit(pkt, blk, request_time, first_acc_after_pf);
+        if (cacheLevel == 1 && pkt->isResponse() && pkt->isRead() && lat > 1) {
+            // send cache miss signal
+            cpuSidePort.sendCustomSignal(pkt, 1);
+        }
     } else {
+        if (cacheLevel == 1 && pkt->needsResponse() && pkt->isRead()) {
+            // send cache miss signal
+            cpuSidePort.sendCustomSignal(pkt, 1);
+        }
+
         // ArchDB: for now we only track packet which has PC
         // and is normal load/store
         // TODO: for now there are some bugs in vaddrs
@@ -1383,6 +1416,7 @@ BaseCache::calculateAccessLatency(const CacheBlk* blk, const uint32_t delay,
         if (when_ready > tick &&
             ticksToCycles(when_ready - tick) > lat) {
             lat += ticksToCycles(when_ready - tick);
+            DPRINTF(Cache, "block not ready, need %lu cycle\n", ticksToCycles(when_ready - tick));
         }
     } else {
         // In case of a miss, we neglect the data access in a parallel
@@ -1409,8 +1443,8 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
     Cycles tag_latency(0);
     blk = tags->accessBlock(pkt, tag_latency);
 
-    DPRINTF(Cache, "%s for %s %s\n", __func__, pkt->print(),
-            blk ? "hit " + blk->print() : "miss");
+    DPRINTF(Cache, "%s for %s %s, block access lat %lu\n", __func__, pkt->print(),
+            blk ? "hit " + blk->print() : "miss", tag_latency);
 
     if (pkt->req->isCacheMaintenance()) {
         // A cache maintenance operation is always forwarded to the
@@ -1648,6 +1682,8 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         } else {
             lat = calculateTagOnlyLatency(pkt->headerDelay, tag_latency);
         }
+
+        DPRINTF(Cache, "final cache read lat %lu\n", lat);
 
         satisfyRequest(pkt, blk);
         assert(!blk->needInvalidate());

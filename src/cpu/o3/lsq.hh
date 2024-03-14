@@ -100,6 +100,7 @@ class LSQ
          * memory. */
         virtual bool recvTimingResp(PacketPtr pkt);
         virtual void recvTimingSnoopReq(PacketPtr pkt);
+        virtual void recvFunctionalCustomSignal(PacketPtr pkt, int sig);
 
         virtual void
         recvFunctionalSnoop(PacketPtr pkt)
@@ -426,7 +427,7 @@ class LSQ
         }
         /** @} */
         virtual bool recvTimingResp(PacketPtr pkt) = 0;
-        virtual void sendPacketToCache() = 0;
+        virtual bool sendPacketToCache() = 0;
         virtual void buildPackets() = 0;
 
         /**
@@ -590,7 +591,7 @@ class LSQ
         virtual void finish(const Fault &fault, const RequestPtr &req,
                 gem5::ThreadContext* tc, BaseMMU::Mode mode);
         virtual bool recvTimingResp(PacketPtr pkt);
-        virtual void sendPacketToCache();
+        virtual bool sendPacketToCache();
         virtual void buildPackets();
         virtual Cycles handleLocalAccess(
                 gem5::ThreadContext *thread, PacketPtr pkt);
@@ -656,7 +657,7 @@ class LSQ
                 gem5::ThreadContext* tc, BaseMMU::Mode mode);
         virtual bool recvTimingResp(PacketPtr pkt);
         virtual void initiateTranslation();
-        virtual void sendPacketToCache();
+        virtual bool sendPacketToCache();
         virtual void buildPackets();
 
         virtual Cycles handleLocalAccess(
@@ -879,6 +880,8 @@ class LSQ
     bool recvTimingResp(PacketPtr pkt);
 
     void recvTimingSnoopReq(PacketPtr pkt);
+
+    void recvFunctionalCustomSignal(PacketPtr pkt, int sig);
 
     Fault pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
                       unsigned int size, Addr addr, Request::Flags flags,

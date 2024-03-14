@@ -106,10 +106,10 @@ class BaseO3CPU(BaseCPU):
 
     commitToIEWDelay = Param.Cycles(1, "Commit to "
                "Issue/Execute/Writeback delay")
-    renameToIEWDelay = Param.Cycles(2, "Rename to "
+    renameToIEWDelay = Param.Cycles(1, "Rename to "
                "Issue/Execute/Writeback delay")
-    issueToExecuteDelay = Param.Cycles(1, "Issue to execute delay (internal "
-              "to the IEW stage)")
+    executeToWriteBackDelay = Param.Cycles(1, "Execute to issue delay")
+
     dispatchWidth = Param.Unsigned(6, "Dispatch width")
     issueWidth = Param.Unsigned(8, "Issue width")
     wbWidth = Param.Unsigned(8, "Writeback width")
@@ -165,7 +165,7 @@ class BaseO3CPU(BaseCPU):
     numPhysCCRegs = Param.Unsigned(0, "Number of physical cc registers")
     numPhysRMiscRegs = Param.Unsigned(40, "Number of physical renameable misc registers")
 
-    numIQEntries = Param.Unsigned(192, "Number of instruction queue entries")
+    numDQEntries = Param.Unsigned(16, "Number of entries in the dispQue")
     numROBEntries = Param.Unsigned(256, "Number of reorder buffer entries")
 
     smtNumFetchingThreads = Param.Unsigned(1, "SMT Number of Fetching Threads")
@@ -185,7 +185,6 @@ class BaseO3CPU(BaseCPU):
                                        "Branch Predictor")
     needsTSO = Param.Bool(False, "Enable TSO Memory model")
 
-    iewDelayCalibrator = Param.DelayCalibrator(DefaultDelayMatrix(),
-                                               "iew schedule and execute tick calibrator ")
+    scheduler = Param.Scheduler(KunminghuScheduler(), "")
 
     arch_db = Param.ArchDBer(Parent.any, "Arch DB")

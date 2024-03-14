@@ -41,6 +41,8 @@
 #include "cpu/o3/dyn_inst.hh"
 
 #include <algorithm>
+#include <cassert>
+#include <cstring>
 
 #include "base/intmath.hh"
 #include "debug/DynInst.hh"
@@ -311,6 +313,22 @@ DynInst::markSrcRegReady(RegIndex src_idx)
     markSrcRegReady();
 }
 
+void
+DynInst::clearSrcRegReady(RegIndex src_idx)
+{
+    assert(readySrcIdx(src_idx));
+    readySrcIdx(src_idx, false);
+    readyRegs--;
+    clearCanIssue();
+}
+
+void DynInst::resetNumSrcRegReady(uint8_t n) {
+    readyRegs = n;
+    if (n < numSrcRegs()) {
+        clearCanIssue();
+    }
+    memset(_readySrcIdx, 0, (numSrcs() + 7) / 8);
+}
 
 void
 DynInst::setSquashed()

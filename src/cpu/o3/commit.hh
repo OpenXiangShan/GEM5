@@ -41,11 +41,12 @@
 #ifndef __CPU_O3_COMMIT_HH__
 #define __CPU_O3_COMMIT_HH__
 
-#include <queue>
+#include <cstdint>
 #include <list>
 #include <map>
-#include <vector>
+#include <queue>
 #include <utility>
+#include <vector>
 
 #include "base/statistics.hh"
 #include "cpu/exetrace.hh"
@@ -56,10 +57,11 @@
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/rename_map.hh"
 #include "cpu/o3/rob.hh"
-#include "cpu/timebuf.hh"
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/ftb/decoupled_bpred.hh"
+#include "cpu/pred/general_arch_db.hh"
 #include "cpu/pred/stream/decoupled_bpred.hh"
+#include "cpu/timebuf.hh"
 #include "enums/CommitPolicy.hh"
 #include "sim/arch_db.hh"
 #include "sim/probe/probe.hh"
@@ -141,6 +143,9 @@ class Commit
       Addr target=0;
     };
     std::list<BranchInfo> branchLog;
+
+    bool maybeStucked = false;
+    uint64_t lastCommitCycle = 0;
 
     /** Mark the thread as processing a trap. */
     void processTrapEvent(ThreadID tid);

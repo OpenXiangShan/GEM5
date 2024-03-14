@@ -405,7 +405,6 @@ class Rename
      */
     struct FreeEntries
     {
-        unsigned iqEntries;
         unsigned robEntries;
         unsigned lqEntries;
         unsigned sqEntries;

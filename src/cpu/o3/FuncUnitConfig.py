@@ -46,6 +46,10 @@ class IntALU(FUDesc):
     opList = [ OpDesc(opClass='IntAlu') ]
     count = 6
 
+class IntBRU(FUDesc):
+    opList = [ OpDesc(opClass='IntBr') ]
+    count = 1
+
 class IntMultDiv(FUDesc):
     opList = [ OpDesc(opClass='IntMult', opLat=3),
                OpDesc(opClass='IntDiv', opLat=20, pipelined=False) ]
@@ -57,6 +61,15 @@ class IntMultDiv(FUDesc):
     if buildEnv['TARGET_ISA'] in ('x86'):
         opList[1].opLat=1
 
+    count=2
+
+class IntDiv(FUDesc):
+    opList = [ OpDesc(opClass='IntDiv', opLat=20) ]
+    count=2
+
+
+class IntMult(FUDesc):
+    opList = [ OpDesc(opClass='IntMult', opLat=3) ]
     count=2
 
 class FP_SLOW(FUDesc):
@@ -124,7 +137,7 @@ class PredALU(FUDesc):
     count = 1
 
 class ReadPort(FUDesc):
-    opList = [ OpDesc(opClass='MemRead', opLat=2),
+    opList = [ OpDesc(opClass='MemRead', opLat=2), # actually execute cycle = 2+1
                OpDesc(opClass='FloatMemRead'),
                OpDesc(opClass='VectorUnitStrideLoad', opLat=2),
                OpDesc(opClass='VectorUnitStrideMaskLoad', opLat=2),

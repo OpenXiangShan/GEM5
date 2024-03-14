@@ -81,7 +81,7 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
         instsInProgress[tid] = 0;
         loadsInProgress[tid] = 0;
         storesInProgress[tid] = 0;
-        freeEntries[tid] = {0, 0, 0, 0};
+        freeEntries[tid] = {0, 0, 0};
         emptyROB[tid] = true;
         stalls[tid] = {false, false};
         serializeInst[tid] = nullptr;
@@ -249,7 +249,6 @@ Rename::clearStates(ThreadID tid)
 {
     renameStatus[tid] = Idle;
 
-    freeEntries[tid].iqEntries = iew_ptr->instQueue.numFreeEntries(tid);
     freeEntries[tid].lqEntries = iew_ptr->ldstQueue.numFreeLoadEntries(tid);
     freeEntries[tid].sqEntries = iew_ptr->ldstQueue.numFreeStoreEntries(tid);
     freeEntries[tid].robEntries = commit_ptr->numROBFreeEntries(tid);
@@ -276,8 +275,6 @@ Rename::resetStage()
     // Grab the number of free entries directly from the stages.
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         renameStatus[tid] = Idle;
-
-        freeEntries[tid].iqEntries = iew_ptr->instQueue.numFreeEntries(tid);
         freeEntries[tid].lqEntries =
             iew_ptr->ldstQueue.numFreeLoadEntries(tid);
         freeEntries[tid].sqEntries =
@@ -1223,14 +1220,14 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
         flat_dest_regid.setNumPinnedWrites(dest_reg.getNumPinnedWrites());
 
         PhysRegIdPtr last_dest_phy_reg = nullptr;
-        bool produer_valid = false;
+        bool mov_elim = false;
         if (inst->staticInst->isMov()) {
             last_dest_phy_reg =
                 map->lookup(tc->flattenRegId(inst->srcRegIdx(0)));
             DPRINTF(Rename, "Find the last reg p%i renamed for mv x%i, x%i\n",
                     last_dest_phy_reg->flatIndex(), dest_reg.index(),
                     inst->srcRegIdx(0).index());
-            produer_valid = true;
+            mov_elim = true;
             inst->setEmptyMove(true);
             DPRINTF(Rename, "Inst sn:%lu is nop: %i, is move: %i\n",
                     inst->seqNum, inst->isNop(), inst->staticInst->isMov());
@@ -1240,11 +1237,12 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
 
         inst->flattenedDestIdx(dest_idx, flat_dest_regid);
 
-        if (!produer_valid) {
+        if (!mov_elim) {
             scoreboard->unsetReg(rename_result.first);
         }
+
         DPRINTF(Rename, "[tid:%i] %s map arch reg x%i (%s) to p%i.\n",
-                tid, produer_valid ? "Mov" : "Rename",
+                tid, mov_elim ? "Mov" : "Rename",
                 dest_reg.index(), dest_reg.className(),
                 rename_result.first->flatIndex());
 
@@ -1287,12 +1285,8 @@ Rename::calcFreeROBEntries(ThreadID tid)
 int
 Rename::calcFreeIQEntries(ThreadID tid)
 {
-    int num_free = freeEntries[tid].iqEntries -
-                  (instsInProgress[tid] - fromIEW->iewInfo[tid].dispatched);
 
-    //DPRINTF(Rename,"[tid:%i] %i iq free\n",tid,num_free);
-
-    return num_free;
+    return 100;
 }
 
 int
@@ -1387,9 +1381,6 @@ Rename::checkStall(ThreadID tid)
 void
 Rename::readFreeEntries(ThreadID tid)
 {
-    if (fromIEW->iewInfo[tid].usedIQ)
-        freeEntries[tid].iqEntries = fromIEW->iewInfo[tid].freeIQEntries;
-
     if (fromIEW->iewInfo[tid].usedLSQ) {
         freeEntries[tid].lqEntries = fromIEW->iewInfo[tid].freeLQEntries;
         freeEntries[tid].sqEntries = fromIEW->iewInfo[tid].freeSQEntries;
@@ -1403,10 +1394,9 @@ Rename::readFreeEntries(ThreadID tid)
             DPRINTF(Rename, "[tid:%i] ROB is empty now.\n", tid);
     }
 
-    DPRINTF(Rename, "[tid:%i] Free IQ: %i, Free ROB: %i, "
+    DPRINTF(Rename, "[tid:%i] Free ROB: %i, "
                     "Free LQ: %i, Free SQ: %i, FreeRM %i(%i %i %i %i %i %i)\n",
             tid,
-            freeEntries[tid].iqEntries,
             freeEntries[tid].robEntries,
             freeEntries[tid].lqEntries,
             freeEntries[tid].sqEntries,

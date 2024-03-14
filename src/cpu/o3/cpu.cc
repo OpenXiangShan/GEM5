@@ -40,8 +40,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "arch/riscv/regs/misc.hh"
 #include "cpu/o3/cpu.hh"
+
+#include <cassert>
 
 #include "arch/riscv/regs/misc.hh"
 #include "config/the_isa.hh"
@@ -51,6 +52,7 @@
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/thread_context.hh"
+#include "cpu/reg_class.hh"
 #include "cpu/simple_thread.hh"
 #include "cpu/thread_context.hh"
 #include "debug/Activity.hh"
@@ -760,10 +762,6 @@ CPU::removeThread(ThreadID tid)
         iewQueue.advance();
     }
 
-    // at this step, all instructions in the pipeline should be already
-    // either committed successfully or squashed. All thread-specific
-    // queues in the pipeline must be empty.
-    assert(iew.instQueue.getCount(tid) == 0);
     assert(iew.ldstQueue.getCount(tid) == 0);
     assert(commit.rob->isEmpty(tid));
 

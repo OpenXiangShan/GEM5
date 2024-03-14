@@ -1052,7 +1052,7 @@ class VectorBase : public DataWrapVec<Derived, VectorInfoProxy>
     Proxy
     operator[](off_type index)
     {
-        assert (index < size());
+        panic_if(!(index < size()), this->name());
         return Proxy(this->self(), index);
     }
 };
