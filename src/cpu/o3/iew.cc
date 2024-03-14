@@ -1040,7 +1040,7 @@ IEW::dispatchInsts(ThreadID tid)
         if (cpu->hasHintDownStream() && ins%10000 == 1 && ins>10000000)
         {
             ipc=float(cpu->cpuStats.committedInsts.total()/cpu->baseStats.numCycles.value());
-            cpu->hintDownStream->transferIPC(ipc);
+            cpu->hintDownStream->notifyIns(ipc);
         }
         int id = dispClassify(inst);
         if (dispQue[id].size() < dqSize) {

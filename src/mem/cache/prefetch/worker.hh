@@ -49,20 +49,17 @@ class WorkerPrefetcher: public Queued
     };
 
     void rxHint(BaseMMU::Translation *dpp) override;
-    float rxMembusRatio(RequestorID requestorId) override
+    std::pair<long, long> rxMembusRatio(RequestorID requestorId) override
     {
       long totalMissCount = cache->stats.cmd[MemCmd::ReadExReq]->misses.total()
             + cache->stats.cmd[MemCmd::ReadSharedReq]->misses.total();
       long missCount = cache->stats.cmd[MemCmd::ReadExReq]->misses[requestorId].value()
             + cache->stats.cmd[MemCmd::ReadSharedReq]->misses[requestorId].value();
-      if (totalMissCount > 100)
-        return missCount * 1.0 / totalMissCount;
-      else
-        return 0;
+      return std::pair<long,long>(missCount, totalMissCount);
     };
-    void transferIPC(float _ipc) override{
+    void notifyIns(int ins_num) override{
         if (hasHintDownStream())
-          hintDownStream->transferIPC(_ipc);
+          hintDownStream->notifyIns(ins_num);
     }
 
     // dummy

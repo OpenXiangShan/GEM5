@@ -559,9 +559,9 @@ class Base : public ClockedObject
     }
     virtual void rxHint(BaseMMU::Translation *dpp) = 0;
 
-    virtual void transferIPC(float ipc){}
+    virtual void notifyIns(int ins_num){}
 
-    virtual float rxMembusRatio(RequestorID requestorId) {return 0;};
+    virtual std::pair<long, long> rxMembusRatio(RequestorID requestorId) {return std::pair<long, long>(0,0);};
 
     void nofityHitToDownStream(const PacketPtr &pkt);
 

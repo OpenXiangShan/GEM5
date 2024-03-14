@@ -197,9 +197,9 @@ class XSCompositePrefetcher : public Queued
     const bool neighborPhtUpdate;
 
   public:
-    void transferIPC(float _ipc) override{
+    void notifyIns(int ins_num) override{
         if (hasHintDownStream())
-          hintDownStream->transferIPC(_ipc);
+          hintDownStream->notifyIns(ins_num);
     }
     void setCache(BaseCache *_cache) override;
 };

@@ -35,8 +35,8 @@ class L2CompositeWithWorkerPrefetcher: public CompositeWithWorkerPrefetcher
     void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) override;
 
     void notifyFill(const PacketPtr &pkt) override;
-    void transferIPC(float _ipc) override{
-          cdp->transferIPC(_ipc);
+    void notifyIns(int ins_num) override{
+          cdp->notifyIns(ins_num);
     }
 
   private:

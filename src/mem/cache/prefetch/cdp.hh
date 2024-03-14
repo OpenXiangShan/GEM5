@@ -133,12 +133,16 @@ class CDP : public Queued
   public:
     StatGroup* prefetchStatsPtr = nullptr;
     RequestorID parentRid;
-    float ipc = 0;
+    std::pair<long, long> l3_miss_info; // (cdp_l3_miss,l3_total_miss_num)
+    float mpki = 1;
     void setStatsPtr(StatGroup* ptr){
         prefetchStatsPtr = ptr;
     }
-    void transferIPC(float _ipc) override{
-        ipc = _ipc;
+    void notifyIns(int ins_num) override{
+        if (l3_miss_info.second!=0)
+        {
+            mpki = l3_miss_info.second*1000.0 / ins_num;
+        }
     }
     bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType pfSource,
                           int pf_depth);

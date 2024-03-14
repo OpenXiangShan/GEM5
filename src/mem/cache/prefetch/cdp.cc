@@ -54,7 +54,8 @@ namespace prefetch
 {
 CDP::CDP(const CDPParams &p) : Queued(p),
                                depth_threshold(3), throttle_agreessive(p.throttle_agreessive),
-                               enable_thro(false), byteOrder(p.sys->getGuestByteOrder()),
+                               enable_thro(false), l3_miss_info(0,0),
+                               byteOrder(p.sys->getGuestByteOrder()),
                                cdpStats(this)
 {
     for (int i = 0; i < PrefetchSourceType::NUM_PF_SOURCES; i++) {
@@ -208,13 +209,24 @@ CDP::notifyWithData(const PacketPtr &pkt, bool is_l1_use, std::vector<AddrPriori
             trueAccuracy = (prefetchStatsPtr->pfUseful_srcs[PrefetchSourceType::CDP].value()*1.0) /
                     (prefetchStatsPtr->pfIssued_srcs[PrefetchSourceType::CDP].value());
         }
-        if (hasHintDownStream()&&hintDownStream->rxMembusRatio(parentRid) > 0.3&&ipc>1) enable_thro = true;
-        else enable_thro =false;
-        if (enable_thro && ipc>3){
+        if (hasHintDownStream())l3_miss_info = hintDownStream->rxMembusRatio(parentRid);
+        if (mpki<1)
             return;
-        }
-        if ( ipc > 4||ipc == 0){
-            return;
+        if (l3_miss_info.second>100){
+            float membus_ratio = l3_miss_info.first*1.0/l3_miss_info.second;
+            if (membus_ratio>0.4 && mpki<100)
+            {
+                if (trueAccuracy<0.2)
+                    enable_thro = true;
+                else
+                    enable_thro = false;
+                if (mpki<2)
+                    return;
+            }
+            else
+            {
+                enable_thro = false;
+            }
         }
         unsigned sentCount = 0;
         for (int of = 0; of < max_offset; of++) {
