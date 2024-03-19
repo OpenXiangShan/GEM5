@@ -48,8 +48,10 @@ def template FloatExecute {{
         %(code)s;
 
         FFLAGS |= softfloat_exceptionFlags;
-        softfloat_exceptionFlags = 0;
-        xc->setMiscReg(MISCREG_FFLAGS, FFLAGS);
+        if (softfloat_exceptionFlags) {
+            softfloat_exceptionFlags = 0;
+            xc->setMiscReg(MISCREG_FFLAGS, FFLAGS);
+        }
 
         %(op_wb)s;
 
@@ -81,8 +83,10 @@ def template FAccExecute {{
         %(code)s;
 
         FFLAGS |= softfloat_exceptionFlags;
-        softfloat_exceptionFlags = 0;
-        xc->setMiscReg(MISCREG_FFLAGS, FFLAGS);
+        if (softfloat_exceptionFlags) {
+            softfloat_exceptionFlags = 0;
+            xc->setMiscReg(MISCREG_FFLAGS, FFLAGS);
+        }
 
         %(op_wb)s;
 
