@@ -1035,12 +1035,10 @@ IEW::dispatchInsts(ThreadID tid)
     while (!insts_to_dispatch.empty()) {
         auto& inst = insts_to_dispatch.front();
         
-        float ipc = 0;
         int ins =cpu->cpuStats.committedInsts.total();
-        if (cpu->hasHintDownStream() && ins%10000 == 1 && ins>10000000)
+        if (cpu->hasHintDownStream() && ins%10000 == 1)
         {
-            ipc=float(cpu->cpuStats.committedInsts.total()/cpu->baseStats.numCycles.value());
-            cpu->hintDownStream->notifyIns(ipc);
+            cpu->hintDownStream->notifyIns(ins);
         }
         int id = dispClassify(inst);
         if (dispQue[id].size() < dqSize) {
