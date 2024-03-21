@@ -14,15 +14,14 @@ GEM5_DEPRECATED_NAMESPACE(Prefetcher, prefetch);
 namespace prefetch
 {
 
-class L2CompositeWithWorkerPrefetcher: public CompositeWithWorkerPrefetcher
+class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
 {
   public:
     L2CompositeWithWorkerPrefetcher(const L2CompositeWithWorkerPrefetcherParams &p);
 
-    void calculatePrefetch(const PrefetchInfo &pfi,
-                           std::vector<AddrPriority> &addresses) override;
+    void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses) override;
 
-    void addHintDownStream(Base* down_stream) override
+    void addHintDownStream(Base *down_stream) override
     {
         hintDownStream = down_stream;
         cdp->addHintDownStream(down_stream);
@@ -35,20 +34,16 @@ class L2CompositeWithWorkerPrefetcher: public CompositeWithWorkerPrefetcher
     void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) override;
 
     void notifyFill(const PacketPtr &pkt) override;
-    void notifyIns(int ins_num) override{
-          cdp->notifyIns(ins_num);
-    }
+    void notifyIns(int ins_num) override { cdp->notifyIns(ins_num); }
 
   private:
-
     CDP *cdp;
 
     bool offloadLowAccuracy = true;
-
 };
 
-} // namespace prefetch
-} // namespace gem5
+}  // namespace prefetch
+}  // namespace gem5
 
 
-#endif // __MEM_CACHE_PREFETCH_COMPOITE_WITH_WORKER_L2_HH__
+#endif  // __MEM_CACHE_PREFETCH_COMPOITE_WITH_WORKER_L2_HH__

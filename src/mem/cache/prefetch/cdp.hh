@@ -75,7 +75,7 @@ class CDP : public Queued
     std::vector<bool> enable_prf_filter;
     std::vector<bool> enable_prf_filter2;
     int depth_threshold;
-    float throttle_agreessive;
+    float throttle_aggressiveness;
     bool enable_thro;
     /** Byte order used to access the cache */
     /** Update the RR right table after a prefetch fill */
@@ -99,15 +99,15 @@ class CDP : public Queued
                 vpns[vpn2][vpn1] += 1;
             }
         }
-        void resetConfidence(float throttle_agreessive, bool enable_thro)
+        void resetConfidence(float throttle_aggressiveness, bool enable_thro)
         {
             if (counter < 128)
                 return;
             hotVpns.clear();
             for (auto pair2 : vpns) {
                 for (auto pair1 : pair2.second) {
-                    if (pair1.second > counter / 16||enable_thro) {
-                        hotVpns[pair2.first][pair1.first] = pair1.second * throttle_agreessive;
+                    if (pair1.second > counter / 16 || enable_thro) {
+                        hotVpns[pair2.first][pair1.first] = pair1.second * throttle_aggressiveness;
                     }
                 }
             }
@@ -117,38 +117,45 @@ class CDP : public Queued
         bool search(int vpn2, int vpn1)
         {
             if (hotVpns.find(vpn2) != hotVpns.end() && hotVpns[vpn2].find(vpn1) != hotVpns[vpn2].end()) {
-                if (hotVpns[vpn2][vpn1] > 0){
+                if (hotVpns[vpn2][vpn1] > 0) {
                     return true;
                 }
             }
             return false;
         }
-        void update(int vpn2, int vpn1, bool enable_thro){
-            if (enable_thro)
+        void update(int vpn2, int vpn1, bool enable_thro)
+        {
+            if (enable_thro) {
                 hotVpns[vpn2][vpn1]--;
+            }
         }
         VpnTable() { resetConfidence(2, false); }
     } vpnTable;
 
   public:
-    StatGroup* prefetchStatsPtr = nullptr;
+    StatGroup *prefetchStatsPtr = nullptr;
     RequestorID parentRid;
-    std::pair<long, long> l3_miss_info; // (cdp_l3_miss,l3_total_miss_num)
+    std::pair<long, long> l3_miss_info;  // (cdp_l3_miss,l3_total_miss_num)
     float mpki = 1;
-    void setStatsPtr(StatGroup* ptr){
-        prefetchStatsPtr = ptr;
-    }
-    void notifyIns(int ins_num) override{
-        if (l3_miss_info.second!=0)
-        {
-            mpki = l3_miss_info.second*1000.0 / ins_num;
+    void setStatsPtr(StatGroup *ptr) { prefetchStatsPtr = ptr; }
+    void notifyIns(int ins_num) override
+    {
+        if (l3_miss_info.second != 0) {
+            mpki = l3_miss_info.second * 1000.0 / ins_num;
         }
     }
     bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType pfSource,
                           int pf_depth);
 
     CDP(const CDPParams &p);
-    ~CDP() = default;
+
+    ~CDP()
+    {
+        // Delete the pfLRUFilter pointer to release memory
+        Queued::~Queued();
+        delete pfLRUFilter;
+    }
+
     ByteOrder byteOrder;
 
     using Queued::notifyFill;
@@ -179,11 +186,13 @@ class CDP : public Queued
             vpn0 = BITS(test_addr, 20, 12);
             page_offset = BITS(test_addr, 11, 0);
             bool flag = true;
-            if ((check_bit != 0) || (!vpnTable.search(vpn2, vpn1)) || (vpn0 == 0) || (align_bit != 0))
+            if ((check_bit != 0) || (!vpnTable.search(vpn2, vpn1)) || (vpn0 == 0) || (align_bit != 0)) {
                 flag = false;
+            }
             Addr test_addr2 = Addr(test_addr);
-            if (flag)
+            if (flag) {
                 ans.push_back(test_addr2);
+            }
         }
         return ans;
     };

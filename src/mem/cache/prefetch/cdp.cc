@@ -52,11 +52,14 @@ namespace gem5
 GEM5_DEPRECATED_NAMESPACE(Prefetcher, prefetch);
 namespace prefetch
 {
-CDP::CDP(const CDPParams &p) : Queued(p),
-                               depth_threshold(3), throttle_agreessive(p.throttle_agreessive),
-                               enable_thro(false), l3_miss_info(0,0),
-                               byteOrder(p.sys->getGuestByteOrder()),
-                               cdpStats(this)
+CDP::CDP(const CDPParams &p)
+    : Queued(p),
+      depth_threshold(3),
+      throttle_aggressiveness(p.throttle_aggressiveness),
+      enable_thro(false),
+      l3_miss_info(0, 0),
+      byteOrder(p.sys->getGuestByteOrder()),
+      cdpStats(this)
 {
     for (int i = 0; i < PrefetchSourceType::NUM_PF_SOURCES; i++) {
         enable_prf_filter.push_back(false);
@@ -87,10 +90,8 @@ CDP::CDPStats::CDPStats(statistics::Group *parent)
                "Number of times the prefetcher exited hitNotify due to no data"),
       ADD_STAT(missNotifyCalled, statistics::units::Count::get(),
                "Number of times the prefetcher was called in missNotify"),
-      ADD_STAT(passedFilter, statistics::units::Count::get(),
-               "Number of prefetch requests passed the filter"),
-      ADD_STAT(inserted, statistics::units::Count::get(),
-               "Number of prefetches inserted")
+      ADD_STAT(passedFilter, statistics::units::Count::get(), "Number of prefetch requests passed the filter"),
+      ADD_STAT(inserted, statistics::units::Count::get(), "Number of prefetches inserted")
 {
 }
 
@@ -134,7 +135,7 @@ CDP::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addre
             for (Addr pt_addr : scanPointer(addr, addrs)) {
                 vpn2 = BITS(pt_addr, 38, 30);
                 vpn1 = BITS(pt_addr, 29, 21);
-                vpnTable.update(vpn2,vpn1,enable_thro);
+                vpnTable.update(vpn2, vpn1, enable_thro);
                 sendPFWithFilter(blockAddress(pt_addr), addresses, 30, PrefetchSourceType::CDP, 1);
                 cdpStats.triggeredInCalcPf++;
             }
@@ -205,26 +206,26 @@ CDP::notifyWithData(const PacketPtr &pkt, bool is_l1_use, std::vector<AddrPriori
         };
 
         float trueAccuracy = 1;
-        if (prefetchStatsPtr->pfIssued_srcs[PrefetchSourceType::CDP].value()>100){
-            trueAccuracy = (prefetchStatsPtr->pfUseful_srcs[PrefetchSourceType::CDP].value()*1.0) /
-                    (prefetchStatsPtr->pfIssued_srcs[PrefetchSourceType::CDP].value());
+        if (prefetchStatsPtr->pfIssued_srcs[PrefetchSourceType::CDP].value() > 100) {
+            trueAccuracy = (prefetchStatsPtr->pfUseful_srcs[PrefetchSourceType::CDP].value() * 1.0) /
+                           (prefetchStatsPtr->pfIssued_srcs[PrefetchSourceType::CDP].value());
         }
-        if (hasHintDownStream())l3_miss_info = hintDownStream->rxMembusRatio(parentRid);
-        if (mpki<1)
+        if (hasHintDownStream())
+            l3_miss_info = hintDownStream->rxMembusRatio(parentRid);
+        if (mpki < 1)
             return;
-        if (l3_miss_info.second>100){
-            float membus_ratio = l3_miss_info.first*1.0/l3_miss_info.second;
-            if (membus_ratio>0.4 && mpki<100)
-            {
-                if (trueAccuracy<0.2)
+        if (l3_miss_info.second > 100) {
+            float membus_ratio = l3_miss_info.first * 1.0 / l3_miss_info.second;
+            if (membus_ratio > 0.4 && mpki < 100) {
+                if (trueAccuracy < 0.2) {
                     enable_thro = true;
-                else
+                } else {
                     enable_thro = false;
-                if (mpki<2)
+                }
+                if (mpki < 2) {
                     return;
-            }
-            else
-            {
+                }
+            } else {
                 enable_thro = false;
             }
         }
@@ -232,10 +233,11 @@ CDP::notifyWithData(const PacketPtr &pkt, bool is_l1_use, std::vector<AddrPriori
         for (int of = 0; of < max_offset; of++) {
             test_addr = addrs[of];
             int align_bit = BITS(test_addr, 1, 0);
-            if (trueAccuracy < 0.05)
+            if (trueAccuracy < 0.05) {
                 align_bit = BITS(test_addr, 10, 0);
-            if (trueAccuracy < 0.01)
+            } else if (trueAccuracy < 0.01) {
                 align_bit = BITS(test_addr, 11, 0);
+            }
             int filter_bit = BITS(test_addr, 5, 0);
             int page_offset, vpn0, vpn1, vpn1_addr, vpn2, vpn2_addr, check_bit;
             check_bit = BITS(test_addr, 63, 39);
@@ -246,8 +248,9 @@ CDP::notifyWithData(const PacketPtr &pkt, bool is_l1_use, std::vector<AddrPriori
             vpn0 = BITS(test_addr, 20, 12);
             page_offset = BITS(test_addr, 11, 0);
             bool flag = true;
-            if ((check_bit != 0)  || (vpn0 == 0) || (align_bit != 0)|| (!vpnTable.search(vpn2, vpn1)))
+            if ((check_bit != 0) || (vpn0 == 0) || (align_bit != 0) || (!vpnTable.search(vpn2, vpn1))) {
                 flag = false;
+            }
             Addr test_addr2 = Addr(test_addr);
             if (flag) {
                 if (pf_depth >= depth_threshold) {
@@ -255,21 +258,18 @@ CDP::notifyWithData(const PacketPtr &pkt, bool is_l1_use, std::vector<AddrPriori
                     return;
                 }
                 int next_depth = 0;
-                if (pf_depth == 0)
-                {
+                if (pf_depth == 0) {
                     next_depth = 4;
-                } else
-                {
+                } else {
                     next_depth = pf_depth + 1;
                 }
-                vpnTable.update(vpn2,vpn1,enable_thro);
+                vpnTable.update(vpn2, vpn1, enable_thro);
                 sendPFWithFilter(blockAddress(test_addr2), addresses, 29 + next_depth, PrefetchSourceType::CDP,
                                  next_depth);
-                if (trueAccuracy > 0.05)
-                {
-                    vpnTable.update(vpn2,vpn1,enable_thro);
-                    sendPFWithFilter(blockAddress(test_addr2) + 0x40, addresses, 1,
-                                    PrefetchSourceType::CDP, next_depth);
+                if (trueAccuracy > 0.05) {
+                    vpnTable.update(vpn2, vpn1, enable_thro);
+                    sendPFWithFilter(blockAddress(test_addr2) + 0x40, addresses, 1, PrefetchSourceType::CDP,
+                                     next_depth);
                 }
                 cdpStats.triggeredInRxNotify++;
                 sentCount++;
@@ -279,8 +279,10 @@ CDP::notifyWithData(const PacketPtr &pkt, bool is_l1_use, std::vector<AddrPriori
             cdpStats.dataNotifyNoAddrFound++;
         }
     }
-    if (!pkt->req->hasVaddr()) cdpStats.dataNotifyNoVA++;
-    if (!pkt->hasData()) cdpStats.dataNotifyNoData++;
+    if (!pkt->req->hasVaddr())
+        cdpStats.dataNotifyNoVA++;
+    if (!pkt->hasData())
+        cdpStats.dataNotifyNoData++;
     return;
 }
 
@@ -325,7 +327,7 @@ CDP::addToVpnTable(Addr addr)
     vpn0 = BITS(addr, 20, 12);
     page_offset = BITS(addr, 11, 0);
     vpnTable.add(vpn2, vpn1);
-    vpnTable.resetConfidence(throttle_agreessive, enable_thro);
+    vpnTable.resetConfidence(throttle_aggressiveness, enable_thro);
     DPRINTF(CDPdebug, "Sv39, ADDR:%#llx, vpn2:%#llx, vpn1:%#llx, vpn0:%#llx, page offset:%#llx\n", addr, Addr(vpn2),
             Addr(vpn1), Addr(vpn0), Addr(page_offset));
 }
