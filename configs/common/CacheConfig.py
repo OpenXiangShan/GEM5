@@ -210,7 +210,8 @@ def config_cache(options, system):
                     dcache.prefetcher.berti.use_byte_addr = True
                     dcache.prefetcher.berti.aggressive_pf = False
                     dcache.prefetcher.berti.trigger_pht = True
-
+                    if options.cpu_type == 'DerivO3CPU':
+                        system.cpu[i].add_pf_downstream(dcache.prefetcher)
                     if options.ideal_cache:
                         dcache.prefetcher.stream_pf_ahead = False
 

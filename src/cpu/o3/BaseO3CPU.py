@@ -44,6 +44,7 @@ from m5.objects.BaseCPU import BaseCPU
 from m5.objects.FUPool import *
 #from m5.objects.O3Checker import O3Checker
 from m5.objects.BranchPredictor import *
+from m5.SimObject import *
 
 class SMTFetchPolicy(ScopedEnum):
     vals = [ 'RoundRobin', 'Branch', 'IQCount', 'LSQCount' ]
@@ -61,6 +62,27 @@ class BaseO3CPU(BaseCPU):
     type = 'BaseO3CPU'
     cxx_class = 'gem5::o3::CPU'
     cxx_header = 'cpu/o3/dyn_inst.hh'
+    cxx_exports = [
+        PyBindMethod("addHintDownStream"),
+    ]
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._downstream_pf = []
+
+    # Override the normal SimObject::regProbeListeners method and
+    # register deferred event handlers.
+    def regProbeListeners(self):
+        print("Registering probe listeners for BaseO3CPU {}".format(self))
+        assert len(self._downstream_pf) <= 1
+        if len(self._downstream_pf):
+            self.getCCObject().addHintDownStream(self._downstream_pf[0].getCCObject())
+        self.getCCObject().regProbeListeners()
+
+    def add_pf_downstream(self, other_prefetcher):
+        if not isinstance(other_prefetcher, SimObject):
+            raise TypeError("other_prefetcher must be a SimObject type")
+        self._downstream_pf.append(other_prefetcher)
 
     @classmethod
     def memory_mode(cls):

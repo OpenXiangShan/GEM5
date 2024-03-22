@@ -553,11 +553,15 @@ class Base : public ClockedObject
     bool squashMark{false};
 
   public:
-    void addHintDownStream(Base* down_stream)
+    virtual void addHintDownStream(Base* down_stream)
     {
         hintDownStream = down_stream;
     }
     virtual void rxHint(BaseMMU::Translation *dpp) = 0;
+
+    virtual void notifyIns(int ins_num){}
+
+    virtual std::pair<long, long> rxMembusRatio(RequestorID requestorId) {return std::pair<long, long>(0,0);};
 
     void nofityHitToDownStream(const PacketPtr &pkt);
 

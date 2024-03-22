@@ -481,6 +481,8 @@ class CDP(QueuedPrefetcher):
     on_data  = True
     on_inst  = False
     use_byteorder = Param.Bool(True,"")
+    throttle_aggressiveness = Param.Float(2.0,
+        "A parameter to control the aggressiveness of throttling")
 
 class CompositeWithWorkerPrefetcher(WorkerPrefetcher):
     type = 'CompositeWithWorkerPrefetcher'

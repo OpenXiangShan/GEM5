@@ -1034,6 +1034,10 @@ IEW::dispatchInsts(ThreadID tid)
     unsigned dispatched = 0;
     while (!insts_to_dispatch.empty()) {
         auto& inst = insts_to_dispatch.front();
+        int ins = cpu->cpuStats.committedInsts.total();
+        if (cpu->hasHintDownStream() && ins % 10000 == 1) {
+            cpu->hintDownStream->notifyIns(ins);
+        }
         int id = dispClassify(inst);
         if (dispQue[id].size() < dqSize) {
             if (inst->isSquashed()) {

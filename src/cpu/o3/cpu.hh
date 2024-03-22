@@ -70,6 +70,7 @@
 #include "cpu/o3/thread_state.hh"
 #include "cpu/simple_thread.hh"
 #include "cpu/timebuf.hh"
+#include "mem/cache/prefetch/base.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/process.hh"
 #include "sim/rolling.hh"
@@ -102,6 +103,15 @@ class CPU : public BaseCPU
     friend class ThreadContext;
 
   public:
+    gem5::prefetch::Base *hintDownStream{nullptr};
+    void addHintDownStream(gem5::prefetch::Base* down_stream)
+    {
+        hintDownStream = down_stream;
+    }
+    bool hasHintDownStream() const
+    {
+        return hintDownStream != nullptr;
+    }
     enum Status
     {
         Running,

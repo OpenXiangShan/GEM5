@@ -13,6 +13,7 @@ L2CompositeWithWorkerPrefetcher::L2CompositeWithWorkerPrefetcher(const L2Composi
     : CompositeWithWorkerPrefetcher(p), cdp(p.cdp)
 {
     cdp->pfLRUFilter = &pfLRUFilter;
+    cdp->parentRid = p.sys->getRequestorId(this);
 }
 
 void
@@ -62,6 +63,7 @@ void
 L2CompositeWithWorkerPrefetcher::setCache(BaseCache *_cache)
 {
     cdp->setCache(_cache);
+    cdp->setStatsPtr(&prefetchStats);
     CompositeWithWorkerPrefetcher::setCache(_cache);
 }
 
