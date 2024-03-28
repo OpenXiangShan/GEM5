@@ -1,5 +1,4 @@
 # DO NOT track your local updates in this script!
-source ~/apps/setenv_AOCC.sh
 
 function print_help() {
     printf "Usage:
