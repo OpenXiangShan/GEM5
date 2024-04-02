@@ -195,7 +195,32 @@ enum MiscRegIndex
     MISCREG_VTYPE,
     MISCREG_VLENB,
 
-    // These registers are not in the standard, hence does not exist in the
+    MISCREG_HSTATUS,
+    MISCREG_HEDELEG,
+    MISCREG_HIDELEG,
+    MISCREG_HIE,
+    MISCREG_HCOUNTEREN,
+    MISCREG_HGEIE,
+    MISCREG_HTVAL,
+    MISCREG_HIP,
+    MISCREG_HVIP,
+    MISCREG_HTINST,
+    MISCREG_HGEIP,
+    MISCREG_HENVCFG,
+    MISCREG_HGATP,
+    MISCREG_HTIMEDELTA,
+    MISCREG_VSSTATUS,
+    MISCREG_VSIE,
+    MISCREG_VSTVEC,
+    MISCREG_VSSCRATCH,
+    MISCREG_VSEPC,
+    MISCREG_VSCAUSE,
+    MISCREG_VSTVAL,
+    MISCREG_VSIP,
+    MISCREG_VSATP,
+    MISCREG_MTINST,
+    MISCREG_MTVAL2,
+
     // CSRData map. These are mainly used to provide a minimal implementation
     // for non-maskable-interrupt in our simple cpu.
     // non-maskable-interrupt-vector-base-address: NMI version of xTVEC
@@ -380,7 +405,33 @@ enum CSRIndex
     CSR_VCSR         = 0x00F,
     CSR_VL           = 0xC20,
     CSR_VTYPE        = 0xC21,
-    CSR_VLENB        = 0xC22
+    CSR_VLENB        = 0xC22,
+
+    CSR_HSTATUS     = 0x600,
+    CSR_HEDELEG     = 0x602,
+    CSR_HIDELEG     = 0x603,
+    CSR_HIE         = 0x604,
+    CSR_HCOUNTEREN  = 0x606,
+    CSR_HGEIE       = 0x607,
+    CSR_HTVAL       = 0x643,
+    CSR_HIP         = 0x644,
+    CSR_HVIP        = 0x645,
+    CSR_HTINST      = 0x64A,
+    CSR_HGEIP       = 0xE12,
+    CSR_HENVCFG     = 0x60A,
+    CSR_HGATP       = 0x680,
+    CSR_HTIMEDELTA  = 0x605,
+    CSR_VSSTATUS    = 0x200,
+    CSR_VSIE        = 0x204,
+    CSR_VSTVEC      = 0x205,
+    CSR_VSSCRATCH   = 0x240,
+    CSR_VSEPC       = 0x241,
+    CSR_VSCAUSE     = 0x242,
+    CSR_VSTVAL      = 0x243,
+    CSR_VSIP        = 0x244,
+    CSR_VSATP       = 0x280,
+    CSR_MTINST      = 0x34A,
+    CSR_MTVAL2      = 0x34B,
 };
 
 struct CSRMetadata
@@ -558,7 +609,33 @@ const std::map<int, CSRMetadata> CSRData = {
     {CSR_VCSR,         {"vcsr"  , MISCREG_VCSR}},
     {CSR_VL,           {"vl"    , MISCREG_VL}},
     {CSR_VTYPE,        {"vtype" , MISCREG_VTYPE}},
-    {CSR_VLENB,        {"VLENB" , MISCREG_VLENB}}
+    {CSR_VLENB,        {"VLENB" , MISCREG_VLENB}},
+
+    {CSR_HSTATUS, {"hstatus", MISCREG_STATUS}},
+    {CSR_HEDELEG, {"hedeleg", MISCREG_HEDELEG}},
+    {CSR_HIDELEG, {"hideleg", MISCREG_HIDELEG}},
+    {CSR_HIE, {"hie", MISCREG_IE}},
+    {CSR_HCOUNTEREN, {"hcounteren", MISCREG_HCOUNTEREN}},
+    {CSR_HGEIE, {"hgeie", MISCREG_HGEIE}},
+    {CSR_HTVAL, {"htval", MISCREG_HTVAL}},
+    {CSR_HIP, {"hip", MISCREG_HIP}},
+    {CSR_HVIP, {"hvip", MISCREG_HVIP}},
+    {CSR_HTINST, {"htinst", MISCREG_HTINST}},
+    {CSR_HGEIP, {"hgeip", MISCREG_HGEIP}},
+    {CSR_HENVCFG, {"henvcfg", MISCREG_HENVCFG}},
+    {CSR_HGATP, {"hgatp", MISCREG_HGATP}},
+    {CSR_HTIMEDELTA, {"htimedalta", MISCREG_HTIMEDELTA}},
+    {CSR_VSSTATUS, {"vsstatus", MISCREG_VSSTATUS}},
+    {CSR_VSIE, {"vsie", MISCREG_VSIE}},
+    {CSR_VSTVEC, {"vstvec", MISCREG_VSTVEC}},
+    {CSR_VSSCRATCH, {"vsscratch", MISCREG_VSSCRATCH}},
+    {CSR_VSEPC, {"vsepc", MISCREG_VSEPC}},
+    {CSR_VSCAUSE, {"vscause", MISCREG_VSCAUSE}},
+    {CSR_VSTVAL, {"vstval", MISCREG_VSTVAL}},
+    {CSR_VSIP, {"vsip", MISCREG_VSIP}},
+    {CSR_VSATP, {"vsatp", MISCREG_VSATP}},
+    {CSR_MTINST, {"mtinst", MISCREG_MTINST}},
+    {CSR_MTVAL2, {"mtval2", MISCREG_MTVAL2}},
 };
 
 /**
@@ -696,6 +773,214 @@ const std::map<int, RegVal> CSRMasks = {
     {CSR_MIE, MI_MASK},
     {CSR_MIP, MI_MASK}
 };
+
+#define concat_temp(x, y) x ## y
+#define concat(x, y) concat_temp(x, y)
+
+#define CSR_STRUCT_START(name) \
+  typedef union { \
+    struct {
+
+#define CSR_STRUCT_END(name) \
+    }; \
+    uint64_t val; \
+  } concat(name, _t);
+
+
+
+CSR_STRUCT_START(hstatus)
+  uint64_t pad0  : 5;
+  uint64_t vsbe  : 1;
+  uint64_t gva   : 1;
+  uint64_t spv   : 1;
+  uint64_t spvp  : 1;
+  uint64_t hu    : 1;
+  uint64_t pad1  : 2;
+  uint64_t vgein : 6;
+  uint64_t pad2  : 2;
+  uint64_t vtvm  : 1;
+  uint64_t vtw   : 1;
+  uint64_t vtsr  : 1;
+  uint64_t pad3  : 9;
+  uint64_t vsxl  : 2;
+CSR_STRUCT_END(hstatus)
+
+
+// CSR_STRUCT_START(hedeleg)
+// CSR_STRUCT_END(hedeleg)
+
+// CSR_STRUCT_START(hideleg)
+// CSR_STRUCT_END(hideleg)
+
+CSR_STRUCT_START(hie)
+  uint64_t pad0  : 2;
+  uint64_t vssie : 1;
+  uint64_t pad1  : 3;
+  uint64_t vstie : 1;
+  uint64_t pad2  : 3;
+  uint64_t vseie : 1;
+  uint64_t pad3  : 1;
+  uint64_t sgeie : 1;
+CSR_STRUCT_END(hie)
+
+// CSR_STRUCT_START(hcounteren)
+// CSR_STRUCT_END(hcounteren)
+
+// CSR_STRUCT_START(hgeie)
+// CSR_STRUCT_END(hgeie)
+
+// CSR_STRUCT_START(htval)
+// CSR_STRUCT_END(htval)
+
+CSR_STRUCT_START(hip)
+  uint64_t pad0  : 2;
+  uint64_t vssip : 1;
+  uint64_t pad1  : 3;
+  uint64_t vstip : 1;
+  uint64_t pad2  : 3;
+  uint64_t vseip : 1;
+  uint64_t pad3  : 1;
+  uint64_t sgeip : 1;
+CSR_STRUCT_END(hip)
+
+CSR_STRUCT_START(hvip)
+  uint64_t pad0  : 2;
+  uint64_t vssip : 1;
+  uint64_t pad1  : 3;
+  uint64_t vstip : 1;
+  uint64_t pad2  : 3;
+  uint64_t vseip : 1;
+CSR_STRUCT_END(hvip)
+
+// CSR_STRUCT_START(htinst)
+// CSR_STRUCT_END(htinst)
+
+// CSR_STRUCT_START(hgeip)
+// CSR_STRUCT_END(hgeip)
+
+CSR_STRUCT_START(henvcfg)
+  uint64_t fiom   : 1;
+  uint64_t pad0   : 3;
+  uint64_t cbie   : 2;
+  uint64_t cbcfe  : 1;
+  uint64_t cbze   : 1;
+  uint64_t pad1   :54;
+  uint64_t pbmte  : 1;
+  uint64_t vstce  : 1;
+CSR_STRUCT_END(henvcfg)
+
+CSR_STRUCT_START(hgatp)
+  uint64_t ppn    : 44;
+  uint64_t vmid   : 14;
+  uint64_t pad0   : 2;
+  uint64_t mode   : 4;
+CSR_STRUCT_END(hgatp)
+
+// CSR_STRUCT_START(htimedelta)
+// CSR_STRUCT_END(htimedelta)
+
+CSR_STRUCT_START(vsstatus)
+  union{
+    struct{
+      uint64_t pad0: 1;
+      uint64_t sie : 1;
+      uint64_t pad1: 3;
+      uint64_t spie: 1;
+      uint64_t ube : 1;
+      uint64_t pad2: 1;
+      uint64_t spp : 1;
+      uint64_t vs  : 2;
+      uint64_t pad3: 2;
+      uint64_t fs  : 2;
+      uint64_t xs  : 2;
+      uint64_t pad4: 1;
+      uint64_t sum : 1;
+      uint64_t mxr : 1;
+      uint64_t pad5:11;
+      uint64_t sd  : 1;
+    }_32;
+    struct{
+      uint64_t pad0: 1;
+      uint64_t sie : 1;
+      uint64_t pad1: 3;
+      uint64_t spie: 1;
+      uint64_t ube : 1;
+      uint64_t pad2: 1;
+      uint64_t spp : 1;
+      uint64_t vs  : 2;
+      uint64_t pad3: 2;
+      uint64_t fs  : 2;
+      uint64_t xs  : 2;
+      uint64_t pad4: 1;
+      uint64_t sum : 1;
+      uint64_t mxr : 1;
+      uint64_t pad5:12;
+      uint64_t uxl : 2;
+      uint64_t pad6:29;
+      uint64_t sd  : 1;
+    }_64;
+  };
+CSR_STRUCT_END(vsstatus)
+
+CSR_STRUCT_START(vsie)
+  uint64_t pad0 : 1;
+  uint64_t ssie : 1;
+  uint64_t pad1 : 3;
+  uint64_t stie : 1;
+  uint64_t pad2 : 3;
+  uint64_t seie : 1;
+CSR_STRUCT_END(vsie)
+
+CSR_STRUCT_START(vstvec)
+  uint64_t mode  : 2;
+  uint64_t base  :62;
+CSR_STRUCT_END(vstvec)
+
+// CSR_STRUCT_START(vsscratch)
+// CSR_STRUCT_END(vsscratch)
+
+// CSR_STRUCT_START(vsepc)
+// CSR_STRUCT_END(vsepc)
+
+CSR_STRUCT_START(vscause)
+  union{
+    struct{
+      uint64_t code:31;
+      uint64_t intr: 1;
+    }_32;
+    struct{
+      uint64_t code:63;
+      uint64_t intr: 1;
+    }_64;
+  };
+CSR_STRUCT_END(vscause)
+
+// CSR_STRUCT_START(vstval)
+// CSR_STRUCT_END(vstval)
+
+CSR_STRUCT_START(vsip)
+  uint64_t pad0 : 1;
+  uint64_t ssip : 1;
+  uint64_t pad1 : 3;
+  uint64_t stip : 1;
+  uint64_t pad2 : 3;
+  uint64_t seip : 1;
+CSR_STRUCT_END(vsip)
+
+CSR_STRUCT_START(vsatp)
+  union{
+    struct{
+      uint64_t ppn  :22;
+      uint64_t asid : 9;
+      uint64_t mode : 1;
+    }_32;
+    struct{
+      uint64_t ppn  :44;
+      uint64_t asid :16;
+      uint64_t mode : 4;
+    }_64;
+  };
+CSR_STRUCT_END(vsatp)
 
 } // namespace RiscvISA
 } // namespace gem5
