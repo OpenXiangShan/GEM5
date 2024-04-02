@@ -1471,7 +1471,7 @@ IEW::executeInsts()
         updateExeInstStats(inst);
 
         if (Debug::IEW) {
-            inst->printDisassembly();
+            inst->printDisassemblyAndResult(cpu->name());
         }
 
         // Check if branch prediction was correct, if not then we need

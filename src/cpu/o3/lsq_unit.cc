@@ -824,7 +824,7 @@ LSQUnit::commitLoad()
                 inst->lastWakeDependents - inst->firstIssue);
             stats.loadToUse.sample(load_to_use);
             if (((uint64_t) load_to_use) > 2000) {
-                inst->printDisassembly();
+                inst->printDisassemblyAndResult(cpu->name());
                 DPRINTF(CommitTrace,
                         "Inst[sn:%lu] load2use = %lu, translation lat = %lu\n",
                         inst->seqNum, load_to_use, translation_lat);

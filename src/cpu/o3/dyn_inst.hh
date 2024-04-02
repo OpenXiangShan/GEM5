@@ -1294,7 +1294,7 @@ class DynInst : public ExecContext, public RefCounted
         //TODO setResult
     }
 
-    void printDisassembly() const;
+    void printDisassemblyAndResult(const std::string &site) const;
 
     std::string genDisassembly() const
     {
