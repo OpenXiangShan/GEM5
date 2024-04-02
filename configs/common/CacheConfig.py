@@ -120,32 +120,41 @@ def config_cache(options, system):
         # Provide a clock for the L2 and the L1-to-L2 bus here as they
         # are not connected using addTwoLevelCacheHierarchy. Use the
         # same clock as the CPUs.
-        system.l2 = l2_cache_class(clk_domain=system.cpu_clk_domain,
-                                   **_get_cache_opts('l2', options))
+        system.l2_caches = [l2_cache_class(clk_domain=system.cpu_clk_domain,
+                                           **_get_cache_opts('l2', options)) for i in range(options.num_cpus)]
+        system.tol2bus_list = [L2XBar(
+            clk_domain=system.cpu_clk_domain, width=256) for i in range(options.num_cpus)]
+        for i in range(options.num_cpus):
+            # system.l2_caches.append(l2_cache_class(clk_domain=system.cpu_clk_domain,
+            #                        **_get_cache_opts('l2', options)))
 
-        system.tol2bus = L2XBar(clk_domain = system.cpu_clk_domain, width=256)
-        system.l2.cpu_side = system.tol2bus.mem_side_ports
+            # system.tol2bus_list.append(L2XBar(clk_domain = system.cpu_clk_domain, width=256))
+            system.l2_caches[i].cpu_side = system.tol2bus_list[i].mem_side_ports
 
-        if options.ideal_cache:
-            assert not options.l3cache, \
-                "Ideal caches and L3s are exclusive options."
-            assert options.l2cache, "Ideal caches require L2s."
-            assert options.mem_type == "SimpleMemory", \
-                "Ideal caches require SimpleMemory."
+            if options.ideal_cache:
+                assert not options.l3cache, \
+                    "Ideal caches and L3s are exclusive options."
+                assert options.l2cache, "Ideal caches require L2s."
+                assert options.mem_type == "SimpleMemory", \
+                    "Ideal caches require SimpleMemory."
 
-            system.tol2bus.frontend_latency = 0
-            system.tol2bus.response_latency = 0
-            system.tol2bus.forward_latency = 0
-            system.tol2bus.header_latency = 0
-            system.tol2bus.snoop_response_latency = 0
-            system.tol2bus.width = 128 # byte per cycle
+                system.tol2bus_list[i].frontend_latency = 0
+                system.tol2bus_list[i].response_latency = 0
+                system.tol2bus_list[i].forward_latency = 0
+                system.tol2bus_list[i].header_latency = 0
+                system.tol2bus_list[i].snoop_response_latency = 0
+                system.tol2bus_list[i].width = 256 # byte per cycle
 
-            system.l2.response_latency = 0
-            system.l2.tag_latency = 1
-            system.l2.data_latency = 1
-            system.l2.sequential_access = False
-            system.l2.writeback_clean = False
-            system.l2.mshrs = 64
+                system.l2_caches[i].response_latency = 0
+                system.l2_caches[i].tag_latency = 1
+                system.l2_caches[i].data_latency = 1
+                system.l2_caches[i].sequential_access = False
+                system.l2_caches[i].writeback_clean = False
+                system.l2_caches[i].mshrs = 64
+
+            if options.xiangshan_ecore:
+                system.l2_caches[i].response_latency = 66
+                system.l2_caches[i].writeback_clean = False
 
             system.membus.frontend_latency = 0
             system.membus.response_latency = 0
@@ -154,25 +163,24 @@ def config_cache(options, system):
             system.membus.snoop_response_latency = 0
             system.membus.width = 128 # byte per cycle
 
-        if options.xiangshan_ecore:
-            system.l2.response_latency = 66
-            system.l2.writeback_clean = False
 
         if options.l3cache:
             system.l3 = L3Cache(clk_domain=system.cpu_clk_domain,
                                         **_get_cache_opts('l3', options))
-
-            # l2 -> tol3bus -> l3
             system.tol3bus = L2XBar(clk_domain=system.cpu_clk_domain, width=256)
             system.l3.cpu_side = system.tol3bus.mem_side_ports
-            system.l2.mem_side = system.tol3bus.cpu_side_ports
-            # l3 -> membus
             system.l3.mem_side = system.membus.cpu_side_ports
-            system.l2.max_cache_level = 3
             system.l3.max_cache_level = 3
-        else:
-            system.l2.mem_side = system.membus.cpu_side_ports
-            system.l2.max_cache_level = 2
+
+        for i in range(options.num_cpus):
+            if options.l3cache:
+                # l2 -> tol3bus -> l3
+                system.l2_caches[i].mem_side = system.tol3bus.cpu_side_ports
+                # l3 -> membus
+                system.l2_caches[i].max_cache_level = 3
+            else:
+                system.l2_caches[i].mem_side = system.membus.cpu_side_ports
+                system.l2_caches[i].max_cache_level = 2
 
     if options.memchecker:
         system.memchecker = MemChecker()
@@ -221,19 +229,19 @@ def config_cache(options, system):
 
             if options.l1_to_l2_pf_hint:
                 assert dcache.prefetcher != NULL and \
-                    system.l2.prefetcher != NULL
-                dcache.prefetcher.add_pf_downstream(system.l2.prefetcher)
-                system.l2.prefetcher.queue_size = 64
-                system.l2.prefetcher.max_prefetch_requests_with_pending_translation = 128
-                print("Add L2 prefetcher as downstream of L1D prefetcher")
+                    system.l2_caches[i].prefetcher != NULL
+                dcache.prefetcher.add_pf_downstream(system.l2_caches[i].prefetcher)
+                system.l2_caches[i].prefetcher.queue_size = 64
+                system.l2_caches[i].prefetcher.max_prefetch_requests_with_pending_translation = 128
+                print("Add L2 prefetcher {} as downstream of L1D prefetcher {}".format(i, i))
 
             if options.l3cache and options.l2_to_l3_pf_hint:
-                assert system.l2.prefetcher != NULL and \
+                assert system.l2_caches[i].prefetcher != NULL and \
                     system.l3.prefetcher != NULL
-                system.l2.prefetcher.add_pf_downstream(system.l3.prefetcher)
+                system.l2_caches[i].prefetcher.add_pf_downstream(system.l3.prefetcher)
                 system.l3.prefetcher.queue_size = 64
                 system.l3.prefetcher.max_prefetch_requests_with_pending_translation = 128
-                print("Add L3 prefetcher as downstream of L2 prefetcher")
+                print("Add L3 prefetcher as downstream of L2 prefetcher {}".format(i))
 
             # If we have a walker cache specified, instantiate two
             # instances here
@@ -290,11 +298,11 @@ def config_cache(options, system):
         system.cpu[i].createInterruptController()
         if options.l2cache:
             system.cpu[i].connectAllPorts(
-                system.tol2bus.cpu_side_ports,
+                system.tol2bus_list[i].cpu_side_ports,
                 system.membus.cpu_side_ports, system.membus.mem_side_ports)
-            if system.l2.prefetcher != NULL:
+            if system.l2_caches[i].prefetcher != NULL:
                 print("Add dtb for L2 prefetcher")
-                system.l2.prefetcher.registerTLB(system.cpu[i].mmu.dtb)
+                system.l2_caches[i].prefetcher.registerTLB(system.cpu[i].mmu.dtb)
         elif options.external_memory_system:
             system.cpu[i].connectUncachedPorts(
                 system.membus.cpu_side_ports, system.membus.mem_side_ports)

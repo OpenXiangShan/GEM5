@@ -90,13 +90,13 @@ PhysicalMemory::PhysicalMemory(const std::string& _name,
                                const std::string& gcpt_path,
                                bool map_to_raw_cpt,
                                bool auto_unlink_shared_backstore,
-                               bool enable_riscv_vector) :
+                               unsigned gcpt_restorer_size_limit) :
     _name(_name), size(0), mmapUsingNoReserve(mmap_using_noreserve),
     sharedBackstore(shared_backstore), sharedBackstoreSize(0),
     pageSize(sysconf(_SC_PAGE_SIZE)),
     restoreFromXiangshanCpt(restore_from_gcpt),
     gCptRestorerPath(gcpt_restorer_path),
-    xsCptPath(gcpt_path), mapToRawCpt(map_to_raw_cpt), riscvVectorGCPTrestore(enable_riscv_vector)
+    xsCptPath(gcpt_path), mapToRawCpt(map_to_raw_cpt), gcptRestorerSizeLimit(gcpt_restorer_size_limit)
 {
     // Register cleanup callback if requested.
     if (auto_unlink_shared_backstore && !sharedBackstore.empty()) {
@@ -642,21 +642,23 @@ PhysicalMemory::overrideGCptRestorer(unsigned store_id)
         warn("Overriding Gcpt restorer\n");
         warn("gCptRestorerPath: %s\n", gCptRestorerPath.c_str());
 
-        uint32_t restorer_size = 0x700;
-        if (riscvVectorGCPTrestore) {
-            restorer_size = 0x1000;
-        }
+        uint32_t restorer_size;
 
         FILE *fp = fopen(gCptRestorerPath.c_str(), "rb");
         if (!fp) {
             panic("Can not open '%s'", gCptRestorerPath);
         }
         uint32_t file_len=0;
-        // fseek(fp, 0, SEEK_END);
-        // file_len = ftell(fp);
-        // if (file_len > restorer_size) {
-        //     panic("gcpt restore file size %u is larger than %u!!\n", file_len, restorer_size);
-        // }
+
+        fseek(fp, 0, SEEK_END);
+        file_len = ftell(fp);
+        if (file_len <= gcptRestorerSizeLimit) {
+            restorer_size = file_len;
+        } else {
+            warn("Gcpt restorer file size %u is larger than limit %u, is partially loaded\n", file_len,
+                 gcptRestorerSizeLimit);
+            restorer_size = gcptRestorerSizeLimit;
+        }
 
         fseek(fp, 0, SEEK_SET);
         file_len = fread(pmem, 1, restorer_size, fp);

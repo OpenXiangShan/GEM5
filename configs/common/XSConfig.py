@@ -45,6 +45,16 @@ def config_xiangshan_inputs(args: argparse.Namespace, sys):
     else:
         gcpt_restorer = args.gcpt_restorer
 
+    if args.num_cpus > 1:
+        print("Simulating a multi-core system, demanding a larger GCPT restorer size (2M).")
+        sys.gcpt_restorer_size_limit = 2**20
+    elif args.enable_riscv_vector:
+        print("Simulating a multi-core system, demanding a median GCPT restorer size (0x1000).")
+        sys.gcpt_restorer_size_limit = 0x1000
+    else:
+        print("Simulating a multi-core system, demanding a basic GCPT restorer size (0x700).")
+        sys.gcpt_restorer_size_limit = 0x700
+
     # configure gcpt input
     if args.generic_rv_cpt is not None:
         assert(buildEnv['TARGET_ISA'] == "riscv")
@@ -56,6 +66,7 @@ def config_xiangshan_inputs(args: argparse.Namespace, sys):
 
         if args.raw_cpt:
             assert not args.gcpt_restorer  # raw_cpt and gcpt_restorer are exclusive
+            print('Using raw bbl', gcpt_restorer)
             sys.map_to_raw_cpt = True
             sys.workload.raw_bootloader = True
         else:
