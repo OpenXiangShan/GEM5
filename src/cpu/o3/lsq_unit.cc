@@ -308,7 +308,9 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
       ADD_STAT(loadToUse, "Distribution of cycle latency between the "
                 "first time a load is issued and its completion"),
       ADD_STAT(loadTranslationLat, "Distribution of cycle latency between the "
-                "first time a load is issued and its translation completion")
+                "first time a load is issued and its translation completion"),
+      ADD_STAT(nonUnitStrideCross16Byte, "Number of vector non unitStride cross 16-byte boundary"),
+      ADD_STAT(UnitStrideCross16Byte, "Number of vector unitStride cross 16-byte boundary")
 {
     loadToUse
         .init(0, 299, 10)
@@ -1436,6 +1438,19 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
 
     DPRINTF(LSQUnit, "request: size: %u, Addr: %#lx\n",
             request->mainReq()->getSize(), request->mainReq()->getVaddr());
+
+    Addr addr = request->mainReq()->getVaddr();
+    Addr size = request->mainReq()->getSize();
+    bool cross16Byte = (addr % 16) + size > 16;
+    if (load_inst->isVector() && cross16Byte) {
+        if (load_inst->opClass() == enums::VectorUnitStrideLoad) {
+            stats.UnitStrideCross16Byte++;
+        }
+        else {
+            stats.nonUnitStrideCross16Byte++;
+        }
+    }
+
 
     if (!load_inst->isVector() && request->mainReq()->getSize() > 1 &&
         request->mainReq()->getVaddr() % request->mainReq()->getSize() != 0) {
