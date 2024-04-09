@@ -16,6 +16,7 @@ ArchDBer::ArchDBer(const Params &p)
     dumpL1MissTrace(p.dump_l1_miss_trace),
     dumpBopTrainTrace(p.dump_bop_train_trace),
     dumpSMSTrainTrace(p.dump_sms_train_trace),
+    dumpL1WayPreTrace(p.dump_l1d_way_pre_trace),
     mem_db(nullptr), zErrMsg(nullptr),rc(0),
     db_path(p.arch_db_file)
 {
@@ -158,6 +159,23 @@ void ArchDBer::L1MissTrace_write(
   if (rc != SQLITE_OK) {
     fatal("SQL error: %s\n", zErrMsg);
   };
+}
+
+void
+ArchDBer::dcacheWayPreTrace(Tick tick, uint64_t pc, uint64_t vaddr, int way, int is_write)
+{
+    bool dump_me = dumpGlobal && dumpL1WayPreTrace;
+    if (!dump_me)
+        return;
+    char sql[512];
+    sprintf(sql,
+            "INSERT INTO dcacheWayPreTrace(PC,VADDR, WAY, Tick, IsWrite,SITE)"
+            "VALUES(%ld,%ld,%ld,%ld,%ld,'%s');",
+            pc, vaddr, (uint64_t)way, tick, (uint64_t)is_write, "dacheWayPre");
+    rc = sqlite3_exec(mem_db, sql, callback, 0, &zErrMsg);
+    if (rc != SQLITE_OK) {
+        fatal("SQL error: %s\n", zErrMsg);
+    };
 }
 
 void

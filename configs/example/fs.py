@@ -164,6 +164,7 @@ def build_test_system(np):
         test_sys.arch_db.dump_l1_miss_trace = False
         test_sys.arch_db.dump_bop_train_trace = False
         test_sys.arch_db.dump_sms_train_trace = False
+        test_sys.arch_db.dump_l1d_way_pre_trace = True
         test_sys.arch_db.table_cmds = [
             "CREATE TABLE L1MissTrace(" \
             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
@@ -172,6 +173,15 @@ def build_test_system(np):
             "PADDR INT NOT NULL," \
             "VADDR INT NOT NULL," \
             "STAMP INT NOT NULL," \
+            "SITE TEXT);"
+            ,
+            "CREATE TABLE dcacheWayPreTrace(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "PC INT NOT NULL," \
+            "VADDR INT NOT NULL," \
+            "WAY INT NOT NULL," \
+            "Tick INT NOT NULL," \
+            "IsWrite INT NOT NULL," \
             "SITE TEXT);"
             ,
             "CREATE TABLE CacheEvictTrace(" \

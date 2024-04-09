@@ -604,6 +604,13 @@ BaseCache::recvTimingReq(PacketPtr pkt)
                 writePreWay(pkt, blk->getWay());
             }
         }
+        if (archDBer && pkt->req->hasPC() && (pkt->isRead() && (cacheLevel == 1)) && enableWayPrediction) {
+            Addr pc = pkt->req->getPC();
+            Addr vaddr = pkt->req->hasVaddr() ? pkt->req->getVaddr() : 0;
+            uint64_t curCycle = ticksToCycles(curTick());
+            DPRINTF(ArchDB, "ArchDB: insert dcacheWayPre [%x %x %d %x]\n", pc, vaddr, blk->getWay(), curCycle);
+            archDBer->dcacheWayPreTrace(curCycle, pc, vaddr, blk->getWay(), 0);
+        }
 
         handleTimingReqHit(pkt, blk, request_time, first_acc_after_pf);
         if (cacheLevel == 1 && pkt->isResponse() && pkt->isRead() && lat > 1) {
