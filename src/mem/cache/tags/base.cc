@@ -89,7 +89,11 @@ BaseTags::findBlock(Addr addr, bool is_secure) const
     // Search for block
     for (const auto& location : entries) {
         CacheBlk* blk = static_cast<CacheBlk*>(location);
+        int way = location->getWay();
         if (blk->matchTag(tag, is_secure)) {
+            if ((blk->getWay() != way) && (blk->getWay() != 10))
+                panic("way pre sign wrong\n");
+            blk->setHitWay(way);
             return blk;
         }
     }

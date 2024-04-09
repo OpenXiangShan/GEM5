@@ -67,6 +67,7 @@ class L1_ICache(L1Cache):
     sequential_access = False
 
     response_latency = 4
+    enable_wayprediction = False
 
 class L1_DCache(L1Cache):
     mshrs = 32
@@ -102,6 +103,7 @@ class L2Cache(Cache):
     response_latency = 15
 
     cache_level = 2
+    enable_wayprediction = False
 
 class L3Cache(Cache):
     mshrs = 128
@@ -123,6 +125,7 @@ class L3Cache(Cache):
     response_latency = 66
 
     cache_level = 3
+    enable_wayprediction = False
 
 class IOCache(Cache):
     assoc = 8
@@ -132,6 +135,7 @@ class IOCache(Cache):
     mshrs = 20
     size = '1kB'
     tgts_per_mshr = 12
+    enable_wayprediction = False
 
 class PageTableWalkerCache(Cache):
     assoc = 2
@@ -142,6 +146,7 @@ class PageTableWalkerCache(Cache):
     size = '1kB'
     tgts_per_mshr = 12
     writeback_clean = True
+    enable_wayprediction = False
 
     # the x86 table walker actually writes to the table-walker cache
     if buildEnv['TARGET_ISA'] in ['x86', 'riscv']:

@@ -116,6 +116,10 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
                                     name(), false,
                                     EventBase::Delayed_Writeback_Pri),
       blkSize(blk_size),
+      size(p.size),
+      assoc(p.assoc),
+      enableWayPrediction(p.enable_wayprediction),
+      wayPreTable(size/assoc/64),
       lookupLatency(p.tag_latency),
       dataLatency(p.data_latency),
       forwardLatency(p.tag_latency),
@@ -150,6 +154,11 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
     // whether the connected requestor is actually snooping or not
 
     tempBlock = new TempCacheBlk(blkSize);
+    for (int i =0;i<size/assoc/blkSize;i++){
+        for (int j=0;j<assoc;j++)
+            wayPreTable[i].push_back(10);
+    }
+    assert(!((size != 65536) && enableWayPrediction));
 
     tags->tagsInit();
     if (prefetcher)
@@ -583,6 +592,19 @@ BaseCache::recvTimingReq(PacketPtr pkt)
             invalidateBlock(blk);
         }
 
+        bool way_pre0_success = false;
+        if ((cacheLevel == 1) && (pkt->isRead()) && enableWayPrediction) {
+            int pre_way = getPreWay(pkt);
+            if ((pre_way == blk->getWay()) && (pre_way != 10)) {
+                stats.wayPreHitTimes++;
+                stats.wayPreTimes++;
+                way_pre0_success = true;
+            } else {
+                stats.wayPreTimes++;
+                writePreWay(pkt, blk->getWay());
+            }
+        }
+
         handleTimingReqHit(pkt, blk, request_time, first_acc_after_pf);
         if (cacheLevel == 1 && pkt->isResponse() && pkt->isRead() && lat > 1) {
             // send cache miss signal
@@ -625,6 +647,22 @@ BaseCache::recvTimingReq(PacketPtr pkt)
             schedMemSideSendEvent(next_pf_time);
         }
     }
+}
+int
+BaseCache::getPreWay(PacketPtr pkt){
+    //int setIdx = (pkt->getAddr() >>6) & 0x7f;
+    int setIdx = (pkt->getAddr() >> SETROFFSET) & SETMASK;
+    int tagIdx = (pkt->getAddr() >> TAGOFFSET) & TAGMASK;
+    return wayPreTable[setIdx][tagIdx];
+
+}
+void
+BaseCache::writePreWay(PacketPtr pkt ,int way){
+    //int setIdx = (pkt->getAddr() >>6) & 0x7f;
+    int setIdx = (pkt->getAddr() >> SETROFFSET) & SETMASK;
+    //int tagIdx = (pkt->getAddr() >>3) & 0x7;
+    int tagIdx = (pkt->getAddr() >> TAGOFFSET) & TAGMASK;
+    wayPreTable[setIdx][tagIdx] = way;
 }
 
 void
@@ -2531,6 +2569,10 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "average overall mshr uncacheable latency"),
     ADD_STAT(replacements, statistics::units::Count::get(),
              "number of replacements"),
+    ADD_STAT(wayPreHitTimes, statistics::units::Count::get(),
+             "number of wayPreHitTimes"),
+    ADD_STAT(wayPreTimes, statistics::units::Count::get(),
+             "number of wayPreTimes"),
     ADD_STAT(deadBlockReplacements, statistics::units::Count::get(),
              "number of dead block replacements"),
     ADD_STAT(liveBlockReplacements, statistics::units::Count::get(),

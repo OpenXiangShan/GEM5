@@ -258,6 +258,8 @@ class CacheBlk : public TaggedEntry
 
     bool wasEverPrefetched() const { return _ever_prefetched; }
 
+    int hitway() const { return _way; }
+
     /**
      * Clear the prefetching bit. Either because it was recently used, or due
      * to the block being invalidated.
@@ -267,6 +269,8 @@ class CacheBlk : public TaggedEntry
         _prefetched = false;
         _xsMeta.prefetchDepth = 0;
     }
+
+    void clearWay() { _way = 10; }
 
     void clearAllPrefetched()
     {
@@ -281,6 +285,7 @@ class CacheBlk : public TaggedEntry
         _prefetched = true;
         _ever_prefetched = true;
     }
+    void setHitWay(int hitway) { _way = hitway; }
 
     bool needInvalidate() const { return _needInvalidate; }
 
@@ -552,6 +557,8 @@ class CacheBlk : public TaggedEntry
 
     /** Whether there is a pending invalidate on this block. */
     bool _needInvalidate = 0;
+    /**if the blk hit which is the hit way ? */
+    int _way = 10;
 };
 
 /**

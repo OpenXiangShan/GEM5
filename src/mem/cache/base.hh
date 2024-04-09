@@ -554,6 +554,17 @@ class BaseCache : public ClockedObject
      */
     virtual void recvTimingReq(PacketPtr pkt);
 
+    /**way prediction **/
+    const int SETROFFSET = 6;
+    const int SETMASK = 0x7f;
+
+    const int TAGOFFSET = 3;
+    const int TAGMASK = 0x7;
+
+    int getPreWay(PacketPtr pkt);
+
+    void writePreWay(PacketPtr pkt, int way);
+
     /**
      * Handling the special case of uncacheable write responses to
      * make recvTimingResp less cluttered.
@@ -909,6 +920,10 @@ class BaseCache : public ClockedObject
 
     /** Block size of this cache */
     const unsigned blkSize;
+    const int size ;
+    const int assoc;
+    const bool enableWayPrediction;
+    std::vector<std::vector<int>> wayPreTable;
 
     /**
      * The latency of tag lookup of a cache. It occurs when there is
@@ -1162,6 +1177,12 @@ class BaseCache : public ClockedObject
 
         /** Number of replacements of valid blocks. */
         statistics::Scalar replacements;
+
+        /**Number of waypre hit times */
+        statistics::Scalar wayPreHitTimes;
+
+        /*number of waypre times*/
+        statistics::Scalar wayPreTimes;
 
         /** Number of replacements of dead blocks */
         statistics::Scalar deadBlockReplacements;
