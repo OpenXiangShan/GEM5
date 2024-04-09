@@ -111,7 +111,9 @@ static const OpClass FMAAccOp = enums::FMAAcc;
 
 // riscv vload/store
 static const OpClass VectorUnitStrideLoadOp = enums::VectorUnitStrideLoad;
+static const OpClass VectorSegmentLoadOp = enums::VectorSegmentLoad;
 static const OpClass VectorUnitStrideStoreOp = enums::VectorUnitStrideStore;
+static const OpClass VectorSegmentStoreOp = enums::VectorSegmentStore;
 static const OpClass VectorUnitStrideMaskLoadOp
              = enums::VectorUnitStrideMaskLoad;
 static const OpClass VectorUnitStrideMaskStoreOp
