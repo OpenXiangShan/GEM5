@@ -302,7 +302,7 @@ def addCommonOptions(parser, configure_xiangshan=False):
                         help="Clock for blocks running at CPU speed")
 
     parser.add_argument("-I", "--maxinsts", action="store", type=int,
-                        default=20*10**6, help="""Total number of instructions to
+                        default=40*10**6, help="""Total number of instructions to
                                             simulate (default: run forever)""")
 
     parser.add_argument("--enable-riscv-vector", action="store_true", default=False,
