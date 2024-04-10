@@ -275,7 +275,8 @@ IEW::IEWStats::IEWStats(CPU *cpu)
         {StallReason::BpStall, "BpStall"},
         {StallReason::IntStall, "IntStall"},
         {StallReason::TrapStall, "TrapStall"},
-        {StallReason::FragStall, "FragStall"},
+        {StallReason::FetchFragStall, "FetchFragStall"},
+        {StallReason::OtherFragStall, "OtherFragStall"},
         {StallReason::SquashStall, "SquashStall"},
         {StallReason::FetchBufferInvalid, "FetchBufferInvalid"},
         {StallReason::InstMisPred, "InstMisPred"},
@@ -1140,7 +1141,7 @@ IEW::classifyInstToDispQue(ThreadID tid)
                 } else if (breakDispatch != StallReason::NoStall) {
                     dispatchStalls.at(i) = breakDispatch;
                 } else if (i >= dispatched) {
-                    dispatchStalls.at(i) = StallReason::FragStall;
+                    dispatchStalls.at(i) = StallReason::OtherFragStall;
                 }
             }
         }

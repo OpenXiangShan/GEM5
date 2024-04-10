@@ -67,7 +67,8 @@ enum StallReason {
     BpStall,  // BS, bad speculation: Frontend is squashed
     IntStall,  // F
     TrapStall,  // F
-    FragStall,  // F
+    FetchFragStall,  // F
+    OtherFragStall,
     SquashStall,  // BS
     FetchBufferInvalid,  // Never used
     InstMisPred,  // BS
