@@ -151,7 +151,7 @@ def build_test_system(np):
             cpu.nemuSDCptBin = mmc.cpt_bin_path
             cpu.nemuSDimg = mmc.img_path
 
-    XSConfig.config_difftest(test_sys.cpu, args)
+    XSConfig.config_difftest(test_sys.cpu, args, test_sys)
 
     # configure vector
     if args.enable_riscv_vector:

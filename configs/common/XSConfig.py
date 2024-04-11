@@ -83,11 +83,18 @@ def config_xiangshan_inputs(args: argparse.Namespace, sys):
     return gcpt_restorer, ref_so
 
 
-def config_difftest(cpu_list, args):
+def config_difftest(cpu_list, args, sys):
     if not args.enable_difftest:
         return
     else:
-        assert len(cpu_list) == 1
-        cpu_list[0].enable_difftest = True
-        cpu_list[0].enable_mem_dedup = True
-        cpu_list[0].difftest_ref_so = args.difftest_ref_so
+        if len(cpu_list) > 1:
+            sys.enable_mem_dedup = True
+            for cpu in cpu_list:
+                cpu.enable_mem_dedup = True
+                cpu.enable_difftest = True
+                cpu.difftest_ref_so = args.difftest_ref_so
+        else:
+            # sys.enable_mem_dedup = True
+            # cpu_list[0].enable_mem_dedup = True
+            cpu_list[0].enable_difftest = True
+            cpu_list[0].difftest_ref_so = args.difftest_ref_so

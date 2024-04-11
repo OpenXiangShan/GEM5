@@ -185,12 +185,13 @@ System::System(const Params &p)
       physmem(name() + ".physmem", p.memories, p.mmap_using_noreserve,
               p.shared_backstore, p.restore_from_gcpt, p.gcpt_restorer_file,
               p.gcpt_file, p.map_to_raw_cpt, p.auto_unlink_shared_backstore, p.gcpt_restorer_size_limit,
-              &dedupMemManager),
+              &dedupMemManager, p.enable_mem_dedup),
       ShadowRomRanges(p.shadow_rom_ranges.begin(),
                       p.shadow_rom_ranges.end()),
       memoryMode(p.mem_mode),
       _cacheLineSize(p.cache_line_size),
       numWorkIds(p.num_work_ids),
+      enableMemDedup(p.enable_mem_dedup),
       thermalModel(p.thermal_model),
       _m5opRange(p.m5ops_base ?
                  RangeSize(p.m5ops_base, 0x10000) :

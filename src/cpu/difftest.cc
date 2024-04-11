@@ -39,7 +39,7 @@ const std::vector<uint64_t> skipCSRs = {
   0xb0000073
 };
 
-NemuProxy::NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff)
+NemuProxy::NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff, bool enable_mem_dedup)
 {
     void *handle = dlmopen(LM_ID_NEWLM, ref_so, RTLD_LAZY | RTLD_DEEPBIND);
     printf("Using %s for difftest\n", ref_so);
@@ -48,8 +48,11 @@ NemuProxy::NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff)
         assert(0);
     }
 
-    this->ref_get_backed_memory = (void (*)(void *backed_mem, size_t n))dlsym(handle, "difftest_get_backed_memory");
-    assert(this->ref_get_backed_memory);
+    if (enable_mem_dedup) {
+        this->ref_get_backed_memory =
+            (void (*)(void *backed_mem, size_t n))dlsym(handle, "difftest_get_backed_memory");
+        assert(this->ref_get_backed_memory);
+    }
 
     this->memcpy = (void (*)(paddr_t, void *, size_t, bool))dlsym(
         handle, "difftest_memcpy");

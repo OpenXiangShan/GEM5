@@ -93,14 +93,15 @@ PhysicalMemory::PhysicalMemory(const std::string& _name,
                                bool map_to_raw_cpt,
                                bool auto_unlink_shared_backstore,
                                unsigned gcpt_restorer_size_limit,
-                               mem_util::DedupMemory *dedup_mem_manager) :
+                               mem_util::DedupMemory *dedup_mem_manager,
+                               bool enable_mem_dedup) :
     _name(_name), size(0), mmapUsingNoReserve(mmap_using_noreserve),
     sharedBackstore(shared_backstore), sharedBackstoreSize(0),
     pageSize(sysconf(_SC_PAGE_SIZE)),
     restoreFromXiangshanCpt(restore_from_gcpt),
     gCptRestorerPath(gcpt_restorer_path),
     xsCptPath(gcpt_path), mapToRawCpt(map_to_raw_cpt), gcptRestorerSizeLimit(gcpt_restorer_size_limit),
-    enableDedup(true),
+    enableDedup(enable_mem_dedup),
     dedupMemManager(dedup_mem_manager)
 {
     // Register cleanup callback if requested.
@@ -622,6 +623,7 @@ PhysicalMemory::unserializeStoreFrom(std::string filepath,
         dedupMemManager->syncRootUpdates();
         backingStore[store_id].pmem = dedupMemManager->createCopyOnWriteBranch();
 
+        warn("Has created a copy-on-write branch for the restored memory\n");
         for (const auto& m : memories) {
             DPRINTF(AddrRanges, "Remapping memory %s to backing store %#lx\n",
                     m->name(), (uint64_t)backingStore[store_id].pmem);
@@ -784,6 +786,7 @@ PhysicalMemory::unserializeFromZstd(std::string filepath, unsigned store_id, lon
     // decompress and write in memory
     uint64_t* pmem_current;
     uint64_t total_write_size = 0;
+    uint64_t non_zero_dword = 0;
     while (total_write_size < range.size()) {
         ZSTD_outBuffer output = {decompress_file_buffer, decompress_file_buffer_size * sizeof(long), 0};
         size_t result = ZSTD_decompressStream(dstream, &output, &input);
@@ -803,10 +806,12 @@ PhysicalMemory::unserializeFromZstd(std::string filepath, unsigned store_id, lon
             uint64_t read_data = *(decompress_file_buffer + x / sizeof(long));
             if (read_data != 0 || *pmem_current != 0) {
                 *pmem_current = read_data;
+                non_zero_dword++;
             }
         }
         total_write_size += output.pos;
     }
+    warn("Total write non-zero bytes: %lu\n", non_zero_dword * 8);
 
     ZSTD_outBuffer output = {decompress_file_buffer, decompress_file_buffer_size * sizeof(long), 0};
     size_t result = ZSTD_decompressStream(dstream, &output, &input);

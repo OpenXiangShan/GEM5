@@ -224,7 +224,8 @@ class PhysicalMemory : public Serializable
                    bool map_to_raw_cpt,
                    bool auto_unlink_shared_backstore,
                    unsigned gcpt_restorer_size_limit,
-                   mem_util::DedupMemory *dedup_mem_manager);
+                   mem_util::DedupMemory *dedup_mem_manager,
+                   bool enable_mem_dedup);
 
     /**
      * Unmap all the backing store we have used.

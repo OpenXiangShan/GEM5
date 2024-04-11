@@ -331,8 +331,6 @@ class System : public SimObject, public PCEventScope
     /** OS kernel */
     Workload *workload = nullptr;
 
-    mem_util::DedupMemory dedupMemManager;
-
   public:
     /**
      * Get a pointer to the Kernel Virtual Machine (KVM) SimObject,
@@ -405,6 +403,8 @@ class System : public SimObject, public PCEventScope
      */
     ThermalModel * getThermalModel() const { return thermalModel; }
 
+    bool enabledMemDedup() const { return enableMemDedup; }
+
   protected:
 
     KvmVM *kvmVM = nullptr;
@@ -427,6 +427,10 @@ class System : public SimObject, public PCEventScope
      * like cache statistics.
      */
     std::vector<RequestorInfo> requestors;
+
+    mem_util::DedupMemory dedupMemManager;
+
+    bool enableMemDedup = false;
 
     ThermalModel * thermalModel;
 

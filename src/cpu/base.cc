@@ -217,7 +217,7 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
         else {
             diffAllStates->proxy = new NemuProxy(
                 params().cpu_id, params().difftest_ref_so.c_str(),
-                params().nemuSDimg.size() && params().nemuSDCptBin.size());
+                params().nemuSDimg.size() && params().nemuSDCptBin.size(), system->enabledMemDedup());
         }
 
         warn("Difftest is enabled with ref so: %s.\n",
