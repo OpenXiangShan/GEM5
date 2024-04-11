@@ -55,6 +55,7 @@
 #include "cpu/pc_event.hh"
 #include "enums/MemoryMode.hh"
 #include "mem/mem_requestor.hh"
+#include "mem/mem_util.hh"
 #include "mem/physical.hh"
 #include "mem/port.hh"
 #include "mem/port_proxy.hh"
@@ -330,6 +331,8 @@ class System : public SimObject, public PCEventScope
     /** OS kernel */
     Workload *workload = nullptr;
 
+    mem_util::DedupMemory dedupMemManager;
+
   public:
     /**
      * Get a pointer to the Kernel Virtual Machine (KVM) SimObject,
@@ -358,6 +361,8 @@ class System : public SimObject, public PCEventScope
      * @return Whether the address corresponds to a memory
      */
     bool isMemAddr(Addr addr) const;
+
+    uint8_t *createCopyOnWriteBranch() { return dedupMemManager.createCopyOnWriteBranch(); }
 
     /**
      * Add a physical memory range for a device. The ranges added here will

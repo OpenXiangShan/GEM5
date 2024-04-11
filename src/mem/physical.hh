@@ -44,6 +44,7 @@
 
 #include "base/addr_range.hh"
 #include "base/addr_range_map.hh"
+#include "mem/mem_util.hh"
 #include "mem/packet.hh"
 #include "sim/serialize.hh"
 
@@ -71,10 +72,10 @@ class BackingStoreEntry
      */
     BackingStoreEntry(AddrRange range, uint8_t* pmem,
                       bool conf_table_reported, bool in_addr_map, bool kvm_map,
-                      int shm_fd=-1, off_t shm_offset=0)
+                      int shm_fd=-1, off_t shm_offset=0, bool managed_by_dedup=false)
         : range(range), pmem(pmem), confTableReported(conf_table_reported),
           inAddrMap(in_addr_map), kvmMap(kvm_map), shmFd(shm_fd),
-          shmOffset(shm_offset)
+          shmOffset(shm_offset), isDedupManaged(managed_by_dedup)
         {}
 
     /**
@@ -115,6 +116,11 @@ class BackingStoreEntry
       * of this backing store in the share memory. Otherwise, the value is 0.
       */
      off_t shmOffset;
+
+     /**
+      * If this backing store is managed by dedup manager
+      */
+     bool isDedupManaged;
 };
 
 /**
@@ -179,6 +185,10 @@ class PhysicalMemory : public Serializable
 
     unsigned gcptRestorerSizeLimit{false};
 
+    bool enableDedup;
+
+    mem_util::DedupMemory *dedupMemManager;
+
     /**
      * Create the memory region providing the backing store for a
      * given address range that corresponds to a set of memories in
@@ -213,7 +223,8 @@ class PhysicalMemory : public Serializable
                    const std::string&gcpt_path,
                    bool map_to_raw_cpt,
                    bool auto_unlink_shared_backstore,
-                   unsigned gcpt_restorer_size_limit);
+                   unsigned gcpt_restorer_size_limit,
+                   mem_util::DedupMemory *dedup_mem_manager);
 
     /**
      * Unmap all the backing store we have used.

@@ -159,7 +159,9 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
       enableDifftest(p.enable_difftest),
       dumpCommitFlag(p.dump_commit),
       dumpStartNum(p.dump_start),
-      enableRVV(p.enable_riscv_vector)
+      enableRVV(p.enable_riscv_vector),
+      noHypeMode(false),
+      enableMemDedup(p.enable_mem_dedup)
 {
     // if Python did not provide a valid ID, do it here
     if (_cpuId == -1 ) {
@@ -1194,12 +1196,19 @@ BaseCPU::difftestStep(ThreadID tid, InstSeqNum seq)
             diffAllStates->hasCommit = true;
             readGem5Regs();
             diffAllStates->gem5RegFile.pc = diffInfo.pc->instAddr();
-            fprintf(stderr, "Will start memcpy to NEMU from %#lx, size=%lu\n",
-                    (uint64_t)pmemStart, pmemSize);
-            diffAllStates->proxy->memcpy(
-                0x80000000u, pmemStart + pmemSize * diffAllStates->diff.cpu_id,
-                pmemSize, DUT_TO_REF);
-            fprintf(stderr, "Will start regcpy to NEMU\n");
+            if (noHypeMode) {
+                auto start = pmemStart + pmemSize * diffAllStates->diff.cpu_id;
+                warn("Start memcpy to NEMU from %#lx, size=%lu \n", (uint64_t)start, pmemSize);
+                diffAllStates->proxy->memcpy(0x80000000u, start, pmemSize, DUT_TO_REF);
+            } else if (enableMemDedup) {
+                warn("Let ref share a COW mirror of root memory\n");
+                assert(diffAllStates->proxy->ref_get_backed_memory);
+                diffAllStates->proxy->ref_get_backed_memory(system->createCopyOnWriteBranch(), pmemSize);
+            } else {
+                warn("Start memcpy to NEMU from %#lx, size=%lu\n", (uint64_t)pmemStart, pmemSize);
+                diffAllStates->proxy->memcpy(0x80000000u, pmemStart, pmemSize, DUT_TO_REF);
+            }
+            warn("Start regcpy to NEMU\n");
             diffAllStates->proxy->regcpy(&(diffAllStates->gem5RegFile), DUT_TO_REF);
         }
 

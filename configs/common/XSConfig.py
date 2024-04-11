@@ -89,4 +89,5 @@ def config_difftest(cpu_list, args):
     else:
         assert len(cpu_list) == 1
         cpu_list[0].enable_difftest = True
+        cpu_list[0].enable_mem_dedup = True
         cpu_list[0].difftest_ref_so = args.difftest_ref_so

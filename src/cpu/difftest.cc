@@ -48,6 +48,9 @@ NemuProxy::NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff)
         assert(0);
     }
 
+    this->ref_get_backed_memory = (void (*)(void *backed_mem, size_t n))dlsym(handle, "difftest_get_backed_memory");
+    assert(this->ref_get_backed_memory);
+
     this->memcpy = (void (*)(paddr_t, void *, size_t, bool))dlsym(
         handle, "difftest_memcpy");
     assert(this->memcpy);
