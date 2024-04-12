@@ -201,6 +201,33 @@ namespace RiscvISA
     [MISCREG_VTYPE]         = "VTYPE",
     [MISCREG_VLENB]         = "VLENB",
 
+    [MISCREG_HSTATUS]       = "HSTATUS",
+    [MISCREG_HEDELEG]       = "HEDELEG",
+    [MISCREG_HIDELEG]       = "HIDELEG",
+    [MISCREG_HIE]           = "HIE",
+    [MISCREG_HCOUNTEREN]    = "HCOUNTEREN",
+    [MISCREG_HGEIE]         = "HGEIE",
+    [MISCREG_HTVAL]         = "HTVAL",
+    [MISCREG_HIP]           = "HIP",
+    [MISCREG_HVIP]          = "HVIP",
+    [MISCREG_HTINST]        = "HTINST",
+    [MISCREG_HGEIP]         = "HGEIP",
+    [MISCREG_HENVCFG]       = "HENVCFG",
+    [MISCREG_HGATP]         = "HGATP",
+    [MISCREG_HTIMEDELTA]    = "HTIMEDELTA",
+    [MISCREG_VSSTATUS]      = "VSSTATUS",
+    [MISCREG_VSIE]          = "VSIE",
+    [MISCREG_VSTVEC]        = "VSTVEC",
+    [MISCREG_VSSCRATCH]     = "VSSCRATCH",
+    [MISCREG_VSEPC]         = "VSEPC",
+    [MISCREG_VSCAUSE]       = "VSCAUSE",
+    [MISCREG_VSTVAL]        = "VSTVAL",
+    [MISCREG_VSIP]          = "VSIP",
+    [MISCREG_VSATP]         = "VSATP",
+    [MISCREG_MTINST]        = "MTINST",
+    [MISCREG_MTVAL2]        = "MTVAL2",
+
+
     [MISCREG_NMIVEC]        = "NMIVEC",
     [MISCREG_NMIE]          = "NMIE",
     [MISCREG_NMIP]          = "NMIP",
@@ -257,7 +284,8 @@ void ISA::clear()
     std::fill(miscRegFile.begin(), miscRegFile.end(), 0);
 
     miscRegFile[MISCREG_PRV] = PRV_M;
-    miscRegFile[MISCREG_ISA] = (2ULL << MXL_OFFSET) | 0x34112D;
+    //miscRegFile[MISCREG_ISA] = (2ULL << MXL_OFFSET) | 0x34112D;
+    miscRegFile[MISCREG_ISA] = (2ULL << MXL_OFFSET) | 0x1411ad;
     miscRegFile[MISCREG_VENDORID] = 0;
     miscRegFile[MISCREG_ARCHID] = 0;
     miscRegFile[MISCREG_IMPID] = 0;
