@@ -211,7 +211,19 @@ PMP::pmpUpdateRule(uint32_t pmp_index)
       }
     }
 }
-
+uint64_t
+PMP::pmpcfg_from_index(uint32_t pmp_index){
+    int xlen =64;
+    assert(pmp_index <16);
+    int cfgPerCSR = xlen / 8;
+    int cfg_csr_addr;
+    switch (pmp_index / cfgPerCSR) {
+    case 0: cfg_csr_addr = 0x3a0; break;
+    case 1: cfg_csr_addr = 0x3a2; break;
+    default: assert(0);
+   }
+   return cfg_csr_addr + (pmp_index % cfgPerCSR);
+}
 void
 PMP::pmpUpdateAddr(uint32_t pmp_index, Addr this_addr)
 {

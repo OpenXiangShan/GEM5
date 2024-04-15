@@ -334,7 +334,10 @@ ISA::hpmCounterEnabled(int misc_reg) const
 RegVal
 ISA::readMiscRegNoEffect(int misc_reg) const
 {
-    if (misc_reg > NUM_MISCREGS || misc_reg < 0) {
+    if ((misc_reg >= RiscvISA::MiscRegIndex::MISCREG_PMPADDR00) &&
+        (misc_reg < RiscvISA::MiscRegIndex::MISCREG_PMPADDR00 + 16)) {
+        return miscRegFile[misc_reg] & (-(1 << (12 - 2)));
+    } else if (misc_reg > NUM_MISCREGS || misc_reg < 0) {
         // Illegal CSR
         panic("Illegal CSR index %#x\n", misc_reg);
         return -1;
@@ -499,9 +502,13 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 auto mmu = dynamic_cast<RiscvISA::MMU *>
                               (tc->getMMUPtr());
                 uint32_t pmp_index = misc_reg-MISCREG_PMPADDR00;
+                RegVal write_val = val & (((uint64_t)1 << (36 - 2)) - 1);
+                uint64_t csr_num = mmu->getPMP()->pmpcfg_from_index(pmp_index);
+                uint64_t cfg = miscRegFile[csr_num];
+
                 mmu->getPMP()->pmpUpdateAddr(pmp_index, val);
 
-                setMiscRegNoEffect(misc_reg, val);
+                setMiscRegNoEffect(misc_reg, write_val);
             }
             break;
 

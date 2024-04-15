@@ -81,7 +81,10 @@ enum CsrRegIndex
   mip, mie,
   mscratch, sscratch,
   mideleg, medeleg,
-  pc
+  pc ,v,
+  mtval2, mtinst, hstatus, hideleg, hedeleg,
+  hcounteren, htval, htinst, hgatp, vsstatus,
+  vstvec, vsepc, vscause, vstval, vsatp, vsscratch
 };
 
 struct AddressMonitor

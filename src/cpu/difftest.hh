@@ -62,6 +62,12 @@ struct riscv64_CPU_regfile
     uint64_t mideleg, medeleg;
     uint64_t pc;
 
+    //hypervisor
+    uint64_t v; // virtualization mode
+    uint64_t mtval2, mtinst, hstatus, hideleg, hedeleg;
+    uint64_t hcounteren, htval, htinst, hgatp, vsstatus;
+    uint64_t vstvec, vsepc, vscause, vstval, vsatp, vsscratch;
+
     //vector
     union
     {
