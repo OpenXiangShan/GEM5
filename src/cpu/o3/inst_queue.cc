@@ -424,6 +424,12 @@ InstructionQueue::takeOverFrom()
 }
 
 bool
+InstructionQueue::isReady(DynInstPtr& inst)
+{
+    return scheduler->ready(inst);
+}
+
+bool
 InstructionQueue::isFull(DynInstPtr& inst)
 {
     return scheduler->full(inst);

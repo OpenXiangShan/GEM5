@@ -1012,6 +1012,13 @@ IEW::dispatch(ThreadID tid)
 void
 IEW::dispatchInsts(ThreadID tid)
 {
+    dispatchInstFromDispQue(tid);
+    classifyInstToDispQue(tid);
+}
+
+void
+IEW::classifyInstToDispQue(ThreadID tid)
+{
     auto dispClassify = [](const DynInstPtr& inst) -> int{
         if (inst->isMemRef() || inst->isReadBarrier() || inst->isWriteBarrier() || inst->isNonSpeculative()) {
             return MemDQ;
@@ -1147,12 +1154,16 @@ IEW::dispatchInsts(ThreadID tid)
         dispatchStatus[tid] = Running;
         updatedQueues = true;
     }
+}
 
+void
+IEW::dispatchInstFromDispQue(ThreadID tid)
+{
     DynInstPtr inst;
     bool add_to_iq = false;
     int dis_num_inst = 0;
 
-    for (int i=0; i<=MemDQ; i++) {
+    for (int i=0; i<NumDQ; i++) {
         while (!dispQue[i].empty()) {
             inst = dispQue[i].front();
 
@@ -1165,9 +1176,9 @@ IEW::dispatchInsts(ThreadID tid)
                 continue;
             }
 
-            // Check for full conditions.
-            if (instQueue.isFull(inst)) {
-                DPRINTF(IEW, "[tid:%i] Dispatch: IQ has become full.\n", tid);
+            // Check for ready conditions.(ready: !full && !bwFull )
+            if (!instQueue.isReady(inst)) {
+                DPRINTF(IEW, "[tid:%i] Dispatch: IQ is full or bwFull.\n", tid);
 
                 iewStats.stallEvents[IQFull]++;
                 ++iewStats.iqFullEvents;
@@ -1946,7 +1957,7 @@ IEW::checkLSQStall(ThreadID tid, bool isLoad)
 void
 IEW::setRob(ROB *rob)
 {
-    this->rob = rob; 
+    this->rob = rob;
 }
 
 } // namespace o3

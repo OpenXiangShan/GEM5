@@ -126,6 +126,7 @@ class IssueQue : public SimObject
 
     void tick();
     bool full();
+    bool ready();
     void insert(const DynInstPtr& inst);
     void insertNonSpec(const DynInstPtr& inst);
 
@@ -216,6 +217,7 @@ class Scheduler : public SimObject
     void tick();
     void issueAndSelect();
     bool full(const DynInstPtr& inst);
+    bool ready(const DynInstPtr& inst);
 
     void addProducer(const DynInstPtr& inst);
     // return true if insert successful

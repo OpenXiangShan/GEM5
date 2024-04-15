@@ -281,25 +281,31 @@ IssueQue::tick()
 }
 
 bool
+IssueQue::ready()
+{
+    bool bwFull = instNumInsert >= inoutPorts;
+    if (bwFull) {
+        iqstats->bwfull++;
+        DPRINTF(Schedule, "can't insert more due to inports exhausted\n");
+    }
+    return !full() && !bwFull;
+}
+
+bool
 IssueQue::full()
 {
     bool full = instNumInsert + instNum >= iqsize;
-    bool dispBottleneck = instNumInsert >= inoutPorts;
     if (full) {
         iqstats->full++;
         DPRINTF(Schedule, "has full!\n");
     }
-    if (dispBottleneck) {
-        iqstats->bwfull++;
-        DPRINTF(Schedule, "can't insert more due to inports exhausted\n");
-    }
-    return full || dispBottleneck;
+    return full;
 }
 
 void
 IssueQue::insert(const DynInstPtr& inst)
 {
-    assert(!full());
+    assert(ready());
     DPRINTF(Schedule, "[sn %lu] %s insert into %s\n",
         inst->seqNum, enums::OpClassStrings[inst->opClass()] ,iqname);
     instNumInsert++;
@@ -539,6 +545,19 @@ Scheduler::issueAndSelect(){
 }
 
 bool
+Scheduler::ready(const DynInstPtr& inst)
+{
+    auto iqs = dispTable[inst->opClass()];
+    for (auto iq : iqs) {
+        if (iq->ready()) {
+            return true;
+        }
+    }
+    DPRINTF(Dispatch, "IQ not ready, opclass: %s\n", enums::OpClassStrings[inst->opClass()]);
+    return false;
+}
+
+bool
 Scheduler::full(const DynInstPtr& inst)
 {
     auto iqs = dispTable[inst->opClass()];
@@ -576,7 +595,7 @@ Scheduler::insert(const DynInstPtr& inst)
 
     if (forwardDisp) {
         for (auto iq : iqs) {
-            if (!iq->full()) {
+            if (iq->ready()) {
                 iq->insert(inst);
                 inserted = true;
                 break;
@@ -584,7 +603,7 @@ Scheduler::insert(const DynInstPtr& inst)
         }
     } else {
         for (auto iq = iqs.rbegin(); iq != iqs.rend(); iq++) {
-            if (!(*iq)->full()) {
+            if ((*iq)->ready()) {
                 (*iq)->insert(inst);
                 inserted = true;
                 break;
@@ -603,7 +622,7 @@ Scheduler::insertNonSpec(const DynInstPtr& inst)
     auto iqs = dispTable[inst->opClass()];
     assert(!iqs.empty());
     for (auto iq : iqs) {
-        if (!iq->full()) {
+        if (iq->ready()) {
             iq->insertNonSpec(inst);
             break;
         }

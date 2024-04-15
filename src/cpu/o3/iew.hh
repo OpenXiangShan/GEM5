@@ -127,7 +127,8 @@ class IEW
     {
         IntDQ,
         FVDQ,
-        MemDQ
+        MemDQ,
+        NumDQ
     };
 
   private:
@@ -290,6 +291,12 @@ class IEW
 
     /** Dispatches instructions to IQ and LSQ. */
     void dispatchInsts(ThreadID tid);
+    /** dispatchQueue is the buffer between rename and iq
+     *  first, dispatch the inst from DispatchQueue to IQ
+     *  second, receive new inst from rename, store it to DQ
+     */
+    void dispatchInstFromDispQue(ThreadID tid);
+    void classifyInstToDispQue(ThreadID tid);
 
     /** Executes instructions. In the case of memory operations, it informs the
      * LSQ to execute the instructions. Also handles any redirects that occur
@@ -551,7 +558,7 @@ class IEW
   public:
 
     void setRob(ROB *rob);
-  
+
 };
 
 } // namespace o3

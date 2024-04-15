@@ -173,6 +173,9 @@ class InstructionQueue
     /** Returns whether or not the IQ is full for a specific thread. */
     bool isFull(DynInstPtr& inst);
 
+    /** Returns whether or not the IQ is ok to accept the inst for a specific thread. */
+    bool isReady(DynInstPtr& inst);
+
     /** Returns if there are any ready instructions in the IQ. */
     bool hasReadyInsts();
 
