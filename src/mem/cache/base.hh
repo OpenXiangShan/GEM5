@@ -568,20 +568,16 @@ class BaseCache : public ClockedObject
 
     int indexWayPre(Addr addr,int hit_way);
 
-    class waypreEntry :public TaggedEntry
+    class waypreEntry : public TaggedEntry
     {
-        public:
-         Addr index;
-         Addr way;
-         waypreEntry()
-                :TaggedEntry(),
-                index(0),
-                way(0)
-                {
-
-                }
-         void _setSecure(bool is_secure) {
-            if (is_secure) TaggedEntry::setSecure();
+      public:
+        Addr index;
+        Addr way;
+        waypreEntry() : TaggedEntry(), index(0), way(0) {}
+        void _setSecure(bool is_secure)
+        {
+            if (is_secure)
+                TaggedEntry::setSecure();
         }
     };
     AssociativeSet<waypreEntry> indexWayPreTable;
@@ -944,6 +940,7 @@ class BaseCache : public ClockedObject
     const int size ;
     const int assoc;
     const bool enableWayPrediction;
+    const int DEFAULTWAYPRESIZE = 65536;
     std::vector<std::vector<int>> wayPreTable;
 
     /**

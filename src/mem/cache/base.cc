@@ -49,6 +49,7 @@
 #include "base/logging.hh"
 #include "base/output.hh"
 #include "base/trace.hh"
+#include "base/types.hh"
 #include "debug/ArchDB.hh"
 #include "debug/Cache.hh"
 #include "debug/CacheComp.hh"
@@ -157,13 +158,13 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
     // whether the connected requestor is actually snooping or not
 
     tempBlock = new TempCacheBlk(blkSize);
-    for (int i =0;i<size/assoc/blkSize;i++){
-        for (int j=0;j<assoc;j++)
-            wayPreTable[i].push_back(10);
-    }
-    assert(!((size != 65536) && enableWayPrediction));
-
     tags->tagsInit();
+    for (int i = 0; i < size / assoc / blkSize; i++) {
+        for (int j = 0; j < assoc; j++)
+            wayPreTable[i].push_back(DEFAULTWAYPRE);
+    }
+    assert(!((size != DEFAULTWAYPRESIZE) && enableWayPrediction));
+
     if (prefetcher)
         prefetcher->setCache(this);
 
@@ -689,7 +690,7 @@ BaseCache::indexWayPre(Addr addr, int hit_way)
 {
     int index = (addr >> SETROFFSET) & SETMASK;
     waypreEntry *entry = indexWayPreTable.findEntry(index, true);
-    int pref_way = 10;
+    int pref_way = DEFAULTWAYPRE;
     if (entry) {
         indexWayPreTable.accessEntry(entry);
         pref_way = entry->way;
@@ -703,7 +704,7 @@ BaseCache::indexWayPre(Addr addr, int hit_way)
         entry->way = hit_way;
         indexWayPreTable.insertEntry(index, false, entry);
     }
-    return 10;
+    return DEFAULTWAYPRE;
 }
 
 void

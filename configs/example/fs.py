@@ -164,7 +164,7 @@ def build_test_system(np):
         test_sys.arch_db.dump_l1_miss_trace = False
         test_sys.arch_db.dump_bop_train_trace = False
         test_sys.arch_db.dump_sms_train_trace = False
-        test_sys.arch_db.dump_l1d_way_pre_trace = True
+        test_sys.arch_db.dump_l1d_way_pre_trace = False
         test_sys.arch_db.table_cmds = [
             "CREATE TABLE L1MissTrace(" \
             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \

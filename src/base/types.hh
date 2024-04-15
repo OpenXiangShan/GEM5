@@ -169,6 +169,7 @@ isRomMicroPC(MicroPC upc)
 }
 
 const Addr MaxAddr = (Addr)-1;
+const int DEFAULTWAYPRE = 10;
 
 using RegVal = uint64_t;
 

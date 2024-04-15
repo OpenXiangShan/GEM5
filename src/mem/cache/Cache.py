@@ -171,7 +171,6 @@ class BaseCache(ClockedObject):
             size=Parent.way_entries),
         "Indexing policy of active generation table"
     )
-
     way_replacement_policy = Param.BaseReplacementPolicy(
         LRURP(),
         "Replacement policy of active generation table"

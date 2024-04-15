@@ -270,7 +270,6 @@ class CacheBlk : public TaggedEntry
         _xsMeta.prefetchDepth = 0;
     }
 
-    void clearWay() { _way = 10; }
 
     void clearAllPrefetched()
     {
@@ -558,7 +557,7 @@ class CacheBlk : public TaggedEntry
     /** Whether there is a pending invalidate on this block. */
     bool _needInvalidate = 0;
     /**if the blk hit which is the hit way ? */
-    int _way = 10;
+    int _way = DEFAULTWAYPRE;
 };
 
 /**

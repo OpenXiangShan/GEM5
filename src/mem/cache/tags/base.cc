@@ -91,8 +91,8 @@ BaseTags::findBlock(Addr addr, bool is_secure) const
         CacheBlk* blk = static_cast<CacheBlk*>(location);
         int way = location->getWay();
         if (blk->matchTag(tag, is_secure)) {
-            if ((blk->getWay() != way) && (blk->getWay() != 10))
-                panic("way pre sign wrong\n");
+            if ((blk->getWay() != way) && (blk->getWay() != DEFAULTWAYPRE))
+                panic("Unexpected way %d\n", blk->getWay());
             blk->setHitWay(way);
             return blk;
         }
