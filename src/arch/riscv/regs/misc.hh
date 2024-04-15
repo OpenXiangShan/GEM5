@@ -657,6 +657,11 @@ const std::map<int, CSRMetadata> CSRData = {
  */
 BitUnion64(STATUS)
     Bitfield<63> sd;
+    Bitfield<62,40> wpri;
+    Bitfield<39> mpv;
+    Bitfield<38> gva;
+    Bitfield<37> mbe;
+    Bitfield<36> sbe;
     Bitfield<35, 34> sxl;
     Bitfield<33, 32> uxl;
     Bitfield<22> tsr;
