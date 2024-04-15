@@ -85,6 +85,8 @@ class PMP : public SimObject
     /** pmpcfg address range execute permission mask */
     const uint8_t PMP_EXEC = 1 << 2;
 
+    const uint8_t PMP_A = 0x18;
+
     /** pmpcfg address range locked mask */
     const uint8_t PMP_LOCK = 1 << 7;
 
@@ -129,6 +131,8 @@ class PMP : public SimObject
      * @param this_cfg value to be written to pmpcfg.
      */
     void pmpUpdateCfg(uint32_t pmp_index, uint8_t this_cfg);
+
+    uint64_t pmpcfg_from_index(uint32_t pmp_inde);
 
     /**
      * pmpUpdateAddr updates the pmpaddr for a pmp
