@@ -80,6 +80,35 @@ namespace RiscvISA
     [MISCREG_CYCLE]         = "CYCLE",
     [MISCREG_TIME]          = "TIME",
     [MISCREG_INSTRET]       = "INSTRET",
+    [MISCREG_MHPMCOUNTER3]  = "MHPMCOUNTER3",
+    [MISCREG_MHPMCOUNTER4]  = "MHPMCOUNTER4",
+    [MISCREG_MHPMCOUNTER5]  = "MHPMCOUNTER5",
+    [MISCREG_MHPMCOUNTER6]  = "MHPMCOUNTER6",
+    [MISCREG_MHPMCOUNTER7]  = "MHPMCOUNTER7",
+    [MISCREG_MHPMCOUNTER8]  = "MHPMCOUNTER8",
+    [MISCREG_MHPMCOUNTER9]  = "MHPMCOUNTER9",
+    [MISCREG_MHPMCOUNTER10]  = "MHPMCOUNTER10",
+    [MISCREG_MHPMCOUNTER11]  = "MHPMCOUNTER11",
+    [MISCREG_MHPMCOUNTER12]  = "MHPMCOUNTER12",
+    [MISCREG_MHPMCOUNTER13]  = "MHPMCOUNTER13",
+    [MISCREG_MHPMCOUNTER14]  = "MHPMCOUNTER14",
+    [MISCREG_MHPMCOUNTER15]  = "MHPMCOUNTER15",
+    [MISCREG_MHPMCOUNTER16]  = "MHPMCOUNTER16",
+    [MISCREG_MHPMCOUNTER17]  = "MHPMCOUNTER17",
+    [MISCREG_MHPMCOUNTER18]  = "MHPMCOUNTER18",
+    [MISCREG_MHPMCOUNTER19]  = "MHPMCOUNTER19",
+    [MISCREG_MHPMCOUNTER20]  = "MHPMCOUNTER20",
+    [MISCREG_MHPMCOUNTER21]  = "MHPMCOUNTER21",
+    [MISCREG_MHPMCOUNTER22]  = "MHPMCOUNTER22",
+    [MISCREG_MHPMCOUNTER23]  = "MHPMCOUNTER23",
+    [MISCREG_MHPMCOUNTER24]  = "MHPMCOUNTER24",
+    [MISCREG_MHPMCOUNTER25]  = "MHPMCOUNTER25",
+    [MISCREG_MHPMCOUNTER26]  = "MHPMCOUNTER26",
+    [MISCREG_MHPMCOUNTER27]  = "MHPMCOUNTER27",
+    [MISCREG_MHPMCOUNTER28]  = "MHPMCOUNTER28",
+    [MISCREG_MHPMCOUNTER29]  = "MHPMCOUNTER29",
+    [MISCREG_MHPMCOUNTER30]  = "MHPMCOUNTER30",
+    [MISCREG_MHPMCOUNTER31]  = "MHPMCOUNTER31",
     [MISCREG_HPMCOUNTER03]  = "HPMCOUNTER03",
     [MISCREG_HPMCOUNTER04]  = "HPMCOUNTER04",
     [MISCREG_HPMCOUNTER05]  = "HPMCOUNTER05",
@@ -109,6 +138,7 @@ namespace RiscvISA
     [MISCREG_HPMCOUNTER29]  = "HPMCOUNTER29",
     [MISCREG_HPMCOUNTER30]  = "HPMCOUNTER30",
     [MISCREG_HPMCOUNTER31]  = "HPMCOUNTER31",
+    [MISCREG_MCOUNTINHIBIT]  = "MCOUNTINHIBIT",
     [MISCREG_HPMEVENT03]    = "HPMEVENT03",
     [MISCREG_HPMEVENT04]    = "HPMEVENT04",
     [MISCREG_HPMEVENT05]    = "HPMEVENT05",
@@ -154,6 +184,7 @@ namespace RiscvISA
     [MISCREG_MIDELEG]       = "MIDELEG",
     [MISCREG_MTVEC]         = "MTVEC",
     [MISCREG_MCOUNTEREN]    = "MCOUNTEREN",
+    [MISCREG_MENVCFG]       = "MENVCFG",
     [MISCREG_MSCRATCH]      = "MSCRATCH",
     [MISCREG_MEPC]          = "MEPC",
     [MISCREG_MCAUSE]        = "MCAUSE",
@@ -303,7 +334,7 @@ void ISA::clear()
         miscRegFile[MISCREG_STATUS] = (2ULL << UXL_OFFSET) | (2ULL << SXL_OFFSET) |
                                     (1ULL << FS_OFFSET);
     }
-    miscRegFile[MISCREG_MCOUNTEREN] = 0x7;
+    miscRegFile[MISCREG_MCOUNTEREN] = 0x0;
     miscRegFile[MISCREG_SCOUNTEREN] = 0x7;
     // don't set it to zero; software may try to determine the supported
     // triggers, starting at zero. simply set a different value here.
@@ -460,7 +491,12 @@ ISA::setMiscReg(int misc_reg, RegVal val)
     }
     if (misc_reg >= MISCREG_CYCLE && misc_reg <= MISCREG_HPMCOUNTER31) {
         // Ignore writes to HPM counters for now
-        warn("Ignoring write to %s.\n", CSRData.at(misc_reg).name);
+        if (misc_reg >= MISCREG_MHPMCOUNTER3 && misc_reg <= MISCREG_MHPMCOUNTER31) {
+            warn("write to misc_reg %x val %lx but now write 0\n", misc_reg, val);
+            setMiscRegNoEffect(misc_reg, 0);
+        } else {
+            warn("Ignoring write to %x\n", misc_reg);
+        }
     } else {
         switch (misc_reg) {
 
