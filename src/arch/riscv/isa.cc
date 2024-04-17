@@ -138,6 +138,7 @@ namespace RiscvISA
     [MISCREG_HPMCOUNTER29]  = "HPMCOUNTER29",
     [MISCREG_HPMCOUNTER30]  = "HPMCOUNTER30",
     [MISCREG_HPMCOUNTER31]  = "HPMCOUNTER31",
+    [MISCREG_MCOUNTINHIBIT]  = "MCOUNTINHIBIT",
     [MISCREG_HPMEVENT03]    = "HPMEVENT03",
     [MISCREG_HPMEVENT04]    = "HPMEVENT04",
     [MISCREG_HPMEVENT05]    = "HPMEVENT05",
@@ -326,7 +327,7 @@ void ISA::clear()
         miscRegFile[MISCREG_STATUS] = (2ULL << UXL_OFFSET) | (2ULL << SXL_OFFSET) |
                                     (1ULL << FS_OFFSET);
     }
-    miscRegFile[MISCREG_MCOUNTEREN] = 0x7;
+    miscRegFile[MISCREG_MCOUNTEREN] = 0x0;
     miscRegFile[MISCREG_SCOUNTEREN] = 0x7;
     // don't set it to zero; software may try to determine the supported
     // triggers, starting at zero. simply set a different value here.
@@ -483,7 +484,12 @@ ISA::setMiscReg(int misc_reg, RegVal val)
     }
     if (misc_reg >= MISCREG_CYCLE && misc_reg <= MISCREG_HPMCOUNTER31) {
         // Ignore writes to HPM counters for now
-        warn("Ignoring write to %s.\n", CSRData.at(misc_reg).name);
+        if (misc_reg >= MISCREG_MHPMCOUNTER3 && misc_reg <= MISCREG_MHPMCOUNTER31) {
+            warn("write to misc_reg %x val %lx but now write 0\n", misc_reg, val);
+            setMiscRegNoEffect(misc_reg, 0);
+        } else {
+            warn("Ignoring write to %x\n", misc_reg);
+        }
     } else {
         switch (misc_reg) {
 
