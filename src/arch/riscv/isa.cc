@@ -184,6 +184,7 @@ namespace RiscvISA
     [MISCREG_MIDELEG]       = "MIDELEG",
     [MISCREG_MTVEC]         = "MTVEC",
     [MISCREG_MCOUNTEREN]    = "MCOUNTEREN",
+    [MISCREG_MENVCFG]       = "MENVCFG",
     [MISCREG_MSCRATCH]      = "MSCRATCH",
     [MISCREG_MEPC]          = "MEPC",
     [MISCREG_MCAUSE]        = "MCAUSE",
