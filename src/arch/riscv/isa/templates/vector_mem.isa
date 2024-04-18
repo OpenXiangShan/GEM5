@@ -68,6 +68,7 @@ def template VleConstructor {{
             microop = new %(class_name)sMicro(_machInst, i, vmi);
             microop->setDelayedCommit();
             microop->setFlag(IsLoad);
+            microop->setNF(1);
             this->microops.push_back(microop);
         }
     } else {
@@ -83,7 +84,12 @@ def template VleConstructor {{
                 vmi.microVd = elem_gen_idx(VD + fn * emul, i, eew/8);
                 vmi.offset = (i*nf+fn) * eew / 8;
                 microop = new %(class_name)sMicro(_machInst, i*(fn+1), vmi);
-                microop->resetOpClass(VectorSegmentLoadOp);
+
+                // segment vl related
+                microop->resetOpClass(VectorSegUnitStrideLoadOp);
+                microop->setNF(nf);
+                microop->setFlag(IsSegLoad);
+
                 microop->setDelayedCommit();
                 microop->setFlag(IsLoad);
                 this->microops.push_back(microop);
@@ -518,6 +524,14 @@ def template VlStrideConstructor {{
             microop = new %(class_name)sMicro(_machInst, i*fn, vmi);
             microop->setDelayedCommit();
             microop->setFlag(IsLoad);
+
+            microop->setNF(nf);
+            if (nf > 1) {
+                // segment vl related
+                microop->resetOpClass(VectorSegStridedLoadOp);
+                microop->setFlag(IsSegLoad);
+            }
+
             this->microops.push_back(microop);
         }
     }
@@ -636,6 +650,14 @@ template<typename ElemType>
             microop = new %(class_name)sMicro<ElemType>(machInst, i * fn, vmi);
             microop->setFlag(IsDelayedCommit);
             microop->setFlag(IsLoad);
+
+            microop->setNF(nf);
+            if (nf > 1) {
+                // segment vl related
+                microop->resetOpClass(VectorSegIndexedLoadOp);
+                microop->setFlag(IsSegLoad);
+            }
+
             this->microops.push_back(microop);
         }
     }
@@ -768,7 +790,7 @@ def template VseConstructor {{
                 vmi.microVs3 = elem_gen_idx(VS3 + fn * emul, i, eew/8);
                 vmi.offset = (i*nf+fn) * eew / 8;
                 microop = new %(class_name)sMicro(_machInst, i*(fn+1), vmi);
-                microop->resetOpClass(VectorSegmentStoreOp);
+                microop->resetOpClass(VectorSegUnitStrideStoreOp);
                 microop->setDelayedCommit();
                 microop->setFlag(IsStore);
                 this->microops.push_back(microop);

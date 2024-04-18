@@ -111,16 +111,17 @@ static const OpClass FMAAccOp = enums::FMAAcc;
 
 // riscv vload/store
 static const OpClass VectorUnitStrideLoadOp = enums::VectorUnitStrideLoad;
-static const OpClass VectorSegmentLoadOp = enums::VectorSegmentLoad;
+static const OpClass VectorSegUnitStrideLoadOp = enums::VectorSegUnitStrideLoad;
 static const OpClass VectorUnitStrideStoreOp = enums::VectorUnitStrideStore;
-static const OpClass VectorSegmentStoreOp = enums::VectorSegmentStore;
-static const OpClass VectorUnitStrideMaskLoadOp
-             = enums::VectorUnitStrideMaskLoad;
-static const OpClass VectorUnitStrideMaskStoreOp
-             = enums::VectorUnitStrideMaskStore;
+static const OpClass VectorSegUnitStrideStoreOp = enums::VectorSegUnitStrideStore;
+static const OpClass VectorUnitStrideMaskLoadOp = enums::VectorUnitStrideMaskLoad;
+static const OpClass VectorSegUnitStrideMaskLoadOp = enums::VectorSegUnitStrideMaskLoad;
+static const OpClass VectorUnitStrideMaskStoreOp = enums::VectorUnitStrideMaskStore;
 static const OpClass VectorStridedLoadOp = enums::VectorStridedLoad;
+static const OpClass VectorSegStridedLoadOp = enums::VectorSegStridedLoad;
 static const OpClass VectorStridedStoreOp = enums::VectorStridedStore;
 static const OpClass VectorIndexedLoadOp = enums::VectorIndexedLoad;
+static const OpClass VectorSegIndexedLoadOp = enums::VectorSegIndexedLoad;
 static const OpClass VectorIndexedStoreOp = enums::VectorIndexedStore;
 static const OpClass VectorUnitStrideFaultOnlyFirstLoadOp
              = enums::VectorUnitStrideFaultOnlyFirstLoad;

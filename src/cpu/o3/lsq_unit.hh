@@ -566,7 +566,8 @@ class LSQUnit
         statistics::Distribution loadTranslationLat;
 
         statistics::Scalar nonUnitStrideCross16Byte;
-        statistics::Scalar UnitStrideCross16Byte;
+        statistics::Scalar unitStrideCross16Byte;
+        statistics::Scalar unitStrideAligned;
     } stats;
 
     void bankConflictReplay();

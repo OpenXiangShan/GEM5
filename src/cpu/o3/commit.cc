@@ -213,7 +213,13 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
       ADD_STAT(committedInstType, statistics::units::Count::get(),
                "Class of committed instruction"),
       ADD_STAT(commitEligibleSamples, statistics::units::Cycle::get(),
-               "number cycles where commit BW limit reached")
+               "number cycles where commit BW limit reached"),
+      ADD_STAT(segUnitStrideNF, statistics::units::Count::get(),
+               "Distribution of segment unit stride NF"),
+      ADD_STAT(segStrideNF, statistics::units::Count::get(),
+               "Distribution of segment stride NF"),
+      ADD_STAT(segIndexedNF, statistics::units::Count::get(),
+               "Distribution of segment indexed NF")
 {
     using namespace statistics;
 
@@ -223,6 +229,18 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
 
     numCommittedDist
         .init(0,commit->commitWidth,1)
+        .flags(statistics::pdf);
+
+    segUnitStrideNF
+        .init(0, 8, 1)
+        .flags(statistics::pdf);
+
+    segStrideNF
+        .init(0, 8, 1)
+        .flags(statistics::pdf);
+
+    segIndexedNF
+        .init(0, 8, 1)
         .flags(statistics::pdf);
 
     instsCommitted
@@ -1725,8 +1743,18 @@ Commit::updateComInstStats(const DynInstPtr &inst)
     if (inst->isFloating())
         stats.floating[tid]++;
     // Vector Instruction
-    if (inst->isVector())
+    if (inst->isVector()) {
         stats.vectorInstructions[tid]++;
+        if (!inst->isMicroop() || inst->isLastMicroop()) {
+            if (inst->opClass() == enums::VectorSegUnitStrideLoad) {
+                stats.segUnitStrideNF.sample(inst->staticInst->getNF());
+            } else if (inst->opClass() == enums::VectorSegStridedLoad) {
+                stats.segStrideNF.sample(inst->staticInst->getNF());
+            } else if (inst->opClass() == enums::VectorSegIndexedLoad) {
+                stats.segIndexedNF.sample(inst->staticInst->getNF());
+            }
+        }
+    }
 
     // Function Calls
     if (inst->isCall())
