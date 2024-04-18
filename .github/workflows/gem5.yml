@@ -106,4 +106,4 @@ jobs:
           export GEM5_HOME=$(pwd)
           mkdir -p $GEM5_HOME/util/xs_scripts/test_v
           cd $GEM5_HOME/util/xs_scripts/test_v
-          bash ../kmh_6wide_vector.sh /nfs/home/share/jiaxiaoyu/20240226_vector_checkpoint_archive/disdain-practical-toll-2023-12-25-11-26/zstd-checkpoint-0-0-0/hmmer_nph3/102/_102_0.0243576.zstd
+          bash ../kmh_6wide_vector.sh /nfs/home/share/jiaxiaoyu/simpoint_checkpoint_archive/spec06_hmmer_libquantum_h264_rv64gcv_O3_20m_gcc14.0.0_1218-intFpcOff-ptMalloc/disdain-practical-toll-2023-12-25-11-26/zstd-checkpoint-0-0-0/hmmer_nph3/102/_102_0.0243576.zstd
