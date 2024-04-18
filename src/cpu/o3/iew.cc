@@ -50,6 +50,7 @@
 #include "base/stats/info.hh"
 #include "config/the_isa.hh"
 #include "cpu/checker/cpu.hh"
+#include "cpu/o3/comm.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/fu_pool.hh"
@@ -280,7 +281,8 @@ IEW::IEWStats::IEWStats(CPU *cpu)
         {StallReason::InstMisPred, "InstMisPred"},
         {StallReason::InstSquashed, "InstSquashed"},
         {StallReason::SerializeStall, "SerializeStall"},
-        {StallReason::LongExecute, "LongExecute"},
+        {StallReason::VectorLongExecute, "VectorLongExecute"},
+        {StallReason::ScalarLongExecute, "ScalarLongExecute"},
         {StallReason::InstNotReady, "InstNotReady"},
         {StallReason::LoadL1Bound, "LoadL1Bound"},
         {StallReason::LoadL2Bound, "LoadL2Bound"},
@@ -295,7 +297,16 @@ IEW::IEWStats::IEWStats(CPU *cpu)
         {StallReason::ResumeUnblock, "ResumeUnblock"},
         {StallReason::CommitSquash, "CommitSquash"},
         {StallReason::OtherStall, "OtherStall"},
-        {StallReason::OtherFetchStall, "OtherFetchStall"}
+        {StallReason::OtherFetchStall, "OtherFetchStall"},
+
+        {StallReason::MemDQBandwidth, "MemDQBandwidth"},
+        {StallReason::FVDQBandwidth, "FVDQBandwidth"},
+        {StallReason::IntDQBandwidth, "IntDQBandwidth"},
+        {StallReason::MemNotReady, "MemNotReady"},
+        {StallReason::MemCommitRateLimit, "MemCommitRateLimit"},
+        {StallReason::OtherMemStall, "OtherMemStall"},
+        {StallReason::VectorReadyButNotIssued, "VectorReadyButNotIssued"},
+        {StallReason::ScalarReadyButNotIssued, "ScalarReadyButNotIssued"}
     };
 
     for (int i = 0;i < NumStallReasons;i++) {
@@ -1104,15 +1115,12 @@ IEW::classifyInstToDispQue(ThreadID tid)
                 scheduler->addProducer(inst);
             }
 
-#if TRACING_ON
-            inst->dispatchTick = curTick() - inst->fetchTick;
-#endif
-            ppDispatch->notify(inst);
+            inst->enterDQTick = curTick();
 
             insts_to_dispatch.pop_front();
             dispatched++;
         } else {
-            dispatch_stalls.push(checkDispatchStall(tid));
+            dispatch_stalls.push(checkDispatchStall(tid, id, inst));
             breakDispatch = dispatch_stalls.back();
             blockReason = breakDispatch;
             break;
@@ -1121,9 +1129,8 @@ IEW::classifyInstToDispQue(ThreadID tid)
 
     if (insts_to_add == 0) {
         dispatchStalls = fromRename->renameStallReason;
-    }
-    else {
-        for (int i=0; i<renameWidth; i++) {
+    } else {
+        for (int i = 0; i < renameWidth; i++) {
             if (i < dispatched) {
                 dispatchStalls.at(i) = StallReason::NoStall;
             } else {
@@ -1163,7 +1170,7 @@ IEW::dispatchInstFromDispQue(ThreadID tid)
     bool add_to_iq = false;
     int dis_num_inst = 0;
 
-    for (int i=0; i<NumDQ; i++) {
+    for (int i = 0; i < NumDQ; i++) {
         while (!dispQue[i].empty()) {
             inst = dispQue[i].front();
 
@@ -1279,6 +1286,8 @@ IEW::dispatchInstFromDispQue(ThreadID tid)
                 instQueue.insert(inst);
             }
             ++dis_num_inst;
+
+            inst->exitDQTick = curTick();
 
     #if TRACING_ON
             inst->dispatchTick = curTick() - inst->fetchTick;
@@ -1679,9 +1688,11 @@ IEW::tick()
         checkSignalsAndUpdate(tid);
         dispatch(tid);
 
-        toRename->iewInfo[tid].robHeadStallReason = checkDispatchStall(tid);
-        toRename->iewInfo[tid].lqHeadStallReason = ldstQueue.lqEmpty() ? StallReason::NoStall : checkLSQStall(tid, true);
-        toRename->iewInfo[tid].sqHeadStallReason = ldstQueue.sqEmpty() ? StallReason::NoStall : checkLSQStall(tid, false);
+        toRename->iewInfo[tid].robHeadStallReason = checkDispatchStall(tid, NumDQ, nullptr);
+        toRename->iewInfo[tid].lqHeadStallReason =
+            ldstQueue.lqEmpty() ? StallReason::NoStall : checkLSQStall(tid, true);
+        toRename->iewInfo[tid].sqHeadStallReason =
+            ldstQueue.sqEmpty() ? StallReason::NoStall : checkLSQStall(tid, false);
         toRename->iewInfo[tid].blockReason = blockReason;
     }
     for (int i = 0;i < dispatchStalls.size();i++) {
@@ -1867,13 +1878,13 @@ IEW::checkLoadStoreInst(DynInstPtr inst)
         return StallReason::MemSquashed;
     }
     if (inst->isCommitted()) {
-        return StallReason::NoStall;
+        return StallReason::MemCommitRateLimit;
     }
-    if (inst->isAtomic()) {
+    if (inst->isAtomic() || inst->isStoreConditional()) {
         return StallReason::Atomic;
     }
-    if (inst->isStoreConditional()){
-        return StallReason::StoreL1Bound;
+    if (!inst->readyToIssue()){
+        return StallReason::MemNotReady;
     }
     assert(inst->isLoad() || inst->isStore());
 
@@ -1893,10 +1904,10 @@ IEW::checkLoadStoreInst(DynInstPtr inst)
     bool in_l1 = depth == 0;
     bool in_l2 = depth == 1;
     bool in_l3 = depth == 2;
-    bool otherStall = depth == -1;
+    bool other_stall = depth == -1;
     // maybe soc does not have l3cache
     // so we can not use in_mem = depth==3
-    bool in_mem = !(in_l1 ||  in_l2 || in_l3 || otherStall);
+    bool in_mem = !(in_l1 ||  in_l2 || in_l3 || other_stall);
     if (inFlight && in_l1) {
         return inst->isLoad() ? StallReason::LoadL1Bound : StallReason::StoreL1Bound;
     } else if (inFlight && in_l2) {
@@ -1905,16 +1916,77 @@ IEW::checkLoadStoreInst(DynInstPtr inst)
         return inst->isLoad() ? StallReason::LoadL3Bound : StallReason::StoreL3Bound;
     } else if (inFlight && in_mem) {
         return inst->isLoad() ? StallReason::LoadMemBound : StallReason::StoreMemBound;
+    }
+    return StallReason::OtherMemStall;
+}
+
+StallReason
+IEW::dqTypeToReason(DQType dq_type)
+{
+    switch (dq_type) {
+        case DQType::IntDQ:
+            return StallReason::IntDQBandwidth;
+        case DQType::MemDQ:
+            return StallReason::MemDQBandwidth;
+        case DQType::FVDQ:
+            return StallReason::FVDQBandwidth;
+        default:
+            panic("Unknown DQType");
+    }
+}
+
+IEW::DQType
+IEW::getInstDQType(const DynInstPtr &inst)
+{
+    if (inst->isLoad() || inst->isStore() || inst->isAtomic()) {
+        return DQType::MemDQ;
+    } else if (inst->isFloating() || inst->isVector()) {
+        return DQType::FVDQ;
+    } else if (inst->isInteger()) {
+        return DQType::IntDQ;
     } else {
-        return StallReason::OtherStall;
+        panic("Unknown inst type");
     }
 }
 
 StallReason
-IEW::checkDispatchStall(ThreadID tid) {
+IEW::checkDispatchStall(ThreadID tid, int dq_id, const DynInstPtr &dispatch_inst) {
     DynInstPtr head_inst = rob->readHeadInst(tid);
     if (head_inst == rob->dummyInst) {
-        return StallReason::NoStall;
+        if (dq_id != NumDQ) {  // this call is from dispatch to classify the reason why an instr cannot be dispatched
+            return dqTypeToReason(static_cast<DQType>(dq_id));
+        } else {  // this call is to tell rename the stall status
+            return StallReason::NoStall;
+        }
+    }
+
+    if (dq_id != NumDQ) {
+        // get dq head inst
+        assert(dispQue[dq_id].size());
+        auto &dq_head = dispQue[dq_id].front();
+        if (getInstDQType(dispatch_inst) == getInstDQType(dq_head) && !instQueue.isReady(dq_head)) {
+            return dqTypeToReason(static_cast<DQType>(dq_id));
+        }
+
+        if (dispatch_inst->isStore() && !ldstQueue.sqFull()) {
+            // store cannot be dispatched while sq is not full
+            return StallReason::MemDQBandwidth;
+        }
+        if (dispatch_inst->isLoad() && !(ldstQueue.lqFull() || rob->isFull() || instQueue.isFull(dispatch_inst))) {
+            return StallReason::MemDQBandwidth;
+        }
+        if (dispatch_inst->isAtCommit() && !(ldstQueue.lqFull() || ldstQueue.sqFull())) {
+            return StallReason::MemDQBandwidth;
+        }
+
+        if ((dispatch_inst->isFloating() || dispatch_inst->isVector()) &&
+            !(rob->isFull() || instQueue.isFull(dispatch_inst))) {
+            return StallReason::FVDQBandwidth;
+        }
+
+        if (dispatch_inst->isInteger() && !(rob->isFull() || instQueue.isFull(dispatch_inst))) {
+            return StallReason::IntDQBandwidth;
+        }
     }
 
     assert(head_inst);
@@ -1938,9 +2010,17 @@ IEW::checkDispatchStall(ThreadID tid) {
         return checkLoadStoreInst(head_inst);
     } else {
         if (head_inst->firstIssue != -1) {
-            return StallReason::LongExecute;
+            if (head_inst->isVector()) {
+                return StallReason::VectorLongExecute;
+            } else {
+                return StallReason::ScalarLongExecute;
+            }
         } else {
-            return StallReason::OtherStall;
+            if (head_inst->isVector()) {
+                return StallReason::VectorReadyButNotIssued;
+            } else {
+                return StallReason::ScalarReadyButNotIssued;
+            }
         }
     }
 

@@ -551,7 +551,11 @@ class IEW
 
     StallReason checkLoadStoreInst(DynInstPtr inst);
 
-    StallReason checkDispatchStall(ThreadID tid);
+    StallReason dqTypeToReason(DQType dq_type);
+
+    DQType getInstDQType(const DynInstPtr &inst);
+
+    StallReason checkDispatchStall(ThreadID tid, int dq_id, const DynInstPtr &dispatch_inst);
 
     StallReason checkLSQStall(ThreadID tid, bool isLoad);
 

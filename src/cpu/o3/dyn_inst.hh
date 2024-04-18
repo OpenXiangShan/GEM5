@@ -1073,6 +1073,8 @@ class DynInst : public ExecContext, public RefCounted
 #endif
 
     /* Values used by LoadToUse stat */
+    Tick enterDQTick = -1;
+    Tick exitDQTick = -1;
     Tick firstIssue = -1;
     Tick lastWakeDependents = -1;
     Tick translatedTick = -1;
@@ -1257,32 +1259,7 @@ class DynInst : public ExecContext, public RefCounted
         //TODO setResult
     }
 
-    void printDisassembly() const
-    {
-        DPRINTF(CommitTrace,
-                "[sn:%lu pc:%#lx] %s",
-                seqNum, pcState().instAddr(),
-                staticInst->disassemble(pcState().instAddr()));
-        if (instResult.size() > 0) {
-            DPRINTFR(CommitTrace, ", res: %#lx", instResult.front().as<uint64_t>());
-        }
-        else if (numDestRegs() > 0 && isVector()) {
-            uint64_t val[RiscvISA::NumVecElemPerVecReg];
-            cpu->getArchReg(destRegIdx(0), val, threadNumber);
-            std::string s_val;
-            for (int j=RiscvISA::NumVecElemPerVecReg-1; j>=0; j--) {
-                s_val += csprintf("%016lx", val[j]);
-                if (j != 0) {
-                    s_val+="_";
-                }
-            }
-            DPRINTFR(CommitTrace, ", res: %s", s_val);
-        }
-        if (isMemRef()) {
-            DPRINTFR(CommitTrace, ", paddr: %#lx", physEffAddr);
-        }
-        DPRINTFR(CommitTrace, "\n");
-    }
+    void printDisassembly() const;
 
     std::string genDisassembly() const
     {
