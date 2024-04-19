@@ -49,6 +49,7 @@
 #include "base/logging.hh"
 #include "base/output.hh"
 #include "base/trace.hh"
+#include "base/types.hh"
 #include "debug/ArchDB.hh"
 #include "debug/Cache.hh"
 #include "debug/CacheComp.hh"
@@ -58,6 +59,7 @@
 #include "debug/HWPrefetch.hh"
 #include "mem/cache/compressors/base.hh"
 #include "mem/cache/mshr.hh"
+#include "mem/cache/prefetch/associative_set_impl.hh"
 #include "mem/cache/prefetch/base.hh"
 #include "mem/cache/queue_entry.hh"
 #include "mem/cache/tags/compressed_tags.hh"
@@ -110,12 +112,18 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       compressor(p.compressor),
       prefetcher(p.prefetcher),
       writeAllocator(p.write_allocator),
+      indexWayPreTable(p.way_entries,p.way_entries,p.way_indexing_policy,
+          p.way_replacement_policy,waypreEntry()),
       writebackClean(p.writeback_clean),
       tempBlockWriteback(nullptr),
       writebackTempBlockAtomicEvent([this]{ writebackTempBlockAtomic(); },
                                     name(), false,
                                     EventBase::Delayed_Writeback_Pri),
       blkSize(blk_size),
+      size(p.size),
+      assoc(p.assoc),
+      enableWayPrediction(p.enable_wayprediction),
+      wayPreTable(size/assoc/64),
       lookupLatency(p.tag_latency),
       dataLatency(p.data_latency),
       forwardLatency(p.tag_latency),
@@ -150,8 +158,13 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
     // whether the connected requestor is actually snooping or not
 
     tempBlock = new TempCacheBlk(blkSize);
-
     tags->tagsInit();
+    for (int i = 0; i < size / assoc / blkSize; i++) {
+        for (int j = 0; j < assoc; j++)
+            wayPreTable[i].push_back(DEFAULTWAYPRE);
+    }
+    assert(!((size != DEFAULTWAYPRESIZE) && enableWayPrediction));
+
     if (prefetcher)
         prefetcher->setCache(this);
 
@@ -583,6 +596,35 @@ BaseCache::recvTimingReq(PacketPtr pkt)
             invalidateBlock(blk);
         }
 
+        bool way_pre0_success = false;
+        bool way_pre1_success = false;
+        if ((cacheLevel == 1) && (pkt->isRead()) && enableWayPrediction) {
+            int hit_way = blk->getWay();
+            int pre_way = getPreWay(pkt);
+            if ((pre_way == blk->getWay()) && (pre_way != 10)) {
+                stats.wayPreHitTimes++;
+                stats.wayPreTimes++;
+                way_pre0_success = true;
+            } else {
+                stats.wayPreTimes++;
+                writePreWay(pkt, blk->getWay());
+            }
+            int index_pre_way = indexWayPre(pkt->getAddr(), blk->getWay());
+            if ((index_pre_way == blk->getWay()) && (index_pre_way != 10)) {
+                way_pre1_success = true;
+                stats.wayPreIndexHitTimes++;
+            }
+            if (way_pre0_success || way_pre1_success)
+                stats.wayPreDoubleHitTimes++;
+        }
+        if (archDBer && pkt->req->hasPC() && (pkt->isRead() && (cacheLevel == 1)) && enableWayPrediction) {
+            Addr pc = pkt->req->getPC();
+            Addr vaddr = pkt->req->hasVaddr() ? pkt->req->getVaddr() : 0;
+            uint64_t curCycle = ticksToCycles(curTick());
+            DPRINTF(ArchDB, "ArchDB: insert dcacheWayPre [%x %x %d %x]\n", pc, vaddr, blk->getWay(), curCycle);
+            archDBer->dcacheWayPreTrace(curCycle, pc, vaddr, blk->getWay(), 0);
+        }
+
         handleTimingReqHit(pkt, blk, request_time, first_acc_after_pf);
         if (cacheLevel == 1 && pkt->isResponse() && pkt->isRead() && lat > 1) {
             // send cache miss signal
@@ -625,6 +667,44 @@ BaseCache::recvTimingReq(PacketPtr pkt)
             schedMemSideSendEvent(next_pf_time);
         }
     }
+}
+int
+BaseCache::getPreWay(PacketPtr pkt){
+    //int setIdx = (pkt->getAddr() >>6) & 0x7f;
+    int setIdx = (pkt->getAddr() >> SETROFFSET) & SETMASK;
+    int tagIdx = (pkt->getAddr() >> TAGOFFSET) & TAGMASK;
+    return wayPreTable[setIdx][tagIdx];
+
+}
+void
+BaseCache::writePreWay(PacketPtr pkt ,int way){
+    //int setIdx = (pkt->getAddr() >>6) & 0x7f;
+    int setIdx = (pkt->getAddr() >> SETROFFSET) & SETMASK;
+    //int tagIdx = (pkt->getAddr() >>3) & 0x7;
+    int tagIdx = (pkt->getAddr() >> TAGOFFSET) & TAGMASK;
+    wayPreTable[setIdx][tagIdx] = way;
+}
+
+int
+BaseCache::indexWayPre(Addr addr, int hit_way)
+{
+    int index = (addr >> SETROFFSET) & SETMASK;
+    waypreEntry *entry = indexWayPreTable.findEntry(index, true);
+    int pref_way = DEFAULTWAYPRE;
+    if (entry) {
+        indexWayPreTable.accessEntry(entry);
+        pref_way = entry->way;
+        if (pref_way != hit_way)
+            entry->way = hit_way;
+        return pref_way;
+    } else {
+        entry = indexWayPreTable.findVictim(0);
+        entry->_setSecure(true);
+        entry->index = index;
+        entry->way = hit_way;
+        indexWayPreTable.insertEntry(index, false, entry);
+    }
+    return DEFAULTWAYPRE;
 }
 
 void
@@ -2531,6 +2611,14 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "average overall mshr uncacheable latency"),
     ADD_STAT(replacements, statistics::units::Count::get(),
              "number of replacements"),
+    ADD_STAT(wayPreHitTimes, statistics::units::Count::get(),
+             "number of wayPreHitTimes"),
+    ADD_STAT(wayPreIndexHitTimes, statistics::units::Count::get(),
+             "number of wayPreIndexHitTimes"),
+    ADD_STAT(wayPreDoubleHitTimes, statistics::units::Count::get(),
+             "number of wayPreDoubleHitTimes"),
+    ADD_STAT(wayPreTimes, statistics::units::Count::get(),
+             "number of wayPreTimes"),
     ADD_STAT(deadBlockReplacements, statistics::units::Count::get(),
              "number of dead block replacements"),
     ADD_STAT(liveBlockReplacements, statistics::units::Count::get(),

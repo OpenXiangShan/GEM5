@@ -62,6 +62,7 @@
 #include "mem/cache/cache_blk.hh"
 #include "mem/cache/compressors/base.hh"
 #include "mem/cache/mshr_queue.hh"
+#include "mem/cache/prefetch/associative_set.hh"
 #include "mem/cache/tags/base.hh"
 #include "mem/cache/write_queue.hh"
 #include "mem/cache/write_queue_entry.hh"
@@ -554,6 +555,33 @@ class BaseCache : public ClockedObject
      */
     virtual void recvTimingReq(PacketPtr pkt);
 
+    /**way prediction **/
+    const int SETROFFSET = 6;
+    const int SETMASK = 0x7f;
+
+    const int TAGOFFSET = 3;
+    const int TAGMASK = 0x7;
+
+    int getPreWay(PacketPtr pkt);
+
+    void writePreWay(PacketPtr pkt, int way);
+
+    int indexWayPre(Addr addr,int hit_way);
+
+    class waypreEntry : public TaggedEntry
+    {
+      public:
+        Addr index;
+        Addr way;
+        waypreEntry() : TaggedEntry(), index(0), way(0) {}
+        void _setSecure(bool is_secure)
+        {
+            if (is_secure)
+                TaggedEntry::setSecure();
+        }
+    };
+    AssociativeSet<waypreEntry> indexWayPreTable;
+
     /**
      * Handling the special case of uncacheable write responses to
      * make recvTimingResp less cluttered.
@@ -909,6 +937,11 @@ class BaseCache : public ClockedObject
 
     /** Block size of this cache */
     const unsigned blkSize;
+    const int size ;
+    const int assoc;
+    const bool enableWayPrediction;
+    const int DEFAULTWAYPRESIZE = 65536;
+    std::vector<std::vector<int>> wayPreTable;
 
     /**
      * The latency of tag lookup of a cache. It occurs when there is
@@ -1162,6 +1195,16 @@ class BaseCache : public ClockedObject
 
         /** Number of replacements of valid blocks. */
         statistics::Scalar replacements;
+
+        /**Number of waypre hit times */
+        statistics::Scalar wayPreHitTimes;
+
+        statistics::Scalar wayPreIndexHitTimes;
+
+        statistics::Scalar wayPreDoubleHitTimes;
+
+        /*number of waypre times*/
+        statistics::Scalar wayPreTimes;
 
         /** Number of replacements of dead blocks */
         statistics::Scalar deadBlockReplacements;

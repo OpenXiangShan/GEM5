@@ -95,6 +95,7 @@ class BaseCache(ClockedObject):
     write_buffers = Param.Unsigned(8, "Number of write buffers")
 
     is_read_only = Param.Bool(False, "Is this cache read only (e.g. inst)")
+    enable_wayprediction = Param.Bool(True, "enablewaypredction")
 
     prefetcher = Param.BasePrefetcher(NULL,"Prefetcher attached to cache")
     prefetch_on_access = Param.Bool(False,
@@ -159,6 +160,21 @@ class BaseCache(ClockedObject):
     max_cache_level = Param.Unsigned(2, "Max Cache level (L1 is 1, L2 is 2, etc.)")
 
     force_hit = Param.Bool(False, "Force some PC to hit in L1")
+    way_entries = Param.MemorySize(
+        "64",
+        "num of active generation table entries"
+    )
+    way_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.way_entries,
+            size=Parent.way_entries),
+        "Indexing policy of active generation table"
+    )
+    way_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(),
+        "Replacement policy of active generation table"
+    )
 
 class Cache(BaseCache):
     type = 'Cache'
