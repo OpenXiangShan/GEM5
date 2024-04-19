@@ -40,12 +40,14 @@ SimObject('RTC.py', sim_objects=['RiscvRTC'], tags='riscv isa')
 SimObject('RiscvVirtIOMMIO.py', sim_objects=['RiscvMmioVirtIO'],
     tags='riscv isa')
 SimObject('NemuMMC.py', sim_objects=['NemuMMC'], tags='riscv isa')
+SimObject('NemuPlic.py', sim_objects=['NemuPlic'], tags='riscv isa')
 
 DebugFlag('Clint', tags='riscv isa')
 DebugFlag('Lint', tags='riscv isa')
 DebugFlag('Plic', tags='riscv isa')
 DebugFlag('VirtIOMMIO', tags='riscv isa')
 DebugFlag('NemuMMC', tags='riscv isa')
+DebugFlag('NemuPlic', tags='riscv isa')
 
 Source('pci_host.cc', tags='riscv isa')
 
@@ -58,3 +60,4 @@ Source('plic.cc', tags='riscv isa')
 Source('rtc.cc', tags='riscv isa')
 Source('vio_mmio.cc', tags='riscv isa')
 Source('nemu_mmc.cc', tags='riscv isa')
+Source('nemu_plic.cc', tags='riscv isa')
