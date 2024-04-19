@@ -663,6 +663,12 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 setMiscRegNoEffect(misc_reg, val);
             }
             break;
+          case MISCREG_MIDELEG:
+            {
+               RegVal writeVal = val|((1 << 12) | (1 << 10) | (1 << 6) | (1 << 2));
+               setMiscRegNoEffect(misc_reg, writeVal);
+            }
+            break;
           default:
             setMiscRegNoEffect(misc_reg, val);
         }
