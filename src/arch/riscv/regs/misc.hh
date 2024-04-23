@@ -63,6 +63,7 @@ namespace RiscvISA
 enum MiscRegIndex
 {
     MISCREG_PRV = 0,
+    MISCREG_VIRMODE,
     MISCREG_ISA,
     MISCREG_VENDORID,
     MISCREG_ARCHID,
