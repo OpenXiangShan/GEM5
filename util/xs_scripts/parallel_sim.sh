@@ -45,6 +45,14 @@ check() {
     fi
 }
 
+trap cleanup SIGINT
+
+function cleanup() {
+    echo "Script interrupted, marking tasks as aborted..."
+    find $full_work_dir -type f -name running -execdir bash -c 'rm -f running; touch abort' \;
+    exit 1
+}
+
 function run() {
     set -x
     hostname
