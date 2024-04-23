@@ -69,6 +69,7 @@ namespace RiscvISA
 
 [[maybe_unused]] const std::array<const char *, NUM_MISCREGS> MiscRegNames = {{
     [MISCREG_PRV]           = "PRV",
+    [MISCREG_VIRMODE]         = "VIRTUALIZATIONMODE",
     [MISCREG_ISA]           = "ISA",
     [MISCREG_VENDORID]      = "VENDORID",
     [MISCREG_ARCHID]        = "ARCHID",

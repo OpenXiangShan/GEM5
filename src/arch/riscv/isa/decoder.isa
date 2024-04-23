@@ -4372,6 +4372,29 @@ decode QUADRANT default Unknown::unknown() {
                             NPC = xc->readMiscReg(MISCREG_MEPC);
                         }
                     }}, IsSerializeAfter, IsNonSpeculative, IsReturn);
+                    0x31: priv({{
+                        auto pm = (PrivilegeMode)xc->readMiscReg(
+                                MISCREG_PRV);
+                        auto vir = (PrivilegeMode)xc->readMiscReg(
+                                MISCREG_VIRMODE);
+                        STATUS status = xc->readMiscReg(MISCREG_STATUS);
+                        xc->tcBase()->getMMUPtr()->demapPage(Rs1, Rs2);
+
+                        if(vir){
+                            panic("add priv vir code\n");
+
+                        }
+                        if(pm == PRV_U){
+                            return std::make_shared<IllegalInstFault>(
+                                        "h-priv pm == prv_u", machInst);
+
+                        }
+                        if(!(pm == PRV_M ||(pm == PRV_S && !vir && status.tvm ==0))){
+                            return std::make_shared<IllegalInstFault>(
+                                        "h-priv pm == prv_u", machInst);
+
+                        }
+                    }},IsNonSpeculative, IsSerializeAfter, No_OpClass);
                 }
             }
             format CSROp {
