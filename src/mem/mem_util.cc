@@ -17,6 +17,7 @@
 
 #include "base/logging.hh"
 #include "sim/core.hh"
+#include "sim/root.hh"
 
 namespace gem5
 {
@@ -33,6 +34,12 @@ isPageZero(uint8_t *page, std::size_t size)
 
 DedupMemory::DedupMemory()
 {
+    initDedupMemory();
+}
+
+void
+DedupMemory::initDedupMemory()
+{
     registerExitCallback([this]() { this->releaseResources(); });
 }
 
@@ -40,7 +47,9 @@ uint8_t*
 DedupMemory::createSharedReadOnlyRoot(size_t size)
 {
     // currently we assume only one chunk of memory and initiate it only once
-    assert(rootPMem == nullptr);
+    if (rootPMem != nullptr) {
+        panic("Shared memory object already created at %#lx\n", (uint64_t)rootPMem);
+    }
 
     boost::uuids::uuid uuid = boost::uuids::random_generator()();
     backedFilePath = boost::uuids::to_string(uuid);

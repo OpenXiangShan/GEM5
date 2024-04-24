@@ -210,18 +210,18 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
         warn("cpu_id set to %d\n", params().cpu_id);
 
         if (params().difftest_ref_so.find("spike") != std::string::npos) {
+            assert(!system->multiCore());
             diffAllStates->proxy = new SpikeProxy(
                 params().cpu_id, params().difftest_ref_so.c_str(),
                 params().nemuSDimg.size() && params().nemuSDCptBin.size());
-        }
-        else {
-            diffAllStates->proxy = new NemuProxy(
-                params().cpu_id, params().difftest_ref_so.c_str(),
-                params().nemuSDimg.size() && params().nemuSDCptBin.size(), system->enabledMemDedup());
+        } else {
+            diffAllStates->proxy =
+                new NemuProxy(params().cpu_id, params().difftest_ref_so.c_str(),
+                              params().nemuSDimg.size() && params().nemuSDCptBin.size(), system->enabledMemDedup(),
+                              system->multiCore());
         }
 
-        warn("Difftest is enabled with ref so: %s.\n",
-             params().difftest_ref_so.c_str());
+        warn("Difftest is enabled with ref so: %s.\n", params().difftest_ref_so.c_str());
 
         diffAllStates->proxy->regcpy(&(diffAllStates->gem5RegFile), REF_TO_DUT);
         diffAllStates->diff.dynamic_config.ignore_illegal_mem_access = false;
@@ -393,6 +393,14 @@ BaseCPU::startup()
     // Assumption CPU start to operate instantaneously without any latency
     if (powerState->get() == enums::PwrState::UNDEFINED)
         powerState->set(enums::PwrState::ON);
+
+    if (system->multiCore()) {
+        goldenMem = system->getGoldenMemPtr();
+    }
+
+    if (system->multiCore()) {
+        diffAllStates->proxy->initState(params().cpu_id, goldenMem);
+    }
 
 }
 
@@ -1067,10 +1075,10 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         // readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_SATP, 0);
         ref_val = diffAllStates->referenceRegFile.satp;
         if (gem5_val != ref_val) {
-            warn("Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
-            warn("Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033"
-                    "[0m, GEM5 value: \033[31m%#lx\033[0m\n", "satp",
-                    ref_val, gem5_val);
+            warn("CPU%i Inst [sn:%lli] pc: %#lx\n", cpuId(), seq, diffInfo.pc->instAddr());
+            warn("CPU%i Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033"
+                    "[0m, GEM5 value: \033[31m%#lx\033[0m\n",
+                    cpuId(), "satp", ref_val, gem5_val);
             diffInfo.errorCsrsValue[CsrRegIndex::satp] = 1;
             diffAllStates->gem5RegFile.satp = gem5_val;
             if (!diff_at)

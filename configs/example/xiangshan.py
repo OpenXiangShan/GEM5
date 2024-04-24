@@ -26,9 +26,11 @@ from common import Options
 def build_test_system(np):
     assert buildEnv['TARGET_ISA'] == "riscv"
     test_sys = makeBareMetalXiangshanSystem(test_mem_mode, SysConfig(mem=args.mem_size), None)
+    test_sys.num_cpus = np
 
-    test_sys.xiangshan_system = True
     args.enable_difftest = True
+    test_sys.xiangshan_system = True
+    test_sys.enable_difftest = args.enable_difftest
 
     XSConfig.config_xiangshan_inputs(args, test_sys)
 

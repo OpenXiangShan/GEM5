@@ -9,10 +9,8 @@
 
 
 #include "arch/riscv/types.hh"
-
-#ifndef NUM_CORES
-#define NUM_CORES 1
-#endif
+#include "base/logging.hh"
+#include "cpu/golden_global_mem.hh"
 
 enum
 {
@@ -184,14 +182,20 @@ class RefProxy
     void (*debug_mem_sync)(paddr_t addr, void *bytes, size_t size) = nullptr;
     void (*sdcard_init)(const char *img_path,
                         const char *sd_cpt_bin_path) = nullptr;
+    virtual void initState(int coreid, uint8_t *golden_mem) = 0;
+
+  protected:
+    bool multiCore;
+
+    void *handle;
 };
 
 class NemuProxy : public RefProxy
 {
   public:
-    NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff, bool enable_mem_dedup);
+    NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff, bool enable_mem_dedup, bool multi_core);
 
-  private:
+    void initState(int coreid, uint8_t *golden_mem) override;
 };
 
 
@@ -199,6 +203,8 @@ class SpikeProxy : public RefProxy
 {
   public:
     SpikeProxy(int coreid, const char *ref_so, bool enable_sdcard_diff);
+
+    void initState(int coreid, uint8_t *golden_mem) override { panic("Not implemented\n"); }
 };
 
 #define DIFFTEST_WIDTH 8

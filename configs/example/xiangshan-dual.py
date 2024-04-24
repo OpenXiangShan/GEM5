@@ -26,9 +26,11 @@ from common import Options
 def build_test_system(np):
     assert buildEnv['TARGET_ISA'] == "riscv"
     test_sys = makeBareMetalXiangshanSystem(test_mem_mode, SysConfig(mem=args.mem_size), None)
+    test_sys.num_cpus = np
 
+    args.enable_difftest = True
     test_sys.xiangshan_system = True
-    args.enable_difftest = False
+    test_sys.enable_difftest = args.enable_difftest
 
     XSConfig.config_xiangshan_inputs(args, test_sys)
 
@@ -151,7 +153,7 @@ def build_test_system(np):
             cpu.nemuSDCptBin = mmc.cpt_bin_path
             cpu.nemuSDimg = mmc.img_path
 
-    XSConfig.config_difftest(test_sys.cpu, args)
+    XSConfig.config_difftest(test_sys.cpu, args, test_sys)
 
     # configure vector
     if args.enable_riscv_vector:

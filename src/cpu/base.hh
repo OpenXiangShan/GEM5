@@ -701,6 +701,8 @@ class BaseCPU : public ClockedObject
      */
     const bool enableMemDedup{false};
 
+    uint8_t *goldenMem;
+
   public:
     struct
     {

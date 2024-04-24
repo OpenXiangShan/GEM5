@@ -331,6 +331,12 @@ class System : public SimObject, public PCEventScope
     /** OS kernel */
     Workload *workload = nullptr;
 
+    unsigned numCPUs;
+
+    bool enableDifftest = false;
+
+    uint8_t *goldenMem = nullptr;
+
   public:
     /**
      * Get a pointer to the Kernel Virtual Machine (KVM) SimObject,
@@ -405,9 +411,17 @@ class System : public SimObject, public PCEventScope
 
     bool enabledMemDedup() const { return enableMemDedup; }
 
+    bool multiCore() const { return numCPUs > 1; }
+
+    uint8_t *getGoldenMemPtr() const { return goldenMem; }
+
   protected:
 
     KvmVM *kvmVM = nullptr;
+
+    bool enableMemDedup = false;
+
+    mem_util::DedupMemory dedupMemManager;
 
     memory::PhysicalMemory physmem;
 
@@ -427,10 +441,6 @@ class System : public SimObject, public PCEventScope
      * like cache statistics.
      */
     std::vector<RequestorInfo> requestors;
-
-    mem_util::DedupMemory dedupMemManager;
-
-    bool enableMemDedup = false;
 
     ThermalModel * thermalModel;
 

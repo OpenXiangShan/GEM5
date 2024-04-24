@@ -270,6 +270,7 @@ PhysicalMemory::createBackingStore(
                 pmem = (uint8_t*)MAP_FAILED;
             } else {
                 // Create a common ``root'' memory
+                warn("creating backingstore: Creating a shared read-only root memory for dedup\n");
                 pmem = dedupMemManager->createSharedReadOnlyRoot(range.size());
             }
         } else {

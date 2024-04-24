@@ -17,6 +17,7 @@ namespace mem_util
     class DedupMemory
     {
       public:
+        void initDedupMemory();
         DedupMemory();
         void releaseResources();
         ~DedupMemory();

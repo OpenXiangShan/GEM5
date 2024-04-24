@@ -182,6 +182,9 @@ System::System(const Params &p)
       init_param(p.init_param),
       physProxy(_systemPort, p.cache_line_size),
       workload(p.workload),
+      numCPUs(p.num_cpus),
+      enableDifftest(p.enable_difftest),
+      enableMemDedup(p.enable_mem_dedup),
       physmem(name() + ".physmem", p.memories, p.mmap_using_noreserve,
               p.shared_backstore, p.restore_from_gcpt, p.gcpt_restorer_file,
               p.gcpt_file, p.map_to_raw_cpt, p.auto_unlink_shared_backstore, p.gcpt_restorer_size_limit,
@@ -191,7 +194,6 @@ System::System(const Params &p)
       memoryMode(p.mem_mode),
       _cacheLineSize(p.cache_line_size),
       numWorkIds(p.num_work_ids),
-      enableMemDedup(p.enable_mem_dedup),
       thermalModel(p.thermal_model),
       _m5opRange(p.m5ops_base ?
                  RangeSize(p.m5ops_base, 0x10000) :
@@ -558,6 +560,14 @@ void System::initState()
     if (physmem.tryRestoreFromXSCpt()) {
         inform("Restored from Xiangshan RISC-V Checkpoint\n");
     }
+
+    // have to initiate golden memory after checkpoint restored
+    if (numCPUs > 1 && enableDifftest) {
+        warn("Creating golden memory for multi-core difftest\n");
+        assert(enableMemDedup);
+        goldenMem = dedupMemManager.createCopyOnWriteBranch();
+    }
+
 }
 
 } // namespace gem5
