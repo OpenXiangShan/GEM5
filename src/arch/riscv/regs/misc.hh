@@ -809,6 +809,18 @@ const RegVal ISA_EXT_C_MASK = 1UL << ('c' - 'a');
 const RegVal ISA_EXT_H_MASK = 1UL << ('h' - 'a');
 const RegVal MISA_MASK = ISA_MXL_MASK | ISA_EXT_MASK;
 
+const uint64_t NEMU_SV39_SIGN0 = 0;
+const uint64_t NEMU_SV39_SIGN1 = 8;
+const uint64_t NEMU_SATP_SV39_MASK = 0xf000000000000000;
+const uint64_t NEMU_SATP_ASID_LEN = 16;
+const uint64_t NEMU_SATP_PADDR_LEN = 24;
+const uint64_t NEMU_SATP_PADDR_MAX_LEN = 44;
+const uint64_t NEMU_SATP_RIGHT_OFFSET = 60;
+const uint64_t NEMU_SATP_MODE_MASK = (uint64_t)8<<(NEMU_SATP_ASID_LEN+NEMU_SATP_PADDR_MAX_LEN);
+const uint64_t NEMU_SATP_ASID_MASK =  ((((uint64_t)1 <<(NEMU_SATP_ASID_LEN))-1)<<NEMU_SATP_PADDR_MAX_LEN);
+const uint64_t NEMU_SATP_PADDR_MASK =  (((uint64_t)1<<NEMU_SATP_PADDR_LEN)-1);
+const uint64_t NEMU_SATP_MASK = NEMU_SATP_MODE_MASK |NEMU_SATP_ASID_MASK | NEMU_SATP_PADDR_MASK;
+
 const RegVal STATUS_SD_MASK = 1ULL << ((sizeof(uint64_t) * 8) - 1);
 const RegVal STATUS_SXL_MASK = 3ULL << SXL_OFFSET;
 const RegVal STATUS_UXL_MASK = 3ULL << UXL_OFFSET;
