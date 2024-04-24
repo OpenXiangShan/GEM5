@@ -15,7 +15,10 @@ NemuPlic::NemuPlic(const NemuPlicParams &p) : BasicPioDevice(p, p.pio_size) {}
 Tick
 NemuPlic::read(PacketPtr pkt)
 {
-    panic("todo,now plic read is nothing\n");
+    pkt->setLE(0);
+    warn("now plic read always is 0\n");
+    pkt->makeAtomicResponse();
+    return pioDelay;
 }
 
 Tick
