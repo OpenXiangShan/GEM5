@@ -570,13 +570,20 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 // shall have no effect (see 4.1.12 in priv ISA manual)
                 SATP cur_val = readMiscRegNoEffect(misc_reg);
                 SATP new_val = val;
-                if (new_val.mode != AddrXlateMode::BARE &&
-                    new_val.mode != AddrXlateMode::SV39)
-                    new_val.mode = cur_val.mode;
-                setMiscRegNoEffect(misc_reg, new_val);
+                //change the mode update , only support sv39
+                //if (new_val.mode != AddrXlateMode::BARE &&
+                //    new_val.mode != AddrXlateMode::SV39)
+                //    new_val.mode = cur_val.mode;
+                //setMiscRegNoEffect(misc_reg, new_val);
                 if (cur_val != new_val) {
                     tc->getCpuPtr()->flushTLBs();
                 }
+                if ((val & NEMU_SATP_SV39_MASK) >> NEMU_SATP_RIGHT_OFFSET == NEMU_SV39_SIGN0 ||
+                    (val & NEMU_SATP_SV39_MASK) >> NEMU_SATP_RIGHT_OFFSET == NEMU_SV39_SIGN1) {
+                    RegVal writeVal = val & NEMU_SATP_MASK;
+                    setMiscRegNoEffect(misc_reg, writeVal);
+                }
+
             }
             break;
           case MISCREG_TSELECT:
