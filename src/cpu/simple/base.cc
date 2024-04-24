@@ -535,10 +535,11 @@ BaseSimpleCPU::difftestRecordAndStep()
     assert(enableDifftest);
     diffInfo.inst = curStaticInst;
     diffInfo.pc = &threadContexts[curThread]->pcState();
-    if (curStaticInst->numDestRegs() > 0) {
-        const auto &dest = curStaticInst->destRegIdx(0);
+    assert(curStaticInst->numDestRegs() <= MaxDestRegisters);
+    for (int i = 0; i < curStaticInst->numSrcRegs(); i++) {
+        const auto &dest = curStaticInst->destRegIdx(i);
         if ((dest.isFloatReg() || dest.isIntReg()) && !dest.isZeroReg()) {
-            diffInfo.result = threadContexts[curThread]->getReg(dest);
+            diffInfo.scalarResults[i] = threadContexts[curThread]->getReg(dest);
         }
     }
     difftestStep(curThread, numCommittedInsts);

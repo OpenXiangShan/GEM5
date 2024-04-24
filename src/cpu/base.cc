@@ -400,6 +400,7 @@ BaseCPU::startup()
 
     if (system->multiCore()) {
         diffAllStates->proxy->initState(params().cpu_id, goldenMem);
+        diffInfo.scalarResults.resize(MaxDestRegisters);
     }
 
 }
@@ -878,7 +879,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             assert(diffInfo.inst->numDestRegs()==1);
             const auto &dest = diffInfo.inst->destRegIdx(0);
             unsigned index = dest.index() + (dest.isFloatReg() ? FPRegIndexBase : IntRegIndexBase);
-            diffAllStates->referenceRegFile[index] = diffInfo.result;
+            diffAllStates->referenceRegFile[index] = diffInfo.scalarResults[0];
         }
         diffAllStates->proxy->regcpy(&(diffAllStates->referenceRegFile), DUT_TO_REF);
 
@@ -888,8 +889,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         diffAllStates->diff.nemu_this_pc = next_pc;
         diffAllStates->diff.npc = next_pc;
         return std::make_pair(NoneDiff, true);
-    }
-    else {
+    } else {
         // difftest step start
         DPRINTF(Diff, "Step NEMU\n");
         diffAllStates->proxy->exec(1);
@@ -1122,12 +1122,13 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         }
     }
 
-    if (diffInfo.inst->numDestRegs() > 0) {
-        const auto &dest = diffInfo.inst->destRegIdx(0);
+    for (int dest_idx = 0; dest_idx < diffInfo.inst->numDestRegs(); dest_idx++) {
+
+        const auto &dest = diffInfo.inst->destRegIdx(dest_idx);
         auto dest_tag = dest.index() + dest.isFloatReg() * 32;
 
         if ((dest.isFloatReg() || dest.isIntReg()) && !dest.isZeroReg()) {
-            auto gem5_val = diffInfo.result;
+            auto gem5_val = diffInfo.scalarResults[dest_idx];
             auto nemu_val = diffAllStates->referenceRegFile[dest_tag];
             DPRINTF(Diff, "At %s Ref value: %#lx, GEM5 value: %#lx\n",
                     reg_name[dest_tag], nemu_val, gem5_val);
@@ -1137,6 +1138,9 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             }
             if (diffInfo.inst->isStore()) {
                 DPRINTF(Diff, "Store addr: %#lx\n", diffInfo.physEffAddr);
+            }
+            if (diffInfo.inst->isAtomic()) {
+                DPRINTF(Diff, "AMO addr: %#lx\n", diffInfo.physEffAddr);
             }
             if (gem5_val != nemu_val) {
                 if (dest.isFloatReg() &&
@@ -1197,8 +1201,15 @@ BaseCPU::difftestStep(ThreadID tid, InstSeqNum seq)
     DPRINTF(Diff, "DiffTest step on inst pc: %#lx: %s\n",
             diffInfo.pc->instAddr(),
             diffInfo.inst->disassemble(diffInfo.pc->instAddr()));
-    // Keep an instruction count.
-    if (!diffInfo.inst->isMicroop() || diffInfo.inst->isLastMicroop()) {
+
+    bool is_fence = diffInfo.inst->isReadBarrier() || diffInfo.inst->isWriteBarrier();
+    bool fence_should_diff = is_fence && !diffInfo.inst->isMicroop();
+    bool amo_should_diff = diffInfo.inst->isAtomic() && diffInfo.inst->numDestRegs() > 0;
+    bool is_sc = diffInfo.inst->isStoreConditional() && diffInfo.inst->isDelayedCommit();
+    bool other_should_diff = !diffInfo.inst->isAtomic() && !is_fence && !is_sc &&
+                             (!diffInfo.inst->isMicroop() || diffInfo.inst->isLastMicroop());
+
+    if (fence_should_diff || amo_should_diff || is_sc || other_should_diff) {
         should_diff = true;
         if (!diffAllStates->hasCommit && diffInfo.pc->instAddr() == 0x80000000u) {
             diffAllStates->hasCommit = true;
@@ -1219,21 +1230,6 @@ BaseCPU::difftestStep(ThreadID tid, InstSeqNum seq)
             warn("Start regcpy to NEMU\n");
             diffAllStates->proxy->regcpy(&(diffAllStates->gem5RegFile), DUT_TO_REF);
         }
-
-        if (diffAllStates->scFenceInFlight) {
-            assert(diffInfo.inst->isWriteBarrier() &&
-                   diffInfo.inst->isReadBarrier());
-            should_diff = false;
-        }
-    }
-
-    diffAllStates->scFenceInFlight = false;
-
-    if (!diffInfo.inst->isLastMicroop() &&
-        diffInfo.inst->isStoreConditional() &&
-        diffInfo.inst->isDelayedCommit()) {
-        diffAllStates->scFenceInFlight = true;
-        should_diff = true;
     }
 
     if (enableDifftest && should_diff) {

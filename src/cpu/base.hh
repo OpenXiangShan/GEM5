@@ -704,11 +704,13 @@ class BaseCPU : public ClockedObject
     uint8_t *goldenMem;
 
   public:
+    const unsigned MaxDestRegisters = 2;
+
     struct
     {
         gem5::StaticInstPtr inst;
         // the result of currently inst
-        gem5::RegVal result;
+        std::vector<gem5::RegVal> scalarResults;
         uint64_t vecResult[RiscvISA::NumVecElemPerVecReg];
         // the lambda expr of get srcOperand
         gem5::RegVal getSrcReg(const gem5::RegId &regid) { return 0; };

@@ -1230,13 +1230,13 @@ Commit::commitInsts()
                     }
                     cpu->diffInfo.inst = head_inst->staticInst;
                     cpu->diffInfo.pc = &head_inst->pcState();
-                    if (head_inst->numDestRegs() > 0) {
-                        const auto &dest = head_inst->destRegIdx(0);
-                        if ((dest.isFloatReg() || dest.isIntReg()) &&
-                            !dest.isZeroReg()) {
-                            cpu->diffInfo.result = cpu->getArchReg(dest, tid);
-                        }
-                        else if (dest.isVecReg()) {
+                    assert(head_inst->numDestRegs() <= cpu->MaxDestRegisters);
+                    for (int i = 0; i < head_inst->numDestRegs(); i++) {
+                        const auto &dest = head_inst->destRegIdx(i);
+                        if ((dest.isFloatReg() || dest.isIntReg()) && !dest.isZeroReg()) {
+                            cpu->diffInfo.scalarResults[i] = cpu->getArchReg(dest, tid);
+                        } else if (dest.isVecReg()) {
+                            assert(i == 0);
                             cpu->getArchReg(dest, &(cpu->diffInfo.vecResult), tid);
                         }
                     }
