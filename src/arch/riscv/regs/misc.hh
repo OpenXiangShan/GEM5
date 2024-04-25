@@ -841,7 +841,7 @@ const RegVal STATUS_UPIE_MASK = 1ULL << 4;
 const RegVal STATUS_MIE_MASK = 1ULL << 3;
 const RegVal STATUS_SIE_MASK = 1ULL << 1;
 const RegVal STATUS_UIE_MASK = 1ULL << 0;
-const RegVal MSTATUS_MASK = STATUS_SD_MASK | STATUS_SXL_MASK |
+/*const RegVal MSTATUS_MASK = STATUS_SD_MASK | STATUS_SXL_MASK |
                             STATUS_UXL_MASK | STATUS_TSR_MASK |
                             STATUS_TW_MASK | STATUS_TVM_MASK |
                             STATUS_MXR_MASK | STATUS_SUM_MASK |
@@ -851,7 +851,8 @@ const RegVal MSTATUS_MASK = STATUS_SD_MASK | STATUS_SXL_MASK |
                             STATUS_SPP_MASK | STATUS_MPIE_MASK |
                             STATUS_SPIE_MASK | STATUS_UPIE_MASK |
                             STATUS_MIE_MASK | STATUS_SIE_MASK |
-                            STATUS_UIE_MASK;
+                            STATUS_UIE_MASK;*/
+const RegVal MSTATUS_MASK = (0x7e79aaUL) | (1UL << 63) | (1UL << 39) | (1UL << 38);
 const RegVal SSTATUS_MASK = STATUS_SD_MASK | STATUS_UXL_MASK |
                             STATUS_MXR_MASK | STATUS_SUM_MASK |
                             STATUS_XS_MASK | STATUS_FS_MASK |
@@ -873,7 +874,7 @@ const RegVal UTI_MASK = 1ULL << 4;
 const RegVal MSI_MASK = 1ULL << 3;
 const RegVal SSI_MASK = 1ULL << 1;
 const RegVal USI_MASK = 1ULL << 0;
-const RegVal MI_MASK = MEI_MASK | SEI_MASK | UEI_MASK |
+const RegVal MIP_MASK = MEI_MASK | SEI_MASK | UEI_MASK |
                        MTI_MASK | STI_MASK | UTI_MASK |
                        MSI_MASK | SSI_MASK | USI_MASK;
 const RegVal SI_MASK = SEI_MASK | STI_MASK | SSI_MASK;
@@ -893,8 +894,8 @@ const std::map<int, RegVal> CSRMasks = {
     {CSR_SIP, SI_MASK},
     {CSR_MSTATUS, MSTATUS_MASK},
     {CSR_MISA, MISA_MASK},
-    {CSR_MIE, MI_MASK},
-    {CSR_MIP, MI_MASK}
+  //  {CSR_MIE, MIE_MASK},
+    {CSR_MIP, MIP_MASK}
 };
 
 #define concat_temp(x, y) x ## y
