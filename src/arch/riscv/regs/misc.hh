@@ -841,7 +841,7 @@ const RegVal STATUS_UPIE_MASK = 1ULL << 4;
 const RegVal STATUS_MIE_MASK = 1ULL << 3;
 const RegVal STATUS_SIE_MASK = 1ULL << 1;
 const RegVal STATUS_UIE_MASK = 1ULL << 0;
-const RegVal MSTATUS_MASK = STATUS_SD_MASK | STATUS_SXL_MASK |
+/*const RegVal MSTATUS_MASK = STATUS_SD_MASK | STATUS_SXL_MASK |
                             STATUS_UXL_MASK | STATUS_TSR_MASK |
                             STATUS_TW_MASK | STATUS_TVM_MASK |
                             STATUS_MXR_MASK | STATUS_SUM_MASK |
@@ -851,7 +851,8 @@ const RegVal MSTATUS_MASK = STATUS_SD_MASK | STATUS_SXL_MASK |
                             STATUS_SPP_MASK | STATUS_MPIE_MASK |
                             STATUS_SPIE_MASK | STATUS_UPIE_MASK |
                             STATUS_MIE_MASK | STATUS_SIE_MASK |
-                            STATUS_UIE_MASK;
+                            STATUS_UIE_MASK;*/
+const RegVal MSTATUS_MASK = (0x7e79aaUL) | (1UL << 63) | (1UL << 39) | (1UL << 38);
 const RegVal SSTATUS_MASK = STATUS_SD_MASK | STATUS_UXL_MASK |
                             STATUS_MXR_MASK | STATUS_SUM_MASK |
                             STATUS_XS_MASK | STATUS_FS_MASK |
