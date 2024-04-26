@@ -1161,12 +1161,17 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                         sync_mem_reg();
                         continue;
                     } else if (diffInfo.inst->isAtomic()) {
-                        DPRINTF(Diff, "Golden value: %#lx\n", *(uint64_t *)golden_ptr);
-                        warn(
-                            "Atomic encountered, we assume GEM5 is right without checking (because it is hard to "
-                            "check). Sync from golden to ref\n");
-                        sync_mem_reg();
-                        continue;
+                        DPRINTF(Diff, "Golden mem old value: %#lx, GEM5 old value: %#lx\n",
+                                diffInfo.amoOldGoldenValue, gem5_val);
+                        DPRINTF(Diff, "New golden value: %#lx\n", *(uint64_t *)golden_ptr);
+                        if (memcmp(&diffInfo.amoOldGoldenValue, &gem5_val, diffInfo.effSize) == 0) {
+                            warn(
+                                "Atomic encountered, old value matched. Sync from golden to ref\n");
+                            sync_mem_reg();
+                            continue;
+                        } else {
+                            warn("Old value not matched!\n");
+                        }
                     }
                 }
 

@@ -1279,7 +1279,16 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx)
             uint8_t tmp_data[8] = {0};
             memcpy(tmp_data, store_inst->memData, request->_size);
             assert(request->req()->getAtomicOpFunctor());
+
+            // read golden memory to get the global latest value before this AMO is executed for further compare
+            cpu->goldenMemManager()->readGoldenMem(request->mainReq()->getPaddr(),
+                                                   store_inst->getAmoOldGoldenValuePtr(), request->_size);
+            cpu->diffInfo.amoOldGoldenValue = store_inst->getAmoOldGoldenValue();
+
+            // before amo operate on golden memory
             (*(request->req()->getAtomicOpFunctor()))(tmp_data);
+            // after amo operate on golden memory
+
             DPRINTF(Diff, "AMO writing to golden memory at addr %#x, data %#lx, mask %#x, size %d\n",
                     request->mainReq()->getPaddr(), *(uint64_t *)tmp_data, 0xff, request->_size);
             cpu->goldenMemManager()->updateGoldenMem(request->mainReq()->getPaddr(), tmp_data, 0xff,

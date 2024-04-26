@@ -254,6 +254,10 @@ class DynInst : public ExecContext, public RefCounted
     // Whether or not the source register is ready, one bit per register.
     uint8_t *_readySrcIdx;
 
+    std::vector<bool> srcRegCanceled;
+
+    uint64_t amoOldGoldenValue;
+
   public:
     size_t numSrcs() const { return _numSrcs; }
     size_t numDests() const { return _numDests; }
@@ -729,6 +733,10 @@ class DynInst : public ExecContext, public RefCounted
 
     /** Returns the logical register index of the i'th source register. */
     const RegId& srcRegIdx(int i) const { return staticInst->srcRegIdx(i); }
+
+    uint64_t getAmoOldGoldenValue() const { return amoOldGoldenValue; }
+
+    void *getAmoOldGoldenValuePtr() { return (void *) &amoOldGoldenValue; }
 
     /** Return the size of the instResult queue. */
     uint8_t resultSize() { return instResult.size(); }
