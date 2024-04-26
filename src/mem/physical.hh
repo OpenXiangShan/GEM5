@@ -247,6 +247,8 @@ class PhysicalMemory : public Serializable
      */
     bool isMemAddr(Addr addr) const;
 
+    Addr getStartaddr() const;
+
     /**
      * Get the memory ranges for all memories that are to be reported
      * to the configuration table. The ranges are merged before they

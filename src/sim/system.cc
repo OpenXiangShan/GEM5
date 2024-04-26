@@ -566,6 +566,7 @@ void System::initState()
         warn("Creating golden memory for multi-core difftest\n");
         assert(enableMemDedup);
         goldenMem = dedupMemManager.createCopyOnWriteBranch();
+        goldenMemManager.initGoldenMem(physmem.getStartaddr(), memSize(), goldenMem);
     }
 
 }

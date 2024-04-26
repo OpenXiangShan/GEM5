@@ -48,6 +48,7 @@
 // Before we do anything else, check if this build is the NULL ISA,
 // and if so stop here
 #include "config/the_isa.hh"
+#include "cpu/golden_global_mem.hh"
 
 #if IS_NULL_ISA
 #error Including BaseCPU in a system without CPU support
@@ -125,7 +126,6 @@ struct DiffAllStates
     DiffState diff;
     RefProxy *proxy;
 
-    bool scFenceInFlight{false};
     bool hasCommit{false};
 };
 
@@ -701,7 +701,9 @@ class BaseCPU : public ClockedObject
      */
     const bool enableMemDedup{false};
 
-    uint8_t *goldenMem;
+    uint8_t *goldenMemPtr;
+
+    gem5::GoldenGloablMem *_goldenMemManager;
 
   public:
     const unsigned MaxDestRegisters = 2;
@@ -717,6 +719,7 @@ class BaseCPU : public ClockedObject
         const gem5::PCStateBase *pc;
         bool curInstStrictOrdered{false};
         gem5::Addr physEffAddr;
+        gem5::Addr effSize;
         // Register address causing difftest error
         bool errorRegsValue[96];// 32 regs + 32fprs +32 vprs
         bool errorCsrsValue[32];// CsrRegIndex
@@ -725,6 +728,7 @@ class BaseCPU : public ClockedObject
         std::queue<std::string> lastCommittedMsg;
     } diffInfo;
 
+    uint8_t cmpBuffer[16];
 
     virtual RegVal readMiscRegNoEffect(int misc_reg, ThreadID tid) const
     {
@@ -772,6 +776,10 @@ class BaseCPU : public ClockedObject
     int committedInstNum = 0;
 
     std::vector<std::pair<Addr, std::string>> committedInsts;
+
+    uint8_t *getGoldenMemPtr() { return goldenMemPtr; }
+
+    gem5::GoldenGloablMem *goldenMemManager() { return _goldenMemManager; }
 };
 
 } // namespace gem5

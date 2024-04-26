@@ -46,11 +46,14 @@
 #include "base/str.hh"
 #include "base/trace.hh"
 #include "config/the_isa.hh"
+#include "cpu/base.hh"
 #include "cpu/checker/cpu.hh"
+#include "cpu/golden_global_mem.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/lsq.hh"
 #include "debug/Activity.hh"
+#include "debug/Diff.hh"
 #include "debug/HtmCpu.hh"
 #include "debug/IEW.hh"
 #include "debug/LSQUnit.hh"
@@ -957,20 +960,21 @@ LSQUnit::writebackStores()
                 request->mainReq()->getPaddr(), (int)*(inst->memData),
                 inst->seqNum);
 
+        bool sc_success = false;
         // @todo: Remove this SC hack once the memory system handles it.
         if (inst->isStoreConditional()) {
             // Disable recording the result temporarily.  Writing to
             // misc regs normally updates the result, but this is not
             // the desired behavior when handling store conditionals.
             inst->recordResult(false);
-            bool success = inst->tcBase()->getIsaPtr()->handleLockedWrite(
+            sc_success = inst->tcBase()->getIsaPtr()->handleLockedWrite(
                     inst.get(), request->mainReq(), cacheBlockMask);
             inst->recordResult(true);
             request->packetSent();
 
-            inst->lockedWriteSuccess(success);
+            inst->lockedWriteSuccess(sc_success);
 
-            if (!success) {
+            if (!sc_success) {
                 request->complete();
                 // Instantly complete this store.
                 DPRINTF(LSQUnit, "Store conditional [sn:%lli] failed.  "
@@ -1249,6 +1253,7 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx)
     /* We 'need' a copy here because we may clear the entry from the
      * store queue. */
     DynInstPtr store_inst = store_idx->instruction();
+    auto request = store_idx->request();
     if (store_idx == storeQueue.begin()) {
         do {
             storeQueue.front().clear();
@@ -1262,6 +1267,25 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx)
     DPRINTF(LSQUnit, "Completing store [sn:%lli], idx:%i, store head "
             "idx:%i\n",
             store_inst->seqNum, store_idx.idx() - 1, storeQueue.head() - 1);
+
+    if ((!store_inst->isStoreConditional() || store_inst->lockedWriteSuccess()) &&
+        cpu->goldenMemManager()->inPmem(request->mainReq()->getPaddr())) {
+        if (!store_inst->isAtomic()) {
+            DPRINTF(Diff, "Store writing to golden memory at addr %#x, data %#lx, mask %#x, size %d\n",
+                    request->mainReq()->getPaddr(), *(uint64_t *)store_inst->memData, 0xff, request->_size);
+            cpu->goldenMemManager()->updateGoldenMem(request->mainReq()->getPaddr(), store_inst->memData, 0xff,
+                                                     request->_size);
+        } else {
+            uint8_t tmp_data[8] = {0};
+            memcpy(tmp_data, store_inst->memData, request->_size);
+            assert(request->req()->getAtomicOpFunctor());
+            (*(request->req()->getAtomicOpFunctor()))(tmp_data);
+            DPRINTF(Diff, "AMO writing to golden memory at addr %#x, data %#lx, mask %#x, size %d\n",
+                    request->mainReq()->getPaddr(), *(uint64_t *)tmp_data, 0xff, request->_size);
+            cpu->goldenMemManager()->updateGoldenMem(request->mainReq()->getPaddr(), tmp_data, 0xff,
+                                                     request->_size);
+        }
+    }
 
 #if TRACING_ON
     if (debug::O3PipeView) {

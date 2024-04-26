@@ -1243,6 +1243,7 @@ Commit::commitInsts()
                     cpu->diffInfo.curInstStrictOrdered =
                         head_inst->strictlyOrdered();
                     cpu->diffInfo.physEffAddr = head_inst->physEffAddr;
+                    cpu->diffInfo.effSize = head_inst->effSize;
                     cpu->difftestStep(tid, head_inst->seqNum);
                 }
 

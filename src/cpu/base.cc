@@ -56,6 +56,7 @@
 #include "base/output.hh"
 #include "base/trace.hh"
 #include "cpu/checker/cpu.hh"
+#include "cpu/difftest.hh"
 #include "cpu/thread_context.hh"
 #include "debug/Diff.hh"
 #include "debug/Diff2.hh"
@@ -395,11 +396,10 @@ BaseCPU::startup()
         powerState->set(enums::PwrState::ON);
 
     if (system->multiCore()) {
-        goldenMem = system->getGoldenMemPtr();
-    }
+        goldenMemPtr = system->getGoldenMemPtr();
+        _goldenMemManager = system->getGoldenMemManager();
 
-    if (system->multiCore()) {
-        diffAllStates->proxy->initState(params().cpu_id, goldenMem);
+        diffAllStates->proxy->initState(params().cpu_id, goldenMemPtr);
         diffInfo.scalarResults.resize(MaxDestRegisters);
     }
 
@@ -1133,22 +1133,48 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             DPRINTF(Diff, "At %s Ref value: %#lx, GEM5 value: %#lx\n",
                     reg_name[dest_tag], nemu_val, gem5_val);
 
-            if (diffInfo.inst->isLoad()) {
-                DPRINTF(Diff, "Load addr: %#lx\n", diffInfo.physEffAddr);
+            if (diffInfo.inst->isMemRef()) {
+                DPRINTF(Diff, "%s addr: %#lx, size: %u\n",
+                        diffInfo.inst->isAtomic() ? "AMO"
+                        : diffInfo.inst->isLoad() ? "Load"
+                                                  : "Store",
+                        diffInfo.physEffAddr, diffInfo.effSize);
             }
-            if (diffInfo.inst->isStore()) {
-                DPRINTF(Diff, "Store addr: %#lx\n", diffInfo.physEffAddr);
-            }
-            if (diffInfo.inst->isAtomic()) {
-                DPRINTF(Diff, "AMO addr: %#lx\n", diffInfo.physEffAddr);
-            }
+
             if (gem5_val != nemu_val) {
+                if (system->multiCore() && (diffInfo.inst->isLoad() || diffInfo.inst->isAtomic()) &&
+                    _goldenMemManager->inPmem(diffInfo.physEffAddr)) {
+                    warn("Difference on %s instr found in multicore mode, check in golden memory\n",
+                         diffInfo.inst->isLoad() ? "load" : "amo");
+                    uint8_t *golden_ptr = (uint8_t *)_goldenMemManager->guestToHost(diffInfo.physEffAddr);
+
+                    // a lambda function to sync memory and register from golden results to ref
+                    auto sync_mem_reg = [&]() {
+                        diffAllStates->proxy->memcpy(diffInfo.physEffAddr, golden_ptr, diffInfo.effSize,
+                                                     DIFFTEST_TO_REF);
+                        diffAllStates->referenceRegFile[dest_tag] = gem5_val;
+                        diffAllStates->proxy->regcpy(&(diffAllStates->referenceRegFile), DUT_TO_REF);
+                    };
+
+                    if (diffInfo.inst->isLoad() && memcmp(golden_ptr, &gem5_val, diffInfo.effSize) == 0) {
+                        warn("Load content matched in golden memory. Sync from golden to ref\n");
+                        sync_mem_reg();
+                        continue;
+                    } else if (diffInfo.inst->isAtomic()) {
+                        DPRINTF(Diff, "Golden value: %#lx\n", *(uint64_t *)golden_ptr);
+                        warn(
+                            "Atomic encountered, we assume GEM5 is right without checking (because it is hard to "
+                            "check). Sync from golden to ref\n");
+                        sync_mem_reg();
+                        continue;
+                    }
+                }
+
                 if (dest.isFloatReg() &&
                     (gem5_val ^ nemu_val) == ((0xffffffffULL) << 32)) {
                     DPRINTF(Diff,
                             "Difference might be caused by box,"
                             " ignore it\n");
-
                 } else {
                     for (int i = 0; i < diffInfo.inst->numSrcRegs(); i++) {
                         const auto &src = diffInfo.inst->srcRegIdx(i);

@@ -52,6 +52,7 @@
 #include "base/loader/symtab.hh"
 #include "base/statistics.hh"
 #include "config/the_isa.hh"
+#include "cpu/golden_global_mem.hh"
 #include "cpu/pc_event.hh"
 #include "enums/MemoryMode.hh"
 #include "mem/mem_requestor.hh"
@@ -337,6 +338,8 @@ class System : public SimObject, public PCEventScope
 
     uint8_t *goldenMem = nullptr;
 
+    GoldenGloablMem goldenMemManager;
+
   public:
     /**
      * Get a pointer to the Kernel Virtual Machine (KVM) SimObject,
@@ -414,6 +417,8 @@ class System : public SimObject, public PCEventScope
     bool multiCore() const { return numCPUs > 1; }
 
     uint8_t *getGoldenMemPtr() const { return goldenMem; }
+
+    GoldenGloablMem *getGoldenMemManager() { return &goldenMemManager; }
 
   protected:
 

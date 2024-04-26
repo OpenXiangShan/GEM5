@@ -325,6 +325,12 @@ PhysicalMemory::isMemAddr(Addr addr) const
     return addrMap.contains(addr) != addrMap.end();
 }
 
+Addr
+PhysicalMemory::getStartaddr() const
+{
+    return addrMap.begin()->first.start();
+}
+
 AddrRangeList
 PhysicalMemory::getConfAddrRanges() const
 {
