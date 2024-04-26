@@ -338,6 +338,9 @@ void ISA::clear()
     miscRegFile[MISCREG_NMIE] = 1;
     // sync with NEMU
     miscRegFile[MISCREG_VTYPE] = (1lu<<63);
+    //(HSTATUS) reg_num.vsxl =2;
+    miscRegFile[MISCREG_HSTATUS] = (uint64_t)2<<32;
+    printf("set hstatus\n");
 }
 
 bool
@@ -495,6 +498,11 @@ ISA::setMiscReg(int misc_reg, RegVal val)
 {
     if (misc_reg == MISCREG_STATUS) {
         DPRINTF(RiscvMisc, "setMiscReg: setting mstatus with %#lx\n", val);
+        printf("setMiscReg: setting mstatus with %#lx\n", val);
+    }
+    if (misc_reg == MISCREG_HSTATUS) {
+        DPRINTF(RiscvMisc, "setMiscReg: setting mstatus with %#lx\n", val);
+        printf("setMiscReg: setting hstatus with %#lx hstatus %lx\n", val,readMiscReg(MISCREG_HSTATUS));
     }
     if (misc_reg == MISCREG_IE) {
         DPRINTF(RiscvMisc, "setMiscReg: setting mstatus with %#lx\n", val);
@@ -800,6 +808,8 @@ operator<<(std::ostream &os, gem5::RiscvISA::PrivilegeMode pm)
         return os << "PRV_U";
     case gem5::RiscvISA::PRV_S:
         return os << "PRV_S";
+    case gem5::RiscvISA::PRV_HS:
+        return os << "PRV_HS";
     case gem5::RiscvISA::PRV_M:
         return os << "PRV_M";
     }
