@@ -1071,6 +1071,12 @@ BaseCache::cmpAndSwap(CacheBlk *blk, PacketPtr pkt)
 
     if (overwrite_mem) {
         std::memcpy(blk_data, &overwrite_val, pkt->getSize());
+        DPRINTF(CacheVerbose, "CAS instruction Write to addr %#x size %lu\n",
+                pkt->getAddr(), pkt->getSize());
+        for (int i = 0; i < pkt->getSize(); i++) {
+            DPRINTFR(CacheVerbose, "data[%d] = %02x, ", i, blk_data[i]);
+        }
+        DPRINTFR(CacheVerbose, "\n");
         blk->setCoherenceBits(CacheBlk::DirtyBit);
 
         if (ppDataUpdate->hasListeners()) {
@@ -1401,6 +1407,12 @@ BaseCache::satisfyRequest(PacketPtr pkt, CacheBlk *blk, bool, bool)
 
             // execute AMO operation
             (*(pkt->getAtomicOp()))(blk_data);
+
+            DPRINTF(CacheVerbose, "Atomic instruction Write to addr %#x size %lu\n", pkt->getAddr(), pkt->getSize());
+            for (int i = 0; i < pkt->getSize(); i++) {
+                DPRINTFR(CacheVerbose, "data[%d] = %02x, ", i, blk_data[i]);
+            }
+            DPRINTFR(CacheVerbose, "\n");
 
             // Inform of this block's data contents update
             if (ppDataUpdate->hasListeners()) {

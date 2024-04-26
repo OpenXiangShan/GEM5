@@ -1026,6 +1026,11 @@ Cache::doTimingSupplyResponse(PacketPtr req_pkt, const uint8_t *blk_data,
         DPRINTF(Cache, "%s: pkt static data: %i, dyn data: %i\n", __func__, pkt->flags.isSet(Packet::STATIC_DATA),
                 pkt->flags.isSet(Packet::DYNAMIC_DATA));
         pkt->setDataFromBlock(blk_data, blkSize);
+        DPRINTF(CacheVerbose, "Responsing data:\n");
+        for (int i = 0; i < blkSize; i++) {
+            DPRINTFR(CacheVerbose, "%02x ", blk_data[i]);
+        }
+        DPRINTFR(CacheVerbose, "\n");
     }
     if (pkt->cmd == MemCmd::ReadResp && pending_inval) {
         // Assume we defer a response to a read from a far-away cache
