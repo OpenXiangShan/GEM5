@@ -66,6 +66,7 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
         PrivilegeMode pp = (PrivilegeMode)tc->readMiscReg(MISCREG_PRV);
         PrivilegeMode prv = PRV_M;
         STATUS status = tc->readMiscReg(MISCREG_STATUS);
+        HSTATUS hstatus = tc->readMiscReg(MISCREG_HSTATUS);
 
         // According to riscv-privileged-v1.11, if a NMI occurs at the middle
         // of a M-mode trap handler, the state (epc/cause) will be overwritten
@@ -99,6 +100,7 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
 
         // Set fault registers and status
         MiscRegIndex cause, epc, tvec, tval;
+        int v = status.mprv ? status.mpv : tc->readMiscReg(MISCREG_VIRMODE);
         switch (prv) {
           case PRV_U:
             cause = MISCREG_UCAUSE;
@@ -118,6 +120,14 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
             status.spp = pp;
             status.spie = status.sie;
             status.sie = 0;
+            hstatus.gva =
+                (!isInterrupt()) && (_code == INSTG_PAGE || _code == LOADG_PAGE || _code == STOREG_PAGE ||
+                                     ((v) && ((0 <= _code && _code <= 7 && _code != 2) || _code == INST_PAGE ||
+                                              _code == LOAD_PAGE || _code == STORE_PAGE)));
+            hstatus.spv = v;
+            if (v)
+                hstatus.spvp = pp;
+            tc->setMiscReg(MISCREG_VIRMODE, 0);
             break;
           case PRV_M:
             cause = MISCREG_MCAUSE;
@@ -128,6 +138,12 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
             status.mpp = pp;
             status.mpie = status.mie;
             status.mie = 0;
+            status.gva =
+                (!isInterrupt()) && (_code == INSTG_PAGE || _code == LOADG_PAGE || _code == STOREG_PAGE ||
+                                     ((v) && ((0 <= _code && _code <= 7 && _code != 2) || _code == INST_PAGE ||
+                                              _code == LOAD_PAGE || _code == STORE_PAGE)));
+            status.mpv = v;
+            tc->setMiscReg(MISCREG_VIRMODE, 0);
             break;
           default:
             panic("Unknown privilege mode %d.", prv);
@@ -148,6 +164,7 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
             tc->setMiscReg(tval, trap_value());
         tc->setMiscReg(MISCREG_PRV, prv);
         tc->setMiscReg(MISCREG_STATUS, status);
+        tc->setMiscReg(MISCREG_HSTATUS, hstatus);
         // Temporarily mask NMI while we're in NMI handler. Otherweise, the
         // checkNonMaskableInterrupt will always return true and we'll be
         // stucked in an infinite loop.

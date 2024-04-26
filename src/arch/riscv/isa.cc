@@ -344,6 +344,11 @@ void ISA::clear()
     miscRegFile[MISCREG_NMIE] = 1;
 
     miscRegFile[MISCREG_VTYPE] = (1lu<<63);
+    //(HSTATUS) reg_num.vsxl =2;
+    miscRegFile[MISCREG_HSTATUS] = (uint64_t)2<<32;
+    miscRegFile[MISCREG_VSSTATUS] = miscRegFile[MISCREG_STATUS] & NEMU_SSTATUS_RMASK;
+
+    printf("set hstatus\n");
 }
 
 bool
@@ -501,6 +506,11 @@ ISA::setMiscReg(int misc_reg, RegVal val)
 {
     if (misc_reg == MISCREG_STATUS) {
         DPRINTF(RiscvMisc, "setMiscReg: setting mstatus with %#lx\n", val);
+        printf("setMiscReg: setting mstatus with %#lx\n", val);
+    }
+    if (misc_reg == MISCREG_HSTATUS) {
+        DPRINTF(RiscvMisc, "setMiscReg: setting mstatus with %#lx\n", val);
+        printf("setMiscReg: setting hstatus with %#lx hstatus %lx\n", val,readMiscReg(MISCREG_HSTATUS));
     }
     if (misc_reg == MISCREG_IE) {
         DPRINTF(RiscvMisc, "setMiscReg: setting mstatus with %#lx\n", val);
@@ -576,6 +586,17 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                     tc->getCpuPtr()->getInterruptController(tc->threadId()));
                 DPRINTF(RiscvMisc, "Setting IP to %#lx.\n", val);
                 ic->setIP(val);
+            }
+            break;
+          case MISCREG_HIE:
+            {
+                auto ic = dynamic_cast<RiscvISA::Interrupts *>(
+                    tc->getCpuPtr()->getInterruptController(tc->threadId()));
+                RegVal write_val =0;
+                RegVal old = readMiscReg(MISCREG_IE);
+                RegVal hip_Mask = NEMU_HIE_WMASK & (readMiscReg(MISCREG_MIDELEG) | NEMU_MIDELEG_FORCED_MASK);
+                write_val = ((old & ~(hip_Mask)) |(val & hip_Mask));
+                ic->setIE(write_val);
             }
             break;
           case MISCREG_IE:
@@ -692,6 +713,13 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                setMiscRegNoEffect(misc_reg, writeVal);
             }
             break;
+          case MISCREG_HSTATUS:
+            {
+                RegVal oldVal = readMiscRegNoEffect(MISCREG_HSTATUS);
+                RegVal writeVal = (oldVal & ~HSTATUS_MASK)|(val & HSTATUS_MASK);
+                setMiscRegNoEffect(misc_reg, writeVal);
+            }
+            break;
           default:
             setMiscRegNoEffect(misc_reg, val);
         }
@@ -796,6 +824,8 @@ operator<<(std::ostream &os, gem5::RiscvISA::PrivilegeMode pm)
         return os << "PRV_U";
     case gem5::RiscvISA::PRV_S:
         return os << "PRV_S";
+    case gem5::RiscvISA::PRV_HS:
+        return os << "PRV_HS";
     case gem5::RiscvISA::PRV_M:
         return os << "PRV_M";
     }

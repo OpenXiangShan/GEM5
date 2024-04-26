@@ -716,10 +716,10 @@ const std::map<int, CSRMetadata> CSRData = {
     {CSR_VTYPE,        {"vtype" , MISCREG_VTYPE}},
     {CSR_VLENB,        {"VLENB" , MISCREG_VLENB}},
 
-    {CSR_HSTATUS, {"hstatus", MISCREG_STATUS}},
+    {CSR_HSTATUS, {"hstatus", MISCREG_HSTATUS}},
     {CSR_HEDELEG, {"hedeleg", MISCREG_HEDELEG}},
     {CSR_HIDELEG, {"hideleg", MISCREG_HIDELEG}},
-    {CSR_HIE, {"hie", MISCREG_IE}},
+    {CSR_HIE, {"hie", MISCREG_HIE}},
     {CSR_HCOUNTEREN, {"hcounteren", MISCREG_HCOUNTEREN}},
     {CSR_HGEIE, {"hgeie", MISCREG_HGEIE}},
     {CSR_HTVAL, {"htval", MISCREG_HTVAL}},
@@ -778,6 +778,31 @@ BitUnion64(STATUS)
     Bitfield<0> uie;
 EndBitUnion(STATUS)
 
+BitUnion64(HSTATUS)
+    Bitfield<63,34> pad4;
+    Bitfield<33,32> vsxl;
+    Bitfield<31,23> pad3;
+    Bitfield<22> vtsr;
+    Bitfield<21> vtw;
+    Bitfield<20> vtvm;
+    Bitfield<19, 18> pad2;
+    Bitfield<17,12> vgein;
+    Bitfield<11,10> pad1;
+    Bitfield<9> hu;
+    Bitfield<8> spvp;
+    Bitfield<7> spv;
+    Bitfield<6> gva;
+    Bitfield<5> vsbe;
+    Bitfield<4,0> pad0;
+EndBitUnion(HSTATUS)
+
+BitUnion64(HGATP)
+    Bitfield<63,60> mode;
+    Bitfield<59,58> pad0;
+    Bitfield<57,44> vmid;
+    Bitfield<43,0> ppn;
+EndBitUnion(HGATP)
+
 /**
  * These fields are specified in the RISC-V Instruction Set Manual, Volume II,
  * v1.10 in Figures 3.11 and 3.12, accessible at www.riscv.org. Both the MIP
@@ -821,6 +846,13 @@ const uint64_t NEMU_SATP_ASID_MASK =  ((((uint64_t)1 <<(NEMU_SATP_ASID_LEN))-1)<
 const uint64_t NEMU_SATP_PADDR_MASK =  (((uint64_t)1<<NEMU_SATP_PADDR_LEN)-1);
 const uint64_t NEMU_SATP_MASK = NEMU_SATP_MODE_MASK |NEMU_SATP_ASID_MASK | NEMU_SATP_PADDR_MASK;
 
+const uint64_t NEMU_SSTATUS_WMASK = ((1 << 19) | (1 << 18) | (0x3 << 13) | (1 << 8) | (1 << 5) | (1 << 1));
+const uint64_t NEMU_SSTATUS_RMASK = (NEMU_SSTATUS_WMASK | (0x3 << 15) | (1ull << 63) | (3ull << 32));
+
+const uint64_t NEMU_VS_MASK = ((1 << 10) | (1 << 6) | (1 << 2));
+const uint64_t NEMU_HS_MASK = ((1 << 12) | NEMU_VS_MASK);
+const uint64_t NEMU_HIE_WMASK = NEMU_HS_MASK;
+const uint64_t NEMU_MIDELEG_FORCED_MASK = ((1 << 12) | (1 << 10) | (1 << 6) | (1 << 2));
 const RegVal STATUS_SD_MASK = 1ULL << ((sizeof(uint64_t) * 8) - 1);
 const RegVal STATUS_SXL_MASK = 3ULL << SXL_OFFSET;
 const RegVal STATUS_UXL_MASK = 3ULL << UXL_OFFSET;
@@ -853,6 +885,8 @@ const RegVal STATUS_UIE_MASK = 1ULL << 0;
                             STATUS_MIE_MASK | STATUS_SIE_MASK |
                             STATUS_UIE_MASK;*/
 const RegVal MSTATUS_MASK = (0x7e79aaUL) | (1UL << 63) | (1UL << 39) | (1UL << 38);
+const RegVal HSTATUS_MASK = ((1 << 22) | (1 << 21) | (1 << 20) | (1 << 18) | (0x3f << 12) | (1 << 9) | (1 << 8) |
+                             (1 << 7) | (1 << 6) | (1 << 5));
 const RegVal SSTATUS_MASK = STATUS_SD_MASK | STATUS_UXL_MASK |
                             STATUS_MXR_MASK | STATUS_SUM_MASK |
                             STATUS_XS_MASK | STATUS_FS_MASK |
@@ -892,8 +926,8 @@ const std::map<int, RegVal> CSRMasks = {
     {CSR_SSTATUS, SSTATUS_MASK},
     {CSR_SIE, SI_MASK},
     {CSR_SIP, SI_MASK},
-    {CSR_MSTATUS, MSTATUS_MASK},
     {CSR_MISA, MISA_MASK},
+    {CSR_HSTATUS,HSTATUS_MASK},
   //  {CSR_MIE, MIE_MASK},
     {CSR_MIP, MIP_MASK}
 };
