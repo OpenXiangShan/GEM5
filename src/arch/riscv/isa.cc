@@ -374,7 +374,15 @@ ISA::readMiscRegNoEffect(int misc_reg) const
 {
     if ((misc_reg >= RiscvISA::MiscRegIndex::MISCREG_PMPADDR00) &&
         (misc_reg < RiscvISA::MiscRegIndex::MISCREG_PMPADDR00 + 16)) {
-        return miscRegFile[misc_reg] & (-(1 << (12 - 2)));
+        auto mmu = dynamic_cast<RiscvISA::MMU *>(tc->getMMUPtr());
+        uint32_t pmp_index = misc_reg - MISCREG_PMPADDR00;
+        uint64_t csr_num = mmu->getPMP()->pmpcfg_from_index(pmp_index);
+        if (mmu->getPMP()->pmp_read_config(csr_num)) {
+            return miscRegFile[misc_reg] | (~mmu->getPMP()->pmpTorMask() >> 1);
+        } else {
+            return miscRegFile[misc_reg] & (mmu->getPMP()->pmpTorMask());
+        }
+        return 0;
     } else if (misc_reg > NUM_MISCREGS || misc_reg < 0) {
         // Illegal CSR
         panic("Illegal CSR index %#x\n", misc_reg);
@@ -454,6 +462,10 @@ ISA::readMiscReg(int misc_reg)
                   (readMiscRegNoEffect(MISCREG_VXRM) << 1);
         }
         break;
+        case MISCREG_PMPADDR00 ... MISCREG_PMPADDR15:
+        {
+            return readMiscRegNoEffect(misc_reg);
+        } break;
       default:
         // Try reading HPM counters
         // As a placeholder, all HPM counters are just cycle counters
@@ -488,6 +500,9 @@ void
 ISA::setMiscReg(int misc_reg, RegVal val)
 {
     if (misc_reg == MISCREG_STATUS) {
+        DPRINTF(RiscvMisc, "setMiscReg: setting mstatus with %#lx\n", val);
+    }
+    if (misc_reg == MISCREG_IE) {
         DPRINTF(RiscvMisc, "setMiscReg: setting mstatus with %#lx\n", val);
     }
     if (misc_reg >= MISCREG_CYCLE && misc_reg <= MISCREG_HPMCOUNTER31) {
