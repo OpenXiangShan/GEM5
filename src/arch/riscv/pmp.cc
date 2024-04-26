@@ -163,6 +163,12 @@ PMP::pmpUpdateCfg(uint32_t pmp_index, uint8_t this_cfg)
 
 }
 
+uint64_t
+PMP::pmpTorMask()
+{
+    return -((uint64_t)1 << (CONFIG_PMP_GRANULARITY - CONFIG_PMP_GRANULARITY));
+}
+
 void
 PMP::pmpUpdateRule(uint32_t pmp_index)
 {
@@ -211,6 +217,11 @@ PMP::pmpUpdateRule(uint32_t pmp_index)
       }
     }
 }
+bool
+PMP::pmp_read_config(uint64_t cfg)
+{
+    return (cfg & PMP_A) >= NEMU_PMP_NAPOT;
+}
 uint64_t
 PMP::pmpcfg_from_index(uint32_t pmp_index){
     int xlen =64;
@@ -218,11 +229,18 @@ PMP::pmpcfg_from_index(uint32_t pmp_index){
     int cfgPerCSR = xlen / 8;
     int cfg_csr_addr;
     switch (pmp_index / cfgPerCSR) {
-    case 0: cfg_csr_addr = 0x3a0; break;
-    case 1: cfg_csr_addr = 0x3a2; break;
-    default: assert(0);
-   }
-   return cfg_csr_addr + (pmp_index % cfgPerCSR);
+        case 0:
+            cfg_csr_addr = 0;
+            break;  // MISCREG_PMPCFG0
+        case 1:
+            cfg_csr_addr = 8;
+            break;  // MISCREG_PMPCFG1
+        default:
+            assert(0);
+    }
+    uint32_t now_pmp_index = (pmp_index % cfgPerCSR) + cfg_csr_addr;
+    DPRINTF(PMP, "return num %x yushu %d\n", pmpTable[now_pmp_index].pmpCfg, pmp_index % cfgPerCSR);
+    return pmpTable[now_pmp_index].pmpCfg;
 }
 void
 PMP::pmpUpdateAddr(uint32_t pmp_index, Addr this_addr)
