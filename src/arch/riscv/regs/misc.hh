@@ -716,7 +716,7 @@ const std::map<int, CSRMetadata> CSRData = {
     {CSR_VTYPE,        {"vtype" , MISCREG_VTYPE}},
     {CSR_VLENB,        {"VLENB" , MISCREG_VLENB}},
 
-    {CSR_HSTATUS, {"hstatus", MISCREG_STATUS}},
+    {CSR_HSTATUS, {"hstatus", MISCREG_HSTATUS}},
     {CSR_HEDELEG, {"hedeleg", MISCREG_HEDELEG}},
     {CSR_HIDELEG, {"hideleg", MISCREG_HIDELEG}},
     {CSR_HIE, {"hie", MISCREG_IE}},
@@ -777,6 +777,24 @@ BitUnion64(STATUS)
     Bitfield<1> sie;
     Bitfield<0> uie;
 EndBitUnion(STATUS)
+
+BitUnion64(HSTATUS)
+    Bitfield<63,34> pad4;
+    Bitfield<33,32> vsxl;
+    Bitfield<31,23> pad3;
+    Bitfield<22> vtsr;
+    Bitfield<21> vtw;
+    Bitfield<20> vtvm;
+    Bitfield<19, 18> pad2;
+    Bitfield<17,12> vgein;
+    Bitfield<11,10> pad1;
+    Bitfield<9> hu;
+    Bitfield<8> spvp;
+    Bitfield<7> spv;
+    Bitfield<6> gva;
+    Bitfield<5> vsbe;
+    Bitfield<4,0> pad0;
+EndBitUnion(HSTATUS)
 
 /**
  * These fields are specified in the RISC-V Instruction Set Manual, Volume II,
@@ -853,6 +871,8 @@ const RegVal STATUS_UIE_MASK = 1ULL << 0;
                             STATUS_MIE_MASK | STATUS_SIE_MASK |
                             STATUS_UIE_MASK;*/
 const RegVal MSTATUS_MASK = (0x7e79aaUL) | (1UL << 63) | (1UL << 39) | (1UL << 38);
+const RegVal HSTATUS_MASK = ((1 << 22) | (1 << 21) | (1 << 20) | (1 << 18) | (0x3f << 12) | (1 << 9) | (1 << 8) |
+                             (1 << 7) | (1 << 6) | (1 << 5));
 const RegVal SSTATUS_MASK = STATUS_SD_MASK | STATUS_UXL_MASK |
                             STATUS_MXR_MASK | STATUS_SUM_MASK |
                             STATUS_XS_MASK | STATUS_FS_MASK |
@@ -894,6 +914,7 @@ const std::map<int, RegVal> CSRMasks = {
     {CSR_SIP, SI_MASK},
     {CSR_MSTATUS, MSTATUS_MASK},
     {CSR_MISA, MISA_MASK},
+    {CSR_HSTATUS,HSTATUS_MASK},
   //  {CSR_MIE, MIE_MASK},
     {CSR_MIP, MIP_MASK}
 };
