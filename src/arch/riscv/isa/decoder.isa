@@ -1040,6 +1040,9 @@ decode QUADRANT default Unknown::unknown() {
                             Rd = Rs1/Rs2;
                         }
                     }}, IntDivOp);
+                    0x7: czero_eqz({{
+                        Rd = Rs2 == 0 ? 0 : Rs1;
+                    }});
                     0x20: sra({{
                         Rd_sd = Rs1_sd >> Rs2<5:0>;
                     }});
@@ -1093,6 +1096,9 @@ decode QUADRANT default Unknown::unknown() {
                     }}, IntDivOp);
                     0x5: maxu({{
                         Rd = Rs1 > Rs2 ? Rs1 : Rs2;
+                    }});
+                    0x7: czero_nez({{
+                        Rd = Rs2 != 0 ? 0 : Rs1;
                     }});
                     0x20: andn({{
                         Rd = Rs1 & (~Rs2);
