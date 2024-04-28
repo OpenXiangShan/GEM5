@@ -481,6 +481,7 @@ ISA::setMiscReg(int misc_reg, RegVal val)
             {
                 auto ic = dynamic_cast<RiscvISA::Interrupts *>(
                     tc->getCpuPtr()->getInterruptController(tc->threadId()));
+                DPRINTF(RiscvMisc, "Setting IP to %#lx.\n", val);
                 ic->setIP(val);
             }
             break;

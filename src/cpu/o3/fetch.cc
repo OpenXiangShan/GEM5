@@ -65,6 +65,7 @@
 #include "debug/Drain.hh"
 #include "debug/Fetch.hh"
 #include "debug/FetchFault.hh"
+#include "debug/FetchVerbose.hh"
 #include "debug/O3CPU.hh"
 #include "debug/O3PipeView.hh"
 #include "mem/packet.hh"
@@ -1852,9 +1853,9 @@ Fetch::fetch(bool &status_change)
         in_rom = isRomMicroPC(this_pc.microPC());
     }
 
-    DPRINTF(Fetch, "FetchQue start dumping\n");
+    DPRINTF(FetchVerbose, "FetchQue start dumping\n");
     for (auto it : fetchQueue[tid]) {
-        DPRINTF(Fetch, "inst: %s\n", it->staticInst->disassemble(it->pcState().instAddr()));
+        DPRINTF(FetchVerbose, "inst: %s\n", it->staticInst->disassemble(it->pcState().instAddr()));
     }
 
     for (int i = 0;i < fetchWidth;i++) {

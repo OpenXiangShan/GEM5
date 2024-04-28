@@ -1026,13 +1026,14 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
 
     // always check some CSR regs
     {
+        DPRINTF(Diff, "Check critical CSR regs for Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
         // mstatus
         auto gem5_val = readMiscRegNoEffect(
             RiscvISA::MiscRegIndex::MISCREG_STATUS, tid);
         // readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_STATUS, 0);
         auto ref_val = diffAllStates->referenceRegFile.mstatus;
+        DPRINTF(Diff, "mstatus:\tGEM5: %#lx,\tREF: %#lx\n", gem5_val, ref_val);
         if (gem5_val != ref_val) {
-            warn("Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
             warn("Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
                     "mstatus", ref_val, gem5_val);
             diffInfo.errorCsrsValue[CsrRegIndex::mstatus] = 1;
@@ -1044,6 +1045,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         gem5_val = readMiscRegNoEffect(
             RiscvISA::MiscRegIndex::MISCREG_STVAL, tid);
         ref_val = diffAllStates->referenceRegFile.stval;
+        DPRINTF(Diff, "stval:\tGEM5: %#lx,\tREF: %#lx\n", gem5_val, ref_val);
         if (gem5_val != ref_val) {
             warn("Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
             warn("Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033"
@@ -1060,6 +1062,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             RiscvISA::MiscRegIndex::MISCREG_MCAUSE, tid);
         // readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_MCAUSE, 0);
         ref_val = diffAllStates->referenceRegFile.mcause;
+        DPRINTF(Diff, "mcause:\tGEM5: %#lx,\tREF: %#lx\n", gem5_val, ref_val);
         if (gem5_val != ref_val) {
             warn("Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
             warn("Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
@@ -1074,6 +1077,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_SATP, tid);
         // readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_SATP, 0);
         ref_val = diffAllStates->referenceRegFile.satp;
+        DPRINTF(Diff, "satp:\tGEM5: %#lx,\tREF: %#lx\n", gem5_val, ref_val);
         if (gem5_val != ref_val) {
             warn("CPU%i Inst [sn:%lli] pc: %#lx\n", cpuId(), seq, diffInfo.pc->instAddr());
             warn("CPU%i Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033"
@@ -1089,6 +1093,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_IE, tid);
         // readMiscReg(RiscvISA::MiscRegIndex::MISCREG_IE, 0);
         ref_val = diffAllStates->referenceRegFile.mie;
+        DPRINTF(Diff, "mie:\tGEM5: %#lx,\tREF: %#lx\n", gem5_val, ref_val);
         if (gem5_val != ref_val) {
             warn("Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
             warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
@@ -1103,11 +1108,11 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_IP, tid);
         // readMiscReg(RiscvISA::MiscRegIndex::MISCREG_IP, 0);
         ref_val = diffAllStates->referenceRegFile.mip;
+        DPRINTF(Diff, "mip:\tGEM5: %#lx,\tREF: %#lx\n", gem5_val, ref_val);
         if (gem5_val != ref_val) {
-            DPRINTF(Diff, "Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
-            DPRINTF(Diff, "Diff at \033[31m%s\033[0m Ref value: \033[31m"
-                    "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
-                    "mip", ref_val, gem5_val);
+            warn("Inst [sn:%lli] pc: %#lx", seq, diffInfo.pc->instAddr());
+            warn("%s at \033[31m%s\033[0m Ref value: \033[31m%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
+                 gem5_val == ref_val ? "match" : "fiff", "mip", ref_val, gem5_val);
             diffInfo.errorCsrsValue[CsrRegIndex::mip] = 1;
             diffAllStates->gem5RegFile.mip = gem5_val;
         }

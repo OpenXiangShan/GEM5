@@ -174,8 +174,18 @@ class Interrupts : public BaseInterrupts
 
     uint64_t readIP() const { return (uint64_t)ip.to_ulong(); }
     uint64_t readIE() const { return (uint64_t)ie.to_ulong(); }
-    void setIP(const uint64_t& val) { ip = val; }
-    void setIE(const uint64_t& val) { ie = val; }
+    void setIP(const uint64_t& val) {
+        uint64_t _val = val;
+        INTERRUPT *new_ip_ptr = (INTERRUPT *)&_val;
+        // mtip is read only
+        new_ip_ptr->mti = ip[INT_TIMER_MACHINE];
+        DPRINTF(Interrupt, "Set IP to %d\n", _val);
+        ip = _val;
+    }
+    void setIE(const uint64_t &val) {
+        DPRINTF(Interrupt, "Set IE to %d\n", val);
+        ie = val;
+    }
 
     void
     serialize(CheckpointOut &cp) const
