@@ -710,7 +710,7 @@ class BaseCPU : public ClockedObject
         gem5::Addr physEffAddr;
         // Register address causing difftest error
         bool errorRegsValue[96];// 32 regs + 32fprs +32 vprs
-        bool errorCsrsValue[32];// CsrRegIndex
+        bool errorCsrsValue[36];// CsrRegIndex
         bool errorPcValue;
 
         std::queue<std::string> lastCommittedMsg;
