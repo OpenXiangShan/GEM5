@@ -719,7 +719,7 @@ const std::map<int, CSRMetadata> CSRData = {
     {CSR_HSTATUS, {"hstatus", MISCREG_HSTATUS}},
     {CSR_HEDELEG, {"hedeleg", MISCREG_HEDELEG}},
     {CSR_HIDELEG, {"hideleg", MISCREG_HIDELEG}},
-    {CSR_HIE, {"hie", MISCREG_IE}},
+    {CSR_HIE, {"hie", MISCREG_HIE}},
     {CSR_HCOUNTEREN, {"hcounteren", MISCREG_HCOUNTEREN}},
     {CSR_HGEIE, {"hgeie", MISCREG_HGEIE}},
     {CSR_HTVAL, {"htval", MISCREG_HTVAL}},
@@ -838,6 +838,9 @@ const uint64_t NEMU_SATP_MODE_MASK = (uint64_t)8<<(NEMU_SATP_ASID_LEN+NEMU_SATP_
 const uint64_t NEMU_SATP_ASID_MASK =  ((((uint64_t)1 <<(NEMU_SATP_ASID_LEN))-1)<<NEMU_SATP_PADDR_MAX_LEN);
 const uint64_t NEMU_SATP_PADDR_MASK =  (((uint64_t)1<<NEMU_SATP_PADDR_LEN)-1);
 const uint64_t NEMU_SATP_MASK = NEMU_SATP_MODE_MASK |NEMU_SATP_ASID_MASK | NEMU_SATP_PADDR_MASK;
+
+const uint64_t NEMU_SSTATUS_WMASK = ((1 << 19) | (1 << 18) | (0x3 << 13) | (1 << 8) | (1 << 5) | (1 << 1));
+const uint64_t NEMU_SSTATUS_RMASK = (NEMU_SSTATUS_WMASK | (0x3 << 15) | (1ull << 63) | (3ull << 32));
 
 const RegVal STATUS_SD_MASK = 1ULL << ((sizeof(uint64_t) * 8) - 1);
 const RegVal STATUS_SXL_MASK = 3ULL << SXL_OFFSET;

@@ -346,6 +346,8 @@ void ISA::clear()
     miscRegFile[MISCREG_VTYPE] = (1lu<<63);
     //(HSTATUS) reg_num.vsxl =2;
     miscRegFile[MISCREG_HSTATUS] = (uint64_t)2<<32;
+    miscRegFile[MISCREG_VSSTATUS] = miscRegFile[MISCREG_STATUS] & NEMU_SSTATUS_RMASK;
+
     printf("set hstatus\n");
 }
 
