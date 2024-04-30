@@ -56,7 +56,6 @@ def config_xiangshan_inputs(args: argparse.Namespace, sys):
 
         if args.raw_cpt:
             assert not args.gcpt_restorer  # raw_cpt and gcpt_restorer are exclusive
-            print('Using raw bbl', args.kernel)
             sys.map_to_raw_cpt = True
             sys.workload.raw_bootloader = True
         else:
