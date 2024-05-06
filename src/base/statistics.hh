@@ -65,6 +65,7 @@
 #include <math.h>
 #endif
 #include <cmath>
+#include <csignal>
 #include <functional>
 #include <iosfwd>
 #include <list>
@@ -1173,6 +1174,8 @@ class Vector2dBase : public DataWrapVec2d<Derived, Vector2dInfoProxy>
     Derived &
     init(size_type _x, size_type _y)
     {
+        if (_x <= 0 || _y <= 0)
+            std::raise(SIGINT);
         fatal_if((_x <= 0) || (_y <= 0), "Storage sizes must be positive");
         fatal_if(check(), "Stat has already been initialized");
 

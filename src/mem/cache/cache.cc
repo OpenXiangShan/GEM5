@@ -96,8 +96,8 @@ Cache::satisfyRequest(PacketPtr pkt, CacheBlk *blk,
                 // keeps it marked dirty (in the modified state)
                 if (blk->isSet(CacheBlk::DirtyBit)) {
                     DPRINTF(CacheVerbose,
-                            "%s set packet %s as cache responding, when blk is dirty and pkt need writable\n", __func__,
-                            pkt->print());
+                            "%s set packet %s (%#lx) as cache responding, when blk is dirty and pkt need writable\n",
+                            __func__, pkt->print(), (uint64_t)pkt);
                     pkt->setCacheResponding();
                     blk->clearCoherenceBits(CacheBlk::DirtyBit);
                 }
@@ -119,8 +119,8 @@ Cache::satisfyRequest(PacketPtr pkt, CacheBlk *blk,
                     if (!deferred_response) {
                         // respond with the line in Modified state
                         // (cacheResponding set, hasSharers not set)
-                        DPRINTF(CacheVerbose, "%s set packet %s as cache responding, when blk is dirty 2\n", __func__,
-                                pkt->print());
+                        DPRINTF(CacheVerbose, "%s set packet %s (%#lx) as cache responding, when blk is dirty 2\n",
+                                __func__, pkt->print(), (uint64_t)pkt);
                         pkt->setCacheResponding();
 
                         // if this cache is mostly inclusive, we
@@ -455,9 +455,9 @@ Cache::recvTimingReq(PacketPtr pkt)
         // copy (Modified or Owned) that will supply the right
         // data
         snoop_pkt->setExpressSnoop();
+        DPRINTF(CacheVerbose, "%s set packet %s (%#lx) as cache responding, when cache above responding\n", __func__,
+                snoop_pkt->print(), (uint64_t)snoop_pkt);
         snoop_pkt->setCacheResponding();
-        DPRINTF(CacheVerbose, "%s set packet %s as cache responding, when cache above responding\n", __func__,
-                snoop_pkt->print());
 
         // this express snoop travels towards the memory, and at
         // every crossbar it is snooped upwards thus reaching
@@ -1224,8 +1224,8 @@ Cache::handleSnoop(PacketPtr pkt, CacheBlk *blk, bool is_timing,
         // prevent anyone else from responding, cache as well as
         // memory, and also prevent any memory from even seeing the
         // request
-        DPRINTF(CacheVerbose, "%s set packet %s as cache responding, because pkt needs and blk is dirty\n", __func__,
-                pkt->print());
+        DPRINTF(CacheVerbose, "%s set packet %s (%#lx) as cache responding, because pkt needs and blk is dirty\n",
+                __func__, pkt->print(), (uint64_t)pkt);
         pkt->setCacheResponding();
         if (!pkt->isClean() && blk->isSet(CacheBlk::WritableBit)) {
             // inform the cache hierarchy that this cache had the line
@@ -1370,8 +1370,8 @@ Cache::recvTimingSnoopReq(PacketPtr pkt)
         }
 
         if (respond) {
-            DPRINTF(CacheVerbose, "%s set packet %s as cache responding, when dirty blk found in wb entry\n",
-                    __func__, pkt->print());
+            DPRINTF(CacheVerbose, "%s set packet %s (%#lx) as cache responding, when dirty blk found in wb entry\n",
+                    __func__, pkt->print(), (uint64_t) pkt);
             pkt->setCacheResponding();
 
             if (have_writable) {

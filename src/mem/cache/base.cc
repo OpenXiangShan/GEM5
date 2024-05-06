@@ -1458,6 +1458,9 @@ BaseCache::satisfyRequest(PacketPtr pkt, CacheBlk *blk, bool, bool)
             // we were in the Owned state, and a cache above us that
             // has the line in Shared state needs to be made aware
             // that the data it already has is in fact dirty
+            DPRINTF(CacheVerbose,
+                    "%s set packet %s (%#lx) as cache responding, because we are owner and blk is dirty\n", __func__,
+                    pkt->print(), (uint64_t)pkt);
             pkt->setCacheResponding();
             blk->clearCoherenceBits(CacheBlk::DirtyBit);
         }

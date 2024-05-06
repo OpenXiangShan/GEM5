@@ -521,11 +521,12 @@ MSHR::handleSnoop(PacketPtr pkt, Counter _order)
             // respond, and depending on whether the packet
             // needsWritable or not we either pass a Shared line or a
             // Modified line
+            DPRINTF(MSHR,
+                    "%s set packet %s (%#lx) as cache responding, when cache pending mod or inval, responding by mshr "
+                    "%#lx\n",
+                    __func__, pkt->print(), (uint64_t)pkt, (uint64_t)this);
             pkt->setCacheResponding();
             cp_pkt->setCacheRespondingBy((uint64_t) this);
-            DPRINTF(MSHR,
-                    "%s set packet %s as cache responding, when cache pendign mod or inval, responding by mshr %lx\n",
-                    __func__, pkt->print(), (uint64_t)this);
 
             // inform the cache hierarchy that this cache had the line
             // in the Modified state, even if the response is passed
