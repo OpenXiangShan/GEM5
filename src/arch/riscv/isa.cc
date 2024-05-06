@@ -588,6 +588,17 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 ic->setIP(val);
             }
             break;
+          case MISCREG_HIE:
+            {
+                auto ic = dynamic_cast<RiscvISA::Interrupts *>(
+                    tc->getCpuPtr()->getInterruptController(tc->threadId()));
+                RegVal write_val =0;
+                RegVal old = readMiscReg(MISCREG_IE);
+                RegVal hip_Mask = NEMU_HIE_WMASK & (readMiscReg(MISCREG_MIDELEG) | NEMU_MIDELEG_FORCED_MASK);
+                write_val = ((old & ~(hip_Mask)) |(val & hip_Mask));
+                ic->setIE(write_val);
+            }
+            break;
           case MISCREG_IE:
             {
                 auto ic = dynamic_cast<RiscvISA::Interrupts *>(
