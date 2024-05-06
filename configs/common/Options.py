@@ -223,13 +223,13 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--external-memory-system", type=str,
                         help="use external ports of this port_type for caches")
 
+    # Enable Ruby
+    parser.add_argument("--ruby", action="store_true")
+
     if configure_xiangshan:
         return
 
     # Following options are not available in XiangShan
-    # Enable Ruby
-    parser.add_argument("--ruby", action="store_true")
-
     parser.add_argument(
         "--rel-max-tick", type=int, default=None, metavar="TICKS",
         help="Simulate for specified number of"

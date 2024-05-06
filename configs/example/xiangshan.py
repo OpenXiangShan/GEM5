@@ -25,7 +25,7 @@ from common import Options
 
 def build_test_system(np):
     assert buildEnv['TARGET_ISA'] == "riscv"
-    test_sys = makeBareMetalXiangshanSystem(test_mem_mode, SysConfig(mem=args.mem_size), None)
+    test_sys = makeBareMetalXiangshanSystem(test_mem_mode, SysConfig(mem=args.mem_size), None, np=np)
     test_sys.num_cpus = np
 
     args.enable_difftest = True
