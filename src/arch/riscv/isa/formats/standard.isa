@@ -387,6 +387,9 @@ def template CSRExecute {{
         %(code)s;
 
         data &= maskVal;
+        if(csr == CSR_HIE){
+            xc->setMiscReg(midx, data);
+        }
         // NOTE: may has bug
         if (data != olddata || csr == CSR_FCSR || (csr == CSR_FRM && write) || csr == CSR_VCSR) {
             if (bits(csr, 11, 10) == 0x3) {
