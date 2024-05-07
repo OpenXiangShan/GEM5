@@ -243,6 +243,8 @@ LSQUnit::init(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params,
     checkLoads = params.LSQCheckLoads;
     needsTSO = params.needsTSO;
 
+    enableStorePrefetchTrain = params.store_prefetch_train;
+
     resetState();
 }
 
@@ -796,7 +798,9 @@ LSQUnit::executeStore(const DynInstPtr &store_inst)
 
         ++storesToWB;
     } else {
-        triggerStorePFTrain(store_idx);
+        if (enableStorePrefetchTrain) {
+            triggerStorePFTrain(store_idx);
+        }
     }
 
     return checkViolations(loadIt, store_inst);

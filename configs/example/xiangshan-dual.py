@@ -119,6 +119,9 @@ def build_test_system(np):
 
             test_sys.ruby._cpu_ports[i].connectCpuPorts(cpu)
 
+            # Ruby D-cache does not support store prefetch yet
+            cpu.store_prefetch_train = False
+
     else:
         if args.caches or args.l2cache:
             # By default the IOCache runs at the system clock
