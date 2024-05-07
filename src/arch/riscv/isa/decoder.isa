@@ -4368,6 +4368,8 @@ decode QUADRANT default Unknown::unknown() {
                             status.mie = status.mpie;
                             status.mpie = 1;
                             status.mpp = PRV_U;
+                            xc->setMiscReg(MISCREG_VIRMODE,status.mpv);
+                            status.mpv = 0;
                             xc->setMiscReg(MISCREG_STATUS, status);
                             NPC = xc->readMiscReg(MISCREG_MEPC);
                         }
