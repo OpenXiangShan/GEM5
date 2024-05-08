@@ -74,7 +74,7 @@ jobs:
         run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
       - name: XS-GEM5 - Test xiangshan.py simulation scripts
         run: |
-          export GCB_REF_SO="/nfs-nvme/home/share/zyy/shared_payloads/rv64gcb-nemu-e475285f.so"
+          export GCB_REF_SO="/nfs-nvme/home/share/xuyan/shared_payloads/rvv-nemu-so"
           export GCB_RESTORER="/nfs-nvme/home/share/zyy/shared_payloads/rv64gcb-gcpt-restorer-e475285f.bin"
           export GEM5_HOME=$(pwd)
           mkdir -p $GEM5_HOME/util/xs_scripts/test
@@ -101,7 +101,7 @@ jobs:
         run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
       - name: XS-GEM5 - Test xiangshan.py simulation scripts
         run: |
-          export GCBV_REF_SO="/nfs-nvme/home/share/zyy/shared_payloads/rv64gcbv-spike-d179549f.so"
+          export GCBV_REF_SO="/nfs-nvme/home/share/xuyan/shared_payloads/rvv-nemu-so"
           export GCBV_RESTORER="/nfs-nvme/home/share/zyy/shared_payloads/rv64gcbv-gcpt-restorer-96ce67b2.bin"
           export GEM5_HOME=$(pwd)
           mkdir -p $GEM5_HOME/util/xs_scripts/test_v

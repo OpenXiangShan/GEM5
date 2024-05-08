@@ -203,14 +203,14 @@ A tested working matrix of repos & revisions is here:
 |  | reference design | GCPT restorer 
 | ---------- | --------- | --------- |
 | RV64GCB | NEMU master | NEMU master |
-| RV64GCBV      | Spike gem5-ref | NEMU gcpt_new_mem_layout |
+| RV64GCBV      | ~~Spike gem5-ref~~ | NEMU gcpt_new_mem_layout |
 
 If above branches are not working, you can try the following commits:
 
 |  | reference design | GCPT restorer 
 | ---------- | --------- | --------- |
 | RV64GCB | NEMU e475285f | NEMU e475285f |
-| RV64GCBV | Spike d179549f  | NEMU 96ce67b2|
+| RV64GCBV | ~~Spike d179549f~~  | NEMU b966d274 |
 
 
 **NOTE**: Current scripts enforce Difftest (cosimulating against NEMU or spike).
