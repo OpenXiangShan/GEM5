@@ -26,12 +26,13 @@
 
 from slicc.ast.AST import AST
 
+
 class PairListAST(AST):
     def __init__(self, slicc):
         super().__init__(slicc)
 
     def __repr__(self):
-        return "[PairListAST] %r" % self.pairs
+        return f"[PairListAST] {self.pairs!r}"
 
     def addPair(self, pair_ast):
         self[pair_ast.key] = pair_ast.value

@@ -26,7 +26,11 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 from slicc.ast.DeclAST import DeclAST
-from slicc.symbols import StateMachine, Type
+from slicc.symbols import (
+    StateMachine,
+    Type,
+)
+
 
 class MachineAST(DeclAST):
     def __init__(self, slicc, mtype, pairs_ast, config_parameters, decls):
@@ -38,14 +42,16 @@ class MachineAST(DeclAST):
         self.decls = decls
 
     def __repr__(self):
-        return "[Machine: %r]" % self.ident
+        return f"[Machine: {self.ident!r}]"
 
     def files(self, parent=None):
-        s = set(('%s_Controller.cc' % self.ident,
-                 '%s_Controller.hh' % self.ident,
-                 '%s_Controller.py' % self.ident,
-                 '%s_Transitions.cc' % self.ident,
-                 '%s_Wakeup.cc' % self.ident))
+        s = {
+            f"{self.ident}_Controller.cc",
+            f"{self.ident}_Controller.hh",
+            f"{self.ident}_Controller.py",
+            f"{self.ident}_Transitions.cc",
+            f"{self.ident}_Wakeup.cc",
+        }
 
         s |= self.decls.files(self.ident)
         return s
@@ -55,8 +61,13 @@ class MachineAST(DeclAST):
         self.symtab.pushFrame()
 
         # Create a new machine
-        machine = StateMachine(self.symtab, self.ident, self.location,
-                               self.pairs, self.config_parameters)
+        machine = StateMachine(
+            self.symtab,
+            self.ident,
+            self.location,
+            self.pairs,
+            self.config_parameters,
+        )
 
         self.symtab.newCurrentMachine(machine)
 
@@ -73,4 +84,4 @@ class MachineAST(DeclAST):
         mtype = self.ident
         machine_type = self.symtab.find("MachineType", Type)
         if not machine_type.checkEnum(mtype):
-            self.error("Duplicate machine name: %s:%s" % (machine_type, mtype))
+            self.error(f"Duplicate machine name: {machine_type}:{mtype}")

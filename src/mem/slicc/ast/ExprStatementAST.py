@@ -26,9 +26,10 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from slicc.ast.StatementAST import StatementAST
 from slicc.ast.LocalVariableAST import LocalVariableAST
+from slicc.ast.StatementAST import StatementAST
 from slicc.symbols import Type
+
 
 class ExprStatementAST(StatementAST):
     def __init__(self, slicc, expr):
@@ -36,18 +37,20 @@ class ExprStatementAST(StatementAST):
         self.expr = expr
 
     def __repr__(self):
-        return "[ExprStatementAST: %s]" % (self.expr)
+        return f"[ExprStatementAST: {self.expr}]"
 
     def generate(self, code, return_type, **kwargs):
-        actual_type,rcode = self.expr.inline(True, **kwargs)
+        actual_type, rcode = self.expr.inline(True, **kwargs)
         code("$rcode;")
 
         # The return type must be void, except for local var decls
-        if (not isinstance(self.expr, LocalVariableAST) and
-            actual_type != self.symtab.find("void", Type)):
-            self.expr.warning("Non-void return ignored, " + \
-                "return type is '%s'", actual_type.ident)
+        if not isinstance(
+            self.expr, LocalVariableAST
+        ) and actual_type != self.symtab.find("void", Type):
+            self.expr.warning(
+                "Non-void return ignored, " + "return type is '%s'",
+                actual_type.ident,
+            )
 
     def findResources(self, resources):
         self.expr.findResources(resources)
-

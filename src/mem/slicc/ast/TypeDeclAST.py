@@ -28,6 +28,7 @@
 from slicc.ast.DeclAST import DeclAST
 from slicc.symbols.Type import Type
 
+
 class TypeDeclAST(DeclAST):
     def __init__(self, slicc, type_ast, pairs, field_asts):
         super().__init__(slicc, pairs)
@@ -36,25 +37,26 @@ class TypeDeclAST(DeclAST):
         self.field_asts = field_asts
 
     def __repr__(self):
-        return "[TypeDecl: %r]" % (self.type_ast)
+        return f"[TypeDecl: {self.type_ast!r}]"
 
     def files(self, parent=None):
         if "external" in self:
             return set()
 
         if parent:
-            ident = "%s_%s" % (parent, self.type_ast.ident)
+            ident = f"{parent}_{self.type_ast.ident}"
         else:
             ident = self.type_ast.ident
-        return set(("%s.hh" % ident, "%s.cc" % ident))
+        return {f"{ident}.hh", f"{ident}.cc"}
 
     def generate(self):
         ident = str(self.type_ast)
         machine = self.symtab.state_machine
 
         # Make the new type
-        new_type = Type(self.symtab, ident, self.location, self.pairs,
-                        self.state_machine)
+        new_type = Type(
+            self.symtab, ident, self.location, self.pairs, self.state_machine
+        )
 
         if machine:
             machine.addType(new_type)

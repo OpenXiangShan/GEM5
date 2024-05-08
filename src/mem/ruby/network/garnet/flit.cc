@@ -51,7 +51,7 @@ flit::flit(int packet_id, int id, int  vc, int vnet, RouteInfo route, int size,
     m_enqueue_time = curTime;
     m_dequeue_time = curTime;
     m_time = curTime;
-    m_packet_id = id;
+    m_packet_id = packet_id;
     m_id = id;
     m_vnet = vnet;
     m_vc = vc;
@@ -123,6 +123,13 @@ flit::print(std::ostream& out) const
     out << "Set Time=" << m_time << " ";
     out << "Width=" << m_width<< " ";
     out << "]";
+}
+
+bool
+flit::functionalRead(Packet *pkt, WriteMask &mask)
+{
+    Message *msg = m_msg_ptr.get();
+    return msg->functionalRead(pkt, mask);
 }
 
 bool

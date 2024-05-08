@@ -30,15 +30,16 @@
 from slicc.ast.StatementAST import StatementAST
 from slicc.symbols import Var
 
+
 class LocalVariableAST(StatementAST):
-    def __init__(self, slicc, type_ast, ident, pointer = False):
+    def __init__(self, slicc, type_ast, ident, pointer=False):
         super().__init__(slicc)
         self.type_ast = type_ast
-        self.ident    = ident
+        self.ident = ident
         self.pointer = pointer
 
     def __repr__(self):
-        return "[LocalVariableAST: %r %r]" % (self.type_ast, self.ident)
+        return f"[LocalVariableAST: {self.type_ast!r} {self.ident!r}]"
 
     @property
     def name(self):
@@ -53,19 +54,25 @@ class LocalVariableAST(StatementAST):
             return code
 
     def generate(self, code, **kwargs):
-        type = self.type_ast.type;
-        ident = "%s" % self.ident;
+        type = self.type_ast.type
+        ident = f"{self.ident}"
 
         # Add to symbol table
-        v = Var(self.symtab, self.ident, self.location, type, ident,
-                self.pairs)
+        v = Var(
+            self.symtab, self.ident, self.location, type, ident, self.pairs
+        )
         self.symtab.newSymbol(v)
-        if self.pointer or str(type) == "TBE" or (
-        # Check whether type is Entry by checking interface since
-        # entries in protocol files use AbstractCacheEntry as interfaces.
-           "interface" in type and (
-               type["interface"] == "AbstractCacheEntry")):
-            code += "%s* %s" % (type.c_ident, ident)
+        if (
+            self.pointer
+            or str(type) == "TBE"
+            or (
+                # Check whether type is Entry by checking interface since
+                # entries in protocol files use AbstractCacheEntry as interfaces.
+                "interface" in type
+                and (type["interface"] == "AbstractCacheEntry")
+            )
+        ):
+            code += f"{type.c_ident}* {ident}"
         else:
-            code += "%s %s" % (type.c_ident, ident)
+            code += f"{type.c_ident} {ident}"
         return type

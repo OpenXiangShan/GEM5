@@ -32,21 +32,23 @@ from slicc.symbols.StateMachine import StateMachine
 from slicc.symbols.Type import Type
 from slicc.util import Location
 
+
 def makeDir(path):
     """Make a directory if it doesn't exist.  If the path does exist,
     ensure that it is a directory"""
     if os.path.exists(path):
         if not os.path.isdir(path):
-            raise AttributeError("%s exists but is not directory" % path)
+            raise AttributeError(f"{path} exists but is not directory")
     else:
-        os.mkdir(path)
+        os.makedirs(path, exist_ok=True)
 
-class SymbolTable(object):
+
+class SymbolTable:
     def __init__(self, slicc):
         self.slicc = slicc
 
         self.sym_vec = []
-        self.sym_map_vec = [ {} ]
+        self.sym_map_vec = [{}]
         self.machine_components = {}
 
         pairs = {}
@@ -57,7 +59,7 @@ class SymbolTable(object):
         self.newSymbol(void)
 
     def __repr__(self):
-        return "[SymbolTable]" # FIXME
+        return "[SymbolTable]"  # FIXME
 
     def codeFormatter(self, *args, **kwargs):
         return self.slicc.codeFormatter(*args, **kwargs)
@@ -88,8 +90,8 @@ class SymbolTable(object):
 
             if types is not None:
                 if not isinstance(symbol, types):
-                    continue # there could be a name clash with other symbol
-                             # so rather than producing an error, keep trying
+                    continue  # there could be a name clash with other symbol
+                    # so rather than producing an error, keep trying
 
             return symbol
 
@@ -122,7 +124,7 @@ class SymbolTable(object):
     def registerGlobalSym(self, ident, symbol):
         # Check for redeclaration (global frame only)
         if ident in self.sym_map_vec[0]:
-            symbol.error("Symbol '%s' redeclared in global scope." % ident)
+            symbol.error(f"Symbol '{ident}' redeclared in global scope.")
 
         self.sym_map_vec[0][ident] = symbol
 
@@ -153,12 +155,13 @@ class SymbolTable(object):
 
         machines = list(self.getAllType(StateMachine))
         if len(machines) > 1:
-            name = "%s_table.html" % machines[0].ident
+            name = f"{machines[0].ident}_table.html"
         else:
             name = "empty.html"
 
         code = self.codeFormatter()
-        code('''
+        code(
+            """
 <html>
 <head>
 <title>$path</title>
@@ -168,7 +171,8 @@ class SymbolTable(object):
     <frame name="Status" src="empty.html">
 </frameset>
 </html>
-''')
+"""
+        )
         code.write(path, "index.html")
 
         code = self.codeFormatter()
@@ -178,4 +182,5 @@ class SymbolTable(object):
         for symbol in self.sym_vec:
             symbol.writeHTMLFiles(path)
 
-__all__ = [ "SymbolTable" ]
+
+__all__ = ["SymbolTable"]

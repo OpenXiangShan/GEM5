@@ -27,15 +27,16 @@
 
 from slicc.ast.AST import AST
 
+
 class StatementListAST(AST):
     def __init__(self, slicc, statements):
         super().__init__(slicc)
         if not isinstance(statements, (list, tuple)):
-            statements = [ statements ]
+            statements = [statements]
         self.statements = statements
 
     def __repr__(self):
-        return "[StatementListAST: %r]" % self.statements
+        return f"[StatementListAST: {self.statements!r}]"
 
     def generate(self, code, return_type, **kwargs):
         for statement in self.statements:

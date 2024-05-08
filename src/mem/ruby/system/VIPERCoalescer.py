@@ -27,13 +27,14 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+from m5.objects.GPUCoalescer import *
 from m5.params import *
 from m5.proxy import *
-from m5.objects.GPUCoalescer import *
+
 
 class VIPERCoalescer(RubyGPUCoalescer):
-    type = 'VIPERCoalescer'
-    cxx_class = 'gem5::ruby::VIPERCoalescer'
+    type = "VIPERCoalescer"
+    cxx_class = "gem5::ruby::VIPERCoalescer"
     cxx_header = "mem/ruby/system/VIPERCoalescer.hh"
 
     max_inv_per_cycle = Param.Int(32, "max invalidations per cycle")

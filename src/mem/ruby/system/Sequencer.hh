@@ -126,12 +126,24 @@ class Sequencer : public RubyPort
                       const Cycles forwardRequestTime = Cycles(0),
                       const Cycles firstResponseTime = Cycles(0));
 
+    void atomicCallback(Addr address,
+                        DataBlock& data,
+                        const bool externalHit = false,
+                        const MachineType mach = MachineType_NUM,
+                        const Cycles initialRequestTime = Cycles(0),
+                        const Cycles forwardRequestTime = Cycles(0),
+                        const Cycles firstResponseTime = Cycles(0));
+
     void unaddressedCallback(Addr unaddressedReqId,
                              RubyRequestType requestType,
                              const MachineType mach = MachineType_NUM,
                              const Cycles initialRequestTime = Cycles(0),
                              const Cycles forwardRequestTime = Cycles(0),
                              const Cycles firstResponseTime = Cycles(0));
+
+    void completeHitCallback(std::vector<PacketPtr>& list);
+    void invL1Callback();
+    void invL1();
 
     RequestStatus makeRequest(PacketPtr pkt) override;
     virtual bool empty() const;
@@ -234,6 +246,10 @@ class Sequencer : public RubyPort
 
   private:
     int m_max_outstanding_requests;
+
+    int m_num_pending_invs;
+
+    PacketPtr m_cache_inv_pkt;
 
     CacheMemory* m_dataCache_ptr;
 

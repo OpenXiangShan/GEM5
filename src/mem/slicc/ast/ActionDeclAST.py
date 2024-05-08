@@ -26,7 +26,12 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 from slicc.ast.DeclAST import DeclAST
-from slicc.symbols import Action, Type, Var
+from slicc.symbols import (
+    Action,
+    Type,
+    Var,
+)
+
 
 class ActionDeclAST(DeclAST):
     def __init__(self, slicc, ident, pairs, statement_list):
@@ -35,7 +40,7 @@ class ActionDeclAST(DeclAST):
         self.statement_list = statement_list
 
     def __repr__(self):
-        return "[ActionDecl: %r]" % (self.ident)
+        return f"[ActionDecl: {self.ident!r}]"
 
     def generate(self):
         resources = {}
@@ -53,18 +58,36 @@ class ActionDeclAST(DeclAST):
             if addr_type is None:
                 self.error("Type 'Addr' not declared.")
 
-            var = Var(self.symtab, "address", self.location, addr_type,
-                      "addr", self.pairs)
+            var = Var(
+                self.symtab,
+                "address",
+                self.location,
+                addr_type,
+                "addr",
+                self.pairs,
+            )
             self.symtab.newSymbol(var)
 
             if machine.TBEType != None:
-                var = Var(self.symtab, "tbe", self.location, machine.TBEType,
-                      "m_tbe_ptr", self.pairs)
+                var = Var(
+                    self.symtab,
+                    "tbe",
+                    self.location,
+                    machine.TBEType,
+                    "m_tbe_ptr",
+                    self.pairs,
+                )
                 self.symtab.newSymbol(var)
 
             if machine.EntryType != None:
-                var = Var(self.symtab, "cache_entry", self.location,
-                          machine.EntryType, "m_cache_entry_ptr", self.pairs)
+                var = Var(
+                    self.symtab,
+                    "cache_entry",
+                    self.location,
+                    machine.EntryType,
+                    "m_cache_entry_ptr",
+                    self.pairs,
+                )
                 self.symtab.newSymbol(var)
 
             # Do not allows returns in actions
@@ -76,6 +99,7 @@ class ActionDeclAST(DeclAST):
 
             self.symtab.popFrame()
 
-        action = Action(self.symtab, self.ident, resources, self.location,
-                        self.pairs)
+        action = Action(
+            self.symtab, self.ident, resources, self.location, self.pairs
+        )
         machine.addAction(action)

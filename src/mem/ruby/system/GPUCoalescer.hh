@@ -71,6 +71,7 @@ class UncoalescedTable
     ~UncoalescedTable() {}
 
     void insertPacket(PacketPtr pkt);
+    void insertReqType(PacketPtr pkt, RubyRequestType type);
     bool packetAvailable();
     void printRequestTable(std::stringstream& ss);
 
@@ -101,6 +102,8 @@ class UncoalescedTable
     std::map<InstSeqNum, PerInstPackets> instMap;
 
     std::map<InstSeqNum, int> instPktsRemaining;
+
+    std::map<InstSeqNum, RubyRequestType> reqTypeMap;
 };
 
 class CoalescedRequest
@@ -216,9 +219,9 @@ class GPUCoalescer : public RubyPort
     class GMTokenPort : public TokenResponsePort
     {
       public:
-        GMTokenPort(const std::string& name, ClockedObject *owner,
+        GMTokenPort(const std::string& name,
                     PortID id = InvalidPortID)
-            : TokenResponsePort(name, owner, id)
+            : TokenResponsePort(name, id)
         { }
         ~GMTokenPort() { }
 

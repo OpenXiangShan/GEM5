@@ -75,12 +75,15 @@ VIPERCoalescer::makeRequest(PacketPtr pkt)
     //    ReadReq             : cache read
     //    WriteReq            : cache write
     //    AtomicOp            : cache atomic
+    //    Flush               : flush and invalidate cache
     //
-    // VIPER does not expect MemSyncReq & Release since in GCN3, compute unit
+    // VIPER does not expect MemSyncReq & Release since compute unit
     // does not specify an equivalent type of memory request.
     assert((pkt->cmd == MemCmd::MemSyncReq && pkt->req->isInvL1()) ||
+           (pkt->cmd == MemCmd::MemSyncReq && pkt->req->isInvL2()) ||
             pkt->cmd == MemCmd::ReadReq ||
             pkt->cmd == MemCmd::WriteReq ||
+            pkt->cmd == MemCmd::FlushReq ||
             pkt->isAtomicOp());
 
     if (pkt->req->isInvL1() && m_cache_inv_pkt) {
@@ -102,6 +105,10 @@ VIPERCoalescer::makeRequest(PacketPtr pkt)
         assert(!m_cache_inv_pkt);
         m_cache_inv_pkt = pkt;
         invTCP();
+    }
+
+    if (pkt->req->isInvL2()) {
+        invTCC(pkt);
     }
 
     return RequestStatus_Issued;
@@ -302,6 +309,52 @@ VIPERCoalescer::invTCP()
     DPRINTF(GPUCoalescer,
             "There are %d Invalidatons outstanding after Cache Walk\n",
             m_num_pending_invs);
+}
+
+void
+VIPERCoalescer::invTCCCallback(Addr addr)
+{
+    for (auto& pkt : m_pending_invl2s[addr]) {
+        RubyPort::SenderState *ss =
+            safe_cast<RubyPort::SenderState *>(pkt->senderState);
+        MemResponsePort *port = ss->port;
+        assert(port != nullptr);
+
+        // Now convert to MemSyncResp
+        pkt->makeResponse();
+
+        pkt->senderState = ss->predecessor;
+        delete ss;
+        port->hitCallback(pkt);
+    }
+    m_pending_invl2s.erase(addr);
+}
+
+/*
+ * Send an invalidate to a specific address in the TCC.
+ */
+void
+VIPERCoalescer::invTCC(PacketPtr pkt)
+{
+    assert(pkt);
+    assert(pkt->req);
+
+    Addr addr = pkt->req->getPaddr();
+    RubyRequestType request_type = RubyRequestType_InvL2;
+
+    std::shared_ptr<RubyRequest> msg = std::make_shared<RubyRequest>(
+        clockEdge(), addr, 0, 0,
+        request_type, RubyAccessMode_Supervisor,
+        nullptr);
+
+    DPRINTF(GPUCoalescer, "Sending L2 invalidate to 0x%x\n", addr);
+
+    assert(m_mandatory_q_ptr);
+    Tick latency = cyclesToTicks(
+        m_controller->mandatoryQueueLatency(request_type));
+    m_mandatory_q_ptr->enqueue(msg, clockEdge(), latency);
+
+    m_pending_invl2s[addr].push_back(pkt);
 }
 
 } // namespace ruby

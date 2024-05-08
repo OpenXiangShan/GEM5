@@ -27,6 +27,7 @@
 
 from slicc.ast.StatementAST import StatementAST
 
+
 class ReturnStatementAST(StatementAST):
     def __init__(self, slicc, expr_ast):
         super().__init__(slicc)
@@ -34,11 +35,11 @@ class ReturnStatementAST(StatementAST):
         self.expr_ast = expr_ast
 
     def __repr__(self):
-        return "[ReturnStatementAST: %r]" % self.expr_ast
+        return f"[ReturnStatementAST: {self.expr_ast!r}]"
 
     def generate(self, code, return_type, **kwargs):
         actual_type, ecode = self.expr_ast.inline(True)
-        code('return $ecode;')
+        code("return $ecode;")
 
         # Is return valid here?
         if return_type is None:
@@ -46,9 +47,12 @@ class ReturnStatementAST(StatementAST):
 
         # The return type must match
         if actual_type != "OOD" and return_type != actual_type:
-            self.expr_ast.error("Return type miss-match, expected return " +
-                                "type is '%s', actual is '%s'",
-                                return_type, actual_type)
+            self.expr_ast.error(
+                "Return type miss-match, expected return "
+                + "type is '%s', actual is '%s'",
+                return_type,
+                actual_type,
+            )
 
     def findResources(self, resources):
         self.expr_ast.findResources(resources)
