@@ -211,9 +211,11 @@ RubyPrefetcherProxy::notifyPfEvict(Addr blkAddr, bool hwPrefetched,
                                   RequestorID requestorID)
 {
     DPRINTF(HWPrefetch, "notify evict: %#x hw_pf=%d\n", blkAddr, hwPrefetched);
-    CacheDataUpdateProbeArg data_update(
-        blkAddr, false, requestorID, *this);
-    data_update.hwPrefetched = hwPrefetched;
+    // DataUpdate data_update(
+    //     blkAddr, false, requestorID, *this);
+    // Maybe using the old DataUpdate here is enough
+    DataUpdate data_update(blkAddr, false);
+    // data_update.hwPrefetched = hwPrefetched;
     ppDataUpdate->notify(data_update);
     scheduleNextPrefetch();
 }

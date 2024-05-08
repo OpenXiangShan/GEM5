@@ -41,6 +41,7 @@
 #include <unordered_map>
 
 // #include "mem/cache/cache_probe_arg.hh"
+#include "mem/cache/base.hh"
 #include "mem/cache/prefetch/base.hh"
 #include "mem/ruby/slicc_interface/AbstractController.hh"
 #include "mem/ruby/slicc_interface/RubyRequest.hh"
@@ -50,76 +51,10 @@ namespace gem5
 
 namespace ruby
 {
+// Removed cache accessor
+  using DataUpdate = BaseCache::DataUpdate;
 
-/**
- * This is a proxy for prefetcher class in classic memory. This wrapper
- * enables a SLICC machine to interact with classic prefetchers.
- *
- * The expected use case for this class is to instantiate it in the SLICC
- * state machine definition and provide a pointer to the prefetcher object
- * (typically defined in SLICC as one of the SM's configuration parameters)
- * and the prefetch queue where prefetch requests will be inserted.
- *
- * The SLICC SM can them use the notifyPF* functions to notify the prefetcher.
- *
- * Notes:
- *
- * This object's regProbePoints() must be called explicitly. The SLICC SM may
- * defined it's own regProbePoints() to call it.
- *
- * completePrefetch(Addr) must be called when a request injected into the
- * prefetch queue is completed.
- *
- * A nullptr prefetcher can be provided, in which case the notifyPf* are
- * no-ops.
- *
- */
-
-struct DataUpdate
-    {
-        /** The updated block's address. */
-        Addr addr;
-        /** Whether the block belongs to the secure address space. */
-        bool isSecure;
-        /** The stale data contents. If zero-sized this update is a fill. */
-        std::vector<uint64_t> oldData;
-        /** The new data contents. If zero-sized this is an invalidation. */
-        std::vector<uint64_t> newData;
-
-        DataUpdate(Addr _addr, bool is_secure)
-          : addr(_addr), isSecure(is_secure), oldData(), newData()
-        {
-        }
-    };
-
-    /**
- * Provides generic cache lookup functions. A cache may provide
- * a CacheAccessor object to other components that need to perform
- * a lookup outside the normal cache control flow. Currently this
- * is used by prefetchers that perform lookups when notified by
- * cache events.
- */
-struct CacheAccessor
-{
-    /** Determine if address is in cache */
-    virtual bool inCache(Addr addr, bool is_secure) const = 0;
-
-    /** Determine if address has been prefetched */
-    virtual bool hasBeenPrefetched(Addr addr, bool is_secure) const = 0;
-
-    /** Determine if address has been prefetched by the requestor */
-    virtual bool hasBeenPrefetched(Addr addr, bool is_secure,
-                                   RequestorID requestor) const = 0;
-
-    /** Determine if address is in cache miss queue */
-    virtual bool inMissQueue(Addr addr, bool is_secure) const = 0;
-
-    /** Determine if cache is coalescing writes */
-    virtual bool coalesce() const = 0;
-};
-
-
-class RubyPrefetcherProxy : public CacheAccessor, public Named
+class RubyPrefetcherProxy : /*public CacheAccessor,*/ public Named
 {
   public:
 
