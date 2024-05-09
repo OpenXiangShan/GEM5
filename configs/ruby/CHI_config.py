@@ -228,7 +228,7 @@ class CHI_L1Controller(CHI_Cache_Controller):
     Default parameters for a L1 Cache controller
     """
 
-    def __init__(self, ruby_system, sequencer, cache, prefetcher):
+    def __init__(self, ruby_system, sequencer, cache, prefetcher, is_dcache=False):
         super().__init__(ruby_system)
         self.sequencer = sequencer
         self.cache = cache
@@ -251,6 +251,7 @@ class CHI_L1Controller(CHI_Cache_Controller):
         self.dealloc_on_shared = False
         self.dealloc_backinv_unique = True
         self.dealloc_backinv_shared = True
+        self.is_dcache = is_dcache
         # Some reasonable default TBE params
         self.number_of_TBEs = 16
         self.number_of_repl_TBEs = 16
@@ -521,7 +522,7 @@ class CHI_RNF(CHI_Node):
             )
 
             cpu.l1d = CHI_L1Controller(
-                ruby_system, cpu.data_sequencer, l1d_cache, l1d_pf
+                ruby_system, cpu.data_sequencer, l1d_cache, l1d_pf, is_dcache=True
             )
 
             cpu.inst_sequencer.dcache = NULL

@@ -90,6 +90,7 @@ class RubyPort : public ClockedObject
                      bool _access_backing_store,
                      PortID id, bool _no_retry_on_stall);
         void hitCallback(PacketPtr pkt);
+        void customSignalCallback(PacketPtr pkt);
         void evictionCallback(Addr address);
 
       protected:
@@ -179,6 +180,7 @@ class RubyPort : public ClockedObject
   protected:
     void trySendRetries();
     void ruby_hit_callback(PacketPtr pkt);
+    void ruby_custom_signal_callback(PacketPtr pkt);
     void ruby_unaddressed_callback(PacketPtr pkt);
     void ruby_stale_translation_callback(Addr txnId);
     void testDrainComplete();

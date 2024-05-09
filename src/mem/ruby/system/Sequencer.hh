@@ -126,6 +126,8 @@ class Sequencer : public RubyPort
                       const Cycles forwardRequestTime = Cycles(0),
                       const Cycles firstResponseTime = Cycles(0));
 
+    void customSignalCallback(Addr address);
+
     void atomicCallback(Addr address,
                         DataBlock& data,
                         const bool externalHit = false,

@@ -558,7 +558,7 @@ Sequencer::writeCallback(Addr address, DataBlock& data,
         m_RequestTable.erase(address);
     }
 }
-
+// TODO: call this when cache miss
 void
 Sequencer::readCallback(Addr address, DataBlock& data,
                         bool externalHit, const MachineType mach,
@@ -610,6 +610,21 @@ Sequencer::readCallback(Addr address, DataBlock& data,
     if (seq_req_list.empty()) {
         m_RequestTable.erase(address);
     }
+}
+
+void
+Sequencer::customSignalCallback(Addr address)
+{
+    // TODO Fill packet with sender state
+    // is pkt stored in ruby port?
+    // Get original pkt from sequencer
+    assert(address == makeLineAddress(address));
+    assert(m_RequestTable.find(address) != m_RequestTable.end());
+    auto &seq_req_list = m_RequestTable[address];
+    SequencerRequest &seq_req = seq_req_list.front();
+
+    ruby_custom_signal_callback(seq_req.pkt);
+    return;
 }
 
 void

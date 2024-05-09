@@ -178,6 +178,8 @@ machine(MachineType:Cache, "Cache coherency protocol") :
   // Use prefetcher
   bool use_prefetcher, default="false";
 
+  bool is_dcache := "False";
+
   // Message Queues
 
   // Interface to the network
@@ -559,6 +561,8 @@ machine(MachineType:Cache, "Cache coherency protocol") :
     FinishCopyBack_Stale, desc="Check if a Evict needs to be sent";
     ActionStalledOnHazard, desc="Stall a trigger action because until finish handling snoop hazard";
     WriteZero, desc="Stall a trigger action because until finish handling snoop hazard";
+
+    DelayedL1DResult, desc="L1 result delayed, due to a miss";
 
     // This is triggered once a transaction doesn't have
     // any queued action and is not expecting responses/data. The transaction

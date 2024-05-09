@@ -664,6 +664,7 @@ transition(BUSY_BLKD, AtomicHit) {
 transition(I, {Load,Prefetch}, BUSY_BLKD) {
   Initiate_Request;
   Initiate_LoadMiss;
+  Callback_DelayedL1DResult;
   Profile_Miss;
   Pop_ReqRdyQueue;
   ProcessNextState;
