@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "arch/riscv/insts/vector.hh"
 #include "base/logging.hh"
 #include "base/stats/group.hh"
 #include "base/stats/info.hh"
@@ -101,7 +102,7 @@ IssueQue::resetDepGraph(int numPhysRegs)
     subDepGraph.resize(numPhysRegs);
 }
 
-bool
+void
 IssueQue::checkScoreboard(const DynInstPtr& inst)
 {
     for (int i=0; i<inst->numSrcRegs(); i++) {
@@ -111,17 +112,18 @@ IssueQue::checkScoreboard(const DynInstPtr& inst)
         }
         // check bypass data ready or not
         if (!scheduler->bypassScoreboard[src->flatIndex()]) {
-            DPRINTF(Schedule, "[sn %lu] p%lu can't get data from bypassNetwork\n", inst->seqNum, src->flatIndex());
-            return false;
+            panic("[sn %lu] %s can't get data from bypassNetwork\n", inst->seqNum, inst->srcRegIdx(i));
         }
     }
-    return true;
+    inst->checkOldVdElim();
 }
 
 void
 IssueQue::addToFu(const DynInstPtr& inst)
 {
-    assert (!inst->isIssued());
+    if (inst->isIssued()) {
+        panic("inst %lu has alreayd been issued\n", inst->seqNum);
+    }
     inst->setIssued();
     scheduler->addToFU(inst);
     DPRINTF(Schedule, "[sn %lu] instNum--\n", inst->seqNum);
@@ -130,8 +132,7 @@ IssueQue::addToFu(const DynInstPtr& inst)
 }
 
 void
-IssueQue::
-issueToFu()
+IssueQue::issueToFu()
 {
     int size = toFu->size;
     for (int i=0; i<size;i++) {
@@ -139,7 +140,7 @@ issueToFu()
         if (!inst) {
             continue;
         }
-        assert(checkScoreboard(inst));
+        checkScoreboard(inst);
         addToFu(inst);
         if (scheduler->getCorrectedOpLat(inst) > 1) {
             scheduler->wakeUpDependents(inst, this);
@@ -172,7 +173,7 @@ IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
     if (speculative && inst->canceled()) {
         return;
     }
-    for (int i=0; i<inst->numDestRegs(); i++) {
+    for (int i = 0; i < inst->numDestRegs(); i++) {
         PhysRegIdPtr dst = inst->renamedDestIdx(i);
         if (dst->isFixedMapping() || dst->getNumPinnedWritesToComplete() != 1) {
             continue;;
@@ -182,14 +183,18 @@ IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
             speculative ? "spec" : "wb", dst->flatIndex(), inst->seqNum);
         for (auto& it: subDepGraph[dst->flatIndex()]) {
             int srcIdx = it.first;
-            auto inst = it.second;
-            if (inst->readySrcIdx(srcIdx)) {
+            auto consumer = it.second;
+            if (consumer->readySrcIdx(srcIdx)) {
                 continue;
             }
+            consumer->markSrcRegReady(srcIdx);
 
-            inst->markSrcRegReady(srcIdx);
-            DPRINTF(Schedule, "[sn %lu] src%d was woken\n", inst->seqNum, srcIdx);
-            addIfReady(inst);
+            if (!speculative && consumer->srcRegIdx(srcIdx) == RiscvISA::VecRenamedVLReg) {
+                consumer->checkOldVdElim();
+            }
+
+            DPRINTF(Schedule, "[sn %lu] src%d was woken\n", consumer->seqNum, srcIdx);
+            addIfReady(consumer);
         }
 
         if (!speculative) {
@@ -326,6 +331,9 @@ IssueQue::insert(const DynInstPtr& inst)
             }
         }
     }
+
+    inst->checkOldVdElim();
+
     if (!addToDepGraph) {
         assert(inst->readyToIssue());
     }
@@ -407,13 +415,13 @@ Scheduler::Slot::Slot(uint32_t priority, uint32_t demand, const DynInstPtr& inst
 Scheduler::SpecWakeupCompletion::SpecWakeupCompletion(const DynInstPtr& inst, IssueQue* to)
     : Event(Stat_Event_Pri, AutoDelete),
       inst(inst),
-      to(to)
+      to_issue_queue(to)
 {}
 
 void
 Scheduler::SpecWakeupCompletion::process()
 {
-    to->wakeUpDependents(inst, true);
+    to_issue_queue->wakeUpDependents(inst, true);
 }
 
 const char *
@@ -630,26 +638,26 @@ Scheduler::insertNonSpec(const DynInstPtr& inst)
 }
 
 void
-Scheduler::wakeUpDependents(const DynInstPtr& inst, IssueQue* from)
+Scheduler::wakeUpDependents(const DynInstPtr& inst, IssueQue* from_issue_queue)
 {
     if (inst->numDestRegs() == 0 || (inst->isVector() && inst->isLoad())) {
         // ignore if vector load
         return;
     }
 
-    for (auto to : wakeMatrix[from->getId()]) {
+    for (auto to : wakeMatrix[from_issue_queue->getId()]) {
         int wakeDelay = 0;
         int oplat = getCorrectedOpLat(inst);
 
-        if (oplat == 1 && (from->getIssueStages() > to->getIssueStages())) {
-            wakeDelay = from->getIssueStages() - to->getIssueStages();
+        if (oplat == 1 && (from_issue_queue->getIssueStages() > to->getIssueStages())) {
+            wakeDelay = from_issue_queue->getIssueStages() - to->getIssueStages();
         } else if (oplat > to->getIssueStages()) {
             wakeDelay = oplat - to->getIssueStages();
         }
 
         DPRINTF(Schedule, "[sn %lu] %s create wakeupEvent to %s, delay %d cycles\n",
-            inst->seqNum, from->getName(), to->getName(), wakeDelay);
-        if (wakeDelay==0) {
+            inst->seqNum, from_issue_queue->getName(), to->getName(), wakeDelay);
+        if (wakeDelay == 0) {
             to->wakeUpDependents(inst, true);
         } else {
             auto wakeEvent = new SpecWakeupCompletion(inst, to);
@@ -685,7 +693,8 @@ Scheduler::insertSlot(const DynInstPtr& inst)
 
 void Scheduler::loadCancel(const DynInstPtr& inst)
 {
-    DPRINTF(Schedule, "[sn %lu] %s cache miss, cancel others\n", inst->seqNum, enums::OpClassStrings[inst->opClass()]);
+    DPRINTF(Schedule, "[sn %lu] %s cache miss, cancel consumers\n", inst->seqNum,
+            enums::OpClassStrings[inst->opClass()]);
     inst->setCancel();
     if (inst->issueQue) {
         inst->issueQue->iqstats->loadmiss++;
@@ -704,7 +713,7 @@ void Scheduler::loadCancel(const DynInstPtr& inst)
                 for (auto& it : iq->subDepGraph[dst->flatIndex()]) {
                     int srcIdx = it.first;
                     auto& depInst = it.second;
-                    if (depInst->readySrcIdx(srcIdx)) {
+                    if (depInst->readySrcIdx(srcIdx) && depInst->renamedSrcIdx(srcIdx) != cpu->vecOnesPhysRegId) {
                         assert(!depInst->isIssued());
                         DPRINTF(Schedule, "cancel [sn %lu], clear src p%d ready\n",
                             depInst->seqNum, depInst->renamedSrcIdx(srcIdx)->flatIndex());
@@ -736,7 +745,7 @@ Scheduler::writebackWakeup(const DynInstPtr& inst)
 {
     DPRINTF(Schedule, "[sn %lu] was writeback\n", inst->seqNum);
     inst->issueQue = nullptr;// clear in issueQue
-    for (int i=0; i<inst->numDestRegs(); i++) {
+    for (int i = 0; i < inst->numDestRegs(); i++) {
         auto dst = inst->renamedDestIdx(i);
         if (dst->isFixedMapping()) {
             continue;

@@ -127,6 +127,7 @@ class CPU : public BaseCPU
     /** Overall CPU status. */
     Status _status;
 
+    PhysRegIdPtr vecOnesPhysRegId;
   private:
 
     /** The tick event used for scheduling CPU ticks. */

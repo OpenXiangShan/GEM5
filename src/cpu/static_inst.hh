@@ -113,8 +113,6 @@ class StaticInst : public RefCounted, public StaticInstFlags
 
     std::array<uint8_t, RMiscRegClass + 1> _numTypedDestRegs = {};
 
-    unsigned nf = 0;
-
   public:
 
     /// @name Register information.
@@ -167,7 +165,11 @@ class StaticInst : public RefCounted, public StaticInstFlags
     bool isFloating()     const { return flags[IsFloating]; }
     bool isVector()       const { return flags[IsVector]; }
     bool isVectorConfig() const { return opClass() == VectorConfigOp; }
-    bool isSegLoad()      const { return flags[IsSegLoad]; }
+    bool isVecSegLoad()   const
+    {
+        return opClass() == VectorSegUnitStrideLoadOp || opClass() == VectorSegUnitStrideMaskLoadOp ||
+               opClass() == VectorSegStridedLoadOp || opClass() == VectorSegIndexedLoadOp;
+    }
 
     bool isControl()      const { return flags[IsControl]; }
     bool isCall()         const { return flags[IsCall]; }
@@ -222,9 +224,6 @@ class StaticInst : public RefCounted, public StaticInstFlags
     OpClass opClass() const { return _opClass; }
 
     void resetOpClass(OpClass op_class) { _opClass = op_class; }
-
-    void setNF(unsigned _nf) { nf = _nf; }
-    unsigned getNF() { return nf; }
 
     /// Return logical index (architectural reg num) of i'th destination reg.
     /// Only the entries from 0 through numDestRegs()-1 are valid.

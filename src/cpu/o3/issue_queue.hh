@@ -111,7 +111,7 @@ class IssueQue : public SimObject
 
     void replay(const DynInstPtr& inst);
     void addToFu(const DynInstPtr& inst);
-    bool checkScoreboard(const DynInstPtr& inst);
+    void checkScoreboard(const DynInstPtr& inst);
     void issueToFu();
     void wakeUpDependents(const DynInstPtr& inst, bool speculative);
     void selectInst();
@@ -162,7 +162,7 @@ class Scheduler : public SimObject
     class SpecWakeupCompletion : public Event
     {
         DynInstPtr inst;
-        IssueQue* to = nullptr;
+        IssueQue* to_issue_queue = nullptr;
       public:
         SpecWakeupCompletion(const DynInstPtr& inst, IssueQue* to);
         void process() override;
@@ -206,7 +206,7 @@ class Scheduler : public SimObject
     std::stack<DynInstPtr> dfs;
 
     // should call at issue first/last cycle,
-    void wakeUpDependents(const DynInstPtr& inst, IssueQue* from);
+    void wakeUpDependents(const DynInstPtr& inst, IssueQue* from_issue_queue);
 
   public:
     Scheduler(const SchedulerParams& params);

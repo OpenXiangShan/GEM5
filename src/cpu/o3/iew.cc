@@ -1938,15 +1938,12 @@ IEW::dqTypeToReason(DQType dq_type)
 IEW::DQType
 IEW::getInstDQType(const DynInstPtr &inst)
 {
-    if (inst->isLoad() || inst->isStore() || inst->isAtomic()) {
+    if (inst->isMemRef() || inst->isReadBarrier() || inst->isWriteBarrier() || inst->isNonSpeculative()) {
         return DQType::MemDQ;
     } else if (inst->isFloating() || inst->isVector()) {
         return DQType::FVDQ;
-    } else if (inst->isInteger()) {
-        return DQType::IntDQ;
-    } else {
-        panic("Unknown inst type");
     }
+    return DQType::IntDQ;
 }
 
 StallReason

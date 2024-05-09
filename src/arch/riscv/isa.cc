@@ -263,7 +263,7 @@ void ISA::clear()
     miscRegFile[MISCREG_IMPID] = 0;
     if (FullSystem) {
         // Xiangshan assume machine boots with FS off
-        miscRegFile[MISCREG_STATUS] = (2ULL << UXL_OFFSET) | (2ULL << SXL_OFFSET);
+        miscRegFile[MISCREG_STATUS] = (2ULL << UXL_OFFSET) | (2ULL << SXL_OFFSET) | (1ULL <<VS_OFFSET);
     } else {
         // SE assumes process starts with FS on
         miscRegFile[MISCREG_STATUS] = (2ULL << UXL_OFFSET) | (2ULL << SXL_OFFSET) |
@@ -276,7 +276,7 @@ void ISA::clear()
     miscRegFile[MISCREG_TSELECT] = 1;
     // NMI is always enabled.
     miscRegFile[MISCREG_NMIE] = 1;
-    // sync with NEMU
+
     miscRegFile[MISCREG_VTYPE] = (1lu<<63);
 }
 
