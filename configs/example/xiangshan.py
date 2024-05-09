@@ -25,7 +25,10 @@ from common import Options
 
 def build_test_system(np):
     assert buildEnv['TARGET_ISA'] == "riscv"
-    test_sys = makeBareMetalXiangshanSystem(test_mem_mode, SysConfig(mem=args.mem_size), None, np=np)
+    ruby = False
+    if hasattr(args, 'ruby') and args.ruby:
+        ruby = True
+    test_sys = makeBareMetalXiangshanSystem(test_mem_mode, SysConfig(mem=args.mem_size), None, np=np, ruby=ruby)
     test_sys.num_cpus = np
 
     args.enable_difftest = True
@@ -93,7 +96,8 @@ def build_test_system(np):
     if args.mem_type == 'DRAMsim3':
         assert args.dramsim3_ini is not None
 
-    if hasattr(args, 'ruby') and args.ruby:
+    if ruby:
+        test_sys._dma_ports = []
         bootmem = getattr(test_sys, '_bootmem', None)
         Ruby.create_system(args, True, test_sys, test_sys.iobus,
                            test_sys._dma_ports, bootmem)
@@ -114,6 +118,9 @@ def build_test_system(np):
             cpu.createInterruptController()
 
             test_sys.ruby._cpu_ports[i].connectCpuPorts(cpu)
+
+            # Ruby D-cache does not support store prefetch yet
+            cpu.store_prefetch_train = False
 
     else:
         if args.caches or args.l2cache:
@@ -256,7 +263,6 @@ Options.addXiangshanFSOptions(parser)
 
 # Add the ruby specific and protocol specific args
 if '--ruby' in sys.argv:
-    fatal("XS-GEM5 currently doesn't support the ruby memory system")
     Ruby.define_options(parser)
 
 args = parser.parse_args()
@@ -279,9 +285,7 @@ else:
 # Match the memories with the CPUs, based on the options for the test system
 TestMemClass = Simulation.setMemClass(args)
 
-np = args.num_cpus
-
-test_sys = build_test_system(np)
+test_sys = build_test_system(args.num_cpus)
 
 root = Root(full_system=True, system=test_sys)
 
