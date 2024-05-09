@@ -48,6 +48,7 @@
 #include <list>
 #include <string>
 
+#include "arch/riscv/insts/vector.hh"
 #include "base/refcnt.hh"
 #include "base/trace.hh"
 #include "config/the_isa.hh"
@@ -68,6 +69,7 @@
 #include "debug/DecoupleBP.hh"
 #include "debug/HtmCpu.hh"
 #include "debug/RiscvMisc.hh"
+#include "debug/Schedule.hh"
 
 namespace gem5
 {
@@ -1015,6 +1017,39 @@ class DynInst : public ExecContext, public RefCounted
     void setInstListIt(ListIt _instListIt) { instListIt = _instListIt; }
 
   public:
+    bool checkOldVdElim()
+    {
+        if (isVector() && !isStore()) {
+            auto vecinst = dynamic_cast<RiscvISA::VectorMicroInst *>(staticInst.get());
+            if (vecinst->vlsrcIdx < 0 || vecinst->oldDstIdx < 0) {
+                return false;
+            }
+            if (!readySrcIdx(vecinst->vlsrcIdx)) {
+                return false;
+            }
+            uint64_t vl = getRegOperand(staticInst.get(), vecinst->vlsrcIdx);
+            bool set = vecinst->vmi.rs < RiscvISA::vtype_VLMAX(vecinst->machInst.vtype8);
+            bool eleFullCover = vecinst->vmi.re <= vl;
+            bool oldVdElim = set && ((vl > 0 && vecinst->vma && vecinst->vta) || (vecinst->vma && eleFullCover));
+            DPRINTF(Schedule, "[sn %llu] vl: %llu, rs: %llu, re: %llu, set: %d, eleFullCover: %d, oldVdElim: %d\n",
+                    seqNum, vl, vecinst->vmi.rs, vecinst->vmi.re, set, eleFullCover, oldVdElim);
+            if (oldVdElim) {
+                DPRINTF(Schedule, "[sn %llu] old vd elim\n", seqNum);
+                renameSrcReg(vecinst->oldDstIdx, cpu->vecOnesPhysRegId);
+                if (!readySrcIdx(vecinst->oldDstIdx)) {
+                    markSrcRegReady(vecinst->oldDstIdx);
+                }
+            } else {
+                DPRINTF(Schedule, "[sn %llu] assert failed\n", seqNum);
+                assert(srcRegIdx(vecinst->oldDstIdx) != RiscvISA::VecOnesReg);
+            }
+            return oldVdElim;
+        }
+        return false;
+    }
+
+
+
     /** Returns the number of consecutive store conditional failures. */
     unsigned int
     readStCondFailures() const override
@@ -1073,6 +1108,8 @@ class DynInst : public ExecContext, public RefCounted
 #endif
 
     /* Values used by LoadToUse stat */
+    Tick enterDQTick = -1;
+    Tick exitDQTick = -1;
     Tick firstIssue = -1;
     Tick lastWakeDependents = -1;
     Tick translatedTick = -1;
@@ -1257,32 +1294,7 @@ class DynInst : public ExecContext, public RefCounted
         //TODO setResult
     }
 
-    void printDisassembly() const
-    {
-        DPRINTF(CommitTrace,
-                "[sn:%lu pc:%#lx] %s",
-                seqNum, pcState().instAddr(),
-                staticInst->disassemble(pcState().instAddr()));
-        if (instResult.size() > 0) {
-            DPRINTFR(CommitTrace, ", res: %#lx", instResult.front().as<uint64_t>());
-        }
-        else if (numDestRegs() > 0 && isVector()) {
-            uint64_t val[RiscvISA::NumVecElemPerVecReg];
-            cpu->getArchReg(destRegIdx(0), val, threadNumber);
-            std::string s_val;
-            for (int j=RiscvISA::NumVecElemPerVecReg-1; j>=0; j--) {
-                s_val += csprintf("%016lx", val[j]);
-                if (j != 0) {
-                    s_val+="_";
-                }
-            }
-            DPRINTFR(CommitTrace, ", res: %s", s_val);
-        }
-        if (isMemRef()) {
-            DPRINTFR(CommitTrace, ", paddr: %#lx", physEffAddr);
-        }
-        DPRINTFR(CommitTrace, "\n");
-    }
+    void printDisassembly() const;
 
     std::string genDisassembly() const
     {

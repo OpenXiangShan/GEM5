@@ -713,8 +713,17 @@ Decode::decodeInsts(ThreadID tid)
         }
     }
 
+    bool vec_decode_limit = false;
+
+    if (!insts_to_decode.front()->isVector()) {
+        vec_decode_limit = true;
+    }
+
     while (insts_available > 0 && toRenameIndex < decode_width) {
         assert(!insts_to_decode.empty());
+        if (vec_decode_limit && insts_to_decode.front()->isVector()) {
+            break;
+        }
 
         DynInstPtr inst = std::move(insts_to_decode.front());
 

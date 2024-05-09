@@ -310,7 +310,8 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
       ADD_STAT(loadTranslationLat, "Distribution of cycle latency between the "
                 "first time a load is issued and its translation completion"),
       ADD_STAT(nonUnitStrideCross16Byte, "Number of vector non unitStride cross 16-byte boundary"),
-      ADD_STAT(UnitStrideCross16Byte, "Number of vector unitStride cross 16-byte boundary")
+      ADD_STAT(unitStrideCross16Byte, "Number of vector unitStride cross 16-byte boundary"),
+      ADD_STAT(unitStrideAligned, "Number of vector unitStride 16-byte aligned")
 {
     loadToUse
         .init(0, 299, 10)
@@ -1444,10 +1445,14 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
     bool cross16Byte = (addr % 16) + size > 16;
     if (load_inst->isVector() && cross16Byte) {
         if (load_inst->opClass() == enums::VectorUnitStrideLoad) {
-            stats.UnitStrideCross16Byte++;
-        }
-        else {
+            stats.unitStrideCross16Byte++;
+        } else {
             stats.nonUnitStrideCross16Byte++;
+        }
+    }
+    if (load_inst->isVector() && !cross16Byte) {
+        if (load_inst->opClass() == enums::VectorUnitStrideLoad) {
+            stats.unitStrideAligned++;
         }
     }
 

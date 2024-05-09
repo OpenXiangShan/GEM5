@@ -140,10 +140,13 @@ class ReadPort(FUDesc):
     opList = [ OpDesc(opClass='MemRead', opLat=2), # actually execute cycle = 2+1
                OpDesc(opClass='FloatMemRead'),
                OpDesc(opClass='VectorUnitStrideLoad', opLat=2),
-               OpDesc(opClass='VectorSegmentLoad', opLat=2),
+               OpDesc(opClass='VectorSegUnitStrideLoad', opLat=2),
                OpDesc(opClass='VectorUnitStrideMaskLoad', opLat=2),
+               OpDesc(opClass='VectorSegUnitStrideMaskLoad', opLat=2),
                OpDesc(opClass='VectorStridedLoad', opLat=2),
+               OpDesc(opClass='VectorSegStridedLoad', opLat=2),
                OpDesc(opClass='VectorIndexedLoad', opLat=2),
+               OpDesc(opClass='VectorSegIndexedLoad', opLat=2),
                OpDesc(opClass='VectorUnitStrideFaultOnlyFirstLoad', opLat=2),
                OpDesc(opClass='VectorWholeRegisterLoad', opLat=2)]
     count = 2
@@ -152,7 +155,7 @@ class WritePort(FUDesc):
     opList = [ OpDesc(opClass='MemWrite', opLat=4),
                OpDesc(opClass='FloatMemWrite'),
                OpDesc(opClass='VectorUnitStrideStore'),
-               OpDesc(opClass='VectorSegmentStore'),
+               OpDesc(opClass='VectorSegUnitStrideStore'),
                OpDesc(opClass='VectorUnitStrideMaskStore'),
                OpDesc(opClass='VectorStridedStore'),
                OpDesc(opClass='VectorIndexedStore'),

@@ -472,6 +472,32 @@ DynInst::initiateMemAMO(Addr addr, unsigned size, Request::Flags flags,
             /* atomic */ false, nullptr, size, addr, flags, nullptr,
             std::move(amo_op), std::vector<bool>(size, true));
 }
+void
+DynInst::printDisassembly() const
+{
+    DPRINTF(CommitTrace, "[sn:%lu pc:%#lx] enDqT: %lu, exDqT: %lu, readyT: %lu, CompleT:%lu, %s",
+            seqNum, pcState().instAddr(),
+            enterDQTick, exitDQTick, readyTick, completionTick,
+            staticInst->disassemble(pcState().instAddr()));
+    if (instResult.size() > 0) {
+        DPRINTFR(CommitTrace, ", res: %#lx", instResult.front().as<uint64_t>());
+    } else if (numDestRegs() > 0 && isVector()) {
+        uint64_t val[RiscvISA::NumVecElemPerVecReg];
+        cpu->getArchReg(destRegIdx(0), val, threadNumber);
+        std::string s_val;
+        for (int j = RiscvISA::NumVecElemPerVecReg - 1; j >= 0; j--) {
+            s_val += csprintf("%016lx", val[j]);
+            if (j != 0) {
+                s_val += "_";
+            }
+        }
+        DPRINTFR(CommitTrace, ", res: %s", s_val);
+    }
+    if (isMemRef()) {
+        DPRINTFR(CommitTrace, ", paddr: %#lx", physEffAddr);
+    }
+    DPRINTFR(CommitTrace, "\n");
+}
 
 } // namespace o3
 } // namespace gem5

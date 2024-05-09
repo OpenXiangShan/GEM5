@@ -541,6 +541,15 @@ class Commit
 
         /** Number of cycles where the commit bandwidth limit is reached. */
         statistics::Scalar commitEligibleSamples;
+
+        statistics::Distribution segUnitStrideNF;
+        statistics::Distribution segStrideNF;
+        statistics::Distribution segIndexedNF;
+
+        statistics::Scalar vectorVma;
+        statistics::Scalar vectorVmu;
+        statistics::Scalar vectorVta;
+        statistics::Scalar vectorVtu;
     } stats;
 
     Tick lastCommitTick;

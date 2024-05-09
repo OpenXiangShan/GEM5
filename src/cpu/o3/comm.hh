@@ -73,7 +73,8 @@ enum StallReason {
     InstMisPred,  // BS
     InstSquashed,  // BS
     SerializeStall,  // F
-    LongExecute,  // B
+    ScalarLongExecute,  // B
+    VectorLongExecute,  // B
     InstNotReady,  // B
 
     LoadL1Bound,
@@ -85,8 +86,16 @@ enum StallReason {
     StoreL3Bound,
     StoreMemBound,
     MemSquashed,  // maybe never used
+    MemNotReady,
+    MemCommitRateLimit,
     Atomic,
+    OtherMemStall,  // B
 
+    MemDQBandwidth,
+    IntDQBandwidth,
+    FVDQBandwidth,
+    VectorReadyButNotIssued,  // B
+    ScalarReadyButNotIssued,  // B
     ResumeUnblock,  // B
     CommitSquash,  // BS
     OtherStall,  // B

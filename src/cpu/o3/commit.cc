@@ -213,7 +213,21 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
       ADD_STAT(committedInstType, statistics::units::Count::get(),
                "Class of committed instruction"),
       ADD_STAT(commitEligibleSamples, statistics::units::Cycle::get(),
-               "number cycles where commit BW limit reached")
+               "number cycles where commit BW limit reached"),
+      ADD_STAT(segUnitStrideNF, statistics::units::Count::get(),
+               "Distribution of segment unit stride NF"),
+      ADD_STAT(segStrideNF, statistics::units::Count::get(),
+               "Distribution of segment stride NF"),
+      ADD_STAT(segIndexedNF, statistics::units::Count::get(),
+               "Distribution of segment indexed NF"),
+      ADD_STAT(vectorVma, statistics::units::Count::get(),
+               "Number of vector vma enable"),
+      ADD_STAT(vectorVmu, statistics::units::Count::get(),
+               "Number of vector vmu enable"),
+      ADD_STAT(vectorVta, statistics::units::Count::get(),
+               "Number of vector vta enable"),
+      ADD_STAT(vectorVtu, statistics::units::Count::get(),
+               "Number of vector vtu enable")
 {
     using namespace statistics;
 
@@ -223,6 +237,18 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
 
     numCommittedDist
         .init(0,commit->commitWidth,1)
+        .flags(statistics::pdf);
+
+    segUnitStrideNF
+        .init(0, 8, 1)
+        .flags(statistics::pdf);
+
+    segStrideNF
+        .init(0, 8, 1)
+        .flags(statistics::pdf);
+
+    segIndexedNF
+        .init(0, 8, 1)
         .flags(statistics::pdf);
 
     instsCommitted
@@ -1725,8 +1751,33 @@ Commit::updateComInstStats(const DynInstPtr &inst)
     if (inst->isFloating())
         stats.floating[tid]++;
     // Vector Instruction
-    if (inst->isVector())
+    if (inst->isVector()) {
         stats.vectorInstructions[tid]++;
+        if (!inst->isMicroop() || inst->isLastMicroop()) {
+            auto vecInst = dynamic_cast<RiscvISA::VectorMicroInst *>(inst->staticInst.get());
+            if (inst->opClass() == enums::VectorSegUnitStrideLoad) {
+                stats.segUnitStrideNF.sample(vecInst->vmi.nf);
+            } else if (inst->opClass() == enums::VectorSegStridedLoad) {
+                stats.segStrideNF.sample(vecInst->vmi.nf);
+            } else if (inst->opClass() == enums::VectorSegIndexedLoad) {
+                stats.segIndexedNF.sample(vecInst->vmi.nf);
+            }
+        }
+        if (inst->isMicroop()) {
+            auto vecInst = dynamic_cast<RiscvISA::VectorMicroInst *>(inst->staticInst.get());
+            if (vecInst->vma) {
+                stats.vectorVma++;
+            } else {
+                stats.vectorVmu++;
+            }
+
+            if (vecInst->vta) {
+                stats.vectorVta++;
+            } else {
+                stats.vectorVtu++;
+            }
+        }
+    }
 
     // Function Calls
     if (inst->isCall())

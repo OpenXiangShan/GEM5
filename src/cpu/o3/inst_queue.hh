@@ -171,10 +171,10 @@ class InstructionQueue
     void takeOverFrom();
 
     /** Returns whether or not the IQ is full for a specific thread. */
-    bool isFull(DynInstPtr& inst);
+    bool isFull(const DynInstPtr& inst);
 
     /** Returns whether or not the IQ is ok to accept the inst for a specific thread. */
-    bool isReady(DynInstPtr& inst);
+    bool isReady(const DynInstPtr& inst);
 
     /** Returns if there are any ready instructions in the IQ. */
     bool hasReadyInsts();

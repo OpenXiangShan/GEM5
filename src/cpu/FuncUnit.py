@@ -56,13 +56,24 @@ class OpClass(Enum):
             'SimdPredAlu',
             'MemRead', 'MemWrite', 'FloatMemRead', 'FloatMemWrite',
             'IprAccess', 'InstPrefetch', 'FMAMul', 'FMAAcc',
-            'VectorUnitStrideLoad', 'VectorSegmentLoad',
-            'VectorUnitStrideStore', 'VectorSegmentStore',
-            'VectorUnitStrideMaskLoad', 'VectorUnitStrideMaskStore',
-            'VectorStridedLoad', 'VectorStridedStore',
-            'VectorIndexedLoad', 'VectorIndexedStore',
+
+            'VectorUnitStrideLoad', 'VectorSegUnitStrideLoad',
+            'VectorUnitStrideStore', 'VectorSegUnitStrideStore',
+
+            'VectorUnitStrideMaskLoad', 'VectorSegUnitStrideMaskLoad',
+            'VectorUnitStrideMaskStore',
+
+            'VectorStridedLoad', 'VectorSegStridedLoad',
+            'VectorStridedStore',
+
+            'VectorIndexedLoad', 'VectorSegIndexedLoad',
+            'VectorIndexedStore',
+
+            'VectorWholeRegisterLoad',
+            'VectorWholeRegisterStore',
+
             'VectorUnitStrideFaultOnlyFirstLoad',
-            'VectorWholeRegisterLoad', 'VectorWholeRegisterStore',
+
             'VectorIntegerArith', 'VectorFloatArith', 'VectorFloatConvert',
             'VectorIntegerReduce', 'VectorFloatReduce',
             'VectorMisc', 'VectorIntegerExtension', 'VectorConfig'
