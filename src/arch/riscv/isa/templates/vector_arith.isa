@@ -1354,7 +1354,7 @@ public:
                    uint8_t _microIdx, int pos);
     Fault execute(ExecContext* xc, Trace::InstRecord* traceData)const override;
     std::string generateDisassembly(Addr pc,
-        const Loader::SymbolTable *symtab) const
+        const Loader::SymbolTable *symtab) const override
     {
         std::stringstream ss;
         if (pos==FirstUop) {
