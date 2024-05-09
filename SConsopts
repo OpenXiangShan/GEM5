@@ -50,4 +50,9 @@ sticky_vars.AddVariables(
     ('BATCH_CMD', 'Batch pool submission command name', 'qdo'),
     ('M5_BUILD_CACHE', 'Cache built objects in this directory', False),
     ('USE_EFENCE', 'Link with Electric Fence malloc debugger', False),
+    ('RUBY', 'Use ruby memory system', True),
+    ('PROTOCOL', 'Protocol used by ruby memory', 'CHI'),
+    ('NUMBER_BITS_PER_SET', 'Number of bits per set', 64),
+    ('NEED_PARTIAL_FUNC_READS', 'Need partial funct reads', True),
+    ('SLICC_HTML', 'Generate html for slicc files', False)
     )
