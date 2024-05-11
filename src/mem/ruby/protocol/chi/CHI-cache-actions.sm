@@ -3584,9 +3584,15 @@ action(Callback_LoadHit, desc="") {
 
 action(Callback_DelayedL1DResult, desc="Callback for delayed L1D result") {
   assert(is_valid(tbe));
-  assert(tbe.reqType == CHIRequestType:Load);
   if (is_dcache) {
-    sequencer.customSignalCallback(tbe.addr);
+    sequencer.notifyMissCallback(tbe.addr, false);
+  }
+}
+
+action(Callback_DelayedL1DResult_Upgrade, desc="Callback for write upgrade") {
+  assert(is_valid(tbe));
+  if (is_dcache) {
+    sequencer.notifyMissCallback(tbe.addr, true);
   }
 }
 

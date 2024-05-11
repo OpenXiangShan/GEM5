@@ -476,19 +476,18 @@ RubyPort::ruby_hit_callback(PacketPtr pkt)
 void
 RubyPort::ruby_custom_signal_callback(PacketPtr pkt)
 {
-    DPRINTF(RubyPort, "Callback due to delayed L1D access for %s\n", pkt->cmdString());
+    DPRINTF(RubyPort, "Callback due to delayed L1D access for pkt %#lx %s\n", pkt, pkt->cmdString());
 
     assert(pkt->isRequest());
 
     // TODO get cpu side port from MemResponsePort?
-    RubyPort::SenderState *senderState =
-        safe_cast<RubyPort::SenderState *>(pkt->popSenderState());
-    MemResponsePort *port = senderState->port;
-    assert(port != NULL);
-    delete senderState;
+    RubyPort::SenderState *sender_state = safe_cast<RubyPort::SenderState *>(pkt->senderState);
+    assert(sender_state != nullptr);
+    MemResponsePort *port = sender_state->port;
+    assert(port != nullptr);
 
+    DPRINTF(RubyPort, "Sent custom signal back to LSQ with sender state %#lx\n", sender_state);
     port->sendCustomSignal(pkt, 1);
-    DPRINTF(RubyPort, "Sent custom signal back to LSQ");
 }
 
 void

@@ -368,6 +368,18 @@ Sequencer::insertRequest(PacketPtr pkt, RubyRequestType primary_type,
     m_outstanding_count++;
 
     if (seq_req_list.size() > 1) {
+        if (seq_req_list.front().blk_invalid) {
+            seq_req_list.back().blk_invalid = true;
+            if (pkt->isRead()) {
+                DPRINTF(RubySequencer, "Pkt %#lx %s is delayed for blk invalid\n", pkt, pkt->cmdString());
+                ruby_custom_signal_callback(pkt);
+            }
+        } else if (seq_req_list.front().blk_upgrading) {
+            if (pkt->isRead()) {
+                DPRINTF(RubySequencer, "Pkt %#lx %s is delayed for blk upgrading by writes\n", pkt, pkt->cmdString());
+                ruby_custom_signal_callback(pkt);
+            }
+        }
         return RequestStatus_Aliased;
     }
 
@@ -558,7 +570,7 @@ Sequencer::writeCallback(Addr address, DataBlock& data,
         m_RequestTable.erase(address);
     }
 }
-// TODO: call this when cache miss
+
 void
 Sequencer::readCallback(Addr address, DataBlock& data,
                         bool externalHit, const MachineType mach,
@@ -599,6 +611,7 @@ Sequencer::readCallback(Addr address, DataBlock& data,
                               firstResponseTime);
         }
         markRemoved();
+        // All read packets will be responsed here
         hitCallback(&seq_req, data, true, mach, externalHit,
                     initialRequestTime, forwardRequestTime,
                     firstResponseTime, !ruby_request);
@@ -613,17 +626,31 @@ Sequencer::readCallback(Addr address, DataBlock& data,
 }
 
 void
-Sequencer::customSignalCallback(Addr address)
+Sequencer::notifyMissCallback(Addr address, bool is_upgrade)
 {
     // TODO Fill packet with sender state
     // is pkt stored in ruby port?
     // Get original pkt from sequencer
     assert(address == makeLineAddress(address));
-    assert(m_RequestTable.find(address) != m_RequestTable.end());
-    auto &seq_req_list = m_RequestTable[address];
-    SequencerRequest &seq_req = seq_req_list.front();
+    auto it = m_RequestTable.find(address);
+    assert(it != m_RequestTable.end());
+    auto &seq_req_list = it->second;
 
-    ruby_custom_signal_callback(seq_req.pkt);
+    for (auto &seq_req: seq_req_list) {
+        // if not write upgrade
+        if (!is_upgrade) {
+            if (!seq_req.blk_invalid) {
+                seq_req.blk_invalid = true;
+                if (seq_req.pkt->isRead()) {
+                    ruby_custom_signal_callback(seq_req.pkt);
+                }
+            }
+        } else {
+            if (seq_req.pkt->isWrite() && is_upgrade) {
+                seq_req.blk_upgrading = true;
+            }
+        }
+    }
     return;
 }
 

@@ -132,7 +132,7 @@ structure (Sequencer, external = "yes") {
   void readCallback(Addr, DataBlock, bool, MachineType,
                     Cycles, Cycles, Cycles);
 
-  void customSignalCallback(Addr);
+  void notifyMissCallback(Addr, bool);
 
   void writeCallback(Addr, DataBlock);
   void writeCallback(Addr, DataBlock, bool);

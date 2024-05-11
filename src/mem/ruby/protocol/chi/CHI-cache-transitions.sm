@@ -673,6 +673,7 @@ transition(I, {Load,Prefetch}, BUSY_BLKD) {
 transition(I, Store, BUSY_BLKD) {
   Initiate_Request;
   Initiate_StoreMiss;
+  Callback_DelayedL1DResult;
   Profile_Miss;
   Pop_ReqRdyQueue;
   ProcessNextState;
@@ -681,6 +682,7 @@ transition(I, Store, BUSY_BLKD) {
 transition({SD,SC}, Store, BUSY_BLKD) {
   Initiate_Request;
   Initiate_StoreUpgrade;
+  Callback_DelayedL1DResult_Upgrade;
   Profile_Miss;
   Pop_ReqRdyQueue;
   ProcessNextState;
