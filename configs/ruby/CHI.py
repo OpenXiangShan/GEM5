@@ -117,7 +117,7 @@ def create_system(
         assoc = options.l1i_assoc
 
     class L1DCache(RubyCache):
-        dataAccessLatency = 2
+        dataAccessLatency = 0
         tagAccessLatency = 1
         size = options.l1d_size
         assoc = options.l1d_assoc
