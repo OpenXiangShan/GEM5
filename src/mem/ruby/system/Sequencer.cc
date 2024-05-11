@@ -626,14 +626,18 @@ Sequencer::readCallback(Addr address, DataBlock& data,
 }
 
 void
-Sequencer::notifyMissCallback(Addr address, bool is_upgrade)
+Sequencer::notifyMissCallback(Addr address, bool is_upgrade, bool is_snoop)
 {
     // TODO Fill packet with sender state
     // is pkt stored in ruby port?
     // Get original pkt from sequencer
     assert(address == makeLineAddress(address));
     auto it = m_RequestTable.find(address);
-    assert(it != m_RequestTable.end());
+    if (it == m_RequestTable.end()) {
+        assert(is_snoop || is_upgrade);
+        DPRINTF(RubySequencer, "No outstanding requests for address %#x\n", address);
+        return;
+    }
     auto &seq_req_list = it->second;
 
     for (auto &seq_req: seq_req_list) {

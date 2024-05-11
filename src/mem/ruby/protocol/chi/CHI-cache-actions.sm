@@ -3585,14 +3585,21 @@ action(Callback_LoadHit, desc="") {
 action(Callback_DelayedL1DResult, desc="Callback for delayed L1D result") {
   assert(is_valid(tbe));
   if (is_dcache) {
-    sequencer.notifyMissCallback(tbe.addr, false);
+    sequencer.notifyMissCallback(tbe.addr, false, false);
   }
 }
 
 action(Callback_DelayedL1DResult_Upgrade, desc="Callback for write upgrade") {
   assert(is_valid(tbe));
   if (is_dcache) {
-    sequencer.notifyMissCallback(tbe.addr, true);
+    sequencer.notifyMissCallback(tbe.addr, true, false);
+  }
+}
+
+action(Callback_DelayedL1DResult_Snoop, desc="Callback for snoop from other cores") {
+  assert(is_valid(tbe));
+  if (is_dcache) {
+    sequencer.notifyMissCallback(tbe.addr, false, true);
   }
 }
 

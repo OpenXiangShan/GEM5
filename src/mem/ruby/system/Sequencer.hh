@@ -129,7 +129,7 @@ class Sequencer : public RubyPort
                       const Cycles forwardRequestTime = Cycles(0),
                       const Cycles firstResponseTime = Cycles(0));
 
-    void notifyMissCallback(Addr address, bool is_upgrade = false);
+    void notifyMissCallback(Addr address, bool is_upgrade, bool is_snoop);
 
     void atomicCallback(Addr address,
                         DataBlock& data,
