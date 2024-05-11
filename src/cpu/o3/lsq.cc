@@ -42,6 +42,7 @@
 #include "cpu/o3/lsq.hh"
 
 #include <algorithm>
+#include <csignal>
 #include <list>
 #include <string>
 
@@ -56,6 +57,7 @@
 #include "debug/Fetch.hh"
 #include "debug/HtmCpu.hh"
 #include "debug/LSQ.hh"
+#include "debug/PacketSender.hh"
 #include "debug/Schedule.hh"
 #include "debug/Writeback.hh"
 #include "params/BaseO3CPU.hh"
@@ -510,7 +512,7 @@ LSQ::recvFunctionalCustomSignal(PacketPtr pkt, int sig)
         return;
     }
 
-    LSQRequest *request = dynamic_cast<LSQRequest*>(pkt->senderState);
+    LSQRequest *request = dynamic_cast<LSQRequest*>(pkt->getPrimarySenderState());
     panic_if(!request, "Got packet back with unknown sender state\n");
     // notify cache miss
     iewStage->loadCancel(request->instruction());
@@ -1202,6 +1204,11 @@ LSQ::LSQRequest::addReq(Addr addr, unsigned size,
 
 LSQ::LSQRequest::~LSQRequest()
 {
+    if (isAnyOutstandingRequest()) {
+        warn("numInTranslationFragments = %u, _numOutstandingPackets = %u\n",
+             numInTranslationFragments, _numOutstandingPackets);
+        std::raise(SIGINT);
+    }
     assert(!isAnyOutstandingRequest());
     _inst->savedRequest = nullptr;
 
@@ -1306,6 +1313,7 @@ LSQ::SingleDataRequest::buildPackets()
                     :  Packet::createWrite(req()));
         _packets.back()->dataStatic(_inst->memData);
         _packets.back()->senderState = this;
+        DPRINTF(PacketSender, "Set packet %#lx senderState to %#lx\n", _packets.back(), this);
 
         // hardware transactional memory
         // If request originates in a transaction (not necessarily a HtmCmd),
