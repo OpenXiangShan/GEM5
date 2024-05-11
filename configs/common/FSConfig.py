@@ -681,7 +681,6 @@ def makeBareMetalXiangshanSystem(mem_mode, mdesc=None, cmdline=None, np=1, ruby=
     self.lint = Lint()
     self.lint.pio = self.iobus.mem_side_ports
     self.lint.pio_addr = 0x38000000
-    self.lint.pio_size = 0x10000
     self.lint.num_threads = np
     self.lint.int_enable = 1
 

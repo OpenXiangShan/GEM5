@@ -30,15 +30,15 @@ Lint::read(PacketPtr pkt)
         case CLINT_MTIME:
             ret_val = mtime;
             break;
-        case CLINT_MSIP:
-            ret_val = msip;
+        case CLINT_MSIP ... CLINT_MSIP + 4 * MaxThreads:
+            ret_val = msip[(offset - CLINT_MSIP) / 4];
             break;
-        case CLINT_MTIMECMP:
-            ret_val = mtimecmp;
+        case CLINT_MTIMECMP ... CLINT_MTIMECMP + 8 * MaxThreads:
+            ret_val = mtimecmp[(offset - CLINT_MTIMECMP) / 8];
             break;
+        default: panic("Invalid Lint register offset %#lx\n", offset);
     }
-    DPRINTF(Lint, "read Lint offset:%#lx val:%lu\n", offset, ret_val);
-    update_mtip();
+    DPRINTF(Lint, "Context %i read Lint offset:%#lx val:%lu\n", pkt->req->contextId(), offset, ret_val);
     pkt->setLE(ret_val);
     pkt->makeAtomicResponse();
     return pioDelay;
@@ -70,31 +70,28 @@ Lint::write(PacketPtr pkt)
         } break;
         case CLINT_MSIP: {
             write_val = pkt->getRaw<uint32_t>();
-            msip = write_val;
+            msip[(offset - CLINT_MSIP) / 4] = write_val;
         } break;
-        case CLINT_MTIMECMP: {
+        case CLINT_MTIMECMP ... CLINT_MTIMECMP + 16: {
             write_val = pkt->getRaw<uint64_t>();
-            mtimecmp = write_val;
+            mtimecmp[(offset - CLINT_MTIMECMP) / 8] = write_val;
             tryClearMtip();
         } break;
+        default: panic("Invalid Lint register offset %#lx\n", offset);
     }
-    DPRINTF(Lint, "write Lint offset:%#lx val:%lu\n", offset, write_val);
-    update_mtip();
+    DPRINTF(Lint, "Context %i write Lint offset:%#lx val:%lu\n", pkt->req->contextId(), offset, write_val);
     pkt->makeAtomicResponse();
     return pioDelay;
 }
 
 void
-Lint::update_mtip(void)
+Lint::tryPostInterrupt(uint64_t old_time)
 {
-    DPRINTF(Lint, "intr en: %i, mtime: %lu, time cmp: %lu\n", int_enable,
-            mtime, mtimecmp);
-    if (int_enable && mtime >= mtimecmp) {
-        DPRINTF(Lint, "post mtip! time:%x cmp:%x\n", mtime, mtimecmp);
-        for (int context_id = 0; context_id < numThreads; context_id++) {
+    DPRINTF(Lint, "intr en: %i, mtime: %lu\n", int_enable, mtime);
+    for (int context_id = 0; context_id < numThreads; context_id++) {
+        if (int_enable && old_time < mtimecmp[context_id] && mtime == mtimecmp[context_id]) {
             auto tc = sys->threads[context_id];
-            tc->getCpuPtr()->postInterrupt(tc->threadId(), INT_TIMER_MACHINE,
-                                           0);
+            tc->getCpuPtr()->postInterrupt(tc->threadId(), INT_TIMER_MACHINE, 0);
         }
     }
 }
@@ -103,7 +100,7 @@ void
 Lint::update_time()
 {
     mtime += 1;
-    update_mtip();
+    // tryPostInterrupt();
     DPRINTF(Lint, "scheudle update time event at tick: %lu\n",
             curTick() + interval);
     this->reschedule(update_lint_event, curTick() + interval, true);
@@ -112,12 +109,12 @@ Lint::update_time()
 void
 Lint::tryClearMtip()
 {
-    if (mtime < mtimecmp) {
-        DPRINTF(Lint, "Clear mtip! time:%x cmp:%x\n", mtime, mtimecmp);
-        for (int context_id = 0; context_id < numThreads; context_id++) {
+    DPRINTF(Lint, "Try clear mtip, time:%lu\n", mtime);
+    for (int context_id = 0; context_id < numThreads; context_id++) {
+        if (mtime < mtimecmp[context_id]) {
+            DPRINTF(Lint, "Clear mtip for context %i, time: %lu, cmp: %lu\n", context_id, mtime, mtimecmp[context_id]);
             auto tc = sys->threads[context_id];
-            tc->getCpuPtr()->clearInterrupt(tc->threadId(), INT_TIMER_MACHINE,
-                                            0);
+            tc->getCpuPtr()->clearInterrupt(tc->threadId(), INT_TIMER_MACHINE, 0);
         }
     }
 }
@@ -129,13 +126,13 @@ Lint::Lint(const LintParams &p)
       freq(0),
       inc(0),
       mtime(0),
-      msip(0),
-      mtimecmp(999999),
+      msip(p.num_threads, 0),
+      mtimecmp(p.num_threads, 12345678),
       numThreads(p.num_threads),
       update_lint_event([this] { update_time(); }, "update clint time")
 {
-    interval = (Tick)(1 * SimClock::Float::us);
-    DPRINTF(Lint, "scheudle update time event at tick: %lu\n",
+    interval = (Tick)(1 * sim_clock::as_float::us);
+    DPRINTF(Lint, "schedule update time event at tick: %lu\n",
             curTick() + interval);
     this->schedule(update_lint_event, curTick() + interval);
 }

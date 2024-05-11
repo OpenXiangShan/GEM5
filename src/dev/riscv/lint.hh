@@ -19,6 +19,8 @@
 
 namespace gem5 {
 
+const int MaxThreads=1024;
+
 class Lint: public BasicPioDevice
 {
   private:
@@ -26,8 +28,8 @@ class Lint: public BasicPioDevice
     int lint_id;
     bool int_enable;
     uint64_t freq, inc, mtime;
-    uint32_t msip;
-    uint64_t mtimecmp;
+    std::vector<uint32_t> msip;
+    std::vector<uint64_t> mtimecmp;
     int numThreads;
     EventFunctionWrapper update_lint_event;
 
@@ -37,7 +39,7 @@ class Lint: public BasicPioDevice
 
     Tick read(PacketPtr pkt) override;
     Tick write(PacketPtr pkt) override;
-    void update_mtip(void);
+    void tryPostInterrupt(uint64_t old_time);
     void update_time(void);
     void tryClearMtip(void);
 };
