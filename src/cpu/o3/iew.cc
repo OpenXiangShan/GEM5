@@ -1938,10 +1938,16 @@ IEW::dqTypeToReason(DQType dq_type)
 IEW::DQType
 IEW::getInstDQType(const DynInstPtr &inst)
 {
-    if (inst->isMemRef() || inst->isReadBarrier() || inst->isWriteBarrier() || inst->isNonSpeculative()) {
+    if (inst->isMemRef() || inst->isAtomic() || inst->isReadBarrier() || inst->isWriteBarrier() ||
+        inst->isNonSpeculative()) {
         return DQType::MemDQ;
     } else if (inst->isFloating() || inst->isVector()) {
         return DQType::FVDQ;
+    } else if (inst->isInteger() || inst->isControl() || inst->staticInst->opClass() == enums::No_OpClass) {
+        return DQType::IntDQ;
+    } else {
+        panic("Unknown inst op Class: %i type: %s\n", inst->staticInst->opClass(),
+              inst->staticInst->disassemble(inst->pcState().instAddr()));
     }
     return DQType::IntDQ;
 }

@@ -400,8 +400,11 @@ BaseCPU::startup()
         _goldenMemManager = system->getGoldenMemManager();
 
         diffAllStates->proxy->initState(params().cpu_id, goldenMemPtr);
-        diffInfo.scalarResults.resize(MaxDestRegisters);
+    } else {
+        goldenMemPtr = nullptr;
+        _goldenMemManager = nullptr;
     }
+    diffInfo.scalarResults.resize(MaxDestRegisters);
 
 }
 

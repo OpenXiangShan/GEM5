@@ -1272,7 +1272,7 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx)
             "idx:%i\n",
             store_inst->seqNum, store_idx.idx() - 1, storeQueue.head() - 1);
 
-    if ((!store_inst->isStoreConditional() || store_inst->lockedWriteSuccess()) &&
+    if ((!store_inst->isStoreConditional() || store_inst->lockedWriteSuccess()) && cpu->goldenMemManager() &&
         cpu->goldenMemManager()->inPmem(request->mainReq()->getPaddr())) {
         if (!store_inst->isAtomic()) {
             DPRINTF(Diff, "Store writing to golden memory at addr %#x, data %#lx, mask %#x, size %d\n",
