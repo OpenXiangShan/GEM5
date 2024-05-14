@@ -16,43 +16,61 @@ def config_xiangshan_inputs(args: argparse.Namespace, sys):
     # configure difftest input
     if args.enable_difftest and args.difftest_ref_so is None:
         # ref so should be either provided from the command line or from the env
-        if (not args.enable_riscv_vector) and "GCB_REF_SO" in os.environ:
-            ref_so = os.environ["GCB_REF_SO"]
-        elif args.enable_riscv_vector and "GCBV_REF_SO" in os.environ:
+        if args.num_cpus > 1 and "GCBV_MULTI_CORE_REF_SO" in os.environ:
+            ref_so = os.environ["GCBV_MULTI_CORE_REF_SO"]
+            print("Obtained ref_so from GCBV_MULTI_CORE_REF_SO: ", ref_so)
+        elif "GCBV_REF_SO" in os.environ:
             ref_so = os.environ["GCBV_REF_SO"]
+            print("Obtained ref_so from GCBV_REF_SO: ", ref_so)
         elif "NEMU_HOME" in os.environ:
             ref_so = os.path.join(os.environ["NEMU_HOME"], "build/riscv64-nemu-interpreter-so")
+            print("Obtained ref_so from NEMU_HOME: ", ref_so)
         else:
+            if "GCBV_REF_SO" in os.environ:
+                print("Currently XS-GEM5 always turn on RVV and require a ref_so with RVV support")
             fatal("No valid ref_so file specified for the functional model to "
                   "compare against. Please 1) either specify a valid ref_so file using "
                   "the --difftest-ref-so option;\n"
-                  "2) or specify GCB_REF_SO or GCBV_REF_SO that points to the ref_so file;\n"
+                  "2) or specify GCBV_REF_SO/GCBV_MULTI_CORE_REF_SO that points to the ref_so file;\n"
                   "3) or specify NEMU_HOME that contains build/riscv64-nemu-interpreter-so")
+    elif args.enable_difftest and args.difftest_ref_so is not None:
+        ref_so = args.difftest_ref_so
+        print("Obtained ref_so from args.difftest_ref_so: ", ref_so)
+
     args.difftest_ref_so = ref_so
 
     if args.gcpt_restorer is None:
-        if args.enable_riscv_vector:
+        if args.num_cpus > 1:
+            if "GCB_MULTI_CORE_RESTORER" in os.environ:
+                gcpt_restorer = os.environ["GCB_MULTI_CORE_RESTORER"]
+                print("Obtained gcpt_restorer from GCB_MULTI_CORE_RESTORER: ", gcpt_restorer)
+            else:
+                fatal("Plz set $GCB_MULTI_CORE_RESTORER when model Xiangshan with multi-core")
+        elif args.restore_rvv_cpt:
             if "GCBV_RESTORER" in os.environ:
                 gcpt_restorer = os.environ["GCBV_RESTORER"]
+                print("Obtained gcpt_restorer from GCBV_RESTORER: ", gcpt_restorer)
             else:
-                fatal("Plz set $GCBV_RESTORER when model Xiangshan with vector")
+                fatal("Plz set $GCBV_RESTORER when running RVV checkpoints")
         else:
             if "GCB_RESTORER" in os.environ:
                 gcpt_restorer = os.environ["GCB_RESTORER"]
+                print("Obtained gcpt_restorer from GCB_RESTORER: ", gcpt_restorer)
             else:
                 fatal("Plz set $GCB_RESTORER or pass it through --gcpt-restorer"
-                      " when model Xiangshan without vector")
+                      " when running non-RVV checkpoints")
     else:
+        print("Obtained gcpt_restorer from args.gcpt_restorer: ", args.gcpt_restorer)
         gcpt_restorer = args.gcpt_restorer
 
     if args.num_cpus > 1:
         print("Simulating a multi-core system, demanding a larger GCPT restorer size (2M).")
         sys.gcpt_restorer_size_limit = 2**20
-    elif args.enable_riscv_vector:
-        print("Simulating a multi-core system, demanding a median GCPT restorer size (0x1000).")
+    elif args.restore_rvv_cpt:
+        print("Simulating single core with RVV, demanding GCPT restorer size of 0x1000.")
         sys.gcpt_restorer_size_limit = 0x1000
     else:
-        print("Simulating a multi-core system, demanding a basic GCPT restorer size (0x700).")
+        print("Simulating single core without RVV, demanding GCPT restorer size of 0x700.")
         sys.gcpt_restorer_size_limit = 0x700
 
     # configure gcpt input

@@ -308,6 +308,9 @@ def addCommonOptions(parser, configure_xiangshan=False):
     parser.add_argument("--enable-riscv-vector", action="store_true", default=False,
             help="enable riscv vector extension (need vector-supported gcpt restore and diff-ref-so)")
 
+    parser.add_argument("--restore-rvv-cpt", action="store_true", default=False,
+            help="The input checkpoint is RVV, which requires RVV restorer")
+
     parser.add_argument("--xiangshan-ecore", action= "store_true",
                         help="Use efficient core of xiangshan")
 

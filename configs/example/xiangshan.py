@@ -31,7 +31,6 @@ def build_test_system(np):
     test_sys = makeBareMetalXiangshanSystem(test_mem_mode, SysConfig(mem=args.mem_size), None, np=np, ruby=ruby)
     test_sys.num_cpus = np
 
-    args.enable_difftest = True
     test_sys.xiangshan_system = True
     test_sys.enable_difftest = args.enable_difftest
 
@@ -268,6 +267,8 @@ if '--ruby' in sys.argv:
 args = parser.parse_args()
 
 args.xiangshan_system = True
+args.enable_difftest = True
+args.enable_riscv_vector = True
 
 assert not args.external_memory_system
 

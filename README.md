@@ -189,33 +189,40 @@ Users must properly prepare workloads before running GEM5, plz read [Workflows](
 
 Users should set the following environment variables before running GEM5:
 
-- $GCB_REF_SO: The reference design used in Difftest, which is the path to the `.so` file of NEMU or spike.
-- $GCB_RESTORER: A piece of RISC-V code to restore the checkpoint.
-- $GCBV_REF_SO: Reference design of RVV version.
-- $GCBV_RESTORER: Restorer of RVV version.
+- $GCBV_REF_SO: The reference design used in Difftest, which is the path to the `.so` file of NEMU or spike.
+- $GCBV_MULTI_CORE_REF_SO: The reference design for multi-core.
+- $GCB_RESTORER: A piece of RISC-V code to restore the checkpoint of RV64GCB.
+- $GCBV_RESTORER: Restorer of RV64GCBV.
+- $GCB_MULTI_CORE_RESTORER: Restorer of RV64GCB + multi-core.
 
 These files can be found in the release page.
 Users can also opt to build them from source ([Difftest with NEMU](#difftest-with-nemu) and
 [Build GCPT restorer](#build-gcpt-restorer)).
 A tested working matrix of repos & revisions is here:
 
-<!-- table -->
-|  | reference design | GCPT restorer 
+|  Checkpoint Type  | reference design | GCPT restorer 
 | ---------- | --------- | --------- |
-| RV64GCB | NEMU master | NEMU master |
-| RV64GCBV      | ~~Spike gem5-ref~~ | NEMU gcpt_new_mem_layout |
+| RV64GCB       | NEMU master + riscv64-gem5-ref_defconfig  | NEMU master |
+| RV64GCBV      | NEMU master + riscv64-gem5-ref_defconfig | NEMU gcpt_new_mem_layout |
+| RV64GCB multi-core | NEMU master + riscv64-gem5-multicore-ref_defconfig | Download Binary from release; Code release soon |
+| RV64GCBV multi-core | NEMU master + riscv64-gem5-multicore-ref_defconfig | ~~NOT available yet~~ |
 
 If above branches are not working, you can try the following commits:
 
-|  | reference design | GCPT restorer 
+| Checkpoint Type | reference design | GCPT restorer 
 | ---------- | --------- | --------- |
-| RV64GCB | NEMU e475285f | NEMU e475285f |
-| RV64GCBV | ~~Spike d179549f~~  | NEMU b966d274 |
+| RV64GCB | NEMU 732e4ccd + riscv64-gem5-ref_defconfig | NEMU 732e4ccd |
+| RV64GCBV      | NEMU 732e4ccd + riscv64-gem5-ref_defconfig | NEMU b966d274 |
+| RV64GCB multi-core | NEMU 732e4ccd + riscv64-gem5-multicore-ref_defconfig | Download Binary from release; Code release soon |
+| RV64GCBV multi-core | NEMU 732e4ccd + riscv64-gem5-multicore-ref_defconfig | ~~NOT available yet~~ |
 
 
-**NOTE**: Current scripts enforce Difftest (cosimulating against NEMU or spike).
+**NOTE**:
+- Current scripts enforce Difftest (cosimulating against NEMU or spike).
 If a user does not want Difftest, please manually edit `configs/example/xiangshan.py` and `configs/common/XSConfig.py` to disable it.
 Simulation error without Difftest **will NOT be responded.**
+- When running a GCB checkpoint, it is OK to use GCBV reference design but not vice versa.
+- When running a GCB checkpoint, user must use GCB restorer but not GCBV restorer.
 
 ### Example command
 

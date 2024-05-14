@@ -3,7 +3,7 @@
 script_dir=$(dirname -- "$( readlink -f -- "$0"; )")
 source $script_dir/common.sh
 
-for var in GCB_REF_SO GCB_RESTORER gem5_home; do
+for var in GCBV_REF_SO GCB_RESTORER gem5_home; do
     checkForVariable $var
 done
 
