@@ -48,6 +48,7 @@
 // Before we do anything else, check if this build is the NULL ISA,
 // and if so stop here
 #include "config/the_isa.hh"
+#include "cpu/golden_global_mem.hh"
 
 #if IS_NULL_ISA
 #error Including BaseCPU in a system without CPU support
@@ -125,7 +126,6 @@ struct DiffAllStates
     DiffState diff;
     RefProxy *proxy;
 
-    bool scFenceInFlight{false};
     bool hasCommit{false};
 };
 
@@ -693,18 +693,34 @@ class BaseCPU : public ClockedObject
     }
     std::pair<int, bool> diffWithNEMU(ThreadID tid, InstSeqNum seq);
 
+    // NoHype mode split memory space into distinct regions for different cores
+    const bool noHypeMode{false};
+
+    /** enableMemDedup: Let memory of GEM5, difftest ref cores, and global memory share one origin memory
+     *  Each branch memory is a copy-on-write mirror of the origin memory
+     */
+    const bool enableMemDedup{false};
+
+    uint8_t *goldenMemPtr;
+
+    gem5::GoldenGloablMem *_goldenMemManager;
+
   public:
+    const unsigned MaxDestRegisters = 2;
+
     struct
     {
         gem5::StaticInstPtr inst;
         // the result of currently inst
-        gem5::RegVal result;
+        std::vector<gem5::RegVal> scalarResults;
         uint64_t vecResult[RiscvISA::NumVecElemPerVecReg];
         // the lambda expr of get srcOperand
         gem5::RegVal getSrcReg(const gem5::RegId &regid) { return 0; };
         const gem5::PCStateBase *pc;
         bool curInstStrictOrdered{false};
         gem5::Addr physEffAddr;
+        gem5::Addr effSize;
+        uint64_t amoOldGoldenValue;
         // Register address causing difftest error
         bool errorRegsValue[96];// 32 regs + 32fprs +32 vprs
         bool errorCsrsValue[32];// CsrRegIndex
@@ -713,6 +729,7 @@ class BaseCPU : public ClockedObject
         std::queue<std::string> lastCommittedMsg;
     } diffInfo;
 
+    uint8_t cmpBuffer[16];
 
     virtual RegVal readMiscRegNoEffect(int misc_reg, ThreadID tid) const
     {
@@ -760,6 +777,10 @@ class BaseCPU : public ClockedObject
     int committedInstNum = 0;
 
     std::vector<std::pair<Addr, std::string>> committedInsts;
+
+    uint8_t *getGoldenMemPtr() { return goldenMemPtr; }
+
+    gem5::GoldenGloablMem *goldenMemManager() { return _goldenMemManager; }
 };
 
 } // namespace gem5

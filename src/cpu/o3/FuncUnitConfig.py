@@ -137,8 +137,8 @@ class PredALU(FUDesc):
     count = 1
 
 class ReadPort(FUDesc):
-    opList = [ OpDesc(opClass='MemRead', opLat=2), # actually execute cycle = 2+1
-               OpDesc(opClass='FloatMemRead'),
+    opList = [ OpDesc(opClass='MemRead', opLat=1), # actually execute cycle = 1+2
+               OpDesc(opClass='FloatMemRead', opLat=1),
                OpDesc(opClass='VectorUnitStrideLoad', opLat=2),
                OpDesc(opClass='VectorSegUnitStrideLoad', opLat=2),
                OpDesc(opClass='VectorUnitStrideMaskLoad', opLat=2),

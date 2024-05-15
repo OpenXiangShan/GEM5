@@ -58,6 +58,7 @@
 #include "debug/Quiesce.hh"
 #include "debug/WorkItems.hh"
 #include "mem/abstract_mem.hh"
+#include "mem/mem_util.hh"
 #include "mem/physical.hh"
 #include "params/System.hh"
 #include "sim/byteswap.hh"
@@ -181,9 +182,13 @@ System::System(const Params &p)
       init_param(p.init_param),
       physProxy(_systemPort, p.cache_line_size),
       workload(p.workload),
+      numCPUs(p.num_cpus),
+      enableDifftest(p.enable_difftest),
+      enableMemDedup(p.enable_mem_dedup),
       physmem(name() + ".physmem", p.memories, p.mmap_using_noreserve,
               p.shared_backstore, p.restore_from_gcpt, p.gcpt_restorer_file,
-              p.gcpt_file, p.map_to_raw_cpt, p.auto_unlink_shared_backstore, p.enable_riscv_vector),
+              p.gcpt_file, p.map_to_raw_cpt, p.auto_unlink_shared_backstore, p.gcpt_restorer_size_limit,
+              &dedupMemManager, p.enable_mem_dedup),
       ShadowRomRanges(p.shadow_rom_ranges.begin(),
                       p.shadow_rom_ranges.end()),
       memoryMode(p.mem_mode),
@@ -553,8 +558,17 @@ void System::initState()
     SimObject::initState();
 
     if (physmem.tryRestoreFromXSCpt()) {
-        inform("Restoring from Xiangshan RISC-V Checkpoint\n");
+        inform("Restored from Xiangshan RISC-V Checkpoint\n");
     }
+
+    // have to initiate golden memory after checkpoint restored
+    if (numCPUs > 1 && enableDifftest) {
+        warn("Creating golden memory for multi-core difftest\n");
+        assert(enableMemDedup);
+        goldenMem = dedupMemManager.createCopyOnWriteBranch();
+        goldenMemManager.initGoldenMem(physmem.getStartaddr(), memSize(), goldenMem);
+    }
+
 }
 
 } // namespace gem5

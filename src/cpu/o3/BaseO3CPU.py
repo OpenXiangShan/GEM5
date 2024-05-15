@@ -210,3 +210,6 @@ class BaseO3CPU(BaseCPU):
     scheduler = Param.Scheduler(KunminghuScheduler(), "")
 
     arch_db = Param.ArchDBer(Parent.any, "Arch DB")
+
+    store_prefetch_train = Param.Bool(True, "Training store prefetcher with store addresses")
+

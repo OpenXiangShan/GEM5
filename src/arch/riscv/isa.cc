@@ -481,6 +481,7 @@ ISA::setMiscReg(int misc_reg, RegVal val)
             {
                 auto ic = dynamic_cast<RiscvISA::Interrupts *>(
                     tc->getCpuPtr()->getInterruptController(tc->threadId()));
+                DPRINTF(RiscvMisc, "Setting IP to %#lx.\n", val);
                 ic->setIP(val);
             }
             break;
@@ -523,6 +524,11 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                         bits(tc->pcState().as<RiscvISA::PCState>().npc(),
                             2, 0) != 0) {
                     val |= cur_val & ISA_EXT_C_MASK;
+                }
+
+                if ((val & ISA_EXT_H_MASK) != 0) {
+                    // Do not allow to enable RVH because not implemented yet
+                    val &= ~ISA_EXT_H_MASK;
                 }
                 setMiscRegNoEffect(misc_reg, val);
             }

@@ -27,9 +27,11 @@
 
 from slicc.symbols.Symbol import Symbol
 
+
 class Var(Symbol):
-    def __init__(self, symtab, ident, location, type, code, pairs,
-                 machine=None):
+    def __init__(
+        self, symtab, ident, location, type, code, pairs, machine=None
+    ):
         super().__init__(symtab, ident, location, pairs)
 
         self.machine = machine
@@ -37,9 +39,10 @@ class Var(Symbol):
         self.code = code
 
     def __repr__(self):
-        return "[Var id: %s]" % (self.ident)
+        return f"[Var id: {self.ident}]"
 
     def writeCodeFiles(self, path, includes):
         pass
 
-__all__ = [ "Var" ]
+
+__all__ = ["Var"]

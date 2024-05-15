@@ -1,0 +1,4 @@
+TARGET_ISA = 'riscv'
+RUBY='y'
+RUBY_PROTOCOL_CHI = 'y'
+PROTOCOL = 'CHI'

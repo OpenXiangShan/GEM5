@@ -1,3 +1,15 @@
+# Copyright (c) 2023 Arm Limited
+# All rights reserved.
+#
+# The license below extends only to copyright in the software and shall
+# not be construed as granting a license to any other intellectual
+# property including but not limited to intellectual property relating
+# to a hardware implementation of the functionality of the software
+# licensed hereunder.  You may use the software subject to the license
+# terms below provided that you ensure that this notice is replicated
+# unmodified and in its entirety in all distributions of the software,
+# modified or unmodified, in source code or in binary form.
+#
 # Copyright (c) 1999-2008 Mark D. Hill and David A. Wood
 # Copyright (c) 2009 The Hewlett-Packard Development Company
 # All rights reserved.
@@ -28,6 +40,7 @@
 from slicc.ast.ExprAST import ExprAST
 from slicc.symbols import Type
 
+
 class InfixOperatorExprAST(ExprAST):
     def __init__(self, slicc, left, op, right):
         super().__init__(slicc)
@@ -37,7 +50,7 @@ class InfixOperatorExprAST(ExprAST):
         self.right = right
 
     def __repr__(self):
-        return "[InfixExpr: %r %s %r]" % (self.left, self.op, self.right)
+        return f"[InfixExpr: {self.left!r} {self.op} {self.right!r}]"
 
     def generate(self, code, **kwargs):
         lcode = self.slicc.codeFormatter()
@@ -49,11 +62,23 @@ class InfixOperatorExprAST(ExprAST):
         # Figure out what the input and output types should be
         if self.op in ("==", "!=", ">=", "<=", ">", "<"):
             output = "bool"
-            if (ltype != rtype):
-                self.error("Type mismatch: left and right operands of " +
-                           "operator '%s' must be the same type. " +
-                           "left: '%s', right: '%s'",
-                           self.op, ltype, rtype)
+
+            if (
+                str(ltype) == "Addr"
+                and str(rtype) == "int"
+                or str(ltype) == "int"
+                and str(rtype) == "Addr"
+            ):
+                pass
+            elif ltype != rtype:
+                self.error(
+                    "Type mismatch: left and right operands of "
+                    + "operator '%s' must be the same type. "
+                    + "left: '%s', right: '%s'",
+                    self.op,
+                    ltype,
+                    rtype,
+                )
         else:
             expected_types = []
             output = None
@@ -62,19 +87,26 @@ class InfixOperatorExprAST(ExprAST):
                 # boolean inputs and output
                 expected_types = [("bool", "bool", "bool")]
             elif self.op in ("<<", ">>"):
-                expected_types = [("int", "int", "int"),
-                                  ("Cycles", "int", "Cycles")]
+                expected_types = [
+                    ("int", "int", "int"),
+                    ("Cycles", "int", "Cycles"),
+                ]
             elif self.op in ("+", "-", "*", "/", "%"):
-                expected_types = [("int", "int", "int"),
-                                  ("Cycles", "Cycles", "Cycles"),
-                                  ("Tick", "Tick", "Tick"),
-                                  ("Cycles", "int", "Cycles"),
-                                  ("Scalar", "int", "Scalar"),
-                                  ("int", "bool", "int"),
-                                  ("bool", "int", "int"),
-                                  ("int", "Cycles", "Cycles")]
+                expected_types = [
+                    ("int", "int", "int"),
+                    ("Cycles", "Cycles", "Cycles"),
+                    ("Tick", "Tick", "Tick"),
+                    ("Addr", "Addr", "Addr"),
+                    ("Cycles", "int", "Cycles"),
+                    ("Scalar", "int", "Scalar"),
+                    ("int", "bool", "int"),
+                    ("bool", "int", "int"),
+                    ("int", "Cycles", "Cycles"),
+                    ("Addr", "int", "Addr"),
+                    ("int", "Addr", "Addr"),
+                ]
             else:
-                self.error("No operator matched with {0}!" .format(self.op))
+                self.error(f"No operator matched with {self.op}!")
 
             for expected_type in expected_types:
                 left_input_type = self.symtab.find(expected_type[0], Type)
@@ -84,15 +116,19 @@ class InfixOperatorExprAST(ExprAST):
                     output = expected_type[2]
 
             if output == None:
-                self.error("Type mismatch: operands ({0}, {1}) for operator " \
-                           "'{2}' failed to match with the expected types" .
-                           format(ltype, rtype, self.op))
+                self.error(
+                    "Type mismatch: operands ({}, {}) for operator "
+                    "'{}' failed to match with the expected types".format(
+                        ltype, rtype, self.op
+                    )
+                )
 
         # All is well
         fix = code.nofix()
         code("($lcode ${{self.op}} $rcode)")
         code.fix(fix)
         return self.symtab.find(output, Type)
+
 
 class PrefixOperatorExprAST(ExprAST):
     def __init__(self, slicc, op, operand):
@@ -102,7 +138,7 @@ class PrefixOperatorExprAST(ExprAST):
         self.operand = operand
 
     def __repr__(self):
-        return "[PrefixExpr: %s %r]" % (self.op, self.operand)
+        return f"[PrefixExpr: {self.op} {self.operand!r}]"
 
     def generate(self, code, **kwargs):
         opcode = self.slicc.codeFormatter()
@@ -113,13 +149,15 @@ class PrefixOperatorExprAST(ExprAST):
         if self.op in opmap:
             output = opmap[self.op]
             type_in_symtab = self.symtab.find(opmap[self.op], Type)
-            if (optype != type_in_symtab):
-                self.error("Type mismatch: right operand of " +
-                           "unary operator '%s' must be of type '%s'. ",
-                           self.op, type_in_symtab)
+            if optype != type_in_symtab:
+                self.error(
+                    "Type mismatch: right operand of "
+                    + "unary operator '%s' must be of type '%s'. ",
+                    self.op,
+                    type_in_symtab,
+                )
         else:
-            self.error("Invalid prefix operator '%s'",
-                       self.op)
+            self.error("Invalid prefix operator '%s'", self.op)
 
         # All is well
         fix = code.nofix()

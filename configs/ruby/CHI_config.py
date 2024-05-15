@@ -1,4 +1,4 @@
-# Copyright (c) 2021 ARM Limited
+# Copyright (c) 2021-2023 ARM Limited
 # All rights reserved.
 #
 # The license below extends only to copyright in the software and shall
@@ -33,7 +33,7 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-'''
+"""
 Definitions for CHI nodes and controller types. These are used by
 create_system in configs/ruby/CHI.py or may be used in custom configuration
 scripts. When used with create_system, the user may provide an additional
@@ -43,18 +43,22 @@ defined here.
 When using the CustomMesh topology, --chi-config must be provided with
 specialization of the NoC_Param classes defining the NoC dimensions and
 node to router binding. See configs/example/noc_config/2x4.py for an example.
-'''
+"""
 
 import math
+
 import m5
 from m5.objects import *
 
+
 class Versions:
-    '''
+    """
     Helper class to obtain unique ids for a given controller class.
     These are passed as the 'version' parameter when creating the controller.
-    '''
+    """
+
     _seqs = 0
+
     @classmethod
     def getSeqId(cls):
         val = cls._seqs
@@ -62,6 +66,7 @@ class Versions:
         return val
 
     _version = {}
+
     @classmethod
     def getVersion(cls, tp):
         if tp not in cls._version:
@@ -72,11 +77,12 @@ class Versions:
 
 
 class NoC_Params:
-    '''
+    """
     Default parameters for the interconnect. The value of data_width is
     also used to set the data_channel_size for all CHI controllers.
     (see configs/ruby/CHI.py)
-    '''
+    """
+
     router_link_latency = 1
     node_link_latency = 1
     router_latency = 1
@@ -86,16 +92,17 @@ class NoC_Params:
     cross_links = []
     cross_link_latency = 0
 
+
 class CHI_Node(SubSystem):
-    '''
+    """
     Base class with common functions for setting up Cache or Memory
     controllers that are part of a CHI RNF, RNFI, HNF, or SNF nodes.
     Notice getNetworkSideControllers and getAllControllers must be implemented
     in the derived classes.
-    '''
+    """
 
     class NoC_Params:
-        '''
+        """
         NoC config. parameters and bindings required for CustomMesh topology.
 
         Maps 'num_nodes_per_router' CHI nodes to each router provided in
@@ -104,40 +111,41 @@ class CHI_Node(SubSystem):
         If 'num_nodes_per_router' is left undefined, we circulate around
         'router_list' until all nodes are mapped.
         See 'distributeNodes' in configs/topologies/CustomMesh.py
-        '''
+        """
+
         num_nodes_per_router = None
         router_list = None
 
     def __init__(self, ruby_system):
-        super(CHI_Node, self).__init__()
+        super().__init__()
         self._ruby_system = ruby_system
         self._network = ruby_system.network
 
     def getNetworkSideControllers(self):
-        '''
+        """
         Returns all ruby controllers that need to be connected to the
         network
-        '''
+        """
         raise NotImplementedError()
 
     def getAllControllers(self):
-        '''
+        """
         Returns all ruby controllers associated with this node
-        '''
+        """
         raise NotImplementedError()
 
     def setDownstream(self, cntrls):
-        '''
+        """
         Sets cntrls as the downstream list of all controllers in this node
-        '''
+        """
         for c in self.getNetworkSideControllers():
             c.downstream_destinations = cntrls
 
     def connectController(self, cntrl):
-        '''
+        """
         Creates and configures the messages buffers for the CHI input/output
         ports that connect to the network
-        '''
+        """
         cntrl.reqOut = MessageBuffer()
         cntrl.rspOut = MessageBuffer()
         cntrl.snpOut = MessageBuffer()
@@ -162,54 +170,70 @@ class CHI_Node(SubSystem):
 
 
 class TriggerMessageBuffer(MessageBuffer):
-    '''
+    """
     MessageBuffer for triggering internal controller events.
     These buffers should not be affected by the Ruby tester randomization
     and allow poping messages enqueued in the same cycle.
-    '''
-    randomization = 'disabled'
+    """
+
+    randomization = "disabled"
     allow_zero_latency = True
+
 
 class OrderedTriggerMessageBuffer(TriggerMessageBuffer):
     ordered = True
 
+
+class MemCtrlMessageBuffer(MessageBuffer):
+    """
+    MessageBuffer exchanging messages with the memory
+    These buffers should also not be affected by the Ruby tester randomization.
+    """
+
+    randomization = "disabled"
+    ordered = True
+
+
 class CHI_Cache_Controller(Cache_Controller):
-    '''
+    """
     Default parameters for a Cache controller
     The Cache_Controller can also be used as a DMA requester or as
     a pure directory if all cache allocation policies are disabled.
-    '''
+    """
 
     def __init__(self, ruby_system):
-        super(CHI_Cache_Controller, self).__init__(
-            version = Versions.getVersion(Cache_Controller),
-            ruby_system = ruby_system,
-            mandatoryQueue = MessageBuffer(),
-            prefetchQueue = MessageBuffer(),
-            triggerQueue = TriggerMessageBuffer(),
-            retryTriggerQueue = OrderedTriggerMessageBuffer(),
-            replTriggerQueue = OrderedTriggerMessageBuffer(),
-            reqRdy = TriggerMessageBuffer(),
-            snpRdy = TriggerMessageBuffer())
+        super().__init__(
+            version=Versions.getVersion(Cache_Controller),
+            ruby_system=ruby_system,
+            mandatoryQueue=MessageBuffer(),
+            prefetchQueue=MessageBuffer(),
+            triggerQueue=TriggerMessageBuffer(),
+            retryTriggerQueue=OrderedTriggerMessageBuffer(),
+            replTriggerQueue=OrderedTriggerMessageBuffer(),
+            reqRdy=TriggerMessageBuffer(),
+            snpRdy=TriggerMessageBuffer(),
+        )
         # Set somewhat large number since we really a lot on internal
         # triggers. To limit the controller performance, tweak other
         # params such as: input port buffer size, cache banks, and output
         # port latency
-        self.transitions_per_cycle = 128
+        self.transitions_per_cycle = 1024
         # This should be set to true in the data cache controller to enable
         # timeouts on unique lines when a store conditional fails
         self.sc_lock_enabled = False
 
-class CHI_L1Controller(CHI_Cache_Controller):
-    '''
-    Default parameters for a L1 Cache controller
-    '''
 
-    def __init__(self, ruby_system, sequencer, cache, prefetcher):
-        super(CHI_L1Controller, self).__init__(ruby_system)
+class CHI_L1Controller(CHI_Cache_Controller):
+    """
+    Default parameters for a L1 Cache controller
+    """
+
+    def __init__(self, ruby_system, sequencer, cache, prefetcher, is_dcache=False):
+        super().__init__(ruby_system)
         self.sequencer = sequencer
         self.cache = cache
-        self.use_prefetcher = False
+        self.prefetcher = prefetcher
+        self.use_prefetcher = prefetcher != NULL
         self.send_evictions = True
         self.is_HN = False
         self.enable_DMT = False
@@ -222,10 +246,12 @@ class CHI_L1Controller(CHI_Cache_Controller):
         self.alloc_on_readunique = True
         self.alloc_on_readonce = True
         self.alloc_on_writeback = True
+        self.alloc_on_atomic = False
         self.dealloc_on_unique = False
         self.dealloc_on_shared = False
         self.dealloc_backinv_unique = True
         self.dealloc_backinv_shared = True
+        self.is_dcache = is_dcache
         # Some reasonable default TBE params
         self.number_of_TBEs = 16
         self.number_of_repl_TBEs = 16
@@ -235,16 +261,18 @@ class CHI_L1Controller(CHI_Cache_Controller):
 
         self.unify_repl_TBEs = False
 
+
 class CHI_L2Controller(CHI_Cache_Controller):
-    '''
+    """
     Default parameters for a L2 Cache controller
-    '''
+    """
 
     def __init__(self, ruby_system, cache, prefetcher):
-        super(CHI_L2Controller, self).__init__(ruby_system)
+        super().__init__(ruby_system)
         self.sequencer = NULL
         self.cache = cache
-        self.use_prefetcher = False
+        self.prefetcher = prefetcher
+        self.use_prefetcher = prefetcher != NULL
         self.allow_SD = True
         self.is_HN = False
         self.enable_DMT = False
@@ -257,6 +285,7 @@ class CHI_L2Controller(CHI_Cache_Controller):
         self.alloc_on_readunique = True
         self.alloc_on_readonce = True
         self.alloc_on_writeback = True
+        self.alloc_on_atomic = False
         self.dealloc_on_unique = False
         self.dealloc_on_shared = False
         self.dealloc_backinv_unique = True
@@ -265,20 +294,22 @@ class CHI_L2Controller(CHI_Cache_Controller):
         self.number_of_TBEs = 32
         self.number_of_repl_TBEs = 32
         self.number_of_snoop_TBEs = 16
-        self.number_of_DVM_TBEs = 1 # should not receive any dvm
-        self.number_of_DVM_snoop_TBEs = 1 # should not receive any dvm
+        self.number_of_DVM_TBEs = 1  # should not receive any dvm
+        self.number_of_DVM_snoop_TBEs = 1  # should not receive any dvm
         self.unify_repl_TBEs = False
 
+
 class CHI_HNFController(CHI_Cache_Controller):
-    '''
+    """
     Default parameters for a coherent home node (HNF) cache controller
-    '''
+    """
 
     def __init__(self, ruby_system, cache, prefetcher, addr_ranges):
-        super(CHI_HNFController, self).__init__(ruby_system)
+        super().__init__(ruby_system)
         self.sequencer = NULL
         self.cache = cache
-        self.use_prefetcher = False
+        self.prefetcher = prefetcher
+        self.use_prefetcher = prefetcher != NULL
         self.addr_ranges = addr_ranges
         self.allow_SD = True
         self.is_HN = True
@@ -292,6 +323,7 @@ class CHI_HNFController(CHI_Cache_Controller):
         self.alloc_on_readunique = False
         self.alloc_on_readonce = True
         self.alloc_on_writeback = True
+        self.alloc_on_atomic = True
         self.dealloc_on_unique = True
         self.dealloc_on_shared = False
         self.dealloc_backinv_unique = False
@@ -299,27 +331,29 @@ class CHI_HNFController(CHI_Cache_Controller):
         # Some reasonable default TBE params
         self.number_of_TBEs = 32
         self.number_of_repl_TBEs = 32
-        self.number_of_snoop_TBEs = 1 # should not receive any snoop
-        self.number_of_DVM_TBEs = 1 # should not receive any dvm
-        self.number_of_DVM_snoop_TBEs = 1 # should not receive any dvm
+        self.number_of_snoop_TBEs = 1  # should not receive any snoop
+        self.number_of_DVM_TBEs = 1  # should not receive any dvm
+        self.number_of_DVM_snoop_TBEs = 1  # should not receive any dvm
         self.unify_repl_TBEs = False
 
-class CHI_MNController(MiscNode_Controller):
-    '''
-    Default parameters for a Misc Node
-    '''
 
-    def __init__(self, ruby_system, addr_range, l1d_caches,
-                 early_nonsync_comp):
-        super(CHI_MNController, self).__init__(
-            version = Versions.getVersion(MiscNode_Controller),
-            ruby_system = ruby_system,
-            mandatoryQueue = MessageBuffer(),
-            triggerQueue = TriggerMessageBuffer(),
-            retryTriggerQueue = TriggerMessageBuffer(),
-            schedRspTriggerQueue = TriggerMessageBuffer(),
-            reqRdy = TriggerMessageBuffer(),
-            snpRdy = TriggerMessageBuffer(),
+class CHI_MNController(MiscNode_Controller):
+    """
+    Default parameters for a Misc Node
+    """
+
+    def __init__(
+        self, ruby_system, addr_range, l1d_caches, early_nonsync_comp
+    ):
+        super().__init__(
+            version=Versions.getVersion(MiscNode_Controller),
+            ruby_system=ruby_system,
+            mandatoryQueue=MessageBuffer(),
+            triggerQueue=TriggerMessageBuffer(),
+            retryTriggerQueue=TriggerMessageBuffer(),
+            schedRspTriggerQueue=TriggerMessageBuffer(),
+            reqRdy=TriggerMessageBuffer(),
+            snpRdy=TriggerMessageBuffer(),
         )
         # Set somewhat large number since we really a lot on internal
         # triggers. To limit the controller performance, tweak other
@@ -335,19 +369,23 @@ class CHI_MNController(MiscNode_Controller):
         # "upstream_destinations" = targets for DVM snoops
         self.upstream_destinations = l1d_caches
 
+
 class CHI_DMAController(CHI_Cache_Controller):
-    '''
+    """
     Default parameters for a DMA controller
-    '''
+    """
 
     def __init__(self, ruby_system, sequencer):
-        super(CHI_DMAController, self).__init__(ruby_system)
+        super().__init__(ruby_system)
         self.sequencer = sequencer
+
         class DummyCache(RubyCache):
             dataAccessLatency = 0
             tagAccessLatency = 1
             size = "128"
             assoc = 1
+
+        self.prefetcher = NULL
         self.use_prefetcher = False
         self.cache = DummyCache()
         self.sequencer.dcache = NULL
@@ -363,6 +401,7 @@ class CHI_DMAController(CHI_Cache_Controller):
         self.alloc_on_readunique = False
         self.alloc_on_readonce = False
         self.alloc_on_writeback = False
+        self.alloc_on_atomic = False
         self.dealloc_on_unique = False
         self.dealloc_on_shared = False
         self.dealloc_backinv_unique = False
@@ -370,37 +409,39 @@ class CHI_DMAController(CHI_Cache_Controller):
         self.send_evictions = False
         self.number_of_TBEs = 16
         self.number_of_repl_TBEs = 1
-        self.number_of_snoop_TBEs = 1 # should not receive any snoop
-        self.number_of_DVM_TBEs = 1 # should not receive any dvm
-        self.number_of_DVM_snoop_TBEs = 1 # should not receive any dvm
+        self.number_of_snoop_TBEs = 1  # should not receive any snoop
+        self.number_of_DVM_TBEs = 1  # should not receive any dvm
+        self.number_of_DVM_snoop_TBEs = 1  # should not receive any dvm
         self.unify_repl_TBEs = False
 
+
 class CPUSequencerWrapper:
-    '''
+    """
     Other generic configuration scripts assume a matching number of sequencers
     and cpus. This wraps the instruction and data sequencer so they are
     compatible with the other scripts. This assumes all scripts are using
     connectCpuPorts/connectIOPorts to bind ports
-    '''
+    """
 
     def __init__(self, iseq, dseq):
         # use this style due to __setattr__ override below
-        self.__dict__['inst_seq'] = iseq
-        self.__dict__['data_seq'] = dseq
-        self.__dict__['support_data_reqs'] = True
-        self.__dict__['support_inst_reqs'] = True
+        self.__dict__["inst_seq"] = iseq
+        self.__dict__["data_seq"] = dseq
+        self.__dict__["support_data_reqs"] = True
+        self.__dict__["support_inst_reqs"] = True
         # Compatibility with certain scripts that wire up ports
         # without connectCpuPorts
-        self.__dict__['in_ports'] = dseq.in_ports
+        self.__dict__["in_ports"] = dseq.in_ports
 
     def connectCpuPorts(self, cpu):
-        assert(isinstance(cpu, BaseCPU))
+        assert isinstance(cpu, BaseCPU)
         cpu.icache_port = self.inst_seq.in_ports
         for p in cpu._cached_ports:
-            if str(p) != 'icache_port':
-                exec('cpu.%s = self.data_seq.in_ports' % p)
+            if str(p) != "icache_port":
+                exec(f"cpu.{p} = self.data_seq.in_ports")
         cpu.connectUncachedPorts(
-            self.data_seq.in_ports, self.data_seq.interrupt_out_port)
+            self.data_seq.in_ports, self.data_seq.interrupt_out_port
+        )
 
     def connectIOPorts(self, piobus):
         self.data_seq.connectIOPorts(piobus)
@@ -409,19 +450,26 @@ class CPUSequencerWrapper:
         setattr(self.inst_seq, name, value)
         setattr(self.data_seq, name, value)
 
+
 class CHI_RNF(CHI_Node):
-    '''
+    """
     Defines a CHI request node.
     Notice all contollers and sequencers are set as children of the cpus, so
     this object acts more like a proxy for seting things up and has no topology
     significance unless the cpus are set as its children at the top level
-    '''
+    """
 
-    def __init__(self, cpus, ruby_system,
-                 l1Icache_type, l1Dcache_type,
-                 cache_line_size,
-                 l1Iprefetcher_type=None, l1Dprefetcher_type=None):
-        super(CHI_RNF, self).__init__(ruby_system)
+    def __init__(
+        self,
+        cpus,
+        ruby_system,
+        l1Icache_type,
+        l1Dcache_type,
+        cache_line_size,
+        l1Iprefetcher_type=None,
+        l1Dprefetcher_type=None,
+    ):
+        super().__init__(ruby_system)
 
         self._block_size_bits = int(math.log(cache_line_size, 2))
 
@@ -437,33 +485,45 @@ class CHI_RNF(CHI_Node):
 
         # First creates L1 caches and sequencers
         for cpu in self._cpus:
-            cpu.inst_sequencer = RubySequencer(version = Versions.getSeqId(),
-                                         ruby_system = ruby_system)
-            cpu.data_sequencer = RubySequencer(version = Versions.getSeqId(),
-                                         ruby_system = ruby_system)
+            cpu.inst_sequencer = RubySequencer(
+                version=Versions.getSeqId(), ruby_system=ruby_system
+            )
+            cpu.data_sequencer = RubySequencer(
+                version=Versions.getSeqId(), ruby_system=ruby_system
+            )
 
-            self._seqs.append(CPUSequencerWrapper(cpu.inst_sequencer,
-                                                  cpu.data_sequencer))
+            self._seqs.append(
+                CPUSequencerWrapper(cpu.inst_sequencer, cpu.data_sequencer)
+            )
 
             # caches
-            l1i_cache = l1Icache_type(start_index_bit = self._block_size_bits,
-                                      is_icache = True)
+            l1i_cache = l1Icache_type(
+                start_index_bit=self._block_size_bits, is_icache=True
+            )
 
-            l1d_cache = l1Dcache_type(start_index_bit = self._block_size_bits,
-                                      is_icache = False)
+            l1d_cache = l1Dcache_type(
+                start_index_bit=self._block_size_bits, is_icache=False
+            )
 
-            # Placeholders for future prefetcher support
-            if l1Iprefetcher_type != None or l1Dprefetcher_type != None:
-                m5.fatal('Prefetching not supported yet')
-            l1i_pf = NULL
-            l1d_pf = NULL
+            # prefetcher wrappers
+            if l1Iprefetcher_type != None:
+                l1i_pf = l1Iprefetcher_type()
+            else:
+                l1i_pf = NULL
+
+            if l1Dprefetcher_type != None:
+                l1d_pf = l1Dprefetcher_type()
+            else:
+                l1d_pf = NULL
 
             # cache controllers
-            cpu.l1i = CHI_L1Controller(ruby_system, cpu.inst_sequencer,
-                                       l1i_cache, l1i_pf)
+            cpu.l1i = CHI_L1Controller(
+                ruby_system, cpu.inst_sequencer, l1i_cache, l1i_pf
+            )
 
-            cpu.l1d = CHI_L1Controller(ruby_system, cpu.data_sequencer,
-                                       l1d_cache, l1d_pf)
+            cpu.l1d = CHI_L1Controller(
+                ruby_system, cpu.data_sequencer, l1d_cache, l1d_pf, is_dcache=True
+            )
 
             cpu.inst_sequencer.dcache = NULL
             cpu.data_sequencer.dcache = cpu.l1d.cache
@@ -496,11 +556,14 @@ class CHI_RNF(CHI_Node):
     def addPrivL2Cache(self, cache_type, pf_type=None):
         self._ll_cntrls = []
         for cpu in self._cpus:
-            l2_cache = cache_type(start_index_bit = self._block_size_bits,
-                                  is_icache = False)
+            l2_cache = cache_type(
+                start_index_bit=self._block_size_bits, is_icache=False
+            )
+
             if pf_type != None:
-                m5.fatal('Prefetching not supported yet')
-            l2_pf = NULL
+                l2_pf = pf_type()
+            else:
+                l2_pf = NULL
 
             cpu.l2 = CHI_L2Controller(self._ruby_system, l2_cache, l2_pf)
 
@@ -515,18 +578,20 @@ class CHI_RNF(CHI_Node):
 
 
 class CHI_HNF(CHI_Node):
-    '''
+    """
     Encapsulates an HNF cache/directory controller.
     Before the first controller is created, the class method
     CHI_HNF.createAddrRanges must be called before creating any CHI_HNF object
     to set-up the interleaved address ranges used by the HNFs
-    '''
+    """
 
     class NoC_Params(CHI_Node.NoC_Params):
-        '''HNFs may also define the 'pairing' parameter to allow pairing'''
+        """HNFs may also define the 'pairing' parameter to allow pairing"""
+
         pairing = None
 
     _addr_ranges = {}
+
     @classmethod
     def createAddrRanges(cls, sys_mem_ranges, cache_line_size, hnfs):
         # Create the HNFs interleaved addr ranges
@@ -536,30 +601,34 @@ class CHI_HNF(CHI_Node):
         for i, hnf in enumerate(hnfs):
             ranges = []
             for r in sys_mem_ranges:
-                addr_range = AddrRange(r.start, size = r.size(),
-                                        intlvHighBit = numa_bit,
-                                        intlvBits = llc_bits,
-                                        intlvMatch = i)
+                addr_range = AddrRange(
+                    r.start,
+                    size=r.size(),
+                    intlvHighBit=numa_bit,
+                    intlvBits=llc_bits,
+                    intlvMatch=i,
+                )
                 ranges.append(addr_range)
             cls._addr_ranges[hnf] = (ranges, numa_bit)
 
     @classmethod
     def getAddrRanges(cls, hnf_idx):
-        assert(len(cls._addr_ranges) != 0)
+        assert len(cls._addr_ranges) != 0
         return cls._addr_ranges[hnf_idx]
 
     # The CHI controller can be a child of this object or another if
     # 'parent' if specified
     def __init__(self, hnf_idx, ruby_system, llcache_type, parent):
-        super(CHI_HNF, self).__init__(ruby_system)
+        super().__init__(ruby_system)
 
-        addr_ranges,intlvHighBit = self.getAddrRanges(hnf_idx)
+        addr_ranges, intlvHighBit = self.getAddrRanges(hnf_idx)
         # All ranges should have the same interleaving
-        assert(len(addr_ranges) >= 1)
+        assert len(addr_ranges) >= 1
 
-        ll_cache = llcache_type(start_index_bit = intlvHighBit + 1)
-        self._cntrl = CHI_HNFController(ruby_system, ll_cache, NULL,
-                                        addr_ranges)
+        ll_cache = llcache_type(start_index_bit=intlvHighBit + 1)
+        self._cntrl = CHI_HNFController(
+            ruby_system, ll_cache, NULL, addr_ranges
+        )
 
         if parent == None:
             self.cntrl = self._cntrl
@@ -576,25 +645,26 @@ class CHI_HNF(CHI_Node):
 
 
 class CHI_MN(CHI_Node):
-    '''
+    """
     Encapsulates a Misc Node controller.
-    '''
+    """
 
     class NoC_Params(CHI_Node.NoC_Params):
-        '''HNFs may also define the 'pairing' parameter to allow pairing'''
-        pairing = None
+        """HNFs may also define the 'pairing' parameter to allow pairing"""
 
+        pairing = None
 
     # The CHI controller can be a child of this object or another if
     # 'parent' if specified
     def __init__(self, ruby_system, l1d_caches, early_nonsync_comp=False):
-        super(CHI_MN, self).__init__(ruby_system)
+        super().__init__(ruby_system)
 
         # MiscNode has internal address range starting at 0
-        addr_range = AddrRange(0, size = "1kB")
+        addr_range = AddrRange(0, size="1kB")
 
-        self._cntrl = CHI_MNController(ruby_system, addr_range, l1d_caches,
-                                       early_nonsync_comp)
+        self._cntrl = CHI_MNController(
+            ruby_system, addr_range, l1d_caches, early_nonsync_comp
+        )
 
         self.cntrl = self._cntrl
 
@@ -609,23 +679,33 @@ class CHI_MN(CHI_Node):
     def getNetworkSideControllers(self):
         return [self._cntrl]
 
+
 class CHI_SNF_Base(CHI_Node):
-    '''
+    """
     Creates CHI node controllers for the memory controllers
-    '''
+    """
 
     # The CHI controller can be a child of this object or another if
     # 'parent' if specified
     def __init__(self, ruby_system, parent):
-        super(CHI_SNF_Base, self).__init__(ruby_system)
+        super().__init__(ruby_system)
 
         self._cntrl = Memory_Controller(
-                          version = Versions.getVersion(Memory_Controller),
-                          ruby_system = ruby_system,
-                          triggerQueue = TriggerMessageBuffer(),
-                          responseFromMemory = MessageBuffer(),
-                          requestToMemory = MessageBuffer(ordered = True),
-                          reqRdy = TriggerMessageBuffer())
+            version=Versions.getVersion(Memory_Controller),
+            ruby_system=ruby_system,
+            triggerQueue=TriggerMessageBuffer(),
+            responseFromMemory=MemCtrlMessageBuffer(),
+            requestToMemory=MemCtrlMessageBuffer(),
+            reqRdy=TriggerMessageBuffer(),
+            transitions_per_cycle=1024,
+        )
+
+        # The Memory_Controller implementation deallocates the TBE for
+        # write requests when they are queue up to memory. The size of this
+        # buffer must be limited to prevent unlimited outstanding writes.
+        self._cntrl.requestToMemory.buffer_size = (
+            int(self._cntrl.to_memory_controller_latency) + 1
+        )
 
         self.connectController(self._cntrl)
 
@@ -643,46 +723,51 @@ class CHI_SNF_Base(CHI_Node):
     def getMemRange(self, mem_ctrl):
         # TODO need some kind of transparent API for
         # MemCtrl+DRAM vs SimpleMemory
-        if hasattr(mem_ctrl, 'range'):
+        if hasattr(mem_ctrl, "range"):
             return mem_ctrl.range
         else:
             return mem_ctrl.dram.range
 
+
 class CHI_SNF_BootMem(CHI_SNF_Base):
-    '''
+    """
     Create the SNF for the boot memory
-    '''
+    """
 
     def __init__(self, ruby_system, parent, bootmem):
-        super(CHI_SNF_BootMem, self).__init__(ruby_system, parent)
+        super().__init__(ruby_system, parent)
         self._cntrl.memory_out_port = bootmem.port
         self._cntrl.addr_ranges = self.getMemRange(bootmem)
 
-class CHI_SNF_MainMem(CHI_SNF_Base):
-    '''
-    Create the SNF for a list main memory controllers
-    '''
 
-    def __init__(self, ruby_system, parent, mem_ctrl = None):
-        super(CHI_SNF_MainMem, self).__init__(ruby_system, parent)
+class CHI_SNF_MainMem(CHI_SNF_Base):
+    """
+    Create the SNF for a list main memory controllers
+    """
+
+    def __init__(self, ruby_system, parent, mem_ctrl=None):
+        super().__init__(ruby_system, parent)
         if mem_ctrl:
             self._cntrl.memory_out_port = mem_ctrl.port
             self._cntrl.addr_ranges = self.getMemRange(mem_ctrl)
         # else bind ports and range later
 
+
 class CHI_RNI_Base(CHI_Node):
-    '''
+    """
     Request node without cache / DMA
-    '''
+    """
 
     # The CHI controller can be a child of this object or another if
     # 'parent' if specified
     def __init__(self, ruby_system, parent):
-        super(CHI_RNI_Base, self).__init__(ruby_system)
+        super().__init__(ruby_system)
 
-        self._sequencer = RubySequencer(version = Versions.getSeqId(),
-                                         ruby_system = ruby_system,
-                                         clk_domain = ruby_system.clk_domain)
+        self._sequencer = RubySequencer(
+            version=Versions.getSeqId(),
+            ruby_system=ruby_system,
+            clk_domain=ruby_system.clk_domain,
+        )
         self._cntrl = CHI_DMAController(ruby_system, self._sequencer)
 
         if parent:
@@ -698,21 +783,23 @@ class CHI_RNI_Base(CHI_Node):
     def getNetworkSideControllers(self):
         return [self._cntrl]
 
+
 class CHI_RNI_DMA(CHI_RNI_Base):
-    '''
+    """
     DMA controller wiredup to a given dma port
-    '''
+    """
 
     def __init__(self, ruby_system, dma_port, parent):
-        super(CHI_RNI_DMA, self).__init__(ruby_system, parent)
-        assert(dma_port != None)
+        super().__init__(ruby_system, parent)
+        assert dma_port != None
         self._sequencer.in_ports = dma_port
 
+
 class CHI_RNI_IO(CHI_RNI_Base):
-    '''
+    """
     DMA controller wiredup to ruby_system IO port
-    '''
+    """
 
     def __init__(self, ruby_system, parent):
-        super(CHI_RNI_IO, self).__init__(ruby_system, parent)
+        super().__init__(ruby_system, parent)
         ruby_system._io_port = self._sequencer

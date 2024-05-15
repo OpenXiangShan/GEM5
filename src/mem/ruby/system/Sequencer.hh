@@ -65,10 +65,13 @@ struct SequencerRequest
     RubyRequestType m_type;
     RubyRequestType m_second_type;
     Cycles issue_time;
+    bool blk_invalid;
+    bool blk_upgrading;
     SequencerRequest(PacketPtr _pkt, RubyRequestType _m_type,
-                     RubyRequestType _m_second_type, Cycles _issue_time)
+                     RubyRequestType _m_second_type, Cycles _issue_time,
+                     bool is_blk_invalid = false, bool is_blk_upgrading = false)
                 : pkt(_pkt), m_type(_m_type), m_second_type(_m_second_type),
-                  issue_time(_issue_time)
+                  issue_time(_issue_time), blk_invalid(is_blk_invalid), blk_upgrading(is_blk_upgrading)
     {}
 
     bool functionalWrite(Packet *func_pkt) const
@@ -126,12 +129,26 @@ class Sequencer : public RubyPort
                       const Cycles forwardRequestTime = Cycles(0),
                       const Cycles firstResponseTime = Cycles(0));
 
+    void notifyMissCallback(Addr address, bool is_upgrade, bool is_snoop);
+
+    void atomicCallback(Addr address,
+                        DataBlock& data,
+                        const bool externalHit = false,
+                        const MachineType mach = MachineType_NUM,
+                        const Cycles initialRequestTime = Cycles(0),
+                        const Cycles forwardRequestTime = Cycles(0),
+                        const Cycles firstResponseTime = Cycles(0));
+
     void unaddressedCallback(Addr unaddressedReqId,
                              RubyRequestType requestType,
                              const MachineType mach = MachineType_NUM,
                              const Cycles initialRequestTime = Cycles(0),
                              const Cycles forwardRequestTime = Cycles(0),
                              const Cycles firstResponseTime = Cycles(0));
+
+    void completeHitCallback(std::vector<PacketPtr>& list);
+    void invL1Callback();
+    void invL1();
 
     RequestStatus makeRequest(PacketPtr pkt) override;
     virtual bool empty() const;
@@ -234,6 +251,10 @@ class Sequencer : public RubyPort
 
   private:
     int m_max_outstanding_requests;
+
+    int m_num_pending_invs;
+
+    PacketPtr m_cache_inv_pkt;
 
     CacheMemory* m_dataCache_ptr;
 

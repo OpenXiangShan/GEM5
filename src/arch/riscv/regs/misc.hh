@@ -619,6 +619,7 @@ const off_t FRM_OFFSET = 5;
 const RegVal ISA_MXL_MASK = 3ULL << MXL_OFFSET;
 const RegVal ISA_EXT_MASK = mask(26);
 const RegVal ISA_EXT_C_MASK = 1UL << ('c' - 'a');
+const RegVal ISA_EXT_H_MASK = 1UL << ('h' - 'a');
 const RegVal MISA_MASK = ISA_MXL_MASK | ISA_EXT_MASK;
 
 const RegVal STATUS_SD_MASK = 1ULL << ((sizeof(uint64_t) * 8) - 1);

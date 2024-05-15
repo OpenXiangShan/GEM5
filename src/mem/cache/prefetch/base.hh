@@ -460,11 +460,18 @@ class Base : public ClockedObject
 
     const unsigned maxCacheLevel;
 
+    /** Proxied Prefetchers in ruby does not have cache as parent
+     * so need to set probe manager explicitly
+     */
+    ProbeManager *probeManagerDirty;
+
   public:
     Base(const BasePrefetcherParams &p);
     virtual ~Base() = default;
 
     virtual void setCache(BaseCache *_cache);
+
+    void setPMInfoDirty(ProbeManager *pm) { probeManagerDirty = pm; }
 
     /**
      * Notify prefetcher of cache access (may be any access or just

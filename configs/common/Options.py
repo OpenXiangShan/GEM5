@@ -223,13 +223,13 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--external-memory-system", type=str,
                         help="use external ports of this port_type for caches")
 
+    # Enable Ruby
+    parser.add_argument("--ruby", action="store_true")
+
     if configure_xiangshan:
         return
 
     # Following options are not available in XiangShan
-    # Enable Ruby
-    parser.add_argument("--ruby", action="store_true")
-
     parser.add_argument(
         "--rel-max-tick", type=int, default=None, metavar="TICKS",
         help="Simulate for specified number of"
@@ -307,6 +307,9 @@ def addCommonOptions(parser, configure_xiangshan=False):
 
     parser.add_argument("--enable-riscv-vector", action="store_true", default=False,
             help="enable riscv vector extension (need vector-supported gcpt restore and diff-ref-so)")
+
+    parser.add_argument("--restore-rvv-cpt", action="store_true", default=False,
+            help="The input checkpoint is RVV, which requires RVV restorer")
 
     parser.add_argument("--xiangshan-ecore", action= "store_true",
                         help="Use efficient core of xiangshan")

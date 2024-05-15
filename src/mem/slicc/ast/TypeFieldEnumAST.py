@@ -26,7 +26,12 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 from slicc.ast.TypeFieldAST import TypeFieldAST
-from slicc.symbols import Event, State, RequestType
+from slicc.symbols import (
+    Event,
+    RequestType,
+    State,
+)
+
 
 class TypeFieldEnumAST(TypeFieldAST):
     def __init__(self, slicc, field_id, pairs_ast):
@@ -36,15 +41,17 @@ class TypeFieldEnumAST(TypeFieldAST):
         self.pairs_ast = pairs_ast
 
     def __repr__(self):
-        return "[TypeFieldEnum: %r]" % self.field_id
+        return f"[TypeFieldEnum: {self.field_id!r}]"
 
     def generate(self, type, **kwargs):
         if str(type) == "State":
-            self.error("States must in a State Declaration, not a normal enum.")
+            self.error(
+                "States must in a State Declaration, not a normal enum."
+            )
 
         # Add enumeration
         if not type.addEnum(self.field_id, self.pairs_ast.pairs):
-            self.error("Duplicate enumeration: %s:%s" % (type, self.field_id))
+            self.error(f"Duplicate enumeration: {type}:{self.field_id}")
 
         # Fill machine info
         machine = self.symtab.state_machine
@@ -58,6 +65,7 @@ class TypeFieldEnumAST(TypeFieldAST):
         if str(type) == "RequestType":
             if not machine:
                 self.error("RequestType declaration not part of a machine.")
-            s = RequestType(self.symtab, self.field_id, self.location,
-                           self.pairs)
+            s = RequestType(
+                self.symtab, self.field_id, self.location, self.pairs
+            )
             machine.addRequestType(s)

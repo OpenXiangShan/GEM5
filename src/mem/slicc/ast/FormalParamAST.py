@@ -40,8 +40,9 @@
 from slicc.ast.AST import AST
 from slicc.symbols import Var
 
+
 class FormalParamAST(AST):
-    def __init__(self, slicc, type_ast, ident, default = None, qualifier=""):
+    def __init__(self, slicc, type_ast, ident, default=None, qualifier=""):
         super().__init__(slicc)
         self.type_ast = type_ast
         self.ident = ident
@@ -49,7 +50,7 @@ class FormalParamAST(AST):
         self.qualifier = qualifier
 
     def __repr__(self):
-        return "[FormalParamAST: %s]" % self.ident
+        return f"[FormalParamAST: {self.ident}]"
 
     @property
     def name(self):
@@ -57,22 +58,25 @@ class FormalParamAST(AST):
 
     def generate(self):
         type = self.type_ast.type
-        param = "param_%s" % self.ident
+        param = f"param_{self.ident}"
 
         # Add to symbol table
-        v = Var(self.symtab, self.ident, self.location, type, param,
-                self.pairs)
+        v = Var(
+            self.symtab, self.ident, self.location, type, param, self.pairs
+        )
         self.symtab.newSymbol(v)
 
         # Qualifier is always a pointer for TBE table and Cache entries.
         # It's expected to be left unspecified or specified as ptr.
         qualifier = self.qualifier
         if str(type) == "TBE" or (
-           "interface" in type and (
-               type["interface"] == "AbstractCacheEntry")):
-            if qualifier not in ["", "PTR"] :
-                self.warning("Parameter \'%s\' is always pointer. "
-                             "%s qualifier ignored" % (self.ident, qualifier))
+            "interface" in type and (type["interface"] == "AbstractCacheEntry")
+        ):
+            if qualifier not in ["", "PTR"]:
+                self.warning(
+                    "Parameter '%s' is always pointer. "
+                    "%s qualifier ignored" % (self.ident, qualifier)
+                )
             qualifier = "PTR"
 
         # default
@@ -80,10 +84,10 @@ class FormalParamAST(AST):
             qualifier = "CONST_REF"
 
         if qualifier == "PTR":
-            return type, "%s* %s" % (type.c_ident, param)
+            return type, f"{type.c_ident}* {param}"
         elif qualifier == "REF":
-            return type, "%s& %s" % (type.c_ident, param)
+            return type, f"{type.c_ident}& {param}"
         elif qualifier == "CONST_REF":
-            return type, "const %s& %s" % (type.c_ident, param)
+            return type, f"const {type.c_ident}& {param}"
         else:
-            self.error("Invalid qualifier for param \'%s\'" % self.ident)
+            self.error(f"Invalid qualifier for param '{self.ident}'")

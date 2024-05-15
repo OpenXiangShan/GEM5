@@ -656,7 +656,7 @@ def makeBareMetalRiscvSystem(mem_mode, mdesc=None, cmdline=None):
     self.system_port = self.membus.cpu_side_ports
     return self
 
-def makeBareMetalXiangshanSystem(mem_mode, mdesc=None, cmdline=None):
+def makeBareMetalXiangshanSystem(mem_mode, mdesc=None, cmdline=None, np=1, ruby=False):
     self = System()
     if not mdesc:
         # generic system
@@ -667,12 +667,13 @@ def makeBareMetalXiangshanSystem(mem_mode, mdesc=None, cmdline=None):
     self.workload = RiscvBareMetal()
 
     self.iobus = IOXBar()
-    self.membus = MemBus()
-    self.membus.width = 32
+    if not ruby:
+        self.membus = MemBus()
+        self.membus.width = 32
 
-    self.bridge = Bridge(delay='50ns')
-    self.bridge.mem_side_port = self.iobus.cpu_side_ports
-    self.bridge.cpu_side_port = self.membus.mem_side_ports
+        self.bridge = Bridge(delay='50ns')
+        self.bridge.mem_side_port = self.iobus.cpu_side_ports
+        self.bridge.cpu_side_port = self.membus.mem_side_ports
 
     self.uartlite  = UartLite()
     self.uartlite.pio = self.iobus.mem_side_ports
@@ -680,22 +681,23 @@ def makeBareMetalXiangshanSystem(mem_mode, mdesc=None, cmdline=None):
     self.lint = Lint()
     self.lint.pio = self.iobus.mem_side_ports
     self.lint.pio_addr = 0x38000000
-    self.lint.pio_size = 0x10000
-    self.lint.num_threads = 1
+    self.lint.num_threads = np
     self.lint.int_enable = 1
 
     self.mmcs = NemuMMC()
     self.mmcs.pio = self.iobus.mem_side_ports
 
-    self.bridge.ranges = [
-        AddrRange(self.uartlite.pio_addr, self.uartlite.pio_addr +
-         self.uartlite.pio_size),
-        AddrRange(self.lint.pio_addr, self.lint.pio_addr + self.lint.pio_size),
-        AddrRange(self.mmcs.pio_addr, self.mmcs.pio_addr + self.mmcs.pio_size),
-        ]
+    if not ruby:
+        self.bridge.ranges = [
+            AddrRange(self.uartlite.pio_addr, self.uartlite.pio_addr +
+            self.uartlite.pio_size),
+            AddrRange(self.lint.pio_addr, self.lint.pio_addr + self.lint.pio_size),
+            AddrRange(self.mmcs.pio_addr, self.mmcs.pio_addr + self.mmcs.pio_size),
+            ]
 
     self.workload.reset_vect = 0x80000000
-    self.system_port = self.membus.cpu_side_ports
+    if not ruby:
+        self.system_port = self.membus.cpu_side_ports
     return self
 
 def makeDualRoot(full_system, testSystem, driveSystem, dumpfile):

@@ -52,9 +52,11 @@
 #include "base/loader/symtab.hh"
 #include "base/statistics.hh"
 #include "config/the_isa.hh"
+#include "cpu/golden_global_mem.hh"
 #include "cpu/pc_event.hh"
 #include "enums/MemoryMode.hh"
 #include "mem/mem_requestor.hh"
+#include "mem/mem_util.hh"
 #include "mem/physical.hh"
 #include "mem/port.hh"
 #include "mem/port_proxy.hh"
@@ -330,6 +332,14 @@ class System : public SimObject, public PCEventScope
     /** OS kernel */
     Workload *workload = nullptr;
 
+    unsigned numCPUs;
+
+    bool enableDifftest = false;
+
+    uint8_t *goldenMem = nullptr;
+
+    GoldenGloablMem goldenMemManager;
+
   public:
     /**
      * Get a pointer to the Kernel Virtual Machine (KVM) SimObject,
@@ -358,6 +368,8 @@ class System : public SimObject, public PCEventScope
      * @return Whether the address corresponds to a memory
      */
     bool isMemAddr(Addr addr) const;
+
+    uint8_t *createCopyOnWriteBranch() { return dedupMemManager.createCopyOnWriteBranch(); }
 
     /**
      * Add a physical memory range for a device. The ranges added here will
@@ -400,9 +412,21 @@ class System : public SimObject, public PCEventScope
      */
     ThermalModel * getThermalModel() const { return thermalModel; }
 
+    bool enabledMemDedup() const { return enableMemDedup; }
+
+    bool multiCore() const { return numCPUs > 1; }
+
+    uint8_t *getGoldenMemPtr() const { return goldenMem; }
+
+    GoldenGloablMem *getGoldenMemManager() { return &goldenMemManager; }
+
   protected:
 
     KvmVM *kvmVM = nullptr;
+
+    bool enableMemDedup = false;
+
+    mem_util::DedupMemory dedupMemManager;
 
     memory::PhysicalMemory physmem;
 

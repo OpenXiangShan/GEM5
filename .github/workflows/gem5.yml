@@ -74,8 +74,8 @@ jobs:
         run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
       - name: XS-GEM5 - Test xiangshan.py simulation scripts
         run: |
-          export GCB_REF_SO="/nfs-nvme/home/share/xuyan/shared_payloads/rvv-nemu-so"
-          export GCB_RESTORER="/nfs-nvme/home/share/zyy/shared_payloads/rv64gcb-gcpt-restorer-e475285f.bin"
+          export GCBV_REF_SO="/nfs-nvme/home/share/zyy/shared_payloads/gem5-release/2024-05-14/nemu-gcbv-ref.so"
+          export GCB_RESTORER="/nfs-nvme/home/share/zyy/shared_payloads/gem5-release/2024-05-14/gcb-restorer.bin"
           export GEM5_HOME=$(pwd)
           mkdir -p $GEM5_HOME/util/xs_scripts/test
           cd $GEM5_HOME/util/xs_scripts/test
@@ -101,9 +101,28 @@ jobs:
         run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
       - name: XS-GEM5 - Test xiangshan.py simulation scripts
         run: |
-          export GCBV_REF_SO="/nfs-nvme/home/share/xuyan/shared_payloads/rvv-nemu-so"
-          export GCBV_RESTORER="/nfs-nvme/home/share/zyy/shared_payloads/rv64gcbv-gcpt-restorer-96ce67b2.bin"
+          export GCBV_REF_SO="/nfs-nvme/home/share/zyy/shared_payloads/gem5-release/2024-05-14/nemu-gcbv-ref.so"
+          export GCBV_RESTORER="/nfs-nvme/home/share/zyy/shared_payloads/gem5-release/2024-05-14/gcbv-restorer.bin"
           export GEM5_HOME=$(pwd)
           mkdir -p $GEM5_HOME/util/xs_scripts/test_v
           cd $GEM5_HOME/util/xs_scripts/test_v
           bash ../kmh_6wide_vector.sh /nfs/home/share/jiaxiaoyu/simpoint_checkpoint_archive/spec06_hmmer_libquantum_h264_rv64gcv_O3_20m_gcc14.0.0_1218-intFpcOff-ptMalloc/disdain-practical-toll-2023-12-25-11-26/zstd-checkpoint-0-0-0/hmmer_nph3/102/_102_0.0243576.zstd
+
+  new_sim_script_test_gcb_multi_core:
+    runs-on: self-hosted
+    continue-on-error: false
+    name: XS-GEM5 - Test Multi-core + RV64GCB
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build GEM5 opt
+        run: |
+          source /nfs-nvme/home/share/zyy/shared_apps/setenv_AOCC.sh
+          CC=clang CXX=clang++ scons build/RISCV_CHI/gem5.opt -j 48 --gold-linker
+      - name: XS-GEM5 - Test xiangshan.py simulation scripts
+        run: |
+          export GCBV_MULTI_CORE_REF_SO="/nfs-nvme/home/share/zyy/shared_payloads/gem5-release/2024-05-14/nemu-gcbv-multi-core-ref.so"
+          export GCB_MULTI_CORE_RESTORER="/nfs-nvme/home/share/zyy/shared_payloads/gem5-release/2024-05-14/gcb-2core-restorer.bin"
+          export GEM5_HOME=$(pwd)
+          mkdir -p $GEM5_HOME/util/xs_scripts/test_multi_core
+          cd $GEM5_HOME/util/xs_scripts/test_multi_core
+          bash ../kmh-ruby-dual.sh /nfs-nvme/home/share/zyy/shared_payloads/bzip_checkpoint_with_sv39_without_rdtime_with_dualmtimecpt_1000M.gz

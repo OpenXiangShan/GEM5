@@ -33,9 +33,8 @@
 
 Import('*')
 
-if env['CONF']['PROTOCOL'] == 'None':
+if not env['CONF']['RUBY']:
     Return()
 
 SimObject('FaultModel.py', sim_objects=['FaultModel'])
 Source('FaultModel.cc')
-

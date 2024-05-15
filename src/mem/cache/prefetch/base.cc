@@ -136,7 +136,8 @@ Base::Base(const BasePrefetcherParams &p)
       prefetchOnPfHit(p.prefetch_on_pf_hit),
       useVirtualAddresses(p.use_virtual_addresses),
       prefetchStats(this), issuedPrefetches(0),
-      usefulPrefetches(0), streamlatenum(0),tlb(nullptr), maxCacheLevel(p.max_cache_level)
+      usefulPrefetches(0), streamlatenum(0),tlb(nullptr), maxCacheLevel(p.max_cache_level),
+      probeManagerDirty(nullptr)
 {
 }
 
@@ -430,8 +431,14 @@ Base::regProbeListeners()
      * parent cache using the probe "Miss". Also connect to "Hit", if the
      * cache is configured to prefetch on accesses.
      */
-    if (listeners.empty() && cache != nullptr && !isSubPrefetcher) {
-        ProbeManager* pm(cache->getProbeManager());
+    if (listeners.empty() && !isSubPrefetcher) {
+        assert((cache != nullptr) != (probeManagerDirty != nullptr));
+        ProbeManager* pm(nullptr);
+        if (cache != nullptr) {
+            pm = cache->getProbeManager();
+        } else if (probeManagerDirty != nullptr) {
+            pm = probeManagerDirty;
+        }
         listeners.push_back(new PrefetchListener(*this, pm, "StorePFtrain", false, true, true));
         listeners.push_back(new PrefetchListener(*this, pm, "Miss", false, true, false));
         listeners.push_back(new PrefetchListener(*this, pm, "Fill", true, false, false));

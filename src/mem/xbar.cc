@@ -560,6 +560,11 @@ BaseXBar::regStats()
         transDist.subname(i, cstr);
     }
 
+    if (cpuSidePorts.size() <= 0 || memSidePorts.size() <= 0) {
+        panic("Crossbar %s has %u CPU-side ports and %u memory-side ports", name(), cpuSidePorts.size(),
+              memSidePorts.size());
+    }
+
     pktCount
         .init(cpuSidePorts.size(), memSidePorts.size())
         .flags(total | nozero | nonan);

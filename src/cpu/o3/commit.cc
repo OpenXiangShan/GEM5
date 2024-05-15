@@ -821,6 +821,7 @@ Commit::handleInterrupt()
             cpu->difftestRaiseIntr(cpu->getInterruptsNO() | (1ULL << 63));
         }
 
+        DPRINTF(CommitTrace, "Handle interrupt No.%lx\n", cpu->getInterruptsNO() | (1ULL << 63));
         cpu->processInterrupts(cpu->getInterrupts());
 
         thread[0]->noSquashFromTC = false;
@@ -1134,7 +1135,7 @@ Commit::commitInsts()
 
             if (commit_success) {
                 lastCommitCycle = cpu->curCycle();
-                head_inst->printDisassembly();
+                head_inst->printDisassemblyAndResult(cpu->name());
                 const auto &head_rv_pc = head_inst->pcState().as<RiscvISA::PCState>();
                 if (bp->isStream()) {
                     auto dbsp = dynamic_cast<branch_prediction::stream_pred::DecoupledStreamBPU*>(bp);
@@ -1229,19 +1230,19 @@ Commit::commitInsts()
                     }
                     cpu->diffInfo.inst = head_inst->staticInst;
                     cpu->diffInfo.pc = &head_inst->pcState();
-                    if (head_inst->numDestRegs() > 0) {
-                        const auto &dest = head_inst->destRegIdx(0);
-                        if ((dest.isFloatReg() || dest.isIntReg()) &&
-                            !dest.isZeroReg()) {
-                            cpu->diffInfo.result = cpu->getArchReg(dest, tid);
-                        }
-                        else if (dest.isVecReg()) {
+                    for (int i = 0; i < head_inst->numDestRegs(); i++) {
+                        const auto &dest = head_inst->destRegIdx(i);
+                        if ((dest.isFloatReg() || dest.isIntReg()) && !dest.isZeroReg()) {
+                            cpu->diffInfo.scalarResults.at(i) = cpu->getArchReg(dest, tid);
+                        } else if (dest.isVecReg()) {
+                            assert(i == 0);
                             cpu->getArchReg(dest, &(cpu->diffInfo.vecResult), tid);
                         }
                     }
                     cpu->diffInfo.curInstStrictOrdered =
                         head_inst->strictlyOrdered();
                     cpu->diffInfo.physEffAddr = head_inst->physEffAddr;
+                    cpu->diffInfo.effSize = head_inst->effSize;
                     cpu->difftestStep(tid, head_inst->seqNum);
                 }
 
@@ -1404,8 +1405,13 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
     }
 
     if (inst_fault != NoFault) {
-        DPRINTF(Commit, "Inst [tid:%i] [sn:%llu] PC %s has a fault\n",
-                tid, head_inst->seqNum, head_inst->pcState());
+        DPRINTF(CommitTrace, "[sn:%lu pc:%#lx] %s has a fault, mepc: %#lx, mcause: %#lx, mtval: %#lx\n",
+                head_inst->seqNum, head_inst->pcState().instAddr(),
+                head_inst->staticInst->disassemble(head_inst->pcState().instAddr()),
+                cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_MEPC, tid),
+                cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_MCAUSE, tid),
+                cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_MTVAL, tid)
+                );
 
         if (iewStage->hasStoresToWB(tid) || inst_num > 0) {
             DPRINTF(Commit,
@@ -1510,6 +1516,14 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         // Generate trap squash event.
         generateTrapEvent(tid, inst_fault);
         return false;
+    }
+
+    // if (IsSerializeAfter, IsNonSpeculative, IsReturn)
+    if (head_inst->isSerializeAfter() && head_inst->isNonSpeculative() && head_inst->isReturn()) {
+        DPRINTF(CommitTrace, "Priv return [sn:%llu] PC %s: %s, mepc: %#lx, sepc: %#lx\n", head_inst->seqNum,
+                head_inst->pcState(), head_inst->staticInst->disassemble(head_inst->pcState().instAddr()),
+                cpu->readMiscRegNoEffect(RiscvISA::MISCREG_MEPC, tid),
+                cpu->readMiscRegNoEffect(RiscvISA::MISCREG_SEPC, tid));
     }
 
     committedPC[tid] = head_inst->pcState().instAddr();

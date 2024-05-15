@@ -27,7 +27,8 @@
 import os
 import sys
 
-class PairContainer(object):
+
+class PairContainer:
     def __init__(self, pairs=None):
         self.pairs = {}
         if pairs:
@@ -45,33 +46,37 @@ class PairContainer(object):
     def get(self, item, failobj=None):
         return self.pairs.get(item, failobj)
 
-class Location(object):
+
+class Location:
     def __init__(self, filename, lineno, no_warning=False):
         if not isinstance(filename, str):
             raise AttributeError(
-                "filename must be a string, found {}".format(type(filename)))
+                f"filename must be a string, found {type(filename)}"
+            )
         if not isinstance(lineno, int):
             raise AttributeError(
-                "filename must be an integer, found {}".format(type(lineno)))
+                f"filename must be an integer, found {type(lineno)}"
+            )
         self.filename = filename
         self.lineno = lineno
         self.no_warning = no_warning
 
     def __str__(self):
-        return '%s:%d' % (os.path.basename(self.filename), self.lineno)
+        return "%s:%d" % (os.path.basename(self.filename), self.lineno)
 
     def warning(self, message, *args):
         if self.no_warning:
             return
         if args:
             message = message % args
-        #raise Exception, "%s: Warning: %s" % (self, message)
-        print("%s: Warning: %s" % (self, message), file=sys.stderr)
+        # raise Exception, "%s: Warning: %s" % (self, message)
+        print(f"{self}: Warning: {message}", file=sys.stderr)
 
     def error(self, message, *args):
         if args:
             message = message % args
-        raise Exception("{}: Error: {}".format(self, message))
-        sys.exit("\n%s: Error: %s" % (self, message))
+        raise Exception(f"{self}: Error: {message}")
+        sys.exit(f"\n{self}: Error: {message}")
 
-__all__ = [ 'PairContainer', 'Location' ]
+
+__all__ = ["PairContainer", "Location"]

@@ -26,7 +26,11 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 from slicc.ast.DeclAST import DeclAST
-from slicc.symbols import Func, Type
+from slicc.symbols import (
+    Func,
+    Type,
+)
+
 
 class EnumDeclAST(DeclAST):
     def __init__(self, slicc, type_ast, pairs, fields):
@@ -36,25 +40,26 @@ class EnumDeclAST(DeclAST):
         self.fields = fields
 
     def __repr__(self):
-        return "[EnumDecl: %s]" % (self.type_ast)
+        return f"[EnumDecl: {self.type_ast}]"
 
     def files(self, parent=None):
         if "external" in self:
             return set()
 
         if parent:
-            ident = "%s_%s" % (parent, self.type_ast.ident)
+            ident = f"{parent}_{self.type_ast.ident}"
         else:
             ident = self.type_ast.ident
-        s = set(("%s.hh" % ident, "%s.cc" % ident))
+        s = {f"{ident}.hh", f"{ident}.cc"}
         return s
 
     def generate(self):
         ident = str(self.type_ast)
 
         # Make the new type
-        t = Type(self.symtab, ident, self.location, self.pairs,
-                 self.state_machine)
+        t = Type(
+            self.symtab, ident, self.location, self.pairs, self.state_machine
+        )
         self.symtab.newSymbol(t)
 
         # Add all of the fields of the type to it
@@ -62,11 +67,18 @@ class EnumDeclAST(DeclAST):
             field.generate(t)
 
         # Add the implicit State_to_string method - FIXME, this is a bit dirty
-        func_id = "%s_to_string" % t.c_ident
+        func_id = f"{t.c_ident}_to_string"
 
-        pairs = { "external" : "yes" }
-        func = Func(self.symtab, func_id + "_" + t.c_ident,
-                    func_id, self.location,
-                    self.symtab.find("std::string", Type), [ t ], [], "",
-                    pairs)
+        pairs = {"external": "yes"}
+        func = Func(
+            self.symtab,
+            func_id + "_" + t.c_ident,
+            func_id,
+            self.location,
+            self.symtab.find("std::string", Type),
+            [t],
+            [],
+            "",
+            pairs,
+        )
         self.symtab.newSymbol(func)

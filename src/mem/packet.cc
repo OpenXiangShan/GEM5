@@ -56,6 +56,7 @@
 #include "base/cprintf.hh"
 #include "base/logging.hh"
 #include "base/trace.hh"
+#include "debug/PacketSender.hh"
 #include "mem/packet_access.hh"
 #include "sim/bufval.hh"
 
@@ -334,6 +335,18 @@ Packet::pushSenderState(Packet::SenderState *sender_state)
     assert(sender_state != NULL);
     sender_state->predecessor = senderState;
     senderState = sender_state;
+    DPRINTF(PacketSender, "Packet %#lx push sender %#lx\n", this, sender_state);
+}
+
+Packet::SenderState *
+Packet::getPrimarySenderState() const
+{
+    assert(senderState != nullptr);
+    SenderState *sender_state = senderState;
+    while (sender_state->predecessor != nullptr) {
+        sender_state = sender_state->predecessor;
+    }
+    return sender_state;
 }
 
 Packet::SenderState *
@@ -343,6 +356,7 @@ Packet::popSenderState()
     SenderState *sender_state = senderState;
     senderState = sender_state->predecessor;
     sender_state->predecessor = NULL;
+    DPRINTF(PacketSender, "Packet %#lx pop sender %#lx\n", this, sender_state);
     return sender_state;
 }
 

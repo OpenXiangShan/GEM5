@@ -559,6 +559,8 @@ class Packet : public Printable
      */
     void pushSenderState(SenderState *sender_state);
 
+    SenderState *getPrimarySenderState() const;
+
     /**
      * Pop the top of the state stack and return a pointer to it. This
      * assumes the current sender state is not NULL. This should be

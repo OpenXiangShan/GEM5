@@ -28,49 +28,96 @@
 # Author: Tushar Krishna
 #
 
-from m5.params import *
-from m5.proxy import *
-from m5.objects.Network import RubyNetwork
+# from m5.citations import add_citation
 from m5.objects.BasicRouter import BasicRouter
 from m5.objects.ClockedObject import ClockedObject
+from m5.objects.Network import RubyNetwork
+from m5.params import *
+from m5.proxy import *
+
 
 class GarnetNetwork(RubyNetwork):
-    type = 'GarnetNetwork'
+    type = "GarnetNetwork"
     cxx_header = "mem/ruby/network/garnet/GarnetNetwork.hh"
-    cxx_class = 'gem5::ruby::garnet::GarnetNetwork'
+    cxx_class = "gem5::ruby::garnet::GarnetNetwork"
 
-    num_rows = Param.Int(0, "number of rows if 2D (mesh/torus/..) topology");
+    num_rows = Param.Int(0, "number of rows if 2D (mesh/torus/..) topology")
     ni_flit_size = Param.UInt32(16, "network interface flit size in bytes")
-    vcs_per_vnet = Param.UInt32(4, "virtual channels per virtual network");
-    buffers_per_data_vc = Param.UInt32(4, "buffers per data virtual channel");
-    buffers_per_ctrl_vc = Param.UInt32(1, "buffers per ctrl virtual channel");
-    routing_algorithm = Param.Int(0,
-        "0: Weight-based Table, 1: XY, 2: Custom");
-    enable_fault_model = Param.Bool(False, "enable network fault model");
-    fault_model = Param.FaultModel(NULL, "network fault model");
-    garnet_deadlock_threshold = Param.UInt32(50000,
-                              "network-level deadlock threshold")
+    vcs_per_vnet = Param.UInt32(4, "virtual channels per virtual network")
+    buffers_per_data_vc = Param.UInt32(4, "buffers per data virtual channel")
+    buffers_per_ctrl_vc = Param.UInt32(1, "buffers per ctrl virtual channel")
+    routing_algorithm = Param.Int(0, "0: Weight-based Table, 1: XY, 2: Custom")
+    enable_fault_model = Param.Bool(False, "enable network fault model")
+    fault_model = Param.FaultModel(NULL, "network fault model")
+    garnet_deadlock_threshold = Param.UInt32(
+        50000, "network-level deadlock threshold"
+    )
+
 
 class GarnetNetworkInterface(ClockedObject):
-    type = 'GarnetNetworkInterface'
-    cxx_class = 'gem5::ruby::garnet::NetworkInterface'
+    type = "GarnetNetworkInterface"
+    cxx_class = "gem5::ruby::garnet::NetworkInterface"
     cxx_header = "mem/ruby/network/garnet/NetworkInterface.hh"
 
     id = Param.UInt32("ID in relation to other network interfaces")
-    vcs_per_vnet = Param.UInt32(Parent.vcs_per_vnet,
-                             "virtual channels per virtual network")
-    virt_nets = Param.UInt32(Parent.number_of_virtual_networks,
-                          "number of virtual networks")
-    garnet_deadlock_threshold = Param.UInt32(Parent.garnet_deadlock_threshold,
-                                      "network-level deadlock threshold")
+    vcs_per_vnet = Param.UInt32(
+        Parent.vcs_per_vnet, "virtual channels per virtual network"
+    )
+    virt_nets = Param.UInt32(
+        Parent.number_of_virtual_networks, "number of virtual networks"
+    )
+    garnet_deadlock_threshold = Param.UInt32(
+        Parent.garnet_deadlock_threshold, "network-level deadlock threshold"
+    )
+
 
 class GarnetRouter(BasicRouter):
-    type = 'GarnetRouter'
-    cxx_class = 'gem5::ruby::garnet::Router'
+    type = "GarnetRouter"
+    cxx_class = "gem5::ruby::garnet::Router"
     cxx_header = "mem/ruby/network/garnet/Router.hh"
-    vcs_per_vnet = Param.UInt32(Parent.vcs_per_vnet,
-                              "virtual channels per virtual network")
-    virt_nets = Param.UInt32(Parent.number_of_virtual_networks,
-                          "number of virtual networks")
-    width = Param.UInt32(Parent.ni_flit_size,
-                          "bit width supported by the router")
+    vcs_per_vnet = Param.UInt32(
+        Parent.vcs_per_vnet, "virtual channels per virtual network"
+    )
+    virt_nets = Param.UInt32(
+        Parent.number_of_virtual_networks, "number of virtual networks"
+    )
+    width = Param.UInt32(
+        Parent.ni_flit_size, "bit width supported by the router"
+    )
+
+
+# add_citation(
+#     GarnetNetwork,
+#     """@inproceedings{Bharadwaj:2020:kite,
+#   author       = {Srikant Bharadwaj and
+#                   Jieming Yin and
+#                   Bradford M. Beckmann and
+#                   Tushar Krishna},
+#   title        = {Kite: {A} Family of Heterogeneous Interposer Topologies Enabled via
+#                   Accurate Interconnect Modeling},
+#   booktitle    = {57th {ACM/IEEE} Design Automation Conference, {DAC} 2020, San Francisco,
+#                   CA, USA, July 20-24, 2020},
+#   pages        = {1--6},
+#   publisher    = {{IEEE}},
+#   year         = {2020},
+#   url          = {https://doi.org/10.1109/DAC18072.2020.9218539},
+#   doi          = {10.1109/DAC18072.2020.9218539}
+# }
+# @inproceedings{Agarwal:2009:garnet,
+#   author       = {Niket Agarwal and
+#                   Tushar Krishna and
+#                   Li{-}Shiuan Peh and
+#                   Niraj K. Jha},
+#   title        = {{GARNET:} {A} detailed on-chip network model inside a full-system
+#                   simulator},
+#   booktitle    = {{IEEE} International Symposium on Performance Analysis of Systems
+#                   and Software, {ISPASS} 2009, April 26-28, 2009, Boston, Massachusetts,
+#                   USA, Proceedings},
+#   pages        = {33--42},
+#   publisher    = {{IEEE} Computer Society},
+#   year         = {2009},
+#   url          = {https://doi.org/10.1109/ISPASS.2009.4919636},
+#   doi          = {10.1109/ISPASS.2009.4919636}
+# }
+# """,
+# )

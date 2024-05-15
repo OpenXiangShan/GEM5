@@ -57,6 +57,8 @@
 #include "debug/AddrRanges.hh"
 #include "debug/Checkpoint.hh"
 #include "mem/abstract_mem.hh"
+#include "mem/mem_util.hh"
+#include "mem/packet.hh"
 #include "sim/serialize.hh"
 #include "sim/sim_exit.hh"
 
@@ -90,13 +92,17 @@ PhysicalMemory::PhysicalMemory(const std::string& _name,
                                const std::string& gcpt_path,
                                bool map_to_raw_cpt,
                                bool auto_unlink_shared_backstore,
-                               bool enable_riscv_vector) :
+                               unsigned gcpt_restorer_size_limit,
+                               mem_util::DedupMemory *dedup_mem_manager,
+                               bool enable_mem_dedup) :
     _name(_name), size(0), mmapUsingNoReserve(mmap_using_noreserve),
     sharedBackstore(shared_backstore), sharedBackstoreSize(0),
     pageSize(sysconf(_SC_PAGE_SIZE)),
     restoreFromXiangshanCpt(restore_from_gcpt),
     gCptRestorerPath(gcpt_restorer_path),
-    xsCptPath(gcpt_path), mapToRawCpt(map_to_raw_cpt), riscvVectorGCPTrestore(enable_riscv_vector)
+    xsCptPath(gcpt_path), mapToRawCpt(map_to_raw_cpt), gcptRestorerSizeLimit(gcpt_restorer_size_limit),
+    enableDedup(enable_mem_dedup),
+    dedupMemManager(dedup_mem_manager)
 {
     // Register cleanup callback if requested.
     if (auto_unlink_shared_backstore && !sharedBackstore.empty()) {
@@ -155,6 +161,10 @@ PhysicalMemory::PhysicalMemory(const std::string& _name,
         if (!r.second->isNull()) {
             // if the range is interleaved then save it for now
             if (r.first.interleaved()) {
+                if (enableDedup) {
+                    panic("Dedup mem only support one continuous range!");
+                }
+
                 // if we already got interleaved ranges that are not
                 // part of the same range, then first do a merge
                 // before we add the new one
@@ -252,9 +262,20 @@ PhysicalMemory::createBackingStore(
     }
     uint8_t* pmem = nullptr;
     if (!mapToRawCpt) {
-        pmem =
-            (uint8_t*)mmap(NULL, range.size(), PROT_READ | PROT_WRITE,
-                           map_flags, shm_fd, map_offset);
+        if (enableDedup) {
+            if (shm_fd != -1) {
+                panic(
+                    "Dedup mem treates shared backstore as a read-only checkpoint, while original shared backstore is "
+                    "read-write which intends to persist updates from GEM5. They are mutually exclusive.");
+                pmem = (uint8_t*)MAP_FAILED;
+            } else {
+                // Create a common ``root'' memory
+                warn("creating backingstore: Creating a shared read-only root memory for dedup\n");
+                pmem = dedupMemManager->createSharedReadOnlyRoot(range.size());
+            }
+        } else {
+            pmem = (uint8_t*)mmap(NULL, range.size(), PROT_READ | PROT_WRITE, map_flags, shm_fd, map_offset);
+        }
 
         if (pmem == (uint8_t*)MAP_FAILED) {
             perror("mmap");
@@ -270,8 +291,7 @@ PhysicalMemory::createBackingStore(
     // it appropriately
     backingStore.emplace_back(range, pmem,
                               conf_table_reported, in_addr_map, kvm_map,
-                              shm_fd, map_offset);
-
+                              shm_fd, map_offset, enableDedup);
 
     if (!mapToRawCpt) {
         assert(pmem);
@@ -291,14 +311,24 @@ PhysicalMemory::createBackingStore(
 PhysicalMemory::~PhysicalMemory()
 {
     // unmap the backing store
-    for (auto& s : backingStore)
-        munmap((char*)s.pmem, s.range.size());
+    for (auto& s : backingStore) {
+        // If it is managed by dedup, then it will be unmapped by dedup
+        if (!s.isDedupManaged) {
+            munmap((char*)s.pmem, s.range.size());
+        }
+    }
 }
 
 bool
 PhysicalMemory::isMemAddr(Addr addr) const
 {
     return addrMap.contains(addr) != addrMap.end();
+}
+
+Addr
+PhysicalMemory::getStartaddr() const
+{
+    return addrMap.begin()->first.start();
 }
 
 AddrRangeList
@@ -511,10 +541,8 @@ PhysicalMemory::unserializeStoreFrom(std::string filepath,
     // mmap memoryfile
     bool is_gz = hasGzipMagic(fd);
     bool is_zstd = hasZSTDMagic(fd);
-    uint8_t* pmem = backingStore[store_id].pmem;
-    AddrRange range = backingStore[store_id].range;
     close(fd);
-    if (!is_gz && !is_zstd) {
+    if (!is_gz && !is_zstd) {  // Restoring from memory image checkpoint
         fd = open(filepath.c_str(), O_RDWR);
 
         assert(mapToRawCpt &&
@@ -533,22 +561,40 @@ PhysicalMemory::unserializeStoreFrom(std::string filepath,
         fatal_if(off < 0, "Failed to determine size of file %s.\n", filepath);
         auto file_len = static_cast<size_t>(off);
 
+        assert(backingStore[store_id].pmem == nullptr);
+
         if (file_len < size) {
-            // small file -> anonymous map + file copy
-            backingStore[store_id].pmem = (uint8_t *)mmap(
-                NULL, size, PROT_READ | PROT_WRITE,
-                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            // For small file, anonymous map + file copy
+            if (enableDedup) {
+                // Create a common ``root'' memory
+                dedupMemManager->createSharedReadOnlyRoot(size);
+                // map pmem to one of a branch memory, whose update is not visable to other branches (PRIVATE)
+                backingStore[store_id].pmem = dedupMemManager->createCopyOnWriteBranch();
+            } else {
+                backingStore[store_id].pmem =
+                    (uint8_t*)mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            }
             assert(backingStore[store_id].pmem != MAP_FAILED);
-            // copy file into pmem
+
+            // Then copy file into pmem
             inform("copying %s to pmem %#lx",
                    filepath, (uint64_t)backingStore[store_id].pmem);
             lseek(fd, 0, SEEK_SET);
             auto bytes = read(fd, backingStore[store_id].pmem, file_len);
             assert(bytes == file_len);
         } else {
-            // large file -> file map
-            backingStore[store_id].pmem =(uint8_t*)mmap(
-                NULL, file_len, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+            // For large file, map to file directly
+            if (enableDedup) {
+                // Firstly, create a shared map to this file; then pmem and other branch memories will be created based
+                // on this shared map
+                dedupMemManager->initRootFromExistingFile(fd, filepath.c_str());
+                // Then map pmem to one of a branch memory, whose update is not visable to other branches (PRIVATE) and
+                // not to the backed file
+                backingStore[store_id].pmem = dedupMemManager->createCopyOnWriteBranch();
+            } else {
+                backingStore[store_id].pmem =
+                    (uint8_t*)mmap(NULL, file_len, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+            }
             assert(backingStore[store_id].pmem != MAP_FAILED);
             inform("mmap %s to %#lx, setting backing store pointer to it",
                    filepath, (uint64_t)backingStore[store_id].pmem);
@@ -577,6 +623,20 @@ PhysicalMemory::unserializeStoreFrom(std::string filepath,
 
     overrideGCptRestorer(store_id);
 
+    if (enableDedup) {
+        // After restore and overriding, map pmem to one of a branch memory, whose update is not visable to other
+        // branches (PRIVATE)
+        warn("Checkpoint restored, switch the memory array used for real simulation to PRIVATE");
+        dedupMemManager->syncRootUpdates();
+        backingStore[store_id].pmem = dedupMemManager->createCopyOnWriteBranch();
+
+        warn("Has created a copy-on-write branch for the restored memory\n");
+        for (const auto& m : memories) {
+            DPRINTF(AddrRanges, "Remapping memory %s to backing store %#lx\n",
+                    m->name(), (uint64_t)backingStore[store_id].pmem);
+            m->setBackingStore(backingStore[store_id].pmem);
+        }
+    }
 }
 
 void
@@ -642,21 +702,23 @@ PhysicalMemory::overrideGCptRestorer(unsigned store_id)
         warn("Overriding Gcpt restorer\n");
         warn("gCptRestorerPath: %s\n", gCptRestorerPath.c_str());
 
-        uint32_t restorer_size = 0x700;
-        if (riscvVectorGCPTrestore) {
-            restorer_size = 0x1000;
-        }
+        uint32_t restorer_size;
 
         FILE *fp = fopen(gCptRestorerPath.c_str(), "rb");
         if (!fp) {
             panic("Can not open '%s'", gCptRestorerPath);
         }
         uint32_t file_len=0;
-        // fseek(fp, 0, SEEK_END);
-        // file_len = ftell(fp);
-        // if (file_len > restorer_size) {
-        //     panic("gcpt restore file size %u is larger than %u!!\n", file_len, restorer_size);
-        // }
+
+        fseek(fp, 0, SEEK_END);
+        file_len = ftell(fp);
+        if (file_len <= gcptRestorerSizeLimit) {
+            restorer_size = file_len;
+        } else {
+            warn("Gcpt restorer file size %u is larger than limit %u, is partially loaded\n", file_len,
+                 gcptRestorerSizeLimit);
+            restorer_size = gcptRestorerSizeLimit;
+        }
 
         fseek(fp, 0, SEEK_SET);
         file_len = fread(pmem, 1, restorer_size, fp);
@@ -731,6 +793,7 @@ PhysicalMemory::unserializeFromZstd(std::string filepath, unsigned store_id, lon
     // decompress and write in memory
     uint64_t* pmem_current;
     uint64_t total_write_size = 0;
+    uint64_t non_zero_dword = 0;
     while (total_write_size < range.size()) {
         ZSTD_outBuffer output = {decompress_file_buffer, decompress_file_buffer_size * sizeof(long), 0};
         size_t result = ZSTD_decompressStream(dstream, &output, &input);
@@ -750,10 +813,12 @@ PhysicalMemory::unserializeFromZstd(std::string filepath, unsigned store_id, lon
             uint64_t read_data = *(decompress_file_buffer + x / sizeof(long));
             if (read_data != 0 || *pmem_current != 0) {
                 *pmem_current = read_data;
+                non_zero_dword++;
             }
         }
         total_write_size += output.pos;
     }
+    warn("Total write non-zero bytes: %lu\n", non_zero_dword * 8);
 
     ZSTD_outBuffer output = {decompress_file_buffer, decompress_file_buffer_size * sizeof(long), 0};
     size_t result = ZSTD_decompressStream(dstream, &output, &input);

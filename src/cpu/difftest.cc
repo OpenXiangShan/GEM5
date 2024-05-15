@@ -39,13 +39,19 @@ const std::vector<uint64_t> skipCSRs = {
   0xb0000073
 };
 
-NemuProxy::NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff)
+NemuProxy::NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff, bool enable_mem_dedup, bool multi_core)
 {
-    void *handle = dlmopen(LM_ID_NEWLM, ref_so, RTLD_LAZY | RTLD_DEEPBIND);
+    handle = dlmopen(LM_ID_NEWLM, ref_so, RTLD_LAZY | RTLD_DEEPBIND);
     printf("Using %s for difftest\n", ref_so);
     if (!handle) {
         printf("%s\n", dlerror());
         assert(0);
+    }
+
+    if (enable_mem_dedup) {
+        this->ref_get_backed_memory =
+            (void (*)(void *backed_mem, size_t n))dlsym(handle, "difftest_get_backed_memory");
+        assert(this->ref_get_backed_memory);
     }
 
     this->memcpy = (void (*)(paddr_t, void *, size_t, bool))dlsym(
@@ -86,12 +92,8 @@ NemuProxy::NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff)
     assert(query);
 #endif
 
-    auto nemu_difftest_set_mhartid =
-        (void (*)(int))dlsym(handle, "difftest_set_mhartid");
-    if (NUM_CORES > 1) {
-        assert(nemu_difftest_set_mhartid);
-        nemu_difftest_set_mhartid(coreid);
-    }
+    multiCore = multi_core;
+
     if (enable_sdcard_diff) {
         sdcard_init = (void (*)(const char *, const char *))dlsym(
             handle, "difftest_sdcard_init");
@@ -104,10 +106,26 @@ NemuProxy::NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff)
     nemu_init();
 }
 
+void
+NemuProxy::initState(int coreid, uint8_t *golden_mem)
+{
+    if (multiCore) {
+        auto nemu_difftest_set_mhartid = (void (*)(int))dlsym(handle, "difftest_set_mhartid");
+        warn("Setting mhartid to %d\n", coreid);
+        assert(nemu_difftest_set_mhartid);
+        nemu_difftest_set_mhartid(coreid);
+
+        auto nemu_difftest_put_gmaddr = (void (*)(uint8_t *ptr))dlsym(handle, "difftest_put_gmaddr");
+        warn("Setting gmaddr to %#lx\n", (uint64_t) golden_mem);
+        assert(nemu_difftest_put_gmaddr);
+        nemu_difftest_put_gmaddr(golden_mem);
+    }
+}
+
 
 SpikeProxy::SpikeProxy(int coreid, const char *ref_so, bool enable_sdcard_diff)
 {
-    void *handle = dlmopen(LM_ID_NEWLM, ref_so, RTLD_LAZY | RTLD_DEEPBIND);
+    handle = dlmopen(LM_ID_NEWLM, ref_so, RTLD_LAZY | RTLD_DEEPBIND);
     printf("Using %s for difftest\n", ref_so);
     if (!handle) {
         printf("%s\n", dlerror());
@@ -147,24 +165,11 @@ SpikeProxy::SpikeProxy(int coreid, const char *ref_so, bool enable_sdcard_diff)
     isa_reg_display = (void (*)(void))dlsym(handle, "isa_reg_display");
     assert(isa_reg_display);
 
-//     query = (void (*)(void *, uint64_t))dlsym(handle, "difftest_query_ref");
-// #ifdef ENABLE_RUNHEAD
-//     assert(query);
-// #endif
-
-    auto nemu_difftest_set_mhartid =
-        (void (*)(int))dlsym(handle, "difftest_set_mhartid");
-    if (NUM_CORES > 1) {
-        assert(nemu_difftest_set_mhartid);
-        nemu_difftest_set_mhartid(coreid);
+    if (coreid > 0) {
+        panic("Multi-core difftest on spike is not supported or not tested\n");
     }
 
     assert(!enable_sdcard_diff);
-    // if (enable_sdcard_diff) {
-    //     sdcard_init = (void (*)(const char *, const char *))dlsym(
-    //         handle, "difftest_sdcard_init");
-    //     assert(sdcard_init);
-    // }
 
     auto nemu_init = (void (*)(void))dlsym(handle, "difftest_init");
     assert(nemu_init);

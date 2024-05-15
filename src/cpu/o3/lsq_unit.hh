@@ -454,6 +454,8 @@ class LSQUnit
         LSQUnit *lsqPtr;
     };
 
+    bool enableStorePrefetchTrain;
+
   public:
     /**
      * Handles writing back and completing the load or store that has
