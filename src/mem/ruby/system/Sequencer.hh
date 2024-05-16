@@ -44,6 +44,7 @@
 #include <iostream>
 #include <list>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "mem/ruby/common/Address.hh"
 #include "mem/ruby/protocol/MachineType.hh"
@@ -65,13 +66,10 @@ struct SequencerRequest
     RubyRequestType m_type;
     RubyRequestType m_second_type;
     Cycles issue_time;
-    bool blk_invalid;
-    bool blk_upgrading;
     SequencerRequest(PacketPtr _pkt, RubyRequestType _m_type,
-                     RubyRequestType _m_second_type, Cycles _issue_time,
-                     bool is_blk_invalid = false, bool is_blk_upgrading = false)
+                     RubyRequestType _m_second_type, Cycles _issue_time)
                 : pkt(_pkt), m_type(_m_type), m_second_type(_m_second_type),
-                  issue_time(_issue_time), blk_invalid(is_blk_invalid), blk_upgrading(is_blk_upgrading)
+                  issue_time(_issue_time)
     {}
 
     bool functionalWrite(Packet *func_pkt) const
@@ -242,6 +240,8 @@ class Sequencer : public RubyPort
     // UnadressedRequestTable contains "unaddressed" requests,
     // guaranteed not to alias each other
     std::unordered_map<uint64_t, SequencerRequest> m_UnaddressedRequestTable;
+    // tracks whether a block is busy because of snoop/miss/upgrade
+    std::unordered_set<Addr> m_BusyBlocks;
 
     Cycles m_deadlock_threshold;
 

@@ -3582,24 +3582,31 @@ action(Callback_LoadHit, desc="") {
   }
 }
 
-action(Callback_DelayedL1DResult, desc="Callback for delayed L1D result") {
+action(Callback_DelayedL1DResult_Load, desc="L1D load delayed due to load miss") {
   assert(is_valid(tbe));
   if (is_dcache) {
     sequencer.notifyMissCallback(tbe.addr, false, false);
   }
 }
 
-action(Callback_DelayedL1DResult_Upgrade, desc="Callback for write upgrade") {
+action(Callback_DelayedL1DResult_Store, desc="L1D store delayed due to store") {
   assert(is_valid(tbe));
   if (is_dcache) {
     sequencer.notifyMissCallback(tbe.addr, true, false);
   }
 }
 
-action(Callback_DelayedL1DResult_Snoop, desc="Callback for snoop from other cores") {
+action(Callback_DelayedL1DResult_Busy, desc="L1D transaction delayed due to busy") {
   assert(is_valid(tbe));
   if (is_dcache) {
-    sequencer.notifyMissCallback(tbe.addr, false, true);
+    if (tbe.reqType == CHIRequestType:Load) {
+      sequencer.notifyMissCallback(tbe.addr, false, true);
+    } else if (tbe.reqType == CHIRequestType:Store) {
+      sequencer.notifyMissCallback(tbe.addr, true, true);
+    } else {
+      DPRINTF(RubySlicc, "Unexpected request type\n");
+      assert(false);
+    }
   }
 }
 

@@ -362,21 +362,19 @@ Sequencer::insertRequest(PacketPtr pkt, RubyRequestType primary_type,
     Addr line_addr = makeLineAddress(pkt->getAddr());
     // Check if there is any outstanding request for the same cache line.
     auto &seq_req_list = m_RequestTable[line_addr];
+
+    bool cache_block_busy = m_BusyBlocks.find(line_addr) != m_BusyBlocks.end();
+
     // Create a default entry
     seq_req_list.emplace_back(pkt, primary_type,
         secondary_type, curCycle());
     m_outstanding_count++;
 
     if (seq_req_list.size() > 1) {
-        if (seq_req_list.front().blk_invalid) {
-            seq_req_list.back().blk_invalid = true;
+        if (cache_block_busy) {
             if (pkt->isRead()) {
-                DPRINTF(RubySequencer, "Pkt %#lx %s is delayed for blk invalid\n", pkt, pkt->cmdString());
-                ruby_custom_signal_callback(pkt);
-            }
-        } else if (seq_req_list.front().blk_upgrading) {
-            if (pkt->isRead()) {
-                DPRINTF(RubySequencer, "Pkt %#lx %s is delayed for blk upgrading by writes\n", pkt, pkt->cmdString());
+                DPRINTF(RubySequencer, "Pkt %#lx %s is delayed because blk is busy doing ruby stuff\n",
+                    pkt, pkt->cmdString());
                 ruby_custom_signal_callback(pkt);
             }
         }
@@ -564,6 +562,7 @@ Sequencer::writeCallback(Addr address, DataBlock& data,
         }
         seq_req_list.pop_front();
     }
+    m_BusyBlocks.erase(address);
 
     // free all outstanding requests corresponding to this address
     if (seq_req_list.empty()) {
@@ -618,6 +617,7 @@ Sequencer::readCallback(Addr address, DataBlock& data,
         ruby_request = false;
         seq_req_list.pop_front();
     }
+    m_BusyBlocks.erase(address);
 
     // free all outstanding requests corresponding to this address
     if (seq_req_list.empty()) {
@@ -626,35 +626,26 @@ Sequencer::readCallback(Addr address, DataBlock& data,
 }
 
 void
-Sequencer::notifyMissCallback(Addr address, bool is_upgrade, bool is_snoop)
+Sequencer::notifyMissCallback(Addr address, bool is_upgrade, bool is_busy)
 {
-    // TODO Fill packet with sender state
-    // is pkt stored in ruby port?
-    // Get original pkt from sequencer
     assert(address == makeLineAddress(address));
+
     auto it = m_RequestTable.find(address);
-    if (it == m_RequestTable.end()) {
-        assert(is_snoop || is_upgrade);
-        DPRINTF(RubySequencer, "No outstanding requests for address %#x\n", address);
-        return;
-    }
+    assert(it != m_RequestTable.end());
+
     auto &seq_req_list = it->second;
 
+    // cancel pending loads' speculation
     for (auto &seq_req: seq_req_list) {
-        // if not write upgrade
-        if (!is_upgrade) {
-            if (!seq_req.blk_invalid) {
-                seq_req.blk_invalid = true;
-                if (seq_req.pkt->isRead()) {
-                    ruby_custom_signal_callback(seq_req.pkt);
-                }
-            }
-        } else {
-            if (seq_req.pkt->isWrite() && is_upgrade) {
-                seq_req.blk_upgrading = true;
-            }
+        if (seq_req.pkt->isRead()) {
+            ruby_custom_signal_callback(seq_req.pkt);
         }
     }
+
+    m_BusyBlocks.insert(address);
+
+    DPRINTF(RubySequencer, "A %s of addr %#x signals the delay of all pending loads",
+        is_upgrade ? "load" : "store", address);
     return;
 }
 
@@ -707,6 +698,8 @@ Sequencer::atomicCallback(Addr address, DataBlock& data,
                     firstResponseTime, false);
         seq_req_list.pop_front();
     }
+
+    // atomics don't set busytable so no need to unset it
 
     // free all outstanding requests corresponding to this address
     if (seq_req_list.empty()) {

@@ -664,7 +664,7 @@ transition(BUSY_BLKD, AtomicHit) {
 transition(I, {Load,Prefetch}, BUSY_BLKD) {
   Initiate_Request;
   Initiate_LoadMiss;
-  Callback_DelayedL1DResult;
+  Callback_DelayedL1DResult_Load;
   Profile_Miss;
   Pop_ReqRdyQueue;
   ProcessNextState;
@@ -673,7 +673,7 @@ transition(I, {Load,Prefetch}, BUSY_BLKD) {
 transition(I, Store, BUSY_BLKD) {
   Initiate_Request;
   Initiate_StoreMiss;
-  Callback_DelayedL1DResult;
+  Callback_DelayedL1DResult_Store;
   Profile_Miss;
   Pop_ReqRdyQueue;
   ProcessNextState;
@@ -682,7 +682,7 @@ transition(I, Store, BUSY_BLKD) {
 transition({SD,SC}, Store, BUSY_BLKD) {
   Initiate_Request;
   Initiate_StoreUpgrade;
-  Callback_DelayedL1DResult_Upgrade;
+  Callback_DelayedL1DResult_Store;
   Profile_Miss;
   Pop_ReqRdyQueue;
   ProcessNextState;
@@ -885,7 +885,6 @@ transition({UD,SD,UC,SC,UD_RSC,SD_RSC,UC_RSC,UD_RU,UC_RU,RU,RUSD,RUSC,RSD,UD_RSD
            {SnpUnique,SnpUniqueFwd,SnpCleanInvalid}, BUSY_BLKD) {
   Initiate_Snoop;
   Initiate_InvalidationSnoop;
-  Callback_DelayedL1DResult_Snoop;
   Profile_Eviction;
   Pop_SnoopRdyQueue;
   ProcessNextState;
@@ -894,7 +893,6 @@ transition({UD,SD,UC,SC,UD_RSC,SD_RSC,UC_RSC,UD_RU,UC_RU,RU,RUSD,RUSC,RSD,UD_RSD
 transition(BUSY_INTR, {SnpUnique,SnpUniqueFwd,SnpCleanInvalid}, BUSY_BLKD) {
   Initiate_Snoop_Hazard;
   Initiate_InvalidationSnoop;
-  Callback_DelayedL1DResult_Snoop;
   Profile_Eviction;
   Pop_SnoopRdyQueue;
   ProcessNextState;
@@ -906,7 +904,6 @@ transition({UD,UD_RSC,SD,SD_RSC,UC,UC_RSC,UD_RU,UC_RU,RU,UD_RSD,SD_RSD,RSD,RUSD,
            {SnpShared,SnpSharedFwd,SnpNotSharedDirtyFwd}, BUSY_BLKD) {
   Initiate_Snoop;
   Initiate_SnpShared;
-  Callback_DelayedL1DResult_Snoop;
   Pop_SnoopRdyQueue;
   ProcessNextState;
 }
@@ -914,7 +911,6 @@ transition({UD,UD_RSC,SD,SD_RSC,UC,UC_RSC,UD_RU,UC_RU,RU,UD_RSD,SD_RSD,RSD,RUSD,
 transition({SC, SC_RSC, RSC}, {SnpSharedFwd, SnpNotSharedDirtyFwd}, BUSY_BLKD) {
   Initiate_Snoop;
   Initiate_SnpShared;
-  Callback_DelayedL1DResult_Snoop;
   Pop_SnoopRdyQueue;
   ProcessNextState;
 }
@@ -931,7 +927,6 @@ transition({UD,UD_T,UD_RSC,UD_RU,UD_RSD,SD,SD_RSC,SD_RSD,UC,UC_RSC,UC_RU,SC,SC_R
            {SnpOnce,SnpOnceFwd}, BUSY_BLKD) {
   Initiate_Snoop;
   Initiate_SnpOnce;
-  Callback_DelayedL1DResult_Snoop;
   Pop_SnoopRdyQueue;
   ProcessNextState;
 }
@@ -957,7 +952,7 @@ transition({I,SC,UC,SD,UD,RU,RSC,RSD,RUSD,SC_RSC,UC_RSC,SD_RSC,UD_RSC,UC_RU,UD_R
 transition({BUSY_BLKD,BUSY_INTR},
             {ReadShared, ReadNotSharedDirty, ReadUnique, ReadUnique_PoC,
             ReadOnce, CleanUnique, CleanUnique_Stale,
-            Load, Store, AtomicLoad, AtomicStore, Prefetch,
+            AtomicLoad, AtomicStore, Prefetch,
             MakeReadUnique,
             WriteBackFull, WriteBackFull_Stale,
             WriteEvictFull, WriteEvictFull_Stale,
@@ -969,6 +964,16 @@ transition({BUSY_BLKD,BUSY_INTR},
             AtomicReturn,AtomicReturn_PoC, AtomicReturn_PoC_Alloc
             AtomicNoReturn,AtomicNoReturn_PoC, AtomicNoReturn_PoC_Alloc
             StashOnceShared,StashOnceUnique}) {
+  StallRequest;
+}
+
+transition({BUSY_BLKD,BUSY_INTR}, Load) {
+  Callback_DelayedL1DResult_Load;
+  StallRequest;
+}
+
+transition({BUSY_BLKD,BUSY_INTR}, Store) {
+  Callback_DelayedL1DResult_Store;
   StallRequest;
 }
 
