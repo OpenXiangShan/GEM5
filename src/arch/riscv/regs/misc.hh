@@ -786,6 +786,13 @@ BitUnion64(HSTATUS)
     Bitfield<4,0> pad0;
 EndBitUnion(HSTATUS)
 
+BitUnion64(HGATP)
+    Bitfield<63,60> mode;
+    Bitfield<59,58> pad0;
+    Bitfield<57,44> vmid;
+    Bitfield<43,0> ppn;
+EndBitUnion(HGATP)
+
 /**
  * These fields are specified in the RISC-V Instruction Set Manual, Volume II,
  * v1.10 in Figures 3.11 and 3.12, accessible at www.riscv.org. Both the MIP
@@ -908,7 +915,6 @@ const std::map<int, RegVal> CSRMasks = {
     {CSR_SSTATUS, SSTATUS_MASK},
     {CSR_SIE, SI_MASK},
     {CSR_SIP, SI_MASK},
-    {CSR_MSTATUS, MSTATUS_MASK},
     {CSR_MISA, MISA_MASK},
     {CSR_HSTATUS,HSTATUS_MASK},
   //  {CSR_MIE, MIE_MASK},
