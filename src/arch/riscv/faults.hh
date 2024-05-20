@@ -83,6 +83,11 @@ enum ExceptionCode : uint64_t
     LOAD_PAGE = 13,
     STORE_PAGE = 15,
     AMO_PAGE = 15,
+    INSTG_PAGE = 20,
+    LOADG_PAGE = 21,
+    VIRTUAL_INST = 22,
+    STOREG_PAGE = 23,
+    AMOG_PAGE = 23,
 
     INT_SOFTWARE_USER = 0,
     INT_SOFTWARE_SUPER = 1,
