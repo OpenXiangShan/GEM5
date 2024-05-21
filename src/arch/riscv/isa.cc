@@ -717,6 +717,13 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                setMiscRegNoEffect(misc_reg, writeVal);
             }
             break;
+          case MISCREG_HSTATUS:
+            {
+                RegVal oldVal = readMiscRegNoEffect(MISCREG_HSTATUS);
+                RegVal writeVal = (oldVal & ~HSTATUS_MASK)|(val & HSTATUS_MASK);
+                setMiscRegNoEffect(misc_reg, writeVal);
+            }
+            break;
           default:
             setMiscRegNoEffect(misc_reg, val);
         }
