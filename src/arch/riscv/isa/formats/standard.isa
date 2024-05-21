@@ -345,7 +345,8 @@ def template CSRExecute {{
         RegVal data, olddata;
         auto lowestAllowedMode = (PrivilegeMode)bits(csr, 9, 8);
         auto pm = (PrivilegeMode)xc->readMiscReg(MISCREG_PRV);
-        if (pm < lowestAllowedMode) {
+        if ((pm < lowestAllowedMode)&&
+            ((csr <CSR_HSTATUS) ||(csr >CSR_HGATP)) && ((csr <CSR_VSSTATUS) ||(csr > CSR_VSATP))) {
             return std::make_shared<IllegalInstFault>(
                     csprintf("%s is not accessible in %s\n", csrName, pm),
                     machInst);
