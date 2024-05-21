@@ -4316,22 +4316,54 @@ decode QUADRANT default Unknown::unknown() {
                     0x8: decode RS2 {
                         0x2: sret({{
                             STATUS status = xc->readMiscReg(MISCREG_STATUS);
+                            HSTATUS hstatus = xc->readMiscReg(MISCREG_HSTATUS);
+                            STATUS vsstatus =  xc->readMiscReg(MISCREG_VSSTATUS);
+                            int v = xc->readMiscReg(MISCREG_VIRMODE);
                             auto pm = (PrivilegeMode)xc->readMiscReg(
                                 MISCREG_PRV);
-                            if (pm == PRV_U ||
-                                (pm == PRV_S && status.tsr == 1)) {
-                                return std::make_shared<IllegalInstFault>(
-                                            "sret in user mode or TSR enabled",
-                                            machInst);
-                                NPC = NPC;
-                            } else {
-                                xc->setMiscReg(MISCREG_PRV, status.spp);
-                                status.sie = status.spie;
-                                status.spie = 1;
-                                status.spp = PRV_U;
-                                xc->setMiscReg(MISCREG_STATUS, status);
-                                NPC = xc->readMiscReg(MISCREG_SEPC);
+                            bool writeSign = false;
+                            if(v ==0){
+                                xc->setMiscReg(MISCREG_VIRMODE, hstatus.spv);
+                                hstatus.spv =0;
+                                xc->setMiscReg(MISCREG_HSTATUS, hstatus);
+
                             }
+                            else{
+                                writeSign = true;
+                                if((pm == PRV_S && hstatus.vtsr) || pm < PRV_S){
+                                    panic("todo EX_VI");
+                                }
+                                if(hstatus.vsxl ){
+                                    panic("vsstatus 32 no finish");
+                                }
+                                else{
+                                    xc->setMiscReg(MISCREG_PRV, status.spp);
+                                    vsstatus.spp = PRV_U;
+                                    vsstatus.sie = vsstatus.spie;
+                                    vsstatus.spie =1;
+                                    xc->setMiscReg(MISCREG_VSSTATUS, vsstatus);
+
+
+                                }
+                            }
+                            if(!writeSign){
+                                if (pm == PRV_U ||
+                                    (pm == PRV_S && status.tsr == 1)) {
+                                    return std::make_shared<IllegalInstFault>(
+                                                "sret in user mode or TSR enabled",
+                                                machInst);
+                                    NPC = NPC;
+                                } else {
+                                    xc->setMiscReg(MISCREG_PRV, status.spp);
+                                    status.sie = status.spie;
+                                    status.spie = 1;
+                                    status.spp = PRV_U;
+                                    xc->setMiscReg(MISCREG_STATUS, status);
+                                    NPC = xc->readMiscReg(MISCREG_SEPC);
+                                }
+                            }
+
+
                         }}, IsSerializeAfter, IsNonSpeculative, IsReturn);
                         0x5: wfi({{
                             STATUS status = xc->readMiscReg(MISCREG_STATUS);
