@@ -65,8 +65,10 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
     if (FullSystem) {
         PrivilegeMode pp = (PrivilegeMode)tc->readMiscReg(MISCREG_PRV);
         PrivilegeMode prv = PRV_M;
+        PrivilegeMode prvh = PRV_M;
         STATUS status = tc->readMiscReg(MISCREG_STATUS);
         HSTATUS hstatus = tc->readMiscReg(MISCREG_HSTATUS);
+        VSSTATUS vsstatus = tc->readMiscReg(MISCREG_VSSTATUS);
 
         // According to riscv-privileged-v1.11, if a NMI occurs at the middle
         // of a M-mode trap handler, the state (epc/cause) will be overwritten
@@ -98,6 +100,18 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
             }
         }
 
+        if (isInterrupt()) {
+            if (pp != PRV_M && (tc->readMiscReg(MISCREG_VIRMODE) == 1) &&
+                bits(tc->readMiscReg(MISCREG_HIDELEG), _code) != 0) {
+                prvh = PRV_HS;
+            }
+        } else {
+            if (pp != PRV_M && (tc->readMiscReg(MISCREG_VIRMODE) == 1) &&
+                bits(tc->readMiscReg(MISCREG_HEDELEG), _code) != 0) {
+                prvh = PRV_HS;
+            }
+        }
+
         // Set fault registers and status
         MiscRegIndex cause, epc, tvec, tval;
         int v = status.mprv ? status.mpv : tc->readMiscReg(MISCREG_VIRMODE);
@@ -112,22 +126,47 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
             status.uie = 0;
             break;
           case PRV_S:
-            cause = MISCREG_SCAUSE;
-            epc = MISCREG_SEPC;
-            tvec = MISCREG_STVEC;
-            tval = MISCREG_STVAL;
+              if (prvh == PRV_HS) {
+                  cause = MISCREG_SCAUSE;
+                  epc = MISCREG_SEPC;
+                  tvec = MISCREG_STVEC;
+                  tval = MISCREG_STVAL;
 
-            status.spp = pp;
-            status.spie = status.sie;
-            status.sie = 0;
-            hstatus.gva =
-                (!isInterrupt()) && (_code == INSTG_PAGE || _code == LOADG_PAGE || _code == STOREG_PAGE ||
-                                     ((v) && ((0 <= _code && _code <= 7 && _code != 2) || _code == INST_PAGE ||
-                                              _code == LOAD_PAGE || _code == STORE_PAGE)));
-            hstatus.spv = v;
-            if (v)
-                hstatus.spvp = pp;
-            tc->setMiscReg(MISCREG_VIRMODE, 0);
+                  if (hstatus.vsxl == 1) {
+                      assert(0);
+
+                  } else {
+                      vsstatus.spp = pp;
+                      vsstatus.spie = vsstatus.sie;
+                      vsstatus.sie = 0;
+                  }
+
+                  tc->setMiscReg(MISCREG_VIRMODE, 1);
+                  if (isInterrupt())
+                      tc->setMiscReg(MISCREG_VSCAUSE, _code | (1L << 63));
+                  else
+                      tc->setMiscReg(MISCREG_VSCAUSE, _code);
+                  tc->setMiscReg(MISCREG_VSEPC, tc->pcState().instAddr());
+
+
+              } else {
+                  cause = MISCREG_SCAUSE;
+                  epc = MISCREG_SEPC;
+                  tvec = MISCREG_STVEC;
+                  tval = MISCREG_STVAL;
+
+                  status.spp = pp;
+                  status.spie = status.sie;
+                  status.sie = 0;
+                  hstatus.gva =
+                      (!isInterrupt()) && (_code == INSTG_PAGE || _code == LOADG_PAGE || _code == STOREG_PAGE ||
+                                           ((v) && ((0 <= _code && _code <= 7 && _code != 2) || _code == INST_PAGE ||
+                                                    _code == LOAD_PAGE || _code == STORE_PAGE)));
+                  hstatus.spv = v;
+                  if (v)
+                      hstatus.spvp = pp;
+                  tc->setMiscReg(MISCREG_VIRMODE, 0);
+              }
             break;
           case PRV_M:
             cause = MISCREG_MCAUSE;
@@ -165,6 +204,7 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
         tc->setMiscReg(MISCREG_PRV, prv);
         tc->setMiscReg(MISCREG_STATUS, status);
         tc->setMiscReg(MISCREG_HSTATUS, hstatus);
+        tc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
         // Temporarily mask NMI while we're in NMI handler. Otherweise, the
         // checkNonMaskableInterrupt will always return true and we'll be
         // stucked in an infinite loop.
