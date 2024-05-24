@@ -423,31 +423,6 @@ AbstractController::mapAddressToMachine(Addr addr, MachineType mtype) const
     return mach;
 }
 
-MachineID
-AbstractController::mapAddressToDownstreamMachine(Addr addr, MachineType mtype)
-const
-{
-    if (mtype == MachineType_NUM) {
-        // map to the first match
-        for (const auto &i : downstreamAddrMap) {
-            const auto mapping = i.second.contains(addr);
-            if (mapping != i.second.end())
-                return mapping->second;
-        }
-    }
-    else {
-        const auto i = downstreamAddrMap.find(mtype);
-        if (i != downstreamAddrMap.end()) {
-            const auto mapping = i->second.contains(addr);
-            if (mapping != i->second.end())
-                return mapping->second;
-        }
-    }
-    fatal("%s: couldn't find mapping for address %x mtype=%s\n",
-        name(), addr, mtype);
-}
-
-
 void
 AbstractController::memRespQueueDequeued() {
     if (m_mem_ctrl_waiting_retry && !mRetryRespEvent.scheduled()) {
