@@ -287,6 +287,8 @@ ${param_class}::simObjectCreate()
 code.indent()
 if hasattr(sim_object, 'abstract') and sim_object.abstract:
     code('return nullptr;')
+elif issubclass(sim_object, m5.objects.SystemC.SystemC_ScModule):
+    code('return nullptr;')
 else:
     code('return this->create();')
 code.dedent()

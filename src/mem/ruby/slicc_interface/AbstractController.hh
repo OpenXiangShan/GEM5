@@ -54,6 +54,7 @@
 #include "mem/ruby/common/Address.hh"
 #include "mem/ruby/common/Consumer.hh"
 #include "mem/ruby/common/DataBlock.hh"
+#include "mem/ruby/common/HasDownStream.hh"
 #include "mem/ruby/common/Histogram.hh"
 #include "mem/ruby/common/MachineID.hh"
 #include "mem/ruby/network/MessageBuffer.hh"
@@ -80,7 +81,7 @@ class RejectException: public std::exception
     { return "Port rejected message based on type"; }
 };
 
-class AbstractController : public ClockedObject, public Consumer
+class AbstractController : public ClockedObject, public Consumer, public HasDownStream
 {
   public:
     PARAMS(RubyController);
@@ -208,23 +209,6 @@ class AbstractController : public ClockedObject, public Consumer
      * @return the MachineID of the destination
      */
     MachineID mapAddressToMachine(Addr addr, MachineType mtype) const;
-
-    /**
-     * Maps an address to the correct dowstream MachineID (i.e. the component
-     * in the next level of the cache hierarchy towards memory)
-     *
-     * This function uses the local list of possible destinations instead of
-     * querying the network.
-     *
-     * @param the destination address
-     * @param the type of the destination (optional)
-     * @return the MachineID of the destination
-     */
-    MachineID mapAddressToDownstreamMachine(Addr addr,
-                                    MachineType mtype = MachineType_NUM) const;
-
-    /** List of downstream destinations (towards memory) */
-    const NetDest& allDownstreamDest() const { return downstreamDestinations; }
 
     /** List of upstream destinations (towards the CPU) */
     const NetDest& allUpstreamDest() const { return upstreamDestinations; }
@@ -456,10 +440,6 @@ class AbstractController : public ClockedObject, public Consumer
     /** The address range to which the controller responds on the CPU side. */
     const AddrRangeList addrRanges;
 
-    std::unordered_map<MachineType, AddrRangeMap<MachineID, 3>>
-      downstreamAddrMap;
-
-    NetDest downstreamDestinations;
     NetDest upstreamDestinations;
 
     void sendRetryRespToMem();

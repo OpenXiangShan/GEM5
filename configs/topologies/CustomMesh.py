@@ -1,4 +1,4 @@
-# Copyright (c) 2021 ARM Limited
+# Copyright (c) 2021,2022 ARM Limited
 # All rights reserved.
 #
 # The license below extends only to copyright in the software and shall
@@ -304,7 +304,7 @@ class CustomMesh(SimpleTopology):
         self.distributeNodes(hnf_params, hnf_nodes)
 
         # Place CHI_MN on the mesh
-        self.distributeNodes(options, mn_params, mn_nodes)
+        self.distributeNodes(mn_params, mn_nodes)
 
         # Place CHI_SNF_MainMem on the mesh
         self.distributeNodes(mem_params, mem_nodes)
@@ -319,6 +319,10 @@ class CustomMesh(SimpleTopology):
         # Set up
         network.int_links = self._int_links
         network.ext_links = self._ext_links
+        # fix Routers being set as link child
+        for r in self._routers:
+            if r.has_parent():
+                r.get_parent().clear_child(r.get_name())
         network.routers = self._routers
 
         pairing = getattr(options, 'pairing', None)
