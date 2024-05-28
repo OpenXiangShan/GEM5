@@ -127,6 +127,7 @@ class RiscvFault : public FaultBase
     }
     ExceptionCode exception() const { return _code; }
     virtual RegVal trap_value() const { return 0; }
+    virtual RegVal g_trap_value() const { return 0; }
 
     virtual void invokeSE(ThreadContext *tc, const StaticInstPtr &inst);
     void invoke(ThreadContext *tc, const StaticInstPtr &inst) override;
@@ -233,13 +234,15 @@ class AddressFault : public RiscvFault
 {
   private:
     const Addr _addr;
+    const Addr _gPaddr;
 
   public:
-    AddressFault(const Addr addr, ExceptionCode code)
-        : RiscvFault("Address", FaultType::OTHERS, code), _addr(addr)
+    AddressFault(const Addr addr,const Addr gPaddr, ExceptionCode code)
+        : RiscvFault("Address", FaultType::OTHERS, code), _addr(addr),_gPaddr(gPaddr)
     {}
 
     RegVal trap_value() const override { return _addr; }
+    RegVal g_trap_value() const override { return _gPaddr; }
 };
 
 class BreakpointFault : public RiscvFault
