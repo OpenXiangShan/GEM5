@@ -401,6 +401,10 @@ ISA::readMiscRegNoEffect(int misc_reg) const
 RegVal
 ISA::readMiscReg(int misc_reg)
 {
+    int v = readMiscRegNoEffect(MISCREG_VIRMODE);
+    if ((v == 1) && (misc_reg == MISCREG_SSCRATCH)) {
+        return readMiscRegNoEffect(MISCREG_VSSCRATCH);
+    }
     switch (misc_reg) {
       case MISCREG_HARTID:
         return tc->contextId();
@@ -504,6 +508,7 @@ ISA::setMiscRegNoEffect(int misc_reg, RegVal val)
 void
 ISA::setMiscReg(int misc_reg, RegVal val)
 {
+    int v = readMiscReg(MISCREG_VIRMODE);
     if (misc_reg == MISCREG_STATUS) {
         DPRINTF(RiscvMisc, "setMiscReg: setting mstatus with %#lx\n", val);
         printf("setMiscReg: setting mstatus with %#lx\n", val);
@@ -523,6 +528,11 @@ ISA::setMiscReg(int misc_reg, RegVal val)
         } else {
             warn("Ignoring write to %x\n", misc_reg);
         }
+    } else if ((v == 1) && ((misc_reg == MISCREG_SSCRATCH))) {
+        if (misc_reg == MISCREG_SSCRATCH) {
+            setMiscRegNoEffect(MISCREG_VSSCRATCH, val);
+        }
+
     } else {
         switch (misc_reg) {
 

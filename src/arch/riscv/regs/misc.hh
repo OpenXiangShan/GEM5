@@ -796,6 +796,27 @@ BitUnion64(HSTATUS)
     Bitfield<4,0> pad0;
 EndBitUnion(HSTATUS)
 
+BitUnion64(VSSTATUS)
+    Bitfield<63> sd;
+    Bitfield<62,34> pad6;
+    Bitfield<33,32> uxl;
+    Bitfield<31,20> pad5;
+    Bitfield<19> mxr;
+    Bitfield<18> sum;
+    Bitfield<17> pad4;
+    Bitfield<16,15> xs;
+    Bitfield<14,13> fs;
+    Bitfield<12,11> pad3;
+    Bitfield<10,9> vs;
+    Bitfield<8> spp;
+    Bitfield<7> pad2;
+    Bitfield<6> ube;
+    Bitfield<5> spie;
+    Bitfield<4,2> pad1;
+    Bitfield<1> sie;
+    Bitfield<0> pad0;
+EndBitUnion(VSSTATUS)
+
 BitUnion64(HGATP)
     Bitfield<63,60> mode;
     Bitfield<59,58> pad0;
@@ -927,7 +948,7 @@ const std::map<int, RegVal> CSRMasks = {
     {CSR_SIE, SI_MASK},
     {CSR_SIP, SI_MASK},
     {CSR_MISA, MISA_MASK},
-    {CSR_HSTATUS,HSTATUS_MASK},
+   // {CSR_HSTATUS,HSTATUS_MASK},
   //  {CSR_MIE, MIE_MASK},
     {CSR_MIP, MIP_MASK}
 };

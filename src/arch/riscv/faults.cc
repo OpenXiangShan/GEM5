@@ -69,6 +69,7 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
         STATUS status = tc->readMiscReg(MISCREG_STATUS);
         HSTATUS hstatus = tc->readMiscReg(MISCREG_HSTATUS);
         VSSTATUS vsstatus = tc->readMiscReg(MISCREG_VSSTATUS);
+        bool hs_mode_pc = false;
 
         // According to riscv-privileged-v1.11, if a NMI occurs at the middle
         // of a M-mode trap handler, the state (epc/cause) will be overwritten
@@ -147,8 +148,7 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
                   else
                       tc->setMiscReg(MISCREG_VSCAUSE, _code);
                   tc->setMiscReg(MISCREG_VSEPC, tc->pcState().instAddr());
-
-
+                  hs_mode_pc = true;
               } else {
                   cause = MISCREG_SCAUSE;
                   epc = MISCREG_SEPC;
@@ -213,7 +213,13 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
         }
 
         // Set PC to fault handler address
-        Addr addr = mbits(tc->readMiscReg(tvec), 63, 2);
+        Addr addr = 0;
+        if (!hs_mode_pc) {
+            addr = mbits(tc->readMiscReg(tvec), 63, 2);
+        } else {
+            addr = mbits(tc->readMiscReg(MISCREG_VSTVEC), 63, 2) + 2;
+        }
+
         if (isInterrupt() && bits(tc->readMiscReg(tvec), 1, 0) == 1)
             addr += 4 * _code;
         pc_state.set(addr);
