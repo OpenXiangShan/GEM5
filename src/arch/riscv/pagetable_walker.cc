@@ -652,7 +652,8 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
         if (!pte.v || (!pte.r && pte.w)) {
             doEndWalk = true;
             DPRINTF(PageTableWalker3, "PTE invalid, raising PF\n");
-            fault = pageFault(pte.v, true);
+            fault = pageFault(pte.v, false);
+            endWalk();
         } else {
             if (pte.r || pte.x) {
                 doEndWalk = true;
@@ -667,7 +668,7 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
                         assert(0);
                     } else {
                         finishGVA = true;
-                        gPaddr = pte.ppn;
+                        gPaddr = pte.ppn << 12;
                         if (level > 0) {
                             Addr pg_mask = (1ULL << (12 + 9 * level)) - 1;
                             // if ((pg_mask && ((pte.ppn<<12) !=0)))
@@ -688,6 +689,7 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
                 if (level < 0) {
                     doEndWalk = true;
                     fault = pageFault(true, false);
+                    endWalk();
                 } else {
                     Addr shift = (PageShift + LEVEL_BITS * level);
                     Addr idx_f = (entry.vaddr >> shift) & LEVEL_MASK;
@@ -1245,12 +1247,15 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
         nextState = Ready;
         PacketPtr write = NULL;
         read = pkt;
-        if ((translateMode == twoStageMode) && (inGstage))
+        if ((translateMode == twoStageMode) && (inGstage)){
             mainFault = twoStageStepWalk(write);
-        else if ((translateMode == twoStageMode) && (!inGstage))
+        }
+        else if ((translateMode == twoStageMode) && (!inGstage)){
             mainFault = twoStageWalk(write);
-        else
+        }
+        else{
             mainFault = stepWalk(write);
+        }
         state = Waiting;
         assert(mainFault == NoFault || read == NULL);
         if (write) {
@@ -1289,6 +1294,9 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
                     assert(0);
                     return false;
                 }
+                r.translation->finish(mainFault, r.req, r.tc, mode);
+            }
+            else{
                 r.translation->finish(mainFault, r.req, r.tc, mode);
             }
         }
