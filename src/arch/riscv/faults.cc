@@ -165,6 +165,11 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
                   hstatus.spv = v;
                   if (v)
                       hstatus.spvp = pp;
+                  if (_code == INSTG_PAGE || _code == LOADG_PAGE || _code == STOREG_PAGE ||
+                      _code == LOAD_ADDR_MISALIGNED || _code == STORE_ADDR_MISALIGNED || _code == INST_ACCESS ||
+                      _code == LOAD_ACCESS || _code == STORE_ACCESS)
+                      tc->setMiscReg(MISCREG_HTVAL, 0);
+
                   tc->setMiscReg(MISCREG_VIRMODE, 0);
               }
             break;
@@ -201,6 +206,12 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
             tc->setMiscReg(tval, 0);
         else
             tc->setMiscReg(tval, trap_value());
+        if (prv == PRV_S && (g_trap_value() != 0)) {
+            tc->setMiscReg(MISCREG_HTVAL, g_trap_value() >> 2);
+        } else if (g_trap_value() != 0) {
+            tc->setMiscReg(MISCREG_MTVAL2, g_trap_value() >> 2);
+        }
+
         tc->setMiscReg(MISCREG_PRV, prv);
         tc->setMiscReg(MISCREG_STATUS, status);
         tc->setMiscReg(MISCREG_HSTATUS, hstatus);
