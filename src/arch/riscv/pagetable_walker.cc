@@ -64,6 +64,7 @@
 #include "debug/PageTableWalker.hh"
 #include "debug/PageTableWalker2.hh"
 #include "debug/PageTableWalker3.hh"
+#include "debug/PageTableWalkerTwoStage.hh"
 #include "mem/packet_access.hh"
 #include "mem/request.hh"
 
@@ -556,6 +557,8 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
 
     vaddr_choose = (gPaddr >> (twoStageLevel * LEVEL_BITS + PageShift)) & VADDR_CHOOSE_MASK;
     pte = read->getLE_l2tlb<uint64_t>(vaddr_choose);
+    DPRINTF(PageTableWalkerTwoStage, "twoStageStepWalk pte %lx vaddr %lx gpaddr %lx\n",
+            read->getLE_l2tlb<uint64_t>(vaddr_choose), entry.vaddr, gPaddr);
     PacketPtr oldRead = read;
     Request::Flags flags = oldRead->req->getFlags();
     PgBase = pte.ppn << 12;
@@ -579,9 +582,9 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
             }
 
         } else if (!pte.v || (!pte.r && pte.w)) {
-            doEndWalk = true;
-            DPRINTF(PageTableWalker3, "PTE invalid, two stage step walk raising PF\n");
-            assert(0);
+            endWalk();
+            fault = pageFault(true, true);
+            return fault;
         } else if (!pte.u) {
             doEndWalk = true;
             assert(0);
@@ -612,6 +615,7 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
             vaddr_choose_flag = (PgBase & 0x3f) / 8;
             nextRead = (PgBase >> 6) << 6;
             gPaddr = nextRead;
+            DPRINTF(PageTableWalkerTwoStage, "twoStageStepWalk gpaddr %lx vaddr %lx\n", gPaddr, entry.vaddr);
             mainReq->setgPaddr(gPaddr);
         }
 
@@ -625,6 +629,8 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
             if (nextRead == 0)
                 panic("nextread can't be 0\n");
             RequestPtr request = std::make_shared<Request>(nextRead, oldRead->getSize(), flags, walker->requestorId);
+            DPRINTF(PageTableWalkerTwoStage, "twoStageStepWalk pte %lx vaddr %lx gpaddr %lx level %d twolevel %d\n",
+                    nextRead, entry.vaddr, gPaddr, level, twoStageLevel);
             DPRINTF(PageTableWalker, "oldread size %d\n", oldRead->getSize());
             delete oldRead;
             oldRead = nullptr;
@@ -677,6 +683,8 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
                             gPaddr = ((pte.ppn << 12) & ~pg_mask) | (entry.vaddr & pg_mask & ~PGMASK);
                         }
                         gPaddr = gPaddr | (entry.vaddr & PGMASK);
+                        DPRINTF(PageTableWalkerTwoStage, "twoStageStepWalk gpaddr %lx vaddr %lx\n", gPaddr,
+                                entry.vaddr);
                         mainReq->setgPaddr(gPaddr);
                         nextState = Translate;
                         inGstage = true;
@@ -695,6 +703,7 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
                     Addr idx_f = (entry.vaddr >> shift) & LEVEL_MASK;
                     Addr idx = (idx_f >> L2TLB_BLK_OFFSET) << L2TLB_BLK_OFFSET;
                     gPaddr = (pte.ppn << PageShift) + (idx_f * l2tlbLineSize);
+                    DPRINTF(PageTableWalkerTwoStage, "twoStageStepWalk gpaddr %lx vaddr %lx\n", gPaddr, entry.vaddr);
                     mainReq->setgPaddr(gPaddr);
                     nextState = Translate;
                     inGstage = true;
@@ -1091,6 +1100,8 @@ Walker::WalkerState::startTwoStageWalk(Addr ppn, Addr vaddr)
         Addr TwoLevelTopAddr = (hgatp.ppn << PageShift) + (idx * sizeof(PTESv39));
         Request::Flags flags = Request::PHYSICAL;
         RequestPtr request = std::make_shared<Request>(TwoLevelTopAddr, 64, flags, walker->requestorId);
+        DPRINTF(PageTableWalkerTwoStage, "twoStageStepWalk pte %lx vaddr %lx gpaddr %lx level %d twolevel %d\n",
+                TwoLevelTopAddr, entry.vaddr, gPaddr, level, twoStageLevel);
         if (TwoLevelTopAddr == 0)
             panic("topAddr can't be 0\n");
         DPRINTF(PageTableWalker, " sv39 size is %d\n", sizeof(PTESv39));
@@ -1127,6 +1138,7 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level, bool from_l2tl
         nextline = false;
         topAddr = (vsatp.ppn << PageShift) + (idx * sizeof(PTESv39));
         gPaddr = (vsatp.ppn << PageShift) + (idx_f * sizeof(PTESv39));
+        DPRINTF(PageTableWalkerTwoStage, "twoStageStepWalk gpaddr %lx vaddr %lx level %d\n", gPaddr, vaddr, level);
         mainReq->setgPaddr(gPaddr);
         nextlineLevelMask = LEVEL_MASK;
         nextlineShift = shift;
@@ -1298,6 +1310,7 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
             }
             else{
                 r.translation->finish(mainFault, r.req, r.tc, mode);
+                DPRINTF(PageTableWalkerTwoStage, "translate fault vaddr %lx\n", mainReq->getVaddr());
             }
         }
         return false;
