@@ -296,6 +296,7 @@ Walker::WalkerState::initState(ThreadContext *_tc, const RequestPtr &_req, BaseM
         fromBackPre = false;
         translateMode = twoStageMode;
         hgatp = _tc->readMiscReg(MISCREG_HGATP);
+        isHInst = _req->get_h_inst();
     } else {
         assert(state == Ready);
         started = false;
@@ -316,6 +317,7 @@ Walker::WalkerState::initState(ThreadContext *_tc, const RequestPtr &_req, BaseM
         fromBackPre = _from_back_pre_req;
         translateMode = defaultmode;
         hgatp = _tc->readMiscReg(MISCREG_HGATP);
+        assert(!_req->get_h_inst());
     }
 }
 
@@ -588,7 +590,7 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
         } else if (!pte.u) {
             doEndWalk = true;
             assert(0);
-        } else if (((mode == BaseMMU::Execute) || (mode == BaseMMU::hLdST)) && (!pte.x)) {
+        } else if (((mode == BaseMMU::Execute) || (isHInst)) && (!pte.x)) {
             doEndWalk = true;
             assert(0);
         } else if ((mode == BaseMMU::Read) && (!pte.r && !(status.mxr && pte.x))) {

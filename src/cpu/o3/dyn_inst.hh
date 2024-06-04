@@ -575,6 +575,7 @@ class DynInst : public ExecContext, public RefCounted
     bool isNop()          const { return staticInst->isNop() || isEmptyMove; }
     bool isMemRef()       const { return staticInst->isMemRef(); }
     bool isLoad()         const { return staticInst->isLoad(); }
+    bool isHInst()         const { return staticInst->isHInst(); }
     bool isStore()        const { return staticInst->isStore(); }
     bool isAtomic()       const { return staticInst->isAtomic(); }
     bool isStoreConditional() const

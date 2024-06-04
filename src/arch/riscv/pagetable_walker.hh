@@ -144,6 +144,7 @@ namespace RiscvISA
             std::vector<PacketPtr> writes;
             Fault mainFault;
             BaseMMU::Mode mode;
+            bool isHInst;
             SATP satp;
             SATP vsatp;
             STATUS status;

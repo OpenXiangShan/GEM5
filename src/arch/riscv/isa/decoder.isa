@@ -1384,7 +1384,7 @@ decode QUADRANT default Unknown::unknown() {
                         Rd = (int32_t) ((Rs1_uw >> shamt) | (Rs1_uw << ((32 - shamt) & (32 - 1))));
                     }});
                 }
-                0x6:  decode FUNCT7 {
+                0x6: decode FUNCT7 {
                     0x1: remw({{
                         if (Rs2_sw == 0) {
                             Rd_sd = Rs1_sw;
@@ -4229,6 +4229,13 @@ decode QUADRANT default Unknown::unknown() {
         }}, IsDirectControl, IsUncondControl);
 
         0x1c: decode FUNCT3 {
+            format LoadH {
+                0x04:  decode HFUNCT2{
+                    0x643: hlvx_hu({{
+                        Rd = Mem_uh;
+                    }},inst_flags = IsHInst);
+                }
+            }
             format SystemOp {
                 0x0: decode FUNCT7 {
                     0x0: decode RS2 {
