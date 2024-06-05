@@ -4262,11 +4262,11 @@ decode QUADRANT default Unknown::unknown() {
                             HSTATUS hstatus = xc->readMiscReg(MISCREG_HSTATUS);
                             STATUS vsstatus =  xc->readMiscReg(MISCREG_VSSTATUS);
                             int v = xc->readMiscReg(MISCREG_VIRMODE);
+                            auto hstatus_spv = hstatus.spv;
                             auto pm = (PrivilegeMode)xc->readMiscReg(
                                 MISCREG_PRV);
                             bool writeSign = false;
                             if(v ==0){
-                                xc->setMiscReg(MISCREG_VIRMODE, hstatus.spv);
                                 hstatus.spv =0;
                                 xc->setMiscReg(MISCREG_HSTATUS, hstatus);
 
@@ -4304,6 +4304,7 @@ decode QUADRANT default Unknown::unknown() {
                                     xc->setMiscReg(MISCREG_STATUS, status);
                                     NPC = xc->readMiscReg(MISCREG_SEPC);
                                 }
+                                xc->setMiscReg(MISCREG_VIRMODE, hstatus_spv);
                             }
 
 
@@ -4343,10 +4344,12 @@ decode QUADRANT default Unknown::unknown() {
                             status.mie = status.mpie;
                             status.mpie = 1;
                             status.mpp = PRV_U;
-                            xc->setMiscReg(MISCREG_VIRMODE,status.mpv);
+                            auto status_mpv = status.mpv;
+
                             status.mpv = 0;
                             xc->setMiscReg(MISCREG_STATUS, status);
                             NPC = xc->readMiscReg(MISCREG_MEPC);
+                            xc->setMiscReg(MISCREG_VIRMODE,status_mpv);
                         }
                     }}, IsSerializeAfter, IsNonSpeculative, IsReturn);
                     0x31: priv({{
@@ -4400,11 +4403,24 @@ decode QUADRANT default Unknown::unknown() {
                     data |= uimm;
                     write = uimm != 0;
                 }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
-                0x7: csrrci({{
-                    Rd = data;
-                    data &= ~uimm;
-                    write = uimm != 0;
-                }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                0x7: decode FUNCT12 {
+                    0x100:csrrci_s({{
+                        auto v = xc->readMiscReg(MISCREG_VIRMODE);
+                        if(v)
+                            data = xc->readMiscReg(MISCREG_VSSTATUS) & NEMU_SSTATUS_RMASK;
+                        Rd = data;
+                        data &= ~uimm;
+                        write = uimm != 0;
+                    }}, IsUpdateVsstatusSd,IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    default:csrrci({{
+                        Rd = data;
+                        data &= ~uimm;
+                        write = uimm != 0;
+                    }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+
+
+                }
+
             }
         }
 

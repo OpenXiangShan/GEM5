@@ -303,6 +303,7 @@ class Commit
 
     /** Commits as many instructions as possible. */
     void commitInsts();
+    void updateMstatusSd(ThreadID tid);
 
     /** Tries to commit the head ROB instruction passed in.
      * @param head_inst The instruction to be committed.
