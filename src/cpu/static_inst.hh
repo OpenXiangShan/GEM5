@@ -194,6 +194,7 @@ class StaticInst : public RefCounted, public StaticInstFlags
     bool isReadBarrier() const { return flags[IsReadBarrier]; }
     bool isWriteBarrier() const { return flags[IsWriteBarrier]; }
     bool isNonSpeculative() const { return flags[IsNonSpeculative]; }
+    bool isUpdateVsstatusSd() const{ return flags[IsUpdateVsstatusSd];}
     bool isQuiesce() const { return flags[IsQuiesce]; }
     bool isUnverifiable() const { return flags[IsUnverifiable]; }
     bool isSyscall() const { return flags[IsSyscall]; }

@@ -1041,6 +1041,12 @@ Commit::commit()
 
     }
 }
+void
+Commit::updateMstatusSd(ThreadID tid){
+    RiscvISA::STATUS mstatus = cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_STATUS, tid);
+    mstatus.sd = (mstatus.fs == 3) || (mstatus.vs == 3);
+    cpu->setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_STATUS, (RegVal)mstatus, tid);
+}
 
 void
 Commit::commitInsts()
@@ -1169,6 +1175,20 @@ Commit::commitInsts()
                         }
                     }
                     dbftb->notifyInstCommit(head_inst);
+                }
+                if (head_inst->isUpdateVsstatusSd()) {
+                    auto v = cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VIRMODE, tid);
+                    RiscvISA::HSTATUS hstatus = cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_HSTATUS, tid);
+                    RiscvISA::VSSTATUS vsstatus =
+                        cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSSTATUS, tid);
+                    if (v) {
+                        if (hstatus.vsxl) {
+                            warn("todo no vsstatus_32\n");
+                        } else {
+                            vsstatus.sd = (vsstatus.fs == 3);
+                        }
+                    }
+                    cpu->setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSSTATUS, (RegVal)vsstatus, tid);
                 }
 
                 ++num_committed;
