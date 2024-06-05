@@ -402,6 +402,7 @@ RegVal
 ISA::readMiscReg(int misc_reg)
 {
     int v = readMiscRegNoEffect(MISCREG_VIRMODE);
+    auto pm = readMiscRegNoEffect(MISCREG_PRV);
     if ((v == 1) && (misc_reg == MISCREG_SSCRATCH)) {
         return readMiscRegNoEffect(MISCREG_VSSCRATCH);
     }
@@ -515,7 +516,6 @@ ISA::setMiscReg(int misc_reg, RegVal val)
     }
     if (misc_reg == MISCREG_HSTATUS) {
         DPRINTF(RiscvMisc, "setMiscReg: setting mstatus with %#lx\n", val);
-        printf("setMiscReg: setting hstatus with %#lx hstatus %lx\n", val,readMiscReg(MISCREG_HSTATUS));
     }
     if (misc_reg == MISCREG_IE) {
         DPRINTF(RiscvMisc, "setMiscReg: setting mstatus with %#lx\n", val);
@@ -533,6 +533,10 @@ ISA::setMiscReg(int misc_reg, RegVal val)
             setMiscRegNoEffect(MISCREG_VSSCRATCH, val);
         }
 
+    } else if ((v == 1) && ((misc_reg == MISCREG_STATUS)) && (readMiscRegNoEffect(MISCREG_PRV) == PRV_S)) {
+        auto vsstatus = readMiscRegNoEffect(MISCREG_VSSTATUS);
+        RegVal write_val = ((vsstatus & ~(NEMU_SSTATUS_WMASK)) | (val & NEMU_SSTATUS_WMASK));
+        setMiscRegNoEffect(MISCREG_VSSTATUS, write_val);
     } else {
         switch (misc_reg) {
 
