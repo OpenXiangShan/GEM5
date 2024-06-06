@@ -78,6 +78,7 @@ enum ExceptionCode : uint64_t
     AMO_ACCESS = 7,
     ECALL_USER = 8,
     ECALL_SUPER = 9,
+    ECALL_VS = 10,  // ecall from vs-mode h-extention
     ECALL_MACHINE = 11,
     INST_PAGE = 12,
     LOAD_PAGE = 13,
