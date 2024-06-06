@@ -4442,16 +4442,33 @@ decode QUADRANT default Unknown::unknown() {
                 }
             }
             format CSROp {
-                0x1: csrrw({{
-                    Rd = data;
-                    data = Rs1;
-                    write = RS1 != 0;
-                }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
-                0x2: csrrs({{
-                    Rd = data;
-                    data |= Rs1;
-                    write = RS1 != 0;
-                }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                0x1:decode FUNCT12 {
+                    0x100:csrrw_s({{
+                        Rd = data;
+                        data = Rs1;
+                        write = RS1 != 0;
+                    }}, IsUpdateMstatusSd,IsUpdateMstatusSd,IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    default:csrrw({{
+                        Rd = data;
+                        data = Rs1;
+                        write = RS1 != 0;
+                    }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                }
+                0x2: decode FUNCT12 {
+                    0x100:csrrs_s({{
+                        auto v = xc->readMiscReg(MISCREG_VIRMODE);
+                        if(v)
+                            data = xc->readMiscReg(MISCREG_VSSTATUS) & NEMU_SSTATUS_RMASK;
+                        Rd = data;
+                        data |= Rs1;
+                        write = RS1 != 0;
+                    }}, IsUpdateMstatusSd,IsUpdateMstatusSd,IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    default:csrrs({{
+                        Rd = data;
+                        data |= Rs1;
+                        write = RS1 != 0;
+                    }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                }
                 0x3: csrrc({{
                     Rd = data;
                     data &= ~Rs1;
@@ -4462,11 +4479,21 @@ decode QUADRANT default Unknown::unknown() {
                     data = uimm;
                     write = uimm != 0;
                 }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
-                0x6: csrrsi({{
-                    Rd = data;
-                    data |= uimm;
-                    write = uimm != 0;
-                }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                0x6: decode FUNCT12 {
+                    0x100:csrrsi_s({{
+                        auto v = xc->readMiscReg(MISCREG_VIRMODE);
+                        if(v)
+                            data = xc->readMiscReg(MISCREG_VSSTATUS) & NEMU_SSTATUS_RMASK;
+                        Rd = data;
+                        data |= uimm;
+                        write = uimm != 0;
+                    }}, IsUpdateVsstatusSd,IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    default:csrrsi({{
+                        Rd = data;
+                        data |= uimm;
+                        write = uimm != 0;
+                    }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                }
                 0x7: decode FUNCT12 {
                     0x100:csrrci_s({{
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
@@ -4481,8 +4508,6 @@ decode QUADRANT default Unknown::unknown() {
                         data &= ~uimm;
                         write = uimm != 0;
                     }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
-
-
                 }
 
             }
