@@ -69,7 +69,11 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
         STATUS status = tc->readMiscReg(MISCREG_STATUS);
         HSTATUS hstatus = tc->readMiscReg(MISCREG_HSTATUS);
         VSSTATUS vsstatus = tc->readMiscReg(MISCREG_VSSTATUS);
+        auto vmode = tc->readMiscReg(MISCREG_VIRMODE);
         bool hs_mode_pc = false;
+        if ((_code == ECALL_SUPER)  && vmode){
+            _code = ECALL_VS;
+        }
 
         // According to riscv-privileged-v1.11, if a NMI occurs at the middle
         // of a M-mode trap handler, the state (epc/cause) will be overwritten
@@ -165,10 +169,13 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
                   hstatus.spv = v;
                   if (v)
                       hstatus.spvp = pp;
-                  if (_code == INSTG_PAGE || _code == LOADG_PAGE || _code == STOREG_PAGE ||
+                  if (_code == INST_PAGE || _code == LOAD_PAGE || _code == STORE_PAGE ||
                       _code == LOAD_ADDR_MISALIGNED || _code == STORE_ADDR_MISALIGNED || _code == INST_ACCESS ||
                       _code == LOAD_ACCESS || _code == STORE_ACCESS)
                       tc->setMiscReg(MISCREG_HTVAL, 0);
+                  else if ((_code != INSTG_PAGE) && (_code != LOADG_PAGE) && (_code != STORE_PAGE))
+                      tc->setMiscReg(MISCREG_HTVAL, 0);
+
 
                   tc->setMiscReg(MISCREG_VIRMODE, 0);
               }
