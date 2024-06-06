@@ -110,55 +110,44 @@ Walker::start(Addr ppn, ThreadContext *_tc, BaseMMU::Translation *_translation,
         if (!regulate)
             autoOpenNextLine = false;
     }
-    if (_req->get_two_stage_state() && _req->get_virt()) {
-        WalkerState *newState = new WalkerState(this, _translation, _req);
-        newState->initState(_tc, _req, _mode, sys->isTimingMode(), from_forward_pre_req, from_back_pre_req);
-        Fault fault = newState->startWalk(ppn, f_level, from_l2tlb, openNextLine, autoOpenNextLine,
-                                          from_forward_pre_req, from_back_pre_req);
-        if (!newState->isTiming()) {
-            delete newState;
-        }
-        return NoFault;
-    } else {
-        if (currStates.size()) {
-            auto [coalesced, fault] =
-                tryCoalesce(_tc, _translation, _req, _mode, from_l2tlb, asid, from_forward_pre_req, from_back_pre_req);
-            if (!coalesced) {
-                // create state
-                WalkerState *newState = new WalkerState(this, _translation, _req);
-                newState->initState(_tc, _req, _mode, sys->isTimingMode(), from_forward_pre_req, from_back_pre_req);
-                assert(newState->isTiming());
-                // TODO: add to requestors
-                DPRINTF(PageTableWalker,
-                        "Walks in progress: %d, push req pc: %#lx, addr: %#lx "
-                        "into currStates\n",
-                        currStates.size(), _req->getPC(), _req->getVaddr());
-                currStates.push_back(newState);
-                Fault fault = newState->startWalk(ppn, f_level, from_l2tlb, openNextLine, autoOpenNextLine,
-                                                  from_forward_pre_req, from_back_pre_req);
-                if (!newState->isTiming()) {
-                    assert(0);
-                }
-                return NoFault;
-            } else {
-                DPRINTF(PageTableWalker,
-                        "Walks in progress: %d. Coalesce req pc: %#lx, addr: %#lx "
-                        "into currStates\n",
-                        currStates.size(), _req->getPC(), _req->getVaddr());
-                return fault;
-            }
-        } else {
+    if (currStates.size()) {
+        auto [coalesced, fault] =
+            tryCoalesce(_tc, _translation, _req, _mode, from_l2tlb, asid, from_forward_pre_req, from_back_pre_req);
+        if (!coalesced) {
+            // create state
             WalkerState *newState = new WalkerState(this, _translation, _req);
             newState->initState(_tc, _req, _mode, sys->isTimingMode(), from_forward_pre_req, from_back_pre_req);
+            assert(newState->isTiming());
+            // TODO: add to requestors
+            DPRINTF(PageTableWalker,
+                    "Walks in progress: %d, push req pc: %#lx, addr: %#lx "
+                    "into currStates\n",
+                    currStates.size(), _req->getPC(), _req->getVaddr());
             currStates.push_back(newState);
             Fault fault = newState->startWalk(ppn, f_level, from_l2tlb, openNextLine, autoOpenNextLine,
                                               from_forward_pre_req, from_back_pre_req);
             if (!newState->isTiming()) {
-                currStates.pop_front();
-                delete newState;
+                assert(0);
             }
+            return NoFault;
+        } else {
+            DPRINTF(PageTableWalker,
+                    "Walks in progress: %d. Coalesce req pc: %#lx, addr: %#lx "
+                    "into currStates\n",
+                    currStates.size(), _req->getPC(), _req->getVaddr());
             return fault;
         }
+    } else {
+        WalkerState *newState = new WalkerState(this, _translation, _req);
+        newState->initState(_tc, _req, _mode, sys->isTimingMode(), from_forward_pre_req, from_back_pre_req);
+        currStates.push_back(newState);
+        Fault fault = newState->startWalk(ppn, f_level, from_l2tlb, openNextLine, autoOpenNextLine,
+                                          from_forward_pre_req, from_back_pre_req);
+        if (!newState->isTiming()) {
+            currStates.pop_front();
+            delete newState;
+        }
+        return fault;
     }
 }
 
@@ -346,6 +335,10 @@ Walker::WalkerState::tryCoalesce(ThreadContext *_tc, BaseMMU::Translation *trans
     bool addr_match;
     Addr addr_match_num;
     Addr pre_match_num;
+    bool model_match;
+    model_match = (mainReq->get_two_stage_state() == req->get_two_stage_state()) &&
+                  (mainReq->get_virt() == req->get_virt()) &&
+                  (mainReq->get_twoStageTranslateMode() == req->get_twoStageTranslateMode());
     if (fromPre) {
         addr_match_num = mainReq->getForwardPreVaddr();
     } else if (fromBackPre) {
@@ -366,7 +359,7 @@ Walker::WalkerState::tryCoalesce(ThreadContext *_tc, BaseMMU::Translation *trans
                  ((addr_match_num >> PageShift) << PageShift);
 
 
-    if (priv_match && addr_match && (!finishDefaultTranslate)) {
+    if (priv_match && addr_match && (!finishDefaultTranslate) && model_match) {
         // coalesce
         if (from_forward_pre_req || from_back_pre_req) {
             DPRINTF(PageTableWalker, "from_forward_pre_req be coalesced\n");
@@ -639,7 +632,11 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
             read = new Packet(request, MemCmd::ReadReq);
             read->allocate();
             DPRINTF(PageTableWalker, "Loading level%d PTE from %#x vaddr %#x\n", level, nextRead, entry.vaddr);
+        } else {
+            assert(0);
         }
+    } else {
+        assert(0);
     }
 
     return fault;
@@ -713,6 +710,8 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
                 }
             }
         }
+    } else {
+        assert(0);
     }
 
     return fault;
@@ -1315,7 +1314,7 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
                 DPRINTF(PageTableWalkerTwoStage, "translate fault vaddr %lx\n", mainReq->getVaddr());
             }
         }
-        return false;
+        return true;
     }
     if ((inflight == 0 && read == NULL && writes.size() == 0) &&
         (!nextline)) {
