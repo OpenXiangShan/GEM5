@@ -615,7 +615,8 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
         }
 
         if (doLLwalk && finishGVA) {
-            entry.paddr = pte.ppn;
+            //entry.paddr = pte.ppn;
+            entry.paddr = (gPaddr >>12);
             entry.pte = pte;
             entry.logBytes = PageShift + (twoStageLevel * LEVEL_BITS);
             endWalk();
@@ -624,8 +625,9 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
             if (nextRead == 0)
                 panic("nextread can't be 0\n");
             RequestPtr request = std::make_shared<Request>(nextRead, oldRead->getSize(), flags, walker->requestorId);
-            DPRINTF(PageTableWalkerTwoStage, "twoStageStepWalk pte %lx vaddr %lx gpaddr %lx level %d twolevel %d\n",
-                    nextRead, entry.vaddr, gPaddr, level, twoStageLevel);
+            DPRINTF(PageTableWalkerTwoStage,
+                    "twoStageStepWalk nextRead %lx vaddr %lx gpaddr %lx level %d twolevel %d\n", nextRead, entry.vaddr,
+                    gPaddr, level, twoStageLevel);
             DPRINTF(PageTableWalker, "oldread size %d\n", oldRead->getSize());
             delete oldRead;
             oldRead = nullptr;
@@ -689,6 +691,8 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
                         inGstage = true;
                         startTwoStageWalk(gPaddr, entry.vaddr);
                     }
+                } else {
+                    endWalk();
                 }
 
             } else {
@@ -1297,7 +1301,8 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
         for (auto &r : requestors) {
             if (mainFault == NoFault) {
                 Addr vaddr = mainReq->getVaddr();
-                Addr paddr = entry.paddr << PageShift | (vaddr & mask(entry.logBytes));
+                //Addr paddr = entry.paddr << PageShift | (vaddr & mask(entry.logBytes));
+                Addr paddr = entry.paddr << PageShift | (vaddr & 0xfff);
                 r.req->setPaddr(paddr);
                 walker->pma->check(r.req);
                 mainFault = walker->pmp->pmpCheck(r.req, mode, pmode, r.tc);
