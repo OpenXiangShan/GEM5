@@ -97,8 +97,10 @@ class StaticInstFlags(Enum):
 
         'IsSquashAfter',     # Squash all uncommitted state after executed
 
-        #update vastatus
+        #update vsstatus
         'IsUpdateVsstatusSd',
+        #update mstatussd
+        'IsUpdateMstatusSd',
 
         # hardware transactional memory
         'IsHtmStart',       # Starts a HTM transaction
