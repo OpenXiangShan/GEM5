@@ -615,6 +615,7 @@ class DynInst : public ExecContext, public RefCounted
     bool isWriteBarrier() const { return staticInst->isWriteBarrier(); }
     bool isNonSpeculative() const { return staticInst->isNonSpeculative(); }
     bool isUpdateVsstatusSd() const {return staticInst->isUpdateVsstatusSd(); }
+    bool isUpdateMstatusSd() const {return staticInst->isUpdateMstatusSd(); }
     bool isQuiesce() const { return staticInst->isQuiesce(); }
     bool isUnverifiable() const { return staticInst->isUnverifiable(); }
     bool isSyscall() const { return staticInst->isSyscall(); }
