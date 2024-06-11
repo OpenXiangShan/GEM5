@@ -224,7 +224,7 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
         tc->setMiscReg(MISCREG_PRV, prv);
         tc->setMiscReg(MISCREG_STATUS, status);
         tc->setMiscReg(MISCREG_HSTATUS, hstatus);
-        tc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
+        tc->setMiscRegNoEffect(MISCREG_VSSTATUS, vsstatus);
         // Temporarily mask NMI while we're in NMI handler. Otherweise, the
         // checkNonMaskableInterrupt will always return true and we'll be
         // stucked in an infinite loop.
