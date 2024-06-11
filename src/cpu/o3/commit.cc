@@ -1161,6 +1161,9 @@ Commit::commitInsts()
                     }
                     cpu->setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSSTATUS, (RegVal)vsstatus, tid);
                 }
+                if (head_inst->isUpdateMstatusSd()) {
+                    updateMstatusSd(tid);
+                }
 
                 ++num_committed;
                 stats.committedInstType[tid][head_inst->opClass()]++;
