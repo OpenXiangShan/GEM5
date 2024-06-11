@@ -407,6 +407,23 @@ ISA::readMiscReg(int misc_reg)
     if ((v == 1) && (misc_reg == MISCREG_SSCRATCH)) {
         return readMiscRegNoEffect(MISCREG_VSSCRATCH);
     }
+    if ((v == 1) && (misc_reg == MISCREG_SATP)) {
+        return readMiscRegNoEffect(MISCREG_VSATP);
+    }
+    if (misc_reg == MISCREG_HIE) {
+        auto ic = dynamic_cast<RiscvISA::Interrupts *>(tc->getCpuPtr()->getInterruptController(tc->threadId()));
+        DPRINTF(RiscvMisc, "Read IE value: %#lx.\n", ic->readIE());
+        return ic->readIE() & NEMU_HIE_RMASK & (readMiscRegNoEffect(MISCREG_MIDELEG) | NEMU_MIDELEG_FORCED_MASK);
+    }
+    if (misc_reg == MISCREG_HIP) {
+        auto ic = dynamic_cast<RiscvISA::Interrupts *>(tc->getCpuPtr()->getInterruptController(tc->threadId()));
+        DPRINTF(RiscvMisc, "Read IE value: %#lx.\n", ic->readIE());
+        return (ic->readIP() & NEMU_HIP_RMASK & (readMiscRegNoEffect(MISCREG_MIDELEG) | NEMU_MIDELEG_FORCED_MASK));
+    }
+    if (misc_reg == MISCREG_HVIP) {
+        auto ic = dynamic_cast<RiscvISA::Interrupts *>(tc->getCpuPtr()->getInterruptController(tc->threadId()));
+        return (ic->readIP() & NEMU_HVIP_MASK);
+    }
     switch (misc_reg) {
       case MISCREG_HARTID:
         return tc->contextId();
@@ -513,7 +530,6 @@ ISA::setMiscReg(int misc_reg, RegVal val)
     int v = readMiscReg(MISCREG_VIRMODE);
     if (misc_reg == MISCREG_STATUS) {
         DPRINTF(RiscvMisc, "setMiscReg: setting mstatus with %#lx\n", val);
-        printf("setMiscReg: setting mstatus with %#lx\n", val);
     }
     if (misc_reg == MISCREG_HSTATUS) {
         DPRINTF(RiscvMisc, "setMiscReg: setting mstatus with %#lx\n", val);
@@ -538,6 +554,18 @@ ISA::setMiscReg(int misc_reg, RegVal val)
         auto vsstatus = readMiscRegNoEffect(MISCREG_VSSTATUS);
         RegVal write_val = ((vsstatus & ~(NEMU_SSTATUS_WMASK)) | (val & NEMU_SSTATUS_WMASK));
         setMiscRegNoEffect(MISCREG_VSSTATUS, write_val);
+    } else if (misc_reg == MISCREG_VSSTATUS) {
+        auto vsstatus = readMiscRegNoEffect(MISCREG_VSSTATUS);
+        RegVal write_val = ((vsstatus & ~(NEMU_SSTATUS_WMASK)) | (val & NEMU_SSTATUS_WMASK));
+        setMiscRegNoEffect(MISCREG_VSSTATUS, write_val);
+    } else if ((v == 1) && ((misc_reg == MISCREG_SATP))) {
+        setMiscRegNoEffect(MISCREG_VSATP, val & NEMU_SATP_MASK);
+    } else if ((v == 1) && (misc_reg == MISCREG_SEPC)) {
+        setMiscRegNoEffect(MISCREG_VSEPC, val);
+    } else if (misc_reg == MISCREG_HCOUNTEREN) {
+        auto hcounter = readMiscRegNoEffect(MISCREG_HCOUNTEREN);
+        RegVal write_val = ((hcounter & ~(NEMU_COUNTER_MASK)) | (val & NEMU_COUNTER_MASK));
+        setMiscRegNoEffect(MISCREG_HCOUNTEREN, write_val);
     } else {
         switch (misc_reg) {
 
@@ -594,13 +622,22 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 setMiscRegNoEffect(misc_reg, write_val);
             }
             break;
+            case MISCREG_HVIP: {
+                auto ic =
+                    dynamic_cast<RiscvISA::Interrupts *>(tc->getCpuPtr()->getInterruptController(tc->threadId()));
+                auto old = readMiscReg(MISCREG_IP);
+                RegVal writeVal = ((old & ~(NEMU_HVIP_MASK)) | (val & NEMU_HVIP_MASK));
+                ic->setIP(writeVal);
+            } break;
 
           case MISCREG_IP:
             {
                 auto ic = dynamic_cast<RiscvISA::Interrupts *>(
                     tc->getCpuPtr()->getInterruptController(tc->threadId()));
                 DPRINTF(RiscvMisc, "Setting IP to %#lx.\n", val);
-                ic->setIP(val);
+                auto old = readMiscReg(MISCREG_IP);
+                RegVal writeVal = ((old & ~(NEMU_MIP_MASK)) | (val & NEMU_MIP_MASK));
+                ic->setIP(writeVal);
             }
             break;
           case MISCREG_HIE:
@@ -619,6 +656,16 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 auto ic = dynamic_cast<RiscvISA::Interrupts *>(
                     tc->getCpuPtr()->getInterruptController(tc->threadId()));
                 DPRINTF(RiscvMisc, "Setting IE to %#lx.\n", val);
+                uint64_t sie_mask = 0x222 & readMiscReg(MISCREG_MIDELEG);
+                if ((v == 1) && ((misc_reg == MISCREG_IE)) && (readMiscRegNoEffect(MISCREG_PRV) == PRV_S)) {
+                    RegVal old = readMiscReg(MISCREG_IE);
+                    RegVal write_val = ((old & ~(NEMU_VS_MASK)) | ((val)&NEMU_VS_MASK));
+                    val = write_val;
+                } else if (readMiscRegNoEffect(MISCREG_PRV) == PRV_S) {
+                    RegVal old = readMiscReg(MISCREG_IE);
+                    RegVal write_val = ((old & ~(sie_mask)) | (val & sie_mask));
+                    val = write_val;
+                }
                 ic->setIE(val);
             }
             break;
