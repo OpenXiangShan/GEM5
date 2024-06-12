@@ -862,6 +862,7 @@ const uint64_t NEMU_SSTATUS_RMASK = (NEMU_SSTATUS_WMASK | (0x3 << 15) | (1ull <<
 const uint64_t NEMU_VS_MASK = ((1 << 10) | (1 << 6) | (1 << 2));
 const uint64_t NEMU_HS_MASK = ((1 << 12) | NEMU_VS_MASK);
 const uint64_t NEMU_HIE_WMASK = NEMU_HS_MASK;
+const uint64_t NEMU_HIE_RMASK = NEMU_HS_MASK;
 const uint64_t NEMU_MIDELEG_FORCED_MASK = ((1 << 12) | (1 << 10) | (1 << 6) | (1 << 2));
 const RegVal STATUS_SD_MASK = 1ULL << ((sizeof(uint64_t) * 8) - 1);
 const RegVal STATUS_SXL_MASK = 3ULL << SXL_OFFSET;
@@ -934,7 +935,7 @@ const std::map<int, RegVal> CSRMasks = {
     {CSR_FRM, FRM_MASK},
     {CSR_FCSR, FFLAGS_MASK | (FRM_MASK << FRM_OFFSET)},
     {CSR_SSTATUS, SSTATUS_MASK},
-    {CSR_SIE, SI_MASK},
+   // {CSR_SIE, SI_MASK},
     {CSR_SIP, SI_MASK},
     {CSR_MISA, MISA_MASK},
    // {CSR_HSTATUS,HSTATUS_MASK},

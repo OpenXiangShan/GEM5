@@ -401,6 +401,14 @@ ISA::readMiscReg(int misc_reg)
     if ((v == 1) && (misc_reg == MISCREG_SSCRATCH)) {
         return readMiscRegNoEffect(MISCREG_VSSCRATCH);
     }
+    if ((v == 1) && (misc_reg == MISCREG_SATP)) {
+        return readMiscRegNoEffect(MISCREG_VSATP);
+    }
+    if (misc_reg == MISCREG_HIE) {
+        auto ic = dynamic_cast<RiscvISA::Interrupts *>(tc->getCpuPtr()->getInterruptController(tc->threadId()));
+        DPRINTF(RiscvMisc, "Read IE value: %#lx.\n", ic->readIE());
+        return ic->readIE() & NEMU_HIE_RMASK & (readMiscReg(MISCREG_MIDELEG) | NEMU_MIDELEG_FORCED_MASK);
+    }
     switch (misc_reg) {
       case MISCREG_HARTID:
         return tc->contextId();
@@ -535,6 +543,8 @@ ISA::setMiscReg(int misc_reg, RegVal val)
         auto vsstatus = readMiscRegNoEffect(MISCREG_VSSTATUS);
         RegVal write_val = ((vsstatus & ~(NEMU_SSTATUS_WMASK)) | (val & NEMU_SSTATUS_WMASK));
         setMiscRegNoEffect(MISCREG_VSSTATUS, write_val);
+    } else if ((v == 1) && ((misc_reg == MISCREG_SATP))) {
+        setMiscRegNoEffect(MISCREG_VSATP, val & NEMU_SATP_MASK);
     } else {
         switch (misc_reg) {
 
@@ -615,6 +625,18 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 auto ic = dynamic_cast<RiscvISA::Interrupts *>(
                     tc->getCpuPtr()->getInterruptController(tc->threadId()));
                 DPRINTF(RiscvMisc, "Setting IE to %#lx.\n", val);
+                uint64_t sie_mask = 0x222 & readMiscReg(MISCREG_MIDELEG);
+                if ((v == 1) && ((misc_reg == MISCREG_IE)) && (readMiscRegNoEffect(MISCREG_PRV) == PRV_S)) {
+                    RegVal old = readMiscReg(MISCREG_IE);
+                    RegVal write_val = ((old & ~(NEMU_VS_MASK)) | ((val)&NEMU_VS_MASK));
+                    printf("622 old %lx val %lx end\n", old, val);
+                    val = write_val;
+                } else if (readMiscRegNoEffect(MISCREG_PRV) == PRV_S) {
+                    RegVal old = readMiscReg(MISCREG_IE);
+                    RegVal write_val = ((old & ~(sie_mask)) | (val & sie_mask));
+                    printf("628 old %lx val %lx\n", old, val);
+                    val = write_val;
+                }
                 ic->setIE(val);
             }
             break;
