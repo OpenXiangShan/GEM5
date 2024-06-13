@@ -551,6 +551,12 @@ ISA::setMiscReg(int misc_reg, RegVal val)
         setMiscRegNoEffect(MISCREG_VSSTATUS, write_val);
     } else if ((v == 1) && ((misc_reg == MISCREG_SATP))) {
         setMiscRegNoEffect(MISCREG_VSATP, val & NEMU_SATP_MASK);
+    } else if ((v == 1) && (misc_reg == MISCREG_SEPC)) {
+        setMiscRegNoEffect(MISCREG_VSEPC, val);
+    } else if (misc_reg == MISCREG_HCOUNTEREN) {
+        auto hcounter = readMiscRegNoEffect(MISCREG_HCOUNTEREN);
+        RegVal write_val = ((hcounter & ~(NEMU_COUNTER_MASK)) | (val & NEMU_COUNTER_MASK));
+        setMiscRegNoEffect(MISCREG_HCOUNTEREN, write_val);
     } else {
         switch (misc_reg) {
 
