@@ -953,7 +953,7 @@ decode QUADRANT default Unknown::unknown() {
             0x2: decode AMOFUNCT {
                 0x2: LoadReserved::lr_w({{
                     Rd_sd = Mem_sw;
-                }}, mem_flags=LLSC);
+                }}, inst_flags=IsLoadReserved, mem_flags=LLSC);
                 0x3: StoreCond::sc_w({{
                     Mem_uw = Rs2_uw;
                 }}, {{

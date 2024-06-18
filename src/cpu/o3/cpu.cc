@@ -1087,6 +1087,12 @@ CPU::getReg(PhysRegIdPtr phys_reg)
     return regFile.getReg(phys_reg);
 }
 
+RegVal
+CPU::readReg(PhysRegIdPtr phys_reg)
+{
+    return regFile.getReg(phys_reg);
+}
+
 void
 CPU::getReg(PhysRegIdPtr phys_reg, void *val)
 {

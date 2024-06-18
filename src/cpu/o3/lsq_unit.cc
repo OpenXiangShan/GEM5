@@ -53,6 +53,7 @@
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/lsq.hh"
 #include "debug/Activity.hh"
+#include "debug/Atomic.hh"
 #include "debug/Diff.hh"
 #include "debug/HtmCpu.hh"
 #include "debug/IEW.hh"
@@ -1539,6 +1540,48 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffe
                  !storeQueue.empty());
 
         iewStage->updateLSQNextCycle = true;
+    }
+
+    DPRINTF(LSQUnit, "Completing store [sn:%lli], idx:%i, store head "
+            "idx:%i\n",
+            store_inst->seqNum, store_idx.idx() - 1, storeQueue.head() - 1);
+
+    if ((!store_inst->isStoreConditional() || store_inst->lockedWriteSuccess()) && cpu->goldenMemManager() &&
+        cpu->goldenMemManager()->inPmem(request->mainReq()->getPaddr())) {
+        if (!store_inst->isAtomic()) {
+            DPRINTF(Diff, "Store writing to golden memory at addr %#x, data %#lx, mask %#x, size %d\n",
+                    request->mainReq()->getPaddr(), *(uint64_t *)store_inst->memData, 0xff, request->_size);
+            cpu->goldenMemManager()->updateGoldenMem(request->mainReq()->getPaddr(), store_inst->memData, 0xff,
+                                                     request->_size);
+        } else {
+            uint8_t tmp_data[8] = {0};
+            memcpy(tmp_data, store_inst->memData, request->_size);
+            assert(request->req()->getAtomicOpFunctor());
+
+            // read golden memory to get the global latest value before this AMO is executed for further compare
+            cpu->goldenMemManager()->readGoldenMem(request->mainReq()->getPaddr(),
+                                                   store_inst->getAmoOldGoldenValuePtr(), request->_size);
+            cpu->diffInfo.amoOldGoldenValue = store_inst->getAmoOldGoldenValue();
+
+            // before amo operate on golden memory
+            // AMO done here
+            uint64_t old_data = *(uint64_t *) tmp_data;
+            (*(request->req()->getAtomicOpFunctor()))(tmp_data);
+            uint64_t new_data = *(uint64_t *) tmp_data;
+            DPRINTF(Atomic, "%s ,has return %i old value %lx, new value %lx, value changed %i\n",
+            store_inst->genDisassembly(),
+            // check if amo target reg is 0
+            !store_inst->destRegIdx(0).isZeroReg(),
+            old_data, new_data,
+            old_data != new_data
+            );
+            // after amo operate on golden memory
+
+            DPRINTF(Diff, "AMO writing to golden memory at addr %#x, data %#lx, mask %#x, size %d\n",
+                    request->mainReq()->getPaddr(), *(uint64_t *)tmp_data, 0xff, request->_size);
+            cpu->goldenMemManager()->updateGoldenMem(request->mainReq()->getPaddr(), tmp_data, 0xff,
+                                                     request->_size);
+        }
     }
 
 #if TRACING_ON

@@ -75,6 +75,9 @@
 #include "debug/HtmCpu.hh"
 #include "debug/InstCommited.hh"
 #include "debug/O3PipeView.hh"
+#include "debug/LRSC.hh"
+#include "debug/Atomic.hh"
+#include "debug/SyscallYield.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/core.hh"
 #include "sim/cur_tick.hh"
@@ -1569,10 +1572,36 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
                 tid, head_inst->seqNum, head_inst->pcState());
     }
 
+    if (head_inst->isLoadReserved()) {
+        DPRINTF(LRSC, "%s Load Reserved\n", head_inst->genDisassembly());
+    }
+
     if (head_inst->isStoreConditional()) {
         DPRINTF(Commit, "[tid:%i] [sn:%llu] Store Conditional success: %i\n", tid, head_inst->seqNum,
                 head_inst->lockedWriteSuccess());
+        // TODO more elegant way of reading sc stored value
+        // TODO bug: get data reg not physical reg?
+        // How to get dst reg (for amo)
+        DPRINTF(LRSC, "%s SC success: %i Store data: %lx\n",
+                head_inst->genDisassembly(),
+                head_inst->lockedWriteSuccess(),
+                cpu->readReg(head_inst->renamedSrcIdx(0)));
         cpu->setSCSuccess(head_inst->lockedWriteSuccess(), head_inst->physEffAddr);
+    }
+
+    if (head_inst->isAtomic()) {
+        // TODO add assert that dest is not x0
+        // old_data = cpu->readReg(head_inst->renamedSrcIdx(0));
+        // // TODO
+        // new_data = cpu->readReg(head_inst->renamedSrcIdx(1));
+        // DPRINTF(Atomic, "[tid:%i] [sn:%llu] PC: %lx Physical addr: %lx
+        //         No Return: %i Old data: %lx New Data: %lx\n",
+        //         tid, head_inst->seqNum,
+        //         head_inst->pcState().instAddr(),
+        //         head_inst->physEffAddr,
+        //         head_inst->destRegIdx(0).isZeroReg(),
+        //         TODO New data must not be get from reg file if zero reg,
+        //         head_inst->);
     }
 
     // Update the commit rename map

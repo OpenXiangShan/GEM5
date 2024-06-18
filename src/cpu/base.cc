@@ -1181,6 +1181,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                             warn("Old value not matched!\n");
                         }
                     }
+                    // When this happens, if load miss in local cache, record info?
                 }
 
                 if (dest.isFloatReg() &&

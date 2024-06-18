@@ -330,6 +330,7 @@ class CPU : public BaseCPU
 
     RegVal getReg(PhysRegIdPtr phys_reg);
     void getReg(PhysRegIdPtr phys_reg, void *val);
+    RegVal readReg(PhysRegIdPtr phys_reg);
     void *getWritableReg(PhysRegIdPtr phys_reg);
 
     void setReg(PhysRegIdPtr phys_reg, RegVal val);
