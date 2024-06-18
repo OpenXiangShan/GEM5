@@ -80,7 +80,7 @@ enum : RegIndex
 };
 
 inline constexpr RegId
-    Zero(IntRegClass, _ZeroIdx),
+    Zero(InvalidRegClass, _ZeroIdx),
     Ra(IntRegClass, _RaIdx),
     Sp(IntRegClass, _SpIdx),
     Gp(IntRegClass, _GpIdx),
