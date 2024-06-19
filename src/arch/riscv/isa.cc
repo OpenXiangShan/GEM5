@@ -407,7 +407,16 @@ ISA::readMiscReg(int misc_reg)
     if (misc_reg == MISCREG_HIE) {
         auto ic = dynamic_cast<RiscvISA::Interrupts *>(tc->getCpuPtr()->getInterruptController(tc->threadId()));
         DPRINTF(RiscvMisc, "Read IE value: %#lx.\n", ic->readIE());
-        return ic->readIE() & NEMU_HIE_RMASK & (readMiscReg(MISCREG_MIDELEG) | NEMU_MIDELEG_FORCED_MASK);
+        return ic->readIE() & NEMU_HIE_RMASK & (readMiscRegNoEffect(MISCREG_MIDELEG) | NEMU_MIDELEG_FORCED_MASK);
+    }
+    if (misc_reg == MISCREG_HIP) {
+        auto ic = dynamic_cast<RiscvISA::Interrupts *>(tc->getCpuPtr()->getInterruptController(tc->threadId()));
+        DPRINTF(RiscvMisc, "Read IE value: %#lx.\n", ic->readIE());
+        return (ic->readIP() & NEMU_HIP_RMASK & (readMiscRegNoEffect(MISCREG_MIDELEG) | NEMU_MIDELEG_FORCED_MASK));
+    }
+    if (misc_reg == MISCREG_HVIP) {
+        auto ic = dynamic_cast<RiscvISA::Interrupts *>(tc->getCpuPtr()->getInterruptController(tc->threadId()));
+        return (ic->readIP() & NEMU_HVIP_MASK);
     }
     switch (misc_reg) {
       case MISCREG_HARTID:
@@ -607,12 +616,21 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 setMiscRegNoEffect(misc_reg, write_val);
             }
             break;
+            case MISCREG_HVIP: {
+                auto ic =
+                    dynamic_cast<RiscvISA::Interrupts *>(tc->getCpuPtr()->getInterruptController(tc->threadId()));
+                auto old = readMiscReg(MISCREG_IP);
+                RegVal writeVal = ((old & ~(NEMU_HVIP_MASK)) | (val & NEMU_HVIP_MASK));
+                ic->setIP(writeVal);
+            } break;
 
           case MISCREG_IP:
             {
                 auto ic = dynamic_cast<RiscvISA::Interrupts *>(
                     tc->getCpuPtr()->getInterruptController(tc->threadId()));
-                ic->setIP(val);
+                auto old = readMiscReg(MISCREG_IP);
+                RegVal writeVal = ((old & ~(NEMU_MIP_MASK)) | (val & NEMU_MIP_MASK));
+                ic->setIP(writeVal);
             }
             break;
           case MISCREG_HIE:
@@ -635,12 +653,10 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 if ((v == 1) && ((misc_reg == MISCREG_IE)) && (readMiscRegNoEffect(MISCREG_PRV) == PRV_S)) {
                     RegVal old = readMiscReg(MISCREG_IE);
                     RegVal write_val = ((old & ~(NEMU_VS_MASK)) | ((val)&NEMU_VS_MASK));
-                    printf("622 old %lx val %lx end\n", old, val);
                     val = write_val;
                 } else if (readMiscRegNoEffect(MISCREG_PRV) == PRV_S) {
                     RegVal old = readMiscReg(MISCREG_IE);
                     RegVal write_val = ((old & ~(sie_mask)) | (val & sie_mask));
-                    printf("628 old %lx val %lx\n", old, val);
                     val = write_val;
                 }
                 ic->setIE(val);
