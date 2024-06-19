@@ -135,7 +135,8 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
                   cause = MISCREG_SCAUSE;
                   epc = MISCREG_SEPC;
                   tvec = MISCREG_STVEC;
-                  tval = MISCREG_STVAL;
+                  //tval = MISCREG_STVAL;
+                  tval = MISCREG_VSTVAL;
 
                   if (hstatus.vsxl == 1) {
                       assert(0);
@@ -207,8 +208,12 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
         if (isInterrupt()) {
            _cause |= (1L << 63);
         }
-        tc->setMiscReg(cause, _cause);
-        tc->setMiscReg(epc, tc->pcState().instAddr());
+
+        if (!hs_mode_pc) {
+            tc->setMiscReg(cause, _cause);
+            tc->setMiscReg(epc, tc->pcState().instAddr());
+        }
+
         if (_cause == INST_ILLEGAL)
             tc->setMiscReg(tval, 0);
         else
@@ -234,13 +239,15 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
 
         // Set PC to fault handler address
         Addr addr = 0;
+        auto addr_tvec = tc->readMiscReg(tvec);
         if (!hs_mode_pc) {
             addr = mbits(tc->readMiscReg(tvec), 63, 2);
         } else {
-            addr = mbits(tc->readMiscReg(MISCREG_VSTVEC), 63, 2) + 2;
+            addr = mbits(tc->readMiscReg(MISCREG_VSTVEC), 63, 2);
+            addr_tvec = tc->readMiscReg(MISCREG_VSTVEC);
         }
 
-        if (isInterrupt() && bits(tc->readMiscReg(tvec), 1, 0) == 1)
+        if (isInterrupt() && bits(addr_tvec, 1, 0) == 1)
             addr += 4 * _code;
         pc_state.set(addr);
         tc->pcState(pc_state);
