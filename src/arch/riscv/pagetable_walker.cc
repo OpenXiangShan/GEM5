@@ -286,6 +286,7 @@ Walker::WalkerState::initState(ThreadContext *_tc, const RequestPtr &_req, BaseM
         translateMode = twoStageMode;
         hgatp = _tc->readMiscReg(MISCREG_HGATP);
         isHInst = _req->get_h_inst();
+        isVsatp0Mode = _req->get_vsatp_0_mode();
     } else {
         assert(state == Ready);
         started = false;
@@ -306,6 +307,8 @@ Walker::WalkerState::initState(ThreadContext *_tc, const RequestPtr &_req, BaseM
         fromBackPre = _from_back_pre_req;
         translateMode = defaultmode;
         hgatp = _tc->readMiscReg(MISCREG_HGATP);
+        isHInst = false;
+        isVsatp0Mode = false;
         assert(!_req->get_h_inst());
     }
 }
@@ -338,7 +341,8 @@ Walker::WalkerState::tryCoalesce(ThreadContext *_tc, BaseMMU::Translation *trans
     bool model_match;
     model_match = (mainReq->get_two_stage_state() == req->get_two_stage_state()) &&
                   (mainReq->get_virt() == req->get_virt()) &&
-                  (mainReq->get_twoStageTranslateMode() == req->get_twoStageTranslateMode());
+                  (mainReq->get_twoStageTranslateMode() == req->get_twoStageTranslateMode()) &&
+                  (mainReq->get_vsatp_0_mode() == req->get_vsatp_0_mode());
     if (fromPre) {
         addr_match_num = mainReq->getForwardPreVaddr();
     } else if (fromBackPre) {
@@ -622,6 +626,13 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
             endWalk();
             return NoFault;
         } else if ((!doEndWalk) || (doLLwalk)) {
+            if (isVsatp0Mode) {
+                entry.paddr = gPaddr >> 12;
+                entry.pte = pte;
+                entry.logBytes = PageShift + (twoStageLevel * LEVEL_BITS);
+                endWalk();
+                return NoFault;
+            }
             if (nextRead == 0)
                 panic("nextread can't be 0\n");
             RequestPtr request = std::make_shared<Request>(nextRead, oldRead->getSize(), flags, walker->requestorId);
@@ -1130,13 +1141,13 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level, bool from_l2tl
     }
     else {
         level = 2;
+        if (isVsatp0Mode)
+            level = 0;
     }
     Addr shift = PageShift + LEVEL_BITS * level;
     Addr idx_f = (vaddr >> shift) & LEVEL_MASK;
     Addr idx = (idx_f >> 3) << 3;
     if (translateMode == twoStageMode) {
-        if (vsatp.mode == 0)
-            assert(0);
         nextline = false;
         autoNextlineSign = false;
         preHitInPtw = false;
