@@ -145,6 +145,7 @@ namespace RiscvISA
             Fault mainFault;
             BaseMMU::Mode mode;
             bool isHInst;
+            bool isVsatp0Mode;
             SATP satp;
             SATP vsatp;
             STATUS status;

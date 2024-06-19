@@ -1277,6 +1277,7 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
     STATUS status = tc->readMiscReg(MISCREG_STATUS);
     HSTATUS hstatus = tc->readMiscReg(MISCREG_HSTATUS);
     int two_stage_pmode = (int)getMemPriv(tc, mode);
+    Fault fault = NoFault;
 
     if (mode != BaseMMU::Execute) {
         if (status.mprv) {
@@ -1290,13 +1291,22 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
         }
     }
     if (virt != 0) {
-        if (vsatp.mode == 0)
-            assert(0);
+        if (vsatp.mode == 0) {
+            req->setVsatp0Mode(true);
+            req->setTwoStageState(true, virt, two_stage_pmode);
+            fault = walker->start(0, tc, translation, req, mode, false, false, 0, false, 0);
+            if (translation != nullptr || fault != NoFault) {
+                delayed = true;
+                return fault;
+            }
+            return fault;
+        }
     } else {
         assert(0);
     }
+    req->setVsatp0Mode(false);
     req->setTwoStageState(true, virt, two_stage_pmode);
-    Fault fault = walker->start(0, tc, translation, req, mode, false, false, 2, false, 0);
+    fault = walker->start(0, tc, translation, req, mode, false, false, 2, false, 0);
     if (translation != nullptr || fault != NoFault) {
         delayed = true;
         return fault;
@@ -1547,6 +1557,26 @@ TLB::hasTwoStageTranslation(ThreadContext *tc, const RequestPtr &req, BaseMMU::M
     int v_mode = tc->readMiscReg(MISCREG_VIRMODE);
     return (req->get_h_inst()) || (status.mprv && status.mpv) || v_mode;
 }
+Fault
+TLB::misalignDataAddrCheck(const RequestPtr &req, BaseMMU::Mode mode)
+{
+    Addr vaddr = req->getVaddr();
+    auto size = req->getSize();
+    if (mode != BaseMMU::Execute) {
+        if (size <= 8) {
+            if ((vaddr & (size - 1)) != 0) {
+                if (mode == BaseMMU::Write)
+                    return std::make_shared<AddressFault>(req->getVaddr() & 0x7FFFFFFFFF, 0,
+                                                          ExceptionCode::STORE_ADDR_MISALIGNED);
+                else
+                    return std::make_shared<AddressFault>(req->getVaddr() & 0x7FFFFFFFFF, 0,
+                                                          ExceptionCode::LOAD_ADDR_MISALIGNED);
+            }
+        }
+    }
+
+    return NoFault;
+}
 
 MMUMode
 TLB::isaMMUCheck(ThreadContext *tc, Addr vaddr, BaseMMU::Mode mode)
@@ -1604,14 +1634,19 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
             fault = NoFault;
             assert(!req->get_h_inst());
         } else {
-            two_stage_translation = hasTwoStageTranslation(tc, req, mode);
-            if (two_stage_translation) {
-                if (vsatp.mode != 8 && hgatp.mode != 8)
-                    assert(0);
-                fault = doTwoStageTranslate(req, tc, translation, mode, delayed);
+            fault = misalignDataAddrCheck(req, mode);
+            if (fault == NoFault) {
+                two_stage_translation = hasTwoStageTranslation(tc, req, mode);
+                if (two_stage_translation) {
+                    if (vsatp.mode != 8 && hgatp.mode != 8)
+                        assert(0);
+                    fault = doTwoStageTranslate(req, tc, translation, mode, delayed);
+                } else {
+                    req->setTwoStageState(false, 0, 0);
+                    fault = doTranslate(req, tc, translation, mode, delayed);
+                }
             } else {
-                req->setTwoStageState(false, 0, 0);
-                fault = doTranslate(req, tc, translation, mode, delayed);
+                return fault;
             }
         }
 

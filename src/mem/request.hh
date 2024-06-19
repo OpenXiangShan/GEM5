@@ -548,6 +548,7 @@ class Request
     bool _twoStageTranslate = false;
     int _virt = 0;
     int _twoStageTranslateMode = 0;
+    bool _vsatp_0_mode = false;
 
     bool _isHInst = false;
 
@@ -965,6 +966,9 @@ class Request
     int get_virt() const {return _virt;}
 
     int get_twoStageTranslateMode () const {return _twoStageTranslateMode;}
+
+    bool get_vsatp_0_mode() const { return _vsatp_0_mode; }
+
     bool get_h_inst() const { return _isHInst; }
 
     void setBackPreVaddr(Addr back_pre_vaddr)
@@ -972,12 +976,16 @@ class Request
         _back_pre_vaddr = back_pre_vaddr;
         back_pre_tlb = true;
     }
+
     void setTwoStageState(bool two_stage_translate,int virt,int two_stage_translate_mode)
     {
         _twoStageTranslate = two_stage_translate;
         _virt = virt;
         _twoStageTranslateMode = two_stage_translate_mode;
     }
+
+    void setVsatp0Mode(bool vstap_0_mode) { _vsatp_0_mode = vstap_0_mode; }
+
     void setHInst(bool is_h_inst) { _isHInst = is_h_inst; }
 
     /** Accesssor for the requestor id. */
