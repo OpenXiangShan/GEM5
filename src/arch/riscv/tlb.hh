@@ -291,6 +291,7 @@ class TLB : public BaseTLB
     void l2tlbRemoveIn(EntryList *List, TlbEntryTrie *Trie_l2,std::vector<TlbEntry>&tlb,size_t idx, int choose);
     void l2TLBRemove(size_t idx, int choose);
     bool hasTwoStageTranslation(ThreadContext *tc, const RequestPtr &req, BaseMMU::Mode mode);
+    Fault misalignDataAddrCheck(const RequestPtr &req, BaseMMU::Mode mode);
     MMUMode isaMMUCheck(ThreadContext *tc, Addr vaddr, BaseMMU::Mode mode);
 
 
