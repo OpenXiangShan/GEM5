@@ -404,6 +404,15 @@ ISA::readMiscReg(int misc_reg)
     if ((v == 1) && (misc_reg == MISCREG_SATP)) {
         return readMiscRegNoEffect(MISCREG_VSATP);
     }
+    if ((v == 1) && (misc_reg == MISCREG_SEPC)){
+        return readMiscRegNoEffect(MISCREG_VSEPC);
+    }
+    if ((v == 1) && (misc_reg == MISCREG_STVAL)){
+        return readMiscRegNoEffect(MISCREG_VSTVAL);
+    }
+    if ((v == 1) && (misc_reg == MISCREG_SCAUSE)){
+        return readMiscRegNoEffect(MISCREG_VSCAUSE);
+    }
     if (misc_reg == MISCREG_HIE) {
         auto ic = dynamic_cast<RiscvISA::Interrupts *>(tc->getCpuPtr()->getInterruptController(tc->threadId()));
         DPRINTF(RiscvMisc, "Read IE value: %#lx.\n", ic->readIE());
