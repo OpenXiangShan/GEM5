@@ -807,6 +807,25 @@ BitUnion64(VSSTATUS)
     Bitfield<0> pad0;
 EndBitUnion(VSSTATUS)
 
+BitUnion32(VSSTATUS32)
+    Bitfield<31> sd;
+    Bitfield<30,20> pad5;
+    Bitfield<19> mxr;
+    Bitfield<18> sum;
+    Bitfield<17> pad4;
+    Bitfield<16,15> xs;
+    Bitfield<14,13> fs;
+    Bitfield<12,11> pad3;
+    Bitfield<10,9> vs;
+    Bitfield<8> spp;
+    Bitfield<7> pad2;
+    Bitfield<6> ube;
+    Bitfield<5> spie;
+    Bitfield<4,2> pad1;
+    Bitfield<1> sie;
+    Bitfield<0> pad0;
+EndBitUnion(VSSTATUS32)
+
 BitUnion64(HGATP)
     Bitfield<63,60> mode;
     Bitfield<59,58> pad0;

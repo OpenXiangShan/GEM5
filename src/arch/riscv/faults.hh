@@ -126,7 +126,7 @@ class RiscvFault : public FaultBase
     {
         return _fault_type == FaultType::NON_MASKABLE_INTERRUPT;
     }
-    ExceptionCode exception() const { return _code; }
+    uint64_t exception() const override{ return _code; }
     virtual RegVal trap_value() const { return 0; }
     virtual RegVal g_trap_value() const { return 0; }
 
