@@ -287,6 +287,7 @@ Walker::WalkerState::initState(ThreadContext *_tc, const RequestPtr &_req, BaseM
         hgatp = _tc->readMiscReg(MISCREG_HGATP);
         isHInst = _req->get_h_inst();
         isVsatp0Mode = _req->get_vsatp_0_mode();
+        virt = _req->get_virt();
     } else {
         assert(state == Ready);
         started = false;
@@ -683,7 +684,8 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
 
                 if (fault == NoFault) {
                     if ((!pte.a) || ((!pte.d) && (mode == BaseMMU::Write))) {
-                        assert(0);
+                        fault = pageFault(true,false);
+                        endWalk();
                     } else {
                         finishGVA = true;
                         gPaddr = pte.ppn << 12;

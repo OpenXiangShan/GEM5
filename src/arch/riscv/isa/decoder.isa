@@ -4324,7 +4324,8 @@ decode QUADRANT default Unknown::unknown() {
                         0x2: sret({{
                             STATUS status = xc->readMiscReg(MISCREG_STATUS);
                             HSTATUS hstatus = xc->readMiscReg(MISCREG_HSTATUS);
-                            STATUS vsstatus =  xc->readMiscReg(MISCREG_VSSTATUS);
+                            VSSTATUS vsstatus =  xc->readMiscReg(MISCREG_VSSTATUS);
+                            VSSTATUS32 vsstatus32 =  xc->readMiscReg(MISCREG_VSSTATUS);
                             int v = xc->readMiscReg(MISCREG_VIRMODE);
                             auto hstatus_spv = hstatus.spv;
                             auto pm = (PrivilegeMode)xc->readMiscReg(
@@ -4341,17 +4342,21 @@ decode QUADRANT default Unknown::unknown() {
                                     panic("todo EX_VI");
                                 }
                                 if(hstatus.vsxl ){
-                                    panic("vsstatus 32 no finish");
+                                    auto vsstatus_spp = vsstatus32.spp;
+                                    xc->setMiscReg(MISCREG_PRV, vsstatus32.spp);
+                                    vsstatus32.spp = PRV_U;
+                                    vsstatus32.sie = vsstatus32.spie;
+                                    vsstatus32.spie =1;
+                                    xc->setMiscReg(MISCREG_VSSTATUS, vsstatus32);
                                 }
                                 else{
-                                    xc->setMiscReg(MISCREG_PRV, status.spp);
+                                    xc->setMiscReg(MISCREG_PRV, vsstatus.spp);
                                     vsstatus.spp = PRV_U;
                                     vsstatus.sie = vsstatus.spie;
                                     vsstatus.spie =1;
                                     xc->setMiscReg(MISCREG_VSSTATUS, vsstatus);
-
-
                                 }
+                                NPC = xc->readMiscReg(MISCREG_VSEPC);
                             }
                             if(!writeSign){
                                 if (pm == PRV_U ||
