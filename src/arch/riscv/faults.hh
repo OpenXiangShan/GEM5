@@ -286,6 +286,12 @@ class SyscallFault : public RiscvFault
     void invokeSE(ThreadContext *tc, const StaticInstPtr &inst) override;
 };
 
+class HVFault : public RiscvFault
+{
+  public:
+    HVFault() : RiscvFault("System call", FaultType::OTHERS, VIRTUAL_INST) {}
+    void invokeSE(ThreadContext *tc, const StaticInstPtr &inst) override;
+};
 } // namespace RiscvISA
 } // namespace gem5
 

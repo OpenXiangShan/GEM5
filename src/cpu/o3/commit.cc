@@ -1252,6 +1252,31 @@ Commit::commitInsts()
                         tc->getDecoderPtr()->as<RiscvISA::Decoder>().setVtype(new_vtype);
                     }
                 }
+                if (head_inst->isFloating()){
+                    RiscvISA::STATUS status = cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_STATUS, tid);
+                    status.sd = 1;
+                    status.fs = 3;
+                    cpu->setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_STATUS, (RegVal)status, tid);
+                }
+                if (head_inst->isUpdateVsstatusSd()) {
+                    auto v = cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VIRMODE, tid);
+                    RiscvISA::HSTATUS hstatus = cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_HSTATUS, tid);
+                    RiscvISA::VSSTATUS vsstatus =
+                        cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSSTATUS, tid);
+                    RiscvISA::VSSTATUS32 vsstatus32 =
+                        cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSSTATUS, tid);
+
+                    if (v) {
+                        if (hstatus.vsxl ==1) {
+                            vsstatus32.sd = (vsstatus32.fs == 3);
+                            cpu->setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSSTATUS, (RegVal)vsstatus32, tid);
+                        } else {
+                            vsstatus.sd = (vsstatus.fs == 3);
+                            cpu->setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSSTATUS, (RegVal)vsstatus, tid);
+                        }
+                    }
+
+                }
 
                 if (cpu->difftestEnabled()) {
                     diffInst(tid, head_inst);
@@ -1496,11 +1521,6 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
             head_inst->staticInst->disassemble(
                 head_inst->pcState().instAddr()).c_str(), inst_fault->name());
 
-        DPRINTF(
-            Faults, "[tid:%i] [sn:%llu] Fault instruction machInst: %lx\n",
-            tid, head_inst->seqNum,
-            dynamic_cast<RiscvISA::RiscvStaticInst &>(
-                *head_inst->staticInst).machInst);
 
         if (head_inst->traceData) {
             // We ignore ReExecution "faults" here as they are not real
