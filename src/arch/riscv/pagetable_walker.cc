@@ -684,7 +684,8 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
 
                 if (fault == NoFault) {
                     if ((!pte.a) || ((!pte.d) && (mode == BaseMMU::Write))) {
-                        assert(0);
+                        fault = pageFault(true,false);
+                        endWalk();
                     } else {
                         finishGVA = true;
                         gPaddr = pte.ppn << 12;
