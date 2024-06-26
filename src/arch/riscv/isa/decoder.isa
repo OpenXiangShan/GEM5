@@ -57,7 +57,7 @@ decode QUADRANT default Unknown::unknown() {
                                                                machInst);
                 } else {
                     status.fs = 3;
-                    xc->setMiscReg(MISCREG_STATUS,status);
+                    //xc->setMiscReg(MISCREG_STATUS,status);
                 }
 
                 Fp2_bits = Mem;
@@ -441,7 +441,7 @@ decode QUADRANT default Unknown::unknown() {
                                     "FPU is off", machInst);
                     } else {
                         status.fs = 3;
-                        xc->setMiscReg(MISCREG_STATUS,status);
+                       // xc->setMiscReg(MISCREG_STATUS,status);
                     }
                     freg_t fd;
                     fd = freg(f64(Mem));
@@ -4382,7 +4382,13 @@ decode QUADRANT default Unknown::unknown() {
                             STATUS status = xc->readMiscReg(MISCREG_STATUS);
                             auto pm = (PrivilegeMode)xc->readMiscReg(
                                 MISCREG_PRV);
-                            if (pm == PRV_U ||
+                            HSTATUS hstatus = xc->readMiscReg(MISCREG_HSTATUS);
+                            int v = xc->readMiscReg(MISCREG_VIRMODE);
+                            if(( v && (pm == PRV_S) && (hstatus.vtw ==1) && (status.tw == 0))
+                            || (v && (pm == PRV_U) && (status.tw == 0))){
+                                return std::make_shared<HVFault>();
+                            }
+                            else if (pm == PRV_U ||
                                 (pm == PRV_S && status.tw == 1)) {
                                 return std::make_shared<IllegalInstFault>(
                                             "wfi in user mode or TW enabled",
@@ -4470,7 +4476,7 @@ decode QUADRANT default Unknown::unknown() {
                         Rd = data;
                         data |= Rs1;
                         write = RS1 != 0;
-                    }}, IsUpdateMstatusSd,IsUpdateMstatusSd,IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    }}, IsUpdateVsstatusSd,IsUpdateMstatusSd,IsSerializeAfter, IsNonSpeculative, No_OpClass);
                     default:csrrs({{
                         auto Rs1_use = Rs1;
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
@@ -4489,18 +4495,32 @@ decode QUADRANT default Unknown::unknown() {
                         Rd = data;
                         data &= ~Rs1;
                         write = RS1 != 0;
-                    }}, IsUpdateMstatusSd,IsUpdateMstatusSd,IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    }}, IsUpdateVsstatusSd,IsUpdateMstatusSd,IsSerializeAfter, IsNonSpeculative, No_OpClass);
                     default:csrrc({{
+                        auto Rs1_use = Rs1;
+                        auto v = xc->readMiscReg(MISCREG_VIRMODE);
+                        if((FUNCT12 == 0x104) && v)
+                            Rs1_use = Rs1 <<1;
                         Rd = data;
-                        data &= ~Rs1;
+                        data &= ~Rs1_use;
                         write = RS1 != 0;
                     }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
                 }
-                0x5: csrrwi({{
-                    Rd = data;
-                    data = uimm;
-                    write = uimm != 0;
-                }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                0x5: decode FUNCT12 {
+                    0x100:csrrwi_s({{
+                        auto v = xc->readMiscReg(MISCREG_VIRMODE);
+                        if(v)
+                            data = xc->readMiscReg(MISCREG_VSSTATUS) & NEMU_SSTATUS_RMASK;
+                        Rd = data;
+                        data = uimm;
+                        write = uimm != 0;
+                    }}, IsUpdateVsstatusSd,IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    default:csrrwi({{
+                        Rd = data;
+                        data = uimm;
+                        write = uimm != 0;
+                    }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                }
                 0x6: decode FUNCT12 {
                     0x100:csrrsi_s({{
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
