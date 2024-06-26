@@ -315,5 +315,11 @@ SyscallFault::invokeSE(ThreadContext *tc, const StaticInstPtr &inst)
     tc->getSystemPtr()->workload->syscall(tc);
 }
 
+void
+HVFault::invokeSE(ThreadContext *tc, const StaticInstPtr &inst)
+{
+    panic("HVFault at pc %s", tc->pcState());
+}
+
 } // namespace RiscvISA
 } // namespace gem5
