@@ -1223,7 +1223,7 @@ Commit::commitInsts()
                         tc->getDecoderPtr()->as<RiscvISA::Decoder>().setVtype(new_vtype);
                     }
                 }
-                if (head_inst->isFloating()){
+                if (head_inst->isFloating() && head_inst->isLoad()){
                     RiscvISA::STATUS status = cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_STATUS, tid);
                     status.sd = 1;
                     status.fs = 3;
