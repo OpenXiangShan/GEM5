@@ -330,7 +330,8 @@ void ISA::clear()
                                     (1ULL << FS_OFFSET);
     }
     miscRegFile[MISCREG_MCOUNTEREN] = 0x0;
-    miscRegFile[MISCREG_SCOUNTEREN] = 0x7;
+    // miscRegFile[MISCREG_SCOUNTEREN] = 0x7;
+    miscRegFile[MISCREG_SCOUNTEREN] = 0;
     // don't set it to zero; software may try to determine the supported
     // triggers, starting at zero. simply set a different value here.
     miscRegFile[MISCREG_TSELECT] = 1;
@@ -575,6 +576,10 @@ ISA::setMiscReg(int misc_reg, RegVal val)
         auto hcounter = readMiscRegNoEffect(MISCREG_HCOUNTEREN);
         RegVal write_val = ((hcounter & ~(NEMU_COUNTER_MASK)) | (val & NEMU_COUNTER_MASK));
         setMiscRegNoEffect(MISCREG_HCOUNTEREN, write_val);
+    } else if (misc_reg == MISCREG_SCOUNTEREN) {
+        auto scounter = readMiscRegNoEffect(MISCREG_SCOUNTEREN);
+        RegVal write_val = ((scounter & ~(NEMU_COUNTER_MASK)) | (val & NEMU_COUNTER_MASK));
+        setMiscRegNoEffect(MISCREG_SCOUNTEREN, write_val);
     } else if ((v == 1) && ((misc_reg == MISCREG_STVEC))) {
         setMiscRegNoEffect(MISCREG_VSTVEC, val & ~(0x2UL));
     } else {
