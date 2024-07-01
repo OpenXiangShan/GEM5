@@ -419,6 +419,9 @@ ISA::readMiscReg(int misc_reg)
     if ((v == 1) && (misc_reg == MISCREG_SCAUSE)){
         return readMiscRegNoEffect(MISCREG_VSCAUSE);
     }
+    if ((v == 1) && (misc_reg == MISCREG_STVEC)){
+        return readMiscRegNoEffect(MISCREG_VSTVEC);
+    }
     if (misc_reg == MISCREG_HIE) {
         auto ic = dynamic_cast<RiscvISA::Interrupts *>(tc->getCpuPtr()->getInterruptController(tc->threadId()));
         DPRINTF(RiscvMisc, "Read IE value: %#lx.\n", ic->readIE());
@@ -568,13 +571,18 @@ ISA::setMiscReg(int misc_reg, RegVal val)
         RegVal write_val = ((vsstatus & ~(NEMU_SSTATUS_WMASK)) | (val & NEMU_SSTATUS_WMASK));
         setMiscRegNoEffect(MISCREG_VSSTATUS, write_val);
     } else if ((v == 1) && ((misc_reg == MISCREG_SATP))) {
-        setMiscRegNoEffect(MISCREG_VSATP, val & NEMU_SATP_MASK);
+        if ((val & NEMU_SATP_SV39_MASK) >> NEMU_SATP_RIGHT_OFFSET == NEMU_SV39_SIGN0 ||
+            (val & NEMU_SATP_SV39_MASK) >> NEMU_SATP_RIGHT_OFFSET == NEMU_SV39_SIGN1) {
+            setMiscRegNoEffect(MISCREG_VSATP, val & NEMU_SATP_MASK);
+        }
     } else if ((v == 1) && (misc_reg == MISCREG_SEPC)) {
         setMiscRegNoEffect(MISCREG_VSEPC, val);
     } else if (misc_reg == MISCREG_HCOUNTEREN) {
         auto hcounter = readMiscRegNoEffect(MISCREG_HCOUNTEREN);
         RegVal write_val = ((hcounter & ~(NEMU_COUNTER_MASK)) | (val & NEMU_COUNTER_MASK));
         setMiscRegNoEffect(MISCREG_HCOUNTEREN, write_val);
+    } else if ((v == 1) && ((misc_reg == MISCREG_STVEC))) {
+        setMiscRegNoEffect(MISCREG_VSTVEC, val & ~(0x2UL));
     } else {
         switch (misc_reg) {
 
