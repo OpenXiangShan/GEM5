@@ -4497,8 +4497,12 @@ decode QUADRANT default Unknown::unknown() {
                         write = RS1 != 0;
                     }}, IsUpdateVsstatusSd,IsUpdateMstatusSd,IsSerializeAfter, IsNonSpeculative, No_OpClass);
                     default:csrrc({{
+                        auto Rs1_use = Rs1;
+                        auto v = xc->readMiscReg(MISCREG_VIRMODE);
+                        if((FUNCT12 == 0x104) && v)
+                            Rs1_use = Rs1 <<1;
                         Rd = data;
-                        data &= ~Rs1;
+                        data &= ~Rs1_use;
                         write = RS1 != 0;
                     }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
                 }
