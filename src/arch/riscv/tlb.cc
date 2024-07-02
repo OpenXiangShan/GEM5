@@ -1279,6 +1279,7 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
     int two_stage_pmode = (int)getMemPriv(tc, mode);
     Fault fault = NoFault;
 
+    int level = 2;
     if (mode != BaseMMU::Execute) {
         if (status.mprv) {
             two_stage_pmode = status.mpp;
@@ -1294,6 +1295,10 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
         if (vsatp.mode == 0) {
             req->setVsatp0Mode(true);
             req->setTwoStageState(true, virt, two_stage_pmode);
+            level = 0;
+            if ((vaddr & ~(((int64_t)1 << 41) - 1)) != 0 ){
+                return createPagefault(vaddr,vaddr,mode,true);
+            }
             fault = walker->start(0, tc, translation, req, mode, false, false, 0, false, 0);
             if (translation != nullptr || fault != NoFault) {
                 delayed = true;
@@ -1620,6 +1625,7 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
         HGATP hgatp = tc->readMiscReg(MISCREG_HGATP);
         int v_mode = tc->readMiscReg(MISCREG_VIRMODE);
         bool two_stage_translation = false;
+        STATUS status = tc->readMiscReg(MISCREG_STATUS);
 
         if ((pmode == PrivilegeMode::PRV_M || satp.mode == AddrXlateMode::BARE))
             req->setFlags(Request::PHYSICAL);
@@ -1630,9 +1636,14 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
             /**
              * we simply set the virtual address to physical address
              */
-            req->setPaddr(req->getVaddr());
-            fault = NoFault;
-            assert(!req->get_h_inst());
+
+            if ((hgatp.mode == 8 || vsatp.mode == 8) && (pmode < PrivilegeMode::PRV_M)) {
+                fault = doTwoStageTranslate(req, tc, translation, mode, delayed);
+            } else {
+                req->setPaddr(req->getVaddr());
+                fault = NoFault;
+                assert(!req->get_h_inst());
+            }
         } else {
             fault = misalignDataAddrCheck(req, mode);
             if (fault == NoFault) {
