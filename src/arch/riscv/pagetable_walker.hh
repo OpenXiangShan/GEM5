@@ -180,7 +180,9 @@ namespace RiscvISA
             int translateMode;
             bool inGstage;
             bool finishGVA;
+            int gpaddrMode;
             bool finishGPA;
+            bool GstageFault;
 
 
           public:
@@ -196,7 +198,7 @@ namespace RiscvISA
                 tlbSizePte(0), openNextline(false), autoNextlineSign(false),
                 finishDefaultTranslate(false), preHitInPtw(false), fromPre(false),
                 fromBackPre(false),virt(0),translateMode(0),inGstage(false),finishGVA(false),
-                finishGPA(false)
+                gpaddrMode(0),finishGPA(false),GstageFault(false)
             {
                 requestors.emplace_back(nullptr, _req, _translation);
             }
@@ -226,12 +228,12 @@ namespace RiscvISA
 
             bool anyRequestorSquashed() const;
             bool allRequestorSquashed() const;
-            void setupWalk(Addr ppn, Addr vaddr, int f_level, bool from_l2tlb,
+            Fault setupWalk(Addr ppn, Addr vaddr, int f_level, bool from_l2tlb,
                            bool open_nextline, bool auto_openNextline,
                            bool from_forward_pre_req, bool from_back_pre_req);
 
           private:
-            void startTwoStageWalk(Addr ppn, Addr vaddr);
+            Fault startTwoStageWalk(Addr ppn, Addr vaddr);
 
             Fault twoStageStepWalk(PacketPtr &write);
             Fault twoStageWalk(PacketPtr &write);
