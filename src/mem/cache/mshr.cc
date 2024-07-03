@@ -162,7 +162,15 @@ MSHR::TargetList::updateWriteFlags(PacketPtr pkt)
         if (first_write || compat_write) {
             auto offset = pkt->getOffset(blkSize);
             auto begin = writesBitmap.begin() + offset;
-            std::fill(begin, begin + pkt->getSize(), true);
+            if (pkt->isMaskedWrite()) {
+                for (int i=0;i<pkt->getSize();i++,begin++) {
+                    if (pkt->req->getByteEnable()[i]) {
+                        *begin = true;
+                    }
+                }
+            } else {
+                std::fill(begin, begin + pkt->getSize(), true);
+            }
         }
 
         // We won't allow further merging if this has been a

@@ -43,10 +43,15 @@
 #define __CPU_O3_LSQ_UNIT_HH__
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <map>
 #include <memory>
 #include <queue>
+#include <vector>
+
+#include <base/logging.hh>
+#include <boost/circular_buffer.hpp>
 
 #include "arch/generic/debugfaults.hh"
 #include "arch/generic/vec_reg.hh"
@@ -73,6 +78,106 @@ namespace o3
 {
 
 class IEW;
+
+
+template <typename T>
+class FullyAssocSet
+{
+    uint64_t _size;
+    // key : index
+
+    //using valIter = typename std::vector<T*>::iterator;
+    using mapIter = typename std::map<uint64_t, uint64_t>::iterator;
+
+    std::map<uint64_t, uint64_t> data_map;
+    boost::circular_buffer<uint64_t> lru_index;
+    boost::circular_buffer<uint64_t> free_list;
+    std::vector<T*> data_vec;
+    std::vector<mapIter> crossRef;
+    std::vector<bool> data_vld;
+
+public:
+    FullyAssocSet(uint64_t way) {
+        _size = 0;
+        lru_index.set_capacity(way);
+        free_list.set_capacity(way);
+        crossRef.resize(way);
+        data_vec.resize(way);
+        data_vld.resize(way, false);
+        for (uint64_t i = 0; i < way; i++) {
+            free_list.push_back(i);
+        }
+    }
+
+    void setData(std::vector<T*>& data_vec) {
+        this->data_vec = data_vec;
+    }
+
+    bool full() {
+        return free_list.size() == 0;
+    }
+
+    uint64_t size() {
+        return this->_size;
+    }
+
+    uint64_t unsentSize() {
+        return lru_index.size();
+    }
+
+    std::pair<T*, uint64_t> getEmpty() {
+        assert(!full());
+        uint64_t index = free_list.back();
+        free_list.pop_back();
+        return std::make_pair(data_vec[index], index);
+    }
+
+    void insert(uint64_t index, uint64_t addr) {
+        assert(_size < data_vec.size());
+        assert(!data_vld[index]);
+        _size++;
+        auto [it, _] = data_map.insert({addr, index});
+        crossRef[index] = it;
+        data_vld[index] = true;
+        assert(!lru_index.full());
+        lru_index.push_front(index);
+    }
+
+    std::pair<T*, uint64_t> get(uint64_t key) {
+        auto iter = data_map.find(key);
+        if (iter == data_map.end()) {
+            return std::make_pair(nullptr, -1);
+        }
+        uint64_t index = iter->second;
+        if (data_vld[index]) {
+            return std::make_pair(data_vec[iter->second], index);
+        }
+        return std::make_pair(nullptr, -1);
+    }
+
+    void update(uint64_t index) {
+        assert(std::find(lru_index.begin(), lru_index.end(), index) != lru_index.end());
+        lru_index.erase(std::find(lru_index.begin(), lru_index.end(), index));
+        lru_index.push_front(index);
+    }
+
+    std::pair<T*, uint64_t> getEvict() {
+        uint64_t index = lru_index.back();
+        lru_index.pop_back();
+        assert(data_vld[index]);
+        return std::make_pair(data_vec[index], index);
+    }
+
+    void release(uint64_t index) {
+        assert(_size > 0);
+        _size--;
+        data_vld[index] = false;
+        data_map.erase(crossRef[index]);
+        assert(std::find(free_list.begin(), free_list.end(), index) == free_list.end());
+        free_list.push_back(index);
+    }
+
+};
 
 /**
  * Class that implements the actual LQ and SQ for each specific
@@ -197,6 +302,35 @@ class LSQUnit
     };
     using LQEntry = LSQEntry;
 
+  public:
+    // storeQue -> storeBuffer -> cache
+    struct StoreBufferEntry
+    {
+        Addr blockVaddr;
+        Addr blockPaddr;
+        std::vector<uint8_t> blockDatas;
+        std::vector<bool> validMask;
+        bool sending = false;
+        // merged request
+        LSQ::SbufferRequest* request = nullptr;
+
+        StoreBufferEntry(int size) {
+            blockDatas.resize(size, 0);
+            validMask.resize(size, false);
+        }
+
+        void reset(uint64_t blockVaddr, uint64_t blockPaddr, uint64_t offset, uint8_t* datas, uint64_t size);
+
+        void merge(uint64_t offset, uint8_t* datas, uint64_t size);
+
+        bool forward(uint64_t offset, uint64_t size, uint8_t* buf);
+    };
+
+    bool storeBufferFlushing = false;
+    FullyAssocSet<StoreBufferEntry>  storeBuffer = FullyAssocSet<StoreBufferEntry>(16);
+
+    StoreBufferEntry* blockedsbufferEntry = nullptr;
+
     /** Coverage of one address range with another */
     enum class AddrRangeCoverage
     {
@@ -278,8 +412,22 @@ class LSQUnit
     /** Commits stores older than a specific sequence number. */
     void commitStores(InstSeqNum &youngest_inst);
 
+    bool directStoreToCache();
+
     /** Writes back stores. */
-    void writebackStores();
+    void offloadToStoreBuffer();
+
+    bool insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t size);
+
+    void sbufferEvictToCache();
+
+    void flushStoreBuffer();
+
+    bool storeBufferEmpty() { return storeBuffer.size() == 0; }
+
+    void completeSbufferEvict(PacketPtr pkt);
+
+    bool storebufferforward(PacketPtr pkt);
 
     /** Completes the data access that has been returned from the
      * memory system. */
@@ -349,7 +497,7 @@ class LSQUnit
     bool hasStoresToWB() { return storesToWB; }
 
     /** Returns the number of stores to writeback. */
-    int numStoresToWB() { return storesToWB; }
+    int numStoresToSbuffer() { return storesToWB; }
 
     /** Returns if the LSQ unit will writeback on this cycle. */
     bool
@@ -391,6 +539,7 @@ class LSQUnit
 
     bool trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict);
 
+    bool sbufferSendPacket(PacketPtr data_pkt);
 
     /** Debugging function to dump instructions in the LSQ. */
     void dumpInsts() const;
@@ -453,6 +602,17 @@ class LSQUnit
         /** The pointer to the LSQ unit that issued the bankConflictReplayEvent. */
         LSQUnit *lsqPtr;
     };
+    class SbufferForwardEvent : public Event
+    {
+      public:
+        SbufferForwardEvent(LSQ *lsq, PacketPtr pkt);
+        void process();
+        const char *description() const;
+
+      private:
+        LSQ *lsq;
+        PacketPtr pkt;
+    };
 
     bool enableStorePrefetchTrain;
 
@@ -465,7 +625,6 @@ class LSQUnit
      */
     bool recvTimingResp(PacketPtr pkt);
 
-  private:
     /** The LSQUnit thread id. */
     ThreadID lsqID;
   public:
@@ -518,6 +677,10 @@ class LSQUnit
 
     /** Whehter or not a store is blocked due to the memory system. */
     bool isStoreBlocked;
+
+    bool storeBlockedfromQue;
+
+    bool sbufferStall;
 
     /** Whether or not a store is in flight. */
     bool storeInFlight;

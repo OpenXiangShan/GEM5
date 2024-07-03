@@ -669,6 +669,30 @@ class LSQ
         virtual std::string name() const { return "SplitDataRequest"; }
     };
 
+    class SbufferRequest : public LSQRequest
+    {
+        CPU* cpu;
+      public:
+        uint64_t sbuffer_index=-1;
+        SbufferRequest(CPU* cpu, LSQUnit* port, Addr blockpaddr, uint8_t* data);
+
+        void addReq(Addr blockVaddr, Addr blockPaddr, const std::vector<bool> byteEnable);
+
+        // do not translate
+        void markAsStaleTranslation() override {}
+        void initiateTranslation() override {}
+        void finish(const Fault &fault, const RequestPtr &req,
+                gem5::ThreadContext* tc, BaseMMU::Mode mode) override {}
+        bool recvTimingResp(PacketPtr pkt) override;
+        bool sendPacketToCache() override;
+        void buildPackets() override;
+        Cycles handleLocalAccess(
+                gem5::ThreadContext *thread, PacketPtr pkt) override { return Cycles(0);};
+        bool isCacheBlockHit(Addr blockAddr, Addr cacheBlockMask) override { return false;};
+        std::string name() const override { return "SbufferRequest"; }
+
+    };
+
     /** Constructs an LSQ with the given parameters. */
     LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params);
 
@@ -716,9 +740,9 @@ class LSQ
      * Attempts to write back stores until all cache ports are used or the
      * interface becomes blocked.
      */
-    void writebackStores();
-    /** Same as above, but only for one thread. */
-    void writebackStores(ThreadID tid);
+    void writebackSbuffer();
+    // /** Same as above, but only for one thread. */
+    // void writebackStores(ThreadID tid);
 
     /**
      * Squash instructions from a thread until the specified sequence number.
@@ -836,7 +860,7 @@ class LSQ
     bool hasStoresToWB(ThreadID tid);
 
     /** Returns the number of stores a specific thread has to write back. */
-    int numStoresToWB(ThreadID tid);
+    int numStoresToSbuffer(ThreadID tid);
 
     /** Returns if the LSQ will write back to memory this cycle. */
     bool willWB();

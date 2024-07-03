@@ -59,6 +59,7 @@
 #include "debug/LSQ.hh"
 #include "debug/PacketSender.hh"
 #include "debug/Schedule.hh"
+#include "debug/StoreBuffer.hh"
 #include "debug/Writeback.hh"
 #include "params/BaseO3CPU.hh"
 
@@ -298,7 +299,7 @@ LSQ::commitStores(InstSeqNum &youngest_inst, ThreadID tid)
 }
 
 void
-LSQ::writebackStores()
+LSQ::writebackSbuffer()
 {
     std::list<ThreadID>::iterator threads = activeThreads->begin();
     std::list<ThreadID>::iterator end = activeThreads->end();
@@ -306,12 +307,8 @@ LSQ::writebackStores()
     while (threads != end) {
         ThreadID tid = *threads++;
 
-        if (numStoresToWB(tid) > 0) {
-            DPRINTF(Writeback,"[tid:%i] Writing back stores. %i stores "
-                "available for Writeback.\n", tid, numStoresToWB(tid));
-        }
-
-        thread[tid].writebackStores();
+        thread[tid].sbufferEvictToCache();
+        thread[tid].offloadToStoreBuffer();
     }
 }
 
@@ -445,7 +442,8 @@ LSQ::recvTimingResp(PacketPtr pkt)
     LSQRequest *request = dynamic_cast<LSQRequest*>(pkt->senderState);
     panic_if(!request, "Got packet back with unknown sender state\n");
 
-    thread[cpu->contextToThread(request->contextId())].recvTimingResp(pkt);
+
+    thread[request->_port.lsqID].recvTimingResp(pkt);
 
     if (pkt->isInvalidate()) {
         // This response also contains an invalidate; e.g. this can be the case
@@ -794,9 +792,9 @@ LSQ::hasStoresToWB(ThreadID tid)
 }
 
 int
-LSQ::numStoresToWB(ThreadID tid)
+LSQ::numStoresToSbuffer(ThreadID tid)
 {
-    return thread.at(tid).numStoresToWB();
+    return thread.at(tid).numStoresToSbuffer();
 }
 
 bool
@@ -1119,6 +1117,62 @@ LSQ::SplitDataRequest::initiateTranslation()
     }
 }
 
+LSQ::SbufferRequest::SbufferRequest(CPU* cpu, LSQUnit* port, Addr blockpaddr, uint8_t* data)
+    : LSQRequest(port, nullptr, false, 0, port->cacheLineSize(), 0, data,
+                 nullptr, nullptr, false),
+      cpu(cpu) {}
+
+void
+LSQ::SbufferRequest::addReq(Addr blockVaddr, Addr blockPaddr, const std::vector<bool> byteEnable)
+{
+    auto req = std::make_shared<Request>(
+        blockPaddr, _port.cacheLineSize(), Request::Flags(),
+        cpu->dataRequestorId());
+    req->setContext(cpu->getContext(_port.lsqID)->contextId());
+    req->setByteEnable(byteEnable);
+
+    _reqs.push_back(req);
+}
+
+bool
+LSQ::SbufferRequest::sendPacketToCache()
+{
+    assert(_numOutstandingPackets == 0);
+    bool success = _port.sbufferSendPacket(_packets.at(0));
+    // PacketPtr pkt = _packets.at(0);
+    // if (pkt->isWrite()) {
+    //     uint64_t cacheBlockMask = ~(64-1);
+    //     if (pkt->isWrite() && ((pkt->getAddr() & cacheBlockMask) == (0x809423a8lu & cacheBlockMask))) {
+    //         std::cout<<std::hex<<pkt->getAddr()<<" sbuffer write : ";
+    //         for (int i=0;i<pkt->getSize();i++) {
+    //             if (pkt->req->getByteEnable()[i]){
+    //                 std::cout<<std::hex<<(int)pkt->getConstPtr<uint8_t>()[i]<<" ";
+    //             }
+    //         }
+    //         std::cout<<std::endl;
+    //     }
+    // }
+    DPRINTF(StoreBuffer,
+            "Sbuffer Req::sendPacketToCache: entry[%#x] sbuffer index: %lu\n",
+            _packets[0]->getAddr(), this->sbuffer_index);
+    if (success) {
+      _numOutstandingPackets = 1;
+    }
+
+    return success;
+}
+
+void
+LSQ::SbufferRequest::buildPackets()
+{
+    if (_packets.size() == 0) {
+        PacketPtr pkt = Packet::createWrite(_reqs[0]);
+        pkt->dataStatic(_data);
+        pkt->senderState = this;
+        _packets.push_back(pkt);
+    }
+}
+
 LSQ::LSQRequest::LSQRequest(
         LSQUnit *port, const DynInstPtr& inst, bool isLoad) :
     _state(State::NotIssued),
@@ -1127,11 +1181,13 @@ LSQ::LSQRequest::LSQRequest(
     _numOutstandingPackets(0), _amo_op(nullptr)
 {
     flags.set(Flag::IsLoad, isLoad);
-    flags.set(Flag::WriteBackToRegister,
-              _inst->isStoreConditional() || _inst->isAtomic() ||
-              _inst->isLoad());
-    flags.set(Flag::IsAtomic, _inst->isAtomic());
-    install();
+    if (_inst) {
+        flags.set(Flag::WriteBackToRegister,
+                _inst->isStoreConditional() || _inst->isAtomic() ||
+                _inst->isLoad());
+        flags.set(Flag::IsAtomic, _inst->isAtomic());
+        install();
+    }
 }
 
 LSQ::LSQRequest::LSQRequest(
@@ -1150,11 +1206,14 @@ LSQ::LSQRequest::LSQRequest(
     _hasStaleTranslation(stale_translation)
 {
     flags.set(Flag::IsLoad, isLoad);
-    flags.set(Flag::WriteBackToRegister,
-              _inst->isStoreConditional() || _inst->isAtomic() ||
-              _inst->isLoad());
-    flags.set(Flag::IsAtomic, _inst->isAtomic());
-    install();
+    if (_inst) {
+        flags.set(Flag::WriteBackToRegister,
+                _inst->isStoreConditional() || _inst->isAtomic() ||
+                _inst->isLoad());
+        flags.set(Flag::IsAtomic, _inst->isAtomic());
+        install();
+    }
+
 }
 
 void
@@ -1299,6 +1358,20 @@ LSQ::SplitDataRequest::recvTimingResp(PacketPtr pkt)
         delete resp;
     }
     _hasStaleTranslation = false;
+    return true;
+}
+
+bool
+LSQ::SbufferRequest::recvTimingResp(PacketPtr pkt)
+{
+    // Dump inst num, request addr, and packet addr
+    DPRINTF(StoreBuffer,
+            "Sbuffer Req::recvTimingResp: entry[%#x] sbuffer index: %lu\n",
+            _packets[0]->getAddr(), this->sbuffer_index);
+    assert(_numOutstandingPackets == 1);
+    flags.set(Flag::Complete);
+    assert(pkt == _packets.front());
+    _port.completeSbufferEvict(pkt);
     return true;
 }
 
