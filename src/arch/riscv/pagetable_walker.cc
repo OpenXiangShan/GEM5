@@ -1058,8 +1058,7 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                         DPRINTF(PageTableWalker,
                                 "nextline level %d pte from %#x vaddr %#x "
                                 "nextline_vaddr %#x\n",
-                                nextlineLevel, nextRead, entry.vaddr,
-                                nextlineVaddr);
+                                nextlineLevel, nextRead, entry.vaddr, nextlineVaddr);
                         return fault;
                     } else {
                         DPRINTF(PageTableWalker,"no pre\n");

@@ -137,8 +137,13 @@ struct TlbEntry : public Serializable
     Addr vaddr;
     // The size of the page this represents, in address bits.
     unsigned logBytes;
-
+    //transalte mode
+    //0:direct 1:vsstage 2:gstage 3:allstage
+    uint8_t translateMode;
+    //vsatp.asid or satp.asid
     uint16_t asid;
+    // hgatp.vmid
+    uint16_t vmid;
 
     PTESv39 pte;
 
@@ -163,6 +168,9 @@ struct TlbEntry : public Serializable
         : paddr(0),
           vaddr(0),
           logBytes(0),
+          translateMode(0),
+          asid(0),
+          vmid(0),
           pte(),
           lruSeq(0),
           level(0),
