@@ -791,6 +791,13 @@ LSQ::hasStoresToWB(ThreadID tid)
     return thread.at(tid).hasStoresToWB();
 }
 
+bool LSQ::flushAllStores(ThreadID tid)
+{
+    thread.at(tid).flushStoreBuffer();
+    bool t = thread.at(tid).hasStoresToWB() == 0 && thread.at(tid).storeBufferEmpty();
+    return t;
+}
+
 int
 LSQ::numStoresToSbuffer(ThreadID tid)
 {
@@ -1261,6 +1268,16 @@ LSQ::LSQRequest::addReq(Addr addr, unsigned size,
     }
 }
 
+void
+LSQ::LSQRequest::forward()
+{
+    if (!isLoad() || !needWBToRegister()) return;
+    for (auto& p : forwardPackets)
+    {
+        _inst->memData[p.idx] = p.byte;
+    }
+}
+
 LSQ::LSQRequest::~LSQRequest()
 {
     if (isAnyOutstandingRequest()) {
@@ -1328,6 +1345,7 @@ LSQ::SingleDataRequest::recvTimingResp(PacketPtr pkt)
     assert(_numOutstandingPackets == 1);
     flags.set(Flag::Complete);
     assert(pkt == _packets.front());
+    forward();
     _port.completeDataAccess(pkt);
     _hasStaleTranslation = false;
     return true;
@@ -1354,6 +1372,7 @@ LSQ::SplitDataRequest::recvTimingResp(PacketPtr pkt)
         else
             resp->dataStatic(_data);
         resp->senderState = this;
+        forward();
         _port.completeDataAccess(resp);
         delete resp;
     }

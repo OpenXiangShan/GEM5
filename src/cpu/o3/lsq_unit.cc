@@ -112,25 +112,6 @@ LSQUnit::bankConflictReplayEvent::description() const
     return "bankConflictReplayEvent";
 }
 
-LSQUnit::SbufferForwardEvent::SbufferForwardEvent(LSQ *lsq, PacketPtr pkt)
-{
-    this->lsq = lsq;
-    this->pkt = pkt;
-}
-
-void
-LSQUnit::SbufferForwardEvent::process()
-{
-    pkt->makeResponse();
-    lsq->recvTimingResp(pkt);
-}
-
-const char *
-LSQUnit::SbufferForwardEvent::description() const
-{
-    return "SbufferForwardEvent";
-}
-
 void LSQUnit::StoreBufferEntry::reset(uint64_t blockVaddr, uint64_t blockPaddr,
                                       uint64_t offset, uint8_t *datas,
                                       uint64_t size) {
@@ -154,6 +135,28 @@ LSQUnit::StoreBufferEntry::merge(uint64_t offset, uint8_t* datas, uint64_t size)
         blockDatas[offset + i] = datas[i];
         validMask[offset + i] = true;
     }
+}
+
+
+bool
+LSQUnit::StoreBufferEntry::coverage(PacketPtr pkt, LSQ::LSQRequest* req)
+{
+    int offset = pkt->getAddr() & (validMask.size()-1);
+    int goffset = pkt->getAddr() - req->mainReq()->getPaddr();
+    if (pkt->getAddr() - req->mainReq()->getPaddr() > 0) {
+        assert(offset == 0);
+    }
+    for (int i=0;i<pkt->getSize();i++) {
+        if (validMask[offset + i]) {
+            req->forwardPackets.push_back(
+                LSQ::LSQRequest::FWDPacket{
+                    .idx = goffset + i,
+                    .byte = blockDatas[offset+i]
+                }
+            );
+        }
+    }
+    return false;
 }
 
 bool
@@ -186,9 +189,6 @@ LSQUnit::recvTimingResp(PacketPtr pkt)
     bool ret = true;
     /* Check that the request is still alive before any further action. */
     if (!request->isReleased()) {
-        if (request->instruction() && request->instruction()->isLoad()) {
-            storebufferforward(pkt);
-        }
         ret = request->recvTimingResp(pkt);
     }
     return ret;
@@ -198,11 +198,11 @@ void
 LSQUnit::completeSbufferEvict(PacketPtr pkt)
 {
     auto request = dynamic_cast<LSQ::SbufferRequest *>(pkt->senderState);
+    storeBuffer.release(request->sbuffer_index);
     DPRINTF(
         StoreBuffer,
         "finish entry[%#x] evict to cache, sbuffer size: %d, unsentsize: %d\n",
         pkt->getAddr(), storeBuffer.size(), storeBuffer.unsentSize());
-    storeBuffer.release(request->sbuffer_index);
 }
 
 
@@ -1571,6 +1571,7 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx)
 bool
 LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict)
 {
+    // sbuffer do not call this
     if (lsq->getLastConflictCheckTick() != curTick()) {
         lsq->clearAddresses(curTick());
     }
@@ -1610,6 +1611,13 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict)
         }
         lsq->cachePortBusy(isLoad);
         request->packetSent();
+
+        if (isLoad) {
+            auto [entry, index] = storeBuffer.get(pkt->getAddr() & cacheBlockMask);
+            if (entry) {
+                entry->coverage(pkt, request);
+            }
+        }
     } else {
         if (cache_got_blocked) {
             lsq->cacheBlocked(true);
@@ -1780,12 +1788,9 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
     // A bit of a hackish way to get strictly ordered accesses to work
     // only if they're at the head of the LSQ and are ready to commit
     // (at the head of the ROB too).
-
-    if ((request->mainReq()->isStrictlyOrdered() ||
-         request->mainReq()->isAtomic() || request->mainReq()->isLLSC()) &&
-        (load_idx != loadQueue.head() || !load_inst->isAtCommit() ||
-         storeBuffer.size() > 0)) {
-        flushStoreBuffer();
+    if (request->mainReq()->isStrictlyOrdered() &&
+        (load_idx != loadQueue.head() || !load_inst->isAtCommit())) {
+        // should not enter this
         // Tell IQ/mem dep unit that this instruction will need to be
         // rescheduled eventually
         iewStage->rescheduleMemInst(load_inst);
@@ -1800,7 +1805,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         load_entry.setRequest(nullptr);
         request->discard();
         return std::make_shared<GenericISA::M5PanicFault>(
-            "Strictly ordered load [sn:%llx] PC %s\n", load_inst->seqNum,
+            "Strictly ordered load [sn:%lli] PC %s\n", load_inst->seqNum,
             load_inst->pcState());
     }
 

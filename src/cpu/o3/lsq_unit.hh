@@ -323,6 +323,8 @@ class LSQUnit
 
         void merge(uint64_t offset, uint8_t* datas, uint64_t size);
 
+        bool coverage(PacketPtr pkt, LSQ::LSQRequest* req);
+
         bool forward(uint64_t offset, uint64_t size, uint8_t* buf);
     };
 
@@ -494,7 +496,7 @@ class LSQUnit
     unsigned getCount() { return loadQueue.size() + storeQueue.size(); }
 
     /** Returns if there are any stores to writeback. */
-    bool hasStoresToWB() { return storesToWB; }
+    bool hasStoresToWB() { return storesToWB > 0; }
 
     /** Returns the number of stores to writeback. */
     int numStoresToSbuffer() { return storesToWB; }
@@ -601,17 +603,6 @@ class LSQUnit
       private:
         /** The pointer to the LSQ unit that issued the bankConflictReplayEvent. */
         LSQUnit *lsqPtr;
-    };
-    class SbufferForwardEvent : public Event
-    {
-      public:
-        SbufferForwardEvent(LSQ *lsq, PacketPtr pkt);
-        void process();
-        const char *description() const;
-
-      private:
-        LSQ *lsq;
-        PacketPtr pkt;
     };
 
     bool enableStorePrefetchTrain;

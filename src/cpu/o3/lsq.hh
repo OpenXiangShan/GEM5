@@ -261,6 +261,13 @@ class LSQ
         AtomicOpFunctorPtr _amo_op;
         bool _hasStaleTranslation;
 
+        struct FWDPacket
+        {
+            int idx;
+            uint8_t byte;
+        };
+        std::vector<FWDPacket> forwardPackets;
+
       protected:
         LSQUnit* lsqUnit() { return &_port; }
         LSQRequest(LSQUnit* port, const DynInstPtr& inst, bool isLoad);
@@ -316,6 +323,8 @@ class LSQ
          */
         void addReq(Addr addr, unsigned size,
                 const std::vector<bool>& byte_enable);
+
+        void forward();
 
         /** Destructor.
          * The LSQRequest owns the request. If the packet has already been
@@ -858,6 +867,9 @@ class LSQ
      * to memory.
      */
     bool hasStoresToWB(ThreadID tid);
+
+    // true if all stores are flushed
+    bool flushAllStores(ThreadID tid);
 
     /** Returns the number of stores a specific thread has to write back. */
     int numStoresToSbuffer(ThreadID tid);
