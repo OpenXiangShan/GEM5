@@ -1218,6 +1218,7 @@ LSQUnit::sbufferEvictToCache()
     if (storeBuffer.size() == 0) {
         assert(storeBuffer.unsentSize() == 0);
         storeBufferFlushing = false;
+        cpu->activityThisCycle();
         return;
     }
     if (storeBuffer.unsentSize() == 0) {

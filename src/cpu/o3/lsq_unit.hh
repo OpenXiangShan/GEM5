@@ -505,11 +505,12 @@ class LSQUnit
     bool
     willWB()
     {
-        return storeWBIt.dereferenceable() &&
+        bool t = storeWBIt.dereferenceable() &&
                         storeWBIt->valid() &&
                         storeWBIt->canWB() &&
                         !storeWBIt->completed() &&
                         !isStoreBlocked;
+        return t || storeBufferFlushing;
     }
 
     /** Handles doing the retry. */
