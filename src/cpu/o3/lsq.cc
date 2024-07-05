@@ -1271,9 +1271,11 @@ LSQ::LSQRequest::addReq(Addr addr, unsigned size,
 void
 LSQ::LSQRequest::forward()
 {
-    if (!isLoad() || !needWBToRegister()) return;
+    if (!isLoad() || !needWBToRegister() || forwardPackets.empty()) return;
+    DPRINTF(StoreBuffer, "sbuffer forward data\n");
     for (auto& p : forwardPackets)
     {
+        assert(p.idx < _size);
         _inst->memData[p.idx] = p.byte;
     }
 }

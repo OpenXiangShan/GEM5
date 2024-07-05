@@ -383,7 +383,7 @@ LSQUnit::resetState()
 
     stalled = false;
 
-    cacheBlockMask = ~(cpu->cacheLineSize() - 1);
+    cacheBlockMask = ~(((uint64_t)cpu->cacheLineSize()) - 1);
 }
 
 std::string
@@ -1236,6 +1236,14 @@ LSQUnit::sbufferEvictToCache()
         DPRINTF(StoreBuffer, "Evicting sbuffer entry[%#x]\n",
                 entry->blockPaddr);
 
+        if (debug::StoreBuffer) {
+            DPRINTFR(StoreBuffer, "Dumping sbuffer entry data\n");
+            for (int i = 0; i < cacheLineSize(); i++) {
+                DPRINTFR(StoreBuffer, "%s%d ", entry->validMask[i] ? "" : "!", (uint32_t)entry->blockDatas[i]);
+            }
+            DPRINTFR(StoreBuffer, "\n");
+        }
+
         // send packet to cache
         assert(entry->request == nullptr);
 
@@ -1616,6 +1624,7 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict)
         if (isLoad) {
             auto [entry, index] = storeBuffer.get(pkt->getAddr() & cacheBlockMask);
             if (entry) {
+                DPRINTF(StoreBuffer, "sbuffer entry[%#x] coverage %s\n", entry->blockPaddr, pkt->print());
                 entry->coverage(pkt, request);
             }
         }
