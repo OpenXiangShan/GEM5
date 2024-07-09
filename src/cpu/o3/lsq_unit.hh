@@ -324,8 +324,6 @@ class LSQUnit
         void merge(uint64_t offset, uint8_t* datas, uint64_t size);
 
         bool coverage(PacketPtr pkt, LSQ::LSQRequest* req);
-
-        bool forward(uint64_t offset, uint64_t size, uint8_t* buf);
     };
 
     bool storeBufferFlushing = false;
@@ -428,8 +426,6 @@ class LSQUnit
     bool storeBufferEmpty() { return storeBuffer.size() == 0; }
 
     void completeSbufferEvict(PacketPtr pkt);
-
-    bool storebufferforward(PacketPtr pkt);
 
     /** Completes the data access that has been returned from the
      * memory system. */

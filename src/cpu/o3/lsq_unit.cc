@@ -142,12 +142,13 @@ bool
 LSQUnit::StoreBufferEntry::coverage(PacketPtr pkt, LSQ::LSQRequest* req)
 {
     int offset = pkt->getAddr() & (validMask.size()-1);
-    int goffset = pkt->getAddr() - req->mainReq()->getPaddr();
-    if (pkt->getAddr() - req->mainReq()->getPaddr() > 0) {
+    int goffset = pkt->req->getVaddr() - req->mainReq()->getVaddr();
+    if (goffset > 0) {
         assert(offset == 0);
     }
     for (int i=0;i<pkt->getSize();i++) {
         if (validMask[offset + i]) {
+            assert(goffset + i < req->_size);
             req->forwardPackets.push_back(
                 LSQ::LSQRequest::FWDPacket{
                     .idx = goffset + i,
@@ -157,20 +158,6 @@ LSQUnit::StoreBufferEntry::coverage(PacketPtr pkt, LSQ::LSQRequest* req)
         }
     }
     return false;
-}
-
-bool
-LSQUnit::StoreBufferEntry::forward(uint64_t offset, uint64_t size, uint8_t* buf)
-{
-    assert(offset + size <= validMask.size());
-    bool forward = false;
-    for (uint64_t i = 0; i < size; ++i) {
-        if (validMask[offset + i]) {
-            buf[i] = blockDatas[offset + i];
-            forward = true;
-        }
-    }
-    return forward;
 }
 
 bool
@@ -203,27 +190,6 @@ LSQUnit::completeSbufferEvict(PacketPtr pkt)
         StoreBuffer,
         "finish entry[%#x] evict to cache, sbuffer size: %d, unsentsize: %d\n",
         pkt->getAddr(), storeBuffer.size(), storeBuffer.unsentSize());
-}
-
-
-bool
-LSQUnit::storebufferforward(PacketPtr pkt)
-{
-    Addr blockPaddr = pkt->getAddr() & cacheBlockMask;
-    Addr offset = pkt->getAddr() & (cacheLineSize() - 1);
-
-    auto [entry, index] = storeBuffer.get(blockPaddr);
-    if (entry) {
-        if (!entry->sending) {
-            storeBuffer.update(index);
-        }
-        bool forward = entry->forward(offset, pkt->getSize(), pkt->getPtr<uint8_t>());
-        if (forward) {
-            DPRINTF(StoreBuffer, "sbuffer forward entry[%#x] for %#x\n", blockPaddr, pkt->getAddr());
-            return true;
-        }
-    }
-    return false;
 }
 
 void
@@ -1151,8 +1117,27 @@ LSQUnit::offloadToStoreBuffer()
         assert(!request->mainReq()->isLocalAccess());
 
         if (request->isSplit()) {
-            // insertStoreBuffer();
-            panic("Split store not supported yet\n");
+            Addr vbase = request->_addr;
+            bool all_send = true;
+            for (int i = request->_numOutstandingPackets; i < request->_reqs.size(); i++) {
+                auto req = request->_reqs[i];
+                Addr vaddr = req->getVaddr();
+                Addr paddr = req->getPaddr();
+                uint64_t offset = vaddr - vbase;
+                DPRINTF(LSQUnit, "Spilt store idx %d [sn:%lli] insert into sbuffer\n", i, inst->seqNum);
+                assert(offset + req->getSize() <= storeWBIt->size());
+                bool success = insertStoreBuffer(vaddr, paddr, (uint8_t *)storeWBIt->data() + offset, req->getSize());
+                if (success) {
+                    request->_numOutstandingPackets++;
+                } else {
+                    break;
+                }
+            }
+            if (request->_numOutstandingPackets == request->_reqs.size()) {
+                request->_numOutstandingPackets = 0;
+                completeStore(storeWBIt);
+                storeWBIt++;
+            }
         } else {
             Addr vaddr = request->getVaddr();
             Addr paddr = request->mainReq()->getPaddr();
@@ -1505,9 +1490,10 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx)
             "idx:%i\n",
             store_inst->seqNum, store_idx.idx() - 1, storeQueue.head() - 1);
 
-    Addr paddr = request->mainReq()->getPaddr();
     if ((!store_inst->isStoreConditional() || store_inst->lockedWriteSuccess()) && cpu->goldenMemManager() &&
-        cpu->goldenMemManager()->inPmem(paddr)) {
+        cpu->goldenMemManager()->inPmem(request->mainReq()->getPaddr())) {
+        Addr paddr = request->mainReq()->getPaddr();
+
         if (!store_inst->isAtomic()) {
             DPRINTF(Diff, "Store writing to golden memory at addr %#x, data %#lx, mask %#x, size %d\n",
                     paddr, *(uint64_t *)store_idx->data(), 0xff, request->_size);

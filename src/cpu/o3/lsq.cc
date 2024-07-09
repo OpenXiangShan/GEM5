@@ -1236,7 +1236,6 @@ LSQ::LSQRequest::forward()
     DPRINTF(StoreBuffer, "sbuffer forward data\n");
     for (auto& p : forwardPackets)
     {
-        assert(p.idx < _size);
         _inst->memData[p.idx] = p.byte;
     }
 }
