@@ -180,7 +180,7 @@ class TLB : public BaseTLB
 
     void takeOverFrom(BaseTLB *old) override {}
 
-    TlbEntry *insert(Addr vpn, const TlbEntry &entry, bool suqashed_update);
+    TlbEntry *insert(Addr vpn, const TlbEntry &entry, bool suqashed_update, uint8_t translateMode);
     TlbEntry *insertForwardPre(Addr vpn, const TlbEntry &entry);
     TlbEntry *insertBackPre(Addr vpn, const TlbEntry &entry);
 
@@ -194,8 +194,8 @@ class TLB : public BaseTLB
     void demapPage(Addr vaddr, uint64_t asn) override;
     void demapPageL2(Addr vaddr,uint64_t asn);
 
-    Fault checkPermissions(STATUS status, PrivilegeMode pmode, Addr vaddr,
-                           BaseMMU::Mode mode, PTESv39 pte);
+    Fault checkPermissions(STATUS status, PrivilegeMode pmode, Addr vaddr, BaseMMU::Mode mode, PTESv39 pte,
+                           Addr gpaddr, bool G);
     Fault checkGuestPermissions(STATUS status, PrivilegeMode pmode, Addr vaddr,
                       BaseMMU::Mode mode, PTESv39 pte);
     Fault createPagefault(Addr vaddr, Addr gPaddr,BaseMMU::Mode mode,bool G);
@@ -218,7 +218,7 @@ class TLB : public BaseTLB
      */
     Port *getTableWalkerPort() override;
 
-    Addr translateWithTLB(Addr vaddr, uint16_t asid, BaseMMU::Mode mode);
+    Addr translateWithTLB(Addr vaddr, uint16_t asid, BaseMMU::Mode mode, uint8_t translateMode);
 
     Fault L2TLBPagefault(Addr vaddr, BaseMMU::Mode mode, const RequestPtr &req, bool is_pre, bool is_back_pre);
 
@@ -241,8 +241,7 @@ class TLB : public BaseTLB
                               BaseMMU::Mode mode) override;
     Fault finalizePhysical(const RequestPtr &req, ThreadContext *tc,
                            BaseMMU::Mode mode) const override;
-    TlbEntry *lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
-                     bool sign_used);
+    TlbEntry *lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden, bool sign_used, uint8_t translateMode);
     TlbEntry *lookupForwardPre(Addr vpn, uint64_t asid, bool hidden);
     TlbEntry *lookupBackPre(Addr vpn, uint64_t asid, bool hidden);
     bool autoOpenNextline();

@@ -549,6 +549,9 @@ class Request
     int _virt = 0;
     int _twoStageTranslateMode = 0;
     bool _vsatp_0_mode = false;
+    bool _inGstage = true;
+    int _level = 2;
+    bool _finishGVA = false;
 
     bool _isHInst = false;
 
@@ -970,6 +973,9 @@ class Request
     bool get_vsatp_0_mode() const { return _vsatp_0_mode; }
 
     bool get_h_inst() const { return _isHInst; }
+    bool get_h_gstage() const { return _inGstage; }
+    int get_level() const { return _level; }
+    bool get_finish_gva() const { return _finishGVA; }
 
     void setBackPreVaddr(Addr back_pre_vaddr)
     {
@@ -982,6 +988,13 @@ class Request
         _twoStageTranslate = two_stage_translate;
         _virt = virt;
         _twoStageTranslateMode = two_stage_translate_mode;
+    }
+
+    void setTwoPtwWalk(bool inGstage, int level, bool finishGVA)
+    {
+        _inGstage = inGstage;
+        _level = level;
+        _finishGVA = finishGVA;
     }
 
     void setVsatp0Mode(bool vstap_0_mode) { _vsatp_0_mode = vstap_0_mode; }
