@@ -1719,7 +1719,7 @@ IEW::tick()
     }
 
     // Writeback any stores using any leftover bandwidth.
-    ldstQueue.writebackSbuffer();
+    ldstQueue.writebackStoreBuffer();
 
     // Check the committed load/store signals to see if there's a load
     // or store to commit.  Also check if it's being told to execute a

@@ -299,7 +299,7 @@ LSQ::commitStores(InstSeqNum &youngest_inst, ThreadID tid)
 }
 
 void
-LSQ::writebackSbuffer()
+LSQ::writebackStoreBuffer()
 {
     std::list<ThreadID>::iterator threads = activeThreads->begin();
     std::list<ThreadID>::iterator end = activeThreads->end();
@@ -307,7 +307,7 @@ LSQ::writebackSbuffer()
     while (threads != end) {
         ThreadID tid = *threads++;
 
-        thread[tid].sbufferEvictToCache();
+        thread[tid].storeBufferEvictToCache();
         thread[tid].offloadToStoreBuffer();
     }
 }
@@ -1141,45 +1141,6 @@ LSQ::SbufferRequest::addReq(Addr blockVaddr, Addr blockPaddr, const std::vector<
     _reqs.push_back(req);
 }
 
-bool
-LSQ::SbufferRequest::sendPacketToCache()
-{
-    assert(_numOutstandingPackets == 0);
-    bool success = _port.sbufferSendPacket(_packets.at(0));
-    // PacketPtr pkt = _packets.at(0);
-    // if (pkt->isWrite()) {
-    //     uint64_t cacheBlockMask = ~(64-1);
-    //     if (pkt->isWrite() && ((pkt->getAddr() & cacheBlockMask) == (0x809423a8lu & cacheBlockMask))) {
-    //         std::cout<<std::hex<<pkt->getAddr()<<" sbuffer write : ";
-    //         for (int i=0;i<pkt->getSize();i++) {
-    //             if (pkt->req->getByteEnable()[i]){
-    //                 std::cout<<std::hex<<(int)pkt->getConstPtr<uint8_t>()[i]<<" ";
-    //             }
-    //         }
-    //         std::cout<<std::endl;
-    //     }
-    // }
-    DPRINTF(StoreBuffer,
-            "Sbuffer Req::sendPacketToCache: entry[%#x] sbuffer index: %lu\n",
-            _packets[0]->getAddr(), this->sbuffer_index);
-    if (success) {
-      _numOutstandingPackets = 1;
-    }
-
-    return success;
-}
-
-void
-LSQ::SbufferRequest::buildPackets()
-{
-    if (_packets.size() == 0) {
-        PacketPtr pkt = Packet::createWrite(_reqs[0]);
-        pkt->dataStatic(_data);
-        pkt->senderState = this;
-        _packets.push_back(pkt);
-    }
-}
-
 LSQ::LSQRequest::LSQRequest(
         LSQUnit *port, const DynInstPtr& inst, bool isLoad) :
     _state(State::NotIssued),
@@ -1339,6 +1300,20 @@ LSQ::SplitDataRequest::markAsStaleTranslation()
 }
 
 bool
+LSQ::SbufferRequest::recvTimingResp(PacketPtr pkt)
+{
+    // Dump inst num, request addr, and packet addr
+    DPRINTF(StoreBuffer,
+            "Sbuffer Req::recvTimingResp: entry[%#x] sbuffer index: %lu\n",
+            _packets[0]->getAddr(), this->sbuffer_index);
+    assert(_numOutstandingPackets == 1);
+    flags.set(Flag::Complete);
+    assert(pkt == _packets.front());
+    _port.completeSbufferEvict(pkt);
+    return true;
+}
+
+bool
 LSQ::SingleDataRequest::recvTimingResp(PacketPtr pkt)
 {
     // Dump inst num, request addr, and packet addr
@@ -1382,18 +1357,15 @@ LSQ::SplitDataRequest::recvTimingResp(PacketPtr pkt)
     return true;
 }
 
-bool
-LSQ::SbufferRequest::recvTimingResp(PacketPtr pkt)
+void
+LSQ::SbufferRequest::buildPackets()
 {
-    // Dump inst num, request addr, and packet addr
-    DPRINTF(StoreBuffer,
-            "Sbuffer Req::recvTimingResp: entry[%#x] sbuffer index: %lu\n",
-            _packets[0]->getAddr(), this->sbuffer_index);
-    assert(_numOutstandingPackets == 1);
-    flags.set(Flag::Complete);
-    assert(pkt == _packets.front());
-    _port.completeSbufferEvict(pkt);
-    return true;
+    if (_packets.size() == 0) {
+        PacketPtr pkt = Packet::createWrite(_reqs[0]);
+        pkt->dataStatic(_data);
+        pkt->senderState = this;
+        _packets.push_back(pkt);
+    }
 }
 
 void
@@ -1492,6 +1464,21 @@ LSQ::SplitDataRequest::buildPackets()
         }
     }
     assert(_packets.size() > 0);
+}
+
+bool
+LSQ::SbufferRequest::sendPacketToCache()
+{
+    assert(_numOutstandingPackets == 0);
+    bool success = _port.sbufferSendPacket(_packets.at(0));
+    DPRINTF(StoreBuffer,
+            "Sbuffer Req::sendPacketToCache: entry[%#x] sbuffer index: %lu\n",
+            _packets[0]->getAddr(), this->sbuffer_index);
+    if (success) {
+      _numOutstandingPackets = 1;
+    }
+
+    return success;
 }
 
 bool

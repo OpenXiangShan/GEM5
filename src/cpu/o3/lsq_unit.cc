@@ -996,8 +996,7 @@ LSQUnit::writebackBlockedStore()
         if (storeWBIt->request()->isSent()) {
             storePostSend();
         }
-    }
-    else {
+    } else {
         assert(blockedsbufferEntry);
         bool success = blockedsbufferEntry->request->sendPacketToCache();
         if (!success) {
@@ -1121,11 +1120,12 @@ LSQUnit::offloadToStoreBuffer()
         DynInstPtr inst = storeWBIt->instruction();
         LSQRequest *request = storeWBIt->request();
 
-        if (request->mainReq()->isLLSC() || request->mainReq()->isAtomic() ||
+        if (request->mainReq()->isLLSC() ||
+            request->mainReq()->isAtomic() ||
             request->mainReq()->isRelease() ||
             request->mainReq()->isStrictlyOrdered() ||
             inst->isStoreConditional()) {
-            DPRINTF(StoreBuffer, "Find atomic/SC store\n");
+            DPRINTF(StoreBuffer, "Find atomic/SC store[sn %llu]\n", storeWBIt->instruction()->seqNum);
             if (!(storeWBIt.idx() == storeQueue.head())) {
                 DPRINTF(StoreBuffer, "atomic/SC store waiting\n");
                 break;
@@ -1208,9 +1208,8 @@ bool LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t
     return true;
 }
 
-
 void
-LSQUnit::sbufferEvictToCache()
+LSQUnit::storeBufferEvictToCache()
 {
     if (isStoreBlocked) {
         return;
@@ -1227,7 +1226,7 @@ LSQUnit::sbufferEvictToCache()
     }
     if (storeBuffer.unsentSize() > 12 || storeBufferFlushing) {
         if (storeBufferFlushing) {
-            DPRINTF(StoreBuffer, "wait for sbuffer flushed\n");
+            DPRINTF(StoreBuffer, "sbuffer flushing\n");
         } else {
             DPRINTF(StoreBuffer, "sbuffer has reached threshold\n");
         }
@@ -1501,34 +1500,26 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx)
      * store queue. */
     DynInstPtr store_inst = store_idx->instruction();
     auto request = store_idx->request();
-    if (store_idx == storeQueue.begin()) {
-        do {
-            storeQueue.front().clear();
-            storeQueue.pop_front();
-        } while (storeQueue.front().completed() &&
-                 !storeQueue.empty());
-
-        iewStage->updateLSQNextCycle = true;
-    }
 
     DPRINTF(LSQUnit, "Completing store [sn:%lli], idx:%i, store head "
             "idx:%i\n",
             store_inst->seqNum, store_idx.idx() - 1, storeQueue.head() - 1);
 
+    Addr paddr = request->mainReq()->getPaddr();
     if ((!store_inst->isStoreConditional() || store_inst->lockedWriteSuccess()) && cpu->goldenMemManager() &&
-        cpu->goldenMemManager()->inPmem(request->mainReq()->getPaddr())) {
+        cpu->goldenMemManager()->inPmem(paddr)) {
         if (!store_inst->isAtomic()) {
             DPRINTF(Diff, "Store writing to golden memory at addr %#x, data %#lx, mask %#x, size %d\n",
-                    request->mainReq()->getPaddr(), *(uint64_t *)store_inst->memData, 0xff, request->_size);
-            cpu->goldenMemManager()->updateGoldenMem(request->mainReq()->getPaddr(), store_inst->memData, 0xff,
-                                                     request->_size);
+                    paddr, *(uint64_t *)store_idx->data(), 0xff, request->_size);
+            cpu->goldenMemManager()->updateGoldenMem(paddr, store_idx->data(), 0xff,
+                                                     store_idx->size());
         } else {
             uint8_t tmp_data[8] = {0};
-            memcpy(tmp_data, store_inst->memData, request->_size);
+            memcpy(tmp_data, store_idx->data(), store_idx->size());
             assert(request->req()->getAtomicOpFunctor());
 
             // read golden memory to get the global latest value before this AMO is executed for further compare
-            cpu->goldenMemManager()->readGoldenMem(request->mainReq()->getPaddr(),
+            cpu->goldenMemManager()->readGoldenMem(paddr,
                                                    store_inst->getAmoOldGoldenValuePtr(), request->_size);
             cpu->diffInfo.amoOldGoldenValue = store_inst->getAmoOldGoldenValue();
 
@@ -1537,10 +1528,20 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx)
             // after amo operate on golden memory
 
             DPRINTF(Diff, "AMO writing to golden memory at addr %#x, data %#lx, mask %#x, size %d\n",
-                    request->mainReq()->getPaddr(), *(uint64_t *)tmp_data, 0xff, request->_size);
-            cpu->goldenMemManager()->updateGoldenMem(request->mainReq()->getPaddr(), tmp_data, 0xff,
+                    paddr, *(uint64_t *)tmp_data, 0xff, request->_size);
+            cpu->goldenMemManager()->updateGoldenMem(paddr, tmp_data, 0xff,
                                                      request->_size);
         }
+    }
+
+    if (store_idx == storeQueue.begin()) {
+        do {
+            storeQueue.front().clear();
+            storeQueue.pop_front();
+        } while (storeQueue.front().completed() &&
+                 !storeQueue.empty());
+
+        iewStage->updateLSQNextCycle = true;
     }
 
 #if TRACING_ON

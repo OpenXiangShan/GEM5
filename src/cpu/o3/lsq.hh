@@ -749,7 +749,7 @@ class LSQ
      * Attempts to write back stores until all cache ports are used or the
      * interface becomes blocked.
      */
-    void writebackSbuffer();
+    void writebackStoreBuffer();
     // /** Same as above, but only for one thread. */
     // void writebackStores(ThreadID tid);
 

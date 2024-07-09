@@ -421,7 +421,7 @@ class LSQUnit
 
     bool insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t size);
 
-    void sbufferEvictToCache();
+    void storeBufferEvictToCache();
 
     void flushStoreBuffer();
 
