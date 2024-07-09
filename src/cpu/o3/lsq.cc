@@ -119,7 +119,7 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
 
     thread.reserve(numThreads);
     for (ThreadID tid = 0; tid < numThreads; tid++) {
-        thread.emplace_back(maxLQEntries, maxSQEntries);
+        thread.emplace_back(maxLQEntries, maxSQEntries, params.SbufferEntries, params.SbufferEvictThreshold);
         thread[tid].init(cpu, iew_ptr, params, this, tid);
         thread[tid].setDcachePort(&dcachePort);
     }
@@ -1470,11 +1470,10 @@ LSQ::SbufferRequest::sendPacketToCache()
 {
     assert(_numOutstandingPackets == 0);
     bool success = _port.sbufferSendPacket(_packets.at(0));
-    DPRINTF(StoreBuffer,
-            "Sbuffer Req::sendPacketToCache: entry[%#x] sbuffer index: %lu\n",
-            _packets[0]->getAddr(), this->sbuffer_index);
+    DPRINTF(StoreBuffer, "Sbuffer Req::sendPacketToCache: entry[%#x] sbuffer index: %lu\n", _packets[0]->getAddr(),
+            this->sbuffer_index);
     if (success) {
-      _numOutstandingPackets = 1;
+        _numOutstandingPackets = 1;
     }
 
     return success;

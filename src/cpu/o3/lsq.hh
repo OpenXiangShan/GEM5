@@ -750,8 +750,6 @@ class LSQ
      * interface becomes blocked.
      */
     void writebackStoreBuffer();
-    // /** Same as above, but only for one thread. */
-    // void writebackStores(ThreadID tid);
 
     /**
      * Squash instructions from a thread until the specified sequence number.

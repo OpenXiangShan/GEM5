@@ -112,7 +112,7 @@ LSQUnit::bankConflictReplayEvent::description() const
     return "bankConflictReplayEvent";
 }
 
-void LSQUnit::StoreBufferEntry::reset(uint64_t blockVaddr, uint64_t blockPaddr,
+void LSQUnit::StoreBufferEntry::reset(uint64_t block_vaddr, uint64_t block_paddr,
                                       uint64_t offset, uint8_t *datas,
                                       uint64_t size) {
     std::fill(validMask.begin(), validMask.begin() + offset, false);
@@ -121,8 +121,8 @@ void LSQUnit::StoreBufferEntry::reset(uint64_t blockVaddr, uint64_t blockPaddr,
     std::fill(validMask.begin() + offset + size, validMask.end(), false);
     memcpy(blockDatas.data() + offset, datas, size);
 
-    this->blockVaddr = blockVaddr;
-    this->blockPaddr = blockPaddr;
+    this->blockVaddr = block_vaddr;
+    this->blockPaddr = block_paddr;
     this->sending = false;
     this->request = nullptr;
 }
@@ -163,15 +163,14 @@ LSQUnit::StoreBufferEntry::coverage(PacketPtr pkt, LSQ::LSQRequest* req)
 bool
 LSQUnit::recvTimingResp(PacketPtr pkt)
 {
-    LSQRequest *request = dynamic_cast<LSQRequest*>(pkt->senderState);
+    LSQRequest *request = dynamic_cast<LSQRequest *>(pkt->senderState);
     assert(request != nullptr);
 
     if (request->instruction()) {
-      DPRINTF(LSQUnit, "LSQUnit::recvTimingResp [sn:%lu] pkt: %s\n",
-              request->instruction()->seqNum, pkt->print());
+        DPRINTF(LSQUnit, "LSQUnit::recvTimingResp [sn:%lu] pkt: %s\n", request->instruction()->seqNum, pkt->print());
     } else {
-      DPRINTF(StoreBuffer, "LSQUnit::recvTimingResp sbuffer index: %lu\n",
-              dynamic_cast<LSQ::SbufferRequest *>(request)->sbuffer_index);
+        DPRINTF(StoreBuffer, "LSQUnit::recvTimingResp sbuffer index: %lu\n",
+                dynamic_cast<LSQ::SbufferRequest *>(request)->sbuffer_index);
     }
     bool ret = true;
     /* Check that the request is still alive before any further action. */
@@ -186,10 +185,8 @@ LSQUnit::completeSbufferEvict(PacketPtr pkt)
 {
     auto request = dynamic_cast<LSQ::SbufferRequest *>(pkt->senderState);
     storeBuffer.release(request->sbuffer_index);
-    DPRINTF(
-        StoreBuffer,
-        "finish entry[%#x] evict to cache, sbuffer size: %d, unsentsize: %d\n",
-        pkt->getAddr(), storeBuffer.size(), storeBuffer.unsentSize());
+    DPRINTF(StoreBuffer, "finish entry[%#x] evict to cache, sbuffer size: %d, unsentsize: %d\n", pkt->getAddr(),
+            storeBuffer.size(), storeBuffer.unsentSize());
 }
 
 void
@@ -280,13 +277,23 @@ LSQUnit::completeDataAccess(PacketPtr pkt)
     }
 }
 
-LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries)
-    : lsqID(-1), storeQueue(sqEntries), loadQueue(lqEntries),
+LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries, uint32_t sbufferEvictThreshold)
+    : sbufferEvictThreshold(sbufferEvictThreshold),
+      sbufferEntries(sbufferEntries),
+      storeBuffer(sbufferEntries),
+      lsqID(-1),
+      storeQueue(sqEntries),
+      loadQueue(lqEntries),
       storesToWB(0),
-      htmStarts(0), htmStops(0),
+      htmStarts(0),
+      htmStops(0),
       lastRetiredHtmUid(0),
-      cacheBlockMask(0), stalled(false),
-      isStoreBlocked(false), storeBlockedfromQue(false), storeInFlight(false), stats(nullptr)
+      cacheBlockMask(0),
+      stalled(false),
+      isStoreBlocked(false),
+      storeBlockedfromQue(false),
+      storeInFlight(false),
+      stats(nullptr)
 {
 }
 
@@ -311,7 +318,7 @@ LSQUnit::init(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params,
 
     enableStorePrefetchTrain = params.store_prefetch_train;
     std::vector<StoreBufferEntry*> sbufer;
-    for (int i = 0; i < 16; i++) {
+    for (int i = 0; i < sbufferEntries; i++) {
         sbufer.push_back(new StoreBufferEntry(cpu->cacheLineSize()));
     }
     storeBuffer.setData(sbufer);
@@ -323,7 +330,6 @@ void
 LSQUnit::bankConflictReplay()
 {
     iewStage->cacheUnblocked();
-    //lsq->recvReqRetry();
 }
 
 void
@@ -978,15 +984,12 @@ LSQUnit::directStoreToCache()
 {
     DynInstPtr inst = storeWBIt->instruction();
     LSQRequest* request = storeWBIt->request();
-    if ((request->mainReq()->isLLSC() ||
-            request->mainReq()->isRelease()) &&
-            (storeWBIt.idx() != storeQueue.head())) {
-        DPRINTF(LSQUnit, "Store idx:%i PC:%s to Addr:%#x "
-            "[sn:%lli] is %s%s and not head of the queue\n",
-            storeWBIt.idx(), inst->pcState(),
-            request->mainReq()->getPaddr(), inst->seqNum,
-            request->mainReq()->isLLSC() ? "SC" : "",
-            request->mainReq()->isRelease() ? "/Release" : "");
+    if ((request->mainReq()->isLLSC() || request->mainReq()->isRelease()) && (storeWBIt.idx() != storeQueue.head())) {
+        DPRINTF(LSQUnit,
+                "Store idx:%i PC:%s to Addr:%#x "
+                "[sn:%lli] is %s%s and not head of the queue\n",
+                storeWBIt.idx(), inst->pcState(), request->mainReq()->getPaddr(), inst->seqNum,
+                request->mainReq()->isLLSC() ? "SC" : "", request->mainReq()->isRelease() ? "/Release" : "");
         return false;
     }
 
@@ -1013,7 +1016,8 @@ LSQUnit::directStoreToCache()
 
         if (!sc_success) {
             request->complete();
-            DPRINTF(LSQUnit, "Store conditional [sn:%lli] failed.  "
+            DPRINTF(LSQUnit,
+                    "Store conditional [sn:%lli] failed.  "
                     "Instantly completing it.\n",
                     inst->seqNum);
             PacketPtr new_pkt = new Packet(*request->packet());
@@ -1032,8 +1036,7 @@ LSQUnit::directStoreToCache()
         assert(!inst->isStoreConditional());
         assert(!inst->inHtmTransactionalState());
         gem5::ThreadContext *thread = cpu->tcBase(lsqID);
-        PacketPtr main_pkt = new Packet(request->mainReq(),
-                                        MemCmd::WriteReq);
+        PacketPtr main_pkt = new Packet(request->mainReq(), MemCmd::WriteReq);
         main_pkt->dataStatic(inst->memData);
         request->mainReq()->localAccessor(thread, main_pkt);
         delete main_pkt;
@@ -1141,9 +1144,8 @@ LSQUnit::offloadToStoreBuffer()
         } else {
             Addr vaddr = request->getVaddr();
             Addr paddr = request->mainReq()->getPaddr();
-            DPRINTF(LSQUnit, "Store [sn:%lli] insert into sbuffer\n",
-                                    inst->seqNum);
-            bool success = insertStoreBuffer(vaddr, paddr, (uint8_t*)storeWBIt->data(), request->_size);
+            DPRINTF(LSQUnit, "Store [sn:%lli] insert into sbuffer\n", inst->seqNum);
+            bool success = insertStoreBuffer(vaddr, paddr, (uint8_t *)storeWBIt->data(), request->_size);
             if (!success) {
                 break;
             }
@@ -1209,7 +1211,7 @@ LSQUnit::storeBufferEvictToCache()
         DPRINTF(StoreBuffer, "sbuffer was exhausted\n");
         return;
     }
-    if (storeBuffer.unsentSize() > 12 || storeBufferFlushing) {
+    if (storeBuffer.unsentSize() > sbufferEvictThreshold || storeBufferFlushing) {
         if (storeBufferFlushing) {
             DPRINTF(StoreBuffer, "sbuffer flushing\n");
         } else {
@@ -1574,15 +1576,14 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict)
     bool ret = true;
     bool cache_got_blocked = false;
 
-    LSQRequest *request = dynamic_cast<LSQRequest*>(data_pkt->senderState);
+    LSQRequest *request = dynamic_cast<LSQRequest *>(data_pkt->senderState);
     if (isLoad) {
         bank_conflict = lsq->bankConflictedCheck(data_pkt->req->getVaddr());
     }
 
     PacketPtr pkt = data_pkt;
 
-    if (!lsq->cacheBlocked() &&
-        lsq->cachePortAvailable(isLoad)) {
+    if (!lsq->cacheBlocked() && lsq->cachePortAvailable(isLoad)) {
         if (bank_conflict) {
             ++stats.bankConflictTimes;
             if (!isLoad) {
@@ -1627,10 +1628,11 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict)
         }
         request->packetNotSent();
     }
-    DPRINTF(LSQUnit, "Memory request (pkt: %s) from inst [sn:%llu] was"
+    DPRINTF(LSQUnit,
+            "Memory request (pkt: %s) from inst [sn:%llu] was"
             " %ssent (cache is blocked: %d, cache_got_blocked: %d, bank conflict: %d)\n",
-            data_pkt->print(), request->instruction()->seqNum,
-            ret ? "": "not ", lsq->cacheBlocked(), cache_got_blocked, bank_conflict);
+            data_pkt->print(), request->instruction()->seqNum, ret ? "" : "not ", lsq->cacheBlocked(),
+            cache_got_blocked, bank_conflict);
     return ret;
 }
 
@@ -1643,8 +1645,7 @@ LSQUnit::sbufferSendPacket(PacketPtr data_pkt)
     bool ret = true;
     bool cache_got_blocked = false;
 
-    if (!lsq->cacheBlocked() &&
-        lsq->cachePortAvailable(false)) {
+    if (!lsq->cacheBlocked() && lsq->cachePortAvailable(false)) {
         if (!dcachePort->sendTimingReq(data_pkt)) {
             ret = false;
             cache_got_blocked = true;
