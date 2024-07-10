@@ -1338,7 +1338,7 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
             Addr ppn = 0;
             Addr paddrBase = 0;
             if (vsatp.mode == 0) {
-                gPaddr = vaddr;
+                //gPaddr = vaddr;
                 req->setVsatp0Mode(true);
                 req->setTwoStageState(true, virt, two_stage_pmode);
             } else {
@@ -1349,6 +1349,8 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
                 Addr shift = PageShift + LEVEL_BITS *tlb_level;
                 Addr idx_f = (vaddr >> shift) & LEVEL_MASK;
                 gPaddr = pgBase + (idx_f * sizeof(PTESv39));
+                if (vsatp.mode == 0)
+                    gPaddr = vaddr;
                 if ((gPaddr & ~(((int64_t)1 << 41) - 1)) != 0) {
                     return createPagefault(vaddr, vaddr, mode, true);
                 }
