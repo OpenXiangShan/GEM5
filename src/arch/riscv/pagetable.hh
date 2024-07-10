@@ -147,6 +147,7 @@ struct TlbEntry : public Serializable
     uint16_t vmid;
 
     PTESv39 pte;
+    PTESv39 pteVS;
 
     TlbEntryTrie::Handle trieHandle;
 
@@ -174,6 +175,7 @@ struct TlbEntry : public Serializable
           asid(0),
           vmid(0),
           pte(),
+          pteVS(),
           lruSeq(0),
           level(0),
           index(0),

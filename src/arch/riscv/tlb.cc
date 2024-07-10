@@ -561,6 +561,8 @@ TLB::insert(Addr vpn, const TlbEntry &entry,bool squashed_update,uint8_t transla
     freeList.pop_front();
 
     Addr key = buildKey(vpn, entry.asid, translateMode);
+    if (translateMode == gstage)
+        key = buildKey(vpn, entry.vmid, translateMode);
     *newEntry = entry;
     newEntry->lruSeq = nextSeq();
     newEntry->vaddr = vpn;
@@ -795,8 +797,12 @@ TLB::demapPage(Addr vpn, uint64_t asid)
             for (i = 0; i < size; i++) {
                 if (tlb[i].trieHandle) {
                     Addr mask = ~(tlb[i].size() - 1);
-                    if ((vpn == 0 || (vpn & mask) == tlb[i].vaddr) &&
-                        (asid == 0 || tlb[i].asid == asid))
+                    if ((vpn == 0 || (vpn & mask) == (tlb[i].vaddr & mask)) && (asid == 0 || tlb[i].asid == asid))
+                        remove(i);
+                }
+                if (tlb[i].trieHandle) {
+                    Addr mask = ~(tlb[i].size() - 1);
+                    if ((vpn == 0 || (vpn & mask) == (tlb[i].gpaddr & mask)) && (asid == 0 || tlb[i].vmid == asid))
                         remove(i);
                 }
             }
@@ -1298,15 +1304,22 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
             two_stage_pmode = (PrivilegeMode)(RegVal)hstatus.spvp;
         }
     }
+
     if (virt != 0) {
         e[0] = lookup(vaddr, vsatp.asid, mode, false, true, allstage);
         if (e[0]) {
             if (hgatp.vmid != e[0]->vmid)
                 assert(0);
-            if (mode == BaseMMU::Write && !e[0]->pte.d)
-                fault = createPagefault(vaddr, 0, mode, false);
-            if (fault != NoFault) {
-                return fault;
+            if (vsatp.mode != 0) {
+                if ((mode == BaseMMU::Write && !e[0]->pteVS.d) || (!e[0]->pteVS.a))
+                    fault = createPagefault(vaddr, 0, mode, false);
+                if (fault != NoFault) {
+                    return fault;
+                }
+                fault = checkPermissions(status, pmode, vaddr, mode, e[0]->pteVS, 0, false);
+                if (fault != NoFault) {
+                    return fault;
+                }
             }
             Addr fault_gpaddr = ((e[0]->gpaddr >> 12) << 12) | (vaddr & 0xfff);
 
@@ -1323,7 +1336,12 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
             } else if ((mode == BaseMMU::Write) && !(e[0]->pte.r && e[0]->pte.w)) {
                 return createPagefault(vaddr, fault_gpaddr, mode, true);
             }
+
             Addr paddr = e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes));
+            if (e[0]->level > 0) {
+                paddr = (paddr >> (PageShift + e[0]->level * 9)) << (PageShift + e[0]->level * 9) |
+                        (vaddr & mask(e[0]->logBytes));
+            }
             req->setPaddr(paddr);
             return NoFault;
         } else {
@@ -1331,24 +1349,44 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
             Addr gPaddr = 0;
             Addr ppn = 0;
             Addr paddrBase = 0;
+            Addr pg_mask =0;
             if (vsatp.mode == 0) {
-                gPaddr = vaddr;
                 req->setVsatp0Mode(true);
                 req->setTwoStageState(true, virt, two_stage_pmode);
+                if ((vaddr & ~(((int64_t)1 << 41) - 1)) != 0 ){
+                    return createPagefault(vaddr,vaddr,mode,true);
+                }
             } else {
                 req->setVsatp0Mode(false);
                 req->setTwoStageState(true, virt, two_stage_pmode);
             }
-            for (int tlb_level = 2; tlb_level >=0; tlb_level--) {
-                Addr shift = PageShift + LEVEL_BITS *tlb_level;
-                Addr idx_f = (vaddr >> shift) & LEVEL_MASK;
-                gPaddr = pgBase + (idx_f * sizeof(PTESv39));
-                if ((gPaddr & ~(((int64_t)1 << 41) - 1)) != 0) {
-                    return createPagefault(vaddr, vaddr, mode, true);
+
+            e[0] = lookup(vaddr, vsatp.asid, mode, false, true, vsstage);
+            if (e[0]){
+                gPaddr = e[0]->pte.ppn <<12;
+                if (e[0]->level >0){
+                    pg_mask =  (1ULL << (12 + 9 * e[0]->level)) - 1;
+                    gPaddr = ((e[0]->pte.ppn << 12) & ~pg_mask) | (vaddr & pg_mask & ~PGMASK);
                 }
-                e[0] = lookup(gPaddr, hgatp.vmid, mode, false, true,gstage);
-                if (e[0]) {
-                    ppn = e[0]->pte.ppn;
+                gPaddr = gPaddr | (vaddr & PGMASK);
+                if (mode == BaseMMU::Write && !e[0]->pte.d) {
+                    fault = createPagefault(vaddr, 0, mode, false);
+                    return fault;
+                } else {
+                    fault = checkPermissions(status, pmode, vaddr, mode, e[0]->pte, 0, false);
+                    if (fault != NoFault) {
+                        return fault;
+                    }
+                }
+
+
+                e[0] = lookup(gPaddr, hgatp.vmid, mode, false, true, gstage);
+                if (e[0]){
+                    if (e[0]->level >0){
+                        pg_mask = (1ULL << (12 + 9 * e[0]->level)) - 1;
+                        pgBase = ((e[0]->pte.ppn << 12) & ~pg_mask) | (gPaddr & pg_mask & ~PGMASK);
+                    }
+                    gPaddr = pgBase |(gPaddr & PGMASK);
                     if (e[0]->pte.v && !e[0]->pte.r && !e[0]->pte.w && !e[0]->pte.x) {
                         assert(0);
                     } else if (!e[0]->pte.v || (!e[0]->pte.r && e[0]->pte.w)) {
@@ -1362,70 +1400,11 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
                     } else if ((mode == BaseMMU::Write) && !(e[0]->pte.r && e[0]->pte.w)) {
                         return createPagefault(vaddr, gPaddr, mode, true);
                     }
-
-                    if (vsatp.mode == 0) {
-                        Addr paddr = e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes));
-                        paddrBase = e[0]->pte.ppn << 12;
-                        Addr pg_mask;
-                        if (e[0]->level > 0) {
-                            pg_mask = ((1ULL << (12 + 9 * e[0]->level)) - 1);
-                            if (((e[0]->pte.ppn << 12) & pg_mask) != 0)
-                                assert(0);
-                            paddrBase = (paddrBase & ~pg_mask) | (gPaddr & pg_mask & ~PGMASK);
-                        }
-                        paddrBase = paddrBase | (gPaddr & PGMASK);
-                        req->setPaddr(paddrBase);
-                        return NoFault;
-                    } else {
-                        Addr paddr = e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes));
-                        paddrBase = e[0]->pte.ppn << 12;
-                        Addr pg_mask;
-                        if (e[0]->level > 0) {
-                            pg_mask = ((1ULL << (12 + 9 * e[0]->level)) - 1);
-                            if (((e[0]->pte.ppn << 12) & pg_mask) != 0)
-                                assert(0);
-                            paddrBase = (paddrBase & ~pg_mask) | (gPaddr & pg_mask & ~PGMASK);
-                        }
-                        paddrBase = paddrBase | (gPaddr & PGMASK);
-                        e[0] = lookup(gPaddr, vsatp.asid, mode, false, true, vsstage);
-                        if (e[0]) {
-                            ppn = e[0]->pte.ppn;
-                            if (mode == BaseMMU::Write && !e[0]->pte.d) {
-                                fault = createPagefault(vaddr, 0, mode, false);
-                                return fault;
-                            } else {
-                                fault = checkPermissions(status, pmode, vaddr, mode, e[0]->pte, 0, false);
-                                if (fault != NoFault) {
-                                    return fault;
-                                }
-
-                                paddr = e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes));
-                                paddrBase = e[0]->pte.ppn << 12;
-
-                                if (e[0]->level > 0) {
-                                    pg_mask = ((1ULL << (12 + 9 * e[0]->level)) - 1);
-                                    if (((e[0]->pte.ppn << 12) & pg_mask) != 0)
-                                        assert(0);
-                                    paddrBase = (paddrBase & ~pg_mask) | (gPaddr & pg_mask & ~PGMASK);
-                                }
-                                paddrBase = paddrBase | (gPaddr & PGMASK);
-                                if (e[0]->pte.r || e[0]->pte.x)
-                                    break;
-                            }
-
-                        } else {
-                            req->setTwoPtwWalk(false, tlb_level, false);
-                            req->setgPaddr(gPaddr);
-                            fault = walker->start(ppn, tc, translation, req, mode, false, false, 0, false, 0);
-                            if (translation != nullptr || fault != NoFault) {
-                                delayed = true;
-                                return fault;
-                            }
-                            return fault;
-                        }
-                    }
-                } else {
-                    req->setTwoPtwWalk(true, tlb_level, false);
+                    req->setPaddr(gPaddr);
+                    return NoFault;
+                }
+                else{
+                    req->setTwoPtwWalk(true, 0, true);
                     req->setgPaddr(gPaddr);
                     fault = walker->start(ppn, tc, translation, req, mode, false, false, 0, false, 0);
                     if (translation != nullptr || fault != NoFault) {
@@ -1434,38 +1413,9 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
                     }
                     return fault;
                 }
-                gPaddr = paddrBase;
             }
-            e[0] = lookup(gPaddr, hgatp.vmid, mode, false, true, gstage);
-            if (e[0]) {
-                if (e[0]->pte.v && !e[0]->pte.r && !e[0]->pte.w && !e[0]->pte.x) {
-                    assert(0);
-                } else if (!e[0]->pte.v || (!e[0]->pte.r && e[0]->pte.w)) {
-                    return createPagefault(vaddr, gPaddr, mode, true);
-                } else if (!e[0]->pte.u) {
-                    return createPagefault(vaddr, gPaddr, mode, true);
-                } else if (((mode == BaseMMU::Execute) || (req->get_h_inst())) && (!e[0]->pte.x)) {
-                    return createPagefault(vaddr, gPaddr, mode, true);
-                } else if ((mode == BaseMMU::Read) && (!e[0]->pte.r && !(status.mxr && e[0]->pte.x))) {
-                    return createPagefault(vaddr, gPaddr, mode, true);
-                } else if ((mode == BaseMMU::Write) && !(e[0]->pte.r && e[0]->pte.w)) {
-                    return createPagefault(vaddr, gPaddr, mode, true);
-                }
-
-                Addr paddr = e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes));
-                paddrBase = e[0]->pte.ppn << 12;
-                Addr pg_mask;
-                if (e[0]->level > 0) {
-                    pg_mask = ((1ULL << (12 + 9 * e[0]->level)) - 1);
-                    if (((e[0]->pte.ppn << 12) & pg_mask) != 0)
-                        assert(0);
-                    paddrBase = (paddrBase & ~pg_mask) | (gPaddr & pg_mask & ~PGMASK);
-                }
-                paddrBase = paddrBase | (gPaddr & PGMASK);
-                req->setPaddr(paddrBase);
-                return NoFault;
-            } else {
-                req->setTwoPtwWalk(true, 0, true);
+            else{
+                req->setTwoPtwWalk(false, 2, false);
                 req->setgPaddr(gPaddr);
                 fault = walker->start(ppn, tc, translation, req, mode, false, false, 0, false, 0);
                 if (translation != nullptr || fault != NoFault) {
@@ -1475,26 +1425,6 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
                 return fault;
             }
         }
-        if (vsatp.mode == 0) {
-            req->setVsatp0Mode(true);
-            req->setTwoStageState(true, virt, two_stage_pmode);
-            level = 0;
-            fault = walker->start(0, tc, translation, req, mode, false, false, 0, false, 0);
-            if (translation != nullptr || fault != NoFault) {
-                delayed = true;
-                return fault;
-            }
-            return fault;
-        }
-    } else {
-        assert(0);
-    }
-    req->setVsatp0Mode(false);
-    req->setTwoStageState(true, virt, two_stage_pmode);
-    fault = walker->start(0, tc, translation, req, mode, false, false, 2, false, 0);
-    if (translation != nullptr || fault != NoFault) {
-        delayed = true;
-        return fault;
     }
     return fault;
 }
