@@ -1299,6 +1299,7 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
             two_stage_pmode = (PrivilegeMode)(RegVal)hstatus.spvp;
         }
     }
+
     if (virt != 0) {
         e[0] = lookup(vaddr, vsatp.asid, mode, false, true, allstage);
         if (e[0]) {
@@ -1324,7 +1325,12 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
             } else if ((mode == BaseMMU::Write) && !(e[0]->pte.r && e[0]->pte.w)) {
                 return createPagefault(vaddr, fault_gpaddr, mode, true);
             }
+
             Addr paddr = e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes));
+            if (e[0]->level > 0) {
+                paddr = (paddr >> (PageShift + e[0]->level * 9)) << (PageShift + e[0]->level * 9) |
+                        (vaddr & mask(e[0]->logBytes));
+            }
             req->setPaddr(paddr);
             return NoFault;
         } else {
@@ -1347,7 +1353,7 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
                 if ((gPaddr & ~(((int64_t)1 << 41) - 1)) != 0) {
                     return createPagefault(vaddr, vaddr, mode, true);
                 }
-                e[0] = lookup(gPaddr, hgatp.vmid, mode, false, true,gstage);
+                e[0] = lookup(gPaddr, hgatp.vmid, mode, false, true, gstage);
                 if (e[0]) {
                     ppn = e[0]->pte.ppn;
                     if (e[0]->pte.v && !e[0]->pte.r && !e[0]->pte.w && !e[0]->pte.x) {
@@ -1425,6 +1431,7 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
                             return fault;
                         }
                     }
+
                 } else {
                     req->setTwoPtwWalk(true, tlb_level, false);
                     req->setgPaddr(gPaddr);
@@ -1476,6 +1483,7 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
                 return fault;
             }
         }
+
         if (vsatp.mode == 0) {
             req->setVsatp0Mode(true);
             req->setTwoStageState(true, virt, two_stage_pmode);

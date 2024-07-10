@@ -637,10 +637,16 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
 
         if (doLLwalk && finishGVA) {
             //entry.paddr = pte.ppn;
-            entry.paddr = (gPaddr >>12);
+            entry.paddr = gPaddr >> 12;
             entry.pte = pte;
-            entry.logBytes = PageShift + (level * LEVEL_BITS);
-            entry.level = level;
+            int put_level = 0;
+            if (twoStageLevel < level)
+                put_level = twoStageLevel;
+            else
+                put_level = level;
+
+            entry.logBytes = PageShift + (put_level * LEVEL_BITS);
+            entry.level = put_level;
             walker->tlb->insert(entry.vaddr, entry, false, allstage);
             endWalk();
             return NoFault;
