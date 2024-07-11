@@ -1167,6 +1167,8 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                     if (diffInfo.inst->isLoad() && memcmp(golden_ptr, &gem5_val, diffInfo.effSize) == 0) {
                         warn("Load content matched in golden memory. Sync from golden to ref\n");
                         sync_mem_reg();
+                        // log the load here
+                        _goldenMemManager->recordLoad(diffInfo.physEffAddr, tid);
                         continue;
                     } else if (diffInfo.inst->isAtomic()) {
                         DPRINTF(Diff, "Golden mem old value: %#lx, GEM5 old value: %#lx\n",

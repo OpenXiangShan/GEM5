@@ -20,7 +20,11 @@
 #include <cstdint>
 #include <vector>
 
+#include <base/statistics.hh>
 #include <base/types.hh>
+#include <cpu/pred/general_arch_db.hh>
+#include <sim/cur_tick.hh>
+#include <sim/sim_exit.hh>
 
 namespace gem5
 {
@@ -51,12 +55,44 @@ class GoldenGloablMem
 
     uint8_t *getGoldenMemPtr() const { return goldenMem; }
 
+    void recordLoad(Addr addr, ThreadID tid);
+    void recordStore(Addr addr, ThreadID tid);
+    void recordAtomic(Addr addr, ThreadID tid);
+
+    struct GoldenMemInfo
+    {
+      Tick lastUpdateTick;
+      ThreadID lastUpdater;
+      bool modified;
+      bool atomic;
+    };
+
+    // struct GoldenMemStats : public statistics::Group
+    // {
+    //     GoldenMemStats(statistics::Group *parent);
+    //     statistics::Scalar reuse;
+    // } goldenMemStat;
+
+    DataBase goldenMemDB;
+    TraceManager *goldenMemTrace;
+
   private:
     Addr pmemBase;
     Addr pmemSize;
     uint8_t *goldenMem;
+    GoldenMemInfo* goldenMemInfo;
 };
 
+struct GoldenMemTrace : public Record
+{
+  GoldenMemTrace(ThreadID dest, ThreadID src, Addr block_addr, Tick tick) {
+    _tick = curTick();
+    _uint64_data["dest"] = dest;
+    _uint64_data["src"] = src;
+    _uint64_data["addr"] = block_addr;
+    _uint64_data["reuse_time"] = tick;
+  }
+};
 } // namespace gem5
 
 #endif // __MEMORY_PADDR_H__

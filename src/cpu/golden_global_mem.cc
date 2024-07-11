@@ -40,6 +40,20 @@ GoldenGloablMem::initGoldenMem(Addr pmem_base, Addr pmem_size, uint8_t *pmem_ptr
     }
     pmemBase = pmem_base;
     pmemSize = pmem_size;
+    goldenMemDB.init_db();
+    std::vector<std::pair<std::string, DataType>> fields_vec = {
+                std::make_pair("dest", UINT64),
+                std::make_pair("src", UINT64),
+                std::make_pair("addr", UINT64),
+                std::make_pair("reuse_time", UINT64)
+            };
+    goldenMemTrace = goldenMemDB.addAndGetTrace("GMTRACE", fields_vec);
+    goldenMemTrace->init_table();
+    goldenMemInfo = new GoldenMemInfo[pmemSize / 64];
+    memset(goldenMemInfo, 0, sizeof(GoldenMemInfo) * (pmemSize / 64));
+
+    registerExitCallback([this](){ goldenMemFinish(); });
+
 }
 
 void *
@@ -51,7 +65,9 @@ GoldenGloablMem::guestToHost(uint64_t addr)
 void
 GoldenGloablMem::goldenMemFinish()
 {
-    // do nothing because memory is released in dedupMemManager
+    // memory is released in dedupMemManager
+    delete []goldenMemInfo;
+    goldenMemDB.save_db("golden_mem_db.db");
 }
 
 void
@@ -80,6 +96,31 @@ void
 GoldenGloablMem::readGoldenMem(uint64_t addr, void *data, uint64_t len)
 {
     *(uint64_t *)data = pmemReadCheck(addr, len);
+}
+
+void GoldenGloablMem::recordLoad(Addr addr, ThreadID tid) {
+    auto gi= goldenMemInfo[(addr - pmemBase) / 64];
+    if (gi.modified) {
+        Tick reuse_time = curTick() - gi.lastUpdateTick;
+        goldenMemTrace->write_record({GoldenMemTrace(tid, gi.lastUpdater, addr, reuse_time)});
+
+    }
+}
+
+void GoldenGloablMem::recordStore(Addr addr, ThreadID tid) {
+    // if pmem writecheck failed it will panic
+    // Maybe record time stored as well?
+    // if (addr / 64 != (addr + len) / 64) {
+    //     panic("Cross cache line write is not supported! addr: %#lx, mem start: %#lx, mem size: %lx\n",
+    //             addr, pmemBase, pmemSize);
+    // }
+
+    goldenMemInfo[(addr - pmemBase) / 64] = { curTick(), tid, true, false};
+
+}
+
+void GoldenGloablMem::recordAtomic(Addr addr, ThreadID tid) {
+    goldenMemInfo[(addr - pmemBase) / 64] = { curTick(), tid, true, true};
 }
 
 bool
@@ -135,6 +176,7 @@ GoldenGloablMem::pmemReadCheck(Addr addr, int len)
     if (inPmem(addr)) {
         return pmemRead(addr, len);
     } else {
+        // ???
         warn("[Hint] read not in pmem, maybe in speculative state! addr: %lx\n", addr);
     }
     return 0;

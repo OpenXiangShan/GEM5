@@ -1553,12 +1553,15 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffe
                     request->mainReq()->getPaddr(), *(uint64_t *)store_inst->memData, 0xff, request->_size);
             cpu->goldenMemManager()->updateGoldenMem(request->mainReq()->getPaddr(), store_inst->memData, 0xff,
                                                      request->_size);
+            cpu->goldenMemManager()->recordStore(request->mainReq()->getPaddr(), lsqID);
         } else {
             uint8_t tmp_data[8] = {0};
             memcpy(tmp_data, store_inst->memData, request->_size);
             assert(request->req()->getAtomicOpFunctor());
 
             // read golden memory to get the global latest value before this AMO is executed for further compare
+            // When AMO Commits, it already reads golden mem once if no match
+            // Trigger logging here
             cpu->goldenMemManager()->readGoldenMem(request->mainReq()->getPaddr(),
                                                    store_inst->getAmoOldGoldenValuePtr(), request->_size);
             cpu->diffInfo.amoOldGoldenValue = store_inst->getAmoOldGoldenValue();
@@ -1581,6 +1584,7 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffe
                     request->mainReq()->getPaddr(), *(uint64_t *)tmp_data, 0xff, request->_size);
             cpu->goldenMemManager()->updateGoldenMem(request->mainReq()->getPaddr(), tmp_data, 0xff,
                                                      request->_size);
+            cpu->goldenMemManager()->recordAtomic(request->mainReq()->getPaddr(), lsqID);
         }
     }
 
