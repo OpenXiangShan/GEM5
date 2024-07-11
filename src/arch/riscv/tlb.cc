@@ -1373,9 +1373,9 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
                 if (e[0]){
                     if (e[0]->level >0){
                         pg_mask = (1ULL << (12 + 9 * e[0]->level)) - 1;
-                        gPaddr = ((e[0]->pte.ppn << 12) & ~pg_mask) | (gPaddr & pg_mask & ~PGMASK);
+                        pgBase = ((e[0]->pte.ppn << 12) & ~pg_mask) | (gPaddr & pg_mask & ~PGMASK);
                     }
-                    gPaddr = gPaddr |(gPaddr & PGMASK);
+                    gPaddr = pgBase |(gPaddr & PGMASK);
                     if (e[0]->pte.v && !e[0]->pte.r && !e[0]->pte.w && !e[0]->pte.x) {
                         assert(0);
                     } else if (!e[0]->pte.v || (!e[0]->pte.r && e[0]->pte.w)) {

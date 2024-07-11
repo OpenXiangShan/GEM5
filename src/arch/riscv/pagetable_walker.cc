@@ -629,7 +629,7 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
             nextRead = (PgBase >> 6) << 6;
             gPaddr = nextRead;
             entry.paddr = gPaddr;
-            if (finishGVA)
+            if (finishGVA &&(!isVsatp0Mode))
                 walker->tlb->insert(entry.gpaddr, entry, false, gstage);
             if ((gPaddr & ~(((int64_t)1 << 41) - 1)) != 0) {
                 // this is a excep
