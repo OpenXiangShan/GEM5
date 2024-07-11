@@ -723,6 +723,7 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
                         finishGVA = true;
                         entry.gpaddr = gPaddr;
                         entry.pte = pte;
+                        entry.pteVS = pte;
                         entry.logBytes = PageShift + (level * LEVEL_BITS);
                         entry.level = level;
 
