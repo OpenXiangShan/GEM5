@@ -1187,6 +1187,8 @@ bool LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t
         auto [entry, index] = storeBuffer.getEmpty();
         entry->reset(blockVaddr, blockPaddr, offset, datas, size);
         storeBuffer.insert(index, blockPaddr);
+        DPRINTF(StoreBuffer, "create new entry[%#x] for addr %#x\n",
+                blockPaddr, paddr);
     }
     DPRINTF(
         StoreBuffer,
@@ -1208,7 +1210,6 @@ LSQUnit::storeBufferEvictToCache()
         return;
     }
     if (storeBuffer.unsentSize() == 0) {
-        DPRINTF(StoreBuffer, "sbuffer was exhausted\n");
         return;
     }
     if (storeBuffer.unsentSize() > sbufferEvictThreshold || storeBufferFlushing) {
