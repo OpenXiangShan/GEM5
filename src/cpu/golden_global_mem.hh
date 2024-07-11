@@ -18,6 +18,7 @@
 #define __MEMORY_PADDR_H__
 
 #include <cstdint>
+#include <vector>
 
 #include <base/types.hh>
 
@@ -37,6 +38,7 @@ class GoldenGloablMem
     uint64_t hostToGuest(void *addr);
 
     void updateGoldenMem(uint64_t addr, void *data, uint64_t mask, int len);
+    void updateGoldenMem(uint64_t addr, void *data, const std::vector<bool>& mask, int len);
     void pmemWriteCheck(uint64_t addr, uint64_t data, int len);
     void pmemWrite(uint64_t addr, uint64_t data, int len);
 

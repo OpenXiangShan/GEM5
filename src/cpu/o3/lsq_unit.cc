@@ -181,15 +181,6 @@ LSQUnit::recvTimingResp(PacketPtr pkt)
 }
 
 void
-LSQUnit::completeSbufferEvict(PacketPtr pkt)
-{
-    auto request = dynamic_cast<LSQ::SbufferRequest *>(pkt->senderState);
-    storeBuffer.release(request->sbuffer_index);
-    DPRINTF(StoreBuffer, "finish entry[%#x] evict to cache, sbuffer size: %d, unsentsize: %d\n", pkt->getAddr(),
-            storeBuffer.size(), storeBuffer.unsentSize());
-}
-
-void
 LSQUnit::completeDataAccess(PacketPtr pkt)
 {
     LSQRequest *request = dynamic_cast<LSQRequest *>(pkt->senderState);
@@ -1138,7 +1129,7 @@ LSQUnit::offloadToStoreBuffer()
             }
             if (request->_numOutstandingPackets == request->_reqs.size()) {
                 request->_numOutstandingPackets = 0;
-                completeStore(storeWBIt);
+                completeStore(storeWBIt, true);
                 storeWBIt++;
             }
         } else {
@@ -1150,7 +1141,7 @@ LSQUnit::offloadToStoreBuffer()
                 break;
             }
             // finish once store
-            completeStore(storeWBIt);
+            completeStore(storeWBIt, true);
             storeWBIt++;
         }
     }
@@ -1473,7 +1464,22 @@ LSQUnit::writeback(const DynInstPtr &inst, PacketPtr pkt)
 }
 
 void
-LSQUnit::completeStore(typename StoreQueue::iterator store_idx)
+LSQUnit::completeSbufferEvict(PacketPtr pkt)
+{
+    auto request = dynamic_cast<LSQ::SbufferRequest *>(pkt->senderState);
+    if (cpu->goldenMemManager() && cpu->goldenMemManager()->inPmem(request->mainReq()->getPaddr())) {
+        Addr paddr = request->mainReq()->getPaddr();
+        DPRINTF(LSQUnit, "StoreBuffer writing to golden memory at addr %#x\n", paddr);
+        cpu->goldenMemManager()->updateGoldenMem(paddr, request->_data, request->mainReq()->getByteEnable(),
+                                                 request->_size);
+    }
+    storeBuffer.release(request->sbuffer_index);
+    DPRINTF(StoreBuffer, "finish entry[%#x] evict to cache, sbuffer size: %d, unsentsize: %d\n", pkt->getAddr(),
+            storeBuffer.size(), storeBuffer.unsentSize());
+}
+
+void
+LSQUnit::completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffer)
 {
     assert(store_idx->valid());
     store_idx->completed() = true;
@@ -1493,18 +1499,20 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx)
             "idx:%i\n",
             store_inst->seqNum, store_idx.idx() - 1, storeQueue.head() - 1);
 
-    if ((!store_inst->isStoreConditional() || store_inst->lockedWriteSuccess()) && cpu->goldenMemManager() &&
+    if (!from_sbuffer &&
+        (!store_inst->isStoreConditional() || store_inst->lockedWriteSuccess()) &&
+        cpu->goldenMemManager() &&
         cpu->goldenMemManager()->inPmem(request->mainReq()->getPaddr())) {
         Addr paddr = request->mainReq()->getPaddr();
-
         if (!store_inst->isAtomic()) {
-            DPRINTF(Diff, "Store writing to golden memory at addr %#x, data %#lx, mask %#x, size %d\n",
-                    paddr, *(uint64_t *)store_idx->data(), 0xff, request->_size);
-            cpu->goldenMemManager()->updateGoldenMem(paddr, store_idx->data(), 0xff,
-                                                     store_idx->size());
+            DPRINTF(LSQUnit, "Store writing to golden memory at addr %#x, data %#lx, mask %#x, size %d\n",
+                    paddr, *((uint64_t *)store_inst->memData), 0xff, request->_size);
+            cpu->goldenMemManager()->updateGoldenMem(paddr, store_inst->memData, 0xff,
+                                                     request->_size);
         } else {
-            uint8_t tmp_data[8] = {0};
-            memcpy(tmp_data, store_idx->data(), store_idx->size());
+            uint8_t tmp_data[8];
+            memset(tmp_data, 0, 8);
+            memcpy(tmp_data, store_inst->memData, request->_size);
             assert(request->req()->getAtomicOpFunctor());
 
             // read golden memory to get the global latest value before this AMO is executed for further compare
@@ -1516,8 +1524,8 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx)
             (*(request->req()->getAtomicOpFunctor()))(tmp_data);
             // after amo operate on golden memory
 
-            DPRINTF(Diff, "AMO writing to golden memory at addr %#x, data %#lx, mask %#x, size %d\n",
-                    paddr, *(uint64_t *)tmp_data, 0xff, request->_size);
+            DPRINTF(LSQUnit, "AMO writing to golden memory at addr %#x, data %#lx, mask %#x, size %d\n",
+                    paddr, *((uint64_t *)(tmp_data)), 0xff, request->_size);
             cpu->goldenMemManager()->updateGoldenMem(paddr, tmp_data, 0xff,
                                                      request->_size);
         }

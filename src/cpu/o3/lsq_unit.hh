@@ -527,7 +527,7 @@ class LSQUnit
     void writebackBlockedStore();
 
     /** Completes the store at the specified index. */
-    void completeStore(typename StoreQueue::iterator store_idx);
+    void completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffer = false);
 
     /** Handles completing the send of a store to memory. */
     void storePostSend();
