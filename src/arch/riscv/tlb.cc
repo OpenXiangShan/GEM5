@@ -561,6 +561,8 @@ TLB::insert(Addr vpn, const TlbEntry &entry,bool squashed_update,uint8_t transla
     freeList.pop_front();
 
     Addr key = buildKey(vpn, entry.asid, translateMode);
+    if (translateMode == gstage)
+        key = buildKey(vpn, entry.vmid, translateMode);
     *newEntry = entry;
     newEntry->lruSeq = nextSeq();
     newEntry->vaddr = vpn;
@@ -793,12 +795,15 @@ TLB::demapPage(Addr vpn, uint64_t asid)
             }
         } else {
             for (i = 0; i < size; i++) {
-                if (tlb[i].trieHandle) {
+                /*if (tlb[i].trieHandle) {
                     Addr mask = ~(tlb[i].size() - 1);
                     if ((vpn == 0 || (vpn & mask) == tlb[i].vaddr) &&
                         (asid == 0 || tlb[i].asid == asid))
                         remove(i);
-                }
+                }*/
+                if (tlb[i].trieHandle)
+                    remove(i);
+
             }
             l2tlb->demapPageL2(vpn, asid);
         }
@@ -1304,10 +1309,16 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
         if (e[0]) {
             if (hgatp.vmid != e[0]->vmid)
                 assert(0);
-            if (mode == BaseMMU::Write && !e[0]->pte.d)
-                fault = createPagefault(vaddr, 0, mode, false);
-            if (fault != NoFault) {
-                return fault;
+            if (vsatp.mode != 0) {
+                if ((mode == BaseMMU::Write && !e[0]->pteVS.d) || (!e[0]->pteVS.a))
+                    fault = createPagefault(vaddr, 0, mode, false);
+                if (fault != NoFault) {
+                    return fault;
+                }
+                fault = checkPermissions(status, pmode, vaddr, mode, e[0]->pteVS, 0, false);
+                if (fault != NoFault) {
+                    return fault;
+                }
             }
             Addr fault_gpaddr = ((e[0]->gpaddr >> 12) << 12) | (vaddr & 0xfff);
 
