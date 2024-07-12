@@ -796,15 +796,16 @@ TLB::demapPage(Addr vpn, uint64_t asid)
             }
         } else {
             for (i = 0; i < size; i++) {
-                /*if (tlb[i].trieHandle) {
+                if (tlb[i].trieHandle) {
                     Addr mask = ~(tlb[i].size() - 1);
-                    if ((vpn == 0 || (vpn & mask) == tlb[i].vaddr) &&
-                        (asid == 0 || tlb[i].asid == asid))
+                    if ((vpn == 0 || (vpn & mask) == (tlb[i].vaddr & mask)) && (asid == 0 || tlb[i].asid == asid))
                         remove(i);
-                }*/
-                if (tlb[i].trieHandle)
-                    remove(i);
-
+                }
+                if (tlb[i].trieHandle) {
+                    Addr mask = ~(tlb[i].size() - 1);
+                    if ((vpn == 0 || (vpn & mask) == (tlb[i].gpaddr & mask)) && (asid == 0 || tlb[i].vmid == asid))
+                        remove(i);
+                }
             }
             l2tlb->demapPageL2(vpn, asid);
         }
