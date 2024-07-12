@@ -193,6 +193,8 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
                "Number of insts commited each cycle"),
       ADD_STAT(instsCommitted, statistics::units::Count::get(),
                "Number of instructions committed"),
+      ADD_STAT(pagefaulttimes, statistics::units::Count::get(),
+               "Number of pagefaulttimes"),
       ADD_STAT(opsCommitted, statistics::units::Count::get(),
                "Number of ops (including micro ops) committed"),
       ADD_STAT(memRefs, statistics::units::Count::get(),
@@ -254,6 +256,10 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
         .flags(statistics::pdf);
 
     instsCommitted
+        .init(cpu->numThreads)
+        .flags(total);
+
+    pagefaulttimes
         .init(cpu->numThreads)
         .flags(total);
 
@@ -1484,6 +1490,13 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
                     tid, head_inst->seqNum);
             return false;
         }
+        if (inst_fault->exception() == RiscvISA::ExceptionCode::LOAD_PAGE ||
+            inst_fault->exception() == RiscvISA::ExceptionCode::STORE_PAGE ||
+            inst_fault->exception() == RiscvISA::ExceptionCode::INST_PAGE ||
+            inst_fault->exception() == RiscvISA::ExceptionCode::INSTG_PAGE ||
+            inst_fault->exception() == RiscvISA::ExceptionCode::LOADG_PAGE ||
+            inst_fault->exception() == RiscvISA::ExceptionCode::STOREG_PAGE)
+            stats.pagefaulttimes[tid]++;
 
         head_inst->setCompleted();
 
@@ -1559,7 +1572,10 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
             auto exception_no =inst_fault->exception();
             if (exception_no == RiscvISA::ExceptionCode::LOAD_PAGE ||
                 exception_no == RiscvISA::ExceptionCode::STORE_PAGE ||
-                exception_no == RiscvISA::ExceptionCode::INST_PAGE) {
+                exception_no == RiscvISA::ExceptionCode::INST_PAGE ||
+                exception_no == RiscvISA::ExceptionCode::INSTG_PAGE ||
+                exception_no == RiscvISA::ExceptionCode::LOADG_PAGE ||
+                exception_no == RiscvISA::ExceptionCode::STOREG_PAGE) {
                 DPRINTF(Commit, "Force to raise No.%lu exception at page fault\n", inst_fault);
                 cpu->setExceptionGuideExecInfo(
                     exception_no, cpu->readMiscReg(RiscvISA::MiscRegIndex::MISCREG_MTVAL, tid),
