@@ -520,6 +520,8 @@ class Commit
 
         /** Total number of instructions committed. */
         statistics::Vector instsCommitted;
+        /** Total number of pagefault.*/
+        statistics::Vector pagefaulttimes;
         /** Total number of ops (including micro ops) committed. */
         statistics::Vector opsCommitted;
         /** Stat for the total number of committed memory references. */
