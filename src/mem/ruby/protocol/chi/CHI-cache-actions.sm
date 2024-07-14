@@ -155,7 +155,7 @@ action(AllocateTBE_SeqRequest, desc="") {
           (in_msg.Type == RubyRequestType:IFETCH)) {
         out_msg.type := CHIRequestType:Load;
       } else if (in_msg.Type == RubyRequestType:ST) {
-        if (in_msg.Size == blockSize) {
+        if (in_msg.Size == blockSize && in_msg.writeMask.isFull()) {
           out_msg.type := CHIRequestType:StoreLine;
         } else {
           out_msg.type := CHIRequestType:Store;

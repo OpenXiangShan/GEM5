@@ -66,6 +66,17 @@ GoldenGloablMem::updateGoldenMem(uint64_t addr, void *data, uint64_t mask, int l
 }
 
 void
+GoldenGloablMem::updateGoldenMem(uint64_t addr, void *data, const std::vector<bool>& mask, int len)
+{
+    uint8_t *dataArray = (uint8_t *)data;
+    for (int i = 0; i < len; i++) {
+        if (mask[i]) {
+            pmemWriteCheck(addr + i, dataArray[i], 1);
+        }
+    }
+}
+
+void
 GoldenGloablMem::readGoldenMem(uint64_t addr, void *data, uint64_t len)
 {
     *(uint64_t *)data = pmemReadCheck(addr, len);

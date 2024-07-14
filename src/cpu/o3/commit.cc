@@ -701,7 +701,7 @@ Commit::tick()
     if (activeThreads->empty())
         return;
 
-    if (cpu->curCycle() - lastCommitCycle > 10000) {
+    if (cpu->curCycle() - lastCommitCycle > 20000) {
         if (maybeStucked) {
             panic("cpu stucked!!\n");
         }
@@ -1352,7 +1352,7 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
                 "at the head of the ROB, PC %s.\n",
                 tid, head_inst->seqNum, head_inst->pcState());
 
-        if (inst_num > 0 || iewStage->hasStoresToWB(tid)) {
+        if (inst_num > 0 || !iewStage->flushAllStores(tid)) {
             DPRINTF(Commit,
                     "[tid:%i] [sn:%llu] "
                     "Waiting for all stores to writeback.\n",
@@ -1413,7 +1413,7 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
                 cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_MTVAL, tid)
                 );
 
-        if (iewStage->hasStoresToWB(tid) || inst_num > 0) {
+        if (!iewStage->flushAllStores(tid) || inst_num > 0) {
             DPRINTF(Commit,
                     "[tid:%i] [sn:%llu] "
                     "Stores outstanding, fault must wait.\n",

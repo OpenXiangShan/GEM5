@@ -157,6 +157,10 @@ class BaseO3CPU(BaseCPU):
 
     LQEntries = Param.Unsigned(80, "Number of load queue entries")
     SQEntries = Param.Unsigned(64, "Number of store queue entries")
+
+    SbufferEntries = Param.Unsigned(16, "Number of store buffer entries")
+    SbufferEvictThreshold = Param.Unsigned(12, "store buffer eviction threshold")
+
     LSQDepCheckShift = Param.Unsigned(0,
             "Number of places to shift addr before check")
     LSQCheckLoads = Param.Bool(True,

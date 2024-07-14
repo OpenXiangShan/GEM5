@@ -623,9 +623,11 @@ XSCompositePrefetcher::updatePhtBits(bool accessed, bool early_update, bool re_a
 void
 XSCompositePrefetcher::notifyFill(const PacketPtr &pkt)
 {
-    stats.refillNotifyCount++;
-    berti->notifyFill(pkt);
-    pfBlockLRUFilter.insert(pkt->req->getVaddr(), 0);
+    if (pkt->req->hasVaddr()) {
+        stats.refillNotifyCount++;
+        berti->notifyFill(pkt);
+        pfBlockLRUFilter.insert(pkt->req->getVaddr(), 0);
+    }
 }
 
 XSCompositePrefetcher::XSCompositeStats::XSCompositeStats(statistics::Group *parent)
