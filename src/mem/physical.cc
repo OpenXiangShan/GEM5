@@ -567,9 +567,7 @@ PhysicalMemory::unserializeStoreFrom(std::string filepath,
             // For small file, anonymous map + file copy
             if (enableDedup) {
                 // Create a common ``root'' memory
-                dedupMemManager->createSharedReadOnlyRoot(size);
-                // map pmem to one of a branch memory, whose update is not visable to other branches (PRIVATE)
-                backingStore[store_id].pmem = dedupMemManager->createCopyOnWriteBranch();
+                backingStore[store_id].pmem = dedupMemManager->createSharedReadOnlyRoot(size);
             } else {
                 backingStore[store_id].pmem =
                     (uint8_t*)mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -582,6 +580,9 @@ PhysicalMemory::unserializeStoreFrom(std::string filepath,
             lseek(fd, 0, SEEK_SET);
             auto bytes = read(fd, backingStore[store_id].pmem, file_len);
             assert(bytes == file_len);
+            if (enableDedup) {
+                backingStore[store_id].pmem = dedupMemManager->createCopyOnWriteBranch();
+            }
         } else {
             // For large file, map to file directly
             if (enableDedup) {
