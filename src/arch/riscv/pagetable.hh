@@ -95,6 +95,7 @@ enum l2TLBPage
     L_L2sp2
 
 };
+enum Hl1HitState { H_L1miss = 0, h_l1AllstageHit, h_l1VSstageHit, h_l1GstageHit };
 
 enum TlbTranslateMode { direct = 0, vsstage, gstage, allstage };
 

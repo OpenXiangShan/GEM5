@@ -198,6 +198,8 @@ class TLB : public BaseTLB
                            Addr gpaddr, bool G);
     Fault checkGuestPermissions(STATUS status, PrivilegeMode pmode, Addr vaddr,
                       BaseMMU::Mode mode, PTESv39 pte);
+    std::pair<bool, Fault> checkGPermissions(STATUS status, Addr vaddr, Addr gpaddr, BaseMMU::Mode mode, PTESv39 pte,
+                                             bool h_inst);
     Fault createPagefault(Addr vaddr, Addr gPaddr,BaseMMU::Mode mode,bool G);
 
     PrivilegeMode getMemPriv(ThreadContext *tc, BaseMMU::Mode mode);
@@ -300,6 +302,8 @@ class TLB : public BaseTLB
     Fault doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
                       BaseMMU::Translation *translation, BaseMMU::Mode mode,
                       bool &delayed);
+    std::pair<int, Fault> checkHL1Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation *translation,
+                                      BaseMMU::Mode mode);
     Fault doTranslate(const RequestPtr &req, ThreadContext *tc,
                       BaseMMU::Translation *translation, BaseMMU::Mode mode,
                       bool &delayed);
