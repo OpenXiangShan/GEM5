@@ -118,13 +118,13 @@ class BaseO3CPU(BaseCPU):
                                     "delay")
     commitToDecodeDelay = Param.Cycles(1, "Commit to decode delay")
     fetchToDecodeDelay = Param.Cycles(4, "Fetch to decode delay")
-    decodeWidth = Param.Unsigned(6, "Decode width")
+    decodeWidth = Param.Unsigned(8, "Decode width")
 
     iewToRenameDelay = Param.Cycles(1, "Issue/Execute/Writeback to rename "
                                     "delay")
     commitToRenameDelay = Param.Cycles(1, "Commit to rename delay")
     decodeToRenameDelay = Param.Cycles(1, "Decode to rename delay")
-    renameWidth = Param.Unsigned(6, "Rename width")
+    renameWidth = Param.Unsigned(8, "Rename width")
 
     commitToIEWDelay = Param.Cycles(1, "Commit to "
                "Issue/Execute/Writeback delay")
@@ -153,8 +153,8 @@ class BaseO3CPU(BaseCPU):
     forwardComSize = Param.Unsigned(10,
             "Time buffer size for forward communication")
 
-    LQEntries = Param.Unsigned(80, "Number of load queue entries")
-    SQEntries = Param.Unsigned(64, "Number of store queue entries")
+    LQEntries = Param.Unsigned(128, "Number of load queue entries")
+    SQEntries = Param.Unsigned(96, "Number of store queue entries")
 
     SbufferEntries = Param.Unsigned(16, "Number of store buffer entries")
     SbufferEvictThreshold = Param.Unsigned(8, "store buffer eviction threshold")
@@ -179,9 +179,9 @@ class BaseO3CPU(BaseCPU):
 
     numPhysIntRegs = Param.Unsigned(224,
             "Number of physical integer registers")
-    numPhysFloatRegs = Param.Unsigned(192, "Number of physical floating point "
+    numPhysFloatRegs = Param.Unsigned(256, "Number of physical floating point "
                                       "registers")
-    numPhysVecRegs = Param.Unsigned(192, "Number of physical vector "
+    numPhysVecRegs = Param.Unsigned(256, "Number of physical vector "
                                       "registers")
     numPhysVecPredRegs = Param.Unsigned(32, "Number of physical predicate "
                                       "registers")
