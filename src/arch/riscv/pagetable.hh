@@ -95,7 +95,17 @@ enum l2TLBPage
     L_L2sp2
 
 };
-enum Hl1HitState { H_L1miss = 0, h_l1AllstageHit, h_l1VSstageHit, h_l1GstageHit };
+enum HTLBHitState
+{
+    H_L1miss = 0,
+    h_l1AllstageHit,
+    h_l1VSstageHit,
+    h_l1GstageHit,
+    h_l2VSstageHitEnd,
+    h_l2VSstageHitContinue,
+    h_l2GstageHitEnd,
+    h_l2GstageHitContinue
+};
 
 enum TlbTranslateMode { direct = 0, vsstage, gstage, allstage };
 
@@ -156,6 +166,7 @@ struct TlbEntry : public Serializable
     uint64_t lruSeq;
 
     uint64_t level;
+    uint64_t VSlevel;
 
     Addr index;
 
@@ -179,6 +190,7 @@ struct TlbEntry : public Serializable
           pteVS(),
           lruSeq(0),
           level(0),
+          VSlevel(0),
           index(0),
           isSquashed(false),
           used(false),

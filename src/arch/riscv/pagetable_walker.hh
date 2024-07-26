@@ -183,6 +183,9 @@ namespace RiscvISA
             int gpaddrMode;
             bool finishGPA;
             bool GstageFault;
+            bool tlbHit;
+            PTESv39 tlbHitPte;
+            Request::Flags tlbflags;
 
 
           public:
@@ -198,7 +201,8 @@ namespace RiscvISA
                 tlbSizePte(0), openNextline(false), autoNextlineSign(false),
                 finishDefaultTranslate(false), preHitInPtw(false), fromPre(false),
                 fromBackPre(false),virt(0),translateMode(0),inGstage(false),finishGVA(false),
-                gpaddrMode(0),finishGPA(false),GstageFault(false)
+                gpaddrMode(0),finishGPA(false),GstageFault(false),
+                tlbHit(false),tlbHitPte(0),tlbflags(Request::PHYSICAL)
             {
                 requestors.emplace_back(nullptr, _req, _translation);
             }
@@ -234,7 +238,8 @@ namespace RiscvISA
 
           private:
             Fault startTwoStageWalk(Addr ppn, Addr vaddr);
-            Fault startTwoStageWalkFromTLB(Addr ppn, Addr vaddr);
+            Fault startTwoStageWalkFromTLBNotInG(Addr ppn, Addr vaddr);
+            Fault startTwoStageWalkFromTLBInG(Addr ppn, Addr vaddr);
 
             Fault twoStageStepWalk(PacketPtr &write);
             Fault twoStageWalk(PacketPtr &write);
@@ -255,8 +260,9 @@ namespace RiscvISA
               BaseMMU::Translation *translation;
               BaseMMU::Mode mode;
               Addr Paddr;
-              TlbEntry entry;
-
+              TlbEntry *entry;
+              TlbEntry *entryVsstage;
+              TlbEntry *entryGstage;
         };
         std::list<L2TlbState> L2TLBrequestors;
 
@@ -285,7 +291,8 @@ namespace RiscvISA
         void doL2TLBHitSchedule(const RequestPtr &req, ThreadContext *tc,
                                 BaseMMU::Translation *translation,
                                 BaseMMU::Mode mode, Addr Paddr,
-                                const TlbEntry &entry);
+                                TlbEntry *entry,TlbEntry *entryVsstage,
+                                TlbEntry *entryGstage,int delaytick);
 
 
 
@@ -305,6 +312,7 @@ namespace RiscvISA
       protected:
         // The TLB we're supposed to load.
         TLB * tlb;
+        TLB * l2tlb;
         System * sys;
         PMAChecker * pma;
         PMP * pmp;
@@ -345,6 +353,10 @@ namespace RiscvISA
         void setTLB(TLB * _tlb)
         {
             tlb = _tlb;
+        }
+        void setL2TLB(TLB * _l2tlb)
+        {
+            l2tlb = _l2tlb;
         }
 
         using Params = RiscvPagetableWalkerParams;
