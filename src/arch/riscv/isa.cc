@@ -475,6 +475,26 @@ ISA::readMiscReg(int misc_reg)
             DPRINTF(RiscvMisc, "Read IE value: %#lx.\n", ic->readIE());
             return ic->readIE();
         }
+      case MISCREG_MIDELEG:
+        {
+            // Note: old versions of bbl don't like HS_INTERRUPTS on mideleg.
+            // If your bootloader panics, keep this return as-is.
+            auto mideleg_val = readMiscRegNoEffect(MISCREG_MIDELEG);
+            return mideleg_val;
+            // MISA misa = readMiscRegNoEffect(MISCREG_ISA);
+            // return misa.rvh ? mideleg_val | HS_INTERRUPTS : mideleg_val;
+        }
+      case MISCREG_UIE:
+        {
+            RegVal mask = readMiscRegNoEffect(MISCREG_SIDELEG);
+            mask &= readMiscRegNoEffect(MISCREG_MIDELEG);
+            return readMiscReg(MISCREG_IE) & mask;
+        }
+      case MISCREG_SIE:
+        {
+            RegVal mask = readMiscRegNoEffect(MISCREG_MIDELEG);
+            return readMiscReg(MISCREG_IE) & mask;
+        }
       case MISCREG_SEPC:
       case MISCREG_MEPC:
         {

@@ -36,6 +36,7 @@
 #include <vector>
 
 #include "arch/riscv/faults.hh"
+#include "arch/riscv/memflags.hh"
 #include "arch/riscv/mmu.hh"
 #include "arch/riscv/page_size.hh"
 #include "arch/riscv/pagetable.hh"
@@ -1112,15 +1113,19 @@ TLB::l2TLBRemove(size_t idx, int choose)
 
 Fault
 TLB::checkPermissions(STATUS status, PrivilegeMode pmode, Addr vaddr,
-                      BaseMMU::Mode mode, PTE pte,Addr gpaddr,bool G)
+                      BaseMMU::Mode mode, PTE pte, Addr gpaddr, bool G,
+                      bool hlvx)
 {
     Fault fault = NoFault;
 
-    if (mode == BaseMMU::Read && !pte.r) {
+    const bool exec_like = (mode == BaseMMU::Execute) ||
+        (mode == BaseMMU::Read && hlvx);
+
+    if (exec_like && !pte.x) {
+        fault = createPagefault(vaddr, gpaddr, mode, G);
+    } else if (!exec_like && mode == BaseMMU::Read && !pte.r) {
         fault = createPagefault(vaddr, gpaddr, mode, G);
     } else if (mode == BaseMMU::Write && !pte.w) {
-        fault = createPagefault(vaddr, gpaddr, mode, G);
-    } else if (mode == BaseMMU::Execute && !pte.x) {
         fault = createPagefault(vaddr, gpaddr, mode, G);
     }
 
@@ -1136,17 +1141,23 @@ TLB::checkPermissions(STATUS status, PrivilegeMode pmode, Addr vaddr,
 }
 
 std::pair<bool, Fault>
-TLB::checkGPermissions(STATUS status,Addr vaddr,Addr gpaddr,BaseMMU::Mode mode, PTE pte,bool h_inst){
+TLB::checkGPermissions(STATUS status, Addr vaddr, Addr gpaddr,
+                       BaseMMU::Mode mode, PTE pte, bool hlvx)
+{
     bool continuePtw = false;
+    const bool exec_like = (mode == BaseMMU::Execute) ||
+        (mode == BaseMMU::Read && hlvx);
+
     if (pte.v && !pte.r && !pte.w && !pte.x) {
         return std::make_pair(true,NoFault);
     } else if (!pte.v || (!pte.r && pte.w)) {
         return std::make_pair(continuePtw,createPagefault(vaddr, gpaddr, mode, true));
     } else if (!pte.u) {
         return std::make_pair(continuePtw,createPagefault(vaddr, gpaddr, mode, true));
-    } else if (((mode == BaseMMU::Execute) || (h_inst)) && (!pte.x)) {
+    } else if (exec_like && (!pte.x)) {
         return std::make_pair(continuePtw,createPagefault(vaddr, gpaddr, mode, true));
-    } else if ((mode == BaseMMU::Read) && (!pte.r && !(status.mxr && pte.x))) {
+    } else if ((mode == BaseMMU::Read) && !hlvx &&
+               (!pte.r && !(status.mxr && pte.x))) {
         return std::make_pair(continuePtw,createPagefault(vaddr, gpaddr, mode, true));
     } else if ((mode == BaseMMU::Write) && !(pte.r && pte.w)) {
         return std::make_pair(continuePtw,createPagefault(vaddr, gpaddr, mode, true));
@@ -1234,7 +1245,10 @@ TLB::L2TLBCheck(PTE pte, int level, STATUS status, PrivilegeMode pmode, Addr vad
     } else {
         if (pte.r || pte.x) {
             hitInSp = true;
-            fault = checkPermissions(status, pmode, vaddr, mode, pte, 0, false);
+            fault = checkPermissions(status, pmode, vaddr, mode, pte, 0, false,
+                (req->getFlags() &
+                    (Request::ARCH_BITS & XlateFlags::HLVX)) ||
+                    req->get_h_inst());
             if (fault == NoFault) {
                 if (level >= L2L1CheckLevel && pte.ppn0 != 0) {
                     fault = L2TLBPagefault(vaddr, mode, req, isPre, is_back_pre);
@@ -1392,14 +1406,22 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
             if (fault != NoFault) {
                 return std::make_pair(hit_type, fault);
             }
-            fault = checkPermissions(status, pmode, vaddr, mode, e[0]->pteVS, 0, false);
+            fault = checkPermissions(status, pmode, vaddr, mode, e[0]->pteVS, 0,
+                false,
+                (req->getFlags() &
+                    (Request::ARCH_BITS & XlateFlags::HLVX)) ||
+                    req->get_h_inst());
             if (fault != NoFault) {
                 return std::make_pair(hit_type, fault);
             }
         }
         Addr fault_gpaddr = ((e[0]->gpaddr >> 12) << 12) | (vaddr & 0xfff);
 
-        std::pair(continuePtw,fault) = checkGPermissions(status,vaddr,fault_gpaddr,mode,e[0]->pte,req->get_h_inst());
+        std::pair(continuePtw,fault) = checkGPermissions(status, vaddr,
+            fault_gpaddr, mode, e[0]->pte,
+            (req->getFlags() &
+                (Request::ARCH_BITS & XlateFlags::HLVX)) ||
+                req->get_h_inst());
         if (fault != NoFault) {
             return std::make_pair(hit_type, fault);
         }
@@ -1435,7 +1457,11 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
                 //return fault;
                 return std::make_pair(hit_type,fault);
             } else {
-                fault = checkPermissions(status, pmode, vaddr, mode, e[0]->pte, 0, false);
+                fault = checkPermissions(status, pmode, vaddr, mode, e[0]->pte, 0,
+                    false,
+                    (req->getFlags() &
+                        (Request::ARCH_BITS & XlateFlags::HLVX)) ||
+                        req->get_h_inst());
                 if (fault != NoFault) {
                     return std::make_pair(hit_type, fault);
                 }
@@ -1451,7 +1477,10 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
                 hit_type = h_l1GstageHit;
                 DPRINTF(TLB, "l1tlb hit in Gstage: level %d, ppn %#x\n", e[0]->level, e[0]->pte.ppn);
                 std::pair(continuePtw, fault) =
-                    checkGPermissions(status, vaddr, gPaddr, mode, e[0]->pte, req->get_h_inst());
+                    checkGPermissions(status, vaddr, gPaddr, mode, e[0]->pte,
+                        (req->getFlags() &
+                            (Request::ARCH_BITS & XlateFlags::HLVX)) ||
+                            req->get_h_inst());
                 if (e[0]->level >0){
                     pg_mask = (1ULL << (12 + 9 * e[0]->level)) - 1;
                     pgBase = ((e[0]->pte.ppn << 12) & ~pg_mask) | (gPaddr & pg_mask & ~PGMASK);
@@ -1541,7 +1570,10 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
             e_l2tlbGstage = e[0];
             gPaddr = req->getgPaddr();
             std::pair<bool, Fault> result =
-                checkGPermissions(status, vaddr, gPaddr, mode, e[0]->pte, req->get_h_inst());
+                checkGPermissions(status, vaddr, gPaddr, mode, e[0]->pte,
+                    (req->getFlags() &
+                        (Request::ARCH_BITS & XlateFlags::HLVX)) ||
+                        req->get_h_inst());
             continuePtw = result.first;
             fault = result.second;
             DPRINTF(TLB, "l2tlb hit in Gstage: "
@@ -1655,7 +1687,11 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                     e_l2tlbGstage = e[0];
                     twoStageLevel = e[0]->level;
                     req->setgPaddr(gPaddr);
-                    auto check_res = checkGPermissions(status, vaddr, gPaddr, mode, e[0]->pte, req->get_h_inst());
+                    auto check_res = checkGPermissions(status, vaddr, gPaddr,
+                        mode, e[0]->pte,
+                        (req->getFlags() &
+                            (Request::ARCH_BITS & XlateFlags::HLVX)) ||
+                            req->get_h_inst());
                     continuePtw = check_res.first;
                     fault = check_res.second;
                     DPRINTF(TLB, "found pte for gPaddr: %#x in Gstage -> "
@@ -1759,7 +1795,9 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
             virt = status.mpv && (two_stage_pmode != PrivilegeMode::PRV_M);
         }
 
-        if (req->get_h_inst()) {
+        bool force_virt =
+            req->getFlags() & (Request::ARCH_BITS & XlateFlags::FORCE_VIRT);
+        if (force_virt || req->get_h_inst()) {
             virt = 1;
             two_stage_pmode = (PrivilegeMode)(RegVal)hstatus.spvp;
         }
@@ -2063,7 +2101,10 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
         DPRINTF(TLB, "final checkpermission\n");
         DPRINTF(TLB, "translate(vpn=%#x, asid=%#x): %#x pc %#x mode %i pte.d %d\n", vaddr, satp.asid, paddr,
                 req->getPC(), mode, e[0]->pte.d);
-        fault = checkPermissions(status, pmode, vaddr, mode, e[0]->pte, 0, false);
+        fault = checkPermissions(status, pmode, vaddr, mode, e[0]->pte, 0, false,
+            (req->getFlags() &
+                (Request::ARCH_BITS & XlateFlags::HLVX)) ||
+                req->get_h_inst());
     }
 
 
@@ -2139,7 +2180,10 @@ TLB::hasTwoStageTranslation(ThreadContext *tc, const RequestPtr &req, BaseMMU::M
 {
     STATUS status = (STATUS)tc->readMiscReg(MISCREG_STATUS);
     int v_mode = tc->readMiscReg(MISCREG_VIRMODE);
-    return (req->get_h_inst()) || (status.mprv && status.mpv) || v_mode;
+    bool force_virt =
+        req->getFlags() & (Request::ARCH_BITS & XlateFlags::FORCE_VIRT);
+    return force_virt || req->get_h_inst() || (status.mprv && status.mpv) ||
+        v_mode;
 }
 
 MMUMode
@@ -2304,7 +2348,9 @@ TLB::configVmodeInTLB(const RequestPtr &req, ThreadContext *tc,
             v_mode = status.mpv && (two_stage_pmode != PrivilegeMode::PRV_M);
         }
 
-        if (req->get_h_inst()) {
+        bool force_virt =
+            req->getFlags() & (Request::ARCH_BITS & XlateFlags::FORCE_VIRT);
+        if (force_virt || req->get_h_inst()) {
             v_mode = 1;
             two_stage_pmode = (PrivilegeMode)(RegVal)hstatus.spvp;
         }

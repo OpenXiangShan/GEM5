@@ -55,6 +55,7 @@
 #include <numeric>
 
 #include "arch/riscv/faults.hh"
+#include "arch/riscv/memflags.hh"
 #include "arch/riscv/page_size.hh"
 #include "arch/riscv/pagetable.hh"
 #include "arch/riscv/tlb.hh"
@@ -295,7 +296,9 @@ Walker::WalkerState::initState(ThreadContext *_tc, const RequestPtr &_req, BaseM
         fromBackPre = false;
         translateMode = twoStageMode;
         hgatp = _tc->readMiscReg(MISCREG_HGATP);
-        isHInst = _req->get_h_inst();
+        isHInst = (_req->getFlags() &
+                      (Request::ARCH_BITS & XlateFlags::HLVX)) ||
+                  _req->get_h_inst();
         isVsatp0Mode = _req->get_vsatp_0_mode();
         virt = _req->get_virt();
         GstageFault = false;
@@ -694,10 +697,12 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
         } else if (!pte.u) {
             endWalk();
             return endGstageWalk();
-        } else if (((mode == BaseMMU::Execute) || isHInst) && (!pte.x)) {
+        } else if (((mode == BaseMMU::Execute) ||
+                    (mode == BaseMMU::Read && isHInst)) && (!pte.x)) {
             endWalk();
             return endGstageWalk();
-        } else if ((mode == BaseMMU::Read) && (!pte.r && !(status.mxr && pte.x))) {
+        } else if ((mode == BaseMMU::Read) && !isHInst &&
+                   (!pte.r && !(status.mxr && pte.x))) {
             endWalk();
             return endGstageWalk();
         } else if ((mode == BaseMMU::Write) && !(pte.r && pte.w)) {
@@ -907,9 +912,11 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
             if (pte.r || pte.x) {
                 doEndWalk = true;
                 if (virt) {
-                    fault = walker->tlb->checkPermissions(vsstatus, pmode, entry.vaddr, mode, pte, 0, false);
+                    fault = walker->tlb->checkPermissions(vsstatus, pmode, entry.vaddr, mode, pte, 0, false,
+                                                          isHInst);
                 } else {
-                    fault = walker->tlb->checkPermissions(status, pmode, entry.vaddr, mode, pte, 0, false);
+                    fault = walker->tlb->checkPermissions(status, pmode, entry.vaddr, mode, pte, 0, false,
+                                                          isHInst);
                 }
 
                 if (fault == NoFault) {
@@ -1171,7 +1178,8 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
             if (pte.r || pte.x) {
                 // step 5: leaf PTE
                 doEndWalk = true;
-                fault = walker->tlb->checkPermissions(status, pmode, entry.vaddr, mode, pte, 0, false);
+                fault = walker->tlb->checkPermissions(status, pmode, entry.vaddr, mode, pte, 0, false,
+                                                      isHInst);
                 // step 6
                 if (fault == NoFault) {
                     if (level >= 1 && pte.ppn0 != 0) {

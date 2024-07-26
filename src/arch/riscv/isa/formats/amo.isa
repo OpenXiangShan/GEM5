@@ -564,7 +564,6 @@ def format AtomicMemOp(memacc_code, amoop_code, postacc_code={{ }},
                              'postacc_code': postacc_code,
                              'amoop_code': amoop_code},
                             rmw_inst_flags)
-
     rmw_iop.constructor += '\n\tmemAccessFlags = memAccessFlags | ' + \
           '|'.join(['Request::%s' % flag for flag in rmw_mem_flags]) + ';'
 
