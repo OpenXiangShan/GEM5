@@ -23,7 +23,7 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
           p.pht_replacement_policy,
           PhtEntry(2 * (regionBlks - 1), SatCounter8(3, 2))),
       phtPFAhead(p.pht_pf_ahead),
-      phtPFLevel(std::min(p.pht_pf_level, (int) maxCacheLevel)),
+      phtPFLevel(std::min(p.pht_pf_level, (int) 3)),
       stats(this),
       pfBlockLRUFilter(pfFilterSize),
       pfPageLRUFilter(pfPageFilterSize),
@@ -134,10 +134,9 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
         if (streamPFAhead) {
             Addr pf_tgt_addr_l2 = decr ? pf_tgt_addr - 48 * blkSize : pf_tgt_addr + 48 * blkSize;  // depth here?
             sendStreamPF(pfi, pf_tgt_addr_l2, addresses, pfPageLRUFilterL2, decr, 2);
-            if (maxCacheLevel >= 3) {
-                Addr pf_tgt_addr_l3 = decr ? pf_tgt_addr - 256 * blkSize : pf_tgt_addr + 256 * blkSize;  // depth here?
-                sendStreamPF(pfi, pf_tgt_addr_l3, addresses, pfPageLRUFilterL3, decr, 3);
-            }
+
+            Addr pf_tgt_addr_l3 = decr ? pf_tgt_addr - 256 * blkSize : pf_tgt_addr + 256 * blkSize;  // depth here?
+            sendStreamPF(pfi, pf_tgt_addr_l3, addresses, pfPageLRUFilterL3, decr, 3);
         }
     }
 
@@ -640,21 +639,21 @@ XSCompositePrefetcher::XSCompositeStats::XSCompositeStats(statistics::Group *par
 }
 
 void
-XSCompositePrefetcher::setCache(BaseCache *_cache)
+XSCompositePrefetcher::setParentInfo(System *sys, ProbeManager *pm, CacheAccessor* _cache, unsigned blk_size)
 {
-    Base::setCache(_cache);
+    Base::setParentInfo(sys, pm, _cache, blk_size);
 
-    largeBOP->setCache(_cache);
-    smallBOP->setCache(_cache);
-    learnedBOP->setCache(_cache);
+    largeBOP->setParentInfo(sys, pm, _cache, blk_size);
+    smallBOP->setParentInfo(sys, pm, _cache, blk_size);
+    learnedBOP->setParentInfo(sys, pm, _cache, blk_size);
 
-    berti->setCache(_cache);
+    berti->setParentInfo(sys, pm, _cache, blk_size);
 
     if (cmc)
-        cmc->setCache(_cache);
+        cmc->setParentInfo(sys, pm, _cache, blk_size);
 
     if (ipcp)
-        ipcp->setCache(_cache);
+        ipcp->setParentInfo(sys, pm, _cache, blk_size);
 }
 
 }  // prefetch

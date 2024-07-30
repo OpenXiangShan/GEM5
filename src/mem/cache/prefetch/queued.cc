@@ -575,7 +575,7 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
     } else {
         // Add the translation request and try to resolve it later
         dpp.setTranslationRequest(translation_req);
-        dpp.tc = cache->system->threads[translation_req->contextId()];
+        dpp.tc = system->threads[translation_req->contextId()];
         DPRINTF(HWPrefetch, "Prefetch queued with no translation. "
                 "addr:%#x priority: %3d\n", new_pfi.getAddr(), priority);
         addToQueue(pfqMissingTranslation, dpp);
@@ -605,10 +605,10 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
         if (dpp.pfahead) {
             // l1 can not process l3 pfahead request
             // but l3 can process l1 request
-            if (dpp.pfahead_host > cache->level()) {
-                panic("Prefetch req from src %i heading to l%i, but l%i can not process it\n",
-                      dpp.pfInfo.getXsMetadata().prefetchSource, dpp.pfahead_host, cache->level());
-            }
+            // if (dpp.pfahead_host > cache->level()) {
+            //     panic("Prefetch req from src %i heading to l%i, but l%i can not process it\n",
+            //           dpp.pfInfo.getXsMetadata().prefetchSource, dpp.pfahead_host, cache->level());
+            // }
         }
         queue_size = queueSize;
         queue_name = "PFQ";

@@ -51,6 +51,7 @@
 #include "mem/ruby/protocol/PrefetchBit.hh"
 #include "mem/ruby/protocol/RubyAccessMode.hh"
 #include "mem/ruby/protocol/RubyRequestType.hh"
+#include "mem/ruby/slicc_interface/XsPFMetaData.hh"
 
 namespace gem5
 {
@@ -225,6 +226,10 @@ class RubyRequest : public Message
     const int& getSize() const { return m_Size; }
     const PrefetchBit& getPrefetch() const { return m_Prefetch; }
     RequestPtr getRequestPtr() const { return m_pkt->req; }
+    XsPFMetaData getXsPFMeta() const
+    {
+        return m_pkt->req->getXsMetadata();
+    }
 
     void setWriteMask(uint32_t offset, uint32_t len,
         std::vector< std::pair<int,AtomicOpFunctor*>> atomicOps);

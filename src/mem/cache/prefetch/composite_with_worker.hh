@@ -23,7 +23,7 @@ class CompositeWithWorkerPrefetcher: public WorkerPrefetcher
 
     bool hasHintsWaiting() override { return !localBuffer.empty(); }
 
-    void setCache(BaseCache *_cache) override;
+    void setParentInfo(System *sys, ProbeManager *pm, CacheAccessor* _cache, unsigned blk_size) override;
 
     void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) override;
 

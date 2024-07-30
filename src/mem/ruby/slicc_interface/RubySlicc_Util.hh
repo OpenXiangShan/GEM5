@@ -58,12 +58,15 @@
 #include "mem/ruby/common/TypeDefines.hh"
 #include "mem/ruby/common/WriteMask.hh"
 #include "mem/ruby/protocol/RubyRequestType.hh"
+#include "mem/ruby/slicc_interface/XsPFMetaData.hh"
 
 namespace gem5
 {
 
 namespace ruby
 {
+
+class AbstractCacheEntry;
 
 inline Cycles zero_time() { return Cycles(0); }
 
@@ -320,6 +323,30 @@ inline RequestorID
 getRequestorID(RequestPtr req)
 {
     return req->requestorId();
+}
+
+inline XsPFMetaData
+getRequestXsMetaData(RequestPtr& req)
+{
+    return req->getXsMetadata();
+}
+
+inline void
+setRequestXsMetaData(RequestPtr& req, XsPFMetaData& pfmeta)
+{
+    req->setXsMetadata(pfmeta);
+}
+
+inline bool
+XsMetaIsNotNull(XsPFMetaData& pfmeta)
+{
+    return pfmeta.prefetchSource != PrefetchSourceType::PF_NONE;
+}
+
+inline AbstractCacheEntry*
+CacheEntryToAbstract(AbstractCacheEntry* entry)
+{
+    return entry;
 }
 
 } // namespace ruby

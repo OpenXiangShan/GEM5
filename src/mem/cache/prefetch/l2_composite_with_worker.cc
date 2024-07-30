@@ -60,11 +60,11 @@ L2CompositeWithWorkerPrefetcher::pfHitNotify(float accuracy, PrefetchSourceType 
 }
 
 void
-L2CompositeWithWorkerPrefetcher::setCache(BaseCache *_cache)
+L2CompositeWithWorkerPrefetcher::setParentInfo(System *sys, ProbeManager *pm, CacheAccessor* _cache, unsigned blk_size)
 {
-    cdp->setCache(_cache);
+    cdp->setParentInfo(sys, pm, _cache, blk_size);
     cdp->setStatsPtr(&prefetchStats);
-    CompositeWithWorkerPrefetcher::setCache(_cache);
+    CompositeWithWorkerPrefetcher::setParentInfo(sys, pm, _cache, blk_size);
 }
 
 void

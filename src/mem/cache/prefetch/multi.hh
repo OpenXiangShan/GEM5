@@ -57,7 +57,7 @@ class Multi : public Base
     Multi(const MultiPrefetcherParams &p);
 
   public:
-    void setCache(BaseCache *_cache) override;
+    void setParentInfo(System *sys, ProbeManager *pm, CacheAccessor* _cache, unsigned blk_size) override;
     void addTLB(BaseTLB* _t) override;
     PacketPtr getPacket() override;
     Tick nextPrefetchReadyTime() const override;

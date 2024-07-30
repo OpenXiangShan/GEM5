@@ -112,7 +112,9 @@ IssueQue::checkScoreboard(const DynInstPtr& inst)
         }
         // check bypass data ready or not
         if (!scheduler->bypassScoreboard[src->flatIndex()]) {
-            panic("[sn %lu] %s can't get data from bypassNetwork\n", inst->seqNum, inst->srcRegIdx(i));
+            auto dst_inst = scheduler->getInstByDstReg(src->flatIndex());
+            panic("[sn %lu] %s can't get data from bypassNetwork, dst inst: %s\n", inst->seqNum, inst->srcRegIdx(i),
+                  dst_inst->genDisassembly());
         }
     }
     inst->checkOldVdElim();
@@ -576,6 +578,20 @@ Scheduler::full(const DynInstPtr& inst)
     }
     DPRINTF(Dispatch, "IQ full, opclass: %s\n", enums::OpClassStrings[inst->opClass()]);
     return true;
+}
+
+DynInstPtr
+Scheduler::getInstByDstReg(RegIndex flatIdx)
+{
+    for (auto iq : issueQues)
+    {
+        for (auto& inst : iq->instList){
+            if (inst->numDestRegs() > 0 && inst->renamedDestIdx(0)->flatIndex() == flatIdx) {
+                return inst;
+            }
+        }
+    }
+    return nullptr;
 }
 
 void

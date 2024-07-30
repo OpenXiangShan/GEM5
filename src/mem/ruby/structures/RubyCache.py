@@ -35,6 +35,7 @@ class RubyCache(SimObject):
     cxx_class = "gem5::ruby::CacheMemory"
     cxx_header = "mem/ruby/structures/CacheMemory.hh"
 
+    level = Param.Int(-1, "the level of cache (l1 is 1, l2 is 2, etc.)")
     size = Param.MemorySize("capacity in bytes")
     assoc = Param.Int("")
     replacement_policy = Param.BaseReplacementPolicy(TreePLRURP(), "")

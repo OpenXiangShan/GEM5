@@ -73,6 +73,7 @@ namespace ruby
 class Network;
 class GPUCoalescer;
 class DMASequencer;
+class AbstractCacheEntry;
 
 // used to communicate that an in_port peeked the wrong message type
 class RejectException: public std::exception
@@ -358,18 +359,29 @@ class AbstractController : public ClockedObject, public Consumer, public HasDown
     virtual bool inCache(const Addr &addr, const bool &is_secure)
     { fatal("inCache: prefetching not supported"); return false; }
 
+    virtual int level()
+    { fatal("level: prefetching not supported"); return 0; }
+
     virtual bool hasBeenPrefetched(const Addr &addr, const bool &is_secure)
     { fatal("hasBeenPrefetched: prefetching not supported"); return false; }
 
-    virtual bool hasBeenPrefetched(const Addr &addr, const bool &is_secure,
-                                   const RequestorID &requestor)
+    virtual bool hasBeenPrefetched(const Addr &addr, const bool &is_secure, const RequestorID &requestor)
     { fatal("hasBeenPrefetched: prefetching not supported"); return false; }
+
+    virtual bool hasBeenPrefetchedAndNotAccessed(const Addr &addr, const bool &is_secure)
+    { fatal("hasBeenPrefetchedAndNotAccessed: prefetching not supported"); return false; }
+
+    virtual Request::XsMetadata getHitBlkXsMetadata(const Addr &addr, const bool &is_secure)
+    { fatal("getHitBlkXsMetadata: prefetching not supported"); return Request::XsMetadata(); }
 
     virtual bool inMissQueue(const Addr &addr, const bool &is_secure)
     { fatal("inMissQueue: prefetching not supported"); return false; }
 
     virtual bool coalesce()
     { fatal("coalesce: prefetching not supported"); return false; }
+
+    virtual AbstractCacheEntry* findBlock(const Addr &addr, const bool &is_secure)
+    { fatal("findBlock: prefetching not supported"); return nullptr; }
 
     friend class RubyPrefetcherProxy;
 

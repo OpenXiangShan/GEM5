@@ -43,8 +43,11 @@
 // #include "mem/cache/cache_probe_arg.hh"
 #include "mem/cache/base.hh"
 #include "mem/cache/prefetch/base.hh"
+#include "mem/ruby/slicc_interface/AbstractCacheEntry.hh"
 #include "mem/ruby/slicc_interface/AbstractController.hh"
 #include "mem/ruby/slicc_interface/RubyRequest.hh"
+#include "mem/ruby/slicc_interface/XsPFMetaData.hh"
+#include "mem/ruby/system/RubySystem.hh"
 
 namespace gem5
 {
@@ -54,7 +57,7 @@ namespace ruby
 // Removed cache accessor
   using DataUpdate = BaseCache::DataUpdate;
 
-class RubyPrefetcherProxy : /*public CacheAccessor,*/ public Named
+class RubyPrefetcherProxy : public CacheAccessor, public Named
 {
   public:
 
@@ -71,14 +74,22 @@ class RubyPrefetcherProxy : /*public CacheAccessor,*/ public Named
     /**
      * Notify PF probes hit/miss/fill
      */
-    void notifyPfHit(const RequestPtr& req, bool is_read,
+    void notifyPfHit(const RequestPtr& req, bool is_read, XsPFMetaData& pfmeta,
                      const DataBlock& data_blk);
-    void notifyPfMiss(const RequestPtr& req, bool is_read,
+
+    void notifyPfMiss(const RequestPtr& req, bool is_read, XsPFMetaData& pfmeta,
                       const DataBlock& data_blk);
+
     void notifyPfFill(const RequestPtr& req, const DataBlock& data_blk,
                       bool from_pf);
-    void notifyPfEvict(Addr blkAddr, bool hwPrefetched,
+    void notifyPfEvict(Addr blkAddr, bool hwPrefetched, XsPFMetaData& pfmeta,
                        RequestorID requestorID);
+
+    void pfHitInCache(const XsPFMetaData& pfmeta);
+
+    void notifyHitToDownStream(const RequestPtr& req);
+
+    void offloadToDownStream();
 
     /** Registers probes. */
     void regProbePoints();
@@ -129,29 +140,49 @@ class RubyPrefetcherProxy : /*public CacheAccessor,*/ public Named
 
     /** Accessor functions */
 
-    // bool inCache(Addr addr, bool is_secure) const override
-    // {
-    //     return cacheCntrl->inCache(addr, is_secure);
-    // }
+    bool inCache(Addr addr, bool is_secure) const override
+    {
+        return cacheCntrl->inCache(addr, is_secure);
+    }
 
-    // bool hasBeenPrefetched(Addr addr, bool is_secure) const override
-    // {
-    //     return cacheCntrl->hasBeenPrefetched(addr, is_secure);
-    // }
+    virtual unsigned level() const override
+    {
+        return cacheCntrl->level();
+    }
 
-    // bool hasBeenPrefetched(Addr addr, bool is_secure,
-    //                         RequestorID requestor) const override
-    // {
-    //     return cacheCntrl->hasBeenPrefetched(addr, is_secure, requestor);
-    // }
+    bool hasBeenPrefetched(Addr addr, bool is_secure) const override
+    {
+        return cacheCntrl->hasBeenPrefetched(addr, is_secure);
+    }
 
-    // bool inMissQueue(Addr addr, bool is_secure) const override
-    // {
-    //     return cacheCntrl->inMissQueue(addr, is_secure);
-    // }
+    bool hasBeenPrefetched(Addr addr, bool is_secure,
+                            RequestorID requestor) const override
+    {
+        return cacheCntrl->hasBeenPrefetched(addr, is_secure, requestor);
+    }
 
-    // bool coalesce() const override
-    // { return cacheCntrl->coalesce(); }
+    bool hasBeenPrefetchedAndNotAccessed(Addr addr, bool is_secure) const override
+    {
+        return cacheCntrl->hasBeenPrefetchedAndNotAccessed(addr, is_secure);
+    }
+
+    Request::XsMetadata getHitBlkXsMetadata(PacketPtr pkt) override
+    {
+        return cacheCntrl->getHitBlkXsMetadata(pkt->getAddr(), pkt->isSecure());
+    }
+
+    bool inMissQueue(Addr addr, bool is_secure) const override
+    {
+        return cacheCntrl->inMissQueue(addr, is_secure);
+    }
+
+    bool coalesce() const override
+    { return cacheCntrl->coalesce(); }
+
+    const uint8_t* findBlock(Addr addr, bool is_secure) const override
+    {
+      return cacheCntrl->findBlock(addr, is_secure)->getDataBlk().getData(0, RubySystem::getBlockSizeBytes());
+    }
 
 };
 

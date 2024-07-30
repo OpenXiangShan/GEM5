@@ -71,6 +71,8 @@ namespace gem5
 namespace ruby
 {
 
+class Sequencer;
+
 class MessageBuffer : public SimObject
 {
   public:
@@ -144,6 +146,10 @@ class MessageBuffer : public SimObject
 
     void registerDequeueCallback(std::function<void()> callback);
     void unregisterDequeueCallback();
+
+    void notifyMissCallback(Tick current_time, Sequencer& sequencer);
+
+    bool hasPrefetchRequest(Addr addr);
 
     void recycle(Tick current_time, Tick recycle_latency);
     bool isEmpty() const { return m_prio_heap.size() == 0; }
