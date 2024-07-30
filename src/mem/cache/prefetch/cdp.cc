@@ -104,7 +104,7 @@ CDP::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addre
     PrefetchSourceType pf_source = pfi.getXsMetadata().prefetchSource;
     int pf_depth = pfi.getXsMetadata().prefetchDepth;
     bool is_prefetch =
-        cache->system->getRequestorName(pfi.getRequestorId()).find("dcache.prefetcher") != std::string::npos;
+        system->getRequestorName(pfi.getRequestorId()).find("dcache.prefetcher") != std::string::npos;
     if (!miss && pfi.getDataPtr() != nullptr) {
         if (is_prefetch && enable_prf_filter[pf_source]) {
             return;
@@ -169,13 +169,13 @@ CDP::notifyWithData(const PacketPtr &pkt, bool is_l1_use, std::vector<AddrPriori
         DPRINTF(CDPdebug, "Notify with data received for addr: %#llx, pkt size: %lu\n", pkt->req->getVaddr(),
                 pkt->getSize());
 
-        auto *blk = cache->findBlock(pkt->getAddr(), pkt->isSecure());
-        if (!blk) {
+        auto *blk_data = cache->findBlock(pkt->getAddr(), pkt->isSecure());
+        if (!blk_data) {
             cdpStats.dataNotifyExitBlockNotFound++;
             return;
         }
         Request::XsMetadata pkt_meta = cache->getHitBlkXsMetadata(pkt);
-        size_t prefetch_type = cache->system->getRequestorName(pkt->req->requestorId()).find("dcache.prefetcher");
+        size_t prefetch_type = system->getRequestorName(pkt->req->requestorId()).find("dcache.prefetcher");
         int pf_depth = pkt_meta.prefetchDepth;
         PrefetchSourceType pf_source = pkt_meta.prefetchSource;
         if (!is_l1_use && prefetch_type != std::string::npos) {
@@ -184,7 +184,7 @@ CDP::notifyWithData(const PacketPtr &pkt, bool is_l1_use, std::vector<AddrPriori
                 return;
             }
         }
-        uint64_t *test_addr_start = (uint64_t *)blk->data;
+        const uint64_t *test_addr_start = (const uint64_t *)blk_data;
         unsigned max_offset = blkSize / sizeof(uint64_t);
         switch (byteOrder) {
             case ByteOrder::big:

@@ -203,7 +203,7 @@ class XSCompositePrefetcher : public Queued
           hintDownStream->notifyIns(ins_num);
         }
     }
-    void setCache(BaseCache *_cache) override;
+    void setParentInfo(System *sys, ProbeManager *pm, CacheAccessor* _cache, unsigned blk_size) override;
 };
 
 }

@@ -155,6 +155,7 @@ class CacheMemory : public SimObject
     void htmCommitTransaction();
 
   public:
+    int level() const { return m_level; }
     int getCacheSize() const { return m_cache_size; }
     int getCacheAssoc() const { return m_cache_assoc; }
     int getNumBlocks() const { return m_cache_num_sets * m_cache_assoc; }
@@ -189,6 +190,7 @@ class CacheMemory : public SimObject
     BankedArray tagArray;
     ALUFreeListArray atomicALUArray;
 
+    int m_level;
     int m_cache_size;
     int m_cache_num_sets;
     int m_cache_num_set_bits;

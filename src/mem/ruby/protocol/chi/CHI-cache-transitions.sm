@@ -968,6 +968,7 @@ transition({BUSY_BLKD,BUSY_INTR},
 }
 
 transition({BUSY_BLKD,BUSY_INTR}, Load) {
+  Callback_PrefetchLate;
   Callback_DelayedL1DResult_Load;
   StallRequest;
 }

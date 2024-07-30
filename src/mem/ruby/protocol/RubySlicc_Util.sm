@@ -40,6 +40,7 @@
 
 // Miscallaneous Functions
 
+void warn(std::string msg);
 void error(std::string msg);
 void assert(bool condition);
 Cycles zero_time();
@@ -61,3 +62,6 @@ structure(BoolVec, external="yes") {
 }
 int countBoolVec(BoolVec bVec);
 RequestorID getRequestorID(RequestPtr req);
+XsPFMetaData getRequestXsMetaData(RequestPtr req);
+void setRequestXsMetaData(RequestPtr req, XsPFMetaData pfmeta);
+bool XsMetaIsNotNull(XsPFMetaData pfmeta);

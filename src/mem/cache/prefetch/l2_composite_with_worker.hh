@@ -29,7 +29,7 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
     void rxHint(BaseMMU::Translation *dpp) override;
     void pfHitNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt) override;
 
-    void setCache(BaseCache *_cache) override;
+    void setParentInfo(System *sys, ProbeManager *pm, CacheAccessor* _cache, unsigned blk_size) override;
 
     void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) override;
 

@@ -218,6 +218,7 @@ class Scheduler : public SimObject
     void issueAndSelect();
     bool full(const DynInstPtr& inst);
     bool ready(const DynInstPtr& inst);
+    DynInstPtr getInstByDstReg(RegIndex flatIdx);
 
     void addProducer(const DynInstPtr& inst);
     // return true if insert successful

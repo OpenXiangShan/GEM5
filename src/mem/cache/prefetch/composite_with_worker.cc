@@ -65,9 +65,9 @@ CompositeWithWorkerPrefetcher::postNotifyInsert(const PacketPtr &trigger_pkt, st
 }
 
 void
-CompositeWithWorkerPrefetcher::setCache(BaseCache *_cache)
+CompositeWithWorkerPrefetcher::setParentInfo(System *sys, ProbeManager *pm, CacheAccessor* _cache, unsigned blk_size)
 {
-    Base::setCache(_cache);
+    Base::setParentInfo(sys, pm, _cache, blk_size);
 }
 
 }  // namespace prefetch

@@ -174,7 +174,6 @@ class L2(Cache):
     size = '2MB'
     assoc = 16
     write_buffers = 8
-    prefetch_on_access = True
     clusivity = 'mostly_excl'
     # Simple stride prefetcher
     prefetcher = StridePrefetcher(degree=8, latency = 1)

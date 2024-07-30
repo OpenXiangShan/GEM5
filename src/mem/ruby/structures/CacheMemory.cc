@@ -77,6 +77,7 @@ CacheMemory::CacheMemory(const Params &p)
              p.ruby_system->clockPeriod()),
     cacheMemoryStats(this)
 {
+    m_level = p.level;
     m_cache_size = p.size;
     m_cache_assoc = p.assoc;
     m_replacementPolicy_ptr = p.replacement_policy;

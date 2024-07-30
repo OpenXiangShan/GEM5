@@ -1247,6 +1247,7 @@ void
 $c_ident::${{action.ident}}(${{self.TBEType.c_ident}}*& m_tbe_ptr, ${{self.EntryType.c_ident}}*& m_cache_entry_ptr, Addr addr)
 {
     DPRINTF(RubyGenerated, "executing ${{action.ident}}\\n");
+    printTBEState("${{action.ident}}", m_tbe_ptr);
     try {
        ${{action["c_code"]}}
     } catch (const RejectException & e) {

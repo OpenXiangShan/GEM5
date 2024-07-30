@@ -170,17 +170,14 @@ def config_cache(options, system):
             system.tol3bus = L2XBar(clk_domain=system.cpu_clk_domain, width=256)
             system.l3.cpu_side = system.tol3bus.mem_side_ports
             system.l3.mem_side = system.membus.cpu_side_ports
-            system.l3.max_cache_level = 3
 
         for i in range(options.num_cpus):
             if options.l3cache:
                 # l2 -> tol3bus -> l3
                 system.l2_caches[i].mem_side = system.tol3bus.cpu_side_ports
                 # l3 -> membus
-                system.l2_caches[i].max_cache_level = 3
             else:
                 system.l2_caches[i].mem_side = system.membus.cpu_side_ports
-                system.l2_caches[i].max_cache_level = 2
 
     if options.memchecker:
         system.memchecker = MemChecker()
@@ -189,12 +186,6 @@ def config_cache(options, system):
         if options.caches:
             icache = icache_class(**_get_cache_opts('l1i', options))
             dcache = dcache_class(**_get_cache_opts('l1d', options))
-            if options.l2cache:
-                icache.max_cache_level = 2
-                dcache.max_cache_level = 2
-            if options.l3cache:
-                icache.max_cache_level = 3
-                dcache.max_cache_level = 3
             if dcache.prefetcher != NULL:
                 print("Add dtb for L1D prefetcher")
                 dcache.prefetcher.registerTLB(system.cpu[i].mmu.dtb)

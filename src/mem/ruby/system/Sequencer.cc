@@ -644,7 +644,7 @@ Sequencer::notifyMissCallback(Addr address, bool is_upgrade, bool is_busy)
 
     m_BusyBlocks.insert(address);
 
-    DPRINTF(RubySequencer, "A %s of addr %#x signals the delay of all pending loads",
+    DPRINTF(RubySequencer, "A %s of addr %#x signals the delay of all pending loads\n",
         is_upgrade ? "load" : "store", address);
     return;
 }

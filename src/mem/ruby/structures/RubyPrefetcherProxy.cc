@@ -38,6 +38,7 @@
 #include "mem/ruby/structures/RubyPrefetcherProxy.hh"
 
 #include "debug/HWPrefetch.hh"
+#include "mem/ruby/slicc_interface/RubySlicc_Util.hh"
 #include "mem/ruby/system/RubySystem.hh"
 
 namespace gem5
@@ -63,13 +64,11 @@ RubyPrefetcherProxy::RubyPrefetcherProxy(AbstractController* _parent,
         fatal_if(!pfQueue,
             "%s initializing a RubyPrefetcherProxy without a prefetch queue",
             name());
-        // prefetcher->setParentInfo(
-        //     cacheCntrl->params().system,
-        //     cacheCntrl->getProbeManager(),
-        //     RubySystem::getBlockSizeBytes());
-        // Cannot do this below: RPP is not SimObject
-        // block size is same as system!
-        prefetcher->setPMInfoDirty(cacheCntrl->getProbeManager());
+        prefetcher->setParentInfo(
+            cacheCntrl->params().system,
+            cacheCntrl->getProbeManager(),
+            this,
+            RubySystem::getBlockSizeBytes());
     }
 }
 
@@ -124,9 +123,7 @@ RubyPrefetcherProxy::issuePrefetch()
                                     pkt->getAddr(), line_addr,
                                     pkt->needsWritable());
 
-                RubyRequestType req_type = pkt->needsWritable() ?
-                                    RubyRequestType_ST : RubyRequestType_LD;
-
+                RubyRequestType req_type = RubyRequestType_LD;
                 std::shared_ptr<RubyRequest> msg =
                     std::make_shared<RubyRequest>(cacheCntrl->clockEdge(),
                                                   pkt->getAddr(),
@@ -136,7 +133,7 @@ RubyPrefetcherProxy::issuePrefetch()
                                                   RubyAccessMode_Supervisor,
                                                   pkt,
                                                   PrefetchBit_Yes);
-
+                assert(msg->getRequestPtr()->hasXsMetadata());
                 // enqueue request into prefetch queue to the cache
                 pfQueue->enqueue(msg, cacheCntrl->clockEdge(),
                                     cacheCntrl->cyclesToTicks(Cycles(1)));
@@ -157,7 +154,7 @@ RubyPrefetcherProxy::issuePrefetch()
 }
 
 void
-RubyPrefetcherProxy::notifyPfHit(const RequestPtr& req, bool is_read,
+RubyPrefetcherProxy::notifyPfHit(const RequestPtr& req, bool is_read, XsPFMetaData& pfmeta,
                                 const DataBlock& data_blk)
 {
     assert(ppHit);
@@ -168,22 +165,31 @@ RubyPrefetcherProxy::notifyPfHit(const RequestPtr& req, bool is_read,
     pkt.dataStaticConst<uint8_t>(data_blk.getData(getOffset(req->getPaddr()),
                                   pkt.getSize()));
     DPRINTF(HWPrefetch, "notify hit: %s\n", pkt.print());
+    pkt.missOnLatePf = false;
+    pkt.pfSource = pfmeta.prefetchSource;
+    pkt.pfDepth = pfmeta.prefetchDepth;
     ppHit->notify(&pkt);
     scheduleNextPrefetch();
 }
 
 void
-RubyPrefetcherProxy::notifyPfMiss(const RequestPtr& req, bool is_read,
+RubyPrefetcherProxy::notifyPfMiss(const RequestPtr& req, bool is_read, XsPFMetaData& pfmeta,
                                  const DataBlock& data_blk)
 {
     assert(ppMiss);
     assert(req);
-    Packet pkt(req, is_read ? Packet::makeReadCmd(req) :
-                              Packet::makeWriteCmd(req));
+    Packet pkt(req, is_read ? MemCmd::ReadReq : MemCmd::WriteReq);
     // NOTE: for now we only communicate physical address with prefetchers
     pkt.dataStaticConst<uint8_t>(data_blk.getData(getOffset(req->getPaddr()),
                                   pkt.getSize()));
     DPRINTF(HWPrefetch, "notify miss: %s\n", pkt.print());
+    pkt.missOnLatePf = (pfmeta.prefetchSource != PrefetchSourceType::PF_NONE);
+    pkt.pfSource = pfmeta.prefetchSource;
+    pkt.pfDepth = pfmeta.prefetchDepth;
+    if (XsMetaIsNotNull(pfmeta)) {
+        prefetcher->pfHitInMSHR(pfmeta.prefetchSource);
+    }
+    prefetcher->incrDemandMhsrMisses();
     ppMiss->notify(&pkt);
     scheduleNextPrefetch();
 }
@@ -207,17 +213,40 @@ RubyPrefetcherProxy::notifyPfFill(const RequestPtr& req,
 }
 
 void
-RubyPrefetcherProxy::notifyPfEvict(Addr blkAddr, bool hwPrefetched,
+RubyPrefetcherProxy::notifyPfEvict(Addr blkAddr, bool hwPrefetched, XsPFMetaData& pfmeta,
                                   RequestorID requestorID)
 {
     DPRINTF(HWPrefetch, "notify evict: %#x hw_pf=%d\n", blkAddr, hwPrefetched);
     // DataUpdate data_update(
     //     blkAddr, false, requestorID, *this);
     // Maybe using the old DataUpdate here is enough
+    if (hwPrefetched) {
+        prefetcher->prefetchUnused(pfmeta.prefetchSource);
+    }
     DataUpdate data_update(blkAddr, false);
     // data_update.hwPrefetched = hwPrefetched;
     ppDataUpdate->notify(data_update);
     scheduleNextPrefetch();
+}
+
+void
+RubyPrefetcherProxy::pfHitInCache(const XsPFMetaData& pfmeta)
+{
+    prefetcher->pfHitInCache(pfmeta.prefetchSource);
+}
+
+void
+RubyPrefetcherProxy::notifyHitToDownStream(const RequestPtr& req)
+{
+    // TODO:
+}
+
+void
+RubyPrefetcherProxy::offloadToDownStream()
+{
+    if (prefetcher->hasHintDownStream()) {
+        prefetcher->offloadToDownStream();
+    }
 }
 
 void
