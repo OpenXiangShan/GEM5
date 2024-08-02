@@ -84,8 +84,15 @@ function prepare_env() {
     all_args=("$@")
     task=${all_args[0]}
     task_path=${all_args[1]}
-    suffix="zstd"
-    checkpoint=$(find -L $cpt_dir -wholename "*${task_path}*${suffix}" | head -n 1)
+    # 同时匹配 gz zstd 后缀
+    suffixes=("gz" "zstd")
+    checkpoint=""
+    for suffix in "${suffixes[@]}"; do
+        checkpoint=$(find -L $cpt_dir -wholename "*${task_path}*${suffixes}" | head -n 1)
+        if [ -n "$checkpoint" ]; then
+            break
+        fi
+    done
     echo $checkpoint
 
     export work_dir=$full_work_dir/$task
