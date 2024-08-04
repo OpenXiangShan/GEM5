@@ -229,6 +229,8 @@
   <reg name="mhpmevent29" bitsize="64"/>
   <reg name="mhpmevent30" bitsize="64"/>
   <reg name="mhpmevent31" bitsize="64"/>
+  <reg name="mtinst" bitsize="64"/>
+  <reg name="mtval2" bitsize="64"/>
   <reg name="tselect" bitsize="64"/>
   <reg name="tdata1" bitsize="64"/>
   <reg name="tdata2" bitsize="64"/>
