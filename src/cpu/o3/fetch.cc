@@ -475,7 +475,7 @@ Fetch::processCacheCompletion(PacketPtr pkt)
         return;
     }
 
-    memcpy(fetchBuffer[tid], pkt->getConstPtr<uint8_t>(), fetchBufferSize);
+    memcpy(fetchBuffer[tid], pkt->getConstPtr<uint8_t>(), fetchBufferSize);     // 从pkt 取到fetchBuffer中
     fetchBufferValid[tid] = true;
 
     // Wake up the CPU (if it went to sleep and was waiting on
@@ -630,7 +630,7 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
 {
     // Do branch prediction check here.
     // A bit of a misnomer...next_PC is actually the current PC until
-    // this function updates it.
+    // this function updates it.   检查是否分支跳转，next_PC为当前pc, 并在这里更新
     bool predict_taken;
 
     //  BP  =>  FSQ  =>  FTB  => Fetch
@@ -647,7 +647,7 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
         else if (isFTBPred()) {
             std::tie(predict_taken, usedUpFetchTargets) =
                 dbpftb->decoupledPredict(
-                    inst->staticInst, inst->seqNum, next_pc, tid, currentLoopIter);
+                    inst->staticInst, inst->seqNum, next_pc, tid, currentLoopIter);     // 预测！
             if (usedUpFetchTargets) {
                 DPRINTF(DecoupleBP, "Used up fetch targets.\n");
             }
@@ -657,8 +657,8 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
 
     // For decoupled frontend, the instruction type is predicted with BTB
     if ((isDecoupledFrontend() && !predict_taken) ||
-        (!isDecoupledFrontend() && !inst->isControl())) {
-        inst->staticInst->advancePC(next_pc);
+        (!isDecoupledFrontend() && !inst->isControl())) {   // 预测不跳转
+        inst->staticInst->advancePC(next_pc);   // next_pc = pc
         inst->setPredTarg(next_pc);
         inst->setPredTaken(false);
         return false;
@@ -727,9 +727,9 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
 
     // Setup the memReq to do a read of the first instruction's address.
     // Set the appropriate read size and flags as well.
-    // Build request here.
-    if (fetchPC % 64 + fetchBufferSize > 64) {
-        fetchMisaligned[tid] = true;
+    // Build request here.  设置memReq读取第一条指令地址，设置size,flags
+    if (fetchPC % 64 + fetchBufferSize > 64) {  // fetchBufferSize=64
+        fetchMisaligned[tid] = true;        // 指示指令是否未对齐，yes?
 
         firstPkt[tid] = nullptr;
         secondPkt[tid] = nullptr;
@@ -738,7 +738,7 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
         RequestPtr mem_req = std::make_shared<Request>(
             fetchPC, fetchSize,
             Request::INST_FETCH, cpu->instRequestorId(), pc,
-            cpu->thread[tid]->contextId());
+            cpu->thread[tid]->contextId());     // 设置mem_req
 
         mem_req->taskId(cpu->taskId());
 
@@ -749,13 +749,13 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
         mem_req->setMisalignedFetch();
 
         DPRINTF(Fetch, "[tid:%i] Fetching first cache line %#x for addr %#x, pc=%#lx\n",
-                tid, fetchPC, vaddr, pc);
+                tid, fetchPC, vaddr, pc);       // 先读取第一行！
 
         // Initiate translation of the icache block
         fetchStatus[tid] = ItlbWait;
         FetchTranslation *trans = new FetchTranslation(this);
         cpu->mmu->translateTiming(mem_req, cpu->thread[tid]->getTC(),
-                                  trans, BaseMMU::Execute);
+                                  trans, BaseMMU::Execute);     // 地址翻译
 
         fetchPC += (64 - fetchPC % 64);
         fetchSize = fetchBufferSize - fetchSize;
@@ -772,7 +772,7 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
     RequestPtr mem_req = std::make_shared<Request>(
         fetchPC, fetchSize,
         Request::INST_FETCH, cpu->instRequestorId(), pc,
-        cpu->thread[tid]->contextId());
+        cpu->thread[tid]->contextId());     // 这里又有一个mem_req,fetchPC,fetchSize不同
 
     mem_req->taskId(cpu->taskId());
 
@@ -780,14 +780,14 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
 
     if (fetchMisaligned[tid]) {
         DPRINTF(Fetch, "[tid:%i] Fetching second cache line %#x for addr %#x, pc=%#lx\n",
-                tid, fetchPC, vaddr, pc);
+                tid, fetchPC, vaddr, pc);       // 取第二行cache
         mem_req->setMisalignedFetch();
         mem_req->setReqNum(2);
     }
 
     // Initiate translation of the icache block
     fetchStatus[tid] = ItlbWait;
-    setAllFetchStalls(StallReason::ITlbStall);
+    setAllFetchStalls(StallReason::ITlbStall);      // 设置为ITLB wait
     FetchTranslation *trans = new FetchTranslation(this);
     cpu->mmu->translateTiming(mem_req, cpu->thread[tid]->getTC(),
                               trans, BaseMMU::Execute);
@@ -1150,7 +1150,7 @@ Fetch::tick()
     for (threadFetched = 0; threadFetched < numFetchingThreads;
          threadFetched++) {
         // Fetch each of the actively fetching threads.
-        fetch(status_change);
+        fetch(status_change);       // 进入fetch函数
     }
 
     toDecode->fetchStallReason = stallReason;
@@ -1186,13 +1186,13 @@ Fetch::tick()
     }
 
     // Send instructions enqueued into the fetch queue to decode.
-    // Limit rate by fetchWidth.  Stall if decode is stalled.
+    // Limit rate by fetchWidth.  Stall if decode is stalled.  把fetch queue发送到decode, 用fetchWidth限制速度
     unsigned insts_to_decode = 0;
     unsigned available_insts = 0;
 
     for (auto tid : *activeThreads) {
         if (!stalls[tid].decode) {
-            available_insts += fetchQueue[tid].size();
+            available_insts += fetchQueue[tid].size();  // 有效指令=8
         }
     }
 
@@ -1201,7 +1201,7 @@ Fetch::tick()
     std::advance(tid_itr,
             random_mt.random<uint8_t>(0, activeThreads->size() - 1));
 
-    int decode_width = decodeWidth;
+    int decode_width = decodeWidth; // 8
     int count_ = 0;
     for (auto &it0 : fetchQueue){
         for (auto &it1 : it0) {
@@ -1223,7 +1223,7 @@ Fetch::tick()
             toDecode->insts[toDecode->size++] = inst;
             DPRINTF(Fetch, "[tid:%i] [sn:%llu] Sending instruction to decode "
                     "from fetch queue. Fetch queue size: %i.\n",
-                    tid, inst->seqNum, fetchQueue[tid].size());
+                    tid, inst->seqNum, fetchQueue[tid].size());     // inst queue 发送到decode, 速度为decode_width=8
 
             wroteToTimeBuffer = true;
             fetchQueue[tid].pop_front();
@@ -1583,10 +1583,10 @@ Fetch::fetch(bool &status_change)
     DPRINTF(Fetch, "Attempting to fetch from [tid:%i]\n", tid);
 
     // The current PC.
-    PCStateBase &this_pc = *pc[tid];
+    PCStateBase &this_pc = *pc[tid];        // 设置为elf 初始addr, 例如0x8000_0000
 
-    Addr pc_offset = fetchOffset[tid];
-    Addr fetch_addr = (this_pc.instAddr() + pc_offset) & decoder[tid]->pcMask();
+    Addr pc_offset = fetchOffset[tid];      // pc_offset = 0
+    Addr fetch_addr = (this_pc.instAddr() + pc_offset) & decoder[tid]->pcMask();    // pc = pc + 4
 
     bool in_rom = isRomMicroPC(this_pc.microPC());
 
@@ -1617,9 +1617,9 @@ Fetch::fetch(bool &status_change)
               fetchBufferPC[tid] + fetchBufferSize > fetch_addr && fetchBufferPC[tid] <= fetch_addr) &&
             !in_rom && !macroop[tid] && !currentFetchTargetInLoop) {
             DPRINTF(Fetch, "[tid:%i] Attempting to translate and read "
-                    "instruction, starting at PC %s.\n", tid, this_pc);
+                    "instruction, starting at PC %s.\n", tid, this_pc);     // 尝试翻译读取指令，thisc_pc
 
-            fetchCacheLine(fetch_addr, tid, this_pc.instAddr());
+            fetchCacheLine(fetch_addr, tid, this_pc.instAddr());    // 读取这一行的cache，读了两行
 
             if (fetchStatus[tid] == IcacheWaitResponse)
                 ++fetchStats.icacheStallCycles;
@@ -1649,7 +1649,7 @@ Fetch::fetch(bool &status_change)
         // Status is Idle, so fetch should do nothing.
         return;
     }
-
+    // 之后都是ICache complete执行
     ++fetchStats.cycles;
 
     std::unique_ptr<PCStateBase> next_pc(this_pc.clone());
@@ -1659,26 +1659,26 @@ Fetch::fetch(bool &status_change)
 
     // If the read of the first instruction was successful, then grab the
     // instructions from the rest of the cache line and put them into the
-    // queue heading to decode.
+    // queue heading to decode. 如果第一条指令正确，放入decode队列
 
     DPRINTF(Fetch, "[tid:%i] Adding instructions to queue to "
             "decode.\n", tid);
 
     // Need to keep track of whether or not a predicted branch
-    // ended this fetch block.
+    // ended this fetch block.  需要跟踪跳转是否结束这个fetch 块
     bool predictedBranch = false;
 
-    // Need to halt fetch if quiesce instruction detected
+    // Need to halt fetch if quiesce instruction detected  静止指令需要停止
     bool quiesce = false;
 
     // num_insts_per_buffer: number of instruction payloads (usually in 4bytes)
     // in the fetchBuffer. Note that it does not consider RVC or x86's variable
-    // inst length. It only indicates the number of 4 byte chunks.
+    // inst length. It only indicates the number of 4 byte chunks.  假设instSize=4, nums = 64/4=16
     const unsigned num_insts_per_buffer = fetchBufferSize / instSize;
 
     // block offset: offset of the fetch_addr in the fetchBuffer/loopBuffer.
     // Note that it is counted with the number of instruction payloads
-    // instead of in bytes.
+    // instead of in bytes.     fetch_addr在fetchBuffer/loopBuffer中的指令偏移量 =0
     unsigned blk_offset =
         currentFetchTargetInLoop && enableLoopBuffer
             ? (fetch_addr - loopBuffer->getActiveLoopStart()) / instSize
@@ -1691,17 +1691,17 @@ Fetch::fetch(bool &status_change)
 
     // Loop through instruction memory from the cache.
     // Keep issuing while fetchWidth is available and branch is not
-    // predicted taken
+    // predicted taken      当fetchWidth = 16 > 0， 不是分支，持续取指令
     StallReason stall = StallReason::NoStall;
     bool exit_loopbuffer_this_cycle = false;
-    bool cond_taken_backward = false;
+    bool cond_taken_backward = false;   // 还能取值，<48,
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize &&
            !(predictedBranch && !currentFetchTargetInLoop) && !quiesce &&
            !ftqEmpty() && !exit_loopbuffer_this_cycle && !waitForVsetvl) {
         // We need to process more memory if we aren't going to get a
         // StaticInst from the rom, the current macroop, or what's already
-        // in the decoder.
-        // insts from loop buffer is decoded, we do not need instruction bytes
+        // in the decoder.  如果不在rom中，不是当前宏码，不在decoder中，继续来
+        // insts from loop buffer is decoded, we do not need instruction bytes  loop buffer中已经解码，不用了
         bool need_mem = !in_rom && !curMacroop && !dec_ptr->instReady() && !currentFetchTargetInLoop;
         fetch_addr = (this_pc.instAddr() + pc_offset) & pc_mask;
 
@@ -1727,13 +1727,13 @@ Fetch::fetch(bool &status_change)
             //     exit_loopbuffer_this_cycle = run_out_loop_entry;
             // } else {
             memcpy(dec_ptr->moreBytesPtr(),
-                    fetchBuffer[tid] + blk_offset * instSize, instSize);
+                    fetchBuffer[tid] + blk_offset * instSize, instSize);    // 把fetchBuffer二进制搬到decode中
             DPRINTF(Fetch, "Supplying fetch from fetchBuffer\n");
             // }
 
             decoder[tid]->moreBytes(this_pc, fetch_addr);
 
-            if (dec_ptr->needMoreBytes()) {
+            if (dec_ptr->needMoreBytes()) {     // 能取就继续取下一条
                 blk_offset++;
                 fetch_addr += instSize;
                 pc_offset += instSize;
@@ -1741,19 +1741,19 @@ Fetch::fetch(bool &status_change)
         }
 
         // Extract as many instructions and/or microops as we can from
-        // the memory we've processed so far.
+        // the memory we've processed so far.  尽可能多的提取指令译码
         do {
             if (!(curMacroop || in_rom)) {
                 if (dec_ptr->instReady() || (isFTBPred() && enableLoopBuffer && currentFetchTargetInLoop)) {
                     if (isFTBPred() && enableLoopBuffer && currentFetchTargetInLoop) {
-                        auto instDesc = dbpftb->lb.supplyInst();
+                        auto instDesc = dbpftb->lb.supplyInst();    // 从loop_buffer中查表得到inst
                         staticInst = instDesc.inst;
-                        dec_ptr->setPCStateWithInstDesc(instDesc.compressed, this_pc);
+                        dec_ptr->setPCStateWithInstDesc(instDesc.compressed, this_pc);  // 更具是否是压缩指令，设置this_pc
                         DPRINTF(LoopBuffer, "Supplying inst pc %#lx from loop buffer pc %#lx\n",
                             this_pc.instAddr(), instDesc.pc);
                         assert(this_pc.instAddr() == instDesc.pc);
                     } else {
-                        staticInst = dec_ptr->decode(this_pc);
+                        staticInst = dec_ptr->decode(this_pc);      // 译码出具体指令了！
                     }
 
                     // Increment stat of fetched instructions.
@@ -1772,7 +1772,7 @@ Fetch::fetch(bool &status_change)
             }
             // Whether we're moving to a new macroop because we're at the
             // end of the current one, or the branch predictor incorrectly
-            // thinks we are...
+            // thinks we are...  是否要转向新的宏码，如果这个弄完了或者分支预测错了
             bool newMacro = false;
             if (curMacroop || in_rom) {
                 if (in_rom) {
@@ -1785,7 +1785,7 @@ Fetch::fetch(bool &status_change)
             }
 
             DynInstPtr instruction = buildInst(
-                    tid, staticInst, curMacroop, this_pc, *next_pc, true);
+                    tid, staticInst, curMacroop, this_pc, *next_pc, true);  // 得到DynInst
 
             if (staticInst->isVectorConfig()) {
                 waitForVsetvl = dec_ptr->stall();
@@ -1794,7 +1794,7 @@ Fetch::fetch(bool &status_change)
             instruction->setVersion(localSquashVer);
 
             if (enableLoopBuffer) {
-                // record this static inst of current ftq entry
+                // record this static inst of current ftq entry  记录这条指令
                 currentFtqEntryInsts.second.push_back(loopBuffer->genInstDesc(
                     instruction->getInstBytes() == 2, staticInst, this_pc.instAddr()));
             }
@@ -1819,7 +1819,7 @@ Fetch::fetch(bool &status_change)
             }
             predictedBranch |= lookupAndUpdateNextPC(instruction, *next_pc);
             if (predictedBranch) {
-                DPRINTF(Fetch, "Branch detected with PC = %s\n", this_pc);
+                DPRINTF(Fetch, "Branch detected with PC = %s\n", this_pc);      // 预测有分支
             }
             cond_taken_backward = predictedBranch && next_pc->instAddr() < this_pc.instAddr() && staticInst->isCondCtrl();
             if (enableLoopBuffer) {
@@ -1851,14 +1851,14 @@ Fetch::fetch(bool &status_change)
             }
         } while ((curMacroop || dec_ptr->instReady()) &&
                  numInst < fetchWidth &&
-                 fetchQueue[tid].size() < fetchQueueSize);
+                 fetchQueue[tid].size() < fetchQueueSize);      // 一个很大的do_while循环，不断取指，内层循环
 
         // Re-evaluate whether the next instruction to fetch is in micro-op ROM
         // or not.
         in_rom = isRomMicroPC(this_pc.microPC());
     }
 
-    DPRINTF(FetchVerbose, "FetchQue start dumping\n");
+    DPRINTF(FetchVerbose, "FetchQue start dumping\n");  // 把fetch Queue中打印一下，并退出函数后放入decode中
     for (auto it : fetchQueue[tid]) {
         DPRINTF(FetchVerbose, "inst: %s\n", it->staticInst->disassemble(it->pcState().instAddr()));
     }

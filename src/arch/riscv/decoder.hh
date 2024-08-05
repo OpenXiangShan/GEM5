@@ -48,19 +48,19 @@ namespace RiscvISA
 
 class ISA;
 class Decoder : public InstDecoder
-{
+{   // decoder 继承基类InstDecoder
   private:
-    bool aligned;
-    bool mid;
+    bool aligned;   // 是否对齐
+    bool mid;       // 是否在中间
   protected:
-    //The extended machine instruction being generated
+    //The extended machine instruction being generated  要生成的扩展机器码
     ExtMachInst emi;
     uint32_t machInst;
 
     bool vtypeReady = true;
     VTYPE machVtype;
 
-    /// A cache of decoded instruction objects.
+    /// A cache of decoded instruction objects.  存储译码后的， inst cache
     static GenericISA::BasicDecodeCache<Decoder, ExtMachInst> defaultCache;
     friend class GenericISA::BasicDecodeCache<Decoder, ExtMachInst>;
 
@@ -68,7 +68,7 @@ class Decoder : public InstDecoder
 
     /// Decode a machine instruction.
     /// @param mach_inst The binary instruction to decode.
-    /// @retval A pointer to the corresponding StaticInst object.
+    /// @retval A pointer to the corresponding StaticInst object.  输入要解码二进制，返回StaticInst指针
     StaticInstPtr decode(ExtMachInst mach_inst, Addr addr);
 
   public:
@@ -79,7 +79,7 @@ class Decoder : public InstDecoder
 
     void reset() override;
 
-    inline bool compressed(ExtMachInst inst) { return (inst & 0x3) < 0x3; }
+    inline bool compressed(ExtMachInst inst) { return (inst & 0x3) < 0x3; }   // 是否是压缩指令
     inline bool vconf(ExtMachInst inst) {
       return inst.opcode7 == 0b1010111u && inst.width == 0b111u;
     }

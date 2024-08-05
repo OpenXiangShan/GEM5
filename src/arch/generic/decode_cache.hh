@@ -58,7 +58,7 @@ class BasicDecodeCache
     StaticInstPtr
     decode(Decoder *const decoder, EMI mach_inst, Addr addr)
     {
-        auto &entry = decodePages.lookup(addr);
+        auto &entry = decodePages.lookup(addr);     // 先在cache中找
         if (entry.inst && (entry.machInst == mach_inst))
             return entry.inst;
 
@@ -70,7 +70,7 @@ class BasicDecodeCache
             return entry.inst;
         }
 
-        entry.inst = decoder->decodeInst(mach_inst);
+        entry.inst = decoder->decodeInst(mach_inst);    // 真正解码！
         instMap[mach_inst] = entry.inst;
         return entry.inst;
     }

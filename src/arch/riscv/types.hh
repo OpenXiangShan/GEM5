@@ -181,7 +181,7 @@ BitUnion64(ExtMachInst)
     // vsetvl
     Bitfield<31, 25>    bit31_25;
 
-EndBitUnion(ExtMachInst)
+EndBitUnion(ExtMachInst)    // 扩展指令二进制，包含更多项目
 
 
 } // namespace RiscvISA

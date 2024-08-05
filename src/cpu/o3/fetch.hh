@@ -186,7 +186,7 @@ class Fetch
         IcacheWaitRetry,
         IcacheAccessComplete,
         NoGoodAddr
-    };
+    };  // 每个线程在fetch阶段：run, 空闲，挤出，阻塞，取值中，等待，静默等，icache等响应/重发/完成
 
   private:
     /** Fetch status. */
@@ -288,7 +288,7 @@ class Fetch
      * the next PC will be.
      * @param next_NPC Used for ISAs which use delay slots.
      * @return Whether or not a branch was predicted as taken.
-     */
+     */   // 查分支预测器，pc+=4 or pc = baddr, 返回是否跳转
     bool lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &pc);
 
     /**
@@ -301,7 +301,7 @@ class Fetch
      * @param tid Thread id.
      * @param pc The actual PC of the current instruction.
      * @return Any fault that occured.
-     */
+     */   // 取指令vaddr一行，放入fetchBuffer中，返回可能错误
     bool fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc);
     void finishTranslation(const Fault &fault, const RequestPtr &mem_req);
 
@@ -413,7 +413,7 @@ class Fetch
     TimeBuffer<TimeStruct> *timeBuffer;
 
     /** Wire to get decode's information from backwards time buffer. */
-    TimeBuffer<TimeStruct>::wire fromDecode;
+    TimeBuffer<TimeStruct>::wire fromDecode;    // 从decode的数据
 
     /** Wire to get rename's information from backwards time buffer. */
     TimeBuffer<TimeStruct>::wire fromRename;
@@ -426,7 +426,7 @@ class Fetch
 
     //Might be annoying how this name is different than the queue.
     /** Wire used to write any information heading to decode. */
-    TimeBuffer<FetchStruct>::wire toDecode;
+    TimeBuffer<FetchStruct>::wire toDecode;   // 写个decode
 
     /** BPredUnit. */
     branch_prediction::BPredUnit *branchPred;
@@ -498,7 +498,7 @@ class Fetch
     unsigned int cacheBlkSize;
 
     /** The size of the fetch buffer in bytes. The fetch buffer
-     *  itself may be smaller than a cache line.
+     *  itself may be smaller than a cache line.   可能小于cache line
      */
     unsigned fetchBufferSize;
 
@@ -506,7 +506,7 @@ class Fetch
     Addr fetchBufferMask;
 
     /** The fetch data that is being fetched and buffered. */
-    uint8_t *fetchBuffer[MaxThreads];
+    uint8_t *fetchBuffer[MaxThreads];   // 存储从icache获得的指令二进制
 
     /** The PC of the first instruction loaded into the fetch buffer. */
     Addr fetchBufferPC[MaxThreads];
@@ -522,10 +522,10 @@ class Fetch
     PacketPtr secondPkt[MaxThreads];
 
     /** The size of the fetch queue in micro-ops */
-    unsigned fetchQueueSize;
+    unsigned fetchQueueSize;    // 微操作队列大小=48
 
     /** Queue of fetched instructions. Per-thread to prevent HoL blocking. */
-    std::deque<DynInstPtr> fetchQueue[MaxThreads];
+    std::deque<DynInstPtr> fetchQueue[MaxThreads];    // 取出指令队列，元素为指针，指向DynInst
 
     /** Whether or not the fetch buffer data is valid. */
     bool fetchBufferValid[MaxThreads];
@@ -581,7 +581,7 @@ class Fetch
     /** fetch stall reasons */
     std::vector<StallReason> stallReason;
 
-    bool currentFetchTargetInLoop;
+    bool currentFetchTargetInLoop;    // 当前取值的在loop buffer中
 
     std::pair<Addr, std::vector<branch_prediction::ftb_pred::LoopBuffer::InstDesc>> currentFtqEntryInsts;
 

@@ -42,12 +42,12 @@ namespace gem5
 class InstDecoder : public SimObject
 {
   protected:
-    void *_moreBytesPtr;
+    void *_moreBytesPtr;        // 指向decoder buf 数组
     size_t _moreBytesSize;
     Addr _pcMask;
 
-    bool instDone = false;
-    bool outOfBytes = true;
+    bool instDone = false;      // instReady()
+    bool outOfBytes = true;     // needMoreBytes()
 
   public:
     template <typename MoreBytesType>
@@ -103,7 +103,7 @@ class InstDecoder : public SimObject
      * return a new instruction on the next call. It typically only
      * returns false if the decoder hasn't received enough data to
      * decode a full instruction.
-     */
+     */     // 指令准备好了吗，这条指令的二进制够不够
     bool instReady() const { return instDone; }
 
     /**
@@ -112,16 +112,16 @@ class InstDecoder : public SimObject
      * A CPU model uses this method to determine if the decoder can
      * accept more data. Note that an instruction can be ready (see
      * instReady() even if this method returns true.
-     */
+     */     // 解码器还能容纳更多二进制吗？即便instDone了也可以
     bool needMoreBytes() const { return outOfBytes; }
 
     /**
-     * Feed data to the decoder.
+     * Feed data to the decoder.  数据喂给decoder, 用于设置instReady, needMoreBytes?
      *
      * A CPU model uses this interface to load instruction data into
      * the decoder. Once enough data has been loaded (check with
      * instReady()), a decoded instruction can be retrieved using
-     * decode(PCStateBase &).
+     * decode(PCStateBase &).  一旦instReady(), insts = decode() 可以译码了
      *
      * This method is intended to support both fixed-length and
      * variable-length instructions. Instruction data is fetch in
@@ -129,13 +129,13 @@ class InstDecoder : public SimObject
      * insturction). The method might need to be called multiple times
      * if the instruction spans multiple blocks, in that case
      * needMoreBytes() will return true and instReady() will return
-     * false.
+     * false.  用于变长/定长指令，如果指令太长，needMoreBytes=true, instReady=false
      *
      * The fetchPC parameter is used to indicate where in memory the
      * instruction was fetched from. This is should be the same
      * address as the pc. If fetching multiple blocks, it indicates
      * where subsequent blocks are fetched from (pc + n *
-     * sizeof(MachInst)).
+     * sizeof(MachInst)).   fetchPc = pc._pc, 下一次pc = pc + n*4(sizeof(MachInst))
      *
      * @param pc Instruction pointer that we are decoding.
      * @param fetchPC The address this chunk was fetched from.
@@ -143,11 +143,11 @@ class InstDecoder : public SimObject
     virtual void moreBytes(const PCStateBase &pc, Addr fetchPC) = 0;
 
     /**
-     * Decode an instruction or fetch it from the code cache.
+     * Decode an instruction or fetch it from the code cache.  解码指令 or 从code cache 获取
      *
      * This method decodes the currently pending pre-decoded
      * instruction. Data must be fed to the decoder using moreBytes()
-     * until instReady() is true before calling this method.
+     * until instReady() is true before calling this method.  数据从moreBytes()中拿，且instReady=true
      *
      * @param pc Instruction pointer that we are decoding.
      * @return A pointer to a static instruction or NULL if the
@@ -156,7 +156,7 @@ class InstDecoder : public SimObject
     virtual StaticInstPtr decode(PCStateBase &pc) = 0;
 
     virtual void setPCStateWithInstDesc(const bool &compressed,
-                                           PCStateBase &pc);
+                                           PCStateBase &pc);    // 设置next pc
 
 
     virtual bool stall() { return false; };

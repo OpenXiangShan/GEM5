@@ -53,7 +53,7 @@ Decoder::moreBytes(const PCStateBase &pc, Addr fetchPC)
 {
     // The MSB of the upper and lower halves of a machine instruction.
     constexpr size_t max_bit = sizeof(machInst) * 8 - 1;
-    constexpr size_t mid_bit = sizeof(machInst) * 4 - 1;
+    constexpr size_t mid_bit = sizeof(machInst) * 4 - 1;    // 压缩长度
 
     auto inst = letoh(machInst);
     DPRINTF(Decode, "Requesting bytes 0x%08x from address %#x\n", inst,
@@ -65,7 +65,7 @@ Decoder::moreBytes(const PCStateBase &pc, Addr fetchPC)
         if (compressed(inst))
             emi.instBits = bits(inst, mid_bit, 0);
         outOfBytes = !compressed(emi);
-        instDone = true;
+        instDone = true;    // 指令完成
     } else {
         if (mid) {
             assert(bits(emi.instBits, max_bit, mid_bit + 1) == 0);
@@ -77,7 +77,7 @@ Decoder::moreBytes(const PCStateBase &pc, Addr fetchPC)
             emi.instBits = bits(inst, max_bit, mid_bit + 1);
             mid = !compressed(emi);
             outOfBytes = true;
-            instDone = compressed(emi);
+            instDone = compressed(emi);     // 如果不是压缩指令，还需要二进制，instReady=false
         }
     }
 }

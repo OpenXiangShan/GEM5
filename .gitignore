@@ -40,3 +40,9 @@ configs/dram/lowp_sweep.cfg
 /*txt*
 /ext/dramsim3/DRAMsim3/
 .cache
+
+compile_commands.json
+/util/xs_scripts/backend_test
+/util/xs_scripts/
+.vscode
+*.less

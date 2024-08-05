@@ -167,7 +167,7 @@ class BaseCPU : public ClockedObject
      * of the OS process ID) to each request so components in the memory system
      * can track which process IDs are ultimately interacting with them
      */
-    uint32_t _taskId;
+    uint32_t _taskId;   // 指向具体要处理的哪个进程
 
     /** The current OS process ID that is executing on this processor. This is
      * used to generate a taskId */

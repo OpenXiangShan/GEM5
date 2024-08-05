@@ -43,10 +43,10 @@ class Checkpoint;
  *  models.  This includes things such as pointers to the process,
  *  memory, quiesce events, and certain stats.  This can be expanded
  *  to hold more thread-specific stats within it.
- */
+ */   // 保存通用状态，包括指向进程指针，状态，可扩展
 struct ThreadState : public Serializable
 {
-    typedef ThreadContext::Status Status;
+    typedef ThreadContext::Status Status;     // ThreadState 包含ThreadContext!
 
     ThreadState(BaseCPU *cpu, ThreadID _tid, Process *_process);
 

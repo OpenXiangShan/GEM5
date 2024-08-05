@@ -85,7 +85,7 @@ enum PrefetchSourceType
     CDP,
     SOpt,
     NUM_PF_SOURCES
-};
+};  // 预取有很多来源
 
 /**
  * Special TaskIds that are used for per-context-switch stats dumps
@@ -117,7 +117,7 @@ typedef uint16_t RequestorID;
 class Request
 {
   public:
-    typedef uint64_t FlagsType;
+    typedef uint64_t FlagsType;     // 类型/arch相关类型
     typedef uint8_t ArchFlagsType;
     typedef gem5::Flags<FlagsType> Flags;
 
@@ -129,7 +129,7 @@ class Request
          * These bits int the flag field are reserved for
          * architecture-specific code. For example, SPARC uses them to
          * represent ASIs.
-         */
+         */ // 这一位用于不同体系结构
         ARCH_BITS                   = 0x000000FF,
         /** The request was an instruction fetch. */
         INST_FETCH                  = 0x00000100,

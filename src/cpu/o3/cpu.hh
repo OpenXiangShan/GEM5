@@ -119,7 +119,7 @@ class CPU : public BaseCPU
         Halted,
         Blocked,
         SwitchedOut
-    };
+    };  // 运行，空闲，暂停，阻塞，换出
 
     BaseMMU *mmu;
     using LSQRequest = LSQ::LSQRequest;
@@ -160,7 +160,7 @@ class CPU : public BaseCPU
      * This method checks if a drain has been requested and if the CPU
      * has drained successfully (i.e., there are no instructions in
      * the pipeline). If the CPU has drained, it deschedules the tick
-     * event and signals the drain manager.
+     * event and signals the drain manager.  尝试对CPU排空
      *
      * @return False if a drain hasn't been requested or the CPU
      * hasn't drained, true otherwise.
@@ -434,7 +434,7 @@ class CPU : public BaseCPU
     Decode decode;
 
     /** The dispatch stage. */
-    Rename rename;
+    Rename rename;    // 同時做rename和dispatch（简单）
 
     /** The issue/execute/writeback stages. */
     IEW iew;
@@ -446,10 +446,10 @@ class CPU : public BaseCPU
     PhysRegFile regFile;
 
     /** The free list. */
-    UnifiedFreeList freeList;
+    UnifiedFreeList freeList;   // 空闲寄存器列表
 
     /** The rename map. */
-    UnifiedRenameMap renameMap[MaxThreads];
+    UnifiedRenameMap renameMap[MaxThreads];   // 重命名表
 
     /** The commit rename map. */
     UnifiedRenameMap commitRenameMap[MaxThreads];
@@ -491,7 +491,7 @@ class CPU : public BaseCPU
     TimeBuffer<TimeStruct> timeBuffer;
 
     /** The fetch stage's instruction queue. */
-    TimeBuffer<FetchStruct> fetchQueue;
+    TimeBuffer<FetchStruct> fetchQueue;   // 各个流水级传递的信息
 
     /** The decode stage's instruction queue. */
     TimeBuffer<DecodeStruct> decodeQueue;
