@@ -60,7 +60,7 @@ namespace branch_prediction
  * should be NULL using this predictor because it does not have any branch
  * predictor state that needs to be recorded or updated; the update can be
  * determined solely by the branch being taken or not taken.
- */
+ */   // 根据pc 索引table来预测，注意没有bp_history, 没有状态
 class LocalBP : public BPredUnit
 {
   public:

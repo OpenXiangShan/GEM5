@@ -47,7 +47,7 @@ class BaseTags(ClockedObject):
     # Get system to which it belongs
     system = Param.System(Parent.any, "System we belong to")
 
-    # Get the size from the parent (cache)
+    # Get the size from the parent (cache)  parent = Cache的大小
     size = Param.MemorySize(Parent.size, "capacity in bytes")
 
     # Get the block size from the parent (system)

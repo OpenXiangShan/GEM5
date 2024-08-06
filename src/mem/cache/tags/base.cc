@@ -80,20 +80,20 @@ CacheBlk*
 BaseTags::findBlock(Addr addr, bool is_secure) const
 {
     // Extract block tag
-    Addr tag = extractTag(addr);
+    Addr tag = extractTag(addr);    // 提取tag
 
     // Find possible entries that may contain the given address
     const std::vector<ReplaceableEntry*> entries =
-        indexingPolicy->getPossibleEntries(addr);
+        indexingPolicy->getPossibleEntries(addr);   // 获取可能包含给定地址的条目
 
     // Search for block
     for (const auto& location : entries) {
-        CacheBlk* blk = static_cast<CacheBlk*>(location);
+        CacheBlk* blk = static_cast<CacheBlk*>(location);   // 将location转换为CacheBlk
         int way = location->getWay();
-        if (blk->matchTag(tag, is_secure)) {
+        if (blk->matchTag(tag, is_secure)) {    // 匹配tag
             if ((blk->getWay() != way) && (blk->getWay() != DEFAULTWAYPRE))
                 panic("Unexpected way %d\n", blk->getWay());
-            blk->setHitWay(way);
+            blk->setHitWay(way);    // 设置命中路
             return blk;
         }
     }

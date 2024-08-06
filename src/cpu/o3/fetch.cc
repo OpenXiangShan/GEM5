@@ -728,7 +728,7 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
     // Setup the memReq to do a read of the first instruction's address.
     // Set the appropriate read size and flags as well.
     // Build request here.  设置memReq读取第一条指令地址，设置size,flags
-    if (fetchPC % 64 + fetchBufferSize > 64) {  // fetchBufferSize=64
+    if (fetchPC % 64 + fetchBufferSize > 64) {  // fetchBufferSize=64, 0+64>64 = false!
         fetchMisaligned[tid] = true;        // 指示指令是否未对齐，yes?
 
         firstPkt[tid] = nullptr;
@@ -859,7 +859,7 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
 
         fetchStats.cacheLines++;
 
-        // Access the cache.
+        // Access the cache. 访问cache, 发出请求
         if (!icachePort.sendTimingReq(data_pkt)) {
             assert(retryPkt == NULL);
             assert(retryTid == InvalidThreadID);

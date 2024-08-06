@@ -68,7 +68,7 @@ class BaseCache;
 
 /**
  * Miss Status and handling Register. This class keeps all the information
- * needed to handle a cache miss including a list of target requests.
+ * needed to handle a cache miss including a list of target requests. Miss状态和处理寄存器。此类保留处理缓存未命中所需的所有信息，包括目标请求列表。
  * @sa  \ref gem5MemorySystem "gem5 Memory System"
  */
 class MSHR : public QueueEntry, public Printable
@@ -87,13 +87,13 @@ class MSHR : public QueueEntry, public Printable
     bool downstreamPending;
 
     /**
-     * Here we use one flag to track both if:
+     * Here we use one flag to track both if: 用一个标志来跟踪两个方面：
      *
      * 1. We are going to become owner or not, i.e., we will get the
      * block in an ownership state (Owned or Modified) with BlkDirty
      * set. This determines whether or not we are going to become the
      * responder and ordering point for future requests that we snoop.
-     *
+     * 1. 我们将成为所有者还是否，即，我们将以所有权状态（Owned或Modified）获取块，并设置BlkDirty。这决定了我们是否将成为未来请求的响应者和排序点，我们会窥探这些请求。
      * 2. We know that we are going to get a writable block, i.e. we
      * will get the block in writable state (Exclusive or Modified
      * state) with BlkWritable set. That determines whether additional
@@ -137,7 +137,7 @@ class MSHR : public QueueEntry, public Printable
             FromPrefetcher
         };
 
-        const Source source;  //!< Request from cpu, memory, or prefetcher?
+        const Source source;  //!< Request from cpu, memory, or prefetcher? source 来自cpu、内存还是预取器的请求？
 
         /**
          * We use this flag to track whether we have cleared the
@@ -417,7 +417,7 @@ class MSHR : public QueueEntry, public Printable
      */
     Iterator allocIter;
 
-    /** List of all requests that match the address */
+    /** List of all requests that match the address */ // 所有与地址匹配的请求列表
     TargetList targets;
 
     TargetList deferredTargets;

@@ -64,7 +64,7 @@ namespace branch_prediction
 
 /**
  * Basically a wrapper class to hold both the branch predictor
- * and the BTB.
+ * and the BTB.  基类，保存分支预测器BP和BTB
  */
 class BPredUnit : public SimObject
 {

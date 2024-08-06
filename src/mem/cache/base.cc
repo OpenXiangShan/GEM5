@@ -493,7 +493,7 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
             // Here we are using forward_time, modelling the latency of
             // a miss (outbound) just as forwardLatency, neglecting the
             // lookupLatency component.
-            allocateMissBuffer(pkt, forward_time);
+            allocateMissBuffer(pkt, forward_time);      // 为请求分配一个MSHR
         }
     }
 }
@@ -539,7 +539,7 @@ BaseCache::recvTimingReq(PacketPtr pkt)
 
         // After the evicted blocks are selected, they must be forwarded
         // to the write buffer to ensure they logically precede anything
-        // happening below
+        // happening below 当选中的块被驱逐后，它们必題被转发到写缓冲区，以确保它们在逻辑上优先于下面发生的任何事情
         doWritebacks(writebacks, clockEdge(lat + forwardLatency));
     }
 
@@ -653,7 +653,7 @@ BaseCache::recvTimingReq(PacketPtr pkt)
               pc, source, paddr, vaddr, curCycle, this->name().c_str());
         }
 
-        handleTimingReqMiss(pkt, blk, forward_time, request_time);
+        handleTimingReqMiss(pkt, blk, forward_time, request_time);  // 处理TimingReq请求Miss情况
 
         ppMiss->notify(pkt);
     }
@@ -747,7 +747,7 @@ BaseCache::recvTimingResp(PacketPtr pkt)
     }
 
     // we have dealt with any (uncacheable) writes above, from here on
-    // we know we are dealing with an MSHR due to a miss or a prefetch
+    // we know we are dealing with an MSHR due to a miss or a prefetch  接下来处理的是由于缺失或预取而产生的MSHR
     MSHR *mshr = dynamic_cast<MSHR*>(pkt->popSenderState());
     DPRINTF(Cache, "MSHR addr: %#lx\n", mshr);
     assert(mshr);
@@ -775,7 +775,7 @@ BaseCache::recvTimingResp(PacketPtr pkt)
 
     bool is_fill = !mshr->isForward &&
         (pkt->isRead() || pkt->cmd == MemCmd::UpgradeResp ||
-         mshr->wasWholeLineWrite);
+         mshr->wasWholeLineWrite);      // 如果是读请求或者是升级响应或者是 整行写
 
     // make sure that if the mshr was due to a whole line write then
     // the response is an invalidation
@@ -789,7 +789,7 @@ BaseCache::recvTimingResp(PacketPtr pkt)
 
         const bool allocate = (writeAllocator && mshr->wasWholeLineWrite) ?
             writeAllocator->allocate() : mshr->allocOnFill();
-        blk = handleFill(pkt, blk, writebacks, allocate);
+        blk = handleFill(pkt, blk, writebacks, allocate);   // 写入到对应的块中
         assert(blk != nullptr);
         ppFill->notify(pkt);
     }
@@ -1210,7 +1210,7 @@ BaseCache::handleEvictions(std::vector<CacheBlk*> &evict_blks,
 {
     bool replacement = false;
     for (const auto& blk : evict_blks) {
-        if (blk->isValid()) {
+        if (blk->isValid()) {   // 如果块是有效的，那么就需要替换，新建MSHR
             replacement = true;
 
             const MSHR* mshr =
@@ -1226,7 +1226,7 @@ BaseCache::handleEvictions(std::vector<CacheBlk*> &evict_blks,
     }
 
     // The victim will be replaced by a new entry, so increase the replacement
-    // counter if a valid block is being replaced
+    // counter if a valid block is being replaced victim 会被新的条目替换，所以如果替换了一个有效的块，就增加替换计数器
     if (replacement) {
         stats.replacements++;
 
@@ -1535,7 +1535,7 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
 
     // Access block in the tags
     Cycles tag_latency(0);
-    blk = tags->accessBlock(pkt, tag_latency);
+    blk = tags->accessBlock(pkt, tag_latency);  // 访问到具体的块
 
     DPRINTF(Cache, "%s for %s %s, block access lat %lu\n", __func__, pkt->print(),
             blk ? "hit " + blk->print() : "miss", tag_latency);
@@ -1852,13 +1852,13 @@ BaseCache::handleFill(PacketPtr pkt, CacheBlk *blk, PacketList &writebacks,
     assert(addr == pkt->getBlockAddr(blkSize));
     assert(!writeBuffer.findMatch(addr, is_secure));
 
-    if (!blk) {
+    if (!blk) { // block not found
         // better have read new data...
         assert(pkt->hasData() || pkt->cmd == MemCmd::InvalidateResp);
 
         // need to do a replacement if allocating, otherwise we stick
         // with the temporary storage
-        blk = allocate ? allocateBlock(pkt, writebacks) : nullptr;
+        blk = allocate ? allocateBlock(pkt, writebacks) : nullptr;  // 申请一个新的块
 
         if (!blk) {
             // No replaceable block or a mostly exclusive
@@ -1919,7 +1919,7 @@ BaseCache::handleFill(PacketPtr pkt, CacheBlk *blk, PacketList &writebacks,
             addr, is_secure ? "s" : "ns", old_state, blk->print());
 
     // if we got new data, copy it in (checking for a read response
-    // and a response that has data is the same in the end)
+    // and a response that has data is the same in the end) 如果有新数据，复制进去（检查读响应和带有数据的响应最终是一样的）
     if (pkt->isRead()) {
         // sanity checks
         assert(pkt->hasData());
@@ -1970,7 +1970,7 @@ BaseCache::allocateBlock(const PacketPtr pkt, PacketList &writebacks)
     // Find replacement victim
     std::vector<CacheBlk*> evict_blks;
     CacheBlk *victim = tags->findVictim(addr, is_secure, blk_size_bits,
-                                        evict_blks);
+                                        evict_blks);    // 找到一个替换的块
 
     // It is valid to return nullptr if there is no victim
     if (!victim)
@@ -1979,12 +1979,12 @@ BaseCache::allocateBlock(const PacketPtr pkt, PacketList &writebacks)
     // Print victim block's information
     DPRINTF(CacheRepl, "Replacement victim: %s\n", victim->print());
 
-    // Try to evict blocks; if it fails, give up on allocation
+    // Try to evict blocks; if it fails, give up on allocation 尝试驱逐块；如果失败，放弃分配
     if (!handleEvictions(evict_blks, writebacks)) {
         return nullptr;
     }
 
-    // Insert new block at victimized entry
+    // Insert new block at victimized entry 插入新块，就是到同一组的某路上
     tags->insertBlock(pkt, victim);
 
     // If using a compressor, set compression data. This must be done after

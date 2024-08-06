@@ -79,7 +79,7 @@ LRU::getVictim(const ReplacementCandidates& candidates) const
     // Visit all candidates to find victim
     ReplaceableEntry* victim = candidates[0];
     for (const auto& candidate : candidates) {
-        // Update victim entry if necessary
+        // Update victim entry if necessary  选择最近未使用的块，即lastTouchTick最小的块
         if (std::static_pointer_cast<LRUReplData>(
                     candidate->replacementData)->lastTouchTick <
                 std::static_pointer_cast<LRUReplData>(

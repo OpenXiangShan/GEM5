@@ -1289,11 +1289,11 @@ class Request
      * are supported:
 
      * 1) A cache clean operation updates all copies of a memory
-     * location to the point of reference,
+     * location to the point of reference, clean 会将所有副本更新到参考点
      * 2) A cache invalidate operation invalidates all copies of the
-     * specified block in the memory above the point of reference,
+     * specified block in the memory above the point of reference,  使指定块的所有副本在参考点之上无效
      * 3) A clean and invalidate operation is a combination of the two
-     * operations.
+     * operations.  清理和使无效操作是两个操作的组合
      * @{ */
     bool isCacheClean() const { return _flags.isSet(CLEAN); }
     bool isCacheInvalidate() const { return _flags.isSet(INVALIDATE); }

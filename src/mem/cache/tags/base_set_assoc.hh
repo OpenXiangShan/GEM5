@@ -70,7 +70,7 @@ namespace gem5
  * @sa  \ref gem5MemorySystem "gem5 Memory System"
  *
  * The BaseSetAssoc placement policy divides the cache into s sets of w
- * cache lines (ways).
+ * cache lines (ways).  设置为s组，每组w路。
  */
 class BaseSetAssoc : public BaseTags
 {
@@ -79,7 +79,7 @@ class BaseSetAssoc : public BaseTags
     unsigned allocAssoc;
 
     /** The cache blocks. */
-    std::vector<CacheBlk> blks;
+    std::vector<CacheBlk> blks;     // Cache blocks 向量
 
     /** Whether tags and data are accessed sequentially. */
     const bool sequentialAccess;
@@ -149,7 +149,7 @@ class BaseSetAssoc : public BaseTags
                 blk->increaseDemandHits();
             }
 
-            // Update replacement data of accessed block
+            // Update replacement data of accessed block  更新访问块的替换数据
             replacementPolicy->touch(blk->replacementData, pkt);
         }
 
@@ -161,7 +161,7 @@ class BaseSetAssoc : public BaseTags
 
     /**
      * Find replacement victim based on address. The list of evicted blocks
-     * only contains the victim.
+     * only contains the victim.   基于地址找到替换受害者，被驱逐块列表只包含受害者。
      *
      * @param addr Address to find a victim for.
      * @param is_secure True if the target memory space is secure.
@@ -173,11 +173,11 @@ class BaseSetAssoc : public BaseTags
                          const std::size_t size,
                          std::vector<CacheBlk*>& evict_blks) override
     {
-        // Get possible entries to be victimized
+        // Get possible entries to be victimized 获取可能被牺牲的条目，在相同set中的所有条目
         const std::vector<ReplaceableEntry*> entries =
             indexingPolicy->getPossibleEntries(addr);
 
-        // Choose replacement victim from replacement candidates
+        // Choose replacement victim from replacement candidates 从替换候选者中选择替换受害者
         CacheBlk* victim = static_cast<CacheBlk*>(replacementPolicy->getVictim(
                                 entries));
 

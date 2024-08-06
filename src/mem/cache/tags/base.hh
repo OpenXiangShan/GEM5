@@ -286,7 +286,7 @@ class BaseTags : public ClockedObject
      * Access block and update replacement data. May not succeed, in which case
      * nullptr is returned. This has all the implications of a cache access and
      * should only be used as such. Returns the tag lookup latency as a side
-     * effect.
+     * effect.  根据地址访问块并更新替换数据。可能不成功，此时返回nullptr。这具有缓存访问的所有含义，应该仅用作这样。返回标签查找延迟作为副作用。
      *
      * @param pkt The packet holding the address to find.
      * @param lat The latency of the tag lookup.

@@ -100,7 +100,7 @@ class BaseCache : public ClockedObject, CacheAccessor
 {
   protected:
     /**
-     * Indexes to enumerate the MSHR queues.
+     * Indexes to enumerate the MSHR queues. 一个MSHRs, 一个write buffer
      */
     enum MSHRQueueIndex
     {
@@ -110,7 +110,7 @@ class BaseCache : public ClockedObject, CacheAccessor
 
   public:
     /**
-     * Reasons for caches to be blocked.
+     * Reasons for caches to be blocked.  阻塞原因
      */
     enum BlockedCause
     {
@@ -122,7 +122,7 @@ class BaseCache : public ClockedObject, CacheAccessor
 
     /**
      * A data contents update is composed of the updated block's address,
-     * the old contents, and the new contents.
+     * the old contents, and the new contents.  更新地址+旧内容+新内容
      * @sa ppDataUpdate
      */
     struct DataUpdate
@@ -152,7 +152,7 @@ class BaseCache : public ClockedObject, CacheAccessor
      * writebacks). The send event is scheduled through schedSendEvent,
      * and the sendDeferredPacket of the timing port is modified to
      * consider both the transmit list and the requests from the MSHR.
-     */
+     */     // 用于cache的请求端口
     class CacheRequestPort : public QueuedRequestPort
     {
 
@@ -367,7 +367,7 @@ class BaseCache : public ClockedObject, CacheAccessor
     WriteQueue writeBuffer;
 
     /** Tag and data Storage */
-    BaseTags *tags;
+    BaseTags *tags;     // 存储tag 和data
 
     /** Compression method being used. */
     compression::Base* compressor;

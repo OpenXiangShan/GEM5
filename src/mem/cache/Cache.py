@@ -81,28 +81,28 @@ class BaseCache(ClockedObject):
 
     tag_latency = Param.Cycles("Tag lookup latency")
     data_latency = Param.Cycles("Data access latency")
-    response_latency = Param.Cycles("Latency for the return path on a miss");
+    response_latency = Param.Cycles("Latency for the return path on a miss");   # miss 时候从下一级fetch的延迟
 
     warmup_percentage = Param.Percent(0,
         "Percentage of tags to be touched to warm up the cache")
 
     max_miss_count = Param.Counter(0,
-        "Number of misses to handle before calling exit")
+        "Number of misses to handle before calling exit")   # 每次能处理的最大miss次数
 
-    mshrs = Param.Unsigned("Number of MSHRs (max outstanding requests)")
+    mshrs = Param.Unsigned("Number of MSHRs (max outstanding requests)")    # MSHR miss status handler 最大处理次数
     demand_mshr_reserve = Param.Unsigned(1, "MSHRs reserved for demand access")
     tgts_per_mshr = Param.Unsigned("Max number of accesses per MSHR")
     write_buffers = Param.Unsigned(8, "Number of write buffers")
 
     is_read_only = Param.Bool(False, "Is this cache read only (e.g. inst)")
-    enable_wayprediction = Param.Bool(True, "enablewaypredction")
+    enable_wayprediction = Param.Bool(True, "enablewaypredction")       # 路预测？预测是哪一路吧
 
     prefetcher = Param.BasePrefetcher(NULL,"Prefetcher attached to cache")
     tags = Param.BaseTags(BaseSetAssoc(), "Tag store")
     replacement_policy = Param.BaseReplacementPolicy(LRURP(),
-        "Replacement policy")
+        "Replacement policy")   # 替换策略 = LRURP
 
-    compressor = Param.BaseCacheCompressor(NULL, "Cache compressor.")
+    compressor = Param.BaseCacheCompressor(NULL, "Cache compressor.")       # 压缩
     replace_expansions = Param.Bool(True, "Apply replacement policy to " \
         "decide which blocks should be evicted on a data expansion")
     # When a block passes from uncompressed to compressed, it may become
@@ -112,13 +112,13 @@ class BaseCache(ClockedObject):
         "contract")
 
     sequential_access = Param.Bool(False,
-        "Whether to access tags and data sequentially")
+        "Whether to access tags and data sequentially")     # 是否顺序访问tags, data
 
-    cpu_side = ResponsePort("Upstream port closer to the CPU and/or device")
+    cpu_side = ResponsePort("Upstream port closer to the CPU and/or device")    # 与cpu的端口
     mem_side = RequestPort("Downstream port closer to memory")
 
     addr_ranges = VectorParam.AddrRange([AllMemory],
-         "Address range for the CPU-side port (to allow striping)")
+         "Address range for the CPU-side port (to allow striping)") # 地址范围
 
     system = Param.System(Parent.any, "System we belong to")
 
@@ -127,8 +127,8 @@ class BaseCache(ClockedObject):
     # exclusive with respect to this cache (acting as a victim cache),
     # the clean writebacks are essential for performance. In general
     # this should be set to True for anything but the last-level
-    # cache.
-    writeback_clean = Param.Bool(False, "Writeback clean lines")
+    # cache.  决定是否写回干净行？
+    writeback_clean = Param.Bool(False, "Writeback clean lines")     # 写回干净行, 除了LLC应该为true
 
     # Control whether this cache should be mostly inclusive or mostly
     # exclusive with respect to upstream caches. The behaviour on a
@@ -140,12 +140,12 @@ class BaseCache(ClockedObject):
     # e.g. a table walker. Additionally, on a hit from an upstream
     # cache a line is dropped for a mostly exclusive cache.
     clusivity = Param.Clusivity('mostly_incl',
-                                "Clusivity with upstream cache")
+                                "Clusivity with upstream cache")    # 决定是inclusive(下包含上) 还是exclusive
 
     # The write allocator enables optimizations for streaming write
     # accesses by first coalescing writes and then avoiding allocation
     # in the current cache. Typically, this would be enabled in the
-    # data cache.
+    # data cache. 写入分配器，对流式写优化，合并相邻写，在DCache用
     write_allocator = Param.WriteAllocator(NULL, "Write allocator")
 
     arch_db = Param.ArchDBer(Parent.any, "Arch DB")
@@ -178,7 +178,7 @@ class NoncoherentCache(BaseCache):
     type = 'NoncoherentCache'
     cxx_header = 'mem/cache/noncoherent_cache.hh'
     cxx_class = 'gem5::NoncoherentCache'
-
+    # 非一致性缓存？
     # This is typically a last level cache and any clean
     # writebacks would be unnecessary traffic to the main memory.
     writeback_clean = False
