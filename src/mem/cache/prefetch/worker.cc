@@ -52,7 +52,7 @@ WorkerPrefetcher::rxHint(BaseMMU::Translation *dpp)
 void
 WorkerPrefetcher::transfer()
 {
-    // ignore information of pfi, grab the information from the local buffer
+    // ignore information of pfi, grab the information from the local buffer  忽略pfi的信息，从本地缓冲区中获取信息
     unsigned count = 0;
     auto dpp_it = localBuffer.begin();
     while (count < depth && !localBuffer.empty()) {
@@ -70,14 +70,14 @@ WorkerPrefetcher::transfer()
                         dpp_it->pfahead_host);
             }
         } else {
-            addToQueue(pfq, *dpp_it);
+            addToQueue(pfq, *dpp_it);   // 将dpp_it指向的DeferredPacket加入pfq
             DPRINTF(WorkerPref, "Worker: put [%lx, %d] into local pfq\n", dpp_it->pfInfo.getAddr(),
                     dpp_it->pfahead_host);
         }
-        dpp_it = localBuffer.erase(dpp_it);
+        dpp_it = localBuffer.erase(dpp_it); // 删除dpp_it指向的DeferredPacket
         count++;
     }
-    schedule(transferEvent, nextCycle());
+    schedule(transferEvent, nextCycle());   // 重新调度transferEvent
 }
 
 }  // namespace prefetch

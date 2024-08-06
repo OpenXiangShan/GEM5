@@ -82,7 +82,7 @@ class WorkerPrefetcher : public Queued
   protected:
     boost::compute::detail::lru_cache<Addr, Addr> pfLRUFilter;
 
-    std::list<DeferredPacket> localBuffer;
+    std::list<DeferredPacket> localBuffer;  // 局部缓冲区，内容是延迟包
 
     unsigned depth{4};
 };

@@ -86,16 +86,16 @@ class Base : public ClockedObject
         const bool miss;
 
         // Core can directly pass address to train or trigger prefetchers, for example, store prefetch
-        const bool coreDirectNotify;
+        const bool coreDirectNotify;    // core 可以直接传递地址来训练或触发预取器，例如，存储预取
     };
 
-    std::vector<PrefetchListener *> listeners;
+    std::vector<PrefetchListener *> listeners;  // 预取监听器
 
   public:
 
     /**
      * Class containing the information needed by the prefetch to train and
-     * generate new prefetch requests.
+     * generate new prefetch requests. 包含预取所需的信息，以训练和生成新的预取请求
      */
     class PrefetchInfo
     {
@@ -527,7 +527,7 @@ class Base : public ClockedObject
     void regProbeListeners() override;
 
     /**
-     * Process a notification event from the ProbeListener.
+     * Process a notification event from the ProbeListener. 处理来自ProbeListener的通知事件
      * @param pkt The memory request causing the event
      * @param miss whether this event comes from a cache miss
      */

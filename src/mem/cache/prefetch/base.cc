@@ -370,7 +370,7 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
             prefetchStats.pfUsefulButMiss++;
     }
 
-    // Verify this access type is observed by prefetcher
+    // Verify this access type is observed by prefetcher 确定这种访问类型是否被预取器观察到
     if (observeAccess(pkt, miss)) {
         PrefetchSourceType pf_source;
         int pf_depth;

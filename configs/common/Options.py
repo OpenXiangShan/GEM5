@@ -164,7 +164,7 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--ideal-cache", action="store_true")
 
     parser.add_argument("--l1i-hwp-type", default=None,
-                        choices=ObjectList.hwp_list.get_names(), help="L1 icache hardware prefetcher")
+                        choices=ObjectList.hwp_list.get_names(), help="L1 icache hardware prefetcher")  # icache 无
     parser.add_argument("--l1d-hwp-type", default='XSCompositePrefetcher',
                         choices=ObjectList.hwp_list.get_names(), help="L1 dcache hardware prefetcher")
     parser.add_argument("--l2-hwp-type", default='L2CompositeWithWorkerPrefetcher',
