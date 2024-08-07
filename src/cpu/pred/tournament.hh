@@ -61,7 +61,8 @@ namespace branch_prediction
  * uses a global history to index into a table of counters.  A choice
  * predictor chooses between the two.  Both the global history register
  * and the selected local history are speculatively updated.
- */
+ */ // 实现锦标赛分支预测器，希望与21264中使用的相同。它有一个本地预测器，使用本地历史表来索引到计数器表，以及一个全局预测器，使用全局历史来索引到计数器表。
+ // 选择预测器在两者之间进行选择。全局历史寄存器和选择的本地历史都是推测性更新的。
 class TournamentBP : public BPredUnit
 {
   public:
@@ -77,7 +78,7 @@ class TournamentBP : public BPredUnit
      * @param branch_addr The address of the branch to look up.
      * @param bp_history Pointer that will be set to the BPHistory object.
      * @return Whether or not the branch is taken.
-     */
+     */ // 根据地址查找分支预测器，并返回是否被采取的真/假值。还创建一个BPHistory对象，用于存储在压缩/更新时需要的任何状态。
     bool lookup(ThreadID tid, Addr branch_addr, void * &bp_history);
 
     /**
@@ -106,12 +107,12 @@ class TournamentBP : public BPredUnit
      * @param inst Static instruction information
      * @param corrTarget Resolved target of the branch (only needed if
      * squashed)
-     */
+     */ // 根据分支的实际结果更新分支预测器（retire阶段？）
     void update(ThreadID tid, Addr branch_addr, bool taken, void *bp_history,
                 bool squashed, const StaticInstPtr & inst, Addr corrTarget);
 
     /**
-     * Restores the global branch history on a squash.
+     * Restores the global branch history on a squash. 在squash时恢复全局分支历史。
      * @param bp_history Pointer to the BPHistory object that has the
      * previous global branch history in it.
      */
@@ -155,7 +156,7 @@ class TournamentBP : public BPredUnit
      * The branch history information that is created upon predicting
      * a branch.  It will be passed back upon updating and squashing,
      * when the BP can use this information to update/restore its
-     * state properly.
+     * state properly.  基于预测分支时创建的分支历史信息。在更新和压缩时将传递回来，当BP可以使用此信息正确更新/恢复其状态时。
      */
     struct BPHistory
     {
@@ -190,7 +191,7 @@ class TournamentBP : public BPredUnit
     std::vector<SatCounter8> localCtrs;
 
     /** Array of local history table entries. */
-    std::vector<unsigned> localHistoryTable;
+    std::vector<unsigned> localHistoryTable;  // 本地历史表
 
     /** Number of entries in the local history table. */
     unsigned localHistoryTableSize;
@@ -205,12 +206,12 @@ class TournamentBP : public BPredUnit
     unsigned globalCtrBits;
 
     /** Array of counters that make up the global predictor. */
-    std::vector<SatCounter8> globalCtrs;
+    std::vector<SatCounter8> globalCtrs;  // 全局预测器
 
     /** Global history register. Contains as much history as specified by
      *  globalHistoryBits. Actual number of bits used is determined by
      *  globalHistoryMask and choiceHistoryMask. */
-    std::vector<unsigned> globalHistory;
+    std::vector<unsigned> globalHistory;  // 全局历史，也就是过去所有分支的跳转方向
 
     /** Number of bits for the global history. Determines maximum number of
         entries in global and choice predictor tables. */
@@ -235,7 +236,7 @@ class TournamentBP : public BPredUnit
     unsigned choiceCtrBits;
 
     /** Array of counters that make up the choice predictor. */
-    std::vector<SatCounter8> choiceCtrs;
+    std::vector<SatCounter8> choiceCtrs;  // 选择器，选择全局预测器和本地预测器的结果
 
     /** Thresholds for the counter value; above the threshold is taken,
      *  equal to or below the threshold is not taken.

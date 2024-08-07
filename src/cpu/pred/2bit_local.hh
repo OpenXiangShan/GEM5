@@ -116,13 +116,13 @@ class LocalBP : public BPredUnit
     const unsigned localPredictorSize;
 
     /** Number of bits of the local predictor's counters. */
-    const unsigned localCtrBits;
+    const unsigned localCtrBits;  // 2位
 
     /** Number of sets. */
     const unsigned localPredictorSets;
 
     /** Array of counters that make up the local predictor. */
-    std::vector<SatCounter8> localCtrs;
+    std::vector<SatCounter8> localCtrs;   // 8位饱和计数器
 
     /** Mask to get index bits. */
     const unsigned indexMask;

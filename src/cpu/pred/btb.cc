@@ -78,10 +78,10 @@ inline
 unsigned
 DefaultBTB::getIndex(Addr instPC, ThreadID tid)
 {
-    // Need to shift PC over by the word offset.
+    // Need to shift PC over by the word offset. 需要将PC向右移动一个字的偏移量。
     return ((instPC >> instShiftAmt)
             ^ (tid << (tagShiftAmt - instShiftAmt - log2NumThreads)))
-            & idxMask;
+            & idxMask;  // （pc >> 2) ^ (tid << 2) & 0x3f
 }
 
 inline
@@ -94,7 +94,7 @@ DefaultBTB::getTag(Addr instPC)
 bool
 DefaultBTB::valid(Addr instPC, ThreadID tid)
 {
-    unsigned btb_idx = getIndex(instPC, tid);
+    unsigned btb_idx = getIndex(instPC, tid);   // 类似组相联，获取index
 
     Addr inst_tag = getTag(instPC);
 
@@ -124,7 +124,7 @@ DefaultBTB::lookup(Addr inst_pc, ThreadID tid)
     if (btb[btb_idx].valid
         && inst_tag == btb[btb_idx].tag
         && btb[btb_idx].tid == tid) {
-        return btb[btb_idx].target.get();
+        return btb[btb_idx].target.get();   // 返回target.pc
     } else {
         return nullptr;
     }

@@ -83,7 +83,7 @@ class BranchPredictor(SimObject):
     BTBEntries = Param.Unsigned(4096, "Number of BTB entries")
     BTBTagSize = Param.Unsigned(16, "Size of the BTB tags, in bits")
     RASSize = Param.Unsigned(16, "RAS size")
-    instShiftAmt = Param.Unsigned(2, "Number of bits to shift instructions by")
+    instShiftAmt = Param.Unsigned(2, "Number of bits to shift instructions by") # 指令偏移量
     isDumpMisspredPC = Param.Bool(False, "enable dump miss pred pc")
     indirectBranchPred = Param.IndirectPredictor(ITTAGE(),
       "Indirect branch predictor, set to NULL to disable indirect predictions")
@@ -93,7 +93,7 @@ class LocalBP(BranchPredictor):
     cxx_class = 'gem5::branch_prediction::LocalBP'
     cxx_header = "cpu/pred/2bit_local.hh"
 
-    localPredictorSize = Param.Unsigned(2048, "Size of local predictor")
+    localPredictorSize = Param.Unsigned(2048, "Size of local predictor")    # 本地预测器大小,2048个2bit计数器
     localCtrBits = Param.Unsigned(2, "Bits per counter")
 
 
@@ -104,7 +104,7 @@ class TournamentBP(BranchPredictor):
 
     localPredictorSize = Param.Unsigned(2048, "Size of local predictor")
     localCtrBits = Param.Unsigned(2, "Bits per counter")
-    localHistoryTableSize = Param.Unsigned(2048, "size of local history table")
+    localHistoryTableSize = Param.Unsigned(2048, "size of local history table") # 本地历史表大小?
     globalPredictorSize = Param.Unsigned(8192, "Size of global predictor")
     globalCtrBits = Param.Unsigned(2, "Bits per counter")
     choicePredictorSize = Param.Unsigned(8192, "Size of choice predictor")

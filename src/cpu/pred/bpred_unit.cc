@@ -162,7 +162,7 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
     // See if branch predictor predicts taken.
     // If so, get its target addr either from the BTB or the RAS.
     // Save off record of branch stuff so the RAS can be fixed
-    // up once it's done.
+    // up once it's done. 看是否分支预测为taken，如果是，从BTB或RAS中获取目标地址，保存分支信息，以便在完成后修复RAS。
 
     bool pred_taken = false;
     std::unique_ptr<PCStateBase> target(pc.clone());
@@ -173,7 +173,7 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
     void *bp_history = NULL;
     void *indirect_history = NULL;
 
-    if (inst->isUncondCtrl()) {
+    if (inst->isUncondCtrl()) {     // 无条件跳转
         DPRINTF(Branch, "[tid:%i] [sn:%llu] Unconditional control\n",
             tid,seqNum);
         pred_taken = true;
@@ -181,7 +181,7 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
         uncondBranch(tid, pc.instAddr(), bp_history);
     } else {
         ++stats.condPredicted;
-        pred_taken = lookup(tid, pc.instAddr(), bp_history);
+        pred_taken = lookup(tid, pc.instAddr(), bp_history);    // 查找分支预测
 
         DPRINTF(Branch, "[tid:%i] [sn:%llu] "
                 "Branch predictor predicted %i for PC %s\n",
@@ -198,11 +198,11 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
             tid, seqNum, pc);
 
     PredictorHistory predict_record(seqNum, pc.instAddr(), pred_taken,
-                                    bp_history, indirect_history, tid, inst);
+                                    bp_history, indirect_history, tid, inst);   // 创建预测历史记录
 
-    // Now lookup in the BTB or RAS.
-    if (pred_taken) {
-        if (inst->isReturn()) {
+    // Now lookup in the BTB or RAS. 现在在BTB或RAS中查找
+    if (pred_taken) {   // 分支预测为taken, 接下来查找BTB或RAS查目标地址
+        if (inst->isReturn()) {    // ret, pop RAS
             ++stats.RASUsed;
             predict_record.wasReturn = true;
             // If it's a function return call, then look up the address
@@ -223,7 +223,7 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
                     tid, seqNum, pc, *target, predict_record.RASIndex);
         } else {
 
-            if (inst->isCall()) {
+            if (inst->isCall()) {   // call, push RAS
                 RAS[tid].push(pc);
                 predict_record.pushedRAS = true;
 
@@ -237,10 +237,10 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
                         tid, seqNum, pc, pc, RAS[tid].topIdx());
             }
 
-            if (inst->isDirectCtrl() || !iPred) {
+            if (inst->isDirectCtrl() || !iPred) {   // 直接跳转
                 ++stats.BTBLookups;
                 // Check BTB on direct branches
-                if (BTB.valid(pc.instAddr(), tid)) {
+                if (BTB.valid(pc.instAddr(), tid)) {    // BTB中有该PC
                     ++stats.BTBHits;
                     // If it's not a return, use the BTB to get target addr.
                     set(target, BTB.lookup(pc.instAddr(), tid));
@@ -255,9 +255,9 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
                     predict_record.predTaken = pred_taken;
                     // The Direction of the branch predictor is altered
                     // because the BTB did not have an entry
-                    // The predictor needs to be updated accordingly
+                    // The predictor needs to be updated accordingly 由于BTB没有条目，分支预测器的方向被改变，因此需要相应地更新分支预测器
                     if (!inst->isCall() && !inst->isReturn()) {
-                        btbUpdate(tid, pc.instAddr(), bp_history);
+                        btbUpdate(tid, pc.instAddr(), bp_history);  // 更新BTB
                         DPRINTF(Branch,
                                 "[tid:%i] [sn:%llu] btbUpdate "
                                 "called for %s\n",
@@ -268,7 +268,7 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
                     }
                     inst->advancePC(*target);
                 }
-            } else {
+            } else {    // 间接跳转
                 predict_record.wasIndirect = true;
                 ++stats.indirectLookups;
                 //Consult indirect predictor on indirect control

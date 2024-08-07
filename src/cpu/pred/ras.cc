@@ -54,7 +54,7 @@ ReturnAddrStack::push(const PCStateBase &return_addr)
 {
     incrTos();
 
-    set(addrStack[tos], return_addr);
+    set(addrStack[tos], return_addr);   // 将return_addr存入tos指向的栈顶
 
     if (usedEntries != numEntries) {
         ++usedEntries;

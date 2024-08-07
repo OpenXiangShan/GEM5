@@ -119,7 +119,7 @@ TournamentBP::TournamentBP(const TournamentBPParams &params)
 
     // Set thresholds for the three predictors' counters
     // This is equivalent to (2^(Ctr))/2 - 1
-    localThreshold  = (1ULL << (localCtrBits  - 1)) - 1;
+    localThreshold  = (1ULL << (localCtrBits  - 1)) - 1;    // (1 << (2-1) ) - 1 = 1
     globalThreshold = (1ULL << (globalCtrBits - 1)) - 1;
     choiceThreshold = (1ULL << (choiceCtrBits - 1)) - 1;
 }
@@ -208,15 +208,15 @@ TournamentBP::lookup(ThreadID tid, Addr branch_addr, void * &bp_history)
     history->globalUsed = choice_prediction;
     history->localHistoryIdx = local_history_idx;
     history->localHistory = local_predictor_idx;
-    bp_history = (void *)history;
+    bp_history = (void *)history;   // 存一下这次的checkpoint,之后传递给update
 
     assert(local_history_idx < localHistoryTableSize);
 
     // Speculative update of the global history and the
     // selected local history.
-    if (choice_prediction) {
+    if (choice_prediction) {    // 选择全局预测
         if (global_prediction) {
-            updateGlobalHistTaken(tid);
+            updateGlobalHistTaken(tid);     // 用预测值直接更新全局历史（即便可能错误）
             updateLocalHistTaken(local_history_idx);
             return true;
         } else {
@@ -224,7 +224,7 @@ TournamentBP::lookup(ThreadID tid, Addr branch_addr, void * &bp_history)
             updateLocalHistNotTaken(local_history_idx);
             return false;
         }
-    } else {
+    } else {    // 选择局部预测
         if (local_prediction) {
             updateGlobalHistTaken(tid);
             updateLocalHistTaken(local_history_idx);
@@ -266,13 +266,13 @@ TournamentBP::update(ThreadID tid, Addr branch_addr, bool taken,
 
     assert(local_history_idx < localHistoryTableSize);
 
-    // Unconditional branches do not use local history.
+    // Unconditional branches do not use local history. 无条件分支不使用局部历史
     bool old_local_pred_valid = history->localHistory !=
             invalidPredictorIndex;
 
     // If this is a misprediction, restore the speculatively
     // updated state (global history register and local history)
-    // and update again.
+    // and update again. 如果是错误预测，恢复之前的推测状态，重新更新
     if (squashed) {
         // Global history restore and update
         globalHistory[tid] = (history->globalHistory << 1) | taken;
@@ -293,7 +293,7 @@ TournamentBP::update(ThreadID tid, Addr branch_addr, bool taken,
     assert(old_local_pred_index < localPredictorSize);
 
     // Update the choice predictor to tell it which one was correct if
-    // there was a prediction.
+    // there was a prediction. 更新选择预测器，告诉它哪个是正确的
     if (history->localPredTaken != history->globalPredTaken &&
         old_local_pred_valid)
     {
@@ -303,7 +303,7 @@ TournamentBP::update(ThreadID tid, Addr branch_addr, bool taken,
         unsigned choice_predictor_idx =
             history->globalHistory & choiceHistoryMask;
         if (history->localPredTaken == taken) {
-            choiceCtrs[choice_predictor_idx]--;
+            choiceCtrs[choice_predictor_idx]--;     // 局部预测正确，减小选择预测器的计数器
         } else if (history->globalPredTaken == taken) {
             choiceCtrs[choice_predictor_idx]++;
         }
@@ -313,7 +313,7 @@ TournamentBP::update(ThreadID tid, Addr branch_addr, bool taken,
     // resolution of the branch. Histories are updated
     // speculatively, restored upon squash() calls, and
     // recomputed upon update(squash = true) calls,
-    // so they do not need to be updated.
+    // so they do not need to be updated. 更新计数器，历史记录是推测的，压缩时恢复，更新时重新计算，所以不需要更新
     unsigned global_predictor_idx =
             history->globalHistory & globalHistoryMask;
     if (taken) {

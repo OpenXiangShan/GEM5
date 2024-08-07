@@ -82,7 +82,7 @@ class BPredUnit : public SimObject
 
     /**
      * Predicts whether or not the instruction is a taken branch, and the
-     * target of the branch if it is taken.
+     * target of the branch if it is taken.  预测分支是否跳转，以及分支目标地址
      * @param inst The branch instruction.
      * @param PC The predicted PC is passed back through this parameter.
      * @param tid The thread id.
@@ -141,7 +141,7 @@ class BPredUnit : public SimObject
      /**
      * If a branch is not taken, because the BTB address is invalid or missing,
      * this function sets the appropriate counter in the global and local
-     * predictors to not taken.
+     * predictors to not taken. btb更新策略可能不同
      * @param inst_PC The PC to look up the local predictor.
      * @param bp_history Pointer that will be set to an object that
      * has the branch predictor state associated with the lookup.
@@ -158,7 +158,7 @@ class BPredUnit : public SimObject
     /**
      * Looks up a given PC in the BTB to get the predicted target. The PC may
      * be changed or deleted in the future, so it needs to be used immediately,
-     * and/or copied for use later.
+     * and/or copied for use later. 根据PC查找BTB，获取预测目标，PC可能在未来被更改或删除，因此需要立即使用或复制以供以后使用
      * @param inst_PC The PC to look up.
      * @return The address of the target of the branch.
      */
@@ -214,7 +214,7 @@ class BPredUnit : public SimObject
         /**
          * Makes a predictor history struct that contains any
          * information needed to update the predictor, BTB, and RAS.
-         */
+         */ // 制作一个预测器历史结构，其中包含更新预测器BP、BTB和RAS所需的任何信息
         PredictorHistory(const InstSeqNum &seq_num, Addr instPC,
                          bool pred_taken, void *bp_history,
                          void *indirect_history, ThreadID _tid,
@@ -242,14 +242,14 @@ class BPredUnit : public SimObject
         }
 
         /** The sequence number for the predictor history entry. */
-        InstSeqNum seqNum;
+        InstSeqNum seqNum;  // BP历史条目的序列号
 
         /** The PC associated with the sequence number. */
         Addr pc;
 
         /** Pointer to the history object passed back from the branch
          * predictor.  It is used to update or restore state of the
-         * branch predictor.
+         * branch predictor.  指向从分支预测器返回的历史对象的指针，用于更新或恢复分支预测器的状态
          */
         void *bpHistory = nullptr;
 
@@ -291,7 +291,7 @@ class BPredUnit : public SimObject
         const StaticInstPtr inst;
     };
 
-    typedef std::deque<PredictorHistory> History;
+    typedef std::deque<PredictorHistory> History;   // 预测器历史，双端队列
 
     /** Number of the threads for which the branch history is maintained. */
     const unsigned numThreads;
@@ -300,18 +300,18 @@ class BPredUnit : public SimObject
     /**
      * The per-thread predictor history. This is used to update the predictor
      * as instructions are committed, or restore it to the proper state after
-     * a squash.
+     * a squash. 每个线程的预测器历史，用于在提交指令时更新预测器，或在取消时将其恢复到正确的状态，predHist
      */
     std::vector<History> predHist;
 
     /** The BTB. */
-    DefaultBTB BTB;
+    DefaultBTB BTB;     // 分支目标缓冲区，简单
 
     /** The per-thread return address stack. */
-    std::vector<ReturnAddrStack> RAS;
+    std::vector<ReturnAddrStack> RAS;   // 返回地址栈
 
     /** The indirect target predictor. */
-    IndirectPredictor * iPred;
+    IndirectPredictor * iPred;  // 间接目标预测器
 
     struct BPredUnitStats : public statistics::Group
     {
@@ -367,7 +367,7 @@ class BPredUnit : public SimObject
 
 
     /**
-     * Branches seen by the branch predictor
+     * Branches seen by the branch predictor， BP看到的分支
      *
      * @note This counter includes speculative branches.
      */

@@ -56,14 +56,14 @@ class DefaultBTB
 
         /** Whether or not the entry is valid. */
         bool valid = false;
-    };
+    };  // 一项 = tag + target + tid + valid
 
   public:
     /** Creates a BTB with the given number of entries, number of bits per
-     *  tag, and instruction offset amount.
+     *  tag, and instruction offset amount. 根据给定的条目数、每个标记的位数和指令偏移量创建BTB。
      *  @param numEntries Number of entries for the BTB.
      *  @param tagBits Number of bits for each tag in the BTB.
-     *  @param instShiftAmt Offset amount for instructions to ignore alignment.
+     *  @param instShiftAmt Offset amount for instructions to ignore alignment.  指令的偏移量，以忽略对齐。
      */
     DefaultBTB(unsigned numEntries, unsigned tagBits,
                unsigned instShiftAmt, unsigned numThreads);

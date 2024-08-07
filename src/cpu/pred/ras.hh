@@ -69,7 +69,7 @@ class ReturnAddrStack
     void pop();
 
     /** Changes index to the top of the RAS, and replaces the top address with
-     *  a new target.
+     *  a new target. 把新的目标地址放到RAS的顶部，并将索引更改为RAS的顶部。
      *  @param top_entry_idx The index of the RAS that will now be the top.
      *  @param restored The new target address of the new top of the RAS.
      */
@@ -95,7 +95,7 @@ class ReturnAddrStack
     }
 
     /** The RAS itself. */
-    std::vector<std::unique_ptr<PCStateBase>> addrStack;
+    std::vector<std::unique_ptr<PCStateBase>> addrStack;    // RAS = 一个PCStateBase的vector
 
     /** The number of entries in the RAS. */
     unsigned numEntries;
@@ -104,7 +104,7 @@ class ReturnAddrStack
     unsigned usedEntries;
 
     /** The top of stack index. */
-    unsigned tos;
+    unsigned tos;   // 栈顶索引
 };
 
 } // namespace branch_prediction

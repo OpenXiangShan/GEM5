@@ -78,7 +78,7 @@ bool
 LocalBP::lookup(ThreadID tid, Addr branch_addr, void * &bp_history)
 {
     bool taken;
-    unsigned local_predictor_idx = getLocalIndex(branch_addr);
+    unsigned local_predictor_idx = getLocalIndex(branch_addr);  // 根据pc索引table
 
     DPRINTF(Fetch, "Looking up index %#x\n",
             local_predictor_idx);
@@ -125,7 +125,7 @@ bool
 LocalBP::getPrediction(uint8_t &count)
 {
     // Get the MSB of the count
-    return (count >> (localCtrBits - 1));
+    return (count >> (localCtrBits - 1));   // count >> 1, 取最高位
 }
 
 inline
