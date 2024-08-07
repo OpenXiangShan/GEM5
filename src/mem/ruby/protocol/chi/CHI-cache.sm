@@ -584,6 +584,7 @@ machine(MachineType:Cache, "Cache coherency protocol") :
   structure(CacheEntry, interface="AbstractCacheEntry") {
     State state,        desc="SLICC line state";
     DataBlock DataBlk,  desc="data for the block";
+    bool everPrefetched, default="false", desc="Set if this cache entry was ever prefetched";
     bool HWPrefetched,  default="false", desc="Set if this cache entry was prefetched";
     RequestorID requestor,  desc="First requestor to fill this block";
     XsPFMetaData pfmeta,  desc="Xs prefetch meta data";

@@ -364,7 +364,7 @@ MessageBuffer::notifyMissCallback(Tick current_time, Sequencer& sequencer)
         if (msg->getLastEnqueueTime() <= current_time) {
             num_readys++;
             auto req = dynamic_cast<const RubyRequest *>(msg.get());
-            sequencer.notifyMissCallback(req->m_LineAddress, false, false);
+            sequencer.TBEFullCancel(req->m_LineAddress);
         }
     }
     DPRINTF(RubyQueue, "MessageBuffer: has %d readys but not dequeue, need notifyMissCallback\n", num_readys);

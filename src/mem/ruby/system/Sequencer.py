@@ -104,7 +104,7 @@ class RubySequencer(RubyPort):
     dcache = Param.RubyCache("")
 
     max_outstanding_requests = Param.Int(
-        16, "max requests (incl. prefetches) outstanding"
+        1024, "max requests (incl. prefetches) outstanding"
     )
     deadlock_threshold = Param.Cycles(
         500000,

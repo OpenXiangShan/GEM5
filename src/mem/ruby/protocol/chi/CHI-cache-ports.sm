@@ -424,8 +424,7 @@ in_port(seqInPort, RubyRequest, mandatoryQueue, rank=1) {
           );
         }
       } else {
-        
-        if (!storTBEs.areNSlotsAvailable(1)) {
+        if (!storTBEs.areNSlotsAvailable(1) || !reqRdy.areNSlotsAvailable(1, curTick())) {
           seqInPort.notifyMissCallback(clockEdge(), sequencer);
         }
         trigger(Event:AllocSeqRequest, in_msg.LineAddress,

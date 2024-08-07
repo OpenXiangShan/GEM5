@@ -338,10 +338,10 @@ bool hasBeenPrefetched(Addr addr, bool is_secure) {
   }
 }
 
-bool hasBeenPrefetchedAndNotAccessed(Addr addr, bool is_secure) {
+bool hasEverBeenPrefetched(Addr addr, bool is_secure) {
   CacheEntry entry := getCacheEntry(makeLineAddress(addr));
   if (is_valid(entry)) {
-    return entry.HWPrefetched;
+    return entry.everPrefetched;
   } else {
     return false;
   }

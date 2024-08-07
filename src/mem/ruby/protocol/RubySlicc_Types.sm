@@ -123,6 +123,7 @@ structure (Sequencer, external = "yes") {
                     Cycles, Cycles, Cycles);
 
   void notifyMissCallback(Addr, bool, bool);
+  void TBEFullCancel(Addr);
 
   void writeCallback(Addr, DataBlock);
   void writeCallback(Addr, DataBlock, bool);

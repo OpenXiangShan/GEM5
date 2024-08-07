@@ -1366,10 +1366,6 @@ class BaseCache : public ClockedObject, CacheAccessor
         memSidePort.schedSendEvent(time);
     }
 
-    CacheBlk* findBlock(Addr addr, bool is_secure){
-        return tags->findBlock(addr, is_secure);
-    }
-
     void incMissCount(PacketPtr pkt)
     {
         assert(pkt->req->requestorId() < system->maxRequestors());
@@ -1483,7 +1479,7 @@ public:
     {
         CacheBlk *block = tags->findBlock(addr, is_secure);
         if (block) {
-            return block->wasEverPrefetched();
+            return block->wasPrefetched();
         } else {
             return false;
         }
@@ -1494,11 +1490,11 @@ public:
         return false;
     }
 
-    bool hasBeenPrefetchedAndNotAccessed(Addr addr, bool is_secure) const override
+    bool hasEverBeenPrefetched(Addr addr, bool is_secure) const override
     {
         CacheBlk *block = tags->findBlock(addr, is_secure);
         if (block) {
-            return block->wasPrefetched();
+            return block->wasEverPrefetched();
         } else {
             return false;
         }
@@ -1524,8 +1520,8 @@ public:
     bool coalesce() const override;
 
     const uint8_t* findBlock(Addr addr, bool is_secure) const override {
-        auto blk = findBlock(addr, is_secure);
-        return blk;
+        auto blk = tags->findBlock(addr, is_secure);
+        return blk->data;
     }
 };
 

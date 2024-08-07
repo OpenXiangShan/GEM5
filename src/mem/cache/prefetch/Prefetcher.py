@@ -103,10 +103,12 @@ class BasePrefetcher(ClockedObject):
     def regProbeListeners(self):
         print("Registering probe listeners for Prefetcher {}".format(self))
         for tlb in self._tlbs:
+            print(f"{self} addTLB {tlb}")
             self.getCCObject().addTLB(tlb.getCCObject())
 
         assert len(self._downstream_pf) <= 1
         if len(self._downstream_pf):
+            print(f"{self} addHintDownStream {self._downstream_pf[0]}")
             self.getCCObject().addHintDownStream(self._downstream_pf[0].getCCObject())
 
         for event in self._events:

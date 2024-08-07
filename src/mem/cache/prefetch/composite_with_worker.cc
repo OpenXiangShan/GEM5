@@ -41,7 +41,7 @@ CompositeWithWorkerPrefetcher::postNotifyInsert(const PacketPtr &trigger_pkt, st
         if (!samePage(addr_prio.addr, pfi.getAddr())) {
             statsQueued.pfSpanPage += 1;
 
-            if (hasBeenPrefetched(trigger_pkt->getAddr(), trigger_pkt->isSecure())) {
+            if (hasEverBeenPrefetched(trigger_pkt->getAddr(), trigger_pkt->isSecure())) {
                 statsQueued.pfUsefulSpanPage += 1;
             }
         }
