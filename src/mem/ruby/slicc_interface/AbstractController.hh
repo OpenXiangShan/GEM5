@@ -368,8 +368,8 @@ class AbstractController : public ClockedObject, public Consumer, public HasDown
     virtual bool hasBeenPrefetched(const Addr &addr, const bool &is_secure, const RequestorID &requestor)
     { fatal("hasBeenPrefetched: prefetching not supported"); return false; }
 
-    virtual bool hasBeenPrefetchedAndNotAccessed(const Addr &addr, const bool &is_secure)
-    { fatal("hasBeenPrefetchedAndNotAccessed: prefetching not supported"); return false; }
+    virtual bool hasEverBeenPrefetched(const Addr &addr, const bool &is_secure)
+    { fatal("hasEverBeenPrefetched: prefetching not supported"); return false; }
 
     virtual Request::XsMetadata getHitBlkXsMetadata(const Addr &addr, const bool &is_secure)
     { fatal("getHitBlkXsMetadata: prefetching not supported"); return Request::XsMetadata(); }

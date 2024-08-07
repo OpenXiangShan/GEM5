@@ -51,6 +51,7 @@ RubyPrefetcherProxy::RubyPrefetcherProxy(AbstractController* _parent,
                           prefetch::Base* _prefetcher,
                           MessageBuffer *_pf_queue)
     :Named(_parent->name()),
+    stat(_prefetcher),
     prefetcher(_prefetcher),
     cacheCntrl(_parent),
     pfQueue(_pf_queue),
@@ -70,6 +71,14 @@ RubyPrefetcherProxy::RubyPrefetcherProxy(AbstractController* _parent,
             this,
             RubySystem::getBlockSizeBytes());
     }
+}
+
+RubyPrefetcherProxy::PfProxyStat::PfProxyStat(statistics::Group *parent)
+    : statistics::Group(parent, "RubyPrefetcherProxy"),
+      ADD_STAT(notifymiss,""),
+      ADD_STAT(notifyhit,""),
+      ADD_STAT(issuedPf,"")
+{
 }
 
 void
@@ -137,6 +146,7 @@ RubyPrefetcherProxy::issuePrefetch()
                 // enqueue request into prefetch queue to the cache
                 pfQueue->enqueue(msg, cacheCntrl->clockEdge(),
                                     cacheCntrl->cyclesToTicks(Cycles(1)));
+                stat.issuedPf++;
 
                 // track all pending PF requests
                 issuedPfPkts[line_addr] = pkt;
@@ -159,6 +169,7 @@ RubyPrefetcherProxy::notifyPfHit(const RequestPtr& req, bool is_read, XsPFMetaDa
 {
     assert(ppHit);
     assert(req);
+    stat.notifyhit++;
     Packet pkt(req, is_read ? Packet::makeReadCmd(req) :
                               Packet::makeWriteCmd(req));
     // NOTE: for now we only communicate physical address with prefetchers
@@ -178,6 +189,7 @@ RubyPrefetcherProxy::notifyPfMiss(const RequestPtr& req, bool is_read, XsPFMetaD
 {
     assert(ppMiss);
     assert(req);
+    stat.notifymiss++;
     Packet pkt(req, is_read ? MemCmd::ReadReq : MemCmd::WriteReq);
     // NOTE: for now we only communicate physical address with prefetchers
     pkt.dataStaticConst<uint8_t>(data_blk.getData(getOffset(req->getPaddr()),
@@ -186,6 +198,13 @@ RubyPrefetcherProxy::notifyPfMiss(const RequestPtr& req, bool is_read, XsPFMetaD
     pkt.missOnLatePf = (pfmeta.prefetchSource != PrefetchSourceType::PF_NONE);
     pkt.pfSource = pfmeta.prefetchSource;
     pkt.pfDepth = pfmeta.prefetchDepth;
+    if (!pkt.missOnLatePf && issuedPfPkts.count(makeLineAddress(req->getPaddr())) > 0)
+    {
+        auto pfpkt = issuedPfPkts[makeLineAddress(req->getPaddr())];
+        pkt.missOnLatePf = true;
+        pkt.pfSource = pfpkt->req->getXsMetadata().prefetchSource;
+        pkt.pfDepth = pfpkt->req->getXsMetadata().prefetchDepth;
+    }
     if (XsMetaIsNotNull(pfmeta)) {
         prefetcher->pfHitInMSHR(pfmeta.prefetchSource);
     }

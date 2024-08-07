@@ -56,7 +56,6 @@ class WorkerPrefetcher : public Queued
         // long missCount = cache->stats.cmd[MemCmd::ReadExReq]->misses[requestorId].value() +
         //                  cache->stats.cmd[MemCmd::ReadSharedReq]->misses[requestorId].value();
         // return std::pair<long, long>(missCount, totalMissCount);
-        panic("not support yet");
         return std::pair<long, long>(0, 0);
     };
     void notifyIns(int ins_num) override

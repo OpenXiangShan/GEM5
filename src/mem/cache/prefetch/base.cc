@@ -245,7 +245,7 @@ Base::observeAccess(const PacketPtr &pkt, bool miss) const
 
     if (!miss) {
         if (prefetchOnPfHit)
-            return hasBeenPrefetched(pkt->getAddr(), pkt->isSecure());
+            return hasEverBeenPrefetched(pkt->getAddr(), pkt->isSecure());
         if (!prefetchOnAccess)
             return false;
     }
@@ -283,9 +283,9 @@ Base::hasBeenPrefetched(Addr addr, bool is_secure) const
 }
 
 bool
-Base::hasBeenPrefetchedAndNotAccessed(Addr addr, bool is_secure) const
+Base::hasEverBeenPrefetched(Addr addr, bool is_secure) const
 {
-    return cache->hasBeenPrefetchedAndNotAccessed(addr, is_secure);
+    return cache->hasEverBeenPrefetched(addr, is_secure);
 }
 
 bool
@@ -359,7 +359,7 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
 
     DPRINTF(HWPrefetch, "Reach condition checked\n");
 
-    if (hasBeenPrefetchedAndNotAccessed(pkt->getAddr(), pkt->isSecure())) {
+    if (hasBeenPrefetched(pkt->getAddr(), pkt->isSecure())) {
         usefulPrefetches += 1;
         prefetchStats.pfUseful++;
         PrefetchSourceType pf_source = cache->getHitBlkXsMetadata(pkt).prefetchSource;
@@ -387,9 +387,9 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
             PrefetchInfo pfi(pkt, pkt->req->hasVaddr() ? pkt->req->getVaddr() : pkt->req->getPaddr(), miss,
                              Request::XsMetadata(pf_source, pf_depth));
             pfi.setReqAfterSquash(squashMark);
-            pfi.setEverPrefetched(hasBeenPrefetched(pkt->getAddr(), pkt->isSecure()));
-            pfi.setPfFirstHit(!miss && hasBeenPrefetchedAndNotAccessed(pkt->getAddr(), pkt->isSecure()));
-            pfi.setPfHit(!miss && hasBeenPrefetched(pkt->getAddr(), pkt->isSecure()));
+            pfi.setEverPrefetched(hasEverBeenPrefetched(pkt->getAddr(), pkt->isSecure()));
+            pfi.setPfFirstHit(!miss && hasBeenPrefetched(pkt->getAddr(), pkt->isSecure()));
+            pfi.setPfHit(!miss && hasEverBeenPrefetched(pkt->getAddr(), pkt->isSecure()));
             squashMark = false;
             notify(pkt, pfi);
         } else {

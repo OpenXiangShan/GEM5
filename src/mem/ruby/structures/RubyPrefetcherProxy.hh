@@ -96,6 +96,15 @@ class RubyPrefetcherProxy : public CacheAccessor, public Named
 
   private:
 
+    struct PfProxyStat : public statistics::Group
+    {
+      PfProxyStat(statistics::Group *parent);
+      statistics::Scalar notifymiss;
+      statistics::Scalar notifyhit;
+      statistics::Scalar issuedPf;
+    } stat;
+
+
     /** Schedule the next ready prefetch */
     void scheduleNextPrefetch();
 
@@ -161,9 +170,9 @@ class RubyPrefetcherProxy : public CacheAccessor, public Named
         return cacheCntrl->hasBeenPrefetched(addr, is_secure, requestor);
     }
 
-    bool hasBeenPrefetchedAndNotAccessed(Addr addr, bool is_secure) const override
+    bool hasEverBeenPrefetched(Addr addr, bool is_secure) const override
     {
-        return cacheCntrl->hasBeenPrefetchedAndNotAccessed(addr, is_secure);
+        return cacheCntrl->hasEverBeenPrefetched(addr, is_secure);
     }
 
     Request::XsMetadata getHitBlkXsMetadata(PacketPtr pkt) override

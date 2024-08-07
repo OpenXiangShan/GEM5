@@ -187,7 +187,6 @@ def config_cache(options, system):
             icache = icache_class(**_get_cache_opts('l1i', options))
             dcache = dcache_class(**_get_cache_opts('l1d', options))
             if dcache.prefetcher != NULL:
-                print("Add dtb for L1D prefetcher")
                 dcache.prefetcher.registerTLB(system.cpu[i].mmu.dtb)
                 if options.l1d_hwp_type == 'XSCompositePrefetcher':
                     if options.l1d_enable_spp:
@@ -224,7 +223,6 @@ def config_cache(options, system):
                 dcache.prefetcher.add_pf_downstream(system.l2_caches[i].prefetcher)
                 system.l2_caches[i].prefetcher.queue_size = 64
                 system.l2_caches[i].prefetcher.max_prefetch_requests_with_pending_translation = 128
-                print("Add L2 prefetcher {} as downstream of L1D prefetcher {}".format(i, i))
 
             if options.l3cache and options.l2_to_l3_pf_hint:
                 assert system.l2_caches[i].prefetcher != NULL and \
@@ -232,7 +230,6 @@ def config_cache(options, system):
                 system.l2_caches[i].prefetcher.add_pf_downstream(system.l3.prefetcher)
                 system.l3.prefetcher.queue_size = 64
                 system.l3.prefetcher.max_prefetch_requests_with_pending_translation = 128
-                print("Add L3 prefetcher as downstream of L2 prefetcher {}".format(i))
 
             # If we have a walker cache specified, instantiate two
             # instances here

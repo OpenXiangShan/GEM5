@@ -65,7 +65,7 @@ struct CacheAccessor
     /** Determine if address has been prefetched by the requestor */
     virtual bool hasBeenPrefetched(Addr addr, bool is_secure, RequestorID requestor) const = 0;
 
-    virtual bool hasBeenPrefetchedAndNotAccessed(Addr addr, bool is_secure) const = 0;
+    virtual bool hasEverBeenPrefetched(Addr addr, bool is_secure) const = 0;
 
     virtual Request::XsMetadata getHitBlkXsMetadata(PacketPtr pkt) = 0;
 

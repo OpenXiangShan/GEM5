@@ -256,7 +256,7 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
         if (!samePage(addr_prio.addr, pfi.getAddr())) {
             statsQueued.pfSpanPage += 1;
 
-            if (hasBeenPrefetchedAndNotAccessed(pkt->getAddr(), pkt->isSecure())) {
+            if (hasBeenPrefetched(pkt->getAddr(), pkt->isSecure())) {
                 statsQueued.pfUsefulSpanPage += 1;
             }
         }
@@ -379,7 +379,7 @@ Queued::translationComplete(DeferredPacket *dp, bool failed)
                 statsQueued.pfInCache++;
                 DPRINTF(HWPrefetch, "Dropping redundant in "
                         "cache/MSHR prefetch addr:%#x\n", target_paddr);
-            } else if (target_paddr < 0x80000000) {
+            } else if (!system->isMemAddr(target_paddr)) {
                 DPRINTF(HWPrefetch, "wrong paddr of prefetch:%#x\n", target_paddr);
 
             } else {
@@ -552,7 +552,7 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
                 "cache/MSHR prefetch addr:%#x\n", target_paddr);
         return;
     }
-    if (has_target_pa && (target_paddr < 0x80000000)) {
+    if (has_target_pa && !system->isMemAddr(target_paddr)) {
         DPRINTF(HWPrefetch, "wrong paddr of prefetch:%#x\n", target_paddr);
         return;
     }

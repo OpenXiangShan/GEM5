@@ -49,7 +49,7 @@ import math
 
 import m5
 from m5.objects import *
-
+from common.PrefetcherConfig import create_prefetcher
 
 class Versions:
     """
@@ -512,30 +512,9 @@ class CHI_RNF(CHI_Node):
             l1i_pf = NULL
 
             # create dcache prefetcher
-            l1d_pf = NULL
-            if options.l1d_hwp_type == 'XSCompositePrefetcher':
-                l1d_pf = XSCompositePrefetcher()
-                if options.l1d_enable_spp:
-                    l1d_pf.enable_spp = True
-                if options.l1d_enable_cplx:
-                    l1d_pf.enable_cplx = True
-                l1d_pf.pht_pf_level = options.pht_pf_level
-                l1d_pf.short_stride_thres = options.short_stride_thres
-                l1d_pf.fuzzy_stride_matching = False
-                l1d_pf.stream_pf_ahead = True
-                l1d_pf.bop_large.delay_queue_enable = True
-                l1d_pf.bop_large.bad_score = 10
-                l1d_pf.bop_small.delay_queue_enable = True
-                l1d_pf.bop_small.bad_score = 5
-                l1d_pf.queue_size = 128
-                l1d_pf.max_prefetch_requests_with_pending_translation = 128
-                l1d_pf.region_size = 64*16  # 64B * blocks per region
-
-                l1d_pf.berti.use_byte_addr = True
-                l1d_pf.berti.aggressive_pf = False
-                l1d_pf.berti.trigger_pht = True
-                if options.cpu_type == 'DerivO3CPU':
-                        cpu.add_pf_downstream(l1d_pf)
+            l1d_pf = create_prefetcher(cpu, 'l1d', options)
+            if l1d_pf != NULL and options.cpu_type == 'DerivO3CPU':
+                    cpu.add_pf_downstream(l1d_pf)
 
             # cache controllers
             cpu.l1i = CHI_L1Controller(
@@ -587,17 +566,11 @@ class CHI_RNF(CHI_Node):
                 start_index_bit=self._block_size_bits, is_icache=False
             )
 
-            l2_pf = NULL
-            if options.l2_hwp_type == 'WorkerPrefetcher':
-                l2_pf = WorkerPrefetcher()
-                l2_pf.queue_size = 64
-                l2_pf.max_prefetch_requests_with_pending_translation = 128
+            l2_pf = create_prefetcher(NULL, 'l2', options)
+            if l2_pf != NULL and options.l1_to_l2_pf_hint:
+                cpu.l1d.prefetcher.add_pf_downstream(l2_pf)
 
             cpu.l2 = CHI_L2Controller(self._ruby_system, l2_cache, l2_pf)
-            if options.l1_to_l2_pf_hint:
-                cpu.l1d.prefetcher.add_pf_downstream(l2_pf)
-                print(f"Add L2 prefetcher {l2_pf} as downstream of L1D prefetcher {cpu.l1d.prefetcher}")
-                pass
 
             self._cntrls.append(cpu.l2)
             self.connectController(cpu.l2)
@@ -610,7 +583,6 @@ class CHI_RNF(CHI_Node):
     def addLLCPrefetcherDownstream(self, llc_pf):
         for cpu in self._cpus:
             cpu.l2.prefetcher.add_pf_downstream(llc_pf)
-            print(f"Add LLC prefetcher {llc_pf} as downstream of L2 prefetcher {cpu.l2.prefetcher}")
 
 
 class CHI_HNF(CHI_Node):
@@ -661,11 +633,7 @@ class CHI_HNF(CHI_Node):
         # All ranges should have the same interleaving
         assert len(addr_ranges) >= 1
 
-        llc_pf = NULL
-        if options.l3_hwp_type == 'WorkerPrefetcher':
-            llc_pf = WorkerPrefetcher()
-            llc_pf.queue_size = 64
-            llc_pf.max_prefetch_requests_with_pending_translation = 128
+        llc_pf = create_prefetcher(NULL, 'l3', options)
 
         ll_cache = llcache_type(start_index_bit=intlvHighBit + 1)
         self._cntrl = CHI_HNFController(
