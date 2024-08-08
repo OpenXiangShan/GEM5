@@ -795,7 +795,11 @@ action(Initiate_LoadHit, desc="") {
 }
 
 action(Initiate_LoadMiss, desc="") {
-  if (tbe.doCacheFill) {
+  if (is_HN) {
+    tbe.actions.push(Event:SendReadNoSnp);
+    tbe.actions.push(Event:CheckCacheFill);
+    tbe.actions.push(Event:TagArrayWrite);
+  } else if (tbe.doCacheFill) {
     tbe.actions.push(Event:SendReadShared);
     tbe.actions.push(Event:CheckCacheFill);
     tbe.actions.push(Event:TagArrayWrite);
@@ -1550,7 +1554,7 @@ action(Send_ReadShared, desc="") {
 
 action(Send_ReadNoSnp, desc="") {
   assert(is_HN);
-  assert((tbe.use_DMT == false) ||
+  assert((tbe.use_DMT == false || tbe.is_local_pf) ||
          ((tbe.reqType == CHIRequestType:AtomicReturn) ||
           (tbe.reqType == CHIRequestType:AtomicNoReturn)));
 
