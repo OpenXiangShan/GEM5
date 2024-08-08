@@ -206,9 +206,7 @@ def create_system(
             Warning("L2 to L3 prefetch hint is not supported with multiple HNFs")
         else:
             for rnf in ruby_system.rnf:
-                # not support yet
-                #rnf.addLLCPrefetcherDownstream(ruby_system.hnf[0].getPrefetcher())
-                pass
+                rnf.addLLCPrefetcherDownstream(ruby_system.hnf[0].getPrefetcher())
 
     for hnf in ruby_system.hnf:
         network_nodes.append(hnf)
