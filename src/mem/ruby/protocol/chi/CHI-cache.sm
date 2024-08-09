@@ -167,7 +167,7 @@ machine(MachineType:Cache, "Cache coherency protocol") :
   // If the responder has the line in UC or UD state, propagate this state
   // on a ReadShared. Notice data won't be deallocated if dealloc_on_unique is
   // set
-  bool fwd_unique_on_readshared := "False";
+  bool fwd_unique_on_readshared := "True";
 
   // Allow receiving data in SD state.
   bool allow_SD;
