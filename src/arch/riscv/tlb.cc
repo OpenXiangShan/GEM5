@@ -372,10 +372,10 @@ TLB::autoOpenNextline()
     return auto_nextline;
 }
 void
-TLB::updateL2TLBSeq(TlbEntryTrie *Trie_l2, Addr vpn, Addr step, uint16_t asid)
+TLB::updateL2TLBSeq(TlbEntryTrie *Trie_l2, Addr vpn, Addr step, uint16_t asid, uint8_t translateMode)
 {
     for (int i = 0; i < l2tlbLineSize; i++) {
-        TlbEntry *m_entry = (*Trie_l2).lookup(buildKey(vpn + step * i, asid, 0));
+        TlbEntry *m_entry = (*Trie_l2).lookup(buildKey(vpn + step * i, asid, translateMode));
         if (m_entry == nullptr) {
             DPRINTF(TLB, "l2sp1 vaddr basic %#x vaddr %#x \n", vpn, vpn + step * i);
             panic("l2 TLB link num is empty\n");
@@ -414,7 +414,7 @@ TLB::lookupL2TLB(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden, int f
         entry_l2 = entry_l2l1;
         step = 0x1 << (PageShift + 2 * LEVEL_BITS);
         if ((!hidden) && (entry_l2l1))
-            updateL2TLBSeq(&trieL2L1, vpnl2l1, step, asid);
+            updateL2TLBSeq(&trieL2L1, vpnl2l1, step, asid, translateMode);
     }
     if (f_level == L_L2L2) {
         DPRINTF(TLB, "look up l2tlb in l2l2\n");
@@ -422,7 +422,7 @@ TLB::lookupL2TLB(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden, int f
         entry_l2 = entry_l2l2;
         step = 0x1 << (PageShift + LEVEL_BITS);
         if ((!hidden) && (entry_l2l2))
-            updateL2TLBSeq(&trieL2L2, vpnl2l2, step, asid);
+            updateL2TLBSeq(&trieL2L2, vpnl2l2, step, asid, translateMode);
     }
     if (f_level == L_L2L3) {
         DPRINTF(TLB, "look up l2tlb in l2l3\n");
@@ -443,7 +443,7 @@ TLB::lookupL2TLB(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden, int f
                 }
             }
             for (i = 0; i < l2tlbLineSize; i++) {
-                TlbEntry *m_entry_l2l3 = trieL2L3.lookup(buildKey((vpnl2l3 + step * i), asid, 0));
+                TlbEntry *m_entry_l2l3 = trieL2L3.lookup(buildKey((vpnl2l3 + step * i), asid, translateMode));
                 if (m_entry_l2l3 == nullptr) {
                     DPRINTF(TLB, "l2l3 vaddr basic %#x vaddr %#x\n", vpnl2l3, vpnl2l3 + step * i);
                     panic("l2l3 TLB link num is empty\n");
@@ -480,7 +480,7 @@ TLB::lookupL2TLB(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden, int f
                 return nullptr;
             }
             if (!hidden)
-                updateL2TLBSeq(&trieL2sp, vpnl2sp1, step, asid);
+                updateL2TLBSeq(&trieL2sp, vpnl2sp1, step, asid, translateMode);
         }
     }
     if (f_level == L_L2sp2) {
@@ -494,7 +494,7 @@ TLB::lookupL2TLB(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden, int f
                 return nullptr;
             }
             if (!hidden)
-                updateL2TLBSeq(&trieL2sp, vpnl2sp2, step, asid);
+                updateL2TLBSeq(&trieL2sp, vpnl2sp2, step, asid, translateMode);
         }
     }
 
@@ -627,7 +627,10 @@ TLB::L2TLBInsertIn(Addr vpn, const TlbEntry &entry, int choose, EntryList *List,
             choose);
     TlbEntry *newEntry;
     Addr key;
-    newEntry = lookupL2TLB(vpn, entry.asid, BaseMMU::Read, true, choose, false, translateMode);
+    if (translateMode == gstage)
+        newEntry = lookupL2TLB(vpn, entry.vmid, BaseMMU::Read, true, choose, false, translateMode);
+    else
+        newEntry = lookupL2TLB(vpn, entry.asid, BaseMMU::Read, true, choose, false, translateMode);
     Addr step = 0;
     if ((choose == L_L2L1) || (choose == L_L2sp1)) {
         step = 0x1 << 30;
@@ -645,7 +648,12 @@ TLB::L2TLBInsertIn(Addr vpn, const TlbEntry &entry, int choose, EntryList *List,
             newEntry->isSquashed = true;
             stats.squashedInsertL2++;
             for (int i = 1; i < l2tlbLineSize; i++) {
-                newEntry = lookupL2TLB(vpn + step * i, entry.asid, BaseMMU::Read, true, choose, false, translateMode);
+                if (translateMode == gstage)
+                    newEntry =
+                        lookupL2TLB(vpn + step * i, entry.vmid, BaseMMU::Read, true, choose, false, translateMode);
+                else
+                    newEntry =
+                        lookupL2TLB(vpn + step * i, entry.asid, BaseMMU::Read, true, choose, false, translateMode);
                 stats.squashedInsertL2++;
                 if (newEntry) {
                     newEntry->isSquashed = true;
@@ -657,10 +665,11 @@ TLB::L2TLBInsertIn(Addr vpn, const TlbEntry &entry, int choose, EntryList *List,
     if (newEntry) {
         newEntry->pte = entry.pte;
         if (newEntry->vaddr != vpn) {
-            Addr newEntryAddr = buildKey(newEntry->vaddr, newEntry->asid, 0);
-            Addr vpnAddr = buildKey(entry.vaddr, entry.asid, 0);
-            warn("vaddr newEntry vaddr %lx vpn %lx key newEntry vaddr %lx vpn %lx\n", newEntry->vaddr, vpn,
-                 newEntryAddr, vpnAddr);
+            Addr newEntryAddr = ((buildKey(newEntry->vaddr, newEntry->asid, translateMode) >> 12) << 12);
+            Addr vpnAddr = ((buildKey(entry.vaddr, entry.asid, translateMode) >> 12) << 12);
+            Addr vpngpaddr = ((buildKey(entry.gpaddr, entry.vmid, translateMode) >> 12) << 12);
+            warn("vaddr newEntry vaddr %lx vpn %lx key newEntry vaddr %lx vpn %lx vpngpaddr %lx\n", newEntry->vaddr,
+                 vpn, newEntryAddr, vpnAddr, vpngpaddr);
 
             DPRINTF(TLBVerbosel2, "newEntryAddr %#x vpnAddr %#x\n", newEntryAddr, vpnAddr);
             DPRINTF(TLBVerbosel2, "l2tlb insert(vpn=%#x, vpn2 %#x asid=%#x): ppn=%#x pte=%#x size=%#x level %d\n", vpn,
@@ -668,7 +677,7 @@ TLB::L2TLBInsertIn(Addr vpn, const TlbEntry &entry, int choose, EntryList *List,
             DPRINTF(TLBVerbosel2, "newentry(vpn=%#x, vpn2 %#x asid=%#x): ppn=%#x pte=%#x size=%#x level %d\n", vpn,
                     newEntry->vaddr, newEntry->asid, newEntry->paddr, newEntry->pte, newEntry->size(), choose);
             DPRINTF(TLBVerbosel2, "newEntry->vaddr %#x vpn %#x choose %d\n", newEntry->vaddr, vpn, choose);
-            if (newEntryAddr != vpnAddr)
+            if ((newEntryAddr != vpnAddr) && (newEntryAddr != vpngpaddr))
                 panic("tlb match but key is wrong\n");
         }
         return newEntry;
@@ -1338,10 +1347,14 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
     PrivilegeMode pmode = getMemPriv(tc, mode);
     bool continuePtw =false;
     Addr ppn = 0;
+    uint64_t pte = 0;
     TlbEntry *e[6] = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
     int hit_type = H_L1miss;
+    if (vsatp.mode != 0)
+        e[0] = lookup(vaddr, vsatp.asid, mode, false, true, allstage);
+    else
+        e[0] = lookup(vaddr, hgatp.vmid, mode, false, true, gstage);
 
-    e[0] = lookup(vaddr, vsatp.asid, mode, false, true, allstage);
     if (e[0]) {
         hit_type = h_l1AllstageHit;
         if (hgatp.vmid != e[0]->vmid)
@@ -1360,8 +1373,9 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
         Addr fault_gpaddr = ((e[0]->gpaddr >> 12) << 12) | (vaddr & 0xfff);
 
         std::pair(continuePtw,fault) = checkGPermissions(status,vaddr,fault_gpaddr,mode,e[0]->pte,req->get_h_inst());
-        if (fault != NoFault)
-            return std::make_pair(hit_type,fault);
+        if (fault != NoFault) {
+            return std::make_pair(hit_type, fault);
+        }
 
         Addr paddr = e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes));
         if (e[0]->level > 0) {
@@ -1399,6 +1413,7 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
             }
             req->setPaddr(gPaddr);
             ppn = e[0]->pte.ppn;
+            pte = e[0]->pte;
 
             e[0] = lookup(gPaddr, hgatp.vmid, mode, false, true, gstage);
             if (e[0]) {
@@ -1412,8 +1427,10 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
                 gPaddr = pgBase |(gPaddr & PGMASK);
 
 
-                if (fault != NoFault)
-                    return std::make_pair(hit_type,fault);
+                if (fault != NoFault) {
+                    return std::make_pair(hit_type, fault);
+                }
+
 
                 req->setPaddr(gPaddr);
                 return std::make_pair(hit_type,NoFault);
@@ -1450,6 +1467,7 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
     int level = 2;
     int twoStageLevel = 2;
     bool finishgva = false;
+    hitInSp = false;
 
     Addr pgBase = vsatp.ppn << PageShift;
 
@@ -1461,20 +1479,15 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
 
     assert(l2tlb != nullptr);
     // first check
-    e[0] = l2tlb->lookupL2TLB(vaddr, vsatp.asid, mode, false, L_L2L3, true, allstage);
-    hit_type = h_l1AllstageHit;
-    if (!e[0]) {
-        e[0] = l2tlb->lookupL2TLB(vaddr, vsatp.asid, mode, false, L_L2sp2, true, allstage);
-        if (!e[0])
-            e[0] = l2tlb->lookupL2TLB(vaddr, vsatp.asid, mode, false, L_L2sp1, true, allstage);
-    }
     if ((!e[0]) && (l1tlbtype == h_l1VSstageHit)) {
         for (int i_e = 1; i_e < 6; i_e++) {
             e[i_e] = l2tlb->lookupL2TLB(req->getgPaddr(), hgatp.vmid, mode, false, i_e, true, gstage);
-            if (e[i_e]->level < hit_level) {
-                e[0] = e[i_e];
-                hit_level = e[i_e]->level;
-                hit_flag = i_e;
+            if (e[i_e]) {
+                if (e[i_e]->level < hit_level) {
+                    e[0] = e[i_e];
+                    hit_level = e[i_e]->level;
+                    hit_flag = i_e;
+                }
             }
         }
         // fault = L2TLBCheck(e[0]->pte, e[0]->level, status, pmode, vaddr, mode, req, false, false);
@@ -1502,6 +1515,7 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
             hit_type = h_l2VSstageHitEnd;
             return std::make_pair(hit_type, NoFault);
         }
+        assert(0);
     }
 
     if (!e[0]) {
@@ -1509,10 +1523,12 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
         if (!e[0]) {
             for (int i_e = 1; i_e < 6; i_e++) {
                 e[i_e] = l2tlb->lookupL2TLB(vaddr, vsatp.asid, mode, false, i_e, true, vsstage);
-                if (e[i_e]->level < hit_level) {
-                    e[0] = e[i_e];
-                    hit_level = e[i_e]->level;
-                    hit_flag = i_e;
+                if (e[i_e]) {
+                    if (e[i_e]->level < hit_level) {
+                        e[0] = e[i_e];
+                        hit_level = e[i_e]->level;
+                        hit_flag = i_e;
+                    }
                 }
             }
         }
@@ -1521,6 +1537,7 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
             level = e[0]->level;
             fault = L2TLBCheck(e[0]->pte, e[0]->level, status, pmode, vaddr, mode, req, false, false);
             finishgva = hitInSp;
+            req->setPte(e[0]->pte);
             if (fault != NoFault) {
                 return std::make_pair(hit_type, fault);
             } else {
@@ -1536,10 +1553,12 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                 if (!e[0]) {
                     for (int i_e = 1; i_e < 6; i_e++) {
                         e[i_e] = l2tlb->lookupL2TLB(gPaddr, hgatp.vmid, mode, false, i_e, true, gstage);
-                        if (e[i_e]->level < hit_level) {
-                            e[0] = e[i_e];
-                            hit_level = e[i_e]->level;
-                            hit_flag = i_e;
+                        if (e[i_e]) {
+                            if (e[i_e]->level < hit_level) {
+                                e[0] = e[i_e];
+                                hit_level = e[i_e]->level;
+                                hit_flag = i_e;
+                            }
                         }
                     }
                 }
@@ -1561,9 +1580,9 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                             pgBase = ((e[0]->pte.ppn << 12) & ~pg_mask) | (gPaddr & pg_mask & ~PGMASK);
                         }
                         gPaddr = pgBase | (gPaddr & PGMASK);
-                        if (finishgva)
+                        if (finishgva) {
                             req->setPaddr(gPaddr);
-                        else {
+                        } else {
                             hit_type = h_l2VSstageHitContinue;
                             req->setTwoPtwWalk(false, level - 1, 2, e[0]->pte.ppn, hitInSp);
                         }
@@ -1590,26 +1609,69 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
             req->setgPaddr(gPaddr);
             return std::make_pair(hit_type,NoFault);
         }
+        assert(0);
     } else {
         hit_type = h_l1AllstageHit;
         if (vsatp.mode != 0){
-            fault = L2TLBCheck(e[0]->pteVS, e[0]->level, status, pmode, vaddr, mode, req, false, false);
+            fault = L2TLBCheck(e[0]->pteVS, e[0]->VSlevel, status, pmode, vaddr, mode, req, false, false);
             if (!hitInSp){
-
+                assert(0);
+                twoStageLevel = e[0]->level;
+                std::pair(continuePtw, fault) =
+                    checkGPermissions(status, vaddr, gPaddr, mode, e[0]->pte, req->get_h_inst());
+                if (fault != NoFault) {
+                    return std::make_pair(hit_type, fault);
+                } else if (continuePtw) {
+                    hit_type = h_l2GstageHitContinue;
+                    req->setTwoPtwWalk(true, level, twoStageLevel--, e[0]->pte.ppn, hitInSp);
+                    // req->setTwoPtwWalk(true, level, twoStageLevel--, e[0]->pte, hitInSp);
+                    req->setgPaddr(gPaddr);
+                    return std::make_pair(hit_type, fault);
+                } else {
+                    hit_type = h_l2GstageHitEnd;
+                    if (e[0]->level > 0) {
+                        pg_mask = (1ULL << (12 + 9 * e[0]->level)) - 1;
+                        pgBase = ((e[0]->pte.ppn << 12) & ~pg_mask) | (gPaddr & pg_mask & ~PGMASK);
+                    }
+                    gPaddr = pgBase | (gPaddr & PGMASK);
+                    if (finishgva) {
+                        req->setPaddr(gPaddr);
+                    } else {
+                        hit_type = h_l2VSstageHitContinue;
+                        req->setTwoPtwWalk(false, level - 1, 2, e[0]->pte.ppn, hitInSp);
+                    }
+                    return std::make_pair(hit_type, NoFault);
+                }
             }
         }
-        if (fault != NoFault)
-            return std::make_pair(hit_type,NoFault);
+        if (fault != NoFault){
+            return std::make_pair(hit_type,fault);
+        }
         Addr fault_gpaddr = ((e[0]->gpaddr >> 12) << 12) | (vaddr & 0xfff);
 
-        std::pair(continuePtw,fault) = checkGPermissions(status,vaddr,fault_gpaddr,mode,e[0]->pte,req->get_h_inst());
-        if (fault != NoFault)
-            return std::make_pair(hit_type,fault);
+        std::pair(continuePtw, fault) =
+            checkGPermissions(status, vaddr, fault_gpaddr, mode, e[0]->pte, req->get_h_inst());
+        if (fault != NoFault) {
+            return std::make_pair(hit_type, fault);
+        }
+
 
         Addr paddr = e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes));
+        gPaddr = e[0]->pteVS.ppn << 12;
+        if (e[0]->VSlevel > 0) {
+            pg_mask = (1ULL << (12 + 9 * e[0]->VSlevel)) - 1;
+            gPaddr = ((e[0]->pte.ppn << 12) & ~pg_mask) | (vaddr & pg_mask & ~PGMASK);
+        }
+        gPaddr = gPaddr | (vaddr & PGMASK);
+
+
         if (e[0]->level > 0) {
             paddr = (paddr >> (PageShift + e[0]->level * 9)) << (PageShift + e[0]->level * 9) |
                     (vaddr & mask(e[0]->logBytes));
+        }
+        if (e[0]->level > 0) {
+            pg_mask = (1ULL << (12 + 9 * e[0]->level)) - 1;
+            pgBase = ((e[0]->pte.ppn << 12) & ~pg_mask) | (gPaddr & pg_mask & ~PGMASK);
         }
         req->setPaddr(paddr);
         return std::make_pair(hit_type,NoFault);
@@ -1680,8 +1742,10 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
             }
             return fault;*/
             std::pair<int, Fault> result = checkHL2Tlb(req, tc, translation, mode, l1tlbtype);
-            if (result.second != NoFault)
-                return fault;
+            if (result.second != NoFault) {
+                return result.second;
+            }
+
             if ((result.first == h_l2GstageHitContinue) || (result.first == h_l2VSstageHitEnd) ||
                 (result.first == H_L1miss)) {
                 fault = walker->start(0, tc, translation, req, mode, false, false, 0, false, 0);
@@ -1690,7 +1754,11 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
                     return fault;
                 }
                 return fault;
+            } else {
+                req->getPaddr();
             }
+        } else {
+            req->getPaddr();
         }
     }
     return fault;
