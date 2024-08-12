@@ -348,18 +348,15 @@ FTBITTAGE::update(const FetchStream &entry)
             unsigned maskMaxNum = std::pow(2, (numPredictors - (pred.main_table + 1)));
             unsigned mask = allocLFSR.get() % maskMaxNum;
             bitset allocateLFSR(numPredictors - (pred.main_table + 1), mask);
-            std::string buf;
-            boost::to_string(allocateLFSR, buf);
-            DPRINTF(FTBITTAGE || debugFlag, "allocateLFSR %s, size %d\n", buf, allocateLFSR.size());
+
             auto flipped_usefulMask = pred.usefulMask.flip();
-            boost::to_string(flipped_usefulMask, buf);
-            DPRINTF(FTBITTAGE || debugFlag, "pred usefulmask %s, size %d\n", buf, pred.usefulMask.size());
             bitset masked = allocateLFSR & flipped_usefulMask;
-            boost::to_string(masked, buf);
-            DPRINTF(FTBITTAGE || debugFlag, "masked %s, size %d\n", buf, masked.size());
             bitset allocate = masked.any() ? masked : flipped_usefulMask;
-            boost::to_string(allocate, buf);
-            DPRINTF(FTBITTAGE || debugFlag, "allocate %s, size %d\n", buf, allocate.size());
+            DPRINTF(FTBITTAGE || debugFlag, "allocateLFSR %s, size %d\n", allocateLFSR, allocateLFSR.size());
+            DPRINTF(FTBITTAGE || debugFlag, "pred usefulmask %s, size %d\n", flipped_usefulMask,
+                    pred.usefulMask.size());
+            DPRINTF(FTBITTAGE || debugFlag, "masked %s, size %d\n", masked, masked.size());
+            DPRINTF(FTBITTAGE || debugFlag, "allocate %s, size %d\n", allocate, allocate.size());
 
             bool allocateValid = flipped_usefulMask.any();
             if (needToAllocate && allocateValid) {
@@ -456,9 +453,7 @@ FTBITTAGE::satDecrement(int min, short &counter)
 void
 FTBITTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, int shamt, bool taken)
 {
-    std::string buf;
-    boost::to_string(history, buf);
-    DPRINTF(FTBITTAGE || debugFlag, "in doUpdateHist, shamt %d, taken %d, history %s\n", shamt, taken, buf);
+    DPRINTF(FTBITTAGE || debugFlag, "in doUpdateHist, shamt %d, taken %d, history %s\n", shamt, taken, history);
     if (shamt == 0) {
         DPRINTF(FTBITTAGE || debugFlag, "shamt is 0, returning\n");
         return;
@@ -501,9 +496,7 @@ void
 FTBITTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * when)
 {
     DPRINTF(FTBITTAGE || debugFlag, "checking folded history when %s\n", when);
-    std::string hist_str;
-    boost::to_string(hist, hist_str);
-    DPRINTF(FTBITTAGE || debugFlag, "history:\t%s\n", hist_str.c_str());
+    DPRINTF(FTBITTAGE || debugFlag, "history:\t%s\n", hist);
     for (int t = 0; t < numPredictors; t++) {
         for (int type = 0; type < 2; type++) {
             DPRINTF(FTBITTAGE || debugFlag, "t: %d, type: %d\n", t, type);
