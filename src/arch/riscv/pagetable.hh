@@ -166,6 +166,7 @@ struct TlbEntry : public Serializable
     uint64_t lruSeq;
 
     uint64_t level;
+    uint64_t VSlevel;
 
     Addr index;
 
@@ -189,6 +190,7 @@ struct TlbEntry : public Serializable
           pteVS(),
           lruSeq(0),
           level(0),
+          VSlevel(0),
           index(0),
           isSquashed(false),
           used(false),

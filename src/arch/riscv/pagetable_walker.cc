@@ -719,7 +719,7 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
                 entry.logBytes = PageShift + (twoStageLevel * LEVEL_BITS);
                 entry.level = twoStageLevel;
                 entry.gpaddr = entry.vaddr;
-                walker->tlb->insert(entry.vaddr, entry, false, allstage);
+                walker->tlb->insert(entry.vaddr, entry, false, gstage);
                 endWalk();
                 return NoFault;
             }
@@ -1440,6 +1440,10 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level, bool from_l2tl
         finishGVA = mainReq->get_finish_gva();
         level = mainReq->get_level();
         twoStageLevel = mainReq->get_two_stage_level();
+        if (finishGVA){
+            entry.pteVS = mainReq->get_pte();
+            inl2Entry.pteVS = mainReq->get_pte();
+        }
         if ((!isVsatp0Mode) && (mainReq->get_h_gstage()) && (mainReq->get_two_stage_level() != 2)) {
             fault = startTwoStageWalkFromTLBInG(mainReq->get_ppn(), vaddr);
         } else if ((!isVsatp0Mode) && (!mainReq->get_h_gstage()) && (mainReq->get_two_stage_level() != 2)) {
