@@ -636,18 +636,15 @@ DecoupledStreamBPU::trapSquash(unsigned target_id, unsigned stream_id,
 
     historyManager.squash(stream_id, true, last_committed_pc, inst_pc.instAddr());
 
-    boost::to_string(s0History, buf1);
-    boost::to_string(stream.history, buf2);
-    DPRINTF(DecoupleBP, "Recover history %s\nto %s\n", buf1.c_str(),
-            buf2.c_str());
+    DPRINTF(DecoupleBP, "Recover history %s\nto %s\n", s0History,
+            stream.history);
     s0History = stream.history;
     streamTAGE->recoverFoldedHist(s0History);
     // streamTAGE->checkFoldedHist(s0History);
     auto hashed_path =
         computePathHash(last_committed_pc, inst_pc.instAddr());
     histShiftIn(hashed_path, s0History);
-    boost::to_string(s0History, buf1);
-    DPRINTF(DecoupleBP, "Shift in history %s\n", buf1.c_str());
+    DPRINTF(DecoupleBP, "Shift in history %s\n", s0History);
 
     checkHistory(s0History);
 
@@ -1145,12 +1142,13 @@ DecoupledStreamBPU::makeNewPrediction(bool create_new_stream)
 
         auto hashed_path =
             computePathHash(s0UbtbPred.controlAddr, s0UbtbPred.nextStream);
-        boost::to_string(s0History, buf1);
+        if (debug::DecoupleBP) {
+            boost::to_string(s0History, buf1);
+        }
         histShiftIn(hashed_path, s0History);
-        boost::to_string(s0History, buf2);
         DPRINTF(DecoupleBP, "Update s0PC to %#lx\n", s0PC);
-        DPRINTF(DecoupleBP, "Update s0History from %s to %s\n", buf1.c_str(),
-                buf2.c_str());
+        DPRINTF(DecoupleBP, "Update s0History from %s to %s\n", buf1,
+                s0History);
         DPRINTF(DecoupleBP, "Hashed path: %#lx\n", hashed_path);
 
         if (create_new_stream) {
@@ -1206,8 +1204,7 @@ DecoupledStreamBPU::makeNewPrediction(bool create_new_stream)
     DPRINTF(DecoupleBP || debugFlagOn,
             "After pred, s0StreamStartPC=%#lx, s0PC=%#lx\n", s0StreamStartPC,
             s0PC);
-    boost::to_string(entry.history, buf1);
-    DPRINTF(DecoupleBP, "New prediction history: %s\n", buf1.c_str());
+    DPRINTF(DecoupleBP, "New prediction history: %s\n", entry.history);
 
     std::tie(entry.isLoop, entry.loopTarget) = streamLoopPredictor->makeLoopPrediction(s0UbtbPred.controlAddr);
     if (s0UbtbPred.useLoopPrediction) {
@@ -1268,13 +1265,11 @@ DecoupledStreamBPU::checkHistory(const boost::dynamic_bitset<> &history)
     ideal_hash_hist.resize(comparable_size);
     sized_real_hist.resize(comparable_size);
 
-    boost::to_string(ideal_hash_hist, buf1);
-    boost::to_string(sized_real_hist, buf2);
     DPRINTF(DecoupleBP,
             "Ideal size:\t%u, real history size:\t%u, comparable size:\t%u\n",
             ideal_size, historyBits, comparable_size);
     DPRINTF(DecoupleBP, "Ideal history:\t%s\nreal history:\t%s\n",
-            buf1.c_str(), buf2.c_str());
+            ideal_hash_hist, sized_real_hist);
     assert(ideal_hash_hist == sized_real_hist);
 }
 

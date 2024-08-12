@@ -2330,9 +2330,7 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
         // update ghr
         int shamt;
         std::tie(shamt, taken) = finalPred.getHistInfo();
-        boost::to_string(s0History, buf1);
         histShiftIn(shamt, taken, s0History);
-        boost::to_string(s0History, buf2);
 
         historyManager.addSpeculativeHist(entry.startPC, shamt, taken, entry.predBranchInfo, fsqId);
         tage->checkFoldedHist(s0History, "speculative update");
@@ -2475,8 +2473,6 @@ DecoupledBPUWithFTB::checkHistory(const boost::dynamic_bitset<> &history)
     ideal_hash_hist.resize(comparable_size);
     sized_real_hist.resize(comparable_size);
 
-    boost::to_string(ideal_hash_hist, buf1);
-    boost::to_string(sized_real_hist, buf2);
     DPRINTF(DecoupleBP,
             "Ideal size:\t%u, real history size:\t%u, comparable size:\t%u\n",
             ideal_size, historyBits, comparable_size);
