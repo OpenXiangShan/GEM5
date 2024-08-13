@@ -331,6 +331,9 @@ class LSQUnit
     const uint32_t sbufferEvictThreshold = 0;
     const uint32_t sbufferEntries = 0;
     FullyAssocSet<StoreBufferEntry> storeBuffer;
+    // Store Buffer Writeback Timeout
+    uint64_t storeBufferWritebackInactive;
+    uint64_t storeBufferInactiveThreshold;
 
     StoreBufferEntry* blockedsbufferEntry = nullptr;
 
@@ -348,7 +351,8 @@ class LSQUnit
 
   public:
     /** Constructs an LSQ unit. init() must be called prior to use. */
-    LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries, uint32_t sbufferEvictThreshold);
+    LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries,
+      uint32_t sbufferEvictThreshold, uint64_t storeBufferInactiveThreshold);
 
     /** We cannot copy LSQUnit because it has stats for which copy
      * contructor is deleted explicitly. However, STL vector requires
