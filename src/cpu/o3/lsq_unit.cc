@@ -269,10 +269,12 @@ LSQUnit::completeDataAccess(PacketPtr pkt)
     }
 }
 
-LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries, uint32_t sbufferEvictThreshold)
+LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries, uint32_t sbufferEvictThreshold,
+    uint64_t storeBufferInactiveThreshold)
     : sbufferEvictThreshold(sbufferEvictThreshold),
       sbufferEntries(sbufferEntries),
       storeBuffer(sbufferEntries),
+      storeBufferInactiveThreshold(storeBufferInactiveThreshold),
       lsqID(-1),
       storeQueue(sqEntries),
       loadQueue(lqEntries),
@@ -1204,7 +1206,8 @@ LSQUnit::storeBufferEvictToCache()
     if (storeBuffer.unsentSize() == 0) {
         return;
     }
-    if (storeBuffer.unsentSize() > sbufferEvictThreshold || storeBufferFlushing) {
+    if (storeBuffer.unsentSize() > sbufferEvictThreshold ||
+        storeBufferWritebackInactive > storeBufferInactiveThreshold || storeBufferFlushing) {
         if (storeBufferFlushing) {
             DPRINTF(StoreBuffer, "sbuffer flushing\n");
         } else {
@@ -1238,6 +1241,10 @@ LSQUnit::storeBufferEvictToCache()
         }
         DPRINTF(StoreBuffer, "send packet successed\n");
         entry->sending = true;
+        storeBufferWritebackInactive = 0;
+    } else {
+        // Timeout
+        storeBufferWritebackInactive++;
     }
 }
 
@@ -1510,6 +1517,7 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffe
                     paddr, *((uint64_t *)store_inst->memData), 0xff, request->_size);
             cpu->goldenMemManager()->updateGoldenMem(paddr, store_inst->memData, 0xff,
                                                      request->_size);
+            cpu->goldenMemManager()->recordStore(request->mainReq()->getPaddr(), lsqID);
         } else {
             uint8_t tmp_data[8];
             memset(tmp_data, 0, 8);
@@ -1518,51 +1526,6 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffe
 
             // read golden memory to get the global latest value before this AMO is executed for further compare
             cpu->goldenMemManager()->readGoldenMem(paddr,
-                                                   store_inst->getAmoOldGoldenValuePtr(), request->_size);
-            cpu->diffInfo.amoOldGoldenValue = store_inst->getAmoOldGoldenValue();
-
-            // before amo operate on golden memory
-            (*(request->req()->getAtomicOpFunctor()))(tmp_data);
-            // after amo operate on golden memory
-
-            DPRINTF(LSQUnit, "AMO writing to golden memory at addr %#x, data %#lx, mask %#x, size %d\n",
-                    paddr, *((uint64_t *)(tmp_data)), 0xff, request->_size);
-            cpu->goldenMemManager()->updateGoldenMem(paddr, tmp_data, 0xff,
-                                                     request->_size);
-        }
-    }
-
-    if (store_idx == storeQueue.begin()) {
-        do {
-            storeQueue.front().clear();
-            storeQueue.pop_front();
-        } while (storeQueue.front().completed() &&
-                 !storeQueue.empty());
-
-        iewStage->updateLSQNextCycle = true;
-    }
-
-    DPRINTF(LSQUnit, "Completing store [sn:%lli], idx:%i, store head "
-            "idx:%i\n",
-            store_inst->seqNum, store_idx.idx() - 1, storeQueue.head() - 1);
-
-    if ((!store_inst->isStoreConditional() || store_inst->lockedWriteSuccess()) && cpu->goldenMemManager() &&
-        cpu->goldenMemManager()->inPmem(request->mainReq()->getPaddr())) {
-        if (!store_inst->isAtomic()) {
-            DPRINTF(Diff, "Store writing to golden memory at addr %#x, data %#lx, mask %#x, size %d\n",
-                    request->mainReq()->getPaddr(), *(uint64_t *)store_inst->memData, 0xff, request->_size);
-            cpu->goldenMemManager()->updateGoldenMem(request->mainReq()->getPaddr(), store_inst->memData, 0xff,
-                                                     request->_size);
-            cpu->goldenMemManager()->recordStore(request->mainReq()->getPaddr(), lsqID);
-        } else {
-            uint8_t tmp_data[8] = {0};
-            memcpy(tmp_data, store_inst->memData, request->_size);
-            assert(request->req()->getAtomicOpFunctor());
-
-            // read golden memory to get the global latest value before this AMO is executed for further compare
-            // When AMO Commits, it already reads golden mem once if no match
-            // Trigger logging here
-            cpu->goldenMemManager()->readGoldenMem(request->mainReq()->getPaddr(),
                                                    store_inst->getAmoOldGoldenValuePtr(), request->_size);
             cpu->diffInfo.amoOldGoldenValue = store_inst->getAmoOldGoldenValue();
 
@@ -1580,13 +1543,27 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffe
             );
             // after amo operate on golden memory
 
-            DPRINTF(Diff, "AMO writing to golden memory at addr %#x, data %#lx, mask %#x, size %d\n",
-                    request->mainReq()->getPaddr(), *(uint64_t *)tmp_data, 0xff, request->_size);
-            cpu->goldenMemManager()->updateGoldenMem(request->mainReq()->getPaddr(), tmp_data, 0xff,
+            DPRINTF(LSQUnit, "AMO writing to golden memory at addr %#x, data %#lx, mask %#x, size %d\n",
+                    paddr, *((uint64_t *)(tmp_data)), 0xff, request->_size);
+            cpu->goldenMemManager()->updateGoldenMem(paddr, tmp_data, 0xff,
                                                      request->_size);
             cpu->goldenMemManager()->recordAtomic(request->mainReq()->getPaddr(), lsqID);
         }
     }
+
+    if (store_idx == storeQueue.begin()) {
+        do {
+            storeQueue.front().clear();
+            storeQueue.pop_front();
+        } while (storeQueue.front().completed() &&
+                 !storeQueue.empty());
+
+        iewStage->updateLSQNextCycle = true;
+    }
+
+    DPRINTF(LSQUnit, "Completing store [sn:%lli], idx:%i, store head "
+            "idx:%i\n",
+            store_inst->seqNum, store_idx.idx() - 1, storeQueue.head() - 1);
 
 #if TRACING_ON
     if (debug::O3PipeView) {
@@ -1828,9 +1805,10 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
 
     if (!load_inst->isVector() && request->mainReq()->getSize() > 1 &&
         request->mainReq()->getVaddr() % request->mainReq()->getSize() != 0) {
-        DPRINTF(LSQUnit, "request: size: %u, Addr: %#lx, code: %d\n",
-                request->mainReq()->getSize(), request->mainReq()->getVaddr(), RiscvISA::ExceptionCode::LOAD_ADDR_MISALIGNED);
-        return std::make_shared<RiscvISA::AddressFault>(request->mainReq()->getVaddr(), RiscvISA::ExceptionCode::LOAD_ADDR_MISALIGNED);
+        DPRINTF(LSQUnit, "request: size: %u, Addr: %#lx, code: %d\n", request->mainReq()->getSize(),
+            request->mainReq()->getVaddr(), RiscvISA::ExceptionCode::LOAD_ADDR_MISALIGNED);
+        return std::make_shared<RiscvISA::AddressFault>(request->mainReq()->getVaddr(),
+            RiscvISA::ExceptionCode::LOAD_ADDR_MISALIGNED);
     }
 
     load_entry.setRequest(request);
