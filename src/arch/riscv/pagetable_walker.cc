@@ -829,7 +829,9 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
                         }
                         if ((gPaddr & ~(((int64_t)1 << 41) - 1)) != 0) {
                             // this is a excep
-                            assert(0);
+                            fault = pageFault(true, true);
+                            endWalk();
+                            return fault;
                         }
                         DPRINTF(PageTableWalkerTwoStage, "twoStageStepWalk gpaddr %lx vaddr %lx\n", gPaddr,
                                 entry.vaddr);
@@ -1399,7 +1401,7 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level, bool from_l2tl
         nextline = false;
         topAddr = (vsatp.ppn << PageShift) + (idx * sizeof(PTESv39));
         gPaddr = (vsatp.ppn << PageShift) + (idx_f * sizeof(PTESv39));
-        if (mainReq->get_level() != 2) {
+        if ((mainReq->get_level() != 2) && (mainReq->getgPaddr() != 0)) {
             gPaddr = mainReq->getgPaddr();
         }
         if (isVsatp0Mode) {
