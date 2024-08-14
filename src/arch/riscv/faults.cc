@@ -174,7 +174,7 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
                       _code == LOAD_ADDR_MISALIGNED || _code == STORE_ADDR_MISALIGNED || _code == INST_ACCESS ||
                       _code == LOAD_ACCESS || _code == STORE_ACCESS)
                       tc->setMiscReg(MISCREG_HTVAL, 0);
-                  else if ((_code != INSTG_PAGE) && (_code != LOADG_PAGE) && (_code != STORE_PAGE))
+                  else if ((_code != INSTG_PAGE) && (_code != LOADG_PAGE) && (_code != STOREG_PAGE))
                       tc->setMiscReg(MISCREG_HTVAL, 0);
 
 
