@@ -103,6 +103,7 @@ GoldenGloablMem::pmemRead(uint64_t addr, int len)
             return *(uint64_t *)p;
         default:
             assert(0);
+            return 0;
     }
 }
 
@@ -125,6 +126,7 @@ GoldenGloablMem::pmemWrite(Addr addr, uint64_t data, int len)
             return;
         default:
             assert(0);
+            return;
     }
 }
 
