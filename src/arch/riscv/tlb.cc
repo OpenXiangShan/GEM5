@@ -1151,8 +1151,9 @@ TLB::createPagefault(Addr vaddr, Addr gPaddr,BaseMMU::Mode mode,bool G)
     if (G) {
         if (mode == BaseMMU::Read)
             code = ExceptionCode::LOADG_PAGE;
-        else if (mode == BaseMMU::Write)
+        else if (mode == BaseMMU::Write){
             code = ExceptionCode::STOREG_PAGE;
+        }
         else
             code = ExceptionCode::INSTG_PAGE;
 
@@ -1364,11 +1365,11 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
             if ((mode == BaseMMU::Write && !e[0]->pteVS.d) || (!e[0]->pteVS.a))
                 fault = createPagefault(vaddr, 0, mode, false);
             if (fault != NoFault) {
-                return std::make_pair(hit_type,fault);
+                return std::make_pair(hit_type, fault);
             }
             fault = checkPermissions(status, pmode, vaddr, mode, e[0]->pteVS, 0, false);
             if (fault != NoFault) {
-                return std::make_pair(hit_type,fault);
+                return std::make_pair(hit_type, fault);
             }
         }
         Addr fault_gpaddr = ((e[0]->gpaddr >> 12) << 12) | (vaddr & 0xfff);
@@ -1409,7 +1410,7 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
             } else {
                 fault = checkPermissions(status, pmode, vaddr, mode, e[0]->pte, 0, false);
                 if (fault != NoFault) {
-                    return std::make_pair(hit_type,fault);
+                    return std::make_pair(hit_type, fault);
                 }
             }
             req->setPaddr(gPaddr);
@@ -1493,6 +1494,7 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
         }
         // fault = L2TLBCheck(e[0]->pte, e[0]->level, status, pmode, vaddr, mode, req, false, false);
         if (e[0]) {
+            gPaddr = req->getgPaddr();
             std::pair(continuePtw, fault) =
                 checkGPermissions(status, vaddr, gPaddr, mode, e[0]->pte, req->get_h_inst());
             if (fault != NoFault) {
@@ -1748,7 +1750,7 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
             }
 
             if ((result.first == h_l2GstageHitContinue) || (result.first == h_l2VSstageHitEnd) ||
-                (result.first == H_L1miss)) {
+                (result.first == H_L1miss) || (result.first == h_l2VSstageHitContinue)) {
                 fault = walker->start(0, tc, translation, req, mode, false, false, 0, false, 0);
                 if (translation != nullptr || fault != NoFault) {
                     delayed = true;
