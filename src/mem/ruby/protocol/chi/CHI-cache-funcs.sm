@@ -316,6 +316,10 @@ bool inCache(Addr addr, bool is_secure) {
   }
 }
 
+int level() {
+  return cache.level();
+}
+
 bool hasBeenPrefetched(Addr addr, bool is_secure, RequestorID requestor) {
   CacheEntry entry := getCacheEntry(makeLineAddress(addr));
   if (is_valid(entry)) {
@@ -334,6 +338,25 @@ bool hasBeenPrefetched(Addr addr, bool is_secure) {
   }
 }
 
+bool hasEverBeenPrefetched(Addr addr, bool is_secure) {
+  CacheEntry entry := getCacheEntry(makeLineAddress(addr));
+  if (is_valid(entry)) {
+    return entry.everPrefetched;
+  } else {
+    return false;
+  }
+}
+
+XsPFMetaData getHitBlkXsMetadata(Addr addr, bool is_secure) {
+  CacheEntry entry := getCacheEntry(makeLineAddress(addr));
+  XsPFMetaData empty;
+  if (is_valid(entry)) {
+    return entry.pfmeta;
+  } else {
+    return empty;
+  }
+}
+
 bool inMissQueue(Addr addr, bool is_secure) {
   Addr line_addr := makeLineAddress(addr);
   TBE tbe := getCurrentActiveTBE(line_addr);
@@ -342,6 +365,16 @@ bool inMissQueue(Addr addr, bool is_secure) {
 
 bool coalesce() {
   return false;
+}
+
+AbstractCacheEntry CacheEntryToAbstract(CacheEntry entry), return_by_pointer="yes";
+
+AbstractCacheEntry findBlock(Addr addr, bool is_secure), return_by_pointer="yes" {
+  CacheEntry entry := getCacheEntry(makeLineAddress(addr));
+  if (is_valid(entry)) {
+    return CacheEntryToAbstract(entry);
+  }
+  return OOD;
 }
 
 void notifyCoalesced(Addr addr, RubyRequestType type, RequestPtr req,
@@ -357,10 +390,11 @@ void notifyCoalesced(Addr addr, RubyRequestType type, RequestPtr req,
     bool is_read := (type == RubyRequestType:LD) ||
                     (type == RubyRequestType:Load_Linked) ||
                     (type == RubyRequestType:IFETCH);
+    XsPFMetaData empty;
     if (was_miss) {
-      pfProxy.notifyPfMiss(req, is_read, data_blk);
+      pfProxy.notifyPfMiss(req, is_read, empty, data_blk);
     } else {
-      pfProxy.notifyPfHit(req, is_read, data_blk);
+      pfProxy.notifyPfHit(req, is_read, empty, data_blk);
     }
   }
 }
@@ -444,8 +478,10 @@ TBE allocateRequestTBE(Addr addr, CHIRequestMsg in_msg), return_by_pointer="yes"
 
   tbe.isSeqReqValid := in_msg.isSeqReqValid;
   tbe.seqReq := in_msg.seqReq;
+  tbe.is_from_cpu := in_msg.is_from_cpu;
   tbe.is_local_pf := in_msg.is_local_pf;
   tbe.is_remote_pf := in_msg.is_remote_pf;
+  tbe.pfmeta := in_msg.pfmeta;
 
   tbe.atomic_op.clear();
   tbe.atomic_op.orMask(in_msg.atomic_op);
@@ -485,6 +521,7 @@ TBE allocateDvmRequestTBE(Addr txnId, CHIRequestMsg in_msg), return_by_pointer="
 
   tbe.isSeqReqValid := in_msg.isSeqReqValid;
   tbe.seqReq := in_msg.seqReq;
+  tbe.is_from_cpu := in_msg.is_from_cpu;
   tbe.is_local_pf := in_msg.is_local_pf;
   tbe.is_remote_pf := in_msg.is_remote_pf;
 
@@ -842,14 +879,18 @@ bool upstreamHasShared(State state) {
          (state == State:UC_RSC) || (state == State:SC_RSC);
 }
 
-void printTBEState(TBE tbe) {
-  DPRINTF(RubySlicc, "STATE: addr: %#x data present=%d valid=%d unique=%d dirty=%d mu_dirty=%d dir ownerV=%d ownerE=%d sharers=%d tobe_I=%d tobe_SC=%d doFill=%d pendAction=%s txnId=%d\n",
-                      tbe.addr, tbe.dataBlkValid.isFull(), tbe.dataValid, tbe.dataUnique,
-                      tbe.dataDirty, tbe.dataMaybeDirtyUpstream, tbe.dir_ownerExists,
-                      tbe.dir_ownerIsExcl,tbe.dir_sharers.count(),
-                      tbe.dataToBeInvalid, tbe.dataToBeSharedClean,
-                      tbe.doCacheFill, tbe.pendAction, tbe.txnId);
-  DPRINTF(RubySlicc, "dataBlkValid = %s\n", tbe.dataBlkValid);
+void printTBEState(std::string pos, TBE tbe) {
+  if (is_valid(tbe)) {
+    DPRINTF(RubySlicc, "At %s: STATE: addr: %#x data present=%d valid=%d unique=%d dirty=%d mu_dirty=%d dir ownerV=%d ownerE=%d sharers=%d tobe_I=%d tobe_SC=%d doFill=%d pendAction=%s txnId=%d\n",
+                        pos, tbe.addr, tbe.dataBlkValid.isFull(), tbe.dataValid, tbe.dataUnique,
+                        tbe.dataDirty, tbe.dataMaybeDirtyUpstream, tbe.dir_ownerExists,
+                        tbe.dir_ownerIsExcl,tbe.dir_sharers.count(),
+                        tbe.dataToBeInvalid, tbe.dataToBeSharedClean,
+                        tbe.doCacheFill, tbe.pendAction, tbe.txnId);
+  } else {
+    DPRINTF(RubySlicc, "At %s: invalid tbe\n", pos);
+  }
+  // DPRINTF(RubySlicc, "dataBlkValid = %s\n", tbe.dataBlkValid);
 }
 
 void printDvmTBEState(TBE tbe) {
@@ -945,7 +986,7 @@ void copyCacheAndDir(CacheEntry cache_entry, DirEntry dir_entry,
   tbe.dataToBeSharedClean := false;
   tbe.dataToBeInvalid := false;
 
-  printTBEState(tbe);
+  printTBEState("copyCacheAndDir", tbe);
 }
 
 void copyCacheAndDirTBEs(TBE src, TBE dst) {
@@ -961,7 +1002,7 @@ void copyCacheAndDirTBEs(TBE src, TBE dst) {
   dst.dir_owner := src.dir_owner;
   dst.dir_ownerExists := src.dir_ownerExists;
   dst.dir_ownerIsExcl := src.dir_ownerIsExcl;
-  printTBEState(dst);
+  printTBEState("copyCacheAndDirTBEs", dst);
 }
 
 void deallocateReqTBE(TBE tbe) {
@@ -1093,7 +1134,7 @@ State makeFinalStateHelper(State cs, State ds) {
 
 State makeFinalState(TBE tbe, CacheEntry cache_entry, DirEntry dir_entry) {
   setDataToBeStates(tbe);
-  printTBEState(tbe);
+  printTBEState("makeFinalState", tbe);
 
   State cache_state := State:I;
   State dir_state := State:I;
@@ -1202,6 +1243,14 @@ bool isWriteReqType(CHIRequestType type) {
       type == CHIRequestType:WriteUniqueFull ||
       type == CHIRequestType:WriteUniqueZero ||
       type == CHIRequestType:ReadUnique) {
+    return true;
+  }
+  return false;
+}
+
+bool isAtomicReqType(CHIRequestType type) {
+  if (type == CHIRequestType:AtomicLoad ||
+      type == CHIRequestType:AtomicStore) {
     return true;
   }
   return false;

@@ -206,7 +206,7 @@ class CacheBlk : public TaggedEntry
     {
         TaggedEntry::invalidate();
 
-        clearPrefetched();
+        clearAllPrefetched();
         clearPendingInvalidate();
         clearCoherenceBits(AllBits);
 

@@ -17,7 +17,6 @@ NemuMMC::NemuMMC(const NemuMMCParams *p)
     , write_cmd(false)
     , read_ext_csd(false)
 {
-    printf("111\n");
     assert(C_SIZE < (1 << 12));
     sd_reg_base = (uint32_t *)malloc(0x80);
     img_fp = fopen(p->img_path.c_str(), "rb");
@@ -31,7 +30,6 @@ NemuMMC::NemuMMC(const NemuMMCParams *p)
 inline void
 NemuMMC::prepare_rw(int is_write)
 {
-    printf("222\n");
     blk_addr = sd_reg_base[SDARG];
     tmp_addr = 0;
     if (img_fp)
@@ -42,7 +40,6 @@ NemuMMC::prepare_rw(int is_write)
 void
 NemuMMC::sdcard_handle_cmd(int cmd)
 {
-    // printf("333\n");
     switch (cmd) {
         case MMC_GO_IDLE_STATE:
             break;
@@ -101,7 +98,6 @@ NemuMMC::sdcard_handle_cmd(int cmd)
 void
 NemuMMC::sdcard_io_handler(uint32_t offset)
 {
-    // printf("444\n");
     assert(img_fp);
     int idx = offset / 4;
     switch (idx) {
@@ -149,7 +145,6 @@ NemuMMC::sdcard_io_handler(uint32_t offset)
 void
 NemuMMC::unserialize_sdcard(FILE *sdfp)
 {
-    // printf("555\n");
     __attribute__((unused)) int ret;
     ret = fread(sd_reg_base, 4, 0x80 / 4, sdfp);
     ret = fread(&tmp_addr, 4, 1, sdfp);
@@ -163,7 +158,6 @@ NemuMMC::unserialize_sdcard(FILE *sdfp)
 Tick
 NemuMMC::read(PacketPtr pkt)
 {
-    // printf("666\n");
     assert(pkt->getSize() == 4);
     Addr offset = pkt->getAddr() - pioAddr;
     // handler before read
@@ -180,7 +174,6 @@ NemuMMC::read(PacketPtr pkt)
 Tick
 NemuMMC::write(PacketPtr pkt)
 {
-    //printf("777\n");
     assert(pkt->getSize() == 4);
     Addr offset = pkt->getAddr() - pioAddr;
     uint32_t write_val = pkt->getRaw<uint32_t>();

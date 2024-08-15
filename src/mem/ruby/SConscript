@@ -93,6 +93,7 @@ def MakeInclude(source):
 MakeInclude('slicc_interface/AbstractCacheEntry.hh')
 MakeInclude('slicc_interface/Message.hh')
 MakeInclude('slicc_interface/RubyRequest.hh')
+MakeInclude('slicc_interface/XsPFMetaData.hh')
 
 # External types
 MakeInclude('common/Address.hh')

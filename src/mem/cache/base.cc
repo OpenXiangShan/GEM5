@@ -145,7 +145,6 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       system(p.system),
       stats(*this),
       cacheLevel(p.cache_level),
-      maxCacheLevel(p.max_cache_level),
       forceHit(p.force_hit)
 {
     // the MSHR queue has no reserve entries as we check the MSHR
@@ -166,7 +165,7 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
     assert(!((size != DEFAULTWAYPRESIZE) && enableWayPrediction));
 
     if (prefetcher)
-        prefetcher->setCache(this);
+        prefetcher->setParentInfo(system, getProbeManager(), this, getBlockSize());
 
     fatal_if(compressor && !dynamic_cast<CompressedTags*>(tags),
         "The tags of compressed cache %s must derive from CompressedTags",
@@ -1150,28 +1149,28 @@ BaseCache::getNextQueueEntry()
         PacketPtr pkt = prefetcher->getPacket();
         if (pkt) {
             Addr pf_addr = pkt->getBlockAddr(blkSize);
-            int pf_num = pkt->req->getXsMetadata().prefetchSource;
+            PrefetchSourceType pf_type = pkt->req->getXsMetadata().prefetchSource;
             if (tags->findBlock(pf_addr, pkt->isSecure())) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in cache, "
                         "dropped.\n", pf_addr);
-                prefetcher->pfHitInCache(pf_num);
-                if (pf_num == 1)
+                prefetcher->pfHitInCache(pf_type);
+                if (pf_type == PrefetchSourceType::SStream)
                     prefetcher->streamPflate();
                 // free the request and packet
                 delete pkt;
             } else if (mshrQueue.findMatch(pf_addr, pkt->isSecure())) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in a MSHR, "
                         "dropped.\n", pf_addr);
-                prefetcher->pfHitInMSHR(pf_num);
-                if (pf_num == 1)
+                prefetcher->pfHitInMSHR(pf_type);
+                if (pf_type == PrefetchSourceType::SStream)
                     prefetcher->streamPflate();
                 // free the request and packet
                 delete pkt;
             } else if (writeBuffer.findMatch(pf_addr, pkt->isSecure())) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in the "
                         "Write Buffer, dropped.\n", pf_addr);
-                prefetcher->pfHitInWB(pf_num);
-                if (pf_num == 1)
+                prefetcher->pfHitInWB(pf_type);
+                if (pf_type == PrefetchSourceType::SStream)
                     prefetcher->streamPflate();
                 // free the request and packet
                 delete pkt;

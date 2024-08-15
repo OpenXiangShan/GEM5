@@ -48,6 +48,7 @@
 #include "base/stl_helpers.hh"
 #include "debug/RubyQueue.hh"
 #include "mem/ruby/system/RubySystem.hh"
+#include "mem/ruby/system/Sequencer.hh"
 
 namespace gem5
 {
@@ -356,6 +357,32 @@ MessageBuffer::unregisterDequeueCallback()
 }
 
 void
+MessageBuffer::notifyMissCallback(Tick current_time, Sequencer& sequencer)
+{
+    int num_readys = 0;
+    for (auto& msg : m_prio_heap) {
+        if (msg->getLastEnqueueTime() <= current_time) {
+            num_readys++;
+            auto req = dynamic_cast<const RubyRequest *>(msg.get());
+            sequencer.TBEFullCancel(req->m_LineAddress);
+        }
+    }
+    DPRINTF(RubyQueue, "MessageBuffer: has %d readys but not dequeue, need notifyMissCallback\n", num_readys);
+}
+
+bool
+MessageBuffer::hasPrefetchRequest(Addr addr)
+{
+    for (auto& msg : m_prio_heap) {
+        auto req = dynamic_cast<const RubyRequest *>(msg.get());
+        if (req->m_LineAddress == makeLineAddress(addr) && req->m_Prefetch == PrefetchBit_Yes) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void
 MessageBuffer::clear()
 {
     m_prio_heap.clear();
@@ -522,6 +549,19 @@ MessageBuffer::isReady(Tick current_time) const
                        (m_dequeues_this_cy < m_max_dequeue_rate);
     bool is_ready = (m_prio_heap.size() > 0) &&
                    (m_prio_heap.front()->getLastEnqueueTime() <= current_time);
+
+    if (debug::RubyQueue) {
+        int num_readys = 0;
+        for (auto& msg : m_prio_heap)
+        {
+            if (msg->getLastEnqueueTime() <= current_time)
+            {
+                num_readys ++;
+            }
+        }
+        DPRINTF(RubyQueue, "MessageBuffer: has %d readys\n", num_readys);
+    }
+
     if (!can_dequeue && is_ready) {
         // Make sure the Consumer executes next cycle to dequeue the ready msg
         m_consumer->scheduleEvent(Cycles(1));

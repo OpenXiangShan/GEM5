@@ -112,7 +112,9 @@ IssueQue::checkScoreboard(const DynInstPtr& inst)
         }
         // check bypass data ready or not
         if (!scheduler->bypassScoreboard[src->flatIndex()]) {
-            panic("[sn %lu] %s can't get data from bypassNetwork\n", inst->seqNum, inst->srcRegIdx(i));
+            auto dst_inst = scheduler->getInstByDstReg(src->flatIndex());
+            panic("[sn %lu] %s can't get data from bypassNetwork, dst inst: %s\n", inst->seqNum, inst->srcRegIdx(i),
+                  dst_inst->genDisassembly());
         }
     }
     inst->checkOldVdElim();
@@ -578,6 +580,20 @@ Scheduler::full(const DynInstPtr& inst)
     return true;
 }
 
+DynInstPtr
+Scheduler::getInstByDstReg(RegIndex flatIdx)
+{
+    for (auto iq : issueQues)
+    {
+        for (auto& inst : iq->instList){
+            if (inst->numDestRegs() > 0 && inst->renamedDestIdx(0)->flatIndex() == flatIdx) {
+                return inst;
+            }
+        }
+    }
+    return nullptr;
+}
+
 void
 Scheduler::addProducer(const DynInstPtr& inst)
 {
@@ -693,6 +709,9 @@ Scheduler::insertSlot(const DynInstPtr& inst)
 
 void Scheduler::loadCancel(const DynInstPtr& inst)
 {
+    if (inst->canceled()) {
+        return;
+    }
     DPRINTF(Schedule, "[sn %lu] %s cache miss, cancel consumers\n", inst->seqNum,
             enums::OpClassStrings[inst->opClass()]);
     inst->setCancel();

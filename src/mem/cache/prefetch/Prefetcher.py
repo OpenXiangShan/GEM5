@@ -77,9 +77,9 @@ class BasePrefetcher(ClockedObject):
     on_write = Param.Bool(True, "Notify prefetcher on writes")
     on_data  = Param.Bool(True, "Notify prefetcher on data accesses")
     on_inst  = Param.Bool(True, "Notify prefetcher on instruction accesses")
-    prefetch_on_access = Param.Bool(Parent.prefetch_on_access,
+    prefetch_on_access = Param.Bool(False,
         "Notify the hardware prefetcher on every access (not just misses)")
-    prefetch_on_pf_hit = Param.Bool(Parent.prefetch_on_pf_hit,
+    prefetch_on_pf_hit = Param.Bool(False,
         "Notify the hardware prefetcher on hit on prefetched lines")
     use_virtual_addresses = Param.Bool(False,
         "Use virtual addresses for prefetching")
@@ -88,7 +88,6 @@ class BasePrefetcher(ClockedObject):
 
     is_sub_prefetcher = Param.Bool(False, "Is this a sub-prefetcher")
 
-    max_cache_level = Param.Unsigned(Parent.max_cache_level , "Max Cache level (L1 is 1, L2 is 2, etc.)")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -104,10 +103,12 @@ class BasePrefetcher(ClockedObject):
     def regProbeListeners(self):
         print("Registering probe listeners for Prefetcher {}".format(self))
         for tlb in self._tlbs:
+            print(f"{self} addTLB {tlb}")
             self.getCCObject().addTLB(tlb.getCCObject())
 
         assert len(self._downstream_pf) <= 1
         if len(self._downstream_pf):
+            print(f"{self} addHintDownStream {self._downstream_pf[0]}")
             self.getCCObject().addHintDownStream(self._downstream_pf[0].getCCObject())
 
         for event in self._events:
@@ -329,6 +330,7 @@ class WorkerPrefetcher(QueuedPrefetcher):
     on_data = True
     on_miss = False
 
+    prefetch_on_access = True
     prefetch_on_pf_hit = True
     use_virtual_addresses = True
 

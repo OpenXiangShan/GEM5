@@ -111,25 +111,29 @@ def create_system(
     # dataAccessLatency may be set to 0 if one wants to consider parallel
     # data and tag lookups
     class L1ICache(RubyCache):
+        level = 1
         dataAccessLatency = 1
         tagAccessLatency = 1
         size = options.l1i_size
         assoc = options.l1i_assoc
 
     class L1DCache(RubyCache):
+        level = 1
         dataAccessLatency = 0
         tagAccessLatency = 1
         size = options.l1d_size
         assoc = options.l1d_assoc
 
     class L2Cache(RubyCache):
-        dataAccessLatency = 6
+        level = 2
+        dataAccessLatency = 13
         tagAccessLatency = 2
         size = options.l2_size
         assoc = options.l2_assoc
 
     class HNFCache(RubyCache):
-        dataAccessLatency = 10
+        level = 3
+        dataAccessLatency = 17
         tagAccessLatency = 2
         size = options.l3_size
         assoc = options.l3_assoc
@@ -154,11 +158,13 @@ def create_system(
             L1ICache,
             L1DCache,
             system.cache_line_size.value,
+            options
         )
         for cpu in cpus
     ]
+
     for rnf in ruby_system.rnf:
-        rnf.addPrivL2Cache(L2Cache)
+        rnf.addPrivL2Cache(L2Cache, options)
         cpu_sequencers.extend(rnf.getSequencers())
         all_cntrls.extend(rnf.getAllControllers())
         network_nodes.append(rnf)
@@ -191,9 +197,16 @@ def create_system(
     hnf_list = [i for i in range(options.num_l3caches)]
     CHI_HNF.createAddrRanges(sysranges, system.cache_line_size.value, hnf_list)
     ruby_system.hnf = [
-        CHI_HNF(i, ruby_system, HNFCache, None)
+        CHI_HNF(i, ruby_system, HNFCache, options, None)
         for i in range(options.num_l3caches)
     ]
+
+    if options.l2_to_l3_pf_hint:
+        if len(ruby_system.hnf) > 1:
+            Warning("L2 to L3 prefetch hint is not supported with multiple HNFs")
+        else:
+            for rnf in ruby_system.rnf:
+                rnf.addLLCPrefetcherDownstream(ruby_system.hnf[0].getPrefetcher())
 
     for hnf in ruby_system.hnf:
         network_nodes.append(hnf)

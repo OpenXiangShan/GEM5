@@ -67,8 +67,17 @@ namespace gem5
 namespace ruby
 {
 
+Sequencer::SequencerStat::SequencerStat(statistics::Group *parent)
+    : statistics::Group(parent, "Sequencer"),
+      ADD_STAT(notifymiss,""),
+      ADD_STAT(loadcancel,"")
+{
+}
+
 Sequencer::Sequencer(const Params &p)
-    : RubyPort(p), m_IncompleteTimes(MachineType_NUM),
+    : RubyPort(p),
+      stat(this),
+      m_IncompleteTimes(MachineType_NUM),
       deadlockCheckEvent([this]{ wakeup(); }, "Sequencer deadlock check")
 {
     m_outstanding_count = 0;
@@ -376,6 +385,7 @@ Sequencer::insertRequest(PacketPtr pkt, RubyRequestType primary_type,
                 DPRINTF(RubySequencer, "Pkt %#lx %s is delayed because blk is busy doing ruby stuff\n",
                     pkt, pkt->cmdString());
                 ruby_custom_signal_callback(pkt);
+                stat.loadcancel++;
             }
         }
         return RequestStatus_Aliased;
@@ -629,6 +639,31 @@ void
 Sequencer::notifyMissCallback(Addr address, bool is_upgrade, bool is_busy)
 {
     assert(address == makeLineAddress(address));
+    stat.notifymiss++;
+    auto it = m_RequestTable.find(address);
+    assert(it != m_RequestTable.end());
+
+    auto &seq_req_list = it->second;
+
+    // cancel pending loads' speculation
+    for (auto &seq_req: seq_req_list) {
+        if (seq_req.pkt->isRead()) {
+            ruby_custom_signal_callback(seq_req.pkt);
+            stat.loadcancel++;
+        }
+    }
+
+    m_BusyBlocks.insert(address);
+
+    DPRINTF(RubySequencer, "A %s of addr %#x signals the delay of all pending loads\n",
+        is_upgrade ? "load" : "store", address);
+    return;
+}
+
+void
+Sequencer::TBEFullCancel(Addr address)
+{
+    assert(address == makeLineAddress(address));
 
     auto it = m_RequestTable.find(address);
     assert(it != m_RequestTable.end());
@@ -639,13 +674,12 @@ Sequencer::notifyMissCallback(Addr address, bool is_upgrade, bool is_busy)
     for (auto &seq_req: seq_req_list) {
         if (seq_req.pkt->isRead()) {
             ruby_custom_signal_callback(seq_req.pkt);
+            stat.loadcancel++;
         }
     }
 
-    m_BusyBlocks.insert(address);
-
-    DPRINTF(RubySequencer, "A %s of addr %#x signals the delay of all pending loads",
-        is_upgrade ? "load" : "store", address);
+    DPRINTF(RubySequencer, "A %s of addr %#x signals the delay of all pending loads\n",
+        false ? "load" : "store", address);
     return;
 }
 

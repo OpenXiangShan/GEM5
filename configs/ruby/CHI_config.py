@@ -49,7 +49,7 @@ import math
 
 import m5
 from m5.objects import *
-
+from common.PrefetcherConfig import create_prefetcher
 
 class Versions:
     """
@@ -86,9 +86,9 @@ class NoC_Params:
     router_link_latency = 1
     node_link_latency = 1
     router_latency = 1
-    router_buffer_size = 4
-    cntrl_msg_size = 8
-    data_width = 32
+    router_buffer_size = 128
+    cntrl_msg_size = 0
+    data_width = 64
     cross_links = []
     cross_link_latency = 0
 
@@ -222,6 +222,10 @@ class CHI_Cache_Controller(Cache_Controller):
         # timeouts on unique lines when a store conditional fails
         self.sc_lock_enabled = False
 
+    def setPrefetcher(self, pf):
+        self.prefetcher = pf
+        self.use_prefetcher = pf != NULL
+
 
 class CHI_L1Controller(CHI_Cache_Controller):
     """
@@ -249,17 +253,20 @@ class CHI_L1Controller(CHI_Cache_Controller):
         self.alloc_on_atomic = False
         self.dealloc_on_unique = False
         self.dealloc_on_shared = False
-        self.dealloc_backinv_unique = True
-        self.dealloc_backinv_shared = True
+        self.dealloc_backinv_unique = False
+        self.dealloc_backinv_shared = False
         self.is_dcache = is_dcache
         # Some reasonable default TBE params
-        self.number_of_TBEs = 16
+        self.number_of_TBEs = 32+8
         self.number_of_repl_TBEs = 16
         self.number_of_snoop_TBEs = 4
         self.number_of_DVM_TBEs = 16
         self.number_of_DVM_snoop_TBEs = 4
 
         self.unify_repl_TBEs = False
+
+        self.response_latency = 4
+        self.request_latency = 1
 
 
 class CHI_L2Controller(CHI_Cache_Controller):
@@ -288,16 +295,18 @@ class CHI_L2Controller(CHI_Cache_Controller):
         self.alloc_on_atomic = False
         self.dealloc_on_unique = False
         self.dealloc_on_shared = False
-        self.dealloc_backinv_unique = True
-        self.dealloc_backinv_shared = True
+        self.dealloc_backinv_unique = False
+        self.dealloc_backinv_shared = False
         # Some reasonable default TBE params
-        self.number_of_TBEs = 32
+        self.number_of_TBEs = 64+16
         self.number_of_repl_TBEs = 32
-        self.number_of_snoop_TBEs = 16
+        self.number_of_snoop_TBEs = 32
         self.number_of_DVM_TBEs = 1  # should not receive any dvm
         self.number_of_DVM_snoop_TBEs = 1  # should not receive any dvm
         self.unify_repl_TBEs = False
 
+        self.response_latency = 12
+        self.request_latency = 1
 
 class CHI_HNFController(CHI_Cache_Controller):
     """
@@ -329,12 +338,16 @@ class CHI_HNFController(CHI_Cache_Controller):
         self.dealloc_backinv_unique = False
         self.dealloc_backinv_shared = False
         # Some reasonable default TBE params
-        self.number_of_TBEs = 32
+        self.number_of_TBEs = 256 + 32
         self.number_of_repl_TBEs = 32
         self.number_of_snoop_TBEs = 1  # should not receive any snoop
         self.number_of_DVM_TBEs = 1  # should not receive any dvm
         self.number_of_DVM_snoop_TBEs = 1  # should not receive any dvm
         self.unify_repl_TBEs = False
+
+        self.response_latency = 40
+        self.request_latency = 1
+
 
 
 class CHI_MNController(MiscNode_Controller):
@@ -466,8 +479,7 @@ class CHI_RNF(CHI_Node):
         l1Icache_type,
         l1Dcache_type,
         cache_line_size,
-        l1Iprefetcher_type=None,
-        l1Dprefetcher_type=None,
+        options
     ):
         super().__init__(ruby_system)
 
@@ -505,16 +517,13 @@ class CHI_RNF(CHI_Node):
                 start_index_bit=self._block_size_bits, is_icache=False
             )
 
-            # prefetcher wrappers
-            if l1Iprefetcher_type != None:
-                l1i_pf = l1Iprefetcher_type()
-            else:
-                l1i_pf = NULL
+            # create icache prefetcher
+            l1i_pf = NULL
 
-            if l1Dprefetcher_type != None:
-                l1d_pf = l1Dprefetcher_type()
-            else:
-                l1d_pf = NULL
+            # create dcache prefetcher
+            l1d_pf = create_prefetcher(cpu, 'l1d', options)
+            if l1d_pf != NULL and options.cpu_type == 'DerivO3CPU':
+                    cpu.add_pf_downstream(l1d_pf)
 
             # cache controllers
             cpu.l1i = CHI_L1Controller(
@@ -552,29 +561,37 @@ class CHI_RNF(CHI_Node):
     def getCpus(self):
         return self._cpus
 
+    def getL1DCachePrefetcher(self, cpu_idx):
+        return self._cpus[cpu_idx].l1d.prefetcher
+
+    def getL2CachePrefetcher(self, cpu_idx):
+        return self._cpus[cpu_idx].l2.prefetcher
+
     # Adds a private L2 for each cpu
-    def addPrivL2Cache(self, cache_type, pf_type=None):
+    def addPrivL2Cache(self, cache_type, options):
         self._ll_cntrls = []
         for cpu in self._cpus:
             l2_cache = cache_type(
                 start_index_bit=self._block_size_bits, is_icache=False
             )
 
-            if pf_type != None:
-                l2_pf = pf_type()
-            else:
-                l2_pf = NULL
+            l2_pf = create_prefetcher(NULL, 'l2', options)
+            if l2_pf != NULL and options.l1_to_l2_pf_hint:
+                cpu.l1d.prefetcher.add_pf_downstream(l2_pf)
 
             cpu.l2 = CHI_L2Controller(self._ruby_system, l2_cache, l2_pf)
 
             self._cntrls.append(cpu.l2)
             self.connectController(cpu.l2)
-
             self._ll_cntrls.append(cpu.l2)
 
             for c in cpu._ll_cntrls:
                 c.downstream_destinations = [cpu.l2]
             cpu._ll_cntrls = [cpu.l2]
+
+    def addLLCPrefetcherDownstream(self, llc_pf):
+        for cpu in self._cpus:
+            cpu.l2.prefetcher.add_pf_downstream(llc_pf)
 
 
 class CHI_HNF(CHI_Node):
@@ -618,16 +635,18 @@ class CHI_HNF(CHI_Node):
 
     # The CHI controller can be a child of this object or another if
     # 'parent' if specified
-    def __init__(self, hnf_idx, ruby_system, llcache_type, parent):
+    def __init__(self, hnf_idx, ruby_system, llcache_type, options, parent):
         super().__init__(ruby_system)
 
         addr_ranges, intlvHighBit = self.getAddrRanges(hnf_idx)
         # All ranges should have the same interleaving
         assert len(addr_ranges) >= 1
 
+        llc_pf = create_prefetcher(NULL, 'l3', options)
+
         ll_cache = llcache_type(start_index_bit=intlvHighBit + 1)
         self._cntrl = CHI_HNFController(
-            ruby_system, ll_cache, NULL, addr_ranges
+            ruby_system, ll_cache, llc_pf, addr_ranges
         )
 
         if parent == None:
@@ -636,6 +655,9 @@ class CHI_HNF(CHI_Node):
             parent.cntrl = self._cntrl
 
         self.connectController(self._cntrl)
+
+    def getPrefetcher(self):
+        return self._cntrl.prefetcher
 
     def getAllControllers(self):
         return [self._cntrl]
@@ -698,6 +720,7 @@ class CHI_SNF_Base(CHI_Node):
             requestToMemory=MemCtrlMessageBuffer(),
             reqRdy=TriggerMessageBuffer(),
             transitions_per_cycle=1024,
+            number_of_TBEs = 1024
         )
 
         # The Memory_Controller implementation deallocates the TBE for

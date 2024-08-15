@@ -135,7 +135,7 @@ CMCPrefetcher::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &ad
             // addresses.push_back(AddrPriority(addr, mixedNum, PrefetchSourceType::CMC));
             if (sendPFWithFilter(pfi, addr, addresses, priority, PrefetchSourceType::CMC)) {
                 num_send++;
-                if (maxCacheLevel == 3 && num_send > 24) {
+                if (num_send > 24) {
                     addresses.back().pfahead = true;
                     addresses.back().pfahead_host = 3;
                 } else if (num_send > 4) {

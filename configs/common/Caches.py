@@ -89,8 +89,6 @@ class L2Cache(Cache):
     mshrs = 64
     tgts_per_mshr = 20
     clusivity='mostly_incl'
-    prefetch_on_access = True
-    #prefetch_on_access = False
     # always writeback clean when lower level is exclusive
     writeback_clean = True
 
@@ -110,7 +108,6 @@ class L3Cache(Cache):
     tgts_per_mshr = 20
     clusivity='mostly_excl'
     writeback_clean = False
-    prefetch_on_access = True
 
     # aligned latency:
     tag_latency = 2

@@ -60,6 +60,7 @@
 #include "debug/CacheTrace.hh"
 #include "enums/Clusivity.hh"
 #include "mem/cache/cache_blk.hh"
+#include "mem/cache/cache_probe_arg.hh"
 #include "mem/cache/compressors/base.hh"
 #include "mem/cache/mshr_queue.hh"
 #include "mem/cache/prefetch/associative_set.hh"
@@ -95,7 +96,7 @@ struct BaseCacheParams;
 /**
  * A basic cache interface. Implements some common functions for speed.
  */
-class BaseCache : public ClockedObject
+class BaseCache : public ClockedObject, CacheAccessor
 {
   protected:
     /**
@@ -1365,50 +1366,6 @@ class BaseCache : public ClockedObject
         memSidePort.schedSendEvent(time);
     }
 
-    bool inCache(Addr addr, bool is_secure) const {
-        return tags->findBlock(addr, is_secure);
-    }
-
-    bool hasBeenPrefetched(Addr addr, bool is_secure) const {
-        CacheBlk *block = tags->findBlock(addr, is_secure);
-        if (block) {
-            return block->wasEverPrefetched();
-        } else {
-            return false;
-        }
-    }
-
-    bool hasBeenPrefetchedAndNotAccessed(Addr addr, bool is_secure) const {
-        CacheBlk *block = tags->findBlock(addr, is_secure);
-        if (block) {
-            return block->wasPrefetched();
-        } else {
-            return false;
-        }
-    }
-
-    CacheBlk* findBlock(Addr addr, bool is_secure){
-        return tags->findBlock(addr, is_secure);
-    }
-
-    Request::XsMetadata getHitBlkXsMetadata(PacketPtr pkt)
-    {
-        CacheBlk *block = tags->findBlock(pkt->getAddr(), pkt->isSecure());
-        assert(block);
-        /* clean prefetchSource if the block was not prefetched */
-        if (!block->wasEverPrefetched()) {
-            Request::XsMetadata blkMeta = block->getXsMetadata();
-            blkMeta.prefetchSource = PrefetchSourceType::PF_NONE;
-            block->setXsMetadata(blkMeta);
-        }
-        return block->getXsMetadata();
-    }
-
-
-    bool inMissQueue(Addr addr, bool is_secure) const {
-        return mshrQueue.findMatch(addr, is_secure);
-    }
-
     void incMissCount(PacketPtr pkt)
     {
         assert(pkt->req->requestorId() < system->maxRequestors());
@@ -1456,14 +1413,6 @@ class BaseCache : public ClockedObject
     }
 
     /**
-     * Checks if the cache is coalescing writes
-     *
-     * @return True if the cache is coalescing writes
-     */
-    bool coalesce() const;
-
-
-    /**
      * Cache block visitor that writes back dirty cache blocks using
      * functional writes.
      */
@@ -1508,7 +1457,7 @@ class BaseCache : public ClockedObject
 
     const unsigned cacheLevel{0};
 
-    const unsigned maxCacheLevel;
+    //const unsigned maxCacheLevel;
 
     const bool dumpMissPC{false};
 
@@ -1520,7 +1469,60 @@ class BaseCache : public ClockedObject
     const bool forceHit;
 
 public:
-    unsigned level() { return cacheLevel; }
+    // CacheAccessor overrided function
+
+    bool inCache(Addr addr, bool is_secure) const override { return tags->findBlock(addr, is_secure); }
+
+    unsigned level() const override { return cacheLevel; }
+
+    bool hasBeenPrefetched(Addr addr, bool is_secure) const override
+    {
+        CacheBlk *block = tags->findBlock(addr, is_secure);
+        if (block) {
+            return block->wasPrefetched();
+        } else {
+            return false;
+        }
+    }
+
+    bool hasBeenPrefetched(Addr addr, bool is_secure, RequestorID requestor) const override {
+        panic("hasBeenPrefetched Not implemented");
+        return false;
+    }
+
+    bool hasEverBeenPrefetched(Addr addr, bool is_secure) const override
+    {
+        CacheBlk *block = tags->findBlock(addr, is_secure);
+        if (block) {
+            return block->wasEverPrefetched();
+        } else {
+            return false;
+        }
+    }
+
+    Request::XsMetadata getHitBlkXsMetadata(PacketPtr pkt) override
+    {
+        CacheBlk *block = tags->findBlock(pkt->getAddr(), pkt->isSecure());
+        assert(block);
+        /* clean prefetchSource if the block was not prefetched */
+        if (!block->wasEverPrefetched()) {
+            Request::XsMetadata blkMeta = block->getXsMetadata();
+            blkMeta.prefetchSource = PrefetchSourceType::PF_NONE;
+            block->setXsMetadata(blkMeta);
+        }
+        return block->getXsMetadata();
+    }
+
+    bool inMissQueue(Addr addr, bool is_secure) const override {
+        return mshrQueue.findMatch(addr, is_secure);
+    }
+
+    bool coalesce() const override;
+
+    const uint8_t* findBlock(Addr addr, bool is_secure) const override {
+        auto blk = tags->findBlock(addr, is_secure);
+        return blk->data;
+    }
 };
 
 /**

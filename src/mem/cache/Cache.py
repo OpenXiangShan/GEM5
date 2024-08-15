@@ -98,11 +98,6 @@ class BaseCache(ClockedObject):
     enable_wayprediction = Param.Bool(True, "enablewaypredction")
 
     prefetcher = Param.BasePrefetcher(NULL,"Prefetcher attached to cache")
-    prefetch_on_access = Param.Bool(False,
-         "Notify the hardware prefetcher on every access (not just misses)")
-    prefetch_on_pf_hit = Param.Bool(False,
-        "Notify the hardware prefetcher on hit on prefetched lines")
-
     tags = Param.BaseTags(BaseSetAssoc(), "Tag store")
     replacement_policy = Param.BaseReplacementPolicy(LRURP(),
         "Replacement policy")
@@ -156,8 +151,6 @@ class BaseCache(ClockedObject):
     arch_db = Param.ArchDBer(Parent.any, "Arch DB")
 
     cache_level = Param.Unsigned(0, "Cache level (L1 is 1, L2 is 2, etc.)")
-
-    max_cache_level = Param.Unsigned(2, "Max Cache level (L1 is 1, L2 is 2, etc.)")
 
     force_hit = Param.Bool(False, "Force some PC to hit in L1")
     way_entries = Param.MemorySize(

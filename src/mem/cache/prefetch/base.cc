@@ -126,7 +126,7 @@ Base::PrefetchListener::notify(const PacketPtr &pkt)
 
 Base::Base(const BasePrefetcherParams &p)
     : ClockedObject(p),
-      listeners(), cache(nullptr), isSubPrefetcher(p.is_sub_prefetcher),
+      listeners(), isSubPrefetcher(p.is_sub_prefetcher),
       archDBer(p.arch_db), blkSize(p.block_size),
       lBlkSize(floorLog2(blkSize)), onMiss(p.on_miss), onRead(p.on_read),
       onWrite(p.on_write), onData(p.on_data), onInst(p.on_inst),
@@ -136,19 +136,20 @@ Base::Base(const BasePrefetcherParams &p)
       prefetchOnPfHit(p.prefetch_on_pf_hit),
       useVirtualAddresses(p.use_virtual_addresses),
       prefetchStats(this), issuedPrefetches(0),
-      usefulPrefetches(0), streamlatenum(0),tlb(nullptr), maxCacheLevel(p.max_cache_level),
-      probeManagerDirty(nullptr)
+      usefulPrefetches(0), streamlatenum(0),tlb(nullptr)
 {
 }
 
 void
-Base::setCache(BaseCache *_cache)
+Base::setParentInfo(System *sys, ProbeManager *pm, CacheAccessor* _cache, unsigned blk_size)
 {
-    assert(!cache);
+    assert(!cache && !system && !probeManager);
+    system = sys;
+    probeManager = pm;
     cache = _cache;
 
     // If the cache has a different block size from the system's, save it
-    blkSize = cache->getBlockSize();
+    blkSize = blk_size;
     lBlkSize = floorLog2(blkSize);
 }
 
@@ -244,7 +245,7 @@ Base::observeAccess(const PacketPtr &pkt, bool miss) const
 
     if (!miss) {
         if (prefetchOnPfHit)
-            return hasBeenPrefetched(pkt->getAddr(), pkt->isSecure());
+            return hasEverBeenPrefetched(pkt->getAddr(), pkt->isSecure());
         if (!prefetchOnAccess)
             return false;
     }
@@ -282,9 +283,9 @@ Base::hasBeenPrefetched(Addr addr, bool is_secure) const
 }
 
 bool
-Base::hasBeenPrefetchedAndNotAccessed(Addr addr, bool is_secure) const
+Base::hasEverBeenPrefetched(Addr addr, bool is_secure) const
 {
-    return cache->hasBeenPrefetchedAndNotAccessed(addr, is_secure);
+    return cache->hasEverBeenPrefetched(addr, is_secure);
 }
 
 bool
@@ -358,7 +359,7 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
 
     DPRINTF(HWPrefetch, "Reach condition checked\n");
 
-    if (hasBeenPrefetchedAndNotAccessed(pkt->getAddr(), pkt->isSecure())) {
+    if (hasBeenPrefetched(pkt->getAddr(), pkt->isSecure())) {
         usefulPrefetches += 1;
         prefetchStats.pfUseful++;
         PrefetchSourceType pf_source = cache->getHitBlkXsMetadata(pkt).prefetchSource;
@@ -386,9 +387,9 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
             PrefetchInfo pfi(pkt, pkt->req->hasVaddr() ? pkt->req->getVaddr() : pkt->req->getPaddr(), miss,
                              Request::XsMetadata(pf_source, pf_depth));
             pfi.setReqAfterSquash(squashMark);
-            pfi.setEverPrefetched(hasBeenPrefetched(pkt->getAddr(), pkt->isSecure()));
-            pfi.setPfFirstHit(!miss && hasBeenPrefetchedAndNotAccessed(pkt->getAddr(), pkt->isSecure()));
-            pfi.setPfHit(!miss && hasBeenPrefetched(pkt->getAddr(), pkt->isSecure()));
+            pfi.setEverPrefetched(hasEverBeenPrefetched(pkt->getAddr(), pkt->isSecure()));
+            pfi.setPfFirstHit(!miss && hasBeenPrefetched(pkt->getAddr(), pkt->isSecure()));
+            pfi.setPfHit(!miss && hasEverBeenPrefetched(pkt->getAddr(), pkt->isSecure()));
             squashMark = false;
             notify(pkt, pfi);
         } else {
@@ -431,18 +432,11 @@ Base::regProbeListeners()
      * parent cache using the probe "Miss". Also connect to "Hit", if the
      * cache is configured to prefetch on accesses.
      */
-    if (listeners.empty() && !isSubPrefetcher) {
-        assert((cache != nullptr) != (probeManagerDirty != nullptr));
-        ProbeManager* pm(nullptr);
-        if (cache != nullptr) {
-            pm = cache->getProbeManager();
-        } else if (probeManagerDirty != nullptr) {
-            pm = probeManagerDirty;
-        }
-        listeners.push_back(new PrefetchListener(*this, pm, "StorePFtrain", false, true, true));
-        listeners.push_back(new PrefetchListener(*this, pm, "Miss", false, true, false));
-        listeners.push_back(new PrefetchListener(*this, pm, "Fill", true, false, false));
-        listeners.push_back(new PrefetchListener(*this, pm, "Hit", false, false, false));
+    if (listeners.empty() && !isSubPrefetcher && probeManager != nullptr) {
+        listeners.push_back(new PrefetchListener(*this, probeManager, "StorePFtrain", false, true, true));
+        listeners.push_back(new PrefetchListener(*this, probeManager, "Miss", false, true, false));
+        listeners.push_back(new PrefetchListener(*this, probeManager, "Fill", true, false, false));
+        listeners.push_back(new PrefetchListener(*this, probeManager, "Hit", false, false, false));
     }
 }
 

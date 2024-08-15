@@ -52,7 +52,7 @@
 #include "base/compiler.hh"
 #include "base/statistics.hh"
 #include "base/types.hh"
-#include "mem/cache/cache_blk.hh"
+#include "mem/cache/cache_probe_arg.hh"
 #include "mem/packet.hh"
 #include "mem/request.hh"
 #include "sim/arch_db.hh"
@@ -63,7 +63,6 @@
 namespace gem5
 {
 
-class BaseCache;
 struct BasePrefetcherParams;
 
 GEM5_DEPRECATED_NAMESPACE(Prefetcher, prefetch);
@@ -332,14 +331,20 @@ class Base : public ClockedObject
 
   protected:
 
-    // PARAMETERS
-
-    /** Pointr to the parent cache. */
-    BaseCache* cache;
-
     bool isSubPrefetcher;
 
     ArchDBer* archDBer;
+
+    // PARAMETERS
+
+    /** Pointr to the parent cache. */
+    CacheAccessor* cache = nullptr;
+
+    /** Pointer to the parent system. */
+    System* system = nullptr;
+
+    /** Pointer to the parent cache's probe manager. */
+    ProbeManager *probeManager = nullptr;
 
     /** The block size of the parent cache. */
     unsigned blkSize;
@@ -390,7 +395,7 @@ class Base : public ClockedObject
     bool inMissQueue(Addr addr, bool is_secure) const;
 
     bool hasBeenPrefetched(Addr addr, bool is_secure) const;
-    bool hasBeenPrefetchedAndNotAccessed(Addr addr, bool is_secure) const;
+    bool hasEverBeenPrefetched(Addr addr, bool is_secure) const;
 
     /** Determine if addresses are on the same page */
     bool samePage(Addr a, Addr b) const;
@@ -458,20 +463,11 @@ class Base : public ClockedObject
     /** Registered tlb for address translations */
     BaseTLB * tlb;
 
-    const unsigned maxCacheLevel;
-
-    /** Proxied Prefetchers in ruby does not have cache as parent
-     * so need to set probe manager explicitly
-     */
-    ProbeManager *probeManagerDirty;
-
   public:
     Base(const BasePrefetcherParams &p);
     virtual ~Base() = default;
 
-    virtual void setCache(BaseCache *_cache);
-
-    void setPMInfoDirty(ProbeManager *pm) { probeManagerDirty = pm; }
+    virtual void setParentInfo(System *sys, ProbeManager *pm, CacheAccessor* _cache, unsigned blk_size);
 
     /**
      * Notify prefetcher of cache access (may be any access or just
@@ -501,27 +497,27 @@ class Base : public ClockedObject
     }
 
     void
-    pfHitInCache(int pf_num)
+    pfHitInCache(PrefetchSourceType pf_type)
     {
         prefetchStats.pfHitInCache++;
-        prefetchStats.pfHitInCache_srcs[pf_num]++;
-        prefetchStats.late_srcs[pf_num]++;
+        prefetchStats.pfHitInCache_srcs[pf_type]++;
+        prefetchStats.late_srcs[pf_type]++;
     }
 
     void
-    pfHitInMSHR(int pf_num)
+    pfHitInMSHR(PrefetchSourceType pf_type)
     {
         prefetchStats.pfHitInMSHR++;
-        prefetchStats.pfHitInMSHR_srcs[pf_num]++;
-        prefetchStats.late_srcs[pf_num]++;
+        prefetchStats.pfHitInMSHR_srcs[pf_type]++;
+        prefetchStats.late_srcs[pf_type]++;
     }
 
     void
-    pfHitInWB(int pf_num)
+    pfHitInWB(PrefetchSourceType pf_type)
     {
         prefetchStats.pfHitInWB++;
-        prefetchStats.pfHitInWB_srcs[pf_num]++;
-        prefetchStats.late_srcs[pf_num]++;
+        prefetchStats.pfHitInWB_srcs[pf_type]++;
+        prefetchStats.late_srcs[pf_type]++;
     }
     void streamPflate() { streamlatenum++; }
 

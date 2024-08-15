@@ -64,16 +64,6 @@ structure(OutPort, external = "yes", primitive="yes") {
     bool isDeferredMsgMapEmpty(Addr addr);
 }
 
-structure(InPort, external = "yes", primitive="yes") {
-  bool isReady(Tick current_time);
-  Tick dequeue(Tick current_time);
-  void recycle(Tick current_time, Tick recycle_latency);
-  bool isEmpty();
-  bool isStallMapEmpty();
-  int getStallMapSize();
-  bool hasStalledMsg(Addr addr);
-}
-
 external_type(NodeID, default="0", primitive="yes");
 external_type(MachineID);
 
@@ -133,6 +123,7 @@ structure (Sequencer, external = "yes") {
                     Cycles, Cycles, Cycles);
 
   void notifyMissCallback(Addr, bool, bool);
+  void TBEFullCancel(Addr);
 
   void writeCallback(Addr, DataBlock);
   void writeCallback(Addr, DataBlock, bool);
@@ -166,9 +157,25 @@ structure (Sequencer, external = "yes") {
   bool checkResourceAvailable(CacheResourceType, Addr);
 }
 
+structure(InPort, external = "yes", primitive="yes") {
+  bool isReady(Tick current_time);
+  Tick dequeue(Tick current_time);
+  void recycle(Tick current_time, Tick recycle_latency);
+  bool isEmpty();
+  bool isStallMapEmpty();
+  int getStallMapSize();
+  bool hasStalledMsg(Addr addr);
+  void notifyMissCallback(Tick current_time, Sequencer sequencer);
+}
+
 structure (HTMSequencer, interface="Sequencer", external = "yes") {
   // hardware transactional memory
   void htmCallback(Addr, HtmCallbackMode, HtmFailedInCacheReason);
+}
+
+structure (XsPFMetaData, desc="...", external="yes") {
+  bool validXsMetadata,               desc="";
+  int prefetchDepth,                  desc="";
 }
 
 structure(RubyRequest, desc="...", interface="Message", external="yes") {
@@ -193,6 +200,7 @@ structure(RubyRequest, desc="...", interface="Message", external="yes") {
   bool isSLCSet,             default="false",desc="If flag is set, bypass GPU L1 and L2 caches";
 
   RequestPtr getRequestPtr();
+  XsPFMetaData getXsPFMeta();
 }
 
 structure(AbstractCacheEntry, primitive="yes", external = "yes") {
@@ -230,6 +238,7 @@ structure (CacheMemory, external = "yes") {
   void htmCommitTransaction();
   void htmAbortTransaction();
 
+  int level();
   int getCacheSize();
   int getNumBlocks();
   Addr getAddressAtIdx(int);
@@ -266,11 +275,14 @@ structure (RubyPrefetcher, external = "yes") {
 }
 
 structure(RubyPrefetcherProxy, external = "yes") {
-    void notifyPfHit(RequestPtr, bool, DataBlock);
-    void notifyPfMiss(RequestPtr, bool, DataBlock);
+    void notifyPfHit(RequestPtr, bool, XsPFMetaData, DataBlock);
+    void notifyPfMiss(RequestPtr, bool, XsPFMetaData, DataBlock);
     void notifyPfFill(RequestPtr, DataBlock, bool);
-    void notifyPfEvict(Addr, bool, RequestorID);
+    void notifyPfEvict(Addr, bool, XsPFMetaData, RequestorID);
     void completePrefetch(Addr);
+    void pfHitInCache(XsPFMetaData);
+    void notifyHitToDownStream(RequestPtr);
+    void offloadToDownStream();
     // SLICC controller must define its own regProbePoints and call
     // this for every RubyPrefetcherProxy object present
     void regProbePoints();

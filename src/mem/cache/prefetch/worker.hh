@@ -51,11 +51,12 @@ class WorkerPrefetcher : public Queued
     void rxHint(BaseMMU::Translation *dpp) override;
     std::pair<long, long> rxMembusRatio(RequestorID requestorId) override
     {
-        long totalMissCount = cache->stats.cmd[MemCmd::ReadExReq]->misses.total() +
-                              cache->stats.cmd[MemCmd::ReadSharedReq]->misses.total();
-        long missCount = cache->stats.cmd[MemCmd::ReadExReq]->misses[requestorId].value() +
-                         cache->stats.cmd[MemCmd::ReadSharedReq]->misses[requestorId].value();
-        return std::pair<long, long>(missCount, totalMissCount);
+        // long totalMissCount = cache->stats.cmd[MemCmd::ReadExReq]->misses.total() +
+        //                       cache->stats.cmd[MemCmd::ReadSharedReq]->misses.total();
+        // long missCount = cache->stats.cmd[MemCmd::ReadExReq]->misses[requestorId].value() +
+        //                  cache->stats.cmd[MemCmd::ReadSharedReq]->misses[requestorId].value();
+        // return std::pair<long, long>(missCount, totalMissCount);
+        return std::pair<long, long>(0, 0);
     };
     void notifyIns(int ins_num) override
     {

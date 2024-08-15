@@ -318,6 +318,9 @@ in_port(reqRdyPort, CHIRequestMsg, reqRdy, rank=3,
       } else {
         CacheEntry cache_entry := getCacheEntry(in_msg.addr);
         TBE tbe := getCurrentActiveTBE(in_msg.addr);
+        if (is_valid(tbe)) {
+          tbe.is_from_cpu := in_msg.is_from_cpu;
+        }
 
         DirEntry dir_entry := getDirEntry(in_msg.addr);
 
@@ -421,6 +424,9 @@ in_port(seqInPort, RubyRequest, mandatoryQueue, rank=1) {
           );
         }
       } else {
+        if (!storTBEs.areNSlotsAvailable(1) || !reqRdy.areNSlotsAvailable(1, curTick())) {
+          seqInPort.notifyMissCallback(clockEdge(), sequencer);
+        }
         trigger(Event:AllocSeqRequest, in_msg.LineAddress,
                 getCacheEntry(in_msg.LineAddress),
                 getCurrentActiveTBE(in_msg.LineAddress));
@@ -482,7 +488,7 @@ void processNextState(Addr address, TBE tbe, CacheEntry cache_entry) {
     }
   }
 
-  printTBEState(tbe);
+  printTBEState("processNextState", tbe);
 
   // we might be going to BUSY_INTERRUPTABLE so wakeup pending snoops
   // if any

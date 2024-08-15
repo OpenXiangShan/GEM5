@@ -129,6 +129,8 @@ class Sequencer : public RubyPort
 
     void notifyMissCallback(Addr address, bool is_upgrade, bool is_snoop);
 
+    void TBEFullCancel(Addr address);
+
     void atomicCallback(Addr address,
                         DataBlock& data,
                         const bool externalHit = false,
@@ -250,6 +252,14 @@ class Sequencer : public RubyPort
                                         RubyRequestType secondary_type);
 
   private:
+
+    struct SequencerStat : public statistics::Group
+    {
+      SequencerStat(statistics::Group *parent);
+      statistics::Scalar notifymiss;
+      statistics::Scalar loadcancel;
+    } stat;
+
     int m_max_outstanding_requests;
 
     int m_num_pending_invs;
