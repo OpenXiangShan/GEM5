@@ -1660,29 +1660,41 @@ decode QUADRANT default Unknown::unknown() {
                         auto sign = bits(unboxF32(Fs2_bits), 31);
                         Fd_bits = boxF32(insertBits(unboxF32(Fs1_bits), 31,
                                                     sign));
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS,status);
                         }}, FloatMiscOp);
                     0x1: fsgnjn_s({{
                         auto sign = ~bits(unboxF32(Fs2_bits), 31);
                         Fd_bits = boxF32(insertBits(unboxF32(Fs1_bits), 31,
                                                     sign));
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS,status);
                         }}, FloatMiscOp);
                     0x2: fsgnjx_s({{
                         auto sign = bits(
                             unboxF32(Fs1_bits) ^ unboxF32(Fs2_bits), 31);
                         Fd_bits = boxF32(insertBits(unboxF32(Fs1_bits), 31,
                                                     sign));
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS,status);
                         }}, FloatMiscOp);
                 }
                 0x11: decode ROUND_MODE {
                     0x0: fsgnj_d({{
                         Fd_bits = insertBits(Fs2_bits, 62, 0, Fs1_bits);
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS,status);
                     }}, FloatMiscOp);
                     0x1: fsgnjn_d({{
                         Fd_bits = insertBits(~Fs2_bits, 62, 0, Fs1_bits);
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS,status);
                     }}, FloatMiscOp);
                     0x2: fsgnjx_d({{
                         Fd_bits = insertBits(
                                 Fs1_bits ^ Fs2_bits, 62, 0, Fs1_bits);
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS,status);
                     }}, FloatMiscOp);
                 }
                 0x12: decode ROUND_MODE {
@@ -1800,6 +1812,8 @@ decode QUADRANT default Unknown::unknown() {
                         freg_t fd;
                         fd = freg(f64_to_f32(f64(freg(Fs1_bits))));
                         Fd_bits = fd.v;
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS,status);
                     }}, FloatCvtOp);
                     0x2: fcvt_s_h({{
                         RM_REQUIRED;
@@ -1814,6 +1828,8 @@ decode QUADRANT default Unknown::unknown() {
                         freg_t fd;
                         fd = freg(f32_to_f64(f32(freg(Fs1_bits))));
                         Fd_bits = fd.v;
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS,status);
                     }}, FloatCvtOp);
                     0x2: fcvt_d_h({{
                         RM_REQUIRED;
@@ -1965,42 +1981,58 @@ decode QUADRANT default Unknown::unknown() {
                         freg_t fd;
                         fd = freg(i32_to_f32((int32_t)Rs1_sw));
                         Fd_bits = fd.v;
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS,status);
                         }}, FloatCvtOp);
                     0x1: fcvt_s_wu({{
                         RM_REQUIRED;
                         freg_t fd;
                         fd = freg(ui32_to_f32((uint32_t)Rs1_uw));
                         Fd_bits = fd.v;
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS,status);
                         }}, FloatCvtOp);
                     0x2: fcvt_s_l({{
                         RM_REQUIRED;
                         freg_t fd;
                         fd = freg(i64_to_f32(Rs1_ud));
                         Fd_bits = fd.v;
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS,status);
                         }}, FloatCvtOp);
                     0x3: fcvt_s_lu({{
                         RM_REQUIRED;
                         freg_t fd;
                         fd = freg(ui64_to_f32(Rs1));
                         Fd_bits = fd.v;
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS,status);
                         }}, FloatCvtOp);
                 }
                 0x69: decode CONV_SGN {
                     0x0: fcvt_d_w({{
                         RM_REQUIRED;
                         Fd = (double)Rs1_sw;
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS,status);
                     }}, FloatCvtOp);
                     0x1: fcvt_d_wu({{
                         RM_REQUIRED;
                         Fd = (double)Rs1_uw;
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS,status);
                     }}, FloatCvtOp);
                     0x2: fcvt_d_l({{
                         RM_REQUIRED;
                         Fd = (double)Rs1_sd;
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS,status);
                     }}, FloatCvtOp);
                     0x3: fcvt_d_lu({{
                         RM_REQUIRED;
                         Fd = (double)Rs1;
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS,status);
                     }}, FloatCvtOp);
                 }
                 0x6a: decode CONV_SGN {
@@ -2063,11 +2095,15 @@ decode QUADRANT default Unknown::unknown() {
                     freg_t fd;
                     fd = freg(f32(Rs1_uw));
                     Fd_bits = fd.v;
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS,status);
                 }}, FloatCvtOp);
                 0x79: fmv_d_x({{
                     freg_t fd;
                     fd = freg(f64(Rs1));
                     Fd_bits = fd.v;
+                    status.fs = 3;
+                    xc->setMiscReg(MISCREG_STATUS,status);
                 }}, FloatCvtOp);
                 0x7a: fmv_h_x({{
                     freg_t fd;
