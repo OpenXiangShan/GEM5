@@ -54,7 +54,7 @@ class BasicExtLink(BasicLink):
 
     ext_node = Param.RubyController("External node")
     int_node = Param.BasicRouter("ID of internal node")
-    bandwidth_factor = 16  # only used by simple network
+    bandwidth_factor = 64  # only used by simple network
 
 
 class BasicIntLink(BasicLink):
@@ -70,4 +70,4 @@ class BasicIntLink(BasicLink):
     dst_inport = Param.String("", "Inport direction at dst router")
 
     # only used by simple network
-    bandwidth_factor = 16
+    bandwidth_factor = 64

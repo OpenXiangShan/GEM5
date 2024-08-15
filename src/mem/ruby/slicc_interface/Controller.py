@@ -54,7 +54,7 @@ class RubyController(ClockedObject):
     cluster_id = Param.UInt32(0, "Id of this controller's cluster")
 
     transitions_per_cycle = Param.Int(
-        32, "no. of  SLICC state machine transitions per cycle"
+        1024, "no. of  SLICC state machine transitions per cycle"
     )
     buffer_size = Param.UInt32(0, "max buffer size 0 means infinite")
 
