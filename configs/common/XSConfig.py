@@ -40,7 +40,10 @@ def config_xiangshan_inputs(args: argparse.Namespace, sys):
     args.difftest_ref_so = ref_so
 
     if args.gcpt_restorer is None:
-        if args.num_cpus > 1:
+        if args.raw_cpt:
+            # If using raw binary, no restorer is needed.
+            gcpt_restorer = None
+        elif args.num_cpus > 1:
             if "GCB_MULTI_CORE_RESTORER" in os.environ:
                 gcpt_restorer = os.environ["GCB_MULTI_CORE_RESTORER"]
                 print("Obtained gcpt_restorer from GCB_MULTI_CORE_RESTORER: ", gcpt_restorer)
@@ -84,7 +87,7 @@ def config_xiangshan_inputs(args: argparse.Namespace, sys):
 
         if args.raw_cpt:
             assert not args.gcpt_restorer  # raw_cpt and gcpt_restorer are exclusive
-            print('Using raw bbl', gcpt_restorer)
+            print('Using raw bbl', args.generic_rv_cpt)
             sys.map_to_raw_cpt = True
             sys.workload.raw_bootloader = True
         else:
