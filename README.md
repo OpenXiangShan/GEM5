@@ -1,6 +1,6 @@
 # About
 
-This is the gem5 simulator for Xiangshan (XS-GEM5), which currently scores similar with Nanhu on SPEC CPU 2006.
+This is the gem5 simulator for Xiangshan (XS-GEM5), which currently scores similar with Kunminghu on SPEC CPU 2006.
 
 ## Features
 
@@ -10,16 +10,26 @@ with Xiangshan's specific formats, refer to [Workflows](#workflows-how-to-run-wo
 XS-GEM5 is enhanced with
 - Xiangshan RVGCpt: a cross-platform full-system checkpoint for RISC-V.
 - Xiangshan online Difftest: an API to check execution results online.
-- Frontend microarchitecture calibrated with Xiangshan V2 (Nanhu): Decoupled frontend, TAGESC, and ITTAGE,
-which performance better than LTAGE and TAGE-SCL shipped in official version on SPECCPU.
-- Instruction latency calibrated with Nanhu
-- Cache hierarchy, latency, and prefetchers calibrated with Nanhu.
-- A fixed Multi-Prefetcher framework with VA-PA translation support
-- A fixed BOP prefetcher
-- Parallel RV PTW (Page Table Walker) and walking state coalescing
+- Topdown performance counters
+- Frontend microarchitecture calibrated with Xiangshan V3 (Kunminghu)
+  * Decoupled frontend
+  * TAGESC, ITTAGE, and optinal Loop predictor (performs better than LTAGE and TAGE-SCL shipped in official version on SPECCPU)
+  * Instruction latency calibrated with Kunminghu
+- Backend microarchitecture calibrated with Xiangshan V3 (Kunminghu)
+  * Distributed scheduler
+  * Scheduling/execution latency calibrated with Kunminghu
+  * RVV mostly calibrated
+- Cache hierarchy, latency, and prefetchers calibrated with Kunminghu.
+  * Algorithm: Stream + Berti/Stride + BOP + SMS + Temporal + CDP
+  * Framework: Active/Passive offloading; Multi-Prefetcher coordination
+  * VA-PA translation support for all prefetchers
+- Parallel RV PTW (Page Table Walker)
+  * Walking state coalescing
+  * PTW and TLBs for RV-H
 - Cascaded FMA
 - Move elimination
-- L2 TLB and TLB prefetching (coming soon).
+- L2 TLB and TLB prefetching.
+- CSR fixes
 - Other functional or performance bug fixes.
 
 ## Branches
@@ -129,8 +139,7 @@ The process to produce SimPoint checkpoints includes ***3 individual steps***
 1. Taking checkpoints according to clustering results. (In the RVGCpt process, this step generates the **checkpoints** that will be used for simulation.)
 
 If you have problem generating SPECCPU checkpoints, following links might help you.
-- [The video to build SPECCPU, put it in Linux, and run it in NEMU to get SimPoint BBVs](https://drive.google.com/file/d/1msr_YijlYN4rxpn71bod1LAoRWs5VtAL/view?usp=sharing) (step 1)
-- [The document to do SimPoint clustering based on BBVs and take simpoint checkpoints](https://zhuanlan.zhihu.com/p/604396330) (step 2 & 3)
+- [The video to produce SimPoint checkpoints from SPECCPU source code](https://www.bilibili.com/video/BV1Wr421h7XN?p=2)
 
 ## Basic build environment
 
