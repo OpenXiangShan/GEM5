@@ -1660,29 +1660,41 @@ decode QUADRANT default Unknown::unknown() {
                         auto sign = bits(unboxF32(Fs2_bits), 31);
                         Fd_bits = boxF32(insertBits(unboxF32(Fs1_bits), 31,
                                                     sign));
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS,status);
                         }}, FloatMiscOp);
                     0x1: fsgnjn_s({{
                         auto sign = ~bits(unboxF32(Fs2_bits), 31);
                         Fd_bits = boxF32(insertBits(unboxF32(Fs1_bits), 31,
                                                     sign));
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS,status);
                         }}, FloatMiscOp);
                     0x2: fsgnjx_s({{
                         auto sign = bits(
                             unboxF32(Fs1_bits) ^ unboxF32(Fs2_bits), 31);
                         Fd_bits = boxF32(insertBits(unboxF32(Fs1_bits), 31,
                                                     sign));
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS,status);
                         }}, FloatMiscOp);
                 }
                 0x11: decode ROUND_MODE {
                     0x0: fsgnj_d({{
                         Fd_bits = insertBits(Fs2_bits, 62, 0, Fs1_bits);
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS,status);
                     }}, FloatMiscOp);
                     0x1: fsgnjn_d({{
                         Fd_bits = insertBits(~Fs2_bits, 62, 0, Fs1_bits);
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS,status);
                     }}, FloatMiscOp);
                     0x2: fsgnjx_d({{
                         Fd_bits = insertBits(
                                 Fs1_bits ^ Fs2_bits, 62, 0, Fs1_bits);
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS,status);
                     }}, FloatMiscOp);
                 }
                 0x12: decode ROUND_MODE {
