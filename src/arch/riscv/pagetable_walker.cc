@@ -789,9 +789,11 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
                         gPaddr = pte.ppn << 12;
                         if (level > 0) {
                             Addr pg_mask = (1ULL << (12 + 9 * level)) - 1;
-                            // if ((pg_mask && ((pte.ppn<<12) !=0)))
-                            if ((pg_mask & (pte.ppn << 12)) != 0)
-                                assert(0);
+                            if ((pg_mask & (pte.ppn << 12)) != 0) {
+                                fault = pageFault(true, false);
+                                endWalk();
+                                return fault;
+                            }
                             gPaddr = ((pte.ppn << 12) & ~pg_mask) | (entry.vaddr & pg_mask & ~PGMASK);
                         }
                         gPaddr = gPaddr | (entry.vaddr & PGMASK);
@@ -895,7 +897,9 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
                     }
                     if ((gPaddr & ~(((int64_t)1 << 41) - 1)) != 0) {
                         // this is a excep
-                        assert(0);
+                        fault = pageFault(true, false);
+                        endWalk();
+                        return fault;
                     }
                     DPRINTF(PageTableWalkerTwoStage, "twoStageStepWalk gpaddr %lx vaddr %lx\n", gPaddr, entry.vaddr);
                     gpaddrMode =2;
@@ -1291,7 +1295,7 @@ Walker::WalkerState::startTwoStageWalkFromTLBNotInG(Addr ppn, Addr vaddr)
     Addr pg_mask = 0;
     Fault fault = NoFault;
     Addr nextRead = 0;
-    // inGstage = true;
+    inGstage = false;
     if (twoStageLevel > 0) {
         pg_mask = ((1ULL << (12 + 9 * twoStageLevel)) - 1);
         if (((ppn << 12) & pg_mask) != 0) {
@@ -1439,6 +1443,8 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level, bool from_l2tl
         inl2Entry.fromBackPreReq = false;
         inl2Entry.preSign = false;
         inl2Entry.vmid = hgatp.vmid;
+        inl2Entry.paddr = 0;
+
         finishGVA = mainReq->get_finish_gva();
         level = mainReq->get_level();
         twoStageLevel = mainReq->get_two_stage_level();
@@ -1448,7 +1454,7 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level, bool from_l2tl
         }
         if ((!isVsatp0Mode) && (mainReq->get_h_gstage()) && (mainReq->get_two_stage_level() != 2)) {
             fault = startTwoStageWalkFromTLBInG(mainReq->get_ppn(), vaddr);
-        } else if ((!isVsatp0Mode) && (!mainReq->get_h_gstage()) && (mainReq->get_two_stage_level() != 2)) {
+        } else if ((!isVsatp0Mode) && (!mainReq->get_h_gstage()) && (mainReq->get_level() != 2)) {
             fault = startTwoStageWalkFromTLBNotInG(mainReq->get_ppn(), vaddr);
         } else if ((mainReq->get_level() == 2) || (isVsatp0Mode)) {
             fault = startTwoStageWalk(gPaddr, vaddr);
