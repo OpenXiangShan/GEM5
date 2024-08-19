@@ -709,6 +709,9 @@ Scheduler::insertSlot(const DynInstPtr& inst)
 
 void Scheduler::loadCancel(const DynInstPtr& inst)
 {
+    if (inst->canceled()) {
+        return;
+    }
     DPRINTF(Schedule, "[sn %lu] %s cache miss, cancel consumers\n", inst->seqNum,
             enums::OpClassStrings[inst->opClass()]);
     inst->setCancel();

@@ -580,7 +580,9 @@ PhysicalMemory::unserializeStoreFrom(std::string filepath,
             lseek(fd, 0, SEEK_SET);
             auto bytes = read(fd, backingStore[store_id].pmem, file_len);
             assert(bytes == file_len);
-            backingStore[store_id].pmem = dedupMemManager->createCopyOnWriteBranch();
+            if (enableDedup) {
+                backingStore[store_id].pmem = dedupMemManager->createCopyOnWriteBranch();
+            }
         } else {
             // For large file, map to file directly
             if (enableDedup) {

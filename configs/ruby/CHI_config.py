@@ -86,9 +86,9 @@ class NoC_Params:
     router_link_latency = 1
     node_link_latency = 1
     router_latency = 1
-    router_buffer_size = 4
-    cntrl_msg_size = 8
-    data_width = 32
+    router_buffer_size = 128
+    cntrl_msg_size = 0
+    data_width = 64
     cross_links = []
     cross_link_latency = 0
 
@@ -257,13 +257,16 @@ class CHI_L1Controller(CHI_Cache_Controller):
         self.dealloc_backinv_shared = False
         self.is_dcache = is_dcache
         # Some reasonable default TBE params
-        self.number_of_TBEs = 32
+        self.number_of_TBEs = 32+8
         self.number_of_repl_TBEs = 16
         self.number_of_snoop_TBEs = 4
         self.number_of_DVM_TBEs = 16
         self.number_of_DVM_snoop_TBEs = 4
 
         self.unify_repl_TBEs = False
+
+        self.response_latency = 4
+        self.request_latency = 1
 
 
 class CHI_L2Controller(CHI_Cache_Controller):
@@ -295,13 +298,15 @@ class CHI_L2Controller(CHI_Cache_Controller):
         self.dealloc_backinv_unique = False
         self.dealloc_backinv_shared = False
         # Some reasonable default TBE params
-        self.number_of_TBEs = 64
+        self.number_of_TBEs = 64+16
         self.number_of_repl_TBEs = 32
-        self.number_of_snoop_TBEs = 16
+        self.number_of_snoop_TBEs = 32
         self.number_of_DVM_TBEs = 1  # should not receive any dvm
         self.number_of_DVM_snoop_TBEs = 1  # should not receive any dvm
         self.unify_repl_TBEs = False
 
+        self.response_latency = 12
+        self.request_latency = 1
 
 class CHI_HNFController(CHI_Cache_Controller):
     """
@@ -333,12 +338,16 @@ class CHI_HNFController(CHI_Cache_Controller):
         self.dealloc_backinv_unique = False
         self.dealloc_backinv_shared = False
         # Some reasonable default TBE params
-        self.number_of_TBEs = 256
+        self.number_of_TBEs = 256 + 32
         self.number_of_repl_TBEs = 32
         self.number_of_snoop_TBEs = 1  # should not receive any snoop
         self.number_of_DVM_TBEs = 1  # should not receive any dvm
         self.number_of_DVM_snoop_TBEs = 1  # should not receive any dvm
         self.unify_repl_TBEs = False
+
+        self.response_latency = 40
+        self.request_latency = 1
+
 
 
 class CHI_MNController(MiscNode_Controller):
@@ -711,6 +720,7 @@ class CHI_SNF_Base(CHI_Node):
             requestToMemory=MemCtrlMessageBuffer(),
             reqRdy=TriggerMessageBuffer(),
             transitions_per_cycle=1024,
+            number_of_TBEs = 1024
         )
 
         # The Memory_Controller implementation deallocates the TBE for

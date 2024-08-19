@@ -126,14 +126,14 @@ def create_system(
 
     class L2Cache(RubyCache):
         level = 2
-        dataAccessLatency = 6
+        dataAccessLatency = 13
         tagAccessLatency = 2
         size = options.l2_size
         assoc = options.l2_assoc
 
     class HNFCache(RubyCache):
         level = 3
-        dataAccessLatency = 10
+        dataAccessLatency = 17
         tagAccessLatency = 2
         size = options.l3_size
         assoc = options.l3_assoc

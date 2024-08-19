@@ -122,8 +122,6 @@ StreamUBTB::update(/*const PredictionID fsq_id,*/
                 stream_start_pc);
         return;
     }
-    std::string buf;
-    boost::to_string(history, buf);
     // DPRINTF(DecoupleBP,
     //         "StreamUBTB::update: fsq id: %d, control_pc: %#x, target: %#x, "
     //         "is_conditional: %d, is_indirect: %d, "

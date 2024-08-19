@@ -55,7 +55,7 @@ class SimpleNetwork(RubyNetwork):
         "default internal buffer size for links and\
                                 routers; 0 indicates infinite buffering",
     )
-    endpoint_bandwidth = Param.Int(1000, "bandwidth adjustment factor")
+    endpoint_bandwidth = Param.Int(2048, "bandwidth adjustment factor")
 
     physical_vnets_channels = VectorParam.Int(
         [],

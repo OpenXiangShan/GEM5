@@ -468,17 +468,9 @@ FTBTAGE::update(const FetchStream &entry)
             unsigned mask = allocLFSR.get() % maskMaxNum;
             bitset allocateLFSR(numPredictors - (pred.table + 1), mask);
             std::string buf;
-            boost::to_string(allocateLFSR, buf);
-            // DPRINTF(FTBTAGEUseful, "allocateLFSR %s, size %d\n", buf, allocateLFSR.size());
             auto flipped_usefulMask = ~pred.usefulMask;
-            boost::to_string(flipped_usefulMask, buf);
-            // DPRINTF(FTBTAGEUseful, "pred usefulmask %s, size %d\n", buf, pred.usefulMask.size());
             bitset masked = allocateLFSR & flipped_usefulMask;
-            boost::to_string(masked, buf);
-            // DPRINTF(FTBTAGEUseful, "masked %s, size %d\n", buf, masked.size());
             bitset allocate = masked.any() ? masked : flipped_usefulMask;
-            boost::to_string(allocate, buf);
-            // DPRINTF(FTBTAGEUseful, "allocate %s, size %d\n", buf, allocate.size());
             short newCounter = this_cond_actually_taken ? 0 : -1;
 
             bool allocateValid = flipped_usefulMask.any();
@@ -616,9 +608,7 @@ FTBTAGE::getUseAltIdx(Addr pc) {
 void
 FTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, int shamt, bool taken)
 {
-    std::string buf;
-    boost::to_string(history, buf);
-    DPRINTF(FTBTAGE, "in doUpdateHist, shamt %d, taken %d, history %s\n", shamt, taken, buf);
+    DPRINTF(FTBTAGE, "in doUpdateHist, shamt %d, taken %d, history %s\n", shamt, taken, history);
     if (shamt == 0) {
         DPRINTF(FTBTAGE, "shamt is 0, returning\n");
         return;
@@ -666,10 +656,6 @@ FTBTAGE::recoverHist(const boost::dynamic_bitset<> &history,
 void
 FTBTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * when)
 {
-    // DPRINTF(FTBTAGE, "checking folded history when %s\n", when);
-    std::string hist_str;
-    boost::to_string(hist, hist_str);
-    // DPRINTF(FTBTAGE, "history:\t%s\n", hist_str.c_str());
     for (int t = 0; t < numPredictors; t++) {
         for (int type = 0; type < 3; type++) {
 
