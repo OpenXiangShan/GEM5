@@ -845,10 +845,20 @@ TLB::demapPageL2(Addr vpn, uint64_t asid)
     DPRINTF(TLB, "l2 flush(vpn=%#x, asid=%#x)\n", vpn, asid);
     DPRINTF(TLBVerbose3, "l2tlb flush(vpn=%#x, asid=%#x)\n", vpn, asid);
 
-    /*TlbEntry *l2_newEntry[6] = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
+    TlbEntry *l2_newEntry[6] = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
+    TlbEntry *l2_newEntry1[6] = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
+    TlbEntry *l2_newEntry2[6] = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
+
     for (int ii = 1; ii < 6; ii++) {
-        l2_newEntry[ii] = lookupL2TLB(vpn_vec[ii], asid, BaseMMU::Read, true, ii, false);
-    }*/
+        l2_newEntry[ii] = lookupL2TLB(vpn_vec[ii], asid, BaseMMU::Read, true, ii, false, direct);
+    }
+    for (int ii = 1; ii < 6; ii++) {
+        l2_newEntry1[ii] = lookupL2TLB(vpn_vec[ii], asid, BaseMMU::Read, true, ii, true, gstage);
+    }
+    for (int ii = 1; ii < 6; ii++) {
+        l2_newEntry2[ii] = lookupL2TLB(vpn_vec[ii], asid, BaseMMU::Read, true, ii, true, vsstage);
+    }
+
 
 
     if (vpn != 0 && asid != 0) {
@@ -870,18 +880,28 @@ TLB::demapPageL2(Addr vpn, uint64_t asid)
                     l2TLBRemove(i, L_L2sp1);
             }
         }
-    /*    for (i = 1; i < 6; i++) {
+        for (i = 1; i < 6; i++) {
             int tlb_i = 0;
             if (i - 1 > 3)
                 tlb_i = 3;
             else
                 tlb_i = i - 1;
             if (l2_newEntry[i]) {
-                TlbEntry *m_newEntry = lookupL2TLB(vpn_vec[i], asid, BaseMMU::Read, true, i, false);
+                TlbEntry *m_newEntry = lookupL2TLB(vpn_vec[i], asid, BaseMMU::Read, true, i, false,direct);
                 assert(m_newEntry != nullptr);
                 l2TLBRemove(m_newEntry - tlb_lists[tlb_i].data(), i);
             }
-        }*/
+            if (l2_newEntry1[i]) {
+                TlbEntry *m_newEntry = lookupL2TLB(vpn_vec[i], asid, BaseMMU::Read, true, i, true, gstage);
+                assert(m_newEntry != nullptr);
+                l2TLBRemove(m_newEntry - tlb_lists[tlb_i].data(), i);
+            }
+            if (l2_newEntry2[i]) {
+                TlbEntry *m_newEntry = lookupL2TLB(vpn_vec[i], asid, BaseMMU::Read, true, i, true, vsstage);
+                assert(m_newEntry != nullptr);
+                l2TLBRemove(m_newEntry - tlb_lists[tlb_i].data(), i);
+            }
+        }
     } else {
         if (isStage2 || isTheSharedL2) {
             for (i = 0; i < l2TlbL1Size * l2tlbLineSize; i = i + l2tlbLineSize) {
@@ -902,30 +922,50 @@ TLB::demapPageL2(Addr vpn, uint64_t asid)
             }
         }
 
-        /*for (i = 0; i < l2TlbL1Size * l2tlbLineSize; i = i + l2tlbLineSize) {
+        for (i = 0; i < l2TlbL1Size * l2tlbLineSize; i = i + l2tlbLineSize) {
+            Addr l2l1_mask = ~(tlbL2L1[i].size() - 1);
             if (tlbL2L1[i].trieHandle) {
-                Addr l2l1_mask = ~(tlbL2L1[i].size() - 1);
                 if ((vpnl2l1 == 0 || (vpnl2l1 & l2l1_mask) == tlbL2L1[i].vaddr) &&
                     (asid == 0 || tlbL2L1[i].asid == asid)) {
                     l2TLBRemove(i, L_L2L1);
                 }
             }
+            if (tlbL2L1[i].trieHandle) {
+                if ((vpnl2l1 == 0 || (vpnl2l1 & l2l1_mask) == (tlbL2L1[i].gpaddr & l2l1_mask)) &&
+                    (asid == 0 || tlbL2L1[i].vmid == asid)) {
+                    l2TLBRemove(i, L_L2L1);
+                }
+            }
         }
         for (i = 0; i < l2TlbL2Size * l2tlbLineSize; i = i + l2tlbLineSize) {
+            Addr l2l2_mask = ~(tlbL2L2[i].size() - 1);
             if (tlbL2L2[i].trieHandle) {
-                Addr l2l2_mask = ~(tlbL2L2[i].size() - 1);
                 if ((vpnl2l2 == 0 || (vpnl2l2 & l2l2_mask) == tlbL2L2[i].vaddr) &&
                     (asid == 0 || tlbL2L2[i].asid == asid)) {
                     l2TLBRemove(i, L_L2L2);
                     DPRINTF(TLBVerbose3, "l2l2 remove vaddr %#x vpn %#x vpnl2l3\n", tlbL2L2[i].vaddr, vpn, vpnl2l2);
                 }
             }
+            if (tlbL2L2[i].trieHandle) {
+                if ((vpnl2l2 == 0 || (vpnl2l2 & l2l2_mask) == (tlbL2L2[i].gpaddr & l2l2_mask)) &&
+                    (asid == 0 || tlbL2L2[i].vmid == asid)) {
+                    l2TLBRemove(i, L_L2L2);
+                    DPRINTF(TLBVerbose3, "l2l2 remove vaddr %#x vpn %#x vpnl2l3\n", tlbL2L2[i].vaddr, vpn, vpnl2l2);
+                }
+            }
         }
         for (i = 0; i < l2TlbL3Size * l2tlbLineSize; i = i + l2tlbLineSize) {
+            Addr l2l3_mask = ~(tlbL2L3[i].size() - 1);
             if (tlbL2L3[i].trieHandle) {
-                Addr l2l3_mask = ~(tlbL2L3[i].size() - 1);
                 if ((vpnl2l3 == 0 || (vpnl2l3 & l2l3_mask) == tlbL2L3[i].vaddr) &&
                     (asid == 0 || tlbL2L3[i].asid == asid)) {
+                    l2TLBRemove(i, L_L2L3);
+                    DPRINTF(TLBVerbose3, "l2l3 remove vaddr %#x vpn %#x vpnl2l3\n", tlbL2L3[i].vaddr, vpn, vpnl2l3);
+                }
+            }
+            if (tlbL2L3[i].trieHandle) {
+                if ((vpnl2l3 == 0 || (vpnl2l3 & l2l3_mask) == (tlbL2L3[i].gpaddr & l2l3_mask)) &&
+                    (asid == 0 || tlbL2L3[i].vmid == asid)) {
                     l2TLBRemove(i, L_L2L3);
                     DPRINTF(TLBVerbose3, "l2l3 remove vaddr %#x vpn %#x vpnl2l3\n", tlbL2L3[i].vaddr, vpn, vpnl2l3);
                 }
@@ -940,12 +980,24 @@ TLB::demapPageL2(Addr vpn, uint64_t asid)
                 }
             }
             if (tlbL2Sp[i].trieHandle) {
+                if ((vpnl2l1 == 0 || (vpnl2l1 & l2sp_mask) == (tlbL2Sp[i].gpaddr & l2sp_mask)) &&
+                    (asid == 0 || tlbL2Sp[i].vmid == asid)) {
+                    l2TLBRemove(i, L_L2sp1);
+                }
+            }
+            if (tlbL2Sp[i].trieHandle) {
                 if ((vpnl2l2 == 0 || (vpnl2l2 & l2sp_mask) == tlbL2Sp[i].vaddr) &&
                     (asid == 0 || tlbL2Sp[i].asid == asid)) {
                     l2TLBRemove(i, L_L2sp2);
                 }
             }
-        }*/
+            if (tlbL2Sp[i].trieHandle) {
+                if ((vpnl2l2 == 0 || (vpnl2l2 & l2sp_mask) == (tlbL2Sp[i].gpaddr & l2sp_mask)) &&
+                    (asid == 0 || tlbL2Sp[i].vmid == asid)) {
+                    l2TLBRemove(i, L_L2sp2);
+                }
+            }
+        }
     }
 }
 
