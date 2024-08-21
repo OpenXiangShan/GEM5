@@ -220,10 +220,10 @@ If above branches are not working, you can try the following commits:
 
 | Checkpoint Type | reference design | GCPT restorer 
 | ---------- | --------- | --------- |
-| RV64GCB | NEMU 732e4ccd + riscv64-gem5-ref_defconfig | NEMU 732e4ccd |
-| RV64GCBV      | NEMU 732e4ccd + riscv64-gem5-ref_defconfig | NEMU b966d274 |
-| RV64GCB multi-core | NEMU 732e4ccd + riscv64-gem5-multicore-ref_defconfig | Download Binary from release; Code release soon |
-| RV64GCBV multi-core | NEMU 732e4ccd + riscv64-gem5-multicore-ref_defconfig | ~~NOT available yet~~ |
+| RV64GCB | NEMU 4332a525 + riscv64-gem5-ref_defconfig | NEMU 732e4ccd |
+| RV64GCBV      | NEMU 4332a525 + riscv64-gem5-ref_defconfig | NEMU b966d274 |
+| RV64GCB multi-core | NEMU 4332a525 + riscv64-gem5-multicore-ref_defconfig | Download Binary from release; Code release soon |
+| RV64GCBV multi-core | NEMU 4332a525 + riscv64-gem5-multicore-ref_defconfig | ~~NOT available yet~~ |
 
 
 **NOTE**:
