@@ -257,13 +257,13 @@ void ISA::clear()
     std::fill(miscRegFile.begin(), miscRegFile.end(), 0);
 
     miscRegFile[MISCREG_PRV] = PRV_M;
-    miscRegFile[MISCREG_ISA] = (2ULL << MXL_OFFSET) | 0x34112D;
+    miscRegFile[MISCREG_ISA] = 0x800000000034112f;
     miscRegFile[MISCREG_VENDORID] = 0;
     miscRegFile[MISCREG_ARCHID] = 0;
     miscRegFile[MISCREG_IMPID] = 0;
     if (FullSystem) {
         // Xiangshan assume machine boots with FS off
-        miscRegFile[MISCREG_STATUS] = (2ULL << UXL_OFFSET) | (2ULL << SXL_OFFSET) | (1ULL <<VS_OFFSET);
+        miscRegFile[MISCREG_STATUS] = (2ULL << UXL_OFFSET) | (2ULL << SXL_OFFSET);
     } else {
         // SE assumes process starts with FS on
         miscRegFile[MISCREG_STATUS] = (2ULL << UXL_OFFSET) | (2ULL << SXL_OFFSET) |
@@ -516,22 +516,6 @@ ISA::setMiscReg(int misc_reg, RegVal val)
             }
             break;
           case MISCREG_ISA:
-            {
-                auto cur_val = readMiscRegNoEffect(misc_reg);
-                // only allow to disable compressed instructions
-                // if the following instruction is 4-byte aligned
-                if ((val & ISA_EXT_C_MASK) == 0 &&
-                        bits(tc->pcState().as<RiscvISA::PCState>().npc(),
-                            2, 0) != 0) {
-                    val |= cur_val & ISA_EXT_C_MASK;
-                }
-
-                if ((val & ISA_EXT_H_MASK) != 0) {
-                    // Do not allow to enable RVH because not implemented yet
-                    val &= ~ISA_EXT_H_MASK;
-                }
-                setMiscRegNoEffect(misc_reg, val);
-            }
             break;
           case MISCREG_STATUS:
             {

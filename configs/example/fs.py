@@ -484,6 +484,7 @@ if args.generic_rv_cpt is not None:
 if args.enable_riscv_vector:
     print("Enable riscv vector difftest, need riscv vector-supported gcpt restore and diff-ref-so")
     test_sys.enable_riscv_vector = True
+    test_sys.gcpt_restorer_size_limit = 0x1000
     for cpu in test_sys.cpu:
         cpu.enable_riscv_vector = True
 

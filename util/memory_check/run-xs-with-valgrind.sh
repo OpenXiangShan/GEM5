@@ -1,8 +1,8 @@
 set -x
 
 gem5_home=$(pwd)
-gcpt_restore_path=/nfs-nvme/home/share/xuyan/shared_payloads/gcpt_restore_checkpoint.bin
-ref_so_path=/nfs-nvme/home/share/xuyan/shared_payloads/rvv-nemu-so
+gcpt_restore_path=/nfs/home/share/gem5_shared_tools/normal-gcb-restorer.bin
+ref_so_path=/nfs/home/share/gem5_shared_tools/riscv64-nemu-4332a525-so
 test_cpt=/nfs/home/share/jiaxiaoyu/simpoint_checkpoint_archive/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc/checkpoint-0-0-0/GemsFDTD/30385/_30385_0.268180_.gz
 
 export NEMU_HOME=$ref_so_path  # dummy
