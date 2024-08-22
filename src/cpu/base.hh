@@ -693,6 +693,22 @@ class BaseCPU : public ClockedObject
     }
     std::pair<int, bool> diffWithNEMU(ThreadID tid, InstSeqNum seq);
 
+
+    std::string diffMsg;
+    void reportDiffMismatch(ThreadID tid, InstSeqNum seq) {
+      warn("%s", diffMsg);
+      diffAllStates->proxy->isa_reg_display();
+      displayGem5Regs();
+      warn("start dump last %lu committed msg\n", diffInfo.lastCommittedMsg.size());
+      while (diffInfo.lastCommittedMsg.size()) {
+        auto& msg = diffInfo.lastCommittedMsg.front();
+        warn("V %s\n", msg);
+        diffInfo.lastCommittedMsg.pop();
+      }
+    }
+    void clearDiffMismatch(ThreadID tid, InstSeqNum seq);
+
+
     // NoHype mode split memory space into distinct regions for different cores
     const bool noHypeMode{false};
 
