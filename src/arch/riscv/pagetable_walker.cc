@@ -152,14 +152,15 @@ Walker::start(Addr ppn, ThreadContext *_tc, BaseMMU::Translation *_translation,
 }
 
 void
-Walker::doL2TLBHitSchedule(const RequestPtr &req, ThreadContext *tc,
-                           BaseMMU::Translation *translation,
-                           BaseMMU::Mode mode, Addr Paddr,
-                           const TlbEntry &entry)
+Walker::doL2TLBHitSchedule(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation *translation,
+                           BaseMMU::Mode mode, Addr Paddr, TlbEntry *entry, TlbEntry *entryVsstage,
+                           TlbEntry *entryGstage, int delaytick)
 {
     DPRINTF(PageTableWalker2, "schedule %d\n", curCycle());
-    if (!doL2TLBHitEvent.scheduled())
-        schedule(doL2TLBHitEvent, nextCycle());
+    Tick hitdelay = curTick() + cyclesToTicks(Cycles(delaytick));
+    if (!doL2TLBHitEvent.scheduled()) {
+        schedule(doL2TLBHitEvent, hitdelay);
+    }
     L2TlbState l2state;
     l2state.req = req;
     l2state.tc = tc;
@@ -167,8 +168,9 @@ Walker::doL2TLBHitSchedule(const RequestPtr &req, ThreadContext *tc,
     l2state.mode = mode;
     l2state.Paddr = Paddr;
     l2state.entry = entry;
+    l2state.entryVsstage = entryVsstage;
+    l2state.entryGstage = entryGstage;
     L2TLBrequestors.push_back(l2state);
-
 }
 
 Fault
@@ -421,7 +423,15 @@ Walker::dol2TLBHit()
                           pmodel2, dol2TLBHitrequestors.tc);
         //assert(l2tlbFault == NoFault);
         if (l2tlbFault == NoFault){
-            tlb->insert(dol2TLBHitrequestors.entry.vaddr, dol2TLBHitrequestors.entry, false, direct);
+            if (dol2TLBHitrequestors.entry != nullptr)
+                tlb->insert(dol2TLBHitrequestors.entry->vaddr, *dol2TLBHitrequestors.entry, false, direct);
+            if (dol2TLBHitrequestors.entryVsstage != nullptr)
+                tlb->insert(dol2TLBHitrequestors.entryVsstage->vaddr, *dol2TLBHitrequestors.entryVsstage, false,
+                            vsstage);
+            if (dol2TLBHitrequestors.entryGstage != nullptr)
+                tlb->insert(dol2TLBHitrequestors.entryGstage->gpaddr, *dol2TLBHitrequestors.entryGstage, false,
+                            gstage);
+
             dol2TLBHitrequestors.translation->finish(
                 l2tlbFault, dol2TLBHitrequestors.req, dol2TLBHitrequestors.tc,
                 dol2TLBHitrequestors.mode);

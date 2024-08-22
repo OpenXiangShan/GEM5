@@ -256,8 +256,9 @@ namespace RiscvISA
               BaseMMU::Translation *translation;
               BaseMMU::Mode mode;
               Addr Paddr;
-              TlbEntry entry;
-
+              TlbEntry *entry;
+              TlbEntry *entryVsstage;
+              TlbEntry *entryGstage;
         };
         std::list<L2TlbState> L2TLBrequestors;
 
@@ -286,7 +287,8 @@ namespace RiscvISA
         void doL2TLBHitSchedule(const RequestPtr &req, ThreadContext *tc,
                                 BaseMMU::Translation *translation,
                                 BaseMMU::Mode mode, Addr Paddr,
-                                const TlbEntry &entry);
+                                TlbEntry *entry,TlbEntry *entryVsstage,
+                                TlbEntry *entryGstage,int delaytick);
 
 
 
