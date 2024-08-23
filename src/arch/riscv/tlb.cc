@@ -1699,6 +1699,7 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
             return std::make_pair(hit_type,NoFault);
         }
     }
+    return std::make_pair(hit_type,NoFault);
 }
 
 Fault
