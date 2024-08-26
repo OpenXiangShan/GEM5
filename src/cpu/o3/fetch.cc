@@ -1143,16 +1143,6 @@ Fetch::tick()
 
     DPRINTF(Fetch, "Running stage.\n");
 
-    if (FullSystem) {
-        if (fromCommit->commitInfo[0].interruptPending) {
-            interruptPending = true;
-        }
-
-        if (fromCommit->commitInfo[0].clearInterrupt) {
-            interruptPending = false;
-        }
-    }
-
     if (fromCommit->commitInfo[0].emptyROB) {
         waitForVsetvl = false;
     }
@@ -1171,6 +1161,21 @@ Fetch::tick()
     if (status_change) {
         // Change the fetch stage status if there was a status change.
         _status = updateFetchStatus();
+    }
+
+
+    if (FullSystem) {
+        if (fromCommit->commitInfo[0].interruptPending) {
+            DPRINTF(Fetch, "Set interrupt pending.\n");
+            interruptPending = true;
+            issuePipelinedIfetch[0] = false;
+        }
+
+        if (fromCommit->commitInfo[0].clearInterrupt) {
+            DPRINTF(Fetch, "Clear interrupt pending.\n");
+            interruptPending = false;
+            issuePipelinedIfetch[0] = true;
+        }
     }
 
     // Issue the next I-cache request if possible.
