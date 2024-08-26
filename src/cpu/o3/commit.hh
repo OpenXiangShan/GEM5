@@ -486,6 +486,9 @@ class Commit
     /** Updates commit stats based on this instruction. */
     void updateComInstStats(const DynInstPtr &inst);
 
+    // Difftest
+    void diffInst(ThreadID tid, const DynInstPtr &inst);
+
     // HTM
     int htmStarts[MaxThreads];
     int htmStops[MaxThreads];
