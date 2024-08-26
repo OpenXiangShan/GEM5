@@ -93,6 +93,8 @@ Commit::processTrapEvent(ThreadID tid)
     // This will get reset by commit if it was switched out at the
     // time of this event processing.
     trapSquash[tid] = true;
+    // update priv mode
+    toIEW->commitInfo[0].clearInterrupt = true;
 }
 
 Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUParams &params)
@@ -805,7 +807,7 @@ Commit::handleInterrupt()
         DPRINTF(Commit, "Interrupt detected.\n");
 
         // Clear the interrupt now that it's going to be handled
-        toIEW->commitInfo[0].clearInterrupt = true;
+        // toIEW->commitInfo[0].clearInterrupt = true;
 
         assert(!thread[0]->noSquashFromTC);
         thread[0]->noSquashFromTC = true;
@@ -1224,26 +1226,7 @@ Commit::commitInsts()
                 }
 
                 if (cpu->difftestEnabled()) {
-                    cpu->diffInfo.lastCommittedMsg.push(head_inst->genDisassembly());
-                    if (cpu->diffInfo.lastCommittedMsg.size() > 20) {
-                        cpu->diffInfo.lastCommittedMsg.pop();
-                    }
-                    cpu->diffInfo.inst = head_inst->staticInst;
-                    cpu->diffInfo.pc = &head_inst->pcState();
-                    for (int i = 0; i < head_inst->numDestRegs(); i++) {
-                        const auto &dest = head_inst->destRegIdx(i);
-                        if ((dest.isFloatReg() || dest.isIntReg()) && !dest.isZeroReg()) {
-                            cpu->diffInfo.scalarResults.at(i) = cpu->getArchReg(dest, tid);
-                        } else if (dest.isVecReg()) {
-                            assert(i == 0);
-                            cpu->getArchReg(dest, &(cpu->diffInfo.vecResult), tid);
-                        }
-                    }
-                    cpu->diffInfo.curInstStrictOrdered =
-                        head_inst->strictlyOrdered();
-                    cpu->diffInfo.physEffAddr = head_inst->physEffAddr;
-                    cpu->diffInfo.effSize = head_inst->effSize;
-                    cpu->difftestStep(tid, head_inst->seqNum);
+                    diffInst(tid, head_inst);
                 }
 
                 // Check instruction execution if it successfully commits and
@@ -1328,6 +1311,33 @@ Commit::commitInsts()
         stats.commitEligibleSamples++;
     }
 }
+
+
+
+void
+Commit::diffInst(ThreadID tid, const DynInstPtr &inst) {
+    cpu->diffInfo.lastCommittedMsg.push(inst->genDisassembly());
+    if (cpu->diffInfo.lastCommittedMsg.size() > 20) {
+        cpu->diffInfo.lastCommittedMsg.pop();
+    }
+    cpu->diffInfo.inst = inst->staticInst;
+    cpu->diffInfo.pc = &inst->pcState();
+    for (int i = 0; i < inst->numDestRegs(); i++) {
+        const auto &dest = inst->destRegIdx(i);
+        if ((dest.isFloatReg() || dest.isIntReg()) && !dest.isZeroReg()) {
+            cpu->diffInfo.scalarResults.at(i) = cpu->getArchReg(dest, tid);
+        } else if (dest.isVecReg()) {
+            assert(i == 0);
+            cpu->getArchReg(dest, &(cpu->diffInfo.vecResult), tid);
+        }
+    }
+    cpu->diffInfo.curInstStrictOrdered =
+        inst->strictlyOrdered();
+    cpu->diffInfo.physEffAddr = inst->physEffAddr;
+    cpu->diffInfo.effSize = inst->effSize;
+    cpu->difftestStep(tid, inst->seqNum);
+}
+
 
 bool
 Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
@@ -1511,6 +1521,14 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
                         RiscvISA::MiscRegIndex::MISCREG_STVAL, tid),
                     false, 0);
             }
+            if (cause == RiscvISA::ExceptionCode::ECALL_USER ||
+                cause == RiscvISA::ExceptionCode::ECALL_SUPER ||
+                cause == RiscvISA::ExceptionCode::ECALL_MACHINE) {
+                diffInst(tid, head_inst);
+            }
+
+            // Maybe set interrupt here?
+
         }
 
         // Generate trap squash event.
