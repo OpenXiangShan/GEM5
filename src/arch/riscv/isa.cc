@@ -262,13 +262,13 @@ void ISA::clear()
     std::fill(miscRegFile.begin(), miscRegFile.end(), 0);
 
     miscRegFile[MISCREG_PRV] = PRV_M;
-    miscRegFile[MISCREG_ISA] = 0x800000000034112f;
+    miscRegFile[MISCREG_ISA] = (2ULL << MXL_OFFSET) | 0x34112D;
     miscRegFile[MISCREG_VENDORID] = 0;
     miscRegFile[MISCREG_ARCHID] = 0;
     miscRegFile[MISCREG_IMPID] = 0;
     if (FullSystem) {
         // Xiangshan assume machine boots with FS off
-        miscRegFile[MISCREG_STATUS] = (2ULL << UXL_OFFSET) | (2ULL << SXL_OFFSET);
+        miscRegFile[MISCREG_STATUS] = (2ULL << UXL_OFFSET) | (2ULL << SXL_OFFSET)| (1ULL <<VS_OFFSET);;
     } else {
         // SE assumes process starts with FS on
         miscRegFile[MISCREG_STATUS] = (2ULL << UXL_OFFSET) | (2ULL << SXL_OFFSET) |
