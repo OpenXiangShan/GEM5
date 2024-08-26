@@ -109,6 +109,12 @@ TLB::TLB(const Params &p) :
         }
         walker = p.walker;
         walker->setTLB(this);
+        TLB *l2tlb;
+        if (isStage2)
+            l2tlb = this;
+        else
+            l2tlb = static_cast<TLB *>(nextLevel());
+        walker->setL2TLB(l2tlb);
         DPRINTF(TLBVerbose, "tlb11 tlb_size %d size() %d\n", size, tlb.size());
 
     }
