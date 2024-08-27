@@ -1134,6 +1134,8 @@ LSQUnit::offloadToStoreBuffer()
                 request->_numOutstandingPackets = 0;
                 completeStore(storeWBIt, true);
                 storeWBIt++;
+            } else {
+                break;
             }
         } else {
             Addr vaddr = request->getVaddr();
