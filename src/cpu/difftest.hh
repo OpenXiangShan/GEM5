@@ -60,6 +60,11 @@ struct riscv64_CPU_regfile
     uint64_t mideleg, medeleg;
     uint64_t pc;
 
+    uint64_t v; // virtualization mode
+    uint64_t mtval2, mtinst, hstatus, hideleg, hedeleg;
+    uint64_t hcounteren, htval, htinst, hgatp, vsstatus;
+    uint64_t vstvec, vsepc, vscause, vstval, vsatp, vsscratch;
+
     //vector
     union
     {
@@ -73,6 +78,8 @@ struct riscv64_CPU_regfile
     uint64_t vxsat, vxrm, vcsr;
     uint64_t vl, vtype, vlenb;
 
+    uint64_t fcsr;
+
 
     uint64_t& operator[](int x) {
         assert(x<64);
@@ -80,33 +87,6 @@ struct riscv64_CPU_regfile
     }
 
 };
-
-// 0~31: GPRs, 32~63 FPRs
-//
-// enum
-// {
-//     DIFFTEST_THIS_PC = 64,
-//     DIFFTEST_MSTATUS,
-//     DIFFTEST_MCAUSE,
-//     DIFFTEST_MEPC,
-//     DIFFTEST_SSTATUS,
-//     DIFFTEST_SCAUSE,
-//     DIFFTEST_SEPC,
-//     DIFFTEST_SATP,
-//     DIFFTEST_MIP,
-//     DIFFTEST_MIE,
-//     DIFFTEST_MSCRATCH,
-//     DIFFTEST_SSCRATCH,
-//     DIFFTEST_MIDELEG,
-//     DIFFTEST_MEDELEG,
-//     DIFFTEST_MTVAL,
-//     DIFFTEST_STVAL,
-//     DIFFTEST_MTVEC,
-//     DIFFTEST_STVEC,
-//     DIFFTEST_MODE,
-//     DIFFTEST_NR_REG
-// };
-
 
 struct SyncState
 {
