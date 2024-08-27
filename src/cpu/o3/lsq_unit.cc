@@ -273,6 +273,7 @@ LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries
     : sbufferEvictThreshold(sbufferEvictThreshold),
       sbufferEntries(sbufferEntries),
       storeBuffer(sbufferEntries),
+      storeBufferWritebackInactive(0),
       storeBufferInactiveThreshold(storeBufferInactiveThreshold),
       lsqID(-1),
       storeQueue(sqEntries),
