@@ -46,3 +46,6 @@ compile_commands.json
 /util/xs_scripts/
 .vscode
 *.less
+.vscode
+libquantum*
+m5out*
