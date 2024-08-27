@@ -781,7 +781,6 @@ TLB::demapPage(Addr vpn, uint64_t asid)
         DPRINTF(TLB, "flush(vpn=%#x, asid=%#x)\n", vpn, asid);
         DPRINTF(TLB, "l1tlb flush(vpn=%#x, asid=%#x)\n", vpn, asid);
         if (vpn != 0 && asid != 0) {
-            assert(0);
 
             TlbEntry *newEntry = lookup(vpn, asid, BaseMMU::Read, true, false);
             if (newEntry)
@@ -807,22 +806,22 @@ TLB::demapPageL2(Addr vpn, uint64_t asid)
 {
     asid &= 0xFFFF;
     std::vector<Addr> vpn_vec;
-    std::vector<std::vector<TlbEntry>> tlb_lists;
+    std::vector<TlbEntry *> tlb_lists;
     vpn_vec.push_back(0);
     Addr vpnl2l1 = (vpn >> (PageShift + 2 * LEVEL_BITS + L2TLB_BLK_OFFSET))
                    << (PageShift + 2 * LEVEL_BITS + L2TLB_BLK_OFFSET);
     vpn_vec.push_back(vpnl2l1);
-    tlb_lists.push_back(tlbL2L1);
+    tlb_lists.push_back(tlbL2L1.data());
     Addr vpnl2l2 = (vpn >> (PageShift + LEVEL_BITS + L2TLB_BLK_OFFSET)) << (PageShift + LEVEL_BITS + L2TLB_BLK_OFFSET);
     vpn_vec.push_back(vpnl2l2);
-    tlb_lists.push_back(tlbL2L2);
+    tlb_lists.push_back(tlbL2L2.data());
     Addr vpnl2l3 = (vpn >> (PageShift + L2TLB_BLK_OFFSET)) << (PageShift + L2TLB_BLK_OFFSET);
     vpn_vec.push_back(vpnl2l3);
-    tlb_lists.push_back(tlbL2L3);
+    tlb_lists.push_back(tlbL2L3.data());
     Addr vpnl2sp1 = (vpn >> (PageShift + 2 * LEVEL_BITS + L2TLB_BLK_OFFSET))
                     << (PageShift + 2 * LEVEL_BITS + L2TLB_BLK_OFFSET);
     vpn_vec.push_back(vpnl2sp1);
-    tlb_lists.push_back(tlbL2Sp);
+    tlb_lists.push_back(tlbL2Sp.data());
     Addr vpnl2sp2 = (vpn >> (PageShift + LEVEL_BITS + L2TLB_BLK_OFFSET))
                     << (PageShift + LEVEL_BITS + L2TLB_BLK_OFFSET);
     vpn_vec.push_back(vpnl2sp2);
@@ -847,7 +846,7 @@ TLB::demapPageL2(Addr vpn, uint64_t asid)
             if (l2_newEntry[i]) {
                 TlbEntry *m_newEntry = lookupL2TLB(vpn_vec[i], asid, BaseMMU::Read, true, i, false);
                 assert(m_newEntry != nullptr);
-                l2TLBRemove(m_newEntry - tlb_lists[tlb_i].data(), i);
+                l2TLBRemove(m_newEntry - tlb_lists[tlb_i], i);
             }
         }
     } else {
