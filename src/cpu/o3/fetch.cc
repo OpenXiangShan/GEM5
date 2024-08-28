@@ -1168,15 +1168,15 @@ Fetch::tick()
         if (fromCommit->commitInfo[0].interruptPending) {
             DPRINTF(Fetch, "Set interrupt pending.\n");
             interruptPending = true;
-            issuePipelinedIfetch[0] = false;
         }
 
         if (fromCommit->commitInfo[0].clearInterrupt) {
             DPRINTF(Fetch, "Clear interrupt pending.\n");
             interruptPending = false;
-            issuePipelinedIfetch[0] = true;
         }
     }
+
+    issuePipelinedIfetch[0] = issuePipelinedIfetch[0] && !interruptPending;
 
     // Issue the next I-cache request if possible.
     for (ThreadID i = 0; i < numThreads; ++i) {
