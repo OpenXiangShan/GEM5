@@ -1521,7 +1521,7 @@ public:
 
     const uint8_t* findBlock(Addr addr, bool is_secure) const override {
         auto blk = tags->findBlock(addr, is_secure);
-        return blk->data;
+        return blk ? blk->data: nullptr;
     }
 };
 
