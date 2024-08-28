@@ -786,6 +786,24 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
                 }
             } else {
                 tlbHit = false;
+                for (int i_e = 1; i_e < 6; i_e++) {
+                    e[i_e] = walker->l2tlb->lookupL2TLB(nextcheck, vsatp.asid, mode, false, i_e, true, vsstage);
+                    if (e[i_e]) {
+                        if (e[i_e]->level < hit_level) {
+                            e[0] = e[i_e];
+                            hit_level = e[i_e]->level;
+                        }
+                    }
+                    if (e[0] && (level == e[0]->level)) {
+                        tlbHit = true;
+                        tlbHitPte = e[0]->pte;
+                        hit_level = true;
+                        tlbflags = flags;
+                        return twoStageWalk(write);
+                    } else {
+                        tlbHit = false;
+                    }
+                }
             }
             if (!tlbHit) {
                 delete oldRead;
@@ -815,13 +833,34 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
 {
     Fault fault;
     bool doEndWalk = false;
-    PTESv39 pte = read->getLE_l2tlb<uint64_t>(vaddr_choose_flag);
+    PTESv39 pte;
+
     PacketPtr oldRead = read;
-    Request::Flags flags = oldRead->req->getFlags();
-    walker->pma->check(read->req);
+    Request::Flags flags;
+
     PTESv39 l2pte;
-    fault =
-        walker->pmp->pmpCheck(read->req, BaseMMU::Read, RiscvISA::PrivilegeMode::PRV_S, requestors.front().tc, gPaddr);
+    unsigned oldSize = 64;
+
+    if (!tlbHit) {
+        pte = read->getLE_l2tlb<uint64_t>(vaddr_choose_flag);
+        flags = oldRead->req->getFlags();
+        walker->pma->check(read->req);
+        oldSize = oldRead->getSize();
+        fault = walker->pmp->pmpCheck(read->req, BaseMMU::Read, RiscvISA::PrivilegeMode::PRV_S, requestors.front().tc,
+                                      gPaddr);
+
+    } else {
+        pte = tlbHitPte;
+        flags = tlbflags;
+    }
+    TlbEntry *e[6] = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
+    int hit_level = 2;
+    bool tlb_hit = false;
+    Addr shift = 0;
+    Addr idx_f = 0;
+    Addr idx = 0;
+    Addr nextcheck = 0;
+
     if (fault == NoFault) {
         if (!pte.v || (!pte.r && pte.w)) {
             doEndWalk = true;
@@ -865,33 +904,33 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
 
                         entry.paddr = (gPaddr >> 12) << 12;
                         walker->tlb->insert(entry.vaddr, entry, false, vsstage);
+                        if (!tlbHit) {
+                            int l2_level = level;
+                            inl2Entry.gpaddr = gPaddr;
+                            inl2Entry.pte = pte;
+                            inl2Entry.logBytes = PageShift + (l2_level * LEVEL_BITS);
+                            inl2Entry.level = l2_level;
 
-                        int l2_level = level;
-                        inl2Entry.gpaddr = gPaddr;
-                        inl2Entry.pte = pte;
-                        inl2Entry.logBytes = PageShift + (l2_level * LEVEL_BITS);
-                        inl2Entry.level = l2_level;
-
-                        for (int l2_i = 0; l2_i < l2tlbLineSize; l2_i++) {
-                            inl2Entry.vaddr =
-                                (((entry.vaddr >> ((l2_level * LEVEL_BITS + PageShift + L2TLB_BLK_OFFSET)))
-                                  << L2TLB_BLK_OFFSET) +
-                                 l2_i)
-                                << ((l2_level * LEVEL_BITS + PageShift));
-                            l2pte = read->getLE_l2tlb<uint64_t>(l2_i);
-                            inl2Entry.pte = l2pte;
-                            inl2Entry.paddr = l2pte.ppn;
-                            if (l2_level == 0) {
-                                inl2Entry.index = (gPaddr >> (L2TLB_BLK_OFFSET + PageShift)) & L2TLB_L3_MASK;
-                                walker->tlb->L2TLBInsert(inl2Entry.vaddr, inl2Entry, l2_level, L_L2L3, l2_i, false,
-                                                         vsstage);
-
-                            } else if (l2_level == 1) {
-                                walker->tlb->L2TLBInsert(inl2Entry.vaddr, inl2Entry, l2_level, L_L2sp2, l2_i, false,
-                                                         vsstage);
-                            } else if (l2_level == 2) {
-                                walker->tlb->L2TLBInsert(inl2Entry.vaddr, inl2Entry, l2_level, L_L2sp1, l2_i, false,
-                                                         vsstage);
+                            for (int l2_i = 0; l2_i < l2tlbLineSize; l2_i++) {
+                                inl2Entry.vaddr =
+                                    (((entry.vaddr >> ((l2_level * LEVEL_BITS + PageShift + L2TLB_BLK_OFFSET)))
+                                      << L2TLB_BLK_OFFSET) +
+                                     l2_i)
+                                    << ((l2_level * LEVEL_BITS + PageShift));
+                                l2pte = read->getLE_l2tlb<uint64_t>(l2_i);
+                                inl2Entry.pte = l2pte;
+                                inl2Entry.paddr = l2pte.ppn;
+                                if (l2_level == 0) {
+                                    inl2Entry.index = (gPaddr >> (L2TLB_BLK_OFFSET + PageShift)) & L2TLB_L3_MASK;
+                                    walker->tlb->L2TLBInsert(inl2Entry.vaddr, inl2Entry, l2_level, L_L2L3, l2_i, false,
+                                                             vsstage);
+                                } else if (l2_level == 1) {
+                                    walker->tlb->L2TLBInsert(inl2Entry.vaddr, inl2Entry, l2_level, L_L2sp2, l2_i,
+                                                             false, vsstage);
+                                } else if (l2_level == 2) {
+                                    walker->tlb->L2TLBInsert(inl2Entry.vaddr, inl2Entry, l2_level, L_L2sp1, l2_i,
+                                                             false, vsstage);
+                                }
                             }
                         }
                         if ((gPaddr & ~(((int64_t)1 << 41) - 1)) != 0) {
@@ -907,10 +946,39 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
                         nextState = Translate;
                         inGstage = true;
                         twoStageLevel = 2;
-                        fault = startTwoStageWalk(gPaddr, entry.vaddr);
-                        if (fault != NoFault) {
-                            endWalk();
-                            return fault;
+                        tlbHit = false;
+                        nextcheck = 0;
+                        shift = PageShift + LEVEL_BITS * twoStageLevel;
+                        idx = ((gPaddr >> shift) & TWO_STAGE_L2_LEVEL_MASK);
+                        nextcheck = (hgatp.ppn << PageShift) + (idx * sizeof(PTESv39));
+
+                        for (int i_e = 1; i_e < 6; i_e++) {
+                            e[i_e] = walker->l2tlb->lookupL2TLB(nextcheck, hgatp.vmid, mode, false, i_e, true, gstage);
+                            if (e[i_e]) {
+                                if (e[i_e]->level < hit_level) {
+                                    e[0] = e[i_e];
+                                    hit_level = e[i_e]->level;
+                                }
+                            }
+                            if (e[0] && (level == e[0]->level)) {
+                                tlbHit = true;
+                                tlbHitPte = e[0]->pte;
+                                hit_level = true;
+                                tlbflags = flags;
+                                inGstage = true;
+                                return twoStageStepWalk(write);
+                            } else {
+                                tlbHit = false;
+                            }
+                        }
+                        if (!tlbHit) {
+                            delete oldRead;
+                            oldRead = nullptr;
+                            fault = startTwoStageWalk(gPaddr, entry.vaddr);
+                            if (fault != NoFault) {
+                                endWalk();
+                                return fault;
+                            }
                         }
                     }
                 } else {
@@ -930,36 +998,39 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
                     entry.logBytes = PageShift + (level * LEVEL_BITS);
                     entry.level = level;
 
-                    Addr shift = (PageShift + LEVEL_BITS * level);
-                    Addr idx_f = (entry.vaddr >> shift) & LEVEL_MASK;
-                    Addr idx = (idx_f >> L2TLB_BLK_OFFSET) << L2TLB_BLK_OFFSET;
+                    shift = (PageShift + LEVEL_BITS * level);
+                    idx_f = (entry.vaddr >> shift) & LEVEL_MASK;
+                    idx = (idx_f >> L2TLB_BLK_OFFSET) << L2TLB_BLK_OFFSET;
                     gPaddr = (pte.ppn << PageShift) + (idx_f * l2tlbLineSize);
                     entry.paddr = gPaddr;
+                    if (!tlbHit) {
+                        int l2_level = level + 1;
+                        inl2Entry.gpaddr = gPaddr;
+                        inl2Entry.pte = pte;
+                        inl2Entry.logBytes = PageShift + (l2_level * LEVEL_BITS);
+                        inl2Entry.level = l2_level;
 
-                    int l2_level = level + 1;
-                    inl2Entry.gpaddr = gPaddr;
-                    inl2Entry.pte = pte;
-                    inl2Entry.logBytes = PageShift + (l2_level * LEVEL_BITS);
-                    inl2Entry.level = l2_level;
-
-                    for (int l2_i = 0; l2_i < l2tlbLineSize; l2_i++) {
-                        inl2Entry.vaddr = (((entry.vaddr >> ((l2_level * LEVEL_BITS + PageShift + L2TLB_BLK_OFFSET)))
-                                            << L2TLB_BLK_OFFSET) +
-                                           l2_i)
-                                          << ((l2_level * LEVEL_BITS + PageShift));
-                        l2pte = read->getLE_l2tlb<uint64_t>(l2_i);
-                        inl2Entry.pte = l2pte;
-                        inl2Entry.paddr = l2pte.ppn;
-                        if (l2_level == 2) {
-                            walker->tlb->L2TLBInsert(inl2Entry.vaddr, inl2Entry, l2_level, L_L2L1, l2_i, false,
-                                                     vsstage);
-                        } else if (l2_level == 1) {
-                            inl2Entry.index =
-                                (entry.vaddr >> (LEVEL_BITS + PageShift + L2TLB_BLK_OFFSET)) & (L2TLB_L2_MASK);
-                            walker->tlb->L2TLBInsert(inl2Entry.vaddr, inl2Entry, l2_level, L_L2L2, l2_i, false,
-                                                     vsstage);
+                        for (int l2_i = 0; l2_i < l2tlbLineSize; l2_i++) {
+                            inl2Entry.vaddr =
+                                (((entry.vaddr >> ((l2_level * LEVEL_BITS + PageShift + L2TLB_BLK_OFFSET)))
+                                  << L2TLB_BLK_OFFSET) +
+                                 l2_i)
+                                << ((l2_level * LEVEL_BITS + PageShift));
+                            l2pte = read->getLE_l2tlb<uint64_t>(l2_i);
+                            inl2Entry.pte = l2pte;
+                            inl2Entry.paddr = l2pte.ppn;
+                            if (l2_level == 2) {
+                                walker->tlb->L2TLBInsert(inl2Entry.vaddr, inl2Entry, l2_level, L_L2L1, l2_i, false,
+                                                         vsstage);
+                            } else if (l2_level == 1) {
+                                inl2Entry.index =
+                                    (entry.vaddr >> (LEVEL_BITS + PageShift + L2TLB_BLK_OFFSET)) & (L2TLB_L2_MASK);
+                                walker->tlb->L2TLBInsert(inl2Entry.vaddr, inl2Entry, l2_level, L_L2L2, l2_i, false,
+                                                         vsstage);
+                            }
                         }
                     }
+
                     if ((gPaddr & ~(((int64_t)1 << 41) - 1)) != 0) {
                         // this is a excep
                         fault = pageFault(true, false);
@@ -972,10 +1043,40 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
                     nextState = Translate;
                     inGstage = true;
                     twoStageLevel = 2;
-                    fault = startTwoStageWalk(gPaddr, entry.vaddr);
-                    if (fault != NoFault) {
-                        endWalk();
-                        return fault;
+                    tlbHit = false;
+
+
+                    shift = PageShift + LEVEL_BITS * twoStageLevel;
+                    idx = ((gPaddr >> shift) & TWO_STAGE_L2_LEVEL_MASK);
+                    nextcheck = (hgatp.ppn << PageShift) + (idx * sizeof(PTESv39));
+
+                    for (int i_e = 1; i_e < 6; i_e++) {
+                        e[i_e] = walker->l2tlb->lookupL2TLB(nextcheck, hgatp.vmid, mode, false, i_e, true, gstage);
+                        if (e[i_e]) {
+                            if (e[i_e]->level < hit_level) {
+                                e[0] = e[i_e];
+                                hit_level = e[i_e]->level;
+                            }
+                        }
+                        if (e[0] && (level == e[0]->level)) {
+                            tlbHit = true;
+                            tlbHitPte = e[0]->pte;
+                            hit_level = true;
+                            tlbflags = flags;
+                            inGstage = true;
+                            return twoStageStepWalk(write);
+                        } else {
+                            tlbHit = false;
+                        }
+                    }
+                    if (!tlbHit) {
+                        delete oldRead;
+                        oldRead = nullptr;
+                        fault = startTwoStageWalk(gPaddr, entry.vaddr);
+                        if (fault != NoFault) {
+                            endWalk();
+                            return fault;
+                        }
                     }
                 }
             }
