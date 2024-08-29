@@ -448,6 +448,11 @@ class Base : public ClockedObject
          * in the Write Buffer (WB). */
         statistics::Scalar pfHitInWB;
 
+        statistics::Scalar metadataAccesses;
+        statistics::Scalar lookupCorrect;
+        statistics::Scalar lookupWrong;
+        statistics::Scalar lookupCancelled;
+
         /** The number of times a HW-prefetch is late
          * (hit in cache, MSHR, WB). */
         statistics::Formula pfLate;

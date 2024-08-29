@@ -217,6 +217,12 @@ class BaseSetAssoc : public BaseTags
         allocAssoc = ways;
     }
 
+    virtual void clearSetWay(int set, int way) override {
+        CacheBlk* blk = static_cast<CacheBlk*>(findBlockBySetAndWay(set,indexingPolicy->assoc-1-way));
+        if(!blk->isSet(CacheBlk::DirtyBit) && blk->isValid()) blk->invalidate();//evictBlock(blk,writebacks);
+        else if(blk->isSet(CacheBlk::DirtyBit) && blk->isValid()) badBlocks.push_back(blk);
+    }
+
     /**
      * Get the way allocation mask limit.
      * @return The maximum number of ways available for replacement.

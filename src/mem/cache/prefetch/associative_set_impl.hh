@@ -31,6 +31,7 @@
 
 #include "base/intmath.hh"
 #include "mem/cache/prefetch/associative_set.hh"
+#include "mem/cache/replacement_policies/weighted_lru_rp.hh"
 
 namespace gem5
 {
@@ -76,6 +77,15 @@ void
 AssociativeSet<Entry>::accessEntry(Entry *entry)
 {
     replacementPolicy->touch(entry->replacementData);
+}
+
+template<class Entry>
+void
+AssociativeSet<Entry>::weightedAccessEntry(Entry *entry, int weight, bool fill)
+{
+    gem5::replacement_policy::WeightedLRU* wlru = dynamic_cast<gem5::replacement_policy::WeightedLRU*>(replacementPolicy);
+    if(wlru) wlru->touch(entry->replacementData, weight);
+    else if(!fill) accessEntry(entry);  //not fill for RRIPs
 }
 
 template<class Entry>

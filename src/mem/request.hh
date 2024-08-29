@@ -84,6 +84,7 @@ enum PrefetchSourceType
     StoreStream,
     CDP,
     SOpt,
+    Triangel,
     NUM_PF_SOURCES
 };
 

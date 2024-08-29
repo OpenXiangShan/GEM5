@@ -65,12 +65,13 @@ class ReplaceableEntry;
  */
 class BaseIndexingPolicy : public SimObject
 {
-  protected:
+  public:
     /**
      * The associativity.
      */
     const unsigned assoc;
 
+  protected:
     /**
      * The number of sets in the cache.
      */

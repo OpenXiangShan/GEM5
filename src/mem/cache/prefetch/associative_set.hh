@@ -49,6 +49,9 @@ class AssociativeSet
 
     /** Associativity of the container */
     const int associativity;
+    int allocAssoc;
+
+  public:
     /**
      * Total number of entries, entries are organized in sets of the provided
      * associativity. The number of associative sets is obtained by dividing
@@ -61,8 +64,6 @@ class AssociativeSet
     replacement_policy::Base* const replacementPolicy;
     /** Vector containing the entries of the container */
     std::vector<Entry> entries;
-
-  public:
     /**
      * Public constructor
      * @param assoc number of elements in each associative set
@@ -91,6 +92,8 @@ class AssociativeSet
      */
     void accessEntry(Entry *entry);
 
+    void weightedAccessEntry(Entry *entry, int weight, bool fill);
+
     /**
      * Find a victim to be replaced
      * @param addr key to select the possible victim
@@ -114,6 +117,20 @@ class AssociativeSet
      * @param reset indicates if the replacement data should be reset, for example, place to the MRU position
      */
     void insertEntry(Addr addr, bool is_secure, Entry* entry, bool with_reset = true);
+
+    void setWayAllocationMax(int ways)
+    {
+        allocAssoc = ways;
+    }
+
+    /**
+     * Get the way allocation mask limit.
+     * @return The maximum number of ways available for replacement.
+     */
+    int getWayAllocationMax() const
+    {
+        return allocAssoc;
+    }
 
     /**
      * Invalidate an entry and its respective replacement data.

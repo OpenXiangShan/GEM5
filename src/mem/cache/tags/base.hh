@@ -236,6 +236,11 @@ class BaseTags : public ClockedObject
         panic("This tag class does not implement way allocation limit!\n");
     }
 
+    virtual void clearSetWay(int set, int way)
+    {
+         panic("This tag class does not implement way allocation limit!\n");   
+    }
+
     /**
      * Get the way allocation mask limit.
      * @return The maximum number of ways available for replacement.
@@ -261,6 +266,16 @@ class BaseTags : public ClockedObject
         stats.sampledRefs++;
 
         blk->invalidate();
+    }
+
+    std::vector<CacheBlk*> badBlocks;
+    
+    CacheBlk* getBadBlock() {
+      if(badBlocks.empty()) return NULL;
+      
+      CacheBlk* blk = badBlocks.back();
+      badBlocks.pop_back();
+      return blk;
     }
 
     /**
