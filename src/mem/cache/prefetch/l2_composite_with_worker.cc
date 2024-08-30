@@ -10,7 +10,7 @@ namespace prefetch
 {
 
 L2CompositeWithWorkerPrefetcher::L2CompositeWithWorkerPrefetcher(const L2CompositeWithWorkerPrefetcherParams &p)
-    : CompositeWithWorkerPrefetcher(p), cdp(p.cdp)
+    : CompositeWithWorkerPrefetcher(p), cdp(p.cdp), triangel(p.triangel)
 {
     cdp->pfLRUFilter = &pfLRUFilter;
     cdp->parentRid = p.sys->getRequestorId(this);
@@ -20,6 +20,7 @@ void
 L2CompositeWithWorkerPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses)
 {
     cdp->calculatePrefetch(pfi, addresses);
+    triangel->calculatePrefetch(pfi, addresses);
 }
 
 void

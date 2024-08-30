@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "mem/cache/prefetch/cdp.hh"
+#include "mem/cache/prefetch/triangel.hh"
 #include "mem/cache/prefetch/composite_with_worker.hh"
 #include "params/L2CompositeWithWorkerPrefetcher.hh"
 
@@ -38,6 +39,7 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
 
   private:
     CDP *cdp;
+    Triangel *triangel;
 
     bool offloadLowAccuracy = true;
 };

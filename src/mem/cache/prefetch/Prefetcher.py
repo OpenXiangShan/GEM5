@@ -1156,6 +1156,7 @@ class L2CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
     cxx_header = "mem/cache/prefetch/l2_composite_with_worker.hh"
 
     cdp = Param.CDP(CDP(is_sub_prefetcher=True), "")
+    triangel = Param.TriangelPrefetcher(NULL, "triangel")
 
 class L3CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
     type = 'L3CompositeWithWorkerPrefetcher'
