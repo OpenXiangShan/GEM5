@@ -268,10 +268,13 @@ LSQUnit::completeDataAccess(PacketPtr pkt)
     }
 }
 
-LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries, uint32_t sbufferEvictThreshold)
+LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries, uint32_t sbufferEvictThreshold,
+    uint64_t storeBufferInactiveThreshold)
     : sbufferEvictThreshold(sbufferEvictThreshold),
       sbufferEntries(sbufferEntries),
       storeBuffer(sbufferEntries),
+      storeBufferWritebackInactive(0),
+      storeBufferInactiveThreshold(storeBufferInactiveThreshold),
       lsqID(-1),
       storeQueue(sqEntries),
       loadQueue(lqEntries),
@@ -1131,6 +1134,8 @@ LSQUnit::offloadToStoreBuffer()
                 request->_numOutstandingPackets = 0;
                 completeStore(storeWBIt, true);
                 storeWBIt++;
+            } else {
+                break;
             }
         } else {
             Addr vaddr = request->getVaddr();
@@ -1203,7 +1208,8 @@ LSQUnit::storeBufferEvictToCache()
     if (storeBuffer.unsentSize() == 0) {
         return;
     }
-    if (storeBuffer.unsentSize() > sbufferEvictThreshold || storeBufferFlushing) {
+    if (storeBuffer.unsentSize() > sbufferEvictThreshold ||
+        storeBufferWritebackInactive > storeBufferInactiveThreshold || storeBufferFlushing) {
         if (storeBufferFlushing) {
             DPRINTF(StoreBuffer, "sbuffer flushing\n");
         } else {
@@ -1237,6 +1243,10 @@ LSQUnit::storeBufferEvictToCache()
         }
         DPRINTF(StoreBuffer, "send packet successed\n");
         entry->sending = true;
+        storeBufferWritebackInactive = 0;
+    } else {
+        // Timeout
+        storeBufferWritebackInactive++;
     }
 }
 
@@ -1541,6 +1551,10 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffe
         iewStage->updateLSQNextCycle = true;
     }
 
+    DPRINTF(LSQUnit, "Completing store [sn:%lli], idx:%i, store head "
+            "idx:%i\n",
+            store_inst->seqNum, store_idx.idx() - 1, storeQueue.head() - 1);
+
 #if TRACING_ON
     if (debug::O3PipeView) {
         store_inst->storeTick =
@@ -1781,9 +1795,10 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
 
     if (!load_inst->isVector() && request->mainReq()->getSize() > 1 &&
         request->mainReq()->getVaddr() % request->mainReq()->getSize() != 0) {
-        DPRINTF(LSQUnit, "request: size: %u, Addr: %#lx, code: %d\n",
-                request->mainReq()->getSize(), request->mainReq()->getVaddr(), RiscvISA::ExceptionCode::LOAD_ADDR_MISALIGNED);
-        return std::make_shared<RiscvISA::AddressFault>(request->mainReq()->getVaddr(), RiscvISA::ExceptionCode::LOAD_ADDR_MISALIGNED);
+        DPRINTF(LSQUnit, "request: size: %u, Addr: %#lx, code: %d\n", request->mainReq()->getSize(),
+            request->mainReq()->getVaddr(), RiscvISA::ExceptionCode::LOAD_ADDR_MISALIGNED);
+        return std::make_shared<RiscvISA::AddressFault>(request->mainReq()->getVaddr(),
+            RiscvISA::ExceptionCode::LOAD_ADDR_MISALIGNED);
     }
 
     load_entry.setRequest(request);

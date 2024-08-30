@@ -701,6 +701,7 @@ transition({BUSY_BLKD,BUSY_INTR}, UseTimeout) {
 transition(I, AtomicLoad, BUSY_BLKD){
   Initiate_Request;
   Initiate_AtomicReturn_I;
+  Callback_DelayedL1DResult_Store;
   Profile_Miss;
   Pop_ReqRdyQueue;
   ProcessNextState;
@@ -709,6 +710,7 @@ transition(I, AtomicLoad, BUSY_BLKD){
 transition(I, AtomicStore, BUSY_BLKD){
   Initiate_Request;
   Initiate_AtomicNoReturn_I;
+  Callback_DelayedL1DResult_Store;
   Profile_Miss;
   Pop_ReqRdyQueue;
   ProcessNextState;
@@ -717,6 +719,7 @@ transition(I, AtomicStore, BUSY_BLKD){
 transition(SD, AtomicLoad, BUSY_BLKD) {
   Initiate_Request;
   Initiate_AtomicReturn_SD;
+  Callback_DelayedL1DResult_Store;
   Profile_Miss;
   Pop_ReqRdyQueue;
   ProcessNextState;
@@ -725,14 +728,17 @@ transition(SD, AtomicLoad, BUSY_BLKD) {
 transition(SC, AtomicLoad, BUSY_BLKD) {
   Initiate_Request;
   Initiate_AtomicReturn_SC;
+  Callback_DelayedL1DResult_Store;
   Profile_Miss;
   Pop_ReqRdyQueue;
   ProcessNextState;
 }
 
+// RISC-V does not issue atomicstores, even if dest reg is zero
 transition(SD, AtomicStore, BUSY_BLKD) {
   Initiate_Request;
   Initiate_AtomicNoReturn_SD;
+  Callback_DelayedL1DResult_Store;
   Profile_Miss;
   Pop_ReqRdyQueue;
   ProcessNextState;
@@ -741,6 +747,7 @@ transition(SD, AtomicStore, BUSY_BLKD) {
 transition(SC, AtomicStore, BUSY_BLKD) {
   Initiate_Request;
   Initiate_AtomicNoReturn_SC;
+  Callback_DelayedL1DResult_Store;
   Profile_Miss;
   Pop_ReqRdyQueue;
   ProcessNextState;
@@ -952,7 +959,7 @@ transition({I,SC,UC,SD,UD,RU,RSC,RSD,RUSD,SC_RSC,UC_RSC,SD_RSC,UD_RSC,UC_RU,UD_R
 transition({BUSY_BLKD,BUSY_INTR},
             {ReadShared, ReadNotSharedDirty, ReadUnique, ReadUnique_PoC,
             ReadOnce, CleanUnique, CleanUnique_Stale,
-            AtomicLoad, AtomicStore, Prefetch,
+            Prefetch,
             MakeReadUnique,
             WriteBackFull, WriteBackFull_Stale,
             WriteEvictFull, WriteEvictFull_Stale,
@@ -974,6 +981,11 @@ transition({BUSY_BLKD,BUSY_INTR}, Load) {
 }
 
 transition({BUSY_BLKD,BUSY_INTR}, Store) {
+  Callback_DelayedL1DResult_Store;
+  StallRequest;
+}
+
+transition({BUSY_BLKD,BUSY_INTR}, {AtomicLoad, AtomicStore}) {
   Callback_DelayedL1DResult_Store;
   StallRequest;
 }
