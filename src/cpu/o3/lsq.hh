@@ -222,7 +222,8 @@ class LSQ
             WritebackScheduled  = 0x00001000,
             WritebackDone       = 0x00002000,
             /** True if this is an atomic request */
-            IsAtomic            = 0x00004000
+            IsAtomic            = 0x00004000,
+            IsHInst            = 0x00008000
         };
         FlagsType flags;
 
@@ -281,6 +282,12 @@ class LSQ
         isLoad() const
         {
             return flags.isSet(Flag::IsLoad);
+        }
+
+        bool
+        isHInst() const
+        {
+            return flags.isSet(Flag::IsHInst);
         }
 
         bool

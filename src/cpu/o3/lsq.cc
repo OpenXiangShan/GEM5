@@ -1180,6 +1180,7 @@ LSQ::LSQRequest::LSQRequest(
                 _inst->isStoreConditional() || _inst->isAtomic() ||
                 _inst->isLoad());
         flags.set(Flag::IsAtomic, _inst->isAtomic());
+        flags.set(Flag::IsHInst, _inst->isHInst());
         install();
     }
 
@@ -1265,6 +1266,9 @@ void
 LSQ::LSQRequest::sendFragmentToTranslation(int i)
 {
     numInTranslationFragments++;
+    if (_inst->isHInst()){
+        req(i)->setHInst(_inst->isHInst());
+    }
     _port.getMMUPtr()->translateTiming(req(i), _inst->thread->getTC(),
             this, isLoad() ? BaseMMU::Read : BaseMMU::Write);
 }

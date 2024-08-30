@@ -549,6 +549,8 @@ class Request
     int _virt = 0;
     int _twoStageTranslateMode = 0;
 
+    bool _isHInst = false;
+
   public:
 
     /**
@@ -963,6 +965,7 @@ class Request
     int get_virt() const {return _virt;}
 
     int get_twoStageTranslateMode () const {return _twoStageTranslateMode;}
+    bool get_h_inst() const { return _isHInst; }
 
     void setBackPreVaddr(Addr back_pre_vaddr)
     {
@@ -975,6 +978,7 @@ class Request
         _virt = virt;
         _twoStageTranslateMode = two_stage_translate_mode;
     }
+    void setHInst(bool is_h_inst) { _isHInst = is_h_inst; }
 
     /** Accesssor for the requestor id. */
     RequestorID

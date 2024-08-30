@@ -1283,7 +1283,7 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
             virt = status.mpv && (two_stage_pmode != PrivilegeMode::PRV_M);
         }
 
-        if (mode == BaseMMU::hLdST) {
+        if (req->get_h_inst()) {
             virt = 1;
             two_stage_pmode = (PrivilegeMode)(RegVal)hstatus.spvp;
         }
@@ -1544,7 +1544,7 @@ TLB::hasTwoStageTranslation(ThreadContext *tc, const RequestPtr &req, BaseMMU::M
 {
     STATUS status = (STATUS)tc->readMiscReg(MISCREG_STATUS);
     int v_mode = tc->readMiscReg(MISCREG_VIRMODE);
-    return (mode == BaseMMU::hLdST) || (status.mprv && status.mpv) || v_mode;
+    return (req->get_h_inst()) || (status.mprv && status.mpv) || v_mode;
 }
 
 MMUMode
@@ -1601,6 +1601,7 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
              */
             req->setPaddr(req->getVaddr());
             fault = NoFault;
+            assert(!req->get_h_inst());
         } else {
             two_stage_translation = hasTwoStageTranslation(tc, req, mode);
             if (two_stage_translation) {
