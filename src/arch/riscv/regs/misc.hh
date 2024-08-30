@@ -875,6 +875,9 @@ const uint64_t NEMU_VS_MASK = ((1 << 10) | (1 << 6) | (1 << 2));
 const uint64_t NEMU_HS_MASK = ((1 << 12) | NEMU_VS_MASK);
 const uint64_t NEMU_HIE_WMASK = NEMU_HS_MASK;
 const uint64_t NEMU_HIE_RMASK = NEMU_HS_MASK;
+
+const uint64_t NEMU_HIP_RMASK = NEMU_HS_MASK;
+const uint64_t NEMU_HVIP_MASK = ((1 << 10) | (1 << 6) | (1 << 2));
 const uint64_t NEMU_MIDELEG_FORCED_MASK = ((1 << 12) | (1 << 10) | (1 << 6) | (1 << 2));
 const RegVal STATUS_SD_MASK = 1ULL << ((sizeof(uint64_t) * 8) - 1);
 const RegVal STATUS_SXL_MASK = 3ULL << SXL_OFFSET;
@@ -931,9 +934,10 @@ const RegVal UTI_MASK = 1ULL << 4;
 const RegVal MSI_MASK = 1ULL << 3;
 const RegVal SSI_MASK = 1ULL << 1;
 const RegVal USI_MASK = 1ULL << 0;
-const RegVal MIP_MASK = MEI_MASK | SEI_MASK | UEI_MASK |
-                       MTI_MASK | STI_MASK | UTI_MASK |
-                       MSI_MASK | SSI_MASK | USI_MASK;
+//const RegVal MIP_MASK = MEI_MASK | SEI_MASK | UEI_MASK |
+//                       MTI_MASK | STI_MASK | UTI_MASK |
+//                       MSI_MASK | SSI_MASK | USI_MASK;
+const RegVal NEMU_MIP_MASK =  ((1 << 9) | (1 << 5) | (1 << 2) |(1 << 1));
 const RegVal SI_MASK = SEI_MASK | STI_MASK | SSI_MASK;
 const RegVal UI_MASK = UEI_MASK | UTI_MASK | USI_MASK;
 const RegVal FFLAGS_MASK = (1 << FRM_OFFSET) - 1;
@@ -949,10 +953,10 @@ const std::map<int, RegVal> CSRMasks = {
     {CSR_SSTATUS, SSTATUS_MASK},
    // {CSR_SIE, SI_MASK},
     {CSR_SIP, SI_MASK},
-    {CSR_MISA, MISA_MASK},
+    {CSR_MISA, MISA_MASK}
    // {CSR_HSTATUS,HSTATUS_MASK},
   //  {CSR_MIE, MIE_MASK},
-    {CSR_MIP, MIP_MASK}
+    //{CSR_MIP, MIP_MASK}
 };
 
 #define concat_temp(x, y) x ## y
