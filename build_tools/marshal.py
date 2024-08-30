@@ -67,7 +67,7 @@ if len(sys.argv) < 4:
 
 _, cpp, python, modpath, abspath = sys.argv
 
-with open(python, 'r') as f:
+with open(python, 'r', encoding='utf-8') as f:
     src = f.read()
 
 compiled = compile(src, python, 'exec')
