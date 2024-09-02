@@ -254,8 +254,8 @@ class DecoupledBPUWithFTB : public BPredUnit
 
 
 
-    std::vector<TimedBaseFTBPredictor*> components{};
-    std::vector<FullFTBPrediction> predsOfEachStage{};
+    std::vector<TimedBaseFTBPredictor*> components{};   // 所有组件的vector
+    std::vector<FullFTBPrediction> predsOfEachStage{};  // 每个阶段的预测结果
     unsigned numComponents{};
     unsigned numStages{};
 

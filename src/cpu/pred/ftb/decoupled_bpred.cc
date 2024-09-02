@@ -45,7 +45,7 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
 {
     if (bpDBSwitches.size() > 0) {
         
-        bpdb.init_db();
+        bpdb.init_db();     // init database
         enableBranchTrace = checkGivenSwitch(bpDBSwitches, std::string("basic"));
         if (enableBranchTrace) {
             std::vector<std::pair<std::string, DataType>> fields_vec = {
@@ -122,21 +122,21 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
         printf("\n");
     }
 
-    predsOfEachStage.resize(numStages);
+    predsOfEachStage.resize(numStages); // 3 stages
     for (unsigned i = 0; i < numStages; i++) {
-        predsOfEachStage[i].predSource = i;
-        predsOfEachStage[i].condTakens.resize(numBr, false);
+        predsOfEachStage[i].predSource = i;     // 预测来源 = 自己
+        predsOfEachStage[i].condTakens.resize(numBr, false);    // 默认两个分支，NT
     }
 
     s0PC = 0x80000000;
 
-    s0History.resize(historyBits, 0);
+    s0History.resize(historyBits, 0);   // 970位历史
     fetchTargetQueue.setName(name());
 
     commitHistory.resize(historyBits, 0);
     squashing = true;
 
-    lp = LoopPredictor(16, 4, enableLoopDB);
+    lp = LoopPredictor(16, 4, enableLoopDB);    // 16组4路 loop predictor
     lb.setLp(&lp);
 
     jap = JumpAheadPredictor(16, 4);
@@ -150,7 +150,7 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
     lastPhaseFsqEntryNumFetchedInstDist.resize(16+1, 0);
 
     registerExitCallback([this]() {
-        auto out_handle = simout.create("topMisPredicts.txt", false, true);
+        auto out_handle = simout.create("    .txt", false, true);
         *out_handle->stream() << "startPC" << " " << "control pc" << " " << "count" << std::endl;
         std::vector<std::pair<std::pair<Addr, Addr>, int>> topMisPredPC;
         for (auto &it : topMispredicts) {
@@ -609,7 +609,7 @@ DecoupledBPUWithFTB::tick()
     if (!squashing) {
         DPRINTF(DecoupleBP, "DecoupledBPUWithFTB::tick()\n");
         DPRINTF(Override, "DecoupledBPUWithFTB::tick()\n");
-        tryEnqFetchTarget();
+        tryEnqFetchTarget();    // 尝试入队到FetchTarget中
         tryEnqFetchStream();
     } else {
         receivedPred = false;

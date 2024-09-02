@@ -52,7 +52,7 @@ public:
 
 class DataBase
 {
-    // a trace corrsponds to a table
+    // a trace corrsponds to a table trace对应一个表， name->TraceManager
     std::map<std::string, TraceManager> _traces;
     sqlite3 *mem_db;
     public:

@@ -33,7 +33,7 @@ class TimedBaseFTBPredictor: public SimObject
 
     virtual void tickStart() {}
     virtual void tick() {}
-    // make predictions, record in stage preds
+    // make predictions, record in stage preds 做预测，记录在stagePreds中
     virtual void putPCHistory(Addr startAddr,
                               const boost::dynamic_bitset<> &history,
                               std::vector<FullFTBPrediction> &stagePreds) {}

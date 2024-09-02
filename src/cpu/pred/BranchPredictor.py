@@ -940,8 +940,8 @@ class DecoupledBPUWithFTB(BranchPredictor):
     ftq_size = Param.Unsigned(128, "Fetch target queue size")
     fsq_size = Param.Unsigned(64, "Fetch stream queue size")
     maxHistLen = Param.Unsigned(970, "The length of history")
-    numBr = Param.Unsigned(2, "Number of maximum branches per entry")
-    numStages = Param.Unsigned(3, "Number of stages in the pipeline")
+    numBr = Param.Unsigned(2, "Number of maximum branches per entry")   # 一个entry 最多两个branch
+    numStages = Param.Unsigned(3, "Number of stages in the pipeline")   # 3级pipeline
     ftb = Param.DefaultFTB(DefaultFTB(numBr=2), "FTB")
     tage = Param.FTBTAGE(FTBTAGE(), "TAGE predictor")
     ittage = Param.FTBITTAGE(FTBITTAGE(), "ITTAGE predictor")
@@ -949,7 +949,7 @@ class DecoupledBPUWithFTB(BranchPredictor):
     ras = Param.RAS(RAS(), "RAS")
     uras = Param.uRAS(uRAS(), "uRAS")
     
-    bpDBSwitches = VectorParam.String([], "Enable which traces in the form of database")
-    enableLoopBuffer = Param.Bool(False, "Enable loop buffer to supply inst for loops")
-    enableLoopPredictor = Param.Bool(False, "Use loop predictor to predict loop exit")
-    enableJumpAheadPredictor = Param.Bool(False, "Use jump ahead predictor to skip no-need-to-predict blocks")
+    bpDBSwitches = VectorParam.String([], "Enable which traces in the form of database") # 用于开启哪些trace的database, [basic, loop]
+    enableLoopBuffer = Param.Bool(False, "Enable loop buffer to supply inst for loops") # 启用循环缓冲区
+    enableLoopPredictor = Param.Bool(False, "Use loop predictor to predict loop exit")  # 预测循环退出, 只开了这个
+    enableJumpAheadPredictor = Param.Bool(False, "Use jump ahead predictor to skip no-need-to-predict blocks")  # 跳过不需要预测的块

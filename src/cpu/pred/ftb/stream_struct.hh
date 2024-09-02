@@ -412,7 +412,7 @@ typedef struct FullFTBPrediction
 {
     Addr bbStart;
     FTBEntry ftbEntry; // for FTB
-    std::vector<bool> condTakens; // for conditional branch predictors
+    std::vector<bool> condTakens; // for conditional branch predictors 用于条件分支预测器
 
     Addr indirectTarget; // for indirect predictor
     Addr returnTarget; // for RAS
@@ -577,7 +577,7 @@ typedef struct FullFTBPrediction
     }
 
 
-}FullFTBPrediction;
+}FullFTBPrediction;     // 记录所有的预测信息
 
 // each entry corresponds to a 32Byte unaligned block
 struct FtqEntry
