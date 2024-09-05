@@ -99,16 +99,13 @@ InstructionQueue::InstructionQueue(CPU *cpu_ptr, IEW *iew_ptr,
         const BaseO3CPUParams &params)
     : cpu(cpu_ptr),
       iewStage(iew_ptr),
-      fuPool(params.fuPool),
       scheduler(params.scheduler),
       numThreads(params.numThreads),
-      totalWidth(params.issueWidth),
+      totalWidth(8),
       commitToIEWDelay(params.commitToIEWDelay),
       iqStats(cpu, totalWidth),
       iqIOStats(cpu)
 {
-    assert(fuPool);
-
     const auto &reg_classes = params.isa[0]->regClasses();
     // Set the number of total physical registers
     // As the vector registers have two addressing modes, they are added twice
@@ -174,8 +171,6 @@ InstructionQueue::IQStats::IQStats(CPU *cpu, const unsigned &total_width)
              "Number of squashed non-spec instructions that were removed"),
     ADD_STAT(numIssuedDist, statistics::units::Count::get(),
              "Number of insts issued each cycle"),
-    ADD_STAT(statFuBusy, statistics::units::Count::get(),
-             "attempts to use FU when none available"),
     ADD_STAT(statIssuedInstType, statistics::units::Count::get(),
              "Number of instructions issued per FU type, per thread"),
     ADD_STAT(issueRate, statistics::units::Rate<
@@ -272,14 +267,6 @@ InstructionQueue::IQStats::IQStats(CPU *cpu, const unsigned &total_width)
     issueRate
         .flags(statistics::total)
         ;
-
-    statFuBusy
-        .init(Num_OpClasses)
-        .flags(statistics::pdf | statistics::dist)
-        ;
-    for (int i=0; i < Num_OpClasses; ++i) {
-        statFuBusy.subname(i, enums::OpClassStrings[i]);
-    }
 
     fuBusy
         .init(cpu->numThreads)
@@ -525,14 +512,100 @@ InstructionQueue::processFUCompletion(const DynInstPtr &inst, int fu_idx)
    --wbOutstanding;
     iewStage->wakeCPU();
 
-    if (fu_idx > -1)
-        fuPool->freeUnitNextCycle(fu_idx);
-
     // @todo: Ensure that these FU Completions happen at the beginning
     // of a cycle, otherwise they could add too many instructions to
     // the queue.
     issueToExecuteQueue->access(0)->size++;
     instsToExecute.push_back(inst);
+}
+
+bool
+InstructionQueue::execLatencyCheck(const DynInstPtr& inst, uint32_t& op_latency)
+{
+    auto lzc = [](RegVal val) {
+        for (int i = 0; i < 64; i++) {
+            if (val & (0x1lu << 63)) {
+                return i;
+            }
+            val <<= 1;
+        }
+        return 64;
+    };
+    RegVal rs1;
+    RegVal rs2;
+    int delay_;
+    switch (inst->opClass()) {
+        case OpClass::IntDiv:
+            rs1 = cpu->readArchIntReg(inst->srcRegIdx(0).index(),
+                                      inst->threadNumber);
+            rs2 = cpu->readArchIntReg(inst->srcRegIdx(1).index(),
+                                      inst->threadNumber);
+            // rs1 / rs2 : 0x80/0x8 ,delay_ = 4
+            delay_ = std::max(lzc(std::labs(rs2)) - lzc(std::labs(rs1)), 0);
+            if (rs2 == 1) {
+                op_latency = 6;
+            } else if (rs1 == rs2) {
+                op_latency = 8;
+            } else if (lzc(std::labs(rs2)) - lzc(std::labs(rs1)) < 0) {
+                op_latency = 6;
+            } else {
+                op_latency = 8 + delay_ / 4;
+            }
+            return true;
+        case OpClass::FloatSqrt:
+            rs1 = cpu->readArchFloatReg(inst->srcRegIdx(0).index(),
+                                        inst->threadNumber);
+            switch (inst->staticInst->operWid()) {
+                case 32:
+                    if (__isnanf(*((float*)(&rs1)))) {
+                        op_latency = 4;
+                        break;
+                    }
+                    op_latency = 17;
+                    break;
+                case 64:
+                    if (__isnan(*((double*)(&rs1)))) {
+                        op_latency = 4;
+                        break;
+                    }
+                    op_latency = 31;
+                    break;
+                default:
+                    panic("Unsupported float width\n");
+                    return false;
+            }
+            return true;
+        case OpClass::FloatDiv:
+            rs1 = cpu->readArchFloatReg(inst->srcRegIdx(0).index(),
+                                        inst->threadNumber);
+            rs2 = cpu->readArchFloatReg(inst->srcRegIdx(1).index(),
+                                        inst->threadNumber);
+            switch (inst->staticInst->operWid()) {
+                case 32:
+                    if (__isnanf(*((float*)(&rs1))) ||
+                        __isnanf(*((float*)(&rs2)))) {
+                        op_latency = 4;
+                        break;
+                    }
+                    op_latency = 11;
+                    break;
+                case 64:
+                    if (__isnan(*((double*)(&rs1))) ||
+                        __isnan(*((double*)(&rs2)))) {
+                        op_latency = 4;
+                        break;
+                    }
+                    op_latency = 18;
+                    break;
+                default:
+                    panic("Unsupported float width\n");
+                    return false;
+            }
+            return true;
+        default:
+            return false;
+    }
+    return false;
 }
 
 // @todo: Figure out a better way to remove the squashed items from the
@@ -590,6 +663,8 @@ InstructionQueue::scheduleReadyInsts()
         }
 
         uint32_t op_latency = scheduler->getOpLatency(issued_inst);
+        execLatencyCheck(issued_inst, op_latency);
+        assert(op_latency < 64);
         DPRINTF(Schedule, "[sn %lu] start execute %u cycles\n", issued_inst->seqNum, op_latency);
         if (op_latency <= 1) {
             i2e_info->size++;
@@ -608,9 +683,6 @@ InstructionQueue::scheduleReadyInsts()
             issued_inst->firstIssue = curTick();
         }
 
-        if (!issued_inst->isMemRef()) {
-            issued_inst->clearInIQ();
-        }
 
         iqStats.statIssuedInstType[issued_inst->threadNumber][issued_inst->opClass()]++;
     }

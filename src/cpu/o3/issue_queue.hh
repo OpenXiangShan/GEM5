@@ -120,7 +120,9 @@ class IssueQue : public SimObject
         statistics::Scalar arbFailed;
         statistics::Vector insertDist;
         statistics::Vector issueDist;
+        statistics::Vector portissued;
         statistics::Vector portBusy;
+        statistics::Average avgInsts;
     } *iqstats = nullptr;
 
     void replay(const DynInstPtr& inst);
@@ -133,6 +135,9 @@ class IssueQue : public SimObject
     void addIfReady(const DynInstPtr& inst);
 
   public:
+    inline void clearBusy(uint32_t pi) { portBusy.at(pi) = 0; }
+
+
     IssueQue(const IssueQueParams &params);
     void setIQID(int id) { IQID = id; }
     void setCPU(CPU* cpu);
@@ -230,7 +235,7 @@ class Scheduler : public SimObject
     std::stack<DynInstPtr> dfs;
 
     // should call at issue first/last cycle,
-    void wakeUpDependents(const DynInstPtr& inst, IssueQue* from_issue_queue);
+    void specWakeUpDependents(const DynInstPtr& inst, IssueQue* from_issue_queue);
 
   public:
     Scheduler(const SchedulerParams& params);
