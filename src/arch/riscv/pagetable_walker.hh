@@ -136,6 +136,7 @@ namespace RiscvISA
             State state;
             State nextState;
             int level;
+            int twoStageLevel;
             unsigned inflight;
             TlbEntry entry;
             TlbEntry inl2Entry;
@@ -144,8 +145,11 @@ namespace RiscvISA
             Fault mainFault;
             BaseMMU::Mode mode;
             SATP satp;
+            SATP vsatp;
             STATUS status;
+            STATUS vsstatus;
             PrivilegeMode pmode;
+            HGATP hgatp;
             bool functional;
             bool timing;
             bool retrying;
@@ -161,6 +165,8 @@ namespace RiscvISA
             Addr nextlineShift;
             Addr tlbVaddr;
             Addr tlbppn;
+            Addr gPaddr;
+            int vaddr_choose_flag;
             Addr tlbSizePte;
             bool openNextline;
             bool autoNextlineSign;
@@ -168,24 +174,31 @@ namespace RiscvISA
             bool preHitInPtw;
             bool fromPre;
             bool fromBackPre;
+            bool virt;
+            int translateMode;
+            bool inGstage;
+            bool finishGVA;
+            bool finishGPA;
 
 
           public:
             WalkerState(Walker * _walker, BaseMMU::Translation *_translation,
                         const RequestPtr &_req, bool _isFunctional = false) :
                 walker(_walker), mainReq(_req), state(Ready),
-                nextState(Ready), level(0), inflight(0),
+                nextState(Ready), level(0), twoStageLevel(2),inflight(0),
                 functional(_isFunctional), timing(false),
                 retrying(false), started(false), squashed(false), nextline(false),
                 nextlineRead(0), nextlineLevel(0), nextlineVaddr(0),
                 nextlineLevelMask(0), nextlineShift(0), tlbVaddr(0), tlbppn(0),
+                gPaddr(0),vaddr_choose_flag(0),
                 tlbSizePte(0), openNextline(false), autoNextlineSign(false),
                 finishDefaultTranslate(false), preHitInPtw(false), fromPre(false),
-                fromBackPre(false)
+                fromBackPre(false),virt(0),translateMode(0),inGstage(false),finishGVA(false),
+                finishGPA(false)
             {
                 requestors.emplace_back(nullptr, _req, _translation);
             }
-            void initState(ThreadContext *_tc, BaseMMU::Mode _mode,
+            void initState(ThreadContext *_tc, const RequestPtr &_req,BaseMMU::Mode _mode,
                            bool _isTiming = false, bool _from_forward_pre_req = false,
                            bool _from_back_pre_req = false);
 
@@ -211,16 +224,22 @@ namespace RiscvISA
 
             bool anyRequestorSquashed() const;
             bool allRequestorSquashed() const;
-
-          private:
             void setupWalk(Addr ppn, Addr vaddr, int f_level, bool from_l2tlb,
                            bool open_nextline, bool auto_openNextline,
                            bool from_forward_pre_req, bool from_back_pre_req);
+
+          private:
+            void startTwoStageWalk(Addr ppn, Addr vaddr);
+
+            Fault twoStageStepWalk(PacketPtr &write);
+            Fault twoStageWalk(PacketPtr &write);
             Fault stepWalk(PacketPtr &write);
             void sendPackets();
             void endWalk();
-            Fault pageFault(bool present);
-            Fault pageFaultOnRequestor(RequestorState &requestor);
+            Fault pageFault(bool present, bool G);
+            Fault pageFaultOnRequestor(RequestorState &requestor, bool G);
+            Addr getGVPNi(Addr vaddr, int level);
+            Addr VpniShift(int level);
         };
 
         struct L2TlbState

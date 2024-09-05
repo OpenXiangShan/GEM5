@@ -1054,19 +1054,18 @@ TLB::checkPermissions(STATUS status, PrivilegeMode pmode, Addr vaddr,
     Fault fault = NoFault;
 
     if (mode == BaseMMU::Read && !pte.r) {
-        fault = createPagefault(vaddr, mode);
+        fault = createPagefault(vaddr, 0, mode, false);
     } else if (mode == BaseMMU::Write && !pte.w) {
-        fault = createPagefault(vaddr, mode);
+        fault = createPagefault(vaddr, 0, mode, false);
     } else if (mode == BaseMMU::Execute && !pte.x) {
-        fault = createPagefault(vaddr, mode);
+        fault = createPagefault(vaddr, 0, mode, false);
     }
 
     if (fault == NoFault) {
         if (pmode == PrivilegeMode::PRV_U && !pte.u) {
-            fault = createPagefault(vaddr, mode);
-        } else if (pmode == PrivilegeMode::PRV_S && pte.u &&
-                   (status.sum == 0)) {
-            fault = createPagefault(vaddr, mode);
+            fault = createPagefault(vaddr, 0, mode, false);
+        } else if (pmode == PrivilegeMode::PRV_S && pte.u && (status.sum == 0)) {
+            fault = createPagefault(vaddr, 0, mode, false);
         }
     }
 
@@ -1074,17 +1073,28 @@ TLB::checkPermissions(STATUS status, PrivilegeMode pmode, Addr vaddr,
 }
 
 Fault
-TLB::createPagefault(Addr vaddr, BaseMMU::Mode mode)
+TLB::createPagefault(Addr vaddr, Addr gPaddr,BaseMMU::Mode mode,bool G)
 {
     ExceptionCode code;
-    if (mode == BaseMMU::Read)
-        code = ExceptionCode::LOAD_PAGE;
-    else if (mode == BaseMMU::Write)
-        code = ExceptionCode::STORE_PAGE;
-    else
-        code = ExceptionCode::INST_PAGE;
+    if (G) {
+        if (mode == BaseMMU::Read)
+            code = ExceptionCode::LOADG_PAGE;
+        else if (mode == BaseMMU::Write)
+            code = ExceptionCode::STOREG_PAGE;
+        else
+            code = ExceptionCode::INSTG_PAGE;
+
+    } else {
+        if (mode == BaseMMU::Read)
+            code = ExceptionCode::LOAD_PAGE;
+        else if (mode == BaseMMU::Write)
+            code = ExceptionCode::STORE_PAGE;
+        else
+            code = ExceptionCode::INST_PAGE;
+    }
+
     DPRINTF(TLB, "Create page fault #%i on %#lx\n", code, vaddr);
-    return std::make_shared<AddressFault>(vaddr, code);
+    return std::make_shared<AddressFault>(vaddr, gPaddr, code);
 }
 
 Addr
@@ -1107,18 +1117,17 @@ TLB::L2TLBPagefault(Addr vaddr, BaseMMU::Mode mode, const RequestPtr &req, bool 
         if (req->getPC() < page_l2_start) {
             DPRINTF(TLBVerbosel2, "vaddr %#x,req_pc %#x,page_l2_start %#x\n",
                     vaddr, req->getPC(), page_l2_start);
-            return createPagefault(page_l2_start, mode);
+            return createPagefault(page_l2_start, 0, mode, false);
         }
-        return createPagefault(req->getPC(), mode);
+        return createPagefault(req->getPC(), 0, mode, false);
     } else {
-        DPRINTF(TLBVerbosel2, "vaddr 2 %#x,req_pc %#x,get vaddr %#x\n", vaddr,
-                req->getPC(), req->getVaddr());
+        DPRINTF(TLBVerbosel2, "vaddr 2 %#x,req_pc %#x,get vaddr %#x\n", vaddr, req->getPC(), req->getVaddr());
         if (is_back_pre)
-            return createPagefault(req->getBackPreVaddr(), mode);
+            return createPagefault(req->getBackPreVaddr(), 0, mode, false);
         else if (isPre)
-            return createPagefault(req->getForwardPreVaddr(), mode);
+            return createPagefault(req->getForwardPreVaddr(), 0, mode, false);
         else
-            return createPagefault(req->getVaddr(), mode);
+            return createPagefault(req->getVaddr(), 0, mode, false);
     }
 }
 
@@ -1255,6 +1264,44 @@ TLB::L2TLBSendRequest(Fault fault, TlbEntry *e_l2tlb, const RequestPtr &req, Thr
     return std::make_pair(false, fault);
 }
 
+
+Fault
+TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
+                 BaseMMU::Translation *translation, BaseMMU::Mode mode,
+                 bool &delayed)
+{
+    Addr vaddr = Addr(sext<VADDR_BITS>(req->getVaddr()));
+    SATP vsatp = tc->readMiscReg(MISCREG_VSATP);
+    int virt = tc->readMiscReg(MISCREG_VIRMODE);
+    STATUS status = tc->readMiscReg(MISCREG_STATUS);
+    HSTATUS hstatus = tc->readMiscReg(MISCREG_HSTATUS);
+    int two_stage_pmode = (int)getMemPriv(tc, mode);
+
+    if (mode != BaseMMU::Execute) {
+        if (status.mprv) {
+            two_stage_pmode = status.mpp;
+            virt = status.mpv && (two_stage_pmode != PrivilegeMode::PRV_M);
+        }
+
+        if (mode == BaseMMU::hLdST) {
+            virt = 1;
+            two_stage_pmode = (PrivilegeMode)(RegVal)hstatus.spvp;
+        }
+    }
+    if (virt != 0) {
+        if (vsatp.mode == 0)
+            assert(0);
+    } else {
+        assert(0);
+    }
+    req->setTwoStageState(true, virt, two_stage_pmode);
+    Fault fault = walker->start(0, tc, translation, req, mode, false, false, 2, false, 0);
+    if (translation != nullptr || fault != NoFault) {
+        delayed = true;
+        return fault;
+    }
+    return fault;
+}
 Fault
 TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                  BaseMMU::Translation *translation, BaseMMU::Mode mode,
@@ -1426,7 +1473,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
     status = tc->readMiscReg(MISCREG_STATUS);
     pmode = getMemPriv(tc, mode);
     if (mode == BaseMMU::Write && !e[0]->pte.d) {
-        fault = createPagefault(vaddr, mode);
+        fault = createPagefault(vaddr, 0, mode, false);
     }
 
     if (fault == NoFault) {
@@ -1492,6 +1539,41 @@ TLB::getMemPriv(ThreadContext *tc, BaseMMU::Mode mode)
         pmode = (PrivilegeMode)(RegVal)status.mpp;
     return pmode;
 }
+bool
+TLB::hasTwoStageTranslation(ThreadContext *tc, const RequestPtr &req, BaseMMU::Mode mode)
+{
+    STATUS status = (STATUS)tc->readMiscReg(MISCREG_STATUS);
+    int v_mode = tc->readMiscReg(MISCREG_VIRMODE);
+    return (mode == BaseMMU::hLdST) || (status.mprv && status.mpv) || v_mode;
+}
+
+MMUMode
+TLB::isaMMUCheck(ThreadContext *tc, Addr vaddr, BaseMMU::Mode mode)
+{
+    STATUS status = tc->readMiscReg(MISCREG_STATUS);
+    PrivilegeMode pp = (PrivilegeMode)tc->readMiscReg(MISCREG_PRV);
+    SATP satp = tc->readMiscReg(MISCREG_SATP);
+    SATP vsatp = tc->readMiscReg(MISCREG_VSATP);
+    int v_mode = tc->readMiscReg(MISCREG_VIRMODE);
+    HGATP hgatp = tc->readMiscReg(MISCREG_HGATP);
+    bool vm_enable = (status.mprv && (mode == BaseMMU::Execute) ? status.mpp : pp) < PRV_M &&
+                     (satp.mode == 8 || (v_mode && (vsatp.mode == 8 || hgatp.mode == 8)));
+    Addr vaMask = ((((Addr)1) << (63 - 38 + 1)) - 1);
+    Addr vaMsbs = vaddr >> 38;
+    bool vaMsbsOk = (vaMsbs == vaMask) || vaMsbs == 0 || !vm_enable;
+    bool gpf = false;
+    if ((v_mode == 1) && (vsatp.mode == 0)) {
+        Addr maxgpa = ((((Addr)1) << (41)) - 1);
+        if ((vaddr & ~maxgpa) == 0) {
+            vaMsbsOk = 1;
+        } else {
+            gpf = true;
+        }
+    }
+    if (!vaMsbsOk)
+        assert(0);
+    return MMU_DIRECT;
+}
 
 Fault
 TLB::translate(const RequestPtr &req, ThreadContext *tc,
@@ -1503,18 +1585,32 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
     if (FullSystem) {
         PrivilegeMode pmode = getMemPriv(tc, mode);
         SATP satp = tc->readMiscReg(MISCREG_SATP);
-        if (pmode == PrivilegeMode::PRV_M || satp.mode == AddrXlateMode::BARE)
+        SATP vsatp = tc->readMiscReg(MISCREG_VSATP);
+        HGATP hgatp = tc->readMiscReg(MISCREG_HGATP);
+        int v_mode = tc->readMiscReg(MISCREG_VIRMODE);
+        bool two_stage_translation = false;
+
+        if ((pmode == PrivilegeMode::PRV_M || satp.mode == AddrXlateMode::BARE))
             req->setFlags(Request::PHYSICAL);
 
         Fault fault;
         if (req->getFlags() & Request::PHYSICAL) {
+            req->setTwoStageState(false, 0, 0);
             /**
              * we simply set the virtual address to physical address
              */
             req->setPaddr(req->getVaddr());
             fault = NoFault;
         } else {
-            fault = doTranslate(req, tc, translation, mode, delayed);
+            two_stage_translation = hasTwoStageTranslation(tc, req, mode);
+            if (two_stage_translation) {
+                if (vsatp.mode != 8 && hgatp.mode != 8)
+                    assert(0);
+                fault = doTwoStageTranslate(req, tc, translation, mode, delayed);
+            } else {
+                req->setTwoStageState(false, 0, 0);
+                fault = doTranslate(req, tc, translation, mode, delayed);
+            }
         }
 
         // according to the RISC-V tests, negative physical addresses trigger
@@ -1524,11 +1620,12 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
             ExceptionCode code;
             if (mode == BaseMMU::Read)
                 code = ExceptionCode::LOAD_ACCESS;
-            else if (mode == BaseMMU::Write)
+            else if (mode == BaseMMU::Write) {
                 code = ExceptionCode::STORE_ACCESS;
+            }
             else
                 code = ExceptionCode::INST_ACCESS;
-            fault = std::make_shared<AddressFault>(req->getVaddr(), code);
+            fault = std::make_shared<AddressFault>(req->getVaddr(), 0, code);
         }
 
         if (!delayed && fault == NoFault) {

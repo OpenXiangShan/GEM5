@@ -138,7 +138,7 @@ PMP::createAddrfault(Addr vaddr, BaseMMU::Mode mode)
         code = RiscvISA::ExceptionCode::INST_ACCESS;
     }
     warn("pmp access fault.mode %d  vaddr %lx \n",mode , vaddr);
-    return std::make_shared<RiscvISA::AddressFault>(vaddr, code);
+    return std::make_shared<RiscvISA::AddressFault>(vaddr, 0, code);
 }
 
 inline uint8_t
