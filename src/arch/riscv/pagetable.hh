@@ -55,10 +55,16 @@ enum AddrXlateMode
     SV48 = 9,
 };
 
+const Addr H_VADDR_BITS = 41;
 // Sv39 paging
 const Addr VADDR_BITS  = 39;
 const Addr LEVEL_BITS  = 9;
-const Addr LEVEL_MASK  = (1 << LEVEL_BITS) - 1;
+const Addr LEVEL_MASK = ((1 << LEVEL_BITS) - 1);
+const Addr PGMASK = ((1 << 12) - 1);
+const Addr TWO_STAGE_L2_LEVEL_MASK = 0x7ff;
+const Addr VPN_MASK = 0x1ff;
+const Addr PGSHFT = 12;
+const Addr PTESIZE = 8;
 
 const Addr L2TLB_BLK_OFFSET = 3;
 const Addr VADDR_CHOOSE_MASK = 7;
@@ -89,6 +95,17 @@ enum l2TLBPage
     L_L2sp2
 
 };
+
+enum TranslateMode
+{
+    defaultmode = 0,
+    twoStageMode = 1
+
+};
+
+enum MMUMode
+{
+    MMU_DIRECT = 0, MMU_TRANSLATE = 1, MMU_DYNAMIC = 2 };
 
 BitUnion64(PTESv39)
     Bitfield<53, 10> ppn;

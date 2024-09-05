@@ -507,6 +507,7 @@ class Request
 
     /** The virtual address of the request. */
     Addr _vaddr = MaxAddr;
+    Addr _gPaddr = MaxAddr;
     Addr _forward_pre_vaddr = MaxAddr;
     Addr _back_pre_vaddr = MaxAddr;
 
@@ -543,6 +544,10 @@ class Request
     int reqNum = 1;
     bool forward_pre_tlb = false;
     bool back_pre_tlb = false;
+
+    bool _twoStageTranslate = false;
+    int _virt = 0;
+    int _twoStageTranslateMode = 0;
 
   public:
 
@@ -936,6 +941,8 @@ class Request
         return _vaddr;
     }
 
+    Addr getgPaddr() const { return _gPaddr; }
+
     Addr getForwardPreVaddr() const { return _forward_pre_vaddr; }
     bool get_forward_pre_tlb() const { return forward_pre_tlb; }
 
@@ -945,14 +952,28 @@ class Request
         forward_pre_tlb = true;
     }
 
+    void setgPaddr(Addr gPaddr) { _gPaddr = gPaddr; }
+
     Addr getBackPreVaddr() const { return _back_pre_vaddr; }
 
     bool get_back_pre_tlb() const { return back_pre_tlb; }
+
+    bool get_two_stage_state() const {return _twoStageTranslate;}
+
+    int get_virt() const {return _virt;}
+
+    int get_twoStageTranslateMode () const {return _twoStageTranslateMode;}
 
     void setBackPreVaddr(Addr back_pre_vaddr)
     {
         _back_pre_vaddr = back_pre_vaddr;
         back_pre_tlb = true;
+    }
+    void setTwoStageState(bool two_stage_translate,int virt,int two_stage_translate_mode)
+    {
+        _twoStageTranslate = two_stage_translate;
+        _virt = virt;
+        _twoStageTranslateMode = two_stage_translate_mode;
     }
 
     /** Accesssor for the requestor id. */

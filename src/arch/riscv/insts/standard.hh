@@ -129,8 +129,9 @@ class CSROp : public RiscvStaticInst
             auto mask_it = CSRMasks.find(csr);
             if (mask_it == CSRMasks.end())
                 maskVal = mask(64);
-            else
+            else {
                 maskVal = mask_it->second;
+            }
         }
 
         if (csr == CSR_SATP) {

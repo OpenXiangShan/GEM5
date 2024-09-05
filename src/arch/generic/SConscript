@@ -51,6 +51,8 @@ DebugFlag('PageTableWalker',
           "Page table walker state machine debugging")
 DebugFlag('PageTableWalker2',
           "Page table walker state machine debugging")
+DebugFlag('PageTableWalkerTwoStage',
+          "Page table walker state machine debugging")
 DebugFlag('PageTableWalker3',
           "Page table walker state machine debugging")
 DebugFlag('autoNextline',

@@ -196,7 +196,9 @@ class TLB : public BaseTLB
 
     Fault checkPermissions(STATUS status, PrivilegeMode pmode, Addr vaddr,
                            BaseMMU::Mode mode, PTESv39 pte);
-    Fault createPagefault(Addr vaddr, BaseMMU::Mode mode);
+    Fault checkGuestPermissions(STATUS status, PrivilegeMode pmode, Addr vaddr,
+                      BaseMMU::Mode mode, PTESv39 pte);
+    Fault createPagefault(Addr vaddr, Addr gPaddr,BaseMMU::Mode mode,bool G);
 
     PrivilegeMode getMemPriv(ThreadContext *tc, BaseMMU::Mode mode);
 
@@ -288,11 +290,16 @@ class TLB : public BaseTLB
     void removeBackPre(size_t idx);
     void l2tlbRemoveIn(EntryList *List, TlbEntryTrie *Trie_l2,std::vector<TlbEntry>&tlb,size_t idx, int choose);
     void l2TLBRemove(size_t idx, int choose);
+    bool hasTwoStageTranslation(ThreadContext *tc, const RequestPtr &req, BaseMMU::Mode mode);
+    MMUMode isaMMUCheck(ThreadContext *tc, Addr vaddr, BaseMMU::Mode mode);
 
 
     Fault translate(const RequestPtr &req, ThreadContext *tc,
                     BaseMMU::Translation *translation, BaseMMU::Mode mode,
                     bool &delayed);
+    Fault doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
+                      BaseMMU::Translation *translation, BaseMMU::Mode mode,
+                      bool &delayed);
     Fault doTranslate(const RequestPtr &req, ThreadContext *tc,
                       BaseMMU::Translation *translation, BaseMMU::Mode mode,
                       bool &delayed);
