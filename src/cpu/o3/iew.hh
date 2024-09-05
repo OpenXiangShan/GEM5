@@ -405,8 +405,8 @@ class IEW
     /** Load / store queue. */
     LSQ ldstQueue;
 
-    /** Pointer to the functional unit pool. */
-    FUPool *fuPool;
+    const uint32_t dispWidth;
+
     /** Records if the LSQ needs to be updated on the next cycle, so that
      * IEW knows if there will be activity on the next cycle.
      */

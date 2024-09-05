@@ -283,7 +283,9 @@ def addCommonOptions(parser, configure_xiangshan=False):
     parser.add_argument("--list-hwp-types",
                         action=ListHWP, nargs=0,
                         help="List available hardware prefetcher types")
-
+    parser.add_argument("--l1d-use-xsstride", action="store_true", default=False,
+                        help="""
+                        Enable SPP component for L1 data prefetcher""")
     parser.add_argument("--l1d-enable-spp", action="store_true", default=False,
                         help="""
                         Enable SPP component for L1 data prefetcher""")

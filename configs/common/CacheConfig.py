@@ -212,6 +212,9 @@ def config_cache(options, system):
                         system.cpu[i].add_pf_downstream(dcache.prefetcher)
                     if options.ideal_cache:
                         dcache.prefetcher.stream_pf_ahead = False
+                    if options.l1d_use_xsstride:
+                        dcache.prefetcher.enable_berti = False
+                        dcache.prefetcher.enable_sstride = True
 
             if options.ideal_cache:
                 icache.response_latency = 0

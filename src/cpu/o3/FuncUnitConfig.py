@@ -36,6 +36,7 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import sys
 from m5.SimObject import SimObject
 from m5.defines import buildEnv
 from m5.params import *
@@ -44,15 +45,12 @@ from m5.objects.FuncUnit import *
 
 class IntMisc(FUDesc):
     opList = [ OpDesc(opClass='No_OpClass') ]
-    count = 1
 
 class IntALU(FUDesc):
     opList = [ OpDesc(opClass='IntAlu') ]
-    count = 6
 
 class IntBRU(FUDesc):
     opList = [ OpDesc(opClass='IntBr') ]
-    count = 1
 
 class IntMultDiv(FUDesc):
     opList = [ OpDesc(opClass='IntMult', opLat=3),
@@ -68,35 +66,31 @@ class IntMultDiv(FUDesc):
     count=2
 
 class IntDiv(FUDesc):
-    opList = [ OpDesc(opClass='IntDiv', opLat=20) ]
-    count=2
+    # for instructions with uncertain cycle
+    # just set opLat = sys.maxsize
+    # it can help us find potential bugs
+    opList = [ OpDesc(opClass='IntDiv', opLat=sys.maxsize) ]
 
 
 class IntMult(FUDesc):
     opList = [ OpDesc(opClass='IntMult', opLat=3) ]
-    count=2
 
 class FP_SLOW(FUDesc):
-    opList = [OpDesc(opClass='FloatDiv', opLat=19, pipelined=False),
-              OpDesc(opClass='FloatSqrt', opLat=24, pipelined=False),
-              ]
-    count = 2
+    opList = [ OpDesc(opClass='FloatDiv', opLat=sys.maxsize),
+               OpDesc(opClass='FloatSqrt', opLat=sys.maxsize)]
+
+class FP_ALU(FUDesc):
+    opList = [ OpDesc(opClass='FloatCmp', opLat=3),
+               OpDesc(opClass='FloatAdd', opLat=3),
+               OpDesc(opClass='FloatMisc', opLat=2),
+               OpDesc(opClass='FloatMult', opLat=4)]
 
 class FP_MISC(FUDesc):
-    opList = [OpDesc(opClass='FloatCvt', opLat=3),
-              OpDesc(opClass='FloatCmp', opLat=3),
-              OpDesc(opClass='FloatMisc', opLat=2),]
-    count = 2
+    opList = [ OpDesc(opClass='FloatCvt', opLat=3)]
 
-class FP_MAM(FUDesc):
-    opList = [ OpDesc(opClass='FMAMul', opLat=3),
-               OpDesc(opClass='FloatMult', opLat=3),]
-    count = 4
-
-class FP_MAA(FUDesc):
+class FP_MAC(FUDesc):
     opList = [ OpDesc(opClass='FMAAcc', opLat=2),
-               OpDesc(opClass='FloatAdd', opLat=3)]
-    count = 4
+               OpDesc(opClass='FMAMul', opLat=4)]
 
 class SIMD_Unit(FUDesc):
     opList = [ OpDesc(opClass='SimdAdd'),
@@ -134,15 +128,14 @@ class SIMD_Unit(FUDesc):
                OpDesc(opClass='VectorMisc'),
                OpDesc(opClass='VectorIntegerExtension'),
                OpDesc(opClass='VectorConfig')]
-    count = 2
 
 class PredALU(FUDesc):
     opList = [ OpDesc(opClass='SimdPredAlu') ]
     count = 1
 
 class ReadPort(FUDesc):
-    opList = [ OpDesc(opClass='MemRead', opLat=2), # actually execute cycle = 2+2
-               OpDesc(opClass='FloatMemRead', opLat=2),
+    opList = [ OpDesc(opClass='MemRead', opLat=2), # actually execute cycle = 2+2 (2 is in rubycache)
+               OpDesc(opClass='FloatMemRead', opLat=4),
                OpDesc(opClass='VectorUnitStrideLoad', opLat=3),
                OpDesc(opClass='VectorSegUnitStrideLoad', opLat=3),
                OpDesc(opClass='VectorUnitStrideMaskLoad', opLat=3),
@@ -153,18 +146,16 @@ class ReadPort(FUDesc):
                OpDesc(opClass='VectorSegIndexedLoad', opLat=3),
                OpDesc(opClass='VectorUnitStrideFaultOnlyFirstLoad', opLat=3),
                OpDesc(opClass='VectorWholeRegisterLoad', opLat=3)]
-    count = 2
 
 class WritePort(FUDesc):
     opList = [ OpDesc(opClass='MemWrite', opLat=3),
-               OpDesc(opClass='FloatMemWrite', opLat=3),
+               OpDesc(opClass='FloatMemWrite', opLat=4),
                OpDesc(opClass='VectorUnitStrideStore'),
                OpDesc(opClass='VectorSegUnitStrideStore'),
                OpDesc(opClass='VectorUnitStrideMaskStore'),
                OpDesc(opClass='VectorStridedStore'),
                OpDesc(opClass='VectorIndexedStore'),
                OpDesc(opClass='VectorWholeRegisterStore')]
-    count = 2
 
 class RdWrPort(FUDesc):
     opList = [ OpDesc(opClass='MemRead', opLat=2),
