@@ -886,8 +886,8 @@ const uint64_t NEMU_SATP_ASID_MASK =  ((((uint64_t)1 <<(NEMU_SATP_ASID_LEN))-1)<
 const uint64_t NEMU_SATP_PADDR_MASK =  (((uint64_t)1<<NEMU_SATP_PADDR_LEN)-1);
 const uint64_t NEMU_SATP_MASK = NEMU_SATP_MODE_MASK |NEMU_SATP_ASID_MASK | NEMU_SATP_PADDR_MASK;
 
-const uint64_t NEMU_SSTATUS_WMASK = ((1 << 19) | (1 << 18) | (0x3 << 13) | (1 << 8) | (1 << 5) | (1 << 1));
-const uint64_t NEMU_SSTATUS_RMASK = (NEMU_SSTATUS_WMASK | (0x3 << 15) | (1ull << 63) | (3ull << 32));
+const uint64_t NEMU_SSTATUS_WMASK = ((1 << 19) | (1 << 18) | (0x3 << 13) | (1 << 8) | (1 << 5) | (1 << 1) |(0x3 <<9));
+const uint64_t NEMU_SSTATUS_RMASK = 0x80000003000de762UL;
 const uint64_t NEMU_COUNTER_MASK = 0;
 
 const uint64_t NEMU_VS_MASK = ((1 << 10) | (1 << 6) | (1 << 2));
@@ -929,7 +929,11 @@ const RegVal STATUS_UIE_MASK = 1ULL << 0;
                             STATUS_SPIE_MASK | STATUS_UPIE_MASK |
                             STATUS_MIE_MASK | STATUS_SIE_MASK |
                             STATUS_UIE_MASK;*/
-const RegVal MSTATUS_MASK = (0x7e79aaUL) | (1UL << 63) | (1UL << 39) | (1UL << 38);
+//const RegVal MSTATUS_MASK = (0x7e79aaUL) | (1UL << 63) | (1UL << 39) | (1UL << 38);
+const RegVal MSTATUS_WMASK_FS = 0x3UL << 13;
+const RegVal MSTATUS_WMASK_RVH = 3UL << 38;
+const RegVal MSTATUS_WMASK_RVV = 3UL << 9;
+const RegVal MSTATUS_MASK = (0x7e79aaUL) | MSTATUS_WMASK_FS | MSTATUS_WMASK_RVH | MSTATUS_WMASK_RVV;
 const RegVal HSTATUS_MASK = ((1 << 22) | (1 << 21) | (1 << 20) | (1 << 18) | (0x3f << 12) | (1 << 9) | (1 << 8) |
                              (1 << 7) | (1 << 6) | (1 << 5));
 const RegVal SSTATUS_MASK = STATUS_SD_MASK | STATUS_UXL_MASK |
