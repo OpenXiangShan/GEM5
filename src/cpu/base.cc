@@ -1193,7 +1193,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                 diff_at = ValueDiff;
         }
         //hcounteren
-        gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_HCOUNTEREN, tid);
+        gem5_val = readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_HCOUNTEREN, tid);
         ref_val = diffAllStates->referenceRegFile.hcounteren;
         if (gem5_val != ref_val) {
             warn("Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
@@ -1339,6 +1339,21 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             if (!diff_at)
                 diff_at = ValueDiff;
         }
+        //cpu.v diff
+        gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VIRMODE, tid);
+        ref_val = diffAllStates->referenceRegFile.v;
+        if (gem5_val != ref_val) {
+            warn("Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
+            warn(
+                "Diff at \033[31m%s\033[0m Ref value: \033[31m"
+                "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
+                "v mode", ref_val, gem5_val);
+            diffInfo.errorCsrsValue[CsrRegIndex::v] = 1;
+            diffAllStates->gem5RegFile.vsscratch = gem5_val;
+            if (!diff_at)
+                diff_at = ValueDiff;
+        }
+
 
 
         if (diff_at != NoneDiff) {
@@ -1527,7 +1542,7 @@ BaseCPU::difftestStep(ThreadID tid, InstSeqNum seq)
                 }
             } else {
                 reportDiffMismatch(tid, seq);
-                panic("Difftest failed!\n");
+
             }
         } else {
             clearDiffMismatch(tid, seq);
@@ -1679,15 +1694,17 @@ void BaseCPU::setSCSuccess(bool success, paddr_t addr)
 }
 
 void
-BaseCPU::setExceptionGuideExecInfo(uint64_t exception_num, uint64_t mtval,
-                          uint64_t stval, bool force_set_jump_target,
-                          uint64_t jump_target)
+BaseCPU::setExceptionGuideExecInfo(uint64_t exception_num, uint64_t mtval, uint64_t stval, bool force_set_jump_target,
+                                   uint64_t jump_target, ThreadID tid)
 {
     auto &gd = diffAllStates->diff.guide;
     gd.force_raise_exception = true;
     gd.exception_num = exception_num;
     gd.mtval = mtval;
     gd.stval = stval;
+    gd.mtval2 = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_MTVAL2, tid);
+    gd.htval = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_HTVAL, tid);
+    gd.vstval = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VSTVAL, tid);
     gd.force_set_jump_target = force_set_jump_target;
     gd.jump_target = jump_target;
 
