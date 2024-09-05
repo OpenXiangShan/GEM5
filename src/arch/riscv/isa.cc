@@ -170,8 +170,6 @@ namespace RiscvISA
     [MISCREG_HPMEVENT30]    = "HPMEVENT30",
     [MISCREG_HPMEVENT31]    = "HPMEVENT31",
 
-    [MISCREG_MTINST]        = "MTINST",
-    [MISCREG_MTVAL2]        = "MTVAL2",
 
     [MISCREG_TSELECT]       = "TSELECT",
     [MISCREG_TDATA1]        = "TDATA1",

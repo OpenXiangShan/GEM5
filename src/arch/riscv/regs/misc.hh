@@ -164,8 +164,6 @@ enum MiscRegIndex
     MISCREG_HPMEVENT30,
     MISCREG_HPMEVENT31,
 
-    MISCREG_MTINST,
-    MISCREG_MTVAL2,
 
     MISCREG_TSELECT,
     MISCREG_TDATA1,
@@ -458,9 +456,6 @@ enum CSRIndex
     CSR_MHPMEVENT30 = 0x33E,
     CSR_MHPMEVENT31 = 0x33F,
 
-    CSR_MTINST = 0x34A,
-    CSR_MTVAL2 = 0x34B,
-
     CSR_TSELECT = 0x7A0,
     CSR_TDATA1 = 0x7A1,
     CSR_TDATA2 = 0x7A2,
@@ -696,9 +691,6 @@ const std::map<int, CSRMetadata> CSRData = {
     {CSR_MHPMEVENT29, {"mhpmevent29", MISCREG_HPMEVENT29}},
     {CSR_MHPMEVENT30, {"mhpmevent30", MISCREG_HPMEVENT30}},
     {CSR_MHPMEVENT31, {"mhpmevent31", MISCREG_HPMEVENT31}},
-
-    {CSR_MTINST, {"mtisnt", MISCREG_MTINST}},
-    {CSR_MTVAL2, {"mtval2", MISCREG_MTVAL2}},
 
     {CSR_TSELECT, {"tselect", MISCREG_TSELECT}},
     {CSR_TDATA1, {"tdata1", MISCREG_TDATA1}},
