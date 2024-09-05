@@ -234,6 +234,7 @@ namespace RiscvISA
 
           private:
             Fault startTwoStageWalk(Addr ppn, Addr vaddr);
+            Fault startTwoStageWalkFromTLB(Addr ppn, Addr vaddr);
 
             Fault twoStageStepWalk(PacketPtr &write);
             Fault twoStageWalk(PacketPtr &write);

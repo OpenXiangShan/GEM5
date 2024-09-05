@@ -96,6 +96,8 @@ enum l2TLBPage
 
 };
 
+enum TlbTranslateMode { direct = 0, vsstage, gstage, allstage };
+
 enum TranslateMode
 {
     defaultmode = 0,
@@ -103,9 +105,7 @@ enum TranslateMode
 
 };
 
-enum MMUMode
-{
-    MMU_DIRECT = 0, MMU_TRANSLATE = 1, MMU_DYNAMIC = 2 };
+enum MMUMode { MMU_DIRECT = 0, MMU_TRANSLATE = 1, MMU_DYNAMIC = 2 };
 
 BitUnion64(PTESv39)
     Bitfield<53, 10> ppn;
@@ -135,6 +135,7 @@ struct TlbEntry : public Serializable
 
     // The beginning of the virtual page this entry maps.
     Addr vaddr;
+    Addr gpaddr;
     // The size of the page this represents, in address bits.
     unsigned logBytes;
     //transalte mode
@@ -167,6 +168,7 @@ struct TlbEntry : public Serializable
     TlbEntry()
         : paddr(0),
           vaddr(0),
+          gpaddr(0),
           logBytes(0),
           translateMode(0),
           asid(0),
