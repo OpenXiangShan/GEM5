@@ -717,13 +717,14 @@ PhysicalMemory::overrideGCptRestorer(unsigned store_id)
 
         fseek(fp, 0, SEEK_END);
         file_len = ftell(fp);
-        if (file_len <= gcptRestorerSizeLimit) {
+        restorer_size = file_len;
+        /*if (file_len <= gcptRestorerSizeLimit) {
             restorer_size = file_len;
         } else {
             warn("Gcpt restorer file size %u is larger than limit %u, is partially loaded\n", file_len,
                  gcptRestorerSizeLimit);
             restorer_size = gcptRestorerSizeLimit;
-        }
+        }*/
 
         fseek(fp, 0, SEEK_SET);
         file_len = fread(pmem, 1, restorer_size, fp);
