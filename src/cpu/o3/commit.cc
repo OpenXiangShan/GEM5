@@ -1181,14 +1181,19 @@ Commit::commitInsts()
                     RiscvISA::HSTATUS hstatus = cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_HSTATUS, tid);
                     RiscvISA::VSSTATUS vsstatus =
                         cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSSTATUS, tid);
+                    RiscvISA::VSSTATUS32 vsstatus32 =
+                        cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSSTATUS, tid);
+
                     if (v) {
-                        if (hstatus.vsxl) {
-                            warn("todo no vsstatus_32\n");
+                        if (hstatus.vsxl ==1) {
+                            vsstatus32.sd = (vsstatus32.fs == 3);
+                            cpu->setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSSTATUS, (RegVal)vsstatus32, tid);
                         } else {
                             vsstatus.sd = (vsstatus.fs == 3);
+                            cpu->setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSSTATUS, (RegVal)vsstatus, tid);
                         }
                     }
-                    cpu->setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSSTATUS, (RegVal)vsstatus, tid);
+
                 }
                 if (head_inst->isUpdateMstatusSd()) {
                     updateMstatusSd(tid);
@@ -1531,19 +1536,14 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
                 cause = cpu->readMiscReg(
                     RiscvISA::MiscRegIndex::MISCREG_UCAUSE, tid);
             }
-            if (cause == RiscvISA::ExceptionCode::LOAD_PAGE ||
-                cause == RiscvISA::ExceptionCode::STORE_PAGE ||
-                cause == RiscvISA::ExceptionCode::INST_PAGE) {
-                DPRINTF(Commit,
-                        "Force to raise No.%lu exception at page fault\n",
-                        cause);
+            auto exception_no =inst_fault->exception();
+            if (exception_no == RiscvISA::ExceptionCode::LOAD_PAGE ||
+                exception_no == RiscvISA::ExceptionCode::STORE_PAGE ||
+                exception_no == RiscvISA::ExceptionCode::INST_PAGE) {
+                DPRINTF(Commit, "Force to raise No.%lu exception at page fault\n", inst_fault);
                 cpu->setExceptionGuideExecInfo(
-                    cause,
-                    cpu->readMiscReg(
-                        RiscvISA::MiscRegIndex::MISCREG_MTVAL, tid),
-                    cpu->readMiscReg(
-                        RiscvISA::MiscRegIndex::MISCREG_STVAL, tid),
-                    false, 0);
+                    exception_no, cpu->readMiscReg(RiscvISA::MiscRegIndex::MISCREG_MTVAL, tid),
+                    cpu->readMiscReg(RiscvISA::MiscRegIndex::MISCREG_STVAL, tid), false, 0, tid);
             }
             if (cause == RiscvISA::ExceptionCode::ECALL_USER ||
                 cause == RiscvISA::ExceptionCode::ECALL_SUPER ||
