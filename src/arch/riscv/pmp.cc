@@ -166,7 +166,7 @@ PMP::pmpUpdateCfg(uint32_t pmp_index, uint8_t this_cfg)
 uint64_t
 PMP::pmpTorMask()
 {
-    return -((uint64_t)1 << (CONFIG_PMP_GRANULARITY - CONFIG_PMP_GRANULARITY));
+    return -((uint64_t)1 << (CONFIG_PMP_GRANULARITY - PMP_SHIFT));
 }
 
 void
