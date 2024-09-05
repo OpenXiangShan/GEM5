@@ -81,7 +81,7 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
       scheduler(params.scheduler),
       instQueue(_cpu, this, params),
       ldstQueue(_cpu, this, params),
-      fuPool(params.fuPool),
+      dispWidth(params.dispWidth),
       commitToIEWDelay(params.commitToIEWDelay),
       renameToIEWDelay(params.renameToIEWDelay),
       renameWidth(params.renameWidth),
@@ -468,14 +468,6 @@ IEW::isDrained() const
         drained = drained && dispatchStatus[tid] == Running;
     }
 
-    // Also check the FU pool as instructions are "stored" in FU
-    // completion events until they are done and not accounted for
-    // above
-    if (drained && !fuPool->isDrained()) {
-        DPRINTF(Drain, "FU pool still busy.\n");
-        drained = false;
-    }
-
     return drained;
 }
 
@@ -498,7 +490,6 @@ IEW::takeOverFrom()
 
     instQueue.takeOverFrom();
     ldstQueue.takeOverFrom();
-    fuPool->takeOverFrom();
 
     startupStage();
     cpu->activityThisCycle();
@@ -1171,7 +1162,8 @@ IEW::dispatchInstFromDispQue(ThreadID tid)
     int dis_num_inst = 0;
 
     for (int i = 0; i < NumDQ; i++) {
-        while (!dispQue[i].empty()) {
+        int dispatched = 0;
+        while (!dispQue[i].empty() && dispatched < dispWidth) {
             inst = dispQue[i].front();
 
             // Check for squashed instructions.
@@ -1295,6 +1287,7 @@ IEW::dispatchInstFromDispQue(ThreadID tid)
             ppDispatch->notify(inst);
 
             dispQue[i].pop_front();
+            dispatched++;
         }
     }
     iewStats.dispDist.sample(dis_num_inst);
@@ -1672,9 +1665,6 @@ IEW::tick()
     ldstQueue.tick();
 
     sortInsts();
-
-    // Free function units marked as being freed this cycle.
-    fuPool->processFreeUnits();
 
     std::list<ThreadID>::iterator threads = activeThreads->begin();
     std::list<ThreadID>::iterator end = activeThreads->end();

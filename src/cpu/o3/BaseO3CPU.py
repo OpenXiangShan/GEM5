@@ -132,18 +132,16 @@ class BaseO3CPU(BaseCPU):
                "Issue/Execute/Writeback delay")
     executeToWriteBackDelay = Param.Cycles(1, "Execute to issue delay")
 
-    dispatchWidth = Param.Unsigned(6, "Dispatch width")
-    issueWidth = Param.Unsigned(8, "Issue width")
-    wbWidth = Param.Unsigned(8, "Writeback width")
-    fuPool = Param.FUPool(DefaultFUPool(), "Functional Unit pool")
+    dispWidth = Param.Unsigned(6, "Each DispQue dispatch width")
+    wbWidth = Param.Unsigned(20, "Writeback width")
 
     iewToCommitDelay = Param.Cycles(1, "Issue/Execute/Writeback to commit "
                "delay")
     renameToROBDelay = Param.Cycles(1, "Rename to reorder buffer delay")
-    commitWidth = Param.Unsigned(6, "Commit width")
+    commitWidth = Param.Unsigned(8, "Commit width")
 
-    squashWidth = Param.Unsigned(6, "Squash width with rollback rob walk")
-    replayWidth = Param.Unsigned(6, "Squash width with redo rob walk")
+    squashWidth = Param.Unsigned(8, "Squash width with rollback rob walk")
+    replayWidth = Param.Unsigned(8, "Squash width with redo rob walk")
     ConstSquashCycle = Param.Unsigned(1, "Squash width with redo rob walk")
     robWalkPolicy = Param.ROBWalkPolicy('Replay', "Squash with a specific policy")
 

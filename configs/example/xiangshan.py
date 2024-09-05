@@ -23,12 +23,20 @@ from common import XSConfig
 from common.Caches import *
 from common import Options
 
-def build_test_system(np):
+def build_test_system(np, args):
     assert buildEnv['TARGET_ISA'] == "riscv"
+
+    # override cpu class and clock
+    if args.xiangshan_ecore:
+        TestCPUClass = XiangshanECore
+        args.cpu_clock = '2.4GHz'
+    else:
+        TestCPUClass = XiangshanCore
+
     ruby = False
     if hasattr(args, 'ruby') and args.ruby:
         ruby = True
-    test_sys = makeBareMetalXiangshanSystem(test_mem_mode, SysConfig(mem=args.mem_size), None, np=np, ruby=ruby)
+    test_sys = makeBareMetalXiangshanSystem('timing', SysConfig(mem=args.mem_size), None, np=np, ruby=ruby)
     test_sys.num_cpus = np
 
     test_sys.xiangshan_system = True
@@ -255,39 +263,35 @@ def build_test_system(np):
 
     return test_sys
 
-# Add args
-parser = argparse.ArgumentParser()
-Options.addCommonOptions(parser, configure_xiangshan=True)
-Options.addXiangshanFSOptions(parser)
+if __name__ == '__m5_main__':
+    # Add args
+    parser = argparse.ArgumentParser()
+    Options.addCommonOptions(parser, configure_xiangshan=True)
+    Options.addXiangshanFSOptions(parser)
 
-# Add the ruby specific and protocol specific args
-if '--ruby' in sys.argv:
-    Ruby.define_options(parser)
+    # Add the ruby specific and protocol specific args
+    if '--ruby' in sys.argv:
+        Ruby.define_options(parser)
 
-args = parser.parse_args()
+    args = parser.parse_args()
 
-args.xiangshan_system = True
-args.enable_difftest = True
-args.enable_riscv_vector = True
+    if args.xiangshan_ecore:
+        FutureClass = None
+        args.cpu_clock = '2.4GHz'
+    else:
+        FutureClass = None
 
-assert not args.external_memory_system
+    args.xiangshan_system = True
+    args.enable_difftest = True
+    args.enable_riscv_vector = True
 
-test_mem_mode = 'timing'
+    assert not args.external_memory_system
 
-# override cpu class and clock
-if args.xiangshan_ecore:
-    TestCPUClass = XiangshanECore
-    FutureClass = None
-    args.cpu_clock = '2.4GHz'
-else:
-    TestCPUClass = XiangshanCore
-    FutureClass = None
+    # Match the memories with the CPUs, based on the options for the test system
+    TestMemClass = Simulation.setMemClass(args)
 
-# Match the memories with the CPUs, based on the options for the test system
-TestMemClass = Simulation.setMemClass(args)
+    test_sys = build_test_system(args.num_cpus, args)
 
-test_sys = build_test_system(args.num_cpus)
+    root = Root(full_system=True, system=test_sys)
 
-root = Root(full_system=True, system=test_sys)
-
-Simulation.run_vanilla(args, root, test_sys, FutureClass)
+    Simulation.run_vanilla(args, root, test_sys, FutureClass)
