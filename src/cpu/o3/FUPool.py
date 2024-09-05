@@ -165,13 +165,13 @@ class NanhuScheduler(Scheduler):
 
 class KunminghuScheduler(Scheduler):
     IQs = [
-        IssueQue(name='IQ_misc' , inoutPorts=1, size=1*24, fuType=[IntDiv()]),
-        IssueQue(name='IQ_br', inoutPorts=2, size=2*24, fuType=[IntBRU()]),
-        IssueQue(name='IQ_si', inoutPorts=2, size=2*24, fuType=[IntALU()]),
-        IssueQue(name='IQ_ci', inoutPorts=2, size=2*24, fuType=[IntALU(), IntMult()]),
-        IssueQue(name='IQ_stu', inoutPorts=2, size=2*24, fuType=[WritePort()]),
-        IssueQue(name='IQ_ldu', inoutPorts=2, size=2*24, fuType=[ReadPort()]),
-        IssueQue(name='IQ_cplx',inoutPorts=2, size=2*24,
+        IssueQue(name='IQ_misc' , inoutPorts=1, size=1*16, fuType=[IntDiv()]),
+        IssueQue(name='IQ_br', inoutPorts=2, size=2*16, fuType=[IntBRU()]),
+        IssueQue(name='IQ_si', inoutPorts=2, size=2*16, fuType=[IntALU()]),
+        IssueQue(name='IQ_ci', inoutPorts=2, size=2*16, fuType=[IntALU(), IntMult()]),
+        IssueQue(name='IQ_stu', inoutPorts=2, size=2*16, fuType=[WritePort()]),
+        IssueQue(name='IQ_ldu', inoutPorts=3, size=3*16, fuType=[ReadPort()]),
+        IssueQue(name='IQ_cplx',inoutPorts=2, size=2*16,
             scheduleToExecDelay=3, fuType=[FP_MISC(), FP_SLOW(), FP_MAM(), FP_MAA(), SIMD_Unit()])
     ]
     slotNum = 12
