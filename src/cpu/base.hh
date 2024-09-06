@@ -688,6 +688,8 @@ class BaseCPU : public ClockedObject
     bool dumpCommitFlag;
     int dumpStartNum;
     bool enableRVV{false};
+    bool enableRVHDIFF{false};
+    bool enabledifftesInstTrace{false};
     std::shared_ptr<DiffAllStates> diffAllStates{};
 
     virtual void readGem5Regs()
