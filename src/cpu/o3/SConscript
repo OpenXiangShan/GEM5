@@ -32,7 +32,7 @@ Import('*')
 
 if env['CONF']['TARGET_ISA'] != 'null':
     SimObject('FUPool.py', sim_objects=['FUPool', 'SpecWakeupChannel',
-              'IssueQue', 'Scheduler'])
+              'IssuePort', 'IssueQue', 'Scheduler'])
     SimObject('FuncUnitConfig.py', sim_objects=[
               'DelayCalibrator', 'ScheduleDelayMatrixMap'])
     SimObject('BaseO3CPU.py', sim_objects=['BaseO3CPU'], enums=[
