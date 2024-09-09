@@ -179,7 +179,7 @@ class BaseO3CPU(BaseCPU):
 
     numRobs = Param.Unsigned(1, "Number of Reorder Buffers");
 
-    numPhysIntRegs = Param.Unsigned(192,
+    numPhysIntRegs = Param.Unsigned(224,
             "Number of physical integer registers")
     numPhysFloatRegs = Param.Unsigned(192, "Number of physical floating point "
                                       "registers")
@@ -192,7 +192,7 @@ class BaseO3CPU(BaseCPU):
     numPhysCCRegs = Param.Unsigned(0, "Number of physical cc registers")
     numPhysRMiscRegs = Param.Unsigned(40, "Number of physical renameable misc registers")
 
-    numDQEntries = Param.Unsigned(16, "Number of entries in the dispQue")
+    numDQEntries = Param.Unsigned(18, "Number of entries in the dispQue")
     numROBEntries = Param.Unsigned(256, "Number of reorder buffer entries")
 
     smtNumFetchingThreads = Param.Unsigned(1, "SMT Number of Fetching Threads")

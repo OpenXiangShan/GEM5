@@ -36,8 +36,20 @@ namespace gem5
 namespace o3
 {
 
+IssuePort::IssuePort(const IssuePortParams &params)
+    : SimObject(params),
+      fu(params.fu)
+{
+    mask.resize(Num_OpClasses, false);
+    for (auto it0 : params.fu) {
+        for (auto it1 : it0->opDescList) {
+            mask.set(it1->opClass);
+        }
+    }
+}
+
 bool
-IssueQue::compare_priority::operator()(const DynInstPtr& a, const DynInstPtr& b) const
+IssueQue::select_ploy::operator()(const DynInstPtr& a, const DynInstPtr& b) const
 {
     return a->seqNum > b->seqNum;
 }
@@ -58,17 +70,17 @@ IssueQue::IssueStream::pop()
 
 IssueQue::IssueQueStats::IssueQueStats(statistics::Group* parent, IssueQue* que, std::string name)
     : Group(parent, name.c_str()),
-      ADD_STAT(full, statistics::units::Count::get(), "count of iq full"),
-      ADD_STAT(bwfull, statistics::units::Count::get(), "count of bandwidth full"),
       ADD_STAT(retryMem, statistics::units::Count::get(), "count of load/store retry"),
       ADD_STAT(canceledInst, statistics::units::Count::get(), "count of canceled insts"),
       ADD_STAT(loadmiss, statistics::units::Count::get(), "count of load miss"),
       ADD_STAT(arbFailed, statistics::units::Count::get(), "count of arbitration failed"),
       ADD_STAT(insertDist, statistics::units::Count::get(), "distruibution of insert"),
-      ADD_STAT(issueDist, statistics::units::Count::get(), "distruibution of issue")
+      ADD_STAT(issueDist, statistics::units::Count::get(), "distruibution of issue"),
+      ADD_STAT(portBusy, statistics::units::Count::get(), "distruibution of port busy cycles")
 {
-    insertDist.init(que->inoutPorts + 1).flags(statistics::nozero);
-    issueDist.init(que->inoutPorts + 1).flags(statistics::nozero);
+    insertDist.init(que->inports + 1).flags(statistics::nozero);
+    issueDist.init(que->outports + 1).flags(statistics::nozero);
+    portBusy.init(que->outports).flags(statistics::nozero);
     retryMem.flags(statistics::nozero);
     canceledInst.flags(statistics::nozero);
     loadmiss.flags(statistics::nozero);
@@ -77,15 +89,67 @@ IssueQue::IssueQueStats::IssueQueStats(statistics::Group* parent, IssueQue* que,
 
 IssueQue::IssueQue(const IssueQueParams &params)
     : SimObject(params),
-      inoutPorts(params.inoutPorts),
+      inports(params.inports),
+      outports(params.oports.size()),
       iqsize(params.size),
       scheduleToExecDelay(params.scheduleToExecDelay),
       iqname(params.name),
-      fuDescs(params.fuType),
       inflightIssues(scheduleToExecDelay, 0)
 {
     toIssue = inflightIssues.getWire(0);
     toFu = inflightIssues.getWire(-scheduleToExecDelay);
+    if (outports > 8) {
+        panic("%s: outports > 8 is not supported\n", iqname);
+    }
+
+    bool same_fu = true;
+    for (int i = 0; i < outports; i++) {
+        for (int j = i + 1; j < outports; j++) {
+            if (params.oports[i]->mask != params.oports[j]->mask) {
+                same_fu = false;
+            }
+            if (!same_fu && (params.oports[i]->mask & params.oports[j]->mask).any()) {
+                panic("%s: Found the conflict opClass in different FU, portid: %d and %d\n", iqname, i, j);
+            }
+        }
+    }
+    if (same_fu) {
+        warn("%s: Use one selector by multiple identical fus\n", iqname);
+    }
+
+    if (same_fu) {
+        // we only allocate one ReadyQue
+        auto t = new ReadyQue;
+        readyQs.resize(outports, t);
+        auto& port = params.oports[0];
+        fuDescs.insert(fuDescs.begin(), port->fu.begin(), port->fu.end());
+    }
+    else {
+        readyQs.resize(outports, nullptr);
+        for (int i = 0; i < outports; i++) {
+            readyQs[i] = new ReadyQue;
+            auto& port = params.oports[i];
+            fuDescs.insert(fuDescs.begin(), port->fu.begin(), port->fu.end());
+        }
+    }
+
+    readyQclassify.resize(enums::OpClass::Num_OpClass, nullptr);
+    opPipelined.resize(Num_OpClasses, false);
+    for (int pi = 0; pi < (same_fu ? 1 : outports); pi++) {
+        auto& port = params.oports[pi];
+        for (auto ops : port->fu) {
+            for (auto op : ops->opDescList) {
+                if (readyQclassify[op->opClass]) {
+                    panic("%s: Found the conflict opClass in different FU, opclass: %s\n", iqname,
+                          enums::OpClassStrings[op->opClass]);
+                }
+                readyQclassify[op->opClass] = readyQs.at(pi);
+                opPipelined[op->opClass] = op->pipelined;
+            }
+        }
+    }
+
+    portBusy.resize(outports, 0);
 }
 
 void
@@ -185,7 +249,7 @@ IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
             speculative ? "spec" : "wb", dst->flatIndex(), inst->seqNum);
         for (auto& it: subDepGraph[dst->flatIndex()]) {
             int srcIdx = it.first;
-            auto consumer = it.second;
+            auto& consumer = it.second;
             if (consumer->readySrcIdx(srcIdx)) {
                 continue;
             }
@@ -228,7 +292,7 @@ IssueQue::addIfReady(const DynInstPtr& inst)
         inst->clearCancel();
         if (!inst->inReadyQ()) {
             inst->setInReadyQ();
-            readyInsts.push(inst);
+            readyQclassify[inst->opClass()]->push(inst);
         }
     }
 }
@@ -236,18 +300,25 @@ IssueQue::addIfReady(const DynInstPtr& inst)
 void
 IssueQue::selectInst()
 {
-    selectedInst.clear();
-    while (selectedInst.size() < inoutPorts && !readyInsts.empty()) {
-        auto& inst = readyInsts.top();
-        if (inst->canceled()) {
-            inst->clearInReadyQ();
-            readyInsts.pop();
-            continue;
+    selectQ.clear();
+    for (int pi=0;pi<outports;pi++) {
+        auto readyQ = readyQs[pi];
+        while (!readyQ->empty()) {
+            auto top = readyQ->top();
+            if (!top->canceled()) {
+                break;
+            }
+            top->clearInReadyQ();
+            readyQ->pop();
         }
-        DPRINTF(Schedule, "[sn %ld] was selected\n", inst->seqNum);
-        scheduler->insertSlot(inst);
-        selectedInst.push_back(inst);
-        readyInsts.pop();
+
+        if (!readyQ->empty()) {
+            auto inst = readyQ->top();
+            DPRINTF(Schedule, "[sn %ld] was selected\n", inst->seqNum);
+            scheduler->insertSlot(inst);
+            selectQ.push_back(std::make_pair(pi, inst));
+            readyQ->pop();
+        }
     }
 }
 
@@ -255,33 +326,51 @@ void
 IssueQue::scheduleInst()
 {
     // here is issueStage 0
-    for (auto& inst : selectedInst) {
+    for (auto& info : selectQ) {
+        auto& pi = info.first;
+        auto& inst = info.second;
         inst->clearInReadyQ();
         if (inst->canceled()) {
             DPRINTF(Schedule, "[sn %ld] was canceled\n", inst->seqNum);
-        } else if (inst->arbFailed()) {
-            DPRINTF(Schedule, "[sn %ld] arbitration failed, retry\n", inst->seqNum);
+        } else if (inst->arbFailed() || portBusy[pi]) {
+            if (inst->arbFailed()) {
+                iqstats->arbFailed++;
+                DPRINTF(Schedule, "[sn %ld] arbitration failed, retry\n", inst->seqNum);
+            } else {
+                iqstats->portBusy[pi]++;
+                DPRINTF(Schedule, "[sn %ld] port busy, retry\n", inst->seqNum);
+            }
             assert(inst->readyToIssue());
             inst->setInReadyQ();
-            readyInsts.push(inst);// retry
-            iqstats->arbFailed++;
+            readyQclassify[inst->opClass()]->push(inst);// retry
         } else {
             DPRINTF(Schedule, "[sn %ld] no conflict, scheduled\n", inst->seqNum);
             toIssue->push(inst);
-            if (scheduler->getCorrectedOpLat(inst) <= 1) {
+            uint32_t lat = scheduler->getCorrectedOpLat(inst);
+            if (lat <= 1) {
                 scheduler->wakeUpDependents(inst, this);
+            } else if (!opPipelined[inst->opClass()]) {
+                portBusy[pi] = lat - 1;
             }
         }
         inst->clearArbFailed();
     }
-    iqstats->issueDist[toIssue->size]++;
+    if (toIssue->size > 0) {
+        iqstats->issueDist[toIssue->size]++;
+    }
 }
 
 void
 IssueQue::tick()
 {
-    iqstats->insertDist[instNumInsert]++;
+    if (instNumInsert > 0) {
+        iqstats->insertDist[instNumInsert]++;
+    }
     instNumInsert = 0;
+
+    for (auto& t : portBusy) {
+        t = t > 0 ? t - 1 : 0;
+    }
 
     scheduleInst();
     inflightIssues.advance();
@@ -290,9 +379,8 @@ IssueQue::tick()
 bool
 IssueQue::ready()
 {
-    bool bwFull = instNumInsert >= inoutPorts;
+    bool bwFull = instNumInsert >= inports;
     if (bwFull) {
-        iqstats->bwfull++;
         DPRINTF(Schedule, "can't insert more due to inports exhausted\n");
     }
     return !full() && !bwFull;
@@ -303,7 +391,6 @@ IssueQue::full()
 {
     bool full = instNumInsert + instNum >= iqsize;
     if (full) {
-        iqstats->full++;
         DPRINTF(Schedule, "has full!\n");
     }
     return full;
@@ -433,34 +520,50 @@ Scheduler::SpecWakeupCompletion::description() const
 }
 
 bool
-Scheduler::compare_priority::operator()(const Slot& a, const Slot& b) const
+Scheduler::disp_ploy::operator()(IssueQue* a, IssueQue* b) const
 {
+    // bigger/ready first
+    int p0 = a->ready() ? a->emptyEntries() : -1;
+    int p1 = b->ready() ? b->emptyEntries() : -1;
+    return p0 < p1;
+}
+
+bool
+Scheduler::slot_ploy::operator()(const Slot& a, const Slot& b) const
+{
+    // smaller first
     return a.priority > b.priority;
 }
 
 Scheduler::Scheduler(const SchedulerParams& params)
     : SimObject(params),
       issueQues(params.IQs),
-      slotNum(params.slotNum)
+      intSlotNum(params.intSlotNum),
+      fpSlotNum(params.fpSlotNum)
 {
     dispTable.resize(enums::OpClass::Num_OpClass);
-
     opExecTimeTable.resize(enums::OpClass::Num_OpClass, 1);
 
+    boost::dynamic_bitset<> opChecker(enums::Num_OpClass, 0);
     for (int i=0; i< issueQues.size(); i++) {
         issueQues[i]->setIQID(i);
         issueQues[i]->scheduler = this;
-        combinedFus += issueQues[i]->inoutPorts;
+        combinedFus += issueQues[i]->outports;
+        panic_if(issueQues[i]->fuDescs.size() == 0, "Empty config IssueQue: " + issueQues[i]->getName());
         for (auto fu : issueQues[i]->fuDescs) {
             for (auto op : fu->opDescList) {
                 opExecTimeTable[op->opClass] = op->opLat;
                 dispTable[op->opClass].push_back(issueQues[i]);
+                opChecker.set(op->opClass);
             }
         }
     }
-    for (auto& it : dispTable) {
-        if (it.empty()) {
-            it.push_back(issueQues[0]);
+
+    if (opChecker.count() != enums::Num_OpClass) {
+        for (int i=0; i<enums::Num_OpClass; i++) {
+            if (!opChecker[i]) {
+                warn("No config for opClass: %s\n", enums::OpClassStrings[i]);
+            }
         }
     }
 
@@ -541,28 +644,43 @@ Scheduler::issueAndSelect(){
         it->selectInst();
     }
     // inst arbitration
-    while (slotOccupied > slotNum) {
+    while (intSlotOccupied > intSlotNum) {
         auto& slot = intSlot.top();
         slot.inst->setArbFailed();
-        slotOccupied -= slot.resourceDemand;
+        intSlotOccupied -= slot.resourceDemand;
         DPRINTF(Schedule, "[sn %lu] remove from slot\n", slot.inst->seqNum);
         intSlot.pop();
     }
+    while (fpSlotOccupied > fpSlotNum) {
+        auto& slot = fpSlot.top();
+        slot.inst->setArbFailed();
+        fpSlotOccupied -= slot.resourceDemand;
+        DPRINTF(Schedule, "[sn %lu] remove from slot\n", slot.inst->seqNum);
+        fpSlot.pop();
+    }
 
     // reset slot status
-    slotOccupied = 0;
+    intSlotOccupied = 0;
+    fpSlotOccupied = 0;
     intSlot.clear();
+    fpSlot.clear();
 }
 
 bool
 Scheduler::ready(const DynInstPtr& inst)
 {
-    auto iqs = dispTable[inst->opClass()];
+    auto& iqs = dispTable[inst->opClass()];
+    // std::sort(iqs.begin(), iqs.end(), disp_ploy());
+    // if (iqs.back()->ready()) {
+    //     return true;
+    // }
+
     for (auto iq : iqs) {
         if (iq->ready()) {
             return true;
         }
     }
+
     DPRINTF(Dispatch, "IQ not ready, opclass: %s\n", enums::OpClassStrings[inst->opClass()]);
     return false;
 }
@@ -570,12 +688,18 @@ Scheduler::ready(const DynInstPtr& inst)
 bool
 Scheduler::full(const DynInstPtr& inst)
 {
-    auto iqs = dispTable[inst->opClass()];
+    auto& iqs = dispTable[inst->opClass()];
+    // std::sort(iqs.begin(), iqs.end(), disp_ploy());
+    // if (!iqs.back()->full()) {
+    //     return false;
+    // }
+
     for (auto iq : iqs) {
         if (!iq->full()) {
             return false;
         }
     }
+
     DPRINTF(Dispatch, "IQ full, opclass: %s\n", enums::OpClassStrings[inst->opClass()]);
     return true;
 }
@@ -613,29 +737,26 @@ void
 Scheduler::insert(const DynInstPtr& inst)
 {
     inst->setInIQ();
-    auto iqs = dispTable[inst->opClass()];
+    auto& iqs = dispTable[inst->opClass()];
     assert(!iqs.empty());
     bool inserted = false;
 
-    if (forwardDisp) {
-        for (auto iq : iqs) {
-            if (iq->ready()) {
-                iq->insert(inst);
-                inserted = true;
-                break;
-            }
-        }
-    } else {
-        for (auto iq = iqs.rbegin(); iq != iqs.rend(); iq++) {
-            if ((*iq)->ready()) {
-                (*iq)->insert(inst);
-                inserted = true;
-                break;
-            }
+    // std::sort(iqs.begin(), iqs.end(), disp_ploy());
+    // auto iq = iqs.back();
+    // if (iq->ready()) {
+    //     iq->insert(inst);
+    //     inserted = true;
+    // }
+
+    for (auto iq : iqs) {
+        if (iq->ready()) {
+            iq->insert(inst);
+            inserted = true;
+            break;
         }
     }
+
     assert(inserted);
-    forwardDisp = !forwardDisp;
     DPRINTF(Dispatch, "[sn %lu] dispatch: %s\n", inst->seqNum, inst->staticInst->disassemble(0));
 }
 
@@ -643,8 +764,11 @@ void
 Scheduler::insertNonSpec(const DynInstPtr& inst)
 {
     inst->setInIQ();
-    auto iqs = dispTable[inst->opClass()];
+    auto& iqs = dispTable[inst->opClass()];
     assert(!iqs.empty());
+    // std::sort(iqs.begin(), iqs.end(), disp_ploy());
+    // auto iq = iqs.back();
+    // iq->insertNonSpec(inst);
     for (auto iq : iqs) {
         if (iq->ready()) {
             iq->insertNonSpec(inst);
@@ -696,14 +820,21 @@ Scheduler::getInstToFU()
 void
 Scheduler::insertSlot(const DynInstPtr& inst)
 {
-    if (inst->isFloating() || inst->isVector()) {
+    if (inst->isVector()) {
         // floating point and vector insts are not participate in arbitration
         return;
     }
     uint32_t priority = getArbPriority(inst);
     uint32_t needed = inst->numSrcRegs();
-    slotOccupied += needed;
-    intSlot.push(Slot(priority, needed, inst));
+
+    if (inst->isFloating()) {
+        fpSlotOccupied += needed;
+        fpSlot.push(Slot(priority, needed, inst));
+    }
+    else if (inst->isInteger()) {
+        intSlotOccupied += needed;
+        intSlot.push(Slot(priority, needed, inst));
+    }
     DPRINTF(Schedule, "[sn %lu] insert slot, priority: %u, needed: %u\n", inst->seqNum, priority, needed);
 }
 
@@ -814,8 +945,10 @@ bool
 Scheduler::hasReadyInsts()
 {
     for (auto it : issueQues) {
-        if (!it->readyInsts.empty()) {
-            return true;
+        for (auto readyQ : it->readyQs) {
+            if (!readyQ->empty()) {
+                return true;
+            }
         }
     }
     return false;
