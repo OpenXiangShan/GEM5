@@ -42,6 +42,10 @@ from m5.params import *
 
 from m5.objects.FuncUnit import *
 
+class IntMisc(FUDesc):
+    opList = [ OpDesc(opClass='No_OpClass') ]
+    count = 1
+
 class IntALU(FUDesc):
     opList = [ OpDesc(opClass='IntAlu') ]
     count = 6
@@ -137,23 +141,23 @@ class PredALU(FUDesc):
     count = 1
 
 class ReadPort(FUDesc):
-    opList = [ OpDesc(opClass='MemRead', opLat=1), # actually execute cycle = 1+2
-               OpDesc(opClass='FloatMemRead', opLat=1),
-               OpDesc(opClass='VectorUnitStrideLoad', opLat=2),
-               OpDesc(opClass='VectorSegUnitStrideLoad', opLat=2),
-               OpDesc(opClass='VectorUnitStrideMaskLoad', opLat=2),
-               OpDesc(opClass='VectorSegUnitStrideMaskLoad', opLat=2),
-               OpDesc(opClass='VectorStridedLoad', opLat=2),
-               OpDesc(opClass='VectorSegStridedLoad', opLat=2),
-               OpDesc(opClass='VectorIndexedLoad', opLat=2),
-               OpDesc(opClass='VectorSegIndexedLoad', opLat=2),
-               OpDesc(opClass='VectorUnitStrideFaultOnlyFirstLoad', opLat=2),
-               OpDesc(opClass='VectorWholeRegisterLoad', opLat=2)]
+    opList = [ OpDesc(opClass='MemRead', opLat=2), # actually execute cycle = 2+2
+               OpDesc(opClass='FloatMemRead', opLat=2),
+               OpDesc(opClass='VectorUnitStrideLoad', opLat=3),
+               OpDesc(opClass='VectorSegUnitStrideLoad', opLat=3),
+               OpDesc(opClass='VectorUnitStrideMaskLoad', opLat=3),
+               OpDesc(opClass='VectorSegUnitStrideMaskLoad', opLat=3),
+               OpDesc(opClass='VectorStridedLoad', opLat=3),
+               OpDesc(opClass='VectorSegStridedLoad', opLat=3),
+               OpDesc(opClass='VectorIndexedLoad', opLat=3),
+               OpDesc(opClass='VectorSegIndexedLoad', opLat=3),
+               OpDesc(opClass='VectorUnitStrideFaultOnlyFirstLoad', opLat=3),
+               OpDesc(opClass='VectorWholeRegisterLoad', opLat=3)]
     count = 2
 
 class WritePort(FUDesc):
-    opList = [ OpDesc(opClass='MemWrite', opLat=4),
-               OpDesc(opClass='FloatMemWrite'),
+    opList = [ OpDesc(opClass='MemWrite', opLat=3),
+               OpDesc(opClass='FloatMemWrite', opLat=3),
                OpDesc(opClass='VectorUnitStrideStore'),
                OpDesc(opClass='VectorSegUnitStrideStore'),
                OpDesc(opClass='VectorUnitStrideMaskStore'),
