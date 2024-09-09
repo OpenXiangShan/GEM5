@@ -736,6 +736,7 @@ class BaseCPU : public ClockedObject
         bool curInstStrictOrdered{false};
         gem5::Addr physEffAddr;
         gem5::Addr effSize;
+        uint8_t *goldenValue;
         uint64_t amoOldGoldenValue;
         // Register address causing difftest error
         bool errorRegsValue[96];// 32 regs + 32fprs +32 vprs
@@ -797,6 +798,8 @@ class BaseCPU : public ClockedObject
     uint8_t *getGoldenMemPtr() { return goldenMemPtr; }
 
     gem5::GoldenGloablMem *goldenMemManager() { return _goldenMemManager; }
+
+    void checkL1DRefill(Addr paddr, const uint8_t *refill_data, size_t size);
 };
 
 } // namespace gem5

@@ -73,6 +73,8 @@ class FunctionalRequestProtocol
      * Receive a functional custom signals
      */
     virtual void recvFunctionalCustomSignal(PacketPtr pkt, int sig) {};
+
+    virtual void* recvGetCPUPtr();
 };
 
 class FunctionalResponseProtocol
@@ -95,6 +97,8 @@ class FunctionalResponseProtocol
     virtual void recvFunctional(PacketPtr pkt) = 0;
 
     void sendFunctionalCustomSignal(FunctionalRequestProtocol *peer, PacketPtr pkt, int sig) const;
+
+    void* sendGetCPUPtr(FunctionalRequestProtocol *peer) const;
 
     /**
      * Receive a functional custom signals

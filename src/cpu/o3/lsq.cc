@@ -61,6 +61,7 @@
 #include "debug/Schedule.hh"
 #include "debug/StoreBuffer.hh"
 #include "debug/Writeback.hh"
+#include "mem/packet_access.hh"
 #include "params/BaseO3CPU.hh"
 
 namespace gem5
@@ -515,6 +516,11 @@ LSQ::recvFunctionalCustomSignal(PacketPtr pkt, int sig)
     panic_if(!request, "Got packet back with unknown sender state\n");
     // notify cache miss
     iewStage->loadCancel(request->instruction());
+}
+
+void*
+LSQ::getCPUPtr() {
+    return (void *) cpu;
 }
 
 int
@@ -1147,7 +1153,8 @@ LSQ::LSQRequest::LSQRequest(
     _state(State::NotIssued),
     _port(*port), _inst(inst), _data(nullptr),
     _res(nullptr), _addr(0), _size(0), _flags(0),
-    _numOutstandingPackets(0), _amo_op(nullptr)
+    _numOutstandingPackets(0), _amo_op(nullptr),
+    _sbufferBypass(false)
 {
     flags.set(Flag::IsLoad, isLoad);
     if (_inst) {
@@ -1172,7 +1179,8 @@ LSQ::LSQRequest::LSQRequest(
     _flags(flags_),
     _numOutstandingPackets(0),
     _amo_op(std::move(amo_op)),
-    _hasStaleTranslation(stale_translation)
+    _hasStaleTranslation(stale_translation),
+    _sbufferBypass(false)
 {
     flags.set(Flag::IsLoad, isLoad);
     if (_inst) {
@@ -1235,6 +1243,7 @@ LSQ::LSQRequest::forward()
 {
     if (!isLoad() || !needWBToRegister() || forwardPackets.empty()) return;
     DPRINTF(StoreBuffer, "sbuffer forward data\n");
+    _sbufferBypass = true;
     for (auto& p : forwardPackets)
     {
         _inst->memData[p.idx] = p.byte;
@@ -1612,6 +1621,12 @@ void
 LSQ::DcachePort::recvFunctionalCustomSignal(PacketPtr pkt, int sig)
 {
     lsq->recvFunctionalCustomSignal(pkt, sig);
+}
+
+void*
+LSQ::DcachePort::recvGetCPUPtr()
+{
+    return (void *) (lsq->cpu);
 }
 
 void

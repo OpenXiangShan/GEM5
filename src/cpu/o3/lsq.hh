@@ -101,6 +101,7 @@ class LSQ
         virtual bool recvTimingResp(PacketPtr pkt);
         virtual void recvTimingSnoopReq(PacketPtr pkt);
         virtual void recvFunctionalCustomSignal(PacketPtr pkt, int sig);
+        virtual void* recvGetCPUPtr();
 
         virtual void
         recvFunctionalSnoop(PacketPtr pkt)
@@ -260,6 +261,7 @@ class LSQ
         uint32_t _numOutstandingPackets;
         AtomicOpFunctorPtr _amo_op;
         bool _hasStaleTranslation;
+        bool _sbufferBypass;
 
         struct FWDPacket
         {
@@ -916,6 +918,8 @@ class LSQ
     void recvTimingSnoopReq(PacketPtr pkt);
 
     void recvFunctionalCustomSignal(PacketPtr pkt, int sig);
+
+    void* getCPUPtr();
 
     Fault pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
                       unsigned int size, Addr addr, Request::Flags flags,

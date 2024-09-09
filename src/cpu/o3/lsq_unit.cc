@@ -52,6 +52,7 @@
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/lsq.hh"
+#include "cpu/utils.hh"
 #include "debug/Activity.hh"
 #include "debug/Diff.hh"
 #include "debug/HtmCpu.hh"
@@ -60,6 +61,7 @@
 #include "debug/O3PipeView.hh"
 #include "debug/StoreBuffer.hh"
 #include "mem/packet.hh"
+#include "mem/packet_access.hh"
 #include "mem/request.hh"
 
 namespace gem5
@@ -243,6 +245,26 @@ LSQUnit::completeDataAccess(PacketPtr pkt)
 
     assert(!cpu->switchedOut());
     if (!inst->isSquashed()) {
+        if (inst->isLoad() || inst->isAtomic()) {
+            Addr addr = pkt->getAddr();
+            auto [enable_diff, diff_all_states] = cpu->getDiffAllStates();
+            if (system->multiCore() && enable_diff && !request->_sbufferBypass &&
+                cpu->goldenMemManager()->inPmem(addr)) {
+                // check data with golden mem
+                uint8_t *golden_data = (uint8_t *)cpu->goldenMemManager()->guestToHost(addr);
+                uint8_t *loaded_data = pkt->getPtr<uint8_t>();
+                size_t size = pkt->getSize();
+                if (memcmp(golden_data, loaded_data, size) == 0) {
+                    assert(size == inst->effSize);
+                    inst->setGolden(golden_data);
+                } else {
+                    panic("Data error at addr %#lx, size %d. %s\n",
+                        addr, size,
+                        goldenDiffStr(loaded_data, golden_data, size).c_str());
+                }
+            }
+        }
+
         if (request->needWBToRegister()) {
             // Only loads, store conditionals and atomics perform the writeback
             // after receving the response from the memory
@@ -305,6 +327,8 @@ LSQUnit::init(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params,
     cpu->addStatGroup(csprintf("lsq%i", lsqID).c_str(), &stats);
 
     DPRINTF(LSQUnit, "Creating LSQUnit%i object.\n",lsqID);
+
+    system = params.system;
 
     depCheckShift = params.LSQDepCheckShift;
     checkLoads = params.LSQCheckLoads;

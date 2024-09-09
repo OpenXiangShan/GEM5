@@ -46,6 +46,7 @@
 #include "debug/Config.hh"
 #include "debug/Drain.hh"
 #include "debug/Ruby.hh"
+#include "mem/packet_access.hh"
 #include "mem/ruby/protocol/AccessPermission.hh"
 #include "mem/ruby/slicc_interface/AbstractController.hh"
 #include "mem/simple_mem.hh"
@@ -69,7 +70,9 @@ RubyPort::RubyPort(const Params &p)
                    p.ruby_system->getAccessBackingStore(), -1,
                    p.no_retry_on_stall),
       gotAddrRanges(p.port_interrupt_out_port_connection_count),
-      m_isCPUSequencer(p.is_cpu_sequencer)
+      m_isCPUSequencer(p.is_cpu_sequencer),
+      m_isDataSequencer(p.is_data_sequencer),
+      cpu(nullptr)
 {
     assert(m_version != -1);
 
@@ -283,6 +286,12 @@ RubyPort::MemResponsePort::recvTimingReq(PacketPtr pkt)
                 curTick() + rs->clockPeriod());
             return true;
         }
+    }
+
+    // set cpu here
+    // when receiving a request, set sequencer(rubyport)'s cpu
+    if (ruby_port->m_isDataSequencer && !ruby_port->cpu) {
+        ruby_port->cpu = (BaseCPU *)(this->sendGetCPUPtr());
     }
 
     // Save the port in the sender state object to be used later to

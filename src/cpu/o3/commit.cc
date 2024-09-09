@@ -1335,6 +1335,7 @@ Commit::diffInst(ThreadID tid, const DynInstPtr &inst) {
         inst->strictlyOrdered();
     cpu->diffInfo.physEffAddr = inst->physEffAddr;
     cpu->diffInfo.effSize = inst->effSize;
+    cpu->diffInfo.goldenValue = inst->getGolden();
     cpu->difftestStep(tid, inst->seqNum);
 }
 

@@ -325,6 +325,16 @@ class ResponsePort : public Port, public AtomicResponseProtocol,
         }
     }
 
+    void* sendGetCPUPtr()
+    {
+        try {
+            warn("Peer is %s\n", _requestPort->name());
+            return FunctionalResponseProtocol::sendGetCPUPtr(_requestPort);
+        } catch (UnboundPortException) {
+            reportUnbound();
+        }
+    }
+
   public:
     /* The atomic protocol. */
 

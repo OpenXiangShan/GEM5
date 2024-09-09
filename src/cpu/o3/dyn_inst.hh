@@ -387,6 +387,9 @@ class DynInst : public ExecContext, public RefCounted
     ssize_t sqIdx = -1;
     typename LSQUnit::SQIterator sqIt;
 
+    /** If load data is from cache then it must be golden */
+    uint8_t goldenData[8] = {0};
+
     int pf_source  = -1; // if load cache line is prefetched
     /////////////////////// TLB Miss //////////////////////
     /**
@@ -1402,6 +1405,12 @@ class DynInst : public ExecContext, public RefCounted
     {
         return pc->as<RiscvISA::PCState>().branching();
     }
+
+    /** set golden */
+    void setGolden(uint8_t *golden) { memcpy(goldenData, golden, effSize); }
+
+    /** get golden */
+    uint8_t *getGolden() { return goldenData; }
 };
 
 } // namespace o3

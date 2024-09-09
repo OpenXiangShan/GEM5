@@ -179,7 +179,7 @@ machine(MachineType:Cache, "Cache coherency protocol") :
   bool use_prefetcher, default="false";
 
   bool is_dcache := "False";
-
+  bool enable_difftest := "False";
   // Message Queues
 
   // Interface to the network
