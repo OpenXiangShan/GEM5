@@ -88,6 +88,7 @@ class RubyPort(ClockedObject):
     support_data_reqs = Param.Bool(True, "data cache requests supported")
     support_inst_reqs = Param.Bool(True, "inst cache requests supported")
     is_cpu_sequencer = Param.Bool(True, "connected to a cpu")
+    is_data_sequencer = Param.Bool(False, "Is this sequencer for the dcache?")
 
 
 class RubyPortProxy(RubyPort):

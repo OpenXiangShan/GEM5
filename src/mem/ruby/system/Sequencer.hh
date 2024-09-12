@@ -129,6 +129,8 @@ class Sequencer : public RubyPort
 
     void notifyMissCallback(Addr address, bool is_upgrade, bool is_snoop);
 
+    void checkL1DRefill(Addr address, const DataBlock& data, WriteMask mask);
+
     void TBEFullCancel(Addr address);
 
     void atomicCallback(Addr address,
@@ -321,6 +323,8 @@ class Sequencer : public RubyPort
     std::vector<statistics::Counter> m_IncompleteTimes;
 
     EventFunctionWrapper deadlockCheckEvent;
+
+    bool isDataSequencer;
 
     // support for LL/SC
 

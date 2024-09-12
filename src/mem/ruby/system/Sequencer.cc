@@ -45,6 +45,7 @@
 #include "base/compiler.hh"
 #include "base/logging.hh"
 #include "base/str.hh"
+#include "cpu/base.hh"
 #include "cpu/testers/rubytest/RubyTester.hh"
 #include "debug/LLSC.hh"
 #include "debug/MemoryAccess.hh"
@@ -78,7 +79,8 @@ Sequencer::Sequencer(const Params &p)
     : RubyPort(p),
       stat(this),
       m_IncompleteTimes(MachineType_NUM),
-      deadlockCheckEvent([this]{ wakeup(); }, "Sequencer deadlock check")
+      deadlockCheckEvent([this]{ wakeup(); }, "Sequencer deadlock check"),
+      isDataSequencer(p.is_data_sequencer)
 {
     m_outstanding_count = 0;
 
@@ -658,6 +660,25 @@ Sequencer::notifyMissCallback(Addr address, bool is_upgrade, bool is_busy)
     DPRINTF(RubySequencer, "A %s of addr %#x signals the delay of all pending loads\n",
         is_upgrade ? "load" : "store", address);
     return;
+}
+
+
+void
+Sequencer::checkL1DRefill(Addr address, const DataBlock& data, WriteMask mask) {
+    if (!m_isDataSequencer) {
+        return;
+    }
+
+    if (!mask.isFull()) {
+        panic("Currently partial L1D refills are not supported");
+    }
+
+    assert(address == makeLineAddress(address));
+    DPRINTF(RubySequencer, "Checking dut refill with golden for addr %#x\n", address);
+
+    size_t block_size = RubySystem::getBlockSizeBytes();
+
+    cpu->checkL1DRefill(address, data.getData(getOffset(address), block_size), block_size);
 }
 
 void

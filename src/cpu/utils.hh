@@ -94,6 +94,18 @@ isAnyActiveElement(const std::vector<bool>::const_iterator& it_start,
     return (it_tmp != it_end);
 }
 
+inline std::string
+goldenDiffStr(uint8_t *dut_ptr, uint8_t* golden_ptr, size_t size) {
+    assert(size <= 8);
+    uint64_t dut_value = 0;
+    uint64_t golden_value = 0;
+    memcpy(&dut_value, dut_ptr, size);
+    memcpy(&golden_value, golden_ptr, size);
+    std::stringstream ss;
+    ss << std::hex << "Dut value: " << dut_value << " , golden value: " << golden_value << " ";
+    return ss.str();
+}
+
 } // namespace gem5
 
 #endif // __CPU_UTILS_HH__

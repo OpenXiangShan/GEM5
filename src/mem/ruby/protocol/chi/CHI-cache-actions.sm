@@ -2157,6 +2157,9 @@ action(Receive_ReqDataResp, desc="") {
         tbe.dataBlkValid.clear();
       }
       tbe.dataBlk.copyPartial(in_msg.dataBlk, in_msg.bitMask);
+      if (is_dcache && enable_difftest) {
+        sequencer.checkL1DRefill(tbe.addr, in_msg.dataBlk, in_msg.bitMask);
+      }
       assert(tbe.dataBlkValid.isOverlap(in_msg.bitMask) == false);
       tbe.dataBlkValid.orMask(in_msg.bitMask);
     }

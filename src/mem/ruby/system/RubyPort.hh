@@ -45,6 +45,7 @@
 #include <cassert>
 #include <string>
 
+#include "cpu/base.hh"
 #include "mem/ruby/common/MachineID.hh"
 #include "mem/ruby/network/MessageBuffer.hh"
 #include "mem/ruby/protocol/RequestStatus.hh"
@@ -234,6 +235,9 @@ class RubyPort : public ClockedObject
     std::vector<MemResponsePort *> retryList;
 
     bool m_isCPUSequencer;
+  public:
+    bool m_isDataSequencer;
+    BaseCPU* cpu;
 };
 
 } // namespace ruby

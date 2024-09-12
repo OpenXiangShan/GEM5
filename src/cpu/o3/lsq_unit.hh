@@ -556,6 +556,8 @@ class LSQUnit
     BaseMMU *getMMUPtr();
 
   private:
+    System *system;
+
     /** Pointer to the CPU. */
     CPU *cpu;
 

@@ -1149,7 +1149,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                     _goldenMemManager->inPmem(diffInfo.physEffAddr)) {
                     DPRINTF(Diff, "Difference on %s instr found in multicore mode, check in golden memory\n",
                          diffInfo.inst->isLoad() ? "load" : "amo");
-                    uint8_t *golden_ptr = (uint8_t *)_goldenMemManager->guestToHost(diffInfo.physEffAddr);
+                    uint8_t *golden_ptr = diffInfo.goldenValue;
 
                     // a lambda function to sync memory and register from golden results to ref
                     auto sync_mem_reg = [&]() {
@@ -1478,5 +1478,14 @@ BaseCPU::setExceptionGuideExecInfo(uint64_t exception_num, uint64_t mtval,
     // diffAllStates->proxy->update_config(&diffAllStates->diff.dynamic_config);
 }
 
-
+void
+BaseCPU::checkL1DRefill(Addr paddr, const uint8_t* refill_data, size_t size) {
+    assert(size == 64);
+    if (system->multiCore()) {
+        uint8_t *golden_ptr = (uint8_t *)_goldenMemManager->guestToHost(paddr);
+        if (memcmp(golden_ptr, refill_data, size)) {
+            panic("Refill data diff with Golden addr %#lx with size %d\n", paddr, size);
+        }
+    }
+}
 } // namespace gem5
