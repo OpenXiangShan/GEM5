@@ -17,17 +17,17 @@ namespace branch_prediction {
 
 namespace ftb_pred{
 
-FTBTAGE::FTBTAGE(const Params& p):
-TimedBaseFTBPredictor(p),
-numPredictors(p.numPredictors),
-tableSizes(p.tableSizes),
-tableTagBits(p.TTagBitSizes),
-tablePcShifts(p.TTagPcShifts),
-histLengths(p.histLengths),
-maxHistLen(p.maxHistLen),
-numTablesToAlloc(p.numTablesToAlloc),
-numBr(p.numBr),
-sc(p.numBr, this)
+FTBTAGE::FTBTAGE(const Params& p)
+    : TimedBaseFTBPredictor(p),
+      numPredictors(p.numPredictors),
+      tableSizes(p.tableSizes),
+      tableTagBits(p.TTagBitSizes),
+      tablePcShifts(p.TTagPcShifts),
+      histLengths(p.histLengths),
+      maxHistLen(p.maxHistLen),
+      numTablesToAlloc(p.numTablesToAlloc),
+      numBr(p.numBr),
+      sc(p.numBr, this)
 {
     tageBankStats = new TageBankStats * [numBr];
     for (int i = 0; i < numBr; i++) {

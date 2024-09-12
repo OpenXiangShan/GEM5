@@ -43,7 +43,7 @@ class TimedBaseFTBPredictor: public SimObject
     virtual void specUpdateHist(const boost::dynamic_bitset<> &history, FullFTBPrediction &pred) {}
     virtual void recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken) {}
     virtual void update(const FetchStream &entry) {}
-    virtual unsigned getDelay() {return 0;}
+    unsigned getDelay() { return numDelay; }
     // do some statistics on a per-branch and per-predictor basis
     virtual void commitBranch(const FetchStream &entry, const DynInstPtr &inst) {}
 
@@ -59,6 +59,9 @@ class TimedBaseFTBPredictor: public SimObject
     }
     virtual void setTrace() {}
     DataBase *_db;
+
+  private:
+    unsigned int numDelay;
 };
 
 } // namespace ftb_pred

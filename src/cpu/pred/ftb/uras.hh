@@ -42,8 +42,6 @@ class uRAS : public TimedBaseFTBPredictor
 
         void specUpdateHist(const boost::dynamic_bitset<> &history, FullFTBPrediction &pred) override;
 
-        unsigned getDelay() override {return 0;}
-
         void recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken) override;
 
         void update(const FetchStream &entry) override;

@@ -10,7 +10,8 @@ namespace ftb_pred
 {
 
 TimedBaseFTBPredictor::TimedBaseFTBPredictor(const Params &p)
-    : SimObject(p)
+    : SimObject(p),
+    numDelay(p.numDelay)
 {
 }
 
