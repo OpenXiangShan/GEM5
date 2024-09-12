@@ -124,28 +124,29 @@ def config_cache(options, system):
         # Provide a clock for the L2 and the L1-to-L2 bus here as they
         # are not connected using addTwoLevelCacheHierarchy. Use the
         # same clock as the CPUs.
-        assert options.l2_hwp_type == 'L2CompositeWithWorkerPrefetcher'
         system.l2_caches = [l2_cache_class(clk_domain=system.cpu_clk_domain,
                                            **_get_cache_opts('l2', options)) for i in range(options.num_cpus)]
-        for i in range(options.num_cpus):
-            system.l2_caches[i].prefetcher.triangel = TriangelPrefetcher(
-                cachetags=system.l3.tags,
-                cache_delay=system.l3.tag_latency + system.l3.data_latency + 5,
-                degree=4,
-                address_map_max_ways=4,
-                address_map_actual_entries="196608",
-                address_map_actual_cache_assoc=12,
-                address_map_rounded_entries="262144",
-                address_map_rounded_cache_assoc=16,
-                use_bloom=False,
-                use_scs=True,
-                timed_scs=True,
-                use_pattern=True,
-                use_pattern2=True,
-                use_reuse=True,
-                perfbias=False,
-                should_rearrange=True,
-                use_mrb=True)
+        if options.triangel:
+            assert options.l2_hwp_type == 'L2CompositeWithWorkerPrefetcher'
+            for i in range(options.num_cpus):
+                system.l2_caches[i].prefetcher.triangel = TriangelPrefetcher(
+                    cachetags=system.l3.tags,
+                    cache_delay=system.l3.tag_latency + system.l3.data_latency + 5,
+                    degree=4,
+                    address_map_max_ways=4,
+                    address_map_actual_entries="196608",
+                    address_map_actual_cache_assoc=12,
+                    address_map_rounded_entries="262144",
+                    address_map_rounded_cache_assoc=16,
+                    use_bloom=False,
+                    use_scs=True,
+                    timed_scs=True,
+                    use_pattern=True,
+                    use_pattern2=True,
+                    use_reuse=True,
+                    perfbias=False,
+                    should_rearrange=True,
+                    use_mrb=True)
         system.tol2bus_list = [L2XBar(
             clk_domain=system.cpu_clk_domain, width=256) for i in range(options.num_cpus)]
         for i in range(options.num_cpus):

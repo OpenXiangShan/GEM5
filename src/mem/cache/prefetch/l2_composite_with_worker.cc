@@ -20,7 +20,7 @@ void
 L2CompositeWithWorkerPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses)
 {
     cdp->calculatePrefetch(pfi, addresses);
-    triangel->calculatePrefetch(pfi, addresses);
+    if (triangel) triangel->calculatePrefetch(pfi, addresses);
 }
 
 void

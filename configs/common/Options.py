@@ -139,6 +139,7 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     # Cache Options
     parser.add_argument("--caches", action="store_true")
     parser.add_argument("--l2cache", action="store_true")
+    parser.add_argument("--triangel", action="store_true")
     parser.add_argument("--l3cache", action="store_true")
     parser.add_argument("--no-l3cache", action="store_true")
     parser.add_argument("--l1-to-l2-pf-hint", action="store_true")
