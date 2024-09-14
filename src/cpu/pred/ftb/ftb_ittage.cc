@@ -20,16 +20,16 @@ namespace branch_prediction {
 
 namespace ftb_pred{
 
-FTBITTAGE::FTBITTAGE(const Params& p):
-TimedBaseFTBPredictor(p),
-numPredictors(p.numPredictors),
-tableSizes(p.tableSizes),
-tableTagBits(p.TTagBitSizes),
-tablePcShifts(p.TTagPcShifts),
-histLengths(p.histLengths),
-maxHistLen(p.maxHistLen),
-numTablesToAlloc(p.numTablesToAlloc),
-numBr(p.numBr)
+FTBITTAGE::FTBITTAGE(const Params& p)
+    : TimedBaseFTBPredictor(p),
+      numPredictors(p.numPredictors),
+      tableSizes(p.tableSizes),
+      tableTagBits(p.TTagBitSizes),
+      tablePcShifts(p.TTagPcShifts),
+      histLengths(p.histLengths),
+      maxHistLen(p.maxHistLen),
+      numTablesToAlloc(p.numTablesToAlloc),
+      numBr(p.numBr)
 {
     DPRINTF(FTBITTAGE || debugFlag, "FTBITTAGE constructor numBr=%d\n", numBr);
     tageTable.resize(numPredictors);

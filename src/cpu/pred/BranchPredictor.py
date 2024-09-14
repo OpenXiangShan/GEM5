@@ -860,9 +860,10 @@ class TimedBaseFTBPredictor(SimObject):
     cxx_class = 'gem5::branch_prediction::ftb_pred::TimedBaseFTBPredictor'
     cxx_header = "cpu/pred/ftb/timed_base_pred.hh"
     
-    # TODO: parametrize numBr and numDelay
     numBr = Param.Unsigned(2, "Number of maximum branches per entry")
-    
+    # subclass are encouraged to explicitly declare latency as numDelay
+    numDelay = Param.Unsigned(1000, "Number of bubbles to put on a prediction")
+
 class DefaultFTB(TimedBaseFTBPredictor):
     type = 'DefaultFTB'
     cxx_class = 'gem5::branch_prediction::ftb_pred::DefaultFTB'
@@ -873,8 +874,8 @@ class DefaultFTB(TimedBaseFTBPredictor):
     instShiftAmt = Param.Unsigned(1, "Amount to shift PC to get inst bits")
     numThreads = Param.Unsigned(1, "Number of threads")
     numWays = Param.Unsigned(4, "Number of ways per set")
-    numDelay = Param.Unsigned(1, "Number of bubbles to put on a prediction")
-    
+    numDelay = 1
+
 class UFTB(DefaultFTB):
     numEntries = 32
     tagBits = 38
@@ -889,6 +890,7 @@ class RAS(TimedBaseFTBPredictor):
     numEntries = Param.Unsigned(32, "Number of entries in the RAS")
     ctrWidth = Param.Unsigned(8, "Width of the counter")
     numInflightEntries = Param.Unsigned(384, "Number of inflight entries")
+    numDelay = 1
 
 class uRAS(TimedBaseFTBPredictor):
     type = 'uRAS'
@@ -897,6 +899,7 @@ class uRAS(TimedBaseFTBPredictor):
     
     numEntries = Param.Unsigned(4, "Number of entries in the RAS")
     ctrWidth = Param.Unsigned(2, "Width of the counter")
+    numDelay = 0
 
 class FTBTAGE(TimedBaseFTBPredictor):
     type = 'FTBTAGE'
@@ -911,6 +914,7 @@ class FTBTAGE(TimedBaseFTBPredictor):
     histLengths = VectorParam.Unsigned([8, 13, 32, 119], "the FTB TAGE T0~Tn history length")
     maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
     numTablesToAlloc = Param.Unsigned(1,"The number of table to allocated each time")
+    numDelay = 1
 
 class FTBITTAGE(TimedBaseFTBPredictor):
     type = 'FTBITTAGE'
@@ -925,7 +929,8 @@ class FTBITTAGE(TimedBaseFTBPredictor):
     histLengths = VectorParam.Unsigned([4, 8, 13, 16, 32], "the FTB TAGE T0~Tn history length")
     maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
     numTablesToAlloc = Param.Unsigned(1,"The number of table to allocated each time")
-    
+    numDelay = 2
+
 class DecoupledBPUWithFTB(BranchPredictor):
     type = 'DecoupledBPUWithFTB'
     cxx_class = 'gem5::branch_prediction::ftb_pred::DecoupledBPUWithFTB'

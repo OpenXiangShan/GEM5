@@ -95,8 +95,6 @@ class FTBITTAGE : public TimedBaseFTBPredictor
 
     void update(const FetchStream &entry) override;
 
-    unsigned getDelay() override { return 2; }
-
     void commitBranch(const FetchStream &stream, const DynInstPtr &inst) override;
 
     // check folded hists after speculative update and recover

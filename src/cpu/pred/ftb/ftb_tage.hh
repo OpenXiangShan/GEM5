@@ -94,8 +94,6 @@ class FTBTAGE : public TimedBaseFTBPredictor
 
     void update(const FetchStream &entry) override;
 
-    unsigned getDelay() override { return 1; }
-
     void commitBranch(const FetchStream &stream, const DynInstPtr &inst) override;
 
     void setTrace() override;

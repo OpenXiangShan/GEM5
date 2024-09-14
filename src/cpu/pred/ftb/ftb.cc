@@ -51,7 +51,6 @@ DefaultFTB::DefaultFTB(const Params &p)
     numBr(p.numBr),
     numWays(p.numWays),
     numSets(numEntries / numWays),
-    numDelay(p.numDelay),
     ftbStats(this)
 {
     assert(numEntries % numWays == 0);
