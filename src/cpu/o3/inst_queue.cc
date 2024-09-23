@@ -53,7 +53,6 @@
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/fu_pool.hh"
-#include "cpu/o3/iew_delay_calibrator.hh"
 #include "cpu/o3/issue_queue.hh"
 #include "cpu/o3/limits.hh"
 #include "debug/IQ.hh"
@@ -555,20 +554,30 @@ InstructionQueue::execLatencyCheck(const DynInstPtr& inst, uint32_t& op_latency)
         case OpClass::FloatSqrt:
             rs1 = cpu->readArchFloatReg(inst->srcRegIdx(0).index(),
                                         inst->threadNumber);
+            rs2 = cpu->readArchFloatReg(inst->srcRegIdx(1).index(),
+                                        inst->threadNumber);
             switch (inst->staticInst->operWid()) {
                 case 32:
-                    if (__isnanf(*((float*)(&rs1)))) {
-                        op_latency = 4;
+                    if (__isnanf(*((float*)(&rs1))) ||
+                        __isnanf(*((float*)(&rs2))) ||
+                        __isinff(*((float*)(&rs1))) ||
+                        __isinff(*((float*)(&rs2))) ||
+                        (*((float*)(&rs2)) - 1.0f < 1e-6f)) {
+                        op_latency = 2;
                         break;
                     }
-                    op_latency = 17;
+                    op_latency = 10;
                     break;
                 case 64:
-                    if (__isnan(*((double*)(&rs1)))) {
-                        op_latency = 4;
+                    if (__isnan(*((double*)(&rs1))) ||
+                        __isnan(*((double*)(&rs2))) ||
+                        __isinf(*((double*)(&rs1))) ||
+                        __isinf(*((double*)(&rs2))) ||
+                        (*((double*)(&rs2)) - 1.0 < 1e-15)) {
+                        op_latency = 2;
                         break;
                     }
-                    op_latency = 31;
+                    op_latency = 15;
                     break;
                 default:
                     panic("Unsupported float width\n");
@@ -583,19 +592,25 @@ InstructionQueue::execLatencyCheck(const DynInstPtr& inst, uint32_t& op_latency)
             switch (inst->staticInst->operWid()) {
                 case 32:
                     if (__isnanf(*((float*)(&rs1))) ||
-                        __isnanf(*((float*)(&rs2)))) {
-                        op_latency = 4;
+                        __isnanf(*((float*)(&rs2))) ||
+                        __isinff(*((float*)(&rs1))) ||
+                        __isinff(*((float*)(&rs2))) ||
+                        (*((float*)(&rs2)) - 1.0f < 1e-6f)) {
+                        op_latency = 2;
                         break;
                     }
-                    op_latency = 11;
+                    op_latency = 7;
                     break;
                 case 64:
                     if (__isnan(*((double*)(&rs1))) ||
-                        __isnan(*((double*)(&rs2)))) {
-                        op_latency = 4;
+                        __isnan(*((double*)(&rs2))) ||
+                        __isinf(*((double*)(&rs1))) ||
+                        __isinf(*((double*)(&rs2))) ||
+                        (*((double*)(&rs2)) - 1.0 < 1e-15)) {
+                        op_latency = 2;
                         break;
                     }
-                    op_latency = 18;
+                    op_latency = 12;
                     break;
                 default:
                     panic("Unsupported float width\n");

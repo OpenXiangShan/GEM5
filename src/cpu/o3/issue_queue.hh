@@ -89,6 +89,7 @@ class IssueQue : public SimObject
         DynInstPtr pop();
     };
 
+    std::vector<DynInstPtr> skidBuffer;
     TimeBuffer<IssueStream> inflightIssues;
     TimeBuffer<IssueStream>::wire toIssue;
     TimeBuffer<IssueStream>::wire toFu;
@@ -199,6 +200,7 @@ class Scheduler : public SimObject
     using DispPloy = std::vector<IssueQue*>;
 
     std::vector<int> opExecTimeTable;
+    std::vector<bool> opPipelined;
     std::vector<DispPloy> dispTable;
     std::vector<IssueQue*> issueQues;
     std::vector<std::vector<IssueQue*>> wakeMatrix;
@@ -206,6 +208,7 @@ class Scheduler : public SimObject
 
     std::vector<DynInstPtr> instsToFu;
 
+    std::vector<bool> earlyScoreboard;
     std::vector<bool> bypassScoreboard;
     std::vector<bool> scoreboard;
 
