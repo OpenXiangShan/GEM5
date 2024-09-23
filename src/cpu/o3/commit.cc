@@ -165,6 +165,14 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
         }
         simout.close(out_handle);
     });
+
+    faultNum.insert(RiscvISA::ExceptionCode::LOAD_PAGE);
+    faultNum.insert(RiscvISA::ExceptionCode::STORE_PAGE);
+    faultNum.insert(RiscvISA::ExceptionCode::INST_PAGE);
+    faultNum.insert(RiscvISA::ExceptionCode::INST_G_PAGE);
+    faultNum.insert(RiscvISA::ExceptionCode::LOAD_G_PAGE);
+    faultNum.insert(RiscvISA::ExceptionCode::STORE_G_PAGE);
+
 }
 
 std::string Commit::name() const { return cpu->name() + ".commit"; }
@@ -1490,13 +1498,9 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
                     tid, head_inst->seqNum);
             return false;
         }
-        if (inst_fault->exception() == RiscvISA::ExceptionCode::LOAD_PAGE ||
-            inst_fault->exception() == RiscvISA::ExceptionCode::STORE_PAGE ||
-            inst_fault->exception() == RiscvISA::ExceptionCode::INST_PAGE ||
-            inst_fault->exception() == RiscvISA::ExceptionCode::INSTG_PAGE ||
-            inst_fault->exception() == RiscvISA::ExceptionCode::LOADG_PAGE ||
-            inst_fault->exception() == RiscvISA::ExceptionCode::STOREG_PAGE)
+        if (faultNum.find(inst_fault->exception()) != faultNum.end()) {
             stats.pagefaulttimes[tid]++;
+        }
 
         head_inst->setCompleted();
 
@@ -1570,12 +1574,7 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
                     RiscvISA::MiscRegIndex::MISCREG_UCAUSE, tid);
             }
             auto exception_no =inst_fault->exception();
-            if (exception_no == RiscvISA::ExceptionCode::LOAD_PAGE ||
-                exception_no == RiscvISA::ExceptionCode::STORE_PAGE ||
-                exception_no == RiscvISA::ExceptionCode::INST_PAGE ||
-                exception_no == RiscvISA::ExceptionCode::INSTG_PAGE ||
-                exception_no == RiscvISA::ExceptionCode::LOADG_PAGE ||
-                exception_no == RiscvISA::ExceptionCode::STOREG_PAGE) {
+            if (faultNum.find(exception_no) != faultNum.end()) {
                 DPRINTF(Commit, "Force to raise No.%lu exception at page fault\n", inst_fault);
                 cpu->setExceptionGuideExecInfo(
                     exception_no, cpu->readMiscReg(RiscvISA::MiscRegIndex::MISCREG_MTVAL, tid),

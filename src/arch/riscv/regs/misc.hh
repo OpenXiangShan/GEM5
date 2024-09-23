@@ -910,18 +910,6 @@ const RegVal STATUS_UPIE_MASK = 1ULL << 4;
 const RegVal STATUS_MIE_MASK = 1ULL << 3;
 const RegVal STATUS_SIE_MASK = 1ULL << 1;
 const RegVal STATUS_UIE_MASK = 1ULL << 0;
-/*const RegVal MSTATUS_MASK = STATUS_SD_MASK | STATUS_SXL_MASK |
-                            STATUS_UXL_MASK | STATUS_TSR_MASK |
-                            STATUS_TW_MASK | STATUS_TVM_MASK |
-                            STATUS_MXR_MASK | STATUS_SUM_MASK |
-                            STATUS_MPRV_MASK | STATUS_XS_MASK |
-                            STATUS_FS_MASK | STATUS_MPP_MASK |
-                            STATUS_VS_MASK |
-                            STATUS_SPP_MASK | STATUS_MPIE_MASK |
-                            STATUS_SPIE_MASK | STATUS_UPIE_MASK |
-                            STATUS_MIE_MASK | STATUS_SIE_MASK |
-                            STATUS_UIE_MASK;*/
-//const RegVal MSTATUS_MASK = (0x7e79aaUL) | (1UL << 63) | (1UL << 39) | (1UL << 38);
 const RegVal MSTATUS_WMASK_FS = 0x3UL << 13;
 const RegVal MSTATUS_WMASK_RVH = 3UL << 38;
 const RegVal MSTATUS_WMASK_RVV = 3UL << 9;
@@ -949,9 +937,6 @@ const RegVal UTI_MASK = 1ULL << 4;
 const RegVal MSI_MASK = 1ULL << 3;
 const RegVal SSI_MASK = 1ULL << 1;
 const RegVal USI_MASK = 1ULL << 0;
-//const RegVal MIP_MASK = MEI_MASK | SEI_MASK | UEI_MASK |
-//                       MTI_MASK | STI_MASK | UTI_MASK |
-//                       MSI_MASK | SSI_MASK | USI_MASK;
 const RegVal NEMU_MIP_MASK =  ((1 << 9) | (1 << 5) | (1 << 2) |(1 << 1));
 const RegVal SI_MASK = SEI_MASK | STI_MASK | SSI_MASK;
 const RegVal UI_MASK = UEI_MASK | UTI_MASK | USI_MASK;
@@ -966,12 +951,8 @@ const std::map<int, RegVal> CSRMasks = {
     {CSR_FRM, FRM_MASK},
     {CSR_FCSR, FFLAGS_MASK | (FRM_MASK << FRM_OFFSET)},
     {CSR_SSTATUS, SSTATUS_MASK},
-   // {CSR_SIE, SI_MASK},
     {CSR_SIP, SI_MASK},
     {CSR_MISA, MISA_MASK}
-   // {CSR_HSTATUS,HSTATUS_MASK},
-  //  {CSR_MIE, MIE_MASK},
-    //{CSR_MIP, MIP_MASK}
 };
 
 #define concat_temp(x, y) x ## y
@@ -1005,13 +986,6 @@ CSR_STRUCT_START(hstatus)
   uint64_t vsxl  : 2;
 CSR_STRUCT_END(hstatus)
 
-
-// CSR_STRUCT_START(hedeleg)
-// CSR_STRUCT_END(hedeleg)
-
-// CSR_STRUCT_START(hideleg)
-// CSR_STRUCT_END(hideleg)
-
 CSR_STRUCT_START(hie)
   uint64_t pad0  : 2;
   uint64_t vssie : 1;
@@ -1022,15 +996,6 @@ CSR_STRUCT_START(hie)
   uint64_t pad3  : 1;
   uint64_t sgeie : 1;
 CSR_STRUCT_END(hie)
-
-// CSR_STRUCT_START(hcounteren)
-// CSR_STRUCT_END(hcounteren)
-
-// CSR_STRUCT_START(hgeie)
-// CSR_STRUCT_END(hgeie)
-
-// CSR_STRUCT_START(htval)
-// CSR_STRUCT_END(htval)
 
 CSR_STRUCT_START(hip)
   uint64_t pad0  : 2;
@@ -1052,12 +1017,6 @@ CSR_STRUCT_START(hvip)
   uint64_t vseip : 1;
 CSR_STRUCT_END(hvip)
 
-// CSR_STRUCT_START(htinst)
-// CSR_STRUCT_END(htinst)
-
-// CSR_STRUCT_START(hgeip)
-// CSR_STRUCT_END(hgeip)
-
 CSR_STRUCT_START(henvcfg)
   uint64_t fiom   : 1;
   uint64_t pad0   : 3;
@@ -1075,9 +1034,6 @@ CSR_STRUCT_START(hgatp)
   uint64_t pad0   : 2;
   uint64_t mode   : 4;
 CSR_STRUCT_END(hgatp)
-
-// CSR_STRUCT_START(htimedelta)
-// CSR_STRUCT_END(htimedelta)
 
 CSR_STRUCT_START(vsstatus)
   union{
@@ -1136,12 +1092,6 @@ CSR_STRUCT_START(vstvec)
   uint64_t base  :62;
 CSR_STRUCT_END(vstvec)
 
-// CSR_STRUCT_START(vsscratch)
-// CSR_STRUCT_END(vsscratch)
-
-// CSR_STRUCT_START(vsepc)
-// CSR_STRUCT_END(vsepc)
-
 CSR_STRUCT_START(vscause)
   union{
     struct{
@@ -1154,9 +1104,6 @@ CSR_STRUCT_START(vscause)
     }_64;
   };
 CSR_STRUCT_END(vscause)
-
-// CSR_STRUCT_START(vstval)
-// CSR_STRUCT_END(vstval)
 
 CSR_STRUCT_START(vsip)
   uint64_t pad0 : 1;

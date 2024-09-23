@@ -318,10 +318,7 @@ void ISA::clear()
     std::fill(miscRegFile.begin(), miscRegFile.end(), 0);
 
     miscRegFile[MISCREG_PRV] = PRV_M;
-    //miscRegFile[MISCREG_ISA] = 0x800000000034112f;
     miscRegFile[MISCREG_ISA] = 0x80000000003411af;
-    //miscRegFile[MISCREG_ISA] = (2ULL << MXL_OFFSET) | 0x34112D;
-    //miscRegFile[MISCREG_ISA] = (2ULL << MXL_OFFSET) | 0x1411ad;
     miscRegFile[MISCREG_VENDORID] = 0;
     miscRegFile[MISCREG_ARCHID] = 0;
     miscRegFile[MISCREG_IMPID] = 0;
@@ -334,7 +331,6 @@ void ISA::clear()
                                     (1ULL << FS_OFFSET);
     }
     miscRegFile[MISCREG_MCOUNTEREN] = 0x0;
-    // miscRegFile[MISCREG_SCOUNTEREN] = 0x7;
     miscRegFile[MISCREG_SCOUNTEREN] = 0;
     // don't set it to zero; software may try to determine the supported
     // triggers, starting at zero. simply set a different value here.
@@ -343,12 +339,10 @@ void ISA::clear()
     miscRegFile[MISCREG_NMIE] = 1;
 
     miscRegFile[MISCREG_VTYPE] = (1lu<<63);
-    //(HSTATUS) reg_num.vsxl =2;
     miscRegFile[MISCREG_HSTATUS] = (uint64_t)2<<32;
     miscRegFile[MISCREG_VSSTATUS] = miscRegFile[MISCREG_STATUS] & NEMU_SSTATUS_RMASK;
     miscRegFile[MISCREG_ARCHID] = 0x19;
 
-    printf("set hstatus\n");
 }
 
 bool
@@ -409,16 +403,16 @@ ISA::readMiscReg(int misc_reg)
     if ((v == 1) && (misc_reg == MISCREG_SATP)) {
         return readMiscRegNoEffect(MISCREG_VSATP);
     }
-    if ((v == 1) && (misc_reg == MISCREG_SEPC)){
+    if ((v == 1) && (misc_reg == MISCREG_SEPC)) {
         return readMiscRegNoEffect(MISCREG_VSEPC);
     }
-    if ((v == 1) && (misc_reg == MISCREG_STVAL)){
+    if ((v == 1) && (misc_reg == MISCREG_STVAL)) {
         return readMiscRegNoEffect(MISCREG_VSTVAL);
     }
-    if ((v == 1) && (misc_reg == MISCREG_SCAUSE)){
+    if ((v == 1) && (misc_reg == MISCREG_SCAUSE)) {
         return readMiscRegNoEffect(MISCREG_VSCAUSE);
     }
-    if ((v == 1) && (misc_reg == MISCREG_STVEC)){
+    if ((v == 1) && (misc_reg == MISCREG_STVEC)) {
         return readMiscRegNoEffect(MISCREG_VSTVEC);
     }
     if (misc_reg == MISCREG_HIE) {

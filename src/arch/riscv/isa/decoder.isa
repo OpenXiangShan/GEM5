@@ -4330,14 +4330,14 @@ decode QUADRANT default Unknown::unknown() {
                             auto hstatus_spv = hstatus.spv;
                             auto pm = (PrivilegeMode)xc->readMiscReg(
                                 MISCREG_PRV);
-                            bool writeSign = false;
+                            bool write_sign = false;
                             if(v ==0){
                                 hstatus.spv =0;
                                 xc->setMiscReg(MISCREG_HSTATUS, hstatus);
 
                             }
                             else{
-                                writeSign = true;
+                                write_sign = true;
                                 if((pm == PRV_S && hstatus.vtsr) || pm < PRV_S){
                                     panic("todo EX_VI");
                                 }
@@ -4358,7 +4358,7 @@ decode QUADRANT default Unknown::unknown() {
                                 }
                                 NPC = xc->readMiscReg(MISCREG_VSEPC);
                             }
-                            if(!writeSign){
+                            if(!write_sign){
                                 if (pm == PRV_U ||
                                     (pm == PRV_S && status.tsr == 1)) {
                                     return std::make_shared<IllegalInstFault>(

@@ -692,6 +692,12 @@ class BaseCPU : public ClockedObject
     bool enabledifftesInstTrace{false};
     std::shared_ptr<DiffAllStates> diffAllStates{};
 
+    enum  diffRegConfig
+    {
+      diffAllNum = 96,// 32 regs + 32fprs +32 vprs
+      diffCsrNum = 36,
+    };
+
     virtual void readGem5Regs()
     {
         panic("difftest:readGem5Regs() is not implemented\n");
@@ -744,8 +750,8 @@ class BaseCPU : public ClockedObject
         uint8_t *goldenValue;
         uint64_t amoOldGoldenValue;
         // Register address causing difftest error
-        bool errorRegsValue[96];// 32 regs + 32fprs +32 vprs
-        bool errorCsrsValue[36];// CsrRegIndex
+        bool errorRegsValue[diffAllNum];
+        bool errorCsrsValue[diffCsrNum];  // CsrRegIndex
         bool errorPcValue;
 
         std::queue<std::string> lastCommittedMsg;

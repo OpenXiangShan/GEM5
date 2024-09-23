@@ -126,6 +126,7 @@ class Commit
     CommitStatus _status;
     /** Next commit status, to be set at the end of the cycle. */
     CommitStatus _nextStatus;
+    std::set<uint64_t> faultNum;
     /** Per-thread status. */
     ThreadStatus commitStatus[MaxThreads];
 

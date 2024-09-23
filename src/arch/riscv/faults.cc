@@ -164,19 +164,19 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
                   status.spie = status.sie;
                   status.sie = 0;
                   hstatus.gva =
-                      (!isInterrupt()) && (_code == INSTG_PAGE || _code == LOADG_PAGE || _code == STOREG_PAGE ||
+                      (!isInterrupt()) && (_code == INST_G_PAGE || _code == LOAD_G_PAGE || _code == STORE_G_PAGE ||
                                            ((v) && ((0 <= _code && _code <= 7 && _code != 2) || _code == INST_PAGE ||
                                                     _code == LOAD_PAGE || _code == STORE_PAGE)));
                   hstatus.spv = v;
-                  if (v)
+                  if (v) {
                       hstatus.spvp = pp;
-                  if (_code == INST_PAGE || _code == LOAD_PAGE || _code == STORE_PAGE ||
-                      _code == LOAD_ADDR_MISALIGNED || _code == STORE_ADDR_MISALIGNED || _code == INST_ACCESS ||
-                      _code == LOAD_ACCESS || _code == STORE_ACCESS)
+                  }
+                  if ((_code == INST_PAGE || _code == LOAD_PAGE || _code == STORE_PAGE ||
+                       _code == LOAD_ADDR_MISALIGNED || _code == STORE_ADDR_MISALIGNED || _code == INST_ACCESS ||
+                       _code == LOAD_ACCESS || _code == STORE_ACCESS) ||
+                      ((_code != INST_G_PAGE) && (_code != LOAD_G_PAGE) && (_code != STORE_G_PAGE))) {
                       tc->setMiscReg(MISCREG_HTVAL, 0);
-                  else if ((_code != INSTG_PAGE) && (_code != LOADG_PAGE) && (_code != STOREG_PAGE))
-                      tc->setMiscReg(MISCREG_HTVAL, 0);
-
+                  }
 
                   tc->setMiscReg(MISCREG_VIRMODE, 0);
               }
@@ -191,7 +191,7 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
             status.mpie = status.mie;
             status.mie = 0;
             status.gva =
-                (!isInterrupt()) && (_code == INSTG_PAGE || _code == LOADG_PAGE || _code == STOREG_PAGE ||
+                (!isInterrupt()) && (_code == INST_G_PAGE || _code == LOAD_G_PAGE || _code == STORE_G_PAGE ||
                                      ((v) && ((0 <= _code && _code <= 7 && _code != 2) || _code == INST_PAGE ||
                                               _code == LOAD_PAGE || _code == STORE_PAGE)));
             status.mpv = v;
@@ -218,7 +218,7 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
             tc->setMiscReg(tval, 0);
         else
             tc->setMiscReg(tval, trap_value());
-        if (_code == INSTG_PAGE || _code == LOADG_PAGE || _code == STOREG_PAGE) {
+        if (_code == INST_G_PAGE || _code == LOAD_G_PAGE || _code == STORE_G_PAGE) {
             if (prv == PRV_S && (g_trap_value() != 0)) {
                 tc->setMiscReg(MISCREG_HTVAL, g_trap_value() >> 2);
             } else if (g_trap_value() != 0) {

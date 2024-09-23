@@ -246,6 +246,7 @@ namespace RiscvISA
             Fault stepWalk(PacketPtr &write);
             void sendPackets();
             void endWalk();
+            Fault endGstageWalk();
             Fault pageFault(bool present, bool G);
             Fault pageFaultOnRequestor(RequestorState &requestor, bool G);
             Addr getGVPNi(Addr vaddr, int level);

@@ -65,6 +65,8 @@ const Addr TWO_STAGE_L2_LEVEL_MASK = 0x7ff;
 const Addr VPN_MASK = 0x1ff;
 const Addr PGSHFT = 12;
 const Addr PTESIZE = 8;
+const Addr L2PageTypeNum = 4;
+const Addr L2PageStoreTypeNum = 5;
 
 const Addr L2TLB_BLK_OFFSET = 3;
 const Addr VADDR_CHOOSE_MASK = 7;
