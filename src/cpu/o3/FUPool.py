@@ -85,56 +85,56 @@ class Scheduler(SimObject):
     specWakeupNetwork = VectorParam.SpecWakeupChannel([], "")
     xbarWakeup = Param.Bool(False, "use xbar wakeup network, (will override specWakeupNetwork)")
 
-class DefaultScheduler(Scheduler):
-    IQs = [
-        IssueQue(name='intIQ0' , inports=2, size=2*12, oports=[
-            IssuePort(fu=[IntBRU(), IntMisc()]),
-            IssuePort(fu=[IntBRU(), IntMisc()])
-        ]),
-        IssueQue(name='intIQ1' , inports=2, size=2*12, oports=[
-            IssuePort(fu=[IntALU(), IntMult()]),
-            IssuePort(fu=[IntALU(), IntMult()]),
-        ]),
-        IssueQue(name='intIQ2' , inports=2, size=2*12, oports=[
-            IssuePort(fu=[IntALU(), IntDiv()]),
-            IssuePort(fu=[IntALU(), IntDiv()]),
-        ]),
-        IssueQue(name='memIQ0' , inports=6, size=3*16, oports=[
-            IssuePort(fu=[ReadPort()]),
-            IssuePort(fu=[ReadPort()]),
-            IssuePort(fu=[ReadPort()]),
-        ]),
-        IssueQue(name='memIQ1' , inports=4, size=2*16, oports=[
-            IssuePort(fu=[WritePort()]),
-            IssuePort(fu=[WritePort()])
-        ]),
-        IssueQue(name='fpIQ0' , inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MISC(), FP_MAC()])
-        ], scheduleToExecDelay=3),
-        IssueQue(name='fpIQ1' , inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MAC()])
-        ], scheduleToExecDelay=3),
-        IssueQue(name='fpIQ2' , inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MAC()])
-        ], scheduleToExecDelay=3),
-        IssueQue(name='fpIQ3' , inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MAC()])
-        ], scheduleToExecDelay=3),
-        IssueQue(name='fpIQ4' , inports=2, size=18, oports=[
-            IssuePort(fu=[FP_SLOW()]),
-            IssuePort(fu=[FP_SLOW()])
-        ], scheduleToExecDelay=3),
-        IssueQue(name='vecIQ0' , inports=5, size=16+16+10, oports=[
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()])
-        ], scheduleToExecDelay=3),
-    ]
-    intSlotNum = 12
-    fpSlotNum = 12
-    xbarWakeup = True
+# class DefaultScheduler(Scheduler):
+#     IQs = [
+#         IssueQue(name='intIQ0' , inports=2, size=2*12, oports=[
+#             IssuePort(fu=[IntBRU(), IntMisc()]),
+#             IssuePort(fu=[IntBRU(), IntMisc()])
+#         ]),
+#         IssueQue(name='intIQ1' , inports=2, size=2*12, oports=[
+#             IssuePort(fu=[IntALU(), IntMult()]),
+#             IssuePort(fu=[IntALU(), IntMult()]),
+#         ]),
+#         IssueQue(name='intIQ2' , inports=2, size=2*12, oports=[
+#             IssuePort(fu=[IntALU(), IntDiv()]),
+#             IssuePort(fu=[IntALU(), IntDiv()]),
+#         ]),
+#         IssueQue(name='memIQ0' , inports=6, size=3*16, oports=[
+#             IssuePort(fu=[ReadPort()]),
+#             IssuePort(fu=[ReadPort()]),
+#             IssuePort(fu=[ReadPort()]),
+#         ]),
+#         IssueQue(name='memIQ1' , inports=4, size=2*16, oports=[
+#             IssuePort(fu=[WritePort()]),
+#             IssuePort(fu=[WritePort()])
+#         ]),
+#         IssueQue(name='fpIQ0' , inports=2, size=18, oports=[
+#             IssuePort(fu=[FP_ALU(), FP_MISC(), FP_MAC()])
+#         ], scheduleToExecDelay=3),
+#         IssueQue(name='fpIQ1' , inports=2, size=18, oports=[
+#             IssuePort(fu=[FP_ALU(), FP_MAC()])
+#         ], scheduleToExecDelay=3),
+#         IssueQue(name='fpIQ2' , inports=2, size=18, oports=[
+#             IssuePort(fu=[FP_ALU(), FP_MAC()])
+#         ], scheduleToExecDelay=3),
+#         IssueQue(name='fpIQ3' , inports=2, size=18, oports=[
+#             IssuePort(fu=[FP_ALU(), FP_MAC()])
+#         ], scheduleToExecDelay=3),
+#         IssueQue(name='fpIQ4' , inports=2, size=18, oports=[
+#             IssuePort(fu=[FP_SLOW()]),
+#             IssuePort(fu=[FP_SLOW()])
+#         ], scheduleToExecDelay=3),
+#         IssueQue(name='vecIQ0' , inports=5, size=16+16+10, oports=[
+#             IssuePort(fu=[SIMD_Unit()]),
+#             IssuePort(fu=[SIMD_Unit()]),
+#             IssuePort(fu=[SIMD_Unit()]),
+#             IssuePort(fu=[SIMD_Unit()]),
+#             IssuePort(fu=[SIMD_Unit()])
+#         ], scheduleToExecDelay=3),
+#     ]
+#     intSlotNum = 12
+#     fpSlotNum = 12
+#     xbarWakeup = True
 
 
 class KunminghuScheduler(Scheduler):
@@ -178,7 +178,7 @@ class KunminghuScheduler(Scheduler):
         ], scheduleToExecDelay=3),
         IssueQue(name='fpIQ4' , inports=2, size=18, oports=[
             IssuePort(fu=[FP_SLOW()]),
-            IssuePort(fu=[FP_SLOW()])
+            IssuePort(fu=[FP_SLOW()]),
         ], scheduleToExecDelay=3),
         IssueQue(name='vecIQ0' , inports=5, size=16+16+10, oports=[
             IssuePort(fu=[SIMD_Unit()]),
