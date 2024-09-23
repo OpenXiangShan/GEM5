@@ -69,19 +69,19 @@ class IntDiv(FUDesc):
     # for instructions with uncertain cycle
     # just set opLat = sys.maxsize
     # it can help us find potential bugs
-    opList = [ OpDesc(opClass='IntDiv', opLat=sys.maxsize) ]
+    opList = [ OpDesc(opClass='IntDiv', opLat=sys.maxsize, pipelined=False) ]
 
 
 class IntMult(FUDesc):
     opList = [ OpDesc(opClass='IntMult', opLat=3) ]
 
 class FP_SLOW(FUDesc):
-    opList = [ OpDesc(opClass='FloatDiv', opLat=sys.maxsize),
-               OpDesc(opClass='FloatSqrt', opLat=sys.maxsize)]
+    opList = [ OpDesc(opClass='FloatDiv', opLat=sys.maxsize, pipelined=False),
+               OpDesc(opClass='FloatSqrt', opLat=sys.maxsize, pipelined=False)]
 
 class FP_ALU(FUDesc):
     opList = [ OpDesc(opClass='FloatCmp', opLat=3),
-               OpDesc(opClass='FloatAdd', opLat=3),
+               OpDesc(opClass='FloatAdd', opLat=2),
                OpDesc(opClass='FloatMisc', opLat=2),
                OpDesc(opClass='FloatMult', opLat=4)]
 
@@ -135,7 +135,7 @@ class PredALU(FUDesc):
 
 class ReadPort(FUDesc):
     opList = [ OpDesc(opClass='MemRead', opLat=2), # actually execute cycle = 2+2 (2 is in rubycache)
-               OpDesc(opClass='FloatMemRead', opLat=4),
+               OpDesc(opClass='FloatMemRead', opLat=2),
                OpDesc(opClass='VectorUnitStrideLoad', opLat=3),
                OpDesc(opClass='VectorSegUnitStrideLoad', opLat=3),
                OpDesc(opClass='VectorUnitStrideMaskLoad', opLat=3),
@@ -179,86 +179,3 @@ class RdWrPort(FUDesc):
 class IprPort(FUDesc):
     opList = [ OpDesc(opClass='IprAccess', opLat = 3, pipelined = False) ]
     count = 1
-
-
-class ScheduleDelayMatrixMap(SimObject):
-    type = 'ScheduleDelayMatrixMap'
-    cxx_header = "cpu/o3/iew_delay_calibrator.hh"
-    cxx_class = 'gem5::o3::ScheduleDelayMatrixMap'
-
-    dep_opclass = Param.OpClass('the opclass of dep_inst (aka. consumer instructions)')
-    completed_opclass = Param.OpClass('the opclass of complete_inst (aka. producer instructions)')
-    delay_tick = Param.UInt32(
-        'the delay tick between dep_inst and complete_inst')
-
-
-class DelayCalibrator(SimObject):
-    type = 'DelayCalibrator'
-    cxx_header = "cpu/o3/iew_delay_calibrator.hh"
-    cxx_class = 'gem5::o3::DelayCalibrator'
-    # dep_inst completed_inst
-    # actually the order of dep_inst and completed_inst doesn't have much
-    # effect on the cycle delay????
-    matrix = VectorParam.ScheduleDelayMatrixMap('')
-
-
-class DefaultDelayMatrix(DelayCalibrator):
-    # dep_inst = consumer instruction; completed_inst = producer instruction
-    matrix = [
-        ScheduleDelayMatrixMap(dep_opclass='IntAlu', completed_opclass='IntAlu', delay_tick=0),
-        ScheduleDelayMatrixMap(dep_opclass='IntMult', completed_opclass='IntAlu', delay_tick=1),
-        ScheduleDelayMatrixMap(dep_opclass='IntDiv', completed_opclass='IntDiv', delay_tick=1),
-        ScheduleDelayMatrixMap(dep_opclass='IntDiv',
-                               completed_opclass='IntMult', delay_tick=1),
-        ScheduleDelayMatrixMap(dep_opclass='IntDiv',
-                               completed_opclass='IntAlu', delay_tick=2),
-
-        ScheduleDelayMatrixMap(dep_opclass='FloatCvt',
-                               completed_opclass='IntAlu', delay_tick=3),
-        ScheduleDelayMatrixMap(dep_opclass='FloatCvt',
-                               completed_opclass='IntMult', delay_tick=3),
-        ScheduleDelayMatrixMap(dep_opclass='FloatCvt',
-                               completed_opclass='IntDiv', delay_tick=2),
-
-        ScheduleDelayMatrixMap(dep_opclass='FloatCvt',
-                               completed_opclass='FloatAdd', delay_tick=2),
-        ScheduleDelayMatrixMap(dep_opclass='FloatCvt',
-                               completed_opclass='FloatMult', delay_tick=2),
-        ScheduleDelayMatrixMap(dep_opclass='FloatCvt',
-                               completed_opclass='FloatDiv', delay_tick=2),
-        ScheduleDelayMatrixMap(dep_opclass='FloatCvt',
-                               completed_opclass='FloatCvt', delay_tick=2),
-
-        ScheduleDelayMatrixMap(dep_opclass='MemRead',
-                               completed_opclass='IntAlu', delay_tick=0),
-        ScheduleDelayMatrixMap(dep_opclass='MemRead',
-                               completed_opclass='MemRead', delay_tick=1),
-        ScheduleDelayMatrixMap(dep_opclass='IntAlu',
-                               completed_opclass='MemRead', delay_tick=0),
-
-        ScheduleDelayMatrixMap(dep_opclass='FMAAcc',
-                               completed_opclass='FloatMemRead', delay_tick=1),
-        ScheduleDelayMatrixMap(dep_opclass='FMAMul',
-                               completed_opclass='FloatMemRead', delay_tick=1),
-        ScheduleDelayMatrixMap(dep_opclass='FloatMult',
-                               completed_opclass='FloatMemRead', delay_tick=1),
-        ScheduleDelayMatrixMap(dep_opclass='FloatAdd',
-                               completed_opclass='FloatMemRead', delay_tick=1),
-        ScheduleDelayMatrixMap(dep_opclass='FMAAcc',
-                               completed_opclass='FloatCvt', delay_tick=2),
-        ScheduleDelayMatrixMap(dep_opclass='FMAMul',
-                               completed_opclass='FloatCvt', delay_tick=2),
-        ScheduleDelayMatrixMap(dep_opclass='FloatMult',
-                               completed_opclass='FloatCvt', delay_tick=2),
-        ScheduleDelayMatrixMap(dep_opclass='FloatAdd',
-                               completed_opclass='FloatCvt', delay_tick=2),
-
-        # load to use
-        # maybe we need to recalibrate in the future
-        ScheduleDelayMatrixMap(dep_opclass='MemRead',
-                               completed_opclass='MemWrite', delay_tick=3),
-        ScheduleDelayMatrixMap(dep_opclass='MemWrite',
-                               completed_opclass='MemRead', delay_tick=2),
-        ScheduleDelayMatrixMap(dep_opclass='IntMult',
-                               completed_opclass='MemRead', delay_tick=1),
-        ScheduleDelayMatrixMap(dep_opclass='IntDiv', completed_opclass='MemRead', delay_tick=1)]
