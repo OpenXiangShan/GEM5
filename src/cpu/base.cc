@@ -1389,12 +1389,13 @@ BaseCPU::difftestStep(ThreadID tid, InstSeqNum seq)
 
     bool is_fence = diffInfo.inst->isReadBarrier() || diffInfo.inst->isWriteBarrier();
     bool fence_should_diff = is_fence && !diffInfo.inst->isMicroop();
+    bool lr_should_diff = diffInfo.inst->isLoadReserved();
     bool amo_should_diff = diffInfo.inst->isAtomic() && diffInfo.inst->numDestRegs() > 0;
     bool is_sc = diffInfo.inst->isStoreConditional() && diffInfo.inst->isDelayedCommit();
     bool other_should_diff = !diffInfo.inst->isAtomic() && !is_fence && !is_sc &&
                              (!diffInfo.inst->isMicroop() || diffInfo.inst->isLastMicroop());
 
-    if (fence_should_diff || amo_should_diff || is_sc || other_should_diff) {
+    if (fence_should_diff || amo_should_diff || is_sc || other_should_diff || lr_should_diff) {
         should_diff = true;
         if (!diffAllStates->hasCommit && diffInfo.pc->instAddr() == 0x80000000u) {
             diffAllStates->hasCommit = true;
