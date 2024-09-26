@@ -49,6 +49,8 @@
 #include <queue>
 #include <vector>
 
+#include <boost/compute/detail/lru_cache.hpp>
+
 #include "arch/generic/mmu.hh"
 #include "arch/generic/tlb.hh"
 #include "base/flags.hh"
@@ -972,6 +974,8 @@ class LSQ
     Tick lastConflictCheckTick;
 
     std::vector<int64_t> l1dBankAddresses;
+    struct NullStruct {};
+    boost::compute::detail::lru_cache<uint64_t, NullStruct> recentlyloadAddr;
 
     bool enableBankConflictCheck;
 
