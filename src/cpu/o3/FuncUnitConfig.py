@@ -148,8 +148,8 @@ class ReadPort(FUDesc):
                OpDesc(opClass='VectorWholeRegisterLoad', opLat=3)]
 
 class WritePort(FUDesc):
-    opList = [ OpDesc(opClass='MemWrite', opLat=3),
-               OpDesc(opClass='FloatMemWrite', opLat=4),
+    opList = [ OpDesc(opClass='MemWrite', opLat=2),
+               OpDesc(opClass='FloatMemWrite', opLat=3),
                OpDesc(opClass='VectorUnitStrideStore'),
                OpDesc(opClass='VectorSegUnitStrideStore'),
                OpDesc(opClass='VectorUnitStrideMaskStore'),

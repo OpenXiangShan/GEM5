@@ -79,6 +79,7 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
       _cacheBlocked(false),
       cacheStorePorts(params.cacheStorePorts), usedStorePorts(0),
       cacheLoadPorts(params.cacheLoadPorts), usedLoadPorts(0),lastConflictCheckTick(0),
+      recentlyloadAddr(16),
       enableBankConflictCheck(params.BankConflictCheck),
       waitingForStaleTranslation(false),
       staleTranslationWaitTxnId(0),
@@ -210,9 +211,13 @@ LSQ::bankConflictedCheck(Addr vaddr)
         if (l1dBankAddresses.size() == 0) {
             l1dBankAddresses.push_back(bankNum(vaddr));
         } else {
+            if (recentlyloadAddr.contains(vaddr)) {
+                return false;
+            }
             auto bank_it = std::find(l1dBankAddresses.begin(), l1dBankAddresses.end(), bankNum(vaddr));
             if (bank_it == l1dBankAddresses.end()) {
                 l1dBankAddresses.push_back(bankNum(vaddr));
+                recentlyloadAddr.insert(vaddr, {});
             } else {
                 now_bank_conflict = true;
             }
