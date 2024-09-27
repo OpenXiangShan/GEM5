@@ -899,12 +899,12 @@ TLB::demapPageL2(Addr vpn, uint64_t asid)
             if (l2_newEntry1[i]) {
                 TlbEntry *m_newEntry = lookupL2TLB(vpn_vec[i], asid, BaseMMU::Read, true, i, true, gstage);
                 assert(m_newEntry != nullptr);
-                l2TLBRemove(m_newEntry - tlb_lists[tlb_i].data(), i);
+                l2TLBRemove(m_newEntry - tlb_lists[tlb_i], i);
             }
             if (l2_newEntry2[i]) {
                 TlbEntry *m_newEntry = lookupL2TLB(vpn_vec[i], asid, BaseMMU::Read, true, i, true, vsstage);
                 assert(m_newEntry != nullptr);
-                l2TLBRemove(m_newEntry - tlb_lists[tlb_i].data(), i);
+                l2TLBRemove(m_newEntry - tlb_lists[tlb_i], i);
             }
         }
     } else {
@@ -2122,24 +2122,25 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
             if ((hgatp.mode == 8 || vsatp.mode == 8) && (pmode < PrivilegeMode::PRV_M)) {
                 fault = doTwoStageTranslate(req, tc, translation, mode, delayed);
             } else {
+                if (req->getVaddr()==0)
+                    printf("vaddr ==0 pc %lx \n",req->getPC());
                 req->setPaddr(req->getVaddr());
                 fault = NoFault;
                 assert(!req->get_h_inst());
             }
-        } else {
-            fault = misalignDataAddrCheck(req, mode);
-            if (fault == NoFault) {
-                two_stage_translation = hasTwoStageTranslation(tc, req, mode);
-                if (two_stage_translation) {
-                    if (vsatp.mode != 8 && hgatp.mode != 8)
-                        assert(0);
-                    fault = doTwoStageTranslate(req, tc, translation, mode, delayed);
-                } else {
-                    req->setTwoStageState(false, 0, 0);
-                    fault = doTranslate(req, tc, translation, mode, delayed);
+        } else {            
+            two_stage_translation = hasTwoStageTranslation(tc, req, mode);
+            if (two_stage_translation) {
+                fault = misalignDataAddrCheck(req, mode);
+                if (fault != NoFault) {
+                    return fault;
                 }
+                if (vsatp.mode != 8 && hgatp.mode != 8)
+                    assert(0);
+                fault = doTwoStageTranslate(req, tc, translation, mode, delayed);
             } else {
-                return fault;
+                req->setTwoStageState(false, 0, 0);
+                fault = doTranslate(req, tc, translation, mode, delayed);
             }
         }
 
