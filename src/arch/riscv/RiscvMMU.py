@@ -39,7 +39,7 @@ from m5.params import *
 from m5.proxy import *
 
 from m5.objects.BaseMMU import BaseMMU
-from m5.objects.RiscvTLB import RiscvTLB, RiscvTLBL2
+from m5.objects.RiscvTLB import RiscvTLB, RiscvTLBL2, AppleM4LikeTLBL2
 from m5.objects.PMAChecker import PMAChecker
 from m5.objects.PMP import PMP
 
@@ -54,6 +54,28 @@ class RiscvMMU(BaseMMU):
     next_level=Parent.l2_shared,size=32)
     dtb = RiscvTLB(entry_type="data",
                    next_level=Parent.l2_shared, is_dtlb=True)
+    pma_checker = Param.PMAChecker(PMAChecker(), "PMA Checker")
+    pmp = Param.PMP(PMP(), "Physical Memory Protection Unit")
+
+    @classmethod
+    def walkerPorts(cls):
+        return ["mmu.itb.walker.port", "mmu.dtb.walker.port"]
+
+    def connectWalkerPorts(self, iport, dport):
+        self.itb.walker.port = iport
+        self.dtb.walker.port = dport
+
+class AppleM4LikeMMU(BaseMMU):
+    type = 'RiscvMMU'
+    cxx_class = 'gem5::RiscvISA::MMU'
+    cxx_header = 'arch/riscv/mmu.hh'
+
+    l2_shared = AppleM4LikeTLBL2(entry_type="unified")
+
+    itb = RiscvTLB(entry_type="instruction",
+                   next_level=Parent.l2_shared, size=192)
+    dtb = RiscvTLB(entry_type="data",
+                   next_level=Parent.l2_shared, is_dtlb=True, size=256)
     pma_checker = Param.PMAChecker(PMAChecker(), "PMA Checker")
     pmp = Param.PMP(PMP(), "Physical Memory Protection Unit")
 

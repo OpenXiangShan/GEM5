@@ -279,6 +279,18 @@ if args.xiangshan_ecore:
     TestCPUClass = XiangshanECore
     FutureClass = None
     args.cpu_clock = '2.4GHz'
+elif args.apple_m4_like_core:
+    TestCPUClass = AppleM4LikeCore
+    FutureClass = None
+    args.cpu_clock = '4.3GHz'
+    args.l1d_size = "128kB"
+    args.l1d_assoc = 8
+    args.l1i_size = "192kB"
+    args.l1i_assoc = 6
+    args.l2_size = "16MB"
+    args.l2_assoc = 16
+    args.l3_size = "24MB"
+    args.l3_assoc = 24
 else:
     TestCPUClass = XiangshanCore
     FutureClass = None

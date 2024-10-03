@@ -95,3 +95,10 @@ class RiscvTLBL2(RiscvTLB):
     is_L1tlb = False
     is_the_sharedL2 = True
 
+
+class AppleM4LikeTLBL2(RiscvTLBL2):
+    l2tlb_l1_size = 128
+    l2tlb_l2_size = 512
+    l2tlb_l3_size = 3072
+    l2tlb_sp_size = 128
+    l2tlb_line_size = 1

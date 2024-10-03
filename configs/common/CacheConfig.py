@@ -231,6 +231,9 @@ def config_cache(options, system):
                 system.l3.prefetcher.queue_size = 64
                 system.l3.prefetcher.max_prefetch_requests_with_pending_translation = 128
 
+            if options.apple_m4_like_core:
+                dcache.response_latency = 0 # M4 L2 Cache latency is 15 cycles
+
             # If we have a walker cache specified, instantiate two
             # instances here
             if walk_cache_class:

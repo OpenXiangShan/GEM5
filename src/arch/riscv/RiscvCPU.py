@@ -29,7 +29,7 @@ from m5.objects.BaseTimingSimpleCPU import BaseTimingSimpleCPU
 from m5.objects.BaseO3CPU import BaseO3CPU
 from m5.objects.BaseMinorCPU import BaseMinorCPU
 from m5.objects.RiscvDecoder import RiscvDecoder
-from m5.objects.RiscvMMU import RiscvMMU
+from m5.objects.RiscvMMU import RiscvMMU, AppleM4LikeMMU
 from m5.objects.RiscvInterrupts import RiscvInterrupts
 from m5.objects.RiscvISA import RiscvISA
 from m5.objects.FUPool import *
@@ -97,3 +97,33 @@ class XiangshanECore2Read(XiangshanCore):
     numPhysVecPredRegs = 36
     numPhysCCRegs = 0
     numPhysRMiscRegs = 40
+
+class AppleM4LikeCore(RiscvO3CPU):
+    scheduler = AppleM4LikeScheduler()
+    mmu = AppleM4LikeMMU()
+
+    fetchWidth = 16
+    decodeWidth = 10
+    renameWidth = 10
+    dispatchWidth = 19
+    issueWidth = 19
+    wbWidth = 10
+
+    replayWidth = 10
+
+    fetchQueueSize = 96
+    numROBEntries = 960
+
+    LQEntries = 264
+    SQEntries = 144
+    SbufferEntries = 64 # Just large enough not to be a bottleneck
+    SbufferEvictThreshold = 48
+
+    backComSize = 20
+    forwardComSize = 20
+
+    numPhysIntRegs = 446
+    numPhysFloatRegs = 378
+    numPhysVecRegs = 378
+    numPhysVecPredRegs = 100 # Just make it large to avoid being a problem, not sure if useful
+    numPhysRMiscRegs = 100

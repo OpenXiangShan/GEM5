@@ -176,3 +176,19 @@ class KunminghuScheduler(Scheduler):
     ]
     slotNum = 12
     xbarWakeup = True
+
+
+class AppleM4LikeScheduler(Scheduler):
+    IQs = [
+        IssueQue(name='IQ_alu_only', inoutPorts=3, size=68, fuType=[IntALU()]),
+        IssueQue(name='IQ_alu_br', inoutPorts=3, size=78, fuType=[IntALU(), IntBRU()]),
+        IssueQue(name='IQ_alu_mult', inoutPorts=1, size=26, fuType=[IntALU(), IntMult()]),
+        IssueQue(name='IQ_alu_multdiv', inoutPorts=1, size=32, fuType=[IntALU(), IntMult(), IntDiv()]),
+        IssueQue(name='IQ_ldst_mixed', inoutPorts=5, size=87, fuType=[WritePort(), ReadPort()]),
+        IssueQue(name='IQ_fpwide', inoutPorts=5, size=67*4, fuType=[FP_MAM(), FP_MAA()]),
+        IssueQue(name='IQ_cplx',inoutPorts=2, size=2*24,
+            scheduleToExecDelay=3, fuType=[FP_MISC(), FP_SLOW(), SIMD_Unit()])
+    ]
+    # Not sure how M4 handle regfile read, there must be some arbitrary, but assume low conflict rate
+    slotNum = 26
+    xbarWakeup = True

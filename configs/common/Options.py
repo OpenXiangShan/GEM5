@@ -314,6 +314,9 @@ def addCommonOptions(parser, configure_xiangshan=False):
     parser.add_argument("--xiangshan-ecore", action= "store_true",
                         help="Use efficient core of xiangshan")
 
+    parser.add_argument("--apple-m4-like-core", action="store_true",
+                        help="Model a Apple-M4-like core")
+
     # for warmup without switching cpu
     parser.add_argument("--warmup-insts-no-switch", action="store", type=int,
         default=20*10**6,
