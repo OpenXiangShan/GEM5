@@ -60,6 +60,12 @@ struct riscv64_CPU_regfile
     uint64_t mideleg, medeleg;
     uint64_t pc;
 
+    //hypervisor
+    uint64_t v; // virtualization mode
+    uint64_t mtval2, mtinst, hstatus, hideleg, hedeleg;
+    uint64_t hcounteren, htval, htinst, hgatp, vsstatus;
+    uint64_t vstvec, vsepc, vscause, vstval, vsatp, vsscratch;
+
     //vector
     union
     {
@@ -126,6 +132,10 @@ struct ExecutionGuide {
     uint64_t exception_num;
     uint64_t mtval;
     uint64_t stval;
+    // need enable h
+    uint64_t mtval2;
+    uint64_t htval;
+    uint64_t vstval;
     // force set jump target
     bool force_set_jump_target;
     uint64_t jump_target;

@@ -1819,10 +1819,12 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
 
     if (!load_inst->isVector() && request->mainReq()->getSize() > 1 &&
         request->mainReq()->getVaddr() % request->mainReq()->getSize() != 0) {
-        DPRINTF(LSQUnit, "request: size: %u, Addr: %#lx, code: %d\n", request->mainReq()->getSize(),
-            request->mainReq()->getVaddr(), RiscvISA::ExceptionCode::LOAD_ADDR_MISALIGNED);
+        DPRINTF(LSQUnit, "request: size: %u, Addr: %#lx, code: %d\n",
+                request->mainReq()->getSize(), request->mainReq()->getVaddr(),
+                RiscvISA::ExceptionCode::LOAD_ADDR_MISALIGNED);
         return std::make_shared<RiscvISA::AddressFault>(request->mainReq()->getVaddr(),
-            RiscvISA::ExceptionCode::LOAD_ADDR_MISALIGNED);
+                                                        request->mainReq()->getgPaddr(),
+                                                        RiscvISA::ExceptionCode::LOAD_ADDR_MISALIGNED);
     }
 
     load_entry.setRequest(request);

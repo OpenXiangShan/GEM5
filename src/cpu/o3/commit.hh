@@ -126,6 +126,7 @@ class Commit
     CommitStatus _status;
     /** Next commit status, to be set at the end of the cycle. */
     CommitStatus _nextStatus;
+    std::set<uint64_t> faultNum;
     /** Per-thread status. */
     ThreadStatus commitStatus[MaxThreads];
 
@@ -303,6 +304,7 @@ class Commit
 
     /** Commits as many instructions as possible. */
     void commitInsts();
+    void updateMstatusSd(ThreadID tid);
 
     /** Tries to commit the head ROB instruction passed in.
      * @param head_inst The instruction to be committed.
@@ -519,6 +521,8 @@ class Commit
 
         /** Total number of instructions committed. */
         statistics::Vector instsCommitted;
+        /** Total number of pagefault.*/
+        statistics::Vector pagefaulttimes;
         /** Total number of ops (including micro ops) committed. */
         statistics::Vector opsCommitted;
         /** Stat for the total number of committed memory references. */

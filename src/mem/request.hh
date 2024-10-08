@@ -507,6 +507,7 @@ class Request
 
     /** The virtual address of the request. */
     Addr _vaddr = MaxAddr;
+    Addr _gPaddr = MaxAddr;
     Addr _forward_pre_vaddr = MaxAddr;
     Addr _back_pre_vaddr = MaxAddr;
 
@@ -543,6 +544,19 @@ class Request
     int reqNum = 1;
     bool forward_pre_tlb = false;
     bool back_pre_tlb = false;
+
+    bool _twoStageTranslate = false;
+    int _virt = 0;
+    int _twoStageTranslateMode = 0;
+    bool _vsatp_0_mode = false;
+    bool _inGstage = true;
+    int _level = 2;
+    int _twoStageLevel = 2;
+    Addr _ppn = 0;
+    uint64_t _pte = 0;
+    bool _finishGVA = false;
+
+    bool _isHInst = false;
 
   public:
 
@@ -936,6 +950,8 @@ class Request
         return _vaddr;
     }
 
+    Addr getgPaddr() const { return _gPaddr; }
+
     Addr getForwardPreVaddr() const { return _forward_pre_vaddr; }
     bool get_forward_pre_tlb() const { return forward_pre_tlb; }
 
@@ -945,15 +961,54 @@ class Request
         forward_pre_tlb = true;
     }
 
+    void setgPaddr(Addr gPaddr) { _gPaddr = gPaddr; }
+
     Addr getBackPreVaddr() const { return _back_pre_vaddr; }
 
     bool get_back_pre_tlb() const { return back_pre_tlb; }
+
+    bool get_two_stage_state() const {return _twoStageTranslate;}
+
+    int get_virt() const {return _virt;}
+
+    int get_twoStageTranslateMode () const {return _twoStageTranslateMode;}
+
+    bool get_vsatp_0_mode() const { return _vsatp_0_mode; }
+
+    bool get_h_inst() const { return _isHInst; }
+    bool get_h_gstage() const { return _inGstage; }
+    int get_level() const { return _level; }
+    int get_two_stage_level() const { return _twoStageLevel; }
+    Addr get_ppn() const { return _ppn; }
+    uint64_t get_pte() const { return _pte; }
+    bool get_finish_gva() const { return _finishGVA; }
 
     void setBackPreVaddr(Addr back_pre_vaddr)
     {
         _back_pre_vaddr = back_pre_vaddr;
         back_pre_tlb = true;
     }
+    void setPte(uint64_t pte) { _pte = pte; }
+
+    void setTwoStageState(bool two_stage_translate,int virt,int two_stage_translate_mode)
+    {
+        _twoStageTranslate = two_stage_translate;
+        _virt = virt;
+        _twoStageTranslateMode = two_stage_translate_mode;
+    }
+
+    void setTwoPtwWalk(bool inGstage, int level, int twoStageLevel, Addr ppn, bool finishGVA)
+    {
+        _inGstage = inGstage;
+        _level = level;
+        _twoStageLevel = twoStageLevel;
+        _ppn = ppn;
+        _finishGVA = finishGVA;
+    }
+
+    void setVsatp0Mode(bool vstap_0_mode) { _vsatp_0_mode = vstap_0_mode; }
+
+    void setHInst(bool is_h_inst) { _isHInst = is_h_inst; }
 
     /** Accesssor for the requestor id. */
     RequestorID

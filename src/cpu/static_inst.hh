@@ -152,6 +152,7 @@ class StaticInst : public RefCounted, public StaticInstFlags
     {
         return flags[IsLoad] || flags[IsStore] || flags[IsAtomic];
     }
+    bool isHInst()        const { return flags[IsHInst];}
     bool isLoad()         const { return flags[IsLoad]; }
     bool isStore()        const { return flags[IsStore]; }
     bool isAtomic()       const { return flags[IsAtomic]; }
@@ -193,6 +194,8 @@ class StaticInst : public RefCounted, public StaticInstFlags
     bool isReadBarrier() const { return flags[IsReadBarrier]; }
     bool isWriteBarrier() const { return flags[IsWriteBarrier]; }
     bool isNonSpeculative() const { return flags[IsNonSpeculative]; }
+    bool isUpdateVsstatusSd() const{ return flags[IsUpdateVsstatusSd];}
+    bool isUpdateMstatusSd() const{return flags[IsUpdateMstatusSd];}
     bool isQuiesce() const { return flags[IsQuiesce]; }
     bool isUnverifiable() const { return flags[IsUnverifiable]; }
     bool isSyscall() const { return flags[IsSyscall]; }

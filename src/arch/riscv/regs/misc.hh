@@ -63,6 +63,7 @@ namespace RiscvISA
 enum MiscRegIndex
 {
     MISCREG_PRV = 0,
+    MISCREG_VIRMODE,
     MISCREG_ISA,
     MISCREG_VENDORID,
     MISCREG_ARCHID,
@@ -74,6 +75,35 @@ enum MiscRegIndex
     MISCREG_CYCLE,
     MISCREG_TIME,
     MISCREG_INSTRET,
+    MISCREG_MHPMCOUNTER3,
+    MISCREG_MHPMCOUNTER4,
+    MISCREG_MHPMCOUNTER5,
+    MISCREG_MHPMCOUNTER6,
+    MISCREG_MHPMCOUNTER7,
+    MISCREG_MHPMCOUNTER8,
+    MISCREG_MHPMCOUNTER9,
+    MISCREG_MHPMCOUNTER10,
+    MISCREG_MHPMCOUNTER11,
+    MISCREG_MHPMCOUNTER12,
+    MISCREG_MHPMCOUNTER13,
+    MISCREG_MHPMCOUNTER14,
+    MISCREG_MHPMCOUNTER15,
+    MISCREG_MHPMCOUNTER16,
+    MISCREG_MHPMCOUNTER17,
+    MISCREG_MHPMCOUNTER18,
+    MISCREG_MHPMCOUNTER19,
+    MISCREG_MHPMCOUNTER20,
+    MISCREG_MHPMCOUNTER21,
+    MISCREG_MHPMCOUNTER22,
+    MISCREG_MHPMCOUNTER23,
+    MISCREG_MHPMCOUNTER24,
+    MISCREG_MHPMCOUNTER25,
+    MISCREG_MHPMCOUNTER26,
+    MISCREG_MHPMCOUNTER27,
+    MISCREG_MHPMCOUNTER28,
+    MISCREG_MHPMCOUNTER29,
+    MISCREG_MHPMCOUNTER30,
+    MISCREG_MHPMCOUNTER31,
     MISCREG_HPMCOUNTER03,
     MISCREG_HPMCOUNTER04,
     MISCREG_HPMCOUNTER05,
@@ -103,6 +133,7 @@ enum MiscRegIndex
     MISCREG_HPMCOUNTER29,
     MISCREG_HPMCOUNTER30,
     MISCREG_HPMCOUNTER31,
+    MISCREG_MCOUNTINHIBIT,
     MISCREG_HPMEVENT03,
     MISCREG_HPMEVENT04,
     MISCREG_HPMEVENT05,
@@ -133,8 +164,6 @@ enum MiscRegIndex
     MISCREG_HPMEVENT30,
     MISCREG_HPMEVENT31,
 
-    MISCREG_MTINST,
-    MISCREG_MTVAL2,
 
     MISCREG_TSELECT,
     MISCREG_TDATA1,
@@ -148,6 +177,7 @@ enum MiscRegIndex
     MISCREG_MIDELEG,
     MISCREG_MTVEC,
     MISCREG_MCOUNTEREN,
+    MISCREG_MENVCFG,
     MISCREG_MSCRATCH,
     MISCREG_MEPC,
     MISCREG_MCAUSE,
@@ -199,7 +229,32 @@ enum MiscRegIndex
     MISCREG_VTYPE,
     MISCREG_VLENB,
 
-    // These registers are not in the standard, hence does not exist in the
+    MISCREG_HSTATUS,
+    MISCREG_HEDELEG,
+    MISCREG_HIDELEG,
+    MISCREG_HIE,
+    MISCREG_HCOUNTEREN,
+    MISCREG_HGEIE,
+    MISCREG_HTVAL,
+    MISCREG_HIP,
+    MISCREG_HVIP,
+    MISCREG_HTINST,
+    MISCREG_HGEIP,
+    MISCREG_HENVCFG,
+    MISCREG_HGATP,
+    MISCREG_HTIMEDELTA,
+    MISCREG_VSSTATUS,
+    MISCREG_VSIE,
+    MISCREG_VSTVEC,
+    MISCREG_VSSCRATCH,
+    MISCREG_VSEPC,
+    MISCREG_VSCAUSE,
+    MISCREG_VSTVAL,
+    MISCREG_VSIP,
+    MISCREG_VSATP,
+    MISCREG_MTINST,
+    MISCREG_MTVAL2,
+
     // CSRData map. These are mainly used to provide a minimal implementation
     // for non-maskable-interrupt in our simple cpu.
     // non-maskable-interrupt-vector-base-address: NMI version of xTVEC
@@ -283,6 +338,7 @@ enum CSRIndex
     CSR_MIE = 0x304,
     CSR_MTVEC = 0x305,
     CSR_MCOUNTEREN = 0x306,
+    CSR_MENVCFG = 0x30A,
     CSR_MSCRATCH = 0x340,
     CSR_MEPC = 0x341,
     CSR_MCAUSE = 0x342,
@@ -310,6 +366,35 @@ enum CSRIndex
     CSR_PMPADDR15 = 0x3BF,
     CSR_MCYCLE = 0xB00,
     CSR_MINSTRET = 0xB02,
+    CSR_MMHPMCOUNTER3 = 0xB03,
+    CSR_MMHPMCOUNTER4 = 0xB04,
+    CSR_MMHPMCOUNTER5 = 0xB05,
+    CSR_MMHPMCOUNTER6 = 0xB06,
+    CSR_MMHPMCOUNTER7 = 0xB07,
+    CSR_MMHPMCOUNTER8 = 0xB08,
+    CSR_MMHPMCOUNTER9 = 0xB09,
+    CSR_MMHPMCOUNTER10 = 0xB0A,
+    CSR_MMHPMCOUNTER11 = 0xB0B,
+    CSR_MMHPMCOUNTER12 = 0xB0C,
+    CSR_MMHPMCOUNTER13 = 0xB0D,
+    CSR_MMHPMCOUNTER14 = 0xB0E,
+    CSR_MMHPMCOUNTER15 = 0xB0F,
+    CSR_MMHPMCOUNTER16 = 0xB10,
+    CSR_MMHPMCOUNTER17 = 0xB11,
+    CSR_MMHPMCOUNTER18 = 0xB12,
+    CSR_MMHPMCOUNTER19 = 0xB13,
+    CSR_MMHPMCOUNTER20 = 0xB14,
+    CSR_MMHPMCOUNTER21 = 0xB15,
+    CSR_MMHPMCOUNTER22 = 0xB16,
+    CSR_MMHPMCOUNTER23 = 0xB17,
+    CSR_MMHPMCOUNTER24 = 0xB18,
+    CSR_MMHPMCOUNTER25 = 0xB19,
+    CSR_MMHPMCOUNTER26 = 0xB1A,
+    CSR_MMHPMCOUNTER27 = 0xB1B,
+    CSR_MMHPMCOUNTER28 = 0xB1C,
+    CSR_MMHPMCOUNTER29 = 0xB1D,
+    CSR_MMHPMCOUNTER30 = 0xB1E,
+    CSR_MMHPMCOUNTER31 = 0xB1F,
     CSR_MHPMCOUNTER03 = 0xC03,
     CSR_MHPMCOUNTER04 = 0xC04,
     CSR_MHPMCOUNTER05 = 0xC05,
@@ -340,6 +425,7 @@ enum CSRIndex
     CSR_MHPMCOUNTER30 = 0xC1E,
     CSR_MHPMCOUNTER31 = 0xC1F,
     // MHPMCOUNTERH rv32 only
+    CSR_MMCOUNTINHIBIT = 0x320,
     CSR_MHPMEVENT03 = 0x323,
     CSR_MHPMEVENT04 = 0x324,
     CSR_MHPMEVENT05 = 0x325,
@@ -370,9 +456,6 @@ enum CSRIndex
     CSR_MHPMEVENT30 = 0x33E,
     CSR_MHPMEVENT31 = 0x33F,
 
-    CSR_MTINST = 0x34A,
-    CSR_MTVAL2 = 0x34B,
-
     CSR_TSELECT = 0x7A0,
     CSR_TDATA1 = 0x7A1,
     CSR_TDATA2 = 0x7A2,
@@ -387,7 +470,33 @@ enum CSRIndex
     CSR_VCSR         = 0x00F,
     CSR_VL           = 0xC20,
     CSR_VTYPE        = 0xC21,
-    CSR_VLENB        = 0xC22
+    CSR_VLENB        = 0xC22,
+
+    CSR_HSTATUS     = 0x600,
+    CSR_HEDELEG     = 0x602,
+    CSR_HIDELEG     = 0x603,
+    CSR_HIE         = 0x604,
+    CSR_HCOUNTEREN  = 0x606,
+    CSR_HGEIE       = 0x607,
+    CSR_HTVAL       = 0x643,
+    CSR_HIP         = 0x644,
+    CSR_HVIP        = 0x645,
+    CSR_HTINST      = 0x64A,
+    CSR_HGEIP       = 0xE12,
+    CSR_HENVCFG     = 0x60A,
+    CSR_HGATP       = 0x680,
+    CSR_HTIMEDELTA  = 0x605,
+    CSR_VSSTATUS    = 0x200,
+    CSR_VSIE        = 0x204,
+    CSR_VSTVEC      = 0x205,
+    CSR_VSSCRATCH   = 0x240,
+    CSR_VSEPC       = 0x241,
+    CSR_VSCAUSE     = 0x242,
+    CSR_VSTVAL      = 0x243,
+    CSR_VSIP        = 0x244,
+    CSR_VSATP       = 0x280,
+    CSR_MTINST      = 0x34A,
+    CSR_MTVAL2      = 0x34B,
 };
 
 struct CSRMetadata
@@ -411,6 +520,35 @@ const std::map<int, CSRMetadata> CSRData = {
     {CSR_CYCLE, {"cycle", MISCREG_CYCLE}},
     {CSR_TIME, {"time", MISCREG_TIME}},
     {CSR_INSTRET, {"instret", MISCREG_INSTRET}},
+    {CSR_MMHPMCOUNTER3, {"mmhpmcounter03", MISCREG_MHPMCOUNTER3}},
+    {CSR_MMHPMCOUNTER4, {"mmhpmcounter04", MISCREG_MHPMCOUNTER4}},
+    {CSR_MMHPMCOUNTER5, {"mmhpmcounter05", MISCREG_MHPMCOUNTER5}},
+    {CSR_MMHPMCOUNTER6, {"mmhpmcounter06", MISCREG_MHPMCOUNTER6}},
+    {CSR_MMHPMCOUNTER7, {"mmhpmcounter07", MISCREG_MHPMCOUNTER7}},
+    {CSR_MMHPMCOUNTER8, {"mmhpmcounter08", MISCREG_MHPMCOUNTER8}},
+    {CSR_MMHPMCOUNTER9, {"mmhpmcounter09", MISCREG_MHPMCOUNTER9}},
+    {CSR_MMHPMCOUNTER10, {"mmhpmcounter10", MISCREG_MHPMCOUNTER10}},
+    {CSR_MMHPMCOUNTER11, {"mmhpmcounter11", MISCREG_MHPMCOUNTER11}},
+    {CSR_MMHPMCOUNTER12, {"mmhpmcounter12", MISCREG_MHPMCOUNTER12}},
+    {CSR_MMHPMCOUNTER13, {"mmhpmcounter13", MISCREG_MHPMCOUNTER13}},
+    {CSR_MMHPMCOUNTER14, {"mmhpmcounter14", MISCREG_MHPMCOUNTER14}},
+    {CSR_MMHPMCOUNTER15, {"mmhpmcounter15", MISCREG_MHPMCOUNTER15}},
+    {CSR_MMHPMCOUNTER16, {"mmhpmcounter16", MISCREG_MHPMCOUNTER16}},
+    {CSR_MMHPMCOUNTER17, {"mmhpmcounter17", MISCREG_MHPMCOUNTER17}},
+    {CSR_MMHPMCOUNTER18, {"mmhpmcounter18", MISCREG_MHPMCOUNTER18}},
+    {CSR_MMHPMCOUNTER19, {"mmhpmcounter19", MISCREG_MHPMCOUNTER19}},
+    {CSR_MMHPMCOUNTER20, {"mmhpmcounter20", MISCREG_MHPMCOUNTER20}},
+    {CSR_MMHPMCOUNTER21, {"mmhpmcounter21", MISCREG_MHPMCOUNTER21}},
+    {CSR_MMHPMCOUNTER22, {"mmhpmcounter22", MISCREG_MHPMCOUNTER22}},
+    {CSR_MMHPMCOUNTER23, {"mmhpmcounter23", MISCREG_MHPMCOUNTER23}},
+    {CSR_MMHPMCOUNTER24, {"mmhpmcounter24", MISCREG_MHPMCOUNTER24}},
+    {CSR_MMHPMCOUNTER25, {"mmhpmcounter25", MISCREG_MHPMCOUNTER25}},
+    {CSR_MMHPMCOUNTER26, {"mmhpmcounter26", MISCREG_MHPMCOUNTER26}},
+    {CSR_MMHPMCOUNTER27, {"mmhpmcounter27", MISCREG_MHPMCOUNTER27}},
+    {CSR_MMHPMCOUNTER28, {"mmhpmcounter28", MISCREG_MHPMCOUNTER28}},
+    {CSR_MMHPMCOUNTER29, {"mmhpmcounter29", MISCREG_MHPMCOUNTER29}},
+    {CSR_MMHPMCOUNTER30, {"mmhpmcounter30", MISCREG_MHPMCOUNTER30}},
+    {CSR_MMHPMCOUNTER31, {"mmhpmcounter31", MISCREG_MHPMCOUNTER31}},
     {CSR_HPMCOUNTER03, {"hpmcounter03", MISCREG_HPMCOUNTER03}},
     {CSR_HPMCOUNTER04, {"hpmcounter04", MISCREG_HPMCOUNTER04}},
     {CSR_HPMCOUNTER05, {"hpmcounter05", MISCREG_HPMCOUNTER05}},
@@ -465,6 +603,7 @@ const std::map<int, CSRMetadata> CSRData = {
     {CSR_MIE, {"mie", MISCREG_IE}},
     {CSR_MTVEC, {"mtvec", MISCREG_MTVEC}},
     {CSR_MCOUNTEREN, {"mcounteren", MISCREG_MCOUNTEREN}},
+    {CSR_MENVCFG, {"menvcfg", MISCREG_MENVCFG}},
     {CSR_MSCRATCH, {"mscratch", MISCREG_MSCRATCH}},
     {CSR_MEPC, {"mepc", MISCREG_MEPC}},
     {CSR_MCAUSE, {"mcause", MISCREG_MCAUSE}},
@@ -492,6 +631,7 @@ const std::map<int, CSRMetadata> CSRData = {
     {CSR_PMPADDR15, {"pmpaddr15", MISCREG_PMPADDR15}},
     {CSR_MCYCLE, {"mcycle", MISCREG_CYCLE}},
     {CSR_MINSTRET, {"minstret", MISCREG_INSTRET}},
+
     {CSR_MHPMCOUNTER03, {"mhpmcounter03", MISCREG_HPMCOUNTER03}},
     {CSR_MHPMCOUNTER04, {"mhpmcounter04", MISCREG_HPMCOUNTER04}},
     {CSR_MHPMCOUNTER05, {"mhpmcounter05", MISCREG_HPMCOUNTER05}},
@@ -521,6 +661,7 @@ const std::map<int, CSRMetadata> CSRData = {
     {CSR_MHPMCOUNTER29, {"mhpmcounter29", MISCREG_HPMCOUNTER29}},
     {CSR_MHPMCOUNTER30, {"mhpmcounter30", MISCREG_HPMCOUNTER30}},
     {CSR_MHPMCOUNTER31, {"mhpmcounter31", MISCREG_HPMCOUNTER31}},
+    {CSR_MMCOUNTINHIBIT,{"mcountinhibit", MISCREG_MCOUNTINHIBIT}},
     {CSR_MHPMEVENT03, {"mhpmevent03", MISCREG_HPMEVENT03}},
     {CSR_MHPMEVENT04, {"mhpmevent04", MISCREG_HPMEVENT04}},
     {CSR_MHPMEVENT05, {"mhpmevent05", MISCREG_HPMEVENT05}},
@@ -551,9 +692,6 @@ const std::map<int, CSRMetadata> CSRData = {
     {CSR_MHPMEVENT30, {"mhpmevent30", MISCREG_HPMEVENT30}},
     {CSR_MHPMEVENT31, {"mhpmevent31", MISCREG_HPMEVENT31}},
 
-    {CSR_MTINST, {"mtisnt", MISCREG_MTINST}},
-    {CSR_MTVAL2, {"mtval2", MISCREG_MTVAL2}},
-
     {CSR_TSELECT, {"tselect", MISCREG_TSELECT}},
     {CSR_TDATA1, {"tdata1", MISCREG_TDATA1}},
     {CSR_TDATA2, {"tdata2", MISCREG_TDATA2}},
@@ -568,7 +706,33 @@ const std::map<int, CSRMetadata> CSRData = {
     {CSR_VCSR,         {"vcsr"  , MISCREG_VCSR}},
     {CSR_VL,           {"vl"    , MISCREG_VL}},
     {CSR_VTYPE,        {"vtype" , MISCREG_VTYPE}},
-    {CSR_VLENB,        {"VLENB" , MISCREG_VLENB}}
+    {CSR_VLENB,        {"VLENB" , MISCREG_VLENB}},
+
+    {CSR_HSTATUS, {"hstatus", MISCREG_HSTATUS}},
+    {CSR_HEDELEG, {"hedeleg", MISCREG_HEDELEG}},
+    {CSR_HIDELEG, {"hideleg", MISCREG_HIDELEG}},
+    {CSR_HIE, {"hie", MISCREG_HIE}},
+    {CSR_HCOUNTEREN, {"hcounteren", MISCREG_HCOUNTEREN}},
+    {CSR_HGEIE, {"hgeie", MISCREG_HGEIE}},
+    {CSR_HTVAL, {"htval", MISCREG_HTVAL}},
+    {CSR_HIP, {"hip", MISCREG_HIP}},
+    {CSR_HVIP, {"hvip", MISCREG_HVIP}},
+    {CSR_HTINST, {"htinst", MISCREG_HTINST}},
+    {CSR_HGEIP, {"hgeip", MISCREG_HGEIP}},
+    {CSR_HENVCFG, {"henvcfg", MISCREG_HENVCFG}},
+    {CSR_HGATP, {"hgatp", MISCREG_HGATP}},
+    {CSR_HTIMEDELTA, {"htimedalta", MISCREG_HTIMEDELTA}},
+    {CSR_VSSTATUS, {"vsstatus", MISCREG_VSSTATUS}},
+    {CSR_VSIE, {"vsie", MISCREG_VSIE}},
+    {CSR_VSTVEC, {"vstvec", MISCREG_VSTVEC}},
+    {CSR_VSSCRATCH, {"vsscratch", MISCREG_VSSCRATCH}},
+    {CSR_VSEPC, {"vsepc", MISCREG_VSEPC}},
+    {CSR_VSCAUSE, {"vscause", MISCREG_VSCAUSE}},
+    {CSR_VSTVAL, {"vstval", MISCREG_VSTVAL}},
+    {CSR_VSIP, {"vsip", MISCREG_VSIP}},
+    {CSR_VSATP, {"vsatp", MISCREG_VSATP}},
+    {CSR_MTINST, {"mtinst", MISCREG_MTINST}},
+    {CSR_MTVAL2, {"mtval2", MISCREG_MTVAL2}},
 };
 
 /**
@@ -580,6 +744,11 @@ const std::map<int, CSRMetadata> CSRData = {
  */
 BitUnion64(STATUS)
     Bitfield<63> sd;
+    Bitfield<62,40> wpri;
+    Bitfield<39> mpv;
+    Bitfield<38> gva;
+    Bitfield<37> mbe;
+    Bitfield<36> sbe;
     Bitfield<35, 34> sxl;
     Bitfield<33, 32> uxl;
     Bitfield<22> tsr;
@@ -600,6 +769,71 @@ BitUnion64(STATUS)
     Bitfield<1> sie;
     Bitfield<0> uie;
 EndBitUnion(STATUS)
+
+BitUnion64(HSTATUS)
+    Bitfield<63,34> pad4;
+    Bitfield<33,32> vsxl;
+    Bitfield<31,23> pad3;
+    Bitfield<22> vtsr;
+    Bitfield<21> vtw;
+    Bitfield<20> vtvm;
+    Bitfield<19, 18> pad2;
+    Bitfield<17,12> vgein;
+    Bitfield<11,10> pad1;
+    Bitfield<9> hu;
+    Bitfield<8> spvp;
+    Bitfield<7> spv;
+    Bitfield<6> gva;
+    Bitfield<5> vsbe;
+    Bitfield<4,0> pad0;
+EndBitUnion(HSTATUS)
+
+BitUnion64(VSSTATUS)
+    Bitfield<63> sd;
+    Bitfield<62,34> pad6;
+    Bitfield<33,32> uxl;
+    Bitfield<31,20> pad5;
+    Bitfield<19> mxr;
+    Bitfield<18> sum;
+    Bitfield<17> pad4;
+    Bitfield<16,15> xs;
+    Bitfield<14,13> fs;
+    Bitfield<12,11> pad3;
+    Bitfield<10,9> vs;
+    Bitfield<8> spp;
+    Bitfield<7> pad2;
+    Bitfield<6> ube;
+    Bitfield<5> spie;
+    Bitfield<4,2> pad1;
+    Bitfield<1> sie;
+    Bitfield<0> pad0;
+EndBitUnion(VSSTATUS)
+
+BitUnion32(VSSTATUS32)
+    Bitfield<31> sd;
+    Bitfield<30,20> pad5;
+    Bitfield<19> mxr;
+    Bitfield<18> sum;
+    Bitfield<17> pad4;
+    Bitfield<16,15> xs;
+    Bitfield<14,13> fs;
+    Bitfield<12,11> pad3;
+    Bitfield<10,9> vs;
+    Bitfield<8> spp;
+    Bitfield<7> pad2;
+    Bitfield<6> ube;
+    Bitfield<5> spie;
+    Bitfield<4,2> pad1;
+    Bitfield<1> sie;
+    Bitfield<0> pad0;
+EndBitUnion(VSSTATUS32)
+
+BitUnion64(HGATP)
+    Bitfield<63,60> mode;
+    Bitfield<59,58> pad0;
+    Bitfield<57,44> vmid;
+    Bitfield<43,0> ppn;
+EndBitUnion(HGATP)
 
 /**
  * These fields are specified in the RISC-V Instruction Set Manual, Volume II,
@@ -632,6 +866,30 @@ const RegVal ISA_EXT_C_MASK = 1UL << ('c' - 'a');
 const RegVal ISA_EXT_H_MASK = 1UL << ('h' - 'a');
 const RegVal MISA_MASK = ISA_MXL_MASK | ISA_EXT_MASK;
 
+const uint64_t NEMU_SV39_SIGN0 = 0;
+const uint64_t NEMU_SV39_SIGN1 = 8;
+const uint64_t NEMU_SATP_SV39_MASK = 0xf000000000000000;
+const uint64_t NEMU_SATP_ASID_LEN = 16;
+const uint64_t NEMU_SATP_PADDR_LEN = 24;
+const uint64_t NEMU_SATP_PADDR_MAX_LEN = 44;
+const uint64_t NEMU_SATP_RIGHT_OFFSET = 60;
+const uint64_t NEMU_SATP_MODE_MASK = (uint64_t)8<<(NEMU_SATP_ASID_LEN+NEMU_SATP_PADDR_MAX_LEN);
+const uint64_t NEMU_SATP_ASID_MASK =  ((((uint64_t)1 <<(NEMU_SATP_ASID_LEN))-1)<<NEMU_SATP_PADDR_MAX_LEN);
+const uint64_t NEMU_SATP_PADDR_MASK =  (((uint64_t)1<<NEMU_SATP_PADDR_LEN)-1);
+const uint64_t NEMU_SATP_MASK = NEMU_SATP_MODE_MASK |NEMU_SATP_ASID_MASK | NEMU_SATP_PADDR_MASK;
+
+const uint64_t NEMU_SSTATUS_WMASK = ((1 << 19) | (1 << 18) | (0x3 << 13) | (1 << 8) | (1 << 5) | (1 << 1) |(0x3 <<9));
+const uint64_t NEMU_SSTATUS_RMASK = 0x80000003000de762UL;
+const uint64_t NEMU_COUNTER_MASK = 0;
+
+const uint64_t NEMU_VS_MASK = ((1 << 10) | (1 << 6) | (1 << 2));
+const uint64_t NEMU_HS_MASK = ((1 << 12) | NEMU_VS_MASK);
+const uint64_t NEMU_HIE_WMASK = NEMU_HS_MASK;
+const uint64_t NEMU_HIE_RMASK = NEMU_HS_MASK;
+
+const uint64_t NEMU_HIP_RMASK = NEMU_HS_MASK;
+const uint64_t NEMU_HVIP_MASK = ((1 << 10) | (1 << 6) | (1 << 2));
+const uint64_t NEMU_MIDELEG_FORCED_MASK = ((1 << 12) | (1 << 10) | (1 << 6) | (1 << 2));
 const RegVal STATUS_SD_MASK = 1ULL << ((sizeof(uint64_t) * 8) - 1);
 const RegVal STATUS_SXL_MASK = 3ULL << SXL_OFFSET;
 const RegVal STATUS_UXL_MASK = 3ULL << UXL_OFFSET;
@@ -652,17 +910,12 @@ const RegVal STATUS_UPIE_MASK = 1ULL << 4;
 const RegVal STATUS_MIE_MASK = 1ULL << 3;
 const RegVal STATUS_SIE_MASK = 1ULL << 1;
 const RegVal STATUS_UIE_MASK = 1ULL << 0;
-const RegVal MSTATUS_MASK = STATUS_SD_MASK | STATUS_SXL_MASK |
-                            STATUS_UXL_MASK | STATUS_TSR_MASK |
-                            STATUS_TW_MASK | STATUS_TVM_MASK |
-                            STATUS_MXR_MASK | STATUS_SUM_MASK |
-                            STATUS_MPRV_MASK | STATUS_XS_MASK |
-                            STATUS_FS_MASK | STATUS_MPP_MASK |
-                            STATUS_VS_MASK |
-                            STATUS_SPP_MASK | STATUS_MPIE_MASK |
-                            STATUS_SPIE_MASK | STATUS_UPIE_MASK |
-                            STATUS_MIE_MASK | STATUS_SIE_MASK |
-                            STATUS_UIE_MASK;
+const RegVal MSTATUS_WMASK_FS = 0x3UL << 13;
+const RegVal MSTATUS_WMASK_RVH = 3UL << 38;
+const RegVal MSTATUS_WMASK_RVV = 3UL << 9;
+const RegVal MSTATUS_MASK = (0x7e79aaUL) | MSTATUS_WMASK_FS | MSTATUS_WMASK_RVH | MSTATUS_WMASK_RVV;
+const RegVal HSTATUS_MASK = ((1 << 22) | (1 << 21) | (1 << 20) | (1 << 18) | (0x3f << 12) | (1 << 9) | (1 << 8) |
+                             (1 << 7) | (1 << 6) | (1 << 5));
 const RegVal SSTATUS_MASK = STATUS_SD_MASK | STATUS_UXL_MASK |
                             STATUS_MXR_MASK | STATUS_SUM_MASK |
                             STATUS_XS_MASK | STATUS_FS_MASK |
@@ -684,9 +937,7 @@ const RegVal UTI_MASK = 1ULL << 4;
 const RegVal MSI_MASK = 1ULL << 3;
 const RegVal SSI_MASK = 1ULL << 1;
 const RegVal USI_MASK = 1ULL << 0;
-const RegVal MI_MASK = MEI_MASK | SEI_MASK | UEI_MASK |
-                       MTI_MASK | STI_MASK | UTI_MASK |
-                       MSI_MASK | SSI_MASK | USI_MASK;
+const RegVal NEMU_MIP_MASK =  ((1 << 9) | (1 << 5) | (1 << 2) |(1 << 1));
 const RegVal SI_MASK = SEI_MASK | STI_MASK | SSI_MASK;
 const RegVal UI_MASK = UEI_MASK | UTI_MASK | USI_MASK;
 const RegVal FFLAGS_MASK = (1 << FRM_OFFSET) - 1;
@@ -700,13 +951,183 @@ const std::map<int, RegVal> CSRMasks = {
     {CSR_FRM, FRM_MASK},
     {CSR_FCSR, FFLAGS_MASK | (FRM_MASK << FRM_OFFSET)},
     {CSR_SSTATUS, SSTATUS_MASK},
-    {CSR_SIE, SI_MASK},
     {CSR_SIP, SI_MASK},
-    {CSR_MSTATUS, MSTATUS_MASK},
-    {CSR_MISA, MISA_MASK},
-    {CSR_MIE, MI_MASK},
-    {CSR_MIP, MI_MASK}
+    {CSR_MISA, MISA_MASK}
 };
+
+#define concat_temp(x, y) x ## y
+#define concat(x, y) concat_temp(x, y)
+
+#define CSR_STRUCT_START(name) \
+  typedef union { \
+    struct {
+
+#define CSR_STRUCT_END(name) \
+    }; \
+    uint64_t val; \
+  } concat(name, _t);
+
+
+
+CSR_STRUCT_START(hstatus)
+  uint64_t pad0  : 5;
+  uint64_t vsbe  : 1;
+  uint64_t gva   : 1;
+  uint64_t spv   : 1;
+  uint64_t spvp  : 1;
+  uint64_t hu    : 1;
+  uint64_t pad1  : 2;
+  uint64_t vgein : 6;
+  uint64_t pad2  : 2;
+  uint64_t vtvm  : 1;
+  uint64_t vtw   : 1;
+  uint64_t vtsr  : 1;
+  uint64_t pad3  : 9;
+  uint64_t vsxl  : 2;
+CSR_STRUCT_END(hstatus)
+
+CSR_STRUCT_START(hie)
+  uint64_t pad0  : 2;
+  uint64_t vssie : 1;
+  uint64_t pad1  : 3;
+  uint64_t vstie : 1;
+  uint64_t pad2  : 3;
+  uint64_t vseie : 1;
+  uint64_t pad3  : 1;
+  uint64_t sgeie : 1;
+CSR_STRUCT_END(hie)
+
+CSR_STRUCT_START(hip)
+  uint64_t pad0  : 2;
+  uint64_t vssip : 1;
+  uint64_t pad1  : 3;
+  uint64_t vstip : 1;
+  uint64_t pad2  : 3;
+  uint64_t vseip : 1;
+  uint64_t pad3  : 1;
+  uint64_t sgeip : 1;
+CSR_STRUCT_END(hip)
+
+CSR_STRUCT_START(hvip)
+  uint64_t pad0  : 2;
+  uint64_t vssip : 1;
+  uint64_t pad1  : 3;
+  uint64_t vstip : 1;
+  uint64_t pad2  : 3;
+  uint64_t vseip : 1;
+CSR_STRUCT_END(hvip)
+
+CSR_STRUCT_START(henvcfg)
+  uint64_t fiom   : 1;
+  uint64_t pad0   : 3;
+  uint64_t cbie   : 2;
+  uint64_t cbcfe  : 1;
+  uint64_t cbze   : 1;
+  uint64_t pad1   :54;
+  uint64_t pbmte  : 1;
+  uint64_t vstce  : 1;
+CSR_STRUCT_END(henvcfg)
+
+CSR_STRUCT_START(hgatp)
+  uint64_t ppn    : 44;
+  uint64_t vmid   : 14;
+  uint64_t pad0   : 2;
+  uint64_t mode   : 4;
+CSR_STRUCT_END(hgatp)
+
+CSR_STRUCT_START(vsstatus)
+  union{
+    struct{
+      uint64_t pad0: 1;
+      uint64_t sie : 1;
+      uint64_t pad1: 3;
+      uint64_t spie: 1;
+      uint64_t ube : 1;
+      uint64_t pad2: 1;
+      uint64_t spp : 1;
+      uint64_t vs  : 2;
+      uint64_t pad3: 2;
+      uint64_t fs  : 2;
+      uint64_t xs  : 2;
+      uint64_t pad4: 1;
+      uint64_t sum : 1;
+      uint64_t mxr : 1;
+      uint64_t pad5:11;
+      uint64_t sd  : 1;
+    }_32;
+    struct{
+      uint64_t pad0: 1;
+      uint64_t sie : 1;
+      uint64_t pad1: 3;
+      uint64_t spie: 1;
+      uint64_t ube : 1;
+      uint64_t pad2: 1;
+      uint64_t spp : 1;
+      uint64_t vs  : 2;
+      uint64_t pad3: 2;
+      uint64_t fs  : 2;
+      uint64_t xs  : 2;
+      uint64_t pad4: 1;
+      uint64_t sum : 1;
+      uint64_t mxr : 1;
+      uint64_t pad5:12;
+      uint64_t uxl : 2;
+      uint64_t pad6:29;
+      uint64_t sd  : 1;
+    }_64;
+  };
+CSR_STRUCT_END(vsstatus)
+
+CSR_STRUCT_START(vsie)
+  uint64_t pad0 : 1;
+  uint64_t ssie : 1;
+  uint64_t pad1 : 3;
+  uint64_t stie : 1;
+  uint64_t pad2 : 3;
+  uint64_t seie : 1;
+CSR_STRUCT_END(vsie)
+
+CSR_STRUCT_START(vstvec)
+  uint64_t mode  : 2;
+  uint64_t base  :62;
+CSR_STRUCT_END(vstvec)
+
+CSR_STRUCT_START(vscause)
+  union{
+    struct{
+      uint64_t code:31;
+      uint64_t intr: 1;
+    }_32;
+    struct{
+      uint64_t code:63;
+      uint64_t intr: 1;
+    }_64;
+  };
+CSR_STRUCT_END(vscause)
+
+CSR_STRUCT_START(vsip)
+  uint64_t pad0 : 1;
+  uint64_t ssip : 1;
+  uint64_t pad1 : 3;
+  uint64_t stip : 1;
+  uint64_t pad2 : 3;
+  uint64_t seip : 1;
+CSR_STRUCT_END(vsip)
+
+CSR_STRUCT_START(vsatp)
+  union{
+    struct{
+      uint64_t ppn  :22;
+      uint64_t asid : 9;
+      uint64_t mode : 1;
+    }_32;
+    struct{
+      uint64_t ppn  :44;
+      uint64_t asid :16;
+      uint64_t mode : 4;
+    }_64;
+  };
+CSR_STRUCT_END(vsatp)
 
 } // namespace RiscvISA
 } // namespace gem5

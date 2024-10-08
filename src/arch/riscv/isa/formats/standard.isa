@@ -345,7 +345,9 @@ def template CSRExecute {{
         RegVal data, olddata;
         auto lowestAllowedMode = (PrivilegeMode)bits(csr, 9, 8);
         auto pm = (PrivilegeMode)xc->readMiscReg(MISCREG_PRV);
-        if (pm < lowestAllowedMode) {
+        if ((pm < lowestAllowedMode) && ((csr <CSR_HSTATUS
+                ) ||(csr >CSR_HGATP)) && ((csr <CSR_VSSTATUS) || (
+                    csr > CSR_VSATP))) {
             return std::make_shared<IllegalInstFault>(
                     csprintf("%s is not accessible in %s\n", csrName, pm),
                     machInst);
@@ -387,6 +389,9 @@ def template CSRExecute {{
         %(code)s;
 
         data &= maskVal;
+        if(csr == CSR_HIE){
+            xc->setMiscReg(midx, data);
+        }
         // NOTE: may has bug
         if (data != olddata || csr == CSR_FCSR || (csr == CSR_FRM && write) || csr == CSR_VCSR) {
             if (bits(csr, 11, 10) == 0x3) {
@@ -409,6 +414,7 @@ def template CSRExecute {{
               case CSR_SIP: case CSR_SIE:
               case CSR_UIP: case CSR_UIE:
               case CSR_MSTATUS: case CSR_SSTATUS: case CSR_USTATUS:
+              case CSR_HSTATUS:
                 if (newdata_all != olddata_all) {
                     xc->setMiscReg(midx, newdata_all);
                     auto new_val = xc->readMiscReg(MISCREG_STATUS);

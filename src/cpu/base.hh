@@ -82,7 +82,10 @@ enum CsrRegIndex
   mip, mie,
   mscratch, sscratch,
   mideleg, medeleg,
-  pc
+  pc ,v,
+  mtval2, mtinst, hstatus, hideleg, hedeleg,
+  hcounteren, htval, htinst, hgatp, vsstatus,
+  vstvec, vsepc, vscause, vstval, vsatp, vsscratch
 };
 
 struct AddressMonitor
@@ -685,14 +688,24 @@ class BaseCPU : public ClockedObject
     bool dumpCommitFlag;
     int dumpStartNum;
     bool enableRVV{false};
+    bool enableRVHDIFF{false};
+    bool enabledifftesInstTrace{false};
     std::shared_ptr<DiffAllStates> diffAllStates{};
+
+    enum  diffRegConfig
+    {
+      diffAllNum = 96,// 32 regs + 32fprs +32 vprs
+      diffCsrNum = 36,
+    };
 
     virtual void readGem5Regs()
     {
         panic("difftest:readGem5Regs() is not implemented\n");
     }
-    std::pair<int, bool> diffWithNEMU(ThreadID tid, InstSeqNum seq);
 
+    void csrDiffMessage(uint64_t gem5_val, uint64_t ref_val, int error_num, uint64_t &error_reg, InstSeqNum seq,
+                        std::string error_csr_name,int &diff_at);
+    std::pair<int, bool> diffWithNEMU(ThreadID tid, InstSeqNum seq);
 
     std::string diffMsg;
     void reportDiffMismatch(ThreadID tid, InstSeqNum seq) {
@@ -739,8 +752,8 @@ class BaseCPU : public ClockedObject
         uint8_t *goldenValue;
         uint64_t amoOldGoldenValue;
         // Register address causing difftest error
-        bool errorRegsValue[96];// 32 regs + 32fprs +32 vprs
-        bool errorCsrsValue[32];// CsrRegIndex
+        bool errorRegsValue[diffAllNum];
+        bool errorCsrsValue[diffCsrNum];  // CsrRegIndex
         bool errorPcValue;
 
         std::queue<std::string> lastCommittedMsg;
@@ -772,10 +785,9 @@ class BaseCPU : public ClockedObject
 
     void setSCSuccess(bool success, paddr_t addr);
 
-    void setExceptionGuideExecInfo(uint64_t exception_num, uint64_t mtval,
-                          uint64_t stval,
-                          // force set jump target
-                          bool force_set_jump_target, uint64_t jump_target);
+    void setExceptionGuideExecInfo(uint64_t exception_num, uint64_t mtval, uint64_t stval,
+                                   // force set jump target
+                                   bool force_set_jump_target, uint64_t jump_target, ThreadID tid);
 
     void clearGuideExecInfo();
 

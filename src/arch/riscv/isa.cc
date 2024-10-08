@@ -69,6 +69,7 @@ namespace RiscvISA
 
 [[maybe_unused]] const std::array<const char *, NUM_MISCREGS> MiscRegNames = {{
     [MISCREG_PRV]           = "PRV",
+    [MISCREG_VIRMODE]         = "VIRTUALIZATIONMODE",
     [MISCREG_ISA]           = "ISA",
     [MISCREG_VENDORID]      = "VENDORID",
     [MISCREG_ARCHID]        = "ARCHID",
@@ -80,6 +81,35 @@ namespace RiscvISA
     [MISCREG_CYCLE]         = "CYCLE",
     [MISCREG_TIME]          = "TIME",
     [MISCREG_INSTRET]       = "INSTRET",
+    [MISCREG_MHPMCOUNTER3]  = "MHPMCOUNTER3",
+    [MISCREG_MHPMCOUNTER4]  = "MHPMCOUNTER4",
+    [MISCREG_MHPMCOUNTER5]  = "MHPMCOUNTER5",
+    [MISCREG_MHPMCOUNTER6]  = "MHPMCOUNTER6",
+    [MISCREG_MHPMCOUNTER7]  = "MHPMCOUNTER7",
+    [MISCREG_MHPMCOUNTER8]  = "MHPMCOUNTER8",
+    [MISCREG_MHPMCOUNTER9]  = "MHPMCOUNTER9",
+    [MISCREG_MHPMCOUNTER10]  = "MHPMCOUNTER10",
+    [MISCREG_MHPMCOUNTER11]  = "MHPMCOUNTER11",
+    [MISCREG_MHPMCOUNTER12]  = "MHPMCOUNTER12",
+    [MISCREG_MHPMCOUNTER13]  = "MHPMCOUNTER13",
+    [MISCREG_MHPMCOUNTER14]  = "MHPMCOUNTER14",
+    [MISCREG_MHPMCOUNTER15]  = "MHPMCOUNTER15",
+    [MISCREG_MHPMCOUNTER16]  = "MHPMCOUNTER16",
+    [MISCREG_MHPMCOUNTER17]  = "MHPMCOUNTER17",
+    [MISCREG_MHPMCOUNTER18]  = "MHPMCOUNTER18",
+    [MISCREG_MHPMCOUNTER19]  = "MHPMCOUNTER19",
+    [MISCREG_MHPMCOUNTER20]  = "MHPMCOUNTER20",
+    [MISCREG_MHPMCOUNTER21]  = "MHPMCOUNTER21",
+    [MISCREG_MHPMCOUNTER22]  = "MHPMCOUNTER22",
+    [MISCREG_MHPMCOUNTER23]  = "MHPMCOUNTER23",
+    [MISCREG_MHPMCOUNTER24]  = "MHPMCOUNTER24",
+    [MISCREG_MHPMCOUNTER25]  = "MHPMCOUNTER25",
+    [MISCREG_MHPMCOUNTER26]  = "MHPMCOUNTER26",
+    [MISCREG_MHPMCOUNTER27]  = "MHPMCOUNTER27",
+    [MISCREG_MHPMCOUNTER28]  = "MHPMCOUNTER28",
+    [MISCREG_MHPMCOUNTER29]  = "MHPMCOUNTER29",
+    [MISCREG_MHPMCOUNTER30]  = "MHPMCOUNTER30",
+    [MISCREG_MHPMCOUNTER31]  = "MHPMCOUNTER31",
     [MISCREG_HPMCOUNTER03]  = "HPMCOUNTER03",
     [MISCREG_HPMCOUNTER04]  = "HPMCOUNTER04",
     [MISCREG_HPMCOUNTER05]  = "HPMCOUNTER05",
@@ -109,6 +139,7 @@ namespace RiscvISA
     [MISCREG_HPMCOUNTER29]  = "HPMCOUNTER29",
     [MISCREG_HPMCOUNTER30]  = "HPMCOUNTER30",
     [MISCREG_HPMCOUNTER31]  = "HPMCOUNTER31",
+    [MISCREG_MCOUNTINHIBIT]  = "MCOUNTINHIBIT",
     [MISCREG_HPMEVENT03]    = "HPMEVENT03",
     [MISCREG_HPMEVENT04]    = "HPMEVENT04",
     [MISCREG_HPMEVENT05]    = "HPMEVENT05",
@@ -139,8 +170,6 @@ namespace RiscvISA
     [MISCREG_HPMEVENT30]    = "HPMEVENT30",
     [MISCREG_HPMEVENT31]    = "HPMEVENT31",
 
-    [MISCREG_MTINST]        = "MTINST",
-    [MISCREG_MTVAL2]        = "MTVAL2",
 
     [MISCREG_TSELECT]       = "TSELECT",
     [MISCREG_TDATA1]        = "TDATA1",
@@ -154,6 +183,7 @@ namespace RiscvISA
     [MISCREG_MIDELEG]       = "MIDELEG",
     [MISCREG_MTVEC]         = "MTVEC",
     [MISCREG_MCOUNTEREN]    = "MCOUNTEREN",
+    [MISCREG_MENVCFG]       = "MENVCFG",
     [MISCREG_MSCRATCH]      = "MSCRATCH",
     [MISCREG_MEPC]          = "MEPC",
     [MISCREG_MCAUSE]        = "MCAUSE",
@@ -204,6 +234,33 @@ namespace RiscvISA
     [MISCREG_VL]            = "VL",
     [MISCREG_VTYPE]         = "VTYPE",
     [MISCREG_VLENB]         = "VLENB",
+
+    [MISCREG_HSTATUS]       = "HSTATUS",
+    [MISCREG_HEDELEG]       = "HEDELEG",
+    [MISCREG_HIDELEG]       = "HIDELEG",
+    [MISCREG_HIE]           = "HIE",
+    [MISCREG_HCOUNTEREN]    = "HCOUNTEREN",
+    [MISCREG_HGEIE]         = "HGEIE",
+    [MISCREG_HTVAL]         = "HTVAL",
+    [MISCREG_HIP]           = "HIP",
+    [MISCREG_HVIP]          = "HVIP",
+    [MISCREG_HTINST]        = "HTINST",
+    [MISCREG_HGEIP]         = "HGEIP",
+    [MISCREG_HENVCFG]       = "HENVCFG",
+    [MISCREG_HGATP]         = "HGATP",
+    [MISCREG_HTIMEDELTA]    = "HTIMEDELTA",
+    [MISCREG_VSSTATUS]      = "VSSTATUS",
+    [MISCREG_VSIE]          = "VSIE",
+    [MISCREG_VSTVEC]        = "VSTVEC",
+    [MISCREG_VSSCRATCH]     = "VSSCRATCH",
+    [MISCREG_VSEPC]         = "VSEPC",
+    [MISCREG_VSCAUSE]       = "VSCAUSE",
+    [MISCREG_VSTVAL]        = "VSTVAL",
+    [MISCREG_VSIP]          = "VSIP",
+    [MISCREG_VSATP]         = "VSATP",
+    [MISCREG_MTINST]        = "MTINST",
+    [MISCREG_MTVAL2]        = "MTVAL2",
+
 
     [MISCREG_NMIVEC]        = "NMIVEC",
     [MISCREG_NMIE]          = "NMIE",
@@ -261,7 +318,7 @@ void ISA::clear()
     std::fill(miscRegFile.begin(), miscRegFile.end(), 0);
 
     miscRegFile[MISCREG_PRV] = PRV_M;
-    miscRegFile[MISCREG_ISA] = 0x800000000034112f;
+    miscRegFile[MISCREG_ISA] = 0x80000000003411af;
     miscRegFile[MISCREG_VENDORID] = 0;
     miscRegFile[MISCREG_ARCHID] = 0;
     miscRegFile[MISCREG_IMPID] = 0;
@@ -273,8 +330,8 @@ void ISA::clear()
         miscRegFile[MISCREG_STATUS] = (2ULL << UXL_OFFSET) | (2ULL << SXL_OFFSET) |
                                     (1ULL << FS_OFFSET);
     }
-    miscRegFile[MISCREG_MCOUNTEREN] = 0x7;
-    miscRegFile[MISCREG_SCOUNTEREN] = 0x7;
+    miscRegFile[MISCREG_MCOUNTEREN] = 0x0;
+    miscRegFile[MISCREG_SCOUNTEREN] = 0;
     // don't set it to zero; software may try to determine the supported
     // triggers, starting at zero. simply set a different value here.
     miscRegFile[MISCREG_TSELECT] = 1;
@@ -282,6 +339,10 @@ void ISA::clear()
     miscRegFile[MISCREG_NMIE] = 1;
 
     miscRegFile[MISCREG_VTYPE] = (1lu<<63);
+    miscRegFile[MISCREG_HSTATUS] = (uint64_t)2<<32;
+    miscRegFile[MISCREG_VSSTATUS] = miscRegFile[MISCREG_STATUS] & NEMU_SSTATUS_RMASK;
+    miscRegFile[MISCREG_ARCHID] = 0x19;
+
 }
 
 bool
@@ -310,7 +371,18 @@ ISA::hpmCounterEnabled(int misc_reg) const
 RegVal
 ISA::readMiscRegNoEffect(int misc_reg) const
 {
-    if (misc_reg > NUM_MISCREGS || misc_reg < 0) {
+    if ((misc_reg >= RiscvISA::MiscRegIndex::MISCREG_PMPADDR00) &&
+        (misc_reg < RiscvISA::MiscRegIndex::MISCREG_PMPADDR00 + 16)) {
+        auto mmu = dynamic_cast<RiscvISA::MMU *>(tc->getMMUPtr());
+        uint32_t pmp_index = misc_reg - MISCREG_PMPADDR00;
+        uint64_t csr_num = mmu->getPMP()->pmpcfg_from_index(pmp_index);
+        if (mmu->getPMP()->pmp_read_config(csr_num)) {
+            return miscRegFile[misc_reg] | (~mmu->getPMP()->pmpTorMask() >> 1);
+        } else {
+            return miscRegFile[misc_reg] & (mmu->getPMP()->pmpTorMask());
+        }
+        return 0;
+    } else if (misc_reg > NUM_MISCREGS || misc_reg < 0) {
         // Illegal CSR
         panic("Illegal CSR index %#x\n", misc_reg);
         return -1;
@@ -323,6 +395,40 @@ ISA::readMiscRegNoEffect(int misc_reg) const
 RegVal
 ISA::readMiscReg(int misc_reg)
 {
+    int v = readMiscRegNoEffect(MISCREG_VIRMODE);
+    auto pm = readMiscRegNoEffect(MISCREG_PRV);
+    if ((v == 1) && (misc_reg == MISCREG_SSCRATCH)) {
+        return readMiscRegNoEffect(MISCREG_VSSCRATCH);
+    }
+    if ((v == 1) && (misc_reg == MISCREG_SATP)) {
+        return readMiscRegNoEffect(MISCREG_VSATP);
+    }
+    if ((v == 1) && (misc_reg == MISCREG_SEPC)) {
+        return readMiscRegNoEffect(MISCREG_VSEPC);
+    }
+    if ((v == 1) && (misc_reg == MISCREG_STVAL)) {
+        return readMiscRegNoEffect(MISCREG_VSTVAL);
+    }
+    if ((v == 1) && (misc_reg == MISCREG_SCAUSE)) {
+        return readMiscRegNoEffect(MISCREG_VSCAUSE);
+    }
+    if ((v == 1) && (misc_reg == MISCREG_STVEC)) {
+        return readMiscRegNoEffect(MISCREG_VSTVEC);
+    }
+    if (misc_reg == MISCREG_HIE) {
+        auto ic = dynamic_cast<RiscvISA::Interrupts *>(tc->getCpuPtr()->getInterruptController(tc->threadId()));
+        DPRINTF(RiscvMisc, "Read IE value: %#lx.\n", ic->readIE());
+        return ic->readIE() & NEMU_HIE_RMASK & (readMiscRegNoEffect(MISCREG_MIDELEG) | NEMU_MIDELEG_FORCED_MASK);
+    }
+    if (misc_reg == MISCREG_HIP) {
+        auto ic = dynamic_cast<RiscvISA::Interrupts *>(tc->getCpuPtr()->getInterruptController(tc->threadId()));
+        DPRINTF(RiscvMisc, "Read IE value: %#lx.\n", ic->readIE());
+        return (ic->readIP() & NEMU_HIP_RMASK & (readMiscRegNoEffect(MISCREG_MIDELEG) | NEMU_MIDELEG_FORCED_MASK));
+    }
+    if (misc_reg == MISCREG_HVIP) {
+        auto ic = dynamic_cast<RiscvISA::Interrupts *>(tc->getCpuPtr()->getInterruptController(tc->threadId()));
+        return (ic->readIP() & NEMU_HVIP_MASK);
+    }
     switch (misc_reg) {
       case MISCREG_HARTID:
         return tc->contextId();
@@ -389,6 +495,10 @@ ISA::readMiscReg(int misc_reg)
                   (readMiscRegNoEffect(MISCREG_VXRM) << 1);
         }
         break;
+        case MISCREG_PMPADDR00 ... MISCREG_PMPADDR15:
+        {
+            return readMiscRegNoEffect(misc_reg);
+        } break;
       default:
         // Try reading HPM counters
         // As a placeholder, all HPM counters are just cycle counters
@@ -422,12 +532,54 @@ ISA::setMiscRegNoEffect(int misc_reg, RegVal val)
 void
 ISA::setMiscReg(int misc_reg, RegVal val)
 {
+    int v = readMiscReg(MISCREG_VIRMODE);
     if (misc_reg == MISCREG_STATUS) {
+        DPRINTF(RiscvMisc, "setMiscReg: setting mstatus with %#lx\n", val);
+    }
+    if (misc_reg == MISCREG_HSTATUS) {
+        DPRINTF(RiscvMisc, "setMiscReg: setting mstatus with %#lx\n", val);
+    }
+    if (misc_reg == MISCREG_IE) {
         DPRINTF(RiscvMisc, "setMiscReg: setting mstatus with %#lx\n", val);
     }
     if (misc_reg >= MISCREG_CYCLE && misc_reg <= MISCREG_HPMCOUNTER31) {
         // Ignore writes to HPM counters for now
-        warn("Ignoring write to %s.\n", CSRData.at(misc_reg).name);
+        if (misc_reg >= MISCREG_MHPMCOUNTER3 && misc_reg <= MISCREG_MHPMCOUNTER31) {
+            warn("write to misc_reg %x val %lx but now write 0\n", misc_reg, val);
+            setMiscRegNoEffect(misc_reg, 0);
+        } else {
+            warn("Ignoring write to %x\n", misc_reg);
+        }
+    } else if ((v == 1) && ((misc_reg == MISCREG_SSCRATCH))) {
+        if (misc_reg == MISCREG_SSCRATCH) {
+            setMiscRegNoEffect(MISCREG_VSSCRATCH, val);
+        }
+
+    } else if ((v == 1) && ((misc_reg == MISCREG_STATUS)) && (readMiscRegNoEffect(MISCREG_PRV) == PRV_S)) {
+        auto vsstatus = readMiscRegNoEffect(MISCREG_VSSTATUS);
+        RegVal write_val = ((vsstatus & ~(NEMU_SSTATUS_WMASK)) | (val & NEMU_SSTATUS_WMASK));
+        setMiscRegNoEffect(MISCREG_VSSTATUS, write_val);
+    } else if (misc_reg == MISCREG_VSSTATUS) {
+        auto vsstatus = readMiscRegNoEffect(MISCREG_VSSTATUS);
+        RegVal write_val = ((vsstatus & ~(NEMU_SSTATUS_WMASK)) | (val & NEMU_SSTATUS_WMASK));
+        setMiscRegNoEffect(MISCREG_VSSTATUS, write_val);
+    } else if ((v == 1) && ((misc_reg == MISCREG_SATP))) {
+        if ((val & NEMU_SATP_SV39_MASK) >> NEMU_SATP_RIGHT_OFFSET == NEMU_SV39_SIGN0 ||
+            (val & NEMU_SATP_SV39_MASK) >> NEMU_SATP_RIGHT_OFFSET == NEMU_SV39_SIGN1) {
+            setMiscRegNoEffect(MISCREG_VSATP, val & NEMU_SATP_MASK);
+        }
+    } else if ((v == 1) && (misc_reg == MISCREG_SEPC)) {
+        setMiscRegNoEffect(MISCREG_VSEPC, val);
+    } else if (misc_reg == MISCREG_HCOUNTEREN) {
+        auto hcounter = readMiscRegNoEffect(MISCREG_HCOUNTEREN);
+        RegVal write_val = ((hcounter & ~(NEMU_COUNTER_MASK)) | (val & NEMU_COUNTER_MASK));
+        setMiscRegNoEffect(MISCREG_HCOUNTEREN, write_val);
+    } else if (misc_reg == MISCREG_SCOUNTEREN) {
+        auto scounter = readMiscRegNoEffect(MISCREG_SCOUNTEREN);
+        RegVal write_val = ((scounter & ~(NEMU_COUNTER_MASK)) | (val & NEMU_COUNTER_MASK));
+        setMiscRegNoEffect(MISCREG_SCOUNTEREN, write_val);
+    } else if ((v == 1) && ((misc_reg == MISCREG_STVEC))) {
+        setMiscRegNoEffect(MISCREG_VSTVEC, val & ~(0x2UL));
     } else {
         switch (misc_reg) {
 
@@ -475,18 +627,42 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 auto mmu = dynamic_cast<RiscvISA::MMU *>
                               (tc->getMMUPtr());
                 uint32_t pmp_index = misc_reg-MISCREG_PMPADDR00;
+                RegVal write_val = val & (((uint64_t)1 << (36 - 2)) - 1);
+                uint64_t csr_num = mmu->getPMP()->pmpcfg_from_index(pmp_index);
+                uint64_t cfg = miscRegFile[csr_num];
+
                 mmu->getPMP()->pmpUpdateAddr(pmp_index, val);
 
-                setMiscRegNoEffect(misc_reg, val);
+                setMiscRegNoEffect(misc_reg, write_val);
             }
             break;
+            case MISCREG_HVIP: {
+                auto ic =
+                    dynamic_cast<RiscvISA::Interrupts *>(tc->getCpuPtr()->getInterruptController(tc->threadId()));
+                auto old = readMiscReg(MISCREG_IP);
+                RegVal writeVal = ((old & ~(NEMU_HVIP_MASK)) | (val & NEMU_HVIP_MASK));
+                ic->setIP(writeVal);
+            } break;
 
           case MISCREG_IP:
             {
                 auto ic = dynamic_cast<RiscvISA::Interrupts *>(
                     tc->getCpuPtr()->getInterruptController(tc->threadId()));
                 DPRINTF(RiscvMisc, "Setting IP to %#lx.\n", val);
-                ic->setIP(val);
+                auto old = readMiscReg(MISCREG_IP);
+                RegVal writeVal = ((old & ~(NEMU_MIP_MASK)) | (val & NEMU_MIP_MASK));
+                ic->setIP(writeVal);
+            }
+            break;
+          case MISCREG_HIE:
+            {
+                auto ic = dynamic_cast<RiscvISA::Interrupts *>(
+                    tc->getCpuPtr()->getInterruptController(tc->threadId()));
+                RegVal write_val =0;
+                RegVal old = readMiscReg(MISCREG_IE);
+                RegVal hip_Mask = NEMU_HIE_WMASK & (readMiscReg(MISCREG_MIDELEG) | NEMU_MIDELEG_FORCED_MASK);
+                write_val = ((old & ~(hip_Mask)) |(val & hip_Mask));
+                ic->setIE(write_val);
             }
             break;
           case MISCREG_IE:
@@ -494,6 +670,16 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 auto ic = dynamic_cast<RiscvISA::Interrupts *>(
                     tc->getCpuPtr()->getInterruptController(tc->threadId()));
                 DPRINTF(RiscvMisc, "Setting IE to %#lx.\n", val);
+                uint64_t sie_mask = 0x222 & readMiscReg(MISCREG_MIDELEG);
+                if ((v == 1) && ((misc_reg == MISCREG_IE)) && (readMiscRegNoEffect(MISCREG_PRV) == PRV_S)) {
+                    RegVal old = readMiscReg(MISCREG_IE);
+                    RegVal write_val = ((old & ~(NEMU_VS_MASK)) | ((val)&NEMU_VS_MASK));
+                    val = write_val;
+                } else if (readMiscRegNoEffect(MISCREG_PRV) == PRV_S) {
+                    RegVal old = readMiscReg(MISCREG_IE);
+                    RegVal write_val = ((old & ~(sie_mask)) | (val & sie_mask));
+                    val = write_val;
+                }
                 ic->setIE(val);
             }
             break;
@@ -503,13 +689,20 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 // shall have no effect (see 4.1.12 in priv ISA manual)
                 SATP cur_val = readMiscRegNoEffect(misc_reg);
                 SATP new_val = val;
-                if (new_val.mode != AddrXlateMode::BARE &&
-                    new_val.mode != AddrXlateMode::SV39)
-                    new_val.mode = cur_val.mode;
-                setMiscRegNoEffect(misc_reg, new_val);
+                //change the mode update , only support sv39
+                //if (new_val.mode != AddrXlateMode::BARE &&
+                //    new_val.mode != AddrXlateMode::SV39)
+                //    new_val.mode = cur_val.mode;
+                //setMiscRegNoEffect(misc_reg, new_val);
                 if (cur_val != new_val) {
                     tc->getCpuPtr()->flushTLBs();
                 }
+                if ((val & NEMU_SATP_SV39_MASK) >> NEMU_SATP_RIGHT_OFFSET == NEMU_SV39_SIGN0 ||
+                    (val & NEMU_SATP_SV39_MASK) >> NEMU_SATP_RIGHT_OFFSET == NEMU_SV39_SIGN1) {
+                    RegVal writeVal = val & NEMU_SATP_MASK;
+                    setMiscRegNoEffect(misc_reg, writeVal);
+                }
+
             }
             break;
           case MISCREG_TSELECT:
@@ -588,6 +781,19 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 mstatus.sd = 1;
                 setMiscRegNoEffect(MISCREG_STATUS, mstatus);
                 setMiscRegNoEffect(misc_reg, val);
+            }
+            break;
+          case MISCREG_MIDELEG:
+            {
+               RegVal writeVal = val|((1 << 12) | (1 << 10) | (1 << 6) | (1 << 2));
+               setMiscRegNoEffect(misc_reg, writeVal);
+            }
+            break;
+          case MISCREG_HSTATUS:
+            {
+                RegVal oldVal = readMiscRegNoEffect(MISCREG_HSTATUS);
+                RegVal writeVal = (oldVal & ~HSTATUS_MASK)|(val & HSTATUS_MASK);
+                setMiscRegNoEffect(misc_reg, writeVal);
             }
             break;
           default:
@@ -694,6 +900,8 @@ operator<<(std::ostream &os, gem5::RiscvISA::PrivilegeMode pm)
         return os << "PRV_U";
     case gem5::RiscvISA::PRV_S:
         return os << "PRV_S";
+    case gem5::RiscvISA::PRV_HS:
+        return os << "PRV_HS";
     case gem5::RiscvISA::PRV_M:
         return os << "PRV_M";
     }

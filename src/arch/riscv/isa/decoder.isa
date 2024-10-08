@@ -57,7 +57,7 @@ decode QUADRANT default Unknown::unknown() {
                                                                machInst);
                 } else {
                     status.fs = 3;
-                    xc->setMiscReg(MISCREG_STATUS,status);
+                    //xc->setMiscReg(MISCREG_STATUS,status);
                 }
 
                 Fp2_bits = Mem;
@@ -441,7 +441,7 @@ decode QUADRANT default Unknown::unknown() {
                                     "FPU is off", machInst);
                     } else {
                         status.fs = 3;
-                        xc->setMiscReg(MISCREG_STATUS,status);
+                       // xc->setMiscReg(MISCREG_STATUS,status);
                     }
                     freg_t fd;
                     fd = freg(f64(Mem));
@@ -1390,7 +1390,7 @@ decode QUADRANT default Unknown::unknown() {
                         Rd = (int32_t) ((Rs1_uw >> shamt) | (Rs1_uw << ((32 - shamt) & (32 - 1))));
                     }});
                 }
-                0x6:  decode FUNCT7 {
+                0x6: decode FUNCT7 {
                     0x1: remw({{
                         if (Rs2_sw == 0) {
                             Rd_sd = Rs1_sw;
@@ -4293,6 +4293,13 @@ decode QUADRANT default Unknown::unknown() {
         }}, IsDirectControl, IsUncondControl);
 
         0x1c: decode FUNCT3 {
+            format LoadH {
+                0x04:  decode HFUNCT2{
+                    0x643: hlvx_hu({{
+                        Rd = Mem_uh;
+                    }},inst_flags = IsHInst);
+                }
+            }
             format SystemOp {
                 0x0: decode FUNCT7 {
                     0x0: decode RS2 {
@@ -4316,28 +4323,72 @@ decode QUADRANT default Unknown::unknown() {
                     0x8: decode RS2 {
                         0x2: sret({{
                             STATUS status = xc->readMiscReg(MISCREG_STATUS);
+                            HSTATUS hstatus = xc->readMiscReg(MISCREG_HSTATUS);
+                            VSSTATUS vsstatus =  xc->readMiscReg(MISCREG_VSSTATUS);
+                            VSSTATUS32 vsstatus32 =  xc->readMiscReg(MISCREG_VSSTATUS);
+                            int v = xc->readMiscReg(MISCREG_VIRMODE);
+                            auto hstatus_spv = hstatus.spv;
                             auto pm = (PrivilegeMode)xc->readMiscReg(
                                 MISCREG_PRV);
-                            if (pm == PRV_U ||
-                                (pm == PRV_S && status.tsr == 1)) {
-                                return std::make_shared<IllegalInstFault>(
-                                            "sret in user mode or TSR enabled",
-                                            machInst);
-                                NPC = NPC;
-                            } else {
-                                xc->setMiscReg(MISCREG_PRV, status.spp);
-                                status.sie = status.spie;
-                                status.spie = 1;
-                                status.spp = PRV_U;
-                                xc->setMiscReg(MISCREG_STATUS, status);
-                                NPC = xc->readMiscReg(MISCREG_SEPC);
+                            bool write_sign = false;
+                            if(v ==0){
+                                hstatus.spv =0;
+                                xc->setMiscReg(MISCREG_HSTATUS, hstatus);
+
                             }
+                            else{
+                                write_sign = true;
+                                if((pm == PRV_S && hstatus.vtsr) || pm < PRV_S){
+                                    panic("todo EX_VI");
+                                }
+                                if(hstatus.vsxl ){
+                                    auto vsstatus_spp = vsstatus32.spp;
+                                    xc->setMiscReg(MISCREG_PRV, vsstatus32.spp);
+                                    vsstatus32.spp = PRV_U;
+                                    vsstatus32.sie = vsstatus32.spie;
+                                    vsstatus32.spie =1;
+                                    xc->setMiscReg(MISCREG_VSSTATUS, vsstatus32);
+                                }
+                                else{
+                                    xc->setMiscReg(MISCREG_PRV, vsstatus.spp);
+                                    vsstatus.spp = PRV_U;
+                                    vsstatus.sie = vsstatus.spie;
+                                    vsstatus.spie =1;
+                                    xc->setMiscReg(MISCREG_VSSTATUS, vsstatus);
+                                }
+                                NPC = xc->readMiscReg(MISCREG_VSEPC);
+                            }
+                            if(!write_sign){
+                                if (pm == PRV_U ||
+                                    (pm == PRV_S && status.tsr == 1)) {
+                                    return std::make_shared<IllegalInstFault>(
+                                                "sret in user mode or TSR enabled",
+                                                machInst);
+                                    NPC = NPC;
+                                } else {
+                                    xc->setMiscReg(MISCREG_PRV, status.spp);
+                                    status.sie = status.spie;
+                                    status.spie = 1;
+                                    status.spp = PRV_U;
+                                    xc->setMiscReg(MISCREG_STATUS, status);
+                                    NPC = xc->readMiscReg(MISCREG_SEPC);
+                                }
+                                xc->setMiscReg(MISCREG_VIRMODE, hstatus_spv);
+                            }
+
+
                         }}, IsSerializeAfter, IsNonSpeculative, IsReturn);
                         0x5: wfi({{
                             STATUS status = xc->readMiscReg(MISCREG_STATUS);
                             auto pm = (PrivilegeMode)xc->readMiscReg(
                                 MISCREG_PRV);
-                            if (pm == PRV_U ||
+                            HSTATUS hstatus = xc->readMiscReg(MISCREG_HSTATUS);
+                            int v = xc->readMiscReg(MISCREG_VIRMODE);
+                            if(( v && (pm == PRV_S) && (hstatus.vtw ==1) && (status.tw == 0))
+                            || (v && (pm == PRV_U) && (status.tw == 0))){
+                                return std::make_shared<HVFault>();
+                            }
+                            else if (pm == PRV_U ||
                                 (pm == PRV_S && status.tw == 1)) {
                                 return std::make_shared<IllegalInstFault>(
                                             "wfi in user mode or TW enabled",
@@ -4368,43 +4419,143 @@ decode QUADRANT default Unknown::unknown() {
                             status.mie = status.mpie;
                             status.mpie = 1;
                             status.mpp = PRV_U;
+                            auto status_mpv = status.mpv;
+
+                            status.mpv = 0;
                             xc->setMiscReg(MISCREG_STATUS, status);
                             NPC = xc->readMiscReg(MISCREG_MEPC);
+                            xc->setMiscReg(MISCREG_VIRMODE,status_mpv);
                         }
                     }}, IsSerializeAfter, IsNonSpeculative, IsReturn);
+                    0x31: priv({{
+                        auto pm = (PrivilegeMode)xc->readMiscReg(
+                                MISCREG_PRV);
+                        auto vir = (PrivilegeMode)xc->readMiscReg(
+                                MISCREG_VIRMODE);
+                        STATUS status = xc->readMiscReg(MISCREG_STATUS);
+                        xc->tcBase()->getMMUPtr()->demapPage(Rs1, Rs2);
+
+                        if(vir){
+                            panic("add priv vir code\n");
+
+                        }
+                        if(pm == PRV_U){
+                            return std::make_shared<IllegalInstFault>(
+                                        "h-priv pm == prv_u", machInst);
+
+                        }
+                        if(!(pm == PRV_M ||(pm == PRV_S && !vir && status.tvm ==0))){
+                            return std::make_shared<IllegalInstFault>(
+                                        "h-priv pm == prv_u", machInst);
+
+                        }
+                    }},IsNonSpeculative, IsSerializeAfter, No_OpClass);
                 }
             }
             format CSROp {
-                0x1: csrrw({{
-                    Rd = data;
-                    data = Rs1;
-                    write = RS1 != 0;
-                }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
-                0x2: csrrs({{
-                    Rd = data;
-                    data |= Rs1;
-                    write = RS1 != 0;
-                }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
-                0x3: csrrc({{
-                    Rd = data;
-                    data &= ~Rs1;
-                    write = RS1 != 0;
-                }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
-                0x5: csrrwi({{
-                    Rd = data;
-                    data = uimm;
-                    write = uimm != 0;
-                }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
-                0x6: csrrsi({{
-                    Rd = data;
-                    data |= uimm;
-                    write = uimm != 0;
-                }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
-                0x7: csrrci({{
-                    Rd = data;
-                    data &= ~uimm;
-                    write = uimm != 0;
-                }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                0x1:decode FUNCT12 {
+                    0x100:csrrw_s({{
+                        auto v = xc->readMiscReg(MISCREG_VIRMODE);
+                        if(v)
+                            data = xc->readMiscReg(MISCREG_VSSTATUS) & NEMU_SSTATUS_RMASK;
+                        Rd = data;
+                        data = Rs1;
+                        write = RS1 != 0;
+                    }}, IsUpdateMstatusSd,IsUpdateMstatusSd,IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    default:csrrw({{
+                        Rd = data;
+                        data = Rs1;
+                        write = RS1 != 0;
+                    }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                }
+                0x2: decode FUNCT12 {
+                    0x100:csrrs_s({{
+                        auto v = xc->readMiscReg(MISCREG_VIRMODE);
+                        if(v)
+                            data = xc->readMiscReg(MISCREG_VSSTATUS) & NEMU_SSTATUS_RMASK;
+                        Rd = data;
+                        data |= Rs1;
+                        write = RS1 != 0;
+                    }}, IsUpdateVsstatusSd,IsUpdateMstatusSd,IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    default:csrrs({{
+                        auto Rs1_use = Rs1;
+                        auto v = xc->readMiscReg(MISCREG_VIRMODE);
+                        if((FUNCT12 == 0x104) && v)
+                            Rs1_use = Rs1 <<1;
+                        Rd = data;
+                        data |= Rs1_use;
+                        write = RS1 != 0;
+                    }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                }
+                0x3: decode FUNCT12 {
+                    0x100:csrrc_s({{
+                        auto v = xc->readMiscReg(MISCREG_VIRMODE);
+                        if(v)
+                            data = xc->readMiscReg(MISCREG_VSSTATUS) & NEMU_SSTATUS_RMASK;
+                        Rd = data;
+                        data &= ~Rs1;
+                        write = RS1 != 0;
+                    }}, IsUpdateVsstatusSd,IsUpdateMstatusSd,IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    default:csrrc({{
+                        auto Rs1_use = Rs1;
+                        auto v = xc->readMiscReg(MISCREG_VIRMODE);
+                        if((FUNCT12 == 0x104) && v)
+                            Rs1_use = Rs1 <<1;
+                        Rd = data;
+                        data &= ~Rs1_use;
+                        write = RS1 != 0;
+                    }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                }
+                0x5: decode FUNCT12 {
+                    0x100:csrrwi_s({{
+                        auto v = xc->readMiscReg(MISCREG_VIRMODE);
+                        if(v)
+                            data = xc->readMiscReg(MISCREG_VSSTATUS) & NEMU_SSTATUS_RMASK;
+                        Rd = data;
+                        data = uimm;
+                        write = uimm != 0;
+                    }}, IsUpdateVsstatusSd,IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    default:csrrwi({{
+                        Rd = data;
+                        data = uimm;
+                        write = uimm != 0;
+                    }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                }
+                0x6: decode FUNCT12 {
+                    0x100:csrrsi_s({{
+                        auto v = xc->readMiscReg(MISCREG_VIRMODE);
+                        if(v)
+                            data = xc->readMiscReg(MISCREG_VSSTATUS) & NEMU_SSTATUS_RMASK;
+                        Rd = data;
+                        data |= uimm;
+                        write = uimm != 0;
+                    }}, IsUpdateVsstatusSd,IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    default:csrrsi({{
+                        auto uimm_use = uimm;
+                        auto v = xc->readMiscReg(MISCREG_VIRMODE);
+                        if((FUNCT12 == 0x104) && v)
+                            uimm_use =uimm<<1;
+                        Rd = data;
+                        data |= uimm_use;
+                        write = uimm != 0;
+                    }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                }
+                0x7: decode FUNCT12 {
+                    0x100:csrrci_s({{
+                        auto v = xc->readMiscReg(MISCREG_VIRMODE);
+                        if(v)
+                            data = xc->readMiscReg(MISCREG_VSSTATUS) & NEMU_SSTATUS_RMASK;
+                        Rd = data;
+                        data &= ~uimm;
+                        write = uimm != 0;
+                    }}, IsUpdateVsstatusSd,IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    default:csrrci({{
+                        Rd = data;
+                        data &= ~uimm;
+                        write = uimm != 0;
+                    }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                }
+
             }
         }
 

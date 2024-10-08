@@ -180,13 +180,14 @@ class TLB : public BaseTLB
 
     void takeOverFrom(BaseTLB *old) override {}
 
-    TlbEntry *insert(Addr vpn, const TlbEntry &entry, bool suqashed_update);
+    TlbEntry *insert(Addr vpn, const TlbEntry &entry, bool suqashed_update, uint8_t translateMode);
     TlbEntry *insertForwardPre(Addr vpn, const TlbEntry &entry);
     TlbEntry *insertBackPre(Addr vpn, const TlbEntry &entry);
 
-    TlbEntry *L2TLBInsert(Addr vpn, const TlbEntry &entry, int level, int choose, int sign, bool squashed_update);
+    TlbEntry *L2TLBInsert(Addr vpn, const TlbEntry &entry, int level, int choose, int sign, bool squashed_update,
+                          uint8_t translateMode);
     TlbEntry *L2TLBInsertIn(Addr vpn, const TlbEntry &entry, int choose, EntryList *List, TlbEntryTrie *Trie_l2,
-                            int sign, bool squashed_update);
+                            int sign, bool squashed_update, uint8_t translateMode);
     // TlbEntry *L2TLB_insert_in(Addr vpn,const TlbEntry &entry,int level);
 
 
@@ -194,9 +195,13 @@ class TLB : public BaseTLB
     void demapPage(Addr vaddr, uint64_t asn) override;
     void demapPageL2(Addr vaddr,uint64_t asn);
 
-    Fault checkPermissions(STATUS status, PrivilegeMode pmode, Addr vaddr,
-                           BaseMMU::Mode mode, PTESv39 pte);
-    Fault createPagefault(Addr vaddr, BaseMMU::Mode mode);
+    Fault checkPermissions(STATUS status, PrivilegeMode pmode, Addr vaddr, BaseMMU::Mode mode, PTESv39 pte,
+                           Addr gpaddr, bool G);
+    Fault checkGuestPermissions(STATUS status, PrivilegeMode pmode, Addr vaddr,
+                      BaseMMU::Mode mode, PTESv39 pte);
+    std::pair<bool, Fault> checkGPermissions(STATUS status, Addr vaddr, Addr gpaddr, BaseMMU::Mode mode, PTESv39 pte,
+                                             bool h_inst);
+    Fault createPagefault(Addr vaddr, Addr gPaddr,BaseMMU::Mode mode,bool G);
 
     PrivilegeMode getMemPriv(ThreadContext *tc, BaseMMU::Mode mode);
 
@@ -216,7 +221,7 @@ class TLB : public BaseTLB
      */
     Port *getTableWalkerPort() override;
 
-    Addr translateWithTLB(Addr vaddr, uint16_t asid, BaseMMU::Mode mode);
+    Addr translateWithTLB(Addr vaddr, uint16_t asid, BaseMMU::Mode mode, uint8_t translateMode);
 
     Fault L2TLBPagefault(Addr vaddr, BaseMMU::Mode mode, const RequestPtr &req, bool is_pre, bool is_back_pre);
 
@@ -239,11 +244,12 @@ class TLB : public BaseTLB
                               BaseMMU::Mode mode) override;
     Fault finalizePhysical(const RequestPtr &req, ThreadContext *tc,
                            BaseMMU::Mode mode) const override;
-    TlbEntry *lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
-                     bool sign_used);
+    TlbEntry *lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden, bool sign_used, uint8_t translateMode);
     TlbEntry *lookupForwardPre(Addr vpn, uint64_t asid, bool hidden);
     TlbEntry *lookupBackPre(Addr vpn, uint64_t asid, bool hidden);
     bool autoOpenNextline();
+    TlbEntry *lookupL2TLB(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden, int f_level, bool sign_used,
+                          uint8_t translateMode);
 
 
 
@@ -274,8 +280,8 @@ class TLB : public BaseTLB
 
   private:
     uint64_t nextSeq() { return ++lruSeq; }
-    void updateL2TLBSeq(TlbEntryTrie *Trie_l2,Addr vpn,Addr step, uint16_t asid);
-    TlbEntry *lookupL2TLB(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden, int f_level, bool sign_used);
+    void updateL2TLBSeq(TlbEntryTrie *Trie_l2,Addr vpn,Addr step, uint16_t asid,uint8_t translateMode);
+
 
     void evictLRU();
     void evictForwardPre();
@@ -288,11 +294,21 @@ class TLB : public BaseTLB
     void removeBackPre(size_t idx);
     void l2tlbRemoveIn(EntryList *List, TlbEntryTrie *Trie_l2,std::vector<TlbEntry>&tlb,size_t idx, int choose);
     void l2TLBRemove(size_t idx, int choose);
+    bool hasTwoStageTranslation(ThreadContext *tc, const RequestPtr &req, BaseMMU::Mode mode);
+    Fault misalignDataAddrCheck(const RequestPtr &req, BaseMMU::Mode mode);
+    MMUMode isaMMUCheck(ThreadContext *tc, Addr vaddr, BaseMMU::Mode mode);
 
 
     Fault translate(const RequestPtr &req, ThreadContext *tc,
                     BaseMMU::Translation *translation, BaseMMU::Mode mode,
                     bool &delayed);
+    Fault doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
+                      BaseMMU::Translation *translation, BaseMMU::Mode mode,
+                      bool &delayed);
+    std::pair<int, Fault> checkHL1Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation *translation,
+                                      BaseMMU::Mode mode);
+    std::pair<int, Fault> checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation *translation,
+                                      BaseMMU::Mode mode, int l1tlbtype);
     Fault doTranslate(const RequestPtr &req, ThreadContext *tc,
                       BaseMMU::Translation *translation, BaseMMU::Mode mode,
                       bool &delayed);

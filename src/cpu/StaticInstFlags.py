@@ -49,6 +49,7 @@ class StaticInstFlags(Enum):
         'IsOper16',
         'IsOper32',
         'IsOper64',
+        'IsHInst',
         'IsNop',            # Is a no-op (no effect at all).
         'IsMov',
 
@@ -95,6 +96,11 @@ class StaticInstFlags(Enum):
         'IsFirstMicroop',   # This microop begins a microop sequence
 
         'IsSquashAfter',     # Squash all uncommitted state after executed
+
+        #update vsstatus
+        'IsUpdateVsstatusSd',
+        #update mstatussd
+        'IsUpdateMstatusSd',
 
         # hardware transactional memory
         'IsHtmStart',       # Starts a HTM transaction

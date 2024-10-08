@@ -59,6 +59,7 @@ class FaultBase
 {
   public:
     virtual bool isFromISA() const { return true; };
+    virtual uint64_t exception() const { return 0; }
     virtual FaultName name() const = 0;
     virtual void invoke(ThreadContext * tc, const StaticInstPtr &inst=
                         nullStaticInstPtr);

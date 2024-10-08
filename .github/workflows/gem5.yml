@@ -74,7 +74,7 @@ jobs:
         run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
       - name: XS-GEM5 - Test xiangshan.py simulation scripts
         run: |
-          export GCBV_REF_SO="/nfs/home/share/gem5_shared_tools/riscv64-nemu-4332a525-so"
+          export GCBV_REF_SO="/nfs-nvme/home/share/zhenhao/ref-h/build/riscv64-nemu-interpreter-so"
           export GCB_RESTORER="/nfs/home/share/gem5_shared_tools/normal-gcb-restorer.bin"
           export GEM5_HOME=$(pwd)
           mkdir -p $GEM5_HOME/util/xs_scripts/test
@@ -101,7 +101,7 @@ jobs:
         run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
       - name: XS-GEM5 - Test xiangshan.py simulation scripts
         run: |
-          export GCBV_REF_SO="/nfs/home/share/gem5_shared_tools/riscv64-nemu-4332a525-so"
+          export GCBV_REF_SO="/nfs-nvme/home/share/zhenhao/ref-h/build/riscv64-nemu-interpreter-so"
           export GCBV_RESTORER="/nfs/home/share/gem5_shared_tools/gcbv-restorer.bin"
           export GEM5_HOME=$(pwd)
           mkdir -p $GEM5_HOME/util/xs_scripts/test_v
@@ -120,7 +120,7 @@ jobs:
           CC=clang CXX=clang++ scons build/RISCV_CHI/gem5.opt -j 48 --gold-linker
       - name: XS-GEM5 - Test xiangshan.py simulation scripts
         run: |
-          export GCBV_MULTI_CORE_REF_SO="/nfs/home/share/gem5_shared_tools/riscv64-dualcore-nemu-4332a525-so"
+          export GCBV_MULTI_CORE_REF_SO="/nfs-nvme/home/share/zhenhao/ref-h/build-multi/riscv64-nemu-interpreter-so"
           export GCB_MULTI_CORE_RESTORER="/nfs/home/share/gem5_shared_tools/gcb-2core-restorer.bin"
           export GEM5_HOME=$(pwd)
           mkdir -p $GEM5_HOME/util/xs_scripts/test_multi_core

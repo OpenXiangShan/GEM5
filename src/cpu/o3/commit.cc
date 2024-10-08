@@ -165,6 +165,14 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
         }
         simout.close(out_handle);
     });
+
+    faultNum.insert(RiscvISA::ExceptionCode::LOAD_PAGE);
+    faultNum.insert(RiscvISA::ExceptionCode::STORE_PAGE);
+    faultNum.insert(RiscvISA::ExceptionCode::INST_PAGE);
+    faultNum.insert(RiscvISA::ExceptionCode::INST_G_PAGE);
+    faultNum.insert(RiscvISA::ExceptionCode::LOAD_G_PAGE);
+    faultNum.insert(RiscvISA::ExceptionCode::STORE_G_PAGE);
+
 }
 
 std::string Commit::name() const { return cpu->name() + ".commit"; }
@@ -193,6 +201,8 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
                "Number of insts commited each cycle"),
       ADD_STAT(instsCommitted, statistics::units::Count::get(),
                "Number of instructions committed"),
+      ADD_STAT(pagefaulttimes, statistics::units::Count::get(),
+               "Number of pagefaulttimes"),
       ADD_STAT(opsCommitted, statistics::units::Count::get(),
                "Number of ops (including micro ops) committed"),
       ADD_STAT(memRefs, statistics::units::Count::get(),
@@ -254,6 +264,10 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
         .flags(statistics::pdf);
 
     instsCommitted
+        .init(cpu->numThreads)
+        .flags(total);
+
+    pagefaulttimes
         .init(cpu->numThreads)
         .flags(total);
 
@@ -1041,6 +1055,12 @@ Commit::commit()
 
     }
 }
+void
+Commit::updateMstatusSd(ThreadID tid){
+    RiscvISA::STATUS mstatus = cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_STATUS, tid);
+    mstatus.sd = (mstatus.fs == 3) || (mstatus.vs == 3);
+    cpu->setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_STATUS, (RegVal)mstatus, tid);
+}
 
 void
 Commit::commitInsts()
@@ -1170,6 +1190,28 @@ Commit::commitInsts()
                     }
                     dbftb->notifyInstCommit(head_inst);
                 }
+                if (head_inst->isUpdateVsstatusSd()) {
+                    auto v = cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VIRMODE, tid);
+                    RiscvISA::HSTATUS hstatus = cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_HSTATUS, tid);
+                    RiscvISA::VSSTATUS vsstatus =
+                        cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSSTATUS, tid);
+                    RiscvISA::VSSTATUS32 vsstatus32 =
+                        cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSSTATUS, tid);
+
+                    if (v) {
+                        if (hstatus.vsxl ==1) {
+                            vsstatus32.sd = (vsstatus32.fs == 3);
+                            cpu->setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSSTATUS, (RegVal)vsstatus32, tid);
+                        } else {
+                            vsstatus.sd = (vsstatus.fs == 3);
+                            cpu->setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSSTATUS, (RegVal)vsstatus, tid);
+                        }
+                    }
+
+                }
+                if (head_inst->isUpdateMstatusSd()) {
+                    updateMstatusSd(tid);
+                }
 
                 ++num_committed;
                 stats.committedInstType[tid][head_inst->opClass()]++;
@@ -1223,6 +1265,31 @@ Commit::commitInsts()
                         RiscvISA::VTYPE new_vtype = head_inst->readMiscReg(RiscvISA::MISCREG_VTYPE);
                         tc->getDecoderPtr()->as<RiscvISA::Decoder>().setVtype(new_vtype);
                     }
+                }
+                if (head_inst->isFloating() && head_inst->isLoad()){
+                    RiscvISA::STATUS status = cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_STATUS, tid);
+                    status.sd = 1;
+                    status.fs = 3;
+                    cpu->setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_STATUS, (RegVal)status, tid);
+                }
+                if (head_inst->isUpdateVsstatusSd()) {
+                    auto v = cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VIRMODE, tid);
+                    RiscvISA::HSTATUS hstatus = cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_HSTATUS, tid);
+                    RiscvISA::VSSTATUS vsstatus =
+                        cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSSTATUS, tid);
+                    RiscvISA::VSSTATUS32 vsstatus32 =
+                        cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSSTATUS, tid);
+
+                    if (v) {
+                        if (hstatus.vsxl ==1) {
+                            vsstatus32.sd = (vsstatus32.fs == 3);
+                            cpu->setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSSTATUS, (RegVal)vsstatus32, tid);
+                        } else {
+                            vsstatus.sd = (vsstatus.fs == 3);
+                            cpu->setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSSTATUS, (RegVal)vsstatus, tid);
+                        }
+                    }
+
                 }
 
                 if (cpu->difftestEnabled()) {
@@ -1431,6 +1498,9 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
                     tid, head_inst->seqNum);
             return false;
         }
+        if (faultNum.find(inst_fault->exception()) != faultNum.end()) {
+            stats.pagefaulttimes[tid]++;
+        }
 
         head_inst->setCompleted();
 
@@ -1469,11 +1539,6 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
             head_inst->staticInst->disassemble(
                 head_inst->pcState().instAddr()).c_str(), inst_fault->name());
 
-        DPRINTF(
-            Faults, "[tid:%i] [sn:%llu] Fault instruction machInst: %lx\n",
-            tid, head_inst->seqNum,
-            dynamic_cast<RiscvISA::RiscvStaticInst &>(
-                *head_inst->staticInst).machInst);
 
         if (head_inst->traceData) {
             // We ignore ReExecution "faults" here as they are not real
@@ -1508,19 +1573,12 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
                 cause = cpu->readMiscReg(
                     RiscvISA::MiscRegIndex::MISCREG_UCAUSE, tid);
             }
-            if (cause == RiscvISA::ExceptionCode::LOAD_PAGE ||
-                cause == RiscvISA::ExceptionCode::STORE_PAGE ||
-                cause == RiscvISA::ExceptionCode::INST_PAGE) {
-                DPRINTF(Commit,
-                        "Force to raise No.%lu exception at page fault\n",
-                        cause);
+            auto exception_no =inst_fault->exception();
+            if (faultNum.find(exception_no) != faultNum.end()) {
+                DPRINTF(Commit, "Force to raise No.%lu exception at page fault\n", inst_fault);
                 cpu->setExceptionGuideExecInfo(
-                    cause,
-                    cpu->readMiscReg(
-                        RiscvISA::MiscRegIndex::MISCREG_MTVAL, tid),
-                    cpu->readMiscReg(
-                        RiscvISA::MiscRegIndex::MISCREG_STVAL, tid),
-                    false, 0);
+                    exception_no, cpu->readMiscReg(RiscvISA::MiscRegIndex::MISCREG_MTVAL, tid),
+                    cpu->readMiscReg(RiscvISA::MiscRegIndex::MISCREG_STVAL, tid), false, 0, tid);
             }
             if (cause == RiscvISA::ExceptionCode::ECALL_USER ||
                 cause == RiscvISA::ExceptionCode::ECALL_SUPER ||
