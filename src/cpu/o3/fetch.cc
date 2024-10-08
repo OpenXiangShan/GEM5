@@ -1868,7 +1868,7 @@ Fetch::fetch(bool &status_change)
             stallReason[i] = StallReason::NoStall;
         else {
             if (numInst > 0) {
-                stallReason[i] = StallReason::FragStall;
+                stallReason[i] = StallReason::FetchFragStall;
             } else if (stall  != StallReason::NoStall) {
                 stallReason[i] = stall;
             } else if (stalls[tid].decode && fetchQueue[tid].size() >= fetchQueueSize) {
