@@ -48,6 +48,7 @@ let
       bison
       flex
       riscv-toolchain
+      libpng
     ];
 
     buildPhase = ''
