@@ -88,7 +88,7 @@ function prepare_env() {
     suffixes=("gz" "zstd")
     checkpoint=""
     for suffix in "${suffixes[@]}"; do
-        checkpoint=$(find -L $cpt_dir -wholename "*${task_path}*${suffixes}" | head -n 1)
+        checkpoint=$(find -L "$cpt_dir" -wholename "*${task_path}*.$suffix" | head -n 1)
         if [ -n "$checkpoint" ]; then
             break
         fi
