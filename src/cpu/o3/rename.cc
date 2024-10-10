@@ -407,7 +407,7 @@ void
 Rename::tick()
 {
     toIEW->fetchStallReason = fromDecode->fetchStallReason;
-    toIEW->decodeStallReason = fromDecode->decodeStallReason;
+    toIEW->decodeStallReason = fromDecode->decodeStallReason;   // 将decode stall原因直接传递给IEW
 
     wroteToTimeBuffer = false;
 
@@ -558,7 +558,7 @@ Rename::renameInsts(ThreadID tid)
                 break;
             }
         }
-        setAllStalls(stall);
+        setAllStalls(stall);    // 根据decode stall原因，设置rename stall原因
 
         return;
     } else if (renameStatus[tid] == Unblocking) {
@@ -828,7 +828,7 @@ Rename::renameInsts(ThreadID tid)
         if (i < renamed_insts) {
             renameStalls.at(i) = StallReason::NoStall;
         } else {
-            if (!rename_stalls.empty()) {
+            if (!rename_stalls.empty()) {   // 如果当前inst未rename，则根据rename_stalls队列赋值
                 renameStalls.at(i) = rename_stalls.front();
                 rename_stalls.pop();
             } else if (breakRename != StallReason::NoStall) {
@@ -836,7 +836,7 @@ Rename::renameInsts(ThreadID tid)
             } else if (instsAvailable < renameWidth && instsAvailable > 0) {
                 renameStalls.at(i) = StallReason::OtherFragStall;
             } else if (instsAvailable == 0) {
-                renameStalls.at(i) = stall;
+                renameStalls.at(i) = stall;     // decode stall原因
             }else {
                 renameStalls.at(i) = StallReason::OtherStall;
             }

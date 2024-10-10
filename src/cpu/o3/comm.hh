@@ -121,10 +121,10 @@ struct DecodeStruct
 {
     int size;
 
-    DynInstPtr insts[MaxWidth];
+    DynInstPtr insts[MaxWidth];     // 8宽度，存放DynInstPtr
     std::vector<StallReason> fetchStallReason;
-    std::vector<StallReason> decodeStallReason;
-};
+    std::vector<StallReason> decodeStallReason; // 8宽度，存放decode stall原因
+};  // decode传递给rename的结构体， decodeQueue, *dq_ptr, *decodeQueue
 
 /** Struct that defines the information passed from rename to IEW. */
 struct RenameStruct

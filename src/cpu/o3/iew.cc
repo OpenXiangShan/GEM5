@@ -1120,7 +1120,7 @@ IEW::classifyInstToDispQue(ThreadID tid)
     }
 
     if (insts_to_add == 0) {
-        dispatchStalls = fromRename->renameStallReason;
+        dispatchStalls = fromRename->renameStallReason;  // 没有要dispatch的inst，则将rename stall原因传递给dispatch stall
     } else {
         for (int i = 0; i < renameWidth; i++) {
             if (i < dispatched) {
@@ -1648,8 +1648,8 @@ IEW::tick()
         iewStats.fetchStallReason[fromRename->fetchStallReason[i]]++;
     }
 
-    for (int i = 0;i < fromRename->decodeStallReason.size();i++) {
-        iewStats.decodeStallReason[fromRename->decodeStallReason[i]]++;
+    for (int i = 0;i < fromRename->decodeStallReason.size();i++) {  // 8宽度，遍历每个inst的decode stall原因
+        iewStats.decodeStallReason[fromRename->decodeStallReason[i]]++; // 汇总求和，输出为stats
     }
 
     for (int i = 0;i < fromRename->renameStallReason.size();i++) {

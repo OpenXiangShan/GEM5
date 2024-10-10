@@ -604,7 +604,7 @@ Decode::tick()
         updateStatus();
     }
 
-    toRename->decodeStallReason = decodeStalls;
+    toRename->decodeStallReason = decodeStalls;     // 将decode stall原因传递给rename
 
     if (wroteToTimeBuffer) {
         DPRINTF(Activity, "Activity this cycle.\n");
@@ -667,7 +667,7 @@ Decode::decodeInsts(ThreadID tid)
     int insts_available = decodeStatus[tid] == Unblocking ?
         skidBuffer[tid].size() : insts[tid].size();
 
-    std::queue<StallReason> decode_stalls;
+    std::queue<StallReason> decode_stalls;  // 存放当前inst的stall原因，队列
 
     StallReason breakDecode = StallReason::NoStall;
 
@@ -684,7 +684,7 @@ Decode::decodeInsts(ThreadID tid)
                 break;
             }
         }
-        setAllStalls(stall);
+        setAllStalls(stall);    // 把fetchStallReason赋值给decodeStallReason！
         return;
     } else if (decodeStatus[tid] == Unblocking) {
         DPRINTF(Decode, "[tid:%i] Unblocking, removing insts from skid "
@@ -741,7 +741,7 @@ Decode::decodeInsts(ThreadID tid)
 
             --insts_available;
 
-            decode_stalls.push(StallReason::InstSquashed);
+            decode_stalls.push(StallReason::InstSquashed);  // 指令被squash
 
             continue;
         }
@@ -774,7 +774,7 @@ Decode::decodeInsts(ThreadID tid)
 
         // Ensure that if it was predicted as a branch, it really is a
         // branch.
-        if (inst->readPredTaken() && !inst->isControl()) {
+        if (inst->readPredTaken() && !inst->isControl()) {    // 预测taken，且不是control指令
             // panic("Instruction predicted as a branch!");
 
             ++stats.controlMispred;
@@ -783,7 +783,7 @@ Decode::decodeInsts(ThreadID tid)
             // a check at the end
             squash(inst, inst->threadNumber);
 
-            decode_stalls.push(StallReason::InstMisPred);
+            decode_stalls.push(StallReason::InstMisPred);  // 预测错误，指令都不对
             breakDecode = StallReason::InstMisPred;
 
             break;
@@ -863,13 +863,13 @@ Decode::decodeInsts(ThreadID tid)
     }
 
     for (int i = 0;i < decodeWidth;i++) {
-        if (i < toRenameIndex) {
+        if (i < toRenameIndex) {    // 如果当前inst已经rename，则不stall
             decodeStalls.at(i) = StallReason::NoStall;
         } else {
-            if (!decode_stalls.empty()) {
+            if (!decode_stalls.empty()) {   // 如果当前inst未rename，则根据decode_stalls队列赋值
                 decodeStalls.at(i) = decode_stalls.front();
                 decode_stalls.pop();
-            } else if (breakDecode != StallReason::NoStall) {
+            } else if (breakDecode != StallReason::NoStall) {    // 如果当前inst未rename，且decode_stalls队列空，则赋值breakDecode
                 decodeStalls.at(i) = breakDecode;
             } else {
                 decodeStalls.at(i) = StallReason::NoStall;
