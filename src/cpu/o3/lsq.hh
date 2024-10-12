@@ -74,6 +74,7 @@ namespace o3
 class CPU;
 class IEW;
 class LSQUnit;
+class StoreBufferEntry;
 
 class LSQ
 {
@@ -686,7 +687,7 @@ class LSQ
     {
         CPU* cpu;
       public:
-        uint64_t sbuffer_index=-1;
+        StoreBufferEntry* sbuffer_entry=nullptr;
         SbufferRequest(CPU* cpu, LSQUnit* port, Addr blockpaddr, uint8_t* data);
 
         void addReq(Addr blockVaddr, Addr blockPaddr, const std::vector<bool> byteEnable);
