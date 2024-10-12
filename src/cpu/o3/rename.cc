@@ -417,7 +417,7 @@ Rename::tick()
 
     toIEWIndex = 0;
 
-    sortInsts();
+    sortInsts();    // fromDecode->insts 排序放入InstQueue insts 中
 
     std::list<ThreadID>::iterator threads = activeThreads->begin();
     std::list<ThreadID>::iterator end = activeThreads->end();
@@ -430,7 +430,7 @@ Rename::tick()
 
         status_change = checkSignalsAndUpdate(tid) || status_change;
 
-        rename(status_change, tid);
+        rename(status_change, tid);  // 每个线程重命名
 
         toDecode->renameInfo[tid].blockReason = blockReason;
     }
@@ -441,7 +441,7 @@ Rename::tick()
         updateStatus();
     }
 
-    if (wroteToTimeBuffer) {
+    if (wroteToTimeBuffer) {  // decode是否写入时间缓冲区, 监控CPU 活跃状态
         DPRINTF(Activity, "Activity this cycle.\n");
         cpu->activityThisCycle();
     }
@@ -457,13 +457,13 @@ Rename::tick()
             renameStatus[tid] != Squashing) {
 
             removeFromHistory(fromCommit->commitInfo[tid].doneSeqNum,
-                                  tid);
+                                  tid);  // 从history中删除已提交的inst
         }
     }
 
     // @todo: make into updateProgress function
     for (ThreadID tid = 0; tid < numThreads; tid++) {
-        instsInProgress[tid] -= fromIEW->iewInfo[tid].dispatched;
+        instsInProgress[tid] -= fromIEW->iewInfo[tid].dispatched;  // 从IEW来的inst， 指令计数--
         loadsInProgress[tid] -= fromIEW->iewInfo[tid].dispatchedToLQ;
         storesInProgress[tid] -= fromIEW->iewInfo[tid].dispatchedToSQ;
         assert(loadsInProgress[tid] >= 0);
@@ -509,7 +509,7 @@ Rename::rename(bool &status_change, ThreadID tid)
             toDecode->renameUnblock[tid] = false;
         }
     }
-
+    // 如果状态是running or idle， 则调用renameInsts()
     if (renameStatus[tid] == Running ||
         renameStatus[tid] == Idle) {
         DPRINTF(Rename,
@@ -524,7 +524,7 @@ Rename::rename(bool &status_change, ThreadID tid)
         if (validInsts()) {
             // Add the current inputs to the skid buffer so they can be
             // reprocessed when this stage unblocks.
-            skidInsert(tid);
+            skidInsert(tid);  // 将insts[tid] 中的inst 放入skidBuffer[tid] 中，能放就放
         }
 
         // If we switched over to blocking, then there's a potential for
@@ -537,9 +537,9 @@ void
 Rename::renameInsts(ThreadID tid)
 {
     // Instructions can be either in the skid buffer or the queue of
-    // instructions coming from decode, depending on the status.
+    // instructions coming from decode, depending on the status.  指令可能在skid buffer 或 从decode 来的insts[tid] 中， 取决于状态
     int insts_available = renameStatus[tid] == Unblocking ?
-        skidBuffer[tid].size() : insts[tid].size();
+        skidBuffer[tid].size() : insts[tid].size();  // 如果状态是unblocking， 则insts_available 为 skidBuffer[tid].size()， 否则为 insts[tid].size()
 
     int instsAvailable = insts_available;
 
@@ -569,12 +569,12 @@ Rename::renameInsts(ThreadID tid)
 
     // Will have to do a different calculation for the number of free
     // entries.
-    int free_rob_entries = calcFreeROBEntries(tid);
-    int free_iq_entries  = calcFreeIQEntries(tid);
-    int min_free_entries = free_rob_entries;
+    int free_rob_entries = calcFreeROBEntries(tid);  // 计算ROB空闲数
+    int free_iq_entries  = calcFreeIQEntries(tid);  // 计算IQ空闲数
+    int min_free_entries = free_rob_entries;  // 最小空闲数
 
     DPRINTF(Rename, "free_rob_entries=%d, free_iq_entries=%d, insts_available=%d\n",
-            free_rob_entries, free_iq_entries, insts_available);
+            free_rob_entries, free_iq_entries, insts_available);  // 打印空闲数
 
     FullSource source = ROB;
 
@@ -600,7 +600,7 @@ Rename::renameInsts(ThreadID tid)
         setAllStalls(checkRenameStallFromIEW(tid));
 
         return;
-    } else if (min_free_entries < insts_available) {
+    } else if (min_free_entries < insts_available) {    // 如果最小空闲数小于insts_available， 则阻塞
         DPRINTF(Rename,
                 "[tid:%i] "
                 "Will have to block this cycle. "
@@ -660,7 +660,7 @@ Rename::renameInsts(ThreadID tid)
 
     StallReason breakRename = StallReason::NoStall;
 
-    while (insts_available > 0 &&  toIEWIndex < rename_width) {
+    while (insts_available > 0 &&  toIEWIndex < rename_width) { // 准备发送insts_to_rename 中的inst 到IEW, 遍历
         DPRINTF(Rename, "[tid:%i] Sending instructions to IEW.\n", tid);
 
         assert(!insts_to_rename.empty());
@@ -671,6 +671,9 @@ Rename::renameInsts(ThreadID tid)
         //instruction, check LQ size and take into account the inflight loads
         //For store instruction, check SQ size and take into account the
         //inflight stores
+        // 对于所有类型的指令，首先检查 ROB 和 IQ
+        // 对于加载指令，检查 LQ 大小并考虑正在进行中的加载
+        // 对于存储指令，检查 SQ 大小并考虑正在进行中的存储
 
         if (inst->isLoad()) {
             if (calcFreeLQEntries(tid) <= 0) {
@@ -724,7 +727,7 @@ Rename::renameInsts(ThreadID tid)
         DPRINTF(Rename,
                 "[tid:%i] "
                 "Processing instruction [sn:%llu] with PC %s.\n",
-                tid, inst->seqNum, inst->pcState());
+                tid, inst->seqNum, inst->pcState());    // 打印当前处理的inst
 
         // Check here to make sure there are enough destination registers
         // to rename to.  Otherwise block.
@@ -790,24 +793,24 @@ Rename::renameInsts(ThreadID tid)
 
             serializeAfter(insts_to_rename, tid);
         }
-        renameSrcRegs(inst, inst->threadNumber);
+        renameSrcRegs(inst, inst->threadNumber);  // 重命名源寄存器
 
-        renameDestRegs(inst, inst->threadNumber);
+        renameDestRegs(inst, inst->threadNumber);  // 重命名目的寄存器
 
         if (inst->isAtomic() || inst->isStore()) {
-            storesInProgress[tid]++;
+            storesInProgress[tid]++;  // 存储指令计数++
         } else if (inst->isLoad()) {
-            loadsInProgress[tid]++;
+            loadsInProgress[tid]++;  // 加载指令计数++
         }
 
         ++renamed_insts;
         // Notify potential listeners that source and destination registers for
         // this instruction have been renamed.
-        ppRename->notify(inst);
+        ppRename->notify(inst);  // 通知潜在的监听器，当前指令的源和目的寄存器已重命名
 
         // Put instruction in rename queue.
         toIEW->insts[toIEWIndex] = inst;
-        ++(toIEW->size);
+        ++(toIEW->size);  // 将当前inst 放入toIEW->insts[toIEWIndex]
 
         // Increment which instruction we're on.
         ++toIEWIndex;
@@ -1140,17 +1143,17 @@ void
 Rename::renameSrcRegs(const DynInstPtr &inst, ThreadID tid)
 {
     gem5::ThreadContext *tc = inst->tcBase();
-    UnifiedRenameMap *map = renameMap[tid];
-    unsigned num_src_regs = inst->numSrcRegs();
+    UnifiedRenameMap *map = renameMap[tid];  // 获取重命名映射
+    unsigned num_src_regs = inst->numSrcRegs();  // 获取源寄存器数量
 
-    // Get the architectual register numbers from the source and
-    // operands, and redirect them to the right physical register.
-    for (int src_idx = 0; src_idx < num_src_regs; src_idx++) {
-        const RegId& src_reg = inst->srcRegIdx(src_idx);
-        PhysRegIdPtr renamed_reg;
+    // 获取源寄存器和操作数的架构寄存器编号，
+    // 并将它们重定向到正确的物理寄存器。
+    for (int src_idx = 0; src_idx < num_src_regs; src_idx++) {  // 遍历所有源寄存器
+        const RegId& src_reg = inst->srcRegIdx(src_idx);  // 获取当前源寄存器
+        PhysRegIdPtr renamed_reg;  // 重命名后的物理寄存器
 
-        renamed_reg = map->lookup(tc->flattenRegId(src_reg));
-        switch (src_reg.classValue()) {
+        renamed_reg = map->lookup(tc->flattenRegId(src_reg));  // 查找重命名后的物理寄存器
+        switch (src_reg.classValue()) {  // 根据寄存器类型进行统计
           case InvalidRegClass:
             break;
           case IntRegClass:
@@ -1179,19 +1182,19 @@ Rename::renameSrcRegs(const DynInstPtr &inst, ThreadID tid)
                 "[tid:%i] "
                 "Looking up %s arch reg x%i, got p%i\n",
                 tid, src_reg.className(),
-                src_reg.index(), renamed_reg->flatIndex());
+                src_reg.index(), renamed_reg->flatIndex());  // 打印重命名结果
 
-        inst->renameSrcReg(src_idx, renamed_reg);
+        inst->renameSrcReg(src_idx, renamed_reg);  // 重命名源寄存器
 
-        // See if the register is ready or not.
+        // 检查寄存器是否就绪
         if (scoreboard->getReg(renamed_reg)) {
             DPRINTF(Rename,
                     "[tid:%i] "
                     "Register %d (flat: %d) (%s) is ready.\n",
                     tid, renamed_reg->index(), renamed_reg->flatIndex(),
-                    renamed_reg->className());
+                    renamed_reg->className());  // 打印寄存器就绪信息
 
-            inst->markSrcRegReady(src_idx);
+            inst->markSrcRegReady(src_idx);  // 标记源寄存器就绪
         } else {
             DPRINTF(Rename,
                     "[tid:%i] "
@@ -1211,52 +1214,52 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
     UnifiedRenameMap *map = renameMap[tid];
     unsigned num_dest_regs = inst->numDestRegs();
 
-    // Rename the destination registers.
+    // Rename the destination registers.  重命名目的寄存器
     for (int dest_idx = 0; dest_idx < num_dest_regs; dest_idx++) {
-        const RegId& dest_reg = inst->destRegIdx(dest_idx);
-        UnifiedRenameMap::RenameInfo rename_result;
+        const RegId& dest_reg = inst->destRegIdx(dest_idx);  // 获取当前目的寄存器
+        UnifiedRenameMap::RenameInfo rename_result;  // 重命名结果
 
-        RegId flat_dest_regid = tc->flattenRegId(dest_reg);
-        flat_dest_regid.setNumPinnedWrites(dest_reg.getNumPinnedWrites());
+        RegId flat_dest_regid = tc->flattenRegId(dest_reg);  // 展平目的寄存器
+        flat_dest_regid.setNumPinnedWrites(dest_reg.getNumPinnedWrites());  // 设置展平目的寄存器的写入次数
 
-        PhysRegIdPtr last_dest_phy_reg = nullptr;
-        bool mov_elim = false;
-        if (inst->staticInst->isMov()) {
+        PhysRegIdPtr last_dest_phy_reg = nullptr;  // 最后一个空闲目的物理寄存器
+        bool mov_elim = false;  // mov 消除标志
+        if (inst->staticInst->isMov()) {  // 检查是否是mov指令
             last_dest_phy_reg =
-                map->lookup(tc->flattenRegId(inst->srcRegIdx(0)));
+                map->lookup(tc->flattenRegId(inst->srcRegIdx(0))); 
             DPRINTF(Rename, "Find the last reg p%i renamed for mv x%i, x%i\n",
                     last_dest_phy_reg->flatIndex(), dest_reg.index(),
-                    inst->srcRegIdx(0).index());
-            mov_elim = true;
-            inst->setEmptyMove(true);
+                    inst->srcRegIdx(0).index());  // 打印找到的寄存器 find the last reg p65535 renamed for mv x1, x0
+            mov_elim = true;  // 设置mov消除标志
+            inst->setEmptyMove(true);  // 设置空指令标志
             DPRINTF(Rename, "Inst sn:%lu is nop: %i, is move: %i\n",
-                    inst->seqNum, inst->isNop(), inst->staticInst->isMov());
+                    inst->seqNum, inst->isNop(), inst->staticInst->isMov());  // mov 设置为nop 指令
         }
 
-        rename_result = map->rename(flat_dest_regid, last_dest_phy_reg);
+        rename_result = map->rename(flat_dest_regid, last_dest_phy_reg);  // 重命名目的寄存器
 
-        inst->flattenedDestIdx(dest_idx, flat_dest_regid);
+        inst->flattenedDestIdx(dest_idx, flat_dest_regid);  // 更新指令的展平目的寄存器索引
 
         if (!mov_elim) {
-            scoreboard->unsetReg(rename_result.first);
+            scoreboard->unsetReg(rename_result.first);  // 如果不是移动消除,则在记分板中取消设置该寄存器
         }
 
         DPRINTF(Rename, "[tid:%i] %s map arch reg x%i (%s) to p%i.\n",
                 tid, mov_elim ? "Mov" : "Rename",
                 dest_reg.index(), dest_reg.className(),
-                rename_result.first->flatIndex());
+                rename_result.first->flatIndex());  // 打印重命名结果
 
-        // Record the rename information so that a history can be kept.
+        // Record the rename information so that a history can be kept. 记录重命名信息以便保持历史记录
         RenameHistory hb_entry(inst->seqNum, flat_dest_regid,
                                rename_result.first,
-                               rename_result.second);
+                               rename_result.second);  // 记录重命名信息
 
-        historyBuffer[tid].push_front(hb_entry);
+        historyBuffer[tid].push_front(hb_entry);  // 将重命名信息添加到历史记录中
 
         DPRINTF(Rename, "[tid:%i] [sn:%llu] "
                 "Adding instruction to history buffer (size=%i).\n",
                 tid,(*historyBuffer[tid].begin()).instSeqNum,
-                historyBuffer[tid].size());
+                historyBuffer[tid].size());  // 打印历史记录大小
 
         // Tell the instruction to rename the appropriate destination
         // register (dest_idx) to the new physical register
@@ -1265,9 +1268,9 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
         // (rename_result.second).
         inst->renameDestReg(dest_idx,
                             rename_result.first,
-                            rename_result.second);
+                            rename_result.second);  // 重命名目的寄存器
 
-        ++stats.renamedOperands;
+        ++stats.renamedOperands;  // 增加重命名操作数统计
     }
 }
 

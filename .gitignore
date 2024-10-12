@@ -52,3 +52,4 @@ m5out*
 run_fs.sh
 src/cpu/o3/dramsim3.txt
 src/cpu/o3/dramsim3.json
+pipeview.out

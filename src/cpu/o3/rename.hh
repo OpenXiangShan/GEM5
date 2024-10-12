@@ -64,16 +64,17 @@ namespace o3
 {
 
 /**
- * Rename handles both single threaded and SMT rename. Its
- * width is specified by the parameters; each cycle it tries to rename
- * that many instructions. It holds onto the rename history of all
- * instructions with destination registers, storing the
- * arch. register, the new physical register, and the old physical
- * register, to allow for undoing of mappings if squashing happens, or
- * freeing up registers upon commit. Rename handles blocking if the
- * ROB, IQ, or LSQ is going to be full. Rename also handles barriers,
- * and does so by stalling on the instruction until the ROB is empty
- * and there are no instructions in flight to the ROB.
+ * Rename 模块同时处理单线程和 SMT（同时多线程）的重命名。其
+ * 宽度由参数指定；每个周期它尝试重命名
+ * 指定数量的指令。它保存所有带有目标寄存器的
+ * 指令的重命名历史，存储
+ * 架构寄存器、新的物理寄存器和旧的物理
+ * 寄存器，以便在发生清除（squashing）时撤销映射，或
+ * 在提交时释放寄存器。如果
+ * ROB（重排序缓冲区）、IQ（指令队列）或 LSQ（加载/存储队列）即将满，Rename 会处理阻塞。
+ * Rename 还处理屏障指令，
+ * 通过在指令上停顿直到 ROB 为空且
+ * 没有指令正在传送到 ROB 来实现。
  */
 class Rename
 {
@@ -82,7 +83,7 @@ class Rename
     // be added to the front of the queue, which is the only reason for
     // using a deque instead of a queue. (Most other stages use a
     // queue)
-    typedef std::deque<DynInstPtr> InstQueue;
+    typedef std::deque<DynInstPtr> InstQueue;   // 存放从decode来的inst, 双端队列
 
   public:
     /** Overall rename status. Used to determine if the CPU can
@@ -104,7 +105,7 @@ class Rename
         Blocked,
         Unblocking,
         SerializeStall
-    };
+    };  // 独立的线程状态， 运行，空闲，开始squash，squashing，blocked，unblocking，serializeStall
 
     enum StallEvent
     {
@@ -117,22 +118,22 @@ class Rename
         SerializeInst,
         BWFull,
         StallEventCount
-    };
+    };  // 存放stall原因， IEW stall， ROB满， IQ满， LSQ满， RegFull， SerializeInst， BWFull
 
   private:
     /** Rename status. */
     RenameStatus _status;
 
     /** Per-thread status. */
-    ThreadStatus renameStatus[MaxThreads];
+    ThreadStatus renameStatus[MaxThreads];  // 每个线程的状态
 
     /** Probe points. */
     typedef std::pair<InstSeqNum, PhysRegIdPtr> SeqNumRegPair;
     /** To probe when register renaming for an instruction is complete */
-    ProbePointArg<DynInstPtr> *ppRename;
+    ProbePointArg<DynInstPtr> *ppRename;  // 当指令的寄存器重命名完成时进行探测
     /**
      * To probe when an instruction is squashed and the register mapping
-     * for it needs to be undone
+     * for it needs to be undone  当指令被squash时， 需要撤销寄存器映射， 进行探测
      */
     ProbePointArg<SeqNumRegPair> *ppSquashInRename;
 
@@ -363,7 +364,7 @@ class Rename
     TimeBuffer<DecodeStruct>::wire fromDecode;
 
     /** Queue of all instructions coming from decode this cycle. */
-    InstQueue insts[MaxThreads];
+    InstQueue insts[MaxThreads];  // 存放从decode来的inst， 每个线程一个队列
 
     /** Skid buffer between rename and decode. */
     InstQueue skidBuffer[MaxThreads];
