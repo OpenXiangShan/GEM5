@@ -752,7 +752,6 @@ Scheduler::insert(const DynInstPtr& inst)
     auto& iqs = dispTable[inst->opClass()];
     bool inserted = false;
 
-    // std::round
     std::random_shuffle(iqs.begin(), iqs.end());
     for (auto iq : iqs) {
         if (iq->ready()) {

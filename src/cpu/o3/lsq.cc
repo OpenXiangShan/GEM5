@@ -1322,8 +1322,8 @@ LSQ::SbufferRequest::recvTimingResp(PacketPtr pkt)
 {
     // Dump inst num, request addr, and packet addr
     DPRINTF(StoreBuffer,
-            "Sbuffer Req::recvTimingResp: entry[%#x] sbuffer index: %lu\n",
-            _packets[0]->getAddr(), this->sbuffer_index);
+            "Sbuffer Req::recvTimingResp: entry[%#x]\n",
+            _packets[0]->getAddr());
     assert(_numOutstandingPackets == 1);
     flags.set(Flag::Complete);
     assert(pkt == _packets.front());
@@ -1489,8 +1489,7 @@ LSQ::SbufferRequest::sendPacketToCache()
 {
     assert(_numOutstandingPackets == 0);
     bool success = _port.sbufferSendPacket(_packets.at(0));
-    DPRINTF(StoreBuffer, "Sbuffer Req::sendPacketToCache: entry[%#x] sbuffer index: %lu\n", _packets[0]->getAddr(),
-            this->sbuffer_index);
+    DPRINTF(StoreBuffer, "Sbuffer Req::sendPacketToCache: entry[%#x]\n", _packets[0]->getAddr());
     if (success) {
         _numOutstandingPackets = 1;
     }
