@@ -395,10 +395,10 @@ Rename::squash(const InstSeqNum &squash_seq_num, ThreadID tid)
 
     // Clear the instruction list and skid buffer in case they have any
     // insts in them.
-    insts[tid].clear();
+    insts[tid].clear();  // 清空insts[tid]
 
     // Clear the skid buffer in case it has any data in it.
-    skidBuffer[tid].clear();
+    skidBuffer[tid].clear();  // 清空skidBuffer[tid]
 
     doSquash(squash_seq_num, tid);
 }
@@ -1431,7 +1431,7 @@ Rename::checkSignalsAndUpdate(ThreadID tid)
     readFreeEntries(tid);
     readStallSignals(tid);
 
-    if (fromCommit->commitInfo[tid].squash) {
+    if (fromCommit->commitInfo[tid].squash) {   // 如果提交阶段有squash信号，则进行squash操作
         DPRINTF(Rename, "[tid:%i] Squashing instructions due to squash from "
                 "commit.\n", tid);
 
@@ -1444,22 +1444,22 @@ Rename::checkSignalsAndUpdate(ThreadID tid)
         return true;
     }
 
-    if (checkStall(tid)) {
+    if (checkStall(tid)) {  // 检查是否需要阻塞
         return block(tid);
     }
 
-    if (renameStatus[tid] == Blocked) {
+    if (renameStatus[tid] == Blocked) {  // 如果阻塞
         DPRINTF(Rename, "[tid:%i] Done blocking, switching to unblocking.\n",
                 tid);
 
         renameStatus[tid] = Unblocking;
 
-        unblock(tid);
+        unblock(tid);   // 如果skidbuffer为空，则取消阻塞
 
         return true;
     }
 
-    if (renameStatus[tid] == Squashing) {
+    if (renameStatus[tid] == Squashing) {  // 如果正在squashing
         // Switch status to running if rename isn't being told to block or
         // squash this cycle.
         if (resumeSerialize) {
