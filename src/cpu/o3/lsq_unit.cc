@@ -96,7 +96,7 @@ StoreBufferEntry::merge(uint64_t offset, uint8_t *datas, uint64_t size)
 }
 
 bool
-StoreBufferEntry::coverage(PacketPtr pkt, LSQ::LSQRequest *req)
+StoreBufferEntry::recordForward(PacketPtr pkt, LSQ::LSQRequest *req)
 {
     int offset = pkt->getAddr() & (validMask.size() - 1);
     int goffset = pkt->req->getVaddr() - req->mainReq()->getVaddr();
@@ -422,6 +422,7 @@ LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries
       storeInFlight(false),
       stats(nullptr)
 {
+    // reserve space, we want if sq will be full, sbuffer will start evicting
     sqFullUpperLimit = sqEntries - 4;
     sqFullLowerLimit = sqFullUpperLimit - 4;
     assert(sqFullLowerLimit > 0);
@@ -1375,14 +1376,14 @@ LSQUnit::storeBufferEvictToCache()
     }
 
     if (storeQueue.size() > sqFullUpperLimit) {
-        sqwillfull = true;
+        sqWillFull = true;
     } else if (storeQueue.size() < sqFullLowerLimit) {
-        sqwillfull = false;
+        sqWillFull = false;
     }
 
     if ((storeBuffer.unsentSize() > sbufferEvictThreshold) ||
         (storeBufferWritebackInactive > storeBufferInactiveThreshold) ||
-        (sqwillfull) ||
+        (sqWillFull) ||
         storeBufferFlushing) {
 
         if (storeBufferFlushing) {
@@ -1391,7 +1392,7 @@ LSQUnit::storeBufferEvictToCache()
         } else if (storeBuffer.unsentSize() > sbufferEvictThreshold) {
             stats.sbufferEvictDuetoFull++;
             DPRINTF(StoreBuffer, "sbuffer has reached threshold\n");
-        } else if (sqwillfull) {
+        } else if (sqWillFull) {
             stats.sbufferEvictDuetoSQFull++;
             DPRINTF(StoreBuffer, "sbuffer has reached SQ threshold\n");
         } else {
@@ -1820,10 +1821,10 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict)
             auto entry = storeBuffer.get(pkt->getAddr() & cacheBlockMask);
             if (entry) {
                 DPRINTF(StoreBuffer, "sbuffer entry[%#x] coverage %s\n", entry->blockPaddr, pkt->print());
-                entry->coverage(pkt, request);
+                entry->recordForward(pkt, request);
                 if (entry->vice) {
                     DPRINTF(StoreBuffer, "sbuffer vice entry coverage\n");
-                    entry->vice->coverage(pkt, request);
+                    entry->vice->recordForward(pkt, request);
                 }
             }
         }

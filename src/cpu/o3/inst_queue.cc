@@ -548,6 +548,7 @@ InstructionQueue::execLatencyCheck(const DynInstPtr& inst, uint32_t& op_latency)
             } else if (lzc(std::labs(rs2)) - lzc(std::labs(rs1)) < 0) {
                 op_latency = 6;
             } else {
+                // base_latency + dynamic_latency
                 op_latency = 8 + delay_ / 4;
             }
             return true;
