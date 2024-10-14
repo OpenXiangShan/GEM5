@@ -103,7 +103,7 @@ class StoreBufferEntry
 
     void merge(uint64_t offset, uint8_t* datas, uint64_t size);
 
-    bool coverage(PacketPtr pkt, LSQ::LSQRequest* req);
+    bool recordForward(PacketPtr pkt, LSQ::LSQRequest* req);
 };
 
 class StoreBuffer
@@ -260,10 +260,12 @@ class LSQUnit
   public:
     // storeQue -> storeBuffer -> cache
     const int maxSQoffload = 2;
+    const int sqFullBufferSize = 4;
+
     int sqFullUpperLimit = 0;
     int sqFullLowerLimit = 0;
     bool storeBufferFlushing = false;
-    bool sqwillfull = false;
+    bool sqWillFull = false;
     const uint32_t sbufferEvictThreshold = 0;
     const uint32_t sbufferEntries = 0;
     StoreBuffer storeBuffer;
