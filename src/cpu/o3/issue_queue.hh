@@ -74,11 +74,11 @@ class IssueQue : public SimObject
     std::vector<bool> opPipelined;
     int IQID = -1;
 
-    struct select_ploy
+    struct select_policy
     {
         bool operator()(const DynInstPtr& a, const DynInstPtr& b) const;
     };
-    using ReadyQue = boost::heap::priority_queue<DynInstPtr, boost::heap::compare<select_ploy>>;
+    using ReadyQue = boost::heap::priority_queue<DynInstPtr, boost::heap::compare<select_policy>>;
     using SelectQue = std::vector<std::pair<uint32_t, DynInstPtr>>;
 
     struct IssueStream
@@ -192,15 +192,15 @@ class Scheduler : public SimObject
     CPU* cpu;
     MemDepUnit *memDepUnit;
 
-    struct disp_ploy
+    struct disp_policy
     {
         bool operator()(IssueQue* a, IssueQue* b) const;
     };
-    using DispPloy = std::vector<IssueQue*>;
+    using DispPolicy = std::vector<IssueQue*>;
 
     std::vector<int> opExecTimeTable;
     std::vector<bool> opPipelined;
-    std::vector<DispPloy> dispTable;
+    std::vector<DispPolicy> dispTable;
     std::vector<IssueQue*> issueQues;
     std::vector<std::vector<IssueQue*>> wakeMatrix;
     uint32_t combinedFus;
@@ -218,11 +218,11 @@ class Scheduler : public SimObject
         DynInstPtr inst;
         Slot(uint32_t priority, uint32_t demand, const DynInstPtr& inst);
     };
-    struct slot_ploy
+    struct slot_policy
     {
         bool operator()(const Slot& a, const Slot& b) const;
     };
-    using SlotQue = boost::heap::priority_queue<Slot, boost::heap::compare<slot_ploy>>;
+    using SlotQue = boost::heap::priority_queue<Slot, boost::heap::compare<slot_policy>>;
 
     const uint32_t intSlotNum;
     const uint32_t fpSlotNum;

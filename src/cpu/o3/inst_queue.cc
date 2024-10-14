@@ -521,6 +521,7 @@ InstructionQueue::processFUCompletion(const DynInstPtr &inst, int fu_idx)
 bool
 InstructionQueue::execLatencyCheck(const DynInstPtr& inst, uint32_t& op_latency)
 {
+    // Leading zero count
     auto lzc = [](RegVal val) {
         for (int i = 0; i < 64; i++) {
             if (val & (0x1lu << 63)) {
@@ -540,14 +541,20 @@ InstructionQueue::execLatencyCheck(const DynInstPtr& inst, uint32_t& op_latency)
             rs2 = cpu->readArchIntReg(inst->srcRegIdx(1).index(),
                                       inst->threadNumber);
             // rs1 / rs2 : 0x80/0x8 ,delay_ = 4
+            // get the leading zero difference between rs1 and rs2 (rs1 > rs2)
             delay_ = std::max(lzc(std::labs(rs2)) - lzc(std::labs(rs1)), 0);
             if (rs2 == 1) {
+                // rs1 / 1 = rs1
                 op_latency = 6;
             } else if (rs1 == rs2) {
+                // rs1 / rs2 = 1 rem 0
                 op_latency = 8;
             } else if (lzc(std::labs(rs2)) - lzc(std::labs(rs1)) < 0) {
+                // if rs2 > rs1 then rs1/rs2 = 0 rem rs1
                 op_latency = 6;
             } else {
+                // base_latency + dynamic_latency
+                // dynamic_latency determined by delay_
                 op_latency = 8 + delay_ / 4;
             }
             return true;
@@ -556,6 +563,8 @@ InstructionQueue::execLatencyCheck(const DynInstPtr& inst, uint32_t& op_latency)
                                         inst->threadNumber);
             rs2 = cpu->readArchFloatReg(inst->srcRegIdx(1).index(),
                                         inst->threadNumber);
+            // for special values, fsqrt/fdiv early finish
+            // such as nan, inf or rs1 == rs2
             switch (inst->staticInst->operWid()) {
                 case 32:
                     if (__isnanf(*((float*)(&rs1))) ||
