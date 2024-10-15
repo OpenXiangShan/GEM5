@@ -56,16 +56,12 @@ class RiscvMinorCPU(BaseMinorCPU, RiscvCPU):
     mmu = RiscvMMU()
 
 class XiangshanCore(RiscvO3CPU):
-    fuPool = XSCoreFUPool()
+    pass
 
 class XiangshanECore(XiangshanCore):
-    fuPool = XSECoreFUPool()
-
     fetchWidth = 8
     decodeWidth = 4
     renameWidth = 4
-    dispatchWidth = 4
-    issueWidth = 6
     wbWidth = 6
 
     numROBEntries = 150
@@ -79,13 +75,9 @@ class XiangshanECore(XiangshanCore):
     numPhysRMiscRegs = 40
 
 class XiangshanECore2Read(XiangshanCore):
-    fuPool = XSECore2ReadFUPool()
-
     fetchWidth = 8
     decodeWidth = 4
     renameWidth = 4
-    dispatchWidth = 4
-    issueWidth = 6
     wbWidth = 6
 
     numROBEntries = 150

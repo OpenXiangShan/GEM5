@@ -132,18 +132,16 @@ class BaseO3CPU(BaseCPU):
                "Issue/Execute/Writeback delay")
     executeToWriteBackDelay = Param.Cycles(1, "Execute to issue delay")
 
-    dispatchWidth = Param.Unsigned(6, "Dispatch width")
-    issueWidth = Param.Unsigned(8, "Issue width")
-    wbWidth = Param.Unsigned(8, "Writeback width")
-    fuPool = Param.FUPool(DefaultFUPool(), "Functional Unit pool")
+    dispWidth = Param.Unsigned(6, "Each DispQue dispatch width")
+    wbWidth = Param.Unsigned(20, "Writeback width")
 
     iewToCommitDelay = Param.Cycles(1, "Issue/Execute/Writeback to commit "
                "delay")
     renameToROBDelay = Param.Cycles(1, "Rename to reorder buffer delay")
-    commitWidth = Param.Unsigned(6, "Commit width")
+    commitWidth = Param.Unsigned(8, "Commit width")
 
-    squashWidth = Param.Unsigned(6, "Squash width with rollback rob walk")
-    replayWidth = Param.Unsigned(6, "Squash width with redo rob walk")
+    squashWidth = Param.Unsigned(8, "Squash width with rollback rob walk")
+    replayWidth = Param.Unsigned(8, "Squash width with redo rob walk")
     ConstSquashCycle = Param.Unsigned(1, "Squash width with redo rob walk")
     robWalkPolicy = Param.ROBWalkPolicy('Replay', "Squash with a specific policy")
 
@@ -179,7 +177,7 @@ class BaseO3CPU(BaseCPU):
 
     numRobs = Param.Unsigned(1, "Number of Reorder Buffers");
 
-    numPhysIntRegs = Param.Unsigned(192,
+    numPhysIntRegs = Param.Unsigned(224,
             "Number of physical integer registers")
     numPhysFloatRegs = Param.Unsigned(192, "Number of physical floating point "
                                       "registers")
@@ -192,7 +190,7 @@ class BaseO3CPU(BaseCPU):
     numPhysCCRegs = Param.Unsigned(0, "Number of physical cc registers")
     numPhysRMiscRegs = Param.Unsigned(40, "Number of physical renameable misc registers")
 
-    numDQEntries = Param.Unsigned(16, "Number of entries in the dispQue")
+    numDQEntries = Param.Unsigned(18, "Number of entries in the dispQue")
     numROBEntries = Param.Unsigned(256, "Number of reorder buffer entries")
 
     smtNumFetchingThreads = Param.Unsigned(1, "SMT Number of Fetching Threads")

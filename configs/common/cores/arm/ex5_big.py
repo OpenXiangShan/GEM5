@@ -123,8 +123,6 @@ class ex5_big(ArmO3CPU):
     renameWidth = 3
     renameToIEWDelay = 1
     issueToExecuteDelay = 1
-    dispatchWidth = 6
-    issueWidth = 8
     wbWidth = 8
     fuPool = ex5_big_FUP()
     iewToCommitDelay = 1

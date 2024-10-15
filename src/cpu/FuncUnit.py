@@ -94,5 +94,5 @@ class FUDesc(SimObject):
     cxx_header = "cpu/func_unit.hh"
     cxx_class = 'gem5::FUDesc'
 
-    count = Param.Int("number of these FU's available")
+    count = Param.Int(0, "number of these FU's available (deprecated)")
     opList = VectorParam.OpDesc("operation classes for this FU type")

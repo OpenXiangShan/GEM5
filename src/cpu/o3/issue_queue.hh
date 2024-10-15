@@ -13,6 +13,7 @@
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/timebuf.hh"
+#include "params/IssuePort.hh"
 #include "params/IssueQue.hh"
 #include "params/Scheduler.hh"
 #include "params/SpecWakeupChannel.hh"
@@ -51,23 +52,34 @@ class MemDepUnit;
  *              execute ----------------+
 */
 
+class IssuePort : public SimObject
+{
+  public:
+    std::vector<FUDesc*> fu;
+    boost::dynamic_bitset<> mask;
+    IssuePort(const IssuePortParams &params);
+};
+
 class IssueQue : public SimObject
 {
     friend class Scheduler;
 
     std::string _name;
-    const int inoutPorts;
+    const int inports;
+    const int outports;
     const int iqsize;
     const int scheduleToExecDelay;
     const std::string iqname;
-    const std::vector<FUDesc *> fuDescs;
-
+    std::vector<FUDesc *> fuDescs;
+    std::vector<bool> opPipelined;
     int IQID = -1;
 
-    struct compare_priority
+    struct select_policy
     {
         bool operator()(const DynInstPtr& a, const DynInstPtr& b) const;
     };
+    using ReadyQue = boost::heap::priority_queue<DynInstPtr, boost::heap::compare<select_policy>>;
+    using SelectQue = std::vector<std::pair<uint32_t, DynInstPtr>>;
 
     struct IssueStream
     {
@@ -77,6 +89,7 @@ class IssueQue : public SimObject
         DynInstPtr pop();
     };
 
+    std::vector<DynInstPtr> skidBuffer;
     TimeBuffer<IssueStream> inflightIssues;
     TimeBuffer<IssueStream>::wire toIssue;
     TimeBuffer<IssueStream>::wire toFu;
@@ -85,10 +98,13 @@ class IssueQue : public SimObject
     uint64_t instNumInsert = 0;
     uint64_t instNum = 0;
 
+    std::vector<int> portBusy;
+    // opclass mapping to pipeid
+    std::vector<ReadyQue*> readyQclassify;
     // s0: wakeup inst, add ready inst to readyInstsQue
-    boost::heap::priority_queue<DynInstPtr, boost::heap::compare<compare_priority>> readyInsts;
+    std::vector<ReadyQue*> readyQs;
     // s1: schedule readyInsts
-    std::vector<DynInstPtr> selectedInst;
+    SelectQue selectQ;
 
     // srcIdx : inst
     std::vector<std::vector<std::pair<int, DynInstPtr>>> subDepGraph;
@@ -99,14 +115,15 @@ class IssueQue : public SimObject
     struct IssueQueStats : public statistics::Group
     {
         IssueQueStats(statistics::Group* parent, IssueQue* que, std::string name);
-        statistics::Scalar full;
-        statistics::Scalar bwfull;
         statistics::Scalar retryMem;
         statistics::Scalar canceledInst;
         statistics::Scalar loadmiss;
         statistics::Scalar arbFailed;
         statistics::Vector insertDist;
         statistics::Vector issueDist;
+        statistics::Vector portissued;
+        statistics::Vector portBusy;
+        statistics::Average avgInsts;
     } *iqstats = nullptr;
 
     void replay(const DynInstPtr& inst);
@@ -119,6 +136,9 @@ class IssueQue : public SimObject
     void addIfReady(const DynInstPtr& inst);
 
   public:
+    inline void clearBusy(uint32_t pi) { portBusy.at(pi) = 0; }
+
+
     IssueQue(const IssueQueParams &params);
     void setIQID(int id) { IQID = id; }
     void setCPU(CPU* cpu);
@@ -127,6 +147,7 @@ class IssueQue : public SimObject
     void tick();
     bool full();
     bool ready();
+    int emptyEntries() const { return instNum; }
     void insert(const DynInstPtr& inst);
     void insertNonSpec(const DynInstPtr& inst);
 
@@ -172,14 +193,22 @@ class Scheduler : public SimObject
     CPU* cpu;
     MemDepUnit *memDepUnit;
 
+    struct disp_policy
+    {
+        bool operator()(IssueQue* a, IssueQue* b) const;
+    };
+    using DispPolicy = std::vector<IssueQue*>;
+
     std::vector<int> opExecTimeTable;
-    std::vector<std::vector<IssueQue*>> dispTable;
+    std::vector<bool> opPipelined;
+    std::vector<DispPolicy> dispTable;
     std::vector<IssueQue*> issueQues;
     std::vector<std::vector<IssueQue*>> wakeMatrix;
     uint32_t combinedFus;
 
     std::vector<DynInstPtr> instsToFu;
 
+    std::vector<bool> earlyScoreboard;
     std::vector<bool> bypassScoreboard;
     std::vector<bool> scoreboard;
 
@@ -190,23 +219,26 @@ class Scheduler : public SimObject
         DynInstPtr inst;
         Slot(uint32_t priority, uint32_t demand, const DynInstPtr& inst);
     };
-    struct compare_priority
+    struct slot_policy
     {
         bool operator()(const Slot& a, const Slot& b) const;
     };
+    using SlotQue = boost::heap::priority_queue<Slot, boost::heap::compare<slot_policy>>;
 
-    const uint32_t slotNum;
-    uint32_t slotOccupied = 0;
+    const uint32_t intSlotNum;
+    const uint32_t fpSlotNum;
+    uint32_t intSlotOccupied = 0;
+    uint32_t fpSlotOccupied = 0;
     // interger slot
-    boost::heap::priority_queue<Slot, boost::heap::compare<compare_priority>> intSlot;
-
-    bool forwardDisp = false;
+    SlotQue intSlot;
+    // floating point slot
+    SlotQue fpSlot;
 
     // used for searching dependency chain
     std::stack<DynInstPtr> dfs;
 
     // should call at issue first/last cycle,
-    void wakeUpDependents(const DynInstPtr& inst, IssueQue* from_issue_queue);
+    void specWakeUpDependents(const DynInstPtr& inst, IssueQue* from_issue_queue);
 
   public:
     Scheduler(const SchedulerParams& params);

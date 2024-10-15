@@ -404,6 +404,7 @@ class DynInst : public ExecContext, public RefCounted
     RequestPtr reqToVerify;
 
     IssueQue* issueQue = nullptr;
+    int issueportid = -1;
 
   public:
     /** Records changes to result? */
@@ -820,6 +821,8 @@ class DynInst : public ExecContext, public RefCounted
     void setMemDepDone() { status.set(MemDepSolved); }
 
     bool memDepSolved() const { return status[MemDepSolved]; }
+
+    void setWriteback() { issueQue = nullptr; issueportid = -1; }
 
     void setInReadyQ() { status.set(InReadyQue); }
 
