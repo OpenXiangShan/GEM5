@@ -162,19 +162,19 @@ class ECore2ReadScheduler(Scheduler):
 
 class KunminghuScheduler(Scheduler):
     IQs = [
-        IssueQue(name='intIQ0' , inports=2, size=2*12, oports=[
+        IssueQue(name='intIQ0' , inports=2, size=2*24, oports=[
             IssuePort(fu=[IntALU(), IntMult()]),
             IssuePort(fu=[IntBRU()])
         ]),
-        IssueQue(name='intIQ1' , inports=2, size=2*12, oports=[
+        IssueQue(name='intIQ1' , inports=2, size=2*24, oports=[
             IssuePort(fu=[IntALU(), IntMult()]),
             IssuePort(fu=[IntBRU()])
         ]),
-        IssueQue(name='intIQ2' , inports=2, size=2*12, oports=[
+        IssueQue(name='intIQ2' , inports=2, size=2*24, oports=[
             IssuePort(fu=[IntALU()]),
             IssuePort(fu=[IntBRU(), IntMisc()])
         ]),
-        IssueQue(name='intIQ3' , inports=2, size=2*12, oports=[
+        IssueQue(name='intIQ3' , inports=2, size=2*24, oports=[
             IssuePort(fu=[IntALU()]),
             IssuePort(fu=[IntBRU(), IntDiv()])
         ]),

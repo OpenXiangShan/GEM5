@@ -869,7 +869,7 @@ class DefaultFTB(TimedBaseFTBPredictor):
     cxx_class = 'gem5::branch_prediction::ftb_pred::DefaultFTB'
     cxx_header = 'cpu/pred/ftb/ftb.hh'
     
-    numEntries = Param.Unsigned(2048, "Number of entries in the FTB")
+    numEntries = Param.Unsigned(16384, "Number of entries in the FTB")
     tagBits = Param.Unsigned(20, "Number of bits in the tag")
     instShiftAmt = Param.Unsigned(1, "Amount to shift PC to get inst bits")
     numThreads = Param.Unsigned(1, "Number of threads")
@@ -877,7 +877,7 @@ class DefaultFTB(TimedBaseFTBPredictor):
     numDelay = 1
 
 class UFTB(DefaultFTB):
-    numEntries = 32
+    numEntries = 1024
     tagBits = 38
     numWays = 32
     numDelay = 0
@@ -906,12 +906,12 @@ class FTBTAGE(TimedBaseFTBPredictor):
     cxx_class = 'gem5::branch_prediction::ftb_pred::FTBTAGE'
     cxx_header = "cpu/pred/ftb/ftb_tage.hh"
 
-    numPredictors = Param.Unsigned(4, "Number of TAGE predictors")
-    tableSizes = VectorParam.Unsigned([2048]*4, "the ITTAGE T0~Tn length")
-    TTagBitSizes = VectorParam.Unsigned([8]*4, "the T0~Tn entry's tag bit size")
-    TTagPcShifts = VectorParam.Unsigned([1] * 4, "when the T0~Tn entry's tag generating, PC right shift")
+    numPredictors = Param.Unsigned(9, "Number of TAGE predictors")
+    tableSizes = VectorParam.Unsigned([2048]*9, "the ITTAGE T0~Tn length")
+    TTagBitSizes = VectorParam.Unsigned([8]*9, "the T0~Tn entry's tag bit size")
+    TTagPcShifts = VectorParam.Unsigned([1] * 9, "when the T0~Tn entry's tag generating, PC right shift")
 
-    histLengths = VectorParam.Unsigned([8, 13, 32, 119], "the FTB TAGE T0~Tn history length")
+    histLengths = VectorParam.Unsigned([8, 13, 21, 35, 57, 93, 151, 246, 401], "the FTB TAGE T0~Tn history length")
     maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
     numTablesToAlloc = Param.Unsigned(1,"The number of table to allocated each time")
     numDelay = 1

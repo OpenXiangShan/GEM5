@@ -51,7 +51,7 @@ class RiscvMMU(BaseMMU):
     l2_shared = RiscvTLBL2(entry_type="unified")
 
     itb = RiscvTLB(entry_type="instruction",
-    next_level=Parent.l2_shared,size=32)
+    next_level=Parent.l2_shared,size=96)
     dtb = RiscvTLB(entry_type="data",
                    next_level=Parent.l2_shared, is_dtlb=True)
     pma_checker = Param.PMAChecker(PMAChecker(), "PMA Checker")
