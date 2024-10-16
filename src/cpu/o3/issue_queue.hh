@@ -138,7 +138,6 @@ class IssueQue : public SimObject
   public:
     inline void clearBusy(uint32_t pi) { portBusy.at(pi) = 0; }
 
-
     IssueQue(const IssueQueParams &params);
     void setIQID(int id) { IQID = id; }
     void setCPU(CPU* cpu);
@@ -147,7 +146,7 @@ class IssueQue : public SimObject
     void tick();
     bool full();
     bool ready();
-    int emptyEntries() const { return instNum; }
+    int emptyEntries() const { return iqsize - instNum; }
     void insert(const DynInstPtr& inst);
     void insertNonSpec(const DynInstPtr& inst);
 

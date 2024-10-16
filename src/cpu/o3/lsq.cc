@@ -79,6 +79,7 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
       _cacheBlocked(false),
       cacheStorePorts(params.cacheStorePorts), usedStorePorts(0),
       cacheLoadPorts(params.cacheLoadPorts), usedLoadPorts(0),lastConflictCheckTick(0),
+      recentlyloadAddr(16),
       enableBankConflictCheck(params.BankConflictCheck),
       waitingForStaleTranslation(false),
       staleTranslationWaitTxnId(0),
@@ -210,9 +211,13 @@ LSQ::bankConflictedCheck(Addr vaddr)
         if (l1dBankAddresses.size() == 0) {
             l1dBankAddresses.push_back(bankNum(vaddr));
         } else {
+            if (recentlyloadAddr.contains(vaddr)) {
+                return false;
+            }
             auto bank_it = std::find(l1dBankAddresses.begin(), l1dBankAddresses.end(), bankNum(vaddr));
             if (bank_it == l1dBankAddresses.end()) {
                 l1dBankAddresses.push_back(bankNum(vaddr));
+                recentlyloadAddr.insert(vaddr, {});
             } else {
                 now_bank_conflict = true;
             }
@@ -1317,8 +1322,8 @@ LSQ::SbufferRequest::recvTimingResp(PacketPtr pkt)
 {
     // Dump inst num, request addr, and packet addr
     DPRINTF(StoreBuffer,
-            "Sbuffer Req::recvTimingResp: entry[%#x] sbuffer index: %lu\n",
-            _packets[0]->getAddr(), this->sbuffer_index);
+            "Sbuffer Req::recvTimingResp: entry[%#x]\n",
+            _packets[0]->getAddr());
     assert(_numOutstandingPackets == 1);
     flags.set(Flag::Complete);
     assert(pkt == _packets.front());
@@ -1484,8 +1489,7 @@ LSQ::SbufferRequest::sendPacketToCache()
 {
     assert(_numOutstandingPackets == 0);
     bool success = _port.sbufferSendPacket(_packets.at(0));
-    DPRINTF(StoreBuffer, "Sbuffer Req::sendPacketToCache: entry[%#x] sbuffer index: %lu\n", _packets[0]->getAddr(),
-            this->sbuffer_index);
+    DPRINTF(StoreBuffer, "Sbuffer Req::sendPacketToCache: entry[%#x]\n", _packets[0]->getAddr());
     if (success) {
         _numOutstandingPackets = 1;
     }

@@ -157,8 +157,8 @@ class BaseO3CPU(BaseCPU):
     SQEntries = Param.Unsigned(64, "Number of store queue entries")
 
     SbufferEntries = Param.Unsigned(16, "Number of store buffer entries")
-    SbufferEvictThreshold = Param.Unsigned(12, "store buffer eviction threshold")
-    storeBufferInactiveThreshold = Param.Unsigned(100, "store buffer writeback timeout threshold")
+    SbufferEvictThreshold = Param.Unsigned(8, "store buffer eviction threshold")
+    storeBufferInactiveThreshold = Param.Unsigned(800, "store buffer writeback timeout threshold")
 
     LSQDepCheckShift = Param.Unsigned(0,
             "Number of places to shift addr before check")
@@ -168,11 +168,11 @@ class BaseO3CPU(BaseCPU):
     store_set_clear_period = Param.Unsigned(250000,
             "Number of load/store insts before the dep predictor "
             "should be invalidated")
-    LFSTSize = Param.Unsigned(256, "Last fetched store table size")
+    LFSTSize = Param.Unsigned(2048, "Last fetched store table size")
     store_set_clear_thres = Param.Unsigned(1048576,"")
     LFSTEntrySize = Param.Unsigned(4,"The number of store table inst in every entry of LFST can contain")
-    SSITSize = Param.Unsigned(1024, "Store set ID table size")
-    BankConflictCheck = Param.Bool(True,"open Bank conflict check")
+    SSITSize = Param.Unsigned(8192, "Store set ID table size")
+    BankConflictCheck = Param.Bool(True, "open Bank conflict check")
 
 
     numRobs = Param.Unsigned(1, "Number of Reorder Buffers");
@@ -191,7 +191,7 @@ class BaseO3CPU(BaseCPU):
     numPhysRMiscRegs = Param.Unsigned(40, "Number of physical renameable misc registers")
 
     numDQEntries = Param.Unsigned(18, "Number of entries in the dispQue")
-    numROBEntries = Param.Unsigned(256, "Number of reorder buffer entries")
+    numROBEntries = Param.Unsigned(320, "Number of reorder buffer entries")
 
     smtNumFetchingThreads = Param.Unsigned(1, "SMT Number of Fetching Threads")
     smtFetchPolicy = Param.SMTFetchPolicy('RoundRobin', "SMT Fetch policy")
