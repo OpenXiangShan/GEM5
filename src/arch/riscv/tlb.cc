@@ -121,23 +121,12 @@ TLB::TLB(const Params &p) :
     }
     if (isStage2 || isTheSharedL2) {
         DPRINTF(TLBVerbose, "tlbL2\n");
-        for (size_t x_l2l1 = 0; x_l2l1 < l2TlbL1Size * l2tlbLineSize; x_l2l1++) {
-            tlbL2L1[x_l2l1].trieHandle = nullptr;
-            freeListL2L1.push_back(&tlbL2L1[x_l2l1]);
-        }
 
-        for (size_t x_l2l2 = 0; x_l2l2 < l2TlbL2Size * l2tlbLineSize; x_l2l2++) {
-            tlbL2L2[x_l2l2].trieHandle = nullptr;
-            freeListL2L2.push_back(&tlbL2L2[x_l2l2]);
-        }
-        for (size_t x_l2l3 = 0; x_l2l3 < l2TlbL3Size * l2tlbLineSize; x_l2l3++) {
-            tlbL2L3[x_l2l3].trieHandle = nullptr;
-            freeListL2L3.push_back(&tlbL2L3[x_l2l3]);
-        }
-        for (size_t x_l2sp = 0; x_l2sp < l2TlbSpSize * l2tlbLineSize; x_l2sp++) {
-            tlbL2Sp[x_l2sp].trieHandle = nullptr;
-            freeListL2sp.push_back(&tlbL2Sp[x_l2sp]);
-        }
+        configL2Tlb(&freeListL2L1,&trieL2L1,tlbL2L1,l2TlbL1Size,false);
+        configL2Tlb(&freeListL2L2,&trieL2L2,tlbL2L2,l2TlbL2Size,false);
+        configL2Tlb(&freeListL2L3,&trieL2L3,tlbL2L3,l2TlbL3Size,false);
+        configL2Tlb(&freeListL2sp,&trieL2sp,tlbL2Sp,l2TlbSpSize,true);
+
         for (size_t x_g = 0; x_g < forwardPreSize; x_g++) {
             forwardPre[x_g].trieHandle = nullptr;
             freeListForwardPre.push_back(&forwardPre[x_g]);
@@ -161,6 +150,27 @@ TLB::getWalker()
     return walker;
 }
 
+void
+TLB::configL2Tlb(EntryList *List_choose, TlbEntryTrie *Trie_l2_choose, std::vector<TlbEntry> &l2Tlb_choose,
+                 size_t size, bool sp)
+{
+    int push_times = 1;
+    if (sp) {
+        push_times = 2;
+    }
+
+    for (size_t x_count = 0; x_count < size * l2tlbLineSize; x_count++) {
+        l2Tlb_choose[x_count].trieHandle = nullptr;
+        List_choose->push_back(&l2Tlb_choose[x_count]);
+    }
+
+    for (int push_time = 0; push_time < push_times; push_time++) {
+        l2Tlb.push_back(l2Tlb_choose.data());
+        l2TlbSize.push_back(size);
+        l2Trie.push_back(Trie_l2_choose);
+        l2Freelist.push_back(List_choose);
+    }
+}
 void
 TLB::evictLRU()
 {
@@ -747,21 +757,8 @@ TLB::L2TLBInsert(Addr vpn, const TlbEntry &entry, int level, int choose, int sig
 
     TlbEntry *newEntry = nullptr;
     DPRINTF(TLB, "choose %d vpn %#x entry->vaddr %#x\n", choose, vpn, entry.vaddr);
-    if (choose == 1)
-        newEntry = l2tlb->L2TLBInsertIn(vpn, entry, choose, &l2tlb->freeListL2L1, &l2tlb->trieL2L1, sign,
-                                        squashed_update, translateMode);
-    else if (choose == 2)
-        newEntry = l2tlb->L2TLBInsertIn(vpn, entry, choose, &l2tlb->freeListL2L2, &l2tlb->trieL2L2, sign,
-                                        squashed_update, translateMode);
-    else if (choose == 3)
-        newEntry = l2tlb->L2TLBInsertIn(vpn, entry, choose, &l2tlb->freeListL2L3, &l2tlb->trieL2L3, sign,
-                                        squashed_update, translateMode);
-    else if (choose == 4)
-        newEntry = l2tlb->L2TLBInsertIn(vpn, entry, choose, &l2tlb->freeListL2sp, &l2tlb->trieL2sp, sign,
-                                        squashed_update, translateMode);
-    else if (choose == 5)
-        newEntry = l2tlb->L2TLBInsertIn(vpn, entry, choose, &l2tlb->freeListL2sp, &l2tlb->trieL2sp, sign,
-                                        squashed_update, translateMode);
+    newEntry = l2tlb->L2TLBInsertIn(vpn, entry, choose, l2tlb->l2Freelist[choose - 1], l2tlb->l2Trie[choose - 1], sign,
+                                    squashed_update, translateMode);
 
     if (!squashed_update) {
         assert(newEntry != nullptr);
@@ -831,31 +828,19 @@ TLB::demapPageL2(Addr vpn, uint64_t asid)
 {
     asid &= 0xFFFF;
     std::vector<Addr> vpn_vec;
-    std::vector<TlbEntry *> tlb_lists;
-    std::vector<size_t> tlb_size;
     Addr vpnl2l1 = (vpn >> (PageShift + 2 * LEVEL_BITS + L2TLB_BLK_OFFSET))
                    << (PageShift + 2 * LEVEL_BITS + L2TLB_BLK_OFFSET);
     vpn_vec.push_back(vpnl2l1);
-    tlb_lists.push_back(tlbL2L1.data());
-    tlb_size.push_back(l2TlbL1Size);
     Addr vpnl2l2 = (vpn >> (PageShift + LEVEL_BITS + L2TLB_BLK_OFFSET)) << (PageShift + LEVEL_BITS + L2TLB_BLK_OFFSET);
     vpn_vec.push_back(vpnl2l2);
-    tlb_lists.push_back(tlbL2L2.data());
-    tlb_size.push_back(l2TlbL2Size);
     Addr vpnl2l3 = (vpn >> (PageShift + L2TLB_BLK_OFFSET)) << (PageShift + L2TLB_BLK_OFFSET);
     vpn_vec.push_back(vpnl2l3);
-    tlb_lists.push_back(tlbL2L3.data());
-    tlb_size.push_back(l2TlbL3Size);
     Addr vpnl2sp1 = (vpn >> (PageShift + 2 * LEVEL_BITS + L2TLB_BLK_OFFSET))
                     << (PageShift + 2 * LEVEL_BITS + L2TLB_BLK_OFFSET);
     vpn_vec.push_back(vpnl2sp1);
-    tlb_lists.push_back(tlbL2Sp.data());
-    tlb_size.push_back(l2TlbSpSize);
     Addr vpnl2sp2 = (vpn >> (PageShift + LEVEL_BITS + L2TLB_BLK_OFFSET))
                     << (PageShift + LEVEL_BITS + L2TLB_BLK_OFFSET);
     vpn_vec.push_back(vpnl2sp2);
-    tlb_lists.push_back(tlbL2Sp.data());
-    tlb_size.push_back(l2TlbSpSize);
     int i;
 
     DPRINTF(TLB, "l2 flush(vpn=%#x, asid=%#x)\n", vpn, asid);
@@ -880,8 +865,8 @@ TLB::demapPageL2(Addr vpn, uint64_t asid)
     if (vpn != 0 && asid != 0) {
         if (isStage2 || isTheSharedL2) {
             for (int i_type = 0; i_type < L2PageTypeNum; i_type++) {
-                for (i = 0; i < tlb_size[i_type] * l2tlbLineSize; i = i + l2tlbLineSize) {
-                    if ((tlb_lists[i_type] + i)->trieHandle) {
+                for (i = 0; i < l2TlbSize[i_type] * l2tlbLineSize; i = i + l2tlbLineSize) {
+                    if ((l2Tlb[i_type] + i)->trieHandle) {
                         l2TLBRemove(i, i_type + 1);
                     }
                 }
@@ -896,42 +881,42 @@ TLB::demapPageL2(Addr vpn, uint64_t asid)
             if (l2_newEntry[i]) {
                 TlbEntry *m_newEntry = lookupL2TLB(vpn_vec[i - 1], asid, BaseMMU::Read, true, i, false, direct);
                 assert(m_newEntry != nullptr);
-                l2TLBRemove(m_newEntry - tlb_lists[tlb_i], i);
+                l2TLBRemove(m_newEntry - l2Tlb[tlb_i], i);
             }
             if (l2_newEntry1[i]) {
                 TlbEntry *m_newEntry = lookupL2TLB(vpn_vec[i - 1], asid, BaseMMU::Read, true, i, true, gstage);
                 assert(m_newEntry != nullptr);
-                l2TLBRemove(m_newEntry - tlb_lists[tlb_i], i);
+                l2TLBRemove(m_newEntry - l2Tlb[tlb_i], i);
             }
             if (l2_newEntry2[i]) {
                 TlbEntry *m_newEntry = lookupL2TLB(vpn_vec[i - 1], asid, BaseMMU::Read, true, i, true, vsstage);
                 assert(m_newEntry != nullptr);
-                l2TLBRemove(m_newEntry - tlb_lists[tlb_i], i);
+                l2TLBRemove(m_newEntry - l2Tlb[tlb_i], i);
             }
         }
     } else {
         if (isStage2 || isTheSharedL2) {
             for (int i_type = 0; i_type < L2PageTypeNum; i_type++) {
-                for (i = 0; i < tlb_size[i_type] * l2tlbLineSize; i = i + l2tlbLineSize) {
-                    if ((tlb_lists[i_type] + i)->trieHandle) {
+                for (i = 0; i < l2TlbSize[i_type] * l2tlbLineSize; i = i + l2tlbLineSize) {
+                    if ((l2Tlb[i_type] + i)->trieHandle) {
                         l2TLBRemove(i, i_type + 1);
                     }
                 }
             }
         }
         for (int i_type = 0; i_type < L2PageTypeNum; i_type++) {
-            for (i = 0; i < tlb_size[i_type] * l2tlbLineSize; i = i + l2tlbLineSize) {
-                Addr mask = ~((tlb_lists[i_type] + i)->size() - 1);
-                if ((tlb_lists[i_type] + i)->trieHandle) {
-                    if ((vpn_vec[i_type] == 0 || (vpn_vec[i_type] & mask) == (tlb_lists[i_type] + i)->vaddr) &&
-                        (asid == 0 || (tlb_lists[i_type] + i)->asid == asid)) {
+            for (i = 0; i < l2TlbSize[i_type] * l2tlbLineSize; i = i + l2tlbLineSize) {
+                Addr mask = ~((l2Tlb[i_type] + i)->size() - 1);
+                if ((l2Tlb[i_type] + i)->trieHandle) {
+                    if ((vpn_vec[i_type] == 0 || (vpn_vec[i_type] & mask) == (l2Tlb[i_type] + i)->vaddr) &&
+                        (asid == 0 || (l2Tlb[i_type] + i)->asid == asid)) {
                         l2TLBRemove(i, i_type + 1);
                     }
                 }
-                if ((tlb_lists[i_type] + i)->trieHandle) {
+                if ((l2Tlb[i_type] + i)->trieHandle) {
                     if ((vpn_vec[i_type] == 0 ||
-                         (vpn_vec[i_type] & mask) == ((tlb_lists[i_type] + i)->gpaddr & mask)) &&
-                        (asid == 0 || (tlb_lists[i_type] + i)->vmid == asid)) {
+                         (vpn_vec[i_type] & mask) == ((l2Tlb[i_type] + i)->gpaddr & mask)) &&
+                        (asid == 0 || (l2Tlb[i_type] + i)->vmid == asid)) {
                         l2TLBRemove(i, i_type + 1);
                     }
                 }
@@ -951,21 +936,12 @@ TLB::flushAll()
         }
     }
     if (isStage2 || isTheSharedL2) {
-        for (i = 0; i < l2TlbL1Size * l2tlbLineSize; i = i + l2tlbLineSize) {
-            if (tlbL2L1[i].trieHandle)
-                l2TLBRemove(i, L_L2L1);
-        }
-        for (i = 0; i < l2TlbL2Size * l2tlbLineSize; i = i + l2tlbLineSize) {
-            if (tlbL2L2[i].trieHandle)
-                l2TLBRemove(i, L_L2L2);
-        }
-        for (i = 0; i < l2TlbL3Size * l2tlbLineSize; i = i + l2tlbLineSize) {
-            if (tlbL2L3[i].trieHandle)
-                l2TLBRemove(i, L_L2L3);
-        }
-        for (i = 0; i < l2TlbSpSize * l2tlbLineSize; i = i + l2tlbLineSize) {
-            if (tlbL2Sp[i].trieHandle)
-                l2TLBRemove(i, L_L2sp1);
+        for (int i_type = 0; i_type < L2PageTypeNum; i_type++) {
+            for (i = 0; i < l2TlbSize[i_type] * l2tlbLineSize; i = i + l2tlbLineSize) {
+                if ((l2Tlb[i_type] + i)->trieHandle) {
+                    l2TLBRemove(i, i_type + 1);
+                }
+            }
         }
     }
 }
@@ -1031,63 +1007,25 @@ TLB::l2tlbRemoveIn(EntryList *List, TlbEntryTrie *Trie_l2, std::vector<TlbEntry>
 void
 TLB::l2TLBRemove(size_t idx, int choose)
 {
-    int i;
-    if (choose == L_L2L1) {
-        stats.l2l1tlbRemove++;
-        if (tlbL2L1[idx].used) {
-            stats.l2l1tlbUsedRemove++;
-        } else {
-            stats.l2l1tlbUnusedRemove++;
-        }
+    stats.l2tlbRemove[choose]++;
+    if ((l2Tlb[choose - 1] + idx)->used){
+        stats.l2tlbUsedRemove[choose]++;
+    } else{
+        stats.l2tlbUnusedRemove[choose]++;
+    }
+    for (int i = 0; i < l2tlbLineSize; i++) {
+        DPRINTF(TLB, "remove l2_tlb level %d idx %d idx+i %d\n", choose - 1, idx, idx + i);
+        DPRINTF(TLB, "remove tlb %d idx %d\n", choose, idx);
+        DPRINTF(TLB, "remove tlb (vpn=%#x, asid=%#x): ppn=%#x pte=%#x size=%#x\n",
+                (l2Tlb[choose - 1] + idx + i)->vaddr, (l2Tlb[choose - 1] + idx + i)->asid,
+                (l2Tlb[choose - 1] + idx + i)->paddr, (l2Tlb[choose - 1] + idx + i)->pte,
+                (l2Tlb[choose - 1] + idx + i)->size());
+        assert((l2Tlb[choose - 1] + idx + i)->trieHandle);
+        (*l2Trie[choose - 1]).remove((l2Tlb[choose - 1] + idx + i)->trieHandle);
+        (l2Tlb[choose - 1] + idx + i)->trieHandle = nullptr;
+        (*l2Freelist[choose - 1]).push_back((l2Tlb[choose - 1] + idx + i));
+    }
 
-        for (i = 0; i < l2tlbLineSize; i++) {
-            DPRINTF(TLB, "remove tlb_l2l1 idx %d idx+i %d\n", idx, idx + i);
-            l2tlbRemoveIn(&freeListL2L1, &trieL2L1, tlbL2L1, idx + i, L_L2L1);
-        }
-    }
-    if (choose == L_L2L2) {
-        stats.l2l2tlbRemove++;
-        if (tlbL2L2[idx].used) {
-            stats.l2l2tlbUsedRemove++;
-        } else {
-            stats.l2l2tlbUnusedRemove++;
-        }
-        EntryList::iterator iterl2l2 = freeListL2L2.begin();
-        for (i = 0; i < l2tlbLineSize; i++) {
-            DPRINTF(TLB, "remove tlb_l2l2 idx %d idx+i %d\n", idx, idx + i);
-            l2tlbRemoveIn(&freeListL2L2, &trieL2L2, tlbL2L2, idx + i, L_L2L2);
-        }
-    }
-    if (choose == L_L2L3) {
-        stats.l2l3tlbRemove++;
-        if (tlbL2L3[idx].used) {
-            stats.l2l3tlbUsedRemove++;
-        } else {
-            stats.l2l3tlbUnusedRemove++;
-        }
-        if (tlbL2L3[idx].isPre && !tlbL2L3[idx].preSign) {
-            stats.RemovePreUnused++;
-            RemovePreUnused++;
-        }
-
-        EntryList::iterator iterl2l3 = freeListL2L3.begin();
-        for (i = 0; i < l2tlbLineSize; i++) {
-            DPRINTF(TLB, "remove tlb_l2l3 idx %d idx+i %d\n", idx, idx + i);
-            l2tlbRemoveIn(&freeListL2L3, &trieL2L3, tlbL2L3, idx + i, L_L2L3);
-        }
-    }
-    if (choose == L_L2sp1 || choose == L_L2sp2) {
-        stats.l2sptlbRemove++;
-        if (tlbL2Sp[idx].used) {
-            stats.l2sptlbUsedRemove++;
-        } else {
-            stats.l2sptlbUnusedRemove++;
-        }
-        for (i = 0; i < l2tlbLineSize; i++) {
-            DPRINTF(TLB, "remove tlb_l2sp idx %d idx+i %d\n", idx, idx + i);
-            l2tlbRemoveIn(&freeListL2sp, &trieL2sp, tlbL2Sp, idx + i, L_L2sp1);
-        }
-    }
 }
 
 Fault
@@ -2297,29 +2235,11 @@ TLB::TlbStats::TlbStats(statistics::Group *parent)
                "l1tlb used remove"),
       ADD_STAT(l1tlbUnusedRemove, statistics::units::Count::get(),
                "l1tlb unused remove"),
-      ADD_STAT(l2l1tlbRemove, statistics::units::Count::get(),
-               "l2l1tlb remove"),
-      ADD_STAT(l2l1tlbUsedRemove, statistics::units::Count::get(),
-               "l2l1tlb used remove"),
-      ADD_STAT(l2l1tlbUnusedRemove, statistics::units::Count::get(),
-               "l2l1tlb unused remove"),
-      ADD_STAT(l2l2tlbRemove, statistics::units::Count::get(),
-               "l2l2tlb remove"),
-      ADD_STAT(l2l2tlbUsedRemove, statistics::units::Count::get(),
-               "l2l2tlb used remove"),
-      ADD_STAT(l2l2tlbUnusedRemove, statistics::units::Count::get(),
-               "l2l2tlb unused remove"),
-      ADD_STAT(l2l3tlbRemove, statistics::units::Count::get(),
-               "l2l3tlb remove"),
-      ADD_STAT(l2l3tlbUsedRemove, statistics::units::Count::get(),
-               "l2l3tlb used remove"),
-      ADD_STAT(l2l3tlbUnusedRemove, statistics::units::Count::get(),
-               "l2l3tlb unused remove"),
-      ADD_STAT(l2sptlbRemove, statistics::units::Count::get(),
-               "l2sptlb remove"),
-      ADD_STAT(l2sptlbUsedRemove, statistics::units::Count::get(),
+      ADD_STAT(l2tlbRemove, statistics::units::Count::get(),
+               "l2tlb remove"),
+      ADD_STAT(l2tlbUsedRemove, statistics::units::Count::get(),
                "l2sptlb used remove"),
-      ADD_STAT(l2sptlbUnusedRemove, statistics::units::Count::get(),
+      ADD_STAT(l2tlbUnusedRemove, statistics::units::Count::get(),
                "l2sptlb unused remove"),
       ADD_STAT(hitPreEntry, statistics::units::Count::get(),
                "number of pre entry hit"),
@@ -2336,6 +2256,15 @@ TLB::TlbStats::TlbStats(statistics::Group *parent)
                "Total TLB (read and write) accesses",
                readAccesses + writeAccesses)
 {
+    l2tlbRemove
+        .init(5)
+        .flags(gem5::statistics::total);
+    l2tlbUsedRemove
+        .init(5)
+        .flags(gem5::statistics::total);
+    l2tlbUnusedRemove
+        .init(5)
+        .flags(gem5::statistics::total);
 }
 
 Port *
