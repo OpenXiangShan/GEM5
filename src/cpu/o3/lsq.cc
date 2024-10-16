@@ -909,6 +909,14 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
         request->initiateTranslation();
     }
 
+    if (!isLoad && !inst->isVector() && size > 1 && addr % size != 0) {
+        warn( "Store misaligned: size: %u, Addr: %#lx, code: %d\n", size,
+            addr, RiscvISA::ExceptionCode::STORE_ADDR_MISALIGNED);
+        return std::make_shared<RiscvISA::AddressFault>(request->mainReq()->getVaddr(),
+            request->mainReq()->getgPaddr(),
+            RiscvISA::ExceptionCode::STORE_ADDR_MISALIGNED);
+    }
+
     /* This is the place were instructions get the effAddr. */
     if (request->isTranslationComplete()) {
         if (request->isMemAccessRequired()) {
