@@ -169,6 +169,7 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
     faultNum.insert(RiscvISA::ExceptionCode::LOAD_PAGE);
     faultNum.insert(RiscvISA::ExceptionCode::STORE_PAGE);
     faultNum.insert(RiscvISA::ExceptionCode::INST_PAGE);
+    faultNum.insert(RiscvISA::ExceptionCode::AMO_PAGE);
     faultNum.insert(RiscvISA::ExceptionCode::INST_G_PAGE);
     faultNum.insert(RiscvISA::ExceptionCode::LOAD_G_PAGE);
     faultNum.insert(RiscvISA::ExceptionCode::STORE_G_PAGE);
