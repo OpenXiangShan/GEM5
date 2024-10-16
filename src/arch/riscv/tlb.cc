@@ -1961,6 +1961,13 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
 PrivilegeMode
 TLB::getMemPriv(ThreadContext *tc, BaseMMU::Mode mode)
 {
+    if (use_old_priv && mode != BaseMMU::Execute) {
+        if (mode == BaseMMU::Execute) {
+            return old_priv_ex;
+        } else {
+            return old_priv_ldst;
+        }
+    }
     STATUS status = (STATUS)tc->readMiscReg(MISCREG_STATUS);
     PrivilegeMode pmode = (PrivilegeMode)tc->readMiscReg(MISCREG_PRV);
     if (mode != BaseMMU::Execute && status.mprv == 1)

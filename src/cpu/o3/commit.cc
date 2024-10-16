@@ -642,6 +642,8 @@ Commit::squashAll(ThreadID tid)
     toIEW->commitInfo[tid].squashedTargetId = committedTargetId;
     toIEW->commitInfo[tid].squashedLoopIter = committedLoopIter;
 
+    cpu->mmu->useNewPriv(cpu->getContext(tid));
+
     squashInflightAndUpdateVersion(tid);
 }
 
@@ -840,6 +842,8 @@ Commit::handleInterrupt()
 
         DPRINTF(CommitTrace, "Handle interrupt No.%lx\n", cpu->getInterruptsNO() | (1ULL << 63));
         cpu->processInterrupts(cpu->getInterrupts());
+
+        cpu->mmu->setOldPriv(cpu->getContext(0));
 
         thread[0]->noSquashFromTC = false;
 
@@ -1527,6 +1531,8 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         cpu->trap(inst_fault, tid,
                   head_inst->notAnInst() ? nullStaticInstPtr :
                       head_inst->staticInst);
+
+        cpu->mmu->setOldPriv(cpu->getContext(tid));
 
         // Exit state update mode to avoid accidental updating.
         thread[tid]->noSquashFromTC = false;
