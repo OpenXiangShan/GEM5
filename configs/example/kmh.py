@@ -41,10 +41,13 @@ if __name__ == '__m5_main__':
     args.enable_difftest = True
     args.enable_riscv_vector = True
 
-    args.l2_hwp_type = "WorkerPrefetcher"
+    # l1cache prefetcher use stream, stride
+    # l2cache prefetcher use pht, bop, cmc
+    # disable l1prefetcher store pf train
+    # disable l1 berti, l2 cdp
+    args.l2_hwp_type = "L2CompositeWithWorkerPrefetcher"
     args.pht_pf_level = 2
-    args.l1d_use_xsstride = True
-
+    args.kmh_align = True
 
     assert not args.external_memory_system
 

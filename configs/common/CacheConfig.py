@@ -64,7 +64,7 @@ def _get_cache_opts(level, options):
         opts['assoc'] = getattr(options, assoc_attr)
 
     prefetcher_attr = '{}_hwp_type'.format(level)
-    if hasattr(options, prefetcher_attr):
+    if hasattr(options, prefetcher_attr) and (not options.no_pf):
         opts['prefetcher'] = _get_hwp(getattr(options, prefetcher_attr))
 
     return opts
@@ -130,6 +130,11 @@ def config_cache(options, system):
 
             # system.tol2bus_list.append(L2XBar(clk_domain = system.cpu_clk_domain, width=256))
             system.l2_caches[i].cpu_side = system.tol2bus_list[i].mem_side_ports
+            if options.kmh_align:
+                assert options.l2_hwp_type == 'L2CompositeWithWorkerPrefetcher'
+                system.l2_caches[i].prefetcher.enable_cmc = True
+                system.l2_caches[i].prefetcher.enable_bop = True
+                system.l2_caches[i].prefetcher.enable_cdp = False
 
             if options.ideal_cache:
                 assert not options.l3cache, \
@@ -195,12 +200,16 @@ def config_cache(options, system):
                         dcache.prefetcher.enable_cplx = True
                     dcache.prefetcher.pht_pf_level = options.pht_pf_level
                     dcache.prefetcher.short_stride_thres = options.short_stride_thres
+                    dcache.prefetcher.enable_temporal = not options.kmh_align
                     dcache.prefetcher.fuzzy_stride_matching = False
                     dcache.prefetcher.stream_pf_ahead = True
+
+                    dcache.prefetcher.enable_bop = not options.kmh_align
                     dcache.prefetcher.bop_large.delay_queue_enable = True
                     dcache.prefetcher.bop_large.bad_score = 10
                     dcache.prefetcher.bop_small.delay_queue_enable = True
                     dcache.prefetcher.bop_small.bad_score = 5
+
                     dcache.prefetcher.queue_size = 128
                     dcache.prefetcher.max_prefetch_requests_with_pending_translation = 128
                     dcache.prefetcher.region_size = 64*16  # 64B * blocks per region
@@ -212,7 +221,7 @@ def config_cache(options, system):
                         system.cpu[i].add_pf_downstream(dcache.prefetcher)
                     if options.ideal_cache:
                         dcache.prefetcher.stream_pf_ahead = False
-                    if options.l1d_use_xsstride:
+                    if options.kmh_align:
                         dcache.prefetcher.enable_berti = False
                         dcache.prefetcher.enable_sstride = True
 
@@ -220,14 +229,14 @@ def config_cache(options, system):
                 icache.response_latency = 0
                 dcache.response_latency = 0
 
-            if options.l1_to_l2_pf_hint:
+            if (not options.no_pf) and options.l1_to_l2_pf_hint:
                 assert dcache.prefetcher != NULL and \
                     system.l2_caches[i].prefetcher != NULL
                 dcache.prefetcher.add_pf_downstream(system.l2_caches[i].prefetcher)
                 system.l2_caches[i].prefetcher.queue_size = 64
                 system.l2_caches[i].prefetcher.max_prefetch_requests_with_pending_translation = 128
 
-            if options.l3cache and options.l2_to_l3_pf_hint:
+            if (not options.no_pf) and options.l3cache and options.l2_to_l3_pf_hint:
                 assert system.l2_caches[i].prefetcher != NULL and \
                     system.l3.prefetcher != NULL
                 system.l2_caches[i].prefetcher.add_pf_downstream(system.l3.prefetcher)

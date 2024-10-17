@@ -175,6 +175,9 @@ def build_test_system(np, args):
         for cpu in test_sys.cpu:
             cpu.enable_riscv_vector = True
 
+    for cpu in test_sys.cpu:
+        cpu.store_prefetch_train = not args.kmh_align
+
     # config arch db
     if args.enable_arch_db:
         test_sys.arch_db = ArchDBer(arch_db_file=args.arch_db_file)

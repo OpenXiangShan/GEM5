@@ -75,15 +75,15 @@ void
 CMCPrefetcher::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
                            PrefetchSourceType pf_source, bool is_first_shot)
 {
-    bool can_prefetch = !pfi.isWrite() && pfi.hasPC();
+    bool can_prefetch = cache->level() == 1 ? (!pfi.isWrite() && pfi.hasPC()) : true;
     if (!can_prefetch) {
         return;
     }
+    Addr pc = pfi.hasPC() ? pfi.getPC() : 0;
 
     Addr vaddr = pfi.getAddr();
     Addr block_addr = blockAddress(vaddr);
     bool is_secure = pfi.isSecure();
-    Addr pc = pfi.getPC();
     int prefetchSource = pf_source;
 
     // if (enableDB) {

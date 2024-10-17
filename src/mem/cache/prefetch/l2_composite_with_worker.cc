@@ -10,16 +10,36 @@ namespace prefetch
 {
 
 L2CompositeWithWorkerPrefetcher::L2CompositeWithWorkerPrefetcher(const L2CompositeWithWorkerPrefetcherParams &p)
-    : CompositeWithWorkerPrefetcher(p), cdp(p.cdp)
+    : CompositeWithWorkerPrefetcher(p),
+      cdp(p.cdp),
+      largeBOP(p.bop_large),
+      smallBOP(p.bop_small),
+      cmc(p.cmc),
+      enableBOP(p.enable_bop),
+      enableCDP(p.enable_cdp),
+      enableCMC(p.enable_cmc)
 {
     cdp->pfLRUFilter = &pfLRUFilter;
+    largeBOP->filter = &pfLRUFilter;
+    smallBOP->filter = &pfLRUFilter;
+    cmc->filter = &pfLRUFilter;
     cdp->parentRid = p.sys->getRequestorId(this);
 }
 
 void
-L2CompositeWithWorkerPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses)
+L2CompositeWithWorkerPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses,
+                                                   bool late, PrefetchSourceType pf_source, bool miss_repeat)
 {
-    cdp->calculatePrefetch(pfi, addresses);
+    if (enableCMC) {
+        cmc->doPrefetch(pfi, addresses, late, pf_source, false);
+    }
+    if (enableCDP) {
+        cdp->calculatePrefetch(pfi, addresses);
+    }
+    if (enableBOP) {
+        largeBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
+        smallBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
+    }
 }
 
 void
@@ -64,6 +84,9 @@ L2CompositeWithWorkerPrefetcher::setParentInfo(System *sys, ProbeManager *pm, Ca
 {
     cdp->setParentInfo(sys, pm, _cache, blk_size);
     cdp->setStatsPtr(&prefetchStats);
+    largeBOP->setParentInfo(sys, pm, _cache, blk_size);
+    smallBOP->setParentInfo(sys, pm, _cache, blk_size);
+    cmc->setParentInfo(sys, pm, _cache, blk_size);
     CompositeWithWorkerPrefetcher::setParentInfo(sys, pm, _cache, blk_size);
 }
 
