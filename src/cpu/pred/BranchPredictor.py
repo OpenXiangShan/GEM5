@@ -881,7 +881,7 @@ class UFTB(DefaultFTB):
     tagBits = 38
     numWays = 32
     numDelay = 0
-    aheadPipelined = 0
+
 class RAS(TimedBaseFTBPredictor):
     type = 'RAS'
     cxx_class = 'gem5::branch_prediction::ftb_pred::RAS'
@@ -907,7 +907,7 @@ class FTBTAGE(TimedBaseFTBPredictor):
     cxx_header = "cpu/pred/ftb/ftb_tage.hh"
 
     numPredictors = Param.Unsigned(9, "Number of TAGE predictors")
-    tableSizes = VectorParam.Unsigned([2048]*9, "the ITTAGE T0~Tn length")
+    tableSizes = VectorParam.Unsigned([4096]*9, "the ITTAGE T0~Tn length")
     TTagBitSizes = VectorParam.Unsigned([8]*9, "the T0~Tn entry's tag bit size")
     TTagPcShifts = VectorParam.Unsigned([1] * 9, "when the T0~Tn entry's tag generating, PC right shift")
 
@@ -954,4 +954,4 @@ class DecoupledBPUWithFTB(BranchPredictor):
     enableLoopPredictor = Param.Bool(False, "Use loop predictor to predict loop exit")
     enableJumpAheadPredictor = Param.Bool(False, "Use jump ahead predictor to skip no-need-to-predict blocks")
 
-    enableTwoTaken = Param.Bool(False, "Enable predicting two taken blocks per cycle")
+    enableTwoTaken = Param.Bool(True, "Enable predicting two taken blocks per cycle")
