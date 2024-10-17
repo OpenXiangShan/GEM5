@@ -10,7 +10,10 @@ GEM5_DEPRECATED_NAMESPACE(Prefetcher, prefetch);
 namespace prefetch
 {
 
-WorkerPrefetcher::WorkerPrefetcher(const WorkerPrefetcherParams &p) : Queued(p), workerStats(this), pfLRUFilter(128)
+WorkerPrefetcher::WorkerPrefetcher(const WorkerPrefetcherParams &p)
+    : Queued(p),
+      workerStats(this),
+      pfLRUFilter(256)
 {
     //Event *event = new EventFunctionWrapper([this]{ enableFunctionTrace(); }, name(), true);
     transferEvent = new EventFunctionWrapper([this](){

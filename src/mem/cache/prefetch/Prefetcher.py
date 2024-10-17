@@ -995,6 +995,7 @@ class XSCompositePrefetcher(QueuedPrefetcher):
     enable_spp = Param.Bool(False, "Enable SPP component")
     enable_temporal = Param.Bool(False, "Enable temporal component")
     enable_berti = Param.Bool(True,"Enable berti component")
+    enable_bop = Param.Bool(True, "Enable BOP")
 
     enable_sstride = Param.Bool(False,"Enable sms stride component")
     enable_opt = Param.Bool(False,"Enable opt component")
@@ -1025,6 +1026,14 @@ class L2CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
     cxx_header = "mem/cache/prefetch/l2_composite_with_worker.hh"
 
     cdp = Param.CDP(CDP(is_sub_prefetcher=True), "")
+    cmc = Param.CMCPrefetcher(CMCPrefetcher(is_sub_prefetcher=True), "")
+    bop_large = Param.BOPPrefetcher(BOPPrefetcher(is_sub_prefetcher=True),
+                                     "Large BOP used in composite prefetcher ")
+    bop_small = Param.BOPPrefetcher(SmallBOPPrefetcher(is_sub_prefetcher=True),
+                                     "Small BOP used in composite prefetcher ")
+    enable_bop = Param.Bool(False, "Enable BOP")
+    enable_cdp = Param.Bool(False, "Enable CDP")
+    enable_cmc = Param.Bool(False, "Enable CMC")
 
 class L3CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
     type = 'L3CompositeWithWorkerPrefetcher'

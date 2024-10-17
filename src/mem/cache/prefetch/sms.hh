@@ -191,6 +191,7 @@ class XSCompositePrefetcher : public Queued
     const bool enableTemporal;
     const bool enableSstride;
     const bool enableBerti;
+    const bool enableBOP;
     const bool enableOpt;
     const bool enableXsstream;
     const bool phtEarlyUpdate;
