@@ -144,21 +144,9 @@ class TLB : public BaseTLB
         statistics::Scalar l1tlbUsedRemove;
         statistics::Scalar l1tlbUnusedRemove;
 
-        statistics::Scalar l2l1tlbRemove;
-        statistics::Scalar l2l1tlbUsedRemove;
-        statistics::Scalar l2l1tlbUnusedRemove;
-
-        statistics::Scalar l2l2tlbRemove;
-        statistics::Scalar l2l2tlbUsedRemove;
-        statistics::Scalar l2l2tlbUnusedRemove;
-
-        statistics::Scalar l2l3tlbRemove;
-        statistics::Scalar l2l3tlbUsedRemove;
-        statistics::Scalar l2l3tlbUnusedRemove;
-
-        statistics::Scalar l2sptlbRemove;
-        statistics::Scalar l2sptlbUsedRemove;
-        statistics::Scalar l2sptlbUnusedRemove;
+        statistics::Vector l2tlbRemove;
+        statistics::Vector l2tlbUsedRemove;
+        statistics::Vector l2tlbUnusedRemove;
 
 
         statistics::Scalar hitPreEntry;
@@ -186,6 +174,8 @@ class TLB : public BaseTLB
     TlbEntry *insert(Addr vpn, const TlbEntry &entry, bool suqashed_update, uint8_t translateMode);
     TlbEntry *insertForwardPre(Addr vpn, const TlbEntry &entry);
     TlbEntry *insertBackPre(Addr vpn, const TlbEntry &entry);
+    void configL2Tlb(EntryList *List_choose, TlbEntryTrie *Trie_l2_choose, std::vector<TlbEntry> &l2Tlb_choose,
+                     size_t size, bool sp);
 
     TlbEntry *L2TLBInsert(Addr vpn, const TlbEntry &entry, int level, int choose, int sign, bool squashed_update,
                           uint8_t translateMode);
@@ -288,6 +278,11 @@ class TLB : public BaseTLB
     std::vector<TlbEntry> backPre;
     TlbEntryTrie trieBackPre;
     EntryList freeListBackPre;
+
+    std::vector<TlbEntry *> l2Tlb;
+    std::vector<size_t> l2TlbSize;
+    std::vector<TlbEntryTrie *> l2Trie;
+    std::vector<EntryList *> l2Freelist;
 
   private:
     uint64_t nextSeq() { return ++lruSeq; }
