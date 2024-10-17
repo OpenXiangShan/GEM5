@@ -171,7 +171,7 @@ IssueQue::resetDepGraph(int numPhysRegs)
     subDepGraph.resize(numPhysRegs);
 }
 
-void
+bool
 IssueQue::checkScoreboard(const DynInstPtr& inst)
 {
     for (int i = 0; i < inst->numSrcRegs(); i++) {
@@ -182,11 +182,17 @@ IssueQue::checkScoreboard(const DynInstPtr& inst)
         // check bypass data ready or not
         if (!scheduler->bypassScoreboard[src->flatIndex()]) [[unlikely]] {
             auto dst_inst = scheduler->getInstByDstReg(src->flatIndex());
-            panic("[sn %lu] %s can't get data from bypassNetwork, dst inst: %s\n", inst->seqNum, inst->srcRegIdx(i),
-                  dst_inst->genDisassembly());
+            if (!dst_inst || !dst_inst->isLoad()) {
+                panic("dst is not load");
+            }
+            scheduler->loadCancel(dst_inst);
+            DPRINTF(Schedule, "[sn %lu] %s can't get data from bypassNetwork, dst inst: %s\n",
+                    inst->seqNum, inst->srcRegIdx(i), dst_inst->genDisassembly());
+            return false;
         }
     }
     inst->checkOldVdElim();
+    return true;
 }
 
 void
@@ -217,7 +223,9 @@ IssueQue::issueToFu()
             readyQclassify[inst->opClass()]->push(inst);  // retry
             continue;
         }
-        checkScoreboard(inst);
+        if (!checkScoreboard(inst)) {
+            continue;
+        }
         addToFu(inst);
         if (!opPipelined[inst->opClass()]) [[unlikely]] {
             // set fu busy

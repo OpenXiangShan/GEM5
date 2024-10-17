@@ -1064,7 +1064,38 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                     "[0m, GEM5 value: \033[31m%#lx\033[0m\n", "stval",
                     ref_val, gem5_val);
         }
+
+        // mtval
+        gem5_val = readMiscRegNoEffect(
+            RiscvISA::MiscRegIndex::MISCREG_MTVAL, tid);
+        ref_val = diffAllStates->referenceRegFile.mtval;
+        DPRINTF(Diff, "stvmtvalal:\tGEM5: %#lx,\tREF: %#lx\n", gem5_val, ref_val);
+        if (gem5_val != ref_val) {
+            diffMsg += csprintf("Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033"
+                    "[0m, GEM5 value: \033[31m%#lx\033[0m\n", "mtval",
+                    ref_val, gem5_val);
+            diffInfo.errorCsrsValue[CsrRegIndex::mtval] = 1;
+            diffAllStates->gem5RegFile.mtval = gem5_val;
+            if (!diff_at)
+                diff_at = ValueDiff;
+        }
             //DIFFTEST_STVDIFFTEST_STVAL
+
+        // mode
+        gem5_val = readMiscRegNoEffect(
+            RiscvISA::MiscRegIndex::MISCREG_PRV, tid);
+        ref_val = diffAllStates->referenceRegFile.mode;
+        DPRINTF(Diff, "priv:\tGEM5: %#lx,\tREF: %#lx\n", gem5_val, ref_val);
+        if (gem5_val != ref_val) {
+            diffMsg += csprintf("Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033"
+                    "[0m, GEM5 value: \033[31m%#lx\033[0m\n", "priv",
+                    ref_val, gem5_val);
+            // diffInfo.errorCsrsValue[CsrRegIndex::stval] = 1;
+            diffAllStates->gem5RegFile.mode = gem5_val;
+            if (!diff_at)
+                diff_at = ValueDiff;
+        }
+
         // mcause
         gem5_val = readMiscRegNoEffect(
             RiscvISA::MiscRegIndex::MISCREG_MCAUSE, tid);
@@ -1075,6 +1106,21 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             diffMsg +=
                 csprintf("Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
                     "mcause", ref_val, gem5_val);
+        }
+
+        // scause
+        gem5_val = readMiscRegNoEffect(
+            RiscvISA::MiscRegIndex::MISCREG_SCAUSE, tid);
+        ref_val = diffAllStates->referenceRegFile.scause;
+        DPRINTF(Diff, "scause:\tGEM5: %#lx,\tREF: %#lx\n", gem5_val, ref_val);
+        if (gem5_val != ref_val) {
+            diffMsg +=
+                csprintf("Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
+                    "scause", ref_val, gem5_val);
+            diffInfo.errorCsrsValue[CsrRegIndex::scause] = 1;
+            diffAllStates->gem5RegFile.scause = gem5_val;
+            if (!diff_at)
+                diff_at = ValueDiff;
         }
         // satp
         gem5_val =
@@ -1389,12 +1435,13 @@ BaseCPU::difftestStep(ThreadID tid, InstSeqNum seq)
 
     bool is_fence = diffInfo.inst->isReadBarrier() || diffInfo.inst->isWriteBarrier();
     bool fence_should_diff = is_fence && !diffInfo.inst->isMicroop();
+    bool lr_should_diff = diffInfo.inst->isLoadReserved();
     bool amo_should_diff = diffInfo.inst->isAtomic() && diffInfo.inst->numDestRegs() > 0;
     bool is_sc = diffInfo.inst->isStoreConditional() && diffInfo.inst->isDelayedCommit();
     bool other_should_diff = !diffInfo.inst->isAtomic() && !is_fence && !is_sc &&
                              (!diffInfo.inst->isMicroop() || diffInfo.inst->isLastMicroop());
 
-    if (fence_should_diff || amo_should_diff || is_sc || other_should_diff) {
+    if (fence_should_diff || amo_should_diff || is_sc || other_should_diff || lr_should_diff) {
         should_diff = true;
         if (!diffAllStates->hasCommit && diffInfo.pc->instAddr() == 0x80000000u) {
             diffAllStates->hasCommit = true;

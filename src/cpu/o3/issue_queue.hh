@@ -128,7 +128,7 @@ class IssueQue : public SimObject
 
     void replay(const DynInstPtr& inst);
     void addToFu(const DynInstPtr& inst);
-    void checkScoreboard(const DynInstPtr& inst);
+    bool checkScoreboard(const DynInstPtr& inst);
     void issueToFu();
     void wakeUpDependents(const DynInstPtr& inst, bool speculative);
     void selectInst();
