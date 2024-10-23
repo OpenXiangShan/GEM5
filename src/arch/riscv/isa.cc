@@ -322,6 +322,7 @@ void ISA::clear()
     miscRegFile[MISCREG_VENDORID] = 0;
     miscRegFile[MISCREG_ARCHID] = 0;
     miscRegFile[MISCREG_IMPID] = 0;
+    miscRegFile[MISCREG_MIDELEG] = ((1 << 12) | (1 << 10) | (1 << 6) | (1 << 2));
     if (FullSystem) {
         // Xiangshan assume machine boots with FS off
         miscRegFile[MISCREG_STATUS] = (2ULL << UXL_OFFSET) | (2ULL << SXL_OFFSET);
@@ -670,16 +671,6 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 auto ic = dynamic_cast<RiscvISA::Interrupts *>(
                     tc->getCpuPtr()->getInterruptController(tc->threadId()));
                 DPRINTF(RiscvMisc, "Setting IE to %#lx.\n", val);
-                uint64_t sie_mask = 0x222 & readMiscReg(MISCREG_MIDELEG);
-                if ((v == 1) && ((misc_reg == MISCREG_IE)) && (readMiscRegNoEffect(MISCREG_PRV) == PRV_S)) {
-                    RegVal old = readMiscReg(MISCREG_IE);
-                    RegVal write_val = ((old & ~(NEMU_VS_MASK)) | ((val)&NEMU_VS_MASK));
-                    val = write_val;
-                } else if (readMiscRegNoEffect(MISCREG_PRV) == PRV_S) {
-                    RegVal old = readMiscReg(MISCREG_IE);
-                    RegVal write_val = ((old & ~(sie_mask)) | (val & sie_mask));
-                    val = write_val;
-                }
                 ic->setIE(val);
             }
             break;

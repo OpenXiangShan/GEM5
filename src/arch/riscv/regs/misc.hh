@@ -942,6 +942,10 @@ const RegVal SI_MASK = SEI_MASK | STI_MASK | SSI_MASK;
 const RegVal UI_MASK = UEI_MASK | UTI_MASK | USI_MASK;
 const RegVal FFLAGS_MASK = (1 << FRM_OFFSET) - 1;
 const RegVal FRM_MASK = 0x7;
+const RegVal NEMU_MIE_MASK_BASE = 0xaaa;
+const RegVal NEMU_MIE_MASK_H = (1 << 2) | (1 << 6) | (1 << 10) | (1 << 12);
+const RegVal NEMU_LCOFI = 0;
+const RegVal NEMU_MIE_MASK = NEMU_MIE_MASK_BASE | NEMU_MIE_MASK_H | NEMU_LCOFI;
 
 const std::map<int, RegVal> CSRMasks = {
     {CSR_USTATUS, USTATUS_MASK},
@@ -952,7 +956,8 @@ const std::map<int, RegVal> CSRMasks = {
     {CSR_FCSR, FFLAGS_MASK | (FRM_MASK << FRM_OFFSET)},
     {CSR_SSTATUS, SSTATUS_MASK},
     {CSR_SIP, SI_MASK},
-    {CSR_MISA, MISA_MASK}
+    {CSR_MISA, MISA_MASK},
+    {CSR_MIE,NEMU_MIE_MASK}
 };
 
 #define concat_temp(x, y) x ## y

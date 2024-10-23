@@ -380,15 +380,24 @@ def template CSRExecute {{
             olddata = xc->readMiscReg(midx);
         }
         auto olddata_all = olddata;
+        uint64_t maskVal_num = maskVal;
+        if(csr == CSR_SIE){
+            if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                maskVal_num = (1ULL << 2)|(1ULL << 6)|(1ULL << 10);
 
-        olddata &= maskVal;
+            } else {
+                maskVal_num = 0x222 & xc->readMiscReg(MISCREG_MIDELEG);
+            }
+        }
+
+        olddata &= maskVal_num;
         DPRINTF(RiscvMisc, "Reading CSR %s: %#x\n", csrName, olddata);
         data = olddata;
         bool write = false;
 
         %(code)s;
 
-        data &= maskVal;
+        data &= maskVal_num;
         if(csr == CSR_HIE){
             xc->setMiscReg(midx, data);
         }
@@ -402,7 +411,7 @@ def template CSRExecute {{
             // We must keep those original bits not in mask.
             // olddata and data only contain the bits visable
             // in current privilige level.
-            newdata_all = (olddata_all & ~maskVal) | data;
+            newdata_all = (olddata_all & ~maskVal_num) | data;
             DPRINTF(RiscvMisc, "Writing %#x to CSR %s.\n",
                     newdata_all, csrName);
             switch (csr) {
