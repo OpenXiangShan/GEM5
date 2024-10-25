@@ -1869,21 +1869,21 @@ IEW::checkLoadStoreInst(DynInstPtr inst)
         return StallReason::MemSquashed;
     }
     if (inst->isCommitted()) {
-        return StallReason::MemCommitRateLimit;
+        return StallReason::MemCommitRateLimit;  // 如果指令已经ROB提交，那么就是Mem提交带宽收到限制
     }
     if (inst->isAtomic() || inst->isStoreConditional()) {
         return StallReason::Atomic;
     }
-    if (!inst->readyToIssue()){
+    if (!inst->readyToIssue()){     // 指令没准备好发射
         return StallReason::MemNotReady;
     }
     assert(inst->isLoad() || inst->isStore());
 
     if (inst->isIssued() && !inst->translationCompleted()) {
-        return StallReason::DTlbStall;
+        return StallReason::DTlbStall;  // 如果指令已经发射，但是没有完成TLB翻译，那么就是TLB停顿
     }
 
-    bool inFlight = inst->isIssued() && inst->translationCompleted();
+    bool inFlight = inst->isIssued() && inst->translationCompleted();  // 如果指令已经发射，并且完成TLB翻译，那么就是在Cache层次中
     //Level of the cache hierachy where this request was responded to
     //e.g. 0:in l1, 1:in l2
     int depth=-1;
@@ -1946,28 +1946,28 @@ IEW::getInstDQType(const DynInstPtr &inst)
 StallReason
 IEW::checkDispatchStall(ThreadID tid, int dq_id, const DynInstPtr &dispatch_inst) {
     DynInstPtr head_inst = rob->readHeadInst(tid);
-    if (head_inst == rob->dummyInst) {
+    if (head_inst == rob->dummyInst) {      // 检查ROB 是否空
         if (dq_id != NumDQ) {  // this call is from dispatch to classify the reason why an instr cannot be dispatched
-            return dqTypeToReason(static_cast<DQType>(dq_id));
+            return dqTypeToReason(static_cast<DQType>(dq_id));  // ROB 空，那么就是Dispatch 带宽收到限制，Int/Mem/FVec
         } else {  // this call is to tell rename the stall status
             return StallReason::NoStall;
         }
     }
 
-    if (dq_id != NumDQ) {
+    if (dq_id != NumDQ) {   // 有具体调度队列
         // get dq head inst
         assert(dispQue[dq_id].size());
-        auto &dq_head = dispQue[dq_id].front();
+        auto &dq_head = dispQue[dq_id].front();     // 检查队头
         if (getInstDQType(dispatch_inst) == getInstDQType(dq_head) && !instQueue.isReady(dq_head)) {
             return dqTypeToReason(static_cast<DQType>(dq_id));
         }
 
-        if (dispatch_inst->isStore() && !ldstQueue.sqFull()) {
+        if (dispatch_inst->isStore() && !ldstQueue.sqFull()) {  // 如果调度指令是store，并且LSQ 不满，那么就是store 带宽收到限制
             // store cannot be dispatched while sq is not full
             return StallReason::MemDQBandwidth;
         }
         if (dispatch_inst->isLoad() && !(ldstQueue.lqFull() || rob->isFull() || instQueue.isFull(dispatch_inst))) {
-            return StallReason::MemDQBandwidth;
+            return StallReason::MemDQBandwidth; // 如果调度指令是load，并且LSQ 不满，ROB 不满，IQ 不满，那么就是load 带宽收到限制
         }
         if (dispatch_inst->isAtCommit() && !(ldstQueue.lqFull() || ldstQueue.sqFull())) {
             return StallReason::MemDQBandwidth;
@@ -1979,19 +1979,19 @@ IEW::checkDispatchStall(ThreadID tid, int dq_id, const DynInstPtr &dispatch_inst
         }
 
         if (dispatch_inst->isInteger() && !(rob->isFull() || instQueue.isFull(dispatch_inst))) {
-            return StallReason::IntDQBandwidth;
+            return StallReason::IntDQBandwidth; // 如果调度指令是integer，并且ROB 不满，IQ 不满，那么就是integer 带宽收到限制
         }
     }
 
     assert(head_inst);
 
-    if (head_inst->readyTick == -1) {
+    if (head_inst->readyTick == -1) {   // rob 头部指令没准备好，执行完但不能提交
         DPRINTF(Counters, "IEW: [tid:%i] [sn:%llu] "
                 "Dispatch: Instruction not ready. nonSpeculative:%d\n",
                 tid, head_inst->seqNum, head_inst->isNonSpeculative());
-        if (head_inst->isNonSpeculative()) {
+        if (head_inst->isNonSpeculative()) {    // 如果头部指令是非speculative，那么就是serialize 停顿
             return StallReason::SerializeStall;
-        } else if (head_inst->isLoad() && ldstQueue.lqFull(tid)) {
+        } else if (head_inst->isLoad() && ldstQueue.lqFull(tid)) {  // 对于load/store/原子指令，检查ldStQueue
             return checkLSQStall(tid, true);
         } else if ((head_inst->isStore() || head_inst->isAtomic()) && ldstQueue.sqFull(tid)) {
             return checkLSQStall(tid, false);
@@ -2003,11 +2003,11 @@ IEW::checkDispatchStall(ThreadID tid, int dq_id, const DynInstPtr &dispatch_inst
     if (head_inst->isLoad() || head_inst->isStore() || head_inst->isAtomic()) {
         return checkLoadStoreInst(head_inst);
     } else {
-        if (head_inst->firstIssue != -1) {
+        if (head_inst->firstIssue != -1) {  // 如果头部指令已经发射
             if (head_inst->isVector()) {
-                return StallReason::VectorLongExecute;
+                return StallReason::VectorLongExecute;  // 如果头部指令是vector，那么就是vector 停顿
             } else {
-                return StallReason::ScalarLongExecute;
+                return StallReason::ScalarLongExecute;  // 如果头部指令是scalar，那么就是scalar 停顿
             }
         } else {
             if (head_inst->isVector()) {
@@ -2025,7 +2025,7 @@ StallReason
 IEW::checkLSQStall(ThreadID tid, bool isLoad)
 {
     DynInstPtr head_inst = ldstQueue.getLSQHeadInst(tid, isLoad);
-    return checkLoadStoreInst(head_inst);
+    return checkLoadStoreInst(head_inst);  // 检查ldStQueue队头指令
 }
 
 void

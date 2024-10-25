@@ -1872,7 +1872,7 @@ Fetch::fetch(bool &status_change)
             } else if (stall  != StallReason::NoStall) {
                 stallReason[i] = stall;
             } else if (stalls[tid].decode && fetchQueue[tid].size() >= fetchQueueSize) {
-                stallReason[i] = fromDecode->decodeInfo[tid].blockReason;
+                stallReason[i] = fromDecode->decodeInfo[tid].blockReason;   // 从decode中获取stall原因
             } else {
                 stallReason[i] = StallReason::OtherFetchStall;
             }

@@ -72,8 +72,8 @@ enum StallReason {
     SquashStall,  // BS
     FetchBufferInvalid,  // Never used
     InstMisPred,  // BS
-    InstSquashed,  // BS
-    SerializeStall,  // F
+    InstSquashed,  // BS, 和SquashStall的区别是，SquashStall是squash的普通inst，InstSquashed是mispredict的inst？
+    SerializeStall,  // F， 序列化导致的stall，序列化
     ScalarLongExecute,  // B
     VectorLongExecute,  // B
     InstNotReady,  // B
@@ -81,16 +81,16 @@ enum StallReason {
     LoadL1Bound,
     LoadL2Bound,
     LoadL3Bound,
-    LoadMemBound,
+    LoadMemBound,   // load
     StoreL1Bound,
     StoreL2Bound,
     StoreL3Bound,
-    StoreMemBound,
+    StoreMemBound,  // store
     MemSquashed,  // maybe never used
     MemNotReady,
-    MemCommitRateLimit,
+    MemCommitRateLimit, // high
     Atomic,
-    OtherMemStall,  // B
+    OtherMemStall,  // B, not used
 
     MemDQBandwidth,
     IntDQBandwidth,
@@ -113,7 +113,7 @@ struct FetchStruct
     Fault fetchFault;
     InstSeqNum fetchFaultSN;
     bool clearFetchFault;
-    std::vector<StallReason> fetchStallReason;
+    std::vector<StallReason> fetchStallReason;  // 宽度为fetchWidth
 };
 
 /** Struct that defines the information passed from decode to rename. */

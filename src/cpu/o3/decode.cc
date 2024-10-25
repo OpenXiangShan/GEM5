@@ -671,7 +671,7 @@ Decode::decodeInsts(ThreadID tid)
 
     StallReason breakDecode = StallReason::NoStall;
 
-    if (insts_available == 0) {
+    if (insts_available == 0) {     // 当前拍fetch 没有传递指令过来，所以全盘接受fetchStallReason
         DPRINTF(Decode, "[tid:%i] Nothing to do, breaking out"
                 " early.\n",tid);
         // Should I change the status to idle?
@@ -680,7 +680,7 @@ Decode::decodeInsts(ThreadID tid)
         StallReason stall = StallReason::NoStall;
         for (auto iter : fromFetch->fetchStallReason) {
             if (iter != StallReason::NoStall) {
-                stall = iter;
+                stall = iter;       // 找到第一个stall原因
                 break;
             }
         }
@@ -741,7 +741,7 @@ Decode::decodeInsts(ThreadID tid)
 
             --insts_available;
 
-            decode_stalls.push(StallReason::InstSquashed);  // 指令被squash
+            decode_stalls.push(StallReason::InstSquashed);
 
             continue;
         }
@@ -823,7 +823,7 @@ Decode::decodeInsts(ThreadID tid)
                 // a check at the end
                 squash(inst, inst->threadNumber);
 
-                decode_stalls.push(StallReason::InstMisPred);
+                decode_stalls.push(StallReason::InstMisPred);   // 条件分支预测错误，flush
                 breakDecode = StallReason::InstMisPred;
 
                 DPRINTF(Decode,
@@ -838,7 +838,7 @@ Decode::decodeInsts(ThreadID tid)
         // unpredicted return can make use of ras results to get earlier resteer
         if (inst->isReturn() && !inst->isNonSpeculative() && !inst->readPredTaken()) {
             ++stats.branchMispred;
-            decode_stalls.push(StallReason::InstMisPred);
+            decode_stalls.push(StallReason::InstMisPred);   // return预测错误，flush
             breakDecode = StallReason::InstMisPred;
             // return target cannot be computed in decode stage since it is an indirect branch
             // need to inquire bpu to get the target
