@@ -1,5 +1,6 @@
 #include "cpu/o3/issue_queue.hh"
 
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
@@ -174,13 +175,13 @@ IssueQue::resetDepGraph(int numPhysRegs)
 void
 IssueQue::checkScoreboard(const DynInstPtr& inst)
 {
-    for (int i = 0; i < inst->numSrcRegs(); i++) {
-        auto src = inst->renamedSrcIdx(i);
-        if (src->isFixedMapping()) [[unlikely]] {
+    for (int i = 0; i < inst->numSrcRegs(); i++) {      // 遍历src寄存器
+        auto src = inst->renamedSrcIdx(i);  // 获取重命名后的src寄存器
+        if (src->isFixedMapping()) [[unlikely]] {  // 如果寄存器是固定的（0号寄存器），则跳过
             continue;
         }
         // check bypass data ready or not
-        if (!scheduler->bypassScoreboard[src->flatIndex()]) [[unlikely]] {
+        if (!scheduler->bypassScoreboard[src->flatIndex()]) [[unlikely]] {  // 如果bypass scoreboard中没有数据，则panic
             auto dst_inst = scheduler->getInstByDstReg(src->flatIndex());
             panic("[sn %lu] %s can't get data from bypassNetwork, dst inst: %s\n", inst->seqNum, inst->srcRegIdx(i),
                   dst_inst->genDisassembly());
@@ -217,8 +218,8 @@ IssueQue::issueToFu()
             readyQclassify[inst->opClass()]->push(inst);  // retry
             continue;
         }
-        checkScoreboard(inst);
-        addToFu(inst);
+        checkScoreboard(inst);  // 检查scoreboard
+        addToFu(inst);  // 发射到FU中
         if (!opPipelined[inst->opClass()]) [[unlikely]] {
             // set fu busy
             portBusy[inst->issueportid] = scheduler->getOpLatency(inst) - 1;
@@ -259,20 +260,20 @@ IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
 
         DPRINTF(Schedule, "was %s woken by p%lu [sn %lu]\n", speculative ? "spec" : "wb", dst->flatIndex(),
                 inst->seqNum);
-        for (auto& it : subDepGraph[dst->flatIndex()]) {
+        for (auto& it : subDepGraph[dst->flatIndex()]) {  // 遍历依赖指令
             int srcIdx = it.first;
             auto& consumer = it.second;
-            if (consumer->readySrcIdx(srcIdx)) {
+            if (consumer->readySrcIdx(srcIdx)) {  // 如果依赖指令的src寄存器已经就绪，则跳过
                 continue;
             }
-            consumer->markSrcRegReady(srcIdx);
+            consumer->markSrcRegReady(srcIdx);  // 标记依赖指令的src寄存器就绪
 
             if (!speculative && consumer->srcRegIdx(srcIdx) == RiscvISA::VecRenamedVLReg) [[unlikely]] {
                 consumer->checkOldVdElim();
             }
 
             DPRINTF(Schedule, "[sn %lu] src%d was woken\n", consumer->seqNum, srcIdx);
-            addIfReady(consumer);
+            addIfReady(consumer);  // 将依赖指令添加到readyInstsQue中
         }
 
         if (!speculative) {
@@ -303,7 +304,7 @@ IssueQue::addIfReady(const DynInstPtr& inst)
         DPRINTF(Schedule, "[sn %lu] add to readyInstsQue\n", inst->seqNum);
         inst->clearCancel();
         if (!inst->inReadyQ()) {
-            inst->setInReadyQ();
+            inst->setInReadyQ();  // 标记指令在readyInstsQue中
             readyQclassify[inst->opClass()]->push(inst);
         }
     }
@@ -314,7 +315,7 @@ IssueQue::selectInst()
 {
     selectQ.clear();
     for (int pi = 0; pi < outports; pi++) {
-        auto readyQ = readyQs[pi];
+        auto readyQ = readyQs[pi];  // readyQueue
         while (!readyQ->empty()) {
             auto top = readyQ->top();
             if (!top->canceled()) {
@@ -379,8 +380,8 @@ IssueQue::tick()
         t = t > 0 ? t - 1 : t;
     }
 
-    scheduleInst();
-    inflightIssues.advance();
+    scheduleInst();     // 调度指令
+    inflightIssues.advance();  // 时间戳前进
 }
 
 bool
@@ -647,14 +648,14 @@ void
 Scheduler::issueAndSelect()
 {
     for (auto it : issueQues) {
-        it->issueToFu();
+        it->issueToFu();    // 发射到FU中
     }
     // must wait for all insts was issued
     for (auto it : issueQues) {
-        it->selectInst();
+        it->selectInst();   // 选择IQ中ready指令
     }
-    // inst arbitration
-    while (intSlotOccupied > intSlotNum) {
+    // inst arbitration  指令仲裁
+    while (intSlotOccupied > intSlotNum) {  // 超过IQ大小了
         auto& slot = intSlot.top();
         slot.inst->setArbFailed();
         intSlotOccupied -= slot.resourceDemand;
@@ -760,7 +761,7 @@ Scheduler::insert(const DynInstPtr& inst)
 void
 Scheduler::insertNonSpec(const DynInstPtr& inst)
 {
-    inst->setInIQ();
+    inst->setInIQ();  // 设置指令为IQ 中的entry
     auto& iqs = dispTable[inst->opClass()];
 
     for (auto iq : iqs) {
@@ -903,10 +904,10 @@ Scheduler::writebackWakeup(const DynInstPtr& inst)
         if (dst->isFixedMapping()) {
             continue;
         }
-        scoreboard[dst->flatIndex()] = true;
+        scoreboard[dst->flatIndex()] = true;  // 标记目的寄存器就绪
     }
     for (auto it : issueQues) {
-        it->wakeUpDependents(inst, false);
+        it->wakeUpDependents(inst, false);  // 唤醒依赖指令
     }
 }
 

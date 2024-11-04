@@ -65,14 +65,14 @@ class IssueQue : public SimObject
     friend class Scheduler;
 
     std::string _name;
-    const int inports;
-    const int outports;
-    const int iqsize;
-    const int scheduleToExecDelay;
-    const std::string iqname;
-    std::vector<FUDesc *> fuDescs;
-    std::vector<bool> opPipelined;
-    int IQID = -1;
+    const int inports;  // 输入端口数
+    const int outports; // 输出端口数
+    const int iqsize;   // IQ 大小
+    const int scheduleToExecDelay;  // 调度到执行的延迟
+    const std::string iqname;  // IQ 名称
+    std::vector<FUDesc *> fuDescs;  // 功能单元描述
+    std::vector<bool> opPipelined;  // 是否流水线化
+    int IQID = -1;  // IQ 编号
 
     struct select_policy
     {
@@ -84,15 +84,15 @@ class IssueQue : public SimObject
     struct IssueStream
     {
         int size;
-        DynInstPtr insts[8];
+        DynInstPtr insts[8];  // 8宽度指令
         void push(const DynInstPtr& inst);
         DynInstPtr pop();
     };
 
-    std::vector<DynInstPtr> skidBuffer;
-    TimeBuffer<IssueStream> inflightIssues;
-    TimeBuffer<IssueStream>::wire toIssue;
-    TimeBuffer<IssueStream>::wire toFu;
+    std::vector<DynInstPtr> skidBuffer;  // 缓冲区
+    TimeBuffer<IssueStream> inflightIssues;  // 正在issue的指令
+    TimeBuffer<IssueStream>::wire toIssue;  // 调度到执行的指令
+    TimeBuffer<IssueStream>::wire toFu;  // 到FU的指令
 
     std::list<DynInstPtr> instList;
     uint64_t instNumInsert = 0;
@@ -196,16 +196,16 @@ class Scheduler : public SimObject
     {
         bool operator()(IssueQue* a, IssueQue* b) const;
     };
-    using DispPolicy = std::vector<IssueQue*>;
+    using DispPolicy = std::vector<IssueQue*>;  // 调度表，每个opclass 对应一个IQ
 
     std::vector<int> opExecTimeTable;
     std::vector<bool> opPipelined;
-    std::vector<DispPolicy> dispTable;
-    std::vector<IssueQue*> issueQues;
-    std::vector<std::vector<IssueQue*>> wakeMatrix;
+    std::vector<DispPolicy> dispTable;  // 调度表，每个opclass 对应一个IQ
+    std::vector<IssueQue*> issueQues;  // 调度器中所有IQ
+    std::vector<std::vector<IssueQue*>> wakeMatrix;  // 唤醒矩阵，每个IQ 对应一个唤醒矩阵
     uint32_t combinedFus;
 
-    std::vector<DynInstPtr> instsToFu;
+    std::vector<DynInstPtr> instsToFu;  // 已经发射到Fu的指令
 
     std::vector<bool> earlyScoreboard;
     std::vector<bool> bypassScoreboard;
@@ -229,7 +229,7 @@ class Scheduler : public SimObject
     uint32_t intSlotOccupied = 0;
     uint32_t fpSlotOccupied = 0;
     // interger slot
-    SlotQue intSlot;
+    SlotQue intSlot;  // Int 槽位，和Issue Queue区别？
     // floating point slot
     SlotQue fpSlot;
 

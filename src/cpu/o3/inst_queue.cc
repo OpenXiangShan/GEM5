@@ -412,7 +412,7 @@ InstructionQueue::takeOverFrom()
 bool
 InstructionQueue::isReady(const DynInstPtr& inst)
 {
-    return scheduler->ready(inst);
+    return scheduler->ready(inst);  // 检查指令是否准备好发射
 }
 
 bool
@@ -463,7 +463,7 @@ InstructionQueue::insertNonSpec(const DynInstPtr &new_inst)
 
     assert(new_inst);
 
-    scheduler->insertNonSpec(new_inst);
+    scheduler->insertNonSpec(new_inst);  // 将非speculative 指令插入到IQ中
     nonSpecInsts[new_inst->seqNum] = new_inst;
 
     DPRINTF(Schedule, "nonSpecInsts size: %lu\n", nonSpecInsts.size());
@@ -655,7 +655,7 @@ InstructionQueue::scheduleReadyInsts()
     // FUs that handle it.
     int total_issued = 0;
     DynInstPtr issued_inst;
-    while ((issued_inst = scheduler->getInstToFU())) {
+    while ((issued_inst = scheduler->getInstToFU())) {  // 从调度器中获取instsToFu指令
 
         if (issued_inst->isFloating()) {
             iqIOStats.fpInstQueueReads++;
@@ -678,18 +678,18 @@ InstructionQueue::scheduleReadyInsts()
             iqIOStats.intAluAccesses++;
         }
 
-        uint32_t op_latency = scheduler->getOpLatency(issued_inst);
-        execLatencyCheck(issued_inst, op_latency);
+        uint32_t op_latency = scheduler->getOpLatency(issued_inst);  // 获取指令的执行延迟
+        execLatencyCheck(issued_inst, op_latency);  // 检查指令的执行延迟
         assert(op_latency < 64);
         DPRINTF(Schedule, "[sn %lu] start execute %u cycles\n", issued_inst->seqNum, op_latency);
         if (op_latency <= 1) {
             i2e_info->size++;
-            instsToExecute.push_back(issued_inst);
+            instsToExecute.push_back(issued_inst);  // 添加到instsToExecute中
         }
         else {
             ++wbOutstanding;
             FUCompletion *execution = new FUCompletion(issued_inst, 0, this);
-            cpu->schedule(execution, cpu->clockEdge(Cycles(op_latency - 1))-1);
+            cpu->schedule(execution, cpu->clockEdge(Cycles(op_latency - 1))-1);  // 调度指令，在op_latency-1个周期后执行
         }
         ++total_issued;
 #if TRACING_ON

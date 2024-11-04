@@ -216,7 +216,7 @@ ROB::insertInst(const DynInstPtr &inst)
 
     ThreadID tid = inst->threadNumber;
 
-    instList[tid].push_back(inst);
+    instList[tid].push_back(inst);  // 将指令插入到ROB中
 
     //Set Up head iterator if this is the 1st instruction in the ROB
     if (numInstsInROB == 0) {
@@ -353,7 +353,7 @@ ROB::doSquash(ThreadID tid)
          squashIt[tid] != instList[tid].end() &&
          (*squashIt[tid])->seqNum > squashedSeqNum[tid];
          ++numSquashed)
-    {
+    { // 每拍小于num_insts_to_squash数目，直到squashedSeqNum，从后向前squash
         DPRINTF(ROB, "[tid:%i] Squashing instruction PC %s, seq num %i.\n",
                 (*squashIt[tid])->threadNumber,
                 (*squashIt[tid])->pcState(),
@@ -396,7 +396,7 @@ ROB::doSquash(ThreadID tid)
 
         instList[tid].erase(squashIt[tid]);
 
-        squashIt[tid] = prevIt;
+        squashIt[tid] = prevIt;     // 向前移动
     }
 
 
@@ -514,14 +514,14 @@ ROB::squash(InstSeqNum squash_num, ThreadID tid)
     squashedSeqNum[tid] = squash_num;
 
     // TODO: find the number of instructions to squash and
-    // the number of uncommited instructions
+    // the number of uncommited instructions 查找要冲刷指令和未提交指令
     unsigned total_inst_to_squash = 0;
     for (auto it = instList[tid].begin(); it != instList[tid].end(); ++it) {
         if ((*it)->seqNum > squash_num) {
-            total_inst_to_squash++;
+            total_inst_to_squash++;     // ROB中年龄大于squash_num的都要冲刷
         }
     }
-    unsigned num_uncommited_inst = instList[tid].size() - total_inst_to_squash;
+    unsigned num_uncommited_inst = instList[tid].size() - total_inst_to_squash; // ROB_size - 冲刷的 = 未提交的
 
     dynSquashWidth = computeDynSquashWidth(num_uncommited_inst, total_inst_to_squash);
 
@@ -531,7 +531,7 @@ ROB::squash(InstSeqNum squash_num, ThreadID tid)
 
         squashIt[tid] = tail_thread;
 
-        doSquash(tid);
+        doSquash(tid);  // 执行squash
     }
 }
 

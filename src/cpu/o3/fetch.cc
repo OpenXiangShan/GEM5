@@ -950,7 +950,7 @@ Fetch::doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst, const In
     DPRINTF(Fetch, "[tid:%i] Squashing, setting PC to: %s.\n",
             tid, new_pc);
 
-    // restore vtype
+    // restore vtype  恢复向量配置寄存器vtype
     uint8_t restored_vtype = cpu->readMiscReg(RiscvISA::MISCREG_VTYPE, tid);
     for (auto& it : cpu->instList) {
         if (!it->isSquashed() &&
@@ -964,15 +964,15 @@ Fetch::doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst, const In
     }
     decoder[tid]->as<RiscvISA::Decoder>().setVtype(restored_vtype);
 
-    set(pc[tid], new_pc);
+    set(pc[tid], new_pc);  // 更新pc
     fetchOffset[tid] = 0;
     if (squashInst && squashInst->pcState().instAddr() == new_pc.instAddr())
-        macroop[tid] = squashInst->macroop;
+        macroop[tid] = squashInst->macroop;  // 更新宏操作=squashInst
     else
         macroop[tid] = NULL;
     decoder[tid]->reset();
 
-    // Clear the icache miss if it's outstanding.
+    // Clear the icache miss if it's outstanding. 清理未完成的icache请求
     if (fetchStatus[tid] == IcacheWaitResponse) {
         DPRINTF(Fetch, "[tid:%i] Squashing outstanding Icache miss.\n",
                 tid);
@@ -985,7 +985,7 @@ Fetch::doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst, const In
         anotherMemReq[tid] = NULL;
     }
 
-    // Get rid of the retrying packet if it was from this thread.
+    // Get rid of the retrying packet if it was from this thread.清理重试包
     if (retryTid == tid) {
         assert(cacheBlocked);
         if (retryPkt) {
@@ -998,7 +998,7 @@ Fetch::doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst, const In
     fetchStatus[tid] = Squashing;
     setAllFetchStalls(StallReason::BpStall); // may caused by other stages like load and store
 
-    // Empty fetch queue
+    // Empty fetch queue  清空fetch队列
     fetchQueue[tid].clear();
 
     // microops are being squashed, it is not known wheather the
@@ -1113,10 +1113,10 @@ Fetch::squash(const PCStateBase &new_pc, const InstSeqNum seq_num,
 {
     DPRINTF(Fetch, "[tid:%i] Squash from commit.\n", tid);
 
-    doSquash(new_pc, squashInst, seq_num, tid);
+    doSquash(new_pc, squashInst, seq_num, tid);  // 刷新指令(非分支错误)
 
     // Tell the CPU to remove any instructions that are not in the ROB.
-    cpu->removeInstsNotInROB(tid);
+    cpu->removeInstsNotInROB(tid);  // 移除在流水线中，不在ROB中的指令
 }
 
 void
@@ -1280,14 +1280,14 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
     }
 
     // Check squash signals from commit.
-    if (fromCommit->commitInfo[tid].squash) {
+    if (fromCommit->commitInfo[tid].squash) {   //有commit squash信号
 
         DPRINTF(Fetch, "[tid:%i] Squashing instructions due to squash "
                 "from commit.\n",tid);
         // In any case, squash.
         squash(*fromCommit->commitInfo[tid].pc,
                fromCommit->commitInfo[tid].doneSeqNum,
-               fromCommit->commitInfo[tid].squashInst, tid);
+               fromCommit->commitInfo[tid].squashInst, tid);  // 刷新指令(非分支错误)
 
         localSquashVer.update(fromCommit->commitInfo[tid].squashVersion.getVersion());
         DPRINTF(Fetch, "Updating squash version to %u\n",
@@ -1296,6 +1296,7 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
         // If it was a branch mispredict on a control instruction, update the
         // branch predictor with that instruction, otherwise just kill the
         // invalid state we generated in after sequence number
+        // 如果这是分支错误，则更新分支预测，否则直接刷新seq num之后的指令
         if (!isDecoupledFrontend()) {
             if (fromCommit->commitInfo[tid].mispredictInst &&
                 fromCommit->commitInfo[tid].mispredictInst->isControl()) {
@@ -1805,8 +1806,8 @@ Fetch::fetch(bool &status_change)
 #if TRACING_ON
             if (debug::O3PipeView) {
                 instruction->fetchTick = curTick();
-                DPRINTF(O3PipeView, "Record fetch for inst sn:%lu\n",
-                        instruction->seqNum);
+                // DPRINTF(O3PipeView, "Record fetch for inst sn:%lu\n",
+                //         instruction->seqNum);
             }
 #endif
 

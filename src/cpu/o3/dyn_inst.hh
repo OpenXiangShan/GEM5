@@ -403,7 +403,7 @@ class DynInst : public ExecContext, public RefCounted
     // Need a copy of main request pointer to verify on writes.
     RequestPtr reqToVerify;
 
-    IssueQue* issueQue = nullptr;
+    IssueQue* issueQue = nullptr;   // 这条指令所在的IssueQueue
     int issueportid = -1;
 
   public:

@@ -297,7 +297,7 @@ class ROB
 
     unsigned replayWidth{6};
 
-    unsigned dynSquashWidth{6};
+    unsigned dynSquashWidth{6};   // 一个数，初始化为6，表示冲刷宽度
 
     unsigned constSquashCycle{1};
 
@@ -324,7 +324,7 @@ class ROB
      *  immediately removed, meaning the tail iterator remains the same before
      *  and after a squash.
      *  This will always be set to cpu->instList.end() if it is invalid.
-     */
+     */ // squash时候指向指令的迭代器
     InstIt squashIt[MaxThreads];
 
   public:

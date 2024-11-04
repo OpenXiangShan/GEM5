@@ -1306,7 +1306,7 @@ CPU::removeInstsNotInROB(ThreadID tid)
     if (instList.empty()) {
         return;
     } else if (rob.isEmpty(tid)) {
-        DPRINTF(O3CPU, "ROB is empty, squashing all insts.\n");
+        DPRINTF(O3CPU, "ROB is empty, squashing all insts.\n"); // ROB为空，刷新所有instList指令
         end_it = instList.begin();
         rob_empty = true;
     } else {

@@ -569,7 +569,7 @@ IEW::squashDueToBranch(const DynInstPtr& inst, ThreadID tid)
         set(execWB->pc[tid], inst->pcState());
         inst->staticInst->advancePC(*execWB->pc[tid]);
 
-        execWB->mispredictInst[tid] = inst;
+        execWB->mispredictInst[tid] = inst;  // 分支预测错误指令来自IEW
         execWB->includeSquashInst[tid] = false;
 
         wroteToTimeBuffer = true;
@@ -649,7 +649,7 @@ IEW::unblock(ThreadID tid)
             "buffer %u.\n",tid, tid);
 
     // If the skid bufffer is empty, signal back to previous stages to unblock.
-    // Also switch status to running.
+    // Also switch status to running. 如果skid buffer 为空，通知rename 解阻塞，并设置调度状态为运行
     if (skidBuffer[tid].empty()) {
         toRename->iewUnblock[tid] = true;
         wroteToTimeBuffer = true;
@@ -701,6 +701,13 @@ IEW::instToCommit(const DynInstPtr& inst)
     // and write the instruction to that time.  If there are not,
     // keep looking back to see where's the first time there's a
     // free slot.
+
+#if TRACING_ON
+    if (debug::O3PipeView) {
+        inst->completeTick = curTick() - inst->fetchTick;
+    }
+#endif
+
     while ((*iewQueue)[wbCycle].insts[wbNumInst]) {
         ++wbNumInst;
         if (wbNumInst == wbWidth) {
@@ -715,7 +722,7 @@ IEW::instToCommit(const DynInstPtr& inst)
     DPRINTF(IEW, "Current wb cycle: %i, width: %i, numInst: %i\nwbActual:%i\n",
             wbCycle, wbWidth, wbNumInst, wbCycle * wbWidth + wbNumInst);
     // Add finished instruction to queue to commit.
-    (*iewQueue)[wbCycle].insts[wbNumInst] = inst;
+    (*iewQueue)[wbCycle].insts[wbNumInst] = inst;   // 将commit的指令添加到iewQueue中
     (*iewQueue)[wbCycle].size++;
 }
 
@@ -819,7 +826,7 @@ IEW::checkStall(ThreadID tid)
 {
     bool ret_val(false);
 
-    if (fromCommit->commitInfo[tid].robSquashing) {
+    if (fromCommit->commitInfo[tid].robSquashing) {  // 收到commit 的robSquashing 信号
         DPRINTF(IEW,"[tid:%i] Stall from Commit stage detected.\n",tid);
         ret_val = true;
         blockReason = StallReason::CommitSquash;
@@ -838,61 +845,61 @@ IEW::checkSignalsAndUpdate(ThreadID tid)
     // If status was Squashing
     //     check if squashing is not high.  Switch to running this cycle.
 
-    if (fromCommit->commitInfo[tid].squash) {
-        squash(tid);
+    if (fromCommit->commitInfo[tid].squash) {   // 收到commit 的squash 信号
+        squash(tid);    // 调用squash 函数
         localSquashVer.update(fromCommit->commitInfo[tid].squashVersion.getVersion());
         DPRINTF(IEW, "Updating squash version to %u\n",
                 localSquashVer.getVersion());
 
         if (dispatchStatus[tid] == Blocked ||
-            dispatchStatus[tid] == Unblocking) {
-            toRename->iewUnblock[tid] = true;
+            dispatchStatus[tid] == Unblocking) {  // 如果调度状态是阻塞或者解阻塞
+            toRename->iewUnblock[tid] = true;   // 通知rename 解阻塞
             wroteToTimeBuffer = true;
         }
 
-        dispatchStatus[tid] = Squashing;
+        dispatchStatus[tid] = Squashing;    // 调度状态设置为squashing
         fetchRedirect[tid] = false;
         iewStats.stallEvents[ROBWalk]++;
         setAllStalls(StallReason::CommitSquash);
         return;
     }
 
-    if (fromCommit->commitInfo[tid].robSquashing) {
+    if (fromCommit->commitInfo[tid].robSquashing) {  // 收到commit 的robSquashing 信号
         DPRINTF(IEW, "[tid:%i] ROB is still squashing.\n", tid);
 
-        dispatchStatus[tid] = Squashing;
-        emptyRenameInsts(tid);
+        dispatchStatus[tid] = Squashing;    // 调度状态设置为squashing
+        emptyRenameInsts(tid);    // 清空rename 的insts
         wroteToTimeBuffer = true;
         iewStats.stallEvents[ROBWalk]++;
         setAllStalls(StallReason::CommitSquash);
     }
 
-    if (checkStall(tid)) {
-        block(tid);
-        dispatchStatus[tid] = Blocked;
+    if (checkStall(tid)) {  // 检查stall 条件
+        block(tid);    // 调用block 函数
+        dispatchStatus[tid] = Blocked;  // 调度状态设置为阻塞
         return;
     }
 
-    if (dispatchStatus[tid] == Blocked) {
+    if (dispatchStatus[tid] == Blocked) {  // 调度状态是阻塞， 更新状态机
         // Status from previous cycle was blocked, but there are no more stall
         // conditions.  Switch over to unblocking.
         DPRINTF(IEW, "[tid:%i] Done blocking, switching to unblocking.\n",
                 tid);
 
-        dispatchStatus[tid] = Unblocking;
+        dispatchStatus[tid] = Unblocking;    // 调度状态设置为解阻塞
 
-        unblock(tid);
+        unblock(tid);    // 调用unblock 函数， 可能变为running(skid buffer 为空)
 
         return;
     }
 
-    if (dispatchStatus[tid] == Squashing) {
+    if (dispatchStatus[tid] == Squashing) {  // 调度状态是squashing
         // Switch status to running if rename isn't being told to block or
         // squash this cycle.
         DPRINTF(IEW, "[tid:%i] Done squashing, switching to running.\n",
                 tid);
 
-        dispatchStatus[tid] = Running;
+        dispatchStatus[tid] = Running;    // 调度状态设置为运行
 
         return;
     }
@@ -966,12 +973,13 @@ IEW::deactivateStage()
 void
 IEW::dispatch(ThreadID tid)
 {
-    // If status is Running or idle,
+    // 如果调度状态是运行或者空闲，
     //     call dispatchInsts()
-    // If status is Unblocking,
+    // 如果调度状态是解阻塞，
     //     buffer any instructions coming from rename
     //     continue trying to empty skid buffer
     //     check if stall conditions have passed
+    // 从rename来的指令buffer到skid buffer中
 
     if (dispatchStatus[tid] == Blocked) {
         ++iewStats.blockCycles;
@@ -983,7 +991,7 @@ IEW::dispatch(ThreadID tid)
     }
 
     // Dispatch should try to dispatch as many instructions as its bandwidth
-    // will allow, as long as it is not currently blocked.
+    // will allow, as long as it is not currently blocked. 尽可能dispatch更多指令，只要调度状态不是阻塞
     if (dispatchStatus[tid] == Running ||
         dispatchStatus[tid] == Idle) {
         DPRINTF(IEW, "[tid:%i] Not blocked, so attempting to run "
@@ -1015,8 +1023,8 @@ IEW::dispatch(ThreadID tid)
 void
 IEW::dispatchInsts(ThreadID tid)
 {
-    dispatchInstFromDispQue(tid);
-    classifyInstToDispQue(tid);
+    dispatchInstFromDispQue(tid);   // 从dispQue 中发射指令到IQ中
+    classifyInstToDispQue(tid);    // 分类insts指令到dispQue 中
 }
 
 void
@@ -1030,11 +1038,11 @@ IEW::classifyInstToDispQue(ThreadID tid)
             return FVDQ;
         }
         return IntDQ;
-    };
+    };  // 分类指令到dispQue 中：MemDQ, FVDQ, IntDQ
 
     std::deque<DynInstPtr> &insts_to_dispatch =
         dispatchStatus[tid] == Unblocking ?
-        skidBuffer[tid] : insts[tid];
+        skidBuffer[tid] : insts[tid];  // 如果调度状态是解阻塞，则从skid buffer 中获取指令，否则从insts 中获取指令
 
     bool emptyROB = fromCommit->commitInfo[tid].emptyROB;
 
@@ -1048,32 +1056,32 @@ IEW::classifyInstToDispQue(ThreadID tid)
         if (cpu->hasHintDownStream() && ins % 10000 == 1) {
             cpu->hintDownStream->notifyIns(ins);
         }
-        int id = dispClassify(inst);
-        if (dispQue[id].size() < dqSize) {
-            if (inst->isSquashed()) {
+        int id = dispClassify(inst);  // 分类指令到dispQue 中：MemDQ, FVDQ, IntDQ
+        if (dispQue[id].size() < dqSize) {  // 如果dispQue 中指令数小于宽度，则送到dispQue 中
+            if (inst->isSquashed()) {  // 如果指令被squash，则不发射
                 ++iewStats.dispSquashedInsts;
-                //Tell Rename That An Instruction has been processed
+                //Tell Rename That An Instruction has been processed 告诉rename 指令已经被处理
                 if (inst->isLoad()) {
                     toRename->iewInfo[tid].dispatchedToLQ++;
                 }
                 if (inst->isStore() || inst->isAtomic()) {
                     toRename->iewInfo[tid].dispatchedToSQ++;
                 }
-                toRename->iewInfo[tid].dispatched++;
+                toRename->iewInfo[tid].dispatched++;  // 告诉rename 指令已经被处理
                 insts_to_dispatch.pop_front();
 
                 dispatch_stalls.push(StallReason::InstSquashed);
                 continue;
             }
 
-            if ((inst->isSerializeBefore() && !inst->isSerializeHandled()) ? !emptyROB : false) {
+            if ((inst->isSerializeBefore() && !inst->isSerializeHandled()) ? !emptyROB : false) {  // 如果指令是serialize 指令，并且没有被处理，则stall
                 dispatch_stalls.push(StallReason::SerializeStall);
                 breakDispatch = StallReason::SerializeStall;
                 blockReason = breakDispatch;
                 break;
             }
 
-            // hardware transactional memory
+            // hardware transactional memory 硬件事务性内存，cpu需要按照程序顺序跟踪事务状态
             // CPU needs to track transactional state in program order.
             const int numHtmStarts = ldstQueue.numHtmStarts(tid);
             const int numHtmStops = ldstQueue.numHtmStops(tid);
@@ -1101,25 +1109,25 @@ IEW::classifyInstToDispQue(ThreadID tid)
             }
             toRename->iewInfo[tid].dispatched++;
             ++iewStats.dispatchedInsts;
-            dispQue[id].push_back(inst);
+            dispQue[id].push_back(inst);  // 将指令送到dispQue 中
 
             if (!inst->isNop()) {
-                scheduler->addProducer(inst);
+                scheduler->addProducer(inst);  // 将指令添加到调度器中，有producer
             }
 
-            inst->enterDQTick = curTick();
+            inst->enterDQTick = curTick();  // 设置指令进入dispQue 的时间
 
-            insts_to_dispatch.pop_front();
+            insts_to_dispatch.pop_front();  // 从insts_to_dispatch 中删除头部指令
             dispatched++;
         } else {
             dispatch_stalls.push(checkDispatchStall(tid, id, inst));
-            breakDispatch = dispatch_stalls.back();
+            breakDispatch = dispatch_stalls.back();  // 获取stall 原因
             blockReason = breakDispatch;
             break;
         }
     }
 
-    if (insts_to_add == 0) {
+    if (insts_to_add == 0) {    // insts为空 & skid buffer 为空
         dispatchStalls = fromRename->renameStallReason;  // 没有要dispatch的inst，则将rename stall原因传递给dispatch stall
     } else {
         for (int i = 0; i < renameWidth; i++) {
@@ -1127,7 +1135,7 @@ IEW::classifyInstToDispQue(ThreadID tid)
                 dispatchStalls.at(i) = StallReason::NoStall;
             } else {
                 if (!dispatch_stalls.empty()) {
-                    dispatchStalls.at(i) = dispatch_stalls.front();
+                    dispatchStalls.at(i) = dispatch_stalls.front();  // 获取stall 原因
                     dispatch_stalls.pop();
                 } else if (breakDispatch != StallReason::NoStall) {
                     dispatchStalls.at(i) = breakDispatch;
@@ -1149,8 +1157,8 @@ IEW::classifyInstToDispQue(ThreadID tid)
         toRename->iewUnblock[tid] = false;
     }
 
-    if (dispatchStatus[tid] == Idle && insts_to_add) {
-        dispatchStatus[tid] = Running;
+    if (dispatchStatus[tid] == Idle && insts_to_add) {  // 如果调度状态是空闲，并且有要dispatch的指令
+        dispatchStatus[tid] = Running;  // 设置调度状态为运行
         updatedQueues = true;
     }
 }
@@ -1164,11 +1172,11 @@ IEW::dispatchInstFromDispQue(ThreadID tid)
 
     for (int i = 0; i < NumDQ; i++) {
         int dispatched = 0;
-        while (!dispQue[i].empty() && dispatched < dispWidth) {
-            inst = dispQue[i].front();
+        while (!dispQue[i].empty() && dispatched < dispWidth) {  // 只要dispQue 不为空，并且dispatch 的指令数小于宽度，则继续dispatch
+            inst = dispQue[i].front();  // 获取dispQue 中的头部指令
 
             // Check for squashed instructions.
-            if (inst->isSquashed()) {
+            if (inst->isSquashed()) {  // 如果指令被squash，则不添加到IQ中
                 DPRINTF(IEW, "[tid:%i] Dispatch: Squashed instruction encountered, "
                         "not adding to IQ.\n", tid);
 
@@ -1177,7 +1185,7 @@ IEW::dispatchInstFromDispQue(ThreadID tid)
             }
 
             // Check for ready conditions.(ready: !full && !bwFull )
-            if (!instQueue.isReady(inst)) {
+            if (!instQueue.isReady(inst)) {  // 如果IQ 或者LSQ 满了，则stall, 指令无法发射
                 DPRINTF(IEW, "[tid:%i] Dispatch: IQ is full or bwFull.\n", tid);
 
                 iewStats.stallEvents[IQFull]++;
@@ -1188,7 +1196,7 @@ IEW::dispatchInstFromDispQue(ThreadID tid)
             // Check LSQ if inst is LD/ST
             if ((inst->isAtomic() && ldstQueue.sqFull(tid)) ||
                 (inst->isLoad() && ldstQueue.lqFull(tid)) ||
-                (inst->isStore() && ldstQueue.sqFull(tid))) {
+                (inst->isStore() && ldstQueue.sqFull(tid))) {  // 如果LSQ 满了，则stall, 指令无法发射
                 DPRINTF(IEW, "[tid:%i] Dispatch: %s has become full.\n",tid,
                         inst->isLoad() ? "LQ" : "SQ");
 
@@ -1203,13 +1211,13 @@ IEW::dispatchInstFromDispQue(ThreadID tid)
                 DPRINTF(IEW, "[tid:%i] Dispatch: Memory instruction "
                         "encountered, adding to LSQ.\n", tid);
 
-                ldstQueue.insertStore(inst);
+                ldstQueue.insertStore(inst);  // 将store 指令插入到LSQ中
 
                 // AMOs need to be set as "canCommit()"
                 // so that commit can process them when they reach the
                 // head of commit.
                 inst->setCanCommit();
-                instQueue.insertNonSpec(inst);
+                instQueue.insertNonSpec(inst);  // 将非speculative 指令插入到IQ中,实际上是插入到scheduler的IQ中
                 add_to_iq = false;
             } else if (inst->isLoad()) {
                 DPRINTF(IEW, "[tid:%i] Dispatch: Memory instruction "
@@ -1217,7 +1225,7 @@ IEW::dispatchInstFromDispQue(ThreadID tid)
 
                 // Reserve a spot in the load store queue for this
                 // memory access.
-                ldstQueue.insertLoad(inst);
+                ldstQueue.insertLoad(inst);  // 将load 指令插入到LSQ中
 
                 add_to_iq = true;
 
@@ -1225,7 +1233,7 @@ IEW::dispatchInstFromDispQue(ThreadID tid)
                 DPRINTF(IEW, "[tid:%i] Dispatch: Memory instruction "
                         "encountered, adding to LSQ.\n", tid);
 
-                ldstQueue.insertStore(inst);
+                ldstQueue.insertStore(inst);  // 将store 指令插入到LSQ中
 
                 if (inst->isStoreConditional()) {
                     // Store conditionals need to be set as "canCommit()"
@@ -1247,10 +1255,10 @@ IEW::dispatchInstFromDispQue(ThreadID tid)
             } else if (inst->isNop()) {
                 DPRINTF(IEW, "[tid:%i] Dispatch: Nop instruction encountered, "
                         "skipping.\n", tid);
-
+                // nop 指令设置为issued, executed, canCommit
                 inst->setIssued();
                 inst->setExecuted();
-                inst->setCanCommit();
+                inst->setCanCommit(); 
 
                 iewStats.executedInstStats.numNop[tid]++;
 
@@ -1260,7 +1268,7 @@ IEW::dispatchInstFromDispQue(ThreadID tid)
                 add_to_iq = true;
             }
 
-            if (add_to_iq && inst->isNonSpeculative()) {
+            if (add_to_iq && inst->isNonSpeculative()) {  // 如果指令是非speculative，则设置canCommit，并插入到IQ中
                 DPRINTF(IEW, "[tid:%i] Dispatch: Nonspeculative instruction "
                         "encountered, skipping.\n", tid);
 
@@ -1268,7 +1276,7 @@ IEW::dispatchInstFromDispQue(ThreadID tid)
                 inst->setCanCommit();
 
                 // Specifically insert it as nonspeculative.
-                instQueue.insertNonSpec(inst);
+                instQueue.insertNonSpec(inst);  // 将非speculative 指令插入到IQ中
 
                 add_to_iq = false;
             }
@@ -1276,7 +1284,7 @@ IEW::dispatchInstFromDispQue(ThreadID tid)
             // If the instruction queue is not full, then add the
             // instruction.
             if (add_to_iq) {
-                instQueue.insert(inst);
+                instQueue.insert(inst);  // 将dispQueue中指令添加到IQ中
             }
             ++dis_num_inst;
 
@@ -1332,10 +1340,10 @@ IEW::executeInsts()
 
     // Uncomment this if you want to see all available instructions.
     // @todo This doesn't actually work anymore, we should fix it.
-//    printAvailableInsts();
+//    printAvailableInsts();       // print 所有待执行指令，无用了
 
     // Execute/writeback any instructions that are available.
-    int insts_to_execute = fromIssue->size;
+    int insts_to_execute = fromIssue->size;     // 要执行的指令数
     fromIssue->size = 0;
     int inst_num = 0;
     for (; inst_num < insts_to_execute;
@@ -1343,7 +1351,7 @@ IEW::executeInsts()
 
         DPRINTF(IEW, "Execute: Executing instructions from IQ.\n");
 
-        DynInstPtr inst = instQueue.getInstToExecute();
+        DynInstPtr inst = instQueue.getInstToExecute();  // 从IQ/instsToExecute中获取指令
 
         DPRINTF(IEW, "Execute: Processing PC %s, [tid:%i] [sn:%llu].\n",
                 inst->pcState(), inst->threadNumber,inst->seqNum);
@@ -1353,7 +1361,7 @@ IEW::executeInsts()
         ppExecute->notify(inst);
 
         // Check if the instruction is squashed; if so then skip it
-        if (inst->isSquashed()) {
+        if (inst->isSquashed()) {   // 被冲刷，标记为已执行可提交
             DPRINTF(IEW, "Execute: Instruction was squashed. PC: %s, [tid:%i]"
                          " [sn:%llu]\n", inst->pcState(), inst->threadNumber,
                          inst->seqNum);
@@ -1383,7 +1391,7 @@ IEW::executeInsts()
             // Tell the LDSTQ to execute this instruction (if it is a load).
             if (inst->isAtomic()) {
                 // AMOs are treated like store requests
-                fault = ldstQueue.executeStore(inst);
+                fault = ldstQueue.executeStore(inst);   // 执行store指令
 
                 if (inst->isTranslationDelayed() &&
                     fault == NoFault) {
@@ -1413,7 +1421,7 @@ IEW::executeInsts()
                     inst->fault = NoFault;
                 }
             } else if (inst->isStore()) {
-                fault = ldstQueue.executeStore(inst);
+                fault = ldstQueue.executeStore(inst);   // 执行store指令
 
                 if (inst->isTranslationDelayed() &&
                     fault == NoFault) {
@@ -1452,14 +1460,14 @@ IEW::executeInsts()
             // If we execute the instruction (even if it's a nop) the fault
             // will be replaced and we will lose it.
             if (inst->getFault() == NoFault) {
-                inst->execute();
+                inst->execute();    // 执行这条指令
                 if (!inst->readPredicate())
                     inst->forwardOldRegs();
             }
 
             inst->setExecuted();
 
-            instToCommit(inst);
+            instToCommit(inst);     // 非内存指令，发送到commit阶段
         }
 
         updateExeInstStats(inst);
@@ -1480,11 +1488,11 @@ IEW::executeInsts()
 
         if (!fetchRedirect[tid] ||
             !execWB->squash[tid] ||
-            execWB->squashedSeqNum[tid] > inst->seqNum) {
+            execWB->squashedSeqNum[tid] > inst->seqNum) {   // 分支预测错误，或者squashedSeqNum > inst->seqNum，则冲刷
 
             // Prevent testing for misprediction on load instructions,
             // that have not been executed.
-            bool loadNotExecuted = !inst->isExecuted() && inst->isLoad();
+            bool loadNotExecuted = !inst->isExecuted() && inst->isLoad();  // 如果指令是load指令，并且没有执行，则不冲刷
 
             if (inst->mispredicted() && !loadNotExecuted) {
                 fetchRedirect[tid] = true;
@@ -1499,7 +1507,7 @@ IEW::executeInsts()
                         "Redirecting fetch to PC: %s\n",
                         tid, inst->seqNum, inst->pcState());
                 // If incorrect, then signal the ROB that it must be squashed.
-                squashDueToBranch(inst, tid);
+                squashDueToBranch(inst, tid);  // 冲刷分支预测错误指令
 
                 ppMispredict->notify(inst);
 
@@ -1508,7 +1516,7 @@ IEW::executeInsts()
                 } else {
                     iewStats.predictedNotTakenIncorrect++;
                 }
-            } else if (ldstQueue.violation(tid)) {
+            } else if (ldstQueue.violation(tid)) {  // 内存顺序冲突
                 assert(inst->isMemRef());
                 // If there was an ordering violation, then get the
                 // DynInst that caused the violation.  Note that this
@@ -1577,9 +1585,14 @@ IEW::writebackInsts()
     // mark scoreboard that this instruction is finally complete.
     // Either have IEW have direct access to scoreboard, or have this
     // as part of backwards communication.
-
+    // 遍历时间缓冲区的头部并唤醒所有依赖指令。
+    // 这些指令即将写回。
+    // 同时在记分牌中标记这条指令已经完全完成。
+    // 可以让IEW直接访问记分牌，
+    // 或者将其作为反向通信的一部分。
     int wb_width = wbWidth;
     int count_ = 0;
+    // 如果是FMA累加操作,需要增加写回带宽
     while (execWB->insts[count_]) {
         DynInstPtr it = execWB->insts[count_];
         count_++;
@@ -1594,11 +1607,11 @@ IEW::writebackInsts()
 
 
     for (int inst_num = 0; inst_num < wb_width &&
-             execWB->insts[inst_num]; inst_num++) {
+             execWB->insts[inst_num]; inst_num++) {     // 遍历写回阶段的指令
         DynInstPtr inst = execWB->insts[inst_num];
         ThreadID tid = inst->threadNumber;
 
-        if (inst->savedRequest && inst->isLoad()) {
+        if (inst->savedRequest && inst->isLoad()) {  // 对于load指令,记录预取源
             inst->pf_source = inst->savedRequest->mainReq()->getPFSource();
         }
 
@@ -1615,12 +1628,14 @@ IEW::writebackInsts()
         // E.g. Strictly ordered loads have not actually executed when they
         // are first sent to commit.  Instead commit must tell the LSQ
         // when it's ready to execute the strictly ordered load.
+        // load指令需要发送到commit阶段才执行
         if (!inst->isSquashed() && inst->isExecuted() &&
-                inst->getFault() == NoFault) {
-
+                inst->getFault() == NoFault) { // 如果指令已执行完成且没有故障
+            // 1. 通过调度器唤醒依赖指令
             scheduler->writebackWakeup(inst);
+            // 2. 通过IQ唤醒依赖指令
             int dependents = instQueue.wakeDependents(inst);
-
+            // 3. 更新记分牌,标记目的寄存器就绪
             for (int i = 0; i < inst->numDestRegs(); i++) {
                 // Mark register as ready if not pinned
                 if (inst->renamedDestIdx(i)->
@@ -1628,7 +1643,7 @@ IEW::writebackInsts()
                     DPRINTF(IEW,"Setting Destination Register %i (%s)\n",
                             inst->renamedDestIdx(i)->index(),
                             inst->renamedDestIdx(i)->className());
-                    scoreboard->setReg(inst->renamedDestIdx(i));
+                    scoreboard->setReg(inst->renamedDestIdx(i));    // 标记目的寄存器就绪
                 }
             }
 
@@ -1662,10 +1677,10 @@ IEW::tick()
     wroteToTimeBuffer = false;
     updatedQueues = false;
 
-    scheduler->tick();
-    ldstQueue.tick();
+    scheduler->tick();      // 调度器tick= issue， 从issueQueue中取出指令，并发射到功能单元中
+    ldstQueue.tick();      // 内存队列tick
 
-    sortInsts();
+    sortInsts();    // rename指令放入insts中
 
     std::list<ThreadID>::iterator threads = activeThreads->begin();
     std::list<ThreadID>::iterator end = activeThreads->end();
@@ -1676,8 +1691,8 @@ IEW::tick()
 
         DPRINTF(IEW,"Issue: Processing [tid:%i]\n",tid);
 
-        checkSignalsAndUpdate(tid);
-        dispatch(tid);
+        checkSignalsAndUpdate(tid);  // 检查信号并更新状态机
+        dispatch(tid);  // 调度指令, insts->dispQue -> IQ/LSQ
 
         toRename->iewInfo[tid].robHeadStallReason = checkDispatchStall(tid, NumDQ, nullptr);
         toRename->iewInfo[tid].lqHeadStallReason =
@@ -1691,14 +1706,14 @@ IEW::tick()
     }
 
     if (exeStatus != Squashing) {
-        instQueue.scheduleReadyInsts();
+        instQueue.scheduleReadyInsts();  // 调度IQ中ready的指令到FU中，并计算延迟
 
-        executeInsts();
+        executeInsts();     // 指令执行
 
-        writebackInsts();
+        writebackInsts();    // 写回指令
     }
 
-    scheduler->issueAndSelect();
+    scheduler->issueAndSelect();    // 调度器 选择并issue
 
     bool broadcast_free_entries = false;
 
@@ -1786,11 +1801,7 @@ IEW::updateExeInstStats(const DynInstPtr& inst)
 
     iewStats.executedInstStats.numInsts++;
 
-#if TRACING_ON
-    if (debug::O3PipeView) {
-        inst->completeTick = curTick() - inst->fetchTick;
-    }
-#endif
+
 
     //
     //  Control operations

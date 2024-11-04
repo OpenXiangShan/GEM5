@@ -265,10 +265,10 @@ struct TimeStruct
         Addr committedPC; // *F for trap squash
 
         /// Provide fetch the instruction that mispredicted, if this
-        /// pointer is not-null a misprediction occured
+        /// pointer is not-null a misprediction occured  分支预测错误指令，需要刷新
         DynInstPtr mispredictInst;  // *F
 
-        /// Instruction that caused the a non-mispredict squash
+        /// Instruction that caused the a non-mispredict squash  非分支预测错误指令
         DynInstPtr squashInst; // *F
 
         /// Hack for now to send back a strictly ordered access to the

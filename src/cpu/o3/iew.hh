@@ -138,7 +138,7 @@ class IEW
     /** Overall stage status. */
     Status _status;
     /** Dispatch status. */
-    StageStatus dispatchStatus[MaxThreads];
+    StageStatus dispatchStatus[MaxThreads];  // 调度状态， 没有issueStatus吗？
     /** Execute status. */
     StageStatus exeStatus;
     /** Writeback status. */
@@ -375,7 +375,7 @@ class IEW
     std::deque<DynInstPtr> insts[MaxThreads];
 
     /** Skid buffer between rename and IEW. */
-    std::deque<DynInstPtr> skidBuffer[MaxThreads];
+    std::deque<DynInstPtr> skidBuffer[MaxThreads];  // skid buffer 在rename 和IEW 之间
 
     std::deque<DynInstPtr> dispQue[3];
 

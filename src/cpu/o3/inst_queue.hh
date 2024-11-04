@@ -295,7 +295,7 @@ class InstructionQueue
     Scheduler* scheduler;
 
     /** List of instructions that are ready to be executed. */
-    std::list<DynInstPtr> instsToExecute;
+    std::list<DynInstPtr> instsToExecute;   // 列出即将执行的指令
 
     /** List of instructions waiting for their DTB translation to
      *  complete (hw page table walk in progress).

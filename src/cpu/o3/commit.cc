@@ -927,6 +927,8 @@ Commit::commit()
         // Squashed sequence number must be older than youngest valid
         // instruction in the ROB. This prevents squashes from younger
         // instructions overriding squashes from older instructions.
+        // 被squash的指令序列号必须比ROB中最年轻的有效指令更老
+        // 这可以防止来自更年轻指令的squash覆盖来自更老指令的squash
         if (fromIEW->squash[tid] &&
             commitStatus[tid] != TrapPending &&
             fromIEW->squashedSeqNum[tid] <= youngestSeqNum[tid]) {
@@ -973,7 +975,7 @@ Commit::commit()
             toIEW->commitInfo[tid].robSquashing = true;
 
             toIEW->commitInfo[tid].mispredictInst =
-                fromIEW->mispredictInst[tid];
+                fromIEW->mispredictInst[tid];  // 分支预测错误指令来自IEW
             toIEW->commitInfo[tid].branchTaken =
                 fromIEW->branchTaken[tid];
 
@@ -1013,10 +1015,10 @@ Commit::commit()
 
     if (num_squashing_threads != numThreads) {
         // If we're not currently squashing, then get instructions.
-        getInsts();
+        getInsts();  // 获取指令/指令插入到ROB中
 
         // Try to commit any instructions.
-        commitInsts();
+        commitInsts();  // 提交指令
     }
 
     //Check for any activity
@@ -1071,7 +1073,7 @@ Commit::commitInsts()
     // instructions in the ROB so that the ROB only tries to commit
     // instructions it has in this current cycle, and not instructions
     // it is writing in during this cycle.  Can't commit and squash
-    // things at the same time...
+    // things at the same time...  先处理指令提交，在处理新指令写入ROB,不能同时squash和commit
     ////////////////////////////////////
 
     DPRINTF(Commit, "Trying to commit instructions in the ROB.\n");
@@ -1090,7 +1092,7 @@ Commit::commitInsts()
                 commit_width++;
             }
             if (count_ >= commitWidth ||
-                commit_width >= commitWidth * 2) {
+                commit_width >= commitWidth * 2) {  // 如果提交的指令数量达到提交带宽限制，则跳出循环
                 break;
             }
         }
@@ -1107,7 +1109,7 @@ Commit::commitInsts()
 
         // Check for any interrupt that we've already squashed for
         // and start processing it.
-        if (interrupt != NoFault) {
+        if (interrupt != NoFault) {     // 处理中断
             // If inside a transaction, postpone interrupts
             if (executingHtmTransaction(commit_thread)) {
                 cpu->clearInterrupts(0);
@@ -1124,7 +1126,7 @@ Commit::commitInsts()
         if (commit_thread == -1 || !rob->isHeadReady(commit_thread))
             break;
 
-        head_inst = rob->readHeadInst(commit_thread);
+        head_inst = rob->readHeadInst(commit_thread);  // 获取ROB头指令
 
         ThreadID tid = head_inst->threadNumber;
 
@@ -1136,7 +1138,7 @@ Commit::commitInsts()
 
         // If the head instruction is squashed, it is ready to retire
         // (be removed from the ROB) at any time.
-        if (head_inst->isSquashed()) {
+        if (head_inst->isSquashed()) {  // 如果指令被squash,直接从ROB移除
 
             DPRINTF(Commit, "Retiring squashed instruction from "
                     "ROB.\n");
@@ -1152,12 +1154,12 @@ Commit::commitInsts()
         } else {
             set(pc[tid], head_inst->pcState());
 
-            // Try to commit the head instruction.
+            // Try to commit the head instruction.  尝试提交rob头指令
             bool commit_success = commitHead(head_inst, num_committed);
 
-            if (commit_success) {
+            if (commit_success) {  // 如果提交成功
                 lastCommitCycle = cpu->curCycle();
-                head_inst->printDisassemblyAndResult(cpu->name());
+                head_inst->printDisassemblyAndResult(cpu->name());  // 打印指令CommitTrace
                 const auto &head_rv_pc = head_inst->pcState().as<RiscvISA::PCState>();
                 if (bp->isStream()) {
                     auto dbsp = dynamic_cast<branch_prediction::stream_pred::DecoupledStreamBPU*>(bp);
@@ -1172,7 +1174,7 @@ Commit::commitInsts()
                     }
                 }
 
-                if (bp->isFTB()) {
+                if (bp->isFTB()) {      // 如果分支预测是FTB,则更新FTB
                     auto dbftb = dynamic_cast<branch_prediction::ftb_pred::DecoupledBPUWithFTB*>(bp);
                     bool miss = head_inst->mispredicted();
                     if (head_inst->isReturn()) {
@@ -1292,7 +1294,7 @@ Commit::commitInsts()
 
                 }
 
-                if (cpu->difftestEnabled()) {
+                if (cpu->difftestEnabled()) {   // difftest 比较
                     diffInst(tid, head_inst);
                 }
 
@@ -1304,7 +1306,7 @@ Commit::commitInsts()
 
                 cpu->traceFunctions(pc[tid]->instAddr());
 
-                head_inst->staticInst->advancePC(*pc[tid]);
+                head_inst->staticInst->advancePC(*pc[tid]);  // 更新pc
 
                 // Keep track of the last sequence number commited
                 lastCommitedSeqNum[tid] = head_inst->seqNum;
@@ -1416,7 +1418,8 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
 
     // If the instruction is not executed yet, then it will need extra
     // handling.  Signal backwards that it should be executed.
-    if (!head_inst->isExecuted()) {
+    if (!head_inst->isExecuted()) {  // 如果指令未执行
+        // 只有非投机指令、条件存储、内存屏障、原子指令或严格有序的load指令可以在未执行时到达这里
         // Make sure we are only trying to commit un-executed instructions we
         // think are possible.
         assert(head_inst->isNonSpeculative() || head_inst->isStoreConditional()
@@ -1458,7 +1461,7 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
     }
 
     // Check if the instruction caused a fault.  If so, trap.
-    Fault inst_fault = head_inst->getFault();
+    Fault inst_fault = head_inst->getFault();  // 获取指令故障
 
     // hardware transactional memory
     // if a fault occurred within a HTM transaction
@@ -1482,7 +1485,7 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         head_inst->setCompleted();
     }
 
-    if (inst_fault != NoFault) {
+    if (inst_fault != NoFault) {  // 如果指令故障
         DPRINTF(CommitTrace, "[sn:%lu pc:%#lx] %s has a fault, mepc: %#lx, mcause: %#lx, mtval: %#lx\n",
                 head_inst->seqNum, head_inst->pcState().instAddr(),
                 head_inst->staticInst->disassemble(head_inst->pcState().instAddr()),
@@ -1525,7 +1528,7 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         // that the trap need.
         cpu->trap(inst_fault, tid,
                   head_inst->notAnInst() ? nullStaticInstPtr :
-                      head_inst->staticInst);
+                      head_inst->staticInst);  // 执行trap
 
         // Exit state update mode to avoid accidental updating.
         thread[tid]->noSquashFromTC = false;
@@ -1605,7 +1608,7 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
 
     committedPC[tid] = head_inst->pcState().instAddr();
 
-    updateComInstStats(head_inst);
+    updateComInstStats(head_inst);  // 更新提交指令统计
 
     // head_inst->printDisassembly();
     uint64_t delta = (curTick() - lastCommitTick) / 500;
@@ -1652,7 +1655,7 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         cpu->setSCSuccess(head_inst->lockedWriteSuccess(), head_inst->physEffAddr);
     }
 
-    // Update the commit rename map
+    // Update the commit rename map  更新提交重命名映射
     for (int i = 0; i < head_inst->numDestRegs(); i++) {
         renameMap[tid]->setEntry(head_inst->flattenedDestIdx(i),
                                  head_inst->renamedDestIdx(i));
@@ -1672,8 +1675,8 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
 #if TRACING_ON
     if (debug::O3PipeView) {
         head_inst->commitTick = curTick() - head_inst->fetchTick;
-        DPRINTF(O3PipeView, "Record commit for inst sn:%lu, commitTick=%lu\n",
-                head_inst->seqNum, head_inst->commitTick);
+        // DPRINTF(O3PipeView, "Record commit for inst sn:%lu, commitTick=%lu\n",
+        //         head_inst->seqNum, head_inst->commitTick);
     }
 #endif
 
@@ -1691,13 +1694,13 @@ Commit::getInsts()
     DPRINTF(Commit, "Getting instructions from Rename stage.\n");
 
     // Read any renamed instructions and place them into the ROB.
-    int insts_to_process = std::min((int)renameWidth * 2, fromRename->size);
+    int insts_to_process = std::min((int)renameWidth * 2, fromRename->size);  // 获取指令数量
 
     for (int inst_num = 0; inst_num < insts_to_process; ++inst_num) {
-        const DynInstPtr &inst = fromRename->insts[inst_num];
+        const DynInstPtr &inst = fromRename->insts[inst_num];  // 指令是从rename阶段获取的
         ThreadID tid = inst->threadNumber;
 
-        if (localSquashVer.largerThan(inst->getVersion())) {
+        if (localSquashVer.largerThan(inst->getVersion())) {  // 如果squash版本大于指令的版本，则标记指令被squash
             inst->setSquashed();
         }
 
@@ -1709,7 +1712,7 @@ Commit::getInsts()
             DPRINTF(Commit, "[tid:%i] [sn:%llu] Inserting PC %s into ROB.\n",
                     tid, inst->seqNum, inst->pcState());
 
-            rob->insertInst(inst);
+            rob->insertInst(inst);  // 将指令插入到ROB中
 
             assert(rob->getThreadEntries(tid) <= rob->getMaxEntries(tid));
 
