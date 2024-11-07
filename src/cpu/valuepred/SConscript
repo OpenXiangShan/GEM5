@@ -1,0 +1,19 @@
+Import('*')
+
+SimObject('ValuePredictor.py',
+          sim_objects=[
+            'ValuePredictor',
+            'EStride'
+          ],
+          enums=['ValuePredType'])
+
+Source('valuepred_unit.cc')
+Source('enhanced_stride.cc')
+Source('valuepred_metadata.cc')
+
+DebugFlag('VPCOMMON')
+DebugFlag('EStride')
+
+
+CompoundFlag('VP', ['VPCOMMON', 'EStride'])
+
