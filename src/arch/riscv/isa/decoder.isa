@@ -46,7 +46,7 @@ decode QUADRANT default Unknown::unknown() {
                 return std::make_shared<IllegalInstFault>("zero instruction",
                                                            machInst);
             Rp2 = sp + imm;
-        }}, uint64_t);
+        }}, uint64_t, {{IsIntAdd}});
         format CompressedLoad {
             0x1: c_fld({{
                 offset = CIMM3 << 3 | CIMM2 << 6;
@@ -129,7 +129,7 @@ decode QUADRANT default Unknown::unknown() {
                     }
                 }
                 Rc1_sd = Rc1_sd + imm;
-            }});
+            }}, int64_t, {{IsIntAdd}});
             0x1: c_addiw({{
                 imm = CIMM5;
                 if (CIMM1 > 0)
@@ -140,7 +140,7 @@ decode QUADRANT default Unknown::unknown() {
                             "source reg x0", machInst);
                 }
                 Rc1_sw = (int32_t)(Rc1_sw + imm);
-            }});
+            }}, int64_t, {{IsIntAdd}});
             0x2: c_li({{
                 imm = CIMM5;
                 if (CIMM1 > 0)
@@ -166,7 +166,7 @@ decode QUADRANT default Unknown::unknown() {
                                 "immediate = 0", machInst);
                     }
                     sp_sd = sp_sd + imm;
-                }});
+                }}, int64_t, {{IsIntAdd}});
                 default: c_lui({{
                     imm = CIMM5 << 12;
                     if (CIMM1 > 0)
@@ -217,7 +217,7 @@ decode QUADRANT default Unknown::unknown() {
                     0x0: decode CFUNCT2LOW {
                         0x0: c_sub({{
                             Rp1 = Rp1 - Rp2;
-                        }});
+                        }},{{IsIntAdd}});
                         0x1: c_xor({{
                             Rp1 = Rp1 ^ Rp2;
                         }});
@@ -231,10 +231,10 @@ decode QUADRANT default Unknown::unknown() {
                     0x1: decode CFUNCT2LOW {
                         0x0: c_subw({{
                             Rp1_sd = (int32_t)Rp1_sd - Rp2_sw;
-                        }});
+                        }},{{IsIntAdd}});
                         0x1: c_addw({{
                             Rp1_sd = (int32_t)Rp1_sd + Rp2_sw;
-                        }});
+                        }},{{IsIntAdd}});
                     }
                 }
             }
@@ -352,7 +352,7 @@ decode QUADRANT default Unknown::unknown() {
                     }}, IsIndirectControl, IsUncondControl, IsCall);
                     default: CompressedROp::c_add({{
                         Rc1_sd = Rc1_sd + Rc2_sd;
-                    }});
+                    }},{{IsIntAdd}});
                 }
             }
         }
@@ -706,7 +706,7 @@ decode QUADRANT default Unknown::unknown() {
                     }},int64_t, {{ imm = 0; }}, IsMov);
                     default: addi({{
                         Rd_sd = Rs1_sd + imm;
-                    }});
+                    }}, int64_t, {{imm = sext<12>(IMM12)}}, {{IsIntAdd}});
                 }
                 0x2: slti({{
                     Rd = (Rs1_sd < imm) ? 1 : 0;
@@ -769,7 +769,7 @@ decode QUADRANT default Unknown::unknown() {
             format IOp {
                 0x0: addiw({{
                     Rd_sw = (int32_t)(Rs1_sw + imm);
-                }}, int32_t);
+                }}, int32_t, {{imm = sext<12>(IMM12)}}, {{IsIntAdd}});
                 0x1: decode FS3 {
                     0x0: slliw({{
                         Rd_sd = Rs1_sw << imm;
@@ -1103,10 +1103,10 @@ decode QUADRANT default Unknown::unknown() {
                     0x00: decode BS {
                         0x0: add({{
                             Rd = Rs1_sd + Rs2_sd;
-                        }});
+                        }}, {{IsIntAdd}});
                         0x1: sub({{
                             Rd = Rs1_sd - Rs2_sd;
-                        }});
+                        }}, {{IsIntAdd}});
                     }
                     0x01: decode BS {
                         0x0: mul({{
@@ -1328,16 +1328,16 @@ decode QUADRANT default Unknown::unknown() {
                 0x0: decode FUNCT7 {
                     0x0: addw({{
                         Rd_sd = Rs1_sw + Rs2_sw;
-                    }});
+                    }}, {{IsIntAdd}});
                     0x1: mulw({{
                         Rd_sd = (int32_t)(Rs1_sw*Rs2_sw);
                     }}, IntMultOp);
                     0x4: add_uw({{
                         Rd = Rs1_uw + Rs2;
-                    }});
+                    }}, {{IsIntAdd}});
                     0x20: subw({{
                         Rd_sd = Rs1_sw - Rs2_sw;
-                    }});
+                    }}, {{IsIntAdd}});
                 }
                 0x1: decode FUNCT7 {
                     0x0: sllw({{
