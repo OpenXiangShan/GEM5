@@ -62,6 +62,7 @@
 #include "cpu/pred/general_arch_db.hh"
 #include "cpu/pred/stream/decoupled_bpred.hh"
 #include "cpu/timebuf.hh"
+#include "cpu/valuepred/valuepred_unit.hh"
 #include "enums/CommitPolicy.hh"
 #include "sim/arch_db.hh"
 #include "sim/probe/probe.hh"
@@ -566,6 +567,9 @@ class Commit
     ArchDBer *archDBer;
 
     void dumpTicks(const DynInstPtr &inst);
+
+    // value prediction
+    valuepred::VPUnit *valuePredictor;
 };
 
 } // namespace o3

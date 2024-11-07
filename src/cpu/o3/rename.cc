@@ -47,10 +47,14 @@
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/reg_class.hh"
+#include "cpu/valuepred/es_metadata.hh"
+#include "cpu/valuepred/valuepred_metadata.hh"
 #include "debug/Activity.hh"
+#include "debug/Counters.hh"
 #include "debug/O3PipeView.hh"
 #include "debug/Rename.hh"
-#include "debug/Counters.hh"
+#include "debug/VPCOMMON.hh"
+#include "enums/ValuePredType.hh"
 #include "params/BaseO3CPU.hh"
 
 namespace gem5
@@ -66,7 +70,8 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
       commitToRenameDelay(params.commitToRenameDelay),
       renameWidth(params.renameWidth),
       numThreads(params.numThreads),
-      stats(_cpu)
+      stats(_cpu),
+      valuePredictor(params.valuePred)
 {
     if (renameWidth > MaxWidth)
         fatal("renameWidth (%d) is larger than compiled limit (%d),\n"
@@ -1268,6 +1273,57 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
                             rename_result.second);
 
         ++stats.renamedOperands;
+
+        // do the value prediction.
+        // In EStride or other implementations of value predictors, since
+        // it takes time for the value predictor to produce a prediction,
+        // the value prediction is often started after the fetch phase,
+        // where the instructions are not decoded, so we can't use the
+        // information in dyninst. The reason for placing the value
+        // prediction in the Rename phase is that on gem5,
+        // the predictor does not require a delay to produce a result.
+
+        // This simulate valuePredict in fetch the instructions
+        // no instruction information, every instructions take into valuePredictor.
+        valuepred::VPPredMetaData* vpPredMetaData =
+                dynamic_cast<valuepred::ESPredMetaData *>(valuepred::VPDataStructFactory::
+                                                                buildPredMetaData(ValuePredType::EStride));
+        vpPredMetaData->pc = inst->getPC();
+        vpPredMetaData->seq_no = inst->seqNum;
+        inst->vpResult = valuePredictor->valuePredict(vpPredMetaData);
+
+
+        // This simulate in rename stage, we know the instruction information, we can control
+        // whether instruction support value prediction.
+        if (num_dest_regs != 1 || rename_result.first->isFixedMapping() ||
+            mov_elim || inst->isNotSupportVP()) {
+            inst->vpSupported = false;
+            continue;
+        }
+
+        valuePredictor->stats.VPsupported++;
+        inst->vpSupported = true;
+        inst->renameCycle = cpu->curCycle();
+        if (inst->vpResult.speculative){
+            valuePredictor->stats.VPpredicted++;
+            gem5_assert(!scoreboard->getReg(rename_result.first),
+                            "before set the scoreboard, the scoreboard must unset before");
+            // set the scoreboard, let the back-to-back rename inst mark reg ready
+            scoreboard->setReg(rename_result.first);
+            inst->setRegOperand(inst->staticInst.get(), 0, inst->vpResult.value);
+            // must pop result here
+            inst->popResult();
+            DPRINTF(VPCOMMON,
+                    "Rename-Stage instruction[%s] generate "
+                    "prediction value."
+                    "seq num: %lu pc: %lX "
+                    "prediction value: %lu \n",
+                    inst->staticInst->disassemble(inst->getPC()), inst->seqNum, inst->getPC(), inst->vpResult.value);
+        }else{
+            // value prediction not taken
+        }
+        delete vpPredMetaData;
+
     }
 }
 

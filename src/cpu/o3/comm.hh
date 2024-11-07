@@ -155,6 +155,10 @@ struct IEWStruct
     bool branchMispredict[MaxThreads];
     bool branchTaken[MaxThreads];
     bool includeSquashInst[MaxThreads];
+
+    // add flag for memory violation and VP
+    bool memoryViolation[MaxThreads];
+    bool valuePredictionError[MaxThreads];
 };
 
 struct IssueStruct

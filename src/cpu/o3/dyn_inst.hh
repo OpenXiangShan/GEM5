@@ -65,6 +65,7 @@
 #include "cpu/reg_class.hh"
 #include "cpu/static_inst.hh"
 #include "cpu/translation.hh"
+#include "cpu/valuepred/valuepred_metadata.hh"
 #include "debug/CommitTrace.hh"
 #include "debug/DecoupleBP.hh"
 #include "debug/HtmCpu.hh"
@@ -186,6 +187,8 @@ class DynInst : public ExecContext, public RefCounted
                                  /// instructions ahead of it
         SerializeAfter,          /// Needs to serialize instructions behind it
         SerializeHandled,        /// Serialization has been handled
+        Verified,				 /// VP instructions is verified
+        NeedFlush,				 /// VP instructions mispredicted and need flush
         NumStatus
     };
 
@@ -594,6 +597,7 @@ class DynInst : public ExecContext, public RefCounted
     bool isInstPrefetch() const { return staticInst->isInstPrefetch(); }
     bool isDataPrefetch() const { return staticInst->isDataPrefetch(); }
     bool isInteger()      const { return staticInst->isInteger(); }
+    bool isIntAdd()       const { return staticInst->isIntAdd(); }
     bool isFloating()     const { return staticInst->isFloating(); }
     bool isVector()       const { return staticInst->isVector(); }
     bool isControl()      const { return staticInst->isControl(); }
@@ -1418,6 +1422,45 @@ class DynInst : public ExecContext, public RefCounted
 
     /** get golden */
     uint8_t *getGolden() { return goldenData; }
+
+
+  public:
+    // value prediction
+    valuepred::VPResult vpResult = {false, 0};
+
+    RegVal actualValue = 0u;
+    bool vpMisprediction = false;
+    bool vpSupported = false;
+
+    bool isVerified() { return status[Verified]; }
+
+    void setVerified() { status.set(Verified); }
+
+    void resetVerified() { status.reset(Verified); }
+
+    // mark the time to support EStride Update
+    Cycles renameCycle;
+    Cycles commitCycle;
+
+    // ugly code
+    bool isNotSupportVP(){
+        return isNop() || isHInst() || isStore() ||
+            isAtomic() || isStoreConditional() ||
+            isInstPrefetch() || isDataPrefetch() ||
+            isFloating() || isVector() || isControl() ||
+            isCall() || isReturn() || isDirectCtrl() ||
+            isIndirectCtrl() || isCondCtrl() ||
+            isUncondCtrl() || isSerializing() ||
+            isSerializeAfter() || isSerializeBefore() ||
+            isSquashAfter() || isFullMemBarrier() ||
+            isReadBarrier() || isWriteBarrier() ||
+            isNonSpeculative() || isUpdateVsstatusSd() ||
+            isUpdateMstatusSd() || isQuiesce() ||
+            isUnverifiable() || isSyscall() ||
+            isDelayedCommit() || isHtmStop() ||
+            isHtmStart() || isHtmCancel() || isHtmCmd();
+    }
+
 };
 
 } // namespace o3

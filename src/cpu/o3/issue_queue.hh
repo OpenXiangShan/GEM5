@@ -178,6 +178,8 @@ class SpecWakeupChannel : public SimObject
 
 class Scheduler : public SimObject
 {
+    // not good to use friend class
+    friend class IEW;
     friend class IssueQue;
     class SpecWakeupCompletion : public Event
     {

@@ -1251,6 +1251,10 @@ CPU::instDone(ThreadID tid, const DynInstPtr &inst)
         thread[tid]->threadStats.numInsts++;
         cpuStats.committedInsts[tid]++;
 
+        if (thread[tid]->numInst % 10000 == 0) {
+            fprintf(stderr, "commit %lu insts\n", thread[tid]->numInst);
+        }
+
         if (this->nextDumpInstCount
                 && totalInsts() == this->nextDumpInstCount) {
             fprintf(stderr, "Will trigger stat dump and reset\n");

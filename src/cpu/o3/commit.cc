@@ -62,6 +62,8 @@
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/thread_state.hh"
 #include "cpu/timebuf.hh"
+#include "cpu/valuepred/es_metadata.hh"
+#include "cpu/valuepred/valuepred_metadata.hh"
 #include "debug/Activity.hh"
 #include "debug/Commit.hh"
 #include "debug/CommitRate.hh"
@@ -75,6 +77,7 @@
 #include "debug/HtmCpu.hh"
 #include "debug/InstCommited.hh"
 #include "debug/O3PipeView.hh"
+#include "debug/VPCOMMON.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/core.hh"
 #include "sim/cur_tick.hh"
@@ -114,7 +117,8 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
       canHandleInterrupts(true),
       avoidQuiesceLiveLock(false),
       stats(_cpu, this),
-      archDBer(params.arch_db)
+      archDBer(params.arch_db),
+      valuePredictor(params.valuePred)
 {
     if (commitWidth > MaxWidth)
         fatal("commitWidth (%d) is larger than compiled limit (%d),\n"
@@ -622,6 +626,9 @@ Commit::squashAll(ThreadID tid)
     rob->squash(squashed_inst, tid);
     changedROBNumEntries[tid] = true;
 
+    // value prediction also squash in this
+    valuePredictor->squash(squashed_inst);
+
     // Send back the sequence number of the squashed instruction.
     toIEW->commitInfo[tid].doneSeqNum = squashed_inst;
 
@@ -943,10 +950,16 @@ Commit::commit()
                     tid,
                     fromIEW->mispredictInst[tid]->pcState().instAddr(),
                     fromIEW->squashedSeqNum[tid]);
-            } else {
+            } else if (fromIEW->memoryViolation[tid]){
                 DPRINTF(Commit,
                     "[tid:%i] Squashing due to order violation [sn:%llu]\n",
                     tid, fromIEW->squashedSeqNum[tid]);
+            } else if (fromIEW->valuePredictionError[tid]){
+                // DPRINTF
+                DPRINTF(VPCOMMON, "Squashing due to value prediction error, "
+                            "seq_no: %llu\n", fromIEW->squashedSeqNum[0]);
+            } else{
+                panic("undefined in commit squash\n");
             }
 
             DPRINTF(Commit, "[tid:%i] Redirecting to PC %#x\n",
@@ -968,6 +981,9 @@ Commit::commit()
 
             rob->squash(squashed_inst, tid);
             changedROBNumEntries[tid] = true;
+
+            // squash value predictor
+            valuePredictor->squash(squashed_inst);
 
             toIEW->commitInfo[tid].doneSeqNum = squashed_inst;
 
@@ -1672,6 +1688,46 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
     // the HTM UID is purely for correctness and debugging purposes
     if (head_inst->isHtmStart())
         iewStage->setLastRetiredHtmUid(tid, head_inst->getHtmTransactionUid());
+
+
+    // value prediction
+    head_inst->commitCycle = cpu->curCycle();
+
+    // for instruction who can be train for value predictor
+    if (head_inst->vpSupported){
+        gem5_assert(head_inst->isVerified(), "%s\n", head_inst->genDisassembly());
+        assert(head_inst->commitCycle > head_inst->renameCycle);
+
+        valuepred::ESUpdateMetaData *updateMetaData =
+                        dynamic_cast<valuepred::ESUpdateMetaData *>(valuepred::
+                                VPDataStructFactory::buildUpdateMetaData(ValuePredType::EStride));
+        updateMetaData->pc = head_inst->getPC();
+        updateMetaData->seq_no = head_inst->seqNum;
+        updateMetaData->actualValue = head_inst->actualValue;
+        updateMetaData->isMisprediction = head_inst->vpMisprediction;
+        updateMetaData->isLoadInst = head_inst->isLoad();
+        updateMetaData->inflightTime = head_inst->commitCycle - head_inst->renameCycle;
+        updateMetaData->disas = head_inst->staticInst->disassemble(updateMetaData->pc);
+        valuePredictor->updateValuePredictor(updateMetaData);
+
+        delete updateMetaData;
+
+        DPRINTF(VPCOMMON,
+            "Commit-Stage instruction commit and value "
+            "predictor update => "
+            "seq num: %lu pc: %lX "
+            "spec: %s "
+            "isMisPrediction: %s "
+            "predict value: %lu "
+            "real value: %lu "
+            "disas: %s\n",
+            head_inst->seqNum,
+            head_inst->getPC(),
+            head_inst->vpResult.speculative ? "spec" : "no spec ",
+            head_inst->vpMisprediction ? "yes" : "no", head_inst->vpResult.value,
+            head_inst->actualValue,
+            head_inst->genDisassembly());
+    }
 
     // Finally clear the head ROB entry.
     rob->retireHead(tid);
