@@ -58,8 +58,10 @@ class FetchTargetQueue
                 FetchStreamId new_enq_stream_id, Addr new_enq_pc);
 
     bool fetchTargetAvailable() const;
+    bool fetchTargetAvailable(int nextN) const;
 
     FtqEntry &getTarget();
+    FtqEntry &getTarget(int nextN);
 
     FetchTargetEnqState &getEnqState() { return fetchTargetEnqState; }
 
@@ -84,6 +86,7 @@ class FetchTargetQueue
     }
 
     void finishCurrentFetchTarget();
+    void finishCurrentFetchTarget(int N);
 
     bool trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &in_loop);
 

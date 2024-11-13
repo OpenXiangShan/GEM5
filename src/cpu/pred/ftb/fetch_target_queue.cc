@@ -50,6 +50,12 @@ FetchTargetQueue::fetchTargetAvailable() const
            supplyFetchTargetState.targetId == fetchDemandTargetId;
 }
 
+bool
+FetchTargetQueue::fetchTargetAvailable(int nextN) const
+{
+    return ftq.find(fetchDemandTargetId + nextN) != ftq.end();
+}
+
 FtqEntry&
 FetchTargetQueue::getTarget()
 {
@@ -57,11 +63,33 @@ FetchTargetQueue::getTarget()
     return *supplyFetchTargetState.entry;
 }
 
+FtqEntry&
+FetchTargetQueue::getTarget(int nextN)
+{
+    assert(fetchTargetAvailable(nextN));
+    return ftq[fetchDemandTargetId + nextN];
+}
+
+
 void
 FetchTargetQueue::finishCurrentFetchTarget()
 {
 
     ++fetchDemandTargetId;
+    ftq.erase(supplyFetchTargetState.targetId);
+    supplyFetchTargetState.valid = false;
+    supplyFetchTargetState.entry = nullptr;
+    currentLoopIter = 0;
+    DPRINTF(DecoupleBP,
+            "Finish current fetch target: %lu, inc demand to %lu\n",
+            supplyFetchTargetState.targetId, fetchDemandTargetId);
+}
+
+void
+FetchTargetQueue::finishCurrentFetchTarget(int N)
+{
+
+    fetchDemandTargetId += N;
     ftq.erase(supplyFetchTargetState.targetId);
     supplyFetchTargetState.valid = false;
     supplyFetchTargetState.entry = nullptr;

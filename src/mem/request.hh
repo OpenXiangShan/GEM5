@@ -550,7 +550,8 @@ class Request
     /** The cause for HTM transaction abort */
     HtmFailureFaultCause _htmAbortCause = HtmFailureFaultCause::INVALID;
 
-    bool misalignedFetch = false;
+    bool firstLineFetch = false;
+    bool secondLineFetch = false;
 
     int reqNum = 1;
     bool forward_pre_tlb = false;
@@ -638,15 +639,11 @@ class Request
         return mgmt_req;
     }
 
-    bool isMisalignedFetch()
-    {
-        return misalignedFetch;
-    }
+    bool isSecondLineFetch() { return secondLineFetch; }
+    void setSecondLineFetch() { secondLineFetch = true; }
 
-    void setMisalignedFetch()
-    {
-        misalignedFetch = true;
-    }
+    bool isFirstLineFetch() { return firstLineFetch; }
+    void setFirstLineFetch() { firstLineFetch = true; }
 
     int getReqNum()
     {

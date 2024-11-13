@@ -1,17 +1,19 @@
 #include "cpu/pred/ftb/decoupled_bpred.hh"
 
-#include "base/output.hh"
 #include "base/debug_helper.hh"
+#include "base/output.hh"
+
 // #include "cpu/base.hh"
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/pred/ftb/stream_common.hh"
-#include "debug/DecoupleBPVerbose.hh"
+#include "cpu/pred/ftb/stream_struct.hh"
 #include "debug/DecoupleBPHist.hh"
-#include "debug/Override.hh"
+#include "debug/DecoupleBPVerbose.hh"
 #include "debug/FTB.hh"
 #include "debug/FTBITTAGE.hh"
 #include "debug/JumpAheadPredictor.hh"
+#include "debug/Override.hh"
 #include "debug/Profiling.hh"
 #include "sim/core.hh"
 
@@ -857,9 +859,9 @@ DecoupledBPUWithFTB::trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &fetch_
 }
 
 std::pair<bool, bool>
-DecoupledBPUWithFTB::decoupledPredict(const StaticInstPtr &inst,
-                               const InstSeqNum &seqNum, PCStateBase &pc,
-                               ThreadID tid, unsigned &currentLoopIter)
+DecoupledBPUWithFTB::decoupledPredict(const StaticInstPtr &inst, const InstSeqNum &seqNum, PCStateBase &pc,
+                                      ThreadID tid, unsigned &currentLoopIter,
+                                      FtqEntry &fetch_block_in_fetch_stage)
 {
     std::unique_ptr<PCStateBase> target(pc.clone());
 
@@ -879,6 +881,7 @@ DecoupledBPUWithFTB::decoupledPredict(const StaticInstPtr &inst,
     currentFtqEntryInstNum++;
 
     const auto &target_to_fetch = fetchTargetQueue.getTarget();
+    fetch_block_in_fetch_stage = target_to_fetch;
 
     // found corresponding entry
     auto start = target_to_fetch.startPC;

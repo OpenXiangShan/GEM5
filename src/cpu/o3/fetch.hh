@@ -42,6 +42,7 @@
 #define __CPU_O3_FETCH_HH__
 
 #include <utility>
+#include <vector>
 
 #include "arch/generic/decoder.hh"
 #include "arch/generic/mmu.hh"
@@ -189,12 +190,18 @@ class Fetch
         NumFetchStatus
     };
 
+    struct FetchBlock
+    {
+        Addr startAddr;
+        uint64_t length;
+    };
+
   private:
     /** Fetch status. */
     FetchStatus _status;
 
     /** Per-thread status. */
-    ThreadStatus fetchStatus[MaxThreads];
+    std::vector<std::vector<ThreadStatus>> fetchStatus;
 
     /** Fetch policy. */
     SMTFetchPolicy fetchPolicy;
@@ -355,6 +362,8 @@ class Fetch
      */
     void fetch(bool &status_change);
 
+    void sendFetchRequest();
+
     /** Align a PC to the start of a fetch buffer block. */
     Addr fetchBufferAlignPC(Addr addr)
     {
@@ -405,6 +414,47 @@ class Fetch
     /** Set the reasons of all fetch stalls. */
     void setAllFetchStalls(StallReason stall);
 
+    // Function to check if two ranges overlap in mod 64 space
+    bool isOverlappingMod64(std::pair<uint64_t, uint64_t> a, std::pair<uint64_t, uint64_t> b) {
+        // TODO: remove magic number and use something like ICache block size
+        uint64_t mask = 0x3F; // 63 in hexadecimal (0x3F) used to simulate mod 64
+        uint64_t granularity = 8; // Assume 8B bank granularity
+        uint64_t startA = a.first & mask;
+        uint64_t endA = (a.first + a.second - 1) & mask;
+        uint64_t startB = b.first & mask;
+        uint64_t endB = (b.first + b.second - 1) & mask;
+        startA /= granularity;
+        endA /= granularity;
+        startB /= granularity;
+        endB /= granularity;
+
+        // Check if the two ranges overlap in mod 64 space
+        if (startA <= endA && startB <= endB) {
+            return (startA <= endB && endA >= startB);
+        } else if (startA > endA && startB > endB) {
+            return true; // Both ranges wrap around, they must overlap
+        } else if (startA > endA) {
+            return (startB <= endA || endB >= startA);
+        } else if (startB > endB) {
+            return (startA <= endB || endA >= startB);
+        }
+        return false;
+    }
+
+    // Function to check if a new range overlaps with any existing ranges
+    bool hasOverlapMod64(std::pair<uint64_t, uint64_t> newRange,
+                         const std::vector<std::pair<uint64_t, uint64_t>> &ranges)
+    {
+        for (const auto &range : ranges) {
+            if (isOverlappingMod64(newRange, range)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+
+
 
   private:
     /** Pointer to the O3CPU. */
@@ -444,11 +494,6 @@ class Fetch
 
     /** Can the fetch stage redirect from an interrupt on this instruction? */
     bool delayedCommit[MaxThreads];
-
-    /** Memory request used to access cache. */
-    RequestPtr memReq[MaxThreads];
-
-    RequestPtr anotherMemReq[MaxThreads];
 
     /** Variable that tracks if fetch has written to the time buffer this
      * cycle. Used to tell CPU if there is activity this cycle.
@@ -498,38 +543,54 @@ class Fetch
     /** Cache block size. */
     unsigned int cacheBlkSize;
 
-    /** The size of the fetch buffer in bytes. The fetch buffer
-     *  itself may be smaller than a cache line.
-     */
+
+    uint64_t MaxFetchBlockPerCycle = 2;
+
+    /** The max size a fetch block can be */
     unsigned fetchBufferSize;
 
     /** Mask to align a fetch address to a fetch buffer boundary. */
     Addr fetchBufferMask;
 
-    /** The fetch data that is being fetched and buffered. */
-    uint8_t *fetchBuffer[MaxThreads];
+    /**
+      The fetch data that is being fetched and buffered.
+      [MaxThreads][MaxFetchBlockPerCycle]
+    */
+    std::vector<std::vector<uint8_t *>> fetchBuffer;
 
     /** The PC of the first instruction loaded into the fetch buffer. */
-    Addr fetchBufferPC[MaxThreads];
+    std::vector<std::vector<Addr>> fetchBufferStartAddr;
 
-    /** Indicating whether the fetch request is mis-aligned*/
-    bool fetchMisaligned[MaxThreads];
+    std::vector<std::vector<Addr>> fetchBlockStartAddr;
 
-    /** The information of access including the address of two requests*/
-    std::pair<Addr, Addr> accessInfo[MaxThreads];
+    std::vector<std::vector<bool>> fetchBlockEndWithTaken;
 
-    PacketPtr firstPkt[MaxThreads];
+    std::vector<bool> lastFetchBlockFallThrough;
 
-    PacketPtr secondPkt[MaxThreads];
+    std::vector<int> lastSentReqAmount;
+
+
+    std::vector<Addr> currentPC;
+
+    /** The size of the fetch buffer in bytes. The fetch buffer
+     *  itself may be smaller than a cache line.
+     */
+    std::vector<std::vector<uint64_t>> fetchBlockSize;
+
+    /** Whether or not the fetch buffer data is valid. */
+    std::vector<std::vector<bool>> fetchBufferValid;
+
+    std::vector<uint64_t> currentfetchBlockID;
+    std::vector<uint64_t> currentDecoderInputOffsetInFetchBuffer;
+
+    /** Memory request used to access cache. */
+    std::vector<std::vector<RequestPtr>> memReq;
 
     /** The size of the fetch queue in micro-ops */
     unsigned fetchQueueSize;
 
     /** Queue of fetched instructions. Per-thread to prevent HoL blocking. */
     std::deque<DynInstPtr> fetchQueue[MaxThreads];
-
-    /** Whether or not the fetch buffer data is valid. */
-    bool fetchBufferValid[MaxThreads];
 
     /** Loop buffer with unrolling */
     branch_prediction::ftb_pred::LoopBuffer *loopBuffer;

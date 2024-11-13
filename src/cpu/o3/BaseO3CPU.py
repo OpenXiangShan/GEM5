@@ -120,10 +120,10 @@ class BaseO3CPU(BaseCPU):
     renameToFetchDelay = Param.Cycles(1 ,"Rename to fetch delay")
     iewToFetchDelay = Param.Cycles(1, "Issue/Execute/Writeback to fetch "
                                    "delay")
-    commitToFetchDelay = Param.Cycles(3, "Commit to fetch delay")
-    fetchWidth = Param.Unsigned(16, "Fetch width")
-    fetchBufferSize = Param.Unsigned(64, "Fetch buffer size in bytes")
-    fetchQueueSize = Param.Unsigned(48, "Fetch queue size in micro-ops "
+    commitToFetchDelay = Param.Cycles(1, "Commit to fetch delay")
+    fetchWidth = Param.Unsigned(32, "Fetch width")
+    fetchBufferSize = Param.Unsigned(36, "Fetch buffer size in bytes")
+    fetchQueueSize = Param.Unsigned(80, "Fetch queue size in micro-ops "
                                     "per-thread")
 
     renameToDecodeDelay = Param.Cycles(1, "Rename to decode delay")

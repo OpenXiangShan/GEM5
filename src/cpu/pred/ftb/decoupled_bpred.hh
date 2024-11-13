@@ -582,10 +582,9 @@ class DecoupledBPUWithFTB : public BPredUnit
         BpTrace(FetchStream &stream, const DynInstPtr &inst, bool mispred);
     };
 
-    std::pair<bool, bool> decoupledPredict(const StaticInstPtr &inst,
-                                           const InstSeqNum &seqNum,
-                                           PCStateBase &pc, ThreadID tid,
-                                           unsigned &currentLoopIter);
+    std::pair<bool, bool> decoupledPredict(const StaticInstPtr &inst, const InstSeqNum &seqNum, PCStateBase &pc,
+                                           ThreadID tid, unsigned &currentLoopIter,
+                                           FtqEntry &ftq_entry);
 
     // redirect the stream
     void controlSquash(unsigned ftq_id, unsigned fsq_id,
@@ -614,9 +613,24 @@ class DecoupledBPUWithFTB : public BPredUnit
         return fetchTargetQueue.fetchTargetAvailable();
     }
 
+    bool fetchTargetAvailable(int nextN)
+    {
+        return fetchTargetQueue.fetchTargetAvailable(nextN);
+    }
+
     FtqEntry& getSupplyingFetchTarget()
     {
         return fetchTargetQueue.getTarget();
+    }
+
+    FtqEntry& getSupplyingFetchTarget(int nextN)
+    {
+        return fetchTargetQueue.getTarget(nextN);
+    }
+
+    void finishCurrentFetchTarget(int n)
+    {
+        fetchTargetQueue.finishCurrentFetchTarget(n);
     }
 
     unsigned getSupplyingTargetId()
