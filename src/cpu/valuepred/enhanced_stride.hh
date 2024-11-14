@@ -23,7 +23,7 @@ class EStride : public VPUnit
 
   private:
     using Params = EStrideParams;
-    using updateConfDecision = std::pair<bool, int>;
+    using UpdateConfDecision = std::pair<bool, int>;
 
     // some instruction latency, these are pre-existing data.
     // todo: This data needs to be updated to the real observed data
@@ -37,10 +37,10 @@ class EStride : public VPUnit
     class ESEntry
     {
       public:
-        unsigned tag = 0;
+        uint32_t tag = 0;
         int confidence = 0;
         // todo: we can also control the bits of stride
-        int stride = 0;
+        int64_t stride = 0;
         RegVal lastValue = 0;
         // now only use 2 bits useful
         // todo: we can also control the bits of useful
@@ -92,14 +92,14 @@ class EStride : public VPUnit
     const int strideWidth;
     const int tagWidth;
     const int logESTBEntrys;
+    const int entryCounts;
     const int logMaxConfidence;
+    const int MAXCONFIDENCE;
+    const int confidenceThreshold;
     InflightWindow inflightWindow;
     const bool enableTimeMsgInUpdate;
 
   private:
-    int entryCounts;
-    int confidenceThreshold;
-    int MAXCONFIDENCE;
 
     std::vector<std::vector<ESEntry>> ESTables;
 
@@ -108,21 +108,21 @@ class EStride : public VPUnit
     VPResult doPredict(ESPredMetaData *esPredMetaData, int inflights);
 
     // extend strideWidth-bits stride to 32-bits stride for calculate
-    int extendStride(int entryStride);
+    int64_t extendStride(int64_t entryStride);
 
     // Pass in pc and the nth way, and hash to get the index of the nth way.
-    unsigned pcHashToWayIndex(Addr pc, int way);
+    uint32_t pcHashToWayIndex(Addr pc, int way);
     // Pass in pc and the nth way, and hash to get the tag of the nth way.
-    unsigned pcHashToTag(Addr pc, int way);
+    uint32_t pcHashToTag(Addr pc, int way);
 
     // return not-zero value if not equals
-    unsigned compareTags(unsigned tag1, unsigned tag2);
+    uint32_t compareTags(uint32_t tag1, uint32_t tag2);
 
     // Returns a decision about whether to update the entry.
-    updateConfDecision decideToUpdate(const ESUpdateMetaData *esUpdateMetaData, int stride);
+    UpdateConfDecision decideToUpdate(const ESUpdateMetaData *esUpdateMetaData, int64_t stride);
 
     // in update time, when we can't allocate new entry, try dec useful count
-    unsigned tryDecUseful(const ESEntry &entry);
+    uint32_t tryDecUseful(const ESEntry &entry);
 
   public:
     EStride(const Params &params);
@@ -147,7 +147,7 @@ class EStride : public VPUnit
 
     // for dump some data
   private:
-    std::unordered_map<Addr, std::pair<int, std::string>> fluentInstructions;
+    std::unordered_map<Addr, std::pair<int32_t, std::string>> fluentInstructions;
 
   public:
     struct EStrideStats : public statistics::Group

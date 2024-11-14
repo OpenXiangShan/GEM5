@@ -21,7 +21,7 @@ EStride::InflightWindow::InflightWindow(int windowTagLength, bool idealWindow)
       windowTagLength(windowTagLength),
       idealWindow(idealWindow),
       windowActiveCount(0),
-      lastSeqNo(0u)
+      lastSeqNo(0ul)
 {
     // simple hash plan
     if (idealWindow) {
@@ -90,29 +90,22 @@ EStride::EStride(const Params &params)
       strideWidth(params.strideWidth),
       tagWidth(params.tagWidth),
       logESTBEntrys(params.logESTBEntrys),
+      entryCounts(1 << logESTBEntrys),
       logMaxConfidence(params.logMaxConfidence),
+      MAXCONFIDENCE(1 << logMaxConfidence),
+      confidenceThreshold(static_cast<int>(params.thresholdPercent * MAXCONFIDENCE)),
       inflightWindow(params.inflightWindowTagLength, params.idealWindow),
       enableTimeMsgInUpdate(params.enableTimeMsgInUpdate),
       esstats(this)
 {
     // assertion
-    static_assert(sizeof(int) >= 4, "error because int < 4 bytes \n");
     gem5_assert(ways, "EStride ways must > 0 \n");
-    gem5_assert(strideWidth, "EStride strideWidth  must > 0 \n");
+    gem5_assert(strideWidth, "EStride strideWidth must > 0 \n");
+    gem5_assert(strideWidth < 64, "EStride strideWidth must < 64 \n");
     gem5_assert(tagWidth, "EStride tagWidth must > 0 \n");
     gem5_assert(logESTBEntrys, "EStride logESTBEntrys must > 0 \n");
     gem5_assert(logMaxConfidence, "EStride logMaxConfidence must > 0 \n");
     gem5_assert(params.inflightWindowTagLength, "EStride inflightWindowTagLength must > 0 \n");
-
-    // we can also enable the test for data type
-    assert(logESTBEntrys < (sizeof(int) * 8));
-    entryCounts = 1 << logESTBEntrys;
-
-    // generate max confidence
-    assert(logMaxConfidence < (sizeof(int) * 8));
-    MAXCONFIDENCE = 1 << logMaxConfidence;
-    confidenceThreshold = static_cast<int>(params.thresholdPercent * MAXCONFIDENCE);
-
 
     // init stats
     ESTables.resize(ways);
@@ -123,6 +116,7 @@ EStride::EStride(const Params &params)
     esstats.allocate.init(ways, entryCounts);
     esstats.strideNotEquals.init(ways, entryCounts);
     esstats.strideEquals.init(ways, entryCounts);
+    // The global inflight window size should be slightly larger than the ROB.
     esstats.inflightSH.init(400);
 
     DPRINTF(EStride, "================================== EStride Params ==================================\n");
@@ -188,13 +182,13 @@ EStride::EStride(const Params &params)
 
 //*********************** auxilary method **************************
 
-int
-EStride::extendStride(int entryStride)
+int64_t
+EStride::extendStride(int64_t entryStride)
 {
-    int mask = (1 << strideWidth) - 1;
+    int64_t mask = (1 << strideWidth) - 1;
     entryStride &= mask;
 
-    int sign_bit = 1 << (strideWidth - 1);
+    int64_t sign_bit = 1 << (strideWidth - 1);
 
     if (entryStride & sign_bit) {
         entryStride |= (~mask);
@@ -205,7 +199,7 @@ EStride::extendStride(int entryStride)
     return entryStride;
 }
 
-unsigned
+uint32_t
 EStride::pcHashToWayIndex(Addr pc, int way)
 {
     uint64_t hash = pc;
@@ -220,7 +214,7 @@ EStride::pcHashToWayIndex(Addr pc, int way)
     return hash & ((1u << logESTBEntrys) - 1);
 }
 
-unsigned
+uint32_t
 EStride::pcHashToTag(Addr pc, int way)
 {
     int j = ways - way;
@@ -228,7 +222,7 @@ EStride::pcHashToTag(Addr pc, int way)
         j = 0;
     }
 
-    int hash = pc;
+    uint64_t hash = pc;
     for (int k = 1; k <= ways + 1; k++) {
         int shift = ((k * logESTBEntrys) - j) % 64;
         if (shift < 0) {
@@ -240,15 +234,15 @@ EStride::pcHashToTag(Addr pc, int way)
     return hash & ((1 << tagWidth) - 1);
 }
 
-unsigned
-EStride::compareTags(unsigned tag1, unsigned tag2)
+uint32_t
+EStride::compareTags(uint32_t tag1, uint32_t tag2)
 {
     return ((tag1 & ((1 << tagWidth) - 1)) ^ (tag2 & ((1 << tagWidth) - 1)));
 }
 
 
-EStride::updateConfDecision
-EStride::decideToUpdate(const ESUpdateMetaData *esUpdateMetaData, int stride)
+EStride::UpdateConfDecision
+EStride::decideToUpdate(const ESUpdateMetaData *esUpdateMetaData, int64_t stride)
 {
     // todo: different update strategy
     // todo: The current update strategy is close to 100% probability and will
@@ -281,48 +275,56 @@ EStride::decideToUpdate(const ESUpdateMetaData *esUpdateMetaData, int stride)
     }
 
     bool finalUpdate = shouldUpdate & ((std::abs(stride) > 1) || !esUpdateMetaData->isLoadInst ||
-                                       ((stride == -1) & ((random_mt.random<int>() & 1) == 0)) ||
-                                       ((stride == 1) & ((random_mt.random<int>() & 3) == 0)));
+                                       ((stride == -1) & ((random_mt.random<int32_t>() & 1) == 0)) ||
+                                       ((stride == 1) & ((random_mt.random<int32_t>() & 3) == 0)));
 
     return {finalUpdate, 1};
 }
 
-unsigned
+uint32_t
 EStride::tryDecUseful(const ESEntry &entry)
 {
-    unsigned k = 2 + 2 * (entry.confidence > MAXCONFIDENCE / 8) + 2 * (entry.confidence >= MAXCONFIDENCE / 4);
-    unsigned mask = (1 << k) - 1;
+    uint32_t k = 2 + 2 * (entry.confidence > MAXCONFIDENCE / 8) + 2 * (entry.confidence >= MAXCONFIDENCE / 4);
+    uint32_t mask = (1 << k) - 1;
 
-    return random_mt.random<int>() & mask;
+    return random_mt.random<uint32_t>() & mask;
 }
 //****************************************************************
 
 VPResult
 EStride::doPredict(ESPredMetaData *esPredMetaData, int inflights)
 {
-    std::string indexMarker, tagMarker;
-    std::vector<unsigned> indexEachWays(ways);
+    std::vector<uint32_t> indexEachWays(ways);
     for (size_t i = 0; i < indexEachWays.size(); i++) {
         indexEachWays[i] = pcHashToWayIndex(esPredMetaData->pc, i);
-        indexMarker += std::to_string(indexEachWays[i]);
-        indexMarker += " ";
     }
 
-    std::vector<unsigned> tagEachWays(ways);
+    std::vector<uint32_t> tagEachWays(ways);
     for (size_t i = 0; i < tagEachWays.size(); i++) {
         tagEachWays[i] = pcHashToTag(esPredMetaData->pc, i);
-        tagMarker += std::to_string(tagEachWays[i]);
-        tagMarker += " ";
     }
 
-    DPRINTF(EStride, "[ESPredict] seq_no:%lu pc: %lX index each way: %s\n", esPredMetaData->seq_no, esPredMetaData->pc,
-            indexMarker.c_str());
-    DPRINTF(EStride, "[ESPredict] seq_no:%lu pc: %lX tag each way: %s\n", esPredMetaData->seq_no, esPredMetaData->pc,
-            tagMarker.c_str());
+    if (debug::EStride) {
+        std::string indexMarker, tagMarker;
+        for (size_t i = 0; i < indexEachWays.size(); i++) {
+            indexMarker += std::to_string(indexEachWays[i]);
+            indexMarker += " ";
+        }
+
+        for (size_t i = 0; i < tagEachWays.size(); i++) {
+            tagMarker += std::to_string(tagEachWays[i]);
+            tagMarker += " ";
+        }
+
+        DPRINTF(EStride, "[ESPredict] seq_no:%lu pc: %lX index each way: %s\n", esPredMetaData->seq_no,
+                esPredMetaData->pc, indexMarker.c_str());
+        DPRINTF(EStride, "[ESPredict] seq_no:%lu pc: %lX tag each way: %s\n", esPredMetaData->seq_no,
+                esPredMetaData->pc, tagMarker.c_str());
+    }
 
     bool found = false;
     int way;
-    size_t index;
+    uint32_t index;
     ESEntry entryCopy;
     for (int i = 0; i < ways; ++i) {
         const ESEntry &entry = ESTables[i][indexEachWays[i]];
@@ -345,18 +347,18 @@ EStride::doPredict(ESPredMetaData *esPredMetaData, int inflights)
     DPRINTF(EStride, "[ESPredict][way: %d index: %u][confidence: %d  useful: %d lastValue: %lu]\n", way, index,
             entryCopy.confidence, entryCopy.useful, entryCopy.lastValue);
 
+    uint64_t predValue = (uint64_t)((int64_t)entryCopy.lastValue + (inflights + 1) * extendStride(entryCopy.stride));
+
     if (entryCopy.confidence < confidenceThreshold) {
         DPRINTF(EStride,
                 "[ESPredict]=> seq_no:%lu pc:%lX confidence not enough in ES[way: %d index: %u inflights: %d]\n",
                 esPredMetaData->seq_no, esPredMetaData->pc, way, index, inflights);
-        return {false,
-                (uint64_t)((int64_t)entryCopy.lastValue + (inflights + 1) * (int64_t)extendStride(entryCopy.stride))};
+        return {false, predValue};
     }
 
     DPRINTF(EStride, "[ESPredict]=> seq_no:%lu pc:%lX get prediction in [way: %d index: %u inflights: %d]\n",
             esPredMetaData->seq_no, esPredMetaData->pc, way, index, inflights);
-    return {true,
-            (uint64_t)((int64_t)entryCopy.lastValue + (inflights + 1) * (int64_t)extendStride(entryCopy.stride))};
+    return {true, predValue};
 }
 
 VPResult
@@ -383,34 +385,44 @@ EStride::updateValuePredictor(VPUpdateMetaData *updateMetaData)
     // the first step update inflights window
     inflightWindow.removeFromWindow(esUpdateMetaData->pc, esUpdateMetaData->seq_no);
 
-    std::string indexMarker, tagMarker;
-
     // Given the nature of the current hash method, the same PC gets the
     // same hash value every time it is computed. So instead of storing
     // the hash value in dyninst, we now compute it each time it is used.
     std::vector<unsigned> indexEachWays(ways);
     for (size_t i = 0; i < indexEachWays.size(); i++) {
         indexEachWays[i] = pcHashToWayIndex(esUpdateMetaData->pc, i);
-        indexMarker += std::to_string(indexEachWays[i]);
-        indexMarker += " ";
     }
 
     std::vector<unsigned> tagEachWays(ways);
     for (size_t i = 0; i < tagEachWays.size(); i++) {
         tagEachWays[i] = pcHashToTag(esUpdateMetaData->pc, i);
-        tagMarker += std::to_string(tagEachWays[i]);
-        tagMarker += " ";
     }
 
-    DPRINTF(EStride, "[ESUpdate] seq_no:%lu pc: %lX index each way: %s\n", updateMetaData->seq_no, updateMetaData->pc,
-            indexMarker.c_str());
-    DPRINTF(EStride, "[ESUpdate] seq_no:%lu pc: %lX tag each way: %s\n", updateMetaData->seq_no, updateMetaData->pc,
-            tagMarker.c_str());
+
+    if (debug::EStride) {
+        std::string indexMarker, tagMarker;
+
+        for (size_t i = 0; i < indexEachWays.size(); i++) {
+            indexMarker += std::to_string(indexEachWays[i]);
+            indexMarker += " ";
+        }
+
+        for (size_t i = 0; i < tagEachWays.size(); i++) {
+            tagMarker += std::to_string(tagEachWays[i]);
+            tagMarker += " ";
+        }
+
+        DPRINTF(EStride, "[ESUpdate] seq_no:%lu pc: %lX index each way: %s\n", updateMetaData->seq_no,
+                updateMetaData->pc, indexMarker.c_str());
+        DPRINTF(EStride, "[ESUpdate] seq_no:%lu pc: %lX tag each way: %s\n", updateMetaData->seq_no,
+                updateMetaData->pc, tagMarker.c_str());
+    }
+
 
     // try to find
     bool found = false;
-    size_t way;
-    size_t index;
+    int way;
+    uint32_t index;
     for (size_t i = 0; i < ways; ++i) {
         const ESEntry &entry = ESTables[i][indexEachWays[i]];
         // todo maybe change the occupied
@@ -432,9 +444,9 @@ EStride::updateValuePredictor(VPUpdateMetaData *updateMetaData)
         // update stride and judge is mispredict, and update lastValue
         DPRINTF(EStride, "activate value - last value: %lu-%lu, appear before: %s \n", esUpdateMetaData->actualValue,
                 entry.lastValue, entry.NotFirstAppear ? "not" : "yes");
-        bool misprediction = !(esUpdateMetaData->actualValue ==
-                               (uint64_t)((int64_t)entry.lastValue + (int64_t)extendStride(entry.stride)));
-        int actualStride = esUpdateMetaData->actualValue - entry.lastValue;
+        bool misprediction =
+            !(esUpdateMetaData->actualValue == (uint64_t)((int64_t)entry.lastValue + extendStride(entry.stride)));
+        int64_t actualStride = esUpdateMetaData->actualValue - entry.lastValue;
         entry.lastValue = esUpdateMetaData->actualValue;
 
         if (entry.NotFirstAppear) {
@@ -450,7 +462,7 @@ EStride::updateValuePredictor(VPUpdateMetaData *updateMetaData)
                     fluentInstructions[esUpdateMetaData->pc].first += 1;
                 }
 
-                updateConfDecision decision = decideToUpdate(esUpdateMetaData, actualStride);
+                UpdateConfDecision decision = decideToUpdate(esUpdateMetaData, actualStride);
                 if (decision.first) {
                     entry.confidence = std::min(MAXCONFIDENCE, entry.confidence + decision.second);
                 }
@@ -487,7 +499,7 @@ EStride::updateValuePredictor(VPUpdateMetaData *updateMetaData)
         DPRINTF(EStride, "try to allocate new entry\n");
 
         // random find begin of the way-number to find allocate entry
-        unsigned wayBegin = random_mt.random<unsigned>() % ways;
+        uint32_t wayBegin = random_mt.random<uint32_t>() % ways;
 
         // the entry have no stride at first allocate time
 
