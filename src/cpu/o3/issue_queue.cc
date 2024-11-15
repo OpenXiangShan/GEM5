@@ -953,15 +953,15 @@ Scheduler::bypassWriteback(const DynInstPtr& inst)
 
         // value prediction verify
         // mark: value prediction verification
-        if (inst->vpSupported) {
+        if (inst->vpSupported && inst->fault == NoFault) {
             assert(!inst->isVerified());
+
+            //if (inst->getFault() != NoFault) {
+            //    inst->setVerified();
+            //    return;
+            //}
+
             assert(inst->isExecuted());
-
-            if (inst->getFault() != NoFault) {
-                inst->setVerified();
-                return;
-            }
-
             assert(inst->resultSize() == 1);
 
             // convert result to instruction types

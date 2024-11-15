@@ -56,6 +56,7 @@
 #include "cpu/pred/ftb/decoupled_bpred.hh"
 #include "cpu/timebuf.hh"
 #include "cpu/translation.hh"
+#include "cpu/valuepred/valuepred_unit.hh"
 #include "enums/SMTFetchPolicy.hh"
 #include "mem/packet.hh"
 #include "mem/port.hh"
@@ -654,6 +655,10 @@ class Fetch
     uint8_t* secondDataBuf;
 
     bool waitForVsetvl = false;
+
+  private:
+    // value prediction
+    valuepred::VPUnit *valuePredictor;
 };
 
 } // namespace o3

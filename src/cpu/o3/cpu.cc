@@ -60,6 +60,7 @@
 #include "debug/Drain.hh"
 #include "debug/O3CPU.hh"
 #include "debug/Quiesce.hh"
+#include "debug/VPCOMMON.hh"
 #include "debug/ValueCommit.hh"
 #include "enums/MemoryMode.hh"
 #include "sim/async.hh"
@@ -1251,8 +1252,10 @@ CPU::instDone(ThreadID tid, const DynInstPtr &inst)
         thread[tid]->threadStats.numInsts++;
         cpuStats.committedInsts[tid]++;
 
-        if (thread[tid]->numInst % 10000 == 0) {
-            fprintf(stderr, "commit %lu insts\n", thread[tid]->numInst);
+        if (debug::VPCOMMON) {
+            if (thread[tid]->numInst % 10000 == 0) {
+                fprintf(stderr, "commit %lu insts\n", thread[tid]->numInst);
+            }
         }
 
         if (this->nextDumpInstCount

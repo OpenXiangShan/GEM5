@@ -1274,25 +1274,6 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
 
         ++stats.renamedOperands;
 
-        // do the value prediction.
-        // In EStride or other implementations of value predictors, since
-        // it takes time for the value predictor to produce a prediction,
-        // the value prediction is often started after the fetch phase,
-        // where the instructions are not decoded, so we can't use the
-        // information in dyninst. The reason for placing the value
-        // prediction in the Rename phase is that on gem5,
-        // the predictor does not require a delay to produce a result.
-
-        // This simulate valuePredict in fetch the instructions
-        // no instruction information, every instructions take into valuePredictor.
-        valuepred::VPPredMetaData* vpPredMetaData =
-                dynamic_cast<valuepred::ESPredMetaData *>(valuepred::VPDataStructFactory::
-                                                                buildPredMetaData(ValuePredType::EStride));
-        vpPredMetaData->pc = inst->getPC();
-        vpPredMetaData->seq_no = inst->seqNum;
-        inst->vpResult = valuePredictor->valuePredict(vpPredMetaData);
-
-
         // This simulate in rename stage, we know the instruction information, we can control
         // whether instruction support value prediction.
         if (num_dest_regs != 1 || rename_result.first->isFixedMapping() ||
@@ -1322,7 +1303,6 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
         }else{
             // value prediction not taken
         }
-        delete vpPredMetaData;
 
     }
 }

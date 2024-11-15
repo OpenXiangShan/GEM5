@@ -1694,7 +1694,7 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
     head_inst->commitCycle = cpu->curCycle();
 
     // for instruction who can be train for value predictor
-    if (head_inst->vpSupported){
+    if (head_inst->vpSupported && inst_fault == NoFault){
         gem5_assert(head_inst->isVerified(), "%s\n", head_inst->genDisassembly());
         assert(head_inst->commitCycle > head_inst->renameCycle);
 

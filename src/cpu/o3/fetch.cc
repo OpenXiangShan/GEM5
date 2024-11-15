@@ -59,6 +59,8 @@
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/valuepred/es_metadata.hh"
+#include "cpu/valuepred/valuepred_metadata.hh"
 #include "debug/Activity.hh"
 #include "debug/Counters.hh"
 #include "debug/DecoupleBPProbe.hh"
@@ -106,7 +108,8 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       numThreads(params.numThreads),
       numFetchingThreads(params.smtNumFetchingThreads),
       icachePort(this, _cpu),
-      finishTranslationEvent(this), fetchStats(_cpu, this)
+      finishTranslationEvent(this), fetchStats(_cpu, this),
+      valuePredictor(params.valuePred)
 {
     if (numThreads > MaxThreads)
         fatal("numThreads (%d) is larger than compiled limit (%d),\n"
@@ -1849,6 +1852,23 @@ Fetch::fetch(bool &status_change)
                 quiesce = true;
                 break;
             }
+
+
+            // do the value prediction.
+            // In EStride or other implementations of value predictors, since
+            // it takes time for the value predictor to produce a prediction,
+            // the value prediction is often started after the fetch phase.
+
+            // This simulate valuePredict in fetch the instructions
+            // no instruction information, every instructions take into valuePredictor.
+            valuepred::VPPredMetaData* vpPredMetaData =
+                    dynamic_cast<valuepred::ESPredMetaData *>(valuepred::VPDataStructFactory::
+                                                                    buildPredMetaData(ValuePredType::EStride));
+            vpPredMetaData->pc = instruction->getPC();
+            vpPredMetaData->seq_no = instruction->seqNum;
+            instruction->vpResult = valuePredictor->valuePredict(vpPredMetaData);
+            delete vpPredMetaData;
+
         } while ((curMacroop || dec_ptr->instReady()) &&
                  numInst < fetchWidth &&
                  fetchQueue[tid].size() < fetchQueueSize);
