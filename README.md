@@ -251,6 +251,10 @@ bash ../parallel_sim.sh `realpath ../kmh_6wide.sh` $workloads_lst /top/dir/of/ch
 In this example, parallel_sim.sh will invoke kmh_6wide.sh with GNU parallel to run multiple workloads.
 Through this, parallel simulation infrastructure is decouple from the simulation script.
 
+#### run xs-gem5 in docker
+In order to be able to run scores on servers without root access, we provide a simple docker script to run xs-gem5.
+For more details see [README about run in docker](./util/xs_scripts/docker/README.md).
+
 ### About workload_lst
 
 A line of `workload_lst` is a space-separated list of workload parameters.
