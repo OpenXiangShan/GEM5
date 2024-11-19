@@ -120,10 +120,11 @@ export -f run
 export -f arg_wrapper
 export -f prepare_env
 
+# xsgem5_para_jobs define in docker compose
+num_threads=${xsgem5_para_jobs:-63}
 function parallel_run() {
     # We use gnu parallel to control the parallelism.
     # If your server has 32 core and 64 SMT threads, we suggest to run with no more than 32 threads.
-    export num_threads=63
     cat $workload_list | parallel -a - -j $num_threads arg_wrapper {}
 }
 
