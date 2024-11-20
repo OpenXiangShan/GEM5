@@ -23,7 +23,7 @@ class EStride(ValuePredictor):
     strideWidth = Param.Int(20, "Indicates the number of bits used for stride"
                             "must <= 32")
     tagWidth = Param.Int(16, "tag-width")
-    logESTBEntrys = Param.Int(5, "log 2 of ES table entry counts")
+    logESTBEntrys = Param.Int(7, "log 2 of ES table entry counts")
     logMaxConfidence = Param.Int(5, "log 2 of max confidence number")
     thresholdPercent = Param.Float(0.25, "threshold percent of confidence")
 

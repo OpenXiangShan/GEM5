@@ -131,6 +131,10 @@ EStride::EStride(const Params &params)
     // call back to dump stats
     registerExitCallback([this]() {
         auto outhandle = simout.create("EStride.txt", false, true);
+
+        int ESSize = ways * entryCounts * (tagWidth + logMaxConfidence + strideWidth + 64 + 2 + 1);
+        *outhandle->stream() << "EStride Size: " << (1.0 * ESSize) / (8 * 1024)  << "KB" << std::endl;
+
         *outhandle->stream() << "VPcorrect: " << stats.VPcorrected.value() << std::endl;
         *outhandle->stream() << "VPpredicted: " << stats.VPpredicted.value() << std::endl;
         *outhandle->stream() << "faultLoad: " << stats.faultLoad.value() << std::endl;

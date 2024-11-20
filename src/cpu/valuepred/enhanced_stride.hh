@@ -1,3 +1,5 @@
+//The interfaces and implementations in EStride
+//are partially based on the cvp1st paper implementation.
 #ifndef __ENHANCED_STTIDE_HH__
 #define __ENHANCED_STTIDE_HH__
 
