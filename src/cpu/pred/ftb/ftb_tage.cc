@@ -250,7 +250,7 @@ FTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Full
             if (entry.slots.size() > i) {
                 takens[i] = takens[i] || entry.slots[i].alwaysTaken;
             }
-            stagePreds[s].condTakens[i] = takens[i];
+            stagePreds[s].condTakens[i] = takens[i];    // 用tage的预测结果更新condTakens
         }
     }
 

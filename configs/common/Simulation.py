@@ -265,7 +265,7 @@ def scriptCheckpoints(options, maxtick, cptdir):
     return exit_event
 
 def benchCheckpoints(testsys, options, maxtick, cptdir):
-    exit_event = m5.simulate(maxtick - m5.curTick())
+    exit_event = m5.simulate(maxtick - m5.curTick())     # 开始模拟到maxtick
     exit_cause = exit_event.getCause()
     while exit_cause == "Will trigger stat dump and reset":
         if options.enable_arch_db:
@@ -821,7 +821,7 @@ def run_vanilla(options, root, testsys, cpu_class):
 
     checkpoint_dir = None
     root.apply_config(options.param)
-    m5.instantiate(checkpoint_dir)
+    m5.instantiate(checkpoint_dir)      # 实例化所有objects, C++对象初始化
 
     # Handle the max tick settings now that tick frequency was resolved
     # during system instantiation
@@ -847,7 +847,7 @@ def run_vanilla(options, root, testsys, cpu_class):
 
     # If checkpoints are being taken, then the checkpoint instruction
     # will occur in the benchmark code it self.
-    exit_event = benchCheckpoints(testsys, options, maxtick, cptdir=None)
+    exit_event = benchCheckpoints(testsys, options, maxtick, cptdir=None)   # 开始模拟
 
     print('Exiting @ tick %i because %s' %
           (m5.curTick(), exit_event.getCause()))

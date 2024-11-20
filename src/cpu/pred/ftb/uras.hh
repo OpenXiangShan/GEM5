@@ -23,16 +23,16 @@ class uRAS : public TimedBaseFTBPredictor
 
         typedef struct uRASEntry
         {
-            Addr retAddr;
-            unsigned ctr;
+            Addr retAddr; // 返回地址
+            unsigned ctr; // 计数器，判断是否连续的call，地址相同，ctr++
             uRASEntry(Addr retAddr, unsigned ctr) : retAddr(retAddr), ctr(ctr) {}
             uRASEntry(Addr retAddr) : retAddr(retAddr), ctr(0) {}
             uRASEntry() : retAddr(0), ctr(0) {}
         }uRASEntry;
 
         typedef struct uRASMeta {
-            int sp;
-            uRASEntry tos; // top of stack
+            int sp; // 栈指针
+            uRASEntry tos; // top of stack, 栈顶
         }uRASMeta;
 
         void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
@@ -92,21 +92,21 @@ class uRAS : public TimedBaseFTBPredictor
 
         void setTrace() override;
 
-        unsigned numEntries;
+        unsigned numEntries; // 栈的深度=4
 
-        unsigned ctrWidth;
+        unsigned ctrWidth; // 计数器宽度=2
 
-        int maxCtr;
+        int maxCtr; // 最大计数器=3
 
-        int specSp;
+        int specSp; // 推测栈指针
 
-        int nonSpecSp;
+        int nonSpecSp; // 非推测栈指针
 
-        std::vector<uRASEntry> specStack;
+        std::vector<uRASEntry> specStack; // 推测栈
 
-        std::vector<uRASEntry> nonSpecStack;
+        std::vector<uRASEntry> nonSpecStack; // 非推测栈
 
-        uRASMeta meta;
+        uRASMeta meta; // 元数据， 栈指针和栈顶，用于恢复
 
         TraceManager *specRasTrace;
         TraceManager *nonSpecRasTrace;

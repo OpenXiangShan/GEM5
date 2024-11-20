@@ -54,7 +54,7 @@ FtqEntry&
 FetchTargetQueue::getTarget()
 {
     assert(fetchTargetAvailable());
-    return *supplyFetchTargetState.entry;
+    return *supplyFetchTargetState.entry;  // 返回当前的FTQ条目
 }
 
 void
@@ -145,8 +145,8 @@ FetchTargetQueue::enqueue(FtqEntry entry)
 {
     DPRINTF(DecoupleBP, "Enqueueing target %lu with pc %#x and stream %lu\n",
             fetchTargetEnqState.nextEnqTargetId, entry.startPC, entry.fsqID);
-    ftq[fetchTargetEnqState.nextEnqTargetId] = entry;
-    ++fetchTargetEnqState.nextEnqTargetId;
+    ftq[fetchTargetEnqState.nextEnqTargetId] = entry;  // 将entry插入FTQ中
+    ++fetchTargetEnqState.nextEnqTargetId;  // 更新ftq的id, ftqid = fsqid - 1, 没区别了
 }
 
 void

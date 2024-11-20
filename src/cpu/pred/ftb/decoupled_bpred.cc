@@ -603,14 +603,14 @@ DecoupledBPUWithFTB::tick()
         dbpFtbStats.fsqFullCannotEnq++;
     }
 
-    if (!receivedPred && numOverrideBubbles == 0 && sentPCHist) {
-        generateFinalPredAndCreateBubbles();
+    if (!receivedPred && numOverrideBubbles == 0 && sentPCHist) { // 没有收到预测结果，没有气泡，并且发送了PC历史
+        generateFinalPredAndCreateBubbles();  // 生成最终预测结果，产生气泡
     }
     if (!squashing) {
         DPRINTF(DecoupleBP, "DecoupledBPUWithFTB::tick()\n");
         DPRINTF(Override, "DecoupledBPUWithFTB::tick()\n");
-        tryEnqFetchTarget();    // 尝试入队到FetchTarget中
-        tryEnqFetchStream();
+        tryEnqFetchTarget();    // 尝试入队到FetchTarget中, 从FSQ生成（多个）FTQ条目存入FTQ
+        tryEnqFetchStream();    // 尝试入队到FetchStream中，这里会分支预测，并把预测结果生成FSQentry存入FSQ
     } else {
         receivedPred = false;
         DPRINTF(DecoupleBP, "Squashing, skip this cycle, receivedPred is %d.\n", receivedPred);
@@ -623,7 +623,7 @@ DecoupledBPUWithFTB::tick()
 
     sentPCHist = false;
 
-    if (!receivedPred && !streamQueueFull()) {
+    if (!receivedPred && !streamQueueFull()) { // 没有收到预测结果，并且FSQ没有满， 开始BP预测！
         if (!enableLoopBuffer || (enableLoopBuffer && !lb.isActive())) {
             if (s0PC == ObservingPC) {
                 DPRINTFV(true, "Predicting block %#lx, id: %lu\n", s0PC, fsqId);
@@ -635,7 +635,8 @@ DecoupledBPUWithFTB::tick()
                 predsOfEachStage[i].bbStart = s0PC;
             }
             for (int i = 0; i < numComponents; i++) {
-                components[i]->putPCHistory(s0PC, s0History, predsOfEachStage);
+                components[i]->putPCHistory(s0PC, s0History, predsOfEachStage);  
+                // 调用各个组件的putPCHistory方法分支预测， 预测结果记录在predsOfEachStage中
             }
         } else {
             DPRINTF(LoopBuffer, "Do not query bpu when loop buffer is active\n");
@@ -668,6 +669,7 @@ DecoupledBPUWithFTB::tick()
 
 // this function collects predictions from all stages and generate bubbles
 // when loop buffer is active, predictions are from saved stream
+// 这个函数收集各个阶段的预测结果，产生泡泡
 void
 DecoupledBPUWithFTB::generateFinalPredAndCreateBubbles()
 {
@@ -678,9 +680,9 @@ DecoupledBPUWithFTB::generateFinalPredAndCreateBubbles()
         for (int i = 0; i < numStages; i++) {
             printFullFTBPrediction(predsOfEachStage[i]);
         }
-        // choose the most accurate prediction
+        // choose the most accurate prediction， 选择各级最准确的预测（最后一级）
         FullFTBPrediction *chosen = &predsOfEachStage[0];
-
+        // 从最后一级开始往前找，选择第一个有效的预测，只看valid吗，会出现uftb, ftb 同时valid吗？
         for (int i = (int) numStages - 1; i >= 0; i--) {
             if (predsOfEachStage[i].valid) {
                 chosen = &predsOfEachStage[i];
@@ -690,7 +692,7 @@ DecoupledBPUWithFTB::generateFinalPredAndCreateBubbles()
         }
         finalPred = *chosen;
         // calculate bubbles
-        unsigned first_hit_stage = 0;
+        unsigned first_hit_stage = 0; // 找到第一个预测命中的级别
         while (first_hit_stage < numStages-1) {
             if (predsOfEachStage[first_hit_stage].match(*chosen)) {
                 break;
@@ -753,12 +755,12 @@ DecoupledBPUWithFTB::decoupledPredict(const StaticInstPtr &inst,
     std::unique_ptr<PCStateBase> target(pc.clone());
 
     DPRINTF(DecoupleBP, "looking up pc %#lx\n", pc.instAddr());
-    auto target_avail = fetchTargetQueue.fetchTargetAvailable();
+    auto target_avail = fetchTargetQueue.fetchTargetAvailable(); // 检查FTQ(Fetch Target Queue)是否有可用目标
 
     DPRINTF(DecoupleBP, "Supplying fetch with target ID %lu\n",
             fetchTargetQueue.getSupplyingTargetId());
 
-    if (!target_avail) {
+    if (!target_avail) {  // 没有，返回dummy预测,not taken
         DPRINTF(DecoupleBP,
                 "No ftq entry to fetch, return dummy prediction\n");
         // todo pass these with reference
@@ -767,7 +769,7 @@ DecoupledBPUWithFTB::decoupledPredict(const StaticInstPtr &inst,
     }
     currentFtqEntryInstNum++;
 
-    const auto &target_to_fetch = fetchTargetQueue.getTarget();
+    const auto &target_to_fetch = fetchTargetQueue.getTarget(); // 获取当前的FTQ条目
 
     // found corresponding entry
     auto start = target_to_fetch.startPC;
@@ -786,7 +788,7 @@ DecoupledBPUWithFTB::decoupledPredict(const StaticInstPtr &inst,
     // because it might just be updated last cycle
     // but last cycle ftq tells fetch that this is a miss stream
     assert(pc.instAddr() < end && pc.instAddr() >= start);
-    bool raw_taken = pc.instAddr() == taken_pc && target_to_fetch.taken;
+    bool raw_taken = pc.instAddr() == taken_pc && target_to_fetch.taken;    // 是分支且预测taken
     bool taken = raw_taken;
     bool run_out_of_this_entry = false;
     // an ftq entry may consists of multiple loop iterations,
@@ -796,9 +798,9 @@ DecoupledBPUWithFTB::decoupledPredict(const StaticInstPtr &inst,
         DPRINTF(LoopBuffer, "current loop iter %d, loop_iter %d, loop_exit %d\n",
             current_loop_iter, loop_iter, loop_exit);
         if (raw_taken) {
-            if (current_loop_iter >= loop_iter - 1) {
+            if (current_loop_iter >= loop_iter - 1) { // 如果是循环最后一次
                 run_out_of_this_entry = true;
-                if (loop_exit) {
+                if (loop_exit) {    // 循环出口，改为Not taken
                     taken = false;
                     lb.tryUnpin();
                     DPRINTF(LoopBuffer, "modifying taken to false because of loop exit\n");
@@ -807,12 +809,12 @@ DecoupledBPUWithFTB::decoupledPredict(const StaticInstPtr &inst,
             fetchTargetQueue.incCurrentLoopIter(loop_iter);
         }
     } else {
-        if (taken) {
+        if (taken) {    // 非循环，taken = 基本块结束
             run_out_of_this_entry = true;
         }
     }
 
-    if (taken) {
+    if (taken) {    // 预测taken, 更新PC 到预测目标
         auto &rtarget = target->as<GenericISA::PCStateWithNext>();
         rtarget.pc(target_to_fetch.target);
         // TODO: how about compressed?
@@ -822,7 +824,7 @@ DecoupledBPUWithFTB::decoupledPredict(const StaticInstPtr &inst,
                 "Predicted pc: %#lx, upc: %#lx, npc(meaningless): %#lx, instSeqNum: %d\n",
                 target->instAddr(), rtarget.upc(), rtarget.npc(), seqNum);
         set(pc, *target);
-    } else {
+    } else { // 如果预测not taken,顺序执行下一条指令
         inst->advancePC(*target);
         if (target->instAddr() >= end) {
             run_out_of_this_entry = true;
@@ -831,7 +833,7 @@ DecoupledBPUWithFTB::decoupledPredict(const StaticInstPtr &inst,
         DPRINTF(DecoupleBP, "Predict it %staken to %#lx\n", taken ? "" : "not ",
                 target->instAddr());
 
-    if (run_out_of_this_entry) {
+    if (run_out_of_this_entry) { // 当前FTQ条目使用完毕,需要出队
         // dequeue the entry
         const auto fsqId = target_to_fetch.fsqID;
         DPRINTF(DecoupleBP, "running out of ftq entry %lu with %d insts\n",
@@ -1284,6 +1286,7 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
     // commit controls in local prediction history buffer to committedSeq
     // mark all committed control instructions as correct
     // do not need to dequeue when empty
+    // 当commit stream时候，把本地预测控制流提交到committedSeq, 标记为正确，当空时候不需要出队
     if (fetchStreamQueue.empty())
         return;
     auto it = fetchStreamQueue.begin();
@@ -1485,11 +1488,11 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
             auto updateLat = curCycle() - stream.predCycle;
             dbpFtbStats.updateLatencyDist.sample(updateLat, 1);
 
-            // generate new ftb entry first
-            // each component will use info of this entry to update
-            ftb->getAndSetNewFTBEntry(stream);
+            // generate new ftb entry first 先生成新的ftb项
+            // each component will use info of this entry to update 每个组件使用这个项更新自己的内容
+            ftb->getAndSetNewFTBEntry(stream);  // 获取新的ftb项
             for (int i = 0; i < numComponents; ++i) {
-                components[i]->update(stream);
+                components[i]->update(stream);  // 每个组件更新自己内容
             }
             // ftb entry stats
             auto it = totalFTBEntries.find(stream.startPC);
@@ -1988,7 +1991,7 @@ DecoupledBPUWithFTB::dumpFsq(const char *when)
     }
 }
 
-// this funtion use finalPred to enq fsq(ftq) and update s0PC
+// this funtion use finalPred to enq fsq(ftq) and update s0PC 使用finalPred预测结果入队FSQ，更新s0PC
 void
 DecoupledBPUWithFTB::tryEnqFetchStream()
 {
@@ -2007,7 +2010,7 @@ DecoupledBPUWithFTB::tryEnqFetchStream()
         DPRINTF(DecoupleBP, "s0PC %#lx is insane, cannot make prediction\n", s0PC);
         return;
     }
-    // prediction valid, but not ready to enq because of bubbles
+    // prediction valid, but not ready to enq because of bubbles 预测有效，但由于bubbles未准备好enq
     if (numOverrideBubbles > 0) {
         DPRINTF(DecoupleBP, "Waiting for bubble caused by overriding, bubbles rest: %u\n", numOverrideBubbles);
         DPRINTF(Override, "Waiting for bubble caused by overriding, bubbles rest: %u\n", numOverrideBubbles);
@@ -2016,7 +2019,7 @@ DecoupledBPUWithFTB::tryEnqFetchStream()
     assert(!streamQueueFull());
     if (true) {
         bool should_create_new_stream = true;
-        makeNewPrediction(should_create_new_stream);
+        makeNewPrediction(should_create_new_stream);    // 创建新的预测，存入FSQ中
     } else {
         DPRINTF(DecoupleBP || debugFlagOn, "FSQ is full: %lu\n",
                 fetchStreamQueue.size());
@@ -2057,13 +2060,13 @@ DecoupledBPUWithFTB::setNTEntryWithStream(FtqEntry &ftq_entry, Addr end_pc)
 
 void
 DecoupledBPUWithFTB::tryEnqFetchTarget()
-{
+{   // 从FSQ中的指令流入队到FTQ中
     DPRINTF(DecoupleBP, "Try to enq fetch target\n");
-    if (fetchTargetQueue.full()) {
+    if (fetchTargetQueue.full()) { // 检查FTQ是否已满
         DPRINTF(DecoupleBP, "FTQ is full\n");
         return;
     }
-    if (fetchStreamQueue.empty()) {
+    if (fetchStreamQueue.empty()) { // 检查FSQ是否为空
         dbpFtbStats.fsqNotValid++;
         // no stream that have not entered ftq
         DPRINTF(DecoupleBP, "No stream to enter ftq in fetchStreamQueue\n");
@@ -2071,10 +2074,12 @@ DecoupledBPUWithFTB::tryEnqFetchTarget()
     }
     // ftq can accept new cache lines,
     // try to get cache lines from fetchStreamQueue
-    // find current stream with ftqEnqfsqID in fetchStreamQueue
+    // find current stream with ftqEnqfsqID in fetchStreamQueue， 从FSQ中获取cache line?
+    // FTQ可以接受新的cache line,尝试从FSQ获取cache line
+    // 在FSQ中查找当前需要入队的指令流
     auto &ftq_enq_state = fetchTargetQueue.getEnqState();
     auto it = fetchStreamQueue.find(ftq_enq_state.streamId);
-    if (it == fetchStreamQueue.end()) {
+    if (it == fetchStreamQueue.end()) { // 在FSQ中未找到目标指令流
         dbpFtbStats.fsqNotValid++;
         // desired stream not found in fsq
         DPRINTF(DecoupleBP, "FTQ enq desired Stream ID %u is not found\n",
@@ -2084,7 +2089,7 @@ DecoupledBPUWithFTB::tryEnqFetchTarget()
         }
         return;
     }
-
+    // 获取要入队的指令流和其结束地址
     auto &stream_to_enq = it->second;
     Addr end = stream_to_enq.predEndPC;
     DPRINTF(DecoupleBP, "Serve enq PC: %#lx with stream %lu:\n",
@@ -2093,24 +2098,24 @@ DecoupledBPUWithFTB::tryEnqFetchTarget()
     
 
     // We does let ftq to goes beyond fsq now
-    if (ftq_enq_state.pc > end) {
+    if (ftq_enq_state.pc > end) { // 检查FTQ入队PC是否超出FSQ范围
         warn("FTQ enq PC %#lx is beyond fsq end %#lx\n",
          ftq_enq_state.pc, end);
     }
     
     assert(ftq_enq_state.pc <= end || (end < 0x20 && (ftq_enq_state.pc + 0x20 < 0x20)));
 
-    // create a new target entry
+    // create a new target entry // 创建新的FTQ条目
     FtqEntry ftq_entry;
     ftq_entry.startPC = ftq_enq_state.pc;
     ftq_entry.fsqID = ftq_enq_state.streamId;
 
-    // set prediction results to ftq entry
+    // set prediction results to ftq entry // 设置预测结果到FTQ条目
     Addr thisFtqEntryShouldEndPC = end;
     bool taken = stream_to_enq.getTaken();
     bool inLoop = stream_to_enq.fromLoopBuffer;
     bool loopExit = stream_to_enq.isExit;
-    if (enableJumpAheadPredictor) {
+    if (enableJumpAheadPredictor) { // 处理Jump Ahead预测器的情况
         bool jaHit = stream_to_enq.jaHit;
         if (jaHit) {
             int &currentSentBlock = stream_to_enq.currentSentBlock;
@@ -2119,14 +2124,15 @@ DecoupledBPUWithFTB::tryEnqFetchTarget()
         }
     }
     Addr loopEndPC = stream_to_enq.getBranchInfo().getEnd();
-    if (taken) {
-        setTakenEntryWithStream(stream_to_enq, ftq_entry);
+    if (taken) { // 根据是否taken设置FTQ条目信息
+        setTakenEntryWithStream(stream_to_enq, ftq_entry);  // taken的FTQ条目
     } else {
-        setNTEntryWithStream(ftq_entry, thisFtqEntryShouldEndPC);
+        setNTEntryWithStream(ftq_entry, thisFtqEntryShouldEndPC);  // not taken的FTQ条目
     }
 
     // update ftq_enq_state
     // if in loop, next pc will either be loop exit or loop start
+    // 更新FTQ入队状态， 如果在循环中,下一个PC将是循环出口或循环开始
     ftq_enq_state.pc = inLoop ?
         loopExit ? loopEndPC : stream_to_enq.getBranchInfo().target :
         taken ? stream_to_enq.getBranchInfo().target : thisFtqEntryShouldEndPC;
@@ -2140,7 +2146,7 @@ DecoupledBPUWithFTB::tryEnqFetchTarget()
             "Update ftqEnqPC to %#lx, FTQ demand stream ID to %lu\n",
             ftq_enq_state.pc, ftq_enq_state.streamId);
 
-    fetchTargetQueue.enqueue(ftq_entry);
+    fetchTargetQueue.enqueue(ftq_entry); // 将FTQ条目入队
 
     assert(ftq_enq_state.streamId <= fsqId + 1);
 
@@ -2231,12 +2237,12 @@ DecoupledBPUWithFTB::makeLoopPredictions(FetchStream &entry, bool &endLoop, bool
 }
 
 // this function enqueues fsq and update s0PC and s0History
-// use loop predictor and loop buffer here
+// use loop predictor and loop buffer here 这个函数入队FSQ，更新s0PC和s0History，使用loop predictor和loop buffer
 void
 DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
 {
     DPRINTF(DecoupleBP, "Try to make new prediction\n");
-    FetchStream entry_new;
+    FetchStream entry_new; // 创建新的指令流条目 entry，用finalPred预测值初始化
     auto &entry = entry_new;
     entry.startPC = s0PC;
     entry.predMetas.resize(numComponents);
@@ -2249,20 +2255,20 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
     }
     DPRINTF(DecoupleBP || debugFlagOn, "Make pred with %s, pred valid: %i, taken: %i\n",
              create_new_stream ? "new stream" : "last missing stream",
-             finalPred.valid, finalPred.isTaken());
+             finalPred.valid, finalPred.isTaken());     // 打印预测结果finalPred
 
     // if loop buffer is not activated, use normal prediction from branch predictors
     bool endLoop, isDouble, loopConf;
     std::vector<LoopRedirectInfo> lpRedirectInfos(numBr);
     std::vector<bool> fixNotExits(numBr);
     std::vector<LoopRedirectInfo> unseenLpRedirectInfos;
-    if (!enableLoopBuffer || (enableLoopBuffer && !lb.isActive())) {
+    if (!enableLoopBuffer || (enableLoopBuffer && !lb.isActive())) { // 如果未激活loop buffer，用常规的BP
         entry.fromLoopBuffer = false;
         entry.isDouble = false;
         entry.isExit = false;
 
         bool taken = finalPred.isTaken();
-        bool predReasonable = finalPred.isReasonable();
+        bool predReasonable = finalPred.isReasonable();  // 检查预测结果是否合理
         if (predReasonable) {
             if (enableLoopPredictor) {
                 makeLoopPredictions(entry, endLoop, isDouble, loopConf, lpRedirectInfos,
@@ -2285,7 +2291,7 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
             DPRINTF(DecoupleBP || debugFlagOn, "Prediction is not reasonable, printing ftb entry\n");
             ftb->printFTBEntry(finalPred.ftbEntry);
             dbpFtbStats.predFalseHit++;
-            // prediction is not reasonable, use fall through
+            // prediction is not reasonable, use fall through 不合理用fall through地址
             entry.isHit = false;
             entry.falseHit = true;
             entry.predTaken = false;
@@ -2324,8 +2330,8 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
 
         // update (folded) histories for components
         for (int i = 0; i < numComponents; i++) {
-            components[i]->specUpdateHist(s0History, finalPred);
-            entry.predMetas[i] = components[i]->getPredictionMeta();
+            components[i]->specUpdateHist(s0History, finalPred); // 每个组件推测更新历史， 根据finalPred更新组件状态
+            entry.predMetas[i] = components[i]->getPredictionMeta(); // 获取预测元数据
         }
         // update ghr
         int shamt;
@@ -2339,7 +2345,7 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
         entry.setDefaultResolve();
 
 
-    } else {
+    } else {    // 使用loop buffer
         assert(enableLoopPredictor);
         // loop buffer is activated, use loop buffer to make prediction
         // determine whether this stream entry has double iterations
@@ -2427,7 +2433,7 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
     DPRINTF(LoopBuffer, "now stream before loop:\n");
     printStream(lb.streamBeforeLoop);
 
-    auto [insert_it, inserted] = fetchStreamQueue.emplace(fsqId, entry);
+    auto [insert_it, inserted] = fetchStreamQueue.emplace(fsqId, entry); // 将entry插入FSQ中
     assert(inserted);
 
     dumpFsq("after insert new stream");

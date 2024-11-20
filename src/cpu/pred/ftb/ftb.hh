@@ -67,9 +67,9 @@ class DefaultFTB : public TimedBaseFTBPredictor
         TickedFTBEntry() : tick(0) {}
     }TickedFTBEntry;
 
-    using FTBMap = std::map<Addr, TickedFTBEntry>;
+    using FTBMap = std::map<Addr, TickedFTBEntry>;  // 地址到FTB条目的映射
     using FTBMapIter = typename FTBMap::iterator;
-    using FTBHeap = std::vector<FTBMapIter>;
+    using FTBHeap = std::vector<FTBMapIter>;  // 最近使用列表,LRU
 
 
     struct older
@@ -221,9 +221,9 @@ class DefaultFTB : public TimedBaseFTBPredictor
 
     /** The actual FTB. */
 
-    std::vector<FTBMap> ftb;
+    std::vector<FTBMap> ftb;  // 实际的FTB, 多个set
 
-    std::vector<FTBHeap> mruList;
+    std::vector<FTBHeap> mruList;  // 最近使用列表,LRU
 
 
     /** The number of entries in the FTB. */

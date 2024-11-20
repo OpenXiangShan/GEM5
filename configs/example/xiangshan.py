@@ -266,14 +266,14 @@ def build_test_system(np, args):
 if __name__ == '__m5_main__':
     # Add args
     parser = argparse.ArgumentParser()
-    Options.addCommonOptions(parser, configure_xiangshan=True)
-    Options.addXiangshanFSOptions(parser)
+    Options.addCommonOptions(parser, configure_xiangshan=True)  # 添加common选项
+    Options.addXiangshanFSOptions(parser)  # 添加XiangshanFS选项
 
     # Add the ruby specific and protocol specific args
     if '--ruby' in sys.argv:
-        Ruby.define_options(parser)
+        Ruby.define_options(parser)  # 添加ruby选项
 
-    args = parser.parse_args()
+    args = parser.parse_args() # 解析命令行参数
 
     if args.xiangshan_ecore:
         FutureClass = None
@@ -289,9 +289,9 @@ if __name__ == '__m5_main__':
 
     # Match the memories with the CPUs, based on the options for the test system
     TestMemClass = Simulation.setMemClass(args)
+    # num_cpus = 1 在System.py中默认定义，参数num-cpus在common/Options.py中定义
+    test_sys = build_test_system(args.num_cpus, args)  # 构建测试系统,system在src/sim/System.py中定义
 
-    test_sys = build_test_system(args.num_cpus, args)
-
-    root = Root(full_system=True, system=test_sys)
+    root = Root(full_system=True, system=test_sys)  # 创建根对象，在src/sim/Root.py中定义
 
     Simulation.run_vanilla(args, root, test_sys, FutureClass)

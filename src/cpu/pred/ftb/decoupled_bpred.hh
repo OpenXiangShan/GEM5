@@ -198,9 +198,9 @@ class DecoupledBPUWithFTB : public BPredUnit
   private:
     std::string _name;
 
-    FetchTargetQueue fetchTargetQueue;
-
-    std::map<FetchStreamId, FetchStream> fetchStreamQueue;
+    FetchTargetQueue fetchTargetQueue;  // FTQ，管理具体取值模块
+    // BP -> FSQ -> FTQ -> Fetch unit
+    std::map<FetchStreamId, FetchStream> fetchStreamQueue;  // FSQ: 完整指令流，可能产生多个FTQ条目，直到commit才从FSQ中移除
     unsigned fetchStreamQueueSize;
     FetchStreamId fsqId{1};
     FetchStream lastCommittedStream;
@@ -223,6 +223,7 @@ class DecoupledBPUWithFTB : public BPredUnit
     const Addr MaxAddr{~(0ULL)};
 
     // StreamTAGE *streamTAGE{};
+    // 6个预测器组件
     DefaultFTB *uftb{};
     DefaultFTB *ftb{};
     FTBTAGE *tage{};
@@ -260,12 +261,12 @@ class DecoupledBPUWithFTB : public BPredUnit
     unsigned numStages{};
 
     bool sentPCHist{false};
-    bool receivedPred{false};
+    bool receivedPred{false};   // 是否收到预测结果
 
-    Addr s0PC;
+    Addr s0PC;  // 当前PC
     // Addr s0StreamStartPC;
-    boost::dynamic_bitset<> s0History;
-    FullFTBPrediction finalPred;
+    boost::dynamic_bitset<> s0History; // 当前PC的历史,not used, 用每个组件自己的meta代替，用于恢复
+    FullFTBPrediction finalPred;  // 最终预测结果， 从predsOfEachStage中选择最准确的
 
     boost::dynamic_bitset<> commitHistory;
 
@@ -273,7 +274,7 @@ class DecoupledBPUWithFTB : public BPredUnit
 
     HistoryManager historyManager;
 
-    unsigned numOverrideBubbles{0};
+    unsigned numOverrideBubbles{0};  // 覆盖的泡泡数
 
 
     using JAInfo = JumpAheadPredictor::JAInfo;

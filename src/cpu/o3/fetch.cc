@@ -648,7 +648,7 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
             std::tie(predict_taken, usedUpFetchTargets) =
                 dbpftb->decoupledPredict(
                     inst->staticInst, inst->seqNum, next_pc, tid, currentLoopIter);     // 预测！
-            if (usedUpFetchTargets) {
+            if (usedUpFetchTargets) {   // 是否用完fetch targets/FTQ条目？
                 DPRINTF(DecoupleBP, "Used up fetch targets.\n");
             }
             inst->setLoopIteration(currentLoopIter);
@@ -782,7 +782,7 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
         DPRINTF(Fetch, "[tid:%i] Fetching second cache line %#x for addr %#x, pc=%#lx\n",
                 tid, fetchPC, vaddr, pc);       // 取第二行cache
         mem_req->setMisalignedFetch();
-        mem_req->setReqNum(2);
+        mem_req->setReqNum(2);      // 第二次翻译
     }
 
     // Initiate translation of the icache block
@@ -799,7 +799,7 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
 {
     ThreadID tid = cpu->contextToThread(mem_req->contextId());
     Addr fetchMisalignedPC = mem_req->getVaddr();
-    if (mem_req->getReqNum() == 2) {
+    if (mem_req->getReqNum() == 2) {    // 第二次翻译
         fetchMisalignedPC = mem_req->getVaddr() - 64 + mem_req->getSize();
     }
     Addr fetchPC = mem_req->isMisalignedFetch() ? fetchMisalignedPC : mem_req->getVaddr();
@@ -874,7 +874,7 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
             retryTid = tid;
             cacheBlocked = true;
 
-        } else {
+        } else {  // 成功发出请求，等待icache 相应
             DPRINTF(Fetch, "[tid:%i] Doing Icache access.\n", tid);
             DPRINTF(Activity, "[tid:%i] Activity: Waiting on I-cache "
                     "response.\n", tid);
@@ -1260,7 +1260,7 @@ Fetch::tick()
         usedUpFetchTargets = !dbsp->trySupplyFetchWithTarget(pc[0]->instAddr());
     } else if (isFTBPred()) {
         assert(dbpftb);
-        dbpftb->tick();
+        dbpftb->tick();     // BP 执行！
         usedUpFetchTargets = !dbpftb->trySupplyFetchWithTarget(pc[0]->instAddr(), currentFetchTargetInLoop);
     }
 }
@@ -1383,7 +1383,7 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
                 dbsp->update(fromCommit->commitInfo[tid].doneFsqId, tid);
             } else if (isFTBPred()) {
                 assert(dbpftb);
-                dbpftb->update(fromCommit->commitInfo[tid].doneFsqId, tid);
+                dbpftb->update(fromCommit->commitInfo[tid].doneFsqId, tid); // 用commit stream更新预测器
             }
         }
     }
@@ -1814,11 +1814,11 @@ Fetch::fetch(bool &status_change)
             set(next_pc, this_pc);
 
             // If we're branching after this instruction, quit fetching
-            // from the same block.
+            // from the same block.  如果当前指令是分支，则不从当前块中取指令
             if (!isDecoupledFrontend()) {
                 predictedBranch |= this_pc.branching();
             }
-            predictedBranch |= lookupAndUpdateNextPC(instruction, *next_pc);
+            predictedBranch |= lookupAndUpdateNextPC(instruction, *next_pc);  // 检查是否分支跳转，更新pc
             if (predictedBranch) {
                 DPRINTF(Fetch, "Branch detected with PC = %s\n", this_pc);      // 预测有分支
             }

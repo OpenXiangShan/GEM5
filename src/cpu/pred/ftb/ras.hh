@@ -23,8 +23,8 @@ class RAS : public TimedBaseFTBPredictor
 
         typedef struct RASEssential
         {
-            Addr retAddr;
-            unsigned ctr;
+            Addr retAddr; // 返回地址
+            unsigned ctr; // 饱和计数器
         }RASEssential;
 
         typedef struct RASEntry
@@ -49,17 +49,17 @@ class RAS : public TimedBaseFTBPredictor
 
         typedef struct RASInflightEntry
         {
-            RASEssential data;
-            int nos; // parent node pointer
+            RASEssential data; // 返回地址和饱和计数器
+            int nos; // parent node pointer 指向上一个push的TOSR
         }RASInflightEntry;
 
         typedef struct RASMeta {
-            int ssp;
-            int sctr;
+            int ssp; // 推测栈指针
+            int sctr; // 推测栈饱和计数器
             // RASEntry tos; // top of stack
-            int TOSR;
-            int TOSW;
-            bool willPush;
+            int TOSR; // 非推测栈读指针
+            int TOSW; // 非推测栈写指针
+            bool willPush; // 是否将推测栈push
             Addr target;
             // RASInflightEntry inflight; // inflight top of stack
         }RASMeta;
@@ -152,31 +152,31 @@ class RAS : public TimedBaseFTBPredictor
             //}
         }
 
-        unsigned numEntries;
+        unsigned numEntries; // 推测栈entry数量=32
 
-        unsigned ctrWidth;
+        unsigned ctrWidth; // 饱和计数器宽度=8
 
-        unsigned numInflightEntries;
+        unsigned numInflightEntries; // 推测entry数量=384
 
-        int TOSW; // inflight pointer to the write top of stack
+        int TOSW; // inflight pointer to the write top of stack 推测栈写指针
 
-        int TOSR; // inflight pointer to the read top of stack
+        int TOSR; // inflight pointer to the read top of stack 推测栈读指针
 
-        int BOS; // inflight pointer to the bottom of stack
+        int BOS; // inflight pointer to the bottom of stack 推测栈底指针
 
-        int maxCtr;
+        int maxCtr; // 饱和计数器最大值
 
-        int ssp; // spec sp
+        int ssp; // spec sp 推测栈指针, 指向inflightStack 栈顶
         
-        int nsp; // non-spec sp
+        int nsp; // non-spec sp 非推测栈指针，指向stack 栈顶
 
         int sctr;
 
         //int ndepth;
 
-        std::vector<RASEntry> stack;
+        std::vector<RASEntry> stack; // 非推测栈, 只在commit 更新，环形管理
         
-        std::vector<RASInflightEntry> inflightStack;
+        std::vector<RASInflightEntry> inflightStack; // 推测栈，也有多个
 
         RASMeta meta;
 

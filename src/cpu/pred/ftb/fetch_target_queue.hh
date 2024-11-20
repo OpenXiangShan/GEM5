@@ -16,8 +16,8 @@ namespace ftb_pred
 struct FetchTargetEnqState
 {
     Addr pc;
-    FetchStreamId streamId;
-    FetchTargetId nextEnqTargetId;
+    FetchStreamId streamId;  // fsq的id
+    FetchTargetId nextEnqTargetId;  // ftq的id
     FetchTargetEnqState() : pc(0), streamId(1), nextEnqTargetId(0) {}
 };
 
@@ -34,9 +34,9 @@ class FetchTargetQueue
     // 1. enqueue from fetch stream buffer
     // 2. supply fetch with fetch target head
     // 3. redirect fetch target head after squash
-    using FTQ = std::map<FetchTargetId, FtqEntry>;
+    using FTQ = std::map<FetchTargetId, FtqEntry>;  // <id, FtqEntry>， map 字典，有64项
     using FTQIt = FTQ::iterator;
-    FTQ ftq;
+    FTQ ftq;    // <id, FtqEntry>， map 字典，有64项
     unsigned ftqSize;
     FetchTargetId ftqId{0};  // this is a queue ptr for ftq itself
 

@@ -42,13 +42,13 @@ enum SquashSource {
 };
 
 typedef struct BranchInfo {
-    Addr pc;
-    Addr target;
-    bool isCond;
-    bool isIndirect;
-    bool isCall;
-    bool isReturn;
-    uint8_t size;
+    Addr pc;  // 分支PC
+    Addr target;  // 分支目标地址
+    bool isCond;  // 条件跳转
+    bool isIndirect;  // 间接跳转
+    bool isCall;  // 调用
+    bool isReturn;  // 返回
+    uint8_t size; // 指令长度
     bool isUncond() const { return !this->isCond; }
     Addr getEnd() { return this->pc + this->size; }
     BranchInfo() : pc(0), target(0), isCond(false), isIndirect(false), isCall(false), isReturn(false), size(0) {}
@@ -115,14 +115,14 @@ typedef struct BranchInfo {
     }
 }BranchInfo;
 
-
+// FTBSlot 分支槽，继承BranchInfo，加上valid, alwaysTaken, ctr
 typedef struct FTBSlot : BranchInfo
 {
-    bool valid;
-    bool alwaysTaken;
-    int ctr;
-    bool uncondValid() { return this->isUncond() && this->valid; }
-    bool condValid() { return this->isCond && this->valid;}
+    bool valid;     // 分支有效
+    bool alwaysTaken;  // 总是跳转
+    int ctr;  // 饱和计数器
+    bool uncondValid() { return this->isUncond() && this->valid; }  // 无条件跳转有效
+    bool condValid() { return this->isCond && this->valid;}  // 条件跳转有效
     FTBSlot() : valid(false) {}
     FTBSlot(const BranchInfo &bi) : BranchInfo(bi), valid(true), alwaysTaken(true), ctr(0) {}
     BranchInfo getBranchInfo() { return BranchInfo(*this); }
@@ -149,13 +149,13 @@ typedef struct LFSR64 {
 typedef struct FTBEntry
 {
     /** The entry's tag. */
-    Addr tag = 0;
+    Addr tag = 0;   // FTB块的tag， 由FetchStream的start pc 计算
 
     /** The entry's branch info. */
-    std::vector<FTBSlot> slots;
+    std::vector<FTBSlot> slots;     // 分支槽，最多两条分支（NT, T/NT)
 
     /** The entry's fallthrough address. */
-    Addr fallThruAddr;
+    Addr fallThruAddr;              // FTB块的fallThru地址
 
     /** The entry's thread id. */
     ThreadID tid;
@@ -164,7 +164,7 @@ typedef struct FTBEntry
     bool valid = false;
     FTBEntry(): fallThruAddr(0), tid(0), valid(false) {}
 
-    int getNumCondInEntryBefore(Addr pc) {
+    int getNumCondInEntryBefore(Addr pc) {  // 获取在pc之前的条件跳转数
         int num = 0;
         for (auto &slot : this->slots) {
             if (slot.condValid() && slot.pc < pc) {
@@ -174,7 +174,7 @@ typedef struct FTBEntry
         return num;
     }
 
-    int getTotalNumConds() {
+    int getTotalNumConds() {  // 获取总的条件跳转数
         int num = 0;
         for (auto &slot : this->slots) {
             if (slot.condValid()) {
@@ -186,7 +186,7 @@ typedef struct FTBEntry
 
     // check if the entry is reasonable with given startPC
     // every branch slot and fallThru should be in the range of (startPC, startPC+34]
-    // every 
+    // 检查FTB条目是否合理，每个分支槽pc和fallThru地址是否在(startPC, startPC+34]范围内
     bool isReasonable(Addr start) {
         Addr min = start;
         Addr max = start+34;
@@ -202,7 +202,7 @@ typedef struct FTBEntry
         return reasonable;
     }
 
-    FTBSlot getSlot(Addr pc) {
+    FTBSlot getSlot(Addr pc) {  // 获取pc对应的分支槽
         for (auto &slot : this->slots) {
             if (slot.pc == pc) {
                 return slot;
@@ -232,9 +232,9 @@ struct BlockDecodeInfo {
 };
 
 
-using FetchStreamId = uint64_t;
-using FetchTargetId = uint64_t;
-using PredictionID = uint64_t;
+using FetchStreamId = uint64_t;  // FetchStream的id
+using FetchTargetId = uint64_t;  // FetchTarget的id
+using PredictionID = uint64_t;  // 预测的id
 
 typedef struct LoopEntry {
     bool valid;
@@ -253,8 +253,8 @@ typedef struct LoopRedirectInfo {
 
 typedef struct JAEntry {
     // jump target: indexPC + jumpAheadBlockNum * blockSize
-    int jumpAheadBlockNum;
-    int conf;
+    int jumpAheadBlockNum;  // 跳转提前块数
+    int conf;  // confidence 信心
     JAEntry() : jumpAheadBlockNum(0), conf(0) {}
     Addr getJumpTarget(Addr indexPC, int blockSize) {
         return indexPC + jumpAheadBlockNum * blockSize;
@@ -265,36 +265,36 @@ typedef struct JAEntry {
 //       XiangShan nanhu architecture
 struct FetchStream
 {
-    Addr startPC;
+    Addr startPC;  // FetchStream的start pc， [startPC, predEndPC)
 
     // indicating whether a backing prediction has finished
     // bool predEnded;
-    bool predTaken;
+    bool predTaken;  // 预测跳转
 
     // predicted stream end pc (fall through pc)
-    Addr predEndPC;
-    BranchInfo predBranchInfo;
-    // record predicted FTB entry
+    Addr predEndPC;  // 预测的流结束pc（fall through pc）
+    BranchInfo predBranchInfo;  // 预测的流分支信息,一条分支？
+    // record predicted FTB entry 记录预测的FTB条目
     bool isHit;
     bool falseHit;
-    FTBEntry predFTBEntry;
+    FTBEntry predFTBEntry;  // 预测的FTB条目
 
-    bool sentToICache;
+    bool sentToICache;  // 是否发送给ICache
 
     // for commit, write at redirect or fetch
     // bool exeEnded;
-    bool exeTaken;
+    bool exeTaken;  // exe阶段分支确实跳转
     // Addr exeEndPC;
-    BranchInfo exeBranchInfo;
+    BranchInfo exeBranchInfo;  // 实际跳转的分支信息
 
-    FTBEntry updateFTBEntry;
-    bool updateIsOldEntry;
-    bool resolved;
+    FTBEntry updateFTBEntry;   // 新的，要写入FTB的FTB条目
+    bool updateIsOldEntry;  // 是否更新为旧的FTB条目
+    bool resolved;  // 是否解决
 
-    int squashType;
-    Addr squashPC;
-    int squashSource;
-    unsigned predSource;
+    int squashType;  // squash类型
+    Addr squashPC;  // squash的pc
+    int squashSource;  // squash来源
+    unsigned predSource;  // 预测来源
 
     // for loop buffer
     bool fromLoopBuffer;
@@ -307,7 +307,7 @@ struct FetchStream
     int currentSentBlock;
 
     // prediction metas
-    std::vector<std::shared_ptr<void>> predMetas;
+    std::vector<std::shared_ptr<void>> predMetas;  // 预测元数据， 每个组件一个
 
     // for loop
     std::vector<LoopRedirectInfo> loopRedirectInfos;
@@ -319,8 +319,8 @@ struct FetchStream
     boost::dynamic_bitset<> history;
 
     // for profiling
-    int fetchInstNum;
-    int commitInstNum;
+    int fetchInstNum;  // Fetch阶段指令数
+    int commitInstNum;  // Commit阶段指令数
     std::map<Addr, bool> commitMispredictions; // per committed branch
     std::map<Addr, std::tuple<SquashType, SquashSource, BranchInfo>> squashInfos; // per committed inst if there is squash
 
@@ -410,18 +410,18 @@ struct FetchStream
 
 typedef struct FullFTBPrediction
 {
-    Addr bbStart;
+    Addr bbStart;  // 块的开始pc
     FTBEntry ftbEntry; // for FTB
     std::vector<bool> condTakens; // for conditional branch predictors 用于条件分支预测器
 
     Addr indirectTarget; // for indirect predictor
-    Addr returnTarget; // for RAS
+    Addr returnTarget; // for RAS， 返回地址
 
     bool valid; // hit
-    unsigned predSource;
-    Tick predTick;
-    Cycles predCycle;
-    boost::dynamic_bitset<> history;
+    unsigned predSource; // 预测来源，哪一级预测的
+    Tick predTick;  // 预测时间
+    Cycles predCycle;  // 预测周期
+    boost::dynamic_bitset<> history;  // 历史
 
     bool isTaken() {
         auto &ftbEntry = this->ftbEntry;
@@ -573,16 +573,16 @@ typedef struct FullFTBPrediction
     }
 
     bool isReasonable() {
-        return !valid || ftbEntry.isReasonable(bbStart);
+        return !valid || ftbEntry.isReasonable(bbStart); // 检查FTB条目是否合理
     }
 
 
 }FullFTBPrediction;     // 记录所有的预测信息
 
-// each entry corresponds to a 32Byte unaligned block
+// each entry corresponds to a 32Byte unaligned block 包含一个32字节未对齐的块, 和FTBEntry区别！
 struct FtqEntry
 {
-    Addr startPC;
+    Addr startPC;  // 块的开始pc
     Addr endPC;    // TODO: use PCState and it can be included in takenPC
 
     // When it is a taken branch, takenPC is the control (starting) PC
@@ -593,7 +593,7 @@ struct FtqEntry
 
     bool taken;
     Addr target;  // TODO: use PCState
-    FetchStreamId fsqID;
+    FetchStreamId fsqID;  // fsq的id
 
     // for loop buffer
     bool inLoop;
