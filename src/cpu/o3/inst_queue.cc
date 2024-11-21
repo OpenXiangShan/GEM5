@@ -94,6 +94,12 @@ InstructionQueue::FUCompletion::description() const
     return "Functional unit completion";
 }
 
+size_t
+InstructionQueue::CacheMissLdInstsHash::operator()(const DynInstPtr& ptr) const
+{
+    return ptr->getLqIdx();
+}
+
 InstructionQueue::InstructionQueue(CPU *cpu_ptr, IEW *iew_ptr,
         const BaseO3CPUParams &params)
     : cpu(cpu_ptr),
@@ -352,6 +358,7 @@ InstructionQueue::resetState()
 
     nonSpecInsts.clear();
     deferredMemInsts.clear();
+    cacheMissLdInsts.clear();
     blockedMemInsts.clear();
     retryMemInsts.clear();
     wbOutstanding = 0;
@@ -650,6 +657,10 @@ InstructionQueue::scheduleReadyInsts()
     IssueStruct *i2e_info = issueToExecuteQueue->access(0);
 
     DynInstPtr mem_inst;
+    while ((mem_inst = getCacheMissInstToExecute())) {
+        mem_inst->issueQue->retryMem(mem_inst);
+    }
+
     while ((mem_inst = getDeferredMemInstToExecute())) {
         mem_inst->issueQue->retryMem(mem_inst);
     }
@@ -721,7 +732,7 @@ InstructionQueue::scheduleReadyInsts()
     // @todo If the way deferred memory instructions are handeled due to
     // translation changes then the deferredMemInsts condition should be
     // removed from the code below.
-    if (total_issued || !retryMemInsts.empty() || !deferredMemInsts.empty()) {
+    if (total_issued || !retryMemInsts.empty() || !deferredMemInsts.empty() || !cacheMissLdInsts.empty()) {
         cpu->activityThisCycle();
     } else {
         DPRINTF(IQ, "Not able to schedule any instructions.\n");
@@ -861,6 +872,19 @@ InstructionQueue::deferMemInst(const DynInstPtr &deferred_inst)
 }
 
 void
+InstructionQueue::cacheMissLdReplay(const DynInstPtr &deferred_inst)
+{
+    DPRINTF(IQ, "Get Cache Missed Load, insert to Replay Queue "
+            "[sn:%llu]\n", deferred_inst->seqNum);
+    // Reset DTB translation state
+    deferred_inst->translationStarted(false);
+    deferred_inst->translationCompleted(false);
+
+    deferred_inst->clearCanIssue();
+    cacheMissLdInsts.insert(deferred_inst);
+}
+
+void
 InstructionQueue::blockMemInst(const DynInstPtr &blocked_inst)
 {
     blocked_inst->clearCanIssue();
@@ -896,6 +920,29 @@ InstructionQueue::getDeferredMemInstToExecute()
             DPRINTF(
                 IQ,
                 "Deferred mem inst [sn:%llu] PC %s has not been translated\n",
+                (*it)->seqNum, (*it)->pcState());
+        }
+    }
+    return nullptr;
+}
+
+DynInstPtr
+InstructionQueue::getCacheMissInstToExecute()
+{
+    for (auto it = cacheMissLdInsts.begin(); it != cacheMissLdInsts.end();
+         ++it) {
+        if ((*it)->cacheRefilledAfterMiss() || (*it)->isSquashed()) {
+            DPRINTF(IQ, "CacheMissed load inst [sn:%llu] PC %s is ready to "
+                    "execute\n", (*it)->seqNum, (*it)->pcState());
+            DynInstPtr mem_inst = std::move(*it);
+            cacheMissLdInsts.erase(it);
+            return mem_inst;
+        }
+        if (!(*it)->cacheRefilledAfterMiss()) {
+            DPRINTF(
+                IQ,
+                "CacheMissed load inst [sn:%llu] PC %s has not been waken up "
+                "by Dcache\n",
                 (*it)->seqNum, (*it)->pcState());
         }
     }

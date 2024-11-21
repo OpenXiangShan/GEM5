@@ -383,7 +383,7 @@ Sequencer::insertRequest(PacketPtr pkt, RubyRequestType primary_type,
 
     if (seq_req_list.size() > 1) {
         if (cache_block_busy) {
-            if (pkt->isRead()) {
+            if (pkt->isRead() && !pkt->isWrite()) {
                 DPRINTF(RubySequencer, "Pkt %#lx %s is delayed because blk is busy doing ruby stuff\n",
                     pkt, pkt->cmdString());
                 ruby_custom_signal_callback(pkt);
@@ -649,7 +649,7 @@ Sequencer::notifyMissCallback(Addr address, bool is_upgrade, bool is_busy)
 
     // cancel pending loads' speculation
     for (auto &seq_req: seq_req_list) {
-        if (seq_req.pkt->isRead()) {
+        if (seq_req.pkt->isRead() && !seq_req.pkt->isWrite()) {
             ruby_custom_signal_callback(seq_req.pkt);
             stat.loadcancel++;
         }
@@ -693,7 +693,7 @@ Sequencer::TBEFullCancel(Addr address)
 
     // cancel pending loads' speculation
     for (auto &seq_req: seq_req_list) {
-        if (seq_req.pkt->isRead()) {
+        if (seq_req.pkt->isRead() && !seq_req.pkt->isWrite()) {
             ruby_custom_signal_callback(seq_req.pkt);
             stat.loadcancel++;
         }

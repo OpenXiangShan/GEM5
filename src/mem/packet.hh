@@ -1598,6 +1598,8 @@ class Packet : public Printable
 
     bool tagReadFail = false;
 
+    bool cacheSatisfied = true;
+
     bool fromBOP() const { return pfSource == PrefetchSourceType::HWP_BOP; }
     
     PrefetchSourceType getPFSource() const { return static_cast<PrefetchSourceType>(pfSource); }

@@ -652,17 +652,19 @@ BaseCache::recvTimingReq(PacketPtr pkt)
         }
 
         handleTimingReqHit(pkt, blk, request_time, first_acc_after_pf);
-        if (cacheLevel == 1 && pkt->isResponse() && pkt->isRead() && lat > 1) {
-            // send cache miss signal
-            cpuSidePort.sendCustomSignal(pkt, DcacheRespType::Miss);
+        if (cacheLevel == 1 && pkt->isResponse() && pkt->isRead() && !pkt->isWrite() && lat > 1) {
+            // cache block not ready, send cancel signal
+            cpuSidePort.sendCustomSignal(pkt, DcacheRespType::Block_Not_Ready);
+            pkt->cacheSatisfied = false;
         }
     } else {
         if (cacheLevel != 1) {
             calculateSliceBusy(pkt);
         }
-        if (cacheLevel == 1 && pkt->needsResponse() && pkt->isRead()) {
+        if (cacheLevel == 1 && pkt->needsResponse() && pkt->isRead() && !pkt->isWrite()) {
             // send cache miss signal
             cpuSidePort.sendCustomSignal(pkt, DcacheRespType::Miss);
+            pkt->cacheSatisfied = false;
         }
 
         // ArchDB: for now we only track packet which has PC

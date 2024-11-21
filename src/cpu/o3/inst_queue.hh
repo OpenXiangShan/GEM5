@@ -45,6 +45,7 @@
 #include <list>
 #include <map>
 #include <queue>
+#include <unordered_set>
 #include <vector>
 
 #include "base/statistics.hh"
@@ -199,6 +200,11 @@ class InstructionQueue
      */
     DynInstPtr getDeferredMemInstToExecute();
 
+    /** Gets a load instruction that was referred due to Dcache miss
+     *  if it is now ready to execute.  NULL if none available.
+     */
+    DynInstPtr getCacheMissInstToExecute();
+
     /** Gets a memory instruction that was blocked on the cache. NULL if none
      *  available.
      */
@@ -241,6 +247,11 @@ class InstructionQueue
      * page table walk.
      */
     void deferMemInst(const DynInstPtr &deferred_inst);
+
+    /**
+     * Defers a load instruction when Dcache miss.
+     */
+    void cacheMissLdReplay(const DynInstPtr &deferred_inst);
 
     /**  Defers a memory instruction when it is cache blocked. */
     void blockMemInst(const DynInstPtr &blocked_inst);
@@ -301,6 +312,16 @@ class InstructionQueue
      *  complete (hw page table walk in progress).
      */
     std::list<DynInstPtr> deferredMemInsts;
+
+    /** Set of load instructions waiting for Dcache refill
+     *    use unordered_set to prevent repeat enqueue,
+     *    SplitDataRequest may call `cacheMissLdReplay` multiple times.
+     */
+    struct CacheMissLdInstsHash
+    {
+      size_t operator()(const DynInstPtr& ptr) const;
+    };
+    std::unordered_set<DynInstPtr, CacheMissLdInstsHash> cacheMissLdInsts;
 
     /** List of instructions that have been cache blocked. */
     std::list<DynInstPtr> blockedMemInsts;

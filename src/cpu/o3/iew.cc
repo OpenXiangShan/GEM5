@@ -683,6 +683,12 @@ IEW::blockMemInst(const DynInstPtr& inst)
 }
 
 void
+IEW::cacheMissLdReplay(const DynInstPtr& inst)
+{
+    instQueue.cacheMissLdReplay(inst);
+}
+
+void
 IEW::cacheUnblocked()
 {
     instQueue.cacheUnblocked();

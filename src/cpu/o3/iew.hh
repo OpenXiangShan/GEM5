@@ -209,6 +209,9 @@ class IEW
     /** Moves memory instruction onto the list of cache blocked instructions */
     void blockMemInst(const DynInstPtr &inst);
 
+    /** Moves load instruction onto the Set of cache missed instructions */
+    void cacheMissLdReplay(const DynInstPtr &inst);
+
     /** Notifies that the cache has become unblocked */
     void cacheUnblocked();
 

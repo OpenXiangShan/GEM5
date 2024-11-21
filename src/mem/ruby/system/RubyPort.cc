@@ -497,6 +497,7 @@ RubyPort::ruby_custom_signal_callback(PacketPtr pkt)
 
     DPRINTF(RubyPort, "Sent custom signal back to LSQ with sender state %#lx\n", sender_state);
     port->sendCustomSignal(pkt, DcacheRespType::Miss);
+    pkt->cacheSatisfied = false;
 }
 
 void

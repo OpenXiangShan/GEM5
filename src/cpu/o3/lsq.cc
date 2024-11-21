@@ -558,13 +558,26 @@ LSQ::recvFunctionalCustomSignal(PacketPtr pkt, int sig)
 
     LSQRequest *request = dynamic_cast<LSQRequest*>(pkt->getPrimarySenderState());
     panic_if(!request, "Got packet back with unknown sender state\n");
-    if (sig == DcacheRespType::Miss) {
-        if (request->instruction()->isLoad()) {
-            // notify cache miss
-            iewStage->loadCancel(request->instruction());
+    if (sig == DcacheRespType::Miss || sig == DcacheRespType::Block_Not_Ready) {
+        DPRINTF(LSQ, "recvFunctionalCustomSignal: Resp type: %d, [sn:%ld], lqidx: %ld\n",
+                sig, request->instruction()->seqNum, request->instruction()->lqIdx);
+        if (request->mainReq()->isLLSC() || request->mainReq()->isUncacheable()) {
+            // do not replay Amo/Uncache Load
+            DPRINTF(LSQ, "Recv Amo/Uncache Load: [sn:%ld], No Need to Replay\n",
+                    request->instruction()->seqNum);
+        } else {
+            // clear state in this instruction
+            request->instruction()->cacheRefilledAfterMiss(false);
+            request->instruction()->effAddrValid(false);
+            // clear request in loadQueue
+            thread[request->_port.lsqID].loadQueue[request->instruction()->lqIdx].setRequest(nullptr);
             // set cache miss flag in pipeline
             thread[request->_port.lsqID].setFlagInPipeLine(request->instruction(), LdStFlags::CacheMiss);
+            // insert to missed load replay queue
+            iewStage->cacheMissLdReplay(request->instruction());
         }
+        // cancel subsequent dependent insts of this load
+        iewStage->loadCancel(request->instruction());
     } else {
         panic("unsupported sig %d in recvFunctionalCustomSignal\n", sig);
     }
@@ -1397,21 +1410,32 @@ LSQ::SbufferRequest::recvTimingResp(PacketPtr pkt)
 bool
 LSQ::SingleDataRequest::recvTimingResp(PacketPtr pkt)
 {
+    LSQRequest *request = dynamic_cast<LSQRequest*>(pkt->senderState);
+    bool isNormalLd = isLoad() && !request->mainReq()->isLLSC() && !request->mainReq()->isUncacheable();
     // Dump inst num, request addr, and packet addr
-    DPRINTF(LSQ, "Single Req::recvTimingResp: inst: %llu, pkt: %#lx\n", pkt->req->getReqInstSeqNum(),
-            pkt->getAddr());
+    DPRINTF(LSQ, "Single Req::recvTimingResp: inst: %llu, pkt: %#lx, isLoad: %d, "
+                "isLLSC: %d, isUncache: %d, isCacheSatisfied: %d\n",
+                pkt->req->getReqInstSeqNum(), pkt->getAddr(), isLoad(), request->mainReq()->isLLSC(),
+                request->mainReq()->isUncacheable(), pkt->cacheSatisfied);
     assert(_numOutstandingPackets == 1);
-    flags.set(Flag::Complete);
-    assert(pkt == _packets.front());
-    forward();
-    _port.completeDataAccess(pkt);
-    _hasStaleTranslation = false;
+    if (isNormalLd && !pkt->cacheSatisfied) {
+        // Data in Dcache is ready, wake up missed load in replay queue
+        LSQRequest::_inst->cacheRefilledAfterMiss(true);
+        discard();
+    } else {
+        flags.set(Flag::Complete);
+        assert(pkt == _packets.front());
+        forward();
+        _port.completeDataAccess(pkt);
+        _hasStaleTranslation = false;
+    }
     return true;
 }
 
 bool
 LSQ::SplitDataRequest::recvTimingResp(PacketPtr pkt)
 {
+    LSQRequest *request = dynamic_cast<LSQRequest*>(pkt->senderState);
     DPRINTF(LSQ, "Spilt Req::recvTimingResp: inst: %llu, pkt: %#lx\n", pkt->req->getReqInstSeqNum(),
             pkt->getAddr());
     uint32_t pktIdx = 0;
@@ -1420,21 +1444,28 @@ LSQ::SplitDataRequest::recvTimingResp(PacketPtr pkt)
     assert(pktIdx < _packets.size());
     numReceivedPackets++;
     if (numReceivedPackets == _packets.size()) {
-        flags.set(Flag::Complete);
-        /* Assemble packets. */
-        PacketPtr resp = isLoad()
-            ? Packet::createRead(_mainReq)
-            : Packet::createWrite(_mainReq);
-        if (isLoad())
-            resp->dataStatic(_inst->memData);
-        else
-            resp->dataStatic(_data);
-        resp->senderState = this;
-        forward();
-        _port.completeDataAccess(resp);
-        delete resp;
+        bool isNormalLd = isLoad() && !request->mainReq()->isLLSC() && !request->mainReq()->isUncacheable();
+        if (isNormalLd && !pkt->cacheSatisfied) {
+            // Data in Dcache is ready, wake up missed load in replay queue
+            LSQRequest::_inst->cacheRefilledAfterMiss(true);
+            discard();
+        } else {
+            flags.set(Flag::Complete);
+            /* Assemble packets. */
+            PacketPtr resp = isLoad()
+                ? Packet::createRead(_mainReq)
+                : Packet::createWrite(_mainReq);
+            if (isLoad())
+                resp->dataStatic(_inst->memData);
+            else
+                resp->dataStatic(_data);
+            resp->senderState = this;
+            forward();
+            _port.completeDataAccess(resp);
+            delete resp;
+            _hasStaleTranslation = false;
+        }
     }
-    _hasStaleTranslation = false;
     return true;
 }
 

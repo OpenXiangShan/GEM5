@@ -194,6 +194,7 @@ class DynInst : public ExecContext, public RefCounted
         NotAnInst,
         TranslationStarted,
         TranslationCompleted,
+        CacheRefilledAfterMiss,
         PossibleLoadViolation,
         HitExternalSnoop,
         EffAddrValid,
@@ -461,6 +462,14 @@ class DynInst : public ExecContext, public RefCounted
         return instFlags[TranslationCompleted];
     }
     void translationCompleted(bool f) { instFlags[TranslationCompleted] = f; }
+
+    /** True if Dcache refilled after Dcache miss. */
+    bool
+    cacheRefilledAfterMiss() const
+    {
+        return instFlags[CacheRefilledAfterMiss];
+    }
+    void cacheRefilledAfterMiss(bool f) { instFlags[CacheRefilledAfterMiss] = f; }
 
     /** True if this address was found to match a previous load and they issued
      * out of order. If that happend, then it's only a problem if an incoming
@@ -1395,6 +1404,10 @@ class DynInst : public ExecContext, public RefCounted
         return squashVer.getVersion();
     }
 
+    ssize_t getLqIdx()
+    {
+        return lqIdx;
+    }
 
     Addr getPC()
     {

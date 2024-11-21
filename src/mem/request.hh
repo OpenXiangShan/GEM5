@@ -91,6 +91,7 @@ enum DcacheRespType
 {
     NONE = 0,
     Hit,
+    Block_Not_Ready,
     Miss,
     NUM_Resp_Type
 };
