@@ -496,9 +496,12 @@ IssueQue::insert(const DynInstPtr& inst)
     for (int i = 0; i < inst->numSrcRegs(); i++) {
         auto src = inst->renamedSrcIdx(i);
         if (!inst->readySrcIdx(i) && !src->isFixedMapping()) {
-            if (scheduler->scoreboard[src->flatIndex()] || scheduler->earlyScoreboard[src->flatIndex()]) {
+            if (scheduler->scoreboard[src->flatIndex()]) {
                 inst->markSrcRegReady(i);
             } else {
+                if (scheduler->earlyScoreboard[src->flatIndex()]) {
+                    inst->markSrcRegReady(i);
+                }
                 DPRINTF(Schedule, "[sn:%llu] src p%d add to depGraph\n", inst->seqNum, src->flatIndex());
                 subDepGraph[src->flatIndex()].push_back({i, inst});
                 addToDepGraph = true;
