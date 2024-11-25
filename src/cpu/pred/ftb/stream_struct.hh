@@ -535,7 +535,7 @@ typedef struct FullFTBPrediction
                 Addr other_control_addr = other.controlAddr();
                 Addr this_npc = this->getTarget();
                 Addr other_npc = other.getTarget();
-                // both this and chosen valid
+                // both this and chosen valid 比较方向，target, 分支数量，npc都相同
                 return this_taken == other_taken &&
                        this_control_addr == other_control_addr &&
                        this_cond_num == other_cond_num &&

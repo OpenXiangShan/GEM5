@@ -28,6 +28,7 @@
 
 
 #include "base/intmath.hh"
+#include "base/stats/info.hh"
 #include "base/trace.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/pred/ftb/ftb.hh"
@@ -97,10 +98,12 @@ DefaultFTB::putPCHistory(Addr startAddr,
                          const boost::dynamic_bitset<> &history,
                          std::vector<FullFTBPrediction> &stagePreds)
 {
-    TickedFTBEntry find_entry = lookup(startAddr);  // 查找FTB条目
+    TickedFTBEntry find_entry = lookup(startAddr);  // 1. 查找startAddr对应的FTB条目
     bool hit = find_entry.valid;
     if (hit) { // 2. 统计命中情况
         DPRINTF(FTB, "FTB: lookup hit, dumping hit entry\n");
+        DPRINTF(UFTBCount, "%s hit, addr: %#lx index: %#x tag: %#x\n", 
+            isL0() ? "UFTB" : "FTB", startAddr, getIndex(startAddr), getTag(startAddr));
         ftbStats.predHit++;
         printTickedFTBEntry(find_entry);
     } else {
@@ -110,22 +113,22 @@ DefaultFTB::putPCHistory(Addr startAddr,
     }
     assert(getDelay() < stagePreds.size());
     // assign prediction for s2 and later stages // 3. 为流水线各级填充预测结果
-    for (int s = getDelay(); s < stagePreds.size(); ++s) {
-        if (!isL0() && !hit && stagePreds[s].valid) { // 3.1 处理L0 FTB未命中但uFTB命中的情况
-            DPRINTF(FTB, "FTB: uftb hit and ftb miss, use uftb result");
+    for (int s = getDelay(); s < stagePreds.size(); ++s) {  // s = 0,1,2(uFTB)  or  1,2(FTB)
+        if (!isL0() && !hit && stagePreds[s].valid) {  // 不在L0且FTB未命中, 但是有预测结果？
+            DPRINTF(FTB, "FTB: uftb hit and ftb miss, use uftb result");// 3.1 处理L0 FTB未命中但uFTB命中的情况
             incNonL0Stat(ftbStats.predUseL0OnL1Miss);
             break;
         }
         DPRINTF(FTB, "FTB: assigning prediction for stage %d\n", s);
-        stagePreds[s].valid = hit; // 3.2 基本预测信息
-        stagePreds[s].ftbEntry = find_entry;
+        stagePreds[s].valid = hit; // 3.2 基本预测信息， 更新预测结果
+        stagePreds[s].ftbEntry = find_entry;  // 更新FTB条目传到预测结果
         DPRINTF(FTB, "FTB: numBranches %d\n", numBr);
 
         if (isL0() && s == 0) { // 3.3 L0 FTB的条件分支预测, uftb应该只在0级更新吧？
-            // use saturating counter of L0 FTB 用两位饱和计数器
-            for (int i = 0; i < numBr; ++i) {
-                if (find_entry.slots.size() > i) {
-                    stagePreds[s].condTakens[i] = find_entry.slots[i].ctr >= 0 && hit;
+            // use saturating counter of L0 uFTB 用两位饱和计数器
+            for (int i = 0; i < numBr; ++i) {   // 遍历每个槽
+                if (find_entry.slots.size() > i) {  // 如果包含这个分支i, 也就是有槽位
+                    stagePreds[s].condTakens[i] = find_entry.slots[i].ctr >= 0 && hit;  // ctr >= 0 且命中,记录为taken
                     DPRINTF(UFTBCount, "UFTBCount: i = %d, numBr = %d, cond taken %d, ctr: %d, hit: %d\n", 
                         i, numBr, stagePreds[s].condTakens[i], find_entry.slots[i].ctr, hit);
                 } else {
@@ -134,22 +137,22 @@ DefaultFTB::putPCHistory(Addr startAddr,
             }
         }
         // assign ftb prediction for indirect targets // 3.4 间接跳转目标预测
-        if (!find_entry.slots.empty()) {
-            auto tail_slot = find_entry.slots.back();
-            if (tail_slot.uncondValid()) {  // 设置间接跳转目标
-                stagePreds[s].indirectTarget = tail_slot.target;
+        if (!find_entry.slots.empty()) {  // 如果包含槽位
+            auto tail_slot = find_entry.slots.back();  // 获取最后一个槽位
+            if (tail_slot.uncondValid()) {  // 如果最后一个槽位是无条件跳转有效
+                stagePreds[s].indirectTarget = tail_slot.target;  // 设置间接跳转目标
                 if (tail_slot.isReturn) {  // 如果是返回指令，设置返回地址
                     stagePreds[s].returnTarget = tail_slot.target;
                 }
             }
         }
-        stagePreds[s].predTick = curTick();
+        stagePreds[s].predTick = curTick();  // 更新预测时间
     } // 4. 更新元数据
-    if (getDelay() >= 1) {
-        meta.l0_hit = stagePreds[getDelay() - 1].valid;
+    if (getDelay() >= 1) {  // 是FTB
+        meta.l0_hit = stagePreds[getDelay() - 1].valid;  // 更新L0命中情况, 0级命中了
     }
-    meta.hit = hit;
-    meta.entry = FTBEntry(find_entry);
+    meta.hit = hit;  // 更新命中情况
+    meta.entry = FTBEntry(find_entry);  // 更新FTB条目
 }
 
 std::shared_ptr<void>
@@ -160,7 +163,39 @@ DefaultFTB::getPredictionMeta()
 }
 
 void
-DefaultFTB::specUpdateHist(const boost::dynamic_bitset<> &history, FullFTBPrediction &pred) {}
+DefaultFTB::specUpdateHist(const boost::dynamic_bitset<> &history, FullFTBPrediction &pred) {
+    // if (!isL0()) return;  // 只对uFTB做推测更新
+    
+    // // 获取当前预测的FTB条目
+    // Addr startPC = pred.bbStart;
+    // Addr ftb_idx = getIndex(startPC);
+    // Addr ftb_tag = getTag(startPC);
+    
+    // auto it = ftb[ftb_idx].find(ftb_tag);
+    // if (it == ftb[ftb_idx].end()) return;  // 未命中则不更新
+    
+    // auto &ftb_entry = it->second;
+    
+    // // 遍历所有条件分支槽位
+    // for (int i = 0; i < numBr && i < ftb_entry.slots.size(); i++) {
+    //     auto &slot = ftb_entry.slots[i];
+    //     if (!slot.isCond || slot.alwaysTaken) continue;  // 只更新条件分支且非always taken
+        
+    //     // 获取预测结果
+    //     bool pred_taken = pred.condTakens[i];
+        
+    //     // 推测性更新计数器
+    //     int new_ctr = slot.ctr;
+    //     DPRINTF(UFTBCount, "spec update: pc =%#lx old=%d\n", startPC, slot.ctr);
+    //     updateCtr(new_ctr, pred_taken);
+        
+    //     // 更新FTB条目中的计数器
+    //     slot.ctr = new_ctr;
+        
+    //     DPRINTF(UFTBCount, "Spec update ctr for branch %d: old=%d new=%d pred_taken=%d\n",
+    //             i, slot.ctr, new_ctr, pred_taken);
+    // }
+}
 
 void
 DefaultFTB::reset()
@@ -211,7 +246,7 @@ DefaultFTB::valid(Addr instPC)
 DefaultFTB::TickedFTBEntry
 DefaultFTB::lookup(Addr inst_pc)
 {
-    if (inst_pc & 0x1) {
+    if (inst_pc & 0x1) {  // 最低位是1, 忽略
         return TickedFTBEntry(); // ignore false hit when lowest bit is 1
     }
     Addr ftb_idx = getIndex(inst_pc);
@@ -221,15 +256,15 @@ DefaultFTB::lookup(Addr inst_pc)
 
     assert(ftb_idx < numSets);
     // ignore false hit when lowest bit is 1
-    const auto &it = ftb[ftb_idx].find(ftb_tag);
-    if (it != ftb[ftb_idx].end()) {
-        if (it->second.valid) {
+    const auto &it = ftb[ftb_idx].find(ftb_tag);  // 根据index查找tag
+    if (it != ftb[ftb_idx].end()) {  // 找到
+        if (it->second.valid) {  // 有效
             it->second.tick = curTick();
-            std::make_heap(mruList[ftb_idx].begin(), mruList[ftb_idx].end(), older());
+            std::make_heap(mruList[ftb_idx].begin(), mruList[ftb_idx].end(), older());  // 更新MRU列表
             return it->second;
         }
     }
-    return TickedFTBEntry();
+    return TickedFTBEntry();  // 未找到
 }
 
 void
@@ -243,40 +278,40 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
 
     bool pred_hit = stream.isHit;
 
-    bool stream_taken = stream.exeTaken;
-    FTBEntry entry_to_write;
+    bool stream_taken = stream.exeTaken;  // 执行阶段分支确实跳转
+    FTBEntry entry_to_write;  // 要写入的FTB条目
     bool is_old_entry = pred_hit;
-    if (pred_hit || stream_taken) {
-        BranchInfo branch_info = stream.exeBranchInfo;
+    if (pred_hit || stream_taken) { // 如果预测命中或执行跳转
+        BranchInfo branch_info = stream.exeBranchInfo;  // 执行阶段分支信息
         bool is_uncond = branch_info.isUncond();
         // if pred not hit, establish a new entry
-        if (!pred_hit) {
+        if (!pred_hit) { // 如果预测未命中， 执行跳转了，建立新的FTB条目
             DPRINTF(FTB, "pred miss, creating new FTB entry\n");
             FTBEntry new_entry;
             new_entry.valid = true;
             new_entry.tag = inst_tag;
             std::vector<FTBSlot> &slots = new_entry.slots;
-            FTBSlot new_slot = FTBSlot(branch_info);
+            FTBSlot new_slot = FTBSlot(branch_info);  // 创建新的槽位，第一个分支
             slots.push_back(new_slot);
-            // uncond branch should set fallThruAddr to end of that inst
+            // uncond branch should set fallThruAddr to end of that inst 无条件分支设置fallThruAddr为指令结束地址
             if (is_uncond) {
                 new_entry.fallThruAddr = branch_info.getEnd();
                 incNonL0Stat(ftbStats.newEntryWithUncond);
             } else {
-                new_entry.fallThruAddr = startPC + 32;
+                new_entry.fallThruAddr = startPC + 32;  // 条件分支设置fallThruAddr为当前PC+32？
                 incNonL0Stat(ftbStats.newEntryWithCond);
             }
             entry_to_write = new_entry;
             incNonL0Stat(ftbStats.newEntry);
-        } else {
+        } else { // 如果预测命中，需要时候更新FTB条目
             DPRINTF(FTB, "pred hit, updating FTB entry if necessary\n");
             DPRINTF(FTB, "printing old entry:\n");
             FTBEntry old_entry = stream.predFTBEntry;
             printFTBEntry(old_entry);
             // assert(old_entry.tag == inst_tag && old_entry.valid);
             std::vector<FTBSlot> &slots = old_entry.slots;
-            bool new_branch = !branchIsInEntry(old_entry, branch_info.pc);
-            if (new_branch && stream_taken) {
+            bool new_branch = !branchIsInEntry(old_entry, branch_info.pc);  // 如果分支不在FTB条目中
+            if (new_branch && stream_taken) {  // 如果分支不在FTB条目中且执行跳转
                 is_old_entry = false;
                 DPRINTF(FTB, "new taken branch detected, inserting into FTB entry\n");
                 // keep pc ascending order
@@ -354,13 +389,13 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
         printFTBEntry(entry_to_write);
         checkFTBEntry(entry_to_write);
     }
-    stream.updateFTBEntry = entry_to_write;
+    stream.updateFTBEntry = entry_to_write;  // 更新要写入的FTB条目
     stream.updateIsOldEntry = is_old_entry;
 }
 
 void
 DefaultFTB::update(const FetchStream &stream)
-{
+{ // 用commit stream更新预测器内容
     auto meta = std::static_pointer_cast<FTBMeta>(stream.predMetas[getComponentIdx()]);
     if (meta->hit) {
         ftbStats.updateHit++;
@@ -375,9 +410,10 @@ DefaultFTB::update(const FetchStream &stream)
             return;
         }
     }
-    Addr startPC = stream.getRealStartPC();
-    Addr ftb_idx = getIndex(startPC);
-    Addr ftb_tag = getTag(startPC);
+    Addr startPC = stream.getRealStartPC();     // 获取stream真实PC来更新对应的FTB条目
+    Addr ftb_idx = getIndex(startPC);  // 获取FTB索引
+    Addr ftb_tag = getTag(startPC);  // 获取FTB标签
+
 
     DPRINTF(FTB, "FTB: Updating FTB entry index %#lx tag %#lx\n", ftb_idx, ftb_tag);
 
@@ -390,16 +426,19 @@ DefaultFTB::update(const FetchStream &stream)
         const auto& old_entry = mruList[ftb_idx].back();
         DPRINTF(FTB, "FTB: Replacing entry with tag %#lx in set %#lx\n", old_entry->first, ftb_idx);
         ftb[ftb_idx].erase(old_entry->first);
+
+        ftbStats.replacements++;
+        ftbStats.fullSetEvents++;
     }
 
-    auto updatedEntry = stream.updateFTBEntry;
+    auto updatedEntry = stream.updateFTBEntry;  // 要写入的FTB条目
     bool updatedIsOldEntry = stream.updateIsOldEntry;
-    auto entryInFtbNow = ftb[ftb_idx][ftb_tag];
+    auto entryInFtbNow = ftb[ftb_idx][ftb_tag];  // 当前FTB条目
     // if this entry is old entry, use entry now in ftb to avoid overwriting entry with more branche info
     // 如果是旧条目且当前FTB中存在，使用现有条目避免覆盖更多分支信息
     auto entry_to_write = (updatedIsOldEntry && !not_found) ? FTBEntry(entryInFtbNow) : updatedEntry;
     // train L0 FTB ctrs  L0 FTB ctr 更新
-    if (isL0()) {
+    if (isL0()) {   // UFTB更新ctrs
         std::vector<bool> need_to_update;
         need_to_update.resize(numBr, false);
         auto &ftb_entry = entry_to_write;
@@ -444,14 +483,14 @@ DefaultFTB::update(const FetchStream &stream)
             } else {
                 ctr_to_be_updated = updatedEntry.slots[b].ctr;
             }
-            DPRINTF(UFTBCount, "UFTBCount: updating ctr %d, taken = %d for branch %d\n", ctr_to_be_updated, this_cond_actually_taken, b);
-            updateCtr(ctr_to_be_updated, this_cond_actually_taken); // 更新计数器
-            DPRINTF(UFTBCount, "UFTBCount: updated ctr %d\n", ctr_to_be_updated);
+            // DPRINTF(UFTBCount, "UFTBCount: updating ctr %d, taken = %d for branch %d\n", ctr_to_be_updated, this_cond_actually_taken, b);
+            // updateCtr(ctr_to_be_updated, this_cond_actually_taken); // 更新计数器
+            // DPRINTF(UFTBCount, "UFTBCount: updated ctr %d\n", ctr_to_be_updated);
             entry_to_write.slots[b].ctr = ctr_to_be_updated;
         }
     }
 
-    ftb[ftb_idx][ftb_tag] = TickedFTBEntry(entry_to_write, curTick());
+    ftb[ftb_idx][ftb_tag] = TickedFTBEntry(entry_to_write, curTick());  // 更新FTB条目
     ftb[ftb_idx][ftb_tag].tag = ftb_tag; // in case different ftb has different tags
 
 
@@ -467,6 +506,9 @@ DefaultFTB::update(const FetchStream &stream)
     assert(ftb[ftb_idx].size() <= numWays);
     assert(mruList[ftb_idx].size() <= numWays);
 
+    ftbStats.setUsage[ftb_idx]++;
+    ftbStats.wayUsage[ftb[ftb_idx].size()]++;
+
     // ftb[ftb_idx].valid = true;
     // set(ftb[ftb_idx].target, target);
     // ftb[ftb_idx].tag = getTag(inst_pc);
@@ -474,7 +516,7 @@ DefaultFTB::update(const FetchStream &stream)
 
 void
 DefaultFTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
-{
+{ // commit阶段统计分支数据
     auto meta = std::static_pointer_cast<FTBMeta>(stream.predMetas[getComponentIdx()]);
     auto &entry = meta->entry;
     auto pc = inst->getPC();
@@ -614,10 +656,17 @@ DefaultFTB::FTBStats::FTBStats(statistics::Group* parent) :
     ADD_STAT(callHits, statistics::units::Count::get(), "calls committed that was predicted hit"),
     ADD_STAT(callMisses, statistics::units::Count::get(), "calls committed that was predicted miss"),
     ADD_STAT(returnHits, statistics::units::Count::get(), "returns committed that was predicted hit"),
-    ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss")
+    ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss"),
+    ADD_STAT(setUsage, statistics::units::Count::get(), "Usage count per set"),
+    ADD_STAT(wayUsage, statistics::units::Count::get(), "Way usage distribution per set"),
+    ADD_STAT(replacements, statistics::units::Count::get(), "Number of entry replacements"),
+    ADD_STAT(fullSetEvents, statistics::units::Count::get(), "Number of times a set was full")
 
 {
     auto ftb = dynamic_cast<branch_prediction::ftb_pred::DefaultFTB*>(parent);
+    
+    setUsage.init(ftb->numSets+1).flags(statistics::total);
+    wayUsage.init(ftb->numWays+1).flags(statistics::total);
     // do not need counter below in L0 ftb
     if (ftb->isL0()) {
         predUseL0OnL1Miss.prereq(predUseL0OnL1Miss);

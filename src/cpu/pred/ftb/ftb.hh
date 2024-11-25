@@ -61,13 +61,13 @@ class DefaultFTB : public TimedBaseFTBPredictor
 
     typedef struct TickedFTBEntry : public FTBEntry
     {
-        uint64_t tick;
+        uint64_t tick;  // 时间戳
         TickedFTBEntry(const FTBEntry &entry, uint64_t tick)
             : FTBEntry(entry), tick(tick) {}
         TickedFTBEntry() : tick(0) {}
     }TickedFTBEntry;
 
-    using FTBMap = std::map<Addr, TickedFTBEntry>;  // 地址到FTB条目的映射
+    using FTBMap = std::map<Addr, TickedFTBEntry>;  // 地址tag到FTB条目的映射
     using FTBMapIter = typename FTBMap::iterator;
     using FTBHeap = std::vector<FTBMapIter>;  // 最近使用列表,LRU
 
@@ -106,7 +106,7 @@ class DefaultFTB : public TimedBaseFTBPredictor
      *  @param inst_PC The address of the branch to look up.
      *  @return Returns the FTB entry.
      */
-    TickedFTBEntry lookup(Addr instPC);
+    TickedFTBEntry lookup(Addr instPC);  // 查找PC对应的FTB条目
 
     /** Checks if an block starting with the given PC is in the FTB.
      *  @param inst_PC The address of the block to look up.
@@ -126,7 +126,7 @@ class DefaultFTB : public TimedBaseFTBPredictor
      * 
      * @param stream 
      */
-    void getAndSetNewFTBEntry(FetchStream &stream);
+    void getAndSetNewFTBEntry(FetchStream &stream);  // 从旧的FTB条目中推导出新条目并设置stream的updateFTBEntry字段
 
     bool entryHasUncond(FTBEntry e) {
         if (!e.slots.empty()) {
@@ -140,7 +140,7 @@ class DefaultFTB : public TimedBaseFTBPredictor
       return numCondInEntry(e) > 0;
     }
 
-    int numCondInEntry(FTBEntry e) {
+    int numCondInEntry(FTBEntry e) {  // 获取条目中的条件跳转数
         int numCond = 0;
         if (!e.slots.empty()) {
             for (auto &slot : e.slots) {
@@ -152,7 +152,7 @@ class DefaultFTB : public TimedBaseFTBPredictor
         return numCond;
     }
 
-    bool entryIsFull(FTBEntry e) {
+    bool entryIsFull(FTBEntry e) {  // 分支条目是否满
         // int validSlots = 0;
         // if (!e.slots.empty()) {
         //     for (auto &slot : e.slots) {
@@ -212,7 +212,7 @@ class DefaultFTB : public TimedBaseFTBPredictor
      */
     inline Addr getTag(Addr instPC);
 
-    bool isL0() { return getDelay() == 0; }
+    bool isL0() { return getDelay() == 0; }  // 是否是L0/ uFTB
 
     void updateCtr(int &ctr, bool taken) {
         if (taken && ctr < 1) {ctr++;}
@@ -227,43 +227,43 @@ class DefaultFTB : public TimedBaseFTBPredictor
 
 
     /** The number of entries in the FTB. */
-    unsigned numEntries;
+    unsigned numEntries;  // FTB的条目数
 
     /** The index mask. */
-    Addr idxMask;
+    Addr idxMask;  // 索引掩码
 
     /** The number of tag bits per entry. */
-    unsigned tagBits;
+    unsigned tagBits;  // 每个条目的tag位数
 
     /** The tag mask. */
-    Addr tagMask;
+    Addr tagMask;  // tag掩码
 
     /** Number of bits to shift PC when calculating index. */
-    unsigned instShiftAmt;
+    unsigned instShiftAmt;  // 计算索引时PC的位移量
 
     /** Number of bits to shift PC when calculating tag. */
-    unsigned tagShiftAmt;
+    unsigned tagShiftAmt;  // 计算tag时PC的位移量
 
     /** Log2 NumThreads used for hashing threadid */
-    unsigned log2NumThreads;
+    unsigned log2NumThreads;  // 用于哈希线程id的log2 NumThreads
 
-    unsigned numBr;
+    unsigned numBr;  // 每个条目中的分支槽数    
 
-    unsigned numWays;
+    unsigned numWays;  // 每个set中的way数
 
-    unsigned numSets;
+    unsigned numSets;  // set数
 
     typedef struct FTBMeta
     {
-        bool hit;
-        bool l0_hit;
-        FTBEntry entry;
+        bool hit;  // 命中
+        bool l0_hit;  // L0命中
+        FTBEntry entry;  // FTB条目
         FTBMeta() : hit(false), l0_hit(false), entry(FTBEntry()) {}
         FTBMeta(bool h, bool h0, FTBEntry e) : hit(h), l0_hit(h0), entry(e) {}
         FTBMeta(const FTBMeta &other) : hit(other.hit), l0_hit(other.l0_hit), entry(other.entry) {}
     }FTBMeta;
 
-    FTBMeta meta;
+    FTBMeta meta;  // 元数据
 
     struct FTBStats : public statistics::Group {
         statistics::Scalar newEntry;
@@ -314,6 +314,11 @@ class DefaultFTB : public TimedBaseFTBPredictor
 
         statistics::Scalar returnHits;
         statistics::Scalar returnMisses;
+
+        statistics::Vector setUsage;        // 每组的使用计数
+        statistics::Vector wayUsage;        // 每组中way的使用分布
+        statistics::Scalar replacements;    // 替换次数
+        statistics::Scalar fullSetEvents;   // 组满事件次数
 
         FTBStats(statistics::Group* parent);
     } ftbStats;
