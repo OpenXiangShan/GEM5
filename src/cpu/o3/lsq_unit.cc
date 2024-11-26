@@ -430,7 +430,7 @@ LSQUnit::completeDataAccess(PacketPtr pkt)
 }
 
 LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries, uint32_t sbufferEvictThreshold,
-    uint64_t storeBufferInactiveThreshold)
+    uint64_t storeBufferInactiveThreshold, uint32_t ldPipeStages, uint32_t stPipeStages)
     : sbufferEvictThreshold(sbufferEvictThreshold),
       sbufferEntries(sbufferEntries),
       storeBufferWritebackInactive(0),
@@ -438,6 +438,8 @@ LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries
       lsqID(-1),
       storeQueue(sqEntries),
       loadQueue(lqEntries),
+      loadPipe(ldPipeStages - 1, 0),
+      storePipe(stPipeStages - 1, 0),
       storesToWB(0),
       htmStarts(0),
       htmStops(0),
@@ -452,7 +454,25 @@ LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries
     // reserve space, we want if sq will be full, sbuffer will start evicting
     sqFullUpperLimit = sqEntries - 4;
     sqFullLowerLimit = sqFullUpperLimit - 4;
+
+    loadPipeSx.resize(ldPipeStages);
+    storePipeSx.resize(stPipeStages);
+
+    for (int i = 0; i < ldPipeStages; i++) {
+        loadPipeSx[i] = loadPipe.getWire(-i);
+    }
+    for (int i = 0; i < stPipeStages; i++) {
+        storePipeSx[i] = storePipe.getWire(-i);
+    }
+    assert(ldPipeStages >= 4 && stPipeStages >= 5);
     assert(sqFullLowerLimit > 0);
+}
+
+void
+LSQUnit::tick()
+{
+    loadPipe.advance();
+    storePipe.advance();
 }
 
 void
@@ -900,8 +920,140 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
     return NoFault;
 }
 
+void
+LSQUnit::issueToLoadPipe(const DynInstPtr &inst)
+{
+    // push to loadPipeS0
+    assert(loadPipeSx[0]->size < MaxWidth);
+    loadPipeSx[0]->insts[loadPipeSx[0]->size++] = inst;
+    DPRINTF(LSQUnit, "issueToLoadPipe: [sn:%lli]\n", inst->seqNum);
+    dumpLoadPipe();
+}
 
+void
+LSQUnit::issueToStorePipe(const DynInstPtr &inst)
+{
+    // push to storePipeS0
+    assert(storePipeSx[0]->size < MaxWidth);
+    storePipeSx[0]->insts[storePipeSx[0]->size++] = inst;
+    DPRINTF(LSQUnit, "issueToStorePipe: [sn:%lli]\n", inst->seqNum);
+    dumpStorePipe();
+}
 
+void
+LSQUnit::executeLoadPipeSx()
+{
+    // TODO: execute operations in each load pipelines
+    Fault fault = NoFault;
+    for (int i = 0; i < loadPipeSx.size(); i++) {
+        auto& stage = loadPipeSx[i];
+        switch (i) {
+            case 0:
+                break;
+            case 1:
+                for (int j = 0; j < stage->size; j++) {
+                    auto& inst = stage->insts[j];
+                    if (!inst->isSquashed()) {
+                        // Loads will mark themselves as executed, and their writeback
+                        // event adds the instruction to the queue to commit
+                        fault = executeLoad(inst);
+                        if (inst->isTranslationDelayed() &&
+                            fault == NoFault) {
+                            // A hw page table walk is currently going on; the
+                            // instruction must be deferred.
+                            DPRINTF(LSQUnit, "Execute: Delayed translation, deferring "
+                            "load.\n");
+                            iewStage->deferMemInst(inst);
+                            continue;
+                        }
+                        if (inst->isDataPrefetch() || inst->isInstPrefetch()) {
+                            inst->fault = NoFault;
+                        }
+                        iewStage->SquashCheckAfterExe(inst);
+                    } else {
+                        DPRINTF(LSQUnit, "Execute: Instruction was squashed. PC: %s, [tid:%i]"
+                                        " [sn:%llu]\n", inst->pcState(), inst->threadNumber,
+                                        inst->seqNum);
+                        inst->setExecuted();
+                        inst->setCanCommit();
+                    }
+                }
+                break;
+            case 2:
+                break;
+            case 3:
+                break;
+            default:
+                panic("unsupported loadpipe length");
+        }
+    }
+}
+
+void
+LSQUnit::executeStorePipeSx()
+{
+    // TODO: execute operations in each store pipelines
+    Fault fault = NoFault;
+    for (int i = 0; i < storePipeSx.size(); i++) {
+        auto& stage = storePipeSx[i];
+        switch (i) {
+            case 0:
+                break;
+            case 1:
+                for (int j = 0; j < stage->size; j++) {
+                    auto& inst = stage->insts[j];
+                    if (!inst->isSquashed()) {
+                        fault = executeStore(inst);
+                        if (inst->isTranslationDelayed() &&
+                            fault == NoFault) {
+                            // A hw page table walk is currently going on; the
+                            // instruction must be deferred.
+                            DPRINTF(LSQUnit, "Execute: Delayed translation, deferring "
+                                    "store.\n");
+                            iewStage->deferMemInst(inst);
+                            continue;
+                        }
+
+                        // If the store had a fault then it may not have a mem req
+                        if (fault != NoFault || !inst->readPredicate() ||
+                                !inst->isStoreConditional()) {
+                            // If the instruction faulted, then we need to send it
+                            // along to commit without the instruction completing.
+                            // Send this instruction to commit, also make sure iew
+                            // stage realizes there is activity.
+                            inst->setExecuted();
+                            iewStage->instToCommit(inst);
+                            iewStage->activityThisCycle();
+                        }
+                        iewStage->notifyExecuted(inst);
+                        iewStage->SquashCheckAfterExe(inst);
+                    } else {
+                        DPRINTF(LSQUnit, "Execute: Instruction was squashed. PC: %s, [tid:%i]"
+                                        " [sn:%llu]\n", inst->pcState(), inst->threadNumber,
+                                        inst->seqNum);
+                        inst->setExecuted();
+                        inst->setCanCommit();
+                    }
+                }
+                break;
+            case 2:
+                break;
+            case 3:
+                break;
+            case 4:
+                break;
+            default:
+                panic("unsupported storepipe length");
+        }
+    }
+}
+
+void
+LSQUnit::executePipeSx()
+{
+    executeLoadPipeSx();
+    executeStorePipeSx();
+}
 
 Fault
 LSQUnit::executeLoad(const DynInstPtr &inst)
@@ -1970,6 +2122,38 @@ LSQUnit::recvRetry()
     if (isStoreBlocked) {
         DPRINTF(LSQUnit, "Receiving retry: blocked store\n");
         writebackBlockedStore();
+    }
+}
+
+void
+LSQUnit::dumpLoadPipe()
+{
+    DPRINTF(LSQUnit, "Dumping LoadPipe:\n");
+    for (int i = 0; i < loadPipeSx.size(); i++) {
+        DPRINTF(LSQUnit, "Load S%d:, size: %d\n", i, loadPipeSx[i]->size);
+        for (int j = 0; j < loadPipeSx[i]->size; j++) {
+            DPRINTF(LSQUnit, "  PC: %s, [tid:%i] [sn:%lli]\n",
+                    loadPipeSx[i]->insts[j]->pcState(),
+                    loadPipeSx[i]->insts[j]->threadNumber,
+                    loadPipeSx[i]->insts[j]->seqNum
+            );
+        }
+    }
+}
+
+void
+LSQUnit::dumpStorePipe()
+{
+    DPRINTF(LSQUnit, "Dumping StorePipe:\n");
+    for (int i = 0; i < storePipeSx.size(); i++) {
+        DPRINTF(LSQUnit, "Store S%d:, size: %d\n", i, storePipeSx[i]->size);
+        for (int j = 0; j < storePipeSx[i]->size; j++) {
+            DPRINTF(LSQUnit, "  PC: %s, [tid:%i] [sn:%lli]\n",
+                    storePipeSx[i]->insts[j]->pcState(),
+                    storePipeSx[i]->insts[j]->threadNumber,
+                    storePipeSx[i]->insts[j]->seqNum
+            );
+        }
     }
 }
 

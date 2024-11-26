@@ -252,6 +252,17 @@ class IEW
 
     bool flushAllStores(ThreadID tid) { return ldstQueue.flushAllStores(tid); }
 
+    /** Check if we need to squash after a load/store/branch is executed. */
+    void SquashCheckAfterExe(DynInstPtr inst);
+
+    void notifyExecuted(const DynInstPtr &inst) { instQueue.notifyExecuted(inst); }
+
+    /**
+     * Defers a memory instruction when its DTB translation incurs a hw
+     * page table walk.
+     */
+    void deferMemInst(const DynInstPtr &deferred_inst) { instQueue.deferMemInst(deferred_inst); }
+
     /** Check misprediction  */
     void checkMisprediction(const DynInstPtr &inst);
 

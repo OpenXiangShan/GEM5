@@ -697,7 +697,7 @@ InstructionQueue::scheduleReadyInsts()
         assert(op_latency < 64);
         DPRINTF(Schedule, "[sn:%llu] start execute %u cycles\n", issued_inst->seqNum, op_latency);
         cpu->perfCCT->updateInstPos(issued_inst->seqNum, PerfRecord::AtFU);
-        if (op_latency <= 1) {
+        if (op_latency <= 1 || issued_inst->isLoad() || issued_inst->isStore()) {
             i2e_info->size++;
             instsToExecute.push_back(issued_inst);
         }

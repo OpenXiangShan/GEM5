@@ -748,6 +748,15 @@ class LSQ
     /** Executes a store. */
     Fault executeStore(const DynInstPtr &inst);
 
+    /** Iq issues a load to load pipeline. */
+    void issueToLoadPipe(const DynInstPtr &inst);
+
+    /** Iq issues a store to store pipeline. */
+    void issueToStorePipe(const DynInstPtr &inst);
+
+    /** Process instructions in each load/store pipeline stages. */
+    void executePipeSx();
+
     /**
      * Commits loads up until the given sequence number for a specific thread.
      */

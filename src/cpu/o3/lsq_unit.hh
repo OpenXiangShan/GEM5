@@ -290,7 +290,8 @@ class LSQUnit
   public:
     /** Constructs an LSQ unit. init() must be called prior to use. */
     LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries,
-      uint32_t sbufferEvictThreshold, uint64_t storeBufferInactiveThreshold);
+      uint32_t sbufferEvictThreshold, uint64_t storeBufferInactiveThreshold,
+      uint32_t ldPipeStages, uint32_t stPipeStages);
 
     /** We cannot copy LSQUnit because it has stats for which copy
      * contructor is deleted explicitly. However, STL vector requires
@@ -342,12 +343,18 @@ class LSQUnit
     /** Executes a load instruction. */
     Fault executeLoad(const DynInstPtr &inst);
 
+    /** Iq issues a load to load pipeline. */
+    void issueToLoadPipe(const DynInstPtr &inst);
+
     Fault executeLoad(int lq_idx) { panic("Not implemented"); return NoFault; }
 
     bool triggerStorePFTrain(int sq_idx);
 
     /** Executes a store instruction. */
     Fault executeStore(const DynInstPtr& inst);
+
+    /** Iq issues a store to store pipeline. */
+    void issueToStorePipe(const DynInstPtr &inst);
 
     /** Commits the head load. */
     void commitLoad();
@@ -487,8 +494,28 @@ class LSQUnit
 
     bool sbufferSendPacket(PacketPtr data_pkt);
 
+    /** Debugging function to dump instructions in the LoadPipe. */
+    void dumpLoadPipe();
+
+    /** Debugging function to dump instructions in the storePipe. */
+    void dumpStorePipe();
+
     /** Debugging function to dump instructions in the LSQ. */
     void dumpInsts() const;
+
+    /** Ticks
+     *  causing load/store pipe to run for one cycle.
+     */
+    void tick();
+
+    /** Process instructions in each load pipeline stages. */
+    void executeLoadPipeSx();
+
+    /** Process instructions in each store pipeline stages. */
+    void executeStorePipeSx();
+
+    /** Wrap function. */
+    void executePipeSx();
 
     /** Schedule event for the cpu. */
     void schedule(Event& ev, Tick when);
@@ -585,6 +612,30 @@ class LSQUnit
     StoreQueue storeQueue;
     /** The load queue. */
     LoadQueue loadQueue;
+
+    /** Struct that defines the information passed through Load Pipeline. */
+    struct LoadPipeStruct
+    {
+        int size;
+
+        DynInstPtr insts[MaxWidth];
+    };
+    /** The load pipeline TimeBuffer. */
+    TimeBuffer<LoadPipeStruct> loadPipe;
+    /** Each stage in load pipeline. loadPipeSx[0] means load pipe S0 */
+    std::vector<TimeBuffer<LoadPipeStruct>::wire> loadPipeSx;
+
+    /** Struct that defines the information passed through Store Pipeline. */
+    struct StorePipeStruct
+    {
+        int size;
+
+        DynInstPtr insts[MaxWidth];
+    };
+    /** The store pipeline TimeBuffer. */
+    TimeBuffer<StorePipeStruct> storePipe;
+    /** Each stage in store pipeline. storePipeSx[0] means store pipe S0 */
+    std::vector<TimeBuffer<StorePipeStruct>::wire> storePipeSx;
 
   private:
     /** The number of places to shift addresses in the LSQ before checking

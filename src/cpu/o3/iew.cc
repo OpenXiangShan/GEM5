@@ -1327,6 +1327,84 @@ IEW::printAvailableInsts()
 }
 
 void
+IEW::SquashCheckAfterExe(DynInstPtr inst)
+{
+    ThreadID tid = inst->threadNumber;
+
+    if (!fetchRedirect[tid] ||
+        !execWB->squash[tid] ||
+        execWB->squashedSeqNum[tid] > inst->seqNum) {
+
+        // Prevent testing for misprediction on load instructions,
+        // that have not been executed.
+        bool loadNotExecuted = !inst->isExecuted() && inst->isLoad();
+
+        if (inst->mispredicted() && !loadNotExecuted) {
+            fetchRedirect[tid] = true;
+
+            DPRINTF(IEW, "[tid:%i] [sn:%llu] Execute: "
+                    "Branch mispredict detected.\n",
+                    tid, inst->seqNum);
+            DPRINTF(IEW, "[tid:%i] [sn:%llu] "
+                    "Predicted target was PC: %s\n",
+                    tid, inst->seqNum, inst->readPredTarg());
+            DPRINTF(IEW, "[tid:%i] [sn:%llu] Execute: "
+                    "Redirecting fetch to PC: %s\n",
+                    tid, inst->seqNum, inst->pcState());
+            // If incorrect, then signal the ROB that it must be squashed.
+            squashDueToBranch(inst, tid);
+
+            ppMispredict->notify(inst);
+
+            if (inst->readPredTaken()) {
+                iewStats.predictedTakenIncorrect++;
+            } else {
+                iewStats.predictedNotTakenIncorrect++;
+            }
+        } else if (ldstQueue.violation(tid)) {
+            assert(inst->isMemRef());
+            // If there was an ordering violation, then get the
+            // DynInst that caused the violation.  Note that this
+            // clears the violation signal.
+            DynInstPtr violator;
+            violator = ldstQueue.getMemDepViolator(tid);
+
+            DPRINTF(IEW, "LDSTQ detected a violation. Violator PC: %s "
+                    "[sn:%lli], inst PC: %s [sn:%lli]. Addr is: %#x.\n",
+                    violator->pcState(), violator->seqNum,
+                    inst->pcState(), inst->seqNum, inst->physEffAddr);
+
+            fetchRedirect[tid] = true;
+
+            // Tell the instruction queue that a violation has occured.
+            instQueue.violation(inst, violator);
+
+            // Squash.
+            squashDueToMemOrder(violator, tid);
+
+            ++iewStats.memOrderViolationEvents;
+        }
+    } else {
+        // Reset any state associated with redirects that will not
+        // be used.
+        if (ldstQueue.violation(tid)) {
+            assert(inst->isMemRef());
+
+            DynInstPtr violator = ldstQueue.getMemDepViolator(tid);
+
+            DPRINTF(IEW, "LDSTQ detected a violation.  Violator PC: "
+                    "%s, inst PC: %s.  Addr is: %#x.\n",
+                    violator->pcState(), inst->pcState(),
+                    inst->physEffAddr);
+            DPRINTF(IEW, "Violation will not be handled because "
+                    "already squashing\n");
+
+            ++iewStats.memOrderViolationEvents;
+        }
+    }
+}
+
+void
 IEW::executeInsts()
 {
     wbNumInst = 0;
@@ -1401,53 +1479,15 @@ IEW::executeInsts()
                     // instruction must be deferred.
                     DPRINTF(IEW, "Execute: Delayed translation, deferring "
                             "store.\n");
-                    instQueue.deferMemInst(inst);
+                    deferMemInst(inst);
                     continue;
                 }
             } else if (inst->isLoad()) {
-                // Loads will mark themselves as executed, and their writeback
-                // event adds the instruction to the queue to commit
-                fault = ldstQueue.executeLoad(inst);
-
-                if (inst->isTranslationDelayed() &&
-                    fault == NoFault) {
-                    // A hw page table walk is currently going on; the
-                    // instruction must be deferred.
-                    DPRINTF(IEW, "Execute: Delayed translation, deferring "
-                            "load.\n");
-                    instQueue.deferMemInst(inst);
-                    continue;
-                }
-
-                if (inst->isDataPrefetch() || inst->isInstPrefetch()) {
-                    inst->fault = NoFault;
-                }
+                // add this load inst to loadpipe S0.
+                ldstQueue.issueToLoadPipe(inst);
             } else if (inst->isStore()) {
-                fault = ldstQueue.executeStore(inst);
-
-                if (inst->isTranslationDelayed() &&
-                    fault == NoFault) {
-                    // A hw page table walk is currently going on; the
-                    // instruction must be deferred.
-                    DPRINTF(IEW, "Execute: Delayed translation, deferring "
-                            "store.\n");
-                    instQueue.deferMemInst(inst);
-                    continue;
-                }
-
-                // If the store had a fault then it may not have a mem req
-                if (fault != NoFault || !inst->readPredicate() ||
-                        !inst->isStoreConditional()) {
-                    // If the instruction faulted, then we need to send it
-                    // along to commit without the instruction completing.
-                    // Send this instruction to commit, also make sure iew
-                    // stage realizes there is activity.
-                    inst->setExecuted();
-                    instToCommit(inst);
-                    activityThisCycle();
-                }
-
-                instQueue.notifyExecuted(inst);
+                // add this store inst to storepipe S0.
+                ldstQueue.issueToStorePipe(inst);
 
                 // Store conditionals will mark themselves as
                 // executed, and their writeback event will add the
@@ -1486,80 +1526,13 @@ IEW::executeInsts()
         // This probably needs to prioritize the redirects if a different
         // scheduler is used.  Currently the scheduler schedules the oldest
         // instruction first, so the branch resolution order will be correct.
-        ThreadID tid = inst->threadNumber;
-
-        if (!fetchRedirect[tid] ||
-            !execWB->squash[tid] ||
-            execWB->squashedSeqNum[tid] > inst->seqNum) {
-
-            // Prevent testing for misprediction on load instructions,
-            // that have not been executed.
-            bool loadNotExecuted = !inst->isExecuted() && inst->isLoad();
-
-            if (inst->mispredicted() && !loadNotExecuted) {
-                fetchRedirect[tid] = true;
-
-                DPRINTF(IEW, "[tid:%i] [sn:%llu] Execute: "
-                        "Branch mispredict detected.\n",
-                        tid, inst->seqNum);
-                DPRINTF(IEW, "[tid:%i] [sn:%llu] "
-                        "Predicted target was PC: %s\n",
-                        tid, inst->seqNum, inst->readPredTarg());
-                DPRINTF(IEW, "[tid:%i] [sn:%llu] Execute: "
-                        "Redirecting fetch to PC: %s\n",
-                        tid, inst->seqNum, inst->pcState());
-                // If incorrect, then signal the ROB that it must be squashed.
-                squashDueToBranch(inst, tid);
-
-                ppMispredict->notify(inst);
-
-                if (inst->readPredTaken()) {
-                    iewStats.predictedTakenIncorrect++;
-                } else {
-                    iewStats.predictedNotTakenIncorrect++;
-                }
-            } else if (ldstQueue.violation(tid)) {
-                assert(inst->isMemRef());
-                // If there was an ordering violation, then get the
-                // DynInst that caused the violation.  Note that this
-                // clears the violation signal.
-                DynInstPtr violator;
-                violator = ldstQueue.getMemDepViolator(tid);
-
-                DPRINTF(IEW, "LDSTQ detected a violation. Violator PC: %s "
-                        "[sn:%lli], inst PC: %s [sn:%lli]. Addr is: %#x.\n",
-                        violator->pcState(), violator->seqNum,
-                        inst->pcState(), inst->seqNum, inst->physEffAddr);
-
-                fetchRedirect[tid] = true;
-
-                // Tell the instruction queue that a violation has occured.
-                instQueue.violation(inst, violator);
-
-                // Squash.
-                squashDueToMemOrder(violator, tid);
-
-                ++iewStats.memOrderViolationEvents;
-            }
-        } else {
-            // Reset any state associated with redirects that will not
-            // be used.
-            if (ldstQueue.violation(tid)) {
-                assert(inst->isMemRef());
-
-                DynInstPtr violator = ldstQueue.getMemDepViolator(tid);
-
-                DPRINTF(IEW, "LDSTQ detected a violation.  Violator PC: "
-                        "%s, inst PC: %s.  Addr is: %#x.\n",
-                        violator->pcState(), inst->pcState(),
-                        inst->physEffAddr);
-                DPRINTF(IEW, "Violation will not be handled because "
-                        "already squashing\n");
-
-                ++iewStats.memOrderViolationEvents;
-            }
+        if (!(inst->isLoad() || inst->isStore())) {
+            // Load/Store will call this in `lsq_unit.cc` after execution
+            SquashCheckAfterExe(inst);
         }
     }
+
+    ldstQueue.executePipeSx();
 
     // Update and record activity if we processed any instructions.
     if (inst_num) {

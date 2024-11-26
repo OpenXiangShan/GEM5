@@ -121,9 +121,10 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
     }
 
     thread.reserve(numThreads);
+    // TODO: Parameterize the load/store pipeline stages
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         thread.emplace_back(maxLQEntries, maxSQEntries, params.SbufferEntries,
-            params.SbufferEvictThreshold, params.storeBufferInactiveThreshold);
+            params.SbufferEvictThreshold, params.storeBufferInactiveThreshold, 4, 5);
         thread[tid].init(cpu, iew_ptr, params, this, tid);
         thread[tid].setDcachePort(&dcachePort);
     }
@@ -190,6 +191,15 @@ LSQ::tick()
 
     usedLoadPorts = 0;
     usedStorePorts = 0;
+    // tick lsq_unit
+    std::list<ThreadID>::iterator threads = activeThreads->begin();
+    std::list<ThreadID>::iterator end = activeThreads->end();
+
+    while (threads != end) {
+        ThreadID tid = *threads++;
+        thread[tid].tick();
+    }
+
 }
 Tick
 LSQ::getLastConflictCheckTick()
@@ -281,6 +291,35 @@ LSQ::insertStore(const DynInstPtr &store_inst)
     ThreadID tid = store_inst->threadNumber;
 
     thread[tid].insertStore(store_inst);
+}
+
+void
+LSQ::issueToLoadPipe(const DynInstPtr &inst)
+{
+    ThreadID tid = inst->threadNumber;
+
+    thread[tid].issueToLoadPipe(inst);
+}
+
+void
+LSQ::issueToStorePipe(const DynInstPtr &inst)
+{
+    ThreadID tid = inst->threadNumber;
+
+    thread[tid].issueToStorePipe(inst);
+}
+
+void
+LSQ::executePipeSx()
+{
+    std::list<ThreadID>::iterator threads = activeThreads->begin();
+    std::list<ThreadID>::iterator end = activeThreads->end();
+
+    while (threads != end) {
+        ThreadID tid = *threads++;
+
+        thread[tid].executePipeSx();
+    }
 }
 
 Fault
