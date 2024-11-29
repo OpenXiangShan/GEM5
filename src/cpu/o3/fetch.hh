@@ -435,7 +435,7 @@ class Fetch
 
     branch_prediction::ftb_pred::DecoupledBPUWithFTB *dbpftb;
 
-    std::unique_ptr<PCStateBase> pc[MaxThreads];
+    std::unique_ptr<PCStateBase> pc[MaxThreads];  // 每个线程的pc
 
     Addr fetchOffset[MaxThreads];
 

@@ -33,7 +33,7 @@ FetchTargetQueue::squash(FetchTargetId new_enq_target_id,
     fetchTargetEnqState.streamId = new_enq_stream_id;
     fetchTargetEnqState.pc = new_enq_pc;
 
-    supplyFetchTargetState.valid = false;
+    supplyFetchTargetState.valid = false;  // squah 时候设置供应状态无效
     supplyFetchTargetState.entry = nullptr;
     fetchDemandTargetId = new_fetch_demand_target_id;
     currentLoopIter = 0;
@@ -61,11 +61,11 @@ void
 FetchTargetQueue::finishCurrentFetchTarget()
 {
 
-    ++fetchDemandTargetId;
-    ftq.erase(supplyFetchTargetState.targetId);
-    supplyFetchTargetState.valid = false;
-    supplyFetchTargetState.entry = nullptr;
-    currentLoopIter = 0;
+    ++fetchDemandTargetId;  // 更新需求id
+    ftq.erase(supplyFetchTargetState.targetId);  // 删除供应id对应的ftq条目
+    supplyFetchTargetState.valid = false;  // 设置供应状态无效
+    supplyFetchTargetState.entry = nullptr;  // 设置供应entry为空
+    currentLoopIter = 0;  // 设置当前loop迭代为0
     DPRINTF(DecoupleBP,
             "Finish current fetch target: %lu, inc demand to %lu\n",
             supplyFetchTargetState.targetId, fetchDemandTargetId);
@@ -74,15 +74,17 @@ FetchTargetQueue::finishCurrentFetchTarget()
 bool
 FetchTargetQueue::trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &in_loop)
 {
+    // 当供应状态无效或供应id不等于需求id时,需要从FTQ中获取新target， 也就是分支预测跳转了
     if (!supplyFetchTargetState.valid ||
-        supplyFetchTargetState.targetId != fetchDemandTargetId) {
-        auto it = ftq.find(fetchDemandTargetId);
-        if (it != ftq.end()) {
-            if (M5_UNLIKELY(fetch_demand_pc >= it->second.endPC)) {
+        supplyFetchTargetState.targetId != fetchDemandTargetId) {  // 供应/响应fetch目标状态无效或供应id不等于需求id
+        auto it = ftq.find(fetchDemandTargetId);  // 查找需求id对应的ftq条目
+        if (it != ftq.end()) {  // 找到
+            if (M5_UNLIKELY(fetch_demand_pc >= it->second.endPC)) {  // 少见：需求pc已经超过ftq条目结束pc
                 // This is a special case where the fetch demand pc is
                 // already past the end of the ftq entry.
                 // In this case, we should just finish the current ftq
                 // entry and supply the fetch with the next ftq entry.
+                // 这是特殊情况，需求pc已经超过ftq条目结束pc，则跳过当前ftq条目，并供应下一个ftq条目
                 DPRINTF(DecoupleBP,
                         "Skip ftq entry %lu: [%#lx, %#lx),", it->first,
                         it->second.startPC, it->second.endPC);
@@ -96,21 +98,22 @@ FetchTargetQueue::trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &in_loop)
                 DPRINTFR(DecoupleBP,
                         " use %lu: [%#lx, %#lx) instead. because demand pc "
                         "past the first entry.\n",
-                        it->first, it->second.startPC, it->second.endPC);
+                        it->first, it->second.startPC, it->second.endPC); // 使用下一个ftq条目替代
             }
+            // 正常情况，找到ftq, 返回
             DPRINTF(DecoupleBP,
                     "Found ftq entry with id %lu, writing to "
                     "fetchReadFtqEntryBuffer\n",
-                    fetchDemandTargetId);
-            supplyFetchTargetState.valid = true;
-            supplyFetchTargetState.targetId = fetchDemandTargetId;
-            supplyFetchTargetState.entry = &(it->second);
-            in_loop = it->second.inLoop;
+                    fetchDemandTargetId);  // 打印找到的ftq条目id
+            supplyFetchTargetState.valid = true;  // 设置供应状态有效
+            supplyFetchTargetState.targetId = fetchDemandTargetId;  // 设置供应id
+            supplyFetchTargetState.entry = &(it->second);  // 设置供应entry
+            in_loop = it->second.inLoop;  // 设置是否在loop中
             return true;
-        } else {
+        } else {  // 没找到
             DPRINTF(DecoupleBP, "Target id %lu not found\n",
                     fetchDemandTargetId);
-            if (!ftq.empty()) {
+            if (!ftq.empty()) {  // 检查ftq是否为空
                 // sanity check
                 --it;
                 DPRINTF(DecoupleBP, "Last entry of target queue: %lu\n",
@@ -127,7 +130,7 @@ FetchTargetQueue::trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &in_loop)
     DPRINTF(DecoupleBP,
             "FTQ supplying, valid: %u, supply id: %u, demand id: %u\n",
             supplyFetchTargetState.valid, supplyFetchTargetState.targetId,
-            fetchDemandTargetId);
+            fetchDemandTargetId);   // 打印FTQ供应状态: 有效,供应id,需求id
     in_loop = supplyFetchTargetState.entry->inLoop;
     return true;
 }

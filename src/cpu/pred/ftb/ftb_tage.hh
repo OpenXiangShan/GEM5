@@ -38,7 +38,7 @@ class FTBTAGE : public TimedBaseFTBPredictor
         public:
             bool valid;
             Addr tag;
-            short counter;
+            short counter;  // 分支预测的计数器
             bool useful;
 
             TageEntry() : valid(false), tag(0), counter(0), useful(false) {}
@@ -51,16 +51,16 @@ class FTBTAGE : public TimedBaseFTBPredictor
     struct TagePrediction
     {
         public:
-            bool mainFound;
-            short mainCounter;
-            bool mainUseful;
-            short altCounter;
-            unsigned table;
-            Addr index;
-            Addr tag;
-            bool useAlt;
-            bitset usefulMask;
-            bool taken;
+            bool mainFound;  // 是否在main table中找到匹配的entry
+            short mainCounter;  // main table中匹配的entry的counter
+            bool mainUseful;  // main table中匹配的entry的useful
+            short altCounter;  // alt table中匹配的entry的counter
+            unsigned table;  // main table的index
+            Addr index;  // main table中匹配的entry的index
+            Addr tag;  // main table中匹配的entry的tag
+            bool useAlt;  // 是否使用alt table
+            bitset usefulMask;  // 每个branch的usefulMask
+            bool taken;  // 分支是否taken
 
             TagePrediction() : mainFound(false), mainCounter(0), mainUseful(false), altCounter(0),
                                 table(0), index(0), tag(0), useAlt(false), taken(false) {}
@@ -147,7 +147,7 @@ class FTBTAGE : public TimedBaseFTBPredictor
 
     unsigned maxHistLen;
 
-    std::vector<std::vector<std::vector<TageEntry>>> tageTable;
+    std::vector<std::vector<std::vector<TageEntry>>> tageTable;  // tage table， 多少个表， tageTable[i][tmp_index][phyBrIdx];
 
     std::vector<std::vector<short>> baseTable;
 

@@ -648,6 +648,7 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
             std::tie(predict_taken, usedUpFetchTargets) =
                 dbpftb->decoupledPredict(
                     inst->staticInst, inst->seqNum, next_pc, tid, currentLoopIter);     // 预测！
+                // 在这个函数内同时从FTQ 出队，用new target 更新next_pc!!!
             if (usedUpFetchTargets) {   // 是否用完fetch targets/FTQ条目？
                 DPRINTF(DecoupleBP, "Used up fetch targets.\n");
             }
@@ -1260,7 +1261,7 @@ Fetch::tick()
         usedUpFetchTargets = !dbsp->trySupplyFetchWithTarget(pc[0]->instAddr());
     } else if (isFTBPred()) {
         assert(dbpftb);
-        dbpftb->tick();     // BP 执行！
+        dbpftb->tick();     // BP 执行！然后从FTQ中取出对应pc 所在entry
         usedUpFetchTargets = !dbpftb->trySupplyFetchWithTarget(pc[0]->instAddr(), currentFetchTargetInLoop);
     }
 }
@@ -1573,15 +1574,15 @@ Fetch::fetch(bool &status_change)
                 return;
             }
         } else if (isFTBPred()) {
-            if (!dbpftb->fetchTargetAvailable()) {
-                dbpftb->addFtqNotValid();
+            if (!dbpftb->fetchTargetAvailable()) {  // 检查FTQ供应状态
+                dbpftb->addFtqNotValid();  // 设置供应状态无效
                 DPRINTF(Fetch, "Skip fetch when FTQ head is not available\n");
                 return;
             }
         }
     }
 
-    DPRINTF(Fetch, "Attempting to fetch from [tid:%i]\n", tid);
+    DPRINTF(Fetch, "Attempting to fetch from [tid:%i]\n", tid);  // 尝试从FTQ中取指令
 
     // The current PC.
     PCStateBase &this_pc = *pc[tid];        // 设置为elf 初始addr, 例如0x8000_0000
@@ -1610,7 +1611,8 @@ Fetch::fetch(bool &status_change)
         fetchStatus[tid] = Running;
         setAllFetchStalls(StallReason::NoStall);
         status_change = true;
-    } else if (fetchStatus[tid] == Running) {
+    } else if (fetchStatus[tid] == Running) {  // 如果fetch状态是Running，
+        // 如果fetchBuffer有效，fetch_addr在fetchBuffer范围内，并且没有宏码，则从icache中取指令
         // If buffer is no longer valid or fetch_addr has moved to point
         // to the next cache block, AND we have no remaining ucode
         // from a macro-op, then start fetch from icache.
@@ -1637,7 +1639,7 @@ Fetch::fetch(bool &status_change)
             DPRINTF(Fetch, "[tid:%i] Fetch is stalled!\n", tid);
             return;
         }
-        if (ftqEmpty()) {
+        if (ftqEmpty()) {  // 如果FTQ为空，则fetch被阻塞
             DPRINTF(
                 Fetch, "[tid:%i] Fetch is stalled due to ftq empty\n", tid);
         }
@@ -1818,7 +1820,7 @@ Fetch::fetch(bool &status_change)
             if (!isDecoupledFrontend()) {
                 predictedBranch |= this_pc.branching();
             }
-            predictedBranch |= lookupAndUpdateNextPC(instruction, *next_pc);  // 检查是否分支跳转，更新pc
+            predictedBranch |= lookupAndUpdateNextPC(instruction, *next_pc);  // 检查是否分支跳转，用FTQ值更新pc
             if (predictedBranch) {
                 DPRINTF(Fetch, "Branch detected with PC = %s\n", this_pc);      // 预测有分支
             }

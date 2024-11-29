@@ -148,20 +148,20 @@ FTBTAGE::lookupHelper(Addr startAddr,
 
     for (int b = 0; b < numBr; b++) {
         // make main prediction
-        int phyBrIdx = getShuffledBrIndex(startAddr, b);
-        int provider_counts = 0;
-        for (int i = numPredictors - 1; i >= 0; --i) {
-            Addr tmp_index = getTageIndex(startAddr, i);
-            Addr tmp_tag = getTageTag(startAddr, i);
-            auto &way = tageTable[i][tmp_index][phyBrIdx];
-            bool match = way.valid && matchTag(tmp_tag, way.tag);
+        int phyBrIdx = getShuffledBrIndex(startAddr, b);  // 获取分支的物理索引
+        int provider_counts = 0;  // 提供者的数量
+        for (int i = numPredictors - 1; i >= 0; --i) { // 遍历每个tage table, 从高到低
+            Addr tmp_index = getTageIndex(startAddr, i);  // 获取tage table的index
+            Addr tmp_tag = getTageTag(startAddr, i);  // 获取tage table的tag
+            auto &way = tageTable[i][tmp_index][phyBrIdx];  // 获取tage table的entry
+            bool match = way.valid && matchTag(tmp_tag, way.tag);  // 判断是否匹配
 
             if (match) {
                 main_entries[b] = way;
                 main_tables[b] = i;
                 main_table_indices[b] = tmp_index;
                 ++provider_counts;
-                break;
+                break;  // 找到匹配的entry后，跳出循环
             }
 
             usefulMasks[b].resize(numPredictors-i);
@@ -195,7 +195,7 @@ FTBTAGE::lookupHelper(Addr startAddr,
 void
 FTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<FullFTBPrediction> &stagePreds) {
     // DPRINTF(FTBTAGE, "putPCHistory startAddr: %#lx\n", stream_start);
-    std::vector<TageEntry> entries;
+    std::vector<TageEntry> entries;     // 保存每个branch的预测结果
     entries.resize(numBr);
 
     for (int i = 0; i < numBr; ++i) {
@@ -203,31 +203,32 @@ FTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Full
     }
     std::vector<int> main_tables;
     std::vector<int> main_table_indices;
-    std::vector<bool> use_alt_preds;
-    std::vector<bitset> usefulMasks;
-    std::vector<bool> takens;
+    std::vector<bool> use_alt_preds;  // 保存每个branch是否使用alt table
+    std::vector<bitset> usefulMasks;  // 保存每个branch的usefulMask
+    std::vector<bool> takens;  // 保存每个branch是否taken
     main_tables.resize(numBr, -1);
     main_table_indices.resize(numBr, -1);
     use_alt_preds.resize(numBr, false);
-    usefulMasks.resize(numBr);
+    usefulMasks.resize(numBr);    // 保存每个branch的usefulMask
+
     takens.resize(numBr, false);
 
-    // get prediction and save it
+    // get prediction and save it 获取预测结果并保存
     std::vector<bool> found = lookupHelper(stream_start, entries, main_tables,
                                     main_table_indices, use_alt_preds, usefulMasks);
 
 
     std::vector<short> altRes = baseTable.at(getBaseTableIndex(stream_start));
 
-    std::vector<TagePrediction> preds;
+    std::vector<TagePrediction> preds;  // 保存每个branch的预测结果
     preds.resize(numBr);
     for (int b = 0; b < numBr; ++b) {
         int phyBrIdx = getShuffledBrIndex(stream_start, b);
-        takens[b] = use_alt_preds[b] ? altRes[phyBrIdx] >= 0 : entries[b].counter >= 0;
+        takens[b] = use_alt_preds[b] ? altRes[phyBrIdx] >= 0 : entries[b].counter >= 0;  // 分支是否taken， 如果不用alt, 用counter>=0表示taken
         preds[b] = TagePrediction(found[b], entries[b].counter, entries[b].useful, altRes[phyBrIdx],
             main_tables[b], main_table_indices[b], entries[b].tag, use_alt_preds[b],
-            usefulMasks[b], takens[b]);
-        tageBankStats[b]->updateStatsWithTagePrediction(preds[b], true);
+            usefulMasks[b], takens[b]);  // 生成preds
+        tageBankStats[b]->updateStatsWithTagePrediction(preds[b], true);  // 更新stats
     }
 
     // sc prediction
@@ -241,7 +242,7 @@ FTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Full
     }
     assert(getDelay() < stagePreds.size());
     for (int s = getDelay(); s < stagePreds.size(); ++s) {
-        // assume that ftb entry is provided in stagePreds
+        // assume that ftb entry is provided in stagePreds 假设ftb entry在stagePreds中提供了
 
         for (int i = 0; i < numBr; ++i) {
             // always taken logic
@@ -250,7 +251,7 @@ FTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Full
             if (entry.slots.size() > i) {
                 takens[i] = takens[i] || entry.slots[i].alwaysTaken;
             }
-            stagePreds[s].condTakens[i] = takens[i];    // 用tage的预测结果更新condTakens
+            stagePreds[s].condTakens[i] = takens[i];    // 用tage的预测结果更新stagePreds的condTakens
         }
     }
 

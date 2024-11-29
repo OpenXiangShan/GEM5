@@ -593,7 +593,7 @@ class DecoupledBPUWithFTB : public BPredUnit
 
     bool fetchTargetAvailable()
     {
-        return fetchTargetQueue.fetchTargetAvailable();
+        return fetchTargetQueue.fetchTargetAvailable();  // 检查FTQ供应状态
     }
 
     FtqEntry& getSupplyingFetchTarget()

@@ -816,7 +816,7 @@ DecoupledBPUWithFTB::decoupledPredict(const StaticInstPtr &inst,
 
     if (taken) {    // 预测taken, 更新PC 到预测目标
         auto &rtarget = target->as<GenericISA::PCStateWithNext>();
-        rtarget.pc(target_to_fetch.target);
+        rtarget.pc(target_to_fetch.target);  // 更新pc = target = rtarget = new target
         // TODO: how about compressed?
         rtarget.npc(target_to_fetch.target + 4);
         rtarget.uReset();
@@ -838,7 +838,7 @@ DecoupledBPUWithFTB::decoupledPredict(const StaticInstPtr &inst,
         const auto fsqId = target_to_fetch.fsqID;
         DPRINTF(DecoupleBP, "running out of ftq entry %lu with %d insts\n",
                 fetchTargetQueue.getSupplyingTargetId(), currentFtqEntryInstNum);
-        fetchTargetQueue.finishCurrentFetchTarget();
+        fetchTargetQueue.finishCurrentFetchTarget();  // 出队，当前供应结束
         // record inst fetched in fsq entry
         auto it = fetchStreamQueue.find(fsqId);
         assert(it != fetchStreamQueue.end());

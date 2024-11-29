@@ -23,9 +23,9 @@ struct FetchTargetEnqState
 
 struct FetchTargetReadState
 {
-    bool valid;
-    FetchTargetId targetId;
-    FtqEntry *entry;
+    bool valid;  // 有效
+    FetchTargetId targetId;  // fetch目标id
+    FtqEntry *entry;  // ftq的entry
 };
 
 class FetchTargetQueue
@@ -34,6 +34,9 @@ class FetchTargetQueue
     // 1. enqueue from fetch stream buffer
     // 2. supply fetch with fetch target head
     // 3. redirect fetch target head after squash
+    // 1. 从fetch stream buffer中入队
+    // 2. 从FTQ中供应fetch目标
+    // 3. 在squash后重定向fetch目标
     using FTQ = std::map<FetchTargetId, FtqEntry>;  // <id, FtqEntry>， map 字典，有64项
     using FTQIt = FTQ::iterator;
     FTQ ftq;    // <id, FtqEntry>， map 字典，有64项
@@ -41,11 +44,11 @@ class FetchTargetQueue
     FetchTargetId ftqId{0};  // this is a queue ptr for ftq itself
 
     // The supply/responsing fetch target state
-    FetchTargetReadState supplyFetchTargetState;
+    FetchTargetReadState supplyFetchTargetState;  // 供应/响应fetch目标状态
     // The demanded fetch target ID to send to fetch
-    FetchTargetId fetchDemandTargetId{0};
+    FetchTargetId fetchDemandTargetId{0};  // 发送给fetch的需求fetch目标ID，新target
 
-    FetchTargetEnqState fetchTargetEnqState;
+    FetchTargetEnqState fetchTargetEnqState;  // 入队状态
 
     int currentLoopIter{0};
 
