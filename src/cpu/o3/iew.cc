@@ -81,7 +81,7 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
       scheduler(params.scheduler),
       instQueue(_cpu, this, params),
       ldstQueue(_cpu, this, params),
-      fuPool(params.fuPool),
+      dispWidth(params.dispWidth),
       commitToIEWDelay(params.commitToIEWDelay),
       renameToIEWDelay(params.renameToIEWDelay),
       renameWidth(params.renameWidth),
@@ -275,7 +275,8 @@ IEW::IEWStats::IEWStats(CPU *cpu)
         {StallReason::BpStall, "BpStall"},
         {StallReason::IntStall, "IntStall"},
         {StallReason::TrapStall, "TrapStall"},
-        {StallReason::FragStall, "FragStall"},
+        {StallReason::FetchFragStall, "FetchFragStall"},
+        {StallReason::OtherFragStall, "OtherFragStall"},
         {StallReason::SquashStall, "SquashStall"},
         {StallReason::FetchBufferInvalid, "FetchBufferInvalid"},
         {StallReason::InstMisPred, "InstMisPred"},
@@ -468,14 +469,6 @@ IEW::isDrained() const
         drained = drained && dispatchStatus[tid] == Running;
     }
 
-    // Also check the FU pool as instructions are "stored" in FU
-    // completion events until they are done and not accounted for
-    // above
-    if (drained && !fuPool->isDrained()) {
-        DPRINTF(Drain, "FU pool still busy.\n");
-        drained = false;
-    }
-
     return drained;
 }
 
@@ -498,7 +491,6 @@ IEW::takeOverFrom()
 
     instQueue.takeOverFrom();
     ldstQueue.takeOverFrom();
-    fuPool->takeOverFrom();
 
     startupStage();
     cpu->activityThisCycle();
@@ -716,6 +708,12 @@ IEW::instToCommit(const DynInstPtr& inst)
             wbNumInst = 0;
         }
     }
+
+#if TRACING_ON
+    if (debug::O3PipeView) {
+        inst->completeTick = curTick() - inst->fetchTick;
+    }
+#endif
 
     scheduler->bypassWriteback(inst);
     inst->completionTick = curTick();
@@ -1057,7 +1055,7 @@ IEW::classifyInstToDispQue(ThreadID tid)
             cpu->hintDownStream->notifyIns(ins);
         }
         int id = dispClassify(inst);
-        if (dispQue[id].size() < dqSize) {
+        if (dispQue[id].size() < dqSize[id]) {
             if (inst->isSquashed()) {
                 ++iewStats.dispSquashedInsts;
                 //Tell Rename That An Instruction has been processed
@@ -1116,6 +1114,7 @@ IEW::classifyInstToDispQue(ThreadID tid)
             }
 
             inst->enterDQTick = curTick();
+            cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtDispQue);
 
             insts_to_dispatch.pop_front();
             dispatched++;
@@ -1140,7 +1139,7 @@ IEW::classifyInstToDispQue(ThreadID tid)
                 } else if (breakDispatch != StallReason::NoStall) {
                     dispatchStalls.at(i) = breakDispatch;
                 } else if (i >= dispatched) {
-                    dispatchStalls.at(i) = StallReason::FragStall;
+                    dispatchStalls.at(i) = StallReason::OtherFragStall;
                 }
             }
         }
@@ -1171,7 +1170,8 @@ IEW::dispatchInstFromDispQue(ThreadID tid)
     int dis_num_inst = 0;
 
     for (int i = 0; i < NumDQ; i++) {
-        while (!dispQue[i].empty()) {
+        int dispatched = 0;
+        while (!dispQue[i].empty() && dispatched < dispWidth[i]) {
             inst = dispQue[i].front();
 
             // Check for squashed instructions.
@@ -1295,6 +1295,7 @@ IEW::dispatchInstFromDispQue(ThreadID tid)
             ppDispatch->notify(inst);
 
             dispQue[i].pop_front();
+            dispatched++;
         }
     }
     iewStats.dispDist.sample(dis_num_inst);
@@ -1470,7 +1471,7 @@ IEW::executeInsts()
 
         updateExeInstStats(inst);
 
-        if (Debug::IEW) {
+        if (debug::IEW) {
             inst->printDisassemblyAndResult(cpu->name());
         }
 
@@ -1673,9 +1674,6 @@ IEW::tick()
 
     sortInsts();
 
-    // Free function units marked as being freed this cycle.
-    fuPool->processFreeUnits();
-
     std::list<ThreadID>::iterator threads = activeThreads->begin();
     std::list<ThreadID>::iterator end = activeThreads->end();
 
@@ -1794,12 +1792,6 @@ IEW::updateExeInstStats(const DynInstPtr& inst)
     ThreadID tid = inst->threadNumber;
 
     iewStats.executedInstStats.numInsts++;
-
-#if TRACING_ON
-    if (debug::O3PipeView) {
-        inst->completeTick = curTick() - inst->fetchTick;
-    }
-#endif
 
     //
     //  Control operations

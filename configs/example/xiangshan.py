@@ -23,6 +23,7 @@ from common import XSConfig
 from common.Caches import *
 from common import Options
 
+
 from m5.SimObject import SimObject
 from m5.params import *
 from m5.objects.FuncUnit import *
@@ -33,11 +34,61 @@ from MyConfig import *
 
 
 def build_test_system(np):
+
+from common.FUScheduler import *
+from m5.objects import PerfRecord
+
+
+class XiangshanCore(RiscvO3CPU):
+    scheduler = KunminghuScheduler()
+
+class XiangshanECore(XiangshanCore):
+    fetchWidth = 8
+    decodeWidth = 4
+    renameWidth = 4
+
+    numROBEntries = 150
+    LQEntries = 48
+    SQEntries = 32
+    numPhysIntRegs = 108
+    numPhysFloatRegs = 112
+    numPhysVecRegs = 112
+    numPhysVecPredRegs = 36
+    numPhysCCRegs = 0
+    numPhysRMiscRegs = 40
+    scheduler = ECoreScheduler()
+
+class XiangshanECore2Read(XiangshanCore):
+    fetchWidth = 8
+    decodeWidth = 4
+    renameWidth = 4
+
+    numROBEntries = 150
+    LQEntries = 48
+    SQEntries = 32
+    numPhysIntRegs = 108
+    numPhysFloatRegs = 112
+    numPhysVecRegs = 112
+    numPhysVecPredRegs = 36
+    numPhysCCRegs = 0
+    numPhysRMiscRegs = 40
+    scheduler = ECore2ReadScheduler()
+
+def build_test_system(np, args):
+
     assert buildEnv['TARGET_ISA'] == "riscv"
+
+    # override cpu class and clock
+    if args.xiangshan_ecore:
+        TestCPUClass = XiangshanECore
+        args.cpu_clock = '2.4GHz'
+    else:
+        TestCPUClass = XiangshanCore
+
     ruby = False
     if hasattr(args, 'ruby') and args.ruby:
         ruby = True
-    test_sys = makeBareMetalXiangshanSystem(test_mem_mode, SysConfig(mem=args.mem_size), None, np=np, ruby=ruby)
+    test_sys = makeBareMetalXiangshanSystem('timing', SysConfig(mem=args.mem_size), None, np=np, ruby=ruby)
     test_sys.num_cpus = np
 
     test_sys.xiangshan_system = True
@@ -104,6 +155,9 @@ def build_test_system(np):
     if args.mem_type == 'DRAMsim3':
         assert args.dramsim3_ini is not None
 
+    for cpu in test_sys.cpu:
+        cpu.store_prefetch_train = not args.kmh_align
+    # ruby will overwrite the store_prefetch_train
     if ruby:
         test_sys._dma_ports = []
         bootmem = getattr(test_sys, '_bootmem', None)
@@ -178,6 +232,14 @@ def build_test_system(np):
 
     # config arch db
     if args.enable_arch_db:
+        perfCCT_cmd = "CREATE TABLE LifeTimeCommitTrace(ID INTEGER PRIMARY KEY AUTOINCREMENT,"
+        perfCCT_cmd += PerfRecord.vals[0] + " INT NOT NULL"
+        for i in range(1, len(PerfRecord.vals)):
+            name = PerfRecord.vals[i]
+            type_str = "INT" if name.lower().startswith(('at', 'pc')) else "CHAR(20)"
+            perfCCT_cmd += "," + name + " " + type_str + " NOT NULL"
+        perfCCT_cmd += ");"
+
         test_sys.arch_db = ArchDBer(arch_db_file=args.arch_db_file)
         test_sys.arch_db.dump_from_start = args.arch_db_fromstart
         test_sys.arch_db.enable_rolling = args.enable_rolling
@@ -189,6 +251,7 @@ def build_test_system(np):
         test_sys.arch_db.dump_l1_miss_trace = False
         test_sys.arch_db.dump_bop_train_trace = False
         test_sys.arch_db.dump_sms_train_trace = False
+        test_sys.arch_db.dump_lifetime = False
         test_sys.arch_db.table_cmds = [
             "CREATE TABLE L1MissTrace(" \
             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
@@ -231,7 +294,6 @@ def build_test_system(np):
             "PFSrc INT NOT NULL," \
             "SITE TEXT);"
             ,
-
             "CREATE TABLE BOPTrainTrace(" \
             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
             "Tick INT NOT NULL," \
@@ -241,7 +303,7 @@ def build_test_system(np):
             "Score INT NOT NULL," \
             "Miss BOOL NOT NULL," \
             "SITE TEXT);"
-
+            ,
             "CREATE TABLE SMSTrainTrace(" \
             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
             "Tick INT NOT NULL," \
@@ -251,6 +313,8 @@ def build_test_system(np):
             "Conf INT NOT NULL," \
             "Miss BOOL NOT NULL," \
             "SITE TEXT);"
+            ,# perfCounter CommitTrace
+            perfCCT_cmd
         ]
 
     # config debug trace
@@ -264,16 +328,18 @@ def build_test_system(np):
 
     return test_sys
 
-# Add args
-parser = argparse.ArgumentParser()
-Options.addCommonOptions(parser, configure_xiangshan=True)
-Options.addXiangshanFSOptions(parser)
+if __name__ == '__m5_main__':
+    # Add args
+    parser = argparse.ArgumentParser()
+    Options.addCommonOptions(parser, configure_xiangshan=True)
+    Options.addXiangshanFSOptions(parser)
 
-# Add the ruby specific and protocol specific args
-if '--ruby' in sys.argv:
-    Ruby.define_options(parser)
+    # Add the ruby specific and protocol specific args
+    if '--ruby' in sys.argv:
+        Ruby.define_options(parser)
 
-args = parser.parse_args()
+    args = parser.parse_args()
+
 
 args.xiangshan_system = True
 args.enable_difftest = False
@@ -281,7 +347,17 @@ args.enable_riscv_vector = True
 
 assert not args.external_memory_system
 
-test_mem_mode = 'timing'
+    if args.xiangshan_ecore:
+        FutureClass = None
+        args.cpu_clock = '2.4GHz'
+    else:
+        FutureClass = None
+
+
+    args.xiangshan_system = True
+    args.enable_difftest = True
+    args.enable_riscv_vector = True
+
 
 
 # override cpu class and clock
@@ -295,11 +371,14 @@ else:
     args.cpu_clock = '3GHz'
 
 
-# Match the memories with the CPUs, based on the options for the test system
-TestMemClass = Simulation.setMemClass(args)
+    assert not args.external_memory_system
 
-test_sys = build_test_system(args.num_cpus)
 
-root = Root(full_system=True, system=test_sys)
+    # Match the memories with the CPUs, based on the options for the test system
+    TestMemClass = Simulation.setMemClass(args)
 
-Simulation.run_vanilla(args, root, test_sys, FutureClass)
+    test_sys = build_test_system(args.num_cpus, args)
+
+    root = Root(full_system=True, system=test_sys)
+
+    Simulation.run_vanilla(args, root, test_sys, FutureClass)

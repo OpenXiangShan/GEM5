@@ -7,29 +7,6 @@ on:
     branches: [ xs-dev ]
 
 jobs:
-  paralel_cpt_test:
-    runs-on: self-hosted
-    continue-on-error: false
-    name: XS-GEM5 - Running test checkpoints
-    steps:
-      - uses: actions/checkout@v2
-      - name: Build DRAMSim
-        run: |
-          export GEM5_HOME=$(pwd)
-          cd ext/dramsim3
-          git clone git@github.com:umd-memsys/DRAMSim3.git DRAMsim3
-          cd DRAMsim3 && mkdir -p build
-          cd build
-          cmake ..
-          make -j 48
-          cd $GEM5_HOME
-      - name: Build GEM5 opt
-        run: |
-          source /nfs-nvme/home/share/zyy/shared_apps/setenv_AOCC.sh
-          CC=clang CXX=clang++ scons build/RISCV/gem5.opt -j 48 --gold-linker
-      - name: Run paralel autotest script
-        run: python3 .github/workflows/autotest/script/autotest.py -f .github/workflows/autotest/gem5.cfg
-
   valgrind_memory_check:
     runs-on: self-hosted
     continue-on-error: false
@@ -74,7 +51,7 @@ jobs:
         run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
       - name: XS-GEM5 - Test xiangshan.py simulation scripts
         run: |
-          export GCBV_REF_SO="/nfs/home/share/gem5_shared_tools/riscv64-nemu-4332a525-so"
+          export GCBV_REF_SO="/nfs-nvme/home/share/zhenhao/ref-h/build/riscv64-nemu-interpreter-so"
           export GCB_RESTORER="/nfs/home/share/gem5_shared_tools/normal-gcb-restorer.bin"
           export GEM5_HOME=$(pwd)
           mkdir -p $GEM5_HOME/util/xs_scripts/test
@@ -101,7 +78,7 @@ jobs:
         run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
       - name: XS-GEM5 - Test xiangshan.py simulation scripts
         run: |
-          export GCBV_REF_SO="/nfs/home/share/gem5_shared_tools/riscv64-nemu-4332a525-so"
+          export GCBV_REF_SO="/nfs-nvme/home/share/zhenhao/ref-h/build/riscv64-nemu-interpreter-so"
           export GCBV_RESTORER="/nfs/home/share/gem5_shared_tools/gcbv-restorer.bin"
           export GEM5_HOME=$(pwd)
           mkdir -p $GEM5_HOME/util/xs_scripts/test_v
@@ -120,9 +97,151 @@ jobs:
           CC=clang CXX=clang++ scons build/RISCV_CHI/gem5.opt -j 48 --gold-linker
       - name: XS-GEM5 - Test xiangshan.py simulation scripts
         run: |
-          export GCBV_MULTI_CORE_REF_SO="/nfs/home/share/gem5_shared_tools/riscv64-dualcore-nemu-4332a525-so"
+          export GCBV_MULTI_CORE_REF_SO="/nfs-nvme/home/share/zhenhao/ref-h/build-multi/riscv64-nemu-interpreter-so"
           export GCB_MULTI_CORE_RESTORER="/nfs/home/share/gem5_shared_tools/gcb-2core-restorer.bin"
           export GEM5_HOME=$(pwd)
           mkdir -p $GEM5_HOME/util/xs_scripts/test_multi_core
           cd $GEM5_HOME/util/xs_scripts/test_multi_core
           bash ../kmh-ruby-dual.sh /nfs-nvme/home/share/zyy/shared_payloads/bzip_checkpoint_with_sv39_without_rdtime_with_dualmtimecpt_1000M.gz
+
+  difftest_check:
+    runs-on: self-hosted
+    continue-on-error: false
+    name: XS-GEM5 - Check difftest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build DRAMSim
+        run: |
+          export GEM5_HOME=$(pwd)
+          cd ext/dramsim3
+          git clone git@github.com:umd-memsys/DRAMSim3.git DRAMsim3
+          cd DRAMsim3 && mkdir -p build
+          cd build
+          cmake ..
+          make -j 48
+          cd $GEM5_HOME
+      - name: Build GEM5 debug
+        run: CC=clang CXX=clang++ scons build/RISCV/gem5.opt -j 48 --gold-linker
+      - name: difftest check
+        run: |
+          export GCBV_REF_SO="/nfs-nvme/home/share/zhenhao/ref-h/build-error/riscv64-nemu-interpreter-so"
+          export GCB_RESTORER="/nfs-nvme/home/share/zhenhao/LibCheckpointAlpha/build/gcpt.bin"
+          export GEM5_HOME=$(pwd)
+          mkdir -p $GEM5_HOME/util/xs_scripts/test
+          cd $GEM5_HOME/util/xs_scripts/test
+          bash ../kmh_6wide.sh /nfs/home/share/jiaxiaoyu/simpoint_checkpoint_archive/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc/zstd-checkpoint-0-0-0/xalancbmk/133/_133_0.006424_.zstd 2>log.txt || exit_code=$?
+          if [ ${exit_code} -eq 0 ]; then echo "Difftest is broken, it should report error!" exit 1; fi
+          match=$(grep ".*Difftest failed!.*" log.txt -c)
+          if [ ${match} -eq 0 ]; then echo "Difftest is broken, it should report at least one agnostic related difference!" exit 1; fi
+
+  test_fix_l2tlb_bugs:
+    runs-on: self-hosted
+    continue-on-error: false
+    name: XS-GEM5 - Test fix L2TLB bugs
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build DRAMSim
+        run: |
+          export GEM5_HOME=$(pwd)
+          cd ext/dramsim3
+          git clone git@github.com:umd-memsys/DRAMSim3.git DRAMsim3
+          cd DRAMsim3 && mkdir -p build
+          cd build
+          cmake ..
+          make -j 48
+          cd $GEM5_HOME
+      - name: Build GEM5 opt
+        run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
+      - name: XS-GEM5 - Test xiangshan.py simulation scripts
+        run: |
+          export GCBV_REF_SO="/nfs-nvme/home/share/zhenhao/ref-h/build/riscv64-nemu-interpreter-so"
+          export GCB_RESTORER=""
+          export GEM5_HOME=$(pwd)
+          mkdir -p $GEM5_HOME/util/xs_scripts/test_l2tlb
+          cd $GEM5_HOME/util/xs_scripts/test_l2tlb
+          bash ../kmh_6wide.sh  /nfs/home/share/yanyue/checkpoints/gcc13_gcb_403_61291.zstd
+
+  new_sim_script_test_gcbh:
+    runs-on: self-hosted
+    continue-on-error: false
+    name: XS-GEM5 - Test new simulation script on RV64GCBH
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build DRAMSim
+        run: |
+          export GEM5_HOME=$(pwd)
+          cd ext/dramsim3
+          git clone git@github.com:umd-memsys/DRAMSim3.git DRAMsim3
+          cd DRAMsim3 && mkdir -p build
+          cd build
+          cmake ..
+          make -j 48
+          cd $GEM5_HOME
+      - name: Build GEM5 opt
+        run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
+      - name: XS-GEM5 - Test xiangshan.py simulation scripts
+        run: |
+          export GCBH_REF_SO="/nfs-nvme/home/share/zhenhao/ref-h/build-h/riscv64-nemu-interpreter-so"
+          export GCBH_RESTORER="/nfs-nvme/home/share/zhenhao/LibCheckpointAlpha/build/gcpt.bin"
+          export GEM5_HOME=$(pwd)
+          mkdir -p $GEM5_HOME/util/xs_scripts/test_h
+          cd $GEM5_HOME/util/xs_scripts/test_h
+          bash ../kmh_6wide_h.sh /nfs/home/share/jiaxiaoyu/H-ext-checkpoint-uniform-zstd-nosmp/uniform/payload/820000000/_820000000_.zstd
+
+  run_performance_test:
+    runs-on: self-hosted
+    continue-on-error: false
+    name: XS-GEM5 - Run performance test
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build DRAMSim
+        run: |
+          export GEM5_HOME=$(pwd)
+          cd ext/dramsim3
+          git clone git@github.com:umd-memsys/DRAMSim3.git DRAMsim3
+          cd DRAMsim3 && mkdir -p build
+          cd build
+          cmake ..
+          make -j 48
+          cd $GEM5_HOME
+      - name: Build GEM5 opt
+        run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
+      - name: XS-GEM5 - Run performance test
+        # run 80% coverage spec06 checkpoints, 500+ checkpoints
+        run: |
+          export GCBV_REF_SO="/nfs-nvme/home/share/zhenhao/ref-h/build/riscv64-nemu-interpreter-so"
+          export GCB_RESTORER=""
+          export GEM5_HOME=$(pwd)
+          mkdir -p $GEM5_HOME/util/xs_scripts/test
+          cd $GEM5_HOME/util/xs_scripts/test
+          bash ../parallel_sim.sh `realpath ../kmh_6wide.sh` \
+            /nfs/home/yanyue/workspace/spec06_cpts/spec_0.8c.lst \
+            /nfs/home/share/jiaxiaoyu/simpoint_checkpoint_archive/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc/zstd-checkpoint-0-0-0 \
+            spec_all
+      - name: Setup gem5_data_proc environment
+        run: |
+          # 克隆数据处理仓库到 CI 工作目录
+          cd $GITHUB_WORKSPACE
+          git clone https://github.com/shinezyy/gem5_data_proc
+      - name: Check performance test result
+        run: |
+          # 添加yanyue的 Python 包路径, 包含pandas等
+          export PYTHONPATH=/nfs/home/yanyue/.local/lib/python3.10/site-packages:$PYTHONPATH
+          # 每次run 会进入新的shell, 需要重新设置GEM5_HOME
+          export GEM5_HOME=$GITHUB_WORKSPACE
+          cd $GITHUB_WORKSPACE/gem5_data_proc
+          # 使用已有的数据spec_all生成测试报告
+          bash example-scripts/gem5-score-ci.sh \
+            $GEM5_HOME/util/xs_scripts/test/spec_all \
+            /nfs/home/yanyue/workspace/spec06_cpts/spec06_0.8coverage.json \
+            > $GITHUB_WORKSPACE/score.txt
+          # 提取最后42行score信息
+          echo "### performance test result :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          tail -n 42 $GITHUB_WORKSPACE/score.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          # 提取关键指标
+          FINAL_SCORE=$(grep "Estimated Int score per GHz:" $GITHUB_WORKSPACE/score.txt | awk '{print $NF}')
+          echo "### Key indicators" >> $GITHUB_STEP_SUMMARY
+          echo "- Final Int score per GHz: **${FINAL_SCORE}**" >> $GITHUB_STEP_SUMMARY
+          

@@ -78,11 +78,17 @@ enum ExceptionCode : uint64_t
     AMO_ACCESS = 7,
     ECALL_USER = 8,
     ECALL_SUPER = 9,
+    ECALL_VS = 10,  // ecall from vs-mode h-extention
     ECALL_MACHINE = 11,
     INST_PAGE = 12,
     LOAD_PAGE = 13,
     STORE_PAGE = 15,
     AMO_PAGE = 15,
+    INST_G_PAGE = 20,
+    LOAD_G_PAGE = 21,
+    VIRTUAL_INST = 22,
+    STORE_G_PAGE = 23,
+    AMO_G_PAGE = 23,
 
     INT_SOFTWARE_USER = 0,
     INT_SOFTWARE_SUPER = 1,
@@ -120,8 +126,9 @@ class RiscvFault : public FaultBase
     {
         return _fault_type == FaultType::NON_MASKABLE_INTERRUPT;
     }
-    ExceptionCode exception() const { return _code; }
+    uint64_t exception() const override{ return _code; }
     virtual RegVal trap_value() const { return 0; }
+    virtual RegVal g_trap_value() const { return 0; }
 
     virtual void invokeSE(ThreadContext *tc, const StaticInstPtr &inst);
     void invoke(ThreadContext *tc, const StaticInstPtr &inst) override;
@@ -228,13 +235,15 @@ class AddressFault : public RiscvFault
 {
   private:
     const Addr _addr;
+    const Addr _gPaddr;
 
   public:
-    AddressFault(const Addr addr, ExceptionCode code)
-        : RiscvFault("Address", FaultType::OTHERS, code), _addr(addr)
+    AddressFault(const Addr addr,const Addr gPaddr, ExceptionCode code)
+        : RiscvFault("Address", FaultType::OTHERS, code), _addr(addr),_gPaddr(gPaddr)
     {}
 
     RegVal trap_value() const override { return _addr; }
+    RegVal g_trap_value() const override { return _gPaddr; }
 };
 
 class BreakpointFault : public RiscvFault
@@ -277,6 +286,12 @@ class SyscallFault : public RiscvFault
     void invokeSE(ThreadContext *tc, const StaticInstPtr &inst) override;
 };
 
+class HVFault : public RiscvFault
+{
+  public:
+    HVFault() : RiscvFault("System call", FaultType::OTHERS, VIRTUAL_INST) {}
+    void invokeSE(ThreadContext *tc, const StaticInstPtr &inst) override;
+};
 } // namespace RiscvISA
 } // namespace gem5
 

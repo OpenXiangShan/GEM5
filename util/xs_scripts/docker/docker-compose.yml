@@ -1,0 +1,25 @@
+services:
+  para_xsgem5:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # build args
+        xsgem5_url: ""
+        xsgem5_commit_hash: ""
+        xsgem5_build_jobs: 64
+        gcpt: "gcpt"
+        nemu_ref: "nemu_ref"
+    image: xsgem5:latest 
+    volumes:
+      # dir map
+      - ./checkpoints:/checkpoints
+      - ./results:/results
+    environment:
+      # runtime env
+      - checkpoints_dir="/checkpoints"
+      - checkpoints_tag="spec06_gc"
+      - run_script="kmh_6wide.sh" # must in util/xs_scripts
+      - workloads_lst="checkpoint.lst"
+      - run_tag="any-tag"
+      - xsgem5_para_jobs=40

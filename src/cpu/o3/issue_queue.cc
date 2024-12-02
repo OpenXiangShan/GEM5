@@ -19,8 +19,6 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
-#include "cpu/o3/fu_pool.hh"
-#include "cpu/o3/iew_delay_calibrator.hh"
 #include "cpu/reg_class.hh"
 #include "debug/Counters.hh"
 #include "debug/Dispatch.hh"
@@ -30,14 +28,46 @@
 #include "sim/eventq.hh"
 #include "sim/sim_object.hh"
 
+#define POPINST(x)                                 \
+    do {                                           \
+        if (x->opClass() != FMAMulOp) [[likely]] { \
+            assert(instNum != 0);                  \
+            assert(opNum[x->opClass()] != 0);      \
+            opNum[x->opClass()]--;                 \
+            instNum--;                             \
+        }                                          \
+    } while (0)
+
+// must be consistent with FUScheduler.py
+// rfTypePortId = regfile typeid + portid
+#define MAXVAL_TYPEPORTID (1 << (2 + 4)) // [5:4] is typeid, [3:0] is portid
+#define RF_GET_PRIORITY(x) ((x) & 0b11)
+#define RF_GET_PORTID(x) (((x) >> 2) & 0b1111)
+#define RF_GET_TYPEID(x) ((x) >> 6)
+
+#define RF_MAKE_TYPEPORTID(t, p) (((t) << 4) | (p))
+
+#define RF_INTID 0
+#define RF_FPID 1
+
 namespace gem5
 {
 
 namespace o3
 {
 
+IssuePort::IssuePort(const IssuePortParams& params) : SimObject(params), rp(params.rp), fu(params.fu)
+{
+    mask.resize(Num_OpClasses, false);
+    for (auto it0 : params.fu) {
+        for (auto it1 : it0->opDescList) {
+            mask.set(it1->opClass);
+        }
+    }
+}
+
 bool
-IssueQue::compare_priority::operator()(const DynInstPtr& a, const DynInstPtr& b) const
+IssueQue::select_policy::operator()(const DynInstPtr& a, const DynInstPtr& b) const
 {
     return a->seqNum > b->seqNum;
 }               // 比较指令的seqNum，这里的">"被重载了，比较的是指令的优先顺序
@@ -58,34 +88,109 @@ IssueQue::IssueStream::pop()
 
 IssueQue::IssueQueStats::IssueQueStats(statistics::Group* parent, IssueQue* que, std::string name)
     : Group(parent, name.c_str()),
-      ADD_STAT(full, statistics::units::Count::get(), "count of iq full"),
-      ADD_STAT(bwfull, statistics::units::Count::get(), "count of bandwidth full"),
       ADD_STAT(retryMem, statistics::units::Count::get(), "count of load/store retry"),
       ADD_STAT(canceledInst, statistics::units::Count::get(), "count of canceled insts"),
       ADD_STAT(loadmiss, statistics::units::Count::get(), "count of load miss"),
       ADD_STAT(arbFailed, statistics::units::Count::get(), "count of arbitration failed"),
       ADD_STAT(insertDist, statistics::units::Count::get(), "distruibution of insert"),
-      ADD_STAT(issueDist, statistics::units::Count::get(), "distruibution of issue")
+      ADD_STAT(issueDist, statistics::units::Count::get(), "distruibution of issue"),
+      ADD_STAT(portissued, statistics::units::Count::get(), "count each port issues"),
+      ADD_STAT(portBusy, statistics::units::Count::get(), "count each port busy cycles"),
+      ADD_STAT(avgInsts, statistics::units::Count::get(), "average insts")
 {
-    insertDist.init(que->inoutPorts + 1).flags(statistics::nozero);
-    issueDist.init(que->inoutPorts + 1).flags(statistics::nozero);
+    insertDist.init(que->inports + 1).flags(statistics::nozero);
+    issueDist.init(que->outports + 1).flags(statistics::nozero);
+    portissued.init(que->outports).flags(statistics::nozero);
+    portBusy.init(que->outports).flags(statistics::nozero);
     retryMem.flags(statistics::nozero);
     canceledInst.flags(statistics::nozero);
     loadmiss.flags(statistics::nozero);
     arbFailed.flags(statistics::nozero);
 }
 
-IssueQue::IssueQue(const IssueQueParams &params)
+IssueQue::IssueQue(const IssueQueParams& params)
     : SimObject(params),
-      inoutPorts(params.inoutPorts),
+      inports(params.inports),
+      outports(params.oports.size()),
       iqsize(params.size),
       scheduleToExecDelay(params.scheduleToExecDelay),
       iqname(params.name),
-      fuDescs(params.fuType),
       inflightIssues(scheduleToExecDelay, 0)
 {
     toIssue = inflightIssues.getWire(0);
+
     toFu = inflightIssues.getWire(-scheduleToExecDelay);      // 这里模拟了流水线的内部延迟，延迟为scheduleToExecDelay
+
+    toFu = inflightIssues.getWire(-scheduleToExecDelay);
+    if (outports > 8) {
+        panic("%s: outports > 8 is not supported\n", iqname);
+    }
+
+    intRfTypePortId.resize(outports);
+    fpRfTypePortId.resize(outports);
+
+    bool same_fu = true;
+    for (int i = 0; i < outports; i++) {
+        for (auto rfp : params.oports[i]->rp) {
+            int rf_type = RF_GET_TYPEID(rfp);
+            int rf_portid = RF_GET_PORTID(rfp);
+            int rf_portPri = RF_GET_PRIORITY(rfp);
+            assert(rf_portPri < 4);
+            assert(RF_MAKE_TYPEPORTID(rf_type, rf_portid) < 64);
+            if (rf_type == RF_INTID) {
+                intRfTypePortId[i].push_back(std::make_pair(RF_MAKE_TYPEPORTID(rf_type, rf_portid), rf_portPri));
+            } else if (rf_type == RF_FPID) {
+                fpRfTypePortId[i].push_back(std::make_pair(RF_MAKE_TYPEPORTID(rf_type, rf_portid), rf_portPri));
+            } else {
+                panic("%s: Unknown RF type %d\n", iqname, rf_type);
+            }
+        }
+
+        for (int j = i + 1; j < outports; j++) {
+            if (params.oports[i]->mask != params.oports[j]->mask) {
+                same_fu = false;
+            }
+            if (!same_fu && (params.oports[i]->mask & params.oports[j]->mask).any()) {
+                panic("%s: Found the conflict opClass in different FU, portid: %d and %d\n", iqname, i, j);
+            }
+        }
+    }
+
+    if (same_fu) {
+        // we only allocate one ReadyQue
+        warn("%s: Use one selector by multiple identical fus\n", iqname);
+        auto t = new ReadyQue;
+        readyQs.resize(outports, t);
+        auto& port = params.oports[0];
+        fuDescs.insert(fuDescs.begin(), port->fu.begin(), port->fu.end());
+    } else {
+        readyQs.resize(outports, nullptr);
+        for (int i = 0; i < outports; i++) {
+            readyQs[i] = new ReadyQue;
+            auto& port = params.oports[i];
+            fuDescs.insert(fuDescs.begin(), port->fu.begin(), port->fu.end());
+        }
+    }
+
+    opNum.resize(Num_OpClasses, 0);
+    readyQclassify.resize(Num_OpClasses, nullptr);
+    opPipelined.resize(Num_OpClasses, false);
+    for (int pi = 0; pi < (same_fu ? 1 : outports); pi++) {
+        auto& port = params.oports[pi];
+        for (auto ops : port->fu) {
+            for (auto op : ops->opDescList) {
+                if (readyQclassify[op->opClass]) {
+                    panic("%s: Found the conflict opClass in different FU, opclass: %s\n", iqname,
+                          enums::OpClassStrings[op->opClass]);
+                }
+                readyQclassify[op->opClass] = readyQs.at(pi);
+                opPipelined[op->opClass] = op->pipelined;
+            }
+        }
+    }
+
+    portBusy.resize(outports, 0);
+
 }
 
 void
@@ -102,51 +207,93 @@ IssueQue::resetDepGraph(int numPhysRegs)
     subDepGraph.resize(numPhysRegs);
 }                                        // 重置依赖关系图，大小为物理寄存器个数，每个subDeqGraph[i]记录了依赖此物理寄存器的指令
 
-void
+bool
 IssueQue::checkScoreboard(const DynInstPtr& inst)
 {
-    for (int i=0; i<inst->numSrcRegs(); i++) {
+    for (int i = 0; i < inst->numSrcRegs(); i++) {
         auto src = inst->renamedSrcIdx(i);
-        if (src->isFixedMapping()) {
+        if (src->isFixedMapping()) [[unlikely]] {
             continue;
         }
         // check bypass data ready or not
-        if (!scheduler->bypassScoreboard[src->flatIndex()]) {
+        if (!scheduler->bypassScoreboard[src->flatIndex()]) [[unlikely]] {
             auto dst_inst = scheduler->getInstByDstReg(src->flatIndex());
-            panic("[sn %lu] %s can't get data from bypassNetwork, dst inst: %s\n", inst->seqNum, inst->srcRegIdx(i),
-                  dst_inst->genDisassembly());
+            if (!dst_inst || !dst_inst->isLoad()) {
+                panic("dst is not load");
+            }
+            scheduler->loadCancel(dst_inst);
+            DPRINTF(Schedule, "[sn:%llu] %s can't get data from bypassNetwork, dst inst: %s\n", inst->seqNum,
+                    inst->srcRegIdx(i), dst_inst->genDisassembly());
+            return false;
         }
     }
+
     // inst->checkOldVdElim();
 }                                     // 检查每一条指令的源操作数对应的计分板，以及其是否可以通过旁路获得
+
+    inst->checkOldVdElim();
+    return true;
+}
+
 
 void
 IssueQue::addToFu(const DynInstPtr& inst)
 {
-    if (inst->isIssued()) {
-        panic("inst %lu has alreayd been issued\n", inst->seqNum);
+    if (inst->isIssued()) [[unlikely]] {
+        panic("%s [sn:%llu] has alreayd been issued\n", enums::OpClassStrings[inst->opClass()], inst->seqNum);
     }
     inst->setIssued();
     scheduler->addToFU(inst);
-    DPRINTF(Schedule, "[sn %lu] instNum--\n", inst->seqNum);
-    assert(instNum != 0);
-    instNum--;
+    POPINST(inst);
 }
 
 void
 IssueQue::issueToFu()
 {
+
     int size = toFu->size;                                   // 获取准备好且等待发射的指令
     for (int i=0; i<size;i++) {
+
+    int size = toFu->size;
+    int issued = 0;
+    for (int i = 0; i < size; i++) {
+
         auto inst = toFu->pop();
         if (!inst) {
             continue;
         }
-        checkScoreboard(inst);
+        if (portBusy[inst->issueportid]) {
+            DPRINTF(Schedule, "port%d busy, retry\n", inst->issueportid);
+            iqstats->portBusy[inst->issueportid]++;
+            // replay it
+            inst->setInReadyQ();
+            readyQclassify[inst->opClass()]->push(inst);  // retry
+            continue;
+        }
+        if (!checkScoreboard(inst)) {
+            continue;
+        }
         addToFu(inst);
+
         if (scheduler->getCorrectedOpLat(inst) > 1) {
             scheduler->wakeUpDependents(inst, this);         // 唤醒依赖于该指令的后续指令
+
+        cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtIssueReadReg);
+        issued++;
+        if (!opPipelined[inst->opClass()]) [[unlikely]] {
+            // set fu busy
+            portBusy[inst->issueportid] = scheduler->getOpLatency(inst) - 1;
+
         }
+    }
+    for (int i = size; !replayQ.empty() && i < outports; i++) {
+        auto inst = replayQ.front();
+        replayQ.pop();
+        scheduler->addToFU(inst);
+        issued++;
+    }
+    if (issued > 0) {
+        iqstats->issueDist[issued]++;
     }
 }
 
@@ -155,16 +302,35 @@ IssueQue::retryMem(const DynInstPtr& inst)
 {
     assert(!inst->isNonSpeculative());                       // 非推测执行指令无需重试
     iqstats->retryMem++;
+
     DPRINTF(Schedule, "retry %s [sn %lu]\n", enums::OpClassStrings[inst->opClass()], inst->seqNum);
     // scheduler->loadCancel(inst);
     scheduler->addToFU(inst);
 }                                                            // 这个函数用于重试retry的内存相关的指令
 
+    DPRINTF(Schedule, "retry %s [sn:%llu]\n", enums::OpClassStrings[inst->opClass()], inst->seqNum);
+    replayQ.push(inst);
+}
+
+bool
+IssueQue::idle()
+{
+    bool idle = false;
+    for (auto it : readyQs) {
+        if (it->size()) {
+            idle = true;
+        }
+    }
+    idle |= replayQ.size() > 0;
+    return idle;
+}
+
+
 void
 IssueQue::markMemDepDone(const DynInstPtr& inst)
 {
     assert(inst->isMemRef());
-    DPRINTF(Schedule, "[sn %lu] has solved memdependency\n", inst->seqNum);
+    DPRINTF(Schedule, "[sn:%llu] has solved memdependency\n", inst->seqNum);
     inst->setMemDepDone();
     addIfReady(inst);
 }                                                            // 设置内存依赖解决并添加到发射队列当中
@@ -172,6 +338,7 @@ IssueQue::markMemDepDone(const DynInstPtr& inst)
 void
 IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
 {
+
     if (speculative && inst->canceled()) {
         return;                                             // 如果推测执行指令被取消，则不进行唤醒操作
     }
@@ -179,23 +346,33 @@ IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
         PhysRegIdPtr dst = inst->renamedDestIdx(i);
         if (dst->isFixedMapping() || dst->getNumPinnedWritesToComplete() != 1) {
             continue;;                                      // 检测指令的目的寄存器是否为不用于映射的寄存器，如零寄存器或是否还有多个未完成的写该目的寄存器的操作
+
+    if (speculative && inst->canceled()) [[unlikely]] {
+        return;
+    }
+    for (int i = 0; i < inst->numDestRegs(); i++) {
+        PhysRegIdPtr dst = inst->renamedDestIdx(i);
+        if (dst->isFixedMapping() || dst->getNumPinnedWritesToComplete() != 1) [[unlikely]] {
+
         }
 
-        DPRINTF(Schedule, "was %s woken by p%lu [sn %lu]\n",
-            speculative ? "spec" : "wb", dst->flatIndex(), inst->seqNum);
-        for (auto& it: subDepGraph[dst->flatIndex()]) {
+        DPRINTF(Schedule, "was %s woken by p%lu [sn:%llu]\n", speculative ? "spec" : "wb", dst->flatIndex(),
+                inst->seqNum);
+        for (auto& it : subDepGraph[dst->flatIndex()]) {
             int srcIdx = it.first;
-            auto consumer = it.second;
+            auto& consumer = it.second;
             if (consumer->readySrcIdx(srcIdx)) {
                 continue;                                  // 唤醒该目的寄存器的消费者
             }
             consumer->markSrcRegReady(srcIdx);
 
-            //if (!speculative && consumer->srcRegIdx(srcIdx) == RiscvISA::VecRenamedVLReg) {
-                //consumer->checkOldVdElim();
-            //}
 
-            DPRINTF(Schedule, "[sn %lu] src%d was woken\n", consumer->seqNum, srcIdx);
+            if (!speculative && consumer->srcRegIdx(srcIdx) == RiscvISA::VecRenamedVLReg) [[unlikely]] {
+                consumer->checkOldVdElim();
+            }
+
+
+            DPRINTF(Schedule, "[sn:%llu] src%d was woken\n", consumer->seqNum, srcIdx);
             addIfReady(consumer);
         }
 
@@ -214,7 +391,7 @@ IssueQue::addIfReady(const DynInstPtr& inst)
             DPRINTF(Counters, "set readyTick at addIfReady\n");
         }
 
-        //Add the instruction to the proper ready list.
+        // Add the instruction to the proper ready list.
         if (inst->isMemRef()) {
             if (inst->memDepSolved()) {
                 DPRINTF(Schedule, "memRef Dependency was solved can issue\n");
@@ -224,11 +401,11 @@ IssueQue::addIfReady(const DynInstPtr& inst)
             }
         }
 
-        DPRINTF(Schedule, "[sn %lu] add to readyInstsQue\n", inst->seqNum);
+        DPRINTF(Schedule, "[sn:%llu] add to readyInstsQue\n", inst->seqNum);
         inst->clearCancel();
         if (!inst->inReadyQ()) {
             inst->setInReadyQ();
-            readyInsts.push(inst);
+            readyQclassify[inst->opClass()]->push(inst);
         }
     }
 }                                                       // 选出发射队列中已经准备好发射的指令
@@ -236,18 +413,47 @@ IssueQue::addIfReady(const DynInstPtr& inst)
 void
 IssueQue::selectInst()
 {
-    selectedInst.clear();
-    while (selectedInst.size() < inoutPorts && !readyInsts.empty()) {
-        auto& inst = readyInsts.top();
-        if (inst->canceled()) {
-            inst->clearInReadyQ();
-            readyInsts.pop();
-            continue;
+    selectQ.clear();
+    for (int pi = 0; pi < outports; pi++) {
+        auto readyQ = readyQs[pi];
+        while (!readyQ->empty()) {
+            auto top = readyQ->top();
+            if (!top->canceled()) {
+                break;
+            }
+            top->clearInReadyQ();
+            readyQ->pop();
         }
+        if (!readyQ->empty()) {
+            auto inst = readyQ->top();
+            DPRINTF(Schedule, "[sn %ld] was selected\n", inst->seqNum);
+
+            // get regfile read port
+            for (int i = 0; i < inst->numSrcRegs(); i++) {
+                auto src = inst->srcRegIdx(i);
+                PhysRegIdPtr psrc = inst->renamedSrcIdx(i);
+                std::pair<int, int> rfTypePortId;
+                // read port is point to point with srcid
+                if (src.isIntReg() && intRfTypePortId[pi].size() > i) {
+                    rfTypePortId = intRfTypePortId[pi][i];
+                    scheduler->useRegfilePort(inst, psrc, rfTypePortId.first, rfTypePortId.second);
+                } else if (src.isFloatReg() && fpRfTypePortId[pi].size() > i) {
+                    rfTypePortId = fpRfTypePortId[pi][i];
+                    scheduler->useRegfilePort(inst, psrc, rfTypePortId.first, rfTypePortId.second);
+                }
+            }
+
+            selectQ.push_back(std::make_pair(pi, inst));
+            inst->clearInReadyQ();
+            readyQ->pop();
+        }
+
         DPRINTF(Schedule, "[sn %ld] was selected\n", inst->seqNum);
         scheduler->insertSlot(inst);                     // 将指令放入调度槽，其中向量和浮点指令不参与
         selectedInst.push_back(inst);
         readyInsts.pop();
+
+
     }
 }
 
@@ -255,33 +461,43 @@ void
 IssueQue::scheduleInst()
 {
     // here is issueStage 0
-    for (auto& inst : selectedInst) {
-        inst->clearInReadyQ();
+    for (auto& info : selectQ) {
+        auto& pi = info.first;  // issue port id
+        auto& inst = info.second;
         if (inst->canceled()) {
-            DPRINTF(Schedule, "[sn %ld] was canceled\n", inst->seqNum);
+            DPRINTF(Schedule, "[sn:%llu] was canceled\n", inst->seqNum);
         } else if (inst->arbFailed()) {
-            DPRINTF(Schedule, "[sn %ld] arbitration failed, retry\n", inst->seqNum);
+            DPRINTF(Schedule, "[sn:%llu] arbitration failed, retry\n", inst->seqNum);
+            iqstats->arbFailed++;
             assert(inst->readyToIssue());
             inst->setInReadyQ();
-            readyInsts.push(inst);// retry
-            iqstats->arbFailed++;
-        } else {
-            DPRINTF(Schedule, "[sn %ld] no conflict, scheduled\n", inst->seqNum);
+            readyQclassify[inst->opClass()]->push(inst);  // retry
+        } else [[likely]] {
+            DPRINTF(Schedule, "[sn:%llu] no conflict, scheduled\n", inst->seqNum);
+            iqstats->portissued[pi]++;
+            inst->clearInIQ();
             toIssue->push(inst);
-            if (scheduler->getCorrectedOpLat(inst) <= 1) {
-                scheduler->wakeUpDependents(inst, this);
-            }
+            inst->issueportid = pi;
+            scheduler->specWakeUpDependents(inst, this);
+            cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtIssueArb);
         }
         inst->clearArbFailed();
     }
-    iqstats->issueDist[toIssue->size]++;
 }
 
 void
 IssueQue::tick()
 {
-    iqstats->insertDist[instNumInsert]++;
+    iqstats->avgInsts = instNum;
+
+    if (instNumInsert > 0) {
+        iqstats->insertDist[instNumInsert]++;
+    }
     instNumInsert = 0;
+
+    for (auto& t : portBusy) {
+        t = t > 0 ? t - 1 : t;
+    }
 
     scheduleInst();
     inflightIssues.advance();
@@ -290,9 +506,8 @@ IssueQue::tick()
 bool
 IssueQue::ready()
 {
-    bool bwFull = instNumInsert >= inoutPorts;
+    bool bwFull = instNumInsert >= inports;
     if (bwFull) {
-        iqstats->bwfull++;
         DPRINTF(Schedule, "can't insert more due to inports exhausted\n");
     }
     return !full() && !bwFull;
@@ -302,8 +517,8 @@ bool
 IssueQue::full()
 {
     bool full = instNumInsert + instNum >= iqsize;
+    full |= replayQ.size() > replayQsize;  // TODO: parameterize it
     if (full) {
-        iqstats->full++;
         DPRINTF(Schedule, "has full!\n");
     }
     return full;
@@ -312,29 +527,37 @@ IssueQue::full()
 void
 IssueQue::insert(const DynInstPtr& inst)
 {
-    assert(ready());
-    DPRINTF(Schedule, "[sn %lu] %s insert into %s\n",
-        inst->seqNum, enums::OpClassStrings[inst->opClass()] ,iqname);
-    instNumInsert++;
-    instNum++;
-    DPRINTF(Schedule, "[sn %lu] instNum++\n", inst->seqNum);
+    if (inst->opClass() != FMAMulOp) [[likely]] {
+        assert(instNum < iqsize);
+        opNum[inst->opClass()]++;
+        instNum++;
+        instNumInsert++;
+    }
+
+    cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtIssueQue);
+
+    DPRINTF(Schedule, "[sn:%llu] %s insert into %s\n", inst->seqNum, enums::OpClassStrings[inst->opClass()], iqname);
+    DPRINTF(Schedule, "[sn:%llu] instNum++\n", inst->seqNum);
     inst->issueQue = this;
     instList.emplace_back(inst);
     bool addToDepGraph = false;
-    for (int i=0; i<inst->numSrcRegs(); i++) {
+    for (int i = 0; i < inst->numSrcRegs(); i++) {
         auto src = inst->renamedSrcIdx(i);
         if (!inst->readySrcIdx(i) && !src->isFixedMapping()) {
             if (scheduler->scoreboard[src->flatIndex()]) {
                 inst->markSrcRegReady(i);
             } else {
-                DPRINTF(Schedule, "[sn %lu] src p%d add to depGraph\n", inst->seqNum, src->flatIndex());
+                if (scheduler->earlyScoreboard[src->flatIndex()]) {
+                    inst->markSrcRegReady(i);
+                }
+                DPRINTF(Schedule, "[sn:%llu] src p%d add to depGraph\n", inst->seqNum, src->flatIndex());
                 subDepGraph[src->flatIndex()].push_back({i, inst});
                 addToDepGraph = true;
             }
         }
     }
 
-    //inst->checkOldVdElim();
+    inst->checkOldVdElim();
 
     if (!addToDepGraph) {
         assert(inst->readyToIssue());
@@ -351,7 +574,7 @@ IssueQue::insert(const DynInstPtr& inst)
 void
 IssueQue::insertNonSpec(const DynInstPtr& inst)
 {
-    DPRINTF(Schedule, "[sn %lu] insertNonSpec into %s\n", inst->seqNum, iqname);
+    DPRINTF(Schedule, "[sn:%llu] insertNonSpec into %s\n", inst->seqNum, iqname);
     inst->issueQue = this;
     if (inst->isMemRef()) {
         scheduler->memDepUnit[inst->threadNumber].insertNonSpec(inst);
@@ -370,17 +593,17 @@ IssueQue::doCommit(const InstSeqNum seqNum)
 void
 IssueQue::doSquash(const InstSeqNum seqNum)
 {
-    for (auto it=instList.begin(); it!=instList.end();) {
+    for (auto it = instList.begin(); it != instList.end();) {
         if ((*it)->seqNum > seqNum) {
             (*it)->setSquashedInIQ();
             (*it)->setCanCommit();
             (*it)->clearInIQ();
             (*it)->setCancel();
             if (!(*it)->isIssued()) {
-                DPRINTF(Schedule, "[sn %lu] instNum--\n", (*it)->seqNum);
-                assert(instNum != 0);
-                instNum--;
+                POPINST((*it));
                 (*it)->setIssued();
+            } else if ((*it)->issueportid >= 0) {
+                portBusy[(*it)->issueportid] = 0;
             }
             it = instList.erase(it);
         } else {
@@ -410,15 +633,10 @@ IssueQue::doSquash(const InstSeqNum seqNum)
     }
 }
 
-Scheduler::Slot::Slot(uint32_t priority, uint32_t demand, const DynInstPtr& inst)
-    : priority(priority), resourceDemand(demand), inst(inst)
-{}
-
 Scheduler::SpecWakeupCompletion::SpecWakeupCompletion(const DynInstPtr& inst, IssueQue* to)
-    : Event(Stat_Event_Pri, AutoDelete),
-      inst(inst),
-      to_issue_queue(to)
-{}
+    : Event(Stat_Event_Pri, AutoDelete), inst(inst), to_issue_queue(to)
+{
+}
 
 void
 Scheduler::SpecWakeupCompletion::process()
@@ -426,46 +644,72 @@ Scheduler::SpecWakeupCompletion::process()
     to_issue_queue->wakeUpDependents(inst, true);
 }
 
-const char *
+const char*
 Scheduler::SpecWakeupCompletion::description() const
 {
     return "Spec wakeup completion";
 }
 
 bool
-Scheduler::compare_priority::operator()(const Slot& a, const Slot& b) const
+Scheduler::disp_policy::operator()(IssueQue* a, IssueQue* b) const
 {
-    return a.priority > b.priority;
+    // initNum smaller first
+    int p0 = a->opNum[disp_op];
+    int p1 = b->opNum[disp_op];
+    return p0 < p1;
 }
 
-Scheduler::Scheduler(const SchedulerParams& params)
-    : SimObject(params),
-      issueQues(params.IQs),
-      slotNum(params.slotNum)
+Scheduler::Scheduler(const SchedulerParams& params) : SimObject(params), issueQues(params.IQs)
 {
     dispTable.resize(enums::OpClass::Num_OpClass);
-
     opExecTimeTable.resize(enums::OpClass::Num_OpClass, 1);
+    opPipelined.resize(enums::OpClass::Num_OpClass, false);
 
-    for (int i=0; i< issueQues.size(); i++) {
+    boost::dynamic_bitset<> opChecker(enums::Num_OpClass, 0);
+    std::vector<int> rfportChecker(MAXVAL_TYPEPORTID, 0);
+    int maxTypePortId = 0;
+    for (int i = 0; i < issueQues.size(); i++) {
         issueQues[i]->setIQID(i);
         issueQues[i]->scheduler = this;
-        combinedFus += issueQues[i]->inoutPorts;
+        combinedFus += issueQues[i]->outports;
+        panic_if(issueQues[i]->fuDescs.size() == 0, "Empty config IssueQue: " + issueQues[i]->getName());
         for (auto fu : issueQues[i]->fuDescs) {
             for (auto op : fu->opDescList) {
                 opExecTimeTable[op->opClass] = op->opLat;
+                opPipelined[op->opClass] = op->pipelined;
                 dispTable[op->opClass].push_back(issueQues[i]);
+                opChecker.set(op->opClass);
+            }
+        }
+
+        for (auto rfTypePortId : issueQues[i]->intRfTypePortId) {
+            for (auto &typePortId : rfTypePortId) {
+                maxTypePortId = std::max(maxTypePortId, typePortId.first);
+                rfportChecker[typePortId.first] += 1;
+            }
+        }
+        for (auto rfTypePortId : issueQues[i]->fpRfTypePortId) {
+            for (auto typePortId : rfTypePortId) {
+                maxTypePortId = std::max(maxTypePortId, typePortId.first);
+                rfportChecker[typePortId.first] += 1;
             }
         }
     }
-    for (auto& it : dispTable) {
-        if (it.empty()) {
-            it.push_back(issueQues[0]);
+    maxTypePortId += 1;
+    assert(maxTypePortId <= MAXVAL_TYPEPORTID);
+    rfMaxTypePortId = maxTypePortId;
+    rfPortOccupancy.resize(maxTypePortId, {nullptr, 0});
+
+    if (opChecker.count() != enums::Num_OpClass) {
+        for (int i = 0; i < enums::Num_OpClass; i++) {
+            if (!opChecker[i]) {
+                warn("No config for opClass: %s\n", enums::OpClassStrings[i]);
+            }
         }
     }
 
     wakeMatrix.resize(issueQues.size());
-    auto findIQbyname = [this](std::string name) -> IssueQue*{
+    auto findIQbyname = [this](std::string name) -> IssueQue* {
         IssueQue* ret = nullptr;
         for (auto it : this->issueQues) {
             if (it->getName().compare(name) == 0) {
@@ -475,7 +719,7 @@ Scheduler::Scheduler(const SchedulerParams& params)
                 ret = it;
             }
         }
-        panic_if(!ret, "can't find IQ by name: %s\n", name);
+        warn_if(!ret, "can't find IQ by name: %s\n", name);
         return ret;
     };
     if (params.xbarWakeup) {
@@ -488,10 +732,14 @@ Scheduler::Scheduler(const SchedulerParams& params)
     } else {
         for (auto it : params.specWakeupNetwork) {
             auto srcIQ = findIQbyname(it->srcIQ);
-            for (auto dstIQname : it->dstIQ) {
-                auto dstIQ = findIQbyname(dstIQname);
-                wakeMatrix[srcIQ->getId()].push_back(dstIQ);
-                DPRINTF(Schedule, "build wakeup channel: %s -> %s\n", srcIQ->getName(), dstIQ->getName());
+            if (srcIQ) {
+                for (auto dstIQname : it->dstIQ) {
+                    auto dstIQ = findIQbyname(dstIQname);
+                    if (dstIQ) {
+                        wakeMatrix[srcIQ->getId()].push_back(dstIQ);
+                        DPRINTF(Schedule, "build wakeup channel: %s -> %s\n", srcIQ->getName(), dstIQ->getName());
+                    }
+                }
             }
         }
     }
@@ -511,6 +759,7 @@ Scheduler::resetDepGraph(uint64_t numPhysRegs)
 {
     scoreboard.resize(numPhysRegs, true);
     bypassScoreboard.resize(numPhysRegs, true);
+    earlyScoreboard.resize(numPhysRegs, true);
     for (auto it : issueQues) {
         it->resetDepGraph(numPhysRegs);
     }
@@ -519,7 +768,10 @@ Scheduler::resetDepGraph(uint64_t numPhysRegs)
 void
 Scheduler::addToFU(const DynInstPtr& inst)
 {
-    DPRINTF(Schedule, "[sn %lu] add to FUs\n", inst->seqNum);
+#if TRACING_ON
+    inst->issueTick = curTick() - inst->fetchTick;
+#endif
+    DPRINTF(Schedule, "%s [sn:%llu] add to FUs\n", enums::OpClassStrings[inst->opClass()], inst->seqNum);
     instsToFu.push_back(inst);
 }
 
@@ -532,7 +784,8 @@ Scheduler::tick()
 }
 
 void
-Scheduler::issueAndSelect(){
+Scheduler::issueAndSelect()
+{
     for (auto it : issueQues) {
         it->issueToFu();
     }
@@ -540,52 +793,51 @@ Scheduler::issueAndSelect(){
     for (auto it : issueQues) {
         it->selectInst();
     }
-    // inst arbitration
-    while (slotOccupied > slotNum) {
-        auto& slot = intSlot.top();
-        slot.inst->setArbFailed();
-        slotOccupied -= slot.resourceDemand;
-        DPRINTF(Schedule, "[sn %lu] remove from slot\n", slot.inst->seqNum);
-        intSlot.pop();
-    }
 
-    // reset slot status
-    slotOccupied = 0;
-    intSlot.clear();
+    // inst arbitration
+    for (auto inst : arbFailedInsts) {
+        inst->setArbFailed();
+    }
+    arbFailedInsts.clear();
+    std::fill(rfPortOccupancy.begin(), rfPortOccupancy.end(), std::make_pair(nullptr, 0));
 }
 
 bool
 Scheduler::ready(const DynInstPtr& inst)
 {
-    auto iqs = dispTable[inst->opClass()];
+    auto& iqs = dispTable[inst->opClass()];
+    assert(!iqs.empty());
+
     for (auto iq : iqs) {
         if (iq->ready()) {
             return true;
         }
     }
-    DPRINTF(Dispatch, "IQ not ready, opclass: %s\n", enums::OpClassStrings[inst->opClass()]);
+
+    DPRINTF(Schedule, "IQ not ready, opclass: %s\n", enums::OpClassStrings[inst->opClass()]);
     return false;
 }
 
 bool
 Scheduler::full(const DynInstPtr& inst)
 {
-    auto iqs = dispTable[inst->opClass()];
+    auto& iqs = dispTable[inst->opClass()];
+
     for (auto iq : iqs) {
         if (!iq->full()) {
             return false;
         }
     }
-    DPRINTF(Dispatch, "IQ full, opclass: %s\n", enums::OpClassStrings[inst->opClass()]);
+
+    DPRINTF(Schedule, "IQ full, opclass: %s\n", enums::OpClassStrings[inst->opClass()]);
     return true;
 }
 
 DynInstPtr
 Scheduler::getInstByDstReg(RegIndex flatIdx)
 {
-    for (auto iq : issueQues)
-    {
-        for (auto& inst : iq->instList){
+    for (auto iq : issueQues) {
+        for (auto& inst : iq->instList) {
             if (inst->numDestRegs() > 0 && inst->renamedDestIdx(0)->flatIndex() == flatIdx) {
                 return inst;
             }
@@ -597,14 +849,15 @@ Scheduler::getInstByDstReg(RegIndex flatIdx)
 void
 Scheduler::addProducer(const DynInstPtr& inst)
 {
-    DPRINTF(Schedule, "[sn %lu] addProdecer\n", inst->seqNum);
-    for (int i=0; i<inst->numDestRegs(); i++) {
+    DPRINTF(Schedule, "[sn:%llu] addProdecer\n", inst->seqNum);
+    for (int i = 0; i < inst->numDestRegs(); i++) {
         auto dst = inst->renamedDestIdx(i);
         if (dst->isFixedMapping()) {
             continue;
         }
         scoreboard[dst->flatIndex()] = false;
         bypassScoreboard[dst->flatIndex()] = false;
+        earlyScoreboard[dst->flatIndex()] = false;
         DPRINTF(Schedule, "mark scoreboard p%lu not ready\n", dst->flatIndex());
     }
 }
@@ -613,11 +866,11 @@ void
 Scheduler::insert(const DynInstPtr& inst)
 {
     inst->setInIQ();
-    auto iqs = dispTable[inst->opClass()];
-    assert(!iqs.empty());
+    auto& iqs = dispTable[inst->opClass()];
     bool inserted = false;
 
-    if (forwardDisp) {
+    if (inst->isInteger()) {
+        std::sort(iqs.begin(), iqs.end(), disp_policy(inst->opClass()));
         for (auto iq : iqs) {
             if (iq->ready()) {
                 iq->insert(inst);
@@ -626,25 +879,27 @@ Scheduler::insert(const DynInstPtr& inst)
             }
         }
     } else {
-        for (auto iq = iqs.rbegin(); iq != iqs.rend(); iq++) {
-            if ((*iq)->ready()) {
-                (*iq)->insert(inst);
+        std::random_shuffle(iqs.begin(), iqs.end());
+        for (auto iq : iqs) {
+            if (iq->ready()) {
+                iq->insert(inst);
                 inserted = true;
                 break;
             }
         }
     }
+
+
     assert(inserted);
-    forwardDisp = !forwardDisp;
-    DPRINTF(Dispatch, "[sn %lu] dispatch: %s\n", inst->seqNum, inst->staticInst->disassemble(0));
+    DPRINTF(Schedule, "[sn:%llu] dispatch: %s\n", inst->seqNum, inst->staticInst->disassemble(0));
 }
 
 void
 Scheduler::insertNonSpec(const DynInstPtr& inst)
 {
     inst->setInIQ();
-    auto iqs = dispTable[inst->opClass()];
-    assert(!iqs.empty());
+    auto& iqs = dispTable[inst->opClass()];
+
     for (auto iq : iqs) {
         if (iq->ready()) {
             iq->insertNonSpec(inst);
@@ -654,27 +909,35 @@ Scheduler::insertNonSpec(const DynInstPtr& inst)
 }
 
 void
-Scheduler::wakeUpDependents(const DynInstPtr& inst, IssueQue* from_issue_queue)
+Scheduler::specWakeUpDependents(const DynInstPtr& inst, IssueQue* from_issue_queue)
 {
-    if (inst->numDestRegs() == 0 || (inst->isVector() && inst->isLoad())) {
-        // ignore if vector load
+    if (!opPipelined[inst->opClass()] || inst->numDestRegs() == 0 || (inst->isVector() && inst->isLoad())) {
         return;
     }
 
     for (auto to : wakeMatrix[from_issue_queue->getId()]) {
-        int wakeDelay = 0;
         int oplat = getCorrectedOpLat(inst);
-
-        if (oplat == 1 && (from_issue_queue->getIssueStages() > to->getIssueStages())) {
-            wakeDelay = from_issue_queue->getIssueStages() - to->getIssueStages();
-        } else if (oplat > to->getIssueStages()) {
-            wakeDelay = oplat - to->getIssueStages();
+        int wakeDelay = oplat - 1;
+        assert(oplat < 64);
+        int diff = std::abs(from_issue_queue->getIssueStages() - to->getIssueStages());
+        if (from_issue_queue->getIssueStages() > to->getIssueStages()) {
+            wakeDelay += diff;
+        } else if (wakeDelay >= diff) {
+            wakeDelay -= diff;
         }
 
-        DPRINTF(Schedule, "[sn %lu] %s create wakeupEvent to %s, delay %d cycles\n",
-            inst->seqNum, from_issue_queue->getName(), to->getName(), wakeDelay);
+        DPRINTF(Schedule, "[sn:%llu] %s create wakeupEvent to %s, delay %d cycles\n", inst->seqNum,
+                from_issue_queue->getName(), to->getName(), wakeDelay);
         if (wakeDelay == 0) {
             to->wakeUpDependents(inst, true);
+            for (int i = 0; i < inst->numDestRegs(); i++) {
+                PhysRegIdPtr dst = inst->renamedDestIdx(i);
+                if (dst->isFixedMapping()) [[unlikely]] {
+                    continue;
+                    ;
+                }
+                earlyScoreboard[dst->flatIndex()] = true;
+            }
         } else {
             auto wakeEvent = new SpecWakeupCompletion(inst, to);
             cpu->schedule(wakeEvent, cpu->clockEdge(Cycles(wakeDelay)) - 1);
@@ -693,13 +956,42 @@ Scheduler::getInstToFU()
     return ret;
 }
 
-void
-Scheduler::insertSlot(const DynInstPtr& inst)
+bool
+Scheduler::checkRfPortBusy(int typePortId, int pri)
 {
-    if (inst->isFloating() || inst->isVector()) {
-        // floating point and vector insts are not participate in arbitration
-        return;
+    if (rfPortOccupancy[typePortId].first && rfPortOccupancy[typePortId].second > pri) {
+        return false;
     }
+    return true;
+}
+
+void
+Scheduler::useRegfilePort(const DynInstPtr& inst, const PhysRegIdPtr& regid, int typePortId, int pri)
+{
+    if (regid->is(IntRegClass)) {
+        if (regCache.contains(regid->flatIndex())) {
+            regCache.get(regid->flatIndex());
+            return;
+        } else {
+            regCache.insert(regid->flatIndex(), {});
+        }
+    }
+    assert(typePortId < rfPortOccupancy.size());
+    if (rfPortOccupancy[typePortId].first) {
+        if (rfPortOccupancy[typePortId].second > pri) {
+            // inst arbitration failure
+            arbFailedInsts.push_back(inst);
+            DPRINTF(Schedule, "[sn:%llu] arbitration failure, typePortId %d occupied by [sn:%llu]\n", inst->seqNum, typePortId,
+                    rfPortOccupancy[typePortId].first->seqNum);
+            return;
+        } else {
+            // rfPortOccupancy[typePortId].first arbitration failure
+            arbFailedInsts.push_back(rfPortOccupancy[typePortId].first);
+            DPRINTF(Schedule, "[sn:%llu] arbitration failure, typePortId %d occupied by [sn:%llu]\n",
+                    rfPortOccupancy[typePortId].first->seqNum, typePortId, inst->seqNum);
+        }
+    }
+
     uint32_t priority = getArbPriority(inst);
     uint32_t needed = inst->numSrcRegs();
     slotOccupied += needed;
@@ -707,12 +999,17 @@ Scheduler::insertSlot(const DynInstPtr& inst)
     DPRINTF(Schedule, "[sn %lu] insert slot, priority: %u, needed: %u\n", inst->seqNum, priority, needed);
 }      // 将指令插入调度槽，根据优先级进行仲裁，浮点和向量指令不参与
 
-void Scheduler::loadCancel(const DynInstPtr& inst)
+    rfPortOccupancy[typePortId] = std::make_pair(inst, pri);
+}
+
+
+void
+Scheduler::loadCancel(const DynInstPtr& inst)
 {
     if (inst->canceled()) {
         return;
     }
-    DPRINTF(Schedule, "[sn %lu] %s cache miss, cancel consumers\n", inst->seqNum,
+    DPRINTF(Schedule, "[sn:%llu] %s cache miss, cancel consumers\n", inst->seqNum,
             enums::OpClassStrings[inst->opClass()]);
     inst->setCancel();
     if (inst->issueQue) {
@@ -723,19 +1020,20 @@ void Scheduler::loadCancel(const DynInstPtr& inst)
     while (!dfs.empty()) {
         auto top = dfs.top();
         dfs.pop();
-        for (int i=0; i<top->numDestRegs(); i++) {
+        for (int i = 0; i < top->numDestRegs(); i++) {
             auto dst = top->renamedDestIdx(i);
             if (dst->isFixedMapping()) {
                 continue;
             }
+            earlyScoreboard[dst->flatIndex()] = false;
             for (auto iq : issueQues) {
                 for (auto& it : iq->subDepGraph[dst->flatIndex()]) {
                     int srcIdx = it.first;
                     auto& depInst = it.second;
                     if (depInst->readySrcIdx(srcIdx) && depInst->renamedSrcIdx(srcIdx) != cpu->vecOnesPhysRegId) {
                         assert(!depInst->isIssued());
-                        DPRINTF(Schedule, "cancel [sn %lu], clear src p%d ready\n",
-                            depInst->seqNum, depInst->renamedSrcIdx(srcIdx)->flatIndex());
+                        DPRINTF(Schedule, "cancel [sn:%llu], clear src p%d ready\n", depInst->seqNum,
+                                depInst->renamedSrcIdx(srcIdx)->flatIndex());
                         depInst->setCancel();
                         iq->iqstats->canceledInst++;
                         depInst->clearSrcRegReady(srcIdx);
@@ -747,9 +1045,9 @@ void Scheduler::loadCancel(const DynInstPtr& inst)
     }
 
     for (auto iq : issueQues) {
-        for (int i=0; i<=iq->getIssueStages(); i++) {
+        for (int i = 0; i <= iq->getIssueStages(); i++) {
             int size = iq->inflightIssues[-i].size;
-            for (int j=0; j<size; j++) {
+            for (int j = 0; j < size; j++) {
                 auto& inst = iq->inflightIssues[-i].insts[j];
                 if (inst && inst->canceled()) {
                     inst = nullptr;
@@ -762,8 +1060,9 @@ void Scheduler::loadCancel(const DynInstPtr& inst)
 void
 Scheduler::writebackWakeup(const DynInstPtr& inst)
 {
-    DPRINTF(Schedule, "[sn %lu] was writeback\n", inst->seqNum);
-    inst->issueQue = nullptr;// clear in issueQue
+    DPRINTF(Schedule, "[sn:%llu] was writeback\n", inst->seqNum);
+    inst->setWriteback();  // clear in issueQue
+    cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtWriteVal);
     for (int i = 0; i < inst->numDestRegs(); i++) {
         auto dst = inst->renamedDestIdx(i);
         if (dst->isFixedMapping()) {
@@ -779,8 +1078,12 @@ Scheduler::writebackWakeup(const DynInstPtr& inst)
 void
 Scheduler::bypassWriteback(const DynInstPtr& inst)
 {
-    DPRINTF(Schedule, "[sn %lu] bypass write\n", inst->seqNum);
-    for (int i=0; i<inst->numDestRegs(); i++) {
+    if (inst->issueportid >= 0) {
+        inst->issueQue->portBusy[inst->issueportid] = 0;
+    }
+    cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtBypassVal);
+    DPRINTF(Schedule, "[sn:%llu] bypass write\n", inst->seqNum);
+    for (int i = 0; i < inst->numDestRegs(); i++) {
         auto dst = inst->renamedDestIdx(i);
         if (dst->isFixedMapping()) {
             continue;
@@ -788,12 +1091,6 @@ Scheduler::bypassWriteback(const DynInstPtr& inst)
         bypassScoreboard[dst->flatIndex()] = true;
         DPRINTF(Schedule, "p%lu in bypassNetwork ready\n", dst->flatIndex());
     }
-}
-
-uint32_t
-Scheduler::getArbPriority(const DynInstPtr& inst)
-{
-    return (uint32_t)rand() % 10;
 }
 
 uint32_t
@@ -814,7 +1111,7 @@ bool
 Scheduler::hasReadyInsts()
 {
     for (auto it : issueQues) {
-        if (!it->readyInsts.empty()) {
+        if (!it->idle()) {
             return true;
         }
     }
@@ -852,7 +1149,7 @@ Scheduler::doSquash(const InstSeqNum seqNum)
 uint32_t
 Scheduler::getIQInsts()
 {
-    uint32_t total=0;
+    uint32_t total = 0;
     for (auto iq : issueQues) {
         total += iq->instNum;
     }

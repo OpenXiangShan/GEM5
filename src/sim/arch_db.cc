@@ -17,6 +17,7 @@ ArchDBer::ArchDBer(const Params &p)
     dumpBopTrainTrace(p.dump_bop_train_trace),
     dumpSMSTrainTrace(p.dump_sms_train_trace),
     dumpL1WayPreTrace(p.dump_l1d_way_pre_trace),
+    dumpLifetime(p.dump_lifetime),
     mem_db(nullptr), zErrMsg(nullptr),rc(0),
     db_path(p.arch_db_file)
 {
@@ -64,6 +65,15 @@ void ArchDBer::save_db() {
     rc = sqlite3_errcode(disk_db);
   }
   sqlite3_close(disk_db);
+}
+
+void
+ArchDBer::execmd(std::string cmd)
+{
+  rc = sqlite3_exec(mem_db, cmd.c_str(), callback, 0, &zErrMsg);
+  if (rc != SQLITE_OK) {
+    fatal("SQL error: %s\n", zErrMsg);
+  }
 }
 
 DBTraceManager *

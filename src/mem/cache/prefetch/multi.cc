@@ -71,6 +71,13 @@ Multi::nextPrefetchReadyTime() const
     return next_ready;
 }
 
+bool
+Multi::hasPendingPacket()
+{
+    uint8_t pf_turn = (lastChosenPf + 1) % prefetchers.size();
+    return (prefetchers[pf_turn]->nextPrefetchReadyTime() <= curTick());
+}
+
 PacketPtr
 Multi::getPacket()
 {

@@ -54,6 +54,7 @@ enum PrivilegeMode
 {
     PRV_U = 0,
     PRV_S = 1,
+    PRV_HS = 2,
     PRV_M = 3
 };
 

@@ -49,6 +49,8 @@
 #include <queue>
 #include <vector>
 
+#include <boost/compute/detail/lru_cache.hpp>
+
 #include "arch/generic/mmu.hh"
 #include "arch/generic/tlb.hh"
 #include "base/flags.hh"
@@ -72,6 +74,7 @@ namespace o3
 class CPU;
 class IEW;
 class LSQUnit;
+class StoreBufferEntry;
 
 class LSQ
 {
@@ -223,7 +226,8 @@ class LSQ
             WritebackScheduled  = 0x00001000,
             WritebackDone       = 0x00002000,
             /** True if this is an atomic request */
-            IsAtomic            = 0x00004000
+            IsAtomic            = 0x00004000,
+            IsHInst            = 0x00008000
         };
         FlagsType flags;
 
@@ -283,6 +287,12 @@ class LSQ
         isLoad() const
         {
             return flags.isSet(Flag::IsLoad);
+        }
+
+        bool
+        isHInst() const
+        {
+            return flags.isSet(Flag::IsHInst);
         }
 
         bool
@@ -684,7 +694,7 @@ class LSQ
     {
         CPU* cpu;
       public:
-        uint64_t sbuffer_index=-1;
+        StoreBufferEntry* sbuffer_entry=nullptr;
         SbufferRequest(CPU* cpu, LSQUnit* port, Addr blockpaddr, uint8_t* data);
 
         void addReq(Addr blockVaddr, Addr blockPaddr, const std::vector<bool> byteEnable);
@@ -965,6 +975,8 @@ class LSQ
     Tick lastConflictCheckTick;
 
     std::vector<int64_t> l1dBankAddresses;
+    struct NullStruct {};
+    boost::compute::detail::lru_cache<uint64_t, NullStruct> recentlyloadAddr;
 
     bool enableBankConflictCheck;
 

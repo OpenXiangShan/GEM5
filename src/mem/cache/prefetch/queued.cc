@@ -280,6 +280,12 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
     }
 }
 
+bool
+Queued::hasPendingPacket()
+{
+    return !pfq.empty();
+}
+
 PacketPtr
 Queued::getPacket()
 {

@@ -835,7 +835,7 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
         // If we have, just wait around for commit to squash something and put
         // us on the right track
         if (!cpu->system->isMemAddr(mem_req->getPaddr())) {
-            warn("Address %#x is outside of physical memory, stopping fetch, %lu\n",
+            DPRINTF(Fetch, "Address %#x is outside of physical memory, stopping fetch, %lu\n",
                     mem_req->getPaddr(), curTick());
             fetchStatus[tid] = NoGoodAddr;
             setAllFetchStalls(StallReason::OtherFetchStall);
@@ -1488,6 +1488,10 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
     // Create a new DynInst from the instruction fetched.
     DynInstPtr instruction = new (arrays) DynInst(
             arrays, staticInst, curMacroop, this_pc, next_pc, seq, cpu);
+
+    cpu->perfCCT->createMeta(instruction);
+    cpu->perfCCT->updateInstPos(instruction->seqNum, PerfRecord::AtFetch);
+
     instruction->setTid(tid);
 
     instruction->setThreadState(cpu->thread[tid]);
@@ -1868,7 +1872,7 @@ Fetch::fetch(bool &status_change)
             stallReason[i] = StallReason::NoStall;
         else {
             if (numInst > 0) {
-                stallReason[i] = StallReason::FragStall;
+                stallReason[i] = StallReason::FetchFragStall;
             } else if (stall  != StallReason::NoStall) {
                 stallReason[i] = stall;
             } else if (stalls[tid].decode && fetchQueue[tid].size() >= fetchQueueSize) {

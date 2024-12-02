@@ -22,6 +22,9 @@ def config_xiangshan_inputs(args: argparse.Namespace, sys):
         elif "GCBV_REF_SO" in os.environ:
             ref_so = os.environ["GCBV_REF_SO"]
             print("Obtained ref_so from GCBV_REF_SO: ", ref_so)
+        elif "GCBH_REF_SO" in os.environ:
+            ref_so = os.environ["GCBH_REF_SO"]
+            print("Obtained ref_so from GCBH_REF_SO: ", ref_so)
         elif "NEMU_HOME" in os.environ:
             ref_so = os.path.join(os.environ["NEMU_HOME"], "build/riscv64-nemu-interpreter-so")
             print("Obtained ref_so from NEMU_HOME: ", ref_so)
@@ -31,7 +34,7 @@ def config_xiangshan_inputs(args: argparse.Namespace, sys):
             fatal("No valid ref_so file specified for the functional model to "
                   "compare against. Please 1) either specify a valid ref_so file using "
                   "the --difftest-ref-so option;\n"
-                  "2) or specify GCBV_REF_SO/GCBV_MULTI_CORE_REF_SO that points to the ref_so file;\n"
+                  "2) or specify GCBV_REF_SO/GCBV_MULTI_CORE_REF_SO/GCBH_REF_SO that points to the ref_so file;\n"
                   "3) or specify NEMU_HOME that contains build/riscv64-nemu-interpreter-so")
     elif args.enable_difftest and args.difftest_ref_so is not None:
         ref_so = args.difftest_ref_so
@@ -55,6 +58,12 @@ def config_xiangshan_inputs(args: argparse.Namespace, sys):
                 print("Obtained gcpt_restorer from GCBV_RESTORER: ", gcpt_restorer)
             else:
                 fatal("Plz set $GCBV_RESTORER when running RVV checkpoints")
+        elif args.restore_rvh_cpt:
+            if "GCBH_RESTORER" in os.environ:
+                gcpt_restorer = os.environ["GCBH_RESTORER"]
+                print("Obtained gcpt_restorer from GCBH_RESTORER: ", gcpt_restorer)
+            else:
+                fatal("Plz set $GCBH_RESTORER when running RVH checkpoints")
         else:
             if "GCB_RESTORER" in os.environ:
                 gcpt_restorer = os.environ["GCB_RESTORER"]
@@ -71,6 +80,9 @@ def config_xiangshan_inputs(args: argparse.Namespace, sys):
         sys.gcpt_restorer_size_limit = 2**20
     elif args.restore_rvv_cpt:
         print("Simulating single core with RVV, demanding GCPT restorer size of 0x1000.")
+        sys.gcpt_restorer_size_limit = 0x1000
+    elif args.restore_rvh_cpt:
+        print("Simulating single core with RVH, demanding GCPT restorer size of 0x1000.")
         sys.gcpt_restorer_size_limit = 0x1000
     else:
         print("Simulating single core without RVV, demanding GCPT restorer size of 0x700.")

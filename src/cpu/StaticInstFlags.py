@@ -49,6 +49,7 @@ class StaticInstFlags(Enum):
         'IsOper16',
         'IsOper32',
         'IsOper64',
+        'IsHInst',
         'IsNop',            # Is a no-op (no effect at all).
         'IsMov',
 
@@ -60,6 +61,7 @@ class StaticInstFlags(Enum):
         'IsLoad',           # Reads from memory (load or prefetch).
         'IsStore',          # Writes to memory.
         'IsAtomic',         # Does atomic RMW to memory.
+        'IsLoadReserved',   # Load reserved
         'IsStoreConditional',   # Store conditional instruction.
         'IsInstPrefetch',   # Instruction-cache prefetch.
         'IsDataPrefetch',   # Data-cache prefetch.
@@ -95,6 +97,11 @@ class StaticInstFlags(Enum):
         'IsFirstMicroop',   # This microop begins a microop sequence
 
         'IsSquashAfter',     # Squash all uncommitted state after executed
+
+        #update vsstatus
+        'IsUpdateVsstatusSd',
+        #update mstatussd
+        'IsUpdateMstatusSd',
 
         # hardware transactional memory
         'IsHtmStart',       # Starts a HTM transaction

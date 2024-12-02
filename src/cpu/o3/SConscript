@@ -32,11 +32,10 @@ Import('*')
 
 if env['CONF']['TARGET_ISA'] != 'null':
     SimObject('FUPool.py', sim_objects=['FUPool', 'SpecWakeupChannel',
-              'IssueQue', 'Scheduler'])
-    SimObject('FuncUnitConfig.py', sim_objects=[
-              'DelayCalibrator', 'ScheduleDelayMatrixMap'])
+              'IssuePort', 'IssueQue', 'Scheduler'])
+    SimObject('FuncUnitConfig.py', sim_objects=[])
     SimObject('BaseO3CPU.py', sim_objects=['BaseO3CPU'], enums=[
-        'SMTFetchPolicy', 'SMTQueuePolicy', 'CommitPolicy', 'ROBWalkPolicy'])
+        'SMTFetchPolicy', 'SMTQueuePolicy', 'CommitPolicy', 'ROBWalkPolicy', 'PerfRecord'])
 
     Source('commit.cc')
     Source('cpu.cc')
@@ -58,14 +57,15 @@ if env['CONF']['TARGET_ISA'] != 'null':
     Source('store_set.cc')
     Source('thread_context.cc')
     Source('thread_state.cc')
-    Source('iew_delay_calibrator.cc')
     Source('issue_queue.cc')
+    Source('perfCCT.cc')
 
     DebugFlag('CommitRate')
     DebugFlag('IEW')
     DebugFlag('IQ')
     DebugFlag('LSQ')
     DebugFlag('LSQUnit')
+    DebugFlag('TagReadFail')
     DebugFlag('StoreBuffer')
     DebugFlag('MemDepUnit')
     DebugFlag('O3CPU')

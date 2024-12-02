@@ -49,7 +49,6 @@ class ArchDBer : public SimObject
     //let db start recording
     void start_recording();
 
-  private:
     //variables from chisel generate cpp
     bool dumpGlobal;
     bool dumpRolling;
@@ -62,6 +61,8 @@ class ArchDBer : public SimObject
     bool dumpBopTrainTrace;
     bool dumpSMSTrainTrace;
     bool dumpL1WayPreTrace;
+    bool dumpLifetime;
+    bool dumpLifetimeMore;
 
     sqlite3 *mem_db;
     char * zErrMsg;
@@ -75,6 +76,8 @@ class ArchDBer : public SimObject
 
     void save_db();
   public:
+    void execmd(std::string cmd);
+
     DBTraceManager *addAndGetTrace(const char *name, std::vector<std::pair<std::string, DataType>> fields);
 
     bool get_dump_rolling() { return dumpRolling; }

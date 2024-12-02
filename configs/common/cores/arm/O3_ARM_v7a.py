@@ -123,8 +123,6 @@ class O3_ARM_v7a_3(ArmO3CPU):
     renameWidth = 3
     renameToIEWDelay = 1
     issueToExecuteDelay = 1
-    dispatchWidth = 6
-    issueWidth = 8
     wbWidth = 8
     fuPool = O3_ARM_v7a_FUP()
     iewToCommitDelay = 1

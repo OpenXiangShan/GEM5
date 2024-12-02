@@ -236,6 +236,8 @@ class Queued : public Base
                                    PrefetchSourceType source, bool miss_repeat);
     PacketPtr getPacket() override;
 
+    bool hasPendingPacket() override;
+
     Tick nextPrefetchReadyTime() const override
     {
         return pfq.empty() ? MaxTick : pfq.front().tick;

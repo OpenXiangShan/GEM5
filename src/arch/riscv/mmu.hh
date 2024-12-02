@@ -94,6 +94,18 @@ class MMU : public BaseMMU
     {
         return static_cast<TLB*>(dtb)->pmp;
     }
+
+    void
+    setOldPriv(ThreadContext *tc) override {
+      static_cast<TLB*>(dtb)->setOldPriv(tc);
+      static_cast<TLB*>(itb)->setOldPriv(tc);
+    }
+
+    void
+    useNewPriv(ThreadContext *tc) override {
+      static_cast<TLB*>(dtb)->useNewPriv(tc);
+      static_cast<TLB*>(itb)->useNewPriv(tc);
+    }
 };
 
 } // namespace RiscvISA

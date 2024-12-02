@@ -481,6 +481,8 @@ class Base : public ClockedObject
 
     virtual PacketPtr getPacket() = 0;
 
+    virtual bool hasPendingPacket() = 0;
+
     virtual Tick nextPrefetchReadyTime() const = 0;
 
     void

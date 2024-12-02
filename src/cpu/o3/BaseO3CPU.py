@@ -58,6 +58,19 @@ class CommitPolicy(ScopedEnum):
 class ROBWalkPolicy(ScopedEnum):
     vals = [ 'Rollback', 'Replay', 'ConstCycle', 'NaiveCpt', 'ConfidentCpt' ]
 
+class PerfRecord(ScopedEnum):
+    vals = [
+        # position tick
+        'AtFetch', 'AtDecode', 'AtRename', 'AtDispQue', 'AtIssueQue', 'AtIssueArb', 'AtIssueReadReg',
+        'AtFU', 'AtBypassVal', 'AtWriteVal', 'AtCommit',
+        'Disasm', 'PC'
+    ]
+
+class PerfDetail(ScopedEnum):
+    vals = [
+        'pdst', 'psrcs', 'result', 'ldstAddr', 'cachemisslevel', 'arbfail'
+    ]
+
 class BaseO3CPU(BaseCPU):
     type = 'BaseO3CPU'
     cxx_class = 'gem5::o3::CPU'
@@ -132,18 +145,18 @@ class BaseO3CPU(BaseCPU):
                "Issue/Execute/Writeback delay")
     executeToWriteBackDelay = Param.Cycles(1, "Execute to issue delay")
 
-    dispatchWidth = Param.Unsigned(6, "Dispatch width")
-    issueWidth = Param.Unsigned(8, "Issue width")
-    wbWidth = Param.Unsigned(8, "Writeback width")
-    fuPool = Param.FUPool(DefaultFUPool(), "Functional Unit pool")
+    numDQEntries = VectorParam.Unsigned([32, 16, 16], "Number of entries in the dispQue, (Int, Float/Vector, Mem)")
+    dispWidth = VectorParam.Unsigned([8, 6, 6], "Each DispQue dispatch width")
+
+    wbWidth = Param.Unsigned(20, "Writeback width")
 
     iewToCommitDelay = Param.Cycles(1, "Issue/Execute/Writeback to commit "
                "delay")
     renameToROBDelay = Param.Cycles(1, "Rename to reorder buffer delay")
-    commitWidth = Param.Unsigned(6, "Commit width")
+    commitWidth = Param.Unsigned(8, "Commit width")
 
-    squashWidth = Param.Unsigned(6, "Squash width with rollback rob walk")
-    replayWidth = Param.Unsigned(6, "Squash width with redo rob walk")
+    squashWidth = Param.Unsigned(8, "Squash width with rollback rob walk")
+    replayWidth = Param.Unsigned(8, "Squash width with redo rob walk")
     ConstSquashCycle = Param.Unsigned(1, "Squash width with redo rob walk")
     robWalkPolicy = Param.ROBWalkPolicy('Replay', "Squash with a specific policy")
 
@@ -159,8 +172,8 @@ class BaseO3CPU(BaseCPU):
     SQEntries = Param.Unsigned(64, "Number of store queue entries")
 
     SbufferEntries = Param.Unsigned(16, "Number of store buffer entries")
-    SbufferEvictThreshold = Param.Unsigned(12, "store buffer eviction threshold")
-    storeBufferInactiveThreshold = Param.Unsigned(100, "store buffer writeback timeout threshold")
+    SbufferEvictThreshold = Param.Unsigned(7, "store buffer eviction threshold")
+    storeBufferInactiveThreshold = Param.Unsigned(800, "store buffer writeback timeout threshold")
 
     LSQDepCheckShift = Param.Unsigned(0,
             "Number of places to shift addr before check")
@@ -170,16 +183,16 @@ class BaseO3CPU(BaseCPU):
     store_set_clear_period = Param.Unsigned(250000,
             "Number of load/store insts before the dep predictor "
             "should be invalidated")
-    LFSTSize = Param.Unsigned(256, "Last fetched store table size")
+    LFSTSize = Param.Unsigned(2048, "Last fetched store table size")
     store_set_clear_thres = Param.Unsigned(1048576,"")
     LFSTEntrySize = Param.Unsigned(4,"The number of store table inst in every entry of LFST can contain")
-    SSITSize = Param.Unsigned(1024, "Store set ID table size")
-    BankConflictCheck = Param.Bool(True,"open Bank conflict check")
+    SSITSize = Param.Unsigned(8192, "Store set ID table size")
+    BankConflictCheck = Param.Bool(True, "open Bank conflict check")
 
 
     numRobs = Param.Unsigned(1, "Number of Reorder Buffers");
 
-    numPhysIntRegs = Param.Unsigned(192,
+    numPhysIntRegs = Param.Unsigned(224,
             "Number of physical integer registers")
     numPhysFloatRegs = Param.Unsigned(192, "Number of physical floating point "
                                       "registers")
@@ -192,8 +205,7 @@ class BaseO3CPU(BaseCPU):
     numPhysCCRegs = Param.Unsigned(0, "Number of physical cc registers")
     numPhysRMiscRegs = Param.Unsigned(40, "Number of physical renameable misc registers")
 
-    numDQEntries = Param.Unsigned(16, "Number of entries in the dispQue")
-    numROBEntries = Param.Unsigned(256, "Number of reorder buffer entries")
+    numROBEntries = Param.Unsigned(320, "Number of reorder buffer entries")
 
     smtNumFetchingThreads = Param.Unsigned(1, "SMT Number of Fetching Threads")
     smtFetchPolicy = Param.SMTFetchPolicy('RoundRobin', "SMT Fetch policy")
@@ -212,7 +224,7 @@ class BaseO3CPU(BaseCPU):
                                        "Branch Predictor")
     needsTSO = Param.Bool(False, "Enable TSO Memory model")
 
-    scheduler = Param.Scheduler(KunminghuScheduler(), "")
+    scheduler = Param.Scheduler("")
 
     arch_db = Param.ArchDBer(Parent.any, "Arch DB")
 

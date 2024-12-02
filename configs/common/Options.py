@@ -163,6 +163,8 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--cacheline_size", type=int, default=64)
     parser.add_argument("--ideal-cache", action="store_true")
 
+    parser.add_argument("--no-pf", default=False,
+                        action="store_true", help="L1 icache hardware prefetcher")
     parser.add_argument("--l1i-hwp-type", default=None,
                         choices=ObjectList.hwp_list.get_names(), help="L1 icache hardware prefetcher")
     parser.add_argument("--l1d-hwp-type", default='XSCompositePrefetcher',
@@ -280,10 +282,12 @@ def addCommonOptions(parser, configure_xiangshan=False):
                         action=ListRP, nargs=0,
                         help="List available replacement policy types")
 
+    parser.add_argument("--kmh-align", action="store_true", default=False,
+                        help="""
+                        Use kmu config""")
     parser.add_argument("--list-hwp-types",
                         action=ListHWP, nargs=0,
                         help="List available hardware prefetcher types")
-
     parser.add_argument("--l1d-enable-spp", action="store_true", default=False,
                         help="""
                         Enable SPP component for L1 data prefetcher""")
@@ -310,6 +314,9 @@ def addCommonOptions(parser, configure_xiangshan=False):
 
     parser.add_argument("--restore-rvv-cpt", action="store_true", default=False,
             help="The input checkpoint is RVV, which requires RVV restorer")
+
+    parser.add_argument("--restore-rvh-cpt", action="store_true", default=False,
+            help="The input checkpoint is RVH, which requires RVH restorer")
 
     parser.add_argument("--xiangshan-ecore", action= "store_true",
                         help="Use efficient core of xiangshan")

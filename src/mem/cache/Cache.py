@@ -152,6 +152,8 @@ class BaseCache(ClockedObject):
 
     cache_level = Param.Unsigned(0, "Cache level (L1 is 1, L2 is 2, etc.)")
 
+    tag_load_read_ports = Param.Unsigned(3, "Total tag read ports for load/prefetcher(in L1 Cache)")
+
     force_hit = Param.Bool(False, "Force some PC to hit in L1")
     way_entries = Param.MemorySize(
         "64",

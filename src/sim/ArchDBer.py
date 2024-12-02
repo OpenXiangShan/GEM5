@@ -60,3 +60,4 @@ class ArchDBer(SimObject):
     dump_bop_train_trace = Param.Bool(False, "Dump bop train trace")
     dump_sms_train_trace = Param.Bool(False, "Dump sms train trace")
     dump_l1d_way_pre_trace = Param.Bool(False, "Dump l1d way predction trace")
+    dump_lifetime = Param.Bool(False, "Dump inst lifetime")

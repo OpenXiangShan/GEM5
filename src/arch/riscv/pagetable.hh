@@ -55,10 +55,18 @@ enum AddrXlateMode
     SV48 = 9,
 };
 
+const Addr H_VADDR_BITS = 41;
 // Sv39 paging
 const Addr VADDR_BITS  = 39;
 const Addr LEVEL_BITS  = 9;
-const Addr LEVEL_MASK  = (1 << LEVEL_BITS) - 1;
+const Addr LEVEL_MASK = ((1 << LEVEL_BITS) - 1);
+const Addr PGMASK = ((1 << 12) - 1);
+const Addr TWO_STAGE_L2_LEVEL_MASK = 0x7ff;
+const Addr VPN_MASK = 0x1ff;
+const Addr PGSHFT = 12;
+const Addr PTESIZE = 8;
+const Addr L2PageTypeNum = 4;
+const Addr L2PageStoreTypeNum = 5;
 
 const Addr L2TLB_BLK_OFFSET = 3;
 const Addr VADDR_CHOOSE_MASK = 7;
@@ -89,6 +97,28 @@ enum l2TLBPage
     L_L2sp2
 
 };
+enum HTLBHitState
+{
+    H_L1miss = 0,
+    h_l1AllstageHit,
+    h_l1VSstageHit,
+    h_l1GstageHit,
+    h_l2VSstageHitEnd,
+    h_l2VSstageHitContinue,
+    h_l2GstageHitEnd,
+    h_l2GstageHitContinue
+};
+
+enum TlbTranslateMode { direct = 0, vsstage, gstage, allstage };
+
+enum TranslateMode
+{
+    defaultmode = 0,
+    twoStageMode = 1
+
+};
+
+enum MMUMode { MMU_DIRECT = 0, MMU_TRANSLATE = 1, MMU_DYNAMIC = 2 };
 
 BitUnion64(PTESv39)
     Bitfield<53, 10> ppn;
@@ -118,12 +148,19 @@ struct TlbEntry : public Serializable
 
     // The beginning of the virtual page this entry maps.
     Addr vaddr;
+    Addr gpaddr;
     // The size of the page this represents, in address bits.
     unsigned logBytes;
-
+    //transalte mode
+    //0:direct 1:vsstage 2:gstage 3:allstage
+    uint8_t translateMode;
+    //vsatp.asid or satp.asid
     uint16_t asid;
+    // hgatp.vmid
+    uint16_t vmid;
 
     PTESv39 pte;
+    PTESv39 pteVS;
 
     TlbEntryTrie::Handle trieHandle;
 
@@ -131,6 +168,7 @@ struct TlbEntry : public Serializable
     uint64_t lruSeq;
 
     uint64_t level;
+    uint64_t VSlevel;
 
     Addr index;
 
@@ -145,10 +183,16 @@ struct TlbEntry : public Serializable
     TlbEntry()
         : paddr(0),
           vaddr(0),
+          gpaddr(0),
           logBytes(0),
+          translateMode(0),
+          asid(0),
+          vmid(0),
           pte(),
+          pteVS(),
           lruSeq(0),
           level(0),
+          VSlevel(0),
           index(0),
           isSquashed(false),
           used(false),

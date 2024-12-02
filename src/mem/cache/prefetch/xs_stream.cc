@@ -71,6 +71,7 @@ XsStreamPrefetcher::streamLookup(const PrefetchInfo &pfi, bool &in_active_page, 
     Addr vaddr = pfi.getAddr();
     Addr vaddr_tag_num = tagAddress(vaddr);
     Addr vaddr_offset = tagOffset(vaddr);
+    bool secure = pfi.isSecure();
 
     STREAMEntry *entry = stream_array.findEntry(regionHashTag(vaddr_tag_num), pfi.isSecure());
     STREAMEntry *entry_plus = stream_array.findEntry(regionHashTag(vaddr_tag_num + 1), pfi.isSecure());
@@ -99,6 +100,7 @@ XsStreamPrefetcher::streamLookup(const PrefetchInfo &pfi, bool &in_active_page, 
     entry->bitVec = 1UL << vaddr_offset;
     entry->cnt = 1;
     entry->active = (entry_plus != nullptr) || (entry_min != nullptr);
+    stream_array.insertEntry(regionHashTag(vaddr_tag_num), secure, entry);
     return entry;
 }
 bool

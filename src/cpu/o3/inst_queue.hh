@@ -74,7 +74,6 @@ class MemInterface;
 namespace o3
 {
 
-class FUPool;
 class CPU;
 class IEW;
 class Scheduler;
@@ -208,6 +207,8 @@ class InstructionQueue
     /** Process FU completion event. */
     void processFUCompletion(const DynInstPtr &inst, int fu_idx);
 
+    bool execLatencyCheck(const DynInstPtr& inst, uint32_t& op_latency);
+
     /**
      * Schedules ready instructions, adding the ready ones (oldest first) to
      * the queue to execute.
@@ -290,9 +291,6 @@ class InstructionQueue
 
     /** Wire to read information from timebuffer. */
     typename TimeBuffer<TimeStruct>::wire fromCommit;
-
-    /** Function unit pool. */
-    FUPool *fuPool;
 
     Scheduler* scheduler;
 
@@ -399,10 +397,6 @@ class InstructionQueue
          * instruction. */
         // statistics::VectorDistribution issueDelayDist;
 
-        /** Number of times an instruction could not be issued because a
-         * FU was busy.
-         */
-        statistics::Vector statFuBusy;
         // statistics::Vector dist_unissued;
         /** Stat for total number issued for each instruction type. */
         statistics::Vector2d statIssuedInstType;

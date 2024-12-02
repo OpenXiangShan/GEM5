@@ -763,7 +763,7 @@ Decode::decodeInsts(ThreadID tid)
         ++toRenameIndex;
         ++stats.decodedInsts;
         --insts_available;
-
+        cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtDecode);
 #if TRACING_ON
         if (debug::O3PipeView) {
             inst->decodeTick = curTick() - inst->fetchTick;

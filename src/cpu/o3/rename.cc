@@ -794,6 +794,8 @@ Rename::renameInsts(ThreadID tid)
 
         renameDestRegs(inst, inst->threadNumber);
 
+        cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtRename);
+
         if (inst->isAtomic() || inst->isStore()) {
             storesInProgress[tid]++;
         } else if (inst->isLoad()) {
@@ -834,7 +836,7 @@ Rename::renameInsts(ThreadID tid)
             } else if (breakRename != StallReason::NoStall) {
                 renameStalls.at(i) = breakRename;
             } else if (instsAvailable < renameWidth && instsAvailable > 0) {
-                renameStalls.at(i) = StallReason::FragStall;
+                renameStalls.at(i) = StallReason::OtherFragStall;
             } else if (instsAvailable == 0) {
                 renameStalls.at(i) = stall;
             }else {

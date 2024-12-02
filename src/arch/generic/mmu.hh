@@ -53,7 +53,7 @@ class BaseTLB;
 class BaseMMU : public SimObject
 {
   public:
-    enum Mode { Read, Write, Execute };
+    enum Mode { Read, Write, Execute};
 
     class Translation
     {
@@ -122,6 +122,14 @@ class BaseMMU : public SimObject
     virtual Fault
     translateFunctional(const RequestPtr &req, ThreadContext *tc,
                         Mode mode);
+
+    virtual void setOldPriv(ThreadContext *tc) {
+      panic("BaseMMU::setOldPriv() not implemented");
+    }
+
+    virtual void useNewPriv(ThreadContext *tc) {
+      panic("BaseMMU::useNewPriv() not implemented");
+    }
 
     class MMUTranslationGen : public TranslationGen
     {

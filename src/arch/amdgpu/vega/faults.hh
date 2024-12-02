@@ -62,7 +62,7 @@ class VegaFault : public FaultBase
 
     FaultName name() const override { return _name; }
     bool isInterrupt() const { return _interrupt; }
-    ExceptionCode exception() const { return _code; }
+    uint64_t exception() const override{ return _code; }
     virtual RegVal trap_value() const { return 0; }
 
     void invoke(ThreadContext *tc, const StaticInstPtr &inst) override;

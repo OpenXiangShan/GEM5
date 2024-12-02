@@ -60,6 +60,7 @@
 #include "debug/PacketSender.hh"
 #include "debug/Schedule.hh"
 #include "debug/StoreBuffer.hh"
+#include "debug/TagReadFail.hh"
 #include "debug/Writeback.hh"
 #include "mem/packet_access.hh"
 #include "params/BaseO3CPU.hh"
@@ -79,6 +80,7 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
       _cacheBlocked(false),
       cacheStorePorts(params.cacheStorePorts), usedStorePorts(0),
       cacheLoadPorts(params.cacheLoadPorts), usedLoadPorts(0),lastConflictCheckTick(0),
+      recentlyloadAddr(8),
       enableBankConflictCheck(params.BankConflictCheck),
       waitingForStaleTranslation(false),
       staleTranslationWaitTxnId(0),
@@ -206,16 +208,21 @@ bool
 LSQ::bankConflictedCheck(Addr vaddr)
 {
     bool now_bank_conflict = false;
+    // 64KB Dcache 8way 128sets
+    // [12:6]   [5:3]     [2:0]
+    // setIndex bankIndex dataOffset
+    const uint64_t cacheBankmask = 0b1111111111000;
     if (enableBankConflictCheck) {
-        if (l1dBankAddresses.size() == 0) {
+        if (recentlyloadAddr.contains((vaddr & cacheBankmask))) {
+            recentlyloadAddr.get((vaddr & cacheBankmask));
+            return false;
+        }
+        auto bank_it = std::find(l1dBankAddresses.begin(), l1dBankAddresses.end(), bankNum(vaddr));
+        if (bank_it == l1dBankAddresses.end()) {
             l1dBankAddresses.push_back(bankNum(vaddr));
+            recentlyloadAddr.insert((vaddr & cacheBankmask), {});
         } else {
-            auto bank_it = std::find(l1dBankAddresses.begin(), l1dBankAddresses.end(), bankNum(vaddr));
-            if (bank_it == l1dBankAddresses.end()) {
-                l1dBankAddresses.push_back(bankNum(vaddr));
-            } else {
-                now_bank_conflict = true;
-            }
+            now_bank_conflict = true;
         }
     }
     return now_bank_conflict;
@@ -514,8 +521,12 @@ LSQ::recvFunctionalCustomSignal(PacketPtr pkt, int sig)
 
     LSQRequest *request = dynamic_cast<LSQRequest*>(pkt->getPrimarySenderState());
     panic_if(!request, "Got packet back with unknown sender state\n");
-    // notify cache miss
-    iewStage->loadCancel(request->instruction());
+    if (sig == DcacheRespType::Miss) {
+        // notify cache miss
+        iewStage->loadCancel(request->instruction());
+    } else {
+        panic("unsupported sig %d in recvFunctionalCustomSignal\n", sig);
+    }
 }
 
 void*
@@ -904,6 +915,14 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
         request->initiateTranslation();
     }
 
+    if (!isLoad && !inst->isVector() && size > 1 && addr % size != 0) {
+        warn( "Store misaligned: size: %u, Addr: %#lx, code: %d\n", size,
+            addr, RiscvISA::ExceptionCode::STORE_ADDR_MISALIGNED);
+        return std::make_shared<RiscvISA::AddressFault>(request->mainReq()->getVaddr(),
+            request->mainReq()->getgPaddr(),
+            RiscvISA::ExceptionCode::STORE_ADDR_MISALIGNED);
+    }
+
     /* This is the place were instructions get the effAddr. */
     if (request->isTranslationComplete()) {
         if (request->isMemAccessRequired()) {
@@ -1188,6 +1207,7 @@ LSQ::LSQRequest::LSQRequest(
                 _inst->isStoreConditional() || _inst->isAtomic() ||
                 _inst->isLoad());
         flags.set(Flag::IsAtomic, _inst->isAtomic());
+        flags.set(Flag::IsHInst, _inst->isHInst());
         install();
     }
 
@@ -1274,6 +1294,9 @@ void
 LSQ::LSQRequest::sendFragmentToTranslation(int i)
 {
     numInTranslationFragments++;
+    if (_inst->isHInst()){
+        req(i)->setHInst(_inst->isHInst());
+    }
     _port.getMMUPtr()->translateTiming(req(i), _inst->thread->getTC(),
             this, isLoad() ? BaseMMU::Read : BaseMMU::Write);
 }
@@ -1313,8 +1336,8 @@ LSQ::SbufferRequest::recvTimingResp(PacketPtr pkt)
 {
     // Dump inst num, request addr, and packet addr
     DPRINTF(StoreBuffer,
-            "Sbuffer Req::recvTimingResp: entry[%#x] sbuffer index: %lu\n",
-            _packets[0]->getAddr(), this->sbuffer_index);
+            "Sbuffer Req::recvTimingResp: entry[%#x]\n",
+            _packets[0]->getAddr());
     assert(_numOutstandingPackets == 1);
     flags.set(Flag::Complete);
     assert(pkt == _packets.front());
@@ -1480,8 +1503,7 @@ LSQ::SbufferRequest::sendPacketToCache()
 {
     assert(_numOutstandingPackets == 0);
     bool success = _port.sbufferSendPacket(_packets.at(0));
-    DPRINTF(StoreBuffer, "Sbuffer Req::sendPacketToCache: entry[%#x] sbuffer index: %lu\n", _packets[0]->getAddr(),
-            this->sbuffer_index);
+    DPRINTF(StoreBuffer, "Sbuffer Req::sendPacketToCache: entry[%#x]\n", _packets[0]->getAddr());
     if (success) {
         _numOutstandingPackets = 1;
     }
@@ -1494,7 +1516,8 @@ LSQ::SingleDataRequest::sendPacketToCache()
 {
     assert(_numOutstandingPackets == 0);
     bool bank_conflict = false;
-    bool success = lsqUnit()->trySendPacket(isLoad(), _packets.at(0), bank_conflict);
+    bool tag_read_fail = false;
+    bool success = lsqUnit()->trySendPacket(isLoad(), _packets.at(0), bank_conflict, tag_read_fail);
     if (success) {
         if (!bank_conflict) {
             _numOutstandingPackets = 1;
@@ -1502,6 +1525,10 @@ LSQ::SingleDataRequest::sendPacketToCache()
     }
     if (bank_conflict) {
         lsqUnit()->bankConflictReplaySchedule();
+    }
+    if (tag_read_fail) {
+        DPRINTF(TagReadFail, "sendPacketToCache fails addr: %lx\n", _packets.at(0)->getAddr());
+        lsqUnit()->tagReadFailReplaySchedule();
     }
     return success;
 }
@@ -1511,9 +1538,10 @@ LSQ::SplitDataRequest::sendPacketToCache()
 {
     /* Try to send the packets. */
     bool bank_conflict = false;
+    bool tag_read_fail = false;
     while (numReceivedPackets + _numOutstandingPackets < _packets.size()) {
         bool success = lsqUnit()->trySendPacket(isLoad(), _packets.at(numReceivedPackets + _numOutstandingPackets),
-                                                bank_conflict);
+                                                bank_conflict, tag_read_fail);
         if (success) {
             _numOutstandingPackets++;
         } else {
@@ -1522,6 +1550,9 @@ LSQ::SplitDataRequest::sendPacketToCache()
     }
     if (bank_conflict) {
         lsqUnit()->bankConflictReplaySchedule();
+    }
+    if (tag_read_fail) {
+        lsqUnit()->tagReadFailReplaySchedule();
     }
 
     if (_numOutstandingPackets == _packets.size()) {

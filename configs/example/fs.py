@@ -62,6 +62,7 @@ from common import MemConfig
 from common import ObjectList
 from common.Caches import *
 from common import Options
+from common.FUScheduler import *
 
 def cmd_line_template():
     if args.command_line and args.command_line_file:
@@ -150,6 +151,7 @@ def build_test_system(np):
                     for i in range(np)]
     if args.xiangshan_system:
         for cpu in test_sys.cpu:
+            cpu.scheduler = DefaultScheduler()
             cpu.mmu.pma_checker = PMAChecker(
                 uncacheable=[AddrRange(0, size=0x80000000)])
     if args.enable_arch_db:

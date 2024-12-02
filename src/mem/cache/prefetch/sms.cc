@@ -45,6 +45,7 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       enableTemporal(p.enable_temporal),
       enableSstride(p.enable_sstride),
       enableBerti(p.enable_berti),
+      enableBOP(p.enable_bop),
       enableOpt(p.enable_opt),
       enableXsstream(p.enable_xsstream),
       phtEarlyUpdate(p.pht_early_update),
@@ -174,9 +175,10 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
 
 
     if (pf_source != PrefetchSourceType::SStream && !is_active_page) {
-        bool use_bop = (pfi.isPfFirstHit() &&
-                        (pf_source == PrefetchSourceType::HWP_BOP || pf_source == PrefetchSourceType::IPCP_CPLX || pf_source == PrefetchSourceType::Berti)) ||
-                       pfi.isCacheMiss();
+        bool use_bop = enableBOP && ((pfi.isPfFirstHit() && (pf_source == PrefetchSourceType::HWP_BOP ||
+                                                             pf_source == PrefetchSourceType::IPCP_CPLX ||
+                                                             pf_source == PrefetchSourceType::Berti)) ||
+                                     pfi.isCacheMiss());
         use_bop &= !miss_repeat && is_first_shot; // miss repeat should not be handled by stride
         if (use_bop) {
             DPRINTF(XSCompositePrefetcher, "Do BOP traing/prefetching...\n");

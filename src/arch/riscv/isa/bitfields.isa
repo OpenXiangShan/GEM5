@@ -153,3 +153,6 @@ def bitfield BIT31      <31>;
 def bitfield BIT30      <30>;
 def bitfield SIMM5     <19:15>;
 def bitfield SIMM3     <17:15>;
+
+//h instructions
+def bitfield HFUNCT2 <31:20>;

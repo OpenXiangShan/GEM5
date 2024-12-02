@@ -64,6 +64,7 @@
 #include "mem/cache/compressors/base.hh"
 #include "mem/cache/mshr_queue.hh"
 #include "mem/cache/prefetch/associative_set.hh"
+#include "mem/cache/prefetch/base.hh"
 #include "mem/cache/tags/base.hh"
 #include "mem/cache/write_queue.hh"
 #include "mem/cache/write_queue_entry.hh"
@@ -369,6 +370,14 @@ class BaseCache : public ClockedObject, CacheAccessor
     /** Tag and data Storage */
     BaseTags *tags;
 
+    /** Max Tag read ports for L1 Load/pretche */
+    const unsigned tagLoadReadPorts;
+
+    /** Available Tag read ports for L1 Load/pretche */
+    unsigned freeTagLoadReadPorts;
+
+    Cycles lastTagAccessCheckCycle;
+
     /** Compression method being used. */
     compression::Base* compressor;
 
@@ -555,6 +564,8 @@ class BaseCache : public ClockedObject, CacheAccessor
      * @param pkt The request to perform.
      */
     virtual void recvTimingReq(PacketPtr pkt);
+
+    bool tryAccessTag(PacketPtr pkt);
 
     /**way prediction **/
     const int SETROFFSET = 6;
@@ -1222,6 +1233,12 @@ class BaseCache : public ClockedObject, CacheAccessor
         /** Number of demand hits that accessed squashed inst blocks. */
         statistics::Scalar squashedDemandHits;
 
+        /** Number of load Tag read fail because of prefetcher. */
+        statistics::Scalar loadTagReadFails;
+
+        /** Number of prefetch req Tag read fail because of load. */
+        mutable statistics::Scalar prefetchTagReadFails;
+
         /** Number of data expansions. */
         statistics::Scalar dataExpansions;
 
@@ -1409,6 +1426,37 @@ class BaseCache : public ClockedObject, CacheAccessor
             if (tmp_meta.instXsMetadata->squashed){
                 stats.squashedDemandHits++;
             }
+        }
+    }
+
+    Tick nextPrefetchReadyTime() const
+    {
+        Tick rdy_time = prefetcher->nextPrefetchReadyTime();
+        if (cacheLevel == 1) {
+            if (curTick() >= rdy_time && freeTagLoadReadPorts == 0) {
+                // no free tag read ports for prefetcher this cycle, try in next cycle.
+                stats.prefetchTagReadFails++;
+                return nextCycle();
+            } else {
+                return rdy_time;
+            }
+        } else {
+            return rdy_time;
+        }
+    }
+
+    bool tagAccessCheck()
+    {
+        Cycles currentCycle = curCycle();
+        if (currentCycle != lastTagAccessCheckCycle) {
+            freeTagLoadReadPorts = tagLoadReadPorts;
+        }
+        lastTagAccessCheckCycle = currentCycle;
+        if (freeTagLoadReadPorts == 0) {
+            return false;
+        } else {
+            freeTagLoadReadPorts--;
+            return true;
         }
     }
 

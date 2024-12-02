@@ -700,6 +700,10 @@ PhysicalMemory::overrideGCptRestorer(unsigned store_id)
 {
     uint8_t* pmem = backingStore[store_id].pmem;
     if (restoreFromXiangshanCpt && !gCptRestorerPath.empty()) {
+        if (gCptRestorerPath == "None") {
+            warn("gcpt restore is None\n");
+            return;
+        }
         warn("Overriding Gcpt restorer\n");
         warn("gCptRestorerPath: %s\n", gCptRestorerPath.c_str());
 

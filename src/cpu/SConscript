@@ -71,6 +71,7 @@ DebugFlag('Mwait')
 DebugFlag('Diff')
 DebugFlag('DumpCommit')
 DebugFlag('Diff2')
+DebugFlag('DiffValue')
 
 CompoundFlag('ExecAll', [ 'ExecEnable', 'ExecCPSeq', 'ExecEffAddr',
     'ExecFaulting', 'ExecFetchSeq', 'ExecOpClass', 'ExecRegDelta',

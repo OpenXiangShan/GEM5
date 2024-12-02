@@ -57,10 +57,10 @@
 #include "debug/CacheRepl.hh"
 #include "debug/CacheVerbose.hh"
 #include "debug/HWPrefetch.hh"
+#include "debug/TagReadFail.hh"
 #include "mem/cache/compressors/base.hh"
 #include "mem/cache/mshr.hh"
 #include "mem/cache/prefetch/associative_set_impl.hh"
-#include "mem/cache/prefetch/base.hh"
 #include "mem/cache/queue_entry.hh"
 #include "mem/cache/tags/compressed_tags.hh"
 #include "mem/cache/tags/super_blk.hh"
@@ -109,6 +109,9 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       mshrQueue("MSHRs", p.mshrs, 0, p.demand_mshr_reserve, p.name),
       writeBuffer("write buffer", p.write_buffers, p.mshrs, p.name),
       tags(p.tags),
+      tagLoadReadPorts(p.tag_load_read_ports),
+      freeTagLoadReadPorts(p.tag_load_read_ports),
+      lastTagAccessCheckCycle(0),
       compressor(p.compressor),
       prefetcher(p.prefetcher),
       writeAllocator(p.write_allocator),
@@ -498,6 +501,20 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
     }
 }
 
+bool
+BaseCache::tryAccessTag(PacketPtr pkt)
+{
+    if ((cacheLevel == 1) && pkt->needsResponse() && pkt->isRead()) {
+        if (!tagAccessCheck()) {
+            // send tag read fail signal to lsu
+            stats.loadTagReadFails++;
+            pkt->tagReadFail = true;
+            return false;
+        }
+    }
+    return true;
+}
+
 void
 BaseCache::recvTimingReq(PacketPtr pkt)
 {
@@ -627,12 +644,12 @@ BaseCache::recvTimingReq(PacketPtr pkt)
         handleTimingReqHit(pkt, blk, request_time, first_acc_after_pf);
         if (cacheLevel == 1 && pkt->isResponse() && pkt->isRead() && lat > 1) {
             // send cache miss signal
-            cpuSidePort.sendCustomSignal(pkt, 1);
+            cpuSidePort.sendCustomSignal(pkt, DcacheRespType::Miss);
         }
     } else {
         if (cacheLevel == 1 && pkt->needsResponse() && pkt->isRead()) {
             // send cache miss signal
-            cpuSidePort.sendCustomSignal(pkt, 1);
+            cpuSidePort.sendCustomSignal(pkt, DcacheRespType::Miss);
         }
 
         // ArchDB: for now we only track packet which has PC
@@ -661,7 +678,7 @@ BaseCache::recvTimingReq(PacketPtr pkt)
 
     if (prefetcher) {
         // track time of availability of next prefetch, if any
-        Tick next_pf_time = prefetcher->nextPrefetchReadyTime();
+        Tick next_pf_time = nextPrefetchReadyTime();
         if (next_pf_time != MaxTick) {
             schedMemSideSendEvent(next_pf_time);
         }
@@ -843,8 +860,7 @@ BaseCache::recvTimingResp(PacketPtr pkt)
             // Request the bus for a prefetch if this deallocation freed enough
             // MSHRs for a prefetch to take place
             if (prefetcher && mshrQueue.canPrefetch() && !isBlocked()) {
-                Tick next_pf_time = std::max(
-                    prefetcher->nextPrefetchReadyTime(), clockEdge());
+                Tick next_pf_time = std::max(nextPrefetchReadyTime(), clockEdge());
                 if (next_pf_time != MaxTick)
                     schedMemSideSendEvent(next_pf_time);
             }
@@ -1146,7 +1162,18 @@ BaseCache::getNextQueueEntry()
     assert(!miss_mshr && !wq_entry);
     if (prefetcher && mshrQueue.canPrefetch() && !isBlocked()) {
         // If we have a miss queue slot, we can try a prefetch
-        PacketPtr pkt = prefetcher->getPacket();
+        bool has_pending_pkt = prefetcher->hasPendingPacket();
+        PacketPtr pkt = nullptr;
+        if (cacheLevel == 1) {
+            // load & prefetch share a limited number of cache tag read ports
+            if (has_pending_pkt && tagAccessCheck()) {
+                pkt = prefetcher->getPacket();
+            } else if (has_pending_pkt) {
+                stats.prefetchTagReadFails++;
+            }
+        } else {
+            pkt = prefetcher->getPacket();
+        }
         if (pkt) {
             Addr pf_addr = pkt->getBlockAddr(blkSize);
             PrefetchSourceType pf_type = pkt->req->getXsMetadata().prefetchSource;
@@ -2204,8 +2231,7 @@ BaseCache::nextQueueReadyTime() const
     // Don't signal prefetch ready time if no MSHRs available
     // Will signal once enoguh MSHRs are deallocated
     if (prefetcher && mshrQueue.canPrefetch() && !isBlocked()) {
-        nextReady = std::min(nextReady,
-                             prefetcher->nextPrefetchReadyTime());
+        nextReady = std::min(nextReady, nextPrefetchReadyTime());
     }
 
     return nextReady;
@@ -2643,6 +2669,10 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
                 "number of squashed live block replacements"),
     ADD_STAT(squashedDemandHits, statistics::units::Count::get(),
              "number of squashed inst block demand hits"),
+    ADD_STAT(loadTagReadFails, statistics::units::Count::get(),
+             "number of load Tag read fail because of prefetcher"),
+    ADD_STAT(prefetchTagReadFails, statistics::units::Count::get(),
+             "number of prefetch req Tag read fail because of load"),
     ADD_STAT(dataExpansions, statistics::units::Count::get(),
              "number of data expansions"),
     ADD_STAT(dataContractions, statistics::units::Count::get(),
@@ -2918,6 +2948,10 @@ BaseCache::CpuSidePort::tryTiming(PacketPtr pkt)
     } else if (blocked || mustSendRetry) {
         // either already committed to send a retry, or blocked
         mustSendRetry = true;
+        return false;
+    }
+    if (!cache->tryAccessTag(pkt)) {
+        DPRINTF(TagReadFail, "tryAccessTag fails addr: %lx\n", pkt->getAddr());
         return false;
     }
     mustSendRetry = false;

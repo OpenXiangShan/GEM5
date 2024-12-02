@@ -3,7 +3,9 @@
 
 #include <vector>
 
+#include "mem/cache/prefetch/bop.hh"
 #include "mem/cache/prefetch/cdp.hh"
+#include "mem/cache/prefetch/cmc.hh"
 #include "mem/cache/prefetch/composite_with_worker.hh"
 #include "params/L2CompositeWithWorkerPrefetcher.hh"
 
@@ -19,7 +21,10 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
   public:
     L2CompositeWithWorkerPrefetcher(const L2CompositeWithWorkerPrefetcherParams &p);
 
-    void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses) override;
+    void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses) override {}
+
+    void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
+                           PrefetchSourceType source, bool miss_repeat) override;
 
     void addHintDownStream(Base *down_stream) override
     {
@@ -38,6 +43,13 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
 
   private:
     CDP *cdp;
+    BOP* largeBOP;
+    BOP* smallBOP;
+    CMCPrefetcher* cmc;
+
+    const bool enableBOP;
+    const bool enableCDP;
+    const bool enableCMC;
 
     bool offloadLowAccuracy = true;
 };

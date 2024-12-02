@@ -1066,6 +1066,8 @@ TimingSimpleCPU::completeDataAccess(PacketPtr pkt)
              pkt->req->getPaddr());
         fault = std::make_shared<RiscvISA::AddressFault>(
             pkt->req->getVaddr(),
+            0
+            ,
             RiscvISA::ExceptionCode::LOAD_ADDR_MISALIGNED);
     } else {
         fault = curStaticInst->completeAcc(pkt, t_info,
