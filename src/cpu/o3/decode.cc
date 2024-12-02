@@ -865,7 +865,7 @@ Decode::decodeInsts(ThreadID tid)
     for (int i = 0;i < decodeWidth;i++) {
         if (i < toRenameIndex) {    // 如果当前inst已经rename，则不stall
             decodeStalls.at(i) = StallReason::NoStall;
-        } else {
+        } else {    // toRenameIndex < i < decodeWidth
             if (!decode_stalls.empty()) {   // 如果当前inst未rename，则根据decode_stalls队列赋值
                 decodeStalls.at(i) = decode_stalls.front();
                 decode_stalls.pop();

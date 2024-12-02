@@ -237,7 +237,13 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
     ADD_STAT(rate, statistics::units::Rate<
                     statistics::units::Count, statistics::units::Cycle>::get(),
              "Number of inst fetches per cycle",
-             insts / cpu->baseStats.numCycles)
+             insts / cpu->baseStats.numCycles),
+    ADD_STAT(fetchStatusDist, statistics::units::Count::get(),
+             "Distribution of fetch status per cycle"),
+    ADD_STAT(fetchToDecodeInstsDist, statistics::units::Count::get(),
+             "Distribution of fetch to decode insts per cycle"),
+    ADD_STAT(fetchQueueSizeDist, statistics::units::Count::get(),
+             "Distribution of fetchQueue size per cycle")
 {
         icacheStallCycles
             .prereq(icacheStallCycles);
@@ -286,6 +292,17 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .flags(statistics::total);
         rate
             .flags(statistics::total);
+        fetchStatusDist
+            .init(ThreadStatus::Running,
+                  ThreadStatus::NoGoodAddr+1,
+                  /* bucket size */ 1)
+            .flags(statistics::pdf);
+        fetchToDecodeInstsDist
+            .init(0, fetch->fetchWidth, 1)
+            .flags(statistics::pdf);
+        fetchQueueSizeDist
+            .init(0, fetch->fetchQueueSize, 1)
+            .flags(statistics::pdf);
 }
 void
 Fetch::setTimeBuffer(TimeBuffer<TimeStruct> *time_buffer)
@@ -1154,10 +1171,12 @@ Fetch::tick()
         fetch(status_change);       // 进入fetch函数
     }
 
-    toDecode->fetchStallReason = stallReason;
+    toDecode->fetchStallReason = stallReason;   // 记录当拍的stall原因
 
     // Record number of instructions fetched this cycle for distribution.
-    fetchStats.nisnDist.sample(numInst);
+    fetchStats.nisnDist.sample(numInst);    // 记录fetch的指令数
+
+    fetchStats.fetchStatusDist.sample(fetchStatus[0]);
 
     if (status_change) {
         // Change the fetch stage status if there was a status change.
@@ -1219,16 +1238,16 @@ Fetch::tick()
 
     while (available_insts != 0 && insts_to_decode < decode_width) {
         ThreadID tid = *tid_itr;
-        if (!stalls[tid].decode && !fetchQueue[tid].empty()) {
+        if (!stalls[tid].decode && !fetchQueue[tid].empty()) {  // 如果decode不阻塞，fetchQueue不空
             const auto& inst = fetchQueue[tid].front();
-            toDecode->insts[toDecode->size++] = inst;
+            toDecode->insts[toDecode->size++] = inst;   // 从fetchQueue中取出指令，发送到decode
             DPRINTF(Fetch, "[tid:%i] [sn:%llu] Sending instruction to decode "
                     "from fetch queue. Fetch queue size: %i.\n",
                     tid, inst->seqNum, fetchQueue[tid].size());     // inst queue 发送到decode, 速度为decode_width=8
 
             wroteToTimeBuffer = true;
             fetchQueue[tid].pop_front();
-            insts_to_decode++;
+            insts_to_decode++;  // insts_to_decode should be equal to toDecode->size
             available_insts--;
         }
 
@@ -1237,11 +1256,13 @@ Fetch::tick()
         if (tid_itr == activeThreads->end())
             tid_itr = activeThreads->begin();
     }
+    fetchStats.fetchToDecodeInstsDist.sample(insts_to_decode);
+    fetchStats.fetchQueueSizeDist.sample(fetchQueue[0].size());
 
-    for (int i = 0;i < toDecode->fetchStallReason.size();i++) {
-        if (i < insts_to_decode) {
-            toDecode->fetchStallReason[i] = StallReason::NoStall;
-        } else if(stalls[*tid_itr].decode) {
+    for (int i = 0;i < toDecode->fetchStallReason.size();i++) { // i < fetchWidth = 16
+        if (i < insts_to_decode) { // 如果有指令去decode，则设置前面几条指令为NoStall
+            toDecode->fetchStallReason[i] = StallReason::NoStall; 
+        } else if(stalls[*tid_itr].decode) {    // 如果当前线程decode stall，则设置stall原因为decode stall原因
             toDecode->fetchStallReason[i] = fromDecode->decodeInfo[*tid_itr].blockReason;
         }
     }
@@ -1532,7 +1553,7 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
     // Write the instruction to the first slot in the queue
     // that heads to decode.
     assert(numInst < fetchWidth);
-    fetchQueue[tid].push_back(instruction);
+    fetchQueue[tid].push_back(instruction);     // 当前指令加入fetchQueue中
     assert(fetchQueue[tid].size() <= fetchQueueSize);
     DPRINTF(Fetch, "[tid:%i] Fetch queue entry created (%i/%i).\n",
             tid, fetchQueue[tid].size(), fetchQueueSize);
@@ -1695,7 +1716,7 @@ Fetch::fetch(bool &status_change)
     // Loop through instruction memory from the cache.
     // Keep issuing while fetchWidth is available and branch is not
     // predicted taken      当fetchWidth = 16 > 0， 不是分支，持续取指令
-    StallReason stall = StallReason::NoStall;
+    StallReason stall = StallReason::NoStall;   // 当前tick stall原因
     bool exit_loopbuffer_this_cycle = false;
     bool cond_taken_backward = false;   // 还能取值，<48,
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize &&
@@ -1866,14 +1887,14 @@ Fetch::fetch(bool &status_change)
         DPRINTF(FetchVerbose, "inst: %s\n", it->staticInst->disassemble(it->pcState().instAddr()));
     }
 
-    for (int i = 0;i < fetchWidth;i++) {
+    for (int i = 0;i < fetchWidth;i++) {    // 遍历16个slot
         if (i < numInst)
-            stallReason[i] = StallReason::NoStall;
-        else {
+            stallReason[i] = StallReason::NoStall;  // 如果当前slot有指令，则设置为NoStall
+        else {  // numInst < i < fetchWidth
             if (numInst > 0) {
-                stallReason[i] = StallReason::FetchFragStall;
+                stallReason[i] = StallReason::FetchFragStall; // 设置为Fragment stall
             } else if (stall  != StallReason::NoStall) {
-                stallReason[i] = stall;
+                stallReason[i] = stall;  // 如果当前tick stall，则设置为当前tick stall原因=ICacheStall
             } else if (stalls[tid].decode && fetchQueue[tid].size() >= fetchQueueSize) {
                 stallReason[i] = fromDecode->decodeInfo[tid].blockReason;   // 从decode中获取stall原因
             } else {

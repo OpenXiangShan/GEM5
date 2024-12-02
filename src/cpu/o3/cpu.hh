@@ -488,19 +488,20 @@ class CPU : public BaseCPU
     };
 
     /** The main time buffer to do backwards communication. */
-    TimeBuffer<TimeStruct> timeBuffer;
+    TimeBuffer<TimeStruct> timeBuffer;  // 5个流水级传递的信息，内容为TimeStruct
+    // 这里更多传递的是状态信息，而不是指令信息
 
     /** The fetch stage's instruction queue. */
-    TimeBuffer<FetchStruct> fetchQueue;   // 各个流水级传递的信息
+    TimeBuffer<FetchStruct> fetchQueue;   // fetch to decode 传递信息，内容为FetchStruct，传递指令
 
     /** The decode stage's instruction queue. */
-    TimeBuffer<DecodeStruct> decodeQueue;
+    TimeBuffer<DecodeStruct> decodeQueue;  // decode to rename 传递信息，内容为DecodeStruct，传递指令
 
     /** The rename stage's instruction queue. */
-    TimeBuffer<RenameStruct> renameQueue;
+    TimeBuffer<RenameStruct> renameQueue;  // rename to iew 传递信息，内容为RenameStruct，传递指令
 
     /** The IEW stage's instruction queue. */
-    TimeBuffer<IEWStruct> iewQueue;
+    TimeBuffer<IEWStruct> iewQueue;  // iew to commit 传递信息，内容为IEWStruct，传递指令
 
   private:
     /** The activity recorder; used to tell if the CPU has any

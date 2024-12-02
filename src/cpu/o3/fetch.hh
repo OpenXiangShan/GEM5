@@ -645,6 +645,12 @@ class Fetch
         statistics::Formula branchRate;
         /** Number of instruction fetched per cycle. */
         statistics::Formula rate;
+        /** Distribution of fetch status per cycle. */
+        statistics::Distribution fetchStatusDist;
+        /** Distribution of fetch to decode insts per cycle. */
+        statistics::Distribution fetchToDecodeInstsDist;
+        /** Distribution of fetchQueue size */
+        statistics::Distribution fetchQueueSizeDist;
     } fetchStats;
 
     SquashVersion localSquashVer;

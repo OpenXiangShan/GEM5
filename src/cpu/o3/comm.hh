@@ -106,10 +106,10 @@ enum StallReason {
 
 /** Struct that defines the information passed from fetch to decode. */
 struct FetchStruct
-{
+{   // fetch to decode 传递信息，内容为FetchStruct
     int size;
 
-    DynInstPtr insts[MaxWidth];
+    DynInstPtr insts[MaxWidth];  // 宽度为fetchWidth的动态指令指针
     Fault fetchFault;
     InstSeqNum fetchFaultSN;
     bool clearFetchFault;
@@ -260,7 +260,7 @@ struct TimeStruct
 
         /// The pc of the next instruction to execute. This is the next
         /// instruction for a branch mispredict, but the same instruction for
-        /// order violation and the like
+        /// order violation and the like 下一条要执行的指令pc, fetch使用,用于squash/mispredict
         std::unique_ptr<PCStateBase> pc; // *F
         Addr committedPC; // *F for trap squash
 

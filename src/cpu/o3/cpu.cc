@@ -173,7 +173,7 @@ CPU::CPU(const BaseO3CPUParams &params)
     commit.setTimeBuffer(&timeBuffer);
 
     // Also setup each of the stages' queues.
-    fetch.setFetchQueue(&fetchQueue);
+    fetch.setFetchQueue(&fetchQueue);   // fetchQueue内容只有fetch, decode, commit使用
     decode.setFetchQueue(&fetchQueue);
     commit.setFetchQueue(&fetchQueue);
     decode.setDecodeQueue(&decodeQueue);
