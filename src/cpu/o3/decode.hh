@@ -337,7 +337,7 @@ class Decode
 
     std::vector<StallReason> decodeStalls;
 
-    StallReason blockReason;
+    StallReason blockReason;  // 传递给fetch，表示decode完全stall原因
 
     void setAllStalls(StallReason decodeStall);
 

@@ -210,7 +210,7 @@ struct TimeStruct
         bool branchMispredict;
         bool branchTaken;
 
-        StallReason blockReason;
+        StallReason blockReason;    // 传递给fetch，表示decode完全stall原因
     };
 
     DecodeComm decodeInfo[MaxThreads];
@@ -319,8 +319,8 @@ struct TimeStruct
 
     CommitComm commitInfo[MaxThreads];
 
-    bool decodeBlock[MaxThreads];
-    bool decodeUnblock[MaxThreads];
+    bool decodeBlock[MaxThreads];   // decode block
+    bool decodeUnblock[MaxThreads];  // decode unblock
     bool renameBlock[MaxThreads];
     bool renameUnblock[MaxThreads];
     bool iewBlock[MaxThreads];

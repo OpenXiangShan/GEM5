@@ -315,8 +315,8 @@ class DefaultFTB : public TimedBaseFTBPredictor
         statistics::Scalar returnHits;
         statistics::Scalar returnMisses;
 
-        statistics::Vector setUsage;        // 每组的使用计数
-        statistics::Vector wayUsage;        // 每组中way的使用分布
+        // statistics::Vector setUsage;        // 每组的使用计数
+        // statistics::Vector wayUsage;        // 每组中way的使用分布
         statistics::Scalar replacements;    // 替换次数
         statistics::Scalar fullSetEvents;   // 组满事件次数
 

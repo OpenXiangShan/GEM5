@@ -169,7 +169,8 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
     // Get the size of an instruction.
     instSize = decoder[0]->moreBytesSize();
 
-    stallReason.resize(fetchWidth, StallReason::NoStall);
+    // 8 slot，保证fetchStallReason不会翻倍
+    stallReason.resize(decodeWidth, StallReason::NoStall);
 
     firstDataBuf = new uint8_t[fetchBufferSize];
     secondDataBuf = new uint8_t[fetchBufferSize];
@@ -1259,6 +1260,7 @@ Fetch::tick()
     fetchStats.fetchToDecodeInstsDist.sample(insts_to_decode);
     fetchStats.fetchQueueSizeDist.sample(fetchQueue[0].size());
 
+    // 修改fetchStallReason, 如果指令去decode，则设置为NoStall, 如果decodeStall， 覆盖设置为decode stall原因
     for (int i = 0;i < toDecode->fetchStallReason.size();i++) { // i < fetchWidth = 16
         if (i < insts_to_decode) { // 如果有指令去decode，则设置前面几条指令为NoStall
             toDecode->fetchStallReason[i] = StallReason::NoStall; 
@@ -1292,10 +1294,10 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
 {
     // Update the per thread stall statuses.
     if (fromDecode->decodeBlock[tid]) {
-        stalls[tid].decode = true;
+        stalls[tid].decode = true;  // 如果decode stall，则设置fetch stall为decode stall
     }
 
-    if (fromDecode->decodeUnblock[tid]) {
+    if (fromDecode->decodeUnblock[tid]) {   // decode skidBuffer为空，decode允许接受了，fetch可以发送指令了
         assert(stalls[tid].decode);
         assert(!fromDecode->decodeBlock[tid]);
         stalls[tid].decode = false;
@@ -1809,7 +1811,7 @@ Fetch::fetch(bool &status_change)
             }
 
             DynInstPtr instruction = buildInst(
-                    tid, staticInst, curMacroop, this_pc, *next_pc, true);  // 得到DynInst
+                    tid, staticInst, curMacroop, this_pc, *next_pc, true);  // 得到DynInst, 并压入instBuffer
 
             if (staticInst->isVectorConfig()) {
                 waitForVsetvl = dec_ptr->stall();
@@ -1887,7 +1889,7 @@ Fetch::fetch(bool &status_change)
         DPRINTF(FetchVerbose, "inst: %s\n", it->staticInst->disassemble(it->pcState().instAddr()));
     }
 
-    for (int i = 0;i < fetchWidth;i++) {    // 遍历16个slot
+    for (int i = 0;i < stallReason.size();i++) {    // 遍历16个slot
         if (i < numInst)
             stallReason[i] = StallReason::NoStall;  // 如果当前slot有指令，则设置为NoStall
         else {  // numInst < i < fetchWidth

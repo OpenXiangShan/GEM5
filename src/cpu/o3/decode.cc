@@ -263,7 +263,7 @@ Decode::block(ThreadID tid)
         if (toFetch->decodeUnblock[tid]) {
             toFetch->decodeUnblock[tid] = false;
         } else {
-            toFetch->decodeBlock[tid] = true;
+            toFetch->decodeBlock[tid] = true;  // 如果decode block，则设置fetch block
             wroteToTimeBuffer = true;
         }
 
@@ -540,7 +540,7 @@ Decode::checkSignalsAndUpdate(ThreadID tid)
         return true;
     }
 
-    if (checkStall(tid)) {
+    if (checkStall(tid)) {  // rename stall导致decode stall,传递给fetch
         blockReason = fromRename->renameInfo[tid].blockReason;
         return block(tid);
     }
@@ -669,7 +669,7 @@ Decode::decodeInsts(ThreadID tid)
 
     std::queue<StallReason> decode_stalls;  // 存放当前inst的stall原因，队列
 
-    StallReason breakDecode = StallReason::NoStall;
+    StallReason breakDecode = StallReason::NoStall;  // 当前拍decode break stall原因
 
     if (insts_available == 0) {     // 当前拍fetch 没有传递指令过来，所以全盘接受fetchStallReason
         DPRINTF(Decode, "[tid:%i] Nothing to do, breaking out"
@@ -696,7 +696,7 @@ Decode::decodeInsts(ThreadID tid)
 
     std::deque<DynInstPtr>
         &insts_to_decode = decodeStatus[tid] == Unblocking ?
-        skidBuffer[tid] : insts[tid];
+        skidBuffer[tid] : insts[tid];   // 从skidBuffer或insts中取指令，这一拍要尽可能译码完
 
     DPRINTF(Decode, "[tid:%i] Sending instruction to rename.\n",tid);
 
@@ -879,7 +879,7 @@ Decode::decodeInsts(ThreadID tid)
 
     // If we didn't process all instructions, then we will need to block
     // and put all those instructions into the skid buffer.
-    if (!insts_to_decode.empty()) {
+    if (!insts_to_decode.empty()) { // 如果没有处理完所有inst，则decode stall，把指令放入skidBuffer
         blockReason = breakDecode;
         block(tid);
     }

@@ -506,8 +506,8 @@ DefaultFTB::update(const FetchStream &stream)
     assert(ftb[ftb_idx].size() <= numWays);
     assert(mruList[ftb_idx].size() <= numWays);
 
-    ftbStats.setUsage[ftb_idx]++;
-    ftbStats.wayUsage[ftb[ftb_idx].size()]++;
+    // ftbStats.setUsage[ftb_idx]++;
+    // ftbStats.wayUsage[ftb[ftb_idx].size()]++;
 
     // ftb[ftb_idx].valid = true;
     // set(ftb[ftb_idx].target, target);
@@ -657,16 +657,16 @@ DefaultFTB::FTBStats::FTBStats(statistics::Group* parent) :
     ADD_STAT(callMisses, statistics::units::Count::get(), "calls committed that was predicted miss"),
     ADD_STAT(returnHits, statistics::units::Count::get(), "returns committed that was predicted hit"),
     ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss"),
-    ADD_STAT(setUsage, statistics::units::Count::get(), "Usage count per set"),
-    ADD_STAT(wayUsage, statistics::units::Count::get(), "Way usage distribution per set"),
+    // ADD_STAT(setUsage, statistics::units::Count::get(), "Usage count per set"),
+    // ADD_STAT(wayUsage, statistics::units::Count::get(), "Way usage distribution per set"),
     ADD_STAT(replacements, statistics::units::Count::get(), "Number of entry replacements"),
     ADD_STAT(fullSetEvents, statistics::units::Count::get(), "Number of times a set was full")
 
 {
     auto ftb = dynamic_cast<branch_prediction::ftb_pred::DefaultFTB*>(parent);
     
-    setUsage.init(ftb->numSets+1).flags(statistics::total);
-    wayUsage.init(ftb->numWays+1).flags(statistics::total);
+    // setUsage.init(ftb->numSets+1).flags(statistics::total);
+    // wayUsage.init(ftb->numWays+1).flags(statistics::total);
     // do not need counter below in L0 ftb
     if (ftb->isL0()) {
         predUseL0OnL1Miss.prereq(predUseL0OnL1Miss);

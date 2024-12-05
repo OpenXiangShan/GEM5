@@ -460,8 +460,8 @@ class Fetch
     /** Source of possible stalls. */
     struct Stalls
     {
-        bool decode;
-        bool drain;
+        bool decode;  // fetch stall 原因: decode stall
+        bool drain;  // 也可能是在排空过程中，停止取指令
     };
 
     /** Tracks which stages are telling fetch to stall. */
@@ -522,10 +522,10 @@ class Fetch
     PacketPtr secondPkt[MaxThreads];
 
     /** The size of the fetch queue in micro-ops */
-    unsigned fetchQueueSize;    // 微操作队列大小=48
+    unsigned fetchQueueSize;    // 微操作队列大小=48, 注意区别，不是TimeBuffer 的那个fetchQueue !!!
 
     /** Queue of fetched instructions. Per-thread to prevent HoL blocking. */
-    std::deque<DynInstPtr> fetchQueue[MaxThreads];    // 取出指令队列，元素为指针，指向DynInst
+    std::deque<DynInstPtr> fetchQueue[MaxThreads];    // 对应InstBuffer, 每拍存入最多16条指令，取出最多8条给decode
 
     /** Whether or not the fetch buffer data is valid. */
     bool fetchBufferValid[MaxThreads];
@@ -579,7 +579,7 @@ class Fetch
     bool usedUpFetchTargets;
 
     /** fetch stall reasons */
-    std::vector<StallReason> stallReason;
+    std::vector<StallReason> stallReason;   // fetch当前状态，8个，每个表示是否stall以及原因
 
     bool currentFetchTargetInLoop;    // 当前取值的在loop buffer中
 
