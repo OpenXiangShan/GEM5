@@ -1471,7 +1471,7 @@ IEW::executeInsts()
             // Tell the LDSTQ to execute this instruction (if it is a load).
             if (inst->isAtomic()) {
                 // AMOs are treated like store requests
-                fault = ldstQueue.executeStore(inst);
+                fault = ldstQueue.executeAmo(inst);
 
                 if (inst->isTranslationDelayed() &&
                     fault == NoFault) {

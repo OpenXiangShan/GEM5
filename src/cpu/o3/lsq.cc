@@ -43,6 +43,7 @@
 
 #include <algorithm>
 #include <csignal>
+#include <cstdint>
 #include <list>
 #include <string>
 
@@ -51,6 +52,7 @@
 #include "base/trace.hh"
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
+#include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/iew.hh"
 #include "cpu/o3/limits.hh"
 #include "debug/Drain.hh"
@@ -323,19 +325,11 @@ LSQ::executePipeSx()
 }
 
 Fault
-LSQ::executeLoad(const DynInstPtr &inst)
+LSQ::executeAmo(const DynInstPtr &inst)
 {
     ThreadID tid = inst->threadNumber;
 
-    return thread[tid].executeLoad(inst);
-}
-
-Fault
-LSQ::executeStore(const DynInstPtr &inst)
-{
-    ThreadID tid = inst->threadNumber;
-
-    return thread[tid].executeStore(inst);
+    return thread[tid].executeAmo(inst);
 }
 
 void
@@ -565,8 +559,12 @@ LSQ::recvFunctionalCustomSignal(PacketPtr pkt, int sig)
     LSQRequest *request = dynamic_cast<LSQRequest*>(pkt->getPrimarySenderState());
     panic_if(!request, "Got packet back with unknown sender state\n");
     if (sig == DcacheRespType::Miss) {
-        // notify cache miss
-        iewStage->loadCancel(request->instruction());
+        if (request->instruction()->isLoad()) {
+            // notify cache miss
+            iewStage->loadCancel(request->instruction());
+            // set cache miss flag in pipeline
+            thread[request->_port.lsqID].setFlagInPipeLine(request->instruction(), LdStFlags::CacheMiss);
+        }
     } else {
         panic("unsupported sig %d in recvFunctionalCustomSignal\n", sig);
     }
@@ -958,6 +956,14 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
         request->initiateTranslation();
     }
 
+    if (!isLoad && !isAtomic) {
+        // store inst temporally saves its data in memData
+        inst->memData = new uint8_t[size];
+        memcpy(inst->memData, data, size);
+    }
+
+    inst->effSize = size;
+
     if (!isLoad && !inst->isVector() && size > 1 && addr % size != 0) {
         warn( "Store misaligned: size: %u, Addr: %#lx, code: %d\n", size,
             addr, RiscvISA::ExceptionCode::STORE_ADDR_MISALIGNED);
@@ -967,7 +973,7 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
     }
 
     /* This is the place were instructions get the effAddr. */
-    if (request->isTranslationComplete()) {
+    if (inst->isAtomic() && request->isTranslationComplete()) {
         if (request->isMemAccessRequired()) {
             inst->effAddr = request->getVaddr();
             inst->effSize = size;

@@ -921,11 +921,47 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
 }
 
 void
+LSQUnit::setFlagInPipeLine(DynInstPtr inst, LdStFlags f)
+{
+    bool found = false;
+    if (inst->isLoad()) {
+        for (int i = (loadPipeSx.size() - 1); i >= 0; i--) {
+            for (int j = 0; j < loadPipeSx[i]->size; j++) {
+                if (inst == loadPipeSx[i]->insts[j]) {
+                    found = true;
+                    (loadPipeSx[i]->flags[j])[f] = true;
+                    break;
+                }
+            }
+        }
+    } else {
+        for (int i = (storePipeSx.size() - 1); i >= 0; i--) {
+            for (int j = 0; j < storePipeSx[i]->size; j++) {
+                if (inst == storePipeSx[i]->insts[j]) {
+                    found = true;
+                    (storePipeSx[i]->flags[j])[f] = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!found) {
+        warn("[sn:%ld] Can not found corresponding inst in PipeLine, isLoad: %d\n", inst->seqNum, inst->isLoad());
+    }
+}
+
+void
 LSQUnit::issueToLoadPipe(const DynInstPtr &inst)
 {
     // push to loadPipeS0
     assert(loadPipeSx[0]->size < MaxWidth);
-    loadPipeSx[0]->insts[loadPipeSx[0]->size++] = inst;
+    int idx = loadPipeSx[0]->size;
+
+    loadPipeSx[0]->insts[idx] = inst;
+    loadPipeSx[0]->flags[idx][LdStFlags::Valid] = true;
+    loadPipeSx[0]->size++;
+
     DPRINTF(LSQUnit, "issueToLoadPipe: [sn:%lli]\n", inst->seqNum);
     dumpLoadPipe();
 }
@@ -935,143 +971,75 @@ LSQUnit::issueToStorePipe(const DynInstPtr &inst)
 {
     // push to storePipeS0
     assert(storePipeSx[0]->size < MaxWidth);
-    storePipeSx[0]->insts[storePipeSx[0]->size++] = inst;
+    int idx = storePipeSx[0]->size;
+
+    storePipeSx[0]->insts[idx] = inst;
+    storePipeSx[0]->flags[idx][LdStFlags::Valid] = true;
+    storePipeSx[0]->size++;
+
     DPRINTF(LSQUnit, "issueToStorePipe: [sn:%lli]\n", inst->seqNum);
     dumpStorePipe();
 }
 
-void
-LSQUnit::executeLoadPipeSx()
+Fault
+LSQUnit::loadPipeS0(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag)
 {
-    // TODO: execute operations in each load pipelines
-    Fault fault = NoFault;
-    for (int i = 0; i < loadPipeSx.size(); i++) {
-        auto& stage = loadPipeSx[i];
-        switch (i) {
-            case 0:
-                break;
-            case 1:
-                for (int j = 0; j < stage->size; j++) {
-                    auto& inst = stage->insts[j];
-                    if (!inst->isSquashed()) {
-                        // Loads will mark themselves as executed, and their writeback
-                        // event adds the instruction to the queue to commit
-                        fault = executeLoad(inst);
-                        if (inst->isTranslationDelayed() &&
-                            fault == NoFault) {
-                            // A hw page table walk is currently going on; the
-                            // instruction must be deferred.
-                            DPRINTF(LSQUnit, "Execute: Delayed translation, deferring "
-                            "load.\n");
-                            iewStage->deferMemInst(inst);
-                            continue;
-                        }
-                        if (inst->isDataPrefetch() || inst->isInstPrefetch()) {
-                            inst->fault = NoFault;
-                        }
-                        iewStage->SquashCheckAfterExe(inst);
-                    } else {
-                        DPRINTF(LSQUnit, "Execute: Instruction was squashed. PC: %s, [tid:%i]"
-                                        " [sn:%llu]\n", inst->pcState(), inst->threadNumber,
-                                        inst->seqNum);
-                        inst->setExecuted();
-                        inst->setCanCommit();
-                    }
-                }
-                break;
-            case 2:
-                break;
-            case 3:
-                break;
-            default:
-                panic("unsupported loadpipe length");
-        }
-    }
-}
+    DPRINTF(LSQUnit, "LoadPipeS0: Executing load PC %s, [sn:%lli] "
+            "flags: valid[%d], replayed[%d], cachemiss[%d], squashed[%d]\n",
+            inst->pcState(), inst->seqNum,
+            flag[LdStFlags::Valid], flag[LdStFlags::Replayed],
+            flag[LdStFlags::CacheMiss], flag[LdStFlags::Squashed]);
+    assert(!inst->isSquashed());
 
-void
-LSQUnit::executeStorePipeSx()
-{
-    // TODO: execute operations in each store pipelines
-    Fault fault = NoFault;
-    for (int i = 0; i < storePipeSx.size(); i++) {
-        auto& stage = storePipeSx[i];
-        switch (i) {
-            case 0:
-                break;
-            case 1:
-                for (int j = 0; j < stage->size; j++) {
-                    auto& inst = stage->insts[j];
-                    if (!inst->isSquashed()) {
-                        fault = executeStore(inst);
-                        if (inst->isTranslationDelayed() &&
-                            fault == NoFault) {
-                            // A hw page table walk is currently going on; the
-                            // instruction must be deferred.
-                            DPRINTF(LSQUnit, "Execute: Delayed translation, deferring "
-                                    "store.\n");
-                            iewStage->deferMemInst(inst);
-                            continue;
-                        }
+    Fault load_fault = NoFault;
+    // Now initiateAcc only does TLB access
+    load_fault = inst->initiateAcc();
 
-                        // If the store had a fault then it may not have a mem req
-                        if (fault != NoFault || !inst->readPredicate() ||
-                                !inst->isStoreConditional()) {
-                            // If the instruction faulted, then we need to send it
-                            // along to commit without the instruction completing.
-                            // Send this instruction to commit, also make sure iew
-                            // stage realizes there is activity.
-                            inst->setExecuted();
-                            iewStage->instToCommit(inst);
-                            iewStage->activityThisCycle();
-                        }
-                        iewStage->notifyExecuted(inst);
-                        iewStage->SquashCheckAfterExe(inst);
-                    } else {
-                        DPRINTF(LSQUnit, "Execute: Instruction was squashed. PC: %s, [tid:%i]"
-                                        " [sn:%llu]\n", inst->pcState(), inst->threadNumber,
-                                        inst->seqNum);
-                        inst->setExecuted();
-                        inst->setCanCommit();
-                    }
-                }
-                break;
-            case 2:
-                break;
-            case 3:
-                break;
-            case 4:
-                break;
-            default:
-                panic("unsupported storepipe length");
-        }
-    }
-}
-
-void
-LSQUnit::executePipeSx()
-{
-    executeLoadPipeSx();
-    executeStorePipeSx();
+    return load_fault;
 }
 
 Fault
-LSQUnit::executeLoad(const DynInstPtr &inst)
+LSQUnit::loadPipeS1(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag)
 {
-    // Execute a specific load.
-    Fault load_fault = NoFault;
-
-    DPRINTF(LSQUnit, "Executing load PC %s, [sn:%lli]\n",
-            inst->pcState(), inst->seqNum);
-
+    DPRINTF(LSQUnit, "LoadPipeS1: Executing load PC %s, [sn:%lli] "
+            "flags: valid[%d], replayed[%d], cachemiss[%d], squashed[%d]\n",
+            inst->pcState(), inst->seqNum,
+            flag[LdStFlags::Valid], flag[LdStFlags::Replayed],
+            flag[LdStFlags::CacheMiss], flag[LdStFlags::Squashed]);
     assert(!inst->isSquashed());
 
-    load_fault = inst->initiateAcc();
+    Fault load_fault = inst->getFault();
+    LSQRequest* request = inst->savedRequest;
+
+    // Cache access
+    if (request && request->isTranslationComplete()) {
+        if (request->isMemAccessRequired()) {
+            inst->effAddr = request->getVaddr();
+            inst->effAddrValid(true);
+
+            Fault fault;
+            fault = read(request, inst->lqIdx);
+            // inst->getFault() may have the first-fault of a
+            // multi-access split request at this point.
+            // Overwrite that only if we got another type of fault
+            // (e.g. re-exec).
+            if (fault != NoFault) {
+                inst->getFault() = fault;
+                load_fault = fault;
+            }
+        } else {
+            inst->setMemAccPredicate(false);
+            // Commit will have to clean up whatever happened.  Set this
+            // instruction as executed.
+            inst->setExecuted();
+        }
+    }
 
     if (!inst->translationCompleted()) {
+        // TLB miss
         iewStage->loadCancel(inst);
     } else {
-        DPRINTF(LSQUnit, "load tlb hit [sn:%lli]\n",
+        DPRINTF(LSQUnit, "LoadPipeS1: load tlb hit [sn:%lli]\n",
                 inst->seqNum);
     }
 
@@ -1108,7 +1076,7 @@ LSQUnit::executeLoad(const DynInstPtr &inst)
         // commit.
         if (!inst->readPredicate())
             inst->forwardOldRegs();
-        DPRINTF(LSQUnit, "Load [sn:%lli] not executed from %s\n",
+        DPRINTF(LSQUnit, "LoadPipeS1: Load [sn:%lli] not executed from %s\n",
                 inst->seqNum,
                 (load_fault != NoFault ? "fault" : "predication"));
         if (!(inst->hasRequest() && inst->strictlyOrdered()) ||
@@ -1123,11 +1091,298 @@ LSQUnit::executeLoad(const DynInstPtr &inst)
             ++it;
 
             if (checkLoads)
-                return checkViolations(it, inst);
+                load_fault = checkViolations(it, inst);
         }
     }
 
     return load_fault;
+}
+
+Fault
+LSQUnit::loadPipeS2(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag)
+{
+    Fault fault = inst->getFault();
+    DPRINTF(LSQUnit, "LoadPipeS2: Executing load PC %s, [sn:%lli] "
+            "flags: valid[%d], replayed[%d], cachemiss[%d], squashed[%d]\n",
+            inst->pcState(), inst->seqNum,
+            flag[LdStFlags::Valid], flag[LdStFlags::Replayed],
+            flag[LdStFlags::CacheMiss], flag[LdStFlags::Squashed]);
+    assert(!inst->isSquashed());
+    return fault;
+}
+
+Fault
+LSQUnit::loadPipeS3(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag)
+{
+    Fault fault = inst->getFault();
+    DPRINTF(LSQUnit, "LoadPipeS3: Executing load PC %s, [sn:%lli] "
+            "flags: valid[%d], replayed[%d], cachemiss[%d], squashed[%d]\n",
+            inst->pcState(), inst->seqNum,
+            flag[LdStFlags::Valid], flag[LdStFlags::Replayed],
+            flag[LdStFlags::CacheMiss], flag[LdStFlags::Squashed]);
+    assert(!inst->isSquashed());
+    return fault;
+}
+
+void
+LSQUnit::executeLoadPipeSx()
+{
+    // TODO: execute operations in each load pipelines
+    Fault fault = NoFault;
+    for (int i = 0; i < loadPipeSx.size(); i++) {
+        auto& stage = loadPipeSx[i];
+        for (int j = 0; j < stage->size; j++) {
+            auto& inst = stage->insts[j];
+            auto& flag = stage->flags[j];
+            if (!inst->isSquashed()) {
+                switch (i) {
+                    case 0:
+                        fault = loadPipeS0(inst, flag);
+                        break;
+                    case 1:
+                        // Loads will mark themselves as executed, and their writeback
+                        // event adds the instruction to the queue to commit
+                        fault = loadPipeS1(inst, flag);
+
+                        if (inst->isTranslationDelayed() && fault == NoFault) {
+                            // A hw page table walk is currently going on; the
+                            // instruction must be deferred.
+                            DPRINTF(LSQUnit, "Execute: Delayed translation, deferring "
+                            "load.\n");
+                            iewStage->deferMemInst(inst);
+                            flag[LdStFlags::Replayed] = true;
+                        }
+
+                        if (inst->isDataPrefetch() || inst->isInstPrefetch()) {
+                            inst->fault = NoFault;
+                        }
+
+                        iewStage->SquashCheckAfterExe(inst);
+                        break;
+                    case 2:
+                        fault = loadPipeS2(inst, flag);
+                        break;
+                    case 3:
+                        fault = loadPipeS3(inst, flag);
+                        break;
+                    default:
+                        panic("unsupported loadpipe length");
+                }
+            } else {
+                DPRINTF(LSQUnit, "Execute: Instruction was squashed. PC: %s, [tid:%i]"
+                                " [sn:%llu]\n", inst->pcState(), inst->threadNumber,
+                                inst->seqNum);
+                inst->setExecuted();
+                inst->setCanCommit();
+                flag[LdStFlags::Squashed] = true;
+            }
+        }
+    }
+}
+
+Fault
+LSQUnit::storePipeS0(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag)
+{
+    // Make sure that a store exists.
+    assert(storeQueue.size() != 0);
+    assert(!inst->isSquashed());
+
+    DPRINTF(LSQUnit, "StorePipeS0: Executing store PC %s [sn:%lli] "
+            "flags: valid[%d], replayed[%d], squashed[%d]\n",
+            inst->pcState(), inst->seqNum,
+            flag[LdStFlags::Valid], flag[LdStFlags::Replayed], flag[LdStFlags::Squashed]);
+
+    // Now initiateAcc only does TLB access
+    Fault store_fault = inst->initiateAcc();
+
+    return store_fault;
+}
+
+Fault
+LSQUnit::storePipeS1(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag)
+{
+    // Make sure that a store exists.
+    assert(storeQueue.size() != 0);
+
+    ssize_t store_idx = inst->sqIdx;
+    LSQRequest* request = inst->savedRequest;
+
+    DPRINTF(LSQUnit, "StorePipeS1: Executing store PC %s [sn:%lli] "
+            "flags: valid[%d], replayed[%d], squashed[%d]\n",
+            inst->pcState(), inst->seqNum,
+            flag[LdStFlags::Valid], flag[LdStFlags::Replayed], flag[LdStFlags::Squashed]);
+
+    // Check the recently completed loads to see if any match this store's
+    // address.  If so, then we have a memory ordering violation.
+    typename LoadQueue::iterator loadIt = inst->lqIt;
+
+    /* This is the place were instructions get the effAddr. */
+    if (request && request->isTranslationComplete()) {
+        if (request->isMemAccessRequired() && (inst->getFault() == NoFault)) {
+            inst->effAddr = request->getVaddr();
+            inst->effAddrValid(true);
+
+            if (cpu->checker) {
+                inst->reqToVerify = std::make_shared<Request>(*request->req());
+            }
+            Fault fault;
+            fault = write(request, inst->memData, inst->sqIdx);
+            // release temporal data
+            delete [] inst->memData;
+            inst->memData = nullptr;
+
+            if (fault != NoFault)
+                inst->getFault() = fault;
+        }
+    }
+
+    Fault store_fault = inst->getFault();
+
+    if (inst->isTranslationDelayed() &&
+        store_fault == NoFault)
+        return store_fault;
+
+    if (!inst->readPredicate()) {
+        DPRINTF(LSQUnit, "StorePipeS1: Store [sn:%lli] not executed from predication\n",
+                inst->seqNum);
+        inst->forwardOldRegs();
+        return store_fault;
+    }
+
+    if (storeQueue[store_idx].size() == 0) {
+        DPRINTF(LSQUnit, "StorePipeS1: Fault on Store PC %s, [sn:%lli], Size = 0\n",
+                inst->pcState(), inst->seqNum);
+
+        return store_fault;
+    }
+
+    assert(store_fault == NoFault);
+
+    if (inst->isStoreConditional()) {
+        // Store conditionals need to set themselves as able to
+        // writeback if we haven't had a fault by here.
+        storeQueue[store_idx].canWB() = true;
+
+        ++storesToWB;
+    } else {
+        if (enableStorePrefetchTrain) {
+            triggerStorePFTrain(store_idx);
+        }
+    }
+
+    return checkViolations(loadIt, inst);
+}
+
+Fault
+LSQUnit::storePipeS2(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag)
+{
+    Fault fault = inst->getFault();
+    assert(!inst->isSquashed());
+
+    DPRINTF(LSQUnit, "StorePipeS2: Executing store PC %s [sn:%lli] "
+            "flags: valid[%d], replayed[%d], squashed[%d]\n",
+            inst->pcState(), inst->seqNum,
+            flag[LdStFlags::Valid], flag[LdStFlags::Replayed], flag[LdStFlags::Squashed]);
+    return fault;
+}
+
+Fault
+LSQUnit::storePipeS3(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag)
+{
+    Fault fault = inst->getFault();
+    assert(!inst->isSquashed());
+
+    DPRINTF(LSQUnit, "StorePipeS3: Executing store PC %s [sn:%lli] "
+            "flags: valid[%d], replayed[%d], squashed[%d]\n",
+            inst->pcState(), inst->seqNum,
+            flag[LdStFlags::Valid], flag[LdStFlags::Replayed], flag[LdStFlags::Squashed]);
+    return fault;
+}
+
+Fault
+LSQUnit::storePipeS4(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag)
+{
+    Fault fault = inst->getFault();
+    assert(!inst->isSquashed());
+
+    DPRINTF(LSQUnit, "StorePipeS4: Executing store PC %s [sn:%lli] "
+            "flags: valid[%d], replayed[%d], squashed[%d]\n",
+            inst->pcState(), inst->seqNum,
+            flag[LdStFlags::Valid], flag[LdStFlags::Replayed], flag[LdStFlags::Squashed]);
+    return fault;
+}
+
+void
+LSQUnit::executeStorePipeSx()
+{
+    // TODO: execute operations in each store pipelines
+    Fault fault = NoFault;
+    for (int i = 0; i < storePipeSx.size(); i++) {
+        auto& stage = storePipeSx[i];
+        for (int j = 0; j < stage->size; j++) {
+            auto& inst = stage->insts[j];
+            auto& flag = stage->flags[j];
+            if (!inst->isSquashed()) {
+                switch (i) {
+                    case 0:
+                        fault = storePipeS0(inst, flag);
+                        break;
+                    case 1:
+                        fault = storePipeS1(inst, flag);
+                        if (inst->isTranslationDelayed() && fault == NoFault) {
+                            // A hw page table walk is currently going on; the
+                            // instruction must be deferred.
+                            DPRINTF(LSQUnit, "Execute: Delayed translation, deferring "
+                                    "store.\n");
+                            iewStage->deferMemInst(inst);
+                            flag[LdStFlags::Replayed] = true;
+                            continue;
+                        }
+
+                        iewStage->notifyExecuted(inst);
+                        iewStage->SquashCheckAfterExe(inst);
+                        break;
+                    case 2:
+                        fault = storePipeS2(inst, flag);
+                        break;
+                    case 3:
+                        fault = storePipeS3(inst, flag);
+                        // If the store had a fault then it may not have a mem req
+                        if (fault != NoFault || !inst->readPredicate() || !inst->isStoreConditional()) {
+                            // If the instruction faulted, then we need to send it
+                            // along to commit without the instruction completing.
+                            // Send this instruction to commit, also make sure iew
+                            // stage realizes there is activity.
+                            if (!flag[LdStFlags::Replayed]) {
+                                inst->setExecuted();
+                                iewStage->instToCommit(inst);
+                                iewStage->activityThisCycle();
+                            }
+                        }
+                        break;
+                    case 4:
+                        fault = storePipeS4(inst, flag);
+                        break;
+                    default:
+                        panic("unsupported storepipe length");
+                }
+            } else {
+                DPRINTF(LSQUnit, "Execute: Instruction was squashed. PC: %s, [tid:%i]"
+                                " [sn:%llu]\n", inst->pcState(), inst->threadNumber,
+                                inst->seqNum);
+                inst->setExecuted();
+                inst->setCanCommit();
+                flag[LdStFlags::Squashed] = true;
+            }
+        }
+    }
+}
+
+void
+LSQUnit::executePipeSx()
+{
+    executeLoadPipeSx();
+    executeStorePipeSx();
 }
 
 bool
@@ -1153,69 +1408,57 @@ LSQUnit::triggerStorePFTrain(int sq_idx)
 }
 
 Fault
-LSQUnit::executeStore(const DynInstPtr &store_inst)
+LSQUnit::executeAmo(const DynInstPtr &amo_inst)
 {
     // Make sure that a store exists.
     assert(storeQueue.size() != 0);
 
-    ssize_t store_idx = store_inst->sqIdx;
+    ssize_t amo_idx = amo_inst->sqIdx;
 
-    DPRINTF(LSQUnit, "Executing store PC %s [sn:%lli]\n",
-            store_inst->pcState(), store_inst->seqNum);
+    DPRINTF(LSQUnit, "Executing AMO PC %s [sn:%lli]\n",
+            amo_inst->pcState(), amo_inst->seqNum);
 
-    assert(!store_inst->isSquashed());
+    assert(!amo_inst->isSquashed());
 
-    // Check the recently completed loads to see if any match this store's
+    // Check the recently completed loads to see if any match this amo's
     // address.  If so, then we have a memory ordering violation.
-    typename LoadQueue::iterator loadIt = store_inst->lqIt;
+    typename LoadQueue::iterator loadIt = amo_inst->lqIt;
 
-    Fault store_fault = store_inst->initiateAcc();
+    Fault amo_fault = amo_inst->initiateAcc();
 
-    if (store_inst->isTranslationDelayed() &&
-        store_fault == NoFault)
-        return store_fault;
+    if (amo_inst->isTranslationDelayed() && amo_fault == NoFault)
+        return amo_fault;
 
-    if (!store_inst->readPredicate()) {
-        DPRINTF(LSQUnit, "Store [sn:%lli] not executed from predication\n",
-                store_inst->seqNum);
-        store_inst->forwardOldRegs();
-        return store_fault;
+    if (!amo_inst->readPredicate()) {
+        DPRINTF(LSQUnit, "AMO [sn:%lli] not executed from predication\n",
+                amo_inst->seqNum);
+        amo_inst->forwardOldRegs();
+        return amo_fault;
     }
 
-    if (storeQueue[store_idx].size() == 0) {
-        DPRINTF(LSQUnit,"Fault on Store PC %s, [sn:%lli], Size = 0\n",
-                store_inst->pcState(), store_inst->seqNum);
+    if (storeQueue[amo_idx].size() == 0) {
+        DPRINTF(LSQUnit,"Fault on AMO PC %s, [sn:%lli], Size = 0\n",
+                amo_inst->pcState(), amo_inst->seqNum);
 
-        if (store_inst->isAtomic()) {
-            // If the instruction faulted, then we need to send it along
-            // to commit without the instruction completing.
-            if (!(store_inst->hasRequest() && store_inst->strictlyOrdered()) ||
-                store_inst->isAtCommit()) {
-                store_inst->setExecuted();
-            }
-            iewStage->instToCommit(store_inst);
-            iewStage->activityThisCycle();
+        // If the amo instruction faulted, then we need to send it along
+        // to commit without the instruction completing.
+        if (!(amo_inst->hasRequest() && amo_inst->strictlyOrdered()) ||
+            amo_inst->isAtCommit()) {
+            amo_inst->setExecuted();
         }
+        iewStage->instToCommit(amo_inst);
+        iewStage->activityThisCycle();
 
-        return store_fault;
+        return amo_fault;
     }
 
-    assert(store_fault == NoFault);
+    assert(amo_fault == NoFault);
 
-    if (store_inst->isStoreConditional() || store_inst->isAtomic()) {
-        // Store conditionals and Atomics need to set themselves as able to
-        // writeback if we haven't had a fault by here.
-        storeQueue[store_idx].canWB() = true;
+    // Atomics need to set themselves as able to writeback if we haven't had a fault by here.
+    storeQueue[amo_idx].canWB() = true;
+    ++storesToWB;
 
-        ++storesToWB;
-    } else {
-        if (enableStorePrefetchTrain) {
-            triggerStorePFTrain(store_idx);
-        }
-    }
-
-    return checkViolations(loadIt, store_inst);
-
+    return checkViolations(loadIt, amo_inst);
 }
 
 void
@@ -2132,10 +2375,15 @@ LSQUnit::dumpLoadPipe()
     for (int i = 0; i < loadPipeSx.size(); i++) {
         DPRINTF(LSQUnit, "Load S%d:, size: %d\n", i, loadPipeSx[i]->size);
         for (int j = 0; j < loadPipeSx[i]->size; j++) {
-            DPRINTF(LSQUnit, "  PC: %s, [tid:%i] [sn:%lli]\n",
+            DPRINTF(LSQUnit, "  PC: %s, [tid:%i] [sn:%lli] "
+                    "flags: valid[%d], replayed[%d], cachemiss[%d], squashed[%d]\n",
                     loadPipeSx[i]->insts[j]->pcState(),
                     loadPipeSx[i]->insts[j]->threadNumber,
-                    loadPipeSx[i]->insts[j]->seqNum
+                    loadPipeSx[i]->insts[j]->seqNum,
+                    (loadPipeSx[i]->flags[j])[LdStFlags::Valid],
+                    (loadPipeSx[i]->flags[j])[LdStFlags::Replayed],
+                    (loadPipeSx[i]->flags[j])[LdStFlags::CacheMiss],
+                    (loadPipeSx[i]->flags[j])[LdStFlags::Squashed]
             );
         }
     }
@@ -2148,10 +2396,14 @@ LSQUnit::dumpStorePipe()
     for (int i = 0; i < storePipeSx.size(); i++) {
         DPRINTF(LSQUnit, "Store S%d:, size: %d\n", i, storePipeSx[i]->size);
         for (int j = 0; j < storePipeSx[i]->size; j++) {
-            DPRINTF(LSQUnit, "  PC: %s, [tid:%i] [sn:%lli]\n",
+            DPRINTF(LSQUnit, "  PC: %s, [tid:%i] [sn:%lli] "
+                    "flags: valid[%d], replayed[%d], squashed[%d]\n",
                     storePipeSx[i]->insts[j]->pcState(),
                     storePipeSx[i]->insts[j]->threadNumber,
-                    storePipeSx[i]->insts[j]->seqNum
+                    storePipeSx[i]->insts[j]->seqNum,
+                    (storePipeSx[i]->flags[j])[LdStFlags::Valid],
+                    (storePipeSx[i]->flags[j])[LdStFlags::Replayed],
+                    (storePipeSx[i]->flags[j])[LdStFlags::Squashed]
             );
         }
     }
@@ -2567,6 +2819,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
     }
     if (!request->isSent()) {
         iewStage->blockMemInst(load_inst);
+        setFlagInPipeLine(load_inst, LdStFlags::Replayed);
     }
 
     return NoFault;
@@ -2577,9 +2830,9 @@ LSQUnit::write(LSQRequest *request, uint8_t *data, ssize_t store_idx)
 {
     assert(storeQueue[store_idx].valid());
 
-    DPRINTF(LSQUnit, "Doing write to store idx %i, addr %#x | storeHead:%i "
+    DPRINTF(LSQUnit, "Doing write to store idx %i, addr %#x | storeHead:%i, size: %d"
             "[sn:%llu]\n",
-            store_idx - 1, request->req()->getPaddr(), storeQueue.head() - 1,
+            store_idx - 1, request->req()->getPaddr(), storeQueue.head() - 1, request->_size,
             storeQueue[store_idx].instruction()->seqNum);
 
     storeQueue[store_idx].setRequest(request);

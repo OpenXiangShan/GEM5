@@ -43,6 +43,7 @@
 #define __CPU_O3_LSQ_UNIT_HH__
 
 #include <algorithm>
+#include <bitset>
 #include <cstdint>
 #include <cstring>
 #include <map>
@@ -62,6 +63,7 @@
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
+#include "cpu/o3/limits.hh"
 #include "cpu/o3/lsq.hh"
 #include "cpu/timebuf.hh"
 #include "debug/HtmCpu.hh"
@@ -340,18 +342,13 @@ class LSQUnit
      */
     void checkSnoop(PacketPtr pkt);
 
-    /** Executes a load instruction. */
-    Fault executeLoad(const DynInstPtr &inst);
-
     /** Iq issues a load to load pipeline. */
     void issueToLoadPipe(const DynInstPtr &inst);
 
-    Fault executeLoad(int lq_idx) { panic("Not implemented"); return NoFault; }
-
     bool triggerStorePFTrain(int sq_idx);
 
-    /** Executes a store instruction. */
-    Fault executeStore(const DynInstPtr& inst);
+    /** Executes an amo instruction. */
+    Fault executeAmo(const DynInstPtr& inst);
 
     /** Iq issues a store to store pipeline. */
     void issueToStorePipe(const DynInstPtr &inst);
@@ -511,8 +508,19 @@ class LSQUnit
     /** Process instructions in each load pipeline stages. */
     void executeLoadPipeSx();
 
+    Fault loadPipeS0(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag);
+    Fault loadPipeS1(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag);
+    Fault loadPipeS2(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag);
+    Fault loadPipeS3(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag);
+
     /** Process instructions in each store pipeline stages. */
     void executeStorePipeSx();
+
+    Fault storePipeS0(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag);
+    Fault storePipeS1(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag);
+    Fault storePipeS2(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag);
+    Fault storePipeS3(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag);
+    Fault storePipeS4(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag);
 
     /** Wrap function. */
     void executePipeSx();
@@ -619,6 +627,7 @@ class LSQUnit
         int size;
 
         DynInstPtr insts[MaxWidth];
+        std::bitset<LdStFlagNum> flags[MaxWidth];
     };
     /** The load pipeline TimeBuffer. */
     TimeBuffer<LoadPipeStruct> loadPipe;
@@ -631,11 +640,15 @@ class LSQUnit
         int size;
 
         DynInstPtr insts[MaxWidth];
+        std::bitset<LdStFlagNum> flags[MaxWidth];
     };
     /** The store pipeline TimeBuffer. */
     TimeBuffer<StorePipeStruct> storePipe;
     /** Each stage in store pipeline. storePipeSx[0] means store pipe S0 */
     std::vector<TimeBuffer<StorePipeStruct>::wire> storePipeSx;
+
+    /** Find inst in Load/Store Pipeline, set corresponding flag to true */
+    void setFlagInPipeLine(DynInstPtr inst, LdStFlags f);
 
   private:
     /** The number of places to shift addresses in the LSQ before checking

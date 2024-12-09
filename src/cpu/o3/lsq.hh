@@ -76,6 +76,18 @@ class IEW;
 class LSQUnit;
 class StoreBufferEntry;
 
+/** The Flag of Load/Store inst in Pipeline. */
+enum LdStFlags
+{
+    Valid = 0,
+    Replayed,
+    CacheMiss,
+    Squashed,
+    Num_Flags
+};
+
+constexpr uint64_t LdStFlagNum = LdStFlags::Num_Flags;
+
 class LSQ
 {
   public:
@@ -742,11 +754,8 @@ class LSQ
     /** Inserts a store into the LSQ. */
     void insertStore(const DynInstPtr &store_inst);
 
-    /** Executes a load. */
-    Fault executeLoad(const DynInstPtr &inst);
-
-    /** Executes a store. */
-    Fault executeStore(const DynInstPtr &inst);
+    /** Executes an amo inst. */
+    Fault executeAmo(const DynInstPtr &inst);
 
     /** Iq issues a load to load pipeline. */
     void issueToLoadPipe(const DynInstPtr &inst);
