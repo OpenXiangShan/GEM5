@@ -48,6 +48,7 @@ DefaultFTB::DefaultFTB(const Params &p)
     tagBits(p.tagBits),
     instShiftAmt(p.instShiftAmt),
     log2NumThreads(floorLog2(p.numThreads)),
+    predictWidth(p.predictWidth),
     numBr(p.numBr),
     numWays(p.numWays),
     numSets(numEntries / numWays),
@@ -261,7 +262,7 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
                 new_entry.fallThruAddr = branch_info.getEnd();
                 incNonL0Stat(ftbStats.newEntryWithUncond);
             } else {
-                new_entry.fallThruAddr = startPC + 32;
+                new_entry.fallThruAddr = startPC + predictWidth;
                 incNonL0Stat(ftbStats.newEntryWithCond);
             }
             entry_to_write = new_entry;

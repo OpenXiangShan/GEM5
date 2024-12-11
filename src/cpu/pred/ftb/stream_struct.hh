@@ -20,6 +20,8 @@ namespace branch_prediction {
 
 namespace ftb_pred {
 
+extern unsigned predictWidth;
+
 enum EndType {
     END_CALL=0,
     END_RET,
@@ -189,7 +191,7 @@ typedef struct FTBEntry
     // every 
     bool isReasonable(Addr start) {
         Addr min = start;
-        Addr max = start+34;
+        Addr max = start + predictWidth + 2;
         bool reasonable = true;
         for (auto &slot : slots) {
             if (slot.pc < min || slot.pc > max) {
@@ -375,8 +377,8 @@ struct FetchStream
         if (jaHit && squashType == SQUASH_CTRL) {
             Addr realStart = startPC;
             Addr squashBranchPC = exeBranchInfo.pc;
-            while (realStart + 0x20 <= squashBranchPC) {
-                realStart += 0x20;
+            while (realStart + predictWidth <= squashBranchPC) {
+                realStart += predictWidth;
             }
             return realStart;
         } else {
@@ -473,7 +475,7 @@ typedef struct FullFTBPrediction
             }
             
         } else {
-            target = bbStart + 32; //TODO: +predictWidth
+            target = bbStart + predictWidth;
         }
         return target;
     }
@@ -493,7 +495,7 @@ typedef struct FullFTBPrediction
         if (valid) {
             return ftbEntry.fallThruAddr;
         } else {
-            return bbStart + 32; //TODO: +predictWidth
+            return bbStart + predictWidth;
         }
     }
 

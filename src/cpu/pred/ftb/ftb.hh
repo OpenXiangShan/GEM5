@@ -247,6 +247,8 @@ class DefaultFTB : public TimedBaseFTBPredictor
     /** Log2 NumThreads used for hashing threadid */
     unsigned log2NumThreads;
 
+    unsigned predictWidth;
+
     unsigned numBr;
 
     unsigned numWays;
