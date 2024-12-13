@@ -151,6 +151,36 @@ def template LRSCMacroConstructor {{
     }
 }};
 
+// Strictly order-preserving LRSC
+def template LRSCStrictMacroConstructor {{
+    %(class_name)s::%(class_name)s(ExtMachInst machInst):
+        %(base_class)s("%(mnemonic)s", machInst, %(op_class)s)
+    {
+        %(constructor)s;
+
+        StaticInstPtr rel_fence;
+        StaticInstPtr lrsc;
+        StaticInstPtr acq_fence;
+
+        rel_fence = new MemFenceMicro(machInst, No_OpClass);
+        rel_fence->setFlag(IsFirstMicroop);
+        rel_fence->setFlag(IsReadBarrier);
+        rel_fence->setFlag(IsWriteBarrier);
+        rel_fence->setFlag(IsDelayedCommit);
+
+        // set up atomic rmw op
+        lrsc = new %(class_name)sMicro(machInst, this);
+        lrsc->setFlag(IsDelayedCommit);
+
+        acq_fence = new MemFenceMicro(machInst, No_OpClass);
+        acq_fence->setFlag(IsLastMicroop);
+        acq_fence->setFlag(IsReadBarrier);
+        acq_fence->setFlag(IsWriteBarrier);
+
+        microops = {rel_fence, lrsc, acq_fence};
+    }
+}};
+
 def template LRSCMicroConstructor {{
     %(class_name)s::%(class_name)sMicro::%(class_name)sMicro(
         ExtMachInst machInst, %(class_name)s *_p)
@@ -435,7 +465,7 @@ def format LoadReserved(memacc_code, postacc_code={{ }}, ea_code={{EA = Rs1;}},
     macro_iop = InstObjParams(name, Name, 'LoadReserved', macro_ea_code,
                               macro_inst_flags)
     header_output = LRSCDeclare.subst(macro_iop)
-    decoder_output = LRSCMacroConstructor.subst(macro_iop)
+    decoder_output = LRSCStrictMacroConstructor.subst(macro_iop)
     decode_block = BasicDecode.subst(macro_iop)
 
     exec_output = ''
@@ -463,7 +493,7 @@ def format StoreCond(memacc_code, postacc_code={{ }}, ea_code={{EA = Rs1;}},
     macro_iop = InstObjParams(name, Name, 'StoreCond', macro_ea_code,
                               macro_inst_flags)
     header_output = LRSCDeclare.subst(macro_iop)
-    decoder_output = LRSCMacroConstructor.subst(macro_iop)
+    decoder_output = LRSCStrictMacroConstructor.subst(macro_iop)
     decode_block = BasicDecode.subst(macro_iop)
 
     exec_output = ''
