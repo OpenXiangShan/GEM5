@@ -860,7 +860,7 @@ class TimedBaseFTBPredictor(SimObject):
     cxx_class = 'gem5::branch_prediction::ftb_pred::TimedBaseFTBPredictor'
     cxx_header = "cpu/pred/ftb/timed_base_pred.hh"
     
-    numBr = Param.Unsigned(2, "Number of maximum branches per entry")
+    numBr = Param.Unsigned(Parent.numBr, "Number of maximum branches per entry")
     predictWidth = Param.Unsigned(Parent.predictWidth, "The width of prediction/fetch block")
     # subclass are encouraged to explicitly declare latency as numDelay
     numDelay = Param.Unsigned(1000, "Number of bubbles to put on a prediction")
@@ -907,8 +907,10 @@ class FTBTAGE(TimedBaseFTBPredictor):
     cxx_class = 'gem5::branch_prediction::ftb_pred::FTBTAGE'
     cxx_header = "cpu/pred/ftb/ftb_tage.hh"
 
+    enableSC = Param.Bool(True, "Enable SC or not")
     numPredictors = Param.Unsigned(4, "Number of TAGE predictors")
-    tableSizes = VectorParam.Unsigned([2048]*4, "the ITTAGE T0~Tn length")
+    baseTableSize = Param.Unsigned(2048, "The FTB TAGE base table length")
+    tableSizes = VectorParam.Unsigned([2048]*4, "the FTB TAGE T0~Tn length")
     TTagBitSizes = VectorParam.Unsigned([8]*4, "the T0~Tn entry's tag bit size")
     TTagPcShifts = VectorParam.Unsigned([1] * 4, "when the T0~Tn entry's tag generating, PC right shift")
 
@@ -944,7 +946,7 @@ class DecoupledBPUWithFTB(BranchPredictor):
     numBr = Param.Unsigned(2, "Number of maximum branches per entry")
     predictWidth = Param.Unsigned(32, "The width of prediction/fetch block")
     numStages = Param.Unsigned(3, "Number of stages in the pipeline")
-    ftb = Param.DefaultFTB(DefaultFTB(numBr=2), "FTB")
+    ftb = Param.DefaultFTB(DefaultFTB(), "FTB")
     tage = Param.FTBTAGE(FTBTAGE(), "TAGE predictor")
     ittage = Param.FTBITTAGE(FTBITTAGE(), "ITTAGE predictor")
     uftb = Param.DefaultFTB(UFTB(), "UFTB predictor")

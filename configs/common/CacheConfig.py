@@ -44,6 +44,7 @@ import m5
 from m5.objects import *
 from common.Caches import *
 from common import ObjectList
+from common.PrefetcherConfig import *
 
 def _get_hwp(hwp_option):
     if hwp_option == None:
@@ -52,7 +53,7 @@ def _get_hwp(hwp_option):
     hwpClass = ObjectList.hwp_list.get(hwp_option)
     return hwpClass()
 
-def _get_cache_opts(level, options):
+def _get_cache_opts(cpu, level, options):
     opts = {}
 
     size_attr = '{}_size'.format(level)
@@ -65,7 +66,7 @@ def _get_cache_opts(level, options):
 
     prefetcher_attr = '{}_hwp_type'.format(level)
     if hasattr(options, prefetcher_attr) and (not options.no_pf):
-        opts['prefetcher'] = _get_hwp(getattr(options, prefetcher_attr))
+        opts['prefetcher'] = create_prefetcher(cpu, level, options)
 
     return opts
 
@@ -121,7 +122,7 @@ def config_cache(options, system):
         # are not connected using addTwoLevelCacheHierarchy. Use the
         # same clock as the CPUs.
         system.l2_caches = [l2_cache_class(clk_domain=system.cpu_clk_domain,
-                                           **_get_cache_opts('l2', options)) for i in range(options.num_cpus)]
+                            **_get_cache_opts(system.cpu[i], 'l2', options)) for i in range(options.num_cpus)]
         system.tol2bus_list = [L2XBar(
             clk_domain=system.cpu_clk_domain, width=256) for i in range(options.num_cpus)]
         for i in range(options.num_cpus):
@@ -131,11 +132,6 @@ def config_cache(options, system):
             # system.tol2bus_list.append(L2XBar(clk_domain = system.cpu_clk_domain, width=256))
             system.l2_caches[i].cpu_side = system.tol2bus_list[i].mem_side_ports
             system.tol2bus_list[i].snoop_filter.max_capacity = "16MB"
-            if options.kmh_align:
-                assert options.l2_hwp_type == 'L2CompositeWithWorkerPrefetcher'
-                system.l2_caches[i].prefetcher.enable_cmc = True
-                system.l2_caches[i].prefetcher.enable_bop = True
-                system.l2_caches[i].prefetcher.enable_cdp = False
 
             if options.ideal_cache:
                 assert not options.l3cache, \
@@ -172,7 +168,7 @@ def config_cache(options, system):
 
         if options.l3cache:
             system.l3 = L3Cache(clk_domain=system.cpu_clk_domain,
-                                        **_get_cache_opts('l3', options))
+                                        **_get_cache_opts(NULL, 'l3', options))
             system.tol3bus = L2XBar(clk_domain=system.cpu_clk_domain, width=256)
             system.tol3bus.snoop_filter.max_capacity = "32MB"
             system.l3.cpu_side = system.tol3bus.mem_side_ports
@@ -191,43 +187,10 @@ def config_cache(options, system):
 
     for i in range(options.num_cpus):
         if options.caches:
-            icache = icache_class(**_get_cache_opts('l1i', options))
-            dcache = dcache_class(**_get_cache_opts('l1d', options))
-            if dcache.prefetcher != NULL:
-                dcache.prefetcher.registerTLB(system.cpu[i].mmu.dtb)
-                if options.l1d_hwp_type == 'XSCompositePrefetcher':
-                    if options.l1d_enable_spp:
-                        dcache.prefetcher.enable_spp = True
-                    if options.l1d_enable_cplx:
-                        dcache.prefetcher.enable_cplx = True
-                    dcache.prefetcher.pht_pf_level = options.pht_pf_level
-                    dcache.prefetcher.short_stride_thres = options.short_stride_thres
-                    dcache.prefetcher.enable_temporal = not options.kmh_align
-                    dcache.prefetcher.fuzzy_stride_matching = False
-                    dcache.prefetcher.stream_pf_ahead = True
-
-                    dcache.prefetcher.enable_bop = not options.kmh_align
-                    dcache.prefetcher.bop_large.delay_queue_enable = True
-                    dcache.prefetcher.bop_large.bad_score = 10
-                    dcache.prefetcher.bop_small.delay_queue_enable = True
-                    dcache.prefetcher.bop_small.bad_score = 5
-
-                    dcache.prefetcher.queue_size = 128
-                    dcache.prefetcher.max_prefetch_requests_with_pending_translation = 128
-                    dcache.prefetcher.region_size = 64*16  # 64B * blocks per region
-
-                    dcache.prefetcher.berti.use_byte_addr = True
-                    dcache.prefetcher.berti.aggressive_pf = False
-                    dcache.prefetcher.berti.trigger_pht = True
-                    if options.cpu_type == 'DerivO3CPU':
-                        system.cpu[i].add_pf_downstream(dcache.prefetcher)
-                    if options.ideal_cache:
-                        dcache.prefetcher.stream_pf_ahead = False
-                    if options.kmh_align:
-                        dcache.prefetcher.enable_berti = False
-                        dcache.prefetcher.enable_sstride = True
-                        dcache.prefetcher.enable_activepage = False
-                        dcache.prefetcher.enable_xsstream = True
+            icache = icache_class(**_get_cache_opts(system.cpu[i], 'l1i', options))
+            dcache = dcache_class(**_get_cache_opts(system.cpu[i], 'l1d', options))
+            if dcache.prefetcher != NULL and options.cpu_type == 'DerivO3CPU':
+                system.cpu[i].add_pf_downstream(dcache.prefetcher)
 
             if options.ideal_cache:
                 icache.response_latency = 0
@@ -237,15 +200,11 @@ def config_cache(options, system):
                 assert dcache.prefetcher != NULL and \
                     system.l2_caches[i].prefetcher != NULL
                 dcache.prefetcher.add_pf_downstream(system.l2_caches[i].prefetcher)
-                system.l2_caches[i].prefetcher.queue_size = 64
-                system.l2_caches[i].prefetcher.max_prefetch_requests_with_pending_translation = 128
 
             if (not options.no_pf) and options.l3cache and options.l2_to_l3_pf_hint:
                 assert system.l2_caches[i].prefetcher != NULL and \
                     system.l3.prefetcher != NULL
                 system.l2_caches[i].prefetcher.add_pf_downstream(system.l3.prefetcher)
-                system.l3.prefetcher.queue_size = 64
-                system.l3.prefetcher.max_prefetch_requests_with_pending_translation = 128
 
             # If we have a walker cache specified, instantiate two
             # instances here
@@ -304,9 +263,6 @@ def config_cache(options, system):
             system.cpu[i].connectAllPorts(
                 system.tol2bus_list[i].cpu_side_ports,
                 system.membus.cpu_side_ports, system.membus.mem_side_ports)
-            if system.l2_caches[i].prefetcher != NULL:
-                print("Add dtb for L2 prefetcher")
-                system.l2_caches[i].prefetcher.registerTLB(system.cpu[i].mmu.dtb)
         elif options.external_memory_system:
             system.cpu[i].connectUncachedPorts(
                 system.membus.cpu_side_ports, system.membus.mem_side_ports)

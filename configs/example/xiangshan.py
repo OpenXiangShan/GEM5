@@ -127,6 +127,7 @@ def build_test_system(np, args):
                                             enableLoopPredictor=args.enable_loop_predictor,
                                             enableJumpAheadPredictor=args.enable_jump_ahead_predictor
                                             )
+            test_sys.cpu[i].branchPred.tage.enableSC = not args.disable_sc
             test_sys.cpu[i].branchPred.isDumpMisspredPC = True
         else:
             test_sys.cpu[i].branchPred = ObjectList.bp_list.get(args.bp_type)
@@ -314,6 +315,71 @@ def build_test_system(np, args):
 
     return test_sys
 
+def setKmhV3IdealParams(args, system):
+    for cpu in system.cpu:
+        cpu.commitToFetchDelay = 2
+        cpu.fetchQueueSize = 64
+        cpu.fetchToDecodeDelay = 2
+        cpu.decodeWidth = 8
+        cpu.renameWidth = 8
+        cpu.dispWidth = [10, 10, 10] # 6->10
+        cpu.commitWidth = 12
+        cpu.squashWidth = 12
+        cpu.replayWidth = 12
+        cpu.LQEntries = 128
+        cpu.SQEntries = 96
+        cpu.SbufferEntries = 24
+        cpu.numPhysIntRegs = 354
+        cpu.numPhysFloatRegs = 384
+        cpu.numROBEntries = 640
+        cpu.numDQEntries = [32, 16, 16] # 32->36
+        cpu.mmu.itb.size = 96
+        cpu.SbufferEvictThreshold = 8
+
+        # cpu.scheduler.disableAllRegArb()
+
+        for iq in cpu.scheduler.IQs:
+            if iq.name.startswith('intIQ'):
+                iq.size = 2 * 24
+            if iq.name.startswith('load'):
+                iq.size = 32
+            if iq.name.startswith('store'):
+                iq.size = 32
+            if iq.name.startswith('fpIQ'):
+                iq.size = 32
+
+        # ideal decoupled frontend
+        if args.bp_type is None or args.bp_type == 'DecoupledBPUWithFTB':
+            # cpu.branchPred.enableTwoTaken = True
+            cpu.branchPred.numBr = 4
+            cpu.branchPred.tage.enableSC = False # TODO(bug): When numBr changes, enabling SC will trigger an assert
+            cpu.branchPred.ftq_size = 256
+            cpu.branchPred.fsq_size = 256
+            cpu.branchPred.uftb.numEntries = 1024
+            cpu.branchPred.ftb.numEntries = 16384
+            cpu.branchPred.tage.numPredictors = 9
+            cpu.branchPred.tage.baseTableSize = 4096
+            cpu.branchPred.tage.tableSizes = [4096] * 9
+            cpu.branchPred.tage.TTagBitSizes = [8] * 9
+            cpu.branchPred.tage.TTagPcShifts = [1] * 9
+            cpu.branchPred.tage.histLengths = [8, 13, 21, 35, 57, 93, 151, 246, 401]
+
+        # ideal l1 caches
+        if args.caches:
+            cpu.icache.size = '128kB'
+            cpu.dcache.size = '128kB'
+            cpu.icache.enable_wayprediction = False
+            cpu.dcache.enable_wayprediction = False
+            cpu.dcache.tag_load_read_ports = 100 # 3->100
+
+    if args.l2cache:
+        for i in range(args.num_cpus):
+            system.l2_caches[i].size = '2MB'
+            system.l2_caches[i].enable_wayprediction = False
+
+    if args.l3cache:
+        system.l3.enable_wayprediction = False
+
 if __name__ == '__m5_main__':
     # Add args
     parser = argparse.ArgumentParser()
@@ -342,6 +408,10 @@ if __name__ == '__m5_main__':
     TestMemClass = Simulation.setMemClass(args)
 
     test_sys = build_test_system(args.num_cpus, args)
+
+    # Set ideal parameters here with the highest priority, over command-line arguments
+    if args.ideal_kmhv3:
+        setKmhV3IdealParams(args, test_sys)
 
     root = Root(full_system=True, system=test_sys)
 

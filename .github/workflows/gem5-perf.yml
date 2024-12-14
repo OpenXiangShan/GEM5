@@ -1,0 +1,66 @@
+name: gem5 Performance Test
+
+on:
+  push:
+    branches: [ xs-dev ]
+  pull_request:
+    branches: [ xs-dev ]
+
+jobs:
+  run_performance_test:
+    runs-on: self-hosted
+    continue-on-error: false
+    name: XS-GEM5 - Run performance test
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build DRAMSim
+        run: |
+          export GEM5_HOME=$(pwd)
+          cd ext/dramsim3
+          git clone git@github.com:umd-memsys/DRAMSim3.git DRAMsim3
+          cd DRAMsim3 && mkdir -p build
+          cd build
+          cmake ..
+          make -j 48
+          cd $GEM5_HOME
+      - name: Build GEM5 opt
+        run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
+      - name: XS-GEM5 - Run performance test
+        # run 80% coverage spec06 checkpoints, 500+ checkpoints
+        run: |
+          export GCBV_REF_SO="/nfs-nvme/home/share/zhenhao/ref-h/build/riscv64-nemu-interpreter-so"
+          export GCB_RESTORER=""
+          export GEM5_HOME=$(pwd)
+          mkdir -p $GEM5_HOME/util/xs_scripts/test
+          cd $GEM5_HOME/util/xs_scripts/test
+          bash ../parallel_sim.sh `realpath ../kmh_6wide.sh` \
+            /nfs/home/yanyue/workspace/spec06_cpts/spec_0.8c_int.lst \
+            /nfs/home/share/jiaxiaoyu/simpoint_checkpoint_archive/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc/zstd-checkpoint-0-0-0 \
+            spec_all
+      - name: Setup gem5_data_proc environment
+        run: |
+          # 克隆数据处理仓库到 CI 工作目录
+          cd $GITHUB_WORKSPACE
+          git clone https://github.com/shinezyy/gem5_data_proc
+      - name: Check performance test result
+        run: |
+          # 添加yanyue的 Python 包路径, 包含pandas等
+          export PYTHONPATH=/nfs/home/yanyue/.local/lib/python3.10/site-packages:$PYTHONPATH
+          # 每次run 会进入新的shell, 需要重新设置GEM5_HOME
+          export GEM5_HOME=$GITHUB_WORKSPACE
+          cd $GITHUB_WORKSPACE/gem5_data_proc
+          # 使用已有的数据spec_all生成测试报告
+          bash example-scripts/gem5-score-ci.sh \
+            $GEM5_HOME/util/xs_scripts/test/spec_all \
+            /nfs/home/yanyue/workspace/spec06_cpts/cluster-0-0.json \
+            > $GITHUB_WORKSPACE/score.txt
+          # 提取最后42行score信息
+          echo "### performance test result :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          tail -n 42 $GITHUB_WORKSPACE/score.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          # 提取关键指标
+          FINAL_SCORE=$(grep "Estimated Int score per GHz:" $GITHUB_WORKSPACE/score.txt | awk '{print $NF}')
+          echo "### Key indicators" >> $GITHUB_STEP_SUMMARY
+          echo "- Final Int score per GHz: **${FINAL_SCORE}**" >> $GITHUB_STEP_SUMMARY
+          

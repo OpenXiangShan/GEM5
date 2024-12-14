@@ -131,6 +131,8 @@ class FTBTAGE : public TimedBaseFTBPredictor
 
     const unsigned numPredictors;
 
+    unsigned baseTableSize;
+
     std::vector<unsigned> tableSizes;
     std::vector<unsigned> tableIndexBits;
     std::vector<bitset> tableIndexMasks;

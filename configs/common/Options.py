@@ -271,6 +271,8 @@ def addCommonOptions(parser, configure_xiangshan=False):
                         help="enable bp database for specified subdatabase, "
                         "basic branch trace is enabled by default even without specifying, "
                         "available subdatabase: basic, tage, ras, loop")
+    parser.add_argument("--disable-sc", default=False, action="store_true",
+                        help="disable SC (enabled by default, only for FTBTAGE)")
     parser.add_argument("--enable-loop-buffer", default=False, action="store_true",
                         help="enable loop buffer (only for ftb branch predictor)")
     parser.add_argument("--enable-loop-predictor", default=False, action="store_true",
@@ -320,6 +322,9 @@ def addCommonOptions(parser, configure_xiangshan=False):
 
     parser.add_argument("--xiangshan-ecore", action= "store_true",
                         help="Use efficient core of xiangshan")
+
+    parser.add_argument("--ideal-kmhv3", action= "store_true",
+                        help="Use KunminghuV3 ideal params, which take priority over command-line arguments.")
 
     # for warmup without switching cpu
     parser.add_argument("--warmup-insts-no-switch", action="store", type=int,

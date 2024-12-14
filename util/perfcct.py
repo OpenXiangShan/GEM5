@@ -31,13 +31,15 @@ def dump_visual(pos, records):
     line += '[' + non_stage() * pos_start
     pos_next = pos_start
     for i in range(1, len(pos)):
-        if (pos[i] <= pos[i-1]):
+        if (pos[i] == pos[i-1]) or pos[i] == 0:
             pos[i] = pos[i-1]
             continue
+        if (pos[i] < pos[i-1]):
+            raise "error: metaBuffer maybe overflow"
         if pos[i] - pos[i-1] >= cycle_per_line - pos_next:
             diff = cycle_per_line - pos_next
             line += f'{stage(i-1)}' * diff + ']\n'
-            diff_line = (pos[i] - pos[i-1]) - diff - 1
+            diff_line = ((pos[i] - pos[i-1]) - diff - 1) // cycle_per_line
             if diff_line > 0:
                 line += '[' + f'{stage(i-1)}' * cycle_per_line + ']\n'
 
