@@ -19,14 +19,14 @@ struct FetchTargetEnqState
     FetchStreamId streamId;  // fsq的id
     FetchTargetId nextEnqTargetId;  // ftq的id
     FetchTargetEnqState() : pc(0), streamId(1), nextEnqTargetId(0) {}
-};
+};  // 入队状态, bp 写入ftq，相当于head
 
 struct FetchTargetReadState
 {
     bool valid;  // 有效
     FetchTargetId targetId;  // fetch目标id
     FtqEntry *entry;  // ftq的entry
-};
+};  // 出队状态, o3 在fetch阶段读取ftq，相当于tail
 
 class FetchTargetQueue
 {
@@ -39,12 +39,12 @@ class FetchTargetQueue
     // 3. 在squash后重定向fetch目标
     using FTQ = std::map<FetchTargetId, FtqEntry>;  // <id, FtqEntry>， map 字典，有64项
     using FTQIt = FTQ::iterator;
-    FTQ ftq;    // <id, FtqEntry>， map 字典，有64项
+    FTQ ftq;    // <id, FtqEntry>， map 字典，有64项, 用fetchDemandTargetId索引
     unsigned ftqSize;
     FetchTargetId ftqId{0};  // this is a queue ptr for ftq itself
 
     // The supply/responsing fetch target state
-    FetchTargetReadState supplyFetchTargetState;  // 供应/响应fetch目标状态
+    FetchTargetReadState supplyFetchTargetState;  // 供应fetch目标状态
     // The demanded fetch target ID to send to fetch
     FetchTargetId fetchDemandTargetId{0};  // 发送给fetch的需求fetch目标ID，新target
 

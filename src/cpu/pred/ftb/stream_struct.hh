@@ -233,7 +233,7 @@ struct BlockDecodeInfo {
 
 
 using FetchStreamId = uint64_t;  // FetchStream的id
-using FetchTargetId = uint64_t;  // FetchTarget的id
+using FetchTargetId = uint64_t;  // FetchTarget的id，ftq的id
 using PredictionID = uint64_t;  // 预测的id
 
 typedef struct LoopEntry {
@@ -275,8 +275,8 @@ struct FetchStream
     Addr predEndPC;  // 预测的流结束pc（fall through pc）
     BranchInfo predBranchInfo;  // 预测的流分支信息,一条分支？
     // record predicted FTB entry 记录预测的FTB条目
-    bool isHit;
-    bool falseHit;
+    bool isHit;  // 是否命中
+    bool falseHit;  // 是否假命中？
     FTBEntry predFTBEntry;  // 预测的FTB条目
 
     bool sentToICache;  // 是否发送给ICache
@@ -321,8 +321,8 @@ struct FetchStream
     // for profiling
     int fetchInstNum;  // Fetch阶段指令数
     int commitInstNum;  // Commit阶段指令数
-    std::map<Addr, bool> commitMispredictions; // per committed branch
-    std::map<Addr, std::tuple<SquashType, SquashSource, BranchInfo>> squashInfos; // per committed inst if there is squash
+    std::map<Addr, bool> commitMispredictions; // per committed branch 每条分支是否预测错误
+    std::map<Addr, std::tuple<SquashType, SquashSource, BranchInfo>> squashInfos; // per committed inst if there is squash 每条commit指令是否squash
 
     FetchStream()
         : startPC(0),

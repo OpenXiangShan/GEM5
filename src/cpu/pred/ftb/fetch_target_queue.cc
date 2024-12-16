@@ -26,16 +26,16 @@ FetchTargetQueue::squash(FetchTargetId new_enq_target_id,
                          FetchStreamId new_enq_stream_id, Addr new_enq_pc)
 {
     ftq.clear();
-    // Because we squash the whole ftq, head and tail should be the same
+    // Because we squash the whole ftq, head and tail should be the same 头尾相同
     auto new_fetch_demand_target_id = new_enq_target_id;
 
     fetchTargetEnqState.nextEnqTargetId = new_enq_target_id;
     fetchTargetEnqState.streamId = new_enq_stream_id;
-    fetchTargetEnqState.pc = new_enq_pc;
+    fetchTargetEnqState.pc = new_enq_pc;    // 入队状态更新
 
     supplyFetchTargetState.valid = false;  // squah 时候设置供应状态无效
-    supplyFetchTargetState.entry = nullptr;
-    fetchDemandTargetId = new_fetch_demand_target_id;
+    supplyFetchTargetState.entry = nullptr;  // 供应状态entry为空
+    fetchDemandTargetId = new_fetch_demand_target_id;  // 需求id更新
     currentLoopIter = 0;
     DPRINTF(DecoupleBP,
             "FTQ demand stream ID update to %lu, ftqEnqPC update to "
@@ -47,13 +47,13 @@ bool
 FetchTargetQueue::fetchTargetAvailable() const
 {
     return supplyFetchTargetState.valid &&
-           supplyFetchTargetState.targetId == fetchDemandTargetId;
+           supplyFetchTargetState.targetId == fetchDemandTargetId;  // 供应id等于需求id
 }
 
 FtqEntry&
 FetchTargetQueue::getTarget()
 {
-    assert(fetchTargetAvailable());
+    assert(fetchTargetAvailable());  // 确保供应状态有效
     return *supplyFetchTargetState.entry;  // 返回当前的FTQ条目
 }
 

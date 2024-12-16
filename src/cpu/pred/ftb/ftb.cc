@@ -281,9 +281,9 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
     bool stream_taken = stream.exeTaken;  // 执行阶段分支确实跳转
     FTBEntry entry_to_write;  // 要写入的FTB条目
     bool is_old_entry = pred_hit;
-    if (pred_hit || stream_taken) { // 如果预测命中或执行跳转
-        BranchInfo branch_info = stream.exeBranchInfo;  // 执行阶段分支信息
-        bool is_uncond = branch_info.isUncond();
+    if (pred_hit || stream_taken) { // 如果预测命中或执行跳转, 调用者update()也是这样
+        BranchInfo branch_info = stream.exeBranchInfo;  // 执行阶段那条分支信息
+        bool is_uncond = branch_info.isUncond();    // 当前分支是否是无条件分支
         // if pred not hit, establish a new entry
         if (!pred_hit) { // 如果预测未命中， 执行跳转了，建立新的FTB条目
             DPRINTF(FTB, "pred miss, creating new FTB entry\n");
@@ -291,12 +291,12 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
             new_entry.valid = true;
             new_entry.tag = inst_tag;
             std::vector<FTBSlot> &slots = new_entry.slots;
-            FTBSlot new_slot = FTBSlot(branch_info);  // 创建新的槽位，第一个分支
+            FTBSlot new_slot = FTBSlot(branch_info);  // 创建新的槽位，taken的br作为第一个分支
             slots.push_back(new_slot);
             // uncond branch should set fallThruAddr to end of that inst 无条件分支设置fallThruAddr为指令结束地址
             if (is_uncond) {
-                new_entry.fallThruAddr = branch_info.getEnd();
-                incNonL0Stat(ftbStats.newEntryWithUncond);
+                new_entry.fallThruAddr = branch_info.getEnd();  // 无条件分支直接设置fallThruAddr为指令结束地址=pc+4
+                incNonL0Stat(ftbStats.newEntryWithUncond);  // 无条件分支
             } else {
                 new_entry.fallThruAddr = startPC + 32;  // 条件分支设置fallThruAddr为当前PC+32？
                 incNonL0Stat(ftbStats.newEntryWithCond);
@@ -311,10 +311,10 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
             // assert(old_entry.tag == inst_tag && old_entry.valid);
             std::vector<FTBSlot> &slots = old_entry.slots;
             bool new_branch = !branchIsInEntry(old_entry, branch_info.pc);  // 如果分支不在FTB条目中
-            if (new_branch && stream_taken) {  // 如果分支不在FTB条目中且执行跳转
+            if (new_branch && stream_taken) {  // 如果分支不在FTB条目中且执行跳转, 插入新的槽位并移除多余的
                 is_old_entry = false;
                 DPRINTF(FTB, "new taken branch detected, inserting into FTB entry\n");
-                // keep pc ascending order
+                // keep pc ascending order 插入新的槽位并保持pc升序
                 auto it = slots.begin();
                 while (it != slots.end()) {
                     if (*it > branch_info) {
@@ -324,7 +324,7 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
                 }
                 slots.insert(it, FTBSlot(branch_info));
                 // remove the last slot if there are more than numBr slots
-                if (slots.size() > numBr) {
+                if (slots.size() > numBr) { // 如果槽位数超过numBr, 移除最后一个槽位
                     DPRINTF(FTB, "removing last slot because there are more than %d slots", numBr);
                     Addr last_slot_pc = slots.rbegin()->pc;
                     slots.pop_back();

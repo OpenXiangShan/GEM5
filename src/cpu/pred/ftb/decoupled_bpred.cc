@@ -1289,9 +1289,9 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
     // 当commit stream时候，把本地预测控制流提交到committedSeq, 标记为正确，当空时候不需要出队
     if (fetchStreamQueue.empty())
         return;
-    auto it = fetchStreamQueue.begin();
+    auto it = fetchStreamQueue.begin(); // 查找fsq内容，找到后删除这一项，commit释放fsq/ftq内容
     defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
-    while (it != fetchStreamQueue.end() && stream_id >= it->first) {
+    while (it != fetchStreamQueue.end() && stream_id >= it->first) {    // 遍历所有小于stream_id的项，都要更新
         auto &stream = it->second;
         // dequeue
         DPRINTF(DecoupleBP, "dequeueing stream id: %lu, entry below:\n",
@@ -1316,19 +1316,19 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
                 stream.startPC, miss_predicted ? "miss" : "correctly",
                 stream.exeBranchInfo.pc, stream.exeBranchInfo.target,
                 stream.predBranchInfo.pc, stream.predBranchInfo.target);
-        
+        // 输出预测正确or错误, 预测br地址，target; 实际br地址，target
         if (stream.isHit && !stream.falseHit) {
             dbpFtbStats.ftbHit++;
-        } else {
-            if (stream.exeTaken) {
-                dbpFtbStats.ftbMiss++;
+        } else {    // 预测错误
+            if (stream.exeTaken) { // 实际跳转, 预测NT
+                dbpFtbStats.ftbMiss++;  // 还可以输出预测tick, predTick!
                 DPRINTF(FTB, "FTB miss detected when update, stream start %#lx, predTick %lu, printing branch info:\n", stream.startPC, stream.predTick);
                 auto &slot = stream.exeBranchInfo;
                 DPRINTF(FTB, "    pc:%#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d\n",
                 slot.pc, slot.size, slot.target, slot.isCond, slot.isIndirect, slot.isCall, slot.isReturn);
-                // try to find branch indentified by exeBranchInfo in commitMispredictions
+                // try to find branch indentified by exeBranchInfo in commitMispredictions 尝试根据commitMispredictions的exeBranchInfo找到branch
                 const auto misp_it = stream.commitMispredictions.find(slot.pc);
-                bool found = misp_it != stream.commitMispredictions.end();
+                bool found = misp_it != stream.commitMispredictions.end();  // 找到slot.pc是否在commitMispredictions中
                 DPRINTF(DBPFTBStats, "fsqID: %d, inst causing ftb miss: %#lx, found in commitMispredictions: %d\n", it->first, slot.pc, found);
                 if (!found) {
                     dbpFtbStats.ftbMissInstNotCommitted++;
@@ -1351,24 +1351,24 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
                 } else {
                     bool miss = misp_it->second;
                     if (!miss) {
-                        dbpFtbStats.ftbMissInstNotMispredicted++;
+                        dbpFtbStats.ftbMissInstNotMispredicted++;   // 导致ftb miss, 但预测正确？只是ftb装不下了吗？
                         DPRINTF(DBPFTBStats, "fsqID: %d, pc: %#lx found in commitMispredictions, but not mispredicted\n", it->first, slot.pc);
                     } else {
                         dbpFtbStats.ftbMissInstMispredicted++;
                     }
                 }
-            } else {
+            } else {  // 实际不跳转, 预测跳转?为何no harm?
                 dbpFtbStats.ftbMissWithNoHarm++;
             }
             if (stream.falseHit) {
                 dbpFtbStats.commitFalseHit++;
             }
         }
-        dbpFtbStats.commitPredsFromEachStage[stream.predSource]++;
+        dbpFtbStats.commitPredsFromEachStage[stream.predSource]++;  // 输出预测来源
 
         if (stream.squashType != SQUASH_NONE) {
             dbpFtbStats.committedStreamHadReceivedSquash++;
-            if (stream.squashSource == SQUASH_SRC_DECODE) {
+            if (stream.squashSource == SQUASH_SRC_DECODE) {// 输出squash来源:decode or commit
                 dbpFtbStats.committedStreamSquashFromDecode++;
             } else if (stream.squashSource == SQUASH_SRC_COMMIT ) {
                 dbpFtbStats.committedStreamSquashFromCommit++;
@@ -1483,14 +1483,14 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
             }
         }
 
-        if (stream.isHit || stream.exeTaken) {
+        if (stream.isHit || stream.exeTaken) {  // 命中或实际跳转，都要更新ftb
             // update latency stats
-            auto updateLat = curCycle() - stream.predCycle;
-            dbpFtbStats.updateLatencyDist.sample(updateLat, 1);
+            auto updateLat = curCycle() - stream.predCycle; // 当前时间-预测时间，为更新latency，为何都 300多拍？
+            dbpFtbStats.updateLatencyDist.sample(updateLat, 1); // 更新latency
 
             // generate new ftb entry first 先生成新的ftb项
             // each component will use info of this entry to update 每个组件使用这个项更新自己的内容
-            ftb->getAndSetNewFTBEntry(stream);  // 获取新的ftb项
+            ftb->getAndSetNewFTBEntry(stream);  // 生成新的ftb项
             for (int i = 0; i < numComponents; ++i) {
                 components[i]->update(stream);  // 每个组件更新自己内容
             }
