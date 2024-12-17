@@ -49,6 +49,7 @@
 #include "mem/packet_access.hh"
 #include "mem/ruby/protocol/AccessPermission.hh"
 #include "mem/ruby/slicc_interface/AbstractController.hh"
+#include "mem/ruby/slicc_interface/RubySlicc_Util.hh"
 #include "mem/simple_mem.hh"
 #include "sim/full_system.hh"
 #include "sim/system.hh"
@@ -676,7 +677,12 @@ RubyPort::MemResponsePort::hitCallback(PacketPtr pkt)
         // Send a response in the same cycle. There is no need to delay the
         // response because the response latency is already incurred in the
         // Ruby protocol.
-        schedTimingResp(pkt, curTick());
+        if (pkt->isRead() && !pkt->isWrite() && !pkt->fromCache()) {
+            // send resp right now, make sure load has certain latency
+            respQueue.sendTiming(pkt);
+        } else {
+            schedTimingResp(pkt, curTick());
+        }
     } else {
         delete pkt;
     }
