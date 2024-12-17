@@ -931,14 +931,14 @@ InstructionQueue::getCacheMissInstToExecute()
 {
     for (auto it = cacheMissLdInsts.begin(); it != cacheMissLdInsts.end();
          ++it) {
-        if ((*it)->cacheRefilledAfterMiss() || (*it)->isSquashed()) {
+        if (!(*it)->waitingCacheRefill() || (*it)->isSquashed()) {
             DPRINTF(IQ, "CacheMissed load inst [sn:%llu] PC %s is ready to "
                     "execute\n", (*it)->seqNum, (*it)->pcState());
             DynInstPtr mem_inst = std::move(*it);
             cacheMissLdInsts.erase(it);
             return mem_inst;
         }
-        if (!(*it)->cacheRefilledAfterMiss()) {
+        if ((*it)->waitingCacheRefill()) {
             DPRINTF(
                 IQ,
                 "CacheMissed load inst [sn:%llu] PC %s has not been waken up "

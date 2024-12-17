@@ -41,15 +41,21 @@
 
 #include "cpu/o3/lsq_unit.hh"
 
+#include <cassert>
+
 #include "arch/generic/debugfaults.hh"
 #include "arch/riscv/faults.hh"
+#include "base/logging.hh"
 #include "base/str.hh"
 #include "base/trace.hh"
+#include "base/types.hh"
 #include "config/the_isa.hh"
 #include "cpu/base.hh"
 #include "cpu/checker/cpu.hh"
 #include "cpu/golden_global_mem.hh"
 #include "cpu/o3/dyn_inst.hh"
+#include "cpu/o3/dyn_inst_ptr.hh"
+#include "cpu/o3/issue_queue.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/lsq.hh"
 #include "cpu/utils.hh"
@@ -567,6 +573,8 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
                "Number of loads that had data forwarded from stores"),
       ADD_STAT(squashedLoads, statistics::units::Count::get(),
                "Number of loads squashed"),
+      ADD_STAT(pipeRawNukeReplay, statistics::units::Count::get(),
+               "Number of pipeline detected raw nuke"),
       ADD_STAT(ignoredResponses, statistics::units::Count::get(),
                "Number of memory responses ignored because the instruction is "
                "squashed"),
@@ -724,6 +732,27 @@ LSQUnit::insertStore(const DynInstPtr& store_inst)
     storeQueue.back().set(store_inst);
 }
 
+bool
+LSQUnit::pipeLineNukeCheck(const DynInstPtr &load_inst, const DynInstPtr &store_inst)
+{
+    Addr load_eff_addr1 = load_inst->effAddr >> depCheckShift;
+    Addr load_eff_addr2 = (load_inst->effAddr + load_inst->effSize - 1) >> depCheckShift;
+
+    Addr store_eff_addr1 = store_inst->effAddr >> depCheckShift;
+    Addr store_eff_addr2 = (store_inst->effAddr + store_inst->effSize - 1) >> depCheckShift;
+
+    LSQRequest* store_req = store_inst->savedRequest;
+    bool load_need_check = load_inst->effAddrValid() && (load_inst->lqIt >= store_inst->lqIt);
+    bool store_need_check = store_req && store_req->isTranslationComplete() &&
+                            store_req->isMemAccessRequired() && (store_inst->getFault() == NoFault);
+    if (load_need_check && store_need_check) {
+        if (load_eff_addr1 <= store_eff_addr2 && store_eff_addr1 <= load_eff_addr2) {
+            return true;
+        }
+    }
+    return false;
+}
+
 DynInstPtr
 LSQUnit::getMemDepViolator()
 {
@@ -834,6 +863,23 @@ LSQUnit::checkSnoop(PacketPtr pkt)
     return;
 }
 
+bool
+LSQUnit::skipNukeReplay(const DynInstPtr& load_inst)
+{
+    // if the load_inst has been marked as `Nuke`
+    // load will be replayed, so no Raw violation happens.
+    for (int i = 1; i <= 2; i++) {
+        // check loadPipe s1 & s2
+        auto& stage = loadPipeSx[i];
+        for (int j = 0; j < stage->size; j++) {
+            if (load_inst == stage->insts[j] && stage->flags[j][LdStFlags::Nuke]) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 Fault
 LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
         const DynInstPtr& inst)
@@ -896,6 +942,14 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
                 if (memDepViolator && ld_inst->seqNum > memDepViolator->seqNum)
                     break;
 
+                // if this load has been marked as Nuke, the load will then be replayed
+                // So next time this load replaying to pipeline will forward from store correctly
+                // And no RAW violation happens
+                if (skipNukeReplay(ld_inst)) {
+                    ++loadIt;
+                    continue;
+                }
+
                 DPRINTF(LSQUnit,
                         "ld_eff_addr1: %#x, ld_eff_addr2: %#x, "
                         "inst_eff_addr1: %#x, inst_eff_addr2: %#x\n",
@@ -947,7 +1001,7 @@ LSQUnit::setFlagInPipeLine(DynInstPtr inst, LdStFlags f)
     }
 
     if (!found) {
-        warn("[sn:%ld] Can not found corresponding inst in PipeLine, isLoad: %d\n", inst->seqNum, inst->isLoad());
+        panic("[sn:%ld] Can not found corresponding inst in PipeLine, isLoad: %d\n", inst->seqNum, inst->isLoad());
     }
 }
 
@@ -982,13 +1036,10 @@ LSQUnit::issueToStorePipe(const DynInstPtr &inst)
 }
 
 Fault
-LSQUnit::loadPipeS0(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag)
+LSQUnit::loadPipeS0(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
 {
-    DPRINTF(LSQUnit, "LoadPipeS0: Executing load PC %s, [sn:%lli] "
-            "flags: valid[%d], replayed[%d], cachemiss[%d], squashed[%d]\n",
-            inst->pcState(), inst->seqNum,
-            flag[LdStFlags::Valid], flag[LdStFlags::Replayed],
-            flag[LdStFlags::CacheMiss], flag[LdStFlags::Squashed]);
+    DPRINTF(LSQUnit, "LoadPipeS0: Executing load PC %s, [sn:%lli] flags: %s\n",
+            inst->pcState(), inst->seqNum, getLdStFlagStr(flag));
     assert(!inst->isSquashed());
 
     Fault load_fault = NoFault;
@@ -999,13 +1050,10 @@ LSQUnit::loadPipeS0(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag
 }
 
 Fault
-LSQUnit::loadPipeS1(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag)
+LSQUnit::loadPipeS1(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
 {
-    DPRINTF(LSQUnit, "LoadPipeS1: Executing load PC %s, [sn:%lli] "
-            "flags: valid[%d], replayed[%d], cachemiss[%d], squashed[%d]\n",
-            inst->pcState(), inst->seqNum,
-            flag[LdStFlags::Valid], flag[LdStFlags::Replayed],
-            flag[LdStFlags::CacheMiss], flag[LdStFlags::Squashed]);
+    DPRINTF(LSQUnit, "LoadPipeS1: Executing load PC %s, [sn:%lli] flags: %s\n",
+            inst->pcState(), inst->seqNum, getLdStFlagStr(flag));
     assert(!inst->isSquashed());
 
     Fault load_fault = inst->getFault();
@@ -1044,11 +1092,7 @@ LSQUnit::loadPipeS1(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag
     }
 
     if (load_fault == NoFault && !inst->readMemAccPredicate()) {
-        assert(inst->readPredicate());
-        inst->setExecuted();
-        inst->completeAcc(nullptr);
-        iewStage->instToCommit(inst);
-        iewStage->activityThisCycle();
+        flag[LdStFlags::readMemAccNotPredicate] = true;
         return NoFault;
     }
 
@@ -1067,26 +1111,20 @@ LSQUnit::loadPipeS1(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag
         return NoFault;
     }
 
-    // If the instruction faulted or predicated false, then we need to send it
-    // along to commit without the instruction completing.
     if (load_fault != NoFault || !inst->readPredicate()) {
-        // Send this instruction to commit, also make sure iew stage
-        // realizes there is activity.  Mark it as executed unless it
-        // is a strictly ordered load that needs to hit the head of
-        // commit.
-        if (!inst->readPredicate())
-            inst->forwardOldRegs();
-        DPRINTF(LSQUnit, "LoadPipeS1: Load [sn:%lli] not executed from %s\n",
-                inst->seqNum,
-                (load_fault != NoFault ? "fault" : "predication"));
-        if (!(inst->hasRequest() && inst->strictlyOrdered()) ||
-            inst->isAtCommit()) {
-            inst->setExecuted();
-        }
-        iewStage->instToCommit(inst);
-        iewStage->activityThisCycle();
+        flag[LdStFlags::HasFault] = load_fault != NoFault;
+        flag[LdStFlags::readNotPredicate] = !inst->readPredicate();
     } else {
         if (inst->effAddrValid()) {
+            // raw violation check (nuke replay)
+            for (int i = 0; i < storePipeSx[1]->size; i++) {
+                auto& store_inst = storePipeSx[1]->insts[i];
+                if (pipeLineNukeCheck(inst, store_inst)) {
+                    flag[LdStFlags::Nuke] = true;
+                    break;
+                }
+            }
+            // rar violation check
             auto it = inst->lqIt;
             ++it;
 
@@ -1099,27 +1137,117 @@ LSQUnit::loadPipeS1(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag
 }
 
 Fault
-LSQUnit::loadPipeS2(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag)
+LSQUnit::loadPipeS2(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
 {
     Fault fault = inst->getFault();
-    DPRINTF(LSQUnit, "LoadPipeS2: Executing load PC %s, [sn:%lli] "
-            "flags: valid[%d], replayed[%d], cachemiss[%d], squashed[%d]\n",
-            inst->pcState(), inst->seqNum,
-            flag[LdStFlags::Valid], flag[LdStFlags::Replayed],
-            flag[LdStFlags::CacheMiss], flag[LdStFlags::Squashed]);
+    DPRINTF(LSQUnit, "LoadPipeS2: Executing load PC %s, [sn:%lli] flags: %s\n",
+            inst->pcState(), inst->seqNum, getLdStFlagStr(flag));
     assert(!inst->isSquashed());
+    LSQRequest* request = inst->savedRequest;
+
+    if (flag[LdStFlags::readMemAccNotPredicate]) {
+        assert(inst->readPredicate() && fault == NoFault);
+        inst->setExecuted();
+        inst->completeAcc(nullptr);
+        iewStage->instToCommit(inst);
+        iewStage->activityThisCycle();
+        return NoFault;
+    }
+
+    // If the instruction faulted or predicated false, then we need to send it
+    // along to commit without the instruction completing.
+    if (flag[LdStFlags::HasFault] || flag[LdStFlags::readNotPredicate]) {
+        // Send this instruction to commit, also make sure iew stage
+        // realizes there is activity.  Mark it as executed unless it
+        // is a strictly ordered load that needs to hit the head of
+        // commit.
+        if (flag[LdStFlags::readNotPredicate])
+            inst->forwardOldRegs();
+        DPRINTF(LSQUnit, "LoadPipeS2: Load [sn:%lli] not executed from %s\n",
+                inst->seqNum, (fault != NoFault ? "fault" : "predication"));
+        if (!(inst->hasRequest() && inst->strictlyOrdered()) || inst->isAtCommit()) {
+            inst->setExecuted();
+        }
+        iewStage->instToCommit(inst);
+        iewStage->activityThisCycle();
+        return fault;
+    }
+
+    if (flag[LdStFlags::Replayed] || flag[LdStFlags::LocalAccess]) {
+        return fault;
+    }
+
+    // raw violation check (nuke replay)
+    for (int i = 0; i < storePipeSx[1]->size; i++) {
+        auto& store_inst = storePipeSx[1]->insts[i];
+        if (pipeLineNukeCheck(inst, store_inst)) {
+            flag[LdStFlags::Nuke] = true;
+            break;
+        }
+    }
+
+    // check if cache hit & get cache response?
+    // NOTE: cache miss replay has higher priority than nuke replay!
+    if (request && request->isNormalLd() && !flag[LdStFlags::FullForward] && !flag[LdStFlags::CacheHit]) {
+        // cannot get cache data at load s2, replay this load
+        // clear state in this instruction
+        inst->effAddrValid(false);
+        // set it as waiting for dcache refill
+        inst->waitingCacheRefill(true);
+        // clear request in loadQueue
+        loadQueue[inst->lqIdx].setRequest(nullptr);
+        // set cache miss & replayed flag in pipeline
+        flag[Replayed] = true;
+        // insert to missed load replay queue
+        iewStage->cacheMissLdReplay(inst);
+        // cancel subsequent dependent insts of this load
+        iewStage->loadCancel(inst);
+        return fault;
+    }
+
+    if (flag[LdStFlags::Nuke]) {
+        // replay load if nuke happens
+        request->discard();
+        inst->savedRequest = nullptr;
+        // clear state in this instruction
+        inst->translationStarted(false);
+        inst->translationCompleted(false);
+        inst->clearCanIssue();
+        inst->effAddrValid(false);
+        // clear request in loadQueue
+        loadQueue[inst->lqIdx].setRequest(nullptr);
+        // set replayed flag in pipeline
+        flag[LdStFlags::Replayed] = true;
+        // nuke fast replay
+        inst->issueQue->retryMem(inst);
+        stats.pipeRawNukeReplay++;
+        // cancel subsequent dependent insts of this load
+        iewStage->loadCancel(inst);
+    } else {
+        // no nuke happens, prepare the inst data
+        request = inst->savedRequest;
+        if (flag[LdStFlags::FullForward]) {
+            // this load gets full data from sq
+            assert(request && request->_fwd_data_pkt);
+            writeback(inst, request->_fwd_data_pkt);
+            request->writebackDone();
+        } else {
+            if (request && request->isNormalLd()) {
+                // assemble cache & sbuffer forwarded data and completeDataAcess
+                request->assemblePackets();
+            }
+        }
+    }
+
     return fault;
 }
 
 Fault
-LSQUnit::loadPipeS3(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag)
+LSQUnit::loadPipeS3(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
 {
     Fault fault = inst->getFault();
-    DPRINTF(LSQUnit, "LoadPipeS3: Executing load PC %s, [sn:%lli] "
-            "flags: valid[%d], replayed[%d], cachemiss[%d], squashed[%d]\n",
-            inst->pcState(), inst->seqNum,
-            flag[LdStFlags::Valid], flag[LdStFlags::Replayed],
-            flag[LdStFlags::CacheMiss], flag[LdStFlags::Squashed]);
+    DPRINTF(LSQUnit, "LoadPipeS3: Executing load PC %s, [sn:%lli] flags: %s\n",
+            inst->pcState(), inst->seqNum, getLdStFlagStr(flag));
     assert(!inst->isSquashed());
     return fault;
 }
@@ -1152,15 +1280,14 @@ LSQUnit::executeLoadPipeSx()
                             iewStage->deferMemInst(inst);
                             flag[LdStFlags::Replayed] = true;
                         }
-
-                        if (inst->isDataPrefetch() || inst->isInstPrefetch()) {
-                            inst->fault = NoFault;
-                        }
-
                         iewStage->SquashCheckAfterExe(inst);
                         break;
                     case 2:
                         fault = loadPipeS2(inst, flag);
+
+                        if (inst->isDataPrefetch() || inst->isInstPrefetch()) {
+                            inst->fault = NoFault;
+                        }
                         break;
                     case 3:
                         fault = loadPipeS3(inst, flag);
@@ -1181,16 +1308,14 @@ LSQUnit::executeLoadPipeSx()
 }
 
 Fault
-LSQUnit::storePipeS0(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag)
+LSQUnit::storePipeS0(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
 {
     // Make sure that a store exists.
     assert(storeQueue.size() != 0);
     assert(!inst->isSquashed());
 
-    DPRINTF(LSQUnit, "StorePipeS0: Executing store PC %s [sn:%lli] "
-            "flags: valid[%d], replayed[%d], squashed[%d]\n",
-            inst->pcState(), inst->seqNum,
-            flag[LdStFlags::Valid], flag[LdStFlags::Replayed], flag[LdStFlags::Squashed]);
+    DPRINTF(LSQUnit, "StorePipeS0: Executing store PC %s [sn:%lli] flags: %s\n",
+            inst->pcState(), inst->seqNum, getLdStFlagStr(flag));
 
     // Now initiateAcc only does TLB access
     Fault store_fault = inst->initiateAcc();
@@ -1199,7 +1324,7 @@ LSQUnit::storePipeS0(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &fla
 }
 
 Fault
-LSQUnit::storePipeS1(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag)
+LSQUnit::storePipeS1(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
 {
     // Make sure that a store exists.
     assert(storeQueue.size() != 0);
@@ -1207,10 +1332,8 @@ LSQUnit::storePipeS1(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &fla
     ssize_t store_idx = inst->sqIdx;
     LSQRequest* request = inst->savedRequest;
 
-    DPRINTF(LSQUnit, "StorePipeS1: Executing store PC %s [sn:%lli] "
-            "flags: valid[%d], replayed[%d], squashed[%d]\n",
-            inst->pcState(), inst->seqNum,
-            flag[LdStFlags::Valid], flag[LdStFlags::Replayed], flag[LdStFlags::Squashed]);
+    DPRINTF(LSQUnit, "StorePipeS1: Executing store PC %s [sn:%lli] flags: %s\n",
+            inst->pcState(), inst->seqNum, getLdStFlagStr(flag));
 
     // Check the recently completed loads to see if any match this store's
     // address.  If so, then we have a memory ordering violation.
@@ -1246,13 +1369,14 @@ LSQUnit::storePipeS1(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &fla
         DPRINTF(LSQUnit, "StorePipeS1: Store [sn:%lli] not executed from predication\n",
                 inst->seqNum);
         inst->forwardOldRegs();
+        flag[LdStFlags::readNotPredicate] = true;
         return store_fault;
     }
 
     if (storeQueue[store_idx].size() == 0) {
         DPRINTF(LSQUnit, "StorePipeS1: Fault on Store PC %s, [sn:%lli], Size = 0\n",
                 inst->pcState(), inst->seqNum);
-
+        flag[LdStFlags::HasFault] = true;
         return store_fault;
     }
 
@@ -1274,41 +1398,48 @@ LSQUnit::storePipeS1(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &fla
 }
 
 Fault
-LSQUnit::storePipeS2(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag)
+LSQUnit::storePipeS2(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
 {
     Fault fault = inst->getFault();
     assert(!inst->isSquashed());
 
-    DPRINTF(LSQUnit, "StorePipeS2: Executing store PC %s [sn:%lli] "
-            "flags: valid[%d], replayed[%d], squashed[%d]\n",
-            inst->pcState(), inst->seqNum,
-            flag[LdStFlags::Valid], flag[LdStFlags::Replayed], flag[LdStFlags::Squashed]);
+    DPRINTF(LSQUnit, "StorePipeS2: Executing store PC %s [sn:%lli] flags: %s\n",
+            inst->pcState(), inst->seqNum, getLdStFlagStr(flag));
     return fault;
 }
 
 Fault
-LSQUnit::storePipeS3(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag)
+LSQUnit::storePipeS3(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
 {
     Fault fault = inst->getFault();
     assert(!inst->isSquashed());
 
-    DPRINTF(LSQUnit, "StorePipeS3: Executing store PC %s [sn:%lli] "
-            "flags: valid[%d], replayed[%d], squashed[%d]\n",
-            inst->pcState(), inst->seqNum,
-            flag[LdStFlags::Valid], flag[LdStFlags::Replayed], flag[LdStFlags::Squashed]);
+    DPRINTF(LSQUnit, "StorePipeS3: Executing store PC %s [sn:%lli] flags: %s\n",
+            inst->pcState(), inst->seqNum, getLdStFlagStr(flag));
     return fault;
 }
 
 Fault
-LSQUnit::storePipeS4(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag)
+LSQUnit::storePipeS4(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
 {
     Fault fault = inst->getFault();
     assert(!inst->isSquashed());
 
-    DPRINTF(LSQUnit, "StorePipeS4: Executing store PC %s [sn:%lli] "
-            "flags: valid[%d], replayed[%d], squashed[%d]\n",
-            inst->pcState(), inst->seqNum,
-            flag[LdStFlags::Valid], flag[LdStFlags::Replayed], flag[LdStFlags::Squashed]);
+    DPRINTF(LSQUnit, "StorePipeS4: Executing store PC %s [sn:%lli] flags: %s\n",
+            inst->pcState(), inst->seqNum, getLdStFlagStr(flag));
+
+    // If the store had a fault then it may not have a mem req
+    if (fault != NoFault || !inst->readPredicate() || !inst->isStoreConditional()) {
+        // If the instruction faulted, then we need to send it
+        // along to commit without the instruction completing.
+        // Send this instruction to commit, also make sure iew
+        // stage realizes there is activity.
+        if (!flag[LdStFlags::Replayed]) {
+            inst->setExecuted();
+            iewStage->instToCommit(inst);
+            iewStage->activityThisCycle();
+        }
+    }
     return fault;
 }
 
@@ -1347,18 +1478,6 @@ LSQUnit::executeStorePipeSx()
                         break;
                     case 3:
                         fault = storePipeS3(inst, flag);
-                        // If the store had a fault then it may not have a mem req
-                        if (fault != NoFault || !inst->readPredicate() || !inst->isStoreConditional()) {
-                            // If the instruction faulted, then we need to send it
-                            // along to commit without the instruction completing.
-                            // Send this instruction to commit, also make sure iew
-                            // stage realizes there is activity.
-                            if (!flag[LdStFlags::Replayed]) {
-                                inst->setExecuted();
-                                iewStage->instToCommit(inst);
-                                iewStage->activityThisCycle();
-                            }
-                        }
                         break;
                     case 4:
                         fault = storePipeS4(inst, flag);
@@ -2375,15 +2494,11 @@ LSQUnit::dumpLoadPipe()
     for (int i = 0; i < loadPipeSx.size(); i++) {
         DPRINTF(LSQUnit, "Load S%d:, size: %d\n", i, loadPipeSx[i]->size);
         for (int j = 0; j < loadPipeSx[i]->size; j++) {
-            DPRINTF(LSQUnit, "  PC: %s, [tid:%i] [sn:%lli] "
-                    "flags: valid[%d], replayed[%d], cachemiss[%d], squashed[%d]\n",
+            DPRINTF(LSQUnit, "  PC: %s, [tid:%i] [sn:%lli] flags: %s\n",
                     loadPipeSx[i]->insts[j]->pcState(),
                     loadPipeSx[i]->insts[j]->threadNumber,
                     loadPipeSx[i]->insts[j]->seqNum,
-                    (loadPipeSx[i]->flags[j])[LdStFlags::Valid],
-                    (loadPipeSx[i]->flags[j])[LdStFlags::Replayed],
-                    (loadPipeSx[i]->flags[j])[LdStFlags::CacheMiss],
-                    (loadPipeSx[i]->flags[j])[LdStFlags::Squashed]
+                    getLdStFlagStr(loadPipeSx[i]->flags[j])
             );
         }
     }
@@ -2396,14 +2511,11 @@ LSQUnit::dumpStorePipe()
     for (int i = 0; i < storePipeSx.size(); i++) {
         DPRINTF(LSQUnit, "Store S%d:, size: %d\n", i, storePipeSx[i]->size);
         for (int j = 0; j < storePipeSx[i]->size; j++) {
-            DPRINTF(LSQUnit, "  PC: %s, [tid:%i] [sn:%lli] "
-                    "flags: valid[%d], replayed[%d], squashed[%d]\n",
+            DPRINTF(LSQUnit, "  PC: %s, [tid:%i] [sn:%lli] flags: %s\n",
                     storePipeSx[i]->insts[j]->pcState(),
                     storePipeSx[i]->insts[j]->threadNumber,
                     storePipeSx[i]->insts[j]->seqNum,
-                    (storePipeSx[i]->flags[j])[LdStFlags::Valid],
-                    (storePipeSx[i]->flags[j])[LdStFlags::Replayed],
-                    (storePipeSx[i]->flags[j])[LdStFlags::Squashed]
+                    getLdStFlagStr(storePipeSx[i]->flags[j])
             );
         }
     }
@@ -2495,6 +2607,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         // rescheduled eventually
         iewStage->rescheduleMemInst(load_inst);
         load_inst->effAddrValid(false);
+        setFlagInPipeLine(load_inst, LdStFlags::Replayed);
         ++stats.rescheduledLoads;
         DPRINTF(LSQUnit, "Strictly ordered load [sn:%lli] PC %s\n",
                 load_inst->seqNum, load_inst->pcState());
@@ -2543,6 +2656,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
 
         WritebackEvent *wb = new WritebackEvent(load_inst, main_pkt, this);
         cpu->schedule(wb, cpu->clockEdge(delay));
+        setFlagInPipeLine(load_inst, LdStFlags::LocalAccess);
         return NoFault;
     }
 
@@ -2694,13 +2808,12 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                     request->discard();
                 }
 
-                WritebackEvent *wb = new WritebackEvent(load_inst, data_pkt,
-                        this);
-
-                // We'll say this has a 1 cycle load-store forwarding latency
-                // for now.
-                // @todo: Need to make this a parameter.
-                cpu->schedule(wb, curTick());
+                // set FullForward flag, save the forward result(data_pkt) in _fwd_data_pkt
+                // then this load will be written back at s2
+                // @todo: make sure _fwd_data_pkt no memory leak!
+                assert(request->_fwd_data_pkt == nullptr);
+                request->_fwd_data_pkt = data_pkt;
+                setFlagInPipeLine(load_inst, LdStFlags::FullForward);
 
                 // Don't need to do anything special for split loads.
                 ++stats.forwLoads;
@@ -2730,6 +2843,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                 // rescheduled eventually
                 iewStage->rescheduleMemInst(load_inst);
                 load_inst->effAddrValid(false);
+                setFlagInPipeLine(load_inst, LdStFlags::Replayed);
                 ++stats.rescheduledLoads;
 
                 // Do not generate a writeback event as this instruction is not
@@ -2777,9 +2891,13 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                     request->discard();
                 }
 
-                WritebackEvent *wb = new WritebackEvent(load_inst, data_pkt,
-                        this);
-                cpu->schedule(wb, curTick());
+                // set FullForward flag, save the forward result(data_pkt) in _fwd_data_pkt
+                // then this load will be written back at s2
+                // @todo: make sure _fwd_data_pkt no memory leak!
+                assert(request->_fwd_data_pkt == nullptr);
+                request->_fwd_data_pkt = data_pkt;
+                setFlagInPipeLine(load_inst, LdStFlags::FullForward);
+
                 return NoFault;
             }
             // if not fully forward, need to clear buffer

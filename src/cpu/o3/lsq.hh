@@ -47,6 +47,8 @@
 #include <list>
 #include <map>
 #include <queue>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include <boost/compute/detail/lru_cache.hpp>
@@ -60,6 +62,7 @@
 #include "cpu/o3/dyn_inst_xsmeta.hh"
 #include "cpu/utils.hh"
 #include "enums/SMTQueuePolicy.hh"
+#include "mem/packet.hh"
 #include "mem/port.hh"
 #include "sim/sim_object.hh"
 
@@ -81,12 +84,31 @@ enum LdStFlags
 {
     Valid = 0,
     Replayed,
-    CacheMiss,
+    CacheHit,
+    Nuke,
+    FullForward,
+    LocalAccess,
+    HasFault,
+    readNotPredicate,
+    readMemAccNotPredicate,
     Squashed,
     Num_Flags
 };
 
 constexpr uint64_t LdStFlagNum = LdStFlags::Num_Flags;
+
+const std::string LdStFlagName[LdStFlagNum] = {
+    "Valid",
+    "Replayed",
+    "CacheHit",
+    "Nuke",
+    "FullForward",
+    "LocalAccess",
+    "HasFault",
+    "readNotPredicate",
+    "readMemAccNotPredicate",
+    "Squashed"
+};
 
 class LSQ
 {
@@ -268,6 +290,7 @@ class LSQ
         PacketDataPtr _data;
         std::vector<PacketPtr> _packets;
         std::vector<RequestPtr> _reqs;
+        PacketPtr _fwd_data_pkt;
         std::vector<Fault> _fault;
         uint64_t* _res;
         const Addr _addr;
@@ -475,6 +498,8 @@ class LSQ
          */
         virtual bool isCacheBlockHit(Addr blockAddr, Addr cacheBlockMask) = 0;
 
+        virtual void assemblePackets() { panic("assemblePackets not implemented!\n"); }
+
         /** Update the status to reflect that a packet was sent. */
         void
         packetSent()
@@ -606,6 +631,13 @@ class LSQ
             flags.set(Flag::Complete);
         }
 
+        /* Load instrutcion which is not LR or MMIO type of Load. */
+        bool
+        isNormalLd()
+        {
+            return isLoad() && !mainReq()->isLLSC() && !mainReq()->isUncacheable();
+        }
+
         virtual std::string name() const { return "LSQRequest"; }
     };
 
@@ -625,6 +657,7 @@ class LSQ
         virtual void finish(const Fault &fault, const RequestPtr &req,
                 gem5::ThreadContext* tc, BaseMMU::Mode mode);
         virtual bool recvTimingResp(PacketPtr pkt);
+        virtual void assemblePackets();
         virtual bool sendPacketToCache();
         virtual void buildPackets();
         virtual Cycles handleLocalAccess(
@@ -690,6 +723,7 @@ class LSQ
         virtual void finish(const Fault &fault, const RequestPtr &req,
                 gem5::ThreadContext* tc, BaseMMU::Mode mode);
         virtual bool recvTimingResp(PacketPtr pkt);
+        virtual void assemblePackets();
         virtual void initiateTranslation();
         virtual bool sendPacketToCache();
         virtual void buildPackets();

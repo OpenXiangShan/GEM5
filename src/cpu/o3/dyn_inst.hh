@@ -194,7 +194,7 @@ class DynInst : public ExecContext, public RefCounted
         NotAnInst,
         TranslationStarted,
         TranslationCompleted,
-        CacheRefilledAfterMiss,
+        WaitingCacheRefill,
         PossibleLoadViolation,
         HitExternalSnoop,
         EffAddrValid,
@@ -463,13 +463,13 @@ class DynInst : public ExecContext, public RefCounted
     }
     void translationCompleted(bool f) { instFlags[TranslationCompleted] = f; }
 
-    /** True if Dcache refilled after Dcache miss. */
+    /** True if inst is waiting for Dcache refill. */
     bool
-    cacheRefilledAfterMiss() const
+    waitingCacheRefill() const
     {
-        return instFlags[CacheRefilledAfterMiss];
+        return instFlags[WaitingCacheRefill];
     }
-    void cacheRefilledAfterMiss(bool f) { instFlags[CacheRefilledAfterMiss] = f; }
+    void waitingCacheRefill(bool f) { instFlags[WaitingCacheRefill] = f; }
 
     /** True if this address was found to match a previous load and they issued
      * out of order. If that happend, then it's only a problem if an incoming

@@ -391,6 +391,12 @@ class LSQUnit
     /** Returns the memory ordering violator. */
     DynInstPtr getMemDepViolator();
 
+    /** Check if store should skip this raw violation because of nuke replay. */
+    bool skipNukeReplay(const DynInstPtr& load_inst);
+
+    /** Check if there exists raw nuke between load and store. */
+    bool pipeLineNukeCheck(const DynInstPtr &load_inst, const DynInstPtr &store_inst);
+
     /** Returns the number of free LQ entries. */
     unsigned numFreeLoadEntries();
 
@@ -445,6 +451,19 @@ class LSQUnit
 
     /** Returns the number of stores to writeback. */
     int numStoresToSbuffer() { return storesToWB; }
+
+    /** get description string from load/store pipeLine flag. */
+    std::string getLdStFlagStr(const std::bitset<LdStFlagNum>& flag) {
+        std::string res{};
+        for (int i = 0; i < LdStFlagNum; i++) {
+            if (flag.test(i)) {
+                res += LdStFlagName[i] + ": [1] ";
+            } else {
+                res += LdStFlagName[i] + ": [0] ";
+            }
+        }
+        return res;
+    }
 
     /** Returns if the LSQ unit will writeback on this cycle. */
     bool
@@ -508,19 +527,19 @@ class LSQUnit
     /** Process instructions in each load pipeline stages. */
     void executeLoadPipeSx();
 
-    Fault loadPipeS0(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag);
-    Fault loadPipeS1(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag);
-    Fault loadPipeS2(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag);
-    Fault loadPipeS3(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag);
+    Fault loadPipeS0(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag);
+    Fault loadPipeS1(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag);
+    Fault loadPipeS2(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag);
+    Fault loadPipeS3(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag);
 
     /** Process instructions in each store pipeline stages. */
     void executeStorePipeSx();
 
-    Fault storePipeS0(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag);
-    Fault storePipeS1(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag);
-    Fault storePipeS2(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag);
-    Fault storePipeS3(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag);
-    Fault storePipeS4(const DynInstPtr &inst, const std::bitset<LdStFlagNum> &flag);
+    Fault storePipeS0(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag);
+    Fault storePipeS1(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag);
+    Fault storePipeS2(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag);
+    Fault storePipeS3(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag);
+    Fault storePipeS4(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag);
 
     /** Wrap function. */
     void executePipeSx();
@@ -721,6 +740,9 @@ class LSQUnit
 
         /** Total number of squashed loads. */
         statistics::Scalar squashedLoads;
+
+        /** Total number of pipeline detected raw nuke. */
+        statistics::Scalar pipeRawNukeReplay;
 
         /** Total number of responses from the memory system that are
          * ignored due to the instruction already being squashed. */
