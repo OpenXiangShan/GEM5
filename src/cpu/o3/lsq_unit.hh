@@ -453,7 +453,8 @@ class LSQUnit
     int numStoresToSbuffer() { return storesToWB; }
 
     /** get description string from load/store pipeLine flag. */
-    std::string getLdStFlagStr(const std::bitset<LdStFlagNum>& flag) {
+    std::string getLdStFlagStr(const std::bitset<LdStFlagNum>& flag)
+    {
         std::string res{};
         for (int i = 0; i < LdStFlagNum; i++) {
             if (flag.test(i)) {
@@ -464,6 +465,8 @@ class LSQUnit
         }
         return res;
     }
+
+    LSQ* getLsq() { return lsq; }
 
     /** Returns if the LSQ unit will writeback on this cycle. */
     bool

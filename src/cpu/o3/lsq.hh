@@ -1017,6 +1017,9 @@ class LSQ
 
     RequestPort &getDataPort() { return dcachePort; }
 
+    bool enableLdMissReplay() const { return _enableLdMissReplay; }
+    bool enablePipeNukeCheck() const { return _enablePipeNukeCheck; }
+
   protected:
     /** D-cache is blocked */
     bool _cacheBlocked;
@@ -1037,6 +1040,9 @@ class LSQ
     boost::compute::detail::lru_cache<uint64_t, NullStruct> recentlyloadAddr;
 
     bool enableBankConflictCheck;
+
+    bool _enableLdMissReplay;
+    bool _enablePipeNukeCheck;
 
     /** If the LSQ is currently waiting for stale translations */
     bool waitingForStaleTranslation;

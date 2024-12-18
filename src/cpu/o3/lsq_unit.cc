@@ -745,7 +745,7 @@ LSQUnit::pipeLineNukeCheck(const DynInstPtr &load_inst, const DynInstPtr &store_
     bool load_need_check = load_inst->effAddrValid() && (load_inst->lqIt >= store_inst->lqIt);
     bool store_need_check = store_req && store_req->isTranslationComplete() &&
                             store_req->isMemAccessRequired() && (store_inst->getFault() == NoFault);
-    if (load_need_check && store_need_check) {
+    if (lsq->enablePipeNukeCheck() && load_need_check && store_need_check) {
         if (load_eff_addr1 <= store_eff_addr2 && store_eff_addr1 <= load_eff_addr2) {
             return true;
         }
@@ -868,12 +868,14 @@ LSQUnit::skipNukeReplay(const DynInstPtr& load_inst)
 {
     // if the load_inst has been marked as `Nuke`
     // load will be replayed, so no Raw violation happens.
-    for (int i = 1; i <= 2; i++) {
-        // check loadPipe s1 & s2
-        auto& stage = loadPipeSx[i];
-        for (int j = 0; j < stage->size; j++) {
-            if (load_inst == stage->insts[j] && stage->flags[j][LdStFlags::Nuke]) {
-                return true;
+    if (lsq->enablePipeNukeCheck()) {
+        for (int i = 1; i <= 2; i++) {
+            // check loadPipe s1 & s2
+            auto& stage = loadPipeSx[i];
+            for (int j = 0; j < stage->size; j++) {
+                if (load_inst == stage->insts[j] && stage->flags[j][LdStFlags::Nuke]) {
+                    return true;
+                }
             }
         }
     }
@@ -1188,7 +1190,8 @@ LSQUnit::loadPipeS2(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
 
     // check if cache hit & get cache response?
     // NOTE: cache miss replay has higher priority than nuke replay!
-    if (request && request->isNormalLd() && !flag[LdStFlags::FullForward] && !flag[LdStFlags::CacheHit]) {
+    if (lsq->enableLdMissReplay() &&
+        request && request->isNormalLd() && !flag[LdStFlags::FullForward] && !flag[LdStFlags::CacheHit]) {
         // cannot get cache data at load s2, replay this load
         // clear state in this instruction
         inst->effAddrValid(false);
@@ -1206,6 +1209,7 @@ LSQUnit::loadPipeS2(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
     }
 
     if (flag[LdStFlags::Nuke]) {
+        assert(lsq->enablePipeNukeCheck());
         // replay load if nuke happens
         request->discard();
         inst->savedRequest = nullptr;
@@ -1232,7 +1236,7 @@ LSQUnit::loadPipeS2(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
             writeback(inst, request->_fwd_data_pkt);
             request->writebackDone();
         } else {
-            if (request && request->isNormalLd()) {
+            if (lsq->enableLdMissReplay() && request && request->isNormalLd()) {
                 // assemble cache & sbuffer forwarded data and completeDataAcess
                 request->assemblePackets();
             }

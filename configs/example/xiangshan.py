@@ -337,8 +337,10 @@ def setKmhV3IdealParams(args, system):
         cpu.mmu.itb.size = 96
         
         cpu.BankConflictCheck = False   # real bank conflict 0.2 score
+        cpu.EnableLdMissReplay = False
+        cpu.EnablePipeNukeCheck = False
 
-        cpu.scheduler = IdealScheduler()    
+        cpu.scheduler = IdealScheduler()
         # use centralized load/store issue queue, for hmmer
 
         # ideal decoupled frontend

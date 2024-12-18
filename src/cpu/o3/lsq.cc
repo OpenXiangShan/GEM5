@@ -86,6 +86,8 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
       cacheLoadPorts(params.cacheLoadPorts), usedLoadPorts(0),lastConflictCheckTick(0),
       recentlyloadAddr(8),
       enableBankConflictCheck(params.BankConflictCheck),
+      _enableLdMissReplay(params.EnableLdMissReplay),
+      _enablePipeNukeCheck(params.EnablePipeNukeCheck),
       waitingForStaleTranslation(false),
       staleTranslationWaitTxnId(0),
       lsqPolicy(params.smtLSQPolicy),
@@ -99,6 +101,9 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
       numThreads(params.numThreads)
 {
     assert(numThreads > 0 && numThreads <= MaxThreads);
+    if (!_enableLdMissReplay && _enablePipeNukeCheck) {
+        panic("LSQ can not support pipeline nuke replay when EnableLdMissReplay is False");
+    }
 
     //**********************************************
     //************ Handle SMT Parameters ***********
@@ -1401,20 +1406,21 @@ bool
 LSQ::SingleDataRequest::recvTimingResp(PacketPtr pkt)
 {
     bool isNormalLd = this->isNormalLd();
+    bool enableLdMissReplay = this->_port.getLsq()->enableLdMissReplay();
     // Dump inst num, request addr, and packet addr
     DPRINTF(LSQ, "Single Req::recvTimingResp: inst: %llu, pkt: %#lx, isLoad: %d, "
                 "isLLSC: %d, isUncache: %d, isCacheSatisfied: %d, data: %d\n",
                 pkt->req->getReqInstSeqNum(), pkt->getAddr(), isLoad(), mainReq()->isLLSC(),
                 mainReq()->isUncacheable(), pkt->cacheSatisfied, *(pkt->getPtr<uint64_t*>()));
     assert(_numOutstandingPackets == 1);
-    if (isNormalLd && LSQRequest::_inst->waitingCacheRefill()) {
+    if (enableLdMissReplay && isNormalLd && LSQRequest::_inst->waitingCacheRefill()) {
         // Data in Dcache is ready, wake up missed load in replay queue
         LSQRequest::_inst->waitingCacheRefill(false);
         discard();
     } else {
         flags.set(Flag::Complete);
         assert(pkt == _packets.front());
-        if (isNormalLd) {
+        if (enableLdMissReplay && isNormalLd) {
             // cache satisfied load, assemblePackets at load s2
             _port.setFlagInPipeLine(_inst, LdStFlags::CacheHit);
         } else {
@@ -1439,13 +1445,14 @@ LSQ::SplitDataRequest::recvTimingResp(PacketPtr pkt)
     numReceivedPackets++;
     if (numReceivedPackets == _packets.size()) {
         bool isNormalLd = this->isNormalLd();
-        if (isNormalLd && LSQRequest::_inst->waitingCacheRefill()) {
+        bool enableLdMissReplay = this->_port.getLsq()->enableLdMissReplay();
+        if (enableLdMissReplay && isNormalLd && LSQRequest::_inst->waitingCacheRefill()) {
             // Data in Dcache is ready, wake up missed load in replay queue
             LSQRequest::_inst->waitingCacheRefill(false);
             discard();
         } else {
             flags.set(Flag::Complete);
-            if (isNormalLd) {
+            if (enableLdMissReplay && isNormalLd) {
                 // cache satisfied load, assemblePackets at load s2
                 _port.setFlagInPipeLine(_inst, LdStFlags::CacheHit);
             } else {

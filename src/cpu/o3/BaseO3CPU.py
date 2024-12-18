@@ -188,6 +188,8 @@ class BaseO3CPU(BaseCPU):
     LFSTEntrySize = Param.Unsigned(4,"The number of store table inst in every entry of LFST can contain")
     SSITSize = Param.Unsigned(8192, "Store set ID table size")
     BankConflictCheck = Param.Bool(True, "open Bank conflict check")
+    EnableLdMissReplay = Param.Bool(True, "Replay Cache missed load instrution from ReplayQ if True")
+    EnablePipeNukeCheck = Param.Bool(True, "Replay load if Raw violation is detected in loadPipe if True")
 
 
     numRobs = Param.Unsigned(1, "Number of Reorder Buffers");
