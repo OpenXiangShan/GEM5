@@ -88,6 +88,7 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
       enableBankConflictCheck(params.BankConflictCheck),
       _enableLdMissReplay(params.EnableLdMissReplay),
       _enablePipeNukeCheck(params.EnablePipeNukeCheck),
+      _storeWbStage(params.StoreWbStage),
       waitingForStaleTranslation(false),
       staleTranslationWaitTxnId(0),
       lsqPolicy(params.smtLSQPolicy),
@@ -104,6 +105,7 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
     if (!_enableLdMissReplay && _enablePipeNukeCheck) {
         panic("LSQ can not support pipeline nuke replay when EnableLdMissReplay is False");
     }
+    assert(_storeWbStage >= 2 && _storeWbStage <= 4);
 
     //**********************************************
     //************ Handle SMT Parameters ***********

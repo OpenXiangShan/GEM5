@@ -1019,6 +1019,7 @@ class LSQ
 
     bool enableLdMissReplay() const { return _enableLdMissReplay; }
     bool enablePipeNukeCheck() const { return _enablePipeNukeCheck; }
+    int storeWbStage() const { return _storeWbStage; }
 
   protected:
     /** D-cache is blocked */
@@ -1043,6 +1044,8 @@ class LSQ
 
     bool _enableLdMissReplay;
     bool _enablePipeNukeCheck;
+
+    int _storeWbStage;
 
     /** If the LSQ is currently waiting for stale translations */
     bool waitingForStaleTranslation;

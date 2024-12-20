@@ -1432,18 +1432,6 @@ LSQUnit::storePipeS4(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
     DPRINTF(LSQUnit, "StorePipeS4: Executing store PC %s [sn:%lli] flags: %s\n",
             inst->pcState(), inst->seqNum, getLdStFlagStr(flag));
 
-    // If the store had a fault then it may not have a mem req
-    if (fault != NoFault || !inst->readPredicate() || !inst->isStoreConditional()) {
-        // If the instruction faulted, then we need to send it
-        // along to commit without the instruction completing.
-        // Send this instruction to commit, also make sure iew
-        // stage realizes there is activity.
-        if (!flag[LdStFlags::Replayed]) {
-            inst->setExecuted();
-            iewStage->instToCommit(inst);
-            iewStage->activityThisCycle();
-        }
-    }
     return fault;
 }
 
@@ -1488,6 +1476,20 @@ LSQUnit::executeStorePipeSx()
                         break;
                     default:
                         panic("unsupported storepipe length");
+                }
+                if (i == (lsq->storeWbStage() - 1)) {
+                    // If the store had a fault then it may not have a mem req
+                    if (fault != NoFault || !inst->readPredicate() || !inst->isStoreConditional()) {
+                        // If the instruction faulted, then we need to send it
+                        // along to commit without the instruction completing.
+                        // Send this instruction to commit, also make sure iew
+                        // stage realizes there is activity.
+                        if (!flag[LdStFlags::Replayed]) {
+                            inst->setExecuted();
+                            iewStage->instToCommit(inst);
+                            iewStage->activityThisCycle();
+                        }
+                    }
                 }
             } else {
                 DPRINTF(LSQUnit, "Execute: Instruction was squashed. PC: %s, [tid:%i]"
