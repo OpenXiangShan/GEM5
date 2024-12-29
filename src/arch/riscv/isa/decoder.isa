@@ -88,7 +88,7 @@ decode QUADRANT default Unknown::unknown() {
                 }}, {{
                     Rp2 = Mem_ub;
                 }}, {{
-                    EA = rvZext(Rp1 + offset);
+                    EA = (Rp1 + offset);
                 }});
                 0x1: decode CFUNCT1BIT6 {
                     0x0: c_lhu({{
@@ -96,14 +96,14 @@ decode QUADRANT default Unknown::unknown() {
                     }}, {{
                         Rp2 = Mem_uh;
                     }}, {{
-                        EA = rvZext(Rp1 + offset);
+                        EA = (Rp1 + offset);
                     }});
                     0x1: c_lh({{
                         offset = CIMM2<0:0> << 1;
                     }}, {{
                         Rp2_sd = Mem_sh;
                     }}, {{
-                        EA = rvZext(Rp1 + offset);
+                        EA = (Rp1 + offset);
                     }});
                 }
             }
@@ -113,14 +113,14 @@ decode QUADRANT default Unknown::unknown() {
                 }}, {{
                     Mem_ub = Rp2_ub;
                 }}, ea_code={{
-                    EA = rvZext(Rp1 + offset);
+                    EA = (Rp1 + offset);
                 }});
                 0x3: c_sh({{
                     offset = (CIMM2<0:0> << 1);
                 }}, {{
                     Mem_uh = Rp2_uh;
                 }}, ea_code={{
-                    EA = rvZext(Rp1 + offset);
+                    EA = (Rp1 + offset);
                 }});
             }
         }
@@ -272,18 +272,14 @@ decode QUADRANT default Unknown::unknown() {
                         }});
                     }
                     0x1: decode CFUNCT2LOW {
-                        0x0: decode RVTYPE {
-                            0x1: c_subw({{
-                                Rp1_sd = (int32_t)Rp1_sd - Rp2_sw;
-                            }});
-                        }
-                        0x1: decode RVTYPE {
-                            0x1: c_addw({{
-                                Rp1_sd = (int32_t)Rp1_sd + Rp2_sw;
-                            }});
-                        }
+                        0x0: c_subw({{
+                            Rp1_sd = (int32_t)Rp1_sd - Rp2_sw;
+                        }});
+                        0x1: c_addw({{
+                            Rp1_sd = (int32_t)Rp1_sd + Rp2_sw;
+                        }});
                         0x2: c_mul({{
-                            Rp1_sd = rvSext(Rp1_sd * Rp2_sd);
+                            Rp1_sd = (Rp1_sd * Rp2_sd);
                         }}, IntMultOp);
                         0x3: decode RP2 {
                             0x0: c_zext_b({{
@@ -298,11 +294,9 @@ decode QUADRANT default Unknown::unknown() {
                             0x3: c_sext_h({{
                                 Rp1 = sext<16>(Rp1 & 0xFFFFULL);
                             }});
-                            0x4: decode RVTYPE {
-                                0x1: c_zext_w({{
+                            0x4: c_zext_w({{
                                     Rp1 = bits(Rp1, 31, 0);
                                 }});
-                            }
                             0x5: c_not({{
                                 Rp1 = ~Rp1;
                             }});
