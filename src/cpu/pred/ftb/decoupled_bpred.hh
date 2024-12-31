@@ -197,6 +197,8 @@ class DecoupledBPUWithFTB : public BPredUnit
 
     bool enableTwoTaken{false};
 
+    bool enablePerfectUftb{false};
+
   private:
     std::string _name;
 

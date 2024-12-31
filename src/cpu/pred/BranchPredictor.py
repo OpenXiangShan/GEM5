@@ -958,3 +958,4 @@ class DecoupledBPUWithFTB(BranchPredictor):
     enableLoopPredictor = Param.Bool(False, "Use loop predictor to predict loop exit")
     enableJumpAheadPredictor = Param.Bool(False, "Use jump ahead predictor to skip no-need-to-predict blocks")
     enableTwoTaken = Param.Bool(False, "Enable predicting two taken blocks per cycle")
+    enablePerfectUftb = Param.Bool(False, "Remove the override bubble when the generated bubble is equal to 1.")
