@@ -465,6 +465,7 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     ADD_STAT(commitFsqEntryHasInsts, statistics::units::Count::get(), "number of insts that commit fsq entries have"),
     ADD_STAT(commitFsqEntryFetchedInsts, statistics::units::Count::get(), "number of insts that commit fsq entries fetched"),
     ADD_STAT(commitFsqEntryOnlyHasOneJump, statistics::units::Count::get(), "number of fsq entries with only one instruction (jump)"),
+    ADD_STAT(overrideBubbles, statistics::units::Count::get(), "number of bpu pred Override Bubbles"),
     ADD_STAT(ftbHit, statistics::units::Count::get(), "ftb hits (in predict block)"),
     ADD_STAT(ftbMiss, statistics::units::Count::get(), "ftb misses (in predict block)"),
     ADD_STAT(ftbMissInstNotCommitted, statistics::units::Count::get(), "inst causing ftb miss but not committed"),
@@ -624,6 +625,7 @@ DecoupledBPUWithFTB::tick()
     }
 
     if (numOverrideBubbles > 0) {
+        dbpFtbStats.overrideBubbles++;
         numOverrideBubbles--;
     }
 
@@ -729,6 +731,7 @@ DecoupledBPUWithFTB::ideal_tick()
     }
 
     if (numOverrideBubbles > 0) {
+        dbpFtbStats.overrideBubbles++;
         numOverrideBubbles--;
     }
 

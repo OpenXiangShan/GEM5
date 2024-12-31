@@ -420,6 +420,8 @@ class DecoupledBPUWithFTB : public BPredUnit
         statistics::Distribution commitFsqEntryFetchedInsts;
         statistics::Scalar commitFsqEntryOnlyHasOneJump;
 
+        statistics::Scalar overrideBubbles;
+
         statistics::Scalar ftbHit;
         statistics::Scalar ftbMiss;
         statistics::Scalar ftbMissInstNotCommitted;
