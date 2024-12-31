@@ -93,7 +93,6 @@ jobs:
       - uses: actions/checkout@v2
       - name: Build GEM5 opt
         run: |
-          source /nfs-nvme/home/share/zyy/shared_apps/setenv_AOCC.sh
           CC=clang CXX=clang++ scons build/RISCV_CHI/gem5.opt -j 48 --gold-linker
       - name: XS-GEM5 - Test xiangshan.py simulation scripts
         run: |
