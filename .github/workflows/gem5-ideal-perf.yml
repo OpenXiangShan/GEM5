@@ -17,7 +17,7 @@ jobs:
         run: |
           export GEM5_HOME=$(pwd)
           cd ext/dramsim3
-          git clone git@github.com:umd-memsys/DRAMSim3.git DRAMsim3
+          git clone https://github.com/umd-memsys/DRAMsim3.git DRAMsim3
           cd DRAMsim3 && mkdir -p build
           cd build
           cmake ..
