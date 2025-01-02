@@ -290,7 +290,6 @@ class LSQ
         PacketDataPtr _data;
         std::vector<PacketPtr> _packets;
         std::vector<RequestPtr> _reqs;
-        PacketPtr _fwd_data_pkt;
         std::vector<Fault> _fault;
         uint64_t* _res;
         const Addr _addr;

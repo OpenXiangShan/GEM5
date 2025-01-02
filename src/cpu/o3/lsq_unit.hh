@@ -484,6 +484,8 @@ class LSQUnit
     void recvRetry();
 
     unsigned int cacheLineSize();
+
+    PacketPtr makeFullFwdPkt(DynInstPtr load_inst, LSQRequest *request);
   private:
     /** Reset the LSQ state */
     void resetState();

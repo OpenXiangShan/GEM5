@@ -1249,7 +1249,7 @@ LSQ::LSQRequest::LSQRequest(
     : _state(State::NotIssued),
     numTranslatedFragments(0),
     numInTranslationFragments(0),
-    _port(*port), _inst(inst), _data(data), _fwd_data_pkt(nullptr),
+    _port(*port), _inst(inst), _data(data),
     _res(res), _addr(addr), _size(size),
     _flags(flags_),
     _numOutstandingPackets(0),
@@ -1338,9 +1338,6 @@ LSQ::LSQRequest::~LSQRequest()
 
     for (auto r: _packets)
         delete r;
-
-    if (_fwd_data_pkt)
-        delete  _fwd_data_pkt;
 };
 
 ContextID

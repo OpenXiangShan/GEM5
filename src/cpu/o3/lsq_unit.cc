@@ -1231,10 +1231,12 @@ LSQUnit::loadPipeS2(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
         // no nuke happens, prepare the inst data
         request = inst->savedRequest;
         if (flag[LdStFlags::FullForward]) {
-            // this load gets full data from sq
-            assert(request && request->_fwd_data_pkt);
-            writeback(inst, request->_fwd_data_pkt);
+            assert(request);
+            PacketPtr pkt = makeFullFwdPkt(inst, request);
+            // this load gets full data from sq or sbuffer
+            writeback(inst, pkt);
             request->writebackDone();
+            delete pkt;
         } else {
             if (lsq->enableLdMissReplay() && request && request->isNormalLd()) {
                 // assemble cache & sbuffer forwarded data and completeDataAcess
@@ -2561,6 +2563,55 @@ LSQUnit::cacheLineSize()
     return cpu->cacheLineSize();
 }
 
+PacketPtr
+LSQUnit::makeFullFwdPkt(DynInstPtr load_inst, LSQRequest *request)
+{
+    auto store_it = load_inst->sqIt;
+    PacketPtr data_pkt = new Packet(request->mainReq(),
+            MemCmd::ReadReq);
+    data_pkt->dataStatic(load_inst->memData);
+
+    // hardware transactional memory
+    // Store to load forwarding within a transaction
+    // This should be okay because the store will be sent to
+    // the memory subsystem and subsequently get added to the
+    // write set of the transaction. The write set has a stronger
+    // property than the read set, so the load doesn't necessarily
+    // have to be there.
+    assert(!request->mainReq()->isHTMCmd());
+    if (load_inst->inHtmTransactionalState()) {
+        assert (!storeQueue[store_it._idx].completed());
+        assert (
+            storeQueue[store_it._idx].instruction()->
+                inHtmTransactionalState());
+        assert (
+            load_inst->getHtmTransactionUid() ==
+            storeQueue[store_it._idx].instruction()->
+                getHtmTransactionUid());
+        data_pkt->setHtmTransactional(
+            load_inst->getHtmTransactionUid());
+        DPRINTF(HtmCpu, "HTM LD (ST2LDF) "
+            "pc=0x%lx - vaddr=0x%lx - "
+            "paddr=0x%lx - htmUid=%u\n",
+            load_inst->pcState().instAddr(),
+            data_pkt->req->hasVaddr() ?
+            data_pkt->req->getVaddr() : 0lu,
+            data_pkt->getAddr(),
+            load_inst->getHtmTransactionUid());
+    }
+
+    if (request->isAnyOutstandingRequest()) {
+        assert(request->_numOutstandingPackets > 0);
+        // There are memory requests packets in flight already.
+        // This may happen if the store was not complete the
+        // first time this load got executed. Signal the senderSate
+        // that response packets should be discarded.
+        request->discard();
+    }
+
+    return data_pkt;
+}
+
 Fault
 LSQUnit::read(LSQRequest *request, ssize_t load_idx)
 {
@@ -2772,53 +2823,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                         "addr %#x\n", store_it._idx,
                         request->mainReq()->getVaddr());
 
-                PacketPtr data_pkt = new Packet(request->mainReq(),
-                        MemCmd::ReadReq);
-                data_pkt->dataStatic(load_inst->memData);
-
-                // hardware transactional memory
-                // Store to load forwarding within a transaction
-                // This should be okay because the store will be sent to
-                // the memory subsystem and subsequently get added to the
-                // write set of the transaction. The write set has a stronger
-                // property than the read set, so the load doesn't necessarily
-                // have to be there.
-                assert(!request->mainReq()->isHTMCmd());
-                if (load_inst->inHtmTransactionalState()) {
-                    assert (!storeQueue[store_it._idx].completed());
-                    assert (
-                        storeQueue[store_it._idx].instruction()->
-                          inHtmTransactionalState());
-                    assert (
-                        load_inst->getHtmTransactionUid() ==
-                        storeQueue[store_it._idx].instruction()->
-                          getHtmTransactionUid());
-                    data_pkt->setHtmTransactional(
-                        load_inst->getHtmTransactionUid());
-                    DPRINTF(HtmCpu, "HTM LD (ST2LDF) "
-                      "pc=0x%lx - vaddr=0x%lx - "
-                      "paddr=0x%lx - htmUid=%u\n",
-                      load_inst->pcState().instAddr(),
-                      data_pkt->req->hasVaddr() ?
-                        data_pkt->req->getVaddr() : 0lu,
-                      data_pkt->getAddr(),
-                      load_inst->getHtmTransactionUid());
-                }
-
-                if (request->isAnyOutstandingRequest()) {
-                    assert(request->_numOutstandingPackets > 0);
-                    // There are memory requests packets in flight already.
-                    // This may happen if the store was not complete the
-                    // first time this load got executed. Signal the senderSate
-                    // that response packets should be discarded.
-                    request->discard();
-                }
-
-                // set FullForward flag, save the forward result(data_pkt) in _fwd_data_pkt
-                // then this load will be written back at s2
-                // @todo: make sure _fwd_data_pkt no memory leak!
-                assert(request->_fwd_data_pkt == nullptr);
-                request->_fwd_data_pkt = data_pkt;
+                // set FullForward flag, then this load will be written back at s2
                 setFlagInPipeLine(load_inst, LdStFlags::FullForward);
 
                 // Don't need to do anything special for split loads.
@@ -2882,26 +2887,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
 
                 request->forward();
 
-                PacketPtr data_pkt = new Packet(request->mainReq(),
-                        MemCmd::ReadReq);
-                data_pkt->dataStatic(load_inst->memData);
-
-                assert(!request->mainReq()->isHTMCmd());
-                if (load_inst->inHtmTransactionalState()) {
-                    data_pkt->setHtmTransactional(
-                        load_inst->getHtmTransactionUid());
-                }
-
-                if (request->isAnyOutstandingRequest()) {
-                    assert(request->_numOutstandingPackets > 0);
-                    request->discard();
-                }
-
-                // set FullForward flag, save the forward result(data_pkt) in _fwd_data_pkt
-                // then this load will be written back at s2
-                // @todo: make sure _fwd_data_pkt no memory leak!
-                assert(request->_fwd_data_pkt == nullptr);
-                request->_fwd_data_pkt = data_pkt;
+                // set FullForward flag, then this load will be written back at s2
                 setFlagInPipeLine(load_inst, LdStFlags::FullForward);
 
                 return NoFault;
