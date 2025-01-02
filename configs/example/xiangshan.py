@@ -365,6 +365,7 @@ def setKmhV3IdealParams(args, system):
             cpu.icache.enable_wayprediction = False
             cpu.dcache.enable_wayprediction = False
             cpu.dcache.tag_load_read_ports = 100 # 3->100
+            cpu.dcache.mshrs = 32
 
     if args.l2cache:
         for i in range(args.num_cpus):
@@ -376,6 +377,7 @@ def setKmhV3IdealParams(args, system):
 
     if args.l3cache:
         system.l3.enable_wayprediction = False
+        system.l3.mshrs = 128
 
 if __name__ == '__m5_main__':
     # Add args
