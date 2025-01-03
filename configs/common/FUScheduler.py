@@ -231,7 +231,20 @@ class IdealScheduler(Scheduler):
             IssuePort(fu=[SIMD_Unit()])
         ], scheduleToExecDelay=3),
     ]
-    xbarWakeup = True
+    __int_bank = ['intIQ0', 'intIQ1', 'intIQ2', 'intIQ3', 'load0', 'store0']
+    __fp_bank = ['fpIQ0', 'fpIQ1', 'fpIQ2', 'fpIQ3', 'fpIQ4', 'store0']
+    specWakeupNetwork = [
+        SpecWakeupChannel(srcIQ='intIQ0', dstIQ=__int_bank),
+        SpecWakeupChannel(srcIQ='intIQ1', dstIQ=__int_bank),
+        SpecWakeupChannel(srcIQ='intIQ2', dstIQ=__int_bank),
+        SpecWakeupChannel(srcIQ='intIQ3', dstIQ=__int_bank),
+        SpecWakeupChannel(srcIQ='fpIQ0', dstIQ=__fp_bank),
+        SpecWakeupChannel(srcIQ='fpIQ1', dstIQ=__fp_bank),
+        SpecWakeupChannel(srcIQ='fpIQ2', dstIQ=__fp_bank),
+        SpecWakeupChannel(srcIQ='fpIQ3', dstIQ=__fp_bank),
+        # SpecWakeupChannel(srcIQ='fpIQ4', dstIQ=__fp_bank),
+        SpecWakeupChannel(srcIQ='load0', dstIQ=__int_bank),
+    ]
 
 
 DefaultScheduler = KunminghuScheduler
