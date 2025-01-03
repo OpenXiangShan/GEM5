@@ -44,6 +44,7 @@ FoldedHist::recover(FoldedHist &other)
 void
 FoldedHist::check(const boost::dynamic_bitset<> &ghr)
 {
+#ifdef DEBUG
     // Check the folded history now, derive from ghr
     boost::dynamic_bitset<> ideal(ghr);
     boost::dynamic_bitset<> idealFolded;
@@ -53,6 +54,7 @@ FoldedHist::check(const boost::dynamic_bitset<> &ghr)
         idealFolded[i % foldedLen] ^= ideal[i];
     }
     assert(idealFolded == folded);
+#endif
 }
 
 }  // namespace ftb_pred
