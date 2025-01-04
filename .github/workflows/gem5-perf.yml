@@ -26,6 +26,8 @@ jobs:
       - name: Build GEM5 opt
         run: |
           # use pgo profile to build gem5
+          export GEM5_HOME=$(pwd)
+          export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so"
           bash util/pgo/basic_pgo_new.sh
       - name: XS-GEM5 - Run performance test
         # run 80% coverage spec06 checkpoints, 500+ checkpoints
