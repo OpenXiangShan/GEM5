@@ -24,7 +24,9 @@ jobs:
           make -j 48
           cd $GEM5_HOME
       - name: Build GEM5 opt
-        run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
+        run: |
+          # use pgo profile to build gem5
+          bash util/pgo/basic_pgo_new.sh
       - name: XS-GEM5 - Run performance test
         # run 80% coverage spec06 checkpoints, 500+ checkpoints
         run: |

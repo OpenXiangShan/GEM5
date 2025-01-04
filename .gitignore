@@ -43,3 +43,4 @@ configs/dram/lowp_sweep.cfg
 util/xs_scripts/test/
 run_fs.sh
 .vscode/
+llvm-pgo/
