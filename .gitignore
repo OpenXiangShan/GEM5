@@ -44,3 +44,5 @@ util/xs_scripts/test/
 run_fs.sh
 .vscode/
 llvm-pgo/
+*.profdata
+*.profraw

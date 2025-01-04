@@ -107,12 +107,9 @@ def config_xiangshan_inputs(args: argparse.Namespace, sys):
 
     # configure DRAMSim input
     if args.mem_type == 'DRAMsim3' and args.dramsim3_ini is None:
-        home = None
-        if 'gem5_home' in os.environ:
-            home = os.environ['gem5_home']
-        if 'GEM5_HOME' in os.environ:
-            home = os.environ['GEM5_HOME']
-        args.dramsim3_ini = os.path.join(home, 'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini')
+        # use relative path to find the dramsim3 ini file, from configs/common/ to root
+        root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        args.dramsim3_ini = os.path.join(root_dir, 'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini')
     return gcpt_restorer, ref_so
 
 
