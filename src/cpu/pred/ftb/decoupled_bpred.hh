@@ -403,6 +403,12 @@ class DecoupledBPUWithFTB : public BPredUnit
         statistics::Scalar staticBranchNum;
         statistics::Scalar staticBranchNumEverTaken;
 
+        statistics::Scalar overrideByL1;
+        statistics::Scalar overrideByL1WhenL0Hit;
+        statistics::Scalar overrideByL1WhenL0Miss;
+        statistics::Scalar overrideByL2;
+        statistics::Scalar overrideBubbles;
+
         statistics::Vector predsOfEachStage;
         statistics::Vector commitPredsFromEachStage;
         statistics::Distribution fsqEntryDist;
@@ -421,9 +427,6 @@ class DecoupledBPUWithFTB : public BPredUnit
         // write back once an fsq entry finishes fetch
         statistics::Distribution commitFsqEntryFetchedInsts;
         statistics::Scalar commitFsqEntryOnlyHasOneJump;
-
-        statistics::Scalar overrideBubbles;
-
         statistics::Scalar ftbHit;
         statistics::Scalar ftbMiss;
         statistics::Scalar ftbMissInstNotCommitted;

@@ -451,8 +451,17 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     ADD_STAT(otherMiss, statistics::units::Count::get(), "the number of other branch misses"),
     ADD_STAT(staticBranchNum, statistics::units::Count::get(), "the number of all (different) static branches"),
     ADD_STAT(staticBranchNumEverTaken, statistics::units::Count::get(), "the number of all (different) static branches that are once taken"),
-    ADD_STAT(predsOfEachStage, statistics::units::Count::get(), "the number of preds of each stage that account for final pred"),
-    ADD_STAT(commitPredsFromEachStage, statistics::units::Count::get(), "the number of preds of each stage that account for a committed stream"),
+    ADD_STAT(overrideByL1, statistics::units::Count::get(), "the number of preds override by L1"),
+    ADD_STAT(overrideByL1WhenL0Hit, statistics::units::Count::get(),
+        "the number of preds override by L1, when L0 Hit and L1 Hit"),
+    ADD_STAT(overrideByL1WhenL0Miss, statistics::units::Count::get(),
+        "the number of preds override by L1, when L0 Miss and L1 Hit"),
+    ADD_STAT(overrideByL2, statistics::units::Count::get(), "the number of preds override by L2"),
+    ADD_STAT(overrideBubbles, statistics::units::Count::get(), "number of bpu pred Override Bubbles"),
+    ADD_STAT(predsOfEachStage, statistics::units::Count::get(),
+        "the number of preds of each stage that account for final pred"),
+    ADD_STAT(commitPredsFromEachStage, statistics::units::Count::get(),
+        "the number of preds of each stage that account for a committed stream"),
     ADD_STAT(fsqEntryDist, statistics::units::Count::get(), "the distribution of number of entries in fsq"),
     ADD_STAT(fsqEntryEnqueued, statistics::units::Count::get(), "the number of fsq entries enqueued"),
     ADD_STAT(fsqEntryCommitted, statistics::units::Count::get(), "the number of fsq entries committed at last"),
@@ -466,7 +475,6 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     ADD_STAT(commitFsqEntryHasInsts, statistics::units::Count::get(), "number of insts that commit fsq entries have"),
     ADD_STAT(commitFsqEntryFetchedInsts, statistics::units::Count::get(), "number of insts that commit fsq entries fetched"),
     ADD_STAT(commitFsqEntryOnlyHasOneJump, statistics::units::Count::get(), "number of fsq entries with only one instruction (jump)"),
-    ADD_STAT(overrideBubbles, statistics::units::Count::get(), "number of bpu pred Override Bubbles"),
     ADD_STAT(ftbHit, statistics::units::Count::get(), "ftb hits (in predict block)"),
     ADD_STAT(ftbMiss, statistics::units::Count::get(), "ftb misses (in predict block)"),
     ADD_STAT(ftbMissInstNotCommitted, statistics::units::Count::get(), "inst causing ftb miss but not committed"),
@@ -626,7 +634,6 @@ DecoupledBPUWithFTB::tick()
     }
 
     if (numOverrideBubbles > 0) {
-        dbpFtbStats.overrideBubbles++;
         numOverrideBubbles--;
     }
 
@@ -832,6 +839,30 @@ DecoupledBPUWithFTB::generateFinalPredAndCreateBubbles()
             }
             first_hit_stage++;
         }
+
+        if (!squashing) {
+            if (first_hit_stage == 1) {
+                assert(predsOfEachStage[1].valid);
+                if (predsOfEachStage[0].valid) {
+                    // bool s0_taken, s1_taken;
+                    // int s0_cond_num, s1_cond_num;
+                    // std::tie(s0_cond_num, s0_taken) = predsOfEachStage[0].getHistInfo();
+                    // std::tie(s1_cond_num, s1_taken) = predsOfEachStage[1].getHistInfo();
+                    // if (s0_cond_num != s1_cond_num || s0_taken != s1_taken) {
+                    //     dbpFtbStats.overrideByL1WhenL0Hit++;
+                    // }
+                    dbpFtbStats.overrideByL1WhenL0Hit++;
+                } else {
+                    dbpFtbStats.overrideByL1WhenL0Miss++;
+                }
+                dbpFtbStats.overrideByL1++;
+            }
+
+            if (first_hit_stage == 2) {
+                dbpFtbStats.overrideByL2++;
+            }
+        }
+
         // generate bubbles
         bubblesToCreate = first_hit_stage;
         // assign pred source
