@@ -626,6 +626,16 @@ Scheduler::SpecWakeupCompletion::description() const
     return "Spec wakeup completion";
 }
 
+Scheduler::SchedulerStats::SchedulerStats(statistics::Group* parent)
+  : statistics::Group(parent),
+    ADD_STAT(exec_stall_cycle, ""),
+    ADD_STAT(memstall_any_load, ""),
+    ADD_STAT(memstall_l1miss,""),
+    ADD_STAT(memstall_l2miss,""),
+    ADD_STAT(memstall_l3miss,"")
+{
+}
+
 bool
 Scheduler::disp_policy::operator()(IssueQue* a, IssueQue* b) const
 {
@@ -635,7 +645,7 @@ Scheduler::disp_policy::operator()(IssueQue* a, IssueQue* b) const
     return p0 < p1;
 }
 
-Scheduler::Scheduler(const SchedulerParams& params) : SimObject(params), issueQues(params.IQs)
+Scheduler::Scheduler(const SchedulerParams& params) : SimObject(params), stats(this), issueQues(params.IQs)
 {
     dispTable.resize(enums::OpClass::Num_OpClass);
     opExecTimeTable.resize(enums::OpClass::Num_OpClass, 1);
@@ -722,9 +732,10 @@ Scheduler::Scheduler(const SchedulerParams& params) : SimObject(params), issueQu
 }
 
 void
-Scheduler::setCPU(CPU* cpu)
+Scheduler::setCPU(CPU* cpu, LSQ* lsq)
 {
     this->cpu = cpu;
+    this->lsq = lsq;
     for (auto it : issueQues) {
         it->setCPU(cpu);
     }
@@ -767,6 +778,16 @@ Scheduler::issueAndSelect()
     for (auto it : issueQues) {
         it->issueToFu();
     }
+    if (instsToFu.size() < 4) {
+        stats.exec_stall_cycle++;
+    }
+    if (instsToFu.size() == 0) {
+        if (lsq->anyInflightLoadsNotComplete()) stats.memstall_any_load++;
+        if (lsq->anyInflightLoadsNotComplete(1)) stats.memstall_l1miss++;
+        if (lsq->anyInflightLoadsNotComplete(2)) stats.memstall_l2miss++;
+        if (lsq->anyInflightLoadsNotComplete(3)) stats.memstall_l3miss++;
+    }
+
     // must wait for all insts was issued
     for (auto it : issueQues) {
         it->selectInst();

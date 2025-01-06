@@ -2074,6 +2074,12 @@ LSQUnit::squash(const InstSeqNum &squashed_num)
             DPRINTF(HtmCpu, ">> htmStarts (%d) : htmStops-- (%d)\n",
               htmStarts, htmStops);
         }
+        auto request = loadQueue.back().request();
+        auto it = std::find(inflightLoads.begin(), inflightLoads.end(), request);
+        if (it != inflightLoads.end()) {
+            inflightLoads.erase(it);
+        }
+
         // Clear the smart pointer to make sure it is decremented.
         loadQueue.back().instruction()->setSquashed();
         loadQueue.back().clear();

@@ -289,6 +289,8 @@ class LSQUnit
     using LoadQueue = CircularQueue<LQEntry>;
     using StoreQueue = CircularQueue<SQEntry>;
 
+    std::vector<LSQRequest*> inflightLoads;
+
   public:
     /** Constructs an LSQ unit. init() must be called prior to use. */
     LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries,

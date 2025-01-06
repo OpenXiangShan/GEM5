@@ -430,6 +430,16 @@ int LSQ::getCount(ThreadID tid) { return thread.at(tid).getCount(); }
 
 int LSQ::numLoads(ThreadID tid) { return thread.at(tid).numLoads(); }
 
+bool LSQ::anyInflightLoadsNotComplete(int miss_level)
+{
+    for (auto it : thread.at(0).inflightLoads) {
+        if (it->isAnyOutstandingRequest() && (it->mainReq()->depth >= miss_level)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 int LSQ::numStores(ThreadID tid) { return thread.at(tid).numStores(); }
 
 int
@@ -1446,6 +1456,12 @@ LSQ::SingleDataRequest::recvTimingResp(PacketPtr pkt)
                 "isLLSC: %d, isUncache: %d, isCacheSatisfied: %d, data: %d\n",
                 pkt->req->getReqInstSeqNum(), pkt->getAddr(), isLoad(), mainReq()->isLLSC(),
                 mainReq()->isUncacheable(), pkt->cacheSatisfied, *(pkt->getPtr<uint64_t*>()));
+    if (isLoad()) {
+        auto it = std::find(lsqUnit()->inflightLoads.begin(), lsqUnit()->inflightLoads.end(), this);
+        if (it != lsqUnit()->inflightLoads.end()) {
+            lsqUnit()->inflightLoads.erase(it);
+        }
+    }
     assert(_numOutstandingPackets == 1);
     if (enableLdMissReplay && isNormalLd) {
         DPRINTF(Hint, "[sn:%ld] Recv TimingResp\n", pkt->req->getReqInstSeqNum());
@@ -1712,6 +1728,11 @@ LSQ::SingleDataRequest::sendPacketToCache()
     bool tag_read_fail = false;
     bool success = lsqUnit()->trySendPacket(isLoad(), _packets.at(0), bank_conflict, tag_read_fail);
     if (success) {
+        if (isLoad()) {
+            assert(lsqUnit()->inflightLoads.size() < lsqUnit()->numLoads());
+            lsqUnit()->inflightLoads.emplace_back(this);
+        }
+
         if (!bank_conflict) {
             _numOutstandingPackets = 1;
             LSQRequest::_inst->hasPendingCacheReq(true);

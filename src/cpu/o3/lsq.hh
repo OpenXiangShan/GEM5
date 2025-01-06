@@ -320,18 +320,6 @@ class LSQ
                 uint64_t* res=nullptr, AtomicOpFunctorPtr amo_op=nullptr,
                 bool stale_translation=false);
 
-        bool
-        isHInst() const
-        {
-            return flags.isSet(Flag::IsHInst);
-        }
-
-        bool
-        isAtomic() const
-        {
-            return flags.isSet(Flag::IsAtomic);
-        }
-
         /** Install the request in the LQ/SQ. */
         void install();
 
@@ -375,6 +363,24 @@ class LSQ
 
       public:
 
+        bool
+        isLoad() const
+        {
+            return flags.isSet(Flag::IsLoad);
+        }
+
+        bool
+        isHInst() const
+        {
+            return flags.isSet(Flag::IsHInst);
+        }
+
+        bool
+        isAtomic() const
+        {
+            return flags.isSet(Flag::IsAtomic);
+        }
+
         void forward();
 
         /** Convenience getters/setters. */
@@ -384,12 +390,6 @@ class LSQ
         setContext(const ContextID& context_id)
         {
             req()->setContext(context_id);
-        }
-
-        bool
-        isLoad() const
-        {
-            return flags.isSet(Flag::IsLoad);
         }
 
         const DynInstPtr& instruction() { return _inst; }
@@ -862,6 +862,8 @@ class LSQ
     int numLoads();
     /** Returns the total number of loads for a single thread. */
     int numLoads(ThreadID tid);
+
+    bool anyInflightLoadsNotComplete(int miss_level = -1);
 
     /** Returns the total number of stores in the store queue. */
     int numStores();

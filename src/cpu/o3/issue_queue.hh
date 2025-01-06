@@ -210,6 +210,17 @@ class Scheduler : public SimObject
 
     CPU* cpu;
     MemDepUnit* memDepUnit;
+    LSQ* lsq;
+
+    struct SchedulerStats : public statistics::Group
+    {
+        SchedulerStats(statistics::Group* parent);
+        statistics::Scalar exec_stall_cycle;
+        statistics::Scalar memstall_any_load;
+        statistics::Scalar memstall_l1miss;
+        statistics::Scalar memstall_l2miss;
+        statistics::Scalar memstall_l3miss;
+    } stats;
 
     struct disp_policy
     {
@@ -254,7 +265,7 @@ class Scheduler : public SimObject
     PendingWakeEventsType specWakeEvents;
 
     Scheduler(const SchedulerParams& params);
-    void setCPU(CPU* cpu);
+    void setCPU(CPU* cpu, LSQ* lsq);
     void resetDepGraph(uint64_t numPhysRegs);
     void setMemDepUnit(MemDepUnit* memDepUnit) { this->memDepUnit = memDepUnit; }
 
