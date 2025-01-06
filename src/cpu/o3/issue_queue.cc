@@ -852,7 +852,7 @@ Scheduler::insert(const DynInstPtr& inst)
             }
         }
     } else {
-        std::random_shuffle(iqs.begin(), iqs.end());
+        std::random_shuffle(iqs.begin(), iqs.end()); // random
         for (auto iq : iqs) {
             if (iq->ready()) {
                 iq->insert(inst);

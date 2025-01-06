@@ -29,7 +29,7 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
       enableLoopPredictor(p.enableLoopPredictor),
       enableJumpAheadPredictor(p.enableJumpAheadPredictor),
       enableTwoTaken(p.enableTwoTaken),
-      enablePerfectUftb(p.enablePerfectUftb),
+    //   enablePerfectUftb(p.enablePerfectUftb),
       fetchTargetQueue(p.ftq_size),
       fetchStreamQueueSize(p.fsq_size),
       numBr(p.numBr),
@@ -686,9 +686,9 @@ DecoupledBPUWithFTB::ideal_tick()
     DPRINTF(TwoTaken && enableTwoTaken, "Begin ideal_tick, squashing = %s, numOverrideBubbles = %d\n",
             squashing ? "true" : "false", numOverrideBubbles);
 
-    if (numOverrideBubbles > 0 && enablePerfectUftb) {
-        numOverrideBubbles--;
-    }
+    // if (numOverrideBubbles > 0 && enablePerfectUftb) {
+    //     numOverrideBubbles--;
+    // }
 
     int predsRemainsToBeMade = enableTwoTaken ? 2 : 1;
     // in two taken roofline model, we create max(bubblesOfPreds1, bubblesOfPreds2) bubbles
@@ -725,7 +725,7 @@ DecoupledBPUWithFTB::ideal_tick()
         // putPCHistory, generateFinalPredAndCreateBubbles and generateAndSetNewFetchStream by last tick finalPred
     }
 
-    if (numOverrideBubbles > 0 && !enablePerfectUftb) {
+    if (numOverrideBubbles > 0) {
         numOverrideBubbles--;
     }
 
