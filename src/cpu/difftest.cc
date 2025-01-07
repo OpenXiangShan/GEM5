@@ -40,7 +40,7 @@ std::vector<uint64_t> skipCSRs;
 // CSR op Encoding:
 //     #12
 // | csrName | 0000 | 0000 | 0000 | 0111 | 0011 |
-#define GetCSROPInstCode(csrName) ((csrName << 20) | 0x73UL)
+#define GetCSROPInstCode(csrName) (((uint64_t)csrName << 20) | 0x73UL)
 
 void
 skipPerfCntCsr()
