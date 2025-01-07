@@ -171,6 +171,12 @@ Notes:
 - If you have already built GEM5, you should rebuild gem5 after install DRAMSim3
 - If simulating Xiangshan system, use DRAMSim3 with our costumized config
 
+Use init.sh to clone and build DRAMSim3.
+
+```shell
+bash ./init.sh
+```
+
 ## Build GEM5
 
 ```shell
@@ -235,7 +241,30 @@ Simulation error without Difftest **will NOT be responded.**
 
 ### Example command
 
-Firstly, one should ensure GEM5 is properly built and workloads are prepared by running a single workload:
+#### Easy to run
+Easy to run a single workload(not a checkpoint, just a single binary file)
+
+```shell
+# prepare the binary file
+git clone https://github.com/OpenXiangShan/ready-to-run.git
+# prepare nemu reference design
+wget https://github.com/OpenXiangShan/GEM5/releases/download/2024-10-16/riscv64-nemu-interpreter-c1469286ca32-so
+# set environment variables
+export GCBV_REF_SO=`realpath riscv64-nemu-interpreter-c1469286ca32-so`
+# run the workload
+./build/RISCV/gem5.opt ./configs/example/xiangshan.py --raw-cpt --generic-rv-cpt=./ready-to-run/coremark-2-iteration.bin
+# get the ipc
+grep 'cpu.ipc' m5out/stats.txt
+```
+xiangshan.py is the default configuration for XS-GEM5.
+
+raw-cpt means the input is a single binary file.
+
+generic-rv-cpt is the path to the binary file.
+
+Then you can see the output in the terminal, find gem5 output in the `m5out` directory.
+
+Otherwise, if you want to run a checkpoint, you should ensure GEM5 is properly built and workloads are prepared by running a single workload:
 ``` shel
 mkdir util/xs_scripts/example
 cd util/xs_scripts/example
