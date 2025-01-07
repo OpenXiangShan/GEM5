@@ -31,6 +31,30 @@ jobs:
           bash util/memory_check/run-xs-with-valgrind.sh
           cd $GEM5_HOME
 
+  valgrind_memory_check_ideal:
+    runs-on: self-hosted
+    continue-on-error: false
+    name: XS-GEM5 - Check memory corruption with ideal-kmhv3
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build DRAMSim
+        run: |
+          export GEM5_HOME=$(pwd)
+          cd ext/dramsim3
+          git clone https://github.com/umd-memsys/DRAMsim3.git DRAMsim3
+          cd DRAMsim3 && mkdir -p build
+          cd build
+          cmake ..
+          make -j 48
+          cd $GEM5_HOME
+      - name: Build GEM5 debug
+        run: CC=gcc CXX=g++ scons build/RISCV/gem5.debug --linker=gold -j64
+      - name: Memory check
+        run: |
+          export GEM5_HOME=$(pwd)
+          bash util/memory_check/run-xs-with-valgrind.sh ideal
+          cd $GEM5_HOME
+
   new_sim_script_test_gcb:
     runs-on: self-hosted
     continue-on-error: false
