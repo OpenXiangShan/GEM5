@@ -150,6 +150,7 @@ FTBTAGE::lookupHelper(Addr startAddr,
     for (int b = 0; b < numBr; b++) {
         // make main prediction
         int phyBrIdx = getShuffledBrIndex(startAddr, b);
+        assert(phyBrIdx >= 0 && phyBrIdx < numBr);
         int provider_counts = 0;
         for (int i = numPredictors - 1; i >= 0; --i) {
             Addr tmp_index = getTageIndex(startAddr, i);
@@ -575,7 +576,8 @@ FTBTAGE::getBrIndexUnshuffleBits(Addr pc)
 Addr
 FTBTAGE::getShuffledBrIndex(Addr pc, int brIdxToShuffle)
 {
-    return getBrIndexUnshuffleBits(pc) ^ brIdxToShuffle;
+    // make sure the result is in the range of [0, numBr-1]
+    return (getBrIndexUnshuffleBits(pc) ^ brIdxToShuffle) & (numBr - 1);
 }
 
 
