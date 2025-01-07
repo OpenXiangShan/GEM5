@@ -344,7 +344,7 @@ def setKmhV3IdealParams(args, system):
         # ideal decoupled frontend
         if args.bp_type is None or args.bp_type == 'DecoupledBPUWithFTB':
             cpu.branchPred.enableTwoTaken = True
-            cpu.branchPred.numBr = 6
+            cpu.branchPred.numBr = 8    # numBr must be a power of 2, see getShuffledBrIndex()
             cpu.branchPred.predictWidth = 64
             cpu.branchPred.tage.enableSC = False # TODO(bug): When numBr changes, enabling SC will trigger an assert
             cpu.branchPred.ftq_size = 256
