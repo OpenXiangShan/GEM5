@@ -351,12 +351,12 @@ def setKmhV3IdealParams(args, system):
             cpu.branchPred.fsq_size = 256
             cpu.branchPred.uftb.numEntries = 1024
             cpu.branchPred.ftb.numEntries = 16384
-            cpu.branchPred.tage.numPredictors = 9
-            cpu.branchPred.tage.baseTableSize = 4096
-            cpu.branchPred.tage.tableSizes = [4096] * 9
-            cpu.branchPred.tage.TTagBitSizes = [8] * 9
-            cpu.branchPred.tage.TTagPcShifts = [1] * 9
-            cpu.branchPred.tage.histLengths = [8, 13, 21, 35, 57, 93, 151, 246, 401]
+            cpu.branchPred.tage.numPredictors = 14
+            cpu.branchPred.tage.baseTableSize = 16384
+            cpu.branchPred.tage.tableSizes = [2048] * 14
+            cpu.branchPred.tage.TTagBitSizes = [13] * 14
+            cpu.branchPred.tage.TTagPcShifts = [1] * 14
+            cpu.branchPred.tage.histLengths = [4, 7, 12, 16, 21, 29, 38, 51, 68, 90, 120, 160, 283, 499]
 
         # ideal l1 caches
         if args.caches:
