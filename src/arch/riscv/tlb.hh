@@ -87,6 +87,7 @@ class TLB : public BaseTLB
     bool openBackPre;
     bool backPrePrecision;
     bool forwardPrePrecision;
+    uint64_t controlNum;
     uint64_t allForwardPre;
     uint64_t removeNoUseForwardPre;
     uint64_t removeNoUseBackPre;

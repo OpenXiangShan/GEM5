@@ -91,6 +91,7 @@ TLB::TLB(const Params &p) :
     openBackPre(p.open_back_pre),
     backPrePrecision(p.initial_back_pre_precision_value),
     forwardPrePrecision(p.initial_forward_pre_precision_value),
+    controlNum(0),
     allForwardPre(0),removeNoUseForwardPre(0),removeNoUseBackPre(0),
     usedBackPre(0),test_num(0),allUsed(0),forwardUsedPre(0),
     lastVaddr(0),lastPc(0), traceFlag(false),
@@ -1980,6 +1981,9 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
             req->setFlags(Request::PHYSICAL);
 
         Fault fault;
+        if (req->getVaddr() == 0)
+            warn("notice vaddr == 0 pc %lx \n", req->getPC());
+
         if (req->getFlags() & Request::PHYSICAL) {
             req->setTwoStageState(false, 0, 0);
             /**
@@ -1989,8 +1993,6 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
             if ((hgatp.mode == 8 || vsatp.mode == 8) && (pmode < PrivilegeMode::PRV_M)) {
                 fault = doTwoStageTranslate(req, tc, translation, mode, delayed);
             } else {
-                if (req->getVaddr() == 0)
-                    warn("vaddr ==0 pc %lx \n", req->getPC());
                 req->setPaddr(req->getVaddr());
                 fault = NoFault;
                 assert(!req->get_h_inst());
@@ -2006,6 +2008,12 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
                 fault = doTwoStageTranslate(req, tc, translation, mode, delayed);
             } else {
                 req->setTwoStageState(false, 0, 0);
+                if (controlNum < 5) {
+                    uint16_t control_address = (req->getVaddr() >> VADDR_BITS) & VPN_MASK;
+                    if ((control_address != VPN_MASK) && (control_address != 0))
+                        warn("notice sv48,the vaddr %lx may valid sv48\n", req->getVaddr());
+                }
+                controlNum++;
                 fault = doTranslate(req, tc, translation, mode, delayed);
             }
         }
