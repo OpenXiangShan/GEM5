@@ -652,6 +652,16 @@ class Fetch
         statistics::Scalar decodeStalls;
         /** Number of decode stalls per cycle */
         statistics::Formula decodeStallRate;
+        /** Unutilized issue-pipeline slots while there is no backend-stall */
+        statistics::Scalar fetchBubbles;
+        /** Cycles that fetch 0 instruction while there is no backend-stall */
+        statistics::Scalar fetchBubbles_max;
+        /** Frontend Bound */
+        statistics::Formula frontendBound;
+        /** Frontend Latency Bound */
+        statistics::Formula frontendLatencyBound;
+        /** Frontend Bandwidth Bound */
+        statistics::Formula frontendBandwidthBound;
     } fetchStats;
 
     SquashVersion localSquashVer;

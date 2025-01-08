@@ -245,7 +245,23 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
     ADD_STAT(decodeStallRate, statistics::units::Rate<
                     statistics::units::Count, statistics::units::Cycle>::get(),
              "Number of decode stalls per cycle",
-             decodeStalls / cpu->baseStats.numCycles)
+             decodeStalls / cpu->baseStats.numCycles),
+    ADD_STAT(fetchBubbles, statistics::units::Count::get(),
+             "Unutilized issue-pipeline slots while there is no backend-stall"),
+    ADD_STAT(fetchBubbles_max, statistics::units::Count::get(),
+             "Cycles that fetch 0 instruction while there is no backend-stall"),
+    ADD_STAT(frontendBound, statistics::units::Rate<
+                    statistics::units::Count, statistics::units::Cycle>::get(),
+             "Frontend Bound",
+             fetchBubbles / (cpu->baseStats.numCycles * fetch->decodeWidth)),
+    ADD_STAT(frontendLatencyBound, statistics::units::Rate<
+                    statistics::units::Count, statistics::units::Cycle>::get(),
+             "Frontend Latency Bound",
+             fetchBubbles_max / cpu->baseStats.numCycles),
+    ADD_STAT(frontendBandwidthBound, statistics::units::Rate<
+                    statistics::units::Count, statistics::units::Cycle>::get(),
+             "Frontend Bandwidth Bound",
+             frontendBound - frontendLatencyBound)
 {
         icacheStallCycles
             .prereq(icacheStallCycles);
@@ -319,6 +335,16 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
         decodeStalls
             .prereq(decodeStalls);
         decodeStallRate
+            .flags(statistics::total);
+        fetchBubbles
+            .prereq(fetchBubbles);
+        fetchBubbles_max
+            .prereq(fetchBubbles_max);
+        frontendBound
+            .flags(statistics::total);
+        frontendLatencyBound
+            .flags(statistics::total);
+        frontendBandwidthBound
             .flags(statistics::total);
 }
 void
@@ -1163,6 +1189,9 @@ Fetch::tick()
 
     wroteToTimeBuffer = false;
 
+    // get the distribution of fetch status
+    fetchStats.fetchStatusDist[fetchStatus[0]]++;
+
     for (ThreadID i = 0; i < numThreads; ++i) {
         issuePipelinedIfetch[i] = false;
     }
@@ -1294,7 +1323,20 @@ Fetch::tick()
 
     toDecode->fetchStallReason = stallReason;
 
-    fetchStats.fetchStatusDist[fetchStatus[*tid_itr]]++;
+    // Intel TopDown method for measuring frontend bubbles
+    // Count unutilized issue slots when backend is not stalled (decode not stalled)
+    // For N-wide machine, if frontend supplies 0 instructions:
+    // - fetchBubbles += N (count total empty slots)
+    // - fetchBubbles_max += 1 (count occurrence of all slots being empty)
+    if (!stalls[*tid_itr].decode) { // backend not stalled
+        int unused_slots = decode_width - insts_to_decode;
+        if (unused_slots > 0) { // has empty slots
+            fetchStats.fetchBubbles += unused_slots; // add number of empty slots
+            if (unused_slots == decode_width) { // all slots empty, insts_to_decode == 0
+                fetchStats.fetchBubbles_max++; // count max bubble occurrence
+            }
+        }
+    }
 
     if (stalls[*tid_itr].decode) {
         fetchStats.decodeStalls++;
