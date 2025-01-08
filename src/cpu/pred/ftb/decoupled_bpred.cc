@@ -449,8 +449,18 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     ADD_STAT(otherMiss, statistics::units::Count::get(), "the number of other branch misses"),
     ADD_STAT(staticBranchNum, statistics::units::Count::get(), "the number of all (different) static branches"),
     ADD_STAT(staticBranchNumEverTaken, statistics::units::Count::get(), "the number of all (different) static branches that are once taken"),
-    ADD_STAT(predsOfEachStage, statistics::units::Count::get(), "the number of preds of each stage that account for final pred"),
-    ADD_STAT(commitPredsFromEachStage, statistics::units::Count::get(), "the number of preds of each stage that account for a committed stream"),
+    ADD_STAT(overrideByL1, statistics::units::Count::get(), "the number of preds override by L1"),
+    ADD_STAT(overrideByL1WhenL0Hit, statistics::units::Count::get(),
+        "the number of preds override by L1, when L0 Hit and L1 Hit"),
+    ADD_STAT(overrideByL1WhenL0Miss, statistics::units::Count::get(),
+        "the number of preds override by L1, when L0 Miss and L1 Hit"),
+    ADD_STAT(overrideByL2, statistics::units::Count::get(), "the number of preds override by L2"),
+    ADD_STAT(squashWhenOverriding, statistics::units::Count::get(), "the number of squash when overriding"),
+    ADD_STAT(overrideBubbles, statistics::units::Count::get(), "number of bpu pred Override Bubbles"),
+    ADD_STAT(predsOfEachStage, statistics::units::Count::get(),
+        "the number of preds of each stage that account for final pred"),
+    ADD_STAT(commitPredsFromEachStage, statistics::units::Count::get(),
+        "the number of preds of each stage that account for a committed stream"),
     ADD_STAT(fsqEntryDist, statistics::units::Count::get(), "the distribution of number of entries in fsq"),
     ADD_STAT(fsqEntryEnqueued, statistics::units::Count::get(), "the number of fsq entries enqueued"),
     ADD_STAT(fsqEntryCommitted, statistics::units::Count::get(), "the number of fsq entries committed at last"),
@@ -616,6 +626,10 @@ DecoupledBPUWithFTB::tick()
         numOverrideBubbles = generateFinalPredAndCreateBubbles();
     }
 
+    if (squashing && numOverrideBubbles > 0 && receivedPred && s0PC != MaxAddr && !sentPCHist) {
+        dbpFtbStats.squashWhenOverriding++;
+    }
+
     if (!squashing) {
         DPRINTF(DecoupleBP, "DecoupledBPUWithFTB::tick()\n");
         DPRINTF(Override, "DecoupledBPUWithFTB::tick()\n");
@@ -655,7 +669,6 @@ DecoupledBPUWithFTB::tick()
 
         sentPCHist = true;
     }
-
 
     // query loop buffer with start pc
     if (enableLoopBuffer && !lb.isActive() &&
@@ -806,6 +819,7 @@ DecoupledBPUWithFTB::generateFinalPredAndCreateBubbles()
             }
             first_hit_stage++;
         }
+
         // generate bubbles
         bubblesToCreate = first_hit_stage;
         // assign pred source
@@ -837,6 +851,19 @@ DecoupledBPUWithFTB::generateFinalPredAndCreateBubbles()
 
         printFullFTBPrediction(*chosen);
         dbpFtbStats.predsOfEachStage[first_hit_stage]++;
+        if (!squashing && s0PC != MaxAddr && receivedPred && bubblesToCreate > 0) {
+            if (first_hit_stage == 1) {
+                assert(predsOfEachStage[1].valid);
+                if (predsOfEachStage[0].valid) {
+                    dbpFtbStats.overrideByL1WhenL0Hit++;
+                } else {
+                    dbpFtbStats.overrideByL1WhenL0Miss++;
+                }
+                dbpFtbStats.overrideByL1++;
+            }else if (first_hit_stage == 2) {
+                dbpFtbStats.overrideByL2++;
+            }
+        }
     } else {
         bubblesToCreate = 0;
         receivedPred = true;
@@ -2123,6 +2150,7 @@ DecoupledBPUWithFTB::tryEnqFetchStream()
     }
     // prediction valid, but not ready to enq because of bubbles
     if (numOverrideBubbles > 0) {
+        dbpFtbStats.overrideBubbles++;
         DPRINTF(DecoupleBP, "Waiting for bubble caused by overriding, bubbles rest: %u\n", numOverrideBubbles);
         DPRINTF(Override, "Waiting for bubble caused by overriding, bubbles rest: %u\n", numOverrideBubbles);
         return;

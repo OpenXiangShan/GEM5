@@ -235,6 +235,10 @@ class DefaultFTB : public TimedBaseFTBPredictor
     /** The number of tag bits per entry. */
     unsigned tagBits;
 
+    /** The number of tags, only used for stats. */
+    std::set<Addr> predTagSet;
+    std::set<Addr> updateTagSet;
+
     /** The tag mask. */
     Addr tagMask;
 
@@ -277,9 +281,16 @@ class DefaultFTB : public TimedBaseFTBPredictor
         statistics::Scalar oldEntryWithNewUncond;
 
         statistics::Scalar predMiss;
+        statistics::Scalar predMissWhenFull;
+        statistics::Scalar predMissWhenNotFull;
         statistics::Scalar predHit;
         statistics::Scalar updateMiss;
         statistics::Scalar updateHit;
+        statistics::Scalar updateUseEmptyEntry;
+        statistics::Scalar updateUseOldEntry;
+
+        statistics::Scalar predTagSetSize;
+        statistics::Scalar updateTagSetSize;
 
         statistics::Scalar eraseSlotBehindUncond;
 

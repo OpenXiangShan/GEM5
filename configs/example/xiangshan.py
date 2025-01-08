@@ -352,7 +352,9 @@ def setKmhV3IdealParams(args, system):
             cpu.branchPred.tage.enableSC = False # TODO(bug): When numBr changes, enabling SC will trigger an assert
             cpu.branchPred.ftq_size = 256
             cpu.branchPred.fsq_size = 256
-            cpu.branchPred.uftb.numEntries = 1024
+            uftb_size = 1024
+            cpu.branchPred.uftb.numEntries = uftb_size
+            cpu.branchPred.uftb.numWays = uftb_size
             cpu.branchPred.ftb.numEntries = 16384
             cpu.branchPred.tage.numPredictors = 14
             cpu.branchPred.tage.baseTableSize = 16384

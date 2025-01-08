@@ -221,15 +221,39 @@ DefaultFTB::lookup(Addr inst_pc)
     Addr ftb_tag = getTag(inst_pc);
     DPRINTF(FTB, "FTB: Looking up FTB entry index %#lx tag %#lx\n", ftb_idx, ftb_tag);
 
+    if (isL0()) {
+        auto tag_it = predTagSet.find(ftb_tag);
+        if (tag_it == predTagSet.end()) {
+            predTagSet.insert(ftb_tag);
+            ftbStats.predTagSetSize++;
+        }
+    }
+
     assert(ftb_idx < numSets);
     // ignore false hit when lowest bit is 1
     const auto &it = ftb[ftb_idx].find(ftb_tag);
     if (it != ftb[ftb_idx].end()) {
+        assert(it->second.valid);
         if (it->second.valid) {
             it->second.tick = curTick();
             std::make_heap(mruList[ftb_idx].begin(), mruList[ftb_idx].end(), older());
             return it->second;
         }
+    }
+
+    // ftb not hit
+    bool ftb_is_full = true;
+    for (auto it = ftb[ftb_idx].begin(); it != ftb[ftb_idx].end(); ++it) {
+        if (it->second.tick == 0) {
+            ftb_is_full = false;
+            ftbStats.predMissWhenNotFull++;
+            DPRINTF(FTB, "FTB: Looking up FTB entry index %#lx tag %#lx miss, ftb is not full\n", ftb_idx, ftb_tag);
+            break;
+        }
+    }
+    if (ftb_is_full){
+        ftbStats.predMissWhenFull++;
+        DPRINTF(FTB, "FTB: Looking up FTB entry index %#lx tag %#lx miss, ftb is full\n", ftb_idx, ftb_tag);
     }
     return TickedFTBEntry();
 }
@@ -381,6 +405,14 @@ DefaultFTB::update(const FetchStream &stream)
     Addr ftb_idx = getIndex(startPC);
     Addr ftb_tag = getTag(startPC);
 
+    if (isL0()) {
+        auto tag_it = updateTagSet.find(ftb_tag);
+        if (tag_it == updateTagSet.end()) {
+            updateTagSet.insert(ftb_tag);
+            ftbStats.updateTagSetSize++;
+        }
+    }
+
     DPRINTF(FTB, "FTB: Updating FTB entry index %#lx tag %#lx\n", ftb_idx, ftb_tag);
 
     auto it = ftb[ftb_idx].find(ftb_tag);
@@ -391,6 +423,11 @@ DefaultFTB::update(const FetchStream &stream)
         std::pop_heap(mruList[ftb_idx].begin(), mruList[ftb_idx].end(), older());
         const auto& old_entry = mruList[ftb_idx].back();
         DPRINTF(FTB, "FTB: Replacing entry with tag %#lx in set %#lx\n", old_entry->first, ftb_idx);
+        if (old_entry->second.tick == 0) {
+            ftbStats.updateUseEmptyEntry++;
+        } else {
+            ftbStats.updateUseOldEntry++;
+        }
         ftb[ftb_idx].erase(old_entry->first);
     }
 
@@ -447,6 +484,7 @@ DefaultFTB::update(const FetchStream &stream)
         }
     }
 
+    assert(entry_to_write.valid);
     ftb[ftb_idx][ftb_tag] = TickedFTBEntry(entry_to_write, curTick());
     ftb[ftb_idx][ftb_tag].tag = ftb_tag; // in case different ftb has different tags
 
@@ -580,9 +618,15 @@ DefaultFTB::FTBStats::FTBStats(statistics::Group* parent) :
     ADD_STAT(oldEntryWithNewCond, statistics::units::Count::get(), "number of old ftb entries with new conditional branches"),
     ADD_STAT(oldEntryWithNewUncond, statistics::units::Count::get(), "number of old ftb entries with new unconditional branches"),
     ADD_STAT(predMiss, statistics::units::Count::get(), "misses encountered on prediction"),
+    ADD_STAT(predMissWhenFull, statistics::units::Count::get(), "misses encountered on pred when ftb full"),
+    ADD_STAT(predMissWhenNotFull, statistics::units::Count::get(), "misses encountered on pred when ftb not full"),
     ADD_STAT(predHit, statistics::units::Count::get(), "hits encountered on prediction"),
     ADD_STAT(updateMiss, statistics::units::Count::get(), "misses encountered on update"),
     ADD_STAT(updateHit, statistics::units::Count::get(), "hits encountered on update"),
+    ADD_STAT(updateUseEmptyEntry, statistics::units::Count::get(), "use empty entry when update"),
+    ADD_STAT(updateUseOldEntry, statistics::units::Count::get(), "update old entry when update"),
+    ADD_STAT(predTagSetSize, statistics::units::Count::get(), "uftb pred tag set size"),
+    ADD_STAT(updateTagSetSize, statistics::units::Count::get(), "uftb update tag set size"),
     ADD_STAT(eraseSlotBehindUncond, statistics::units::Count::get(), "erase slots behind unconditional slot"),
     ADD_STAT(predUseL0OnL1Miss, statistics::units::Count::get(), "use l0 result on l1 miss when pred"),
     ADD_STAT(updateUseL0OnL1Miss, statistics::units::Count::get(), "use l0 result on l1 miss when update"),
