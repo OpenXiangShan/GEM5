@@ -452,6 +452,12 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     ADD_STAT(overrideByL1, statistics::units::Count::get(), "the number of preds override by L1"),
     ADD_STAT(overrideByL1WhenL0Hit, statistics::units::Count::get(),
         "the number of preds override by L1, when L0 Hit and L1 Hit"),
+    ADD_STAT(overrideByL1WhenL0HitButTargetDiff, statistics::units::Count::get(),
+        "the number of preds override by L1, when L0 Hit and L1 Hit, but target diff"),
+    ADD_STAT(overrideByL1WhenL0HitButTakenDiff, statistics::units::Count::get(),
+        "the number of preds override by L1, when L0 Hit and L1 Hit, but taken diff"),
+    ADD_STAT(overrideByL1WhenL0HitButBranchDiff, statistics::units::Count::get(),
+        "the number of preds override by L1, when L0 Hit and L1 Hit, but branch diff"),
     ADD_STAT(overrideByL1WhenL0Miss, statistics::units::Count::get(),
         "the number of preds override by L1, when L0 Miss and L1 Hit"),
     ADD_STAT(overrideByL2, statistics::units::Count::get(), "the number of preds override by L2"),
@@ -856,6 +862,24 @@ DecoupledBPUWithFTB::generateFinalPredAndCreateBubbles()
                 assert(predsOfEachStage[1].valid);
                 if (predsOfEachStage[0].valid) {
                     dbpFtbStats.overrideByL1WhenL0Hit++;
+
+                    bool s0_taken, s1_taken;
+                    int s0_cond_num, s1_cond_num;
+                    std::tie(s0_cond_num, s0_taken) = predsOfEachStage[0].getHistInfo();
+                    std::tie(s1_cond_num, s1_taken) = predsOfEachStage[1].getHistInfo();
+                    Addr s0_control_addr = predsOfEachStage[0].controlAddr();
+                    Addr s1_control_addr = predsOfEachStage[1].controlAddr();
+                    Addr s0_npc = predsOfEachStage[0].getTarget();
+                    Addr s1_npc = predsOfEachStage[1].getTarget();
+                    if (s0_npc != s1_npc) {
+                        dbpFtbStats.overrideByL1WhenL0HitButTargetDiff++;
+                    }
+                    if (s0_taken != s1_taken) {
+                        dbpFtbStats.overrideByL1WhenL0HitButTakenDiff++;
+                    }
+                    if (s0_control_addr != s1_control_addr || s0_cond_num != s1_cond_num) {
+                        dbpFtbStats.overrideByL1WhenL0HitButBranchDiff++;
+                    }
                 } else {
                     dbpFtbStats.overrideByL1WhenL0Miss++;
                 }

@@ -242,18 +242,13 @@ DefaultFTB::lookup(Addr inst_pc)
     }
 
     // ftb not hit
-    bool ftb_is_full = true;
-    for (auto it = ftb[ftb_idx].begin(); it != ftb[ftb_idx].end(); ++it) {
-        if (it->second.tick == 0) {
-            ftb_is_full = false;
-            ftbStats.predMissWhenNotFull++;
-            DPRINTF(FTB, "FTB: Looking up FTB entry index %#lx tag %#lx miss, ftb is not full\n", ftb_idx, ftb_tag);
-            break;
-        }
-    }
-    if (ftb_is_full){
+    bool ftb_is_full = (ftb[ftb_idx].size() >= numWays);
+    if (ftb_is_full) {
         ftbStats.predMissWhenFull++;
         DPRINTF(FTB, "FTB: Looking up FTB entry index %#lx tag %#lx miss, ftb is full\n", ftb_idx, ftb_tag);
+    } else {
+        ftbStats.predMissWhenNotFull++;
+        DPRINTF(FTB, "FTB: Looking up FTB entry index %#lx tag %#lx miss, ftb is not full\n", ftb_idx, ftb_tag);
     }
     return TickedFTBEntry();
 }

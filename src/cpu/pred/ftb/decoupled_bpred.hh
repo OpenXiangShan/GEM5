@@ -403,6 +403,9 @@ class DecoupledBPUWithFTB : public BPredUnit
 
         statistics::Scalar overrideByL1;
         statistics::Scalar overrideByL1WhenL0Hit;
+        statistics::Scalar overrideByL1WhenL0HitButTargetDiff;
+        statistics::Scalar overrideByL1WhenL0HitButTakenDiff;
+        statistics::Scalar overrideByL1WhenL0HitButBranchDiff;
         statistics::Scalar overrideByL1WhenL0Miss;
         statistics::Scalar overrideByL2;
         statistics::Scalar squashWhenOverriding;
