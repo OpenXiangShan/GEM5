@@ -863,7 +863,9 @@ class LSQ
     /** Returns the total number of loads for a single thread. */
     int numLoads(ThreadID tid);
 
-    bool anyInflightLoadsNotComplete(int miss_level = -1);
+    int anyInflightLoadsNotComplete();
+
+    bool anyStoreNotExecute();
 
     /** Returns the total number of stores in the store queue. */
     int numStores();

@@ -630,6 +630,7 @@ Scheduler::SchedulerStats::SchedulerStats(statistics::Group* parent)
   : statistics::Group(parent),
     ADD_STAT(exec_stall_cycle, ""),
     ADD_STAT(memstall_any_load, ""),
+    ADD_STAT(memstall_any_store, ""),
     ADD_STAT(memstall_l1miss,""),
     ADD_STAT(memstall_l2miss,""),
     ADD_STAT(memstall_l3miss,"")
@@ -780,12 +781,14 @@ Scheduler::issueAndSelect()
     }
     if (instsToFu.size() < 4) {
         stats.exec_stall_cycle++;
+        if (lsq->anyStoreNotExecute()) stats.memstall_any_store++;
     }
     if (instsToFu.size() == 0) {
-        if (lsq->anyInflightLoadsNotComplete()) stats.memstall_any_load++;
-        if (lsq->anyInflightLoadsNotComplete(1)) stats.memstall_l1miss++;
-        if (lsq->anyInflightLoadsNotComplete(2)) stats.memstall_l2miss++;
-        if (lsq->anyInflightLoadsNotComplete(3)) stats.memstall_l3miss++;
+        int misslevel = lsq->anyInflightLoadsNotComplete();
+        if (misslevel != 0) stats.memstall_any_load++;
+        if ((misslevel & ((1<<1) - 1)) == ((1<<1) - 1)) stats.memstall_l1miss++;
+        if ((misslevel & ((1<<2) - 1)) == ((1<<2) - 1)) stats.memstall_l2miss++;
+        if ((misslevel & ((1<<3) - 1)) == ((1<<3) - 1)) stats.memstall_l3miss++;
     }
 
     // must wait for all insts was issued

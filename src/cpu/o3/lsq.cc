@@ -430,10 +430,31 @@ int LSQ::getCount(ThreadID tid) { return thread.at(tid).getCount(); }
 
 int LSQ::numLoads(ThreadID tid) { return thread.at(tid).numLoads(); }
 
-bool LSQ::anyInflightLoadsNotComplete(int miss_level)
+int LSQ::anyInflightLoadsNotComplete()
 {
+    int l1miss = 0, l2miss = 0, l3miss = 0, any = 0;
     for (auto it : thread.at(0).inflightLoads) {
-        if (it->isAnyOutstandingRequest() && (it->mainReq()->depth >= miss_level)) {
+        if (it->isAnyOutstandingRequest()) {
+            if (it->mainReq()->depth == 1) {
+                l1miss = 1;
+            }
+            if (it->mainReq()->depth == 2) {
+                l2miss = 1 << 1;
+            }
+            if (it->mainReq()->depth == 3) {
+                l3miss = 1 << 2;
+            }
+            any = 1 << 3;
+        }
+    }
+    return l1miss | l2miss | l3miss | any;
+}
+
+bool
+LSQ::anyStoreNotExecute()
+{
+    for (auto& it : thread.at(0).storeQueue) {
+        if (!it.instruction()->isIssued()) {
             return true;
         }
     }

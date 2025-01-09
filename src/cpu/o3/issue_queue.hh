@@ -217,6 +217,7 @@ class Scheduler : public SimObject
         SchedulerStats(statistics::Group* parent);
         statistics::Scalar exec_stall_cycle;
         statistics::Scalar memstall_any_load;
+        statistics::Scalar memstall_any_store;
         statistics::Scalar memstall_l1miss;
         statistics::Scalar memstall_l2miss;
         statistics::Scalar memstall_l3miss;
