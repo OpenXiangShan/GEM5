@@ -17,6 +17,7 @@
 #include "cpu/pred/general_arch_db.hh"
 #include "cpu/pred/ftb/fetch_target_queue.hh"
 #include "cpu/pred/ftb/ftb.hh"
+#include "cpu/pred/ftb/fauftb.hh"
 #include "cpu/pred/ftb/ftb_tage.hh"
 #include "cpu/pred/ftb/ftb_ittage.hh"
 #include "cpu/pred/ftb/jump_ahead_predictor.hh"
@@ -228,7 +229,7 @@ class DecoupledBPUWithFTB : public BPredUnit
     const Addr MaxAddr{~(0ULL)};
 
     // StreamTAGE *streamTAGE{};
-    DefaultFTB *uftb{};
+    FauFTB *uftb{};
     DefaultFTB *ftb{};
     FTBTAGE *tage{};
     FTBITTAGE *ittage{};

@@ -877,12 +877,18 @@ class DefaultFTB(TimedBaseFTBPredictor):
     numWays = Param.Unsigned(4, "Number of ways per set")
     numDelay = 1
 
-class UFTB(DefaultFTB):
-    numEntries = 32
-    tagBits = 38
-    numWays = 32
+class FauFTB(TimedBaseFTBPredictor):
+    type = 'FauFTB'
+    cxx_class = 'gem5::branch_prediction::ftb_pred::FauFTB'
+    cxx_header = 'cpu/pred/ftb/fauftb.hh'
+
+    numEntries = Param.Unsigned(32, "Number of entries in the FauFTB")
+    numWays = Param.Unsigned(32, "Number of ways per set")
+    tagBits = Param.Unsigned(38, "Number of bits in the tag")
+    instShiftAmt = Param.Unsigned(1, "Amount to shift PC to get inst bits")
+    numThreads = Param.Unsigned(1, "Number of threads")
     numDelay = 0
-    
+
 class RAS(TimedBaseFTBPredictor):
     type = 'RAS'
     cxx_class = 'gem5::branch_prediction::ftb_pred::RAS'
@@ -949,7 +955,7 @@ class DecoupledBPUWithFTB(BranchPredictor):
     ftb = Param.DefaultFTB(DefaultFTB(), "FTB")
     tage = Param.FTBTAGE(FTBTAGE(), "TAGE predictor")
     ittage = Param.FTBITTAGE(FTBITTAGE(), "ITTAGE predictor")
-    uftb = Param.DefaultFTB(UFTB(), "UFTB predictor")
+    uftb = Param.FauFTB(FauFTB(), "FauFTB predictor")
     ras = Param.RAS(RAS(), "RAS")
     uras = Param.uRAS(uRAS(), "uRAS")
     
