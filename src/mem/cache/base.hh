@@ -48,6 +48,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <queue>
 #include <string>
 
 #include "base/addr_range.hh"
@@ -305,8 +306,6 @@ class BaseCache : public ClockedObject, CacheAccessor
 
         bool mustSendRetry;
 
-      private:
-
         void processSendRetry();
 
         EventFunctionWrapper sendRetryEvent;
@@ -514,7 +513,16 @@ class BaseCache : public ClockedObject, CacheAccessor
     Cycles calculateAccessLatency(const CacheBlk* blk, const uint32_t delay,
                                   const Cycles lookup_lat) const;
 
-    Tick calculateBusyLatenct(Tick when_ready, PacketPtr pkt);
+    int getSliceIdx(Addr addr) {
+        if (sliceNum <= 0) return -1;
+        Addr baddr = addr >> ceilLog2(blkSize);
+        Addr sliceidx = baddr & (sliceNum - 1);
+        return sliceidx;
+    }
+
+    void calculateSliceBusy(PacketPtr pkt, bool isOnlyTag = true);
+
+    bool checkSLiceBusy(PacketPtr pkt, uint32_t sliceidx);
 
     /**
      * Does all the processing necessary to perform the provided request.

@@ -670,7 +670,6 @@ def makeBareMetalXiangshanSystem(mem_mode, mdesc=None, cmdline=None, np=1, ruby=
     self.iobus = IOXBar()
     if not ruby:
         self.membus = MemBus()
-        self.membus.width = 32
 
         self.bridge = Bridge(delay='50ns')
         self.bridge.mem_side_port = self.iobus.cpu_side_ports

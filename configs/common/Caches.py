@@ -104,6 +104,8 @@ class L2Cache(Cache):
     cache_level = 2
     enable_wayprediction = False
 
+    slice_num = 4
+
 class L3Cache(Cache):
     mshrs = 64
     tgts_per_mshr = 20

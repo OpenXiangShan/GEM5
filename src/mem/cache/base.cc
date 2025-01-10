@@ -383,14 +383,9 @@ BaseCache::handleTimingReqHit(PacketPtr pkt, CacheBlk *blk, Tick request_time, b
             this->schedule(new SendTimingRespEvent(this, pkt), request_time - 1);
         }
         else {
-            Tick delay = calculateBusyLatenct(request_time, pkt);
-            cpuSidePort.schedTimingResp(pkt, request_time + delay);
+            cpuSidePort.schedTimingResp(pkt, request_time);
         }
     } else {
-        if (pkt->isEviction()) {
-            calculateBusyLatenct(curTick(), pkt);
-        }
-
         DPRINTF(Cache, "%s satisfied %s, no response needed\n", __func__,
                 pkt->print());
 
@@ -399,6 +394,10 @@ BaseCache::handleTimingReqHit(PacketPtr pkt, CacheBlk *blk, Tick request_time, b
         // CleanEvict and Writeback messages will be deleted
         // here as well
         pendingDelete.reset(pkt);
+    }
+
+    if (cacheLevel != 1) {
+        calculateSliceBusy(pkt, false);
     }
 }
 
@@ -658,6 +657,9 @@ BaseCache::recvTimingReq(PacketPtr pkt)
             cpuSidePort.sendCustomSignal(pkt, DcacheRespType::Miss);
         }
     } else {
+        if (cacheLevel != 1) {
+            calculateSliceBusy(pkt);
+        }
         if (cacheLevel == 1 && pkt->needsResponse() && pkt->isRead()) {
             // send cache miss signal
             cpuSidePort.sendCustomSignal(pkt, DcacheRespType::Miss);
@@ -1559,23 +1561,30 @@ BaseCache::calculateAccessLatency(const CacheBlk* blk, const uint32_t delay,
     return lat;
 }
 
-Tick
-BaseCache::calculateBusyLatenct(Tick when_ready, PacketPtr pkt)
+void
+BaseCache::calculateSliceBusy(PacketPtr pkt, bool isOnlyTag)
 {
-    if (sliceNum <= 0) [[likely]] return 0;
-    Addr baddr = pkt->getAddr() >> ceilLog2(blkSize);
-    Addr sliceidx = baddr & (sliceNum - 1);
-    int additional = 1;
-    int opLatency = additional + (lookupLatency == 1 ? 0 : lookupLatency) + (dataLatency == 1 ? 0 : dataLatency);
-    Tick op_lat = cyclesToTicks(Cycles(opLatency));
-    Tick& readytime = sliceReadyTick[sliceidx];
-    if (when_ready >= readytime + op_lat) {
-        readytime = when_ready;
-        return 0;
-    } else {
-        readytime = readytime + op_lat;
-        return readytime + op_lat - when_ready;
+    int sliceidx = getSliceIdx(pkt->getAddr());
+    if (sliceidx >= 0) {
+        Tick arrival_time = curTick() + pkt->headerDelay;
+        int additional = 1;
+        int opLatency = additional + (lookupLatency == 1 ? 0 : lookupLatency);
+        opLatency += (!isOnlyTag && (dataLatency == 1) ? 0 : dataLatency);
+        Tick op_lat = cyclesToTicks(Cycles(opLatency));
+        Tick& lastReadytime = sliceReadyTick[sliceidx];
+        assert(lastReadytime <= arrival_time);
+        lastReadytime = arrival_time + op_lat;
     }
+}
+
+bool
+BaseCache::checkSLiceBusy(PacketPtr pkt, uint32_t sliceidx)
+{
+    Tick arrival_time = curTick();
+    if (sliceReadyTick[sliceidx] < arrival_time) {
+        return false;
+    }
+    return true;
 }
 
 bool
@@ -2989,6 +2998,18 @@ BaseCache::CpuSidePort::tryTiming(PacketPtr pkt)
     if (!cache->tryAccessTag(pkt)) {
         DPRINTF(TagReadFail, "tryAccessTag fails addr: %lx\n", pkt->getAddr());
         return false;
+    }
+    int sliceidx = cache->getSliceIdx(pkt->getAddr());
+    if (sliceidx >= 0 && cache->cacheLevel != 1) {
+        if (cache->checkSLiceBusy(pkt, sliceidx)) {
+            //no more buffer
+            if (sendRetryEvent.scheduled()) {
+                owner.reschedule(sendRetryEvent, cache->clockEdge());
+            } else {
+                owner.schedule(sendRetryEvent, cache->clockEdge());
+            }
+            return false;
+        }
     }
     mustSendRetry = false;
     return true;
