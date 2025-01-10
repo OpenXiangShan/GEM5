@@ -85,6 +85,8 @@ class NoncoherentCache : public BaseCache
     void serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt,
                             CacheBlk *blk) override;
 
+    void sendHintViaMSHRTargets(MSHR *mshr, const PacketPtr pkt) override;
+
     void recvTimingResp(PacketPtr pkt) override;
 
     void recvTimingSnoopReq(PacketPtr pkt) override {

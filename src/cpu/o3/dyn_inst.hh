@@ -195,6 +195,7 @@ class DynInst : public ExecContext, public RefCounted
         TranslationStarted,
         TranslationCompleted,
         WaitingCacheRefill,
+        HasPendingCacheReq,
         PossibleLoadViolation,
         HitExternalSnoop,
         EffAddrValid,
@@ -470,6 +471,14 @@ class DynInst : public ExecContext, public RefCounted
         return instFlags[WaitingCacheRefill];
     }
     void waitingCacheRefill(bool f) { instFlags[WaitingCacheRefill] = f; }
+
+    /** True if inst is has pending cache request. */
+    bool
+    hasPendingCacheReq() const
+    {
+        return instFlags[HasPendingCacheReq];
+    }
+    void hasPendingCacheReq(bool f) { instFlags[HasPendingCacheReq] = f; }
 
     /** True if this address was found to match a previous load and they issued
      * out of order. If that happend, then it's only a problem if an incoming

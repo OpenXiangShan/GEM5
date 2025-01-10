@@ -876,11 +876,6 @@ InstructionQueue::cacheMissLdReplay(const DynInstPtr &deferred_inst)
 {
     DPRINTF(IQ, "Get Cache Missed Load, insert to Replay Queue "
             "[sn:%llu]\n", deferred_inst->seqNum);
-    // Reset DTB translation state
-    deferred_inst->translationStarted(false);
-    deferred_inst->translationCompleted(false);
-
-    deferred_inst->clearCanIssue();
     cacheMissLdInsts.insert(deferred_inst);
 }
 

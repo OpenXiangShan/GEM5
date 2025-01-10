@@ -574,6 +574,19 @@ MSHR::handleSnoop(PacketPtr pkt, Counter _order)
     return will_respond;
 }
 
+void
+MSHR::pushReadyTargets(TargetList &ready_targets, Target &tgt)
+{
+    // in the case when sbuffer store and load missed at the same block
+    // make sure write packet is processed before read packet
+    // so that load can get the right data after sbuffer store has updated the cache
+    if (tgt.pkt->isWrite()) {
+        ready_targets.push_front(tgt);
+    } else {
+        ready_targets.push_back(tgt);
+    }
+}
+
 MSHR::TargetList
 MSHR::extractServiceableTargets(PacketPtr pkt)
 {
@@ -588,7 +601,7 @@ MSHR::extractServiceableTargets(PacketPtr pkt)
         auto it = targets.begin();
         assert((it->source == Target::FromCPU) ||
                (it->source == Target::FromPrefetcher));
-        ready_targets.push_back(*it);
+        pushReadyTargets(ready_targets, *it);
         // Leave the Locked RMW Read until the corresponding Locked Write
         // request comes in
         if (it->pkt->cmd != MemCmd::LockedRMWReadReq) {
@@ -598,7 +611,7 @@ MSHR::extractServiceableTargets(PacketPtr pkt)
                     it++;
                 } else {
                     assert(it->source == Target::FromSnoop);
-                    ready_targets.push_back(*it);
+                    pushReadyTargets(ready_targets, *it);
                     it = targets.erase(it);
                 }
             }
@@ -609,7 +622,7 @@ MSHR::extractServiceableTargets(PacketPtr pkt)
         while (it != targets.end()) {
             DPRINTF(Cache, "target's packet addr: %#lx\n", it->pkt);
             DPRINTF(Cache, "Get target: %s from targets\n", it->pkt->print());
-            ready_targets.push_back(*it);
+            pushReadyTargets(ready_targets, *it);
             if (it->pkt->cmd == MemCmd::LockedRMWReadReq) {
                 // Leave the Locked RMW Read until the corresponding Locked
                 // Write comes in. Also don't service any later targets as the
@@ -622,6 +635,53 @@ MSHR::extractServiceableTargets(PacketPtr pkt)
         ready_targets.populateFlags();
     }
     targets.populateFlags();
+
+    return ready_targets;
+}
+
+MSHR::TargetList
+MSHR::copyServiceableTargets(PacketPtr pkt)
+{
+    TargetList ready_targets;
+    ready_targets.init(blkAddr, blkSize);
+    // If the downstream MSHR got an invalidation request then we only
+    // service the first of the FromCPU targets and any other
+    // non-FromCPU target. This way the remaining FromCPU targets
+    // issue a new request and get a fresh copy of the block and we
+    // avoid memory consistency violations.
+    if (pkt->cmd == MemCmd::ReadRespWithInvalidate) {
+        auto it = targets.begin();
+        assert((it->source == Target::FromCPU) ||
+               (it->source == Target::FromPrefetcher));
+        pushReadyTargets(ready_targets, *it);
+        // Leave the Locked RMW Read until the corresponding Locked Write
+        // request comes in
+        if (it->pkt->cmd != MemCmd::LockedRMWReadReq) {
+            while (it != targets.end()) {
+                if (it->source == Target::FromCPU) {
+                    it++;
+                } else {
+                    assert(it->source == Target::FromSnoop);
+                    pushReadyTargets(ready_targets, *it);
+                    it++;
+                }
+            }
+        }
+    } else {
+        auto it = targets.begin();
+        while (it != targets.end()) {
+            DPRINTF(Cache, "target's packet addr: %#lx\n", it->pkt);
+            DPRINTF(Cache, "Get target: %s from targets\n", it->pkt->print());
+            pushReadyTargets(ready_targets, *it);
+            if (it->pkt->cmd == MemCmd::LockedRMWReadReq) {
+                // Leave the Locked RMW Read until the corresponding Locked
+                // Write comes in. Also don't service any later targets as the
+                // line is now "locked".
+                break;
+            }
+            it++;
+        }
+    }
 
     return ready_targets;
 }

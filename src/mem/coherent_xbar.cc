@@ -50,6 +50,7 @@
 #include "base/trace.hh"
 #include "debug/AddrRanges.hh"
 #include "debug/CoherentXBar.hh"
+#include "mem/request.hh"
 #include "sim/system.hh"
 
 namespace gem5
@@ -62,12 +63,14 @@ CoherentXBar::CoherentXBar(const CoherentXBarParams &p)
       maxRoutingTableSizeCheck(p.max_routing_table_size),
       pointOfCoherency(p.point_of_coherency),
       pointOfUnification(p.point_of_unification),
+      hintWakeUpAheadCycles(p.hint_wakeup_ahead_cycles),
 
       ADD_STAT(snoops, statistics::units::Count::get(), "Total snoops"),
       ADD_STAT(snoopTraffic, statistics::units::Byte::get(), "Total snoop traffic"),
       ADD_STAT(snoopFanout, statistics::units::Count::get(),
                "Request fanout histogram")
 {
+    assert(hintWakeUpAheadCycles <= responseLatency);
     // create the ports based on the size of the memory-side port and
     // CPU-side port vector ports, and the presence of the default port,
     // the ports are enumerated starting from zero
@@ -445,6 +448,23 @@ CoherentXBar::recvTimingReq(PacketPtr pkt, PortID cpu_side_port_id)
     return success;
 }
 
+CoherentXBar::CustomHintEvent::CustomHintEvent(PortID id, PacketPtr pkt, CoherentXBar* xbar)
+    : Event(Default_Pri, AutoDelete), _pkt(pkt), _id(id), _xbar(xbar)
+{
+}
+
+void
+CoherentXBar::CustomHintEvent::process()
+{
+    _xbar->getCpuSidePort(_id)->sendCustomSignal(_pkt, DcacheRespType::Hint);
+}
+
+const char *
+CoherentXBar::CustomHintEvent::description() const
+{
+    return "CustomHintEvent";
+}
+
 bool
 CoherentXBar::recvTimingResp(PacketPtr pkt, PortID mem_side_port_id)
 {
@@ -495,6 +515,11 @@ CoherentXBar::recvTimingResp(PacketPtr pkt, PortID mem_side_port_id)
     pkt->headerDelay = 0;
     cpuSidePorts[cpu_side_port_id]->schedTimingResp(pkt, curTick()
                                         + latency);
+    if (hintWakeUpAheadCycles) {
+        // send Hint in advance to wake up cache missed load earlier before real TimingResp
+        CustomHintEvent* hint = new CustomHintEvent(cpu_side_port_id, pkt, this);
+        schedule(hint, curTick() + latency - (clockPeriod() * hintWakeUpAheadCycles));
+    }
 
     // remove the request from the routing table
     routeTo.erase(route_lookup);

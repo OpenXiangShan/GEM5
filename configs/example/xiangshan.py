@@ -377,6 +377,7 @@ def setKmhV3IdealParams(args, system):
             system.l2_caches[i].slice_num = 0   # 4 -> 0, no slice
             system.tol2bus_list[i].forward_latency = 0  # 3->0
             system.tol2bus_list[i].response_latency = 0  # 3->0
+            system.tol2bus_list[i].hint_wakeup_ahead_cycles = 0  # 2->0
 
     if args.l3cache:
         system.l3.enable_wayprediction = False

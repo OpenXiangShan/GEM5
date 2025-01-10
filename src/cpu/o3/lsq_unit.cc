@@ -61,6 +61,7 @@
 #include "cpu/utils.hh"
 #include "debug/Activity.hh"
 #include "debug/Diff.hh"
+#include "debug/Hint.hh"
 #include "debug/HtmCpu.hh"
 #include "debug/IEW.hh"
 #include "debug/LSQUnit.hh"
@@ -69,6 +70,7 @@
 #include "mem/packet.hh"
 #include "mem/packet_access.hh"
 #include "mem/request.hh"
+#include "sim/cur_tick.hh"
 
 namespace gem5
 {
@@ -580,12 +582,18 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
                "squashed"),
       ADD_STAT(memOrderViolation, statistics::units::Count::get(),
                "Number of memory ordering violations"),
+      ADD_STAT(busForwardSuccess, statistics::units::Count::get(),
+               "Number of successfully forwarding from bus"),
+      ADD_STAT(cacheMissReplayEarly, statistics::units::Count::get(),
+               "Number of early cache miss replay"),
       ADD_STAT(squashedStores, statistics::units::Count::get(),
                "Number of stores squashed"),
       ADD_STAT(rescheduledLoads, statistics::units::Count::get(),
                "Number of loads that were rescheduled"),
       ADD_STAT(bankConflictTimes, statistics::units::Count::get(),
                "Number of bank conflict times"),
+      ADD_STAT(busAppendTimes, statistics::units::Count::get(),
+               "Number of bus append times"),
       ADD_STAT(blockedByCache, statistics::units::Count::get(),
                "Number of times an access to memory failed due to the cache "
                "being blocked"),
@@ -977,6 +985,41 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
 }
 
 void
+LSQUnit::loadReplayHelper(DynInstPtr inst, LSQRequest* request, bool cacheMiss, bool fastReplay, bool dropReqNow)
+{
+    // clear state in this instruction
+    inst->effAddrValid(false);
+    // Reset DTB translation state
+    inst->translationStarted(false);
+    inst->translationCompleted(false);
+    // set as not able to issue
+    inst->clearCanIssue();
+    if (cacheMiss) {
+        // set it as waiting for dcache refill
+        inst->waitingCacheRefill(true);
+        // insert to missed load replay queue
+        iewStage->cacheMissLdReplay(inst);
+    } else if (fastReplay) {
+        // insert to replayQ directly, replay at next cycle
+        inst->issueQue->retryMem(inst);
+    } else {
+        panic("unsupported\n");
+    }
+    // clear request in loadQueue
+    loadQueue[inst->lqIdx].setRequest(nullptr);
+    // set replayed flag in pipeline
+    setFlagInPipeLine(inst, LdStFlags::Replayed);
+    // cancel subsequent dependent insts of this load
+    iewStage->loadCancel(inst);
+    if (dropReqNow) {
+        // discard this request
+        request->discard();
+        // TODO: is this essential?
+        inst->savedRequest = nullptr;
+    }
+}
+
+void
 LSQUnit::setFlagInPipeLine(DynInstPtr inst, LdStFlags f)
 {
     bool found = false;
@@ -1175,6 +1218,31 @@ LSQUnit::loadPipeS2(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
         return fault;
     }
 
+    if (flag[LdStFlags::WakeUpEarly]) {
+        auto& bus = getLsq()->bus;
+        bool busFwdSuccess = bus.find(inst->seqNum) != bus.end();
+        if (inst->hasPendingCacheReq() || !busFwdSuccess) {
+            // Load has been waken up too early, even no TimingResp at load s2
+            // Or load received TimingResp any time at [s1, s2], but can not find data on bus
+            // replay this load
+            // warn("Tick:%ld Hint & TimingResp not Match, "
+            //     "plz check the timing relationship between Hint & TimingResp, sn:%ld\n", curTick(), inst->seqNum);
+            loadReplayHelper(
+                inst, request,
+                true,  // cache miss
+                false, // Dont fast replay
+                true   // call request->discard() now
+            );
+            stats.cacheMissReplayEarly++;
+        } else {
+            // Load received TimingResp any time at [s1, s2], forward from data bus
+            DPRINTF(LSQUnit, "[sn:%ld]: Forward from bus at load s2, data: %lx\n",
+                    inst->seqNum, *((uint64_t*)(inst->memData)));
+            panic_if(bus.size() > lsq->getLQEntries(), "packets on bus should never be greater than LQ size");
+            forwardFrmBus(inst, request);
+        }
+    }
+
     if (flag[LdStFlags::Replayed] || flag[LdStFlags::LocalAccess]) {
         return fault;
     }
@@ -1193,40 +1261,25 @@ LSQUnit::loadPipeS2(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
     if (lsq->enableLdMissReplay() &&
         request && request->isNormalLd() && !flag[LdStFlags::FullForward] && !flag[LdStFlags::CacheHit]) {
         // cannot get cache data at load s2, replay this load
-        // clear state in this instruction
-        inst->effAddrValid(false);
-        // set it as waiting for dcache refill
-        inst->waitingCacheRefill(true);
-        // clear request in loadQueue
-        loadQueue[inst->lqIdx].setRequest(nullptr);
-        // set cache miss & replayed flag in pipeline
-        flag[Replayed] = true;
-        // insert to missed load replay queue
-        iewStage->cacheMissLdReplay(inst);
-        // cancel subsequent dependent insts of this load
-        iewStage->loadCancel(inst);
+        loadReplayHelper(
+            inst, request,
+            true,  // cache miss
+            false, // Dont fast replay
+            false  // call request->discard() later when TimingResp comes
+        );
         return fault;
     }
 
     if (flag[LdStFlags::Nuke]) {
         assert(lsq->enablePipeNukeCheck());
         // replay load if nuke happens
-        request->discard();
-        inst->savedRequest = nullptr;
-        // clear state in this instruction
-        inst->translationStarted(false);
-        inst->translationCompleted(false);
-        inst->clearCanIssue();
-        inst->effAddrValid(false);
-        // clear request in loadQueue
-        loadQueue[inst->lqIdx].setRequest(nullptr);
-        // set replayed flag in pipeline
-        flag[LdStFlags::Replayed] = true;
-        // nuke fast replay
-        inst->issueQue->retryMem(inst);
+        loadReplayHelper(
+            inst, request,
+            false, // cache hit
+            true,  // fast replay
+            true   // call request->discard() now
+        );
         stats.pipeRawNukeReplay++;
-        // cancel subsequent dependent insts of this load
-        iewStage->loadCancel(inst);
     } else {
         // no nuke happens, prepare the inst data
         request = inst->savedRequest;
@@ -2612,6 +2665,29 @@ LSQUnit::makeFullFwdPkt(DynInstPtr load_inst, LSQRequest *request)
     return data_pkt;
 }
 
+void
+LSQUnit::forwardFrmBus(DynInstPtr inst, LSQRequest *request)
+{
+    // load can get it's data from data bus, actually saved in `inst->memData`
+    // So there is no need to access Dcache
+
+    // forward sbuffer again
+    auto entry = storeBuffer.get(request->mainReq()->getPaddr() & cacheBlockMask);
+    if (entry) {
+        if (entry->recordForward(request->mainReq(), request)) {
+            assert(request->isSplit()); // here must be split request
+            stats.sbufferFullForward++;
+        } else {
+            stats.sbufferPartiForward++;
+        }
+    }
+    // merge forward result
+    request->forward();
+    // set as FullForwarded, writeback at load s2
+    setFlagInPipeLine(inst, LdStFlags::FullForward);
+    stats.busForwardSuccess++;
+}
+
 Fault
 LSQUnit::read(LSQRequest *request, ssize_t load_idx)
 {
@@ -2921,15 +2997,34 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
     // stores do).
     // @todo We should account for cache port contention
     // and arbitrate between loads and stores.
-
-    // if we the cache is not blocked, do cache access
-    request->buildPackets();
-    if (!request->sendPacketToCache()) {
-        iewStage->loadCancel(load_inst);
-    }
-    if (!request->isSent()) {
-        iewStage->blockMemInst(load_inst);
-        setFlagInPipeLine(load_inst, LdStFlags::Replayed);
+    DPRINTF(Hint, "[sn:%ld] Read\n", load_inst->seqNum);
+    auto& bus = getLsq()->bus;
+    bool busFwdSuccess = bus.find(load_inst->seqNum) != bus.end();
+    if (request->_inst->hasPendingCacheReq()) {
+        // Load has been waken up too early, TimingResp is not present now
+        // try waiting TimingResp and forward bus again at load s2
+        assert(request->isLoad());
+        setFlagInPipeLine(load_inst, LdStFlags::WakeUpEarly);
+    } else if (busFwdSuccess) {
+        DPRINTF(LSQUnit, "[sn:%ld]: Forward from bus at load s1, data: %lx\n",
+                load_inst->seqNum, *((uint64_t*)(load_inst->memData)));
+        panic_if(bus.size() > lsq->getLQEntries(), "packets on bus should never be greater than LQ size");
+        for (auto ele : bus) {
+            DPRINTF(LSQUnit, " bus:[sn:%ld], paddr:%lx\n", ele.first, ele.second);
+        }
+        // this load can forward data from bus
+        forwardFrmBus(load_inst, request);
+    } else {
+        // if cannot forward from bus, do real cache access
+        request->buildPackets();
+        // if the cache is not blocked, do cache access
+        if (!request->sendPacketToCache()) {
+            iewStage->loadCancel(load_inst);
+        }
+        if (!request->isSent()) {
+            iewStage->blockMemInst(load_inst);
+            setFlagInPipeLine(load_inst, LdStFlags::Replayed);
+        }
     }
 
     return NoFault;

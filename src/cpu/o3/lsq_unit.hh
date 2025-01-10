@@ -336,6 +336,16 @@ class LSQUnit
     Fault checkViolations(typename LoadQueue::iterator& loadIt,
             const DynInstPtr& inst);
 
+    /** A load replay helper function
+     * this function will clear state of inst (the original request, tlb state etc)
+     * insert to CacheMissReplayQ or replayQ and set as Replayed in pipeline
+     * @param cacheMiss insert to CacheMissReplayQ
+     * @param fastReplay insert to replayQ
+     * @param dropReqNow call request->discard() now
+     */
+    void loadReplayHelper(DynInstPtr inst, LSQRequest* request, bool cacheMiss,
+            bool fastReplay, bool dropReqNow);
+
     /** Check if an incoming invalidate hits in the lsq on a load
      * that might have issued out of order wrt another load beacuse
      * of the intermediate invalidate.
@@ -756,6 +766,12 @@ class LSQUnit
         /** Tota number of memory ordering violations. */
         statistics::Scalar memOrderViolation;
 
+        /** Tota number of successfully forwarding from bus. */
+        statistics::Scalar busForwardSuccess;
+
+        /** Tota number of early cache miss replay. */
+        statistics::Scalar cacheMissReplayEarly;
+
         /** Total number of squashed stores. */
         statistics::Scalar squashedStores;
 
@@ -764,6 +780,9 @@ class LSQUnit
 
         /**Number of bank conflict times**/
         statistics::Scalar bankConflictTimes;
+
+        /** Number of bus append times **/
+        statistics::Scalar busAppendTimes;
 
         /** Number of times the LSQ is blocked due to the cache. */
         statistics::Scalar blockedByCache;
@@ -797,6 +816,9 @@ class LSQUnit
     bool squashMark{false};
 
   public:
+    /** Load Forwards data from Data bus. */
+    void forwardFrmBus(DynInstPtr inst, LSQRequest *request);
+
     /** Executes the load at the given index. */
     Fault read(LSQRequest *request, ssize_t load_idx);
 
@@ -816,6 +838,8 @@ class LSQUnit
 
     /** Returns whether or not the LSQ unit is stalled. */
     bool isStalled()  { return stalled; }
+
+    LSQUnitStats* getStats() { return &stats; }
   public:
     typedef typename CircularQueue<LQEntry>::iterator LQIterator;
     typedef typename CircularQueue<SQEntry>::iterator SQIterator;

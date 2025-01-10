@@ -265,6 +265,8 @@ class BaseCache : public ClockedObject, CacheAccessor
 
         virtual void recvFunctionalSnoop(PacketPtr pkt);
 
+        virtual void recvFunctionalCustomSignal(PacketPtr pkt, int sig);
+
       public:
 
         MemSidePort(const std::string &_name, BaseCache *_cache,
@@ -353,6 +355,18 @@ class BaseCache : public ClockedObject, CacheAccessor
         PacketPtr pkt;
       public:
         SendTimingRespEvent(BaseCache* cache, PacketPtr pkt);
+        void process() override;
+        const char* description() const override;
+    };
+
+    class SendCustomEvent : public Event
+    {
+      private:
+        BaseCache* cache;
+        PacketPtr pkt;
+        int sig;
+      public:
+        SendCustomEvent(BaseCache* cache, PacketPtr pkt, int sig);
         void process() override;
         const char* description() const override;
     };
@@ -627,6 +641,8 @@ class BaseCache : public ClockedObject, CacheAccessor
     virtual void serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt,
                                     CacheBlk *blk) = 0;
 
+    virtual void sendHintViaMSHRTargets(MSHR *mshr, const PacketPtr pkt) = 0;
+
     /**
      * Handles a response (cache line fill/write ack) from the bus.
      * @param pkt The response packet
@@ -709,6 +725,8 @@ class BaseCache : public ClockedObject, CacheAccessor
     QueueEntry* getNextQueueEntry();
 
     bool hasHintsWaiting();
+
+    void recvFunctionalCustomSignal(PacketPtr pkt, int sig);
 
     /**
      * Insert writebacks into the write buffer

@@ -48,6 +48,7 @@
 #include <map>
 #include <queue>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -86,6 +87,7 @@ enum LdStFlags
     Replayed,
     CacheHit,
     Nuke,
+    WakeUpEarly,
     FullForward,
     LocalAccess,
     HasFault,
@@ -102,6 +104,7 @@ const std::string LdStFlagName[LdStFlagNum] = {
     "Replayed",
     "CacheHit",
     "Nuke",
+    "WakeUpEarly",
     "FullForward",
     "LocalAccess",
     "HasFault",
@@ -318,12 +321,6 @@ class LSQ
                 bool stale_translation=false);
 
         bool
-        isLoad() const
-        {
-            return flags.isSet(Flag::IsLoad);
-        }
-
-        bool
         isHInst() const
         {
             return flags.isSet(Flag::IsHInst);
@@ -387,6 +384,12 @@ class LSQ
         setContext(const ContextID& context_id)
         {
             req()->setContext(context_id);
+        }
+
+        bool
+        isLoad() const
+        {
+            return flags.isSet(Flag::IsLoad);
         }
 
         const DynInstPtr& instruction() { return _inst; }
@@ -482,6 +485,7 @@ class LSQ
             return flags.isSet(Flag::WriteBackToRegister);
         }
         /** @} */
+        virtual void recvFunctionalCustomSignal(PacketPtr pkt) = 0;
         virtual bool recvTimingResp(PacketPtr pkt) = 0;
         virtual bool sendPacketToCache() = 0;
         virtual void buildPackets() = 0;
@@ -656,6 +660,7 @@ class LSQ
         virtual void finish(const Fault &fault, const RequestPtr &req,
                 gem5::ThreadContext* tc, BaseMMU::Mode mode);
         virtual bool recvTimingResp(PacketPtr pkt);
+        virtual void recvFunctionalCustomSignal(PacketPtr pkt);
         virtual void assemblePackets();
         virtual bool sendPacketToCache();
         virtual void buildPackets();
@@ -691,6 +696,7 @@ class LSQ
       protected:
         uint32_t numFragments;
         uint32_t numReceivedPackets;
+        uint32_t numCustomHintReceived;
         RequestPtr _mainReq;
         PacketPtr _mainPacket;
 
@@ -703,6 +709,7 @@ class LSQ
                        nullptr),
             numFragments(0),
             numReceivedPackets(0),
+            numCustomHintReceived(0),
             _mainReq(nullptr),
             _mainPacket(nullptr)
         {
@@ -722,6 +729,7 @@ class LSQ
         virtual void finish(const Fault &fault, const RequestPtr &req,
                 gem5::ThreadContext* tc, BaseMMU::Mode mode);
         virtual bool recvTimingResp(PacketPtr pkt);
+        virtual void recvFunctionalCustomSignal(PacketPtr pkt);
         virtual void assemblePackets();
         virtual void initiateTranslation();
         virtual bool sendPacketToCache();
@@ -751,6 +759,7 @@ class LSQ
         void finish(const Fault &fault, const RequestPtr &req,
                 gem5::ThreadContext* tc, BaseMMU::Mode mode) override {}
         bool recvTimingResp(PacketPtr pkt) override;
+        void recvFunctionalCustomSignal(PacketPtr pkt) override;
         bool sendPacketToCache() override;
         void buildPackets() override;
         Cycles handleLocalAccess(
@@ -991,6 +1000,9 @@ class LSQ
     /** The CPU pointer. */
     CPU *cpu;
 
+    /** contains all the insts which can forward data from bus <seqNum, Paddr> */
+    std::unordered_map<uint64_t, Addr> bus;
+
     /** The IEW stage pointer. */
     IEW *iewStage;
     Tick getLastConflictCheckTick();
@@ -1004,6 +1016,8 @@ class LSQ
     void setDcacheWriteStall(bool stall) { dcacheWriteStall = stall; }
 
     bool getDcacheWriteStall() { return dcacheWriteStall; }
+
+    unsigned getLQEntries() const { return LQEntries; }
 
     /** Is D-cache blocked? */
     bool cacheBlocked() const;

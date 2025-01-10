@@ -93,6 +93,8 @@ enum DcacheRespType
     Hit,
     Block_Not_Ready,
     Miss,
+    Hint,
+    Bus_Clear,
     NUM_Resp_Type
 };
 

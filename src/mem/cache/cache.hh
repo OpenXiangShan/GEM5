@@ -103,6 +103,8 @@ class Cache : public BaseCache
     void serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt,
                             CacheBlk *blk) override;
 
+    void sendHintViaMSHRTargets(MSHR *mshr, const PacketPtr pkt) override;
+
     void recvTimingSnoopReq(PacketPtr pkt) override;
 
     void recvTimingSnoopResp(PacketPtr pkt) override;

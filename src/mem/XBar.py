@@ -116,6 +116,10 @@ class CoherentXBar(BaseXBar):
     max_outstanding_snoops = Param.Int(512, "Max. outstanding snoops allowed")
 
     # Maximum routing table size for sanity checks
+    hint_wakeup_ahead_cycles = Param.Int(0, "How many cycles" \
+        "sending a Hint to LSU waking up the missed load before TimingResp")
+
+    # Maximum routing table size for sanity checks
     max_routing_table_size = Param.Int(512, "Max. routing table size")
 
     # Determine how this crossbar handles packets where caches have

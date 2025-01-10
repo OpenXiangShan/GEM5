@@ -322,6 +322,18 @@ NoncoherentCache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt,
 }
 
 void
+NoncoherentCache::sendHintViaMSHRTargets(MSHR *mshr, const PacketPtr pkt)
+{
+    MSHR::TargetList targets = mshr->copyServiceableTargets(pkt);
+    for (auto &target: targets) {
+        Packet *tgt_pkt = target.pkt;
+        if (target.source == MSHR::Target::FromCPU) {
+            BaseCache::cpuSidePort.sendCustomSignal(tgt_pkt, DcacheRespType::Hint);
+        }
+    }
+}
+
+void
 NoncoherentCache::recvTimingResp(PacketPtr pkt)
 {
     assert(pkt->isResponse());

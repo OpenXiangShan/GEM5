@@ -41,6 +41,7 @@
 #include "mem/packet_queue.hh"
 
 #include "base/trace.hh"
+#include "debug/Cache.hh"
 #include "debug/Drain.hh"
 #include "debug/PacketQueue.hh"
 

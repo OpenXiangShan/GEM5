@@ -83,6 +83,7 @@ class MemCmd
     enum Command
     {
         InvalidCmd,
+        CustomBusClear,
         ReadReq,
         ReadResp,
         ReadRespWithInvalidate,

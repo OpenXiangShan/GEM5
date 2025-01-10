@@ -161,6 +161,7 @@ class L1ToL2Bus(CoherentXBar):
     forward_latency = 3 # l1 -> l2 req/snoop latency
     response_latency = 3 # l2 -> l1 resp latency
     snoop_response_latency = 1
+    hint_wakeup_ahead_cycles = 2 # send Hint to L1 N cycles in advance with TimingResp
 
     # Use a snoop-filter by default, and set the latency to zero as
     # the lookup is assumed to overlap with the frontend latency of

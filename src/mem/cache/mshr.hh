@@ -474,6 +474,11 @@ class MSHR : public QueueEntry, public Printable
     { return targets.size() + deferredTargets.size(); }
 
     /**
+     * add a target to ready_targets according to the target type
+     */
+    void pushReadyTargets(TargetList &ready_targets, Target &tgt);
+
+    /**
      * Extracts the subset of the targets that can be serviced given a
      * received response. This function returns the targets list
      * unless the response is a ReadRespWithInvalidate. The
@@ -487,6 +492,11 @@ class MSHR : public QueueEntry, public Printable
      */
     TargetList extractServiceableTargets(PacketPtr pkt);
 
+    /**
+     * works the same as extractServiceableTargets
+     * but this func will not erase the original TargetList
+     */
+    TargetList copyServiceableTargets(PacketPtr pkt);
     /**
      * Returns true if there are targets left.
      * @return true if there are targets

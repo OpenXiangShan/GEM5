@@ -65,6 +65,7 @@
 #include "mem/cache/tags/compressed_tags.hh"
 #include "mem/cache/tags/super_blk.hh"
 #include "mem/packet.hh"
+#include "mem/request.hh"
 #include "params/BaseCache.hh"
 #include "params/WriteAllocator.hh"
 #include "sim/arch_db.hh"
@@ -90,6 +91,24 @@ const char*
 BaseCache::SendTimingRespEvent::description() const
 {
     return "BaseCache response event";
+}
+
+BaseCache::SendCustomEvent::SendCustomEvent(BaseCache* cache, PacketPtr pkt, int sig)
+    : Event(Stat_Event_Pri, AutoDelete),
+      cache(cache),
+      pkt(pkt),
+      sig(sig) {}
+
+void
+BaseCache::SendCustomEvent::process()
+{
+    cache->cpuSidePort.sendCustomSignal(pkt, sig);
+}
+
+const char*
+BaseCache::SendCustomEvent::description() const
+{
+    return "CustomSendEvent";
 }
 
 BaseCache::CacheResponsePort::CacheResponsePort(const std::string &_name,
@@ -895,6 +914,39 @@ BaseCache::recvTimingResp(PacketPtr pkt)
     delete pkt;
 }
 
+void
+BaseCache::recvFunctionalCustomSignal(PacketPtr pkt, int sig)
+{
+    assert(pkt->isResponse());
+
+    // all header delay should be paid for by the crossbar, unless
+    // this is a prefetch response from above
+    panic_if(pkt->headerDelay != 0 && pkt->cmd != MemCmd::HardPFResp,
+             "%s saw a non-zero packet delay\n", name());
+
+    const bool is_error = pkt->isError();
+
+    if (is_error) {
+        DPRINTF(Cache, "%s: Cache received %s with error\n", __func__,
+                pkt->print());
+    }
+
+    DPRINTF(Cache, "%s: Handling response %s\n", __func__,
+            pkt->print());
+
+    // if this is a write, we should be looking at an uncacheable
+    // write
+    if (pkt->isWrite() && pkt->cmd != MemCmd::LockedRMWWriteResp) {
+        assert(pkt->req->isUncacheable());
+        return;
+    }
+
+    MSHR *mshr = dynamic_cast<MSHR*>(pkt->senderState);
+    DPRINTF(Cache, "MSHR addr: %#lx\n", mshr);
+    assert(mshr);
+
+    sendHintViaMSHRTargets(mshr, pkt);
+}
 
 Tick
 BaseCache::recvAtomic(PacketPtr pkt)
@@ -1999,6 +2051,15 @@ BaseCache::handleFill(PacketPtr pkt, CacheBlk *blk, PacketList &writebacks,
     blk->setWhenReady(clockEdge(fillLatency) + pkt->headerDelay +
                       pkt->payloadDelay);
 
+    // NOTE: just send the block address back to lsu
+    // notify lsu to clear data on data bus
+    // when the block is ready in dcache (load can get data from cache directly)
+    PacketPtr customPkt = new Packet(pkt->req, MemCmd::CustomBusClear);
+    customPkt->setAddr(addr);
+    SendCustomEvent* clearEvent = new SendCustomEvent(this, customPkt, DcacheRespType::Bus_Clear);
+    schedule(clearEvent, clockEdge(fillLatency) + pkt->headerDelay +
+                      pkt->payloadDelay);
+
     Request::XsMetadata blk_meta = blk->getXsMetadata();
     blk_meta.prefetchSource = pkt->req->getPFSource();
     blk->setXsMetadata(blk_meta);
@@ -3085,6 +3146,18 @@ BaseCache::MemSidePort::recvTimingResp(PacketPtr pkt)
 {
     cache->recvTimingResp(pkt);
     return true;
+}
+
+void
+BaseCache::MemSidePort::recvFunctionalCustomSignal(PacketPtr pkt, int sig)
+{
+    if (sig == DcacheRespType::Hint) {
+        if (cache->cacheLevel == 1 && pkt->isRead() && !pkt->isWrite()) {
+            cache->recvFunctionalCustomSignal(pkt, sig);
+        }
+    } else {
+        panic("unsupported sig %d in recvFunctionalCustomSignal\n", sig);
+    }
 }
 
 // Express snooping requests to memside port

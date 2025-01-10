@@ -68,6 +68,8 @@ MemCmd::commandInfo[] =
 {
     /* InvalidCmd */
     { {}, InvalidCmd, "InvalidCmd" },
+    /* CustomBusClear - Clear the bus data at LSU */
+    { {}, CustomBusClear, "CustomBusClear" },
     /* ReadReq - Read issued by a non-caching agent such as a CPU or
      * device, with no restrictions on alignment. */
     { {IsRead, IsRequest, NeedsResponse}, ReadResp, "ReadReq" },

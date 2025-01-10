@@ -49,6 +49,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "base/types.hh"
 #include "mem/snoop_filter.hh"
 #include "mem/xbar.hh"
 #include "params/CoherentXBar.hh"
@@ -249,6 +250,27 @@ class CoherentXBar : public BaseXBar
 
     };
 
+    class CustomHintEvent : public Event
+    {
+      public:
+        /** Constructs a the custom hint event. */
+        CustomHintEvent(PortID id, PacketPtr pkt, CoherentXBar* xbar);
+
+        /** Processes the event. */
+        void process();
+
+        /** Returns the description of this event. */
+        const char *description() const;
+
+      private:
+        /** The pkt ptr. */
+        PacketPtr _pkt;
+        /** The cpu side port id. */
+        PortID _id;
+        /** The xbar ptr. */
+        CoherentXBar* _xbar;
+    };
+
     std::vector<SnoopRespPort*> snoopRespPorts;
 
     std::vector<QueuedResponsePort*> snoopPorts;
@@ -291,6 +313,9 @@ class CoherentXBar : public BaseXBar
 
     /** Is this crossbar the point of unification? **/
     const bool pointOfUnification;
+
+    /** How many Cycles to send Hint in advance with TimingResp.*/
+    const Cycles hintWakeUpAheadCycles;
 
     /**
      * Upstream caches need this packet until true is returned, so
@@ -431,6 +456,8 @@ class CoherentXBar : public BaseXBar
     virtual ~CoherentXBar();
 
     virtual void regStats();
+
+    QueuedResponsePort * getCpuSidePort(PortID id) { return cpuSidePorts[id]; }
 };
 
 } // namespace gem5

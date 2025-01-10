@@ -56,12 +56,14 @@
 #include "debug/CacheTags.hh"
 #include "debug/CacheVerbose.hh"
 #include "enums/Clusivity.hh"
+#include "mem/cache/base.hh"
 #include "mem/cache/cache_blk.hh"
 #include "mem/cache/mshr.hh"
 #include "mem/cache/tags/base.hh"
 #include "mem/cache/write_queue_entry.hh"
 #include "mem/request.hh"
 #include "params/Cache.hh"
+#include "sim/cur_tick.hh"
 
 namespace gem5
 {
@@ -954,6 +956,44 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
             } else if (mshr->hasPostDowngrade()) {
                 blk->clearCoherenceBits(CacheBlk::WritableBit);
             }
+        }
+    }
+}
+
+void
+Cache::sendHintViaMSHRTargets(MSHR *mshr, const PacketPtr pkt)
+{
+    QueueEntry::Target *initial_tgt = mshr->getTarget();
+    // First offset for critical word first calculations
+    const int initial_offset = initial_tgt->pkt->getOffset(blkSize);
+
+    MSHR::TargetList targets = mshr->copyServiceableTargets(pkt);
+    // ResponseQueue is a forceOrder Queue, so if first tgt is delayed,
+    // all tgt will be delayed to the same time as the first tgt,
+    // for more details, see PacketQueue::schedSendTiming
+    bool firstTgt = true;
+    bool firstTgtDelayed = false;
+    for (auto &target: targets) {
+        Packet *tgt_pkt = target.pkt;
+        if (target.source == MSHR::Target::FromCPU) {
+            // How many bytes past the first request is this one
+            int transfer_offset =
+                tgt_pkt->getOffset(blkSize) - initial_offset;
+            if (transfer_offset < 0) {
+                transfer_offset += blkSize;
+            }
+            if (firstTgt) {
+                firstTgtDelayed = transfer_offset != 0 && pkt->payloadDelay != 0;
+            }
+            Tick sendHintTime = curTick() + ((transfer_offset || firstTgtDelayed) ? pkt->payloadDelay : 0);
+            DPRINTF(Cache, "sendHintViaMSHRTargets: pkt: %#lx, sendHintTime: %ld", tgt_pkt->getAddr(), sendHintTime);
+            if (sendHintTime == curTick()) {
+                BaseCache::cpuSidePort.sendCustomSignal(tgt_pkt, DcacheRespType::Hint);
+            } else {
+                SendCustomEvent* hintEvent = new SendCustomEvent(this, tgt_pkt, DcacheRespType::Hint);
+                schedule(hintEvent, sendHintTime);
+            }
+            firstTgt = false;
         }
     }
 }
