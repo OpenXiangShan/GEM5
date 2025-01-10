@@ -147,7 +147,7 @@ InstructionQueue::name() const
 }
 
 InstructionQueue::IQStats::IQStats(CPU *cpu, const unsigned &total_width)
-    : statistics::Group(cpu),
+    : statistics::Group(cpu, "iq"),
     ADD_STAT(instsAdded, statistics::units::Count::get(),
              "Number of instructions added to the IQ (excludes non-spec)"),
     ADD_STAT(nonSpecInstsAdded, statistics::units::Count::get(),
@@ -285,7 +285,7 @@ InstructionQueue::IQStats::IQStats(CPU *cpu, const unsigned &total_width)
 }
 
 InstructionQueue::IQIOStats::IQIOStats(statistics::Group *parent)
-    : statistics::Group(parent),
+    : statistics::Group(parent, "iq_io"),
     ADD_STAT(intInstQueueReads, statistics::units::Count::get(),
              "Number of integer instruction queue reads"),
     ADD_STAT(intInstQueueWrites, statistics::units::Count::get(),

@@ -319,7 +319,7 @@ IEW::IEWStats::IEWStats(CPU *cpu)
 }
 
 IEW::IEWStats::ExecutedInstStats::ExecutedInstStats(CPU *cpu)
-    : statistics::Group(cpu),
+    : statistics::Group(cpu, "executed_inst"),
     ADD_STAT(numInsts, statistics::units::Count::get(),
              "Number of executed instructions"),
     ADD_STAT(numLoadInsts, statistics::units::Count::get(),

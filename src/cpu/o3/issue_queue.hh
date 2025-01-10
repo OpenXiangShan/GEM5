@@ -299,6 +299,8 @@ class Scheduler : public SimObject
     void doCommit(const InstSeqNum seqNum);
     void doSquash(const InstSeqNum seqNum);
     uint32_t getIQInsts();
+
+    SchedulerStats& getStats() { return stats; }
 };
 
 

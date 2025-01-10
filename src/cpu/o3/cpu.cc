@@ -50,6 +50,7 @@
 #include "cpu/checker/cpu.hh"
 #include "cpu/checker/thread_context.hh"
 #include "cpu/o3/dyn_inst.hh"
+#include "cpu/o3/issue_queue.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/thread_context.hh"
 #include "cpu/reg_class.hh"
@@ -126,6 +127,7 @@ CPU::CPU(const BaseO3CPUParams &params)
       perfCCT(new PerfCCT(params.arch_db && params.arch_db->dumpLifetime, params.arch_db)),
       ipc_r("ipc", "", 1000, archDBer),
       cpi_r("cpi", "", 1000, archDBer),
+      issueWidth(params.decodeWidth),
       cpuStats(this)
 {
     fatal_if(FullSystem && params.numThreads > 1,
@@ -365,6 +367,51 @@ CPU::CPUStats::CPUStats(CPU *cpu)
       ADD_STAT(totalIpc, statistics::units::Rate<
                     statistics::units::Count, statistics::units::Cycle>::get(),
                "IPC: Total IPC of All Threads"),
+      ADD_STAT(baseRetiring, statistics::units::Rate<
+                    statistics::units::Count, statistics::units::Cycle>::get(),
+               "Level1: Retiring"),
+      ADD_STAT(frontendBound, statistics::units::Rate<
+                    statistics::units::Count, statistics::units::Cycle>::get(),
+               "Level1: Frontend Bound"),
+      ADD_STAT(frontendLatencyBound, statistics::units::Rate<
+                    statistics::units::Count, statistics::units::Cycle>::get(),
+               "Level2: |--Frontend Latency Bound"),
+      ADD_STAT(frontendBandwidthBound, statistics::units::Rate<
+                    statistics::units::Count, statistics::units::Cycle>::get(),
+               "Level2: |--Frontend Bandwidth Bound"),
+      ADD_STAT(badSpecBound, statistics::units::Rate<
+                    statistics::units::Count, statistics::units::Cycle>::get(),
+               "Level1: Bad Speculation"),
+      ADD_STAT(branchMissPrediction, statistics::units::Rate<
+                    statistics::units::Count, statistics::units::Cycle>::get(),
+               "Level2: |--Branch Missprediction"),
+      ADD_STAT(machineClears, statistics::units::Rate<
+                    statistics::units::Count, statistics::units::Cycle>::get(),
+               "Level2: |--Machine Clears"),
+      ADD_STAT(backendBound, statistics::units::Rate<
+                    statistics::units::Count, statistics::units::Cycle>::get(),
+               "Level1: Backend Bound"),
+      ADD_STAT(coreBound, statistics::units::Rate<
+                    statistics::units::Count, statistics::units::Cycle>::get(),
+               "Level2: |--Core Bound"),
+      ADD_STAT(memoryBound, statistics::units::Rate<
+                    statistics::units::Count, statistics::units::Cycle>::get(),
+               "Level2: |--Memory Bound"),
+      ADD_STAT(l1Bound, statistics::units::Rate<
+                    statistics::units::Count, statistics::units::Cycle>::get(),
+               "Level3:    |--L1 Bound"),
+      ADD_STAT(l2Bound, statistics::units::Rate<
+                    statistics::units::Count, statistics::units::Cycle>::get(),
+               "Level3:    |--L2 Bound"),
+      ADD_STAT(l3Bound, statistics::units::Rate<
+                    statistics::units::Count, statistics::units::Cycle>::get(),
+               "Level3:    |--L3 Bound"),
+      ADD_STAT(memBound, statistics::units::Rate<
+                    statistics::units::Count, statistics::units::Cycle>::get(),
+               "Level3:    |--Memory Bound"),
+      ADD_STAT(storeBound, statistics::units::Rate<
+                    statistics::units::Count, statistics::units::Cycle>::get(),
+               "Level3:    |--Store Bound"),
       ADD_STAT(intRegfileReads, statistics::units::Count::get(),
                "Number of integer regfile reads"),
       ADD_STAT(intRegfileWrites, statistics::units::Count::get(),
@@ -429,6 +476,37 @@ CPU::CPUStats::CPUStats(CPU *cpu)
     totalIpc
         .precision(6);
     totalIpc = sum(committedInsts) / cpu->baseStats.numCycles;
+
+    baseRetiring = committedInsts / (cpu->issueWidth * cpu->baseStats.numCycles);
+
+    frontendBound = cpu->fetch.getFetchStats().fetchBubbles / 
+        (cpu->issueWidth * cpu->baseStats.numCycles);
+
+    frontendLatencyBound = cpu->fetch.getFetchStats().fetchBubbles_max / cpu->baseStats.numCycles;
+
+    frontendBandwidthBound = frontendBound - frontendLatencyBound;
+
+    // badSpecBound = (INST_SPEC - INST_RETIRED + RECOVERY_BUBBLE)/(IssueBW * CPU_CYCLES)
+    badSpecBound = (cpu->iew.getIEWStats().dispatchedInsts - committedInsts + cpu->commit.getCommitStats().recovery_bubble) /
+         (cpu->issueWidth * cpu->baseStats.numCycles);
+
+    // branchMissPrediction = Bad Speculation * BR_MIS_PRED/TOTAL_FLUSH
+    branchMissPrediction = badSpecBound * cpu->commit.getCommitStats().branchMispredicts / cpu->commit.getCommitStats().totalSquash;
+
+    machineClears = badSpecBound - branchMissPrediction;
+
+    backendBound = 1 - (frontendBound + badSpecBound + baseRetiring);
+    
+    Scheduler* scheduler = cpu->iew.getScheduler();
+    const auto &stats = scheduler->getStats();
+    // coreBound = (EXEC_STALL_CYCLE - MEMSTALL_ANYLOAD - MEMSTALL_STORE)/CPU_CYCLE
+    coreBound = (stats.exec_stall_cycle - stats.memstall_any_load - stats.memstall_any_store) / cpu->baseStats.numCycles;
+    memoryBound = (stats.memstall_any_load + stats.memstall_any_store) / cpu->baseStats.numCycles;
+    l1Bound = (stats.memstall_any_load - stats.memstall_l1miss) / cpu->baseStats.numCycles;
+    l2Bound = (stats.memstall_l1miss - stats.memstall_l2miss) / cpu->baseStats.numCycles;
+    l3Bound = (stats.memstall_l2miss - stats.memstall_l3miss) / cpu->baseStats.numCycles;
+    memBound = (stats.memstall_l3miss) / cpu->baseStats.numCycles;
+    storeBound = (stats.memstall_any_store) / cpu->baseStats.numCycles;
 
     intRegfileReads
         .prereq(intRegfileReads);

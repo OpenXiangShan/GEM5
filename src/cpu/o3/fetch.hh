@@ -666,6 +666,9 @@ class Fetch
 
     SquashVersion localSquashVer;
 
+public:
+    const FetchStatGroup &getFetchStats() { return fetchStats; }
+
   private:
     uint8_t* firstDataBuf;
     uint8_t* secondDataBuf;

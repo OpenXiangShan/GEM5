@@ -606,6 +606,9 @@ class CPU : public BaseCPU
     Rolling ipc_r;
     Rolling cpi_r;
 
+    /** Issue Width, using for intel topdown stats */
+    int issueWidth; // issueWidth = decodeWidth = renameWidth!!!
+
     struct CPUStats : public statistics::Group
     {
         CPUStats(CPU *cpu);
@@ -630,6 +633,38 @@ class CPU : public BaseCPU
         statistics::Formula ipc;
         /** Stat for the total IPC. */
         statistics::Formula totalIpc;
+
+        // intel top down stats
+        /** Base retiring */
+        statistics::Formula baseRetiring;
+        /** Frontend Bound */
+        statistics::Formula frontendBound;
+        /** Frontend Latency Bound */
+        statistics::Formula frontendLatencyBound;
+        /** Frontend Bandwidth Bound */
+        statistics::Formula frontendBandwidthBound;
+        /** BadSpec Bound */
+        statistics::Formula badSpecBound;
+        /** Branch Miss Prediction Bound */
+        statistics::Formula branchMissPrediction;
+        /** Machine clears */
+        statistics::Formula machineClears;
+        /** Backend Bound */
+        statistics::Formula backendBound;
+        /** Core Bound */
+        statistics::Formula coreBound;
+        /** Memory Bound */
+        statistics::Formula memoryBound;
+        /** L1 Bound */
+        statistics::Formula l1Bound;
+        /** L2 Bound */
+        statistics::Formula l2Bound;
+        /** L3 Bound */
+        statistics::Formula l3Bound;
+        /** Mem Bound */
+        statistics::Formula memBound;
+        /** store Bound */
+        statistics::Formula storeBound;
 
         //number of integer register file accesses
         statistics::Scalar intRegfileReads;

@@ -413,6 +413,8 @@ class IEW
     void printAvailableInsts();
 
   public:
+
+    Scheduler* getScheduler() { return scheduler; }
     /** Instruction queue. */
     InstructionQueue instQueue;
 
@@ -576,6 +578,8 @@ class IEW
     StallReason checkLSQStall(ThreadID tid, bool isLoad);
 
   public:
+
+    const IEWStats& getIEWStats() const { return iewStats; }
 
     void setRob(ROB *rob);
 
