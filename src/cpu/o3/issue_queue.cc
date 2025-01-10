@@ -628,12 +628,17 @@ Scheduler::SpecWakeupCompletion::description() const
 
 Scheduler::SchedulerStats::SchedulerStats(statistics::Group* parent)
   : statistics::Group(parent),
-    ADD_STAT(exec_stall_cycle, ""),
-    ADD_STAT(memstall_any_load, ""),
-    ADD_STAT(memstall_any_store, ""),
-    ADD_STAT(memstall_l1miss,""),
-    ADD_STAT(memstall_l2miss,""),
-    ADD_STAT(memstall_l3miss,"")
+    ADD_STAT(exec_stall_cycle, "SUM(OpsExecuted[= FEW])"),
+    ADD_STAT(memstall_any_load,
+        "Cycles with no uops executed and at least X in-flight load that is not completed yet"),
+    ADD_STAT(memstall_any_store,
+        "Cycles with few uops executed and no more stores can be issued"),
+    ADD_STAT(memstall_l1miss,
+        "Cycles with no uops executed and at least X in-flight load that has missed the L1-cache"),
+    ADD_STAT(memstall_l2miss,
+        "Cycles with no uops executed and at least X in-flight load that has missed the L2-cache"),
+    ADD_STAT(memstall_l3miss,
+        "Cycles with no uops executed and at least X in-flight load that has missed the L3-cache")
 {
 }
 
@@ -779,7 +784,7 @@ Scheduler::issueAndSelect()
     for (auto it : issueQues) {
         it->issueToFu();
     }
-    if (instsToFu.size() < 4) {
+    if (instsToFu.size() < intel_fewops) {
         stats.exec_stall_cycle++;
         if (lsq->anyStoreNotExecute()) stats.memstall_any_store++;
     }

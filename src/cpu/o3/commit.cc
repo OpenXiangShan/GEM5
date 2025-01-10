@@ -196,6 +196,7 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
       ADD_STAT(commitNonSpecStalls, statistics::units::Count::get(),
                "The number of times commit has been forced to stall to "
                "communicate backwards"),
+      ADD_STAT(recovery_bubble, "Unutilized issue-pipeline slots due to recovery from earlier miss-speculation"),
       ADD_STAT(branchMispredicts, statistics::units::Count::get(),
                "The number of times a branch was mispredicted"),
       ADD_STAT(numCommittedDist, statistics::units::Count::get(),
@@ -1164,8 +1165,15 @@ Commit::commitInsts()
             if (commit_success) {
                 cpu->perfCCT->updateInstPos(head_inst->seqNum, PerfRecord::AtCommit);
                 cpu->perfCCT->commitMeta(head_inst->seqNum);
-                lastCommitCycle = cpu->curCycle();
                 head_inst->printDisassemblyAndResult(cpu->name());
+                if (ismispred) {
+                    ismispred = false;
+                    stats.recovery_bubble += (cpu->curCycle() - lastCommitCycle) * renameWidth;
+                }
+                if (head_inst->mispredicted()) {
+                    ismispred = true;
+                }
+                lastCommitCycle = cpu->curCycle();
                 const auto &head_rv_pc = head_inst->pcState().as<RiscvISA::PCState>();
                 if (bp->isStream()) {
                     auto dbsp = dynamic_cast<branch_prediction::stream_pred::DecoupledStreamBPU*>(bp);
@@ -1622,13 +1630,6 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
     if (head_inst->isLoad() && (delta > 250)) {
         DPRINTF(CommitTrace, "Inst[sn:%lu] commit blocked cycles: %lu\n",
                 head_inst->seqNum, delta);
-    }
-    if (head_inst->isControl() && head_inst->pcState().instAddr() == 0x229d6) {
-        DPRINTF(CommitTrace,
-                "%#lx taken: %i, predicted taken: %i, mispredicted: %i\n",
-                head_inst->pcState().instAddr(),
-                head_inst->readPredTaken() ^ head_inst->mispredicted(),
-                head_inst->readPredTaken(), head_inst->mispredicted());
     }
 
     if (archDBer && head_inst->isMemRef())

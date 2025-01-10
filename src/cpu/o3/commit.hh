@@ -512,6 +512,8 @@ class Commit
          * to a non-speculative instruction reaching the head of the ROB.
          */
         statistics::Scalar commitNonSpecStalls;
+
+        statistics::Scalar recovery_bubble;
         /** Stat for the total number of branch mispredicts that caused a
          * squash.
          */
@@ -558,6 +560,8 @@ class Commit
         statistics::Scalar vectorVta;
         statistics::Scalar vectorVtu;
     } stats;
+
+    bool ismispred = false;
 
     Tick lastCommitTick;
 

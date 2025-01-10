@@ -211,6 +211,7 @@ class Scheduler : public SimObject
     CPU* cpu;
     MemDepUnit* memDepUnit;
     LSQ* lsq;
+    const int intel_fewops = 4;
 
     struct SchedulerStats : public statistics::Group
     {
