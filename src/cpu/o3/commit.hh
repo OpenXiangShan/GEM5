@@ -559,6 +559,13 @@ class Commit
         statistics::Scalar vectorVmu;
         statistics::Scalar vectorVta;
         statistics::Scalar vectorVtu;
+
+        statistics::Scalar squashDueToBranch;
+        statistics::Scalar squashDueToOrderViolation;
+        statistics::Scalar squashDueToTrap;
+        statistics::Scalar squashDueToTC;
+        statistics::Scalar squashDueToSquashAfter;
+        statistics::Formula totalSquash;
     } stats;
 
     bool ismispred = false;
@@ -570,6 +577,9 @@ class Commit
     ArchDBer *archDBer;
 
     void dumpTicks(const DynInstPtr &inst);
+
+public:
+    const CommitStats& getCommitStats() const { return stats; }
 };
 
 } // namespace o3
