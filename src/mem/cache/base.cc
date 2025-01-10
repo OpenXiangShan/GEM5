@@ -1832,7 +1832,8 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         incSquashedDemandHitCount(pkt, blk);
 
         // Calculate access latency based on the need to access the data array
-        if (pkt->isRead()) {
+        if (pkt->isRead() || pkt->isWrite()) {
+            // Read and Write can succeed after the data block is ready if Cache Hit
             lat = calculateAccessLatency(blk, pkt->headerDelay, tag_latency);
 
             // When a block is compressed, it must first be decompressed
