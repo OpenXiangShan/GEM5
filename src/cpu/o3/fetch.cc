@@ -1328,7 +1328,7 @@ Fetch::tick()
     // For N-wide machine, if frontend supplies 0 instructions:
     // - fetchBubbles += N (count total empty slots)
     // - fetchBubbles_max += 1 (count occurrence of all slots being empty)
-    if (!stalls[*tid_itr].decode) { // backend not stalled
+    if (!stalls[*tid_itr].decode && !fromCommit->commitInfo[*tid_itr].robSquashing) { // backend not stalled
         int unused_slots = decode_width - insts_to_decode;
         if (unused_slots > 0) { // has empty slots
             fetchStats.fetchBubbles += unused_slots; // add number of empty slots
