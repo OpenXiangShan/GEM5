@@ -215,7 +215,7 @@ IssueQue::checkScoreboard(const DynInstPtr& inst)
         if (!scheduler->bypassScoreboard[src->flatIndex()]) [[unlikely]] {
             auto dst_inst = scheduler->getInstByDstReg(src->flatIndex());
             if (!dst_inst || !dst_inst->isLoad()) {
-                panic("dst is not load");
+                panic("dst[sn:%llu] is not load", dst_inst->seqNum);
             }
             scheduler->loadCancel(dst_inst);
             DPRINTF(Schedule, "[sn:%llu] %s can't get data from bypassNetwork, dst inst: %s\n", inst->seqNum,
@@ -606,8 +606,10 @@ IssueQue::doSquash(const InstSeqNum seqNum)
     }
 }
 
-Scheduler::SpecWakeupCompletion::SpecWakeupCompletion(const DynInstPtr& inst, IssueQue* to)
-    : Event(Stat_Event_Pri, AutoDelete), inst(inst), to_issue_queue(to)
+Scheduler::SpecWakeupCompletion::SpecWakeupCompletion(const DynInstPtr& inst,
+    IssueQue* to, PendingWakeEventsType* owner)
+    : Event(Stat_Event_Pri, AutoDelete),
+      inst(inst), owner(owner), to_issue_queue(to)
 {
 }
 
@@ -615,6 +617,7 @@ void
 Scheduler::SpecWakeupCompletion::process()
 {
     to_issue_queue->wakeUpDependents(inst, true);
+    (*owner)[inst->seqNum].erase(this);
 }
 
 const char*
@@ -913,7 +916,9 @@ Scheduler::specWakeUpDependents(const DynInstPtr& inst, IssueQue* from_issue_que
                 }
             }
         } else {
-            auto wakeEvent = new SpecWakeupCompletion(inst, to);
+            auto wakeEvent = new SpecWakeupCompletion(inst, to, &specWakeEvents);
+            // track these pending events
+            specWakeEvents[inst->seqNum].insert(wakeEvent);
             cpu->schedule(wakeEvent, cpu->clockEdge(Cycles(wakeDelay)) - 1);
         }
     }
@@ -983,6 +988,12 @@ Scheduler::loadCancel(const DynInstPtr& inst)
     while (!dfs.empty()) {
         auto top = dfs.top();
         dfs.pop();
+        // clear pending wake events scheduled by top
+        auto& pendingEvents = specWakeEvents[top->seqNum];
+        for (auto it = pendingEvents.begin(); it != pendingEvents.end();) {
+            cpu->deschedule(*it);
+        }
+        specWakeEvents.erase(top->seqNum);
         for (int i = 0; i < top->numDestRegs(); i++) {
             auto dst = top->renamedDestIdx(i);
             if (dst->isFixedMapping()) {

@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <list>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 
 #include <boost/compute/detail/lru_cache.hpp>
 #include <boost/dynamic_bitset/dynamic_bitset.hpp>
@@ -191,13 +193,17 @@ class SpecWakeupChannel : public SimObject
 class Scheduler : public SimObject
 {
     friend class IssueQue;
+    class SpecWakeupCompletion;
+    // structured as <instruction seqNum -> [pending speculate wakeup events]>
+    using PendingWakeEventsType = std::unordered_map<uint64_t, std::unordered_set<SpecWakeupCompletion*>>;
     class SpecWakeupCompletion : public Event
     {
+      public:
         DynInstPtr inst;
+        PendingWakeEventsType* owner;
         IssueQue* to_issue_queue = nullptr;
 
-      public:
-        SpecWakeupCompletion(const DynInstPtr& inst, IssueQue* to);
+        SpecWakeupCompletion(const DynInstPtr& inst, IssueQue* to, PendingWakeEventsType* owner);
         void process() override;
         const char* description() const override;
     };
@@ -245,6 +251,8 @@ class Scheduler : public SimObject
     void specWakeUpDependents(const DynInstPtr& inst, IssueQue* from_issue_queue);
 
   public:
+    PendingWakeEventsType specWakeEvents;
+
     Scheduler(const SchedulerParams& params);
     void setCPU(CPU* cpu);
     void resetDepGraph(uint64_t numPhysRegs);
