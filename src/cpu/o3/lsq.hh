@@ -950,6 +950,10 @@ class LSQ
 
     bool bankConflictedCheck(Addr vaddr);
 
+    void setDcacheWriteStall(bool stall) { dcacheWriteStall = stall; }
+
+    bool getDcacheWriteStall() { return dcacheWriteStall; }
+
     /** Is D-cache blocked? */
     bool cacheBlocked() const;
     /** Set D-cache blocked status */
@@ -975,6 +979,7 @@ class LSQ
 
     Tick lastConflictCheckTick;
 
+    bool dcacheWriteStall = false;
     std::vector<int64_t> l1dBankAddresses;
     struct NullStruct {};
     boost::compute::detail::lru_cache<uint64_t, NullStruct> recentlyloadAddr;

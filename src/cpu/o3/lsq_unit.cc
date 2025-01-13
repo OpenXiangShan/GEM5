@@ -1404,16 +1404,20 @@ bool LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t
 void
 LSQUnit::storeBufferEvictToCache()
 {
-    if (isStoreBlocked) {
-        return;
-    }
-    if (storeBuffer.size() == 0) {
+    if (storeBufferFlushing && storeBuffer.size() == 0) [[unlikely]] {
         assert(storeBuffer.unsentSize() == 0);
         storeBufferFlushing = false;
         cpu->activityThisCycle();
+    }
+
+    // write request will stall one cycle
+    // so 2 cycle send one write request
+    if (lsq->getDcacheWriteStall()) {
+        lsq->setDcacheWriteStall(false);
         return;
     }
-    if (storeBuffer.unsentSize() == 0) {
+
+    if (isStoreBlocked || storeBuffer.unsentSize() == 0) {
         return;
     }
 
@@ -1470,6 +1474,7 @@ LSQUnit::storeBufferEvictToCache()
         }
         DPRINTF(StoreBuffer, "send packet successed\n");
         entry->sending = true;
+        lsq->setDcacheWriteStall(true);
         storeBufferWritebackInactive = 0;
     } else {
         // Timeout

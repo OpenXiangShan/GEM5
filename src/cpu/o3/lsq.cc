@@ -208,6 +208,9 @@ LSQ::clearAddresses(Tick time)
 bool
 LSQ::bankConflictedCheck(Addr vaddr)
 {
+    if (dcacheWriteStall) {
+        return true;
+    }
     bool now_bank_conflict = false;
     // 64KB Dcache 8way 128sets
     // [12:6]   [5:3]     [2:0]
