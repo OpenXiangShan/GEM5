@@ -514,18 +514,8 @@ DefaultFTB::updateUftbWhenOverrideByL1(Addr bbStart, int brIdx, bool condTaken){
     assert(!not_found);
 
     auto entry_to_update = ftb[ftb_idx][ftb_tag];
-    DPRINTF(OverrideByL1, "=============================\n");
-    DPRINTF(OverrideByL1, "s1 Taken: %d, brIdx: %d\n", condTaken, brIdx);
-    printFTBEntryWhenOverrideByL1(entry_to_update);
-
     updateCtr(entry_to_update.slots[brIdx].ctr, condTaken); // only update the ctr
     ftb[ftb_idx][ftb_tag] = entry_to_update;
-    
-    DPRINTF(OverrideByL1, "-----------------------------\n");
-
-    printFTBEntryWhenOverrideByL1(entry_to_update);
-
-    DPRINTF(OverrideByL1, "=============================\n");
 }
 
 void

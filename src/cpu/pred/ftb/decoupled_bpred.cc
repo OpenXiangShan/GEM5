@@ -459,8 +459,8 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     ADD_STAT(overrideByL1WhenL0Miss, statistics::units::Count::get(), "the number of preds override by L1, when L0 Miss and L1 Hit"),
     ADD_STAT(overrideByL2, statistics::units::Count::get(), "the number of preds override by L2"),
     ADD_STAT(squashWhenOverriding, statistics::units::Count::get(), "the number of squash when overriding"),
-    ADD_STAT(overrideBubbles, statistics::units::Count::get(), "number of bpu pred Override Bubbles"),
-    ADD_STAT(s1PredTakenChangeAtSamePC, statistics::units::Count::get(), "s1 pred different taken at the same bbstart"),
+    ADD_STAT(overrideBubbles, statistics::units::Count::get(), "number of bpu pred override bubbles"),
+    ADD_STAT(s1PredTakenChangeAtSamePC, statistics::units::Count::get(), "s1 pred different taken at the same pc"),
     ADD_STAT(predsOfEachStage, statistics::units::Count::get(), "the number of preds of each stage that account for final pred"),
     ADD_STAT(commitPredsFromEachStage, statistics::units::Count::get(), "the number of preds of each stage that account for a committed stream"),
     ADD_STAT(fsqEntryDist, statistics::units::Count::get(), "the distribution of number of entries in fsq"),
@@ -896,7 +896,7 @@ DecoupledBPUWithFTB::generateFinalPredAndCreateBubbles()
                         if (s0_entry_slot.condValid() && s1_entry_slot.condValid()) {
                             if (s0_entry_slot.pc == s1_entry_slot.pc && s0_condTakens[b] != s1_condTakens[b]) {
                                 dbpFtbStats.overrideByL1WhenL0HitButTakenDiff++;
-                                uftb->updateUftbWhenOverrideByL1(predsOfEachStage[0].bbStart, b, s1_condTakens[b]);
+                                // uftb->updateUftbWhenOverrideByL1(predsOfEachStage[0].bbStart, b, s1_condTakens[b]);
                                 break;
                             } else if (s0_entry_slot.pc == s1_entry_slot.pc && s0_condTakens[b] == 1 && s1_condTakens[b] == 1) {
                                 assert(0); // if taken, then predsOfEachStage0 should equal to predsOfEachStage1
