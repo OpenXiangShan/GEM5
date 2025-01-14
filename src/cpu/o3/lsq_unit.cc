@@ -1457,36 +1457,14 @@ LSQUnit::storePipeS1(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
 }
 
 Fault
-LSQUnit::storePipeS2(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
+LSQUnit::emptyStorePipeSx(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag, uint64_t stage)
 {
+    // empty store pipe stage, Does not perform any operation
     Fault fault = inst->getFault();
     assert(!inst->isSquashed());
 
-    DPRINTF(LSQUnit, "StorePipeS2: Executing store PC %s [sn:%lli] flags: %s\n",
-            inst->pcState(), inst->seqNum, getLdStFlagStr(flag));
-    return fault;
-}
-
-Fault
-LSQUnit::storePipeS3(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
-{
-    Fault fault = inst->getFault();
-    assert(!inst->isSquashed());
-
-    DPRINTF(LSQUnit, "StorePipeS3: Executing store PC %s [sn:%lli] flags: %s\n",
-            inst->pcState(), inst->seqNum, getLdStFlagStr(flag));
-    return fault;
-}
-
-Fault
-LSQUnit::storePipeS4(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
-{
-    Fault fault = inst->getFault();
-    assert(!inst->isSquashed());
-
-    DPRINTF(LSQUnit, "StorePipeS4: Executing store PC %s [sn:%lli] flags: %s\n",
-            inst->pcState(), inst->seqNum, getLdStFlagStr(flag));
-
+    DPRINTF(LSQUnit, "StorePipeS%d: Executing store PC %s [sn:%lli] flags: %s\n",
+            stage, inst->pcState(), inst->seqNum, getLdStFlagStr(flag));
     return fault;
 }
 
@@ -1521,13 +1499,9 @@ LSQUnit::executeStorePipeSx()
                         iewStage->SquashCheckAfterExe(inst);
                         break;
                     case 2:
-                        fault = storePipeS2(inst, flag);
-                        break;
                     case 3:
-                        fault = storePipeS3(inst, flag);
-                        break;
                     case 4:
-                        fault = storePipeS4(inst, flag);
+                        fault = emptyStorePipeSx(inst, flag, i);
                         break;
                     default:
                         panic("unsupported storepipe length");
@@ -2551,16 +2525,18 @@ LSQUnit::recvRetry()
 void
 LSQUnit::dumpLoadPipe()
 {
-    DPRINTF(LSQUnit, "Dumping LoadPipe:\n");
-    for (int i = 0; i < loadPipeSx.size(); i++) {
-        DPRINTF(LSQUnit, "Load S%d:, size: %d\n", i, loadPipeSx[i]->size);
-        for (int j = 0; j < loadPipeSx[i]->size; j++) {
-            DPRINTF(LSQUnit, "  PC: %s, [tid:%i] [sn:%lli] flags: %s\n",
-                    loadPipeSx[i]->insts[j]->pcState(),
-                    loadPipeSx[i]->insts[j]->threadNumber,
-                    loadPipeSx[i]->insts[j]->seqNum,
-                    getLdStFlagStr(loadPipeSx[i]->flags[j])
-            );
+    if (GEM5_UNLIKELY(::gem5::debug::LSQUnit)) {
+        DPRINTFN("Dumping LoadPipe:\n");
+        for (int i = 0; i < loadPipeSx.size(); i++) {
+            DPRINTFN("Load S%d:, size: %d\n", i, loadPipeSx[i]->size);
+            for (int j = 0; j < loadPipeSx[i]->size; j++) {
+                DPRINTFN("  PC: %s, [tid:%i] [sn:%lli] flags: %s\n",
+                        loadPipeSx[i]->insts[j]->pcState(),
+                        loadPipeSx[i]->insts[j]->threadNumber,
+                        loadPipeSx[i]->insts[j]->seqNum,
+                        getLdStFlagStr(loadPipeSx[i]->flags[j])
+                );
+            }
         }
     }
 }
@@ -2568,16 +2544,18 @@ LSQUnit::dumpLoadPipe()
 void
 LSQUnit::dumpStorePipe()
 {
-    DPRINTF(LSQUnit, "Dumping StorePipe:\n");
-    for (int i = 0; i < storePipeSx.size(); i++) {
-        DPRINTF(LSQUnit, "Store S%d:, size: %d\n", i, storePipeSx[i]->size);
-        for (int j = 0; j < storePipeSx[i]->size; j++) {
-            DPRINTF(LSQUnit, "  PC: %s, [tid:%i] [sn:%lli] flags: %s\n",
-                    storePipeSx[i]->insts[j]->pcState(),
-                    storePipeSx[i]->insts[j]->threadNumber,
-                    storePipeSx[i]->insts[j]->seqNum,
-                    getLdStFlagStr(storePipeSx[i]->flags[j])
-            );
+    if (GEM5_UNLIKELY(::gem5::debug::LSQUnit)) {
+        DPRINTFN("Dumping StorePipe:\n");
+        for (int i = 0; i < storePipeSx.size(); i++) {
+            DPRINTFN("Store S%d:, size: %d\n", i, storePipeSx[i]->size);
+            for (int j = 0; j < storePipeSx[i]->size; j++) {
+                DPRINTFN("  PC: %s, [tid:%i] [sn:%lli] flags: %s\n",
+                        storePipeSx[i]->insts[j]->pcState(),
+                        storePipeSx[i]->insts[j]->threadNumber,
+                        storePipeSx[i]->insts[j]->seqNum,
+                        getLdStFlagStr(storePipeSx[i]->flags[j])
+                );
+            }
         }
     }
 }

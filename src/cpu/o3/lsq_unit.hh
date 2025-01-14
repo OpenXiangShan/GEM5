@@ -552,9 +552,7 @@ class LSQUnit
 
     Fault storePipeS0(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag);
     Fault storePipeS1(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag);
-    Fault storePipeS2(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag);
-    Fault storePipeS3(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag);
-    Fault storePipeS4(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag);
+    Fault emptyStorePipeSx(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag, uint64_t stage);
 
     /** Wrap function. */
     void executePipeSx();

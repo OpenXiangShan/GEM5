@@ -171,6 +171,9 @@ class BaseO3CPU(BaseCPU):
     LQEntries = Param.Unsigned(80, "Number of load queue entries")
     SQEntries = Param.Unsigned(64, "Number of store queue entries")
 
+    LdPipeStages = Param.Unsigned(4, "Number of load pipeline stages")
+    StPipeStages = Param.Unsigned(5, "Number of store pipeline stages")
+
     SbufferEntries = Param.Unsigned(16, "Number of store buffer entries")
     SbufferEvictThreshold = Param.Unsigned(7, "store buffer eviction threshold")
     storeBufferInactiveThreshold = Param.Unsigned(800, "store buffer writeback timeout threshold")

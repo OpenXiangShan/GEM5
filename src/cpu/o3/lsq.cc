@@ -138,7 +138,8 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
     // TODO: Parameterize the load/store pipeline stages
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         thread.emplace_back(maxLQEntries, maxSQEntries, params.SbufferEntries,
-            params.SbufferEvictThreshold, params.storeBufferInactiveThreshold, 4, 5);
+            params.SbufferEvictThreshold, params.storeBufferInactiveThreshold,
+            params.LdPipeStages, params.StPipeStages);
         thread[tid].init(cpu, iew_ptr, params, this, tid);
         thread[tid].setDcachePort(&dcachePort);
     }
