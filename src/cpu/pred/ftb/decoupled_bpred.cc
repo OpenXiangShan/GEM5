@@ -452,12 +452,15 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     ADD_STAT(overrideByL1, statistics::units::Count::get(), "the number of preds override by L1"),
     ADD_STAT(overrideByL1WhenL0Hit, statistics::units::Count::get(), "the number of preds override by L1, when L0 Hit and L1 Hit"),
     ADD_STAT(overrideByL1WhenL0HitButTargetDiff, statistics::units::Count::get(), "the number of preds override by L1, when L0 Hit and L1 Hit, but target diff"),
+    ADD_STAT(overrideByL1WhenL0HitButIsReturn, statistics::units::Count::get(), "the number of preds override by L1, when L0 Hit and L1 Hit, but target diff"),
     ADD_STAT(overrideByL1WhenL0HitButTakenDiff, statistics::units::Count::get(), "the number of preds override by L1, when L0 Hit and L1 Hit, but taken diff"),
     ADD_STAT(overrideByL1WhenL0HitButBranchDiff, statistics::units::Count::get(), "the number of preds override by L1, when L0 Hit and L1 Hit, but branch diff"),
+    ADD_STAT(overrideByL1WhenL0HitButEntryDiff, statistics::units::Count::get(), "the number of preds override by L1, when L0 Hit and L1 Hit, but entry diff"),
     ADD_STAT(overrideByL1WhenL0Miss, statistics::units::Count::get(), "the number of preds override by L1, when L0 Miss and L1 Hit"),
     ADD_STAT(overrideByL2, statistics::units::Count::get(), "the number of preds override by L2"),
     ADD_STAT(squashWhenOverriding, statistics::units::Count::get(), "the number of squash when overriding"),
     ADD_STAT(overrideBubbles, statistics::units::Count::get(), "number of bpu pred Override Bubbles"),
+    ADD_STAT(s1PredTakenChangeAtSamePC, statistics::units::Count::get(), "s1 pred different taken at the same bbstart"),
     ADD_STAT(predsOfEachStage, statistics::units::Count::get(), "the number of preds of each stage that account for final pred"),
     ADD_STAT(commitPredsFromEachStage, statistics::units::Count::get(), "the number of preds of each stage that account for a committed stream"),
     ADD_STAT(fsqEntryDist, statistics::units::Count::get(), "the distribution of number of entries in fsq"),
@@ -853,25 +856,77 @@ DecoupledBPUWithFTB::generateFinalPredAndCreateBubbles()
         if (!squashing && s0PC != MaxAddr && receivedPred && bubblesToCreate > 0) {
             if (first_hit_stage == 1) {
                 assert(predsOfEachStage[1].valid);
-                if (predsOfEachStage[0].valid) {
-                    dbpFtbStats.overrideByL1WhenL0Hit++;
 
-                    bool s0_taken, s1_taken;
-                    int s0_cond_num, s1_cond_num;
-                    std::tie(s0_cond_num, s0_taken) = predsOfEachStage[0].getHistInfo();
-                    std::tie(s1_cond_num, s1_taken) = predsOfEachStage[1].getHistInfo();
-                    Addr s0_control_addr = predsOfEachStage[0].controlAddr();
-                    Addr s1_control_addr = predsOfEachStage[1].controlAddr();
-                    Addr s0_npc = predsOfEachStage[0].getTarget();
-                    Addr s1_npc = predsOfEachStage[1].getTarget();
-                    if (s0_npc != s1_npc) {
-                        dbpFtbStats.overrideByL1WhenL0HitButTargetDiff++;
+                for (int b = 0; b < numBr; ++b){
+                    if (b < predsOfEachStage[1].ftbEntry.slots.size()){
+                        Addr slot_pc = predsOfEachStage[1].ftbEntry.slots[b].pc;
+                        auto it = s1PrevPredTakens.find(slot_pc);
+                        bool not_found = it == s1PrevPredTakens.end();
+                        if (not_found){
+                            s1PrevPredTakens[slot_pc] = predsOfEachStage[1].condTakens[b];
+                            dbpFtbStats.s1PredTakenChangeAtSamePC++;
+                        } else if (s1PrevPredTakens[slot_pc] != predsOfEachStage[1].condTakens[b]) {
+                            s1PrevPredTakens[slot_pc] = predsOfEachStage[1].condTakens[b];
+                            dbpFtbStats.s1PredTakenChangeAtSamePC++;
+                        }
                     }
-                    if (s0_taken != s1_taken) {
-                        dbpFtbStats.overrideByL1WhenL0HitButTakenDiff++;
-                    }
-                    if (s0_control_addr != s1_control_addr || s0_cond_num != s1_cond_num) {
-                        dbpFtbStats.overrideByL1WhenL0HitButBranchDiff++;
+                }
+
+                if (predsOfEachStage[0].valid) {
+                    assert(predsOfEachStage[0].bbStart == predsOfEachStage[1].bbStart);
+                    dbpFtbStats.overrideByL1WhenL0Hit++;
+                    // printTwoFullFTBPrediction(predsOfEachStage[0], predsOfEachStage[1]);
+
+                    auto s0_entry = predsOfEachStage[0].ftbEntry;
+                    auto s1_entry = predsOfEachStage[1].ftbEntry;
+                    auto s0_condTakens = predsOfEachStage[0].condTakens;
+                    auto s1_condTakens = predsOfEachStage[1].condTakens;
+
+                    for (int b = 0; b < numBr; ++b){
+                        if (b >= s0_entry.slots.size() || b >= s1_entry.slots.size()) {
+                            if (s0_entry.slots.size() != s1_entry.slots.size()) {
+                                dbpFtbStats.overrideByL1WhenL0HitButEntryDiff++;
+                            }
+                            break;
+                        }
+
+                        FTBSlot s0_entry_slot = s0_entry.slots[b];
+                        FTBSlot s1_entry_slot = s1_entry.slots[b];
+
+                        if (s0_entry_slot.condValid() && s1_entry_slot.condValid()) {
+                            if (s0_entry_slot.pc == s1_entry_slot.pc && s0_condTakens[b] != s1_condTakens[b]) {
+                                dbpFtbStats.overrideByL1WhenL0HitButTakenDiff++;
+                                break;
+                            } else if (s0_entry_slot.pc == s1_entry_slot.pc && s0_condTakens[b] == 1 && s1_condTakens[b] == 1) {
+                                assert(0); // if taken, then predsOfEachStage0 should equal to predsOfEachStage1
+                            } else if (s0_entry_slot.pc == s1_entry_slot.pc && s0_condTakens[b] == 0 && s1_condTakens[b] == 0) {
+                                continue;
+                            } else if (s0_entry_slot.pc != s1_entry_slot.pc) {
+                                dbpFtbStats.overrideByL1WhenL0HitButBranchDiff++;
+                                break;
+                            } else {
+                                assert(0); // should not reach here
+                            }
+                        } else if (s0_entry_slot.uncondValid() && s1_entry_slot.uncondValid()) {
+                            if (s0_entry_slot.pc == s1_entry_slot.pc && s0_entry_slot.target != s1_entry_slot.target) {
+                                dbpFtbStats.overrideByL1WhenL0HitButTargetDiff++;
+                                break;
+                            } else if (s0_entry_slot.pc == s1_entry_slot.pc && s0_entry_slot.target == s1_entry_slot.target) {
+                                if (predsOfEachStage[0].returnTarget != predsOfEachStage[1].returnTarget) {
+                                    dbpFtbStats.overrideByL1WhenL0HitButIsReturn++; // RAS
+                                    break;
+                                }
+                                continue;
+                            } else if (s0_entry_slot.pc != s1_entry_slot.pc) {
+                                dbpFtbStats.overrideByL1WhenL0HitButBranchDiff++;
+                                break;
+                            } else {
+                                assert(0);
+                            }
+                        } else {
+                            dbpFtbStats.overrideByL1WhenL0HitButBranchDiff++;
+                            break;
+                        }
                     }
                 } else {
                     dbpFtbStats.overrideByL1WhenL0Miss++;

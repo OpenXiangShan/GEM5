@@ -9,6 +9,7 @@
 
 #include "arch/generic/pcstate.hh"
 #include "base/statistics.hh"
+#include "base/trace.hh"
 #include "config/the_isa.hh"
 // #include "cpu/base.hh"
 #include "cpu/o3/cpu_def.hh"
@@ -34,6 +35,7 @@
 #include "debug/DecoupleBPuRAS.hh"
 #include "debug/DecoupleBPVerbose.hh"
 #include "debug/DBPFTBStats.hh"
+#include "debug/OverrideByL1.hh"
 #include "debug/JumpAheadPredictor.hh"
 #include "debug/LoopBuffer.hh"
 #include "debug/LoopPredictor.hh"
@@ -281,6 +283,8 @@ class DecoupledBPUWithFTB : public BPredUnit
 
     unsigned numOverrideBubbles{0};
 
+    std::map<Addr, bool> s1PrevPredTakens;
+
 
     using JAInfo = JumpAheadPredictor::JAInfo;
     JAInfo jaInfo;
@@ -374,6 +378,15 @@ class DecoupledBPUWithFTB : public BPredUnit
         }
     }
 
+    void printFTBEntryWhenOverrideByL1(const FTBEntry &entry) {
+        DPRINTF(OverrideByL1, "FTB entry: valid %d, tag %#lx, fallThruAddr:%#lx, slots:\n",
+            entry.valid, entry.tag, entry.fallThruAddr);
+        for (auto &slot : entry.slots) {
+            DPRINTF(OverrideByL1, "    valid %d, pc:%#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d\n",
+                slot.valid, slot.pc, slot.size, slot.target, slot.isCond, slot.isIndirect, slot.isCall, slot.isReturn);
+        }
+    }
+
     void printFullFTBPrediction(const FullFTBPrediction &pred) {
         DPRINTF(DecoupleBP, "dumping FullFTBPrediction\n");
         DPRINTF(DecoupleBP, "bbStart: %#lx, ftbEntry:\n", pred.bbStart);
@@ -385,6 +398,34 @@ class DecoupledBPUWithFTB : public BPredUnit
         DPRINTFR(DecoupleBP, "\n");
         DPRINTF(DecoupleBP, "indirectTarget: %#lx, returnTarget: %#lx\n",
             pred.indirectTarget, pred.returnTarget);
+    }
+
+    void printTwoFullFTBPrediction(FullFTBPrediction &pred0, FullFTBPrediction &pred1) {
+        DPRINTF(OverrideByL1, "============================\n");
+        DPRINTF(OverrideByL1, "dumping FullFTBPrediction0\n");
+        DPRINTF(OverrideByL1, "bbStart: %#lx, ftbEntry:\n", pred0.bbStart);
+        printFTBEntryWhenOverrideByL1(pred0.ftbEntry);
+        DPRINTF(OverrideByL1, "condTakens: ");
+        for (auto taken : pred0.condTakens) {
+            DPRINTFR(OverrideByL1, "%d ", taken);
+        }
+        DPRINTFR(OverrideByL1, "\n");
+        DPRINTF(OverrideByL1, "indirectTarget: %#lx, returnTarget: %#lx\n",
+            pred0.indirectTarget, pred0.returnTarget);
+        DPRINTF(OverrideByL1, "npc: %#lx\n", pred0.getTarget());
+        DPRINTF(OverrideByL1, "-----------------------------\n");
+        DPRINTF(OverrideByL1, "dumping FullFTBPrediction1\n");
+        DPRINTF(OverrideByL1, "bbStart: %#lx, ftbEntry:\n", pred1.bbStart);
+        printFTBEntryWhenOverrideByL1(pred1.ftbEntry);
+        DPRINTF(OverrideByL1, "condTakens: ");
+        for (auto taken : pred1.condTakens) {
+            DPRINTFR(OverrideByL1, "%d ", taken);
+        }
+        DPRINTFR(OverrideByL1, "\n");
+        DPRINTF(OverrideByL1, "indirectTarget: %#lx, returnTarget: %#lx\n",
+            pred1.indirectTarget, pred1.returnTarget);
+        DPRINTF(OverrideByL1, "npc: %#lx\n", pred1.getTarget());
+        DPRINTF(OverrideByL1, "============================\n");
     }
 
     struct DBPFTBStats : public statistics::Group {
@@ -404,12 +445,15 @@ class DecoupledBPUWithFTB : public BPredUnit
         statistics::Scalar overrideByL1;
         statistics::Scalar overrideByL1WhenL0Hit;
         statistics::Scalar overrideByL1WhenL0HitButTargetDiff;
+        statistics::Scalar overrideByL1WhenL0HitButIsReturn;
         statistics::Scalar overrideByL1WhenL0HitButTakenDiff;
         statistics::Scalar overrideByL1WhenL0HitButBranchDiff;
+        statistics::Scalar overrideByL1WhenL0HitButEntryDiff;
         statistics::Scalar overrideByL1WhenL0Miss;
         statistics::Scalar overrideByL2;
         statistics::Scalar squashWhenOverriding;
         statistics::Scalar overrideBubbles;
+        statistics::Scalar s1PredTakenChangeAtSamePC;
 
         statistics::Vector predsOfEachStage;
         statistics::Vector commitPredsFromEachStage;
