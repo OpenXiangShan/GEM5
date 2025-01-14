@@ -37,6 +37,7 @@
 #include "cpu/pred/ftb/timed_base_pred.hh"
 #include "debug/FTB.hh"
 #include "debug/FTBStats.hh"
+#include "debug/OverrideByL1.hh"
 #include "params/DefaultFTB.hh"
 
 
@@ -118,6 +119,8 @@ class DefaultFTB : public TimedBaseFTBPredictor
      */
     void update(const FetchStream &stream) override;
 
+    void updateUftbWhenOverrideByL1(Addr bbStart, int brIdx, bool condTaken);
+
     void commitBranch(const FetchStream &stream, const DynInstPtr &inst) override;
 
     /**
@@ -182,6 +185,15 @@ class DefaultFTB : public TimedBaseFTBPredictor
         for (auto &slot : e.slots) {
             DPRINTF(FTB, "    pc:%#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d, always_taken:%d\n",
                 slot.pc, slot.size, slot.target, slot.isCond, slot.isIndirect, slot.isCall, slot.isReturn, slot.alwaysTaken);
+        }
+    }
+
+    void printFTBEntryWhenOverrideByL1(const FTBEntry &entry) {
+        DPRINTF(OverrideByL1, "FTB entry: valid %d, tag %#lx, fallThruAddr:%#lx, slots:\n",
+            entry.valid, entry.tag, entry.fallThruAddr);
+        for (auto &slot : entry.slots) {
+            DPRINTF(OverrideByL1, "    valid %d, pc:%#lx, size:%d, target:%#lx, ctr:%d, cond:%d, indirect:%d, call:%d, return:%d\n",
+                slot.valid, slot.pc, slot.size, slot.target, slot.ctr, slot.isCond, slot.isIndirect, slot.isCall, slot.isReturn);
         }
     }
 

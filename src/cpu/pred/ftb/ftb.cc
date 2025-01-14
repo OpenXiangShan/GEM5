@@ -32,6 +32,7 @@
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/pred/ftb/ftb.hh"
 #include "debug/Fetch.hh"
+#include "debug/Override.hh"
 
 namespace gem5
 {
@@ -499,6 +500,32 @@ DefaultFTB::update(const FetchStream &stream)
     // ftb[ftb_idx].valid = true;
     // set(ftb[ftb_idx].target, target);
     // ftb[ftb_idx].tag = getTag(inst_pc);
+}
+
+void
+DefaultFTB::updateUftbWhenOverrideByL1(Addr bbStart, int brIdx, bool condTaken){
+    assert(getDelay() == 0);
+
+    Addr ftb_idx = getIndex(bbStart);
+    Addr ftb_tag = getTag(bbStart);
+
+    auto it = ftb[ftb_idx].find(ftb_tag);
+    bool not_found = it == ftb[ftb_idx].end();
+    assert(!not_found);
+
+    auto entry_to_update = ftb[ftb_idx][ftb_tag];
+    DPRINTF(OverrideByL1, "=============================\n");
+    DPRINTF(OverrideByL1, "s1 Taken: %d, brIdx: %d\n", condTaken, brIdx);
+    printFTBEntryWhenOverrideByL1(entry_to_update);
+
+    updateCtr(entry_to_update.slots[brIdx].ctr, condTaken); // only update the ctr
+    ftb[ftb_idx][ftb_tag] = entry_to_update;
+    
+    DPRINTF(OverrideByL1, "-----------------------------\n");
+
+    printFTBEntryWhenOverrideByL1(entry_to_update);
+
+    DPRINTF(OverrideByL1, "=============================\n");
 }
 
 void

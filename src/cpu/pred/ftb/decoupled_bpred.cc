@@ -857,7 +857,7 @@ DecoupledBPUWithFTB::generateFinalPredAndCreateBubbles()
             if (first_hit_stage == 1) {
                 assert(predsOfEachStage[1].valid);
 
-                for (int b = 0; b < numBr; ++b){
+                for (int b = 0; b < numBr; ++b) {
                     if (b < predsOfEachStage[1].ftbEntry.slots.size()){
                         Addr slot_pc = predsOfEachStage[1].ftbEntry.slots[b].pc;
                         auto it = s1PrevPredTakens.find(slot_pc);
@@ -896,6 +896,7 @@ DecoupledBPUWithFTB::generateFinalPredAndCreateBubbles()
                         if (s0_entry_slot.condValid() && s1_entry_slot.condValid()) {
                             if (s0_entry_slot.pc == s1_entry_slot.pc && s0_condTakens[b] != s1_condTakens[b]) {
                                 dbpFtbStats.overrideByL1WhenL0HitButTakenDiff++;
+                                uftb->updateUftbWhenOverrideByL1(predsOfEachStage[0].bbStart, b, s1_condTakens[b]);
                                 break;
                             } else if (s0_entry_slot.pc == s1_entry_slot.pc && s0_condTakens[b] == 1 && s1_condTakens[b] == 1) {
                                 assert(0); // if taken, then predsOfEachStage0 should equal to predsOfEachStage1
