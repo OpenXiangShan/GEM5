@@ -108,9 +108,9 @@ def build_test_system(np, args):
             uncacheable=[AddrRange(0, size=0x80000000)])
 
     # configure BP
-    args.enable_loop_predictor = True
+    args.enable_loop_predictor = False
     if args.enable_riscv_vector:
-        args.enable_loop_buffer = True
+        args.enable_loop_buffer = False
 
     for i in range(np):
         if args.bp_type is None or args.bp_type == 'DecoupledBPUWithFTB':
