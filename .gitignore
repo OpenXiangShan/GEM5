@@ -48,3 +48,4 @@ llvm-pgo/
 *.profraw
 *nemu*
 ready-to-run/
+*.out

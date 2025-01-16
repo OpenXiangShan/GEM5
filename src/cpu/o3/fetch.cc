@@ -1871,8 +1871,8 @@ Fetch::fetch(bool &status_change)
 #if TRACING_ON
             if (debug::O3PipeView) {
                 instruction->fetchTick = curTick();
-                DPRINTF(O3PipeView, "Record fetch for inst sn:%lu\n",
-                        instruction->seqNum);
+                // DPRINTF(O3PipeView, "Record fetch for inst sn:%lu\n",
+                //         instruction->seqNum);
             }
 #endif
 
