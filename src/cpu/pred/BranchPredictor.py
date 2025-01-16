@@ -879,7 +879,7 @@ class DefaultFTB(TimedBaseFTBPredictor):
 
 class UFTB(DefaultFTB):
     numEntries = 32
-    tagBits = 38
+    tagBits = 16
     numWays = 32
     numDelay = 0
     
