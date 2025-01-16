@@ -10,6 +10,7 @@
 #include "arch/generic/pcstate.hh"
 #include "base/statistics.hh"
 #include "base/trace.hh"
+#include "base/statistics.hh"
 #include "config/the_isa.hh"
 // #include "cpu/base.hh"
 #include "cpu/o3/cpu_def.hh"
