@@ -119,7 +119,7 @@ class DefaultFTB : public TimedBaseFTBPredictor
      */
     void update(const FetchStream &stream) override;
 
-    void updateUftbWhenOverrideByL1(Addr bbStart, int brIdx, bool condTaken);
+    bool updateUftbWhenOverrideByL1(Addr bbStart, int brIdx, bool condTaken);
 
     void commitBranch(const FetchStream &stream, const DynInstPtr &inst) override;
 

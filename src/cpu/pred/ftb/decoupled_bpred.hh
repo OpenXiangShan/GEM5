@@ -453,6 +453,7 @@ class DecoupledBPUWithFTB : public BPredUnit
         statistics::Scalar squashWhenOverriding;
         statistics::Scalar overrideBubbles;
         statistics::Scalar s1PredTakenChangeAtSamePC;
+        statistics::Scalar uftbUpdatedButStillDiffFromS1;
 
         statistics::Vector predsOfEachStage;
         statistics::Vector commitPredsFromEachStage;

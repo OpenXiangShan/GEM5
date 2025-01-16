@@ -502,7 +502,7 @@ DefaultFTB::update(const FetchStream &stream)
     // ftb[ftb_idx].tag = getTag(inst_pc);
 }
 
-void
+bool
 DefaultFTB::updateUftbWhenOverrideByL1(Addr bbStart, int brIdx, bool condTaken){
     assert(getDelay() == 0);
 
@@ -516,6 +516,8 @@ DefaultFTB::updateUftbWhenOverrideByL1(Addr bbStart, int brIdx, bool condTaken){
     auto entry_to_update = ftb[ftb_idx][ftb_tag];
     updateCtr(entry_to_update.slots[brIdx].ctr, condTaken); // only update the ctr
     ftb[ftb_idx][ftb_tag] = entry_to_update;
+
+    return entry_to_update.slots[brIdx].ctr >= 0;
 }
 
 void

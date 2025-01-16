@@ -461,6 +461,7 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     ADD_STAT(squashWhenOverriding, statistics::units::Count::get(), "the number of squash when overriding"),
     ADD_STAT(overrideBubbles, statistics::units::Count::get(), "number of bpu pred override bubbles"),
     ADD_STAT(s1PredTakenChangeAtSamePC, statistics::units::Count::get(), "s1 pred different taken at the same pc"),
+    ADD_STAT(uftbUpdatedButStillDiffFromS1, statistics::units::Count::get(), "uftb update when s1 pred is diff, but after update, uftb is still diff from s1"),
     ADD_STAT(predsOfEachStage, statistics::units::Count::get(), "the number of preds of each stage that account for final pred"),
     ADD_STAT(commitPredsFromEachStage, statistics::units::Count::get(), "the number of preds of each stage that account for a committed stream"),
     ADD_STAT(fsqEntryDist, statistics::units::Count::get(), "the distribution of number of entries in fsq"),
@@ -796,6 +797,35 @@ DecoupledBPUWithFTB::generateFinalPredAndCreateBubbles()
         for (int i = 0; i < numStages; i++) {
             printFullFTBPrediction(predsOfEachStage[i]);
         }
+
+        if (predsOfEachStage[0].valid && predsOfEachStage[1].valid) {
+            auto s0_entry = predsOfEachStage[0].ftbEntry;
+            auto s1_entry = predsOfEachStage[1].ftbEntry;
+            auto s0_condTakens = predsOfEachStage[0].condTakens;
+            auto s1_condTakens = predsOfEachStage[1].condTakens;
+
+            for (int b = 0; b < numBr; ++b) {
+                if (b >= s0_entry.slots.size() || b >= s1_entry.slots.size()) {
+                    break;
+                }
+                FTBSlot s0_entry_slot = s0_entry.slots[b];
+                FTBSlot s1_entry_slot = s1_entry.slots[b];
+                if (s0_entry_slot.condValid() && s1_entry_slot.condValid()) {
+                    if (s0_entry_slot.pc == s1_entry_slot.pc && s0_condTakens[b] == 1 && s1_condTakens[b] == 1) {
+                        break;
+                    } else if (s0_entry_slot.pc == s1_entry_slot.pc && s0_condTakens[b] != s1_condTakens[b]) {
+                        bool new_condTaken = uftb->updateUftbWhenOverrideByL1(predsOfEachStage[0].bbStart, b, s1_condTakens[b]);
+                        // new_condTaken = uftb->updateUftbWhenOverrideByL1(predsOfEachStage[0].bbStart, b, s1_condTakens[b]);
+                        predsOfEachStage[0].condTakens[b] = new_condTaken;
+                        if ( new_condTaken != s1_condTakens[b] ) {
+                            dbpFtbStats.uftbUpdatedButStillDiffFromS1++;
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
         // choose the most accurate prediction
         FullFTBPrediction *chosen = &predsOfEachStage[0];
 
@@ -815,6 +845,10 @@ DecoupledBPUWithFTB::generateFinalPredAndCreateBubbles()
             }
             first_hit_stage++;
         }
+
+        // if (first_hit_stage == 1) {
+        //     first_hit_stage = 0;
+        // }
 
         // generate bubbles
         bubblesToCreate = first_hit_stage;
