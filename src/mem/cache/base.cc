@@ -48,6 +48,8 @@
 #include "base/compiler.hh"
 #include "base/logging.hh"
 #include "base/output.hh"
+#include "base/statistics.hh"
+#include "base/stats/group.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
 #include "debug/ArchDB.hh"
@@ -203,6 +205,9 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
         assert(popCount(sliceNum) == 1);
     }
 
+    for (int i = 0; i < getActualSliceNum(); i++) {
+        prevReqCycles.emplace_back(system->maxRequestors(), Cycles{0});
+    }
 
     if (dumpMissPC && cacheLevel) {
         registerExitCallback([this]() {
@@ -545,8 +550,24 @@ BaseCache::tryAccessTag(PacketPtr pkt)
 }
 
 void
+BaseCache::calReqInterval(PacketPtr pkt)
+{
+    RequestorID reqId = pkt->requestorId();
+    size_t sliceId = (getActualSliceNum() == 1) ? 0 : getSliceIdx(pkt->getAddr());
+    auto& prev = prevReqCycles[sliceId][reqId];
+    if (prev == 0) {
+        // first request
+        prev = curCycle();
+    } else {
+        (*stats.reqArriveInterval[sliceId])[reqId].sample(curCycle() - prev);
+        prev = curCycle();
+    }
+}
+
+void
 BaseCache::recvTimingReq(PacketPtr pkt)
 {
+    calReqInterval(pkt);
 
     if (pkt->isStorePFTrain()) {
         // send store prefetch train request
@@ -2807,6 +2828,19 @@ BaseCache::CacheStats::regStats()
 
     System *system = cache.system;
     const auto max_requestors = system->maxRequestors();
+
+    reqArriveInterval.resize(cache.getActualSliceNum());
+    for (int i = 0; i < reqArriveInterval.size(); i++) {
+        reqArriveInterval[i].reset(new statistics::VectorDistribution(this));
+        reqArriveInterval[i]
+        ->init(max_requestors, 0, 20, 1)
+            .name(csprintf("reqArriveInterval_Slice%d", i))
+            .desc("")
+            .flags(statistics::nozero);
+        for (int j = 0; j < max_requestors; j++) {
+            reqArriveInterval[i]->subname(j, system->getRequestorName(j));
+        }
+    }
 
     for (auto &cs : cmd)
         cs->regStatsFromParent();
