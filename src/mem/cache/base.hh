@@ -50,6 +50,7 @@
 #include <cstdint>
 #include <queue>
 #include <string>
+#include <vector>
 
 #include "base/addr_range.hh"
 #include "base/compiler.hh"
@@ -595,6 +596,8 @@ class BaseCache : public ClockedObject, CacheAccessor
 
     bool tryAccessTag(PacketPtr pkt);
 
+    void calReqInterval(PacketPtr pkt);
+
     /**way prediction **/
     const int SETROFFSET = 6;
     const int SETMASK = 0x7f;
@@ -1086,6 +1089,9 @@ class BaseCache : public ClockedObject, CacheAccessor
 
     int squashedWays;
 
+    // the previous cycle calling RecvTimingReq (indexed by [sliceId][ReqId])
+    std::vector<std::vector<Cycles>> prevReqCycles;
+
   public:
     /** System we are currently operating in. */
     System *system;
@@ -1246,6 +1252,9 @@ class BaseCache : public ClockedObject, CacheAccessor
         /**Number of bytes received */
         statistics::Scalar bytesRecv;
 
+        /** Number of Cycles of the arriving interval between two requests. */
+        std::vector<statistics::VectorDistribution*> reqArriveInterval;
+
         /**Number of waypre hit times */
         statistics::Scalar wayPreHitTimes;
 
@@ -1310,6 +1319,14 @@ class BaseCache : public ClockedObject, CacheAccessor
     getBlockSize() const
     {
         return blkSize;
+    }
+
+    size_t
+    getActualSliceNum() const
+    {
+        // This method is used for data statistics only
+        // If slice mechanism is off, the actual slice number is 1
+        return sliceNum <= 0 ? 1 : sliceNum;
     }
 
     const AddrRangeList &getAddrRanges() const { return addrRanges; }
