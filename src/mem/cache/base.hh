@@ -1237,8 +1237,14 @@ class BaseCache : public ClockedObject, CacheAccessor
         /** The average overall latency of an MSHR miss. */
         statistics::Formula overallAvgMshrUncacheableLatency;
 
+        /** The average bandwidth receiving data from lower cache. */
+        statistics::Formula bytesRecvPerCycle;
+
         /** Number of replacements of valid blocks. */
         statistics::Scalar replacements;
+
+        /** Number of bytes received */
+        statistics::Scalar bytesRecv;
 
         /**Number of waypre hit times */
         statistics::Scalar wayPreHitTimes;

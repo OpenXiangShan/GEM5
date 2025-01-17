@@ -774,6 +774,8 @@ BaseCache::recvTimingResp(PacketPtr pkt)
 {
     assert(pkt->isResponse());
 
+    stats.bytesRecv += pkt->getSize();
+
     // all header delay should be paid for by the crossbar, unless
     // this is a prefetch response from above
     panic_if(pkt->headerDelay != 0 && pkt->cmd != MemCmd::HardPFResp,
@@ -2758,8 +2760,12 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
     ADD_STAT(overallAvgMshrUncacheableLatency, statistics::units::Rate<
                 statistics::units::Tick, statistics::units::Count>::get(),
              "average overall mshr uncacheable latency"),
+    ADD_STAT(bytesRecvPerCycle, statistics::units::Ratio::get(),
+             "average bandwidth receiving data from lower cache."),
     ADD_STAT(replacements, statistics::units::Count::get(),
              "number of replacements"),
+    ADD_STAT(bytesRecv, statistics::units::Count::get(),
+             "number of bytes received from lower cache."),
     ADD_STAT(wayPreHitTimes, statistics::units::Count::get(),
              "number of wayPreHitTimes"),
     ADD_STAT(wayPreIndexHitTimes, statistics::units::Count::get(),
@@ -3012,6 +3018,9 @@ BaseCache::CacheStats::regStats()
         overallAvgMshrUncacheableLatency.subname(i,
             system->getRequestorName(i));
     }
+
+    bytesRecvPerCycle.flags(total | nozero | nonan);
+    bytesRecvPerCycle = bytesRecv / simTicks * cache.clockPeriod();
 
     dataExpansions.flags(nozero | nonan);
     dataContractions.flags(nozero | nonan);
