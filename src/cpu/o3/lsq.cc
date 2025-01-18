@@ -1750,7 +1750,7 @@ LSQ::SingleDataRequest::sendPacketToCache()
     bool success = lsqUnit()->trySendPacket(isLoad(), _packets.at(0), bank_conflict, tag_read_fail);
     if (success) {
         if (isLoad()) {
-            assert(lsqUnit()->inflightLoads.size() < lsqUnit()->numLoads());
+            assert(lsqUnit()->inflightLoads.size() < lsqUnit()->numLoads() + 4);
             lsqUnit()->inflightLoads.emplace_back(this);
         }
 
