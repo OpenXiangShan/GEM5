@@ -1037,7 +1037,7 @@ Fetch::tick()
     wroteToTimeBuffer = false;
 
     // get the distribution of fetch status
-    fetchStats.fetchStatusDist[fetchStatus[0]]++;
+    fetchStats.fetchStatusDist[fetchStatus[0][0]]++;
 
     while (threads != end) {
         ThreadID tid = *threads++;
@@ -1923,7 +1923,7 @@ Fetch::recvReqRetry()
 
     for (auto it = retryPkt.begin(); it != retryPkt.end();) {
         if (icachePort.sendTimingReq(*it)) {
-            fetchStatus[retryTid] = IcacheWaitResponse;
+            fetchStatus[retryTid][(*it)->req->getReqNum()] = IcacheWaitResponse;
             // Notify Fetch Request probe when a retryPkt is successfully sent.
             // Note that notify must be called before retryPkt is set to NULL.
             ppFetchRequestSent->notify((*it)->req);
