@@ -365,8 +365,9 @@ class BaseCache : public ClockedObject, CacheAccessor
         BaseCache* cache;
         PacketPtr pkt;
         int sig;
+        bool deletePkt;
       public:
-        SendCustomEvent(BaseCache* cache, PacketPtr pkt, int sig);
+        SendCustomEvent(BaseCache* cache, PacketPtr pkt, int sig, bool deletePkt);
         void process() override;
         const char* description() const override;
     };

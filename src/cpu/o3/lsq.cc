@@ -633,7 +633,6 @@ LSQ::recvFunctionalCustomSignal(PacketPtr pkt, int sig)
                 it++;
             }
         }
-        delete pkt;
         panic_if(bus.size() > getLQEntries(), "elements on bus should never be greater than LQ size");
     } else {
         panic("unsupported sig %d in recvFunctionalCustomSignal\n", sig);

@@ -990,7 +990,8 @@ Cache::sendHintViaMSHRTargets(MSHR *mshr, const PacketPtr pkt)
             if (sendHintTime == curTick()) {
                 BaseCache::cpuSidePort.sendCustomSignal(tgt_pkt, DcacheRespType::Hint);
             } else {
-                SendCustomEvent* hintEvent = new SendCustomEvent(this, tgt_pkt, DcacheRespType::Hint);
+                // set `deletePkt` as false because tgt_pkt should not be deleted by Hint event.
+                SendCustomEvent* hintEvent = new SendCustomEvent(this, tgt_pkt, DcacheRespType::Hint, false);
                 schedule(hintEvent, sendHintTime);
             }
             firstTgt = false;

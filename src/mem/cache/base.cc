@@ -93,16 +93,19 @@ BaseCache::SendTimingRespEvent::description() const
     return "BaseCache response event";
 }
 
-BaseCache::SendCustomEvent::SendCustomEvent(BaseCache* cache, PacketPtr pkt, int sig)
+BaseCache::SendCustomEvent::SendCustomEvent(BaseCache* cache, PacketPtr pkt, int sig, bool deletePkt)
     : Event(Stat_Event_Pri, AutoDelete),
       cache(cache),
       pkt(pkt),
-      sig(sig) {}
+      sig(sig),
+      deletePkt(deletePkt) {}
 
 void
 BaseCache::SendCustomEvent::process()
 {
     cache->cpuSidePort.sendCustomSignal(pkt, sig);
+    if (deletePkt)
+        delete pkt;
 }
 
 const char*
@@ -2051,14 +2054,17 @@ BaseCache::handleFill(PacketPtr pkt, CacheBlk *blk, PacketList &writebacks,
     blk->setWhenReady(clockEdge(fillLatency) + pkt->headerDelay +
                       pkt->payloadDelay);
 
-    // NOTE: just send the block address back to lsu
+    // NOTE: Dcache sends the block address back to lsu
     // notify lsu to clear data on data bus
     // when the block is ready in dcache (load can get data from cache directly)
-    PacketPtr customPkt = new Packet(pkt->req, MemCmd::CustomBusClear);
-    customPkt->setAddr(addr);
-    SendCustomEvent* clearEvent = new SendCustomEvent(this, customPkt, DcacheRespType::Bus_Clear);
-    schedule(clearEvent, clockEdge(fillLatency) + pkt->headerDelay +
-                      pkt->payloadDelay);
+    if (cacheLevel == 1 && !isReadOnly) {
+        PacketPtr customPkt = new Packet(pkt->req, MemCmd::CustomBusClear);
+        customPkt->setAddr(addr);
+        // set `deletePkt` as true to ensure that the customPkt will be deleted finally.
+        SendCustomEvent* clearEvent = new SendCustomEvent(this, customPkt, DcacheRespType::Bus_Clear, true);
+        schedule(clearEvent, clockEdge(fillLatency) + pkt->headerDelay +
+                        pkt->payloadDelay);
+    }
 
     Request::XsMetadata blk_meta = blk->getXsMetadata();
     blk_meta.prefetchSource = pkt->req->getPFSource();
