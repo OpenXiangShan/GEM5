@@ -353,17 +353,46 @@ def template CSRExecute {{
                     machInst);
         }
         switch (csr) {
-          case CSR_SATP: {
-            STATUS status = xc->readMiscReg(MISCREG_STATUS);
-            if (pm == PRV_S && status.tvm == 1) {
-                return std::make_shared<IllegalInstFault>(
-                        "SATP access with TVM enabled\n",
-                        machInst);
+            case CSR_SATP: {
+                STATUS status = xc->readMiscReg(MISCREG_STATUS);
+                if (pm == PRV_S && status.tvm == 1) {
+                    return std::make_shared<IllegalInstFault>(
+                            "SATP access with TVM enabled\n",
+                            machInst);
+                }
+                break;
             }
-            break;
-          }
-          default:
-            break;
+            case CSR_CYCLE...CSR_HPMCOUNTER31: {
+                // No Sstc support for now, below is counteren logic
+                uint64_t counter_bit = 1UL << (csr - 0xC00);
+                int v = xc->readMiscReg(MISCREG_VIRMODE);
+                uint64_t hcounteren = xc->readMiscReg(MISCREG_HCOUNTEREN);
+                uint64_t mcounteren = xc->readMiscReg(MISCREG_MCOUNTEREN);
+                uint64_t scounteren = xc->readMiscReg(MISCREG_SCOUNTEREN);
+                if (pm < PRV_M && !(mcounteren & counter_bit)) { // First check mcounteren
+                    return std::make_shared<IllegalInstFault>(
+                            "cntr CSR access illegal, mcounteren disabled",
+                            machInst);
+                }
+                if (pm < PRV_S && !(scounteren & counter_bit)) {
+                    if (v) {
+                        // VU/VS, report virtual instruction
+                        return std::make_shared<HVFault>();
+                    } else {
+                        // Not is VU/VS, report illegal
+                        return std::make_shared<IllegalInstFault>(
+                                "cntr CSR access illegal, scounteren disabled",
+                                machInst);
+                    }
+                }
+
+                if (v && !(hcounteren & counter_bit)) { // RVH virtual instruction
+                    return std::make_shared<HVFault>();
+                }
+                break;
+            }
+            default:
+                break;
         }
 
         if (csr == CSR_FCSR) {
