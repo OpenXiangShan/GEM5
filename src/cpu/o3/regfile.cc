@@ -41,6 +41,7 @@
 
 #include "cpu/o3/regfile.hh"
 
+#include "arch/riscv/regs/renameable_misc.hh"
 #include "cpu/o3/free_list.hh"
 
 namespace gem5
@@ -133,6 +134,9 @@ PhysRegFile::PhysRegFile(unsigned _numPhysicalIntRegs,
 
     // must clear with zero
     rMiscRegFile.clear();
+
+    RegVal vtype = 1UL << 63;
+    rMiscRegFile.set(RiscvISA::rmisc_reg::_VtypeIdx, &vtype);
 }
 
 
