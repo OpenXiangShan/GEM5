@@ -151,6 +151,9 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       size(p.size),
       assoc(p.assoc),
       enableWayPrediction(p.enable_wayprediction),
+      Judgmentcycle(0),
+      sliceAddr(8),
+      cacheblkAddr(8),
       wayPreTable(size/assoc/64),
       lookupLatency(p.tag_latency),
       dataLatency(p.data_latency),
@@ -726,6 +729,40 @@ BaseCache::recvTimingReq(PacketPtr pkt)
             );
             archDBer->L1MissTrace_write(
               pc, source, paddr, vaddr, curCycle, this->name().c_str());
+        }
+        if (pkt->req->hasPC() && (pkt->isRead() || pkt->isWrite())) {
+            Addr pc = pkt->req->getPC();
+            Addr vaddr = pkt->req->hasVaddr() ? pkt->req->getVaddr() : 0;
+            Addr paddr = pkt->req->getPaddr();
+            uint8_t source = pkt->isRead() ? 0 : 1;
+            uint64_t curCycle = ticksToCycles(curTick());
+            Addr slice_num = (paddr >> 6) & (0x3);
+            Addr cacheblk = (paddr >> 6);
+            if (curCycle != Judgmentcycle) {
+                if (sliceAddr.size() > 1) {
+                    stats.multimshr++;
+                }
+                if (cacheblkAddr.size() > 1) {
+                    stats.multicacheline++;
+                }
+                if (sliceAddr.size() > 0) {
+                    stats.mshrinsert++;
+                }
+                Judgmentcycle = curCycle;
+                sliceAddr.clear();
+                cacheblkAddr.clear();
+                sliceAddr.push_back(slice_num);
+                cacheblkAddr.push_back(cacheblk);
+            } else {
+                auto slice_hit = std::find(sliceAddr.begin(), sliceAddr.end(), slice_num);
+                if (slice_hit == sliceAddr.end()) {
+                    sliceAddr.push_back(slice_num);
+                }
+                auto cacheblk_hit = std::find(cacheblkAddr.begin(), cacheblkAddr.end(), cacheblk);
+                if (cacheblk_hit == cacheblkAddr.end()) {
+                    cacheblkAddr.push_back(cacheblk);
+                }
+            }
         }
 
         handleTimingReqMiss(pkt, blk, forward_time, request_time);
@@ -2793,6 +2830,12 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "number of replacements"),
     ADD_STAT(bytesRecv, statistics::units::Count::get(),
              "number of bytes received from lower cache."),
+    ADD_STAT(multimshr, statistics::units::Count::get(),
+             "this cycle needs visit multi slice l2 cacheblock"),
+    ADD_STAT(multicacheline, statistics::units::Count::get(),
+             "this cycle visit multi cacheblock"),
+    ADD_STAT(mshrinsert, statistics::units::Count::get(),
+             "this cycle visit cacheblock"),
     ADD_STAT(wayPreHitTimes, statistics::units::Count::get(),
              "number of wayPreHitTimes"),
     ADD_STAT(wayPreIndexHitTimes, statistics::units::Count::get(),

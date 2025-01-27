@@ -989,6 +989,10 @@ class BaseCache : public ClockedObject, CacheAccessor
     const int assoc;
     const bool enableWayPrediction;
     const int DEFAULTWAYPRESIZE = 65536;
+    uint64_t Judgmentcycle;
+    std::vector<int64_t> sliceAddr;
+    std::vector<int64_t> cacheblkAddr;
+
     std::vector<std::vector<int>> wayPreTable;
 
     /**
@@ -1255,6 +1259,14 @@ class BaseCache : public ClockedObject, CacheAccessor
 
         /** Number of Cycles of the arriving interval between two requests. */
         std::vector<std::unique_ptr<statistics::VectorDistribution>> reqArriveInterval;
+        /**number of visit multi slice l2 cacheblock times*/
+        statistics::Scalar multimshr;
+
+        /*number of visit multi cacheblock times*/
+        statistics::Scalar multicacheline;
+
+        /*number of this cycle needs visit cacheblock times*/
+        statistics::Scalar mshrinsert;
 
         /**Number of waypre hit times */
         statistics::Scalar wayPreHitTimes;
