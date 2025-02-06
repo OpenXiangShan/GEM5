@@ -2,6 +2,7 @@
 
 #include "base/trace.hh"
 #include "debug/DecoupleBP.hh"
+#include "debug/DecoupleBPProbe.hh"
 
 namespace gem5
 {
@@ -25,7 +26,7 @@ void
 FetchTargetQueue::squash(FetchTargetId new_enq_target_id,
                          FetchStreamId new_enq_stream_id, Addr new_enq_pc)
 {
-    ftq.clear();
+    ftq.clear();    // 清空ftq
     // Because we squash the whole ftq, head and tail should be the same 头尾相同
     auto new_fetch_demand_target_id = new_enq_target_id;
 
@@ -61,7 +62,7 @@ void
 FetchTargetQueue::finishCurrentFetchTarget()
 {
 
-    ++fetchDemandTargetId;  // 更新需求id
+    ++fetchDemandTargetId;  // 更新需求id，下一个要处理的fetch目标直接+1，对应ftqid
     ftq.erase(supplyFetchTargetState.targetId);  // 删除供应id对应的ftq条目
     supplyFetchTargetState.valid = false;  // 设置供应状态无效
     supplyFetchTargetState.entry = nullptr;  // 设置供应entry为空
@@ -155,9 +156,9 @@ FetchTargetQueue::enqueue(FtqEntry entry)
 void
 FetchTargetQueue::dump(const char* when)
 {
-    DPRINTF(DecoupleBP, "%s, dump FTQ\n", when);
+    DPRINTF(DecoupleBPProbe, "%s, dump FTQ\n", when);
     for (auto it = ftq.begin(); it != ftq.end(); ++it) {
-        DPRINTFR(DecoupleBP, "FTQ entry: %lu, start pc: %#x, end pc: %#lx, stream ID: %lu\n",
+        DPRINTFR(DecoupleBPProbe, "FTQ entry: %lu, start pc: %#x, end pc: %#lx, stream ID: %lu\n",
                  it->first, it->second.startPC, it->second.endPC, it->second.fsqID);
     }
 }

@@ -76,7 +76,7 @@ FTBTAGE::FTBTAGE(const Params& p)
         useAlt[i].resize(numBr, 0);
     }
     
-    enableSC = true;
+    enableSC = false;
     std::vector<TageBankStats *> statsPtr;
     for (int i = 0; i < numBr; i++) {
         statsPtr.push_back(tageBankStats[i]);
@@ -144,11 +144,11 @@ FTBTAGE::lookupHelper(Addr startAddr,
     for (auto &t : main_table_indices) { t = -1; }
 
     std::vector<bool> provided;
-    provided.resize(numBr, false);
+    provided.resize(numBr, false);  // 保存每个branch是否由tage提供预测结果
 
     for (int b = 0; b < numBr; b++) {
         // make main prediction
-        int phyBrIdx = getShuffledBrIndex(startAddr, b);  // 获取分支的物理索引
+        int phyBrIdx = getShuffledBrIndex(startAddr, b);  // 获取分支的物理索引，随机化，用于索引tage table
         int provider_counts = 0;  // 提供者的数量
         for (int i = numPredictors - 1; i >= 0; --i) { // 遍历每个tage table, 从高到低
             Addr tmp_index = getTageIndex(startAddr, i);  // 获取tage table的index
@@ -157,34 +157,34 @@ FTBTAGE::lookupHelper(Addr startAddr,
             bool match = way.valid && matchTag(tmp_tag, way.tag);  // 判断是否匹配
 
             if (match) {
-                main_entries[b] = way;
-                main_tables[b] = i;
-                main_table_indices[b] = tmp_index;
-                ++provider_counts;
+                main_entries[b] = way;  // 保存匹配的entry
+                main_tables[b] = i;  // 保存匹配的table i
+                main_table_indices[b] = tmp_index;  // 保存匹配的index tmp_index
+                ++provider_counts;  // 增加提供者的数量
                 break;  // 找到匹配的entry后，跳出循环
             }
 
             usefulMasks[b].resize(numPredictors-i);
             usefulMasks[b] <<= 1;
-            usefulMasks[b][0] = way.useful;
+            usefulMasks[b][0] = way.useful; // 保存useful bit
             DPRINTF(FTBTAGE, "table %d, index %d, lookup tag %d, tag %d, useful %d\n",
                 i, tmp_index, tmp_tag, way.tag, way.useful);
         }
 
 
-        if (provider_counts > 0) {
+        if (provider_counts > 0) { // 如果提供者数量大于0，则表示tage提供了预测结果
             auto main_entry = main_entries[b];
             // in RTL, we do not shuffle on useAltCtrs
             if (useAlt[getUseAltIdx(startAddr)][b] > 0 &&
                 (main_entry.counter == -1 || main_entry.counter == 0)) {
                 use_alt_preds[b] = true;
             } else {
-                use_alt_preds[b] = false;
+                use_alt_preds[b] = false;   // 不使用alt table
             }
             provided[b] = true;
         } else {
-            use_alt_preds[b] = true;
-            provided[b] = false;
+            use_alt_preds[b] = true; // 如果提供者数量为0，则表示tage没有提供预测结果，则使用base table的预测结果
+            provided[b] = false; // 表示tage没有提供预测结果
         }
         DPRINTF(FTBTAGE, "lookup startAddr %#lx cond %d, provider_counts %d, main_table %d, main_table_index %d, use_alt %d\n",
                     startAddr, b, provider_counts, main_tables[b], main_table_indices[b], use_alt_preds[b]);
@@ -201,9 +201,9 @@ FTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Full
     for (int i = 0; i < numBr; ++i) {
         entries[i].valid = false;
     }
-    std::vector<int> main_tables;
-    std::vector<int> main_table_indices;
-    std::vector<bool> use_alt_preds;  // 保存每个branch是否使用alt table
+    std::vector<int> main_tables; // 保存每个branch的main table i,哪一级命中
+    std::vector<int> main_table_indices; // 保存每个branch的main table的index
+    std::vector<bool> use_alt_preds;  // 保存每个branch是否使用alt table 也就是base table作为预测结果
     std::vector<bitset> usefulMasks;  // 保存每个branch的usefulMask
     std::vector<bool> takens;  // 保存每个branch是否taken
     main_tables.resize(numBr, -1);
@@ -213,21 +213,21 @@ FTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Full
 
     takens.resize(numBr, false);
 
-    // get prediction and save it 获取预测结果并保存
+    // get prediction and save it 获取2个branch的预测结果并保存  1. 查找各级预测表
     std::vector<bool> found = lookupHelper(stream_start, entries, main_tables,
                                     main_table_indices, use_alt_preds, usefulMasks);
 
 
-    std::vector<short> altRes = baseTable.at(getBaseTableIndex(stream_start));
+    std::vector<short> altRes = baseTable.at(getBaseTableIndex(stream_start)); // 2. 获取base table的预测结果作为可选预测结果
 
-    std::vector<TagePrediction> preds;  // 保存每个branch的预测结果
+    std::vector<TagePrediction> preds;  // 保存每个branch的TAGE完整预测结果
     preds.resize(numBr);
-    for (int b = 0; b < numBr; ++b) {
-        int phyBrIdx = getShuffledBrIndex(stream_start, b);
-        takens[b] = use_alt_preds[b] ? altRes[phyBrIdx] >= 0 : entries[b].counter >= 0;  // 分支是否taken， 如果不用alt, 用counter>=0表示taken
+    for (int b = 0; b < numBr; ++b) {   // 3. 选择最终预测结果
+        int phyBrIdx = getShuffledBrIndex(stream_start, b); // 获取branch的物理索引，随机化，用于索引tage table
+        takens[b] = use_alt_preds[b] ? altRes[phyBrIdx] >= 0 : entries[b].counter >= 0;  // 3.1 分支是否taken， 如果不用alt, 用counter>=0表示taken
         preds[b] = TagePrediction(found[b], entries[b].counter, entries[b].useful, altRes[phyBrIdx],
             main_tables[b], main_table_indices[b], entries[b].tag, use_alt_preds[b],
-            usefulMasks[b], takens[b]);  // 生成preds
+            usefulMasks[b], takens[b]);  // 组合信息生成TAGE preds
         tageBankStats[b]->updateStatsWithTagePrediction(preds[b], true);  // 更新stats
     }
 
@@ -241,7 +241,7 @@ FTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Full
         meta.scMeta.indexFoldedHist = sc.getFoldedHist();
     }
     assert(getDelay() < stagePreds.size());
-    for (int s = getDelay(); s < stagePreds.size(); ++s) {
+    for (int s = getDelay(); s < stagePreds.size(); ++s) {  // 4. 更新stagePreds的condTakens作为预测结果
         // assume that ftb entry is provided in stagePreds 假设ftb entry在stagePreds中提供了
 
         for (int i = 0; i < numBr; ++i) {
@@ -255,10 +255,10 @@ FTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Full
         }
     }
 
-    meta.preds = preds;
-    meta.tagFoldedHist = tagFoldedHist;
-    meta.altTagFoldedHist = altTagFoldedHist;
-    meta.indexFoldedHist = indexFoldedHist;
+    meta.preds = preds; // 保存tage的预测结果
+    meta.tagFoldedHist = tagFoldedHist; // 保存tage的tag 折叠历史
+    meta.altTagFoldedHist = altTagFoldedHist; // 保存tage的altTag 折叠历史
+    meta.indexFoldedHist = indexFoldedHist; // 保存tage的index 折叠历史
     // DPRINTF(FTBTAGE, "putPCHistory end\n");
 }
 
@@ -278,13 +278,13 @@ FTBTAGE::update(const FetchStream &entry)
     need_to_update.resize(numBr, false);
     auto ftb_entry = entry.updateFTBEntry;
 
-    // get number of conditional branches to update
+    // get number of conditional branches to update 获取需要更新的条件分支数量
     int cond_num = 0;
     if (entry.exeTaken) {
-        cond_num = ftb_entry.getNumCondInEntryBefore(entry.exeBranchInfo.pc);
+        cond_num = ftb_entry.getNumCondInEntryBefore(entry.exeBranchInfo.pc); // 获取exeBranchInfo.pc之前的条件跳转数
         // for case of ftb entry is not full
         if (cond_num < numBr) {
-            cond_num += !entry.exeBranchInfo.isUncond() ? 1 : 0;
+            cond_num += !entry.exeBranchInfo.isUncond() ? 1 : 0; // 如果exeBranchInfo不是非条件跳转，则条件分支数量加1
         }
         // if ftb entry is full, and this branch is conditional,
         // we cannot update the last branch, as it will be removed
@@ -296,27 +296,27 @@ FTBTAGE::update(const FetchStream &entry)
         cond_num = ftb_entry.getTotalNumConds();
     }
     assert(cond_num <= numBr);
-    for (int i = 0; i < cond_num; i++) {
+    for (int i = 0; i < cond_num; i++) {    // 1. 获取需要更新的分支， need_to_update
         auto &slot = ftb_entry.slots[i];
         // only update branches with both taken/not taken behaviors observed
-        need_to_update[i] = !slot.alwaysTaken;
+        need_to_update[i] = !slot.alwaysTaken;  // 如果alwaysTaken为false，才需要更新
     }
     // DPRINTF(FTBTAGE, "need to update size %d\n", need_to_update.size());
 
     // get tage predictions from meta
-    auto meta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
-    auto preds = meta->preds;
-    auto scMeta = meta->scMeta;
+    auto meta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]); // 获取meta
+    auto preds = meta->preds; // 获取tage的预测结果
+    auto scMeta = meta->scMeta; // 获取sc的预测结果
     std::vector<bool> actualTakens;
-    actualTakens.resize(numBr, false);
+    actualTakens.resize(numBr, false); // numBr个actualTakens，初始化为false
 
     auto updateTagFoldedHist = meta->tagFoldedHist;
     auto updateAltTagFoldedHist = meta->altTagFoldedHist;
     auto updateIndexFoldedHist = meta->indexFoldedHist;
     for (int b = 0; b < numBr; b++) {
-        DPRINTF(FTBTAGE, "try to update cond %d \n", b);
+        DPRINTF(FTBTAGE, "try to update cond %d \n", b); // 尝试更新条件分支b
         if (!need_to_update[b]) {
-            DPRINTF(FTBTAGE, "no need to update, skipping\n");
+            DPRINTF(FTBTAGE, "no need to update, skipping\n"); // 如果不需要更新/不是条件跳转，跳过
             // we could also use break
             // because we assume that the branches are in order
             // if the first branch is not executed (need to update), the following branches
@@ -328,39 +328,39 @@ FTBTAGE::update(const FetchStream &entry)
         //     " use alt %d, alt table index %d, alt counter %d, alt counter now  %d, useful mask %#x, ")
 
         auto stat = tageBankStats[b];
-        stat->updateStatsWithTagePrediction(preds[b], false);
-        bool this_cond_actually_taken = entry.exeTaken && entry.exeBranchInfo == ftb_entry.slots[b];
-        actualTakens[b] = this_cond_actually_taken;
+        stat->updateStatsWithTagePrediction(preds[b], false); // 更新stats
+        bool this_cond_actually_taken = entry.exeTaken && entry.exeBranchInfo == ftb_entry.slots[b]; // 实际跳转且分支信息匹配
+        actualTakens[b] = this_cond_actually_taken; // 更新实际跳转
 
-        int phyBrIdx = getShuffledBrIndex(startAddr, b);
-        TagePrediction pred = preds[b];
-        bool mainFound = pred.mainFound;
-        bool mainTaken = pred.mainCounter >= 0;
-        bool mainWeak = pred.mainCounter == 0 || pred.mainCounter == -1;
-        bool altTaken = baseTable.at(getBaseTableIndex(startAddr))[phyBrIdx] >= 0;
+        int phyBrIdx = getShuffledBrIndex(startAddr, b); // 获取物理索引
+        TagePrediction pred = preds[b]; // 获取之前的tage预测结果
+        bool mainFound = pred.mainFound; // 主表是否命中
+        bool mainTaken = pred.mainCounter >= 0; // 主表是否taken
+        bool mainWeak = pred.mainCounter == 0 || pred.mainCounter == -1; // 主表是否弱
+        bool altTaken = baseTable.at(getBaseTableIndex(startAddr))[phyBrIdx] >= 0; // 基表是否taken
 
-        // update useful bit, counter and predTaken for main entry
-        if (mainFound) { // updateProvided
+        // update useful bit, counter and predTaken for main entry 更新主表的useful bit, counter和predTaken
+        if (mainFound) { // updateProvided， 如果主表命中
             DPRINTF(FTBTAGE, "prediction provided by table %d, idx %d, updating corresponding entry\n",
                 pred.table, pred.index);
             auto &way = tageTable[pred.table][pred.index][phyBrIdx];
-
+            // 当主表(mainCounter)和备用表(altCounter)预测结果不同时，更新useful位
             if (mainTaken != altTaken) { // updateAltDiffers
-                way.useful = this_cond_actually_taken == mainTaken; // updateProviderCorrect
+                way.useful = this_cond_actually_taken == mainTaken; // updateProviderCorrect, 3. 更新useful位, 主表预测正确,useful=1
             }
             DPRINTF(FTBTAGE, "useful bit set to %d\n", way.useful);
 
-            updateCounter(this_cond_actually_taken, 3, way.counter);
+            updateCounter(this_cond_actually_taken, 3, way.counter);    // 2. 更新计数器
         }
 
-        // update base table counter
-        if (pred.useAlt) {
-            unsigned base_idx = getBaseTableIndex(startAddr);
+        // update base table counter 更新基表的计数器
+        if (pred.useAlt) { // 如果使用alt表
+            unsigned base_idx = getBaseTableIndex(startAddr); // 获取基表索引
             DPRINTF(FTBTAGE, "prediction provided by base table idx %d, updating corresponding entry\n", base_idx);
-            updateCounter(this_cond_actually_taken, 2, baseTable.at(base_idx)[phyBrIdx]);
+            updateCounter(this_cond_actually_taken, 2, baseTable.at(base_idx)[phyBrIdx]); // 更新基表的计数器
         }
 
-        // update use_alt_counters
+        // update use_alt_counters 更新use_alt_counters
         if (pred.mainFound && mainWeak && mainTaken != altTaken) {
             DPRINTF(FTBTAGE, "use_alt_on_provider_weak, alt %s, updating use_alt_counter\n",
                 altTaken == this_cond_actually_taken ? "correct" : "incorrect");
@@ -375,7 +375,7 @@ FTBTAGE::update(const FetchStream &entry)
         }
 
         // stats
-        if (!pred.mainFound || pred.useAlt) {
+        if (!pred.mainFound || pred.useAlt) { // 如果主表未命中或使用alt表
             bool altTaken = pred.altCounter >= 0;
             bool mainTaken = pred.mainCounter >= 0;
             bool altCorrect = altTaken == this_cond_actually_taken;
@@ -411,7 +411,7 @@ FTBTAGE::update(const FetchStream &entry)
         }
 
         DPRINTF(FTBTAGE, "squashType %d, squashPC %#lx, slot pc %#lx\n", entry.squashType, entry.squashPC, ftb_entry.slots[b].pc);
-        bool this_cond_mispred = entry.squashType == SquashType::SQUASH_CTRL && entry.squashPC == ftb_entry.slots[b].pc;
+        bool this_cond_mispred = entry.squashType == SquashType::SQUASH_CTRL && entry.squashPC == ftb_entry.slots[b].pc; // 如果squashType为SQUASH_CTRL且squashPC与ftb_entry.slots[b].pc匹配
         if (this_cond_mispred) {
             stat->updateMispred++; // TODO: count tage predictions instead of overall predictions
             if (!pred.useAlt && pred.mainFound) {
@@ -419,17 +419,17 @@ FTBTAGE::update(const FetchStream &entry)
             }
         }
         assert(!this_cond_mispred || ftb_entry.slots[b].condValid());
-        // update useful reset counter
-        bool use_alt_on_main_found_correct = pred.useAlt && pred.mainFound && mainTaken == this_cond_actually_taken;
-        bool needToAllocate = this_cond_mispred && !use_alt_on_main_found_correct;
+        // update useful reset counter， 更新usefulReset计数器，还没看明白
+        bool use_alt_on_main_found_correct = pred.useAlt && pred.mainFound && mainTaken == this_cond_actually_taken;    // 如果使用alt表且主表命中且主表预测结果与实际跳转结果一致
+        bool needToAllocate = this_cond_mispred && !use_alt_on_main_found_correct; // 如果条件跳转且主表预测结果与实际跳转结果不一致，需要分配精确表
         DPRINTF(FTBTAGE, "this_cond_mispred %d, use_alt_on_main_found_correct %d, needToAllocate %d\n",
             this_cond_mispred, use_alt_on_main_found_correct, needToAllocate);
 
-        int num_tables_can_allocate = (~pred.usefulMask).count();
-        int total_tables_to_allocate = pred.usefulMask.size();
-        bool incUsefulResetCounter = num_tables_can_allocate < (total_tables_to_allocate - num_tables_can_allocate);
-        bool decUsefulResetCounter = num_tables_can_allocate > (total_tables_to_allocate - num_tables_can_allocate);
-        int changeVal = std::abs(num_tables_can_allocate - (total_tables_to_allocate - num_tables_can_allocate));
+        int num_tables_can_allocate = (~pred.usefulMask).count(); // 计算可以分配的表数，~pred.usefulMask表示取反，.count()表示计算1的个数
+        int total_tables_to_allocate = pred.usefulMask.size(); // 计算总表数=4
+        bool incUsefulResetCounter = num_tables_can_allocate < (total_tables_to_allocate - num_tables_can_allocate); // a < (b - a) == a < 0.5b
+        bool decUsefulResetCounter = num_tables_can_allocate > (total_tables_to_allocate - num_tables_can_allocate); // 如果可以分配的表数大于总表数减去可以分配的表数
+        int changeVal = std::abs(num_tables_can_allocate - (total_tables_to_allocate - num_tables_can_allocate)); // 4 - (4 -4 ) = 4
         if (needToAllocate) {
             if (incUsefulResetCounter) { // need modify: clear the useful bit of all entries
                 stat->updateResetUCtrInc.sample(changeVal, 1);
@@ -439,9 +439,9 @@ FTBTAGE::update(const FetchStream &entry)
                 }
                 // usefulResetCnt[b] = (usefulResetCnt[b] + changeVal >= 128) ? 128 : (usefulResetCnt[b] + changeVal);
                 DPRINTF(FTBTAGEUseful, "incUsefulResetCounter %d, changeVal %d, usefulResetCnt %d\n", b, changeVal, usefulResetCnt[b]);
-            } else if (decUsefulResetCounter) {
+            } else if (decUsefulResetCounter) { // 如果减少计数器
                 stat->updateResetUCtrDec.sample(changeVal, 1);
-                usefulResetCnt[b] -= changeVal;
+                usefulResetCnt[b] -= changeVal; // usefulReset 计数器 减小4
                 if (usefulResetCnt[b] <= 0) {
                     usefulResetCnt[b] = 0;
                 }
@@ -463,34 +463,34 @@ FTBTAGE::update(const FetchStream &entry)
         }
 
         bool allocSuccess, allocFailure;
-        if (needToAllocate) {
+        if (needToAllocate) { // 如果需要分配  4. 分配新表项
             // allocate new entry
-            unsigned maskMaxNum = std::pow(2, (numPredictors - (pred.table + 1)));
-            unsigned mask = allocLFSR.get() % maskMaxNum;
-            bitset allocateLFSR(numPredictors - (pred.table + 1), mask);
+            unsigned maskMaxNum = std::pow(2, (numPredictors - (pred.table + 1))); // 计算mask最大数， 4 - (-1 + 1) = 4， 2^4 = 16
+            unsigned mask = allocLFSR.get() % maskMaxNum; // 获取mask， 0-15
+            bitset allocateLFSR(numPredictors - (pred.table + 1), mask); // 获取allocateLFSR， 4 - (-1 + 1) = 4， 0-15
             std::string buf;
-            auto flipped_usefulMask = ~pred.usefulMask;
-            bitset masked = allocateLFSR & flipped_usefulMask;
-            bitset allocate = masked.any() ? masked : flipped_usefulMask;
-            short newCounter = this_cond_actually_taken ? 0 : -1;
+            auto flipped_usefulMask = ~pred.usefulMask; // 获取flipped_usefulMask， 1111, 表示useful都为false,优先替换
+            bitset masked = allocateLFSR & flipped_usefulMask; // 获取masked， 0000
+            bitset allocate = masked.any() ? masked : flipped_usefulMask; // 获取allocate， 1111
+            short newCounter = this_cond_actually_taken ? 0 : -1; // 获取新计数器， NT, -1， 作为初始化值
 
-            bool allocateValid = flipped_usefulMask.any();
+            bool allocateValid = flipped_usefulMask.any(); // 获取allocateValid， 1
             if (allocateValid) {
                 DPRINTF(FTBTAGE, "allocate new entry\n");
                 stat->updateAllocSuccess++;
                 allocSuccess = true;
-                unsigned startTable = pred.table + 1;
+                unsigned startTable = pred.table + 1; // 获取startTable， -1 + 1 = 0
 
-                for (int ti = startTable; ti < numPredictors; ti++) {
-                    Addr newIndex = getTageIndex(startAddr, ti, updateIndexFoldedHist[ti].get());
-                    Addr newTag = getTageTag(startAddr, ti, updateTagFoldedHist[ti].get(), updateAltTagFoldedHist[ti].get());
-                    auto &entry = tageTable[ti][newIndex][phyBrIdx];
+                for (int ti = startTable; ti < numPredictors; ti++) { // 遍历所有表， 0-3
+                    Addr newIndex = getTageIndex(startAddr, ti, updateIndexFoldedHist[ti].get()); // 根据折叠历史和pc，获取新索引
+                    Addr newTag = getTageTag(startAddr, ti, updateTagFoldedHist[ti].get(), updateAltTagFoldedHist[ti].get()); // 获取新tag
+                    auto &entry = tageTable[ti][newIndex][phyBrIdx]; // 获取新entry
 
-                    if (allocate[ti - startTable]) {
+                    if (allocate[ti - startTable]) { // 如果allocate[ti - startTable]为true
                         DPRINTF(FTBTAGE, "found allocatable entry, table %d, index %d, tag %d, counter %d\n",
                             ti, newIndex, newTag, newCounter);
-                        entry = TageEntry(newTag, newCounter);
-                        break; // allocate only 1 entry
+                        entry = TageEntry(newTag, newCounter); // 更新tage entry为新的tag 和 新的计数器
+                        break; // allocate only 1 entry， 优先分配最低的表
                     }
                 }
             } else {
@@ -518,24 +518,24 @@ FTBTAGE::update(const FetchStream &entry)
 
 void
 FTBTAGE::updateCounter(bool taken, unsigned width, short &counter) {
-    int max = (1 << (width-1)) - 1;
-    int min = -(1 << (width-1));
+    int max = (1 << (width-1)) - 1; // 最大值=1
+    int min = -(1 << (width-1)); // 最小值=-1
     if (taken) {
-        satIncrement(max, counter);
+        satIncrement(max, counter); // 如果跳转，则增加计数器
     } else {
-        satDecrement(min, counter);
+        satDecrement(min, counter); // 如果未跳转，则减小计数器
     }
 }
 
 Addr
 FTBTAGE::getTageTag(Addr pc, int t, bitset &foldedHist, bitset &altFoldedHist)
 {
-    bitset buf(tableTagBits[t], pc >> tablePcShifts[t]);  // lower bits of PC
+    bitset buf(tableTagBits[t], pc >> tablePcShifts[t]);  // lower bits of PC, pc低8位，histLengths配置
     bitset altTagBuf(altFoldedHist);
     altTagBuf.resize(tableTagBits[t]);
     altTagBuf <<= 1;
     buf ^= foldedHist;
-    buf ^= altTagBuf;
+    buf ^= altTagBuf;   // 异或操作， 这索引方式有点独特，都是8位这样索引的
     return buf.to_ulong();
 }
 
@@ -906,16 +906,16 @@ FTBTAGE::TageBankStats::updateStatsWithTagePrediction(const TagePrediction &pred
     bool hit = pred.mainFound;
     unsigned hit_table = pred.table;
     bool useAlt = pred.useAlt;
-    if (when_pred) {
+    if (when_pred) {    // 预测时
         if (hit) {
-            predTableHits.sample(hit_table, 1);
+            predTableHits.sample(hit_table, 1); // 命中时，记录命中的是哪一级
         } else {
-            predNoHitUseBim++;
+            predNoHitUseBim++; // 没有命中时，记录没有命中时使用bimodal/base table
         }
         if (!hit || useAlt) {
-            predUseAlt++;
+            predUseAlt++; // 没有命中或者使用alt时，记录使用alt
         }
-    } else {
+    } else {    // 更新时
         if (hit) {
             updateTableHits.sample(hit_table, 1);
         } else {

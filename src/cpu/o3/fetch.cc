@@ -1284,7 +1284,7 @@ Fetch::tick()
         usedUpFetchTargets = !dbsp->trySupplyFetchWithTarget(pc[0]->instAddr());
     } else if (isFTBPred()) {
         assert(dbpftb);
-        dbpftb->tick();     // BP 执行！然后从FTQ中取出对应pc 所在entry
+        dbpftb->tick();     // BP 执行！然后从FTQ中取出对应pc 所在entry, trySupplyFetchWithTarget 会从FTQ取出entry,设置为supplyFetchTargetState，下一拍会从supplyFetchTargetState中取出entry
         usedUpFetchTargets = !dbpftb->trySupplyFetchWithTarget(pc[0]->instAddr(), currentFetchTargetInLoop);
     }
 }
@@ -1394,9 +1394,9 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
         }
 
         return true;
-    } else if (fromCommit->commitInfo[tid].doneSeqNum) {
+    } else if (fromCommit->commitInfo[tid].doneSeqNum) { // 如果commit完成，则更新branch predictor
         // Update the branch predictor if it wasn't a squashed instruction
-        // that was broadcasted.
+        // that was broadcasted. 如果commit不是squash，则更新branch predictor
         if (!isDecoupledFrontend()) {
             branchPred->update(fromCommit->commitInfo[tid].doneSeqNum, tid);
         } else {
@@ -1757,7 +1757,7 @@ Fetch::fetch(bool &status_change)
             DPRINTF(Fetch, "Supplying fetch from fetchBuffer\n");
             // }
 
-            decoder[tid]->moreBytes(this_pc, fetch_addr);
+            decoder[tid]->moreBytes(this_pc, fetch_addr);   // 是否需要更多字节，设置是否instDone
 
             if (dec_ptr->needMoreBytes()) {     // 能取就继续取下一条
                 blk_offset++;
@@ -1811,7 +1811,7 @@ Fetch::fetch(bool &status_change)
             }
 
             DynInstPtr instruction = buildInst(
-                    tid, staticInst, curMacroop, this_pc, *next_pc, true);  // 得到DynInst, 并压入instBuffer
+                    tid, staticInst, curMacroop, this_pc, *next_pc, true);  // 得到DynInst, 并压入instBuffer/fetchQueue
 
             if (staticInst->isVectorConfig()) {
                 waitForVsetvl = dec_ptr->stall();

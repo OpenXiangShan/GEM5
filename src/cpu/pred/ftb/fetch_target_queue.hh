@@ -15,7 +15,7 @@ namespace ftb_pred
 
 struct FetchTargetEnqState
 {
-    Addr pc;
+    Addr pc;  // 入队PC
     FetchStreamId streamId;  // fsq的id
     FetchTargetId nextEnqTargetId;  // ftq的id
     FetchTargetEnqState() : pc(0), streamId(1), nextEnqTargetId(0) {}
@@ -43,9 +43,9 @@ class FetchTargetQueue
     unsigned ftqSize;
     FetchTargetId ftqId{0};  // this is a queue ptr for ftq itself
 
-    // The supply/responsing fetch target state
+    // The supply/responsing fetch target state  供应状态！
     FetchTargetReadState supplyFetchTargetState;  // 供应fetch目标状态
-    // The demanded fetch target ID to send to fetch
+    // The demanded fetch target ID to send to fetch  需求状态，下一个要处理的fetch目标
     FetchTargetId fetchDemandTargetId{0};  // 发送给fetch的需求fetch目标ID，新target
 
     FetchTargetEnqState fetchTargetEnqState;  // 入队状态
@@ -66,22 +66,32 @@ class FetchTargetQueue
 
     FetchTargetEnqState &getEnqState() { return fetchTargetEnqState; }
 
+    // 获取当前供应的目标ID, ftqid
+    // 如果有有效的供应状态，返回该状态的目标ID
+    // 否则返回需求的目标ID
     FetchTargetId getSupplyingTargetId()
     {
         if (supplyFetchTargetState.valid) {
+            // 如果当前有有效的供应状态，返回其目标ID
             return supplyFetchTargetState.targetId;
         } else {
+            // 否则返回需求的目标ID（新的fetch目标）
             return fetchDemandTargetId;
         }
     }
 
+    // 获取当前供应的流ID，fsqid
+    // 按优先级依次检查：1.当前供应状态 2.FTQ队列头 3.入队状态
     FetchStreamId getSupplyingStreamId()
     {
         if (supplyFetchTargetState.valid) {
+            // 1. 如果有有效的供应状态，返回其对应条目的流ID, 最常见
             return supplyFetchTargetState.entry->fsqID;
         } else if (!ftq.empty()) {
+            // 2. 如果FTQ非空，返回队列头部条目的流ID
             return ftq.begin()->second.fsqID;
         } else {
+            // 3. 如果以上都没有，返回入队状态中的流ID
             return fetchTargetEnqState.streamId;
         }
     }

@@ -6,6 +6,7 @@
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/pred/ftb/stream_common.hh"
+#include "debug/DecoupleBP.hh"
 #include "debug/DecoupleBPVerbose.hh"
 #include "debug/DecoupleBPHist.hh"
 #include "debug/Override.hh"
@@ -346,7 +347,7 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
 
         simout.close(out_handle);
 
-        // dump fsq entry committed insts
+        // dump fsq entry committed insts 记录fsq entry中提交的指令数
         out_handle = simout.create("fsqEntryCommittedInstNumDistsByPhase.txt", false, true);
         *out_handle->stream() << "phaseID";
         for (int i = 0; i <= 16; i++) {
@@ -598,19 +599,19 @@ DecoupledBPUWithFTB::BpTrace::BpTrace(FetchStream &stream, const DynInstPtr &ins
 void
 DecoupledBPUWithFTB::tick()
 {
-    dbpFtbStats.fsqEntryDist.sample(fetchStreamQueue.size(), 1);
-    if (streamQueueFull()) {
+    dbpFtbStats.fsqEntryDist.sample(fetchStreamQueue.size(), 1); // 统计FSQ entry数量
+    if (streamQueueFull()) { // 如果FSQ满了，则统计FSQ满的次数
         dbpFtbStats.fsqFullCannotEnq++;
     }
 
     if (!receivedPred && numOverrideBubbles == 0 && sentPCHist) { // 没有收到预测结果，没有气泡，并且发送了PC历史
-        generateFinalPredAndCreateBubbles();  // 生成最终预测结果，产生气泡
+        generateFinalPredAndCreateBubbles();  // 用上一拍预测结果生成最终预测结果finalPred，产生气泡
     }
     if (!squashing) {
         DPRINTF(DecoupleBP, "DecoupledBPUWithFTB::tick()\n");
         DPRINTF(Override, "DecoupledBPUWithFTB::tick()\n");
-        tryEnqFetchTarget();    // 尝试入队到FetchTarget中, 从FSQ生成（多个）FTQ条目存入FTQ
-        tryEnqFetchStream();    // 尝试入队到FetchStream中，这里会分支预测，并把预测结果生成FSQentry存入FSQ
+        tryEnqFetchTarget();    // 尝试入队到FetchTarget中, 用上一拍FSQ entry 生成一个FTQ条目存入FTQ
+        tryEnqFetchStream();    // 用finalPred结果生成FSQentry存入FSQ, 本质上调用makeNewPrediction
     } else {
         receivedPred = false;
         DPRINTF(DecoupleBP, "Squashing, skip this cycle, receivedPred is %d.\n", receivedPred);
@@ -636,7 +637,7 @@ DecoupledBPUWithFTB::tick()
             }
             for (int i = 0; i < numComponents; i++) {
                 components[i]->putPCHistory(s0PC, s0History, predsOfEachStage);  
-                // 调用各个组件的putPCHistory方法分支预测， 预测结果记录在predsOfEachStage中
+                // 调用各个组件的putPCHistory方法分支预测， 预测结果记录在predsOfEachStage中, 后面的同级预测器可能会覆盖s1/s2的predsOfEachStage内容
             }
         } else {
             DPRINTF(LoopBuffer, "Do not query bpu when loop buffer is active\n");
@@ -657,7 +658,7 @@ DecoupledBPUWithFTB::tick()
 
     DPRINTF(Override, "after putPCHistory\n");
     for (int i = 0; i < numStages; i++) {
-        printFullFTBPrediction(predsOfEachStage[i]);
+        printFullFTBPrediction(i, predsOfEachStage[i]);
     }
     
     if (streamQueueFull()) {
@@ -676,13 +677,13 @@ DecoupledBPUWithFTB::generateFinalPredAndCreateBubbles()
     DPRINTF(Override, "In generateFinalPredAndCreateBubbles().\n");
 
     if (!enableLoopBuffer || (enableLoopBuffer && !lb.isActive())) {
-        // predsOfEachStage should be ready now
+        // predsOfEachStage should be ready now, 上一拍tick() components[i]->putPCHistory(s0PC, s0History, predsOfEachStage);  写入的predsOfEachStage
         for (int i = 0; i < numStages; i++) {
-            printFullFTBPrediction(predsOfEachStage[i]);
+            printFullFTBPrediction(i, predsOfEachStage[i]);
         }
         // choose the most accurate prediction， 选择各级最准确的预测（最后一级）
         FullFTBPrediction *chosen = &predsOfEachStage[0];
-        // 从最后一级开始往前找，选择第一个有效的预测，只看valid吗，会出现uftb, ftb 同时valid吗？
+        // 从最后一级开始往前找，选择第一个有效的预测chosen，只看valid吗，会出现uftb, ftb 同时valid吗？
         for (int i = (int) numStages - 1; i >= 0; i--) {
             if (predsOfEachStage[i].valid) {
                 chosen = &predsOfEachStage[i];
@@ -693,17 +694,17 @@ DecoupledBPUWithFTB::generateFinalPredAndCreateBubbles()
         finalPred = *chosen;
         // calculate bubbles
         unsigned first_hit_stage = 0; // 找到第一个预测命中的级别
-        while (first_hit_stage < numStages-1) {
+        while (first_hit_stage < numStages-1) { // 从前往后找，第一个和chosen匹配的级别，作为有效预测
             if (predsOfEachStage[first_hit_stage].match(*chosen)) {
                 break;
             }
             first_hit_stage++;
         }
         // generate bubbles
-        numOverrideBubbles = first_hit_stage;
+        numOverrideBubbles = first_hit_stage;   // 泡泡数和最终预测来源
         // assign pred source
         finalPred.predSource = first_hit_stage;
-        receivedPred = true;
+        receivedPred = true;    // 收到预测结果，用于跳过下一拍tick()
 
         finalPred.predCycle = curCycle();
 
@@ -728,9 +729,9 @@ DecoupledBPUWithFTB::generateFinalPredAndCreateBubbles()
             }
         }
 
-        printFullFTBPrediction(*chosen);
+        printFullFTBPrediction(first_hit_stage, *chosen);
         dbpFtbStats.predsOfEachStage[first_hit_stage]++;
-    } else {
+    } else {    // 循环缓冲区激活，不生成最终预测, 不会进入这里吧
         numOverrideBubbles = 0;
         receivedPred = true;
         DPRINTF(LoopBuffer, "Do not generate final pred when loop buffer is active\n");
@@ -823,27 +824,27 @@ DecoupledBPUWithFTB::decoupledPredict(const StaticInstPtr &inst,
         DPRINTF(DecoupleBP,
                 "Predicted pc: %#lx, upc: %#lx, npc(meaningless): %#lx, instSeqNum: %d\n",
                 target->instAddr(), rtarget.upc(), rtarget.npc(), seqNum);
-        set(pc, *target);
+        set(pc, *target); // 更新pc = target = rtarget = new target
     } else { // 如果预测not taken,顺序执行下一条指令
-        inst->advancePC(*target);
-        if (target->instAddr() >= end) {
+        inst->advancePC(*target); // target = pc += 4 or 2, 根据inst 自己指令长度来增加全局pc
+        if (target->instAddr() >= end) {    // 如果当前指令地址大于等于基本块结束地址，说明已经运行到基本块结束
             run_out_of_this_entry = true;
         }
     }
         DPRINTF(DecoupleBP, "Predict it %staken to %#lx\n", taken ? "" : "not ",
                 target->instAddr());
 
-    if (run_out_of_this_entry) { // 当前FTQ条目使用完毕,需要出队
+    if (run_out_of_this_entry) { // 当前FTQ条目使用完毕,需要把这个entry从ftq出队
         // dequeue the entry
         const auto fsqId = target_to_fetch.fsqID;
         DPRINTF(DecoupleBP, "running out of ftq entry %lu with %d insts\n",
                 fetchTargetQueue.getSupplyingTargetId(), currentFtqEntryInstNum);
         fetchTargetQueue.finishCurrentFetchTarget();  // 出队，当前供应结束
-        // record inst fetched in fsq entry
-        auto it = fetchStreamQueue.find(fsqId);
+        // record inst fetched in fsq entry 记录当前fsq entry的指令数
+        auto it = fetchStreamQueue.find(fsqId); // 找到fsqId对应的fsq entry
         assert(it != fetchStreamQueue.end());
-        it->second.fetchInstNum = currentFtqEntryInstNum;
-        currentFtqEntryInstNum = 0;
+        it->second.fetchInstNum = currentFtqEntryInstNum; // 记录当前fsq entry供应的指令数
+        currentFtqEntryInstNum = 0; // 清零
     }
 
     return std::make_pair(taken, run_out_of_this_entry);
@@ -894,7 +895,7 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
 
 
     // recover pc
-    s0PC = real_target;
+    s0PC = real_target; // 恢复PC, 恢复到squash的正确PC，之后拿去预测
 
 
     auto squashSrc = SQUASH_SRC_COMMIT;
@@ -1291,7 +1292,7 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
         return;
     auto it = fetchStreamQueue.begin(); // 查找fsq内容，找到后删除这一项，commit释放fsq/ftq内容
     defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
-    while (it != fetchStreamQueue.end() && stream_id >= it->first) {    // 遍历所有小于stream_id的项，都要更新
+    while (it != fetchStreamQueue.end() && stream_id >= it->first) {    // 遍历所有小于stream_id/DoneFsqId的项，删除对应的fsq entry
         auto &stream = it->second;
         // dequeue
         DPRINTF(DecoupleBP, "dequeueing stream id: %lu, entry below:\n",
@@ -1317,17 +1318,17 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
                 stream.exeBranchInfo.pc, stream.exeBranchInfo.target,
                 stream.predBranchInfo.pc, stream.predBranchInfo.target);
         // 输出预测正确or错误, 预测br地址，target; 实际br地址，target
-        if (stream.isHit && !stream.falseHit) {
+        if (stream.isHit && !stream.falseHit) { // 是有效预测，且不是假命中
             dbpFtbStats.ftbHit++;
-        } else {    // 预测错误
+        } else {   // 不是有效预测， ftbMiss等情况
             if (stream.exeTaken) { // 实际跳转, 预测NT
                 dbpFtbStats.ftbMiss++;  // 还可以输出预测tick, predTick!
                 DPRINTF(FTB, "FTB miss detected when update, stream start %#lx, predTick %lu, printing branch info:\n", stream.startPC, stream.predTick);
-                auto &slot = stream.exeBranchInfo;
+                auto &slot = stream.exeBranchInfo;  // 实际跳转的branch info
                 DPRINTF(FTB, "    pc:%#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d\n",
                 slot.pc, slot.size, slot.target, slot.isCond, slot.isIndirect, slot.isCall, slot.isReturn);
                 // try to find branch indentified by exeBranchInfo in commitMispredictions 尝试根据commitMispredictions的exeBranchInfo找到branch
-                const auto misp_it = stream.commitMispredictions.find(slot.pc);
+                const auto misp_it = stream.commitMispredictions.find(slot.pc); // 找到slot.pc是否在commitMispredictions中
                 bool found = misp_it != stream.commitMispredictions.end();  // 找到slot.pc是否在commitMispredictions中
                 DPRINTF(DBPFTBStats, "fsqID: %d, inst causing ftb miss: %#lx, found in commitMispredictions: %d\n", it->first, slot.pc, found);
                 if (!found) {
@@ -1348,7 +1349,7 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
                             dbpFtbStats.ftbMissWithNoMispreds++;
                         }
                     }
-                } else {
+                } else { // 找到slot.pc在commitMispredictions中
                     bool miss = misp_it->second;
                     if (!miss) {
                         dbpFtbStats.ftbMissInstNotMispredicted++;   // 导致ftb miss, 但预测正确？只是ftb装不下了吗？
@@ -1357,7 +1358,7 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
                         dbpFtbStats.ftbMissInstMispredicted++;
                     }
                 }
-            } else {  // 实际不跳转, 预测跳转?为何no harm?
+            } else {  // 实际不跳转, 无效预测，不影响
                 dbpFtbStats.ftbMissWithNoHarm++;
             }
             if (stream.falseHit) {
@@ -1375,7 +1376,7 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
             }
         }
 
-        for (auto &kv : stream.squashInfos) {
+        for (auto &kv : stream.squashInfos) { // 遍历所有squashInfos
             auto &pc = kv.first;
             auto &squash_tuple = kv.second;
             auto &squashType = std::get<0>(squash_tuple);
@@ -1483,16 +1484,18 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
             }
         }
 
-        if (stream.isHit || stream.exeTaken) {  // 命中或实际跳转，都要更新ftb
+        if (stream.isHit || stream.exeTaken) {  // 命中或实际跳转了，都要更新每个组件的内容
             // update latency stats
             auto updateLat = curCycle() - stream.predCycle; // 当前时间-预测时间，为更新latency，为何都 300多拍？
             dbpFtbStats.updateLatencyDist.sample(updateLat, 1); // 更新latency
 
             // generate new ftb entry first 先生成新的ftb项
             // each component will use info of this entry to update 每个组件使用这个项更新自己的内容
+            DPRINTF(DecoupleBP, "generate new ftb entry\n");
             ftb->getAndSetNewFTBEntry(stream);  // 生成新的ftb项
+            DPRINTF(DecoupleBP, "update each component\n");
             for (int i = 0; i < numComponents; ++i) {
-                components[i]->update(stream);  // 每个组件更新自己内容
+                components[i]->update(stream);  // 每个组件更新自己内容!!!!
             }
             // ftb entry stats
             auto it = totalFTBEntries.find(stream.startPC);
@@ -1593,14 +1596,14 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
                 }
             }
         }
-        dbpFtbStats.commitFsqEntryHasInsts.sample(stream.commitInstNum, 1);
+        dbpFtbStats.commitFsqEntryHasInsts.sample(stream.commitInstNum, 1); // 统计fsq 中提交的指令数commitInstNum
         if (stream.commitInstNum >= 0 && stream.commitInstNum <= 16) {
-            commitFsqEntryHasInstsVector[stream.commitInstNum]++;
+            commitFsqEntryHasInstsVector[stream.commitInstNum]++;   // 统计fsq 中提交的指令数commitInstNum
             if (stream.commitInstNum == 1 && stream.exeBranchInfo.isUncond()) {
                 dbpFtbStats.commitFsqEntryOnlyHasOneJump++;
             }
         }
-        dbpFtbStats.commitFsqEntryFetchedInsts.sample(stream.fetchInstNum, 1);
+        dbpFtbStats.commitFsqEntryFetchedInsts.sample(stream.fetchInstNum, 1); // 统计fsq 中fetch的指令数fetchInstNum
         if (stream.fetchInstNum >= 0 && stream.fetchInstNum <= 16) {
             commitFsqEntryFetchedInstsVector[stream.fetchInstNum]++;
         }
@@ -1660,9 +1663,9 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
             lastCommittedStream = stream;
         }
 
-        it = fetchStreamQueue.erase(it);
+        it = fetchStreamQueue.erase(it); // 从FSQ中删除当前fsq entry!!!
 
-        dbpFtbStats.fsqEntryCommitted++;
+        dbpFtbStats.fsqEntryCommitted++; // 统计fsq entry中提交的entry数
     }
     DPRINTF(DecoupleBP, "after commit stream, fetchStreamQueue size: %lu\n",
             fetchStreamQueue.size());
@@ -1834,21 +1837,21 @@ DecoupledBPUWithFTB::commitBranch(const DynInstPtr &inst, bool miss)
         }
     }
     for (auto component : components) {
-        component->commitBranch(entry, inst);
+        component->commitBranch(entry, inst);   // 调用各个预测器commitBranch方法，统计计数！
     }
 }
 
 void
 DecoupledBPUWithFTB::notifyInstCommit(const DynInstPtr &inst)
 {
-    auto it = fetchStreamQueue.find(inst->fsqId);
+    auto it = fetchStreamQueue.find(inst->fsqId); // 找到指令对应的FSQ entry
     assert(it != fetchStreamQueue.end());
-    it->second.commitInstNum++;
-    numInstCommitted++;
+    it->second.commitInstNum++; // 增加FSQ entry的commitInstNum计数
+    numInstCommitted++; // 增加总的commitInstNum计数
     DPRINTF(Profiling, "notifyInstCommit, inst=%s, commitInstNum=%d\n",
             inst->staticInst->disassemble(inst->pcState().instAddr()),
             it->second.commitInstNum);
-    if (numInstCommitted % phaseSizeByInst == 0) {
+    if (numInstCommitted % phaseSizeByInst == 0) { // 每10万条inst 统计一次
         DPRINTF(Profiling, "numInstCommitted %d\n", numInstCommitted);
         int currentPhaseID = numInstCommitted / phaseSizeByInst;
         // dump current phase only once
@@ -1914,7 +1917,7 @@ DecoupledBPUWithFTB::notifyInstCommit(const DynInstPtr &inst)
         }
     }
 
-    if (numInstCommitted % subPhaseSizeByInst()) {
+    if (numInstCommitted % subPhaseSizeByInst() == 0) { // 每1万条inst 统计一次
         DPRINTF(Profiling, "numInstCommitted %d\n", numInstCommitted);
         int currentSubPhaseID = numInstCommitted / subPhaseSizeByInst();
         if (subPhaseIdToDump <= currentSubPhaseID) {
@@ -1991,14 +1994,24 @@ DecoupledBPUWithFTB::dumpFsq(const char *when)
     }
 }
 
-// this funtion use finalPred to enq fsq(ftq) and update s0PC 使用finalPred预测结果入队FSQ，更新s0PC
+// 该函数使用finalPred预测结果入队FSQ(Fetch Stream Queue)并更新s0PC
+// 主要功能:
+// 1. 检查预测结果是否有效
+// 2. 检查是否需要等待气泡
+// 3. 使用预测结果创建新的FSQ entry并入队
+// 4. 重置预测状态,等待下一次预测
 void
 DecoupledBPUWithFTB::tryEnqFetchStream()
 {
+    // 在函数退出时自动重置debugFlagOn标志
     defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    
+    // 如果当前PC是观察点,打开debug标志
     if (s0PC == ObservingPC) {
         debugFlagOn = true;
     }
+
+    // 检查是否收到预测结果
     if (!receivedPred) {
         DPRINTF(DecoupleBP, "No received prediction, cannot enq fsq\n");
         DPRINTF(Override, "In tryEnqFetchStream(), received is false.\n");
@@ -2006,28 +2019,41 @@ DecoupledBPUWithFTB::tryEnqFetchStream()
     } else {
         DPRINTF(Override, "In tryEnqFetchStream(), received is true.\n");
     }
+
+    // 检查当前PC是否有效
     if (s0PC == MaxAddr) {
         DPRINTF(DecoupleBP, "s0PC %#lx is insane, cannot make prediction\n", s0PC);
         return;
     }
-    // prediction valid, but not ready to enq because of bubbles 预测有效，但由于bubbles未准备好enq
+
+    // 如果还有气泡需要等待,则返回
+    // 气泡是由覆盖预测造成的延迟
     if (numOverrideBubbles > 0) {
         DPRINTF(DecoupleBP, "Waiting for bubble caused by overriding, bubbles rest: %u\n", numOverrideBubbles);
         DPRINTF(Override, "Waiting for bubble caused by overriding, bubbles rest: %u\n", numOverrideBubbles);
         return;
     }
+
+    // 确保FSQ未满
     assert(!streamQueueFull());
+
+    // 创建新的预测流并入队FSQ
     if (true) {
         bool should_create_new_stream = true;
-        makeNewPrediction(should_create_new_stream);    // 创建新的预测，存入FSQ中
+        // 使用finalPred创建新的FSQ entry并入队
+        makeNewPrediction(should_create_new_stream);    // 用finalPred生成FSQ entry
     } else {
         DPRINTF(DecoupleBP || debugFlagOn, "FSQ is full: %lu\n",
                 fetchStreamQueue.size());
     }
+
+    // 重置所有阶段的预测状态
     for (int i = 0; i < numStages; i++) {
-        predsOfEachStage[i].valid = false;
+        predsOfEachStage[i].valid = false;  // 清空预测,等待下次tick()写入true
     }
-    receivedPred = false;
+
+    // 重置预测接收标志,等待下次tick()写入true 
+    receivedPred = false;   
     DPRINTF(Override, "In tryFetchEnqStream(), receivedPred reset to false.\n");
     DPRINTF(DecoupleBP || debugFlagOn, "fsqId=%lu\n", fsqId);
 }
@@ -2162,8 +2188,8 @@ DecoupledBPUWithFTB::histShiftIn(int shamt, bool taken, boost::dynamic_bitset<> 
     if (shamt == 0) {
         return;
     }
-    history <<= shamt;
-    history[0] = taken;
+    history <<= shamt;  // 历史左移shamt位
+    history[0] = taken; // 更新最后一位为是否taken
 }
 
 void
@@ -2263,7 +2289,7 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
     std::vector<bool> fixNotExits(numBr);
     std::vector<LoopRedirectInfo> unseenLpRedirectInfos;
     if (!enableLoopBuffer || (enableLoopBuffer && !lb.isActive())) { // 如果未激活loop buffer，用常规的BP
-        entry.fromLoopBuffer = false;
+        entry.fromLoopBuffer = false;   // 接下来都是初始化新的fsq entry
         entry.isDouble = false;
         entry.isExit = false;
 
@@ -2330,19 +2356,19 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
 
         // update (folded) histories for components
         for (int i = 0; i < numComponents; i++) {
-            components[i]->specUpdateHist(s0History, finalPred); // 每个组件推测更新历史， 根据finalPred更新组件状态
-            entry.predMetas[i] = components[i]->getPredictionMeta(); // 获取预测元数据
+            components[i]->specUpdateHist(s0History, finalPred); // 每个组件推测更新历史， 根据finalPred更新组件状态，只有uRAS推测更新，其他都是commit才更新
+            entry.predMetas[i] = components[i]->getPredictionMeta(); // 获取预测元数据，也记录在fsq entry中
         }
-        // update ghr
+        // update ghr 更新全局分支历史
         int shamt;
-        std::tie(shamt, taken) = finalPred.getHistInfo();
-        histShiftIn(shamt, taken, s0History);
+        std::tie(shamt, taken) = finalPred.getHistInfo();  // 获取shamt和taken
+        histShiftIn(shamt, taken, s0History);   // 更新全局分支历史
 
-        historyManager.addSpeculativeHist(entry.startPC, shamt, taken, entry.predBranchInfo, fsqId);
-        tage->checkFoldedHist(s0History, "speculative update");
+        historyManager.addSpeculativeHist(entry.startPC, shamt, taken, entry.predBranchInfo, fsqId);  // 将推测更新信息添加到历史管理器中
+        tage->checkFoldedHist(s0History, "speculative update");  // 检查折叠历史
 
         
-        entry.setDefaultResolve();
+        entry.setDefaultResolve();  // 设置exeBranchInfo = predBranchInfo, exeTaken = predTaken
 
 
     } else {    // 使用loop buffer
@@ -2433,7 +2459,7 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
     DPRINTF(LoopBuffer, "now stream before loop:\n");
     printStream(lb.streamBeforeLoop);
 
-    auto [insert_it, inserted] = fetchStreamQueue.emplace(fsqId, entry); // 将entry插入FSQ中
+    auto [insert_it, inserted] = fetchStreamQueue.emplace(fsqId, entry); // 将新生成的fsq_entry插入FSQ中!!!
     assert(inserted);
 
     dumpFsq("after insert new stream");
@@ -2442,7 +2468,7 @@ DecoupledBPUWithFTB::makeNewPrediction(bool create_new_stream)
     fsqId++;
     printStream(entry);
 
-    dbpFtbStats.fsqEntryEnqueued++;
+    dbpFtbStats.fsqEntryEnqueued++; // 统计fsq入队次数
 }
 
 void

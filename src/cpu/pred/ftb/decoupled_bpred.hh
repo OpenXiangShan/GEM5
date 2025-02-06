@@ -74,7 +74,7 @@ class HistoryManager
     HistoryManager(unsigned _maxShamt) : maxShamt(_maxShamt) {}
 
   private:
-    std::list<HistoryEntry> speculativeHists;
+    std::list<HistoryEntry> speculativeHists;  // 多个推测历史， 推测更新后添加一项当前推测历史
 
     unsigned IdealHistLen{246};
 
@@ -90,7 +90,7 @@ class HistoryManager
         Addr retAddr = bi.getEnd();
 
         speculativeHists.emplace_back(addr, shamt, cond_taken, is_call,
-            is_return, retAddr, stream_id);
+            is_return, retAddr, stream_id);  // 添加这次的推测历史
 
         const auto &it = speculativeHists.back();
         printEntry("Add", it);
@@ -255,17 +255,17 @@ class DecoupledBPUWithFTB : public BPredUnit
 
 
 
-    std::vector<TimedBaseFTBPredictor*> components{};   // 所有组件的vector
+    std::vector<TimedBaseFTBPredictor*> components{};   // 所有预测器（5个）组件的vector
     std::vector<FullFTBPrediction> predsOfEachStage{};  // 每个阶段的预测结果
     unsigned numComponents{};
     unsigned numStages{};
 
     bool sentPCHist{false};
-    bool receivedPred{false};   // 是否收到预测结果
+    bool receivedPred{false};   // 是否收到预测结果，generateFinalPredAndCreateBubbles()中写入true, tryEnqFetchStream()中写入false
 
-    Addr s0PC;  // 当前PC
+    Addr s0PC;  // 当前预测PC
     // Addr s0StreamStartPC;
-    boost::dynamic_bitset<> s0History; // 当前PC的历史,not used, 用每个组件自己的meta代替，用于恢复
+    boost::dynamic_bitset<> s0History; // 全局分支历史，970位， 推测更新
     FullFTBPrediction finalPred;  // 最终预测结果， 从predsOfEachStage中选择最准确的
 
     boost::dynamic_bitset<> commitHistory;
@@ -308,12 +308,12 @@ class DecoupledBPUWithFTB : public BPredUnit
     void printStream(const FetchStream &e)
     {
         if (!e.resolved) {
-            DPRINTFR(DecoupleBP, "FSQ Predicted stream: ");
+            DPRINTFR(DecoupleBPProbe, "FSQ Predicted stream: ");
         } else {
-            DPRINTFR(DecoupleBP, "FSQ Resolved stream: ");
+            DPRINTFR(DecoupleBPProbe, "FSQ Resolved stream: ");
         }
         // TODO:fix this
-        DPRINTFR(DecoupleBP,
+        DPRINTFR(DecoupleBPProbe,
                  "%#lx-[%#lx, %#lx) --> %#lx, taken: %i\n",
                  e.startPC, e.getBranchInfo().pc, e.getEndPC(),
                  e.getTakenTarget(), e.getTaken());
@@ -365,16 +365,16 @@ class DecoupledBPUWithFTB : public BPredUnit
         }
     }
 
-    void printFullFTBPrediction(const FullFTBPrediction &pred) {
-        DPRINTF(DecoupleBP, "dumping FullFTBPrediction\n");
-        DPRINTF(DecoupleBP, "bbStart: %#lx, ftbEntry:\n", pred.bbStart);
+    void printFullFTBPrediction(int i, const FullFTBPrediction &pred) {
+        DPRINTF(DecoupleBPProbe, "dumping FullFTBPrediction_stage%d, valid: %d\n", i, pred.valid);
+        DPRINTF(DecoupleBPProbe, "bbStart: %#lx, ftbEntry:\n", pred.bbStart);
         printFTBEntry(pred.ftbEntry);
-        DPRINTF(DecoupleBP, "condTakens: ");
+        DPRINTF(DecoupleBPProbe, "condTakens: ");
         for (auto taken : pred.condTakens) {
-            DPRINTFR(DecoupleBP, "%d ", taken);
+            DPRINTFR(DecoupleBPProbe, "%d ", taken);
         }
-        DPRINTFR(DecoupleBP, "\n");
-        DPRINTF(DecoupleBP, "indirectTarget: %#lx, returnTarget: %#lx\n",
+        DPRINTFR(DecoupleBPProbe, "\n");
+        DPRINTF(DecoupleBPProbe, "indirectTarget: %#lx, returnTarget: %#lx\n",
             pred.indirectTarget, pred.returnTarget);
     }
 
@@ -586,9 +586,9 @@ class DecoupledBPUWithFTB : public BPredUnit
     // Not a control. But stream is actually disturbed
     void trapSquash(unsigned ftq_id, unsigned fsq_id, Addr last_committed_pc,
                     const PCStateBase &inst_pc, ThreadID tid, const unsigned &currentLoopIter);
-
+    // commit stream, 删除fsqId对应的fsq entry，统计数据，当ftbHit or exeTaken时候，调用每个组件update()
     void update(unsigned fsqID, ThreadID tid);
-
+    // 删除大于squash_stream_id的所有fsq entry, 都在错误路径上
     void squashStreamAfter(unsigned squash_stream_id);
 
     bool fetchTargetAvailable()
@@ -745,9 +745,9 @@ class DecoupledBPUWithFTB : public BPredUnit
     void addFtqNotValid() {
         dbpFtbStats.ftqNotValid++;
     }
-
+    // 提交分支指令，统计计数！先统计整体的，再统计各个预测器的
     void commitBranch(const DynInstPtr &inst, bool miss);
-
+    // 通知branch predictor指令已提交一条普通指令, 每10万条inst 统计一次
     void notifyInstCommit(const DynInstPtr &inst);
 
     std::map<Addr, unsigned> topMispredIndirect;

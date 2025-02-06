@@ -292,6 +292,9 @@ if __name__ == '__m5_main__':
     # num_cpus = 1 在System.py中默认定义，参数num-cpus在common/Options.py中定义
     test_sys = build_test_system(args.num_cpus, args)  # 构建测试系统,system在src/sim/System.py中定义
 
+    # test_sys.cpu[0].branchPred.numBr = 4
+    # test_sys.cpu[0].branchPred.enableSC = False
+
     root = Root(full_system=True, system=test_sys)  # 创建根对象，在src/sim/Root.py中定义
 
     Simulation.run_vanilla(args, root, test_sys, FutureClass)

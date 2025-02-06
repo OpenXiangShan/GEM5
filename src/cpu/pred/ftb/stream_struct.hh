@@ -273,9 +273,9 @@ struct FetchStream
 
     // predicted stream end pc (fall through pc)
     Addr predEndPC;  // 预测的流结束pc（fall through pc）
-    BranchInfo predBranchInfo;  // 预测的流分支信息,一条分支？
+    BranchInfo predBranchInfo;  // 预测的流分支信息,一条分支！
     // record predicted FTB entry 记录预测的FTB条目
-    bool isHit;  // 是否命中
+    bool isHit;  // 是有效预测， finalPred.valid有效
     bool falseHit;  // 是否假命中？
     FTBEntry predFTBEntry;  // 预测的FTB条目
 
@@ -287,13 +287,13 @@ struct FetchStream
     // Addr exeEndPC;
     BranchInfo exeBranchInfo;  // 实际跳转的分支信息
 
-    FTBEntry updateFTBEntry;   // 新的，要写入FTB的FTB条目
+    FTBEntry updateFTBEntry;   // 新的，要写入FTB的FTB条目, ftb->update()写入
     bool updateIsOldEntry;  // 是否更新为旧的FTB条目
-    bool resolved;  // 是否解决
+    bool resolved;  // squash后变为true, if resolved, 使用exeBranchInfo+exeTaken
 
-    int squashType;  // squash类型
+    int squashType;  // squash类型， ctrl(分支redirect) or trap or other
     Addr squashPC;  // squash的pc
-    int squashSource;  // squash来源
+    int squashSource;  // squash来源, decode or commit
     unsigned predSource;  // 预测来源
 
     // for loop buffer
@@ -307,7 +307,7 @@ struct FetchStream
     int currentSentBlock;
 
     // prediction metas
-    std::vector<std::shared_ptr<void>> predMetas;  // 预测元数据， 每个组件一个
+    std::vector<std::shared_ptr<void>> predMetas;  // 预测元数据， 每个组件内容不同，记录预测时候信息，向下流水直到commit, 用于commit更新预测器内容
 
     // for loop
     std::vector<LoopRedirectInfo> loopRedirectInfos;
@@ -316,11 +316,11 @@ struct FetchStream
 
     Tick predTick{};
     Cycles predCycle{};
-    boost::dynamic_bitset<> history;
+    boost::dynamic_bitset<> history; // 全局分支历史，970位， 推测更新
 
     // for profiling
-    int fetchInstNum;  // Fetch阶段指令数
-    int commitInstNum;  // Commit阶段指令数
+    int fetchInstNum;  // Fetch阶段ftq entry供应的指令数
+    int commitInstNum;  // Commit阶段ftq entry供应的指令数
     std::map<Addr, bool> commitMispredictions; // per committed branch 每条分支是否预测错误
     std::map<Addr, std::tuple<SquashType, SquashSource, BranchInfo>> squashInfos; // per committed inst if there is squash 每条commit指令是否squash
 
@@ -352,7 +352,7 @@ struct FetchStream
     {
     }
 
-    // the default exe result should be consistent with prediction
+    // the default exe result should be consistent with prediction 默认执行结果应该与预测一致
     void setDefaultResolve() {
         resolved = false;
         exeBranchInfo = predBranchInfo;
@@ -412,9 +412,9 @@ typedef struct FullFTBPrediction
 {
     Addr bbStart;  // 块的开始pc
     FTBEntry ftbEntry; // for FTB
-    std::vector<bool> condTakens; // for conditional branch predictors 用于条件分支预测器
+    std::vector<bool> condTakens; // for conditional branch predictors 用于条件分支预测器，两个条件分支是否taken， TAGE提供
 
-    Addr indirectTarget; // for indirect predictor
+    Addr indirectTarget; // for indirect predictor  间接跳转目标地址,ITTAGE提供
     Addr returnTarget; // for RAS， 返回地址
 
     bool valid; // hit
@@ -557,9 +557,9 @@ typedef struct FullFTBPrediction
                 DPRINTF(Override, "slot %d: condValid %d, uncondValid %d\n",
                     i, slot.condValid(), slot.uncondValid());
                 DPRINTF(Override, "condTakens.size() %d\n", condTakens.size());
-                if (slot.condValid()) {
+                if (slot.condValid()) {    // 每次有一个条件分支，shamt++
                     shamt++;
-                    if (condTakens[i]) {
+                    if (condTakens[i]) {  // 如果条件分支taken，则taken = true
                         taken = true;
                         break;
                     }
@@ -588,12 +588,12 @@ struct FtqEntry
     // When it is a taken branch, takenPC is the control (starting) PC
     // When it is yet missing, takenPC is the ``known'' PC,
     // decoupledPredict cannot goes beyond takenPC and should be blocked
-    // when current PC == takenPC
-    Addr takenPC;
+    // when current PC == takenPC  预测块不能超过takenPC
+    Addr takenPC;  // 当是taken分支时，takenPC是控制PC, 当是未命中时，takenPC=0
 
     bool taken;
     Addr target;  // TODO: use PCState
-    FetchStreamId fsqID;  // fsq的id
+    FetchStreamId fsqID;  // fsq的id, 用于ftq 索引到对应的Fsq!
 
     // for loop buffer
     bool inLoop;

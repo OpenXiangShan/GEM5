@@ -180,8 +180,8 @@ class DefaultFTB : public TimedBaseFTBPredictor
         DPRINTF(FTB, "FTB entry: valid %d, tag %#lx, fallThruAddr:%#lx, tick:%lu, slots:\n",
             e.valid, e.tag, e.fallThruAddr, tick);
         for (auto &slot : e.slots) {
-            DPRINTF(FTB, "    pc:%#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d, always_taken:%d\n",
-                slot.pc, slot.size, slot.target, slot.isCond, slot.isIndirect, slot.isCall, slot.isReturn, slot.alwaysTaken);
+            DPRINTF(FTB, "    pc:%#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d, always_taken:%d, valid:%d, ctr:%d\n",
+                slot.pc, slot.size, slot.target, slot.isCond, slot.isIndirect, slot.isCall, slot.isReturn, slot.alwaysTaken, slot.valid, slot.ctr);
         }
     }
 

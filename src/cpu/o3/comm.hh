@@ -284,7 +284,7 @@ struct TimeStruct
         /// retired or squashed sequence number.
         InstSeqNum doneSeqNum; // *F, I
 
-        uint64_t doneFsqId; // F
+        uint64_t doneFsqId; // F， 指令对应的fsq id - 1; 等当前fsq指令都提交才更新这个fsq
         uint64_t squashedStreamId; // F
         uint64_t squashedTargetId; // F
         unsigned squashedLoopIter; // F

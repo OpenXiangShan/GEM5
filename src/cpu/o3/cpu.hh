@@ -488,7 +488,7 @@ class CPU : public BaseCPU
     };
 
     /** The main time buffer to do backwards communication. */
-    TimeBuffer<TimeStruct> timeBuffer;  // 5个流水级传递的信息，内容为TimeStruct
+    TimeBuffer<TimeStruct> timeBuffer;  // 5个流水级传递的信息，内容为TimeStruct, 包含decodeComm, renameComm, iewComm, commitComm
     // 这里更多传递的是状态信息，而不是指令信息
 
     /** The fetch stage's instruction queue. */

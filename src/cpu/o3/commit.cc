@@ -67,6 +67,7 @@
 #include "debug/CommitRate.hh"
 #include "debug/CommitTrace.hh"
 #include "debug/Counters.hh"
+#include "debug/DecoupleBP.hh"
 #include "debug/Diff.hh"
 #include "debug/Drain.hh"
 #include "debug/ExecFaulting.hh"
@@ -764,7 +765,7 @@ Commit::tick()
     while (threads != end) {
         ThreadID tid = *threads++;
 
-        if (!rob->isEmpty(tid) && rob->readHeadInst(tid)->readyToCommit()) {
+        if (!rob->isEmpty(tid) && rob->readHeadInst(tid)->readyToCommit()) { // 如果ROB不为空且最年轻指令可以提交
             // The ROB has more instructions it can commit. Its next status
             // will be active.
             _nextStatus = Active;
@@ -775,7 +776,7 @@ Commit::tick()
                     " ROB and ready to commit\n",
                     tid, inst->seqNum, inst->pcState());
 
-        } else if (!rob->isEmpty(tid)) {
+        } else if (!rob->isEmpty(tid)) { // 如果ROB不为空 且最年轻指令不能提交not ready
             const DynInstPtr &inst = rob->readHeadInst(tid);
 
             ppCommitStall->notify(inst);
@@ -1151,7 +1152,7 @@ Commit::commitInsts()
 
             // Record that the number of ROB entries has changed.
             changedROBNumEntries[tid] = true;
-        } else {
+        } else { // 如果指令未被squash
             set(pc[tid], head_inst->pcState());
 
             // Try to commit the head instruction.  尝试提交rob头指令
@@ -1176,7 +1177,7 @@ Commit::commitInsts()
 
                 if (bp->isFTB()) {      // 如果分支预测是FTB,则更新FTB
                     auto dbftb = dynamic_cast<branch_prediction::ftb_pred::DecoupledBPUWithFTB*>(bp);
-                    bool miss = head_inst->mispredicted();
+                    bool miss = head_inst->mispredicted(); // 检查指令是否预测错误
                     if (head_inst->isReturn()) {
                         DPRINTF(FTBRAS, "commit inst PC %x miss %d real target %x pred target %x\n",
                                 head_inst->pcState().instAddr(), miss,
@@ -1184,13 +1185,13 @@ Commit::commitInsts()
                     }
 
                     // FIXME: ignore mret/sret/uret in correspond with RTL
-                    if (!head_inst->isNonSpeculative() && head_inst->isControl()) {
-                        dbftb->commitBranch(head_inst, miss);
-                        if (!head_inst->isReturn() && head_inst->isIndirectCtrl() && miss) {
-                            misPredIndirect[head_inst->pcState().instAddr()]++;
+                    if (!head_inst->isNonSpeculative() && head_inst->isControl()) { // 如果指令不是非投机指令（正确路径上）且是控制指令
+                        dbftb->commitBranch(head_inst, miss); // 提交分支指令，统计计数！先统计整体的，再统计各个预测器的
+                        if (!head_inst->isReturn() && head_inst->isIndirectCtrl() && miss) { // 如果指令不是返回指令且是间接控制指令且预测错误
+                            misPredIndirect[head_inst->pcState().instAddr()]++; // 增加间接控制指令预测错误计数
                         }
                     }
-                    dbftb->notifyInstCommit(head_inst);
+                    dbftb->notifyInstCommit(head_inst); // 通知branch predictor指令已提交一条普通指令
                 }
                 if (head_inst->isUpdateVsstatusSd()) {
                     auto v = cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VIRMODE, tid);
@@ -1238,13 +1239,15 @@ Commit::commitInsts()
 
                 changedROBNumEntries[tid] = true;
 
-                // Set the doneSeqNum to the youngest committed instruction.
+                // Set the doneSeqNum to the youngest committed instruction. 设置commit完成序号为最年轻指令序号
                 toIEW->commitInfo[tid].doneSeqNum = head_inst->seqNum;
 
                 if (head_inst->getFsqId() > 1) {
                     toIEW->commitInfo[tid].doneFsqId =
-                        head_inst->getFsqId() - 1;
+                        head_inst->getFsqId() - 1;  // 指令对应的fsq id - 1; 等当前fsq指令都提交才更新这个fsq
                 }
+                DPRINTF(DecoupleBP, "commit [sn:%llu] fsqid %d, doneFsqId %d\n", head_inst->seqNum, head_inst->getFsqId(), toIEW->commitInfo[tid].doneFsqId);
+
                 committedStreamId = head_inst->getFsqId();
                 committedTargetId = head_inst->getFtqId();
                 committedLoopIter = head_inst->getLoopIteration();

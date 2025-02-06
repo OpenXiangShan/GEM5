@@ -132,7 +132,7 @@ DefaultFTB::putPCHistory(Addr startAddr,
                     DPRINTF(UFTBCount, "UFTBCount: i = %d, numBr = %d, cond taken %d, ctr: %d, hit: %d\n", 
                         i, numBr, stagePreds[s].condTakens[i], find_entry.slots[i].ctr, hit);
                 } else {
-                    stagePreds[s].condTakens[i] = false;
+                    stagePreds[s].condTakens[i] = false; // 没有槽位， 预测为不跳转
                 }
             }
         }
@@ -276,7 +276,7 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
     Addr inst_tag = getTag(startPC);
 
 
-    bool pred_hit = stream.isHit;
+    bool pred_hit = stream.isHit;  // ftb命中
 
     bool stream_taken = stream.exeTaken;  // 执行阶段分支确实跳转
     FTBEntry entry_to_write;  // 要写入的FTB条目
@@ -356,7 +356,7 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
                     incNonL0Stat(ftbStats.oldEntryWithNewUncond);
                 }
             }
-            if (!new_branch && branch_info.isIndirect && stream_taken) {
+            if (!new_branch && branch_info.isIndirect && stream_taken) { // 如果分支不是新分支且是间接跳转且执行跳转
                 auto &tailSlot = slots.back();
                 assert(tailSlot.isIndirect);
                 if (tailSlot.target != branch_info.target) {
@@ -365,17 +365,17 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
                     incNonL0Stat(ftbStats.oldEntryIndirectTargetModified);
                 }
             }
-            // modify always taken logic
+            // modify always taken logic 修改always taken逻辑(原本一直taken, 现在不taken 了)
             auto it = slots.begin();
             while (it != slots.end()) {
-                // set branches before current branch to alwaysTaken: false
-                if (*it < branch_info) {
-                    if (it->alwaysTaken) {
-                        it->alwaysTaken = false;
-                        is_old_entry = false;
+                // set branches before current branch to alwaysTaken: false 设置之前分支为always taken: false
+                if (*it < branch_info) { // 如果当前分支在分支信息之前
+                    if (it->alwaysTaken) { // 如果当前分支是always taken
+                        it->alwaysTaken = false; // 设置为不taken
+                        is_old_entry = false; // 设置为旧条目
                     }
                 }
-                // current always taken branch not taken: alwaysTaken false
+                // current always taken branch not taken: alwaysTaken false 当前always taken分支不taken: alwaysTaken false
                 else if (*it == branch_info && it->alwaysTaken && !stream_taken) {
                     is_old_entry = false;
                     it->alwaysTaken = false;
@@ -395,15 +395,15 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
 
 void
 DefaultFTB::update(const FetchStream &stream)
-{ // 用commit stream更新预测器内容
-    auto meta = std::static_pointer_cast<FTBMeta>(stream.predMetas[getComponentIdx()]);
+{ // 用commit stream更新预测器内容, 准确的！
+    auto meta = std::static_pointer_cast<FTBMeta>(stream.predMetas[getComponentIdx()]); // 获取预测时的meta
     if (meta->hit) {
         ftbStats.updateHit++;
     } else {
         ftbStats.updateMiss++;
     }
     if (!isL0()) { // L1 FTB特殊处理：如果L0命中但L1未命中，跳过更新
-        bool l0_hit_l1_miss = meta->l0_hit && !meta->hit;
+        bool l0_hit_l1_miss = meta->l0_hit && !meta->hit; // L0命中但L1未命中
         if (l0_hit_l1_miss) {
             DPRINTF(FTB, "FTB: skipping entry write because of l0 hit\n");
             incNonL0Stat(ftbStats.updateUseL0OnL1Miss);
@@ -422,18 +422,18 @@ DefaultFTB::update(const FetchStream &stream)
     bool not_found = it == ftb[ftb_idx].end();
 
     if (not_found) { // 如果未找到且表满，执行LRU替换
-        std::pop_heap(mruList[ftb_idx].begin(), mruList[ftb_idx].end(), older());
+        std::pop_heap(mruList[ftb_idx].begin(), mruList[ftb_idx].end(), older()); // 从MRU列表中移除最后一个元素
         const auto& old_entry = mruList[ftb_idx].back();
         DPRINTF(FTB, "FTB: Replacing entry with tag %#lx in set %#lx\n", old_entry->first, ftb_idx);
-        ftb[ftb_idx].erase(old_entry->first);
+        ftb[ftb_idx].erase(old_entry->first); // 从FTB中移除旧条目
 
-        ftbStats.replacements++;
-        ftbStats.fullSetEvents++;
+        ftbStats.replacements++; // 替换次数
+        ftbStats.fullSetEvents++; // 表满次数
     }
 
     auto updatedEntry = stream.updateFTBEntry;  // 要写入的FTB条目
-    bool updatedIsOldEntry = stream.updateIsOldEntry;
-    auto entryInFtbNow = ftb[ftb_idx][ftb_tag];  // 当前FTB条目
+    bool updatedIsOldEntry = stream.updateIsOldEntry; // 是否是旧条目
+    auto entryInFtbNow = ftb[ftb_idx][ftb_tag];  // 当前FTB条目， 根据idx和tag得到，要写入的位置
     // if this entry is old entry, use entry now in ftb to avoid overwriting entry with more branche info
     // 如果是旧条目且当前FTB中存在，使用现有条目避免覆盖更多分支信息
     auto entry_to_write = (updatedIsOldEntry && !not_found) ? FTBEntry(entryInFtbNow) : updatedEntry;
@@ -443,7 +443,7 @@ DefaultFTB::update(const FetchStream &stream)
         need_to_update.resize(numBr, false);
         auto &ftb_entry = entry_to_write;
         // get number of conditional branches to update
-        int cond_num = 0;  // 确定需要更新的条件分支数量
+        int cond_num = 0;  // 获取累计的条件分支数量，小于numBr
         if (stream.exeTaken) { // 如果执行分支命中
             // 获取执行分支前的条件分支数
             cond_num = ftb_entry.getNumCondInEntryBefore(stream.exeBranchInfo.pc);
@@ -467,44 +467,44 @@ DefaultFTB::update(const FetchStream &stream)
         cond_num = std::min(cond_num, (int)ftb_entry.slots.size());
         for (int i = 0; i < cond_num; i++) {
             auto &slot = ftb_entry.slots[i];
-            // only update branches with both taken/not taken behaviors observed
-            need_to_update[i] = !slot.alwaysTaken;
+            // only update branches with both taken/not taken behaviors observed 只更新有taken/not taken行为的分支
+            need_to_update[i] = !slot.alwaysTaken; // 只更新非alwaysTaken的分支
         }
         for (int b = 0; b < numBr; b++) {  // 更新分支预测计数器
-            if (!need_to_update[b]) {
+            if (!need_to_update[b]) { // 如果不需要更新，跳过
                 continue;
             }
             // 确定当前条件分支是否实际命中 = exe分支跳转了 且是当前分支
             bool this_cond_actually_taken = stream.exeTaken && stream.exeBranchInfo == ftb_entry.slots[b];
             int ctr_to_be_updated;
             // read newest ctr if hit // 获取最新的计数器值
-            if (!not_found && it->second.slots.size() > b) {
-                ctr_to_be_updated = entryInFtbNow.slots[b].ctr;
+            if (!not_found && it->second.slots.size() > b) { // 找到且槽位数大于b
+                ctr_to_be_updated = entryInFtbNow.slots[b].ctr; // 获取当前槽位的计数器
             } else {
                 ctr_to_be_updated = updatedEntry.slots[b].ctr;
             }
-            // DPRINTF(UFTBCount, "UFTBCount: updating ctr %d, taken = %d for branch %d\n", ctr_to_be_updated, this_cond_actually_taken, b);
-            // updateCtr(ctr_to_be_updated, this_cond_actually_taken); // 更新计数器
-            // DPRINTF(UFTBCount, "UFTBCount: updated ctr %d\n", ctr_to_be_updated);
-            entry_to_write.slots[b].ctr = ctr_to_be_updated;
+            DPRINTF(UFTBCount, "UFTBCount: updating ctr %d, taken = %d for branch %d\n", ctr_to_be_updated, this_cond_actually_taken, b);
+            updateCtr(ctr_to_be_updated, this_cond_actually_taken); // 更新计数器
+            DPRINTF(UFTBCount, "UFTBCount: updated ctr %d\n", ctr_to_be_updated);
+            entry_to_write.slots[b].ctr = ctr_to_be_updated; // 更新槽位的计数器
         }
     }
 
     ftb[ftb_idx][ftb_tag] = TickedFTBEntry(entry_to_write, curTick());  // 更新FTB条目
-    ftb[ftb_idx][ftb_tag].tag = ftb_tag; // in case different ftb has different tags
+    ftb[ftb_idx][ftb_tag].tag = ftb_tag; // in case different ftb has different tags 可能不同ftb项有不同tag
 
 
     if (not_found) {
         auto it = ftb[ftb_idx].find(ftb_tag);
         assert(it != ftb[ftb_idx].end());
-        mruList[ftb_idx].back() = it;
-        std::push_heap(mruList[ftb_idx].begin(), mruList[ftb_idx].end(), older());
+        mruList[ftb_idx].back() = it; // 将新条目添加到MRU列表的末尾
+        std::push_heap(mruList[ftb_idx].begin(), mruList[ftb_idx].end(), older()); // 将新条目添加到MRU列表中
     } else {
         std::make_heap(mruList[ftb_idx].begin(), mruList[ftb_idx].end(), older());
     }
-    assert(ftb_idx < numSets);
-    assert(ftb[ftb_idx].size() <= numWays);
-    assert(mruList[ftb_idx].size() <= numWays);
+    assert(ftb_idx < numSets); // 确保idx在numSets范围内
+    assert(ftb[ftb_idx].size() <= numWays); // 确保FTB条目数在numWays范围内
+    assert(mruList[ftb_idx].size() <= numWays); // 确保MRU列表条目数在numWays范围内
 
     // ftbStats.setUsage[ftb_idx]++;
     // ftbStats.wayUsage[ftb[ftb_idx].size()]++;

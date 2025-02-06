@@ -860,7 +860,7 @@ class TimedBaseFTBPredictor(SimObject):
     cxx_class = 'gem5::branch_prediction::ftb_pred::TimedBaseFTBPredictor'
     cxx_header = "cpu/pred/ftb/timed_base_pred.hh"
     
-    numBr = Param.Unsigned(2, "Number of maximum branches per entry")
+    numBr = Param.Unsigned(Parent.numBr, "Number of maximum branches per entry")
     # subclass are encouraged to explicitly declare latency as numDelay
     numDelay = Param.Unsigned(1000, "Number of bubbles to put on a prediction")
 
@@ -942,7 +942,7 @@ class DecoupledBPUWithFTB(BranchPredictor):
     maxHistLen = Param.Unsigned(970, "The length of history")
     numBr = Param.Unsigned(2, "Number of maximum branches per entry")   # 一个entry 最多两个branch
     numStages = Param.Unsigned(3, "Number of stages in the pipeline")   # 3级pipeline
-    ftb = Param.DefaultFTB(DefaultFTB(numBr=2), "FTB")
+    ftb = Param.DefaultFTB(DefaultFTB(), "FTB")
     tage = Param.FTBTAGE(FTBTAGE(), "TAGE predictor")
     ittage = Param.FTBITTAGE(FTBITTAGE(), "ITTAGE predictor")
     uftb = Param.DefaultFTB(UFTB(), "UFTB predictor")

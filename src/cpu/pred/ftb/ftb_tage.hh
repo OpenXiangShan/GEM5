@@ -38,8 +38,8 @@ class FTBTAGE : public TimedBaseFTBPredictor
         public:
             bool valid;  // 是否有效
             Addr tag;  // tag
-            short counter;  // 分支预测的计数器
-            bool useful;  // 是否useful
+            short counter;  // 分支预测的计数器，饱和计数器，预测taken/not taken
+            bool useful;  // 是否useful，用于替换策略
 
             TageEntry() : valid(false), tag(0), counter(0), useful(false) {}
 
@@ -51,16 +51,16 @@ class FTBTAGE : public TimedBaseFTBPredictor
     struct TagePrediction
     {
         public:
-            bool mainFound;  // 是否在main table中找到匹配的entry
-            short mainCounter;  // main table中匹配的entry的counter
-            bool mainUseful;  // main table中匹配的entry的useful
-            short altCounter;  // alt table中匹配的entry的counter
-            unsigned table;  // main table的index
-            Addr index;  // main table中匹配的entry的index
-            Addr tag;  // main table中匹配的entry的tag
-            bool useAlt;  // 是否使用alt table
-            bitset usefulMask;  // 每个branch的usefulMask
-            bool taken;  // 分支是否taken
+            bool mainFound;      // 主表是否命中
+            short mainCounter;   // 主表计数器值
+            bool mainUseful;     // 主表useful位
+            short altCounter;    // 备用表(base/bimodal)计数器值
+            int table;          // 命中的表编号
+            int index;          // 表中的索引
+            Addr tag;           // 标签值
+            bool useAlt;        // 是否使用备用预测
+            bitset usefulMask;  // useful位掩码,多个表每个表useful位合并，例如1000
+            bool taken;         // 最终预测结果
 
             TagePrediction() : mainFound(false), mainCounter(0), mainUseful(false), altCounter(0),
                                 table(0), index(0), tag(0), useAlt(false), taken(false) {}
@@ -135,24 +135,24 @@ class FTBTAGE : public TimedBaseFTBPredictor
     std::vector<unsigned> tableIndexBits;
     std::vector<bitset> tableIndexMasks;
     // std::vector<uint64_t> tablePcMasks;
-    std::vector<unsigned> tableTagBits;
-    std::vector<bitset> tableTagMasks;
-    std::vector<unsigned> tablePcShifts;
-    std::vector<unsigned> histLengths;
-    std::vector<FoldedHist> tagFoldedHist;
-    std::vector<FoldedHist> altTagFoldedHist;
-    std::vector<FoldedHist> indexFoldedHist;
+    std::vector<unsigned> tableTagBits;  // 表的tag位数 [8, 8, 8, 8]
+    std::vector<bitset> tableTagMasks;    // 表的tag掩码, 用于tag匹配
+    std::vector<unsigned> tablePcShifts;  // [1, 1, 1, 1]
+    std::vector<unsigned> histLengths;    // [8, 13, 32, 119]
+    std::vector<FoldedHist> tagFoldedHist;  // 表的tag折叠历史
+    std::vector<FoldedHist> altTagFoldedHist;  // 表的alt tag折叠历史
+    std::vector<FoldedHist> indexFoldedHist;  // 表的index折叠历史
 
     LFSR64 allocLFSR;
 
     unsigned maxHistLen;
 
-    std::vector<std::vector<std::vector<TageEntry>>> tageTable;  
+    std::vector<std::vector<std::vector<TageEntry>>> tageTable;  // 多级预测表
     // tage table， 多少个表, 每个表多少项，每项多少个numBr, 存放TageEntry， tageTable[i][tmp_index][phyBrIdx];
 
-    std::vector<std::vector<short>> baseTable;  // 基表，每个表的index, 2048项，每项放numBr个short数目
+    std::vector<std::vector<short>> baseTable;  // 基表，每个表的index, 2048项，每项放numBr个short数目，short为2bit 计数器
 
-    std::vector<std::vector<short>> useAlt;
+    std::vector<std::vector<short>> useAlt;   // 选择器，决定使用主表还是备用表
 
     bool matchTag(Addr expected, Addr found);
 
@@ -381,10 +381,10 @@ public:
 private:
     using SCMeta = StatisticalCorrector::SCMeta;
     typedef struct TageMeta {
-        std::vector<TagePrediction> preds;
-        std::vector<FoldedHist> tagFoldedHist;
-        std::vector<FoldedHist> altTagFoldedHist;
-        std::vector<FoldedHist> indexFoldedHist;
+        std::vector<TagePrediction> preds; // tage的多个预测结果
+        std::vector<FoldedHist> tagFoldedHist; // tage的4个tag折叠历史, 每个表一个
+        std::vector<FoldedHist> altTagFoldedHist; // tage的4个alt tag折叠历史, 每个表一个
+        std::vector<FoldedHist> indexFoldedHist; // tage的4个index折叠历史, 每个表一个
         SCMeta scMeta;
         TageMeta(std::vector<TagePrediction> preds, std::vector<FoldedHist> tagFoldedHist,
             std::vector<FoldedHist> altTagFoldedHist, std::vector<FoldedHist> indexFoldedHist, SCMeta scMeta) :

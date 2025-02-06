@@ -704,7 +704,7 @@ Decode::decodeInsts(ThreadID tid)
     int count_ = 0;
     for (auto it : insts_to_decode) {
         count_++;
-        if (it->opClass() == FMAAccOp) {
+        if (it->opClass() == FMAAccOp) {    // 对融合指令额外处理，width++
             decode_width++;
         }
         if (count_ >= decodeWidth ||
@@ -719,7 +719,7 @@ Decode::decodeInsts(ThreadID tid)
         vec_decode_limit = true;
     }
 
-    while (insts_available > 0 && toRenameIndex < decode_width) {
+    while (insts_available > 0 && toRenameIndex < decode_width) {   // 遍历每条要译码指令
         assert(!insts_to_decode.empty());
         if (vec_decode_limit && insts_to_decode.front()->isVector()) {
             break;
@@ -757,7 +757,7 @@ Decode::decodeInsts(ThreadID tid)
         // This current instruction is valid, so add it into the decode
         // queue.  The next instruction may not be valid, so check to
         // see if branches were predicted correctly.
-        toRename->insts[toRenameIndex] = inst;
+        toRename->insts[toRenameIndex] = inst;  // 当条指令有效，下一条指令不一定，检查分支预测
 
         ++(toRename->size);
         ++toRenameIndex;
@@ -773,7 +773,7 @@ Decode::decodeInsts(ThreadID tid)
 #endif
 
         // Ensure that if it was predicted as a branch, it really is a
-        // branch.
+        // branch. 是否被预测为branch
         if (inst->readPredTaken() && !inst->isControl()) {    // 预测taken，且不是control指令
             // panic("Instruction predicted as a branch!");
 
@@ -792,14 +792,19 @@ Decode::decodeInsts(ThreadID tid)
         // Go ahead and compute any PC-relative branches.
         // This includes direct unconditional control and
         // direct conditional control that is predicted taken.
+        // 处理直接跳转指令的目标地址计算和预测检查
+        // 包括无条件直接跳转和预测taken的条件直接跳转
         if (inst->isDirectCtrl() &&
            (inst->isUncondCtrl() || inst->readPredTaken()))
         {
-            ++stats.branchResolved;
+            ++stats.branchResolved;  // 增加已解析分支计数
 
+            // 计算实际的分支目标地址
             std::unique_ptr<PCStateBase> target = inst->branchTarget();
-            auto &t = target->as<RiscvISA::PCState>();
-            auto &pred = inst->readPredTarg().as<RiscvISA::PCState>();
+            auto &t = target->as<RiscvISA::PCState>();  // 实际目标
+            auto &pred = inst->readPredTarg().as<RiscvISA::PCState>();  // 预测目标
+
+            // 如果预测的PC正确但nPC不正确,更新预测目标
             if (t.start_equals(pred) && !t.equals(pred)) {
                 DPRINTF(
                     DecoupleBP,
@@ -807,56 +812,75 @@ Decode::decodeInsts(ThreadID tid)
                     pred.pc(), pred.npc(), t.pc(), t.npc());
                 inst->setPredTarg(t);
             }
-            if (*target != inst->readPredTarg()) {
-                ++stats.branchMispred;
 
+            // 检查预测目标是否正确
+            if (*target != inst->readPredTarg()) {   // 预测目标和实际目标不一致
+                ++stats.branchMispred;  // 增加分支预测错误计数
+
+                // 克隆目标PC和预测PC用于详细分析
                 RiscvISA::PCState cpTarget = target->clone()->as<RiscvISA::PCState>();
                 RiscvISA::PCState cpPredTarget = inst->readPredTarg().clone()->as<RiscvISA::PCState>();
 
+                // 分析预测错误的类型:
+                // 1. PC预测错误但nPC正确
                 if (cpTarget.instAddr() != cpPredTarget.instAddr() && cpTarget.npc() == cpPredTarget.npc()) {
                     ++stats.mispredictedByPC;
-                } else if (cpTarget.instAddr() == cpPredTarget.instAddr() && cpTarget.npc() != cpPredTarget.npc()) {
+                } 
+                // 2. PC预测正确但nPC错误
+                else if (cpTarget.instAddr() == cpPredTarget.instAddr() && cpTarget.npc() != cpPredTarget.npc()) {
                     ++stats.mispredictedByNPC;
                 }
 
-                // Might want to set some sort of boolean and just do
-                // a check at the end
+                // 预测错误,需要squash流水线
                 squash(inst, inst->threadNumber);
 
-                decode_stalls.push(StallReason::InstMisPred);   // 条件分支预测错误，flush
+                decode_stalls.push(StallReason::InstMisPred);   // 记录stall原因
                 breakDecode = StallReason::InstMisPred;
 
                 DPRINTF(Decode,
                         "[tid:%i] [sn:%llu] Updating predictions:"
                         " Wrong predicted target: %s PredPC: %s\n",
                         tid, inst->seqNum, inst->readPredTarg(), *target);
-                //The micro pc after an instruction level branch should be 0
-                inst->setPredTarg(*target);
+                //指令级分支后的微PC应该为0
+                inst->setPredTarg(*target);  // 更新为正确的目标
                 break;
             }
         }
-        // unpredicted return can make use of ras results to get earlier resteer
+        // 处理未预测到的返回指令 - 可以利用RAS(Return Address Stack)结果来提前重定向
         if (inst->isReturn() && !inst->isNonSpeculative() && !inst->readPredTaken()) {
+            // 增加分支预测错误计数
             ++stats.branchMispred;
-            decode_stalls.push(StallReason::InstMisPred);   // return预测错误，flush
+            
+            // 由于return预测错误,需要flush流水线并stall
+            decode_stalls.push(StallReason::InstMisPred);   
             breakDecode = StallReason::InstMisPred;
-            // return target cannot be computed in decode stage since it is an indirect branch
-            // need to inquire bpu to get the target
+            
+            // 由于return是间接跳转,无法在decode阶段计算目标地址
+            // 需要查询分支预测单元(BPU)获取返回地址
             auto return_addr = fetch_ptr->getPreservedReturnAddr(inst);
             auto target = std::make_unique<RiscvISA::PCState>(return_addr);
+            
+            // 打印调试信息 - 显示预测更新详情
             DPRINTF(Decode, "[tid:%i] [sn:%llu] Updating predictions:"
                     " Return not identified by bp: predTaken %d, PredPC: %s Now PC %s\n",
                     tid, inst->seqNum, inst->readPredTaken(), inst->readPredTarg(), *target);
-            inst->setPredTaken(true);
-            inst->setPredTarg(*target);
-            // must squash after setting inst real target because it cannot be computed from static inst
+            
+            // 更新预测信息
+            inst->setPredTaken(true);  // 设置为taken
+            inst->setPredTarg(*target);  // 设置正确的目标地址
+            
+            // 必须在设置指令实际目标后再squash,因为无法从静态指令计算目标
             squash(inst, inst->threadNumber);
             break;
         }
+
+        // 处理非推测性指令
         if (inst->isNonSpeculative() && inst->readPredTaken()) {
-            // TODO: redirect to fall thru
+            // 对于非推测性指令,需要重定向到顺序执行的下一条指令
             std::unique_ptr<PCStateBase> npc(inst->pcState().clone());
             npc->as<RiscvISA::PCState>().set(inst->pcState().getFallThruPC());
+            
+            // 更新预测信息为not taken
             inst->setPredTaken(false);
             inst->setPredTarg(*npc);
         }
