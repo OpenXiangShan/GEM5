@@ -544,6 +544,12 @@ class LSQUnit
     /** Process instructions in each load pipeline stages. */
     void executeLoadPipeSx();
 
+    /**
+     * - stage0: normal inst access TLB, atomic access TLB and try send to cache.
+     * - stage1: normal inst try send to cache.
+     * - stage2: Analyze the flag and try to send the inst to commit.
+     * - stage3: now just return fault and do nothing.
+     */
     Fault loadPipeS0(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag);
     Fault loadPipeS1(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag);
     Fault loadPipeS2(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag);
@@ -552,6 +558,10 @@ class LSQUnit
     /** Process instructions in each store pipeline stages. */
     void executeStorePipeSx();
 
+    /**
+     * - stage0: access TLB
+     * - stage1: save data to store queue, check load violations, set memDepViolator
+     */
     Fault storePipeS0(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag);
     Fault storePipeS1(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag);
     Fault emptyStorePipeSx(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag, uint64_t stage);

@@ -382,6 +382,8 @@ IssueQue::selectInst()
     selectQ.clear();
     for (int pi = 0; pi < outports; pi++) {
         auto readyQ = readyQs[pi];
+
+        // move the cancel inst in the readyQ
         while (!readyQ->empty()) {
             auto top = readyQ->top();
             if (!top->canceled()) {
@@ -390,6 +392,7 @@ IssueQue::selectInst()
             top->clearInReadyQ();
             readyQ->pop();
         }
+
         if (!readyQ->empty()) {
             auto inst = readyQ->top();
             if (portBusy[pi] & (1llu << scheduler->getCorrectedOpLat(inst))) {
@@ -533,6 +536,12 @@ IssueQue::insert(const DynInstPtr& inst)
         assert(inst->readyToIssue());
     }
 
+
+    /** For memory-related instructions, memory dependency prediction is
+     * used to determine whether they can be out of order execution.
+     * -- pass the dependency check: instruction can be schedule.
+     * -- failed in dependency check: schedule in the store address be computered.
+     */
     if (inst->isMemRef()) {
         // insert and check memDep
         scheduler->memDepUnit[inst->threadNumber].insert(inst);

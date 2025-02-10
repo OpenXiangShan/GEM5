@@ -1219,6 +1219,7 @@ IEW::dispatchInstFromDispQue(ThreadID tid)
                 DPRINTF(IEW, "[tid:%i] Dispatch: Memory instruction "
                         "encountered, adding to LSQ.\n", tid);
 
+                // allocate entry in store queue
                 ldstQueue.insertStore(inst);
 
                 // AMOs need to be set as "canCommit()"
@@ -1231,8 +1232,7 @@ IEW::dispatchInstFromDispQue(ThreadID tid)
                 DPRINTF(IEW, "[tid:%i] Dispatch: Memory instruction "
                         "encountered, adding to LSQ.\n", tid);
 
-                // Reserve a spot in the load store queue for this
-                // memory access.
+                // allocate entry in load queue
                 ldstQueue.insertLoad(inst);
 
                 add_to_iq = true;
@@ -1241,6 +1241,7 @@ IEW::dispatchInstFromDispQue(ThreadID tid)
                 DPRINTF(IEW, "[tid:%i] Dispatch: Memory instruction "
                         "encountered, adding to LSQ.\n", tid);
 
+                // allocate entry in store queue
                 ldstQueue.insertStore(inst);
 
                 if (inst->isStoreConditional()) {
@@ -1533,7 +1534,8 @@ IEW::executeInsts()
         // scheduler is used.  Currently the scheduler schedules the oldest
         // instruction first, so the branch resolution order will be correct.
         if (!(inst->isLoad() || inst->isStore())) {
-            // Load/Store will call this in `lsq_unit.cc` after execution
+            // because Load/Store become pipeline execution ,Load/Store will
+            // call this in `lsq_unit.cc` after execution
             SquashCheckAfterExe(inst);
         }
     }
@@ -1717,6 +1719,8 @@ IEW::tick()
             !fromCommit->commitInfo[tid].squash &&
             !fromCommit->commitInfo[tid].robSquashing) {
 
+            // Marks some of the entries in the store queue as canWB and
+            // they will be moved to the store buffer when appropriate.
             ldstQueue.commitStores(fromCommit->commitInfo[tid].doneSeqNum,tid);
 
             ldstQueue.commitLoads(fromCommit->commitInfo[tid].doneSeqNum,tid);

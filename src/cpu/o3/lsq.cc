@@ -1042,6 +1042,7 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
     }
 
     /* This is the place were instructions get the effAddr. */
+    /* Only atomic types can attempt to send requests to the cache at this stage.*/
     if (inst->isAtomic() && request->isTranslationComplete()) {
         if (request->isMemAccessRequired()) {
             inst->effAddr = request->getVaddr();

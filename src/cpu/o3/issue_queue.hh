@@ -165,6 +165,7 @@ class IssueQue : public SimObject
     void insertNonSpec(const DynInstPtr& inst);
 
     void markMemDepDone(const DynInstPtr& inst);
+    /** move the mem inst to readyQ, and try it again. */
     void retryMem(const DynInstPtr& inst);
     bool idle();
 

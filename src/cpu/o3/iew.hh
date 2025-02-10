@@ -133,6 +133,7 @@ class IEW
 
   private:
 
+    /** The dispatch queue capacity */
     std::vector<uint32_t> dqSize;
 
     /** Overall stage status. */
@@ -253,11 +254,17 @@ class IEW
     /** Returns if the LSQ has any stores to writeback. */
     bool hasStoresToWB(ThreadID tid) { return ldstQueue.hasStoresToWB(tid); }
 
+    /** Just set the relevant flag in lsq and at the appropriate
+     * time, lsq will attempt to write the data in the store buffer
+     * back to the cache. returns true if there is no data in either
+     * the store queue or the store buffer to write back to.
+     */
     bool flushAllStores(ThreadID tid) { return ldstQueue.flushAllStores(tid); }
 
     /** Check if we need to squash after a load/store/branch is executed. */
     void SquashCheckAfterExe(DynInstPtr inst);
 
+    /** notify the mem_dep_unit */
     void notifyExecuted(const DynInstPtr &inst) { instQueue.notifyExecuted(inst); }
 
     /**
@@ -559,6 +566,7 @@ class IEW
         statistics::Vector dispatchStallReason;
     } iewStats;
 
+    /** The width that can be dispatched to the scheduler per cycle. */
     std::vector<StallReason> dispatchStalls;
 
     StallReason blockReason{NoStall};
