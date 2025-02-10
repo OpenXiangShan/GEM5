@@ -47,6 +47,8 @@
 #include <queue>
 #include <unordered_map>
 
+#include <boost/heap/priority_queue.hpp>
+
 #include "mem/abstract_mem.hh"
 #include "mem/dramsim3_wrapper.hh"
 #include "mem/qport.hh"
@@ -142,7 +144,15 @@ class DRAMsim3 : public AbstractMemory
      * back. This is needed as DRAMsim3 unconditionally passes
      * responses back without any flow control.
      */
-    std::deque<PacketPtr> responseQueue;
+
+    struct sort_policy
+    {
+        bool operator()(const std::pair<PacketPtr, Tick> a, std::pair<PacketPtr, Tick> b) const {
+          return a.second > b.second;
+        }
+    };
+
+    boost::heap::priority_queue<std::pair<PacketPtr, Tick>, boost::heap::compare<sort_policy>> responseQueue;
 
 
     unsigned int nbrOutstanding() const;
