@@ -389,7 +389,8 @@ AbstractMemory::access(PacketPtr pkt)
     if (pkt->cmd == MemCmd::CleanEvict || pkt->cmd == MemCmd::WritebackClean) {
         DPRINTF(MemoryAccess, "CleanEvict  on 0x%x: not responding\n",
                 pkt->getAddr());
-      return;
+        pkt->makeResponse();
+        return;
     }
 
     assert(pkt->getAddrRange().isSubset(range));

@@ -272,6 +272,7 @@ CoherentXBar::recvTimingReq(PacketPtr pkt, PortID cpu_side_port_id)
     if (sink_packet) {
         DPRINTF(CoherentXBar, "%s: Not forwarding %s\n", __func__,
                 pkt->print());
+        expect_response = false;
     } else {
         // determine if we are forwarding the packet, or responding to
         // it

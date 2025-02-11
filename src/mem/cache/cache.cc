@@ -813,8 +813,6 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
                 stats.cmdStats(tgt_pkt)
                     .missLatency[tgt_pkt->req->requestorId()] +=
                     completion_time - target.recvTime;
-                stats.cmdStats(tgt_pkt)
-                    .missLatencyDist.sample((completion_time - target.recvTime)/500);
 
                 if (tgt_pkt->cmd == MemCmd::LockedRMWReadReq) {
                     // We're going to leave a target in the MSHR until the
@@ -886,6 +884,10 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
                 // carried over to cache above
                 tgt_pkt->copyResponderFlags(pkt);
             }
+
+            stats.cmdStats(tgt_pkt)
+                .missLatencyDist.sample(ticksToCycles(completion_time - target.recvTime));
+
             tgt_pkt->makeTimingResponse();
             // if this packet is an error copy that to the new packet
             if (is_error)
@@ -986,7 +988,7 @@ Cache::sendHintViaMSHRTargets(MSHR *mshr, const PacketPtr pkt)
                 firstTgtDelayed = transfer_offset != 0 && pkt->payloadDelay != 0;
             }
             Tick sendHintTime = curTick() + ((transfer_offset || firstTgtDelayed) ? pkt->payloadDelay : 0);
-            DPRINTF(Cache, "sendHintViaMSHRTargets: pkt: %#lx, sendHintTime: %ld", tgt_pkt->getAddr(), sendHintTime);
+            DPRINTF(Cache, "sendHintViaMSHRTargets: pkt: %#lx, sendHintTime: %ld\n", tgt_pkt->getAddr(), sendHintTime);
             if (sendHintTime == curTick()) {
                 BaseCache::cpuSidePort.sendCustomSignal(tgt_pkt, DcacheRespType::Hint);
             } else {
@@ -1370,7 +1372,7 @@ Cache::recvTimingSnoopReq(PacketPtr pkt)
     }
 
     //We also need to check the writeback buffers and handle those
-    WriteQueueEntry *wb_entry = writeBuffer.findMatch(blk_addr, is_secure);
+    WriteQueueEntry *wb_entry = writeBuffer.findMatchNoService(blk_addr, is_secure);
     if (wb_entry) {
         DPRINTF(Cache, "Snoop hit in writeback to addr %#llx (%s)\n",
                 pkt->getAddr(), is_secure ? "s" : "ns");
@@ -1426,7 +1428,8 @@ Cache::recvTimingSnoopReq(PacketPtr pkt)
         if (invalidate && wb_pkt->cmd != MemCmd::WriteClean) {
             // Invalidation trumps our writeback... discard here
             // Note: markInService will remove entry from writeback buffer.
-            markInService(wb_entry);
+            wb_entry->popTarget();
+            writeBuffer.deallocate(wb_entry);
             delete wb_pkt;
         }
     }

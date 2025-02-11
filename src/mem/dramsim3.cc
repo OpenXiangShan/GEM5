@@ -109,16 +109,21 @@ DRAMsim3::sendResponse()
 
     DPRINTF(DRAMsim3, "Attempting to send response\n");
 
-    bool success = port.sendTimingResp(responseQueue.front());
+    auto [pkt, time] = responseQueue.top();
+    assert(time <= curTick());
+    bool success = port.sendTimingResp(pkt);
     if (success) {
-        responseQueue.pop_front();
+        responseQueue.pop();
 
         DPRINTF(DRAMsim3, "Have %d read, %d write, %d responses outstanding\n",
                 nbrOutstandingReads, nbrOutstandingWrites,
                 responseQueue.size());
 
-        if (!responseQueue.empty() && !sendResponseEvent.scheduled())
-            schedule(sendResponseEvent, curTick());
+        if (!responseQueue.empty() && !sendResponseEvent.scheduled()) {
+            Tick nextReadyTime = responseQueue.top().second > curTick() ?
+                responseQueue.top().second : curTick();
+            schedule(sendResponseEvent, nextReadyTime);
+        }
 
         if (nbrOutstanding() == 0)
             signalDrainDone();
@@ -177,7 +182,7 @@ DRAMsim3::recvFunctional(PacketPtr pkt)
 
     // potentially update the packets in our response queue as well
     for (auto i = responseQueue.begin(); i != responseQueue.end(); ++i)
-        pkt->trySatisfyFunctional(*i);
+        pkt->trySatisfyFunctional((*i).first);
 
     pkt->popLabel();
 }
@@ -230,7 +235,7 @@ DRAMsim3::recvTimingReq(PacketPtr pkt)
             ++nbrOutstandingWrites;
 
             // perform the access for writes
-            accessAndRespond(pkt);
+            // accessAndRespond(pkt);
         }
     } else {
         // keep it simple and just respond if necessary
@@ -292,7 +297,7 @@ DRAMsim3::accessAndRespond(PacketPtr pkt)
                 pkt->getAddr());
 
         // queue it to be sent back
-        responseQueue.push_back(pkt);
+        responseQueue.push({pkt, time});
 
         // if we are not already waiting for a retry, or are scheduled
         // to send a response, schedule an event
@@ -341,15 +346,16 @@ void DRAMsim3::writeComplete(unsigned id, uint64_t addr)
 
     // we have already responded, and this is only to keep track of
     // what is outstanding
+    PacketPtr pkt = p->second.front();
     p->second.pop();
+
     if (p->second.empty())
         outstandingWrites.erase(p);
 
     assert(nbrOutstandingWrites != 0);
     --nbrOutstandingWrites;
 
-    if (nbrOutstanding() == 0)
-        signalDrainDone();
+    accessAndRespond(pkt);
 }
 
 Port&

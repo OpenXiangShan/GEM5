@@ -92,6 +92,7 @@ class MemCmd
         WriteCompleteResp,
         WritebackDirty,
         WritebackClean,
+        WritebackResp,
         WriteClean,            // writes dirty data below without evicting
         CleanEvict,
         SoftPFReq,
@@ -301,7 +302,7 @@ class Packet : public Printable
     enum : FlagsType
     {
         // Flags to transfer across when copying a packet
-        COPY_FLAGS             = 0x000000FF,
+        COPY_FLAGS             = 0x00000FFF,
 
         // Flags that are used to create reponse packets
         RESPONDER_FLAGS        = 0x00000009,
@@ -342,25 +343,27 @@ class Packet : public Printable
         // in transactional mode, i.e. in a transaction.
         FROM_TRANSACTION       = 0x00000080,
 
+        NEED_RELEASE_WRITEBUFFER = 0x00000100,
+
         /// Are the 'addr' and 'size' fields valid?
-        VALID_ADDR             = 0x00000100,
-        VALID_SIZE             = 0x00000200,
+        VALID_ADDR             = 0x00001000,
+        VALID_SIZE             = 0x00002000,
 
         /// Is the data pointer set to a value that shouldn't be freed
         /// when the packet is destroyed?
-        STATIC_DATA            = 0x00001000,
+        STATIC_DATA            = 0x00010000,
         /// The data pointer points to a value that should be freed when
         /// the packet is destroyed. The pointer is assumed to be pointing
         /// to an array, and delete [] is consequently called
-        DYNAMIC_DATA           = 0x00002000,
+        DYNAMIC_DATA           = 0x00020000,
 
         /// suppress the error if this packet encounters a functional
         /// access failure.
-        SUPPRESS_FUNC_ERROR    = 0x00008000,
+        SUPPRESS_FUNC_ERROR    = 0x00080000,
 
         // Signal block present to squash prefetch and cache evict packets
         // through express snoop flag
-        BLOCK_CACHED          = 0x00010000
+        BLOCK_CACHED          = 0x00100000
     };
 
     Flags flags;
@@ -637,6 +640,21 @@ class Packet : public Printable
     {
         return (cmd == MemCmd::WriteReq || cmd == MemCmd::WriteLineReq) &&
             getOffset(blk_size) == 0 && getSize() == blk_size;
+    }
+
+    void setWriteBackResp()
+    {
+        flags.set(NEED_RELEASE_WRITEBUFFER);
+    }
+
+    bool isWriteBackResp()
+    {
+        return flags.isSet(NEED_RELEASE_WRITEBUFFER);
+    }
+
+    void clearWriteBackResp()
+    {
+        flags.set(NEED_RELEASE_WRITEBUFFER, false);
     }
 
     //@{

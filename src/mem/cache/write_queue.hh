@@ -88,6 +88,9 @@ class WriteQueue : public Queue<WriteQueueEntry>
     WriteQueueEntry *allocate(Addr blk_addr, unsigned blk_size,
                               PacketPtr pkt, Tick when_ready, Counter order);
 
+    WriteQueueEntry* findMatchNoService(Addr blk_addr, bool is_secure,
+                    bool ignore_uncacheable = true) const;
+
     /**
      * Mark the given entry as in service. This removes the entry from
      * the readyList or deallocates the entry if it does not expect a

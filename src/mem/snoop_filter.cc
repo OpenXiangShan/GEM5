@@ -116,7 +116,7 @@ SnoopFilter::lookupRequest(const Packet* cpkt, const ResponsePort&
         return snoopSelected(maskToPortList(interested & ~req_port),
                              lookupLatency);
 
-    if (cpkt->needsResponse()) {
+    if (cpkt->needsResponse() && cpkt->cmd.responseCommand() != MemCmd::WritebackResp) {
         if (!cpkt->cacheResponding()) {
             // Max one request per address per port
             panic_if((sf_item.requested & req_port).any(),
@@ -355,6 +355,7 @@ SnoopFilter::updateResponse(const Packet* cpkt, const ResponsePort&
             __func__, cpu_side_port.name(), cpkt->print());
 
     assert(cpkt->isResponse());
+    if (cpkt->cmd == Packet::Command::WritebackResp) return;
 
     // we only allocate if the packet actually came from a cache, but
     // start by checking if the port is snooping

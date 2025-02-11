@@ -74,6 +74,26 @@ WriteQueue::allocate(Addr blk_addr, unsigned blk_size, PacketPtr pkt,
     return entry;
 }
 
+
+WriteQueueEntry*
+WriteQueue::findMatchNoService(Addr blk_addr, bool is_secure,
+                    bool ignore_uncacheable) const
+{
+    for (const auto& entry : allocatedList) {
+        // we ignore any entries allocated for uncacheable
+        // accesses and simply ignore them when matching, in the
+        // cache we never check for matches when adding new
+        // uncacheable entries, and we do not want normal
+        // cacheable accesses being added to an WriteQueueEntry
+        // serving an uncacheable access
+        if (!(ignore_uncacheable && entry->isUncacheable()) && !entry->inService &&
+            entry->matchBlockAddr(blk_addr, is_secure)) {
+            return entry;
+        }
+    }
+    return nullptr;
+}
+
 void
 WriteQueue::markInService(WriteQueueEntry *entry)
 {
@@ -81,8 +101,10 @@ WriteQueue::markInService(WriteQueueEntry *entry)
     // there is no more to do as we are done from the perspective of
     // this cache, and for uncacheable write we do not need the entry
     // as part of the response handling
-    entry->popTarget();
-    deallocate(entry);
+
+    entry->inService = true;
+    readyList.erase(entry->readyIter);
+    _numInService += 1;
 }
 
 } // namespace gem5

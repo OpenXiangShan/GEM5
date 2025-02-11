@@ -92,18 +92,19 @@ MemCmd::commandInfo[] =
      * dependences are handled in the GPU ISA. */
     { {IsWrite, IsResponse}, InvalidCmd, "WriteCompleteResp" },
     /* WritebackDirty */
-    { {IsWrite, IsRequest, IsEviction, HasData, FromCache},
-            InvalidCmd, "WritebackDirty" },
+    { {IsWrite, IsRequest, IsEviction, NeedsResponse, HasData, FromCache},
+            WritebackResp, "WritebackDirty" },
     /* WritebackClean - This allows the upstream cache to writeback a
      * line to the downstream cache without it being considered
      * dirty. */
-    { {IsWrite, IsRequest, IsEviction, HasData, FromCache},
-            InvalidCmd, "WritebackClean" },
+    { {IsWrite, IsRequest, IsEviction, NeedsResponse, HasData, FromCache},
+            WritebackResp, "WritebackClean" },
+    { {IsWrite, IsResponse}, InvalidCmd, "WritebackResp"},
     /* WriteClean - This allows a cache to write a dirty block to a memory
        below without evicting its copy. */
-    { {IsWrite, IsRequest, HasData, FromCache}, InvalidCmd, "WriteClean" },
+    { {IsWrite, IsRequest, NeedsResponse, HasData, FromCache}, WritebackResp, "WriteClean" },
     /* CleanEvict */
-    { {IsRequest, IsEviction, FromCache}, InvalidCmd, "CleanEvict" },
+    { {IsRequest, IsEviction, NeedsResponse, FromCache}, WritebackResp, "CleanEvict" },
     /* SoftPFReq */
     { {IsRead, IsRequest, IsSWPrefetch, NeedsResponse},
             SoftPFResp, "SoftPFReq" },

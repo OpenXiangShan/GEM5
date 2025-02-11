@@ -466,12 +466,7 @@ class BaseCache : public ClockedObject, CacheAccessor
 
     void markInService(WriteQueueEntry *entry)
     {
-        bool wasFull = writeBuffer.isFull();
         writeBuffer.markInService(entry);
-
-        if (wasFull && !writeBuffer.isFull()) {
-            clearBlocked(Blocked_NoWBBuffers);
-        }
     }
 
     /**
@@ -1367,6 +1362,8 @@ class BaseCache : public ClockedObject, CacheAccessor
     {
         // should only see writes or clean evicts here
         assert(pkt->isWrite() || pkt->cmd == MemCmd::CleanEvict);
+
+        DPRINTF(Cache, "Write buffer allocation for addr %s\n", pkt->print());
 
         Addr blk_addr = pkt->getBlockAddr(blkSize);
 

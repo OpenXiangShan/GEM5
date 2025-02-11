@@ -393,8 +393,8 @@ BaseCache::handleTimingReqHit(PacketPtr pkt, CacheBlk *blk, Tick request_time, b
             // It is a force hit
             assert(pkt->isResponse());
         }
-        DPRINTF(Cache, "Making timing response for %s, schedule it at %llu, is force hit: %i\n",
-                pkt->print(), request_time, pkt->isResponse());
+        DPRINTF(Cache, "Making timing response for %s, schedule it at %llu\n",
+                pkt->print(), request_time);
 
         if (pkt->isRead() && first_acc_after_pf && prefetcher && prefetcher->hasHintDownStream()) {
             DPRINTF(Cache, "Notify down stream on pf hit\n");
@@ -619,7 +619,7 @@ BaseCache::recvTimingReq(PacketPtr pkt)
     if (!satisfied && forceHit && !pkt->req->isInstFetch() && pkt->isRead() && pkt->req->hasPC() &&
         forceHitPCs.count(pkt->req->getPC())) {
         bool mshr_hit = mshrQueue.findMatch(pkt->getAddr(), pkt->isSecure()) != nullptr;
-        bool wb_hit = writeBuffer.findMatch(pkt->getBlockAddr(blkSize), pkt->isSecure()) != nullptr;
+        bool wb_hit = writeBuffer.findMatchNoService(pkt->getBlockAddr(blkSize), pkt->isSecure()) != nullptr;
 
         if (!(mshr_hit || wb_hit)) {
             DPRINTF(Cache, "%s: generate functional access for PC %#lx\n", __func__, pkt->req->getPC());
@@ -851,6 +851,32 @@ BaseCache::recvTimingResp(PacketPtr pkt)
 
     DPRINTF(Cache, "%s: Handling response %s\n", __func__,
             pkt->print());
+
+    if (pkt->isWriteBackResp()) {
+        DPRINTF(Cache, "Writeback response for addr %s\n", pkt->print());
+        WriteQueueEntry* wbentry = dynamic_cast<WriteQueueEntry*>(pkt->popSenderState());
+        panic_if(!wbentry, "Writeback response without sender state\n");
+        bool wasfull = writeBuffer.isFull();
+
+        stats.cmdStats(pkt)
+            .missLatencyDist.sample(ticksToCycles(curTick() - wbentry->getTarget()->recvTime));
+
+        wbentry->popTarget();
+        writeBuffer.deallocate(wbentry);
+        if (wasfull && !writeBuffer.isFull()) {
+            clearBlocked(Blocked_NoWBBuffers);
+        }
+
+        if (pkt->cmd==MemCmd::WritebackResp) {
+            if (pkt->senderState) {
+                cpuSidePort.schedTimingResp(pkt, curTick() + pkt->headerDelay);
+                pkt->headerDelay = 0;
+                return;
+            }
+            delete pkt;
+            return;
+        }
+    }
 
     // if this is a write, we should be looking at an uncacheable
     // write
@@ -1266,7 +1292,7 @@ BaseCache::getNextQueueEntry()
     } else if (miss_mshr) {
         // need to check for conflicting earlier writeback
         WriteQueueEntry *conflict_mshr = writeBuffer.findPending(miss_mshr);
-        if (conflict_mshr) {
+        if (conflict_mshr && !conflict_mshr->inService) {
             // not sure why we don't check order here... it was in the
             // original code but commented out.
 
@@ -1323,7 +1349,7 @@ BaseCache::getNextQueueEntry()
                     prefetcher->streamPflate();
                 // free the request and packet
                 delete pkt;
-            } else if (writeBuffer.findMatch(pf_addr, pkt->isSecure())) {
+            } else if (writeBuffer.findMatchNoService(pf_addr, pkt->isSecure())) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in the "
                         "Write Buffer, dropped.\n", pf_addr);
                 prefetcher->pfHitInWB(pf_type);
@@ -1746,7 +1772,7 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         // generating CleanEvict and Writeback or simply CleanEvict and
         // CleanEvict almost simultaneously will be caught by snoops sent out
         // by crossbar.
-        WriteQueueEntry *wb_entry = writeBuffer.findMatch(pkt->getAddr(),
+        WriteQueueEntry *wb_entry = writeBuffer.findMatchNoService(pkt->getAddr(),
                                                           pkt->isSecure());
         if (wb_entry) {
             assert(wb_entry->getNumTargets() == 1);
@@ -1773,7 +1799,8 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
                 // Dirty writeback from above trumps our clean
                 // writeback... discard here
                 // Note: markInService will remove entry from writeback buffer.
-                markInService(wb_entry);
+                wb_entry->popTarget();
+                writeBuffer.deallocate(wb_entry);
                 delete wbPkt;
             }
         }
@@ -1843,7 +1870,7 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
             blk->setCoherenceBits(CacheBlk::WritableBit);
         }
         // nothing else to do; writeback doesn't expect response
-        assert(!pkt->needsResponse());
+        // assert(!pkt->needsResponse());
 
         updateBlockData(blk, pkt, has_old_data);
         DPRINTF(Cache, "%s new state is %s\n", __func__, blk->print());
@@ -2033,7 +2060,7 @@ BaseCache::handleFill(PacketPtr pkt, CacheBlk *blk, PacketList &writebacks,
 
     // When handling a fill, we should have no writes to this line.
     assert(addr == pkt->getBlockAddr(blkSize));
-    assert(!writeBuffer.findMatch(addr, is_secure));
+    auto entry = writeBuffer.findMatchNoService(addr, is_secure);
 
     if (!blk) {
         // better have read new data...
@@ -2535,7 +2562,20 @@ BaseCache::sendWriteQueuePacket(WriteQueueEntry* wq_entry)
         // it gets retried
         return true;
     } else {
+        bool full = writeBuffer.isFull();
+        assert(tgt_pkt->cmd != MemCmd::ReadReq);
+        tgt_pkt->pushSenderState(wq_entry);
+        tgt_pkt->setWriteBackResp();
         markInService(wq_entry);
+        if ((tgt_pkt->isCleanEviction() && tgt_pkt->isBlockCached())
+            || (tgt_pkt->cacheResponding() &&
+         (!tgt_pkt->needsWritable() || tgt_pkt->responderHadWritable()))) {
+            wq_entry->popTarget();
+            writeBuffer.deallocate(wq_entry);
+        }
+        if (full && !writeBuffer.isFull()) {
+            clearBlocked(Blocked_NoWBBuffers);
+        }
         return false;
     }
 }
@@ -2993,6 +3033,7 @@ BaseCache::CacheStats::regStats()
     blockedCycles.init(NUM_BLOCKED_CAUSES);
     blockedCycles
         .subname(Blocked_NoMSHRs, "no_mshrs")
+        .subname(Blocked_NoWBBuffers, "no_WBBuffer")
         .subname(Blocked_NoTargets, "no_targets")
         ;
 
@@ -3000,11 +3041,13 @@ BaseCache::CacheStats::regStats()
     blockedCauses.init(NUM_BLOCKED_CAUSES);
     blockedCauses
         .subname(Blocked_NoMSHRs, "no_mshrs")
+        .subname(Blocked_NoWBBuffers, "no_WBBuffer")
         .subname(Blocked_NoTargets, "no_targets")
         ;
 
     avgBlocked
         .subname(Blocked_NoMSHRs, "no_mshrs")
+        .subname(Blocked_NoWBBuffers, "no_WBBuffer")
         .subname(Blocked_NoTargets, "no_targets")
         ;
     avgBlocked = blockedCycles / blockedCauses;

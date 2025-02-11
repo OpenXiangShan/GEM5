@@ -741,7 +741,8 @@ Commit::tick()
 
     if (cpu->curCycle() - lastCommitCycle > 20000) {
         if (maybeStucked) {
-            warn("[sn:%s] %s", rob->head->get()->seqNum, rob->head->get()->staticInst->disassemble(0));
+            if (rob->numInstsInROB)
+                warn("[sn:%s] %s", rob->head->get()->seqNum, rob->head->get()->staticInst->disassemble(0));
             panic("cpu stucked!!\n");
         }
         warn("cpu may be stucked\n");

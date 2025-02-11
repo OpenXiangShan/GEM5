@@ -87,6 +87,8 @@ class L1_DCache(L1Cache):
 
     enable_wayprediction = False
 
+    write_buffers = 16
+
 class L2Cache(Cache):
     mshrs = 64
     tgts_per_mshr = 20
@@ -106,6 +108,8 @@ class L2Cache(Cache):
 
     slice_num = 4
 
+    write_buffers = 16
+
 class L3Cache(Cache):
     mshrs = 64
     tgts_per_mshr = 20
@@ -121,6 +125,8 @@ class L3Cache(Cache):
 
     cache_level = 3
     enable_wayprediction = False
+
+    write_buffers = 16
 
 class IOCache(Cache):
     assoc = 8
@@ -201,8 +207,8 @@ class L3ToMemBus(CoherentXBar):
     # A handful pipeline stages for each portion of the latency
     # contributions.
     frontend_latency = 0
-    forward_latency = 30
-    response_latency = 30
+    forward_latency = 48
+    response_latency = 48
     snoop_response_latency = 4
 
     # Use a snoop-filter by default

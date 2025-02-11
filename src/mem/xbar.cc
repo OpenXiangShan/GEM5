@@ -123,18 +123,6 @@ BaseXBar::calcPacketTiming(PacketPtr pkt, Tick header_delay)
     panic_if(pkt->headerDelay > sim_clock::as_int::us,
              "Encountered header delay exceeding 1 us\n");
 
-    if (pkt->hasData()) {
-        // the payloadDelay takes into account the relative time to
-        // deliver the payload of the packet, after the header delay,
-        // we take the maximum since the payload delay could already
-        // be longer than what this parcitular crossbar enforces.
-        DPRINTF(BaseXBar, "Payload delay: %lu, packet size: %lu, width: %lu, clock period: %lu\n", pkt->payloadDelay,
-                pkt->getSize(), width, clockPeriod());
-        pkt->payloadDelay = std::max<Tick>(pkt->payloadDelay,
-                                           divCeil(pkt->getSize(), width) *
-                                           clockPeriod());
-    }
-
     // the payload delay is not paying for the clock offset as that is
     // already done using the header delay, and the payload delay is
     // also used to determine how long the crossbar layer is busy and
