@@ -38,11 +38,11 @@ class Rolling
       interval = intv;
       archDBer = db;
       std::vector<std::pair<std::string, DataType>> fields_vec = {
-          std::make_pair("value", UINT64),
-          std::make_pair("base", UINT64),
+          std::make_pair("yAxisPt", UINT64),
+          std::make_pair("xAxisPt", UINT64),
       };
       std::string tableName(name);
-      tableName += "_rolling";
+      tableName += "_rolling_0";
       traceManager = archDBer->addAndGetTrace(tableName.c_str(), fields_vec);
       traceManager->init_table();
     }
@@ -75,9 +75,9 @@ class Rolling
         Counter y_value = get_value_and_clean();
         Counter x_value = get_base_and_clean();
         Record pt;
-        pt._tick = curTick() / 500;
-        pt._uint64_data["value"] = y_value;
-        pt._uint64_data["base"] = x_value;
+        pt._tick = curTick() / 333;
+        pt._uint64_data["yAxisPt"] = y_value;
+        pt._uint64_data["xAxisPt"] = x_value;
         traceManager->write_record(pt);
       }
     }
