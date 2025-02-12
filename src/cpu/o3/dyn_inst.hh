@@ -401,6 +401,11 @@ class DynInst : public ExecContext, public RefCounted
      */
     LSQ::LSQRequest *savedRequest = nullptr;
 
+    /**
+     * Saved Cache miss memory request
+     */
+    LSQ::LSQRequest *pendingCacheReq = nullptr;
+
     /////////////////////// Checker //////////////////////
     // Need a copy of main request pointer to verify on writes.
     RequestPtr reqToVerify;

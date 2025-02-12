@@ -1511,6 +1511,7 @@ LSQ::SingleDataRequest::recvTimingResp(PacketPtr pkt)
         _hasStaleTranslation = false;
     }
     LSQRequest::_inst->hasPendingCacheReq(false);
+    LSQRequest::_inst->pendingCacheReq = nullptr;
     return true;
 }
 
@@ -1554,6 +1555,7 @@ LSQ::SplitDataRequest::recvTimingResp(PacketPtr pkt)
             _hasStaleTranslation = false;
         }
         LSQRequest::_inst->hasPendingCacheReq(false);
+        LSQRequest::_inst->pendingCacheReq = nullptr;
     }
     return true;
 }
@@ -1756,6 +1758,7 @@ LSQ::SingleDataRequest::sendPacketToCache()
         if (!bank_conflict) {
             _numOutstandingPackets = 1;
             LSQRequest::_inst->hasPendingCacheReq(true);
+            LSQRequest::_inst->pendingCacheReq = this;
         }
     }
     if (bank_conflict) {
@@ -1792,6 +1795,7 @@ LSQ::SplitDataRequest::sendPacketToCache()
 
     if (_numOutstandingPackets == _packets.size()) {
         LSQRequest::_inst->hasPendingCacheReq(true);
+        LSQRequest::_inst->pendingCacheReq = this;
         return true;
     }
     return false;

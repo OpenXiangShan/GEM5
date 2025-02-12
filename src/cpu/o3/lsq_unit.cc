@@ -992,8 +992,6 @@ LSQUnit::loadReplayHelper(DynInstPtr inst, LSQRequest* request, bool cacheMiss, 
     // Reset DTB translation state
     inst->translationStarted(false);
     inst->translationCompleted(false);
-    // set as not able to issue
-    inst->clearCanIssue();
     if (cacheMiss) {
         // set it as waiting for dcache refill
         inst->waitingCacheRefill(true);

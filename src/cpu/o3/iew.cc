@@ -1862,17 +1862,18 @@ IEW::checkLoadStoreInst(DynInstPtr inst)
     }
     assert(inst->isLoad() || inst->isStore());
 
-    if (inst->isIssued() && !inst->translationCompleted()) {
+    if (inst->isIssued() && inst->translationStarted() && !inst->translationCompleted()) {
         return StallReason::DTlbStall;
     }
 
-    bool inFlight = inst->isIssued() && inst->translationCompleted();
+    bool inFlight = inst->isIssued() && inst->hasPendingCacheReq();
+    bool lsuStall = inst->isIssued() && !inst->hasPendingCacheReq();
     //Level of the cache hierachy where this request was responded to
     //e.g. 0:in l1, 1:in l2
     int depth=-1;
     if (inFlight) {
-        assert(inst->savedRequest);
-        depth = inst->savedRequest->mainReq()->depth;
+        assert(inst->pendingCacheReq);
+        depth = inst->pendingCacheReq->mainReq()->depth;
     }
     assert(depth < 5);
     bool in_l1 = depth == 0;
@@ -1890,8 +1891,15 @@ IEW::checkLoadStoreInst(DynInstPtr inst)
         return inst->isLoad() ? StallReason::LoadL3Bound : StallReason::StoreL3Bound;
     } else if (inFlight && in_mem) {
         return inst->isLoad() ? StallReason::LoadMemBound : StallReason::StoreMemBound;
+    } else if (inFlight && other_stall) {
+        return StallReason::OtherMemStall;
     }
-    return StallReason::OtherMemStall;
+
+    if (lsuStall) {
+        return inst->isLoad() ? StallReason::LoadL1Bound : StallReason::StoreL1Bound;
+    } else {
+        return StallReason::OtherMemStall;
+    }
 }
 
 StallReason
