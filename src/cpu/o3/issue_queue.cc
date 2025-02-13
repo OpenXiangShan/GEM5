@@ -784,17 +784,26 @@ Scheduler::issueAndSelect()
     for (auto it : issueQues) {
         it->issueToFu();
     }
+    bool mentall_store = false, menstall_load = false;
+
     if (instsToFu.size() < intel_fewops) {
         stats.exec_stall_cycle++;
-        if (lsq->anyStoreNotExecute()) stats.memstall_any_store++;
+        if (lsq->anyStoreNotExecute()) {
+            stats.memstall_any_store++;
+            mentall_store = true;
+        }
     }
     if (instsToFu.size() == 0) {
         int misslevel = lsq->anyInflightLoadsNotComplete();
-        if (misslevel != 0) stats.memstall_any_load++;
+        if (misslevel != 0) {
+            stats.memstall_any_load++;
+            menstall_load = true;
+        }
         if ((misslevel & ((1<<1) - 1)) == ((1<<1) - 1)) stats.memstall_l1miss++;
         if ((misslevel & ((1<<2) - 1)) == ((1<<2) - 1)) stats.memstall_l2miss++;
         if ((misslevel & ((1<<3) - 1)) == ((1<<3) - 1)) stats.memstall_l3miss++;
     }
+    stats.menstall_both_load_stall += (menstall_load && mentall_store);
 
     // must wait for all insts was issued
     for (auto it : issueQues) {

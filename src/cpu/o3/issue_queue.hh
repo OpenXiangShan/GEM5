@@ -222,6 +222,7 @@ class Scheduler : public SimObject
         statistics::Scalar memstall_l1miss;
         statistics::Scalar memstall_l2miss;
         statistics::Scalar memstall_l3miss;
+        statistics::Scalar menstall_both_load_stall;
     } stats;
 
     struct disp_policy

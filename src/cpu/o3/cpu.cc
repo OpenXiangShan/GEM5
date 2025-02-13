@@ -499,9 +499,11 @@ CPU::CPUStats::CPUStats(CPU *cpu)
     
     Scheduler* scheduler = cpu->iew.getScheduler();
     const auto &stats = scheduler->getStats();
-    // coreBound = (EXEC_STALL_CYCLE - MEMSTALL_ANYLOAD - MEMSTALL_STORE)/CPU_CYCLE
-    coreBound = (stats.exec_stall_cycle - stats.memstall_any_load - stats.memstall_any_store) / cpu->baseStats.numCycles;
-    memoryBound = (stats.memstall_any_load + stats.memstall_any_store) / cpu->baseStats.numCycles;
+    // coreBound = (EXEC_STALL_CYCLE - MEMSTALL_ANYLOAD - MEMSTALL_STORE + MENSTALL_BOTH_LOAD_STALL)/CPU_CYCLE
+    coreBound = (stats.exec_stall_cycle - stats.memstall_any_load - stats.memstall_any_store
+                    + stats.menstall_both_load_stall) / cpu->baseStats.numCycles;
+    memoryBound = (stats.memstall_any_load + stats.memstall_any_store
+                    - stats.menstall_both_load_stall) / cpu->baseStats.numCycles;
     l1Bound = (stats.memstall_any_load - stats.memstall_l1miss) / cpu->baseStats.numCycles;
     l2Bound = (stats.memstall_l1miss - stats.memstall_l2miss) / cpu->baseStats.numCycles;
     l3Bound = (stats.memstall_l2miss - stats.memstall_l3miss) / cpu->baseStats.numCycles;
