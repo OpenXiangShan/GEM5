@@ -76,3 +76,10 @@ jobs:
           echo "### Key indicators" >> $GITHUB_STEP_SUMMARY
           echo "- Final Int score per GHz: **${FINAL_SCORE}**" >> $GITHUB_STEP_SUMMARY
           
+          # 最后检查是否存在abort文件
+          if find $GEM5_HOME/util/xs_scripts/test/spec_all -type f -name "abort" | grep -q .; then
+            echo "### :x: Test Failures Detected!" >> $GITHUB_STEP_SUMMARY
+            echo "Failed test count: $(find $GEM5_HOME/util/xs_scripts/test/spec_all -type f -name "abort" | wc -l)" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+          
