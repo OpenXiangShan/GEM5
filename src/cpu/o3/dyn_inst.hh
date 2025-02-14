@@ -1068,12 +1068,13 @@ class DynInst : public ExecContext, public RefCounted
     {
         if (isVector() && !isStore()) {
             auto vecinst = dynamic_cast<RiscvISA::VectorMicroInst *>(staticInst.get());
-            if (vecinst->vlsrcIdx < 0 || vecinst->oldDstIdx < 0) {
+            if (vecinst->vlsrcIdx <= 0 || vecinst->oldDstIdx <= 0) {
                 return false;
             }
             if (!readySrcIdx(vecinst->vlsrcIdx)) {
                 return false;
             }
+
             uint64_t vl = getRegOperand(staticInst.get(), vecinst->vlsrcIdx);
             bool set = vecinst->vmi.rs < RiscvISA::vtype_VLMAX(vecinst->machInst.vtype8);
             bool eleFullCover = vecinst->vmi.re <= vl;
