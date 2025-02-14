@@ -2398,16 +2398,14 @@ decode QUADRANT default Unknown::unknown() {
                 }
                 format VectorReduceIntWideningFormat {
                     0x30: vwredsumu_vs({{
-                        std::plus<vwui>();
-                        [[maybe_unused]] auto _1 = Vd;
-                        [[maybe_unused]] auto _2 = Vs2;
-                        [[maybe_unused]] auto _3 = rVl;
+                        Vd_vwu[0] = reduce_loop(std::plus<vwu>(),
+                            Vs1_vwu, Vs2_vu);
+                        uint32_t ignore_this = rVl;
                     }}, OPIVV, VectorIntegerReduceOp);
                     0x31: vwredsum_vs({{
-                        std::plus<vwui>();
-                        [[maybe_unused]] auto _1 = Vd;
-                        [[maybe_unused]] auto _2 = Vs2;
-                        [[maybe_unused]] auto _3 = rVl;
+                        Vd_vwu[0] = reduce_loop(std::plus<vwi>(),
+                            Vs1_vwi, Vs2_vi);
+                        uint32_t ignore_this = rVl;
                     }}, OPIVV, VectorIntegerReduceOp);
                 }
                 format VectorIntMaskFormat {
@@ -2513,12 +2511,10 @@ decode QUADRANT default Unknown::unknown() {
                     Vd_vu[i] = fd.v;
                 }}, OPFVV, VectorFloatArithOp);
                 0x01: VectorReduceFloatFormat::vfredusum_vs({{
-                    [](const vu& src1, const vu& src2) {
+                    Vd_vu[0] = reduce_loop([](const vu& src1, const vu& src2) {
                         return fadd<et>(ftype<et>(src1), ftype<et>(src2));
-                    };
-                        [[maybe_unused]] auto _1 = Vd;
-                        [[maybe_unused]] auto _2 = Vs2;
-                        [[maybe_unused]] auto _3 = rVl;
+                    }, Vs1_vu, Vs2_vu);
+                    uint32_t ignore_this = rVl;
                 }}, OPFVV, VectorFloatReduceOp);
                 0x02: VectorFloatFormat::vfsub_vv({{
                     auto fd = fsub<et>(ftype<et>(Vs2_vu[i]),
@@ -2526,12 +2522,10 @@ decode QUADRANT default Unknown::unknown() {
                     Vd_vu[i] = fd.v;
                 }}, OPFVV, VectorFloatArithOp);
                 0x03: VectorReduceFloatFormat::vfredosum_vs({{
-                    [](const vu& src1, const vu& src2) {
+                    Vd_vu[0] = reduce_loop([](const vu& src1, const vu& src2) {
                         return fadd<et>(ftype<et>(src1), ftype<et>(src2));
-                    };
-                        [[maybe_unused]] auto _1 = Vd;
-                        [[maybe_unused]] auto _2 = Vs2;
-                        [[maybe_unused]] auto _3 = rVl;
+                    }, Vs1_vu, Vs2_vu);
+                    uint32_t ignore_this = rVl;
                 }}, OPFVV, VectorFloatReduceOp);
                 0x04: VectorFloatFormat::vfmin_vv({{
                     auto fd = fmin<et>(ftype<et>(Vs2_vu[i]),
@@ -2539,12 +2533,10 @@ decode QUADRANT default Unknown::unknown() {
                     Vd_vu[i] = fd.v;
                 }}, OPFVV, VectorFloatArithOp);
                 0x05: VectorReduceFloatFormat::vfredmin_vs({{
-                    [](const vu& src1, const vu& src2) {
+                    Vd_vu[0] = reduce_loop([](const vu& src1, const vu& src2) {
                         return fmin<et>(ftype<et>(src1), ftype<et>(src2));
-                    };
-                        [[maybe_unused]] auto _1 = Vd;
-                        [[maybe_unused]] auto _2 = Vs2;
-                        [[maybe_unused]] auto _3 = rVl;
+                    }, Vs1_vu, Vs2_vu);
+                    uint32_t ignore_this = rVl;
                 }}, OPFVV, VectorFloatReduceOp);
                 0x06: VectorFloatFormat::vfmax_vv({{
                     auto fd = fmax<et>(ftype<et>(Vs2_vu[i]),
@@ -2552,12 +2544,10 @@ decode QUADRANT default Unknown::unknown() {
                     Vd_vu[i] = fd.v;
                 }}, OPFVV, VectorFloatArithOp);
                 0x07: VectorReduceFloatFormat::vfredmax_vs({{
-                    [](const vu& src1, const vu& src2) {
+                    Vd_vu[0] = reduce_loop([](const vu& src1, const vu& src2) {
                         return fmax<et>(ftype<et>(src1), ftype<et>(src2));
-                    };
-                        [[maybe_unused]] auto _1 = Vd;
-                        [[maybe_unused]] auto _2 = Vs2;
-                        [[maybe_unused]] auto _3 = rVl;
+                    }, Vs1_vu, Vs2_vu);
+                    uint32_t ignore_this = rVl;
                 }}, OPFVV, VectorFloatReduceOp);
                 0x08: VectorFloatFormat::vfsgnj_vv({{
                     Vd_vu[i] = fsgnj<et>(ftype<et>(Vs2_vu[i]),
@@ -2790,20 +2780,16 @@ decode QUADRANT default Unknown::unknown() {
                         Vd_vu[i] = fd.v;
                     }}, OPFVV, VectorFloatArithOp);
                     0x31: VectorReduceFloatWideningFormat::vfwredusum_vs({{
-                        [](const vwu& src1, const vu& src2) {
+                        Vd_vwu[0] = reduce_loop([](const vwu& src1, const vu& src2) {
                             return fadd<ewt>(ftype<ewt>(src1), f_to_wf<et>(ftype<et>(src2)));
-                        };
-                        [[maybe_unused]] auto _1 = Vd;
-                        [[maybe_unused]] auto _2 = Vs2;
-                        [[maybe_unused]] auto _3 = rVl;
+                        }, Vs1_vwu, Vs2_vu);
+                        uint32_t ignore_this = rVl;
                     }}, OPFVV, VectorFloatReduceOp);
                     0x33: VectorReduceFloatWideningFormat::vfwredosum_vs({{
-                        [](const vwu& src1, const vu& src2) {
+                        Vd_vwu[0] = reduce_loop([](const vwu& src1, const vu& src2) {
                             return fadd<ewt>(ftype<ewt>(src1), f_to_wf<et>(ftype<et>(src2)));
-                        };
-                        [[maybe_unused]] auto _1 = Vd;
-                        [[maybe_unused]] auto _2 = Vs2;
-                        [[maybe_unused]] auto _3 = rVl;
+                        }, Vs1_vwu, Vs2_vu);
+                        uint32_t ignore_this = rVl;
                     }}, OPFVV, VectorFloatReduceOp);
                 }
                 format VectorFloatWideningFormat {
@@ -2871,60 +2857,52 @@ decode QUADRANT default Unknown::unknown() {
             0x2: decode VFUNCT6 {
                 format VectorReduceIntFormat {
                     0x0: vredsum_vs({{
-                        std::plus<vui>();
-                        [[maybe_unused]] auto _1 = Vd;
-                        [[maybe_unused]] auto _2 = Vs2;
-                        [[maybe_unused]] auto _3 = rVl;
+                        Vd_vi[0] =
+                            reduce_loop(std::plus<vi>(), Vs1_vi, Vs2_vi);
+                        uint32_t ignore_this = rVl;
                     }}, OPMVV, VectorIntegerReduceOp);
                     0x1: vredand_vs({{
-                        std::bit_and<vui>();
-                        [[maybe_unused]] auto _1 = Vd;
-                        [[maybe_unused]] auto _2 = Vs2;
-                        [[maybe_unused]] auto _3 = rVl;
+                        Vd_vi[0] =
+                            reduce_loop(std::bit_and<vi>(), Vs1_vi, Vs2_vi);
+                        uint32_t ignore_this = rVl;
                     }}, OPMVV, VectorIntegerReduceOp);
                     0x2: vredor_vs({{
-                        std::bit_or<vui>();
-                        [[maybe_unused]] auto _1 = Vd;
-                        [[maybe_unused]] auto _2 = Vs2;
-                        [[maybe_unused]] auto _3 = rVl;
+                        Vd_vi[0] =
+                            reduce_loop(std::bit_or<vi>(), Vs1_vi, Vs2_vi);
+                        uint32_t ignore_this = rVl;
                     }}, OPMVV, VectorIntegerReduceOp);
                     0x3: vredxor_vs({{
-                        std::bit_xor<vui>();
-                        [[maybe_unused]] auto _1 = Vd;
-                        [[maybe_unused]] auto _2 = Vs2;
-                        [[maybe_unused]] auto _3 = rVl;
+                        Vd_vi[0] =
+                            reduce_loop(std::bit_xor<vi>(), Vs1_vi, Vs2_vi);
+                        uint32_t ignore_this = rVl;
                     }}, OPMVV, VectorIntegerReduceOp);
                     0x4: vredminu_vs({{
-                        [](const vui& src1, const vui& src2) {
-                            return std::min<vui>(src1, src2);
-                        };
-                        [[maybe_unused]] auto _1 = Vd;
-                        [[maybe_unused]] auto _2 = Vs2;
-                        [[maybe_unused]] auto _3 = rVl;
+                        Vd_vu[0] =
+                            reduce_loop([](const vu& src1, const vu& src2) {
+                                return std::min<vu>(src1, src2);
+                            }, Vs1_vu, Vs2_vu);
+                        uint32_t ignore_this = rVl;
                     }}, OPMVV, VectorIntegerReduceOp);
                     0x5: vredmin_vs({{
-                        [](const vui& src1, const vui& src2) {
-                            return std::min<vui>(src1, src2);
-                        };
-                        [[maybe_unused]] auto _1 = Vd;
-                        [[maybe_unused]] auto _2 = Vs2;
-                        [[maybe_unused]] auto _3 = rVl;
+                        Vd_vi[0] =
+                            reduce_loop([](const vi& src1, const vi& src2) {
+                                return std::min<vi>(src1, src2);
+                            }, Vs1_vi, Vs2_vi);
+                        uint32_t ignore_this = rVl;
                     }}, OPMVV, VectorIntegerReduceOp);
                     0x6: vredmaxu_vs({{
-                        [](const vui& src1, const vui& src2) {
-                            return std::max<vui>(src1, src2);
-                        };
-                        [[maybe_unused]] auto _1 = Vd;
-                        [[maybe_unused]] auto _2 = Vs2;
-                        [[maybe_unused]] auto _3 = rVl;
+                        Vd_vu[0] =
+                            reduce_loop([](const vu& src1, const vu& src2) {
+                                return std::max<vu>(src1, src2);
+                            }, Vs1_vu, Vs2_vu);
+                        uint32_t ignore_this = rVl;
                     }}, OPMVV, VectorIntegerReduceOp);
                     0x7: vredmax_vs({{
-                        [](const vui& src1, const vui& src2) {
-                            return std::max<vui>(src1, src2);
-                        };
-                        [[maybe_unused]] auto _1 = Vd;
-                        [[maybe_unused]] auto _2 = Vs2;
-                        [[maybe_unused]] auto _3 = rVl;
+                        Vd_vi[0] =
+                            reduce_loop([](const vi& src1, const vi& src2) {
+                                return std::max<vi>(src1, src2);
+                            }, Vs1_vi, Vs2_vi);
+                        uint32_t ignore_this = rVl;
                     }}, OPMVV, VectorIntegerReduceOp);
                 }
                 format VectorIntFormat {

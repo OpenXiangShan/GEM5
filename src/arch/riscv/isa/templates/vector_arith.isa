@@ -6,7 +6,7 @@ output header {{
 #define COPY_OLD_VD() \
     [[maybe_unused]] RiscvISA::vreg_t old_vd; \
     [[maybe_unused]] decltype(Vd) old_Vd = nullptr; \
-    assert(oldDstIdx > -1); \
+    assert(oldDstIdx > 0); \
     xc->getRegOperand(this, oldDstIdx, &old_vd); \
     old_Vd = old_vd.as<std::remove_reference_t<decltype(Vd[0])> >(); \
     memcpy(Vd, old_Vd, VLENB);
@@ -1301,6 +1301,8 @@ def template VectorReduceMacroDeclare {{
 
 template<typename ElemType>
 class %(class_name)s : public %(base_class)s {
+private:
+    %(reg_idx_arr_decl)s;
 public:
     %(class_name)s(ExtMachInst _machInst);
     using %(base_class)s::generateDisassembly;
@@ -1319,13 +1321,10 @@ template<typename ElemType>
     StaticInstPtr microop;
 
     for (int i = 0; i < num_microops; ++i) {
-        microop = new %(class_name)sMicro<ElemType>(_machInst, i, (i == 0 ? 0 : 1));
+        microop = new %(class_name)sMicro<ElemType>(_machInst, i);
         microop->setDelayedCommit();
         this->microops.push_back(microop);
     }
-    microop = new %(class_name)sMicro<ElemType>(_machInst, num_microops, 2);
-    microop->setDelayedCommit();
-    this->microops.push_back(microop);
     this->microops.front()->setFirstMicroop();
     this->microops.back()->setLastMicroop();
 }
@@ -1338,20 +1337,12 @@ template<typename ElemType>
 class %(class_name)s : public %(base_class)s
 {
 private:
-    // first microop: vtmp0 <- reduce_loop(vs2)
-    // middle microop: vtmp0 <- vtmp0 + reduce_loop(vs2)
-    // last microop: vd <= oldvd + vtmp0 + vs1
     // vs2, vs1, vd, vm
     RegId srcRegIdxArr[8];
     RegId destRegIdxArr[1];
 public:
-    enum MicroopPos {
-        FirstUop = 0,  // 0
-        MiddleUop = 1, // 1
-        LastUop = 2,   // 2
-    } pos;
     %(class_name)s(ExtMachInst _machInst,
-                   uint8_t _microIdx, int pos);
+                   uint8_t _microIdx);
     Fault execute(ExecContext* xc, Trace::InstRecord* traceData)const override;
     std::string generateDisassembly(Addr pc,
         const Loader::SymbolTable *symtab) const override
@@ -1381,14 +1372,13 @@ def template VectorReduceMicroConstructor {{
 
 template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst,
-                                         uint8_t _microIdx, int pos)
+                                         uint8_t _microIdx)
 : %(base_class)s("%(mnemonic)s", _machInst,
                  %(op_class)s, _microIdx)
 {
-    this->pos = (MicroopPos)pos;
     uint32_t elem_num_per_vreg = VLEN / sew;
-    vmi.rs = 0;
-    vmi.re = 1;
+    vmi.rs = _microIdx * elem_num_per_vreg;
+    vmi.re = (_microIdx+1) * elem_num_per_vreg;
     %(set_reg_idx_arr)s;
     _numSrcRegs = 0;
     _numDestRegs = 0;
@@ -1410,31 +1400,20 @@ Fault
         return std::make_shared<IllegalInstFault>("VILL is set", machInst);
     }
 
-    auto &tmp_d0 =
-    *(RiscvISAInst::VecRegContainer *)
-    xc->getWritableRegOperand(
-        this, 0);
-    auto Vd = tmp_d0.as<vui>();
-
-    uint64_t rVl = 0;
-    assert(vlsrcIdx > 0);
-    rVl = xc->getRegOperand(this, vlsrcIdx);
+    %(op_decl)s;
+    %(op_rd)s;
+    %(vm_decl_rd)s;
+    COPY_OLD_VD();
 
     uint32_t microvlmax = VLEN / sew * (vflmul > 0 ? 1 : vflmul);
     uint32_t elem_num_per_vreg = microvlmax;
-
-    %(vm_decl_rd)s;
-    vui vtmp, vs1;
-    vui *Vs2=nullptr;
-
-    auto func = %(code)s;
     auto reduce_loop =
-        [&, this](bool middle, vui vtmp) {
-            ElemType microop_result = middle ? vtmp : Vs2[0];
+        [&, this](const auto& f, const auto* _, const auto* vs2) {
+            ElemType microop_result = this->microIdx != 0 ? old_Vd[0] : Vs1[0];;
             for (uint32_t i = 0; i < microvlmax; i++) {
                 uint32_t ei = i + microvlmax * this->microIdx;
                 if ((ei < rVl) && (this->vm || elem_mask(v0, ei))) {
-                    microop_result = func(microop_result, Vs2[i]);
+                    microop_result = f(microop_result, Vs2[i]);
                 } else if (ei >= rVl) {
                     break;
                 }
@@ -1442,41 +1421,8 @@ Fault
             return microop_result;
         };
 
-    vui result;
-    if (pos == FirstUop) {
-        RiscvISAInst::VecRegContainer tmp_s0;
-        xc->getRegOperand(this, 0,
-            &tmp_s0);
-        Vs2 = tmp_s0.as<vui>();
-        result = reduce_loop(false, 0);
-    } else if (pos == MiddleUop) {
-        RiscvISAInst::VecRegContainer tmp_s0;
-        xc->getRegOperand(this, 0,
-            &tmp_s0);
-        vtmp = tmp_s0.as<vui>()[0];
-
-        xc->getRegOperand(this, 1,
-            &tmp_s0);
-        Vs2 = tmp_s0.as<vui>();
-        result = reduce_loop(true, vtmp);
-    } else {
-        COPY_OLD_VD();
-        RiscvISAInst::VecRegContainer tmp_s0;
-        xc->getRegOperand(this, 1,
-            &tmp_s0);
-        vtmp = tmp_s0.as<vui>()[0];
-        xc->getRegOperand(this, 2,
-            &tmp_s0);
-        vs1 = tmp_s0.as<vui>()[0];
-        result = func(vtmp, vs1);
-    }
-    Vd[0] = result;
-
-    xc->setRegOperand(this,0, &tmp_d0);
-    if (traceData) {
-        traceData->setData(tmp_d0);
-    }
-
+    %(code)s;
+    %(op_wb)s;
     return NoFault;
 }
 
@@ -1494,163 +1440,30 @@ Fault
         return std::make_shared<IllegalInstFault>("VILL is set", machInst);
     }
 
-    auto &tmp_d0 =
-    *(RiscvISAInst::VecRegContainer *)
-    xc->getWritableRegOperand(
-        this, 0);
-    auto Vd = tmp_d0.as<vu>();
-
-    uint64_t rVl = 0;
-    assert(vlsrcIdx > 0);
-    rVl = xc->getRegOperand(this, vlsrcIdx);
-
-    uint32_t microvlmax = VLEN / sew * (vflmul > 0 ? 1 : vflmul);
-    uint32_t elem_num_per_vreg = microvlmax;
-
+    %(op_decl)s;
+    %(op_rd)s;
     %(vm_decl_rd)s;
-    vu vtmp, vs1;
-    vu *Vs2=nullptr;
+    COPY_OLD_VD();
 
-    auto func = %(code)s;
-    auto reduce_loop =
-        [&, this](bool middle, vu vtmp) {
-            vu microop_result = middle ? vtmp : Vs2[0];
-            for (uint32_t i = 0; i < microvlmax; i++) {
-                uint32_t ei = i + microvlmax * this->microIdx;
-                if ((ei < rVl) && (this->vm || elem_mask(v0, ei))) {
-                    microop_result = func(microop_result, Vs2[i]).v;
-                } else if (ei >= rVl) {
-                    break;
+    uint32_t micro_vlmax = VLEN / sew * (vflmul > 0 ? 1 : vflmul);
+    if (micro_vlmax * this->microIdx < rVl) {
+        Vd[0] = this->microIdx != 0 ? old_Vd[0] : Vs1[0];
+
+        auto reduce_loop =
+            [&, this](const auto& f, const auto* _, const auto* vs2) {
+                vu tmp_val = Vd[0];
+                for (uint32_t i = 0; i < micro_vlmax; i++) {
+                    uint32_t ei = i + micro_vlmax * this->microIdx;
+                    if ((ei < rVl) && (this->vm || elem_mask(v0, ei))) {
+                        tmp_val = f(tmp_val, Vs2[i]).v;
+                    }
                 }
-            }
-            return microop_result;
-        };
-
-    vu result;
-    if (pos == FirstUop) {
-        RiscvISAInst::VecRegContainer tmp_s0;
-        xc->getRegOperand(this, 0,
-            &tmp_s0);
-        Vs2 = tmp_s0.as<vu>();
-        result = reduce_loop(false, 0);
-    } else if (pos == MiddleUop) {
-        RiscvISAInst::VecRegContainer tmp_s0;
-        xc->getRegOperand(this, 0,
-            &tmp_s0);
-        vtmp = tmp_s0.as<vu>()[0];
-
-        xc->getRegOperand(this, 1,
-            &tmp_s0);
-        Vs2 = tmp_s0.as<vu>();
-        result = reduce_loop(true, vtmp);
-    } else {
-        COPY_OLD_VD();
-        RiscvISAInst::VecRegContainer tmp_s0;
-        xc->getRegOperand(this, 1,
-            &tmp_s0);
-        vtmp = tmp_s0.as<vu>()[0];
-        xc->getRegOperand(this, 2,
-            &tmp_s0);
-        vs1 = tmp_s0.as<vu>()[0];
-        result = func(vtmp, vs1).v;
-    }
-    RegVal FFLAGS = xc->readMiscReg(MISCREG_FFLAGS);
-    std::feclearexcept(FE_ALL_EXCEPT);
-    FFLAGS |= softfloat_exceptionFlags;
-    if (softfloat_exceptionFlags) {
-        softfloat_exceptionFlags = 0;
-        xc->setMiscReg(MISCREG_FFLAGS, FFLAGS);
+                return tmp_val;
+            };
+        %(code)s;
     }
 
-    Vd[0] = result;
-
-    xc->setRegOperand(this,0, &tmp_d0);
-    if (traceData) {
-        traceData->setData(tmp_d0);
-    }
-
-    return NoFault;
-}
-
-}};
-
-def template VectorReduceIntWideningMicroExecute {{
-
-template <typename ElemType>
-Fault
-%(class_name)s<ElemType>::execute(ExecContext* xc,
-                                  Trace::InstRecord* traceData) const
-{
-    %(type_def)s;
-    if (machInst.vill) {
-        return std::make_shared<IllegalInstFault>("VILL is set", machInst);
-    }
-
-    auto &tmp_d0 =
-    *(RiscvISAInst::VecRegContainer *)
-    xc->getWritableRegOperand(
-        this, 0);
-    auto Vd = tmp_d0.as<vwui>();
-
-    uint64_t rVl = 0;
-    assert(vlsrcIdx > 0);
-    rVl = xc->getRegOperand(this, vlsrcIdx);
-
-    uint32_t microvlmax = VLEN / sew * (vflmul > 0 ? 1 : vflmul);
-    uint32_t elem_num_per_vreg = microvlmax;
-
-    %(vm_decl_rd)s;
-    vwui vtmp, vs1;
-    vui *Vs2=nullptr;
-
-    auto func = %(code)s;
-    auto reduce_loop =
-        [&, this](bool middle, vwui vtmp) {
-            vwui microop_result = middle ? vtmp : Vs2[0];
-            for (uint32_t i = 0; i < microvlmax; i++) {
-                uint32_t ei = i + microvlmax * this->microIdx;
-                if ((ei < rVl) && (this->vm || elem_mask(v0, ei))) {
-                    microop_result = func(microop_result, Vs2[i]);
-                } else if (ei >= rVl) {
-                    break;
-                }
-            }
-            return microop_result;
-        };
-
-    vui result;
-    if (pos == FirstUop) {
-        RiscvISAInst::VecRegContainer tmp_s0;
-        xc->getRegOperand(this, 0,
-            &tmp_s0);
-        Vs2 = tmp_s0.as<vui>();
-        result = reduce_loop(false, 0);
-    } else if (pos == MiddleUop) {
-        RiscvISAInst::VecRegContainer tmp_s0;
-        xc->getRegOperand(this, 0,
-            &tmp_s0);
-        vtmp = tmp_s0.as<vwui>()[0];
-        xc->getRegOperand(this, 1,
-            &tmp_s0);
-        Vs2 = tmp_s0.as<vui>();
-        result = reduce_loop(true, vtmp);
-    } else {
-        COPY_OLD_VD();
-        RiscvISAInst::VecRegContainer tmp_s0;
-        xc->getRegOperand(this, 1,
-            &tmp_s0);
-        vtmp = tmp_s0.as<vwui>()[0];
-        xc->getRegOperand(this, 2,
-            &tmp_s0);
-        vs1 = tmp_s0.as<vwui>()[0];
-        result = func(vtmp, vs1);
-    }
-    Vd[0] = result;
-
-    xc->setRegOperand(this,0, &tmp_d0);
-    if (traceData) {
-        traceData->setData(tmp_d0);
-    }
+    %(op_wb)s;
     return NoFault;
 }
 
@@ -1668,80 +1481,30 @@ Fault
         return std::make_shared<IllegalInstFault>("VILL is set", machInst);
     }
 
-    auto &tmp_d0 =
-    *(RiscvISAInst::VecRegContainer *)
-    xc->getWritableRegOperand(
-        this, 0);
-    auto Vd = tmp_d0.as<vwu>();
-
-    uint64_t rVl = 0;
-    assert(vlsrcIdx > 0);
-    rVl = xc->getRegOperand(this, vlsrcIdx);
-
-    uint32_t microvlmax = VLEN / sew * (vflmul > 0 ? 1 : vflmul);
-    uint32_t elem_num_per_vreg = microvlmax;
-
+    %(op_decl)s;
+    %(op_rd)s;
     %(vm_decl_rd)s;
-    vwu vtmp, vs1;
-    vu *Vs2=nullptr;
+    COPY_OLD_VD();
 
-    auto func = %(code)s;
-    auto reduce_loop =
-        [&, this](bool middle, vwu vtmp) {
-            vwu microop_result = middle ? vtmp : Vs2[0];
-            for (uint32_t i = 0; i < microvlmax; i++) {
-                uint32_t ei = i + microvlmax * this->microIdx;
-                if ((ei < rVl) && (this->vm || elem_mask(v0, ei))) {
-                    microop_result = func(microop_result, Vs2[i]).v;
-                } else if (ei >= rVl) {
-                    break;
+    uint32_t micro_vlmax = VLEN / sew * (vflmul > 0 ? 1 : vflmul);
+    if (micro_vlmax * this->microIdx < rVl) {
+        Vd[0] = this->microIdx != 0 ? old_Vd[0] : Vs1[0];
+
+        auto reduce_loop =
+            [&, this](const auto& f, const auto* _, const auto* vs2) {
+                vwu tmp_val = Vd[0];
+                for (uint32_t i = 0; i < micro_vlmax; i++) {
+                    uint32_t ei = i + micro_vlmax * this->microIdx;
+                    if ((ei < rVl) && (this->vm || elem_mask(v0, ei))) {
+                        tmp_val = f(tmp_val, Vs2[i]).v;
+                    }
                 }
-            }
-            return microop_result;
-        };
-
-    vwu result;
-    if (pos == FirstUop) {
-        RiscvISAInst::VecRegContainer tmp_s0;
-        xc->getRegOperand(this, 0,
-            &tmp_s0);
-        Vs2 = tmp_s0.as<vu>();
-        result = reduce_loop(false, 0);
-    } else if (pos == MiddleUop) {
-        RiscvISAInst::VecRegContainer tmp_s0;
-        xc->getRegOperand(this, 0,
-            &tmp_s0);
-        vtmp = tmp_s0.as<vwu>()[0];
-
-        xc->getRegOperand(this, 1,
-            &tmp_s0);
-        Vs2 = tmp_s0.as<vu>();
-        result = reduce_loop(true, vtmp);
-    } else {
-        COPY_OLD_VD();
-        RiscvISAInst::VecRegContainer tmp_s0;
-        xc->getRegOperand(this, 1,
-            &tmp_s0);
-        vtmp = tmp_s0.as<vwu>()[0];
-        xc->getRegOperand(this, 2,
-            &tmp_s0);
-        vs1 = tmp_s0.as<vwu>()[0];
-        result = func(vtmp, vs1).v;
-    }
-    Vd[0] = result;
-    RegVal FFLAGS = xc->readMiscReg(MISCREG_FFLAGS);
-    std::feclearexcept(FE_ALL_EXCEPT);
-    FFLAGS |= softfloat_exceptionFlags;
-    if (softfloat_exceptionFlags) {
-        softfloat_exceptionFlags = 0;
-        xc->setMiscReg(MISCREG_FFLAGS, FFLAGS);
+                return tmp_val;
+            };
+        %(code)s;
     }
 
-    xc->setRegOperand(this,0, &tmp_d0);
-    if (traceData) {
-        traceData->setData(tmp_d0);
-    }
-
+    %(op_wb)s;
     return NoFault;
 }
 
@@ -1986,6 +1749,52 @@ template<typename ElemType>
     _numDestRegs = 0;
     %(set_dest_reg_idx)s;
     %(set_src_reg_idx)s;
+}
+
+}};
+
+def template VectorReduceIntWideningMicroExecute {{
+
+template <typename ElemType>
+Fault
+%(class_name)s<ElemType>::execute(ExecContext* xc,
+                                  Trace::InstRecord* traceData) const
+{
+    using vu [[maybe_unused]] = std::make_unsigned_t<ElemType>;
+    using vi [[maybe_unused]] = std::make_signed_t<ElemType>;
+    using vwu [[maybe_unused]] = typename double_width<vu>::type;
+    using vwi [[maybe_unused]] = typename double_width<vi>::type;
+
+    if (machInst.vill) {
+        return std::make_shared<IllegalInstFault>("VILL is set", machInst);
+    }
+
+    %(op_decl)s;
+    %(op_rd)s;
+    %(vm_decl_rd)s;
+    COPY_OLD_VD();
+
+    uint32_t micro_vlmax = VLEN / sew * (vflmul > 0 ? 1 : vflmul);
+    if (micro_vlmax * this->microIdx < rVl) {
+
+        Vd[0] = this->microIdx != 0 ? old_Vd[0] : Vs1[0];
+        auto reduce_loop =
+            [&, this](const auto& f, const auto* _, const auto* vs2) {
+                vwu tmp_val = Vd[0];
+                for (uint32_t i = 0; i < micro_vlmax; i++) {
+                    uint32_t ei = i + micro_vlmax * this->microIdx;
+                    if ((ei < rVl) && (this->vm || elem_mask(v0, ei))) {
+                        tmp_val = f(tmp_val, Vs2[i]);
+                    }
+                }
+                return tmp_val;
+            };
+
+        %(code)s;
+    }
+
+    %(op_wb)s;
+    return NoFault;
 }
 
 }};
