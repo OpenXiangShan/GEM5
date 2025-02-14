@@ -253,12 +253,7 @@ CPU::CPU(const BaseO3CPUParams &params)
                 commitRenameMap[tid].setEntry(rid, phys_reg);
             }
         }
-        // set default value
-        uint8_t ones[RiscvISA::VLENB];
-        memset(ones, 0xff, RiscvISA::VLENB);
-        setArchReg(RiscvISA::VecOnesReg, ones, tid);
     }
-    vecOnesPhysRegId = commitRenameMap[0].lookup(RiscvISA::VecOnesReg);
 
     rename.setRenameMap(renameMap);
     commit.setRenameMap(commitRenameMap);

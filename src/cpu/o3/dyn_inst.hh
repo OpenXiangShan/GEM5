@@ -48,7 +48,6 @@
 #include <list>
 #include <string>
 
-#include "arch/riscv/insts/vector.hh"
 #include "base/refcnt.hh"
 #include "base/trace.hh"
 #include "config/the_isa.hh"
@@ -69,7 +68,6 @@
 #include "debug/DecoupleBP.hh"
 #include "debug/HtmCpu.hh"
 #include "debug/RiscvMisc.hh"
-#include "debug/Schedule.hh"
 
 namespace gem5
 {
@@ -1064,38 +1062,6 @@ class DynInst : public ExecContext, public RefCounted
     void setInstListIt(ListIt _instListIt) { instListIt = _instListIt; }
 
   public:
-    bool checkOldVdElim()
-    {
-        if (isVector() && !isStore()) {
-            auto vecinst = dynamic_cast<RiscvISA::VectorMicroInst *>(staticInst.get());
-            if (vecinst->vlsrcIdx <= 0 || vecinst->oldDstIdx <= 0) {
-                return false;
-            }
-            if (!readySrcIdx(vecinst->vlsrcIdx)) {
-                return false;
-            }
-
-            uint64_t vl = getRegOperand(staticInst.get(), vecinst->vlsrcIdx);
-            bool set = vecinst->vmi.rs < RiscvISA::vtype_VLMAX(vecinst->machInst.vtype8);
-            bool eleFullCover = vecinst->vmi.re <= vl;
-            bool oldVdElim = set && ((vl > 0 && vecinst->vma && vecinst->vta) || (vecinst->vma && eleFullCover));
-            DPRINTF(Schedule, "[sn:%llu] vl: %llu, rs: %llu, re: %llu, set: %d, eleFullCover: %d, oldVdElim: %d\n",
-                    seqNum, vl, vecinst->vmi.rs, vecinst->vmi.re, set, eleFullCover, oldVdElim);
-            if (oldVdElim) {
-                DPRINTF(Schedule, "[sn:%llu] old vd elim\n", seqNum);
-                renameSrcReg(vecinst->oldDstIdx, cpu->vecOnesPhysRegId);
-                if (!readySrcIdx(vecinst->oldDstIdx)) {
-                    markSrcRegReady(vecinst->oldDstIdx);
-                }
-            } else {
-                DPRINTF(Schedule, "[sn:%llu] assert failed\n", seqNum);
-                assert(srcRegIdx(vecinst->oldDstIdx) != RiscvISA::VecOnesReg);
-            }
-            return oldVdElim;
-        }
-        return false;
-    }
-
 
 
     /** Returns the number of consecutive store conditional failures. */

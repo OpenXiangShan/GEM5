@@ -1885,27 +1885,12 @@ Commit::updateComInstStats(const DynInstPtr &inst)
     if (inst->isVector()) {
         stats.vectorInstructions[tid]++;
         if (!inst->isMicroop() || inst->isLastMicroop()) {
-            auto vecInst = dynamic_cast<RiscvISA::VectorMicroInst *>(inst->staticInst.get());
             if (inst->opClass() == enums::VectorSegUnitStrideLoad) {
-                stats.segUnitStrideNF.sample(vecInst->vmi.nf);
+                stats.segUnitStrideNF.sample(inst->staticInst->getNF());
             } else if (inst->opClass() == enums::VectorSegStridedLoad) {
-                stats.segStrideNF.sample(vecInst->vmi.nf);
+                stats.segStrideNF.sample(inst->staticInst->getNF());
             } else if (inst->opClass() == enums::VectorSegIndexedLoad) {
-                stats.segIndexedNF.sample(vecInst->vmi.nf);
-            }
-        }
-        if (inst->isMicroop()) {
-            auto vecInst = dynamic_cast<RiscvISA::VectorMicroInst *>(inst->staticInst.get());
-            if (vecInst->vma) {
-                stats.vectorVma++;
-            } else {
-                stats.vectorVmu++;
-            }
-
-            if (vecInst->vta) {
-                stats.vectorVta++;
-            } else {
-                stats.vectorVtu++;
+                stats.segIndexedNF.sample(inst->staticInst->getNF());
             }
         }
     }
