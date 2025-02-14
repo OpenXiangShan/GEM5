@@ -1118,45 +1118,6 @@ def format VectorReduceFloatFormat(code, category, *flags) {{
     decode_block = VectorFloatDecodeBlock.subst(iop)
 }};
 
-def format VectorReduceIntWideningFormat(code, category, *flags) {{
-    iop = InstObjParams(name, Name, 'VectorArithMacroInst', {'code': code},
-                        flags)
-    inst_name, inst_suffix = name.split("_", maxsplit=1)
-    dest_reg_id = "RegId(VecRegClass, _machInst.vd)"
-    src1_reg_id = "RegId(VecRegClass, _machInst.vs1)"
-    src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
-    old_dest_reg_id = "RegId(VecRegClass, _machInst.vd)"
-    set_dest_reg_idx = setDestWrapper(dest_reg_id)
-    set_src_reg_idx = setSrcWrapper(src1_reg_id)
-    set_src_reg_idx += setSrcWrapper(src2_reg_id)
-    # Treat tail undisturbed/agnostic as the same
-    # We always need old rd as src vreg
-    set_src_reg_idx += setOldDestWrapper(old_dest_reg_id)
-    set_src_reg_idx += setSrcVL()
-    set_src_reg_idx += setSrcVm()
-    vm_decl_rd = vmDeclAndReadData()
-
-    microiop = InstObjParams(name + "_micro",
-        Name + "Micro",
-        'VectorArithMicroInst',
-        {'code': code,
-         'set_dest_reg_idx': set_dest_reg_idx,
-         'set_src_reg_idx': set_src_reg_idx,
-         'vm_decl_rd': vm_decl_rd,
-         'copy_old_vd': copyOldVd(2)},
-        flags)
-
-    # Because of the use of templates, we had to put all parts in header to
-    # keep the compiler happy.
-    header_output = \
-        VectorReduceMicroDeclare.subst(microiop) + \
-        VectorReduceMicroConstructor.subst(microiop) + \
-        VectorReduceIntWideningMicroExecute.subst(microiop) + \
-        VectorReduceMacroDeclare.subst(iop) + \
-        VectorReduceMacroConstructor.subst(iop)
-    decode_block = VectorIntWideningDecodeBlock.subst(iop)
-}};
-
 def format VectorReduceFloatWideningFormat(code, category, *flags) {{
     iop = InstObjParams(name, Name, 'VectorArithMacroInst', {'code': code},
                         flags)
@@ -1255,6 +1216,45 @@ def format VectorIntVxsatFormat(code, category, *flags) {{
         VectorIntVxsatMacroConstructor.subst(iop)
 
     decode_block = VectorIntDecodeBlock.subst(iop)
+}};
+
+def format VectorReduceIntWideningFormat(code, category, *flags) {{
+    iop = InstObjParams(name, Name, 'VectorArithMacroInst', {'code': code},
+                        flags)
+    inst_name, inst_suffix = name.split("_", maxsplit=1)
+    dest_reg_id = "RegId(VecRegClass, _machInst.vd)"
+    src1_reg_id = "RegId(VecRegClass, _machInst.vs1)"
+    src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
+    old_dest_reg_id = "RegId(VecRegClass, _machInst.vd)"
+    set_dest_reg_idx = setDestWrapper(dest_reg_id)
+    set_src_reg_idx = setSrcWrapper(src1_reg_id)
+    set_src_reg_idx += setSrcWrapper(src2_reg_id)
+    # Treat tail undisturbed/agnostic as the same
+    # We always need old rd as src vreg
+    set_src_reg_idx += setOldDestWrapper(old_dest_reg_id)
+    set_src_reg_idx += setSrcVL()
+    set_src_reg_idx += setSrcVm()
+    vm_decl_rd = vmDeclAndReadData()
+
+    microiop = InstObjParams(name + "_micro",
+        Name + "Micro",
+        'VectorArithMicroInst',
+        {'code': code,
+         'set_dest_reg_idx': set_dest_reg_idx,
+         'set_src_reg_idx': set_src_reg_idx,
+         'vm_decl_rd': vm_decl_rd,
+         'copy_old_vd': copyOldVd(2)},
+        flags)
+
+    # Because of the use of templates, we had to put all parts in header to
+    # keep the compiler happy.
+    header_output = \
+        VectorReduceMicroDeclare.subst(microiop) + \
+        VectorReduceMicroConstructor.subst(microiop) + \
+        VectorReduceIntWideningMicroExecute.subst(microiop) + \
+        VectorReduceMacroDeclare.subst(iop) + \
+        VectorReduceMacroConstructor.subst(iop)
+    decode_block = VectorIntWideningDecodeBlock.subst(iop)
 }};
 
 let {{

@@ -9,7 +9,6 @@
 #include <string>
 #include <vector>
 
-#include "arch/riscv/insts/vector.hh"
 #include "base/logging.hh"
 #include "base/stats/group.hh"
 #include "base/stats/info.hh"
@@ -223,7 +222,6 @@ IssueQue::checkScoreboard(const DynInstPtr& inst)
             return false;
         }
     }
-    inst->checkOldVdElim();
     return true;
 }
 
@@ -319,9 +317,6 @@ IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
             }
             consumer->markSrcRegReady(srcIdx);
 
-            if (!speculative && consumer->srcRegIdx(srcIdx) == RiscvISA::VecRenamedVLReg) [[unlikely]] {
-                consumer->checkOldVdElim();
-            }
 
             DPRINTF(Schedule, "[sn:%llu] src%d was woken\n", consumer->seqNum, srcIdx);
             addIfReady(consumer);
@@ -526,9 +521,6 @@ IssueQue::insert(const DynInstPtr& inst)
             }
         }
     }
-
-    inst->checkOldVdElim();
-
     if (!addToDepGraph) {
         assert(inst->readyToIssue());
     }
@@ -1033,7 +1025,7 @@ Scheduler::loadCancel(const DynInstPtr& inst)
                 for (auto& it : iq->subDepGraph[dst->flatIndex()]) {
                     int srcIdx = it.first;
                     auto& depInst = it.second;
-                    if (depInst->readySrcIdx(srcIdx) && depInst->renamedSrcIdx(srcIdx) != cpu->vecOnesPhysRegId) {
+                    if (depInst->readySrcIdx(srcIdx)) {
                         DPRINTF(Schedule, "cancel [sn:%llu], clear src p%d ready\n", depInst->seqNum,
                                 depInst->renamedSrcIdx(srcIdx)->flatIndex());
                         depInst->issueQue->cancel(depInst);

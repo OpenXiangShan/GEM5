@@ -1923,7 +1923,6 @@ IEW::getInstDQType(const DynInstPtr &inst)
         panic("Unknown inst op Class: %i type: %s\n", inst->staticInst->opClass(),
               inst->staticInst->disassemble(inst->pcState().instAddr()));
     }
-    return DQType::IntDQ;
 }
 
 StallReason
