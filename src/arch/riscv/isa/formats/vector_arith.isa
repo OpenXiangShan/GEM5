@@ -1030,28 +1030,25 @@ def format VectorReduceIntFormat(code, category, *flags) {{
     src1_reg_id = "RegId(VecRegClass, _machInst.vs1)"
     src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
     old_dest_reg_id = "RegId(VecRegClass, _machInst.vd)"
-
-    set_dest_reg_idx = "if (pos == LastUop) {" + setDestWrapper(dest_reg_id) + "}\n"
-    set_dest_reg_idx += "else {" + setDestWrapper("RegId(VecRegClass, VecTempReg0)") + "}\n"
-
-    set_src_reg_idx = ""
-    set_src_reg_idx += "if (pos == LastUop) {" + setOldDestWrapper(old_dest_reg_id) + "}\n"
-    set_src_reg_idx += "if (pos != FirstUop) {" + setSrcWrapper("RegId(VecRegClass, VecTempReg0)") + "}\n"
-    set_src_reg_idx += "if (pos != LastUop) {" + setSrcWrapper(src2_reg_id) + "}\n"
-    set_src_reg_idx += "if (pos == LastUop) {" + setSrcWrapper(src1_reg_id) + "}\n"
-
+    set_dest_reg_idx = setDestWrapper(dest_reg_id)
+    set_src_reg_idx = setSrcWrapper(src1_reg_id)
+    set_src_reg_idx += setSrcWrapper(src2_reg_id)
+    # Treat tail undisturbed/agnostic as the same
+    # We always need old rd as src vreg
+    set_src_reg_idx += setOldDestWrapper(old_dest_reg_id)
     set_src_reg_idx += setSrcVL()
     set_src_reg_idx += setSrcVm()
     vm_decl_rd = vmDeclAndReadData()
+    type_def = '''
+        using vu [[maybe_unused]] = std::make_unsigned_t<ElemType>;
+        using vi [[maybe_unused]] = std::make_signed_t<ElemType>;
+    '''
 
-    if name.endswith('u_vs') :
-        type_def = '''
-            using vui [[maybe_unused]] = std::make_unsigned_t<ElemType>;
-        '''
-    else:
-        type_def = '''
-            using vui [[maybe_unused]] = std::make_signed_t<ElemType>;
-        '''
+    code = """
+    if (microIdx * elem_num_per_vreg < rVl) {
+        %s
+    }
+    """ % (code)
 
     microiop = InstObjParams(name + "_micro",
         Name + "Micro",
@@ -1079,20 +1076,16 @@ def format VectorReduceFloatFormat(code, category, *flags) {{
     iop = InstObjParams(name, Name, 'VectorArithMacroInst', {'code': code},
                         flags)
     inst_name, inst_suffix = name.split("_", maxsplit=1)
-
     dest_reg_id = "RegId(VecRegClass, _machInst.vd)"
     src1_reg_id = "RegId(VecRegClass, _machInst.vs1)"
     src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
     old_dest_reg_id = "RegId(VecRegClass, _machInst.vd)"
-
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
-
-    set_src_reg_idx = ""
-    set_src_reg_idx += "if (pos == LastUop) {" + setOldDestWrapper(old_dest_reg_id) + "}"
-    set_src_reg_idx += "if (pos != FirstUop) {" + setSrcWrapper("RegId(VecRegClass, VecTempReg0)") + "}"
-    set_src_reg_idx += "if (pos != LastUop) {" + setSrcWrapper(src2_reg_id) + "}"
-    set_src_reg_idx += "if (pos == LastUop) {" + setSrcWrapper(src1_reg_id) + "}"
-
+    set_src_reg_idx = setSrcWrapper(src1_reg_id)
+    set_src_reg_idx += setSrcWrapper(src2_reg_id)
+    # Treat tail undisturbed/agnostic as the same
+    # We always need old rd as src vreg
+    set_src_reg_idx += setOldDestWrapper(old_dest_reg_id)
     set_src_reg_idx += setSrcVL()
     set_src_reg_idx += setSrcVm()
     vm_decl_rd = vmDeclAndReadData()
@@ -1100,6 +1093,8 @@ def format VectorReduceFloatFormat(code, category, *flags) {{
         using et = ElemType;
         using vu = decltype(et::v);
     '''
+
+    code = fflags_wrapper(code)
 
     microiop = InstObjParams(name + "_micro",
         Name + "Micro",
@@ -1132,27 +1127,14 @@ def format VectorReduceIntWideningFormat(code, category, *flags) {{
     src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
     old_dest_reg_id = "RegId(VecRegClass, _machInst.vd)"
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
-
-    set_src_reg_idx = ""
-    set_src_reg_idx += "if (pos == LastUop) {" + setOldDestWrapper(old_dest_reg_id) + "}"
-    set_src_reg_idx += "if (pos != FirstUop) {" + setSrcWrapper("RegId(VecRegClass, VecTempReg0)") + "}"
-    set_src_reg_idx += "if (pos != LastUop) {" + setSrcWrapper(src2_reg_id) + "}"
-    set_src_reg_idx += "if (pos == LastUop) {" + setSrcWrapper(src1_reg_id) + "}"
-
+    set_src_reg_idx = setSrcWrapper(src1_reg_id)
+    set_src_reg_idx += setSrcWrapper(src2_reg_id)
+    # Treat tail undisturbed/agnostic as the same
+    # We always need old rd as src vreg
+    set_src_reg_idx += setOldDestWrapper(old_dest_reg_id)
     set_src_reg_idx += setSrcVL()
     set_src_reg_idx += setSrcVm()
     vm_decl_rd = vmDeclAndReadData()
-
-    if name.endswith('u_vs') :
-        type_def = """
-        using vui [[maybe_unused]] = std::make_unsigned_t<ElemType>;
-        using vwui [[maybe_unused]] = typename double_width<vui>::type;
-        """
-    else :
-        type_def = """
-        using vui [[maybe_unused]] = std::make_signed_t<ElemType>;
-        using vwui [[maybe_unused]] = typename double_width<vui>::type;
-        """
 
     microiop = InstObjParams(name + "_micro",
         Name + "Micro",
@@ -1161,7 +1143,6 @@ def format VectorReduceIntWideningFormat(code, category, *flags) {{
          'set_dest_reg_idx': set_dest_reg_idx,
          'set_src_reg_idx': set_src_reg_idx,
          'vm_decl_rd': vm_decl_rd,
-         'type_def': type_def,
          'copy_old_vd': copyOldVd(2)},
         flags)
 
@@ -1185,18 +1166,14 @@ def format VectorReduceFloatWideningFormat(code, category, *flags) {{
     src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
     old_dest_reg_id = "RegId(VecRegClass, _machInst.vd)"
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
-
-    set_src_reg_idx = ""
-    set_src_reg_idx += "if (pos == LastUop) {" + setOldDestWrapper(old_dest_reg_id) + "}"
-    set_src_reg_idx += "if (pos != FirstUop) {" + setSrcWrapper("RegId(VecRegClass, VecTempReg0)") + "}"
-    set_src_reg_idx += "if (pos != LastUop) {" + setSrcWrapper(src2_reg_id) + "}"
-    set_src_reg_idx += "if (pos == LastUop) {" + setSrcWrapper(src1_reg_id) + "}"
-
+    set_src_reg_idx = setSrcWrapper(src1_reg_id)
+    set_src_reg_idx += setSrcWrapper(src2_reg_id)
+    # Treat tail undisturbed/agnostic as the same
+    # We always need old rd as src vreg
+    set_src_reg_idx += setOldDestWrapper(old_dest_reg_id)
     set_src_reg_idx += setSrcVL()
     set_src_reg_idx += setSrcVm()
     vm_decl_rd = vmDeclAndReadData()
-
-
     type_def = '''
         using et = ElemType;
         using vu [[maybe_unused]] = decltype(et::v);
