@@ -1320,26 +1320,7 @@ public:
     %(class_name)s(ExtMachInst _machInst,
                    uint8_t _microIdx);
     Fault execute(ExecContext* xc, Trace::InstRecord* traceData)const override;
-    std::string generateDisassembly(Addr pc,
-        const Loader::SymbolTable *symtab) const override
-    {
-        std::stringstream ss;
-        if (pos==FirstUop) {
-            ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", ";
-            ss << registerName(srcRegIdx(0));
-        }
-        if (pos==MiddleUop) {
-            ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", ";
-            ss << registerName(srcRegIdx(1)) << "," << registerName(srcRegIdx(0));
-        }
-        if (pos==LastUop) {
-            ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", ";
-            ss << registerName(srcRegIdx(2)) << "," << registerName(srcRegIdx(1));
-        }
-
-        if (machInst.vm == 0) ss << ", v0.t";
-        return ss.str();
-    }
+    using %(base_class)s::generateDisassembly;
 };
 
 }};
