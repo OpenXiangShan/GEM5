@@ -119,9 +119,6 @@ template<typename ElemType>
     : %(base_class)s("%(mnemonic)s", _machInst,
                      %(op_class)s, _microIdx)
 {
-    uint32_t elem_num_per_vreg = VLEN / sew;
-    vmi.rs = _microIdx * elem_num_per_vreg;
-    vmi.re = (_microIdx+1) * elem_num_per_vreg;
     %(set_reg_idx_arr)s;
     _numSrcRegs = 0;
     _numDestRegs = 0;
@@ -337,9 +334,6 @@ template<typename ElemType>
     : %(base_class)s("%(mnemonic)s", _machInst,
                      %(op_class)s, _microIdx)
 {
-    uint32_t elem_num_per_vreg = VLEN / sew;
-    vmi.rs = _microIdx * elem_num_per_vreg;
-    vmi.re = (_microIdx+1) * elem_num_per_vreg;
     %(set_reg_idx_arr)s;
     _numSrcRegs = 0;
     _numDestRegs = 0;
@@ -481,9 +475,6 @@ template<typename ElemType>
     : %(base_class)s("%(mnemonic)s", _machInst,
                      %(op_class)s, _microIdx)
 {
-    uint32_t elem_num_per_vreg = VLEN / sew;
-    vmi.rs = _microIdx * elem_num_per_vreg;
-    vmi.re = (_microIdx+1) * elem_num_per_vreg;
     %(set_reg_idx_arr)s;
     _numSrcRegs = 0;
     _numDestRegs = 0;
@@ -688,9 +679,6 @@ template<typename ElemType>
         vmi.rs = i * elem_num_per_vreg;
         vmi.re = (i+1) * elem_num_per_vreg;
         vmi.microVd = VD + i;
-        if (vmi.microVd >= 32) {
-            break;
-        }
         microop = new %(class_name)sMicro<ElemType>(_machInst, i, vmi);
         microop->setDelayedCommit();
         this->microops.push_back(microop);
@@ -736,8 +724,8 @@ template<typename ElemType>
     _numTypedDestRegs[VecRegClass]++;
 
     setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _machInst.vs2));
-    SET_VL_SRC();
     SET_OLDDST_SRC();
+    SET_VL_SRC();
     if (_microIdx != 0) {
         setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, VecTempReg0));
     }
@@ -926,9 +914,6 @@ template<typename ElemType>
 : %(base_class)s("%(mnemonic)s", _machInst,
                  %(op_class)s, _microIdx)
 {
-    uint32_t elem_num_per_vreg = VLEN / sew;
-    vmi.rs = _microIdx * elem_num_per_vreg;
-    vmi.re = (_microIdx+1) * elem_num_per_vreg;
     %(set_reg_idx_arr)s;
     _numSrcRegs = 0;
     _numDestRegs = 0;
@@ -1032,9 +1017,6 @@ template<typename ElemType>
 : %(base_class)s("%(mnemonic)s", _machInst,
                  %(op_class)s, _microIdx)
 {
-    uint32_t elem_num_per_vreg = VLEN / sew;
-    vmi.rs = _microIdx * elem_num_per_vreg;
-    vmi.re = (_microIdx+1) * elem_num_per_vreg;
     %(set_reg_idx_arr)s;
     _numSrcRegs = 0;
     _numDestRegs = 0;
@@ -1128,9 +1110,6 @@ def template VMvWholeMicroConstructor {{
     : %(base_class)s("%(mnemonic)s", _machInst,
                      %(op_class)s, _microIdx)
 {
-    uint32_t elem_num_per_vreg = VLEN / sew;
-    vmi.rs = _microIdx * elem_num_per_vreg;
-    vmi.re = (_microIdx+1) * elem_num_per_vreg;
     %(set_reg_idx_arr)s;
     _numSrcRegs = 0;
     _numDestRegs = 0;
@@ -1242,11 +1221,8 @@ template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
     : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
-    vmi.rs = 0;
-    vmi.re = 1;
     %(set_reg_idx_arr)s;
     %(constructor)s;
-    SET_OLDDST_SRC();
     %(set_vm_idx)s;
 }
 
@@ -1344,26 +1320,7 @@ public:
     %(class_name)s(ExtMachInst _machInst,
                    uint8_t _microIdx);
     Fault execute(ExecContext* xc, Trace::InstRecord* traceData)const override;
-    std::string generateDisassembly(Addr pc,
-        const Loader::SymbolTable *symtab) const override
-    {
-        std::stringstream ss;
-        if (pos==FirstUop) {
-            ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", ";
-            ss << registerName(srcRegIdx(0));
-        }
-        if (pos==MiddleUop) {
-            ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", ";
-            ss << registerName(srcRegIdx(1)) << "," << registerName(srcRegIdx(0));
-        }
-        if (pos==LastUop) {
-            ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", ";
-            ss << registerName(srcRegIdx(2)) << "," << registerName(srcRegIdx(1));
-        }
-
-        if (machInst.vm == 0) ss << ", v0.t";
-        return ss.str();
-    }
+    using %(base_class)s::generateDisassembly;
 };
 
 }};
@@ -1376,9 +1333,6 @@ template<typename ElemType>
 : %(base_class)s("%(mnemonic)s", _machInst,
                  %(op_class)s, _microIdx)
 {
-    uint32_t elem_num_per_vreg = VLEN / sew;
-    vmi.rs = _microIdx * elem_num_per_vreg;
-    vmi.re = (_microIdx+1) * elem_num_per_vreg;
     %(set_reg_idx_arr)s;
     _numSrcRegs = 0;
     _numDestRegs = 0;
@@ -1581,10 +1535,6 @@ template<typename ElemType, typename IndexType>
 : %(base_class)s("%(mnemonic)s", _machInst,
                  %(op_class)s, _microIdx)
 {
-    uint32_t elem_num_per_vreg = VLEN / sew;
-    vmi.rs = _microIdx * elem_num_per_vreg;
-    vmi.re = (_microIdx+1) * elem_num_per_vreg;
-
     %(set_reg_idx_arr)s;
     _numSrcRegs = 0;
     _numDestRegs = 0;
@@ -1740,9 +1690,6 @@ template<typename ElemType>
     : %(base_class)s("%(mnemonic)s", _machInst,
                      %(op_class)s, _microIdx)
 {
-    uint32_t elem_num_per_vreg = VLEN / sew;
-    vmi.rs = _microIdx * elem_num_per_vreg;
-    vmi.re = (_microIdx+1) * elem_num_per_vreg;
     this->vxsatptr = vxsatptr;
     %(set_reg_idx_arr)s;
     _numSrcRegs = 0;
@@ -1844,7 +1791,7 @@ template<typename ElemType>
             vmi.re = (i+1) * elem_num_per_vreg;
             vmi.microVd = VD + i;
             vmi.microVs2 = new_vs2;
-            if (vmi.microVd >= 32 || vmi.microVs2 >= 32) {
+            if (vmi.microVs2 >= 32) {
                 break;
             }
             microop = new %(class_name)sMicro<ElemType>(_machInst, micro_idx++, vmi);
@@ -1858,9 +1805,6 @@ template<typename ElemType>
                 vmi.re = (i+1) * elem_num_per_vreg;
                 vmi.microVd = VD + i;
                 vmi.microVs2 = VS2 + i - j - 1;
-                if (vmi.microVd >= 32) {
-                    break;
-                }
                 if (vmi.microVs2 < 0) {
                     vmi.microVs2 = 0;
                 }
@@ -1905,9 +1849,6 @@ template<typename ElemType>
             vmi.re = (i+1) * elem_num_per_vreg;
             vmi.microVd = VD + i;
             vmi.microVs2 = elem_gen_idx(VS2 + i, off, sew/8);
-            if (vmi.microVd >= 32) {
-                break;
-            }
             if (vmi.microVs2 >= 32) {
                 vmi.microVs2 = 31;
             }
@@ -1922,9 +1863,6 @@ template<typename ElemType>
                 vmi.re = (i+1) * elem_num_per_vreg;
                 vmi.microVd = VD + i;
                 vmi.microVs2 = VS2 + j;
-                if (vmi.microVd >= 32) {
-                    break;
-                }
                 if (vmi.microVs2 >= 32) {
                     vmi.microVs2 = 31;
                 }

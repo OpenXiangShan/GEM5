@@ -48,6 +48,7 @@
 #include <list>
 #include <string>
 
+#include "arch/riscv/insts/vector.hh"
 #include "base/compiler.hh"
 #include "base/logging.hh"
 #include "base/trace.hh"

@@ -54,7 +54,6 @@ def template VleConstructor {{
 
     StaticInstPtr microop;
     VectorMicroInfo vmi;
-    vmi.nf = nf;
     if (nf == 1) { // sequence load
         const uint32_t num_microops = emul;
         for (int i = 0; i < num_microops; ++i) {
@@ -69,6 +68,7 @@ def template VleConstructor {{
             microop = new %(class_name)sMicro(_machInst, i, vmi);
             microop->setDelayedCommit();
             microop->setFlag(IsLoad);
+            microop->setNF(1);
             this->microops.push_back(microop);
         }
     } else {
@@ -83,13 +83,12 @@ def template VleConstructor {{
                 vmi.fn = fn;
                 vmi.microVd = elem_gen_idx(VD + fn * emul, i, eew/8);
                 vmi.offset = (i*nf+fn) * eew / 8;
-                if (vmi.microVd >= 32) {
-                    break;
-                }
                 microop = new %(class_name)sMicro(_machInst, i*(fn+1), vmi);
 
                 // segment vl related
                 microop->resetOpClass(VectorSegUnitStrideLoadOp);
+                microop->setNF(nf);
+                microop->setFlag(IsSegLoad);
 
                 microop->setDelayedCommit();
                 microop->setFlag(IsLoad);
@@ -322,9 +321,6 @@ def template VleffConstructor {{
         vmi.rs = i * elem_num_per_vreg;
         vmi.re = (i + 1) * elem_num_per_vreg;
         vmi.microVd = VD + i;
-        if (vmi.microVd >= 32) {
-            break;
-        }
         microop = new %(class_name)sMicro(_machInst, i, vmi);
         microop->setDelayedCommit();
         microop->setFlag(IsLoad);
@@ -434,9 +430,6 @@ def template VlWholeConstructor {{
         vmi.rs = 0;
         vmi.re = VLEN / eew;
         vmi.microVd = VD + i;
-        if (vmi.microVd >= 32) {
-            break;
-        }
         microop = new %(class_name)sMicro(_machInst, i, vmi);
         microop->setDelayedCommit();
         microop->setFlag(IsLoad);
@@ -518,7 +511,6 @@ def template VlStrideConstructor {{
 
     StaticInstPtr microop;
     VectorMicroInfo vmi;
-    vmi.nf = nf;
     uint32_t vlmax = VLEN / sew * vflmul;
     for (int i=0; i < vlmax; i++) {
         for (int fn=0; fn < nf; fn++) {
@@ -529,17 +521,17 @@ def template VlStrideConstructor {{
             vmi.fn = fn;
             vmi.microVd = elem_gen_idx(VD + fn * emul, i, eew/8);
             vmi.offset = fn * eew / 8;
-            if (vmi.microVd >= 32) {
-                break;
-            }
             microop = new %(class_name)sMicro(_machInst, i*fn, vmi);
             microop->setDelayedCommit();
             microop->setFlag(IsLoad);
 
+            microop->setNF(nf);
             if (nf > 1) {
                 // segment vl related
                 microop->resetOpClass(VectorSegStridedLoadOp);
+                microop->setFlag(IsSegLoad);
             }
+
             this->microops.push_back(microop);
         }
     }
@@ -641,7 +633,6 @@ template<typename ElemType>
 
     StaticInstPtr microop;
     VectorMicroInfo vmi;
-    vmi.nf = nf;
     uint32_t vlmax = VLEN / sew * vflmul;
     for (int i = 0; i < vlmax; i++) {
         for (int fn = 0; fn < nf; fn++) {
@@ -660,9 +651,11 @@ template<typename ElemType>
             microop->setFlag(IsDelayedCommit);
             microop->setFlag(IsLoad);
 
+            microop->setNF(nf);
             if (nf > 1) {
                 // segment vl related
                 microop->resetOpClass(VectorSegIndexedLoadOp);
+                microop->setFlag(IsSegLoad);
             }
 
             this->microops.push_back(microop);

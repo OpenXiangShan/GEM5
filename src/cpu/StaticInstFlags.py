@@ -58,6 +58,7 @@ class StaticInstFlags(Enum):
         'IsFloating',       # References FP regs.
         'IsVector',         # References Vector regs.
         'IsVectorElem',     # References Vector reg elems.
+        'IsSegLoad',        # is segment load in RVV
 
         'IsLoad',           # Reads from memory (load or prefetch).
         'IsStore',          # Writes to memory.

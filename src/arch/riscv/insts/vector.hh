@@ -55,7 +55,6 @@ struct VectorMicroInfo
     int32_t microVs2 = ~0;
     int32_t microVs3 = ~0;
 
-    uint32_t nf = 1;
     uint32_t fn = ~0; // segment idx
     uint32_t offset = ~0; // vload/store baseAddr offset
 };
@@ -101,6 +100,35 @@ inline uint8_t checked_vtype(bool vill, uint8_t vtype) {
     return vtype;
 }
 
+class VectorNonSplitInst : public RiscvStaticInst
+{
+  public:
+    int oldDstIdx = -1;
+    int vmsrcIdx = -1;
+    int vlsrcIdx = -1;
+  protected:
+    const int microIdx = 0; // just for convenience
+    const bool vm;
+    const uint8_t vsew;
+    const int8_t vlmul;
+    const uint32_t sew;
+    const float vflmul;
+    VectorNonSplitInst(const char* mnem, ExtMachInst _machInst,
+                   OpClass __opClass)
+        : RiscvStaticInst(mnem, _machInst, __opClass),
+        vm(_machInst.vm),
+        vsew(_machInst.vtype8.vsew),
+        vlmul(vtype_vlmul(_machInst.vtype8)),
+        sew( (8 << vsew) ),
+        vflmul( vlmul < 0 ? (1.0 / (1 << (-vlmul))) : (1 << vlmul) )
+    {
+        this->flags[IsVector] = true;
+    }
+
+    std::string generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
 class VectorMacroInst : public RiscvMacroInst
 {
   protected:
@@ -129,10 +157,6 @@ public:
     int oldDstIdx = -1;
     int vmsrcIdx = -1;
     int vlsrcIdx = -1;
-    const bool vta,vma;
-
-    virtual bool oldVdEliminable() { return true; }
-
 protected:
     const uint8_t microIdx;
     const bool vm;
@@ -143,33 +167,37 @@ protected:
     VectorMicroInst(const char *mnem, ExtMachInst _machInst, OpClass __opClass,
                     uint8_t _microIdx)
         : RiscvMicroInst(mnem, _machInst, __opClass),
-        vta(_machInst.vtype8.vta),
-        vma(_machInst.vtype8.vma),
         microIdx(_microIdx),
         vm(_machInst.vm),
         vsew(_machInst.vtype8.vsew),
         vlmul(vtype_vlmul(_machInst.vtype8)),
-        sew((8 << vsew)),
-        vflmul(vlmul < 0 ? (1.0 / (1 << (-vlmul))) : (1 << vlmul))
+        sew( (8 << vsew) ),
+        vflmul( vlmul < 0 ? (1.0 / (1 << (-vlmul))) : (1 << vlmul) )
     {
         this->flags[IsVector] = true;
     }
 };
 
-class VectorNonSplitInst : public VectorMicroInst
+class VectorNopMicroInst : public RiscvMicroInst
 {
-  protected:
-    VectorNonSplitInst(const char* mnem, ExtMachInst _machInst,
-                   OpClass __opClass)
-        : VectorMicroInst(mnem, _machInst, __opClass, 0)
+public:
+    VectorNopMicroInst(ExtMachInst _machInst)
+        : RiscvMicroInst("vnop", _machInst, No_OpClass)
+    {}
+
+    Fault execute(ExecContext* xc, Trace::InstRecord* traceData)
+        const override
     {
-        this->flags[IsVector] = true;
-        this->setFirstMicroop();
-        this->setLastMicroop();
+        return NoFault;
     }
 
-    std::string generateDisassembly(
-        Addr pc, const loader::SymbolTable *symtab) const override;
+    std::string generateDisassembly(Addr pc, const loader::SymbolTable *symtab)
+      const override
+    {
+        std::stringstream ss;
+        ss << mnemonic;
+        return ss.str();
+    }
 };
 
 class VectorArithMicroInst : public VectorMicroInst
@@ -384,9 +412,7 @@ class VlWholeMicroInst : public VectorMemMicroInst
     VlWholeMicroInst(const char *mnem, ExtMachInst _machInst,
                      OpClass __opClass, uint8_t _microIdx)
         : VectorMemMicroInst(mnem, _machInst, __opClass, _microIdx)
-    {
-        this->flags[IsLoad] = true;
-    }
+    {}
 
     std::string generateDisassembly(
       Addr pc, const loader::SymbolTable *symtab) const override;
@@ -436,9 +462,7 @@ class VlStrideMicroInst : public VectorMemMicroInst
     VlStrideMicroInst(const char *mnem, ExtMachInst _machInst,
                       OpClass __opClass, uint8_t _microIdx)
         : VectorMemMicroInst(mnem, _machInst, __opClass, _microIdx)
-    {
-        this->flags[IsLoad] = true;
-    }
+    {}
 
     std::string generateDisassembly(
         Addr pc, const loader::SymbolTable *symtab) const override;
@@ -488,9 +512,7 @@ class VlIndexMicroInst : public VectorMemMicroInst
     VlIndexMicroInst(const char *mnem, ExtMachInst _machInst,
                     OpClass __opClass, uint32_t _microIdx)
         : VectorMemMicroInst(mnem, _machInst, __opClass, _microIdx)
-    {
-        this->flags[IsLoad] = true;
-    }
+    {}
 
     std::string generateDisassembly(
         Addr pc, const loader::SymbolTable *symtab) const override;
