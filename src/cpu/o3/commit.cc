@@ -1329,6 +1329,7 @@ Commit::commitInsts()
                 }
 
                 if (cpu->difftestEnabled()) {
+
                     diffInst(tid, head_inst);
                 }
 
@@ -1519,6 +1520,7 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
     }
 
     if (inst_fault != NoFault) {
+        printf("pc %lx \n",head_inst->pcState().instAddr());
         DPRINTF(CommitTrace, "[sn:%lu pc:%#lx] %s has a fault, mepc: %#lx, mcause: %#lx, mtval: %#lx\n",
                 head_inst->seqNum, head_inst->pcState().instAddr(),
                 head_inst->staticInst->disassemble(head_inst->pcState().instAddr()),
@@ -1614,9 +1616,11 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
             auto exception_no =inst_fault->exception();
             if (faultNum.find(exception_no) != faultNum.end()) {
                 DPRINTF(Commit, "Force to raise No.%lu exception at page fault\n", inst_fault);
-                cpu->setExceptionGuideExecInfo(
+                printf("1618 needs to Force to raise exception at page fault\n");
+                diffInst(tid, head_inst);
+                /*cpu->setExceptionGuideExecInfo(
                     exception_no, cpu->readMiscReg(RiscvISA::MiscRegIndex::MISCREG_MTVAL, tid),
-                    cpu->readMiscReg(RiscvISA::MiscRegIndex::MISCREG_STVAL, tid), false, 0, tid);
+                    cpu->readMiscReg(RiscvISA::MiscRegIndex::MISCREG_STVAL, tid), false, 0, tid);*/
             }
             if (cause == RiscvISA::ExceptionCode::ECALL_USER ||
                 cause == RiscvISA::ExceptionCode::ECALL_SUPER ||

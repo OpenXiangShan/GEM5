@@ -699,6 +699,7 @@ void
 PhysicalMemory::overrideGCptRestorer(unsigned store_id)
 {
     uint8_t* pmem = backingStore[store_id].pmem;
+    return;
     if (restoreFromXiangshanCpt && !gCptRestorerPath.empty()) {
         if (gCptRestorerPath == "None") {
             warn("gcpt restore is None\n");
