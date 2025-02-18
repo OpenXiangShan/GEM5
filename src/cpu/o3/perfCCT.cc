@@ -12,7 +12,7 @@ InstMeta::reset(const DynInstPtr inst)
 {
     this->sn = inst->seqNum;
     posTick.clear();
-    posTick.resize((int)PerfRecord::AtCommit + 1);
+    posTick.resize((int)PerfRecord::AtCommit + 1, 0);
     disasm = inst->staticInst->disassemble(inst->pcState().instAddr());
     pc = inst->pcState().instAddr();
 }
@@ -58,6 +58,7 @@ PerfCCT::updateInstPos(InstSeqNum sn, const PerfRecord pos)
         return;
     }
     auto meta = getMeta(sn);
+    if (meta->posTick.at((int)pos)) return;
     meta->posTick.at((int)pos) = curTick();
 }
 
