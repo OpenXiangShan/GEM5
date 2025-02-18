@@ -81,6 +81,8 @@ class L1_DCache(L1Cache):
     # recvTimingResp serviceMSHR latency, not really response latency
     response_latency = 0
 
+    replacement_policy = TreePLRURP(num_leaves = Parent.assoc)
+
     force_hit = False
 
     demand_mshr_reserve = 6

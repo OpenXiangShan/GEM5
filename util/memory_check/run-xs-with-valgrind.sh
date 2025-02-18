@@ -14,7 +14,7 @@ valgrind -s --track-origins=yes --log-file=valgrind-out.txt --error-limit=no \
     --suppressions=$gem5_home/util/valgrind-suppressions \
     $gem5_home/build/RISCV/gem5.debug $gem5_home/configs/example/fs.py \
     --xiangshan-system --cpu-type=DerivO3CPU --mem-size=8GB --caches --cacheline_size=64 \
-    --l1i_size=64kB --l1i_assoc=8 --l1d_size=64kB --l1d_assoc=8 \
+    --l1i_size=64kB --l1i_assoc=8 --l1d_size=64kB --l1d_assoc=4 \
     --l1d-hwp-type=XSCompositePrefetcher --short-stride-thres=0 \
     --l2cache --l2_size=1MB --l2_assoc=8 \
     --l3cache --l3_size=16MB --l3_assoc=16 \
