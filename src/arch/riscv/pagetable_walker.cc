@@ -417,8 +417,8 @@ Walker::dol2TLBHit()
         Fault l2tlbFault;
         PrivilegeMode pmodel2 = tlb->getMemPriv(dol2TLBHitrequestors.tc,
                                                 dol2TLBHitrequestors.mode);
-        DPRINTF(PageTableWalker, "420 l2 hit vaddr %lx paddr %lx\n", dol2TLBHitrequestors.req->getVaddr(),
-                dol2TLBHitrequestors.Paddr);
+        DPRINTF(PageTableWalker, "420 l2 hit pc %lx vaddr %lx paddr %lx\n", dol2TLBHitrequestors.req->getPC(),
+                dol2TLBHitrequestors.req->getVaddr(), dol2TLBHitrequestors.Paddr);
         dol2TLBHitrequestors.req->setPaddr(dol2TLBHitrequestors.Paddr);
         pma->check(dol2TLBHitrequestors.req);
         l2tlbFault =
@@ -848,6 +848,8 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
         oldSize = oldRead->getSize();
         fault = walker->pmp->pmpCheck(read->req, BaseMMU::Read, RiscvISA::PrivilegeMode::PRV_S, requestors.front().tc,
                                       gPaddr);
+        DPRINTF(PageTableWalkerTwoStage, "851 twoStageStepWalk pte %lx vaddr %lx gpaddr %lx level %d\n",
+                read->getLE_l2tlb<uint64_t>(vaddr_choose_flag), entry.vaddr, gPaddr, twoStageLevel);
 
     } else {
         pte = tlbHitPte;
@@ -1516,7 +1518,9 @@ Fault
 Walker::WalkerState::startTwoStageWalkFromTLBInG(Addr ppn, Addr vaddr)
 {
     // vaddr_choose = (gPaddr >> (twoStageLevel * LEVEL_BITS + PageShift)) & VADDR_CHOOSE_MASK;
-    Addr nextRead = (ppn << PageShift) + (getGVPNi(gPaddr, twoStageLevel) * PTESIZE);
+    Addr nextRead = (ppn << PageShift) + (getGVPNi(gPaddr, (twoStageLevel)) * PTESIZE);
+    DPRINTF(PageTableWalkerTwoStage, "1522 nextread %lx gPaddr %lx tlevel %d ppn %lx\n", nextRead, gPaddr,
+            twoStageLevel, ppn);
     Request::Flags flags = Request::PHYSICAL;
     nextRead = (nextRead >> 6) << 6;
     if (nextRead == 0)
@@ -1593,7 +1597,8 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level, bool from_l2tl
             gPaddr = vaddr;
         }
 
-        DPRINTF(PageTableWalkerTwoStage, "twoStageStepWalk gpaddr %lx vaddr %lx level %d\n", gPaddr, vaddr, level);
+        DPRINTF(PageTableWalkerTwoStage, "1596 twoStageStepWalk gpaddr %lx vaddr %lx level %d\n", gPaddr, vaddr,
+                level);
         mainReq->setgPaddr(gPaddr);
         gpaddrMode = 0;
         nextlineLevelMask = LEVEL_MASK;
@@ -1629,17 +1634,24 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level, bool from_l2tl
         finishGVA = mainReq->get_finish_gva();
         level = mainReq->get_level();
         twoStageLevel = mainReq->get_two_stage_level();
+        inGstage = mainReq->get_h_gstage();
         if (finishGVA){
             entry.pteVS = mainReq->get_pte();
             inl2Entry.pteVS = mainReq->get_pte();
         }
         if ((!isVsatp0Mode) && (mainReq->get_h_gstage()) && (mainReq->get_two_stage_level() != 2)) {
+            printf("1639 ppn %lx twostagelevel %d vaddr %lx finishGVA %d\n", mainReq->get_ppn(),
+                   mainReq->get_two_stage_level(), vaddr, finishGVA);
             fault = startTwoStageWalkFromTLBInG(mainReq->get_ppn(), vaddr);
         } else if ((!isVsatp0Mode) && (!mainReq->get_h_gstage()) && (mainReq->get_level() != 2)) {
+            printf("1642\n");
             fault = startTwoStageWalkFromTLBNotInG(mainReq->get_ppn(), vaddr);
         } else if ((mainReq->get_level() == 2) || (isVsatp0Mode)) {
+            printf("1645\n");
             fault = startTwoStageWalk(gPaddr, vaddr);
+
         } else {
+            printf("1649\n");
             fault = startTwoStageWalk(gPaddr, vaddr);
         }
         if (fault != NoFault) {
@@ -1795,6 +1807,9 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
                     panic("paddr overflow\n");
                     return false;
                 }
+                //printf()
+                if (r.req->hasPC() &&(r.req->getPC() == 0xffffffff801e8970))
+                    printf("1800 pc %lx vaddr %lx paddr %lx\n",r.req->getPC(),r.req->getVaddr(),paddr);
                 r.translation->finish(mainFault, r.req, r.tc, mode);
             }
             else{
