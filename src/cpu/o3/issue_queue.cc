@@ -1097,13 +1097,18 @@ Scheduler::bypassWriteback(const DynInstPtr& inst)
 uint32_t
 Scheduler::getOpLatency(const DynInstPtr& inst)
 {
+    if (inst->opClass() == FloatCvtOp) [[unlikely]] {
+        if (inst->destRegIdx(0).isFloatReg()) {
+            return 2 + opExecTimeTable[inst->opClass()];
+        }
+    }
     return opExecTimeTable[inst->opClass()];
 }
 
 uint32_t
 Scheduler::getCorrectedOpLat(const DynInstPtr& inst)
 {
-    uint32_t oplat = opExecTimeTable[inst->opClass()];
+    uint32_t oplat = getOpLatency(inst);
     oplat += inst->isLoad() ? 2 : 0;
     return oplat;
 }

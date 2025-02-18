@@ -87,7 +87,8 @@ class FP_ALU(FUDesc):
                OpDesc(opClass='FloatMult', opLat=4)]
 
 class FP_MISC(FUDesc):
-    opList = [ OpDesc(opClass='FloatCvt', opLat=3)]
+    opList = [ OpDesc(opClass='FloatCvt', opLat=5), # float -> int 5 cycles, int -> float 7 cycle
+               OpDesc(opClass='FloatMv', opLat=5)]
 
 class FP_MAC(FUDesc):
     opList = [ OpDesc(opClass='FMAAcc', opLat=2),

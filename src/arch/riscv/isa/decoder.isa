@@ -2133,7 +2133,7 @@ decode QUADRANT default Unknown::unknown() {
                         if ((Rd&0x80000000) != 0) {
                             Rd |= (0xFFFFFFFFULL << 32);
                         }
-                    }}, FloatCvtOp);
+                    }}, FloatMvOp);
                     0x1: fclass_s({{
                         Rd = f32_classify(f32(freg(Fs1_bits)));
                     }}, FloatMiscOp);
@@ -2141,7 +2141,7 @@ decode QUADRANT default Unknown::unknown() {
                 0x71: decode ROUND_MODE {
                     0x0: fmv_x_d({{
                         Rd = freg(Fs1_bits).v;
-                    }}, FloatCvtOp);
+                    }}, FloatMvOp);
                     0x1: fclass_d({{
                         Rd = f64_classify(f64(freg(Fs1_bits)));
                     }}, FloatMiscOp);
@@ -2152,7 +2152,7 @@ decode QUADRANT default Unknown::unknown() {
                         if ((Rd&0x8000) != 0) {
                             Rd |= (0xFFFFFFFFFFFFULL << 16);
                         }
-                    }}, FloatCvtOp);
+                    }}, FloatMvOp);
                     0x1: fclass_h({{
                         Rd = f16_classify(f16(freg(Fs1_bits)));
                     }}, FloatMiscOp);
@@ -2163,19 +2163,19 @@ decode QUADRANT default Unknown::unknown() {
                     Fd_bits = fd.v;
                         status.fs = 3;
                         xc->setMiscReg(MISCREG_STATUS,status);
-                }}, FloatCvtOp);
+                }}, FloatMvOp);
                 0x79: fmv_d_x({{
                     freg_t fd;
                     fd = freg(f64(Rs1));
                     Fd_bits = fd.v;
                     status.fs = 3;
                     xc->setMiscReg(MISCREG_STATUS,status);
-                }}, FloatCvtOp);
+                }}, FloatMvOp);
                 0x7a: fmv_h_x({{
                     freg_t fd;
                     fd = freg(f16(Rs1_uh));
                     Fd_bits = fd.v;
-                }}, FloatCvtOp);
+                }}, FloatMvOp);
             }
         }
 
