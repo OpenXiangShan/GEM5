@@ -638,7 +638,7 @@ class LSQ
         bool
         isNormalLd()
         {
-            return isLoad() && !mainReq()->isLLSC() && !mainReq()->isUncacheable();
+            return isLoad() && !mainReq()->isLLSC() && !mainReq()->isUncacheable() && !isSplit();
         }
 
         virtual std::string name() const { return "LSQRequest"; }
