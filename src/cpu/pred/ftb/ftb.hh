@@ -166,9 +166,9 @@ class DefaultFTB : public TimedBaseFTBPredictor
     }
 
     bool branchIsInEntry(FTBEntry e, Addr instPC) {
-        if (!e.slots.empty()) {
+        if (!e.slots.empty()) {  // 如果FTB条目中有分支
             for (auto &slot : e.slots) {
-                if (slot.pc == instPC) {
+                if (slot.pc == instPC) {  // 如果分支在FTB条目中
                     return true;
                 }
             }
@@ -320,6 +320,10 @@ class DefaultFTB : public TimedBaseFTBPredictor
         statistics::Scalar replacements;    // 替换次数
         statistics::Scalar fullSetEvents;   // 组满事件次数
 
+        // 添加新的统计
+        statistics::Distribution blockSizeDist;  // 基本块大小分布
+        statistics::Distribution branchNumDist;  // 每个entry的分支数量分布
+        
         FTBStats(statistics::Group* parent);
     } ftbStats;
 

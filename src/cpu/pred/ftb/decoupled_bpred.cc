@@ -781,6 +781,11 @@ DecoupledBPUWithFTB::decoupledPredict(const StaticInstPtr &inst,
     auto loop_exit = target_to_fetch.isExit;
     DPRINTF(DecoupleBP, "Responsing fetch with");
     printFetchTarget(target_to_fetch, "");
+    // print fsq entry
+    auto it = fetchStreamQueue.find(target_to_fetch.fsqID);
+    if (it != fetchStreamQueue.end()) {
+        printStreamFull(it->second);
+    }
 
     auto current_loop_iter = fetchTargetQueue.getCurrentLoopIter();
     currentLoopIter = current_loop_iter;

@@ -155,7 +155,10 @@ FTBTAGE::lookupHelper(Addr startAddr,
             Addr tmp_tag = getTageTag(startAddr, i);  // 获取tage table的tag
             auto &way = tageTable[i][tmp_index][phyBrIdx];  // 获取tage table的entry
             bool match = way.valid && matchTag(tmp_tag, way.tag);  // 判断是否匹配
-
+            
+            DPRINTF(FTBTAGE, "table %d, index %d, lookup tag %d, tag %d, useful %d, counter %d, v %d, match %d\n",
+                i, tmp_index, tmp_tag, way.tag, way.useful, way.counter, way.valid, match);
+            
             if (match) {
                 main_entries[b] = way;  // 保存匹配的entry
                 main_tables[b] = i;  // 保存匹配的table i
@@ -167,8 +170,7 @@ FTBTAGE::lookupHelper(Addr startAddr,
             usefulMasks[b].resize(numPredictors-i);
             usefulMasks[b] <<= 1;
             usefulMasks[b][0] = way.useful; // 保存useful bit
-            DPRINTF(FTBTAGE, "table %d, index %d, lookup tag %d, tag %d, useful %d\n",
-                i, tmp_index, tmp_tag, way.tag, way.useful);
+            
         }
 
 
@@ -176,8 +178,8 @@ FTBTAGE::lookupHelper(Addr startAddr,
             auto main_entry = main_entries[b];
             // in RTL, we do not shuffle on useAltCtrs
             if (useAlt[getUseAltIdx(startAddr)][b] > 0 &&
-                (main_entry.counter == -1 || main_entry.counter == 0)) {
-                use_alt_preds[b] = true;
+                (main_entry.counter == -1 || main_entry.counter == 0)) { // useAlt > 0, 主表弱（counter=0或-1）
+                use_alt_preds[b] = true; // 使用alt table
             } else {
                 use_alt_preds[b] = false;   // 不使用alt table
             }
@@ -213,7 +215,7 @@ FTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Full
 
     takens.resize(numBr, false);
 
-    // get prediction and save it 获取2个branch的预测结果并保存  1. 查找各级预测表
+    // get prediction and save it 获取2个branch的预测结果并保存  1. 查找各级预测表, 存入entries，main*
     std::vector<bool> found = lookupHelper(stream_start, entries, main_tables,
                                     main_table_indices, use_alt_preds, usefulMasks);
 
@@ -361,11 +363,11 @@ FTBTAGE::update(const FetchStream &entry)
         }
 
         // update use_alt_counters 更新use_alt_counters
-        if (pred.mainFound && mainWeak && mainTaken != altTaken) {
+        if (pred.mainFound && mainWeak && mainTaken != altTaken) { // 如果主表命中且主表弱且主表预测结果与备用表预测结果不一致
             DPRINTF(FTBTAGE, "use_alt_on_provider_weak, alt %s, updating use_alt_counter\n",
                 altTaken == this_cond_actually_taken ? "correct" : "incorrect");
             auto &use_alt_counter = useAlt.at(getUseAltIdx(startAddr))[b];
-            if (altTaken == this_cond_actually_taken) {
+            if (altTaken == this_cond_actually_taken) { // 如果备用表预测结果与实际跳转结果一致
                 stat->updateUseAltOnNaInc++;
                 satIncrement(7, use_alt_counter);
             } else {
@@ -430,7 +432,7 @@ FTBTAGE::update(const FetchStream &entry)
         bool incUsefulResetCounter = num_tables_can_allocate < (total_tables_to_allocate - num_tables_can_allocate); // a < (b - a) == a < 0.5b
         bool decUsefulResetCounter = num_tables_can_allocate > (total_tables_to_allocate - num_tables_can_allocate); // 如果可以分配的表数大于总表数减去可以分配的表数
         int changeVal = std::abs(num_tables_can_allocate - (total_tables_to_allocate - num_tables_can_allocate)); // 4 - (4 -4 ) = 4
-        if (needToAllocate) {
+        if (needToAllocate) { // 分配新表项， 更新usefulReset计数器
             if (incUsefulResetCounter) { // need modify: clear the useful bit of all entries
                 stat->updateResetUCtrInc.sample(changeVal, 1);
                 usefulResetCnt[b] += changeVal;
@@ -442,7 +444,7 @@ FTBTAGE::update(const FetchStream &entry)
             } else if (decUsefulResetCounter) { // 如果减少计数器
                 stat->updateResetUCtrDec.sample(changeVal, 1);
                 usefulResetCnt[b] -= changeVal; // usefulReset 计数器 减小4
-                if (usefulResetCnt[b] <= 0) {
+                if (usefulResetCnt[b] <= 0) {   // 如果usefulResetCnt[b]小于0，则设置为0,饱和计数
                     usefulResetCnt[b] = 0;
                 }
                 // usefulResetCnt[b] = (usefulResetCnt[b] - changeVal <= 0) ? 0 : (usefulResetCnt[b] - changeVal);
@@ -466,12 +468,12 @@ FTBTAGE::update(const FetchStream &entry)
         if (needToAllocate) { // 如果需要分配  4. 分配新表项
             // allocate new entry
             unsigned maskMaxNum = std::pow(2, (numPredictors - (pred.table + 1))); // 计算mask最大数， 4 - (-1 + 1) = 4， 2^4 = 16
-            unsigned mask = allocLFSR.get() % maskMaxNum; // 获取mask， 0-15
-            bitset allocateLFSR(numPredictors - (pred.table + 1), mask); // 获取allocateLFSR， 4 - (-1 + 1) = 4， 0-15
+            unsigned mask = allocLFSR.get() % maskMaxNum; // 获取mask， 随机生成0-15
+            bitset allocateLFSR(numPredictors - (pred.table + 1), mask); // 获取allocateLFSR， 4 - (-1 + 1) = 4，长度4，值为0-15
             std::string buf;
             auto flipped_usefulMask = ~pred.usefulMask; // 获取flipped_usefulMask， 1111, 表示useful都为false,优先替换
             bitset masked = allocateLFSR & flipped_usefulMask; // 获取masked， 0000
-            bitset allocate = masked.any() ? masked : flipped_usefulMask; // 获取allocate， 1111
+            bitset allocate = masked.any() ? masked : flipped_usefulMask; // 获取allocate表位置，通过lfsr随机生成，eg:8=1000, 分配表T3
             short newCounter = this_cond_actually_taken ? 0 : -1; // 获取新计数器， NT, -1， 作为初始化值
 
             bool allocateValid = flipped_usefulMask.any(); // 获取allocateValid， 1
@@ -556,6 +558,7 @@ FTBTAGE::getTageIndex(Addr pc, int t, bitset &foldedHist)
 Addr
 FTBTAGE::getTageIndex(Addr pc, int t)
 {
+    DPRINTF(FTBTAGE, "getTageIndex pc %#lx, t %d, indexFoldedHist %lu\n", pc, t, indexFoldedHist[t].get().to_ulong());
     return getTageIndex(pc, t, indexFoldedHist[t].get());
 }
 
@@ -620,7 +623,8 @@ FTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, int shamt, bool ta
             DPRINTF(FTBTAGE, "t: %d, type: %d\n", t, type);
 
             auto &foldedHist = type == 0 ? indexFoldedHist[t] : type == 1 ? tagFoldedHist[t] : altTagFoldedHist[t];
-            foldedHist.update(history, shamt, taken);
+            foldedHist.update(history, shamt, taken);   // 根据全局s0history 更新3个折叠历史
+            DPRINTF(FTBTAGE, "foldedHist %d\n", foldedHist.get().to_ulong());
         }
     }
 }

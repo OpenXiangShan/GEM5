@@ -15,12 +15,12 @@ namespace ftb_pred {
 
 class FoldedHist {
     private:
-        int histLen;
-        int foldedLen;
-        int maxShamt;
-        boost::dynamic_bitset<> folded;
-        std::vector<int> posHighestBitsInGhr;
-        std::vector<int> posHighestBitsInOldFoldedHist;
+        int histLen;    // 历史长度
+        int foldedLen;  // 折叠后历史长度
+        int maxShamt;  // 最大移位=numBr = 2
+        boost::dynamic_bitset<> folded; // 折叠历史
+        std::vector<int> posHighestBitsInGhr; // 最高位在ghr中的位置
+        std::vector<int> posHighestBitsInOldFoldedHist; // 最高位在旧折叠历史中的位置
 
     public:
         FoldedHist(int histLen, int foldedLen, int maxShamt) :

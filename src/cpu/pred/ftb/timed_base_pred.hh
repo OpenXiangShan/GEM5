@@ -48,7 +48,7 @@ class TimedBaseFTBPredictor: public SimObject
     // do some statistics on a per-branch and per-predictor basis
     virtual void commitBranch(const FetchStream &entry, const DynInstPtr &inst) {}  // commit阶段统计分支数据
 
-    int componentIdx;
+    int componentIdx;   // 组件索引，指向哪个组件
     int getComponentIdx() { return componentIdx; }
     void setComponentIdx(int idx) { componentIdx = idx; }
 

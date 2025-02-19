@@ -131,15 +131,15 @@ class FTBTAGE : public TimedBaseFTBPredictor
 
     const unsigned numPredictors;
 
-    std::vector<unsigned> tableSizes;
-    std::vector<unsigned> tableIndexBits;
-    std::vector<bitset> tableIndexMasks;
+    std::vector<unsigned> tableSizes;   // 表的大小 [2048, 2048, 2048, 2048]
+    std::vector<unsigned> tableIndexBits; // 表的index位数 [11, 11, 11, 11]
+    std::vector<bitset> tableIndexMasks; // 表的index掩码, 用于index匹配，11个1bit，11111111111，共4个
     // std::vector<uint64_t> tablePcMasks;
     std::vector<unsigned> tableTagBits;  // 表的tag位数 [8, 8, 8, 8]
     std::vector<bitset> tableTagMasks;    // 表的tag掩码, 用于tag匹配
     std::vector<unsigned> tablePcShifts;  // [1, 1, 1, 1]
     std::vector<unsigned> histLengths;    // [8, 13, 32, 119]
-    std::vector<FoldedHist> tagFoldedHist;  // 表的tag折叠历史
+    std::vector<FoldedHist> tagFoldedHist;  // 表的tag折叠历史， 存了三种
     std::vector<FoldedHist> altTagFoldedHist;  // 表的alt tag折叠历史
     std::vector<FoldedHist> indexFoldedHist;  // 表的index折叠历史
 
@@ -152,7 +152,7 @@ class FTBTAGE : public TimedBaseFTBPredictor
 
     std::vector<std::vector<short>> baseTable;  // 基表，每个表的index, 2048项，每项放numBr个short数目，short为2bit 计数器
 
-    std::vector<std::vector<short>> useAlt;   // 选择器，决定使用主表还是备用表
+    std::vector<std::vector<short>> useAlt;   // 选择器，决定使用主表还是备用表，index, br 索引， [-8, 7]
 
     bool matchTag(Addr expected, Addr found);
 
@@ -174,7 +174,7 @@ class FTBTAGE : public TimedBaseFTBPredictor
 
     Addr getUseAltIdx(Addr pc);
 
-    std::vector<int> usefulResetCnt;
+    std::vector<int> usefulResetCnt;  // 用于reset useful计数器， 2个br, 每个br一个计数器， 值为0-128
 
 
 

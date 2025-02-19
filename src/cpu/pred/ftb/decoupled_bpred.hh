@@ -321,16 +321,18 @@ class DecoupledBPUWithFTB : public BPredUnit
 
     void printStreamFull(const FetchStream &e)
     {
-        // TODO: fix this
-        // DPRINTFR(
-        //     DecoupleBP,
-        //     "FSQ prediction:: %#lx-[%#lx, %#lx) --> %#lx\n",
-        //     e.startPC, e.predBranchPC, e.predEndPC, e.predTarget);
-        // DPRINTFR(
-        //     DecoupleBP,
-        //     "Resolved: %i, resolved stream:: %#lx-[%#lx, %#lx) --> %#lx\n",
-        //     e.exeEnded, e.startPC, e.exeBranchPC, e.exeEndPC,
-        //     e.exeTarget);
+        // if (!e.resolved) {
+        //     DPRINTF(DecoupleBP, "FSQ Predicted stream: ");
+        // } else {
+        //     DPRINTF(DecoupleBP, "FSQ Resolved stream: ");
+        // }
+        // default is predicted
+        DPRINTF(DecoupleBP,
+                 "%#lx-[%#lx, %#lx) --> %#lx, taken: %i, predEndPC: %#lx, isHit: %i, falseHit: %i\n",
+                 e.startPC, e.getBranchInfo().pc, e.getEndPC(),
+                 e.getTakenTarget(), e.getTaken(), e.predEndPC, e.isHit, e.falseHit);
+        // print ftb entry
+        printFTBEntry(e.predFTBEntry);
     }
 
     void printFetchTarget(const FtqEntry &e, const char *when)

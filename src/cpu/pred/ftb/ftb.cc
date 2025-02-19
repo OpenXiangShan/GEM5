@@ -98,8 +98,30 @@ DefaultFTB::putPCHistory(Addr startAddr,
                          const boost::dynamic_bitset<> &history,
                          std::vector<FullFTBPrediction> &stagePreds)
 {
-    TickedFTBEntry find_entry = lookup(startAddr);  // 1. 查找startAddr对应的FTB条目
+    TickedFTBEntry find_entry = lookup(startAddr);
     bool hit = find_entry.valid;
+    if (hit) {
+        // 计算实际基本块大小
+        Addr blockSize = 0;
+        if (!find_entry.slots.empty()) {  // 如果FTB条目有槽位, 默认最后一个br taken了！但目前没有方向信息，只能暂时这样了，TODO!
+            // 使用最后一个分支的PC和大小计算基本块结束位置
+            const auto &lastSlot = find_entry.slots.back();
+            blockSize = lastSlot.pc + lastSlot.size - startAddr;
+        } else {
+            // 没有分支时使用fallThruAddr
+            blockSize = find_entry.fallThruAddr - startAddr;
+        }
+        
+        // 更新统计
+        if (blockSize <= 32) {  // 过滤异常值
+            ftbStats.blockSizeDist.sample(blockSize);
+        }
+        
+        // 统计分支数量
+        size_t branchNum = find_entry.slots.size();
+        ftbStats.branchNumDist.sample(branchNum);
+    }
+    
     if (hit) { // 2. 统计命中情况
         DPRINTF(FTB, "FTB: lookup hit, dumping hit entry\n");
         DPRINTF(UFTBCount, "%s hit, addr: %#lx index: %#x tag: %#x\n", 
@@ -310,7 +332,7 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
             printFTBEntry(old_entry);
             // assert(old_entry.tag == inst_tag && old_entry.valid);
             std::vector<FTBSlot> &slots = old_entry.slots;
-            bool new_branch = !branchIsInEntry(old_entry, branch_info.pc);  // 如果分支不在FTB条目中
+            bool new_branch = !branchIsInEntry(old_entry, branch_info.pc);  // 如果分支不在FTB现有分支中，需要插入进去
             if (new_branch && stream_taken) {  // 如果分支不在FTB条目中且执行跳转, 插入新的槽位并移除多余的
                 is_old_entry = false;
                 DPRINTF(FTB, "new taken branch detected, inserting into FTB entry\n");
@@ -322,25 +344,30 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
                     }
                     ++it;
                 }
-                slots.insert(it, FTBSlot(branch_info));
+                slots.insert(it, FTBSlot(branch_info));  // 插入新的槽位到正确pc位置
                 // remove the last slot if there are more than numBr slots
                 if (slots.size() > numBr) { // 如果槽位数超过numBr, 移除最后一个槽位
                     DPRINTF(FTB, "removing last slot because there are more than %d slots", numBr);
-                    Addr last_slot_pc = slots.rbegin()->pc;
-                    slots.pop_back();
-                    old_entry.fallThruAddr = last_slot_pc;
+                    Addr last_slot_pc = slots.rbegin()->pc;     // 获取最后一个槽位的pc
+                    slots.pop_back();  // 移除最后一个槽位
+                    old_entry.fallThruAddr = last_slot_pc;  // 设置fallThruAddr为最后一个槽位的pc
                 }
                 // ensure uncond slot is the tail slot
                 // Note: if an unconditional jump has a target equal to fallThruPC,
                 //       predicting it to be not taken will not be considered a mispredict
                 //       thus an ftq entry would possibly has two taken branches inside,
                 //       among which the first being an unconditional jump to its fallThruPC
+                // 确保无条件分支是最后一个槽位
+                // Note: 如果一个无条件分支的目标等于fallThruPC，预测它不跳转不会被认为是错误预测，刚好跳到fallThruPC,概率小
+                //       因此，一个FTQ条目可能有两个跳转分支，其中一个是无条件跳转到它的fallThruPC，概率小
+                // 是uncond分支且在FTB条目中，新插入uncond就在entry中了，现在保证j在最后
                 if (branch_info.isUncond() && branchIsInEntry(old_entry, branch_info.pc)) {
                     // check if there is other branches behind an indirect jump
                     // remove slots behind an unconditional jump
+                    // 检查是否存在间接跳转后的其他分支，移除间接跳转后的分支
                     FTBSlot back = slots.back();
                     while (slots.back() > branch_info) {
-                        DPRINTF(FTB, "erasing slot behind uncond slot:\n");
+                        DPRINTF(FTB, "erasing slot behind uncond slot:\n"); // 移除间接跳转后的任何分支
                         DPRINTF(FTB, "    pc:%#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d, always_taken:%d\n",
                             back.pc, back.size, back.target, back.isCond, back.isIndirect, back.isCall, back.isReturn, back.alwaysTaken);
                         slots.pop_back();
@@ -348,21 +375,21 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
                     }
                     assert(back == branch_info);
                     DPRINTF(FTB, "setting fallThruAddr to the next inst of uncond: %#lx\n", old_entry.fallThruAddr);
-                    old_entry.fallThruAddr = branch_info.pc + branch_info.size;
+                    old_entry.fallThruAddr = branch_info.pc + branch_info.size; // 设置fallThruAddr为uncond的下一个指令地址，有何用？反正都要taken的，就是减少一点方向预测错误开销
                 }
                 if (branch_info.isCond) {
-                    incNonL0Stat(ftbStats.oldEntryWithNewCond);
+                    incNonL0Stat(ftbStats.oldEntryWithNewCond);  // 有新条件分支
                 } else {
-                    incNonL0Stat(ftbStats.oldEntryWithNewUncond);
+                    incNonL0Stat(ftbStats.oldEntryWithNewUncond);  // 有新无条件分支
                 }
             }
             if (!new_branch && branch_info.isIndirect && stream_taken) { // 如果分支不是新分支且是间接跳转且执行跳转
-                auto &tailSlot = slots.back();
-                assert(tailSlot.isIndirect);
-                if (tailSlot.target != branch_info.target) {
-                    tailSlot.target = branch_info.target;
-                    is_old_entry = false;
-                    incNonL0Stat(ftbStats.oldEntryIndirectTargetModified);
+                auto &tailSlot = slots.back();  // 获取最后一个槽位
+                assert(tailSlot.isIndirect);  // 确保是间接跳转
+                if (tailSlot.target != branch_info.target) {  // 如果间接跳转目标与执行分支目标不同， j0,j1, 选j0
+                    tailSlot.target = branch_info.target;  // 更新间接跳转目标
+                    is_old_entry = false;  // 设置为旧条目
+                    incNonL0Stat(ftbStats.oldEntryIndirectTargetModified);  // 更新统计, 间接跳转目标修改
                 }
             }
             // modify always taken logic 修改always taken逻辑(原本一直taken, 现在不taken 了)
@@ -517,20 +544,20 @@ DefaultFTB::update(const FetchStream &stream)
 void
 DefaultFTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 { // commit阶段统计分支数据
-    auto meta = std::static_pointer_cast<FTBMeta>(stream.predMetas[getComponentIdx()]);
-    auto &entry = meta->entry;
-    auto pc = inst->getPC();
-    auto npc = inst->getNPC();
+    auto meta = std::static_pointer_cast<FTBMeta>(stream.predMetas[getComponentIdx()]); // 获取预测元数据
+    auto &entry = meta->entry; // 获取FTB条目
+    auto pc = inst->getPC(); // 获取PC
+    auto npc = inst->getNPC(); // 获取NPC
     // auto &static_inst = inst->staticInst();
-    bool this_branch_hit = meta->hit && branchIsInEntry(entry, pc);
+    bool this_branch_hit = meta->hit && branchIsInEntry(entry, pc); // 命中，分支是否在FTB条目中
     // bool this_branch_miss = !this_branch_hit;
-    bool cond_not_taken = inst->isCondCtrl() && !inst->branching();
-    bool this_branch_taken = !cond_not_taken; // all uncond should be taken
+    bool cond_not_taken = inst->isCondCtrl() && !inst->branching(); // 条件分支，且不跳转
+    bool this_branch_taken = !cond_not_taken; // 条件分支，且跳转
     Addr this_branch_target = npc;
     const auto &slot = entry.getSlot(pc);
-    if (this_branch_hit) {
+    if (this_branch_hit) { // 命中
         ftbStats.allBranchHits++;
-        if (this_branch_taken) {
+        if (this_branch_taken) { // 命中且taken
             ftbStats.allBranchHitTakens++;
         } else {
             ftbStats.allBranchHitNotTakens++;
@@ -544,7 +571,7 @@ DefaultFTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
             }
             if (isL0()) {
                 bool pred_taken = slot.ctr >= 0;
-                if (pred_taken == this_branch_taken) {
+                if (pred_taken == this_branch_taken) { // 预测正确
                     ftbStats.condPredCorrect++;
                 } else {
                     ftbStats.condPredWrong++;
@@ -572,7 +599,7 @@ DefaultFTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
                 ftbStats.returnHits++;
             }
         }
-    } else {
+    } else { // 未命中
         ftbStats.allBranchMisses++;
         if (this_branch_taken) {
             ftbStats.allBranchMissTakens++;
@@ -581,19 +608,21 @@ DefaultFTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
         }
         if (inst->isCondCtrl()) {
             ftbStats.condMisses++;
-            if (this_branch_taken) {
+            if (this_branch_taken) { // 条件分支，且taken
                 ftbStats.condMissTakens++;
                 if (isL0()) {
                     // only L0 FTB has saturating counters to predict conditional branches
                     // taken branches that is missed in ftb must have been mispredicted
+                    // L0 FTB有饱和计数器来预测条件分支
+                    // 在FTB中未命中的taken分支必须被错误预测
                     ftbStats.condPredWrong++;
                 }
-            } else {
+            } else { // 条件分支，且not taken
                 ftbStats.condMissNotTakens++;
                 if (isL0()) {
                     // only L0 FTB has saturating counters to predict conditional branches
                     // taken branches that is missed in ftb must have been mispredicted
-                    ftbStats.condPredCorrect++;
+                    ftbStats.condPredCorrect++;     // 预测NT， 实际NT 不存，也算预测正确
                 }
             }
         }
@@ -660,8 +689,11 @@ DefaultFTB::FTBStats::FTBStats(statistics::Group* parent) :
     // ADD_STAT(setUsage, statistics::units::Count::get(), "Usage count per set"),
     // ADD_STAT(wayUsage, statistics::units::Count::get(), "Way usage distribution per set"),
     ADD_STAT(replacements, statistics::units::Count::get(), "Number of entry replacements"),
-    ADD_STAT(fullSetEvents, statistics::units::Count::get(), "Number of times a set was full")
-
+    ADD_STAT(fullSetEvents, statistics::units::Count::get(), "Number of times a set was full"),
+    ADD_STAT(blockSizeDist, 
+        "Distribution of basic block sizes in bytes"),
+    ADD_STAT(branchNumDist,
+        "Distribution of number of branches per FTB entry")
 {
     auto ftb = dynamic_cast<branch_prediction::ftb_pred::DefaultFTB*>(parent);
     
@@ -680,6 +712,14 @@ DefaultFTB::FTBStats::FTBStats(statistics::Group* parent) :
         oldEntryWithNewUncond.prereq(oldEntryWithNewUncond);
         eraseSlotBehindUncond.prereq(eraseSlotBehindUncond);
     }
+
+    // 基本块大小分布: 0-32字节,步长4字节
+    blockSizeDist.init(0, 32, 4)
+        .flags(statistics::pdf | statistics::cdf);
+        
+    // 分支数量分布: 0到numBr个分支
+    branchNumDist.init(0, 4, 1)
+        .flags(statistics::pdf | statistics::cdf);
 }
 
 } // namespace ftb_pred
