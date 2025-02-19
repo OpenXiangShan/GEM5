@@ -212,7 +212,9 @@ class BaseO3CPU(BaseCPU):
     numPhysCCRegs = Param.Unsigned(0, "Number of physical cc registers")
     numPhysRMiscRegs = Param.Unsigned(40, "Number of physical renameable misc registers")
 
-    numROBEntries = Param.Unsigned(320, "Number of reorder buffer entries")
+    # rob config
+    numROBEntries = Param.Unsigned(160, "Number of reorder buffer entries")
+    CROB_instPerGroup = Param.Unsigned(8, "Number of reorder buffer entries")
 
     smtNumFetchingThreads = Param.Unsigned(1, "SMT Number of Fetching Threads")
     smtFetchPolicy = Param.SMTFetchPolicy('RoundRobin', "SMT Fetch policy")
