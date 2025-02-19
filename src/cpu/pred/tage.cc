@@ -66,13 +66,13 @@ TAGE::update(ThreadID tid, Addr branch_pc, bool taken, void* bp_history,
 
     if (squashed) {
         // This restores the global history, then update it
-        // and recomputes the folded histories.
+        // and recomputes the folded histories. 重置全局历史，然后更新，并重新计算折叠历史
         tage->squash(tid, taken, tage_bi, corrTarget);
         return;
     }
 
     int nrand = random_mt.random<int>() & 3;
-    if (bi->tageBranchInfo->condBranch) {
+    if (bi->tageBranchInfo->condBranch) { // 条件分支预测错误，重定向
         DPRINTF(Tage, "Updating tables for branch:%lx; taken?:%d\n",
                 branch_pc, taken);
         tage->updateStats(taken, bi->tageBranchInfo);

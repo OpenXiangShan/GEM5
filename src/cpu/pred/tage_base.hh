@@ -74,22 +74,24 @@ class TAGEBase : public SimObject
     // Tage Entry
     struct TageEntry
     {
-        int8_t ctr;
-        uint16_t tag;
-        uint8_t u;
+        int8_t ctr;     // 方向计数器
+        uint16_t tag;   // 标签
+        uint8_t u;      // useful bit
         TageEntry() : ctr(0), tag(0), u(0) { }
     };
 
     // Folded History Table - compressed history
     // to mix with instruction PC to index partially
     // tagged tables.
+    // 折叠历史表 - 压缩历史
+    // 将指令PC与部分标记表中的历史压缩在一起
     struct FoldedHistory
     {
-        unsigned comp;
-        int compLength;
-        int origLength;
-        int outpoint;
-        int bufferSize;
+        unsigned comp;   // 压缩的历史
+        int compLength; // 压缩历史的长度， 压缩后比较短，5
+        int origLength; // 原始历史的长度， 可能很长20
+        int outpoint;   // 输出点
+        int bufferSize; // 缓冲区大小
 
         FoldedHistory()
         {
@@ -100,15 +102,26 @@ class TAGEBase : public SimObject
         {
             origLength = original_length;
             compLength = compressed_length;
-            outpoint = original_length % compressed_length;
+            outpoint = original_length % compressed_length; // 计算输出点=20%5=0
         }
 
         void update(uint8_t * h)
         {
+            // 步骤1：左移并加入最新的历史位
             comp = (comp << 1) | h[0];
+            // 例如：comp = 10101 变成 01010，然后加入h[0]=1，变成01011
+
+            // 步骤2：异或旧的历史位（超出origLength的部分）
             comp ^= h[origLength] << outpoint;
+            // 如果h[20]=1，则与comp异或，01011 ^ (1 << 0) = 01010
+
+            // 步骤3：折叠操作
             comp ^= (comp >> compLength);
+            // 将高位信息折叠到低位，01010 ^ (01010 >> 5) = 01010 ^ 00000 = 01010
+
+            // 步骤4：保持在compLength位内
             comp &= (1ULL << compLength) - 1;
+            // 确保结果不超过5位，01010 & 00011111 = 01010
         }
     };
 
@@ -117,45 +130,45 @@ class TAGEBase : public SimObject
     // provider type
     enum
     {
-        BIMODAL_ONLY = 0,
-        TAGE_LONGEST_MATCH,
-        BIMODAL_ALT_MATCH,
-        TAGE_ALT_MATCH,
+        BIMODAL_ONLY = 0, // 只用bimodal
+        TAGE_LONGEST_MATCH, // 最长匹配
+        BIMODAL_ALT_MATCH, // bimodal备用匹配
+        TAGE_ALT_MATCH, // tage备用匹配
         LAST_TAGE_PROVIDER_TYPE = TAGE_ALT_MATCH
     };
 
-    // Primary branch history entry
+    // 主分支历史条目， 类似meta信息，每次预测时候保存，更新时候使用
     struct BranchInfo
     {
-        int pathHist;
-        int ptGhist;
-        int hitBank;
-        int hitBankIndex;
-        int altBank;
-        int altBankIndex;
-        int bimodalIndex;
+        int pathHist;    // 路径历史, 记录分支指令地址，捕捉程序的执行路径模式
+        int ptGhist;     // 全局历史，记录方向历史，捕捉分支指令相关性
+        int hitBank;     // 命中表
+        int hitBankIndex; // 命中表索引
+        int altBank;     // 备用表
+        int altBankIndex; // 备用表索引
+        int bimodalIndex; // 双模式表索引
 
         bool tagePred;
         bool altTaken;
         bool condBranch;
-        bool longestMatchPred;
-        bool pseudoNewAlloc;
-        Addr branchPC;
+        bool longestMatchPred; // 最长匹配预测
+        bool pseudoNewAlloc; // 伪新分配
+        Addr branchPC; // 分支PC
 
-        // Pointer to dynamically allocated storage
-        // to save table indices and folded histories.
-        // To do one call to new instead of five.
+        // 指向动态分配的存储空间
+        // 保存表索引和折叠历史。
+        // 一次调用new而不是五个。
         int *storage;
 
-        // Pointers to actual saved array within the dynamically
-        // allocated storage.
-        int *tableIndices;
-        int *tableTags;
-        int *ci;
-        int *ct0;
-        int *ct1;
+        // 指向实际保存的数组
+        // 在动态分配的存储空间中。都是数组
+        int *tableIndices; // 表索引
+        int *tableTags; // 表标签
+        int *ci; // 压缩历史， 更新时候保存computeIndices
+        int *ct0; // 0级表， 保存computeTags[0]
+        int *ct1; // 1级表， 保存computeTags[1]
 
-        // for stats purposes
+        // 用于统计目的
         unsigned provider;
 
         BranchInfo(const TAGEBase &tage)
@@ -168,13 +181,13 @@ class TAGEBase : public SimObject
               pseudoNewAlloc(false), branchPC(0),
               provider(-1)
         {
-            int sz = tage.nHistoryTables + 1;
-            storage = new int [sz * 5];
-            tableIndices = storage;
-            tableTags = storage + sz;
-            ci = tableTags + sz;
-            ct0 = ci + sz;
-            ct1 = ct0 + sz;
+            int sz = tage.nHistoryTables + 1; // 历史表的数量加1
+            storage = new int [sz * 5]; // 分配存储空间, 返回一个指向新分配的内存块的指针
+            tableIndices = storage; // 表索引
+            tableTags = storage + sz; // 表标签
+            ci = tableTags + sz; // 压缩历史
+            ct0 = ci + sz; // 0级表
+            ct1 = ct0 + sz; // 1级表
         }
 
         virtual ~BranchInfo()
@@ -421,21 +434,21 @@ class TAGEBase : public SimObject
     size_t getSizeInBits() const;
 
   protected:
-    const unsigned logRatioBiModalHystEntries;
-    const unsigned nHistoryTables;
-    const unsigned tagTableCounterBits;
-    const unsigned tagTableUBits;
-    const unsigned histBufferSize;
-    const unsigned minHist;
-    const unsigned maxHist;
-    const unsigned pathHistBits;
+    const unsigned logRatioBiModalHystEntries; // 默认2, Log num of prediction entries for a shared hysteresis bit for the Bimodal
+    const unsigned nHistoryTables; // 历史表的数量，默认7
+    const unsigned tagTableCounterBits; // 表计数器位数， 默认3
+    const unsigned tagTableUBits; // 表u位数， 默认2
+    const unsigned histBufferSize; // 历史缓冲区大小，默认2M
+    const unsigned minHist; // 最小历史大小，默认5
+    const unsigned maxHist; // 最大历史大小，默认130
+    const unsigned pathHistBits; // 路径历史位数，默认16
 
-    std::vector<unsigned> tagTableTagWidths;
-    std::vector<int> logTagTableSizes;
+    std::vector<unsigned> tagTableTagWidths; // 表标签宽度，默认[0, 9, 9, 10, 10, 11, 11, 12]
+    std::vector<int> logTagTableSizes; // 表大小对数，默认[13, 9, 9, 9, 9, 9, 9, 9]
 
-    std::vector<bool> btablePrediction;
-    std::vector<bool> btableHysteresis;
-    TageEntry **gtable;
+    std::vector<bool> btablePrediction; // 表预测，默认[]
+    std::vector<bool> btableHysteresis; // 表滞后，默认[]
+    TageEntry **gtable; // 所有表，默认[]
 
     // Keep per-thread histories to
     // support SMT.
@@ -443,51 +456,56 @@ class TAGEBase : public SimObject
     {
         // Speculative path history
         // (LSB of branch address)
-        int pathHist;
+        int pathHist; // 路径历史， 推测路径， 分支地址的LSB
 
         // Speculative branch direction
         // history (circular buffer)
         // @TODO Convert to std::vector<bool>
-        uint8_t *globalHistory;
+        uint8_t *globalHistory; // 全局历史， 推测分支方向历史， 循环缓冲区，// 完整的全局历史数组
 
         // Pointer to most recent branch outcome
-        uint8_t* gHist;
+        uint8_t* gHist; // 最近分支结果， 全局历史// 指向当前位置的指针，当前位置开始是真正的globalHistory！防止出现环形溢出， = &globalHistory[ptGhist]
 
-        // Index to most recent branch outcome
-        int ptGhist;
+        // Index to most recent branch outcome, 指向最近分支结果的索引，索引globalHistory
+        int ptGhist;    // 索引globalHistory，保存位置信息，便于恢复
 
         // Speculative folded histories.
-        FoldedHistory *computeIndices;
-        FoldedHistory *computeTags[2];
+        FoldedHistory *computeIndices; // 某个折叠历史，用于计算索引， 每个tage表一个
+        FoldedHistory *computeTags[2]; // 用于计算标签, 两个，压缩长度不同
     };
 
-    std::vector<ThreadHistory> threadHistory;
+    std::vector<ThreadHistory> threadHistory; // 线程历史， 每个线程一个
 
     /**
-     * Initialization of the folded histories
+     * Initialization of the folded histories， 初始化折叠历史
      */
     virtual void initFoldedHistories(ThreadHistory & history);
 
-    int *histLengths;
-    int *tableIndices;
-    int *tableTags;
+    int *histLengths; // 历史长度， 默认[5, 9, 13, 21, 33, 49, 73]
+    int *tableIndices; // 表索引， 默认[]
+    int *tableTags; // 表标签， 默认[]
 
-    std::vector<int8_t> useAltPredForNewlyAllocated;
-    int64_t tCounter;
-    uint64_t logUResetPeriod;
-    const int64_t initialTCounterValue;
-    unsigned numUseAltOnNa;
-    unsigned useAltOnNaBits;
-    unsigned maxNumAlloc;
+    std::vector<int8_t> useAltPredForNewlyAllocated; // 用于新分配的替代预测， 默认[]
+    int64_t tCounter; // 默认1 << 17
+    uint64_t logUResetPeriod; // 默认18
+    const int64_t initialTCounterValue; // 默认1 << 17
+    unsigned numUseAltOnNa; // 默认1
+    unsigned useAltOnNaBits; // 默认4
+    unsigned maxNumAlloc; // 默认1
 
     // Tells which tables are active
     // (for the base TAGE implementation all are active)
     // Some other classes use this for handling associativity
-    std::vector<bool> noSkip;
+    // 告诉哪些表是活动的
+    // (对于基类TAGE实现，所有表都是活动的)
+    // 其他类使用此方法处理关联性
+    std::vector<bool> noSkip; // 默认[]
 
-    const bool speculativeHistUpdate;
+    const bool speculativeHistUpdate; // 默认True, 是否采用推测更新tage历史
+    // 推测更新，更新及时，但需要存储大量元数据bi，还需要恢复机制
+    // commit 更新，更新延迟大，但只需要存储少量元数据bi
 
-    const unsigned instShiftAmt;
+    const unsigned instShiftAmt; // 默认0
 
     bool initialized;
 
@@ -495,19 +513,19 @@ class TAGEBase : public SimObject
     {
         TAGEBaseStats(statistics::Group *parent, unsigned nHistoryTables);
         // stats
-        statistics::Scalar longestMatchProviderCorrect;
-        statistics::Scalar altMatchProviderCorrect;
-        statistics::Scalar bimodalAltMatchProviderCorrect;
-        statistics::Scalar bimodalProviderCorrect;
-        statistics::Scalar longestMatchProviderWrong;
-        statistics::Scalar altMatchProviderWrong;
-        statistics::Scalar bimodalAltMatchProviderWrong;
-        statistics::Scalar bimodalProviderWrong;
-        statistics::Scalar altMatchProviderWouldHaveHit;
-        statistics::Scalar longestMatchProviderWouldHaveHit;
+        statistics::Scalar longestMatchProviderCorrect; // 最长匹配提供者正确
+        statistics::Scalar altMatchProviderCorrect; // 替代匹配提供者正确
+        statistics::Scalar bimodalAltMatchProviderCorrect; // 双模式替代匹配提供者正确
+        statistics::Scalar bimodalProviderCorrect; // 双模式提供者正确
+        statistics::Scalar longestMatchProviderWrong; // 最长匹配提供者错误
+        statistics::Scalar altMatchProviderWrong; // 替代匹配提供者错误
+        statistics::Scalar bimodalAltMatchProviderWrong; // 双模式替代匹配提供者错误
+        statistics::Scalar bimodalProviderWrong; // 双模式提供者错误
+        statistics::Scalar altMatchProviderWouldHaveHit; // 替代匹配提供者会命中
+        statistics::Scalar longestMatchProviderWouldHaveHit; // 最长匹配提供者会命中
 
-        statistics::Vector longestMatchProvider;
-        statistics::Vector altMatchProvider;
+        statistics::Vector longestMatchProvider; // 最长匹配提供者
+        statistics::Vector altMatchProvider; // 替代匹配提供者
     } stats;
 };
 

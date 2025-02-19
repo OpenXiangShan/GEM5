@@ -90,46 +90,50 @@ TAGEBase::init()
        return;
     }
 
-    // Current method for periodically resetting the u counter bits only
-    // works for 1 or 2 bits
-    // Also make sure that it is not 0
+    // 当前方法仅适用于1或2位u计数器位
+    // 也确保它不是0
     assert(tagTableUBits <= 2 && (tagTableUBits > 0));
 
-    // we use int type for the path history, so it cannot be more than
-    // its size
+    // 我们使用int类型进行路径历史，所以它不能大于
+    // 它的尺寸
     assert(pathHistBits <= (sizeof(int)*8));
 
-    // initialize the counter to half of the period
+    // 将计数器初始化为周期的一半
     assert(logUResetPeriod != 0);
     tCounter = initialTCounterValue;
 
+    // 确保缓冲区足够大
     assert(histBufferSize > maxHist * 2);
 
+    // 初始化用于新分配的替代预测
     useAltPredForNewlyAllocated.resize(numUseAltOnNa, 0);
 
+    // 初始化每个线程的历史
     for (auto& history : threadHistory) {
-        history.pathHist = 0;
-        history.globalHistory = new uint8_t[histBufferSize];
-        history.gHist = history.globalHistory;
-        memset(history.gHist, 0, histBufferSize);
-        history.ptGhist = 0;
+        history.pathHist = 0; // 路径历史
+        history.globalHistory = new uint8_t[histBufferSize]; // 完整的全局历史,默认2M
+        history.gHist = history.globalHistory; // 全局历史
+        memset(history.gHist, 0, histBufferSize); // 初始化全局历史
+        history.ptGhist = 0; // 全局历史索引
     }
 
+    // 初始化历史长度
     histLengths = new int [nHistoryTables+1];
 
     calculateParameters();
 
+    // 确保表标签宽度和表大小对数的大小正确
     assert(tagTableTagWidths.size() == (nHistoryTables+1));
     assert(logTagTableSizes.size() == (nHistoryTables+1));
 
-    // First entry is for the Bimodal table and it is untagged in this
-    // implementation
+    // 第一个条目是用于双模式表，在这个实现中它是无标记的
     assert(tagTableTagWidths[0] == 0);
 
+    // 初始化每个线程的计算索引和标签
     for (auto& history : threadHistory) {
-        history.computeIndices = new FoldedHistory[nHistoryTables+1];
-        history.computeTags[0] = new FoldedHistory[nHistoryTables+1];
-        history.computeTags[1] = new FoldedHistory[nHistoryTables+1];
+        history.computeIndices = new FoldedHistory[nHistoryTables+1];   // 全局历史压缩，gindex获得索引
+        history.computeTags[0] = new FoldedHistory[nHistoryTables+1];     // 全局历史压缩，gtag获得tag
+        history.computeTags[1] = new FoldedHistory[nHistoryTables+1];     // 全局历史压缩，gtag获得tag， 两个不同的压缩历史计算
 
         initFoldedHistories(history);
     }
@@ -150,13 +154,14 @@ TAGEBase::init()
 void
 TAGEBase::initFoldedHistories(ThreadHistory & history)
 {
+    // 初始化每个线程的计算索引和标签
     for (int i = 1; i <= nHistoryTables; i++) {
         history.computeIndices[i].init(
             histLengths[i], (logTagTableSizes[i]));
         history.computeTags[0][i].init(
             history.computeIndices[i].origLength, tagTableTagWidths[i]);
         history.computeTags[1][i].init(
-            history.computeIndices[i].origLength, tagTableTagWidths[i]-1);
+            history.computeIndices[i].origLength, tagTableTagWidths[i]-1);// 压缩长度-1
         DPRINTF(Tage, "HistLength:%d, TTSize:%d, TTTWidth:%d\n",
                 histLengths[i], logTagTableSizes[i], tagTableTagWidths[i]);
     }
@@ -186,17 +191,17 @@ TAGEBase::calculateParameters()
 
 void
 TAGEBase::btbUpdate(ThreadID tid, Addr branch_pc, BranchInfo* &bi)
-{
-    if (speculativeHistUpdate) {
+{// BTB miss时的推测更新
+    if (speculativeHistUpdate) { // 如果启用推测性历史更新
         ThreadHistory& tHist = threadHistory[tid];
-        DPRINTF(Tage, "BTB miss resets prediction: %lx\n", branch_pc);
-        assert(tHist.gHist == &tHist.globalHistory[tHist.ptGhist]);
-        tHist.gHist[0] = 0;
+        DPRINTF(Tage, "BTB miss resets prediction: %lx\n", branch_pc); // 分支预测失败，重置预测
+        assert(tHist.gHist == &tHist.globalHistory[tHist.ptGhist]); // 确保gHist指向globalHistory的正确位置
+        tHist.gHist[0] = 0; // 将gHist的第一个元素设置为0
         for (int i = 1; i <= nHistoryTables; i++) {
-            tHist.computeIndices[i].comp = bi->ci[i];
+            tHist.computeIndices[i].comp = bi->ci[i]; // 恢复之前保存的压缩历史状态
             tHist.computeTags[0][i].comp = bi->ct0[i];
             tHist.computeTags[1][i].comp = bi->ct1[i];
-            tHist.computeIndices[i].update(tHist.gHist);
+            tHist.computeIndices[i].update(tHist.gHist);     // 基于新的全局历史更新
             tHist.computeTags[0][i].update(tHist.gHist);
             tHist.computeTags[1][i].update(tHist.gHist);
         }
@@ -225,19 +230,19 @@ TAGEBase::F(int A, int size, int bank) const
     return (A);
 }
 
-// gindex computes a full hash of pc, ghist and pathHist
+// gindex computes a full hash of pc, ghist and pathHist, 计算pc、ghist和pathHist的完整哈希
 int
 TAGEBase::gindex(ThreadID tid, Addr pc, int bank) const
 {
     int index;
     int hlen = (histLengths[bank] > pathHistBits) ? pathHistBits :
-                                                    histLengths[bank];
-    const unsigned int shiftedPc = pc >> instShiftAmt;
+                                                    histLengths[bank]; // 如果历史长度大于路径历史位数，则使用路径历史位数，否则使用历史长度,例如5
+    const unsigned int shiftedPc = pc >> instShiftAmt; // 将pc右移instShiftAmt位
     index =
-        shiftedPc ^
-        (shiftedPc >> ((int) abs(logTagTableSizes[bank] - bank) + 1)) ^
-        threadHistory[tid].computeIndices[bank].comp ^
-        F(threadHistory[tid].pathHist, hlen, bank);
+        shiftedPc ^ // 基本pc
+        (shiftedPc >> ((int) abs(logTagTableSizes[bank] - bank) + 1)) ^ // 将pc右移abs(logTagTableSizes[bank] - bank) + 1位， pc变种
+        threadHistory[tid].computeIndices[bank].comp ^ // 基于Global History的折叠
+        F(threadHistory[tid].pathHist, hlen, bank); // 基于Path History的折叠, F 会随机排列路径历史
 
     return (index & ((1ULL << (logTagTableSizes[bank])) - 1));
 }
@@ -247,9 +252,9 @@ TAGEBase::gindex(ThreadID tid, Addr pc, int bank) const
 uint16_t
 TAGEBase::gtag(ThreadID tid, Addr pc, int bank) const
 {
-    int tag = (pc >> instShiftAmt) ^
-              threadHistory[tid].computeTags[0][bank].comp ^
-              (threadHistory[tid].computeTags[1][bank].comp << 1);
+    int tag = (pc >> instShiftAmt) ^ // 基本pc
+              threadHistory[tid].computeTags[0][bank].comp ^ // tag0, 找到bank, 获取comp
+              (threadHistory[tid].computeTags[1][bank].comp << 1); // tag1
 
     return (tag & ((1ULL << tagTableTagWidths[bank]) - 1));
 }
@@ -317,35 +322,39 @@ TAGEBase::baseUpdate(Addr pc, bool taken, BranchInfo* bi)
 }
 
 // shifting the global history:  we manage the history in a big table in order
-// to reduce simulation time
-void
-TAGEBase::updateGHist(uint8_t * &h, bool dir, uint8_t * tab, int &pt)
+// to reduce simulation time  在大表中管理历史，减少模拟时间，移动全局历史
+void TAGEBase::updateGHist(uint8_t * &h,        // gHist指针
+                          bool dir,              // 分支方向(taken)
+                          uint8_t * tab,         // globalHistory数组
+                          int &pt)               // ptGhist索引
 {
+    // 检查是否需要回滚历史，当ptGhist到达0时，通过复制操作实现环形效果
     if (pt == 0) {
-        DPRINTF(Tage, "Rolling over the histories\n");
-         // Copy beginning of globalHistoryBuffer to end, such that
-         // the last maxHist outcomes are still reachable
-         // through pt[0 .. maxHist - 1].
-         for (int i = 0; i < maxHist; i++)
-             tab[histBufferSize - maxHist + i] = tab[i];
-         pt =  histBufferSize - maxHist;
-         h = &tab[pt];
+        // 将历史缓冲区开始的maxHist个结果复制到末尾
+        for (int i = 0; i < maxHist; i++)
+            tab[histBufferSize - maxHist + i] = tab[i];
+        
+        // 重置指针到新位置
+        pt = histBufferSize - maxHist;
+        h = &tab[pt];
     }
-    pt--;
-    h--;
-    h[0] = (dir) ? 1 : 0;
+    
+    // 更新历史
+    pt--;           // 索引减1
+    h--;           // 指针前移
+    h[0] = dir ? 1 : 0;  // 写入新的分支结果，相当于新的历史都写在原本历史右边1位
 }
 
 void
 TAGEBase::calculateIndicesAndTags(ThreadID tid, Addr branch_pc,
                                   BranchInfo* bi)
 {
-    // computes the table addresses and the partial tags
+    // computes the table addresses and the partial tags 计算表地址和部分标签
     for (int i = 1; i <= nHistoryTables; i++) {
-        tableIndices[i] = gindex(tid, branch_pc, i);
-        bi->tableIndices[i] = tableIndices[i];
-        tableTags[i] = gtag(tid, branch_pc, i);
-        bi->tableTags[i] = tableTags[i];
+        tableIndices[i] = gindex(tid, branch_pc, i); // 计算表index
+        bi->tableIndices[i] = tableIndices[i]; // 保存表index
+        tableTags[i] = gtag(tid, branch_pc, i); // 计算表tag
+        bi->tableTags[i] = tableTags[i]; // 保存表tag
     }
 }
 
@@ -366,13 +375,13 @@ TAGEBase::tagePredict(ThreadID tid, Addr branch_pc,
     if (cond_branch) {
         // TAGE prediction
 
-        calculateIndicesAndTags(tid, pc, bi);
+        calculateIndicesAndTags(tid, pc, bi);   // 计算表地址和部分标签,存放在bi中
 
-        bi->bimodalIndex = bindex(pc);
+        bi->bimodalIndex = bindex(pc);  // 计算bimodalIndex
 
         bi->hitBank = 0;
         bi->altBank = 0;
-        //Look for the bank with longest matching history
+        //Look for the bank with longest matching history, 寻找最长匹配历史， 从后向前，第一个tag匹配的表
         for (int i = nHistoryTables; i > 0; i--) {
             if (noSkip[i] &&
                 gtable[i][tableIndices[i]].tag == tableTags[i]) {
@@ -381,7 +390,7 @@ TAGEBase::tagePredict(ThreadID tid, Addr branch_pc,
                 break;
             }
         }
-        //Look for the alternate bank
+        //Look for the alternate bank, 寻找备用表, 更低表tag匹配
         for (int i = bi->hitBank - 1; i > 0; i--) {
             if (noSkip[i] &&
                 gtable[i][tableIndices[i]].tag == tableTags[i]) {
@@ -390,36 +399,36 @@ TAGEBase::tagePredict(ThreadID tid, Addr branch_pc,
                 break;
             }
         }
-        //computes the prediction and the alternate prediction
+        //computes the prediction and the alternate prediction, 计算预测和备用预测
         if (bi->hitBank > 0) {
             if (bi->altBank > 0) {
                 bi->altTaken =
-                    gtable[bi->altBank][tableIndices[bi->altBank]].ctr >= 0;
+                    gtable[bi->altBank][tableIndices[bi->altBank]].ctr >= 0; // 备用表ctr>=0 = taken
                 extraAltCalc(bi);
             }else {
-                bi->altTaken = getBimodePred(pc, bi);
+                bi->altTaken = getBimodePred(pc, bi); // 备用表用bimodal预测
             }
 
             bi->longestMatchPred =
-                gtable[bi->hitBank][tableIndices[bi->hitBank]].ctr >= 0;
+                gtable[bi->hitBank][tableIndices[bi->hitBank]].ctr >= 0; // 最长匹配表ctr>=0 = taken
             bi->pseudoNewAlloc =
                 abs(2 * gtable[bi->hitBank][bi->hitBankIndex].ctr + 1) <= 1;
 
             //if the entry is recognized as a newly allocated entry and
             //useAltPredForNewlyAllocated is positive use the alternate
-            //prediction
+            //prediction, 如果条目被识别为新分配的条目并且useAltPredForNewlyAllocated为正，则使用备用预测
             if ((useAltPredForNewlyAllocated[getUseAltIdx(bi, branch_pc)] < 0)
                 || ! bi->pseudoNewAlloc) {
-                bi->tagePred = bi->longestMatchPred;
-                bi->provider = TAGE_LONGEST_MATCH;
+                bi->tagePred = bi->longestMatchPred; // 最长匹配预测
+                bi->provider = TAGE_LONGEST_MATCH; // 最长匹配提供者
             } else {
-                bi->tagePred = bi->altTaken;
+                bi->tagePred = bi->altTaken; // 备用预测
                 bi->provider = bi->altBank ? TAGE_ALT_MATCH
-                                           : BIMODAL_ALT_MATCH;
+                                           : BIMODAL_ALT_MATCH; // 备用提供者
             }
         } else {
             bi->altTaken = getBimodePred(pc, bi);
-            bi->tagePred = bi->altTaken;
+            bi->tagePred = bi->altTaken;    // 都用bimodal预测
             bi->longestMatchPred = bi->altTaken;
             bi->provider = BIMODAL_ONLY;
         }
@@ -445,17 +454,18 @@ TAGEBase::handleAllocAndUReset(bool alloc, bool taken, BranchInfo* bi,
                            int nrand)
 {
     if (alloc) {
-        // is there some "unuseful" entry to allocate
+        // is there some "unuseful" entry to allocate 寻找"无用"的表项进行分配
         uint8_t min = 1;
         for (int i = nHistoryTables; i > bi->hitBank; i--) {
             if (gtable[i][bi->tableIndices[i]].u < min) {
-                min = gtable[i][bi->tableIndices[i]].u;
+                min = gtable[i][bi->tableIndices[i]].u; // 找到最小的u
             }
         }
 
         // we allocate an entry with a longer history
         // to  avoid ping-pong, we do not choose systematically the next
         // entry, but among the 3 next entries
+        // 为了避免乒乓效应，我们不系统地选择下一个表项，而是选择接下来的3个表项之一
         int Y = nrand &
             ((1ULL << (nHistoryTables - bi->hitBank - 1)) - 1);
         int X = bi->hitBank + 1;
@@ -465,19 +475,20 @@ TAGEBase::handleAllocAndUReset(bool alloc, bool taken, BranchInfo* bi,
                 X++;
         }
         // No entry available, forces one to be available
+        // 如果没有可用表项，强制使一个表项可用
         if (min > 0) {
             gtable[X][bi->tableIndices[X]].u = 0;
         }
 
 
-        //Allocate entries
+        //Allocate entries, 分配
         unsigned numAllocated = 0;
-        for (int i = X; i <= nHistoryTables; i++) {
-            if (gtable[i][bi->tableIndices[i]].u == 0) {
-                gtable[i][bi->tableIndices[i]].tag = bi->tableTags[i];
-                gtable[i][bi->tableIndices[i]].ctr = (taken) ? 0 : -1;
-                ++numAllocated;
-                if (numAllocated == maxNumAlloc) {
+        for (int i = X; i <= nHistoryTables; i++) { // 从X开始，到nHistoryTables
+            if (gtable[i][bi->tableIndices[i]].u == 0) { // 如果u=0，则分配
+                gtable[i][bi->tableIndices[i]].tag = bi->tableTags[i]; // 分配tag
+                gtable[i][bi->tableIndices[i]].ctr = (taken) ? 0 : -1; // 分配ctr
+                ++numAllocated; // 分配计数器加1
+                if (numAllocated == maxNumAlloc) { // 如果分配计数器等于maxNumAlloc，则停止，默认1
                     break;
                 }
             }
@@ -515,7 +526,7 @@ TAGEBase::condBranchUpdate(ThreadID tid, Addr branch_pc, bool taken,
     BranchInfo* bi, int nrand, Addr corrTarget, bool pred, bool preAdjustAlloc)
 {
     // TAGE UPDATE
-    // try to allocate a  new entries only if prediction was wrong
+    // try to allocate a  new entries only if prediction was wrong 只有在预测错误时，才分配新表项
     bool alloc = (bi->tagePred != taken) && (bi->hitBank < nHistoryTables);
 
     if (preAdjustAlloc) {
@@ -525,15 +536,17 @@ TAGEBase::condBranchUpdate(ThreadID tid, Addr branch_pc, bool taken,
     if (bi->hitBank > 0) {
         // Manage the selection between longest matching and alternate
         // matching for "pseudo"-newly allocated longest matching entry
+        // 管理从最长匹配和备用匹配中选择，"伪"新分配的最长匹配表项
         bool PseudoNewAlloc = bi->pseudoNewAlloc;
         // an entry is considered as newly allocated if its prediction
-        // counter is weak
+        // counter is weak 如果预测计数器弱，则认为它是新分配的
         if (PseudoNewAlloc) {
             if (bi->longestMatchPred == taken) {
                 alloc = false;
             }
             // if it was delivering the correct prediction, no need to
             // allocate new entry even if the overall prediction was false
+            // 如果它正在交付正确的预测，即使总体预测错误，也不需要分配新的条目
             if (bi->longestMatchPred != bi->altTaken) {
                 ctrUpdate(
                     useAltPredForNewlyAllocated[getUseAltIdx(bi, branch_pc)],
@@ -546,21 +559,21 @@ TAGEBase::condBranchUpdate(ThreadID tid, Addr branch_pc, bool taken,
         adjustAlloc(alloc, taken, pred);
     }
 
-    handleAllocAndUReset(alloc, taken, bi, nrand);
+    handleAllocAndUReset(alloc, taken, bi, nrand); // 分配新表现和u重置
 
-    handleTAGEUpdate(branch_pc, taken, bi);
+    handleTAGEUpdate(branch_pc, taken, bi); // 更新tage表
 }
 
 void
 TAGEBase::handleTAGEUpdate(Addr branch_pc, bool taken, BranchInfo* bi)
 {
-    if (bi->hitBank > 0) {
+    if (bi->hitBank > 0) { // 如果命中表
         DPRINTF(Tage, "Updating tag table entry (%d,%d) for branch %lx\n",
                 bi->hitBank, bi->hitBankIndex, branch_pc);
         ctrUpdate(gtable[bi->hitBank][bi->hitBankIndex].ctr, taken,
-                  tagTableCounterBits);
+                  tagTableCounterBits); // 更新命中表的命中项的ctr
         // if the provider entry is not certified to be useful also update
-        // the alternate prediction
+        // the alternate prediction 如果provider表项没有认证是有用的（u=0），也更新备用预测
         if (gtable[bi->hitBank][bi->hitBankIndex].u == 0) {
             if (bi->altBank > 0) {
                 ctrUpdate(gtable[bi->altBank][bi->altBankIndex].ctr, taken,
@@ -570,14 +583,14 @@ TAGEBase::handleTAGEUpdate(Addr branch_pc, bool taken, BranchInfo* bi)
                         branch_pc);
             }
             if (bi->altBank == 0) {
-                baseUpdate(branch_pc, taken, bi);
+                baseUpdate(branch_pc, taken, bi); // 更新base表
             }
         }
 
         // update the u counter
         if (bi->tagePred != bi->altTaken) {
             unsignedCtrUpdate(gtable[bi->hitBank][bi->hitBankIndex].u,
-                              bi->tagePred == taken, tagTableUBits);
+                              bi->tagePred == taken, tagTableUBits); // 更新u计数器
         }
     } else {
         baseUpdate(branch_pc, taken, bi);
@@ -589,30 +602,31 @@ TAGEBase::updateHistories(ThreadID tid, Addr branch_pc, bool taken,
                           BranchInfo* bi, bool speculative,
                           const StaticInstPtr &inst, Addr target)
 {
-    if (speculative != speculativeHistUpdate) {
+    if (speculative != speculativeHistUpdate) {  // 只在设置推测更新，才推测更新全局历史
         return;
     }
     ThreadHistory& tHist = threadHistory[tid];
     //  UPDATE HISTORIES
-    bool pathbit = ((branch_pc >> instShiftAmt) & 1);
+    bool pathbit = ((branch_pc >> instShiftAmt) & 1); // 获取分支pc的最低位作为新的路径历史bit
     //on a squash, return pointers to this and recompute indices.
-    //update user history
-    updateGHist(tHist.gHist, taken, tHist.globalHistory, tHist.ptGhist);
-    tHist.pathHist = (tHist.pathHist << 1) + pathbit;
-    tHist.pathHist = (tHist.pathHist & ((1ULL << pathHistBits) - 1));
+    //update user history 
+    // 当squash, 返回指针到这个和重新计算索引
+    updateGHist(tHist.gHist, taken, tHist.globalHistory, tHist.ptGhist); // 更新全局历史
+    tHist.pathHist = (tHist.pathHist << 1) + pathbit; // 更新路径历史
+    tHist.pathHist = (tHist.pathHist & ((1ULL << pathHistBits) - 1)); // 确保路径历史不超过pathHistBits
 
     if (speculative) {
-        bi->ptGhist = tHist.ptGhist;
-        bi->pathHist = tHist.pathHist;
+        bi->ptGhist = tHist.ptGhist; // 保存全局历史索引
+        bi->pathHist = tHist.pathHist; // 保存路径历史
     }
 
-    //prepare next index and tag computations for user branchs
+    //prepare next index and tag computations for user branchs 为下一个分支准备索引和标签计算
     for (int i = 1; i <= nHistoryTables; i++)
     {
         if (speculative) {
-            bi->ci[i]  = tHist.computeIndices[i].comp;
-            bi->ct0[i] = tHist.computeTags[0][i].comp;
-            bi->ct1[i] = tHist.computeTags[1][i].comp;
+            bi->ci[i]  = tHist.computeIndices[i].comp; // 保存压缩历史
+            bi->ct0[i] = tHist.computeTags[0][i].comp; // 保存压缩历史
+            bi->ct1[i] = tHist.computeTags[1][i].comp; // 保存压缩历史
         }
         tHist.computeIndices[i].update(tHist.gHist);
         tHist.computeTags[0][i].update(tHist.gHist);
@@ -637,15 +651,15 @@ TAGEBase::squash(ThreadID tid, bool taken, TAGEBase::BranchInfo *bi,
     ThreadHistory& tHist = threadHistory[tid];
     DPRINTF(Tage, "Restoring branch info: %lx; taken? %d; PathHistory:%x, "
             "pointer:%d\n", bi->branchPC,taken, bi->pathHist, bi->ptGhist);
-    tHist.pathHist = bi->pathHist;
-    tHist.ptGhist = bi->ptGhist;
-    tHist.gHist = &(tHist.globalHistory[tHist.ptGhist]);
-    tHist.gHist[0] = (taken ? 1 : 0);
-    for (int i = 1; i <= nHistoryTables; i++) {
-        tHist.computeIndices[i].comp = bi->ci[i];
+    tHist.pathHist = bi->pathHist; // 1. 恢复历史指针和路径历史
+    tHist.ptGhist = bi->ptGhist;    // 恢复到错误分支的位置
+    tHist.gHist = &(tHist.globalHistory[tHist.ptGhist]); // 2. 恢复全局历史指针
+    tHist.gHist[0] = (taken ? 1 : 0); // 3. 恢复全局历史最低位，设置正确的分支结果， 只恢复错误分支这条，之后分支自动消失，等待后续指令覆盖它
+    for (int i = 1; i <= nHistoryTables; i++) {// 4. 恢复折叠历史并重新计算
+        tHist.computeIndices[i].comp = bi->ci[i];// 先恢复保存的折叠历史状态
         tHist.computeTags[0][i].comp = bi->ct0[i];
         tHist.computeTags[1][i].comp = bi->ct1[i];
-        tHist.computeIndices[i].update(tHist.gHist);
+        tHist.computeIndices[i].update(tHist.gHist); // 基于新的全局历史更新折叠历史
         tHist.computeTags[0][i].update(tHist.gHist);
         tHist.computeTags[1][i].update(tHist.gHist);
     }
