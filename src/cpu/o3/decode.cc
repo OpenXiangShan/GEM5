@@ -305,6 +305,7 @@ Decode::squash(const DynInstPtr &inst, ThreadID tid)
     toFetch->decodeInfo[tid].doneSeqNum = inst->seqNum;
     if (inst->isControl()) {
         if (!inst->isReturn()) {
+            // if not return, set fetch to real address.
             set(toFetch->decodeInfo[tid].nextPC, *inst->branchTarget());
         } else {
             // if it is return, the target must have already been set in pred target now
@@ -314,6 +315,7 @@ Decode::squash(const DynInstPtr &inst, ThreadID tid)
     } else {
         std::unique_ptr<PCStateBase> npc_ptr(inst->pcState().clone());
         npc_ptr->as<RiscvISA::PCState>().set(inst->pcState().getFallThruPC());
+        // if normal inst, set fetch pc = pc + 2/4 , and fetch will fetch next
         set(toFetch->decodeInfo[tid].nextPC, *npc_ptr);
     }
 
@@ -795,6 +797,11 @@ Decode::decodeInsts(ThreadID tid)
 
         // Ensure that if it was predicted as a branch, it really is a
         // branch.
+        // In fetch, branch predictor dont know the instruction type,
+        // so the normal instruction maybe pred as branch taken, correct
+        // it in decode status.
+        // normal instruction correct here, if prediction occurs that means
+        // the npc is an error value, so correct and squash it.
         if (inst->readPredTaken() && !inst->isControl()) {
             // panic("Instruction predicted as a branch!");
 
@@ -821,13 +828,17 @@ Decode::decodeInsts(ThreadID tid)
             std::unique_ptr<PCStateBase> target = inst->branchTarget();
             auto &t = target->as<RiscvISA::PCState>();
             auto &pred = inst->readPredTarg().as<RiscvISA::PCState>();
+            // pred pc right, but upc or nupc have some error
+            // correct it
             if (t.start_equals(pred) && !t.equals(pred)) {
                 DPRINTF(
                     DecoupleBP,
                     "Override useless npc, from %#lx->%#lx to %#lx->%#lx\n",
                     pred.pc(), pred.npc(), t.pc(), t.npc());
                 inst->setPredTarg(t);
+                warn("care about this, i think it shouldnt happen\n");
             }
+
             if (*target != inst->readPredTarg()) {
                 ++stats.branchMispred;
 
@@ -852,11 +863,15 @@ Decode::decodeInsts(ThreadID tid)
                         " Wrong predicted target: %s PredPC: %s\n",
                         tid, inst->seqNum, inst->readPredTarg(), *target);
                 //The micro pc after an instruction level branch should be 0
+                //correct the Predict PC.
                 inst->setPredTarg(*target);
                 break;
             }
         }
-        // unpredicted return can make use of ras results to get earlier resteer
+        // unpredicted return can make use of ras results to get earlier resteer.
+        // Predict the return address, this predict the normal return address by branch predictor.
+        // If a predicted value can be obtained from the branch predictor, it will be set accordingly.
+        // If not, it will wait for the IEW stage to resolve.
         if (inst->isReturn() && !inst->isNonSpeculative() && !inst->readPredTaken()) {
             ++stats.branchMispred;
             decode_stalls.push(StallReason::InstMisPred);
@@ -868,16 +883,22 @@ Decode::decodeInsts(ThreadID tid)
             DPRINTF(Decode, "[tid:%i] [sn:%llu] Updating predictions:"
                     " Return not identified by bp: predTaken %d, PredPC: %s Now PC %s\n",
                     tid, inst->seqNum, inst->readPredTaken(), inst->readPredTarg(), *target);
+            // return address gaven by predictor
+            // inst->PCState not set here
             inst->setPredTaken(true);
             inst->setPredTarg(*target);
             // must squash after setting inst real target because it cannot be computed from static inst
             squash(inst, inst->threadNumber);
             break;
         }
+
+        // Handle non-speculative control instructions such as SRET and MRET.
+        // The target address will be determined during execution.
         if (inst->isNonSpeculative() && inst->readPredTaken()) {
             // TODO: redirect to fall thru
             std::unique_ptr<PCStateBase> npc(inst->pcState().clone());
             npc->as<RiscvISA::PCState>().set(inst->pcState().getFallThruPC());
+            // inst->pcstate not set here
             inst->setPredTaken(false);
             inst->setPredTarg(*npc);
         }
