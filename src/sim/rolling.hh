@@ -19,7 +19,6 @@ class Rolling
   private:
     bool enabled = true;
     Counter interval;
-    Counter value;
     Counter base;
     Counter value_interval;
     Counter base_interval;
@@ -29,14 +28,14 @@ class Rolling
   public:
     Rolling(const char *name, const char *desc = nullptr,
            Counter intv = 1000, ArchDBer *db = nullptr)
+           : interval(intv), base(0), value_interval(0),
+             base_interval(0), archDBer(db)
     {
       if (db == nullptr || !db->get_dump_rolling()) {
         enabled = false;
         return;
       }
 
-      interval = intv;
-      archDBer = db;
       std::vector<std::pair<std::string, DataType>> fields_vec = {
           std::make_pair("yAxisPt", UINT64),
           std::make_pair("xAxisPt", UINT64),
@@ -47,11 +46,11 @@ class Rolling
       traceManager->init_table();
     }
 
-    void operator++(int) { value++; value_interval++; }
+    void operator++(int) { value_interval++; }
 
     void operator++() { assert(false && "Not implemented\n"); }
 
-    void operator+=(Counter v) { value += v; value_interval += v; }
+    void operator+=(Counter v) { value_interval += v; }
 
 
     Counter get_value_and_clean() {
