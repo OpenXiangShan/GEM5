@@ -243,6 +243,36 @@ def template AtomicMemOpMacroConstructor {{
     }
 }};
 
+// Strictly order-preserving AMO
+def template AtomicMemOpStrictMacroConstructor {{
+    %(class_name)s::%(class_name)s(ExtMachInst machInst)
+            : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s)
+    {
+        %(constructor)s;
+
+        StaticInstPtr rel_fence;
+        StaticInstPtr rmw_op;
+        StaticInstPtr acq_fence;
+
+        rel_fence = new MemFenceMicro(machInst, No_OpClass);
+        rel_fence->setFlag(IsFirstMicroop);
+        rel_fence->setFlag(IsReadBarrier);
+        rel_fence->setFlag(IsWriteBarrier);
+        rel_fence->setFlag(IsDelayedCommit);
+
+        // set up atomic rmw op
+        rmw_op = new %(class_name)sRMW(machInst, this);
+        rmw_op->setFlag(IsDelayedCommit);
+
+        acq_fence = new MemFenceMicro(machInst, No_OpClass);
+        acq_fence->setFlag(IsLastMicroop);
+        acq_fence->setFlag(IsReadBarrier);
+        acq_fence->setFlag(IsWriteBarrier);
+
+        microops = {rel_fence, rmw_op, acq_fence};
+    }
+}};
+
 def template AtomicMemOpRMWConstructor {{
     %(class_name)s::%(class_name)sRMW::%(class_name)sRMW(
         ExtMachInst machInst, %(class_name)s *_p)
@@ -521,7 +551,7 @@ def format AtomicMemOp(memacc_code, amoop_code, postacc_code={{ }},
     macro_iop = InstObjParams(name, Name, 'AtomicMemOp', macro_ea_code,
                               macro_inst_flags)
     header_output = AtomicMemOpDeclare.subst(macro_iop)
-    decoder_output = AtomicMemOpMacroConstructor.subst(macro_iop)
+    decoder_output = AtomicMemOpStrictMacroConstructor.subst(macro_iop)
     decode_block = BasicDecode.subst(macro_iop)
 
     exec_output = ''
