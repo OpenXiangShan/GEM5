@@ -57,11 +57,13 @@
 #include "base/trace.hh"
 #include "cpu/checker/cpu.hh"
 #include "cpu/difftest.hh"
+#include "cpu/ideal_model.hh"
 #include "cpu/thread_context.hh"
 #include "debug/Diff.hh"
 #include "debug/Diff2.hh"
 #include "debug/DiffValue.hh"
 #include "debug/DumpCommit.hh"
+#include "debug/IdealModel.hh"
 #include "debug/Mwait.hh"
 #include "debug/SyscallVerbose.hh"
 #include "debug/Thread.hh"
@@ -165,7 +167,10 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
       enableRVHDIFF(p.enable_riscv_h),
       enabledifftesInstTrace(p.enable_difftest_inst_trace),
       noHypeMode(false),
-      enableMemDedup(p.enable_mem_dedup)
+      enableMemDedup(p.enable_mem_dedup),
+      enableIdealModel(p.enable_ideal_model),
+      idealModelSupports(p.ideal_model_supports),
+      idealModelFirstTimeInitFinish(false)
 {
     // if Python did not provide a valid ID, do it here
     if (_cpuId == -1 ) {
@@ -239,6 +244,13 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
     } else {
         warn("Difftest is disabled\n");
         diffAllStates->hasCommit = true;
+    }
+
+    idealModelAllStates = std::make_shared<IdealModelAllStates>();
+    if (enableIdealModel){
+        idealModelAllStates->proxy = new IdealModelProxy(params().ideal_model_so.c_str());
+        warn("ideal model enable with : %s.\n", params().ideal_model_so.c_str());
+        idealModelConfig = new IdealModelConfig(idealModelSupports);
     }
 
     if (dumpCommitFlag) {
@@ -865,8 +877,10 @@ BaseCPU::csrDiffMessage(uint64_t gem5_val, uint64_t ref_val, int error_num, uint
     DPRINTF(DiffValue, "Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
     DPRINTF(DiffValue, "Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
             error_csr_name, ref_val, gem5_val);
+    // mark the csr message down
     diffInfo.errorCsrsValue[error_num] = 1;
     error_reg = gem5_val;
+    // mark now are in value diff
     if (!diff_at)
         diff_at = ValueDiff;
 }
@@ -880,6 +894,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
     bool npc_match = false;
     bool is_mmio = diffInfo.curInstStrictOrdered;
 
+    // sync sc msg to nemu
     if (diffInfo.inst->isStoreConditional()) {
         diffAllStates->proxy->uarchstatus_cpy(&diffAllStates->diff.sync, DIFFTEST_TO_REF);
     }
@@ -891,6 +906,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
     }
 
     if (is_mmio) {
+        // nemu can't simulate mmio, so gem5 "guide" nemu run this step rightly.
         DPRINTF(Diff, "Skip step NEMU due to mmio access\n");
         diffAllStates->referenceRegFile.pc = diffInfo.pc->as<RiscvISA::PCState>().npc();
         if (diffInfo.inst->numDestRegs() > 0) {
@@ -913,6 +929,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         diffAllStates->proxy->exec(1);
         diffAllStates->proxy->regcpy(diffAllStates->diff.nemu_reg, REF_TO_DIFFTEST);
 
+        // after this step, next_pc is nemu now's pc
         uint64_t next_pc = diffAllStates->diff.nemu_reg->pc;
         // replace with "this pc" for checking
         diffAllStates->diff.nemu_commit_inst_pc = diffAllStates->diff.nemu_this_pc;
@@ -1297,14 +1314,14 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
 
 
 
-        if (diff_at != NoneDiff) {
-            DPRINTF(Diff, "Inst [sn:%llu] @ \033[31m%#lx\033[0m in GEM5 is \033[31m%s\033[0m\n", seq,
-                    diffInfo.pc->instAddr(),
-                    diffInfo.inst->disassemble(diffInfo.pc->instAddr()));
-            if (diffInfo.inst->isLoad()) {
-                DPRINTF(Diff, "Load addr: %#lx\n", diffInfo.physEffAddr);
-            }
+    if (diff_at != NoneDiff) {
+        DPRINTF(Diff, "Inst [sn:%llu] @ \033[31m%#lx\033[0m in GEM5 is \033[31m%s\033[0m\n", seq,
+                diffInfo.pc->instAddr(),
+                diffInfo.inst->disassemble(diffInfo.pc->instAddr()));
+        if (diffInfo.inst->isLoad()) {
+            DPRINTF(Diff, "Load addr: %#lx\n", diffInfo.physEffAddr);
         }
+    }
 
 
     for (int dest_idx = 0; dest_idx < diffInfo.inst->numDestRegs(); dest_idx++) {
@@ -1424,6 +1441,32 @@ BaseCPU::clearDiffMismatch(ThreadID tid, InstSeqNum seq) {
 
 
 void
+BaseCPU::idealModelFirstInit(){
+    // code reference from difftest init
+    // onlt support single core with tid = 0
+
+    idealModelFirstTimeInitFinish = true;
+    idealModelReadAllGem5Regs();
+    idealModelAllStates->gem5RegFile.pc = 0x80000000u;
+    if (noHypeMode) {
+        gem5_assert(0, "not support\n");
+        // auto start = pmemStart + pmemSize * idealModelAllStates->diff.cpu_id;
+        // warn("Start memcpy to NEMU from %#lx, size=%lu \n", (uint64_t)start, pmemSize);
+        // idealModelAllStates->proxy->memcpy(0x80000000u, start, pmemSize, DUT_TO_REF);
+    } else if (enableMemDedup) {
+        gem5_assert(0, "not support\n");
+        // warn("Let ref share a COW mirror of root memory\n");
+        // assert(idealModelAllStates->proxy->ref_get_backed_memory);
+        // idealModelAllStates->proxy->ref_get_backed_memory(system->createCopyOnWriteBranch(), pmemSize);
+    } else {
+        warn("Start memcpy to ideal model from %#lx, size=%lu \n", (uint64_t)pmemStart, pmemSize);
+        idealModelAllStates->proxy->ideal_model_memcpy(0x80000000u, pmemStart, pmemSize, GEM5_TO_IDEAL_MODEL);
+    }
+    warn("Start regcpy to ideal model\n");
+    idealModelAllStates->proxy->regcpy(&(idealModelAllStates->gem5RegFile), GEM5_TO_IDEAL_MODEL);
+}
+
+void
 BaseCPU::difftestStep(ThreadID tid, InstSeqNum seq)
 {
     bool should_diff = false;
@@ -1441,6 +1484,7 @@ BaseCPU::difftestStep(ThreadID tid, InstSeqNum seq)
     bool other_should_diff = !diffInfo.inst->isAtomic() && !is_fence && !is_sc &&
                              (!diffInfo.inst->isMicroop() || diffInfo.inst->isLastMicroop());
 
+    // This is first time to difftest, init nemu status
     if (fence_should_diff || amo_should_diff || is_sc || other_should_diff || lr_should_diff) {
         should_diff = true;
         if (!diffAllStates->hasCommit && diffInfo.pc->instAddr() == 0x80000000u) {
@@ -1656,6 +1700,7 @@ BaseCPU::setExceptionGuideExecInfo(uint64_t exception_num, uint64_t mtval, uint6
     // diffAllStates->diff.dynamic_config.debug_difftest = true;
     // diffAllStates->proxy->update_config(&diffAllStates->diff.dynamic_config);
 
+    // guide-exec and copy value back
     diffAllStates->proxy->guided_exec(&(diffAllStates->diff.guide));
 
     diffAllStates->proxy->regcpy(diffAllStates->diff.nemu_reg, REF_TO_DIFFTEST);
@@ -1676,4 +1721,113 @@ BaseCPU::checkL1DRefill(Addr paddr, const uint8_t* refill_data, size_t size) {
         }
     }
 }
+
+void
+BaseCPU::askIdealModel(const AskFromGEM5 *const askInfo, AnswerFromNemu *const answerInfo, bool iterMode){
+    idealModelAllStates->proxy->ask_ideal_model((void*) askInfo, (void *)answerInfo, iterMode);
+}
+
+void
+BaseCPU::idealModelRecover(uint64_t seq_no, uint64_t pc, int changeType){
+    idealModelAllStates->proxy->adapt_flow_change(seq_no, pc, changeType);
+}
+
+void
+BaseCPU::setIdealModelIntrHappen(){
+    idealModelAllStates->proxy->set_intr_happen();
+}
+
+void
+BaseCPU::clearIdealModelIntrHappen(){
+    idealModelAllStates->proxy->clear_intr_happen();
+}
+
+void
+BaseCPU::guideIdealModelIntr(uint64_t no){
+    idealModelReadAllGem5Regs();
+    idealModelAllStates->proxy->gem5_raise_intr((void *)&idealModelAllStates->gem5RegFile,no);
+}
+
+void
+BaseCPU::idealModelCommitInst(int instType, uint64_t seq_no, bool is_squash_after){
+    if (instType == GEM5_NOSPEC){
+        // copy reg to nemu
+        idealModelReadRegAndCopyToNemu();
+    }
+    idealModelAllStates->proxy->commit_inst(instType, seq_no, is_squash_after);
+
+    if (!is_squash_after && instType != GEM5_NORMAL){
+        idealModelIterRunInflight(seq_no);
+    }
+}
+
+void
+BaseCPU::idealModelIterRunInflight(uint64_t seq_no){
+    panic("BaseCPU::idealModelIterRunInflight should be implement\n");
+}
+
+void
+BaseCPU::idealModelRaiseRuntimeException(int inst_type, uint64_t seq_no, uint64_t exception_no, bool is_ecall_ebreak){
+    idealModelAllStates->proxy->raise_runtime_exception(inst_type, seq_no, exception_no, is_ecall_ebreak);
+}
+
+bool
+BaseCPU::idealModelForceRaiseException(uint64_t seq_no, uint64_t exception_no){
+    return idealModelAllStates->proxy->raise_force_exception(seq_no, exception_no);
+}
+
+void
+BaseCPU::idealModelReadRegAndCopyToNemu(){
+    idealModelReadAllGem5Regs();
+    idealModelAllStates->proxy->regcpy((void *)&idealModelAllStates->gem5RegFile, GEM5_TO_IDEAL_MODEL);
+}
+
+void
+BaseCPU::setIdealModelGuideInfo(uint64_t exception_num, uint64_t mtval, uint64_t stval,
+        bool force_set_jump_target, uint64_t jump_target, ThreadID tid){
+
+    memset(&(idealModelAllStates->imGuide), 0, sizeof(ExecutionGuide));
+
+    // reference from difftest guide exec
+    idealModelExecutionGuide &gd = idealModelAllStates->imGuide;
+    gd.force_raise_exception = true;
+    gd.exception_num = exception_num;
+    gd.mtval = mtval;
+    gd.stval = stval;
+    gd.mtval2 = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_MTVAL2, tid);
+    gd.htval = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_HTVAL, tid);
+    gd.vstval = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VSTVAL, tid);
+    gd.force_set_jump_target = force_set_jump_target;
+    gd.jump_target = jump_target;
+
+    idealModelAllStates->proxy->ideal_model_guide_exec(&(idealModelAllStates->imGuide));
+
+}
+
+void
+BaseCPU::clearIdealModelTrapPending(){
+    idealModelAllStates->proxy->clear_exception_pending();
+}
+
+void
+BaseCPU::setIdealModelRegPC(uint64_t pc){
+    idealModelAllStates->gem5RegFile.pc = pc;
+}
+
+void
+BaseCPU::clearIdealModelSquashAfter(){
+    idealModelAllStates->proxy->clear_squash_after();
+}
+
+void
+BaseCPU::idaelModelSetIterStop(uint64_t seq_no){
+    idealModelAllStates->proxy->set_iter_stop_state(seq_no);
+}
+
+void
+BaseCPU::idealModelTempExec(int *work_state, uint64_t *pc, uint64_t gem5_pc){
+    idealModelAllStates->proxy->temp_exec(work_state, pc, gem5_pc);
+}
+
+
 } // namespace gem5

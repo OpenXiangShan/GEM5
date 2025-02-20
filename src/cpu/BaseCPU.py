@@ -56,6 +56,13 @@ from m5.objects.Platform import Platform
 
 default_tracer = ExeTracer()
 
+class IdealModelSupport(ScopedEnum):
+    vals = [
+            "IntAddVP",     # only int add prediction
+            "ScalarLVP"    # scalar load value prediction
+            ]
+
+
 class BaseCPU(ClockedObject):
     type = 'BaseCPU'
     abstract = True
@@ -162,6 +169,10 @@ class BaseCPU(ClockedObject):
     enable_riscv_h = Param.Bool(True, "Enable riscv vector extension")
     enable_difftest_inst_trace = Param.Bool(True, "Enable difftest inst trace")
     enable_mem_dedup = Param.Bool(False, "Enable memory deduplication for difftest and golden memory")
+
+    enable_ideal_model = Param.Bool(False, "Enable nemu ideal model")
+    ideal_model_so = Param.String("", "The reference so for ideal model")
+    ideal_model_supports = VectorParam.IdealModelSupport([], "what ideal model should support")
 
     def createInterruptController(self):
         self.interrupts = [

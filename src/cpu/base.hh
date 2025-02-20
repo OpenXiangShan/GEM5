@@ -56,7 +56,10 @@
 #include "arch/generic/interrupts.hh"
 #include "base/statistics.hh"
 #include "cpu/difftest.hh"
+#include "cpu/ideal_model.hh"
+#include "cpu/ideal_model_config.hh"
 #include "debug/Mwait.hh"
+#include "enums/IdealModelSupport.hh"
 #include "mem/htm.hh"
 #include "mem/port_proxy.hh"
 #include "sim/clocked_object.hh"
@@ -130,6 +133,14 @@ struct DiffAllStates
     RefProxy *proxy;
 
     bool hasCommit{false};
+};
+
+struct IdealModelAllStates
+{
+    IdealModelProxy *proxy;
+    AskFromGEM5 gem5Ask;
+    riscv64_CPU_regfile gem5RegFile;
+    idealModelExecutionGuide imGuide;
 };
 
 class BaseCPU : public ClockedObject
@@ -700,7 +711,23 @@ class BaseCPU : public ClockedObject
 
     virtual void readGem5Regs()
     {
-        panic("difftest:readGem5Regs() is not implemented\n");
+        panic("difftest::readGem5Regs() is not implemented\n");
+    }
+
+    virtual void idealModelReadGem5Regs()
+    {
+        panic("difftest::idealModelReadGem5Regs() is not implemented\n");
+    }
+
+    virtual void idealModelReadGem5MiscRegs()
+    {
+        panic("difftest::idealModelReadGem5MiscRegs() is not implemented\n");
+    }
+
+    virtual void idealModelReadAllGem5Regs()
+    {
+        idealModelReadGem5Regs();
+        idealModelReadGem5MiscRegs();
     }
 
     void csrDiffMessage(uint64_t gem5_val, uint64_t ref_val, int error_num, uint64_t &error_reg, InstSeqNum seq,
@@ -708,6 +735,7 @@ class BaseCPU : public ClockedObject
     std::pair<int, bool> diffWithNEMU(ThreadID tid, InstSeqNum seq);
 
     std::string diffMsg;
+
     void reportDiffMismatch(ThreadID tid, InstSeqNum seq) {
       warn("%s", diffMsg);
       diffAllStates->proxy->isa_reg_display();
@@ -719,6 +747,8 @@ class BaseCPU : public ClockedObject
         diffInfo.lastCommittedMsg.pop();
       }
     }
+
+    // Clear diffMsg, also clear error msg in diffInfo struct
     void clearDiffMismatch(ThreadID tid, InstSeqNum seq);
 
 
@@ -739,6 +769,7 @@ class BaseCPU : public ClockedObject
 
     struct
     {
+        // current instruction
         gem5::StaticInstPtr inst;
         // the result of currently inst
         std::vector<gem5::RegVal> scalarResults;
@@ -747,7 +778,9 @@ class BaseCPU : public ClockedObject
         gem5::RegVal getSrcReg(const gem5::RegId &regid) { return 0; };
         const gem5::PCStateBase *pc;
         bool curInstStrictOrdered{false};
+        // the phtsical addr the instruction access
         gem5::Addr physEffAddr;
+        // access size
         gem5::Addr effSize;
         uint8_t *goldenValue;
         uint64_t amoOldGoldenValue;
@@ -763,13 +796,13 @@ class BaseCPU : public ClockedObject
 
     virtual RegVal readMiscRegNoEffect(int misc_reg, ThreadID tid) const
     {
-        panic("difftest:readGem5Regs() is not implemented\n");
+        panic("difftest::readMiscRegNoEffect() is not implemented\n");
         return 0;
     }
 
     virtual RegVal readMiscReg(int misc_reg, ThreadID tid)
     {
-        panic("difftest:readGem5Regs() is not implemented\n");
+        panic("difftest::readMiscReg() is not implemented\n");
         return 0;
     }
 
@@ -785,6 +818,8 @@ class BaseCPU : public ClockedObject
 
     void setSCSuccess(bool success, paddr_t addr);
 
+    // Asynchronous interrupts are not sensed on the NEMU and require
+    // gem5 to synchronize the state to the NEMU. so called "guide".
     void setExceptionGuideExecInfo(uint64_t exception_num, uint64_t mtval, uint64_t stval,
                                    // force set jump target
                                    bool force_set_jump_target, uint64_t jump_target, ThreadID tid);
@@ -812,6 +847,46 @@ class BaseCPU : public ClockedObject
     gem5::GoldenGloablMem *goldenMemManager() { return _goldenMemManager; }
 
     void checkL1DRefill(Addr paddr, const uint8_t *refill_data, size_t size);
+
+  protected:
+    bool enableIdealModel;
+    std::vector<IdealModelSupport> idealModelSupports;
+    std::shared_ptr<IdealModelAllStates> idealModelAllStates{};
+    bool idealModelFirstTimeInitFinish;
+
+  public:
+    IdealModelConfig *idealModelConfig;
+    bool idealModelEnabled(){
+        return enableIdealModel;
+    }
+
+
+    // this init copy mem to ideal model,
+    // only support begin addr 0x80000000
+    void idealModelFirstInit();
+
+
+    bool isIdealModelFTInitFinish(){
+        return idealModelFirstTimeInitFinish;
+    }
+
+    void askIdealModel(const AskFromGEM5 *const askInfo, AnswerFromNemu *const answerInfo, bool iterMode);
+    void idealModelRecover(uint64_t seq_no, uint64_t pc, int changeType);
+    void setIdealModelIntrHappen();
+    void clearIdealModelIntrHappen();
+    void guideIdealModelIntr(uint64_t no);
+    void idealModelCommitInst(int instType, uint64_t seq_no, bool is_squash_after);
+    virtual void idealModelIterRunInflight(uint64_t seq_no);
+    void idealModelRaiseRuntimeException(int inst_type, uint64_t seq_no, uint64_t exception_no, bool is_ecall_ebreak);
+    bool idealModelForceRaiseException(uint64_t seq_no, uint64_t exception_no);
+    void idealModelReadRegAndCopyToNemu();
+    void setIdealModelGuideInfo(uint64_t exception_num, uint64_t mtval, uint64_t stval,
+                                bool force_set_jump_target, uint64_t jump_target, ThreadID tid);
+    void clearIdealModelTrapPending();
+    void setIdealModelRegPC(uint64_t pc);
+    void clearIdealModelSquashAfter();
+    void idaelModelSetIterStop(uint64_t seq_no);
+    void idealModelTempExec(int *work_state, uint64_t *pc, uint64_t gem5_pc);
 };
 
 } // namespace gem5
