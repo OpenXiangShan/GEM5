@@ -309,6 +309,7 @@ LSQUnit::tagReadFailReplayEvent::description() const
     return "tagReadFailReplayEvent";
 }
 
+// dcache port recvTimingResp will call this
 bool
 LSQUnit::recvTimingResp(PacketPtr pkt)
 {
@@ -424,6 +425,7 @@ LSQUnit::completeDataAccess(PacketPtr pkt)
                     pkt->getHtmTransactionFailedInCacheRC() );
             }
 
+            // the real memory access will call this
             writeback(inst, request->mainPacket());
             if (inst->isStore() || inst->isAtomic()) {
                 request->writebackDone();
@@ -520,6 +522,7 @@ LSQUnit::bankConflictReplay()
     iewStage->cacheUnblocked();
 }
 
+// replay in next clock
 void
 LSQUnit::tagReadFailReplay()
 {
@@ -2216,6 +2219,7 @@ LSQUnit::writeback(const DynInstPtr &inst, PacketPtr pkt)
 
         if (inst->fault == NoFault) {
             // Complete access to copy data to proper place.
+            // write back to reg
             inst->completeAcc(pkt);
         } else {
             // If the instruction has an outstanding fault, we cannot complete
@@ -2700,9 +2704,9 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
 
 
     if (!load_inst->isVector() && request->mainReq()->getSize() > 1 &&
-        request->mainReq()->getVaddr() % request->mainReq()->getSize() != 0) {
+        addr % request->mainReq()->getSize() != 0) {
         DPRINTF(LSQUnit, "request: size: %u, Addr: %#lx, code: %d\n",
-                request->mainReq()->getSize(), request->mainReq()->getVaddr(),
+                request->mainReq()->getSize(), addr,
                 RiscvISA::ExceptionCode::LOAD_ADDR_MISALIGNED);
         return std::make_shared<RiscvISA::AddressFault>(request->mainReq()->getVaddr(),
                                                         request->mainReq()->getgPaddr(),

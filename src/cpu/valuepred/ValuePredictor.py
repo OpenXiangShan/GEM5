@@ -1,0 +1,37 @@
+from m5.params import *
+from m5.proxy import *
+from m5.SimObject import *
+
+class ValuePredType(ScopedEnum):
+    # vals will contains value predictor type
+    vals = ["EStride"]
+
+class ValuePredictor(SimObject):
+    type = "ValuePredictor"
+    cxx_class = "gem5::valuepred::VPUnit"
+    cxx_header = "cpu/valuepred/valuepred_unit.hh"
+    abstract = True
+
+class EStride(ValuePredictor):
+    type = "EStride"
+    cxx_class = "gem5::valuepred::EStride"
+    cxx_header = "cpu/valuepred/enhanced_stride.hh"
+    abstract = False
+
+    # default params reference 1st cvp paper
+    ways = Param.Int(3, "ways of the EStride")
+    strideWidth = Param.Int(20, "Indicates the number of bits used for stride"
+                            "must <= 32")
+    tagWidth = Param.Int(16, "tag-width")
+    logESTBEntrys = Param.Int(7, "log 2 of ES table entry counts")
+    logMaxConfidence = Param.Int(5, "log 2 of max confidence number")
+    thresholdPercent = Param.Float(0.25, "threshold percent of confidence")
+
+    # inflight window configuration
+    idealWindow = Param.Bool(True, "The key in the ideal window is a 64-bit pc, not hashed")
+    inflightWindowTagLength = Param.Int(64, "inflight window tag length")
+
+    # about update strategy
+    # still not use
+    enableTimeMsgInUpdate = Param.Bool(True, "enable use instruction"
+                                       "inflight time in update")

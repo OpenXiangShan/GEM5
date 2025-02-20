@@ -47,6 +47,7 @@
 #include "arch/generic/mmu.hh"
 #include "base/statistics.hh"
 #include "config/the_isa.hh"
+#include "cpu/ideal_model.hh"
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/limits.hh"
@@ -56,6 +57,7 @@
 #include "cpu/pred/ftb/decoupled_bpred.hh"
 #include "cpu/timebuf.hh"
 #include "cpu/translation.hh"
+#include "cpu/valuepred/valuepred_unit.hh"
 #include "enums/SMTFetchPolicy.hh"
 #include "mem/packet.hh"
 #include "mem/port.hh"
@@ -441,6 +443,9 @@ class Fetch
     Addr fetchOffset[MaxThreads];
 
     StaticInstPtr macroop[MaxThreads];
+    uint64_t firstMicroopSeqNum[MaxThreads];
+    AnswerFromNemu *firstMicroopAns[MaxThreads];
+
 
     /** Can the fetch stage redirect from an interrupt on this instruction? */
     bool delayedCommit[MaxThreads];
@@ -674,6 +679,10 @@ public:
     uint8_t* secondDataBuf;
 
     bool waitForVsetvl = false;
+
+  private:
+    // value prediction
+    valuepred::VPUnit *valuePredictor;
 };
 
 } // namespace o3

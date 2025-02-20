@@ -59,6 +59,8 @@
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/valuepred/es_metadata.hh"
+#include "cpu/valuepred/valuepred_metadata.hh"
 #include "debug/Activity.hh"
 #include "debug/Counters.hh"
 #include "debug/DecoupleBPProbe.hh"
@@ -66,6 +68,8 @@
 #include "debug/Fetch.hh"
 #include "debug/FetchFault.hh"
 #include "debug/FetchVerbose.hh"
+#include "debug/IdealModel.hh"
+#include "debug/IdealModelVP.hh"
 #include "debug/O3CPU.hh"
 #include "debug/O3PipeView.hh"
 #include "mem/packet.hh"
@@ -106,7 +110,8 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       numThreads(params.numThreads),
       numFetchingThreads(params.smtNumFetchingThreads),
       icachePort(this, _cpu),
-      finishTranslationEvent(this), fetchStats(_cpu, this)
+      finishTranslationEvent(this), fetchStats(_cpu, this),
+      valuePredictor(params.valuePred)
 {
     if (numThreads > MaxThreads)
         fatal("numThreads (%d) is larger than compiled limit (%d),\n"
@@ -129,6 +134,8 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         pc[i].reset(params.isa[0]->newPCState());
         fetchOffset[i] = 0;
         macroop[i] = nullptr;
+        firstMicroopSeqNum[i] = 0u;
+        firstMicroopAns[i] = nullptr;
         delayedCommit[i] = false;
         memReq[i] = nullptr;
         stalls[i] = {false, false};
@@ -393,6 +400,8 @@ Fetch::clearStates(ThreadID tid)
     set(pc[tid], cpu->pcState(tid));
     fetchOffset[tid] = 0;
     macroop[tid] = NULL;
+    firstMicroopSeqNum[tid] = 0u;
+    firstMicroopAns[tid] = nullptr;
     delayedCommit[tid] = false;
     memReq[tid] = NULL;
     anotherMemReq[tid] = NULL;
@@ -421,6 +430,8 @@ Fetch::resetStage()
         set(pc[tid], cpu->pcState(tid));
         fetchOffset[tid] = 0;
         macroop[tid] = NULL;
+        firstMicroopSeqNum[tid] = 0u;
+        firstMicroopAns[tid] = nullptr;
 
         delayedCommit[tid] = false;
         memReq[tid] = NULL;
@@ -718,6 +729,8 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     // For decoupled frontend, the instruction type is predicted with BTB
     if ((isDecoupledFrontend() && !predict_taken) ||
         (!isDecoupledFrontend() && !inst->isControl())) {
+        // if no pred, set pred to next-pc.
+        // micro inst just upc + 1.
         inst->staticInst->advancePC(next_pc);
         inst->setPredTarg(next_pc);
         inst->setPredTaken(false);
@@ -742,6 +755,9 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     DPRINTF(Fetch, "[tid:%i] [sn:%llu] Branch at PC %#x "
             "predicted to go to %s\n",
             tid, inst->seqNum, inst->pcState().instAddr(), next_pc);
+
+    // pred inst set pred target
+    // next_pc change in branch predictor
     inst->setPredTarg(next_pc);
     inst->setPredTaken(predict_taken);
 
@@ -1027,10 +1043,15 @@ Fetch::doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst, const In
 
     set(pc[tid], new_pc);
     fetchOffset[tid] = 0;
-    if (squashInst && squashInst->pcState().instAddr() == new_pc.instAddr())
+    if (squashInst && squashInst->pcState().instAddr() == new_pc.instAddr()){
         macroop[tid] = squashInst->macroop;
-    else
+        firstMicroopSeqNum[tid] = squashInst->firstMicroInstSeqNum;
+        firstMicroopAns[tid] = &(squashInst->idealModelRes);
+    }else{
         macroop[tid] = NULL;
+        firstMicroopSeqNum[tid] = 0u;
+        firstMicroopAns[tid] = nullptr;
+    }
     decoder[tid]->reset();
 
     // Clear the icache miss if it's outstanding.
@@ -1232,11 +1253,19 @@ Fetch::tick()
         if (fromCommit->commitInfo[0].interruptPending) {
             DPRINTF(Fetch, "Set interrupt pending.\n");
             interruptPending = true;
+            if (cpu->idealModelEnabled()){
+                DPRINTF(IdealModel, "ideal model set interrupt pending\n");
+                cpu->setIdealModelIntrHappen();
+            }
         }
 
         if (fromCommit->commitInfo[0].clearInterrupt) {
             DPRINTF(Fetch, "Clear interrupt pending.\n");
             interruptPending = false;
+            if (cpu->idealModelEnabled()){
+                DPRINTF(IdealModel, "ideal model clear interrupt pending \n");
+                cpu->clearIdealModelIntrHappen();
+            }
         }
     }
 
@@ -1280,6 +1309,8 @@ Fetch::tick()
         }
     }
 
+    // send inst to decode
+    // pop from fetch queue and to decode
     while (available_insts != 0 && insts_to_decode < decode_width) {
         ThreadID tid = *tid_itr;
         if (!stalls[tid].decode && !fetchQueue[tid].empty()) {
@@ -1391,6 +1422,10 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
                fromCommit->commitInfo[tid].doneSeqNum,
                fromCommit->commitInfo[tid].squashInst, tid);
 
+        // cpu->markSquashTrace(fromCommit->commitInfo[tid].squashInst->seqNum,
+        //         fromCommit->commitInfo[tid].squashInst->pcState().instAddr(),
+        //         cpu->getInstSeq());
+
         localSquashVer.update(fromCommit->commitInfo[tid].squashVersion.getVersion());
         DPRINTF(Fetch, "Updating squash version to %u\n",
                 localSquashVer.getVersion());
@@ -1413,6 +1448,28 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
             // TODO: write dbpftb conditions
             if (mispred_inst) {
                 DPRINTF(Fetch, "Use mispred inst to redirect, treating as control squash\n");
+
+                if (cpu->idealModelEnabled()){
+                    uint64_t instSeqNum = fromCommit->commitInfo[tid].squashInst->isMicroop() ?
+                        fromCommit->commitInfo[tid].squashInst->firstMicroInstSeqNum :
+                        fromCommit->commitInfo[tid].squashInst->seqNum;
+
+                    if (mispred_inst->isIdealModelSystemOp() && mispred_inst->isReturn()){
+                        // sret mret
+                        DPRINTF(IdealModel, "Ideal Model clear squash after(fetch.cc mispred part), back to work \n");
+                        cpu->clearIdealModelSquashAfter();
+                    }else{
+                        //also recover ideal model
+                        DPRINTF(IdealModel, "ideal model recover from branch mispred \n");
+                        cpu->idealModelRecover(instSeqNum,
+                                fromCommit->commitInfo[tid].squashInst->pcState().instAddr(),
+                                RECOVER_BRANCHMISPRED);
+                    }
+                    cpu->markSquashTrace(instSeqNum,
+                            fromCommit->commitInfo[tid].squashInst->pcState().instAddr(),
+                            cpu->getInstSeq());
+                }
+
                 if (isStreamPred()) {
                     dbsp->controlSquash(
                         mispred_inst->getFtqId(), mispred_inst->getFsqId(),
@@ -1431,6 +1488,13 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
                 }
             } else if (fromCommit->commitInfo[tid].isTrapSquash) {
                 DPRINTF(Fetch, "Treating as trap squash\n",tid);
+
+                if (cpu->idealModelEnabled()){
+                    // make idael model to be work
+                    DPRINTF(IdealModel, "ideal model clear trap pending \n");
+                    cpu->clearIdealModelTrapPending();
+                }
+
                 if (isStreamPred()) {
                     dbsp->trapSquash(
                         fromCommit->commitInfo[tid].squashedTargetId,
@@ -1447,6 +1511,55 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
 
 
             } else {
+                //also recover ideal model
+                // this not be call?
+                if (cpu->idealModelEnabled() && !fromCommit->commitInfo[tid].tcSquash){
+
+                    if (!fromCommit->commitInfo[tid].squashInst){
+                        if (fromCommit->commitInfo[tid].memoryViolationSquash){
+                            DPRINTF(IdealModel, "ideal model recover from mem order, squash Inst null \n");
+                            cpu->idealModelRecover(fromCommit->commitInfo[tid].doneSeqNum, 0,
+                                    RECOVER_MEMORDERVIOLATION);
+                        }else{
+                            DPRINTF(IdealModel, "ideal model recover other error, squash inst null\n");
+                            cpu->idealModelRecover(fromCommit->commitInfo[tid].doneSeqNum, 0,
+                                    RECOVER_MEMORDERVIOLATION);
+                        }
+                        cpu->markSquashTrace(fromCommit->commitInfo[tid].doneSeqNum, 0, cpu->getInstSeq());
+                    }else{
+
+                        uint64_t instSeqNum = fromCommit->commitInfo[tid].squashInst->isMicroop() ?
+                            fromCommit->commitInfo[tid].squashInst->firstMicroInstSeqNum :
+                            fromCommit->commitInfo[tid].squashInst->seqNum;
+                        if (fromCommit->commitInfo[tid].squashInst->isSquashAfter() ||
+                            (fromCommit->commitInfo[tid].squashInst->isIdealModelSystemOp() &&
+                             fromCommit->commitInfo[tid].squashInst->isReturn())){
+                            DPRINTF(IdealModel, "Ideal Model clear squash after, back to work \n");
+                            cpu->clearIdealModelSquashAfter();
+                        }else if (fromCommit->commitInfo[tid].memoryViolationSquash){
+                            DPRINTF(IdealModel, "ideal model recover from mem order \n");
+                            gem5_assert(fromCommit->commitInfo[tid].squashInst,"squash inst null\n");
+                            DPRINTF(IdealModel, "memorder squash: %s \n",
+                                    fromCommit->commitInfo[tid].squashInst->genDisassembly().c_str());
+                            cpu->idealModelRecover(instSeqNum,
+                                    fromCommit->commitInfo[tid].squashInst->pcState().instAddr(),
+                                    RECOVER_MEMORDERVIOLATION);
+                        }else{
+                            DPRINTF(IdealModel, "ideal model recover other error \n");
+                            gem5_assert(fromCommit->commitInfo[tid].squashInst,"squash inst null\n");
+                            DPRINTF(IdealModel, "other squash: %s \n",
+                                    fromCommit->commitInfo[tid].squashInst->genDisassembly().c_str());
+                            cpu->idealModelRecover(instSeqNum,
+                                    fromCommit->commitInfo[tid].squashInst->pcState().instAddr(),
+                                    RECOVER_MEMORDERVIOLATION);
+                        }
+                        cpu->markSquashTrace(instSeqNum,
+                                fromCommit->commitInfo[tid].squashInst->pcState().instAddr(),
+                                cpu->getInstSeq());
+                    }
+
+                }
+
                 if (fromCommit->commitInfo[tid].pc &&
                     fromCommit->commitInfo[tid].squashedStreamId != 0) {
                     DPRINTF(Fetch,
@@ -1541,6 +1654,21 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
                              fromDecode->decodeInfo[tid].squashInst,
                              fromDecode->decodeInfo[tid].doneSeqNum,
                              tid);
+
+            if (cpu->idealModelEnabled()){
+                DPRINTF(IdealModel, "ideal model recover due to decode squash\n");
+                // In this handle squash from decode
+                uint64_t instSeqNum = fromDecode->decodeInfo[tid].squashInst->isMicroop() ?
+                    fromDecode->decodeInfo[tid].squashInst->firstMicroInstSeqNum :
+                    fromDecode->decodeInfo[tid].squashInst->seqNum;
+
+                cpu->idealModelRecover(instSeqNum,
+                        fromDecode->decodeInfo[tid].squashInst->pcState().instAddr(),
+                        RECOVER_BRANCHMISPRED);
+                cpu->markSquashTrace(instSeqNum,
+                        fromDecode->decodeInfo[tid].squashInst->pcState().instAddr(),
+                        cpu->getInstSeq());
+            }
 
             return true;
         }
@@ -1696,6 +1824,7 @@ Fetch::fetch(bool &status_change)
     Addr pc_offset = fetchOffset[tid];
     Addr fetch_addr = (this_pc.instAddr() + pc_offset) & decoder[tid]->pcMask();
 
+    // riscv not use
     bool in_rom = isRomMicroPC(this_pc.microPC());
 
     // if (isStreamPred()) {
@@ -1764,6 +1893,10 @@ Fetch::fetch(bool &status_change)
 
     StaticInstPtr staticInst = NULL;
     StaticInstPtr curMacroop = macroop[tid];
+    uint64_t curfirsrMicroopSeqNum = firstMicroopSeqNum[tid];
+    AnswerFromNemu* curfirsrMicroopAns = firstMicroopAns[tid];
+
+
 
     // If the read of the first instruction was successful, then grab the
     // instructions from the rest of the cache line and put them into the
@@ -1851,6 +1984,8 @@ Fetch::fetch(bool &status_change)
         // Extract as many instructions and/or microops as we can from
         // the memory we've processed so far.
         do {
+            // Now dont't have macro and not in rom,
+            // so decoder decode new inst
             if (!(curMacroop || in_rom)) {
                 if (dec_ptr->instReady() || (isFTBPred() && enableLoopBuffer && currentFetchTargetInLoop)) {
                     if (isFTBPred() && enableLoopBuffer && currentFetchTargetInLoop) {
@@ -1861,6 +1996,7 @@ Fetch::fetch(bool &status_change)
                             this_pc.instAddr(), instDesc.pc);
                         assert(this_pc.instAddr() == instDesc.pc);
                     } else {
+                        // decoder set npc
                         staticInst = dec_ptr->decode(this_pc);
                     }
 
@@ -1881,19 +2017,35 @@ Fetch::fetch(bool &status_change)
             // Whether we're moving to a new macroop because we're at the
             // end of the current one, or the branch predictor incorrectly
             // thinks we are...
+            //
+            // this only fetch new micro-op
             bool newMacro = false;
             if (curMacroop || in_rom) {
                 if (in_rom) {
                     staticInst = dec_ptr->fetchRomMicroop(
                             this_pc.microPC(), curMacroop);
                 } else {
+                    // fetch this macro op's micro op
                     staticInst = curMacroop->fetchMicroop(this_pc.microPC());
                 }
                 newMacro |= staticInst->isLastMicroop();
             }
 
+            // if this is micro inst, macro will be set in dyninst.
+            // dyninst save the ptr to macrostaticinst
             DynInstPtr instruction = buildInst(
                     tid, staticInst, curMacroop, this_pc, *next_pc, true);
+
+            // set first micro-op seq no
+            if (curMacroop && staticInst->isFirstMicroop()){
+                curfirsrMicroopSeqNum = instruction->seqNum;
+            }
+            // each micro(part of macro) dyninst will save first micro dyninst seq_no
+            if (instruction->isMicroop()){
+                instruction->firstMicroInstSeqNum = curfirsrMicroopSeqNum;
+            }
+
+
 
             if (staticInst->isVectorConfig()) {
                 waitForVsetvl = dec_ptr->stall();
@@ -1936,17 +2088,119 @@ Fetch::fetch(bool &status_change)
                 }
             }
 
+            // pc(instAddr) change means new macro op.
             newMacro |= this_pc.instAddr() != next_pc->instAddr();
+
+            // In the Fetch stage, instructions obtain and use the correct results
+            // from the ideal model, as long as the ideal model is functioning normally.
+            // These results can be utilized by gem5. Note that complex instructions,
+            // such as atomic operations, are implemented in gem5 using macros composed
+            // of multiple micro-ops, whereas in NEMU, they are simply
+            // executed as single instructions.
+            // To prevent repeated execution of the same instruction in the ideal model,
+            // gem5 performs the "ask" operation only once per macro. For the multiple
+            // micro-ops within a macro, all of them retrieve their results from
+            // the first micro-op of the macro.
+            if (cpu->idealModelEnabled()){
+
+                //other micro op maybe should copy state
+                if (!cpu->isIdealModelFTInitFinish()){
+                    DPRINTF(IdealModel, "ideal model first time init \n");
+                    cpu->idealModelFirstInit();
+                }
+
+                // Except for the first micro-op of the first macro-op, which performs the "ask,"
+                // all other micro-ops copy the result.
+                if (instruction->isMicroop() && !instruction->isFirstMicroop()){
+                    memcpy(&(instruction->idealModelRes), curfirsrMicroopAns, sizeof(struct AnswerFromNemu));
+                }else{
+                    instruction->gem5Ask.seq_no = instruction->seqNum;
+                    instruction->gem5Ask.pc = this_pc.instAddr();
+                    instruction->gem5Ask.next_pc = next_pc->instAddr();
+                    instruction->gem5Ask.is_systemop = instruction->isIdealModelSystemOp();
+                    instruction->gem5Ask.is_nonspec = false;
+                    // instruction->gem5Ask.is_nonspec = instruction->isStoreConditional() ||
+                    //               instruction->isLoadReserved() ||
+                    //               instruction->isAtomic();
+                    instruction->gem5Ask.is_load = !instruction->gem5Ask.is_systemop &&
+                        !instruction->gem5Ask.is_nonspec &&
+                        (instruction->isMicroop() ? instruction->macroop->isLoad() : instruction->isLoad());
+                    instruction->gem5Ask.is_store = !instruction->gem5Ask.is_systemop &&
+                        !instruction->gem5Ask.is_nonspec &&
+                        (instruction->isMicroop() ? instruction->macroop->isStore() : instruction->isStore());
+                    instruction->gem5Ask.need_provide_dest_value = !instruction->isNotSupportVP();
+
+                    DPRINTF(IdealModel, "[sn: %lu] %s \n", instruction->seqNum, instruction->genDisassembly().c_str());
+
+                    // ask ideal model to get answer
+                    cpu->askIdealModel(&(instruction->gem5Ask), &(instruction->idealModelRes), false);
+
+                    if (instruction->isFirstMicroop()){
+                        curfirsrMicroopAns = &(instruction->idealModelRes);
+                    }else{
+                        curfirsrMicroopAns = nullptr;
+                    }
+
+                }
+
+
+                DPRINTF(IdealModel, "[fetch res:%lu] mmio: %s vaddr: %lX paddr: %lX (%s)dest_value: %lu \n",
+                        instruction->seqNum, instruction->idealModelRes.is_mmio ? "yes" : "no",
+                        instruction->idealModelRes.mem_vaddr,
+                        instruction->idealModelRes.mem_paddr,
+                        instruction->gem5Ask.need_provide_dest_value? "useful" : "useless",
+                        instruction->idealModelRes.dest_value);
+
+            }
+
+            if (cpu->idealModelEnabled() && instruction->idealModelRes.ideal_model_work_state == IM_WORK){
+                if ((instruction->isIntAdd() && cpu->idealModelConfig->isIntAddVP()) ||
+                        (instruction->isScalarLVP() && cpu->idealModelConfig->isScalarLVP())){
+                    instruction->vpResult.value = instruction->idealModelRes.dest_value;
+                    instruction->vpResult.speculative = true;
+                    // DPRINTF(IdealModelVP, "[sn:%lu]provide value to int add insts or scalar load\n",
+                    // instruction->seqNum);
+                }else{
+                    instruction->vpResult.value = 0;
+                    instruction->vpResult.speculative = false;
+                    // DPRINTF(IdealModelVP, "[sn:%lu]ideal model want provide, but not in IM_WORK\n",
+                    // instruction->seqNum);
+                }
+            }else if (cpu->isValuePredictorEnabled()){
+                // do the value prediction.
+                // In EStride or other implementations of value predictors, since
+                // it takes time for the value predictor to produce a prediction,
+                // the value prediction is often started after the fetch phase.
+
+                // This simulate valuePredict in fetch the instructions
+                // no instruction information, every instructions take into valuePredictor.
+                valuepred::VPPredMetaData* vpPredMetaData =
+                        dynamic_cast<valuepred::ESPredMetaData *>(valuepred::VPDataStructFactory::
+                                                                        buildPredMetaData(ValuePredType::EStride));
+                vpPredMetaData->pc = instruction->getPC();
+                vpPredMetaData->seq_no = instruction->seqNum;
+                instruction->vpResult = valuePredictor->valuePredict(vpPredMetaData);
+                // test ideal model
+                instruction->vpResult.speculative = false;
+                delete vpPredMetaData;
+
+            }else{
+                // do nothing
+            }
+
 
             // Move to the next instruction, unless we have a branch.
             set(this_pc, *next_pc);
             in_rom = isRomMicroPC(this_pc.microPC());
 
+            // if new macro, set new pc fetch addr and other.
             if (newMacro) {
                 fetch_addr = this_pc.instAddr() & pc_mask;
                 blk_offset = (fetch_addr - fetchBufferPC[tid]) / instSize;
                 pc_offset = 0;
                 curMacroop = NULL;
+                curfirsrMicroopSeqNum = 0u;
+                curfirsrMicroopAns = nullptr;
             }
 
             if (instruction->isQuiesce()) {
@@ -1957,6 +2211,9 @@ Fetch::fetch(bool &status_change)
                 quiesce = true;
                 break;
             }
+
+
+
         } while ((curMacroop || dec_ptr->instReady()) &&
                  numInst < fetchWidth &&
                  fetchQueue[tid].size() < fetchQueueSize);
@@ -1966,6 +2223,7 @@ Fetch::fetch(bool &status_change)
         in_rom = isRomMicroPC(this_pc.microPC());
     }
 
+    // inst in fetch queue is micro op
     DPRINTF(FetchVerbose, "FetchQue start dumping\n");
     for (auto it : fetchQueue[tid]) {
         DPRINTF(FetchVerbose, "inst: %s\n", it->staticInst->disassemble(it->pcState().instAddr()));
@@ -2011,6 +2269,8 @@ Fetch::fetch(bool &status_change)
     }
 
     macroop[tid] = curMacroop;
+    firstMicroopSeqNum[tid] = curfirsrMicroopSeqNum;
+    firstMicroopAns[tid] = curfirsrMicroopAns;
     fetchOffset[tid] = pc_offset;
 
     if (numInst > 0) {

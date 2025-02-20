@@ -23,6 +23,7 @@
 #include "debug/Counters.hh"
 #include "debug/Dispatch.hh"
 #include "debug/Schedule.hh"
+#include "debug/VPCOMMON.hh"
 #include "enums/OpClass.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/eventq.hh"
@@ -186,6 +187,7 @@ IssueQue::IssueQue(const IssueQueParams& params)
         }
     }
 
+    // init portBusy with no busy status
     portBusy.resize(outports, 0);
 }
 
@@ -311,6 +313,15 @@ IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
         scheduler->regCache.insert(dst->flatIndex(), {});
         DPRINTF(Schedule, "was %s woken by p%lu [sn:%llu]\n", speculative ? "spec" : "wb", dst->flatIndex(),
                 inst->seqNum);
+
+        if ((cpu->idealModelEnabled() && cpu->idealModelConfig->isValuePredSupported()) ||
+                cpu->isValuePredictorEnabled()){
+            if (inst->vpSupported && inst->vpResult.speculative){
+                gem5_assert(!subDepGraph[dst->flatIndex()].size(),
+                        "must no dependency in value prediction instruction dest register");
+            }
+        }
+
         for (auto& it : subDepGraph[dst->flatIndex()]) {
             int srcIdx = it.first;
             auto& consumer = it.second;
@@ -1006,6 +1017,13 @@ Scheduler::loadCancel(const DynInstPtr& inst)
     if (inst->canceled()) {
         return;
     }
+
+    // speculative value prediction load should not be cancel
+    // because the dependency issue has been resolved
+    if (inst->vpResult.speculative){
+        return;
+    }
+
     DPRINTF(Schedule, "[sn:%llu] %s cache miss, cancel consumers\n", inst->seqNum,
             enums::OpClassStrings[inst->opClass()]);
     inst->setCancel();
@@ -1087,10 +1105,46 @@ Scheduler::bypassWriteback(const DynInstPtr& inst)
     for (int i = 0; i < inst->numDestRegs(); i++) {
         auto dst = inst->renamedDestIdx(i);
         if (dst->isFixedMapping()) {
+            gem5_assert(!inst->vpSupported, "instruction whos dest reg can't renameable can't be value predict\n");
             continue;
         }
         bypassScoreboard[dst->flatIndex()] = true;
         DPRINTF(Schedule, "p%lu in bypassNetwork ready\n", dst->flatIndex());
+
+        // also the true value predictor
+        if (!cpu->idealModelEnabled() && cpu->isValuePredictorEnabled()){
+
+            // value prediction verify
+            // mark: value prediction verification
+            if (inst->vpSupported && inst->fault == NoFault) {
+                assert(!inst->isVerified());
+                assert(inst->isExecuted());
+                assert(inst->resultSize() == 1);
+
+                // convert result to instruction types
+                RegVal actualValue = inst->getResult().as<RegVal>();
+                inst->actualValue = actualValue;
+                if (actualValue != inst->vpResult.value) {
+                    // check error
+                    inst->vpMisprediction = true;
+                }
+
+                inst->setVerified();
+                DPRINTF(VPCOMMON,"After verified, the result is => "
+                            "inst seq: %lu pc: %lX "
+                            "spec: %s "
+                            "isMisprediction: %s "
+                            "pred_value: %lu exec_value: %lu\n"
+                            "disas: %s\n",
+                    inst->seqNum, inst->getPC(),
+                    inst->vpResult.speculative ? " spec " : " no spec ",
+                    inst->vpMisprediction ? "yes" : "no",
+                    inst->vpResult.value, actualValue,
+                    inst->genDisassembly().c_str());
+            }
+
+        }
+
     }
 }
 

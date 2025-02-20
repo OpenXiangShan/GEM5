@@ -47,10 +47,15 @@
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/reg_class.hh"
+#include "cpu/valuepred/es_metadata.hh"
+#include "cpu/valuepred/valuepred_metadata.hh"
 #include "debug/Activity.hh"
+#include "debug/Counters.hh"
+#include "debug/IdealModelVP.hh"
 #include "debug/O3PipeView.hh"
 #include "debug/Rename.hh"
-#include "debug/Counters.hh"
+#include "debug/VPCOMMON.hh"
+#include "enums/ValuePredType.hh"
 #include "params/BaseO3CPU.hh"
 
 namespace gem5
@@ -66,7 +71,8 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
       commitToRenameDelay(params.commitToRenameDelay),
       renameWidth(params.renameWidth),
       numThreads(params.numThreads),
-      stats(_cpu)
+      stats(_cpu),
+      valuePredictor(params.valuePred)
 {
     if (renameWidth > MaxWidth)
         fatal("renameWidth (%d) is larger than compiled limit (%d),\n"
@@ -1270,6 +1276,52 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
                             rename_result.second);
 
         ++stats.renamedOperands;
+
+        if ((cpu->idealModelEnabled() && cpu->idealModelConfig->isValuePredSupported()) ||
+                cpu->isValuePredictorEnabled()){
+            // This only allow value prediction, not address prediction
+            // This simulate in rename stage, we know the instruction information, we can control
+            // whether instruction support value prediction.
+            if (num_dest_regs != 1 || rename_result.first->isFixedMapping() ||
+                mov_elim || inst->isNotSupportVP()) {
+                // inst->isNotSupportVP() is ugly code, must be remove in future
+                inst->vpSupported = false;
+                continue;
+            }
+
+            if (cpu->isValuePredictorEnabled()){
+                valuePredictor->stats.VPsupported++;
+            }
+            inst->vpSupported = true;
+            inst->renameCycle = cpu->curCycle();
+
+            if (inst->vpResult.speculative){
+                if (cpu->isValuePredictorEnabled()){
+                    valuePredictor->stats.VPpredicted++;
+                }
+                DPRINTF(IdealModelVP, "[sn:%lu] %s idael vp value use in rename\n", inst->seqNum,
+                        inst->genDisassembly().c_str());
+                gem5_assert(!scoreboard->getReg(rename_result.first),
+                                "before set the scoreboard, the scoreboard must unset before");
+                // set the scoreboard, let the back-to-back rename inst mark reg ready
+                scoreboard->setReg(rename_result.first);
+                inst->setRegOperand(inst->staticInst.get(), 0, inst->vpResult.value);
+                // must pop result here
+                inst->popResult();
+                DPRINTF(VPCOMMON,
+                        "Rename-Stage instruction[%s] generate "
+                        "prediction value."
+                        "seq num: %lu pc: %lX "
+                        "prediction value: %lu \n",
+                        inst->staticInst->disassemble(inst->getPC()),
+                        inst->seqNum, inst->getPC(), inst->vpResult.value);
+            }else{
+                // value prediction not taken
+            }
+
+        }
+
+
     }
 }
 

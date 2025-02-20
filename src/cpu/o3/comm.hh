@@ -156,6 +156,10 @@ struct IEWStruct
     bool branchMispredict[MaxThreads];
     bool branchTaken[MaxThreads];
     bool includeSquashInst[MaxThreads];
+
+    // add flag for memory violation and VP
+    bool memoryViolation[MaxThreads];
+    bool valuePredictionError[MaxThreads];
 };
 
 struct IssueStruct
@@ -315,6 +319,10 @@ struct TimeStruct
         /// Hack for now to send back an strictly ordered access to
         /// the IEW stage.
         bool strictlyOrdered; // *I
+
+        /// some squash ideal model use
+        bool memoryViolationSquash;
+        bool tcSquash;
 
     };
 

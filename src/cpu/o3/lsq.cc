@@ -555,6 +555,7 @@ LSQ::recvTimingResp(PacketPtr pkt)
         }
     }
     // Update the LSQRequest state (this may delete the request)
+    // at the receive time, the request maybe delete
     request->packetReplied();
 
     if (waitingForStaleTranslation) {
@@ -986,6 +987,7 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
     ThreadID tid = cpu->contextToThread(inst->contextId());
     auto cacheLineSize = cpu->cacheLineSize();
     bool needs_burst = transferNeedsBurst(addr, size, cacheLineSize);
+
     LSQRequest* request = nullptr;
 
     // Atomic requests that access data across cache line boundary are
@@ -1087,6 +1089,7 @@ LSQ::SingleDataRequest::finish(const Fault &fault, const RequestPtr &request,
      * as it may have to self-destruct. */
     _inst->translatedTick = curTick();
     if (_inst->isSquashed()) {
+        // detele request
         squashTranslation();
     } else {
         _inst->strictlyOrdered(request->isStrictlyOrdered());
@@ -1123,6 +1126,7 @@ LSQ::SplitDataRequest::finish(const Fault &fault, const RequestPtr &req,
     numInTranslationFragments--;
     numTranslatedFragments++;
 
+    // merge flag to main request
     if (fault == NoFault)
         _mainReq->setFlags(req->getFlags());
 
@@ -1400,6 +1404,7 @@ LSQ::LSQRequest::~LSQRequest()
          _inst->savedRequest = nullptr;
     }
 
+    // when delete request, also delete packet
     for (auto r: _packets)
         delete r;
 };
@@ -1461,6 +1466,7 @@ LSQ::SbufferRequest::recvTimingResp(PacketPtr pkt)
     assert(_numOutstandingPackets == 1);
     flags.set(Flag::Complete);
     assert(pkt == _packets.front());
+    // this means write to cache finish
     _port.completeSbufferEvict(pkt);
     return true;
 }
@@ -1640,6 +1646,7 @@ LSQ::SingleDataRequest::buildPackets()
                 isLoad()
                     ?  Packet::createRead(req())
                     :  Packet::createWrite(req()));
+        // data save in the inst->memData
         _packets.back()->dataStatic(_inst->memData);
         _packets.back()->senderState = this;
         DPRINTF(PacketSender, "Set packet %#lx senderState to %#lx\n", _packets.back(), this);
@@ -1762,6 +1769,7 @@ LSQ::SingleDataRequest::sendPacketToCache()
         }
     }
     if (bank_conflict) {
+        // replay at next tick
         lsqUnit()->bankConflictReplaySchedule();
     }
     if (tag_read_fail) {

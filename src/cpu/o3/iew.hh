@@ -56,6 +56,7 @@
 #include "cpu/o3/rob.hh"
 #include "cpu/o3/scoreboard.hh"
 #include "cpu/timebuf.hh"
+#include "cpu/valuepred/valuepred_unit.hh"
 #include "debug/IEW.hh"
 #include "sim/probe/probe.hh"
 
@@ -293,6 +294,11 @@ class IEW
      * violation.
      */
     void squashDueToMemOrder(const DynInstPtr &inst, ThreadID tid);
+
+    /** Sends commit proper information for a squash due to a value
+     * mispredict.
+     */
+    void squashDueToValuePrediction(const DynInstPtr &inst, ThreadID tid);
 
     /** Sets Dispatch to blocked, and signals back to other stages to block. */
     void block(ThreadID tid);
@@ -576,6 +582,9 @@ class IEW
     StallReason checkDispatchStall(ThreadID tid, int dq_id, const DynInstPtr &dispatch_inst);
 
     StallReason checkLSQStall(ThreadID tid, bool isLoad);
+
+    // value prediction
+    valuepred::VPUnit *valuePredictor;
 
   public:
 

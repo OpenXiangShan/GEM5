@@ -45,6 +45,7 @@
 #include <cassert>
 
 #include "arch/riscv/regs/misc.hh"
+#include "base/output.hh"
 #include "config/the_isa.hh"
 #include "cpu/activity.hh"
 #include "cpu/checker/cpu.hh"
@@ -59,10 +60,13 @@
 #include "debug/Activity.hh"
 #include "debug/Commit.hh"
 #include "debug/Drain.hh"
+#include "debug/IdealModel.hh"
 #include "debug/O3CPU.hh"
 #include "debug/Quiesce.hh"
+#include "debug/VPCOMMON.hh"
 #include "debug/ValueCommit.hh"
 #include "enums/MemoryMode.hh"
+#include "sim/abort_callback.hh"
 #include "sim/async.hh"
 #include "sim/cur_tick.hh"
 #include "sim/full_system.hh"
@@ -128,7 +132,8 @@ CPU::CPU(const BaseO3CPUParams &params)
       ipc_r("ipc", "", 1000, archDBer),
       cpi_r("cpi", "", 1000, archDBer),
       issueWidth(params.decodeWidth),
-      cpuStats(this)
+      cpuStats(this),
+      valuePredictorEnabled(params.valuePred)
 {
     fatal_if(FullSystem && params.numThreads > 1,
             "SMT is not supported in O3 in full system mode currently.");
@@ -320,6 +325,14 @@ CPU::CPU(const BaseO3CPUParams &params)
     if (!params.switched_out && interrupts.empty()) {
         fatal("O3CPU %s has no interrupt controller.\n"
               "Ensure createInterruptController() is called.\n", name());
+    }
+
+    // when enable ideal model register abort callback
+    if (enableIdealModel){
+        registerAbortCallback([this](){
+                this->printInstList();
+                this->printSquashTrace();
+        });
     }
 }
 
@@ -1697,6 +1710,72 @@ CPU::readGem5Regs()
     }
 }
 
+void
+CPU::idealModelReadGem5Regs(){
+    for (int i = 0; i < 32; i++) {
+        idealModelAllStates->gem5RegFile[i] = readArchIntReg(i, 0);
+        idealModelAllStates->gem5RegFile[i + 32] = readArchFloatReg(i, 0);
+        readArchVecReg(i, (uint64_t*)&idealModelAllStates->gem5RegFile.vr[i], 0);
+    }
+}
+
+
+void
+CPU::idealModelReadGem5MiscRegs(){
+#define READMISC(gem5RegFileMember,miscreg) \
+    idealModelAllStates->gem5RegFile.gem5RegFileMember = \
+    readMiscReg(RiscvISA::MiscRegIndex::MISCREG_##miscreg, 0)
+#define READMISCNEFT(gem5RegFileMember,miscreg) \
+    idealModelAllStates->gem5RegFile.gem5RegFileMember = \
+    readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_##miscreg, 0)
+
+    READMISCNEFT(mode,PRV);
+    READMISCNEFT(mstatus,STATUS);
+    READMISCNEFT(mcause,MCAUSE);
+    READMISC(mepc,MEPC);
+    READMISCNEFT(scause,SCAUSE);
+    READMISC(sepc,SEPC);
+    READMISCNEFT(satp,SATP);
+    READMISC(mie,IE);
+    READMISC(mip,IP);
+    READMISCNEFT(mscratch,MSCRATCH);
+    READMISCNEFT(sscratch,SSCRATCH);
+    READMISCNEFT(mideleg,MIDELEG);
+    READMISCNEFT(medeleg,MEDELEG);
+    READMISCNEFT(mtval,MTVAL);
+    READMISCNEFT(stval,STVAL);
+    READMISCNEFT(mtvec,MTVEC);
+    READMISCNEFT(stvec,STVEC);
+
+    // RVV
+
+    READMISC(vtype,VTYPE);
+    READMISC(vcsr,VCSR);
+    READMISC(vl,VL);
+
+    // RVH
+    READMISC(mtval2,MTVAL2);
+    READMISC(mtinst,MTINST);
+    READMISCNEFT(hstatus,HSTATUS);
+    READMISCNEFT(hideleg,HIDELEG);
+    READMISC(hedeleg,HEDELEG);
+    READMISCNEFT(hcounteren,HCOUNTEREN);
+    READMISC(htval,HTVAL);
+    READMISC(htinst,HTINST);
+    READMISC(hgatp,HGATP);
+    READMISC(vsstatus,VSSTATUS);
+    READMISC(vstvec,VSTVEC);
+    READMISC(vsepc,VSEPC);
+    READMISC(vscause,VSCAUSE);
+    READMISC(vstval,VSTVAL);
+    READMISC(vsatp,VSATP);
+    READMISC(vsscratch,VSSCRATCH);
+    READMISC(v,VIRMODE);
+
+#undef READMISC
+#undef READMISCNEFT
+}
+
 RegVal
 CPU::readArchIntReg(int reg_idx, ThreadID tid)
 {
@@ -1731,6 +1810,235 @@ CPU::readArchVecReg(int reg_idx, uint64_t *val,ThreadID tid)
 
     regFile.getReg(phys_reg, val);
 }
+
+void
+CPU::idealModelIterRunInflight(uint64_t seq_no){
+    uint64_t nextFlowBegin = findSquashTrace(seq_no);
+    AnswerFromNemu *curFirstMicroopRes = nullptr;
+    uint64_t curFirstMicroopSeqNum = 0u;
+    for (auto& inst : instList){
+        if (inst->seqNum <= seq_no){
+            continue;
+        }
+
+        if (nextFlowBegin && inst->seqNum < nextFlowBegin){
+            DPRINTF(IdealModel, "[sn:%lu] skip this inst, have been handlded by fetch\n");
+            continue;
+        }
+
+        if (inst->isMicroop() && !inst->isFirstMicroop()){
+            // only handle the first micro op
+            // copy the ask res before?
+            gem5_assert(curFirstMicroopRes, "curFirstMicroopRes can't be nullptr\n");
+            gem5_assert(curFirstMicroopSeqNum == inst->firstMicroInstSeqNum,
+                    "curFirstMicroopSeqNum not set in right status\n");
+            memcpy(&(inst->idealModelRes), curFirstMicroopRes, sizeof(AnswerFromNemu));
+            DPRINTF(IdealModel, "[sn:%lu] micro inst, result copy from first microinst\n", inst->seqNum);
+            continue;
+        }
+
+
+        DPRINTF(IdealModel, "itermode: %s\n", inst->genDisassembly().c_str());
+        DPRINTF(IdealModel, "inst pc : %lx npc: %lx\n", inst->getPC(), inst->getNPC());
+        DPRINTF(IdealModel, "pred pc : %lx \n", inst->readPredTarg().instAddr());
+
+        uint64_t instSeqNum = inst->isMicroop() ? inst->firstMicroInstSeqNum : inst->seqNum;
+        bool isSystemOp = inst->isIdealModelSystemOp();
+        bool isJal = !isSystemOp && inst->isControl() && inst->isDirectCtrl() && inst->isUncondCtrl();
+        bool isJalr = !isSystemOp && inst->isControl() && !inst->isDirectCtrl() && inst->isUncondCtrl();
+        bool isBranch = !isSystemOp && inst->isControl() && inst->isDirectCtrl() && inst->isControl();
+        uint64_t thisInstPC = inst->pcState().as<RiscvISA::PCState>().pc();
+
+        // iter logic
+        if (isSystemOp){
+            inst->gem5Ask.seq_no = instSeqNum;
+            inst->gem5Ask.pc = thisInstPC;
+            inst->gem5Ask.next_pc = inst->readPredTarg().instAddr();
+            inst->gem5Ask.is_systemop = true;
+            inst->gem5Ask.is_nonspec = false;
+            //inst->gem5Ask.is_nonspec = inst->isStoreConditional() ||
+            //              inst->isLoadReserved() ||
+            //              inst->isAtomic();
+            inst->gem5Ask.is_load = inst->isLoad();
+            inst->gem5Ask.is_store = inst->isStore();
+            inst->gem5Ask.need_provide_dest_value = false;
+
+            // ask ideal model to get answer
+            askIdealModel(&(inst->gem5Ask), &(inst->idealModelRes), true);
+
+            return;
+        }else{
+            int resWorkState;
+            uint64_t resPC;
+
+            bool flowChange = false;
+            if (isJalr || isBranch){
+                idealModelTempExec(&resWorkState, &resPC, thisInstPC);
+            }
+
+            uint64_t instPredPC = inst->readPredTarg().instAddr();
+            if (isJalr || isBranch){
+                flowChange = instPredPC != resPC;
+                DPRINTF(IdealModel, "[sn:%lu]resPC is %lx\n", instSeqNum, resPC);
+            }else if (isJal){
+                flowChange = instPredPC != inst->branchTarget()->instAddr();
+            }else{
+                // normal
+                if (inst->readPredTaken()){
+                    flowChange = instPredPC != inst->pcState().as<RiscvISA::PCState>().getFallThruPC();
+                }
+            }
+
+            nextFlowBegin = findSquashTrace(instSeqNum);
+            if (flowChange && !nextFlowBegin){
+                // this flow change not handle by fetch
+                // so stop in this
+                idaelModelSetIterStop(instSeqNum);
+                DPRINTF(IdealModel, "[sn:%lu] flow change and fetch not handle, set IM_ITER_STOP\n", instSeqNum);
+                return;
+            }else{
+                // continue to iter mode
+                inst->gem5Ask.seq_no = instSeqNum;
+                inst->gem5Ask.pc = thisInstPC;
+                inst->gem5Ask.next_pc = instPredPC;
+                inst->gem5Ask.is_systemop = false;
+                inst->gem5Ask.is_nonspec = false;
+                //inst->gem5Ask.is_nonspec = inst->isStoreConditional() ||
+                //              inst->isLoadReserved() ||
+                //              inst->isAtomic();
+                inst->gem5Ask.is_load =
+                        (inst->isMicroop() ? inst->macroop->isLoad() : inst->isLoad());
+
+                inst->gem5Ask.is_store =
+                        (inst->isMicroop() ? inst->macroop->isStore() : inst->isStore());
+                inst->gem5Ask.need_provide_dest_value = !inst->isNotSupportVP();
+
+                // ask ideal model to get answer
+                askIdealModel(&(inst->gem5Ask), &(inst->idealModelRes), true);
+
+                DPRINTF(IdealModel, "[iter res:%lu] mmio: %s vaddr: %lX paddr: %lX (%s)dest_value: %lu \n",
+                        inst->seqNum, inst->idealModelRes.is_mmio ? "yes" : "no",
+                        inst->idealModelRes.mem_vaddr,
+                        inst->idealModelRes.mem_paddr,
+                        !inst->isNotSupportVP()? "useful" : "useless",
+                        inst->idealModelRes.dest_value);
+
+                if (inst->isFirstMicroop()){
+                    curFirstMicroopSeqNum = inst->seqNum;
+                    curFirstMicroopRes = &(inst->idealModelRes);
+                }
+
+                if (inst->idealModelRes.ideal_model_work_state != IM_WORK){
+                    return;
+                }
+            }
+        }
+
+    }
+}
+
+void
+CPU::printInstList(){
+
+    auto outhandle = simout.create("instListMsg.txt", false, true);
+
+    auto normalPrintFunc = [outhandle](uint64_t seqNoBegin, uint64_t seqNoEnd){
+        *outhandle->stream() << std::endl;
+        *outhandle->stream() << "[sn: " << seqNoBegin << " ]" << std::endl;
+        *outhandle->stream() << "\t.. " << std::endl;
+        *outhandle->stream() << "\t.. normal insts" << std::endl;
+        *outhandle->stream() << "\t.. " << std::endl;
+        *outhandle->stream() << "[sn: " << seqNoEnd << " ]" << std::endl;
+        *outhandle->stream() << std::endl;
+    };
+
+    auto specialPrintFunc = [outhandle](DynInstPtr& inst){
+        *outhandle->stream() << "[sn: " << inst->seqNum << "] "
+                             << inst->genDisassembly() << std::endl;
+        *outhandle->stream() << "ideal model work state: "
+                             << coloredIdealModelWorkStateStr[inst->idealModelRes.ideal_model_work_state]
+                             << std::endl;
+
+        if (inst->isControl()){
+            *outhandle->stream() << "---" << coloredInstAttrMap.at("branch") << std::endl;
+        }
+
+        if (inst->gem5Ask.is_nonspec){
+            *outhandle->stream() << "---" << coloredInstAttrMap.at("nonspec") << std::endl;
+        }
+
+        if (inst->gem5Ask.is_systemop){
+            *outhandle->stream() << "---" << coloredInstAttrMap.at("systemop") << std::endl;
+        }
+
+        if (inst->idealModelRes.is_mmio){
+            *outhandle->stream() << "---" << coloredInstAttrMap.at("mmio") << std::endl;
+        }
+
+        if (inst->isExecuted()){
+            *outhandle->stream() << "---" << coloredInstAttrMap.at("executed") << std::endl;
+        }
+
+        if (inst->fault != NoFault && inst->fault->isFromISA()){
+            *outhandle->stream() << "---" << coloredInstAttrMap.at("exception")
+                                 << "  no: " << inst->fault->exception() << std::endl;
+        }
+
+        *outhandle->stream() << std::endl;
+
+    };
+
+    bool normalInstWaitDump = false;
+    uint64_t normalDumpBegin = 0;
+    for (DynInstPtr& inst : instList){
+        specialPrintFunc(inst);
+    }
+
+    simout.close(outhandle);
+
+}
+
+void
+CPU::markSquashTrace(uint64_t causeSquashSeqNo,
+        uint64_t causeSquashPC, uint64_t newFlowBeginSeqNo){
+    squashTraceQue.emplace_back(SquashTrace{causeSquashSeqNo, causeSquashPC, newFlowBeginSeqNo});
+
+    return;
+}
+
+uint64_t
+CPU::findSquashTrace(uint64_t seq_no){
+    auto iter = squashTraceQue.cbegin();
+    while (iter != squashTraceQue.cend()){
+        if (iter->causeSquashSeqNo == seq_no){
+            return iter->newFlowBeginSeqNo;
+        }
+        iter++;
+    }
+
+    return 0;
+}
+
+void
+CPU::clearUselessSquashTrace(uint64_t seq_no){
+    while (!squashTraceQue.empty() && squashTraceQue.front().causeSquashSeqNo <= seq_no){
+        squashTraceQue.pop_front();
+    }
+
+    return;
+}
+
+void
+CPU::printSquashTrace(){
+    auto outhandle = simout.create("squashTrace.txt", false, true);
+    for (auto iter = squashTraceQue.cbegin(); iter != squashTraceQue.cend(); iter++){
+        *outhandle->stream() << "cause seq_no: " << iter->causeSquashSeqNo <<
+            " until: " << iter->newFlowBeginSeqNo << std::endl;
+    }
+    simout.close(outhandle);
+}
+
+
 
 } // namespace o3
 } // namespace gem5

@@ -43,6 +43,7 @@
 #ifndef __CPU_O3_CPU_HH__
 #define __CPU_O3_CPU_HH__
 
+#include <deque>
 #include <iostream>
 #include <list>
 #include <queue>
@@ -295,6 +296,9 @@ class CPU : public BaseCPU
 
     /** Get the current instruction sequence number, and increment it. */
     InstSeqNum getAndIncrementInstSeq() { return globalSeqNum++; }
+
+    /** Get the current instruction sequence number. */
+    InstSeqNum getInstSeq() { return globalSeqNum; }
 
     /** Traps to handle given fault. */
     void trap(const Fault &fault, ThreadID tid, const StaticInstPtr &inst);
@@ -692,8 +696,43 @@ class CPU : public BaseCPU
     void htmSendAbortSignal(ThreadID tid, uint64_t htm_uid,
                             HtmFailureFaultCause cause) override;
 
+  private:
+    bool valuePredictorEnabled;
+
+  public:
+    bool isValuePredictorEnabled(){
+        return valuePredictorEnabled;
+    }
+  public:
     //difftest virtual function
     void readGem5Regs() override;
+
+    // ideal model read reg
+    void idealModelReadGem5Regs() override;
+    void idealModelReadGem5MiscRegs() override;
+    void idealModelIterRunInflight(uint64_t seq_no) override;
+
+  private:
+    // call back when abort
+    void printInstList();
+    void printSquashTrace();
+
+  public:
+    struct SquashTrace
+    {
+        uint64_t causeSquashSeqNo;
+        uint64_t causeSquashPC;
+        uint64_t newFlowBeginSeqNo;
+    };
+
+  private:
+    std::deque<SquashTrace> squashTraceQue;
+
+  public:
+    void markSquashTrace(uint64_t causeSquashSeqNo, uint64_t causeSquashPC, uint64_t newFlowBeginSeqNo);
+    uint64_t findSquashTrace(uint64_t seq_no);
+    void clearUselessSquashTrace(uint64_t seq_no);
+
 };
 
 } // namespace o3

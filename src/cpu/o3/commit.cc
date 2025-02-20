@@ -62,6 +62,8 @@
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/thread_state.hh"
 #include "cpu/timebuf.hh"
+#include "cpu/valuepred/es_metadata.hh"
+#include "cpu/valuepred/valuepred_metadata.hh"
 #include "debug/Activity.hh"
 #include "debug/Commit.hh"
 #include "debug/CommitRate.hh"
@@ -73,8 +75,10 @@
 #include "debug/FTBStats.hh"
 #include "debug/Faults.hh"
 #include "debug/HtmCpu.hh"
+#include "debug/IdealModel.hh"
 #include "debug/InstCommited.hh"
 #include "debug/O3PipeView.hh"
+#include "debug/VPCOMMON.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/core.hh"
 #include "sim/cur_tick.hh"
@@ -114,7 +118,8 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
       canHandleInterrupts(true),
       avoidQuiesceLiveLock(false),
       stats(_cpu, this),
-      archDBer(params.arch_db)
+      archDBer(params.arch_db),
+      valuePredictor(params.valuePred)
 {
     if (commitWidth > MaxWidth)
         fatal("commitWidth (%d) is larger than compiled limit (%d),\n"
@@ -638,6 +643,9 @@ Commit::squashAll(ThreadID tid)
     rob->squash(squashed_inst, tid);
     changedROBNumEntries[tid] = true;
 
+    // value prediction also squash in this
+    valuePredictor->squash(squashed_inst);
+
     // Send back the sequence number of the squashed instruction.
     toIEW->commitInfo[tid].doneSeqNum = squashed_inst;
 
@@ -860,6 +868,12 @@ Commit::handleInterrupt()
             cpu->difftestRaiseIntr(cpu->getInterruptsNO() | (1ULL << 63));
         }
 
+        if (cpu->idealModelEnabled()){
+            DPRINTF(IdealModel, "nemu no intr, so gem5 guide \n");
+            cpu->setIdealModelRegPC(pcState(0).as<RiscvISA::PCState>().pc());
+            cpu->guideIdealModelIntr(cpu->getInterruptsNO() | (1ULL << 63));
+        }
+
         DPRINTF(CommitTrace, "Handle interrupt No.%lx\n", cpu->getInterruptsNO() | (1ULL << 63));
         cpu->processInterrupts(cpu->getInterrupts());
 
@@ -941,6 +955,7 @@ Commit::commit()
                 cpu->scheduleThreadExitEvent(tid);
         } else if (tcSquash[tid]) {
             assert(commitStatus[tid] != TrapPending);
+            toIEW->commitInfo[tid].tcSquash = true;
             squashFromTC(tid);
         } else if (commitStatus[tid] == SquashAfterPending) {
             // A squash from the previous cycle of the commit stage (i.e.,
@@ -964,11 +979,18 @@ Commit::commit()
                     fromIEW->mispredictInst[tid]->pcState().instAddr(),
                     fromIEW->squashedSeqNum[tid]);
                 stats.squashDueToBranch++;
-            } else {
+            } else if (fromIEW->memoryViolation[tid]){
                 DPRINTF(Commit,
                     "[tid:%i] Squashing due to order violation [sn:%llu]\n",
                     tid, fromIEW->squashedSeqNum[tid]);
                 stats.squashDueToOrderViolation++;
+                toIEW->commitInfo[tid].memoryViolationSquash = true;
+            } else if (fromIEW->valuePredictionError[tid]){
+                // DPRINTF
+                DPRINTF(Commit, "Squashing due to value prediction error, "
+                            "seq_no: %llu\n", fromIEW->squashedSeqNum[0]);
+            } else{
+                panic("undefined in commit squash\n");
             }
 
             DPRINTF(Commit, "[tid:%i] Redirecting to PC %#x\n",
@@ -991,6 +1013,11 @@ Commit::commit()
             rob->squash(squashed_inst, tid);
             changedROBNumEntries[tid] = true;
 
+            if (!cpu->idealModelEnabled() && cpu->isValuePredictorEnabled()){
+                // squash value predictor
+                valuePredictor->squash(squashed_inst);
+            }
+
             toIEW->commitInfo[tid].doneSeqNum = squashed_inst;
 
             toIEW->commitInfo[tid].squash = true;
@@ -1006,10 +1033,15 @@ Commit::commit()
 
             auto squashed_inst_ptr = rob->findInst(tid, squashed_inst);
             toIEW->commitInfo[tid].squashInst = squashed_inst_ptr;
+
             if (!squashed_inst_ptr) {
                 DPRINTF(Commit,
                         "Unable to find squashed instruction in ROB\n");
+            }else{
+                DPRINTF(Commit, "find squash seq: %lu, inst : %s\n", squashed_inst,
+                        squashed_inst_ptr->genDisassembly().c_str());
             }
+
             toIEW->commitInfo[tid].squashedStreamId = fromIEW->squashedStreamId[tid];
             toIEW->commitInfo[tid].squashedTargetId = fromIEW->squashedTargetId[tid];
             toIEW->commitInfo[tid].squashedLoopIter = fromIEW->squashedLoopIter[tid];
@@ -1183,8 +1215,63 @@ Commit::commitInsts()
             bool commit_success = commitHead(head_inst, num_committed);
 
             if (commit_success) {
+                // perfCCT
                 cpu->perfCCT->updateInstPos(head_inst->seqNum, PerfRecord::AtCommit);
                 cpu->perfCCT->commitMeta(head_inst->seqNum);
+
+                // ideal model commit
+                if (cpu->idealModelEnabled() && (!head_inst->isMicroop() || head_inst->isLastMicroop())){
+                    bool isSystemOp = head_inst->isIdealModelSystemOp();
+                    DPRINTF(IdealModel, "ideal model mmio: %d, gem5 mmio %d\n",
+                            head_inst->idealModelRes.is_mmio, head_inst->strictlyOrdered());
+                    gem5_assert(head_inst->idealModelRes.is_mmio == head_inst->strictlyOrdered(),
+                            "mmio != strictly ordered\n");
+                    bool isNonSpec = head_inst->idealModelRes.is_mmio;
+                    //             head_inst->isStoreConditional() ||
+                    //             head_inst->isLoadReserved() ||
+                    //             head_inst->isAtomic();
+                    bool isSquashAfter = head_inst->isSquashAfter() ||
+                                         (head_inst->isIdealModelSystemOp() && head_inst->isReturn());
+                    uint64_t instSeqNum = head_inst->isMicroop() ? head_inst->firstMicroInstSeqNum : head_inst->seqNum;
+
+                    DPRINTF(IdealModel, "[sn: %lu] commit success, %s \n", instSeqNum,
+                            head_inst->genDisassembly().c_str());
+
+                    if (isSystemOp){
+                        cpu->idealModelCommitInst(GEM5_SYSTEMOP, instSeqNum, isSquashAfter);
+                    }else if (isNonSpec){
+                        // also set pc
+                        // maybe not need set pc
+                        cpu->setIdealModelRegPC(pcState(0).as<RiscvISA::PCState>().npc());
+                        cpu->idealModelCommitInst(GEM5_NOSPEC, instSeqNum, isSquashAfter);
+                    }else{
+                        // normal commit also use for check specical exception
+                        // cpu->clearUselessSquashTrace(head_inst->seqNum);
+                        cpu->idealModelCommitInst(GEM5_NORMAL, instSeqNum, false);
+                    }
+
+                    // mmio not diff
+                    if (head_inst->idealModelRes.ideal_model_work_state == IM_WORK &&
+                             ((cpu->idealModelConfig->isIntAddVP() && head_inst->isAddVP()) ||
+                             (cpu->idealModelConfig->isScalarLVP() && head_inst->isScalarLVP())) &&
+                             head_inst->gem5Ask.need_provide_dest_value){
+                        // verify idael model correct here.
+                        // now ideal model diff scalar insts
+                        DPRINTF(IdealModel,"[sn:%lu]in commit diff\n", head_inst->seqNum);
+                        DPRINTF(IdealModel, "[sn:%lu] commit compare => gem5: %lu ideal model: %lu \n",
+                                head_inst->seqNum,
+                                (head_inst->numDestRegs() > 0)? head_inst->getDestRegOperand(0) : 0,
+                                head_inst->idealModelRes.dest_value);
+                        if (head_inst->numDestRegs() > 0){
+                            gem5_assert(head_inst->getDestRegOperand(0) == head_inst->idealModelRes.dest_value,
+                                    "ideal model result difftest error \n");
+                        }
+                    }else{
+                        DPRINTF(IdealModel, "[sn:%lu] ideal model not diff this inst\n", instSeqNum);
+                    }
+                }
+
+                /////////////////////////////////////////////
                 head_inst->printDisassemblyAndResult(cpu->name());
                 if (ismispred) {
                     ismispred = false;
@@ -1424,6 +1511,7 @@ Commit::diffInst(ThreadID tid, const DynInstPtr &inst) {
         cpu->diffInfo.lastCommittedMsg.pop();
     }
     cpu->diffInfo.inst = inst->staticInst;
+    // pc state have been advanced
     cpu->diffInfo.pc = &inst->pcState();
     for (int i = 0; i < inst->numDestRegs(); i++) {
         const auto &dest = inst->destRegIdx(i);
@@ -1628,6 +1716,50 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
 
         }
 
+        if (cpu->idealModelEnabled() && inst_fault->isFromISA()){
+            uint64_t exception_no =inst_fault->exception();
+            if (faultNum.find(exception_no) != faultNum.end()) {
+                // page fault and some force-guide exception
+                bool needGuide = cpu->idealModelForceRaiseException(head_inst->seqNum, exception_no);
+                DPRINTF(IdealModel, "raise special exception, may need guide \n");
+                if (needGuide){
+                    DPRINTF(IdealModel, "force guide the special exception\n");
+                    cpu->setIdealModelRegPC(pcState(0).as<RiscvISA::PCState>().pc());
+                    cpu->idealModelReadRegAndCopyToNemu();
+                    // set ideal model guide info
+                    cpu->setIdealModelGuideInfo(
+                            exception_no, cpu->readMiscReg(RiscvISA::MiscRegIndex::MISCREG_MTVAL, tid),
+                            cpu->readMiscReg(RiscvISA::MiscRegIndex::MISCREG_STVAL, tid), false, 0, tid);
+                }
+            }else{
+                // normal exception
+                bool isSystemOp = head_inst->isIdealModelSystemOp();
+                DPRINTF(IdealModel, "ideal model mmio: %d, gem5 mmio %d\n",
+                        head_inst->idealModelRes.is_mmio, head_inst->strictlyOrdered());
+                gem5_assert(head_inst->idealModelRes.is_mmio == head_inst->strictlyOrdered(),
+                        "mmio != strictly ordered\n");
+                bool isNonSpec = head_inst->idealModelRes.is_mmio;
+                             //head_inst->isStoreConditional() ||
+                             //head_inst->isLoadReserved() ||
+                             //head_inst->isAtomic();
+                bool isECallEbreak = head_inst->isSyscall() || head_inst->isEBreak();
+                uint64_t instSeqNum = head_inst->isMicroop() ? head_inst->firstMicroInstSeqNum : head_inst->seqNum;
+                if (isSystemOp){
+                    DPRINTF(IdealModel, "raise system op exception \n");
+                    cpu->idealModelRaiseRuntimeException(GEM5_SYSTEMOP, instSeqNum, exception_no, isECallEbreak);
+                }else if (isNonSpec){
+                    // copy reg
+                    DPRINTF(IdealModel, "raise nonspec exception \n");
+                    cpu->setIdealModelRegPC(pcState(0).as<RiscvISA::PCState>().pc());
+                    cpu->idealModelReadRegAndCopyToNemu();
+                    cpu->idealModelRaiseRuntimeException(GEM5_NOSPEC, instSeqNum, exception_no, false);
+                }else{
+                    DPRINTF(IdealModel, "raise normal exception \n");
+                    cpu->idealModelRaiseRuntimeException(GEM5_NORMAL, instSeqNum, exception_no, false);
+                }
+            }
+        }
+
         // Generate trap squash event.
         generateTrapEvent(tid, inst_fault);
         return false;
@@ -1696,6 +1828,49 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
     // the HTM UID is purely for correctness and debugging purposes
     if (head_inst->isHtmStart())
         iewStage->setLastRetiredHtmUid(tid, head_inst->getHtmTransactionUid());
+
+    if (!cpu->idealModelEnabled() && cpu->isValuePredictorEnabled()){
+
+        // value prediction
+        head_inst->commitCycle = cpu->curCycle();
+
+        // for instruction who can be train for value predictor
+        if (head_inst->vpSupported && inst_fault == NoFault){
+            gem5_assert(head_inst->isVerified(), "%s\n", head_inst->genDisassembly());
+            assert(head_inst->commitCycle > head_inst->renameCycle);
+
+            valuepred::ESUpdateMetaData *updateMetaData =
+                            dynamic_cast<valuepred::ESUpdateMetaData *>(valuepred::
+                                    VPDataStructFactory::buildUpdateMetaData(ValuePredType::EStride));
+            updateMetaData->pc = head_inst->getPC();
+            updateMetaData->seq_no = head_inst->seqNum;
+            updateMetaData->actualValue = head_inst->actualValue;
+            updateMetaData->isMisprediction = head_inst->vpMisprediction;
+            updateMetaData->isLoadInst = head_inst->isLoad();
+            updateMetaData->inflightTime = head_inst->commitCycle - head_inst->renameCycle;
+            updateMetaData->disas = head_inst->staticInst->disassemble(updateMetaData->pc);
+            valuePredictor->updateValuePredictor(updateMetaData);
+
+            delete updateMetaData;
+
+            DPRINTF(VPCOMMON,
+                "Commit-Stage instruction commit and value "
+                "predictor update => "
+                "seq num: %lu pc: %lX "
+                "spec: %s "
+                "isMisPrediction: %s "
+                "predict value: %lu "
+                "real value: %lu "
+                "disas: %s\n",
+                head_inst->seqNum,
+                head_inst->getPC(),
+                head_inst->vpResult.speculative ? "spec" : "no spec ",
+                head_inst->vpMisprediction ? "yes" : "no", head_inst->vpResult.value,
+                head_inst->actualValue,
+                head_inst->genDisassembly());
+        }
+    }
+
 
     // Finally clear the head ROB entry.
     rob->retireHead(tid);

@@ -279,7 +279,9 @@ class LSQ
         State _state;
         void setState(const State& newState) { _state = newState; }
 
+        // inflight translations
         uint32_t numTranslatedFragments;
+        // finished translations
         uint32_t numInTranslationFragments;
 
 
@@ -339,6 +341,7 @@ class LSQ
         release(Flag reason)
         {
             assert(reason == Flag::LSQEntryFreed || reason == Flag::Discarded);
+            // handle destroy when all things done
             if (!isAnyOutstandingRequest()) {
                 delete this;
             } else {

@@ -55,6 +55,7 @@
 #include "cpu/checker/cpu.hh"
 #include "cpu/exec_context.hh"
 #include "cpu/exetrace.hh"
+#include "cpu/ideal_model.hh"
 #include "cpu/inst_res.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/cpu.hh"
@@ -65,6 +66,7 @@
 #include "cpu/reg_class.hh"
 #include "cpu/static_inst.hh"
 #include "cpu/translation.hh"
+#include "cpu/valuepred/valuepred_metadata.hh"
 #include "debug/CommitTrace.hh"
 #include "debug/DecoupleBP.hh"
 #include "debug/HtmCpu.hh"
@@ -186,6 +188,8 @@ class DynInst : public ExecContext, public RefCounted
                                  /// instructions ahead of it
         SerializeAfter,          /// Needs to serialize instructions behind it
         SerializeHandled,        /// Serialization has been handled
+        Verified,				 /// VP instructions is verified
+        NeedFlush,				 /// VP instructions mispredicted and need flush
         NumStatus
     };
 
@@ -612,6 +616,7 @@ class DynInst : public ExecContext, public RefCounted
     bool isHInst()         const { return staticInst->isHInst(); }
     bool isStore()        const { return staticInst->isStore(); }
     bool isAtomic()       const { return staticInst->isAtomic(); }
+    bool isLoadReserved()       const { return staticInst->isLoadReserved(); }
     bool isStoreConditional() const
     { return staticInst->isStoreConditional(); }
     bool isInstPrefetch() const { return staticInst->isInstPrefetch(); }
@@ -657,6 +662,13 @@ class DynInst : public ExecContext, public RefCounted
     bool isHtmStop() const { return staticInst->isHtmStop(); }
     bool isHtmCancel() const { return staticInst->isHtmCancel(); }
     bool isHtmCmd() const { return staticInst->isHtmCmd(); }
+    // ebreak
+    bool isEBreak() const { return staticInst->isEBreak(); }
+    // nemu system op
+    bool isIdealModelSystemOp() const { return staticInst->isIdealModelSystemOp(); }
+    // for value prediction
+    bool isIntAdd()             const { return staticInst->isIntAdd(); }
+    bool isIntScalarLoad()       const { return staticInst->isIntScalarLoad(); }
 
     uint64_t
     getHtmTransactionUid() const override
@@ -1304,6 +1316,15 @@ class DynInst : public ExecContext, public RefCounted
         cpu->getReg(reg, val);
     }
 
+    RegVal
+    getDestRegOperand(int idx)
+    {
+        const PhysRegIdPtr reg = renamedDestIdx(idx);
+        if (reg->is(InvalidRegClass))
+            return 0;
+        return cpu->getReg(reg);
+    }
+
     void *
     getWritableRegOperand(const StaticInst *si, int idx) override
     {
@@ -1338,9 +1359,21 @@ class DynInst : public ExecContext, public RefCounted
     std::string genDisassembly() const
     {
         std::string str = "";
-        str += csprintf("[sn:%lu pc:%#lx] %s",
-                seqNum, pcState().instAddr(),
-                staticInst->disassemble(pcState().instAddr()));
+        if (opClass() == FMAAccOp || opClass() == FMAMulOp){
+            str += "not support fma op class insts disas";
+            return str;
+        }
+        if (!macroop){
+            str += csprintf("[sn:%lu pc:%#lx] %s",
+                    seqNum, pcState().instAddr(),
+                    staticInst->disassemble(pcState().instAddr()));
+        }else{
+            str += csprintf("[sn:%lu pc:%#lx] %s is part of macro: %s",
+                    seqNum, pcState().instAddr(),
+                    staticInst->disassemble(pcState().instAddr()),
+                    macroop->disassemble(pcState().instAddr()));
+        }
+
         if (instResult.size() > 0) {
             str += csprintf(", res: %#lx", instResult.front().as<uint64_t>());
         }
@@ -1443,6 +1476,64 @@ class DynInst : public ExecContext, public RefCounted
 
     /** get golden */
     uint8_t *getGolden() { return goldenData; }
+
+
+  public:
+    // value prediction
+    valuepred::VPResult vpResult = {false, 0};
+
+    RegVal actualValue = 0u;
+    bool vpMisprediction = false;
+    bool vpSupported = false;
+
+    bool isVerified() { return status[Verified]; }
+
+    void setVerified() { status.set(Verified); }
+
+    void resetVerified() { status.reset(Verified); }
+
+    // mark the time to support EStride Update
+    Cycles renameCycle;
+    Cycles commitCycle;
+
+    bool isAddVP(){
+        return isIntAdd();
+    }
+
+    bool isScalarLVP(){
+        return isInteger() && !isFloating() && isLoad() && !isVector() && !isLoadReserved();
+    }
+
+    // ugly code
+    // This code will be removed in future developments of the value predictor.
+    bool isNotSupportVP(){
+        return isNop() || isHInst() || isStore() ||
+            isAtomic() || isStoreConditional() || isLoadReserved() ||
+            isInstPrefetch() || isDataPrefetch() ||
+            isFloating() || isVector() || isControl() ||
+            isCall() || isReturn() || isDirectCtrl() ||
+            isIndirectCtrl() || isCondCtrl() ||
+            isUncondCtrl() || isSerializing() ||
+            isSerializeAfter() || isSerializeBefore() ||
+            isSquashAfter() || isFullMemBarrier() ||
+            isReadBarrier() || isWriteBarrier() ||
+            isNonSpeculative() || isUpdateVsstatusSd() ||
+            isUpdateMstatusSd() || isQuiesce() ||
+            isUnverifiable() || isSyscall() ||
+            isDelayedCommit() || isHtmStop() ||
+            isHtmStart() || isHtmCancel() || isHtmCmd() || staticInst->isMov();
+    }
+
+  public:
+    // ideal model ask
+    AskFromGEM5 gem5Ask;
+    // ideal model return msg
+    AnswerFromNemu idealModelRes;
+
+  public:
+    // only macro inst != NULL, this value is meaningful
+    uint64_t firstMicroInstSeqNum = 0u;
+
 };
 
 } // namespace o3
