@@ -79,6 +79,7 @@ def build_test_system(np, args):
 
     test_sys.xiangshan_system = True
     test_sys.enable_difftest = args.enable_difftest
+    test_sys.enable_ideal_model = args.enable_ideal_model
 
     XSConfig.config_xiangshan_inputs(args, test_sys)
 
@@ -210,6 +211,7 @@ def build_test_system(np, args):
             cpu.nemuSDimg = mmc.img_path
 
     XSConfig.config_difftest(test_sys.cpu, args, test_sys)
+    XSConfig.config_ideal_model(test_sys.cpu, args, test_sys)
 
     # configure vector
     if args.enable_riscv_vector:

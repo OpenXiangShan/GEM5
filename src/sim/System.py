@@ -144,3 +144,4 @@ class System(SimObject):
 
     num_cpus = Param.Unsigned(1, "Number of CPUs in the system")
     enable_difftest = Param.Bool(False, "Enable RISC-V difftest")
+    enable_ideal_model = Param.Bool(False, "Enable ideal model")

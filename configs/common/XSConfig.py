@@ -110,6 +110,16 @@ def config_xiangshan_inputs(args: argparse.Namespace, sys):
         # use relative path to find the dramsim3 ini file, from configs/common/ to root
         root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
         args.dramsim3_ini = os.path.join(root_dir, 'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini')
+
+
+    # config ideal model
+    if args.enable_ideal_model:
+        if 'IDEAL_REF_SO' in os.environ:
+            args.ideal_model_so = os.environ['IDEAL_REF_SO']
+            print("Obtained ideal model from IDEAL_REF_SO: ", args.ideal_model_so)
+        else:
+            fatal("cant get ideal model so")
+
     return gcpt_restorer, ref_so
 
 
@@ -128,3 +138,27 @@ def config_difftest(cpu_list, args, sys):
             # cpu_list[0].enable_mem_dedup = True
             cpu_list[0].enable_difftest = True
             cpu_list[0].difftest_ref_so = args.difftest_ref_so
+
+def config_ideal_model(cpu_list, args, sys):
+    if not args.enable_ideal_model:
+        return
+    else:
+        if len(cpu_list) > 1:
+            pass
+        else:
+            cpu_list[0].enable_ideal_model = True
+            cpu_list[0].ideal_model_so = args.ideal_model_so
+            print("in config ideal so : ", cpu_list[0].ideal_model_so)
+
+            # enable ideal model support type
+            ideal_model_support_type = []
+            if args.im_intaddvp:
+                ideal_model_support_type.append("IntAddVP")
+
+            if args.im_scalarlvp:
+                ideal_model_support_type.append("ScalarLVP")
+
+            print("test ideal model support type: ", ideal_model_support_type)
+            cpu_list[0].ideal_model_supports = ideal_model_support_type
+            print("ideal model support type: ", cpu_list[0].ideal_model_supports)
+

@@ -655,3 +655,21 @@ def addXiangshanFSOptions(parser):
                         default=None,
                         help="The shared lib file used to do difftest")
 
+    # Ideal model option
+    parser.add_argument("--enable-ideal-model",
+                        action="store_true",
+                        help="use NEMU-ideal-model as ideal model")
+
+    parser.add_argument("--ideal-model-so",
+                        action="store",
+                        default=None,
+                        help="The shared lib file which provide ideal model for DSE")
+
+    parser.add_argument("--im-intaddvp",
+                        action="store_true",
+                        help="enable idael model for int add instructions value prediction")
+
+    parser.add_argument("--im-scalarlvp",
+                        action="store_true",
+                        help="enable ideal model scalar load value prediction")
+
