@@ -1526,34 +1526,9 @@ LSQ::SplitDataRequest::recvTimingResp(PacketPtr pkt)
     assert(pktIdx < _packets.size());
     numReceivedPackets++;
     if (numReceivedPackets == _packets.size()) {
-        LSQ* lsq = this->_port.getLsq();
-        bool isNormalLd = this->isNormalLd();
-        bool enableLdMissReplay = lsq->enableLdMissReplay();
-        if (enableLdMissReplay && isNormalLd) {
-            DPRINTF(Hint, "[sn:%ld] Recv TimingResp\n", pkt->req->getReqInstSeqNum());
-            if (LSQRequest::_inst->waitingCacheRefill()) {
-                // Missed Data is ready at lsq side data bus, wake up missed load in replay queue
-                DPRINTF(LSQ, "[sn:%ld] waitingCacheRefill\n", pkt->req->getReqInstSeqNum());
-                LSQRequest::_inst->waitingCacheRefill(false);
-                discard();
-            } else {
-                // this load is either missed and waken up early or hit.
-                if (pkt->cacheSatisfied) {
-                    // cache hit
-                    _port.setFlagInPipeLine(_inst, LdStFlags::CacheHit);
-                } else {
-                    DPRINTF(LSQ, "[sn:%ld] addToBus\n", pkt->req->getReqInstSeqNum());
-                    // cache miss refill, make data stable on data bus
-                    lsq->bus[_inst->seqNum] = pkt->getAddr();
-                    _port.getStats()->busAppendTimes++;
-                    discard();
-                }
-            }
-        } else {
-            flags.set(Flag::Complete);
-            assemblePackets();
-            _hasStaleTranslation = false;
-        }
+        flags.set(Flag::Complete);
+        assemblePackets();
+        _hasStaleTranslation = false;
         LSQRequest::_inst->hasPendingCacheReq(false);
         LSQRequest::_inst->pendingCacheReq = nullptr;
     }
@@ -1579,22 +1554,7 @@ LSQ::SingleDataRequest::recvFunctionalCustomSignal(PacketPtr pkt)
 }
 
 void
-LSQ::SplitDataRequest::recvFunctionalCustomSignal(PacketPtr pkt)
-{
-    numCustomHintReceived++;
-    if (numCustomHintReceived == _packets.size()) {
-        LSQ* lsq = this->_port.getLsq();
-        bool isNormalLd = this->isNormalLd();
-        bool enableLdMissReplay = lsq->enableLdMissReplay();
-        if (enableLdMissReplay && isNormalLd && LSQRequest::_inst->waitingCacheRefill()) {
-            // Collected all Custom Hints, wake up cache missed load earlier before recvTimingResp
-            DPRINTF(LSQ, "SplitDataRequest::CustomResp: inst: %llu, pkt: %#lx\n", pkt->req->getReqInstSeqNum(),
-                pkt->getAddr());
-            DPRINTF(Hint, "[sn:%ld] Recv Hint\n", pkt->req->getReqInstSeqNum());
-            LSQRequest::_inst->waitingCacheRefill(false);
-        }
-    }
-}
+LSQ::SplitDataRequest::recvFunctionalCustomSignal(PacketPtr pkt) {}
 
 
 void

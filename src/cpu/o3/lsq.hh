@@ -638,7 +638,7 @@ class LSQ
         bool
         isNormalLd()
         {
-            return isLoad() && !mainReq()->isLLSC() && !mainReq()->isUncacheable() && !isSplit();
+            return isLoad() && !isSplit() && !mainReq()->isLLSC() && !mainReq()->isUncacheable();
         }
 
         virtual std::string name() const { return "LSQRequest"; }
@@ -696,7 +696,6 @@ class LSQ
       protected:
         uint32_t numFragments;
         uint32_t numReceivedPackets;
-        uint32_t numCustomHintReceived;
         RequestPtr _mainReq;
         PacketPtr _mainPacket;
 
@@ -709,7 +708,6 @@ class LSQ
                        nullptr),
             numFragments(0),
             numReceivedPackets(0),
-            numCustomHintReceived(0),
             _mainReq(nullptr),
             _mainPacket(nullptr)
         {

@@ -750,7 +750,10 @@ LSQUnit::pipeLineNukeCheck(const DynInstPtr &load_inst, const DynInstPtr &store_
     Addr store_eff_addr2 = (store_inst->effAddr + store_inst->effSize - 1) >> depCheckShift;
 
     LSQRequest* store_req = store_inst->savedRequest;
-    bool load_need_check = load_inst->effAddrValid() && (load_inst->lqIt >= store_inst->lqIt);
+    // Dont perform pipe line nuke check for split load
+    bool load_is_splited = load_inst->savedRequest && load_inst->savedRequest->isSplit();
+    bool load_need_check = !load_is_splited && !load_inst->effAddrValid() &&
+                            (load_inst->lqIt >= store_inst->lqIt);
     bool store_need_check = store_req && store_req->isTranslationComplete() &&
                             store_req->isMemAccessRequired() && (store_inst->getFault() == NoFault);
     if (lsq->enablePipeNukeCheck() && load_need_check && store_need_check) {
@@ -1015,6 +1018,10 @@ LSQUnit::loadReplayHelper(DynInstPtr inst, LSQRequest* request, bool cacheMiss, 
         // TODO: is this essential?
         inst->savedRequest = nullptr;
     }
+
+    DPRINTF(LSQUnit, "[sn:%ld]Load Replayed Because of %s, dropReqNow: %d\n", inst->seqNum,
+            cacheMiss  ? "Cache Miss" :
+            fastReplay ? "Nuke Fast Replay": "Other Reason", dropReqNow);
 }
 
 void
