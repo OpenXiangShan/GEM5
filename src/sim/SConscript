@@ -92,6 +92,7 @@ Source('workload.cc')
 Source('mem_pool.cc')
 Source('arch_db.cc')
 Source('rolling.cc')
+Source('abort_callback.cc')
 env.Append(LIBS=['sqlite3'])
 
 env.TagImplies('gem5 drain', ['gem5 events', 'gem5 trace'])

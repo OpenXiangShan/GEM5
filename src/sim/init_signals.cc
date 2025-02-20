@@ -56,6 +56,7 @@
 #include "base/atomicio.hh"
 #include "base/cprintf.hh"
 #include "base/logging.hh"
+#include "sim/abort_callback.hh"
 #include "sim/async.hh"
 #include "sim/backtrace.hh"
 #include "sim/eventq.hh"
@@ -153,6 +154,10 @@ abortHandler(int sigtype)
         STATIC_ERR("Program aborted\n\n");
     }
 
+    // user register abort handle
+    doAbortCleanup();
+    ccprintf(std::cerr, "done user register abort handle\n");
+
     print_backtrace();
     raiseFatalSignal(sigtype);
 }
@@ -200,6 +205,7 @@ initSignals()
     // Print the current cycle number and a backtrace on abort. Make
     // sure the signal is unmasked and the handler reset when a signal
     // is delivered to be able to invoke the default handler.
+    // user can also register some.
     installSignalHandler(SIGABRT, abortHandler, SA_RESETHAND | SA_NODEFER);
 
     // Setup a SIGSEGV handler with a private stack
