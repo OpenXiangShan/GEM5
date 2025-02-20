@@ -71,7 +71,7 @@ function run() {
     touch running
 
     script_dir=$(dirname -- "$( readlink -f -- "$0"; )")
-    bash $arch_script $1 # checkpoint
+    setarch $(uname -m) -R bash $arch_script $1 # checkpoint
     check $?
 
     rm running
