@@ -120,8 +120,8 @@ DRAMsim3::sendResponse()
                 responseQueue.size());
 
         if (!responseQueue.empty() && !sendResponseEvent.scheduled()) {
-            Tick nextReadyTime = responseQueue.top().second > curTick() ?
-                responseQueue.top().second : curTick();
+            Tick nextReadyTime = responseQueue.top().second > clockEdge(Cycles(1)) ?
+                responseQueue.top().second : clockEdge(Cycles(2)); // ddr to l2 bus 32-bytes width
             schedule(sendResponseEvent, nextReadyTime);
         }
 
