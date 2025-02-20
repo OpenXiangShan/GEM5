@@ -106,5 +106,16 @@ class StaticInstFlags(Enum):
         # hardware transactional memory
         'IsHtmStart',       # Starts a HTM transaction
         'IsHtmStop',        # Stops (commits) a HTM transaction
-        'IsHtmCancel'       # Explicitely aborts a HTM transaction
+        'IsHtmCancel',       # Explicitely aborts a HTM transaction
+        # ebreak
+        'IsEBreak',       # Explicitely aborts a HTM transaction
+
+        # system op(aligned) with nemu system op
+        'IsIdealModelSystemOp',
+
+        # these flags use for value prediction
+        # this is in order for the logic to be simpler when the value
+        # predictor determines which instructions can make prediction.
+        'IsIntAdd',         # int add and sub instructions
+        'IsIntScalarLoad',
         ]

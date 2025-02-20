@@ -212,6 +212,17 @@ class StaticInst : public RefCounted, public StaticInstFlags
     bool isHtmStop() const { return flags[IsHtmStop]; }
     bool isHtmCancel() const { return flags[IsHtmCancel]; }
 
+    // ebreak
+    bool isEBreak() const {return flags[IsEBreak];}
+
+    // system op use for ideal model
+    // nonspec and SerializeAfter
+    bool isIdealModelSystemOp() const {return flags[IsIdealModelSystemOp];}
+
+    // for value prediction
+    bool isIntAdd()       const { return flags[IsIntAdd]; }
+    bool isIntScalarLoad()       const { return flags[IsIntScalarLoad]; }
+
     bool
     isHtmCmd() const
     {

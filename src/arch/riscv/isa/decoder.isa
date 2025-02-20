@@ -46,7 +46,7 @@ decode QUADRANT default Unknown::unknown() {
                 return std::make_shared<IllegalInstFault>("zero instruction",
                                                            machInst);
             Rp2 = sp + imm;
-        }}, uint64_t);
+        }}, uint64_t, {{IsIntAdd}});
         format CompressedLoad {
             0x1: c_fld({{
                 offset = CIMM3 << 3 | CIMM2 << 6;
@@ -172,7 +172,7 @@ decode QUADRANT default Unknown::unknown() {
                     }
                 }
                 Rc1_sd = Rc1_sd + imm;
-            }});
+            }}, int64_t, {{IsIntAdd}});
             0x1: c_addiw({{
                 imm = CIMM5;
                 if (CIMM1 > 0)
@@ -183,7 +183,7 @@ decode QUADRANT default Unknown::unknown() {
                             "source reg x0", machInst);
                 }
                 Rc1_sw = (int32_t)(Rc1_sw + imm);
-            }});
+            }}, int64_t, {{IsIntAdd}});
             0x2: c_li({{
                 imm = CIMM5;
                 if (CIMM1 > 0)
@@ -209,7 +209,7 @@ decode QUADRANT default Unknown::unknown() {
                                 "immediate = 0", machInst);
                     }
                     sp_sd = sp_sd + imm;
-                }});
+                }}, int64_t, {{IsIntAdd}});
                 default: c_lui({{
                     imm = CIMM5 << 12;
                     if (CIMM1 > 0)
@@ -260,7 +260,7 @@ decode QUADRANT default Unknown::unknown() {
                     0x0: decode CFUNCT2LOW {
                         0x0: c_sub({{
                             Rp1 = Rp1 - Rp2;
-                        }});
+                        }},{{IsIntAdd}});
                         0x1: c_xor({{
                             Rp1 = Rp1 ^ Rp2;
                         }});
@@ -274,10 +274,10 @@ decode QUADRANT default Unknown::unknown() {
                     0x1: decode CFUNCT2LOW {
                         0x0: c_subw({{
                             Rp1_sd = (int32_t)Rp1_sd - Rp2_sw;
-                        }});
+                        }},{{IsIntAdd}});
                         0x1: c_addw({{
                             Rp1_sd = (int32_t)Rp1_sd + Rp2_sw;
-                        }});
+                        }},{{IsIntAdd}});
                         0x2: c_mul({{
                             Rp1_sd = (Rp1_sd * Rp2_sd);
                         }}, IntMultOp);
@@ -406,7 +406,7 @@ decode QUADRANT default Unknown::unknown() {
                                 "source reg x1", machInst);
                     }
                     return std::make_shared<BreakpointFault>(xc->pcState());
-                }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                }}, IsSerializeAfter, IsNonSpeculative, IsEBreak, IsIdealModelSystemOp, No_OpClass);
                 default: decode RC2 {
                     0x0: Jump::c_jalr({{
                         if (RC1 == 0) {
@@ -418,7 +418,7 @@ decode QUADRANT default Unknown::unknown() {
                     }}, IsIndirectControl, IsUncondControl, IsCall);
                     default: CompressedROp::c_add({{
                         Rc1_sd = Rc1_sd + Rc2_sd;
-                    }});
+                    }},{{IsIntAdd}});
                 }
             }
         }
@@ -772,7 +772,7 @@ decode QUADRANT default Unknown::unknown() {
                     }},int64_t, {{ imm = 0; }}, IsMov);
                     default: addi({{
                         Rd_sd = Rs1_sd + imm;
-                    }});
+                    }}, int64_t, {{imm = sext<12>(IMM12)}}, {{IsIntAdd}});
                 }
                 0x2: slti({{
                     Rd = (Rs1_sd < imm) ? 1 : 0;
@@ -835,7 +835,7 @@ decode QUADRANT default Unknown::unknown() {
             format IOp {
                 0x0: addiw({{
                     Rd_sw = (int32_t)(Rs1_sw + imm);
-                }}, int32_t);
+                }}, int32_t, {{imm = sext<12>(IMM12)}}, {{IsIntAdd}});
                 0x1: decode FS3 {
                     0x0: slliw({{
                         Rd_sd = Rs1_sw << imm;
@@ -1169,10 +1169,10 @@ decode QUADRANT default Unknown::unknown() {
                     0x00: decode BS {
                         0x0: add({{
                             Rd = Rs1_sd + Rs2_sd;
-                        }});
+                        }}, {{IsIntAdd}});
                         0x1: sub({{
                             Rd = Rs1_sd - Rs2_sd;
-                        }});
+                        }}, {{IsIntAdd}});
                     }
                     0x01: decode BS {
                         0x0: mul({{
@@ -1394,16 +1394,16 @@ decode QUADRANT default Unknown::unknown() {
                 0x0: decode FUNCT7 {
                     0x0: addw({{
                         Rd_sd = Rs1_sw + Rs2_sw;
-                    }});
+                    }}, {{IsIntAdd}});
                     0x1: mulw({{
                         Rd_sd = (int32_t)(Rs1_sw*Rs2_sw);
                     }}, IntMultOp);
                     0x4: add_uw({{
                         Rd = Rs1_uw + Rs2;
-                    }});
+                    }}, {{IsIntAdd}});
                     0x20: subw({{
                         Rd_sd = Rs1_sw - Rs2_sw;
-                    }});
+                    }}, {{IsIntAdd}});
                 }
                 0x1: decode FUNCT7 {
                     0x0: sllw({{
@@ -4372,19 +4372,20 @@ decode QUADRANT default Unknown::unknown() {
                         0x0: ecall({{
                             return std::make_shared<SyscallFault>(
                                 (PrivilegeMode)xc->readMiscReg(MISCREG_PRV));
-                        }}, IsSerializeAfter, IsNonSpeculative, IsSyscall,
+                        }}, IsSerializeAfter, IsNonSpeculative, IsSyscall, IsIdealModelSystemOp,
                             No_OpClass);
                         0x1: ebreak({{
                             return std::make_shared<BreakpointFault>(
                                 xc->pcState());
-                        }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                        }}, IsSerializeAfter, IsNonSpeculative, IsEBreak, IsIdealModelSystemOp, No_OpClass);
                         0x2: uret({{
                             STATUS status = xc->readMiscReg(MISCREG_STATUS);
                             status.uie = status.upie;
                             status.upie = 1;
                             xc->setMiscReg(MISCREG_STATUS, status);
                             NPC = xc->readMiscReg(MISCREG_UEPC);
-                        }}, IsSerializeAfter, IsNonSpeculative, IsReturn);
+                        }}, IsSerializeAfter, IsNonSpeculative, IsReturn,
+                        IsIdealModelSystemOp);
                     }
                     0x8: decode RS2 {
                         0x2: sret({{
@@ -4443,7 +4444,7 @@ decode QUADRANT default Unknown::unknown() {
                             }
 
 
-                        }}, IsSerializeAfter, IsNonSpeculative, IsReturn);
+                        }}, IsSerializeAfter, IsNonSpeculative, IsReturn, IsIdealModelSystemOp);
                         0x5: wfi({{
                             STATUS status = xc->readMiscReg(MISCREG_STATUS);
                             auto pm = (PrivilegeMode)xc->readMiscReg(
@@ -4461,7 +4462,7 @@ decode QUADRANT default Unknown::unknown() {
                                             machInst);
                             }
                             // don't do anything for now
-                        }}, No_OpClass);
+                        }}, IsIdealModelSystemOp, No_OpClass);
                     }
                     0x9: sfence_vma({{
                         STATUS status = xc->readMiscReg(MISCREG_STATUS);
@@ -4472,7 +4473,7 @@ decode QUADRANT default Unknown::unknown() {
                                         machInst);
                         }
                         xc->tcBase()->getMMUPtr()->demapPage(Rs1, Rs2);
-                    }}, IsNonSpeculative, IsSerializeAfter, No_OpClass);
+                    }}, IsNonSpeculative, IsSerializeAfter, IsIdealModelSystemOp, No_OpClass);
                     0x18: mret({{
                         if (xc->readMiscReg(MISCREG_PRV) != PRV_M) {
                             return std::make_shared<IllegalInstFault>(
@@ -4492,7 +4493,7 @@ decode QUADRANT default Unknown::unknown() {
                             NPC = xc->readMiscReg(MISCREG_MEPC);
                             xc->setMiscReg(MISCREG_VIRMODE,status_mpv);
                         }
-                    }}, IsSerializeAfter, IsNonSpeculative, IsReturn);
+                    }}, IsSerializeAfter, IsNonSpeculative, IsReturn, IsIdealModelSystemOp);
                     0x31: priv({{
                         auto pm = (PrivilegeMode)xc->readMiscReg(
                                 MISCREG_PRV);
@@ -4515,7 +4516,7 @@ decode QUADRANT default Unknown::unknown() {
                                         "h-priv pm == prv_u", machInst);
 
                         }
-                    }},IsNonSpeculative, IsSerializeAfter, No_OpClass);
+                    }},IsNonSpeculative, IsSerializeAfter, IsIdealModelSystemOp, No_OpClass);
                 }
             }
             format CSROp {
@@ -4527,12 +4528,13 @@ decode QUADRANT default Unknown::unknown() {
                         Rd = data;
                         data = Rs1;
                         write = RS1 != 0;
-                    }}, IsUpdateMstatusSd,IsUpdateMstatusSd,IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    }}, IsUpdateMstatusSd,IsUpdateMstatusSd,IsSerializeAfter,
+                        IsNonSpeculative, IsIdealModelSystemOp, No_OpClass);
                     default:csrrw({{
                         Rd = data;
                         data = Rs1;
                         write = RS1 != 0;
-                    }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    }}, IsSerializeAfter, IsNonSpeculative, IsIdealModelSystemOp, No_OpClass);
                 }
                 0x2: decode FUNCT12 {
                     0x100:csrrs_s({{
@@ -4542,7 +4544,8 @@ decode QUADRANT default Unknown::unknown() {
                         Rd = data;
                         data |= Rs1;
                         write = RS1 != 0;
-                    }}, IsUpdateVsstatusSd,IsUpdateMstatusSd,IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    }}, IsUpdateVsstatusSd,IsUpdateMstatusSd,IsSerializeAfter, IsNonSpeculative,
+                        IsIdealModelSystemOp, No_OpClass);
                     default:csrrs({{
                         auto Rs1_use = Rs1;
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
@@ -4551,7 +4554,7 @@ decode QUADRANT default Unknown::unknown() {
                         Rd = data;
                         data |= Rs1_use;
                         write = RS1 != 0;
-                    }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    }}, IsSerializeAfter, IsNonSpeculative, IsIdealModelSystemOp, No_OpClass);
                 }
                 0x3: decode FUNCT12 {
                     0x100:csrrc_s({{
@@ -4561,7 +4564,8 @@ decode QUADRANT default Unknown::unknown() {
                         Rd = data;
                         data &= ~Rs1;
                         write = RS1 != 0;
-                    }}, IsUpdateVsstatusSd,IsUpdateMstatusSd,IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    }}, IsUpdateVsstatusSd,IsUpdateMstatusSd,IsSerializeAfter,
+                        IsNonSpeculative, IsIdealModelSystemOp, No_OpClass);
                     default:csrrc({{
                         auto Rs1_use = Rs1;
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
@@ -4570,7 +4574,7 @@ decode QUADRANT default Unknown::unknown() {
                         Rd = data;
                         data &= ~Rs1_use;
                         write = RS1 != 0;
-                    }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    }}, IsSerializeAfter, IsNonSpeculative, IsIdealModelSystemOp, No_OpClass);
                 }
                 0x5: decode FUNCT12 {
                     0x100:csrrwi_s({{
@@ -4580,12 +4584,12 @@ decode QUADRANT default Unknown::unknown() {
                         Rd = data;
                         data = uimm;
                         write = uimm != 0;
-                    }}, IsUpdateVsstatusSd,IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    }}, IsUpdateVsstatusSd,IsSerializeAfter, IsNonSpeculative, IsIdealModelSystemOp, No_OpClass);
                     default:csrrwi({{
                         Rd = data;
                         data = uimm;
                         write = uimm != 0;
-                    }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    }}, IsSerializeAfter, IsNonSpeculative, IsIdealModelSystemOp, No_OpClass);
                 }
                 0x6: decode FUNCT12 {
                     0x100:csrrsi_s({{
@@ -4595,7 +4599,7 @@ decode QUADRANT default Unknown::unknown() {
                         Rd = data;
                         data |= uimm;
                         write = uimm != 0;
-                    }}, IsUpdateVsstatusSd,IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    }}, IsUpdateVsstatusSd,IsSerializeAfter, IsNonSpeculative, IsIdealModelSystemOp, No_OpClass);
                     default:csrrsi({{
                         auto uimm_use = uimm;
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
@@ -4604,7 +4608,7 @@ decode QUADRANT default Unknown::unknown() {
                         Rd = data;
                         data |= uimm_use;
                         write = uimm != 0;
-                    }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    }}, IsSerializeAfter, IsNonSpeculative, IsIdealModelSystemOp, No_OpClass);
                 }
                 0x7: decode FUNCT12 {
                     0x100:csrrci_s({{
@@ -4614,12 +4618,12 @@ decode QUADRANT default Unknown::unknown() {
                         Rd = data;
                         data &= ~uimm;
                         write = uimm != 0;
-                    }}, IsUpdateVsstatusSd,IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    }}, IsUpdateVsstatusSd,IsSerializeAfter, IsNonSpeculative, IsIdealModelSystemOp, No_OpClass);
                     default:csrrci({{
                         Rd = data;
                         data &= ~uimm;
                         write = uimm != 0;
-                    }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    }}, IsSerializeAfter, IsNonSpeculative, IsIdealModelSystemOp, No_OpClass);
                 }
 
             }
