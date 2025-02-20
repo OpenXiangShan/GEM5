@@ -72,6 +72,8 @@ DebugFlag('Diff')
 DebugFlag('DumpCommit')
 DebugFlag('Diff2')
 DebugFlag('DiffValue')
+DebugFlag('IdealModel')
+DebugFlag('IdealModelVP')
 
 CompoundFlag('ExecAll', [ 'ExecEnable', 'ExecCPSeq', 'ExecEffAddr',
     'ExecFaulting', 'ExecFetchSeq', 'ExecOpClass', 'ExecRegDelta',
@@ -98,7 +100,7 @@ Source('inst_pb_trace.cc', tags='protobuf')
 
 SimObject('CheckerCPU.py', sim_objects=['CheckerCPU'])
 
-SimObject('BaseCPU.py', sim_objects=['BaseCPU'])
+SimObject('BaseCPU.py', sim_objects=['BaseCPU'], enums=['IdealModelSupport'])
 SimObject('CPUTracers.py', sim_objects=[
     'ExeTracer', 'IntelTrace', 'NativeTrace'])
 SimObject('TimingExpr.py', sim_objects=[
@@ -122,6 +124,7 @@ Source('thread_context.cc')
 Source('thread_state.cc')
 Source('timing_expr.cc')
 Source('difftest.cc')
+Source('ideal_model.cc')
 
 SimObject('DummyChecker.py', sim_objects=['DummyChecker'])
 Source('checker/cpu.cc')
