@@ -196,9 +196,6 @@ class BaseO3CPU(BaseCPU):
     EnableLdMissReplay = Param.Bool(True, "Replay Cache missed load instrution from ReplayQ if True")
     EnablePipeNukeCheck = Param.Bool(True, "Replay load if Raw violation is detected in loadPipe if True")
 
-
-    numRobs = Param.Unsigned(1, "Number of Reorder Buffers");
-
     numPhysIntRegs = Param.Unsigned(224,
             "Number of physical integer registers")
     numPhysFloatRegs = Param.Unsigned(192, "Number of physical floating point "
@@ -212,7 +209,10 @@ class BaseO3CPU(BaseCPU):
     numPhysCCRegs = Param.Unsigned(0, "Number of physical cc registers")
     numPhysRMiscRegs = Param.Unsigned(40, "Number of physical renameable misc registers")
 
-    numROBEntries = Param.Unsigned(320, "Number of reorder buffer entries")
+    # rob config
+    numRobs = Param.Unsigned(1, "Number of Reorder Buffers");
+    numROBEntries = Param.Unsigned(160, "Number of reorder buffer entries")
+    CROB_instPerGroup = Param.Unsigned(8, "Number of reorder buffer entries")
 
     smtNumFetchingThreads = Param.Unsigned(1, "SMT Number of Fetching Threads")
     smtFetchPolicy = Param.SMTFetchPolicy('RoundRobin', "SMT Fetch policy")

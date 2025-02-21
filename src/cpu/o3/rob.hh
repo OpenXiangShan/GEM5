@@ -41,6 +41,7 @@
 #ifndef __CPU_O3_ROB_HH__
 #define __CPU_O3_ROB_HH__
 
+#include <queue>
 #include <string>
 #include <utility>
 #include <vector>
@@ -172,9 +173,6 @@ class ROB
     /** Number of entries needed For 'num_threads' amount of threads. */
     int entryAmount(ThreadID num_threads);
 
-    /** Returns the number of total free entries in the ROB. */
-    unsigned numFreeEntries();
-
     /** Returns the number of free entries in a specific ROB paritition. */
     unsigned numFreeEntries(ThreadID tid);
 
@@ -184,15 +182,20 @@ class ROB
 
     /** Returns the number of entries being used by a specific thread. */
     unsigned getThreadEntries(ThreadID tid)
-    { return threadEntries[tid]; }
+    { return threadGroups[tid].size(); }
 
     /** Returns if the ROB is full. */
     bool isFull()
-    { return numInstsInROB == numEntries; }
+    {
+      for (int i =0;i<MaxThreads;i++) {
+        if (isFull(i)) return true;
+      }
+      return false;
+    }
 
     /** Returns if a specific thread's partition is full. */
     bool isFull(ThreadID tid)
-    { return threadEntries[tid] == numEntries; }
+    { return threadGroups[tid].size() == numEntries; }
 
     /** Returns if the ROB is empty. */
     bool isEmpty() const
@@ -200,7 +203,7 @@ class ROB
 
     /** Returns if a specific thread's partition is empty. */
     bool isEmpty(ThreadID tid) const
-    { return threadEntries[tid] == 0; }
+    { return threadGroups[tid].size() == 0; }
 
     /** Executes the squash, marking squashed instructions. */
     void doSquash(ThreadID tid);
@@ -270,6 +273,17 @@ class ROB
      */
     size_t countInsts(ThreadID tid);
 
+    uint32_t countGroupAllInst(ThreadID tid) {
+        int sum = 0;
+        for (auto it : threadGroups[tid]) {
+          assert(it);
+          sum += (it == crob_magic_num) ? 1 : it;
+        }
+        return sum;
+    }
+
+    uint32_t numInstCanCommit(int groups);
+
   private:
     /** Reset the ROB state */
     void resetState();
@@ -283,8 +297,11 @@ class ROB
     /** Number of instructions in the ROB. */
     unsigned numEntries;
 
-    /** Entries Per Thread */
-    unsigned threadEntries[MaxThreads];
+    const int crob_magic_num = 0xffff;
+
+    unsigned instsPerGroup;
+
+    std::deque<unsigned> threadGroups[MaxThreads];
 
     /** Max Insts a Thread Can Have in the ROB */
     unsigned maxEntries[MaxThreads];
@@ -353,6 +370,8 @@ class ROB
         statistics::Scalar reads;
         // The number of rob_writes
         statistics::Scalar writes;
+
+        statistics::Distribution instPergroup;
     } stats;
 };
 

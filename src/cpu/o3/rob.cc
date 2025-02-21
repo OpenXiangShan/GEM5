@@ -60,6 +60,7 @@ ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
       robWalkPolicy(params.robWalkPolicy),
       cpu(_cpu),
       numEntries(params.numROBEntries),
+      instsPerGroup(params.CROB_instPerGroup),
       rollbackWidth(params.squashWidth),
       replayWidth(params.replayWidth),
       constSquashCycle(params.ConstSquashCycle),
@@ -114,7 +115,7 @@ void
 ROB::resetState()
 {
     for (ThreadID tid = 0; tid  < MaxThreads; tid++) {
-        threadEntries[tid] = 0;
+        threadGroups[tid].clear();
         squashIt[tid] = instList[tid].end();
         squashedSeqNum[tid] = 0;
         doneSquashing[tid] = true;
@@ -203,6 +204,19 @@ ROB::countInsts(ThreadID tid)
     return instList[tid].size();
 }
 
+uint32_t
+ROB::numInstCanCommit(int groups)
+{
+    int sum = 0;
+    for (ThreadID tid = 0; tid < numThreads; tid++) {
+        auto it = threadGroups[tid].begin();
+        for (int i = 0; i < groups && it != threadGroups[tid].end(); i++, it++) {
+            sum += (*it == crob_magic_num) ? 1 : *it;
+        }
+    }
+    return sum;
+}
+
 void
 ROB::insertInst(const DynInstPtr &inst)
 {
@@ -212,7 +226,7 @@ ROB::insertInst(const DynInstPtr &inst)
 
     DPRINTF(ROB, "Adding inst PC %s to the ROB.\n", inst->pcState());
 
-    assert(numInstsInROB != numEntries);
+    assert(numInstsInROB <= numEntries * instsPerGroup);
 
     ThreadID tid = inst->threadNumber;
 
@@ -232,12 +246,30 @@ ROB::insertInst(const DynInstPtr &inst)
     inst->setInROB();
 
     ++numInstsInROB;
-    ++threadEntries[tid];
+    // allocate group
+    if (inst->isMemRef() || inst->isControl() || inst->isNonSpeculative()) {
+        if (!threadGroups[tid].empty()) {
+            auto t = threadGroups[tid].back() == crob_magic_num ? 1 : threadGroups[tid].back();
+            stats.instPergroup.sample(t);
+        }
+
+        // exclusive one entry
+        threadGroups[tid].push_back(crob_magic_num);
+    } else if (!threadGroups[tid].empty() && threadGroups[tid].back() < instsPerGroup) {
+        threadGroups[tid].back()++;
+    } else {
+
+        if (!threadGroups[tid].empty()) {
+            auto t = threadGroups[tid].back() == crob_magic_num ? 1 : threadGroups[tid].back();
+            stats.instPergroup.sample(t);
+        }
+        threadGroups[tid].push_back(1);
+    }
 
     assert((*tail) == inst);
 
     DPRINTF(ROB, "[tid:%i] Now has %d instructions.\n", tid,
-            threadEntries[tid]);
+            threadGroups[tid].size());
 }
 
 void
@@ -261,7 +293,18 @@ ROB::retireHead(ThreadID tid)
             head_inst->seqNum);
 
     --numInstsInROB;
-    --threadEntries[tid];
+
+    //Update Group Size
+    if (head_inst->isMemRef() || head_inst->isControl() ||
+        head_inst->isNonSpeculative()) {
+        // exclusive one entry
+        assert(threadGroups[tid].front() == crob_magic_num);
+        threadGroups[tid].pop_front();
+    } else if (threadGroups[tid].front() > 1) {
+        threadGroups[tid].front()--;
+    } else {
+        threadGroups[tid].pop_front();
+    }
 
     head_inst->clearInROB();
     head_inst->setCommitted();
@@ -279,7 +322,8 @@ bool
 ROB::isHeadReady(ThreadID tid)
 {
     stats.reads++;
-    if (threadEntries[tid] != 0) {
+
+    if (!threadGroups[tid].empty() && threadGroups[tid].front() != 0) {
         return instList[tid].front()->readyToCommit();
     }
 
@@ -305,15 +349,9 @@ ROB::canCommit()
 }
 
 unsigned
-ROB::numFreeEntries()
-{
-    return numEntries - numInstsInROB;
-}
-
-unsigned
 ROB::numFreeEntries(ThreadID tid)
 {
-    return maxEntries[tid] - threadEntries[tid];
+    return maxEntries[tid] - threadGroups[tid].size();
 }
 
 void
@@ -345,7 +383,7 @@ ROB::doSquash(ThreadID tid)
     // Set the number to the number of entries (the max).
     if (cpu->isThreadExiting(tid))
     {
-        num_insts_to_squash = numEntries;
+        num_insts_to_squash = numEntries * instsPerGroup;
     }
 
     for (int numSquashed = 0;
@@ -369,7 +407,18 @@ ROB::doSquash(ThreadID tid)
 
         auto prevIt = std::prev(squashIt[tid]);
         --numInstsInROB;
-        --threadEntries[tid];
+
+        //Update Group Size
+        if ((*squashIt[tid])->isMemRef() || (*squashIt[tid])->isControl() ||
+            (*squashIt[tid])->isNonSpeculative()) {
+            // exclusive one entry
+            assert(threadGroups[tid].back() == crob_magic_num);
+            threadGroups[tid].pop_back();
+        } else if (threadGroups[tid].back() > 1) {
+            threadGroups[tid].back()--;
+        } else {
+            threadGroups[tid].pop_back();
+        }
 
         (*squashIt[tid])->clearInROB();
         // head_inst->setCommitted();
@@ -572,7 +621,8 @@ ROB::computeDynSquashWidth(unsigned uncommitted_insts, unsigned to_squash)
 const DynInstPtr&
 ROB::readHeadInst(ThreadID tid)
 {
-    if (threadEntries[tid] != 0) {
+    if (!threadGroups[tid].empty() && threadGroups[tid].front() != 0) {
+        assert(instList[tid].size() > 0);
         InstIt head_thread = instList[tid].begin();
 
         assert((*head_thread)->isInROB());
@@ -597,8 +647,10 @@ ROB::ROBStats::ROBStats(statistics::Group *parent)
     ADD_STAT(reads, statistics::units::Count::get(),
         "The number of ROB reads"),
     ADD_STAT(writes, statistics::units::Count::get(),
-        "The number of ROB writes")
+        "The number of ROB writes"),
+    ADD_STAT(instPergroup, statistics::units::Count::get())
 {
+    instPergroup.init(0, 8, 1);
 }
 
 DynInstPtr

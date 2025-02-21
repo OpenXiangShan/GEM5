@@ -262,8 +262,8 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
     branchMispredicts.prereq(branchMispredicts);
 
     numCommittedDist
-        .init(0,commit->commitWidth,1)
-        .flags(statistics::pdf);
+        .init(0,commit->commitWidth * 8,1)
+        .flags(statistics::pdf).flags(statistics::nozero);
 
     segUnitStrideNF
         .init(0, 8, 1)
@@ -1107,21 +1107,7 @@ Commit::commitInsts()
 
     DynInstPtr head_inst;
 
-    int commit_width = commitWidth;
-    int count_ = 0;
-    ThreadID tid = getCommittingThread();
-    if (tid > -1) {
-        for (auto& it : *(rob->getInstList(tid))) {
-            count_++;
-            if (it->opClass() == FMAAccOp) {
-                commit_width++;
-            }
-            if (count_ >= commitWidth ||
-                commit_width >= commitWidth * 2) {
-                break;
-            }
-        }
-    }
+    int commit_width = rob->numInstCanCommit(commitWidth);
 
     // Commit as many instructions as possible until the commit bandwidth
     // limit is reached, or it becomes impossible to commit any more.
