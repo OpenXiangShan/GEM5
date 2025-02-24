@@ -150,6 +150,7 @@ class ReadPort(FUDesc):
 
 class WritePort(FUDesc):
     opList = [ OpDesc(opClass='MemWrite', opLat=2),
+               OpDesc(opClass='MemAtomic', opLat=13),
                OpDesc(opClass='FloatMemWrite', opLat=3),
                OpDesc(opClass='VectorUnitStrideStore'),
                OpDesc(opClass='VectorSegUnitStrideStore'),
