@@ -700,14 +700,15 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
                         inl2Entry.paddr = l2pte.ppn;
                         inl2Entry.pte = l2pte;
                         if (l2_level == 0) {
-                            inl2Entry.index = (gPaddr >> (L2TLB_BLK_OFFSET + PageShift)) & walker->tlb->L2TLB_L3_MASK;
+                            inl2Entry.index =
+                                (inl2Entry.gpaddr >> (L2TLB_BLK_OFFSET + PageShift)) & walker->tlb->L2TLB_L3_MASK;
                             walker->tlb->L2TLBInsert(inl2Entry.gpaddr, inl2Entry, l2_level, L_L2L3, l2_i, false,
                                                      gstage);
                         }
 
                         else if (l2_level == 1) {
-                            inl2Entry.index =
-                                (gPaddr >> (LEVEL_BITS + PageShift + L2TLB_BLK_OFFSET)) & (walker->tlb->L2TLB_L2_MASK);
+                            inl2Entry.index = (inl2Entry.gpaddr >> (LEVEL_BITS + PageShift + L2TLB_BLK_OFFSET)) &
+                                              (walker->tlb->L2TLB_L2_MASK);
                             walker->tlb->L2TLBInsert(inl2Entry.gpaddr, inl2Entry, l2_level, L_L2sp2, l2_i, false,
                                                      gstage);
                         }  // hit level =1
@@ -1080,7 +1081,7 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
                     if (!tlbHit) {
                         delete oldRead;
                         oldRead = nullptr;
-                        printf("1088 start two stage walk gpaddr %lx vaddr %lx\n",gPaddr,entry.vaddr);
+                        //printf("1088 start two stage walk gpaddr %lx vaddr %lx\n",gPaddr,entry.vaddr);
                         fault = startTwoStageWalk(gPaddr, entry.vaddr);
                         if (fault != NoFault) {
                             endWalk();
@@ -1341,8 +1342,12 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                         walker->tlb->L2TLBInsert(inl2Entry.vaddr, inl2Entry, l2_level, L_L2L3, l2_i, false, direct);
                     }
 
-                    else if (l2_level == 1)  // hit level =1
+                    else if (l2_level == 1) {
+                        inl2Entry.index = (inl2Entry.vaddr >> (LEVEL_BITS + PageShift + L2TLB_BLK_OFFSET)) &
+                                              (walker->tlb->L2TLB_L2_MASK);
                         walker->tlb->L2TLBInsert(inl2Entry.vaddr, inl2Entry, l2_level, L_L2sp2, l2_i, false, direct);
+                    } // hit level =1
+
                     else if (l2_level == 2)  //
                         walker->tlb->L2TLBInsert(inl2Entry.vaddr, inl2Entry, l2_level, L_L2sp1, l2_i, false, direct);
                 }
@@ -1640,18 +1645,18 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level, bool from_l2tl
             inl2Entry.pteVS = mainReq->get_pte();
         }
         if ((!isVsatp0Mode) && (mainReq->get_h_gstage()) && (mainReq->get_two_stage_level() != 2)) {
-            printf("1639 ppn %lx twostagelevel %d vaddr %lx finishGVA %d\n", mainReq->get_ppn(),
-                   mainReq->get_two_stage_level(), vaddr, finishGVA);
+            //printf("1639 ppn %lx twostagelevel %d vaddr %lx finishGVA %d\n", mainReq->get_ppn(),
+            //       mainReq->get_two_stage_level(), vaddr, finishGVA);
             fault = startTwoStageWalkFromTLBInG(mainReq->get_ppn(), vaddr);
         } else if ((!isVsatp0Mode) && (!mainReq->get_h_gstage()) && (mainReq->get_level() != 2)) {
-            printf("1642\n");
+            //printf("1642\n");
             fault = startTwoStageWalkFromTLBNotInG(mainReq->get_ppn(), vaddr);
         } else if ((mainReq->get_level() == 2) || (isVsatp0Mode)) {
-            printf("1645\n");
+            //printf("1645\n");
             fault = startTwoStageWalk(gPaddr, vaddr);
 
         } else {
-            printf("1649\n");
+            //printf("1649\n");
             fault = startTwoStageWalk(gPaddr, vaddr);
         }
         if (fault != NoFault) {
@@ -1808,7 +1813,8 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
                     return false;
                 }
                 //printf()
-                if (r.req->hasPC() &&(r.req->getPC() == 0xffffffff801e8970))
+                if (r.req->hasPC() &&
+                    ((r.req->getPC() == 0xffffffff801e8970) || (r.req->getPC() == 0xffffffff8020f0e6)))
                     printf("1800 pc %lx vaddr %lx paddr %lx\n",r.req->getPC(),r.req->getVaddr(),paddr);
                 r.translation->finish(mainFault, r.req, r.tc, mode);
             }

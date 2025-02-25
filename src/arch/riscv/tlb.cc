@@ -1055,7 +1055,7 @@ TLB::checkGPermissions(STATUS status,Addr vaddr,Addr gpaddr,BaseMMU::Mode mode, 
     bool continuePtw = false;
     if (pte.v && !pte.r && !pte.w && !pte.x) {
         //panic("checkGpremission hit in no leaf node\n");
-        printf("return 1058 tlb\n");
+        //printf("return 1058 tlb\n");
         return std::make_pair(true,NoFault);
     } else if (!pte.v || (!pte.r && pte.w)) {
         return std::make_pair(continuePtw,createPagefault(vaddr, gpaddr, mode, true));
@@ -1318,7 +1318,7 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
                     (vaddr & mask(e[0]->logBytes));
         }
         req->setPaddr(paddr);
-        if (req->hasPC() && (req->getPC() == 0xffffffff801e8970))
+        if (req->hasPC() && (req->getPC() == 0xffffffff8020f0e6))
             printf("1321 pc %lx vaddr %lx paddr %lx\n",req->getPC(),req->getVaddr(),paddr);
         return std::make_pair(hit_type,NoFault);
     } else {
@@ -1374,7 +1374,7 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
                 walker->doL2TLBHitSchedule(req, tc, translation, mode, gPaddr, e_l2tlb, e_l2tlbVsstage, e_l2tlbGstage,
                                            3);
 
-        if (req->hasPC() &&(req->getPC() == 0xffffffff801e8970))
+        if (req->hasPC() &&(req->getPC() == 0xffffffff8020f0e6))
             printf("1377 pc %lx vaddr %lx paddr %lx\n",req->getPC(),req->getVaddr(),paddr_old);
                 return std::make_pair(hit_type,NoFault);
             } else {
@@ -1458,8 +1458,8 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                 }
                 req->setTwoPtwWalk(true, 0, e[0]->level-1, e[0]->pte.ppn, true);
                 req->setgPaddr(gPaddr);
-                printf("1461 vaddr %lx gpaddr %lx level %d tlevel %d pte %lx level2 %ld\n", vaddr, gPaddr, level,
-                       twoStageLevel, (uint64_t)e[0]->pte, e[0]->level);
+                //printf("1461 vaddr %lx gpaddr %lx level %d tlevel %d pte %lx level2 %ld\n", vaddr, gPaddr, level,
+                       //twoStageLevel, (uint64_t)e[0]->pte, e[0]->level);
                 return std::make_pair(hit_type, fault);
             } else {
                 hit_type = h_l2GstageHitEnd;
@@ -1467,8 +1467,16 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                     pg_mask = (1ULL << (12 + 9 * e[0]->level)) - 1;
                     pgBase = ((e[0]->pte.ppn << 12) & ~pg_mask) | (gPaddr & pg_mask & ~PGMASK);
                 }
+                else{
+                    pgBase = e[0]->pte.ppn << 12;
+                }
                 gPaddr = pgBase | (gPaddr & PGMASK);
-                printf("1461 vaddr %lx gPaddr %lx level %d pte %lx\n",vaddr,gPaddr,level,(uint64_t)e[0]->pte);
+                if (req->hasPC() &&(req->getPC() == 0xffffffff8020f0e6)){
+                    printf("1472 pc %lx vaddr %lx paddr %lx\n",req->getPC(),req->getVaddr(),gPaddr);
+                    //printf("");
+                }
+
+                //printf("1461 vaddr %lx gPaddr %lx level %d pte %lx\n",vaddr,gPaddr,level,(uint64_t)e[0]->pte);
                 walker->doL2TLBHitSchedule(req, tc, translation, mode, gPaddr, e_l2tlb, e_l2tlbVsstage, e_l2tlbGstage,
                                            4);
                 return std::make_pair(hit_type, NoFault);
@@ -1501,10 +1509,10 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
     }
 
     if (!e[0]) {
-        printf("1473 vaddr %lx\n",vaddr);
+        //printf("1473 vaddr %lx\n",vaddr);
         e[0] = lookup(vaddr, vsatp.asid, mode, false, true, vsstage);
         if (!e[0]) {
-            printf("!e[0] 1476\n");
+           // printf("!e[0] 1476\n");
             for (int i_e = 1; i_e < 6; i_e++) {
                 e[i_e] = l2tlb->lookupL2TLB(vaddr, vsatp.asid, mode, false, i_e, true, vsstage);
                 if (e[i_e]) {
@@ -1517,7 +1525,7 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
             }
         }
         if (e[0]) {
-            printf("1489 pte %lx level %ld\n",(uint64_t)e[0]->pte,e[0]->level);
+            //printf("1489 pte %lx level %ld\n",(uint64_t)e[0]->pte,e[0]->level);
             e_l2tlbVsstage = e[0];
             hit_type = h_l2VSstageHitContinue;
             level = e[0]->level;
@@ -1537,22 +1545,22 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                     }
 
                     gPaddr = gPaddr | (vaddr & PGMASK);
-                    printf("1509 gpaddr %lx pg_mask %lx level %ld\n",gPaddr,pg_mask,e[0]->level);
+                    //printf("1509 gpaddr %lx pg_mask %lx level %ld\n",gPaddr,pg_mask,e[0]->level);
                 } else {
                     level--;
                     Addr shift = (PageShift + LEVEL_BITS * level);
                     Addr idx_f = (vaddr >> shift) & LEVEL_MASK;
                     Addr idx = (idx_f >> L2TLB_BLK_OFFSET) << L2TLB_BLK_OFFSET;
                     gPaddr = (e[0]->pte.ppn << PageShift) + (idx_f * l2tlbLineSize);
-                    printf("1516 gpaddr %lx\n",gPaddr);
+                    //printf("1516 gpaddr %lx\n",gPaddr);
                 }
 
                 e[0] = nullptr;
-                printf("1520 gpaddr %lx\n",gPaddr);//is right
+                //printf("1520 gpaddr %lx\n",gPaddr);//is right
                 e[0] = lookup(gPaddr, hgatp.vmid, mode, false, true, gstage);
-                printf("1522\n");
+                //printf("1522\n");
                 if (!e[0]) {
-                    printf("1523 !e[0]\n");
+                    //printf("1523 !e[0]\n");
                     for (int i_e = 1; i_e < 6; i_e++) {
                         e[i_e] = l2tlb->lookupL2TLB(gPaddr, hgatp.vmid, mode, false, i_e, true, gstage);
                         if (e[i_e]) {
@@ -1576,8 +1584,8 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                         hit_type = h_l2GstageHitContinue;
                         req->setTwoPtwWalk(true, level, twoStageLevel--, e[0]->pte.ppn, hitInSp);
                         req->setgPaddr(gPaddr);
-                        printf("1578 vaddr %lx gpaddr %lx level %d tlevel %d pte %lx\n", vaddr, gPaddr, level,
-                               twoStageLevel, (uint64_t)e[0]->pte);
+                        //printf("1578 vaddr %lx gpaddr %lx level %d tlevel %d pte %lx\n", vaddr, gPaddr, level,
+                        //       twoStageLevel, (uint64_t)e[0]->pte);
                         return std::make_pair(hit_type, fault);
                     } else {
                         hit_type = h_l2GstageHitEnd;
@@ -1590,8 +1598,10 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                                 pgBase = (e[0]->pte.ppn << 12);
                             }
                             gPaddr = pgBase | (gPaddr & PGMASK);
-                            printf("1548 vaddr %lx paddr %lx gpaddr %lx level %ld pte %lx\n", vaddr, gPaddr,
-                                   gpaddr_past, e[0]->level, (uint64_t)e[0]->pte);
+                            //printf("1548 vaddr %lx paddr %lx gpaddr %lx level %ld pte %lx\n", vaddr, gPaddr,
+                            //       gpaddr_past, e[0]->level, (uint64_t)e[0]->pte);
+                            if (req->hasPC() &&(req->getPC() == 0xffffffff8020f0e6))
+                                printf("1598 pc %lx vaddr %lx paddr %lx\n",req->getPC(),req->getVaddr(),gPaddr);
                             walker->doL2TLBHitSchedule(req, tc, translation, mode, gPaddr, e_l2tlb, e_l2tlbVsstage,
                                                        e_l2tlbGstage, 4);
                         } else {
@@ -1632,7 +1642,7 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
                  bool &delayed)
 {
     Addr vaddr = Addr(sext<VADDR_BITS>(req->getVaddr()));
-        if (req->hasPC() &&((req->getPC() == 0xffffffff801e8970) || (req->getPC() == 0x1fa66)))
+        if (req->hasPC() &&((req->getPC() == 0xffffffff8020f0e6) || (req->getPC() == 0x1fa66)))
             printf("1608 in mmu pc %lx vaddr %lx\n",req->getPC(),req->getVaddr());
     SATP vsatp = tc->readMiscReg(MISCREG_VSATP);
     HGATP hgatp = tc->readMiscReg(MISCREG_HGATP);
@@ -1695,7 +1705,7 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
 
             if ((result.first == h_l2GstageHitContinue) || (result.first == h_l2VSstageHitEnd) ||
                 (result.first == H_L1miss) || (result.first == h_l2VSstageHitContinue)) {
-                    if (req->hasPC() &&((req->getPC() == 0xffffffff801e8970) || (req->getPC() == 0x1fa66))){
+                    if (req->hasPC() &&((req->getPC() == 0xffffffff8020f0e6) || (req->getPC() == 0x1fa66))){
                         printf("1694 result_type %d vaddr %lx\n",result.first,req->getVaddr());
                     }
 
@@ -1714,30 +1724,30 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
                 return fault;
             } else if (result.first == h_l2GstageHitEnd) {
                 delayed = true;
-                if (!req->hasPaddr()) {
+                /*if (!req->hasPaddr()) {
                     printf("1659 no paddr vaddr %lx\n", vaddr);
-                }
+                }*/
                 // printf("1658 vaddr %lx paddr %lx\n",vaddr,req->getPaddr());
                 return fault;
             } else {
-                if (!req->hasPaddr()) {
+                /*if (!req->hasPaddr()) {
                     printf("1665 no paddr vaddr %lx\n", vaddr);
                 }
-                printf("1661 vaddr %lx paddr %lx\n", vaddr, req->getPaddr());
+                printf("1661 vaddr %lx paddr %lx\n", vaddr, req->getPaddr());*/
                 req->getPaddr();
             }
         } else if (l1tlbtype == h_l1GstageHit) {
             delayed = true;
-            if (!req->hasPaddr()) {
+            /*if (!req->hasPaddr()) {
                 printf("1673 no paddr vaddr %lx\n", vaddr);
-            }
+            }*/
             // printf("1666 vaddr %lx paddr %lx\n",vaddr,req->getPaddr());
             return fault;
         } else {
-            if (!req->hasPaddr()) {
+            /*if (!req->hasPaddr()) {
                 printf("1679 no paddr vaddr %lx\n", vaddr);
             }
-            printf("1669 vaddr %lx paddr %lx\n",vaddr,req->getPaddr());
+            printf("1669 vaddr %lx paddr %lx\n",vaddr,req->getPaddr());*/
             req->getPaddr();
         }
     }
