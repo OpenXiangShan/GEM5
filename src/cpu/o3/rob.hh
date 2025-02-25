@@ -277,12 +277,18 @@ class ROB
         int sum = 0;
         for (auto it : threadGroups[tid]) {
           assert(it);
-          sum += (it == crob_magic_num) ? 1 : it;
+          sum += it;
         }
         return sum;
     }
 
     uint32_t numInstCanCommit(int groups);
+
+    void allocateNewGroup(const DynInstPtr inst, ThreadID tid);
+
+    void commitGroup(const DynInstPtr inst, ThreadID tid);
+
+    void squashGroup(const DynInstPtr inst, ThreadID tid);
 
   private:
     /** Reset the ROB state */
@@ -296,8 +302,6 @@ class ROB
 
     /** Number of instructions in the ROB. */
     unsigned numEntries;
-
-    const int crob_magic_num = 0xffff;
 
     unsigned instsPerGroup;
 

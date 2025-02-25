@@ -211,10 +211,61 @@ ROB::numInstCanCommit(int groups)
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         auto it = threadGroups[tid].begin();
         for (int i = 0; i < groups && it != threadGroups[tid].end(); i++, it++) {
-            sum += (*it == crob_magic_num) ? 1 : *it;
+            sum += *it;
         }
     }
     return sum;
+}
+
+void
+ROB::allocateNewGroup(const DynInstPtr inst, ThreadID tid)
+{
+    bool alloc = false;
+    if (threadGroups[tid].empty()) [[unlikely]] {
+        alloc = true;
+    } else if (inst->isMemRef() || inst->isControl() || inst->isNonSpeculative()) {
+        alloc = true;
+    } else if (instList[tid].back()->ftqId != inst->ftqId) {
+        alloc = true;
+    } else if (threadGroups[tid].back() >= instsPerGroup) {
+        alloc = true;
+    }
+
+    if (alloc) {
+
+        if (!threadGroups[tid].empty()) [[likely]] {
+            stats.instPergroup.sample(threadGroups[tid].back());
+        }
+
+        threadGroups[tid].push_back(1);
+    } else {
+        assert(threadGroups[tid].back() < instsPerGroup);
+        threadGroups[tid].back()++;
+    }
+}
+
+void
+ROB::commitGroup(const DynInstPtr inst, ThreadID tid)
+{
+    assert(!threadGroups[tid].empty());
+
+    if (threadGroups[tid].front() == 1) {
+        threadGroups[tid].pop_front();
+    } else {
+        threadGroups[tid].front()--;
+    }
+}
+
+void
+ROB::squashGroup(const DynInstPtr inst, ThreadID tid)
+{
+    assert(!threadGroups[tid].empty());
+
+    if (threadGroups[tid].back() == 1) {
+        threadGroups[tid].pop_back();
+    } else {
+        threadGroups[tid].back()--;
+    }
 }
 
 void
@@ -247,24 +298,7 @@ ROB::insertInst(const DynInstPtr &inst)
 
     ++numInstsInROB;
     // allocate group
-    if (inst->isMemRef() || inst->isControl() || inst->isNonSpeculative()) {
-        if (!threadGroups[tid].empty()) {
-            auto t = threadGroups[tid].back() == crob_magic_num ? 1 : threadGroups[tid].back();
-            stats.instPergroup.sample(t);
-        }
-
-        // exclusive one entry
-        threadGroups[tid].push_back(crob_magic_num);
-    } else if (!threadGroups[tid].empty() && threadGroups[tid].back() < instsPerGroup) {
-        threadGroups[tid].back()++;
-    } else {
-
-        if (!threadGroups[tid].empty()) {
-            auto t = threadGroups[tid].back() == crob_magic_num ? 1 : threadGroups[tid].back();
-            stats.instPergroup.sample(t);
-        }
-        threadGroups[tid].push_back(1);
-    }
+    allocateNewGroup(inst, tid);
 
     assert((*tail) == inst);
 
@@ -295,16 +329,7 @@ ROB::retireHead(ThreadID tid)
     --numInstsInROB;
 
     //Update Group Size
-    if (head_inst->isMemRef() || head_inst->isControl() ||
-        head_inst->isNonSpeculative()) {
-        // exclusive one entry
-        assert(threadGroups[tid].front() == crob_magic_num);
-        threadGroups[tid].pop_front();
-    } else if (threadGroups[tid].front() > 1) {
-        threadGroups[tid].front()--;
-    } else {
-        threadGroups[tid].pop_front();
-    }
+    commitGroup(head_inst, tid);
 
     head_inst->clearInROB();
     head_inst->setCommitted();
@@ -409,16 +434,7 @@ ROB::doSquash(ThreadID tid)
         --numInstsInROB;
 
         //Update Group Size
-        if ((*squashIt[tid])->isMemRef() || (*squashIt[tid])->isControl() ||
-            (*squashIt[tid])->isNonSpeculative()) {
-            // exclusive one entry
-            assert(threadGroups[tid].back() == crob_magic_num);
-            threadGroups[tid].pop_back();
-        } else if (threadGroups[tid].back() > 1) {
-            threadGroups[tid].back()--;
-        } else {
-            threadGroups[tid].pop_back();
-        }
+        squashGroup(*squashIt[tid], tid);
 
         (*squashIt[tid])->clearInROB();
         // head_inst->setCommitted();

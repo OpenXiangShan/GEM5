@@ -212,7 +212,7 @@ class BaseO3CPU(BaseCPU):
     # rob config
     numRobs = Param.Unsigned(1, "Number of Reorder Buffers");
     numROBEntries = Param.Unsigned(160, "Number of reorder buffer entries")
-    CROB_instPerGroup = Param.Unsigned(8, "Number of reorder buffer entries")
+    CROB_instPerGroup = Param.Unsigned(6, "Number of reorder buffer entries")
 
     smtNumFetchingThreads = Param.Unsigned(1, "SMT Number of Fetching Threads")
     smtFetchPolicy = Param.SMTFetchPolicy('RoundRobin', "SMT Fetch policy")
