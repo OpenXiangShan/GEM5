@@ -65,6 +65,7 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
       decodeToRenameDelay(params.decodeToRenameDelay),
       commitToRenameDelay(params.commitToRenameDelay),
       renameWidth(params.renameWidth),
+      releaseWidth(params.phyregReleaseWidth),
       numThreads(params.numThreads),
       stats(_cpu)
 {
@@ -461,23 +462,31 @@ Rename::tick()
         updateStatus();
     }
 
-    if (wroteToTimeBuffer) {
+    if (wroteToTimeBuffer || releaseSeq < finalCommitSeq) {
         DPRINTF(Activity, "Activity this cycle.\n");
         cpu->activityThisCycle();
     }
 
     threads = activeThreads->begin();
 
+    if (releaseSeq + releaseWidth < finalCommitSeq) {
+        releaseSeq += releaseWidth;
+    } else {
+        releaseSeq = finalCommitSeq;
+    }
+
     while (threads != end) {
         ThreadID tid = *threads++;
+
+        removeFromHistory(releaseSeq, tid);
 
         // If we committed this cycle then doneSeqNum will be > 0
         if (fromCommit->commitInfo[tid].doneSeqNum != 0 &&
             !fromCommit->commitInfo[tid].squash &&
             renameStatus[tid] != Squashing) {
 
-            removeFromHistory(fromCommit->commitInfo[tid].doneSeqNum,
-                                  tid);
+            finalCommitSeq = fromCommit->commitInfo[tid].doneSeqNum;
+            releaseSeq = historyBuffer[tid].back().instSeqNum;
         }
     }
 

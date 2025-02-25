@@ -333,6 +333,10 @@ class Rename
      */
     std::list<RenameHistory> historyBuffer[MaxThreads];
 
+    InstSeqNum finalCommitSeq = 0;
+
+    InstSeqNum releaseSeq = 0;
+
     void tryFreePReg(PhysRegIdPtr phys_reg);
 
     /** Pointer to CPU. */
@@ -450,6 +454,8 @@ class Rename
 
     /** Rename width, in instructions. */
     unsigned renameWidth;
+
+    unsigned releaseWidth;
 
     /** The index of the instruction in the time buffer to IEW that rename is
      * currently using.
