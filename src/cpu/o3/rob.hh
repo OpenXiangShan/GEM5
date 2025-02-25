@@ -307,6 +307,8 @@ class ROB
 
     std::deque<unsigned> threadGroups[MaxThreads];
 
+    uint64_t lastCycle = 0;
+
     /** Max Insts a Thread Can Have in the ROB */
     unsigned maxEntries[MaxThreads];
 

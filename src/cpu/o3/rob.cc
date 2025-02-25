@@ -225,14 +225,21 @@ ROB::allocateNewGroup(const DynInstPtr inst, ThreadID tid)
         alloc = true;
     } else if (inst->isMemRef() || inst->isControl() || inst->isNonSpeculative()) {
         alloc = true;
+    } else if (instList[tid].back()->isMemRef() || instList[tid].back()->isControl() ||
+               instList[tid].back()->isNonSpeculative()) {
+        alloc = true;
     } else if (instList[tid].back()->ftqId != inst->ftqId) {
+        alloc = true;
+    } else if (lastCycle != cpu->curCycle()) {
+        // different cycle
         alloc = true;
     } else if (threadGroups[tid].back() >= instsPerGroup) {
         alloc = true;
     }
 
-    if (alloc) {
+    lastCycle = cpu->curCycle();
 
+    if (alloc) {
         if (!threadGroups[tid].empty()) [[likely]] {
             stats.instPergroup.sample(threadGroups[tid].back());
         }
@@ -281,6 +288,9 @@ ROB::insertInst(const DynInstPtr &inst)
 
     ThreadID tid = inst->threadNumber;
 
+    // allocate group
+    allocateNewGroup(inst, tid);
+
     instList[tid].push_back(inst);
 
     //Set Up head iterator if this is the 1st instruction in the ROB
@@ -297,8 +307,6 @@ ROB::insertInst(const DynInstPtr &inst)
     inst->setInROB();
 
     ++numInstsInROB;
-    // allocate group
-    allocateNewGroup(inst, tid);
 
     assert((*tail) == inst);
 
