@@ -357,7 +357,12 @@ ROB::isHeadReady(ThreadID tid)
     stats.reads++;
 
     if (!threadGroups[tid].empty() && threadGroups[tid].front() != 0) {
-        return instList[tid].front()->readyToCommit();
+        // check if all insts in the same head group are ready to commit
+        return std::all_of(
+            instList[tid].begin(),
+            std::next(instList[tid].begin(), threadGroups[tid].front()),
+            [] (DynInstPtr inst) { return inst->readyToCommit(); }
+        );
     }
 
     return false;

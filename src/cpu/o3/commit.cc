@@ -1109,6 +1109,10 @@ Commit::commitInsts()
 
     int commit_width = rob->numInstCanCommit(commitWidth);
 
+    if (commit_width >= 0) {
+        cpu->activityThisCycle();
+    }
+
     // Commit as many instructions as possible until the commit bandwidth
     // limit is reached, or it becomes impossible to commit any more.
     while (num_committed < commit_width) {
