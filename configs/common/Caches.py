@@ -103,6 +103,8 @@ class L2Cache(Cache):
     # recvTimingResp serviceMSHR latency
     response_latency = 0
 
+    replacement_policy = DRRIPRP(constituency_size = 64, team_size = 8)
+
     cache_level = 2
     enable_wayprediction = False
 
