@@ -1363,6 +1363,9 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
                     pg_mask = (1ULL << (12 + 9 * e[0]->level)) - 1;
                     pgBase = ((e[0]->pte.ppn << 12) & ~pg_mask) | (gPaddr & pg_mask & ~PGMASK);
                 }
+                else{
+                    pgBase = e[0]->pte.ppn << 12;
+                }
                 gPaddr = pgBase |(gPaddr & PGMASK);
 
 
