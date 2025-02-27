@@ -127,61 +127,6 @@ EStride::EStride(const Params &params)
     DPRINTF(EStride, "enableTimeMsgInUpdate(need pmu support): %s\n", enableTimeMsgInUpdate ? "yes" : "no");
     DPRINTF(EStride, "==================================  end of Params ==================================\n");
 
-
-    // call back to dump stats
-    registerExitCallback([this]() {
-        auto outhandle = simout.create("EStride.txt", false, true);
-
-        int ESSize = ways * entryCounts * (tagWidth + logMaxConfidence + strideWidth + 64 + 2 + 1);
-        *outhandle->stream() << "EStride Size: " << (1.0 * ESSize) / (8 * 1024)  << "KB" << std::endl;
-
-        *outhandle->stream() << "VPcorrect: " << stats.VPcorrected.value() << std::endl;
-        *outhandle->stream() << "VPpredicted: " << stats.VPpredicted.value() << std::endl;
-        *outhandle->stream() << "faultLoad: " << stats.faultLoad.value() << std::endl;
-        *outhandle->stream() << "VPaccuracy: " << stats.VPaccuracy.total() << std::endl;
-        *outhandle->stream() << "VPsupported: " << stats.VPsupported.value() << std::endl;
-        *outhandle->stream() << "VPcoverage: " << stats.VPcoverage.total() << std::endl;
-
-        *outhandle->stream() << std::endl;
-        *outhandle->stream() << "Right Stride:" << std::endl;
-        for (auto j = 0; j < this->entryCounts; ++j) {
-            for (auto i = 0; i < this->ways; ++i) {
-                *outhandle->stream() << "[" << i << "," << j << "] = " << esstats.strideEquals[i][j].value() << "  ";
-            }
-            *outhandle->stream() << std::endl;
-        }
-
-        *outhandle->stream() << std::endl;
-        *outhandle->stream() << "Error Stride:" << std::endl;
-        for (auto j = 0; j < this->entryCounts; ++j) {
-            for (auto i = 0; i < this->ways; ++i) {
-                *outhandle->stream() << "[" << i << "," << j << "] = " << esstats.strideNotEquals[i][j].value()
-                                     << "  ";
-            }
-            *outhandle->stream() << std::endl;
-        }
-
-        *outhandle->stream() << std::endl;
-        *outhandle->stream() << "allocate:" << std::endl;
-        for (auto j = 0; j < this->entryCounts; ++j) {
-            for (auto i = 0; i < this->ways; ++i) {
-                *outhandle->stream() << "[" << i << "," << j << "] = " << esstats.allocate[i][j].value() << "  ";
-            }
-            *outhandle->stream() << std::endl;
-        }
-
-        *outhandle->stream() << std::endl;
-        *outhandle->stream() << "fluent instructions:" << std::endl;
-        for (const auto &[pc, countAndInsts] : fluentInstructions) {
-            const auto &[count, inst] = countAndInsts;
-            if (count < 1000) {
-                continue;
-            }
-
-            *outhandle->stream() << "pc: " << pc << " instruction: " << inst << " total count: " << count << std::endl;
-        }
-        simout.close(outhandle);
-    });
 }
 
 //*********************** auxilary method **************************
