@@ -1865,6 +1865,7 @@ CPU::idealModelIterRunInflight(uint64_t seq_no){
 
             // ask ideal model to get answer
             askIdealModel(&(inst->gem5Ask), &(inst->idealModelRes), true);
+            idealModelStats.idealValuePredictorIterModeCount++;
 
             return;
         }else{
@@ -1923,12 +1924,15 @@ CPU::idealModelIterRunInflight(uint64_t seq_no){
                         !inst->isNotSupportVP()? "useful" : "useless",
                         inst->idealModelRes.dest_value);
 
+                idealModelStats.idealValuePredictorIterModeCount++;
+
                 if (inst->isFirstMicroop()){
                     curFirstMicroopSeqNum = inst->seqNum;
                     curFirstMicroopRes = &(inst->idealModelRes);
                 }
 
                 if (inst->idealModelRes.ideal_model_work_state != IM_WORK){
+                    // wait for next iter ask
                     return;
                 }
             }

@@ -1296,7 +1296,9 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
             inst->renameCycle = cpu->curCycle();
 
             if (inst->vpResult.speculative){
-                if (cpu->isValuePredictorEnabled()){
+                if (cpu->idealModelEnabled()){
+                    cpu->idealModelStats.idealValuePredictorPredicted++;
+                }else if (cpu->isValuePredictorEnabled()){
                     valuePredictor->stats.VPpredicted++;
                 }
                 DPRINTF(IdealModelVP, "[sn:%lu] %s idael vp value use in rename\n", inst->seqNum,

@@ -170,7 +170,8 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
       enableMemDedup(p.enable_mem_dedup),
       enableIdealModel(p.enable_ideal_model),
       idealModelSupports(p.ideal_model_supports),
-      idealModelFirstTimeInitFinish(false)
+      idealModelFirstTimeInitFinish(false),
+      idealModelStats(this, "idealmodel")
 {
     // if Python did not provide a valid ID, do it here
     if (_cpuId == -1 ) {
@@ -1827,6 +1828,21 @@ BaseCPU::idaelModelSetIterStop(uint64_t seq_no){
 void
 BaseCPU::idealModelTempExec(int *work_state, uint64_t *pc, uint64_t gem5_pc){
     idealModelAllStates->proxy->temp_exec(work_state, pc, gem5_pc);
+}
+
+BaseCPU::IdealModelStats::IdealModelStats(statistics::Group *parent,
+        const char *name): statistics::Group(parent, name),
+      ADD_STAT(idealValuePredictorPredicted, statistics::units::Count::get(),
+              "number of ideal value predictor predicted instruction"),
+      ADD_STAT(idealValuePredictorSupported, statistics::units::Count::get(),
+              "number of ideal value predictor support instructions"),
+      ADD_STAT(idealValuePredictorCoverage, statistics::units::Ratio::get(),
+              "ideal value predictor coverage",
+               idealValuePredictorPredicted / idealValuePredictorSupported),
+      ADD_STAT(idealValuePredictorIterModeCount, statistics::units::Count::get(),
+              "number of ask in ideal model in iter mode")
+{
+
 }
 
 

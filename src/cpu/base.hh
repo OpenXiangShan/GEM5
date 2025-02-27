@@ -887,6 +887,15 @@ class BaseCPU : public ClockedObject
     void clearIdealModelSquashAfter();
     void idaelModelSetIterStop(uint64_t seq_no);
     void idealModelTempExec(int *work_state, uint64_t *pc, uint64_t gem5_pc);
+  public:
+    struct IdealModelStats : public statistics::Group
+    {
+        IdealModelStats(statistics::Group *parent, const char *name);
+        statistics::Scalar idealValuePredictorPredicted;
+        statistics::Scalar idealValuePredictorSupported;
+        statistics::Formula idealValuePredictorCoverage;
+        statistics::Scalar idealValuePredictorIterModeCount;
+    } idealModelStats;
 };
 
 } // namespace gem5

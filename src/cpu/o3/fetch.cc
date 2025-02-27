@@ -2153,13 +2153,16 @@ Fetch::fetch(bool &status_change)
 
             }
 
-            if (cpu->idealModelEnabled() && instruction->idealModelRes.ideal_model_work_state == IM_WORK){
+            if (cpu->idealModelEnabled()){
                 if ((instruction->isIntAdd() && cpu->idealModelConfig->isIntAddVP()) ||
                         (instruction->isScalarLVP() && cpu->idealModelConfig->isScalarLVP())){
-                    instruction->vpResult.value = instruction->idealModelRes.dest_value;
-                    instruction->vpResult.speculative = true;
-                    // DPRINTF(IdealModelVP, "[sn:%lu]provide value to int add insts or scalar load\n",
-                    // instruction->seqNum);
+                    cpu->idealModelStats.idealValuePredictorSupported++;
+                    if (instruction->idealModelRes.ideal_model_work_state == IM_WORK){
+                        instruction->vpResult.value = instruction->idealModelRes.dest_value;
+                        instruction->vpResult.speculative = true;
+                        // DPRINTF(IdealModelVP, "[sn:%lu]provide value to int add insts or scalar load\n",
+                        // instruction->seqNum);
+                    }
                 }else{
                     instruction->vpResult.value = 0;
                     instruction->vpResult.speculative = false;
