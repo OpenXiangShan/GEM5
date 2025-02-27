@@ -562,6 +562,66 @@ Rename::rename(bool &status_change, ThreadID tid)
     }
 }
 
+bool
+Rename::canRename(ThreadID tid, int num_insts)
+{
+    std::vector<int> demand_phy_regs(RMiscRegClass + 1, 0);
+    InstQueue &insts_to_rename = renameStatus[tid] == Unblocking ?
+        skidBuffer[tid] : insts[tid];
+
+    // calculate physical registers needed by these `num_insts` instructions
+    for (int i = 0; i < num_insts; i++) {
+        DynInstPtr inst = insts_to_rename.at(i);
+        if (inst->isLoad()) {
+            if (calcFreeLQEntries(tid) <= 0) {
+                break;
+            }
+        } else if (inst->isStore() || inst->isAtomic()) {
+            if (calcFreeSQEntries(tid) <= 0) {
+                break;
+            }
+        }
+        if (inst->isSquashed()) {
+            continue;
+        }
+        if (inst->isSerializeBefore() && !inst->isSerializeHandled()) {
+            break;
+        }
+        for (int j = 0; j < RMiscRegClass + 1 ; j++) {
+            demand_phy_regs[j] += inst->numDestRegs((RegClassType)j);
+        }
+        if ((inst->isStoreConditional() || inst->isSerializeAfter()) &&
+            !inst->isSerializeHandled()) {
+            break;
+        }
+    }
+
+    // if total demand registers are less than renameWidth,
+    // then set it to renameWidth.
+    // In actual hardware, due to timing constraints,
+    // we can only evaluate whether rename can be down in the worst-case scenario.
+    for (int i = 0; i < RMiscRegClass + 1; i++) {
+        switch (i) {
+            case IntRegClass:
+            case FloatRegClass:
+            case VecRegClass:
+            case RMiscRegClass:
+                demand_phy_regs[i] = std::max(demand_phy_regs[i], (int)renameWidth);
+                break;
+            default:
+                break;
+        }
+    }
+
+    // check if the demand registers can be satisfied or not
+    for (int i = 0; i < RMiscRegClass + 1; i++) {
+        if (demand_phy_regs[i] > renameMap[tid]->numFreeEntries((RegClassType)i)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void
 Rename::renameInsts(ThreadID tid)
 {
@@ -689,7 +749,16 @@ Rename::renameInsts(ThreadID tid)
 
     StallReason breakRename = StallReason::NoStall;
 
-    while (insts_available > 0 &&  toIEWIndex < rename_width) {
+    // Check here to make sure there are enough destination registers
+    // to rename to.  Otherwise block.
+    bool can_rename = canRename(tid, std::min(rename_width, insts_available));
+    if (!can_rename) {
+        DPRINTF(Rename, "[tid:%i] Blocking due to no free physical registers to rename to.\n", tid);
+        blockThisCycle = true;
+        ++stats.fullRegistersEvents;
+    }
+
+    while (can_rename && insts_available > 0 &&  toIEWIndex < rename_width) {
         DPRINTF(Rename, "[tid:%i] Sending instructions to IEW.\n", tid);
 
         assert(!insts_to_rename.empty());
@@ -755,24 +824,7 @@ Rename::renameInsts(ThreadID tid)
                 "Processing instruction [sn:%llu] with PC %s.\n",
                 tid, inst->seqNum, inst->pcState());
 
-        // Check here to make sure there are enough destination registers
-        // to rename to.  Otherwise block.
-        if (!renameMap[tid]->canRename(inst)) {
-            DPRINTF(Rename,
-                    "Blocking due to "
-                    " lack of free physical registers to rename to.\n");
-            blockThisCycle = true;
-            insts_to_rename.push_front(inst);
-            ++stats.fullRegistersEvents;
-
-            blockReason = checkRenameStallFromIEW(tid);
-
-            rename_stalls.push(blockReason);
-
-            breakRename = blockReason;
-
-            break;
-        }
+        assert(renameMap[tid]->canRename(inst));
 
         // Handle serializeAfter/serializeBefore instructions.
         // serializeAfter marks the next instruction as serializeBefore.

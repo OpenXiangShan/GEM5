@@ -227,6 +227,9 @@ class Rename
      */
     void renameInsts(ThreadID tid);
 
+    /** Checks if the rename map can rename all the given number of instructions this cycle. */
+    bool canRename(ThreadID tid, int num_insts);
+
     /** Inserts unused instructions from a given thread into the skid buffer,
      * to be renamed once rename unblocks.
      */
