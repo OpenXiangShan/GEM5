@@ -582,6 +582,9 @@ class Commit
     // value prediction
     valuepred::VPUnit *valuePredictor;
 
+    // record not isa trap squash
+    bool notISATrapSquash[MaxThreads];
+
   public:
     const CommitStats& getCommitStats() const { return stats; }
 };

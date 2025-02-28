@@ -151,6 +151,7 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
         renameMap[tid] = nullptr;
         htmStarts[tid] = 0;
         htmStops[tid] = 0;
+        notISATrapSquash[tid] = false;
     }
     interrupt = NoFault;
 
@@ -678,6 +679,7 @@ Commit::squashFromTrap(ThreadID tid)
 
     toIEW->commitInfo[tid].isTrapSquash = true;
     toIEW->commitInfo[tid].committedPC = committedPC[tid];
+    toIEW->commitInfo[tid].notISATrapSquash = notISATrapSquash[tid];
 
     DPRINTF(Commit, "Squashing from trap, restarting at PC %s\n", *pc[tid]);
 
@@ -873,6 +875,8 @@ Commit::handleInterrupt()
             cpu->setIdealModelRegPC(pcState(0).as<RiscvISA::PCState>().pc());
             cpu->guideIdealModelIntr(cpu->getInterruptsNO() | (1ULL << 63));
         }
+
+        notISATrapSquash[0] = false;
 
         DPRINTF(CommitTrace, "Handle interrupt No.%lx\n", cpu->getInterruptsNO() | (1ULL << 63));
         cpu->processInterrupts(cpu->getInterrupts());
@@ -1651,12 +1655,21 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
                   head_inst->notAnInst() ? nullStaticInstPtr :
                       head_inst->staticInst);
 
+        DPRINTF(IdealModel, "head_inst notAnInst: %d\n", head_inst->notAnInst());
+        DPRINTF(IdealModel, "exception_no: %lu\n", inst_fault->exception());
+
         cpu->mmu->setOldPriv(cpu->getContext(tid));
 
         // Exit state update mode to avoid accidental updating.
         thread[tid]->noSquashFromTC = false;
 
         commitStatus[tid] = TrapPending;
+
+        if (!inst_fault->isFromISA()){
+            notISATrapSquash[tid] = true;
+        }else{
+            notISATrapSquash[tid] = false;
+        }
 
         DPRINTF(
             Commit,

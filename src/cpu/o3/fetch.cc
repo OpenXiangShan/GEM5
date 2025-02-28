@@ -1490,9 +1490,15 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
                 DPRINTF(Fetch, "Treating as trap squash\n",tid);
 
                 if (cpu->idealModelEnabled()){
-                    // make idael model to be work
-                    DPRINTF(IdealModel, "ideal model clear trap pending \n");
-                    cpu->clearIdealModelTrapPending();
+                    if (fromCommit->commitInfo[tid].notISATrapSquash){
+                        DPRINTF(IdealModel, "not isa trap squash, ideal model normal recover\n");
+                        cpu->idealModelRecover(fromCommit->commitInfo[tid].doneSeqNum, 0,
+                                RECOVER_NOTISAFAULT);
+                    }else{
+                        // make idael model to be work
+                        DPRINTF(IdealModel, "ideal model clear trap pending \n");
+                        cpu->clearIdealModelTrapPending();
+                    }
                 }
 
                 if (isStreamPred()) {

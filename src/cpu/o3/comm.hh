@@ -323,6 +323,7 @@ struct TimeStruct
         /// some squash ideal model use
         bool memoryViolationSquash;
         bool tcSquash;
+        bool notISATrapSquash;
 
     };
 
