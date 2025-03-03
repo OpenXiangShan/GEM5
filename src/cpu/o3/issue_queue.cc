@@ -1019,7 +1019,7 @@ Scheduler::loadCancel(const DynInstPtr& inst)
         dfs.pop();
         // clear pending wake events scheduled by top
         auto& pendingEvents = specWakeEvents[top->seqNum];
-        for (auto it = pendingEvents.begin(); it != pendingEvents.end();) {
+        for (auto it = pendingEvents.begin(); it != pendingEvents.end(); it++) {
             cpu->deschedule(*it);
         }
         specWakeEvents.erase(top->seqNum);
