@@ -1048,87 +1048,95 @@ IEW::classifyInstToDispQue(ThreadID tid)
         dispatchStatus[tid] == Unblocking ?
         skidBuffer[tid] : insts[tid];
 
+    bool skip = false;
+
+    if (dqSize[IntDQ] - dispQue[IntDQ].size() < renameWidth || dqSize[FVDQ] - dispQue[FVDQ].size() < renameWidth ||
+        dqSize[MemDQ] - dispQue[MemDQ].size() < renameWidth) {
+        skip = true;
+    }
+
     bool emptyROB = fromCommit->commitInfo[tid].emptyROB;
 
     int insts_to_add = insts_to_dispatch.size();
     std::queue<StallReason> dispatch_stalls;
     StallReason breakDispatch = StallReason::NoStall;
     unsigned dispatched = 0;
-    while (!insts_to_dispatch.empty()) {
-        auto& inst = insts_to_dispatch.front();
-        int ins = cpu->cpuStats.committedInsts.total();
-        if (cpu->hasHintDownStream() && ins % 10000 == 1) {
-            cpu->hintDownStream->notifyIns(ins);
-        }
-        int id = dispClassify(inst);
-        if (dispQue[id].size() < dqSize[id]) {
-            if (inst->isSquashed()) {
-                ++iewStats.dispSquashedInsts;
-                //Tell Rename That An Instruction has been processed
-                if (inst->isLoad()) {
-                    toRename->iewInfo[tid].dispatchedToLQ++;
+    if (!skip) {
+        while (!insts_to_dispatch.empty()) {
+            auto &inst = insts_to_dispatch.front();
+            int ins = cpu->cpuStats.committedInsts.total();
+            if (cpu->hasHintDownStream() && ins % 10000 == 1) {
+                cpu->hintDownStream->notifyIns(ins);
+            }
+            int id = dispClassify(inst);
+            if (dispQue[id].size() < dqSize[id]) {
+                if (inst->isSquashed()) {
+                    ++iewStats.dispSquashedInsts;
+                    // Tell Rename That An Instruction has been processed
+                    if (inst->isLoad()) {
+                        toRename->iewInfo[tid].dispatchedToLQ++;
+                    }
+                    if (inst->isStore() || inst->isAtomic()) {
+                        toRename->iewInfo[tid].dispatchedToSQ++;
+                    }
+                    toRename->iewInfo[tid].dispatched++;
+                    insts_to_dispatch.pop_front();
+
+                    dispatch_stalls.push(StallReason::InstSquashed);
+                    continue;
                 }
-                if (inst->isStore() || inst->isAtomic()) {
+
+                if ((inst->isSerializeBefore() && !inst->isSerializeHandled()) ? !emptyROB : false) {
+                    dispatch_stalls.push(StallReason::SerializeStall);
+                    breakDispatch = StallReason::SerializeStall;
+                    blockReason = breakDispatch;
+                    break;
+                }
+
+                // hardware transactional memory
+                // CPU needs to track transactional state in program order.
+                const int numHtmStarts = ldstQueue.numHtmStarts(tid);
+                const int numHtmStops = ldstQueue.numHtmStops(tid);
+                const int htmDepth = numHtmStarts - numHtmStops;
+                if (htmDepth > 0) {
+                    inst->setHtmTransactionalState(ldstQueue.getLatestHtmUid(tid), htmDepth);
+                } else {
+                    inst->clearHtmTransactionalState();
+                }
+
+                if (inst->isAtomic()) {
+                    ++iewStats.dispStoreInsts;
+                    ++iewStats.dispNonSpecInsts;
+                    toRename->iewInfo[tid].dispatchedToSQ++;
+                } else if (inst->isLoad()) {
+                    ++iewStats.dispLoadInsts;
+                    toRename->iewInfo[tid].dispatchedToLQ++;
+                } else if (inst->isStore()) {
+                    ++iewStats.dispStoreInsts;
+                    if (inst->isStoreConditional()) {
+                        ++iewStats.dispNonSpecInsts;
+                    }
                     toRename->iewInfo[tid].dispatchedToSQ++;
                 }
                 toRename->iewInfo[tid].dispatched++;
+                ++iewStats.dispatchedInsts;
+                dispQue[id].push_back(inst);
+
+                if (!inst->isNop()) {
+                    scheduler->addProducer(inst);
+                }
+
+                inst->enterDQTick = curTick();
+                cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtDispQue);
+
                 insts_to_dispatch.pop_front();
-
-                dispatch_stalls.push(StallReason::InstSquashed);
-                continue;
-            }
-
-            if ((inst->isSerializeBefore() && !inst->isSerializeHandled()) ? !emptyROB : false) {
-                dispatch_stalls.push(StallReason::SerializeStall);
-                breakDispatch = StallReason::SerializeStall;
+                dispatched++;
+            } else {
+                dispatch_stalls.push(checkDispatchStall(tid, id, inst));
+                breakDispatch = dispatch_stalls.back();
                 blockReason = breakDispatch;
                 break;
             }
-
-            // hardware transactional memory
-            // CPU needs to track transactional state in program order.
-            const int numHtmStarts = ldstQueue.numHtmStarts(tid);
-            const int numHtmStops = ldstQueue.numHtmStops(tid);
-            const int htmDepth = numHtmStarts - numHtmStops;
-            if (htmDepth > 0) {
-                inst->setHtmTransactionalState(ldstQueue.getLatestHtmUid(tid),
-                                                htmDepth);
-            } else {
-                inst->clearHtmTransactionalState();
-            }
-
-            if (inst->isAtomic()) {
-                ++iewStats.dispStoreInsts;
-                ++iewStats.dispNonSpecInsts;
-                toRename->iewInfo[tid].dispatchedToSQ++;
-            } else if (inst->isLoad()) {
-                ++iewStats.dispLoadInsts;
-                toRename->iewInfo[tid].dispatchedToLQ++;
-            } else if (inst->isStore()) {
-                ++iewStats.dispStoreInsts;
-                if (inst->isStoreConditional()) {
-                    ++iewStats.dispNonSpecInsts;
-                }
-                toRename->iewInfo[tid].dispatchedToSQ++;
-            }
-            toRename->iewInfo[tid].dispatched++;
-            ++iewStats.dispatchedInsts;
-            dispQue[id].push_back(inst);
-
-            if (!inst->isNop()) {
-                scheduler->addProducer(inst);
-            }
-
-            inst->enterDQTick = curTick();
-            cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtDispQue);
-
-            insts_to_dispatch.pop_front();
-            dispatched++;
-        } else {
-            dispatch_stalls.push(checkDispatchStall(tid, id, inst));
-            breakDispatch = dispatch_stalls.back();
-            blockReason = breakDispatch;
-            break;
         }
     }
 
