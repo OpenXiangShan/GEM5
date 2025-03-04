@@ -319,6 +319,9 @@ class IEW
      *  second, receive new inst from rename, store it to DQ
      */
     void dispatchInstFromDispQue(ThreadID tid);
+
+    bool CanDispatch(ThreadID tid);
+
     void classifyInstToDispQue(ThreadID tid);
 
     /** Executes instructions. In the case of memory operations, it informs the

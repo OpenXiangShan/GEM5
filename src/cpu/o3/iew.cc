@@ -1178,6 +1178,10 @@ IEW::dispatchInstFromDispQue(ThreadID tid)
     bool add_to_iq = false;
     int dis_num_inst = 0;
 
+    if (!CanDispatch(tid)){
+        return;
+    }
+
     for (int i = 0; i < NumDQ; i++) {
         int dispatched = 0;
         while (!dispQue[i].empty() && dispatched < dispWidth[i]) {
@@ -1309,6 +1313,12 @@ IEW::dispatchInstFromDispQue(ThreadID tid)
         }
     }
     iewStats.dispDist.sample(dis_num_inst);
+}
+
+bool
+IEW::CanDispatch(ThreadID tid)
+{
+    return scheduler->Allready();
 }
 
 void
