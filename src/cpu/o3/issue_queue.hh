@@ -85,7 +85,7 @@ class IssueQue : public SimObject
     {
         bool operator()(const DynInstPtr& a, const DynInstPtr& b) const;
     };
-    using ReadyQue = boost::heap::priority_queue<DynInstPtr, boost::heap::compare<select_policy>>;
+    using ReadyQue = std::list<DynInstPtr>;
     using SelectQue = std::vector<std::pair<uint32_t, DynInstPtr>>;
 
     struct IssueStream

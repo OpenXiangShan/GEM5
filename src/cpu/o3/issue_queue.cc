@@ -69,7 +69,7 @@ IssuePort::IssuePort(const IssuePortParams& params) : SimObject(params), rp(para
 bool
 IssueQue::select_policy::operator()(const DynInstPtr& a, const DynInstPtr& b) const
 {
-    return a->seqNum > b->seqNum;
+    return a->seqNum < b->seqNum;
 }
 
 void
@@ -356,7 +356,10 @@ IssueQue::addIfReady(const DynInstPtr& inst)
         inst->clearCancel();
         if (!inst->inReadyQ()) {
             inst->setInReadyQ();
-            readyQclassify[inst->opClass()]->push(inst);
+
+            auto& readyQ = readyQclassify[inst->opClass()];
+            auto it = std::lower_bound(readyQ->begin(), readyQ->end(), inst, select_policy());
+            readyQ->insert(it, inst);
         }
     }
 }
@@ -383,43 +386,43 @@ IssueQue::selectInst()
     for (int pi = 0; pi < outports; pi++) {
         auto readyQ = readyQs[pi];
 
-        // move the cancel inst in the readyQ
-        while (!readyQ->empty()) {
-            auto top = readyQ->top();
-            if (!top->canceled()) {
-                break;
-            }
-            top->clearInReadyQ();
-            readyQ->pop();
-        }
+        for (auto it = readyQ->begin(); it != readyQ->end();) {
+            auto& inst = *it;
 
-        if (!readyQ->empty()) {
-            auto inst = readyQ->top();
-            if (portBusy[pi] & (1llu << scheduler->getCorrectedOpLat(inst))) {
+            // skipp canceled inst and wb conflict inst
+            if (inst->canceled()) {
+                inst->clearInReadyQ();
+                it = readyQ->erase(it);
                 continue;
             }
 
-            DPRINTF(Schedule, "[sn %ld] was selected\n", inst->seqNum);
+            if (!(portBusy[pi] & (1llu << scheduler->getCorrectedOpLat(inst)))) {
+                DPRINTF(Schedule, "[sn %ld] was selected\n", inst->seqNum);
 
-            // get regfile read port
-            for (int i = 0; i < inst->numSrcRegs(); i++) {
-                auto src = inst->srcRegIdx(i);
-                PhysRegIdPtr psrc = inst->renamedSrcIdx(i);
-                if (psrc->isFixedMapping()) continue;
-                std::pair<int, int> rfTypePortId;
-                // read port is point to point with srcid
-                if (src.isIntReg() && intRfTypePortId[pi].size() > i) {
-                    rfTypePortId = intRfTypePortId[pi][i];
-                    scheduler->useRegfilePort(inst, psrc, rfTypePortId.first, rfTypePortId.second);
-                } else if (src.isFloatReg() && fpRfTypePortId[pi].size() > i) {
-                    rfTypePortId = fpRfTypePortId[pi][i];
-                    scheduler->useRegfilePort(inst, psrc, rfTypePortId.first, rfTypePortId.second);
+                // get regfile read port
+                for (int i = 0; i < inst->numSrcRegs(); i++) {
+                    auto src = inst->srcRegIdx(i);
+                    PhysRegIdPtr psrc = inst->renamedSrcIdx(i);
+                    if (psrc->isFixedMapping())
+                        continue;
+                    std::pair<int, int> rfTypePortId;
+                    // read port is point to point with srcid
+                    if (src.isIntReg() && intRfTypePortId[pi].size() > i) {
+                        rfTypePortId = intRfTypePortId[pi][i];
+                        scheduler->useRegfilePort(inst, psrc, rfTypePortId.first, rfTypePortId.second);
+                    } else if (src.isFloatReg() && fpRfTypePortId[pi].size() > i) {
+                        rfTypePortId = fpRfTypePortId[pi][i];
+                        scheduler->useRegfilePort(inst, psrc, rfTypePortId.first, rfTypePortId.second);
+                    }
                 }
+
+                selectQ.push_back(std::make_pair(pi, inst));
+                inst->clearInReadyQ();
+                readyQ->erase(it);
+                break;
             }
 
-            selectQ.push_back(std::make_pair(pi, inst));
-            inst->clearInReadyQ();
-            readyQ->pop();
+            it++;
         }
     }
 }
@@ -438,7 +441,11 @@ IssueQue::scheduleInst()
             iqstats->arbFailed++;
             assert(inst->readyToIssue());
             inst->setInReadyQ();
-            readyQclassify[inst->opClass()]->push(inst);  // retry
+
+            // retry
+            auto& readyQ = readyQclassify[inst->opClass()];
+            auto it = std::lower_bound(readyQ->begin(), readyQ->end(), inst, select_policy());
+            readyQ->insert(it, inst);
         } else [[likely]] {
             DPRINTF(Schedule, "[sn:%llu] no conflict, scheduled\n", inst->seqNum);
             iqstats->portissued[pi]++;
@@ -884,26 +891,14 @@ Scheduler::insert(const DynInstPtr& inst)
     auto& iqs = dispTable[inst->opClass()];
     bool inserted = false;
 
-    if (inst->isInteger()) {
-        std::sort(iqs.begin(), iqs.end(), disp_policy(inst->opClass()));
-        for (auto iq : iqs) {
-            if (iq->ready()) {
-                iq->insert(inst);
-                inserted = true;
-                break;
-            }
-        }
-    } else {
-        std::random_shuffle(iqs.begin(), iqs.end());
-        for (auto iq : iqs) {
-            if (iq->ready()) {
-                iq->insert(inst);
-                inserted = true;
-                break;
-            }
+    std::sort(iqs.begin(), iqs.end(), disp_policy(inst->opClass()));
+    for (auto iq : iqs) {
+        if (iq->ready()) {
+            iq->insert(inst);
+            inserted = true;
+            break;
         }
     }
-
 
     assert(inserted);
     DPRINTF(Schedule, "[sn:%llu] dispatch: %s\n", inst->seqNum, inst->staticInst->disassemble(0));
@@ -1088,7 +1083,7 @@ Scheduler::writebackWakeup(const DynInstPtr& inst)
 void
 Scheduler::bypassWriteback(const DynInstPtr& inst)
 {
-    if (inst->issueportid >= 0) {
+    if (!opPipelined[inst->opClass()] && inst->issueportid >= 0) {
         inst->issueQue->portBusy[inst->issueportid] = 0;
     }
     cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtBypassVal);
