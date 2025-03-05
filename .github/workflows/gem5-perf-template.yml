@@ -89,4 +89,10 @@ jobs:
               done
             exit 1
           fi
+      - name: Upload score
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-score
+          path: ${{ github.workspace }}/score.txt
           
