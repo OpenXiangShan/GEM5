@@ -620,6 +620,10 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
                                              << L2TLB_BLK_OFFSET) +
                                             l2_i)
                                            << ((l2_level * LEVEL_BITS + PageShift));
+                        inl2Entry.vaddr = (((entry.vaddr >> ((l2_level * LEVEL_BITS + PageShift + L2TLB_BLK_OFFSET)))
+                                             << L2TLB_BLK_OFFSET) +
+                                            l2_i)
+                                           << ((l2_level * LEVEL_BITS + PageShift));
                         l2pte = read->getLE_l2tlb<uint64_t>(l2_i);
                         inl2Entry.pte = l2pte;
                         inl2Entry.paddr = l2pte.ppn;
@@ -690,6 +694,10 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
                 if (!tlbHit) {
                     for (int l2_i = 0; l2_i < l2tlbLineSize; l2_i++) {
                         inl2Entry.gpaddr = ((entry.gpaddr >> ((l2_level * LEVEL_BITS + PageShift + L2TLB_BLK_OFFSET))
+                                                                 << L2TLB_BLK_OFFSET) +
+                                            l2_i)
+                                           << ((l2_level * LEVEL_BITS + PageShift));
+                        inl2Entry.vaddr = ((entry.vaddr >> ((l2_level * LEVEL_BITS + PageShift + L2TLB_BLK_OFFSET))
                                                                  << L2TLB_BLK_OFFSET) +
                                             l2_i)
                                            << ((l2_level * LEVEL_BITS + PageShift));
@@ -1647,16 +1655,24 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level, bool from_l2tl
         if ((!isVsatp0Mode) && (mainReq->get_h_gstage()) && (mainReq->get_two_stage_level() != 2)) {
             //printf("1639 ppn %lx twostagelevel %d vaddr %lx finishGVA %d\n", mainReq->get_ppn(),
             //       mainReq->get_two_stage_level(), vaddr, finishGVA);
+            if (vaddr == 0x3f8ef45000)
+                printf("1659 in vaddr %lx\n",vaddr);
             fault = startTwoStageWalkFromTLBInG(mainReq->get_ppn(), vaddr);
         } else if ((!isVsatp0Mode) && (!mainReq->get_h_gstage()) && (mainReq->get_level() != 2)) {
             //printf("1642\n");
+            if (vaddr == 0x3f8ef45000)
+                printf("1659 in vaddr %lx\n",vaddr);
             fault = startTwoStageWalkFromTLBNotInG(mainReq->get_ppn(), vaddr);
         } else if ((mainReq->get_level() == 2) || (isVsatp0Mode)) {
             //printf("1645\n");
+            if (vaddr == 0x3f8ef45000)
+                printf("1659 in vaddr %lx\n",vaddr);
             fault = startTwoStageWalk(gPaddr, vaddr);
 
         } else {
             //printf("1649\n");
+            if (vaddr == 0x3f8ef45000)
+                printf("1659 in vaddr %lx\n",vaddr);
             fault = startTwoStageWalk(gPaddr, vaddr);
         }
         if (fault != NoFault) {
@@ -1814,13 +1830,16 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
                 }
                 //printf()
                 if (r.req->hasPC() &&
-                    ((r.req->getPC() == 0xffffffff801e8970) || (r.req->getPC() == 0xffffffff8020f0e6)))
+                    ((r.req->getPC() == 0xffffffff801e8970) || (r.req->getPC() == 0x339d8)))
                     printf("1800 pc %lx vaddr %lx paddr %lx\n",r.req->getPC(),r.req->getVaddr(),paddr);
+                if (vaddr == 0x3f8ef45000)
+                    printf("1828 vaddr %lx pte %lx\n",vaddr,(uint64_t)entry.pte);
                 r.translation->finish(mainFault, r.req, r.tc, mode);
             }
             else{
                 r.fault = pageFaultOnRequestor(r, GstageFault);
                 r.translation->finish(r.fault, r.req, r.tc, mode);
+                printf("1824 ptw vaddr %lx\n",r.req->getVaddr());
                 DPRINTF(PageTableWalkerTwoStage, "translate fault vaddr %lx\n", mainReq->getVaddr());
             }
         }
