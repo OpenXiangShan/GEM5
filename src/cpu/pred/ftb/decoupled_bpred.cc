@@ -606,6 +606,25 @@ DecoupledBPUWithFTB::BpTrace::BpTrace(FetchStream &stream, const DynInstPtr &ins
     // }
 }
 
+/**
+ * Control variable lifecycle:
+ *
+ * These control variables manage the prediction flow across simulation cycles:
+ *
+ * - receivedPred: Tracks if a prediction is available from predictor components
+ *   * Set to true in generateFinalPredAndCreateBubbles() when prediction is chosen
+ *   * Reset to false in tryEnqFetchStream() after enqueuing a fetch stream
+ *   * Reset to false during squashing
+ *
+ * - squashing: Indicates recovery from misprediction is in progress
+ *   * Set to true in controlSquash(), nonControlSquash(), or trapSquash(),
+ *   * which are called in checkSignalAndUpdate() in the top-level fetch component
+ *   * Reset to false at the end of each tick() cycle
+ *
+ * - sentPCHist: Tracks if PC history was sent to prediction components
+ *   * Set to true after sending PC history to components
+ *   * Reset to false at every tick
+ */
 void
 DecoupledBPUWithFTB::tick()
 {

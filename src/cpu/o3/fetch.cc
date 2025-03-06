@@ -1366,7 +1366,17 @@ Fetch::tick()
         usedUpFetchTargets = !dbpftb->trySupplyFetchWithTarget(pc[0]->instAddr(), currentFetchTargetInLoop);
     }
 }
-
+/**
+ * Checks signals from other pipeline stages and updates fetch status accordingly.
+ * This function handles:
+ * 1. Decode stalls and unblocks
+ * 2. Squashes from commit and decode stages
+ * 3. Branch predictor updates on commits and squashes
+ * 4. Status transitions between Running, Blocked, and Squashing
+ *
+ * @param tid Thread ID to check signals for
+ * @return True if fetch status changed, false otherwise
+ */
 bool
 Fetch::checkSignalsAndUpdate(ThreadID tid)
 {
