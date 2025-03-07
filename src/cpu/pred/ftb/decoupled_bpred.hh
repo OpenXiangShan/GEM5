@@ -403,6 +403,7 @@ class DecoupledBPUWithFTB : public BPredUnit
 
         statistics::Vector predsOfEachStage;
         statistics::Scalar overrideBubbleNum;
+        statistics::Scalar overrideCount;
         statistics::Vector commitPredsFromEachStage;
         statistics::Distribution fsqEntryDist;
         statistics::Scalar fsqEntryEnqueued;
