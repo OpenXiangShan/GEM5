@@ -559,11 +559,20 @@ ISA::setMiscReg(int misc_reg, RegVal val)
 
     } else if ((v == 1) && ((misc_reg == MISCREG_STATUS)) && (readMiscRegNoEffect(MISCREG_PRV) == PRV_S)) {
         auto vsstatus = readMiscRegNoEffect(MISCREG_VSSTATUS);
-        RegVal write_val = ((vsstatus & ~(NEMU_SSTATUS_WMASK)) | (val & NEMU_SSTATUS_WMASK));
+        STATUS write_val = ((vsstatus & ~(NEMU_SSTATUS_WMASK)) | (val & NEMU_SSTATUS_WMASK));
+        bool fs_dirty = (write_val.fs == 0x3);
+        bool vs_dirty = (write_val.vs == 0x3);
+        uint64_t write_val2 = ((uint64_t)(fs_dirty || vs_dirty) << 63);
+        write_val = write_val | write_val2;
         setMiscRegNoEffect(MISCREG_VSSTATUS, write_val);
-    } else if (misc_reg == MISCREG_VSSTATUS) {
+    } else if ((v == 1) && (misc_reg == MISCREG_VSSTATUS)) {
         auto vsstatus = readMiscRegNoEffect(MISCREG_VSSTATUS);
-        RegVal write_val = ((vsstatus & ~(NEMU_SSTATUS_WMASK)) | (val & NEMU_SSTATUS_WMASK));
+        STATUS write_val = ((vsstatus & ~(NEMU_SSTATUS_WMASK)) | (val & NEMU_SSTATUS_WMASK));
+        // if enable h
+        bool fs_dirty = (write_val.fs == 0x3);
+        bool vs_dirty = (write_val.vs == 0x3);
+        uint64_t write_val2 = ((uint64_t)(fs_dirty || vs_dirty) << 63);
+        write_val = write_val | write_val2;
         setMiscRegNoEffect(MISCREG_VSSTATUS, write_val);
     } else if ((v == 1) && ((misc_reg == MISCREG_SATP))) {
         if ((val & NEMU_SATP_SV39_MASK) >> NEMU_SATP_RIGHT_OFFSET == NEMU_SV39_SIGN0 ||
