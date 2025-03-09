@@ -423,16 +423,7 @@ Walker::dol2TLBHit()
             pmp->pmpCheck(dol2TLBHitrequestors.req, dol2TLBHitrequestors.mode,
                           pmodel2, dol2TLBHitrequestors.tc);
         //assert(l2tlbFault == NoFault);
-        if (l2tlbFault == NoFault){
-            if (dol2TLBHitrequestors.entry != nullptr)
-                tlb->insert(dol2TLBHitrequestors.entry->vaddr, *dol2TLBHitrequestors.entry, false, direct);
-            if (dol2TLBHitrequestors.entryVsstage != nullptr)
-                tlb->insert(dol2TLBHitrequestors.entryVsstage->vaddr, *dol2TLBHitrequestors.entryVsstage, false,
-                            vsstage);
-            if (dol2TLBHitrequestors.entryGstage != nullptr)
-                tlb->insert(dol2TLBHitrequestors.entryGstage->gpaddr, *dol2TLBHitrequestors.entryGstage, false,
-                            gstage);
-
+        if (l2tlbFault == NoFault) {
             dol2TLBHitrequestors.translation->finish(
                 l2tlbFault, dol2TLBHitrequestors.req, dol2TLBHitrequestors.tc,
                 dol2TLBHitrequestors.mode);
@@ -763,46 +754,7 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
 
             if (walker->l2tlb == nullptr)
                 panic("walker->l2tlb is none\n");
-            if (inGstage) {
-                for (int i_e = 1; i_e < 6; i_e++) {
-                    e[i_e] = walker->l2tlb->lookupL2TLB(nextcheck, hgatp.vmid, mode, false, i_e, true, gstage);
-                    if (e[i_e]) {
-                        if (e[i_e]->level < hit_level) {
-                            e[0] = e[i_e];
-                            hit_level = e[i_e]->level;
-                        }
-                    }
-                    if (e[0] && (twoStageLevel == e[0]->level)) {
-                        tlbHit = true;
-                        tlbHitPte = e[0]->pte;
-                        hit_level = true;
-                        tlbflags = flags;
-                        return twoStageStepWalk(write);
-                    } else {
-                        tlbHit = false;
-                    }
-                }
-            } else {
-                tlbHit = false;
-                for (int i_e = 1; i_e < 6; i_e++) {
-                    e[i_e] = walker->l2tlb->lookupL2TLB(nextcheck, vsatp.asid, mode, false, i_e, true, vsstage);
-                    if (e[i_e]) {
-                        if (e[i_e]->level < hit_level) {
-                            e[0] = e[i_e];
-                            hit_level = e[i_e]->level;
-                        }
-                    }
-                    if (e[0] && (level == e[0]->level)) {
-                        tlbHit = true;
-                        tlbHitPte = e[0]->pte;
-                        hit_level = true;
-                        tlbflags = flags;
-                        return twoStageWalk(write);
-                    } else {
-                        tlbHit = false;
-                    }
-                }
-            }
+            
             if (!tlbHit) {
                 delete oldRead;
                 oldRead = nullptr;
@@ -952,27 +904,9 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
                         nextcheck = 0;
                         shift = PageShift + LEVEL_BITS * twoStageLevel;
                         idx = ((gPaddr >> shift) & TWO_STAGE_L2_LEVEL_MASK);
-                        nextcheck = (hgatp.ppn << PageShift) + (idx * sizeof(PTESv39));
+                        nextcheck = gPaddr;
 
-                        for (int i_e = 1; i_e < 6; i_e++) {
-                            e[i_e] = walker->l2tlb->lookupL2TLB(nextcheck, hgatp.vmid, mode, false, i_e, true, gstage);
-                            if (e[i_e]) {
-                                if (e[i_e]->level < hit_level) {
-                                    e[0] = e[i_e];
-                                    hit_level = e[i_e]->level;
-                                }
-                            }
-                            if (e[0] && (level == e[0]->level)) {
-                                tlbHit = true;
-                                tlbHitPte = e[0]->pte;
-                                hit_level = true;
-                                tlbflags = flags;
-                                inGstage = true;
-                                return twoStageStepWalk(write);
-                            } else {
-                                tlbHit = false;
-                            }
-                        }
+                        
                         if (!tlbHit) {
                             delete oldRead;
                             oldRead = nullptr;
@@ -1050,27 +984,7 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
 
                     shift = PageShift + LEVEL_BITS * twoStageLevel;
                     idx = ((gPaddr >> shift) & TWO_STAGE_L2_LEVEL_MASK);
-                    nextcheck = (hgatp.ppn << PageShift) + (idx * sizeof(PTESv39));
-
-                    for (int i_e = 1; i_e < 6; i_e++) {
-                        e[i_e] = walker->l2tlb->lookupL2TLB(nextcheck, hgatp.vmid, mode, false, i_e, true, gstage);
-                        if (e[i_e]) {
-                            if (e[i_e]->level < hit_level) {
-                                e[0] = e[i_e];
-                                hit_level = e[i_e]->level;
-                            }
-                        }
-                        if (e[0] && (level == e[0]->level)) {
-                            tlbHit = true;
-                            tlbHitPte = e[0]->pte;
-                            hit_level = true;
-                            tlbflags = flags;
-                            inGstage = true;
-                            return twoStageStepWalk(write);
-                        } else {
-                            tlbHit = false;
-                        }
-                    }
+                    nextcheck = gPaddr;
                     if (!tlbHit) {
                         delete oldRead;
                         oldRead = nullptr;
