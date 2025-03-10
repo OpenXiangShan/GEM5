@@ -158,6 +158,13 @@ class BaseIndexingPolicy : public SimObject
      */
     virtual Addr regenerateAddr(const Addr tag, const ReplaceableEntry* entry)
                                                                     const = 0;
+
+    /**
+     * Get the alias bits.
+     *
+     * @return default 0 (no alias problem)
+     */
+    virtual uint64_t getAliasBits() const { return 0; }
 };
 
 } // namespace gem5

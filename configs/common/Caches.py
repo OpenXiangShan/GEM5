@@ -83,6 +83,9 @@ class L1_DCache(L1Cache):
 
     replacement_policy = TreePLRURP(num_leaves = Parent.assoc)
 
+    tags = VIPTSetAssoc()
+    tags.indexing_policy = VIPTSetAssociative()
+
     force_hit = False
 
     demand_mshr_reserve = 6

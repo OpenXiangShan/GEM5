@@ -29,7 +29,7 @@
 Import('*')
 
 SimObject('Tags.py', sim_objects=[
-    'BaseTags', 'BaseSetAssoc', 'SectorTags', 'CompressedTags', 'FALRU'])
+    'BaseTags', 'BaseSetAssoc', 'VIPTSetAssoc', 'SectorTags', 'CompressedTags', 'FALRU'])
 
 Source('base.cc')
 Source('base_set_assoc.cc')
@@ -39,5 +39,6 @@ Source('fa_lru.cc')
 Source('sector_blk.cc')
 Source('sector_tags.cc')
 Source('super_blk.cc')
+Source('vipt_set_assoc.cc')
 
 GTest('dueling.test', 'dueling.test.cc', 'dueling.cc')

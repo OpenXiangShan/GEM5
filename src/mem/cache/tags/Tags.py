@@ -84,6 +84,13 @@ class BaseSetAssoc(BaseTags):
     replacement_policy = Param.BaseReplacementPolicy(
         Parent.replacement_policy, "Replacement policy")
 
+class VIPTSetAssoc(BaseSetAssoc):
+    type = 'VIPTSetAssoc'
+    cxx_header = "mem/cache/tags/vipt_set_assoc.hh"
+    cxx_class = 'gem5::VIPTSetAssoc'
+
+    page_size = Param.Int(4096, "page size in bytes")
+
 class SectorTags(BaseTags):
     type = 'SectorTags'
     cxx_header = "mem/cache/tags/sector_tags.hh"

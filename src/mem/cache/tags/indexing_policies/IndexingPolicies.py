@@ -48,6 +48,13 @@ class SetAssociative(BaseIndexingPolicy):
     cxx_class = 'gem5::SetAssociative'
     cxx_header = "mem/cache/tags/indexing_policies/set_associative.hh"
 
+class VIPTSetAssociative(SetAssociative):
+    type = 'VIPTSetAssociative'
+    cxx_class = 'gem5::VIPTSetAssociative'
+    cxx_header = "mem/cache/tags/indexing_policies/vipt_set_associative.hh"
+
+    page_size = Param.Int(4096, "page size in bytes")
+
 class SkewedAssociative(BaseIndexingPolicy):
     type = 'SkewedAssociative'
     cxx_class = 'gem5::SkewedAssociative'

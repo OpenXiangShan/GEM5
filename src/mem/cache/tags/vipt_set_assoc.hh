@@ -1,5 +1,4 @@
 /*
- * Copyright (c) 2018 Inria
  * Copyright (c) 2012-2014,2017 ARM Limited
  * All rights reserved.
  *
@@ -41,94 +40,88 @@
 
 /**
  * @file
- * Declaration of a set associative indexing policy.
+ * Declaration of a base set associative tag store.
  */
 
-#ifndef __MEM_CACHE_INDEXING_POLICIES_SET_ASSOCIATIVE_HH__
-#define __MEM_CACHE_INDEXING_POLICIES_SET_ASSOCIATIVE_HH__
+#ifndef __MEM_CACHE_TAGS_VIPT_SET_ASSOC_HH__
+#define __MEM_CACHE_TAGS_VIPT_SET_ASSOC_HH__
 
+#include <cstdint>
+#include <functional>
+#include <string>
 #include <vector>
 
+#include "base/logging.hh"
+#include "base/types.hh"
+#include "mem/cache/base.hh"
+#include "mem/cache/cache_blk.hh"
+#include "mem/cache/replacement_policies/base.hh"
+#include "mem/cache/replacement_policies/replaceable_entry.hh"
+#include "mem/cache/tags/base.hh"
+#include "mem/cache/tags/base_set_assoc.hh"
 #include "mem/cache/tags/indexing_policies/base.hh"
-#include "params/SetAssociative.hh"
+#include "mem/packet.hh"
+#include "params/VIPTSetAssoc.hh"
 
 namespace gem5
 {
 
-class ReplaceableEntry;
-
 /**
- * A set associative indexing policy.
+ * A basic cache tag store.
  * @sa  \ref gem5MemorySystem "gem5 Memory System"
  *
- * The set associative indexing policy has an immutable/identity mapping, so a
- * value x is always mapped to set x, independent of the way, that is,
- * Hash(A, 0) = Hash(A, 1) = Hash(A, N-1), where N is the number of ways.
- *
- * For example, let's assume address A maps to set 3 on way 0. This policy
- * makes so that A is also mappable to set 3 on every other way. Visually, the
- * possible locations of A are, for a table with 4 ways and 8 sets:
- *    Way 0   1   2   3
- *  Set   _   _   _   _
- *    0  |_| |_| |_| |_|
- *    1  |_| |_| |_| |_|
- *    2  |_| |_| |_| |_|
- *    3  |X| |X| |X| |X|
- *    4  |_| |_| |_| |_|
- *    5  |_| |_| |_| |_|
- *    6  |_| |_| |_| |_|
- *    7  |_| |_| |_| |_|
+ * The VIPTSetAssoc placement policy divides the cache into s sets of w
+ * cache lines (ways) using the virtual address.
  */
-class SetAssociative : public BaseIndexingPolicy
+class VIPTSetAssoc : public BaseSetAssoc
 {
   protected:
-    /**
-     * Apply a hash function to calculate address set.
-     *
-     * @param addr The address to calculate the set for.
-     * @return The set index for given combination of address and way.
-     */
-    virtual uint32_t extractSet(const Addr addr) const;
+    uint64_t pageShift;
 
   public:
-    /**
-     * Convenience typedef.
-     */
-    typedef SetAssociativeParams Params;
+    /** Convenience typedef. */
+     typedef VIPTSetAssocParams Params;
 
     /**
-     * Construct and initialize this policy.
+     * Construct and initialize this tag store.
      */
-    SetAssociative(const Params &p);
+    VIPTSetAssoc(const Params &p);
 
     /**
-     * Destructor.
+     * Destructor
      */
-    ~SetAssociative() {};
+    virtual ~VIPTSetAssoc() {};
 
     /**
-     * Find all possible entries for insertion and replacement of an address.
-     * Should be called immediately before ReplacementPolicy's findVictim()
-     * not to break cache resizing.
-     * Returns entries in all ways belonging to the set of the address.
+     * Finds the block in the cache without touching it.
      *
-     * @param addr The addr to a find possible entries for.
-     * @return The possible entries.
+     * @param addr The address to look for.
+     * @param is_secure True if the target memory space is secure.
+     * @return Pointer to the cache block.
      */
-    std::vector<ReplaceableEntry*> getPossibleEntries(const Addr addr) const
-                                                                     override;
+    virtual CacheBlk *findBlock(Addr addr, bool is_secure) const override;
 
     /**
-     * Regenerate an entry's address from its tag and assigned set and way.
+     * Find replacement victim based on packet.
      *
-     * @param tag The tag bits.
-     * @param entry The entry.
-     * @return the entry's original addr value.
+     * @param pkt The packet holding the address to find a victim for.
+     * @param is_secure True if the target memory space is secure.
+     * @param size Size, in bits, of new block to allocate.
+     * @param evict_blks Cache blocks to be evicted.
+     * @return Cache block to be replaced.
      */
-    virtual Addr regenerateAddr(const Addr tag, const ReplaceableEntry* entry) const
-                                                                   override;
+    CacheBlk* findVictim(PacketPtr pkt, const bool is_secure,
+                         const std::size_t size,
+                         std::vector<CacheBlk*>& evict_blks) override;
+
+    CacheBlk* findVictim(Addr addr, const bool is_secure,
+                         const std::size_t size,
+                         std::vector<CacheBlk*>& evict_blks) override
+    {
+        panic("VIPT cache does not support findVictim based on addr");
+    }
 };
 
 } // namespace gem5
 
-#endif //__MEM_CACHE_INDEXING_POLICIES_SET_ASSOCIATIVE_HH__
+#endif //__MEM_CACHE_TAGS_VIPT_SET_ASSOC_HH__
