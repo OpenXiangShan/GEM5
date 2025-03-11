@@ -1115,7 +1115,7 @@ Commit::commitInsts()
 
     // Commit as many instructions as possible until the commit bandwidth
     // limit is reached, or it becomes impossible to commit any more.
-    while (num_committed < commit_width) {
+    while (num_committed < commitWidth) {
         // hardware transactionally memory
         // If executing within a transaction,
         // need to handle interrupts specially
@@ -1712,7 +1712,7 @@ Commit::getInsts()
     DPRINTF(Commit, "Getting instructions from Rename stage.\n");
 
     // Read any renamed instructions and place them into the ROB.
-    int insts_to_process = std::min((int)renameWidth * 2, fromRename->size);
+    int insts_to_process = std::min((int)renameWidth, fromRename->size);
 
     for (int inst_num = 0; inst_num < insts_to_process; ++inst_num) {
         const DynInstPtr &inst = fromRename->insts[inst_num];

@@ -393,10 +393,10 @@ class IEW
     TimeBuffer<IEWStruct>::wire execWB;
 
     /** Queue of all instructions coming from rename this cycle. */
-    std::deque<DynInstPtr> insts[MaxThreads];
+    std::queue<DynInstPtr> insts[MaxThreads];
 
     /** Skid buffer between rename and IEW. */
-    std::deque<DynInstPtr> skidBuffer[MaxThreads];
+    std::queue<DynInstPtr> skidBuffer[MaxThreads];
 
     std::deque<DynInstPtr> dispQue[3];
 

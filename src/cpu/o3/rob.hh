@@ -327,9 +327,6 @@ class ROB
     unsigned computeDynSquashWidth(unsigned uncommitted_insts, unsigned to_squash);
 
   public:
-    std::list<DynInstPtr>* getInstList(ThreadID tid){
-        return &instList[tid];
-    }
     /** Iterator pointing to the instruction which is the last instruction
      *  in the ROB.  This may at times be invalid (ie when the ROB is empty),
      *  however it should never be incorrect.

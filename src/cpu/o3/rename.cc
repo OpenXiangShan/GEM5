@@ -75,7 +75,7 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
              renameWidth, static_cast<int>(MaxWidth));
 
     // @todo: Make into a parameter.
-    skidBufferMax = (decodeToRenameDelay + 1) * params.decodeWidth * 2;
+    skidBufferMax = (decodeToRenameDelay + 1) * params.decodeWidth;
     for (uint32_t tid = 0; tid < MaxThreads; tid++) {
         renameStatus[tid] = Idle;
         renameMap[tid] = nullptr;
@@ -732,33 +732,20 @@ Rename::renameInsts(ThreadID tid)
 
     int renamed_insts = 0;
 
-    int rename_width = renameWidth;
-    int count_ = 0;
-    for (auto &it : insts_to_rename) {
-        count_++;
-        if (it->opClass() == FMAAccOp) {
-            rename_width++;
-        }
-        if (count_ >= renameWidth ||
-            rename_width >= renameWidth * 2) {
-            break;
-        }
-    }
-
     std::queue<StallReason> rename_stalls;
 
     StallReason breakRename = StallReason::NoStall;
 
     // Check here to make sure there are enough destination registers
     // to rename to.  Otherwise block.
-    bool can_rename = canRename(tid, std::min(rename_width, insts_available));
+    bool can_rename = canRename(tid, std::min((int)renameWidth, insts_available));
     if (!can_rename) {
         DPRINTF(Rename, "[tid:%i] Blocking due to no free physical registers to rename to.\n", tid);
         blockThisCycle = true;
         ++stats.fullRegistersEvents;
     }
 
-    while (can_rename && insts_available > 0 &&  toIEWIndex < rename_width) {
+    while (can_rename && insts_available > 0 &&  toIEWIndex < renameWidth) {
         DPRINTF(Rename, "[tid:%i] Sending instructions to IEW.\n", tid);
 
         assert(!insts_to_rename.empty());

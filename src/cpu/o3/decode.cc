@@ -350,11 +350,11 @@ Decode::squash(const DynInstPtr &inst, ThreadID tid)
     // Clear the instruction list and skid buffer in case they have any
     // insts in them.
     while (!insts[tid].empty()) {
-        insts[tid].pop_front();
+        insts[tid].pop();
     }
 
     while (!skidBuffer[tid].empty()) {
-        skidBuffer[tid].pop_front();
+        skidBuffer[tid].pop();
     }
 
     // Squash instructions up until this one
@@ -398,11 +398,11 @@ Decode::squash(ThreadID tid)
     // Clear the instruction list and skid buffer in case they have any
     // insts in them.
     while (!insts[tid].empty()) {
-        insts[tid].pop_front();
+        insts[tid].pop();
     }
 
     while (!skidBuffer[tid].empty()) {
-        skidBuffer[tid].pop_front();
+        skidBuffer[tid].pop();
     }
 
     return squash_count;
@@ -416,11 +416,11 @@ Decode::skidInsert(ThreadID tid)
     while (!insts[tid].empty()) {
         inst = insts[tid].front();
 
-        insts[tid].pop_front();
+        insts[tid].pop();
 
         assert(tid == inst->threadNumber);
 
-        skidBuffer[tid].push_back(inst);
+        skidBuffer[tid].push(inst);
 
         DPRINTF(Decode, "Inserting [tid:%d][sn:%lli] PC: %s into decode "
                 "skidBuffer %i\n", inst->threadNumber, inst->seqNum,
@@ -494,7 +494,7 @@ Decode::sortInsts()
         if (localSquashVer.largerThan(inst->getVersion())) {
             inst->setSquashed();
         }
-        insts[inst->threadNumber].push_back(inst);
+        insts[inst->threadNumber].push(inst);
     }
 }
 
@@ -715,24 +715,12 @@ Decode::decodeInsts(ThreadID tid)
         ++stats.runCycles;
     }
 
-    std::deque<DynInstPtr>
+    std::queue<DynInstPtr>
         &insts_to_decode = decodeStatus[tid] == Unblocking ?
         skidBuffer[tid] : insts[tid];
 
     DPRINTF(Decode, "[tid:%i] Sending instruction to rename.\n",tid);
 
-    int decode_width = decodeWidth;
-    int count_ = 0;
-    for (auto it : insts_to_decode) {
-        count_++;
-        if (it->opClass() == FMAAccOp) {
-            decode_width++;
-        }
-        if (count_ >= decodeWidth ||
-            decode_width >= decodeWidth * 2) {
-            break;
-        }
-    }
 
     bool vec_decode_limit = false;
 
@@ -740,7 +728,7 @@ Decode::decodeInsts(ThreadID tid)
         vec_decode_limit = true;
     }
 
-    while (insts_available > 0 && toRenameIndex < decode_width) {
+    while (insts_available > 0 && toRenameIndex < decodeWidth) {
         assert(!insts_to_decode.empty());
         if (vec_decode_limit && insts_to_decode.front()->isVector()) {
             break;
@@ -748,7 +736,7 @@ Decode::decodeInsts(ThreadID tid)
 
         DynInstPtr inst = std::move(insts_to_decode.front());
 
-        insts_to_decode.pop_front();
+        insts_to_decode.pop();
 
         DPRINTF(Decode, "[tid:%i] Processing instruction [sn:%lli] with "
                 "PC %s\n", tid, inst->seqNum, inst->pcState());

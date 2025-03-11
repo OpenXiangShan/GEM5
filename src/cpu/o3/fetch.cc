@@ -1265,22 +1265,7 @@ Fetch::tick()
     std::advance(tid_itr,
             random_mt.random<uint8_t>(0, activeThreads->size() - 1));
 
-    int decode_width = decodeWidth;
-    int count_ = 0;
-    for (auto &it0 : fetchQueue){
-        for (auto &it1 : it0) {
-            count_++;
-            if (it1->opClass() == FMAAccOp) {
-                    decode_width++;
-            }
-            if (count_ >= decodeWidth ||
-                decode_width >= decodeWidth * 2) {
-                break;
-            }
-        }
-    }
-
-    while (available_insts != 0 && insts_to_decode < decode_width) {
+    while (available_insts != 0 && insts_to_decode < decodeWidth) {
         ThreadID tid = *tid_itr;
         if (!stalls[tid].decode && !fetchQueue[tid].empty()) {
             const auto& inst = fetchQueue[tid].front();
@@ -1329,10 +1314,10 @@ Fetch::tick()
     // - fetchBubbles += N (count total empty slots)
     // - fetchBubbles_max += 1 (count occurrence of all slots being empty)
     if (!stalls[*tid_itr].decode && !fromCommit->commitInfo[*tid_itr].robSquashing) { // backend not stalled
-        int unused_slots = decode_width - insts_to_decode;
+        int unused_slots = decodeWidth - insts_to_decode;
         if (unused_slots > 0) { // has empty slots
             fetchStats.fetchBubbles += unused_slots; // add number of empty slots
-            if (unused_slots == decode_width) { // all slots empty, insts_to_decode == 0
+            if (unused_slots == decodeWidth) { // all slots empty, insts_to_decode == 0
                 fetchStats.fetchBubbles_max++; // count max bubble occurrence
             }
         }

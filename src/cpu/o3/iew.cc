@@ -544,7 +544,7 @@ IEW::squash(ThreadID tid)
 
         toRename->iewInfo[tid].dispatched++;
 
-        skidBuffer[tid].pop_front();
+        skidBuffer[tid].pop();
     }
 
     emptyRenameInsts(tid);
@@ -739,13 +739,13 @@ IEW::skidInsert(ThreadID tid)
     while (!insts[tid].empty()) {
         inst = insts[tid].front();
 
-        insts[tid].pop_front();
+        insts[tid].pop();
 
         DPRINTF(IEW,"[tid:%i] Inserting [sn:%lli] PC:%s into "
                 "dispatch skidBuffer %i\n",tid, inst->seqNum,
                 inst->pcState(),tid);
 
-        skidBuffer[tid].push_back(inst);
+        skidBuffer[tid].push(inst);
     }
 
     assert(skidBuffer[tid].size() <= skidBufferMax &&
@@ -923,7 +923,7 @@ IEW::sortInsts()
         if (localSquashVer.largerThan(inst->getVersion())) {
             inst->setSquashed();
         }
-        insts[fromRename->insts[i]->threadNumber].push_back(inst);
+        insts[fromRename->insts[i]->threadNumber].push(inst);
     }
 }
 
@@ -944,7 +944,7 @@ IEW::emptyRenameInsts(ThreadID tid)
 
         toRename->iewInfo[tid].dispatched++;
 
-        insts[tid].pop_front();
+        insts[tid].pop();
     }
 }
 
@@ -1044,7 +1044,7 @@ IEW::classifyInstToDispQue(ThreadID tid)
         return IntDQ;
     };
 
-    std::deque<DynInstPtr> &insts_to_dispatch =
+    std::queue<DynInstPtr> &insts_to_dispatch =
         dispatchStatus[tid] == Unblocking ?
         skidBuffer[tid] : insts[tid];
 
@@ -1072,7 +1072,7 @@ IEW::classifyInstToDispQue(ThreadID tid)
                     toRename->iewInfo[tid].dispatchedToSQ++;
                 }
                 toRename->iewInfo[tid].dispatched++;
-                insts_to_dispatch.pop_front();
+                insts_to_dispatch.pop();
 
                 dispatch_stalls.push(StallReason::InstSquashed);
                 continue;
@@ -1122,7 +1122,7 @@ IEW::classifyInstToDispQue(ThreadID tid)
             inst->enterDQTick = curTick();
             cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtDispQue);
 
-            insts_to_dispatch.pop_front();
+            insts_to_dispatch.pop();
             dispatched++;
         } else {
             dispatch_stalls.push(checkDispatchStall(tid, id, inst));
@@ -1569,22 +1569,7 @@ IEW::writebackInsts()
     // Either have IEW have direct access to scoreboard, or have this
     // as part of backwards communication.
 
-    int wb_width = wbWidth;
-    int count_ = 0;
-    while (execWB->insts[count_]) {
-        DynInstPtr it = execWB->insts[count_];
-        count_++;
-        if (it->opClass() == FMAAccOp) {
-            wb_width++;
-        }
-        if (count_ >= wbWidth ||
-            wb_width >= wbWidth * 2) {
-            break;
-        }
-    }
-
-
-    for (int inst_num = 0; inst_num < wb_width &&
+    for (int inst_num = 0; inst_num < wbWidth &&
              execWB->insts[inst_num]; inst_num++) {
         DynInstPtr inst = execWB->insts[inst_num];
         ThreadID tid = inst->threadNumber;

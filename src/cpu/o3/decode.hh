@@ -245,10 +245,10 @@ class Decode
     TimeBuffer<FetchStruct>::wire fromFetch;
 
     /** Queue of all instructions coming from fetch this cycle. */
-    std::deque<DynInstPtr> insts[MaxThreads];
+    std::queue<DynInstPtr> insts[MaxThreads];
 
     /** Skid buffer between fetch and decode. */
-    std::deque<DynInstPtr> skidBuffer[MaxThreads];
+    std::queue<DynInstPtr> skidBuffer[MaxThreads];
 
     /** Variable that tracks if decode has written to the time buffer this
      * cycle. Used to tell CPU if there is activity this cycle.
