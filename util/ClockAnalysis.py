@@ -21,7 +21,7 @@ def DisAssemble(val):
     return asm
 
 
-def ReadDB(sqldb, start_tick, end_tick, period, inter_gap, inner_gap):
+def ReadDB(sqldb, start_clock: int, end_clock: int, period: int, inter_gap: bool, inner_gap: bool):
     inst_pos_clock = []
     inst_records = []
     inst_translate_map = {}
@@ -29,9 +29,9 @@ def ReadDB(sqldb, start_tick, end_tick, period, inter_gap, inner_gap):
     with sql.connect(sqldb) as con:
         cur = con.cursor()
 
-        clock_pick_cmd = f"WHERE AtCommit >= {start_tick} "
-        if end_tick >= start_tick:
-            clock_pick_cmd += f"AND AtCommit <= {end_tick} "
+        clock_pick_cmd = f"WHERE AtCommit >= {start_clock*period} "
+        if end_clock >= start_clock:
+            clock_pick_cmd += f"AND AtCommit <= {end_clock*period} "
 
         cur.execute(
             f"SELECT * FROM LifeTimeCommitTrace {clock_pick_cmd} ORDER BY ID ASC")
@@ -122,26 +122,25 @@ def bbl_main(inst_info, inst_avg_clock_info, inter_gap, inner_gap):
         print()
         print(f"Count: {count}")
         print("Instructions:")
-        base_header = "  PC        : Instruction"
-        clock_head = "               : " + \
-            " ".join([f"{stage_name:>9}" for _,
-                     stage_name in enumerate(StageNameLong)])
+        pc_header = f"{'PC':18}"
+        instr_header = f"{'Instruction':30}"
+        clock_head = ":".join([f"{stage_name:>9}" for stage_name in StageNameLong])
 
         if inter_gap or inner_gap:
-            header = base_header + clock_head
+            header = f"  {pc_header} : {instr_header} : {clock_head}"
         else:
-            header = base_header
+            header = f"  {pc_header} : {instr_header} "
 
         print(header)
 
         for pc, instr in block:
-            print(f"  {pc:10}: {instr:25}", end=' ')
             if inter_gap or inner_gap:
                 formatted_clock = [
                     f"{clock:9.2f}" for clock in inst_avg_clock_info[(pc, instr)]]
-                formatted_clock = " ".join(formatted_clock)
-                print(f": {formatted_clock}", end=' ')
-            print()
+                formatted_clock = ":".join(formatted_clock)
+                print(f"  {pc:18} : {instr:30} : {formatted_clock}")
+            else:
+                print(f"  {pc:18} : {instr:30} ")
 
 
 def perfcct_main(inst_info, inst_pos_clock_info, start_pc, end_pc, attention_pc: list[str], only_attention: bool):
@@ -153,13 +152,13 @@ def perfcct_main(inst_info, inst_pos_clock_info, start_pc, end_pc, attention_pc:
                 (int(pc, 16) < int(start_pc, 16) or int(pc, 16) > int(end_pc, 16)):
             continue
 
-        if only_attention and pc not in attention_pc:
+        if only_attention and (pc not in attention_pc):
             continue
 
-        print(f"{pc:8}:{asm:25}:", end=' ')
+        print(f"{pc:18} : {asm:30}", end=' : ')
 
         for j, pos_clock in enumerate(pos):
-            print(f'{StageNameShort[j]}{pos_clock}', end=' ')
+            print(f'{StageNameShort[j]} {int(pos_clock)}', end=' : ')
 
         if pc in attention_pc:
             print("<<====", end=' ')
@@ -181,14 +180,14 @@ if __name__ == "__main__":
                         choices=['gem5', 'rtl'],
                         default='gem5',
                         help='Platform to analyze')
-    parser.add_argument('-s', '--start-tick', action='store',
+    parser.add_argument('-s', '--start-clock', action='store',
                         type=int,
                         default=0,
-                        help='Start tick to analyze')
-    parser.add_argument('-e', '--end-tick', action='store',
+                        help='Start clock to analyze')
+    parser.add_argument('-e', '--end-clock', action='store',
                         type=int,
                         default=-1,
-                        help='End tick to analyze')
+                        help='End clock to analyze')
     parser.add_argument('-n', '--num-insts', action='store',
                         type=int,
                         default=-1,
@@ -201,7 +200,7 @@ if __name__ == "__main__":
                         help='Analyze inner-gap')
     parser.add_argument('--tool', action='store',
                         choices=['perfcct', 'bbl'],
-                        default= 'bbl',
+                        default='bbl',
                         help='Mode to analyze')
     parser.add_argument('--attention-pc', action='store',
                         nargs='+',
@@ -209,11 +208,11 @@ if __name__ == "__main__":
                         help='Attention PC')
     parser.add_argument('--start-pc', action='store',
                         type=str,
-                        default=0,
+                        default="0x0",
                         help='Start PC to analyze, a hex value start with 0x')
     parser.add_argument('--end-pc', action='store',
                         type=str,
-                        default=0, help='End PC to analyze, a hex value start with 0x')
+                        default="0xffffffffffffffff", help='End PC to analyze, a hex value start with 0x')
     parser.add_argument('--only-attention', action='store_true',
                         default=False,
                         help='Only print attention PC')
@@ -227,11 +226,11 @@ if __name__ == "__main__":
         raise ValueError("Cannot set both inter-gap and inner-gap to True")
 
     inst_info, inst_pos_clock_info, inst_avg_clock_info = ReadDB(
-        args.sqldb, args.start_tick, args.end_tick, args.period, args.inter_gap, args.inner_gap)
+        args.sqldb, args.start_clock, args.end_clock, args.period, args.inter_gap, args.inner_gap)
 
     if args.tool == 'perfcct':
-        perfcct_main(inst_info, inst_pos_clock_info,
-                     args.start_pc, args.end_pc,
-                     args.attention_pc, args.only_attention)
+        perfcct_main(inst_info, inst_pos_clock_info, args.start_pc,
+                     args.end_pc, args.attention_pc, args.only_attention)
     elif args.tool == 'bbl':
-        bbl_main(inst_info, inst_avg_clock_info, args.inter_gap, args.inner_gap)
+        bbl_main(inst_info, inst_avg_clock_info,
+                 args.inter_gap, args.inner_gap)
