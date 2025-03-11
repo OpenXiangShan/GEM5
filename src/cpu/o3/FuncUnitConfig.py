@@ -44,7 +44,7 @@ from m5.params import *
 from m5.objects.FuncUnit import *
 
 class IntMisc(FUDesc):
-    opList = [ OpDesc(opClass='No_OpClass'),
+    opList = [ OpDesc(opClass='No_OpClass', opLat=2),
                OpDesc(opClass='VectorConfig') ]
 
 class IntALU(FUDesc):

@@ -4520,6 +4520,12 @@ decode QUADRANT default Unknown::unknown() {
             }
             format CSROp {
                 0x1:decode FUNCT12 {
+                    0x001:csrrw_fflags({{
+                        // csrrw fflags
+                        Rd = data;
+                        data = Rs1;
+                        write = RS1 != 0;
+                    }}, IsNonSpeculative, No_OpClass);
                     0x100:csrrw_s({{
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
                         if(v)
@@ -4535,6 +4541,15 @@ decode QUADRANT default Unknown::unknown() {
                     }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
                 }
                 0x2: decode FUNCT12 {
+                    0x001:csrrs_fflags({{
+                        auto Rs1_use = Rs1;
+                        auto v = xc->readMiscReg(MISCREG_VIRMODE);
+                        if((FUNCT12 == 0x104) && v)
+                            Rs1_use = Rs1 <<1;
+                        Rd = data;
+                        data |= Rs1_use;
+                        write = RS1 != 0;
+                    }}, IsNonSpeculative, No_OpClass);
                     0x100:csrrs_s({{
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
                         if(v)
@@ -4554,6 +4569,15 @@ decode QUADRANT default Unknown::unknown() {
                     }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
                 }
                 0x3: decode FUNCT12 {
+                    0x001:csrrc_fflags({{
+                        auto Rs1_use = Rs1;
+                        auto v = xc->readMiscReg(MISCREG_VIRMODE);
+                        if((FUNCT12 == 0x104) && v)
+                            Rs1_use = Rs1 <<1;
+                        Rd = data;
+                        data &= ~Rs1_use;
+                        write = RS1 != 0;
+                    }}, IsNonSpeculative, No_OpClass);
                     0x100:csrrc_s({{
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
                         if(v)
@@ -4573,6 +4597,11 @@ decode QUADRANT default Unknown::unknown() {
                     }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
                 }
                 0x5: decode FUNCT12 {
+                    0x001:csrrwi_fflags({{
+                        Rd = data;
+                        data = uimm;
+                        write = uimm != 0;
+                    }}, IsNonSpeculative, No_OpClass);
                     0x100:csrrwi_s({{
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
                         if(v)
@@ -4588,6 +4617,15 @@ decode QUADRANT default Unknown::unknown() {
                     }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
                 }
                 0x6: decode FUNCT12 {
+                    0x001:csrrsi_fflags({{
+                        auto uimm_use = uimm;
+                        auto v = xc->readMiscReg(MISCREG_VIRMODE);
+                        if((FUNCT12 == 0x104) && v)
+                            uimm_use =uimm<<1;
+                        Rd = data;
+                        data |= uimm_use;
+                        write = uimm != 0;
+                    }}, IsNonSpeculative, No_OpClass);
                     0x100:csrrsi_s({{
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
                         if(v)
@@ -4607,6 +4645,11 @@ decode QUADRANT default Unknown::unknown() {
                     }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
                 }
                 0x7: decode FUNCT12 {
+                    0x001:csrrci_fflags({{
+                        Rd = data;
+                        data &= ~uimm;
+                        write = uimm != 0;
+                    }}, IsNonSpeculative, No_OpClass);
                     0x100:csrrci_s({{
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
                         if(v)
