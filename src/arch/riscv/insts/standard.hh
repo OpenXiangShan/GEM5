@@ -56,24 +56,6 @@ class RegOp : public RiscvStaticInst
         Addr pc, const loader::SymbolTable *symtab) const override;
 };
 
-class FMAMOp : public RiscvMacroInst
-{
-  protected:
-    using RiscvMacroInst::RiscvMacroInst;
-
-    std::string generateDisassembly(
-        Addr pc, const loader::SymbolTable *symtab) const override;
-};
-
-class FMAUOp : public RiscvMicroInst
-{
-  protected:
-    using RiscvMicroInst::RiscvMicroInst;
-
-    std::string generateDisassembly(
-        Addr pc, const loader::SymbolTable *symtab) const override;
-};
-
 /**
  * Base class for operations with immediates (I is the type of immediate)
  */

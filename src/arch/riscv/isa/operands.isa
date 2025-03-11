@@ -87,10 +87,6 @@ def operands {{
     'Fp2': FloatRegOp('df', 'FP2 + 8', 'IsFloating', 2),
     'Fp2_bits': FloatRegOp('ud', 'FP2 + 8', 'IsFloating', 2),
 
-
-    'Fx': IntReg('df', 'FMATempReg', 'IsFloating', 1),
-    'Fx_bits': IntReg('ud', 'FMATempReg', 'IsFloating', 1),
-
     'Vd':  VecRegOp('vc', 'VD', 'IsVector', 1),
     'Vs1': VecRegOp('vc', 'VS1', 'IsVector', 2),
     'Vs2': VecRegOp('vc', 'VS2', 'IsVector', 3),

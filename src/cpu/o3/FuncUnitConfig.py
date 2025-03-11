@@ -91,8 +91,7 @@ class FP_MISC(FUDesc):
                OpDesc(opClass='FloatMv', opLat=5)]
 
 class FP_MAC(FUDesc):
-    opList = [ OpDesc(opClass='FMAAcc', opLat=2),
-               OpDesc(opClass='FMAMul', opLat=4)]
+    opList = [ OpDesc(opClass='FloatMultAcc', opLat=4)]
 
 class SIMD_Unit(FUDesc):
     opList = [ OpDesc(opClass='SimdAdd'),

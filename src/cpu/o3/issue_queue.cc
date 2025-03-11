@@ -28,14 +28,12 @@
 #include "sim/eventq.hh"
 #include "sim/sim_object.hh"
 
-#define POPINST(x)                                 \
-    do {                                           \
-        if (x->opClass() != FMAMulOp) [[likely]] { \
-            assert(instNum != 0);                  \
-            assert(opNum[x->opClass()] != 0);      \
-            opNum[x->opClass()]--;                 \
-            instNum--;                             \
-        }                                          \
+#define POPINST(x)                             \
+    do {                                       \
+        assert(instNum != 0);                  \
+        assert(opNum[x->opClass()] != 0);      \
+        opNum[x->opClass()]--;                 \
+        instNum--;                             \
     } while (0)
 
 // must be consistent with FUScheduler.py
@@ -508,12 +506,10 @@ IssueQue::full()
 void
 IssueQue::insert(const DynInstPtr& inst)
 {
-    if (inst->opClass() != FMAMulOp) [[likely]] {
-        assert(instNum < iqsize);
-        opNum[inst->opClass()]++;
-        instNum++;
-        instNumInsert++;
-    }
+    assert(instNum < iqsize);
+    opNum[inst->opClass()]++;
+    instNum++;
+    instNumInsert++;
 
     cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtIssueQue);
 

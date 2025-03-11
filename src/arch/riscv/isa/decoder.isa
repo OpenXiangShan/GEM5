@@ -1481,36 +1481,27 @@ decode QUADRANT default Unknown::unknown() {
             }
         }
 
-        format FMAccOp {
+        format FPROp {
             0x10: decode FUNCT2 {
                 0x0: fmadd_s({{
-                    Fx = Fs1 + Fs2;
-                }}, {{
                     RM_REQUIRED;
                     freg_t fd;
-                    fd.v = Fx_bits;
                     fd = freg(f32_mulAdd(f32(freg(Fs1_bits)),
                                          f32(freg(Fs2_bits)),
                                          f32(freg(Fs3_bits))));
                     Fd_bits = fd.v;
                 }}, FloatMultAccOp);
                 0x1: fmadd_d({{
-                    Fx = Fs1 + Fs2;
-                }}, {{
                     RM_REQUIRED;
                     freg_t fd;
-                    fd.v = Fx_bits;
                     fd = freg(f64_mulAdd(f64(freg(Fs1_bits)),
                                          f64(freg(Fs2_bits)),
                                          f64(freg(Fs3_bits))));
                     Fd_bits = fd.v;
                 }}, FloatMultAccOp);
                 0x2: fmadd_h({{
-                    Fx = Fs1 + Fs2;
-                }}, {{
                     RM_REQUIRED;
                     freg_t fd;
-                    fd.v = Fx_bits;
                     fd = freg(f16_mulAdd(f16(freg(Fs1_bits)),
                                          f16(freg(Fs2_bits)),
                                          f16(freg(Fs3_bits))));
@@ -1519,11 +1510,8 @@ decode QUADRANT default Unknown::unknown() {
             }
             0x11: decode FUNCT2 {
                 0x0: fmsub_s({{
-                    Fx = Fs1 + Fs2;
-                }}, {{
                     RM_REQUIRED;
                     freg_t fd;
-                    fd.v = Fx_bits;
                     fd = freg(f32_mulAdd(f32(freg(Fs1_bits)),
                                     f32(freg(Fs2_bits)),
                                     f32(f32(freg(Fs3_bits)).v ^
@@ -1531,11 +1519,8 @@ decode QUADRANT default Unknown::unknown() {
                     Fd_bits = fd.v;
                 }}, FloatMultAccOp);
                 0x1: fmsub_d({{
-                    Fx = Fs1 + Fs2;
-                }}, {{
                     RM_REQUIRED;
                     freg_t fd;
-                    fd.v = Fx_bits;
                     fd = freg(f64_mulAdd(f64(freg(Fs1_bits)),
                                     f64(freg(Fs2_bits)),
                                     f64(f64(freg(Fs3_bits)).v ^
@@ -1543,11 +1528,8 @@ decode QUADRANT default Unknown::unknown() {
                     Fd_bits = fd.v;
                 }}, FloatMultAccOp);
                 0x2: fmsub_h({{
-                    Fx = Fs1 + Fs2;
-                }}, {{
                     RM_REQUIRED;
                     freg_t fd;
-                    fd.v = Fx_bits;
                     fd = freg(f16_mulAdd(f16(freg(Fs1_bits)),
                                     f16(freg(Fs2_bits)),
                                     f16(f16(freg(Fs3_bits)).v ^
@@ -1557,11 +1539,8 @@ decode QUADRANT default Unknown::unknown() {
             }
             0x12: decode FUNCT2 {
                 0x0: fnmsub_s({{
-                    Fx = Fs1 + Fs2;
-                }}, {{
                     RM_REQUIRED;
                     freg_t fd;
-                    fd.v = Fx_bits;
                     fd = freg(f32_mulAdd(f32(f32(freg(Fs1_bits)).v ^
                                              mask(31, 31)),
                                          f32(freg(Fs2_bits)),
@@ -1569,11 +1548,8 @@ decode QUADRANT default Unknown::unknown() {
                     Fd_bits = fd.v;
                 }}, FloatMultAccOp);
                 0x1: fnmsub_d({{
-                    Fx = Fs1 + Fs2;
-                }}, {{
                     RM_REQUIRED;
                     freg_t fd;
-                    fd.v = Fx_bits;
                     fd = freg(f64_mulAdd(f64(f64(freg(Fs1_bits)).v ^
                                              mask(63, 63)),
                                          f64(freg(Fs2_bits)),
@@ -1581,11 +1557,8 @@ decode QUADRANT default Unknown::unknown() {
                     Fd_bits = fd.v;
                 }}, FloatMultAccOp);
                 0x2: fnmsub_h({{
-                    Fx = Fs1 + Fs2;
-                }}, {{
                     RM_REQUIRED;
                     freg_t fd;
-                    fd.v = Fx_bits;
                     fd = freg(f16_mulAdd(f16(f16(freg(Fs1_bits)).v ^
                                              mask(15, 15)),
                                          f16(freg(Fs2_bits)),
@@ -1595,11 +1568,8 @@ decode QUADRANT default Unknown::unknown() {
             }
             0x13: decode FUNCT2 {
                 0x0: fnmadd_s({{
-                    Fx = Fs1 + Fs2;
-                }}, {{
                     RM_REQUIRED;
                     freg_t fd;
-                    fd.v = Fx_bits;
                     fd = freg(f32_mulAdd(f32(f32(freg(Fs1_bits)).v ^
                                              mask(31, 31)),
                                     f32(freg(Fs2_bits)),
@@ -1608,11 +1578,8 @@ decode QUADRANT default Unknown::unknown() {
                     Fd_bits = fd.v;
                 }}, FloatMultAccOp);
                 0x1: fnmadd_d({{
-                    Fx = Fs1 + Fs2;
-                }}, {{
                     RM_REQUIRED;
                     freg_t fd;
-                    fd.v = Fx_bits;
                     fd = freg(f64_mulAdd(f64(f64(freg(Fs1_bits)).v ^
                                              mask(63, 63)),
                                     f64(freg(Fs2_bits)),
@@ -1621,11 +1588,8 @@ decode QUADRANT default Unknown::unknown() {
                     Fd_bits = fd.v;
                 }}, FloatMultAccOp);
                 0x2: fnmadd_h({{
-                    Fx = Fs1 + Fs2;
-                }}, {{
                     RM_REQUIRED;
                     freg_t fd;
-                    fd.v = Fx_bits;
                     fd = freg(f16_mulAdd(f16(f16(freg(Fs1_bits)).v ^
                                              mask(15, 15)),
                                     f16(freg(Fs2_bits)),
@@ -1634,8 +1598,6 @@ decode QUADRANT default Unknown::unknown() {
                     Fd_bits = fd.v;
                 }}, FloatMultAccOp);
             }
-        }
-        format FPROp {
             0x14: decode FUNCT7 {
                 0x0: fadd_s({{
                     RM_REQUIRED;

@@ -56,7 +56,7 @@ class OpClass(Enum):
             'SimdPredAlu',
             'MemRead', 'MemWrite', 'FloatMemRead', 'FloatMemWrite',
             'MemAtomic',
-            'IprAccess', 'InstPrefetch', 'FMAMul', 'FMAAcc',
+            'IprAccess', 'InstPrefetch',
 
             'VectorUnitStrideLoad', 'VectorSegUnitStrideLoad',
             'VectorUnitStrideStore', 'VectorSegUnitStrideStore',

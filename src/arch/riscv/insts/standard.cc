@@ -58,33 +58,6 @@ RegOp::generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const
 }
 
 std::string
-FMAMOp::generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const
-{
-    assert(_numSrcRegs == 3);
-    std::stringstream ss;
-    ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
-       << registerName(srcRegIdx(0)) << ", " << registerName(srcRegIdx(1))
-       << ", " << registerName(srcRegIdx(2));
-    return ss.str();
-}
-
-std::string
-FMAUOp::generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const
-{
-    assert(_numSrcRegs == 2 || _numSrcRegs == 4);
-    std::stringstream ss;
-    ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", " <<
-        registerName(srcRegIdx(0));
-    if (_numSrcRegs >= 2)
-        ss << ", " << registerName(srcRegIdx(1));
-
-    if (_numSrcRegs >= 4)
-        ss << ", " << registerName(srcRegIdx(2)) << ", "
-           << registerName(srcRegIdx(3));
-    return ss.str();
-}
-
-std::string
 CSROp::generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
