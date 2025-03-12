@@ -62,7 +62,7 @@ def create_prefetcher(cpu, cache_level, options):
     if cache_level == 'l2':
         if options.kmh_align:
             assert prefetcher_name == 'L2CompositeWithWorkerPrefetcher'
-            prefetcher.enable_cmc = True
+            prefetcher.enable_cmc = False
             prefetcher.enable_bop = True
             prefetcher.enable_cdp = False
             prefetcher.bop_large = XSVirtualLargeBOP(is_sub_prefetcher=True)
