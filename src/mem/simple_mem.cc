@@ -144,7 +144,7 @@ SimpleMemory::recvTimingReq(PacketPtr pkt)
 
     // calculate an appropriate tick to release to not exceed
     // the bandwidth limit
-    Tick duration = pkt->getSize() * bandwidth;
+    Tick duration = 4 * clockPeriod();// pkt->getSize() * bandwidth;
 
     // only consider ourselves busy if there is any need to wait
     // to avoid extra events being scheduled for (infinitely) fast
@@ -164,7 +164,7 @@ SimpleMemory::recvTimingReq(PacketPtr pkt)
         // atomic response
         assert(pkt->isResponse());
 
-        Tick when_to_send = curTick() + receive_delay + getLatency();
+        Tick when_to_send = curTick() + receive_delay;// + getLatency();
 
         // typically this should be added at the end, so start the
         // insertion sort with the last element, also make sure not to

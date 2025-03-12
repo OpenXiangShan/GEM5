@@ -69,6 +69,11 @@ class MemBus(L3ToMemBus):
     badaddr_responder = BadAddr()
     default = Self.badaddr_responder.pio
 
+class SimpleMemBus(L3ToMemBus):
+    badaddr_responder = BadAddr()
+    default = Self.badaddr_responder.pio
+    response_latency = 3 + 9 + 180
+
 def attach_9p(parent, bus):
     viopci = PciVirtIO()
     viopci.vio = VirtIO9PDiod()
@@ -657,7 +662,7 @@ def makeBareMetalRiscvSystem(mem_mode, mdesc=None, cmdline=None):
     self.system_port = self.membus.cpu_side_ports
     return self
 
-def makeBareMetalXiangshanSystem(mem_mode, mdesc=None, cmdline=None, np=1, ruby=False):
+def makeBareMetalXiangshanSystem(mem_mode, mdesc=None, cmdline=None, np=1, ruby=False, simple_mem=False):
     self = System()
     if not mdesc:
         # generic system
@@ -669,7 +674,10 @@ def makeBareMetalXiangshanSystem(mem_mode, mdesc=None, cmdline=None, np=1, ruby=
 
     self.iobus = IOXBar()
     if not ruby:
-        self.membus = MemBus()
+        if simple_mem:
+            self.membus = SimpleMemBus()
+        else:
+            self.membus = MemBus()
 
         self.bridge = Bridge(delay='50ns')
         self.bridge.mem_side_port = self.iobus.cpu_side_ports

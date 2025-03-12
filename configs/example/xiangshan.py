@@ -74,7 +74,12 @@ def build_test_system(np, args):
     ruby = False
     if hasattr(args, 'ruby') and args.ruby:
         ruby = True
-    test_sys = makeBareMetalXiangshanSystem('timing', SysConfig(mem=args.mem_size), None, np=np, ruby=ruby)
+
+    if args.mem_type == 'SimpleMemory':
+        simple_mem = True
+
+    test_sys = makeBareMetalXiangshanSystem('timing', SysConfig(mem=args.mem_size), None,
+                                            np=np, ruby=ruby, simple_mem=simple_mem)
     test_sys.num_cpus = np
 
     test_sys.xiangshan_system = True
