@@ -75,6 +75,8 @@ class BOP : public Queued
         const bool         delayQueueEnabled;
         const unsigned int delayQueueSize;
         const unsigned int delayTicks;
+        /** Cross page parameters */
+        const bool crossPage;
 
         const int victimListSize;
         const int restoreCycle;

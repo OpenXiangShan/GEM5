@@ -49,6 +49,7 @@ BOP::BOP(const BOPPrefetcherParams &p)
       delayQueueEnabled(p.delay_queue_enable),
       delayQueueSize(p.delay_queue_size),
       delayTicks(cyclesToTicks(p.delay_queue_cycles)),
+      crossPage(p.crossPage),
       victimListSize(p.victimOffsetsListSize),
       restoreCycle(p.restoreCycle),
       delayQueueEvent([this]{ delayQueueEventWrapper(); }, name()),
@@ -447,6 +448,9 @@ bool
 BOP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
                       PrefetchSourceType src)
 {
+    if (!samePage(pfi.getAddr(), addr) && !crossPage) {
+        return false;
+    }
     if (archDBer && cache->level() == 1) {
         archDBer->l1PFTraceWrite(curTick(), pfi.getPC(), pfi.getAddr(), addr, src);
     }

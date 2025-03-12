@@ -711,8 +711,42 @@ class BOPPrefetcher(QueuedPrefetcher):
     offsets = VectorParam.Int([72, 75, 80, 81, 90, 96, 100, 108, 120, 125, 128, 135, 144,
                               150, 160, 162, 180, 192, 200, 216, 225, 240, 243, 250, 256], "Predefined offsets")
 
+    crossPage = Param.Bool(True, "Cross page prefetching")
     victimOffsetsListSize = Param.Int(10, "The size of victimOffsetsList")
     restoreCycle = Param.Int(250000, "Cycles which Restore one offset from victimOffsetsList")
+
+class XSPhysicalSmallBOP(BOPPrefetcher):
+    score_max = 31
+    round_max = 50
+    bad_score = 1
+    rr_size = 256
+    tag_bits = 12
+    negative_offsets_enable = False
+    delay_queue_enable = True
+    delay_queue_size = 16
+    delay_queue_cycles = 175
+    crossPage = False
+
+    offsets = [x for i in [
+        1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 16, 18, 20, 24, 25, 27, 30
+    ] for x in (i, -i)] + [-32]
+
+class XSVirtualLargeBOP(BOPPrefetcher):
+    score_max = 31
+    round_max = 50
+    bad_score = 2
+    rr_size = 256
+    tag_bits = 12
+    negative_offsets_enable = False
+    delay_queue_enable = True
+    delay_queue_size = 16
+    delay_queue_cycles = 175
+
+    offsets = [x for i in [
+        1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 16, 18, 20, 24, 25, 27, 30, 32, 36, 40, 45, 48,
+        50, 54, 60, 64, 72, 75, 80, 81, 90, 96, 100, 108, 120, 125, 128, 135, 144, 150, 160, 162, 180, 192, 200, 216,
+        225, 240, 243, 250
+    ] for x in (i, -i)] + [-256]
 
 class SmallBOPPrefetcher(BOPPrefetcher):
     score_max = 31
