@@ -89,6 +89,7 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
       wbCycle(0),
       wbDelay(params.executeToWriteBackDelay),
       wbWidth(params.wbWidth),
+      enableStoreSetTrain(params.enable_storeSet_train),
       numThreads(params.numThreads),
       iewStats(cpu)
 {
@@ -1394,7 +1395,9 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
             fetchRedirect[tid] = true;
 
             // Tell the instruction queue that a violation has occured.
-            instQueue.violation(inst, violator);
+            if (enableStoreSetTrain) {
+                instQueue.violation(inst, violator);
+            }
 
             // Squash.
             squashDueToMemOrder(violator, tid);

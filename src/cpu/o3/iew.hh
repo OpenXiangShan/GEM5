@@ -470,6 +470,8 @@ class IEW
     /** Writeback width. */
     unsigned wbWidth;
 
+    bool enableStoreSetTrain;
+
     /** Number of active threads. */
     ThreadID numThreads;
 

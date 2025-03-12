@@ -113,6 +113,9 @@ def build_test_system(np, args):
         args.enable_loop_buffer = True
 
     for i in range(np):
+        if args.kmh_align:
+            test_sys.cpu[i].enable_storeSet_train = False
+
         if args.bp_type is None or args.bp_type == 'DecoupledBPUWithFTB':
             enable_bp_db = len(args.enable_bp_db) > 1
             if enable_bp_db:
