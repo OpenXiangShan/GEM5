@@ -152,14 +152,14 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
             Addr pf_addr = 0;
             if (useXsDepth) {
                 sendPFWithFilter(pfi, blockAddress(lookupAddr + entry->stride * 2), addresses, 0,
-                                 PrefetchSourceType::SStride);
+                                 PrefetchSourceType::SStride, 1);
                 sendPFWithFilter(pfi, blockAddress(lookupAddr + entry->stride * 5), addresses, 0,
-                                 PrefetchSourceType::SStride);
+                                 PrefetchSourceType::SStride, 2);
             } else {
                 for (unsigned i = start_depth; i <= entry->depth; i++) {
                     pf_addr = lookupAddr + entry->stride * i;
                     DPRINTF(XSStridePrefetcher, "Stride conf >= 2, send pf: %x with depth %i\n", pf_addr, i);
-                    sendPFWithFilter(pfi, blockAddress(pf_addr), addresses, 0, PrefetchSourceType::SStride);
+                    sendPFWithFilter(pfi, blockAddress(pf_addr), addresses, 0, PrefetchSourceType::SStride, 1);
                 }
                 stride_pf = pf_addr;  // the longest lookahead
             }
@@ -235,20 +235,26 @@ XSStridePrefetcher::isNonStridePC(Addr pc)
     return entry != nullptr;
 }
 
-bool
+void
 XSStridePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses,
-                                      int prio, PrefetchSourceType src)
+                                      int prio, PrefetchSourceType src, int ahead_level)
 {
     if (filter->contains(addr)) {
         DPRINTF(XSStridePrefetcher, "Skip recently prefetched: %lx\n", addr);
-        return false;
     } else {
         DPRINTF(XSStridePrefetcher, "Send pf: %lx\n", addr);
         filter->insert(addr, 0);
         addresses.push_back(AddrPriority(addr, prio, src));
-        return true;
+        if (ahead_level > 1) {
+            assert(ahead_level == 2 || ahead_level == 3);
+            addresses.back().pfahead_host = ahead_level;
+            addresses.back().pfahead = true;
+        } else {
+            addresses.back().pfahead = false;
+        }
     }
 }
+
 Addr
 XSStridePrefetcher::strideHashPc(Addr pc)
 {

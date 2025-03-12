@@ -32,6 +32,9 @@ class XsStreamPrefetcher : public Queued
     const int DEPTHRIGHT = 1 << 9;
     const int DEPTHLEFT = 1;
     const int DEPTHSTEP = 1;
+    const int L1BLKDEGREE = 2;
+    const int L2BLKDEGREE = 4;
+    const int L3BLKDEGREE = 8;
     const int BLOCKOFFST = 6;
     const int BITVECWIDTH = 128;
     const int REGIONBITS = 7;
@@ -76,8 +79,8 @@ class XsStreamPrefetcher : public Queued
     };
     AssociativeSet<STREAMEntry> stream_array;
     STREAMEntry *streamLookup(const PrefetchInfo &pfi, bool &in_active_page, bool &decr);
-    bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
-                          PrefetchSourceType src, int ahead_level = -1);
+    void sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
+                          PrefetchSourceType src, int pf_degree, int ahead_level = -1);
 
   public:
     boost::compute::detail::lru_cache<Addr, Addr> *filter;

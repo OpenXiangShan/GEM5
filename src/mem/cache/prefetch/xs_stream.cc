@@ -52,14 +52,14 @@ XsStreamPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrP
 
     if (in_active_page) {
         Addr pf_stream_l1 = decr ? block_addr - depth * blkSize : block_addr + depth * blkSize;
-        sendPFWithFilter(pfi, pf_stream_l1, addresses, 1, stream_type);
+        sendPFWithFilter(pfi, pf_stream_l1, addresses, 1, stream_type, L1BLKDEGREE, 1);
         Addr pf_stream_l2 =
             decr ? block_addr - (depth << l2Ratio) * blkSize : block_addr + (depth << l2Ratio) * blkSize;
-        sendPFWithFilter(pfi, pf_stream_l2, addresses, 1, stream_type);
+        sendPFWithFilter(pfi, pf_stream_l2, addresses, 1, stream_type, L2BLKDEGREE, 2);
         if (enableL3StreamPre) {
             Addr pf_stream_l3 =
                 decr ? block_addr - (depth << l3Ratio) * blkSize : block_addr + (depth << l3Ratio) * blkSize;
-            sendPFWithFilter(pfi, pf_stream_l3, addresses, 1, stream_type);
+            sendPFWithFilter(pfi, pf_stream_l3, addresses, 1, stream_type, L3BLKDEGREE, 3);
         }
     }
 }
@@ -77,52 +77,58 @@ XsStreamPrefetcher::streamLookup(const PrefetchInfo &pfi, bool &in_active_page, 
     STREAMEntry *entry_plus = stream_array.findEntry(regionHashTag(vaddr_tag_num + 1), pfi.isSecure());
     STREAMEntry *entry_min = stream_array.findEntry(regionHashTag(vaddr_tag_num - 1), pfi.isSecure());
 
+    bool entry_plus_active = entry_plus && entry_plus->active;
+    bool entry_min_active = entry_min && entry_min->active;
+
     if (entry) {
         stream_array.accessEntry(entry);
         uint64_t region_bit_accessed = 1UL << vaddr_offset;
         if (entry_plus)
             entry->decrMode = true;
-        if ((entry_plus || entry_min) || (entry->cnt > ACTIVETHRESHOLD))
+        if ((entry_plus_active || entry_min_active) || (entry->cnt > ACTIVETHRESHOLD))
             entry->active = true;
         in_active_page = entry->active;
         decr = entry->decrMode;
         if (!(entry->bitVec & region_bit_accessed)) {
+            entry->bitVec |= region_bit_accessed;
             entry->cnt += 1;
         }
         return entry;
     }
     entry = stream_array.findVictim(0);
 
-    in_active_page = (entry_plus || entry_min);
+    in_active_page = (entry_plus_active || entry_min_active);
     decr = entry_plus != nullptr;
     entry->tag = regionHashTag(vaddr_tag_num);
-    entry->decrMode = entry_plus != nullptr;
+    entry->decrMode = decr;
     entry->bitVec = 1UL << vaddr_offset;
     entry->cnt = 1;
-    entry->active = (entry_plus != nullptr) || (entry_min != nullptr);
+    entry->active = in_active_page;
     stream_array.insertEntry(regionHashTag(vaddr_tag_num), secure, entry);
     return entry;
 }
-bool
+
+void
 XsStreamPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses,
-                                     int prio, PrefetchSourceType src, int ahead_level)
+                                     int prio, PrefetchSourceType src, int pf_degree, int ahead_level)
 {
-    if (filter->contains(addr)) {
-        DPRINTF(XsStreamPrefetcher, "Skip recently prefetched: %lx\n", addr);
-        return false;
-    } else {
-        DPRINTF(XsStreamPrefetcher, "Send pf: %lx\n", addr);
-        filter->insert(addr, 0);
-        addresses.push_back(AddrPriority(addr, prio, src));
-        streamBlkFilter.insert(addr, 0);
-        if (ahead_level > 1) {
-            assert(ahead_level == 2 || ahead_level == 3);
-            addresses.back().pfahead_host = ahead_level;
-            addresses.back().pfahead = true;
+    for (int i = 0; i < pf_degree; i++) {
+        Addr pf_addr = addr + i * blkSize;
+        if (filter->contains(pf_addr)) {
+            DPRINTF(XsStreamPrefetcher, "Skip recently prefetched: %lx\n", pf_addr);
         } else {
-            addresses.back().pfahead = false;
+            DPRINTF(XsStreamPrefetcher, "Send pf: %lx\n", pf_addr);
+            filter->insert(pf_addr, 0);
+            addresses.push_back(AddrPriority(pf_addr, prio, src));
+            streamBlkFilter.insert(pf_addr, 0);
+            if (ahead_level > 1) {
+                assert(ahead_level == 2 || ahead_level == 3);
+                addresses.back().pfahead_host = ahead_level;
+                addresses.back().pfahead = true;
+            } else {
+                addresses.back().pfahead = false;
+            }
         }
-        return true;
     }
 }
 

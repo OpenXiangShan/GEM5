@@ -97,8 +97,8 @@ class XSStridePrefetcher : public Queued
     Addr nonStrideHash(Addr pc) { return pc >> 1; }
 
 
-    bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
-                              PrefetchSourceType src);
+    void sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
+                              PrefetchSourceType src, int ahead_level = -1);
     Addr strideHashPc(Addr pc);
 
   public:
