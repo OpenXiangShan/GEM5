@@ -856,31 +856,41 @@ class DynInst : public ExecContext, public RefCounted
 
     void setWriteback() { issueQue = nullptr; issueportid = -1; }
 
+    /** Scheduler state begin */
+
     void setInReadyQ() { status.set(InReadyQue); }
 
+    // leave readyQ and already to schedule
     void clearInReadyQ() { status.reset(InReadyQue); }
 
     bool inReadyQ() const { return status[InReadyQue]; }
 
-    // set ready once, can not be spec woken again
+    // cancled
     void setCancel() { status.set(Canceled); }
 
     void clearCancel() { status.reset(Canceled); }
 
     bool canceled() const { return status[Canceled]; }
 
+    void setScheduled() { status.set(Scheduled); }
+
+    void clearScheduled() { status.reset(Scheduled); }
+
+    bool isScheduled() const { return status[Scheduled]; }
+
+    // schedule failed
     void setArbFailed() { status.set(ArbFailed); }
 
     void clearArbFailed() { status.reset(ArbFailed); }
 
     bool arbFailed() const { return status[ArbFailed]; }
 
-    /** Sets this instruction as issued from the IQ. */
+    /** leave issueStage and goto FuncUnits */
     void setIssued() { status.set(Issued); }
 
-    /** Returns whether or not this instruction has issued. */
     bool isIssued() const { return status[Issued]; }
 
+    /** Scheduler state end */
 
     /** Sets this instruction as executed. */
     void setExecuted() { status.set(Executed); }
@@ -912,17 +922,6 @@ class DynInst : public ExecContext, public RefCounted
 
     /** Returns whether or not this instruction is squashed. */
     bool isSquashed() const { return status[Squashed]; }
-
-    //Instruction Queue Entry
-    //-----------------------
-    /** Sets this instruction as a entry the IQ. */
-    void setScheduled() { status.set(Scheduled); }
-
-    /** Sets this instruction as a entry the IQ. */
-    void clearScheduled() { status.reset(Scheduled); }
-
-    /** Returns whether or not this instruction has issued. */
-    bool isScheduled() const { return status[Scheduled]; }
 
     /** Sets this instruction as squashed in the IQ. */
     void setSquashedInIQ() { status.set(SquashedInIQ); status.set(Squashed);}

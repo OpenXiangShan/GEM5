@@ -132,7 +132,7 @@ class IssueQue : public SimObject
         statistics::Scalar canceledInst;
         statistics::Scalar loadmiss;
         statistics::Scalar arbFailed;
-        statistics::Scalar replayQBlock;
+        statistics::Scalar issueOccupy;
         statistics::Vector insertDist;
         statistics::Vector issueDist;
         statistics::Vector portissued;

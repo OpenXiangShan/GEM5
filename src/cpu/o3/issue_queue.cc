@@ -28,12 +28,20 @@
 #include "sim/eventq.hh"
 #include "sim/sim_object.hh"
 
-#define POPINST(x)                             \
-    do {                                       \
-        assert(instNum != 0);                  \
-        assert(opNum[x->opClass()] != 0);      \
-        opNum[x->opClass()]--;                 \
-        instNum--;                             \
+#define POPINST(x)                        \
+    do {                                  \
+        assert(instNum != 0);             \
+        assert(opNum[x->opClass()] != 0); \
+        opNum[x->opClass()]--;            \
+        instNum--;                        \
+    } while (0)
+
+#define READYQ_PUSH(x)                                                                    \
+    do {                                                                                  \
+        (x)->setInReadyQ();                                                               \
+        auto& readyQ = readyQclassify[(x)->opClass()];                                    \
+        auto it = std::lower_bound(readyQ->begin(), readyQ->end(), (x), select_policy()); \
+        readyQ->insert(it, (x));                                                          \
     } while (0)
 
 // must be consistent with FUScheduler.py
@@ -90,7 +98,7 @@ IssueQue::IssueQueStats::IssueQueStats(statistics::Group* parent, IssueQue* que,
       ADD_STAT(canceledInst, statistics::units::Count::get(), "count of canceled insts"),
       ADD_STAT(loadmiss, statistics::units::Count::get(), "count of load miss"),
       ADD_STAT(arbFailed, statistics::units::Count::get(), "count of arbitration failed"),
-      ADD_STAT(replayQBlock, statistics::units::Count::get(), "count of replayQ blocked"),
+      ADD_STAT(issueOccupy, statistics::units::Count::get(), "count of replayQ blocked"),
       ADD_STAT(insertDist, statistics::units::Count::get(), "distruibution of insert"),
       ADD_STAT(issueDist, statistics::units::Count::get(), "distruibution of issue"),
       ADD_STAT(portissued, statistics::units::Count::get(), "count each port issues"),
@@ -105,7 +113,7 @@ IssueQue::IssueQueStats::IssueQueStats(statistics::Group* parent, IssueQue* que,
     canceledInst.flags(statistics::nozero);
     loadmiss.flags(statistics::nozero);
     arbFailed.flags(statistics::nozero);
-    replayQBlock.flags(statistics::nozero);
+    issueOccupy.flags(statistics::nozero);
 }
 
 IssueQue::IssueQue(const IssueQueParams& params)
@@ -242,31 +250,44 @@ void
 IssueQue::issueToFu()
 {
     int size = toFu->size;
-    int iqIssued = 0, replayQIssued = 0;
+    int replayed = 0;
+    int issued = 0;
+
+    // replay first
+    for (;!replayQ.empty() && replayed < outports; replayed++) {
+        auto& inst = replayQ.front();
+        scheduler->addToFU(inst);
+        DPRINTF(Schedule, "[sn:%llu] replayed to FU\n", inst->seqNum);
+        replayQ.pop();
+        issued++;
+    }
+
     for (int i = 0; i < size; i++) {
         auto inst = toFu->pop();
         if (!inst) {
             continue;
         }
+        if (i < replayed) {
+            inst->clearScheduled();
+            // only for load/store
+            READYQ_PUSH(inst);
+            DPRINTF(Schedule, "[sn:%llu] issue failed due to being occupied\n", inst->seqNum);
+            continue;
+        }
         if (!checkScoreboard(inst)) {
             continue;
         }
+
         addToFu(inst);
         cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtIssueReadReg);
-        iqIssued++;
+        issued++;
     }
-    for (int i = size; !replayQ.empty() && i < outports; i++) {
-        auto inst = replayQ.front();
-        replayQ.pop();
-        scheduler->addToFU(inst);
-        replayQIssued++;
-    }
-    int issued = iqIssued + replayQIssued;
+
     if (issued > 0) {
         iqstats->issueDist[issued]++;
     }
-    if (replayQIssued == 0 && !replayQ.empty() && iqIssued > 0) {
-        iqstats->replayQBlock++;
+    if (replayed) {
+        iqstats->issueOccupy += replayed;
     }
 }
 
@@ -315,7 +336,8 @@ IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
         scheduler->regCache.insert(dst->flatIndex(), {});
         DPRINTF(Schedule, "was %s woken by p%lu [sn:%llu]\n", speculative ? "spec" : "wb", dst->flatIndex(),
                 inst->seqNum);
-        for (auto& it : subDepGraph[dst->flatIndex()]) {
+        auto& depgraph = subDepGraph[dst->flatIndex()];
+        for (auto& it : depgraph) {
             int srcIdx = it.first;
             auto& consumer = it.second;
             if (consumer->readySrcIdx(srcIdx)) {
@@ -332,7 +354,7 @@ IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
         }
 
         if (!speculative) {
-            subDepGraph[dst->flatIndex()].clear();
+            depgraph.clear();
         }
     }
 }
@@ -359,11 +381,7 @@ IssueQue::addIfReady(const DynInstPtr& inst)
         DPRINTF(Schedule, "[sn:%llu] add to readyInstsQue\n", inst->seqNum);
         inst->clearCancel();
         if (!inst->inReadyQ()) {
-            inst->setInReadyQ();
-
-            auto& readyQ = readyQclassify[inst->opClass()];
-            auto it = std::lower_bound(readyQ->begin(), readyQ->end(), inst, select_policy());
-            readyQ->insert(it, inst);
+            READYQ_PUSH(inst);
         }
     }
 }
@@ -424,6 +442,8 @@ IssueQue::selectInst()
                 inst->clearInReadyQ();
                 readyQ->erase(it);
                 break;
+            } else {
+                iqstats->portBusy[pi]++;
             }
 
             it++;
@@ -444,12 +464,8 @@ IssueQue::scheduleInst()
             DPRINTF(Schedule, "[sn:%llu] arbitration failed, retry\n", inst->seqNum);
             iqstats->arbFailed++;
             assert(inst->readyToIssue());
-            inst->setInReadyQ();
 
-            // retry
-            auto& readyQ = readyQclassify[inst->opClass()];
-            auto it = std::lower_bound(readyQ->begin(), readyQ->end(), inst, select_policy());
-            readyQ->insert(it, inst);
+            READYQ_PUSH(inst);
         } else [[likely]] {
             DPRINTF(Schedule, "[sn:%llu] no conflict, scheduled\n", inst->seqNum);
             iqstats->portissued[pi]++;
@@ -800,6 +816,18 @@ Scheduler::tick()
 void
 Scheduler::issueAndSelect()
 {
+    // must wait for all insts was issued
+    for (auto it : issueQues) {
+        it->selectInst();
+    }
+    // inst arbitration
+    for (auto inst : arbFailedInsts) {
+        inst->setArbFailed();
+    }
+    arbFailedInsts.clear();
+    std::fill(rfPortOccupancy.begin(), rfPortOccupancy.end(), std::make_pair(nullptr, 0));
+
+
     for (auto it : issueQues) {
         it->issueToFu();
     }
@@ -814,18 +842,6 @@ Scheduler::issueAndSelect()
         if ((misslevel & ((1<<2) - 1)) == ((1<<2) - 1)) stats.memstall_l2miss++;
         if ((misslevel & ((1<<3) - 1)) == ((1<<3) - 1)) stats.memstall_l3miss++;
     }
-
-    // must wait for all insts was issued
-    for (auto it : issueQues) {
-        it->selectInst();
-    }
-
-    // inst arbitration
-    for (auto inst : arbFailedInsts) {
-        inst->setArbFailed();
-    }
-    arbFailedInsts.clear();
-    std::fill(rfPortOccupancy.begin(), rfPortOccupancy.end(), std::make_pair(nullptr, 0));
 }
 
 bool
@@ -1084,12 +1100,8 @@ Scheduler::useRegfilePort(const DynInstPtr& inst, const PhysRegIdPtr& regid, int
 void
 Scheduler::loadCancel(const DynInstPtr& inst)
 {
-    if (inst->canceled()) {
-        return;
-    }
     DPRINTF(Schedule, "[sn:%llu] %s cache miss, cancel consumers\n", inst->seqNum,
             enums::OpClassStrings[inst->opClass()]);
-    inst->setCancel();
     if (inst->issueQue) {
         inst->issueQue->iqstats->loadmiss++;
     }
