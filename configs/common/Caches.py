@@ -163,7 +163,7 @@ class L1ToL2Bus(CoherentXBar):
     # no more than a single pipeline stage for any packet.
     frontend_latency = 0 # l1 -> l2 req additional latency
     forward_latency = 3 # l1 -> l2 req/snoop latency
-    response_latency = 3 # l2 -> l1 resp latency
+    response_latency = 4 # l2 -> l1 resp latency
     snoop_response_latency = 1
     hint_wakeup_ahead_cycles = 2 # send Hint to L1 N cycles in advance with TimingResp
 
