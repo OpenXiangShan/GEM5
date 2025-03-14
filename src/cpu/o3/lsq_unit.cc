@@ -758,19 +758,20 @@ LSQUnit::insertStore(const DynInstPtr& store_inst)
 bool
 LSQUnit::pipeLineNukeCheck(const DynInstPtr &load_inst, const DynInstPtr &store_inst)
 {
-    Addr load_eff_addr1 = load_inst->effAddr >> depCheckShift;
-    Addr load_eff_addr2 = (load_inst->effAddr + load_inst->effSize - 1) >> depCheckShift;
+    Addr load_eff_addr1 = load_inst->physEffAddr >> depCheckShift;
+    Addr load_eff_addr2 = (load_inst->physEffAddr + load_inst->effSize - 1) >> depCheckShift;
 
-    Addr store_eff_addr1 = store_inst->effAddr >> depCheckShift;
-    Addr store_eff_addr2 = (store_inst->effAddr + store_inst->effSize - 1) >> depCheckShift;
+    Addr store_eff_addr1 = store_inst->physEffAddr >> depCheckShift;
+    Addr store_eff_addr2 = (store_inst->physEffAddr + store_inst->effSize - 1) >> depCheckShift;
 
     LSQRequest* store_req = store_inst->savedRequest;
     // Dont perform pipe line nuke check for split load
     bool load_is_splited = load_inst->savedRequest && load_inst->savedRequest->isSplit();
-    bool load_need_check = !load_is_splited && !load_inst->effAddrValid() &&
+    bool load_need_check = !load_is_splited && load_inst->effAddrValid() &&
                             (load_inst->lqIt >= store_inst->lqIt);
     bool store_need_check = store_req && store_req->isTranslationComplete() &&
                             store_req->isMemAccessRequired() && (store_inst->getFault() == NoFault);
+
     if (lsq->enablePipeNukeCheck() && load_need_check && store_need_check) {
         if (load_eff_addr1 <= store_eff_addr2 && store_eff_addr1 <= load_eff_addr2) {
             return true;
@@ -912,8 +913,8 @@ Fault
 LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
         const DynInstPtr& inst)
 {
-    Addr inst_eff_addr1 = inst->effAddr >> depCheckShift;
-    Addr inst_eff_addr2 = (inst->effAddr + inst->effSize - 1) >> depCheckShift;
+    Addr inst_eff_addr1 = inst->physEffAddr >> depCheckShift;
+    Addr inst_eff_addr2 = (inst->physEffAddr + inst->effSize - 1) >> depCheckShift;
 
     /** @todo in theory you only need to check an instruction that has executed
      * however, there isn't a good way in the pipeline at the moment to check
@@ -921,7 +922,7 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
      * like the implementation that came before it, we're overly conservative.
      */
     DPRINTF(LSQUnit, "Checking for violations for store [sn:%lli], addr: %#lx\n",
-            inst->seqNum, inst->effAddr);
+            inst->seqNum, inst->physEffAddr);
     while (loadIt != loadQueue.end()) {
         DynInstPtr ld_inst = loadIt->instruction();
         if (!ld_inst->effAddrValid() || ld_inst->strictlyOrdered()) {
@@ -929,12 +930,12 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
             continue;
         }
 
-        Addr ld_eff_addr1 = ld_inst->effAddr >> depCheckShift;
+        Addr ld_eff_addr1 = ld_inst->physEffAddr >> depCheckShift;
         Addr ld_eff_addr2 =
-            (ld_inst->effAddr + ld_inst->effSize - 1) >> depCheckShift;
+            (ld_inst->physEffAddr + ld_inst->effSize - 1) >> depCheckShift;
 
         DPRINTF(LSQUnit, "Checking for violations for load [sn:%lli], addr: %#lx\n",
-                ld_inst->seqNum, ld_inst->effAddr);
+                ld_inst->seqNum, ld_inst->physEffAddr);
         if (inst_eff_addr2 >= ld_eff_addr1 && inst_eff_addr1 <= ld_eff_addr2) {
             if (inst->isLoad()) {
                 // If this load is to the same block as an external snoop
@@ -1183,6 +1184,7 @@ LSQUnit::loadPipeS1(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
             for (int i = 0; i < storePipeSx[1]->size; i++) {
                 auto& store_inst = storePipeSx[1]->insts[i];
                 if (pipeLineNukeCheck(inst, store_inst)) {
+                    DPRINTF(LSQUnit, "LoadPipeS1: Nuke replay at s1, [sn:%lli]\n", inst->seqNum);
                     flag[LdStFlags::Nuke] = true;
                     break;
                 }
@@ -1269,6 +1271,7 @@ LSQUnit::loadPipeS2(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
     for (int i = 0; i < storePipeSx[1]->size; i++) {
         auto& store_inst = storePipeSx[1]->insts[i];
         if (pipeLineNukeCheck(inst, store_inst)) {
+            DPRINTF(LSQUnit, "LoadPipeS2: Nuke replay at s2, [sn:%lli]\n", inst->seqNum);
             flag[LdStFlags::Nuke] = true;
             break;
         }
@@ -2839,9 +2842,9 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
 
             // Check if the store data is within the lower and upper bounds of
             // addresses that the request needs.
-            auto req_s = request->mainReq()->getVaddr();
+            auto req_s = request->mainReq()->getPaddr();
             auto req_e = req_s + request->mainReq()->getSize();
-            auto st_s = store_it->instruction()->effAddr;
+            auto st_s = store_it->instruction()->physEffAddr;
             auto st_e = st_s + store_size;
 
             bool store_has_lower_limit = req_s >= st_s;
@@ -2912,8 +2915,8 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
 
             if (coverage == AddrRangeCoverage::FullAddrRangeCoverage) {
                 // Get shift amount for offset into the store's data.
-                int shift_amt = request->mainReq()->getVaddr() -
-                    store_it->instruction()->effAddr;
+                int shift_amt = request->mainReq()->getPaddr() -
+                    store_it->instruction()->physEffAddr;
 
                 // Allocate memory if this is the first time a load is issued.
                 if (!load_inst->memData) {
