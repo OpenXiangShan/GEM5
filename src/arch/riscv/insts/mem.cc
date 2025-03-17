@@ -35,6 +35,7 @@
 #include "arch/riscv/insts/static_inst.hh"
 #include "arch/riscv/utility.hh"
 #include "cpu/o3/dyn_inst.hh"
+#include "cpu/o3/lsq_unit.hh"
 #include "cpu/static_inst.hh"
 
 namespace gem5
@@ -66,10 +67,15 @@ StoreData::execute(ExecContext *xc, Trace::InstRecord *) const
 {
     auto inst = dynamic_cast<o3::DynInst *>(xc);
     auto data = inst->getRegOperand(inst->staticInst.get(), 0);
-    if (inst->sqIt->instruction()->memData)
-        memcpy(inst->sqIt->instruction()->memData, &data, memsize);
-    memcpy(inst->sqIt->data(), &data, memsize);
-    inst->sqIt->setAddrAndDataReady(false, true);
+
+    if (inst->sqIt->instruction()->getFault() == NoFault) {
+        // if instruction has already faulted, then skip executing std
+        if (inst->sqIt->instruction()->memData)
+            memcpy(inst->sqIt->instruction()->memData, &data, memsize);
+        memcpy(inst->sqIt->data(), &data, memsize);
+        inst->sqIt->setStatus(o3::SplitStoreStatus::DataReady);
+        inst->sqIt->setStatus(o3::SplitStoreStatus::StdPipeFinish);
+    }
 
     return NoFault;
 }

@@ -79,6 +79,14 @@ struct BaseO3CPUParams;
 namespace o3
 {
 
+enum class SplitStoreStatus
+{
+    AddressReady,
+    DataReady,
+    StaPipeFinish,
+    StdPipeFinish
+};
+
 class IEW;
 
 class StoreBufferEntry
@@ -220,8 +228,6 @@ class LSQUnit
         bool _committed = false;
         /** Whether or not the store is completed. */
         bool _completed = false;
-        /** Whether or not the store is writebacked to ROB. */
-        bool _writebacked = false;
         /** Does this request write all zeros and thus doesn't
          * have any data attached to it. Used for cache block zero
          * style instructs (ARM DC ZVA; ALPHA WH64)
@@ -231,6 +237,10 @@ class LSQUnit
         bool _addrReady = false;
 
         bool _dataReady = false;
+
+        bool _staFinish = false;
+
+        bool _stdFinish = false;
 
       public:
         static constexpr size_t DataSize = sizeof(_data);
@@ -246,15 +256,16 @@ class LSQUnit
         clear()
         {
             LSQEntry::clear();
-            _canWB = _completed = _committed = _isAllZeros = _writebacked = false;
-            _addrReady = _dataReady = false;
+            _canWB = _completed = _committed = _isAllZeros = false;
+            _addrReady = _dataReady = _staFinish = _stdFinish = false;
         }
 
-        void setAddrAndDataReady(bool addrR, bool dataR);
+        void setStatus(SplitStoreStatus status);
 
         bool addrReady() const { return _addrReady; }
         bool dataReady() const { return _dataReady; }
-        bool splitStoreFinish() const { return _addrReady && _dataReady; }
+        bool canForwardToLoad() const { return _addrReady && _dataReady; }
+        bool splitStoreFinish() const { return _staFinish && _stdFinish; }
 
         /** Member accessors. */
         /** @{ */
@@ -262,8 +273,6 @@ class LSQUnit
         const bool& canWB() const { return _canWB; }
         bool& completed() { return _completed; }
         const bool& completed() const { return _completed; }
-        bool& writebacked() { return _writebacked; }
-        const bool& writebacked() const { return _writebacked; }
         bool& committed() { return _committed; }
         const bool& committed() const { return _committed; }
         bool& isAllZeros() { return _isAllZeros; }

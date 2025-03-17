@@ -1527,15 +1527,14 @@ IEW::executeInsts()
                     inst->forwardOldRegs();
             }
 
-            inst->setExecuted();
-
             if (!inst->isSplitStoreData()) {
+                inst->setExecuted();
                 instToCommit(inst);
             } else {
+                DPRINTF(IEW, "Execute: Split store data, [sn:%lli]\n", inst->seqNum);
                 // STD is ready, wake up corresponding load if any
                 instQueue.resolveSTLFFailInst(inst->seqNum);
-                if (inst->sqIt->splitStoreFinish() && !inst->sqIt->writebacked()) {
-                    inst->sqIt->writebacked() = true;
+                if (inst->sqIt->splitStoreFinish()) {
                     instToCommit(inst->sqIt->instruction());
                 }
             }

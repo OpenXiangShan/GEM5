@@ -249,11 +249,13 @@ StoreBuffer::release(StoreBufferEntry *entry)
 }
 
 void
-LSQUnit::SQEntry::setAddrAndDataReady(bool addrR, bool dataR)
+LSQUnit::SQEntry::setStatus(SplitStoreStatus status)
 {
-    _addrReady |= addrR;
-    _dataReady |= dataR;
-    if (_addrReady && _dataReady) {
+    _addrReady |= status == SplitStoreStatus::AddressReady;
+    _dataReady |= status == SplitStoreStatus::DataReady;
+    _staFinish |= status == SplitStoreStatus::StaPipeFinish;
+    _stdFinish |= status == SplitStoreStatus::StdPipeFinish;
+    if (splitStoreFinish()) {
         instruction()->setExecuted();
     } else {
         assert(!instruction()->isExecuted());
@@ -1454,12 +1456,12 @@ LSQUnit::storePipeS1(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
         return store_fault;
     }
 
-    if (!inst->isStoreConditional()) {
-        // scalar and vector stores
-        inst->sqIt->setAddrAndDataReady(true, !inst->isSplitStoreAddr());
+    inst->sqIt->setStatus(SplitStoreStatus::AddressReady);
+    if (!inst->isSplitStoreAddr()) {
+        inst->sqIt->setStatus(SplitStoreStatus::DataReady);
     }
 
-    if (inst->sqIt->splitStoreFinish()) {
+    if (inst->sqIt->canForwardToLoad()) {
         stats.STDReadyFirst++;
     } else {
         stats.STAReadyFirst++;
@@ -1541,17 +1543,20 @@ LSQUnit::executeStorePipeSx()
                 }
                 if (i == (lsq->storeWbStage() - 1)) {
                     // If the store had a fault then it may not have a mem req
-                    if (fault != NoFault || !inst->readPredicate() || !inst->isStoreConditional()) {
+                    if (inst->fault != NoFault || !inst->readPredicate() || !inst->isStoreConditional()) {
                         // If the instruction faulted, then we need to send it
                         // along to commit without the instruction completing.
                         // Send this instruction to commit, also make sure iew
                         // stage realizes there is activity.
                         if (!flag[LdStFlags::Replayed]) {
-                            if (fault != NoFault && inst->isStoreConditional()) {
+                            inst->sqIt->setStatus(SplitStoreStatus::StaPipeFinish);
+                            if (!inst->isSplitStoreAddr()) {
+                                inst->sqIt->setStatus(SplitStoreStatus::StdPipeFinish);
+                            }
+                            if (inst->fault != NoFault) {
                                 inst->setExecuted();
                                 iewStage->instToCommit(inst);
-                            } else if (inst->sqIt->splitStoreFinish() && !inst->sqIt->writebacked()) {
-                                inst->sqIt->writebacked() = true;
+                            } else if (inst->sqIt->splitStoreFinish()) {
                                 iewStage->instToCommit(inst);
                             }
                             iewStage->activityThisCycle();
@@ -2871,7 +2876,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                 (!((req_s > req_e) || (st_s > st_e)))) {
 
                 const auto &store_req = store_it->request()->mainReq();
-                if (store_it->instruction()->isSplitStoreAddr() && !store_it->splitStoreFinish()) {
+                if (store_it->instruction()->isSplitStoreAddr() && !store_it->canForwardToLoad()) {
                     stats.forwardSTDNotReady++;
                     // insert load inst into replayQ and wait for store data to be ready
                     iewStage->stlfFailLdReplay(load_inst, store_it->instruction()->seqNum);
