@@ -450,6 +450,7 @@ DynInstPtr DynInst::createStoreDataUop()
     DynInstPtr stduop = new (arrays) DynInst(arrays, stdinst, macroop, this->seqNum, cpu);
 
     stduop->thread = this->thread;
+    stduop->pcState(this->pcState());
     stduop->renameSrcReg(0, this->renamedSrcIdx(1));
 
     if (this->readySrcIdx(1)) {

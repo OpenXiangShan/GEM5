@@ -504,7 +504,7 @@ IssueQue::full()
     bool full = instNum >= iqsize;
     full |= replayQ.size() > replayQsize;
     if (full) {
-        DPRINTF(Schedule, "has full!\n");
+        DPRINTF(Schedule, "has full! %d %d\n", instNum, instList.size());
     }
     return full;
 }
@@ -839,22 +839,12 @@ Scheduler::ready(const DynInstPtr& inst)
     assert(!iqs.empty());
 
     for (auto iq : iqs) {
-        if (iq->ready()) {
-            return true;
-        }
-    }
-
-    DPRINTF(Schedule, "IQ not ready, opclass: %s\n", enums::OpClassStrings[inst->opClass()]);
-    return false;
-}
-bool
-Scheduler::Allready()
-{
-    for (auto iq :issueQues){
         if (!iq->ready()) {
+            DPRINTF(Schedule, "IQ not ready, opclass: %s\n", enums::OpClassStrings[inst->opClass()]);
             return false;
         }
     }
+
     return true;
 }
 
@@ -868,13 +858,13 @@ Scheduler::full(const DynInstPtr& inst)
     auto& iqs = dispTable[inst->opClass()];
 
     for (auto iq : iqs) {
-        if (!iq->full()) {
-            return false;
+        if (iq->full()) {
+            DPRINTF(Schedule, "IQ full, opclass: %s\n", enums::OpClassStrings[inst->opClass()]);
+            return true;
         }
     }
 
-    DPRINTF(Schedule, "IQ full, opclass: %s\n", enums::OpClassStrings[inst->opClass()]);
-    return true;
+    return false;
 }
 
 bool
@@ -883,12 +873,12 @@ Scheduler::ready(OpClass op)
     auto& iqs = dispTable[op];
     assert(!iqs.empty());
     for (auto iq : iqs) {
-        if (iq->ready()) {
-            return true;
+        if (!iq->ready()) {
+            DPRINTF(Schedule, "IQ not ready, opclass: %s\n", enums::OpClassStrings[op]);
+            return false;
         }
     }
-    DPRINTF(Schedule, "IQ not ready, opclass: %s\n", enums::OpClassStrings[op]);
-    return false;
+    return true;
 }
 
 bool
@@ -896,12 +886,12 @@ Scheduler::full(OpClass op)
 {
     auto& iqs = dispTable[op];
     for (auto iq : iqs) {
-        if (!iq->full()) {
-            return false;
+        if (iq->full()) {
+            DPRINTF(Schedule, "IQ full, opclass: %s\n", enums::OpClassStrings[op]);
+            return true;
         }
     }
-    DPRINTF(Schedule, "IQ full, opclass: %s\n", enums::OpClassStrings[op]);
-    return true;
+    return false;
 }
 
 DynInstPtr
@@ -971,6 +961,7 @@ Scheduler::insertNonSpec(const DynInstPtr& inst)
             break;
         }
     }
+    DPRINTF(Schedule, "IQ full, [sn: %llu]\n", inst->seqNum);
 }
 
 void

@@ -322,8 +322,6 @@ class IEW
      */
     void dispatchInstFromDispQue(ThreadID tid);
 
-    bool CanDispatch(ThreadID tid);
-
     void classifyInstToDispQue(ThreadID tid);
 
     /** Executes instructions. In the case of memory operations, it informs the
