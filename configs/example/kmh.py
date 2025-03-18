@@ -46,6 +46,7 @@ if __name__ == '__m5_main__':
     # disable l1prefetcher store pf train
     # disable l1 berti, l2 cdp
     args.l2_hwp_type = "L2CompositeWithWorkerPrefetcher"
+    args.l1i_hwp_type = "FDIPPrefetcher"
     args.kmh_align = True
 
     assert not args.external_memory_system

@@ -199,7 +199,7 @@ def config_cache(options, system):
                 system.l2_caches[i].prefetcher.add_pf_downstream(system.l3.prefetcher)
 
             if options.l1i_hwp_type == 'FDIPPrefetcher':
-                icache.mshrs = 12
+                icache.mshrs = 14
                 icache.demand_mshr_reserve = 4
                 icache.prefetcher.registerTLB(system.cpu[i].mmu.itb)
                 icache.prefetcher.piq_latency = 2
