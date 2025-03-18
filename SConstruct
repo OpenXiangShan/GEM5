@@ -370,6 +370,23 @@ for variant_path in variant_paths:
     env = main.Clone()
     env['BUILDDIR'] = variant_path
 
+    try:
+        # try-except section is required because
+        # SConsEnvironmentError/UserError exception raises if FindTool
+        # can't find a tool module. This exeption rises BEFORE check
+        # that tool exists and makes FindTool function useless in some way.
+        cdb_tool = SCons.Tool.FindTool(['compilation_db'], env)
+
+        if cdb_tool:
+            env['COMPILATIONDB_USE_ABSPATH'] = True
+            env.Tool(cdb_tool)
+
+            cdb_path = f"{variant_path}/compile_commands.json"
+            env.CompilationDatabase(cdb_path)
+    except (SCons.Errors.SConsEnvironmentError, SCons.Errors.UserError):
+        # Looks like different scons versions raise different exeptions
+        pass
+
     gem5_build = os.path.join(build_root, variant_path, 'gem5.build')
     env['GEM5BUILD'] = gem5_build
     Execute(Mkdir(gem5_build))

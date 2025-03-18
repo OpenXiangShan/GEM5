@@ -49,3 +49,4 @@ llvm-pgo/
 *nemu*
 ready-to-run/
 *.out
+compile_commands.json
