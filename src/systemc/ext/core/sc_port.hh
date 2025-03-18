@@ -118,6 +118,17 @@ template <class IF>
 class sc_port_b : public sc_port_base
 {
   public:
+#pragma GCC diagnostic push
+/**
+* The following warning is disabled because the bind methods are overloaded
+* in the derived class and the base class. In GCC v13+ this
+* 'overloaded-virtual' warning is strict enough to trigger here (though the
+* code is correct).
+* Please check section 9.3 of SystemC 2.3.1 release note for more details.
+*/
+#if defined(__clang__) || (defined(__GNUC__) && (__GNUC__ >= 13))
+#pragma GCC diagnostic ignored "-Woverloaded-virtual"
+#endif
     void operator () (IF &i) { bind(i); }
     void operator () (sc_port_b<IF> &p) { bind(p); }
 

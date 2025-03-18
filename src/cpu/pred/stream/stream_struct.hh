@@ -1,6 +1,8 @@
 #ifndef __CPU_PRED_STREAM_STRUCT_HH__
 #define __CPU_PRED_STREAM_STRUCT_HH__
 
+#include <list>
+
 #include <boost/dynamic_bitset.hpp>
 
 #include "base/types.hh"
@@ -61,8 +63,8 @@ struct LoopEntry
     unsigned age;
 
     LoopEntry() : valid(true), branch(0), target(0), outTarget(0), fallThruPC(0), tripCount(0), detectedCount(0), intraTaken(false), age(3) {}
-    LoopEntry(Addr branch, Addr target, Addr outTarget, Addr fallThruPC, int detectedCount, bool intraTaken) : 
-              valid(true), branch(branch), target(target), outTarget(outTarget), fallThruPC(fallThruPC), 
+    LoopEntry(Addr branch, Addr target, Addr outTarget, Addr fallThruPC, int detectedCount, bool intraTaken) :
+              valid(true), branch(branch), target(target), outTarget(outTarget), fallThruPC(fallThruPC),
               tripCount(0), detectedCount(detectedCount), intraTaken(intraTaken), age(3) {}
 };
 
@@ -210,7 +212,7 @@ struct StreamPrediction: public StreamDesc
                 // if this is invalid and chosen is valid, sure no match
                 return false;
             } else {
-                // both this and chosen valid 
+                // both this and chosen valid
                 if (this->isTaken() != other.isTaken()) {
                     return false;
                 } else if (this->isTaken() && other.isTaken()) {
@@ -261,7 +263,7 @@ struct FtqEntry
         , taken(false)
         , target(0)
         , fsqID(0) {}
-    
+
     bool miss() const { return !taken; }
     bool filledUp() const { return (endPC & fetchTargetMask) == 0; }
     unsigned predLoopIteration;

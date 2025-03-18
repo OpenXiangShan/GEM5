@@ -93,6 +93,7 @@ import SCons
 import SCons.Node
 import SCons.Node.FS
 import SCons.Tool
+import SCons.Errors
 
 if getattr(SCons, '__version__', None) in ('3.0.0', '3.0.1'):
     # Monkey patch a fix which appears in version 3.0.2, since we only
@@ -323,7 +324,10 @@ def config_embedded_python(env):
         if conf.TryAction(f'@{python_config} --embed')[0]:
             cmd.append('--embed')
 
-    def flag_filter(env, cmd_output):
+    def flag_filter(env, cmd_output, unique=True):
+        # Since this function does not use the `unique` param, one should not
+        # pass any value to this param.
+        assert(unique==True)
         flags = cmd_output.split()
         prefixes = ('-l', '-L', '-I')
         is_useful = lambda x: any(x.startswith(prefix) for prefix in prefixes)
@@ -508,6 +512,13 @@ for variant_path in variant_paths:
         with gem5_scons.Configure(env) as conf:
             conf.CheckCxxFlag('-Wno-c99-designator')
             conf.CheckCxxFlag('-Wno-defaulted-function-deleted')
+            # Poor code quality workaround, should be fixed in the future.
+            conf.CheckCxxFlag('-Wno-error=unused-private-field')
+            conf.CheckCxxFlag('-Wno-error=infinite-recursion')
+            conf.CheckCxxFlag('-Wno-error=array-parameter')
+            conf.CheckCxxFlag('-Wno-error=uninitialized-const-reference')
+            conf.CheckCxxFlag('-Wno-error=vla-extension')
+            conf.CheckCxxFlag('-Wno-error=vla-cxx-extension')
 
         env.Append(TCMALLOC_CCFLAGS=['-fno-builtin'])
 

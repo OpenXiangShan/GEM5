@@ -1,4 +1,5 @@
 build
+gem5_build
 parser.out
 parsetab.py
 cscope.files
@@ -9,6 +10,7 @@ cscope.out
 .*.swo
 m5out
 /src/doxygen/html
+/docs/_build
 /ext/dramsim2/DRAMSim2
 /ext/mcpat/regression/*/*.out
 /util/m5/*.o
@@ -31,6 +33,9 @@ m5out
 configs/example/memcheck.cfg
 configs/dram/lowp_sweep.cfg
 .pyenv
+.vscode
+typings
+.DS_Store
 
 /util/warmup_scripts/*
 /util/arch_db/*.txt
@@ -50,3 +55,4 @@ llvm-pgo/
 ready-to-run/
 *.out
 compile_commands.json
+.direnv
