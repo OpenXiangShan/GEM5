@@ -208,9 +208,6 @@ def config_cache(options, system):
                 if options.maxPrefetchWidth:
                     system.cpu[i].branchPred.maxDistanceFromIFU = options.maxPrefetchWidth
 
-            if options.l1i_mshr:
-                icache.mshrs = options.l1i_mshr
-
             # If we have a walker cache specified, instantiate two
             # instances here
             if walk_cache_class:
