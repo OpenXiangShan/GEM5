@@ -973,6 +973,22 @@ LSQ::dumpInsts(ThreadID tid) const
     thread.at(tid).dumpInsts();
 }
 
+bool
+LSQ::isMisaligned(const DynInstPtr& inst, LSQRequest* request)
+{
+    auto code = inst->isLoad() ? RiscvISA::ExceptionCode::LOAD_ADDR_MISALIGNED
+                                              : RiscvISA::ExceptionCode::STORE_ADDR_MISALIGNED;
+    if (!inst->isVector() && request->mainReq()->getSize() > 1 &&
+        request->mainReq()->getVaddr() % request->mainReq()->getSize() != 0) {
+        DPRINTF(LSQUnit, "[sn:%lld] misaligned: size: %u, Addr: %#lx, code: %d\n",
+                inst->seqNum, request->mainReq()->getSize(), request->mainReq()->getVaddr(), code);
+        inst->getFault() = std::make_shared<RiscvISA::AddressFault>(request->mainReq()->getVaddr(),
+                                                                    request->mainReq()->getgPaddr(), code);
+        return true;
+    }
+    return false;
+}
+
 Fault
 LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
         unsigned int size, Addr addr, Request::Flags flags, uint64_t *res,
@@ -1033,17 +1049,12 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
 
     inst->effSize = size;
 
-    if (!isLoad && !inst->isVector() && size > 1 && addr % size != 0) {
-         DPRINTF(LSQ, "Store misaligned: size: %u, Addr: %#lx, code: %d\n", size,
-            addr, RiscvISA::ExceptionCode::STORE_ADDR_MISALIGNED);
-        return std::make_shared<RiscvISA::AddressFault>(request->mainReq()->getVaddr(),
-            request->mainReq()->getgPaddr(),
-            RiscvISA::ExceptionCode::STORE_ADDR_MISALIGNED);
-    }
-
     /* This is the place were instructions get the effAddr. */
     /* Only atomic types can attempt to send requests to the cache at this stage.*/
     if (inst->isAtomic() && request->isTranslationComplete()) {
+        if (isMisaligned(inst, request)) {
+            return inst->getFault();
+        }
         if (request->isMemAccessRequired()) {
             inst->effAddr = request->getVaddr();
             inst->effSize = size;

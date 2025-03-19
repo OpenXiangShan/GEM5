@@ -959,6 +959,8 @@ class LSQ
     /** Debugging function to print out instructions from a specific thread. */
     void dumpInsts(ThreadID tid) const;
 
+    bool isMisaligned(const DynInstPtr& inst, LSQRequest* request);
+
     /** Executes a read operation, using the load specified at the load
      * index.
      */
