@@ -279,7 +279,6 @@ class Scheduler : public SimObject
     bool ready(const DynInstPtr& inst);
     bool full(OpClass op);
     bool ready(OpClass op);
-    bool Allready();
     DynInstPtr getInstByDstReg(RegIndex flatIdx);
 
     void addProducer(const DynInstPtr& inst);

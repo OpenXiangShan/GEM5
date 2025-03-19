@@ -863,16 +863,6 @@ Scheduler::ready(const DynInstPtr& inst)
     DPRINTF(Schedule, "IQ not ready, opclass: %s\n", enums::OpClassStrings[inst->opClass()]);
     return false;
 }
-bool
-Scheduler::Allready()
-{
-    for (auto iq :issueQues){
-        if (!iq->ready()) {
-            return false;
-        }
-    }
-    return true;
-}
 
 bool
 Scheduler::full(const DynInstPtr& inst)
