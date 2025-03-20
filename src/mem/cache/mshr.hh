@@ -180,6 +180,8 @@ class MSHR : public QueueEntry, public Printable
          */
         bool hasFromCache;
 
+        bool allFromICache;
+
         bool hasFromPref;
 
         bool hasFromCPU;
@@ -223,6 +225,7 @@ class MSHR : public QueueEntry, public Printable
             hasUpgrade = false;
             allocOnFill = false;
             hasFromCache = false;
+            allFromICache = true;
             hasFromPref = false;
             hasFromCPU = false;
         }
@@ -252,7 +255,7 @@ class MSHR : public QueueEntry, public Printable
          */
         bool isReset() const {
             return !needsWritable && !hasUpgrade && !allocOnFill &&
-                !hasFromCache && canMergeWrites;
+                !hasFromCache && canMergeWrites && allFromICache;
         }
 
         /**
@@ -358,6 +361,10 @@ class MSHR : public QueueEntry, public Printable
      */
     bool hasFromCache() const {
         return targets.hasFromCache;
+    }
+
+    bool allFromICache() const {
+        return targets.allFromICache;
     }
 
     bool hasFromPref() const {

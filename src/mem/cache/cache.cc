@@ -631,7 +631,7 @@ Cache::handleAtomicReqMiss(PacketPtr pkt, CacheBlk *&blk,
 
                 // write-line request to the cache that promoted
                 // the write to a whole line
-                const bool allocate = allocOnFill(pkt->cmd) &&
+                const bool allocate = allocOnFill(pkt->cmd, pkt) &&
                     (!writeAllocator || writeAllocator->allocate());
                 blk = handleFill(bus_pkt, blk, writebacks, allocate);
                 assert(blk != NULL);
@@ -642,9 +642,9 @@ Cache::handleAtomicReqMiss(PacketPtr pkt, CacheBlk *&blk,
                 // we're updating cache state to allow us to
                 // satisfy the upstream request from the cache
                 blk = handleFill(bus_pkt, blk, writebacks,
-                                 allocOnFill(pkt->cmd));
+                                 allocOnFill(pkt->cmd, pkt));
                 satisfyRequest(pkt, blk);
-                maintainClusivity(pkt->fromCache(), blk);
+                maintainClusivity(pkt->issuedByICache, pkt->fromCache(), blk);
             } else {
                 // we're satisfying the upstream request without
                 // modifying cache state, e.g., a write-through
@@ -945,7 +945,7 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
     }
 
     if (!mshr->hasLockedRMWReadTarget()) {
-        maintainClusivity(targets.hasFromCache, blk);
+        maintainClusivity(targets.allFromICache, targets.hasFromCache, blk);
 
         if (blk && blk->isValid()) {
             // an invalidate response stemming from a write line request

@@ -497,6 +497,27 @@ class BaseCache : public ClockedObject, CacheAccessor
             cmd.isLLSC();
     }
 
+    inline bool allocOnFill(MemCmd cmd, PacketPtr pkt) const
+    {
+        return (clusivity == enums::mostly_incl && !needExclusive(pkt)) ||
+            cmd == MemCmd::WriteLineReq ||
+            cmd == MemCmd::ReadReq ||
+            cmd == MemCmd::WriteReq ||
+            cmd.isPrefetch() ||
+            cmd.isLLSC();
+    }
+
+    inline bool needExclusive(PacketPtr pkt) const
+    {
+        return cacheLevel == 2 && pkt->issuedByICache;
+    }
+
+    inline bool isICache() const
+    {
+        return cacheLevel == 1 && isReadOnly;
+    }
+
+
     /**
      * Regenerate block address using tags.
      * Block address regeneration depends on whether we're using a temporary
@@ -842,6 +863,8 @@ class BaseCache : public ClockedObject, CacheAccessor
 
     bool exclusiveCacheInvalidate(bool from_cache, CacheBlk *blk);
 
+    bool exclusiveCacheInvalidate(bool all_from_icache, bool from_cache, CacheBlk *blk);
+
     /**
      * Maintain the clusivity of this cache by potentially
      * invalidating a block. This method works in conjunction with
@@ -852,6 +875,8 @@ class BaseCache : public ClockedObject, CacheAccessor
      * @param blk The block that should potentially be dropped
      */
     void maintainClusivity(bool from_cache, CacheBlk *blk);
+
+    void maintainClusivity(bool all_from_icache, bool from_cache, CacheBlk *blk);
 
     /**
      * Try to evict the given blocks. If any of them is a transient eviction,
@@ -1296,6 +1321,8 @@ class BaseCache : public ClockedObject, CacheAccessor
         /** Number of load Tag read fail because of prefetcher. */
         statistics::Scalar loadTagReadFails;
 
+        statistics::Scalar exclusiveInvalids;
+
         /** Number of prefetch req Tag read fail because of load. */
         mutable statistics::Scalar prefetchTagReadFails;
 
@@ -1348,7 +1375,7 @@ class BaseCache : public ClockedObject, CacheAccessor
     {
         MSHR *mshr = mshrQueue.allocate(pkt->getBlockAddr(blkSize), blkSize,
                                         pkt, time, order++,
-                                        allocOnFill(pkt->cmd));
+                                        allocOnFill(pkt->cmd, pkt));
 
         if (mshrQueue.isFull()) {
             setBlocked((BlockedCause)MSHRQueue_MSHRs);

@@ -489,7 +489,7 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                 // port and also takes into account the additional
                 // delay of the xbar.
                 mshr->allocateTarget(pkt, forward_time, order++,
-                                     allocOnFill(pkt->cmd));
+                                     allocOnFill(pkt->cmd, pkt));
                 if (mshr->getNumTargets() >= numTarget) {
                     noTargetMSHR = mshr;
                     setBlocked(Blocked_NoTargets);
@@ -1964,7 +1964,7 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
 
         satisfyRequest(pkt, blk);
         assert(!blk->needInvalidate());
-        if (exclusiveCacheInvalidate(pkt->fromCache(), blk)) {
+        if (exclusiveCacheInvalidate(pkt->issuedByICache, pkt->fromCache(), blk)) {
             blk->setPendingInvalidate();
         }
 
@@ -2010,10 +2010,34 @@ BaseCache::exclusiveCacheInvalidate(bool from_cache, CacheBlk *blk)
      !blk->isSet(CacheBlk::DirtyBit) && clusivity == enums::mostly_excl;
 }
 
+bool
+BaseCache::exclusiveCacheInvalidate(bool all_from_icache, bool from_cache, CacheBlk *blk)
+{
+    bool ret = from_cache && blk && blk->isValid() &&
+     !blk->isSet(CacheBlk::DirtyBit) &&
+     (clusivity == enums::mostly_excl || all_from_icache);
+
+    if (ret) {
+        stats.exclusiveInvalids++;
+    }
+    return ret;
+}
+
 void
 BaseCache::maintainClusivity(bool from_cache, CacheBlk *blk)
 {
     if (exclusiveCacheInvalidate(from_cache, blk)) {
+        // if we have responded to a cache, and our block is still
+        // valid, but not dirty, and this cache is mostly exclusive
+        // with respect to the cache above, drop the block
+        invalidateBlock(blk);
+    }
+}
+
+void
+BaseCache::maintainClusivity(bool all_from_icache, bool from_cache, CacheBlk *blk)
+{
+    if (exclusiveCacheInvalidate(all_from_icache, from_cache, blk)) {
         // if we have responded to a cache, and our block is still
         // valid, but not dirty, and this cache is mostly exclusive
         // with respect to the cache above, drop the block
@@ -2474,6 +2498,7 @@ BaseCache::sendMSHRQueuePacket(MSHR* mshr)
         pkt->setSatisfied();
     }
 
+    pkt->issuedByICache = isICache();
     if (!memSidePort.sendTimingReq(pkt)) {
         // we are awaiting a retry, but we
         // delete the packet and will be creating a new packet
@@ -2526,6 +2551,7 @@ BaseCache::sendWriteQueuePacket(WriteQueueEntry* wq_entry)
 
     DPRINTF(Cache, "%s: write %s\n", __func__, tgt_pkt->print());
 
+    tgt_pkt->issuedByICache = isICache();
     // forward as is, both for evictions and uncacheable writes
     if (!memSidePort.sendTimingReq(tgt_pkt)) {
         // note that we have now masked any requestBus and
@@ -2856,6 +2882,8 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "number of squashed inst block demand hits"),
     ADD_STAT(loadTagReadFails, statistics::units::Count::get(),
              "number of load Tag read fail because of prefetcher"),
+    ADD_STAT(exclusiveInvalids, statistics::units::Count::get(),
+             "number of exclusive invalid ops"),
     ADD_STAT(prefetchTagReadFails, statistics::units::Count::get(),
              "number of prefetch req Tag read fail because of load"),
     ADD_STAT(dataExpansions, statistics::units::Count::get(),
@@ -3179,6 +3207,7 @@ BaseCache::CpuSidePort::recvTimingReq(PacketPtr pkt)
     if (cache->system->bypassCaches()) {
         // Just forward the packet if caches are disabled.
         // @todo This should really enqueue the packet rather
+        pkt->issuedByICache = cache->isICache();
         [[maybe_unused]] bool success = cache->memSidePort.sendTimingReq(pkt);
         assert(success);
         return true;

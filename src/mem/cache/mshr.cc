@@ -73,7 +73,8 @@ MSHR::MSHR(const std::string &name)
 MSHR::TargetList::TargetList(const std::string &name)
     :   Named(name),
         needsWritable(false), hasUpgrade(false),
-        allocOnFill(false), hasFromCache(false)
+        allocOnFill(false), hasFromCache(false),
+        allFromICache(true)
 {}
 
 
@@ -96,6 +97,7 @@ MSHR::TargetList::updateFlags(PacketPtr pkt, Target::Source source,
         // potentially re-evaluate whether we should allocate on a fill or
         // not
         allocOnFill = allocOnFill || alloc_on_fill;
+        allFromICache = allFromICache && pkt->issuedByICache;
 
         if (source != Target::FromPrefetcher) {
             hasFromCache = hasFromCache || pkt->fromCache();
@@ -834,7 +836,8 @@ MSHR::print(std::ostream &os, int verbosity, const std::string &prefix) const
              downstreamPending ? "DwnPend" : "",
              postInvalidate ? "PostInv" : "",
              postDowngrade ? "PostDowngr" : "",
-             hasFromCache() ? "HasFromCache" : "");
+             hasFromCache() ? "HasFromCache" : "",
+             allFromICache() ? "AllFromICache" : "");
 
     if (!targets.empty()) {
         ccprintf(os, "%s      Targets:\n", prefix);
