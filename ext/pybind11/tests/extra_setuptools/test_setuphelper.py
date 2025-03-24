@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import os
 import subprocess
 import sys
@@ -7,7 +8,6 @@ import pytest
 
 DIR = os.path.abspath(os.path.dirname(__file__))
 MAIN_DIR = os.path.dirname(os.path.dirname(DIR))
-WIN = sys.platform.startswith("win32") or sys.platform.startswith("cygwin")
 
 
 @pytest.mark.parametrize("parallel", [False, True])
@@ -18,7 +18,7 @@ def test_simple_setup_py(monkeypatch, tmpdir, parallel, std):
 
     (tmpdir / "setup.py").write_text(
         dedent(
-            f"""\
+            u"""\
             import sys
             sys.path.append({MAIN_DIR!r})
 
@@ -51,13 +51,13 @@ def test_simple_setup_py(monkeypatch, tmpdir, parallel, std):
                 ext_modules=ext_modules,
             )
             """
-        ),
+        ).format(MAIN_DIR=MAIN_DIR, std=std, parallel=parallel),
         encoding="ascii",
     )
 
     (tmpdir / "main.cpp").write_text(
         dedent(
-            """\
+            u"""\
             #include <pybind11/pybind11.h>
 
             int f(int x) {
@@ -71,20 +71,13 @@ def test_simple_setup_py(monkeypatch, tmpdir, parallel, std):
         encoding="ascii",
     )
 
-    out = subprocess.check_output(
+    subprocess.check_call(
         [sys.executable, "setup.py", "build_ext", "--inplace"],
+        stdout=sys.stdout,
+        stderr=sys.stderr,
     )
-    if not WIN:
-        assert b"-g0" in out
-    out = subprocess.check_output(
-        [sys.executable, "setup.py", "build_ext", "--inplace", "--force"],
-        env=dict(os.environ, CFLAGS="-g"),
-    )
-    if not WIN:
-        assert b"-g0" not in out
 
     # Debug helper printout, normally hidden
-    print(out)
     for item in tmpdir.listdir():
         print(item.basename)
 
@@ -95,7 +88,7 @@ def test_simple_setup_py(monkeypatch, tmpdir, parallel, std):
 
     (tmpdir / "test.py").write_text(
         dedent(
-            """\
+            u"""\
             import simple_setup
             assert simple_setup.f(3) == 9
             """
@@ -120,11 +113,10 @@ def test_intree_extensions(monkeypatch, tmpdir):
     subdir.ensure_dir()
     src = subdir / "ext.cpp"
     src.ensure()
-    relpath = src.relto(tmpdir)
-    (ext,) = intree_extensions([relpath])
+    (ext,) = intree_extensions([src.relto(tmpdir)])
     assert ext.name == "ext"
     subdir.ensure("__init__.py")
-    (ext,) = intree_extensions([relpath])
+    (ext,) = intree_extensions([src.relto(tmpdir)])
     assert ext.name == "dir.ext"
 
 
