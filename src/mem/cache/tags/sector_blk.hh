@@ -64,7 +64,6 @@ class SectorSubBlk : public CacheBlk
   public:
     SectorSubBlk() : CacheBlk(), _sectorBlk(nullptr), _sectorOffset(0) {}
     SectorSubBlk(const SectorSubBlk&) = delete;
-    using CacheBlk::operator=;
     SectorSubBlk& operator=(const SectorSubBlk&) = delete;
     SectorSubBlk(SectorSubBlk&&) = delete;
     /**

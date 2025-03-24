@@ -59,7 +59,7 @@ debug=False
 
 labelRE = re.compile(r'(?<!%)%\(([^\)]+)\)[sd]')
 
-class Template:
+class Template(object):
     def __init__(self, parser, t):
         self.parser = parser
         self.template = t
@@ -92,8 +92,8 @@ class Template:
             snippetLabels = [l for l in labelRE.findall(template)
                              if l in d.snippets]
 
-            snippets = {s: self.parser.mungeSnippet(d.snippets[s])
-                             for s in snippetLabels}
+            snippets = dict([(s, self.parser.mungeSnippet(d.snippets[s]))
+                             for s in snippetLabels])
 
             myDict.update(snippets)
 
@@ -182,7 +182,7 @@ class Template:
 # a defineInst() method that generates the code for an instruction
 # definition.
 
-class Format:
+class Format(object):
     def __init__(self, id, params, code):
         self.id = id
         self.params = params
@@ -210,7 +210,7 @@ class Format:
         except Exception as exc:
             if debug:
                 raise
-            error(lineno, f'error defining "{name}": {exc}.')
+            error(lineno, 'error defining "%s": %s.' % (name, exc))
         for k in list(vars.keys()):
             if k not in ('header_output', 'decoder_output',
                          'exec_output', 'decode_block'):
@@ -219,7 +219,7 @@ class Format:
 
 # Special null format to catch an implicit-format instruction
 # definition outside of any format block.
-class NoFormat:
+class NoFormat(object):
     def __init__(self):
         self.defaultInst = ''
 
@@ -239,7 +239,7 @@ class NoFormat:
 # exec.cc file.  The has_decode_default attribute is used in the decode block
 # to allow explicit default clauses to override default default clauses.
 
-class GenCode:
+class GenCode(object):
     # Constructor.
     def __init__(self, parser,
                  header_output = '', decoder_output = '', exec_output = '',
@@ -319,7 +319,7 @@ def substBitOps(code):
             if here < 0:
                 sys.exit("Didn't find '('!")
         exprStart = here+1
-        newExpr = r'bits({}, {}, {})'.format(code[exprStart:exprEnd+1],
+        newExpr = r'bits(%s, %s, %s)' % (code[exprStart:exprEnd+1],
                                          match.group(1), match.group(2))
         code = code[:exprStart] + newExpr + code[match.end():]
         match = bitOpExprRE.search(code)
@@ -370,7 +370,7 @@ instFlagRE = re.compile(r'Is.*')
 # OpClass constants end in 'Op' except No_OpClass
 opClassRE = re.compile(r'.*Op|No_OpClass')
 
-class InstObjParams:
+class InstObjParams(object):
     def __init__(self, parser, mnem, class_name, base_class = '',
                  snippets = {}, opt_args = []):
         self.mnemonic = mnem
@@ -467,7 +467,6 @@ class InstObjParams:
 class ISAParser(Grammar):
     def __init__(self, output_dir):
         super().__init__()
-        self.lex_kwargs["reflags"] = int(re.MULTILINE)
         self.output_dir = output_dir
 
         self.filename = None # for output file watermarking/scaremongering
@@ -508,7 +507,7 @@ class ISAParser(Grammar):
         self.fileNameStack = Stack()
 
         symbols = ('makeList', 're')
-        self.exportContext = {s: eval(s) for s in symbols}
+        self.exportContext = dict([(s, eval(s)) for s in symbols])
         self.exportContext.update({
             'overrideInOperand': overrideInOperand,
             'IntRegOp': IntRegOperandDesc,
@@ -541,7 +540,7 @@ class ISAParser(Grammar):
     # Change the file suffix of a base filename:
     #   (e.g.) decoder.cc -> decoder-g.cc.inc for 'global' outputs
     def suffixize(self, s, sec):
-        extn = re.compile(r"(\.[^\.]+)$") # isolate extension
+        extn = re.compile('(\.[^\.]+)$') # isolate extension
         if self.namespace:
             return extn.sub(r'-ns\1.inc', s) # insert some text on either side
         else:
@@ -627,7 +626,7 @@ class ISAParser(Grammar):
             # is guaranteed to have been written for parse to complete
             f.write('#include "%s"\n' % fn)
 
-        extn = re.compile(r"(\.[^\.]+)$")
+        extn = re.compile('(\.[^\.]+)$')
 
         # instruction constructors
         splits = self.splits[self.get_file('decoder')]
@@ -782,7 +781,7 @@ class ISAParser(Grammar):
     # String literal.  Note that these use only single quotes, and
     # can span multiple lines.
     def t_STRLIT(self, t):
-        r"'([^'])+'"
+        r"(?m)'([^'])+'"
         # strip off quotes
         t.value = t.value[1:-1]
         t.lexer.lineno += t.value.count('\n')
@@ -792,19 +791,19 @@ class ISAParser(Grammar):
     # "Code literal"... like a string literal, but delimiters are
     # '{{' and '}}' so they get formatted nicely under emacs c-mode
     def t_CODELIT(self, t):
-        r"\{\{([^\}]|}(?!\}))+\}\}"
+        r"(?m)\{\{([^\}]|}(?!\}))+\}\}"
         # strip off {{ & }}
         t.value = t.value[2:-2]
         t.lexer.lineno += t.value.count('\n')
         return t
 
     def t_CPPDIRECTIVE(self, t):
-        r'^\#[^\#][^\n]*\n'
+        r'^\#[^\#].*\n'
         t.lexer.lineno += t.value.count('\n')
         return t
 
     def t_NEWFILE(self, t):
-        r'^\#\#newfile\s+"[^"\n]*"\n'
+        r'^\#\#newfile\s+"[^"]*"\n'
         self.fileNameStack.push(t.lexer.lineno)
         t.lexer.lineno = LineTracker(t.value[11:-2])
 
@@ -824,7 +823,7 @@ class ISAParser(Grammar):
 
     # Comments
     def t_comment(self, t):
-        r"//[^\n]*\n"
+        r'//.*'
 
     # Completely ignored characters
     t_ignore = ' \t\x0c'
@@ -1031,7 +1030,7 @@ del wrap
         expr = 'bits(machInst, %2d, %2d)' % (t[6], t[8])
         if (t[2] == 'signed'):
             expr = 'sext<%d>(%s)' % (t[6] - t[8] + 1, expr)
-        hash_define = f'#undef {t[4]}\n#define {t[4]}\t{expr}\n'
+        hash_define = '#undef %s\n#define %s\t%s\n' % (t[4], t[4], expr)
         GenCode(self, header_output=hash_define).emit()
 
     # alternate form for single bit: 'def [signed] bitfield <ID> [<bit>]'
@@ -1040,7 +1039,7 @@ del wrap
         expr = 'bits(machInst, %2d, %2d)' % (t[6], t[6])
         if (t[2] == 'signed'):
             expr = 'sext<%d>(%s)' % (1, expr)
-        hash_define = f'#undef {t[4]}\n#define {t[4]}\t{expr}\n'
+        hash_define = '#undef %s\n#define %s\t%s\n' % (t[4], t[4], expr)
         GenCode(self, header_output=hash_define).emit()
 
     # alternate form for structure member: 'def bitfield <ID> <ID>'
@@ -1050,7 +1049,7 @@ del wrap
             error(t.lineno(1),
                   'error: structure bitfields are always unsigned.')
         expr = 'machInst.%s' % t[5]
-        hash_define = f'#undef {t[4]}\n#define {t[4]}\t{expr}\n'
+        hash_define = '#undef %s\n#define %s\t%s\n' % (t[4], t[4], expr)
         GenCode(self, header_output=hash_define).emit()
 
     def p_id_with_dot_0(self, t):
@@ -1320,7 +1319,7 @@ StaticInstPtr
         args = ','.join(list(map(str, t[3])))
         args = re.sub('(?m)^', '//', args)
         args = re.sub('^//', '', args)
-        comment = f'\n// {currentFormat.id}::{t[1]}({args})\n'
+        comment = '\n// %s::%s(%s)\n' % (currentFormat.id, t[1], args)
         codeObj.prepend_all(comment)
         t[0] = codeObj
 
@@ -1334,7 +1333,7 @@ StaticInstPtr
             error(t.lineno(1), 'instruction format "%s" not defined.' % t[1])
 
         codeObj = format.defineInst(self, t[3], t[5], t.lexer.lineno)
-        comment = f'\n// {t[1]}::{t[3]}({t[5]})\n'
+        comment = '\n// %s::%s(%s)\n' % (t[1], t[3], t[5])
         codeObj.prepend_all(comment)
         t[0] = codeObj
 
@@ -1482,9 +1481,9 @@ StaticInstPtr
 
         operandsREString = r'''
         (?<!\w|:)     # neg. lookbehind assertion: prevent partial matches
-        (({})(?:_({}))?)   # match: operand with optional '_' then suffix
+        ((%s)(?:_(%s))?)   # match: operand with optional '_' then suffix
         (?!\w)       # neg. lookahead assertion: prevent partial matches
-        '''.format('|'.join(operands), '|'.join(extensions))
+        ''' % ('|'.join(operands), '|'.join(extensions))
 
         self._operandsRE = re.compile(operandsREString,
                                       re.MULTILINE | re.VERBOSE)
@@ -1550,7 +1549,7 @@ StaticInstPtr
         current_dir = os.path.dirname(filename)
         try:
             contents = open(filename).read()
-        except OSError:
+        except IOError:
             error('Error including file "%s"' % filename)
 
         self.fileNameStack.push(LineTracker(filename))

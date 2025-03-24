@@ -29,7 +29,6 @@
 #ifndef __BASE_CPRINTF_FORMATS_HH__
 #define __BASE_CPRINTF_FORMATS_HH__
 
-#include <cstdint>
 #include <cstring>
 #include <ostream>
 #include <sstream>
