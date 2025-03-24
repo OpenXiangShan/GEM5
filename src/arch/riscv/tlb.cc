@@ -54,6 +54,7 @@
 #include "debug/TLBtrace.hh"
 #include "debug/autoNextline.hh"
 #include "mem/page_table.hh"
+#include "mem/request.hh"
 #include "params/RiscvTLB.hh"
 #include "sim/full_system.hh"
 #include "sim/process.hh"
@@ -2031,6 +2032,7 @@ TLB::getMemPriv(ThreadContext *tc, BaseMMU::Mode mode)
     PrivilegeMode pmode = (PrivilegeMode)tc->readMiscReg(MISCREG_PRV);
     if (mode != BaseMMU::Execute && status.mprv == 1)
         pmode = (PrivilegeMode)(RegVal)status.mpp;
+    DPRINTF(TLB, "pmode :%d, mprv: %d, mpp: %d\n", pmode, status.mprv, status.mpp);
     return pmode;
 }
 bool
@@ -2213,6 +2215,58 @@ TLB::translateTiming(const RequestPtr &req, ThreadContext *tc,
         translation->markDelayed();
 }
 
+void
+TLB::configVmodeInTLB(const RequestPtr &req, ThreadContext *tc,
+                      BaseMMU::Mode mode)
+{
+    PrivilegeMode pmode = getMemPriv(tc, mode);
+    SATP vsatp = tc->readMiscReg(MISCREG_VSATP);
+    STATUS status = tc->readMiscReg(MISCREG_STATUS);
+    HSTATUS hstatus = tc->readMiscReg(MISCREG_HSTATUS);
+    int v_mode = tc->readMiscReg(MISCREG_VIRMODE);
+    int two_stage_pmode = (int)getMemPriv(tc, mode);
+
+    if (mode != BaseMMU::Execute) {
+        if (status.mprv) {
+            two_stage_pmode = status.mpp;
+            v_mode = status.mpv && (two_stage_pmode != PrivilegeMode::PRV_M);
+        }
+
+        if (req->get_h_inst()) {
+            v_mode = 1;
+            two_stage_pmode = (PrivilegeMode)(RegVal)hstatus.spvp;
+        }
+    }
+    if (v_mode != 0) {
+        req->setVsatp0Mode(vsatp.mode == 0);
+        req->setTwoStageState(true, v_mode, two_stage_pmode);
+        req->setTwoPtwWalk(false, 2, 2, 0, false);
+    }
+}
+
+void
+TLB::configFunctional(const RequestPtr &req, ThreadContext *tc,
+                       BaseMMU::Mode mode)
+{
+    PrivilegeMode pmode = getMemPriv(tc, mode);
+    SATP vsatp = tc->readMiscReg(MISCREG_VSATP);
+    HGATP hgatp = tc->readMiscReg(MISCREG_HGATP);
+    SATP satp = tc->readMiscReg(MISCREG_SATP);
+
+    if ((pmode == PrivilegeMode::PRV_M || satp.mode == AddrXlateMode::BARE)) {
+        req->setTwoStageState(false, 0, 0);
+        if ((hgatp.mode == 8 || vsatp.mode == 8) && (pmode < PrivilegeMode::PRV_M)) {
+            configVmodeInTLB(req, tc, mode);
+        }
+    } else {
+        if (hasTwoStageTranslation(tc, req, mode)) {
+            configVmodeInTLB(req, tc, mode);
+        } else {
+            req->setTwoStageState(false, 0, 0);
+        }
+    }
+}
+
 Fault
 TLB::translateFunctional(const RequestPtr &req, ThreadContext *tc,
                          BaseMMU::Mode mode)
@@ -2225,18 +2279,24 @@ TLB::translateFunctional(const RequestPtr &req, ThreadContext *tc,
 
         PrivilegeMode pmode = mmu->getMemPriv(tc, mode);
         SATP satp = tc->readMiscReg(MISCREG_SATP);
-        if (pmode != PrivilegeMode::PRV_M &&
-            satp.mode != AddrXlateMode::BARE) {
+        SATP vsatp = tc->readMiscReg(MISCREG_VSATP);
+        HGATP hgatp = tc->readMiscReg(MISCREG_HGATP);
+        if ((pmode != PrivilegeMode::PRV_M &&
+             satp.mode != AddrXlateMode::BARE) ||
+            ((hgatp.mode == 8 || vsatp.mode == 8) &&
+             (pmode < PrivilegeMode::PRV_M))) {
             Walker *walker = mmu->getDataWalker();
             unsigned logBytes;
+            configFunctional(req, tc, mode);
             Fault fault = walker->startFunctional(
-                    tc, paddr, logBytes, mode);
+                    req, tc, paddr, logBytes, mode);
             if (fault != NoFault)
                 return fault;
 
             Addr masked_addr = vaddr & mask(logBytes);
             paddr |= masked_addr;
         }
+        DPRINTF(TLB, "satp: %lx, pmode: %d\n", satp, (int)pmode);
     }
     else {
         Process *process = tc->getProcessPtr();
@@ -2258,7 +2318,17 @@ TLB::translateFunctional(const RequestPtr &req, ThreadContext *tc,
 
     DPRINTF(TLB, "Translated (functional) %#x -> %#x.\n", vaddr, paddr);
     req->setPaddr(paddr);
-    return NoFault;
+    pma->check(req);
+    return pmp->pmpCheck(req, mode, static_cast<MMU *>(tc->getMMUPtr())->getMemPriv(tc, mode), tc);
+}
+
+void
+TLB::translateFunctional(const RequestPtr &req, ThreadContext *tc,
+                     BaseMMU::Translation *translation, BaseMMU::Mode mode)
+{
+    assert(translation);
+    Fault fault = translateFunctional(req, tc, mode);
+    translation->finish(fault, req, tc, mode);
 }
 
 Fault

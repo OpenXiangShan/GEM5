@@ -181,6 +181,8 @@ InstructionQueue::IQStats::IQStats(CPU *cpu, const unsigned &total_width)
     ADD_STAT(issueRate, statistics::units::Rate<
                 statistics::units::Count, statistics::units::Cycle>::get(),
              "Inst issue rate", instsIssued / cpu->baseStats.numCycles),
+    ADD_STAT(deferMemInstNum, statistics::units::Count::get(),
+             "Number of instructions replayed because of TLB miss"),
     ADD_STAT(fuBusy, statistics::units::Count::get(), "FU busy when requested"),
     ADD_STAT(fuBusyRate, statistics::units::Rate<
                 statistics::units::Count, statistics::units::Count>::get(),
@@ -869,6 +871,7 @@ void
 InstructionQueue::deferMemInst(const DynInstPtr &deferred_inst)
 {
     deferredMemInsts.push_back(deferred_inst);
+    iqStats.deferMemInstNum++;
 }
 
 void

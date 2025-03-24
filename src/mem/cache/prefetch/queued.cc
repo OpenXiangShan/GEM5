@@ -100,7 +100,8 @@ Queued::DeferredPacket::startTranslation(BaseTLB *tlb)
     if (!ongoingTranslation) {
         ongoingTranslation = true;
         // Prefetchers only operate in Timing mode
-        tlb->translateTiming(translationRequest, tc, this, BaseMMU::Read);
+        // tlb->translateTiming(translationRequest, tc, this, BaseMMU::Read);
+        tlb->translateFunctional(translationRequest, tc, this, BaseMMU::Read);
     }
 }
 

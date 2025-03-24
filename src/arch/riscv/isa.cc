@@ -536,7 +536,7 @@ ISA::setMiscReg(int misc_reg, RegVal val)
 {
     int v = readMiscReg(MISCREG_VIRMODE);
     if (misc_reg == MISCREG_STATUS) {
-        printf("set misceg %lx\n",val);
+        // printf("set misceg %lx\n",val);
         DPRINTF(RiscvMisc, "setMiscReg: setting mstatus with %#lx\n", val);
     }
     if (misc_reg == MISCREG_HSTATUS) {
@@ -570,7 +570,7 @@ ISA::setMiscReg(int misc_reg, RegVal val)
         setMiscRegNoEffect(MISCREG_VSSTATUS, write_val);
         printf("570 readval %lx\n",readMiscReg(MISCREG_VSSTATUS));
     } else if (misc_reg == MISCREG_VSSTATUS) {
-        printf("565 set vsstatus %lx\n",val);
+        // printf("565 set vsstatus %lx\n",val);
         auto vsstatus = readMiscRegNoEffect(MISCREG_VSSTATUS);
         STATUS write_val = ((vsstatus & ~(NEMU_SSTATUS_WMASK)) | (val & NEMU_SSTATUS_WMASK));
         //if enable h
@@ -578,7 +578,7 @@ ISA::setMiscReg(int misc_reg, RegVal val)
         bool vs_dirty = (write_val.vs == 0x3);
         uint64_t write_val2 = ((uint64_t)(fs_dirty || vs_dirty)<<63);
         write_val = write_val | write_val2;
-        printf("write val %lx\n",(uint64_t)write_val);
+        // printf("write val %lx\n",(uint64_t)write_val);
         setMiscRegNoEffect(MISCREG_VSSTATUS, write_val);
     } else if ((v == 1) && ((misc_reg == MISCREG_SATP))) {
         if ((val & NEMU_SATP_SV39_MASK) >> NEMU_SATP_RIGHT_OFFSET == NEMU_SV39_SIGN0 ||

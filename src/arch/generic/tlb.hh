@@ -81,6 +81,13 @@ class BaseTLB : public SimObject
         panic("Not implemented.\n");
     }
 
+    virtual void
+    translateFunctional(const RequestPtr &req, ThreadContext *tc,
+                        BaseMMU::Translation *translation, BaseMMU::Mode mode)
+    {
+        panic("Not implemented.\n");
+    }
+
     /**
      * Do post-translation physical address finalization.
      *

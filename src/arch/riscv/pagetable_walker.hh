@@ -48,6 +48,7 @@
 #include "arch/riscv/tlb.hh"
 #include "base/types.hh"
 #include "mem/packet.hh"
+#include "mem/request.hh"
 #include "params/RiscvPagetableWalker.hh"
 #include "sim/clocked_object.hh"
 #include "sim/faults.hh"
@@ -306,7 +307,7 @@ namespace RiscvISA
 
         // Fault perm_check ();
 
-        Fault startFunctional(ThreadContext * _tc, Addr &addr,
+        Fault startFunctional(RequestPtr req, ThreadContext * _tc, Addr &addr,
                 unsigned &logBytes, BaseMMU::Mode mode);
         Port &getPort(const std::string &if_name,
                       PortID idx=InvalidPortID) override;
