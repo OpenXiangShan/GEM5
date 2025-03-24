@@ -147,6 +147,7 @@ def build_test_system(np, args):
 
     for cpu in test_sys.cpu:
         cpu.store_prefetch_train = not args.kmh_align
+        cpu.enableDispatchStage = not args.kmh_align
     # ruby will overwrite the store_prefetch_train
     if ruby:
         test_sys._dma_ports = []

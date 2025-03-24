@@ -421,25 +421,13 @@ InstructionQueue::takeOverFrom()
 }
 
 bool
-InstructionQueue::isReady(const DynInstPtr& inst)
-{
-    return scheduler->ready(inst);
-}
-
-bool
-InstructionQueue::isFull(const DynInstPtr& inst)
-{
-    return scheduler->full(inst);
-}
-
-bool
 InstructionQueue::hasReadyInsts()
 {
     return scheduler->hasReadyInsts();
 }
 
 void
-InstructionQueue::insert(const DynInstPtr &new_inst)
+InstructionQueue::insert(const DynInstPtr &new_inst, int disp_seq)
 {
     if (new_inst->isFloating()) {
         iqIOStats.fpInstQueueWrites++;
@@ -454,7 +442,7 @@ InstructionQueue::insert(const DynInstPtr &new_inst)
     DPRINTF(IQ, "Adding instruction [sn:%llu] PC %s to the IQ.\n",
             new_inst->seqNum, new_inst->pcState());
 
-    scheduler->insert(new_inst);
+    scheduler->insert(new_inst, disp_seq);
 
     ++iqStats.instsAdded;
 }

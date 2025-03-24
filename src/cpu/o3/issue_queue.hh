@@ -103,7 +103,7 @@ class IssueQue : public SimObject
 
     std::list<DynInstPtr> instList;
     uint64_t instNumInsert = 0;
-    std::vector<int> opNum;
+    std::vector<uint8_t> opNum;
     uint64_t instNum = 0;
 
     // issueport : regfileport : priority
@@ -118,7 +118,7 @@ class IssueQue : public SimObject
     SelectQue selectQ;
 
     // srcIdx : inst
-    std::vector<std::vector<std::pair<int, DynInstPtr>>> subDepGraph;
+    std::vector<std::vector<std::pair<uint8_t, DynInstPtr>>> subDepGraph;
 
     std::queue<DynInstPtr> replayQ;  // only for mem
 
@@ -159,7 +159,6 @@ class IssueQue : public SimObject
     void resetDepGraph(int numPhysRegs);
 
     void tick();
-    bool full();
     bool ready();
     int emptyEntries() const { return iqsize - instNum; }
     void insert(const DynInstPtr& inst);
@@ -262,8 +261,11 @@ class Scheduler : public SimObject
     // used for searching dependency chain
     std::stack<DynInstPtr> dfs;
 
+    std::vector<int> dispSeqVec;
+
     // should call at issue first/last cycle,
     void specWakeUpDependents(const DynInstPtr& inst, IssueQue* from_issue_queue);
+    bool ready(OpClass op, int disp_seq);
 
   public:
     PendingWakeEventsType specWakeEvents;
@@ -275,15 +277,13 @@ class Scheduler : public SimObject
 
     void tick();
     void issueAndSelect();
-    bool full(const DynInstPtr& inst);
-    bool ready(const DynInstPtr& inst);
-    bool full(OpClass op);
-    bool ready(OpClass op);
+    void lookahead(std::deque<DynInstPtr>& insts);
+    bool ready(const DynInstPtr& inst, int disp_seq);
     DynInstPtr getInstByDstReg(RegIndex flatIdx);
 
     void addProducer(const DynInstPtr& inst);
     // return true if insert successful
-    void insert(const DynInstPtr& inst);
+    void insert(const DynInstPtr& inst, int disp_seq);
     void insertNonSpec(const DynInstPtr& inst);
     void addToFU(const DynInstPtr& inst);
     DynInstPtr getInstToFU();

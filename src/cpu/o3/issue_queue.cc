@@ -508,21 +508,14 @@ bool
 IssueQue::ready()
 {
     bool bwFull = instNumInsert >= inports;
+    bool full = (instNum >= iqsize) || (replayQ.size() > replayQsize);
     if (bwFull) {
         DPRINTF(Schedule, "can't insert more due to inports exhausted\n");
     }
-    return !full() && !bwFull;
-}
-
-bool
-IssueQue::full()
-{
-    bool full = instNum >= iqsize;
-    full |= replayQ.size() > replayQsize;
     if (full) {
         DPRINTF(Schedule, "has full!\n");
     }
-    return full;
+    return !full && !bwFull;
 }
 
 void
@@ -769,6 +762,10 @@ Scheduler::Scheduler(const SchedulerParams& params) : SimObject(params), stats(t
             }
         }
     }
+
+    assert(dispTable[MemWriteOp].size() == dispTable[StoreDataOp].size());
+
+    dispSeqVec.resize(64);
 }
 
 void
@@ -844,20 +841,38 @@ Scheduler::issueAndSelect()
     }
 }
 
-bool
-Scheduler::ready(const DynInstPtr& inst)
+void
+Scheduler::lookahead(std::deque<DynInstPtr>& insts)
 {
-    if (inst->staticInst->isSplitStoreAddr() && !ready(StoreDataOp)) {
+    uint8_t disp_op_num[Num_OpClasses];
+    std::memset(disp_op_num, 0, Num_OpClasses);
+    int i = 0;
+    for (auto& it : insts) {
+        auto& iqs = dispTable[it->opClass()];
+        std::sort(iqs.begin(), iqs.end(), disp_policy(it->opClass()));
+        if (it->isSplitStoreAddr()) {
+            auto& iqs = dispTable[StoreDataOp];
+            std::sort(iqs.begin(), iqs.end(), disp_policy(StoreDataOp));
+        }
+
+        dispSeqVec[i] = disp_op_num[it->opClass()] % dispTable[it->opClass()].size();
+        disp_op_num[it->opClass()]++;
+        i++;
+    }
+}
+
+bool
+Scheduler::ready(const DynInstPtr& inst, int disp_seq)
+{
+    if (inst->staticInst->isSplitStoreAddr() && !ready(StoreDataOp, disp_seq)) {
         return false;
     }
 
     auto& iqs = dispTable[inst->opClass()];
     assert(!iqs.empty());
 
-    for (auto iq : iqs) {
-        if (iq->ready()) {
-            return true;
-        }
+    if (iqs[dispSeqVec.at(disp_seq)]->ready()) {
+        return true;
     }
 
     DPRINTF(Schedule, "IQ not ready, opclass: %s\n", enums::OpClassStrings[inst->opClass()]);
@@ -865,49 +880,18 @@ Scheduler::ready(const DynInstPtr& inst)
 }
 
 bool
-Scheduler::full(const DynInstPtr& inst)
+Scheduler::ready(OpClass op, int disp_seq)
 {
-    if (inst->staticInst->isSplitStoreAddr() && full(StoreDataOp)) {
+
+    auto& iqs = dispTable[op];
+    assert(!iqs.empty());
+
+    if (iqs[dispSeqVec.at(disp_seq)]->ready()) {
         return true;
     }
 
-    auto& iqs = dispTable[inst->opClass()];
-
-    for (auto iq : iqs) {
-        if (!iq->full()) {
-            return false;
-        }
-    }
-
-    DPRINTF(Schedule, "IQ full, opclass: %s\n", enums::OpClassStrings[inst->opClass()]);
-    return true;
-}
-
-bool
-Scheduler::ready(OpClass op)
-{
-    auto& iqs = dispTable[op];
-    assert(!iqs.empty());
-    for (auto iq : iqs) {
-        if (iq->ready()) {
-            return true;
-        }
-    }
     DPRINTF(Schedule, "IQ not ready, opclass: %s\n", enums::OpClassStrings[op]);
     return false;
-}
-
-bool
-Scheduler::full(OpClass op)
-{
-    auto& iqs = dispTable[op];
-    for (auto iq : iqs) {
-        if (!iq->full()) {
-            return false;
-        }
-    }
-    DPRINTF(Schedule, "IQ full, opclass: %s\n", enums::OpClassStrings[op]);
-    return true;
 }
 
 DynInstPtr
@@ -940,29 +924,20 @@ Scheduler::addProducer(const DynInstPtr& inst)
 }
 
 void
-Scheduler::insert(const DynInstPtr& inst)
+Scheduler::insert(const DynInstPtr& inst, int disp_seq)
 {
     if (inst->isSplitStoreAddr()) {
         auto stduop = inst->createStoreDataUop();
-        this->insert(stduop);
-
+        this->insert(stduop, disp_seq);
         // transform self to storeAddruop
         inst->buildStoreAddrUop();
     }
 
     auto& iqs = dispTable[inst->opClass()];
-    bool inserted = false;
 
-    std::sort(iqs.begin(), iqs.end(), disp_policy(inst->opClass()));
-    for (auto iq : iqs) {
-        if (iq->ready()) {
-            iq->insert(inst);
-            inserted = true;
-            break;
-        }
-    }
+    assert(iqs[dispSeqVec.at(disp_seq)]->ready());
+    iqs[dispSeqVec.at(disp_seq)]->insert(inst);
 
-    assert(inserted);
     DPRINTF(Schedule, "[sn:%llu] dispatch: %s\n", inst->seqNum, inst->staticInst->disassemble(0));
 }
 

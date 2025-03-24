@@ -398,10 +398,10 @@ class IEW
     TimeBuffer<IEWStruct>::wire execWB;
 
     /** Queue of all instructions coming from rename this cycle. */
-    std::queue<DynInstPtr> insts[MaxThreads];
+    std::deque<DynInstPtr> insts[MaxThreads];
 
     /** Skid buffer between rename and IEW. */
-    std::queue<DynInstPtr> skidBuffer[MaxThreads];
+    std::deque<DynInstPtr> skidBuffer[MaxThreads];
 
     std::deque<DynInstPtr> dispQue[3];
 
@@ -590,7 +590,7 @@ class IEW
 
     DQType getInstDQType(const DynInstPtr &inst);
 
-    StallReason checkDispatchStall(ThreadID tid, int dq_id, const DynInstPtr &dispatch_inst);
+    StallReason checkDispatchStall(ThreadID tid, int dq_stall, const DynInstPtr &dispatch_inst, int disp_seq);
 
     StallReason checkLSQStall(ThreadID tid, bool isLoad);
 

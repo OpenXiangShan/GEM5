@@ -170,17 +170,11 @@ class InstructionQueue
     /** Takes over execution from another CPU's thread. */
     void takeOverFrom();
 
-    /** Returns whether or not the IQ is full for a specific thread. */
-    bool isFull(const DynInstPtr& inst);
-
-    /** Returns whether or not the IQ is ok to accept the inst for a specific thread. */
-    bool isReady(const DynInstPtr& inst);
-
     /** Returns if there are any ready instructions in the IQ. */
     bool hasReadyInsts();
 
     /** Inserts a new instruction into the IQ. */
-    void insert(const DynInstPtr &new_inst);
+    void insert(const DynInstPtr &new_inst, int disp_seq);
 
     /** Inserts a new, non-speculative instruction into the IQ. */
     void insertNonSpec(const DynInstPtr &new_inst);

@@ -145,7 +145,7 @@ class BaseO3CPU(BaseCPU):
                "Issue/Execute/Writeback delay")
     executeToWriteBackDelay = Param.Cycles(1, "Execute to issue delay")
 
-    enableDispatchStage = Param.Bool(False, "Enable the dispatch stage")
+    enableDispatchStage = Param.Bool(True, "Enable the dispatch stage")
     numDQEntries = VectorParam.Unsigned([32, 16, 16], "Number of entries in the dispQue, (Int, Float/Vector, Mem)")
     dispWidth = VectorParam.Unsigned([8, 6, 6], "Each DispQue dispatch width")
 
