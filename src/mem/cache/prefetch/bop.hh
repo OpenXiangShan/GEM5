@@ -158,6 +158,8 @@ class BOP : public Queued
 
         std::list<OffsetListEntry>::iterator bestoffsetsListIterator;
 
+        bool autoLearning = false;
+
         /** Max score found so far */
         unsigned int bestScore;
         /** Current round */
