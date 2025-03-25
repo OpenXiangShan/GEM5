@@ -22,9 +22,6 @@ the version just below.
 To release a new version of pybind11:
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-If you don't have nox, you should either use ``pipx run nox`` instead, or use
-``pipx install nox`` or ``brew install nox`` (Unix).
-
 - Update the version number
     - Update ``PYBIND11_VERSION_MAJOR`` etc. in
       ``include/pybind11/detail/common.h``. PATCH should be a simple integer.
@@ -54,12 +51,14 @@ If you don't have nox, you should either use ``pipx run nox`` instead, or use
   notifications to users watching releases, and also uploads PyPI packages).
   (Note: if you do not use an existing tag, this creates a new lightweight tag
   for you, so you could skip the above step.)
+
     - GUI method: Under `releases <https://github.com/pybind/pybind11/releases>`_
       click "Draft a new release" on the far right, fill in the tag name
       (if you didn't tag above, it will be made here), fill in a release name
       like "Version X.Y.Z", and copy-and-paste the markdown-formatted (!) changelog
       into the description (usually ``cat docs/changelog.rst | pandoc -f rst -t gfm``).
       Check "pre-release" if this is a beta/RC.
+
     - CLI method: with ``gh`` installed, run ``gh release create vX.Y.Z -t "Version X.Y.Z"``
       If this is a pre-release, add ``-p``.
 
@@ -91,7 +90,9 @@ If you need to manually upload releases, you can download the releases from the 
 
 .. code-block:: bash
 
-    nox -s build
+    python3 -m pip install build
+    python3 -m build
+    PYBIND11_SDIST_GLOBAL=1 python3 -m build
     twine upload dist/*
 
 This makes SDists and wheels, and the final line uploads them.
