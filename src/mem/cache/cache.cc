@@ -69,8 +69,7 @@ namespace gem5
 {
 
 Cache::Cache(const CacheParams &p)
-    : BaseCache(p, p.system->cacheLineSize()),
-      doFastWrites(true)
+    : BaseCache(p, p.system->cacheLineSize())
 {
     assert(p.tags);
     assert(p.replacement_policy);
@@ -308,7 +307,7 @@ void
 Cache::promoteWholeLineWrites(PacketPtr pkt)
 {
     // Cache line clearing instructions
-    if (doFastWrites && (pkt->cmd == MemCmd::WriteReq) &&
+    if (doFastWriteline && (pkt->cmd == MemCmd::WriteReq) &&
         (pkt->getSize() == blkSize) && (pkt->getOffset(blkSize) == 0) &&
         !pkt->isMaskedWrite()) {
         pkt->cmd = MemCmd::WriteLineReq;
@@ -490,6 +489,8 @@ Cache::createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
                         bool needsWritable,
                         bool is_whole_line_write) const
 {
+    is_whole_line_write &= doFastWriteline;
+
     // should never see evictions here
     assert(!cpu_pkt->isEviction());
 

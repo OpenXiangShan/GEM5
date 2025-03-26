@@ -67,10 +67,6 @@ class MSHR;
 class Cache : public BaseCache
 {
   protected:
-    /**
-     * This cache should allocate a block on a line-sized write miss.
-     */
-    const bool doFastWrites;
 
     /**
      * Store the outstanding requests that we are expecting snoop

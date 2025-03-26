@@ -93,6 +93,7 @@ class BaseCache(ClockedObject):
     demand_mshr_reserve = Param.Unsigned(1, "MSHRs reserved for demand access")
     tgts_per_mshr = Param.Unsigned("Max number of accesses per MSHR")
     write_buffers = Param.Unsigned(8, "Number of write buffers")
+    do_fast_writeline = Param.Bool(True, "Write whole line do not read")
 
     is_read_only = Param.Bool(False, "Is this cache read only (e.g. inst)")
     enable_wayprediction = Param.Bool(True, "enablewaypredction")

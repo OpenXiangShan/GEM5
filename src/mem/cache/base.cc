@@ -176,7 +176,8 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       system(p.system),
       stats(*this),
       cacheLevel(p.cache_level),
-      forceHit(p.force_hit)
+      forceHit(p.force_hit),
+      doFastWriteline(p.do_fast_writeline)
 {
     // the MSHR queue has no reserve entries as we check the MSHR
     // queue on every single allocation, whereas the write queue has
@@ -893,7 +894,7 @@ BaseCache::recvTimingResp(PacketPtr pkt)
 
     // make sure that if the mshr was due to a whole line write then
     // the response is an invalidation
-    assert(!mshr->wasWholeLineWrite || pkt->isInvalidate());
+    assert(doFastWriteline ? !mshr->wasWholeLineWrite || pkt->isInvalidate() : true);
 
     CacheBlk *blk = tags->findBlock(pkt->getAddr(), pkt->isSecure());
 

@@ -132,6 +132,7 @@ def config_cache(options, system):
             # system.tol2bus_list.append(L2XBar(clk_domain = system.cpu_clk_domain, width=256))
             system.l2_caches[i].cpu_side = system.tol2bus_list[i].mem_side_ports
             system.tol2bus_list[i].snoop_filter.max_capacity = "16MB"
+            system.l2_caches[i].do_fast_writeline = not options.kmh_align
 
             if options.ideal_cache:
                 assert not options.l3cache, \
@@ -166,6 +167,8 @@ def config_cache(options, system):
             system.l3.cpu_side = system.tol3bus.mem_side_ports
             system.l3.mem_side = system.membus.cpu_side_ports
 
+            system.l3.do_fast_writeline = not options.kmh_align
+
         for i in range(options.num_cpus):
             if options.l3cache:
                 # l2 -> tol3bus -> l3
@@ -187,6 +190,8 @@ def config_cache(options, system):
             if options.ideal_cache:
                 icache.response_latency = 0
                 dcache.response_latency = 0
+
+            dcache.do_fast_writeline = not options.kmh_align
 
             if (not options.no_pf) and options.l1_to_l2_pf_hint:
                 assert dcache.prefetcher != NULL and \

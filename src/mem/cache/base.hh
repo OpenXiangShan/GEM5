@@ -1585,6 +1585,11 @@ class BaseCache : public ClockedObject, CacheAccessor
     const bool forceHit;
 
 public:
+    /**
+     * This cache should allocate a block on a line-sized write miss.
+     */
+    const bool doFastWriteline = false;
+
     // CacheAccessor overrided function
 
     bool inCache(Addr addr, bool is_secure) const override { return tags->findBlock(addr, is_secure); }
