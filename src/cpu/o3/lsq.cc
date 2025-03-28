@@ -257,6 +257,18 @@ LSQ::bankConflictedCheck(Addr vaddr)
     return now_bank_conflict;
 }
 
+unsigned
+LSQ::getFreeLQEntries(ThreadID tid)
+{
+    return thread[tid].numFreeLoadEntries();
+}
+
+unsigned
+LSQ::getFreeSQEntries(ThreadID tid)
+{
+    return thread[tid].numFreeStoreEntries();
+}
+
 bool
 LSQ::cacheBlocked() const
 {
