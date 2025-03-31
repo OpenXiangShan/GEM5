@@ -96,23 +96,45 @@ class ECore2ReadScheduler(Scheduler):
 
 
 class KunminghuScheduler(Scheduler):
-    IQs = [
-        IssueQue(name='intIQ0', inports=2, size=2*12, oports=[
-            IssuePort(fu=[IntALU(), IntMult()], rp=[IntRD(0, 0), IntRD(1, 0)]),
-            IssuePort(fu=[IntBRU()], rp=[IntRD(6, 1), IntRD(7, 1)])
+    IQs = [      
+        IssueQue(name='intIQ0', inports=2, size=16, oports=[
+            IssuePort(fu=[IntALU(), IntMult()], rp=[IntRD(0, 0), IntRD(1, 0)])
         ]),
-        IssueQue(name='intIQ1', inports=2, size=2*12, oports=[
-            IssuePort(fu=[IntALU(), IntMult()], rp=[IntRD(2, 0), IntRD(3, 0)]),
-            IssuePort(fu=[IntBRU()], rp=[IntRD(4, 1), IntRD(5, 1)])
+        IssueQue(name='intIQ1', inports=2, size=16, oports=[
+            IssuePort(fu=[IntALU(), IntMult()], rp=[IntRD(2, 0), IntRD(3, 0)])
         ]),
-        IssueQue(name='intIQ2', inports=2, size=2*12, oports=[
-            IssuePort(fu=[IntALU()], rp=[IntRD(4, 0), IntRD(5, 0)]),
-            IssuePort(fu=[IntBRU(), IntMisc()], rp=[IntRD(2, 1), IntRD(3, 1)])
+
+        IssueQue(name='intIQ2', inports=2, size=16, oports=[
+            IssuePort(fu=[IntALU(), IntBRU()], rp=[IntRD(4, 0), IntRD(1, 1)])
         ]),
-        IssueQue(name='intIQ3', inports=2, size=2*12, oports=[
-            IssuePort(fu=[IntALU()], rp=[IntRD(6, 0), IntRD(7, 0)]),
-            IssuePort(fu=[IntDiv()], rp=[IntRD(0, 1), IntRD(1, 1)])
+        IssueQue(name='intIQ3', inports=2, size=16, oports=[
+            IssuePort(fu=[IntALU(), IntBRU()], rp=[IntRD(5, 0), IntRD(3, 1)])
         ]),
+        IssueQue(name='intIQ4', inports=2, size=16, oports=[
+            IssuePort(fu=[IntALU(), IntBRU()], rp=[IntRD(6, 0), IntRD(7, 1)])
+        ]),
+
+        IssueQue(name='intIQ5', inports=2, size=16, oports=[
+            IssuePort(fu=[IntALU(), IntMisc(), IntDiv()],
+                                               rp=[IntRD(7, 0), IntRD(6, 1)])
+        ]),
+
+        # IssueQue(name='intIQ0', inports=2, size=2*12, oports=[
+        #     IssuePort(fu=[IntALU(), IntMult()], rp=[IntRD(0, 0), IntRD(1, 0)]),
+        #     IssuePort(fu=[IntBRU()], rp=[IntRD(6, 1), IntRD(7, 1)])
+        # ]),
+        # IssueQue(name='intIQ1', inports=2, size=2*12, oports=[
+        #     IssuePort(fu=[IntALU(), IntMult()], rp=[IntRD(2, 0), IntRD(3, 0)]),
+        #     IssuePort(fu=[IntBRU()], rp=[IntRD(4, 1), IntRD(5, 1)])
+        # ]),
+        # IssueQue(name='intIQ2', inports=2, size=2*12, oports=[
+        #     IssuePort(fu=[IntALU()], rp=[IntRD(4, 0), IntRD(5, 0)]),
+        #     IssuePort(fu=[IntBRU(), IntMisc()], rp=[IntRD(2, 1), IntRD(3, 1)])
+        # ]),
+        # IssueQue(name='intIQ3', inports=2, size=2*12, oports=[
+        #     IssuePort(fu=[IntALU()], rp=[IntRD(6, 0), IntRD(7, 0)]),
+        #     IssuePort(fu=[IntDiv()], rp=[IntRD(0, 1), IntRD(1, 1)])
+        # ]),
         IssueQue(name='load0', inports=2, size=16, oports=[
             IssuePort(fu=[ReadPort()], rp=[IntRD(8, 0)])
         ]),
@@ -153,13 +175,16 @@ class KunminghuScheduler(Scheduler):
             IssuePort(fu=[SIMD_Unit()])
         ], scheduleToExecDelay=3),
     ]
-    __int_bank = ['intIQ0', 'intIQ1', 'intIQ2', 'intIQ3', 'load0', 'load1', 'load2', 'store0', 'store1', 'std0', 'std1']
+    __int_bank = ['intIQ0', 'intIQ1', 'intIQ2', 'intIQ3', 'intIQ4', 'intIQ5', 'load0', 'load1', 'load2', 'store0', 'store1', 'std0', 'std1']
     __fp_bank = ['fpIQ0', 'fpIQ1', 'fpIQ2', 'store0', 'store1']
     specWakeupNetwork = [
         SpecWakeupChannel(srcIQ='intIQ0', dstIQ=__int_bank),
         SpecWakeupChannel(srcIQ='intIQ1', dstIQ=__int_bank),
         SpecWakeupChannel(srcIQ='intIQ2', dstIQ=__int_bank),
         SpecWakeupChannel(srcIQ='intIQ3', dstIQ=__int_bank),
+        SpecWakeupChannel(srcIQ='intIQ4', dstIQ=__int_bank),
+        SpecWakeupChannel(srcIQ='intIQ5', dstIQ=__int_bank),
+
         SpecWakeupChannel(srcIQ='fpIQ0', dstIQ=__fp_bank),
         SpecWakeupChannel(srcIQ='fpIQ1', dstIQ=__fp_bank),
         SpecWakeupChannel(srcIQ='fpIQ2', dstIQ=__fp_bank),
