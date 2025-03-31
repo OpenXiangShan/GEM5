@@ -242,6 +242,9 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
                "Number of vector vta enable"),
       ADD_STAT(vectorVtu, statistics::units::Count::get(),
                "Number of vector vtu enable"),
+      ADD_STAT(fp64, ""),
+      ADD_STAT(fp32, ""),
+      ADD_STAT(fp16, ""),
       ADD_STAT(squashDueToBranch, statistics::units::Count::get(),
                "Number of squash due to branch"),
       ADD_STAT(squashDueToOrderViolation, statistics::units::Count::get(),
@@ -1173,6 +1176,17 @@ Commit::commitInsts()
             bool commit_success = commitHead(head_inst, num_committed);
 
             if (commit_success) {
+
+                if (head_inst->opClass() == enums::FloatMult) {
+                    switch(head_inst->staticInst->operWid()) {
+                        case 64: stats.fp64++; break;
+                        case 32: stats.fp32++; break;
+                        case 16: stats.fp16++; break;
+                        default:
+                        panic("");
+                    }
+                }
+
                 cpu->perfCCT->updateInstPos(head_inst->seqNum, PerfRecord::AtCommit);
                 cpu->perfCCT->commitMeta(head_inst->seqNum);
                 head_inst->printDisassemblyAndResult(cpu->name());

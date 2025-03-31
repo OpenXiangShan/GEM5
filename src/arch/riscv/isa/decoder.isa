@@ -1506,7 +1506,7 @@ decode QUADRANT default Unknown::unknown() {
                                          f16(freg(Fs2_bits)),
                                          f16(freg(Fs3_bits))));
                     Fd_bits = fd.v;
-                }}, FloatMultAccOp);
+                }}, FloatMultAccOp, IsOper16);
             }
             0x11: decode FUNCT2 {
                 0x0: fmsub_s({{
@@ -1535,7 +1535,7 @@ decode QUADRANT default Unknown::unknown() {
                                     f16(f16(freg(Fs3_bits)).v ^
                                         mask(15, 15))));
                     Fd_bits = fd.v;
-                }}, FloatMultAccOp);
+                }}, FloatMultAccOp, IsOper16);
             }
             0x12: decode FUNCT2 {
                 0x0: fnmsub_s({{
@@ -1564,7 +1564,7 @@ decode QUADRANT default Unknown::unknown() {
                                          f16(freg(Fs2_bits)),
                                          f16(freg(Fs3_bits))));
                     Fd_bits = fd.v;
-                }}, FloatMultAccOp);
+                }}, FloatMultAccOp, IsOper16);
             }
             0x13: decode FUNCT2 {
                 0x0: fnmadd_s({{
@@ -1596,7 +1596,7 @@ decode QUADRANT default Unknown::unknown() {
                                     f16(f16(freg(Fs3_bits)).v ^
                                         mask(15, 15))));
                     Fd_bits = fd.v;
-                }}, FloatMultAccOp);
+                }}, FloatMultAccOp, IsOper16);
             }
             0x14: decode FUNCT7 {
                 0x0: fadd_s({{
@@ -1647,21 +1647,21 @@ decode QUADRANT default Unknown::unknown() {
                     fd = freg(f32_mul(f32(freg(Fs1_bits)),
                                       f32(freg(Fs2_bits))));
                     Fd_bits = fd.v;
-                }}, FloatMultOp);
+                }}, FloatMultOp, IsOper32);
                 0x9: fmul_d({{
                     RM_REQUIRED;
                     freg_t fd;
                     fd = freg(f64_mul(f64(freg(Fs1_bits)),
                                       f64(freg(Fs2_bits))));
                     Fd_bits = fd.v;
-                }}, FloatMultOp);
+                }}, FloatMultOp, IsOper64);
                 0xa: fmul_h({{
                     RM_REQUIRED;
                     freg_t fd;
                     fd = freg(f16_mul(f16(freg(Fs1_bits)),
                                       f16(freg(Fs2_bits))));
                     Fd_bits = fd.v;
-                }}, FloatMultOp);
+                }}, FloatMultOp, IsOper16);
                 0xc: fdiv_s({{
                     RM_REQUIRED;
                     freg_t fd;
@@ -1872,13 +1872,13 @@ decode QUADRANT default Unknown::unknown() {
                         freg_t fd;
                         fd = freg(f32_to_f16(f32(freg(Fs1_bits))));
                         Fd_bits = fd.v;
-                    }}, FloatCvtOp);
+                    }}, FloatCvtOp, IsOper16);
                     0x1: fcvt_h_d({{
                         RM_REQUIRED;
                         freg_t fd;
                         fd = freg(f64_to_f16(f64(freg(Fs1_bits))));
                         Fd_bits = fd.v;
-                    }}, FloatCvtOp);
+                    }}, FloatCvtOp, IsOper16);
                 }
                 0x2c: fsqrt_s({{
                     if (RS2 != 0) {
@@ -2069,25 +2069,25 @@ decode QUADRANT default Unknown::unknown() {
                         freg_t fd;
                         fd = freg(i32_to_f16((int32_t)Rs1_sw));
                         Fd_bits = fd.v;
-                        }}, FloatCvtOp);
+                        }}, FloatCvtOp, IsOper16);
                     0x1: fcvt_h_wu({{
                         RM_REQUIRED;
                         freg_t fd;
                         fd = freg(ui32_to_f16((uint32_t)Rs1_uw));
                         Fd_bits = fd.v;
-                        }}, FloatCvtOp);
+                        }}, FloatCvtOp, IsOper16);
                     0x2: fcvt_h_l({{
                         RM_REQUIRED;
                         freg_t fd;
                         fd = freg(i64_to_f16(Rs1_ud));
                         Fd_bits = fd.v;
-                        }}, FloatCvtOp);
+                        }}, FloatCvtOp, IsOper16);
                     0x3: fcvt_h_lu({{
                         RM_REQUIRED;
                         freg_t fd;
                         fd = freg(ui64_to_f16(Rs1));
                         Fd_bits = fd.v;
-                        }}, FloatCvtOp);
+                        }}, FloatCvtOp, IsOper16);
                 }
                 0x70: decode ROUND_MODE {
                     0x0: fmv_x_w({{

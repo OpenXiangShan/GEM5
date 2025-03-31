@@ -560,6 +560,10 @@ class Commit
         statistics::Scalar vectorVta;
         statistics::Scalar vectorVtu;
 
+        statistics::Scalar fp64;
+        statistics::Scalar fp32;
+        statistics::Scalar fp16;
+
         statistics::Scalar squashDueToBranch;
         statistics::Scalar squashDueToOrderViolation;
         statistics::Scalar squashDueToTrap;

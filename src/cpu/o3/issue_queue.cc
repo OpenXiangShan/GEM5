@@ -1185,6 +1185,12 @@ Scheduler::getOpLatency(const DynInstPtr& inst)
             return 2 + opExecTimeTable[inst->opClass()];
         }
     }
+    if (inst->opClass() == FloatMultOp) [[unlikely]] {
+        switch (inst->staticInst->operWid()) {
+        case 32:
+            return opExecTimeTable[inst->opClass()] - 2;
+        }
+    }
     return opExecTimeTable[inst->opClass()];
 }
 
