@@ -603,8 +603,8 @@ IssueQue::doSquash(const InstSeqNum seqNum)
                 POPINST((*it));
                 (*it)->setIssued();
             }
-            if ((*it)->isScheduled() && !opPipelined[(*it)->opClass()]) {
-                portBusy[(*it)->issueportid] = 0;
+            if ((*it)->isScheduled() && (*it)->issueportid >= 0 && !opPipelined[(*it)->opClass()]) {
+                portBusy.at((*it)->issueportid) = 0;
             }
 
             (*it)->setSquashedInIQ();
