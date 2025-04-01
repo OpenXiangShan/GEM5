@@ -1187,10 +1187,10 @@ pollFunc(SyscallDesc *desc, ThreadContext *tc,
      * for later. Afterwards, replace each target file descriptor in the
      * poll_fd array with its host_fd.
      */
-    int temp_tgt_fds[nfds];
+    auto temp_tgt_fds = std::make_unique<int[]>(nfds);
     for (int index = 0; index < nfds; index++) {
         temp_tgt_fds[index] = ((struct pollfd *)fdsBuf.bufferPtr())[index].fd;
-        auto tgt_fd = temp_tgt_fds[index];
+        int tgt_fd = temp_tgt_fds[index];
         auto hbfdp = std::dynamic_pointer_cast<HBFDEntry>((*p->fds)[tgt_fd]);
         if (!hbfdp)
             return -EBADF;
@@ -1231,7 +1231,7 @@ pollFunc(SyscallDesc *desc, ThreadContext *tc,
      * target file descriptor.
      */
     for (int index = 0; index < nfds; index++) {
-        auto tgt_fd = temp_tgt_fds[index];
+        int tgt_fd = temp_tgt_fds[index];
         ((struct pollfd *)fdsBuf.bufferPtr())[index].fd = tgt_fd;
     }
 
@@ -1762,8 +1762,8 @@ readvFunc(SyscallDesc *desc, ThreadContext *tc,
     int sim_fd = ffdp->getSimFD();
 
     SETranslatingPortProxy prox(tc);
-    typename OS::tgt_iovec tiov[count];
-    struct iovec hiov[count];
+    auto tiov = std::make_unique<typename OS::tgt_iovec[]>(count);
+    auto hiov = std::make_unique<struct iovec[]>(count);
     for (typename OS::size_t i = 0; i < count; ++i) {
         prox.readBlob(tiov_base + (i * sizeof(typename OS::tgt_iovec)),
                       &tiov[i], sizeof(typename OS::tgt_iovec));
@@ -1771,7 +1771,7 @@ readvFunc(SyscallDesc *desc, ThreadContext *tc,
         hiov[i].iov_base = new char [hiov[i].iov_len];
     }
 
-    int result = readv(sim_fd, hiov, count);
+    int result = readv(sim_fd, hiov.get(), count);
     int local_errno = errno;
 
     for (typename OS::size_t i = 0; i < count; ++i) {
@@ -1800,7 +1800,7 @@ writevFunc(SyscallDesc *desc, ThreadContext *tc,
     int sim_fd = hbfdp->getSimFD();
 
     SETranslatingPortProxy prox(tc);
-    struct iovec hiov[count];
+    auto hiov = std::make_unique<struct iovec[]>(count);
     for (typename OS::size_t i = 0; i < count; ++i) {
         typename OS::tgt_iovec tiov;
 
@@ -1812,7 +1812,7 @@ writevFunc(SyscallDesc *desc, ThreadContext *tc,
                       hiov[i].iov_len);
     }
 
-    int result = writev(sim_fd, hiov, count);
+    int result = writev(sim_fd, hiov.get(), count);
 
     for (typename OS::size_t i = 0; i < count; ++i)
         delete [] (char *)hiov[i].iov_base;
