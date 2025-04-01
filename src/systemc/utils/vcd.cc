@@ -601,7 +601,7 @@ class VcdTraceValInt : public VcdTraceVal<T>
     output(std::ostream &os) override
     {
         const int w = this->width();
-        char str[w + 1];
+        chart str[w+1];
         str[w] = '\0';
 
         const uint64_t val =
