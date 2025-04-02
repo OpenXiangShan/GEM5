@@ -72,8 +72,11 @@ RubyPort::RubyPort(const Params &p)
                    p.no_retry_on_stall),
       gotAddrRanges(p.port_interrupt_out_port_connection_count),
       m_isCPUSequencer(p.is_cpu_sequencer),
-      m_isDataSequencer(p.is_data_sequencer),
-      cpu(nullptr)
+      m_isDataSequencer(p.is_data_sequencer)
+
+#ifndef IS_NULL_ISA
+      ,cpu(nullptr)
+#endif
 {
     assert(m_version != -1);
 
@@ -289,11 +292,13 @@ RubyPort::MemResponsePort::recvTimingReq(PacketPtr pkt)
         }
     }
 
+#ifndef IS_NULL_ISA
     // set cpu here
     // when receiving a request, set sequencer(rubyport)'s cpu
     if (ruby_port->m_isDataSequencer && !ruby_port->cpu) {
         ruby_port->cpu = (BaseCPU *)(this->sendGetCPUPtr());
     }
+#endif
 
     // Save the port in the sender state object to be used later to
     // route the response

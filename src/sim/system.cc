@@ -561,6 +561,7 @@ void System::initState()
         inform("Restored from Xiangshan RISC-V Checkpoint\n");
     }
 
+#ifndef IS_NULL_ISA
     // have to initiate golden memory after checkpoint restored
     if (numCPUs > 1 && enableDifftest) {
         warn("Creating golden memory for multi-core difftest\n");
@@ -568,6 +569,7 @@ void System::initState()
         goldenMem = dedupMemManager.createCopyOnWriteBranch();
         goldenMemManager.initGoldenMem(physmem.getStartaddr(), memSize(), goldenMem);
     }
+#endif
 
 }
 

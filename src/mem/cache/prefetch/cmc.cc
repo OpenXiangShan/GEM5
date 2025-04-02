@@ -17,6 +17,7 @@ CMCPrefetcher::CMCPrefetcher(const CMCPrefetcherParams &p)
     enableDB(p.enablePrefetchDB),
     trigger(STACK_SIZE)
 {
+#ifndef IS_NULL_ISA
     if (enableDB) {
         db.init_db();
         std::vector<std::pair<std::string, DataType>> fields_vec = {
@@ -59,15 +60,18 @@ CMCPrefetcher::CMCPrefetcher(const CMCPrefetcherParams &p)
         prefetchTraceManager = db.addAndGetTrace("PREFETCHTRACE", fields_vec);
         prefetchTraceManager->init_table();
     }
+#endif
     registerExitCallback([this]() {
         for (auto e: storage) {
             if (e.isValid()) {
                 // printf("final entry: refcnt = %d\n", e.refcnt);
             }
         }
+#ifndef IS_NULL_ISA
         if (enableDB) {
             db.save_db("cmc.db");
         }
+#endif
     });
 }
 
@@ -143,11 +147,13 @@ CMCPrefetcher::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &ad
                     addresses.back().pfahead_host = 2;
                 }
             }
+#ifndef IS_NULL_ISA
             if (enableDB) {
                 prefetchTraceManager->write_record(
                     PrefetchTrace(addr, id, priority)
                 );
             }
+#endif
             priority--;
         }
     }

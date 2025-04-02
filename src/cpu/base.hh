@@ -51,7 +51,8 @@
 #include "cpu/golden_global_mem.hh"
 
 #if IS_NULL_ISA
-#error Including BaseCPU in a system without CPU support
+// Temporarily disable this warning
+/*#error Including BaseCPU in a system without CPU support*/
 #else
 #include "arch/generic/interrupts.hh"
 #include "base/statistics.hh"

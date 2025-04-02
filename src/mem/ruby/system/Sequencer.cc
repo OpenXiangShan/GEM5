@@ -45,7 +45,9 @@
 #include "base/compiler.hh"
 #include "base/logging.hh"
 #include "base/str.hh"
+#ifndef IS_NULL_ISA
 #include "cpu/base.hh"
+#endif
 #include "cpu/testers/rubytest/RubyTester.hh"
 #include "debug/LLSC.hh"
 #include "debug/MemoryAccess.hh"
@@ -679,7 +681,9 @@ Sequencer::checkL1DRefill(Addr address, const DataBlock& data, WriteMask mask) {
 
     size_t block_size = RubySystem::getBlockSizeBytes();
 
+#ifndef IS_NULL_ISA
     cpu->checkL1DRefill(address, data.getData(getOffset(address), block_size), block_size);
+#endif
 }
 
 void

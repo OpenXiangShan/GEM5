@@ -53,6 +53,7 @@ DebugFlag('HWPrefetchOther')
 DebugFlag('StridePrefetcher')
 DebugFlag('MSHR')
 DebugFlag('HWPrefetchQueue')
+DebugFlag('TagReadFail')
 
 # CacheTags is so outrageously verbose, printing the cache's entire tag
 # array on each timing access, that you should probably have to ask for

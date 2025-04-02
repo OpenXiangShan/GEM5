@@ -45,7 +45,9 @@
 #include <cassert>
 #include <string>
 
+#ifndef IS_NULL_ISA
 #include "cpu/base.hh"
+#endif
 #include "mem/ruby/common/MachineID.hh"
 #include "mem/ruby/network/MessageBuffer.hh"
 #include "mem/ruby/protocol/RequestStatus.hh"
@@ -237,7 +239,9 @@ class RubyPort : public ClockedObject
     bool m_isCPUSequencer;
   public:
     bool m_isDataSequencer;
+#ifndef IS_NULL_ISA
     BaseCPU* cpu;
+#endif
 };
 
 } // namespace ruby
