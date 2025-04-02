@@ -98,64 +98,54 @@ class ECore2ReadScheduler(Scheduler):
 class KunminghuScheduler(Scheduler):
     IQs = [      
         IssueQue(name='intIQ0', inports=2, size=16, oports=[
-            IssuePort(fu=[IntALU(), IntMult()], rp=[IntRD(0, 0), IntRD(1, 0)])
+            IssuePort(fu=[IntALU(), IntMult()],
+                      rp=[IntRD(0, 0), IntRD(6, 0)])
         ]),
         IssueQue(name='intIQ1', inports=2, size=16, oports=[
-            IssuePort(fu=[IntALU(), IntMult()], rp=[IntRD(2, 0), IntRD(3, 0)])
+            IssuePort(fu=[IntALU(), IntMult()],
+                      rp=[IntRD(1, 0), IntRD(7, 0)])
         ]),
-
         IssueQue(name='intIQ2', inports=2, size=16, oports=[
-            IssuePort(fu=[IntALU(), IntBRU()], rp=[IntRD(4, 0), IntRD(1, 1)])
+            IssuePort(fu=[IntALU(), IntBRU()],
+                      rp=[IntRD(2, 0), IntRD(8, 0)])
         ]),
         IssueQue(name='intIQ3', inports=2, size=16, oports=[
-            IssuePort(fu=[IntALU(), IntBRU()], rp=[IntRD(5, 0), IntRD(3, 1)])
+            IssuePort(fu=[IntALU(), IntBRU()],
+                      rp=[IntRD(3, 0), IntRD(6, 1)])
         ]),
         IssueQue(name='intIQ4', inports=2, size=16, oports=[
-            IssuePort(fu=[IntALU(), IntBRU()], rp=[IntRD(6, 0), IntRD(7, 1)])
+            IssuePort(fu=[IntALU(), IntBRU()],
+                      rp=[IntRD(4, 0), IntRD(7, 1)])
         ]),
-
         IssueQue(name='intIQ5', inports=2, size=16, oports=[
             IssuePort(fu=[IntALU(), IntMisc(), IntDiv()],
-                                               rp=[IntRD(7, 0), IntRD(6, 1)])
+                      rp=[IntRD(5, 0), IntRD(8, 1)])
         ]),
 
-        # IssueQue(name='intIQ0', inports=2, size=2*12, oports=[
-        #     IssuePort(fu=[IntALU(), IntMult()], rp=[IntRD(0, 0), IntRD(1, 0)]),
-        #     IssuePort(fu=[IntBRU()], rp=[IntRD(6, 1), IntRD(7, 1)])
-        # ]),
-        # IssueQue(name='intIQ1', inports=2, size=2*12, oports=[
-        #     IssuePort(fu=[IntALU(), IntMult()], rp=[IntRD(2, 0), IntRD(3, 0)]),
-        #     IssuePort(fu=[IntBRU()], rp=[IntRD(4, 1), IntRD(5, 1)])
-        # ]),
-        # IssueQue(name='intIQ2', inports=2, size=2*12, oports=[
-        #     IssuePort(fu=[IntALU()], rp=[IntRD(4, 0), IntRD(5, 0)]),
-        #     IssuePort(fu=[IntBRU(), IntMisc()], rp=[IntRD(2, 1), IntRD(3, 1)])
-        # ]),
-        # IssueQue(name='intIQ3', inports=2, size=2*12, oports=[
-        #     IssuePort(fu=[IntALU()], rp=[IntRD(6, 0), IntRD(7, 0)]),
-        #     IssuePort(fu=[IntDiv()], rp=[IntRD(0, 1), IntRD(1, 1)])
-        # ]),
         IssueQue(name='load0', inports=2, size=16, oports=[
-            IssuePort(fu=[ReadPort()], rp=[IntRD(8, 0)])
-        ]),
-        IssueQue(name='load1', inports=2, size=16, oports=[
             IssuePort(fu=[ReadPort()], rp=[IntRD(9, 0)])
         ]),
-        IssueQue(name='load2', inports=2, size=16, oports=[
+        IssueQue(name='load1', inports=2, size=16, oports=[
             IssuePort(fu=[ReadPort()], rp=[IntRD(10, 0)])
         ]),
+        IssueQue(name='load2', inports=2, size=16, oports=[
+            IssuePort(fu=[ReadPort()], rp=[IntRD(11, 0)])
+        ]),
+
         IssueQue(name='store0', inports=2, size=16, oports=[
-            IssuePort(fu=[WritePort()], rp=[IntRD(7, 2)])
+            IssuePort(fu=[WritePort()], rp=[IntRD(0, 1)])
         ]),
         IssueQue(name='store1', inports=2, size=16, oports=[
-            IssuePort(fu=[WritePort()], rp=[IntRD(6, 2)])
+            IssuePort(fu=[WritePort()], rp=[IntRD(1, 1)])
         ]),
+
         IssueQue(name='std0', inports=2, size=16, oports=[
-            IssuePort(fu=[StoreDataPort()], rp=[IntRD(5,2), FpRD(9,0)])
+            IssuePort(fu=[StoreDataPort()], rp=[IntRD(2,1), FpRD(9,0)])
         ]),
         IssueQue(name='std1', inports=2, size=16, oports=[
-            IssuePort(fu=[StoreDataPort()], rp=[IntRD(3,2), FpRD(10,0)])
+            IssuePort(fu=[StoreDataPort()], rp=[IntRD(3,1), FpRD(10,0)])
         ]),
+
         IssueQue(name='fpIQ0', inports=2, size=18, oports=[
             IssuePort(fu=[FP_ALU(), FP_MISC(), FP_MAC()], rp=[FpRD(0,0), FpRD(1, 0), FpRD(2,0)]),
             IssuePort(fu=[FP_SLOW()], rp=[FpRD(2,1), FpRD(5,1)])
@@ -196,7 +186,7 @@ class KunminghuScheduler(Scheduler):
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # self.disableAllRegArb()
+        self.disableAllRegArb()
 
     def disableAllRegArb(self):
         print("Disable regfile arbitration")
