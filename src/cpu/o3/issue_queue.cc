@@ -385,6 +385,7 @@ IssueQue::issueToFu()
 void
 IssueQue::retryMem(const DynInstPtr& inst)
 {
+    inst->clearCancel();
     assert(!inst->isNonSpeculative());
     iqstats->retryMem++;
     DPRINTF(Schedule, "retry %s [sn:%llu]\n", enums::OpClassStrings[inst->opClass()], inst->seqNum);
@@ -913,10 +914,11 @@ Scheduler::issueAndSelect()
     arbFailedInsts.clear();
     std::fill(rfPortOccupancy.begin(), rfPortOccupancy.end(), std::make_pair(nullptr, 0));
 
-
     for (auto it : issueQues) {
         it->issueToFu();
     }
+
+    delayCancel();
     if (instsToFu.size() < intel_fewops) {
         stats.exec_stall_cycle++;
         if (lsq->anyStoreNotExecute()) stats.memstall_any_store++;
@@ -1183,11 +1185,21 @@ Scheduler::useRegfilePort(const DynInstPtr& inst, const PhysRegIdPtr& regid, int
     rfPortOccupancy[typePortId] = std::make_pair(inst, pri);
 }
 
+
+
 void
 Scheduler::loadCancel(const DynInstPtr& inst)
 {
-    DPRINTF(Schedule, "[sn:%llu] %s cache miss, cancel consumers\n", inst->seqNum,
-            enums::OpClassStrings[inst->opClass()]);
+    if (inst->canceled()) {
+        return;
+    }
+    inst->setCancel();
+
+    inst->delayed_to_cancel = cpu->nextCycle();
+    delayWakeList.push_back(inst);
+
+    DPRINTF(Schedule, "cancel consumers [sn:%llu] %s, delayed_to_cancel: %llu\n", inst->seqNum,
+            enums::OpClassStrings[inst->opClass()], inst->delayed_to_cancel);
     if (inst->issueQue) {
         inst->issueQue->iqstats->loadmiss++;
     }
@@ -1196,32 +1208,122 @@ Scheduler::loadCancel(const DynInstPtr& inst)
     while (!dfs.empty()) {
         auto top = dfs.top();
         dfs.pop();
+
         // clear pending wake events scheduled by top
         auto& pendingEvents = specWakeEvents[top->seqNum];
         for (auto it = pendingEvents.begin(); it != pendingEvents.end(); it++) {
             cpu->deschedule(*it);
         }
         specWakeEvents.erase(top->seqNum);
+
         for (int i = 0; i < top->numDestRegs(); i++) {
             auto dst = top->renamedDestIdx(i);
             if (dst->isFixedMapping()) {
                 continue;
             }
             earlyScoreboard[dst->flatIndex()] = false;
+
+
             for (auto iq : issueQues) {
-                for (auto& it : iq->subDepGraph[dst->flatIndex()]) {
-                    int srcIdx = it.first;
-                    auto& depInst = it.second;
-                    if (depInst->readySrcIdx(srcIdx)) {
-                        DPRINTF(Schedule, "cancel [sn:%llu], clear src p%d ready\n", depInst->seqNum,
-                                depInst->renamedSrcIdx(srcIdx)->flatIndex());
-                        depInst->issueQue->cancel(depInst);
-                        depInst->clearSrcRegReady(srcIdx);
-                        dfs.push(depInst);
+                // cancel in current cycle
+                for (int i = 0; i < iq->inflightIssues[-1].size; i++) {
+                    auto& it = iq->inflightIssues[-1].insts[i];
+                    if (it) for (int j = 0; j < it->numSrcRegs(); j++) {
+                        if (it->renamedSrcIdx(j) == dst) {
+                            auto& depInst = it;
+                            int srcIdx = j;
+                            if (depInst->readySrcIdx(srcIdx) &&
+                                depInst->renamedSrcIdx(srcIdx) != cpu->vecOnesPhysRegId) {
+                                DPRINTF(Schedule, "cancel [sn:%llu], clear src p%d ready\n", depInst->seqNum,
+                                        depInst->renamedSrcIdx(srcIdx)->flatIndex());
+                                std::cout<<"w";
+                                depInst->issueQue->cancel(depInst);
+                                depInst->clearSrcRegReady(srcIdx);
+                                dfs.push(depInst);
+                                depInst->delayed_to_cancel = cpu->nextCycle();
+                                delayWakeList.push_back(depInst);
+                            }
+                        }
+                    }
+                }
+
+            }
+        }
+    }
+
+    for (auto iq : issueQues) {
+        for (int i = 0; i <= iq->getIssueStages(); i++) {
+            int size = iq->inflightIssues[-i].size;
+            for (int j = 0; j < size; j++) {
+                auto& inst = iq->inflightIssues[-i].insts[j];
+                if (inst && inst->canceled()) {
+                    inst = nullptr;
+                }
+            }
+        }
+    }
+
+
+}
+
+
+void
+Scheduler::delayCancel()
+{
+    for (auto ptr = delayWakeList.begin(); ptr != delayWakeList.end();) {
+        auto& inst = *ptr;
+
+        if (inst->delayed_to_cancel == 0) {
+            DPRINTF(Schedule, "remove no used [sn:%llu] %s\n", inst->seqNum,
+                enums::OpClassStrings[inst->opClass()]);
+            ptr = delayWakeList.erase(ptr);
+            continue;
+        }
+
+        assert(inst->delayed_to_cancel >= curTick());
+        if (inst->delayed_to_cancel > curTick()) {
+            ptr++;
+            continue;
+        }
+
+        DPRINTF(Schedule, "delay cancel consumers [sn:%llu] %s\n", inst->seqNum,
+            enums::OpClassStrings[inst->opClass()]);
+
+        dfs.push(inst);
+        while (!dfs.empty()) {
+            auto top = dfs.top();
+            dfs.pop();
+            // clear pending wake events scheduled by top
+            auto& pendingEvents = specWakeEvents[top->seqNum];
+            for (auto it = pendingEvents.begin(); it != pendingEvents.end(); it++) {
+                cpu->deschedule(*it);
+            }
+            specWakeEvents.erase(top->seqNum);
+            for (int i = 0; i < top->numDestRegs(); i++) {
+                auto dst = top->renamedDestIdx(i);
+                if (dst->isFixedMapping()) {
+                    continue;
+                }
+                earlyScoreboard[dst->flatIndex()] = false;
+                for (auto iq : issueQues) {
+                    for (auto& it : iq->subDepGraph[dst->flatIndex()]) {
+                        int srcIdx = it.first;
+                        auto& depInst = it.second;
+                        if (depInst->readySrcIdx(srcIdx) && depInst->renamedSrcIdx(srcIdx) != cpu->vecOnesPhysRegId) {
+                            DPRINTF(Schedule, "cancel [sn:%llu], clear src p%d ready\n", depInst->seqNum,
+                                    depInst->renamedSrcIdx(srcIdx)->flatIndex());
+                            depInst->issueQue->cancel(depInst);
+                            depInst->clearSrcRegReady(srcIdx);
+                            dfs.push(depInst);
+                        }
                     }
                 }
             }
         }
+
+
+        inst->delayed_to_cancel = 0;
+        ptr = delayWakeList.erase(ptr);
     }
 
     for (auto iq : issueQues) {

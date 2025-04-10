@@ -300,6 +300,7 @@ class Scheduler : public SimObject
     std::stack<DynInstPtr> dfs;
 
     std::vector<int> dispSeqVec;
+    std::list<DynInstPtr> delayWakeList;
 
     // should call at issue first/last cycle,
     void specWakeUpDependents(const DynInstPtr& inst, IssueQue* from_issue_queue);
@@ -331,6 +332,7 @@ class Scheduler : public SimObject
 
     void specWakeUpFromLoadPipe(const DynInstPtr& inst);
     void loadCancel(const DynInstPtr& inst);
+    void delayCancel();
 
     void writebackWakeup(const DynInstPtr& inst);
     void bypassWriteback(const DynInstPtr& inst);
