@@ -30,6 +30,10 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       fetchStreamQueueSize(p.fsq_size),
       alignToBlockSize(p.alignToBlockSize),
       historyBits(p.maxHistLen),
+      phrbMaxLen(p.phrbMaxLen),
+      phrbXorLen(p.phrbXorLen),
+      phrtMaxLen(p.phrtMaxLen),
+      phrtXorLen(p.phrtXorLen),
       ubtb(p.ubtb),
       abtb(p.abtb),
       btb(p.btb),
@@ -133,6 +137,8 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     s0PC = 0x80000000;
 
     s0History.resize(historyBits, 0);
+    s0phrb.resize(phrbMaxLen, 0);
+    s0phrt.resize(phrtMaxLen, 0);
     fetchTargetQueue.setName(name());
 
     commitHistory.resize(historyBits, 0);
@@ -584,6 +590,7 @@ DecoupledBPUWithBTB::tick()
             for (int i = 0; i < numStages; i++) {
                 predsOfEachStage[i].bbStart = s0PC;
             }
+            tage->putPhr(s0phrb, s0phrt);
             // Query each predictor component with current PC and history
             for (int i = 0; i < numComponents; i++) {
                 components[i]->putPCHistory(s0PC, s0History, predsOfEachStage);
@@ -952,6 +959,13 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id, unsigned stream_id,
     // DPRINTF(DecoupleBPHist,
     //          "Recover history %s\nto %s\n", s0History, stream.history);
     s0History = stream.history;
+    s0phrb = stream.phrb;
+    s0phrt = stream.phrt;
+
+    // update phr
+    if (actually_taken) {
+        updatePhr(stream.startPC, real_target);
+    }
 
     // recover history info
     int real_shamt;
@@ -1070,6 +1084,9 @@ DecoupledBPUWithBTB::nonControlSquash(unsigned target_id, unsigned stream_id,
 
     // recover history info
     s0History = it->second.history;
+    s0phrb = stream.phrb;
+    s0phrt = stream.phrt;
+
     int real_shamt;
     bool real_taken;
     std::tie(real_shamt, real_taken) = stream.getHistInfoDuringSquash(inst_pc.instAddr(), false, false, numBr);
@@ -1168,6 +1185,9 @@ DecoupledBPUWithBTB::trapSquash(unsigned target_id, unsigned stream_id,
 
     // recover history info
     s0History = stream.history;
+    s0phrb = stream.phrb;
+    s0phrt = stream.phrt;
+
     int real_shamt;
     bool real_taken;
     std::tie(real_shamt, real_taken) = stream.getHistInfoDuringSquash(inst_pc.instAddr(), false, false, numBr);
@@ -2002,10 +2022,17 @@ DecoupledBPUWithBTB::makeNewPrediction(bool create_new_stream)
 
         // 7. Record current history and prediction metadata
         entry.history = s0History;
+        entry.phrb = s0phrb;
+        entry.phrt = s0phrt;
         entry.predTick = finalPred.predTick;
         entry.predSource = finalPred.predSource;
 
-        // 8. Update component-specific history
+        // update phr
+        if (taken) {
+            updatePhr(s0PC, finalPred.getTarget());
+        }
+
+        // update (folded) histories for components
         for (int i = 0; i < numComponents; i++) {
             components[i]->specUpdateHist(s0History, finalPred);
             entry.predMetas[i] = components[i]->getPredictionMeta();

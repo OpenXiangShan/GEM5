@@ -39,6 +39,9 @@
 #include "debug/LoopPredictorVerbose.hh"
 #include "params/DecoupledBPUWithBTB.hh"
 
+#define GET_MASK(len) ((1ULL << (len)) - 1)
+#define GET_SELECTED_BITS(bits, highIdx, lowIdx) ((bits >> (lowIdx)) & GET_MASK((highIdx) - (lowIdx) + 1))
+
 namespace gem5
 {
 
@@ -102,6 +105,11 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     const unsigned historyBits{488};
 
+    unsigned phrbMaxLen;
+    unsigned phrbXorLen;
+    unsigned phrtMaxLen;
+    unsigned phrtXorLen;
+
     const Addr MaxAddr{~(0ULL)};
 
     DefaultBTB *ubtb{};
@@ -149,6 +157,9 @@ class DecoupledBPUWithBTB : public BPredUnit
     // Addr s0StreamStartPC;
     boost::dynamic_bitset<> s0History;  ///< History bits
     FullBTBPrediction finalPred;      ///< Final prediction
+
+    boost::dynamic_bitset<> s0phrb;
+    boost::dynamic_bitset<> s0phrt;
 
     boost::dynamic_bitset<> commitHistory;
 
@@ -275,6 +286,16 @@ class DecoupledBPUWithBTB : public BPredUnit
             pair.first, pair.second);
         }
         DPRINTF(DecoupleBP, "returnTarget %#lx\n", pred.returnTarget);
+    }
+
+    void updatePhr(Addr start, Addr target) {
+        s0phrb <<= 1;
+        boost::dynamic_bitset<> startXorBits(s0phrb.size(), GET_SELECTED_BITS(start, 8, 5));
+        s0phrb ^= startXorBits;
+
+        s0phrt <<= 1;
+        boost::dynamic_bitset<> targetXorBits(s0phrt.size(), GET_SELECTED_BITS(target, 30, 1));
+        s0phrt ^= targetXorBits;
     }
 
     /**

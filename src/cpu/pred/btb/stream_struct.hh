@@ -273,6 +273,9 @@ typedef struct FetchStream
     boost::dynamic_bitset<> history;
     std::queue<Addr> previousPCs;
 
+    boost::dynamic_bitset<> phrb;
+    boost::dynamic_bitset<> phrt;
+
     // for profiling
     int fetchInstNum;
     int commitInstNum;
@@ -302,6 +305,8 @@ typedef struct FetchStream
          currentSentBlock(0),
          predTick(0),
          history(),
+         phrb(),
+         phrt(),
          fetchInstNum(0),
          commitInstNum(0)
    {
