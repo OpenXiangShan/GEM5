@@ -41,6 +41,9 @@
 #include "debug/LoopPredictorVerbose.hh"
 #include "params/DecoupledBPUWithBTB.hh"
 
+#define GET_MASK(len) ((1ULL << (len)) - 1)
+#define GET_SELECTED_BITS(bits, highIdx, lowIdx) ((bits >> (lowIdx)) & GET_MASK((highIdx) - (lowIdx) + 1))
+
 namespace gem5
 {
 
@@ -94,6 +97,11 @@ class DecoupledBPUWithBTB : public BPredUnit
     unsigned maxInstsNum;
 
     const unsigned historyBits{488};
+
+    unsigned phrbMaxLen;
+    unsigned phrbXorLen;
+    unsigned phrtMaxLen;
+    unsigned phrtXorLen;
 
     const Addr MaxAddr{~(0ULL)};
 
@@ -150,6 +158,9 @@ class DecoupledBPUWithBTB : public BPredUnit
     boost::dynamic_bitset<> s0IHistory;  ///< IMLI History bits
     std::vector<boost::dynamic_bitset<>> s0LHistory;  ///< local History bits
     FullBTBPrediction finalPred;      ///< Final prediction
+
+    boost::dynamic_bitset<> s0phrb;
+    boost::dynamic_bitset<> s0phrt;
 
     boost::dynamic_bitset<> commitHistory;
 
@@ -280,6 +291,16 @@ class DecoupledBPUWithBTB : public BPredUnit
             pair.first, pair.second);
         }
         DPRINTF(DecoupleBP, "returnTarget %#lx\n", pred.returnTarget);
+    }
+
+    void updatePhr(Addr start, Addr target) {
+        s0phrb <<= 1;
+        boost::dynamic_bitset<> startXorBits(s0phrb.size(), GET_SELECTED_BITS(start, 8, 5));
+        s0phrb ^= startXorBits;
+
+        s0phrt <<= 1;
+        boost::dynamic_bitset<> targetXorBits(s0phrt.size(), GET_SELECTED_BITS(target, 30, 1));
+        s0phrt ^= targetXorBits;
     }
 
     /**
@@ -788,7 +809,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         bool is_conditional,
         bool actually_taken,
         SquashType squash_type,
-        Addr redirect_pc);
+        Addr redirect_pc // the target of the squashed Fetch Block, used to update PHR);
 
     // Common logic for squash handling
     void handleSquash(unsigned target_id,

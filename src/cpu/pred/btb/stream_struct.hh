@@ -294,6 +294,9 @@ typedef struct FetchStream
     std::vector<boost::dynamic_bitset<>> lhistory; // record LHR/s0History
     std::queue<Addr> previousPCs; // previous PCs, used by ahead BTB
 
+    boost::dynamic_bitset<> phrb;
+    boost::dynamic_bitset<> phrt;
+
     // for profiling
     int fetchInstNum;
     int commitInstNum;
@@ -320,6 +323,8 @@ typedef struct FetchStream
          bwhistory(),
          ihistory(),
          lhistory(),
+         phrb(),
+         phrt(),
          fetchInstNum(0),
          commitInstNum(0)
    {

@@ -1032,8 +1032,13 @@ class BTBTAGE(TimedBaseBTBPredictor):
     enableSC = Param.Bool(False, "Enable SC or not")    # TODO: BTBTAGE doesn't support SC
     numPredictors = Param.Unsigned(4, "Number of TAGE predictors")
     tableSizes = VectorParam.Unsigned([4096]*4, "the ITTAGE T0~Tn length")
-    TTagBitSizes = VectorParam.Unsigned([8]*4, "the T0~Tn entry's tag bit size")
+    TTagBitSizes = VectorParam.Unsigned([12] * 4, "the T0~Tn entry's tag bit size")
     TTagPcShifts = VectorParam.Unsigned([1] * 4, "when the T0~Tn entry's tag generating, PC right shift")
+
+    usePhr = Param.Bool(True, "use phr")
+
+    phrbLengths = VectorParam.Unsigned([6, 11, 17, 28], "the BTB TAGE T0~Tn history length")
+    phrtLengths = VectorParam.Unsigned([6, 13, 57, 100], "the BTB TAGE T0~Tn history length")
 
     histLengths = VectorParam.Unsigned([8, 13, 32, 119], "the FTB TAGE T0~Tn history length")
     maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
@@ -1136,6 +1141,12 @@ class DecoupledBPUWithBTB(BranchPredictor):
     ftq_size = Param.Unsigned(128, "Fetch target queue size")
     fsq_size = Param.Unsigned(64, "Fetch stream queue size")
     maxHistLen = Param.Unsigned(970, "The length of history")
+
+    phrbMaxLen = Param.Unsigned(28, "phrb max length")
+    phrbXorLen = Param.Unsigned(4, "phrt xor length")
+
+    phrtMaxLen = Param.Unsigned(100, "phrt max length")
+    phrtXorLen = Param.Unsigned(30, "phrb xor length")
 
     predictWidth = Param.Unsigned(64, "Maximum range in bytes that a single prediction can cover")
     numStages = Param.Unsigned(4, "Maximum number of stages in the pipeline")

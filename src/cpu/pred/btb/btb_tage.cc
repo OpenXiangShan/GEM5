@@ -10,6 +10,10 @@
 #include "cpu/o3/dyn_inst.hh"
 #include "debug/TAGE.hh"
 
+#define GET_MASK(len) ((1ULL << (len)) - 1)
+#define GET_SELECTED_BITS(bits, highIdx, lowIdx) ((bits >> (lowIdx)) & GET_MASK((highIdx) - (lowIdx) + 1))
+#define GET_ONE_BIT(bits, idx) ((bits >> (idx)) & 0x1)
+
 namespace gem5 {
 
 namespace branch_prediction {
@@ -24,6 +28,9 @@ tableSizes(p.tableSizes),
 tableTagBits(p.TTagBitSizes),
 tablePcShifts(p.TTagPcShifts),
 histLengths(p.histLengths),
+phrbLengths(p.phrbLengths),
+phrtLengths(p.phrtLengths),
+usePhr(p.usePhr),
 maxHistLen(p.maxHistLen),
 numWays(p.numWays),
 numTablesToAlloc(p.numTablesToAlloc),
@@ -124,7 +131,12 @@ BTBTAGE::recordUsefulMask(const Addr &startPC) {
 
     // Look up entries in all TAGE tables
     for (int i = 0; i < numPredictors; ++i) {
-        Addr index = getTageIndex(startPC, i);
+        Addr index = 0;
+        if (usePhr) {
+            index = getTageIndexUsePhr(startPC, i, phrb, phrt);
+        } else {
+            index = getTageIndex(startPC, i);
+        }
         for (unsigned way = 0; way < numWays; way++) {
             auto &entry = tageTable[i][index][way];
             // Save useful bit to metadata
@@ -160,8 +172,15 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 
     // Search from highest to lowest table for matches
     for (int i = numPredictors - 1; i >= 0; --i) {
-        Addr index = getTageIndex(startPC, i);
-        Addr tag = getTageTag(startPC, i); // use for tag comparison
+        Addr index = 0;
+        Addr tag = 0;
+        if (usePhr) {
+            index = getTageIndexUsePhr(startPC, i, phrb, phrt);
+            tag = getTageTagUsePhr(startPC, i, phrb, phrt);
+        } else {
+            index = getTageIndex(startPC, i);
+            tag = getTageTag(startPC, i); // use for tag comparison
+        }
         bool match = false; // for each table, only one way can be matched
         TageEntry matching_entry;
         unsigned matching_way = 0;
@@ -267,6 +286,14 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
         }
     }
     return cond_takens;
+}
+
+void
+BTBTAGE::putPhr(const boost::dynamic_bitset<> &s0phrb, const boost::dynamic_bitset<> &s0phrt) {
+    phrb = s0phrb;
+    phrt = s0phrt;
+
+    // DPRINTF(TAGE, "put s0phrb: %#lx\n", s0phrb.to_ulong());
 }
 
 /**
@@ -527,6 +554,8 @@ BTBTAGE::generateAllocationMask(const bitset &useful_mask,
  */
 bool
 BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
+                                 const boost::dynamic_bitset<> &commitPhrb,
+                                 const boost::dynamic_bitset<> &commitPhrt,
                                  const BTBEntry &entry,
                                  bool actual_taken,
                                  const std::vector<bitset> &useful_mask,
@@ -569,9 +598,15 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
         auto &updateAltTagFoldedHist = meta->altTagFoldedHist;
         auto &updateIndexFoldedHist = meta->indexFoldedHist;
 
-        // Compute index and tag for the new entry
-        Addr newIndex = getTageIndex(startPC, ti, updateIndexFoldedHist[ti].get());
-        Addr newTag = getTageTag(startPC, ti, updateTagFoldedHist[ti].get(), updateAltTagFoldedHist[ti].get());
+        Addr newIndex = 0;
+        Addr newTag = 0;
+        if (usePhr) {
+            newIndex = getTageIndexUsePhr(startPC,ti, commitPhrb, commitPhrt);
+            newTag = getTageTagUsePhr(startPC,ti, commitPhrb, commitPhrt);
+        } else {
+            newIndex = getTageIndex(startPC, ti, updateIndexFoldedHist[ti].get());
+            newTag = getTageTag(startPC, ti, updateTagFoldedHist[ti].get(), updateAltTagFoldedHist[ti].get());
+        }
 
         // Find a way to allocate (invalid entry or LRU victim)
         unsigned way = getLRUVictim(ti, newIndex);
@@ -639,7 +674,7 @@ BTBTAGE::update(const FetchStream &stream) {
             if (main_info.found) {
                 start_table = main_info.table + 1; // start from the table after the main prediction table
             }
-            alloc_success = handleNewEntryAllocation(startAddr, btb_entry, actual_taken,
+            alloc_success = handleNewEntryAllocation(startAddr, stream.phrb, stream.phrt, btb_entry, actual_taken,
                                    meta->usefulMask,
                                    start_table, meta);
         }
@@ -699,6 +734,76 @@ BTBTAGE::getTageTag(Addr pc, int t)
     return getTageTag(pc, t, tagFoldedHist[t].get(), altTagFoldedHist[t].get());
 }
 
+void reverse_dynamic_bitset(boost::dynamic_bitset<>& bits) {
+    size_t left = 0;
+    size_t right = bits.size() - 1;
+
+    while (left < right) {
+        bool temp = bits[left];
+        bits[left++] = bits[right];
+        bits[right--] = temp;
+    }
+}
+
+/**
+ * Folds a bitset by dividing it into segments of specified length and XORing them together.
+ * @param input The bitset to be folded
+ * @param foldLen The length of each segment (must divide evenly into input size)
+ * @return A new bitset containing the XOR result of all segments
+ */
+ boost::dynamic_bitset<> foldBits(const boost::dynamic_bitset<>& input, unsigned foldLen) {
+    assert(input.size() % foldLen == 0 && "Input size must be a multiple of fold length");
+
+    boost::dynamic_bitset<> result(foldLen);
+    unsigned numSegments = input.size() / foldLen;
+
+    for (unsigned seg = 0; seg < numSegments; ++seg) {
+        for (unsigned bit = 0; bit < foldLen; ++bit) {
+            if (input.test(seg * foldLen + bit)) {
+                result.flip(bit);  // XOR operation via flip
+            }
+        }
+    }
+
+    return result;
+}
+
+Addr
+BTBTAGE::getTageTagUsePhr(Addr pc, int table,
+    const boost::dynamic_bitset<> &phrb, const boost::dynamic_bitset<> &phrt)
+{
+    unsigned phrbLen = phrbLengths[table];
+    unsigned phrtLen = phrtLengths[table];
+    unsigned tagLen = tableIndexBits[table];
+
+    unsigned foldLen = tagLen;
+    unsigned paddedLen = ((phrbLen + phrtLen + foldLen - 1) / foldLen) * foldLen;
+
+    boost::dynamic_bitset<> phrbTemp = phrb;
+    phrbTemp.resize(phrbLen);
+    phrbTemp.resize(paddedLen);
+
+    boost::dynamic_bitset<> phrtTemp = phrt;
+    phrtTemp.resize(phrtLen);
+    phrtTemp.resize(paddedLen);
+
+    // DPRINTF(TAGE, "TAG: phrb: %#lx\n", phrb.to_ulong());
+    // DPRINTF(TAGE, "TAG: phrbTemp: %#lx\n", phrbTemp.to_ulong());
+
+    phrbTemp <<= phrtLen;
+    phrbTemp |= phrtTemp;
+
+    uint64_t pcXorBits = GET_SELECTED_BITS(pc, 5 + foldLen - 1, 5);
+    uint64_t tag = pcXorBits ^ foldBits(phrbTemp, foldLen).to_ulong();
+    // tag = (tag << 4) | GET_SELECTED_BITS(pc, 8, 5);
+
+    // DPRINTF(TAGE, "TAG: pc: %#lx\n", pc);
+    // DPRINTF(TAGE, "TAG: pcXorBits: %#lx\n", pcXorBits);
+    // DPRINTF(TAGE, "TAG: tag: %#lx\n", tag);
+
+    return tag;
+}
+
 Addr
 BTBTAGE::getTageIndex(Addr pc, int t, bitset &foldedHist)
 {
@@ -716,6 +821,41 @@ Addr
 BTBTAGE::getTageIndex(Addr pc, int t)
 {
     return getTageIndex(pc, t, indexFoldedHist[t].get());
+}
+
+Addr
+BTBTAGE::getTageIndexUsePhr(Addr pc, int table,
+    const boost::dynamic_bitset<> &phrb, const boost::dynamic_bitset<> &phrt)
+{
+    unsigned phrbLen = phrbLengths[table];
+    unsigned phrtLen = phrtLengths[table];
+    unsigned indexLen = tableIndexBits[table];
+
+    unsigned foldLen = indexLen - 1;
+    unsigned paddedLen = ((phrbLen + phrtLen + foldLen - 1) / foldLen) * foldLen;
+
+    boost::dynamic_bitset<> phrbTemp = phrb;
+    phrbTemp.resize(phrbLen);
+    phrbTemp.resize(paddedLen);
+
+    boost::dynamic_bitset<> phrtTemp = phrt;
+    phrtTemp.resize(phrtLen);
+    phrtTemp.resize(paddedLen);
+
+    // DPRINTF(TAGE, "INDEX: phrb: %#lx\n", phrb.to_ulong());
+    // DPRINTF(TAGE, "INDEX: phrbTemp: %#lx\n", phrbTemp.to_ulong());
+
+    phrbTemp <<= phrtLen;
+    phrbTemp |= phrtTemp;
+
+    uint64_t pcXorBits = GET_SELECTED_BITS(pc, 5 + foldLen - 1, 5);
+    uint64_t index = pcXorBits ^ foldBits(phrbTemp, foldLen).to_ulong();
+
+    index = (index << 1) | GET_ONE_BIT(pc, 5);
+
+    // DPRINTF(TAGE, "INDEX: index: %#lx\n", index);
+
+    return index;
 }
 
 bool

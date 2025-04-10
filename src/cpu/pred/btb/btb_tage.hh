@@ -105,6 +105,9 @@ class BTBTAGE : public TimedBaseBTBPredictor
     void tickStart() override;
 
     void tick() override;
+
+    void putPhr(const boost::dynamic_bitset<> &s0phrb, const boost::dynamic_bitset<> &s0phrt);
+
     // Make predictions for a stream of instructions and record in stage preds
     void putPCHistory(Addr startAddr,
                       const boost::dynamic_bitset<> &history,
@@ -141,11 +144,19 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Calculate TAGE index with folded history
     Addr getTageIndex(Addr pc, int table, bitset &foldedHist);
 
+    // Calculate TAGE index with pc and phr
+    Addr getTageIndexUsePhr(Addr pc, int table,
+        const boost::dynamic_bitset<> &phrb, const boost::dynamic_bitset<> &phrt);
+
     // Calculate TAGE tag for a given PC and table
     Addr getTageTag(Addr pc, int table);
 
     // Calculate TAGE tag with folded history
     Addr getTageTag(Addr pc, int table, bitset &foldedHist, bitset &altFoldedHist);
+
+    // Calculate TAGE tag with pc and phr
+    Addr getTageTagUsePhr(Addr pc, int table,
+        const boost::dynamic_bitset<> &phrb, const boost::dynamic_bitset<> &phrt);
 
     // Get offset within a block for a given PC
     Addr getOffset(Addr pc) {
@@ -178,6 +189,17 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     // History lengths for each table
     std::vector<unsigned> histLengths;
+
+    // History lengths for each table
+    std::vector<unsigned> phrbLengths;
+
+    // History lengths for each table
+    std::vector<unsigned> phrtLengths;
+
+    bool usePhr = true;
+
+    boost::dynamic_bitset<> phrb;
+    boost::dynamic_bitset<> phrt;
 
     // Folded history for tag calculation
     std::vector<FoldedHist> tagFoldedHist;
@@ -342,6 +364,8 @@ private:
 
     // Helper method to handle new entry allocation
     bool handleNewEntryAllocation(const Addr &startPC,
+                                 const boost::dynamic_bitset<> &commitPhrb,
+                                 const boost::dynamic_bitset<> &commitPhrt,
                                  const BTBEntry &entry,
                                  bool actual_taken,
                                  const std::vector<bitset> &useful_mask,
