@@ -249,5 +249,7 @@ class IdealScheduler(Scheduler):
         SpecWakeupChannel(srcIQ='load0', dstIQ=__int_bank),
     ]
 
+    useOldDisp = True
+
 
 DefaultScheduler = KunminghuScheduler

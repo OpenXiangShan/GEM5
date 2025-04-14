@@ -83,3 +83,4 @@ class Scheduler(SimObject):
     IQs = VectorParam.IssueQue([], "")
     specWakeupNetwork = VectorParam.SpecWakeupChannel([], "")
     xbarWakeup = Param.Bool(False, "use xbar wakeup network, (will override specWakeupNetwork)")
+    useOldDisp = Param.Bool(False, "Use old dispatch algorithm")

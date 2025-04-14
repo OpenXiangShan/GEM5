@@ -213,6 +213,7 @@ class Scheduler : public SimObject
     MemDepUnit* memDepUnit;
     LSQ* lsq;
     const int intel_fewops = 4;
+    bool old_disp = false;
 
     struct SchedulerStats : public statistics::Group
     {

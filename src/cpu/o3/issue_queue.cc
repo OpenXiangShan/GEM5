@@ -678,7 +678,8 @@ Scheduler::disp_policy::operator()(IssueQue* a, IssueQue* b) const
     return p0 < p1;
 }
 
-Scheduler::Scheduler(const SchedulerParams& params) : SimObject(params), stats(this), issueQues(params.IQs)
+Scheduler::Scheduler(const SchedulerParams& params)
+    : SimObject(params), old_disp(params.useOldDisp), stats(this), issueQues(params.IQs)
 {
     dispTable.resize(enums::OpClass::Num_OpClass);
     opExecTimeTable.resize(enums::OpClass::Num_OpClass, 1);
@@ -844,20 +845,24 @@ Scheduler::issueAndSelect()
 void
 Scheduler::lookahead(std::deque<DynInstPtr>& insts)
 {
-    uint8_t disp_op_num[Num_OpClasses];
-    std::memset(disp_op_num, 0, Num_OpClasses);
-    int i = 0;
-    for (auto& it : insts) {
-        auto& iqs = dispTable[it->opClass()];
-        std::sort(iqs.begin(), iqs.end(), disp_policy(it->opClass()));
-        if (it->isSplitStoreAddr()) {
-            auto& iqs = dispTable[StoreDataOp];
-            std::sort(iqs.begin(), iqs.end(), disp_policy(StoreDataOp));
-        }
+    if (old_disp) {
+        // donothing
+    } else {
+        uint8_t disp_op_num[Num_OpClasses];
+        std::memset(disp_op_num, 0, Num_OpClasses);
+        int i = 0;
+        for (auto& it : insts) {
+            auto& iqs = dispTable[it->opClass()];
+            std::sort(iqs.begin(), iqs.end(), disp_policy(it->opClass()));
+            if (it->isSplitStoreAddr()) {
+                auto& iqs = dispTable[StoreDataOp];
+                std::sort(iqs.begin(), iqs.end(), disp_policy(StoreDataOp));
+            }
 
-        dispSeqVec[i] = disp_op_num[it->opClass()] % dispTable[it->opClass()].size();
-        disp_op_num[it->opClass()]++;
-        i++;
+            dispSeqVec[i] = disp_op_num[it->opClass()] % dispTable[it->opClass()].size();
+            disp_op_num[it->opClass()]++;
+            i++;
+        }
     }
 }
 
@@ -871,8 +876,16 @@ Scheduler::ready(const DynInstPtr& inst, int disp_seq)
     auto& iqs = dispTable[inst->opClass()];
     assert(!iqs.empty());
 
-    if (iqs[dispSeqVec.at(disp_seq)]->ready()) {
-        return true;
+    if (old_disp) [[unlikely]] {
+        for (auto iq : iqs) {
+            if (iq->ready()) {
+                return true;
+            }
+        }
+    } else {
+        if (iqs[dispSeqVec.at(disp_seq)]->ready()) {
+            return true;
+        }
     }
 
     DPRINTF(Schedule, "IQ not ready, opclass: %s\n", enums::OpClassStrings[inst->opClass()]);
@@ -882,12 +895,19 @@ Scheduler::ready(const DynInstPtr& inst, int disp_seq)
 bool
 Scheduler::ready(OpClass op, int disp_seq)
 {
-
     auto& iqs = dispTable[op];
     assert(!iqs.empty());
 
-    if (iqs[dispSeqVec.at(disp_seq)]->ready()) {
-        return true;
+    if (old_disp) {
+        for (auto iq : iqs) {
+            if (iq->ready()) {
+                return true;
+            }
+        }
+    } else {
+        if (iqs[dispSeqVec.at(disp_seq)]->ready()) {
+            return true;
+        }
     }
 
     DPRINTF(Schedule, "IQ not ready, opclass: %s\n", enums::OpClassStrings[op]);
@@ -935,8 +955,21 @@ Scheduler::insert(const DynInstPtr& inst, int disp_seq)
 
     auto& iqs = dispTable[inst->opClass()];
 
-    assert(iqs[dispSeqVec.at(disp_seq)]->ready());
-    iqs[dispSeqVec.at(disp_seq)]->insert(inst);
+    if (old_disp) {
+        bool insert = false;
+        std::sort(iqs.begin(), iqs.end(), disp_policy(inst->opClass()));
+        for (auto iq : iqs) {
+            if (iq->ready()) {
+                insert = true;
+                iq->insert(inst);
+                break;
+            }
+        }
+        panic_if(!insert, "can't find ready IQ to insert");
+    } else {
+        assert(iqs[dispSeqVec.at(disp_seq)]->ready());
+        iqs[dispSeqVec.at(disp_seq)]->insert(inst);
+    }
 
     DPRINTF(Schedule, "[sn:%llu] dispatch: %s\n", inst->seqNum, inst->staticInst->disassemble(0));
 }
