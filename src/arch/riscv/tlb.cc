@@ -1054,7 +1054,7 @@ std::pair<bool, Fault>
 TLB::checkGPermissions(STATUS status,Addr vaddr,Addr gpaddr,BaseMMU::Mode mode, PTESv39 pte,bool h_inst){
     bool continuePtw = false;
     if (pte.v && !pte.r && !pte.w && !pte.x) {
-        panic("checkGpremission hit in no leaf node\n");
+        return std::make_pair(true,NoFault);
     } else if (!pte.v || (!pte.r && pte.w)) {
         return std::make_pair(continuePtw,createPagefault(vaddr, gpaddr, mode, true));
     } else if (!pte.u) {
@@ -1440,6 +1440,11 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                 return std::make_pair(hit_type, fault);
             } else if (continuePtw) {
                 hit_type = h_l2GstageHitContinue;
+                twoStageLevel = hit_level;
+                hit_level--;
+                if (hit_level < 0) {
+                    assert(0);
+                }
                 req->setTwoPtwWalk(true, level, twoStageLevel--, e[0]->pte.ppn, hitInSp);
                 req->setgPaddr(gPaddr);
                 return std::make_pair(hit_type, fault);
@@ -1530,10 +1535,13 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                         return std::make_pair(hit_type, fault);
                     } else {
                         hit_type = h_l2GstageHitEnd;
+                        uint64_t gpaddr_past = gPaddr;
                         if (finishgva) {
                             if (e[0]->level > 0) {
                                 pg_mask = (1ULL << (12 + 9 * e[0]->level)) - 1;
                                 pgBase = ((e[0]->pte.ppn << 12) & ~pg_mask) | (gPaddr & pg_mask & ~PGMASK);
+                            } else {
+                                pgBase = (e[0]->pte.ppn << 12);
                             }
                             gPaddr = pgBase | (gPaddr & PGMASK);
                             walker->doL2TLBHitSchedule(req, tc, translation, mode, gPaddr, e_l2tlb, e_l2tlbVsstage,
