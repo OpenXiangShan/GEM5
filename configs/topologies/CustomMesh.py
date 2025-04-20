@@ -72,14 +72,16 @@ class CustomMesh(SimpleTopology):
                     llat = cross_link_latency \
                                 if (east_out, west_in) in cross_links \
                                 else link_latency
-                    self._int_links.append(\
-                                IntLink(link_id=self._link_count,
-                                        src_node=self._routers[east_out],
-                                        dst_node=self._routers[west_in],
-                                        dst_inport="West",
-                                        latency = llat,
-                                        weight=link_weights[0]))
-                    self._link_count += 1
+                    for v in range(4):
+                        self._int_links.append(\
+                                    IntLink(link_id=self._link_count,
+                                            src_node=self._routers[east_out],
+                                            dst_node=self._routers[west_in],
+                                            dst_inport="West",
+                                            latency = llat,
+                                            weight=link_weights[0],
+                                            supported_vnets=[v]))
+                        self._link_count += 1
 
         # West output to East input links
         for row in range(num_rows):
@@ -90,14 +92,16 @@ class CustomMesh(SimpleTopology):
                     llat = cross_link_latency \
                                 if (west_out, east_in) in cross_links \
                                 else link_latency
-                    self._int_links.append(\
-                                IntLink(link_id=self._link_count,
-                                        src_node=self._routers[west_out],
-                                        dst_node=self._routers[east_in],
-                                        dst_inport="East",
-                                        latency = llat,
-                                        weight=link_weights[1]))
-                    self._link_count += 1
+                    for v in range(4):
+                        self._int_links.append(\
+                                    IntLink(link_id=self._link_count,
+                                            src_node=self._routers[west_out],
+                                            dst_node=self._routers[east_in],
+                                            dst_inport="East",
+                                            latency = llat,
+                                            weight=link_weights[1],
+                                            supported_vnets=[v]))
+                        self._link_count += 1
 
         # North output to South input links
         for col in range(num_columns):
@@ -108,14 +112,16 @@ class CustomMesh(SimpleTopology):
                     llat = cross_link_latency \
                             if (north_out, south_in) in cross_links \
                             else link_latency
-                    self._int_links.append(\
-                                IntLink(link_id=self._link_count,
-                                        src_node=self._routers[north_out],
-                                        dst_node=self._routers[south_in],
-                                        dst_inport="South",
-                                        latency = llat,
-                                        weight=link_weights[2]))
-                    self._link_count += 1
+                    for v in range(4):
+                        self._int_links.append(\
+                                    IntLink(link_id=self._link_count,
+                                            src_node=self._routers[north_out],
+                                            dst_node=self._routers[south_in],
+                                            dst_inport="South",
+                                            latency = llat,
+                                            weight=link_weights[2],
+                                            supported_vnets=[v]))
+                        self._link_count += 1
 
         # South output to North input links
         for col in range(num_columns):
@@ -126,14 +132,16 @@ class CustomMesh(SimpleTopology):
                     llat = cross_link_latency \
                             if (south_out, north_in) in cross_links \
                             else link_latency
-                    self._int_links.append(\
-                                IntLink(link_id=self._link_count,
-                                        src_node=self._routers[south_out],
-                                        dst_node=self._routers[north_in],
-                                        dst_inport="North",
-                                        latency = llat,
-                                        weight=link_weights[3]))
-                    self._link_count += 1
+                    for v in range(4):
+                        self._int_links.append(\
+                                    IntLink(link_id=self._link_count,
+                                            src_node=self._routers[south_out],
+                                            dst_node=self._routers[north_in],
+                                            dst_inport="North",
+                                            latency = llat,
+                                            weight=link_weights[3],
+                                            supported_vnets=[v]))
+                        self._link_count += 1
 
     #--------------------------------------------------------------------------
     # distributeNodes
@@ -143,23 +151,26 @@ class CustomMesh(SimpleTopology):
         # Create a zero-latency router bridging node controllers
         # and the mesh router
         node_router = self._Router(router_id = len(self._routers),
-                                    latency = 0)
+                                    latency = 1)
         self._routers.append(node_router)
 
         # connect node_router <-> mesh router
-        self._int_links.append(self._IntLink( \
-                                    link_id = self._link_count,
-                                    src_node = node_router,
-                                    dst_node = mesh_router,
-                            latency = self._router_link_latency))
-        self._link_count += 1
+        for v in range(4):
+            self._int_links.append(self._IntLink( \
+                                        link_id = self._link_count,
+                                        src_node = node_router,
+                                        dst_node = mesh_router,
+                                latency = self._router_link_latency,
+                                supported_vnets=[v]))
+            self._link_count += 1
 
-        self._int_links.append(self._IntLink( \
-                                    link_id = self._link_count,
-                                    src_node = mesh_router,
-                                    dst_node = node_router,
-                            latency = self._router_link_latency))
-        self._link_count += 1
+            self._int_links.append(self._IntLink( \
+                                        link_id = self._link_count,
+                                        src_node = mesh_router,
+                                        dst_node = node_router,
+                                latency = self._router_link_latency,
+                                supported_vnets=[v]))
+            self._link_count += 1
 
         return node_router
 
@@ -187,12 +198,14 @@ class CustomMesh(SimpleTopology):
                 # connect all ctrls in the node to node_router
                 ctrls = node.getNetworkSideControllers()
                 for c in ctrls:
-                    self._ext_links.append(self._ExtLink(
-                                    link_id = self._link_count,
-                                    ext_node = c,
-                                    int_node = router,
-                                    latency = self._node_link_latency))
-                    self._link_count += 1
+                    for v in range(4):
+                        self._ext_links.append(self._ExtLink(
+                                        link_id = self._link_count,
+                                        ext_node = c,
+                                        int_node = router,
+                                        latency = self._node_link_latency,
+                                        supported_vnets=[v]))
+                        self._link_count += 1
         else:
             # try to circulate all nodes to all routers, some routers may be
             # connected to zero or more than one node.
@@ -205,12 +218,15 @@ class CustomMesh(SimpleTopology):
                     router = self._createRNFRouter(router)
                 ctrls = node.getNetworkSideControllers()
                 for c in ctrls:
-                    self._ext_links.append(self._ExtLink( \
-                                                 link_id = self._link_count,
-                                                 ext_node = c,
-                                                 int_node = router,
-                                            latency = self._node_link_latency))
-                    self._link_count += 1
+                    for v in range(4):
+                        self._ext_links.append(self._ExtLink( \
+                                                    link_id = self._link_count,
+                                                    ext_node = c,
+                                                    int_node = router,
+                                                latency = self._node_link_latency,
+                                                supported_vnets=[v]))
+                        self._link_count += 1
+                self.router_node_cnt[ridx] += 1
                 idx = (idx + 1) % len(router_idx_list)
 
     #--------------------------------------------------------------------------
@@ -222,6 +238,8 @@ class CustomMesh(SimpleTopology):
 
         num_rows = options.num_rows
         num_cols = options.num_cols
+        self.rows = num_rows
+        self.columns = num_cols
         num_mesh_routers = num_rows * num_cols
 
         self._IntLink = IntLink

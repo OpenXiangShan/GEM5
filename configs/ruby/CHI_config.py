@@ -87,7 +87,7 @@ class NoC_Params:
     node_link_latency = 1
     router_latency = 1
     router_buffer_size = 128
-    cntrl_msg_size = 0
+    cntrl_msg_size = 64 # This breaks garnet completely!
     data_width = 64
     cross_links = []
     cross_link_latency = 0
@@ -167,7 +167,6 @@ class CHI_Node(SubSystem):
         cntrl.rspIn.in_port = self._network.out_port
         cntrl.snpIn.in_port = self._network.out_port
         cntrl.datIn.in_port = self._network.out_port
-
 
 class TriggerMessageBuffer(MessageBuffer):
     """

@@ -96,6 +96,8 @@ args.chi_config = "configs/example/noc_config/GEMM.py"
 args.num_cpus = 16
 args.num_dirs = 8
 args.num_l3caches = 16
+args.router_link_latency = 0
+args.node_link_latency = 1
 
 cpus = [ GarnetSyntheticTraffic(
                      num_packets_max=args.num_packets_max,

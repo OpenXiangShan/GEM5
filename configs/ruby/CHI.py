@@ -151,6 +151,7 @@ def create_system(
 
     # Creates on RNF per cpu with priv l2 caches
     assert len(cpus) == options.num_cpus
+    assert len(cpus) == len(CHI_RNF.NoC_Params.router_list)
     ruby_system.rnf = [
         CHI_RNF(
             [cpu],
@@ -194,6 +195,7 @@ def create_system(
     for m in other_memories:
         sysranges.append(m.range)
 
+    assert (options.num_l3caches == len(CHI_HNF.NoC_Params.router_list))
     hnf_list = [i for i in range(options.num_l3caches)]
     CHI_HNF.createAddrRanges(sysranges, system.cache_line_size.value, hnf_list)
     ruby_system.hnf = [
@@ -219,6 +221,7 @@ def create_system(
     # Notice we don't define a Directory_Controller type so we don't use
     # create_directories shared by other protocols.
 
+    assert (options.num_dirs == len(CHI_SNF_MainMem.NoC_Params.router_list))
     ruby_system.snf = [
         CHI_SNF_MainMem(ruby_system, None, None)
         for i in range(options.num_dirs)
