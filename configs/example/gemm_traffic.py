@@ -81,6 +81,8 @@ parser.add_argument("--inj-vnet", type=int, default=0,
                         0 and 1 are 1-flit, 2 is 5-flit.\
                         Set to -1 to inject randomly in all vnets.")
 
+parser.add_argument("--trace-file", default="", type=str, help="Trace file path")
+
 #
 # Add the ruby specific and protocol specific options
 #
@@ -98,21 +100,15 @@ args.num_dirs = 8
 args.num_l3caches = 16
 args.router_link_latency = 0
 args.node_link_latency = 1
+args.mem_size = "8GB"
 
-cpus = [ GarnetSyntheticTraffic(
-                     num_packets_max=args.num_packets_max,
-                     single_sender=args.single_sender_id,
-                     single_dest=args.single_dest_id,
-                     sim_cycles=args.sim_cycles,
-                     traffic_type=args.synthetic,
-                     inj_rate=args.injectionrate,
-                     inj_vnet=args.inj_vnet,
-                     precision=args.precision,
-                     num_dest=args.num_dirs) \
+cpus = [ SimpleTrace(
+    trace_file = args.trace_file if i == 0 else ""
+)
          for i in range(args.num_cpus) ]
 
 # create the desired simulated system
-system = System(cpu = cpus, mem_ranges = [AddrRange(args.mem_size)])
+system = System(cpu = cpus, mem_ranges = [AddrRange(start=0x80000000, size=args.mem_size)])
 
 
 # Create a top-level voltage domain and clock domain
