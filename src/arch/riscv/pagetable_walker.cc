@@ -1538,6 +1538,7 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level, bool from_l2tl
         finishGVA = mainReq->get_finish_gva();
         level = mainReq->get_level();
         twoStageLevel = mainReq->get_two_stage_level();
+        inGstage = mainReq->get_h_gstage();
         if (finishGVA){
             entry.pteVS = mainReq->get_pte();
             inl2Entry.pteVS = mainReq->get_pte();
