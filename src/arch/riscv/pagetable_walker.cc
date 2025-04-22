@@ -691,14 +691,15 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
                         inl2Entry.paddr = l2pte.ppn;
                         inl2Entry.pte = l2pte;
                         if (l2_level == 0) {
-                            inl2Entry.index = (gPaddr >> (L2TLB_BLK_OFFSET + PageShift)) & walker->tlb->L2TLB_L3_MASK;
+                            inl2Entry.index =
+                                (inl2Entry.gpaddr >> (L2TLB_BLK_OFFSET + PageShift)) & walker->tlb->L2TLB_L3_MASK;
                             walker->tlb->L2TLBInsert(inl2Entry.gpaddr, inl2Entry, l2_level, L_L2L3, l2_i, false,
                                                      gstage);
                         }
 
                         else if (l2_level == 1) {
-                            inl2Entry.index =
-                                (gPaddr >> (LEVEL_BITS + PageShift + L2TLB_BLK_OFFSET)) & (walker->tlb->L2TLB_L2_MASK);
+                            inl2Entry.index = (inl2Entry.gpaddr >> (LEVEL_BITS + PageShift + L2TLB_BLK_OFFSET)) &
+                                              (walker->tlb->L2TLB_L2_MASK);
                             walker->tlb->L2TLBInsert(inl2Entry.gpaddr, inl2Entry, l2_level, L_L2sp2, l2_i, false,
                                                      gstage);
                         }  // hit level =1
@@ -1248,8 +1249,12 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                         walker->tlb->L2TLBInsert(inl2Entry.vaddr, inl2Entry, l2_level, L_L2L3, l2_i, false, direct);
                     }
 
-                    else if (l2_level == 1)  // hit level =1
+                    else if (l2_level == 1)  {
+                        inl2Entry.index = (inl2Entry.vaddr >> (LEVEL_BITS + PageShift + L2TLB_BLK_OFFSET)) &
+                                              (walker->tlb->L2TLB_L2_MASK);
                         walker->tlb->L2TLBInsert(inl2Entry.vaddr, inl2Entry, l2_level, L_L2sp2, l2_i, false, direct);
+                    }// hit level =1
+
                     else if (l2_level == 2)  //
                         walker->tlb->L2TLBInsert(inl2Entry.vaddr, inl2Entry, l2_level, L_L2sp1, l2_i, false, direct);
                 }
