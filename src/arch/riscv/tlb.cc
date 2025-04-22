@@ -905,7 +905,7 @@ TLB::demapPageL2(Addr vpn, uint64_t asid)
             for (i = 0; i < l2TlbSize[i_type] * l2tlbLineSize; i = i + l2tlbLineSize) {
                 Addr mask = ~((l2Tlb[i_type] + i)->size() - 1);
                 if ((l2Tlb[i_type] + i)->trieHandle) {
-                    if ((vpn_vec[i_type] == 0 || (vpn_vec[i_type] & mask) == (l2Tlb[i_type] + i)->vaddr) &&
+                    if ((vpn_vec[i_type] == 0 || (vpn_vec[i_type] & mask) == ((l2Tlb[i_type] + i)->vaddr & mask)) &&
                         (asid == 0 || (l2Tlb[i_type] + i)->asid == asid)) {
                         l2TLBRemove(i, i_type + 1);
                     }
