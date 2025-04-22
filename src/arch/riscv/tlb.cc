@@ -1357,6 +1357,8 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
                 if (e[0]->level >0){
                     pg_mask = (1ULL << (12 + 9 * e[0]->level)) - 1;
                     pgBase = ((e[0]->pte.ppn << 12) & ~pg_mask) | (gPaddr & pg_mask & ~PGMASK);
+                } else {
+                    pgBase = e[0]->pte.ppn << 12;
                 }
                 gPaddr = pgBase |(gPaddr & PGMASK);
 
@@ -1434,8 +1436,10 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
         if (e[0]) {
             e_l2tlbGstage = e[0];
             gPaddr = req->getgPaddr();
-            std::pair(continuePtw, fault) =
+            std::pair<bool, Fault> result =
                 checkGPermissions(status, vaddr, gPaddr, mode, e[0]->pte, req->get_h_inst());
+            continuePtw = result.first;
+            fault = result.second;
             if (fault != NoFault) {
                 return std::make_pair(hit_type, fault);
             } else if (continuePtw) {
@@ -1445,7 +1449,7 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                 if (hit_level < 0) {
                     assert(0);
                 }
-                req->setTwoPtwWalk(true, level, twoStageLevel--, e[0]->pte.ppn, hitInSp);
+                req->setTwoPtwWalk(true, 0, e[0]->level-1, e[0]->pte.ppn, true);
                 req->setgPaddr(gPaddr);
                 return std::make_pair(hit_type, fault);
             } else {
@@ -1453,6 +1457,9 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                 if (e[0]->level > 0) {
                     pg_mask = (1ULL << (12 + 9 * e[0]->level)) - 1;
                     pgBase = ((e[0]->pte.ppn << 12) & ~pg_mask) | (gPaddr & pg_mask & ~PGMASK);
+                }
+                else {
+                    pgBase = e[0]->pte.ppn << 12;
                 }
                 gPaddr = pgBase | (gPaddr & PGMASK);
                 walker->doL2TLBHitSchedule(req, tc, translation, mode, gPaddr, e_l2tlb, e_l2tlbVsstage, e_l2tlbGstage,
