@@ -611,6 +611,11 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
                                              << L2TLB_BLK_OFFSET) +
                                             l2_i)
                                            << ((l2_level * LEVEL_BITS + PageShift));
+
+                        inl2Entry.vaddr = (((entry.vaddr >> ((l2_level * LEVEL_BITS + PageShift + L2TLB_BLK_OFFSET)))
+                                             << L2TLB_BLK_OFFSET) +
+                                            l2_i)
+                                           << ((l2_level * LEVEL_BITS + PageShift));
                         l2pte = read->getLE_l2tlb<uint64_t>(l2_i);
                         inl2Entry.pte = l2pte;
                         inl2Entry.paddr = l2pte.ppn;
@@ -684,6 +689,10 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
                             ((gPaddr >> ((l2_level * LEVEL_BITS + PageShift + L2TLB_BLK_OFFSET)) << L2TLB_BLK_OFFSET) +
                              l2_i)
                             << ((l2_level * LEVEL_BITS + PageShift));
+                        inl2Entry.vaddr = ((entry.vaddr >> ((l2_level * LEVEL_BITS + PageShift + L2TLB_BLK_OFFSET))
+                                                                 << L2TLB_BLK_OFFSET) +
+                                            l2_i)
+                                           << ((l2_level * LEVEL_BITS + PageShift));
                         l2pte = read->getLE_l2tlb<uint64_t>(l2_i);
                         DPRINTF(PageTableWalker3, "final insert vaddr %#x ppn %#x pte %#x pre %d\n", inl2Entry.vaddr,
                                 l2pte.ppn, l2pte, entry.fromForwardPreReq);
