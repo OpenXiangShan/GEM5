@@ -58,6 +58,11 @@ decode QUADRANT default Unknown::unknown() {
                 } else {
                     status.fs = 3;
                     //xc->setMiscReg(MISCREG_STATUS,status);
+                    if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                        STATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                        vsstatus.fs = 3;
+                        xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
+                    }
                 }
 
                 Fp2_bits = Mem;
@@ -350,6 +355,11 @@ decode QUADRANT default Unknown::unknown() {
                 } else {
                     status.fs = 3;
                     xc->setMiscReg(MISCREG_STATUS,status);
+                    if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                        STATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                        vsstatus.fs = 3;
+                        xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
+                    }
                 }
                 Fc1_bits = Mem;
             }}, {{
@@ -495,6 +505,11 @@ decode QUADRANT default Unknown::unknown() {
                     } else {
                         status.fs = 3;
                         xc->setMiscReg(MISCREG_STATUS,status);
+                        if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
+                        }
                     }
                     freg_t fd;
                     fd = freg(f32(Mem_uw));
@@ -508,6 +523,11 @@ decode QUADRANT default Unknown::unknown() {
                     } else {
                         status.fs = 3;
                        // xc->setMiscReg(MISCREG_STATUS,status);
+                        if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
+                        }
                     }
                     freg_t fd;
                     fd = freg(f64(Mem));
@@ -1690,6 +1710,11 @@ decode QUADRANT default Unknown::unknown() {
                                                     sign));
                         status.fs = 3;
                         xc->setMiscReg(MISCREG_STATUS,status);
+                        if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
+                        }
                         }}, FloatMiscOp);
                     0x1: fsgnjn_s({{
                         auto sign = ~bits(unboxF32(Fs2_bits), 31);
@@ -1697,6 +1722,11 @@ decode QUADRANT default Unknown::unknown() {
                                                     sign));
                         status.fs = 3;
                         xc->setMiscReg(MISCREG_STATUS,status);
+                        if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
+                        }
                         }}, FloatMiscOp);
                     0x2: fsgnjx_s({{
                         auto sign = bits(
@@ -1705,6 +1735,11 @@ decode QUADRANT default Unknown::unknown() {
                                                     sign));
                         status.fs = 3;
                         xc->setMiscReg(MISCREG_STATUS,status);
+                        if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
+                        }
                         }}, FloatMiscOp);
                 }
                 0x11: decode ROUND_MODE {
@@ -1712,17 +1747,32 @@ decode QUADRANT default Unknown::unknown() {
                         Fd_bits = insertBits(Fs2_bits, 62, 0, Fs1_bits);
                         status.fs = 3;
                         xc->setMiscReg(MISCREG_STATUS,status);
+                        if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
+                        }
                     }}, FloatMiscOp);
                     0x1: fsgnjn_d({{
                         Fd_bits = insertBits(~Fs2_bits, 62, 0, Fs1_bits);
                         status.fs = 3;
                         xc->setMiscReg(MISCREG_STATUS,status);
+                        if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
+                        }
                     }}, FloatMiscOp);
                     0x2: fsgnjx_d({{
                         Fd_bits = insertBits(
                                 Fs1_bits ^ Fs2_bits, 62, 0, Fs1_bits);
                         status.fs = 3;
                         xc->setMiscReg(MISCREG_STATUS,status);
+                        if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
+                        }
                     }}, FloatMiscOp);
                 }
                 0x12: decode ROUND_MODE {
@@ -1842,6 +1892,11 @@ decode QUADRANT default Unknown::unknown() {
                         Fd_bits = fd.v;
                         status.fs = 3;
                         xc->setMiscReg(MISCREG_STATUS,status);
+                        if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
+                        }
                     }}, FloatCvtOp);
                     0x2: fcvt_s_h({{
                         RM_REQUIRED;
@@ -1858,6 +1913,11 @@ decode QUADRANT default Unknown::unknown() {
                         Fd_bits = fd.v;
                         status.fs = 3;
                         xc->setMiscReg(MISCREG_STATUS,status);
+                        if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
+                        }
                     }}, FloatCvtOp);
                     0x2: fcvt_d_h({{
                         RM_REQUIRED;
@@ -2011,6 +2071,11 @@ decode QUADRANT default Unknown::unknown() {
                         Fd_bits = fd.v;
                         status.fs = 3;
                         xc->setMiscReg(MISCREG_STATUS,status);
+                        if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
+                        }
                         }}, FloatCvtOp);
                     0x1: fcvt_s_wu({{
                         RM_REQUIRED;
@@ -2019,6 +2084,11 @@ decode QUADRANT default Unknown::unknown() {
                         Fd_bits = fd.v;
                         status.fs = 3;
                         xc->setMiscReg(MISCREG_STATUS,status);
+                        if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
+                        }
                         }}, FloatCvtOp);
                     0x2: fcvt_s_l({{
                         RM_REQUIRED;
@@ -2027,6 +2097,11 @@ decode QUADRANT default Unknown::unknown() {
                         Fd_bits = fd.v;
                         status.fs = 3;
                         xc->setMiscReg(MISCREG_STATUS,status);
+                        if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
+                        }
                         }}, FloatCvtOp);
                     0x3: fcvt_s_lu({{
                         RM_REQUIRED;
@@ -2035,6 +2110,11 @@ decode QUADRANT default Unknown::unknown() {
                         Fd_bits = fd.v;
                         status.fs = 3;
                         xc->setMiscReg(MISCREG_STATUS,status);
+                        if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
+                        }
                         }}, FloatCvtOp);
                 }
                 0x69: decode CONV_SGN {
@@ -2043,24 +2123,44 @@ decode QUADRANT default Unknown::unknown() {
                         Fd = (double)Rs1_sw;
                         status.fs = 3;
                         xc->setMiscReg(MISCREG_STATUS,status);
+                        if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
+                        }
                     }}, FloatCvtOp);
                     0x1: fcvt_d_wu({{
                         RM_REQUIRED;
                         Fd = (double)Rs1_uw;
                         status.fs = 3;
                         xc->setMiscReg(MISCREG_STATUS,status);
+                        if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
+                        }
                     }}, FloatCvtOp);
                     0x2: fcvt_d_l({{
                         RM_REQUIRED;
                         Fd = (double)Rs1_sd;
                         status.fs = 3;
                         xc->setMiscReg(MISCREG_STATUS,status);
+                        if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
+                        }
                     }}, FloatCvtOp);
                     0x3: fcvt_d_lu({{
                         RM_REQUIRED;
                         Fd = (double)Rs1;
                         status.fs = 3;
                         xc->setMiscReg(MISCREG_STATUS,status);
+                        if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
+                        }
                     }}, FloatCvtOp);
                 }
                 0x6a: decode CONV_SGN {
@@ -2123,8 +2223,13 @@ decode QUADRANT default Unknown::unknown() {
                     freg_t fd;
                     fd = freg(f32(Rs1_uw));
                     Fd_bits = fd.v;
-                        status.fs = 3;
-                        xc->setMiscReg(MISCREG_STATUS,status);
+                    status.fs = 3;
+                    xc->setMiscReg(MISCREG_STATUS,status);
+                    if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
+                    }
                 }}, FloatMvOp);
                 0x79: fmv_d_x({{
                     freg_t fd;
@@ -4495,7 +4600,7 @@ decode QUADRANT default Unknown::unknown() {
                         Rd = data;
                         data = Rs1;
                         write = RS1 != 0;
-                    }}, IsUpdateMstatusSd,IsUpdateMstatusSd,IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    }}, IsUpdateVsstatusSd,IsUpdateMstatusSd,IsSerializeAfter, IsNonSpeculative, No_OpClass);
                     default:csrrw({{
                         Rd = data;
                         data = Rs1;
