@@ -144,19 +144,19 @@ void DecoupledBPUWithBTB::OverrideStats(OverrideReason overrideReason)
         
         // Track specific override reasons for statistics
         switch (overrideReason) {
-            case OverrideReason::validity:
+            case OverrideReason::FALL_THRU:
                 dbpBtbStats.overrideValidityMismatch++;
                 break;
-            case OverrideReason::controlAddr:
+            case OverrideReason::CONTROL_ADDR:
                 dbpBtbStats.overrideControlAddrMismatch++;
                 break;
-            case OverrideReason::target:
+            case OverrideReason::TARGET:
                 dbpBtbStats.overrideTargetMismatch++;
                 break;
-            case OverrideReason::end:
+            case OverrideReason::END:
                 dbpBtbStats.overrideEndMismatch++;
                 break;
-            case OverrideReason::histInfo:
+            case OverrideReason::HIST_INFO:
                 dbpBtbStats.overrideHistInfoMismatch++;
                 break;
             default:
@@ -196,7 +196,7 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
     // 3. Calculate override bubbles needed for pipeline consistency
     // Override bubbles are needed when earlier stages predict differently from later stages
     unsigned first_hit_stage = 0;
-    OverrideReason overrideReason = OverrideReason::no_override;
+    OverrideReason overrideReason = OverrideReason::NO_OVERRIDE;
 
     // Find first stage that matches the chosen prediction
     while (first_hit_stage < numStages - 1) {

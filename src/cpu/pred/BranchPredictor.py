@@ -984,6 +984,18 @@ class DefaultBTB(TimedBaseBTBPredictor):
     blockSize = 32  # max 64 byte block, 32 byte aligned
     entryHalfAligned = Param.Bool(True, "Whether the entries are half-aligned")
 
+class UBTB(TimedBaseBTBPredictor):
+    type = 'UBTB'
+    cxx_class = 'gem5::branch_prediction::btb_pred::UBTB'
+    cxx_header = 'cpu/pred/btb/btb_ubtb.hh'
+
+    numEntries = Param.Unsigned(32, "Number of entries in the uBTB")
+    tagBits = Param.Unsigned(38, "Number of bits in the tag")
+
+    aheadPipelinedStages = Param.Unsigned(0, "Number of stages ahead pipelined")
+    numDelay = 0
+    # blockSize = 32  not used in uBTB
+
 class ABTB(DefaultBTB):
     numEntries = 1024
     tagBits = 38
@@ -993,13 +1005,6 @@ class ABTB(DefaultBTB):
     aheadPipelinedStages = 1
     entryHalfAligned = False
 
-class UBTB(DefaultBTB):
-    numEntries = 32
-    tagBits = 38
-    numWays = 32
-    numDelay = 0
-    blockSize = 64  # blockSize does't make a difference when entryHalfAligned is False
-    entryHalfAligned = False
 class BTBRAS(TimedBaseBTBPredictor):
     type = 'BTBRAS'
     cxx_class = 'gem5::branch_prediction::btb_pred::BTBRAS'
@@ -1063,7 +1068,7 @@ class DecoupledBPUWithBTB(BranchPredictor):
     
     predictWidth = Param.Unsigned(64, "Maximum range in bytes that a single prediction can cover")
     numStages = Param.Unsigned(3, "Maximum number of stages in the pipeline")
-    ubtb = Param.DefaultBTB(UBTB(), "UBTB predictor")
+    ubtb = Param.UBTB(UBTB(), "UBTB predictor")
     abtb = Param.DefaultBTB(ABTB(), "ABTB predictor")
     btb = Param.DefaultBTB(DefaultBTB(), "BTB")
     tage = Param.BTBTAGE(BTBTAGE(), "TAGE predictor")

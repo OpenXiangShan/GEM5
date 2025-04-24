@@ -47,7 +47,8 @@ SimObject('BranchPredictor.py', sim_objects=[
     'MultiperspectivePerceptronTAGE8KB', 'TimedStreamPredictor',
     'StreamUBTB', 'StreamTAGE', 'StreamLoopDetector', 'StreamLoopPredictor',
     'DecoupledStreamBPU', 'DefaultFTB', 'DecoupledBPUWithFTB',
-    'TimedBaseFTBPredictor', 'FTBTAGE', 'FTBRAS', 'FTBuRAS', 'FTBITTAGE', 'DefaultBTB', 'DecoupledBPUWithBTB',
+    'TimedBaseFTBPredictor', 'FTBTAGE', 'FTBRAS', 'FTBuRAS', 'FTBITTAGE',
+    'DefaultBTB', 'UBTB', 'DecoupledBPUWithBTB',
     'TimedBaseBTBPredictor', 'BTBRAS', 'BTBTAGE', 'BTBITTAGE'], enums=["BpType"])
 
 DebugFlag('Indirect')
@@ -101,6 +102,7 @@ Source('btb/btb_tage.cc')
 Source('btb/btb_ittage.cc')
 Source('btb/folded_hist.cc')
 Source('btb/ras.cc')
+Source('btb/btb_ubtb.cc')
 # Source('btb/uras.cc')
 Source('general_arch_db.cc')
 DebugFlag('FreeList')
@@ -133,6 +135,7 @@ DebugFlag('Profiling')
 DebugFlag('JumpAheadPredictor')
 DebugFlag('DecoupleBPBTB')
 DebugFlag('BTB')
+DebugFlag('UBTB')
 DebugFlag('DBPBTBStats')
 DebugFlag('BTBStats')
 DebugFlag('AheadPipeline')

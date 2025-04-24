@@ -645,6 +645,11 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
         overrideReason = reason;
     }
 
+    // update ubtb using mbtb prediction
+    if (predsOfEachStage[numStages - 1].btbEntries.size() > 0) {
+        ubtb->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
+    }
+
     // 4. Record override bubbles and update statistics
     numOverrideBubbles = first_hit_stage;
     if (numOverrideBubbles > 0) {
