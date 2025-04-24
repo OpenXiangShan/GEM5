@@ -70,13 +70,26 @@ class BOP : public Queued
         const unsigned int badScore;
         /** Recent requests table parameteres */
         const unsigned int rrEntries;
-        const unsigned int tagMask;
+        const unsigned int rrIdxBits;
+        const unsigned int rrIdxMask;
+        const unsigned int rrTagBits;
+        const unsigned int rrTagMask;
         /** Delay queue parameters */
         const bool         delayQueueEnabled;
         const unsigned int delayQueueSize;
         const unsigned int delayTicks;
+
+        /** Dynamic Offset Table  **/
+        const bool enDynExtOffset;
+
         /** Cross page parameters */
         const bool crossPage;
+
+        /** Dynamic Depth **/
+        const bool enDynDepth;
+
+        /** Early Stop */
+        const bool enEarlyStop;
 
         const int victimListSize;
         const int restoreCycle;
@@ -87,10 +100,10 @@ class BOP : public Queued
         struct RREntryDebug
         {
             Addr fullAddr;
-            Addr hashAddr;
+            Addr tag;
 
-            RREntryDebug(Addr full_addr, Addr hash_addr) : fullAddr(full_addr), hashAddr(hash_addr) {}
-            RREntryDebug() : fullAddr(0), hashAddr(0) {}
+            RREntryDebug(Addr full_addr, Addr tag) : fullAddr(full_addr), tag(tag) {}
+            RREntryDebug() : fullAddr(0), tag(0) {}
         };
 
         std::vector<RREntryDebug> rrLeft;
@@ -169,7 +182,7 @@ class BOP : public Queued
          *  @param addr: address to hash
          *  @param way:  RR table to which is addressed (left/right)
          */
-        unsigned int hash(Addr addr, unsigned int way) const;
+        unsigned int index(Addr addr, unsigned int way) const;
 
         /** Insert the specified address into the RR table
          *  @param addr: full address to insert
@@ -206,7 +219,7 @@ class BOP : public Queued
 
         /** Learning phase of the BOP. Update the intermediate values of the
             round and update the best offset if found */
-        bool bestOffsetLearning(Addr hashed_addr, bool late, const PrefetchInfo &pfi);
+        bool bestOffsetLearning(Addr full_addr, bool late, const PrefetchInfo &pfi);
 
         unsigned missCount{0};
 
