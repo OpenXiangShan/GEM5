@@ -283,6 +283,48 @@ class Fetch
     void switchToInactive();
 
     /**
+     * initialize the state for this tick cycle
+     * @return whether there is a status change
+     */
+    bool initializeTickState();
+
+    /**
+     * execute fetch and process instructions
+     * @param status_change status change flag
+     */
+    void fetchAndProcessInstructions(bool status_change);
+
+    /**
+     * handle interrupts and perform related operations
+     */
+    void handleInterrupts();
+
+    /**
+     * send instructions to decode stage
+     * update stall reasons and measure frontend bubbles
+     */
+    void sendInstructionsToDecode();
+
+    /**
+     * update stall reasons based on fetch status
+     * @param insts_to_decode number of instructions to send to decode stage
+     * @param tid thread ID
+     */
+    void updateStallReasons(unsigned insts_to_decode, ThreadID tid);
+
+    /**
+     * measure frontend performance bubbles
+     * @param insts_to_decode number of instructions to send to decode stage
+     * @param tid thread ID
+     */
+    void measureFrontendBubbles(unsigned insts_to_decode, ThreadID tid);
+
+    /**
+     * update branch predictors
+     */
+    void updateBranchPredictors();
+
+    /**
      * Looks up in the branch predictor to see if the next PC should be
      * either next PC+=MachInst or a branch target.
      * @param next_PC Next PC variable passed in by reference.  It is

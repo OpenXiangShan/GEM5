@@ -351,3 +351,51 @@ struct FetchStatGroup : public statistics::Group {
 1. **Loop Buffer**: Caches loop instructions for energy efficiency
 2. **Pipelined I-cache Access**: Allows overlapping multiple I-cache accesses
 3. **Fetch Throttling**: Controls fetch rate based on backend pressure
+
+
+## 代码分析
+checkStall函数
+这个函数检查特定线程是否因drain操作而暂停。当CPU正在drain（排空）时，该线程的fetch会被stall。
+
+updateFetchStatus函数
+这个函数负责更新fetch阶段的状态：
+检查所有活跃线程的状态，如果任一线程处于Running、Squashing或IcacheAccessComplete状态，则将fetch阶段设为Active
+否则将其设为Inactive，并通知CPU
+
+squash函数
+处理来自commit阶段的squash操作：
+调用doSquash进行实际的squash操作
+通知CPU移除不在ROB中的指令
+
+tick函数
+这是fetch阶段的主循环函数，每个时钟周期执行一次：
+更新各线程的fetch状态统计
+对每个活跃线程检查信号并更新状态
+执行fetch操作，获取指令
+处理中断（在FullSystem模式下）
+发起流水线式的I-cache访问请求
+将fetch队列中的指令发送到decode阶段，受decodeWidth限制
+根据stall原因设置相应的stallReason
+测量前端气泡（frontend bubbles）作为性能分析数据
+分支预测器相关操作（支持StreamPred、FTBPred和BTBPred三种不同类型的预测器）
+
+fetch函数
+这是实际执行指令获取的函数，它调用fetchInstructions来获取指令。
+主要特点和机制
+多线程支持：代码支持多线程处理，通过ThreadID来区分不同线程的状态和操作。
+流水线控制：
+通过stall机制控制流水线暂停
+支持流水线式的I-cache访问
+分支预测：
+支持多种分支预测器类型（Stream、FTB、BTB）
+预测器每周期更新，尝试为fetch提供目标地址
+性能统计：
+收集各种指标来分析性能
+实现了Intel TopDown方法来测量前端气泡
+stall原因跟踪：
+详细记录并传递stall原因到decode阶段
+区分不同类型的stall（完全stall、部分stall）
+状态管理：
+完整的fetch状态转换逻辑
+与CPU其他阶段的信号交互
+这部分代码展示了GEM5模拟器中O3处理器模型fetch阶段的核心实现，重点关注了性能、流水线控制和与其他阶段的交互。代码中包含了详细的调试输出（DPRINTF），便于跟踪执行流程和状态变化。

@@ -1211,6 +1211,19 @@ Fetch::squash(const PCStateBase &new_pc, const InstSeqNum seq_num,
 void
 Fetch::tick()
 {
+    // Initialize state for this tick cycle
+    bool status_change = initializeTickState();
+
+    // Perform fetch operations and instruction delivery
+    fetchAndProcessInstructions(status_change);
+
+    // Handle branch prediction updates
+    updateBranchPredictors();
+}
+
+bool
+Fetch::initializeTickState()
+{
     std::list<ThreadID>::iterator threads = activeThreads->begin();
     std::list<ThreadID>::iterator end = activeThreads->end();
     bool status_change = false;
@@ -1220,10 +1233,12 @@ Fetch::tick()
     // get the distribution of fetch status
     fetchStats.fetchStatusDist[fetchStatus[0]]++;
 
+    // Reset pipelined fetch flags
     for (ThreadID i = 0; i < numThreads; ++i) {
         issuePipelinedIfetch[i] = false;
     }
 
+    // Check signal updates for all active threads
     while (threads != end) {
         ThreadID tid = *threads++;
 
@@ -1239,12 +1254,20 @@ Fetch::tick()
         waitForVsetvl = false;
     }
 
+    return status_change;
+}
+
+void
+Fetch::fetchAndProcessInstructions(bool status_change)
+{
+    // Fetch instructions from active threads
     for (threadFetched = 0; threadFetched < numFetchingThreads;
          threadFetched++) {
         // Fetch each of the actively fetching threads.
         fetch(status_change);
     }
 
+    // Pass stall reasons to decode stage
     toDecode->fetchStallReason = stallReason;
 
     // Record number of instructions fetched this cycle for distribution.
@@ -1255,7 +1278,16 @@ Fetch::tick()
         _status = updateFetchStatus();
     }
 
+    // Handle interrupt processing in full system mode
+    handleInterrupts();
 
+    // Send instructions to decode stage, update stall reasons and measure frontend bubbles.
+    sendInstructionsToDecode();
+}
+
+void
+Fetch::handleInterrupts()
+{
     if (FullSystem) {
         if (fromCommit->commitInfo[0].interruptPending) {
             DPRINTF(Fetch, "Set interrupt pending.\n");
@@ -1268,6 +1300,7 @@ Fetch::tick()
         }
     }
 
+    // Don't issue pipelined ifetch if interrupt is pending
     issuePipelinedIfetch[0] = issuePipelinedIfetch[0] && !interruptPending;
 
     // Issue the next I-cache request if possible.
@@ -1276,12 +1309,17 @@ Fetch::tick()
             pipelineIcacheAccesses(i);
         }
     }
+}
 
+void
+Fetch::sendInstructionsToDecode()
+{
     // Send instructions enqueued into the fetch queue to decode.
     // Limit rate by fetchWidth.  Stall if decode is stalled.
     unsigned insts_to_decode = 0;
     unsigned available_insts = 0;
 
+    // Count available instructions across all active threads
     for (auto tid : *activeThreads) {
         if (!stalls[tid].decode) {
             available_insts += fetchQueue[tid].size();
@@ -1293,6 +1331,7 @@ Fetch::tick()
     std::advance(tid_itr,
             random_mt.random<uint8_t>(0, activeThreads->size() - 1));
 
+    // Collect instructions from fetch queues until decode width is reached
     while (available_insts != 0 && insts_to_decode < decodeWidth) {
         ThreadID tid = *tid_itr;
         if (!stalls[tid].decode && !fetchQueue[tid].empty()) {
@@ -1314,11 +1353,33 @@ Fetch::tick()
             tid_itr = activeThreads->begin();
     }
 
+    // Update stall reasons based on fetch/decode status
+    updateStallReasons(insts_to_decode, *tid_itr);
+
+    // Intel TopDown method for measuring frontend bubbles
+    measureFrontendBubbles(insts_to_decode, *tid_itr);
+
+    // If there was activity this cycle, inform the CPU of it
+    if (wroteToTimeBuffer) {
+        DPRINTF(Activity, "Activity this cycle.\n");
+        cpu->activityThisCycle();
+    }
+
+    // Reset the number of instructions we've fetched
+    numInst = 0;
+}
+
+void
+Fetch::updateStallReasons(unsigned insts_to_decode, ThreadID tid)
+{
     // fetch totally stalled
-    if (stalls[*tid_itr].decode) { // If decode stalled, use decode's stall reason
-        setAllFetchStalls(fromDecode->decodeInfo[*tid_itr].blockReason);
-    } else if (insts_to_decode == 0) {  // fetch stalled
-        if (stallReason[0] != StallReason::NoStall) {   //  previously set stall reason
+    if (stalls[tid].decode) {
+        // If decode stalled, use decode's stall reason
+        setAllFetchStalls(fromDecode->decodeInfo[tid].blockReason);
+    } else if (insts_to_decode == 0) {
+        // fetch stalled
+        if (stallReason[0] != StallReason::NoStall) {
+            // previously set stall reason
             setAllFetchStalls(stallReason[0]);
         } else {
             setAllFetchStalls(StallReason::OtherFetchStall);
@@ -1335,35 +1396,37 @@ Fetch::tick()
     }
 
     toDecode->fetchStallReason = stallReason;
+}
 
+void
+Fetch::measureFrontendBubbles(unsigned insts_to_decode, ThreadID tid)
+{
     // Intel TopDown method for measuring frontend bubbles
     // Count unutilized issue slots when backend is not stalled (decode not stalled)
     // For N-wide machine, if frontend supplies 0 instructions:
     // - fetchBubbles += N (count total empty slots)
     // - fetchBubbles_max += 1 (count occurrence of all slots being empty)
-    if (!stalls[*tid_itr].decode && !fromCommit->commitInfo[*tid_itr].robSquashing) { // backend not stalled
+    if (!stalls[tid].decode && !fromCommit->commitInfo[tid].robSquashing) {
+        // backend not stalled
         int unused_slots = decodeWidth - insts_to_decode;
-        if (unused_slots > 0) { // has empty slots
+        if (unused_slots > 0) {
+            // has empty slots
             fetchStats.fetchBubbles += unused_slots; // add number of empty slots
-            if (unused_slots == decodeWidth) { // all slots empty, insts_to_decode == 0
+            if (unused_slots == decodeWidth) {
+                // all slots empty, insts_to_decode == 0
                 fetchStats.fetchBubbles_max++; // count max bubble occurrence
             }
         }
     }
 
-    if (stalls[*tid_itr].decode) {
+    if (stalls[tid].decode) {
         fetchStats.decodeStalls++;
     }
+}
 
-    // If there was activity this cycle, inform the CPU of it.
-    if (wroteToTimeBuffer) {
-        DPRINTF(Activity, "Activity this cycle.\n");
-        cpu->activityThisCycle();
-    }
-
-    // Reset the number of the instruction we've fetched.
-    numInst = 0;
-
+void
+Fetch::updateBranchPredictors()
+{
     if (isStreamPred()) {
         assert(dbsp);
         dbsp->tick();
