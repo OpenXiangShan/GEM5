@@ -583,6 +583,10 @@ ISA::setMiscReg(int misc_reg, RegVal val)
         setMiscRegNoEffect(MISCREG_VSEPC, val);
     } else if ((v == 1) && ((misc_reg == MISCREG_STVEC))) {
         setMiscRegNoEffect(MISCREG_VSTVEC, val & ~(0x2UL));
+    } else if (misc_reg == MISCREG_VSSTATUS) {
+        auto vsstatus = readMiscRegNoEffect(MISCREG_VSSTATUS);
+        STATUS write_val = ((vsstatus & ~(NEMU_SSTATUS_WMASK)) | (val & NEMU_SSTATUS_WMASK));
+        setMiscRegNoEffect(MISCREG_VSSTATUS, write_val);
     } else {
         switch (misc_reg) {
 
