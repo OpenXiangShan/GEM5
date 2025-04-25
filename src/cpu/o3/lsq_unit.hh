@@ -68,6 +68,7 @@
 #include "cpu/timebuf.hh"
 #include "debug/HtmCpu.hh"
 #include "debug/LSQUnit.hh"
+#include "debug/LoadPipeline.hh"
 #include "mem/packet.hh"
 #include "mem/port.hh"
 
@@ -289,6 +290,13 @@ class LSQUnit
     const int maxSQoffload = 2;
     const int sqFullBufferSize = 4;
 
+    // loadpipe
+    const int loadPipeStages = 4;
+    const int loadWhenToReplay = 3;
+    // stapipe
+    const int storePipeStages = 4;
+    const int storeWhenToReplay = 2;
+
     int sqFullUpperLimit = 0;
     int sqFullLowerLimit = 0;
     bool storeBufferFlushing = false;
@@ -370,8 +378,7 @@ class LSQUnit
      * @param fastReplay insert to replayQ
      * @param dropReqNow call request->discard() now
      */
-    void loadReplayHelper(DynInstPtr inst, LSQRequest* request, bool cacheMiss,
-            bool fastReplay, bool dropReqNow);
+    void loadSetReplay(DynInstPtr inst, LSQRequest* request, bool dropReqNow);
 
     /** Check if an incoming invalidate hits in the lsq on a load
      * that might have issued out of order wrt another load beacuse
@@ -427,9 +434,6 @@ class LSQUnit
 
     /** Returns the memory ordering violator. */
     DynInstPtr getMemDepViolator();
-
-    /** Check if store should skip this raw violation because of nuke replay. */
-    bool skipNukeReplay(const DynInstPtr& load_inst);
 
     /** Check if there exists raw nuke between load and store. */
     bool pipeLineNukeCheck(const DynInstPtr &load_inst, const DynInstPtr &store_inst);
@@ -495,19 +499,6 @@ class LSQUnit
     /** Returns the number of stores to writeback. */
     int numStoresToSbuffer() { return storesToWB; }
 
-    /** get description string from load/store pipeLine flag. */
-    std::string getLdStFlagStr(const std::bitset<LdStFlagNum>& flag)
-    {
-        std::string res{};
-        for (int i = 0; i < LdStFlagNum; i++) {
-            if (flag.test(i)) {
-                res += LdStFlagName[i] + ": [1] ";
-            } else {
-                res += LdStFlagName[i] + ": [0] ";
-            }
-        }
-        return res;
-    }
 
     LSQ* getLsq() { return lsq; }
 
@@ -534,7 +525,7 @@ class LSQUnit
     void resetState();
 
     /** Writes back the instruction, sending it to IEW. */
-    void writeback(const DynInstPtr &inst, PacketPtr pkt);
+    void writebackReg(const DynInstPtr &inst, PacketPtr pkt);
 
     /** Try to finish a previously blocked write back attempt */
     void writebackBlockedStore();
@@ -558,11 +549,9 @@ class LSQUnit
 
     bool sbufferSendPacket(PacketPtr data_pkt);
 
-    /** Debugging function to dump instructions in the LoadPipe. */
-    void dumpLoadPipe();
+    bool forwardFromStoreBuffer(const DynInstPtr& inst);
 
-    /** Debugging function to dump instructions in the storePipe. */
-    void dumpStorePipe();
+    bool forwardFromStoreQueue(const DynInstPtr& inst);
 
     /** Debugging function to dump instructions in the LSQ. */
     void dumpInsts() const;
@@ -581,10 +570,10 @@ class LSQUnit
      * - stage2: Analyze the flag and try to send the inst to commit.
      * - stage3: now just return fault and do nothing.
      */
-    Fault loadPipeS0(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag);
-    Fault loadPipeS1(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag);
-    Fault loadPipeS2(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag);
-    Fault loadPipeS3(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag);
+    Fault loadDoTranslate(const DynInstPtr &inst);
+    Fault loadDoSendRequest(const DynInstPtr &inst);
+    Fault loadDoRecvData(const DynInstPtr &inst);
+    Fault loadDoWriteback(const DynInstPtr &inst);
 
     /** Process instructions in each store pipeline stages. */
     void executeStorePipeSx();
@@ -593,9 +582,9 @@ class LSQUnit
      * - stage0: access TLB
      * - stage1: save data to store queue, check load violations, set memDepViolator
      */
-    Fault storePipeS0(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag);
-    Fault storePipeS1(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag);
-    Fault emptyStorePipeSx(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag, uint64_t stage);
+    Fault storeDoTranslate(const DynInstPtr &inst);
+    Fault storeDoWriteSQ(const DynInstPtr &inst);
+    Fault emptyStorePipeSx(const DynInstPtr &inst, uint64_t stage);
 
     /** Wrap function. */
     void executePipeSx();
@@ -621,11 +610,11 @@ class LSQUnit
     RequestPort *dcachePort;
 
     /** Writeback event, specifically for when stores forward data to loads. */
-    class WritebackEvent : public Event
+    class WritebackRegEvent : public Event
     {
       public:
         /** Constructs a writeback event. */
-        WritebackEvent(const DynInstPtr &_inst, PacketPtr pkt,
+        WritebackRegEvent(const DynInstPtr &_inst, PacketPtr pkt,
                 LSQUnit *lsq_ptr);
 
         /** Processes the writeback event. */
@@ -696,34 +685,33 @@ class LSQUnit
     /** The load queue. */
     LoadQueue loadQueue;
 
+    const static int MaxPipeWidth = 4;
+
     /** Struct that defines the information passed through Load Pipeline. */
     struct LoadPipeStruct
     {
         int size;
 
-        DynInstPtr insts[MaxWidth];
-        std::bitset<LdStFlagNum> flags[MaxWidth];
+        DynInstPtr insts[MaxPipeWidth];
     };
-    /** The load pipeline TimeBuffer. */
-    TimeBuffer<LoadPipeStruct> loadPipe;
-    /** Each stage in load pipeline. loadPipeSx[0] means load pipe S0 */
-    std::vector<TimeBuffer<LoadPipeStruct>::wire> loadPipeSx;
-
     /** Struct that defines the information passed through Store Pipeline. */
     struct StorePipeStruct
     {
         int size;
 
-        DynInstPtr insts[MaxWidth];
-        std::bitset<LdStFlagNum> flags[MaxWidth];
+        DynInstPtr insts[MaxPipeWidth];
     };
+
+
+    /** The load pipeline TimeBuffer. */
+    TimeBuffer<LoadPipeStruct> loadPipe;
+    /** Each stage in load pipeline. loadPipeSx[0] means load pipe S0 */
+    std::vector<TimeBuffer<LoadPipeStruct>::wire> loadPipeSx;
+
     /** The store pipeline TimeBuffer. */
     TimeBuffer<StorePipeStruct> storePipe;
     /** Each stage in store pipeline. storePipeSx[0] means store pipe S0 */
     std::vector<TimeBuffer<StorePipeStruct>::wire> storePipeSx;
-
-    /** Find inst in Load/Store Pipeline, set corresponding flag to true */
-    void setFlagInPipeLine(DynInstPtr inst, LdStFlags f);
 
   private:
     /** The number of places to shift addresses in the LSQ before checking
@@ -865,7 +853,7 @@ class LSQUnit
 
   public:
     /** Load Forwards data from Data bus. */
-    void forwardFrmBus(DynInstPtr inst, LSQRequest *request);
+    void forwardFromBus(DynInstPtr inst, LSQRequest *request);
 
     /** Executes the load at the given index. */
     Fault read(LSQRequest *request, ssize_t load_idx);

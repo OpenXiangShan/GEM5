@@ -164,6 +164,8 @@ class DynInst : public ExecContext, public RefCounted
         LsqEntry,                /// Instruction is in the LSQ
         Completed,               /// Instruction has completed
         ResultReady,             /// Instruction has its result
+
+        // scheduler state begin
         CanIssue,                /// Instruction can issue and execute
         MemDepSolved,            /// Memory dependencies are solved
         InReadyQue,              /// Instruction is in the ready queue
@@ -171,6 +173,26 @@ class DynInst : public ExecContext, public RefCounted
         Scheduled,               /// Instruction is scheduled
         ArbFailed,
         Issued,                  /// Instruction has issued
+        // scheduler state end
+
+        // load/store pipe state begin
+        InPipe,
+        CacheHit,
+        WakeUpEarly,
+        FullForward,
+        LocalAccess,
+        NeedReplay,
+        TLBMissReplay,
+        CacheMissReplay,
+        RescheduleReplay,
+        STLFReplay,
+        NukeReplay,
+        CacheBlockedReplay,
+        BankConflicyReplay,
+        SkipFollowingPipe,
+
+        // load/store pipe state end
+
         Executed,                /// Instruction has executed
         CanCommit,               /// Instruction can commit
         AtCommit,                /// Instruction has reached commit
@@ -261,8 +283,6 @@ class DynInst : public ExecContext, public RefCounted
 
     // Whether or not the source register is ready, one bit per register.
     uint8_t *_readySrcIdx;
-
-    std::vector<bool> srcRegCanceled;
 
     uint64_t amoOldGoldenValue;
 
@@ -489,22 +509,6 @@ class DynInst : public ExecContext, public RefCounted
     }
     void translationCompleted(bool f) { instFlags[TranslationCompleted] = f; }
 
-    /** True if inst is waiting for Dcache refill. */
-    bool
-    waitingCacheRefill() const
-    {
-        return instFlags[WaitingCacheRefill];
-    }
-    void waitingCacheRefill(bool f) { instFlags[WaitingCacheRefill] = f; }
-
-    /** True if inst is has pending cache request. */
-    bool
-    hasPendingCacheReq() const
-    {
-        return instFlags[HasPendingCacheReq];
-    }
-    void hasPendingCacheReq(bool f) { instFlags[HasPendingCacheReq] = f; }
-
     /** True if this address was found to match a previous load and they issued
      * out of order. If that happend, then it's only a problem if an incoming
      * snoop invalidate modifies the line, in which case we need to squash.
@@ -589,6 +593,8 @@ class DynInst : public ExecContext, public RefCounted
     /** TODO: This I added for the LSQRequest side to be able to modify the
      * fault. There should be a better mechanism in place. */
     Fault& getFault() { return fault; }
+
+    bool faulted() const { return fault != NoFault; }
 
     /** Checks whether or not this instruction has had its branch target
      *  calculated yet.  For now it is not utilized and is hacked to be
@@ -909,6 +915,86 @@ class DynInst : public ExecContext, public RefCounted
     bool isIssued() const { return status[Issued]; }
 
     /** Scheduler state end */
+
+
+    /** load/store pipe state begin */
+
+    void beginPipelining() {
+                status &= ~(
+                    (1 << CacheHit) |
+                    (1 << WakeUpEarly) |
+                    (1 << FullForward) |
+                    (1 << LocalAccess) |
+                    (1 << NeedReplay) |
+                    (1 << TLBMissReplay) |
+                    (1 << CacheMissReplay) |
+                    (1 << RescheduleReplay) |
+                    (1 << STLFReplay) |
+                    (1 << NukeReplay) |
+                    (1 << CacheBlockedReplay) |
+                    (1 << BankConflicyReplay) |
+                    (1 << SkipFollowingPipe));
+        status.set(InPipe);
+    }
+
+    void endPipelining() {
+        status.reset(InPipe);
+    }
+
+    bool inPipe() const { return status[InPipe]; }
+
+    void setCacheHit() { status.set(CacheHit); }
+    bool cacheHit() const { return status[CacheHit]; }
+
+    // only can be set once!!!
+    void setNeedReplay() {
+        assert(!status[NeedReplay]);
+        status.set(NeedReplay);
+    }
+    bool needReplay() const { return status[NeedReplay]; }
+
+    void setTLBMissReplay() { setNeedReplay(); status.set(TLBMissReplay); }
+    bool needTLBMissReplay() const { return status[TLBMissReplay]; }
+
+    void setCacheMissReplay() { setNeedReplay(); status.set(CacheMissReplay); }
+    bool needCacheMissReplay() const { return status[CacheMissReplay]; }
+
+    void setRescheduleReplay() { setNeedReplay(); status.set(RescheduleReplay); }
+    bool needRescheduleReplay() const { return status[RescheduleReplay]; }
+
+    void setSTLFReplay() { setNeedReplay(); status.set(STLFReplay); }
+    bool needSTLFReplay() const { return status[STLFReplay]; }
+
+    void setNukeReplay() { setNeedReplay(); status.set(NukeReplay); }
+    bool needNukeReplay() const { return status[NukeReplay]; }
+
+    void setCacheBlockedReplay() { setNeedReplay(); status.set(CacheBlockedReplay); }
+    bool needCacheBlockedReplay() const { return status[CacheBlockedReplay]; }
+
+    void setBankConflicyReplay() { setNeedReplay(); status.set(BankConflicyReplay); }
+    bool needBankConflicyReplay() const { return status[BankConflicyReplay]; }
+
+    void setFullForward() { status.set(FullForward); }
+    bool fullForward() const { return status[FullForward]; }
+
+    void setWakeUpEarly() { status.set(WakeUpEarly); }
+    bool wakeUpEarly() const { return status[WakeUpEarly]; }
+
+    void setSkipFollowingPipe() { status.set(SkipFollowingPipe); }
+    bool replayOrSkipFollowingPipe() const { return status[SkipFollowingPipe] || status[NeedReplay]; }
+
+    /** True if inst is waiting for Dcache refill. */
+    bool waitingCacheRefill() const { return instFlags[WaitingCacheRefill]; }
+    void setWaitingCacheRefill() { instFlags.set(WaitingCacheRefill); }
+    void clearWaitingCacheRefill() { instFlags.reset(WaitingCacheRefill); }
+
+    void waitingCacheRefill(bool f) { instFlags[WaitingCacheRefill] = f; }
+
+    /** True if inst is has pending cache request. */
+    bool hasPendingCacheReq() const { return instFlags[HasPendingCacheReq]; }
+    void hasPendingCacheReq(bool f) { instFlags[HasPendingCacheReq] = f; }
+
+    /** load/store pipe state end */
 
     /** Sets this instruction as executed. */
     void setExecuted() { status.set(Executed); }
