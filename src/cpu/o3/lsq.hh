@@ -80,38 +80,6 @@ class IEW;
 class LSQUnit;
 class StoreBufferEntry;
 
-/** The Flag of Load/Store inst in Pipeline. */
-enum LdStFlags
-{
-    Valid = 0,
-    Replayed,
-    CacheHit,
-    Nuke,
-    WakeUpEarly,
-    FullForward,
-    LocalAccess,
-    HasFault,
-    readNotPredicate,
-    readMemAccNotPredicate,
-    Squashed,
-    Num_Flags
-};
-
-constexpr uint64_t LdStFlagNum = LdStFlags::Num_Flags;
-
-const std::string LdStFlagName[LdStFlagNum] = {
-    "Valid",
-    "Replayed",
-    "CacheHit",
-    "Nuke",
-    "WakeUpEarly",
-    "FullForward",
-    "LocalAccess",
-    "HasFault",
-    "readNotPredicate",
-    "readMemAccNotPredicate",
-    "Squashed"
-};
 
 class LSQ
 {
@@ -286,10 +254,15 @@ class LSQ
         void markDelayed() override { flags.set(Flag::Delayed); }
         bool isDelayed() { return flags.isSet(Flag::Delayed); }
 
+        static uint64_t numSBufferRequest;
+        static uint64_t numSingleRequest;
+        static uint64_t numSplitRequest;
+
       public:
         LSQUnit& _port;
         const DynInstPtr _inst;
         uint32_t _taskId;
+        // !!! Only can use in pushrequest except for the storebuffer
         PacketDataPtr _data;
         std::vector<PacketPtr> _packets;
         std::vector<RequestPtr> _reqs;
@@ -309,7 +282,7 @@ class LSQ
             int idx;
             uint8_t byte;
         };
-        std::vector<FWDPacket> forwardPackets;
+        std::vector<FWDPacket> SBforwardPackets, SQforwardPackets;
 
       protected:
         LSQUnit* lsqUnit() { return &_port; }
@@ -647,14 +620,23 @@ class LSQ
     class SingleDataRequest : public LSQRequest
     {
       public:
+        static std::list<SingleDataRequest*> singleList;
         SingleDataRequest(LSQUnit* port, const DynInstPtr& inst,
                 bool isLoad, const Addr& addr, const uint32_t& size,
                 const Request::Flags& flags_, PacketDataPtr data=nullptr,
                 uint64_t* res=nullptr, AtomicOpFunctorPtr amo_op=nullptr) :
             LSQRequest(port, inst, isLoad, addr, size, flags_, data, res,
-                       std::move(amo_op)) {}
+                       std::move(amo_op)) {
+            numSingleRequest++;
+            singleList.push_back(this);
+            assert(numSingleRequest <= 400);
+        }
 
-        virtual ~SingleDataRequest() {}
+        virtual ~SingleDataRequest() {
+            assert(numSingleRequest > 0);
+            numSingleRequest--;
+            singleList.remove(this);
+        }
         virtual void markAsStaleTranslation();
         virtual void initiateTranslation();
         virtual void finish(const Fault &fault, const RequestPtr &req,
@@ -711,10 +693,14 @@ class LSQ
             _mainReq(nullptr),
             _mainPacket(nullptr)
         {
+            numSplitRequest++;
+            assert(numSplitRequest <= 400);
             flags.set(Flag::IsSplit);
         }
         virtual ~SplitDataRequest()
         {
+            assert(numSplitRequest > 0);
+            numSplitRequest--;
             if (_mainReq) {
                 _mainReq = nullptr;
             }
@@ -748,6 +734,10 @@ class LSQ
       public:
         StoreBufferEntry* sbuffer_entry=nullptr;
         SbufferRequest(CPU* cpu, LSQUnit* port, Addr blockpaddr, uint8_t* data);
+        virtual ~SbufferRequest() {
+            assert(numSBufferRequest > 0);
+            numSBufferRequest--;
+        }
 
         void addReq(Addr blockVaddr, Addr blockPaddr, const std::vector<bool> byteEnable);
 
@@ -981,7 +971,6 @@ class LSQ
      */
     void recvReqRetry();
 
-    void completeDataAccess(PacketPtr pkt);
     /**
      * Handles writing back and completing the load or store that has
      * returned from memory.
