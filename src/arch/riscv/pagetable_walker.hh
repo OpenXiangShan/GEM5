@@ -321,6 +321,7 @@ namespace RiscvISA
 
         // The number of outstanding walks that can be squashed per cycle.
         unsigned numSquashable;
+        bool enableL1L2replace;
         bool ptwSquash;
         bool openNextLine;
         bool autoOpenNextLine;
@@ -369,6 +370,7 @@ namespace RiscvISA
             pmp(params.pmp),
             requestorId(sys->getRequestorId(this)),
             numSquashable(params.num_squash_per_cycle),
+            enableL1L2replace(params.enable_l1l2_replace),
             ptwSquash(params.ptw_squash),
             openNextLine(params.open_nextline),
             autoOpenNextLine(true),

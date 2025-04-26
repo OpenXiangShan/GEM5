@@ -424,6 +424,16 @@ Walker::dol2TLBHit()
                           pmodel2, dol2TLBHitrequestors.tc);
         //assert(l2tlbFault == NoFault);
         if (l2tlbFault == NoFault) {
+            if (enableL1L2replace){
+                if (dol2TLBHitrequestors.entry != nullptr)
+                    tlb->insert(dol2TLBHitrequestors.entry->vaddr, *dol2TLBHitrequestors.entry, false, direct);
+                if (dol2TLBHitrequestors.entryVsstage != nullptr)
+                    tlb->insert(dol2TLBHitrequestors.entryVsstage->vaddr, *dol2TLBHitrequestors.entryVsstage, false,
+                            vsstage);
+                if (dol2TLBHitrequestors.entryGstage != nullptr)
+                    tlb->insert(dol2TLBHitrequestors.entryGstage->gpaddr, *dol2TLBHitrequestors.entryGstage, false,
+                            gstage);
+            }
             dol2TLBHitrequestors.translation->finish(
                 l2tlbFault, dol2TLBHitrequestors.req, dol2TLBHitrequestors.tc,
                 dol2TLBHitrequestors.mode);

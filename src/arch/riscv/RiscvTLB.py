@@ -45,6 +45,7 @@ class RiscvPagetableWalker(ClockedObject):
             "Number of outstanding walks that can be squashed per cycle")
     #notice :only partial testing of open ptwsquash was carried out
     #open it may have some bugs
+    enable_l1l2_replace = Param.Bool(True,"enable hit in l2tlb replace to l1tlb")
     ptw_squash = Param.Bool(False,
     "when squash xs will continue ptw until ptw finish")
     # Grab the pma_checker from the MMU
