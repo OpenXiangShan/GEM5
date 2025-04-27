@@ -133,12 +133,24 @@ UBTB::fillStagePredictions(const TickedUBTBEntry &entry, std::vector<FullBTBPred
 
         // Copy BTB entries to stage prediction
         stagePreds[s].btbEntries.clear();
+        stagePreds[s].condTakens.clear();  // TODO: consider moving this to another place -- the uBTB shouldn't need to
+                                           // take care of this
         if (entry.valid) {
+            // push back dummy conditional branches before the taken branch, to create the correct speculative history
+            // information
+            for (int i = 0; i < entry.numNTConds; i++) {
+                auto dummy = BTBEntry();
+                dummy.valid = true;
+                dummy.isCond = true;
+                dummy.pc = 0xdeadbeef;  // a magic number to indicate a dummy entry
+                stagePreds[s].btbEntries.push_back(dummy);
+            }
+
             stagePreds[s].btbEntries.push_back(BTBEntry(entry));
             if (entry.isCond) {
                 // the always taken field of BTBEntry is ignored in uBTB
                 // uBTB always assumes present entries to be taken
-                stagePreds[s].condTakens[entry.pc] = true; //(entry.ctr >= 0);
+                stagePreds[s].condTakens[entry.pc] = true;  //(entry.ctr >= 0);
 
             } else if (entry.isIndirect) {
                 // Set predicted target for indirect branches
@@ -217,6 +229,13 @@ UBTB::replaceOldEntry(UBTBSetIter oldEntryIter, FullBTBPrediction &newPrediction
         newPrediction.getTarget(predictWidth);  // important! this is so that target set by RAS or ITTAGE is used
     // important: update tag (mbtb and ubtb have different tags, even diffferent tag length)
     newEntry.tag = getTag(newPrediction.bbStart);
+    // save the number of conditional branches before the taken branch
+    // this is useful in the prediction phase: to generate the correct speculative history information
+    newEntry.numNTConds = newPrediction.getHistInfo().first;
+    if (newPrediction.getTakenEntry().isCond) {
+        newEntry.numNTConds--;
+        assert(newEntry.numNTConds >= 0);
+    }
     *oldEntryIter = newEntry;
 }
 

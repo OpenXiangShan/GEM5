@@ -81,14 +81,14 @@ class UBTB : public TimedBaseBTBPredictor
      * - valid: validity bit for this entry
      * - tctr: 2-bit saturation counter for branch direction prediction
      * - uctr: 2-bit saturation counter used by the replacement policy
-     * - tag: tag bits from fetch block address [23:1]
+     * - tag: tag bits from fetch block address [23:1]p
      * - tick: timestamp used for MRU (Most Recently Used) replacement policy
      */
     typedef struct TickedUBTBEntry : public BTBEntry
     {
         unsigned uctr; //2-bit saturation counter used in replacement policy
         uint64_t tick;  // timestamp for MRU replacement
-        int  numNTConds;
+        int  numNTConds; // number of conditional branches before the taken branch
         TickedUBTBEntry() : BTBEntry(), uctr(0), tick(0), numNTConds(0) {}
         TickedUBTBEntry(const BTBEntry &be, uint64_t tick) : BTBEntry(be), uctr(0), tick(tick), numNTConds(0) {}
     }TickedUBTBEntry;

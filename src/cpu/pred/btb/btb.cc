@@ -940,6 +940,11 @@ DefaultBTB::BTBStats::BTBStats(statistics::Group* parent) :
         oldEntryWithNewUncond.prereq(oldEntryWithNewUncond);
         eraseSlotBehindUncond.prereq(eraseSlotBehindUncond);
     }
+    if (btb->aheadPipelinedStages == 0){
+        S0Predmiss.prereq(S0Predmiss);
+        S0PredUseUBTB.prereq(S0PredUseUBTB);
+        S0PredUseABTB.prereq(S0PredUseABTB);
+    }
 }
 
 } // namespace btb_pred
