@@ -1340,7 +1340,7 @@ LSQUnit::executeLoadPipeSx()
             }
 
             if (i == loadPipeStages - 1 && !inst->needReplay()) {
-                iewStage->readyToFinish(inst);
+                if (inst->savedRequest->isNormalLd()) iewStage->readyToFinish(inst);
                 iewStage->activityThisCycle();
                 inst->endPipelining();
                 DPRINTF(LoadPipeline, "Load [sn:%llu] ready to finish\n",
