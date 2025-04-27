@@ -578,7 +578,7 @@ LSQ::recvTimingResp(PacketPtr pkt)
         }
     }
 
-    if (!request->isSplit() && !request->mainPacket()->cacheSatisfied) {
+    if (request->isNormalLd() && !request->mainPacket()->cacheSatisfied) {
         // if cache miss, the packet must be delete
         assert(request->isReleased());
         assert(request->_numOutstandingPackets == 1);

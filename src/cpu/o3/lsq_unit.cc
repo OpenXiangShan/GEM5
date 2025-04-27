@@ -1156,6 +1156,9 @@ LSQUnit::loadDoSendRequest(const DynInstPtr &inst)
             inst->setExecuted();
         }
         inst->setSkipFollowingPipe();
+        if (inst->needReplay()) {
+            iewStage->readyToFinish(inst);
+        }
         return load_fault;
     }
 
@@ -2267,7 +2270,7 @@ LSQUnit::writebackReg(const DynInstPtr &inst, PacketPtr pkt)
         }
     }
 
-    if (inst->isStoreConditional()) {
+    if (!inst->savedRequest->isNormalLd()) {
         // Need to insert instruction into queue to commit
         iewStage->readyToFinish(inst);
         iewStage->activityThisCycle();
