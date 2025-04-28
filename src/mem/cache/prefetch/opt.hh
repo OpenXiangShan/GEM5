@@ -46,6 +46,9 @@ class OptPrefetcher : public Queued
           uint64_t region_offset_64;
           ACT64Entry()
             : TaggedEntry(),
+              pc(0),
+              regionAddr(0),
+              is_secure(false),
               region_bits_64(0),
               decr_mode(false),
               access_cnt(0),

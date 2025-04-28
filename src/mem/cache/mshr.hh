@@ -225,6 +225,9 @@ class MSHR : public QueueEntry, public Printable
             hasFromCache = false;
             hasFromPref = false;
             hasFromCPU = false;
+
+            pfSource = PF_NONE;
+            pfDepth = 0;
         }
 
         /**

@@ -65,26 +65,23 @@ doGzipLoad(int fd)
         return -1;
     }
 
-    size_t tmp_len = strlen(P_tmpdir);
-    char *tmpnam = (char*) malloc(tmp_len + 20);
-    strcpy(tmpnam, P_tmpdir);
-    strcpy(tmpnam+tmp_len, "/gem5-gz-obj-XXXXXX"); // 19 chars
-    fd = mkstemp(tmpnam); // repurposing fd variable for output
+    std::string tmpname = std::string(P_tmpdir) + "/gem5-gz-obj-XXXXXX";
+    std::vector<char> tmpnam_buf(tmpname.begin(), tmpname.end());
+    tmpnam_buf.push_back('\0');
+
+    fd = mkstemp(tmpnam_buf.data());
     if (fd < 0) {
-        free(tmpnam);
         gzclose(fdz);
         return fd;
     }
 
-    if (unlink(tmpnam) != 0)
-        warn("couldn't remove temporary file %s\n", tmpnam);
+    if (unlink(tmpnam_buf.data()) != 0)
+        warn("couldn't remove temporary file %s\n", tmpnam_buf.data());
 
-    free(tmpnam);
-
-    auto buf = new uint8_t[blk_sz];
+    std::vector<uint8_t> buf(blk_sz);
     int r; // size of (r)emaining uncopied data in (buf)fer
-    while ((r = gzread(fdz, buf, blk_sz)) > 0) {
-        auto p = buf; // pointer into buffer
+    while ((r = gzread(fdz, buf.data(), blk_sz)) > 0) {
+        auto p = buf.data(); // pointer into buffer
         while (r > 0) {
             auto sz = write(fd, p, r);
             assert(sz <= r);
@@ -92,7 +89,7 @@ doGzipLoad(int fd)
             p += sz;
         }
     }
-    delete[] buf;
+
     gzclose(fdz);
     if (r < 0) { // error
         close(fd);

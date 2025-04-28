@@ -73,7 +73,11 @@ MSHR::MSHR(const std::string &name)
 MSHR::TargetList::TargetList(const std::string &name)
     :   Named(name),
         needsWritable(false), hasUpgrade(false),
-        allocOnFill(false), hasFromCache(false)
+        allocOnFill(false), hasFromCache(false),
+        hasFromPref(false), hasFromCPU(false),
+        pfSource(PF_NONE), pfDepth(0),
+        blkAddr(0), blkSize(0),
+        canMergeWrites(true), writesBitmap(0)
 {}
 
 
