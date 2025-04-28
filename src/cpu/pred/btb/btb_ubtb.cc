@@ -232,15 +232,17 @@ UBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred)
     // commit
 
     UBTBSetIter s0EntryIter = lastPred.hit_entry;
-    auto s0TakenEntry = *lastPred.hit_entry;
+    if (s0EntryIter != ubtb.end()) {
+        assert(s0EntryIter->valid); //lookup() should only return valid entry
+    }
     auto s3TakenEntry = s3Pred.getTakenEntry();
-    if (s0TakenEntry.valid && !s3TakenEntry.valid) {
+    if (s0EntryIter != ubtb.end() && !s3TakenEntry.valid) {
         // S0 has a hit entry, but S3 is fall through
         updateUCtr(s0EntryIter->uctr, false);
         if (s0EntryIter->uctr == 0) {
             s0EntryIter->valid = false;
         }
-    } else if (!s0TakenEntry.valid && s3TakenEntry.valid) {
+    } else if (s0EntryIter == ubtb.end() && s3TakenEntry.valid) {
         // TODO: generate new entry and replace another using LRU and uctr
         UBTBSetIter toBeReplacedIter;
         // First try to find an invalid entry in the set
@@ -264,9 +266,9 @@ UBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred)
         // Replace the entry with the new prediction
         replaceOldEntry(toBeReplacedIter, s3Pred);
 
-    } else if (s0TakenEntry.valid && s3TakenEntry.valid) {
+    } else if (s0EntryIter != ubtb.end() && s3TakenEntry.valid) {
         // both S0 and S3 predict taken
-        if (s0TakenEntry.pc != s3Pred.controlAddr() || s0TakenEntry.target != s3Pred.getTarget(predictWidth)) {
+        if (s0EntryIter->pc != s3Pred.controlAddr() || s0EntryIter->target != s3Pred.getTarget(predictWidth)) {
             // S0 and S3 predict different branch instruction
             updateUCtr(s0EntryIter->uctr, false);
             if (s0EntryIter->uctr == 0) {

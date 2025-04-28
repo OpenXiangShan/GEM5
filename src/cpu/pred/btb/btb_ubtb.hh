@@ -88,8 +88,9 @@ class UBTB : public TimedBaseBTBPredictor
     {
         unsigned uctr; //2-bit saturation counter used in replacement policy
         uint64_t tick;  // timestamp for MRU replacement
-        TickedUBTBEntry() : BTBEntry(), uctr(0), tick(0) {}
-        TickedUBTBEntry(const BTBEntry &be, uint64_t tick) : BTBEntry(be), uctr(0), tick(tick) {}
+        int  numNTConds;
+        TickedUBTBEntry() : BTBEntry(), uctr(0), tick(0), numNTConds(0) {}
+        TickedUBTBEntry(const BTBEntry &be, uint64_t tick) : BTBEntry(be), uctr(0), tick(tick), numNTConds(0) {}
     }TickedUBTBEntry;
 
     // A BTB set is a vector of entries (ways)
