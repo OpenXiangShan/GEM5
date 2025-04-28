@@ -642,8 +642,6 @@ LSQ::recvFunctionalCustomSignal(PacketPtr pkt, int sig)
                 request->instruction()->seqNum,
                 sig == DcacheRespType::Miss,
                 sig == DcacheRespType::Block_Not_Ready);
-        // cancel subsequent dependent insts of this load
-        iewStage->loadCancel(request->instruction());
     } else if (sig == DcacheRespType::Hint) {
         // get cache miss load replay hint
         request->recvFunctionalCustomSignal(pkt);
@@ -660,7 +658,7 @@ LSQ::recvFunctionalCustomSignal(PacketPtr pkt, int sig)
                 DPRINTF(LSQ, " erased bus: [sn:%ld] addr: %#lx\n", seqNum, addr);
             } else {
                 it++;
-            }
+            } 
         }
         panic_if(bus.size() > getLQEntries(), "elements on bus should never be greater than LQ size");
     } else {
@@ -1453,6 +1451,7 @@ LSQ::LSQRequest::~LSQRequest()
     }
     assert(!isAnyOutstandingRequest());
     if (_inst && _inst->savedRequest == this) {
+        DPRINTF(LSQ, "inst [sn:%llu] Deleting LSQRequest, savedRequest\n", _inst->seqNum);
          _inst->savedRequest = nullptr;
     }
 
@@ -1551,6 +1550,7 @@ LSQ::SingleDataRequest::recvTimingResp(PacketPtr pkt)
         } else {
             // this load is either missed and waken up early or hit.
             if (pkt->cacheSatisfied) {
+                DPRINTF(LSQ, "[sn:%ld] cache hit\n", _inst->seqNum);
                 // cache hit
                 instruction()->setCacheHit();
             } else {

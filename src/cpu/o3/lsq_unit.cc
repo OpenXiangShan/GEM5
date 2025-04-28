@@ -864,10 +864,10 @@ LSQUnit::checkSnoop(PacketPtr pkt)
 
     DynInstPtr ld_inst = iter->instruction();
     assert(ld_inst);
-    LSQRequest *request = iter->request();
+    LSQRequest *request = ld_inst->savedRequest; //iter->request();
 
     // Check that this snoop didn't just invalidate our lock flag
-    if (ld_inst->effAddrValid() &&
+    if (ld_inst->effAddrValid() && request &&
         request->isCacheBlockHit(invalidate_addr, cacheBlockMask)
         && ld_inst->memReqFlags & Request::LLSC) {
         ld_inst->tcBase()->getIsaPtr()->handleLockedSnoopHit(ld_inst.get());
@@ -878,7 +878,7 @@ LSQUnit::checkSnoop(PacketPtr pkt)
     while (++iter != loadQueue.end()) {
         ld_inst = iter->instruction();
         assert(ld_inst);
-        request = iter->request();
+        request = ld_inst->savedRequest;// iter->request();
         if (!ld_inst->effAddrValid() || ld_inst->strictlyOrdered())
             continue;
 
@@ -886,7 +886,7 @@ LSQUnit::checkSnoop(PacketPtr pkt)
                     ld_inst->seqNum, invalidate_addr);
 
         if (force_squash ||
-            request->isCacheBlockHit(invalidate_addr, cacheBlockMask)) {
+            (request && request->isCacheBlockHit(invalidate_addr, cacheBlockMask))) {
             if (needsTSO) {
                 // If we have a TSO system, as all loads must be ordered with
                 // all other loads, this load as well as *all* subsequent loads
@@ -1081,6 +1081,10 @@ LSQUnit::loadDoTranslate(const DynInstPtr &inst)
         DPRINTF(LoadPipeline, "Load [sn:%llu] setTLBMissReplay\n", inst->seqNum);
     }
 
+    if (inst->savedRequest && inst->savedRequest->isTranslationComplete() && inst->savedRequest->isNormalLd()) {
+        inst->setNormalLd();
+    }
+
     return load_fault;
 }
 
@@ -1218,6 +1222,11 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
         inst->setWaitingCacheRefill();
         DPRINTF(LoadPipeline, "Load [sn:%llu] setCacheMissReplay\n", inst->seqNum);
         return fault;
+    } else if (!request) {
+        loadSetReplay(inst, request, false);
+        inst->setBankConflicyReplay();// fast replay
+        DPRINTF(LoadPipeline, "Load [sn:%llu] setCacheMissReplay\n", inst->seqNum);
+        return fault;
     }
 
     for (int i = 0; i < storePipeSx[1]->size; i++) {
@@ -1230,9 +1239,10 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
     }
 
     // no nuke happens, prepare the inst data
-    assert(request->isNormalLd() ? !request->isAnyOutstandingRequest() : true);
+    // assert(request->isNormalLd() ? !request->isAnyOutstandingRequest() : true);
     request = inst->savedRequest;
     if (inst->fullForward()) {
+        DPRINTF(LoadPipeline, "Load [sn:%llu] fullForward\n", inst->seqNum);
         assert(request);
         // forwarding
         request->forward();
@@ -1244,6 +1254,7 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
     } else {
         if (lsq->enableLdMissReplay() && request && request->isNormalLd()) {
             // assemble cache & sbuffer forwarded data and completeDataAcess
+            DPRINTFR(LoadPipeline, "Load [sn:%llu] assemble packet\n", inst->seqNum);
             request->assemblePackets();
         }
     }
@@ -1340,7 +1351,12 @@ LSQUnit::executeLoadPipeSx()
             }
 
             if (i == loadPipeStages - 1 && !inst->needReplay()) {
-                if (inst->savedRequest->isNormalLd()) iewStage->readyToFinish(inst);
+                // if (!inst->savedRequest && inst->seqNum == 1683) {
+                //     assert(false);
+                //     DPRINTF(LoadPipeline, "Load [sn:%llu] no savedRequest\n", inst->seqNum);
+                // }
+
+                if (inst->isNormalLd()) iewStage->readyToFinish(inst);
                 iewStage->activityThisCycle();
                 inst->endPipelining();
                 DPRINTF(LoadPipeline, "Load [sn:%llu] ready to finish\n",

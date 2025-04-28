@@ -219,6 +219,7 @@ class DynInst : public ExecContext, public RefCounted
         NotAnInst,
         TranslationStarted,
         TranslationCompleted,
+        NormalLd,
         WaitingCacheRefill,
         HasPendingCacheReq,
         PossibleLoadViolation,
@@ -508,6 +509,14 @@ class DynInst : public ExecContext, public RefCounted
         return instFlags[TranslationCompleted];
     }
     void translationCompleted(bool f) { instFlags[TranslationCompleted] = f; }
+
+
+    void setNormalLd() { instFlags.set(NormalLd); }
+
+    bool isNormalLd() const
+    {
+        return instFlags[NormalLd];
+    }
 
     /** True if this address was found to match a previous load and they issued
      * out of order. If that happend, then it's only a problem if an incoming
