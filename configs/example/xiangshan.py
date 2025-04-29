@@ -373,10 +373,7 @@ def setKmhV3IdealParams(args, system):
                 cpu.branchPred.btb.numEntries = 16384
                 # TODO: BTB TAGE do not bave base table, do not support SC
                 cpu.branchPred.tage.tableSizes = [4096] * 14  # BTB TAGE may need larger table
-                if args.huge_ubtb:
-                    cpu.branchPred.abtb.numDelay = 9
-                    cpu.branchPred.ubtb.numEntries = 1024
-                elif args.pure_ubtb:
+                if args.pure_ubtb:
                     cpu.branchPred.abtb.numDelay = 9
                 elif args.pure_abtb:
                     cpu.branchPred.ubtb.numDelay = 9

@@ -45,11 +45,11 @@ namespace btb_pred
 {
 
 /*
- * BTB Constructor
+ * uBTB Constructor
  * Initializes:
- * - BTB structure (sets and ways)
- * - MRU tracking for each set
- * - Address calculation parameters (index/tag masks and shifts)
+ * - uBTB structure (fully associative)
+ * - MRU tracking for entries
+ * - tag bits
  */
 UBTB::UBTB(const Params &p)
     : TimedBaseBTBPredictor(p),
@@ -66,7 +66,7 @@ UBTB::UBTB(const Params &p)
         fatal("uBTB entries is not a power of 2!");
     }
 
-    // Initialize BTB structure and MRU tracking
+    // Initialize uBTB structure and MRU tracking
     ubtb.resize(numEntries);
     mruList.clear();  // Start with empty list
     for (auto it = ubtb.begin(); it != ubtb.end(); it++) {
@@ -92,15 +92,10 @@ UBTB::setTrace()
     }
 }
 
-/**
- * Process BTB entries:
- * 1. Sort entries by PC order
- * 2. Remove entries before the start PC
- */
+// Check uBTB entry pc range and update statistics
 void
 UBTB::PredStatistics(const TickedUBTBEntry entry, Addr startAddr)
 {
-
     // Update prediction statistics
     if (entry.valid) {
         Addr mbtb_end = (startAddr + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
@@ -110,34 +105,25 @@ UBTB::PredStatistics(const TickedUBTBEntry entry, Addr startAddr)
         printTickedUBTBEntry(entry);
     } else {
         ubtbStats.predMiss++;
-        DPRINTF(BTB, "BTB: lookup miss\n");
+        DPRINTF(BTB, "uBTB: lookup miss\n");
     }
-
     return;
 }
 
-/**
- * Fill predictions for each pipeline stage:
- * 1. Copy BTB entries
- * 2. Set conditional branch predictions
- * 3. Set indirect branch targets
- */
+// Fill predictions for each pipeline stage
 void
 UBTB::fillStagePredictions(const TickedUBTBEntry &entry, std::vector<FullBTBPrediction> &stagePreds)
 {
-
-
     for (int s = getDelay(); s < stagePreds.size(); ++s) {
-
         DPRINTF(UBTB, "UBTB: assigning prediction for stage %d\n", s);
 
-        // Copy BTB entries to stage prediction
+        // Copy uBTB entries to stage prediction
         stagePreds[s].btbEntries.clear();
         stagePreds[s].condTakens.clear();  // TODO: consider moving this to another place -- the uBTB shouldn't need to
                                            // take care of this
         if (entry.valid) {
             // push back dummy conditional branches before the taken branch, to create the correct speculative history
-            // information
+            // information, these dummy entries are not taken, thanks to them not being in stagePreds.condTakens.
             for (int i = 0; i < entry.numNTConds; i++) {
                 auto dummy = BTBEntry();
                 dummy.valid = true;
@@ -167,8 +153,7 @@ UBTB::fillStagePredictions(const TickedUBTBEntry &entry, std::vector<FullBTBPred
     }
 }
 
-
-
+// the Entry point of uBTB prediction pipeline
 void
 UBTB::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history, std::vector<FullBTBPrediction> &stagePreds)
 {
@@ -185,8 +170,7 @@ UBTB::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history, std::
     meta.hit_entry = entry;
 }
 
-
-
+// Lookup a FetchBlock entry in the uBTB, return the iterator to the entry
 UBTB::UBTBSetIter
 UBTB::lookup(Addr startAddr)
 {
@@ -216,9 +200,7 @@ UBTB::lookup(Addr startAddr)
     return it;
 }
 
-
-
-
+// Replace an old uBTB entry with a new one
 void
 UBTB::replaceOldEntry(UBTBSetIter oldEntryIter, FullBTBPrediction &newPrediction)
 {
@@ -239,11 +221,17 @@ UBTB::replaceOldEntry(UBTBSetIter oldEntryIter, FullBTBPrediction &newPrediction
     *oldEntryIter = newEntry;
 }
 
-
+/*
+ * Update uBTB using S3 prediction
+ * Handles different cases of S0 and S3 predictions:
+ * 1. S0 hit but S3 miss
+ * 2. S0 miss but S3 hit
+ * 3. Both S0 and S3 hit
+ * 4. Both miss
+ */
 void
 UBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred)
 {
-
     // obtain meta from S0,
     // note that the purpose of meta is different from the other sub-predictors,
     // uBTB's meta is to record the hit entry of S0, and is used immediatly in the same BPU tick() to update uBTB
@@ -256,13 +244,15 @@ UBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred)
     }
     auto s3TakenEntry = s3Pred.getTakenEntry();
     if (s0EntryIter != ubtb.end() && !s3TakenEntry.valid) {
-        // S0 has a hit entry, but S3 is fall through
+        // S0 has a hit entry, but S3 predicts fall through
         updateUCtr(s0EntryIter->uctr, false);
         if (s0EntryIter->uctr == 0) {
             s0EntryIter->valid = false;
         }
     } else if (s0EntryIter == ubtb.end() && s3TakenEntry.valid) {
-        // TODO: generate new entry and replace another using LRU and uctr
+        // S0 misses, but S3 predicts taken
+        // generate new entry and replace another using LRU
+        // TODO: employ the uctr
         UBTBSetIter toBeReplacedIter;
         // First try to find an invalid entry in the set
         bool foundInvalidEntry = false;
@@ -309,13 +299,11 @@ UBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred)
 void
 UBTB::update(const FetchStream &stream)
 {
-
     auto meta = std::static_pointer_cast<UBTBMeta>(stream.predMetas[getComponentIdx()]);
     // hit entries whose corresponding insts are acutally executed
     Addr end_inst_pc = stream.updateEndInstPC;
 
     auto pred_hit_entry = meta->hit_entry;
-
 
     if (stream.exeTaken) {
         if (!pred_hit_entry.valid || pred_hit_entry != stream.exeBranchInfo) {
@@ -324,14 +312,11 @@ UBTB::update(const FetchStream &stream)
         }
     }
 
-
-
-    // Verify BTB state
+    // Verify uBTB state
     assert(ubtb.size() <= numEntries);
 }
 
-
-
+// also for statistical purpose only
 void
 UBTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 {
@@ -341,8 +326,6 @@ UBTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
     auto npc = inst->getNPC();
     bool this_branch_hit = hit_entry.pc == pc;
 
-
-    // bool this_branch_miss = !this_branch_hit;
     bool cond_not_taken = inst->isCondCtrl() && !inst->branching();
     bool this_branch_taken = stream.exeTaken && stream.getControlPC() == pc;  // all uncond should be taken
     Addr this_branch_target = npc;
@@ -400,18 +383,10 @@ UBTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
             ubtbStats.condMisses++;
             if (this_branch_taken) {
                 ubtbStats.condMissTakens++;
-                // if (isL0()) {
-                // only L0 BTB has saturating counters to predict conditional branches
-                // taken branches that is missed in btb must have been mispredicted
                 ubtbStats.condPredWrong++;
-                // }
             } else {
                 ubtbStats.condMissNotTakens++;
-                // if (isL0()) {
-                // only L0 BTB has saturating counters to predict conditional branches
-                // taken branches that is missed in btb must have been mispredicted
                 ubtbStats.condPredCorrect++;
-                // }
             }
         }
         if (inst->isUncondCtrl()) {
@@ -433,9 +408,9 @@ UBTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
     }
 }
 
+// Initialize uBTB statistics
 UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
     : statistics::Group(parent),
-
       ADD_STAT(predMiss, statistics::units::Count::get(), "misses encountered on prediction"),
       ADD_STAT(predHit, statistics::units::Count::get(), "hits encountered on prediction"),
       ADD_STAT(updateMiss, statistics::units::Count::get(), "misses encountered on update"),
@@ -488,7 +463,6 @@ UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
       ADD_STAT(callMisses, statistics::units::Count::get(), "calls committed that was predicted miss"),
       ADD_STAT(returnHits, statistics::units::Count::get(), "returns committed that was predicted hit"),
       ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss")
-
 {
 }
 

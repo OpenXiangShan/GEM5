@@ -27,18 +27,19 @@
  */
 
 /*
- * Branch Target Buffer (BTB) Implementation
+ * Micro Branch Target Buffer (uBTB) Implementation
  *
- * The BTB is a cache-like structure that stores information about branches:
- * - Branch type (conditional, unconditional, indirect, call, return)
- * - Branch target address
- * - Branch prediction information (counter for conditional branches)
+ * The uBTB is a cache-like structure that provides fast branch prediction:
+ * - Fully associative organization
+ * - MRU (Most Recently Used) replacement policy
  *
  * Key Features:
- * - N-way set associative organization
- * - MRU (Most Recently Used) replacement policy
- * - Support for multiple branch types
- * - Support for multiple prediction stages (L0/L1 BTB)
+ * - Fast lookup using tags from branch addresses
+ * - Each entry contains:
+ *   - Branch type (conditional, unconditional, indirect, call, return)
+ *   - Branch target address
+ *   - 2-bit saturation counters for replacement policy
+ *   - Timestamp for MRU tracking
  */
 
 #ifndef __CPU_PRED_BTB_UBTB_HH__
@@ -72,17 +73,22 @@ class UBTB : public TimedBaseBTBPredictor
 
     typedef UBTBParams Params;
 
+    /** Creates a uBTB with the given number of entries, number of bits per
+     *  tag, and instruction offset amount.
+     *  @param numEntries Number of entries for the uBTB.
+     *  @param tagBits Number of bits for each tag in the uBTB.
+     */
     UBTB(const Params& p);
 
     /*
      * Micro-BTB Entry with timestamp for MRU replacement
      *
-     * This structure extends BranchInfo to implement a uBTB entry with:
+     * This structure extends BTBEntry to implement a uBTB entry with:
      * - valid: validity bit for this entry
-     * - tctr: 2-bit saturation counter for branch direction prediction
-     * - uctr: 2-bit saturation counter used by the replacement policy
-     * - tag: tag bits from fetch block address [23:1]p
+     * - uctr: 2-bit saturation counter used in replacement policy
+     * - tag: tag bits from branch address [23:1]
      * - tick: timestamp used for MRU (Most Recently Used) replacement policy
+     * - numNTConds: number of not-taken conditional branches before the taken branch
      */
     typedef struct TickedUBTBEntry : public BTBEntry
     {
@@ -98,15 +104,6 @@ class UBTB : public TimedBaseBTBPredictor
     using UBTBSetIter = typename UBTBSet::iterator;
     // MRU heap for each set
     using UBTBHeap = std::vector<UBTBSetIter>;
-
-    /** Creates a BTB with the given number of entries, number of bits per
-     *  tag, and instruction offset amount.
-     *  @param numEntries Number of entries for the BTB.
-     *  @param tagBits Number of bits for each tag in the BTB.
-     *  @param instShiftAmt Offset amount for instructions to ignore alignment.
-     */
-    UBTB(unsigned numEntries, unsigned tagBits,
-               unsigned instShiftAmt, unsigned numThreads);
 
     void tickStart() override{};
 
@@ -208,9 +205,8 @@ class UBTB : public TimedBaseBTBPredictor
     };
 
     /** Returns the tag bits of a given address.
-     *  The tag is calculated as: (pc >> tagShiftAmt) & tagMask
-     *  where tagShiftAmt = idxShiftAmt + log2(numSets)
-     *  @param inst_PC The branch's address.
+     *  The tag is calculated as: (pc >> 1) & tagMask
+     *  @param startPC The start address of the fetch block
      *  @return Returns the tag bits.
      */
     inline Addr getTag(Addr startPC) {
@@ -251,10 +247,10 @@ class UBTB : public TimedBaseBTBPredictor
 
 
 
-    /** The BTB structure:
-     *  - Organized as numSets sets
-     *  - Each set has numWays ways
-     *  - Total size = numSets * numWays = numEntries
+    /** The uBTB structure:
+     *  - Implemented as a fully associative table
+     *  - Each entry can store one branch
+     *  - Total size = numEntries
      */
     std::vector<TickedUBTBEntry> ubtb;
 
@@ -263,13 +259,12 @@ class UBTB : public TimedBaseBTBPredictor
     UBTBMeta meta; // metadata for uBTB, set in putPCHistory, used in update, for the sole purpose of statistics
 
     /** MRU tracking:
-     *  - One heap per set
-     *  - Each heap tracks the MRU order of entries in that set
-     *  - Oldest entry is at the top of heap
+     *  - Uses a heap to track entry timestamps
+     *  - Oldest entry is at top of heap for fast replacement
      */
     UBTBHeap mruList;
 
-    /** BTB configuration parameters */
+    /** uBTB configuration parameters */
     unsigned numEntries;    // Total number of entries
 
     /** Address calculation masks and shifts */

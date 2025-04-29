@@ -332,8 +332,6 @@ def addCommonOptions(parser, configure_xiangshan=False):
     parser.add_argument("--pure-ubtb", action="store_true", default=False,
                         help="s0 prediction is produced only by UBTB")
 
-    parser.add_argument("--huge-ubtb", action="store_true", default=False,
-                        help="use huge UBTB")
 
     # for warmup without switching cpu
     parser.add_argument("--warmup-insts-no-switch", action="store", type=int,
