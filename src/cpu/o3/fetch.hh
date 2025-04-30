@@ -579,13 +579,7 @@ class Fetch
     /** Whether or not the fetch buffer data is valid. */
     bool fetchBufferValid[MaxThreads];
 
-    /** Loop buffer with unrolling */
-    // TODO: use the same loop buffer for both of them
-    branch_prediction::ftb_pred::LoopBuffer *loopBuffer;
-
-    bool enableLoopBuffer{false};
-
-    unsigned currentLoopIter{0};
+    unsigned currentLoopIter{0};  // todo: remove this
 
     /** Size of instructions. */
     int instSize;
