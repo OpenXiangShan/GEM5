@@ -263,6 +263,7 @@ action(Initiate_Request, desc="") {
   peek(reqRdyPort, CHIRequestMsg) {
     set_tbe(allocateRequestTBE(address, in_msg));
     // only a msg that was already retried doesn't allow a retry
+    // But cpu requests are not allowRetry
     was_retried := in_msg.allowRetry == false;
   }
   DirEntry dir_entry := getDirEntry(address);
@@ -1546,7 +1547,12 @@ action(Send_ReadShared, desc="") {
     } else {
       prepareRequest(tbe, CHIRequestType:ReadNotSharedDirty, out_msg);
     }
-    out_msg.Destination.add(mapAddressToDownstreamMachine(tbe.addr));
+    // Destination is set here
+    if (sharingManager.checkSharing(tbe.addr)) {
+      out_msg.Destination.add(sharingManager.getDestination(tbe.addr));
+    } else {
+      out_msg.Destination.add(mapAddressToDownstreamMachine(tbe.addr));
+    }
     out_msg.dataToFwdRequestor := false;
     allowRequestRetry(tbe, out_msg);
   }

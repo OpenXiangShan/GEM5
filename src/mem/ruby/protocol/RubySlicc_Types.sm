@@ -288,3 +288,10 @@ structure(RubyPrefetcherProxy, external = "yes") {
     // this for every RubyPrefetcherProxy object present
     void regProbePoints();
 }
+
+structure(SharingManager, external = "yes") {
+  void setSharing(Addr, Addr, int);
+  void clearSharing(Addr);
+  bool checkSharing(Addr);
+  MachineID getDestination(Addr);
+}

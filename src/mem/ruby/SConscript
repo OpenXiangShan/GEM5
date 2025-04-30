@@ -69,6 +69,7 @@ DebugFlag('RubyStats')
 DebugFlag('RubyResourceStalls')
 DebugFlag('RubyProtocol')
 DebugFlag('RubyHitMiss')
+DebugFlag('SharingManager')
 
 CompoundFlag('Ruby', [ 'RubyQueue', 'RubyNetwork', 'RubyTester',
     'RubyGenerated', 'RubySlicc', 'RubySystem', 'RubyCache',
@@ -114,6 +115,7 @@ MakeInclude('structures/PersistentTable.hh')
 MakeInclude('structures/RubyPrefetcher.hh')
 MakeInclude('structures/RubyPrefetcherProxy.hh')
 MakeInclude('structures/TBEStorage.hh')
+MakeInclude('structures/SharingManager.hh')
 if env['CONF']['PROTOCOL'] == 'CHI':
     MakeInclude('structures/MN_TBEStorage.hh')
     MakeInclude('structures/MN_TBETable.hh')

@@ -180,6 +180,10 @@ machine(MachineType:Cache, "Cache coherency protocol") :
 
   bool is_dcache := "False";
   bool enable_difftest := "False";
+
+  bool enable_proxy := "False";
+  SharingManager * sharingManager;
+
   // Message Queues
 
   // Interface to the network
