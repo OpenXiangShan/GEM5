@@ -48,7 +48,7 @@ SimObject('BranchPredictor.py', sim_objects=[
     'StreamUBTB', 'StreamTAGE', 'StreamLoopDetector', 'StreamLoopPredictor',
     'DecoupledStreamBPU', 'DefaultFTB', 'DecoupledBPUWithFTB',
     'TimedBaseFTBPredictor', 'FTBTAGE', 'FTBRAS', 'FTBuRAS', 'FTBITTAGE',
-    'DefaultBTB', 'UBTB', 'DecoupledBPUWithBTB',
+    'DefaultBTB', 'UBTB', 'DecoupledBPUWithBTB', 'S1StatsHelper',
     'TimedBaseBTBPredictor', 'BTBRAS', 'BTBTAGE', 'BTBITTAGE'], enums=["BpType"])
 
 DebugFlag('Indirect')
@@ -103,6 +103,7 @@ Source('btb/btb_ittage.cc')
 Source('btb/folded_hist.cc')
 Source('btb/ras.cc')
 Source('btb/btb_ubtb.cc')
+Source('btb/s1_stats.cc')
 # Source('btb/uras.cc')
 Source('general_arch_db.cc')
 DebugFlag('FreeList')

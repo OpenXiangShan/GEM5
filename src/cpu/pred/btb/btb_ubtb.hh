@@ -65,6 +65,8 @@ namespace branch_prediction
 namespace btb_pred
 {
 
+class S1StatsHelper;
+
 class UBTB : public TimedBaseBTBPredictor
 {
   private:
@@ -172,6 +174,8 @@ class UBTB : public TimedBaseBTBPredictor
 
 
   private:
+
+    friend class S1StatsHelper;
 
     typedef struct LastPred
     {

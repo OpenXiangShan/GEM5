@@ -21,6 +21,7 @@
 #include "cpu/pred/btb/loop_buffer.hh"
 #include "cpu/pred/btb/loop_predictor.hh"
 #include "cpu/pred/btb/ras.hh"
+#include "cpu/pred/btb/s1_stats.hh"
 #include "cpu/pred/general_arch_db.hh"
 
 // #include "cpu/pred/btb/uras.hh"
@@ -98,6 +99,7 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     UBTB *ubtb{};
     DefaultBTB *abtb{};
+    S1StatsHelper *s1_stats{};
     DefaultBTB *btb{};
     BTBTAGE *tage{};
     BTBITTAGE *ittage{};

@@ -65,6 +65,8 @@ namespace branch_prediction
 namespace btb_pred
 {
 
+
+class S1StatsHelper;
 class DefaultBTB : public TimedBaseBTBPredictor
 {
   private:
@@ -196,6 +198,8 @@ class DefaultBTB : public TimedBaseBTBPredictor
 
 
   private:
+
+    friend class S1StatsHelper;
     /** Returns the index into the BTB, based on the branch's PC.
      *  The index is calculated as: (pc >> idxShiftAmt) & idxMask
      *  where idxShiftAmt is:

@@ -1005,6 +1005,12 @@ class ABTB(DefaultBTB):
     aheadPipelinedStages = 1
     entryHalfAligned = False
 
+class S1StatsHelper(TimedBaseBTBPredictor):
+    type = 'S1StatsHelper'
+    cxx_class = 'gem5::branch_prediction::btb_pred::S1StatsHelper'
+    cxx_header = 'cpu/pred/btb/s1_stats.hh'
+
+
 class BTBRAS(TimedBaseBTBPredictor):
     type = 'BTBRAS'
     cxx_class = 'gem5::branch_prediction::btb_pred::BTBRAS'
@@ -1070,6 +1076,7 @@ class DecoupledBPUWithBTB(BranchPredictor):
     numStages = Param.Unsigned(3, "Maximum number of stages in the pipeline")
     ubtb = Param.UBTB(UBTB(), "UBTB predictor")
     abtb = Param.DefaultBTB(ABTB(), "ABTB predictor")
+    s1_stats = Param.S1StatsHelper(S1StatsHelper(), "S1 stats predictor")
     btb = Param.DefaultBTB(DefaultBTB(), "BTB")
     tage = Param.BTBTAGE(BTBTAGE(), "TAGE predictor")
     ittage = Param.BTBITTAGE(BTBITTAGE(), "ITTAGE predictor")

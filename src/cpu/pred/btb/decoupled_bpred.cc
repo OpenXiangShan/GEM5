@@ -32,6 +32,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       historyBits(p.maxHistLen),
       ubtb(p.ubtb),
       abtb(p.abtb),
+      s1_stats(p.s1_stats),
       btb(p.btb),
       tage(p.tage),
       ittage(p.ittage),
@@ -89,11 +90,13 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     }
     bpType = DecoupledBTBType;
     numStages = 3;
+    s1_stats->subscribe(ubtb, abtb);
     // TODO: better impl (use vector to assign in python)
     // problem: btb->getAndSetNewBTBEntry
     components.push_back(ubtb);
     components.push_back(abtb);
     // components.push_back(uras);
+    components.push_back(s1_stats);
     components.push_back(btb);
     components.push_back(tage);
     components.push_back(ras);
