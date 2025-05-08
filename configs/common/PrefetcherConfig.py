@@ -27,17 +27,35 @@ def create_prefetcher(cpu, cache_level, options):
         prefetcher.registerTLB(cpu.mmu.dtb)
 
     if prefetcher_name == 'XSCompositePrefetcher':
-        if options.l1d_enable_spp:
-            prefetcher.enable_spp = True
+
+        if options.l1d_enable_activepage:
+            prefetcher.enable_activepage = True
+        if options.l1d_enable_pht:
+            prefetcher.enable_pht = True
+        if options.l1d_enable_xsstream:
+            prefetcher.enable_xsstream = True
+        if options.l1d_enable_sstride:
+            prefetcher.enable_sstride = True
+        if options.l1d_enable_berti:
+            prefetcher.enable_berti = True
+        if options.l1d_enable_bop:
+            prefetcher.enable_bop = True
         if options.l1d_enable_cplx:
             prefetcher.enable_cplx = True
+        if options.l1d_enable_spp:
+            prefetcher.enable_spp = True
+        if options.l1d_enable_temporal:
+            prefetcher.enable_temporal = True
+        if options.l1d_enable_opt:
+            prefetcher.enable_opt = True
+
         prefetcher.pht_pf_level = 2 if options.kmh_align else options.pht_pf_level
         prefetcher.short_stride_thres = options.short_stride_thres
-        prefetcher.enable_temporal = not options.kmh_align
+        # prefetcher.enable_temporal = not options.kmh_align
         prefetcher.fuzzy_stride_matching = False
         prefetcher.stream_pf_ahead = True
 
-        prefetcher.enable_bop = not options.kmh_align
+        # prefetcher.enable_bop = not options.kmh_align
         prefetcher.bop_large.delay_queue_enable = True
         prefetcher.bop_large.bad_score = 10
         prefetcher.bop_small.delay_queue_enable = True
@@ -53,18 +71,16 @@ def create_prefetcher(cpu, cache_level, options):
 
         if options.ideal_cache:
             prefetcher.stream_pf_ahead = False
-        if options.kmh_align:
-            prefetcher.enable_berti = False
-            prefetcher.enable_sstride = True
-            prefetcher.enable_activepage = False
-            prefetcher.enable_xsstream = True
 
     if cache_level == 'l2':
+        if options.l2_enable_cmc:
+            prefetcher.enable_cmc = True
+        if options.l2_enable_bop:
+            prefetcher.enable_bop = True
+        if options.l2_enable_cdp:
+            prefetcher.enable_cdp = True
         if options.kmh_align:
             assert prefetcher_name == 'L2CompositeWithWorkerPrefetcher'
-            prefetcher.enable_cmc = False
-            prefetcher.enable_bop = True
-            prefetcher.enable_cdp = False
             prefetcher.bop_large = XSVirtualLargeBOP(is_sub_prefetcher=True)
             prefetcher.bop_small = XSPhysicalSmallBOP(is_sub_prefetcher=True)
         if options.l1_to_l2_pf_hint:

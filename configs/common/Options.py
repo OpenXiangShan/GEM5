@@ -290,18 +290,53 @@ def addCommonOptions(parser, configure_xiangshan=False):
     parser.add_argument("--list-hwp-types",
                         action=ListHWP, nargs=0,
                         help="List available hardware prefetcher types")
-    parser.add_argument("--l1d-enable-spp", action="store_true", default=False,
+    parser.add_argument("--l1d-enable-activepage", action="store_true", default=False,
                         help="""
-                        Enable SPP component for L1 data prefetcher""")
+                        Enable active page component for L1 data prefetcher""")
+    parser.add_argument("--l1d-enable-pht", action="store_true", default=False,
+                        help="""
+                        Enable PHT component for L1 data prefetcher""")
+    parser.add_argument("--l1d-enable-xsstream", action="store_true", default=False,
+                        help="""
+                        Enable XsStream component for L1 data prefetcher""")
+    parser.add_argument("--l1d-enable-sstride", action="store_true", default=False,
+                        help="""
+                        Enable XsStride component for L1 data prefetcher""")
+    parser.add_argument("--l1d-enable-berti", action="store_true", default=False,
+                        help="""
+                        Enable BERTI component for L1 data prefetcher""")
+    parser.add_argument("--l1d-enable-bop", action="store_true", default=False,
+                        help="""
+                        Enable BOP component for L1 data prefetcher""")
     parser.add_argument("--l1d-enable-cplx", action="store_true", default=False,
                         help="""
                         Enable complex stride component for L1 data prefetcher""")
+    parser.add_argument("--l1d-enable-spp", action="store_true", default=False,
+                        help="""
+                        Enable SPP component for L1 data prefetcher""")
+    parser.add_argument("--l1d-enable-temporal", action="store_true", default=False,
+                        help="""
+                        Enable temporal component for L1 data prefetcher""")
+    parser.add_argument("--l1d-enable-opt", action="store_true", default=False,
+                        help="""
+                        Enable OPT component for L1 data prefetcher""")
+
     parser.add_argument("--short-stride-thres", action="store", default=0, type=int,
                         help="""
                         Ignore short strides when seen long strides for stride, 0 for turning off""")
     parser.add_argument("--pht-pf-level", action="store", default=1,
                         help="""
                         Prefetching cache level for SMS'pht""")
+
+    parser.add_argument("--l2-enable-cmc", action="store_true", default=False,
+                        help="""
+                        Enable CMC component for L2 cache prefetcher""")
+    parser.add_argument("--l2-enable-bop", action="store_true", default=False,
+                        help="""
+                        Enable BOP component for L2 cache prefetcher""")
+    parser.add_argument("--l2-enable-cdp", action="store_true", default=False,
+                        help="""
+                        Enable CDP component for L2 cache prefetcher""")
 
     parser.add_argument("--cpu-clock", action="store", type=str,
                         default='3GHz',
