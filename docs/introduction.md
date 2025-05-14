@@ -76,7 +76,7 @@ XS-GEM5**不支持**以下功能：
 
 运行工作负载的典型流程与[NEMU](https://github.com/OpenXiangShan/NEMU/)、[XS-GEM5](https://github.com/OpenXiangShan/GEM5)和[香山处理器](https://github.com/OpenXiangShan/XiangShan)类似。它们都只支持全系统模拟。为了准备全系统模拟的工作负载，用户需要构建裸机应用程序或在操作系统中运行用户程序。
 
-```{mermaid}
+```mermaid
 graph TD;
 am["使用AM构建裸机应用程序"]
 linux["构建包含用户应用的Linux镜像"]
@@ -92,7 +92,7 @@ baremetal-->run
 
 对于企业用户和研究人员来说，他们更感兴趣在XS-GEM5上运行更大的工作负载，如SPECCPU。为了减少详细模拟的模拟时间，NEMU作为检查点生成器。生产和运行检查点的流程如下：
 
-```{mermaid}
+```mermaid
 graph TD;
 linux["构建包含NEMU trap应用和用户应用的Linux镜像"]
 bin[/"包含Linux和应用程序的镜像"/]
