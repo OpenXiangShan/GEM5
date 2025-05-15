@@ -514,13 +514,6 @@ for variant_path in variant_paths:
         with gem5_scons.Configure(env) as conf:
             conf.CheckCxxFlag('-Wno-c99-designator')
             conf.CheckCxxFlag('-Wno-defaulted-function-deleted')
-            # Poor code quality workaround, should be fixed in the future.
-            conf.CheckCxxFlag('-Wno-error=unused-private-field')
-            conf.CheckCxxFlag('-Wno-error=infinite-recursion')
-            conf.CheckCxxFlag('-Wno-error=array-parameter')
-            conf.CheckCxxFlag('-Wno-error=uninitialized-const-reference')
-            conf.CheckCxxFlag('-Wno-error=vla-extension')
-            conf.CheckCxxFlag('-Wno-error=vla-cxx-extension')
 
         env.Append(TCMALLOC_CCFLAGS=['-fno-builtin'])
 
