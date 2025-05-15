@@ -41,11 +41,14 @@
 
 #include "cpu/thread_context.hh"
 
+#include <cstdint>
+#include <memory>
 #include <vector>
 
 #include "arch/generic/vec_pred_reg.hh"
 #include "base/logging.hh"
 #include "base/trace.hh"
+#include "base/types.hh"
 #include "config/the_isa.hh"
 #include "cpu/base.hh"
 #include "debug/Context.hh"
@@ -223,12 +226,12 @@ serialize(const ThreadContext &tc, CheckpointOut &cp)
     const auto &regClasses = nc_tc.getIsaPtr()->regClasses();
 
     const size_t numFloats = regClasses.at(FloatRegClass).numRegs();
-    RegVal floatRegs[numFloats];
+    auto floatRegs = std::make_unique<RegVal[]>(numFloats);
     for (int i = 0; i < numFloats; ++i)
         floatRegs[i] = tc.getRegFlat(RegId(FloatRegClass, i));
     // This is a bit ugly, but needed to maintain backwards
     // compatibility.
-    arrayParamOut(cp, "floatRegs.i", floatRegs, numFloats);
+    arrayParamOut(cp, "floatRegs.i", floatRegs.get(), numFloats);
 
     const size_t numVecs = regClasses.at(VecRegClass).numRegs();
     std::vector<TheISA::VecRegContainer> vecRegs(numVecs);
@@ -246,17 +249,17 @@ serialize(const ThreadContext &tc, CheckpointOut &cp)
     SERIALIZE_CONTAINER(vecPredRegs);
 
     const size_t numInts = regClasses.at(IntRegClass).numRegs();
-    RegVal intRegs[numInts];
+    auto intRegs = std::make_unique<RegVal[]>(numInts);
     for (int i = 0; i < numInts; ++i)
         intRegs[i] = tc.getRegFlat(RegId(IntRegClass, i));
-    SERIALIZE_ARRAY(intRegs, numInts);
+    SERIALIZE_ARRAY(intRegs.get(), numInts);
 
     const size_t numCcs = regClasses.at(CCRegClass).numRegs();
     if (numCcs) {
-        RegVal ccRegs[numCcs];
+        auto ccRegs = std::make_unique<RegVal[]>(numCcs);
         for (int i = 0; i < numCcs; ++i)
             ccRegs[i] = tc.getRegFlat(RegId(CCRegClass, i));
-        SERIALIZE_ARRAY(ccRegs, numCcs);
+        SERIALIZE_ARRAY(ccRegs.get(), numCcs);
     }
 
     tc.pcState().serialize(cp);
@@ -270,10 +273,10 @@ unserialize(ThreadContext &tc, CheckpointIn &cp)
     const auto &regClasses = tc.getIsaPtr()->regClasses();
 
     const size_t numFloats = regClasses.at(FloatRegClass).numRegs();
-    RegVal floatRegs[numFloats];
+    auto floatRegs = std::make_unique<RegVal[]>(numFloats);
     // This is a bit ugly, but needed to maintain backwards
     // compatibility.
-    arrayParamIn(cp, "floatRegs.i", floatRegs, numFloats);
+    arrayParamIn(cp, "floatRegs.i", floatRegs.get(), numFloats);
     for (int i = 0; i < numFloats; ++i)
         tc.setRegFlat(RegId(FloatRegClass, i), floatRegs[i]);
 
@@ -292,15 +295,15 @@ unserialize(ThreadContext &tc, CheckpointIn &cp)
     }
 
     const size_t numInts = regClasses.at(IntRegClass).numRegs();
-    RegVal intRegs[numInts];
-    UNSERIALIZE_ARRAY(intRegs, numInts);
+    auto intRegs = std::make_unique<RegVal[]>(numInts);
+    UNSERIALIZE_ARRAY(intRegs.get(), numInts);
     for (int i = 0; i < numInts; ++i)
         tc.setRegFlat(RegId(IntRegClass, i), intRegs[i]);
 
     const size_t numCcs = regClasses.at(CCRegClass).numRegs();
     if (numCcs) {
-        RegVal ccRegs[numCcs];
-        UNSERIALIZE_ARRAY(ccRegs, numCcs);
+        auto ccRegs = std::make_unique<RegVal[]>(numCcs);
+        UNSERIALIZE_ARRAY(ccRegs.get(), numCcs);
         for (int i = 0; i < numCcs; ++i)
             tc.setRegFlat(RegId(CCRegClass, i), ccRegs[i]);
     }
