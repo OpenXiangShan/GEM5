@@ -14,3 +14,5 @@ class SharingManager(SimObject):
     downstream_snfs = VectorParam.RubyController(
         [], "SNFs downstream of this HNF"
     )
+    xid = Param.Int(-1, "X coordinate of this SNF")
+    yid = Param.Int(-1, "Y coordinate of this SNF")

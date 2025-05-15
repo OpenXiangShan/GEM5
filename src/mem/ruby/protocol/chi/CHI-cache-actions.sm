@@ -801,7 +801,12 @@ action(Initiate_LoadMiss, desc="") {
     tbe.actions.push(Event:CheckCacheFill);
     tbe.actions.push(Event:TagArrayWrite);
   } else if (tbe.doCacheFill) {
-    tbe.actions.push(Event:SendReadShared);
+    int sharingGroup = sharingManager.getSharingDirection(tbe.addr);
+    if (sharingGroup == 0) {
+      tbe.actions.push(Event:SendReadShared);
+    } else {
+      tbe.actions.push(Event:SendReadProxy);
+    }
     tbe.actions.push(Event:CheckCacheFill);
     tbe.actions.push(Event:TagArrayWrite);
   } else {
@@ -809,8 +814,6 @@ action(Initiate_LoadMiss, desc="") {
     tbe.dataToBeInvalid := true;
   }
 }
-
-
 
 action(Initiate_StoreHit, desc="") {
   tbe.actions.push(Event:DataArrayRead);
@@ -1548,12 +1551,24 @@ action(Send_ReadShared, desc="") {
       prepareRequest(tbe, CHIRequestType:ReadNotSharedDirty, out_msg);
     }
     // Destination is set here
-    if (sharingManager.checkSharing(tbe.addr)) {
-      out_msg.Destination.add(sharingManager.getDestination(tbe.addr));
-    } else {
-      out_msg.Destination.add(mapAddressToDownstreamMachine(tbe.addr));
-    }
+    out_msg.Destination.add(mapAddressToDownstreamMachine(tbe.addr));
     out_msg.dataToFwdRequestor := false;
+    allowRequestRetry(tbe, out_msg);
+  }
+}
+
+action(Send_ReadProxy, desc="") {
+  assert(is_HN == false);
+  assert(tbe.dataValid == false);
+
+  clearExpectedReqResp(tbe);
+  tbe.expected_req_resp.addExpectedDataType(CHIDataType:CompData_SC);
+  tbe.dataBlkValid.clear();
+
+  enqueue(reqOutPort, CHIRequestMsg, request_latency) {
+    prepareRequest(tbe, CHIRequestType:ReadProxy, out_msg);
+    out_msg.Destination.add(tbe.forwardTgt);
+    // out_msg.dataToFwdRequestor := false;
     allowRequestRetry(tbe, out_msg);
   }
 }
@@ -4147,3 +4162,5 @@ action(Profile_OutgoingEnd_DVM, desc="") {
   assert(is_valid(tbe));
   outgoingTransactionEnd(address, tbe.rcvdRetryAck, false);
 }
+
+include "CHI-proxy-actions.sm"

@@ -855,7 +855,8 @@ bool needCacheEntry(CHIRequestType req_type,
                                  (req_type == CHIRequestType:AtomicStore))) ||
            (alloc_on_seq_line_write && (req_type == CHIRequestType:StoreLine)) ||
            (alloc_on_atomic && ((req_type == CHIRequestType:AtomicReturn) ||
-                                 (req_type == CHIRequestType:AtomicNoReturn)));
+                                 (req_type == CHIRequestType:AtomicNoReturn))) ||
+            req_type == CHIRequestType:ReadProxy;
   }
 }
 
@@ -1346,7 +1347,11 @@ Event reqToEvent(CHIRequestType type, bool is_prefetch) {
     } else {
       return Event:AtomicNoReturn;
     }
-  } else {
+  } else if (type == CHIRequestType:ReadProxy) {
+    return Event:ReadProxy;
+  } else if (type == CHIRequestType:PushProxy) {
+    type == CHIRequestType:PushProxy;
+  } {
     error("Invalid CHIRequestType");
   }
 }
@@ -1419,6 +1424,10 @@ Event respToEvent (CHIResponseType type, TBE tbe) {
         return Event:PCrdGrant;
       }
     }
+  } else if (type == CHIResponseType:CompDBIDRespProxy) {
+    return Event:CompDBIDRespProxy;
+  } else if (type == CHIResponseType:CompAckProxy) {
+    return Event:CompAckProxy;
   } else {
     error("Invalid CHIResponseType");
   }
@@ -1475,6 +1484,8 @@ Event dataToEvent (CHIDataType type) {
     return Event:SnpRespData_I_PD_Fwded_SC;
   } else if (type == CHIDataType:SnpRespData_I_Fwded_SC) {
     return Event:SnpRespData_I_Fwded_SC;
+  } else if (type == CHIDataType:CompDataProxy) {
+    return Event:CompDataProxy;
   } else {
     error("Invalid CHIDataType");
   }
@@ -1569,4 +1580,17 @@ bool checkResourceAvailable(RequestType request_type, Addr addr) {
     DPRINTF(RubySlicc, "Resource %s not available for addr: %#x\n", request_type, addr);
   }
   return avail;
+}
+
+int getXid() {
+  return xid;
+}
+
+int getYid() {
+  return yid;
+}
+
+SharingManager *
+AbstractController::getSharingManager() const {
+  return sharingManager;
 }

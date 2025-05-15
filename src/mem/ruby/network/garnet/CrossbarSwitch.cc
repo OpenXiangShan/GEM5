@@ -77,6 +77,8 @@ CrossbarSwitch::wakeup()
         flit *t_flit = switch_buffer.peekTopFlit();
         if (t_flit->is_stage(ST_, curTick())) {
             int outport = t_flit->get_outport();
+            DPRINTF(RubyNetwork, "CrossbarSwitch at Router %d sending flit %d ",
+                    m_router->get_id(), t_flit->get_msg_ptr());
 
             // flit performs LT_ in the next cycle
             t_flit->advance_stage(LT_, m_router->clockEdge(Cycles(1)));

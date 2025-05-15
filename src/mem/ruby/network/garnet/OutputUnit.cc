@@ -135,6 +135,9 @@ OutputUnit::wakeup()
     if (m_credit_link->isReady(curTick())) {
         Credit *t_credit = (Credit*) m_credit_link->consumeLink();
         increment_credit(t_credit->get_vc());
+        DPRINTF(RubyNetwork, "Router %d OutputUnit %s received credit on vc %d",
+                m_router->get_id(), m_router->getPortDirectionName(get_direction()),
+                t_credit->get_vc());
 
         if (t_credit->is_free_signal())
             set_vc_state(IDLE_, t_credit->get_vc(), curTick());

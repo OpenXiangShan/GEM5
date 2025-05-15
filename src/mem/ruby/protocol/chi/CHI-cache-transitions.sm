@@ -1231,6 +1231,13 @@ transition(BUSY_BLKD, SendReadShared, BUSY_INTR) {DestinationAvailable} {
   ProcessNextState_ClearPending;
 }
 
+transition(BUSY_BLKD, SendReadProxy, BUSY_INTR) {DestinationAvailable} {
+  Pop_TriggerQueue;
+  Send_ReadProxy;
+  Profile_OutgoingStart;
+  ProcessNextState_ClearPending;
+}
+
 transition(BUSY_BLKD, SendReadOnce, BUSY_INTR) {DestinationAvailable} {
   Pop_TriggerQueue;
   Send_ReadOnce;
@@ -1486,6 +1493,66 @@ transition({BUSY_BLKD,BUSY_INTR},
   Profile_OutgoingEnd_DataResp;
   Pop_DataInQueue;
   ProcessNextState;
+}
+
+// Downstream replies data
+transition({BUSY_PROXY}, {CompData_SC}) {
+  Receive_RespSepDataFromCompData;
+  Receive_ReqDataResp;
+  UpdateDataState_FromReqDataResp;
+  Callback_Miss; // TODO, if this is a push then no need to callback
+  Try_Push; // If not received readshared from neighbour, push to it
+  Profile_OutgoingEnd_DataResp;
+  Pop_DataInQueue;
+  ProcessNextState;
+}
+
+transition({BUSY_PROXY}, {CompAck}) {
+  Receive_ReqResp;
+  UpdateDirState_FromReqResp;
+  Pop_RespInQueue;
+  ProcessNextState;
+}
+
+transition({I}, {ReadProxy}, {BUSY_PROXY}) {
+  Initiate_Request;
+  Initiate_Proxy;
+  Allocate_DirEntry;
+  Pop_ReqRdyQueue;
+  ProcessNextState;
+}
+
+transition({BUSY_PROXY}, {ReadProxy}) {
+  ReadProxy_Pending; // If data is ready satisfy the request. If not, block until Compdata
+  ProcessNextState;
+}
+
+// Push data to neighbour once 
+transition({BUSY_PROXY}, {SendProxyData}) {
+  ProcessNextState;
+}
+
+transition({BUSY_PROXY}, {RetryAck}) {
+  Receive_ReadReceipt;
+  Pop_RespInQueue;
+  ProcessNextState;
+}
+
+transition({BUSY_BLKD}, {ReadProxy, SendProxyData}) {
+  Proxy_Error;
+}
+
+transition({BUSY_PROXY}, {PushProxy}) {
+  Discard_Push;
+}
+
+transition({SC, UC, UD, UD_RSC, UD_RSD, UD_T}, {PushProxy}) {
+  Proxy_Error;
+}
+
+transition({BUSY_PROXY}, {Load}) {
+  // TODO Add perf counter?
+  StallRequest;
 }
 
 transition(BUSY_INTR, ReadReceipt, BUSY_BLKD) {

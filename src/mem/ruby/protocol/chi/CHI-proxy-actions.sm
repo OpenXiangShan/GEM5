@@ -1,0 +1,49 @@
+action(Proxy_Error, desc="Error related to proxy transaction") {
+    printTBEState("Proxy Error", tbe);
+    error("Error condition encountered - printing state before exit");
+}
+
+action(Try_Push, desc="Push data to next neighbour") {
+
+    // Get upstream id
+    MachineID upstream = sharingManager.getUpstream(tbe.addr);
+    if (upstream != MachineID::Null) {
+        // Need push
+        if (tbe.upstream_pending) {
+            // If upstream already sent a readproxy, reply with data
+            tbe.actions.push(Event:SendData)
+        } else {
+            // send Push to upstream
+            tbe.push_sent = true;
+        }
+    }
+}
+
+action(ReadProxy_Pending, desc="Receive upstream ReadProxy") {
+    MachineID upstream = sharingManager.getUpstream(tbe.addr);
+    assert(upstream = inport.machineid);
+    if (hasData) {
+        // When downstream already sent push, replay the upstream readproxy only
+        tbe.actions.push(Event:SendData);
+    } else {
+        tbe.upstream_pending = true;
+    }
+    if (tbe.push_sent) {
+        tbe.ignore_push = true;
+    }
+}
+
+action(Initiate_Proxy, desc="Proxy transaction initiated by upstream") {
+    MachineID upstream = sharingManager.getUpstream(tbe.addr);
+    assert(upstream = inport.machineid);
+    assert(is_HN == false);
+    int sharingGroup = sharingManager.getSharingDirection(tbe.addr);
+    assert(sharingGroup != SharingDirection::None);
+    tbe.actions.push(Event:SendReadProxy);
+    tbe.actions.push(Event:CheckCacheFill);
+    tbe.actions.push(Event:TagArrayWrite);
+}
+
+action(Discard_Push, desc="Discard push from downstream") {
+    DPRINTF(RubySlicc, "Downstream sent a push but upstream already in proxy request\n");
+}

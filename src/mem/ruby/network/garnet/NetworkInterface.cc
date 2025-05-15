@@ -211,6 +211,7 @@ NetworkInterface::wakeup()
 
         if (b->isReady(curTime)) { // Is there a message waiting
             msg_ptr = b->peekMsgPtr();
+            DPRINTF(RubyNetwork, "Message ready in protocol buffer:%s\n",*msg_ptr);
             if (flitisizeMessage(msg_ptr, vnet)) {
                 b->dequeue(curTime);
             }
@@ -248,6 +249,7 @@ NetworkInterface::wakeup()
 
                     // Simply send a credit back since we are not buffering
                     // this flit in the NI
+                    DPRINTF(RubyNetwork, "Sending free credit because received tail flit on port %s\n", iPort);
                     Credit *cFlit = new Credit(t_flit->get_vc(),
                                                true, curTick());
                     iPort->sendCredit(cFlit);
@@ -266,6 +268,7 @@ NetworkInterface::wakeup()
                         dequeueCallback(); });
                 }
             } else {
+                DPRINTF(RubyNetwork, "Send non-free credit because received non-tail flit on port %s\n", iPort);
                 // Non-tail flit. Send back a credit but not VC free signal.
                 Credit *cFlit = new Credit(t_flit->get_vc(), false,
                                                curTick());
@@ -286,6 +289,7 @@ NetworkInterface::wakeup()
         CreditLink *inCreditLink = oPort->inCreditLink();
         if (inCreditLink->isReady(curTick())) {
             Credit *t_credit = (Credit*) inCreditLink->consumeLink();
+            DPRINTF(RubyNetwork, "Received credit:%s on port %s\n", *t_credit, oPort);
             outVcState[t_credit->get_vc()].increment_credit();
             if (t_credit->is_free_signal()) {
                 outVcState[t_credit->get_vc()].setState(IDLE_,
@@ -336,6 +340,7 @@ NetworkInterface::checkStallQueue()
 
                     // Send back a credit with free signal now that the
                     // VC is no longer stalled.
+                    DPRINTF(RubyNetwork, "Sending free credit because check_stall_queue, on port %s\n", iPort);
                     Credit *cFlit = new Credit(stallFlit->get_vc(), true,
                                                    curTick());
                     iPort->sendCredit(cFlit);
@@ -381,6 +386,9 @@ NetworkInterface::flitisizeMessage(MsgPtr msg_ptr, int vnet)
     int num_flits = (int)divCeil((float) m_net_ptr->MessageSizeType_to_int(
         net_msg_ptr->getMessageSize()), (float)oPort->bitWidth());
 
+    DPRINTF(RubyNetwork, "flit Size:%f bitwidth:%f\n", (float) m_net_ptr->MessageSizeType_to_int(
+        net_msg_ptr->getMessageSize()), (float)oPort->bitWidth());
+
     DPRINTF(RubyNetwork, "Message Size:%d vnet:%d bitWidth:%d\n",
         m_net_ptr->MessageSizeType_to_int(net_msg_ptr->getMessageSize()),
         vnet, oPort->bitWidth());
@@ -392,6 +400,7 @@ NetworkInterface::flitisizeMessage(MsgPtr msg_ptr, int vnet)
         int vc = calculateVC(vnet);
 
         if (vc == -1) {
+            DPRINTF(RubyNetwork, "No free VC available for dest %d\n", dest_nodes[ctr]);
             return false ;
         }
         MsgPtr new_msg_ptr = msg_ptr->clone();
@@ -437,6 +446,7 @@ NetworkInterface::flitisizeMessage(MsgPtr msg_ptr, int vnet)
         m_net_ptr->increment_injected_packets(vnet);
         m_net_ptr->update_traffic_distribution(route);
         int packet_id = m_net_ptr->getNextPacketID();
+        DPRINTF(RubyNetwork, "Inserted flit %s total number %d\n", *net_msg_ptr, num_flits);
         for (int i = 0; i < num_flits; i++) {
             m_net_ptr->increment_injected_flits(vnet);
             flit *fl = new flit(packet_id,
@@ -493,9 +503,10 @@ NetworkInterface::scheduleOutputPort(OutputPort *oPort)
        int t_vnet = get_vnet(vc);
        if (oPort->isVnetSupported(t_vnet)) {
            // model buffer backpressure
-           if (niOutVcs[vc].isReady(curTick()) &&
+           DPRINTF(RubyNetwork, "Interface scheduling output port vc %d is_ready %d has_credit %d\n",
+                vc, niOutVcs[vc].isReady(curTick()), outVcState[vc].has_credit());
+           if (niOutVcs[vc].isReady(curTick()) && // This did not become ready for the first few flits
                outVcState[vc].has_credit()) {
-
                bool is_candidate_vc = true;
                int vc_base = t_vnet * m_vc_per_vnet;
 
@@ -523,6 +534,7 @@ NetworkInterface::scheduleOutputPort(OutputPort *oPort)
                // Just removing the top flit
                flit *t_flit = niOutVcs[vc].getTopFlit();
                t_flit->set_time(clockEdge(Cycles(1)));
+               DPRINTF(RubyNetwork, "Interface scheduled a flit output port vc %d %s\n", vc, *t_flit);
 
                // Scheduling the flit
                scheduleFlit(t_flit);

@@ -184,6 +184,8 @@ machine(MachineType:Cache, "Cache coherency protocol") :
   bool enable_proxy := "False";
   SharingManager * sharingManager;
 
+  // int xid, default="-1";
+  // int yid, default="-1";
   // Message Queues
 
   // Interface to the network
@@ -568,6 +570,10 @@ machine(MachineType:Cache, "Cache coherency protocol") :
 
     DelayedL1DResult, desc="L1 result delayed, due to a miss";
 
+    // Proxied requests
+    ReadProxy, desc="ReadShared that is sent to RNs, need to be proxied to HNs";
+    PushProxy, desc="Push data to another HN using write transaction";
+
     // This is triggered once a transaction doesn't have
     // any queued action and is not expecting responses/data. The transaction
     // is finalized and the next stable state is stored in the cache/directory
@@ -774,6 +780,11 @@ machine(MachineType:Cache, "Cache coherency protocol") :
     bool wakeup_pending_req;
     bool wakeup_pending_snp;
     bool wakeup_pending_tgr;
+
+    //
+    bool proxyTBE;
+    MachineID forwardTgt;
+    MachineID backwardTgt;
   }
 
   // TBE table definition
