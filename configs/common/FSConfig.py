@@ -683,6 +683,12 @@ def makeBareMetalXiangshanSystem(mem_mode, mdesc=None, cmdline=None, np=1, ruby=
     self.lint.pio_addr = 0x38000000
     self.lint.num_threads = np
 
+    # add RTC device and connect to CLINT
+    from m5.objects.RTC import RiscvRTC
+    from m5.params import Frequency
+    self.rtc = RiscvRTC(frequency=Frequency("100MHz"))
+    self.lint.int_pin = self.rtc.int_pin
+
     self.mmcs = NemuMMC()
     self.mmcs.pio = self.iobus.mem_side_ports
 
