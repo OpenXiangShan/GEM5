@@ -49,7 +49,12 @@ def create_prefetcher(cpu, cache_level, options):
         if options.l1d_enable_opt:
             prefetcher.enable_opt = True
 
+        prefetcher.region_size = options.l1d_sms_region_size
+        prefetcher.act_entries = options.l1d_act_entries
+        prefetcher.pht_entries = options.l1d_pht_entries
+        prefetcher.pht_assoc = options.l1d_pht_associativity
         prefetcher.pht_pf_level = 2 if options.kmh_align else options.pht_pf_level
+
         prefetcher.short_stride_thres = options.short_stride_thres
         # prefetcher.enable_temporal = not options.kmh_align
         prefetcher.fuzzy_stride_matching = False
@@ -63,7 +68,6 @@ def create_prefetcher(cpu, cache_level, options):
 
         prefetcher.queue_size = 128
         prefetcher.max_prefetch_requests_with_pending_translation = 128
-        prefetcher.region_size = 64*16  # 64B * blocks per region
 
         prefetcher.berti.use_byte_addr = True
         prefetcher.berti.aggressive_pf = False

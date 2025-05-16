@@ -324,6 +324,14 @@ def addCommonOptions(parser, configure_xiangshan=False):
     parser.add_argument("--short-stride-thres", action="store", default=0, type=int,
                         help="""
                         Ignore short strides when seen long strides for stride, 0 for turning off""")
+    parser.add_argument("--l1d-sms-region-size", action="store", default=1024,
+                        help="the region size of L1D SMS")
+    parser.add_argument("--l1d-act-entries", action="store", default="32",
+                        help="the number of active page entries")
+    parser.add_argument("--l1d-pht-entries", action="store", default="64",
+                        help="the number of PHT entries")
+    parser.add_argument("--l1d-pht-associativity", action="store", default=4,
+                        help="the associativity of PHT")
     parser.add_argument("--pht-pf-level", action="store", default=1,
                         help="""
                         Prefetching cache level for SMS'pht""")
