@@ -333,7 +333,7 @@ class DefaultBTB : public TimedBaseBTBPredictor
     std::queue<std::tuple<Addr, Addr, BTBSet>> aheadReadBtbEntries;
 
     /** BTB configuration parameters */
-    unsigned blockSize{32};  // max size in byte of a Fetch Block
+    uint64_t blockSize{32};  // max size in byte of a Fetch Block
     unsigned numEntries;    // Total number of entries
     unsigned numWays;       // Number of ways per set
     unsigned numSets;       // Number of sets (numEntries/numWays)
