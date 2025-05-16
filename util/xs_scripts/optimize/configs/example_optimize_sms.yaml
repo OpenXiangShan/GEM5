@@ -1,0 +1,130 @@
+environment:
+  gem5_home: "" # replace with your gem5 home
+  bin_home:  "" # replace with your directory where gem5 binary is located
+  gem5_data_proc_home: "" # [gem5_data_proc](https://github.com/shinezyy/gem5_data_proc)
+  restorer:
+    type: "GCB_RESTORER"
+    path: ""  # if checkpoint has included restorer, leave it empty
+  ref_so: 
+    type: "GCBV_REF_SO"
+    path: "/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so"
+
+running:
+  gem5_bin: "" # replace with your gem5 binary
+  output_base_dir: "./output/Optimize/sms"
+  resume: false
+  max_proc_per_server: 4
+
+workloads:     
+  workloads_path: "" # replace with your directory where workloads are located
+  run_weight: 0.5
+  workload_list:
+    # SPEC CPU2006 INT
+    - "perlbench_checkspam"
+    - "perlbench_diffmail"
+    - "perlbench_splitmail"
+    - "bzip2_chicken"
+    - "bzip2_combined"
+    - "bzip2_html"
+    - "bzip2_liberty"
+    - "bzip2_program"
+    - "bzip2_source" 
+    - "gcc_166"
+    - "gcc_200"
+    - "gcc_cpdecl"
+    - "gcc_expr"
+    - "gcc_expr2"
+    - "gcc_g23"
+    - "gcc_s04"
+    - "gcc_scilab"
+    - "gcc_typeck"
+    - "mcf"
+    - "gobmk_13x13"
+    - "gobmk_nngs"
+    - "gobmk_score2"
+    - "gobmk_trevorc"
+    - "gobmk_trevord"
+    - "hmmer_nph3"
+    - "hmmer_retro"
+    - "sjeng"
+    - "libquantum"
+    - "h264ref_foreman.baseline"
+    - "h264ref_foreman.main"
+    - "h264ref_sss"
+    - "omnetpp"
+    - "astar_biglakes"
+    - "astar_rivers"
+    - "xalancbmk"
+    # SPEC CPU2006 FP
+    # - "bwaves" 
+    # - "gamess_cytosine"
+    # - "gamess_gradient"
+    # - "gamess_triazolium"
+    # - "milc"
+    # - "zeusmp"
+    # - "gromacs"
+    # - "cactusADM"
+    # - "leslie3d"
+    # - "namd"
+    # - "dealII"
+    # - "soplex_pds-50"
+    # - "soplex_ref"
+    # - "povray"
+    # - "calculix"
+    # - "GemsFDTD"
+    # - "tonto"
+    # - "lbm"
+    # - "wrf"
+    # - "sphinx3"
+
+archs:
+  - name: "example-config-kmh_v3"
+    script_file: "configs/example/xiangshan.py"
+
+servers:
+  - "open07"
+  - "open08"
+  - "open09"
+  - "open10"
+  - "open11"
+  - "open12"
+  - "open13"
+  - "open14"
+  - "open15"
+  # - "open16", # Ryzen 9 5950X 16c32t
+  # - "open17", # Ryzen 9 5950X 16c32t
+  # - "open18", # Ryzen 9 5950X 16c32t
+  # - "open19", # Ryzen 9 5950X 16c32t
+  # - "open20", # Ryzen 9 5950X 16c32t
+  - "open21"
+  - "open22"
+  - "open23"
+  - "open24"
+  - "open25"
+  - "open26"
+  - "open27"
+
+optimization:
+  constant_params:
+    - "--ideal-kmhv3"
+    - "--l1d-enable-pht"
+  param_space:
+    - name: "--l1d-act-entries"
+      type: "pow2"
+      min_exp: 4
+      max_exp: 6
+    - name: "--l1d-pht-entries"
+      type: "pow2"
+      min_exp: 5
+      max_exp: 10
+    - name: "--l1d-pht-associativity"
+      type: "pow2"
+      min_exp: 1
+      max_exp: 6
+    - name: "--pht-pf-level"
+      type: "categorical"
+      values: [1, 2, 3]
+      
+
+
+

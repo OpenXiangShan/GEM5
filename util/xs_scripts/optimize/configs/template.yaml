@@ -1,0 +1,138 @@
+environment:
+  gem5_home: "/nfs/home/$(whoami)/repos/gem5"
+  bin_home:  "/nfs/home/$(whoami)/repos/gem5/build/RISCV"
+  gem5_data_proc_home: "/nfs/home/$(whoami)/repos/gem5_data_proc" # [gem5_data_proc](https://github.com/shinezyy/gem5_data_proc)
+  restorer:
+    type: "GCB_RESTORER"
+    path: ""  # if checkpoint has included restorer, leave it empty
+  ref_so: 
+    type: "GCBV_REF_SO"
+    path: "/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so"
+
+running:
+  gem5_bin: "gem5.opt"
+  output_base_dir: "/nfs/home/$(whoami)/gem5_output"
+  resume: false
+  max_proc_per_server: 4
+
+workloads:     
+  workloads_path:
+    "/nfs/home/share/jiaxiaoyu/simpoint_checkpoint_archive/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc/zstd-checkpoint-0-0-0"
+  run_weight: 0.5
+  workload_list:
+    # SPEC CPU2006 Int
+    - "perlbench_checkspam"
+    - "perlbench_diffmail"
+    - "perlbench_splitmail"
+    - "bzip2_chicken"
+    - "bzip2_combined"
+    - "bzip2_html"
+    - "bzip2_liberty"
+    - "bzip2_program"
+    - "bzip2_source" 
+    - "gcc_166"
+    - "gcc_200"
+    - "gcc_cpdecl"
+    - "gcc_expr"
+    - "gcc_expr2"
+    - "gcc_g23"
+    - "gcc_s04"
+    - "gcc_scilab"
+    - "gcc_typeck"
+    - "mcf"
+    - "gobmk_13x13"
+    - "gobmk_nngs"
+    - "gobmk_score2"
+    - "gobmk_trevorc"
+    - "gobmk_trevord"
+    - "hmmer_nph3"
+    - "hmmer_retro"
+    - "sjeng"
+    - "libquantum"
+    - "h264ref_foreman.baseline"
+    - "h264ref_foreman.main"
+    - "h264ref_sss"
+    - "omnetpp"
+    - "astar_biglakes"
+    - "astar_rivers"
+    - "xalancbmk"
+    
+    # SPEC CPU2006 FP
+    - "bwaves" 
+    - "gamess_cytosine"
+    - "gamess_gradient"
+    - "gamess_triazolium"
+    - "milc"
+    - "zeusmp"
+    - "gromacs"
+    - "cactusADM"
+    - "leslie3d"
+    - "namd"
+    - "dealII"
+    - "soplex_pds-50"
+    - "soplex_ref"
+    - "povray"
+    - "calculix"
+    - "GemsFDTD"
+    - "tonto"
+    - "lbm"
+    - "wrf"
+    - "sphinx3"
+
+archs:
+  - name: "example-config-kmh_v3"
+    script_file: "configs/example/xiangshan.py"
+    script_params:
+      - "--ideal-kmhv3"
+      
+  - name: "example-config-kmh_v2"
+    script_file: "configs/example/kmh.py"
+    script_params:
+      - "--kmh-align"
+
+servers:
+  - "open07"
+  - "open08"
+  - "open09"
+  - "open10"
+  - "open11"
+  - "open12"
+  - "open13"
+  - "open14"
+  - "open15"
+  # - "open16", # Ryzen 9 5950X 16c32t
+  # - "open17", # Ryzen 9 5950X 16c32t
+  # - "open18", # Ryzen 9 5950X 16c32t
+  # - "open19", # Ryzen 9 5950X 16c32t
+  # - "open20", # Ryzen 9 5950X 16c32t
+  - "open21"
+  - "open22"
+  - "open23"
+  - "open24"
+  - "open25"
+  - "open26"
+  - "open27"
+
+
+optimization:
+  constant_params:    
+    - "--ideal-kmhv3"
+    - "--l1d-enable-pht"
+  param_space:        
+    - name: "--example-categorical"      
+      type: "categorical"            
+      values: ["value1", "value2"]
+    - name: "--example-pow2"            
+      type: "pow2"                   
+      min_exp: 2                     
+      max_exp: 6                     
+    - name: "--example-continuous-float" 
+      type: "float"
+      min_float: 1.0
+      max_float: 10.0
+    - name: "--example-continuous-integer" 
+      type: "integer"
+      min_int: 1
+      max_int: 10
+    - name: "--example-boolean"          
+      type: "boolean"
