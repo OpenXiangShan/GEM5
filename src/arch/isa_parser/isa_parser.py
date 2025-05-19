@@ -1152,7 +1152,7 @@ del wrap
     #       decode <field1> [, <field2>]* [default <inst>] { ... }
     #
     def p_top_level_decode_block(self, t):
-        'top_level_decode_block : decode_block'
+        'top_level_decode_block : decode_block_list'
         codeObj = t[1]
         codeObj.wrap_decode_block('''
 using namespace gem5;
@@ -1164,13 +1164,23 @@ StaticInstPtr
 
         codeObj.emit()
 
+    def p_decode_block_list(self, t):
+        '''
+        decode_block_list : decode_block
+        | decode_block_list decode_block
+        '''
+        codeObj = t[1]
+        if len(t) == 3:
+            codeObj += t[2]
+        t[0] = codeObj
+
     def p_decode_block(self, t):
         'decode_block : DECODE ID opt_default LBRACE decode_stmt_list RBRACE'
         default_defaults = self.defaultStack.pop()
         codeObj = t[5]
         # use the "default defaults" only if there was no explicit
         # default statement in decode_stmt_list
-        if not codeObj.has_decode_default:
+        if default_defaults is not None and not codeObj.has_decode_default:
             codeObj += default_defaults
         codeObj.wrap_decode_block('switch (%s) {\n' % t[2], '}\n')
         t[0] = codeObj
@@ -1531,6 +1541,11 @@ StaticInstPtr
     includeRE = re.compile(r'^\s*##include\s+"(?P<filename>[^"]*)".*$',
                            re.MULTILINE)
 
+    # This regular expression matches '$(var)' directives
+    # replace the $(var) with its value
+    envReplaceRE = re.compile(r'^.*\$\((?P<varname>[a-zA-Z_][a-zA-Z0-9_]*)\).*$',
+                             re.MULTILINE)
+
     def replace_include(self, matchobj, dirname):
         """Function to replace a matched '##include' directive with the
         contents of the specified file (with nested ##includes
@@ -1558,6 +1573,15 @@ StaticInstPtr
         # Find any includes and include them
         def replace(matchobj):
             return self.replace_include(matchobj, current_dir)
+
+        def replace_var(matchobj):
+            varname = matchobj.group('varname')
+            if os.environ[varname] is not None:
+                return matchobj.group(0).replace('$(' + varname + ')', os.environ[varname])
+            else:
+                error('Error: variable "%s" not defined' % varname)
+
+        contents = self.envReplaceRE.sub(replace_var, contents)
         contents = self.includeRE.sub(replace, contents)
 
         self.fileNameStack.pop()
