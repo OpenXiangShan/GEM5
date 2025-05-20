@@ -1,7 +1,6 @@
 
 decode QUADRANT {
     0x3: decode OPCODE {
-
         0x01: decode FUNCT3 {
             0x0: decode MOP {
                 0x0: decode LUMOP {
