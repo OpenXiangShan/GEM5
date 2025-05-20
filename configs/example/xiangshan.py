@@ -348,7 +348,7 @@ def setKmhV3IdealParams(args, system):
         cpu.numROBEntries = 640
         cpu.numDQEntries = [32, 16, 16] # 32->36
         cpu.mmu.itb.size = 96
-        
+
         cpu.BankConflictCheck = False   # real bank conflict 0.2 score
         cpu.EnableLdMissReplay = False
         cpu.EnablePipeNukeCheck = False
@@ -372,6 +372,7 @@ def setKmhV3IdealParams(args, system):
                 cpu.branchPred.btb.numEntries = 16384
                 # TODO: BTB TAGE do not bave base table, do not support SC
                 cpu.branchPred.tage.tableSizes = [4096] * 14  # BTB TAGE may need larger table
+                cpu.branchPred.mgsc.enableMGSC = True
 
             cpu.branchPred.tage.enableSC = False # TODO(bug): When numBr changes, enabling SC will trigger an assert
             cpu.branchPred.ftq_size = 256

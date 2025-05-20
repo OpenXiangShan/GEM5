@@ -5,6 +5,7 @@
 
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/pred/btb/stream_struct.hh"
 // #include "debug/FoldedHist.hh"
 
 namespace gem5 {
@@ -24,6 +25,7 @@ class FoldedHist {
         int histLen;     // Length of the original history
         int foldedLen;   // Length of the folded (compressed) history
         int maxShamt;    // Maximum shift amount for history updates
+        HistoryType type;
         boost::dynamic_bitset<> folded;  // The folded history bits
         
         // Pre-calculated positions for efficient history updates
@@ -37,8 +39,8 @@ class FoldedHist {
          * @param foldedLen Length of the folded (compressed) history
          * @param maxShamt Maximum number of bits to shift during updates
          */
-        FoldedHist(int histLen, int foldedLen, int maxShamt) :
-            histLen(histLen), foldedLen(foldedLen), maxShamt(maxShamt)
+        FoldedHist(int histLen, int foldedLen, int maxShamt, HistoryType type=HistoryType::GLOBAL) :
+            histLen(histLen), foldedLen(foldedLen), maxShamt(maxShamt), type(type)
             {
                 folded.resize(foldedLen);
                 for (int i = 0; i < maxShamt; i++) {
@@ -60,7 +62,7 @@ class FoldedHist {
          * @param shamt Number of bits to shift
          * @param taken Whether the branch was taken
          */
-        void update(const boost::dynamic_bitset<> &ghr, int shamt, bool taken);
+        void update(const boost::dynamic_bitset<> &ghr, int shamt, bool taken, Addr pc=0);
 
         /**
          * Recover the folded history from another instance

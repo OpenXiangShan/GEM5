@@ -4,7 +4,7 @@
 #include <array>
 #include <queue>
 #include <stack>
-#include <utility> 
+#include <utility>
 #include <vector>
 
 #include "arch/generic/pcstate.hh"
@@ -16,6 +16,7 @@
 #include "cpu/pred/btb/btb_ittage.hh"
 #include "cpu/pred/btb/btb_tage.hh"
 #include "cpu/pred/btb/btb_ubtb.hh"
+#include "cpu/pred/btb/btb_mgsc.hh"
 #include "cpu/pred/btb/fetch_target_queue.hh"
 #include "cpu/pred/btb/jump_ahead_predictor.hh"
 #include "cpu/pred/btb/loop_buffer.hh"
@@ -55,7 +56,7 @@ using CPU = o3::CPU;
 /**
  * @class DecoupledBPUWithBTB
  * @brief A decoupled branch predictor implementation using BTB-based design
- * 
+ *
  * This predictor implements a decoupled front-end with:
  * - Multiple prediction stages (UBTB -> BTB/TAGE/ITTAGE)
  * - Fetch Target Queue (FTQ) for managing predicted targets
@@ -101,7 +102,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     DefaultBTB *btb{};
     BTBTAGE *tage{};
     BTBITTAGE *ittage{};
-    
+    BTBMGSC *mgsc{};
+
     btb_pred::BTBRAS *ras{};
     // btb_pred::BTBuRAS *uras{};
 
@@ -142,7 +144,11 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     Addr s0PC;                  ///< Current PC
     // Addr s0StreamStartPC;
-    boost::dynamic_bitset<> s0History;  ///< History bits
+    boost::dynamic_bitset<> s0History;  ///< global History bits
+    boost::dynamic_bitset<> s0PHistory;  ///< path History bits
+    boost::dynamic_bitset<> s0BwHistory;  ///< global backward History bits
+    boost::dynamic_bitset<> s0IHistory;  ///< IMLI History bits
+    std::vector<boost::dynamic_bitset<>> s0LHistory;  ///< local History bits
     FullBTBPrediction finalPred;      ///< Final prediction
 
     boost::dynamic_bitset<> commitHistory;
@@ -184,6 +190,8 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     // TODO: compare phr and ghr
     void histShiftIn(int shamt, bool taken, boost::dynamic_bitset<> &history);
+
+    void pHistShiftIn(int shamt, bool taken, boost::dynamic_bitset<> &history, Addr pc);
 
     void printStream(const FetchStream &e)
     {
@@ -233,7 +241,7 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     /**
      * @brief Generate final prediction from all stages
-     * 
+     *
      * Collects predictions from all stages and:
      * - Selects most accurate prediction
      * - Generates necessary bubbles
@@ -276,7 +284,7 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     /**
      * @brief Statistics collection for branch prediction
-     * 
+     *
      * Tracks detailed statistics about:
      * - Branch types and mispredictions
      * - Predictor component usage
@@ -349,7 +357,7 @@ class DecoupledBPUWithBTB : public BPredUnit
   public:
     /**
      * @brief Main prediction cycle function
-     * 
+     *
      * This function handles:
      * - FSQ/FTQ management
      * - Prediction generation
@@ -510,7 +518,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     std::string buf1, buf2;
 
     std::stack<Addr> streamRAS;
-    
+
     bool debugFlagOn{false};
 
     std::map<Addr, int> takenBranches;      // branch address -> taken count
@@ -779,7 +787,8 @@ class DecoupledBPUWithBTB : public BPredUnit
         const PCStateBase &squash_pc,
         bool is_conditional,
         bool actually_taken,
-        SquashType squash_type);
+        SquashType squash_type,
+        Addr redirect_pc);
 
     // Common logic for squash handling
     void handleSquash(unsigned target_id,

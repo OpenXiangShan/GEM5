@@ -28,46 +28,126 @@ namespace btb_pred {
  * After XOR & shift: [1,0,1,1]
  */
 void
-FoldedHist::update(const boost::dynamic_bitset<> &ghr, int shamt, bool taken)
+FoldedHist::update(const boost::dynamic_bitset<> &ghr, int shamt, bool taken, Addr pc)
 {
     // Create temporary bitset for manipulation
-    boost::dynamic_bitset<> temp(folded);
+    if(type == HistoryType::GLOBAL || type == HistoryType::GLOBALBW || type == HistoryType::LOCAL){
+        boost::dynamic_bitset<> temp(folded);
+        // Case 1: When folded length >= history length
+        if (foldedLen >= histLen) {
+            // Simple shift and set case
+            temp <<= shamt;
+            // Clear any bits beyond histLen
+            for (int i = histLen; i < foldedLen; i++) {
+                temp[i] = 0;
+            }
+            // Set the newest bit based on branch outcome
+            temp[0] = taken;
+        }
+        // Case 2: When folded length < history length
+        else {
+            // Step 1: Handle the bits that would be lost in shift
+            temp.resize(foldedLen + shamt);
+            for (int i = 0; i < shamt; i++) {
+                // XOR the highest bits from GHR with corresponding positions in folded history
+                temp[posHighestBitsInOldFoldedHist[i]] ^= ghr[posHighestBitsInGhr[i]];
+            }
 
-    // Case 1: When folded length >= history length
-    if (foldedLen >= histLen) {
-        // Simple shift and set case
-        temp <<= shamt;
-        // Clear any bits beyond histLen
-        for (int i = histLen; i < foldedLen; i++) {
-            temp[i] = 0;
-        }
-        // Set the newest bit based on branch outcome
-        temp[0] = taken;
-    } 
-    // Case 2: When folded length < history length
-    else {
-        // Step 1: Handle the bits that would be lost in shift
-        temp.resize(foldedLen + shamt);
-        for (int i = 0; i < shamt; i++) {
-            // XOR the highest bits from GHR with corresponding positions in folded history
-            temp[posHighestBitsInOldFoldedHist[i]] ^= ghr[posHighestBitsInGhr[i]];
-        }
+            // Step 2: Perform the shift
+            temp <<= shamt;
 
-        // Step 2: Perform the shift
-        temp <<= shamt;
-        
-        // Step 3: Copy the XORed bits back to lower positions
-        for (int i = 0; i < shamt; i ++) {
-            temp[i] = temp[foldedLen + i];
+            // Step 3: Copy the XORed bits back to lower positions
+            for (int i = 0; i < shamt; i ++) {
+                temp[i] = temp[foldedLen + i];
+            }
+
+            // Step 4: Add new branch outcome
+            temp[0] ^= taken;
+
+            // Step 5: Restore original size
+            temp.resize(foldedLen);
         }
-        
-        // Step 4: Add new branch outcome
-        temp[0] ^= taken;
-        
-        // Step 5: Restore original size
-        temp.resize(foldedLen);
+        folded = temp;
+    }else if(type == HistoryType::IMLI){
+        // Case 1: When folded length >= history length
+        assert(foldedLen >= histLen); //TODO
+        unsigned temp = folded.to_ulong();
+        if (foldedLen >= histLen) {
+            // Simple shift and set case
+            if(taken && temp < (pow(2, histLen)-1) && shamt == 1){
+                temp = temp + 1;
+            }else if(taken && shamt > 1){
+                temp = 1;
+            }else if(!taken){
+                temp = 0;
+            }
+        }
+        boost::dynamic_bitset<> temp1(temp);
+        temp1.resize(foldedLen);
+        folded = temp1;
+    }else if(type == HistoryType::PATH){
+        if(taken){
+            boost::dynamic_bitset<> temp(folded);
+            // Case 1: When folded length >= history length
+            if (foldedLen >= histLen) {
+                // Simple shift and set case
+                temp <<= 2;
+                // Clear any bits beyond histLen
+                for (int i = histLen; i < foldedLen; i++) {
+                    temp[i] = 0;
+                }
+                // Set the newest bit based on branch outcome
+                temp[0] = (((pc>>1)^(pc>>3)^(pc>>5)^(pc>>7)) & 1);
+                temp[1] = (((pc>>1)^(pc>>3)^(pc>>5)^(pc>>7)) & 2) >> 1;
+            }
+            // Case 2: When folded length < history length
+            else {
+                // Step 1: Handle the bits that would be lost in shift
+                temp.resize(foldedLen + 1);
+                for (int i = 0; i < 1; i++) {
+                    // XOR the highest bits from GHR with corresponding positions in folded history
+                    temp[posHighestBitsInOldFoldedHist[i]] ^= ghr[posHighestBitsInGhr[i]];
+                }
+
+                // Step 2: Perform the shift
+                temp <<= 1;
+
+                // Step 3: Copy the XORed bits back to lower positions
+                for (int i = 0; i < 1; i ++) {
+                    temp[i] = temp[foldedLen + i];
+                }
+
+                // Step 4: Add new branch outcome
+                temp[0] ^= ((((pc>>1)^(pc>>3)^(pc>>5)^(pc>>7)) & 2) >> 1);
+
+                // Step 5: Restore original size
+                temp.resize(foldedLen);
+
+                // Step 1: Handle the bits that would be lost in shift
+                temp.resize(foldedLen + 1);
+                for (int i = 0; i < 1; i++) {
+                    // XOR the highest bits from GHR with corresponding positions in folded history
+                    temp[posHighestBitsInOldFoldedHist[i]] ^= ghr[posHighestBitsInGhr[i]];
+                }
+
+                // Step 2: Perform the shift
+                temp <<= 1;
+
+                // Step 3: Copy the XORed bits back to lower positions
+                for (int i = 0; i < 1; i ++) {
+                    temp[i] = temp[foldedLen + i];
+                }
+
+                // Step 4: Add new branch outcome
+                temp[0] ^= (((pc>>1)^(pc>>3)^(pc>>5)^(pc>>7)) & 1);
+
+                // Step 5: Restore original size
+                temp.resize(foldedLen);
+            }
+            folded = temp;
+        }
     }
-    folded = temp;
+
 }
 
 /**

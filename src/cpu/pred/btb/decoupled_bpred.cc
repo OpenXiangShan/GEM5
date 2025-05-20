@@ -35,6 +35,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       btb(p.btb),
       tage(p.tage),
       ittage(p.ittage),
+      mgsc(p.mgsc),
       ras(p.ras),
     //   uras(p.uras),
       bpDBSwitches(p.bpDBSwitches),
@@ -56,6 +57,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     components.push_back(tage);
     components.push_back(ras);
     components.push_back(ittage);
+    components.push_back(mgsc);
     numComponents = components.size();
     for (int i = 0; i < numComponents; i++) {
         components[i]->setComponentIdx(i);
@@ -88,6 +90,13 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     s0PC = 0x80000000;
 
     s0History.resize(historyBits, 0);
+    s0PHistory.resize(historyBits, 0);
+    s0BwHistory.resize(historyBits, 0);
+    s0IHistory.resize(historyBits, 0);
+    s0LHistory.resize(mgsc->getNumEntriesFirstLocalHistories());
+    for (unsigned int i = 0; i < mgsc->getNumEntriesFirstLocalHistories(); ++i) {
+        s0LHistory[i].resize(historyBits, 0);
+    }
     fetchTargetQueue.setName(name());
 
     commitHistory.resize(historyBits, 0);
@@ -613,7 +622,7 @@ DecoupledBPUWithBTB::requestNewPrediction()
 
         // Query each predictor component with current PC and history
         for (int i = 0; i < numComponents; i++) {
-            components[i]->putPCHistory(s0PC, s0History, predsOfEachStage);
+            components[i]->putPCHistory(s0PC, s0History, predsOfEachStage);  //s0History not used
         }
 
         // Mark that we've sent PC and history to predictors
@@ -912,7 +921,7 @@ DecoupledBPUWithBTB::handleSquash(unsigned target_id,
     squashStreamAfter(stream_id);
 
     // Recover history using the extracted function
-    recoverHistoryForSquash(stream, stream_id, squash_pc, is_conditional, actually_taken, squash_type);
+    recoverHistoryForSquash(stream, stream_id, squash_pc, is_conditional, actually_taken, squash_type, redirect_pc);
 
     // Clear predictions for next cycle
     clearPreds();
@@ -1743,6 +1752,19 @@ DecoupledBPUWithBTB::histShiftIn(int shamt, bool taken, boost::dynamic_bitset<> 
     history[0] = taken;
 }
 
+void
+DecoupledBPUWithBTB::pHistShiftIn(int shamt, bool taken, boost::dynamic_bitset<> &history, Addr pc)
+{
+    if (shamt == 0) {
+        return;
+    }
+    if(taken){
+        history <<= 2;
+        history[0] = (((pc>>1)^(pc>>3)^(pc>>5)^(pc>>7)) & 1);
+        history[1] = (((pc>>1)^(pc>>3)^(pc>>5)^(pc>>7)) & 2) >> 1;
+    }
+}
+
 /**
  * @brief Creates a new FetchStream entry with prediction information
  *
@@ -1775,6 +1797,10 @@ DecoupledBPUWithBTB::createFetchStreamEntry()
 
     // Record current history and prediction metadata
     entry.history = s0History;
+    entry.phistory = s0PHistory;
+    entry.bwhistory = s0BwHistory;
+    entry.ihistory = s0IHistory;
+    entry.lhistory = s0LHistory;
     entry.predTick = finalPred.predTick;
     entry.predSource = finalPred.predSource;
     entry.overrideReason = finalPred.overrideReason;
@@ -1835,6 +1861,8 @@ DecoupledBPUWithBTB::makeNewPrediction(bool create_new_stream)
     // 5. Add entry to fetch stream queue
     auto [insertIt, inserted] = fetchStreamQueue.emplace(fsqId, entry);
     assert(inserted);
+    //printf("curr tick: %lu\n", entry.predTick);
+    //printf("curr fsqId: %lu\n", fsqId);
 
     // 6. Record prediction to database if enabled
     if (enablePredFSQTrace) {
@@ -1850,6 +1878,7 @@ DecoupledBPUWithBTB::makeNewPrediction(bool create_new_stream)
     fsqId++;
     printStream(entry);
     dbpBtbStats.fsqEntryEnqueued++;
+
 }
 
 void
@@ -1929,6 +1958,12 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchStream &entry)
     // Update component-specific history, for TAGE/ITTAGE
     for (int i = 0; i < numComponents; i++) {
         components[i]->specUpdateHist(s0History, finalPred);
+        if(components[i]->needMoreHistories){
+            components[i]->specUpdatePHist(s0PHistory, finalPred);
+            components[i]->specUpdateBwHist(s0BwHistory, finalPred);
+            components[i]->specUpdateIHist(s0IHistory, finalPred);
+            components[i]->specUpdateLHist(s0LHistory, finalPred);
+        }
     }
 
     // Get prediction information for history updates
@@ -1943,6 +1978,30 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchStream &entry)
     historyManager.addSpeculativeHist(
         entry.startPC, shamt, taken, entry.predBranchInfo, fsqId);
     tage->checkFoldedHist(s0History, "speculative update");
+
+    // Get prediction information for global backward history updates
+    int bw_shamt;
+    bool bw_taken;
+    std::tie(bw_shamt, bw_taken) = finalPred.getBwHistInfo();
+
+    // Get prediction information for path history updates
+    int p_shamt=1;
+    bool p_taken;
+    Addr p_pc;
+    std::tie(p_pc, p_taken) = finalPred.getPHistInfo();
+
+    // Update global backward history
+    histShiftIn(bw_shamt, bw_taken, s0BwHistory);
+
+    // Update path history
+    pHistShiftIn(1, taken, s0PHistory, p_pc);
+
+    // Update imli history
+    histShiftIn(bw_shamt, bw_taken, s0IHistory);  //s0IHistory is not used
+
+    // Update local history
+    histShiftIn(shamt, taken,
+        s0LHistory[mgsc->getPcIndex(finalPred.bbStart, log2(mgsc->getNumEntriesFirstLocalHistories()))]);
 }
 
 /**
@@ -1962,10 +2021,16 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     const PCStateBase &squash_pc,
     bool is_conditional,
     bool actually_taken,
-    SquashType squash_type)
+    SquashType squash_type,
+    Addr redirect_pc)
 {
+    //printf("recover stream_id: %u\n", stream_id);
     // Restore history from the stream
     s0History = stream.history;
+    s0PHistory = stream.phistory;
+    s0BwHistory = stream.bwhistory;
+    s0IHistory = stream.ihistory;
+    s0LHistory = stream.lhistory;
 
     // Get actual history shift information
     int real_shamt;
@@ -1973,13 +2038,38 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     std::tie(real_shamt, real_taken) = stream.getHistInfoDuringSquash(
         squash_pc.instAddr(), is_conditional, actually_taken);
 
+    // Get actual history shift information
+    int real_bw_shamt;
+    bool real_bw_taken;
+    std::tie(real_bw_shamt, real_bw_taken) = stream.getBwHistInfoDuringSquash(
+    squash_pc.instAddr(), is_conditional, actually_taken, redirect_pc);
+
     // Recover component-specific history
     for (int i = 0; i < numComponents; ++i) {
         components[i]->recoverHist(s0History, stream, real_shamt, real_taken);
+        if(components[i]->needMoreHistories){
+            components[i]->recoverPHist(s0PHistory, stream, real_shamt, real_taken);
+            components[i]->recoverBwHist(s0BwHistory, stream, real_bw_shamt, real_bw_taken);
+            components[i]->recoverIHist(s0IHistory, stream, real_bw_shamt, real_bw_taken); //s0IHistory is not used
+            components[i]->recoverLHist(s0LHistory, stream, real_shamt, real_taken);
+        }
     }
 
     // Update global history with actual outcome
     histShiftIn(real_shamt, real_taken, s0History);
+
+    // Update path history with actual outcome
+    pHistShiftIn(1, real_taken, s0PHistory, squash_pc.instAddr());
+
+    // Update global backward history with actual outcome
+    histShiftIn(real_bw_shamt, real_bw_taken, s0BwHistory);
+
+    // Update imli history with actual outcome
+    histShiftIn(real_bw_shamt, real_bw_taken, s0IHistory);  //s0IHistory is not used
+
+    // Update local history with actual outcome
+    histShiftIn(real_shamt, real_taken,
+                s0LHistory[mgsc->getPcIndex(stream.startPC, log2(mgsc->getNumEntriesFirstLocalHistories()))]);
 
     // Update history manager with appropriate branch info
     if (squash_type == SQUASH_CTRL) {

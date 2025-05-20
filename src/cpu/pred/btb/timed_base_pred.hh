@@ -41,7 +41,15 @@ class TimedBaseBTBPredictor: public SimObject
     virtual std::shared_ptr<void> getPredictionMeta() { return nullptr; }
 
     virtual void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) {}
+    virtual void specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) {}
+    virtual void specUpdateBwHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) {}
+    virtual void specUpdateIHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) {}
+    virtual void specUpdateLHist(const std::vector<boost::dynamic_bitset<>> &history, FullBTBPrediction &pred) {}
     virtual void recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken) {}
+    virtual void recoverPHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken) {}
+    virtual void recoverBwHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken) {}
+    virtual void recoverIHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken) {}
+    virtual void recoverLHist(const std::vector<boost::dynamic_bitset<>> &history, const FetchStream &entry, int shamt, bool cond_taken) {}
     virtual void update(const FetchStream &entry) {}
     virtual unsigned getDelay() {return numDelay;}
     // do some statistics on a per-branch and per-predictor basis
@@ -49,6 +57,7 @@ class TimedBaseBTBPredictor: public SimObject
 
     int componentIdx;
     unsigned aheadPipelinedStages{0};
+    bool needMoreHistories{false};
     int getComponentIdx() { return componentIdx; }
     void setComponentIdx(int idx) { componentIdx = idx; }
 

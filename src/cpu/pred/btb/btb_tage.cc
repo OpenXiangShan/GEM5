@@ -232,7 +232,8 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
  * @return Map of branch PC addresses to their predicted outcomes
  */
 std::map<Addr, bool>
-BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries)
+BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
+                      std::map<Addr, TageInfoForMGSC> &tageInfoForMgscs)
 {
     // Clear old prediction metadata and save current history state
     meta.preds.clear();
@@ -253,6 +254,15 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
             meta.preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
             cond_takens[btb_entry.pc] = pred.taken || btb_entry.alwaysTaken;
+            tageInfoForMgscs[btb_entry.pc].tage_pred_taken = pred.taken;
+            tageInfoForMgscs[btb_entry.pc].tage_pred_conf_high = pred.mainInfo.found &&
+                                         abs(pred.mainInfo.entry.counter*2 + 1) == 7;
+            tageInfoForMgscs[btb_entry.pc].tage_pred_conf_mid = pred.mainInfo.found &&
+                                         (abs(pred.mainInfo.entry.counter*2 + 1) < 7 &&
+                                         abs(pred.mainInfo.entry.counter*2 + 1) > 1);
+            tageInfoForMgscs[btb_entry.pc].tage_pred_conf_low = !pred.mainInfo.found ||
+                                         (abs(pred.mainInfo.entry.counter*2 + 1) <= 1);
+            tageInfoForMgscs[btb_entry.pc].tage_pred_alt_diff = pred.mainInfo.found && pred.mainInfo.taken() != pred.altInfo.taken();
         }
     }
     return cond_takens;
@@ -280,7 +290,7 @@ BTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Full
     for (int s = getDelay(); s < stagePreds.size(); s++) {
         // TODO: only lookup once for one btb entry in different stages
         auto &stage_pred = stagePreds[s];
-        auto cond_takens = lookupHelper(stream_start, stage_pred.btbEntries);
+        auto cond_takens = lookupHelper(stream_start, stage_pred.btbEntries, stage_pred.tageInfoForMgscs);
         stage_pred.condTakens = cond_takens;
     }
 

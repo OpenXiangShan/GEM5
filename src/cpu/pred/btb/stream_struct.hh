@@ -55,6 +55,15 @@ enum class OverrideReason
     HIST_INFO
 };
 
+enum class HistoryType
+{
+    GLOBAL,
+    GLOBALBW,
+    LOCAL,
+    IMLI,
+    PATH
+};
+
 
 /**
  * @brief Branch information structure containing branch properties and targets
@@ -162,6 +171,30 @@ typedef struct BTBEntry : BranchInfo
 
 }BTBEntry;
 
+/**
+ * @brief Tage prediction info for MGSC
+ */
+typedef struct TageInfoForMGSC
+{
+    // tage info
+    bool tage_pred_taken;
+    bool tage_pred_conf_high;
+    bool tage_pred_conf_mid;
+    bool tage_pred_conf_low;
+    bool tage_pred_alt_diff;
+
+    // Addr offset; // retrived from lowest bits of pc
+    TageInfoForMGSC() : tage_pred_taken(false), tage_pred_conf_high(false),
+                        tage_pred_conf_mid(false), tage_pred_conf_low(false),
+                        tage_pred_alt_diff(false){}
+    TageInfoForMGSC(bool tage_pred_taken, bool tage_pred_conf_high, bool tage_pred_conf_mid,
+                    bool tage_pred_conf_low, bool tage_pred_alt_diff) :
+                    tage_pred_taken(tage_pred_taken), tage_pred_conf_high(tage_pred_conf_high),
+                    tage_pred_conf_mid(tage_pred_conf_mid), tage_pred_conf_low(tage_pred_conf_low),
+                    tage_pred_alt_diff(tage_pred_alt_diff) {}
+
+}TageInfoForMGSC;
+
 typedef struct LFSR64 {
     uint64_t lfsr;
     LFSR64() : lfsr(0x1234567887654321UL) {}
@@ -251,10 +284,14 @@ typedef struct FetchStream
 
     // prediction metas
     // FIXME: use vec
-    std::array<std::shared_ptr<void>, 6> predMetas; // each component has a meta
+    std::array<std::shared_ptr<void>, 7> predMetas; // each component has a meta, TODO
 
     Tick predTick;         // tick of the prediction
     boost::dynamic_bitset<> history; // record GHR/s0History
+    boost::dynamic_bitset<> phistory; // record PATH/s0History
+    boost::dynamic_bitset<> bwhistory; // record BWHR/s0History
+    boost::dynamic_bitset<> ihistory; // record IHR/s0History
+    std::vector<boost::dynamic_bitset<>> lhistory; // record LHR/s0History
     std::queue<Addr> previousPCs; // previous PCs, used by ahead BTB
 
     // for profiling
@@ -279,6 +316,10 @@ typedef struct FetchStream
          predSource(0),
          predTick(0),
          history(),
+         phistory(),
+         bwhistory(),
+         ihistory(),
+         lhistory(),
          fetchInstNum(0),
          commitInstNum(0)
    {
@@ -317,6 +358,22 @@ typedef struct FetchStream
         if (is_cond) {
             shamt++;
             cond_taken = actually_taken;
+        }
+        return std::make_pair(shamt, cond_taken);
+    }
+
+    std::pair<int, bool> getBwHistInfoDuringSquash(Addr squash_pc, bool is_cond, bool actually_taken, Addr target)
+    {
+        int shamt = 0;
+        int cond_taken = false;
+        for (auto &entry : predBTBEntries) {
+            if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
+                shamt++;
+            }
+        }
+        if (is_cond) {
+            shamt++;
+            cond_taken = actually_taken && (squash_pc > target);
         }
         return std::make_pair(shamt, cond_taken);
     }
@@ -368,6 +425,8 @@ typedef struct FullBTBPrediction
     // for indirect predictor, mapped with lowest bits of branches
     std::map<Addr, Addr> indirectTargets; // {branch pc -> target pc} maps
     Addr returnTarget; // for RAS
+
+    std::map<Addr, TageInfoForMGSC> tageInfoForMgscs;
 
     unsigned predSource;
     OverrideReason overrideReason;
@@ -484,7 +543,7 @@ typedef struct FullBTBPrediction
     std::vector<boost::dynamic_bitset<>> indexFoldedHist;
     std::vector<boost::dynamic_bitset<>> tagFoldedHist;
 
-    std::pair<int, bool> getHistInfo()
+    std::pair<int, bool> getHistInfo()  //global or local
     {
         int shamt = 0;
         bool taken = false;
@@ -506,6 +565,54 @@ typedef struct FullBTBPrediction
             }
         }
         return std::make_pair(shamt, taken);
+    }
+
+    std::pair<int, bool> getBwHistInfo() //global backward or imli
+    {
+        int shamt = 0;
+        bool taken = false;
+        for (auto &entry : btbEntries) {
+            if (entry.valid) {
+                if (entry.isCond) {
+                    shamt++;
+                    auto it = condTakens.find(entry.pc);
+                    if (it != condTakens.end()) {
+                        if (it->second) {
+                            taken = (entry.target < entry.pc);
+                            break;
+                        }
+                    }
+                } else {
+                    // uncond
+                    break;
+                }
+            }
+        }
+        return std::make_pair(shamt, taken);
+    }
+
+    std::pair<Addr, bool> getPHistInfo() //path
+    {
+        bool taken = false;
+        Addr pc = 0;
+        for (auto &entry : btbEntries) {
+            if (entry.valid) {
+                if (entry.isCond) {
+                    auto it = condTakens.find(entry.pc);
+                    if (it != condTakens.end()) {
+                        if (it->second) {
+                            taken = true;
+                            pc = entry.pc;
+                            break;
+                        }
+                    }
+                } else {
+                    // uncond
+                    break;
+                }
+            }
+        }
+        return std::make_pair(pc, taken);
     }
 
 }FullBTBPrediction;

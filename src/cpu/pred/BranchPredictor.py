@@ -71,14 +71,14 @@ class ITTAGE(IndirectPredictor):
     histLengths = VectorParam.Int(
         [4, 10, 16, 27, 44, 60, 96, 109, 219, 449, 487], "the ITTAGE T1~Tn history length")
     simpleBTBSize = Param.Unsigned(512, "size of base predictor")
-    
+
 
 class BranchPredictor(SimObject):
     type = 'BranchPredictor'
     cxx_class = 'gem5::branch_prediction::BPredUnit'
     cxx_header = "cpu/pred/bpred_unit.hh"
     abstract = True
-    
+
     numThreads = Param.Unsigned(Parent.numThreads, "Number of threads")
     BTBEntries = Param.Unsigned(4096, "Number of BTB entries")
     BTBTagSize = Param.Unsigned(16, "Size of the BTB tags, in bits")
@@ -845,7 +845,7 @@ class DecoupledStreamBPU(BranchPredictor):
 
     # stream_pred = Param.StreamPredictor(StreamPredictor(),
     # "backing stream predictor")
-    
+
     stream_tage = Param.StreamTAGE(StreamTAGE(), "slower but accurate stream predictor (L2)")
     stream_ubtb = Param.StreamUBTB(StreamUBTB(), "fast stream predictor (L1)")
     loop_detector = Param.StreamLoopDetector(StreamLoopDetector(), "loop detector")
@@ -859,7 +859,7 @@ class TimedBaseFTBPredictor(SimObject):
     type = 'TimedBaseFTBPredictor'
     cxx_class = 'gem5::branch_prediction::ftb_pred::TimedBaseFTBPredictor'
     cxx_header = "cpu/pred/ftb/timed_base_pred.hh"
-    
+
     numBr = Param.Unsigned(Parent.numBr, "Number of maximum branches per entry")
     predictWidth = Param.Unsigned(Parent.predictWidth, "The width of prediction/fetch block")
     # subclass are encouraged to explicitly declare latency as numDelay
@@ -869,7 +869,7 @@ class DefaultFTB(TimedBaseFTBPredictor):
     type = 'DefaultFTB'
     cxx_class = 'gem5::branch_prediction::ftb_pred::DefaultFTB'
     cxx_header = 'cpu/pred/ftb/ftb.hh'
-    
+
     numEntries = Param.Unsigned(2048, "Number of entries in the FTB")
     tagBits = Param.Unsigned(20, "Number of bits in the tag")
     instShiftAmt = Param.Unsigned(1, "Amount to shift PC to get inst bits")
@@ -882,12 +882,12 @@ class UFTB(DefaultFTB):
     tagBits = 38
     numWays = 32
     numDelay = 0
-    
+
 class FTBRAS(TimedBaseFTBPredictor):
     type = 'FTBRAS'
     cxx_class = 'gem5::branch_prediction::ftb_pred::FTBRAS'
     cxx_header = 'cpu/pred/ftb/ras.hh'
-    
+
     numEntries = Param.Unsigned(32, "Number of entries in the RAS")
     ctrWidth = Param.Unsigned(8, "Width of the counter")
     numInflightEntries = Param.Unsigned(384, "Number of inflight entries")
@@ -897,7 +897,7 @@ class FTBuRAS(TimedBaseFTBPredictor):
     type = 'FTBuRAS'
     cxx_class = 'gem5::branch_prediction::ftb_pred::FTBuRAS'
     cxx_header = 'cpu/pred/ftb/uras.hh'
-    
+
     numEntries = Param.Unsigned(4, "Number of entries in the RAS")
     ctrWidth = Param.Unsigned(2, "Width of the counter")
     numDelay = 0
@@ -938,7 +938,7 @@ class DecoupledBPUWithFTB(BranchPredictor):
     type = 'DecoupledBPUWithFTB'
     cxx_class = 'gem5::branch_prediction::ftb_pred::DecoupledBPUWithFTB'
     cxx_header = "cpu/pred/ftb/decoupled_bpred.hh"
-    
+
     # n = 2
     ftq_size = Param.Unsigned(128, "Fetch target queue size")
     fsq_size = Param.Unsigned(64, "Fetch stream queue size")
@@ -952,7 +952,7 @@ class DecoupledBPUWithFTB(BranchPredictor):
     uftb = Param.DefaultFTB(UFTB(), "UFTB predictor")
     ras = Param.FTBRAS(FTBRAS(), "RAS")
     uras = Param.FTBuRAS(FTBuRAS(), "uRAS")
-    
+
     bpDBSwitches = VectorParam.String([], "Enable which traces in the form of database")
     enableLoopBuffer = Param.Bool(False, "Enable loop buffer to supply inst for loops")
     enableLoopPredictor = Param.Bool(False, "Use loop predictor to predict loop exit")
@@ -963,7 +963,7 @@ class TimedBaseBTBPredictor(SimObject):
     type = 'TimedBaseBTBPredictor'
     cxx_class = 'gem5::branch_prediction::btb_pred::TimedBaseBTBPredictor'
     cxx_header = "cpu/pred/btb/timed_base_pred.hh"
-    
+
     # TODO: parametrize numBr and numDelay
     blockSize = Param.Unsigned(Parent.predictWidth, "Block size in bytes")
     predictWidth = Param.Unsigned(Parent.predictWidth, "Maximum range in bytes that a single prediction can cover")
@@ -973,7 +973,7 @@ class DefaultBTB(TimedBaseBTBPredictor):
     type = 'DefaultBTB'
     cxx_class = 'gem5::branch_prediction::btb_pred::DefaultBTB'
     cxx_header = 'cpu/pred/btb/btb.hh'
-    
+
     numEntries = Param.Unsigned(2048, "Number of entries in the BTB")
     tagBits = Param.Unsigned(20, "Number of bits in the tag")
     instShiftAmt = Param.Unsigned(1, "Amount to shift PC to get inst bits")
@@ -1009,7 +1009,7 @@ class BTBRAS(TimedBaseBTBPredictor):
     type = 'BTBRAS'
     cxx_class = 'gem5::branch_prediction::btb_pred::BTBRAS'
     cxx_header = 'cpu/pred/btb/ras.hh'
-    
+
     numEntries = Param.Unsigned(32, "Number of entries in the RAS")
     ctrWidth = Param.Unsigned(8, "Width of the counter")
     numInflightEntries = Param.Unsigned(384, "Number of inflight entries")
@@ -1019,7 +1019,7 @@ class BTBuRAS(TimedBaseBTBPredictor):
     type = 'BTBuRAS'
     cxx_class = 'gem5::branch_prediction::btb_pred::BTBuRAS'
     cxx_header = 'cpu/pred/btb/uras.hh'
-    
+
     numEntries = Param.Unsigned(4, "Number of entries in the RAS")
     ctrWidth = Param.Unsigned(2, "Width of the counter")
     numDelay = 0
@@ -1056,16 +1056,87 @@ class BTBITTAGE(TimedBaseBTBPredictor):
     numTablesToAlloc = Param.Unsigned(1,"The number of table to allocated each time")
     numDelay = 2
 
+class BTBMGSC(TimedBaseBTBPredictor):
+    type = 'BTBMGSC'
+    cxx_class = 'gem5::branch_prediction::btb_pred::BTBMGSC'
+    cxx_header = "cpu/pred/btb/btb_mgsc.hh"
+
+    enableMGSC = Param.Bool(True, "Enable MGSC or not")
+
+    bwnb = Param.Unsigned(2, "Num global backward branch GEHL lengths")
+    bwm = VectorParam.Int([4, 8], "Global backward branch GEHL lengths")
+    logBwnb = Param.Unsigned(11,
+            "Log num of global backward branch GEHL entries")
+    bwWeightInitValue = Param.Int(7,
+     "Initial value of the weights of the global backward branch GEHL entries")
+
+    numEntriesFirstLocalHistories = Param.Unsigned(32,
+        "Number of entries for first local histories")
+    lnb = Param.Unsigned(2, "Num first local history GEHL lenghts")
+    lm = VectorParam.Int([4, 8], "First local history GEHL lengths")
+    logLnb = Param.Unsigned(11,
+            "Log number of first local history GEHL entries")
+    lWeightInitValue = Param.Int(7,
+        "Initial value of the weights of the first local history GEHL entries")
+
+    inb = Param.Unsigned(1, "Num IMLI GEHL lenghts")
+    im = VectorParam.Int([8], "IMLI history GEHL lengths")
+    logInb = Param.Unsigned(11, "Log number of IMLI GEHL entries")
+    iWeightInitValue = Param.Int(7,
+        "Initial value of the weights of the IMLI history GEHL entries")
+
+    logBias = Param.Unsigned(11, "Log size of Bias tables")
+
+    gnb = Param.Unsigned(2, "Num global branch GEHL lengths")
+    gm = VectorParam.Int([8, 16], "Global branch GEHL lengths")
+    logGnb = Param.Unsigned(11, "Log number of global branch GEHL entries")
+    gWeightInitValue = Param.Int(7,
+        "Initial value of the weights of the global history GEHL entries")
+
+    pnb = Param.Unsigned(2, "Num global branch path history lengths")
+    pm = VectorParam.Int([8, 16], "Global branch path history lengths")
+    logPnb = Param.Unsigned(11,
+                    "Log number of global branch path history entries")
+    pWeightInitValue = Param.Int(7,
+        "Initial value of the weights of the path history GEHL entries")
+
+    biasnb = Param.Unsigned(1, "Num bias lenghts")
+    logBiasnb = Param.Unsigned(11, "Log number of global branch GEHL entries")
+
+    thresholdTablelogSize = Param.Unsigned(6,
+        "Log size of update threshold counters tables")
+
+    updateThresholdWidth = Param.Unsigned(12,
+        "Number of bits for the update threshold counter")
+
+    pUpdateThresholdWidth = Param.Unsigned(8,
+        "Number of bits for the pUpdate threshold counters")
+
+    extraWeightsWidth = Param.Unsigned(6,
+        "Number of bits for the extra weights")
+
+    scCountersWidth = Param.Unsigned(6, "Statistical corrector counters width")
+
+    initialUpdateThresholdValue = Param.Int(0,
+        "Initial pUpdate threshold counter value")
+
+    logWeightnb = Param.Unsigned(5,
+        "Log size of weight table")
+
+    numWays = Param.Unsigned(8, "Number of ways per set")
+
+    numDelay = 2
+
 class DecoupledBPUWithBTB(BranchPredictor):
     type = 'DecoupledBPUWithBTB'
     cxx_class = 'gem5::branch_prediction::btb_pred::DecoupledBPUWithBTB'
     cxx_header = "cpu/pred/btb/decoupled_bpred.hh"
-    
+
     # n = 2
     ftq_size = Param.Unsigned(128, "Fetch target queue size")
     fsq_size = Param.Unsigned(64, "Fetch stream queue size")
     maxHistLen = Param.Unsigned(970, "The length of history")
-    
+
     predictWidth = Param.Unsigned(64, "Maximum range in bytes that a single prediction can cover")
     numStages = Param.Unsigned(3, "Maximum number of stages in the pipeline")
     ubtb = Param.UBTB(UBTB(), "UBTB predictor")
@@ -1073,8 +1144,9 @@ class DecoupledBPUWithBTB(BranchPredictor):
     btb = Param.DefaultBTB(DefaultBTB(), "BTB")
     tage = Param.BTBTAGE(BTBTAGE(), "TAGE predictor")
     ittage = Param.BTBITTAGE(BTBITTAGE(), "ITTAGE predictor")
+    mgsc = Param.BTBMGSC(BTBMGSC(), "MGSC predictor")
     ras = Param.BTBRAS(BTBRAS(), "RAS")
-    
+
     bpDBSwitches = VectorParam.String([], "Enable which traces in the form of database")
     enableLoopBuffer = Param.Bool(False, "Enable loop buffer to supply inst for loops")
     enableLoopPredictor = Param.Bool(False, "Use loop predictor to predict loop exit")
