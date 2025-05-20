@@ -1,0 +1,29 @@
+name: gem5 vector Test
+
+on:
+  push:
+    branches: [ dev-vector ]
+  pull_request:
+    branches: [ dev-vector ]
+
+jobs:
+  vector-test:
+    # 由于gem5.cfg使用的切片ck_path都在小机房上，默认使用小机房运行这个测试
+    runs-on: [self-hosted, open]  # 所有open*的机器上运行
+    continue-on-error: false
+    name: XS-GEM5 - Running vector test
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build DRAMSim
+        run: |
+          export GEM5_HOME=$(pwd)
+          cd ext/dramsim3
+          git clone git@github.com:umd-memsys/DRAMSim3.git DRAMsim3
+          cd DRAMsim3 && mkdir -p build
+          cd build
+          cmake ..
+          make -j 48
+          cd $GEM5_HOME
+      - name: Build GEM5 opt
+        run: |
+          CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
