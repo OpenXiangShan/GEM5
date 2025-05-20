@@ -490,7 +490,7 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                 // port and also takes into account the additional
                 // delay of the xbar.
                 mshr->allocateTarget(pkt, forward_time, order++,
-                                     allocOnFill(pkt->cmd));
+                                     allocOnFill(pkt->cmd), pkt->writeNotAllocateOpt);
                 if (mshr->getNumTargets() >= numTarget) {
                     noTargetMSHR = mshr;
                     setBlocked(Blocked_NoTargets);
@@ -898,12 +898,24 @@ BaseCache::recvTimingResp(PacketPtr pkt)
 
     CacheBlk *blk = tags->findBlock(pkt->getAddr(), pkt->isSecure());
 
+    // if (writeAllocator) {
+    //     std::cout << "wholeLineWrite is_fill:" << is_fill << " wasWholeLineWrite:"
+    //     << mshr->wasWholeLineWrite << std::endl;
+    // }
+
     if (is_fill && !is_error) {
         DPRINTF(Cache, "Block for addr %#llx being updated in Cache\n",
                 pkt->getAddr());
 
-        const bool allocate = (writeAllocator && mshr->wasWholeLineWrite) ?
-            writeAllocator->allocate() : mshr->allocOnFill();
+        const bool allocate = (mshr->notAllocOpt() && mshr->wasWholeLineWrite) ?
+            false : mshr->allocOnFill();
+
+        // if (writeAllocator) {
+        //     std::cout << "allocate:" << allocate << " mshr->notAllocOpt():"
+        // << mshr->notAllocOpt() << " mshr->wasWholeLineWrite:"
+        // << mshr->wasWholeLineWrite << " pktAddr:" << std::hex << pkt->getAddr() << std::endl;
+        // }
+
         blk = handleFill(pkt, blk, writebacks, allocate);
         assert(blk != nullptr);
         ppFill->notify(pkt);
@@ -2044,6 +2056,12 @@ BaseCache::handleFill(PacketPtr pkt, CacheBlk *blk, PacketList &writebacks,
         // with the temporary storage
         blk = allocate ? allocateBlock(pkt, writebacks) : nullptr;
 
+        if (allocate) {
+            stats.doRealRefill++;
+        } else {
+            stats.useTempBlock++;
+        }
+
         if (!blk) {
             // No replaceable block or a mostly exclusive
             // cache... just use temporary storage to complete the
@@ -2428,24 +2446,25 @@ BaseCache::sendMSHRQueuePacket(MSHR* mshr)
     // no allocation mode, and we have a write packet with an MSHR
     // that is not a whole-line write (due to incompatible flags etc),
     // then reset the write mode
-    if (writeAllocator && writeAllocator->coalesce() && tgt_pkt->isWrite()) {
-        if (!mshr->isWholeLineWrite()) {
-            // if we are currently write coalescing, hold on the
-            // MSHR as many cycles extra as we need to completely
-            // write a cache line
-            if (writeAllocator->delay(mshr->blkAddr)) {
-                Tick delay = blkSize / tgt_pkt->getSize() * clockPeriod();
-                DPRINTF(CacheVerbose, "Delaying pkt %s %llu ticks to allow "
-                        "for write coalescing\n", tgt_pkt->print(), delay);
-                mshrQueue.delay(mshr, delay);
-                return false;
-            } else {
-                writeAllocator->reset();
-            }
-        } else {
-            writeAllocator->resetDelay(mshr->blkAddr);
-        }
-    }
+
+    // if (writeAllocator && writeAllocator->coalesce() && tgt_pkt->isWrite()) {
+    //     if (!mshr->isWholeLineWrite()) {
+    //         // if we are currently write coalescing, hold on the
+    //         // MSHR as many cycles extra as we need to completely
+    //         // write a cache line
+    //         if (writeAllocator->delay(mshr->blkAddr)) {
+    //             Tick delay = blkSize / tgt_pkt->getSize() * clockPeriod();
+    //             DPRINTF(CacheVerbose, "Delaying pkt %s %llu ticks to allow "
+    //                     "for write coalescing\n", tgt_pkt->print(), delay);
+    //             mshrQueue.delay(mshr, delay);
+    //             return false;
+    //         } else {
+    //             writeAllocator->reset();
+    //         }
+    //     } else {
+    //         writeAllocator->resetDelay(mshr->blkAddr);
+    //     }
+    // }
 
     CacheBlk *blk = tags->findBlock(mshr->blkAddr, mshr->isSecure);
 
@@ -2857,6 +2876,10 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "number of squashed inst block demand hits"),
     ADD_STAT(loadTagReadFails, statistics::units::Count::get(),
              "number of load Tag read fail because of prefetcher"),
+    ADD_STAT(useTempBlock, statistics::units::Count::get(),
+             "number of times using temp block"),
+    ADD_STAT(doRealRefill, statistics::units::Count::get(),
+             "number of times doing real refill to cache"),
     ADD_STAT(prefetchTagReadFails, statistics::units::Count::get(),
              "number of prefetch req Tag read fail because of load"),
     ADD_STAT(dataExpansions, statistics::units::Count::get(),

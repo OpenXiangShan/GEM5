@@ -1296,6 +1296,9 @@ class BaseCache : public ClockedObject, CacheAccessor
         /** Number of load Tag read fail because of prefetcher. */
         statistics::Scalar loadTagReadFails;
 
+        statistics::Scalar useTempBlock;
+        statistics::Scalar doRealRefill;
+
         /** Number of prefetch req Tag read fail because of load. */
         mutable statistics::Scalar prefetchTagReadFails;
 
@@ -1348,7 +1351,7 @@ class BaseCache : public ClockedObject, CacheAccessor
     {
         MSHR *mshr = mshrQueue.allocate(pkt->getBlockAddr(blkSize), blkSize,
                                         pkt, time, order++,
-                                        allocOnFill(pkt->cmd));
+                                        allocOnFill(pkt->cmd), pkt->writeNotAllocateOpt);
 
         if (mshrQueue.isFull()) {
             setBlocked((BlockedCause)MSHRQueue_MSHRs);

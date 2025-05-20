@@ -41,6 +41,7 @@
 
 #include "cpu/o3/lsq_unit.hh"
 
+#include <algorithm>
 #include <cassert>
 
 #include "arch/generic/debugfaults.hh"
@@ -70,6 +71,7 @@
 #include "mem/packet.hh"
 #include "mem/packet_access.hh"
 #include "mem/request.hh"
+#include "params/WriteAllocator.hh"
 #include "sim/cur_tick.hh"
 
 namespace gem5
@@ -207,13 +209,20 @@ StoreBuffer::update(int index)
 }
 
 StoreBufferEntry *
-StoreBuffer::getEvict()
+StoreBuffer::getVictim()
 {
     assert(lru_index.size() > 0);
     uint64_t index = lru_index.back();
-    lru_index.pop_back();
     assert(data_vld[index]);
     return data_vec[index];
+}
+
+StoreBufferEntry *
+StoreBuffer::getAndEvict()
+{
+    StoreBufferEntry* res = getVictim();
+    lru_index.pop_back();
+    return res;
 }
 
 StoreBufferEntry *
@@ -452,11 +461,13 @@ LSQUnit::completeDataAccess(PacketPtr pkt)
 }
 
 LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries, uint32_t sbufferEvictThreshold,
-    uint64_t storeBufferInactiveThreshold, uint32_t ldPipeStages, uint32_t stPipeStages)
+    uint64_t storeBufferInactiveThreshold, uint32_t ldPipeStages, uint32_t stPipeStages,
+    WriteAllocator* writeAllocator)
     : sbufferEvictThreshold(sbufferEvictThreshold),
       sbufferEntries(sbufferEntries),
       storeBufferWritebackInactive(0),
       storeBufferInactiveThreshold(storeBufferInactiveThreshold),
+      writeAllocator(writeAllocator),
       lsqID(-1),
       storeQueue(sqEntries),
       loadQueue(lqEntries),
@@ -625,6 +636,8 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
                 "first time a load is issued and its completion"),
       ADD_STAT(loadTranslationLat, "Distribution of cycle latency between the "
                 "first time a load is issued and its translation completion"),
+      ADD_STAT(writeAllocatorState, "Distribution of state cycles where "
+                "writeAllocator is in"),
       ADD_STAT(forwardSTDNotReady, "Number of load forward but store data not ready"),
       ADD_STAT(STAReadyFirst, "Number of store addr ready first"),
       ADD_STAT(STDReadyFirst, "Number of store data ready first"),
@@ -637,6 +650,9 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
         .flags(statistics::nozero);
     loadTranslationLat
         .init(0, 299, 10)
+        .flags(statistics::nozero);
+    writeAllocatorState
+        .init(0, 2, 1)
         .flags(statistics::nozero);
 }
 
@@ -2011,12 +2027,18 @@ bool LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t
         StoreBuffer,
         "insert %#x to entry[%#x] successed, sbuffer size: %d unsentsize: %d\n",
         paddr, blockPaddr, storeBuffer.size(), storeBuffer.unsentSize());
+
+    // detect store stream
+    if (writeAllocator) {
+        writeAllocator->updateMode(vaddr, size, blockVaddr);
+    }
     return true;
 }
 
 void
 LSQUnit::storeBufferEvictToCache()
 {
+    stats.writeAllocatorState.sample(writeAllocator->allocate());
     if (storeBufferFlushing && storeBuffer.size() == 0) [[unlikely]] {
         assert(storeBuffer.unsentSize() == 0);
         storeBufferFlushing = false;
@@ -2060,7 +2082,23 @@ LSQUnit::storeBufferEvictToCache()
         }
 
         // evict entry to cache
-        auto entry = storeBuffer.getEvict();
+        bool writeNotAllocToDcache = false;
+        if (writeAllocator && writeAllocator->coalesce()) {
+            auto entry= storeBuffer.getVictim();
+            if (std::all_of(entry->validMask.begin(), entry->validMask.end(), [](bool x) { return x;})) {
+                writeAllocator->resetDelay(entry->blockVaddr);
+                writeNotAllocToDcache = !writeAllocator->allocate();
+            } else {
+                if (writeAllocator->delay(entry->blockVaddr)) {
+                    // nothing will be evict this cycle
+                    cpu->activityThisCycle();
+                    return;
+                } else {
+                    writeAllocator->reset();
+                }
+            }
+        }
+        auto entry = storeBuffer.getAndEvict();
         DPRINTF(StoreBuffer, "Evicting sbuffer entry[%#x]\n",
                 entry->blockPaddr);
 
@@ -2077,7 +2115,7 @@ LSQUnit::storeBufferEvictToCache()
 
         entry->request = new LSQ::SbufferRequest(cpu, this, entry->blockPaddr, entry->blockDatas.data());
         entry->request->addReq(entry->blockVaddr, entry->blockPaddr, entry->validMask);
-        entry->request->buildPackets();
+        entry->request->buildPackets(writeNotAllocToDcache);
         entry->request->sbuffer_entry = entry;
         bool success = entry->request->sendPacketToCache();
         if (!success) {

@@ -91,13 +91,14 @@ class MSHRQueue : public Queue<MSHR>
      * @param when_ready When should the MSHR be ready to act upon.
      * @param order The logical order of this MSHR
      * @param alloc_on_fill Should the cache allocate a block on fill
+     * @param not_alloc_opt Prefer not to allocate a block in cache
      *
      * @return The a pointer to the MSHR allocated.
      *
      * @pre There are free entries.
      */
     MSHR *allocate(Addr blk_addr, unsigned blk_size, PacketPtr pkt,
-                   Tick when_ready, Counter order, bool alloc_on_fill);
+                   Tick when_ready, Counter order, bool alloc_on_fill, bool not_alloc_opt);
 
     /**
      * Deallocate a MSHR and its targets

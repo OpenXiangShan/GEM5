@@ -44,6 +44,7 @@ from m5.objects.BaseCPU import BaseCPU
 from m5.objects.FUPool import *
 #from m5.objects.O3Checker import O3Checker
 from m5.objects.BranchPredictor import *
+from m5.objects.Cache import WriteAllocator
 from m5.SimObject import *
 
 class SMTFetchPolicy(ScopedEnum):
@@ -178,6 +179,7 @@ class BaseO3CPU(BaseCPU):
     SbufferEntries = Param.Unsigned(16, "Number of store buffer entries")
     SbufferEvictThreshold = Param.Unsigned(7, "store buffer eviction threshold")
     storeBufferInactiveThreshold = Param.Unsigned(800, "store buffer writeback timeout threshold")
+    write_allocator = Param.WriteAllocator(WriteAllocator(), "Write allocator")
 
     StoreWbStage = Param.Unsigned(4, "Which PipeLine Stage store instruction writeback, 4 means S4")
 

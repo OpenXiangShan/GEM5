@@ -159,10 +159,12 @@ class MSHR : public QueueEntry, public Printable
         const bool allocOnFill;   //!< Should the response servicing this
                                   //!< target list allocate in the cache?
 
+        const bool notAllocOpt;
+
         Target(PacketPtr _pkt, Tick _readyTime, Counter _order,
-               Source _source, bool _markedPending, bool alloc_on_fill)
+               Source _source, bool _markedPending, bool alloc_on_fill, bool not_alloc_opt)
             : QueueEntry::Target(_pkt, _readyTime, _order), source(_source),
-              markedPending(_markedPending), allocOnFill(alloc_on_fill)
+              markedPending(_markedPending), allocOnFill(alloc_on_fill), notAllocOpt(not_alloc_opt)
         {}
     };
 
@@ -174,6 +176,7 @@ class MSHR : public QueueEntry, public Printable
         bool hasUpgrade;
         /** Set when the response should allocate on fill */
         bool allocOnFill;
+        bool notAllocOpt;
         /**
          * Determine whether there was at least one non-snooping
          * target coming from another cache.
@@ -197,9 +200,10 @@ class MSHR : public QueueEntry, public Printable
          * @param pkt Packet considered for the flag update
          * @param source Indicates the source of the packet
          * @param alloc_on_fill Whether the pkt would allocate on a fill
+         * @param not_alloc_opt Whether the pkt would prefer not to allocate in cache
          */
         void updateFlags(PacketPtr pkt, Target::Source source,
-                         bool alloc_on_fill);
+                         bool alloc_on_fill, bool not_alloc_opt);
 
         /**
          * Reset state
@@ -222,6 +226,7 @@ class MSHR : public QueueEntry, public Printable
             needsWritable = false;
             hasUpgrade = false;
             allocOnFill = false;
+            notAllocOpt = false;
             hasFromCache = false;
             hasFromPref = false;
             hasFromCPU = false;
@@ -251,7 +256,7 @@ class MSHR : public QueueEntry, public Printable
          * @return True if the TargetList are reset, false otherwise.
          */
         bool isReset() const {
-            return !needsWritable && !hasUpgrade && !allocOnFill &&
+            return !needsWritable && !hasUpgrade && !allocOnFill && !notAllocOpt &&
                 !hasFromCache && canMergeWrites;
         }
 
@@ -266,9 +271,10 @@ class MSHR : public QueueEntry, public Printable
          * @param source Indicates the source agent of the packet
          * @param markPending Set for deferred targets or pending MSHRs
          * @param alloc_on_fill Whether it should allocate on a fill
+         * @param write_not_alloc_opt Whether it prefer not to allocate in cache
          */
         void add(PacketPtr pkt, Tick readyTime, Counter order,
-                 Target::Source source, bool markPending, bool alloc_on_fill);
+                 Target::Source source, bool markPending, bool alloc_on_fill, bool write_not_alloc_opt);
 
         /**
          * Convert upgrades to the equivalent request if the cache line they
@@ -349,6 +355,10 @@ class MSHR : public QueueEntry, public Printable
 
     bool allocOnFill() const {
         return targets.allocOnFill;
+    }
+
+    bool notAllocOpt() const {
+        return targets.notAllocOpt;
     }
 
     /**
@@ -442,9 +452,10 @@ class MSHR : public QueueEntry, public Printable
      * @param when_ready When should the MSHR be ready to act upon.
      * @param _order The logical order of this MSHR
      * @param alloc_on_fill Should the cache allocate a block on fill
+     * @param not_alloc_opt Prefer not to allocate a cache block
      */
     void allocate(Addr blk_addr, unsigned blk_size, PacketPtr pkt,
-                  Tick when_ready, Counter _order, bool alloc_on_fill);
+                  Tick when_ready, Counter _order, bool alloc_on_fill, bool not_alloc_opt);
 
     void markInService(bool pending_modified_resp);
 
@@ -460,7 +471,7 @@ class MSHR : public QueueEntry, public Printable
      * @param target The target.
      */
     void allocateTarget(PacketPtr target, Tick when, Counter order,
-                        bool alloc_on_fill);
+                        bool alloc_on_fill, bool write_not_alloc_opt);
     bool handleSnoop(PacketPtr target, Counter order);
 
     /** A simple constructor. */
