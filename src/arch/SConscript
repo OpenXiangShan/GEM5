@@ -42,6 +42,7 @@ import sys
 import os
 import os.path
 import re
+import glob
 
 from gem5_scons import Transform
 
@@ -91,10 +92,60 @@ if env['CONF']['BUILD_GPU']:
 import SCons.Scanner
 import SCons.Tool
 
-scanner = SCons.Scanner.Classic("ISAScan",
-                                [".isa", ".ISA"],
-                                 "SRCDIR",
-                                r'^\s*##include\s+"([\w/.-]*)"')
+envReplaceRE = re.compile(r'^.*\$\((?P<varname>[a-zA-Z_][a-zA-Z0-9_]*)\).*$',
+                            re.MULTILINE)
+def replace_var(matchobj):
+    varname = matchobj.group('varname')
+    if os.environ[varname] is not None:
+        return matchobj.group(0).replace('$(' + varname + ')', os.environ[varname])
+    else:
+        error('Error: variable "%s" not defined' % varname)
+
+class Scanner(SCons.Scanner.Current):
+    def __init__(self, name, suffixes, path_variable, regex, *args, **kw):
+        self.cre = re.compile(regex, re.M)
+
+        def _scan(node, _, path=(), self=self):
+            node = node.rfile()
+            if not node.exists():
+                return []
+            return self.scan(node, path)
+
+        kw['function'] = _scan
+        kw['path_function'] = FindPathDirs(path_variable)
+        kw['recursive'] = kw.get('recursive', 1)
+        kw['skeys'] = suffixes
+        kw['name'] = name
+        SCons.Scanner.Current.__init__(self, *args, **kw)
+
+    def scan(self, node, path=()):
+        if node.includes is not None:
+            includes = node.includes
+        else:
+            text = node.get_text_contents()
+            text = envReplaceRE.sub(replace_var, text)
+            includes = self.cre.findall(text)
+            node.includes = list(map(SCons.Util.silent_intern, includes))
+        nodes = []
+        source_dir = node.get_dir()
+        if callable(path):
+            path = path()
+        for include in includes:
+            n = SCons.Node.FS.find_file(include, (source_dir,) + tuple(path))
+
+            if n is None:
+                SCons.Warnings.warn(SCons.Warnings.DependencyWarning,
+                    "No dependency generated for file: %s (included from: %s) -- file not found" % (include, node))
+            else:
+                nodes.append((SCons.Node.FS._my_normcase(include), n))
+        return [pair[1] for pair in sorted(nodes)]
+
+
+
+scanner = Scanner("ISAScan",
+                [".isa", ".ISA"],
+                "SRCDIR",
+                r'^\s*##include\s+"([\w/.-]*)"')
 
 env.Append(SCANNERS=scanner)
 
