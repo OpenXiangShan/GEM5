@@ -152,6 +152,11 @@ AddOption('--pgo-use', action='store', default=None,
           help='Use pgo profiling results')
 AddOption('--unit-test', action='store_true',
           help='Enable unit test build')
+AddOption('--rvv-impl', action='store', default='base',
+          choices=['base', 'simple'],
+          help='Select the implementation of the RVV extension to use')
+
+os.environ['rvv_impl'] = GetOption('rvv_impl')
 
 # Inject the built_tools directory into the python path.
 sys.path[1:1] = [ Dir('#build_tools').abspath ]
