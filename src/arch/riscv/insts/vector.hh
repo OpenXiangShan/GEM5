@@ -827,7 +827,7 @@ class VCompressMicroInst : public VectorArithMicroInst
                 uint32_t ei = vd_has_compressed + vdrs + compressed;
                 uint32_t vdElemIdx = vdrs + compressed;
                 uint32_t vs2ElemIdx = vs2rs + i;
-                if ((ei < rVl) && elem_mask(vm.as<uint8_t>(), ei)) {
+                if ((ei < rVl) && elem_mask(vm.as<uint8_t>(), vs2ElemIdx)) {
                     vd.as<Type>()[vdElemIdx] = vs.as<Type>()[i];
                     compressed++;
                 }
