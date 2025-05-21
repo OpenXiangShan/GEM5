@@ -47,7 +47,6 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
         initDB();
     }
     bpType = DecoupledBTBType;
-    numStages = 3;
     // TODO: better impl (use vector to assign in python)
     // problem: btb->getAndSetNewBTBEntry
     components.push_back(ubtb);

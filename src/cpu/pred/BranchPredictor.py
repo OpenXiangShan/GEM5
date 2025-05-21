@@ -1125,7 +1125,7 @@ class BTBMGSC(TimedBaseBTBPredictor):
 
     numWays = Param.Unsigned(8, "Number of ways per set")
 
-    numDelay = 2
+    numDelay = 3
 
 class DecoupledBPUWithBTB(BranchPredictor):
     type = 'DecoupledBPUWithBTB'
@@ -1138,7 +1138,7 @@ class DecoupledBPUWithBTB(BranchPredictor):
     maxHistLen = Param.Unsigned(970, "The length of history")
 
     predictWidth = Param.Unsigned(64, "Maximum range in bytes that a single prediction can cover")
-    numStages = Param.Unsigned(3, "Maximum number of stages in the pipeline")
+    numStages = Param.Unsigned(4, "Maximum number of stages in the pipeline")
     ubtb = Param.UBTB(UBTB(), "UBTB predictor")
     abtb = Param.DefaultBTB(ABTB(), "ABTB predictor")
     btb = Param.DefaultBTB(DefaultBTB(), "BTB")
