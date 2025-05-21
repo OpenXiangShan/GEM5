@@ -224,15 +224,16 @@ Fault
     // mem_size = calc_memsize(vmi.rs, vmi.re, eew_, rVl);
     // if is vecWhole l/s mem_size = VLENB
     uint32_t mem_size = %(calc_memsize_code)s;
-    mem_size = vm_zero ? 0 : mem_size;
+    uint32_t new_mem_size = vm_zero ? 0 : mem_size;
 
-    std::vector<bool> byte_enable(mem_size, true);
+    std::vector<bool> byte_enable(new_mem_size, true);
+
+    fault = initiateMemRead(xc, EA, new_mem_size, memAccessFlags,
+                                  byte_enable);
 
     %(vfof_set_code)s;
     %(vfof_zero_idx_check_code)s;
 
-    fault = initiateMemRead(xc, EA, mem_size, memAccessFlags,
-                                  byte_enable);
     return fault;
 }
 
