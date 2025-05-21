@@ -1438,8 +1438,7 @@ Commit::diffInst(ThreadID tid, const DynInstPtr &inst) {
         const auto &dest = inst->destRegIdx(i);
         if ((dest.isFloatReg() || dest.isIntReg()) && !dest.isZeroReg()) {
             cpu->diffInfo.scalarResults.at(i) = cpu->getArchReg(dest, tid);
-        } else if (dest.isVecReg()) {
-            assert(i == 0);
+        } else if (dest.isVecReg() && dest.index() < 32) {
             cpu->getArchReg(dest, &(cpu->diffInfo.vecResult), tid);
         }
     }
