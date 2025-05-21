@@ -109,11 +109,12 @@ class StoreBufferEntry
         validMask.resize(size, false);
     }
 
-    void reset(uint64_t blockVaddr, uint64_t blockPaddr, uint64_t offset, uint8_t* datas, uint64_t size);
+    void reset(uint64_t blockVaddr, uint64_t blockPaddr, uint64_t offset, uint8_t *datas, uint64_t size,
+               const std::vector<bool> &mask);
 
-    void merge(uint64_t offset, uint8_t* datas, uint64_t size);
+    void merge(uint64_t offset, uint8_t *datas, uint64_t size, const std::vector<bool> &mask);
 
-    bool recordForward(RequestPtr req, LSQ::LSQRequest* lsqreq);
+    bool recordForward(RequestPtr req, LSQ::LSQRequest *lsqreq);
 };
 
 class StoreBuffer
@@ -402,7 +403,7 @@ class LSQUnit
     /** Writes back stores. */
     void offloadToStoreBuffer();
 
-    bool insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t size);
+    bool insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t size, const std::vector<bool>& mask);
 
     void storeBufferEvictToCache();
 

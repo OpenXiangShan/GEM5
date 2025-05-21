@@ -79,10 +79,15 @@ namespace o3
 {
 
 void
-StoreBufferEntry::reset(uint64_t block_vaddr, uint64_t block_paddr, uint64_t offset, uint8_t *datas, uint64_t size)
+StoreBufferEntry::reset(uint64_t block_vaddr, uint64_t block_paddr, uint64_t offset, uint8_t *datas, uint64_t size,
+                        const std::vector<bool> &mask)
 {
     std::fill(validMask.begin(), validMask.begin() + offset, false);
-    std::fill(validMask.begin() + offset, validMask.begin() + offset + size, true);
+
+    for (int i = 0; i < size; i++) {
+        validMask[offset + i] = mask[i];
+    }
+
     std::fill(validMask.begin() + offset + size, validMask.end(), false);
     memcpy(blockDatas.data() + offset, datas, size);
 
@@ -94,12 +99,14 @@ StoreBufferEntry::reset(uint64_t block_vaddr, uint64_t block_paddr, uint64_t off
 }
 
 void
-StoreBufferEntry::merge(uint64_t offset, uint8_t *datas, uint64_t size)
+StoreBufferEntry::merge(uint64_t offset, uint8_t *datas, uint64_t size, const std::vector<bool> &mask)
 {
     assert(offset + size <= validMask.size());
     for (uint64_t i = 0; i < size; ++i) {
-        blockDatas[offset + i] = datas[i];
-        validMask[offset + i] = true;
+        if (mask[i]) {
+            blockDatas[offset + i] = datas[i];
+            validMask[offset + i] = true;
+        }
     }
 }
 
@@ -1924,7 +1931,8 @@ LSQUnit::offloadToStoreBuffer()
                 uint64_t offset = vaddr - vbase;
                 DPRINTF(LSQUnit, "Spilt store idx %d [sn:%lli] insert into sbuffer\n", i, inst->seqNum);
                 assert(offset + req->getSize() <= storeWBIt->size());
-                bool success = insertStoreBuffer(vaddr, paddr, (uint8_t *)storeWBIt->data() + offset, req->getSize());
+                bool success = insertStoreBuffer(vaddr, paddr, (uint8_t *)storeWBIt->data() + offset, req->getSize(),
+                                                 req->getByteEnable());
                 if (success) {
                     request->_numOutstandingPackets++;
                 } else {
@@ -1944,7 +1952,8 @@ LSQUnit::offloadToStoreBuffer()
             Addr vaddr = request->getVaddr();
             Addr paddr = request->mainReq()->getPaddr();
             DPRINTF(LSQUnit, "Store [sn:%lli] insert into sbuffer\n", inst->seqNum);
-            bool success = insertStoreBuffer(vaddr, paddr, (uint8_t *)storeWBIt->data(), request->_size);
+            bool success = insertStoreBuffer(vaddr, paddr, (uint8_t *)storeWBIt->data(), request->_size,
+                                             request->mainReq()->getByteEnable());
             if (!success) {
                 break;
             }
@@ -1956,7 +1965,7 @@ LSQUnit::offloadToStoreBuffer()
     }
 }
 
-bool LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t size)
+bool LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t size, const std::vector<bool>& mask)
 {
     // access range must in a cache block
     assert((vaddr & cacheBlockMask) == ((vaddr + size - 1) & cacheBlockMask));
@@ -1970,7 +1979,7 @@ bool LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t
             if (entry->vice) {
                 // merge into vice
                 entry = entry->vice;
-                entry->merge(offset, datas, size);
+                entry->merge(offset, datas, size, mask);
                 DPRINTF(StoreBuffer, "Merging vice entry[%#x] for addr %#x\n",
                         blockPaddr, paddr);
             } else {
@@ -1982,14 +1991,14 @@ bool LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t
                 }
                 stats.sbufferCreateVice++;
                 auto vice = storeBuffer.createVice(entry);
-                vice->reset(blockVaddr, blockPaddr, offset, datas, size);
+                vice->reset(blockVaddr, blockPaddr, offset, datas, size, mask);
                 DPRINTF(StoreBuffer, "Create new vice entry[%#x] for addr %#x\n",
                         blockPaddr, paddr);
             }
         } else {
             // merge into unsent
             storeBuffer.update(entry->index);
-            entry->merge(offset, datas, size);
+            entry->merge(offset, datas, size, mask);
             DPRINTF(StoreBuffer, "Merging entry[%#x] for addr %#x\n",
                     blockPaddr, paddr);
         }
@@ -2002,7 +2011,7 @@ bool LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t
         }
         // insert
         auto entry = storeBuffer.getEmpty();
-        entry->reset(blockVaddr, blockPaddr, offset, datas, size);
+        entry->reset(blockVaddr, blockPaddr, offset, datas, size, mask);
         storeBuffer.insert(entry->index, blockPaddr);
         DPRINTF(StoreBuffer, "Create new entry[%#x] for addr %#x\n",
                 blockPaddr, paddr);
