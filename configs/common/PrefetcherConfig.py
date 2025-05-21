@@ -31,6 +31,9 @@ def create_prefetcher(cpu, cache_level, options):
             prefetcher.enable_spp = True
         if options.l1d_enable_cplx:
             prefetcher.enable_cplx = True
+        
+        prefetcher.act_entries = "64"
+        prefetcher.pht_entries = "64"
         prefetcher.pht_pf_level = 2 if options.kmh_align else options.pht_pf_level
         prefetcher.short_stride_thres = options.short_stride_thres
         prefetcher.enable_temporal = not options.kmh_align
