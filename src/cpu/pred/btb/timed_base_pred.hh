@@ -52,7 +52,7 @@ class TimedBaseBTBPredictor: public SimObject
     int getComponentIdx() { return componentIdx; }
     void setComponentIdx(int idx) { componentIdx = idx; }
 
-    unsigned blockSize;
+    uint64_t blockSize;
     unsigned predictWidth;
 
     bool hasDB {false};

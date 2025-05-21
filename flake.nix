@@ -33,6 +33,7 @@
           gtest
           libelf
           libffi
+          libpng
           libtool
           m4
           ninja

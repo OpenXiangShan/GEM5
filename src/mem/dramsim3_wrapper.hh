@@ -44,6 +44,7 @@
 #ifndef __MEM_DRAMSIM3_WRAPPER_HH__
 #define __MEM_DRAMSIM3_WRAPPER_HH__
 
+#include <cstdint>
 #include <functional>
 #include <string>
 

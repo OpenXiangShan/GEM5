@@ -136,7 +136,7 @@ protected:
     void SetUp() override {
         // Create a BTB with 16 entries, 8-bit tags, and 4-way set associative
         mbtb_small = new DefaultBTB(16, 8, 4, 1, true); // mbtb (L1 BTB)
-        mbtb = new DefaultBTB (1024, 20, 8, 1, true);
+        mbtb = new DefaultBTB (16384, 20, 8, 1, true);
     }
     
     
@@ -181,6 +181,19 @@ TEST_F(BTBTest, PredictionAfterUpdate) {
     // Execute prediction-update cycle
     std::vector<FullBTBPrediction> stagePreds =
         predictUpdateCycle(mbtb, 0x1000, branch, true);
+
+    // Verify predictions
+    verifyPrediction(stagePreds, mbtb->getDelay(), {branch});
+}
+
+// Test large virtual addr
+TEST_F(BTBTest, PredictionAfterUpdateLargeAddr) {
+    // Create branch info
+    BranchInfo branch = createBranchInfo(0xffffffff8027ac64, 0xffffffff80261dee, true);
+
+    // Execute prediction-update cycle
+    std::vector<FullBTBPrediction> stagePreds =
+        predictUpdateCycle(mbtb, 0xffffffff8027ac60, branch, true);
 
     // Verify predictions
     verifyPrediction(stagePreds, mbtb->getDelay(), {branch});

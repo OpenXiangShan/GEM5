@@ -930,7 +930,7 @@ InstructionQueue::getCacheMissInstToExecute()
         if (!(*it)->waitingCacheRefill() || (*it)->isSquashed()) {
             DPRINTF(IQ, "CacheMissed load inst [sn:%llu] PC %s is ready to "
                     "execute\n", (*it)->seqNum, (*it)->pcState());
-            DynInstPtr mem_inst = std::move(*it);
+            DynInstPtr mem_inst = *it;
             cacheMissLdInsts.erase(it);
             return mem_inst;
         }

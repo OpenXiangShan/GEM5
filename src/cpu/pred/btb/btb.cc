@@ -398,7 +398,7 @@ DefaultBTB::lookupSingleBlock(Addr block_pc)
                 " skipping tag compare, assigning miss\n", aheadReadBtbEntries.size());
         }
     }
-    DPRINTF(BTB, "BTB: Doing tag comparison for index %d tag %#lx\n",
+    DPRINTF(BTB, "BTB: Doing tag comparison for index 0x%lx tag %#lx\n",
         current_idx, current_tag);
     for (auto &way : current_set) {
         if (way.valid && way.tag == current_tag) {
