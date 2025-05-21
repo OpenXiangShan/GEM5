@@ -39,9 +39,16 @@ def create_prefetcher(cpu, cache_level, options):
 
         prefetcher.enable_bop = not options.kmh_align
         prefetcher.bop_large.delay_queue_enable = True
-        prefetcher.bop_large.bad_score = 10
+        prefetcher.bop_large.delay_queue_size = 16
+        prefetcher.bop_large.delay_queue_cycles = 10
+        prefetcher.bop_large.bad_score = 2
+        prefetcher.bop_large.round_max = 64
+
         prefetcher.bop_small.delay_queue_enable = True
-        prefetcher.bop_small.bad_score = 5
+        prefetcher.bop_small.delay_queue_size = 16
+        prefetcher.bop_small.delay_queue_cycles = 200
+        prefetcher.bop_small.bad_score = 1
+        prefetcher.bop_small.round_max = 64
 
         prefetcher.queue_size = 128
         prefetcher.max_prefetch_requests_with_pending_translation = 128
