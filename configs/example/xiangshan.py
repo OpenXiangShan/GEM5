@@ -384,7 +384,7 @@ def setKmhV3IdealParams(args, system):
 
         # ideal l1 caches
         if args.caches:
-            cpu.icache.size = '128kB'
+            cpu.icache.size = '64kB'
             cpu.dcache.size = '128kB'
             cpu.icache.enable_wayprediction = False
             cpu.dcache.enable_wayprediction = False
