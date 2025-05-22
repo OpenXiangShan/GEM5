@@ -211,6 +211,39 @@ class BTBMGSC : public TimedBaseBTBPredictor
      */
     bool calculateWeightScaleDiff(int lsum, int scale_percsum, int percsum);
 
+    /**
+     * Update a prediction table and allocate new entry if needed
+     */
+    void updateAndAllocatePredTable(std::vector<std::vector<std::vector<MgscEntry>>> &table,
+                                   const std::vector<Addr> &tableIndices,
+                                   unsigned numTables,
+                                   Addr pc,
+                                   bool actual_taken);
+
+    /**
+     * Update a weight table and allocate new entry if needed
+     */
+    void updateAndAllocateWeightTable(std::vector<std::vector<MgscWeightEntry>> &weightTable,
+                                    Addr tableIndex,
+                                    Addr pc,
+                                    bool weight_scale_diff,
+                                    bool percsum_matches_actual);
+
+    /**
+     * Update a threshold table and allocate new entry if needed
+     */
+    void updatePCThresholdTable(Addr tableIndex,
+                                Addr pc,
+                                bool update_condition,
+                                bool update_direction);
+
+    /**
+     * Update the global threshold table and allocate new entry if needed
+     */
+    void updateGlobalThreshold(Addr pc,
+                             bool update_condition,
+                             bool update_direction);
+
   private:
 
     // Look up predictions in MGSC tables for a stream of instructions

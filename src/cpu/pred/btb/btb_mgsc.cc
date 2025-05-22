@@ -511,352 +511,274 @@ BTBMGSC::prepareUpdateEntries(const FetchStream &stream) {
 }
 
 /**
- * @brief Update and allocate predictor for a single entry
+ * Update a prediction table and allocate new entry if needed
+ *
+ * This function handles the main perceptron tables (bwTable, lTable, iTable, gTable, pTable, biasTable)
+ * which store counter values that contribute to the final prediction. These tables:
+ * - Are organized as [numTables][tableIndices][numWays]
+ * - Store signed counters (-32 to 31) representing branch bias
+ * - Are updated for each branch outcome
+ * - Start with 0 for taken branches and -1 for not-taken branches when newly allocated
+ *
+ * @param table The table to update (one of the six main prediction tables)
+ * @param tableIndices Indices for each component of the table, derived from history hashing
+ * @param numTables Number of tables in this category (e.g., bwnb, lnb, etc.)
+ * @param pc PC to match against for finding the right entry
+ * @param actual_taken Actual branch outcome (true=taken, false=not taken)
+ */
+void
+BTBMGSC::updateAndAllocatePredTable(std::vector<std::vector<std::vector<MgscEntry>>> &table,
+                                  const std::vector<Addr> &tableIndices,
+                                  unsigned numTables,
+                                  Addr pc,
+                                  bool actual_taken) {
+    for (unsigned int i = 0; i < numTables; ++i) {
+        bool found_entry = false;
+        // Search all ways in the set for a matching entry
+        for (unsigned way = 0; way < numWays; way++) {
+            auto &entry = table[i][tableIndices[i]][way];
+            if (tagMatch(pc, entry.pc, 5) && entry.valid) {
+                // Entry found - update its counter based on branch outcome
+                updateCounter(actual_taken, scCountersWidth, entry.counter);
+                found_entry = true;
+                updateLRU(table[i], tableIndices[i], way);
+                break;
+            }
+        }
+        // Allocate if not found - use LRU replacement policy
+        if (!found_entry) {
+            unsigned alloc_way = getLRUVictim(table[i], tableIndices[i]);
+            auto &entry_to_alloc = table[i][tableIndices[i]][alloc_way];
+            // Initialize counter based on branch outcome
+            short newCounter = actual_taken ? 0 : -1;
+            entry_to_alloc = MgscEntry(true, newCounter, pc, 0);
+        }
+    }
+}
+
+/**
+ * Update a weight table and allocate new entry if needed
+ *
+ * This function handles the weight tables (bwWeightTable, lWeightTable, etc.) which
+ * determine the relative importance of each predictor type. These tables:
+ * - Are organized as [tableIndex][numWays]
+ * - Store weights that scale the importance of each predictor component
+ * - Are only updated when the weight could have affected the outcome (weight_scale_diff)
+ * - Are initialized to 0 when newly allocated
+ * - Allow adaptive tuning of the prediction mechanism
+ *
+ * @param weightTable The weight table to update
+ * @param tableIndex Index to use for the table (typically derived from PC)
+ * @param pc PC to match against for finding the right entry
+ * @param weight_scale_diff Whether weight scaling affects prediction outcome
+ * @param percsum_matches_actual Whether the raw percsum correctly predicted the outcome
+ */
+void
+BTBMGSC::updateAndAllocateWeightTable(std::vector<std::vector<MgscWeightEntry>> &weightTable,
+                                    Addr tableIndex,
+                                    Addr pc,
+                                    bool weight_scale_diff,
+                                    bool percsum_matches_actual) {
+    bool found_entry = false;
+    // Search all ways in the set for a matching entry
+    for (unsigned way = 0; way < numWays; way++) {
+        auto &entry = weightTable[tableIndex][way];
+        if (tagMatch(pc, entry.pc, 5) && entry.valid) {
+            // Only update if weight scale could affect prediction
+            if (weight_scale_diff) {
+                // Increase weight if percsum was correct, decrease if incorrect
+                updateCounter(percsum_matches_actual, extraWeightsWidth, entry.counter);
+            }
+            found_entry = true;
+            updateLRU(weightTable, tableIndex, way);
+            break;
+        }
+    }
+
+    // Allocate if not found - use LRU replacement policy
+    if (!found_entry) {
+        unsigned alloc_way = getLRUVictim(weightTable, tableIndex);
+        auto &entry_to_alloc = weightTable[tableIndex][alloc_way];
+        // Initialize weight to neutral value (0)
+        entry_to_alloc = MgscWeightEntry(true, pc, 0, 0);
+    }
+}
+
+/**
+ * Update a threshold table and allocate new entry if needed
+ *
+ * This function handles threshold tables (pUpdateThreshold) which determine
+ * when to use statistical correction over TAGE. These tables:
+ * - Are organized as [tableIndex][numWays]
+ * - Store unsigned threshold values
+ * - Are only updated when there's a disagreement between TAGE and SC predictions
+ * - Control the confidence level required to override TAGE prediction
+ * - Are initialized to a default value when newly allocated
+ *
+ * @param tableIndex Index to use for the table (typically derived from PC)
+ * @param pc PC to match against for finding the right entry
+ * @param update_condition Whether to update the counter (typically when TAGE and SC disagree)
+ * @param update_direction Direction to update (true=increment, false=decrement)
+ */
+void
+BTBMGSC::updatePCThresholdTable(Addr tableIndex,
+                                Addr pc,
+                                bool update_condition,
+                                bool update_direction) {
+    bool found_entry = false;
+    // Search all ways in the set for a matching entry
+    for (unsigned way = 0; way < numWays; way++) {
+        auto &entry = pUpdateThreshold[tableIndex][way];
+        if (tagMatch(pc, entry.pc, 5) && entry.valid) {
+            // Only update if the update condition is met (TAGE and SC disagree)
+            if (update_condition) {
+                // Adjust threshold based on which prediction was correct
+                updateCounter(update_direction, pUpdateThresholdWidth, entry.counter);
+            }
+            found_entry = true;
+            updateLRU(pUpdateThreshold, tableIndex, way);
+            break;
+        }
+    }
+
+    // Allocate if not found - use LRU replacement policy
+    if (!found_entry) {
+        unsigned alloc_way = getLRUVictim(pUpdateThreshold, tableIndex);
+        auto &entry_to_alloc = pUpdateThreshold[tableIndex][alloc_way];
+        // Initialize with default value from class member
+        entry_to_alloc = MgscThresEntry(true, pc, initialUpdateThresholdValue, 0);
+    }
+}
+
+/**
+ * Update the global threshold table and allocate new entry if needed
+ *
+ * This function handles the global threshold table (updateThreshold) which is
+ * structured differently than other threshold tables:
+ * - It's a one-dimensional array of entries
+ * - It stores a global threshold value that applies across many branches
+ * - It's updated when TAGE and SC predictions disagree
+ *
+ * @param pc PC to match against for finding the right entry
+ * @param update_condition Whether to update the counter (typically when TAGE and SC disagree)
+ * @param update_direction Direction to update (true=increment, false=decrement)
+ */
+void
+BTBMGSC::updateGlobalThreshold(Addr pc,
+                             bool update_condition,
+                             bool update_direction) {
+    bool found_entry = false;
+    // Search all ways for a matching entry
+    for (unsigned way = 0; way < numWays; way++) {
+        auto &entry = updateThreshold[way];
+        if (tagMatch(pc, entry.pc, 5) && entry.valid) {
+            // Only update if the update condition is met
+            if (update_condition) {
+                updateCounter(update_direction, updateThresholdWidth, entry.counter);
+            }
+            found_entry = true;
+            updateLRU(updateThreshold, way);
+            break;
+        }
+    }
+
+    // Allocate if not found - use LRU replacement policy
+    if (!found_entry) {
+        unsigned alloc_way = getLRUVictim(updateThreshold);
+        auto &entry_to_alloc = updateThreshold[alloc_way];
+        // Initialize with default hard-coded value (35 << 3)
+        entry_to_alloc = MgscThresEntry(true, pc, 35 << 3, 0);
+    }
+}
+
+/**
+ * @brief Update predictor for a single entry and allocate new entries if needed
+ *
+ * This function updates the MGSC predictor state based on the actual branch outcome
+ * and allocates new entries in various tables if they don't already exist.
  *
  * @param entry The BTB entry being updated
  * @param actual_taken The actual outcome of the branch
  * @param pred The prediction made for this entry
  * @param stream The fetch stream containing update information
- * @return true if need to allocate new entry
  */
 void
 BTBMGSC::updateAndAllocateSinglePredictor(const BTBEntry &entry,
                              bool actual_taken,
                              const MgscPrediction &pred,
                              const FetchStream &stream) {
-
-    /////////////////////
+    // Extract prediction information
     auto lsum = pred.lsum;
     auto use_mgsc = pred.use_mgsc;
     auto total_thres = pred.total_thres;
     auto sc_pred_taken = lsum >= 0;
     auto tage_pred_taken = pred.taken_before_sc;
-    auto update_bwIndex = pred.bwIndex;
-    auto update_lIndex = pred.lIndex;
-    auto update_gIndex = pred.gIndex;
-    auto update_iIndex = pred.iIndex;
-    auto update_pIndex = pred.pIndex;
-    auto update_biasIndex = pred.biasIndex;
 
-    bool bw_weight_scale_diff = pred.bw_weight_scale_diff;
-    bool l_weight_scale_diff = pred.l_weight_scale_diff;
-    bool i_weight_scale_diff = pred.i_weight_scale_diff;
-    bool g_weight_scale_diff = pred.g_weight_scale_diff;
-    bool p_weight_scale_diff = pred.p_weight_scale_diff;
-    bool bias_weight_scale_diff = pred.bias_weight_scale_diff;
-
-    auto bw_percsum = pred.bw_percsum;
-    auto l_percsum = pred.l_percsum;
-    auto i_percsum = pred.i_percsum;
-    auto g_percsum = pred.g_percsum;
-    auto p_percsum = pred.p_percsum;
-    auto bias_percsum = pred.bias_percsum;
-
-    auto find_bw_entry = new bool[bwnb];
-    bool find_bw_weight_entry;
-    auto find_l_entry = new bool[lnb];
-    bool find_l_weight_entry;
-    auto find_i_entry = new bool[inb];
-    bool find_i_weight_entry;
-    auto find_g_entry = new bool [gnb];
-    bool find_g_weight_entry;
-    auto find_p_entry = new bool[gnb];
-    bool find_p_weight_entry;
-    auto find_bias_entry = new bool[biasnb];
-    bool find_bias_weight_entry;
-    bool find_updateThreshold_entry;
-    bool find_pUpdateThreshold_entry;
-    if(use_mgsc){
+    // Update statistics
+    if (use_mgsc) {
         mgscStats.scUsed++;
-        if(sc_pred_taken == actual_taken && tage_pred_taken != actual_taken){
+        if (sc_pred_taken == actual_taken && tage_pred_taken != actual_taken) {
             mgscStats.scCorrectTageWrong++;
-        }else if(sc_pred_taken != actual_taken && tage_pred_taken == actual_taken){
+        } else if (sc_pred_taken != actual_taken && tage_pred_taken == actual_taken) {
             mgscStats.scWrongTageCorrect++;
         }
-    }else{
+    } else {
         mgscStats.scNotUsed++;
     }
 
-    if(sc_pred_taken != actual_taken || abs(lsum) < total_thres){
-        //update global bw table
-        for (unsigned int i = 0; i < bwnb; ++i) {
-            find_bw_entry[i] = false;
-            for (unsigned way = 0; way < numWays; way++) {
-                auto &bw_entry = bwTable[i][update_bwIndex[i]][way];
-                if (tagMatch(entry.pc, bw_entry.pc, 5) && bw_entry.valid) {
-                    updateCounter(actual_taken, scCountersWidth, bw_entry.counter);
-                    find_bw_entry[i] = true;
-                    // Update LRU counter
-                    updateLRU(bwTable[i], update_bwIndex[i], way);
-                    break;
-                }
-            }
-            //allocate global bw table
-            if(!find_bw_entry[i]){
-                unsigned alloc_way = getLRUVictim(bwTable[i], update_bwIndex[i]);
-                auto &entry_to_alloc = bwTable[i][update_bwIndex[i]][alloc_way];
-                short newCounter = actual_taken ? 0 : -1;
-                entry_to_alloc = MgscEntry(true, newCounter, entry.pc, 0);
-            }
-        }
-        //update global bw weight table
-        find_bw_weight_entry = false;
-        for (unsigned way = 0; way < numWays; way++) {
-            auto &bw_weight_entry = bwWeightTable[getPcIndex(stream.startPC, logWeightnb)][way];
-            if (tagMatch(entry.pc, bw_weight_entry.pc, 5) && bw_weight_entry.valid) {
-                if(bw_weight_scale_diff){
-                    updateCounter((bw_percsum >= 0) == actual_taken, extraWeightsWidth, bw_weight_entry.counter);
-                }
-                find_bw_weight_entry = true;
-                updateLRU(bwWeightTable, getPcIndex(stream.startPC, logWeightnb), way);
-                break;
-            }
-        }
-        //allocate global bw weight table
-        if(!find_bw_weight_entry){
-            unsigned alloc_way = getLRUVictim(bwWeightTable, getPcIndex(stream.startPC, logWeightnb));
-            auto &entry_to_alloc = bwWeightTable[getPcIndex(stream.startPC, logWeightnb)][alloc_way];
-            entry_to_alloc = MgscWeightEntry(true, entry.pc, 0, 0);
-        }
+    // Only update tables if prediction was wrong or confidence was low
+    if (sc_pred_taken != actual_taken || abs(lsum) < total_thres) {
+        // PC index for weight tables
+        Addr pcIndex = getPcIndex(stream.startPC, logWeightnb);
 
-        //update local table
-        for (unsigned int i = 0; i < lnb; ++i) {
-            find_l_entry[i] = false;
-            for (unsigned way = 0; way < numWays; way++) {
-                auto &l_entry = lTable[i][update_lIndex[i]][way];
-                if (tagMatch(entry.pc, l_entry.pc, 5) && l_entry.valid) {
-                    updateCounter(actual_taken, scCountersWidth, l_entry.counter);
-                    find_l_entry[i] = true;
-                    updateLRU(lTable[i], update_lIndex[i], way);
-                    break;
-                }
-            }
-            //allocate local table
-            if(!find_l_entry[i]){
-                unsigned alloc_way = getLRUVictim(lTable[i], update_lIndex[i]);
-                auto &entry_to_alloc = lTable[i][update_lIndex[i]][alloc_way];
-                short newCounter = actual_taken ? 0 : -1;
-                entry_to_alloc = MgscEntry(true, newCounter, entry.pc, 0);
-            }
-        }
-        //update local weight table
-        find_l_weight_entry = false;
-        for (unsigned way = 0; way < numWays; way++) {
-            auto &l_weight_entry = lWeightTable[getPcIndex(stream.startPC, logWeightnb)][way];
-            if (tagMatch(entry.pc, l_weight_entry.pc, 5) && l_weight_entry.valid) {
-                if(l_weight_scale_diff){
-                    updateCounter((l_percsum >= 0) == actual_taken, extraWeightsWidth, l_weight_entry.counter);
-                }
-                find_l_weight_entry = true;
-                updateLRU(lWeightTable, getPcIndex(stream.startPC, logWeightnb), way);
-                break;
-            }
-        }
-        //allocate local weight table
-        if(!find_l_weight_entry){
-            unsigned alloc_way = getLRUVictim(lWeightTable, getPcIndex(stream.startPC, logWeightnb));
-            auto &entry_to_alloc = lWeightTable[getPcIndex(stream.startPC, logWeightnb)][alloc_way];
-            entry_to_alloc = MgscWeightEntry(true, entry.pc, 0, 0);
-        }
+        // Update BW tables
+        updateAndAllocatePredTable(bwTable, pred.bwIndex, bwnb, entry.pc, actual_taken);
+        updateAndAllocateWeightTable(
+            bwWeightTable, pcIndex, entry.pc, pred.bw_weight_scale_diff,
+            (pred.bw_percsum >= 0) == actual_taken);
 
-        //update imli table
-        for (unsigned int i = 0; i < inb; ++i) {
-            find_i_entry[i] = false;
-            for (unsigned way = 0; way < numWays; way++) {
-                auto &i_entry = iTable[i][update_iIndex[i]][way];
-                if (tagMatch(entry.pc, i_entry.pc, 5) && i_entry.valid) {
-                    updateCounter(actual_taken, scCountersWidth, i_entry.counter);
-                    find_i_entry[i] = true;
-                    updateLRU(iTable[i], update_iIndex[i], way);
-                    break;
-                }
-            }
-            //allocate imli table
-            if(!find_i_entry[i]){
-                unsigned alloc_way = getLRUVictim(iTable[i], update_iIndex[i]);
-                auto &entry_to_alloc = iTable[i][update_iIndex[i]][alloc_way];
-                short newCounter = actual_taken ? 0 : -1;
-                entry_to_alloc = MgscEntry(true, newCounter, entry.pc, 0);
-            }
-        }
-        //update imli weight table
-        find_i_weight_entry = false;
-        for (unsigned way = 0; way < numWays; way++) {
-            auto &i_weight_entry = iWeightTable[getPcIndex(stream.startPC, logWeightnb)][way];
-            if (tagMatch(entry.pc, i_weight_entry.pc, 5) && i_weight_entry.valid) {
-                if(i_weight_scale_diff){
-                    updateCounter((i_percsum >= 0) == actual_taken, extraWeightsWidth, i_weight_entry.counter);
-                }
-                find_i_weight_entry = true;
-                updateLRU(iWeightTable, getPcIndex(stream.startPC, logWeightnb), way);
-                break;
-            }
-        }
-        //allocate imli weight table
-        if(!find_i_weight_entry){
-            unsigned alloc_way = getLRUVictim(iWeightTable, getPcIndex(stream.startPC, logWeightnb));
-            auto &entry_to_alloc = iWeightTable[getPcIndex(stream.startPC, logWeightnb)][alloc_way];
-            entry_to_alloc = MgscWeightEntry(true, entry.pc, 0, 0);
-        }
+        // Update L tables
+        updateAndAllocatePredTable(
+            lTable, pred.lIndex, lnb, entry.pc, actual_taken);
+        updateAndAllocateWeightTable(
+            lWeightTable, pcIndex, entry.pc, pred.l_weight_scale_diff,
+            (pred.l_percsum >= 0) == actual_taken);
 
-        //update global table
-        for (unsigned int i = 0; i < gnb; ++i) {
-            find_g_entry[i] = false;
-            for (unsigned way = 0; way < numWays; way++) {
-                auto &g_entry = gTable[i][update_gIndex[i]][way];
-                if (tagMatch(entry.pc, g_entry.pc, 5) && g_entry.valid) {
-                    updateCounter(actual_taken, scCountersWidth, g_entry.counter);
-                    find_g_entry[i] = true;
-                    updateLRU(gTable[i], update_gIndex[i], way);
-                    break;
-                }
-            }
-            //allocate global table
-            if(!find_g_entry[i]){
-                unsigned alloc_way = getLRUVictim(gTable[i], update_gIndex[i]);
-                auto &entry_to_alloc = gTable[i][update_gIndex[i]][alloc_way];
-                short newCounter = actual_taken ? 0 : -1;
-                entry_to_alloc = MgscEntry(true, newCounter, entry.pc, 0);
-            }
-        }
-        //update global weight table
-        find_g_weight_entry = false;
-        for (unsigned way = 0; way < numWays; way++) {
-            auto &g_weight_entry = gWeightTable[getPcIndex(stream.startPC, logWeightnb)][way];
-            if (tagMatch(entry.pc, g_weight_entry.pc, 5) && g_weight_entry.valid) {
-                if(g_weight_scale_diff){
-                    updateCounter((g_percsum >= 0) == actual_taken, extraWeightsWidth, g_weight_entry.counter);
-                }
-                find_g_weight_entry = true;
-                updateLRU(gWeightTable, getPcIndex(stream.startPC, logWeightnb), way);
-                break;
-            }
-        }
-        //allocate global weight table
-        if(!find_g_weight_entry){
-            unsigned alloc_way = getLRUVictim(gWeightTable, getPcIndex(stream.startPC, logWeightnb));
-            auto &entry_to_alloc = gWeightTable[getPcIndex(stream.startPC, logWeightnb)][alloc_way];
-            entry_to_alloc = MgscWeightEntry(true, entry.pc, 0, 0);
-        }
+        // Update I tables
+        updateAndAllocatePredTable(
+            iTable, pred.iIndex, inb, entry.pc, actual_taken);
+        updateAndAllocateWeightTable(
+            iWeightTable, pcIndex, entry.pc, pred.i_weight_scale_diff,
+            (pred.i_percsum >= 0) == actual_taken);
 
-        //update path table
-        for (unsigned int i = 0; i < pnb; ++i) {
-            find_p_entry[i] = false;
-            for (unsigned way = 0; way < numWays; way++) {
-                auto &p_entry = pTable[i][update_pIndex[i]][way];
-                if (tagMatch(entry.pc, p_entry.pc, 5) && p_entry.valid) {
-                    updateCounter(actual_taken, scCountersWidth, p_entry.counter);
-                    find_p_entry[i] = true;
-                    updateLRU(pTable[i], update_pIndex[i], way);
-                    break;
-                }
-            }
-            //allocate path table
-            if(!find_p_entry[i]){
-                unsigned alloc_way = getLRUVictim(pTable[i], update_pIndex[i]);
-                auto &entry_to_alloc = pTable[i][update_pIndex[i]][alloc_way];
-                short newCounter = actual_taken ? 0 : -1;
-                entry_to_alloc = MgscEntry(true, newCounter, entry.pc, 0);
-            }
-        }
-        //update path weight table
-        find_p_weight_entry = false;
-        for (unsigned way = 0; way < numWays; way++) {
-            auto &p_weight_entry = pWeightTable[getPcIndex(stream.startPC, logWeightnb)][way];
-            if (tagMatch(entry.pc, p_weight_entry.pc, 5) && p_weight_entry.valid) {
-                if(p_weight_scale_diff){
-                    updateCounter((p_percsum >= 0) == actual_taken, extraWeightsWidth, p_weight_entry.counter);
-                }
-                find_p_weight_entry = true;
-                updateLRU(pWeightTable, getPcIndex(stream.startPC, logWeightnb), way);
-                break;
-            }
-        }
-        //allocate path weight table
-        if(!find_p_weight_entry){
-            unsigned alloc_way = getLRUVictim(pWeightTable, getPcIndex(stream.startPC, logWeightnb));
-            auto &entry_to_alloc = pWeightTable[getPcIndex(stream.startPC, logWeightnb)][alloc_way];
-            entry_to_alloc = MgscWeightEntry(true, entry.pc, 0, 0);
-        }
+        // Update G tables
+        updateAndAllocatePredTable(
+            gTable, pred.gIndex, gnb, entry.pc, actual_taken);
+        updateAndAllocateWeightTable(
+            gWeightTable, pcIndex, entry.pc, pred.g_weight_scale_diff,
+            (pred.g_percsum >= 0) == actual_taken);
 
-        //update bias table
-        for (unsigned int i = 0; i < biasnb; ++i) {
-            find_bias_entry[i] = false;
-            for (unsigned way = 0; way < numWays; way++) {
-                auto &bias_entry = biasTable[i][update_biasIndex[i]][way];
-                if (tagMatch(entry.pc, bias_entry.pc, 5) && bias_entry.valid) {
-                    updateCounter(actual_taken, scCountersWidth, bias_entry.counter);
-                    find_bias_entry[i] = true;
-                    updateLRU(biasTable[i], update_biasIndex[i], way);
-                    break;
-                }
-            }
-            //allocate bias table
-            if(!find_bias_entry[i]){
-                unsigned alloc_way = getLRUVictim(biasTable[i], update_biasIndex[i]);
-                auto &entry_to_alloc = biasTable[i][update_biasIndex[i]][alloc_way];
-                short newCounter = actual_taken ? 0 : -1;
-                entry_to_alloc = MgscEntry(true, newCounter, entry.pc, 0);
-            }
-        }
-        //update bias weight table
-        find_bias_weight_entry = false;
-        for (unsigned way = 0; way < numWays; way++) {
-            auto &bias_weight_entry = biasWeightTable[getPcIndex(stream.startPC, logWeightnb)][way];
-            if (tagMatch(entry.pc, bias_weight_entry.pc, 5) && bias_weight_entry.valid) {
-                if(bias_weight_scale_diff){
-                    updateCounter((bias_percsum >= 0) == actual_taken, extraWeightsWidth, bias_weight_entry.counter);
-                }
-                find_bias_weight_entry = true;
-                updateLRU(biasWeightTable, getPcIndex(stream.startPC, logWeightnb), way);
-                break;
-            }
-        }
-        //allocate global weight table
-        if(!find_bias_weight_entry){
-            unsigned alloc_way = getLRUVictim(biasWeightTable, getPcIndex(stream.startPC, logWeightnb));
-            auto &entry_to_alloc = biasWeightTable[getPcIndex(stream.startPC, logWeightnb)][alloc_way];
-            entry_to_alloc = MgscWeightEntry(true, entry.pc, 0, 0);
-        }
+        // Update P tables
+        updateAndAllocatePredTable(
+            pTable, pred.pIndex, pnb, entry.pc, actual_taken);
+        updateAndAllocateWeightTable(
+            pWeightTable, pcIndex, entry.pc, pred.p_weight_scale_diff,
+            (pred.p_percsum >= 0) == actual_taken);
 
-        //update thres
-        find_updateThreshold_entry = false;
-        for (unsigned way = 0; way < numWays; way++) {
-            auto &updateThreshold_entry = updateThreshold[way];
-            if (tagMatch(entry.pc, updateThreshold_entry.pc, 5) && updateThreshold_entry.valid) {
-                if(tage_pred_taken != sc_pred_taken){
-                    updateCounter((sc_pred_taken != actual_taken), updateThresholdWidth, updateThreshold_entry.counter);
-                }
-                find_updateThreshold_entry = true;
-                updateLRU(updateThreshold, way);
-                break;
-            }
-        }
-        //allocate updateThreshold
-        if(!find_updateThreshold_entry){
-            unsigned alloc_way = getLRUVictim(updateThreshold);
-            auto &entry_to_alloc = updateThreshold[alloc_way];
-            entry_to_alloc = MgscThresEntry(true, entry.pc, 35 << 3, 0);
-        }
-        //update pThres
-        find_pUpdateThreshold_entry = false;
-        for (unsigned way = 0; way < numWays; way++) {
-            auto &pUpdateThreshold_entry = pUpdateThreshold[getPcIndex(stream.startPC, thresholdTablelogSize)][way];
-            if (tagMatch(entry.pc, pUpdateThreshold_entry.pc, 5) && pUpdateThreshold_entry.valid) {
-                if(tage_pred_taken != sc_pred_taken){
-                    updateCounter((sc_pred_taken != actual_taken), pUpdateThresholdWidth, pUpdateThreshold_entry.counter);
-                }
-                find_pUpdateThreshold_entry = true;
-                updateLRU(pUpdateThreshold, getPcIndex(stream.startPC, thresholdTablelogSize), way);
-                break;
-            }
-        }
-        //allocate pUpdateThreshold
-        if(!find_pUpdateThreshold_entry){
-            unsigned alloc_way = getLRUVictim(pUpdateThreshold, getPcIndex(stream.startPC, thresholdTablelogSize));
-            auto &entry_to_alloc = pUpdateThreshold[getPcIndex(stream.startPC, thresholdTablelogSize)][alloc_way];
-            entry_to_alloc = MgscThresEntry(true, entry.pc, initialUpdateThresholdValue, 0);
-        }
+        // Update bias tables
+        updateAndAllocatePredTable(
+            biasTable, pred.biasIndex, biasnb, entry.pc, actual_taken);
+        updateAndAllocateWeightTable(
+            biasWeightTable, pcIndex, entry.pc, pred.bias_weight_scale_diff,
+            (pred.bias_percsum >= 0) == actual_taken);
+
+        // Update PC-indexed threshold table
+        updatePCThresholdTable(getPcIndex(stream.startPC, thresholdTablelogSize),
+            entry.pc, tage_pred_taken != sc_pred_taken, sc_pred_taken != actual_taken);
+
+        // Update global threshold table
+        updateGlobalThreshold(entry.pc, tage_pred_taken != sc_pred_taken,
+                             sc_pred_taken != actual_taken);
     }
 }
 
