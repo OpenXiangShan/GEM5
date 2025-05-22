@@ -160,14 +160,19 @@ FoldedHist::recover(FoldedHist &other)
 }
 
 /**
- * Verify that folded history matches what would be computed from GHR.
+ * Verify that folded history matches with what would be computed from GHR.
  *
  * History folding XORs foldedLen-sized chunks:
  * folded = [foldedLen-1:0] ^ [2*foldedLen-1:foldedLen] ^ [3*foldedLen-1:2*foldedLen] ^ ...
+ * this method can be commonly used for checking both GHR and PHR
  */
 void
 FoldedHist::check(const boost::dynamic_bitset<> &ghr)
 {
+    // TODO: support path history in the future
+    if (type != HistoryType::GLOBAL){
+        return;
+    }
     // Create ideal folded history from GHR
     uint64_t idealFolded = 0;
 

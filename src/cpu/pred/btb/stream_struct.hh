@@ -455,6 +455,7 @@ struct FullBTBPrediction
         condTakens(),
         indirectTargets(),
         returnTarget(0),
+        tageInfoForMgscs(),
         predSource(0),
         predTick(0) {}
 

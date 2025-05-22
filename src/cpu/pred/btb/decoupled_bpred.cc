@@ -2082,7 +2082,7 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     // Perform history consistency checks when not a fast build variant
 #ifndef NDEBUG
     checkHistory(s0History);
-    tage->checkFoldedHist(s0History,
+    tage->checkFoldedHist(s0PHistory,
         squash_type == SQUASH_CTRL ? "control squash" :
         squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
 #endif

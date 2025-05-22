@@ -55,9 +55,9 @@ tageStats(this, p.numPredictors)
 
         assert(tablePcShifts.size() >= numPredictors);
 
-        tagFoldedHist.push_back(FoldedHist((int)histLengths[i], (int)tableTagBits[i], 16));
-        altTagFoldedHist.push_back(FoldedHist((int)histLengths[i], (int)tableTagBits[i]-1, 16));
-        indexFoldedHist.push_back(FoldedHist((int)histLengths[i], (int)tableIndexBits[i], 16));
+        tagFoldedHist.push_back(FoldedHist((int)histLengths[i], (int)tableTagBits[i], 16, HistoryType::PATH));
+        altTagFoldedHist.push_back(FoldedHist((int)histLengths[i], (int)tableTagBits[i]-1, 16, HistoryType::PATH));
+        indexFoldedHist.push_back(FoldedHist((int)histLengths[i], (int)tableIndexBits[i], 16, HistoryType::PATH));
     }
     // for (unsigned i = 0; i < baseTable.size(); ++i) {
     //     baseTable[i].resize(numBr);
@@ -759,22 +759,23 @@ BTBTAGE::getUseAltIdx(Addr pc) {
  * @param taken Whether the branch was taken
  */
 void
-BTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, int shamt, bool taken)
+BTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr pc)
 {
     if (debugFlagOn) {
         std::string buf;
         boost::to_string(history, buf);
-        DPRINTF(TAGE, "in doUpdateHist, shamt %d, taken %d, history %s\n", shamt, taken, buf.c_str());
+        DPRINTF(TAGE, "in doUpdateHist, taken %d, pc %#lx, history %s\n", taken, pc, buf.c_str());
     }
-    if (shamt == 0) {
-        DPRINTF(TAGE, "shamt is 0, returning\n");
+    if (!taken) {
+        DPRINTF(TAGE, "not updating folded history, since FB not taken\n");
         return;
     }
 
     for (int t = 0; t < numPredictors; t++) {
         for (int type = 0; type < 3; type++) {
             auto &foldedHist = type == 0 ? indexFoldedHist[t] : type == 1 ? tagFoldedHist[t] : altTagFoldedHist[t];
-            foldedHist.update(history, shamt, taken);
+            // since we have folded path history, we can put arbitrary shamt here, and it wouldn't make a difference
+            foldedHist.update(history, 2, taken, pc);
         }
     }
 }
@@ -792,12 +793,12 @@ BTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, int shamt, bool ta
  * @param pred The prediction metadata containing history information
  */
 void
-BTBTAGE::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
+BTBTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {
-    int shamt;
+    Addr pc;
     bool cond_taken;
-    std::tie(shamt, cond_taken) = pred.getHistInfo();
-    doUpdateHist(history, shamt, cond_taken);
+    std::tie(pc, cond_taken) = pred.getPHistInfo();
+    doUpdateHist(history, cond_taken, pc);
 }
 
 /**
@@ -814,7 +815,7 @@ BTBTAGE::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPredictio
  * @param cond_taken The actual branch outcome
  */
 void
-BTBTAGE::recoverHist(const boost::dynamic_bitset<> &history,
+BTBTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
     const FetchStream &entry, int shamt, bool cond_taken)
 {
     std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
@@ -823,7 +824,7 @@ BTBTAGE::recoverHist(const boost::dynamic_bitset<> &history,
         altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
         indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
     }
-    doUpdateHist(history, shamt, cond_taken);
+    doUpdateHist(history, cond_taken, entry.getControlPC());
 }
 
 // Check folded history after speculative update and recovery

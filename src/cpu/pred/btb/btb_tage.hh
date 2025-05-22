@@ -113,10 +113,14 @@ class BTBTAGE : public TimedBaseBTBPredictor
     std::shared_ptr<void> getPredictionMeta() override;
 
     // speculative update 3 folded history, according history and pred.taken
-    void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
+    // the other specUpdateHist methods are left blank
+    void specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
 
     // Recover 3 folded history after a misprediction, then update 3 folded history according to history and pred.taken
-    void recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken) override;
+    // the other recoverHist methods are left blank
+    void recoverPHist(const boost::dynamic_bitset<> &history,
+                        const FetchStream &entry,int shamt, bool cond_taken) override;
+
 
     // Update predictor state based on actual branch outcomes
     void update(const FetchStream &entry) override;
@@ -127,6 +131,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     // check folded hists after speculative update and recover
     void checkFoldedHist(const bitset &history, const char *when);
+
+    bool needMoreHistories = true;
 
 
   private:
@@ -153,7 +159,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
     }
 
     // Update branch history
-    void doUpdateHist(const bitset &history, int shamt, bool taken);
+    void doUpdateHist(const bitset &history, bool taken, Addr pc);
 
     // Number of TAGE predictor tables
     const unsigned numPredictors;
