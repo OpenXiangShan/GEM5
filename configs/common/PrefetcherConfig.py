@@ -65,6 +65,7 @@ def create_prefetcher(cpu, cache_level, options):
             prefetcher.enable_cmc = False
             prefetcher.enable_bop = True
             prefetcher.enable_cdp = False
+            prefetcher.enable_despacito_stream = False
             prefetcher.bop_large = XSVirtualLargeBOP(is_sub_prefetcher=True)
             prefetcher.bop_small = XSPhysicalSmallBOP(is_sub_prefetcher=True)
         if options.l1_to_l2_pf_hint:

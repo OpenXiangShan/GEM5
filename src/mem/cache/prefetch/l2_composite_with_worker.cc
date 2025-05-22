@@ -16,14 +16,17 @@ L2CompositeWithWorkerPrefetcher::L2CompositeWithWorkerPrefetcher(const L2Composi
       largeBOP(p.bop_large),
       smallBOP(p.bop_small),
       cmc(p.cmc),
+      despacitoStream(p.despacito_stream),
       enableBOP(p.enable_bop),
       enableCDP(p.enable_cdp),
-      enableCMC(p.enable_cmc)
+      enableCMC(p.enable_cmc),
+      enableDespacitoStream(p.enable_despacito_stream)
 {
     cdp->pfLRUFilter = &pfLRUFilter;
     largeBOP->filter = &pfLRUFilter;
     smallBOP->filter = &pfLRUFilter;
     cmc->filter = &pfLRUFilter;
+    despacitoStream->filter = &pfLRUFilter;
     cdp->parentRid = p.sys->getRequestorId(this);
 }
 
@@ -64,6 +67,9 @@ L2CompositeWithWorkerPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std:
     if (enableBOP) {
         largeBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
         smallBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
+    }
+    if (enableDespacitoStream) {
+        despacitoStream->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::DespacitoStream);
     }
 }
 
@@ -121,6 +127,7 @@ L2CompositeWithWorkerPrefetcher::setParentInfo(System *sys, ProbeManager *pm, Ca
     largeBOP->setParentInfo(sys, pm, _cache, blk_size);
     smallBOP->setParentInfo(sys, pm, _cache, blk_size);
     cmc->setParentInfo(sys, pm, _cache, blk_size);
+    despacitoStream->setParentInfo(sys, pm, _cache, blk_size);
     CompositeWithWorkerPrefetcher::setParentInfo(sys, pm, _cache, blk_size);
 }
 
