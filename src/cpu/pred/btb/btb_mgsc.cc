@@ -191,6 +191,102 @@ BTBMGSC::tagMatch(Addr pc_a, Addr pc_b, unsigned matchBits) {
 }
 
 /**
+ * Calculate perceptron sum from a table for a given PC
+ * perceptron sum is the sum of the (2*counter + 1) of the matching entries
+ * @param table The table to search in
+ * @param tableIndices Indices to use for each table component
+ * @param numTables Number of tables to search
+ * @param pc PC to match against
+ * @return Calculated percsum value
+ */
+int
+BTBMGSC::calculatePercsum(const std::vector<std::vector<std::vector<MgscEntry>>> &table,
+                         const std::vector<Addr> &tableIndices,
+                         unsigned numTables,
+                         Addr pc) {
+    int percsum = 0;
+    for (unsigned int i = 0; i < numTables; ++i) {
+        for (unsigned way = 0; way < numWays; way++) {
+            auto &entry = table[i][tableIndices[i]][way];
+            if (tagMatch(pc, entry.pc, 5) && entry.valid) {
+                percsum += (2 * entry.counter + 1); // 2*counter + 1 is always >= 0
+                break;
+            }
+        }
+    }
+    return percsum;
+}
+
+/**
+ * Find weight in a weight table for a given PC
+ * @param weightTable The weight table to search
+ * @param tableIndex Index to use for the table
+ * @param pc PC to match against
+ * @return Found weight or 0 if not found
+ */
+int
+BTBMGSC::findWeight(const std::vector<std::vector<MgscWeightEntry>> &weightTable,
+                   Addr tableIndex,
+                   Addr pc) {
+    for (unsigned way = 0; way < numWays; way++) {
+        auto &entry = weightTable[tableIndex][way];
+        if (tagMatch(pc, entry.pc, 5) && entry.valid) {
+            return entry.counter;
+        }
+    }
+    return 0;
+}
+
+/**
+ * Calculate scaled percsum using weight
+ * weight range is [-32, 31], return value range is [0, 2 * percsum]
+ * @param weight Weight value
+ * @param percsum Original percsum value
+ * @return Scaled percsum value
+ */
+int
+BTBMGSC::calculateScaledPercsum(int weight, int percsum) {
+    return (double)((double)(weight + 32)/32.0) * percsum;
+}
+
+/**
+ * Find threshold in a threshold table for a given PC
+ * @param thresholdTable The threshold table to search
+ * @param tableIndex Index to use for the table
+ * @param pc PC to match against
+ * @param defaultValue Default value to return if not found
+ * @return Found threshold or default value if not found
+ */
+int
+BTBMGSC::findThreshold(const std::vector<std::vector<MgscThresEntry>> &thresholdTable,
+                      Addr tableIndex,
+                      Addr pc,
+                      int defaultValue) {
+    for (unsigned way = 0; way < numWays; way++) {
+        auto &entry = thresholdTable[tableIndex][way];
+        if (tagMatch(pc, entry.pc, 5) && entry.valid) {
+            return entry.counter;
+        }
+    }
+    return defaultValue;
+}
+
+/**
+ * Calculate if weight scale causes prediction difference
+ * @param lsum Total weighted sum
+ * @param scale_percsum Component's scaled percsum
+ * @param percsum Component's raw percsum
+ * @return True if weight scale causes prediction to change
+ */
+bool
+BTBMGSC::calculateWeightScaleDiff(int lsum, int scale_percsum, int percsum) {
+    // First check if removing this table's contribution keeps the sum positive (predict taken)
+    // Then check if doubling this table's contribution keeps the sum positive
+    // If one is true and the other is false, the table's weight is crucial for prediction
+    return ((lsum - scale_percsum) >= 0) != ((lsum - scale_percsum + 2*percsum) >= 0);
+}
+
+/**
  * @brief Generate prediction for a single BTB entry by searching MGSC tables
  *
  * @param btb_entry The BTB entry to generate prediction for
@@ -203,149 +299,72 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry,
                                  const TageInfoForMGSC &tage_info) {
     DPRINTF(MGSC, "generateSinglePrediction for btbEntry: %#lx, always taken %d\n",
         btb_entry.pc, btb_entry.alwaysTaken);
-    ////////////////
-    int bw_percsum = 0;
+
+    // Calculate indices for all tables
     for (unsigned int i = 0; i < bwnb; ++i) {
         bwIndex[i] = getHistIndex(startPC, logBwnb, indexBwFoldedHist[i].get());
-        for (unsigned way = 0; way < numWays; way++) {
-            auto &entry = bwTable[i][bwIndex[i]][way];
-            if (tagMatch(btb_entry.pc, entry.pc, 5) && entry.valid) {
-                bw_percsum += (2 * entry.counter + 1);
-                break;
-            }
-        }
     }
-    int bw_weight = 0;
-    for (unsigned way = 0; way < numWays; way++) {
-        auto &entry = bwWeightTable[getPcIndex(startPC, logWeightnb)][way];
-        if (tagMatch(btb_entry.pc, entry.pc, 5) && entry.valid) {
-            bw_weight = entry.counter;
-            break;
-        }
-    }
-    int bw_scale_percsum = (double)((double)(bw_weight + 32)/32.0) * bw_percsum;
 
-    int l_percsum = 0;
     for (unsigned int i = 0; i < lnb; ++i) {
         lIndex[i] = getHistIndex(startPC, logLnb,
-                    indexLFoldedHist[getPcIndex(startPC, log2(numEntriesFirstLocalHistories))][i].get());
-        for (unsigned way = 0; way < numWays; way++) {
-            auto &entry = lTable[i][lIndex[i]][way];
-            if (tagMatch(btb_entry.pc, entry.pc, 5) && entry.valid) {
-                l_percsum += (2 * entry.counter + 1);
-                break;
-            }
-        }
+                  indexLFoldedHist[getPcIndex(startPC, log2(numEntriesFirstLocalHistories))][i].get());
     }
-    int l_weight = 0;
-    for (unsigned way = 0; way < numWays; way++) {
-        auto &entry = lWeightTable[getPcIndex(startPC, logWeightnb)][way];
-        if (tagMatch(btb_entry.pc, entry.pc, 5) && entry.valid) {
-            l_weight = entry.counter;
-            break;
-        }
-    }
-    int l_scale_percsum = (double)((double)(l_weight + 32)/32.0) * l_percsum;
 
-    int i_percsum = 0;
     for (unsigned int i = 0; i < inb; ++i) {
         iIndex[i] = getHistIndex(startPC, logInb, indexIFoldedHist[i].get());
-        for (unsigned way = 0; way < numWays; way++) {
-            auto &entry = iTable[i][iIndex[i]][way];
-            if (tagMatch(btb_entry.pc, entry.pc, 5) && entry.valid) {
-                i_percsum += (2 * entry.counter + 1);
-                break;
-            }
-        }
     }
-    int i_weight = 0;
-    for (unsigned way = 0; way < numWays; way++) {
-        auto &entry = iWeightTable[getPcIndex(startPC, logWeightnb)][way];
-        if (tagMatch(btb_entry.pc, entry.pc, 5) && entry.valid) {
-            i_weight = entry.counter;
-            break;
-        }
-    }
-    int i_scale_percsum = (double)((double)(i_weight + 32)/32.0) * i_percsum;
 
-    int g_percsum = 0;
     for (unsigned int i = 0; i < gnb; ++i) {
         gIndex[i] = getHistIndex(startPC, logGnb, indexGFoldedHist[i].get());
-        for (unsigned way = 0; way < numWays; way++) {
-            auto &entry = gTable[i][gIndex[i]][way];
-            if (tagMatch(btb_entry.pc, entry.pc, 5) && entry.valid) {
-                g_percsum += (2 * entry.counter + 1);
-                break;
-            }
-        }
     }
-    int g_weight = 0;
-    for (unsigned way = 0; way < numWays; way++) {
-        auto &entry = gWeightTable[getPcIndex(startPC, logWeightnb)][way];
-        if (tagMatch(btb_entry.pc, entry.pc, 5) && entry.valid) {
-            g_weight = entry.counter;
-            break;
-        }
-    }
-    int g_scale_percsum = (double)((double)(g_weight + 32)/32.0) * g_percsum;
 
-    int p_percsum = 0;
     for (unsigned int i = 0; i < pnb; ++i) {
         pIndex[i] = getHistIndex(startPC, logPnb, indexPFoldedHist[i].get());
-        for (unsigned way = 0; way < numWays; way++) {
-            auto &entry = pTable[i][pIndex[i]][way];
-            if (tagMatch(btb_entry.pc, entry.pc, 5) && entry.valid) {
-                p_percsum += (2 * entry.counter + 1);
-                break;
-            }
-        }
     }
-    int p_weight = 0;
-    for (unsigned way = 0; way < numWays; way++) {
-        auto &entry = pWeightTable[getPcIndex(startPC, logWeightnb)][way];
-        if (tagMatch(btb_entry.pc, entry.pc, 5) && entry.valid) {
-            p_weight = entry.counter;
-            break;
-        }
-    }
-    int p_scale_percsum = (double)((double)(p_weight + 32)/32.0) * p_percsum;
 
-    int bias_percsum = 0;
     for (unsigned int i = 0; i < biasnb; ++i) {
-        //Addr index = getHistIndex(startPC, logBiasnb, indexBiasFoldedHist[i].get());
         biasIndex[i] = getBiasIndex(startPC, logBiasnb, tage_info.tage_pred_taken,
                     tage_info.tage_pred_conf_low && tage_info.tage_pred_alt_diff);
-        for (unsigned way = 0; way < numWays; way++) {
-            auto &entry = biasTable[i][biasIndex[i]][way];
-            if (tagMatch(btb_entry.pc, entry.pc, 5) && entry.valid) {
-                bias_percsum += (2 * entry.counter + 1);
-                break;
-            }
-        }
-    }
-    int bias_weight = 0;
-    for (unsigned way = 0; way < numWays; way++) {
-        auto &entry = biasWeightTable[getPcIndex(startPC, logWeightnb)][way];
-        if (tagMatch(btb_entry.pc, entry.pc, 5) && entry.valid) {
-            bias_weight = entry.counter;
-            break;
-        }
-    }
-    int bias_scale_percsum = (double)((double)(bias_weight + 32)/32.0) * bias_percsum;
-
-    int lsum = bw_scale_percsum + l_scale_percsum + i_scale_percsum + g_scale_percsum + p_scale_percsum + bias_scale_percsum;
-
-    //thres
-    int p_update_thres = initialUpdateThresholdValue;
-    for (unsigned way = 0; way < numWays; way++) {
-        auto &entry = pUpdateThreshold[getPcIndex(startPC, thresholdTablelogSize)][way];
-        if (tagMatch(btb_entry.pc, entry.pc, 5) && entry.valid) {
-            p_update_thres = entry.counter;
-            break;
-        }
     }
 
-    int update_thres = 35 << 3;;
+    // Calculate percsums and weights for all tables
+    Addr tableIndex = getPcIndex(startPC, logWeightnb);
+
+    int bw_percsum = calculatePercsum(bwTable, bwIndex, bwnb, btb_entry.pc);
+    int bw_weight = findWeight(bwWeightTable, tableIndex, btb_entry.pc);
+    int bw_scale_percsum = calculateScaledPercsum(bw_weight, bw_percsum);
+
+    int l_percsum = calculatePercsum(lTable, lIndex, lnb, btb_entry.pc);
+    int l_weight = findWeight(lWeightTable, tableIndex, btb_entry.pc);
+    int l_scale_percsum = calculateScaledPercsum(l_weight, l_percsum);
+
+    int i_percsum = calculatePercsum(iTable, iIndex, inb, btb_entry.pc);
+    int i_weight = findWeight(iWeightTable, tableIndex, btb_entry.pc);
+    int i_scale_percsum = calculateScaledPercsum(i_weight, i_percsum);
+
+    int g_percsum = calculatePercsum(gTable, gIndex, gnb, btb_entry.pc);
+    int g_weight = findWeight(gWeightTable, tableIndex, btb_entry.pc);
+    int g_scale_percsum = calculateScaledPercsum(g_weight, g_percsum);
+
+    int p_percsum = calculatePercsum(pTable, pIndex, pnb, btb_entry.pc);
+    int p_weight = findWeight(pWeightTable, tableIndex, btb_entry.pc);
+    int p_scale_percsum = calculateScaledPercsum(p_weight, p_percsum);
+
+    int bias_percsum = calculatePercsum(biasTable, biasIndex, biasnb, btb_entry.pc);
+    int bias_weight = findWeight(biasWeightTable, tableIndex, btb_entry.pc);
+    int bias_scale_percsum = calculateScaledPercsum(bias_weight, bias_percsum);
+
+    // Calculate total sum of all weighted percsums
+    int lsum = bw_scale_percsum + l_scale_percsum + i_scale_percsum +
+               g_scale_percsum + p_scale_percsum + bias_scale_percsum;
+
+    // Find thresholds
+    int p_update_thres = findThreshold(pUpdateThreshold,
+                                     getPcIndex(startPC, thresholdTablelogSize),
+                                     btb_entry.pc,
+                                     initialUpdateThresholdValue);
+
+    int update_thres = 35 << 3;
     for (unsigned way = 0; way < numWays; way++) {
         auto &entry = updateThreshold[way];
         if (tagMatch(btb_entry.pc, entry.pc, 5) && entry.valid) {
@@ -356,29 +375,32 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry,
 
     int total_thres = (update_thres >> 3) + p_update_thres;
 
+    // Determine whether to use SC prediction based on confidence levels
     bool use_sc_pred = false;
-    if(tage_info.tage_pred_conf_high){
-        if(abs(lsum) > total_thres/2){
+    if (tage_info.tage_pred_conf_high) {
+        if (abs(lsum) > total_thres/2) {
             use_sc_pred = true;
         }
-    }else if(tage_info.tage_pred_conf_mid){
-        if(abs(lsum) > total_thres/4){
+    } else if (tage_info.tage_pred_conf_mid) {
+        if (abs(lsum) > total_thres/4) {
             use_sc_pred = true;
         }
-    }else if(tage_info.tage_pred_conf_low){
-        if(abs(lsum) > total_thres/8){
+    } else if (tage_info.tage_pred_conf_low) {
+        if (abs(lsum) > total_thres/8) {
             use_sc_pred = true;
         }
     }
 
-    bool taken =(use_sc_pred && enableMGSC) ? (lsum >= 0) : tage_info.tage_pred_taken;
+    // Final prediction
+    bool taken = (use_sc_pred && enableMGSC) ? (lsum >= 0) : tage_info.tage_pred_taken;
 
-    bool bw_weight_scale_diff = ((lsum - bw_scale_percsum) >= 0) != ((lsum - bw_scale_percsum + 2*bw_percsum) >= 0);
-    bool l_weight_scale_diff = ((lsum - l_scale_percsum) >= 0) != ((lsum - l_scale_percsum + 2*l_percsum) >= 0);
-    bool i_weight_scale_diff = ((lsum - i_scale_percsum) >= 0) != ((lsum - i_scale_percsum + 2*i_percsum) >= 0);
-    bool g_weight_scale_diff = ((lsum - g_scale_percsum) >= 0) != ((lsum - g_scale_percsum + 2*g_percsum) >= 0);
-    bool p_weight_scale_diff = ((lsum - p_scale_percsum) >= 0) != ((lsum - p_scale_percsum + 2*p_percsum) >= 0);
-    bool bias_weight_scale_diff = ((lsum - bias_scale_percsum) >= 0) != ((lsum - bias_scale_percsum + 2*bias_percsum) >= 0);
+    // Calculate weight scale differences
+    bool bw_weight_scale_diff = calculateWeightScaleDiff(lsum, bw_scale_percsum, bw_percsum);
+    bool l_weight_scale_diff = calculateWeightScaleDiff(lsum, l_scale_percsum, l_percsum);
+    bool i_weight_scale_diff = calculateWeightScaleDiff(lsum, i_scale_percsum, i_percsum);
+    bool g_weight_scale_diff = calculateWeightScaleDiff(lsum, g_scale_percsum, g_percsum);
+    bool p_weight_scale_diff = calculateWeightScaleDiff(lsum, p_scale_percsum, p_percsum);
+    bool bias_weight_scale_diff = calculateWeightScaleDiff(lsum, bias_scale_percsum, bias_percsum);
 
     DPRINTF(MGSC, "sc predict %#lx taken %d\n", btb_entry.pc, taken);
 

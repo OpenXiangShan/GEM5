@@ -177,6 +177,39 @@ class BTBMGSC : public TimedBaseBTBPredictor
     // Calculate MGSC weight index
     Addr getPcIndex(Addr pc, unsigned tableIndexBits);
 
+    // Utility functions for reducing code duplication
+    /**
+     * Calculate percsum from a table for a given PC
+     */
+    int calculatePercsum(const std::vector<std::vector<std::vector<MgscEntry>>> &table,
+                         const std::vector<Addr> &tableIndices,
+                         unsigned numTables,
+                         Addr pc);
+
+    /**
+     * Find weight in a weight table for a given PC
+     */
+    int findWeight(const std::vector<std::vector<MgscWeightEntry>> &weightTable,
+                   Addr tableIndex,
+                   Addr pc);
+
+    /**
+     * Calculate scaled percsum using weight
+     */
+    int calculateScaledPercsum(int weight, int percsum);
+
+    /**
+     * Find threshold in a threshold table for a given PC
+     */
+    int findThreshold(const std::vector<std::vector<MgscThresEntry>> &thresholdTable,
+                      Addr tableIndex,
+                      Addr pc,
+                      int defaultValue);
+
+    /**
+     * Calculate if weight scale causes prediction difference
+     */
+    bool calculateWeightScaleDiff(int lsum, int scale_percsum, int percsum);
 
   private:
 
