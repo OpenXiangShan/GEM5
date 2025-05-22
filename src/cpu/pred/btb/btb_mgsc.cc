@@ -54,6 +54,7 @@ enableMGSC(p.enableMGSC),
 mgscStats(this)
 {
     DPRINTF(MGSC, "BTBMGSC constructor\n");
+    this->needMoreHistories = p.needMoreHistories;
     bwTable.resize(bwnb);
     for (unsigned int i = 0; i < bwnb; ++i) {
         assert(bwTable.size() >= bwnb);

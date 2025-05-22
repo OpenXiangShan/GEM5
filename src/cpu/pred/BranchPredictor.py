@@ -1063,6 +1063,8 @@ class BTBMGSC(TimedBaseBTBPredictor):
 
     enableMGSC = Param.Bool(True, "Enable MGSC or not")
 
+    needMoreHistories = Param.Bool(True, "MGSC needs more histories")
+
     bwnb = Param.Unsigned(2, "Num global backward branch GEHL lengths")
     bwm = VectorParam.Int([4, 8], "Global backward branch GEHL lengths")
     logBwnb = Param.Unsigned(11,

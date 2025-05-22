@@ -174,8 +174,6 @@ class BTBMGSC : public TimedBaseBTBPredictor
     // check folded hists after speculative update and recover
     void checkFoldedHist(const bitset &history, const char *when);
 
-    bool needMoreHistories = true;
-
     // Calculate MGSC weight index
     Addr getPcIndex(Addr pc, unsigned tableIndexBits);
 
