@@ -160,7 +160,6 @@ class BaseCPU(ClockedObject):
     arch_db = Param.ArchDBer(Parent.any, "Arch DB")
     enable_riscv_vector = Param.Bool(False, "Enable riscv vector extension")
     enable_riscv_h = Param.Bool(True, "Enable riscv vector extension")
-    enable_difftest_inst_trace = Param.Bool(True, "Enable difftest inst trace")
     enable_mem_dedup = Param.Bool(False, "Enable memory deduplication for difftest and golden memory")
 
     def createInterruptController(self):

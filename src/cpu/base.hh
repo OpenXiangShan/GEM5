@@ -53,9 +53,12 @@
 #if IS_NULL_ISA
 #error Including BaseCPU in a system without CPU support
 #else
+#include <sstream>
+
 #include "arch/generic/interrupts.hh"
 #include "base/statistics.hh"
 #include "cpu/difftest.hh"
+#include "cpu/o3/dyn_inst_ptr.hh"
 #include "debug/Mwait.hh"
 #include "mem/htm.hh"
 #include "mem/port_proxy.hh"
@@ -689,7 +692,6 @@ class BaseCPU : public ClockedObject
     int dumpStartNum;
     bool enableRVV{false};
     bool enableRVHDIFF{false};
-    bool enabledifftesInstTrace{false};
     std::shared_ptr<DiffAllStates> diffAllStates{};
 
     enum  diffRegConfig
@@ -707,18 +709,8 @@ class BaseCPU : public ClockedObject
                         std::string error_csr_name,int &diff_at);
     std::pair<int, bool> diffWithNEMU(ThreadID tid, InstSeqNum seq);
 
-    std::string diffMsg;
-    void reportDiffMismatch(ThreadID tid, InstSeqNum seq) {
-      warn("%s", diffMsg);
-      diffAllStates->proxy->isa_reg_display();
-      displayGem5Regs();
-      warn("start dump last %lu committed msg\n", diffInfo.lastCommittedMsg.size());
-      while (diffInfo.lastCommittedMsg.size()) {
-        auto& msg = diffInfo.lastCommittedMsg.front();
-        warn("V %s\n", msg);
-        diffInfo.lastCommittedMsg.pop();
-      }
-    }
+    std::stringstream diffMsg;
+    void reportDiffMismatch(ThreadID tid, InstSeqNum seq);
     void clearDiffMismatch(ThreadID tid, InstSeqNum seq);
 
 
@@ -756,7 +748,7 @@ class BaseCPU : public ClockedObject
         bool errorCsrsValue[diffCsrNum];  // CsrRegIndex
         bool errorPcValue;
 
-        std::queue<std::string> lastCommittedMsg;
+        std::queue<o3::DynInstPtr> lastCommittedMsg;
     } diffInfo;
 
     uint8_t cmpBuffer[16];

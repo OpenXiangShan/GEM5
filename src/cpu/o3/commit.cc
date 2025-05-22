@@ -1428,7 +1428,7 @@ Commit::commitInsts()
 
 void
 Commit::diffInst(ThreadID tid, const DynInstPtr &inst) {
-    cpu->diffInfo.lastCommittedMsg.push(inst->genDisassembly());
+    cpu->diffInfo.lastCommittedMsg.push(inst);
     if (cpu->diffInfo.lastCommittedMsg.size() > 20) {
         cpu->diffInfo.lastCommittedMsg.pop();
     }

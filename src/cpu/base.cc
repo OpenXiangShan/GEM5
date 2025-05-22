@@ -57,6 +57,7 @@
 #include "base/trace.hh"
 #include "cpu/checker/cpu.hh"
 #include "cpu/difftest.hh"
+#include "cpu/o3/dyn_inst.hh"
 #include "cpu/thread_context.hh"
 #include "debug/Diff.hh"
 #include "debug/Diff2.hh"
@@ -163,7 +164,6 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
       dumpStartNum(p.dump_start),
       enableRVV(p.enable_riscv_vector),
       enableRVHDIFF(p.enable_riscv_h),
-      enabledifftesInstTrace(p.enable_difftest_inst_trace),
       noHypeMode(false),
       enableMemDedup(p.enable_mem_dedup)
 {
@@ -927,13 +927,13 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
 
     if (nemu_pc != gem5_pc) {
         // warn("NEMU store addr: %#lx\n", nemu_store_addr);
-        diffMsg += csprintf("Inst [sn:%lli]\n", seq);
-        diffMsg += csprintf( "Diff at %s, NEMU: %#lx, GEM5: %#lx\n", "PC", nemu_pc,
+        diffMsg << csprintf("Inst [sn:%lli]\n", seq);
+        diffMsg << csprintf( "Diff at %s, NEMU: %#lx, GEM5: %#lx\n", "PC", nemu_pc,
                 gem5_pc);
         if (!diff_at) {
             diff_at = PCDiff;
             diffInfo.errorPcValue = 1;
-            diffMsg += csprintf("GEM5 pc: %#lx, NEMU npc: %#lx\n", gem5_pc,
+            diffMsg << csprintf("GEM5 pc: %#lx, NEMU npc: %#lx\n", gem5_pc,
                     diffAllStates->diff.npc);
             if (diffAllStates->diff.npc == gem5_pc) {
                 npc_match = true;
@@ -982,8 +982,6 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                         nemu_val_ += "_";
                     }
                 }
-                warn("Inst [sn:%lli] pc: %#lx, msg: %s\n", seq, diffInfo.pc->instAddr(),
-                        diffInfo.lastCommittedMsg.back().c_str());
                 warn("May be diff at v%d\n Ref  value: %s\n GEM5 value: %s\n",
                     (error_idx>>1), nemu_val_, gem5_val_);
                 diff_at = ValueDiff;
@@ -995,7 +993,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         diffAllStates->gem5RegFile.vtype = gem5_val;
         uint64_t ref_val = diffAllStates->referenceRegFile.vtype;
         if (gem5_val != ref_val) {
-            DPRINTF(DiffValue,"Diff at \033[31m%s\033[0m Ref value: \033[31m"
+            warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
                     "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
                     "vtype", ref_val, gem5_val);
             if (!diff_at) {
@@ -1030,7 +1028,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         diffAllStates->gem5RegFile.vl = gem5_val;
         ref_val = diffAllStates->referenceRegFile.vl;
         if (gem5_val != ref_val) {
-            DPRINTF(DiffValue,"Diff at \033[31m%s\033[0m Ref value: \033[31m"
+            warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
                     "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
                     "vl", ref_val, gem5_val);
             if (!diff_at) {
@@ -1049,7 +1047,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         if (gem5_val != ref_val) {
             csrDiffMessage(gem5_val, ref_val, CsrRegIndex::mstatus, diffAllStates->gem5RegFile.mstatus, seq, "mstatus",
                            diff_at);
-            diffMsg +=
+            diffMsg <<
                 csprintf("Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
                          "mstatus", ref_val, gem5_val);
         }
@@ -1060,7 +1058,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         if (gem5_val != ref_val) {
             csrDiffMessage(gem5_val, ref_val, CsrRegIndex::stval, diffAllStates->gem5RegFile.stval, seq, "stval",
                            diff_at);
-            diffMsg += csprintf("Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033"
+            diffMsg << csprintf("Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033"
                     "[0m, GEM5 value: \033[31m%#lx\033[0m\n", "stval",
                     ref_val, gem5_val);
         }
@@ -1071,7 +1069,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         ref_val = diffAllStates->referenceRegFile.mtval;
         DPRINTF(Diff, "stvmtvalal:\tGEM5: %#lx,\tREF: %#lx\n", gem5_val, ref_val);
         if (gem5_val != ref_val) {
-            diffMsg += csprintf("Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033"
+            diffMsg << csprintf("Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033"
                     "[0m, GEM5 value: \033[31m%#lx\033[0m\n", "mtval",
                     ref_val, gem5_val);
             diffInfo.errorCsrsValue[CsrRegIndex::mtval] = 1;
@@ -1087,7 +1085,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         ref_val = diffAllStates->referenceRegFile.mode;
         DPRINTF(Diff, "priv:\tGEM5: %#lx,\tREF: %#lx\n", gem5_val, ref_val);
         if (gem5_val != ref_val) {
-            diffMsg += csprintf("Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033"
+            diffMsg << csprintf("Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033"
                     "[0m, GEM5 value: \033[31m%#lx\033[0m\n", "priv",
                     ref_val, gem5_val);
             // diffInfo.errorCsrsValue[CsrRegIndex::stval] = 1;
@@ -1103,7 +1101,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         if (gem5_val != ref_val) {
             csrDiffMessage(gem5_val, ref_val, CsrRegIndex::mcause, diffAllStates->gem5RegFile.mcause, seq, "mcause",
                            diff_at);
-            diffMsg +=
+            diffMsg <<
                 csprintf("Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
                     "mcause", ref_val, gem5_val);
         }
@@ -1114,7 +1112,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         ref_val = diffAllStates->referenceRegFile.scause;
         DPRINTF(Diff, "scause:\tGEM5: %#lx,\tREF: %#lx\n", gem5_val, ref_val);
         if (gem5_val != ref_val) {
-            diffMsg +=
+            diffMsg <<
                 csprintf("Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
                     "scause", ref_val, gem5_val);
             diffInfo.errorCsrsValue[CsrRegIndex::scause] = 1;
@@ -1129,7 +1127,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         if (gem5_val != ref_val) {
             csrDiffMessage(gem5_val, ref_val, CsrRegIndex::satp, diffAllStates->gem5RegFile.satp, seq, "satp",
                            diff_at);
-            diffMsg += csprintf("CPU%i Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033"
+            diffMsg << csprintf("CPU%i Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033"
                     "[0m, GEM5 value: \033[31m%#lx\033[0m\n",
                     cpuId(), "satp", ref_val, gem5_val);
         }
@@ -1139,7 +1137,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         ref_val = diffAllStates->referenceRegFile.mie;
         if (gem5_val != ref_val) {
             csrDiffMessage(gem5_val, ref_val, CsrRegIndex::mie, diffAllStates->gem5RegFile.mie, seq, "mie", diff_at);
-            diffMsg += csprintf("Diff at \033[31m%s\033[0m Ref value: \033[31m"
+            diffMsg << csprintf("Diff at \033[31m%s\033[0m Ref value: \033[31m"
                     "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n", "mie",
                     ref_val, gem5_val);
         }
@@ -1148,7 +1146,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         ref_val = diffAllStates->referenceRegFile.mip;
         if (gem5_val != ref_val) {
             DPRINTF(DiffValue, "mip:\tGEM5: %#lx,\tREF: %#lx\n", gem5_val, ref_val);
-            diffMsg +=
+            diffMsg <<
                 csprintf("%s at \033[31m%s\033[0m Ref value: \033[31m%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
                     gem5_val == ref_val ? "match" : "diff", "mip", ref_val, gem5_val);
             diffInfo.errorCsrsValue[CsrRegIndex::mip] = 1;
@@ -1158,8 +1156,8 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_MEPC, tid);
         ref_val = diffAllStates->referenceRegFile.mepc;
         if (gem5_val != ref_val) {
-            DPRINTF(DiffValue, "Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
-            DPRINTF(DiffValue, "Diff at \033[31m%s\033[0m Ref value: \033[31m"
+            warn("Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
+            warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
                     "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
                     "mepc", ref_val, gem5_val);
             diffInfo.errorCsrsValue[CsrRegIndex::mepc] = 1;
@@ -1318,19 +1316,19 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             DPRINTF(Diff, "At %s Ref value: %#lx, GEM5 value: %#lx\n",
                     reg_name[dest_tag], nemu_val, gem5_val);
 
-            if (diffInfo.inst->isMemRef()) {
-                diffMsg += csprintf("%s addr: %#lx, size: %u\n",
-                        diffInfo.inst->isAtomic() ? "AMO"
-                        : diffInfo.inst->isLoad() ? "Load"
-                                                  : "Store",
-                        diffInfo.physEffAddr, diffInfo.effSize);
-            }
-
             if (gem5_val != nemu_val) {
+                if (diffInfo.inst->isMemRef()) {
+                    diffMsg << csprintf("%s addr: %#lx, size: %u\n",
+                                        diffInfo.inst->isAtomic() ? "AMO"
+                                        : diffInfo.inst->isLoad() ? "Load"
+                                                                  : "Store",
+                                        diffInfo.physEffAddr, diffInfo.effSize);
+                }
+
                 if (system->multiCore() && (diffInfo.inst->isLoad() || diffInfo.inst->isAtomic()) &&
                     _goldenMemManager->inPmem(diffInfo.physEffAddr)) {
                     DPRINTF(Diff, "Difference on %s instr found in multicore mode, check in golden memory\n",
-                         diffInfo.inst->isLoad() ? "load" : "amo");
+                            diffInfo.inst->isLoad() ? "load" : "amo");
                     uint8_t *golden_ptr = diffInfo.goldenValue;
 
                     // a lambda function to sync memory and register from golden results to ref
@@ -1346,12 +1344,11 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                         sync_mem_reg();
                         continue;
                     } else if (diffInfo.inst->isAtomic()) {
-                        DPRINTF(Diff, "Golden mem old value: %#lx, GEM5 old value: %#lx\n",
-                                diffInfo.amoOldGoldenValue, gem5_val);
+                        DPRINTF(Diff, "Golden mem old value: %#lx, GEM5 old value: %#lx\n", diffInfo.amoOldGoldenValue,
+                                gem5_val);
                         DPRINTF(Diff, "New golden value: %#lx\n", *(uint64_t *)golden_ptr);
                         if (memcmp(&diffInfo.amoOldGoldenValue, &gem5_val, diffInfo.effSize) == 0) {
-                            DPRINTF(Diff,
-                                "Atomic encountered, old value matched. Sync from golden to ref\n");
+                            DPRINTF(Diff, "Atomic encountered, old value matched. Sync from golden to ref\n");
                             sync_mem_reg();
                             continue;
                         } else {
@@ -1360,17 +1357,14 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                     }
                 }
 
-                if (dest.isFloatReg() &&
-                    (gem5_val ^ nemu_val) == ((0xffffffffULL) << 32)) {
+                if (dest.isFloatReg() && (gem5_val ^ nemu_val) == ((0xffffffffULL) << 32)) {
                     DPRINTF(Diff,
                             "Difference might be caused by box,"
                             " ignore it\n");
                 } else {
                     for (int i = 0; i < diffInfo.inst->numSrcRegs(); i++) {
                         const auto &src = diffInfo.inst->srcRegIdx(i);
-                        DPRINTF(Diff, "Src%d %s = %lx\n", i,
-                                reg_name[src.index()],
-                                diffInfo.getSrcReg(src));
+                        DPRINTF(Diff, "Src%d %s = %lx\n", i, reg_name[src.index()], diffInfo.getSrcReg(src));
                         // threadContexts[curThread]->getReg(src));
                     }
                     bool skipCSR = false;
@@ -1383,31 +1377,29 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                             break;
                         }
                     }
-                    DPRINTF(Diff, "Inst src count: %u, dest count: %u\n",
-                            diffInfo.inst->numSrcRegs(),
+                    DPRINTF(Diff, "Inst src count: %u, dest count: %u\n", diffInfo.inst->numSrcRegs(),
                             diffInfo.inst->numDestRegs());
-                    diffMsg += csprintf("Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
-                    diffMsg +=
-                        csprintf("Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033[0m, "
-                                "GEM5 value: \033[31m%#lx\033[0m\n",
-                                reg_name[dest_tag], nemu_val, gem5_val);
+                    diffMsg << csprintf("Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
+                    diffMsg << csprintf(
+                        "Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033[0m, "
+                        "GEM5 value: \033[31m%#lx\033[0m\n",
+                        reg_name[dest_tag], nemu_val, gem5_val);
                     diffInfo.errorRegsValue[dest_tag] = 1;
-                    if (dest_tag<32)
+                    if (dest_tag < 32)
                         diffAllStates->gem5RegFile.gpr[dest_tag]._64 = gem5_val;
-                    else if (dest_tag>=32 && dest_tag<64)
-                        diffAllStates->gem5RegFile.fpr[dest_tag-32]._64 = gem5_val;
+                    else if (dest_tag >= 32 && dest_tag < 64)
+                        diffAllStates->gem5RegFile.fpr[dest_tag - 32]._64 = gem5_val;
 
                     diffAllStates->gem5RegFile.pc = gem5_pc;
                     if (!diff_at && !skipCSR) {
                         diff_at = ValueDiff;
                     }
-
                 }
             }
         }
     }
-    if (diff_at && (enabledifftesInstTrace)) {
-        diffMsg += csprintf("In CPU%d: NEMU PC: %#10lx, GEM5 PC: %#10lx, inst: %s\n", cpuId(),
+    if (diff_at) {
+        diffMsg << csprintf("In CPU%d: NEMU PC: %#10lx, GEM5 PC: %#10lx, inst: %s\n", cpuId(),
         nemu_pc, gem5_pc,
         diffInfo.inst->disassemble(diffInfo.pc->instAddr()).c_str());
     }
@@ -1416,12 +1408,25 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
 
 void
 BaseCPU::clearDiffMismatch(ThreadID tid, InstSeqNum seq) {
-    diffMsg = "";
+    diffMsg.str(std::string());
     memset(diffInfo.errorRegsValue, 0, sizeof(diffInfo.errorRegsValue));
     memset(diffInfo.errorCsrsValue, 0, sizeof(diffInfo.errorCsrsValue));
     diffInfo.errorPcValue = 0;
 }
 
+void
+BaseCPU::reportDiffMismatch(ThreadID tid, InstSeqNum seq)
+{
+    warn("%s", diffMsg.str());
+    diffAllStates->proxy->isa_reg_display();
+    displayGem5Regs();
+    warn("start dump last %lu committed msg\n", diffInfo.lastCommittedMsg.size());
+    while (diffInfo.lastCommittedMsg.size()) {
+        auto &inst = diffInfo.lastCommittedMsg.front();
+        warn("V %s\n", inst->genDisassembly());
+        diffInfo.lastCommittedMsg.pop();
+    }
+}
 
 void
 BaseCPU::difftestStep(ThreadID tid, InstSeqNum seq)
@@ -1478,14 +1483,12 @@ BaseCPU::difftestStep(ThreadID tid, InstSeqNum seq)
                 } else {
                     clearDiffMismatch(tid, seq);
                     DPRINTF(Diff,
-                        "Difftest matched again, "
-                        "NEMU seems to commit the failed mem instruction\n");
+                            "Difftest matched again, "
+                            "NEMU seems to commit the failed mem instruction\n");
                 }
             } else {
-                if (enabledifftesInstTrace)
-                    reportDiffMismatch(tid, seq);
+                reportDiffMismatch(tid, seq);
                 panic("Difftest failed!\n");
-
             }
         } else {
             clearDiffMismatch(tid, seq);
@@ -1493,12 +1496,8 @@ BaseCPU::difftestStep(ThreadID tid, InstSeqNum seq)
     }
     committedInstNum++;
     if (dumpCommitFlag && committedInstNum >= dumpStartNum) {
-        committedInsts.push_back(std::make_pair(
-            diffInfo.pc->instAddr(),
-            diffInfo.inst->disassemble(diffInfo.pc->instAddr()).c_str()));
-    }
-    if (enabledifftesInstTrace) {
-        DPRINTF(Diff, "commit_pc: %s, committedInstNum: %d\n", diffInfo.pc, committedInstNum);
+        committedInsts.push_back(
+            std::make_pair(diffInfo.pc->instAddr(), diffInfo.inst->disassemble(diffInfo.pc->instAddr()).c_str()));
     }
 }
 
