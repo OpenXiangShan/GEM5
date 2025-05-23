@@ -340,7 +340,7 @@ def setKmhV3IdealParams(args, system):
         cpu.squashWidth = 12
         cpu.replayWidth = 12
         cpu.LQEntries = 128
-        cpu.SQEntries = 96
+        cpu.SQEntries = 64
         cpu.SbufferEntries = 24
         cpu.SbufferEvictThreshold = 16
         cpu.numPhysIntRegs = 354
