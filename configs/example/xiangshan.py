@@ -348,8 +348,8 @@ def setKmhV3IdealParams(args, system):
         cpu.numROBEntries = 640
         cpu.numDQEntries = [32, 16, 16] # 32->36
         cpu.mmu.itb.size = 96
-
-        cpu.BankConflictCheck = False   # real bank conflict 0.2 score
+        
+        cpu.BankConflictCheck = True   # real bank conflict 0.2 score
         cpu.EnableLdMissReplay = False
         cpu.EnablePipeNukeCheck = False
         cpu.StoreWbStage = 2 # store writeback at s2
