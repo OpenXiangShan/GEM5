@@ -1,0 +1,15 @@
+name: gem5 Ideal BTB Performance Test - Weekly
+
+on:
+  schedule:
+    # Run every Thursday at 23:59 UTC+8 (15:59 UTC)
+    - cron: '59 15 * * 4'
+  workflow_dispatch:
+    # Allow manual triggering of the workflow
+
+jobs:
+  perf_test:
+    uses: ./.github/workflows/gem5-perf-template.yml
+    with:
+      script_path: ../kmh_v3_btb.sh
+      checkpoint_list: "/nfs/home/share/gem5_ci/spec06_cpts/checkpoint-0-0-0.lst" 

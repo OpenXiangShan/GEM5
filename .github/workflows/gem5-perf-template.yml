@@ -6,6 +6,10 @@ on:
       script_path:
         required: true
         type: string
+      checkpoint_list:
+        required: false
+        type: string
+        default: "/nfs/home/share/gem5_ci/spec06_cpts/spec_0.8c_int.lst"
 
 jobs:
   run_performance_test:
@@ -46,7 +50,7 @@ jobs:
           mkdir -p $GEM5_HOME/util/xs_scripts/test
           cd $GEM5_HOME/util/xs_scripts/test
           bash ../parallel_sim.sh `realpath ${{ inputs.script_path }}` \
-            /nfs/home/share/gem5_ci/spec06_cpts/spec_0.8c_int.lst \
+            ${{ inputs.checkpoint_list }} \
             $CHECKPOINT_ROOT \
             spec_all
       - name: Setup gem5_data_proc environment
