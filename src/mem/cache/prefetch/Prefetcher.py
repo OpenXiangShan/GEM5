@@ -944,7 +944,7 @@ class DespacitoStreamPrefetcher(QueuedPrefetcher):
 
     sample_rate = Param.Int(256, "Sample rate")
     min_distance = Param.Int(4, "Minimum distance")
-    max_distance = Param.Int(Parent.size / Parent.cache_line_size / 2, "Maximum distance")
+    max_distance = Param.Int(8192, "Maximum distance")
 
     sampler_entries = Param.MemorySize(
         "32",
