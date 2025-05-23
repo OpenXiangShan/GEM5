@@ -352,7 +352,7 @@ def setKmhV3IdealParams(args, system):
         cpu.BankConflictCheck = True   # real bank conflict 0.2 score
         cpu.EnableLdMissReplay = False
         cpu.EnablePipeNukeCheck = False
-        cpu.StoreWbStage = 2 # store writeback at s2
+        cpu.StoreWbStage = 4 # store writeback at s4
 
         cpu.scheduler = IdealScheduler()
         # use centralized load/store issue queue, for hmmer
