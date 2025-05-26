@@ -52,7 +52,8 @@ class StaticInstFlags(Enum):
         'IsOper64',
         'IsHInst',
         'IsNop',            # Is a no-op (no effect at all).
-        'IsMov',
+        'IsMov',            # Move elimination
+        'IsAddImm',         # Constant folding: addi and addi.w elimination
 
         'IsInteger',        # References integer regs.
         'IsFloating',       # References FP regs.

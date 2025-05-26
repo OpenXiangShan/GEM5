@@ -250,7 +250,7 @@ ElasticTrace::updateRegDep(const DynInstConstPtr& dyn_inst)
         const RegId& src_reg = dyn_inst->srcRegIdx(src_idx);
         if (!src_reg.is(MiscRegClass) && !src_reg.is(InvalidRegClass)) {
             // Get the physical register index of the i'th source register.
-            PhysRegIdPtr phys_src_reg = dyn_inst->renamedSrcIdx(src_idx);
+            PhysRegIdPtr phys_src_reg = dyn_inst->renamedSrcIdx(src_idx).PhyReg();
             DPRINTFR(ElasticTrace, "[sn:%lli] Check map for src reg"
                      " %i (%s)\n", seq_num,
                      phys_src_reg->flatIndex(), phys_src_reg->className());
@@ -283,7 +283,7 @@ ElasticTrace::updateRegDep(const DynInstConstPtr& dyn_inst)
             // Get the physical register index of the i'th destination
             // register.
             PhysRegIdPtr phys_dest_reg =
-                dyn_inst->renamedDestIdx(dest_idx);
+                dyn_inst->renamedDestIdx(dest_idx).PhyReg();
             DPRINTFR(ElasticTrace, "[sn:%lli] Update map for dest reg"
                      " %i (%s)\n", seq_num, phys_dest_reg->flatIndex(),
                      dest_reg.className());

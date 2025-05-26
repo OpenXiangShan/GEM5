@@ -153,15 +153,15 @@ DynInst::operator new(size_t count, Arrays &arrays)
     size_t flat_dest_idx_size = sizeof(*arrays.flatDestIdx) * num_dests;
 
     uintptr_t dest_idx =
-        roundUp(flat_dest_idx + flat_dest_idx_size, alignof(PhysRegIdPtr));
+        roundUp(flat_dest_idx + flat_dest_idx_size, alignof(RenameEntry));
     size_t dest_idx_size = sizeof(*arrays.destIdx) * num_dests;
 
     uintptr_t prev_dest_idx =
-        roundUp(dest_idx + dest_idx_size, alignof(PhysRegIdPtr));
+        roundUp(dest_idx + dest_idx_size, alignof(RenameEntry));
     size_t prev_dest_idx_size = sizeof(*arrays.prevDestIdx) * num_dests;
 
     uintptr_t src_idx =
-        roundUp(prev_dest_idx + prev_dest_idx_size, alignof(PhysRegIdPtr));
+        roundUp(prev_dest_idx + prev_dest_idx_size, alignof(RenameEntry));
     size_t src_idx_size = sizeof(*arrays.srcIdx) * num_srcs;
 
     uintptr_t ready_src_idx =
@@ -177,16 +177,16 @@ DynInst::operator new(size_t count, Arrays &arrays)
 
     // Fill in "arrays" with pointers to all the arrays.
     arrays.flatDestIdx = (RegId *)(buf + flat_dest_idx);
-    arrays.destIdx = (PhysRegIdPtr *)(buf + dest_idx);
-    arrays.prevDestIdx = (PhysRegIdPtr *)(buf + prev_dest_idx);
-    arrays.srcIdx = (PhysRegIdPtr *)(buf + src_idx);
+    arrays.destIdx = (RenameEntry *)(buf + dest_idx);
+    arrays.prevDestIdx = (RenameEntry *)(buf + prev_dest_idx);
+    arrays.srcIdx = (RenameEntry *)(buf + src_idx);
     arrays.readySrcIdx = (uint8_t *)(buf + ready_src_idx);
 
     // Initialize all the extra components.
     new (arrays.flatDestIdx) RegId[num_dests];
-    new (arrays.destIdx) PhysRegIdPtr[num_dests];
-    new (arrays.prevDestIdx) PhysRegIdPtr[num_dests];
-    new (arrays.srcIdx) PhysRegIdPtr[num_srcs];
+    new (arrays.destIdx) RenameEntry[num_dests];
+    new (arrays.prevDestIdx) RenameEntry[num_dests];
+    new (arrays.srcIdx) RenameEntry[num_srcs];
     new (arrays.readySrcIdx) uint8_t[num_srcs];
 
     return buf;
@@ -212,12 +212,12 @@ DynInst::~DynInst()
      */
     for (int i = 0; i < _numDests; i++) {
         _flatDestIdx[i].~RegId();
-        _destIdx[i].~PhysRegIdPtr();
-        _prevDestIdx[i].~PhysRegIdPtr();
+        _destIdx[i].PhyReg().~PhysRegIdPtr();
+        _prevDestIdx[i].PhyReg().~PhysRegIdPtr();
     }
 
     for (int i = 0; i < _numSrcs; i++)
-        _srcIdx[i].~PhysRegIdPtr();
+        _srcIdx[i].PhyReg().~PhysRegIdPtr();
 
     for (int i = 0; i < ((_numSrcs + 7) / 8); i++)
         _readySrcIdx[i].~uint8_t();
@@ -356,7 +356,7 @@ DynInst::setSquashed()
     // ensures that dest regs will be pinned to the same phys register if
     // re-rename happens.
     for (int idx = 0; idx < numDestRegs(); idx++) {
-        PhysRegIdPtr phys_dest_reg = renamedDestIdx(idx);
+        PhysRegIdPtr phys_dest_reg = renamedDestIdx(idx).PhyReg();
         if (phys_dest_reg->isPinned()) {
             phys_dest_reg->incrNumPinnedWrites();
             if (isPinnedRegsWritten())

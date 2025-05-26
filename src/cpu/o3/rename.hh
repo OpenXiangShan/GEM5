@@ -313,8 +313,8 @@ class Rename
     struct RenameHistory
     {
         RenameHistory(InstSeqNum _instSeqNum, const RegId& _archReg,
-                      PhysRegIdPtr _newPhysReg,
-                      PhysRegIdPtr _prevPhysReg)
+                      RenameEntry _newPhysReg,
+                      RenameEntry _prevPhysReg)
             : instSeqNum(_instSeqNum), archReg(_archReg),
               newPhysReg(_newPhysReg), prevPhysReg(_prevPhysReg)
         {
@@ -325,10 +325,10 @@ class Rename
         /** The architectural register index that was renamed. */
         RegId archReg;
         /** The new physical register that the arch. register is renamed to. */
-        PhysRegIdPtr newPhysReg;
+        RenameEntry newPhysReg;
         /** The old physical register that the arch. register was renamed to.
          */
-        PhysRegIdPtr prevPhysReg;
+        RenameEntry prevPhysReg;
     };
 
     /** A per-thread list of all destination register renames, used to either
@@ -555,6 +555,9 @@ class Rename
         statistics::Scalar tempSerializing;
         /** Number of instructions inserted into skid buffers. */
         statistics::Scalar skidInsts;
+
+        statistics::Scalar moveEliminated;
+        statistics::Scalar constantFolded;
 
         statistics::Vector stallEvents;
     } stats;

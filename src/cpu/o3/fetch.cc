@@ -1648,7 +1648,7 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
             instruction->staticInst->disassemble(this_pc.instAddr()));
 
     DPRINTF(Fetch, "Is nop: %i, is move: %i\n", instruction->isNop(),
-            instruction->staticInst->isMov());
+            instruction->isMov());
     if (isDecoupledFrontend()) {
         if (isStreamPred()) {
             DPRINTF(DecoupleBP, "Set instruction %lu with stream id %lu, fetch id %lu\n",

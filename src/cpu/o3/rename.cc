@@ -148,6 +148,10 @@ Rename::RenameStats::RenameStats(statistics::Group *parent)
                "count of temporary serializing insts renamed"),
       ADD_STAT(skidInsts, statistics::units::Count::get(),
                "count of insts added to the skid buffer"),
+      ADD_STAT(moveEliminated, statistics::units::Count::get(),
+               "count of insts eliminated by move elimination"),
+      ADD_STAT(constantFolded, statistics::units::Count::get(),
+               "count of insts eliminated by constant folding"),
       ADD_STAT(stallEvents, statistics::units::Count::get(),
                "count of stall events")
 {
@@ -179,6 +183,8 @@ Rename::RenameStats::RenameStats(statistics::Group *parent)
     serializing.flags(statistics::total);
     tempSerializing.flags(statistics::total);
     skidInsts.flags(statistics::total);
+    moveEliminated.flags(statistics::total);
+    constantFolded.flags(statistics::total);
 
     stallEvents.init(StallEventCount).flags(statistics::total);
     std::map < StallEvent, const char* > stall_event_str = {
@@ -1106,10 +1112,12 @@ Rename::doSquash(const InstSeqNum &squashed_seq_num, ThreadID tid)
            hb_it->instSeqNum > squashed_seq_num) {
         assert(hb_it != historyBuffer[tid].end());
 
-        DPRINTF(Rename, "[tid:%i] Removing history entry with sequence "
-                "number %i (archReg: %d, newPhysReg: %d, prevPhysReg: %d).\n",
+        DPRINTF(Rename,
+                "[tid:%i] Removing history entry with sequence "
+                "number %i (archReg: %d, newPhysReg: [%d:%d], prevPhysReg: [%d:%d]).\n",
                 tid, hb_it->instSeqNum, hb_it->archReg.index(),
-                hb_it->newPhysReg->index(), hb_it->prevPhysReg->index());
+                hb_it->newPhysReg.PhyReg()->index(), hb_it->newPhysReg.Displacement(),
+                hb_it->prevPhysReg.PhyReg()->index(), hb_it->prevPhysReg.Displacement());
 
         // Undo the rename mapping only if it was really a change.
         // Special regs that are not really renamed (like misc regs
@@ -1121,14 +1129,16 @@ Rename::doSquash(const InstSeqNum &squashed_seq_num, ThreadID tid)
             // Tell the rename map to set the architected register to the
             // previous physical register that it was renamed to.
             renameMap[tid]->setEntry(hb_it->archReg, hb_it->prevPhysReg);
-            tryFreePReg(hb_it->newPhysReg);
+            if (hb_it->newPhysReg.PhyReg() != hb_it->prevPhysReg.PhyReg()) {
+                tryFreePReg(hb_it->newPhysReg.PhyReg());
+            }
         }
 
         // Notify potential listeners that the register mapping needs to be
         // removed because the instruction it was mapped to got squashed. Note
         // that this is done before hb_it is incremented.
         ppSquashInRename->notify(std::make_pair(hb_it->instSeqNum,
-                                                hb_it->newPhysReg));
+                                                hb_it->newPhysReg.PhyReg()));
 
         historyBuffer[tid].erase(hb_it++);
 
@@ -1167,17 +1177,18 @@ Rename::removeFromHistory(InstSeqNum inst_seq_num, ThreadID tid)
            hb_it->instSeqNum <= inst_seq_num) {
 
         DPRINTF(Rename,
-                "[tid:%i] try to free up older rename of reg p%i (%s), "
+                "[tid:%i] try to free up older rename of reg [p%i:%d] (%s), "
                 "[sn:%llu].\n",
-                tid, hb_it->prevPhysReg->flatIndex(),
-                hb_it->prevPhysReg->className(), hb_it->instSeqNum);
+                tid, hb_it->prevPhysReg.PhyReg()->flatIndex(), hb_it->prevPhysReg.Displacement(),
+                hb_it->prevPhysReg.PhyReg()->className(),
+                hb_it->instSeqNum);
 
 
         // Don't free special phys regs like misc and zero regs, which
         // can be recognized because the new mapping is the same as
         // the old one.
-        if (hb_it->newPhysReg != hb_it->prevPhysReg) {
-            tryFreePReg(hb_it->prevPhysReg);
+        if (hb_it->newPhysReg.PhyReg() != hb_it->prevPhysReg.PhyReg()) {
+            tryFreePReg(hb_it->prevPhysReg.PhyReg());
         }
 
         ++stats.committedMaps;
@@ -1197,7 +1208,7 @@ Rename::renameSrcRegs(const DynInstPtr &inst, ThreadID tid)
     // operands, and redirect them to the right physical register.
     for (int src_idx = 0; src_idx < num_src_regs; src_idx++) {
         const RegId& src_reg = inst->srcRegIdx(src_idx);
-        PhysRegIdPtr renamed_reg;
+        RenameEntry renamed_reg;
 
         renamed_reg = map->lookup(tc->flattenRegId(src_reg));
         switch (src_reg.classValue()) {
@@ -1227,27 +1238,27 @@ Rename::renameSrcRegs(const DynInstPtr &inst, ThreadID tid)
 
         DPRINTF(Rename,
                 "[tid:%i] "
-                "Looking up %s arch reg x%i, got p%i\n",
-                tid, src_reg.className(),
-                src_reg.index(), renamed_reg->flatIndex());
+                "Looking up %s arch reg x%i, got [p%i:%d]\n",
+                tid, src_reg.className(), src_reg.index(),
+                renamed_reg.PhyReg()->flatIndex(), renamed_reg.Displacement());
 
         inst->renameSrcReg(src_idx, renamed_reg);
 
         // See if the register is ready or not.
-        if (scoreboard->getReg(renamed_reg)) {
+        if (scoreboard->getReg(renamed_reg.PhyReg())) {
             DPRINTF(Rename,
                     "[tid:%i] "
                     "Register %d (flat: %d) (%s) is ready.\n",
-                    tid, renamed_reg->index(), renamed_reg->flatIndex(),
-                    renamed_reg->className());
+                    tid, renamed_reg.PhyReg()->index(), renamed_reg.PhyReg()->flatIndex(),
+                    renamed_reg.PhyReg()->className());
 
             inst->markSrcRegReady(src_idx);
         } else {
             DPRINTF(Rename,
                     "[tid:%i] "
                     "Register %d (flat: %d) (%s) is not ready.\n",
-                    tid, renamed_reg->index(), renamed_reg->flatIndex(),
-                    renamed_reg->className());
+                    tid, renamed_reg.PhyReg()->index(), renamed_reg.PhyReg()->flatIndex(),
+                    renamed_reg.PhyReg()->className());
         }
 
         ++stats.lookups;
@@ -1269,32 +1280,47 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
         RegId flat_dest_regid = tc->flattenRegId(dest_reg);
         flat_dest_regid.setNumPinnedWrites(dest_reg.getNumPinnedWrites());
 
-        PhysRegIdPtr last_dest_phy_reg = nullptr;
-        bool mov_elim = false;
-        if (inst->staticInst->isMov()) {
+        RenameEntry last_dest_phy_reg;
+        bool inc_ref_of_last_dest_phy_reg = false;
+        if (inst->isMov()) {
+            // Move elimination
             last_dest_phy_reg =
                 map->lookup(tc->flattenRegId(inst->srcRegIdx(0)));
             DPRINTF(Rename, "Find the last reg p%i renamed for mv x%i, x%i\n",
-                    last_dest_phy_reg->flatIndex(), dest_reg.index(),
+                    last_dest_phy_reg.PhyReg()->flatIndex(), dest_reg.index(),
                     inst->srcRegIdx(0).index());
-            mov_elim = true;
-            inst->setEmptyMove(true);
-            DPRINTF(Rename, "Inst sn:%lu is nop: %i, is move: %i\n",
-                    inst->seqNum, inst->isNop(), inst->staticInst->isMov());
+            inc_ref_of_last_dest_phy_reg = true;
+            inst->setEmptyMov();
+            DPRINTF(Rename, "[sn:%llu] Inst is nop: %i, is move: %i\n", inst->seqNum, inst->isNop(),
+                    inst->isMov());
+            stats.moveEliminated++;
+        } else if (cpu->enableConstantFolding && inst->isAddImm()) {
+            // Constant folding
+            last_dest_phy_reg =
+                map->lookup(tc->flattenRegId(inst->srcRegIdx(0)));
+            inc_ref_of_last_dest_phy_reg = true;
+            int64_t displacement = last_dest_phy_reg.Displacement() + inst->staticInst->getImm();
+            last_dest_phy_reg.setDisplacement(displacement);
+            inst->setConstantFolded();
+            DPRINTF(Rename, "[sn:%llu] Inst constant folded, is AddImm: %i\n", inst->seqNum, inst->isNop(),
+                    inst->isAddImm());
+            stats.constantFolded++;
         }
 
-        rename_result = map->rename(flat_dest_regid, last_dest_phy_reg);
+        rename_result = map->rename(flat_dest_regid, last_dest_phy_reg.PhyReg(),
+                                    last_dest_phy_reg.Displacement());
 
         inst->flattenedDestIdx(dest_idx, flat_dest_regid);
 
-        if (!mov_elim) {
-            scoreboard->unsetReg(rename_result.first);
+        if (!inc_ref_of_last_dest_phy_reg) {
+            scoreboard->unsetReg(rename_result.first.PhyReg());
         }
 
-        DPRINTF(Rename, "[tid:%i] %s map arch reg x%i (%s) to p%i.\n",
-                tid, mov_elim ? "Mov" : "Rename",
+        DPRINTF(Rename, "[tid:%i] %s arch reg x%i (%s) from [p%i:%d] to [p%i:%d].\n", tid,
+                inc_ref_of_last_dest_phy_reg ? "Mov" : "Rename",
                 dest_reg.index(), dest_reg.className(),
-                rename_result.first->flatIndex());
+                rename_result.second.PhyReg()->flatIndex(), rename_result.second.Displacement(),
+                rename_result.first.PhyReg()->flatIndex(), rename_result.first.Displacement());
 
         // Record the rename information so that a history can be kept.
         RenameHistory hb_entry(inst->seqNum, flat_dest_regid,
@@ -1619,10 +1645,10 @@ Rename::dumpHistory()
                     (*buf_it).instSeqNum,
                     (*buf_it).archReg.className(),
                     (*buf_it).archReg.index(),
-                    (*buf_it).newPhysReg->index(),
-                    (*buf_it).newPhysReg->className(),
-                    (*buf_it).prevPhysReg->index(),
-                    (*buf_it).prevPhysReg->className());
+                    (*buf_it).newPhysReg.PhyReg()->index(),
+                    (*buf_it).newPhysReg.PhyReg()->className(),
+                    (*buf_it).prevPhysReg.PhyReg()->index(),
+                    (*buf_it).prevPhysReg.PhyReg()->className());
 
             buf_it++;
         }

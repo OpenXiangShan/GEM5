@@ -208,11 +208,73 @@ class PhysRegFile
         }
     }
 
+    RegVal
+    getReg(RenameEntry phys_reg) const
+    {
+        const RegClassType type = phys_reg.PhyReg()->classValue();
+        const RegIndex idx = phys_reg.PhyReg()->index();
+
+        DPRINTF(IEW, "RegFile: trying to access %s register %i \n",
+                    type, idx);
+        RegVal val = getReg(phys_reg.PhyReg());
+        switch (type) {
+            case IntRegClass: case InvalidRegClass:
+                val += phys_reg.Displacement();
+                DPRINTF(IEW, "RegFile: Access to int register %i has displacement %d, real data %#x\n",
+                    idx, phys_reg.Displacement(), val);
+                return val;
+            default:
+                if (phys_reg.Displacement() != 0) {
+                    panic(
+                        "Non-zero displacement in unsupported register class type, \
+                        only IntRegClass is supported");
+                }
+                return val;
+        }
+    }
+
     void
     getReg(PhysRegIdPtr phys_reg, void *val) const
     {
         const RegClassType type = phys_reg->classValue();
         const RegIndex idx = phys_reg->index();
+
+        switch (type) {
+          case IntRegClass:
+            *(RegVal *)val = getReg(phys_reg);
+            break;
+          case FloatRegClass:
+            *(RegVal *)val = getReg(phys_reg);
+            break;
+          case VecRegClass:
+            vectorRegFile.get(idx, val);
+            DPRINTF(IEW, "RegFile: Access to vector register %i, has "
+                    "data %s\n", idx, vectorRegFile.regClass.valString(val));
+            break;
+          case VecElemClass:
+            *(RegVal *)val = getReg(phys_reg);
+            break;
+          case VecPredRegClass:
+            vecPredRegFile.get(idx, val);
+            DPRINTF(IEW, "RegFile: Access to predicate register %i, has "
+                    "data %s\n", idx, vecPredRegFile.regClass.valString(val));
+            break;
+          case CCRegClass:
+            *(RegVal *)val = getReg(phys_reg);
+            break;
+          case RMiscRegClass:
+            *(RegVal *)val = getReg(phys_reg);
+            break;
+          default:
+            panic("Unrecognized register class type %d.", type);
+        }
+    }
+
+    void
+    getReg(RenameEntry phys_reg, void *val) const
+    {
+        const RegClassType type = phys_reg.PhyReg()->classValue();
+        const RegIndex idx = phys_reg.PhyReg()->index();
 
         switch (type) {
           case IntRegClass:

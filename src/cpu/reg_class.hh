@@ -364,6 +364,36 @@ class PhysRegId : private RegId
 
 using PhysRegIdPtr = PhysRegId*;
 
+
+class RenameEntry
+{
+  private:
+    PhysRegIdPtr phyReg;
+    int64_t displacement;
+
+  public:
+    RenameEntry() : phyReg(nullptr), displacement(0){};
+    RenameEntry(PhysRegIdPtr ptr) : phyReg(ptr), displacement(0){};
+    RenameEntry(PhysRegIdPtr ptr, int64_t d) : phyReg(ptr), displacement(d){};
+
+    void setDisplacement(int64_t d) { displacement = d; }
+    int64_t Displacement() { return displacement; }
+
+    void setPhyReg(PhysRegIdPtr ptr) { phyReg = ptr; }
+    PhysRegIdPtr PhyReg() const { return phyReg; }
+
+    bool operator==(const RenameEntry& that) const
+    {
+        return phyReg == that.phyReg && displacement == that.displacement;
+    }
+
+    bool operator!=(const RenameEntry& that) const
+    {
+        return !RenameEntry::operator==(that);
+    }
+
+};
+
 } // namespace gem5
 
 namespace std

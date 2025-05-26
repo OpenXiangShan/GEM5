@@ -810,7 +810,7 @@ InstructionQueue::wakeDependents(const DynInstPtr &completed_inst)
          dest_reg_idx++)
     {
         PhysRegIdPtr dest_reg =
-            completed_inst->renamedDestIdx(dest_reg_idx);
+            completed_inst->renamedDestIdx(dest_reg_idx).PhyReg();
 
         // Special case of uniq or control registers.  They are not
         // handled by the IQ and thus have no dependency graph entry.

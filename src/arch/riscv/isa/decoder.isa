@@ -46,7 +46,7 @@ decode QUADRANT default Unknown::unknown() {
                 return std::make_shared<IllegalInstFault>("zero instruction",
                                                            machInst);
             Rp2 = sp + imm;
-        }}, uint64_t);
+        }}, uint64_t, IsAddImm);
         format CompressedLoad {
             0x1: c_fld({{
                 offset = CIMM3 << 3 | CIMM2 << 6;
@@ -168,16 +168,10 @@ decode QUADRANT default Unknown::unknown() {
                     imm |= ~((uint64_t)0x1F);
             }}, {{
                 if ((RC1 == 0) != (imm == 0)) {
-                    if (RC1 == 0) {
-                        return std::make_shared<IllegalInstFault>(
-                                "source reg x0", machInst);
-                    } else { // imm == 0
-                        return std::make_shared<IllegalInstFault>(
-                                "immediate = 0", machInst);
-                    }
+                    // HINT
                 }
                 Rc1_sd = Rc1_sd + imm;
-            }});
+            }}, int64_t, IsAddImm);
             0x1: c_addiw({{
                 imm = CIMM5;
                 if (CIMM1 > 0)
@@ -214,7 +208,7 @@ decode QUADRANT default Unknown::unknown() {
                                 "immediate = 0", machInst);
                     }
                     sp_sd = sp_sd + imm;
-                }});
+                }}, int64_t, IsAddImm);
                 default: c_lui({{
                     imm = CIMM5 << 12;
                     if (CIMM1 > 0)
@@ -407,7 +401,7 @@ decode QUADRANT default Unknown::unknown() {
                                 "source reg x0", machInst);
                     }
                     Rc1 = Rc2;
-                }},IsMov);
+                }}, IsMov);
             }
             0x1: decode RC1 {
                 0x0: SystemOp::c_ebreak({{
@@ -789,10 +783,10 @@ decode QUADRANT default Unknown::unknown() {
                 0x0: decode IMM12 {
                     0x0: mv({{
                         Rd_sd = Rs1_sd;
-                    }},int64_t, {{ imm = 0; }}, IsMov);
+                    }}, int64_t, {{ imm = 0; }}, IsMov);
                     default: addi({{
                         Rd_sd = Rs1_sd + imm;
-                    }});
+                    }}, int64_t, {{ imm = sext<12>(IMM12); }}, IsAddImm);
                 }
                 0x2: slti({{
                     Rd = (Rs1_sd < imm) ? 1 : 0;

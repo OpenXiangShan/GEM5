@@ -213,6 +213,7 @@ class StaticInst : public RefCounted, public StaticInstFlags
     bool isHtmStart() const { return flags[IsHtmStart]; }
     bool isHtmStop() const { return flags[IsHtmStop]; }
     bool isHtmCancel() const { return flags[IsHtmCancel]; }
+    bool isAddImm() const { return flags[IsAddImm]; }
 
     bool
     isHtmCmd() const
@@ -361,6 +362,13 @@ class StaticInst : public RefCounted, public StaticInstFlags
      */
     virtual const std::string &disassemble(Addr pc,
         const loader::SymbolTable *symtab=nullptr) const;
+
+
+    virtual int64_t getImm() const
+    {
+        panic("imm is not defined, trying to get immediate \
+              from an instruction with no immediate");
+    }
 
     /**
      * Print a separator separated list of this instruction's set flag
