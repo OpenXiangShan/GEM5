@@ -103,9 +103,14 @@ Base::Base(const BasePrefetcherParams &p)
       prefetchOnPfHit(p.prefetch_on_pf_hit),
       useVirtualAddresses(p.use_virtual_addresses),
       prefetchStats(this), issuedPrefetches(0),issuedPrefetches_m(0),
-      usefulPrefetches(0), UnUsedRemovePre0(0),
-      UnUsedRemovePre1(0), demandMshrMisses(0),tlb(nullptr)
+      usefulPrefetches(0),
+      //UnUsedRemovePre0(0),
+      //UnUsedRemovePre1(0),
+      //demandMshrMisses(0),tlb(nullptr),CachePreQueue(128),all_insert_num(0),
+      demandMshrMisses(0),tlb(nullptr),CachePreQueue(64),all_insert_num(0),
+      count_insert_num(0),PreNoUse(0),usefulPreNum(0)
 {
+
 }
 
 void
@@ -118,6 +123,67 @@ Base::setCache(BaseCache *_cache)
     // If the cache has a different block size from the system's, save it
     blkSize = cache->getBlockSize();
     lBlkSize = floorLog2(blkSize);
+}
+
+void
+Base::lookupCachePre(uint64_t addr)
+{
+    // printf("lookupCachePre\n");
+    // assert(0);
+    // for (int ii = 0;ii<128;ii++){
+    for (int ii = 0; ii < 64; ii++) {
+        if (CachePreQueue[ii].addr == addr) {
+            if (!CachePreQueue[ii].hasBeenHit) {
+                CachePreQueue[ii].hasBeenHit = true;
+                usefulPreNum++;
+            }
+            return;
+            // break;
+        }
+    }
+    // assert(0);
+}
+
+void
+Base::cleanCachePreCount()
+{
+    count_insert_num = 0;
+    PreNoUse = 0;
+    usefulPreNum = 0;
+}
+
+void
+Base::CachePreinsert(uint64_t addr)
+{
+    // printf("cacheinsert\n");
+    uint64_t insert_num;
+    uint64_t add_num = 0;
+    // if (all_insert_num <128)
+    if (all_insert_num < 64)
+        insert_num = all_insert_num;
+    else
+        insert_num = 64;
+    // insert_num = 128;
+    for (int i = 0; i < insert_num; i++) {
+        if (addr == CachePreQueue[i].addr) {
+            //  printf("addr %lx cachePreQueue
+            //  %lx\n",addr,CachePreQueue[i].addr);
+            return;
+        }
+        // return;
+    }
+
+    // if (all_insert_num >=128)
+    if (all_insert_num >= 64)
+        add_num = evictCachePre();
+    else
+        add_num = all_insert_num;
+
+    CachePreQueue[add_num].addr = addr;
+    CachePreQueue[add_num].seq_num = CachePreQueue[add_num].seq_num + 1;
+    all_insert_num++;
+    count_insert_num++;
+    // printf("count_insert_num %ld\n",count_insert_num);
 }
 
 Base::StatGroup::StatGroup(statistics::Group *parent)
@@ -203,20 +269,22 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
     precision0.flags(total);
     precision0 = (pfIssued0 - pf_UnUsedRemovePre0 - pf_hitincache0 -
                   pf_hitinmshr0 - pf_hitinwb0) /
-                 (pfIssued0 + 1);
+                 (pfIssued0 + 1 -pf_hitincache0 -
+                  pf_hitinmshr0 - pf_hitinwb0);
     precision1.flags(total);
     precision1 = (pfIssued1 - pf_UnUsedRemovePre1 - pf_hitincache1 -
                   pf_hitinmshr1 - pf_hitinwb1) /
-                 (pfIssued1 + 1);
+                 (pfIssued1 + 1-pf_hitincache1 -
+                  pf_hitinmshr1 - pf_hitinwb1);
 
     recall0.flags(total);
     recall0 = (pfIssued0 - pf_UnUsedRemovePre0 - pf_hitincache0 -
                pf_hitinmshr0 - pf_hitinwb0) /
-              (pf_useful0 + pf_hitincache0 + pf_hitinmshr0 + demandMshrMisses);
+              (pf_useful0 + pf_useful1+ demandMshrMisses);
     recall1.flags(total);
     recall1 = (pfIssued1 - pf_UnUsedRemovePre1 - pf_hitincache1 -
                pf_hitinmshr1 - pf_hitinwb1) /
-              (pf_useful1 + pf_hitincache1 + pf_hitinmshr1 + demandMshrMisses);
+              (pf_useful1 + pf_useful0 + demandMshrMisses);
     f10.flags(total);
     f10 = 2 * precision0 * recall0 / (precision0 + recall0);
     f11.flags(total);
@@ -303,6 +371,33 @@ Addr
 Base::pageIthBlockAddress(Addr page, uint32_t blockIndex) const
 {
     return page + (blockIndex << lBlkSize);
+}
+
+uint64_t
+Base::evictCachePre()
+{
+    // printf("evict\n");
+    int choose = 0;
+    // insert_num++;
+    if (CachePreQueue[0].hasBeenHit) {
+        CachePreQueue[0].hasBeenHit = false;
+        return 0;
+    }
+    // for (int i=1;i<128;i++){
+    for (int i = 1; i < 64; i++) {
+        if (CachePreQueue[i].hasBeenHit) {
+            CachePreQueue[i].hasBeenHit = false;
+            return i;
+        }
+        if (CachePreQueue[i].seq_num < CachePreQueue[choose].seq_num) {
+            choose = i;
+        }
+    }
+    if (!CachePreQueue[choose].hasBeenHit)
+        PreNoUse++;
+    CachePreQueue[choose].hasBeenHit = false;
+
+    return choose;
 }
 
 void

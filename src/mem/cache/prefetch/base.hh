@@ -117,6 +117,8 @@ class Base : public ClockedObject
         /** Pointer to the associated request data */
         uint8_t *data;
 
+
+
       public:
         /**
          * Obtains the address value of this Prefetcher address.
@@ -328,6 +330,8 @@ class Base : public ClockedObject
     Addr pageOffset(Addr a) const;
     /** Build the address of the i-th block inside the page */
     Addr pageIthBlockAddress(Addr page, uint32_t i) const;
+
+
     struct StatGroup : public statistics::Group
     {
         StatGroup(statistics::Group *parent);
@@ -385,8 +389,10 @@ class Base : public ClockedObject
     /** Total prefetches that has been useful */
     uint64_t usefulPrefetches;
 
-    uint64_t UnUsedRemovePre0;
-    uint64_t UnUsedRemovePre1;
+    //uint64_t UnUsedRemovePre0;
+    //uint64_t UnUsedRemovePre1;
+
+    std::vector<uint64_t> PF_UnUsedRemovePre;
 
     std::vector<uint64_t> PF_hitInCache;
     std::vector<uint64_t> PF_hitInMshr;
@@ -400,10 +406,33 @@ class Base : public ClockedObject
     BaseTLB * tlb;
 
   public:
+    struct CachePre
+    {
+            uint64_t seq_num;
+            uint64_t addr;
+            bool hasBeenHit;
+
+            CachePre()
+                : seq_num(0),
+                  addr(0),
+                  hasBeenHit(false)
+                {
+                }
+        };
+    std::vector<CachePre>CachePreQueue;
+
+    uint64_t all_insert_num;
+    uint64_t count_insert_num;
+    uint64_t PreNoUse;
+    uint64_t usefulPreNum;
+
     Base(const BasePrefetcherParams &p);
     virtual ~Base() = default;
 
     virtual void setCache(BaseCache *_cache);
+    virtual void lookupCachePre(uint64_t addr);
+    virtual void cleanCachePreCount();
+    virtual void CachePreinsert(uint64_t addr);
 
     /**
      * Notify prefetcher of cache access (may be any access or just
@@ -424,6 +453,7 @@ class Base : public ClockedObject
     virtual void cleanPreIssuenum() {};
 
     void addreg(){
+        PF_UnUsedRemovePre.push_back(0);
         PF_hitInCache.push_back(0);
         PF_hitInMshr.push_back(0);
         PF_hitInWb.push_back(0);
@@ -494,6 +524,7 @@ class Base : public ClockedObject
     }
 
     void cleanMultiNum(int PreNum){
+        PF_UnUsedRemovePre[PreNum]=0;
         PF_hitInCache[PreNum]=0;
         PF_hitInMshr[PreNum]=0;
         PF_hitInWb[PreNum]=0;
@@ -504,7 +535,7 @@ class Base : public ClockedObject
         demandMshrMisses = 0;
     }
 
-    void clean_count(){
+    /*void clean_count(){
 
     }
 
@@ -532,7 +563,20 @@ class Base : public ClockedObject
     {
         // printf("pre UnusedRemovePre1 %ld\n",UnUsedRemovePre1);
         return UnUsedRemovePre1;
+    }*/
+
+    uint64_t UnUsedRemovePreNum(int PreNum){
+        return PF_UnUsedRemovePre[PreNum];
     }
+
+    void UnUsedRemovePre(int PreNum){
+        PF_UnUsedRemovePre[PreNum]++;
+        if (PreNum == 0)
+            prefetchStats.pf_UnUsedRemovePre0++;
+        else if (PreNum ==1)
+            prefetchStats.pf_UnUsedRemovePre1++;
+    }
+
 
     void
     prefetchUnused()
@@ -568,6 +612,8 @@ class Base : public ClockedObject
      * Register probe points for this object.
      */
     void regProbeListeners() override;
+
+    uint64_t evictCachePre();
 
     /**
      * Process a notification event from the ProbeListener.

@@ -29,7 +29,7 @@ void
 SMSPrefetcher::calculatePrefetch(const PrefetchInfo &pfi,
                                  std::vector<AddrPriority> &addresses)
 {
-
+    //printf("sms\n");
     bool can_prefetch = !pfi.isWrite() && pfi.hasPC();
     if (!can_prefetch) {
         return;

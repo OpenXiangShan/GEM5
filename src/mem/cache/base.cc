@@ -105,6 +105,7 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       forwardSnoops(true),
       clusivity(p.clusivity),
       isReadOnly(p.is_read_only),
+      multiprefetch(p.use_multi_prefetch),
       replaceExpansions(p.replace_expansions),
       moveContractions(p.move_contractions),
       blocked(0),
@@ -370,7 +371,8 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
         if (prefetcher && pkt->isDemand()){
             prefetcher->incrDemandMhsrMisses();
             //prefetcher->Pre_demandMshrMisses(pkt->req->printpreNum());
-            prefetcher->Pre_demandMshrMisses();
+            if (multiprefetch)
+                prefetcher->Pre_demandMshrMisses();
         }
 
 
@@ -452,6 +454,16 @@ BaseCache::recvTimingReq(PacketPtr pkt)
     Tick request_time = clockEdge(lat);
     // Here we reset the timing of the packet.
     pkt->headerDelay = pkt->payloadDelay = 0;
+    if (pkt->isWrite()||pkt->isRead()){
+        if (prefetcher){
+            //printf("before cache lookup\n");
+            //pkt->req->getPaddr();
+            uint64_t pre_addr = (pkt->getAddr() >>6)<<6;
+            //printf("cache lookup %lx\n",pre_addr);
+            //printf("paddr ")
+            prefetcher->lookupCachePre(pre_addr);
+        }
+    }
 
     if (satisfied) {
         // notify before anything else as later handleTimingReqHit might turn
@@ -466,7 +478,12 @@ BaseCache::recvTimingReq(PacketPtr pkt)
             //prefetcher->Pre_UsefulNum(pkt->req->printpreNum());
             //printf("useful %d\n",pkt->req->printpreNum());
             //printf("useful %d\n",blk->wasPrefetchedNum());
-            prefetcher->PreUseful(blk->wasPrefetchedNum());
+            if (multiprefetch){
+                prefetcher->PreUseful(blk->wasPrefetchedNum());
+                //printf("multi\n");
+               // assert(0);
+            }
+
             //assert(0);
             //printf("pre useful after\n");
         }
@@ -499,10 +516,11 @@ BaseCache::recvTimingReq(PacketPtr pkt)
 
         ppMiss->notify(pkt);
 
-        if (!pkt->req->isCacheMaintenance()){
-            if (hasBeenPrefetched(pkt->getAddr(),pkt->isSecure())){
-                prefetcher->PreUseful(blk->wasPrefetchedNum());
-
+        if (multiprefetch){
+            if (!pkt->req->isCacheMaintenance()){
+                if (hasBeenPrefetched(pkt->getAddr(),pkt->isSecure())){
+                    prefetcher->PreUseful(blk->wasPrefetchedNum());
+                }
             }
         }
     }
@@ -951,21 +969,24 @@ BaseCache::getNextQueueEntry()
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in cache, "
                         "dropped.\n", pf_addr);
                 prefetcher->pfHitInCache();
-                prefetcher->PreHitInCache(pkt->req->printpreNum());
+                if (multiprefetch)
+                    prefetcher->PreHitInCache(pkt->req->printpreNum());
                 // free the request and packet
                 delete pkt;
             } else if (mshrQueue.findMatch(pf_addr, pkt->isSecure())) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in a MSHR, "
                         "dropped.\n", pf_addr);
                 prefetcher->pfHitInMSHR();
-                prefetcher->PreHitInMshr(pkt->req->printpreNum());
+                if (multiprefetch)
+                    prefetcher->PreHitInMshr(pkt->req->printpreNum());
                 // free the request and packet
                 delete pkt;
             } else if (writeBuffer.findMatch(pf_addr, pkt->isSecure())) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in the "
                         "Write Buffer, dropped.\n", pf_addr);
                 prefetcher->pfHitInWB();
-                prefetcher->PreHitInWb(pkt->req->printpreNum());
+                if (multiprefetch)
+                    prefetcher->PreHitInWb(pkt->req->printpreNum());
                 // free the request and packet
                 delete pkt;
             } else {
@@ -1353,6 +1374,19 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
     if (pkt->isWrite()) {
         lat = calculateTagOnlyLatency(pkt->headerDelay, tag_latency);
     }
+    //if (!blk){
+/*    if (pkt->isWrite()||pkt->isRead()){
+        if (prefetcher){
+            //printf("before cache lookup\n");
+            //pkt->req->getPaddr();
+            uint64_t pre_addr = (pkt->getAddr() >>6)<<6;
+            //printf("cache lookup %lx\n",pre_addr);
+            //printf("paddr ")
+            prefetcher->lookupCachePre(pre_addr);
+        }
+    }       */
+    //}
+
 
     // Writeback handling is special case.  We can write the block into
     // the cache without having a writeable copy (or any copy at all).
@@ -1526,6 +1560,15 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         if (exclusiveCacheInvalidate(pkt->fromCache(), blk)) {
             blk->setPendingInvalidate();
         }
+        /*if (prefetcher){
+            printf("before cache lookup\n");
+            //pkt->req->getPaddr();
+            uint64_t pre_addr = (pkt->getAddr() >>6)<<6;
+            printf("cache lookup %lx\n",pre_addr);
+            //printf("paddr ")
+            prefetcher->lookupCachePre(pre_addr);
+        }*/
+
 
         return true;
     }
@@ -1721,18 +1764,23 @@ void
 BaseCache::invalidateBlock(CacheBlk *blk)
 {
     // If block is still marked as prefetched, then it hasn't been used
-    if (blk->wasPrefetched()) {
+    if (blk->wasPrefetched() && multiprefetch) {
         prefetcher->prefetchUnused();
         blk->UnUsedPreSign();
         if (blk->wasBeUnUsedPre())
         {
             if (blk->wasPrefetchedNum() == 0)
             {
-                prefetcher->PreRemoveUnused0();
+               // prefetcher->PreRemoveUnused0();
+               prefetcher->UnUsedRemovePre(blk->wasPrefetchedNum());
             }
             else if (blk->wasPrefetchedNum() == 1)
             {
-                prefetcher->PreRemovePreNum1();
+                //prefetcher->PreRemovePreNum1();
+                prefetcher->UnUsedRemovePre(blk->wasPrefetchedNum());
+            }
+            else if (blk->wasPrefetchedNum()==2){
+                prefetcher->UnUsedRemovePre(blk->wasPrefetchedNum());
             }
         }
     }

@@ -230,6 +230,7 @@ void
 SignaturePath::calculatePrefetch(const PrefetchInfo &pfi,
                                  std::vector<AddrPriority> &addresses)
 {
+    //printf("Signature\n");
     Addr request_addr = pfi.getAddr();
     Addr ppn = request_addr / pageBytes;
     stride_t current_block = (request_addr % pageBytes) / blkSize;

@@ -236,6 +236,7 @@ void
 BOP::calculatePrefetch(const PrefetchInfo &pfi,
         std::vector<AddrPriority> &addresses)
 {
+    //printf("bop\n");
     Addr addr = pfi.getAddr();
     Addr tag_x = tag(addr);
 

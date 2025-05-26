@@ -945,6 +945,7 @@ class BaseCache : public ClockedObject
      * never have to do any writebacks).
      */
     const bool isReadOnly;
+    const bool multiprefetch;
 
     /**
      * when a data expansion of a compressed block happens it will not be

@@ -265,6 +265,8 @@ Queued::getPacket()
     issuedPrefetches_m += 1;
     assert(pkt != nullptr);
     DPRINTF(HWPrefetch, "Generating prefetch for %#x.\n", pkt->getAddr());
+   // uint64_t pre_addr = pkt->getAddr();
+    //printf("Generating prefetch for %lx.\n", pre_addr);
 
     return pkt;
 }
@@ -361,6 +363,8 @@ Queued::translationComplete(DeferredPacket *dp, bool failed)
                 it->createPkt(target_paddr, blkSize, requestorId, tagPrefetch,
                             pf_time);
                 addToQueue(pfq, *it);
+                // uint64_t pre_addr = (it->translationRequest->getPaddr()
+                // >>6)<<6; CachePreinsert(pre_addr);
             }
         } else {
             DPRINTF(HWPrefetch, "%s Translation of vaddr %#x failed, dropping "
@@ -492,7 +496,9 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi,
                 "cache/MSHR prefetch addr:%#x\n", target_paddr);
         return;
     }
-
+        uint64_t pre_addr = (target_paddr >>6)<<6;
+        CachePreinsert(pre_addr);
+        //printf("target_paddr %lx\n",target_paddr);
     /* Create the packet and find the spot to insert it */
     DeferredPacket dpp(this, new_pfi, 0, priority);
     if (has_target_pa) {
@@ -503,6 +509,7 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi,
                 "addr:%#x priority: %3d tick:%lld.\n",
                 new_pfi.getAddr(), priority, pf_time);
         addToQueue(pfq, dpp);
+
     } else {
         // Add the translation request and try to resolve it later
         dpp.setTranslationRequest(translation_req);

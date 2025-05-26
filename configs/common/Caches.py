@@ -93,6 +93,7 @@ class L2Cache(Cache):
 
     # This is communication latency between l2 & l3
     response_latency = 15
+    use_multi_prefetch = True
 
 class L3Cache(Cache):
     mshrs = 64

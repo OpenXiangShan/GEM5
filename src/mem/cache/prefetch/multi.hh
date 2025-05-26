@@ -61,6 +61,8 @@ class Multi : public Base
     void addTLB(BaseTLB* _t) override;
     PacketPtr getPacket() override;
     Tick nextPrefetchReadyTime() const override;
+    void lookupCachePre(uint64_t addr) override;
+    void cleanCachePreCount() override;
 
     /** @{ */
     /**
@@ -75,11 +77,21 @@ class Multi : public Base
     /** List of sub-prefetchers ordered by priority. */
     std::vector<Base*> prefetchers;
     uint8_t lastChosenPf;
+    uint8_t lastChosenPf_m;
+    typedef struct
+    {
+        int pre_num;
+        double f1;
+    } chooseStruct;
+    chooseStruct chooseorder[3];
+    chooseStruct chooseorder_m[3];
+
 
   public:
     bool hasBeenChoose;
     int firstChoose;
     std::vector<uint64_t> lastremove;
+    int prefetcher_size;
 };
 
 } // namespace prefetch
