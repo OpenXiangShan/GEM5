@@ -83,9 +83,11 @@ FoldedHist::update(const boost::dynamic_bitset<> &ghr, int shamt, bool taken, Ad
                 temp = 0;
             }
         }
-        boost::dynamic_bitset<> temp1(temp);
-        temp1.resize(foldedLen);
-        folded = temp1;
+        // use temp as integer to update folded history
+        for (int i = 0; i < foldedLen; i++){
+            folded[i] = temp & 1;
+            temp >>= 1;
+        }
     }else if(type == HistoryType::PATH){
         if(taken){
             boost::dynamic_bitset<> temp(folded);
