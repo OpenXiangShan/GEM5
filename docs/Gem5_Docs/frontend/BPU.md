@@ -80,7 +80,7 @@ BPU的全部源代码都放在src/cpu/pred/中，读者会发现这个文件夹�
 
 下面将介绍BPU运行过程中较为关键的几个流程，或者涉及BPU的流程，希望通过这些流程，读者能更直观的理解BPU的接口的意义和用法。
 
-更多关于BPU和Fetch交互的细节，请参见[BPU 与Fetch 交互](gem5_前端代码导读.md#interaction-with-fetch)。
+更多关于BPU和Fetch交互的细节，请参见[BPU 与Fetch 交互](frontend_guide.md#interaction-with-fetch)。
 
 ### Fetch::tick()访问FTQ
 
@@ -113,7 +113,7 @@ Fetch::tick()
 ```
 
 >相关内容链接：
-> - [BPU 与 fetch的接口](gem5_前端代码导读.md#detailed-explaination-of-interface-with-fetch)
+> - [BPU 与 fetch的接口](frontend_guide.md#detailed-explaination-of-interface-with-fetch)
 
 
 ### FTQ转发redirect信号以及对BPU子预测器的更新
