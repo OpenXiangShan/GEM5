@@ -31,6 +31,7 @@ enableSC(p.enableSC),
 tageStats(this, p.numPredictors)
 {
     DPRINTF(TAGE, "BTBTAGE constructor\n");
+    this->needMoreHistories = p.needMoreHistories;
     tageTable.resize(numPredictors);
     tableIndexBits.resize(numPredictors);
     tableIndexMasks.resize(numPredictors);

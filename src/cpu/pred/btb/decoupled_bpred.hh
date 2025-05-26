@@ -93,7 +93,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     unsigned predictWidth;  // max predict width, default 64
     unsigned maxInstsNum;
 
-    const unsigned historyBits{488};
+    const unsigned historyBits{488}; // will be overridden later by the constructor
 
     const Addr MaxAddr{~(0ULL)};
 

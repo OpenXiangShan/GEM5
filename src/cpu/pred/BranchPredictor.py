@@ -1029,6 +1029,7 @@ class BTBTAGE(TimedBaseBTBPredictor):
     cxx_class = 'gem5::branch_prediction::btb_pred::BTBTAGE'
     cxx_header = "cpu/pred/btb/btb_tage.hh"
 
+    needMoreHistories = Param.Bool(True, "BTBTAGE needs more histories")
     enableSC = Param.Bool(False, "Enable SC or not")    # TODO: BTBTAGE doesn't support SC
     numPredictors = Param.Unsigned(4, "Number of TAGE predictors")
     tableSizes = VectorParam.Unsigned([4096]*4, "the ITTAGE T0~Tn length")

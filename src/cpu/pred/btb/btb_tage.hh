@@ -132,8 +132,6 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // check folded hists after speculative update and recover
     void checkFoldedHist(const bitset &history, const char *when);
 
-    bool needMoreHistories = true;
-
 
   private:
 
@@ -197,7 +195,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Linear feedback shift register for allocation
     LFSR64 allocLFSR;
 
-    // Maximum history length
+    // Maximum history length, not used
     unsigned maxHistLen;
 
     // Number of ways for set associative design

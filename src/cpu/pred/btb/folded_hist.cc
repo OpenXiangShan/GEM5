@@ -170,9 +170,7 @@ void
 FoldedHist::check(const boost::dynamic_bitset<> &ghr)
 {
     // TODO: support path history in the future
-    if (type != HistoryType::GLOBAL){
-        return;
-    }
+
     // Create ideal folded history from GHR
     uint64_t idealFolded = 0;
 

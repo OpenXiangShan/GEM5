@@ -1996,6 +1996,7 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchStream &entry)
 
     // Update path history
     pHistShiftIn(1, taken, s0PHistory, p_pc);
+    tage->checkFoldedHist(s0PHistory, "speculative update");
 
     // Update imli history
     histShiftIn(bw_shamt, bw_taken, s0IHistory);  //s0IHistory is not used
