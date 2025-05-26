@@ -221,7 +221,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     DPRINTF(TAGE, "tage use_alt %d ? (alt_provided %d ? alt_taken %d : base_taken %d) : main_taken %d\n",
         use_alt, alt_provided, alt_taken, base_taken, main_taken);
 
-    return TagePrediction(btb_entry.pc, main_info, alt_info, use_alt, taken);
+    return TagePrediction(btb_entry.pc, main_info, alt_info, use_alt, taken, alt_pred);
 }
 
 /**
@@ -262,7 +262,8 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
                                          abs(pred.mainInfo.entry.counter*2 + 1) > 1); // counter not saturated, -3, -2, 1, 2
             tageInfoForMgscs[btb_entry.pc].tage_pred_conf_low = !pred.mainInfo.found ||
                                          (abs(pred.mainInfo.entry.counter*2 + 1) <= 1); // counter initialized, -1 or 0
-            tageInfoForMgscs[btb_entry.pc].tage_pred_alt_diff = pred.mainInfo.found && pred.mainInfo.taken() != pred.altInfo.taken();
+            // main predict is different from alt predict/base predict
+            tageInfoForMgscs[btb_entry.pc].tage_pred_alt_diff = pred.mainInfo.found && pred.mainInfo.taken() != pred.altPred;
         }
     }
     return cond_takens;
