@@ -1,11 +1,11 @@
-# XiangShan GEM5 模拟器
+# 介绍
 
 这是香山处理器的GEM5模拟器版本(XS-GEM5)，目前在SPEC CPU 2006基准测试上与昆明湖处理器性能相当。
 
 ## 项目特点
 
 XS-GEM5是专门为香山处理器定制的GEM5模拟器，相比官方GEM5：
-- 仅支持全系统模拟（Full System Simulation）
+- 主要支持全系统模拟（Full System Simulation），SE模式初步支持
 - 支持香山特有的格式和功能
 - 包含多个香山特有的功能增强
 
@@ -50,9 +50,10 @@ XS-GEM5**不支持**以下功能：
 1. **无法运行Boom的裸机应用程序**
    - 我们只支持[Abstract Machine](https://github.com/OpenXiangShan/nexus-am)裸机环境或香山的Linux系统
 
-2. **无法直接运行ELF文件**
-   - 不支持GEM5的系统调用模拟（[什么是系统调用模拟](https://stackoverflow.com/questions/48986597/when-to-use-full-system-fs-vs-syscall-emulation-se-with-userland-programs-in-gem)）
-   - 不支持QEMU的用户空间模拟（[什么是用户空间模拟](https://www.qemu.org/docs/master/user/main.html)）
+2. **无法带difftest运行ELF文件**
+   - 支持GEM5的系统调用模拟（[什么是系统调用模拟](https://stackoverflow.com/questions/48986597/when-to-use-full-system-fs-vs-syscall-emulation-se-with-userland-programs-in-gem)）
+   - 支持QEMU的用户空间模拟（[什么是用户空间模拟](https://www.qemu.org/docs/master/user/main.html)）
+   - 不支持带Difftest做验证的运行ELF文件，当前XS-GEM5 的Difftest(NEMU) 只支持全系统模拟，不支持SE模式
 
 3. **检查点不兼容**
    - 不能生成GEM5的SE检查点或m5检查点

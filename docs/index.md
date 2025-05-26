@@ -1,4 +1,6 @@
-# 欢迎使用香山GEM5模拟器文档！
+# 欢迎
+
+欢迎使用香山GEM5模拟器文档！
 
 GEM5是一个模块化的离散事件驱动的计算机系统架构模拟器平台，参考：[官方GEM5](https://www.gem5.org/)
 
@@ -17,12 +19,20 @@ GEM5是一个模块化的离散事件驱动的计算机系统架构模拟器平�
 !!! note
     本项目正在积极开发中。
 
-## 本地编写文档并测试
+## 如何添加新文档
 
-在docs目录下添加新的md文件，然后在mkdocs.yml中添加新的导航项(nav 后添加)，
+在docs目录下添加新的md文件
 然后运行如下命令在本地预览网页：
 
 ```bash
+touch docs/frontend/test.md
+
+# 本地预览
 pip install -r docs/requirements.txt
 mkdocs serve
+
+# 提交PR
+git add docs/frontend/test.md
+git commit -m "添加新文档 [skip ci]"    # 跳过CI检查
+git push
 ``` 

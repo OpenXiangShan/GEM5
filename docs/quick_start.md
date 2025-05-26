@@ -1,4 +1,4 @@
-# GEM5快速开始指南
+# 快速开始
 
 ## 安装环境
 
@@ -232,3 +232,4 @@ git apply ext/xs_env/clang-warning-suppress.patch
 
 - 官方GEM5文档：[GEM5官方文档](https://www.gem5.org/documentation/)
 - OpenXiangShan GEM5项目：[https://github.com/OpenXiangShan/GEM5](https://github.com/OpenXiangShan/GEM5) 
+- 参考[https://github.com/shinezyy/micro-arch-training](https://github.com/shinezyy/micro-arch-training)有一些练手项目
