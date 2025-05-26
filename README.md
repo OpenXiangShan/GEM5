@@ -163,6 +163,17 @@ sudo apt install build-essential git m4 scons zlib1g zlib1g-dev \
     python3-dev python-is-python3 libboost-all-dev pkg-config libsqlite3-dev zstd libzstd-dev
 ```
 
+### Setup using [Nix](https://github.com/NixOS/nix)
+
+If you are a Nix or NixOS user, you can setup a gem5 development environment using your familiar tools.
+This project already included a [flake.nix](nix/flake.nix) for development shell and a [.envrc](.envrc) for [direnv](https://github.com/direnv/direnv)
+
+If you don't want to use direnv or for some reason you want to manully run the nix development shell, the following command can be used.
+
+```shell
+nix develop path:nix
+```
+
 ## Clone and build DRAMSim3
 
 Refer to [The readme for DRAMSim3](ext/dramsim3/README) to install DRAMSim3.
@@ -215,7 +226,7 @@ Users can also opt to build them from source ([Difftest with NEMU](#difftest-wit
 [Build GCPT restorer](#build-gcpt-restorer)).
 A tested working matrix of repos & revisions is here:
 
-|  Checkpoint Type  | reference design | GCPT restorer 
+|  Checkpoint Type  | reference design | GCPT restorer
 | ---------- | --------- | --------- |
 | RV64GCB       | NEMU master + riscv64-gem5-ref_defconfig  | NEMU master |
 | RV64GCBV      | NEMU master + riscv64-gem5-ref_defconfig | NEMU gcpt_new_mem_layout |
@@ -224,7 +235,7 @@ A tested working matrix of repos & revisions is here:
 
 If above branches are not working, you can try the following commits:
 
-| Checkpoint Type | reference design | GCPT restorer 
+| Checkpoint Type | reference design | GCPT restorer
 | ---------- | --------- | --------- |
 | RV64GCB | NEMU 4332a525 + riscv64-gem5-ref_defconfig | NEMU 732e4ccd |
 | RV64GCBV      | NEMU 4332a525 + riscv64-gem5-ref_defconfig | NEMU b966d274 |
@@ -345,7 +356,7 @@ make riscv64-gem5-ref_defconfig
 make -j 10
 ```
 
-Then the contents of `build` directory should be 
+Then the contents of `build` directory should be
 ```
 build
 |-- obj-riscv64-nemu-interpreter-so

@@ -2,7 +2,7 @@
   description = "gem5 - a modular platform for computer-system architecture research";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/release-24.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -17,6 +17,7 @@
         pythonPackages = python.pkgs;
 
         # Create a scons based on python310
+        # pybind used in current version of gem5 need python <= 3.10
         scons = pkgs.scons.override {
           python3Packages = pythonPackages;
         };
@@ -51,7 +52,6 @@
           # The following dependencies are optional and seldom used
           # protobuf # protobuf version is strictly enforced by gem5, not sure which version
           # hdf5
-          # libpng
         ];
 
         # Development tools
@@ -116,6 +116,9 @@
             inherit buildInputs;
             nativeBuildInputs = devTools;
 
+            # Disable hardening, FORTIFY is causing problem when building debug version without optimization
+            hardeningDisable = [ "all" ];
+
             # Prebuilt NEMU need libstdc++, give it libstdc++
             shellHook = ''
               export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath [
@@ -125,7 +128,6 @@
           };
 
         formatter = pkgs.nixpkgs-fmt;
-        hardeningDisable = [ "all" ];
       }
     );
 }
