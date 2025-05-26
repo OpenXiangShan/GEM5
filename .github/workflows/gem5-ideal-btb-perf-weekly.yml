@@ -1,8 +1,6 @@
-name: gem5 Ideal BTB Performance Test - Weekly
+name: gem5 Ideal BTB Weekly Performance Test
 
 on:
-  pull_request:
-    branches: [ xs-dev ]
   schedule:
     # Run every Thursday at 23:59 UTC+8 (15:59 UTC)
     - cron: '59 15 * * 4'
@@ -14,9 +12,10 @@ jobs:
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       script_path: ../kmh_v3_btb.sh
-      checkpoint_list: "/nfs/home/share/gem5_ci/spec06_cpts/checkpoint-0-0-0.lst"
+      benchmark_type: "spec06-1.0c"
   
   perf_test_spec17:
-    uses: ./.github/workflows/gem5-perf-template-spec17.yml
+    uses: ./.github/workflows/gem5-perf-template.yml
     with:
-      script_path: ../kmh_v3_btb.sh 
+      script_path: ../kmh_v3_btb.sh
+      benchmark_type: "spec17-1.0c" 

@@ -1,4 +1,4 @@
-name: gem5 Performance Test Template
+name: gem5 Performance Test Template (Unified)
 
 on:
   workflow_call:
@@ -6,18 +6,51 @@ on:
       script_path:
         required: true
         type: string
-      checkpoint_list:
-        required: false
+      benchmark_type:
+        required: true
         type: string
-        default: "/nfs/home/share/gem5_ci/spec06_cpts/spec_0.8c_int.lst"
+        description: "Benchmark type: spec06-0.8c, spec06-1.0c, or spec17-1.0c"
 
 jobs:
   run_performance_test:
-    runs-on: self-hosted
+    runs-on: [self-hosted, node]
     continue-on-error: false
-    name: XS-GEM5 - Run performance test
+    name: XS-GEM5 - Run performance test (${{ inputs.benchmark_type }})
     steps:
       - uses: actions/checkout@v2
+      - name: Set benchmark configuration
+        id: config
+        run: |
+          case "${{ inputs.benchmark_type }}" in
+            "spec06-0.8c")
+              echo "checkpoint_list=/nfs/home/share/gem5_ci/spec06_cpts/spec_0.8c_int.lst" >> $GITHUB_OUTPUT
+              echo "checkpoint_root_node=/nfs/home/share/jiaxiaoyu/simpoint_checkpoint_zstd_format/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc" >> $GITHUB_OUTPUT
+              echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
+              echo "cluster_config=/nfs/home/share/gem5_ci/spec06_cpts/cluster-0-0.json" >> $GITHUB_OUTPUT
+              echo "artifact_name=performance-score-spec06-0.8c" >> $GITHUB_OUTPUT
+              echo "comment=run 80% coverage spec06 checkpoints, 500+ checkpoints" >> $GITHUB_OUTPUT
+              ;;
+            "spec06-1.0c")
+              echo "checkpoint_list=/nfs/home/share/gem5_ci/spec06_cpts/checkpoint-0-0-0.lst" >> $GITHUB_OUTPUT
+              echo "checkpoint_root_node=/nfs/home/share/jiaxiaoyu/simpoint_checkpoint_zstd_format/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc" >> $GITHUB_OUTPUT
+              echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
+              echo "cluster_config=/nfs/home/share/gem5_ci/spec06_cpts/cluster-0-0.json" >> $GITHUB_OUTPUT
+              echo "artifact_name=performance-score-spec06-1.0c" >> $GITHUB_OUTPUT
+              echo "comment=run 100% coverage spec06 checkpoints" >> $GITHUB_OUTPUT
+              ;;
+            "spec17-1.0c")
+              echo "checkpoint_list=/nfs/home/yanyue/spec17_cpts/checkpoint-0-0-0/checkpoint.lst" >> $GITHUB_OUTPUT
+              echo "checkpoint_root_node=/nfs/home/yanyue/spec17_cpts/checkpoint-0-0-0/" >> $GITHUB_OUTPUT
+              echo "score_script=gem5-score-ci-17.sh" >> $GITHUB_OUTPUT
+              echo "cluster_config=/nfs/home/yanyue/spec17_cpts/checkpoint-0-0-0/cluster-0-0.json" >> $GITHUB_OUTPUT
+              echo "artifact_name=performance-score-spec17-1.0c" >> $GITHUB_OUTPUT
+              echo "comment=run 100% coverage spec17 checkpoints" >> $GITHUB_OUTPUT
+              ;;
+            *)
+              echo "Error: Invalid benchmark_type '${{ inputs.benchmark_type }}'. Must be one of: spec06-0.8c, spec06-1.0c, spec17-1.0c"
+              exit 1
+              ;;
+          esac
       - name: Build DRAMSim
         run: |
           export GEM5_HOME=$(pwd)
@@ -35,14 +68,8 @@ jobs:
           export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so"
           bash util/pgo/basic_pgo_new.sh
       - name: XS-GEM5 - Run performance test
-        # run 80% coverage spec06 checkpoints, 500+ checkpoints
+        # ${{ steps.config.outputs.comment }}
         run: |
-          # 根据机器名判断当前环境在小机房还是大机房
-          if [[ $(hostname) == open* ]]; then
-            export CHECKPOINT_ROOT="/nfs/home/share/jiaxiaoyu/simpoint_checkpoint_archive/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc/zstd-checkpoint-0-0-0"
-          else
-            export CHECKPOINT_ROOT="/nfs/home/share/jiaxiaoyu/simpoint_checkpoint_zstd_format/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc"
-          fi
 
           export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so"
           export GCB_RESTORER=""
@@ -50,8 +77,8 @@ jobs:
           mkdir -p $GEM5_HOME/util/xs_scripts/test
           cd $GEM5_HOME/util/xs_scripts/test
           bash ../parallel_sim.sh `realpath ${{ inputs.script_path }}` \
-            ${{ inputs.checkpoint_list }} \
-            $CHECKPOINT_ROOT \
+            ${{ steps.config.outputs.checkpoint_list }} \
+            ${{ steps.config.outputs.checkpoint_root_node}} \
             spec_all
       - name: Setup gem5_data_proc environment
         run: |
@@ -66,9 +93,9 @@ jobs:
           export GEM5_HOME=$GITHUB_WORKSPACE
           cd $GITHUB_WORKSPACE/gem5_data_proc
           # 使用已有的数据spec_all生成测试报告
-          bash example-scripts/gem5-score-ci.sh \
+          bash example-scripts/${{ steps.config.outputs.score_script }} \
             $GEM5_HOME/util/xs_scripts/test/spec_all \
-            /nfs/home/share/gem5_ci/spec06_cpts/cluster-0-0.json \
+            ${{ steps.config.outputs.cluster_config }} \
             > $GITHUB_WORKSPACE/score.txt
           # 提取最后42行score信息
           echo "### performance test result :rocket:" >> $GITHUB_STEP_SUMMARY
@@ -97,6 +124,5 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: performance-score
-          path: ${{ github.workspace }}/score.txt
-          
+          name: ${{ steps.config.outputs.artifact_name }}
+          path: ${{ github.workspace }}/score.txt 
