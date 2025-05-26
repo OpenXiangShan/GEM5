@@ -8,7 +8,8 @@ namespace btb_pred {
 
 /**
  * Update the folded history with a new branch outcome.
- * 
+ * Note: pc is used only for path history update!
+ *
  * Example:
  * If we have:
  *   histLen = 8 (original history length)
@@ -71,14 +72,14 @@ FoldedHist::update(const boost::dynamic_bitset<> &ghr, int shamt, bool taken, Ad
     }else if(type == HistoryType::IMLI){
         // Case 1: When folded length >= history length
         assert(foldedLen >= histLen); //TODO
-        unsigned temp = folded.to_ulong();
+        unsigned temp = folded.to_ulong(); // imli history should be treated as integer, no shift
         if (foldedLen >= histLen) {
             // Simple shift and set case
-            if(taken && temp < (pow(2, histLen)-1) && shamt == 1){
-                temp = temp + 1;
-            }else if(taken && shamt > 1){
+            if (taken && temp < (pow(2, histLen)-1) && shamt == 1){ // backward taken, inner most loop
+                temp = temp + 1;    // counter++ (index++)
+            }else if (taken && shamt > 1){   // backward taken, not inner most loop
                 temp = 1;
-            }else if(!taken){
+            }else if (!taken){  // backward not taken, hist = 0
                 temp = 0;
             }
         }

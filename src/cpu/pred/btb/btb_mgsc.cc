@@ -359,12 +359,14 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry,
                g_scale_percsum + p_scale_percsum + bias_scale_percsum;
 
     // Find thresholds
+    // pc-indexed threshold table, default value = initialUpdateThresholdValue = 0
     int p_update_thres = findThreshold(pUpdateThreshold,
                                      getPcIndex(startPC, thresholdTablelogSize),
                                      btb_entry.pc,
                                      initialUpdateThresholdValue);
 
-    int update_thres = 35 << 3;
+    // global threshold table
+    int update_thres = 35 << 3;     // default value = 35 << 3 ?
     for (unsigned way = 0; way < numWays; way++) {
         auto &entry = updateThreshold[way];
         if (tagMatch(btb_entry.pc, entry.pc, 5) && entry.valid) {
@@ -373,7 +375,7 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry,
         }
     }
 
-    int total_thres = (update_thres >> 3) + p_update_thres;
+    int total_thres = (update_thres >> 3) + p_update_thres;  // total_thres = global_thres + pc_thres
 
     // Determine whether to use SC prediction based on confidence levels
     bool use_sc_pred = false;
@@ -392,7 +394,7 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry,
     }
 
     // Final prediction
-    bool taken = (use_sc_pred && enableMGSC) ? (lsum >= 0) : tage_info.tage_pred_taken;
+    bool taken = (use_sc_pred && enableMGSC) ? (lsum >= 0) : tage_info.tage_pred_taken;  // lsum >= 0 means taken if use_sc_pred
 
     // Calculate weight scale differences
     bool bw_weight_scale_diff = calculateWeightScaleDiff(lsum, bw_scale_percsum, bw_percsum);
@@ -712,7 +714,7 @@ BTBMGSC::updateAndAllocateSinglePredictor(const BTBEntry &entry,
     auto use_mgsc = pred.use_mgsc;
     auto total_thres = pred.total_thres;
     auto sc_pred_taken = lsum >= 0;
-    auto tage_pred_taken = pred.taken_before_sc;
+    auto tage_pred_taken = pred.taken_before_sc;    // tage predictions
 
     // Update statistics
     if (use_mgsc) {
@@ -721,9 +723,13 @@ BTBMGSC::updateAndAllocateSinglePredictor(const BTBEntry &entry,
             mgscStats.scCorrectTageWrong++;
         } else if (sc_pred_taken != actual_taken && tage_pred_taken == actual_taken) {
             mgscStats.scWrongTageCorrect++;
+        } else if (sc_pred_taken == actual_taken && tage_pred_taken == actual_taken) {
+            mgscStats.scCorrectTageCorrect++;
+        } else if (sc_pred_taken != actual_taken && tage_pred_taken != actual_taken) {
+            mgscStats.scWrongTageWrong++;
         }
     } else {
-        mgscStats.scNotUsed++;
+        mgscStats.scNotUsed++;  // sc confidence is low
     }
 
     // Only update tables if prediction was wrong or confidence was low
@@ -945,7 +951,7 @@ BTBMGSC::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPredictio
     int shamt;
     bool cond_taken;
     std::tie(shamt, cond_taken) = pred.getHistInfo();
-    doUpdateHist(history, shamt, cond_taken, indexGFoldedHist);
+    doUpdateHist(history, shamt, cond_taken, indexGFoldedHist); // use global history to update G folded history
 }
 
 /**
@@ -966,7 +972,7 @@ BTBMGSC::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPredicti
     Addr pc;
     bool cond_taken;
     std::tie(pc, cond_taken) = pred.getPHistInfo();
-    doUpdateHist(history, 1, cond_taken, indexPFoldedHist, pc);
+    doUpdateHist(history, 1, cond_taken, indexPFoldedHist, pc); // only path history needs pc!
 }
 
 
@@ -1163,6 +1169,8 @@ BTBMGSC::MgscStats::MgscStats(statistics::Group* parent):
     statistics::Group(parent),
      ADD_STAT(scCorrectTageWrong, statistics::units::Count::get(), "number of sc predict correct and tage predict wrong"),
      ADD_STAT(scWrongTageCorrect, statistics::units::Count::get(), "number of sc predict wrong and tage predict correct"),
+     ADD_STAT(scCorrectTageCorrect, statistics::units::Count::get(), "number of sc predict correct and tage predict correct"),
+     ADD_STAT(scWrongTageWrong, statistics::units::Count::get(), "number of sc predict wrong and tage predict wrong"),
      ADD_STAT(scUsed, statistics::units::Count::get(), "number of sc used"),
      ADD_STAT(scNotUsed, statistics::units::Count::get(), "number of sc not used")
 {

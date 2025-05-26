@@ -1759,8 +1759,8 @@ DecoupledBPUWithBTB::pHistShiftIn(int shamt, bool taken, boost::dynamic_bitset<>
     }
     if(taken){
         history <<= 2;
-        history[0] = (((pc>>1)^(pc>>3)^(pc>>5)^(pc>>7)) & 1);
-        history[1] = (((pc>>1)^(pc>>3)^(pc>>5)^(pc>>7)) & 2) >> 1;
+        history[0] = (((pc>>1)^(pc>>3)^(pc>>5)^(pc>>7)) & 1);       // pc[1] ^ pc[3] ^ pc[5] ^ pc[7]
+        history[1] = (((pc>>1)^(pc>>3)^(pc>>5)^(pc>>7)) & 2) >> 1;  // pc[2] ^ pc[4] ^ pc[6] ^ pc[8]
     }
 }
 
@@ -1954,8 +1954,9 @@ DecoupledBPUWithBTB::getPreservedReturnAddr(const DynInstPtr &dynInst)
 void
 DecoupledBPUWithBTB::updateHistoryForPrediction(FetchStream &entry)
 {
-    // Update component-specific history, for TAGE/ITTAGE
+    // Update component-specific history, for TAGE/ITTAGE/MGSC
     for (int i = 0; i < numComponents; i++) {
+        // use old s0History to update folded history, then use finalPred to update folded history
         components[i]->specUpdateHist(s0History, finalPred);
         if(components[i]->needMoreHistories){
             components[i]->specUpdatePHist(s0PHistory, finalPred);

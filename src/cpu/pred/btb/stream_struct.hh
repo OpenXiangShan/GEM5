@@ -545,15 +545,15 @@ typedef struct FullBTBPrediction
 
     std::pair<int, bool> getHistInfo()  //global or local
     {
-        int shamt = 0;
+        int shamt = 0; // shamt is the number of bits to shift in history update
         bool taken = false;
         for (auto &entry : btbEntries) {
             if (entry.valid) {
-                if (entry.isCond) {
+                if (entry.isCond) { // if found a cond branch, shamt++
                     shamt++;
                     auto it = condTakens.find(entry.pc);
                     if (it != condTakens.end()) {
-                        if (it->second) {
+                        if (it->second) { // if the cond branch is taken, taken = true
                             taken = true;
                             break;
                         }
@@ -564,6 +564,8 @@ typedef struct FullBTBPrediction
                 }
             }
         }
+        // For example, return (3, true) means 3 bits to shift in history update,
+        // and the third branch is taken, new hist = xxx001
         return std::make_pair(shamt, taken);
     }
 
@@ -578,7 +580,7 @@ typedef struct FullBTBPrediction
                     auto it = condTakens.find(entry.pc);
                     if (it != condTakens.end()) {
                         if (it->second) {
-                            taken = (entry.target < entry.pc);
+                            taken = (entry.target < entry.pc); // branch is backward if target < pc
                             break;
                         }
                     }
@@ -602,7 +604,7 @@ typedef struct FullBTBPrediction
                     if (it != condTakens.end()) {
                         if (it->second) {
                             taken = true;
-                            pc = entry.pc;
+                            pc = entry.pc; // get the pc of the cond branch
                             break;
                         }
                     }

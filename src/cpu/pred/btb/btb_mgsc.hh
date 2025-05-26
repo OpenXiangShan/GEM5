@@ -82,19 +82,19 @@ class BTBMGSC : public TimedBaseBTBPredictor
     // Contains the complete prediction result
     struct MgscPrediction
     {
-        public:
-            Addr btb_pc;           // btb entry pc, same as mgsc entry pc
-            int lsum;
-            bool use_mgsc;
-            bool taken;
-            bool taken_before_sc;
-            unsigned total_thres;
-            std::vector<Addr> bwIndex;
-            std::vector<Addr> lIndex;
-            std::vector<Addr> iIndex;
-            std::vector<Addr> gIndex;
-            std::vector<Addr> pIndex;
-            std::vector<Addr> biasIndex;
+        Addr btb_pc;                    // BTB entry PC
+        int lsum;                       // Total weighted sum
+        bool use_mgsc;                  // Whether to use MGSC prediction
+        bool taken;                     // Final prediction = (use sc pred) ? (lsum >= 0) : tage prediction
+        bool taken_before_sc;           // Tage prediction (before SC)
+        unsigned total_thres;           // Combined threshold
+        std::vector<Addr> bwIndex;      // BW table indices
+        std::vector<Addr> lIndex;       // L table indices
+        std::vector<Addr> iIndex;       // I table indices
+        std::vector<Addr> gIndex;       // G table indices
+        std::vector<Addr> pIndex;       // P table indices
+        std::vector<Addr> biasIndex;    // Bias table indices
+        // Weight scale difference flags and percsum values
             bool bw_weight_scale_diff;
             bool l_weight_scale_diff;
             bool i_weight_scale_diff;
@@ -368,8 +368,8 @@ class BTBMGSC : public TimedBaseBTBPredictor
     std::vector<std::vector<MgscWeightEntry>> biasWeightTable;
 
     // thres table
-    std::vector<std::vector<MgscThresEntry>> pUpdateThreshold;
-    std::vector<MgscThresEntry> updateThreshold;
+    std::vector<std::vector<MgscThresEntry>> pUpdateThreshold;  // pc-indexed threshold table
+    std::vector<MgscThresEntry> updateThreshold;  // global threshold table
 
 
     // Debug flag
@@ -404,6 +404,8 @@ class BTBMGSC : public TimedBaseBTBPredictor
     struct MgscStats : public statistics::Group {
         statistics::Scalar scCorrectTageWrong;
         statistics::Scalar scWrongTageCorrect;
+        statistics::Scalar scCorrectTageCorrect;
+        statistics::Scalar scWrongTageWrong;
         statistics::Scalar scUsed;
         statistics::Scalar scNotUsed;
 
