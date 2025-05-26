@@ -1977,9 +1977,6 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchStream &entry)
     // Update history manager and verify TAGE folded history
     historyManager.addSpeculativeHist(
         entry.startPC, shamt, taken, entry.predBranchInfo, fsqId);
-#ifndef NDEBUG
-    tage->checkFoldedHist(s0History, "speculative update");
-#endif
 
     // Get prediction information for global backward history updates
     int bw_shamt;
@@ -1996,8 +1993,9 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchStream &entry)
 
     // Update path history
     pHistShiftIn(1, taken, s0PHistory, p_pc);
+#ifndef NDEBUG
     tage->checkFoldedHist(s0PHistory, "speculative update");
-
+#endif
     // Update imli history
     histShiftIn(bw_shamt, bw_taken, s0IHistory);  //s0IHistory is not used
 

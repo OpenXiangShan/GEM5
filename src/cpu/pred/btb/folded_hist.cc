@@ -100,41 +100,28 @@ FoldedHist::update(const boost::dynamic_bitset<> &ghr, int shamt, bool taken, Ad
             }
             // Case 2: When folded length < history length
             else {
-                assert(shamt == 1);
                 assert(maxShamt >= 2);
-                // First shift for bit 1
+
+                int phrShamt = 2; // hardcoded to be 2, the shamt passed in the arguments is ignored
                 // Step 1: Handle the bits that would be lost in shift
-                temp ^= (ghr[posHighestBitsInGhr[0]] << posHighestBitsInOldFoldedHist[0]);
+                for (int i = 0; i < phrShamt; i++) {
+                    // XOR the highest bits from GHR with corresponding positions in folded history
+                    temp ^= (ghr[posHighestBitsInGhr[i]] << posHighestBitsInOldFoldedHist[i]);
+                }
 
                 // Step 2: Perform the shift
-                temp <<= 1;
-
-                // Step 3: Copy the XORed bit back to lower position
-                uint64_t highBit = (temp >> foldedLen) & 1;
-                temp |= highBit;
-
-                // Step 4: Add new branch outcome (bit 1 of PC hash)
-                uint64_t pcBit1 = (((pc >> 1) ^ (pc >> 3) ^ (pc >> 5) ^ (pc >> 7)) >> 1) & 1;
-                temp ^= pcBit1;
-
-                // Mask to folded length
-                temp &= foldedMask;
-
-                // Second shift for bit 0
-                // Step 1: Handle the bits that would be lost in shift
-                temp ^= (ghr[posHighestBitsInGhr[0]] << posHighestBitsInOldFoldedHist[1]);
-
-                // Step 2: Perform the shift
-                temp <<= 1;
-
-                // Step 3: Copy the XORed bit back to lower position
-                highBit = (temp >> foldedLen) & 1;
-                temp |= highBit;
+                temp <<= phrShamt;
 
 
-                // Step 4: Add new branch outcome (bit 0 of PC hash)
-                uint64_t pcBit0 = ((pc >> 1) ^ (pc >> 3) ^ (pc >> 5) ^ (pc >> 7)) & 1;
-                temp ^= pcBit0;
+                // Step 3: Copy the XORed bits back to lower positions
+                for (int i = 0; i < phrShamt; i++) {
+                    uint64_t highBit = (temp >> (foldedLen + i)) & 1;
+                    temp |= (highBit << i);
+                }
+
+                // Step 4: Add new branch outcome
+                temp ^= (((pc>>1)^(pc>>3)^(pc>>5)^(pc>>7)) & 1);
+                temp ^= (((pc>>1)^(pc>>3)^(pc>>5)^(pc>>7)) & 2) ;
 
                 // Mask to folded length
                 temp &= foldedMask;
