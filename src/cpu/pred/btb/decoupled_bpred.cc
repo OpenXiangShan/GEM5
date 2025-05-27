@@ -1985,10 +1985,9 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchStream &entry)
     std::tie(bw_shamt, bw_taken) = finalPred.getBwHistInfo();
 
     // Get prediction information for path history updates
-    int p_shamt=1;
     bool p_taken;
     Addr p_pc;
-    std::tie(p_pc, p_taken) = finalPred.getPHistInfo();
+    std::tie(p_pc, p_taken) = finalPred.getPHistInfo(); // p_taken = taken
 
     // Update global backward history
     histShiftIn(bw_shamt, bw_taken, s0BwHistory);

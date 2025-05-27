@@ -1065,45 +1065,43 @@ class BTBMGSC(TimedBaseBTBPredictor):
 
     needMoreHistories = Param.Bool(True, "MGSC needs more histories")
 
-    bwnb = Param.Unsigned(2, "Num global backward branch GEHL lengths")
-    bwm = VectorParam.Int([4, 8], "Global backward branch GEHL lengths")
+    bwnb = Param.Unsigned(2, "Num global backward branch GEHL tables")
+    bwm = VectorParam.Int([4, 8], "Global backward branch GEHL history lengths")
     logBwnb = Param.Unsigned(11,
             "Log num of global backward branch GEHL entries")
     bwWeightInitValue = Param.Int(7,
-     "Initial value of the weights of the global backward branch GEHL entries")
+     "Initial value of the weights of the global backward branch GEHL entries") # not used
 
     numEntriesFirstLocalHistories = Param.Unsigned(32,
         "Number of entries for first local histories")
-    lnb = Param.Unsigned(2, "Num first local history GEHL lenghts")
-    lm = VectorParam.Int([4, 8], "First local history GEHL lengths")
+    lnb = Param.Unsigned(2, "Num first local history GEHL tables")
+    lm = VectorParam.Int([4, 8], "First local history GEHL history lengths")
     logLnb = Param.Unsigned(11,
             "Log number of first local history GEHL entries")
     lWeightInitValue = Param.Int(7,
         "Initial value of the weights of the first local history GEHL entries")
 
-    inb = Param.Unsigned(1, "Num IMLI GEHL lenghts")
-    im = VectorParam.Int([8], "IMLI history GEHL lengths")
+    inb = Param.Unsigned(1, "Num IMLI GEHL tables")
+    im = VectorParam.Int([8], "IMLI history GEHL history lengths")
     logInb = Param.Unsigned(11, "Log number of IMLI GEHL entries")
     iWeightInitValue = Param.Int(7,
         "Initial value of the weights of the IMLI history GEHL entries")
 
-    logBias = Param.Unsigned(11, "Log size of Bias tables")
-
-    gnb = Param.Unsigned(2, "Num global branch GEHL lengths")
-    gm = VectorParam.Int([8, 16], "Global branch GEHL lengths")
+    gnb = Param.Unsigned(2, "Num global branch GEHL tables")
+    gm = VectorParam.Int([8, 16], "Global branch GEHL history lengths")
     logGnb = Param.Unsigned(11, "Log number of global branch GEHL entries")
     gWeightInitValue = Param.Int(7,
         "Initial value of the weights of the global history GEHL entries")
 
-    pnb = Param.Unsigned(2, "Num global branch path history lengths")
+    pnb = Param.Unsigned(2, "Num global branch path history tables")
     pm = VectorParam.Int([8, 16], "Global branch path history lengths")
     logPnb = Param.Unsigned(11,
                     "Log number of global branch path history entries")
     pWeightInitValue = Param.Int(7,
         "Initial value of the weights of the path history GEHL entries")
 
-    biasnb = Param.Unsigned(1, "Num bias lenghts")
-    logBiasnb = Param.Unsigned(11, "Log number of global branch GEHL entries")
+    biasnb = Param.Unsigned(1, "Num bias tables")
+    logBiasnb = Param.Unsigned(11, "Log number of bias entries")
 
     thresholdTablelogSize = Param.Unsigned(6,
         "Log size of update threshold counters tables")

@@ -349,7 +349,7 @@ typedef struct FetchStream
     std::pair<int, bool> getHistInfoDuringSquash(Addr squash_pc, bool is_cond, bool actually_taken)
     {
         int shamt = 0;
-        int cond_taken = false;
+        bool cond_taken = false;
         for (auto &entry : predBTBEntries) {
             if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
                 shamt++;
@@ -365,7 +365,7 @@ typedef struct FetchStream
     std::pair<int, bool> getBwHistInfoDuringSquash(Addr squash_pc, bool is_cond, bool actually_taken, Addr target)
     {
         int shamt = 0;
-        int cond_taken = false;
+        bool cond_taken = false;
         for (auto &entry : predBTBEntries) {
             if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
                 shamt++;

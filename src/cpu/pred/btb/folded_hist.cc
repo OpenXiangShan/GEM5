@@ -75,7 +75,7 @@ FoldedHist::update(const boost::dynamic_bitset<> &ghr, int shamt, bool taken, Ad
         unsigned temp = folded.to_ulong(); // imli history should be treated as integer, no shift
         if (foldedLen >= histLen) {
             // Simple shift and set case
-            if (taken && temp < (pow(2, histLen)-1) && shamt == 1){ // backward taken, inner most loop
+            if (taken && temp < ((1 << histLen) - 1) && shamt == 1){ // backward taken, inner most loop
                 temp = temp + 1;    // counter++ (index++)
             }else if (taken && shamt > 1){   // backward taken, not inner most loop
                 temp = 1;
