@@ -100,7 +100,8 @@ def template VConfExecute {{
         %(code)s;
 
         assert(vtypesrcIdx > 0);
-        uint32_t current_vtype = xc->getRegOperand(this, vtypesrcIdx);
+        VTYPE current_vtype = xc->getRegOperand(this, vtypesrcIdx);
+        assert(current_vtype == xc->readMiscReg(MISCREG_VTYPE));
 
         tc->setMiscReg(MISCREG_VSTART, 0);
 
@@ -108,7 +109,7 @@ def template VConfExecute {{
         uint32_t vlmax = getVlmax(requested_vtype, vlen);
 
         VTYPE new_vtype = requested_vtype;
-        if (current_vtype != (uint32_t)requested_vtype) {
+        if (current_vtype != requested_vtype) {
             vlmax = getVlmax(new_vtype, vlen);
 
             float vflmul = getVflmul(new_vtype.vlmul);
