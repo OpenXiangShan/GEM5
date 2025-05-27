@@ -1074,8 +1074,8 @@ LSQUnit::loadDoTranslate(const DynInstPtr &inst)
         DPRINTF(LoadPipeline, "Load [sn:%llu] setTLBMissReplay\n", inst->seqNum);
     }
 
-    if (inst->savedRequest && inst->savedRequest->isTranslationComplete() && inst->savedRequest->isNormalLd()) {
-        inst->setNormalLd();
+    if (inst->savedRequest && inst->savedRequest->isTranslationComplete()) {
+        inst->setNormalLd(inst->savedRequest->isNormalLd());
     }
 
     return load_fault;
@@ -1153,9 +1153,9 @@ LSQUnit::loadDoSendRequest(const DynInstPtr &inst)
             inst->setExecuted();
         }
         inst->setSkipFollowingPipe();
-        if (inst->needReplay()) {
-            iewStage->readyToFinish(inst);
-        }
+        // if (inst->strictlyOrdered() && !inst->isExecuted()) {
+        //     iewStage->readyToFinish(inst);
+        // }
         return load_fault;
     }
 
@@ -1215,7 +1215,7 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
         inst->setWaitingCacheRefill();
         DPRINTF(LoadPipeline, "Load [sn:%llu] setCacheMissReplay\n", inst->seqNum);
         return fault;
-    } else if (!request) {
+    } else if (inst->isNormalLd() && !request) {
         loadSetReplay(inst, request, false);
         inst->setBankConflicyReplay();// fast replay
         DPRINTF(LoadPipeline, "Load [sn:%llu] setCacheMissReplay\n", inst->seqNum);
