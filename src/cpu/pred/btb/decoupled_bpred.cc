@@ -1977,7 +1977,9 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchStream &entry)
     // Update history manager and verify TAGE folded history
     historyManager.addSpeculativeHist(
         entry.startPC, shamt, taken, entry.predBranchInfo, fsqId);
+#ifndef NDEBUG
     tage->checkFoldedHist(s0History, "speculative update");
+#endif
 
     // Get prediction information for global backward history updates
     int bw_shamt;
@@ -2077,11 +2079,13 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
         historyManager.squash(stream_id, real_shamt, real_taken, BranchInfo());
     }
 
-    // Perform history consistency checks
+    // Perform history consistency checks when not a fast build variant
+#ifndef NDEBUG
     checkHistory(s0History);
     tage->checkFoldedHist(s0History,
         squash_type == SQUASH_CTRL ? "control squash" :
         squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
+#endif
 }
 
 }  // namespace btb_pred
