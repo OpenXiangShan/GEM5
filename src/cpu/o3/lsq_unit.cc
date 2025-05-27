@@ -2697,6 +2697,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         // Tell IQ/mem dep unit that this instruction will need to be
         // rescheduled eventually
         load_inst->effAddrValid(false);
+        load_inst->setCanCommit();
         load_inst->setSkipFollowingPipe();
         load_inst->setRescheduleReplay();
         iewStage->rescheduleMemInst(load_inst);
