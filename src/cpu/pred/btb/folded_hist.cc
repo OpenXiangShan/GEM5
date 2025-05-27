@@ -176,34 +176,57 @@ FoldedHist::recover(FoldedHist &other)
 /**
  * Verify that folded history matches what would be computed from GHR.
  * 
- * Example:
- * pos:             [0,1,2,3,4,5,6,7]
- * GHR (8 bits):    [1,1,0,0,1,0,1,0]
- * pos 0  ^ pos 4 = 1 ^ 1 = 0 -> pos 0
- * pos 1  ^ pos 5 = 1 ^ 0 = 1 -> pos 1
- * pos 2  ^ pos 6 = 0 ^ 1 = 1 -> pos 2
- * pos 3  ^ pos 7 = 0 ^ 0 = 0 -> pos 3
- * Folded (4 bits): [0,1,1,0]
- * 
- * Verification process:
- * 1. Take each bit from GHR
- * 2. XOR into corresponding position in ideal folded history
- * 3. Compare with actual folded history
+ * Uses optimized bit shifting approach with 64-bit operations when possible.
+ * History folding XORs foldedLen-sized chunks:
+ * folded = [foldedLen-1:0] ^ [2*foldedLen-1:foldedLen] ^ [3*foldedLen-1:2*foldedLen] ^ ...
+ *
+ * This is implemented by repeatedly right-shifting GHR by foldedLen and XORing
+ * the lower bits, using 64-bit integers for performance when possible.
  */
 void
 FoldedHist::check(const boost::dynamic_bitset<> &ghr)
 {
     // Create ideal folded history from GHR
     boost::dynamic_bitset<> ideal(ghr);
-    boost::dynamic_bitset<> idealFolded;
-    
+    boost::dynamic_bitset<> idealFolded(foldedLen);
+
     // Resize to match history length
     ideal.resize(histLen);
-    idealFolded.resize(foldedLen);
-    
-    // Fold the history by XORing bits
-    for (int i = 0; i < histLen; i++) {
-        idealFolded[i % foldedLen] ^= ideal[i];
+
+    // Fast path for histories that fit in unsigned long
+    constexpr int ulong_bits = sizeof(unsigned long) * 8;
+    if (histLen <= ulong_bits && foldedLen <= ulong_bits) {
+        // Extract as native integer and use uint64_t operations
+        unsigned long ghr_val = ideal.to_ulong();
+        unsigned long folded_val = 0;
+
+        // Create mask for foldedLen bits
+        unsigned long mask = (foldedLen == 64) ? ~0ULL : (1ULL << foldedLen) - 1;
+
+        // Fold using native operations
+        while (ghr_val != 0) {
+            folded_val ^= ghr_val;
+            ghr_val >>= foldedLen;
+        }
+        folded_val &= mask;
+
+        // Create result directly from folded value - no bit-by-bit operations
+        idealFolded = boost::dynamic_bitset<>(foldedLen, folded_val);
+    } else {
+        // For larger histories, use block-level operations
+        boost::dynamic_bitset<> working_copy(ideal);
+
+        while (working_copy.any()) {
+            // Extract lower foldedLen bits as chunk - resize handles bit extraction
+            boost::dynamic_bitset<> chunk(working_copy);
+            chunk.resize(foldedLen);  // Automatically truncates to lower bits
+
+            // XOR entire bitsets - no bit-by-bit operations
+            idealFolded ^= chunk;
+
+            // Shift working_copy by foldedLen bits
+            working_copy >>= foldedLen;
+        }
     }
     
     // Verify our folded history matches ideal
