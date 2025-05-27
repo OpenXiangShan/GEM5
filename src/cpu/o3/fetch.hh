@@ -466,7 +466,7 @@ class Fetch
      * @param in_rom Reference to ROM flag to be set
      * @return true if ready to fetch, false if stalled/idle
      */
-    bool prepareFetchAddress(ThreadID tid, bool &status_change, 
+    bool prepareFetchAddress(ThreadID tid, bool &status_change,
                            Addr &fetch_addr, bool &in_rom);
 
     /** Perform the main instruction fetching loop.
@@ -476,6 +476,72 @@ class Fetch
      * @param status_change Reference to status change flag
      */
     void performInstructionFetch(ThreadID tid, Addr fetch_addr, bool in_rom, bool &status_change);
+
+    /** Check memory needs and supply bytes to decoder.
+     * @param tid Thread ID
+     * @param this_pc Current PC state
+     * @param pc_offset Current PC offset
+     * @param fetch_addr Current fetch address
+     * @param blk_offset Block offset in fetch buffer
+     * @param need_mem Whether memory is needed
+     * @param in_rom Whether in ROM microcode
+     * @param curMacroop Current macroop
+     * @param pc_mask PC mask for alignment
+     * @return StallReason if stalled, NoStall otherwise
+     */
+    StallReason checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
+                                Addr &pc_offset, Addr &fetch_addr,
+                                unsigned &blk_offset, bool &need_mem,
+                                bool &in_rom, StaticInstPtr &curMacroop,
+                                const Addr pc_mask);
+
+    /** Process instruction decoding and create dynamic instruction.
+     * @param tid Thread ID
+     * @param this_pc Current PC state
+     * @param next_pc Next PC state
+     * @param staticInst Static instruction pointer
+     * @param curMacroop Current macroop
+     * @param in_rom Whether in ROM microcode
+     * @param newMacro Whether moving to new macroop
+     * @param quiesce Whether quiesce instruction encountered
+     * @param status_change Reference to status change flag
+     * @return DynInstPtr if instruction processed successfully, nullptr otherwise
+     */
+    DynInstPtr processInstructionDecoding(ThreadID tid, PCStateBase &this_pc,
+                                         const std::unique_ptr<PCStateBase> &next_pc,
+                                         StaticInstPtr &staticInst,
+                                         StaticInstPtr &curMacroop,
+                                         bool &in_rom, bool &newMacro,
+                                         bool &quiesce, bool &status_change);
+
+    /** Handle branch prediction and PC updates.
+     * @param instruction Dynamic instruction
+     * @param this_pc Current PC state
+     * @param next_pc Next PC state
+     * @param predictedBranch Whether branch was predicted
+     * @param newMacro Whether moving to new macroop
+     * @return true if should continue fetching
+     */
+    bool handleBranchAndNextPC(DynInstPtr instruction, PCStateBase &this_pc,
+                              std::unique_ptr<PCStateBase> &next_pc,
+                              bool &predictedBranch, bool &newMacro);
+
+    /** Finalize instruction fetch and update state.
+     * @param tid Thread ID
+     * @param this_pc Current PC state
+     * @param pc_offset Current PC offset
+     * @param fetch_addr Current fetch address
+     * @param blk_offset Block offset in fetch buffer
+     * @param curMacroop Current macroop
+     * @param newMacro Whether moving to new macroop
+     * @param pc_mask PC mask for alignment
+     * @param in_rom Whether in ROM microcode
+     */
+    void finalizeInstructionFetch(ThreadID tid, PCStateBase &this_pc,
+                                 Addr &pc_offset, Addr &fetch_addr,
+                                 unsigned &blk_offset, StaticInstPtr &curMacroop,
+                                 bool newMacro, const Addr pc_mask,
+                                 bool &in_rom);
 
   private:
     /** Pointer to the O3CPU. */
