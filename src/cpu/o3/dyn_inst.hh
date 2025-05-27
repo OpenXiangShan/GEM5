@@ -511,7 +511,7 @@ class DynInst : public ExecContext, public RefCounted
     void translationCompleted(bool f) { instFlags[TranslationCompleted] = f; }
 
 
-    void setNormalLd() { instFlags.set(NormalLd); }
+    void setNormalLd(bool t) { instFlags[NormalLd] = t; }
 
     bool isNormalLd() const
     {
