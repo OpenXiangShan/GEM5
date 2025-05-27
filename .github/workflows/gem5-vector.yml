@@ -2,9 +2,9 @@ name: gem5 vector Test
 
 on:
   push:
-    branches: [ dev-vector ]
+    branches: [ xs-dev ]
   pull_request:
-    branches: [ dev-vector ]
+    branches: [ xs-dev ]
 
 jobs:
   vector-test:

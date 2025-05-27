@@ -108,23 +108,22 @@ def template VConfExecute {{
         uint32_t vlmax = getVlmax(requested_vtype, vlen);
 
         VTYPE new_vtype = requested_vtype;
-        if (current_vtype != requested_vtype) {
+        {
             vlmax = getVlmax(new_vtype, vlen);
-
             float vflmul = getVflmul(new_vtype.vlmul);
-
             uint32_t sew = getSew(new_vtype.vsew);
-
             uint32_t new_vill =
                 !(vflmul >= 0.125 && vflmul <= 8) ||
-                    sew > std::min(vflmul, 1.0f) * ELEN ||
-                    bits(requested_vtype, 30, 8) != 0;
+                sew > std::min(vflmul, 1.0f) * ELEN ||
+                bits(requested_vtype, 30, 8) != 0;
+
             if (new_vill) {
                 vlmax = 0;
                 new_vtype = 0;
                 new_vtype.vill = 1;
             }
         }
+
         xc->setMiscReg(MISCREG_VTYPE, new_vtype);
 
         uint32_t current_vl = rVl;
