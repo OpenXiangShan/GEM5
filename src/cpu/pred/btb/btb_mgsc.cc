@@ -180,14 +180,10 @@ BTBMGSC::tickStart() {}
 
 bool
 BTBMGSC::tagMatch(Addr pc_a, Addr pc_b, unsigned matchBits) {
-    bool match = false;
-    bitset tag_a(matchBits, pc_a >> instShiftAmt);  // lower bits of PC
-    bitset tag_b(matchBits, pc_b >> instShiftAmt);  // lower bits of PC
-    if(tag_a == tag_b){
-        return true;
-    }else{
-        return false;
-    }
+    // Use bitwise operations directly to avoid overhead of creating bitset objects
+    // Create mask: when matchBits=5, mask=0x1F (binary 11111)
+    Addr mask = (1ULL << matchBits) - 1;
+    return ((pc_a >> instShiftAmt) & mask) == ((pc_b >> instShiftAmt) & mask);
 }
 
 /**
@@ -844,24 +840,36 @@ BTBMGSC::updateCounter(bool taken, unsigned width, unsigned &counter) {
 Addr
 BTBMGSC::getHistIndex(Addr pc, unsigned tableIndexBits, bitset &foldedHist)
 {
-    bitset buf(tableIndexBits, pc >> floorLog2(blockSize));  // lower bits of PC
-    buf ^= foldedHist;
-    return buf.to_ulong();
+    // Create mask to limit result size to tableIndexBits
+    Addr mask = (1ULL << tableIndexBits) - 1;
+
+    // Extract lower bits of PC and XOR with folded history directly
+    Addr pcBits = (pc >> floorLog2(blockSize)) & mask;
+    Addr foldedBits = foldedHist.to_ulong() & mask;
+
+    return pcBits ^ foldedBits;
 }
 
 Addr
 BTBMGSC::getBiasIndex(Addr pc, unsigned tableIndexBits, bool lowbit0, bool lowbit1)
 {
-    bitset buf(tableIndexBits-2, pc >> floorLog2(blockSize));  // lower bits of PC
-    unsigned index = ((buf.to_ulong()) << 2) + (lowbit1 << 1) + lowbit0;
+    // Create mask for tableIndexBits-2 to extract PC bits
+    Addr mask = (1ULL << (tableIndexBits - 2)) - 1;
+
+    // Extract lower bits of PC directly and combine with low bits
+    Addr pcBits = (pc >> floorLog2(blockSize)) & mask;
+    unsigned index = (pcBits << 2) + (lowbit1 << 1) + lowbit0;
     return index;
 }
 
 Addr
 BTBMGSC::getPcIndex(Addr pc, unsigned tableIndexBits)
 {
-    bitset buf(tableIndexBits, pc >> floorLog2(blockSize));  // lower bits of PC
-    return buf.to_ulong();
+    // Create mask to extract tableIndexBits from PC
+    Addr mask = (1ULL << tableIndexBits) - 1;
+
+    // Extract lower bits of PC directly without bitset
+    return (pc >> floorLog2(blockSize)) & mask;
 }
 
 bool
