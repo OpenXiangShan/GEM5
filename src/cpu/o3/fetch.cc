@@ -1744,75 +1744,82 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
     return instruction;
 }
 
-void
-Fetch::fetch(bool &status_change)
+ThreadID
+Fetch::selectFetchThread()
 {
-    //////////////////////////////////////////
-    // Start actual fetch
-    //////////////////////////////////////////
     ThreadID tid = getFetchingThread();
-
+    
     assert(!cpu->switchedOut());
 
     if (tid == InvalidThreadID) {
         // Breaks looping condition in tick()
         threadFetched = numFetchingThreads;
 
-        if (numThreads == 1) {  // @todo Per-thread stats
+        if (numThreads == 1) {
             profileStall(0);
         }
+        return InvalidThreadID;
+    }
+    
+    return tid;
+}
 
-        return;
+bool
+Fetch::checkDecoupledFrontend(ThreadID tid)
+{
+    if (!isDecoupledFrontend()) {
+        return true; // No decoupled frontend to check
     }
 
-    if (isDecoupledFrontend()) {
-        if (isStreamPred()) {
-            if (!dbsp->fetchTargetAvailable()) {
-                DPRINTF(Fetch, "Skip fetch when FTQ head is not available\n");
-                setAllFetchStalls(StallReason::FTQBubble);
-                return;
-            }
-        } else if (isFTBPred()) {
-            if (!dbpftb->fetchTargetAvailable()) {
-                dbpftb->addFtqNotValid();
-                DPRINTF(Fetch, "Skip fetch when FTQ head is not available\n");
-                setAllFetchStalls(StallReason::FTQBubble);
-                return;
-            }
-        } else if (isBTBPred()) {
-            if (!dbpbtb->fetchTargetAvailable()) {
-                dbpbtb->addFtqNotValid();
-                DPRINTF(Fetch, "Skip fetch when FTQ head is not available\n");
-                return;
-            }
+    if (isStreamPred()) {
+        if (!dbsp->fetchTargetAvailable()) {
+            DPRINTF(Fetch, "Skip fetch when FTQ head is not available\n");
+            setAllFetchStalls(StallReason::FTQBubble);
+            return false;
+        }
+    } else if (isFTBPred()) {
+        if (!dbpftb->fetchTargetAvailable()) {
+            dbpftb->addFtqNotValid();
+            DPRINTF(Fetch, "Skip fetch when FTQ head is not available\n");
+            setAllFetchStalls(StallReason::FTQBubble);
+            return false;
+        }
+    } else if (isBTBPred()) {
+        if (!dbpbtb->fetchTargetAvailable()) {
+            dbpbtb->addFtqNotValid();
+            DPRINTF(Fetch, "Skip fetch when FTQ head is not available\n");
+            return false;
         }
     }
+    
+    return true;
+}
 
+bool
+Fetch::prepareFetchAddress(ThreadID tid, bool &status_change, Addr &fetch_addr, bool &in_rom)
+{
     DPRINTF(Fetch, "Attempting to fetch from [tid:%i]\n", tid);
 
     // The current PC.
     PCStateBase &this_pc = *pc[tid];
 
     Addr pc_offset = fetchOffset[tid];
-    Addr fetch_addr = (this_pc.instAddr() + pc_offset) & decoder[tid]->pcMask();
+    fetch_addr = (this_pc.instAddr() + pc_offset) & decoder[tid]->pcMask();
 
-    bool in_rom = isRomMicroPC(this_pc.microPC());
+    in_rom = isRomMicroPC(this_pc.microPC());
 
-    // If returning from the delay of a cache miss, then update the status
-    // to running, otherwise do the cache access.  Possibly move this up
-    // to tick() function.
+    // Handle status transitions and cache access
     if (fetchStatus[tid] == IcacheAccessComplete) {
         DPRINTF(Fetch, "[tid:%i] Icache miss is complete.\n", tid);
-
         fetchStatus[tid] = Running;
         setAllFetchStalls(StallReason::NoStall);
         status_change = true;
+        return true;
     } else if (fetchStatus[tid] == Running) {
-        // If buffer is no longer valid or fetch_addr has moved to point
-        // to the next cache block, AND we have no remaining ucode
-        // from a macro-op, then start fetch from icache.
+        // Check if we need to fetch from icache
         if (!(fetchBufferValid[tid] &&
-              fetchBufferPC[tid] + fetchBufferSize > fetch_addr && fetchBufferPC[tid] <= fetch_addr) &&
+              fetchBufferPC[tid] + fetchBufferSize > fetch_addr && 
+              fetchBufferPC[tid] <= fetch_addr) &&
             !in_rom && !macroop[tid]) {
             DPRINTF(Fetch, "[tid:%i] Attempting to translate and read "
                     "instruction, starting at PC %s.\n", tid, this_pc);
@@ -1825,99 +1832,106 @@ Fetch::fetch(bool &status_change)
                 ++fetchStats.tlbCycles;
             else
                 ++fetchStats.miscStallCycles;
-            return;
+            return false;
         } else if (checkInterrupt(this_pc.instAddr()) && !delayedCommit[tid]) {
-            // Stall CPU if an interrupt is posted and we're not issuing
-            // an delayed commit micro-op currently (delayed commit
-            // instructions are not interruptable by interrupts, only faults)
+            // Stall CPU if an interrupt is posted
             ++fetchStats.miscStallCycles;
             DPRINTF(Fetch, "[tid:%i] Fetch is stalled!\n", tid);
-            return;
+            return false;
         }
         if (ftqEmpty()) {
-            DPRINTF(
-                Fetch, "[tid:%i] Fetch is stalled due to ftq empty\n", tid);
+            DPRINTF(Fetch, "[tid:%i] Fetch is stalled due to ftq empty\n", tid);
         }
+        return true;
     } else {
         if (fetchStatus[tid] == Idle) {
             ++fetchStats.idleCycles;
             DPRINTF(Fetch, "[tid:%i] Fetch is idle!\n", tid);
         }
-
         // Status is Idle, so fetch should do nothing.
+        return false;
+    }
+}
+
+void
+Fetch::fetch(bool &status_change)
+{
+    //////////////////////////////////////////
+    // Start actual fetch
+    //////////////////////////////////////////
+    ThreadID tid = selectFetchThread();
+    if (tid == InvalidThreadID) {
+        return;
+    }
+
+    if (!checkDecoupledFrontend(tid)) {
+        return;
+    }
+
+    Addr fetch_addr;
+    bool in_rom;
+    if (!prepareFetchAddress(tid, status_change, fetch_addr, in_rom)) {
         return;
     }
 
     ++fetchStats.cycles;
+
+    performInstructionFetch(tid, fetch_addr, in_rom, status_change);
+}
+
+void
+Fetch::performInstructionFetch(ThreadID tid, Addr fetch_addr, bool in_rom, bool &status_change)
+{
+    // Continue with instruction fetching loop
+    PCStateBase &this_pc = *pc[tid];
+    Addr pc_offset = fetchOffset[tid];
 
     std::unique_ptr<PCStateBase> next_pc(this_pc.clone());
 
     StaticInstPtr staticInst = NULL;
     StaticInstPtr curMacroop = macroop[tid];
 
-    // If the read of the first instruction was successful, then grab the
-    // instructions from the rest of the cache line and put them into the
-    // queue heading to decode.
+    DPRINTF(Fetch, "[tid:%i] Adding instructions to queue to decode.\n", tid);
 
-    DPRINTF(Fetch, "[tid:%i] Adding instructions to queue to "
-            "decode.\n", tid);
-
-    // Need to keep track of whether or not a predicted branch
-    // ended this fetch block.
+    // Track whether or not a predicted branch ended this fetch block
     bool predictedBranch = false;
-
     // Need to halt fetch if quiesce instruction detected
     bool quiesce = false;
 
-    // num_insts_per_buffer: number of instruction payloads (usually in 4bytes)
-    // in the fetchBuffer. Note that it does not consider RVC or x86's variable
-    // inst length. It only indicates the number of 4 byte chunks.
+    // RISC-V specific: number of 4-byte chunks in fetch buffer
     const unsigned num_insts_per_buffer = fetchBufferSize / instSize;
 
-    // block offset: offset of the fetch_addr in the fetchBuffer/loopBuffer.
-    // Note that it is counted with the number of instruction payloads
-    // instead of in bytes.
+    // Block offset for RISC-V decoder (in 4-byte chunks)
     unsigned blk_offset = (fetch_addr - fetchBufferPC[tid]) / instSize;
 
     auto *dec_ptr = decoder[tid];
     const Addr pc_mask = dec_ptr->pcMask();
 
-    auto stallDuetoVset = false;
-
-    // Loop through instruction memory from the cache.
-    // Keep issuing while fetchWidth is available and branch is not
-    // predicted taken
+    // Main instruction fetch loop
     StallReason stall = StallReason::NoStall;
-    bool cond_taken_backward = false;
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize &&
            !predictedBranch && !quiesce &&
            !ftqEmpty() && !waitForVsetvl) {
-        // We need to process more memory if we aren't going to get a
-        // StaticInst from the rom, the current macroop, or what's already
-        // in the decoder.
-        // insts from loop buffer is decoded, we do not need instruction bytes
+        
+        // Check if we need more memory for decoding
         bool need_mem = !in_rom && !curMacroop && !dec_ptr->instReady();
         fetch_addr = (this_pc.instAddr() + pc_offset) & pc_mask;
 
         if (need_mem) {
-            // If buffer is no longer valid or fetch_addr has moved to point
-            // to the next cache block then start fetch from icache.
             if (!fetchBufferValid[tid]) {
                 stall = StallReason::IcacheStall;
                 break;
             }
 
             if (blk_offset >= num_insts_per_buffer) {
-                // We need to process more memory, but we've run out of the
-                // current block.
                 stall = StallReason::IcacheStall;
                 break;
             }
 
+            // Supply bytes to decoder (RISC-V needs 4-byte aligned chunks)
             memcpy(dec_ptr->moreBytesPtr(),
                     fetchBuffer[tid] + blk_offset * instSize, instSize);
             DPRINTF(Fetch, "Supplying fetch from fetchBuffer\n");
-            // }
 
             decoder[tid]->moreBytes(this_pc, fetch_addr);
 
@@ -1978,8 +1992,6 @@ Fetch::fetch(bool &status_change)
 #if TRACING_ON
             if (debug::O3PipeView) {
                 instruction->fetchTick = curTick();
-                // DPRINTF(O3PipeView, "Record fetch for inst sn:%lu\n",
-                //         instruction->seqNum);
             }
 #endif
 
@@ -1994,7 +2006,6 @@ Fetch::fetch(bool &status_change)
             if (predictedBranch) {
                 DPRINTF(Fetch, "Branch detected with PC = %s\n", this_pc);
             }
-            cond_taken_backward = predictedBranch && next_pc->instAddr() < this_pc.instAddr() && staticInst->isCondCtrl();
 
             newMacro |= this_pc.instAddr() != next_pc->instAddr();
 

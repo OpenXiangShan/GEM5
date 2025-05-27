@@ -448,6 +448,34 @@ class Fetch
     /** Set the reasons of all fetch stalls. */
     void setAllFetchStalls(StallReason stall);
 
+    /** Select the thread to fetch from.
+     * @return Thread ID to fetch from, or InvalidThreadID if none available
+     */
+    ThreadID selectFetchThread();
+
+    /** Check decoupled frontend (FTQ) availability.
+     * @param tid Thread ID
+     * @return true if frontend is ready for fetch, false otherwise
+     */
+    bool checkDecoupledFrontend(ThreadID tid);
+
+    /** Prepare fetch address and handle status transitions.
+     * @param tid Thread ID
+     * @param status_change Reference to status change flag
+     * @param fetch_addr Reference to fetch address to be set
+     * @param in_rom Reference to ROM flag to be set
+     * @return true if ready to fetch, false if stalled/idle
+     */
+    bool prepareFetchAddress(ThreadID tid, bool &status_change, 
+                           Addr &fetch_addr, bool &in_rom);
+
+    /** Perform the main instruction fetching loop.
+     * @param tid Thread ID
+     * @param fetch_addr Starting fetch address
+     * @param in_rom Whether currently in ROM microcode
+     * @param status_change Reference to status change flag
+     */
+    void performInstructionFetch(ThreadID tid, Addr fetch_addr, bool in_rom, bool &status_change);
 
   private:
     /** Pointer to the O3CPU. */
