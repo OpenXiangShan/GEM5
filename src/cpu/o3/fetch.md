@@ -179,38 +179,84 @@ bool currentFetchTargetInLoop;                        // If current fetch is in 
 
 ## Core Function Workflow
 
-### 1. Main Fetch Cycle
+### 1. Main Fetch Cycle (tick函数)
+
+基于代码实际实现，fetch阶段的主要执行流程如下：
 
 ```
 tick()
   |
-  +--> checkSignalsAndUpdate()  // Check for control signals from other stages
+  +--> initializeTickState()  // Initialize state for this tick cycle
+        |
+        +--> checkSignalsAndUpdate()  // Check signals from other stages for all active threads
+        |
+        +--> Update fetch status distribution stats
+        |
+        +--> Reset pipelined fetch flags
   |
-  +--> fetch()  // Perform actual instruction fetching
+  +--> fetchAndProcessInstructions()  // Perform fetch operations and instruction delivery
         |
-        +--> getFetchingThread()  // Select thread to fetch from
+        +--> fetch()  // Fetch instructions from active threads (loop for numFetchingThreads)
+        |     |
+        |     +--> getFetchingThread()  // Select thread to fetch from
+        |     |
+        |     +--> Check decoupled frontend fetch target availability
+        |     |
+        |     +--> Handle IcacheAccessComplete status
+        |     |
+        |     +--> fetchCacheLine()  // Access I-cache if buffer invalid
+        |     |
+        |     +--> Instruction fetch loop (while numInst < fetchWidth)
+        |           |
+        |           +--> Process memory/ROM/macroop instructions
+        |           |
+        |           +--> buildInst()  // Create dynamic instructions
+        |           |
+        |           +--> lookupAndUpdateNextPC()  // Consult branch predictor
+        |           |
+        |           +--> Check for branch prediction/quiesce
         |
-        +--> fetchCacheLine()  // Access I-cache
+        +--> Pass stall reasons to decode stage
         |
-        +--> lookupAndUpdateNextPC()  // Consult branch predictor
+        +--> Record instruction fetch statistics
         |
-        +--> buildInst()  // Create dynamic instructions
+        +--> handleInterrupts()  // Handle interrupt processing (FullSystem)
         |
-        +--> writeToTimeBuffer()  // Send instructions to decode
+        +--> sendInstructionsToDecode()  // Send instructions to decode with stall reason updates
+  |
+  +--> updateBranchPredictors()  // Handle branch prediction updates (BTB/FTB/Stream)
 ```
 
-### 2. Signal Processing Workflow
+### 2. Signal Processing Workflow (checkSignalsAndUpdate函数)
 
 ```
-checkSignalsAndUpdate()
+checkSignalsAndUpdate()  // For each active thread
   |
-  +--> Process stall signals from Decode
+  +--> Update per-thread stall statuses
+        |
+        +--> Process decode block/unblock signals
   |
-  +--> Process branch resolution from IEW
+  +--> Check squash signals from Commit
+        |
+        +--> Handle branch misprediction squash
+        |
+        +--> Handle trap squash  
+        |
+        +--> Handle non-control squash
+        |
+        +--> Update decoupled branch predictor (BTB/FTB/Stream)
   |
-  +--> Process squash signals from Commit
+  +--> Process normal commit updates (update branch predictor)
   |
-  +--> Process interrupt signals from Commit
+  +--> Check squash signals from Decode
+        |
+        +--> Handle branch misprediction from decode
+        |
+        +--> Update decoupled branch predictor
+  |
+  +--> Check drain stall conditions
+  |
+  +--> Update fetch status (Blocked -> Running transition)
 ```
 
 ### 3. I-Cache Access Workflow
@@ -231,36 +277,129 @@ fetchCacheLine()
         +--> Update fetch status
 ```
 
-### 4. Branch Prediction Handling
+### 4. Branch Prediction Handling (lookupAndUpdateNextPC函数)
 
 ```
 lookupAndUpdateNextPC()
   |
-  +--> Query branch predictor
+  +--> Check if using decoupled frontend
+        |
+        +--> If DecoupledBPUWithBTB: call decoupledPredict()
+        |     |
+        |     +--> Get prediction and usedUpFetchTargets status
+        |     |
+        |     +--> Set instruction loop iteration info
+        |
+        +--> If non-decoupled: call traditional branchPred->predict()
   |
-  +--> Update next PC based on prediction
+  +--> Handle non-control instructions (advance PC normally)
   |
-  +--> Track prediction metadata
+  +--> Handle control instructions
+        |
+        +--> Set prediction target and taken status
+        |
+        +--> Update branch statistics
+        |
+        +--> Return prediction result
+```
+
+### 5. Instruction Building and Queue Management
+
+```
+buildInst()
+  |
+  +--> Get sequence number from CPU
+  |
+  +--> Create DynInst with static instruction info
+  |
+  +--> Set thread-specific information
+  |
+  +--> For decoupled frontend: set FSQ and FTQ IDs
+  |
+  +--> Add to CPU instruction list
+  |
+  +--> Add to fetch queue
+  |
+  +--> Handle delayed commit flags
 ```
 
 ## Decoupled Frontend Implementation
 
-The decoupled frontend design separates branch prediction from instruction fetching, using specialized queues:
+目前主要使用的分支预测器是**DecoupledBPUWithBTB**，这是一个解耦前端设计，将分支预测与指令获取分离：
 
 ```cpp
 // Check if using decoupled frontend
 bool isDecoupledFrontend() { return branchPred->isDecoupled(); }
 
-// Different predictor types
+// Different predictor types (目前主要使用BTB)
 bool isStreamPred() { return branchPred->isStream(); }
 bool isFTBPred() { return branchPred->isFTB(); }
-bool isBTBPred() { return branchPred->isBTB(); }
+bool isBTBPred() { return branchPred->isBTB(); }  // 主要使用的预测器类型
 
 // Track if FTQ is empty
 bool ftqEmpty() { return isDecoupledFrontend() && usedUpFetchTargets; }
 ```
 
-In the decoupled design, the branch predictor works ahead of the fetch unit, generating fetch targets that are stored in the Fetch Target Queue (FTQ). The fetch unit then consumes entries from this queue.
+### DecoupledBPUWithBTB 工作流程：
+
+1. **初始化**: 在构造函数中检测并初始化BTB预测器
+```cpp
+if (isBTBPred()) {
+    dbpbtb = dynamic_cast<branch_prediction::btb_pred::DecoupledBPUWithBTB*>(branchPred);
+    assert(dbpbtb);
+    usedUpFetchTargets = true;
+    dbpbtb->setCpu(_cpu);
+}
+```
+
+2. **每周期更新**: 在updateBranchPredictors()中
+```cpp
+if (isBTBPred()) {
+    assert(dbpbtb);
+    dbpbtb->tick();
+    usedUpFetchTargets = !dbpbtb->trySupplyFetchWithTarget(pc[0]->instAddr(), currentFetchTargetInLoop);
+}
+```
+
+3. **Fetch Target检查**: 在fetch()函数开始时检查FTQ是否有可用目标
+```cpp
+if (isBTBPred()) {
+    if (!dbpbtb->fetchTargetAvailable()) {
+        dbpbtb->addFtqNotValid();
+        DPRINTF(Fetch, "Skip fetch when FTQ head is not available\n");
+        return;
+    }
+}
+```
+
+4. **分支预测调用**: 在lookupAndUpdateNextPC()中
+```cpp
+if (isBTBPred()) {
+    std::tie(predict_taken, usedUpFetchTargets) =
+        dbpbtb->decoupledPredict(
+            inst->staticInst, inst->seqNum, next_pc, tid, currentLoopIter);
+}
+```
+
+5. **Squash处理**: 支持不同类型的squash操作
+```cpp
+// Control squash (branch misprediction)
+dbpbtb->controlSquash(ftqId, fsqId, oldPC, newPC, staticInst, instBytes, taken, seqNum, tid, loopIter, fromCommit);
+
+// Trap squash  
+dbpbtb->trapSquash(targetId, streamId, committedPC, newPC, tid, loopIter);
+
+// Non-control squash
+dbpbtb->nonControlSquash(targetId, streamId, newPC, 0, tid, loopIter);
+```
+
+### 关键特性：
+
+- **Fetch Target Queue (FTQ)**: 存储预测的fetch目标地址
+- **Stream Queue (FSQ)**: 管理指令流信息  
+- **Loop Iteration Tracking**: 跟踪循环迭代信息
+- **Target Availability Check**: 每周期检查是否有可用的fetch目标
+- **Preserved Return Address**: 支持函数返回地址的特殊处理
 
 ## Key Implementation Details
 
@@ -340,62 +479,104 @@ struct FetchStatGroup : public statistics::Group {
 };
 ```
 
-## XiangShan-Specific Enhancements
+## XiangShan特有增强
 
-1. **Decoupled Frontend Designs**: Support for BTB, FTB, and Stream-based prediction
-2. **TAGE, ITTAGE and Loop Predictor**: Advanced branch prediction aligned with XiangShan
-3. **Instruction Latency Calibration**: Timing calibrated to match Kunminghu hardware
+1. **解耦前端设计**: 支持BTB、FTB和Stream-based预测（目前主要使用DecoupledBPUWithBTB）
+2. **TAGE, ITTAGE和Loop Predictor**: 与XiangShan对齐的高级分支预测
+3. **指令延迟校准**: 时序校准以匹配昆明湖硬件特性
+4. **RISC-V特有支持**: 如vsetvl指令的特殊处理
 
-## Advanced Features
+## 高级特性
 
-1. **Loop Buffer**: Caches loop instructions for energy efficiency
-2. **Pipelined I-cache Access**: Allows overlapping multiple I-cache accesses
-3. **Fetch Throttling**: Controls fetch rate based on backend pressure
+1. **Loop Buffer**: 缓存循环指令以提高能效
+2. **流水线式I-cache访问**: 允许overlapping的多个I-cache访问
+3. **Fetch节流控制**: 基于后端压力控制fetch速率
+4. **Misaligned Access处理**: 支持跨cache line的指令获取
+5. **Intel TopDown性能分析**: 详细的前端性能瓶颈分析
 
 
-## 代码分析
-checkStall函数
-这个函数检查特定线程是否因drain操作而暂停。当CPU正在drain（排空）时，该线程的fetch会被stall。
+## 详细代码分析
 
-updateFetchStatus函数
-这个函数负责更新fetch阶段的状态：
-检查所有活跃线程的状态，如果任一线程处于Running、Squashing或IcacheAccessComplete状态，则将fetch阶段设为Active
-否则将其设为Inactive，并通知CPU
+### 关键函数分析
 
-squash函数
-处理来自commit阶段的squash操作：
-调用doSquash进行实际的squash操作
-通知CPU移除不在ROB中的指令
+#### tick() - 主循环函数
+每个时钟周期执行一次的主要函数，包含三个主要阶段：
 
-tick函数
-这是fetch阶段的主循环函数，每个时钟周期执行一次：
-更新各线程的fetch状态统计
-对每个活跃线程检查信号并更新状态
-执行fetch操作，获取指令
-处理中断（在FullSystem模式下）
-发起流水线式的I-cache访问请求
-将fetch队列中的指令发送到decode阶段，受decodeWidth限制
-根据stall原因设置相应的stallReason
-测量前端气泡（frontend bubbles）作为性能分析数据
-分支预测器相关操作（支持StreamPred、FTBPred和BTBPred三种不同类型的预测器）
+1. **initializeTickState()**: 初始化周期状态
+   - 重置状态变化标志和时间缓冲写入标志
+   - 更新fetch状态统计分布
+   - 重置流水线ifetch标志
+   - 处理vsetvl等待状态（RISC-V特有）
 
-fetch函数
-这是实际执行指令获取的函数，它调用fetchInstructions来获取指令。
-主要特点和机制
-多线程支持：代码支持多线程处理，通过ThreadID来区分不同线程的状态和操作。
-流水线控制：
-通过stall机制控制流水线暂停
-支持流水线式的I-cache访问
-分支预测：
-支持多种分支预测器类型（Stream、FTB、BTB）
-预测器每周期更新，尝试为fetch提供目标地址
-性能统计：
-收集各种指标来分析性能
-实现了Intel TopDown方法来测量前端气泡
-stall原因跟踪：
-详细记录并传递stall原因到decode阶段
-区分不同类型的stall（完全stall、部分stall）
-状态管理：
-完整的fetch状态转换逻辑
-与CPU其他阶段的信号交互
-这部分代码展示了GEM5模拟器中O3处理器模型fetch阶段的核心实现，重点关注了性能、流水线控制和与其他阶段的交互。代码中包含了详细的调试输出（DPRINTF），便于跟踪执行流程和状态变化。
+2. **fetchAndProcessInstructions()**: 执行fetch操作和指令处理
+   - 循环处理所有活跃线程的fetch操作
+   - 传递stall原因到decode阶段
+   - 记录指令fetch统计信息
+   - 处理中断（FullSystem模式）
+   - 发送指令到decode阶段并测量前端气泡
+
+3. **updateBranchPredictors()**: 更新分支预测器
+   - 调用分支预测器的tick()方法
+   - 尝试为fetch提供目标地址
+   - 更新usedUpFetchTargets状态
+
+#### fetch() - 指令获取核心函数
+负责实际的指令获取操作：
+
+1. **线程选择**: 通过getFetchingThread()选择要fetch的线程
+2. **Decoupled Frontend检查**: 检查FTQ是否有可用的fetch目标
+3. **状态处理**: 
+   - 处理IcacheAccessComplete状态转换
+   - 检查fetch buffer有效性
+   - 处理中断和stall条件
+4. **指令获取循环**: 
+   - 从cache/ROM/macroop获取指令字节
+   - 解码指令并创建动态指令
+   - 调用分支预测器预测下一个PC
+   - 处理分支预测和quiesce指令
+   - 管理fetch队列和宽度限制
+
+#### checkSignalsAndUpdate() - 信号处理函数
+处理来自其他流水线阶段的控制信号：
+
+1. **Decode阶段信号**: 处理block/unblock信号
+2. **Commit阶段信号**: 
+   - 处理squash信号（分支误预测、trap、非控制squash）
+   - 更新分支预测器状态
+   - 处理中断信号
+3. **Decode阶段Squash**: 处理来自decode的分支误预测
+4. **状态转换**: 管理Blocked/Running状态转换
+
+### 主要机制特点
+
+#### 1. 多线程支持
+- 通过ThreadID区分不同线程状态和操作
+- 支持多种线程选择策略（RoundRobin、IQCount、LSQCount等）
+- 每个线程独立的fetch状态和缓冲区
+
+#### 2. 流水线控制
+- **Stall机制**: 详细的stall原因跟踪和传递
+- **流水线式I-cache访问**: 支持overlapping的cache访问
+- **状态机管理**: 完整的fetch状态转换逻辑
+
+#### 3. Decoupled Frontend (主要使用BTB)
+- **FTQ管理**: Fetch Target Queue提供预测的fetch目标
+- **每周期检查**: 确保FTQ有可用目标才进行fetch
+- **Loop支持**: 跟踪循环迭代信息和循环内fetch
+
+#### 4. 性能分析支持
+- **Intel TopDown方法**: 测量前端气泡（frontend bubbles）
+- **详细统计**: 收集各种性能指标和stall原因
+- **Frontend Bound分析**: 区分延迟bound和带宽bound
+
+#### 5. Cache和内存管理
+- **Fetch Buffer**: 缓存从I-cache获取的指令数据
+- **Misaligned Access**: 支持跨cache line的指令获取
+- **Memory Request管理**: 处理I-cache访问和TLB翻译
+
+#### 6. 错误处理和恢复
+- **Squash操作**: 支持多种类型的pipeline flush
+- **Translation Fault**: 处理地址翻译错误
+- **Cache Miss**: 处理I-cache miss和retry逻辑
+
+这个实现展示了现代处理器fetch阶段的复杂性，特别是在支持解耦前端、多线程、性能分析等高级特性时。代码中的详细DPRINTF输出便于调试和性能分析。
