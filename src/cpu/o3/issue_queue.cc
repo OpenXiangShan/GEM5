@@ -751,13 +751,15 @@ Scheduler::Scheduler(const SchedulerParams& params)
         }
     } else {
         for (auto it : params.specWakeupNetwork) {
-            auto srcIQ = findIQbyname(it->srcIQ);
-            if (srcIQ) {
-                for (auto dstIQname : it->dstIQ) {
-                    auto dstIQ = findIQbyname(dstIQname);
-                    if (dstIQ) {
-                        wakeMatrix[srcIQ->getId()].push_back(dstIQ);
-                        DPRINTF(Schedule, "build wakeup channel: %s -> %s\n", srcIQ->getName(), dstIQ->getName());
+            for (auto src : it->srcIQs) {
+                auto srcIQ = findIQbyname(src);
+                if (srcIQ) {
+                    for (auto dstIQname : it->dstIQs) {
+                        auto dstIQ = findIQbyname(dstIQname);
+                        if (dstIQ) {
+                            wakeMatrix[srcIQ->getId()].push_back(dstIQ);
+                            DPRINTF(Schedule, "build wakeup channel: %s -> %s\n", srcIQ->getName(), dstIQ->getName());
+                        }
                     }
                 }
             }

@@ -96,7 +96,7 @@ class ECore2ReadScheduler(Scheduler):
 
 
 class KunminghuScheduler(Scheduler):
-    IQs = [
+    __intIQs = [
         IssueQue(name='intIQ0', inports=2, size=2*12, oports=[
             IssuePort(fu=[IntALU(), IntMult()], rp=[IntRD(0, 0), IntRD(1, 0)]),
             IssuePort(fu=[IntBRU()], rp=[IntRD(6, 1), IntRD(7, 1)])
@@ -112,7 +112,9 @@ class KunminghuScheduler(Scheduler):
         IssueQue(name='intIQ3', inports=2, size=2*12, oports=[
             IssuePort(fu=[IntALU()], rp=[IntRD(6, 0), IntRD(7, 0)]),
             IssuePort(fu=[IntDiv()], rp=[IntRD(0, 1), IntRD(1, 1)])
-        ]),
+        ])
+    ]
+    __memIQs = [
         IssueQue(name='load0', inports=2, size=16, oports=[
             IssuePort(fu=[ReadPort()], rp=[IntRD(8, 0)])
         ]),
@@ -133,7 +135,9 @@ class KunminghuScheduler(Scheduler):
         ]),
         IssueQue(name='std1', inports=2, size=16, oports=[
             IssuePort(fu=[StoreDataPort()], rp=[IntRD(3,2), FpRD(10,0)])
-        ]),
+        ])
+    ]
+    __fpIQs = [
         IssueQue(name='fpIQ0', inports=2, size=18, oports=[
             IssuePort(fu=[FP_ALU(), FP_MISC(), FP_MAC()], rp=[FpRD(0,0), FpRD(1, 0), FpRD(2,0)]),
             IssuePort(fu=[FP_SLOW()], rp=[FpRD(2,1), FpRD(5,1)])
@@ -151,24 +155,18 @@ class KunminghuScheduler(Scheduler):
             IssuePort(fu=[SIMD_Unit()]),
             IssuePort(fu=[SIMD_Unit()]),
             IssuePort(fu=[SIMD_Unit()])
-        ], scheduleToExecDelay=3),
+        ], scheduleToExecDelay=3)
     ]
-    __int_bank = ['intIQ0', 'intIQ1', 'intIQ2', 'intIQ3', 'load0', 'load1', 'load2', 'store0', 'store1', 'std0', 'std1']
-    __fp_bank = ['fpIQ0', 'fpIQ1', 'fpIQ2', 'store0', 'store1']
+    IQs = __intIQs + __memIQs + __fpIQs
+
+    __int_bank = [i.name for i in __intIQs]
+    __mem_bank = [i.name for i in __memIQs]
+    __fp_bank = [i.name for i in __fpIQs]
     specWakeupNetwork = [
-        SpecWakeupChannel(srcIQ='intIQ0', dstIQ=__int_bank),
-        SpecWakeupChannel(srcIQ='intIQ1', dstIQ=__int_bank),
-        SpecWakeupChannel(srcIQ='intIQ2', dstIQ=__int_bank),
-        SpecWakeupChannel(srcIQ='intIQ3', dstIQ=__int_bank),
-        SpecWakeupChannel(srcIQ='fpIQ0', dstIQ=__fp_bank),
-        SpecWakeupChannel(srcIQ='fpIQ1', dstIQ=__fp_bank),
-        SpecWakeupChannel(srcIQ='fpIQ2', dstIQ=__fp_bank),
-        SpecWakeupChannel(srcIQ='load0', dstIQ=__int_bank),
-        SpecWakeupChannel(srcIQ='load1', dstIQ=__int_bank),
-        SpecWakeupChannel(srcIQ='load2', dstIQ=__int_bank),
+        SpecWakeupChannel(srcs=__int_bank + __mem_bank, dsts=__int_bank + __mem_bank),
+        SpecWakeupChannel(srcs=__fp_bank, dsts=__fp_bank)
     ]
 
-    
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # self.disableAllRegArb()
@@ -180,7 +178,7 @@ class KunminghuScheduler(Scheduler):
                 port.rp.clear()
 
 class IdealScheduler(Scheduler):
-    IQs = [
+    __intIQs = [
         IssueQue(name='intIQ0', inports=2, size=2*24, oports=[
             IssuePort(fu=[IntALU(), IntMult()]),
             IssuePort(fu=[IntBRU()])
@@ -196,7 +194,9 @@ class IdealScheduler(Scheduler):
         IssueQue(name='intIQ3', inports=2, size=2*24, oports=[
             IssuePort(fu=[IntALU()]),
             IssuePort(fu=[IntDiv()])
-        ]),
+        ])
+    ]
+    __memIQs = [
         IssueQue(name='load0', inports=6, size=3*32, oports=[
             IssuePort(fu=[ReadPort()]),
             IssuePort(fu=[ReadPort()]),
@@ -209,7 +209,9 @@ class IdealScheduler(Scheduler):
         IssueQue(name='std0', inports=4, size=2*32, oports=[
             IssuePort(fu=[StoreDataPort()]),
             IssuePort(fu=[StoreDataPort()])
-        ]),
+        ])
+    ]
+    __fpIQs = [
         IssueQue(name='fpIQ0', inports=2, size=18, oports=[
             IssuePort(fu=[FP_ALU(), FP_MISC(), FP_MAC()])
         ], scheduleToExecDelay=3),
@@ -234,19 +236,13 @@ class IdealScheduler(Scheduler):
             IssuePort(fu=[SIMD_Unit()])
         ], scheduleToExecDelay=3),
     ]
-    __int_bank = ['intIQ0', 'intIQ1', 'intIQ2', 'intIQ3', 'load0', 'store0', 'std0']
-    __fp_bank = ['fpIQ0', 'fpIQ1', 'fpIQ2', 'fpIQ3', 'fpIQ4', 'store0']
+    IQs = __intIQs + __memIQs + __fpIQs
+    __int_bank = [i.name for i in __intIQs]
+    __mem_bank = [i.name for i in __memIQs]
+    __fp_bank = [i.name for i in __fpIQs]
     specWakeupNetwork = [
-        SpecWakeupChannel(srcIQ='intIQ0', dstIQ=__int_bank),
-        SpecWakeupChannel(srcIQ='intIQ1', dstIQ=__int_bank),
-        SpecWakeupChannel(srcIQ='intIQ2', dstIQ=__int_bank),
-        SpecWakeupChannel(srcIQ='intIQ3', dstIQ=__int_bank),
-        SpecWakeupChannel(srcIQ='fpIQ0', dstIQ=__fp_bank),
-        SpecWakeupChannel(srcIQ='fpIQ1', dstIQ=__fp_bank),
-        SpecWakeupChannel(srcIQ='fpIQ2', dstIQ=__fp_bank),
-        SpecWakeupChannel(srcIQ='fpIQ3', dstIQ=__fp_bank),
-        # SpecWakeupChannel(srcIQ='fpIQ4', dstIQ=__fp_bank),
-        SpecWakeupChannel(srcIQ='load0', dstIQ=__int_bank),
+        SpecWakeupChannel(srcs=__int_bank + __mem_bank, dsts=__int_bank + __mem_bank),
+        SpecWakeupChannel(srcs=__fp_bank, dsts=__fp_bank)
     ]
 
     useOldDisp = True
