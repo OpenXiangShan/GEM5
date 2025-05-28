@@ -33,7 +33,7 @@ export GEM5_PGO_CPT=/nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin
 checkForVariable GEM5_PGO_CPT
 
 # build gem5 with pgo instrumentation
-CC=clang CXX=clang++ scons build/RISCV/gem5.opt -j $build_threads --gold-linker --pgo-prof
+CC=clang CXX=clang++ scons build/RISCV/gem5.fast -j $build_threads --gold-linker --pgo-prof
 check $?
 
 # run gem5 with pgo instrumentation
@@ -43,7 +43,7 @@ cd llvm-pgo
 # run gem5 and let it to generate profile here
 export LLVM_PROFILE_FILE=$(pwd)/default.profraw
 
-$gem5_home/build/RISCV/gem5.opt \
+$gem5_home/build/RISCV/gem5.fast \
      $gem5_home/configs/example/xiangshan.py \
      --ideal-kmhv3 --raw-cpt \
      --generic-rv-cpt=$GEM5_PGO_CPT
@@ -56,7 +56,7 @@ check $?
 cd ..
 
 # build gem5 with pgo instrumentation
-CC=clang CXX=clang++ scons build/RISCV/gem5.opt -j $build_threads --gold-linker --pgo-use=llvm-pgo/gem5_single.profdata
+CC=clang CXX=clang++ scons build/RISCV/gem5.fast -j $build_threads --gold-linker --pgo-use=llvm-pgo/gem5_single.profdata
 check $?
 
 printf "PGO build is done!\n"
