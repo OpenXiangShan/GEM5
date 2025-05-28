@@ -176,6 +176,8 @@ class RefProxy
   public:
     // public callable functions
     void (*ref_get_backed_memory)(void *backed_mem, size_t n) = nullptr;
+    void (*memcpy_init)(paddr_t nemu_addr, void *dut_buf, size_t n,
+                   bool direction) = nullptr;
     void (*memcpy)(paddr_t nemu_addr, void *dut_buf, size_t n,
                    bool direction) = nullptr;
     void (*regcpy)(void *dut, bool direction) = nullptr;

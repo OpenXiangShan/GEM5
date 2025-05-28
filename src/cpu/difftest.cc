@@ -85,6 +85,10 @@ NemuProxy::NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff, bo
         handle, "difftest_memcpy");
     assert(this->memcpy);
 
+    this->memcpy_init = (void (*)(paddr_t, void *, size_t, bool))dlsym(
+        handle, "difftest_memcpy_init");
+    assert(this->memcpy_init);
+
     regcpy = (void (*)(void *, bool))dlsym(handle, "difftest_regcpy");
     assert(regcpy);
 
