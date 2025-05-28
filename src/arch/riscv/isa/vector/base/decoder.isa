@@ -378,7 +378,7 @@ decode QUADRANT {
                         __int128_t result = (__int128_t)Vs1_vi[i] *
                                             (__int128_t)Vs2_vi[i];
                         result = int_rounding<__int128_t>(
-                            result, 0 /* TODO */, sew - 1);
+                            result, xc->readMiscReg(MISCREG_VXRM), sew - 1);
                         result = result >> (sew - 1);
                         if (overflow) {
                             result = max;
@@ -490,7 +490,7 @@ decode QUADRANT {
                         unsigned shift = Vs1_vu[i + offset] & ((sew * 2) - 1);
 
                         res = int_rounding<__uint128_t>(
-                            res, 0 /* TODO */, shift) >> shift;
+                            res, xc->readMiscReg(MISCREG_VXRM), shift) >> shift;
 
                         if (res & sign_mask) {
                             res = max;
@@ -925,22 +925,22 @@ decode QUADRANT {
                 format VectorIntFormat {
                     0x8: vaaddu_vv({{
                         __uint128_t res = (__uint128_t)Vs2_vu[i] + Vs1_vu[i];
-                        res = int_rounding<__uint128_t>(res, 0 /* TODO */, 1);
+                        res = int_rounding<__uint128_t>(res, xc->readMiscReg(MISCREG_VXRM), 1);
                         Vd_vu[i] = res >> 1;
                     }}, OPMVV, VectorIntegerArithOp);
                     0x9: vaadd_vv({{
                         __uint128_t res = (__uint128_t)Vs2_vi[i] + Vs1_vi[i];
-                        res = int_rounding<__uint128_t>(res, 0 /* TODO */, 1);
+                        res = int_rounding<__uint128_t>(res, xc->readMiscReg(MISCREG_VXRM), 1);
                         Vd_vi[i] = res >> 1;
                     }}, OPMVV, VectorIntegerArithOp);
                     0xa: vasubu_vv({{
                         __uint128_t res = (__uint128_t)Vs2_vu[i] - Vs1_vu[i];
-                        res = int_rounding<__uint128_t>(res, 0 /* TODO */, 1);
+                        res = int_rounding<__uint128_t>(res, xc->readMiscReg(MISCREG_VXRM), 1);
                         Vd_vu[i] = res >> 1;
                     }}, OPMVV, VectorIntegerArithOp);
                     0xb: vasub_vv({{
                         __uint128_t res = (__uint128_t)Vs2_vi[i] - Vs1_vi[i];
-                        res = int_rounding<__uint128_t>(res, 0 /* TODO */, 1);
+                        res = int_rounding<__uint128_t>(res, xc->readMiscReg(MISCREG_VXRM), 1);
                         Vd_vi[i] = res >> 1;
                     }}, OPMVV, VectorIntegerArithOp);
                 }
@@ -1396,8 +1396,7 @@ decode QUADRANT {
                         __uint128_t res = Vs2_vu[i];
 
                         res = int_rounding<__uint128_t>(
-                            res, 0 /* TODO */, sh) >> sh;
-
+                            res, xc->readMiscReg(MISCREG_VXRM), sh) >> sh;
                         Vd_vu[i] = res;
                     }}, OPIVI, VectorIntegerArithOp);
                     0x29: vsra_vi({{
@@ -1483,7 +1482,7 @@ decode QUADRANT {
                         unsigned shift = VS1 & ((sew * 2) - 1);
 
                         res = int_rounding<__uint128_t>(
-                            res, 0 /* TODO */, shift) >> shift;
+                            res, xc->readMiscReg(MISCREG_VXRM), shift) >> shift;
 
                         if (res & sign_mask) {
                             xc->setMiscReg(MISCREG_VXSAT, 1);
@@ -1499,7 +1498,7 @@ decode QUADRANT {
                         unsigned shift = VS1 & ((sew * 2) - 1);
 
                         res = int_rounding<__int128_t>(
-                            res, 0 /* TODO */, shift) >> shift;
+                            res, xc->readMiscReg(MISCREG_VXRM), shift) >> shift;
 
                         if (res < min) {
                             res = min;
@@ -1680,7 +1679,7 @@ decode QUADRANT {
                         __int128_t result =
                             (__int128_t)Rs1_vi * (__int128_t)Vs2_vi[i];
                         result = int_rounding<__uint128_t>(
-                            result, 0 /* TODO */, sew - 1);
+                            result, xc->readMiscReg(MISCREG_VXRM), sew - 1);
                         result = result >> (sew - 1);
                         if (overflow) {
                             result = max;
@@ -1732,7 +1731,7 @@ decode QUADRANT {
                         unsigned shift = Rs1_vu & ((sew * 2) - 1);
 
                         res = int_rounding<__uint128_t>(
-                            res, 0 /* TODO */, shift) >> shift;
+                            res, xc->readMiscReg(MISCREG_VXRM), shift) >> shift;
 
                         if (res & sign_mask) {
                             xc->setMiscReg(MISCREG_VXSAT, 1);
@@ -1748,7 +1747,7 @@ decode QUADRANT {
                         unsigned shift = Rs1_vi & ((sew * 2) - 1);
 
                         res = int_rounding<__int128_t>(
-                            res, 0 /* TODO */, shift) >> shift;
+                            res, xc->readMiscReg(MISCREG_VXRM), shift) >> shift;
 
                         if (res < min) {
                             res = min;
@@ -2113,12 +2112,12 @@ decode QUADRANT {
                 format VectorIntFormat {
                     0x08: vaaddu_vx({{
                         __uint128_t res = (__uint128_t)Vs2_vu[i] + Rs1_vu;
-                        res = int_rounding<__uint128_t>(res, 0 /* TODO */, 1);
+                        res = int_rounding<__uint128_t>(res, xc->readMiscReg(MISCREG_VXRM), 1);
                         Vd_vu[i] = res >> 1;
                     }}, OPMVX, VectorIntegerArithOp);
                     0x09: vaadd_vx({{
                         __uint128_t res = (__uint128_t)Vs2_vi[i] + Rs1_vi;
-                        res = int_rounding<__uint128_t>(res, 0 /* TODO */, 1);
+                        res = int_rounding<__uint128_t>(res, xc->readMiscReg(MISCREG_VXRM), 1);
                         Vd_vi[i] = res >> 1;
                     }}, OPMVX, VectorIntegerArithOp);
                 }
@@ -2198,12 +2197,12 @@ decode QUADRANT {
                 format VectorIntFormat {
                     0x0a: vasubu_vx({{
                         __uint128_t res = (__uint128_t)Vs2_vu[i] - Rs1_vu;
-                        res = int_rounding<__uint128_t>(res, 0 /* TODO */, 1);
+                        res = int_rounding<__uint128_t>(res, xc->readMiscReg(MISCREG_VXRM), 1);
                         Vd_vu[i] = res >> 1;
                     }}, OPMVX, VectorIntegerArithOp);
                     0x0b: vasub_vx({{
                         __uint128_t res = (__uint128_t)Vs2_vi[i] - Rs1_vi;
-                        res = int_rounding<__uint128_t>(res, 0 /* TODO */, 1);
+                        res = int_rounding<__uint128_t>(res, xc->readMiscReg(MISCREG_VXRM), 1);
                         Vd_vi[i] = res >> 1;
                     }}, OPMVX, VectorIntegerArithOp);
                     0x20: vdivu_vx({{
