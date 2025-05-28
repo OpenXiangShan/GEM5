@@ -1,3 +1,10 @@
-//TODO
+// NOTE: include templates first
+
+##include "vector_arith.temp.isa"
+##include "vector_mem.temp.isa"
+
+##include "vector_conf.isa"
+##include "vector_arith.isa"
+##include "vector_mem.isa"
 
 ##include "decoder.isa"
