@@ -183,10 +183,10 @@ class IssueQue : public SimObject
 class SpecWakeupChannel : public SimObject
 {
   public:
-    std::string srcIQ;
-    std::vector<std::string> dstIQ;
+    std::vector<std::string> srcIQs;
+    std::vector<std::string> dstIQs;
     SpecWakeupChannel(const SpecWakeupChannelParams& params)
-        : SimObject(params), srcIQ(params.srcIQ), dstIQ(params.dstIQ)
+        : SimObject(params), srcIQs(params.srcs), dstIQs(params.dsts)
     {
     }
 };
