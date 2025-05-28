@@ -496,14 +496,13 @@ class Fetch
      * @param staticInst Static instruction pointer
      * @param curMacroop Current macroop
      * @param newMacro Whether moving to new macroop
-     * @param status_change Reference to status change flag
      * @return DynInstPtr if instruction processed successfully, nullptr otherwise
      */
     DynInstPtr processInstructionDecoding(ThreadID tid, PCStateBase &this_pc,
                                          const std::unique_ptr<PCStateBase> &next_pc,
                                          StaticInstPtr &staticInst,
                                          StaticInstPtr &curMacroop,
-                                         bool &newMacro, bool &status_change);
+                                         bool &newMacro);
 
     /** Handle branch prediction and PC updates.
      * @param instruction Dynamic instruction
@@ -511,9 +510,8 @@ class Fetch
      * @param next_pc Next PC state
      * @param predictedBranch Whether branch was predicted
      * @param newMacro Whether moving to new macroop
-     * @return true if should continue fetching
      */
-    bool handleBranchAndNextPC(DynInstPtr instruction, PCStateBase &this_pc,
+    void handleBranchAndNextPC(DynInstPtr instruction, PCStateBase &this_pc,
                               std::unique_ptr<PCStateBase> &next_pc,
                               bool &predictedBranch, bool &newMacro);
 

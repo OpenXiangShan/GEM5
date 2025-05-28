@@ -1929,7 +1929,7 @@ Fetch::processInstructionDecoding(ThreadID tid, PCStateBase &this_pc,
                                  const std::unique_ptr<PCStateBase> &next_pc,
                                  StaticInstPtr &staticInst,
                                  StaticInstPtr &curMacroop,
-                                 bool &newMacro, bool &status_change)
+                                 bool &newMacro)
 {
     auto *dec_ptr = decoder[tid];
     newMacro = false;
@@ -1985,7 +1985,7 @@ Fetch::processInstructionDecoding(ThreadID tid, PCStateBase &this_pc,
     return instruction;
 }
 
-bool
+void
 Fetch::handleBranchAndNextPC(DynInstPtr instruction, PCStateBase &this_pc,
                             std::unique_ptr<PCStateBase> &next_pc,
                             bool &predictedBranch, bool &newMacro)
@@ -2011,8 +2011,6 @@ Fetch::handleBranchAndNextPC(DynInstPtr instruction, PCStateBase &this_pc,
 
     // Update current PC to next PC for next iteration
     set(this_pc, *next_pc);
-
-    return true;
 }
 
 void
@@ -2054,7 +2052,7 @@ Fetch::performInstructionFetch(ThreadID tid, Addr fetch_addr, bool &status_chang
             // Decode instruction and create dynamic instruction
             DynInstPtr instruction = processInstructionDecoding(tid, this_pc, next_pc,
                                                                staticInst, curMacroop,
-                                                               newMacro, status_change);
+                                                               newMacro);
             if (!instruction) {
                 // Need more bytes for decoding
                 break;
@@ -2066,10 +2064,8 @@ Fetch::performInstructionFetch(ThreadID tid, Addr fetch_addr, bool &status_chang
             }
 
             // Handle branch prediction and PC updates
-            if (!handleBranchAndNextPC(instruction, this_pc, next_pc,
-                                      predictedBranch, newMacro)) {
-                break;
-            }
+            handleBranchAndNextPC(instruction, this_pc, next_pc,
+                                  predictedBranch, newMacro);
 
             // Finalize instruction processing and update fetch state, handle new macroop transition
             if (newMacro) {
