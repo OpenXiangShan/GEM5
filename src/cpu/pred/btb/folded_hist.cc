@@ -213,19 +213,17 @@ FoldedHist::check(const boost::dynamic_bitset<> &ghr)
         // Create result directly from folded value - no bit-by-bit operations
         idealFolded = boost::dynamic_bitset<>(foldedLen, folded_val);
     } else {
-        // For larger histories, use block-level operations
-        boost::dynamic_bitset<> working_copy(ideal);
-
-        while (working_copy.any()) {
+        // For larger histories, use chunk-level operations
+        while (ideal.any()) {
             // Extract lower foldedLen bits as chunk - resize handles bit extraction
-            boost::dynamic_bitset<> chunk(working_copy);
+            boost::dynamic_bitset<> chunk(ideal);
             chunk.resize(foldedLen);  // Automatically truncates to lower bits
 
             // XOR entire bitsets - no bit-by-bit operations
             idealFolded ^= chunk;
 
-            // Shift working_copy by foldedLen bits
-            working_copy >>= foldedLen;
+            // Shift by foldedLen bits
+            ideal >>= foldedLen;
         }
     }
     
