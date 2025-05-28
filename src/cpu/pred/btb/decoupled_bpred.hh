@@ -809,7 +809,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         bool is_conditional,
         bool actually_taken,
         SquashType squash_type,
-        Addr redirect_pc // the target of the squashed Fetch Block, used to update PHR);
+        Addr redirect_pc); // the target of the squashed Fetch Block, used to update PHR
 
     // Common logic for squash handling
     void handleSquash(unsigned target_id,
