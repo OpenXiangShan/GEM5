@@ -1077,6 +1077,11 @@ Fetch::doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst, const In
         retryTid = InvalidThreadID;
     }
 
+    if (squashInst && !squashInst->isControl()) {
+        // csrrw satp need to flush all fetch targets
+        fetchBufferValid[tid] = false;
+    }
+
     fetchStatus[tid] = Squashing;
     setAllFetchStalls(StallReason::BpStall); // may caused by other stages like load and store
 
