@@ -1361,3 +1361,9 @@ def format VectorCompressFormat(code, category, *flags) {{
 
     decode_block = VectorIntDecodeBlock.subst(iop)
 }};
+
+def format VectorSlideUpSimpleFormat(code, category, *flags) {{
+    iop = InstObjParams(name, Name, "VSlideUpMacroInst", flags)
+
+    decode_block = VectorIntDecodeBlock.subst(iop)
+}};

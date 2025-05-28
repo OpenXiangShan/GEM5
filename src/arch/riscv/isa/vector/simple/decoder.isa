@@ -1296,34 +1296,8 @@ decode QUADRANT {
                         }
                     }
                 }}, OPIVI, VectorMiscOp);
-                0x0e: VectorSlideUpFormat::vslideup_vi({{
-                    int offset_ = SIMM5;
-                    int offset = offset_ % elem_num_per_vreg;
-                    uint32_t ei = vmi.rs;
-                    // set front segment
-                    RiscvISA::vreg_t temp;
-                    xc->getRegOperand(this, 0, &temp);
-                    for (int i=0; i<offset; i++) {
-                        if (ei >= vmi.re || (ei >= rVl)) {
-                            break;
-                        }
-                        if ((machInst.vm || elem_mask(v0, ei)) && (ei >= offset_)) {
-                            Vd_vu[i] = temp.as<vu>()[i + (elem_num_per_vreg - offset)];
-                        }
-                        ei++;
-                    }
-                    // set back segment
-                    xc->getRegOperand(this, 1, &temp);
-                    for (int i=0; i<elem_num_per_vreg - offset; i++) {
-                        if (ei >= vmi.re || (ei >= rVl)) {
-                            break;
-                        }
-                        if ((machInst.vm || elem_mask(v0, ei)) && (ei >= offset_)) {
-                            Vd_vu[i + offset] = temp.as<vu>()[i];
-                        }
-                        ei++;
-                    }
-                }}, OPIVI, VectorMiscOp);
+                0x0e: VectorSlideUpSimpleFormat::vslideup_vi({{
+                }}, OPMVV, VectorMiscOp);
                 0x0f: VectorSlideDownFormat::vslidedown_vi({{
                     int offset_ = SIMM5;
                     int offset = offset_ % elem_num_per_vreg;

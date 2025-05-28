@@ -940,6 +940,88 @@ class Vcompress_vm : public VectorNonSplitInst
     }
 };
 
+template<typename Type>
+class Vslideup_vi : public VectorNonSplitInst
+{
+  private:
+    RegId srcRegIdxArr[20];  // vs, vcnt, vm, old_vd
+    RegId destRegIdxArr[8];  // vd
+    uint32_t imm;
+  public:
+    Vslideup_vi(ExtMachInst extMachInst)
+        : VectorNonSplitInst("Vslideup", extMachInst, VectorIntegerArithOp)
+    {
+        setRegIdxArrays(reinterpret_cast<RegIdArrayPtr>(&std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
+                        reinterpret_cast<RegIdArrayPtr>(&std::remove_pointer_t<decltype(this)>::destRegIdxArr));
+
+        const uint32_t regLength = vflmul < 1 ? 1 : vflmul;
+        _numSrcRegs = 0;
+        _numDestRegs = 0;
+
+        for (int i = 0; i < regLength; i++) {
+            setDestRegIdx(_numDestRegs++, RegId(VecRegClass, extMachInst.vd + i));
+            _numTypedDestRegs[VecRegClass]++;
+        }
+        // vs
+        for (int i = 0; i < regLength; i++) {
+            setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, extMachInst.vs2 + i));
+        }
+        // old_vd
+        for (int i = 0; i < regLength; i++) {
+            setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, extMachInst.vd + i));
+        }
+        // rVl
+        setSrcRegIdx(_numSrcRegs++, VecRenamedVLReg);
+        imm = extMachInst.vecimm;
+    }
+    Fault execute(ExecContext *xc, Trace::InstRecord *traceData) const override
+    {
+        const uint32_t regLength = vflmul < 1 ? 1 : vflmul;
+        const int uvlmax = VLEN / sew;
+        uint32_t elem_num_per_vreg = VLEN / sew;
+
+        std::vector<vreg_t> vs_array(regLength);
+        std::vector<vreg_t> old_vd_array(regLength);
+        std::vector<vreg_t> vd_array(regLength);
+
+        uint32_t rVl;
+
+        for (uint32_t i = 0; i < regLength; i++) {
+            xc->getRegOperand(this, i, &vs_array[i]);
+        }
+        for (uint32_t i = 0; i < regLength; i++) {
+            xc->getRegOperand(this, i + regLength, &old_vd_array[i]);
+        }
+
+        rVl = xc->getRegOperand(this, regLength * 2);
+
+        for (uint32_t i = 0; i < regLength; i++) {
+            vd_array[i] = *(vreg_t *)xc->getWritableRegOperand(this, i);
+            memcpy(vd_array[i].as<uint8_t>(), old_vd_array[i].as<uint8_t>(), VLENB);
+        }
+        uint32_t vs_ptr = 0;
+        for (uint32_t i = 0; i < rVl; i++) {
+            if(i<imm) continue;
+            vd_array[i / elem_num_per_vreg].as<Type>()[i % elem_num_per_vreg] =
+                vs_array[vs_ptr / elem_num_per_vreg].as<Type>()[vs_ptr % elem_num_per_vreg];
+            vs_ptr++;
+        }
+        for (uint32_t i = 0; i < regLength; i++) {
+            xc->setRegOperand(this, i, &vd_array[i]);
+        }
+        return NoFault;
+    }
+
+    std::string generateDisassembly(Addr pc, const loader::SymbolTable *symtab)
+        const override
+    {
+        const uint32_t regLength = vflmul < 1 ? 1 : vflmul;
+        std::stringstream ss;
+        ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
+        << registerName(srcRegIdx(0)) << ", " ;
+        return ss.str();
+    }
+};
 
 } // namespace RiscvISA
 } // namespace gem5
