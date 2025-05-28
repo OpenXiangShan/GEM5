@@ -290,7 +290,7 @@ template<typename ElemType>
     : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
     // Todo: move to Decode template
-    panic_if(vlmul == 3, "LMUL=8 is illegal for widening inst");
+    // panic_if(vlmul == 3, "LMUL=8 is illegal for widening inst");
     // when LMUL setted as m1, need to split to 2 micro insts
     const uint32_t num_microops = 1 << std::max<int64_t>(0, vlmul + 1);
 
