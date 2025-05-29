@@ -1,7 +1,6 @@
 #ifndef __MEM_CACHE_PREFETCH_DESPACITO_STREAM_HH__
 #define __MEM_CACHE_PREFETCH_DESPACITO_STREAM_HH__
 
-#include <unordered_map>
 #include <vector>
 
 #include <boost/compute/detail/lru_cache.hpp>
