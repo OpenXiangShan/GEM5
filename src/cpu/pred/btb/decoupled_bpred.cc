@@ -1987,7 +1987,7 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchStream &entry)
     std::tie(shamt, taken) = finalPred.getHistInfo();
 
     if (taken) {
-        updatePhr(s0PC, finalPred.getTarget(predictWidth));
+        updatePhr(finalPred.controlAddr(), finalPred.getTarget(predictWidth));
     }
 
     // Update global history
@@ -2055,7 +2055,7 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     // update phr, this isn't supposed to be triggered by trap squash and non-control squash
     // this is guaranteed by the fact that actually_taken is always false during these squashs. 
     if (actually_taken) {
-        updatePhr(stream.startPC, redirect_pc);
+        updatePhr(stream.getControlPC(), redirect_pc);
     }
 
     // Get actual history shift information

@@ -293,9 +293,9 @@ class DecoupledBPUWithBTB : public BPredUnit
         DPRINTF(DecoupleBP, "returnTarget %#lx\n", pred.returnTarget);
     }
 
-    void updatePhr(Addr start, Addr target) {
+    void updatePhr(Addr branchPc, Addr target) {
         s0phrb <<= 1;
-        boost::dynamic_bitset<> startXorBits(s0phrb.size(), GET_SELECTED_BITS(start, 8, 5));
+        boost::dynamic_bitset<> startXorBits(s0phrb.size(), GET_SELECTED_BITS(branchPc, 4, 1));
         s0phrb ^= startXorBits;
 
         s0phrt <<= 1;
