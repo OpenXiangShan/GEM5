@@ -330,12 +330,15 @@ def build_test_system(np, args):
 
 def setKmhV3IdealParams(args, system):
     for cpu in system.cpu:
+
+        cpu.mmu.itb.size = 96
+
         cpu.commitToFetchDelay = 2
         cpu.fetchQueueSize = 64
         cpu.fetchToDecodeDelay = 2
+
         cpu.decodeWidth = 8
         cpu.renameWidth = 8
-        cpu.dispWidth = [10, 10, 10] # 6->10
         cpu.commitWidth = 12
         cpu.squashWidth = 12
         cpu.replayWidth = 12
@@ -346,16 +349,15 @@ def setKmhV3IdealParams(args, system):
         cpu.numPhysIntRegs = 354
         cpu.numPhysFloatRegs = 384
         cpu.numROBEntries = 640
-        cpu.numDQEntries = [32, 16, 16] # 32->36
-        cpu.mmu.itb.size = 96
-        
+        cpu.enableDispatchStage = True
+        cpu.numDQEntries = [8, 8, 8]
+        cpu.dispWidth = [10, 10, 10] # 6->10
+        cpu.scheduler = KMHV3Scheduler()
+
         cpu.BankConflictCheck = True   # real bank conflict 0.2 score
         cpu.EnableLdMissReplay = False
         cpu.EnablePipeNukeCheck = False
         cpu.StoreWbStage = 4 # store writeback at s4
-
-        cpu.scheduler = IdealScheduler()
-        # use centralized load/store issue queue, for hmmer
 
         # ideal decoupled frontend
         if args.bp_type == 'DecoupledBPUWithFTB' or args.bp_type == 'DecoupledBPUWithBTB':

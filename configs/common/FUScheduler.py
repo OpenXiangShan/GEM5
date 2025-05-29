@@ -177,6 +177,95 @@ class KunminghuScheduler(Scheduler):
             for port in iq.oports:
                 port.rp.clear()
 
+class KMHV3Scheduler(Scheduler):
+    __intIQs = [
+        IssueQue(name='intIQ0', inports=2, size=16, oports=[
+            IssuePort(fu=[IntALU(), IntMult()],
+                      rp=[IntRD(0, 0), IntRD(1, 0)])]),
+        IssueQue(name='intIQ1', inports=2, size=16, oports=[
+            IssuePort(fu=[IntALU(), IntMult()],
+                      rp=[IntRD(2, 0), IntRD(3, 0)])]),
+        IssueQue(name='intIQ2', inports=2, size=16, oports=[
+            IssuePort(fu=[IntALU(), IntBRU()],
+                      rp=[IntRD(4, 0), IntRD(5, 0)])]),
+        IssueQue(name='intIQ3', inports=2, size=16, oports=[
+            IssuePort(fu=[IntALU(), IntBRU()],
+                      rp=[IntRD(6, 0), IntRD(7, 0)])]),
+        IssueQue(name='intIQ4', inports=2, size=16, oports=[
+            IssuePort(fu=[IntALU(), IntBRU()],
+                      rp=[IntRD(8, 0), IntRD(9, 0)])]),
+        IssueQue(name='intIQ5', inports=2, size=16, oports=[
+            IssuePort(fu=[IntALU(), IntDiv(), IntMisc()],
+                      rp=[IntRD(10, 0), IntRD(11, 0)])]),
+    ]
+    __memIQs = [
+        IssueQue(name='ld0', inports=2, size=16, oports=[
+            IssuePort(fu=[ReadPort()],
+                      rp=[IntRD(12, 0)])]),
+        IssueQue(name='ld1', inports=2, size=16, oports=[
+            IssuePort(fu=[ReadPort()],
+                      rp=[IntRD(13, 0)])]),
+        IssueQue(name='ld2', inports=2, size=16, oports=[
+            IssuePort(fu=[ReadPort()],
+                      rp=[IntRD(14, 0)])]),
+        IssueQue(name='sta0', inports=2, size=16, oports=[
+            IssuePort(fu=[WritePort()],
+                      rp=[IntRD(5, 1)])]),
+        IssueQue(name='sta1', inports=2, size=16, oports=[
+            IssuePort(fu=[WritePort()],
+                      rp=[IntRD(7, 1)])]),
+        IssueQue(name='std0', inports=2, size=16, oports=[
+            IssuePort(fu=[StoreDataPort()],
+                      rp=[IntRD(9, 1), FpRD(9, 0)])]),
+        IssueQue(name='std1', inports=2, size=16, oports=[
+            IssuePort(fu=[StoreDataPort()],
+                      rp=[IntRD(11, 1), FpRD(10, 0)])]),
+    ]
+    __fpIQs = [
+        IssueQue(name='fpIQ0', inports=2, size=18, oports=[
+            IssuePort(fu=[FP_ALU(), FP_MISC(), FP_MAC()],
+                      rp=[FpRD(0,0), FpRD(1, 0), FpRD(2,0)]),
+            IssuePort(fu=[FP_SLOW()],
+                      rp=[FpRD(2,1), FpRD(5,1)])
+        ], scheduleToExecDelay=2),
+        IssueQue(name='fpIQ1', inports=2, size=18, oports=[
+            IssuePort(fu=[FP_ALU(), FP_MAC()],
+                      rp=[FpRD(3,0), FpRD(4,0), FpRD(5,0)]),
+            IssuePort(fu=[FP_SLOW()],
+                      rp=[FpRD(8,1), FpRD(9,1)]),
+        ], scheduleToExecDelay=2),
+        IssueQue(name='fpIQ2', inports=2, size=18, oports=[
+            IssuePort(fu=[FP_ALU(), FP_MAC()],
+                      rp=[FpRD(6,0), FpRD(7,0), FpRD(8,0)])
+        ], scheduleToExecDelay=2),
+        IssueQue(name='vecIQ0', inports=5, size=16+16+10, oports=[
+            IssuePort(fu=[SIMD_Unit()]),
+            IssuePort(fu=[SIMD_Unit()]),
+            IssuePort(fu=[SIMD_Unit()]),
+            IssuePort(fu=[SIMD_Unit()]),
+            IssuePort(fu=[SIMD_Unit()])
+        ], scheduleToExecDelay=3),
+    ]
+
+    IQs = __intIQs + __memIQs + __fpIQs
+    __int_bank = [i.name for i in __intIQs]
+    __mem_bank = [i.name for i in __memIQs]
+    __fp_bank = [i.name for i in __fpIQs]
+    specWakeupNetwork = [
+        SpecWakeupChannel(srcs=__int_bank + __mem_bank, dsts=__int_bank + __mem_bank),
+        SpecWakeupChannel(srcs=__fp_bank, dsts=__fp_bank)
+    ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # self.disableAllRegArb()
+
+    def disableAllRegArb(self):
+        print("Disable regfile arbitration")
+        for iq in self.IQs:
+            for port in iq.oports:
+                port.rp.clear()
+
 class IdealScheduler(Scheduler):
     __intIQs = [
         IssueQue(name='intIQ0', inports=2, size=2*24, oports=[
