@@ -267,7 +267,7 @@ IssueQue::issueToFu()
         if (!inst) {
             continue;
         }
-        if (i < replayed) {
+        if (i + replayed >= outports) {
             inst->clearScheduled();
             // only for load/store
             READYQ_PUSH(inst);
