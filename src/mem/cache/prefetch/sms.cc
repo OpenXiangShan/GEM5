@@ -547,11 +547,14 @@ XSCompositePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std:
         DPRINTF(XSCompositePrefetcher, "Skip recently L1 prefetched page: %lx\n", regionAddress(addr));
         return false;
 
-    } else if (ahead_level == 2 && pfPageLRUFilterL2.contains(regionAddress(addr))) {
+    } else if (ahead_level == 2 &&
+               (pfPageLRUFilterL2.contains(regionAddress(addr) || pfPageLRUFilter.contains(regionAddress(addr))))) {
         DPRINTF(XSCompositePrefetcher, "Skip recently L2 prefetched page: %lx\n", regionAddress(addr));
         return false;
 
-    } else if (ahead_level == 3 && pfPageLRUFilterL3.contains(regionAddress(addr))) {
+    } else if (ahead_level == 3 &&
+               (pfPageLRUFilterL3.contains(regionAddress(addr) || pfPageLRUFilterL2.contains(regionAddress(addr)) ||
+                                           pfPageLRUFilter.contains(regionAddress(addr))))) {
         DPRINTF(XSCompositePrefetcher, "Skip recently L3 prefetched page: %lx\n", regionAddress(addr));
         return false;
 
