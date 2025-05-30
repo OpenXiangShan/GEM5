@@ -176,7 +176,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
         Addr tag = 0;
         if (usePhr) {
             index = getTageIndexUsePhr(startPC, i, phrb, phrt);
-            tag = getTageTagUsePhr(startPC, i, phrb, phrt);
+            tag = getTageTagUsePhr(btb_entry.pc, i, phrb, phrt);
         } else {
             index = getTageIndex(startPC, i);
             tag = getTageTag(startPC, i); // use for tag comparison
@@ -602,7 +602,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
         Addr newTag = 0;
         if (usePhr) {
             newIndex = getTageIndexUsePhr(startPC,ti, commitPhrb, commitPhrt);
-            newTag = getTageTagUsePhr(startPC,ti, commitPhrb, commitPhrt);
+            newTag = getTageTagUsePhr(entry.pc,ti, commitPhrb, commitPhrt);
         } else {
             newIndex = getTageIndex(startPC, ti, updateIndexFoldedHist[ti].get());
             newTag = getTageTag(startPC, ti, updateTagFoldedHist[ti].get(), updateAltTagFoldedHist[ti].get());
