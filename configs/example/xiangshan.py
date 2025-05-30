@@ -377,7 +377,7 @@ def setKmhV3IdealParams(args, system):
             cpu.branchPred.ftq_size = 256
             cpu.branchPred.fsq_size = 256
             cpu.branchPred.tage.numPredictors = 14
-            cpu.branchPred.tage.TTagBitSizes = [13] * 14
+            cpu.branchPred.tage.TTagBitSizes = [16] * 14
             cpu.branchPred.tage.TTagPcShifts = [1] * 14
             cpu.branchPred.tage.histLengths = [4, 7, 12, 16, 21, 29, 38, 51, 68, 90, 120, 160, 283, 499]
             cpu.branchPred.tage.phrbLengths = [6, 7, 8, 9, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28]

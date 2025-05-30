@@ -158,6 +158,18 @@ class BTBTAGE : public TimedBaseBTBPredictor
     Addr getTageTagUsePhr(Addr pc, int table,
         const boost::dynamic_bitset<> &phrb, const boost::dynamic_bitset<> &phrt);
 
+    // Helper functions for the Paper-style tag computation
+    uint64_t getPhrtXorPattern(const boost::dynamic_bitset<> &phrt, unsigned phrtLen,
+                               unsigned bitIdx, unsigned tagLen);
+    uint64_t getPhrbXorPattern(const boost::dynamic_bitset<> &phrb, unsigned phrbLen,
+                               unsigned bitIdx, unsigned tagLen);
+
+    // Helper functions for the Paper-style index computation
+    uint64_t getIndexPhrtPattern(const boost::dynamic_bitset<> &phrt, unsigned phrtLen,
+                                 unsigned bitIdx, unsigned indexLen);
+    uint64_t getIndexPhrbPattern(const boost::dynamic_bitset<> &phrb, unsigned phrbLen,
+                                 unsigned bitIdx, unsigned indexLen);
+
     // Get offset within a block for a given PC
     Addr getOffset(Addr pc) {
         return (pc & (blockSize - 1)) >> 1;

@@ -768,40 +768,235 @@ void reverse_dynamic_bitset(boost::dynamic_bitset<>& bits) {
     return result;
 }
 
+/**
+ * @brief Generate XOR pattern for PHRT bits based on the Paper-style regular stride
+ *
+ * @param phrt The path history register (target)
+ * @param phrtLen Length of PHRT to use
+ * @param bitIdx The tag bit index being computed
+ * @param tagLen Total tag length for stride calculation
+ * @return XORed value of selected PHRT bits
+ */
+uint64_t
+BTBTAGE::getPhrtXorPattern(const boost::dynamic_bitset<> &phrt, unsigned phrtLen,
+                          unsigned bitIdx, unsigned tagLen) {
+    if (phrtLen == 0) return 0;
+
+    // Calculate stride based on available PHRT length and desired coverage
+    // the Paper uses stride 12 for 100-bit PHRT, we scale proportionally
+    unsigned baseStride = std::max(1u, phrtLen / std::max(1u, tagLen));
+    unsigned stride = std::max(1u, baseStride + (phrtLen > 32 ? phrtLen / 32 : 0));
+
+    uint64_t result = 0;
+    unsigned startBit = bitIdx % phrtLen;
+
+    // XOR bits at regular stride intervals, wrapping around
+    for (unsigned offset = 0; offset < phrtLen; offset += stride) {
+        unsigned bitPos = (startBit + offset) % phrtLen;
+        if (bitPos < phrt.size() && phrt[bitPos]) {
+            result ^= 1;
+        }
+    }
+
+    return result;
+}
+
+/**
+ * @brief Generate XOR pattern for PHRB bits based on the Paper-style irregular pattern
+ *
+ * @param phrb The path history register (branch)
+ * @param phrbLen Length of PHRB to use
+ * @param bitIdx The tag bit index being computed
+ * @param tagLen Total tag length for pattern calculation
+ * @return XORed value of selected PHRB bits
+ */
+uint64_t
+BTBTAGE::getPhrbXorPattern(const boost::dynamic_bitset<> &phrb, unsigned phrbLen,
+                          unsigned bitIdx, unsigned tagLen) {
+    if (phrbLen == 0) return 0;
+
+    uint64_t result = 0;
+
+    // Create irregular pattern inspired by the Paper's PHRB usage
+    // Use different access patterns for different tag bits
+    unsigned pattern = bitIdx % 4;
+
+    switch (pattern) {
+        case 0: {
+            // Pattern like PHRB[8,21]: sparse, distant bits
+            unsigned spacing = std::max(2u, phrbLen / 8);
+            for (unsigned i = bitIdx % spacing; i < phrbLen; i += spacing * 2) {
+                if (i < phrb.size() && phrb[i]) result ^= 1;
+            }
+            break;
+        }
+        case 1: {
+            // Pattern like PHRB[0,13,26]: regular stride with offset
+            unsigned stride = std::max(3u, phrbLen / std::max(1u, tagLen / 2));
+            unsigned start = bitIdx % stride;
+            for (unsigned i = start; i < phrbLen; i += stride) {
+                if (i < phrb.size() && phrb[i]) result ^= 1;
+            }
+            break;
+        }
+        case 2: {
+            // Pattern like PHRB[11,12,24,25]: clustered pairs
+            unsigned clusterSize = 2;
+            unsigned clusterSpacing = std::max(4u, phrbLen / std::max(1u, tagLen / 3));
+            unsigned basePos = (bitIdx * clusterSpacing / 2) % phrbLen;
+            for (unsigned j = 0; j < clusterSize && basePos + j < phrbLen; j++) {
+                if (basePos + j < phrb.size() && phrb[basePos + j]) result ^= 1;
+            }
+            break;
+        }
+        case 3: {
+            // Pattern like PHRB[2,15]: two specific distant bits
+            unsigned pos1 = (bitIdx * 3) % phrbLen;
+            unsigned pos2 = (pos1 + phrbLen / 2) % phrbLen;
+            if (pos1 < phrb.size() && phrb[pos1]) result ^= 1;
+            if (pos2 < phrb.size() && phrb[pos2]) result ^= 1;
+            break;
+        }
+    }
+
+    return result;
+}
+
+/**
+ * @brief Generate XOR pattern for PHRT bits in index computation (the Paper-style)
+ *
+ * @param phrt The path history register (target)
+ * @param phrtLen Length of PHRT to use
+ * @param bitIdx The index bit position being computed
+ * @param indexLen Total index length for pattern calculation
+ * @return XORed value of selected PHRT bits
+ */
+uint64_t
+BTBTAGE::getIndexPhrtPattern(const boost::dynamic_bitset<> &phrt, unsigned phrtLen,
+                             unsigned bitIdx, unsigned indexLen) {
+    if (phrtLen == 0) return 0;
+
+    uint64_t result = 0;
+
+    // the Paper uses specific PHRT stride patterns for index computation
+    // Most bits use 2-3 PHRT bits with regular stride patterns
+
+    // Calculate adaptive stride based on available PHRT length
+    // the Paper uses stride ~41-50 for 100-bit PHRT, scale accordingly
+    unsigned baseStride = std::max(5u, phrtLen / std::max(1u, indexLen / 2));
+
+    // Pattern varies by bit position to create diversity
+    unsigned pattern = bitIdx % 3;
+
+    switch (pattern) {
+        case 0: {
+            // Pattern like PHRT[2]⊕PHRT[43]⊕PHRT[93]: start + 2 strides
+            unsigned start = (bitIdx * 5) % phrtLen;
+            unsigned pos1 = start;
+            unsigned pos2 = (start + baseStride) % phrtLen;
+            unsigned pos3 = (start + 2 * baseStride) % phrtLen;
+
+            if (pos1 < phrt.size() && phrt[pos1]) result ^= 1;
+            if (pos2 < phrt.size() && phrt[pos2]) result ^= 1;
+            if (pos3 < phrt.size() && phrt[pos3]) result ^= 1;
+            break;
+        }
+        case 1: {
+            // Pattern like PHRT[38]⊕PHRT[88]: two distant bits
+            unsigned start = (bitIdx * 7 + phrtLen / 3) % phrtLen;
+            unsigned pos1 = start;
+            unsigned pos2 = (start + phrtLen / 2) % phrtLen;
+
+            if (pos1 < phrt.size() && phrt[pos1]) result ^= 1;
+            if (pos2 < phrt.size() && phrt[pos2]) result ^= 1;
+            break;
+        }
+        case 2: {
+            // Pattern like PHRT[53]⊕PHRT[58]: close bits
+            unsigned start = (bitIdx * 11 + phrtLen / 2) % phrtLen;
+            unsigned pos1 = start;
+            unsigned pos2 = (start + std::max(5u, phrtLen / 20)) % phrtLen;
+
+            if (pos1 < phrt.size() && phrt[pos1]) result ^= 1;
+            if (pos2 < phrt.size() && phrt[pos2]) result ^= 1;
+            break;
+        }
+    }
+
+    return result;
+}
+
+/**
+ * @brief Generate XOR pattern for PHRB bits in index computation (the Paper-style)
+ *
+ * @param phrb The path history register (branch)
+ * @param phrbLen Length of PHRB to use
+ * @param bitIdx The index bit position being computed
+ * @param indexLen Total index length for pattern calculation
+ * @return XORed value of selected PHRB bits
+ */
+uint64_t
+BTBTAGE::getIndexPhrbPattern(const boost::dynamic_bitset<> &phrb, unsigned phrbLen,
+                             unsigned bitIdx, unsigned indexLen) {
+    if (phrbLen == 0) return 0;
+
+    uint64_t result = 0;
+
+    // the Paper uses single PHRB bits for index computation
+    // Pattern like PHRB[5], PHRB[10], PHRB[15], etc.
+
+    // Calculate position with stride pattern
+    unsigned stride = std::max(1u, phrbLen / std::max(1u, indexLen));
+    unsigned pos = (bitIdx * stride) % phrbLen;
+
+    if (pos < phrb.size() && phrb[pos]) {
+        result = 1;
+    }
+
+    return result;
+}
+
 Addr
 BTBTAGE::getTageTagUsePhr(Addr pc, int table,
     const boost::dynamic_bitset<> &phrb, const boost::dynamic_bitset<> &phrt)
 {
     unsigned phrbLen = phrbLengths[table];
     unsigned phrtLen = phrtLengths[table];
-    unsigned tagLen = tableIndexBits[table];
+    unsigned tagLen = tableTagBits[table];  // Use tableTagBits instead of tableIndexBits
 
-    unsigned foldLen = tagLen;
-    unsigned paddedLen = ((phrbLen + phrtLen + foldLen - 1) / foldLen) * foldLen;
 
-    boost::dynamic_bitset<> phrbTemp = phrb;
-    phrbTemp.resize(phrbLen);
-    phrbTemp.resize(paddedLen);
+    uint64_t tag = 0;
 
-    boost::dynamic_bitset<> phrtTemp = phrt;
-    phrtTemp.resize(phrtLen);
-    phrtTemp.resize(paddedLen);
+    // Calculate how many bits to use for XOR groups vs direct PC bits
+    // the Paper uses 12 XOR bits + 4 direct PC bits for 16-bit tag
+    unsigned xorBits = std::min(tagLen, (tagLen * 3) / 4);  // 75% for XOR groups
+    unsigned directPcBits = tagLen - xorBits;  // Remaining for direct PC bits
 
-    // DPRINTF(TAGE, "TAG: phrb: %#lx\n", phrb.to_ulong());
-    // DPRINTF(TAGE, "TAG: phrbTemp: %#lx\n", phrbTemp.to_ulong());
+    DPRINTF(TAGE, "TAG: tagLen=%u, xorBits=%u, directPcBits=%u\n", tagLen, xorBits, directPcBits);
 
-    phrbTemp <<= phrtLen;
-    phrbTemp |= phrtTemp;
+    // Generate XOR groups for each tag bit (the Paper-style)
+    for (unsigned i = 0; i < xorBits; i++) {
+        uint64_t pcBit = GET_ONE_BIT(pc, 7 + i);  // Start from PC[7] like the Paper
+        uint64_t phrtXor = getPhrtXorPattern(phrt, phrtLen, i, tagLen);
+        uint64_t phrbXor = getPhrbXorPattern(phrb, phrbLen, i, tagLen);
 
-    uint64_t pcXorBits = GET_SELECTED_BITS(pc, 5 + foldLen - 1, 5);
-    uint64_t tag = pcXorBits ^ foldBits(phrbTemp, foldLen).to_ulong();
-    // tag = (tag << 4) | GET_SELECTED_BITS(pc, 8, 5);
+        uint64_t tagBit = pcBit ^ phrtXor ^ phrbXor;
+        tag |= (tagBit & 1) << i;
+    }
 
-    // DPRINTF(TAGE, "TAG: pc: %#lx\n", pc);
-    // DPRINTF(TAGE, "TAG: pcXorBits: %#lx\n", pcXorBits);
-    // DPRINTF(TAGE, "TAG: tag: %#lx\n", tag);
+    // Add direct PC bits (like the Paper's PC[5:2])
+    if (directPcBits > 0) {
+        // Use PC bits that are meaningful for instruction alignment
+        // For 2-byte ISA: use PC[5:2], for 4-byte ISA: use PC[5:2]
+        unsigned directPcStart = 2;  // Skip alignment bits
+        uint64_t directPc = GET_SELECTED_BITS(pc, directPcStart + directPcBits - 1, directPcStart);
+        tag |= (directPc & GET_MASK(directPcBits)) << xorBits;
+    }
 
-    return tag;
+    DPRINTF(TAGE, "TAG: pc=%#lx, phrbLen=%u, phrtLen=%u, final_tag=%#lx\n",
+            pc, phrbLen, phrtLen, tag);
+
+    return tag & GET_MASK(tagLen);  // Ensure tag fits in allocated bits
 }
 
 Addr
@@ -831,31 +1026,66 @@ BTBTAGE::getTageIndexUsePhr(Addr pc, int table,
     unsigned phrtLen = phrtLengths[table];
     unsigned indexLen = tableIndexBits[table];
 
-    unsigned foldLen = indexLen - 1;
-    unsigned paddedLen = ((phrbLen + phrtLen + foldLen - 1) / foldLen) * foldLen;
+    // Ensure we don't exceed index length
+    if (indexLen == 0) {
+        return GET_SELECTED_BITS(pc, 7, 2);  // Fallback to simple PC bits
+    }
 
-    boost::dynamic_bitset<> phrbTemp = phrb;
-    phrbTemp.resize(phrbLen);
-    phrbTemp.resize(paddedLen);
+    uint64_t index = 0;
 
-    boost::dynamic_bitset<> phrtTemp = phrt;
-    phrtTemp.resize(phrtLen);
-    phrtTemp.resize(paddedLen);
+    // Calculate bit distribution based on the Paper patterns:
+    // - 20% PHRT-only patterns (bits 1-2 of 10)
+    // - 50% PHRT+PHRB patterns (bits 3-7, 9 of 10)
+    // - 10% PHRT+PC patterns (bit 8 of 10)
+    // - 20% direct PC patterns (bit 10 of 10)
 
-    // DPRINTF(TAGE, "INDEX: phrb: %#lx\n", phrb.to_ulong());
-    // DPRINTF(TAGE, "INDEX: phrbTemp: %#lx\n", phrbTemp.to_ulong());
+    unsigned phrtOnlyBits = std::max(1u, indexLen / 5);  // 20%
+    unsigned phrtPhrbBits = std::max(1u, indexLen / 2);   // 50%
+    unsigned phrtPcBits = std::max(1u, indexLen / 10);    // 10%
+    unsigned directPcBits = indexLen - phrtOnlyBits - phrtPhrbBits - phrtPcBits;  // Remaining
 
-    phrbTemp <<= phrtLen;
-    phrbTemp |= phrtTemp;
+    DPRINTF(TAGE, "INDEX: indexLen=%u, phrtOnly=%u, phrtPhrb=%u, phrtPc=%u, directPc=%u\n",
+            indexLen, phrtOnlyBits, phrtPhrbBits, phrtPcBits, directPcBits);
 
-    uint64_t pcXorBits = GET_SELECTED_BITS(pc, 5 + foldLen - 1, 5);
-    uint64_t index = pcXorBits ^ foldBits(phrbTemp, foldLen).to_ulong();
+    unsigned bitPos = 0;
 
-    index = (index << 1) | GET_ONE_BIT(pc, 5);
+    // PHRT-only patterns (like PHRT[2]⊕PHRT[43]⊕PHRT[93])
+    for (unsigned i = 0; i < phrtOnlyBits && bitPos < indexLen; i++, bitPos++) {
+        uint64_t phrtXor = getIndexPhrtPattern(phrt, phrtLen, i, indexLen);
+        index |= (phrtXor & 1) << bitPos;
+    }
 
-    // DPRINTF(TAGE, "INDEX: index: %#lx\n", index);
+    // PHRT+PHRB patterns (like PHRT[12]⊕PHRT[63]⊕PHRB[5])
+    for (unsigned i = 0; i < phrtPhrbBits && bitPos < indexLen; i++, bitPos++) {
+        uint64_t phrtXor = getIndexPhrtPattern(phrt, phrtLen, i + phrtOnlyBits, indexLen);
+        uint64_t phrbXor = getIndexPhrbPattern(phrb, phrbLen, i, indexLen);
 
-    return index;
+        uint64_t indexBit = phrtXor ^ phrbXor;
+        index |= (indexBit & 1) << bitPos;
+    }
+
+    // PHRT+PC patterns (like PHRT[38]⊕PHRT[88]⊕PC[9])
+    for (unsigned i = 0; i < phrtPcBits && bitPos < indexLen; i++, bitPos++) {
+        uint64_t phrtXor = getIndexPhrtPattern(phrt, phrtLen, i + phrtOnlyBits + phrtPhrbBits, indexLen);
+        uint64_t pcBit = GET_ONE_BIT(pc, 9 + i);  // Start from PC[9] like the Paper
+
+        uint64_t indexBit = phrtXor ^ pcBit;
+        index |= (indexBit & 1) << bitPos;
+    }
+
+    // Direct PC bits (like PC[6])
+    if (directPcBits > 0 && bitPos < indexLen) {
+        // Use PC bits that are meaningful for instruction alignment
+        // Start from PC[6] like the Paper
+        unsigned directPcStart = 6;
+        uint64_t directPc = GET_SELECTED_BITS(pc, directPcStart + directPcBits - 1, directPcStart);
+        index |= (directPc & GET_MASK(std::min(directPcBits, indexLen - bitPos))) << bitPos;
+    }
+
+    DPRINTF(TAGE, "INDEX: pc=%#lx, phrbLen=%u, phrtLen=%u, final_index=%#lx\n",
+            pc, phrbLen, phrtLen, index);
+
+    return index & GET_MASK(indexLen);  // Ensure index fits in allocated bits
 }
 
 bool
