@@ -1142,10 +1142,10 @@ class DecoupledBPUWithBTB(BranchPredictor):
     fsq_size = Param.Unsigned(64, "Fetch stream queue size")
     maxHistLen = Param.Unsigned(970, "The length of history")
 
-    phrbMaxLen = Param.Unsigned(28, "phrb max length")
+    phrbMaxLen = Param.Unsigned(100, "phrb max length")
     phrbXorLen = Param.Unsigned(4, "phrt xor length")
 
-    phrtMaxLen = Param.Unsigned(100, "phrt max length")
+    phrtMaxLen = Param.Unsigned(499, "phrt max length")
     phrtXorLen = Param.Unsigned(30, "phrb xor length")
 
     predictWidth = Param.Unsigned(64, "Maximum range in bytes that a single prediction can cover")
