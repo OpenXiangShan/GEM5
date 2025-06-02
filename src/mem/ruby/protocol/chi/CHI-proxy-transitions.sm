@@ -1,0 +1,117 @@
+// Downstream replies data
+transition({BUSY_PROXY}, {CompData_SC}) {
+  Receive_RespSepDataFromCompData;
+  Receive_ReqDataResp;
+  UpdateDataState_FromReqDataResp;
+  Callback_Miss; // TODO, if this is a push then no need to callback
+  Try_Push; // If not received readshared from neighbour, push to it
+  Profile_OutgoingEnd_DataResp;
+  Pop_DataInQueue;
+  ProcessNextState;
+}
+
+transition({BUSY_PROXY}, {CompAck}) {
+  Receive_ReqResp;
+  UpdateDirState_FromReqResp;
+  Pop_RespInQueue;
+  ProcessNextState;
+}
+
+// Upstream initiates request
+transition({I}, {ReadProxy}, {BUSY_PROXY}) {
+  Initiate_Request;
+  Initiate_Proxy;
+  Allocate_DirEntry;
+  Pop_ReqRdyQueue;
+  ProcessNextState;
+}
+
+transition({I}, {PushProxy}, {BUSY_PROXY}) {
+  Initiate_Request;
+  Initiate_Proxy;
+  Allocate_DirEntry;
+  Pop_ReqRdyQueue;
+  ProcessNextState;
+}
+
+transition({SC}, {ReadProxy},) {
+  // Read L2
+  Initiate_Request;
+  Initiate_Proxy_Upstream;
+  Try_Push;
+  Pop_ReqRdyQueue;
+  Proxy_Error;
+}
+
+transition({UC, SC, SD, RSC, RSD}, {ReadProxy},) {
+  Proxy_error;
+}
+
+transition({SC}, {PushProxy},) {
+  Initiate_Request;
+  Initiate_Proxy_Downstream;
+  Try_Push;
+  Pop_ReqRdyQueue;
+  ProcessNextState;
+}
+
+transition({UC, SC, SD, RSC, RSD}, {PushProxy},) {
+  Proxy_error;
+}
+
+// Load Initiate Proxy
+// transition(I, {Load}, {BUSY_PROXY}) {
+//   Initiate_Request;
+//   Initiate_Proxy;
+//   Allocate_DirEntry;
+//   Pop_ReqRdyQueue;
+//   ProcessNextState;
+// }
+
+// Downstream Initiate Proxy
+transition(I, {PushProxy}, {BUSY_PROXY}) {
+  Initiate_Request;
+  Initiate_Proxy;
+  Allocate_DirEntry;
+  Pop_ReqRdyQueue;
+  ProcessNextState;
+}
+
+transition({BUSY_PROXY}, {ReadProxy}) {
+  Mark_UpstreamRead; // If data is ready satisfy the request. If not, block until Compdata
+  ProcessNextState;
+}
+
+transition({BUSY_PROXY}, CompData) {
+  Try_SatisfyLoad;
+  Try_SatisfyUpstream;
+  Write_Cache;
+  ProcessNextState;
+}
+
+transition({BUSY_PROXY}, CompDBIDResp) {
+  Try_SatisfyUpstream;
+  ProcessNextState;
+}
+
+transition(BUSY_PROXY, Final, I) {
+  Pop_TriggerQueue;
+  Finalize_UpdateCacheFromTBE;
+  Finalize_UpdateDirectoryFromTBE;
+  Finalize_DeallocateRequest;
+}
+
+transition({BUSY_PROXY}, {Load}) {
+  processNextState;
+}
+
+transition({BUSY_PROXY}, {PushProxy}) {
+  processNextState;
+}
+
+// Internal transitions
+transition(BUSY_BLKD, LoadMissProxy, BUSY_PROXY) {
+  // Callback for load
+  Initiate_Proxy;
+  processNextState;
+}

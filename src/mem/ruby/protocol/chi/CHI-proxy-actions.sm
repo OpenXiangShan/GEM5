@@ -3,6 +3,22 @@ action(Proxy_Error, desc="Error related to proxy transaction") {
     error("Error condition encountered - printing state before exit");
 }
 
+action(Callback_Proxy, desc="Handle pending load causing a proxy") {
+  if (tbe.dataValid && tbe.is_local_pf) {
+    assert(use_prefetcher);
+    pfProxy.completePrefetch(tbe.addr);
+
+  } else if (tbe.dataValid && (tbe.reqType == CHIRequestType:Load)) {
+    DPRINTF(RubySlicc, "Read data %s\n", tbe.dataBlk);
+    sequencer.readCallback(tbe.addr, tbe.dataBlk, true);
+
+  } else {
+    error("Proxy transaction should only be Load");
+  }
+
+}
+
+// If there is upstream, send push
 action(Try_Push, desc="Push data to next neighbour") {
 
     // Get upstream id
@@ -19,7 +35,7 @@ action(Try_Push, desc="Push data to next neighbour") {
     }
 }
 
-action(ReadProxy_Pending, desc="Receive upstream ReadProxy") {
+action(Mark_UpstreamRead, desc="Receive upstream ReadProxy") {
     MachineID upstream = sharingManager.getUpstream(tbe.addr);
     assert(upstream = inport.machineid);
     if (hasData) {
@@ -33,7 +49,15 @@ action(ReadProxy_Pending, desc="Receive upstream ReadProxy") {
     }
 }
 
-action(Initiate_Proxy, desc="Proxy transaction initiated by upstream") {
+// Common actions for a proxy transaction
+action(Initiate_Proxy, desc="Initialize TBE entry for proxy transaction") {
+    // TODO
+
+    tbe.actions.push(Event:CheckCacheFill);
+    tbe.actions.push(Event:TagArrayWrite);
+}
+
+action(Initiate_Proxy_Upstream, desc="Proxy transaction initiated by upstream") {
     MachineID upstream = sharingManager.getUpstream(tbe.addr);
     assert(upstream = inport.machineid);
     assert(is_HN == false);
@@ -42,6 +66,20 @@ action(Initiate_Proxy, desc="Proxy transaction initiated by upstream") {
     tbe.actions.push(Event:SendReadProxy);
     tbe.actions.push(Event:CheckCacheFill);
     tbe.actions.push(Event:TagArrayWrite);
+    //
+    tbe.downstream = sharingManager.getDownstream(tbe.addr);
+    tbe.chain_tail = tbe.downstream not RNF;
+    tbe.upstream = sharingManager.getUpstream(tbe.addr);
+    tbe.chain_head = tbe.upstream not this;
+}
+
+action(Init_Proxy_Downstream, desc="Proxy transaction initiated by downstream") {
+    
+    tbe.actions.push(Event:PushProxy);
+    tbe.actions.push(Event:CheckCacheFill);
+    tbe.actions.push(Event:TagArrayWrite);
+
+    tbe.up_pending = true;
 }
 
 action(Discard_Push, desc="Discard push from downstream") {

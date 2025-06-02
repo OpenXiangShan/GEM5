@@ -82,31 +82,65 @@ SharingManager::getSharingDirection(Addr addr)
     return SharingDirection::NONE;
 }
 
-SharingManager::Coordinate
+std::pair<
+    SharingManager::Coordinate,
+    SharingManager::UpCoordPair
+>
 SharingManager::Coordinate::NaiveNeighbour(Coordinate slave, SharingDirection direction) const
 {
-    int next_xid = xid;
-    int next_yid = yid;
+    int down_xid = xid;
+    int down_yid = yid;
+    int up_xid = xid;
+    int up_yid = yid;
+    Coordinate downstream = Coordinate(xid, yid);
+    UpCoordPair upstream = std::make_pair(Coordinate(xid, yid), Coordinate(xid, yid));
+
     if (direction == SharingDirection::ROW) {
         // same yid, minimize xid diff
-        if (slave.xid == xid) {
-            return Coordinate(xid, yid);
+        if (slave.xid < xid) {
+            downstream.xid = xid - 1;
+            upstream.first.xid = xid + 1;
+            upstream.second = Coordinate();
+        } else if (slave.xid > xid) {
+            downstream.xid = xid + 1;
+            upstream.first = Coordinate();
+            upstream.second.xid = xid - 1;
         } else {
-            next_xid = slave.xid > xid ? xid + 1 : xid - 1;
+            upstream.first.xid = xid + 1;
+            upstream.second.xid = xid - 1;
         }
     } else if (direction == SharingDirection::COL) {
         // same xid, minimize yid diff
-        if (slave.yid == yid) {
-            return Coordinate(xid, yid);
+        if (slave.yid < yid) {
+            downstream.yid = yid - 1;
+            upstream.first.yid = yid + 1;
+            upstream.second = Coordinate();
+        } else if (slave.yid > yid) {
+            downstream.yid = yid + 1;
+            upstream.first = Coordinate();
+            upstream.second.yid = yid - 1;
         } else {
-            next_yid = slave.yid > yid ? yid + 1 : yid - 1;
+            upstream.first.yid = yid + 1;
+            upstream.second.yid = yid - 1;
         }
     }
-    // TODO Handle special case when
-
-    return Coordinate(next_xid, next_yid);
+    return std::make_pair(downstream, upstream);
 }
 
+// TODO change to getSlave and Range
+MachineID
+SharingManager::getSlaveID(Addr addr) const {
+    auto slave_mapping = snfMap;
+    std::map<AddrRange, MachineID>::iterator it = slave_mapping.contains(addr);
+    if (it != slave_mapping.end()) {
+        DPRINTF(SharingManager, "Addr %lx current id  coord %s, slave id %d coord %s\n",
+            addr, id, coordinate, it->second);
+        return it->second;
+    } else {
+        fatal("SharingManager: No downstream destination for %s\n", addr);
+    }
+
+}
 
 MachineID
 SharingManager::getDestination(Addr addr, SharingDirection direction) const
@@ -117,7 +151,7 @@ SharingManager::getDestination(Addr addr, SharingDirection direction) const
     if (c != slave_mapping.end()) {
         slave_coord = slaveCoordinateMap.at(c->second);
         DPRINTF(SharingManager, "Addr %lx current id  coord %s, slave id %d coord %s\n",
-            addr, id, coordinate, c->second, slave_coord)
+            addr, id, coordinate, c->second, slave_coord);
     } else {
         fatal("SharingManager: No downstream destination for %s\n", addr);
     }

@@ -796,17 +796,18 @@ action(Initiate_LoadHit, desc="") {
 }
 
 action(Initiate_LoadMiss, desc="") {
+  int sharingGroup = sharingManager.getSharingDirection(tbe.addr);
+  if (sharingGroup != 0) {
+    tbe.actions.push(Event:LoadMissProxy);
+    // Initiate_Proxy action inserts CheckCacheFill and TagArrayWrite
+    return;
+  }
   if (is_HN) {
     tbe.actions.push(Event:SendReadNoSnp);
     tbe.actions.push(Event:CheckCacheFill);
     tbe.actions.push(Event:TagArrayWrite);
   } else if (tbe.doCacheFill) {
-    int sharingGroup = sharingManager.getSharingDirection(tbe.addr);
-    if (sharingGroup == 0) {
-      tbe.actions.push(Event:SendReadShared);
-    } else {
-      tbe.actions.push(Event:SendReadProxy);
-    }
+    tbe.actions.push(Event:SendReadShared);
     tbe.actions.push(Event:CheckCacheFill);
     tbe.actions.push(Event:TagArrayWrite);
   } else {

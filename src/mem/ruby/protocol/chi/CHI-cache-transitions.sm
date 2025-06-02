@@ -1495,38 +1495,6 @@ transition({BUSY_BLKD,BUSY_INTR},
   ProcessNextState;
 }
 
-// Downstream replies data
-transition({BUSY_PROXY}, {CompData_SC}) {
-  Receive_RespSepDataFromCompData;
-  Receive_ReqDataResp;
-  UpdateDataState_FromReqDataResp;
-  Callback_Miss; // TODO, if this is a push then no need to callback
-  Try_Push; // If not received readshared from neighbour, push to it
-  Profile_OutgoingEnd_DataResp;
-  Pop_DataInQueue;
-  ProcessNextState;
-}
-
-transition({BUSY_PROXY}, {CompAck}) {
-  Receive_ReqResp;
-  UpdateDirState_FromReqResp;
-  Pop_RespInQueue;
-  ProcessNextState;
-}
-
-transition({I}, {ReadProxy}, {BUSY_PROXY}) {
-  Initiate_Request;
-  Initiate_Proxy;
-  Allocate_DirEntry;
-  Pop_ReqRdyQueue;
-  ProcessNextState;
-}
-
-transition({BUSY_PROXY}, {ReadProxy}) {
-  ReadProxy_Pending; // If data is ready satisfy the request. If not, block until Compdata
-  ProcessNextState;
-}
-
 // Push data to neighbour once 
 transition({BUSY_PROXY}, {SendProxyData}) {
   ProcessNextState;
@@ -1882,3 +1850,5 @@ transition(DvmExtOp_Finished, Final, I) {
   Pop_TriggerQueue;
   Finalize_DeallocateDvmSnoop;
 }
+
+include "CHI-proxy-transitions.sm"
