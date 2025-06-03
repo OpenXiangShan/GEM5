@@ -1068,13 +1068,6 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
         request->initiateTranslation();
     }
 
-    if (!isLoad && !inst->isVector() && size > 1 && addr % size != 0) {
-        warn( "Store misaligned: size: %u, Addr: %#lx, code: %d\n", size,
-            addr, RiscvISA::ExceptionCode::STORE_ADDR_MISALIGNED);
-        return std::make_shared<RiscvISA::AddressFault>(request->mainReq()->getVaddr(),
-            request->mainReq()->getgPaddr(),
-            RiscvISA::ExceptionCode::STORE_ADDR_MISALIGNED);
-    }
 
     if (!isLoad && !isAtomic) {
         // store inst temporally saves its data in memData
@@ -1112,6 +1105,10 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
             // Commit will have to clean up whatever happened.  Set this
             // instruction as executed.
             inst->setExecuted();
+        }
+        if (isMisaligned(inst, request)) {
+            // inst->getFault() is set in isMisaligned()
+            return inst->getFault();
         }
     }
 

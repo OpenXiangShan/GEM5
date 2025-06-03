@@ -2682,6 +2682,14 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         }
     }
 
+    if (load_inst->getFault() != NoFault) {
+        // If the instruction has an outstanding fault, we cannot complete
+        // the access as this discards the current fault.
+        DPRINTF(LoadPipeline, "Not completing instruction [sn:%lli] access "
+                "due to pending fault.\n", load_inst->seqNum);
+        return load_inst->getFault();
+    }
+
     load_entry.setRequest(request);
     assert(load_inst);
 
