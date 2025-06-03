@@ -117,9 +117,9 @@ BTBTAGE::tickStart() {}
 void
 BTBTAGE::recordUsefulMask(const Addr &startPC) {
     // Initialize all usefulMasks
-    meta.usefulMask.resize(numWays);
+    meta->usefulMask.resize(numWays);
     for (unsigned way = 0; way < numWays; way++) {
-        meta.usefulMask[way].resize(numPredictors);
+        meta->usefulMask[way].resize(numPredictors);
     }
 
     // Look up entries in all TAGE tables
@@ -128,13 +128,13 @@ BTBTAGE::recordUsefulMask(const Addr &startPC) {
         for (unsigned way = 0; way < numWays; way++) {
             auto &entry = tageTable[i][index][way];
             // Save useful bit to metadata
-            meta.usefulMask[way][i] = entry.useful;
+            meta->usefulMask[way][i] = entry.useful;
         }
     }
     if (debugFlagOn) {
         std::string buf;
         for (unsigned way = 0; way < numWays; way++) {
-            boost::to_string(meta.usefulMask[way], buf);
+            boost::to_string(meta->usefulMask[way], buf);
             DPRINTF(TAGEUseful, "meta.usefulMask[%u] = %s\n", way, buf.c_str());
         }
     }
@@ -187,8 +187,8 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
         if (match) {
             // Save match information for later recovery
             if (!provided) {
-                meta.hitWay = matching_way;
-                meta.hitFound = true;
+                meta->hitWay = matching_way;
+                meta->hitFound = true;
             }
 
             if (!provided) {
@@ -231,29 +231,20 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
  * @param btbEntries Vector of BTB entries to make predictions for
  * @return Map of branch PC addresses to their predicted outcomes
  */
-std::map<Addr, bool>
+void
 BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
-                      std::map<Addr, TageInfoForMGSC> &tageInfoForMgscs)
+                      std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, CondTakens& results)
 {
-    // Clear old prediction metadata and save current history state
-    meta.preds.clear();
-    meta.tagFoldedHist = tagFoldedHist;
-    meta.altTagFoldedHist = altTagFoldedHist;
-    meta.indexFoldedHist = indexFoldedHist;
-    // record useful bit to meta.usefulMask
-    recordUsefulMask(startPC);
-
     DPRINTF(TAGE, "lookupHelper startAddr: %#lx\n", startPC);
 
     // Process each BTB entry to make predictions
-    std::map<Addr, bool> cond_takens;
     for (auto &btb_entry : btbEntries) {
         // Only predict for valid conditional branches
         if (btb_entry.isCond && btb_entry.valid) {
             auto pred = generateSinglePrediction(btb_entry, startPC);
-            meta.preds[btb_entry.pc] = pred;
+            meta->preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
-            cond_takens[btb_entry.pc] = pred.taken || btb_entry.alwaysTaken;
+            results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
             tageInfoForMgscs[btb_entry.pc].tage_pred_taken = pred.taken;
             tageInfoForMgscs[btb_entry.pc].tage_pred_conf_high = pred.mainInfo.found &&
                                          abs(pred.mainInfo.entry.counter*2 + 1) == 7; // counter saturated, -4 or 3
@@ -266,7 +257,6 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
             tageInfoForMgscs[btb_entry.pc].tage_pred_alt_diff = pred.mainInfo.found && pred.mainInfo.taken() != pred.altPred;
         }
     }
-    return cond_takens;
 }
 
 /**
@@ -288,19 +278,28 @@ BTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Full
     // IMPORTANT: when this function is called,
     // btb entries should already be in stagePreds
     // get prediction and save it
+
+    // Clear old prediction metadata and save current history state
+    meta = std::make_shared<TageMeta>();
+    meta->tagFoldedHist = tagFoldedHist;
+    meta->altTagFoldedHist = altTagFoldedHist;
+    meta->indexFoldedHist = indexFoldedHist;
+
+    // record useful bit to meta.usefulMask
+    recordUsefulMask(stream_start);
+
     for (int s = getDelay(); s < stagePreds.size(); s++) {
         // TODO: only lookup once for one btb entry in different stages
         auto &stage_pred = stagePreds[s];
-        auto cond_takens = lookupHelper(stream_start, stage_pred.btbEntries, stage_pred.tageInfoForMgscs);
-        stage_pred.condTakens = cond_takens;
+        stage_pred.condTakens.clear();
+        lookupHelper(stream_start, stage_pred.btbEntries, stage_pred.tageInfoForMgscs, stage_pred.condTakens);
     }
 
 }
 
 std::shared_ptr<void>
 BTBTAGE::getPredictionMeta() {
-    std::shared_ptr<void> meta_void_ptr = std::make_shared<TageMeta>(meta);
-    return meta_void_ptr;
+    return meta;
 }
 
 /**

@@ -113,10 +113,8 @@ class BTBITTAGE : public TimedBaseBTBPredictor
 
   private:
 
-
-    
     // return provided
-    std::map<Addr, Addr> lookupHelper(Addr stream_start, const std::vector<BTBEntry> &btbEntries);
+    void lookupHelper(Addr stream_start, const std::vector<BTBEntry> &btbEntries, IndirectTargets& results);
 
     // use blockPC
     Addr getTageIndex(Addr pc, int table);
@@ -156,6 +154,9 @@ class BTBITTAGE : public TimedBaseBTBPredictor
 
     std::vector<std::vector<TageEntry>> tageTable;
 
+    std::vector<TageEntry> lookupEntries;
+    std::vector<Addr> lookupIndices, lookupTags;
+
     bool matchTag(Addr expected, Addr found);
 
     void setTag(Addr &dest, Addr src, int table);
@@ -177,12 +178,12 @@ class BTBITTAGE : public TimedBaseBTBPredictor
     int usefulResetCnt;
 
     typedef struct TageMeta {
-        std::map<Addr, TagePrediction> preds;
+        std::unordered_map<Addr, TagePrediction> preds;
         bitset usefulMask;
         std::vector<FoldedHist> tagFoldedHist;
         std::vector<FoldedHist> altTagFoldedHist;
         std::vector<FoldedHist> indexFoldedHist;
-        TageMeta(std::map<Addr, TagePrediction> preds, bitset usefulMask, std::vector<FoldedHist> tagFoldedHist,
+        TageMeta(std::unordered_map<Addr, TagePrediction> preds, bitset usefulMask, std::vector<FoldedHist> tagFoldedHist,
             std::vector<FoldedHist> altTagFoldedHist, std::vector<FoldedHist> indexFoldedHist) :
             preds(preds), usefulMask(usefulMask), tagFoldedHist(tagFoldedHist), altTagFoldedHist(altTagFoldedHist), indexFoldedHist(indexFoldedHist) {}
         TageMeta() {}
@@ -195,7 +196,7 @@ class BTBITTAGE : public TimedBaseBTBPredictor
         }
     } TageMeta;
 
-    TageMeta meta;
+    std::shared_ptr<TageMeta> meta;
 
 public:
 

@@ -247,8 +247,8 @@ class BTBMGSC : public TimedBaseBTBPredictor
   private:
 
     // Look up predictions in MGSC tables for a stream of instructions
-    std::map<Addr, bool> lookupHelper(const Addr &stream_start, const std::vector<BTBEntry> &btbEntries,
-                                      const std::map<Addr, TageInfoForMGSC> &tageInfoForMgscs);
+    void lookupHelper(const Addr &stream_start, const std::vector<BTBEntry> &btbEntries,
+                                      const std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, CondTakens& results);
 
     // Calculate MGSC history index with folded history
     Addr getHistIndex(Addr pc, unsigned tableIndexBits, bitset &foldedHist);
@@ -429,13 +429,13 @@ public:
 private:
     // Metadata for MGSC predictions
     typedef struct MgscMeta {
-        std::map<Addr, MgscPrediction> preds;
+        std::unordered_map<Addr, MgscPrediction> preds;
         std::vector<FoldedHist> indexBwFoldedHist;
         std::vector<std::vector<FoldedHist>> indexLFoldedHist;
         std::vector<FoldedHist> indexIFoldedHist;
         std::vector<FoldedHist> indexGFoldedHist;
         std::vector<FoldedHist> indexPFoldedHist;
-        MgscMeta(std::map<Addr, MgscPrediction> preds, std::vector<FoldedHist> indexBwFoldedHist,
+        MgscMeta(std::unordered_map<Addr, MgscPrediction> preds, std::vector<FoldedHist> indexBwFoldedHist,
                  std::vector<std::vector<FoldedHist>> indexLFoldedHist, std::vector<FoldedHist> indexIFoldedHist,
                  std::vector<FoldedHist> indexGFoldedHist, std::vector<FoldedHist> indexPFoldedHist) :
             preds(preds), indexBwFoldedHist(indexBwFoldedHist), indexLFoldedHist(indexLFoldedHist),
@@ -477,7 +477,7 @@ private:
     template <typename T>
     unsigned getLRUVictim(std::vector<T> &table);
 
-    MgscMeta meta;
+    std::shared_ptr<MgscMeta> meta;
 };
 }
 

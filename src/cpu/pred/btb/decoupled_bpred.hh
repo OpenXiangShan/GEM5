@@ -521,9 +521,9 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     bool debugFlagOn{false};
 
-    std::map<Addr, int> takenBranches;      // branch address -> taken count
-    std::map<Addr, int> currentPhaseTakenBranches;
-    std::map<Addr, int> currentSubPhaseTakenBranches;
+    std::unordered_map<Addr, int> takenBranches;      // branch address -> taken count
+    std::unordered_map<Addr, int> currentPhaseTakenBranches;
+    std::unordered_map<Addr, int> currentSubPhaseTakenBranches;
 
     /**
      * @brief Types of control flow instruction mispredictions
@@ -657,14 +657,14 @@ class DecoupledBPUWithBTB : public BPredUnit
      *
      * Each entry maps branch addresses to execution counts for a phase.
      */
-    std::vector<std::map<Addr, int>> takenBranchesByPhase;
+    std::vector<std::unordered_map<Addr, int>> takenBranchesByPhase;
 
     /**
      * @brief Vector of taken branches for each sub-phase
      *
      * Each entry maps branch addresses to execution counts for a sub-phase.
      */
-    std::vector<std::map<Addr, int>> takenBranchesBySubPhase;
+    std::vector<std::unordered_map<Addr, int>> takenBranchesBySubPhase;
 
     // BTB entry tracking
     /**
@@ -672,21 +672,21 @@ class DecoupledBPUWithBTB : public BPredUnit
      *
      * Maps start address to (BTBEntry, visit count) to track BTB entry usage.
      */
-    std::map<Addr, std::pair<BTBEntry, int>> lastPhaseBTBEntries;
+    std::unordered_map<Addr, std::pair<BTBEntry, int>> lastPhaseBTBEntries;
 
     /**
      * @brief Cumulative BTB entries seen so far
      *
      * Maps start address to (BTBEntry, visit count) with total usage.
      */
-    std::map<Addr, std::pair<BTBEntry, int>> totalBTBEntries;
+    std::unordered_map<Addr, std::pair<BTBEntry, int>> totalBTBEntries;
 
     /**
      * @brief Vector of BTB entries for each phase
      *
      * Each entry contains the BTB entries used during a phase.
      */
-    std::vector<std::map<Addr, std::pair<BTBEntry, int>>> BTBEntriesByPhase;
+    std::vector<std::unordered_map<Addr, std::pair<BTBEntry, int>>> BTBEntriesByPhase;
 
     /**
      * @brief Next phase ID to dump statistics for
@@ -899,8 +899,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     bool processPhase(bool isSubPhase, int phaseID, int &phaseToDump,
                      BranchStatsMap &lastPhaseStats,
                      std::vector<BranchStatsMap> &phaseStatsList,
-                     std::map<Addr, int> &currentPhaseBranches,
-                     std::vector<std::map<Addr, int>> &phaseBranchesList);
+                     std::unordered_map<Addr, int> &currentPhaseBranches,
+                     std::vector<std::unordered_map<Addr, int>> &phaseBranchesList);
 
     /**
      * @brief Process fetch instruction distributions for a phase
@@ -916,7 +916,7 @@ class DecoupledBPUWithBTB : public BPredUnit
      *
      * @return std::map<Addr, std::pair<BTBEntry, int>> Map of BTB entries for the phase
      */
-    std::map<Addr, std::pair<BTBEntry, int>> processBTBEntries();
+    std::unordered_map<Addr, std::pair<BTBEntry, int>> processBTBEntries();
 
     /**
      * @brief Process instruction commit and update phase-based statistics

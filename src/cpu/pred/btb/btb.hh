@@ -243,7 +243,7 @@ class DefaultBTB : public TimedBaseBTBPredictor
         }
     }BTBMeta;
 
-    BTBMeta meta; // metadata for BTB, set in putPCHistory, used in update
+    std::shared_ptr<BTBMeta> meta; // metadata for BTB, set in putPCHistory, used in update
 
     /** Process BTB entries for prediction
      *  @param entries Vector of BTB entries to process

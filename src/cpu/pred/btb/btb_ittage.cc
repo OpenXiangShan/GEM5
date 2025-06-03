@@ -69,37 +69,11 @@ BTBITTAGE::tickStart()
 void
 BTBITTAGE::tick() {}
 
-std::map<Addr, Addr>
-BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries)
+void
+BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries, IndirectTargets& results)
 {
-    // clear old metas
-    meta.preds.clear();
-    // assign history for meta
-    meta.tagFoldedHist = tagFoldedHist;
-    meta.altTagFoldedHist = altTagFoldedHist;
-    meta.indexFoldedHist = indexFoldedHist;
-
     DPRINTF(ITTAGE, "lookupHelper startAddr: %#lx\n", startAddr);
-    std::vector<TageEntry> entries;
-    std::vector<Addr> indices, tags;
-    bitset useful_mask(numPredictors, false);
-    // all btb entries should use the same lookup result
-    // but each btb entry can use prediction from different tables
-    for (int i = 0; i < numPredictors; ++i) {
-        Addr index = getTageIndex(startAddr, i);
-        Addr tag = getTageTag(startAddr, i);
-        auto &entry = tageTable[i][index];
-        entries.push_back(entry);
-        indices.push_back(index);
-        tags.push_back(tag);
-        useful_mask[i] = entry.useful;
-        DPRINTF(ITTAGE, "lookup table %d[%d]: valid %d, tag %d, ctr %d, useful %d\n",
-            i, index, entry.valid, entry.tag, entry.counter, entry.useful);
-    }
-    meta.usefulMask = useful_mask;
-
     std::vector<TagePrediction> preds;
-    std::map<Addr, Addr> indirect_targets;
     for (auto &btb_entry : btbEntries) {
         if (btb_entry.isIndirect && !btb_entry.isReturn && btb_entry.valid) {
             DPRINTF(ITTAGE, "lookupHelper btbEntry: %#lx, always taken %d\n", btb_entry.pc, btb_entry.alwaysTaken);
@@ -109,18 +83,18 @@ BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries)
             TageTableInfo main_info, alt_info;
 
             for (int i = numPredictors - 1; i >= 0; --i) {
-                auto &way = entries[i];
+                auto &way = lookupEntries[i];
                 // TODO: count alias hit (offset match but pc differs)
-                bool match = way.valid && tags[i] == way.tag && btb_entry.pc == way.pc;
+                bool match = way.valid && lookupTags[i] == way.tag && btb_entry.pc == way.pc;
                 DPRINTF(ITTAGE, "hit %d, table %d, index %d, lookup tag %d, tag %d, useful %d, btb_pc %#lx, entry_pc %#lx\n",
-                    match, i, indices[i], tags[i], way.tag, way.useful, btb_entry.pc, way.pc);
+                    match, i, lookupIndices[i], lookupTags[i], way.tag, way.useful, btb_entry.pc, way.pc);
 
                 if (match) {
                     if (!provided) {
-                        main_info = TageTableInfo(true, way, i, indices[i], tags[i]);
+                        main_info = TageTableInfo(true, way, i, lookupIndices[i], lookupTags[i]);
                         provided = true;
                     } else if (!alt_provided) {
-                        alt_info = TageTableInfo(true, way, i, indices[i], tags[i]);
+                        alt_info = TageTableInfo(true, way, i, lookupIndices[i], lookupTags[i]);
                         alt_provided = true;
                         break;
                     }
@@ -157,15 +131,14 @@ BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries)
                 warn("no target found\n");
             }
             if (taken) {
-                indirect_targets[btb_entry.pc] = target;   
+                results.push_back({btb_entry.pc, target});
             }
             DPRINTF(ITTAGE, "tage predict %#lx target %#lx\n", btb_entry.pc, target);
 
             TagePrediction pred(btb_entry.pc, main_info, alt_info, use_alt, main_target);
-            meta.preds[btb_entry.pc] = pred;
+            meta->preds[btb_entry.pc] = pred;
         }
     }
-    return indirect_targets;
 }
 
 void
@@ -174,10 +147,37 @@ BTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Fu
         debugFlag = true;
     }
     DPRINTF(ITTAGE, "putPCHistory startAddr: %#lx\n", stream_start);
+
+    // clear old metas
+    meta = std::make_shared<TageMeta>();
+    // assign history for meta
+    meta->tagFoldedHist = tagFoldedHist;
+    meta->altTagFoldedHist = altTagFoldedHist;
+    meta->indexFoldedHist = indexFoldedHist;
+
+    lookupEntries.clear();
+    lookupIndices.clear();
+    lookupTags.clear();
+    bitset useful_mask(numPredictors, false);
+    // all btb entries should use the same lookup result
+    // but each btb entry can use prediction from different tables
+    for (int i = 0; i < numPredictors; ++i) {
+        Addr index = getTageIndex(stream_start, i);
+        Addr tag = getTageTag(stream_start, i);
+        auto &entry = tageTable[i][index];
+        lookupEntries.push_back(entry);
+        lookupIndices.push_back(index);
+        lookupTags.push_back(tag);
+        useful_mask[i] = entry.useful;
+        DPRINTF(ITTAGE, "lookup table %d[%d]: valid %d, tag %d, ctr %d, useful %d\n",
+            i, index, entry.valid, entry.tag, entry.counter, entry.useful);
+    }
+    meta->usefulMask = std::move(useful_mask);
+
     for (int s = getDelay(); s < stagePreds.size(); s++) {
         auto &stage_pred = stagePreds[s];
-        auto indirect_targets = lookupHelper(stream_start, stage_pred.btbEntries);
-        stage_pred.indirectTargets = indirect_targets;
+        stage_pred.indirectTargets.clear();
+        lookupHelper(stream_start, stage_pred.btbEntries, stage_pred.indirectTargets);
     }
     DPRINTF(ITTAGE, "putPCHistory end\n");
     debugFlag = false;
@@ -185,8 +185,7 @@ BTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Fu
 
 std::shared_ptr<void>
 BTBITTAGE::getPredictionMeta() {
-    std::shared_ptr<void> meta_void_ptr = std::make_shared<TageMeta>(meta);
-    return meta_void_ptr;
+    return meta;
 }
 
 void

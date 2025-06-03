@@ -132,8 +132,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
   private:
 
     // Look up predictions in TAGE tables for a stream of instructions
-    std::map<Addr, bool> lookupHelper(const Addr &stream_start, const std::vector<BTBEntry> &btbEntries,
-                                      std::map<Addr, TageInfoForMGSC> &tageInfoForMgscs);
+    void lookupHelper(const Addr &stream_start, const std::vector<BTBEntry> &btbEntries,
+                                      std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, CondTakens& results);
 
     // Calculate TAGE index for a given PC and table
     Addr getTageIndex(Addr pc, int table);
@@ -294,14 +294,14 @@ public:
 private:
     // Metadata for TAGE predictions
     typedef struct TageMeta {
-        std::map<Addr, TagePrediction> preds;
+        std::unordered_map<Addr, TagePrediction> preds;
         std::vector<bitset> usefulMask;  // Vector of usefulMasks for different ways
         unsigned hitWay;      // hit way index
         bool hitFound;        // whether a hit was found
         std::vector<FoldedHist> tagFoldedHist;
         std::vector<FoldedHist> altTagFoldedHist;
         std::vector<FoldedHist> indexFoldedHist;
-        TageMeta(std::map<Addr, TagePrediction> preds, std::vector<bitset> usefulMask,
+        TageMeta(std::unordered_map<Addr, TagePrediction> preds, std::vector<bitset> usefulMask,
                 unsigned hitWay, bool hitFound, std::vector<FoldedHist> tagFoldedHist,
                 std::vector<FoldedHist> altTagFoldedHist, std::vector<FoldedHist> indexFoldedHist) :
             preds(preds), usefulMask(usefulMask), hitWay(hitWay), hitFound(hitFound),
@@ -356,7 +356,7 @@ private:
     void updateLRU(int table, Addr index, unsigned way);
     unsigned getLRUVictim(int table, Addr index);
 
-    TageMeta meta;
+    std::shared_ptr<TageMeta> meta;
 };
 }
 

@@ -1266,7 +1266,7 @@ void
 DecoupledBPUWithBTB::trackTakenBranch(Addr branchAddr)
 {
     // Helper function to update a branch map
-    auto updateBranchMap = [branchAddr](std::map<Addr, int> &branchMap) {
+    auto updateBranchMap = [branchAddr](std::unordered_map<Addr, int> &branchMap) {
         auto it = branchMap.find(branchAddr);
         if (it == branchMap.end()) {
             // Branch not found - add with count 1
@@ -1357,10 +1357,10 @@ DecoupledBPUWithBTB::processFetchDistributions(std::vector<int> &currentPhaseCom
 /**
  * @brief Process BTB entries for a phase
  */
-std::map<Addr, std::pair<BTBEntry, int>>
+std::unordered_map<Addr, std::pair<BTBEntry, int>>
 DecoupledBPUWithBTB::processBTBEntries()
 {
-    std::map<Addr, std::pair<BTBEntry, int>> currentPhaseBTBEntries;
+    std::unordered_map<Addr, std::pair<BTBEntry, int>> currentPhaseBTBEntries;
 
     // Process each BTB entry
     for (auto &it : totalBTBEntries) {
@@ -1392,8 +1392,8 @@ bool
 DecoupledBPUWithBTB::processPhase(bool isSubPhase, int phaseID, int &phaseToDump,
                                 BranchStatsMap &lastPhaseStats,
                                 std::vector<BranchStatsMap> &phaseStatsList,
-                                std::map<Addr, int> &currentPhaseBranches,
-                                std::vector<std::map<Addr, int>> &phaseBranchesList)
+                                std::unordered_map<Addr, int> &currentPhaseBranches,
+                                std::vector<std::unordered_map<Addr, int>> &phaseBranchesList)
 {
     // Check if this phase should be processed
     if (phaseToDump > phaseID) {

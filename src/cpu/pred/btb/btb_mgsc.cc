@@ -417,36 +417,26 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry,
  * @param btbEntries Vector of BTB entries to make predictions for
  * @return Map of branch PC addresses to their predicted outcomes
  */
-std::map<Addr, bool>
+void
 BTBMGSC::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
-                      const std::map<Addr, TageInfoForMGSC> &tageInfoForMgscs)
+                      const std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, CondTakens& results)
 {
-    // Clear old prediction metadata and save current history state
-    meta.preds.clear();
-    meta.indexBwFoldedHist = indexBwFoldedHist;
-    meta.indexLFoldedHist = indexLFoldedHist;
-    meta.indexIFoldedHist = indexIFoldedHist;
-    meta.indexGFoldedHist = indexGFoldedHist;
-    meta.indexPFoldedHist = indexPFoldedHist;
-
     DPRINTF(MGSC, "lookupHelper startAddr: %#lx\n", startPC);
 
     // Process each BTB entry to make predictions
-    std::map<Addr, bool> cond_takens;
     for (auto &btb_entry : btbEntries) {
         // Only predict for valid conditional branches
         if (btb_entry.isCond && btb_entry.valid) {
             auto tage_info = tageInfoForMgscs.find(btb_entry.pc);
             if(tage_info != tageInfoForMgscs.end()){
                 auto pred = generateSinglePrediction(btb_entry, startPC, tage_info->second);
-                meta.preds[btb_entry.pc] = pred;
-                cond_takens[btb_entry.pc] = pred.taken || btb_entry.alwaysTaken;
-            }else{
+                meta->preds[btb_entry.pc] = pred;
+                results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
+            } else {
                 assert(false);
             }
         }
     }
-    return cond_takens;
 }
 
 /**
@@ -468,19 +458,27 @@ BTBMGSC::putPCHistory(Addr stream_start, const bitset &history, std::vector<Full
     // IMPORTANT: when this function is called,
     // btb entries should already be in stagePreds
     // get prediction and save it
+
+    // Clear old prediction metadata and save current history state
+    meta = std::make_shared<MgscMeta>();
+    meta->indexBwFoldedHist = indexBwFoldedHist;
+    meta->indexLFoldedHist = indexLFoldedHist;
+    meta->indexIFoldedHist = indexIFoldedHist;
+    meta->indexGFoldedHist = indexGFoldedHist;
+    meta->indexPFoldedHist = indexPFoldedHist;
+
     for (int s = getDelay(); s < stagePreds.size(); s++) {
         // TODO: only lookup once for one btb entry in different stages
         auto &stage_pred = stagePreds[s];
-        auto cond_takens = lookupHelper(stream_start, stage_pred.btbEntries, stage_pred.tageInfoForMgscs);
-        stage_pred.condTakens = cond_takens;
+        stage_pred.condTakens.clear();
+        lookupHelper(stream_start, stage_pred.btbEntries, stage_pred.tageInfoForMgscs, stage_pred.condTakens);
     }
 
 }
 
 std::shared_ptr<void>
 BTBMGSC::getPredictionMeta() {
-    std::shared_ptr<void> meta_void_ptr = std::make_shared<MgscMeta>(meta);
-    return meta_void_ptr;
+    return meta;
 }
 
 /**

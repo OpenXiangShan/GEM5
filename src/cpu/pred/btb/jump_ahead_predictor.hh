@@ -107,7 +107,7 @@ class JumpAheadPredictor
     int blockSize = 32;          // Block size for address alignment
 
     // Storage structure for jump-ahead entries indexed by set, use tag as key(multi-way in set)
-    std::vector<std::map<Addr, JAEntry>> jaStorage;
+    std::vector<std::unordered_map<Addr, JAEntry>> jaStorage;
 
     /**
      * Extract set index from PC

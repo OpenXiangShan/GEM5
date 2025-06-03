@@ -47,8 +47,8 @@ class LoopPredictor
     
     bool enableDB;
 
-    std::vector<std::map<Addr, LoopEntry>> loopStorage;
-    std::map<Addr, LoopEntry> commitLoopStorage;
+    std::vector<std::unordered_map<Addr, LoopEntry>> loopStorage;
+    std::unordered_map<Addr, LoopEntry> commitLoopStorage;
 
     // TODO: replacement policy
 
