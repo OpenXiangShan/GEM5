@@ -45,6 +45,9 @@
 
 #include "mem/cache/base.hh"
 
+#include <algorithm>
+#include <cassert>
+
 #include "base/compiler.hh"
 #include "base/logging.hh"
 #include "base/output.hh"
@@ -135,6 +138,7 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       tags(p.tags),
       tagLoadReadPorts(p.tag_load_read_ports),
       sliceNum(p.slice_num),
+      dataBankNum(p.data_bank_num),
       freeTagLoadReadPorts(p.tag_load_read_ports),
       lastTagAccessCheckCycle(0),
       compressor(p.compressor),
@@ -208,8 +212,10 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
         compressor->setCache(this);
 
     if (sliceNum > 0) {
-        sliceReadyTick.resize(sliceNum, 0);
+        sliceBankReadyTick.resize(sliceNum, std::vector<Tick>(dataBankNum, 0));
+        sliceDirReadyTick.resize(sliceNum, 0);
         assert(popCount(sliceNum) == 1);
+        assert(popCount(dataBankNum) == 1);
     }
 
     for (int i = 0; i < getActualSliceNum(); i++) {
@@ -1683,25 +1689,37 @@ void
 BaseCache::calculateSliceBusy(PacketPtr pkt, bool isOnlyTag)
 {
     int sliceidx = getSliceIdx(pkt->getAddr());
+    int bankidx = getDataSramBankIdx(pkt->getAddr());
     if (sliceidx >= 0) {
         Tick arrival_time = curTick() + pkt->headerDelay;
         int additional = 1;
         int opLatency = additional + (lookupLatency == 1 ? 0 : lookupLatency);
         opLatency += (!isOnlyTag && (dataLatency == 1) ? 0 : dataLatency);
         Tick op_lat = cyclesToTicks(Cycles(opLatency));
-        Tick& lastReadytime = sliceReadyTick[sliceidx];
-        assert(lastReadytime <= arrival_time);
-        lastReadytime = arrival_time + op_lat;
+        Tick& lastBankReadytime = sliceBankReadyTick[sliceidx][bankidx];
+        assert(lastBankReadytime <= arrival_time);
+        lastBankReadytime = arrival_time + op_lat;
+
+        Tick& lastDirReadyTime = sliceDirReadyTick[sliceidx];
+        assert(lastDirReadyTime <= arrival_time);
+        lastDirReadyTime = arrival_time + cyclesToTicks(Cycles(1));
     }
 }
 
 bool
-BaseCache::checkSLiceBusy(PacketPtr pkt, uint32_t sliceidx)
+BaseCache::checkSLiceBusy(PacketPtr pkt, uint32_t sliceidx, uint32_t bankidx)
 {
+    stats.sliceAccess++;
     Tick arrival_time = curTick();
-    if (sliceReadyTick[sliceidx] < arrival_time) {
+    if (arrival_time > std::max(sliceBankReadyTick[sliceidx][bankidx], sliceDirReadyTick[sliceidx])) {
         return false;
     }
+    if (arrival_time <= sliceDirReadyTick[sliceidx]) {
+        stats.sliceDirSramConflict++;
+    } else if (arrival_time <= sliceBankReadyTick[sliceidx][bankidx]) {
+        stats.sliceDataSramConflict++;
+    }
+    stats.sliceConflict++;
     return true;
 }
 
@@ -2843,6 +2861,20 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "number of wayPreIndexHitTimes"),
     ADD_STAT(wayPreDoubleHitTimes, statistics::units::Count::get(),
              "number of wayPreDoubleHitTimes"),
+    ADD_STAT(sliceAccess, statistics::units::Count::get(),
+             "number of access of all slices"),
+    ADD_STAT(sliceConflict, statistics::units::Count::get(),
+             "number of conflicts of all slice accesses"),
+    ADD_STAT(sliceDataSramConflict, statistics::units::Count::get(),
+             "number of data sram conflicts of all slice accesses"),
+    ADD_STAT(sliceDirSramConflict, statistics::units::Count::get(),
+             "number of dir sram conflicts of all slice accesses"),
+    ADD_STAT(sliceConflictRate, statistics::units::Ratio::get(),
+             "conflict rate of slice access"),
+    ADD_STAT(sliceDataSramConflictRate, statistics::units::Ratio::get(),
+             "data sram conflict rate of slice access"),
+    ADD_STAT(sliceDirSramConflictRate, statistics::units::Ratio::get(),
+             "dir sram conflict rate of slice access"),
     ADD_STAT(wayPreTimes, statistics::units::Count::get(),
              "number of wayPreTimes"),
     ADD_STAT(deadBlockReplacements, statistics::units::Count::get(),
@@ -3106,6 +3138,16 @@ BaseCache::CacheStats::regStats()
     bytesRecvPerCycle.flags(total | nozero | nonan);
     bytesRecvPerCycle = bytesRecv / simTicks * cache.clockPeriod();
 
+    // slice conflict rate formulas
+    sliceConflictRate.flags(total | nozero | nonan);
+    sliceConflictRate = sliceConflict / sliceAccess;
+
+    sliceDataSramConflictRate.flags(total | nozero | nonan);
+    sliceDataSramConflictRate = sliceDataSramConflict / sliceAccess;
+
+    sliceDirSramConflictRate.flags(total | nozero | nonan);
+    sliceDirSramConflictRate = sliceDirSramConflict / sliceAccess;
+
     dataExpansions.flags(nozero | nonan);
     dataContractions.flags(nozero | nonan);
 }
@@ -3157,8 +3199,9 @@ BaseCache::CpuSidePort::tryTiming(PacketPtr pkt)
         return false;
     }
     int sliceidx = cache->getSliceIdx(pkt->getAddr());
+    int bankidx = cache->getDataSramBankIdx(pkt->getAddr());
     if (sliceidx >= 0 && cache->cacheLevel != 1) {
-        if (cache->checkSLiceBusy(pkt, sliceidx)) {
+        if (cache->checkSLiceBusy(pkt, sliceidx, bankidx)) {
             //no more buffer
             if (sendRetryEvent.scheduled()) {
                 owner.reschedule(sendRetryEvent, cache->clockEdge());

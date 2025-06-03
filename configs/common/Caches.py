@@ -113,6 +113,8 @@ class L2Cache(Cache):
 
     slice_num = 4
 
+    data_bank_num = 1
+
 class L3Cache(Cache):
     mshrs = 64
     tgts_per_mshr = 20
