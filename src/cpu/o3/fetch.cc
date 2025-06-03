@@ -127,7 +127,6 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         fetchStatus[i] = Idle;
         decoder[i] = nullptr;
         pc[i].reset(params.isa[0]->newPCState());
-        fetchOffset[i] = 0;
         macroop[i] = nullptr;
         delayedCommit[i] = false;
         memReq[i] = nullptr;
@@ -172,7 +171,6 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
     }
 
     // Get the size of an instruction.
-    instSize = decoder[0]->moreBytesSize();
     // stallReason size should be the same as decodeWidth,renameWidth,dispWidth
     stallReason.resize(decodeWidth, StallReason::NoStall);
 
@@ -396,7 +394,6 @@ Fetch::clearStates(ThreadID tid)
 {
     fetchStatus[tid] = Running;
     set(pc[tid], cpu->pcState(tid));
-    fetchOffset[tid] = 0;
     macroop[tid] = NULL;
     delayedCommit[tid] = false;
     memReq[tid] = NULL;
@@ -424,7 +421,6 @@ Fetch::resetStage()
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         fetchStatus[tid] = Running;
         set(pc[tid], cpu->pcState(tid));
-        fetchOffset[tid] = 0;
         macroop[tid] = NULL;
 
         delayedCommit[tid] = false;
@@ -1034,7 +1030,6 @@ Fetch::doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst, const In
     decoder[tid]->as<RiscvISA::Decoder>().setVtype(restored_vtype);
 
     set(pc[tid], new_pc);
-    fetchOffset[tid] = 0;
     if (squashInst && squashInst->pcState().instAddr() == new_pc.instAddr())
         macroop[tid] = squashInst->macroop;
     else
@@ -1800,11 +1795,9 @@ Fetch::prepareFetchAddress(ThreadID tid, bool &status_change, Addr &fetch_addr)
 {
     DPRINTF(Fetch, "Attempting to fetch from [tid:%i]\n", tid);
 
-    // The current PC.
+    // The current PC - directly use the actual instruction address
     PCStateBase &this_pc = *pc[tid];
-
-    Addr pc_offset = fetchOffset[tid];
-    fetch_addr = (this_pc.instAddr() + pc_offset) & decoder[tid]->pcMask(); // pcMask() is 4byte aligned fetch address
+    fetch_addr = this_pc.instAddr();
 
     // Handle status transitions and cache access
     if (fetchStatus[tid] == IcacheAccessComplete) {
@@ -1817,8 +1810,8 @@ Fetch::prepareFetchAddress(ThreadID tid, bool &status_change, Addr &fetch_addr)
         // Check if we need to fetch from icache
         // For RISC-V, we don't need ROM microcode, only check buffer validity and macroop status
         if (!(fetchBufferValid[tid] &&
-              fetchBufferPC[tid] + fetchBufferSize > fetch_addr &&
-              fetchBufferPC[tid] <= fetch_addr) &&
+              fetchBufferPC[tid] <= fetch_addr &&
+              fetch_addr + 4 <= fetchBufferPC[tid] + fetchBufferSize) &&
             !macroop[tid]) {
             DPRINTF(Fetch, "[tid:%i] Attempting to translate and read "
                     "instruction, starting at PC %s.\n", tid, this_pc);
@@ -1879,47 +1872,42 @@ Fetch::fetch(bool &status_change)
 
 StallReason
 Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
-                       Addr &pc_offset, Addr &fetch_addr,
-                       unsigned &blk_offset, StaticInstPtr &curMacroop,
-                       const Addr pc_mask)
+                        StaticInstPtr &curMacroop)
 {
-    auto *dec_ptr = decoder[tid];
-    const unsigned num_insts_per_buffer = fetchBufferSize / instSize;
-
-    // Check if decoder needs more bytes for RISC-V instruction decoding
-    // RISC-V decoder requires 4-byte aligned chunks for proper decoding
-    bool need_mem = !curMacroop && !dec_ptr->instReady();
-    fetch_addr = (this_pc.instAddr() + pc_offset) & pc_mask;
-
-    if (need_mem) {
-        // Check if fetch buffer is valid
-        if (!fetchBufferValid[tid]) {
-            DPRINTF(Fetch, "[tid:%i] Fetch buffer invalid, stalling on ICache\n", tid);
-            return StallReason::IcacheStall;
-        }
-
-        // Check if we've reached end of fetch buffer
-        if (blk_offset >= num_insts_per_buffer) {
-            DPRINTF(Fetch, "[tid:%i] Reached end of fetch buffer, stalling on ICache\n", tid);
-            return StallReason::IcacheStall;
-        }
-
-        // Supply bytes to decoder (RISC-V requires 4-byte aligned chunks)
-        memcpy(dec_ptr->moreBytesPtr(),
-                fetchBuffer[tid] + blk_offset * instSize, instSize);
-        DPRINTF(Fetch, "[tid:%i] Supplying %d bytes from fetchBuffer at offset %d\n",
-                tid, instSize, blk_offset);
-
-        decoder[tid]->moreBytes(this_pc, fetch_addr);
-
-        // Check if decoder needs more bytes
-        if (dec_ptr->needMoreBytes()) {
-            blk_offset++;
-            fetch_addr += instSize;
-            pc_offset += instSize;
-            DPRINTF(Fetch, "[tid:%i] Decoder needs more bytes, updating offsets\n", tid);
-        }
+    // In the new design, we only need to supply bytes when decoder needs them
+    // For macroop, we don't need to supply new bytes from memory
+    if (curMacroop) {
+        return StallReason::NoStall;
     }
+
+    Addr fetch_pc = this_pc.instAddr();
+
+    // Check if fetch buffer is valid and contains this PC
+    if (!fetchBufferValid[tid]) {
+        DPRINTF(Fetch, "[tid:%i] Fetch buffer invalid, stalling on ICache\n", tid);
+        return StallReason::IcacheStall;
+    }
+
+    // Check if the fetch buffer contains enough bytes for this instruction
+    // We need at least 4 bytes to decode any RISC-V instruction (including compressed)
+    if (fetch_pc < fetchBufferPC[tid] ||
+        fetch_pc + 4 > fetchBufferPC[tid] + fetchBufferSize) {
+        DPRINTF(Fetch, "[tid:%i] PC %#x outside fetch buffer range [%#x, %#x), stalling on ICache\n",
+                tid, fetch_pc, fetchBufferPC[tid], fetchBufferPC[tid] + fetchBufferSize);
+        return StallReason::IcacheStall;
+    }
+
+    // Supply bytes to decoder - always provide 4 bytes for RISC-V
+    auto *dec_ptr = decoder[tid];
+    Addr offset_in_buffer = fetch_pc - fetchBufferPC[tid];
+    memcpy(dec_ptr->moreBytesPtr(),
+           fetchBuffer[tid] + offset_in_buffer, 4);
+
+    DPRINTF(Fetch, "[tid:%i] Supplying 4 bytes from fetchBuffer at PC %#x (offset %d)\n",
+            tid, fetch_pc, offset_in_buffer);
+
+    // Call decoder with the actual instruction PC
+    decoder[tid]->moreBytes(this_pc, fetch_pc);
 
     return StallReason::NoStall;
 }
@@ -1936,26 +1924,17 @@ Fetch::processInstructionDecoding(ThreadID tid, PCStateBase &this_pc,
 
     // Handle normal instruction decoding or macroop microops
     if (!curMacroop) {
-        if (dec_ptr->instReady()) {
-            staticInst = dec_ptr->decode(this_pc);
+        // In the new design, decoder is always ready after moreBytes() is called
+        staticInst = dec_ptr->decode(this_pc);
 
-            // Increment instruction fetch statistics
-            ++fetchStats.insts;
+        // Increment instruction fetch statistics
+        ++fetchStats.insts;
 
-            if (staticInst->isMacroop()) {
-                curMacroop = staticInst;
-                DPRINTF(Fetch, "[tid:%i] Macroop instruction decoded\n", tid);
-            } else {
-                // Normal instruction, reset PC offset
-                // pc_offset is handled by caller
-            }
-        } else {
-            // Need more bytes for instruction decoding
-            DPRINTF(Fetch, "[tid:%i] Decoder not ready, need more bytes\n", tid);
-            return nullptr;
+        if (staticInst->isMacroop()) {
+            curMacroop = staticInst;
+            DPRINTF(Fetch, "[tid:%i] Macroop instruction decoded\n", tid);
         }
     }
-
     if (curMacroop) { // Handle macroop microops
         staticInst = curMacroop->fetchMicroop(this_pc.microPC());
         DPRINTF(Fetch, "[tid:%i] Fetched macroop microop\n", tid);
@@ -2018,18 +1997,12 @@ Fetch::performInstructionFetch(ThreadID tid, Addr fetch_addr, bool &status_chang
 {
     // Initialize local variables
     PCStateBase &this_pc = *pc[tid];
-    Addr pc_offset = fetchOffset[tid];
     std::unique_ptr<PCStateBase> next_pc(this_pc.clone());
     StaticInstPtr staticInst = NULL;
     StaticInstPtr curMacroop = macroop[tid];
 
     // Control flags for main fetch loop
     bool predictedBranch = false;
-
-    // RISC-V decoder specific setup
-    unsigned blk_offset = (fetch_addr - fetchBufferPC[tid]) / instSize;
-    auto *dec_ptr = decoder[tid];
-    const Addr pc_mask = dec_ptr->pcMask();
 
     DPRINTF(Fetch, "[tid:%i] Adding instructions to queue to decode.\n", tid);
 
@@ -2039,8 +2012,7 @@ Fetch::performInstructionFetch(ThreadID tid, Addr fetch_addr, bool &status_chang
            !predictedBranch && !ftqEmpty() && !waitForVsetvl) {
 
         // Check memory needs and supply bytes to decoder if required
-        stall = checkMemoryNeeds(tid, this_pc, pc_offset, fetch_addr, blk_offset,
-                                curMacroop, pc_mask);
+        stall = checkMemoryNeeds(tid, this_pc, curMacroop);
         if (stall != StallReason::NoStall) {
             break;
         }
@@ -2053,31 +2025,19 @@ Fetch::performInstructionFetch(ThreadID tid, Addr fetch_addr, bool &status_chang
             DynInstPtr instruction = processInstructionDecoding(tid, this_pc, next_pc,
                                                                staticInst, curMacroop,
                                                                newMacro);
-            if (!instruction) {
-                // Need more bytes for decoding
-                break;
-            }
-
-            // Handle non-macroop instructions - reset PC offset
-            if (!curMacroop && !staticInst->isMacroop()) {
-                pc_offset = 0;
-            }
 
             // Handle branch prediction and PC updates
             handleBranchAndNextPC(instruction, this_pc, next_pc,
                                   predictedBranch, newMacro);
 
-            // Finalize instruction processing and update fetch state, handle new macroop transition
+            // Handle new macroop transition
             if (newMacro) {
-                fetch_addr = this_pc.instAddr() & pc_mask;
-                blk_offset = (fetch_addr - fetchBufferPC[tid]) / instSize;
-                pc_offset = 0;
                 curMacroop = NULL;
-                DPRINTF(Fetch, "[tid:%i] New macroop, updating fetch_addr=%#x, blk_offset=%d\n",
-                        tid, fetch_addr, blk_offset);
+                DPRINTF(Fetch, "[tid:%i] New macroop transition, PC=%#x\n",
+                        tid, this_pc.instAddr());
             }
 
-        } while ((curMacroop || dec_ptr->instReady()) &&
+        } while (curMacroop &&
                  numInst < fetchWidth &&
                  fetchQueue[tid].size() < fetchQueueSize);
     }
@@ -2098,27 +2058,32 @@ Fetch::performInstructionFetch(ThreadID tid, Addr fetch_addr, bool &status_chang
         DPRINTF(Fetch, "[tid:%i] Done fetching, predicted branch instruction encountered.\n", tid);
     } else if (numInst >= fetchWidth) {
         DPRINTF(Fetch, "[tid:%i] Done fetching, reached fetch bandwidth for this cycle.\n", tid);
-    } else if (blk_offset >= fetchBufferSize) {
-        DPRINTF(Fetch, "[tid:%i] Done fetching, reached the end of the fetch buffer.\n", tid);
+    } else if (stall != StallReason::NoStall) {
+        DPRINTF(Fetch, "[tid:%i] Done fetching, stalled due to %s.\n", tid,
+                stall == StallReason::IcacheStall ? "ICache" : "other reasons");
     }
 
     // Update persistent state
     macroop[tid] = curMacroop;
-    fetchOffset[tid] = pc_offset;
 
     if (numInst > 0) {
         wroteToTimeBuffer = true;
     }
 
-    // Setup pipelined fetch for next cycle if crossing fetch buffer boundary
-    fetch_addr = (this_pc.instAddr() + pc_offset) & pc_mask;
-    Addr fetchBufferBlockPC = fetchBufferAlignPC(fetch_addr);
-    issuePipelinedIfetch[tid] = fetchBufferBlockPC != fetchBufferPC[tid] &&
-        fetchStatus[tid] != IcacheWaitResponse &&
-        fetchStatus[tid] != ItlbWait &&
-        fetchStatus[tid] != IcacheWaitRetry &&
-        fetchStatus[tid] != QuiescePending &&
-        !curMacroop;
+    // Setup pipelined fetch for next cycle if needed
+    // Check if current PC is outside current fetch buffer
+    Addr current_pc = this_pc.instAddr();
+    if (current_pc < fetchBufferPC[tid] ||
+        current_pc >= fetchBufferPC[tid] + fetchBufferSize) {
+        issuePipelinedIfetch[tid] =
+            fetchStatus[tid] != IcacheWaitResponse &&
+            fetchStatus[tid] != ItlbWait &&
+            fetchStatus[tid] != IcacheWaitRetry &&
+            fetchStatus[tid] != QuiescePending &&
+            !curMacroop;
+    } else {
+        issuePipelinedIfetch[tid] = false;
+    }
 }
 
 void
@@ -2307,14 +2272,15 @@ Fetch::pipelineIcacheAccesses(ThreadID tid)
         return;
     }
 
-    // The next PC to access.
+    // The next PC to access - directly use the actual instruction address
     const PCStateBase &this_pc = *pc[tid];
-
-    Addr pcOffset = fetchOffset[tid];
-    Addr fetchAddr = (this_pc.instAddr() + pcOffset) & decoder[tid]->pcMask();
+    Addr fetchAddr = this_pc.instAddr();
 
     // Unless buffer already got the block, fetch it from icache.
-    if (!(fetchBufferValid[tid] && (fetchBufferPC[tid] + fetchBufferSize > fetchAddr))) {
+    // Check if the current PC is covered by the fetch buffer
+    if (!(fetchBufferValid[tid] &&
+          fetchBufferPC[tid] <= fetchAddr &&
+          fetchAddr + 4 <= fetchBufferPC[tid] + fetchBufferSize)) {
         DPRINTF(Fetch, "[tid:%i] Issuing a pipelined I-cache access, "
                 "starting at PC %s.\n", tid, this_pc);
 

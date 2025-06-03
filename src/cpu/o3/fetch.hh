@@ -474,20 +474,16 @@ class Fetch
      */
     void performInstructionFetch(ThreadID tid, Addr fetch_addr, bool &status_change);
 
-    /** Check memory needs and supply bytes to decoder.
+    /** Check if decoder needs memory and supply bytes if needed.
+     * This function checks if the decoder has enough bytes for the current
+     * instruction and supplies bytes from fetchBuffer if needed.
      * @param tid Thread ID
      * @param this_pc Current PC state
-     * @param pc_offset Current PC offset
-     * @param fetch_addr Current fetch address
-     * @param blk_offset Block offset in fetch buffer
-     * @param curMacroop Current macroop
-     * @param pc_mask PC mask for alignment
+     * @param curMacroop Current macroop (if any)
      * @return StallReason if stalled, NoStall otherwise
      */
     StallReason checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
-                                Addr &pc_offset, Addr &fetch_addr,
-                                unsigned &blk_offset, StaticInstPtr &curMacroop,
-                                const Addr pc_mask);
+                                StaticInstPtr &curMacroop);
 
     /** Process instruction decoding and create dynamic instruction.
      * @param tid Thread ID
@@ -549,9 +545,6 @@ class Fetch
 
     /** PC of each thread. */
     std::unique_ptr<PCStateBase> pc[MaxThreads];
-
-    /** Fetch offset of each thread. */
-    Addr fetchOffset[MaxThreads];
 
     /** Macroop of each thread. */
     StaticInstPtr macroop[MaxThreads];
@@ -646,9 +639,6 @@ class Fetch
     bool fetchBufferValid[MaxThreads];
 
     unsigned currentLoopIter{0};  // todo: remove this
-
-    /** Size of instructions. */
-    int instSize;
 
     /** Icache stall statistics. */
     Counter lastIcacheStall[MaxThreads];
