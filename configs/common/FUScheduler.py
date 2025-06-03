@@ -216,10 +216,10 @@ class KMHV3Scheduler(Scheduler):
                       rp=[IntRD(7, 1)])]),
         IssueQue(name='std0', inports=2, size=16, oports=[
             IssuePort(fu=[StoreDataPort()],
-                      rp=[IntRD(9, 1), FpRD(9, 0)])]),
+                      rp=[IntRD(9, 1), FpRD(12, 0)])]),
         IssueQue(name='std1', inports=2, size=16, oports=[
             IssuePort(fu=[StoreDataPort()],
-                      rp=[IntRD(11, 1), FpRD(10, 0)])]),
+                      rp=[IntRD(11, 1), FpRD(13, 0)])]),
     ]
     __fpIQs = [
         IssueQue(name='fpIQ0', inports=2, size=18, oports=[
@@ -227,17 +227,21 @@ class KMHV3Scheduler(Scheduler):
                       rp=[FpRD(0,0), FpRD(1, 0), FpRD(2,0)]),
             IssuePort(fu=[FP_SLOW()],
                       rp=[FpRD(2,1), FpRD(5,1)])
-        ], scheduleToExecDelay=2),
+        ]),
         IssueQue(name='fpIQ1', inports=2, size=18, oports=[
             IssuePort(fu=[FP_ALU(), FP_MAC()],
                       rp=[FpRD(3,0), FpRD(4,0), FpRD(5,0)]),
             IssuePort(fu=[FP_SLOW()],
-                      rp=[FpRD(8,1), FpRD(9,1)]),
-        ], scheduleToExecDelay=2),
+                      rp=[FpRD(8,1), FpRD(11,1)]),
+        ]),
         IssueQue(name='fpIQ2', inports=2, size=18, oports=[
             IssuePort(fu=[FP_ALU(), FP_MAC()],
                       rp=[FpRD(6,0), FpRD(7,0), FpRD(8,0)])
-        ], scheduleToExecDelay=2),
+        ]),
+        IssueQue(name='fpIQ3', inports=2, size=18, oports=[
+            IssuePort(fu=[FP_ALU(), FP_MAC()],
+                      rp=[FpRD(9,0), FpRD(10,0), FpRD(11,0)])
+        ]),
         IssueQue(name='vecIQ0', inports=5, size=16+16+10, oports=[
             IssuePort(fu=[SIMD_Unit()]),
             IssuePort(fu=[SIMD_Unit()]),
