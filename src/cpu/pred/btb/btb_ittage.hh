@@ -119,14 +119,14 @@ class BTBITTAGE : public TimedBaseBTBPredictor
     // use blockPC
     Addr getTageIndex(Addr pc, int table);
 
-    // use blockPC
-    Addr getTageIndex(Addr pc, int table, bitset &foldedHist);
+    // use blockPC (uint64_t version for performance)
+    Addr getTageIndex(Addr pc, int table, uint64_t foldedHist);
 
     // use blockPC
     Addr getTageTag(Addr pc, int table);
 
-    // use blockPC
-    Addr getTageTag(Addr pc, int table, bitset &foldedHist, bitset &altFoldedHist);
+    // use blockPC (uint64_t version for performance)
+    Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist);
 
     Addr getOffset(Addr pc) {
         return (pc & (blockSize - 1)) >> 1;

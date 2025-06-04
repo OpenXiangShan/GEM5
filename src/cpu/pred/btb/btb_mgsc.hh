@@ -251,7 +251,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
                                       const std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, CondTakens& results);
 
     // Calculate MGSC history index with folded history
-    Addr getHistIndex(Addr pc, unsigned tableIndexBits, bitset &foldedHist);
+    Addr getHistIndex(Addr pc, unsigned tableIndexBits, uint64_t foldedHist);
 
     // Calculate MGSC bias index
     Addr getBiasIndex(Addr pc, unsigned tableIndexBits, bool lowbit0, bool lowbit1);

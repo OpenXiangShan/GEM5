@@ -609,15 +609,19 @@ BTBTAGE::updateCounter(bool taken, unsigned width, short &counter) {
 
 // Calculate TAGE tag with folded history
 Addr
-BTBTAGE::getTageTag(Addr pc, int t, bitset &foldedHist, bitset &altFoldedHist)
+BTBTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist)
 {
-    bitset buf(tableTagBits[t], pc >> floorLog2(predictWidth));  // lower bits of PC
-    bitset altTagBuf(altFoldedHist);
-    altTagBuf.resize(tableTagBits[t]);
-    altTagBuf <<= 1;
-    buf ^= foldedHist;
-    buf ^= altTagBuf;
-    return buf.to_ulong();
+    // Create mask for tableTagBits[t]
+    uint64_t mask = (tableTagBits[t] == 64) ? UINT64_MAX : ((1ULL << tableTagBits[t]) - 1);
+
+    // Extract lower bits of PC
+    uint64_t pcBits = (pc >> floorLog2(predictWidth)) & mask;
+
+    // Prepare alt tag: shift left by 1 and mask
+    uint64_t altTagBits = (altFoldedHist << 1) & mask;
+
+    // XOR all components
+    return (pcBits ^ (foldedHist & mask) ^ altTagBits) & mask;
 }
 
 Addr
@@ -627,11 +631,14 @@ BTBTAGE::getTageTag(Addr pc, int t)
 }
 
 Addr
-BTBTAGE::getTageIndex(Addr pc, int t, bitset &foldedHist)
+BTBTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist)
 {
-    bitset buf(tableIndexBits[t], pc >> floorLog2(predictWidth));  // lower bits of PC
-    buf ^= foldedHist;
-    return buf.to_ulong();
+    // Create mask for tableIndexBits[t]
+    uint64_t mask = (tableIndexBits[t] == 64) ? UINT64_MAX : ((1ULL << tableIndexBits[t]) - 1);
+
+    // Extract lower bits of PC and XOR with folded history
+    uint64_t pcBits = (pc >> floorLog2(predictWidth)) & mask;
+    return (pcBits ^ (foldedHist & mask)) & mask;
 }
 
 Addr

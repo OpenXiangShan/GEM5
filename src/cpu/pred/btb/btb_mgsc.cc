@@ -109,7 +109,7 @@ mgscStats(this)
         for (unsigned int j = 0; j < (std::pow(2,logPnb)); ++j) {
             pTable[i][j].resize(numWays);
         }
-        indexPFoldedHist.push_back(FoldedHist(pm[i], logPnb, 16, HistoryType::PATH));
+        indexPFoldedHist.push_back(FoldedHist(pm[i], logPnb, 2, HistoryType::PATH));
     }
     pIndex.resize(pnb);
 
@@ -836,14 +836,14 @@ BTBMGSC::updateCounter(bool taken, unsigned width, unsigned &counter) {
 
 
 Addr
-BTBMGSC::getHistIndex(Addr pc, unsigned tableIndexBits, bitset &foldedHist)
+BTBMGSC::getHistIndex(Addr pc, unsigned tableIndexBits, uint64_t foldedHist)
 {
     // Create mask to limit result size to tableIndexBits
     Addr mask = (1ULL << tableIndexBits) - 1;
 
     // Extract lower bits of PC and XOR with folded history directly
     Addr pcBits = (pc >> floorLog2(blockSize)) & mask;
-    Addr foldedBits = foldedHist.to_ulong() & mask;
+    Addr foldedBits = foldedHist & mask;
 
     return pcBits ^ foldedBits;
 }
