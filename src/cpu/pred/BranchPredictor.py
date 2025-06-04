@@ -1034,6 +1034,7 @@ class BTBTAGE(TimedBaseBTBPredictor):
     tableSizes = VectorParam.Unsigned([4096]*4, "the ITTAGE T0~Tn length")
     TTagBitSizes = VectorParam.Unsigned([8]*4, "the T0~Tn entry's tag bit size")
     TTagPcShifts = VectorParam.Unsigned([1] * 4, "when the T0~Tn entry's tag generating, PC right shift")
+    blockSize = 32 # tage index function uses 32B aligned block address
 
     histLengths = VectorParam.Unsigned([8, 13, 32, 119], "the FTB TAGE T0~Tn history length")
     maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
@@ -1050,6 +1051,7 @@ class BTBITTAGE(TimedBaseBTBPredictor):
     tableSizes = VectorParam.Unsigned([256]*2 + [512]*3, "the ITTAGE T0~Tn length")
     TTagBitSizes = VectorParam.Unsigned([9]*5, "the T0~Tn entry's tag bit size")
     TTagPcShifts = VectorParam.Unsigned([1] * 5, "when the T0~Tn entry's tag generating, PC right shift")
+    blockSize = 32 # ittage index function uses 32B aligned block address
 
     histLengths = VectorParam.Unsigned([4, 8, 13, 16, 32], "the BTB TAGE T0~Tn history length")
     maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
