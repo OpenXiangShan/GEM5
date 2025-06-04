@@ -1428,13 +1428,14 @@ LSQ::LSQRequest::forward()
 {
     if (!isLoad() || !needWBToRegister()) return;
     DPRINTF(StoreBuffer, "sbuffer/storeQue forward data\n");
-    _sbufferBypass = true;
     for (auto& p : SBforwardPackets)
     {
+        _sbufferBypass = true;
         _inst->memData[p.idx] = p.byte;
     }
 
     for (auto& p : SQforwardPackets) {
+        _sbufferBypass = true;
         _inst->memData[p.idx] = p.byte;
     }
 }

@@ -1355,8 +1355,7 @@ LSQUnit::executeLoadPipeSx()
                 //     assert(false);
                 //     DPRINTF(LoadPipeline, "Load [sn:%llu] no savedRequest\n", inst->seqNum);
                 // }
-
-                if (inst->isNormalLd()) iewStage->readyToFinish(inst);
+                if (inst->isNormalLd() || !inst->readMemAccPredicate()) iewStage->readyToFinish(inst);
                 iewStage->activityThisCycle();
                 inst->endPipelining();
                 DPRINTF(LoadPipeline, "Load [sn:%llu] ready to finish\n",
