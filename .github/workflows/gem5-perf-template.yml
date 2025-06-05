@@ -121,6 +121,48 @@ jobs:
               done
             exit 1
           fi
+      - name: Archive performance data
+        if: always()
+        run: |
+          # Create archive directory with timestamp and commit
+          ARCHIVE_ROOT="/nfs/home/share/gem5_ci/performance_data"
+          BENCHMARK_DIR="${ARCHIVE_ROOT}/${{ inputs.benchmark_type }}"
+          TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+          COMMIT_SHORT=$(git rev-parse --short HEAD)
+          RUN_NUMBER="${{ github.run_number }}"
+          TARGET_DIR="${BENCHMARK_DIR}/${TIMESTAMP}_${COMMIT_SHORT}_run${RUN_NUMBER}"
+          
+          # Create target directory
+          mkdir -p "$TARGET_DIR"
+          
+          # Archive entire spec_all directory with compression
+          echo "Archiving performance data to $TARGET_DIR"
+          tar -czf "$TARGET_DIR/spec_all.tar.gz" -C "$GITHUB_WORKSPACE/util/xs_scripts/test" spec_all
+          
+          # Also save score.txt for quick reference
+          if [ -f "$GITHUB_WORKSPACE/score.txt" ]; then
+            cp "$GITHUB_WORKSPACE/score.txt" "$TARGET_DIR/"
+          fi
+          
+          # Save metadata
+          echo "timestamp: $TIMESTAMP" > "$TARGET_DIR/metadata.txt"
+          echo "commit: $(git rev-parse HEAD)" >> "$TARGET_DIR/metadata.txt"
+          echo "commit_short: $COMMIT_SHORT" >> "$TARGET_DIR/metadata.txt"
+          echo "branch: ${GITHUB_REF#refs/heads/}" >> "$TARGET_DIR/metadata.txt"
+          echo "run_number: $RUN_NUMBER" >> "$TARGET_DIR/metadata.txt"
+          echo "benchmark_type: ${{ inputs.benchmark_type }}" >> "$TARGET_DIR/metadata.txt"
+          echo "workflow_run_id: ${{ github.run_id }}" >> "$TARGET_DIR/metadata.txt"
+          
+          # Auto cleanup: keep only last 50 runs for this benchmark type
+          cd "$BENCHMARK_DIR"
+          if [ $(ls -1 | wc -l) -gt 50 ]; then
+            echo "Cleaning up old performance data, keeping last 50 runs"
+            ls -1t | tail -n +51 | xargs -r rm -rf
+            echo "Cleanup completed"
+          fi
+          
+          echo "Performance data archived successfully"
+          echo "Archive size: $(du -sh "$TARGET_DIR/m5out_data.tar.gz" | cut -f1)"
       - name: Upload score
         if: always()
         uses: actions/upload-artifact@v4
