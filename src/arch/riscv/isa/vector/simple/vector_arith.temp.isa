@@ -1389,6 +1389,7 @@ Fault
 %(class_name)s<ElemType>::execute(ExecContext* xc,
                                   Trace::InstRecord* traceData) const
 {
+    softfloat_roundingMode = 0;
     %(type_def)s;
     if (machInst.vill) {
         return std::make_shared<IllegalInstFault>("VILL is set", machInst);
