@@ -58,7 +58,7 @@ class Multi : public Base
 
   public:
     void setParentInfo(System *sys, ProbeManager *pm, CacheAccessor* _cache, unsigned blk_size) override;
-    void addTLB(BaseTLB* _t) override;
+    void addTLB(BaseTLB* _t, bool functional) override;
     bool hasPendingPacket() override;
     PacketPtr getPacket() override;
     Tick nextPrefetchReadyTime() const override;

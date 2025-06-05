@@ -106,6 +106,7 @@ def build_test_system(np, args):
     for cpu in test_sys.cpu:
         cpu.mmu.pma_checker = PMAChecker(
             uncacheable=[AddrRange(0, size=0x80000000)])
+        cpu.mmu.functional = args.functional_tlb
 
     # configure BP
     args.enable_loop_predictor = True

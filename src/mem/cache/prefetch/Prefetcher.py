@@ -93,6 +93,7 @@ class BasePrefetcher(ClockedObject):
         super().__init__(**kwargs)
         self._events = []
         self._tlbs = []
+        self._functional_tlb = False
         self._downstream_pf = []
 
     def addEvent(self, newObject):
@@ -104,7 +105,7 @@ class BasePrefetcher(ClockedObject):
         print("Registering probe listeners for Prefetcher {}".format(self))
         for tlb in self._tlbs:
             print(f"{self} addTLB {tlb}")
-            self.getCCObject().addTLB(tlb.getCCObject())
+            self.getCCObject().addTLB(tlb.getCCObject(), self._functional_tlb)
 
         assert len(self._downstream_pf) <= 1
         if len(self._downstream_pf):
@@ -122,10 +123,11 @@ class BasePrefetcher(ClockedObject):
             raise TypeError("probeNames must have at least one element")
         self.addEvent(HWPProbeEvent(self, simObj, *probeNames))
 
-    def registerTLB(self, simObj):
+    def registerTLB(self, simObj, functional):
         if not isinstance(simObj, SimObject):
             raise TypeError("argument must be a SimObject type")
         self._tlbs.append(simObj)
+        self._functional_tlb = functional
 
     def add_pf_downstream(self, other_prefetcher):
         if not isinstance(other_prefetcher, SimObject):

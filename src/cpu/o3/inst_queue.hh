@@ -443,6 +443,8 @@ class InstructionQueue
         /** Number of instructions issued per cycle. */
         statistics::Formula issueRate;
 
+        statistics::Scalar deferMemInstNum;
+
         /** Number of times the FU was busy. */
         statistics::Vector fuBusy;
         /** Number of times the FU was busy per instruction issued. */

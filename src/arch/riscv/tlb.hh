@@ -240,8 +240,14 @@ class TLB : public BaseTLB
     void translateTiming(const RequestPtr &req, ThreadContext *tc,
                          BaseMMU::Translation *translation,
                          BaseMMU::Mode mode) override;
+    void configVmodeInTLB(const RequestPtr &req, ThreadContext *tc,
+                      BaseMMU::Mode mode);
+    void configFunctional(const RequestPtr &req, ThreadContext *tc,
+                       BaseMMU::Mode mode);
     Fault translateFunctional(const RequestPtr &req, ThreadContext *tc,
                               BaseMMU::Mode mode) override;
+    void  translateFunctional(const RequestPtr &req, ThreadContext *tc,
+                              BaseMMU::Translation *translation, BaseMMU::Mode mode) override;
     Fault finalizePhysical(const RequestPtr &req, ThreadContext *tc,
                            BaseMMU::Mode mode) const override;
     TlbEntry *lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden, bool sign_used, uint8_t translateMode);

@@ -448,10 +448,11 @@ Base::addEventProbe(SimObject *obj, const char *name)
 }
 
 void
-Base::addTLB(BaseTLB *t)
+Base::addTLB(BaseTLB *t, bool functional)
 {
     // tlb is allowed to be non-null, because of taking over
     tlb = t;
+    functionalTLB = functional;
 }
 
 } // namespace prefetch

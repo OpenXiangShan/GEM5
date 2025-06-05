@@ -59,6 +59,7 @@
 #include "arch/riscv/tlb.hh"
 #include "base/bitfield.hh"
 #include "base/trie.hh"
+#include "base/types.hh"
 #include "cpu/base.hh"
 #include "cpu/thread_context.hh"
 #include "debug/PageTableWalker.hh"
@@ -174,10 +175,10 @@ Walker::doL2TLBHitSchedule(const RequestPtr &req, ThreadContext *tc, BaseMMU::Tr
 }
 
 Fault
-Walker::startFunctional(ThreadContext * _tc, Addr &addr, unsigned &logBytes,
+Walker::startFunctional(RequestPtr req, ThreadContext * _tc, Addr &addr, unsigned &logBytes,
               BaseMMU::Mode _mode)
 {
-    funcState.initState(_tc, nullptr, _mode);
+    funcState.initState(_tc, req, _mode);
     return funcState.startFunctional(addr, logBytes, openNextLine,
                                      autoOpenNextLine, false, false);
 }
@@ -267,14 +268,19 @@ void
 Walker::WalkerState::initState(ThreadContext *_tc, const RequestPtr &_req, BaseMMU::Mode _mode, bool _isTiming,
                                bool _from_forward_pre_req, bool _from_back_pre_req)
 {
-    assert(_req != nullptr);
-    if (_req->get_two_stage_state()) {
+    assert(functional || _req != nullptr);
+    if (_req && _req->get_two_stage_state()) {
         assert(state == Ready);
         started = false;
-        assert(requestors.back().tc == nullptr);
+        assert(functional || requestors.back().tc == nullptr);
         requestors.back().tc = _tc;
         requestors.back().fromForwardPreReq = false;
         requestors.back().fromBackPreReq = false;
+        if (functional) {
+            mainReq = _req;
+            mainFault = NoFault;
+            requestors.back().req = _req;
+        }
         mode = _mode;
         timing = _isTiming;
         status = _tc->readMiscReg(MISCREG_STATUS);
@@ -294,10 +300,15 @@ Walker::WalkerState::initState(ThreadContext *_tc, const RequestPtr &_req, BaseM
     } else {
         assert(state == Ready);
         started = false;
-        assert(requestors.back().tc == nullptr);
+        assert(functional || requestors.back().tc == nullptr);
         requestors.back().tc = _tc;
         requestors.back().fromForwardPreReq = _from_forward_pre_req;
         requestors.back().fromBackPreReq = _from_back_pre_req;
+        if (functional) {
+            mainReq = _req;
+            mainFault = NoFault;
+            requestors.back().req = _req;
+        }
         mode = _mode;
         timing = _isTiming;
         // fetch these now in case they change during the walk
@@ -315,7 +326,7 @@ Walker::WalkerState::initState(ThreadContext *_tc, const RequestPtr &_req, BaseM
         isVsatp0Mode = false;
         GstageFault = false;
         tlbHit = false;
-        assert(!_req->get_h_inst());
+        assert(functional || !_req->get_h_inst());
     }
 }
 
@@ -546,7 +557,13 @@ Walker::WalkerState::startFunctional(Addr &addr, unsigned &logBytes,
         // On a functional access (page table lookup), writes should
         // not happen so this pointer is ignored after stepWalk
         PacketPtr write = NULL;
-        fault = stepWalk(write);
+        if ((translateMode == twoStageMode) && (inGstage)) {
+            fault = twoStageStepWalk(write);
+        } else if ((translateMode == twoStageMode) && (!inGstage)) {
+            fault = twoStageWalk(write);
+        } else {
+            fault = stepWalk(write);
+        }
         assert(fault == NoFault || read == NULL);
         state = nextState;
         nextState = Ready;
@@ -1498,12 +1515,12 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level, bool from_l2tl
                                bool auto_open_nextline, bool from_forward_pre_req, bool from_back_pre_req)
 {
     Addr topAddr;
-    if (from_l2tlb ){
+    if (from_l2tlb){
         level = f_level;
     }
     else {
         level = 2;
-        if (mainReq->get_level() != 2)
+        if (mainReq && mainReq->get_level() != 2)
             level = mainReq->get_level();
         if (isVsatp0Mode)
             level = 0;

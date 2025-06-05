@@ -111,7 +111,11 @@ void
 BaseMMU::translateTiming(const RequestPtr &req, ThreadContext *tc,
                          BaseMMU::Translation *translation, BaseMMU::Mode mode)
 {
-    return getTlb(mode)->translateTiming(req, tc, translation, mode);
+    if (functional) {
+        return getTlb(mode)->translateFunctional(req, tc, translation, mode);
+    } else {
+        return getTlb(mode)->translateTiming(req, tc, translation, mode);
+    }
 }
 
 Fault
