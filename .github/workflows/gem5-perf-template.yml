@@ -66,7 +66,8 @@ jobs:
           # use pgo profile to build gem5
           export GEM5_HOME=$(pwd)
           export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so"
-          bash util/pgo/basic_pgo_new.sh
+          # bash util/pgo/basic_pgo_new.sh
+          scons build/RISCV/gem5.fast --linker=gold -j64
       - name: XS-GEM5 - Run performance test
         # ${{ steps.config.outputs.comment }}
         run: |
