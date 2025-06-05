@@ -25,6 +25,6 @@ jobs:
           cd $GEM5_HOME
       - name: Build GEM5 opt
         run: |
-          CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
+          CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64 --rvv-impl=simple
       - name: run vector test
         run: python3 .github/workflows/autotest/script/autotest.py -f .github/workflows/autotest/gem5-vec.cfg
