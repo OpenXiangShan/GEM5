@@ -108,17 +108,34 @@ jobs:
           echo "### Key indicators" >> $GITHUB_STEP_SUMMARY
           echo "- Final Int score per GHz: **${FINAL_SCORE}**" >> $GITHUB_STEP_SUMMARY
           
-          # 最后检查是否存在abort文件， 如果存在，打出前10个错误名字
+          # 最后检查是否存在abort文件， 如果存在，打出前10个错误名字并收集错误日志
           if find $GEM5_HOME/util/xs_scripts/test/spec_all -type f -name "abort" | grep -q .; then
             echo "### :x: Test Failures Detected!" >> $GITHUB_STEP_SUMMARY
             echo "Failed test count: $(find $GEM5_HOME/util/xs_scripts/test/spec_all -type f -name "abort" | wc -l)" >> $GITHUB_STEP_SUMMARY
             echo "First 10 failed tests:" >> $GITHUB_STEP_SUMMARY
+            
+            # Create directory for collecting error logs
+            mkdir -p $GITHUB_WORKSPACE/error_logs
+            
+            # Collect first 10 failed test logs
             find $GEM5_HOME/util/xs_scripts/test/spec_all -type f -name "abort" | 
               sed 's|.*/\([^/]*\)/abort|\1|' |
               head -n 10 |
-              while read -r line; do
-                echo "- $line" >> $GITHUB_STEP_SUMMARY
+              while read -r test_name; do
+                echo "- $test_name" >> $GITHUB_STEP_SUMMARY
+                # Copy log.txt if it exists
+                if [ -f "$GEM5_HOME/util/xs_scripts/test/spec_all/$test_name/log.txt" ]; then
+                  cp "$GEM5_HOME/util/xs_scripts/test/spec_all/$test_name/log.txt" "$GITHUB_WORKSPACE/error_logs/${test_name}_log.txt"
+                fi
               done
+            
+            # Compress error logs
+            cd $GITHUB_WORKSPACE
+            if [ -n "$(ls -A error_logs 2>/dev/null)" ]; then
+              tar -czf error_logs.tar.gz error_logs/
+              echo "Error logs collected and compressed to error_logs.tar.gz" >> $GITHUB_STEP_SUMMARY
+            fi
+            
             exit 1
           fi
       - name: Upload score
@@ -127,3 +144,10 @@ jobs:
         with:
           name: ${{ steps.config.outputs.artifact_name }}
           path: ${{ github.workspace }}/score.txt 
+      - name: Upload error logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: error-logs-${{ inputs.benchmark_type }}
+          path: ${{ github.workspace }}/error_logs.tar.gz
+          if-no-files-found: ignore
