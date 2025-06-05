@@ -992,7 +992,8 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         uint64_t gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VTYPE, tid);
         diffAllStates->gem5RegFile.vtype = gem5_val;
         uint64_t ref_val = diffAllStates->referenceRegFile.vtype;
-        if (gem5_val != ref_val) {
+        // unable highest digit comparison of vtype because the older version of NEMU (used by GCBH) did not support it well.
+        if (gem5_val % (1ULL<<63) != ref_val % (1ULL<<63)) {
             warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
                     "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
                     "vtype", ref_val, gem5_val);
