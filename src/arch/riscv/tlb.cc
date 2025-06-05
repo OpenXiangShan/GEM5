@@ -1643,12 +1643,6 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
         if (fault != NoFault) {
             return fault;
         } else if ((l1tlbtype == h_l1VSstageHit) || (l1tlbtype == H_L1miss)) {
-            /*fault = walker->start(0, tc, translation, req, mode, false, false, 0, false, 0);
-            if (translation != nullptr || fault != NoFault) {
-                delayed = true;
-                return fault;
-            }
-            return fault;*/
             std::pair<int, Fault> result = checkHL2Tlb(req, tc, translation, mode, l1tlbtype);
             if (result.second != NoFault) {
                 return result.second;
@@ -1656,6 +1650,27 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
 
             if ((result.first == h_l2GstageHitContinue) || (result.first == h_l2VSstageHitEnd) ||
                 (result.first == H_L1miss) || (result.first == h_l2VSstageHitContinue)) {
+                Addr shift = PageShift + LEVEL_BITS * req->get_level();
+                Addr idx_f = (vaddr >> shift) & LEVEL_MASK;
+                Addr gpaddr_check = (vsatp.ppn << PageShift) + (idx_f * sizeof(PTESv39));
+                if ((req->get_level() != 2) && (req->getgPaddr() != 0)) {
+                    gpaddr_check = req->getgPaddr();
+                }
+                if (req->get_vsatp_0_mode()) {
+                    gpaddr_check = vaddr;
+                }
+                if ((gpaddr_check & ~(((int64_t)1 << 41) - 1)) != 0) {
+                    // this is a excep
+                    ExceptionCode code;
+                    if (mode == BaseMMU::Read) {
+                        code = ExceptionCode::LOAD_ACCESS;
+                    } else if (mode == BaseMMU::Write) {
+                        code = ExceptionCode::STORE_ACCESS;
+                    } else {
+                        code = ExceptionCode::INST_ACCESS;
+                    }
+                    return std::make_shared<AddressFault>(req->getVaddr(), 0, code);
+                }
                 fault = walker->start(0, tc, translation, req, mode, false, false, 0, false, 0);
                 if (translation != nullptr || fault != NoFault) {
                     delayed = true;
