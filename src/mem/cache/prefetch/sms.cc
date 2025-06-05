@@ -174,21 +174,21 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
     }
 
 
+    bool use_bop = enableBOP && ((pfi.isPfFirstHit() && (pf_source == PrefetchSourceType::HWP_BOP ||
+                                                            pf_source == PrefetchSourceType::IPCP_CPLX ||
+                                                            pf_source == PrefetchSourceType::Berti)) ||
+                                    pfi.isCacheMiss());
+    use_bop &= !miss_repeat && is_first_shot; // miss repeat should not be handled by stride
+    if (use_bop) {
+        DPRINTF(XSCompositePrefetcher, "Do BOP traing/prefetching...\n");
+        largeBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
+
+        smallBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
+
+        stats.bopTrainCount++;
+    }
+
     if (pf_source != PrefetchSourceType::SStream && !is_active_page) {
-        bool use_bop = enableBOP && ((pfi.isPfFirstHit() && (pf_source == PrefetchSourceType::HWP_BOP ||
-                                                             pf_source == PrefetchSourceType::IPCP_CPLX ||
-                                                             pf_source == PrefetchSourceType::Berti)) ||
-                                     pfi.isCacheMiss());
-        use_bop &= !miss_repeat && is_first_shot; // miss repeat should not be handled by stride
-        if (use_bop) {
-            DPRINTF(XSCompositePrefetcher, "Do BOP traing/prefetching...\n");
-            largeBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
-
-            smallBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
-
-            stats.bopTrainCount++;
-        }
-
         Addr stride_pf_addr = 0;
         bool covered_by_stride = false;
         //NOTICE:don't open berti & stride at the same time
