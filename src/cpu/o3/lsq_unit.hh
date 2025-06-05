@@ -68,6 +68,7 @@
 #include "cpu/timebuf.hh"
 #include "debug/HtmCpu.hh"
 #include "debug/LSQUnit.hh"
+#include "mem/cache/base.hh"
 #include "mem/packet.hh"
 #include "mem/port.hh"
 
@@ -140,7 +141,8 @@ public:
     void insert(int index, uint64_t addr);
     StoreBufferEntry* get(uint64_t addr);
     void update(int index);
-    StoreBufferEntry* getEvict();
+    StoreBufferEntry* getVictim();
+    StoreBufferEntry* getAndEvict();
     StoreBufferEntry* createVice(StoreBufferEntry* entry);
     void release(StoreBufferEntry* entry);
 };
@@ -316,11 +318,13 @@ class LSQUnit
 
     std::vector<LSQRequest*> inflightLoads;
 
+    WriteAllocator * writeAllocator;
+
   public:
     /** Constructs an LSQ unit. init() must be called prior to use. */
     LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries,
       uint32_t sbufferEvictThreshold, uint64_t storeBufferInactiveThreshold,
-      uint32_t ldPipeStages, uint32_t stPipeStages);
+      uint32_t ldPipeStages, uint32_t stPipeStages, WriteAllocator *writeAllocator);
 
     /** We cannot copy LSQUnit because it has stats for which copy
      * contructor is deleted explicitly. However, STL vector requires
@@ -846,6 +850,7 @@ class LSQUnit
          * is issued and its completion */
         statistics::Distribution loadToUse;
         statistics::Distribution loadTranslationLat;
+        statistics::Distribution writeAllocatorState;
 
 
         statistics::Scalar forwardSTDNotReady;

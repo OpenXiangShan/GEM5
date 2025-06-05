@@ -760,6 +760,7 @@ class LSQ
         void recvFunctionalCustomSignal(PacketPtr pkt) override;
         bool sendPacketToCache() override;
         void buildPackets() override;
+        void buildPackets(bool writeNotAllocate);
         Cycles handleLocalAccess(
                 gem5::ThreadContext *thread, PacketPtr pkt) override { return Cycles(0);};
         bool isCacheBlockHit(Addr blockAddr, Addr cacheBlockMask) override { return false;};

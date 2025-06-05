@@ -1601,6 +1601,9 @@ class Packet : public Printable
 
     bool cacheSatisfied = true;
 
+    // If true, the packet will not allocate in Dcache
+    bool writeNotAllocateOpt = false;
+
     bool fromBOP() const { return pfSource == PrefetchSourceType::HWP_BOP; }
     
     PrefetchSourceType getPFSource() const { return static_cast<PrefetchSourceType>(pfSource); }

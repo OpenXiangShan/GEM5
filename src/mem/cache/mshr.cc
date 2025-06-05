@@ -73,7 +73,7 @@ MSHR::MSHR(const std::string &name)
 MSHR::TargetList::TargetList(const std::string &name)
     :   Named(name),
         needsWritable(false), hasUpgrade(false),
-        allocOnFill(false), hasFromCache(false),
+        allocOnFill(false), notAllocOpt(false), hasFromCache(false),
         hasFromPref(false), hasFromCPU(false),
         pfSource(PF_NONE), pfDepth(0),
         blkAddr(0), blkSize(0),
@@ -83,7 +83,7 @@ MSHR::TargetList::TargetList(const std::string &name)
 
 void
 MSHR::TargetList::updateFlags(PacketPtr pkt, Target::Source source,
-                              bool alloc_on_fill)
+                              bool alloc_on_fill, bool not_alloc_opt)
 {
     if (source != Target::FromSnoop) {
         if (pkt->needsWritable()) {
@@ -100,6 +100,7 @@ MSHR::TargetList::updateFlags(PacketPtr pkt, Target::Source source,
         // potentially re-evaluate whether we should allocate on a fill or
         // not
         allocOnFill = allocOnFill || alloc_on_fill;
+        notAllocOpt = notAllocOpt || not_alloc_opt;
 
         if (source != Target::FromPrefetcher) {
             hasFromCache = hasFromCache || pkt->fromCache();
@@ -126,7 +127,7 @@ MSHR::TargetList::populateFlags()
 {
     resetFlags();
     for (auto& t: *this) {
-        updateFlags(t.pkt, t.source, t.allocOnFill);
+        updateFlags(t.pkt, t.source, t.allocOnFill, t.notAllocOpt);
     }
 }
 
@@ -186,9 +187,9 @@ MSHR::TargetList::updateWriteFlags(PacketPtr pkt)
 inline void
 MSHR::TargetList::add(PacketPtr pkt, Tick readyTime,
                       Counter order, Target::Source source, bool markPending,
-                      bool alloc_on_fill)
+                      bool alloc_on_fill, bool write_not_alloc_opt)
 {
-    updateFlags(pkt, source, alloc_on_fill);
+    updateFlags(pkt, source, alloc_on_fill, write_not_alloc_opt);
     if (markPending) {
         // Iterate over the SenderState stack and see if we find
         // an MSHR entry. If we do, set the downstreamPending
@@ -203,7 +204,7 @@ MSHR::TargetList::add(PacketPtr pkt, Tick readyTime,
         }
     }
 
-    emplace_back(pkt, readyTime, order, source, markPending, alloc_on_fill);
+    emplace_back(pkt, readyTime, order, source, markPending, alloc_on_fill, write_not_alloc_opt);
 
     DPRINTF(MSHR, "New target allocated: %s\n", pkt->print());
 }
@@ -325,7 +326,7 @@ MSHR::TargetList::print(std::ostream &os, int verbosity,
 
 void
 MSHR::allocate(Addr blk_addr, unsigned blk_size, PacketPtr target,
-               Tick when_ready, Counter _order, bool alloc_on_fill)
+               Tick when_ready, Counter _order, bool alloc_on_fill, bool not_alloc_opt)
 {
     blkAddr = blk_addr;
     blkSize = blk_size;
@@ -347,7 +348,7 @@ MSHR::allocate(Addr blk_addr, unsigned blk_size, PacketPtr target,
     Target::Source source = (target->cmd == MemCmd::HardPFReq) ?
         Target::FromPrefetcher : Target::FromCPU;
     DPRINTF(MSHR, "New MSHR allocated: %s, from cpu: %i\n", target->print(), Target::FromCPU);
-    targets.add(target, when_ready, _order, source, true, alloc_on_fill);
+    targets.add(target, when_ready, _order, source, true, alloc_on_fill, not_alloc_opt);
 
     // All targets must refer to the same block
     assert(target->matchBlockAddr(targets.front().pkt, blkSize));
@@ -399,7 +400,7 @@ MSHR::deallocate()
  */
 void
 MSHR::allocateTarget(PacketPtr pkt, Tick whenReady, Counter _order,
-                     bool alloc_on_fill)
+                     bool alloc_on_fill, bool write_not_alloc_opt)
 {
     // assume we'd never issue a prefetch when we've got an
     // outstanding miss
@@ -431,14 +432,14 @@ MSHR::allocateTarget(PacketPtr pkt, Tick whenReady, Counter _order,
         if (inService && hasPostInvalidate())
             replaceUpgrade(pkt);
         deferredTargets.add(pkt, whenReady, _order, Target::FromCPU, true,
-                            alloc_on_fill);
+                            alloc_on_fill, write_not_alloc_opt);
     } else {
         // No request outstanding, or still OK to append to
         // outstanding request: append to regular target list.  Only
         // mark pending if current request hasn't been issued yet
         // (isn't in service).
         targets.add(pkt, whenReady, _order, Target::FromCPU, !inService,
-                    alloc_on_fill);
+                    alloc_on_fill, write_not_alloc_opt);
     }
 
     DPRINTF(MSHR, "After target allocation: %s", print());
@@ -557,7 +558,7 @@ MSHR::handleSnoop(PacketPtr pkt, Counter _order)
         }
 
         targets.add(cp_pkt, curTick(), _order, Target::FromSnoop,
-                    downstreamPending && targets.needsWritable, false);
+                    downstreamPending && targets.needsWritable, false, false);
 
         if (pkt->needsWritable() || pkt->isInvalidate()) {
             // This transaction will take away our pending copy
@@ -832,6 +833,7 @@ MSHR::print(std::ostream &os, int verbosity, const std::string &prefix) const
              isSecure ? "s" : "ns",
              isForward ? "Forward" : "",
              allocOnFill() ? "AllocOnFill" : "",
+             notAllocOpt() ? "notAllocOpt" : "",
              needsWritable() ? "Wrtbl" : "",
              _isUncacheable ? "Unc" : "",
              inService ? "InSvc" : "",
