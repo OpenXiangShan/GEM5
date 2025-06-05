@@ -1242,7 +1242,7 @@ Fetch::tick()
     for (threadFetched = 0; threadFetched < numFetchingThreads;
          threadFetched++) {
         // Fetch each of the actively fetching threads.
-        fetch(status_change);
+        // fetch(status_change);
     }
 
     toDecode->fetchStallReason = stallReason;
