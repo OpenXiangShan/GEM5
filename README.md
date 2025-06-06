@@ -2,6 +2,20 @@
 
 This is the gem5 simulator for Xiangshan (XS-GEM5), which currently scores similar with Kunminghu on SPEC CPU 2006.
 
+Our Chinese website is [here](https://xs-gem5.readthedocs.io/zh-cn/latest/), welcome to visit!
+
+## Thanks
+
+In the development of the Kunming Lake v3 performance model, developers Zhang Qianlong, Zhang Lutong, Hu Kai, Yan Yuwei, Liu Shuquan, and Chen Dewei from Tencent Penglai Laboratory jointly made the following contributions:
+
+1. Contributed and debugged the MGSC predictor model, which reduced MPKI by approximately 10% and improved overall performance by 0.3-0.4 points/GHz in the SpecInt 2006 checkpoint tests.
+
+2. Contributed and debugged the L2 Next Prefetcher model, which improved MCF performance by approximately 23% and overall performance by 1.7% in the SpecInt 2006 checkpoint tests.
+
+3. Contributed the model codes for the L2 Adjacent Block Prefetcher and Sector Cache.
+
+We are grateful for their contributions and hope to continue to work together to improve the performance of XS-GEM5.
+
 ## Features
 
 XS-GEM5 is not as easy to use as official GEM5, because it only supports full-system simulation
