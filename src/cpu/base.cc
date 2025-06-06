@@ -69,6 +69,7 @@
 #include "mem/page_table.hh"
 #include "params/BaseCPU.hh"
 #include "sim/clocked_object.hh"
+#include "sim/core.hh"
 #include "sim/full_system.hh"
 #include "sim/process.hh"
 #include "sim/root.hh"
@@ -382,6 +383,9 @@ BaseCPU::init()
 
         verifyMemoryMode();
     }
+
+    // Set CPU clock period for debug printing
+    setCpuClockPeriod(clockPeriod());
 }
 
 void

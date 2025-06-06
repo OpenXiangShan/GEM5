@@ -33,14 +33,15 @@
 #define __BASE_TRACE_HH__
 
 #include <ostream>
-#include <string>
 #include <sstream>
+#include <string>
 
 #include "base/compiler.hh"
 #include "base/cprintf.hh"
 #include "base/debug.hh"
 #include "base/match.hh"
 #include "base/types.hh"
+#include "sim/core.hh"
 #include "sim/cur_tick.hh"
 
 // Return the global context name "global".  This function gets called when
@@ -183,12 +184,24 @@ struct StringWrap
             ::gem5::curTick(), name(), data, count, #x); \
 } while (0)
 
-#define DPRINTF(x, ...) do {                     \
-    if (GEM5_UNLIKELY(TRACING_ON && (::gem5::debug::x))) {   \
-        ::gem5::Trace::getDebugLogger()->dprintf_flag(   \
-            ::gem5::curTick(), name(), #x, __VA_ARGS__); \
-    }                                            \
-} while (0)
+#ifdef DEBUG_SHOW_CYCLES
+    #define DPRINTF(x, ...) do {                     \
+        if (GEM5_UNLIKELY(TRACING_ON && (::gem5::debug::x))) {   \
+            ::gem5::Trace::getDebugLogger()->dprintf_flag(   \
+                ::gem5::curTick(), name(), #x, \
+                "[c: %llu] %s", \
+                ::gem5::curTick() / ::gem5::getCpuClockPeriod(), \
+                ::gem5::csprintf(__VA_ARGS__).c_str()); \
+        } \
+    } while (0)
+#else
+    #define DPRINTF(x, ...) do {                     \
+        if (GEM5_UNLIKELY(TRACING_ON && (::gem5::debug::x))) {   \
+            ::gem5::Trace::getDebugLogger()->dprintf_flag(   \
+                ::gem5::curTick(), name(), #x, __VA_ARGS__); \
+        }                                            \
+    } while (0)
+#endif
 
 #define DPRINTFS(x, s, ...) do {                        \
     if (GEM5_UNLIKELY(TRACING_ON && (::gem5::debug::x))) {          \

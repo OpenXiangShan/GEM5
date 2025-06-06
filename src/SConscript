@@ -665,6 +665,10 @@ envs['debug'].Append(CPPDEFINES=['DEBUG', 'TRACING_ON=1'])
 envs['opt'].Append(CCFLAGS=['-g'], CPPDEFINES=['TRACING_ON=1'])
 envs['fast'].Append(CPPDEFINES=['NDEBUG', 'TRACING_ON=0'])
 
+if GetOption('debug_cycle'):
+    for target in ['debug', 'opt', 'fast']:
+        envs[target].Append(CPPDEFINES=['DEBUG_SHOW_CYCLES'])
+
 # For Link Time Optimization, the optimisation flags used to compile
 # individual files are decoupled from those used at link time
 # (i.e. you can compile with -O3 and perform LTO with -O0), so we need
