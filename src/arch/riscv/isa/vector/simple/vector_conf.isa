@@ -115,7 +115,7 @@ def template VConfExecute {{
             uint32_t new_vill =
                 !(vflmul >= 0.125 && vflmul <= 8) ||
                 sew > std::min(vflmul, 1.0f) * ELEN ||
-                bits(requested_vtype, 30, 8) != 0;
+                (requested_vtype >> 8) != 0;
 
             if (new_vill) {
                 vlmax = 0;
