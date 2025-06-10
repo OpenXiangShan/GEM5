@@ -264,6 +264,60 @@ FetchTargetQueue::resetPC(Addr new_pc)
     fetchTargetEnqState.pc = new_pc;
 }
 
+// NEW: 2Fetch support methods implementation
+
+/**
+ * @brief Check if there is a next available FTQ entry
+ *
+ * @return true if next FTQ entry is available
+ */
+bool
+FetchTargetQueue::hasNext() const
+{
+    // Check if there's an entry with ID = fetchDemandTargetId + 1
+    auto next_it = ftq.find(fetchDemandTargetId + 1);
+    return next_it != ftq.end();
+}
+
+/**
+ * @brief Peek at the next FTQ entry without consuming it
+ *
+ * @return Reference to the next FTQ entry
+ */
+const FtqEntry&
+FetchTargetQueue::peekNext() const
+{
+    assert(hasNext());
+    auto next_it = ftq.find(fetchDemandTargetId + 1);
+    return next_it->second;
+}
+
+/**
+ * @brief Advance to the next FTQ entry without dequeuing current one
+ *
+ * Used for 2fetch when we want to process the next entry
+ * while keeping the current one active
+ */
+void
+FetchTargetQueue::advance()
+{
+    // Already moved to next target ID in processFetchTargetCompletion
+    // Update supply state to point to new target
+    auto next_it = ftq.find(fetchDemandTargetId);
+    if (next_it != ftq.end()) {
+        supplyFetchTargetState.valid = true;
+        supplyFetchTargetState.targetId = fetchDemandTargetId;
+        supplyFetchTargetState.entry = &(next_it->second);
+        
+        DPRINTF(DecoupleBP,
+                "Advanced to next FTQ entry: ID %lu, PC [%#lx, %#lx)\n",
+                fetchDemandTargetId, next_it->second.startPC, next_it->second.endPC);
+    } else {
+        supplyFetchTargetState.valid = false;
+        supplyFetchTargetState.entry = nullptr;
+    }
+}
+
 }  // namespace btb_pred
 
 }  // namespace branch_prediction

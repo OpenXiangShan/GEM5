@@ -79,6 +79,9 @@ class DecoupledBPUWithBTB : public BPredUnit
     JumpAheadPredictor jap;
     bool enableJumpAheadPredictor{false};
 
+    // 2taken feature support
+    bool enable2Taken{true};  // Default enabled
+
   private:
     std::string _name;
 
@@ -350,6 +353,14 @@ class DecoupledBPUWithBTB : public BPredUnit
 
         statistics::Scalar predFalseHit;
         statistics::Scalar commitFalseHit;
+
+        // NEW: 2Fetch statistics
+        statistics::Scalar fetch2Attempts;        ///< Number of 2fetch attempts
+        statistics::Scalar fetch2Successes;       ///< Number of successful 2fetch cycles
+        statistics::Scalar fetch2SpanTooLarge;    ///< Rejected due to span > maxFetchBytes
+        statistics::Scalar fetch2NoNextFTQ;       ///< Rejected due to no next FTQ entry
+        statistics::Scalar fetch2FirstNotTaken;   ///< Rejected due to current FTQ is not taken
+        statistics::Scalar fetch2FirstNotAtStart; ///< Rejected due to current PC is not at next FTQ start
 
         DBPBTBStats(statistics::Group* parent, unsigned numStages, unsigned fsqSize, unsigned maxInstsNum);
     } dbpBtbStats;
@@ -939,6 +950,45 @@ class DecoupledBPUWithBTB : public BPredUnit
      * @brief Current FTQ entry instruction count
      */
     int currentFtqEntryInstNum{0};
+
+    // NEW: 2Fetch support variables
+    /**
+     * @brief Enable 2fetch capability
+     */
+    bool enable2Fetch{true};
+
+    /**
+     * @brief Whether fetched first FTQ
+     */
+    bool has1Fetched{false};
+
+    /**
+     * @brief Maximum fetch bytes per cycle for 2fetch
+     */
+    unsigned maxFetchBytesPerCycle{64};
+
+    // NEW: 2Fetch support methods
+    /**
+     * @brief Check if we can extend to next FTQ entry for 2fetch
+     *
+     * @param current_pc Current program counter
+     * @param current_ftq Current FTQ entry that is being completed
+     * @return true if extension to next FTQ is possible
+     */
+    bool canExtendToNextFTQ(const PCStateBase &current_pc, const FtqEntry &current_ftq);
+
+    /**
+     * @brief Extend processing to next FTQ entry for 2fetch
+     *
+     * @param pc Program counter reference to update
+     * @param seqNum Instruction sequence number
+     * @param tid Thread ID
+     * @param currentLoopIter Loop iteration counter reference
+     */
+    void extendToNextFTQ(PCStateBase &pc, 
+                        const InstSeqNum &seqNum, 
+                        ThreadID tid, 
+                        unsigned &currentLoopIter);
 
     /**
      * @brief Dump statistics on program exit

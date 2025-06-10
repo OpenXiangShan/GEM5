@@ -157,6 +157,29 @@ class FetchTargetQueue
      */
     void finishCurrentFetchTarget();
 
+    // NEW: 2Fetch support methods
+    /**
+     * @brief Check if there is a next available FTQ entry
+     *
+     * @return true if next FTQ entry is available
+     */
+    bool hasNext() const;
+
+    /**
+     * @brief Peek at the next FTQ entry without consuming it
+     *
+     * @return Reference to the next FTQ entry
+     */
+    const FtqEntry& peekNext() const;
+
+    /**
+     * @brief Advance to the next FTQ entry without dequeuing current one
+     *
+     * Used for 2fetch when we want to process the next entry
+     * while keeping the current one active
+     */
+    void advance();
+
     /**
      * @brief Try to supply fetch with a target matching the demand PC
      *
