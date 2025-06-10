@@ -125,7 +125,7 @@ jobs:
           make -j 48
           cd $GEM5_HOME
       - name: Build GEM5 opt
-        run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
+        run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64 --rvv-impl=simple
       - name: XS-GEM5 - Test xiangshan.py simulation scripts
         run: |
           export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-so"
