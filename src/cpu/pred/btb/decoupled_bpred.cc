@@ -566,22 +566,71 @@ DecoupledBPUWithBTB::BpTrace::BpTrace(uint64_t fsqId, FetchStream &stream, const
 void
 DecoupledBPUWithBTB::tick()
 {
-    // 2. Handle pending prediction if available
-    if (!receivedPred && numOverrideBubbles == 0 && sentPCHist) {
-        DPRINTF(Override, "Generating final prediction for PC %#lx\n", s0PC);
-        generateFinalPredAndCreateBubbles();
+    // Monitor FSQ size for statistics
+    dbpBtbStats.fsqEntryDist.sample(fetchStreamQueue.size(), 1);
+    if (streamQueueFull()) {
+        dbpBtbStats.fsqFullCannotEnq++;
     }
 
-    // 3. Process enqueue operations and bubble counter
-    processEnqueueAndBubbles();
+    // Determine number of predictions to make (1 for normal, 2 for 2taken)
+    int predsRemainsToBeMade = enable2Taken ? 2 : 1;
+    int tempNumOverrideBubbles = 0;
 
-    // 4. Request new prediction if needed
-    requestNewPrediction();
+    // Handle existing override bubbles
+    if (numOverrideBubbles > 0) {
+        numOverrideBubbles--;
+        dbpBtbStats.overrideBubbleNum++;
+    }
+
+    // Main prediction loop - mimics FTB ideal_tick implementation
+    while (predsRemainsToBeMade > 0) {
+        // Process enqueue operations for current prediction
+        processEnqueueAndBubbles();
+
+        // Request new prediction if needed
+        requestNewPrediction();
+
+        // Generate final prediction if ready
+        if (!receivedPred && numOverrideBubbles == 0 && sentPCHist) {
+            // For 2taken: check if first prediction is suitable
+            if (enable2Taken && predsRemainsToBeMade == 2) {
+                // First prediction - check if it comes from UBTB (bubble=0)
+                generateFinalPredAndCreateBubbles();
+                int currentBubbles = numOverrideBubbles;
+                if (finalPred.predSource != 0) {
+                    // First prediction not from UBTB, disable 2taken for this cycle
+                    DPRINTF(Override, "First prediction not from UBTB (source=%d), disabling 2taken\n",
+                            finalPred.predSource);
+                    predsRemainsToBeMade = 1;
+                    // Keep the bubbles from this prediction
+                } else {
+                    // First prediction from UBTB, can proceed with 2taken
+                    DPRINTF(Override, "First prediction from UBTB, enabling 2taken\n");
+                    tempNumOverrideBubbles = std::max((unsigned)tempNumOverrideBubbles, numOverrideBubbles);
+                    // Reset bubbles for second prediction
+                    numOverrideBubbles = 0;
+                }
+            } else {
+                // Normal prediction or second prediction in 2taken
+                generateFinalPredAndCreateBubbles();
+                tempNumOverrideBubbles = std::max((unsigned)tempNumOverrideBubbles, numOverrideBubbles);
+            }
+
+            // Create fetch stream entry
+            // makeNewPrediction(true);
+            generateAndSetNewFetchStream();
+
+            // Set final override bubbles only for the last prediction
+            if (predsRemainsToBeMade == 1) {
+                numOverrideBubbles = tempNumOverrideBubbles;
+            }
+        }
+
+        predsRemainsToBeMade--;
+        squashing = false;
+    }
 
     DPRINTF(Override, "Prediction cycle complete\n");
-
-    // 5. Clear squashing state for next cycle
-    squashing = false;
 }
 
 /**
@@ -667,7 +716,7 @@ void DecoupledBPUWithBTB::overrideStats(OverrideReason overrideReason)
 
 // this function collects predictions from all stages and generate bubbles
 // when loop buffer is active, predictions are from saved stream
-void
+int
 DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
 {
     DPRINTF(Override, "In generateFinalPredAndCreateBubbles().\n");
@@ -733,6 +782,7 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
 
     DPRINTF(Override, "Prediction complete: override bubbles=%d, receivedPred=true\n", 
             numOverrideBubbles);
+    return numOverrideBubbles;
 }
 
 bool
@@ -1614,7 +1664,8 @@ DecoupledBPUWithBTB::tryEnqFetchStream()
     }
 
     // Create new FSQ entry with current prediction
-    makeNewPrediction(true);
+    // makeNewPrediction(true);
+    enqueueFetchStream();
 
     // Reset prediction state for next cycle
     for (int i = 0; i < numStages; i++) {
@@ -1863,45 +1914,55 @@ DecoupledBPUWithBTB::fillAheadPipeline(FetchStream &entry)
     }
 }
 
-// this function enqueues fsq and update s0PC and s0History
+// Generate new fetch stream without enqueuing (for 2taken support)
+void
+DecoupledBPUWithBTB::generateAndSetNewFetchStream()
+{
+    DPRINTF(DecoupleBP, "Generating new fetch stream for PC %#lx\n", s0PC);
+
+    // 1. Create a new fetch stream entry with prediction information
+    streamToEnqueue = createFetchStreamEntry();
+
+    // 2. Update global PC state to target or fall-through
+    s0PC = finalPred.getTarget(predictWidth);
+
+    // 3. Update history information
+    updateHistoryForPrediction(streamToEnqueue);
+
+    // 4. Fill ahead pipeline
+    fillAheadPipeline(streamToEnqueue);
+}
+
+// Enqueue the generated fetch stream
+void
+DecoupledBPUWithBTB::enqueueFetchStream()
+{
+    // Add entry to fetch stream queue
+    auto [insertIt, inserted] = fetchStreamQueue.emplace(fsqId, streamToEnqueue);
+    assert(inserted);
+
+    // Record prediction to database if enabled
+    if (enablePredFSQTrace) {
+        predTraceManager->write_record(PredictionTrace(fsqId, streamToEnqueue));
+    }
+
+    // Debug output and update statistics
+    dumpFsq("after insert new stream");
+    DPRINTF(DecoupleBP, "Inserted fetch stream %lu starting at PC %#lx\n",
+            fsqId, streamToEnqueue.startPC);
+
+    // Update FSQ ID and increment statistics
+    fsqId++;
+    printStream(streamToEnqueue);
+    dbpBtbStats.fsqEntryEnqueued++;
+}
+
+// Legacy function for backward compatibility - combines generate and enqueue
 void
 DecoupledBPUWithBTB::makeNewPrediction(bool create_new_stream)
 {
-    DPRINTF(DecoupleBP, "Creating new prediction for PC %#lx\n", s0PC);
-
-    // 1. Create a new fetch stream entry with prediction information
-    FetchStream entry = createFetchStreamEntry();
-
-    // 2. Update global PC state to target or fall-through
-    s0PC = finalPred.getTarget(predictWidth);;
-
-    // 3. Update history information
-    updateHistoryForPrediction(entry);
-
-    // 4. Fill ahead pipeline
-    fillAheadPipeline(entry);
-
-    // 5. Add entry to fetch stream queue
-    auto [insertIt, inserted] = fetchStreamQueue.emplace(fsqId, entry);
-    assert(inserted);
-    //printf("curr tick: %lu\n", entry.predTick);
-    //printf("curr fsqId: %lu\n", fsqId);
-
-    // 6. Record prediction to database if enabled
-    if (enablePredFSQTrace) {
-        predTraceManager->write_record(PredictionTrace(fsqId, entry));
-    }
-
-    // 7. Debug output and update statistics
-    dumpFsq("after insert new stream");
-    DPRINTF(DecoupleBP, "Inserted fetch stream %lu starting at PC %#lx\n", 
-            fsqId, entry.startPC);
-    
-    // 8. Update FSQ ID and increment statistics
-    fsqId++;
-    printStream(entry);
-    dbpBtbStats.fsqEntryEnqueued++;
-
+    generateAndSetNewFetchStream();
+    enqueueFetchStream();
 }
 
 void

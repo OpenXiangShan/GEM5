@@ -91,6 +91,9 @@ class DecoupledBPUWithBTB : public BPredUnit
     unsigned fetchStreamQueueSize;
     FetchStreamId fsqId{1};
 
+    // For 2taken support: temporary storage for stream before enqueue
+    FetchStream streamToEnqueue;
+
     CPU *cpu;
 
     unsigned predictWidth;  // max predict width, default 64
@@ -177,6 +180,11 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void makeNewPrediction(bool create_new_stream);
 
+    // 2taken support: split generation and enqueue
+    void generateAndSetNewFetchStream();
+
+    void enqueueFetchStream();
+
     FtqEntry createFtqEntryFromStream(const FetchStream &stream, const FetchTargetEnqState &ftq_enq_state);
 
     FetchStream createFetchStreamEntry();
@@ -250,7 +258,7 @@ class DecoupledBPUWithBTB : public BPredUnit
      * - Generates necessary bubbles
      * - Updates prediction state
      */
-    void generateFinalPredAndCreateBubbles();
+    int generateFinalPredAndCreateBubbles();
 
     void clearPreds() {
         for (auto &stagePred : predsOfEachStage) {
