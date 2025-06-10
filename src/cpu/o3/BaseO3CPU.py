@@ -168,8 +168,10 @@ class BaseO3CPU(BaseCPU):
     forwardComSize = Param.Unsigned(10,
             "Time buffer size for forward communication")
 
-    LQEntries = Param.Unsigned(80, "Number of load queue entries")
-    SQEntries = Param.Unsigned(64, "Number of store queue entries")
+    #LQEntries = Param.Unsigned(80, "Number of load queue entries")
+    LQEntries = Param.Unsigned(128, "Number of load queue entries")
+    #SQEntries = Param.Unsigned(64, "Number of store queue entries")
+    SQEntries = Param.Unsigned(96, "Number of store queue entries")
 
     SbufferEntries = Param.Unsigned(16, "Number of store buffer entries")
     SbufferEvictThreshold = Param.Unsigned(7, "store buffer eviction threshold")
@@ -187,7 +189,8 @@ class BaseO3CPU(BaseCPU):
     store_set_clear_thres = Param.Unsigned(1048576,"")
     LFSTEntrySize = Param.Unsigned(4,"The number of store table inst in every entry of LFST can contain")
     SSITSize = Param.Unsigned(8192, "Store set ID table size")
-    BankConflictCheck = Param.Bool(True, "open Bank conflict check")
+    #BankConflictCheck = Param.Bool(True, "open Bank conflict check")
+    BankConflictCheck = Param.Bool(False, "open Bank conflict check")
 
 
     numRobs = Param.Unsigned(1, "Number of Reorder Buffers");

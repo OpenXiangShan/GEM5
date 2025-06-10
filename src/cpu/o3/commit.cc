@@ -763,9 +763,33 @@ Commit::tick()
     markCompletedInsts();
 
     threads = activeThreads->begin();
-
+/*void
+Commit::dumpTicks(const DynInstPtr &inst)
+{
+    assert(archDBer);
+    archDBer->memTraceWrite(curTick(), inst->isLoad(), inst->pcState().instAddr(), inst->effAddr, inst->physEffAddr,
+                            inst->firstIssue,
+                            inst->translatedTick, inst->completionTick, curTick(), 0, inst->pf_source);
+}*/
     while (threads != end) {
         ThreadID tid = *threads++;
+
+        if (!rob->isEmpty()){
+            if (rob->readHeadInst(tid)->readyToCommit()){
+                tip_state = tip_computing;
+            }
+            else if (rob->readHeadInst(tid)->mispredicted()){
+                tip_state = tip_walk;
+            }
+            else{
+                tip_state = tip_stalled;
+            }
+        }
+        else{
+            tip_state = tip_drained;
+        }
+
+
 
         if (!rob->isEmpty(tid) && rob->readHeadInst(tid)->readyToCommit()) {
             // The ROB has more instructions it can commit. Its next status

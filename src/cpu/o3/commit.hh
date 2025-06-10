@@ -110,6 +110,14 @@ class Commit
         Inactive
     };
 
+    enum Tip
+    {
+        tip_computing = 0,
+        tip_stalled = 1,
+        tip_walk = 2,
+        tip_drained = 3,
+    };
+
     /** Individual thread status. */
     enum ThreadStatus
     {
@@ -381,6 +389,7 @@ class Commit
      * the CPU to determine if it can deschedule itself if there is no activity.
      */
     bool wroteToTimeBuffer;
+    int tip_state;
 
     /** Records if the number of ROB entries has changed this cycle. If it has,
      * then the number of free entries must be re-broadcast.
