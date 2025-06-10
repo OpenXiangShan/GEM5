@@ -466,9 +466,6 @@ class Fetch
     /** Profile the reasons of fetch stall. */
     void profileStall(ThreadID tid);
 
-
-    bool ftqEmpty() { return isDecoupledFrontend() && usedUpFetchTargets; }
-
     /** Set the reasons of all fetch stalls. */
     void setAllFetchStalls(StallReason stall);
 

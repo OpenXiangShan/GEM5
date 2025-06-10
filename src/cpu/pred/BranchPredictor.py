@@ -1156,3 +1156,5 @@ class DecoupledBPUWithBTB(BranchPredictor):
     enableJumpAheadPredictor = Param.Bool(False, "Use jump ahead predictor to skip no-need-to-predict blocks")
 
     enable2Taken = Param.Bool(False, "Enable 2taken feature")
+    enable2Fetch = Param.Bool(False, "Enable 2fetch feature")
+    maxFetchBytesPerCycle = Param.Unsigned(64, "Maximum fetch bytes per cycle for 2fetch")
