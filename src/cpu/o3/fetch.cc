@@ -689,7 +689,7 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     // Do branch prediction check here.
     // A bit of a misnomer...next_PC is actually the current PC until
     // this function updates it.
-    bool predict_taken;
+    bool predict_taken = false;
 
     //  BP  =>  FSQ  =>  FTB  => Fetch
     ThreadID tid = inst->threadNumber;
@@ -720,17 +720,11 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     }
 
     // For decoupled frontend, the instruction type is predicted with BTB
-    if ((isDecoupledFrontend() && !predict_taken) ||
-        (!isDecoupledFrontend() && !inst->isControl())) {
+    if (isDecoupledFrontend() && !predict_taken) {
         inst->staticInst->advancePC(next_pc);
         inst->setPredTarg(next_pc);
         inst->setPredTaken(false);
         return false;
-    }
-
-    if (!isDecoupledFrontend()) {
-        predict_taken = branchPred->predict(inst->staticInst, inst->seqNum,
-                                            next_pc, tid);
     }
 
     if (predict_taken) {
@@ -1831,7 +1825,7 @@ Fetch::prepareFetchAddress(ThreadID tid, bool &status_change, Addr &fetch_addr)
             DPRINTF(Fetch, "[tid:%i] Fetch is stalled!\n", tid);
             return false;
         }
-        if (ftqEmpty()) {
+        if (usedUpFetchTargets) {
             DPRINTF(Fetch, "[tid:%i] Fetch is stalled due to ftq empty\n", tid);
         }
         return true;
@@ -1972,9 +1966,8 @@ Fetch::handleBranchAndNextPC(DynInstPtr instruction, PCStateBase &this_pc,
     // Save current PC to next_pc first
     set(next_pc, this_pc);
 
-    // Handle branch prediction for non-decoupled frontend
     if (!isDecoupledFrontend()) {
-        predictedBranch |= this_pc.branching();
+        fatal("only decoupled frontend is supported\n");
     }
 
     // Perform branch prediction and get next PC
@@ -2009,7 +2002,7 @@ Fetch::performInstructionFetch(ThreadID tid, Addr fetch_addr, bool &status_chang
     // Main instruction fetch loop - process until fetch width or other limits reached
     StallReason stall = StallReason::NoStall;
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize &&
-           !predictedBranch && !ftqEmpty() && !waitForVsetvl) {
+           !usedUpFetchTargets && !waitForVsetvl) {
 
         // Check memory needs and supply bytes to decoder if required
         stall = checkMemoryNeeds(tid, this_pc, curMacroop);

@@ -1,5 +1,6 @@
 #include "cpu/pred/btb/decoupled_bpred.hh"
 
+#include <algorithm>
 #include "base/output.hh"
 #include "base/debug_helper.hh"
 #include "cpu/o3/cpu.hh"
@@ -25,6 +26,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       enableLoopBuffer(p.enableLoopBuffer),
       enableLoopPredictor(p.enableLoopPredictor),
       enableJumpAheadPredictor(p.enableJumpAheadPredictor),
+      enable2Taken(p.enable2Taken),
       fetchTargetQueue(p.ftq_size),
       fetchStreamQueueSize(p.fsq_size),
       predictWidth(p.predictWidth),
@@ -41,7 +43,9 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       bpDBSwitches(p.bpDBSwitches),
       numStages(p.numStages),
       historyManager(16), // TODO: fix this
-      dbpBtbStats(this, p.numStages, p.fsq_size, maxInstsNum)
+      dbpBtbStats(this, p.numStages, p.fsq_size, maxInstsNum),
+      enable2Fetch(p.enable2Fetch),
+      maxFetchBytesPerCycle(p.maxFetchBytesPerCycle)
 {
     if (bpDBSwitches.size() > 0) {
         initDB();
@@ -528,7 +532,14 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(statistics::Group* parent, unsigne
     ADD_STAT(btbEntriesWithDifferentStart, statistics::units::Count::get(), "number of btb entries with different start PC"),
     ADD_STAT(btbEntriesWithOnlyOneJump, statistics::units::Count::get(), "number of btb entries with different start PC starting with a jump"),
     ADD_STAT(predFalseHit, statistics::units::Count::get(), "false hit detected at pred"),
-    ADD_STAT(commitFalseHit, statistics::units::Count::get(), "false hit detected at commit")
+    ADD_STAT(commitFalseHit, statistics::units::Count::get(), "false hit detected at commit"),
+    // NEW: 2Fetch statistics
+    ADD_STAT(fetch2Attempts, statistics::units::Count::get(), "Number of 2fetch attempts"),
+    ADD_STAT(fetch2Successes, statistics::units::Count::get(), "Number of successful 2fetch cycles"),
+    ADD_STAT(fetch2SpanTooLarge, statistics::units::Count::get(), "Rejected due to span > maxFetchBytes"),
+    ADD_STAT(fetch2NoNextFTQ, statistics::units::Count::get(), "Rejected due to no next FTQ entry"),
+    ADD_STAT(fetch2FirstNotTaken, statistics::units::Count::get(), "Rejected due to current FTQ is not taken"),
+    ADD_STAT(fetch2FirstNotAtStart, statistics::units::Count::get(), "Rejected due to current PC is not at next FTQ start")
 {
     predsOfEachStage.init(numStages);
     commitPredsFromEachStage.init(numStages+1);
@@ -824,7 +835,20 @@ DecoupledBPUWithBTB::decoupledPredict(const StaticInstPtr &inst,
     // Increment instruction counter for current FTQ entry
     currentFtqEntryInstNum++;
     if (run_out_of_this_entry) {
+        // Check if 2fetch is enabled, not fetched first FTQ yet, and if we can extend to the next FTQ
+        // NEW: 2Fetch extension check - before processing completion
+        dbpBtbStats.fetch2Attempts++;
+        if (enable2Fetch && !has1Fetched && canExtendToNextFTQ(pc, target_to_fetch)) {
+            DPRINTF(DecoupleBP, "2Fetch: extending to next FTQ in same cycle\n");
+            has1Fetched = true;
+            processFetchTargetCompletion(target_to_fetch);
+            extendToNextFTQ(pc, seqNum, tid, currentLoopIter);
+            // first fetchBlock is always taken, do not run out of FTQ now
+            return std::make_pair(true, false);
+        }
+        
         processFetchTargetCompletion(target_to_fetch);
+        has1Fetched = false;    // reset 2fetch flag
     }
 
     DPRINTF(DecoupleBP, "Predict it %staken to %#lx\n", taken ? "" : "not ",
@@ -2064,6 +2088,93 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
 #endif
 }
 
+// NEW: 2Fetch support methods implementation
+
+/**
+ * @brief Check if we can extend to next FTQ entry for 2fetch
+ *
+ * @param current_pc Current program counter
+ * @param current_ftq Current FTQ entry that is being completed
+ * @return true if 2fetch extension is possible
+ */
+bool
+DecoupledBPUWithBTB::canExtendToNextFTQ(const PCStateBase &current_pc, const FtqEntry &current_ftq)
+{
+    // Early exit if 2fetch is disabled
+    if (!enable2Fetch) {
+        return false;
+    }
+
+    if (!current_ftq.taken) {
+        DPRINTF(DecoupleBP, "2Fetch rejected: current FTQ is not taken\n");
+        dbpBtbStats.fetch2FirstNotTaken++;
+        return false;
+    }
+
+    // Check if next FTQ entry is available
+    if (!fetchTargetQueue.hasNext()) {
+        DPRINTF(DecoupleBP, "2Fetch rejected: no next FTQ entry available\n");
+        dbpBtbStats.fetch2NoNextFTQ++;
+        return false;
+    }
+    
+    // Get next FTQ entry (without consuming it)
+    const auto &next_ftq = fetchTargetQueue.peekNext();
+    // current_ftq is passed as parameter
+    
+    // Check if current PC is the jump target of the next FTQ start
+    if (current_pc.instAddr() != next_ftq.startPC) {
+        DPRINTF(DecoupleBP, "2Fetch rejected: PC %#x not at next FTQ start %#x\n",
+                current_pc.instAddr(), next_ftq.startPC);
+        dbpBtbStats.fetch2FirstNotAtStart++;
+        return false;
+    }
+    
+    // Check if both FTQs fit in maxFetchBytesPerCycle window
+    Addr span = next_ftq.endPC - current_ftq.startPC;
+    if (span > maxFetchBytesPerCycle) {
+        DPRINTF(DecoupleBP, "2Fetch rejected: span %d exceeds %d bytes\n",
+                span, maxFetchBytesPerCycle);
+        dbpBtbStats.fetch2SpanTooLarge++;
+        return false;
+    }
+    
+    DPRINTF(DecoupleBP, "2Fetch enabled: extending to next FTQ [%#x, %#x), total span: %d bytes\n",
+            next_ftq.startPC, next_ftq.endPC, span);
+    return true;
+}
+
+/**
+ * @brief Extend to process next FTQ entry for 2fetch
+ *
+ * @param pc Program counter reference to update
+ * @param seqNum Sequence number
+ * @param tid Thread ID
+ * @param currentLoopIter Current loop iteration
+ */
+void
+DecoupledBPUWithBTB::extendToNextFTQ(
+    PCStateBase &pc, const InstSeqNum &seqNum, ThreadID tid, unsigned &currentLoopIter)
+{    
+    // Move to next FTQ entry
+    fetchTargetQueue.advance();
+    currentFtqEntryInstNum = 0;  // Reset instruction counter for new FTQ
+    
+    // Get the new FTQ entry
+    const auto &target_to_fetch = fetchTargetQueue.getTarget();
+    
+    DPRINTF(DecoupleBP, "Processing extended FTQ entry: [%#x, %#x)\n",
+            target_to_fetch.startPC, target_to_fetch.endPC);
+    
+    // Set PC to start of new FTQ
+    auto &rpc = pc.as<GenericISA::PCStateWithNext>();
+    rpc.pc(target_to_fetch.startPC);
+    rpc.npc(target_to_fetch.startPC + 4);
+    rpc.uReset();
+    
+    // Record successful 2fetch
+    dbpBtbStats.fetch2Successes++;
+}
 
 }  // namespace btb_pred
 
