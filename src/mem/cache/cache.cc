@@ -900,6 +900,13 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
                 DPRINTF(Cache, "%s: updated cmd to %s\n", __func__,
                         tgt_pkt->print());
             }
+            // TODO: This is a temporary solution to address cache misses with
+            // latency less than 1 caused by prefetching.
+            if (!tgt_pkt->cacheSatisfied && tgt_pkt->isRead() &&
+                ticksToCycles(completion_time - tgt_pkt->sendTick) <= 1 &&
+                target.source == MSHR::Target::FromCPU) {
+                tgt_pkt->cacheSatisfied = true;
+            }
             // Reset the bus additional time as it is now accounted for
             tgt_pkt->headerDelay = tgt_pkt->payloadDelay = 0;
             DPRINTF(Cache, "Scheduling %#lx to response to sender %#lx at tick %lu\n",

@@ -376,7 +376,7 @@ class Packet : public Printable
 
     /// The command field of the packet.
     MemCmd cmd;
-
+    Tick sendTick = 0;
     const PacketId id;
 
     /// A pointer to the original request.
