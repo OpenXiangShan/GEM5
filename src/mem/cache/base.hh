@@ -68,6 +68,7 @@
 #include "mem/cache/prefetch/associative_set.hh"
 #include "mem/cache/prefetch/base.hh"
 #include "mem/cache/tags/base.hh"
+#include "mem/cache/way_prediction_policies/base_wpu.hh"
 #include "mem/cache/write_queue.hh"
 #include "mem/cache/write_queue_entry.hh"
 #include "mem/packet.hh"
@@ -95,6 +96,11 @@ class MSHR;
 class RequestPort;
 class QueueEntry;
 struct BaseCacheParams;
+
+namespace way_prediction_policy
+{
+    class BaseWpu;
+}
 
 /**
  * A basic cache interface. Implements some common functions for speed.
@@ -599,32 +605,10 @@ class BaseCache : public ClockedObject, CacheAccessor
 
     void calReqInterval(PacketPtr pkt);
 
-    /**way prediction **/
-    const int SETROFFSET = 6;
-    const int SETMASK = 0x7f;
-
-    const int TAGOFFSET = 3;
-    const int TAGMASK = 0x7;
-
-    int getPreWay(PacketPtr pkt);
-
-    void writePreWay(PacketPtr pkt, int way);
-
-    int indexWayPre(Addr addr,int hit_way);
-
-    class waypreEntry : public TaggedEntry
-    {
-      public:
-        Addr index;
-        Addr way;
-        waypreEntry() : TaggedEntry(), index(0), way(0) {}
-        void _setSecure(bool is_secure)
-        {
-            if (is_secure)
-                TaggedEntry::setSecure();
-        }
-    };
-    AssociativeSet<waypreEntry> indexWayPreTable;
+    /**
+     * way prediction now is moved to
+     * src/mem/cache/way_prediction_policies/ directory.
+     */
 
     /**
      * Handling the special case of uncacheable write responses to
@@ -987,7 +971,7 @@ class BaseCache : public ClockedObject, CacheAccessor
     const unsigned blkSize;
     const int size ;
     const int assoc;
-    const bool enableWayPrediction;
+    way_prediction_policy::BaseWpu *wpu;
     const int DEFAULTWAYPRESIZE = 65536;
     uint64_t Judgmentcycle;
     std::vector<int64_t> sliceAddr;
@@ -1277,6 +1261,9 @@ class BaseCache : public ClockedObject, CacheAccessor
 
         /*number of waypre times*/
         statistics::Scalar wayPreTimes;
+
+        statistics::Scalar totalWayPreAccesses;
+        statistics::Scalar totalWayPreSuccesses;
 
         /** Number of replacements of dead blocks */
         statistics::Scalar deadBlockReplacements;

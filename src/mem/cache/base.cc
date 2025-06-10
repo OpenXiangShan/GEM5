@@ -140,8 +140,6 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       compressor(p.compressor),
       prefetcher(p.prefetcher),
       writeAllocator(p.write_allocator),
-      indexWayPreTable(p.way_entries,p.way_entries,p.way_indexing_policy,
-          p.way_replacement_policy,waypreEntry()),
       writebackClean(p.writeback_clean),
       tempBlockWriteback(nullptr),
       writebackTempBlockAtomicEvent([this]{ writebackTempBlockAtomic(); },
@@ -150,7 +148,7 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       blkSize(blk_size),
       size(p.size),
       assoc(p.assoc),
-      enableWayPrediction(p.enable_wayprediction),
+      wpu(p.wpu),
       Judgmentcycle(0),
       sliceAddr(8),
       cacheblkAddr(8),
@@ -194,7 +192,6 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
         for (int j = 0; j < assoc; j++)
             wayPreTable[i].push_back(DEFAULTWAYPRE);
     }
-    assert(!((size != DEFAULTWAYPRESIZE) && enableWayPrediction));
 
     if (prefetcher)
         prefetcher->setParentInfo(system, getProbeManager(), this, getBlockSize());
@@ -644,6 +641,33 @@ BaseCache::recvTimingReq(PacketPtr pkt)
     // Here we reset the timing of the packet.
     pkt->headerDelay = pkt->payloadDelay = 0;
 
+    if (pkt->isRead() && wpu) {
+        uint8_t predicted_way = wpu->getPredictedWay(pkt);
+        uint8_t actual_way = blk ? blk->getWay() : std::numeric_limits<uint8_t>::max();
+        wpu->tryUpdateWpu(pkt, predicted_way, actual_way, satisfied);
+
+        // statistics and archdb
+        stats.totalWayPreAccesses++;
+        if (actual_way == predicted_way) {
+            stats.totalWayPreSuccesses++;
+        }
+        if (satisfied && blk) {
+            // cache hit
+            stats.wayPreTimes++;
+            if (actual_way == predicted_way) {
+                stats.wayPreHitTimes++;
+            }
+            if (archDBer && pkt->req->hasPC() && cacheLevel == 1) {
+                Addr pc = pkt->req->getPC();
+                Addr vaddr = pkt->req->hasVaddr() ? pkt->req->getVaddr() : 0;
+                uint64_t curCycle = ticksToCycles(curTick());
+                DPRINTF(ArchDB, "ArchDB: insert dcacheWayPre [%x %x %d %x]\n",
+                        pc, vaddr, blk->getWay(), curCycle);
+                archDBer->dcacheWayPreTrace(curCycle, pc, vaddr, blk->getWay(), 0);
+            }
+        }
+    }
+
     if (satisfied) {
         // notify before anything else as later handleTimingReqHit might turn
         // the packet in a response
@@ -667,35 +691,6 @@ BaseCache::recvTimingReq(PacketPtr pkt)
 
         if (blk && blk->needInvalidate()) {
             invalidateBlock(blk);
-        }
-
-        bool way_pre0_success = false;
-        bool way_pre1_success = false;
-        if ((cacheLevel == 1) && (pkt->isRead()) && enableWayPrediction) {
-            int hit_way = blk->getWay();
-            int pre_way = getPreWay(pkt);
-            if ((pre_way == blk->getWay()) && (pre_way != 10)) {
-                stats.wayPreHitTimes++;
-                stats.wayPreTimes++;
-                way_pre0_success = true;
-            } else {
-                stats.wayPreTimes++;
-                writePreWay(pkt, blk->getWay());
-            }
-            int index_pre_way = indexWayPre(pkt->getAddr(), blk->getWay());
-            if ((index_pre_way == blk->getWay()) && (index_pre_way != 10)) {
-                way_pre1_success = true;
-                stats.wayPreIndexHitTimes++;
-            }
-            if (way_pre0_success || way_pre1_success)
-                stats.wayPreDoubleHitTimes++;
-        }
-        if (archDBer && pkt->req->hasPC() && (pkt->isRead() && (cacheLevel == 1)) && enableWayPrediction) {
-            Addr pc = pkt->req->getPC();
-            Addr vaddr = pkt->req->hasVaddr() ? pkt->req->getVaddr() : 0;
-            uint64_t curCycle = ticksToCycles(curTick());
-            DPRINTF(ArchDB, "ArchDB: insert dcacheWayPre [%x %x %d %x]\n", pc, vaddr, blk->getWay(), curCycle);
-            archDBer->dcacheWayPreTrace(curCycle, pc, vaddr, blk->getWay(), 0);
         }
 
         handleTimingReqHit(pkt, blk, request_time, first_acc_after_pf);
@@ -779,44 +774,6 @@ BaseCache::recvTimingReq(PacketPtr pkt)
             schedMemSideSendEvent(next_pf_time);
         }
     }
-}
-int
-BaseCache::getPreWay(PacketPtr pkt){
-    //int setIdx = (pkt->getAddr() >>6) & 0x7f;
-    int setIdx = (pkt->getAddr() >> SETROFFSET) & SETMASK;
-    int tagIdx = (pkt->getAddr() >> TAGOFFSET) & TAGMASK;
-    return wayPreTable[setIdx][tagIdx];
-
-}
-void
-BaseCache::writePreWay(PacketPtr pkt ,int way){
-    //int setIdx = (pkt->getAddr() >>6) & 0x7f;
-    int setIdx = (pkt->getAddr() >> SETROFFSET) & SETMASK;
-    //int tagIdx = (pkt->getAddr() >>3) & 0x7;
-    int tagIdx = (pkt->getAddr() >> TAGOFFSET) & TAGMASK;
-    wayPreTable[setIdx][tagIdx] = way;
-}
-
-int
-BaseCache::indexWayPre(Addr addr, int hit_way)
-{
-    int index = (addr >> SETROFFSET) & SETMASK;
-    waypreEntry *entry = indexWayPreTable.findEntry(index, true);
-    int pref_way = DEFAULTWAYPRE;
-    if (entry) {
-        indexWayPreTable.accessEntry(entry);
-        pref_way = entry->way;
-        if (pref_way != hit_way)
-            entry->way = hit_way;
-        return pref_way;
-    } else {
-        entry = indexWayPreTable.findVictim(0);
-        entry->_setSecure(true);
-        entry->index = index;
-        entry->way = hit_way;
-        indexWayPreTable.insertEntry(index, false, entry);
-    }
-    return DEFAULTWAYPRE;
 }
 
 void
@@ -2052,6 +2009,9 @@ BaseCache::handleFill(PacketPtr pkt, CacheBlk *blk, PacketList &writebacks,
             tempBlock->insert(addr, is_secure);
             DPRINTF(Cache, "using temp block for %#llx (%s)\n", addr,
                     is_secure ? "s" : "ns");
+        } else if (wpu) {
+            // update wpu when refill a block
+            wpu->update(pkt, blk->getWay());
         }
     } else {
         // existing block... probably an upgrade
@@ -2845,6 +2805,10 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "number of wayPreDoubleHitTimes"),
     ADD_STAT(wayPreTimes, statistics::units::Count::get(),
              "number of wayPreTimes"),
+    ADD_STAT(totalWayPreAccesses, statistics::units::Count::get(),
+             "number of totalWayPreAccesses"),
+    ADD_STAT(totalWayPreSuccesses, statistics::units::Count::get(),
+             "number of totalWayPreSuccesses"),
     ADD_STAT(deadBlockReplacements, statistics::units::Count::get(),
              "number of dead block replacements"),
     ADD_STAT(liveBlockReplacements, statistics::units::Count::get(),

@@ -67,7 +67,6 @@ class L1_ICache(L1Cache):
     sequential_access = False
 
     response_latency = 0
-    enable_wayprediction = False
 
 class L1_DCache(L1Cache):
     mshrs = 16
@@ -83,14 +82,14 @@ class L1_DCache(L1Cache):
 
     replacement_policy = TreePLRURP(num_leaves = Parent.assoc)
 
+    wpu = MMRUWpu(use_virtual = True, n_tags = Parent.assoc)
+
     tags = VIPTSetAssoc()
     tags.indexing_policy = VIPTSetAssociative()
 
     force_hit = False
 
     demand_mshr_reserve = 6
-
-    enable_wayprediction = False
 
 class L2Cache(Cache):
     mshrs = 64
@@ -108,8 +107,9 @@ class L2Cache(Cache):
 
     replacement_policy = DRRIPRP(constituency_size = 64, team_size = 8)
 
+    wpu = UTagWpu(utag_bits = 8)
+
     cache_level = 2
-    enable_wayprediction = False
 
     slice_num = 4
 
@@ -127,7 +127,6 @@ class L3Cache(Cache):
     response_latency = 0
 
     cache_level = 3
-    enable_wayprediction = False
 
 class IOCache(Cache):
     assoc = 8
@@ -137,7 +136,6 @@ class IOCache(Cache):
     mshrs = 20
     size = '1kB'
     tgts_per_mshr = 12
-    enable_wayprediction = False
 
 class PageTableWalkerCache(Cache):
     assoc = 2
@@ -148,7 +146,6 @@ class PageTableWalkerCache(Cache):
     size = '1kB'
     tgts_per_mshr = 12
     writeback_clean = True
-    enable_wayprediction = False
 
     # the x86 table walker actually writes to the table-walker cache
     if buildEnv['TARGET_ISA'] in ['x86', 'riscv']:

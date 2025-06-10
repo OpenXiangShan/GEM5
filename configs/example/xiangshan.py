@@ -388,22 +388,18 @@ def setKmhV3IdealParams(args, system):
         if args.caches:
             cpu.icache.size = '64kB'
             cpu.dcache.size = '64kB'
-            cpu.icache.enable_wayprediction = False
-            cpu.dcache.enable_wayprediction = False
             cpu.dcache.tag_load_read_ports = 100 # 3->100
             cpu.dcache.mshrs = 16
 
     if args.l2cache:
         for i in range(args.num_cpus):
             system.l2_caches[i].size = '2MB'
-            system.l2_caches[i].enable_wayprediction = False
             system.l2_caches[i].slice_num = 0   # 4 -> 0, no slice
             system.tol2bus_list[i].forward_latency = 0  # 3->0
             system.tol2bus_list[i].response_latency = 0  # 3->0
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 0  # 2->0
 
     if args.l3cache:
-        system.l3.enable_wayprediction = False
         system.l3.mshrs = 128
 
 if __name__ == '__m5_main__':
