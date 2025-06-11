@@ -2868,77 +2868,148 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
               store_it->request()->mainReq()->isCacheMaintenance())) {
             assert(store_it->instruction()->effAddrValid());
 
-            // Check if the store data is within the lower and upper bounds of
-            // addresses that the request needs.
-            auto req_s = request->mainReq()->getPaddr();
-            auto req_e = req_s + request->mainReq()->getSize();
-            auto st_s = store_it->instruction()->physEffAddr;
-            auto st_e = st_s + store_size;
-
-            bool store_has_lower_limit = req_s >= st_s;
-            bool store_has_upper_limit = req_e <= st_e;
-            bool lower_load_has_store_part = req_s < st_e;
-            bool upper_load_has_store_part = req_e > st_s;
-
-            DPRINTF(LSQUnit, "req_s:%x,req_e:%x,st_s:%x,st_e:%x\n", req_s,
-                    req_e, st_s, st_e);
-            DPRINTF(LSQUnit, "store_size:%x,store_pc:%s,req_size:%x,req_pc:%s\n",
-                    store_size, store_it->instruction()->pcState(),
-                    request->mainReq()->getSize(),
-                    request->instruction()->pcState());
-
             auto coverage = AddrRangeCoverage::NoAddrRangeCoverage;
+            if (request->isSplit()){
+                    // If request is split, check if the store data is within the lower and upper bounds of
+                    // addresses that the request needs. Always return partial addr coverage when hit
+                for (int i = 0; i < request->_reqs.size(); i++){
+                    auto req_s = request->_reqs[i]->getPaddr();
+                    auto req_e = req_s + request->_reqs[i]->getSize();
+                    auto st_s = store_it->instruction()->physEffAddr;
+                    auto st_e = st_s + store_size;
 
-            // If the store entry is not atomic (atomic does not have valid
-            // data), the store has all of the data needed, and
-            // the load is not LLSC, then
-            // we can forward data from the store to the load
-            if ((!store_it->instruction()->isAtomic() &&
-                 store_has_lower_limit && store_has_upper_limit &&
-                 !request->mainReq()->isLLSC()) &&
-                (!((req_s > req_e) || (st_s > st_e)))) {
+                    bool store_has_lower_limit = req_s >= st_s;
+                    bool store_has_upper_limit = req_e <= st_e;
+                    bool lower_load_has_store_part = req_s < st_e;
+                    bool upper_load_has_store_part = req_e > st_s;
+                    DPRINTF(LSQUnit, "(split, %d) req_s:%x,req_e:%x,st_s:%x,st_e:%x\n", i, req_s,
+                            req_e, st_s, st_e);
+                    DPRINTF(LSQUnit, "(split, %d) store_size:%x,store_pc:%s,req_size:%x,req_pc:%s\n",
+                            i, store_size, store_it->instruction()->pcState(),
+                            request->mainReq()->getSize(),
+                            request->instruction()->pcState());
+                    // When request is split, still set partial add coverage when 
+                    // current store has all of the data needed
+                    if ((!store_it->instruction()->isAtomic() &&
+                        store_has_lower_limit && store_has_upper_limit &&
+                        !request->mainReq()->isLLSC()) &&
+                        (!((req_s > req_e) || (st_s > st_e)))) {
 
-                const auto &store_req = store_it->request()->mainReq();
-                if (store_it->instruction()->isSplitStoreAddr() && !store_it->canForwardToLoad()) {
-                    stats.forwardSTDNotReady++;
-                    // insert load inst into replayQ and wait for store data to be ready
-                    iewStage->stlfFailLdReplay(load_inst, store_it->instruction()->seqNum);
-                    loadReplayHelper(load_inst, request, false, false, true);
-                    return NoFault;
-                } else {
-                    coverage = store_req->isMasked()
-                                ? AddrRangeCoverage::PartialAddrRangeCoverage
-                                : AddrRangeCoverage::FullAddrRangeCoverage;
+                        const auto &store_req = store_it->request()->mainReq();
+                        if (store_it->instruction()->isSplitStoreAddr() && !store_it->canForwardToLoad()) {
+                            stats.forwardSTDNotReady++;
+                            // insert load inst into replayQ and wait for store data to be ready
+                            iewStage->stlfFailLdReplay(load_inst, store_it->instruction()->seqNum);
+                            loadReplayHelper(load_inst, request, false, false, true);
+                            return NoFault;
+                        } else {
+                            coverage = AddrRangeCoverage::PartialAddrRangeCoverage;
+                            break;
+                        }
+
+                    } else if ((!((req_s > req_e) || (st_s > st_e))) &&
+                            (
+                                // This is the partial store-load forwarding case
+                                // where a store has only part of the load's data
+                                // and the load isn't LLSC
+                                (!request->mainReq()->isLLSC() &&
+                                    ((store_has_lower_limit &&
+                                    lower_load_has_store_part) ||
+                                    (store_has_upper_limit &&
+                                    upper_load_has_store_part) ||
+                                    (lower_load_has_store_part &&
+                                    upper_load_has_store_part))) ||
+                                // The load is LLSC, and the store has all or part
+                                // of the load's data
+                                (request->mainReq()->isLLSC() &&
+                                    ((store_has_lower_limit ||
+                                    upper_load_has_store_part) &&
+                                    (store_has_upper_limit ||
+                                    lower_load_has_store_part))) ||
+                                // The store entry is atomic and has all or part of
+                                // the load's data
+                                (store_it->instruction()->isAtomic() &&
+                                    ((store_has_lower_limit ||
+                                    upper_load_has_store_part) &&
+                                    (store_has_upper_limit ||
+                                    lower_load_has_store_part))))) {
+
+                        coverage = AddrRangeCoverage::PartialAddrRangeCoverage;
+                        break;
+                    }
                 }
+            }else{
+                // Request is not split.
+                // Check if the store data is within the lower and upper bounds of
+                // addresses that the request needs.
+                auto req_s = request->mainReq()->getPaddr();
+                auto req_e = req_s + request->mainReq()->getSize();
+                auto st_s = store_it->instruction()->physEffAddr;
+                auto st_e = st_s + store_size;
 
-            } else if ((!((req_s > req_e) || (st_s > st_e))) &&
-                       (
-                           // This is the partial store-load forwarding case
-                           // where a store has only part of the load's data
-                           // and the load isn't LLSC
-                           (!request->mainReq()->isLLSC() &&
-                            ((store_has_lower_limit &&
-                              lower_load_has_store_part) ||
-                             (store_has_upper_limit &&
-                              upper_load_has_store_part) ||
-                             (lower_load_has_store_part &&
-                              upper_load_has_store_part))) ||
-                           // The load is LLSC, and the store has all or part
-                           // of the load's data
-                           (request->mainReq()->isLLSC() &&
-                            ((store_has_lower_limit ||
-                              upper_load_has_store_part) &&
-                             (store_has_upper_limit ||
-                              lower_load_has_store_part))) ||
-                           // The store entry is atomic and has all or part of
-                           // the load's data
-                           (store_it->instruction()->isAtomic() &&
-                            ((store_has_lower_limit ||
-                              upper_load_has_store_part) &&
-                             (store_has_upper_limit ||
-                              lower_load_has_store_part))))) {
+                bool store_has_lower_limit = req_s >= st_s;
+                bool store_has_upper_limit = req_e <= st_e;
+                bool lower_load_has_store_part = req_s < st_e;
+                bool upper_load_has_store_part = req_e > st_s;
 
-                coverage = AddrRangeCoverage::PartialAddrRangeCoverage;
+                DPRINTF(LSQUnit, "req_s:%x,req_e:%x,st_s:%x,st_e:%x\n", req_s,
+                        req_e, st_s, st_e);
+                DPRINTF(LSQUnit, "store_size:%x,store_pc:%s,req_size:%x,req_pc:%s\n",
+                        store_size, store_it->instruction()->pcState(),
+                        request->mainReq()->getSize(),
+                        request->instruction()->pcState());
+
+                // If the store entry is not atomic (atomic does not have valid
+                // data), the store has all of the data needed, and
+                // the load is not LLSC, then
+                // we can forward data from the store to the load
+                if ((!store_it->instruction()->isAtomic() &&
+                    store_has_lower_limit && store_has_upper_limit &&
+                    !request->mainReq()->isLLSC()) &&
+                    (!((req_s > req_e) || (st_s > st_e)))) {
+
+                    const auto &store_req = store_it->request()->mainReq();
+                    if (store_it->instruction()->isSplitStoreAddr() && !store_it->canForwardToLoad()) {
+                        stats.forwardSTDNotReady++;
+                        // insert load inst into replayQ and wait for store data to be ready
+                        iewStage->stlfFailLdReplay(load_inst, store_it->instruction()->seqNum);
+                        loadReplayHelper(load_inst, request, false, false, true);
+                        return NoFault;
+                    } else {
+                        coverage = store_req->isMasked()
+                                    ? AddrRangeCoverage::PartialAddrRangeCoverage
+                                    : AddrRangeCoverage::FullAddrRangeCoverage;
+                    }
+
+                } else if ((!((req_s > req_e) || (st_s > st_e))) &&
+                        (
+                            // This is the partial store-load forwarding case
+                            // where a store has only part of the load's data
+                            // and the load isn't LLSC
+                            (!request->mainReq()->isLLSC() &&
+                                ((store_has_lower_limit &&
+                                lower_load_has_store_part) ||
+                                (store_has_upper_limit &&
+                                upper_load_has_store_part) ||
+                                (lower_load_has_store_part &&
+                                upper_load_has_store_part))) ||
+                            // The load is LLSC, and the store has all or part
+                            // of the load's data
+                            (request->mainReq()->isLLSC() &&
+                                ((store_has_lower_limit ||
+                                upper_load_has_store_part) &&
+                                (store_has_upper_limit ||
+                                lower_load_has_store_part))) ||
+                            // The store entry is atomic and has all or part of
+                            // the load's data
+                            (store_it->instruction()->isAtomic() &&
+                                ((store_has_lower_limit ||
+                                upper_load_has_store_part) &&
+                                (store_has_upper_limit ||
+                                lower_load_has_store_part))))) {
+
+                    coverage = AddrRangeCoverage::PartialAddrRangeCoverage;
+                }
             }
 
             if (coverage == AddrRangeCoverage::FullAddrRangeCoverage) {
