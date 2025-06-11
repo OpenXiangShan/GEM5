@@ -82,7 +82,7 @@ class L1_DCache(L1Cache):
 
     replacement_policy = TreePLRURP(num_leaves = Parent.assoc)
 
-    wpu = MMRUWpu(use_virtual = True, n_tags = Parent.assoc)
+    wpu = MMRUWpu(use_virtual = True)
 
     tags = VIPTSetAssoc()
     tags.indexing_policy = VIPTSetAssociative()

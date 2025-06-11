@@ -11,6 +11,7 @@ class BaseWpu(SimObject):
     abstract = True
 
     use_virtual = Param.Bool(False, "Use virtual address for prediction and update")
+    miss_train = Param.Bool(False, "Train the WPU when the cache miss")
     max_addr_bits = Param.Int(48, "Maximum virtual & physical address bits")
     assoc = Param.Int(Parent.assoc, "Cache associativity")
     size = Param.MemorySize(Parent.size, "Cache capacity in bytes")
@@ -25,7 +26,7 @@ class MMRUWpu(BaseWpu):
     type = 'MMRUWpu'
     cxx_header = "mem/cache/way_prediction_policies/mmru_wpu.hh"
     cxx_class = "gem5::way_prediction_policy::MMRUWpu"
-    n_tags = Param.Int(Parent.n_tags, "Number of tags in each set of MMRU table")
+    n_tags = Param.Int(Parent.assoc, "Number of tags in each set of MMRU table")
 
 class UTagWpu(BaseWpu):
     type = 'UTagWpu'
@@ -52,3 +53,8 @@ class IndexMRUWpu(BaseWpu):
         LRURP(),
         "Replacement policy of active generation table"
     )
+
+class RandomWpu(BaseWpu):
+    type = 'RandomWpu'
+    cxx_header = "mem/cache/way_prediction_policies/random_wpu.hh"
+    cxx_class = "gem5::way_prediction_policy::RandomWpu"

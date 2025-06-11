@@ -15,7 +15,7 @@ namespace way_prediction_policy
 
 BaseWpu::BaseWpu(const BaseWpuParams &params)
     : SimObject(params), use_virtual(params.use_virtual),
-      assoc(params.assoc)
+      miss_train(params.miss_train), assoc(params.assoc)
 {
     // Calculate the shift and mask values based on the associativity
     uint64_t blk_offset = floorLog2(params.blk_size);

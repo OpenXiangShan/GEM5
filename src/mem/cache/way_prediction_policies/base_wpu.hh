@@ -25,6 +25,7 @@ class BaseWpu : public SimObject
 {
   protected:
     const bool use_virtual;
+    const bool miss_train;
     const uint64_t assoc;
     uint64_t set_shift;
     uint64_t set_mask;
@@ -71,6 +72,11 @@ class BaseWpu : public SimObject
     {
         if (hit && (predicted_way != actual_way)) {
             update(pkt, actual_way);
+        }
+        if (!hit && miss_train) {
+            // if using cache miss information to train the WPU,
+            // WPU will have the ability to predict cache miss
+            update(pkt, std::numeric_limits<uint8_t>::max());
         }
     }
 };
