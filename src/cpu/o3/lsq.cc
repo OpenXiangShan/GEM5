@@ -578,7 +578,9 @@ LSQ::recvTimingResp(PacketPtr pkt)
         }
     }
 
-    if (request->isNormalLd() && !request->mainPacket()->cacheSatisfied) {
+    if (request->isNormalLd() &&
+        !request->mainPacket()->cacheSatisfied &&
+        !request->mainPacket()->cacheSatisfiedByMSHR) {
         // if cache miss, the packet must be delete
         assert(request->isReleased());
         assert(request->_numOutstandingPackets == 1);
@@ -1529,7 +1531,8 @@ LSQ::SingleDataRequest::recvTimingResp(PacketPtr pkt)
     DPRINTF(LSQ, "Single Req::recvTimingResp: inst: %llu, pkt: %#lx, isLoad: %d, "
                 "isLLSC: %d, isUncache: %d, isCachehit: %d, data: %d\n",
                 pkt->req->getReqInstSeqNum(), pkt->getAddr(), isLoad(), mainReq()->isLLSC(),
-                mainReq()->isUncacheable(), pkt->cacheSatisfied, *(pkt->getPtr<uint64_t*>()));
+                mainReq()->isUncacheable(), pkt->cacheSatisfied || pkt->cacheSatisfiedByMSHR,
+                *(pkt->getPtr<uint64_t*>()));
 
     if (isLoad()) {
         auto it = std::find(lsqUnit()->inflightLoads.begin(), lsqUnit()->inflightLoads.end(), this);
@@ -1547,8 +1550,8 @@ LSQ::SingleDataRequest::recvTimingResp(PacketPtr pkt)
             discard();
         } else {
             // this load is either missed and waken up early or hit.
-            if (pkt->cacheSatisfied) {
-                DPRINTF(LSQ, "[sn:%ld] cache hit\n", _inst->seqNum);
+            if (pkt->cacheSatisfied || pkt->cacheSatisfiedByMSHR) {
+                DPRINTF(LSQ, "[sn:%ld] %s hit\n", _inst->seqNum, pkt->cacheSatisfied ? "cache" : "MSHR");
                 // cache hit
                 instruction()->setCacheHit();
             } else {

@@ -8,7 +8,7 @@
 
 ### **1. 单一数据请求的处理**
 + **函数**: `SingleDataRequest::recvTimingResp`
-    - 检查`cache`是否命中（`pkt->cacheSatisfied`）。
+    - 检查`cache`是否命中（`pkt->cacheSatisfied` 或 `pkt->cacheSatisfiedByMSHR`）。
     - 如果启用了`enableLdMissReplay`并且是`cache miss`：
         * 将`load`指令标记为等待数据回填（`waitingCacheRefill`）。
         * 调用`discard()`丢弃当前请求。

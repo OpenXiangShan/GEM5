@@ -905,7 +905,7 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
             if (!tgt_pkt->cacheSatisfied && tgt_pkt->isRead() &&
                 ticksToCycles(completion_time - tgt_pkt->sendTick) <= 1 &&
                 target.source == MSHR::Target::FromCPU) {
-                tgt_pkt->cacheSatisfied = true;
+                tgt_pkt->cacheSatisfiedByMSHR = true;
             }
             // Reset the bus additional time as it is now accounted for
             tgt_pkt->headerDelay = tgt_pkt->payloadDelay = 0;

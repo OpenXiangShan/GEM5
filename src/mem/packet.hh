@@ -376,7 +376,9 @@ class Packet : public Printable
 
     /// The command field of the packet.
     MemCmd cmd;
+    /// The tick when the packet is sent
     Tick sendTick = 0;
+
     const PacketId id;
 
     /// A pointer to the original request.
@@ -1599,7 +1601,11 @@ class Packet : public Printable
 
     bool tagReadFail = false;
 
+    // cache hit
     bool cacheSatisfied = true;
+
+    // cache miss, but MSHR has the data
+    bool cacheSatisfiedByMSHR = false;
 
     bool fromBOP() const { return pfSource == PrefetchSourceType::HWP_BOP; }
     
