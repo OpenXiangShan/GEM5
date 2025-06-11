@@ -1247,6 +1247,9 @@ IEW::dispatchInstFromRename(ThreadID tid)
         block(tid);
         iewStats.stallEvents[DispBWFull]++;
         toRename->iewUnblock[tid] = false;
+        disp_stall = true;
+    } else {
+        disp_stall = false;
     }
 
     if (dispatchStatus[tid] == Idle && insts_to_add) {
@@ -1378,6 +1381,9 @@ IEW::classifyInstToDispQue(ThreadID tid)
         block(tid);
         iewStats.stallEvents[DispBWFull]++;
         toRename->iewUnblock[tid] = false;
+        disp_stall = true;
+    } else {
+        disp_stall = false;
     }
 
     if (dispatchStatus[tid] == Idle && insts_to_add) {

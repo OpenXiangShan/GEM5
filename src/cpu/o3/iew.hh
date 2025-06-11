@@ -153,6 +153,8 @@ class IEW
     /** To probe when instruction execution is complete. */
     ProbePointArg<DynInstPtr> *ppToCommit;
 
+    bool disp_stall = false;
+
   public:
     /** Constructs a IEW with the given parameters. */
     IEW(CPU *_cpu, const BaseO3CPUParams &params);
@@ -292,6 +294,11 @@ class IEW
     void stlfFailLdReplay(const DynInstPtr &inst, const InstSeqNum &store_seq_num);
 
     uint32_t getIQInsts();
+
+    bool dispStall() {
+      return disp_stall;
+    }
+
   private:
     /** Sends commit proper information for a squash due to a branch
      * mispredict.
