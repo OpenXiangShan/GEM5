@@ -78,6 +78,7 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     JumpAheadPredictor jap;
     bool enableJumpAheadPredictor{false};
+    bool enableBypassBpuFetch{false};
 
   private:
     std::string _name;
@@ -158,6 +159,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     HistoryManager historyManager;
 
     unsigned numOverrideBubbles{0};
+    unsigned prevNumOverrideBubbles{0};
 
 
     using JAInfo = JumpAheadPredictor::JAInfo;

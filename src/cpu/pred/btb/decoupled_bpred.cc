@@ -25,6 +25,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       enableLoopBuffer(p.enableLoopBuffer),
       enableLoopPredictor(p.enableLoopPredictor),
       enableJumpAheadPredictor(p.enableJumpAheadPredictor),
+      enableBypassBpuFetch(p.enableBypassBpuFetch),
       fetchTargetQueue(p.ftq_size),
       fetchStreamQueueSize(p.fsq_size),
       predictWidth(p.predictWidth),
@@ -556,9 +557,13 @@ void
 DecoupledBPUWithBTB::tick()
 {
     // 2. Handle pending prediction if available
-    if (!receivedPred && numOverrideBubbles == 0 && sentPCHist) {
+    if (!receivedPred && prevNumOverrideBubbles == 0 && sentPCHist) {
         DPRINTF(Override, "Generating final prediction for PC %#lx\n", s0PC);
         generateFinalPredAndCreateBubbles();
+    }
+    if(enableBypassBpuFetch && squashing){
+        numOverrideBubbles = 0;
+        prevNumOverrideBubbles = 0;
     }
 
     // 3. Process enqueue operations and bubble counter
@@ -584,18 +589,23 @@ DecoupledBPUWithBTB::processEnqueueAndBubbles()
     // Try to enqueue new predictions if not squashing
     if (!squashing) {
         DPRINTF(Override, "DecoupledBPUWithBTB::tick()\n");
-        tryEnqFetchTarget();
-        tryEnqFetchStream();
+        if(enableBypassBpuFetch){
+            tryEnqFetchStream();
+            tryEnqFetchTarget();
+        }else{
+            tryEnqFetchTarget();
+            tryEnqFetchStream();
+        }
     } else {
         receivedPred = false;
         DPRINTF(Override, "Squashing, skip this cycle, receivedPred is %d.\n", receivedPred);
     }
 
     // Decrement override bubbles counter
-    if (numOverrideBubbles > 0) {
-        numOverrideBubbles--;
+    if (prevNumOverrideBubbles > 0) {
+        prevNumOverrideBubbles--;
         dbpBtbStats.overrideBubbleNum++;
-        DPRINTF(Override, "Consuming override bubble, %d remaining\n", numOverrideBubbles);
+        DPRINTF(Override, "Consuming override bubble, %d remaining\n", prevNumOverrideBubbles);
     }
 
     sentPCHist = false;
@@ -703,7 +713,11 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
     }
 
     // 4. Record override bubbles and update statistics
+    prevNumOverrideBubbles = numOverrideBubbles;
     numOverrideBubbles = first_hit_stage;
+    if(!enableBypassBpuFetch){
+        prevNumOverrideBubbles = numOverrideBubbles;
+    }
     if (numOverrideBubbles > 0) {
         dbpBtbStats.overrideCount++;
     }
@@ -1563,8 +1577,8 @@ DecoupledBPUWithBTB::validateFSQEnqueue()
 
     // 3. Check for override bubbles
     // When higher stages override lower stages, bubbles are needed for pipeline consistency
-    if (numOverrideBubbles > 0) {
-        DPRINTF(Override, "Waiting for %u override bubbles before enqueuing\n", numOverrideBubbles);
+    if (prevNumOverrideBubbles > 0) {
+        DPRINTF(Override, "Waiting for %u override bubbles before enqueuing\n", prevNumOverrideBubbles);
         return false;
     }
 

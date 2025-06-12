@@ -1154,3 +1154,4 @@ class DecoupledBPUWithBTB(BranchPredictor):
     enableLoopBuffer = Param.Bool(False, "Enable loop buffer to supply inst for loops")
     enableLoopPredictor = Param.Bool(False, "Use loop predictor to predict loop exit")
     enableJumpAheadPredictor = Param.Bool(False, "Use jump ahead predictor to skip no-need-to-predict blocks")
+    enableBypassBpuFetch = Param.Bool(True, "enable bypass BPU fetch after squash")
