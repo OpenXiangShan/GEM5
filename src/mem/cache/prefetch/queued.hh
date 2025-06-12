@@ -224,7 +224,7 @@ class Queued : public Base
   public:
 
     Queued(const QueuedPrefetcherParams &p);
-    virtual ~Queued();
+    //virtual ~Queued();
 
     void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) override;
 

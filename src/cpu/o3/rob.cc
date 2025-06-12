@@ -221,7 +221,7 @@ void
 ROB::allocateNewGroup(const DynInstPtr inst, ThreadID tid)
 {
     bool alloc = false;
-    if (threadGroups[tid].empty()) [[unlikely]] {
+    if (threadGroups[tid].empty()) {
         alloc = true;
     } else if (inst->isMemRef() || inst->isControl() || inst->isNonSpeculative()) {
         alloc = true;
@@ -240,7 +240,7 @@ ROB::allocateNewGroup(const DynInstPtr inst, ThreadID tid)
     lastCycle = cpu->curCycle();
 
     if (alloc) {
-        if (!threadGroups[tid].empty()) [[likely]] {
+        if (!threadGroups[tid].empty()) {
             stats.instPergroup.sample(threadGroups[tid].back());
         }
 

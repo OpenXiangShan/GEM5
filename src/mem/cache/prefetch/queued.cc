@@ -133,13 +133,13 @@ Queued::Queued(const QueuedPrefetcherParams &p)
 {
 }
 
-Queued::~Queued()
+/*Queued::~Queued()
 {
     // Delete the queued prefetch packets
     for (DeferredPacket &p : pfq) {
         delete p.pkt;
     }
-}
+}*/
 
 void
 Queued::printQueue(const std::list<DeferredPacket> &queue) const

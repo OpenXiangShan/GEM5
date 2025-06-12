@@ -2026,7 +2026,7 @@ bool LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t
 void
 LSQUnit::storeBufferEvictToCache()
 {
-    if (storeBufferFlushing && storeBuffer.size() == 0) [[unlikely]] {
+    if (storeBufferFlushing && storeBuffer.size() == 0) {
         assert(storeBuffer.unsentSize() == 0);
         storeBufferFlushing = false;
         cpu->activityThisCycle();

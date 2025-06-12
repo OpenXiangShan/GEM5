@@ -44,7 +44,7 @@ PerfCCT::getMeta(InstSeqNum sn)
 void
 PerfCCT::createMeta(const DynInstPtr inst)
 {
-    if (!enableCCT) [[likely]] {
+    if (!enableCCT) {
         return;
     }
     auto& old = metas[inst->seqNum % MaxMetas];
@@ -54,7 +54,7 @@ PerfCCT::createMeta(const DynInstPtr inst)
 void
 PerfCCT::updateInstPos(InstSeqNum sn, const PerfRecord pos)
 {
-    if (!enableCCT) [[likely]] {
+    if (!enableCCT) {
         return;
     }
     auto meta = getMeta(sn);
@@ -65,7 +65,7 @@ PerfCCT::updateInstPos(InstSeqNum sn, const PerfRecord pos)
 void
 PerfCCT::commitMeta(InstSeqNum sn)
 {
-    if (!enableCCT) [[likely]] {
+    if (!enableCCT) {
         return;
     }
     auto meta = getMeta(sn);

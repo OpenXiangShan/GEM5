@@ -215,11 +215,11 @@ IssueQue::checkScoreboard(const DynInstPtr& inst)
 {
     for (int i = 0; i < inst->numSrcRegs(); i++) {
         auto src = inst->renamedSrcIdx(i);
-        if (src->isFixedMapping()) [[unlikely]] {
+        if (src->isFixedMapping())  {
             continue;
         }
         // check bypass data ready or not
-        if (!scheduler->bypassScoreboard[src->flatIndex()]) [[unlikely]] {
+        if (!scheduler->bypassScoreboard[src->flatIndex()]) {
             auto dst_inst = scheduler->getInstByDstReg(src->flatIndex());
             if (!dst_inst || !dst_inst->isLoad()) {
                 panic("dst[sn:%llu] is not load", dst_inst->seqNum);
@@ -236,7 +236,7 @@ IssueQue::checkScoreboard(const DynInstPtr& inst)
 void
 IssueQue::addToFu(const DynInstPtr& inst)
 {
-    if (inst->isIssued()) [[unlikely]] {
+    if (inst->isIssued()) {
         panic("%s [sn:%llu] has alreayd been issued\n", enums::OpClassStrings[inst->opClass()], inst->seqNum);
     }
     inst->setIssued();
@@ -323,12 +323,12 @@ IssueQue::markMemDepDone(const DynInstPtr& inst)
 void
 IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
 {
-    if (speculative && inst->canceled()) [[unlikely]] {
+    if (speculative && inst->canceled())  {
         return;
     }
     for (int i = 0; i < inst->numDestRegs(); i++) {
         PhysRegIdPtr dst = inst->renamedDestIdx(i);
-        if (dst->isFixedMapping() || dst->getNumPinnedWritesToComplete() != 1) [[unlikely]] {
+        if (dst->isFixedMapping() || dst->getNumPinnedWritesToComplete() != 1) {
             continue;
         }
         scheduler->regCache.insert(dst->flatIndex(), {});
@@ -461,7 +461,7 @@ IssueQue::scheduleInst()
             assert(inst->readyToIssue());
 
             READYQ_PUSH(inst);
-        } else [[likely]] {
+        } else {
             DPRINTF(Schedule, "[sn:%llu] no conflict, scheduled\n", inst->seqNum);
             iqstats->portissued[pi]++;
             inst->setScheduled();
@@ -870,7 +870,7 @@ Scheduler::ready(const DynInstPtr& inst, int disp_seq)
     auto& iqs = dispTable[inst->opClass()];
     assert(!iqs.empty());
 
-    if (old_disp) [[unlikely]] {
+    if (old_disp) {
         for (auto iq : iqs) {
             if (iq->ready()) {
                 return true;
@@ -1006,7 +1006,7 @@ Scheduler::specWakeUpDependents(const DynInstPtr& inst, IssueQue* from_issue_que
             if (!(inst->isFloating() || inst->isVector())) {
                 for (int i = 0; i < inst->numDestRegs(); i++) {
                     PhysRegIdPtr dst = inst->renamedDestIdx(i);
-                    if (dst->isFixedMapping()) [[unlikely]] {
+                    if (dst->isFixedMapping()) {
                         continue;
                     }
                     earlyScoreboard[dst->flatIndex()] = true;
@@ -1034,7 +1034,7 @@ Scheduler::specWakeUpFromLoadPipe(const DynInstPtr& inst)
 
         for (int i = 0; i < inst->numDestRegs(); i++) {
             PhysRegIdPtr dst = inst->renamedDestIdx(i);
-            if (dst->isFixedMapping()) [[unlikely]] {
+            if (dst->isFixedMapping()) {
                 continue;
             }
             earlyScoreboard[dst->flatIndex()] = true;
@@ -1182,7 +1182,7 @@ Scheduler::bypassWriteback(const DynInstPtr& inst)
 uint32_t
 Scheduler::getOpLatency(const DynInstPtr& inst)
 {
-    if (inst->opClass() == FloatCvtOp) [[unlikely]] {
+    if (inst->opClass() == FloatCvtOp) {
         if (inst->destRegIdx(0).isFloatReg()) {
             return 2 + opExecTimeTable[inst->opClass()];
         }
