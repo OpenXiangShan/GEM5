@@ -107,7 +107,8 @@ class L2Cache(Cache):
 
     replacement_policy = DRRIPRP(constituency_size = 64, team_size = 8)
 
-    wpu = UTagWpu(utag_bits = 8)
+    # reduce 2 cycles when way prediction is correct
+    wpu = UTagWpu(utag_bits = 8, cycle_reduction = 2)
 
     cache_level = 2
 

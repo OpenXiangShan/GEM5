@@ -27,6 +27,7 @@ class BaseWpu : public SimObject
     const bool use_virtual;
     const bool miss_train;
     const uint64_t assoc;
+    const Cycles cycle_reduction;
     uint64_t set_shift;
     uint64_t set_mask;
     uint64_t tag_shift;
@@ -79,6 +80,13 @@ class BaseWpu : public SimObject
             update(pkt, std::numeric_limits<uint8_t>::max());
         }
     }
+
+    /**
+     * Get the latency reduction in cycles when way prediction is correct.
+     *
+     * @return The latency reduction in cycles.
+     */
+    Cycles getCycleReduction() const { return cycle_reduction; }
 };
 
 } // namespace way_prediction_policy

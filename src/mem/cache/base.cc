@@ -656,6 +656,10 @@ BaseCache::recvTimingReq(PacketPtr pkt)
             stats.wayPreTimes++;
             if (actual_way == predicted_way) {
                 stats.wayPreHitTimes++;
+                // way predict success, reduce the request time
+                auto cycle_reduction = wpu->getCycleReduction();
+                assert(cycle_reduction <= lat);
+                request_time -= clockPeriod() * cycle_reduction;
             }
             if (archDBer && pkt->req->hasPC() && cacheLevel == 1) {
                 Addr pc = pkt->req->getPC();

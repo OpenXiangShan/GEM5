@@ -16,6 +16,7 @@ class BaseWpu(SimObject):
     assoc = Param.Int(Parent.assoc, "Cache associativity")
     size = Param.MemorySize(Parent.size, "Cache capacity in bytes")
     blk_size = Param.Int(Parent.cache_line_size, "Cache block size in bytes")
+    cycle_reduction = Param.Cycles(0, "Latency reduction in cycles when way prediction is correct")
 
 class MRUWpu(BaseWpu):
     type = 'MRUWpu'
