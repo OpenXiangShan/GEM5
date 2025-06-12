@@ -65,13 +65,13 @@ jobs:
         run: |
           # use pgo profile to build gem5
           export GEM5_HOME=$(pwd)
-          export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so"
+          export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-so"
           bash util/pgo/basic_pgo_new.sh
       - name: XS-GEM5 - Run performance test
         # ${{ steps.config.outputs.comment }}
         run: |
 
-          export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so"
+          export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-so"
           export GCB_RESTORER=""
           export GEM5_HOME=$(pwd)
           export GEM5_BUILD_TYPE=fast
