@@ -555,37 +555,44 @@ DecoupledBPUWithBTB::BpTrace::BpTrace(uint64_t fsqId, FetchStream &stream, const
 void
 DecoupledBPUWithBTB::tick()
 {
+
+    // 1. Request new prediction if FSQ not full
+    if (!receivedPred && !streamQueueFull()) {
+        requestNewPrediction();
+        predictorFinished = true;
+    }
+
     // 2. Handle pending prediction if available
-    if (!receivedPred && numOverrideBubbles == 0 && sentPCHist) {
+    if (predictorFinished) {
         DPRINTF(Override, "Generating final prediction for PC %#lx\n", s0PC);
-        generateFinalPredAndCreateBubbles();
+        numOverrideBubbles = generateFinalPredAndCreateBubbles();
+        receivedPred = true;
+
+        // Clear each predictor's output
+        for (int i = 0; i < numStages; i++) {
+            predsOfEachStage[i].btbEntries.clear();
+        }
+        predictorFinished = false;
     }
 
     // 3. Process enqueue operations and bubble counter
-    processEnqueueAndBubbles();
-
-    // 4. Request new prediction if needed
-    requestNewPrediction();
-
-    DPRINTF(Override, "Prediction cycle complete\n");
-
-    // 5. Clear squashing state for next cycle
-    squashing = false;
-}
-
-/**
- * @brief Processes prediction enqueue operations and bubble counter
- *
- * Tries to enqueue new predictions if not squashing and decrements override bubbles
- */
-void
-DecoupledBPUWithBTB::processEnqueueAndBubbles()
-{
     // Try to enqueue new predictions if not squashing
     if (!squashing) {
         DPRINTF(Override, "DecoupledBPUWithBTB::tick()\n");
         tryEnqFetchTarget();
-        tryEnqFetchStream();
+
+        // check if:
+        // 1. FSQ has space
+        // 2. there's no bubble
+        // 3. receivedPred
+        if (validateFSQEnqueue()) {
+            // Create new FSQ entry with the current prediction
+            makeNewPrediction(true);
+
+            DPRINTF(Override, "FSQ entry enqueued, prediction state reset\n");
+            receivedPred = false;
+        }
+
     } else {
         receivedPred = false;
         DPRINTF(Override, "Squashing, skip this cycle, receivedPred is %d.\n", receivedPred);
@@ -598,7 +605,11 @@ DecoupledBPUWithBTB::processEnqueueAndBubbles()
         DPRINTF(Override, "Consuming override bubble, %d remaining\n", numOverrideBubbles);
     }
 
-    sentPCHist = false;
+    DPRINTF(Override, "Prediction cycle complete\n");
+
+    // 4. Clear squashing state for next cycle
+    squashing = false;
+
 }
 
 /**
@@ -610,8 +621,7 @@ DecoupledBPUWithBTB::processEnqueueAndBubbles()
 void
 DecoupledBPUWithBTB::requestNewPrediction()
 {
-    // Request new prediction if FSQ not full and not using loop buffer
-    if (!receivedPred && !streamQueueFull()) {
+
         DPRINTF(Override, "Requesting new prediction for PC %#lx\n", s0PC);
 
         // Initialize prediction state for each stage
@@ -624,9 +634,6 @@ DecoupledBPUWithBTB::requestNewPrediction()
             components[i]->putPCHistory(s0PC, s0History, predsOfEachStage);  //s0History not used
         }
 
-        // Mark that we've sent PC and history to predictors
-        sentPCHist = true;
-    }
 }
 
 void DecoupledBPUWithBTB::overrideStats(OverrideReason overrideReason)
@@ -656,7 +663,7 @@ void DecoupledBPUWithBTB::overrideStats(OverrideReason overrideReason)
 
 // this function collects predictions from all stages and generate bubbles
 // when loop buffer is active, predictions are from saved stream
-void
+unsigned
 DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
 {
     DPRINTF(Override, "In generateFinalPredAndCreateBubbles().\n");
@@ -703,15 +710,13 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
     }
 
     // 4. Record override bubbles and update statistics
-    numOverrideBubbles = first_hit_stage;
-    if (numOverrideBubbles > 0) {
+    if (first_hit_stage > 0) {
         dbpBtbStats.overrideCount++;
     }
 
     // 5. Finalize prediction process
     finalPred.predSource = first_hit_stage;
     finalPred.overrideReason = overrideReason;
-    receivedPred = true;
 
     // Debug output for final prediction
     printFullBTBPrediction(finalPred);
@@ -720,8 +725,8 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
     // Clear stage predictions for next cycle
     clearPreds();
 
-    DPRINTF(Override, "Prediction complete: override bubbles=%d, receivedPred=true\n", 
-            numOverrideBubbles);
+    DPRINTF(Override, "Prediction complete: override bubbles=%d\n", first_hit_stage);
+    return first_hit_stage;
 }
 
 bool
@@ -1573,33 +1578,6 @@ DecoupledBPUWithBTB::validateFSQEnqueue()
     return true;
 }
 
-/**
- * @brief Attempts to enqueue a new entry into the Fetch Stream Queue (FSQ)
- * 
- * This function is called after a prediction has been generated and checks 
- * if the prediction can be enqueued into the FSQ. It will:
- * 1. Verify that FTQ has space for new entries
- * 2. Create a new FSQ entry with the prediction
- * 3. Clear prediction state for the next cycle
- */
-void
-DecoupledBPUWithBTB::tryEnqFetchStream()
-{
-    if (!validateFSQEnqueue()) {
-        return;
-    }
-
-    // Create new FSQ entry with current prediction
-    makeNewPrediction(true);
-
-    // Reset prediction state for next cycle
-    for (int i = 0; i < numStages; i++) {
-        predsOfEachStage[i].btbEntries.clear();
-    }
-    
-    receivedPred = false;
-    DPRINTF(Override, "FSQ entry enqueued, prediction state reset\n");
-}
 
 void
 DecoupledBPUWithBTB::setTakenEntryWithStream(FtqEntry &ftq_entry, const FetchStream &stream_entry)
@@ -1618,7 +1596,6 @@ DecoupledBPUWithBTB::setNTEntryWithStream(FtqEntry &ftq_entry, Addr end_pc)
     ftq_entry.target = 0;
     ftq_entry.endPC = end_pc;
 }
-
 /**
  * @brief Validate FTQ and FSQ state before enqueueing a fetch target
  *
@@ -2086,6 +2063,7 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
         squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
 #endif
 }
+
 
 }  // namespace btb_pred
 

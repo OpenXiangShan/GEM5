@@ -139,7 +139,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     unsigned numComponents{};
     unsigned numStages{};
 
-    bool sentPCHist{false};     ///< get prediction from BP
+    bool predictorFinished{false};     ///< get prediction from BP
     bool receivedPred{false};   ///< get final prediction from predsOfEachStage[numStages-1]
 
     Addr s0PC;                  ///< Current PC
@@ -163,14 +163,12 @@ class DecoupledBPUWithBTB : public BPredUnit
     using JAInfo = JumpAheadPredictor::JAInfo;
     JAInfo jaInfo;
 
-    void tryEnqFetchStream();
+    bool validateFSQEnqueue();
 
     void tryEnqFetchTarget();
 
     // Helper function to validate FTQ and FSQ state before enqueueing
     bool validateFTQEnqueue();
-
-    bool validateFSQEnqueue();
 
     void makeNewPrediction(bool create_new_stream);
 
@@ -183,7 +181,6 @@ class DecoupledBPUWithBTB : public BPredUnit
     void fillAheadPipeline(FetchStream &entry);
 
     // Tick helper functions
-    void processEnqueueAndBubbles();
     void requestNewPrediction();
 
     Addr computePathHash(Addr br, Addr target);
@@ -247,7 +244,7 @@ class DecoupledBPUWithBTB : public BPredUnit
      * - Generates necessary bubbles
      * - Updates prediction state
      */
-    void generateFinalPredAndCreateBubbles();
+    unsigned generateFinalPredAndCreateBubbles();
 
     void clearPreds() {
         for (auto &stagePred : predsOfEachStage) {
