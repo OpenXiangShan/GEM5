@@ -556,13 +556,8 @@ void
 DecoupledBPUWithBTB::tick()
 {
 
-    // 1. Request new prediction if FSQ not full
-    if (!receivedPred && !streamQueueFull()) {
-        requestNewPrediction();
-        predictorFinished = true;
-    }
 
-    // 2. Handle pending prediction if available
+    // 1. Handle pending prediction if available
     if (predictorFinished) {
         DPRINTF(Override, "Generating final prediction for PC %#lx\n", s0PC);
         numOverrideBubbles = generateFinalPredAndCreateBubbles();
@@ -575,7 +570,7 @@ DecoupledBPUWithBTB::tick()
         predictorFinished = false;
     }
 
-    // 3. Process enqueue operations and bubble counter
+    // 2. Process enqueue operations and bubble counter
     // Try to enqueue new predictions if not squashing
     if (!squashing) {
         DPRINTF(Override, "DecoupledBPUWithBTB::tick()\n");
@@ -603,6 +598,12 @@ DecoupledBPUWithBTB::tick()
         numOverrideBubbles--;
         dbpBtbStats.overrideBubbleNum++;
         DPRINTF(Override, "Consuming override bubble, %d remaining\n", numOverrideBubbles);
+    }
+
+    // 3. Request new prediction if FSQ not full
+    if (!receivedPred && !streamQueueFull()) {
+        requestNewPrediction();
+        predictorFinished = true;
     }
 
     DPRINTF(Override, "Prediction cycle complete\n");
