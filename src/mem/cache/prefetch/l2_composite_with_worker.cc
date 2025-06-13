@@ -93,13 +93,6 @@ L2CompositeWithWorkerPrefetcher::rxHint(BaseMMU::Translation *dpp)
 }
 
 void
-L2CompositeWithWorkerPrefetcher::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
-{
-    WorkerPrefetcher::notify(pkt, pfi);
-    Queued::notify(pkt, pfi);
-}
-
-void
 L2CompositeWithWorkerPrefetcher::recvCustomInfoFrmUpStream(CustomPfInfo& info)
 {
     cdp->recvRivalCoverage(info);

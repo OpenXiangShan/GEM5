@@ -22,8 +22,15 @@ XsStreamPrefetcher::XsStreamPrefetcher(const XsStreamPrefetcherParams &p)
 void
 XsStreamPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, int late_num)
 {
-    Addr pc = pfi.getPC();
-    Addr vaddr = pfi.getAddr();
+    if (useVirtualAddresses && !pfi.isVaddrValid()) {
+        DPRINTF(XsStreamPrefetcher, "Ignoring request with no VAddr.\n");
+        return;
+    }
+    if (!useVirtualAddresses && !pfi.isPaddrValid()) {
+        DPRINTF(XsStreamPrefetcher, "Ignoring request with no PAddr.\n");
+        return;
+    }
+    Addr vaddr = pfi.getVAddr();
     Addr block_addr = blockAddress(vaddr);
     PrefetchSourceType stream_type = PrefetchSourceType::SStream;
     bool in_active_page = false;
@@ -67,8 +74,7 @@ XsStreamPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrP
 XsStreamPrefetcher::STREAMEntry *
 XsStreamPrefetcher::streamLookup(const PrefetchInfo &pfi, bool &in_active_page, bool &decr)
 {
-    Addr pc = pfi.getPC();
-    Addr vaddr = pfi.getAddr();
+    Addr vaddr = pfi.getVAddr();
     Addr vaddr_tag_num = tagAddress(vaddr);
     Addr vaddr_offset = tagOffset(vaddr);
     bool secure = pfi.isSecure();
@@ -119,15 +125,9 @@ XsStreamPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::ve
         } else {
             DPRINTF(XsStreamPrefetcher, "Send pf: %lx\n", pf_addr);
             filter->insert(pf_addr, 0);
-            addresses.push_back(AddrPriority(pf_addr, prio, src));
+            addresses.push_back(AddrPriority(pf_addr, prio, useVirtualAddresses, src,
+                                                ahead_level, ahead_level > cache->level()));
             streamBlkFilter.insert(pf_addr, 0);
-            if (ahead_level > 1) {
-                assert(ahead_level == 2 || ahead_level == 3);
-                addresses.back().pfahead_host = ahead_level;
-                addresses.back().pfahead = true;
-            } else {
-                addresses.back().pfahead = false;
-            }
         }
     }
 }

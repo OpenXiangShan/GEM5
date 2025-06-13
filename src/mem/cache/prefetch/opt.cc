@@ -19,8 +19,16 @@ OptPrefetcher::OptPrefetcher(const OptPrefetcherParams &p)
 void
 OptPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool &is_first_64)
 {
+    if (!pfi.hasPC()) {
+        DPRINTF(OptPrefetcher, "Ignoring request with no PC.\n");
+        return;
+    }
+    if (!pfi.isVaddrValid()) {
+        DPRINTF(OptPrefetcher, "Ignoring request with no valid vaddr.\n");
+        return;
+    }
     Addr pc = pfi.getPC();
-    Addr vaddr = pfi.getAddr();
+    Addr vaddr = pfi.getVAddr();
     Addr region_addr_64 = regionAddress_64(vaddr);
     Addr region_start = regionAddress_64(vaddr) * regionSize64;
     Addr region_offset_64 = regionOffset_64(vaddr);
@@ -167,7 +175,7 @@ OptPrefetcher::cofNum(OptEntry *opt_entry, int j)
 bool
 OptPrefetcher::optLookup(const Base::PrefetchInfo &pfi, std::vector<AddrPriority> &addresses)
 {
-    Addr vaddr = pfi.getAddr();
+    Addr vaddr = pfi.getVAddr();
     Addr blk_addr = blockAddress(vaddr);
     Addr region_offset_64 = regionOffset_64(vaddr);
     bool secure = pfi.isSecure();
@@ -226,10 +234,11 @@ OptPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<
         filter->insert(addr, 0);
         if (ahead_level > 1) {
             assert(ahead_level == 2 || ahead_level == 3);
-            addresses.back().pfahead_host = ahead_level;
-            addresses.back().pfahead = true;
+            addresses.back().targetLevel = ahead_level;
+            addresses.back().isCrossLevel = true;
         } else {
-            addresses.back().pfahead = false;
+            addresses.back().targetLevel = 0;
+            addresses.back().isCrossLevel = false;
         }
         DPRINTF(OptPrefetcher, "Send pf: %lx, target level: %i\n", addr, ahead_level);
         return true;

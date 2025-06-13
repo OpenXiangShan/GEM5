@@ -160,10 +160,13 @@ AccessMapPatternMatching::calculatePrefetch(const Base::PrefetchInfo &pfi,
     std::vector<Queued::AddrPriority> &addresses)
 {
     assert(addresses.empty());
+    if (!pfi.isVaddrValid()) {
+        return;
+    }
 
     bool is_secure = pfi.isSecure();
-    Addr am_addr = pfi.getAddr() / hotZoneSize;
-    Addr current_block = (pfi.getAddr() % hotZoneSize) / blkSize;
+    Addr am_addr = pfi.getVAddr() / hotZoneSize;
+    Addr current_block = (pfi.getVAddr() % hotZoneSize) / blkSize;
     uint64_t lines_per_zone = hotZoneSize / blkSize;
 
     // Get the entries of the curent block (am_addr), the previous, and the
@@ -224,7 +227,8 @@ AccessMapPatternMatching::calculatePrefetch(const Base::PrefetchInfo &pfi,
                 pf_addr = am_addr * hotZoneSize + blk * blkSize;
                 setEntryState(*am_entry_curr, blk, AM_PREFETCH);
             }
-            addresses.push_back(Queued::AddrPriority(pf_addr, 0));
+            addresses.push_back(Queued::AddrPriority(pf_addr, 0, true,
+                PrefetchSourceType::AMPM));
             if (addresses.size() == degree) {
                 break;
             }
@@ -248,7 +252,8 @@ AccessMapPatternMatching::calculatePrefetch(const Base::PrefetchInfo &pfi,
                 pf_addr = am_addr * hotZoneSize + blk * blkSize;
                 setEntryState(*am_entry_curr, blk, AM_PREFETCH);
             }
-            addresses.push_back(Queued::AddrPriority(pf_addr, 0));
+            addresses.push_back(Queued::AddrPriority(pf_addr, 0, true,
+                PrefetchSourceType::AMPM));
             if (addresses.size() == degree) {
                 break;
             }

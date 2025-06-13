@@ -49,6 +49,7 @@
 
 #include "base/intmath.hh"
 #include "debug/HWPrefetch.hh"
+#include "debug/PrefetchFilter.hh"
 #include "mem/cache/base.hh"
 #include "params/BasePrefetcher.hh"
 #include "sim/system.hh"
@@ -60,14 +61,21 @@ GEM5_DEPRECATED_NAMESPACE(Prefetcher, prefetch);
 namespace prefetch
 {
 
-Base::PrefetchInfo::PrefetchInfo(PacketPtr pkt, Addr addr, bool miss)
-  : address(addr), pc(pkt->req->hasPC() ? pkt->req->getPC() : 0),
-    requestorId(pkt->req->requestorId()), validPC(pkt->req->hasPC()),
-    secure(pkt->isSecure()), size(pkt->req->getSize()), write(pkt->isWrite()),
-    paddress(pkt->req->getPaddr()), cacheMiss(miss)
+Base::PrefetchInfo::PrefetchInfo(PacketPtr pkt, bool miss)
+  : validVaddr(pkt->req->hasVaddr()),
+    vaddress(validVaddr ? pkt->req->getVaddr() : 0),
+    validPaddr(pkt->req->hasPaddr()),
+    paddress(validPaddr ? pkt->req->getPaddr() : 0),
+    validPC(bool(pkt->req->hasPC())),
+    pc(validPC ? pkt->req->getPC() : 0),
+    requestorId(pkt->req->requestorId()),
+    secure(pkt->isSecure()),
+    size(pkt->req->getSize()),
+    isWriteReq(pkt->isWrite()),
+    isMiss(miss)
 {
     unsigned int req_size = pkt->req->getSize();
-    if (!write && miss) {
+    if (!isWriteReq && miss) {
         data = nullptr;
         data_ptr = nullptr;
     } else if (pkt->isStorePFTrain()) {
@@ -77,38 +85,24 @@ Base::PrefetchInfo::PrefetchInfo(PacketPtr pkt, Addr addr, bool miss)
         data = new uint8_t[req_size];
         Addr offset = pkt->req->getPaddr() - pkt->getAddr();
         std::memcpy(data, &(pkt->getConstPtr<uint8_t>()[offset]), req_size);
-        data_ptr=(uint64_t*)pkt->getPtr<uint64_t>();
+        data_ptr=(uint64_t*)pkt->getConstPtr<uint64_t>();
     }
 }
 
-Base::PrefetchInfo::PrefetchInfo(
-    PacketPtr pkt, Addr addr, bool miss,
-    Request::XsMetadata xsMeta
-) : address(addr), pc(pkt->req->hasPC() ? pkt->req->getPC() : 0),
-    requestorId(pkt->req->requestorId()), validPC(pkt->req->hasPC()),
-    secure(pkt->isSecure()), size(pkt->req->getSize()), write(pkt->isWrite()),
-    paddress(pkt->req->getPaddr()), cacheMiss(miss), xsMetadata(xsMeta)
-{
-    unsigned int req_size = pkt->req->getSize();
-    if (!write && miss) {
-        data = nullptr;
-        data_ptr = nullptr;
-    } else if (pkt->isStorePFTrain()) {
-        data = nullptr;
-        data_ptr = nullptr;
-    } else {
-        data = new uint8_t[req_size];
-        Addr offset = pkt->req->getPaddr() - pkt->getAddr();
-        std::memcpy(data, &(pkt->getConstPtr<uint8_t>()[offset]), req_size);
-        data_ptr=(uint64_t*)pkt->getPtr<uint64_t>();
-    }
-}
-
-Base::PrefetchInfo::PrefetchInfo(PrefetchInfo const &pfi, Addr addr)
-  : address(addr), pc(pfi.pc), requestorId(pfi.requestorId),
-    validPC(pfi.validPC), secure(pfi.secure), size(pfi.size),
-    write(pfi.write), paddress(pfi.paddress), cacheMiss(pfi.cacheMiss),
-    data(nullptr),data_ptr(nullptr)
+Base::PrefetchInfo::PrefetchInfo(PrefetchInfo const &pfi, Addr addr, bool isVaddr)
+  : validVaddr(isVaddr),
+    vaddress(validVaddr ? addr : 0),
+    validPaddr(!isVaddr),
+    paddress(validPaddr ? addr : 0),
+    validPC(pfi.validPC),
+    pc(pfi.pc),
+    requestorId(pfi.requestorId),
+    secure(pfi.secure),
+    size(pfi.size),
+    isWriteReq(pfi.isWriteReq),
+    isMiss(pfi.isMiss),
+    data(nullptr),
+    data_ptr(nullptr)
 {
 }
 
@@ -126,17 +120,26 @@ Base::PrefetchListener::notify(const PacketPtr &pkt)
 
 Base::Base(const BasePrefetcherParams &p)
     : ClockedObject(p),
-      listeners(), isSubPrefetcher(p.is_sub_prefetcher),
-      archDBer(p.arch_db), blkSize(p.block_size),
-      lBlkSize(floorLog2(blkSize)), onMiss(p.on_miss), onRead(p.on_read),
-      onWrite(p.on_write), onData(p.on_data), onInst(p.on_inst),
+      listeners(),
       requestorId(p.sys->getRequestorId(this)),
-      pageBytes(p.page_bytes),
-      prefetchOnAccess(p.prefetch_on_access),
-      prefetchOnPfHit(p.prefetch_on_pf_hit),
+      isSubPrefetcher(p.is_sub_prefetcher),
+      isCompositePrefetcher(p.is_composite_prefetcher),
+      blkSize(p.block_size),
+      log2BlkSize(floorLog2(blkSize)),
+      pageSize(p.page_bytes),
+      pfOnHitNormalLine(p.on_hit_normal_line),
+      pfOnHitPrefetchedLine(p.on_hit_prefetched_line),
+      pfOnMiss(p.on_miss),
+      pfOnRead(p.on_read),
+      pfOnWrite(p.on_write),
+      pfOnData(p.on_data),
+      pfOnInst(p.on_inst),
       useVirtualAddresses(p.use_virtual_addresses),
-      prefetchStats(this), issuedPrefetches(0),
-      usefulPrefetches(0), streamlatenum(0),tlb(nullptr)
+      prefetchStats(this),
+      archDBer(p.arch_db),
+      issuedPrefetches(0),
+      usefulPrefetches(0),
+      streamlatenum(0)
 {
 }
 
@@ -150,7 +153,7 @@ Base::setParentInfo(System *sys, ProbeManager *pm, CacheAccessor* _cache, unsign
 
     // If the cache has a different block size from the system's, save it
     blkSize = blk_size;
-    lBlkSize = floorLog2(blkSize);
+    log2BlkSize = floorLog2(blkSize);
 }
 
 Base::StatGroup::StatGroup(statistics::Group *parent)
@@ -239,27 +242,27 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
 bool
 Base::observeAccess(const PacketPtr &pkt, bool miss) const
 {
-    bool fetch = pkt->req->isInstFetch();
-    bool read = pkt->isRead();
-    bool inv = pkt->isInvalidate();
+    bool isInstFetch = pkt->req->isInstFetch();
+    bool isRead = pkt->isRead();
+    bool isInvalid = pkt->isInvalidate();
 
     if (!miss) {
-        if (prefetchOnPfHit)
+        if (pfOnHitPrefetchedLine)
             return hasEverBeenPrefetched(pkt->getAddr(), pkt->isSecure());
-        if (!prefetchOnAccess)
+        if (!pfOnHitNormalLine)
             return false;
     }
-    if (pkt->req->isUncacheable()) return false;
-    if (fetch && !onInst) return false;
-    if (!fetch && !onData) return false;
-    if (!fetch && read && !onRead) return false;
-    if (!fetch && !read && !onWrite) return false;
-    if (!fetch && !read && inv) return false;
-    if (pkt->cmd == MemCmd::CleanEvict) return false;
 
-    if (onMiss) {
-        return miss;
-    }
+    if (miss && !pfOnMiss) return false;
+
+    // Access Type Checks
+    if (pkt->req->isUncacheable()) return false;
+    if (isInstFetch  && !pfOnInst) return false;
+    if (!isInstFetch && !pfOnData) return false;
+    if (!isInstFetch && isRead && !pfOnRead) return false;
+    if (!isInstFetch && !isRead && !pfOnWrite) return false;
+    if (!isInstFetch && !isRead && isInvalid) return false;
+    if (pkt->cmd == MemCmd::CleanEvict) return false;
 
     return true;
 }
@@ -289,10 +292,11 @@ Base::hasEverBeenPrefetched(Addr addr, bool is_secure) const
 }
 
 bool
-Base::samePage(Addr a, Addr b) const
+Base::samePage(const Addr a, const Addr b) const
 {
-    return roundDown(a, pageBytes) == roundDown(b, pageBytes);
+    return roundDown(a, pageSize) == roundDown(b, pageSize);
 }
+
 
 Addr
 Base::blockAddress(Addr a) const
@@ -303,25 +307,25 @@ Base::blockAddress(Addr a) const
 Addr
 Base::blockIndex(Addr a) const
 {
-    return a >> lBlkSize;
+    return a >> log2BlkSize;
 }
 
 Addr
 Base::pageAddress(Addr a) const
 {
-    return roundDown(a, pageBytes);
+    return roundDown(a, pageSize);
 }
 
 Addr
 Base::pageOffset(Addr a) const
 {
-    return a & (pageBytes - 1);
+    return a & (pageSize - 1);
 }
 
 Addr
 Base::pageIthBlockAddress(Addr page, uint32_t blockIndex) const
 {
-    return page + (blockIndex << lBlkSize);
+    return page + (blockIndex << log2BlkSize);
 }
 
 void
@@ -333,11 +337,13 @@ Base::nofityHitToDownStream(const PacketPtr &pkt)
     DPRINTF(HWPrefetch, "Notify data read resp pkt to down stream prefetch, especially for CDP\n");
     hintDownStream->pfHitNotify(acc, pf_source, pkt);
 }
+
 void
 Base::probeNotify(const PacketPtr &pkt, bool miss)
 {
     DPRINTF(HWPrefetch, "ProbeNotify: %s for %s\n", miss ? "miss" : "hit",
             pkt->print());
+
     // Don't notify prefetcher on SWPrefetch, cache maintenance
     // operations or for writes that we are coaslescing.
     if (pkt->cmd.isSWPrefetch()) return;
@@ -372,20 +378,22 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
 
     // Verify this access type is observed by prefetcher
     if (observeAccess(pkt, miss)) {
-        PrefetchSourceType pf_source;
-        int pf_depth;
-        if (!miss) {
+        PrefetchSourceType pf_source = PrefetchSourceType::PF_NONE;
+        int pf_depth = 0;
+        if (!miss) {    // if hit on cache get the block's prefetch infomation
             pf_source = cache->getHitBlkXsMetadata(pkt).prefetchSource;
             pf_depth = cache->getHitBlkXsMetadata(pkt).prefetchDepth;
-        } else {  // miss & late
+        } else {  // if miss or late, get the packet's prefetch infomation
             pf_source = pkt->getPFSource();
             pf_depth = pkt->getPFDepth();
         }
-        if (!useVirtualAddresses || pkt->req->hasVaddr()) {
-            // condition1:  useVirtualAddresses && pkt->req->hasVaddr()
-            // condition2: !useVirtualAddresses
-            PrefetchInfo pfi(pkt, pkt->req->hasVaddr() ? pkt->req->getVaddr() : pkt->req->getPaddr(), miss,
-                             Request::XsMetadata(pf_source, pf_depth));
+        if (isCompositePrefetcher || !useVirtualAddresses || pkt->req->hasVaddr()) {
+        // if (!useVirtualAddresses || pkt->req->hasVaddr()) {
+            // condition1: isCompositePrefetcher
+            // condition2: !isCompositePrefetcher && !useVirtualAddresses
+            // condition3: !isCompositePrefetcher && useVirtualAddresses && pkt->req->hasVaddr()
+            PrefetchInfo pfi(pkt, miss);
+            pfi.setXsMetadata(Request::XsMetadata(pf_source, pf_depth));
             pfi.setReqAfterSquash(squashMark);
             pfi.setEverPrefetched(hasEverBeenPrefetched(pkt->getAddr(), pkt->isSecure()));
             pfi.setPfFirstHit(!miss && hasBeenPrefetched(pkt->getAddr(), pkt->isSecure()));
@@ -411,15 +419,18 @@ Base::coreDirectAddrNotify(const PacketPtr& pkt)
 
     PrefetchSourceType pf_source = PrefetchSourceType::StoreStream;
     bool miss = true;
-    PrefetchInfo pfi(pkt, pkt->req->hasVaddr() ? pkt->req->getVaddr() : pkt->req->getPaddr(), miss,
-                     Request::XsMetadata(pf_source));
+
     pkt->missOnLatePf = true;
     pkt->pfSource = pf_source;
+
+    PrefetchInfo pfi(pkt, miss);
+    pfi.setXsMetadata(Request::XsMetadata(pf_source));
     pfi.setReqAfterSquash(false);
     pfi.setEverPrefetched(false);
     pfi.setPfFirstHit(false);
     pfi.setPfHit(false);
     pfi.setStorePftrain(true);
+
     notify(pkt, pfi);
 }
 
@@ -455,5 +466,84 @@ Base::addTLB(BaseTLB *t, bool functional)
     functionalTLB = functional;
 }
 
+template<typename Key>
+void Base::PrefetchFilter::LRUCache<Key>::insert(const Key& key)
+{
+    auto it = cache_map.find(key);
+    if (it != cache_map.end()) {
+        // remove existing key and move it to the front
+        cache_list.erase(it->second);
+        cache_map.erase(it);
+    } else if (cache_list.size() >= capacity) {
+        // if capacity is reached, remove the oldest element
+        Key oldest = cache_list.back();
+        cache_list.pop_back();
+        cache_map.erase(oldest);
+    }
+
+    // insert the new key at the front
+    cache_list.push_front(key);
+    cache_map[key] = cache_list.begin();
+}
+
+template<typename Key>
+bool Base::PrefetchFilter::LRUCache<Key>::contains(const Key& key) const
+{
+    return cache_map.find(key) != cache_map.end();
+}
+
+template<typename Key>
+void Base::PrefetchFilter::LRUCache<Key>::clear()
+{
+    cache_list.clear();
+    cache_map.clear();
+}
+
+Base::PrefetchFilter::PrefetchFilter(size_t physical_capacity, size_t virtual_capacity)
+    : physicalAddrFilter(physical_capacity),
+      virtualAddrFilter(virtual_capacity)
+{
+    // DPRINTF(PrefetchFilter, "Created PrefetchFilter with physical capacity %zu and virtual capacity %zu\n",
+    //         physical_capacity, virtual_capacity);
+}
+
+bool
+Base::PrefetchFilter::contains(Addr addr, bool isVA) const
+{
+    bool ret = isVA ? virtualAddrFilter.contains(addr) : physicalAddrFilter.contains(addr);
+    // DPRINTF(PrefetchFilter, "Checking if address %s is in %s filter: %s\n",
+    //         isVA ? "virtual" : "physical", addr, ret ? "yes" : "no");
+    return ret;
+}
+
+void
+Base::PrefetchFilter::insert(Addr addr, bool isVA)
+{
+    if (isVA) {
+        virtualAddrFilter.insert(addr);
+        // DPRINTF(PrefetchFilter, "Inserted virtual address %s into filter\n", addr);
+    } else {
+        physicalAddrFilter.insert(addr);
+        // DPRINTF(PrefetchFilter, "Inserted physical address %s into filter\n", addr);
+    }
+}
+
+void
+Base::PrefetchFilter::clear(bool isVA)
+{
+    if (isVA) {
+        virtualAddrFilter.clear();
+        // DPRINTF(PrefetchFilter, "Cleared virtual address filter\n");
+    } else {
+        physicalAddrFilter.clear();
+        // DPRINTF(PrefetchFilter, "Cleared physical address filter\n");
+    }
+}
+
+
+
+
 } // namespace prefetch
 } // namespace gem5
+
+

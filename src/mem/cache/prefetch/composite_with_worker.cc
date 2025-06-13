@@ -14,22 +14,9 @@ CompositeWithWorkerPrefetcher::CompositeWithWorkerPrefetcher(const CompositeWith
 }
 
 void
-CompositeWithWorkerPrefetcher::rxHint(BaseMMU::Translation *dpp)
-{
-    WorkerPrefetcher::rxHint(dpp);
-}
-
-void
-CompositeWithWorkerPrefetcher::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
-{
-    WorkerPrefetcher::notify(pkt, pfi);
-    Queued::notify(pkt, pfi);
-}
-
-void
 CompositeWithWorkerPrefetcher::postNotifyInsert(const PacketPtr &trigger_pkt, std::vector<AddrPriority> &addresses)
 {
-    PrefetchInfo pfi(trigger_pkt, trigger_pkt->req->getVaddr(), false);
+    PrefetchInfo pfi(trigger_pkt, false);
     size_t max_pfs = getMaxPermittedPrefetches(addresses.size());
     // Queue up generated prefetches
     size_t num_pfs = 0;
@@ -38,7 +25,7 @@ CompositeWithWorkerPrefetcher::postNotifyInsert(const PacketPtr &trigger_pkt, st
         // Block align prefetch address
         addr_prio.addr = blockAddress(addr_prio.addr);
 
-        if (!samePage(addr_prio.addr, pfi.getAddr())) {
+        if (!samePage(pfi, addr_prio)) {
             statsQueued.pfSpanPage += 1;
 
             if (hasEverBeenPrefetched(trigger_pkt->getAddr(), trigger_pkt->isSecure())) {
@@ -47,11 +34,12 @@ CompositeWithWorkerPrefetcher::postNotifyInsert(const PacketPtr &trigger_pkt, st
         }
 
         bool can_cross_page = (tlb != nullptr);
-        if (can_cross_page || samePage(addr_prio.addr, pfi.getAddr())) {
-            PrefetchInfo new_pfi(pfi, addr_prio.addr);
+        if (can_cross_page || samePage(pfi, addr_prio)) {
+            PrefetchInfo new_pfi(pfi, addr_prio.addr, addr_prio.isVA);
             new_pfi.setXsMetadata(Request::XsMetadata(addr_prio.pfSource, addr_prio.depth));
             statsQueued.pfIdentified++;
-            DPRINTF(HWPrefetch, "Found a pf candidate addr: %#x, inserting into prefetch queue.\n", new_pfi.getAddr());
+            DPRINTF(HWPrefetch, "Found a pf candidate addr: %#x, inserting into prefetch queue.\n",
+                    new_pfi.getVAddr());
             // Create and insert the request
             insert(trigger_pkt, new_pfi, addr_prio);
             num_pfs += 1;
@@ -62,12 +50,6 @@ CompositeWithWorkerPrefetcher::postNotifyInsert(const PacketPtr &trigger_pkt, st
             DPRINTF(HWPrefetch, "Ignoring page crossing prefetch.\n");
         }
     }
-}
-
-void
-CompositeWithWorkerPrefetcher::setParentInfo(System *sys, ProbeManager *pm, CacheAccessor* _cache, unsigned blk_size)
-{
-    Base::setParentInfo(sys, pm, _cache, blk_size);
 }
 
 }  // namespace prefetch

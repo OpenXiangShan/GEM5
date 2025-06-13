@@ -29,6 +29,7 @@
 #include "mem/cache/prefetch/sbooe.hh"
 
 #include "debug/HWPrefetch.hh"
+#include "mem/request.hh"
 #include "params/SBOOEPrefetcher.hh"
 
 namespace gem5
@@ -120,8 +121,14 @@ void
 SBOOE::calculatePrefetch(const PrefetchInfo &pfi,
                                    std::vector<AddrPriority> &addresses)
 {
-    const Addr pfi_addr = pfi.getAddr();
-    const Addr pfi_line = pfi_addr >> lBlkSize;
+    if (useVirtualAddresses && !pfi.isVaddrValid()) {
+        return;
+    }
+    if (!useVirtualAddresses && !pfi.isPaddrValid()) {
+        return;
+    }
+    const Addr pfi_addr = pfi.getVAddr();
+    const Addr pfi_line = pfi_addr >> log2BlkSize;
 
     auto it = demandAddresses.find(pfi_addr);
 
@@ -133,7 +140,7 @@ SBOOE::calculatePrefetch(const PrefetchInfo &pfi,
 
     if (evaluationFinished && bestSandbox->score() > scoreThreshold) {
         Addr pref_line = pfi_line + bestSandbox->stride;
-        addresses.push_back(AddrPriority(pref_line << lBlkSize, 0));
+        addresses.push_back(AddrPriority(pref_line << log2BlkSize, 0, true, PrefetchSourceType::SBOOE, 0, false));
     }
 }
 

@@ -123,7 +123,14 @@ CDP::CDPStats::CDPStats(statistics::Group *parent)
 void
 CDP::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses)
 {
-    Addr addr = pfi.getAddr();
+    if (useVirtualAddresses && !pfi.isVaddrValid()) {
+        return;
+    }
+    if (!useVirtualAddresses && !pfi.isPaddrValid()) {
+        return;
+    }
+
+    Addr addr = pfi.getVAddr();
     bool miss = pfi.isCacheMiss();
     int page_offset, vpn0, vpn1, vpn2;
     PrefetchSourceType pf_source = pfi.getXsMetadata().prefetchSource;
@@ -187,7 +194,7 @@ CDP::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addre
     }
     if (!is_l1_prefetch && !is_l2_prefetch) {
         recordUsedPrefetch(pfi.getPaddr());
-        addToVpnTable(pfi.getAddr(), pf_hit_cdp);
+        addToVpnTable(pfi.getVAddr(), pf_hit_cdp);
     }
     return;
 }
@@ -351,7 +358,7 @@ CDP::sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio,
         return false;
     } else {
         pfLRUFilter->insert((addr), 0);
-        AddrPriority addr_prio = AddrPriority(addr, prio, pfSource);
+        AddrPriority addr_prio = AddrPriority(addr, prio, true, pfSource);
         addr_prio.depth = pf_depth;
         addresses.push_back(addr_prio);
         cdpStats.passedFilter++;

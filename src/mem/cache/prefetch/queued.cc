@@ -46,6 +46,7 @@
 #include "debug/HWPrefetchOther.hh"
 #include "debug/HWPrefetchQueue.hh"
 #include "mem/cache/base.hh"
+#include "mem/cache/prefetch/base.hh"
 #include "mem/request.hh"
 #include "params/QueuedPrefetcher.hh"
 
@@ -57,15 +58,16 @@ namespace prefetch
 {
 
 void
-Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size, RequestorID requestor_id, bool tag_prefetch, Tick t,
+Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size, RequestorID requestor_id,
+                                  bool tag_prefetch_with_pc, Tick t,
                                   PrefetchSourceType pf_src, int prf_depth)
 {
     // TODO: mark from BOP here
 
     /* Create a prefetch memory request */
     RequestPtr req;
-    if (owner->useVirtualAddresses && pfInfo.hasPC()) {
-        req = std::make_shared<Request>(pfInfo.getAddr(), blk_size, 0,
+    if (pfInfo.isVaddrValid() && pfInfo.hasPC()) {
+        req = std::make_shared<Request>(pfInfo.getVAddr(), blk_size, 0,
                                         requestor_id, pfInfo.getPC(), 0);
         req->setPaddr(paddr);
     } else {
@@ -86,7 +88,7 @@ Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size, RequestorID req
     }
     pkt = new Packet(req, MemCmd::HardPFReq);
     pkt->allocate();
-    if (tag_prefetch && pfInfo.hasPC()) {
+    if (tag_prefetch_with_pc && pfInfo.hasPC()) {
         // Tag prefetch packet with  accessing pc
         pkt->req->setPC(pfInfo.getPC());
     }
@@ -124,7 +126,7 @@ Queued::Queued(const QueuedPrefetcherParams &p)
         p.max_prefetch_requests_with_pending_translation),
       latency(p.latency), queueSquash(p.queue_squash),
       queueFilter(p.queue_filter), cacheSnoop(p.cache_snoop),
-      tagPrefetch(p.tag_prefetch),
+      tagPrefetchWithPC(p.tag_prefetch_with_pc),
       throttleControlPct(p.throttle_control_percentage),
       tlbReqEvent(
           [this]{ processMissingTranslations(queueSize); },
@@ -155,7 +157,7 @@ Queued::printQueue(const std::list<DeferredPacket> &queue) const
 
     for (const_iterator it = queue.cbegin(); it != queue.cend();
                                                             it++, pos++) {
-        Addr vaddr = it->pfInfo.getAddr();
+        Addr vaddr = it->pfInfo.getVAddr();
         /* Set paddr to 0 if not yet translated */
         Addr paddr = it->pkt ? it->pkt->getAddr() : 0;
         DPRINTF(HWPrefetchQueue, "%s[%d]: Prefetch Req VA: %#x PA: %#x "
@@ -203,8 +205,6 @@ Queued::calculatePrefetch(const PrefetchInfo &pfi,
 void
 Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
 {
-    Addr blk_addr = blockAddress(pfi.getAddr());
-    bool is_secure = pfi.isSecure();
 
     bool late_in_mshr = pkt->missOnLatePf;  // hit in pf mshr
 
@@ -215,12 +215,19 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
     if (queueSquash) {
         auto itr = pfq.begin();
         while (itr != pfq.end()) {
-            if (itr->pfInfo.getAddr() == blk_addr &&
-                itr->pfInfo.isSecure() == is_secure) {
-                DPRINTF(HWPrefetch, "Removing pf candidate addr: %#x "
+
+            bool sameVaddr = itr->pfInfo.isVaddrValid() && pfi.isVaddrValid() &&
+                             itr->pfInfo.getVAddr() == blockAddress(pfi.getVAddr());
+            bool samePaddr = itr->pfInfo.isPaddrValid() && pfi.isPaddrValid() &&
+                             itr->pfInfo.getPaddr() == blockAddress(pfi.getPaddr());
+            bool sameSecure = itr->pfInfo.isSecure() == pfi.isSecure();
+            if ((sameVaddr || samePaddr) && sameSecure) {
+                DPRINTF(HWPrefetch, "Removing pf candidate %s: %#x "
                         "(cl: %#x), demand request going to the same addr\n",
-                        itr->pfInfo.getAddr(),
-                        blockAddress(itr->pfInfo.getAddr()));
+                        sameVaddr ? "vaddr" : "paddr",
+                        sameVaddr ? itr->pfInfo.getVAddr() : itr->pfInfo.getPaddr(),
+                        sameVaddr ? blockAddress(itr->pfInfo.getVAddr()):
+                                    blockAddress(itr->pfInfo.getPaddr()));
                 late_in_pfq = true;  // hit in pf queue
                 late_pfq_src = itr->pfInfo.getXsMetadata().prefetchSource;
                 delete itr->pkt;
@@ -240,6 +247,7 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
     } else if (late_in_pfq) {
         pf_source = late_pfq_src;
     }
+
     // Calculate prefetches given this access
     std::vector<AddrPriority> addresses;
     // if (!pkt->coalescingMSHR) {  // hit to Other cpu access
@@ -257,7 +265,7 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
         // Block align prefetch address
         addr_prio.addr = blockAddress(addr_prio.addr);
 
-        if (!samePage(addr_prio.addr, pfi.getAddr())) {
+        if (!samePage(pfi, addr_prio)) {
             statsQueued.pfSpanPage += 1;
 
             if (hasBeenPrefetched(pkt->getAddr(), pkt->isSecure())) {
@@ -266,12 +274,12 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
         }
 
         bool can_cross_page = (tlb != nullptr);
-        if (can_cross_page || samePage(addr_prio.addr, pfi.getAddr())) {
-            PrefetchInfo new_pfi(pfi, addr_prio.addr);
+        if (can_cross_page || samePage(pfi, addr_prio)) {
+            PrefetchInfo new_pfi(pfi, addr_prio.addr, addr_prio.isVA);
             new_pfi.setXsMetadata(Request::XsMetadata(addr_prio.pfSource,addr_prio.depth));
             statsQueued.pfIdentified++;
             DPRINTF(HWPrefetch, "Found a pf candidate addr: %#x, "
-                    "inserting into prefetch queue.\n", new_pfi.getAddr());
+                    "inserting into prefetch queue.\n", new_pfi.getVAddr());
             // Create and insert the request
             insert(pkt, new_pfi, addr_prio);
             num_pfs += 1;
@@ -302,7 +310,7 @@ Queued::getPacket()
     }
 
     PacketPtr pkt = pfq.front().pkt;
-    if (pfq.front().pfahead) {
+    if (pfq.front().isCrossLevel) {
         prefetchStats.pfaheadProcess++;
     }
     pfq.pop_front();
@@ -383,18 +391,11 @@ Queued::translationComplete(DeferredPacket *dp, bool failed)
                     it->translationRequest->getVaddr(),
                     it->translationRequest->getPaddr());
             Addr target_paddr = it->translationRequest->getPaddr();
+            Addr target_secure = it->translationRequest->isSecure();
             // check if this prefetch is already redundant
-            if (cacheSnoop && (inCache(target_paddr, it->pfInfo.isSecure()) ||
-                        inMissQueue(target_paddr, it->pfInfo.isSecure()))) {
-                statsQueued.pfInCache++;
-                DPRINTF(HWPrefetch, "Dropping redundant in "
-                        "cache/MSHR prefetch addr:%#x\n", target_paddr);
-            } else if (!system->isMemAddr(target_paddr)) {
-                DPRINTF(HWPrefetch, "wrong paddr of prefetch:%#x\n", target_paddr);
-
-            } else {
+            if (!shouldDropPrefetch(target_paddr, target_secure)) {
                 Tick pf_time = curTick() + clockPeriod() * latency;
-                it->createPkt(target_paddr, blkSize, requestorId, tagPrefetch,
+                it->createPkt(target_paddr, blkSize, requestorId, tagPrefetchWithPC,
                             pf_time, it->translationRequest->getPFSource(), it->translationRequest->getPFDepth());
                 addToQueue(pfq, *it);
             }
@@ -411,12 +412,15 @@ Queued::translationComplete(DeferredPacket *dp, bool failed)
 
 bool
 Queued::alreadyInQueue(std::list<DeferredPacket> &queue,
-                                 const PrefetchInfo &pfi, int32_t priority)
+                       const PrefetchInfo &pfi, int32_t priority)
 {
     bool found = false;
     iterator it;
-    for (it = queue.begin(); it != queue.end() && !found; it++) {
+    for (it = queue.begin(); it != queue.end(); it++) {
         found = it->pfInfo.sameAddr(pfi);
+        if (found) {
+            break;
+        }
     }
 
     /* If the address is already in the queue, update priority and leave */
@@ -438,38 +442,22 @@ Queued::alreadyInQueue(std::list<DeferredPacket> &queue,
     }
     return found;
 }
+
 bool
-
-Queued::alreadyInQueue(std::list<DeferredPacket> &queue,
-                                 Addr addr, bool isSecure, int32_t priority)
+Queued::shouldDropPrefetch(Addr paddr, bool is_secure)
 {
-    bool found = false;
-    iterator it;
-    for (it = queue.begin(); it != queue.end() && !found; it++) {
-        found = it->pfInfo.sameAddr(addr, isSecure);
+    if (cacheSnoop && (inCache(paddr, is_secure) || inMissQueue(paddr, is_secure))) {
+        statsQueued.pfInCache++;
+        DPRINTF(HWPrefetch, "Dropping redundant in "
+                "cache/MSHR prefetch addr:%#x\n", paddr);
+        return true;
     }
-
-    /* If the address is already in the queue, update priority and leave */
-    if (it != queue.end()) {
-        statsQueued.pfBufferHit++;
-        if (it->priority < priority) {
-            /* Update priority value and position in the queue */
-            it->priority = priority;
-            /* Because swap() will cause the translationComplete
-             * run into wrong DeferredPacket, we use std::list::sort
-             * to update this queue */
-            queue.sort(std::greater<DeferredPacket>());
-            DPRINTF(HWPrefetch, "Prefetch addr already in "
-                "prefetch queue, priority updated\n");
-        } else {
-            DPRINTF(HWPrefetch, "Prefetch addr already in "
-                "prefetch queue\n");
-        }
+    if (!system->isMemAddr(paddr)) {
+        DPRINTF(HWPrefetch, "wrong paddr of prefetch:%#x\n", paddr);
+        return true;
     }
-    return found;
+    return false;
 }
-
-
 
 RequestPtr
 Queued::createPrefetchRequest(Addr addr, PrefetchInfo const &pfi, PacketPtr pkt, PrefetchSourceType pf_src, int pf_depth)
@@ -489,7 +477,9 @@ Queued::createPrefetchRequest(Addr addr, PrefetchInfo const &pfi, PacketPtr pkt,
 void
 Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &addr_prio)
 {
-    int32_t priority = addr_prio.priority;
+    const int32_t priority = addr_prio.priority;
+    assert(new_pfi.getVAddr() % blkSize == 0);
+
     if (queueFilter) {
         if (alreadyInQueue(pfq, new_pfi, priority)) {
             return;
@@ -502,33 +492,38 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
     /*
      * Physical address computation
      * if the prefetch is within the same page
-     *   using VA: add the computed stride to the original PA
-     *   using PA: no actions needed
+     *   VA: add the computed stride to the original PA
+     *   PA: no actions needed
      * if we are page crossing
-     *   using VA: Create a translaion request and enqueue the corresponding
+     *   Prefetch VA: Create a translaion request and enqueue the corresponding
      *       deferred packet to the queue of pending translations
-     *   using PA: use the provided VA to obtain the target VA, then attempt to
+     *   Prefetch PA: use the provided VA to obtain the target VA, then attempt to
      *     translate the resulting address
      */
 
-    Addr orig_addr = useVirtualAddresses ?
-        pkt->req->getVaddr() : pkt->req->getPaddr();
-    bool positive_stride = new_pfi.getAddr() >= orig_addr;
-    Addr stride = positive_stride ?
-        (new_pfi.getAddr() - orig_addr) : (orig_addr - new_pfi.getAddr());
+    bool isPrefetchVA = new_pfi.isVaddrValid();
+    Addr originalAddr = isPrefetchVA ? pkt->req->getVaddr() : pkt->req->getPaddr();
+    Addr prefetchAddr = isPrefetchVA ? new_pfi.getVAddr() : new_pfi.getPaddr();
+
+    bool posStride = prefetchAddr >= originalAddr;
+    Addr stride = posStride ? (prefetchAddr - originalAddr) : (originalAddr - prefetchAddr);
 
     Addr target_paddr;
     bool has_target_pa = false;
     RequestPtr translation_req = nullptr;
-    if (samePage(orig_addr, new_pfi.getAddr())) {
-        if (useVirtualAddresses) {
-            // if we trained with virtual addresses,
-            // compute the target PA using the original PA and adding the
-            // prefetch stride (difference between target VA and original VA)
-            target_paddr = positive_stride ? (pkt->req->getPaddr() + stride) :
+
+    if (Base::samePage(originalAddr, prefetchAddr)) {
+        if (isPrefetchVA) {
+            // if we generate a virtual addresses prefetch request,
+            // and the request's Virtual page is the same as the original Virtual page
+            // Compute the target PA using req->getPaddr + stride
+            target_paddr = posStride ? (pkt->req->getPaddr() + stride) :
                 (pkt->req->getPaddr() - stride);
         } else {
-            target_paddr = new_pfi.getAddr();
+            // if we generate a physical addresses prefetch request,
+            // and the request's Physical page is the same as the original Physical page
+            // Use the prefetch VA as the target PA
+            target_paddr = new_pfi.getPaddr();
         }
         has_target_pa = true;
     } else {
@@ -538,56 +533,60 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
         if (!pkt->req->hasContextId()) {
             return;
         }
-        if (useVirtualAddresses) {
+        if (isPrefetchVA) {
+            // if we generate a virtual addresses prefetch request,
+            // and the request's Virtual page is different from the original Virtual page
+            // Create a translation request
             has_target_pa = false;
-            translation_req = createPrefetchRequest(new_pfi.getAddr(), new_pfi, pkt, addr_prio.pfSource, addr_prio.depth);
+            translation_req = createPrefetchRequest(new_pfi.getVAddr(), new_pfi, pkt,
+                                             addr_prio.pfSource, addr_prio.depth);
         } else if (pkt->req->hasVaddr()) {
+            // if we generate a physical addresses prefetch request,
+            // and the request's Pysical page is different from the original Pysical page
+            // and the original request has a valid VA,
+            // we can compute the target VA using req->getVaddr + stride
+            // and then create a translation request
             has_target_pa = false;
             // Compute the target VA using req->getVaddr + stride
-            Addr target_vaddr = positive_stride ?
+            Addr target_vaddr = posStride ?
                 (pkt->req->getVaddr() + stride) :
                 (pkt->req->getVaddr() - stride);
             translation_req = createPrefetchRequest(target_vaddr, new_pfi, pkt, addr_prio.pfSource, addr_prio.depth);
         } else {
-            // Using PA for training but the request does not have a VA,
-            // unable to process this page crossing prefetch.
+            // if we generate a physical addresses prefetch request,
+            // and the request's Physical page is different from the original Physical page
+            // and the original request has no valid VA,
+            // we can not compute the target VA, so we can not create a translation request
             return;
         }
     }
-    if (has_target_pa && cacheSnoop &&
-            (inCache(target_paddr, new_pfi.isSecure()) ||
-            inMissQueue(target_paddr, new_pfi.isSecure()))) {
-        statsQueued.pfInCache++;
-        DPRINTF(HWPrefetch, "Dropping redundant in "
-                "cache/MSHR prefetch addr:%#x\n", target_paddr);
-        return;
-    }
-    if (has_target_pa && !system->isMemAddr(target_paddr)) {
-        DPRINTF(HWPrefetch, "wrong paddr of prefetch:%#x\n", target_paddr);
+
+    if (has_target_pa &&
+        shouldDropPrefetch(target_paddr, new_pfi.isSecure())){
         return;
     }
 
     /* Create the packet and find the spot to insert it */
     DeferredPacket dpp(this, new_pfi, 0, priority);
-    dpp.pfahead = addr_prio.pfahead;
-    dpp.pfahead_host = addr_prio.pfahead_host;
-    if (dpp.pfahead) {
+    dpp.isCrossLevel = addr_prio.isCrossLevel;
+    dpp.targetLevel = addr_prio.targetLevel;
+    if (dpp.isCrossLevel) {
         DPRINTF(HWPrefetchOther, "Create one pfahead request\n");
     }
     if (has_target_pa) {
         Tick pf_time = curTick() + clockPeriod() * latency;
-        dpp.createPkt(target_paddr, blkSize, requestorId, tagPrefetch,
+        dpp.createPkt(target_paddr, blkSize, requestorId, tagPrefetchWithPC,
                       pf_time, addr_prio.pfSource, addr_prio.depth);
         DPRINTF(HWPrefetch, "Prefetch queued. "
                 "addr:%#x priority: %3d tick:%lld.\n",
-                new_pfi.getAddr(), priority, pf_time);
+                new_pfi.getVAddr(), priority, pf_time);
         addToQueue(pfq, dpp);
     } else {
         // Add the translation request and try to resolve it later
         dpp.setTranslationRequest(translation_req);
         dpp.tc = system->threads[translation_req->contextId()];
         DPRINTF(HWPrefetch, "Prefetch queued with no translation. "
-                "addr:%#x priority: %3d\n", new_pfi.getAddr(), priority);
+                "addr:%#x priority: %3d\n", new_pfi.getVAddr(), priority);
         addToQueue(pfqMissingTranslation, dpp);
         if (!tlbReqEvent.scheduled()) {
             schedule(tlbReqEvent, nextCycle());
@@ -605,14 +604,14 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
     if (&queue == &pfq) {
         // if found the dpp is pfahead marked
         // send it to next level pfq
-        if (hasHintDownStream() && dpp.pfahead && (dpp.pfahead_host > cache->level())) {
+        if (hasHintDownStream() && dpp.isCrossLevel && (dpp.targetLevel > cache->level())) {
             hintDownStream->rxHint(&dpp);
             prefetchStats.pfaheadOffloaded++;
             DPRINTF(HWPrefetchOther,
-                    "Prefetch ahead host: %d, will send to cache l%s\n",dpp.pfahead_host, cache->level() + 1);
+                    "Prefetch ahead host: %d, will send to cache l%s\n",dpp.targetLevel, cache->level() + 1);
             return;
         }
-        if (dpp.pfahead) {
+        if (dpp.isCrossLevel) {
             // l1 can not process l3 pfahead request
             // but l3 can process l1 request
             // if (dpp.pfahead_host > cache->level()) {
@@ -649,7 +648,7 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
                 it = prev;
         }
         DPRINTF(HWPrefetch, "%s full (sz=%lu), removing lowest priority oldest packet, addr: %#x\n", queue_name,
-                queue.size(), it->pfInfo.getAddr());
+                queue.size(), it->pfInfo.getVAddr());
         if (&queue == &pfq || !it->ongoingTranslation){
             delete it->pkt;
             queue.erase(it);
@@ -672,7 +671,7 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
 
     if ((queue.size() == 0) || (dpp <= queue.back())) {
         queue.emplace_back(dpp);
-        if (&queue == &pfq && dpp.pfahead) {
+        if (&queue == &pfq && dpp.isCrossLevel) {
             DPRINTF(HWPrefetchOther, "insert one pfahead request host by self\n");
         }
     } else {
@@ -685,7 +684,7 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
         if (it == queue.begin() && dpp <= *it)
             it++;
         queue.insert(it, dpp);
-        if (&queue == &pfq && dpp.pfahead) {
+        if (&queue == &pfq && dpp.isCrossLevel) {
             DPRINTF(HWPrefetchOther, "insert one pfahead request host by self\n");
         }
     }

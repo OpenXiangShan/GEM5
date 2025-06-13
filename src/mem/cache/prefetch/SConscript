@@ -41,7 +41,7 @@ SimObject('Prefetcher.py', sim_objects=[
     'BOPPrefetcher', 'SBOOEPrefetcher', 'STeMSPrefetcher', 'PIFPrefetcher', 'IPCPrefetcher',
     'CompositeWithWorkerPrefetcher', 'L2CompositeWithWorkerPrefetcher'])
 
-
+DebugFlag('PrefetchFilter')
 DebugFlag('BOPPrefetcher')
 DebugFlag('BOPOffsets')
 DebugFlag('XSCompositePrefetcher')
@@ -88,4 +88,6 @@ Source('cmc.cc')
 Source('composite_with_worker.cc')
 Source('l2_composite_with_worker.cc')
 Source('despacito_stream.cc')
+
+
 

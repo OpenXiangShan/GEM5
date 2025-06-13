@@ -63,7 +63,7 @@ IPCP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPrior
         return false;
     } else {
         rrf->insert(addr, 0);
-        addresses.push_back(AddrPriority(addr, prio, pfSource));
+        addresses.push_back(AddrPriority(addr, prio, true, pfSource));
         return true;
     }
     return false;
@@ -103,9 +103,9 @@ IPCP::ipLookup(Addr pc, Addr pf_addr, Classifier &type, int &new_stride)
     auto &ip = ipt[getIndex(pc)];
     IPEntry *ret = nullptr;
 
-    new_stride = ((pf_addr - ip.last_addr) >> lBlkSize) & stride_mask;
+    new_stride = ((pf_addr - ip.last_addr) >> log2BlkSize) & stride_mask;
 
-    bool update = (pf_addr > ip.last_addr) && (((pf_addr - ip.last_addr) >> lBlkSize) <= stride_mask);
+    bool update = (pf_addr > ip.last_addr) && (((pf_addr - ip.last_addr) >> log2BlkSize) <= stride_mask);
     if (!update) {
         new_stride = 0;
     }
@@ -194,8 +194,8 @@ IPCP::doLookup(const PrefetchInfo &pfi, PrefetchSourceType pf_source)
     if (!can_prefetch) {
         return;
     }
-    DPRINTF(IPCP, "IPCP lookup pc: %lx, vaddr: %lx\n", pfi.getPC(), pfi.getAddr());
-    Addr pf_addr = blockAddress(pfi.getAddr());
+    DPRINTF(IPCP, "IPCP lookup pc: %lx, vaddr: %lx\n", pfi.getPC(), pfi.getVAddr());
+    Addr pf_addr = blockAddress(pfi.getVAddr());
     int new_stride = -1;
 
     Classifier type = NO_PREFETCH;
@@ -228,8 +228,9 @@ IPCP::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, 
         assert(saved_ip);
         Addr base_addr = saved_pfAddr;
         for (int i = 1; i <= cs_degree; i++) {
-            base_addr = base_addr + (saved_ip->cs_stride << lBlkSize);
-            DPRINTF(IPCP, "IPCP CS Send pf: %lx, cur stride: %d, conf: %d\n", base_addr, saved_ip->cs_stride, saved_ip->cs_confidence);
+            base_addr = base_addr + (saved_ip->cs_stride << log2BlkSize);
+            DPRINTF(IPCP, "IPCP CS Send pf: %lx, cur stride: %d, conf: %d\n",
+                base_addr, saved_ip->cs_stride, saved_ip->cs_confidence);
             sendPFWithFilter(pfi, base_addr, addresses, 1, PrefetchSourceType::IPCP_CS);
         }
     } else if (saved_type == CLASS_CPLX) {
@@ -246,7 +247,7 @@ IPCP::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, 
                 DPRINTF(IPCP, "IPCP CPLX forced abort\n");
                 break;
             }
-            base_addr = base_addr + (csp.stride << lBlkSize);
+            base_addr = base_addr + (csp.stride << log2BlkSize);
             total_block_stride += csp.stride;
             DPRINTF(IPCP, "IPCP CPLX Send pf: %lx, cur stride: %d, conf: %d\n", base_addr, csp.stride, csp.confidence);
             if (sendPFWithFilter(pfi, base_addr, addresses, 32, PrefetchSourceType::IPCP_CPLX)) {
@@ -262,7 +263,7 @@ IPCP::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, 
                 DPRINTF(IPCP, "IPCP CPLX init sign: %lx, current sign: %lx\n", init_signature, signature);
                 best_block_offset = total_block_stride;
                 DPRINTF(IPCP, "CPLX found best blk offset: %u, best offset: %u\n", best_block_offset,
-                        best_block_offset << lBlkSize);
+                        best_block_offset << log2BlkSize);
             } else {
                 DPRINTF(IPCP, "IPCP CPLX init sign: %lx, current sign: %lx\n", init_signature, signature);
             }

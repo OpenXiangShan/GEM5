@@ -46,10 +46,14 @@
 #ifndef __MEM_CACHE_PREFETCH_BASE_HH__
 #define __MEM_CACHE_PREFETCH_BASE_HH__
 
+#include <cassert>
+#include <cstddef>
 #include <cstdint>
 
 #include "arch/generic/tlb.hh"
 #include "base/compiler.hh"
+#include "base/logging.hh"
+#include "base/named.hh"
 #include "base/statistics.hh"
 #include "base/types.hh"
 #include "mem/cache/cache_probe_arg.hh"
@@ -59,6 +63,7 @@
 #include "sim/byteswap.hh"
 #include "sim/clocked_object.hh"
 #include "sim/probe/probe.hh"
+#include "sim/sim_object.hh"
 
 namespace gem5
 {
@@ -96,6 +101,96 @@ class Base : public ClockedObject
 
     std::vector<PrefetchListener *> listeners;
 
+  protected:
+    class PrefetchFilter
+    {
+
+    private:
+
+        template<typename Key>
+        class LRUCache
+        {
+        private:
+            size_t capacity;
+            std::list<Key> cache_list;
+            std::unordered_map<Key, typename std::list<Key>::iterator> cache_map;
+
+        public:
+            LRUCache(size_t cap) : capacity(cap) {}
+            /**
+             * Check if the cache contains the key.
+             * @param key The key to check
+             * @return True if the key is in the cache, false otherwise
+             */
+            bool contains(const Key& key) const;
+
+            /**
+             * Get the size of the cache.
+             * @return The number of elements in the cache
+             */
+            size_t size() const { return cache_list.size(); }
+
+            /**
+             * Check if the cache is empty.
+             * @return True if the cache is empty, false otherwise
+             */
+            bool empty() const { return cache_list.empty(); }
+
+            /**
+             * Insert a key into the cache.
+             * @param key The key to insert
+             */
+            void insert(const Key& key);
+
+            /**
+             * Remove the all element from the cache.
+             */
+            void clear();
+        };
+        LRUCache<Addr> physicalAddrFilter;
+        LRUCache<Addr> virtualAddrFilter;
+
+    public:
+        PrefetchFilter(size_t physical_capacity = 256, size_t virtual_capacity = 256);
+
+        /**
+         * Check if the address is in the filter.
+         * @param addr The address to check
+         * @param isVA True if the address is a virtual address, false for physical
+         * @return True if the address is in the filter, false otherwise
+         */
+        bool contains(Addr addr, bool isVA) const;
+
+        /**
+         * Get the size of the filter.
+         * @param isVA True if the size of the virtual address filter is requested,
+         * false for physical address filter
+         * @return The size of the filter
+         */
+        size_t size(bool isVA) const { return isVA ? virtualAddrFilter.size() : physicalAddrFilter.size(); }
+
+        /**
+         * Check if the filter is empty.
+         * @param isVA True if checking the virtual address filter, false for physical
+         * @return True if the filter is empty, false otherwise
+         */
+        bool empty(bool isVA) const { return isVA ? virtualAddrFilter.empty() : physicalAddrFilter.empty(); }
+
+        /**
+         * Insert an address into the filter.
+         * @param addr The address to insert
+         * @param isVA True if the address is a virtual address, false for physical
+         */
+        void insert(Addr addr, bool isVA);
+
+        /**
+         * Clear the filter.
+         * @param isVA True if clearing the virtual address filter, false for physical
+         */
+        void clear(bool isVA);
+
+    };
+
   public:
 
     /**
@@ -104,27 +199,42 @@ class Base : public ClockedObject
      */
     class PrefetchInfo
     {
-        /** The address used to train and generate prefetches */
-        Addr address;
-        /** The program counter that generated this address. */
-        Addr pc;
-        /** The requestor ID that generated this address. */
-        RequestorID requestorId;
+        /** Validity bit for the virtual address */
+        bool validVaddr;
+        /** The virtual address used to train and generate prefetches */
+        Addr vaddress;
+
+        /** Validity bit for the physic address */
+        bool validPaddr;
+        /** The physic address used to train and generate prefetches */
+        Addr paddress;
+
         /** Validity bit for the PC of this address. */
         bool validPC;
+        /** The program counter that generated this address. */
+        Addr pc;
+
+
+        /** The requestor ID that generated this address. */
+        RequestorID requestorId;
+
         /** Whether this address targets the secure memory space. */
         bool secure;
+
         /** Size in bytes of the request triggering this event */
         unsigned int size;
+
         /** Whether this event comes from a write request */
-        bool write;
-        /** Physical address, needed because address can be virtual */
-        Addr paddress;
-        /** Whether this event comes from a cache miss */
-        bool cacheMiss;
+        bool isWriteReq;
+
+        /** Whether this event comes from a request miss */
+        bool isMiss;
+
         /** Pointer to the associated request data */
         uint8_t *data;
+
         /** XiangShan metadata of the block*/
+
         Request::XsMetadata xsMetadata;
 
         bool reqAfterSquash{false};
@@ -135,7 +245,7 @@ class Base : public ClockedObject
 
         bool pfHit{false};
 
-        bool storePFTrain{ false };
+        bool storePFTrain{false};
 
         uint64_t *data_ptr;
 
@@ -143,13 +253,41 @@ class Base : public ClockedObject
         uint64_t * getDataPtr()const{
             return data_ptr;
         }
+
         /**
-         * Obtains the address value of this Prefetcher address.
+         * @return Returns true if the virtual address is valid
+         */
+        bool isVaddrValid() const
+        {
+            return validVaddr;
+        }
+
+        /**
+         * Obtains the virtual address of this Prefetcher address.
          * @return the addres value.
          */
-        Addr getAddr() const
+        Addr getVAddr() const
         {
-            return address;
+            assert(isVaddrValid());
+            return vaddress;
+        }
+
+        /**
+         * @return Returns true if the physical address is valid
+         */
+        Addr isPaddrValid() const
+        {
+            return validPaddr;
+        }
+
+        /**
+         * Gets the physical address of the request
+         * @return physical address of the request
+         */
+        Addr getPaddr() const
+        {
+            assert(isPaddrValid());
+            return paddress;
         }
 
         /**
@@ -205,7 +343,7 @@ class Base : public ClockedObject
          */
         bool isWrite() const
         {
-            return write;
+            return isWriteReq;
         }
 
         // is come from store prefetch train trigger
@@ -215,21 +353,12 @@ class Base : public ClockedObject
         }
 
         /**
-         * Gets the physical address of the request
-         * @return physical address of the request
-         */
-        Addr getPaddr() const
-        {
-            return paddress;
-        }
-
-        /**
          * Check if this event comes from a cache miss
          * @result true if this event comes from a cache miss
          */
         bool isCacheMiss() const
         {
-            return cacheMiss;
+            return isMiss;
         }
 
         /**
@@ -263,14 +392,15 @@ class Base : public ClockedObject
          */
         bool sameAddr(PrefetchInfo const &pfi) const
         {
-            return this->getAddr() == pfi.getAddr() &&
-                this->isSecure() == pfi.isSecure();
-        }
-
-        bool sameAddr(Addr addr, bool isSecure) const
-        {
-            return this->getAddr() == addr &&
-                this->isSecure() == isSecure;
+            if (validVaddr && pfi.isVaddrValid()) {
+                return this->getVAddr() == pfi.getVAddr() &&
+                    this->isSecure() == pfi.isSecure();
+            } else if (validPaddr && pfi.isPaddrValid()) {
+                return this->getPaddr() == pfi.getPaddr() &&
+                    this->isSecure() == pfi.isSecure();
+            } else {
+                return false;
+            }
         }
 
         Request::XsMetadata getXsMetadata() const
@@ -310,21 +440,19 @@ class Base : public ClockedObject
         /**
          * Constructs a PrefetchInfo using a PacketPtr.
          * @param pkt PacketPtr used to generate the PrefetchInfo
-         * @param addr the address value of the new object, this address is
-         *        used to train the prefetcher
          * @param miss whether this event comes from a cache miss
          */
-        PrefetchInfo(PacketPtr pkt, Addr addr, bool miss);
+        PrefetchInfo(PacketPtr pkt, bool miss);
 
-        PrefetchInfo(PacketPtr pkt, Addr addr, bool miss, Request::XsMetadata xsMeta);
+        // PrefetchInfo(PacketPtr pkt, bool miss, Request::XsMetadata xsMeta);
 
-        /**
-         * Constructs a PrefetchInfo using a new address value and
-         * another PrefetchInfo as a reference.
-         * @param pfi PrefetchInfo used to generate this new object
-         * @param addr the address value of the new object
-         */
-        PrefetchInfo(PrefetchInfo const &pfi, Addr addr);
+        // /**
+        //  * Constructs a PrefetchInfo using a new address value and
+        //  * another PrefetchInfo as a reference.
+        //  * @param pfi PrefetchInfo used to generate this new object
+        //  * @param addr the address value of the new object
+        //  */
+        PrefetchInfo(PrefetchInfo const &pfi, Addr addr, bool isVaddr);
 
         ~PrefetchInfo()
         {
@@ -336,14 +464,11 @@ class Base : public ClockedObject
 
   protected:
 
-    bool isSubPrefetcher;
-
-    ArchDBer* archDBer;
-
-    // PARAMETERS
-
     /** Pointr to the parent cache. */
     CacheAccessor* cache = nullptr;
+
+    /** Registered tlb for address translations */
+    BaseTLB * tlb = nullptr;
 
     /** Pointer to the parent system. */
     System* system = nullptr;
@@ -351,37 +476,44 @@ class Base : public ClockedObject
     /** Pointer to the parent cache's probe manager. */
     ProbeManager *probeManager = nullptr;
 
-    /** The block size of the parent cache. */
-    unsigned blkSize;
-
-    /** log_2(block size of the parent cache). */
-    unsigned lBlkSize;
-
-    /** Only consult prefetcher on cache misses? */
-    const bool onMiss;
-
-    /** Consult prefetcher on reads? */
-    const bool onRead;
-
-    /** Consult prefetcher on reads? */
-    const bool onWrite;
-
-    /** Consult prefetcher on data accesses? */
-    const bool onData;
-
-    /** Consult prefetcher on instruction accesses? */
-    const bool onInst;
-
     /** Request id for prefetches */
     const RequestorID requestorId;
 
-    const Addr pageBytes;
+    /** Whether this prefetcher is a sub-prefetcher */
+    bool isSubPrefetcher;
+
+    /** Whether this prefetcher is a composite prefetcher */
+    bool isCompositePrefetcher;
+
+    /** The block size(Bytes) of the parent cache. */
+    size_t blkSize;
+
+    /** log_2 block size(Bytes) of the parent cache. */
+    size_t log2BlkSize;
+
+    /** The page size(Bypes) of the parent cache */
+    const size_t pageSize;
 
     /** Prefetch on every access, not just misses */
-    const bool prefetchOnAccess;
+    const bool pfOnHitNormalLine;
 
     /** Prefetch on hit on prefetched lines */
-    const bool prefetchOnPfHit;
+    const bool pfOnHitPrefetchedLine;
+
+    /** Only consult prefetcher on cache misses? */
+    const bool pfOnMiss;
+
+    /** Consult prefetcher on reads? */
+    const bool pfOnRead;
+
+    /** Consult prefetcher on reads? */
+    const bool pfOnWrite;
+
+    /** Consult prefetcher on data accesses? */
+    const bool pfOnData;
+
+    /** Consult prefetcher on instruction accesses? */
+    const bool pfOnInst;
 
     /** Use Virtual Addresses for prefetching */
     const bool useVirtualAddresses;
@@ -403,7 +535,7 @@ class Base : public ClockedObject
     bool hasEverBeenPrefetched(Addr addr, bool is_secure) const;
 
     /** Determine if addresses are on the same page */
-    bool samePage(Addr a, Addr b) const;
+    bool samePage(const Addr a, const Addr b) const;
     /** Determine the address of the block in which a lays */
     Addr blockAddress(Addr a) const;
     /** Determine the address of a at block granularity */
@@ -458,15 +590,14 @@ class Base : public ClockedObject
         statistics::Formula pfLate;
     } prefetchStats;
 
+    ArchDBer* archDBer;
+
     /** Total prefetches issued */
     uint64_t issuedPrefetches;
     /** Total prefetches that has been useful */
     uint64_t usefulPrefetches;
 
     uint64_t streamlatenum;
-
-    /** Registered tlb for address translations */
-    BaseTLB * tlb;
 
   public:
     Base(const BasePrefetcherParams &p);
@@ -481,8 +612,7 @@ class Base : public ClockedObject
     virtual void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) = 0;
 
     /** Notify prefetcher of cache fill */
-    virtual void notifyFill(const PacketPtr &pkt)
-    {}
+    virtual void notifyFill(const PacketPtr &pkt) {}
 
     virtual PacketPtr getPacket() = 0;
 
@@ -497,7 +627,9 @@ class Base : public ClockedObject
         prefetchStats.pfUnused_srcs[pfSource]++;
     }
 
-    virtual void prefetchUnused(Addr paddr, PrefetchSourceType pfSource) { prefetchUnused(pfSource); }
+    virtual void prefetchUnused(Addr paddr, PrefetchSourceType pfSource) {
+        prefetchUnused(pfSource);
+    }
 
     void
     incrDemandMhsrMisses()

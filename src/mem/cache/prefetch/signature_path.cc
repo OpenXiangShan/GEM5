@@ -235,7 +235,7 @@ bool
 SignaturePath::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses,
                                  boost::compute::detail::lru_cache<Addr, Addr> &filter, int32_t &best_block_offset)
 {
-    Addr request_addr = pfi.getAddr();
+    Addr request_addr = pfi.getVAddr();
     Addr ppn = request_addr / sPageBytes;
     stride_t current_block = (request_addr % sPageBytes) / blkSize;
     stride_t stride;
@@ -378,7 +378,7 @@ SignaturePath::sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses,
     } else {
         DPRINTF(SPP, "Send pf: %lx\n", addr);
         filter.insert(addr, 0);
-        addresses.push_back(AddrPriority(addr, prio, PrefetchSourceType::SPP));
+        addresses.push_back(AddrPriority(addr, prio, true, PrefetchSourceType::SPP));
         return true;
     }
 }

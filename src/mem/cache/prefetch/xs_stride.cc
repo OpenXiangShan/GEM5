@@ -31,6 +31,18 @@ XSStridePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrP
                                        PrefetchSourceType pf_source, bool miss_repeat, bool enter_new_region,
                                        bool is_first_shot, Addr &pf_addr, int64_t &learned_bop_offset)
 {
+    if (!pfi.hasPC()) {
+        DPRINTF(XSStridePrefetcher, "Ignoring request with no PC.\n");
+        return;
+    }
+    if (useVirtualAddresses && !pfi.isVaddrValid()) {
+        DPRINTF(XSStridePrefetcher, "Ignoring request with no valid vaddr.\n");
+        return;
+    }
+    if (!useVirtualAddresses && !pfi.isPaddrValid()) {
+        DPRINTF(XSStridePrefetcher, "Ignoring request with no valid paddr.\n");
+        return;
+    }
     if (is_first_shot) {
         DPRINTF(XSStridePrefetcher, "Do stride lookup for first shot acc ...\n");
         strideLookup(strideUnique, pfi, addresses, late, pf_addr, pf_source, enter_new_region, miss_repeat,
@@ -47,7 +59,7 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
                                   PrefetchSourceType last_pf_source, bool enter_new_region, bool miss_repeat,
                                   int64_t &learned_bop_offset)
 {
-    Addr lookupAddr = pfi.getAddr();
+    Addr lookupAddr = pfi.getVAddr();
     Addr stride_hash_pc = strideHashPc(pfi.getPC());
     StrideEntry *entry = stride.findEntry(stride_hash_pc, pfi.isSecure());
     learned_bop_offset = 0;
@@ -244,14 +256,7 @@ XSStridePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::ve
     } else {
         DPRINTF(XSStridePrefetcher, "Send pf: %lx\n", addr);
         filter->insert(addr, 0);
-        addresses.push_back(AddrPriority(addr, prio, src));
-        if (ahead_level > 1) {
-            assert(ahead_level == 2 || ahead_level == 3);
-            addresses.back().pfahead_host = ahead_level;
-            addresses.back().pfahead = true;
-        } else {
-            addresses.back().pfahead = false;
-        }
+        addresses.push_back(AddrPriority(addr, prio, true, src, ahead_level, ahead_level > cache->level()));
     }
 }
 

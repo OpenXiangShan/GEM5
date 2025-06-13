@@ -88,8 +88,17 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
         return;
     }
 
+    if (useVirtualAddresses && !pfi.isVaddrValid()) {
+        DPRINTF(XSCompositePrefetcher, "Ignoring request with no valid vaddr.\n");
+        return;
+    }
+    if (!useVirtualAddresses && !pfi.isPaddrValid()) {
+        DPRINTF(XSCompositePrefetcher, "Ignoring request with no valid paddr.\n");
+        return;
+    }
+
     Addr pc = pfi.getPC();
-    Addr vaddr = pfi.getAddr();
+    Addr vaddr = pfi.getVAddr();
     Addr block_addr = blockAddress(vaddr);
     PrefetchSourceType stream_type = PrefetchSourceType::SStream;
     if (pfi.isStore()) {
@@ -271,7 +280,7 @@ XSCompositePrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page, 
                                  bool &is_first_shot)
 {
     Addr pc = pfi.getPC();
-    Addr vaddr = pfi.getAddr();
+    Addr vaddr = pfi.getVAddr();
     Addr region_addr = regionAddress(vaddr);
     Addr region_start = regionAddress(vaddr) * regionSize;
     Addr region_offset = regionOffset(vaddr);
@@ -500,7 +509,7 @@ XSCompositePrefetcher::phtLookup(const Base::PrefetchInfo &pfi, std::vector<Addr
                          Addr look_ahead_addr)
 {
     Addr pc = pfi.getPC();
-    Addr vaddr = look_ahead_addr ? look_ahead_addr : pfi.getAddr();
+    Addr vaddr = look_ahead_addr ? look_ahead_addr : pfi.getVAddr();
     Addr blk_addr = blockAddress(vaddr);
     // Addr region_addr = regionAddress(vaddr);
     Addr region_offset = regionOffset(vaddr);
@@ -564,16 +573,9 @@ XSCompositePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std:
             pfBlockLRUFilter.insert(addr, 0);
         }
         if (archDBer) {
-            archDBer->l1PFTraceWrite(curTick(), pfi.getPC(), pfi.getAddr(), addr, src);
+            archDBer->l1PFTraceWrite(curTick(), pfi.getPC(), pfi.getVAddr(), addr, src);
         }
-        addresses.push_back(AddrPriority(addr, prio, src));
-        if (ahead_level > 1) {
-            assert(ahead_level == 2 || ahead_level == 3);
-            addresses.back().pfahead_host = ahead_level;
-            addresses.back().pfahead = true;
-        } else {
-            addresses.back().pfahead = false;
-        }
+        addresses.push_back(AddrPriority(addr, prio, true, src, ahead_level, ahead_level > cache->level()));
         DPRINTF(XSCompositePrefetcher, "Send pf: %lx, target level: %i\n", addr, ahead_level);
         return true;
     }

@@ -29,7 +29,6 @@ namespace prefetch
 
 class WorkerPrefetcher : public Queued
 {
-    bool firstCall = false;
     Event *transferEvent;
 
   public:
@@ -39,14 +38,6 @@ class WorkerPrefetcher : public Queued
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses) override {}
 
     virtual void transfer();
-
-    void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) override
-    {
-        if (!firstCall) {
-            firstCall = true;
-            schedule(transferEvent, nextCycle());
-        }
-    };
 
     void rxHint(BaseMMU::Translation *dpp) override;
     std::pair<long, long> rxMembusRatio(RequestorID requestorId) override
@@ -84,7 +75,7 @@ class WorkerPrefetcher : public Queued
 
     std::list<DeferredPacket> localBuffer;
 
-    unsigned depth{4};
+    unsigned transferDepth{4};
 };
 
 }  // namespace prefetch
