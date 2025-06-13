@@ -62,7 +62,7 @@ class IssuePort : public SimObject
   public:
     std::vector<int> rp;  // [typeid, portid]
     std::vector<FUDesc*> fu;
-    boost::dynamic_bitset<> mask;
+    std::bitset<Num_OpClasses> mask;
     IssuePort(const IssuePortParams& params);
 };
 
