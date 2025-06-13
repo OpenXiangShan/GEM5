@@ -139,8 +139,13 @@ class DecoupledBPUWithBTB : public BPredUnit
     unsigned numComponents{};
     unsigned numStages{};
 
-    bool predictorFinished{false};     ///< get prediction from BP
-    bool receivedPred{false};   ///< get final prediction from predsOfEachStage[numStages-1]
+    enum class BpuState
+    {
+        IDLE,               // Waiting to start a prediction.
+        PREDICTOR_DONE,         // Prediction in progress (conceptually replaces `predictorFinished`).
+        PREDICTION_OUTSTANDING,         // Prediction is ready to be enqueued (replaces `receivedPred`).
+    };
+    BpuState bpuState;
 
     Addr s0PC;                  ///< Current PC
     // Addr s0StreamStartPC;
