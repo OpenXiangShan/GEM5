@@ -535,6 +535,9 @@ class Fetch
                               std::unique_ptr<PCStateBase> &next_pc,
                               bool &predictedBranch, bool &newMacro);
 
+    /** Calculate the number of valid bytes that can be fetched considering bank conflicts. */
+    unsigned calculateValidBytes(Addr startAddr, unsigned requestedSize = 64);
+
   private:
     /** Pointer to the O3CPU. */
     CPU *cpu;
@@ -643,9 +646,6 @@ class Fetch
     /** The PC of the first instruction loaded into the fetch buffer. */
     Addr fetchBufferPC[MaxThreads];
 
-    // Constants for misaligned fetch handling
-    static constexpr unsigned CACHE_LINE_SIZE_BYTES = 64;
-
     /** Indicates whether the current fetch request spans across cache line boundaries.
      *  When true, the fetch requires two separate cache line accesses that will
      *  be merged into a single fetch buffer.
@@ -675,6 +675,9 @@ class Fetch
 
     /** Whether or not the fetch buffer data is valid. */
     bool fetchBufferValid[MaxThreads];
+
+    /** Number of valid bytes in fetch buffer considering bank conflicts. */
+    unsigned fetchBufferValidBytes[MaxThreads];
 
     unsigned currentLoopIter{0};  // todo: remove this
 
@@ -777,6 +780,8 @@ class Fetch
          * due to a squash.
          */
         statistics::Scalar tlbSquashes;
+        /** Distribution of fetch buffer valid bytes. */
+        statistics::Distribution fetchBufferValidBytesDist;
         /** Distribution of number of instructions fetched each cycle. */
         statistics::Distribution nisnDist;
         /** Rate of how often fetch was idle. */

@@ -134,6 +134,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         fetchBuffer[i] = NULL;
         fetchBufferPC[i] = 0;
         fetchBufferValid[i] = false;
+        fetchBufferValidBytes[i] = 0;  // Initialize bank conflict aware valid bytes
         lastIcacheStall[i] = 0;
         issuePipelinedIfetch[i] = false;
     }
@@ -229,6 +230,8 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Number of outstanding Icache misses that were squashed"),
     ADD_STAT(tlbSquashes, statistics::units::Count::get(),
              "Number of outstanding ITLB misses that were squashed"),
+    ADD_STAT(fetchBufferValidBytesDist, statistics::units::Count::get(),
+             "Distribution of fetch buffer valid bytes"),
     ADD_STAT(nisnDist, statistics::units::Count::get(),
              "Number of instructions fetched each cycle (Total)"),
     ADD_STAT(idleRate, statistics::units::Ratio::get(),
@@ -302,6 +305,11 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .prereq(icacheSquashes);
         tlbSquashes
             .prereq(tlbSquashes);
+        fetchBufferValidBytesDist
+            .init(/* base value */ 0,
+              /* last value */ fetch->fetchBufferSize,
+              /* bucket size */ 8)
+            .flags(statistics::pdf);
         nisnDist
             .init(/* base value */ 0,
               /* last value */ fetch->fetchWidth,
@@ -402,6 +410,7 @@ Fetch::clearStates(ThreadID tid)
     stalls[tid].drain = false;
     fetchBufferPC[tid] = 0;
     fetchBufferValid[tid] = false;
+    fetchBufferValidBytes[tid] = 0;
     fetchQueue[tid].clear();
 
     // TODO not sure what to do with priorityList for now
@@ -432,7 +441,7 @@ Fetch::resetStage()
 
         fetchBufferPC[tid] = 0;
         fetchBufferValid[tid] = false;
-
+        fetchBufferValidBytes[tid] = 0;
         fetchQueue[tid].clear();
 
         priorityList.push_back(tid);
@@ -892,6 +901,47 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     return predict_taken;
 }
 
+/**
+ * Calculate the number of valid bytes that can be fetched considering bank conflicts.
+ * RTL constraint: when fetching across cache lines, second line can only access
+ * banks [0, startBank-1] to avoid conflicts with first line's banks [startBank, 7].
+ */
+unsigned
+Fetch::calculateValidBytes(Addr startAddr, unsigned requestedSize)
+{
+    static constexpr unsigned CACHE_LINE_SIZE = 64;
+    static constexpr unsigned BANK_SIZE = 8;
+
+    unsigned startLineOffset = startAddr % CACHE_LINE_SIZE;
+    unsigned startBank = startLineOffset / BANK_SIZE;
+
+    // First line accessible bytes (from start position to line end)
+    unsigned firstLineBytes = CACHE_LINE_SIZE - startLineOffset;
+
+    if (requestedSize <= firstLineBytes) {
+        // No cross-line access needed, return requested size
+        return std::min(requestedSize, firstLineBytes);
+    }
+
+    // Need cross-line access, calculate second line accessible bank range
+    unsigned secondLineNeeded = requestedSize - firstLineBytes;
+
+    // Key logic: second line can only access Bank[0, startBank-1] to avoid conflicts
+    // When startBank=0, second line cannot access any banks (0 bytes)
+    // When startBank=3, second line can access Bank0,1,2 (3*8=24 bytes)
+    unsigned secondLineMaxBytes = startBank * BANK_SIZE;
+
+    // Actual second line accessible bytes
+    unsigned secondLineBytes = std::min(secondLineNeeded, secondLineMaxBytes);
+
+    DPRINTF(Fetch, "Bank conflict calc: addr=%#x, startBank=%u, "
+                   "firstLine=%u, secondLineMax=%u, secondLine=%u, total=%u\n",
+            startAddr, startBank, firstLineBytes, secondLineMaxBytes,
+            secondLineBytes, firstLineBytes + secondLineBytes);
+
+    return firstLineBytes + secondLineBytes;
+}
+
 bool
 Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
 {
@@ -914,6 +964,13 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
 
     DPRINTF(Fetch, "[tid:%i] Fetching cache line %#x for addr %#x, pc=%#lx\n",
             tid, vaddr, vaddr, pc);
+
+    // Calculate valid bytes considering bank conflicts
+    fetchBufferValidBytes[tid] = calculateValidBytes(vaddr, fetchBufferSize);
+    fetchStats.fetchBufferValidBytesDist.sample(fetchBufferValidBytes[tid]);
+
+    DPRINTF(Fetch, "[tid:%i] Bank conflict aware: valid=%u bytes (requested=%u)\n",
+            tid, fetchBufferValidBytes[tid], fetchBufferSize);
 
     // Check if fetch request spans across cache line boundaries
     if (vaddr % 64 + fetchBufferSize > 64) {
@@ -1151,6 +1208,7 @@ Fetch::flushFetchBuffer()
 {
     for (ThreadID i = 0; i < numThreads; ++i) {
         fetchBufferValid[i] = false;
+        fetchBufferValidBytes[i] = 0;
     }
 }
 
@@ -1875,7 +1933,7 @@ Fetch::prepareFetchAddress(ThreadID tid, bool &status_change, Addr &fetch_addr)
         // For RISC-V, we don't need ROM microcode, only check buffer validity and macroop status
         if (!(fetchBufferValid[tid] &&
               fetchBufferPC[tid] <= fetch_addr &&
-              fetch_addr + 4 <= fetchBufferPC[tid] + fetchBufferSize) &&
+              fetch_addr + 4 <= fetchBufferPC[tid] + fetchBufferValidBytes[tid]) &&
             !macroop[tid]) {
             DPRINTF(Fetch, "[tid:%i] Attempting to translate and read "
                     "instruction, starting at PC %s.\n", tid, this_pc);
@@ -1954,10 +2012,11 @@ Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
 
     // Check if the fetch buffer contains enough bytes for this instruction
     // We need at least 4 bytes to decode any RISC-V instruction (including compressed)
+    // Use bank conflict aware valid bytes instead of full buffer size
     if (fetch_pc < fetchBufferPC[tid] ||
-        fetch_pc + 4 > fetchBufferPC[tid] + fetchBufferSize) {
+        fetch_pc + 4 > fetchBufferPC[tid] + fetchBufferValidBytes[tid]) {
         DPRINTF(Fetch, "[tid:%i] PC %#x outside fetch buffer range [%#x, %#x), stalling on ICache\n",
-                tid, fetch_pc, fetchBufferPC[tid], fetchBufferPC[tid] + fetchBufferSize);
+                tid, fetch_pc, fetchBufferPC[tid], fetchBufferPC[tid] + fetchBufferValidBytes[tid]);
         return StallReason::IcacheStall;
     }
 
@@ -2138,7 +2197,7 @@ Fetch::performInstructionFetch(ThreadID tid, Addr fetch_addr, bool &status_chang
     // Check if current PC is outside current fetch buffer
     Addr current_pc = this_pc.instAddr();
     if (current_pc < fetchBufferPC[tid] ||
-        current_pc >= fetchBufferPC[tid] + fetchBufferSize) {
+        current_pc >= fetchBufferPC[tid] + fetchBufferValidBytes[tid]) {
         issuePipelinedIfetch[tid] =
             fetchStatus[tid] != IcacheWaitResponse &&
             fetchStatus[tid] != ItlbWait &&
@@ -2341,12 +2400,12 @@ Fetch::pipelineIcacheAccesses(ThreadID tid)
     Addr fetchAddr = this_pc.instAddr();
 
     // Unless buffer already got the block, fetch it from icache.
-    // Check if the current PC is covered by the fetch buffer
+    // Check if the current PC is covered by the fetch buffer (bank conflict aware)
     if (!(fetchBufferValid[tid] &&
           fetchBufferPC[tid] <= fetchAddr &&
-          fetchAddr + 4 <= fetchBufferPC[tid] + fetchBufferSize)) {
+          fetchAddr + 4 <= fetchBufferPC[tid] + fetchBufferValidBytes[tid])) {
         DPRINTF(Fetch, "[tid:%i] Issuing a pipelined I-cache access, "
-                "starting at PC %s.\n", tid, this_pc);
+                "starting at PC %s (bank conflict aware).\n", tid, this_pc);
 
         fetchCacheLine(fetchAddr, tid, this_pc.instAddr());
     }
