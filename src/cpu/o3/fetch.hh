@@ -349,6 +349,30 @@ class Fetch
     bool fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc);
     void finishTranslation(const Fault &fault, const RequestPtr &mem_req);
 
+    /** Handle misaligned fetch that spans two cache lines.
+     * Creates and sends two separate cache requests.
+     * @param vaddr Starting virtual address
+     * @param tid Thread ID
+     * @param pc Program counter
+     * @return true if requests were successfully initiated
+     */
+    bool handleMisalignedFetch(Addr vaddr, ThreadID tid, Addr pc);
+
+    /** Handle normal aligned fetch within a single cache line.
+     * @param vaddr Virtual address to fetch from
+     * @param tid Thread ID
+     * @param pc Program counter
+     * @return true if request was successfully initiated
+     */
+    bool handleAlignedFetch(Addr vaddr, ThreadID tid, Addr pc);
+
+    /** Process misaligned fetch completion when both packets have arrived.
+     * Merges data from both cache lines into the fetch buffer.
+     * @param tid Thread ID
+     * @param pkt Most recently arrived packet
+     * @return Merged packet if both packets have arrived, nullptr otherwise
+     */
+    PacketPtr processMisalignedCompletion(ThreadID tid, PacketPtr pkt);
 
     /** Check if an interrupt is pending and that we need to handle
      */
@@ -619,15 +643,29 @@ class Fetch
     /** The PC of the first instruction loaded into the fetch buffer. */
     Addr fetchBufferPC[MaxThreads];
 
-    /** Indicating whether the fetch request is mis-aligned*/
+    // Constants for misaligned fetch handling
+    static constexpr unsigned CACHE_LINE_SIZE_BYTES = 64;
+
+    /** Indicates whether the current fetch request spans across cache line boundaries.
+     *  When true, the fetch requires two separate cache line accesses that will
+     *  be merged into a single fetch buffer.
+     */
     bool fetchMisaligned[MaxThreads];
 
-    /** The information of access including the address of two requests*/
+    /** Stores access information for misaligned fetches.
+     *  First: original virtual address, Second: address of second cache line
+     */
     std::pair<Addr, Addr> accessInfo[MaxThreads];
 
-    PacketPtr firstPkt[MaxThreads];
+    /** Packet pointer for the first cache line in a misaligned fetch.
+     *  Contains data from the tail of the first cache line.
+     */
+    PacketPtr firstCacheLinePkt[MaxThreads];
 
-    PacketPtr secondPkt[MaxThreads];
+    /** Packet pointer for the second cache line in a misaligned fetch.
+     *  Contains data from the head of the second cache line.
+     */
+    PacketPtr secondCacheLinePkt[MaxThreads];
 
     /** The size of the fetch queue in micro-ops */
     unsigned fetchQueueSize;
@@ -771,8 +809,15 @@ public:
     const FetchStatGroup &getFetchStats() { return fetchStats; }
 
   private:
-    uint8_t* firstDataBuf;
-    uint8_t* secondDataBuf;
+    /** Temporary buffer to store data from the first cache line in misaligned fetch.
+     *  Used during packet merging process.
+     */
+    uint8_t* firstCacheLineDataBuf;
+
+    /** Temporary buffer to store data from the second cache line in misaligned fetch.
+     *  Used during packet merging process.
+     */
+    uint8_t* secondCacheLineDataBuf;
 
     bool waitForVsetvl = false;
 };
