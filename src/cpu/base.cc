@@ -1459,15 +1459,16 @@ BaseCPU::difftestStep(ThreadID tid, InstSeqNum seq)
             diffAllStates->gem5RegFile.pc = diffInfo.pc->instAddr();
             if (noHypeMode) {
                 auto start = pmemStart + pmemSize * diffAllStates->diff.cpu_id;
-                warn("Start memcpy to NEMU from %#lx, size=%lu \n", (uint64_t)start, pmemSize);
+                warn("Start memcpy to NEMU from %#lx, size=%lu\n", (uint64_t)start, pmemSize);
                 diffAllStates->proxy->memcpy(0x80000000u, start, pmemSize, DUT_TO_REF);
             } else if (enableMemDedup) {
                 warn("Let ref share a COW mirror of root memory\n");
                 assert(diffAllStates->proxy->ref_get_backed_memory);
                 diffAllStates->proxy->ref_get_backed_memory(system->createCopyOnWriteBranch(), pmemSize);
             } else {
+                warn("MemDedup disabled, copying pmem to NEMU\n");
                 warn("Start memcpy to NEMU from %#lx, size=%lu\n", (uint64_t)pmemStart, pmemSize);
-                diffAllStates->proxy->memcpy(0x80000000u, pmemStart, pmemSize, DUT_TO_REF);
+                diffAllStates->proxy->memcpy_init(0x80000000u, pmemStart, pmemSize, DUT_TO_REF);
             }
             warn("Start regcpy to NEMU\n");
             diffAllStates->proxy->regcpy(&(diffAllStates->gem5RegFile), DUT_TO_REF);
