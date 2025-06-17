@@ -349,7 +349,8 @@ def setKmhV3IdealParams(args, system):
         cpu.SbufferEvictThreshold = 16
         cpu.numPhysIntRegs = 354
         cpu.numPhysFloatRegs = 384
-        cpu.numROBEntries = 640
+        cpu.numROBEntries = 320
+        cpu.CROB_instPerGroup = 1
         cpu.enableDispatchStage = True
         cpu.numDQEntries = [8, 8, 8]
         cpu.dispWidth = [10, 10, 10] # 6->10
