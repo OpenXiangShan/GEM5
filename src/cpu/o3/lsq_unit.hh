@@ -292,7 +292,7 @@ class LSQUnit
 
     // loadpipe
     const int loadPipeStages = 4;
-    const int loadWhenToReplay = 3;
+    const int loadWhenToReplay = 2;
     // stapipe
     const int storePipeStages = 4;
     const int storeWhenToReplay = 2;
