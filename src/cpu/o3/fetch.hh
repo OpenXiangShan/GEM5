@@ -349,6 +349,30 @@ class Fetch
     bool fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc);
     void finishTranslation(const Fault &fault, const RequestPtr &mem_req);
 
+    /** Handle misaligned fetch that spans two cache lines.
+     * Creates and sends two separate cache requests.
+     * @param vaddr Starting virtual address
+     * @param tid Thread ID
+     * @param pc Program counter
+     * @return true if requests were successfully initiated
+     */
+    bool handleMisalignedFetch(Addr vaddr, ThreadID tid, Addr pc);
+
+    /** Handle normal aligned fetch within a single cache line.
+     * @param vaddr Virtual address to fetch from
+     * @param tid Thread ID
+     * @param pc Program counter
+     * @return true if request was successfully initiated
+     */
+    bool handleAlignedFetch(Addr vaddr, ThreadID tid, Addr pc);
+
+    /** Process misaligned fetch completion when both packets have arrived.
+     * Merges data from both cache lines into the fetch buffer.
+     * @param tid Thread ID
+     * @param pkt Most recently arrived packet
+     * @return Merged packet if both packets have arrived, nullptr otherwise
+     */
+    PacketPtr processMisalignedCompletion(ThreadID tid, PacketPtr pkt);
 
     /** Check if an interrupt is pending and that we need to handle
      */
@@ -511,6 +535,9 @@ class Fetch
                               std::unique_ptr<PCStateBase> &next_pc,
                               bool &predictedBranch, bool &newMacro);
 
+    /** Calculate the number of valid bytes that can be fetched considering bank conflicts. */
+    unsigned calculateValidBytes(Addr startAddr, unsigned requestedSize = 64);
+
   private:
     /** Pointer to the O3CPU. */
     CPU *cpu;
@@ -619,15 +646,26 @@ class Fetch
     /** The PC of the first instruction loaded into the fetch buffer. */
     Addr fetchBufferPC[MaxThreads];
 
-    /** Indicating whether the fetch request is mis-aligned*/
+    /** Indicates whether the current fetch request spans across cache line boundaries.
+     *  When true, the fetch requires two separate cache line accesses that will
+     *  be merged into a single fetch buffer.
+     */
     bool fetchMisaligned[MaxThreads];
 
-    /** The information of access including the address of two requests*/
+    /** Stores access information for misaligned fetches.
+     *  First: original virtual address, Second: address of second cache line
+     */
     std::pair<Addr, Addr> accessInfo[MaxThreads];
 
-    PacketPtr firstPkt[MaxThreads];
+    /** Packet pointer for the first cache line in a misaligned fetch.
+     *  Contains data from the tail of the first cache line.
+     */
+    PacketPtr firstCacheLinePkt[MaxThreads];
 
-    PacketPtr secondPkt[MaxThreads];
+    /** Packet pointer for the second cache line in a misaligned fetch.
+     *  Contains data from the head of the second cache line.
+     */
+    PacketPtr secondCacheLinePkt[MaxThreads];
 
     /** The size of the fetch queue in micro-ops */
     unsigned fetchQueueSize;
@@ -637,6 +675,9 @@ class Fetch
 
     /** Whether or not the fetch buffer data is valid. */
     bool fetchBufferValid[MaxThreads];
+
+    /** Number of valid bytes in fetch buffer considering bank conflicts. */
+    unsigned fetchBufferValidBytes[MaxThreads];
 
     unsigned currentLoopIter{0};  // todo: remove this
 
@@ -739,6 +780,8 @@ class Fetch
          * due to a squash.
          */
         statistics::Scalar tlbSquashes;
+        /** Distribution of fetch buffer valid bytes. */
+        statistics::Distribution fetchBufferValidBytesDist;
         /** Distribution of number of instructions fetched each cycle. */
         statistics::Distribution nisnDist;
         /** Rate of how often fetch was idle. */
@@ -771,8 +814,15 @@ public:
     const FetchStatGroup &getFetchStats() { return fetchStats; }
 
   private:
-    uint8_t* firstDataBuf;
-    uint8_t* secondDataBuf;
+    /** Temporary buffer to store data from the first cache line in misaligned fetch.
+     *  Used during packet merging process.
+     */
+    uint8_t* firstCacheLineDataBuf;
+
+    /** Temporary buffer to store data from the second cache line in misaligned fetch.
+     *  Used during packet merging process.
+     */
+    uint8_t* secondCacheLineDataBuf;
 
     bool waitForVsetvl = false;
 };

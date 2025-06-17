@@ -134,6 +134,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         fetchBuffer[i] = NULL;
         fetchBufferPC[i] = 0;
         fetchBufferValid[i] = false;
+        fetchBufferValidBytes[i] = 0;  // Initialize bank conflict aware valid bytes
         lastIcacheStall[i] = 0;
         issuePipelinedIfetch[i] = false;
     }
@@ -174,8 +175,8 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
     // stallReason size should be the same as decodeWidth,renameWidth,dispWidth
     stallReason.resize(decodeWidth, StallReason::NoStall);
 
-    firstDataBuf = new uint8_t[fetchBufferSize];
-    secondDataBuf = new uint8_t[fetchBufferSize];
+    firstCacheLineDataBuf = new uint8_t[fetchBufferSize];
+    secondCacheLineDataBuf = new uint8_t[fetchBufferSize];
 }
 
 std::string Fetch::name() const { return cpu->name() + ".fetch"; }
@@ -229,6 +230,8 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Number of outstanding Icache misses that were squashed"),
     ADD_STAT(tlbSquashes, statistics::units::Count::get(),
              "Number of outstanding ITLB misses that were squashed"),
+    ADD_STAT(fetchBufferValidBytesDist, statistics::units::Count::get(),
+             "Distribution of fetch buffer valid bytes"),
     ADD_STAT(nisnDist, statistics::units::Count::get(),
              "Number of instructions fetched each cycle (Total)"),
     ADD_STAT(idleRate, statistics::units::Ratio::get(),
@@ -302,6 +305,11 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .prereq(icacheSquashes);
         tlbSquashes
             .prereq(tlbSquashes);
+        fetchBufferValidBytesDist
+            .init(/* base value */ 0,
+              /* last value */ fetch->fetchBufferSize,
+              /* bucket size */ 8)
+            .flags(statistics::pdf);
         nisnDist
             .init(/* base value */ 0,
               /* last value */ fetch->fetchWidth,
@@ -402,6 +410,7 @@ Fetch::clearStates(ThreadID tid)
     stalls[tid].drain = false;
     fetchBufferPC[tid] = 0;
     fetchBufferValid[tid] = false;
+    fetchBufferValidBytes[tid] = 0;
     fetchQueue[tid].clear();
 
     // TODO not sure what to do with priorityList for now
@@ -432,7 +441,7 @@ Fetch::resetStage()
 
         fetchBufferPC[tid] = 0;
         fetchBufferValid[tid] = false;
-
+        fetchBufferValidBytes[tid] = 0;
         fetchQueue[tid].clear();
 
         priorityList.push_back(tid);
@@ -450,74 +459,208 @@ Fetch::resetStage()
     }
 }
 
+bool
+Fetch::handleAlignedFetch(Addr vaddr, ThreadID tid, Addr pc)
+{
+    DPRINTF(Fetch, "[tid:%i] Handling aligned fetch for addr %#x, pc=%#lx\n", tid, vaddr, pc);
+
+    // For aligned fetch, use normal fetch size and no special handling needed
+    fetchMisaligned[tid] = false;
+
+    // Create single memory request for the aligned fetch
+    RequestPtr mem_req = std::make_shared<Request>(
+        vaddr, fetchBufferSize,
+        Request::INST_FETCH, cpu->instRequestorId(), pc,
+        cpu->thread[tid]->contextId());
+
+    mem_req->taskId(cpu->taskId());
+    memReq[tid] = mem_req;
+
+    // Store access information
+    accessInfo[tid] = std::make_pair(vaddr, vaddr);
+
+    // Initiate translation
+    fetchStatus[tid] = ItlbWait;
+    setAllFetchStalls(StallReason::ITlbStall);
+    FetchTranslation *trans = new FetchTranslation(this);
+    cpu->mmu->translateTiming(mem_req, cpu->thread[tid]->getTC(),
+                              trans, BaseMMU::Execute);
+    return true;
+}
+
+bool
+Fetch::handleMisalignedFetch(Addr vaddr, ThreadID tid, Addr pc)
+{
+    DPRINTF(Fetch, "[tid:%i] Handling misaligned fetch for addr %#x, pc=%#lx\n", tid, vaddr, pc);
+
+    fetchMisaligned[tid] = true;
+    firstCacheLinePkt[tid] = nullptr;
+    secondCacheLinePkt[tid] = nullptr;
+
+    Addr fetchPC = vaddr;
+    unsigned fetchSize = 64 - fetchPC % 64;  // Size for first cache line
+
+    DPRINTF(Fetch, "[tid:%i] Creating first cache line request: addr=%#x, size=%d\n",
+            tid, fetchPC, fetchSize);
+
+    // Create and send first request (tail of first cache line)
+    RequestPtr first_mem_req = std::make_shared<Request>(
+        fetchPC, fetchSize,
+        Request::INST_FETCH, cpu->instRequestorId(), pc,
+        cpu->thread[tid]->contextId());
+
+    first_mem_req->taskId(cpu->taskId());
+    first_mem_req->setMisalignedFetch();
+    first_mem_req->setReqNum(1);
+
+    memReq[tid] = first_mem_req;
+    anotherMemReq[tid] = first_mem_req;
+
+    // Initiate translation for first request
+    fetchStatus[tid] = ItlbWait;
+    setAllFetchStalls(StallReason::ITlbStall);
+    FetchTranslation *trans = new FetchTranslation(this);
+    cpu->mmu->translateTiming(first_mem_req, cpu->thread[tid]->getTC(),
+                              trans, BaseMMU::Execute);
+
+    // Prepare second request (head of second cache line)
+    fetchPC += (64 - fetchPC % 64);  // Move to start of next cache line
+    fetchSize = fetchBufferSize - fetchSize;  // Remaining size
+
+    DPRINTF(Fetch, "[tid:%i] Creating second cache line request: addr=%#x, size=%d\n",
+            tid, fetchPC, fetchSize);
+
+    // Store access information before creating second request
+    accessInfo[tid] = std::make_pair(vaddr, fetchPC);
+
+    // Create and send second request
+    RequestPtr second_mem_req = std::make_shared<Request>(
+        fetchPC, fetchSize,
+        Request::INST_FETCH, cpu->instRequestorId(), pc,
+        cpu->thread[tid]->contextId());
+
+    second_mem_req->taskId(cpu->taskId());
+    second_mem_req->setMisalignedFetch();
+    second_mem_req->setReqNum(2);
+
+    memReq[tid] = second_mem_req;  // Update memReq to point to second request
+
+    // Handle case where we're in retry state - check after both requests are prepared
+    if (fetchMisaligned[tid] && fetchStatus[tid] == IcacheWaitRetry) {
+        return true;
+    }
+
+    DPRINTF(Fetch, "[tid:%i] Initiating translation for second cache line\n", tid);
+
+    // Initiate translation for second request
+    fetchStatus[tid] = ItlbWait;
+    setAllFetchStalls(StallReason::ITlbStall);
+    FetchTranslation *trans2 = new FetchTranslation(this);
+    cpu->mmu->translateTiming(second_mem_req, cpu->thread[tid]->getTC(),
+                              trans2, BaseMMU::Execute);
+    return true;
+}
+
+PacketPtr
+Fetch::processMisalignedCompletion(ThreadID tid, PacketPtr pkt)
+{
+    DPRINTF(Fetch, "[tid:%i] Processing misaligned fetch completion.\n", tid);
+
+    Addr anotherPC = 0;
+    unsigned anotherSize = 0;
+
+    // Determine which cache line this packet belongs to
+    if (pkt->req->getReqNum() == 1) {
+        firstCacheLinePkt[tid] = pkt;
+        anotherPC = pkt->req->getVaddr() + 64 - pkt->req->getVaddr() % 64;
+        anotherSize = fetchBufferSize - pkt->getSize();
+    } else if (pkt->req->getReqNum() == 2) {
+        secondCacheLinePkt[tid] = pkt;
+        anotherPC = pkt->req->getVaddr() - 64 + pkt->getSize();
+        anotherSize = fetchBufferSize - pkt->getSize();
+    }
+
+    // Check if we're still waiting for the other packet
+    if (firstCacheLinePkt[tid] == nullptr || secondCacheLinePkt[tid] == nullptr) {
+        DPRINTF(Fetch, "[tid:%i] Waiting for %s pkt.\n", tid,
+                firstCacheLinePkt[tid] == nullptr ? "first" : "second");
+
+        // Handle retry case - need to send the missing request
+        if (pkt->isRetriedPkt()) {
+            DPRINTF(Fetch, "[tid:%i] Retried pkt.\n", tid);
+            DPRINTF(Fetch, "[tid:%i] send next pkt, addr: %#x, size: %d\n",
+                    tid, anotherPC, anotherSize);
+
+            // Create request for the missing cache line
+            RequestPtr mem_req = std::make_shared<Request>(
+                                anotherPC,
+                                anotherSize,
+                                Request::INST_FETCH, cpu->instRequestorId(), pkt->req->getPC(),
+                                cpu->thread[tid]->contextId());
+
+            mem_req->taskId(cpu->taskId());
+            mem_req->setMisalignedFetch();
+
+            // Set request number based on which packet we received
+            if (pkt->req->getReqNum() == 1) {
+                mem_req->setReqNum(2);
+            } else if (pkt->req->getReqNum() == 2) {
+                mem_req->setReqNum(1);
+            }
+
+            anotherMemReq[tid] = memReq[tid];
+            memReq[tid] = mem_req;
+
+            fetchStatus[tid] = ItlbWait;
+            FetchTranslation *trans = new FetchTranslation(this);
+            cpu->mmu->translateTiming(mem_req, cpu->thread[tid]->getTC(),
+                                      trans, BaseMMU::Execute);
+        }
+        return nullptr;  // Return nullptr to indicate we're still waiting
+    }
+
+    // Both packets have arrived - merge them
+    DPRINTF(Fetch, "[tid:%i] Both packets arrived, merging data.\n", tid);
+
+    // Copy data from both packets into temporary buffers
+    firstCacheLinePkt[tid]->getData(firstCacheLineDataBuf);
+    secondCacheLinePkt[tid]->getData(secondCacheLineDataBuf);
+
+    // Determine which packet to use as the final packet based on memReq
+    PacketPtr finalPkt;
+    if (memReq[tid]->getReqNum() == 2) {
+        finalPkt = secondCacheLinePkt[tid];
+    } else {
+        finalPkt = firstCacheLinePkt[tid];
+    }
+
+    // Merge data into the final packet
+    finalPkt->setData(firstCacheLineDataBuf, 0, 0, firstCacheLinePkt[tid]->getSize());
+    finalPkt->setData(secondCacheLineDataBuf, 0, firstCacheLinePkt[tid]->getSize(),
+                      secondCacheLinePkt[tid]->getSize());
+
+    return finalPkt;  // Return the merged packet
+}
+
 void
 Fetch::processCacheCompletion(PacketPtr pkt)
 {
     ThreadID tid = cpu->contextToThread(pkt->req->contextId());
 
+    // Handle misaligned fetch completion if this is a misaligned request
     if (pkt->req->isMisalignedFetch() && (pkt->req == memReq[tid] || pkt->req == anotherMemReq[tid])) {
         DPRINTF(Fetch, "[tid:%i] Misaligned pkt receive.\n", tid);
-        Addr anotherPC = 0;
-        unsigned anotherSize = 0;
-        if (pkt->req->getReqNum() == 1) {
-            firstPkt[tid] = pkt;
-            anotherPC = pkt->req->getVaddr() + 64 - pkt->req->getVaddr() % 64;
-            anotherSize = fetchBufferSize - pkt->getSize();
-        } else if (pkt->req->getReqNum() == 2) {
-            secondPkt[tid] = pkt;
-            anotherPC = pkt->req->getVaddr() - 64 + pkt->getSize();
-            anotherSize = fetchBufferSize - pkt->getSize();
-        }
+        PacketPtr mergedPkt = processMisalignedCompletion(tid, pkt);
 
-        if (firstPkt[tid] == nullptr || secondPkt[tid] == nullptr) {
-            DPRINTF(Fetch, "[tid:%i] Waiting for %s pkt.\n", tid, 
-                    firstPkt[tid] == nullptr ? "first" : "second");
-            if (pkt->isRetriedPkt()) {
-                DPRINTF(Fetch, "[tid:%i] Retried pkt.\n", tid);
-                DPRINTF(Fetch, "[tid:%i] send next pkt, addr: %#x, size: %d\n",
-                        tid, pkt->req->getVaddr() + 64 - pkt->req->getVaddr() % 64, 
-                        fetchBufferSize - pkt->getSize());
-                RequestPtr mem_req = std::make_shared<Request>(
-                                    anotherPC, 
-                                    anotherSize,
-                                    Request::INST_FETCH, cpu->instRequestorId(), pkt->req->getPC(),
-                                    cpu->thread[tid]->contextId());
-
-                mem_req->taskId(cpu->taskId());
-
-                mem_req->setMisalignedFetch();
-
-                if (pkt->req->getReqNum() == 1) {
-                    mem_req->setReqNum(2);
-                } else if (pkt->req->getReqNum() == 2) {
-                    mem_req->setReqNum(1);
-                }
-
-                anotherMemReq[tid] = memReq[tid];
-
-                memReq[tid] = mem_req;
-
-                fetchStatus[tid] = ItlbWait;
-                FetchTranslation *trans = new FetchTranslation(this);
-                cpu->mmu->translateTiming(mem_req, cpu->thread[tid]->getTC(),
-                                          trans, BaseMMU::Execute);
-            }
+        // If we're still waiting for another packet, return early
+        if (mergedPkt == nullptr) {
             return;
-        } else {
-            DPRINTF(Fetch, "[tid:%i] Received another pkt addr=%#lx, mem_req addr=%#lx.\n", tid,
-                    pkt->getAddr(), pkt->req->getVaddr());
-
-            // Copy two packets data into second packet
-            firstPkt[tid]->getData(firstDataBuf);
-            secondPkt[tid]->getData(secondDataBuf);
-            if (memReq[tid]->getReqNum() == 2) {
-                pkt = secondPkt[tid];
-            } else {
-                pkt = firstPkt[tid];
-            }
-            pkt->setData(firstDataBuf, 0, 0, firstPkt[tid]->getSize());
-            pkt->setData(secondDataBuf, 0, firstPkt[tid]->getSize(), secondPkt[tid]->getSize());
         }
+
+        // Use the merged packet for further processing
+        pkt = mergedPkt;
+        DPRINTF(Fetch, "[tid:%i] Received final misaligned pkt addr=%#lx, mem_req addr=%#lx.\n", tid,
+                pkt->getAddr(), pkt->req->getVaddr());
     }
 
     DPRINTF(Fetch, "[tid:%i] Waking up from cache miss.\n", tid);
@@ -558,10 +701,10 @@ Fetch::processCacheCompletion(PacketPtr pkt)
     if (!pkt->req->isMisalignedFetch()) {
         delete pkt;
     } else {
-        delete firstPkt[tid];
-        delete secondPkt[tid];
-        firstPkt[tid] = nullptr;
-        secondPkt[tid] = nullptr;
+        delete firstCacheLinePkt[tid];
+        delete secondCacheLinePkt[tid];
+        firstCacheLinePkt[tid] = nullptr;
+        secondCacheLinePkt[tid] = nullptr;
     }
     memReq[tid] = NULL;
     anotherMemReq[tid] = NULL;
@@ -758,18 +901,55 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     return predict_taken;
 }
 
+/**
+ * Calculate the number of valid bytes that can be fetched considering bank conflicts.
+ * RTL constraint: when fetching across cache lines, second line can only access
+ * banks [0, startBank-1] to avoid conflicts with first line's banks [startBank, 7].
+ */
+unsigned
+Fetch::calculateValidBytes(Addr startAddr, unsigned requestedSize)
+{
+    static constexpr unsigned CACHE_LINE_SIZE = 64;
+    static constexpr unsigned BANK_SIZE = 8;
+
+    unsigned startLineOffset = startAddr % CACHE_LINE_SIZE;
+    unsigned startBank = startLineOffset / BANK_SIZE;
+
+    // First line accessible bytes (from start position to line end)
+    unsigned firstLineBytes = CACHE_LINE_SIZE - startLineOffset;
+
+    if (requestedSize <= firstLineBytes) {
+        // No cross-line access needed, return requested size
+        return std::min(requestedSize, firstLineBytes);
+    }
+
+    // Need cross-line access, calculate second line accessible bank range
+    unsigned secondLineNeeded = requestedSize - firstLineBytes;
+
+    // Key logic: second line can only access Bank[0, startBank-1] to avoid conflicts
+    // When startBank=0, second line cannot access any banks (0 bytes)
+    // When startBank=3, second line can access Bank0,1,2 (3*8=24 bytes)
+    unsigned secondLineMaxBytes = startBank * BANK_SIZE;
+
+    // Actual second line accessible bytes
+    unsigned secondLineBytes = std::min(secondLineNeeded, secondLineMaxBytes);
+
+    DPRINTF(Fetch, "Bank conflict calc: addr=%#x, startBank=%u, "
+                   "firstLine=%u, secondLineMax=%u, secondLine=%u, total=%u\n",
+            startAddr, startBank, firstLineBytes, secondLineMaxBytes,
+            secondLineBytes, firstLineBytes + secondLineBytes);
+
+    return firstLineBytes + secondLineBytes;
+}
+
 bool
 Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
 {
-    Fault fault = NoFault;
-
     assert(!cpu->switchedOut());
 
-    // @todo: not sure if these should block translation.
-    //AlphaDep
+    // Check for blocking conditions
     if (cacheBlocked) {
-        DPRINTF(Fetch, "[tid:%i] Can't fetch cache line, cache blocked\n",
-                tid);
+        DPRINTF(Fetch, "[tid:%i] Can't fetch cache line, cache blocked\n", tid);
         setAllFetchStalls(StallReason::IcacheStall);
         return false;
     } else if (checkInterrupt(pc) && !delayedCommit[tid]) {
@@ -777,86 +957,27 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
         // Cache is blocked, or
         // while an interrupt is pending and we're not in PAL mode, or
         // fetch is switched out.
-        DPRINTF(Fetch, "[tid:%i] Can't fetch cache line, interrupt pending\n",
-                tid);
+        DPRINTF(Fetch, "[tid:%i] Can't fetch cache line, interrupt pending\n", tid);
         setAllFetchStalls(StallReason::IntStall);
         return false;
     }
 
-    Addr fetchPC = vaddr;
-    unsigned fetchSize = fetchBufferSize;
-
     DPRINTF(Fetch, "[tid:%i] Fetching cache line %#x for addr %#x, pc=%#lx\n",
-            tid, fetchPC, vaddr, pc);
+            tid, vaddr, vaddr, pc);
 
-    // Setup the memReq to do a read of the first instruction's address.
-    // Set the appropriate read size and flags as well.
-    // Build request here.
-    if (fetchPC % 64 + fetchBufferSize > 64) {
-        fetchMisaligned[tid] = true;
+    // Calculate valid bytes considering bank conflicts
+    fetchBufferValidBytes[tid] = calculateValidBytes(vaddr, fetchBufferSize);
+    fetchStats.fetchBufferValidBytesDist.sample(fetchBufferValidBytes[tid]);
 
-        firstPkt[tid] = nullptr;
-        secondPkt[tid] = nullptr;
+    DPRINTF(Fetch, "[tid:%i] Bank conflict aware: valid=%u bytes (requested=%u)\n",
+            tid, fetchBufferValidBytes[tid], fetchBufferSize);
 
-        fetchSize = 64 - fetchPC % 64;
-        RequestPtr mem_req = std::make_shared<Request>(
-            fetchPC, fetchSize,
-            Request::INST_FETCH, cpu->instRequestorId(), pc,
-            cpu->thread[tid]->contextId());
-
-        mem_req->taskId(cpu->taskId());
-
-        memReq[tid] = mem_req;
-
-        anotherMemReq[tid] = mem_req;
-
-        mem_req->setMisalignedFetch();
-
-        DPRINTF(Fetch, "[tid:%i] Fetching first cache line %#x for addr %#x, pc=%#lx\n",
-                tid, fetchPC, vaddr, pc);
-
-        // Initiate translation of the icache block
-        fetchStatus[tid] = ItlbWait;
-        setAllFetchStalls(StallReason::ITlbStall);
-        FetchTranslation *trans = new FetchTranslation(this);
-        cpu->mmu->translateTiming(mem_req, cpu->thread[tid]->getTC(),
-                                  trans, BaseMMU::Execute);
-
-        fetchPC += (64 - fetchPC % 64);
-        fetchSize = fetchBufferSize - fetchSize;
+    // Check if fetch request spans across cache line boundaries
+    if (vaddr % 64 + fetchBufferSize > 64) {
+        return handleMisalignedFetch(vaddr, tid, pc);
     } else {
-        fetchMisaligned[tid] = false;
+        return handleAlignedFetch(vaddr, tid, pc);
     }
-
-    accessInfo[tid] = std::make_pair(vaddr, fetchPC);
-
-    if (fetchMisaligned[tid] && fetchStatus[tid] == IcacheWaitRetry) {
-        return true;
-    }
-
-    RequestPtr mem_req = std::make_shared<Request>(
-        fetchPC, fetchSize,
-        Request::INST_FETCH, cpu->instRequestorId(), pc,
-        cpu->thread[tid]->contextId());
-
-    mem_req->taskId(cpu->taskId());
-
-    memReq[tid] = mem_req;
-
-    if (fetchMisaligned[tid]) {
-        DPRINTF(Fetch, "[tid:%i] Fetching second cache line %#x for addr %#x, pc=%#lx\n",
-                tid, fetchPC, vaddr, pc);
-        mem_req->setMisalignedFetch();
-        mem_req->setReqNum(2);
-    }
-
-    // Initiate translation of the icache block
-    fetchStatus[tid] = ItlbWait;
-    setAllFetchStalls(StallReason::ITlbStall);
-    FetchTranslation *trans = new FetchTranslation(this);
-    cpu->mmu->translateTiming(mem_req, cpu->thread[tid]->getTC(),
-                              trans, BaseMMU::Execute);
-    return true;
 }
 
 void
@@ -1087,6 +1208,7 @@ Fetch::flushFetchBuffer()
 {
     for (ThreadID i = 0; i < numThreads; ++i) {
         fetchBufferValid[i] = false;
+        fetchBufferValidBytes[i] = 0;
     }
 }
 
@@ -1811,7 +1933,7 @@ Fetch::prepareFetchAddress(ThreadID tid, bool &status_change, Addr &fetch_addr)
         // For RISC-V, we don't need ROM microcode, only check buffer validity and macroop status
         if (!(fetchBufferValid[tid] &&
               fetchBufferPC[tid] <= fetch_addr &&
-              fetch_addr + 4 <= fetchBufferPC[tid] + fetchBufferSize) &&
+              fetch_addr + 4 <= fetchBufferPC[tid] + fetchBufferValidBytes[tid]) &&
             !macroop[tid]) {
             DPRINTF(Fetch, "[tid:%i] Attempting to translate and read "
                     "instruction, starting at PC %s.\n", tid, this_pc);
@@ -1890,10 +2012,11 @@ Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
 
     // Check if the fetch buffer contains enough bytes for this instruction
     // We need at least 4 bytes to decode any RISC-V instruction (including compressed)
+    // Use bank conflict aware valid bytes instead of full buffer size
     if (fetch_pc < fetchBufferPC[tid] ||
-        fetch_pc + 4 > fetchBufferPC[tid] + fetchBufferSize) {
+        fetch_pc + 4 > fetchBufferPC[tid] + fetchBufferValidBytes[tid]) {
         DPRINTF(Fetch, "[tid:%i] PC %#x outside fetch buffer range [%#x, %#x), stalling on ICache\n",
-                tid, fetch_pc, fetchBufferPC[tid], fetchBufferPC[tid] + fetchBufferSize);
+                tid, fetch_pc, fetchBufferPC[tid], fetchBufferPC[tid] + fetchBufferValidBytes[tid]);
         return StallReason::IcacheStall;
     }
 
@@ -2074,7 +2197,7 @@ Fetch::performInstructionFetch(ThreadID tid, Addr fetch_addr, bool &status_chang
     // Check if current PC is outside current fetch buffer
     Addr current_pc = this_pc.instAddr();
     if (current_pc < fetchBufferPC[tid] ||
-        current_pc >= fetchBufferPC[tid] + fetchBufferSize) {
+        current_pc >= fetchBufferPC[tid] + fetchBufferValidBytes[tid]) {
         issuePipelinedIfetch[tid] =
             fetchStatus[tid] != IcacheWaitResponse &&
             fetchStatus[tid] != ItlbWait &&
@@ -2277,12 +2400,12 @@ Fetch::pipelineIcacheAccesses(ThreadID tid)
     Addr fetchAddr = this_pc.instAddr();
 
     // Unless buffer already got the block, fetch it from icache.
-    // Check if the current PC is covered by the fetch buffer
+    // Check if the current PC is covered by the fetch buffer (bank conflict aware)
     if (!(fetchBufferValid[tid] &&
           fetchBufferPC[tid] <= fetchAddr &&
-          fetchAddr + 4 <= fetchBufferPC[tid] + fetchBufferSize)) {
+          fetchAddr + 4 <= fetchBufferPC[tid] + fetchBufferValidBytes[tid])) {
         DPRINTF(Fetch, "[tid:%i] Issuing a pipelined I-cache access, "
-                "starting at PC %s.\n", tid, this_pc);
+                "starting at PC %s (bank conflict aware).\n", tid, this_pc);
 
         fetchCacheLine(fetchAddr, tid, this_pc.instAddr());
     }
