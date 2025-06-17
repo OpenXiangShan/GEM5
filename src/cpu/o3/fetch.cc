@@ -101,7 +101,6 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       retryTid(InvalidThreadID),
       cacheBlkSize(cpu->cacheLineSize()),
       fetchBufferSize(params.fetchBufferSize),
-      fetchBufferMask(fetchBufferSize - 1),
       fetchQueueSize(params.fetchQueueSize),
       numThreads(params.numThreads),
       numFetchingThreads(params.smtNumFetchingThreads),
@@ -116,12 +115,6 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         fatal("fetchWidth (%d) is larger than compiled limit (%d),\n"
              "\tincrease MaxWidth in src/cpu/o3/limits.hh\n",
              fetchWidth, static_cast<int>(MaxWidth));
-    if (fetchBufferSize > cacheBlkSize)
-        fatal("fetch buffer size (%u bytes) is greater than the cache "
-              "block size (%u bytes)\n", fetchBufferSize, cacheBlkSize);
-    if (cacheBlkSize % fetchBufferSize)
-        fatal("cache block (%u bytes) is not a multiple of the "
-              "fetch buffer (%u bytes)\n", cacheBlkSize, fetchBufferSize);
 
     for (int i = 0; i < MaxThreads; i++) {
         fetchStatus[i] = Idle;
@@ -489,7 +482,7 @@ Fetch::handleMisalignedFetch(Addr vaddr, ThreadID tid, Addr pc)
     secondCacheLinePkt[tid] = nullptr;
 
     Addr fetchPC = vaddr;
-    unsigned fetchSize = 64 - fetchPC % 64;  // Size for first cache line
+    unsigned fetchSize = cacheBlkSize - fetchPC % cacheBlkSize;  // Size for first cache line
 
     DPRINTF(Fetch, "[tid:%i] Creating first cache line request: addr=%#x, size=%d\n",
             tid, fetchPC, fetchSize);
@@ -515,7 +508,8 @@ Fetch::handleMisalignedFetch(Addr vaddr, ThreadID tid, Addr pc)
                               trans, BaseMMU::Execute);
 
     // Prepare second request (head of second cache line)
-    fetchPC += (64 - fetchPC % 64);  // Move to start of next cache line
+    fetchPC += fetchSize;  // Move to start of next cache line
+    assert(fetchPC % cacheBlkSize == 0);
     fetchSize = fetchBufferSize - fetchSize;  // Remaining size
 
     DPRINTF(Fetch, "[tid:%i] Creating second cache line request: addr=%#x, size=%d\n",
@@ -557,18 +551,28 @@ Fetch::processMisalignedCompletion(ThreadID tid, PacketPtr pkt)
 {
     DPRINTF(Fetch, "[tid:%i] Processing misaligned fetch completion.\n", tid);
 
+    // Calculate the correct addresses based on original fetch address
+    Addr originalVaddr = accessInfo[tid].first;
+    unsigned offset = originalVaddr % cacheBlkSize;
+    unsigned firstSize = cacheBlkSize - offset;
+    Addr firstAddr = originalVaddr;
+    Addr secondAddr = originalVaddr + firstSize;
+    unsigned secondSize = fetchBufferSize - firstSize;
+
     Addr anotherPC = 0;
     unsigned anotherSize = 0;
 
-    // Determine which cache line this packet belongs to
+    // Determine which cache line this packet belongs to and calculate the other
     if (pkt->req->getReqNum() == 1) {
         firstCacheLinePkt[tid] = pkt;
-        anotherPC = pkt->req->getVaddr() + 64 - pkt->req->getVaddr() % 64;
-        anotherSize = fetchBufferSize - pkt->getSize();
+        // If we received first packet, the other is the second packet
+        anotherPC = secondAddr;
+        anotherSize = secondSize;
     } else if (pkt->req->getReqNum() == 2) {
         secondCacheLinePkt[tid] = pkt;
-        anotherPC = pkt->req->getVaddr() - 64 + pkt->getSize();
-        anotherSize = fetchBufferSize - pkt->getSize();
+        // If we received second packet, the other is the first packet
+        anotherPC = firstAddr;
+        anotherSize = firstSize;
     }
 
     // Check if we're still waiting for the other packet
@@ -577,7 +581,7 @@ Fetch::processMisalignedCompletion(ThreadID tid, PacketPtr pkt)
                 firstCacheLinePkt[tid] == nullptr ? "first" : "second");
 
         // Handle retry case - need to send the missing request
-        if (pkt->isRetriedPkt()) {
+        if (pkt->isRetriedPkt()) { // if the pkt is a retry pkt, we need to send another request
             DPRINTF(Fetch, "[tid:%i] Retried pkt.\n", tid);
             DPRINTF(Fetch, "[tid:%i] send next pkt, addr: %#x, size: %d\n",
                     tid, anotherPC, anotherSize);
@@ -915,23 +919,23 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
     DPRINTF(Fetch, "[tid:%i] Fetching cache line %#x for addr %#x, pc=%#lx\n",
             tid, vaddr, vaddr, pc);
 
-    // Check if fetch request spans across cache line boundaries
-    if (vaddr % 64 + fetchBufferSize > 64) {
-        return handleMisalignedFetch(vaddr, tid, pc);
-    } else {
-        return handleAlignedFetch(vaddr, tid, pc);
-    }
+    // With 66-byte fetchBufferSize, we always need to access 2 cache lines
+    return handleMisalignedFetch(vaddr, tid, pc);
 }
 
 void
 Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
 {
     ThreadID tid = cpu->contextToThread(mem_req->contextId());
-    Addr fetchMisalignedPC = mem_req->getVaddr();
-    if (mem_req->getReqNum() == 2) {
-        fetchMisalignedPC = mem_req->getVaddr() - 64 + mem_req->getSize();
+
+    // For misaligned fetch, use the stored original fetch address
+    // Both request 1 and request 2 should use the same fetchBufferPC
+    Addr fetchPC;
+    if (mem_req->isMisalignedFetch()) {
+        fetchPC = accessInfo[tid].first;  // Use stored original fetch address
+    } else {
+        fetchPC = mem_req->getVaddr();    // Normal aligned fetch
     }
-    Addr fetchPC = mem_req->isMisalignedFetch() ? fetchMisalignedPC : mem_req->getVaddr();
 
     assert(!cpu->switchedOut());
 

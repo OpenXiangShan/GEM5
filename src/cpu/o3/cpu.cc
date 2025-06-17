@@ -595,6 +595,10 @@ CPU::tick()
         }
     }
 
+    if (curCycle() - commit.getLastCommitCycle() > 40000) {
+        panic("cpu stucked!!\n");
+    }
+
     if (!FullSystem)
         updateThreadPriority();
 

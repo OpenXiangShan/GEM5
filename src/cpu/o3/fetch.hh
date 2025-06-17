@@ -422,12 +422,6 @@ class Fetch
      */
     void fetch(bool &status_change);
 
-    /** Align a PC to the start of a fetch buffer block. */
-    Addr fetchBufferAlignPC(Addr addr)
-    {
-        return (addr & ~(fetchBufferMask));
-    }
-
     /** The decoder. */
     InstDecoder *decoder[MaxThreads];
 
@@ -629,13 +623,10 @@ class Fetch
     /** Cache block size. */
     unsigned int cacheBlkSize;
 
-    /** The size of the fetch buffer in bytes. The fetch buffer
-     *  itself may be smaller than a cache line.
+    /** The size of the fetch buffer in bytes. Default is 66 bytes,
+    *  make sure we could decode tail 4bytes if it is in [62, 66)
      */
     unsigned fetchBufferSize;
-
-    /** Mask to align a fetch address to a fetch buffer boundary. */
-    Addr fetchBufferMask;
 
     /** The fetch data that is being fetched and buffered. */
     uint8_t *fetchBuffer[MaxThreads];
