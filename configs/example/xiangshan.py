@@ -396,7 +396,6 @@ def setKmhV3IdealParams(args, system):
         for i in range(args.num_cpus):
             system.l2_caches[i].size = '2MB'
             system.l2_caches[i].enable_wayprediction = False
-            system.l2_caches[i].slice_num = 0   # 4 -> 0, no slice
             system.tol2bus_list[i].forward_latency = 0  # 3->0
             system.tol2bus_list[i].response_latency = 0  # 3->0
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 0  # 2->0

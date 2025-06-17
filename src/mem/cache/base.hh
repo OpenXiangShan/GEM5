@@ -390,6 +390,8 @@ class BaseCache : public ClockedObject, CacheAccessor
 
     const int sliceNum;
 
+    const int sramBankNum;
+
     /** Available Tag read ports for L1 Load/pretche */
     unsigned freeTagLoadReadPorts;
 
@@ -448,7 +450,17 @@ class BaseCache : public ClockedObject, CacheAccessor
      */
     std::unique_ptr<Packet> pendingDelete;
 
-    std::vector<Tick> sliceReadyTick;
+    /**
+     * The ready tick of each bank in each slice
+     * indexed by sliceid then bankid
+     */
+    std::vector<std::vector<Tick>> sliceSramReadyTick;
+
+    /**
+     * The ready tick of each slice caused by BandWidth conflict
+     */
+    std::vector<Tick> sliceBWReadyTick;
+
 
     /**
      * Mark a request as in service (sent downstream in the memory
@@ -536,9 +548,17 @@ class BaseCache : public ClockedObject, CacheAccessor
         return sliceidx;
     }
 
+    int getSramBankIdx(Addr addr) {
+        if (sramBankNum <= 0) return -1;
+        uint64_t clusterSize = 1;
+        Addr innerSliceIdx = addr >> ceilLog2(blkSize) >> ceilLog2(getActualSliceNum()) >> ceilLog2(clusterSize);
+        Addr bankIdx = innerSliceIdx & (sramBankNum - 1);
+        return bankIdx;
+    }
+
     void calculateSliceBusy(PacketPtr pkt, bool isOnlyTag = true);
 
-    bool checkSLiceBusy(PacketPtr pkt, uint32_t sliceidx);
+    bool checkSLiceBusy(PacketPtr pkt, uint32_t sliceidx, uint32_t bankidx);
 
     /**
      * Does all the processing necessary to perform the provided request.
@@ -1274,6 +1294,17 @@ class BaseCache : public ClockedObject, CacheAccessor
         statistics::Scalar wayPreIndexHitTimes;
 
         statistics::Scalar wayPreDoubleHitTimes;
+
+        /**
+         * slice conflict related statistics
+         */
+        statistics::Scalar sliceAccess;
+        statistics::Scalar sliceConflict;
+        statistics::Scalar sliceSramConflict;
+        statistics::Scalar sliceBWConflict;
+        statistics::Formula sliceConflictRate;
+        statistics::Formula sliceSramConflictRate;
+        statistics::Formula sliceBWConflictRate;
 
         /*number of waypre times*/
         statistics::Scalar wayPreTimes;

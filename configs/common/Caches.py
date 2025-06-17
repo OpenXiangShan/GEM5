@@ -113,6 +113,8 @@ class L2Cache(Cache):
 
     slice_num = 4
 
+    sram_bank_num = 4
+
 class L3Cache(Cache):
     mshrs = 64
     tgts_per_mshr = 20

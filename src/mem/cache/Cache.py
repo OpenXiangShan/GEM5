@@ -156,6 +156,8 @@ class BaseCache(ClockedObject):
     tag_load_read_ports = Param.Unsigned(3, "Total tag read ports for load/prefetcher(in L1 Cache)")
     slice_num = Param.Int(-1, "slice number (-1 is disable)")
 
+    sram_bank_num = Param.Int(1, "bank number of data & dir sram (1 is disable)")
+
     force_hit = Param.Bool(False, "Force some PC to hit in L1")
     way_entries = Param.MemorySize(
         "64",
