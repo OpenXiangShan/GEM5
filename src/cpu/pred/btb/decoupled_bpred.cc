@@ -30,7 +30,8 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       predictWidth(p.predictWidth),
       maxInstsNum(p.predictWidth / 2),
       historyBits(p.maxHistLen),
-      ubtb(p.ubtb),
+      ubtb1(p.ubtb1),
+      ubtb2(p.ubtb2),
       abtb(p.abtb),
       btb(p.btb),
       tage(p.tage),
@@ -49,7 +50,9 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     bpType = DecoupledBTBType;
     // TODO: better impl (use vector to assign in python)
     // problem: btb->getAndSetNewBTBEntry
-    components.push_back(ubtb);
+    components.push_back(ubtb1);
+    // we don't push ubtb2 into the component list, because its putPCHistory()
+    // and update methods are called explicitly.
     components.push_back(abtb);
     // components.push_back(uras);
     components.push_back(btb);
@@ -564,44 +567,66 @@ DecoupledBPUWithBTB::tick()
         numOverrideBubbles = 0;
         DPRINTF(Override, "Squashing, BPU state updated.\n");
         squashing = false;
+        predDFF.reset(); // consider putting it in squash();
         return;
     }
 
-    // 1. Request new prediction if FSQ not full and we are idle
+    // 1. Request prediction, finalize it, and get ready to enqueue.
+    // This all happens if we're idle and not blocked.
     if (bpuState == BpuState::IDLE && !streamQueueFull()) {
         requestNewPrediction();
-        bpuState = BpuState::PREDICTOR_DONE;
-    }
 
-    // 2. Handle pending prediction if available
-    if (bpuState == BpuState::PREDICTOR_DONE) {
-        DPRINTF(Override, "Generating final prediction for PC %#lx\n", s0PC);
+        // The training logic runs here, based on the previous cycle's DFF state.
+        trainUbtbFor2Taken();
         numOverrideBubbles = generateFinalPredAndCreateBubbles();
-        bpuState = BpuState::PREDICTION_OUTSTANDING;
 
-        // Clear each predictor's output
+        // Check if the second prediction is still valid after overrides.
+        validateSecondFBPrediction();
+
+        // Now, update the DFF for the *next* cycle using the results of this one.
+        updateDFF();
+
+        bpuState = BpuState::PREDS_READY;
+
+        // Clear predictor outputs.
         for (int i = 0; i < numStages; i++) {
             predsOfEachStage[i].btbEntries.clear();
         }
     }
 
-    // 3. Process enqueue operations and bubble counter
+    // try Enqueue FTQ
     tryEnqFetchTarget();
 
+    // 2. Enqueue predictions if there are no bubbles.
     // check if:
     // 1. FSQ has space
     // 2. there's no bubble
-    // 3. PREDICTION_OUTSTANDING
-    if (validateFSQEnqueue()) {
-        // Create new FSQ entry with the current prediction
-        makeNewPrediction(true);
+    // 3. Prediction is ready
 
-        DPRINTF(Override, "FSQ entry enqueued, prediction state reset\n");
-        bpuState = BpuState::IDLE;
+    // Try to enqueue the first (or only) prediction.
+    if (bpuState == BpuState::PREDS_READY && validateFSQEnqueue()) {
+        makeNewPrediction(true, false); // Enqueues finalPred
+
+        if (hasSecondPrediction) {
+            // 2-taken produced a second prediction.
+            finalPred = secondPrediction;
+            hasSecondPrediction = false; // It's in the hot seat now.
+            bpuState = BpuState::WAITING_FOR_SECOND_ENQ;
+        } else {
+            // just one single prediction, this cycle is done.
+            bpuState = BpuState::IDLE;
+        }
     }
 
+    // If we're waiting on the second prediction, try to enqueue it.
+    // This can happen in the same tick as the first if the FSQ has space.
+    if (bpuState == BpuState::WAITING_FOR_SECOND_ENQ && validateFSQEnqueue()) {
+        tryEnqFetchTarget();
+        makeNewPrediction(true, true); // Enqueues what was the second prediction
+        bpuState = BpuState::IDLE; // All done. Finally.
+    }
 
-    // Decrement override bubbles counter
+    // Decrement override bubbles counter, if applicable
     if (numOverrideBubbles > 0) {
         numOverrideBubbles--;
         dbpBtbStats.overrideBubbleNum++;
@@ -609,7 +634,6 @@ DecoupledBPUWithBTB::tick()
     }
 
     DPRINTF(Override, "Prediction cycle complete\n");
-
 }
 
 /**
@@ -621,19 +645,48 @@ DecoupledBPUWithBTB::tick()
 void
 DecoupledBPUWithBTB::requestNewPrediction()
 {
+    DPRINTF(Override, "Requesting new prediction for PC %#lx\n", s0PC);
 
-        DPRINTF(Override, "Requesting new prediction for PC %#lx\n", s0PC);
+    // Initialize prediction state for each stage
+    for (int i = 0; i < numStages; i++) {
+        predsOfEachStage[i].bbStart = s0PC;
+    }
 
-        // Initialize prediction state for each stage
-        for (int i = 0; i < numStages; i++) {
-            predsOfEachStage[i].bbStart = s0PC;
+    // Query each predictor component with current PC and history
+    for (int i = 0; i < numComponents; i++) {
+        components[i]->putPCHistory(s0PC, s0History, predsOfEachStage);  //s0History not used
+    }
+
+    // Get prediction from secondary uBTB, if the first prediction is valid.
+    // This uses the same s0PC for lookup, as ubtb2 is trained to hold the
+    // subsequent block's info.
+    // TODO: handles the case when there's abtb prediction
+    if (enable2Taken && predsOfEachStage[0].btbEntries.size() > 0) {
+
+        std::vector<FullBTBPrediction> ubtb2Preds(1);
+        ubtb2Preds[0].bbStart = s0PC;
+        ubtb2->putPCHistory(s0PC, s0History, ubtb2Preds); // ubtb2 lookup based on s0PC
+
+        // After getting the prediction, morph its start PC to reflect its true position,
+        // which is the target of the first branch.
+        if (ubtb2Preds[0].btbEntries.size() > 0) {
+            ubtb2Preds[0].bbStart = predsOfEachStage[0].getTarget(predictWidth);
+            secondPrediction = ubtb2Preds[0];
+
+
+            hasSecondPrediction = true;
+            // Instead of asserting, let's check the condition and discard the second prediction if it doesn't fit.
+            if (!(ubtb2Preds[0].controlAddr() >= ubtb2Preds[0].bbStart &&
+                  ubtb2Preds[0].controlAddr() < ubtb2Preds[0].getFallThrough(predictWidth))) {
+                hasSecondPrediction = false;
+                secondPrediction.btbEntries.clear();
+                DPRINTF(DecoupleBP, "Second FB prediction from uBTB2 failed range check, discarding.\n");
+            }
+            DPRINTF(DecoupleBP, "Got second FB prediction from uBTB2 for target %#lx\n", ubtb2Preds[0].bbStart);
+        } else {
+            hasSecondPrediction = false;
         }
-
-        // Query each predictor component with current PC and history
-        for (int i = 0; i < numComponents; i++) {
-            components[i]->putPCHistory(s0PC, s0History, predsOfEachStage);  //s0History not used
-        }
-
+    }
 }
 
 void DecoupledBPUWithBTB::overrideStats(OverrideReason overrideReason)
@@ -704,10 +757,6 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
         overrideReason = reason;
     }
 
-    // update ubtb using mbtb prediction
-    if (predsOfEachStage[numStages - 1].btbEntries.size() > 0) {
-        ubtb->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
-    }
 
     // 4. Record override bubbles and update statistics
     if (first_hit_stage > 0) {
@@ -1049,7 +1098,11 @@ void DecoupledBPUWithBTB::update(unsigned stream_id, ThreadID tid)
         updateStatistics(stream);
 
         // Update predictor components
-        updatePredictorComponents(stream);
+        if (!stream.isSecondFBPred) {
+            updatePredictorComponents(stream);
+        } else {
+            DPRINTF(DecoupleBP, "Skipping predictor update for second FB prediction at %#lx\n", stream.startPC);
+        }
 
         it = fetchStreamQueue.erase(it);
         dbpBtbStats.fsqEntryCommitted++;
@@ -1331,8 +1384,12 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     }
 
     // ---------- Update predictor components ----------
-    for (auto component : components) {
-        component->commitBranch(entry, inst);
+    // Do not update component stats for the second prediction, as its
+    // metadata might be invalid for this purpose and cause a segfault.
+    if (!entry.isSecondFBPred) {
+        for (auto &component : components) {
+            component->commitBranch(entry, inst);
+        }
     }
 }
 
@@ -1554,12 +1611,6 @@ DecoupledBPUWithBTB::validateFSQEnqueue()
         return false;
     }
 
-    // 1. Check if a prediction is available to enqueue
-    if (bpuState != BpuState::PREDICTION_OUTSTANDING) {
-        DPRINTF(Override, "No prediction available to enqueue into FSQ\n");
-        return false;
-    }
-
     // 2. Validate PC value
     if (s0PC == MaxAddr) {
         DPRINTF(DecoupleBP, "Invalid PC value %#lx, cannot make prediction\n", s0PC);
@@ -1747,7 +1798,7 @@ DecoupledBPUWithBTB::pHistShiftIn(int shamt, bool taken, boost::dynamic_bitset<>
  * @return FetchStream The created fetch stream
  */
 FetchStream
-DecoupledBPUWithBTB::createFetchStreamEntry()
+DecoupledBPUWithBTB::createFetchStreamEntry(bool is_second_pred)
 {
     // Create a new fetch stream entry
     FetchStream entry;
@@ -1780,10 +1831,15 @@ DecoupledBPUWithBTB::createFetchStreamEntry()
     entry.predTick = finalPred.predTick;
     entry.predSource = finalPred.predSource;
     entry.overrideReason = finalPred.overrideReason;
+    entry.isSecondFBPred = is_second_pred;
 
     // Save predictors' metadata
     for (int i = 0; i < numComponents; i++) {
-        entry.predMetas[i] = components[i]->getPredictionMeta();
+        if (is_second_pred) {
+            entry.predMetas[i] = components[i]->getSecondPredictionMeta();
+        } else {
+            entry.predMetas[i] = components[i]->getPredictionMeta();
+        }
     }
 
     // Initialize default resolution state
@@ -1818,12 +1874,12 @@ DecoupledBPUWithBTB::fillAheadPipeline(FetchStream &entry)
 
 // this function enqueues fsq and update s0PC and s0History
 void
-DecoupledBPUWithBTB::makeNewPrediction(bool create_new_stream)
+DecoupledBPUWithBTB::makeNewPrediction(bool create_new_stream, bool is_second_pred)
 {
     DPRINTF(DecoupleBP, "Creating new prediction for PC %#lx\n", s0PC);
 
     // 1. Create a new fetch stream entry with prediction information
-    FetchStream entry = createFetchStreamEntry();
+    FetchStream entry = createFetchStreamEntry(is_second_pred);
 
     // 2. Update global PC state to target or fall-through
     s0PC = finalPred.getTarget(predictWidth);;
@@ -1847,14 +1903,13 @@ DecoupledBPUWithBTB::makeNewPrediction(bool create_new_stream)
 
     // 7. Debug output and update statistics
     dumpFsq("after insert new stream");
-    DPRINTF(DecoupleBP, "Inserted fetch stream %lu starting at PC %#lx\n", 
+    DPRINTF(DecoupleBP, "Inserted fetch stream %lu starting at PC %#lx\n",
             fsqId, entry.startPC);
-    
+
     // 8. Update FSQ ID and increment statistics
     fsqId++;
     printStream(entry);
     dbpBtbStats.fsqEntryEnqueued++;
-
 }
 
 void
@@ -2064,6 +2119,121 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
 #endif
 }
 
+
+bool DecoupledBPUWithBTB::check2TakenConditions(FullBTBPrediction& dff, const FullBTBPrediction& s3Pred) {
+
+    assert(dff.getTarget(predictWidth) == s3Pred.bbStart);
+
+    // 1. Both predictions must have at least one branch.
+    if (dff.btbEntries.empty() || s3Pred.btbEntries.empty()) {
+        return false;
+    }
+
+    auto dffEntry = dff.getTakenEntry();
+    auto& s3PredEntry = s3Pred.btbEntries[0];
+
+    // 2. The first branch must be taken for a 2-taken sequence to form.
+    if (!dff.isTaken()) {
+        return false;
+    }
+
+    // 3. Check branch type compatibility based on spec table.
+
+    // Rule: 'multi-target indirect' as 1st branch is not allowed.
+    if (dffEntry.isIndirect) {
+        return false;
+    }
+
+    // Rule: 'multi-target indirect' as 2nd branch is not allowed.
+    if (s3PredEntry.isIndirect) {
+        return false;
+    }
+
+    // Rule: 'cond' as 2nd branch is not allowed.
+    if (s3PredEntry.isCond) {
+        return false;
+    }
+
+    // Rule: 'ret -> ret' is not allowed to avoid multiple RAS reads.
+    if (dffEntry.isReturn && s3PredEntry.isReturn) {
+        return false;
+    }
+
+    // Rule: 'call -> call' is not allowed to avoid multiple RAS writes.
+    if (dffEntry.isCall && s3PredEntry.isCall) {
+        return false;
+    }
+
+    // (call -> ret is allowed, so no check needed)
+
+    // All conditions passed.
+    return true;
+}
+
+// Renamed function containing only uBTB training logic.
+void DecoupledBPUWithBTB::trainUbtbFor2Taken()
+{
+    // Get the S3 prediction from s3 predictors. This is our 'ground truth' inside the BP.
+    auto& s3_pred = predsOfEachStage[numStages-1];
+
+    // Update ubtb1 based on the S3 prediction.
+    if (s3_pred.btbEntries.size() > 0) {
+        ubtb1->updateUsingS3Pred(s3_pred);
+    }
+
+    // Perform 2-taken learning for ubtb2.
+    // This compares the *current* S3 prediction with the *previous* cycle's S3 prediction (stored in DFF).
+    if (enable2Taken) {
+        if (predDFF.valid && check2TakenConditions(predDFF.prevS3Pred, s3_pred)) {
+            // trainSecondUBTB logic:
+            // Train uBTB2: when indexed by dff.bbstart, predict the content of s3_pred.
+            // This way, when both ubtb1 and ubtb2 use the same S0PC as input, they predict consecutive FBs.
+            FullBTBPrediction trainingPred = s3_pred;
+            // The training entry should be indexed by the PC of the dff block.
+            trainingPred.bbStart = predDFF.prevS3Pred.bbStart;
+
+            ubtb2->update2Taken(trainingPred);
+        }
+    }
+}
+
+// New function to update the DFF buffer for the next cycle.
+void DecoupledBPUWithBTB::updateDFF()
+{
+    // CRITICAL: Update the DFF with the fetch block that will precede
+    // the first fetch block of the next prediction cycle. This stored block
+    // is used for 2-taken training.
+
+    if (hasSecondPrediction) {
+        // Case 1: A valid second prediction exists.
+        // It's the most recent block, so we store it for the next cycle's training.
+         predDFF.storePrediction(secondPrediction);
+     } else {
+        // Case 2: No second prediction.
+        // This could be because the primary prediction was overridden, or uBTB2
+        // simply didn't find a 2-taken entry. In either situation, `finalPred`
+        // represents the one and only fetch block for this cycle. We store it.
+        predDFF.storePrediction(finalPred);
+     }
+}
+
+void DecoupledBPUWithBTB::validateSecondFBPrediction()
+{
+    if (!hasSecondPrediction) {
+        return; // No second prediction to validate.
+    }
+
+    // The second prediction is only valid if the first prediction from uBTB1
+    // was not overridden by a later-stage predictor.
+    // We check if the final prediction's source is stage 0.
+    if (finalPred.predSource != 0) {
+        DPRINTF(DecoupleBP, "uBTB1 prediction was overridden (finalPred source is stage %d), "
+                "invalidating second FB prediction.\n", finalPred.predSource);
+        hasSecondPrediction = false;
+        // We're clearing secondPrediction just to be tidy.
+        secondPrediction.btbEntries.clear();
+    }
+}
 
 }  // namespace btb_pred
 

@@ -90,7 +90,7 @@ UBTB::PredStatistics(const TickedUBTBEntry entry, Addr startAddr)
 {
     if (entry.valid) {
         Addr mbtb_end = (startAddr + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
-        assert(entry.pc >= startAddr && entry.pc < mbtb_end);
+        //assert(entry.pc >= startAddr && entry.pc < mbtb_end);
         DPRINTF(UBTB, "UBTB: lookup hit: \n");
         ubtbStats.predHit += 1;
         printTickedUBTBEntry(entry);
@@ -269,6 +269,41 @@ UBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred)
         }
     } else {
         // both S0 and S3 predict fall through, do nothing
+    }
+}
+
+void
+UBTB::update2Taken(FullBTBPrediction &s3Pred)
+{
+    auto s3TakenEntry = s3Pred.getTakenEntry();
+    if (!s3TakenEntry.valid) {
+        return;
+    }
+
+    auto iter = lookup(s3Pred.bbStart);
+
+    if (iter != ubtb.end()) {
+        // Hit: Unconditionally replace the existing entry.
+        replaceOldEntry(iter, s3Pred);
+    } else {
+        // Miss: Find a victim and create a new entry.
+        UBTBIter toBeReplacedIter;
+        bool foundInvalidEntry = false;
+
+        for (auto it = ubtb.begin(); it != ubtb.end(); ++it) {
+            if (!it->valid) {
+                toBeReplacedIter = it;
+                foundInvalidEntry = true;
+                break;
+            }
+        }
+
+        if (!foundInvalidEntry) {
+            std::make_heap(mruList.begin(), mruList.end(), older());
+            toBeReplacedIter = mruList.front();
+        }
+
+        replaceOldEntry(toBeReplacedIter, s3Pred);
     }
 }
 

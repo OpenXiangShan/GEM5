@@ -481,6 +481,19 @@ BTBMGSC::getPredictionMeta() {
     return meta;
 }
 
+std::shared_ptr<void>
+BTBMGSC::getSecondPredictionMeta()
+{
+    // Create a new meta object for the second prediction's history state.
+    auto second_meta = std::make_shared<MgscMeta>();
+    second_meta->indexBwFoldedHist = indexBwFoldedHist;
+    second_meta->indexLFoldedHist = indexLFoldedHist;
+    second_meta->indexIFoldedHist = indexIFoldedHist;
+    second_meta->indexGFoldedHist = indexGFoldedHist;
+    second_meta->indexPFoldedHist = indexPFoldedHist;
+    return second_meta;
+}
+
 /**
  * @brief Prepare BTB entries for update by filtering and processing
  *

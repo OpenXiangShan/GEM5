@@ -68,6 +68,7 @@ class BTBRAS : public TimedBaseBTBPredictor
                           std::vector<FullBTBPrediction> &stagePreds) override;
         
         std::shared_ptr<void> getPredictionMeta() override;
+        std::shared_ptr<void> getSecondPredictionMeta() override;
 
         void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
 
