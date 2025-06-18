@@ -334,6 +334,7 @@ def setKmhV3IdealParams(args, system):
 
         cpu.mmu.itb.size = 96
 
+        cpu.fetchWidth = 32     # 64byte fetch block have up to 32 instructions
         cpu.commitToFetchDelay = 2
         cpu.fetchQueueSize = 64
         cpu.fetchToDecodeDelay = 2

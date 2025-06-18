@@ -718,6 +718,12 @@ class Fetch
 
     bool notTakenBranchEncountered{false};
 
+    /** Check if we need a new FTQ entry for fetch */
+    bool needNewFTQEntry(ThreadID tid);
+
+    /** Get the start PC of the next FTQ entry and update fetchBufferPC */
+    Addr getNextFTQStartPC(ThreadID tid);
+
   protected:
     struct FetchStatGroup : public statistics::Group
     {

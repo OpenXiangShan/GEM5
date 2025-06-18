@@ -434,6 +434,11 @@ Fetch::resetStage()
     wroteToTimeBuffer = false;
     _status = Inactive;
 
+    // Initialize usedUpFetchTargets to force getting initial FTQ entry
+    usedUpFetchTargets = true;
+
+    DPRINTF(Fetch, "resetStage: set usedUpFetchTargets=true for initial FTQ setup\n");
+
     if (isStreamPred()) {
         dbsp->resetPC(pc[0]->instAddr());
     } else if (isFTBPred()) {
@@ -674,6 +679,25 @@ Fetch::processCacheCompletion(PacketPtr pkt)
     memcpy(fetchBuffer[tid], pkt->getConstPtr<uint8_t>(), fetchBufferSize);
     fetchBufferValid[tid] = true;
 
+    // Reset usedUpFetchTargets flag when we get new fetch data
+    // This allows fetch to continue with the current FTQ entry
+    if (usedUpFetchTargets) {
+        DPRINTF(Fetch, "[tid:%i] Resetting usedUpFetchTargets after cache completion, "
+                "fetchBufferPC=%#x\n", tid, fetchBufferPC[tid]);
+        usedUpFetchTargets = false;
+    }
+
+    // Verify fetchBufferPC alignment with FTQ for decoupled frontend
+    if (isDecoupledFrontend() && fetchBufferValid[tid]) {
+        if (isBTBPred() && dbpbtb->fetchTargetAvailable()) {
+            auto& ftq_entry = dbpbtb->getSupplyingFetchTarget();
+            assert(fetchBufferPC[tid] == ftq_entry.startPC &&
+                   "fetchBufferPC should be aligned with FTQ startPC");
+            DPRINTF(Fetch, "[tid:%i] Verified fetchBufferPC %#x matches FTQ startPC %#x\n",
+                    tid, fetchBufferPC[tid], ftq_entry.startPC);
+        }
+    }
+
     // Wake up the CPU (if it went to sleep and was waiting on
     // this completion event).
     cpu->wakeCPU();
@@ -838,6 +862,7 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
                     inst->staticInst, inst->seqNum, next_pc, tid);
             if (usedUpFetchTargets) {
                 DPRINTF(DecoupleBP, "Used up fetch targets.\n");
+                fetchBufferValid[tid] = false;  // Invalidate fetch buffer when FTQ entry exhausted
             }
         }
         else  {
@@ -852,6 +877,7 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
             }
             if (usedUpFetchTargets) {
                 DPRINTF(DecoupleBP, "Used up fetch targets.\n");
+                fetchBufferValid[tid] = false;  // Invalidate fetch buffer when FTQ entry exhausted
             }
             inst->setLoopIteration(currentLoopIter);
         }
@@ -1145,7 +1171,11 @@ Fetch::doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst, const In
     // some opportunities to handle interrupts may be missed.
     delayedCommit[tid] = true;
 
+    // Set usedUpFetchTargets to force getting new FTQ entry after squash
     usedUpFetchTargets = true;
+    fetchBufferValid[tid] = false;  // clear fetch buffer valid
+
+    DPRINTF(Fetch, "[tid:%i] Squash: set usedUpFetchTargets=true, will need new FTQ entry\n", tid);
 
     ++fetchStats.squashCycles;
 }
@@ -1875,16 +1905,26 @@ Fetch::prepareFetchAddress(ThreadID tid, bool &status_change, Addr &fetch_addr)
         status_change = true;
         return true;
     } else if (fetchStatus[tid] == Running) {
-        // Check if we need to fetch from icache
-        // For RISC-V, we don't need ROM microcode, only check buffer validity and macroop status
-        if (!(fetchBufferValid[tid] &&
-              fetchBufferPC[tid] <= fetch_addr &&
-              fetch_addr + 4 <= fetchBufferPC[tid] + fetchBufferSize) &&
-            !macroop[tid]) {
-            DPRINTF(Fetch, "[tid:%i] Attempting to translate and read "
-                    "instruction, starting at PC %s.\n", tid, this_pc);
+        // Check if we need to fetch from icache based on FTQ entry status
+        // For RISC-V, we don't need ROM microcode, only check FTQ status and macroop
+        if (needNewFTQEntry(tid) && !macroop[tid]) {
+            Addr ftq_start_pc = isDecoupledFrontend() ?
+                getNextFTQStartPC(tid) : fetch_addr;
 
-            fetchCacheLine(fetch_addr, tid, this_pc.instAddr());
+            if (ftq_start_pc == 0) {
+                // FTQ not available, stall fetch
+                DPRINTF(Fetch, "[tid:%i] Fetch stalled, waiting for FTQ entry for PC %s\n",
+                        tid, this_pc);
+                setAllFetchStalls(StallReason::FTQBubble);
+                ++fetchStats.miscStallCycles;
+                return false;
+            }
+
+            DPRINTF(Fetch, "[tid:%i] Need new FTQ entry, attempting to translate and read "
+                    "instruction, starting at PC %#x (original fetch_addr %#x, current PC %s)\n",
+                    tid, ftq_start_pc, fetch_addr, this_pc);
+
+            fetchCacheLine(ftq_start_pc, tid, this_pc.instAddr());
 
             if (fetchStatus[tid] == IcacheWaitResponse)
                 ++fetchStats.icacheStallCycles;
@@ -2139,10 +2179,12 @@ Fetch::performInstructionFetch(ThreadID tid, Addr fetch_addr, bool &status_chang
     }
 
     // Setup pipelined fetch for next cycle if needed
-    // Check if current PC is outside current fetch buffer
+    // Check if we need a new FTQ entry based on FTQ state
     Addr current_pc = this_pc.instAddr();
-    if (current_pc < fetchBufferPC[tid] ||
-        current_pc >= fetchBufferPC[tid] + fetchBufferSize) {
+    if (needNewFTQEntry(tid)) {
+        DPRINTF(Fetch, "[tid:%i] Setting up pipelined fetch for next cycle, "
+                "need new FTQ entry for PC %#x\n", tid, current_pc);
+
         issuePipelinedIfetch[tid] =
             fetchStatus[tid] != IcacheWaitResponse &&
             fetchStatus[tid] != ItlbWait &&
@@ -2150,6 +2192,8 @@ Fetch::performInstructionFetch(ThreadID tid, Addr fetch_addr, bool &status_chang
             fetchStatus[tid] != QuiescePending &&
             !curMacroop;
     } else {
+        DPRINTF(Fetch, "[tid:%i] Current FTQ entry still valid for PC %#x, "
+                "no pipelined fetch needed\n", tid, current_pc);
         issuePipelinedIfetch[tid] = false;
     }
 }
@@ -2333,6 +2377,94 @@ Fetch::branchCount()
     return InvalidThreadID;
 }
 
+bool
+Fetch::needNewFTQEntry(ThreadID tid)
+{
+    // Check if we need a new FTQ entry based on:
+    // 1. Used up current FTQ targets (decoupled frontend)
+    // 2. Invalid fetch buffer (cache miss or initial state)
+    bool need_new = usedUpFetchTargets || !fetchBufferValid[tid];
+
+    // Assert consistency: if usedUpFetchTargets=true, fetchBuffer should be invalid
+    if (isDecoupledFrontend() && usedUpFetchTargets) {
+        assert(!fetchBufferValid[tid] &&
+               "fetchBuffer should be invalid when FTQ entry is exhausted");
+    }
+
+    DPRINTF(Fetch, "[tid:%i] needNewFTQEntry: usedUpFetchTargets=%d, "
+            "fetchBufferValid=%d, result=%d\n",
+            tid, usedUpFetchTargets, fetchBufferValid[tid], need_new);
+
+    return need_new;
+}
+
+Addr
+Fetch::getNextFTQStartPC(ThreadID tid)
+{
+    assert(isDecoupledFrontend());
+
+    // When we need a new FTQ entry, try to supply fetch with the next target immediately
+    if (usedUpFetchTargets) {
+        DPRINTF(Fetch, "[tid:%i] usedUpFetchTargets=true, trying to get next FTQ entry\n", tid);
+
+        bool in_loop = false;
+        bool got_target = false;
+
+        if (isBTBPred()) {
+            got_target = dbpbtb->trySupplyFetchWithTarget(pc[tid]->instAddr(), in_loop);
+        } else if (isFTBPred()) {
+            got_target = dbpftb->trySupplyFetchWithTarget(pc[tid]->instAddr(), in_loop);
+        } else if (isStreamPred()) {
+            got_target = dbsp->trySupplyFetchWithTarget(pc[tid]->instAddr());
+        }
+
+        if (got_target) {
+            DPRINTF(Fetch, "[tid:%i] Successfully got next FTQ entry, resetting usedUpFetchTargets\n", tid);
+            usedUpFetchTargets = false;  // Reset flag since we got a new FTQ entry
+            // Note: fetchBufferValid[tid] will be set to true later when cache line is fetched
+        } else {
+            DPRINTF(Fetch, "[tid:%i] Failed to get next FTQ entry, should stall fetch until FTQ available\n", tid);
+            // Don't fallback to old address, return 0 to indicate stall needed
+            return 0;  // Signal that fetch should stall
+        }
+    }
+
+    // Now get the current supplying FTQ entry
+    if (isBTBPred()) {
+        assert(dbpbtb);
+        auto& ftq_entry = dbpbtb->getSupplyingFetchTarget();
+        Addr start_pc = ftq_entry.startPC;
+
+        // Update fetchBufferPC to align with FTQ entry
+        fetchBufferPC[tid] = start_pc;
+
+        DPRINTF(Fetch, "[tid:%i] getNextFTQStartPC: FTQ entry startPC=%#x, "
+                "endPC=%#x, fetchBufferPC updated to %#x\n",
+                tid, start_pc, ftq_entry.endPC, fetchBufferPC[tid]);
+
+        return start_pc;
+    } else if (isFTBPred()) {
+        assert(dbpftb);
+        auto& ftq_entry = dbpftb->getSupplyingFetchTarget();
+        Addr start_pc = ftq_entry.startPC;
+        fetchBufferPC[tid] = start_pc;
+
+        DPRINTF(Fetch, "[tid:%i] getNextFTQStartPC: FTB entry startPC=%#x, "
+                "endPC=%#x, fetchBufferPC updated to %#x\n",
+                tid, start_pc, ftq_entry.endPC, fetchBufferPC[tid]);
+
+        return start_pc;
+    } else if (isStreamPred()) {
+        // For stream predictor, fall back to current fetchBufferPC
+        DPRINTF(Fetch, "[tid:%i] getNextFTQStartPC: Stream predictor fallback, "
+                "using fetchBufferPC=%#x\n", tid, fetchBufferPC[tid]);
+        return fetchBufferPC[tid];
+    }
+
+    panic("getNextFTQStartPC called with unsupported predictor type");
+    return 0;
+}
+
 void
 Fetch::pipelineIcacheAccesses(ThreadID tid)
 {
@@ -2344,15 +2476,26 @@ Fetch::pipelineIcacheAccesses(ThreadID tid)
     const PCStateBase &this_pc = *pc[tid];
     Addr fetchAddr = this_pc.instAddr();
 
-    // Unless buffer already got the block, fetch it from icache.
-    // Check if the current PC is covered by the fetch buffer
-    if (!(fetchBufferValid[tid] &&
-          fetchBufferPC[tid] <= fetchAddr &&
-          fetchAddr + 4 <= fetchBufferPC[tid] + fetchBufferSize)) {
-        DPRINTF(Fetch, "[tid:%i] Issuing a pipelined I-cache access, "
-                "starting at PC %s.\n", tid, this_pc);
+    // Check if we need a new FTQ entry instead of physical address range
+    if (needNewFTQEntry(tid)) {
+        Addr ftq_start_pc = isDecoupledFrontend() ?
+            getNextFTQStartPC(tid) : fetchAddr;
 
-        fetchCacheLine(fetchAddr, tid, this_pc.instAddr());
+        if (ftq_start_pc == 0) {
+            // FTQ not available, stall pipelined fetch
+            DPRINTF(Fetch, "[tid:%i] Pipelined fetch stalled, waiting for FTQ entry for PC %s\n",
+                    tid, this_pc);
+            return;  // Don't issue pipelined fetch this cycle
+        }
+
+        DPRINTF(Fetch, "[tid:%i] Issuing a pipelined I-cache access for new FTQ entry, "
+                "starting at PC %#x (original PC %s)\n",
+                tid, ftq_start_pc, this_pc);
+
+        fetchCacheLine(ftq_start_pc, tid, this_pc.instAddr());
+    } else {
+        DPRINTF(Fetch, "[tid:%i] Current FTQ entry still valid for PC %s, "
+                "no pipelined access needed\n", tid, this_pc);
     }
 }
 
