@@ -492,7 +492,7 @@ Rename::tick()
             renameStatus[tid] != Squashing) {
 
             finalCommitSeq = fromCommit->commitInfo[tid].doneSeqNum;
-            releaseSeq = historyBuffer[tid].back().instSeqNum;
+            releaseSeq = historyBuffer->empty() ? 0 : historyBuffer[tid].back().instSeqNum;
         }
     }
 
