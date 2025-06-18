@@ -123,6 +123,7 @@ def config_cache(options, system):
         # same clock as the CPUs.
         system.l2_caches = [l2_cache_class(clk_domain=system.cpu_clk_domain,
                                            **_get_cache_opts(system.cpu[i], 'l2', options)) for i in range(options.num_cpus)]
+        system.l2_wrappers = [L2CacheWrapper(clk_domain=system.cpu_clk_domain) for i in range(options.num_cpus)]
         system.tol2bus_list = [L1ToL2Bus(
             clk_domain=system.cpu_clk_domain) for i in range(options.num_cpus)]
         for i in range(options.num_cpus):
@@ -130,7 +131,10 @@ def config_cache(options, system):
             #                        **_get_cache_opts('l2', options)))
 
             # system.tol2bus_list.append(L2XBar(clk_domain = system.cpu_clk_domain, width=256))
-            system.l2_caches[i].cpu_side = system.tol2bus_list[i].mem_side_ports
+            system.l2_wrappers[i].cpu_side = system.tol2bus_list[i].mem_side_ports
+            system.l2_wrappers[i].inner_cpu_port = system.l2_caches[i].cpu_side
+            system.l2_caches[i].mem_side = system.l2_wrappers[i].inner_mem_port
+
             system.tol2bus_list[i].snoop_filter.max_capacity = "16MB"
             system.l2_caches[i].do_fast_writeline = not options.kmh_align
 
@@ -172,10 +176,10 @@ def config_cache(options, system):
         for i in range(options.num_cpus):
             if options.l3cache:
                 # l2 -> tol3bus -> l3
-                system.l2_caches[i].mem_side = system.tol3bus.cpu_side_ports
+                system.l2_wrappers[i].mem_side = system.tol3bus.cpu_side_ports
                 # l3 -> membus
             else:
-                system.l2_caches[i].mem_side = system.membus.cpu_side_ports
+                system.l2_wrappers[i].mem_side = system.membus.cpu_side_ports
 
     if options.memchecker:
         system.memchecker = MemChecker()
