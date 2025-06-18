@@ -377,7 +377,7 @@ def setKmhV3IdealParams(args, system):
                 cpu.branchPred.predictWidth = 64              # max width of a fetch block
                 cpu.branchPred.btb.numEntries = 16384
                 cpu.branchPred.tage.tableSizes = [2048] * 14  # 2ways, 2048 sets
-                cpu.branchPred.enable2Taken = True
+                cpu.branchPred.enable2Taken = not args.disable_2taken
                 cpu.branchPred.enable2Fetch = True
 
             cpu.branchPred.tage.enableSC = False # TODO(bug): When numBr changes, enabling SC will trigger an assert

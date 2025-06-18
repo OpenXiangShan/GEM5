@@ -80,10 +80,34 @@ class DecoupledBPUWithBTB : public BPredUnit
     bool enableJumpAheadPredictor{false};
 
     // 2taken feature support
-    bool enable2Taken{true};  // Default enabled
+    bool enable2Taken{true};  // will be overridden by the constructor
+
+    // Add DFF buffer structure to store previous S3 prediction
+    struct PredictionDFF
+    {
+        bool valid{false};
+        // Previous S3 final prediction result,
+        // this field sometimes stores the second prediction from the previous cycle
+        FullBTBPrediction prevS3Pred;
+
+        void reset() {
+            valid = false;
+        }
+
+        void storePrediction(const FullBTBPrediction& s3_pred) {
+            prevS3Pred = s3_pred;
+            valid = true;
+        }
+    };
 
   private:
     std::string _name;
+
+    PredictionDFF predDFF;  // DFF buffer to store previous pipeline result
+
+    // Storage for second fetch block prediction
+    FullBTBPrediction secondPrediction;  // Second fetch block prediction from uBTB2
+    bool hasSecondPrediction{false};     // Whether we have a valid second FB prediction
 
     FetchTargetQueue fetchTargetQueue;
 
@@ -100,7 +124,8 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     const Addr MaxAddr{~(0ULL)};
 
-    UBTB *ubtb{};
+    UBTB *ubtb1{};     // Primary uBTB for first fetch block
+    UBTB *ubtb2{};     // Secondary uBTB for 2-taken patterns
     DefaultBTB *abtb{};
     DefaultBTB *btb{};
     BTBTAGE *tage{};
@@ -144,9 +169,9 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     enum class BpuState
     {
-        IDLE,               // Waiting to start a prediction.
-        PREDICTOR_DONE,         // Prediction in progress (conceptually replaces `predictorFinished`).
-        PREDICTION_OUTSTANDING,         // Prediction is ready to be enqueued (replaces `receivedPred`).
+        IDLE,                   // Waiting to start a prediction.
+        PREDS_READY,            // One or two predictions are finalized and ready to enqueue.
+        WAITING_FOR_SECOND_ENQ  // First prediction enqueued, second is waiting for space.
     };
     BpuState bpuState;
 
@@ -171,6 +196,13 @@ class DecoupledBPUWithBTB : public BPredUnit
     using JAInfo = JumpAheadPredictor::JAInfo;
     JAInfo jaInfo;
 
+    // Helper method to check 2-taken conditions
+    bool check2TakenConditions(FullBTBPrediction& dff_pred, const FullBTBPrediction& s3_pred);
+    void update2TakenEntry(Addr prevAddr, const FullBTBPrediction& dff_pred, const FullBTBPrediction& s3_pred);
+    void trainUbtbFor2Taken();
+    void updateDFF();
+    void validateSecondFBPrediction();
+
     bool validateFSQEnqueue();
 
     void tryEnqFetchTarget();
@@ -178,11 +210,16 @@ class DecoupledBPUWithBTB : public BPredUnit
     // Helper function to validate FTQ and FSQ state before enqueueing
     bool validateFTQEnqueue();
 
-    void makeNewPrediction(bool create_new_stream);
+    void makeNewPrediction(bool enqueue, bool is_second_pred = false);
 
     FtqEntry createFtqEntryFromStream(const FetchStream &stream, const FetchTargetEnqState &ftq_enq_state);
 
-    FetchStream createFetchStreamEntry();
+    /**
+     * @brief Creates a new FetchStream entry with prediction information
+     *
+     * @return FetchStream The created fetch stream
+     */
+    FetchStream createFetchStreamEntry(bool is_second_pred);
 
     void updateHistoryForPrediction(FetchStream &entry);
 
