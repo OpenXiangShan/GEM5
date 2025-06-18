@@ -78,6 +78,19 @@ BTBRAS::getPredictionMeta()
     return meta;
 }
 
+std::shared_ptr<void>
+BTBRAS::getSecondPredictionMeta()
+{
+    // Create a new meta object to checkpoint the RAS state for the second prediction.
+    auto second_meta = std::make_shared<RASMeta>();
+    second_meta->ssp = ssp;
+    second_meta->sctr = sctr;
+    second_meta->TOSR = TOSR;
+    second_meta->TOSW = TOSW;
+    second_meta->target = getTop().retAddr;
+    return second_meta;
+}
+
 void
 BTBRAS::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {

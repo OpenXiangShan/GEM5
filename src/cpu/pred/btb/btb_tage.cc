@@ -303,6 +303,17 @@ BTBTAGE::getPredictionMeta() {
     return meta;
 }
 
+std::shared_ptr<void>
+BTBTAGE::getSecondPredictionMeta()
+{
+    // Create a new meta object to checkpoint the history state for the second prediction.
+    auto second_meta = std::make_shared<TageMeta>();
+    second_meta->tagFoldedHist = tagFoldedHist;
+    second_meta->altTagFoldedHist = altTagFoldedHist;
+    second_meta->indexFoldedHist = indexFoldedHist;
+    return second_meta;
+}
+
 /**
  * @brief Prepare BTB entries for update by filtering and processing
  * 
