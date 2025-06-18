@@ -111,6 +111,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
                       std::vector<FullBTBPrediction> &stagePreds) override;
 
     std::shared_ptr<void> getPredictionMeta() override;
+    std::shared_ptr<void> getSecondPredictionMeta() override;
 
     // speculative update 3 folded history, according history and pred.taken
     // the other specUpdateHist methods are left blank

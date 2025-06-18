@@ -129,6 +129,8 @@ class UBTB : public TimedBaseBTBPredictor
      */
     void updateUsingS3Pred(FullBTBPrediction &s3Pred);
 
+    void update2Taken(FullBTBPrediction &s3Pred);
+
     /** for statistics only
      * @param stream The fetch stream containing execution results and prediction metadata
      */
@@ -169,8 +171,6 @@ class UBTB : public TimedBaseBTBPredictor
             printTickedUBTBEntry(*it);
         }
     }
-
-
 
   private:
 

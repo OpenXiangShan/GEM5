@@ -188,6 +188,17 @@ BTBITTAGE::getPredictionMeta() {
     return meta;
 }
 
+std::shared_ptr<void>
+BTBITTAGE::getSecondPredictionMeta()
+{
+    // Create a new meta object to checkpoint the ITTAGE state for the second prediction.
+    auto second_meta = std::make_shared<TageMeta>();
+    second_meta->tagFoldedHist = tagFoldedHist;
+    second_meta->altTagFoldedHist = altTagFoldedHist;
+    second_meta->indexFoldedHist = indexFoldedHist;
+    return second_meta;
+}
+
 void
 BTBITTAGE::update(const FetchStream &stream)
 {

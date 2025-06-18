@@ -300,6 +300,8 @@ struct FetchStream
     unsigned predSource;   // source of the prediction(numStage)
     OverrideReason overrideReason; // reason of the override(for profiling)
 
+    bool isSecondFBPred{false}; // New flag for 2-taken
+
     // prediction metas
     // FIXME: use vec
     std::array<std::shared_ptr<void>, 7> predMetas; // each component has a meta, TODO
