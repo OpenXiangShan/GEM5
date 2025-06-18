@@ -273,6 +273,8 @@ def addCommonOptions(parser, configure_xiangshan=False):
                         "available subdatabase: basic, tage, ras, loop")
     parser.add_argument("--disable-sc", default=False, action="store_true",
                         help="disable SC (enabled by default, only for FTBTAGE)")
+    parser.add_argument("--disable-2taken", default=False, action="store_true",
+                        help="disable 2-taken feature (enabled by default for DecoupledBPUWithBTB)")
     parser.add_argument("--enable-loop-buffer", default=False, action="store_true",
                         help="enable loop buffer (only for ftb branch predictor)")
     parser.add_argument("--enable-loop-predictor", default=False, action="store_true",
