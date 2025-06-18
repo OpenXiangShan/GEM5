@@ -53,6 +53,7 @@
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/reg_class.hh"
+#include "enums/ROBCompressPolicy.hh"
 #include "enums/ROBWalkPolicy.hh"
 #include "enums/SMTQueuePolicy.hh"
 
@@ -93,6 +94,11 @@ class ROB
     SMTQueuePolicy robPolicy;
 
     ROBWalkPolicy robWalkPolicy;
+
+    bool allocateGroup_none(const DynInstPtr inst, ThreadID tid);
+    bool allocateGroup_kmhv2(const DynInstPtr inst, ThreadID tid);
+    bool allocateGroup_MohBoE(const DynInstPtr inst, ThreadID tid);
+    bool allocateGroup_kmhv3(const DynInstPtr inst, ThreadID tid);
 
   public:
     /** ROB constructor.
@@ -219,37 +225,6 @@ class ROB
     /** Updates the tail instruction with the new youngest instruction. */
     void updateTail();
 
-    /** Reads the PC of the oldest head instruction. */
-//    uint64_t readHeadPC();
-
-    /** Reads the PC of the head instruction of a specific thread. */
-//    uint64_t readHeadPC(ThreadID tid);
-
-    /** Reads the next PC of the oldest head instruction. */
-//    uint64_t readHeadNextPC();
-
-    /** Reads the next PC of the head instruction of a specific thread. */
-//    uint64_t readHeadNextPC(ThreadID tid);
-
-    /** Reads the sequence number of the oldest head instruction. */
-//    InstSeqNum readHeadSeqNum();
-
-    /** Reads the sequence number of the head instruction of a specific thread.
-     */
-//    InstSeqNum readHeadSeqNum(ThreadID tid);
-
-    /** Reads the PC of the youngest tail instruction. */
-//    uint64_t readTailPC();
-
-    /** Reads the PC of the tail instruction of a specific thread. */
-//    uint64_t readTailPC(ThreadID tid);
-
-    /** Reads the sequence number of the youngest tail instruction. */
-//    InstSeqNum readTailSeqNum();
-
-    /** Reads the sequence number of tail instruction of a specific thread. */
-//    InstSeqNum readTailSeqNum(ThreadID tid);
-
     /** Checks if the ROB is still in the process of squashing instructions.
      *  @retval Whether or not the ROB is done squashing.
      */
@@ -284,7 +259,7 @@ class ROB
 
     uint32_t numInstCanCommit(int groups);
 
-    void allocateNewGroup(const DynInstPtr inst, ThreadID tid);
+    bool (ROB::*allocateNewGroup)(const DynInstPtr inst, ThreadID tid);
 
     void commitGroup(const DynInstPtr inst, ThreadID tid);
 
@@ -307,7 +282,7 @@ class ROB
 
     std::deque<unsigned> threadGroups[MaxThreads];
 
-    uint64_t lastCycle = 0;
+    uint64_t lastInsertCycle = 0;
 
     /** Max Insts a Thread Can Have in the ROB */
     unsigned maxEntries[MaxThreads];

@@ -55,6 +55,80 @@ namespace gem5
 namespace o3
 {
 
+bool
+ROB::allocateGroup_none(const DynInstPtr inst, ThreadID tid)
+{
+    return true; // No group allocation needed
+}
+
+bool
+ROB::allocateGroup_kmhv2(const DynInstPtr inst, ThreadID tid)
+{
+    auto& groups = threadGroups[tid];
+    auto& prev = instList[tid].back();
+
+    // load/store/control exclusive one group
+    bool alloc = false;
+    if (groups.empty()) [[unlikely]] {
+        alloc = true;
+    } else if (inst->isMemRef() || inst->isControl() || inst->isNonSpeculative()) {
+        alloc = true;
+    } else if (prev->isMemRef() || prev->isControl() ||
+               prev->isNonSpeculative()) {
+        alloc = true;
+    } else if (prev->ftqId != inst->ftqId) {
+        alloc = true;
+    } else if (lastInsertCycle != cpu->curCycle()) {
+        // different cycle
+        alloc = true;
+    } else if (groups.back() >= instsPerGroup) {
+        alloc = true;
+    }
+    return alloc;
+}
+
+bool
+ROB::allocateGroup_MohBoE(const DynInstPtr inst, ThreadID tid)
+{
+    auto& groups = threadGroups[tid];
+    auto& prev = instList[tid].back();
+
+    // load/store on group head
+    // control on group end
+    bool alloc = false;
+    if (groups.empty()) [[unlikely]] {
+        alloc = true;
+    } else if (inst->isMemRef() || inst->isNonSpeculative()) {
+        alloc = true;
+    } else if (prev->isControl()) {
+        alloc = true;
+    } else if (lastInsertCycle != cpu->curCycle()) {
+        // different cycle
+        alloc = true;
+    } else if (groups.back() >= instsPerGroup) {
+        alloc = true;
+    }
+    return alloc;
+}
+
+bool
+ROB::allocateGroup_kmhv3(const DynInstPtr inst, ThreadID tid)
+{
+    auto& groups = threadGroups[tid];
+    auto& prev = instList[tid].back();
+
+    bool alloc = false;
+    if (groups.empty()) [[unlikely]] {
+        alloc = true;
+    } else if (lastInsertCycle != cpu->curCycle()) {
+        // different cycle
+        alloc = true;
+    } else if (groups.back() >= instsPerGroup) {
+        alloc = true;
+    }
+    return alloc;
+}
+
 ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
     : robPolicy(params.smtROBPolicy),
       robWalkPolicy(params.robWalkPolicy),
@@ -106,6 +180,25 @@ ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
 
     for (ThreadID tid = numThreads; tid < MaxThreads; tid++) {
         maxEntries[tid] = 0;
+    }
+
+    switch(params.RobCompressPolicy) {
+        case ROBCompressPolicy::none:
+            allocateNewGroup = &ROB::allocateGroup_none;
+            instsPerGroup = 1;
+            break;
+        case ROBCompressPolicy::kmhv2:
+            allocateNewGroup = &ROB::allocateGroup_kmhv2;
+            break;
+        case ROBCompressPolicy::MohBoE:
+            allocateNewGroup = &ROB::allocateGroup_MohBoE;
+            break;
+        case ROBCompressPolicy::kmhv3:
+            allocateNewGroup = &ROB::allocateGroup_kmhv3;
+            break;
+        default:
+            panic("Unknown ROB compression policy");
+            break;
     }
 
     resetState();
@@ -218,40 +311,6 @@ ROB::numInstCanCommit(int groups)
 }
 
 void
-ROB::allocateNewGroup(const DynInstPtr inst, ThreadID tid)
-{
-    bool alloc = false;
-    if (threadGroups[tid].empty()) [[unlikely]] {
-        alloc = true;
-    } else if (inst->isMemRef() || inst->isControl() || inst->isNonSpeculative()) {
-        alloc = true;
-    } else if (instList[tid].back()->isMemRef() || instList[tid].back()->isControl() ||
-               instList[tid].back()->isNonSpeculative()) {
-        alloc = true;
-    } else if (instList[tid].back()->ftqId != inst->ftqId) {
-        alloc = true;
-    } else if (lastCycle != cpu->curCycle()) {
-        // different cycle
-        alloc = true;
-    } else if (threadGroups[tid].back() >= instsPerGroup) {
-        alloc = true;
-    }
-
-    lastCycle = cpu->curCycle();
-
-    if (alloc) {
-        if (!threadGroups[tid].empty()) [[likely]] {
-            stats.instPergroup.sample(threadGroups[tid].back());
-        }
-
-        threadGroups[tid].push_back(1);
-    } else {
-        assert(threadGroups[tid].back() < instsPerGroup);
-        threadGroups[tid].back()++;
-    }
-}
-
-void
 ROB::commitGroup(const DynInstPtr inst, ThreadID tid)
 {
     assert(!threadGroups[tid].empty());
@@ -289,7 +348,17 @@ ROB::insertInst(const DynInstPtr &inst)
     ThreadID tid = inst->threadNumber;
 
     // allocate group
-    allocateNewGroup(inst, tid);
+    bool alloc = (this->*allocateNewGroup)(inst, tid);
+    lastInsertCycle = cpu->curCycle();
+    if (alloc) {
+        if (!threadGroups[tid].empty()) [[likely]] {
+            stats.instPergroup.sample(threadGroups[tid].back());
+        }
+        threadGroups[tid].push_back(1);
+    } else {
+        assert(threadGroups[tid].back() < instsPerGroup);
+        threadGroups[tid].back()++;
+    }
 
     instList[tid].push_back(inst);
 
@@ -357,11 +426,13 @@ ROB::isHeadReady(ThreadID tid)
     stats.reads++;
 
     if (!threadGroups[tid].empty() && threadGroups[tid].front() != 0) {
+        auto head_ready = instList[tid].front()->readyToCommit();
+
         // check if all insts in the same head group are ready to commit
-        return std::all_of(
+        return head_ready && std::all_of(
             instList[tid].begin(),
             std::next(instList[tid].begin(), threadGroups[tid].front()),
-            [] (DynInstPtr inst) { return inst->readyToCommit(); }
+            [] (DynInstPtr inst) { return inst->readyToCommit() || inst->isSquashed(); }
         );
     }
 
@@ -679,7 +750,7 @@ ROB::ROBStats::ROBStats(statistics::Group *parent)
         "The number of ROB writes"),
     ADD_STAT(instPergroup, statistics::units::Count::get())
 {
-    instPergroup.init(0, 8, 1);
+    instPergroup.init(0, 8, 1).flags(statistics::nozero);
 }
 
 DynInstPtr

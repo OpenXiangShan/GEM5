@@ -58,6 +58,9 @@ class CommitPolicy(ScopedEnum):
 class ROBWalkPolicy(ScopedEnum):
     vals = [ 'Rollback', 'Replay', 'ConstCycle', 'NaiveCpt', 'ConfidentCpt' ]
 
+class ROBCompressPolicy(ScopedEnum):
+    vals = [ 'none', 'kmhv2', 'MohBoE' ,'kmhv3' ]
+
 class PerfRecord(ScopedEnum):
     vals = [
         # position tick
@@ -213,7 +216,8 @@ class BaseO3CPU(BaseCPU):
     numPhysRMiscRegs = Param.Unsigned(40, "Number of physical renameable misc registers")
 
     # rob config
-    numRobs = Param.Unsigned(1, "Number of Reorder Buffers");
+    numRobs = Param.Unsigned(1, "Number of Reorder Buffers")
+    RobCompressPolicy = Param.ROBCompressPolicy('kmhv2', "Reorder Buffer Compression Policy")
     numROBEntries = Param.Unsigned(160, "Number of reorder buffer entries")
     CROB_instPerGroup = Param.Unsigned(6, "Max number of inst per group")
     phyregReleaseWidth = Param.Unsigned(6, "Physical register dealloc width")
