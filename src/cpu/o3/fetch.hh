@@ -379,14 +379,14 @@ class Fetch
     bool checkInterrupt(Addr pc) { return interruptPending; }
 
     /** Squashes a specific thread and resets the PC. */
-    void doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqNum seqNum,
+    void doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqNum seqNum,
             ThreadID tid);
 
     /** Squashes a specific thread and resets the PC. Also tells the CPU to
      * remove any instructions between fetch and decode
      *  that should be sqaushed.
      */
-    void squashFromDecode(const PCStateBase &new_pc,
+    void squashFromDecode(PCStateBase &new_pc,
                           const DynInstPtr squashInst,
                           const InstSeqNum seq_num, ThreadID tid);
 
@@ -402,7 +402,7 @@ class Fetch
      * remove any instructions that are not in the ROB. The source of this
      * squash should be the commit stage.
      */
-    void squash(const PCStateBase &new_pc, const InstSeqNum seq_num,
+    void squash(PCStateBase &new_pc, const InstSeqNum seq_num,
                 DynInstPtr squashInst, ThreadID tid);
 
     /** Ticks the fetch stage, processing all inputs signals and fetching

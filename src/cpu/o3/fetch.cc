@@ -692,6 +692,12 @@ Fetch::processCacheCompletion(PacketPtr pkt)
         if (isBTBPred() && dbpbtb->fetchTargetAvailable()) {
             auto& ftq_entry = dbpbtb->getSupplyingFetchTarget();
             assert(fetchBufferPC[tid] == ftq_entry.startPC &&
+                   "fetchBufferPC should be aligned with FTQ startPC,");
+            DPRINTF(Fetch, "[tid:%i] Verified fetchBufferPC %#x matches FTQ startPC %#x\n",
+                    tid, fetchBufferPC[tid], ftq_entry.startPC);
+        } else if (isFTBPred() && dbpftb->fetchTargetAvailable()) {
+            auto& ftq_entry = dbpftb->getSupplyingFetchTarget();
+            assert(fetchBufferPC[tid] == ftq_entry.startPC &&
                    "fetchBufferPC should be aligned with FTQ startPC");
             DPRINTF(Fetch, "[tid:%i] Verified fetchBufferPC %#x matches FTQ startPC %#x\n",
                     tid, fetchBufferPC[tid], ftq_entry.startPC);
@@ -927,6 +933,17 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
 {
     assert(!cpu->switchedOut());
 
+    // For decoupled frontend, trust the BPU-provided addresses (BPU handles alignment)
+    // RISC-V C extension: mask lowest bit for instruction alignment
+    // This handles cases where PC might be odd due to speculative execution,
+    // but no need to throw INST_ADDR_MISALIGNED fault here
+    if (vaddr % 2 != 0 || pc % 2 != 0) {
+        vaddr = vaddr & ~1;
+        pc = pc & ~1;
+        DPRINTF(Fetch, "[tid:%i] Fetching address is misaligned, aligned to %#x, %#x\n",
+                tid, vaddr, pc);
+    }
+
     // Check for blocking conditions
     if (cacheBlocked) {
         DPRINTF(Fetch, "[tid:%i] Can't fetch cache line, cache blocked\n", tid);
@@ -957,11 +974,8 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
     // For misaligned fetch, use the stored original fetch address
     // Both request 1 and request 2 should use the same fetchBufferPC
     Addr fetchPC;
-    if (mem_req->isMisalignedFetch()) {
-        fetchPC = accessInfo[tid].first;  // Use stored original fetch address
-    } else {
-        fetchPC = mem_req->getVaddr();    // Normal aligned fetch
-    }
+    assert(mem_req->isMisalignedFetch());
+    fetchPC = accessInfo[tid].first;  // Use stored original fetch address
 
     assert(!cpu->switchedOut());
 
@@ -1103,7 +1117,7 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
 }
 
 void
-Fetch::doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqNum seqNum,
+Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqNum seqNum,
         ThreadID tid)
 {
     DPRINTF(Fetch, "[tid:%i] Squashing, setting PC to: %s.\n",
@@ -1123,7 +1137,18 @@ Fetch::doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst, const In
     }
     decoder[tid]->as<RiscvISA::Decoder>().setVtype(restored_vtype);
 
-    set(pc[tid], new_pc);
+    // align PC to 2 bytes
+    // This handles cases where PC might be odd due to speculative execution,
+    // but no need to throw INST_ADDR_MISALIGNED fault here
+    if (new_pc.instAddr() % 2 != 0) {
+        // Modify new_pc directly to make it 2-byte aligned
+        auto& riscv_pc = new_pc.as<RiscvISA::PCState>();
+        riscv_pc.set(new_pc.instAddr() & ~1);
+        set(pc[tid], new_pc);
+        DPRINTF(Fetch, "[tid:%i] pc is misaligned, aligned to %#lx\n", tid, new_pc.instAddr());
+    } else {
+        set(pc[tid], new_pc);
+    }
     if (squashInst && squashInst->pcState().instAddr() == new_pc.instAddr())
         macroop[tid] = squashInst->macroop;
     else
@@ -1151,6 +1176,7 @@ Fetch::doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst, const In
         }
         retryPkt.clear();
         retryTid = InvalidThreadID;
+        cacheBlocked = false;   // clear cache blocked
     }
 
     if (squashInst && !squashInst->isControl()) {
@@ -1202,7 +1228,7 @@ Fetch::getPreservedReturnAddr(const DynInstPtr &dynInst)
 }
 
 void
-Fetch::squashFromDecode(const PCStateBase &new_pc, const DynInstPtr squashInst,
+Fetch::squashFromDecode(PCStateBase &new_pc, const DynInstPtr squashInst,
         const InstSeqNum seq_num, ThreadID tid)
 {
     DPRINTF(Fetch, "[tid:%i] Squashing from decode.\n", tid);
@@ -1268,12 +1294,13 @@ Fetch::updateFetchStatus()
 }
 
 void
-Fetch::squash(const PCStateBase &new_pc, const InstSeqNum seq_num,
+Fetch::squash(PCStateBase &new_pc, const InstSeqNum seq_num,
         DynInstPtr squashInst, ThreadID tid)
 {
     DPRINTF(Fetch, "[tid:%i] Squash from commit.\n", tid);
 
     doSquash(new_pc, squashInst, seq_num, tid);
+    assert(new_pc.instAddr() % 2 == 0 && "squash PC should be 2-byte aligned");
 
     // Tell the CPU to remove any instructions that are not in the ROB.
     cpu->removeInstsNotInROB(tid);
