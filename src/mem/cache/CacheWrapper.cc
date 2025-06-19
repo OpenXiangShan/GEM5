@@ -39,11 +39,11 @@ CacheWrapper::CPUSidePort::CPUSidePort(const std::string& name,
 }
 
 bool
-CacheWrapper::CPUSidePort::recvTimingReq(PacketPtr pkt)
+CacheWrapper::cpuSidePortRecvTimingReq(PacketPtr pkt)
 {
     DPRINTF(CacheWrapper, "Got request from CPU side for addr: %#x\n", pkt->getAddr());
 
-    if (!owner->inner_cpu_port.sendTimingReq(pkt)) {
+    if (!inner_cpu_port.sendTimingReq(pkt)) {
         DPRINTF(CacheWrapper, "Inner cache busy, returning false to CPU side, Pkt addr: %#x\n", pkt->getAddr());
         return false;
     }
@@ -51,35 +51,35 @@ CacheWrapper::CPUSidePort::recvTimingReq(PacketPtr pkt)
 }
 
 bool
-CacheWrapper::CPUSidePort::recvTimingSnoopResp(PacketPtr pkt)
+CacheWrapper::cpuSidePortRecvTimingSnoopResp(PacketPtr pkt)
 {
     DPRINTF(CacheWrapper, "Got snoop resp from CPU side for addr: %#x\n", pkt->getAddr());
-    return owner->inner_cpu_port.sendTimingSnoopResp(pkt);
+    return inner_cpu_port.sendTimingSnoopResp(pkt);
 }
 
 void
-CacheWrapper::CPUSidePort::recvRespRetry()
+CacheWrapper::cpuSidePortRecvRespRetry()
 {
     DPRINTF(CacheWrapper, "Got resp retry from CPU side\n");
-    owner->inner_cpu_port.sendRetryResp();
+    inner_cpu_port.sendRetryResp();
 }
 
 AddrRangeList
-CacheWrapper::CPUSidePort::getAddrRanges() const
+CacheWrapper::cpuSidePortGetAddrRanges() const
 {
-    return owner->inner_cpu_port.getAddrRanges();
+    return inner_cpu_port.getAddrRanges();
 }
 
 void
-CacheWrapper::CPUSidePort::recvFunctional(PacketPtr pkt)
+CacheWrapper::cpuSidePortRecvFunctional(PacketPtr pkt)
 {
-    owner->inner_cpu_port.sendFunctional(pkt);
+    inner_cpu_port.sendFunctional(pkt);
 }
 
 Tick
-CacheWrapper::CPUSidePort::recvAtomic(PacketPtr pkt)
+CacheWrapper::cpuSidePortRecvAtomic(PacketPtr pkt)
 {
-    return owner->inner_cpu_port.sendAtomic(pkt);
+    return inner_cpu_port.sendAtomic(pkt);
 }
 
 // --- InnerCPUSidePort (Master) - Sends to inner cache CPU-side ---
@@ -90,11 +90,11 @@ CacheWrapper::InnerCPUSidePort::InnerCPUSidePort(const std::string& name,
 }
 
 bool
-CacheWrapper::InnerCPUSidePort::recvTimingResp(PacketPtr pkt)
+CacheWrapper::innerCpuPortRecvTimingResp(PacketPtr pkt)
 {
     DPRINTF(CacheWrapper, "Got resp from inner cache (CPU side) for addr: %#x\n", pkt->getAddr());
 
-    if (!owner->cpu_side_port.sendTimingResp(pkt)) {
+    if (!cpu_side_port.sendTimingResp(pkt)) {
          DPRINTF(CacheWrapper, "Response to CPU side was blocked!\n");
          return false;
     }
@@ -102,26 +102,25 @@ CacheWrapper::InnerCPUSidePort::recvTimingResp(PacketPtr pkt)
 }
 
 void
-CacheWrapper::InnerCPUSidePort::recvReqRetry()
+CacheWrapper::innerCpuPortRecvReqRetry()
 {
     DPRINTF(CacheWrapper, "Got req retry from inner cache, forwarding to CPU side\n");
-    owner->cpu_side_port.sendRetryReq();
+    cpu_side_port.sendRetryReq();
 }
 
 void
-CacheWrapper::InnerCPUSidePort::recvTimingSnoopReq(PacketPtr pkt)
+CacheWrapper::innerCpuPortRecvTimingSnoopReq(PacketPtr pkt)
 {
     DPRINTF(CacheWrapper, "Got snoop from inner cache for addr: %#x\n", pkt->getAddr());
-    owner->cpu_side_port.sendTimingSnoopReq(pkt);
+    cpu_side_port.sendTimingSnoopReq(pkt);
 }
 
 void
-CacheWrapper::InnerCPUSidePort::recvRangeChange()
+CacheWrapper::innerCpuPortRecvRangeChange()
 {
     DPRINTF(CacheWrapper, "Got range change from inner cache\n");
-    owner->cpu_side_port.sendRangeChange();
+    cpu_side_port.sendRangeChange();
 }
-
 
 // --- InnerMemSidePort (Slave) - Receives from inner cache Mem-side ---
 CacheWrapper::InnerMemSidePort::InnerMemSidePort(const std::string& name,
@@ -131,11 +130,11 @@ CacheWrapper::InnerMemSidePort::InnerMemSidePort(const std::string& name,
 }
 
 bool
-CacheWrapper::InnerMemSidePort::recvTimingReq(PacketPtr pkt)
+CacheWrapper::innerMemPortRecvTimingReq(PacketPtr pkt)
 {
     DPRINTF(CacheWrapper, "Got req from inner cache (Mem side) for addr: %#x\n", pkt->getAddr());
 
-    if (!owner->mem_side_port.sendTimingReq(pkt)) {
+    if (!mem_side_port.sendTimingReq(pkt)) {
         DPRINTF(CacheWrapper, "Memory side busy, returning false to inner cache, Pkt addr: %#x\n", pkt->getAddr());
         return false;
     }
@@ -143,37 +142,36 @@ CacheWrapper::InnerMemSidePort::recvTimingReq(PacketPtr pkt)
 }
 
 bool
-CacheWrapper::InnerMemSidePort::recvTimingSnoopResp(PacketPtr pkt)
+CacheWrapper::innerMemPortRecvTimingSnoopResp(PacketPtr pkt)
 {
     DPRINTF(CacheWrapper, "Got snoop resp from inner cache for addr: %#x\n", pkt->getAddr());
-    return owner->mem_side_port.sendTimingSnoopResp(pkt);
+    return mem_side_port.sendTimingSnoopResp(pkt);
 }
 
 AddrRangeList
-CacheWrapper::InnerMemSidePort::getAddrRanges() const
+CacheWrapper::innerMemPortGetAddrRanges() const
 {
-    return owner->mem_side_port.getAddrRanges();
+    return mem_side_port.getAddrRanges();
 }
 
 void
-CacheWrapper::InnerMemSidePort::recvRespRetry()
+CacheWrapper::innerMemPortRecvRespRetry()
 {
     DPRINTF(CacheWrapper, "Got resp retry from inner cache (Mem side)\n");
-    owner->mem_side_port.sendRetryResp();
+    mem_side_port.sendRetryResp();
 }
 
 void
-CacheWrapper::InnerMemSidePort::recvFunctional(PacketPtr pkt)
+CacheWrapper::innerMemPortRecvFunctional(PacketPtr pkt)
 {
-    owner->mem_side_port.sendFunctional(pkt);
+    mem_side_port.sendFunctional(pkt);
 }
 
 Tick
-CacheWrapper::InnerMemSidePort::recvAtomic(PacketPtr pkt)
+CacheWrapper::innerMemPortRecvAtomic(PacketPtr pkt)
 {
-    return owner->mem_side_port.sendAtomic(pkt);
+    return mem_side_port.sendAtomic(pkt);
 }
-
 
 // --- MemSidePort (Master) - Sends to memory ---
 CacheWrapper::MemSidePort::MemSidePort(const std::string& name,
@@ -183,11 +181,11 @@ CacheWrapper::MemSidePort::MemSidePort(const std::string& name,
 }
 
 bool
-CacheWrapper::MemSidePort::recvTimingResp(PacketPtr pkt)
+CacheWrapper::memSidePortRecvTimingResp(PacketPtr pkt)
 {
     DPRINTF(CacheWrapper, "Got resp from memory side for addr: %#x\n", pkt->getAddr());
 
-    if (!owner->inner_mem_port.sendTimingResp(pkt)) {
+    if (!inner_mem_port.sendTimingResp(pkt)) {
         DPRINTF(CacheWrapper, "Response to inner cache was blocked!, Pkt addr: %#x\n", pkt->getAddr());
         return false;
     }
@@ -195,24 +193,24 @@ CacheWrapper::MemSidePort::recvTimingResp(PacketPtr pkt)
 }
 
 void
-CacheWrapper::MemSidePort::recvReqRetry()
+CacheWrapper::memSidePortRecvReqRetry()
 {
     DPRINTF(CacheWrapper, "Got req retry from memory side\n");
-    owner->inner_mem_port.sendRetryReq();
+    inner_mem_port.sendRetryReq();
 }
 
 void
-CacheWrapper::MemSidePort::recvTimingSnoopReq(PacketPtr pkt)
+CacheWrapper::memSidePortRecvTimingSnoopReq(PacketPtr pkt)
 {
     DPRINTF(CacheWrapper, "Got snoop from memory side for addr: %#x\n", pkt->getAddr());
-    owner->inner_mem_port.sendTimingSnoopReq(pkt);
+    inner_mem_port.sendTimingSnoopReq(pkt);
 }
 
 void
-CacheWrapper::MemSidePort::recvRangeChange()
+CacheWrapper::memSidePortRecvRangeChange()
 {
     DPRINTF(CacheWrapper, "Got range change from memory side\n");
-    owner->inner_mem_port.sendRangeChange();
+    inner_mem_port.sendRangeChange();
 }
 
 } // namespace gem5

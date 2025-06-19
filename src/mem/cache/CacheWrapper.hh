@@ -20,12 +20,24 @@ class CacheWrapper : public ClockedObject
       public:
         CPUSidePort(const std::string& name, CacheWrapper *owner);
       protected:
-        bool recvTimingReq(PacketPtr pkt) override;
-        bool recvTimingSnoopResp(PacketPtr pkt) override;
-        void recvFunctional(PacketPtr pkt) override;
-        Tick recvAtomic(PacketPtr pkt) override;
-        void recvRespRetry() override;
-        AddrRangeList getAddrRanges() const override;
+        bool recvTimingReq(PacketPtr pkt) override {
+          return owner->cpuSidePortRecvTimingReq(pkt);
+        }
+        bool recvTimingSnoopResp(PacketPtr pkt) override {
+          return owner->cpuSidePortRecvTimingSnoopResp(pkt);
+        }
+        void recvFunctional(PacketPtr pkt) override {
+          return owner->cpuSidePortRecvFunctional(pkt);
+        }
+        Tick recvAtomic(PacketPtr pkt) override {
+          return owner->cpuSidePortRecvAtomic(pkt);
+        }
+        void recvRespRetry() override {
+          return owner->cpuSidePortRecvRespRetry();
+        }
+        AddrRangeList getAddrRanges() const override {
+          return owner->cpuSidePortGetAddrRanges();
+        }
     };
 
     class MemSidePort : public RequestPort
@@ -35,11 +47,21 @@ class CacheWrapper : public ClockedObject
       public:
         MemSidePort(const std::string& name, CacheWrapper *owner);
       protected:
-        bool recvTimingResp(PacketPtr pkt) override;
-        void recvReqRetry() override;
-        void recvTimingSnoopReq(PacketPtr pkt) override;
-        void recvRangeChange() override;
-        bool isSnooping() const override { return true; }
+        bool recvTimingResp(PacketPtr pkt) override {
+          return owner->memSidePortRecvTimingResp(pkt);
+        }
+        void recvReqRetry() override {
+          return owner->memSidePortRecvReqRetry();
+        }
+        void recvTimingSnoopReq(PacketPtr pkt) override {
+          return owner->memSidePortRecvTimingSnoopReq(pkt);
+        }
+        void recvRangeChange() override {
+          return owner->memSidePortRecvRangeChange();
+        }
+        bool isSnooping() const override {
+          return true;
+        }
     };
 
     class InnerCPUSidePort : public RequestPort
@@ -49,11 +71,21 @@ class CacheWrapper : public ClockedObject
       public:
         InnerCPUSidePort(const std::string& name, CacheWrapper *owner);
       protected:
-        bool recvTimingResp(PacketPtr pkt) override;
-        void recvReqRetry() override;
-        void recvTimingSnoopReq(PacketPtr pkt) override;
-        void recvRangeChange() override;
-        bool isSnooping() const override { return true; }
+        bool recvTimingResp(PacketPtr pkt) override {
+          return owner->innerCpuPortRecvTimingResp(pkt);
+        }
+        void recvReqRetry() override {
+          return owner->innerCpuPortRecvReqRetry();
+        }
+        void recvTimingSnoopReq(PacketPtr pkt) override {
+          return owner->innerCpuPortRecvTimingSnoopReq(pkt);
+        }
+        void recvRangeChange() override {
+          return owner->innerCpuPortRecvRangeChange();
+        }
+        bool isSnooping() const override {
+          return true;
+        }
     };
 
     class InnerMemSidePort : public ResponsePort
@@ -63,12 +95,24 @@ class CacheWrapper : public ClockedObject
       public:
         InnerMemSidePort(const std::string& name, CacheWrapper *owner);
       protected:
-        bool recvTimingReq(PacketPtr pkt) override;
-        bool recvTimingSnoopResp(PacketPtr pkt) override;
-        void recvFunctional(PacketPtr pkt) override;
-        Tick recvAtomic(PacketPtr pkt) override;
-        void recvRespRetry() override;
-        AddrRangeList getAddrRanges() const override;
+        bool recvTimingReq(PacketPtr pkt) override {
+          return owner->innerMemPortRecvTimingReq(pkt);
+        }
+        bool recvTimingSnoopResp(PacketPtr pkt) override {
+          return owner->innerMemPortRecvTimingSnoopResp(pkt);
+        }
+        void recvFunctional(PacketPtr pkt) override {
+          return owner->innerMemPortRecvFunctional(pkt);
+        }
+        Tick recvAtomic(PacketPtr pkt) override {
+          return owner->innerMemPortRecvAtomic(pkt);
+        }
+        void recvRespRetry() override {
+          return owner->innerMemPortRecvRespRetry();
+        }
+        AddrRangeList getAddrRanges() const override {
+          return owner->innerMemPortGetAddrRanges();
+        }
     };
 
     friend class CPUSidePort;
@@ -76,10 +120,39 @@ class CacheWrapper : public ClockedObject
     friend class InnerCPUSidePort;
     friend class InnerMemSidePort;
 
+  protected:
     CPUSidePort cpu_side_port;
     MemSidePort mem_side_port;
     InnerCPUSidePort inner_cpu_port;
     InnerMemSidePort inner_mem_port;
+
+    // CPU side port methods
+    virtual bool cpuSidePortRecvTimingReq(PacketPtr pkt);
+    virtual bool cpuSidePortRecvTimingSnoopResp(PacketPtr pkt);
+    virtual void cpuSidePortRecvFunctional(PacketPtr pkt);
+    virtual Tick cpuSidePortRecvAtomic(PacketPtr pkt);
+    virtual void cpuSidePortRecvRespRetry();
+    virtual AddrRangeList cpuSidePortGetAddrRanges() const;
+
+    // Mem side port methods
+    virtual bool memSidePortRecvTimingResp(PacketPtr pkt);
+    virtual void memSidePortRecvReqRetry();
+    virtual void memSidePortRecvTimingSnoopReq(PacketPtr pkt);
+    virtual void memSidePortRecvRangeChange();
+
+    // Inner CPU side port methods
+    virtual bool innerCpuPortRecvTimingResp(PacketPtr pkt);
+    virtual void innerCpuPortRecvReqRetry();
+    virtual void innerCpuPortRecvTimingSnoopReq(PacketPtr pkt);
+    virtual void innerCpuPortRecvRangeChange();
+
+    // Inner Mem side port methods
+    virtual bool innerMemPortRecvTimingReq(PacketPtr pkt);
+    virtual bool innerMemPortRecvTimingSnoopResp(PacketPtr pkt);
+    virtual void innerMemPortRecvFunctional(PacketPtr pkt);
+    virtual Tick innerMemPortRecvAtomic(PacketPtr pkt);
+    virtual void innerMemPortRecvRespRetry();
+    virtual AddrRangeList innerMemPortGetAddrRanges() const;
 
   public:
     CacheWrapper(const CacheWrapperParams &p);
