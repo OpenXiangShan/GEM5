@@ -775,5 +775,6 @@ Build variables for {dir}:
     # to the configured variables.  It returns a list of environments,
     # one for each variant build (debug, opt, etc.)
     SConscript('src/SConscript', variant_dir=variant_path, exports=exports)
+    SConscript('src/mem/xsCHI/test/SConscript')
 
 atexit.register(summarize_warnings)
