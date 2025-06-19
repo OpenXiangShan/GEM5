@@ -1,5 +1,8 @@
 #pragma once
+#include <bitset>
 #include <string>
+
+#include "sim/clocked_object.hh"
 
 namespace gem5
 {
@@ -7,7 +10,7 @@ namespace xsCHI
 {
 
 
-class Module
+class Module : public ClockedObject
 {
 public:
     virtual ~Module() = default;
@@ -22,34 +25,7 @@ protected:
     //
 };
 
-// class L2Warper : public Module
-// {
-//     // ...L2Warper特有成员...
-// };
 
-// class Bridge : public Module
-// {
-//     // Port* storagePort;
-//     // Port* networkPort;
-//     // ...Bridge特有成员...
-// };
-
-// class DDRWarper : public Module
-// {
-//     // ...DDRWarper特有成员...
-// };
-
-// class MeshNode : public Module
-// {
-//     // 四个方向的FlitPort和两个device端口
-//     // ...MeshNode特有成员...
-// };
-
-// class LLC : public Module
-// {
-//     // L3缓存、SnoopFilter、PointOfCoherenceQueue等
-//     // ...LLC特有成员...
-// };
 
 } // namespace xsCHI
 } // namespace gem5
