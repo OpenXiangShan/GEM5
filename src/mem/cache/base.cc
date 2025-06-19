@@ -3119,9 +3119,9 @@ BaseCache::CpuSidePort::tryTiming(PacketPtr pkt)
         if (cache->checkSLiceBusy(pkt, sliceidx)) {
             //no more buffer
             if (sendRetryEvent.scheduled()) {
-                owner.reschedule(sendRetryEvent, cache->clockEdge());
+                owner.reschedule(sendRetryEvent, cache->nextCycle());
             } else {
-                owner.schedule(sendRetryEvent, cache->clockEdge());
+                owner.schedule(sendRetryEvent, cache->nextCycle());
             }
             return false;
         }

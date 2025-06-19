@@ -18,3 +18,4 @@ class L2CacheWrapper(CacheWrapper):
     type = 'L2CacheWrapper'
     cxx_header = "mem/cache/L2CacheWrapper.hh"
     cxx_class = 'gem5::L2CacheWrapper'
+    buffer_size = Param.Unsigned(4, "Size of the request buffer")
