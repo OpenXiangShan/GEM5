@@ -1,9 +1,12 @@
+#pragma once
 namespace gem5
 {
 namespace xsCHI
 {
-    enum class CHI_REQ_type
+
+    enum class CHI_OP_TYPE
     {
+        CHI_REQ_OP_START,
         CHI_REQ_REQLCRDRETURN         ,
         CHI_REQ_READSHARED            ,
         CHI_REQ_READCLEAN             ,
@@ -85,13 +88,9 @@ namespace xsCHI
         CHI_REQ_WNSPCLEANSHAREDPERSIST ,
         CHI_REQ_WUPCLEANSHARED         ,
         CHI_REQ_WUPCLEANSHAREDPERSIST  ,
-    } ;
-    // CHI_SNP_type is used to represent the type of a CHI snoop transaction.
-    // It is an enumeration that defines various types of snoop operations
-    // that can be performed in the CHI protocol.
+        CHI_REQ_OP_END,
 
-    enum class CHI_SNP_type
-    {
+        CHI_SNP_OP_START,
         CHI_SNP_SNPLCRDRETURN        ,
         CHI_SNP_SNPSHARED            ,
         CHI_SNP_SNPCLEAN             ,
@@ -114,10 +113,9 @@ namespace xsCHI
         CHI_SNP_SNPPREFERUNIQUE      ,
         CHI_SNP_SNPPREFERUNIQUEFWD   ,
         CHI_SNP_SNPUNIQUEFWD         ,
-    };
+        CHI_SNP_OP_END,
 
-    enum class CHI_DATA_type
-    {
+        CHI_DAT_OP_START,
         CHI_DAT_DATLCRDRETURN     ,
         CHI_DAT_SNPRESPDATA       ,
         CHI_DAT_COPYBACKWRDATA    ,
@@ -129,10 +127,9 @@ namespace xsCHI
         CHI_DAT_DATASEPRESP       ,
         CHI_DAT_NCBWRDATACOMPACK  ,
         CHI_DAT_HNP_RDBURST       ,
-    };
+        CHI_DAT_OP_END,
 
-    enum class CHI_RSP_type
-    {
+        CHI_RSP_OP_START,
         CHI_RSP_RSPLCRDRETURN ,
         CHI_RSP_SNPRESP       ,
         CHI_RSP_COMPACK       ,
@@ -151,6 +148,8 @@ namespace xsCHI
         CHI_RSP_STASHDONE     ,
         CHI_RSP_COMPSTASHDONE ,
         CHI_RSP_COMPCMO       ,
+        CHI_RSP_OP_END,
+
     };
 
 

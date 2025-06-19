@@ -1,0 +1,20 @@
+# Import('env')
+
+# test_env = env.Clone()
+# test_env.Append(CPPPATH=[
+#     '../base/Network',
+#     '../base',
+#     '.',
+# ])
+# test_env.Append(LIBS=['gtest', 'gtest_main', 'pthread'])
+
+# test_env.Program(
+#     target='testNodeID',
+#     source=['testNodeID.cc','src/mem/xsCHI/base/Network/NodeID.hh'],
+# )
+
+
+Import('*')
+
+# Add the test source files
+GTest('testNodeID.test', 'testNodeID.cc')
