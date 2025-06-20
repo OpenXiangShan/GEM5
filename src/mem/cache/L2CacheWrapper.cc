@@ -18,6 +18,12 @@ L2CacheWrapper::L2CacheWrapper(const L2CacheWrapperParams &p)
 bool
 L2CacheWrapper::cpuSidePortRecvTimingReq(PacketPtr pkt)
 {
+    // Express snoop packets should bypass any flow control,
+    // so always let express snoop packets through even if blocked
+    if (pkt->isExpressSnoop()) {
+        DPRINTF(L2CacheWrapper, "Express snoop request, forwarding directly to inner cache\n");
+        return CacheWrapper::cpuSidePortRecvTimingReq(pkt);
+    }
     // If the request is from write_queue(WriteBackClean/CleanEvict etc.),
     // we cannot buffer it and just forward it to inner cache
     if (!pkt->needsResponse()) {
