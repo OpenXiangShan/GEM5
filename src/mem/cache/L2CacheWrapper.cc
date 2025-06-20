@@ -11,8 +11,135 @@ namespace gem5
 L2CacheWrapper::L2CacheWrapper(const L2CacheWrapperParams &p)
     : CacheWrapper(p),
       buffer_size(p.buffer_size),
-      trySendEvent([this]{ trySendFromBuffer(); }, name())
+      trySendEvent([this]{ trySendFromBuffer(); }, name()),
+      processDelayedResponsesEvent([this]{ processDelayedResponses(); }, name()),
+      min_response_latency(p.min_response_latency),
+      max_response_latency(p.max_response_latency)
 {
+    srand(time(NULL));
+}
+
+bool
+L2CacheWrapper::innerMemPortRecvTimingReq(PacketPtr pkt)
+{
+    // If the request needs a response, track it
+    bool enqueue = false;
+    if (pkt->needsResponse()) {
+        DPRINTF(L2CacheWrapper, "Tracking request to L3 for addr: %#x\n", pkt->getAddr());
+        pending_l3_requests.push_back(pkt);
+        enqueue = true;
+    }
+
+    // First, call the base class implementation to forward the request
+    bool success = CacheWrapper::innerMemPortRecvTimingReq(pkt);
+
+    // If the request was not successfully sent, remove it from the pending list
+    if (!success && enqueue) {
+        pending_l3_requests.pop_back();
+    }
+
+    return success;
+}
+
+bool
+L2CacheWrapper::memSidePortRecvTimingResp(PacketPtr pkt)
+{
+    DPRINTF(L2CacheWrapper, "Got resp from memory side for addr: %#x\n", pkt->getAddr());
+
+    auto it = std::find_if(pending_l3_requests.begin(), pending_l3_requests.end(),
+        [&](const PacketPtr& pending_pkt) {
+            return pending_pkt->getAddr() == pkt->getAddr();
+        });
+
+    if (it == pending_l3_requests.end()) {
+        // TODO: Is this case possible?
+        // we didn't find the request in pending_l3_requests, forward it directly.
+        DPRINTF(L2CacheWrapper, "Response for addr %#x is not a tracked L2 miss, "
+                                "forwarding directly. %s\n", pkt->getAddr(), pkt->print());
+        return CacheWrapper::memSidePortRecvTimingResp(pkt);
+    }
+
+    DPRINTF(L2CacheWrapper, "Found matching tracked request for addr: %#x. Applying delay.\n", pkt->getAddr());
+    pending_l3_requests.erase(it);
+
+    Cycles delay_cycles{0};
+    if (max_response_latency > min_response_latency) {
+        Tick min_ticks = cyclesToTicks(min_response_latency);
+        Tick max_ticks = cyclesToTicks(max_response_latency);
+        delay_cycles = ticksToCycles(min_ticks + (Tick)(rand() % (max_ticks - min_ticks + 1)));
+    } else {
+        delay_cycles = min_response_latency;
+    }
+
+    Tick ready_tick = curTick() + cyclesToTicks(delay_cycles);
+    DPRINTF(L2CacheWrapper, "Response for addr %#x will be delayed by %d cycles, "
+                            "ready at tick %d\n", pkt->getAddr(), delay_cycles, ready_tick);
+
+    // Get the ready tick of the next response to be processed before adding the new one
+    Tick next_ready_tick = delayed_responses.empty() ? MaxTick : delayed_responses.top().readyTick;
+
+    delayed_responses.push({pkt, ready_tick});
+
+    // If the new response is ready sooner than any other pending response,
+    // or if the queue was empty, we need to schedule/reschedule the event.
+    if (ready_tick < next_ready_tick) {
+        if (processDelayedResponsesEvent.scheduled()) {
+            deschedule(processDelayedResponsesEvent);
+        }
+        schedule(processDelayedResponsesEvent, ready_tick);
+    }
+
+    return true;
+}
+
+void
+L2CacheWrapper::processDelayedResponses()
+{
+    if (delayed_responses.empty() || response_port_blocked) {
+        return;
+    }
+
+    const DelayedResp& resp_to_send = delayed_responses.top();
+
+    if (curTick() < resp_to_send.readyTick) {
+        if (processDelayedResponsesEvent.scheduled()) {
+             deschedule(processDelayedResponsesEvent);
+        }
+        schedule(processDelayedResponsesEvent, resp_to_send.readyTick);
+        return;
+    }
+
+    DPRINTF(L2CacheWrapper, "Attempting to send delayed response "
+                            "for addr: %#x to inner L2\n", resp_to_send.pkt->getAddr());
+
+    if (!inner_mem_port.sendTimingResp(resp_to_send.pkt)) {
+        DPRINTF(L2CacheWrapper, "Inner L2 is busy, cannot send response. Blocking.\n");
+        response_port_blocked = true;
+    } else {
+        DPRINTF(L2CacheWrapper, "Successfully sent delayed response "
+                                "for addr: %#x to inner L2\n", resp_to_send.pkt->getAddr());
+        delayed_responses.pop();
+
+        if (!delayed_responses.empty()) {
+            Tick next_ready = delayed_responses.top().readyTick;
+            if (processDelayedResponsesEvent.scheduled()) {
+                 deschedule(processDelayedResponsesEvent);
+            }
+            schedule(processDelayedResponsesEvent, std::max(next_ready, nextCycle()));
+        }
+    }
+}
+
+void
+L2CacheWrapper::innerMemPortRecvRespRetry()
+{
+    DPRINTF(L2CacheWrapper, "Got resp retry from inner L2. Unblocking.\n");
+    assert(response_port_blocked);
+    response_port_blocked = false;
+
+    if (!processDelayedResponsesEvent.scheduled() && !delayed_responses.empty()) {
+        schedule(processDelayedResponsesEvent, nextCycle());
+    }
 }
 
 bool

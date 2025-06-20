@@ -19,3 +19,5 @@ class L2CacheWrapper(CacheWrapper):
     cxx_header = "mem/cache/L2CacheWrapper.hh"
     cxx_class = 'gem5::L2CacheWrapper'
     buffer_size = Param.Unsigned(4, "Size of the request buffer")
+    min_response_latency = Param.Cycles(0, "Min response delay in cycles")
+    max_response_latency = Param.Cycles(4, "Max response delay in cycles")
