@@ -83,6 +83,11 @@ LSQ::DcachePort::DcachePort(LSQ *_lsq, CPU *_cpu) :
     RequestPort(_cpu->name() + ".dcache_port", _cpu), lsq(_lsq), cpu(_cpu)
 {}
 
+uint64_t LSQ::LSQRequest::numSBufferRequest = 0;
+uint64_t LSQ::LSQRequest::numSingleRequest = 0;
+uint64_t LSQ::LSQRequest::numSplitRequest = 0;
+std::list<LSQ::SingleDataRequest*> LSQ::SingleDataRequest::singleList;
+
 LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
     : cpu(cpu_ptr), iewStage(iew_ptr),
       _cacheBlocked(false),
@@ -539,13 +544,6 @@ LSQ::recvReqRetry()
     }
 }
 
-void
-LSQ::completeDataAccess(PacketPtr pkt)
-{
-    LSQRequest *request = dynamic_cast<LSQRequest*>(pkt->senderState);
-    thread[cpu->contextToThread(request->contextId())]
-        .completeDataAccess(pkt);
-}
 
 bool
 LSQ::recvTimingResp(PacketPtr pkt)
@@ -579,7 +577,15 @@ LSQ::recvTimingResp(PacketPtr pkt)
             thread[tid].checkSnoop(pkt);
         }
     }
-    // Update the LSQRequest state (this may delete the request)
+
+    if (request->isNormalLd() &&
+        !request->mainPacket()->cacheSatisfied &&
+        !request->mainPacket()->cacheSatisfiedByMSHR) {
+        // if cache miss, the packet must be delete
+        assert(request->isReleased());
+        assert(request->_numOutstandingPackets == 1);
+    }
+
     request->packetReplied();
 
     if (waitingForStaleTranslation) {
@@ -638,8 +644,6 @@ LSQ::recvFunctionalCustomSignal(PacketPtr pkt, int sig)
                 request->instruction()->seqNum,
                 sig == DcacheRespType::Miss,
                 sig == DcacheRespType::Block_Not_Ready);
-        // cancel subsequent dependent insts of this load
-        iewStage->loadCancel(request->instruction());
     } else if (sig == DcacheRespType::Hint) {
         // get cache miss load replay hint
         request->recvFunctionalCustomSignal(pkt);
@@ -656,7 +660,7 @@ LSQ::recvFunctionalCustomSignal(PacketPtr pkt, int sig)
                 DPRINTF(LSQ, " erased bus: [sn:%ld] addr: %#lx\n", seqNum, addr);
             } else {
                 it++;
-            }
+            } 
         }
         panic_if(bus.size() > getLQEntries(), "elements on bus should never be greater than LQ size");
     } else {
@@ -1066,20 +1070,16 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
         request->initiateTranslation();
     }
 
+
     if (!isLoad && !isAtomic) {
         // store inst temporally saves its data in memData
         inst->memData = new uint8_t[size];
         memcpy(inst->memData, data, size);
     }
 
-    inst->effSize = size;
-
     /* This is the place were instructions get the effAddr. */
     /* Only atomic types can attempt to send requests to the cache at this stage.*/
-    if (inst->isAtomic() && request->isTranslationComplete()) {
-        if (isMisaligned(inst, request)) {
-            return inst->getFault();
-        }
+    if (request->isTranslationComplete()) {
         if (request->isMemAccessRequired()) {
             inst->effAddr = request->getVaddr();
             inst->effSize = size;
@@ -1088,22 +1088,29 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
             if (cpu->checker) {
                 inst->reqToVerify = std::make_shared<Request>(*request->req());
             }
-            Fault fault;
-            if (isLoad)
-                fault = read(request, inst->lqIdx);
-            else
-                fault = write(request, data, inst->sqIdx);
-            // inst->getFault() may have the first-fault of a
-            // multi-access split request at this point.
-            // Overwrite that only if we got another type of fault
-            // (e.g. re-exec).
-            if (fault != NoFault)
-                inst->getFault() = fault;
+
+            if (inst->isAtomic()) {
+                Fault fault;
+                if (isLoad)
+                    fault = read(request, inst->lqIdx);
+                else
+                    fault = write(request, data, inst->sqIdx);
+                // inst->getFault() may have the first-fault of a
+                // multi-access split request at this point.
+                // Overwrite that only if we got another type of fault
+                // (e.g. re-exec).
+                if (fault != NoFault)
+                    inst->getFault() = fault;
+            }
         } else if (isLoad) {
             inst->setMemAccPredicate(false);
             // Commit will have to clean up whatever happened.  Set this
             // instruction as executed.
             inst->setExecuted();
+        }
+        if (isMisaligned(inst, request)) {
+            // inst->getFault() is set in isMisaligned()
+            return inst->getFault();
         }
     }
 
@@ -1308,7 +1315,10 @@ LSQ::SplitDataRequest::initiateTranslation()
 LSQ::SbufferRequest::SbufferRequest(CPU* cpu, LSQUnit* port, Addr blockpaddr, uint8_t* data)
     : LSQRequest(port, nullptr, false, 0, port->cacheLineSize(), 0, data,
                  nullptr, nullptr, false),
-      cpu(cpu) {}
+      cpu(cpu) {
+    numSBufferRequest++;
+    assert(numSBufferRequest <= port->sbufferEntries);
+}
 
 void
 LSQ::SbufferRequest::addReq(Addr blockVaddr, Addr blockPaddr, const std::vector<bool> byteEnable)
@@ -1330,6 +1340,7 @@ LSQ::LSQRequest::LSQRequest(
     _numOutstandingPackets(0), _amo_op(nullptr),
     _sbufferBypass(false)
 {
+
     flags.set(Flag::IsLoad, isLoad);
     if (_inst) {
         flags.set(Flag::WriteBackToRegister,
@@ -1356,6 +1367,7 @@ LSQ::LSQRequest::LSQRequest(
     _hasStaleTranslation(stale_translation),
     _sbufferBypass(false)
 {
+
     flags.set(Flag::IsLoad, isLoad);
     if (_inst) {
         flags.set(Flag::WriteBackToRegister,
@@ -1416,11 +1428,16 @@ LSQ::LSQRequest::addReq(Addr addr, unsigned size,
 void
 LSQ::LSQRequest::forward()
 {
-    if (!isLoad() || !needWBToRegister() || forwardPackets.empty()) return;
-    DPRINTF(StoreBuffer, "sbuffer forward data\n");
-    _sbufferBypass = true;
-    for (auto& p : forwardPackets)
+    if (!isLoad() || !needWBToRegister()) return;
+    DPRINTF(StoreBuffer, "sbuffer/storeQue forward data\n");
+    for (auto& p : SBforwardPackets)
     {
+        _sbufferBypass = true;
+        _inst->memData[p.idx] = p.byte;
+    }
+
+    for (auto& p : SQforwardPackets) {
+        _sbufferBypass = true;
         _inst->memData[p.idx] = p.byte;
     }
 }
@@ -1433,7 +1450,8 @@ LSQ::LSQRequest::~LSQRequest()
         std::raise(SIGINT);
     }
     assert(!isAnyOutstandingRequest());
-    if (_inst->savedRequest == this) {
+    if (_inst && _inst->savedRequest == this) {
+        DPRINTF(LSQ, "inst [sn:%llu] Deleting LSQRequest, savedRequest\n", _inst->seqNum);
          _inst->savedRequest = nullptr;
     }
 
@@ -1499,6 +1517,7 @@ LSQ::SbufferRequest::recvTimingResp(PacketPtr pkt)
     flags.set(Flag::Complete);
     assert(pkt == _packets.front());
     _port.completeSbufferEvict(pkt);
+    discard();
     return true;
 }
 
@@ -1510,9 +1529,11 @@ LSQ::SingleDataRequest::recvTimingResp(PacketPtr pkt)
     bool enableLdMissReplay = lsq->enableLdMissReplay();
     // Dump inst num, request addr, and packet addr
     DPRINTF(LSQ, "Single Req::recvTimingResp: inst: %llu, pkt: %#lx, isLoad: %d, "
-                "isLLSC: %d, isUncache: %d, isCacheSatisfied: %d, data: %d\n",
+                "isLLSC: %d, isUncache: %d, isCachehit: %d, data: %d\n",
                 pkt->req->getReqInstSeqNum(), pkt->getAddr(), isLoad(), mainReq()->isLLSC(),
-                mainReq()->isUncacheable(), pkt->cacheSatisfied, *(pkt->getPtr<uint64_t*>()));
+                mainReq()->isUncacheable(), pkt->cacheSatisfied || pkt->cacheSatisfiedByMSHR,
+                *(pkt->getPtr<uint64_t*>()));
+
     if (isLoad()) {
         auto it = std::find(lsqUnit()->inflightLoads.begin(), lsqUnit()->inflightLoads.end(), this);
         if (it != lsqUnit()->inflightLoads.end()) {
@@ -1529,11 +1550,12 @@ LSQ::SingleDataRequest::recvTimingResp(PacketPtr pkt)
             discard();
         } else {
             // this load is either missed and waken up early or hit.
-            if (pkt->cacheSatisfied) {
+            if (pkt->cacheSatisfied || pkt->cacheSatisfiedByMSHR) {
+                DPRINTF(LSQ, "[sn:%ld] %s hit\n", _inst->seqNum, pkt->cacheSatisfied ? "cache" : "MSHR");
                 // cache hit
-                _port.setFlagInPipeLine(_inst, LdStFlags::CacheHit);
+                instruction()->setCacheHit();
             } else {
-                DPRINTF(LSQ, "[sn:%ld] addToBus\n", pkt->req->getReqInstSeqNum());
+                DPRINTF(LSQ, "[sn:%ld] addToBus\n", _inst->seqNum);
                 // cache miss refill, make data stable on data bus
                 lsq->bus[_inst->seqNum] = pkt->getAddr();
                 _port.getStats()->busAppendTimes++;
@@ -1749,17 +1771,21 @@ LSQ::SingleDataRequest::sendPacketToCache()
     if (success) {
         if (isLoad()) {
             assert(lsqUnit()->inflightLoads.size() < lsqUnit()->numLoads() + 4);
-            lsqUnit()->inflightLoads.emplace_back(this);
+            //lsqUnit()->inflightLoads.emplace_back(this);
         }
 
         if (!bank_conflict) {
             _numOutstandingPackets = 1;
             LSQRequest::_inst->hasPendingCacheReq(true);
             LSQRequest::_inst->pendingCacheReq = this;
+            DPRINTF(LSQ, "sendPacketToCache success [sn:%llu], pkt: %#lx\n",
+                    _inst->seqNum, _packets[0]->getAddr());
         }
     }
     if (bank_conflict) {
-        lsqUnit()->bankConflictReplaySchedule();
+        instruction()->setBankConflicyReplay();
+        DPRINTF(LoadPipeline, "Load [sn:%ld] setBankConflicyReplay\n",
+                _inst->seqNum);
     }
     if (tag_read_fail) {
         DPRINTF(TagReadFail, "sendPacketToCache fails addr: %lx\n", _packets.at(0)->getAddr());

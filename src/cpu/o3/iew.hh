@@ -218,8 +218,8 @@ class IEW
     /** Notifies that the cache has become unblocked */
     void cacheUnblocked();
 
-    /** Sends an instruction to commit through the time buffer. */
-    void instToCommit(const DynInstPtr &inst);
+    /** inst is ready to finish (The last cycle in FU) */
+    void readyToFinish(const DynInstPtr &inst);
 
     /** Inserts unused instructions of a thread into the skid buffer. */
     void skidInsert(ThreadID tid);

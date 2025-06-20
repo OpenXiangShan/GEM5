@@ -79,7 +79,7 @@ namespace gem5
 {
 
 BaseCache::SendTimingRespEvent::SendTimingRespEvent(BaseCache* cache, PacketPtr pkt)
-    : Event(Stat_Event_Pri, AutoDelete),
+    : Event(Delayed_Writeback_Pri, AutoDelete),
       cache(cache),
       pkt(pkt) {}
 
@@ -408,7 +408,7 @@ BaseCache::handleTimingReqHit(PacketPtr pkt, CacheBlk *blk, Tick request_time, b
         DPRINTF(Cache, "In handle timing hit, pkt has data: %i\n", pkt->hasData());
         if (cacheLevel == 1) {
             // load pipe shoud have fixed delay
-            this->schedule(new SendTimingRespEvent(this, pkt), request_time - 1);
+            this->schedule(new SendTimingRespEvent(this, pkt), request_time);
         }
         else {
             cpuSidePort.schedTimingResp(pkt, request_time);
@@ -699,8 +699,6 @@ BaseCache::recvTimingReq(PacketPtr pkt)
 
         handleTimingReqHit(pkt, blk, request_time, first_acc_after_pf);
         if (cacheLevel == 1 && pkt->isResponse() && pkt->isRead() && !pkt->isWrite() && lat > 1) {
-            // cache block not ready, send cancel signal
-            cpuSidePort.sendCustomSignal(pkt, DcacheRespType::Block_Not_Ready);
             pkt->cacheSatisfied = false;
         }
     } else {
@@ -708,8 +706,6 @@ BaseCache::recvTimingReq(PacketPtr pkt)
             calculateSliceBusy(pkt);
         }
         if (cacheLevel == 1 && pkt->needsResponse() && pkt->isRead() && !pkt->isWrite()) {
-            // send cache miss signal
-            cpuSidePort.sendCustomSignal(pkt, DcacheRespType::Miss);
             pkt->cacheSatisfied = false;
         }
 

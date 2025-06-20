@@ -697,7 +697,7 @@ IEW::cacheUnblocked()
 }
 
 void
-IEW::instToCommit(const DynInstPtr& inst)
+IEW::readyToFinish(const DynInstPtr& inst)
 {
     // This function should not be called after writebackInsts in a
     // single cycle.  That will cause problems with an instruction
@@ -1743,13 +1743,13 @@ IEW::executeInsts()
 
             if (!inst->isSplitStoreData()) {
                 inst->setExecuted();
-                instToCommit(inst);
+                readyToFinish(inst);
             } else {
                 DPRINTF(IEW, "Execute: Split store data, [sn:%lli]\n", inst->seqNum);
                 // STD is ready, wake up corresponding load if any
                 instQueue.resolveSTLFFailInst(inst->seqNum);
                 if (inst->sqIt->splitStoreFinish()) {
-                    instToCommit(inst->sqIt->instruction());
+                    readyToFinish(inst->sqIt->instruction());
                 }
             }
         }
@@ -2104,7 +2104,7 @@ IEW::checkLoadStoreInst(DynInstPtr inst)
     int depth=-1;
     if (inFlight) {
         assert(inst->pendingCacheReq);
-        depth = inst->pendingCacheReq->mainReq()->depth;
+        depth = 0;// inst->pendingCacheReq->mainReq()->depth;
     }
     assert(depth < 5);
     bool in_l1 = depth == 0;
