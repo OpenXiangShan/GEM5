@@ -124,9 +124,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         delayedCommit[i] = false;
         memReq[i] = nullptr;
         stalls[i] = {false, false};
-        fetchBuffer[i] = NULL;
-        fetchBufferPC[i] = 0;
-        fetchBufferValid[i] = false;
+        // fetchBuffer[i] is initialized by its constructor
         lastIcacheStall[i] = 0;
         issuePipelinedIfetch[i] = false;
     }
@@ -158,9 +156,9 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
     assert(params.decoder.size());
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         decoder[tid] = params.decoder[tid];
-        // Create space to buffer the cache line data,
-        // which may not hold the entire cache line.
-        fetchBuffer[tid] = new uint8_t[fetchBufferSize];
+        // Set the size and allocate data for each fetch buffer instance
+        fetchBuffer[tid].size = fetchBufferSize;
+        fetchBuffer[tid].data = new uint8_t[fetchBufferSize];
     }
 
     // Get the size of an instruction.
@@ -393,8 +391,7 @@ Fetch::clearStates(ThreadID tid)
     anotherMemReq[tid] = NULL;
     stalls[tid].decode = false;
     stalls[tid].drain = false;
-    fetchBufferPC[tid] = 0;
-    fetchBufferValid[tid] = false;
+    fetchBuffer[tid].reset();
     fetchQueue[tid].clear();
 
     // TODO not sure what to do with priorityList for now
@@ -423,8 +420,7 @@ Fetch::resetStage()
         stalls[tid].decode = false;
         stalls[tid].drain = false;
 
-        fetchBufferPC[tid] = 0;
-        fetchBufferValid[tid] = false;
+        fetchBuffer[tid].reset();
 
         fetchQueue[tid].clear();
 
@@ -676,31 +672,30 @@ Fetch::processCacheCompletion(PacketPtr pkt)
         return;
     }
 
-    memcpy(fetchBuffer[tid], pkt->getConstPtr<uint8_t>(), fetchBufferSize);
-    fetchBufferValid[tid] = true;
+    fetchBuffer[tid].setData(fetchBuffer[tid].startPC, pkt->getConstPtr<uint8_t>(), fetchBufferSize);
 
     // Reset usedUpFetchTargets flag when we get new fetch data
     // This allows fetch to continue with the current FTQ entry
     if (usedUpFetchTargets) {
         DPRINTF(Fetch, "[tid:%i] Resetting usedUpFetchTargets after cache completion, "
-                "fetchBufferPC=%#x\n", tid, fetchBufferPC[tid]);
+                "fetchBufferPC=%#x\n", tid, fetchBuffer[tid].startPC);
         usedUpFetchTargets = false;
     }
 
     // Verify fetchBufferPC alignment with FTQ for decoupled frontend
-    if (isDecoupledFrontend() && fetchBufferValid[tid]) {
+    if (isDecoupledFrontend() && fetchBuffer[tid].valid) {
         if (isBTBPred() && dbpbtb->fetchTargetAvailable()) {
             auto& ftq_entry = dbpbtb->getSupplyingFetchTarget();
-            assert(fetchBufferPC[tid] == ftq_entry.startPC &&
+            assert(fetchBuffer[tid].startPC == ftq_entry.startPC &&
                    "fetchBufferPC should be aligned with FTQ startPC,");
             DPRINTF(Fetch, "[tid:%i] Verified fetchBufferPC %#x matches FTQ startPC %#x\n",
-                    tid, fetchBufferPC[tid], ftq_entry.startPC);
+                    tid, fetchBuffer[tid].startPC, ftq_entry.startPC);
         } else if (isFTBPred() && dbpftb->fetchTargetAvailable()) {
             auto& ftq_entry = dbpftb->getSupplyingFetchTarget();
-            assert(fetchBufferPC[tid] == ftq_entry.startPC &&
+            assert(fetchBuffer[tid].startPC == ftq_entry.startPC &&
                    "fetchBufferPC should be aligned with FTQ startPC");
             DPRINTF(Fetch, "[tid:%i] Verified fetchBufferPC %#x matches FTQ startPC %#x\n",
-                    tid, fetchBufferPC[tid], ftq_entry.startPC);
+                    tid, fetchBuffer[tid].startPC, ftq_entry.startPC);
         }
     }
 
@@ -868,7 +863,7 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
                     inst->staticInst, inst->seqNum, next_pc, tid);
             if (usedUpFetchTargets) {
                 DPRINTF(DecoupleBP, "Used up fetch targets.\n");
-                fetchBufferValid[tid] = false;  // Invalidate fetch buffer when FTQ entry exhausted
+                fetchBuffer[tid].valid = false;  // Invalidate fetch buffer when FTQ entry exhausted
             }
         }
         else  {
@@ -883,7 +878,7 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
             }
             if (usedUpFetchTargets) {
                 DPRINTF(DecoupleBP, "Used up fetch targets.\n");
-                fetchBufferValid[tid] = false;  // Invalidate fetch buffer when FTQ entry exhausted
+                fetchBuffer[tid].valid = false;  // Invalidate fetch buffer when FTQ entry exhausted
             }
             inst->setLoopIteration(currentLoopIter);
         }
@@ -1026,8 +1021,8 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
         DPRINTF(Fetch, "[tid:%i] Fetching data for addr %#x, pc=%#lx\n",
                     tid, mem_req->getVaddr(), fetchPC);
 
-        fetchBufferPC[tid] = fetchPC;
-        fetchBufferValid[tid] = false;
+        fetchBuffer[tid].startPC = fetchPC;
+        fetchBuffer[tid].valid = false;
         DPRINTF(Fetch, "Fetch: Doing instruction read.\n");
 
         fetchStats.cacheLines++;
@@ -1181,7 +1176,7 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
 
     if (squashInst && !squashInst->isControl()) {
         // csrrw satp need to flush all fetch targets
-        fetchBufferValid[tid] = false;
+        fetchBuffer[tid].valid = false;
     }
 
     fetchStatus[tid] = Squashing;
@@ -1199,7 +1194,7 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
 
     // Set usedUpFetchTargets to force getting new FTQ entry after squash
     usedUpFetchTargets = true;
-    fetchBufferValid[tid] = false;  // clear fetch buffer valid
+    fetchBuffer[tid].valid = false;  // clear fetch buffer valid
 
     DPRINTF(Fetch, "[tid:%i] Squash: set usedUpFetchTargets=true, will need new FTQ entry\n", tid);
 
@@ -1210,7 +1205,7 @@ void
 Fetch::flushFetchBuffer()
 {
     for (ThreadID i = 0; i < numThreads; ++i) {
-        fetchBufferValid[i] = false;
+        fetchBuffer[i].valid = false;
     }
 }
 
@@ -1916,13 +1911,12 @@ Fetch::checkDecoupledFrontend(ThreadID tid)
 }
 
 bool
-Fetch::prepareFetchAddress(ThreadID tid, bool &status_change, Addr &fetch_addr)
+Fetch::prepareFetchAddress(ThreadID tid, bool &status_change)
 {
     DPRINTF(Fetch, "Attempting to fetch from [tid:%i]\n", tid);
 
     // The current PC - directly use the actual instruction address
     PCStateBase &this_pc = *pc[tid];
-    fetch_addr = this_pc.instAddr();
 
     // Handle status transitions and cache access
     if (fetchStatus[tid] == IcacheAccessComplete) {
@@ -1936,7 +1930,7 @@ Fetch::prepareFetchAddress(ThreadID tid, bool &status_change, Addr &fetch_addr)
         // For RISC-V, we don't need ROM microcode, only check FTQ status and macroop
         if (needNewFTQEntry(tid) && !macroop[tid]) {
             Addr ftq_start_pc = isDecoupledFrontend() ?
-                getNextFTQStartPC(tid) : fetch_addr;
+                getNextFTQStartPC(tid) : this_pc.instAddr();
 
             if (ftq_start_pc == 0) {
                 // FTQ not available, stall fetch
@@ -1948,8 +1942,8 @@ Fetch::prepareFetchAddress(ThreadID tid, bool &status_change, Addr &fetch_addr)
             }
 
             DPRINTF(Fetch, "[tid:%i] Need new FTQ entry, attempting to translate and read "
-                    "instruction, starting at PC %#x (original fetch_addr %#x, current PC %s)\n",
-                    tid, ftq_start_pc, fetch_addr, this_pc);
+                    "instruction, starting at PC %#x (current PC %s)\n",
+                    tid, ftq_start_pc, this_pc);
 
             fetchCacheLine(ftq_start_pc, tid, this_pc.instAddr());
 
@@ -1995,22 +1989,21 @@ Fetch::fetch(bool &status_change)
         return;
     }
 
-    Addr fetch_addr;
-    if (!prepareFetchAddress(tid, status_change, fetch_addr)) {
+    if (!prepareFetchAddress(tid, status_change)) {
         return;
     }
 
     ++fetchStats.cycles;
 
-    performInstructionFetch(tid, fetch_addr, status_change);
+    performInstructionFetch(tid);
 }
 
 StallReason
 Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
-                        StaticInstPtr &curMacroop)
+                        const StaticInstPtr &curMacroop)
 {
-    // In the new design, we only need to supply bytes when decoder needs them
-    // For macroop, we don't need to supply new bytes from memory
+    // If we are in the middle of a macro-op, the decoder does not need
+    // more memory bytes. It will continue processing the existing instruction.
     if (curMacroop) {
         return StallReason::NoStall;
     }
@@ -2018,25 +2011,25 @@ Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
     Addr fetch_pc = this_pc.instAddr();
 
     // Check if fetch buffer is valid and contains this PC
-    if (!fetchBufferValid[tid]) {
+    if (!fetchBuffer[tid].valid) {
         DPRINTF(Fetch, "[tid:%i] Fetch buffer invalid, stalling on ICache\n", tid);
         return StallReason::IcacheStall;
     }
 
     // Check if the fetch buffer contains enough bytes for this instruction
     // We need at least 4 bytes to decode any RISC-V instruction (including compressed)
-    if (fetch_pc < fetchBufferPC[tid] ||
-        fetch_pc + 4 > fetchBufferPC[tid] + fetchBufferSize) {
+    if (fetch_pc < fetchBuffer[tid].startPC ||
+        fetch_pc + 4 > fetchBuffer[tid].startPC + fetchBufferSize) {
         DPRINTF(Fetch, "[tid:%i] PC %#x outside fetch buffer range [%#x, %#x), stalling on ICache\n",
-                tid, fetch_pc, fetchBufferPC[tid], fetchBufferPC[tid] + fetchBufferSize);
+                tid, fetch_pc, fetchBuffer[tid].startPC, fetchBuffer[tid].startPC + fetchBufferSize);
         return StallReason::IcacheStall;
     }
 
     // Supply bytes to decoder - always provide 4 bytes for RISC-V
     auto *dec_ptr = decoder[tid];
-    Addr offset_in_buffer = fetch_pc - fetchBufferPC[tid];
+    Addr offset_in_buffer = fetch_pc - fetchBuffer[tid].startPC;
     memcpy(dec_ptr->moreBytesPtr(),
-           fetchBuffer[tid] + offset_in_buffer, 4);
+           fetchBuffer[tid].data + offset_in_buffer, 4);
 
     DPRINTF(Fetch, "[tid:%i] Supplying 4 bytes from fetchBuffer at PC %#x (offset %d)\n",
             tid, fetch_pc, offset_in_buffer);
@@ -2047,22 +2040,22 @@ Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
     return StallReason::NoStall;
 }
 
-DynInstPtr
-Fetch::processInstructionDecoding(ThreadID tid, PCStateBase &this_pc,
-                                 const std::unique_ptr<PCStateBase> &next_pc,
-                                 StaticInstPtr &staticInst,
-                                 StaticInstPtr &curMacroop,
-                                 bool &newMacro)
+bool
+Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
+                               StaticInstPtr &curMacroop)
 {
     auto *dec_ptr = decoder[tid];
-    newMacro = false;
+    bool predictedBranch = false;
+    bool newMacroop = false;
 
-    // Handle normal instruction decoding or macroop microops
+    // Create a copy of the current PC state to calculate the next PC.
+    std::unique_ptr<PCStateBase> next_pc(pc.clone());
+
+    // Decode the instruction, handling macro-op transitions.
+    StaticInstPtr staticInst = nullptr;
     if (!curMacroop) {
-        // In the new design, decoder is always ready after moreBytes() is called
-        staticInst = dec_ptr->decode(this_pc);
-
-        // Increment instruction fetch statistics
+        // Decode a new instruction if not currently in a macro-op.
+        staticInst = dec_ptr->decode(pc);
         ++fetchStats.insts;
 
         if (staticInst->isMacroop()) {
@@ -2070,16 +2063,18 @@ Fetch::processInstructionDecoding(ThreadID tid, PCStateBase &this_pc,
             DPRINTF(Fetch, "[tid:%i] Macroop instruction decoded\n", tid);
         }
     }
-    if (curMacroop) { // Handle macroop microops
-        staticInst = curMacroop->fetchMicroop(this_pc.microPC());
+    if (curMacroop) {
+        // Fetch the next micro-op from the current macro-op.
+        staticInst = curMacroop->fetchMicroop(pc.microPC());
         DPRINTF(Fetch, "[tid:%i] Fetched macroop microop\n", tid);
-        newMacro |= staticInst->isLastMicroop();
+        // Check if this is the last micro-op.
+        newMacroop = staticInst->isLastMicroop();
     }
 
-    // Create dynamic instruction
-    DynInstPtr instruction = buildInst(tid, staticInst, curMacroop, this_pc, *next_pc, true);
+    // Build the dynamic instruction and add it to the fetch queue
+    DynInstPtr instruction = buildInst(tid, staticInst, curMacroop, pc, *next_pc, true);
 
-    // Handle RISC-V vector configuration instructions (preserve this functionality)
+    // Special handling for RISC-V vector configuration instructions.
     if (staticInst->isVectorConfig()) {
         waitForVsetvl = dec_ptr->stall();
         DPRINTF(Fetch, "[tid:%i] Vector config instruction, waitForVsetvl=%d\n",
@@ -2096,81 +2091,64 @@ Fetch::processInstructionDecoding(ThreadID tid, PCStateBase &this_pc,
     }
 #endif
 
-    return instruction;
-}
-
-void
-Fetch::handleBranchAndNextPC(DynInstPtr instruction, PCStateBase &this_pc,
-                            std::unique_ptr<PCStateBase> &next_pc,
-                            bool &predictedBranch, bool &newMacro)
-{
     // Save current PC to next_pc first
-    set(next_pc, this_pc);
+    set(next_pc, pc);
 
     // Handle branch prediction for non-decoupled frontend
     if (!isDecoupledFrontend()) {
-        predictedBranch |= this_pc.branching();
+        predictedBranch = pc.branching();
+    } else { // decoupled frontend
+        predictedBranch = lookupAndUpdateNextPC(instruction, *next_pc);
     }
-
-    // Perform branch prediction and get next PC
-    predictedBranch |= lookupAndUpdateNextPC(instruction, *next_pc);
 
     if (predictedBranch) {
         DPRINTF(Fetch, "[tid:%i] Branch detected with PC = %s, target = %s\n",
-                instruction->threadNumber, this_pc, *next_pc);
+                instruction->threadNumber, pc, *next_pc);
     }
 
-    // Check if we're moving to a new macroop
-    newMacro |= this_pc.instAddr() != next_pc->instAddr();
+    // A new macro-op also begins if the PC changes discontinuously.
+    newMacroop |= pc.instAddr() != next_pc->instAddr();
+    if (newMacroop) {
+        curMacroop = NULL;
+        DPRINTF(Fetch, "[tid:%i] New macroop transition, PC=%s\n",
+                tid, pc);
+    }
 
-    // Update current PC to next PC for next iteration
-    set(this_pc, *next_pc);
+    // Update the main PC state for the next instruction.
+    set(pc, *next_pc);
+
+    return predictedBranch;
 }
 
 void
-Fetch::performInstructionFetch(ThreadID tid, Addr fetch_addr, bool &status_change)
+Fetch::performInstructionFetch(ThreadID tid)
 {
     // Initialize local variables
-    PCStateBase &this_pc = *pc[tid];
-    std::unique_ptr<PCStateBase> next_pc(this_pc.clone());
-    StaticInstPtr staticInst = NULL;
-    StaticInstPtr curMacroop = macroop[tid];
+    PCStateBase &pc_state = *pc[tid];
+    StaticInstPtr &curMacroop = macroop[tid];
 
     // Control flags for main fetch loop
     bool predictedBranch = false;
 
     DPRINTF(Fetch, "[tid:%i] Adding instructions to queue to decode.\n", tid);
 
-    // Main instruction fetch loop - process until fetch width or other limits reached
+    // Main instruction fetch loop - process until fetch width or other limits
     StallReason stall = StallReason::NoStall;
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize &&
            !predictedBranch && !ftqEmpty() && !waitForVsetvl) {
 
         // Check memory needs and supply bytes to decoder if required
-        stall = checkMemoryNeeds(tid, this_pc, curMacroop);
+        stall = checkMemoryNeeds(tid, pc_state, curMacroop);
         if (stall != StallReason::NoStall) {
             break;
         }
 
-        // Inner loop: extract as many instructions as possible from buffered memory
+        // Inner loop: extract as many instructions as possible from buffered
+        // memory. This is primarily for macro-op instructions, which decode
+        // into multiple micro-ops.
         do {
-            bool newMacro = false;
-
-            // Decode instruction and create dynamic instruction
-            DynInstPtr instruction = processInstructionDecoding(tid, this_pc, next_pc,
-                                                               staticInst, curMacroop,
-                                                               newMacro);
-
-            // Handle branch prediction and PC updates
-            handleBranchAndNextPC(instruction, this_pc, next_pc,
-                                  predictedBranch, newMacro);
-
-            // Handle new macroop transition
-            if (newMacro) {
-                curMacroop = NULL;
-                DPRINTF(Fetch, "[tid:%i] New macroop transition, PC=%#x\n",
-                        tid, this_pc.instAddr());
-            }
+            // Process a single instruction, from decoding to PC update.
+            predictedBranch = processSingleInstruction(tid, pc_state, curMacroop);
 
         } while (curMacroop &&
                  numInst < fetchWidth &&
@@ -2207,7 +2185,7 @@ Fetch::performInstructionFetch(ThreadID tid, Addr fetch_addr, bool &status_chang
 
     // Setup pipelined fetch for next cycle if needed
     // Check if we need a new FTQ entry based on FTQ state
-    Addr current_pc = this_pc.instAddr();
+    Addr current_pc = pc_state.instAddr();
     if (needNewFTQEntry(tid)) {
         DPRINTF(Fetch, "[tid:%i] Setting up pipelined fetch for next cycle, "
                 "need new FTQ entry for PC %#x\n", tid, current_pc);
@@ -2410,17 +2388,17 @@ Fetch::needNewFTQEntry(ThreadID tid)
     // Check if we need a new FTQ entry based on:
     // 1. Used up current FTQ targets (decoupled frontend)
     // 2. Invalid fetch buffer (cache miss or initial state)
-    bool need_new = usedUpFetchTargets || !fetchBufferValid[tid];
+    bool need_new = usedUpFetchTargets || !fetchBuffer[tid].valid;
 
     // Assert consistency: if usedUpFetchTargets=true, fetchBuffer should be invalid
     if (isDecoupledFrontend() && usedUpFetchTargets) {
-        assert(!fetchBufferValid[tid] &&
+        assert(!fetchBuffer[tid].valid &&
                "fetchBuffer should be invalid when FTQ entry is exhausted");
     }
 
     DPRINTF(Fetch, "[tid:%i] needNewFTQEntry: usedUpFetchTargets=%d, "
             "fetchBufferValid=%d, result=%d\n",
-            tid, usedUpFetchTargets, fetchBufferValid[tid], need_new);
+            tid, usedUpFetchTargets, fetchBuffer[tid].valid, need_new);
 
     return need_new;
 }
@@ -2463,29 +2441,29 @@ Fetch::getNextFTQStartPC(ThreadID tid)
         Addr start_pc = ftq_entry.startPC;
 
         // Update fetchBufferPC to align with FTQ entry
-        fetchBufferPC[tid] = start_pc;
+        fetchBuffer[tid].startPC = start_pc;
 
         DPRINTF(Fetch, "[tid:%i] getNextFTQStartPC: FTQ entry startPC=%#x, "
                 "endPC=%#x, fetchBufferPC updated to %#x\n",
-                tid, start_pc, ftq_entry.endPC, fetchBufferPC[tid]);
+                tid, start_pc, ftq_entry.endPC, fetchBuffer[tid].startPC);
 
         return start_pc;
     } else if (isFTBPred()) {
         assert(dbpftb);
         auto& ftq_entry = dbpftb->getSupplyingFetchTarget();
         Addr start_pc = ftq_entry.startPC;
-        fetchBufferPC[tid] = start_pc;
+        fetchBuffer[tid].startPC = start_pc;
 
         DPRINTF(Fetch, "[tid:%i] getNextFTQStartPC: FTB entry startPC=%#x, "
                 "endPC=%#x, fetchBufferPC updated to %#x\n",
-                tid, start_pc, ftq_entry.endPC, fetchBufferPC[tid]);
+                tid, start_pc, ftq_entry.endPC, fetchBuffer[tid].startPC);
 
         return start_pc;
     } else if (isStreamPred()) {
         // For stream predictor, fall back to current fetchBufferPC
         DPRINTF(Fetch, "[tid:%i] getNextFTQStartPC: Stream predictor fallback, "
-                "using fetchBufferPC=%#x\n", tid, fetchBufferPC[tid]);
-        return fetchBufferPC[tid];
+                "using fetchBufferPC=%#x\n", tid, fetchBuffer[tid].startPC);
+        return fetchBuffer[tid].startPC;
     }
 
     panic("getNextFTQStartPC called with unsupported predictor type");
