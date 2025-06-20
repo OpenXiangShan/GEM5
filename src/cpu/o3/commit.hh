@@ -145,8 +145,9 @@ class Commit
     };
     std::list<BranchInfo> branchLog;
 
-    bool maybeStucked = false;
     uint64_t lastCommitCycle = 0;
+
+    EventFunctionWrapper stuckCheckEvent;
 
     /** Mark the thread as processing a trap. */
     void processTrapEvent(ThreadID tid);

@@ -99,6 +99,14 @@ Commit::processTrapEvent(ThreadID tid)
 
 Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUParams &params)
     : commitPolicy(params.smtCommitPolicy),
+      stuckCheckEvent([this](){
+        if (cpu->curCycle() - this->lastCommitCycle > 40000) {
+            panic("Commit stage is stucked for more than 40,000 cycles!\n"
+                  "Last commit cycle: %lu, current cycle: %lu\n",
+                  lastCommitCycle, cpu->curCycle());
+        }
+        cpu->schedule(this->stuckCheckEvent, cpu->clockEdge(Cycles(40010)));
+      }, "CommitStuckCheckEvent"),
       cpu(_cpu),
       bp(_bp),
       iewToCommitDelay(params.iewToCommitDelay),
@@ -174,6 +182,8 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
     faultNum.insert(RiscvISA::ExceptionCode::LOAD_G_PAGE);
     faultNum.insert(RiscvISA::ExceptionCode::STORE_G_PAGE);
 
+    cpu->schedule(stuckCheckEvent,
+                   cpu->clockEdge(Cycles(40000)));
 }
 
 std::string Commit::name() const { return cpu->name() + ".commit"; }
@@ -738,21 +748,6 @@ Commit::tick()
 
     if (activeThreads->empty())
         return;
-
-    if (cpu->curCycle() - lastCommitCycle > 20000) {
-        if (maybeStucked) {
-            if (!rob->isEmpty()) {
-                warn("[sn:%s] %s", rob->head->get()->seqNum, rob->head->get()->staticInst->disassemble(0));
-            } else {
-                warn("ROB is empty\n");
-            }
-            panic("cpu stucked!!\n");
-        }
-        warn("cpu may be stucked\n");
-        maybeStucked = true;
-    } else {
-        maybeStucked = false;
-    }
 
     std::list<ThreadID>::iterator threads = activeThreads->begin();
     std::list<ThreadID>::iterator end = activeThreads->end();
