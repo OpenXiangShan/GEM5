@@ -180,11 +180,11 @@ class Fetch
         Idle,
         Squashing,
         Blocked,
-        Fetching,
         TrapPending,
         QuiescePending,
         ItlbWait,
-        IcacheWaitResponse,
+        IcacheWaitSingle,      // Wait for single cache line access
+        IcacheWaitMisaligned,  // Wait for misaligned fetch (two cache lines)
         IcacheWaitRetry,
         IcacheAccessComplete,
         NoGoodAddr,
@@ -364,6 +364,32 @@ class Fetch
      */
     bool handleAlignedFetch(Addr vaddr, ThreadID tid, Addr pc);
 
+    /** Check if addresses are properly aligned for instruction fetch.
+     * @param vaddr Virtual address
+     * @param pc Program counter
+     * @return true if both addresses are aligned
+     */
+    bool isAddressAligned(Addr vaddr, Addr pc) const;
+
+    /** Align address for RISC-V instruction fetch (clear lowest bit).
+     * @param addr Address to align
+     * @return Aligned address
+     */
+    Addr alignAddress(Addr addr) const;
+
+    /** Check if fetch can be initiated (no blocking conditions).
+     * @param tid Thread ID
+     * @param pc Program counter
+     * @return true if fetch can proceed
+     */
+    bool canInitiateFetch(ThreadID tid, Addr pc);
+
+    /** Check if fetch requires misaligned access across cache lines.
+     * @param vaddr Virtual address to fetch from
+     * @return true if misaligned fetch is needed
+     */
+    bool needsMisalignedFetch(Addr vaddr) const;
+
     /** Process misaligned fetch completion when both packets have arrived.
      * Merges data from both cache lines into the fetch buffer.
      * @param tid Thread ID
@@ -371,6 +397,36 @@ class Fetch
      * @return Merged packet if both packets have arrived, nullptr otherwise
      */
     PacketPtr processMisalignedCompletion(ThreadID tid, PacketPtr pkt);
+
+    /** Validate cache completion packet and current state.
+     * @param tid Thread ID
+     * @param pkt Cache completion packet
+     * @return true if completion is valid for current state
+     */
+    bool isValidCacheCompletion(ThreadID tid, PacketPtr pkt);
+
+    /** Process misaligned fetch cache completion.
+     * @param tid Thread ID
+     * @param pkt Cache completion packet
+     */
+    void processMisalignedCacheCompletion(ThreadID tid, PacketPtr pkt);
+
+    /** Process single cache line completion.
+     * @param tid Thread ID
+     * @param pkt Cache completion packet
+     */
+    void processSingleCacheCompletion(ThreadID tid, PacketPtr pkt);
+
+    /** Complete cache access and transition to next state.
+     * @param tid Thread ID
+     * @param pkt Cache completion packet
+     */
+    void completeCacheAccess(ThreadID tid, PacketPtr pkt);
+
+    /** Verify fetchBuffer alignment with FTQ for decoupled frontend.
+     * @param tid Thread ID
+     */
+    void verifyFTQAlignment(ThreadID tid);
 
     /** Check if an interrupt is pending and that we need to handle
      */

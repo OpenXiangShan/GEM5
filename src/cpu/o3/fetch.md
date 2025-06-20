@@ -779,6 +779,333 @@ void handleBranchAndNextPC(DynInstPtr instruction, PCStateBase &this_pc,
 
 这个重构展示了现代处理器fetch阶段的复杂性，特别是在支持解耦前端、多线程、性能分析等高级特性时。通过模块化设计，代码既保持了功能完整性，又大大提升了可维护性和扩展性。
 
+## Fetch状态转移图
+
+### 当前状态定义和问题
+
+当前fetch阶段支持跨越2个cacheline的指令获取(misaligned fetch)，这显著增加了状态管理的复杂性：
+
+```mermaid
+graph TD
+    %% 基础状态
+    Idle("Idle 空闲状态")
+    Running("Running 正常运行")
+    Blocked("Blocked 被阻塞")
+    Squashing("Squashing 正在清理")
+    
+    %% Cache访问状态
+    ItlbWait("ItlbWait 等待TLB翻译")
+    IcacheWaitResponse("IcacheWaitResponse 等待I-cache响应 🔴复杂：可能等待1或2个packet")
+    IcacheWaitRetry("IcacheWaitRetry 等待I-cache重试")
+    IcacheAccessComplete("IcacheAccessComplete I-cache访问完成")
+    
+    %% 特殊状态
+    TrapPending("TrapPending 等待trap处理")
+    QuiescePending("QuiescePending 等待quiesce")
+    NoGoodAddr("NoGoodAddr 地址无效")
+    
+    %% 主要状态转换
+    Idle --> Running
+    Running --> ItlbWait
+    ItlbWait --> IcacheWaitResponse
+    ItlbWait --> NoGoodAddr
+    
+    %% Cache访问流程
+    IcacheWaitResponse --> IcacheAccessComplete
+    IcacheWaitResponse --> IcacheWaitRetry
+    IcacheWaitRetry --> IcacheWaitResponse
+    IcacheAccessComplete --> Running
+    
+    %% 阻塞和squash
+    Running --> Blocked
+    Running --> Squashing
+    Blocked --> Running
+    Squashing --> Running
+    
+    %% 特殊情况
+    Running --> TrapPending
+    Running --> QuiescePending
+    TrapPending --> Running
+    QuiescePending --> Running
+    
+    %% 问题状态 (无实际使用)
+    Fetching("Fetching 未使用的状态")
+    
+    %% 样式
+    classDef problem fill:#ff9999
+    classDef normal fill:#e1f5fe
+    classDef cache fill:#fff3e0
+    classDef special fill:#f3e5f5
+    
+    class Fetching problem
+    class Idle,Running,Blocked,Squashing normal
+    class ItlbWait,IcacheWaitResponse,IcacheWaitRetry,IcacheAccessComplete cache
+    class TrapPending,QuiescePending,NoGoodAddr special
+```
+
+### Misaligned Fetch的复杂性
+
+当前`IcacheWaitResponse`状态的歧义性：
+
+```mermaid
+graph TD
+    subgraph S1["IcacheWaitResponse状态的两种情况"]
+        SingleWait["等待单个cache line<br/>简单情况"]
+        MisalignedWait["等待两个cache line<br/>复杂情况：需要特殊处理"]
+    end
+    
+    Running["Running"] --> SingleWait
+    Running --> MisalignedWait
+    
+    SingleWait --> IcacheAccessComplete["IcacheAccessComplete"]
+    MisalignedWait --> PartialComplete["部分完成<br/>一个packet到达"]
+    PartialComplete --> IcacheAccessComplete
+    
+    SingleWait --> IcacheWaitRetry["IcacheWaitRetry"]
+    MisalignedWait --> IcacheWaitRetry
+    
+    %% 边标签
+    Running -.->|"aligned fetch"| SingleWait
+    Running -.->|"misaligned fetch"| MisalignedWait
+    SingleWait -.->|"packet到达"| IcacheAccessComplete
+    MisalignedWait -.->|"一个packet到达"| PartialComplete
+    PartialComplete -.->|"两个packet都到达"| IcacheAccessComplete
+    SingleWait -.->|"cache miss"| IcacheWaitRetry
+    MisalignedWait -.->|"任一cache miss"| IcacheWaitRetry
+```
+
+### 建议的状态细化
+
+为解决当前状态歧义性，建议细化状态定义：
+
+```mermaid
+graph TD
+    %% 建议的新状态定义
+    Running["Running"]
+    ItlbWait["ItlbWait"]
+    
+    %% 细化的Cache状态
+    IcacheWaitSingle["IcacheWaitSingle<br/>等待单个cache line"]
+    IcacheWaitMisaligned["IcacheWaitMisaligned<br/>等待misaligned fetch"]
+    IcacheWaitRetry["IcacheWaitRetry"]
+    IcacheAccessComplete["IcacheAccessComplete"]
+    
+    %% 状态转换
+    Running --> ItlbWait
+    ItlbWait --> IcacheWaitSingle
+    ItlbWait --> IcacheWaitMisaligned
+    
+    IcacheWaitSingle --> IcacheAccessComplete
+    IcacheWaitMisaligned --> IcacheAccessComplete
+    
+    IcacheWaitSingle --> IcacheWaitRetry
+    IcacheWaitMisaligned --> IcacheWaitRetry
+    
+    IcacheWaitRetry --> IcacheWaitSingle
+    IcacheWaitRetry --> IcacheWaitMisaligned
+    
+    IcacheAccessComplete --> Running
+    
+    %% 边标签
+    ItlbWait -.->|"aligned fetch"| IcacheWaitSingle
+    ItlbWait -.->|"misaligned fetch"| IcacheWaitMisaligned
+    IcacheWaitSingle -.->|"packet到达"| IcacheAccessComplete
+    IcacheWaitMisaligned -.->|"两个packet都到达"| IcacheAccessComplete
+    IcacheWaitSingle -.->|"cache miss"| IcacheWaitRetry
+    IcacheWaitMisaligned -.->|"cache miss"| IcacheWaitRetry
+    IcacheWaitRetry -.->|"retry (aligned)"| IcacheWaitSingle
+    IcacheWaitRetry -.->|"retry (misaligned)"| IcacheWaitMisaligned
+    
+    %% 样式
+    classDef improved fill:#c8e6c9
+    class IcacheWaitSingle,IcacheWaitMisaligned improved
+```
+
+## 状态管理重构建议
+
+### 当前状态管理的问题
+
+1. **状态歧义性**：`IcacheWaitResponse`既可能等待1个packet也可能等待2个packet
+2. **复杂的完成检测**：需要在`processMisalignedCompletion()`中手动检查两个packet状态
+3. **分散的状态逻辑**：状态转换逻辑分布在多个函数中
+4. **未使用的状态**：`Fetching`状态定义了但从未使用
+
+### 建议的重构方案
+
+#### 方案1: 状态细化 (推荐)
+
+```cpp
+enum ThreadStatus {
+    // 基础状态
+    Running,
+    Idle, 
+    Blocked,
+    Squashing,
+    
+    // 细化的Cache访问状态
+    ItlbWait,
+    IcacheWaitSingle,     // 等待单个cache line
+    IcacheWaitMisaligned, // 等待misaligned fetch
+    IcacheWaitRetry,
+    IcacheAccessComplete,
+    
+    // 特殊状态
+    TrapPending,
+    QuiescePending, 
+    NoGoodAddr,
+    
+    NumFetchStatus
+};
+```
+
+**优点**：
+- 状态语义清晰，无歧义
+- 便于调试和性能分析
+- 状态转换逻辑简化
+
+#### 方案2: 状态+标志位组合
+
+```cpp
+enum ThreadStatus {
+    Running, Idle, Blocked, Squashing,
+    ItlbWait, IcacheWaitResponse, IcacheWaitRetry, IcacheAccessComplete,
+    TrapPending, QuiescePending, NoGoodAddr
+};
+
+struct FetchStateFlags {
+    bool isMisalignedFetch;
+    bool firstPacketReceived; 
+    bool secondPacketReceived;
+    
+    bool isWaitingComplete() const {
+        return !isMisalignedFetch || (firstPacketReceived && secondPacketReceived);
+    }
+};
+```
+
+**优点**：
+- 最小化状态数量
+- 保持向后兼容性
+- 标志位提供额外信息
+
+#### 方案3: 状态机类封装
+
+```cpp
+class FetchStateMachine {
+private:
+    ThreadStatus currentStatus[MaxThreads];
+    FetchStateFlags flags[MaxThreads];
+    
+public:
+    void transitionTo(ThreadID tid, ThreadStatus newStatus);
+    bool canTransitionTo(ThreadID tid, ThreadStatus newStatus) const;
+    void handleCacheResponse(ThreadID tid, PacketPtr pkt);
+    void handleMisalignedSetup(ThreadID tid);
+    bool isReadyToFetch(ThreadID tid) const;
+    
+    // 调试和统计
+    std::string getStatusString(ThreadID tid) const;
+    void dumpStateTransitions() const;
+};
+```
+
+**优点**：
+- 集中化状态管理
+- 便于单元测试
+- 更好的封装性
+
+### 具体实现建议
+
+基于当前代码的复杂性，推荐采用**方案1(状态细化)**：
+
+#### 1. 修改状态定义
+
+```cpp
+// 在fetch.hh中
+enum ThreadStatus {
+    Running,
+    Idle,
+    Squashing,
+    Blocked,
+    
+    // 删除未使用的状态
+    // Fetching,  // ❌ 删除
+    
+    // 细化Cache访问状态
+    ItlbWait,
+    IcacheWaitSingle,     // 新增：等待单个cache line
+    IcacheWaitMisaligned, // 新增：等待misaligned fetch
+    IcacheWaitRetry,
+    IcacheAccessComplete,
+    
+    TrapPending,
+    QuiescePending,
+    NoGoodAddr,
+    NumFetchStatus
+};
+```
+
+#### 2. 更新状态转换逻辑
+
+```cpp
+// 在fetchCacheLine()中
+bool Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc) {
+    if (needsMisalignedFetch(vaddr)) {
+        fetchStatus[tid] = IcacheWaitMisaligned;  // 明确的状态
+        return handleMisalignedFetch(vaddr, tid, pc);
+    } else {
+        fetchStatus[tid] = IcacheWaitSingle;      // 明确的状态  
+        return handleAlignedFetch(vaddr, tid, pc);
+    }
+}
+```
+
+#### 3. 简化完成检测
+
+```cpp
+void Fetch::processCacheCompletion(PacketPtr pkt) {
+    ThreadID tid = cpu->contextToThread(pkt->req->contextId());
+    
+    if (fetchStatus[tid] == IcacheWaitSingle) {
+        // 简单情况：直接完成
+        fetchStatus[tid] = IcacheAccessComplete;
+        processSingleCompletion(tid, pkt);
+    } else if (fetchStatus[tid] == IcacheWaitMisaligned) {
+        // 复杂情况：检查是否两个都到达
+        if (processMisalignedCompletion(tid, pkt)) {
+            fetchStatus[tid] = IcacheAccessComplete;
+        }
+        // 否则保持IcacheWaitMisaligned状态
+    }
+}
+```
+
+#### 4. 统计和调试改进
+
+```cpp
+// 更精确的性能统计
+statistics::Vector icacheWaitCyclesByType;  // [Single, Misaligned, Retry]
+
+// 更清晰的调试输出  
+DPRINTF(Fetch, "[tid:%i] State transition: %s -> %s (%s fetch)\n",
+        tid, statusToString(oldStatus), statusToString(newStatus),
+        (newStatus == IcacheWaitMisaligned) ? "misaligned" : "aligned");
+```
+
+### 重构收益评估
+
+#### 立即收益：
+1. **调试效率提升**：状态转换更清晰，便于定位问题
+2. **代码可读性**：减少if-else嵌套，逻辑更直观
+3. **性能分析精确性**：能够区分单个vs misaligned fetch的性能开销
+
+#### 长期收益：
+1. **维护性提升**：新增状态或修改逻辑时影响范围更小
+2. **扩展性**：为未来的多stream fetch或prefetch预留接口
+3. **测试覆盖率**：每个状态可以独立测试
+
+这个重构建议既解决了当前状态管理的复杂性，又为未来的高级特性(如FDIP、2fetch)提供了更清晰的基础架构。
+
 ## 重构历史
 
 ### 阶段1: 功能模块拆分 ✅
@@ -806,3 +1133,322 @@ void handleBranchAndNextPC(DynInstPtr instruction, PCStateBase &this_pc,
 - 函数职责重新定义，使PC管理更加集中
 
 通过这4个阶段的重构，fetch代码从单一庞大函数转变为清晰的模块化架构，为GEM5 O3 CPU的高级特性实现提供了坚实基础。
+
+## 阶段5: 状态管理重构和Bug修复 ✅
+
+### 问题发现
+在重构过程中发现了一个关键的状态管理bug：
+- misaligned fetch的第二个请求因MSHR满而retry时，状态被错误设置为`IcacheWaitSingle`
+- 导致第一个packet返回时走错执行路径，无法正确等待第二个packet
+
+### 重构内容
+
+#### 1. 状态细化
+```cpp
+enum ThreadStatus {
+    // 删除歧义状态
+    // IcacheWaitResponse,  // ❌ 删除：语义不明确
+    // Fetching,            // ❌ 删除：未使用
+    
+    // 新增明确状态
+    IcacheWaitSingle,       // ✅ 等待单个cache line
+    IcacheWaitMisaligned,   // ✅ 等待misaligned fetch (两个cache line)
+};
+```
+
+#### 2. 模块化processCacheCompletion
+```cpp
+void processCacheCompletion(PacketPtr pkt) {
+    // 验证状态和packet
+    if (!isValidCacheCompletion(tid, pkt)) return;
+    
+    // 分支处理
+    if (fetchStatus[tid] == IcacheWaitMisaligned) {
+        processMisalignedCacheCompletion(tid, pkt);
+    } else if (fetchStatus[tid] == IcacheWaitSingle) {
+        processSingleCacheCompletion(tid, pkt);
+    }
+}
+```
+
+#### 3. 修复retry机制bug
+```cpp
+// 修复前：总是设置为IcacheWaitSingle
+fetchStatus[retryTid] = IcacheWaitSingle;  // ❌ Bug
+
+// 修复后：根据请求类型设置正确状态
+if ((*it)->req->isMisalignedFetch()) {
+    fetchStatus[retryTid] = IcacheWaitMisaligned;  // ✅
+} else {
+    fetchStatus[retryTid] = IcacheWaitSingle;      // ✅
+}
+```
+
+#### 4. 简化复杂条件判断
+```cpp
+// 修复前：复杂的嵌套条件
+if (!((fetchStatus[tid] == IcacheWaitSingle || fetchStatus[tid] == IcacheWaitMisaligned) &&
+      mem_req->isMisalignedFetch() && ...) && 
+    (fetchStatus[tid] != ItlbWait || ...)) { ... }
+
+// 修复后：清晰的分支逻辑
+bool shouldProcessTranslation = false;
+if ((fetchStatus[tid] == IcacheWaitSingle || fetchStatus[tid] == IcacheWaitMisaligned) &&
+    mem_req->isMisalignedFetch() && ...) {
+    shouldProcessTranslation = true;
+} else if (fetchStatus[tid] == ItlbWait && ...) {
+    shouldProcessTranslation = true;
+}
+```
+
+#### 5. 修复verifyFTQAlignment
+```cpp
+// 修复前：只打印调试信息，没有实际验证
+DPRINTF(Fetch, "Verifying alignment...");
+
+// 修复后：实际对比fetchBufferPC和FTQ
+if (fetchBufferPC != ftq_entry.startPC) {
+    warn("FTQ alignment mismatch: fetchBufferPC=%#x, FTQ startPC=%#x\n",
+         fetchBufferPC, ftq_entry.startPC);
+}
+```
+
+### 重构收益
+
+#### 立即收益
+1. **Bug修复**：解决了misaligned fetch在retry场景下的状态错误问题
+2. **调试改善**：状态转换更清晰，便于问题定位
+3. **代码质量**：移除死代码，简化复杂逻辑
+
+#### 长期收益  
+1. **维护性**：模块化设计便于后续修改和扩展
+2. **可靠性**：明确的状态语义减少bug风险
+3. **扩展性**：为future的多stream fetch等特性提供基础
+
+## 最新代码特性 (基于当前commit)
+
+### 状态驱动的Cache访问管理
+
+#### 1. 智能fetch类型检测
+```cpp
+bool Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc) {
+    if (needsMisalignedFetch(vaddr)) {
+        return handleMisalignedFetch(vaddr, tid, pc);
+    } else {
+        return handleAlignedFetch(vaddr, tid, pc);
+    }
+}
+```
+
+#### 2. 健壮的状态管理
+```cpp
+// 状态验证
+bool isValidCacheCompletion(ThreadID tid, PacketPtr pkt) {
+    return (fetchStatus[tid] == IcacheWaitSingle || 
+            fetchStatus[tid] == IcacheWaitMisaligned) &&
+           (pkt->req == memReq[tid] || pkt->req == anotherMemReq[tid]);
+}
+
+// 专门的完成处理
+void processMisalignedCacheCompletion(ThreadID tid, PacketPtr pkt) {
+    PacketPtr mergedPkt = processMisalignedCompletion(tid, pkt);
+    if (mergedPkt) completeCacheAccess(tid, mergedPkt);
+}
+```
+
+#### 3. Retry机制优化
+```cpp
+void Fetch::recvReqRetry() {
+    for (auto it = retryPkt.begin(); it != retryPkt.end();) {
+        if (icachePort.sendTimingReq(*it)) {
+            // 根据请求类型设置正确状态
+            if ((*it)->req->isMisalignedFetch()) {
+                fetchStatus[retryTid] = IcacheWaitMisaligned;
+            } else {
+                fetchStatus[retryTid] = IcacheWaitSingle;
+            }
+            it = retryPkt.erase(it);
+        } else {
+            it++;
+        }
+    }
+}
+```
+
+#### 4. FTQ对齐验证
+```cpp
+void Fetch::verifyFTQAlignment(ThreadID tid) {
+    Addr fetchBufferPC = fetchBuffer[tid].startPC;
+    
+    if (isBTBPred() && dbpbtb->fetchTargetAvailable()) {
+        auto& ftq_entry = dbpbtb->getSupplyingFetchTarget();
+        if (fetchBufferPC != ftq_entry.startPC) {
+            warn("FTQ alignment mismatch: fetchBufferPC=%#x, FTQ startPC=%#x\n",
+                 fetchBufferPC, ftq_entry.startPC);
+        }
+    }
+}
+```
+
+### 当前架构优势
+
+#### 1. 明确的状态语义
+- `IcacheWaitSingle`: 明确等待单个cache line访问
+- `IcacheWaitMisaligned`: 明确等待misaligned fetch的两个cache line
+- 移除了语义不明的`IcacheWaitResponse`状态
+
+#### 2. 模块化的处理流程
+```mermaid
+graph TD
+    A[Cache Completion] --> B[isValidCacheCompletion]
+    B -->|Valid| C{State Check}
+    B -->|Invalid| D[Drop Packet]
+    
+    C -->|IcacheWaitSingle| E[processSingleCacheCompletion]
+    C -->|IcacheWaitMisaligned| F[processMisalignedCacheCompletion]
+    
+    E --> G[completeCacheAccess]
+    F -->|Both packets ready| G
+    F -->|Still waiting| H[Keep waiting]
+    
+    G --> I[verifyFTQAlignment]
+    I --> J[Transition to next state]
+```
+
+#### 3. 健壮的错误处理
+- 严格的状态验证避免无效的cache completion
+- Retry机制正确处理MSHR满的情况
+- FTQ对齐检查确保前端一致性
+
+### 性能和正确性验证
+
+#### 测试结果
+- ✅ 所有run_cpt.py测试用例IPC无变化
+- ✅ 修复了misaligned fetch的状态bug
+- ✅ 代码可读性和维护性显著提升
+
+#### 调试能力增强
+- 详细的状态转换日志
+- 清晰的错误提示信息
+- 模块化的调试接口
+
+这次重构不仅修复了关键bug，还为未来的高级特性(如多stream fetch、更复杂的预取策略)提供了坚实的架构基础。
+PacketPtr Fetch::processMisalignedCompletion(ThreadID tid, PacketPtr pkt) {
+    // 跟踪哪个packet到达
+    if (pkt->req == memReq[tid]) {
+        secondCacheLinePkt[tid] = pkt;
+    } else {
+        firstCacheLinePkt[tid] = pkt;
+    }
+    
+    // 检查是否两个都到达
+    if (firstCacheLinePkt[tid] && secondCacheLinePkt[tid]) {
+        // 合并两个packet的数据到fetchBuffer
+        return mergeMisalignedPackets(tid);
+    }
+    
+    return nullptr;  // 继续等待另一个packet
+}
+```
+
+### DecoupledBPUWithBTB集成
+
+当前主要使用的分支预测器，支持解耦前端架构：
+
+#### 1. FTQ(Fetch Target Queue)管理
+```cpp
+bool Fetch::checkDecoupledFrontend(ThreadID tid) {
+    if (isBTBPred()) {
+        if (!dbpbtb->fetchTargetAvailable()) {
+            dbpbtb->addFtqNotValid();  // 记录FTQ无效周期
+            return false;              // 暂停fetch
+        }
+    }
+    return true;
+}
+```
+
+#### 2. 循环优化支持
+```cpp
+// 在lookupAndUpdateNextPC()中
+if (isBTBPred()) {
+    std::tie(predict_taken, usedUpFetchTargets) =
+        dbpbtb->decoupledPredict(
+            inst->staticInst, inst->seqNum, next_pc, tid, 
+            currentLoopIter);  // 传递循环迭代信息
+}
+```
+
+#### 3. Squash处理优化
+支持三种类型的squash，针对不同的错误预测场景：
+- **controlSquash**: 分支预测错误
+- **trapSquash**: 异常/中断引起的squash  
+- **nonControlSquash**: 非控制指令引起的squash
+
+### RISC-V架构优化
+
+#### 1. 压缩指令支持
+```cpp
+StallReason Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
+                                   const StaticInstPtr &curMacroop) {
+    // 为RISC-V提供4字节对齐的数据，支持压缩指令解码
+    memcpy(dec_ptr->moreBytesPtr(),
+           fetchBuffer[tid].data + offset_in_buffer, 4);
+    decoder[tid]->moreBytes(this_pc, fetch_pc);
+}
+```
+
+#### 2. Vector配置指令处理
+```cpp
+// 在processInstructionDecoding()中
+if (staticInst->isVectorConfig()) {
+    waitForVsetvl = dec_ptr->stall();  // vsetvl指令需要特殊等待
+}
+```
+
+### 性能监控增强
+
+#### 1. 详细的stall原因跟踪
+```cpp
+enum StallReason {
+    NoStall, IcacheStall, FTQBubble, DecodeStall, 
+    SquashStall, TrapStall, QuiesceStall
+};
+
+std::vector<StallReason> stallReason;  // 每周期记录stall原因
+```
+
+#### 2. Frontend性能分析
+基于Intel TopDown方法，精确测量前端性能瓶颈：
+```cpp
+void Fetch::measureFrontendBubbles(unsigned insts_to_decode, ThreadID tid) {
+    // 测量frontend bubble（前端气泡）
+    unsigned unutilized_slots = fetchWidth - insts_to_decode;
+    if (!backend_stall) {
+        fetchStats.fetchBubbles += unutilized_slots;
+    }
+}
+```
+
+### 调试和验证支持
+
+#### 1. 详细的调试输出
+```cpp
+DPRINTF(Fetch, "[tid:%i] State transition: %s -> %s\n", tid, oldStatus, newStatus);
+DPRINTF(Fetch, "[tid:%i] Misaligned fetch: first=%s, second=%s\n", 
+        tid, firstPkt ? "received" : "waiting", secondPkt ? "received" : "waiting");
+```
+
+#### 2. 统计信息收集
+```cpp
+struct FetchStatGroup {
+    statistics::Scalar icacheStallCycles;
+    statistics::Scalar fetchBubbles;          // 前端气泡
+    statistics::Scalar fetchBubbles_max;      // 最大前端气泡
+    statistics::Formula frontendBound;        // 前端bound比例
+    statistics::Formula frontendLatencyBound; // 前端延迟bound
+    statistics::Formula frontendBandwidthBound;// 前端带宽bound
+};
+```
+
+这些最新特性使得GEM5 O3 fetch阶段能够精确模拟现代高性能处理器的前端行为，特别是在支持解耦前端、misaligned access和RISC-V架构特性方面。

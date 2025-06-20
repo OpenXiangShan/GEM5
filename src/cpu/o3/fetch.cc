@@ -313,11 +313,11 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             {Idle, "Idle"},
             {Squashing, "Squashing"},
             {Blocked, "Blocked"},
-            {Fetching, "Fetching"},
             {TrapPending, "TrapPending"},
             {QuiescePending, "QuiescePending"},
             {ItlbWait, "ItlbWait"},
-            {IcacheWaitResponse, "IcacheWaitResponse"},
+            {IcacheWaitSingle, "IcacheWaitSingle"},
+            {IcacheWaitMisaligned, "IcacheWaitMisaligned"},
             {IcacheWaitRetry, "IcacheWaitRetry"},
             {IcacheAccessComplete, "IcacheAccessComplete"},
             {NoGoodAddr, "NoGoodAddr"}
@@ -449,8 +449,10 @@ Fetch::handleAlignedFetch(Addr vaddr, ThreadID tid, Addr pc)
 {
     DPRINTF(Fetch, "[tid:%i] Handling aligned fetch for addr %#x, pc=%#lx\n", tid, vaddr, pc);
 
-    // For aligned fetch, use normal fetch size and no special handling needed
+    // Setup for single cache line access
     fetchMisaligned[tid] = false;
+    firstCacheLinePkt[tid] = nullptr;
+    secondCacheLinePkt[tid] = nullptr;
 
     // Create single memory request for the aligned fetch
     RequestPtr mem_req = std::make_shared<Request>(
@@ -460,11 +462,12 @@ Fetch::handleAlignedFetch(Addr vaddr, ThreadID tid, Addr pc)
 
     mem_req->taskId(cpu->taskId());
     memReq[tid] = mem_req;
+    anotherMemReq[tid] = nullptr;  // Clear secondary request
 
     // Store access information
     accessInfo[tid] = std::make_pair(vaddr, vaddr);
 
-    // Initiate translation
+    // Initiate translation - will transition to IcacheWaitSingle later
     fetchStatus[tid] = ItlbWait;
     setAllFetchStalls(StallReason::ITlbStall);
     FetchTranslation *trans = new FetchTranslation(this);
@@ -643,81 +646,126 @@ Fetch::processCacheCompletion(PacketPtr pkt)
 {
     ThreadID tid = cpu->contextToThread(pkt->req->contextId());
 
-    // Handle misaligned fetch completion if this is a misaligned request
-    if (pkt->req->isMisalignedFetch() && (pkt->req == memReq[tid] || pkt->req == anotherMemReq[tid])) {
-        DPRINTF(Fetch, "[tid:%i] Misaligned pkt receive.\n", tid);
-        PacketPtr mergedPkt = processMisalignedCompletion(tid, pkt);
-
-        // If we're still waiting for another packet, return early
-        if (mergedPkt == nullptr) {
-            return;
-        }
-
-        // Use the merged packet for further processing
-        pkt = mergedPkt;
-        DPRINTF(Fetch, "[tid:%i] Received final misaligned pkt addr=%#lx, mem_req addr=%#lx.\n", tid,
-                pkt->getAddr(), pkt->req->getVaddr());
-    }
-
-    DPRINTF(Fetch, "[tid:%i] Waking up from cache miss.\n", tid);
+    DPRINTF(Fetch, "[tid:%i] Cache completion received for addr %#lx, current status=%d\n",
+            tid, pkt->getAddr(), fetchStatus[tid]);
     assert(!cpu->switchedOut());
 
-    // Only change the status if it's still waiting on the icache access
-    // to return.
-    if (fetchStatus[tid] != IcacheWaitResponse ||
-        pkt->req != memReq[tid]) {
-        DPRINTF(Fetch, "delete pkt %#lx\n", pkt->getAddr());
+    // Validate fetch state and packet
+    if (!isValidCacheCompletion(tid, pkt)) {
+        DPRINTF(Fetch, "[tid:%i] Invalid cache completion, dropping packet\n", tid);
         ++fetchStats.icacheSquashes;
         delete pkt;
         return;
     }
 
-    fetchBuffer[tid].setData(fetchBuffer[tid].startPC, pkt->getConstPtr<uint8_t>(), fetchBufferSize);
+    // Handle misaligned fetch completion
+    if (fetchStatus[tid] == IcacheWaitMisaligned) {
+        processMisalignedCacheCompletion(tid, pkt);
+        return;
+    }
+
+    // Handle single cache line completion
+    if (fetchStatus[tid] == IcacheWaitSingle) {
+        processSingleCacheCompletion(tid, pkt);
+        return;
+    }
+
+    // This code is unreachable - both IcacheWaitSingle and IcacheWaitMisaligned
+    // cases return early above. This is dead code that should be removed.
+    panic("Unreachable code in processCacheCompletion");
+}
+
+bool
+Fetch::isValidCacheCompletion(ThreadID tid, PacketPtr pkt)
+{
+    // Check if we're in a valid state to receive cache completion
+    if (fetchStatus[tid] != IcacheWaitSingle && fetchStatus[tid] != IcacheWaitMisaligned) {
+        DPRINTF(Fetch, "[tid:%i] Unexpected cache completion in state %d\n",
+                tid, fetchStatus[tid]);
+        return false;
+    }
+
+    // Check if this packet matches our outstanding request
+    if (pkt->req != memReq[tid] && pkt->req != anotherMemReq[tid]) {
+        DPRINTF(Fetch, "[tid:%i] Cache completion for unexpected request\n", tid);
+        return false;
+    }
+
+    return true;
+}
+
+void
+Fetch::processMisalignedCacheCompletion(ThreadID tid, PacketPtr pkt)
+{
+    DPRINTF(Fetch, "[tid:%i] Processing misaligned cache completion\n", tid);
+
+    PacketPtr mergedPkt = processMisalignedCompletion(tid, pkt);
+
+    // If we're still waiting for another packet, stay in current state
+    if (mergedPkt == nullptr) {
+        DPRINTF(Fetch, "[tid:%i] Still waiting for second cache line\n", tid);
+        return;
+    }
+
+    // Both packets received, complete the access
+    DPRINTF(Fetch, "[tid:%i] Both cache lines received, completing access\n", tid);
+    completeCacheAccess(tid, mergedPkt);
+}
+
+void
+Fetch::processSingleCacheCompletion(ThreadID tid, PacketPtr pkt)
+{
+    DPRINTF(Fetch, "[tid:%i] Processing single cache line completion\n", tid);
+    completeCacheAccess(tid, pkt);
+}
+
+void
+Fetch::completeCacheAccess(ThreadID tid, PacketPtr pkt)
+{
+    DPRINTF(Fetch, "[tid:%i] Completing cache access\n", tid);
+
+    // For misaligned fetch, use the original fetch address as startPC
+    Addr correctStartPC;
+    if (pkt->req->isMisalignedFetch()) {
+        correctStartPC = accessInfo[tid].first;  // Original fetch address
+        DPRINTF(Fetch, "[tid:%i] Misaligned fetch: setting fetchBuffer startPC to original addr %#x\n",
+                tid, correctStartPC);
+    } else {
+        correctStartPC = pkt->getAddr();
+        DPRINTF(Fetch, "[tid:%i] Single fetch: setting fetchBuffer startPC to %#x\n",
+                tid, correctStartPC);
+    }
+
+    // Set fetch buffer data with correct startPC
+    fetchBuffer[tid].setData(correctStartPC, pkt->getConstPtr<uint8_t>(), fetchBufferSize);
 
     // Reset usedUpFetchTargets flag when we get new fetch data
-    // This allows fetch to continue with the current FTQ entry
     if (usedUpFetchTargets) {
-        DPRINTF(Fetch, "[tid:%i] Resetting usedUpFetchTargets after cache completion, "
-                "fetchBufferPC=%#x\n", tid, fetchBuffer[tid].startPC);
+        DPRINTF(Fetch, "[tid:%i] Resetting usedUpFetchTargets after cache completion\n", tid);
         usedUpFetchTargets = false;
     }
 
     // Verify fetchBufferPC alignment with FTQ for decoupled frontend
-    if (isDecoupledFrontend() && fetchBuffer[tid].valid) {
-        if (isBTBPred() && dbpbtb->fetchTargetAvailable()) {
-            auto& ftq_entry = dbpbtb->getSupplyingFetchTarget();
-            assert(fetchBuffer[tid].startPC == ftq_entry.startPC &&
-                   "fetchBufferPC should be aligned with FTQ startPC,");
-            DPRINTF(Fetch, "[tid:%i] Verified fetchBufferPC %#x matches FTQ startPC %#x\n",
-                    tid, fetchBuffer[tid].startPC, ftq_entry.startPC);
-        } else if (isFTBPred() && dbpftb->fetchTargetAvailable()) {
-            auto& ftq_entry = dbpftb->getSupplyingFetchTarget();
-            assert(fetchBuffer[tid].startPC == ftq_entry.startPC &&
-                   "fetchBufferPC should be aligned with FTQ startPC");
-            DPRINTF(Fetch, "[tid:%i] Verified fetchBufferPC %#x matches FTQ startPC %#x\n",
-                    tid, fetchBuffer[tid].startPC, ftq_entry.startPC);
-        }
-    }
+    verifyFTQAlignment(tid);
 
-    // Wake up the CPU (if it went to sleep and was waiting on
-    // this completion event).
+    // Wake up CPU and switch to active
     cpu->wakeCPU();
-
-    DPRINTF(Activity, "[tid:%i] Activating fetch due to cache completion\n",
-            tid);
-
     switchToActive();
 
-    // Only switch to IcacheAccessComplete if we're not stalled as well.
+    // Transition to next state
     if (checkStall(tid)) {
         fetchStatus[tid] = Blocked;
+        DPRINTF(Fetch, "[tid:%i] Cache access complete but blocked\n", tid);
     } else {
         fetchStatus[tid] = IcacheAccessComplete;
+        DPRINTF(Fetch, "[tid:%i] Cache access complete, ready to fetch\n", tid);
     }
 
+    // Cleanup and notifications
     pkt->req->setAccessLatency();
     cpu->ppInstAccessComplete->notify(pkt);
-    // Reset the mem req to NULL.
+
+    // Clean up packets
     if (!pkt->req->isMisalignedFetch()) {
         delete pkt;
     } else {
@@ -726,8 +774,66 @@ Fetch::processCacheCompletion(PacketPtr pkt)
         firstCacheLinePkt[tid] = nullptr;
         secondCacheLinePkt[tid] = nullptr;
     }
+
     memReq[tid] = NULL;
     anotherMemReq[tid] = NULL;
+}
+
+void
+Fetch::verifyFTQAlignment(ThreadID tid)
+{
+    // Verify fetchBuffer alignment with FTQ for decoupled frontend
+    if (!isDecoupledFrontend()) {
+        return; // No FTQ to verify alignment with
+    }
+
+    // Get current fetch buffer PC and FTQ entry info
+    Addr fetchBufferPC = fetchBuffer[tid].startPC;
+
+    DPRINTF(Fetch, "[tid:%i] Verifying FTQ alignment: fetchBufferPC=%#x\n",
+            tid, fetchBufferPC);
+
+    // For decoupled frontend, ensure fetch buffer aligns with FTQ entry
+    if (isStreamPred()) {
+        if (dbsp->fetchTargetAvailable()) {
+            auto& ftq_entry = dbsp->getSupplyingFetchTarget();
+            if (fetchBufferPC != ftq_entry.startPC) {
+                warn("[tid:%i] FTQ alignment mismatch: fetchBufferPC=%#x, FTQ startPC=%#x\n",
+                     tid, fetchBufferPC, ftq_entry.startPC);
+            } else {
+                DPRINTF(Fetch, "[tid:%i] FTQ alignment verified with Stream predictor\n", tid);
+            }
+        }
+    } else if (isFTBPred()) {
+        if (dbpftb->fetchTargetAvailable()) {
+            auto& ftq_entry = dbpftb->getSupplyingFetchTarget();
+            if (fetchBufferPC != ftq_entry.startPC) {
+                warn("[tid:%i] FTQ alignment mismatch: fetchBufferPC=%#x, FTQ startPC=%#x\n",
+                     tid, fetchBufferPC, ftq_entry.startPC);
+            } else {
+                DPRINTF(Fetch, "[tid:%i] Verified fetchBufferPC %#x matches FTQ startPC %#x\n",
+                        tid, fetchBufferPC, ftq_entry.startPC);
+            }
+        }
+    } else if (isBTBPred()) {
+        if (dbpbtb->fetchTargetAvailable()) {
+            auto& ftq_entry = dbpbtb->getSupplyingFetchTarget();
+            if (fetchBufferPC != ftq_entry.startPC) {
+                warn("[tid:%i] FTQ alignment mismatch: fetchBufferPC=%#x, FTQ startPC=%#x\n",
+                     tid, fetchBufferPC, ftq_entry.startPC);
+            } else {
+                DPRINTF(Fetch, "[tid:%i] Verified fetchBufferPC %#x matches FTQ startPC %#x\n",
+                        tid, fetchBufferPC, ftq_entry.startPC);
+            }
+        }
+    }
+
+    // Additional alignment checks for RISC-V instruction boundaries
+    // Ensure fetchBufferPC is properly aligned for instruction fetch
+    if ((fetchBufferPC & 0x1) != 0) {
+        warn("[tid:%i] fetchBufferPC %#x not aligned to instruction boundary\n",
+             tid, fetchBufferPC);
+    }
 }
 
 void
@@ -924,41 +1030,70 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
 }
 
 bool
-Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
+Fetch::isAddressAligned(Addr vaddr, Addr pc) const
 {
-    assert(!cpu->switchedOut());
+    // For RISC-V, instruction addresses should be 2-byte aligned
+    return (vaddr % 2 == 0) && (pc % 2 == 0);
+}
 
-    // For decoupled frontend, trust the BPU-provided addresses (BPU handles alignment)
-    // RISC-V C extension: mask lowest bit for instruction alignment
-    // This handles cases where PC might be odd due to speculative execution,
-    // but no need to throw INST_ADDR_MISALIGNED fault here
-    if (vaddr % 2 != 0 || pc % 2 != 0) {
-        vaddr = vaddr & ~1;
-        pc = pc & ~1;
-        DPRINTF(Fetch, "[tid:%i] Fetching address is misaligned, aligned to %#x, %#x\n",
-                tid, vaddr, pc);
-    }
+Addr
+Fetch::alignAddress(Addr addr) const
+{
+    // Clear lowest bit for RISC-V instruction alignment
+    return addr & ~1;
+}
 
-    // Check for blocking conditions
+bool
+Fetch::canInitiateFetch(ThreadID tid, Addr pc)
+{
     if (cacheBlocked) {
         DPRINTF(Fetch, "[tid:%i] Can't fetch cache line, cache blocked\n", tid);
         setAllFetchStalls(StallReason::IcacheStall);
         return false;
-    } else if (checkInterrupt(pc) && !delayedCommit[tid]) {
-        // Hold off fetch from getting new instructions when:
-        // Cache is blocked, or
-        // while an interrupt is pending and we're not in PAL mode, or
-        // fetch is switched out.
+    }
+
+    if (checkInterrupt(pc) && !delayedCommit[tid]) {
         DPRINTF(Fetch, "[tid:%i] Can't fetch cache line, interrupt pending\n", tid);
         setAllFetchStalls(StallReason::IntStall);
+        return false;
+    }
+
+    return true;
+}
+
+bool
+Fetch::needsMisalignedFetch(Addr vaddr) const
+{
+    // Check if fetch buffer spans across cache line boundary
+    return (vaddr % cacheBlkSize) + fetchBufferSize > cacheBlkSize;
+}
+
+bool
+Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
+{
+    assert(!cpu->switchedOut());
+
+    // Align addresses for RISC-V instruction fetch
+    if (!isAddressAligned(vaddr, pc)) {
+        vaddr = alignAddress(vaddr);
+        pc = alignAddress(pc);
+        DPRINTF(Fetch, "[tid:%i] Address aligned to %#x, %#x\n", tid, vaddr, pc);
+    }
+
+    // Check blocking conditions early
+    if (!canInitiateFetch(tid, pc)) {
         return false;
     }
 
     DPRINTF(Fetch, "[tid:%i] Fetching cache line %#x for addr %#x, pc=%#lx\n",
             tid, vaddr, vaddr, pc);
 
-    // With 66-byte fetchBufferSize, we always need to access 2 cache lines
-    return handleMisalignedFetch(vaddr, tid, pc);
+    // Determine fetch type and initiate appropriate access
+    if (needsMisalignedFetch(vaddr)) {
+        return handleMisalignedFetch(vaddr, tid, pc);
+    } else {
+        return handleAlignedFetch(vaddr, tid, pc);
+    }
 }
 
 void
@@ -985,15 +1120,28 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
         DPRINTF(Fetch, "anotherMemReq.addr=%#lx\n", anotherMemReq[tid]->getVaddr());
     }
 
-    if (!(fetchStatus[tid] == IcacheWaitResponse && mem_req->isMisalignedFetch() && (mem_req == memReq[tid] || mem_req == anotherMemReq[tid])) && 
-        (fetchStatus[tid] != ItlbWait || ((mem_req != anotherMemReq[tid] || mem_req->getVaddr() != anotherMemReq[tid]->getVaddr()) && 
-         (mem_req != memReq[tid] || mem_req->getVaddr() != memReq[tid]->getVaddr())))) {
-            DPRINTF(Fetch, "[tid:%i] Ignoring itlb completed after squash\n",
-                    tid);
-            DPRINTF(Fetch, "[tid:%i] Ignoring req addr=%#lx\n",
-                    tid, mem_req->getVaddr());
-            ++fetchStats.tlbSquashes;
-            return;
+    // Check if this translation completion should be processed
+    bool shouldProcessTranslation = false;
+
+    // Case 1: Misaligned fetch completion
+    if ((fetchStatus[tid] == IcacheWaitSingle || fetchStatus[tid] == IcacheWaitMisaligned) &&
+        mem_req->isMisalignedFetch() &&
+        (mem_req == memReq[tid] || mem_req == anotherMemReq[tid])) {
+        shouldProcessTranslation = true;
+    }
+    // Case 2: Regular TLB wait completion
+    else if (fetchStatus[tid] == ItlbWait &&
+             ((mem_req == memReq[tid] && mem_req->getVaddr() == memReq[tid]->getVaddr()) ||
+              (anotherMemReq[tid] && mem_req == anotherMemReq[tid] &&
+               mem_req->getVaddr() == anotherMemReq[tid]->getVaddr()))) {
+        shouldProcessTranslation = true;
+    }
+
+    if (!shouldProcessTranslation) {
+        DPRINTF(Fetch, "[tid:%i] Ignoring itlb completed after squash\n", tid);
+        DPRINTF(Fetch, "[tid:%i] Ignoring req addr=%#lx\n", tid, mem_req->getVaddr());
+        ++fetchStats.tlbSquashes;
+        return;
     }
 
 
@@ -1047,7 +1195,16 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
             DPRINTF(Activity, "[tid:%i] Activity: Waiting on I-cache "
                     "response.\n", tid);
             lastIcacheStall[tid] = curTick();
-            fetchStatus[tid] = IcacheWaitResponse;
+
+            // Set appropriate wait state based on fetch type
+            if (mem_req->isMisalignedFetch()) {
+                fetchStatus[tid] = IcacheWaitMisaligned;
+                DPRINTF(Fetch, "[tid:%i] Waiting for misaligned fetch completion\n", tid);
+            } else {
+                fetchStatus[tid] = IcacheWaitSingle;
+                DPRINTF(Fetch, "[tid:%i] Waiting for single cache line\n", tid);
+            }
+
             setAllFetchStalls(StallReason::IcacheStall);
             // Notify Fetch Request probe when a packet containing a fetch
             // request is successfully sent
@@ -1151,7 +1308,7 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
     decoder[tid]->reset();
 
     // Clear the icache miss if it's outstanding.
-    if (fetchStatus[tid] == IcacheWaitResponse) {
+    if (fetchStatus[tid] == IcacheWaitSingle || fetchStatus[tid] == IcacheWaitMisaligned) {
         DPRINTF(Fetch, "[tid:%i] Squashing outstanding Icache miss.\n",
                 tid);
         memReq[tid] = NULL;
@@ -1751,7 +1908,8 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
     }
 
     if (checkStall(tid) &&
-        fetchStatus[tid] != IcacheWaitResponse &&
+        fetchStatus[tid] != IcacheWaitSingle &&
+        fetchStatus[tid] != IcacheWaitMisaligned &&
         fetchStatus[tid] != IcacheWaitRetry &&
         fetchStatus[tid] != ItlbWait &&
         fetchStatus[tid] != QuiescePending) {
@@ -1947,7 +2105,7 @@ Fetch::prepareFetchAddress(ThreadID tid, bool &status_change)
 
             fetchCacheLine(ftq_start_pc, tid, this_pc.instAddr());
 
-            if (fetchStatus[tid] == IcacheWaitResponse)
+            if (fetchStatus[tid] == IcacheWaitSingle || fetchStatus[tid] == IcacheWaitMisaligned)
                 ++fetchStats.icacheStallCycles;
             else if (fetchStatus[tid] == ItlbWait)
                 ++fetchStats.tlbCycles;
@@ -2191,7 +2349,8 @@ Fetch::performInstructionFetch(ThreadID tid)
                 "need new FTQ entry for PC %#x\n", tid, current_pc);
 
         issuePipelinedIfetch[tid] =
-            fetchStatus[tid] != IcacheWaitResponse &&
+            fetchStatus[tid] != IcacheWaitSingle &&
+            fetchStatus[tid] != IcacheWaitMisaligned &&
             fetchStatus[tid] != ItlbWait &&
             fetchStatus[tid] != IcacheWaitRetry &&
             fetchStatus[tid] != QuiescePending &&
@@ -2219,7 +2378,14 @@ Fetch::recvReqRetry()
 
     for (auto it = retryPkt.begin(); it != retryPkt.end();) {
         if (icachePort.sendTimingReq(*it)) {
-            fetchStatus[retryTid] = IcacheWaitResponse;
+            // Set appropriate wait state based on fetch type
+            if ((*it)->req->isMisalignedFetch()) {
+                fetchStatus[retryTid] = IcacheWaitMisaligned;
+                DPRINTF(Fetch, "[tid:%i] Retry successful for misaligned fetch\n", retryTid);
+            } else {
+                fetchStatus[retryTid] = IcacheWaitSingle;
+                DPRINTF(Fetch, "[tid:%i] Retry successful for single cache line\n", retryTid);
+            }
             // Notify Fetch Request probe when a retryPkt is successfully sent.
             // Note that notify must be called before retryPkt is set to NULL.
             ppFetchRequestSent->notify((*it)->req);
@@ -2523,7 +2689,7 @@ Fetch::profileStall(ThreadID tid)
     } else if (fetchStatus[tid] == Squashing) {
         ++fetchStats.squashCycles;
         DPRINTF(Fetch, "[tid:%i] Fetch is squashing!\n", tid);
-    } else if (fetchStatus[tid] == IcacheWaitResponse) {
+    } else if (fetchStatus[tid] == IcacheWaitSingle || fetchStatus[tid] == IcacheWaitMisaligned) {
         ++fetchStats.icacheStallCycles;
         DPRINTF(Fetch, "[tid:%i] Fetch is waiting cache response!\n",
                 tid);
