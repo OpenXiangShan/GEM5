@@ -140,7 +140,7 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         thread.emplace_back(maxLQEntries, maxSQEntries, params.SbufferEntries,
             params.SbufferEvictThreshold, params.storeBufferInactiveThreshold,
-            params.LdPipeStages, params.StPipeStages);
+            params.LdPipeStages, params.StPipeStages, params.write_allocator);
         thread[tid].init(cpu, iew_ptr, params, this, tid);
         thread[tid].setDcachePort(&dcachePort);
     }
@@ -1626,6 +1626,14 @@ LSQ::SbufferRequest::buildPackets()
         pkt->senderState = this;
         _packets.push_back(pkt);
     }
+}
+
+void
+LSQ::SbufferRequest::buildPackets(bool writeNotAllocate)
+{
+    buildPackets();
+    assert(_packets.size() == 1);
+    _packets.back()->writeNotAllocateOpt = writeNotAllocate;
 }
 
 void
