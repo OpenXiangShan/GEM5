@@ -89,13 +89,16 @@ class DecoupledBPUWithBTB : public BPredUnit
         // Previous S3 final prediction result,
         // this field sometimes stores the second prediction from the previous cycle
         FullBTBPrediction prevS3Pred;
+        int prevUbtbHitIndex{-1};  // Store previous cycle's hit index
 
         void reset() {
             valid = false;
+            prevUbtbHitIndex = -1;
         }
 
-        void storePrediction(const FullBTBPrediction& s3_pred) {
+        void storePrediction(const FullBTBPrediction& s3_pred, int hit_index) {
             prevS3Pred = s3_pred;
+            prevUbtbHitIndex = hit_index;
             valid = true;
         }
     };
@@ -106,8 +109,11 @@ class DecoupledBPUWithBTB : public BPredUnit
     PredictionDFF predDFF;  // DFF buffer to store previous pipeline result
 
     // Storage for second fetch block prediction
-    FullBTBPrediction secondPrediction;  // Second fetch block prediction from uBTB2
+    FullBTBPrediction secondPrediction;  // Second fetch block prediction from unified uBTB
     bool hasSecondPrediction{false};     // Whether we have a valid second FB prediction
+
+    // Hit index tracking for 2-taken training
+    int ubtbHitIndex{-1};  // Store hit index from getTwoTakenPrediction
 
     FetchTargetQueue fetchTargetQueue;
 
@@ -124,8 +130,7 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     const Addr MaxAddr{~(0ULL)};
 
-    UBTB *ubtb1{};     // Primary uBTB for first fetch block
-    UBTB *ubtb2{};     // Secondary uBTB for 2-taken patterns
+    UBTB *ubtb{};      // Single uBTB for prediction (supports 2-taken internally)
     DefaultBTB *abtb{};
     DefaultBTB *btb{};
     BTBTAGE *tage{};
@@ -196,11 +201,9 @@ class DecoupledBPUWithBTB : public BPredUnit
     using JAInfo = JumpAheadPredictor::JAInfo;
     JAInfo jaInfo;
 
-    // Helper method to check 2-taken conditions
-    bool check2TakenConditions(FullBTBPrediction& dff_pred, const FullBTBPrediction& s3_pred);
+
     void update2TakenEntry(Addr prevAddr, const FullBTBPrediction& dff_pred, const FullBTBPrediction& s3_pred);
     void trainUbtbFor2Taken();
-    void updateDFF();
     void validateSecondFBPrediction();
 
     bool validateFSQEnqueue();

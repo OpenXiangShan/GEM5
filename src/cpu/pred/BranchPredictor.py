@@ -1142,8 +1142,7 @@ class DecoupledBPUWithBTB(BranchPredictor):
 
     predictWidth = Param.Unsigned(64, "Maximum range in bytes that a single prediction can cover")
     numStages = Param.Unsigned(4, "Maximum number of stages in the pipeline")
-    ubtb1 = Param.UBTB(UBTB(), "Primary UBTB predictor")
-    ubtb2 = Param.UBTB(UBTB(), "Secondary UBTB predictor for 2-taken")
+    ubtb = Param.UBTB(UBTB(), "UBTB predictor")
     abtb = Param.DefaultBTB(ABTB(), "ABTB predictor")
     btb = Param.DefaultBTB(DefaultBTB(), "BTB")
     tage = Param.BTBTAGE(BTBTAGE(), "TAGE predictor")
@@ -1155,3 +1154,5 @@ class DecoupledBPUWithBTB(BranchPredictor):
     enableLoopBuffer = Param.Bool(False, "Enable loop buffer to supply inst for loops")
     enableLoopPredictor = Param.Bool(False, "Use loop predictor to predict loop exit")
     enableJumpAheadPredictor = Param.Bool(False, "Use jump ahead predictor to skip no-need-to-predict blocks")
+
+    enable2Taken = Param.Bool(False, "Enable 2taken feature")
