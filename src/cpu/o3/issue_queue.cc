@@ -54,6 +54,7 @@
 
 #define RF_INTID 0
 #define RF_FPID 1
+#define RF_VECID 2
 
 namespace gem5
 {
@@ -132,6 +133,7 @@ IssueQue::IssueQue(const IssueQueParams& params)
 
     intRfTypePortId.resize(outports);
     fpRfTypePortId.resize(outports);
+    vecRfTypePortId.resize(outports);
 
     bool same_fu = true;
     for (int i = 0; i < outports; i++) {
@@ -145,6 +147,8 @@ IssueQue::IssueQue(const IssueQueParams& params)
                 intRfTypePortId[i].push_back(std::make_pair(RF_MAKE_TYPEPORTID(rf_type, rf_portid), rf_portPri));
             } else if (rf_type == RF_FPID) {
                 fpRfTypePortId[i].push_back(std::make_pair(RF_MAKE_TYPEPORTID(rf_type, rf_portid), rf_portPri));
+            } else if (rf_type == RF_VECID) {
+                vecRfTypePortId[i].push_back(std::make_pair(RF_MAKE_TYPEPORTID(rf_type, rf_portid), rf_portPri));
             } else {
                 panic("%s: Unknown RF type %d\n", iqname, rf_type);
             }
@@ -430,6 +434,9 @@ IssueQue::selectInst()
                     } else if (src.isFloatReg() && fpRfTypePortId[pi].size() > i) {
                         rfTypePortId = fpRfTypePortId[pi][i];
                         scheduler->useRegfilePort(inst, psrc, rfTypePortId.first, rfTypePortId.second);
+                    } else if (src.isVecReg() && vecRfTypePortId[pi].size() > i) {
+                        rfTypePortId = vecRfTypePortId[pi][i];
+                        scheduler->useRegfilePort(inst, psrc, rfTypePortId.first, rfTypePortId.second);
                     }
                 }
 
@@ -701,6 +708,12 @@ Scheduler::Scheduler(const SchedulerParams& params)
             }
         }
         for (auto rfTypePortId : issueQues[i]->fpRfTypePortId) {
+            for (auto typePortId : rfTypePortId) {
+                maxTypePortId = std::max(maxTypePortId, typePortId.first);
+                rfportChecker[typePortId.first] += 1;
+            }
+        }
+        for (auto rfTypePortId : issueQues[i]->vecRfTypePortId) {
             for (auto typePortId : rfTypePortId) {
                 maxTypePortId = std::max(maxTypePortId, typePortId.first);
                 rfportChecker[typePortId.first] += 1;

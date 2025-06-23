@@ -24,6 +24,13 @@ def FpRD(id, p):
     ret = (1 << 6) | (id << 2) | (p)
     return ret
 
+def VecRD(id, p):
+    # [7:6] [5:2] [1:0]
+    assert id < 16
+    assert p < 4
+    ret = (2 << 6) | (id << 2) | (p)
+    return ret
+
 class ECoreScheduler(Scheduler):
     IQs = [
         IssueQue(name='intIQ0' , inports=2, size=2*12, oports=[
@@ -149,12 +156,9 @@ class KunminghuScheduler(Scheduler):
         IssueQue(name='fpIQ2', inports=2, size=18, oports=[
             IssuePort(fu=[FP_ALU(), FP_MAC()], rp=[FpRD(6,0), FpRD(7,0), FpRD(8,0)])
         ], scheduleToExecDelay=2),
-        IssueQue(name='vecIQ0', inports=5, size=16+16+10, oports=[
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()])
+        IssueQue(name='vecIQ0', inports=2, size=18, oports=[
+            IssuePort(fu=[SIMD_Unit()], rp=[VecRD(0, 0), VecRD(1, 0)]),
+            IssuePort(fu=[SIMD_Unit()], rp=[VecRD(2, 0), VecRD(3, 0)]),
         ], scheduleToExecDelay=3)
     ]
     IQs = __intIQs + __memIQs + __fpIQs
@@ -242,12 +246,10 @@ class KMHV3Scheduler(Scheduler):
             IssuePort(fu=[FP_ALU(), FP_MAC()],
                       rp=[FpRD(9,0), FpRD(10,0), FpRD(11,0)])
         ]),
-        IssueQue(name='vecIQ0', inports=5, size=16+16+10, oports=[
+        # require read write rp conflict
+        IssueQue(name='vecIQ0', inports=2, size=16+16+10, oports=[
             IssuePort(fu=[SIMD_Unit()]),
             IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()])
         ], scheduleToExecDelay=3),
     ]
 
@@ -321,10 +323,7 @@ class IdealScheduler(Scheduler):
             IssuePort(fu=[FP_SLOW()]),
             IssuePort(fu=[FP_SLOW()])
         ], scheduleToExecDelay=3),
-        IssueQue(name='vecIQ0', inports=5, size=16+16+10, oports=[
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
+        IssueQue(name='vecIQ0', inports=2, size=16+16+10, oports=[
             IssuePort(fu=[SIMD_Unit()]),
             IssuePort(fu=[SIMD_Unit()])
         ], scheduleToExecDelay=3),

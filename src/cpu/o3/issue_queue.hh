@@ -109,6 +109,7 @@ class IssueQue : public SimObject
     // issueport : regfileport : priority
     std::vector<std::vector<std::pair<int, int>>> intRfTypePortId;
     std::vector<std::vector<std::pair<int, int>>> fpRfTypePortId;
+    std::vector<std::vector<std::pair<int, int>>> vecRfTypePortId;
     std::vector<int64_t> portBusy;
     // opclass mapping to pipeid
     std::vector<ReadyQue*> readyQclassify;
