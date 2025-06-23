@@ -142,13 +142,46 @@ UBTB::fillStagePredictions(const TickedUBTBEntry &entry, std::vector<FullBTBPred
     }
 }
 
+// Helper function to construct a FullBTBPrediction from BranchInfo (for 2nd prediction)
 void
-UBTB::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history, std::vector<FullBTBPrediction> &stagePreds)
+UBTB::fillSecondPrediction(const BranchInfo &branchInfo, Addr bbStart, FullBTBPrediction &prediction)
 {
+    // According to 2-taken design rules, the second branch should never be conditional
+    assert(!branchInfo.isCond && "Second prediction should never be conditional branch");
+
+    prediction.btbEntries.clear();
+    prediction.condTakens.clear();
+    prediction.indirectTargets.clear();
+    prediction.bbStart = bbStart;
+    prediction.predTick = curTick();
+    prediction.predSource = 0; // uBTB is stage 0
+
+    // Create BTBEntry from BranchInfo
+    BTBEntry entry(branchInfo);
+    prediction.btbEntries.push_back(entry);
+
+    // Handle indirect branches (including returns and calls)
+    // TODO: I tend to think indirect branches should not be allowed in the 2nd prediction
+    // not even return, since the second branch will not be validated by RAS
+    if (entry.isIndirect) {
+        DPRINTF(UBTB, "setting indirect target for 2nd prediction pc %#lx to %#lx\n", entry.pc, entry.target);
+        prediction.indirectTargets.push_back({entry.pc, entry.target});
+        if (entry.isReturn) {
+            prediction.returnTarget = entry.target;
+        }
+    }
+    // For direct unconditional branches, no additional setup needed beyond the BTBEntry
+}
+
+void
+UBTB::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
+                   std::vector<FullBTBPrediction> &stagePreds)
+{
+    // Reuse existing lookup and prediction logic
     meta = std::make_shared<UBTBMeta>();
-    auto it = lookup(startAddr);
+    int hit_index = lookup(startAddr);
     auto& entry = meta->hit_entry;
-    entry = (it != ubtb.end()) ? *it : TickedUBTBEntry();
+    entry = (hit_index != -1) ? ubtb[hit_index] : TickedUBTBEntry();
 
     PredStatistics(entry, startAddr);
 
@@ -156,48 +189,110 @@ UBTB::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history, std::
     fillStagePredictions(entry, stagePreds);
 
     // Update metadata for later stages
-    lastPred.hit_entry = it;
+    lastPred.hit_index = hit_index;
 }
 
-UBTB::UBTBIter
+std::pair<int, bool>
+UBTB::getTwoTakenPrediction(Addr startAddr, const boost::dynamic_bitset<> &history,
+                           std::vector<FullBTBPrediction> &stagePreds,
+                           FullBTBPrediction &secondPrediction)
+{
+    // Reuse existing lookup and prediction logic
+    meta = std::make_shared<UBTBMeta>();
+    int hit_index = lookup(startAddr);
+    auto& entry = meta->hit_entry;
+    entry = (hit_index != -1) ? ubtb[hit_index] : TickedUBTBEntry();
+
+    //PredStatistics(entry, startAddr);
+
+    // Fill primary prediction for each pipeline stage
+    fillStagePredictions(entry, stagePreds);
+
+    // Update metadata for later stages
+    lastPred.hit_index = hit_index;
+
+    bool has_second_prediction = false;
+
+    // Check if we have a second prediction to provide
+    if (entry.valid && entry.valid_2nd) {
+        DPRINTF(UBTB, "uBTB: Found second prediction in entry, constructing 2nd FB\n");
+
+        // Calculate target address for second prediction (where the second prediction should start)
+        Addr second_bb_start = stagePreds[0].getTarget(predictWidth);
+
+        // Construct the second prediction from the stored branch info
+        fillSecondPrediction(entry.branch_info_2nd, second_bb_start, secondPrediction);
+
+        // Validate range: the second branch should be within its own fetch block
+        if (secondPrediction.btbEntries.size() > 0) {
+            assert(secondPrediction.isTaken()); // this is guaranteed by the 2-taken design rules
+            Addr control_addr = secondPrediction.controlAddr();
+            Addr fall_through = secondPrediction.getFallThrough(predictWidth);
+
+            if (control_addr >= second_bb_start && control_addr < fall_through) {
+                has_second_prediction = true;
+                DPRINTF(UBTB, "uBTB: Valid second prediction - bbStart: %#lx, controlAddr: %#lx, target: %#lx\n",
+                       second_bb_start, control_addr, secondPrediction.getTarget(predictWidth));
+            } else {
+                // Range check failed, discard second prediction
+                secondPrediction.btbEntries.clear();
+                DPRINTF(UBTB,
+                "uBTB: Second prediction failed range check - bbStart: %#lx, controlAddr: %#lx, fallThrough: %#lx\n",
+                       second_bb_start, control_addr, fall_through);
+            }
+        }
+    }
+
+    return std::make_pair(hit_index, has_second_prediction);
+}
+
+int
 UBTB::lookup(Addr startAddr)
 {
     if (startAddr & 0x1) {
-        return ubtb.end();  // ignore false hit when lowest bit is 1
+        return -1;  // ignore false hit when lowest bit is 1
     }
 
     Addr current_tag = getTag(startAddr);
 
     DPRINTF(UBTB, "UBTB: Doing tag comparison for tag %#lx\n", current_tag);
 
-    auto it = std::find_if(ubtb.begin(), ubtb.end(),
-                           [current_tag](const TickedUBTBEntry &way) { return way.valid && way.tag == current_tag; });
+    // Find the matching entry and return its index
+    for (size_t i = 0; i < ubtb.size(); ++i) {
+        if (ubtb[i].valid && ubtb[i].tag == current_tag) {
+            // Found a hit - verify no duplicates
+            for (size_t j = i + 1; j < ubtb.size(); ++j) {
+                assert(!(ubtb[j].valid && ubtb[j].tag == current_tag) &&
+                       "Multiple hits found in uBTB for the same tag!");
+            }
 
-    if (it != ubtb.end()) {
-        // Found a hit - verify no duplicates
-        auto duplicate = std::find_if(std::next(it), ubtb.end(), [current_tag](const TickedUBTBEntry &way) {
-            return way.valid && way.tag == current_tag;
-        });
-        assert(duplicate == ubtb.end() && "Multiple hits found in uBTB for the same tag!");
+            // Update timestamp for MRU
+            ubtb[i].tick = curTick();
 
-        // go on to update the mruList
-        it->tick = curTick();  // Update timestamp for MRU
-        // might be unnecessary, considering the heap is updated on every reaplacement
-        std::make_heap(mruList.begin(), mruList.end(), older());
+            // the following line might be unnecessary, considering the
+            // heap is updated on every LRU replacement, TODO: confirm this
+            // std::make_heap(mruList.begin(), mruList.end(), older());
+
+            DPRINTF(UBTB, "UBTB: Hit at index %zu for tag %#lx\n", i, current_tag);
+            return static_cast<int>(i);
+        }
     }
 
-    return it;
+    DPRINTF(UBTB, "UBTB: Miss for tag %#lx\n", current_tag);
+    return -1;  // Miss
 }
 
 
 void
-UBTB::replaceOldEntry(UBTBIter oldEntryIter, FullBTBPrediction &newPrediction)
+UBTB::replaceOldEntry(int entryIndex, FullBTBPrediction & newPrediction)
 {
+    assert(entryIndex >= 0 && entryIndex < static_cast<int>(ubtb.size()));
     assert(newPrediction.getTakenEntry().valid);
+
     TickedUBTBEntry newEntry = TickedUBTBEntry(newPrediction.getTakenEntry(), curTick());
     // important! this is so that target set by RAS or ITTAGE is used
     newEntry.target = newPrediction.getTarget(predictWidth);
-    // important: update tag (mbtb and ubtb have different tags, even diffferent tag length)
+    // important: update tag (mbtb and ubtb have different tags, even different tag length)
     newEntry.tag = getTag(newPrediction.bbStart);
     /*  save the number of conditional branches before the taken branch
      *  this is useful in the prediction phase: to generate the correct speculative history information
@@ -207,104 +302,226 @@ UBTB::replaceOldEntry(UBTBIter oldEntryIter, FullBTBPrediction &newPrediction)
         newEntry.numNTConds--;
         assert(newEntry.numNTConds >= 0);
     }
-    *oldEntryIter = newEntry;
+
+    ubtb[entryIndex] = newEntry;
+
+    DPRINTF(UBTB, "UBTB: Replaced entry at index %d with new prediction for PC %#lx\n",
+           entryIndex, newPrediction.controlAddr());
+}
+
+void
+UBTB::addSecondPredictionToEntry(int entryIndex, FullBTBPrediction* secondPred)
+{
+    assert(entryIndex >= 0 && entryIndex < static_cast<int>(ubtb.size()));
+    assert(secondPred != nullptr && "Second prediction must not be null");
+    assert(secondPred->getTakenEntry().valid && "Second prediction must be valid for 2-taken");
+
+    auto& entry = ubtb[entryIndex];
+    assert(entry.valid && "Entry must be valid to add second prediction");
+
+    // Only add if not already present
+    if (!entry.valid_2nd) {
+        entry.valid_2nd = true;
+        auto s3TakenEntry = secondPred->getTakenEntry();
+
+        // Copy branch info (BTBEntry inherits from BranchInfo)
+        entry.branch_info_2nd = s3TakenEntry;
+        // Override target with the one from prediction (may be set by RAS/ITTAGE)
+        entry.branch_info_2nd.target = secondPred->getTarget(predictWidth);
+
+        DPRINTF(UBTB, "UBTB: Added second prediction to entry at index %d: secondary PC %#lx\n",
+               entryIndex, secondPred->controlAddr());
+    } else {
+        DPRINTF(UBTB, "UBTB: Entry at index %d already has second prediction, skipping\n", entryIndex);
+    }
 }
 
 
 void
 UBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred)
 {
+    DPRINTF(UBTB, "1-taken updateUsingS3Pred: hit_index=%d, s3Pred.bbStart=%#lx\n",
+           lastPred.hit_index, s3Pred.bbStart);
+
+    // Use the common helper function with the hit index from lastPred (no second prediction)
+    updateEntryAtIndex(lastPred.hit_index, s3Pred, nullptr);
+}
 
 
-    UBTBIter s0EntryIter = lastPred.hit_entry;
-    if (s0EntryIter != ubtb.end()) {
-        assert(s0EntryIter->valid); //lookup() should only return valid entry
+bool
+UBTB::check2TakenConditions(FullBTBPrediction& dff, const FullBTBPrediction& s3Pred)
+{
+    assert(dff.getTarget(predictWidth) == s3Pred.bbStart);
+
+    // 1. Both predictions must have at least one branch.
+    if (dff.btbEntries.empty() || s3Pred.btbEntries.empty()) {
+        return false;
     }
-    auto s3TakenEntry = s3Pred.getTakenEntry();
-    if (s0EntryIter != ubtb.end() && !s3TakenEntry.valid) {
-        // S0 has a hit entry, but S3 predicts fall through
-        updateUCtr(s0EntryIter->uctr, false);
-        if (s0EntryIter->uctr == 0) {
-            s0EntryIter->valid = false;
-        }
-    } else if (s0EntryIter == ubtb.end() && s3TakenEntry.valid) {
-        /* S0 misses, but S3 predicts taken,
-         * generate new entry and replace another using LRU
-         */
-        UBTBIter toBeReplacedIter;
-        // First try to find an invalid entry in the set
-        bool foundInvalidEntry = false;
 
-        for (auto it = ubtb.begin(); it != ubtb.end(); ++it) {
-            if (!it->valid) {
-                toBeReplacedIter = it;
-                foundInvalidEntry = true;
-                break;
-            }
-        }
+    auto dffEntry = dff.getTakenEntry();
+    auto& s3PredEntry = s3Pred.btbEntries[0];
 
-        // If no invalid entry found, use LRU policy
-        // TODO: consider using LRU only among the entries with the least confidence(smallest uctr)
-        if (!foundInvalidEntry) {
-            // Find the least recently used entry
-            std::make_heap(mruList.begin(), mruList.end(), older());
-            toBeReplacedIter = mruList.front();
-        }
+    // 2. The first branch must be taken for a 2-taken sequence to form.
+    if (!dff.isTaken()) {
+        return false;
+    }
 
-        // Replace the entry with the new prediction
-        replaceOldEntry(toBeReplacedIter, s3Pred);
+    // 3. Check branch type compatibility based on spec table.
 
-    } else if (s0EntryIter != ubtb.end() && s3TakenEntry.valid) {
-        // both S0 and S3 predict taken
-        if (s0EntryIter->pc != s3Pred.controlAddr() || s0EntryIter->target != s3Pred.getTarget(predictWidth)) {
-            // S0 and S3 predict different branch instruction
-            updateUCtr(s0EntryIter->uctr, false);
-            if (s0EntryIter->uctr == 0) {
-                // replace the old entry with the new one
-                replaceOldEntry(s0EntryIter, s3Pred);
+    // Rule: 'multi-target indirect' as 1st branch is not allowed.
+    if (dffEntry.isIndirect) {
+        return false;
+    }
+
+    // Rule: 'multi-target indirect' as 2nd branch is not allowed.
+    if (s3PredEntry.isIndirect) {
+        return false;
+    }
+
+    // Rule: 'cond' as 2nd branch is not allowed.
+    if (s3PredEntry.isCond) {
+        return false;
+    }
+
+    // Rule: 'ret -> ret' is not allowed to avoid multiple RAS reads.
+    if (dffEntry.isReturn && s3PredEntry.isReturn) {
+        return false;
+    }
+
+    // Rule: 'call -> call' is not allowed to avoid multiple RAS writes.
+    if (dffEntry.isCall && s3PredEntry.isCall) {
+        return false;
+    }
+
+    // (call -> ret is allowed, so no check needed)
+
+    // All conditions passed.
+    return true;
+}
+
+// theoretically pred is a const reference, but certain functions
+// like getTakenEntry() are factually const but not declared as const
+void
+UBTB::updateEntryAtIndex(int entry_index, FullBTBPrediction& pred, FullBTBPrediction* secondPred)
+{
+    DPRINTF(UBTB, "updateEntryAtIndex: entry_index=%d, pred.bbStart=%#lx, secondPred=%s\n",
+           entry_index, pred.bbStart, secondPred ? "provided" : "null");
+
+    auto s3TakenEntry = pred.getTakenEntry();
+
+    if (entry_index >= 0) {
+        // Hit case: We have a valid entry at entry_index
+        assert(entry_index < static_cast<int>(ubtb.size()));
+        auto& entry = ubtb[entry_index];
+        assert(entry.valid && "Hit entry should be valid");
+        assert(entry.tag == getTag(pred.bbStart));
+
+        if (!s3TakenEntry.valid) {
+            // S0 has a hit entry, but S3 predicts fall through
+            updateUCtr(entry.uctr, false);
+            if (entry.uctr == 0) {
+                entry.valid = false;
+                DPRINTF(UBTB, "updateEntryAtIndex: Invalidated entry at index %d (fall through)\n", entry_index);
             }
         } else {
-            // S0 and S3 predict the same (brpc and target)
-            updateUCtr(s0EntryIter->uctr, true);
+            // Both S0 and S3 predict taken - check if they match
+            if (entry.pc != pred.controlAddr() || entry.target != pred.getTarget(predictWidth)) {
+                // S0 and S3 predict different branch instruction
+                updateUCtr(entry.uctr, false);
+                if (entry.uctr == 0) {
+                    // Replace the old entry with the new one
+                    replaceOldEntry(entry_index, const_cast<FullBTBPrediction&>(pred));
+                    // Add second prediction if provided
+                    if (secondPred != nullptr) {
+                        addSecondPredictionToEntry(entry_index, secondPred);
+                    }
+                    DPRINTF(UBTB, "updateEntryAtIndex: Replaced entry at index %d (mismatch)\n", entry_index);
+                }
+            } else {
+                // S0 and S3 predict the same (brpc and target)
+                updateUCtr(entry.uctr, true);
+
+                // Add second prediction if provided
+                if (secondPred != nullptr) {
+                    addSecondPredictionToEntry(entry_index, secondPred);
+                }
+
+                DPRINTF(UBTB, "updateEntryAtIndex: Reinforced entry at index %d (match)\n", entry_index);
+            }
         }
     } else {
-        // both S0 and S3 predict fall through, do nothing
+        // Miss case: entry_index == -1
+        if (s3TakenEntry.valid) {
+            /* S0 misses, but S3 predicts taken,
+             * generate new entry and replace another using LRU
+             */
+            // check if the new entry exist in the uBTB
+            for (size_t i = 0; i < ubtb.size(); ++i) {
+                if (ubtb[i].tag == getTag(pred.bbStart)) {
+                    //warn("updateEntryAtIndex: New entry already exists in uBTB\n");
+                    return;
+                }
+            }
+
+            int toBeReplacedIndex = -1;
+
+            // First try to find an invalid entry
+            for (size_t i = 0; i < ubtb.size(); ++i) {
+                if (!ubtb[i].valid) {
+                    toBeReplacedIndex = static_cast<int>(i);
+                    break;
+                }
+            }
+
+            // If no invalid entry found, use LRU policy
+            if (toBeReplacedIndex == -1) {
+                // Find the least recently used entry
+                std::make_heap(mruList.begin(), mruList.end(), older());
+                UBTBIter lru_iter = mruList.front();
+                toBeReplacedIndex = lru_iter - ubtb.begin();
+            }
+
+            // Replace the entry with the new prediction
+            replaceOldEntry(toBeReplacedIndex, const_cast<FullBTBPrediction&>(pred));
+            // Add second prediction if provided
+            if (secondPred != nullptr) {
+                addSecondPredictionToEntry(toBeReplacedIndex, secondPred);
+            }
+            DPRINTF(UBTB, "updateEntryAtIndex: Created new entry at index %d (miss->hit)\n", toBeReplacedIndex);
+        } else {
+            // Both S0 and S3 predict fall through - do nothing
+            DPRINTF(UBTB, "updateEntryAtIndex: No action needed (miss->fall through)\n");
+        }
     }
 }
 
 void
-UBTB::update2Taken(FullBTBPrediction &s3Pred)
+UBTB::updateUsingS3Pred(FullBTBPrediction &dff_pred,
+                        FullBTBPrediction &s3_pred,
+                        int hit_index) // hit index is the index stored in dff, along with dff_pred
 {
-    auto s3TakenEntry = s3Pred.getTakenEntry();
-    if (!s3TakenEntry.valid) {
+    DPRINTF(UBTB, "2-taken updateUsingS3Pred: hit_index=%d, dff_pred.bbStart=%#lx, s3_pred.bbStart=%#lx\n",
+           hit_index, dff_pred.bbStart, s3_pred.bbStart);
+
+    // Validate consecutive FB condition
+    if (dff_pred.getTarget(predictWidth) != s3_pred.bbStart) {
+        DPRINTF(UBTB, "2-taken training rejected: FBs are not consecutive (%#lx -> %#lx vs %#lx)\n",
+               dff_pred.bbStart, dff_pred.getTarget(predictWidth), s3_pred.bbStart);
+        // Fall back to training only with dff_pred using the correct entry (previous cycle's hit)
+        updateEntryAtIndex(hit_index, dff_pred, nullptr);
         return;
     }
 
-    auto iter = lookup(s3Pred.bbStart);
-
-    if (iter != ubtb.end()) {
-        // Hit: Unconditionally replace the existing entry.
-        replaceOldEntry(iter, s3Pred);
-    } else {
-        // Miss: Find a victim and create a new entry.
-        UBTBIter toBeReplacedIter;
-        bool foundInvalidEntry = false;
-
-        for (auto it = ubtb.begin(); it != ubtb.end(); ++it) {
-            if (!it->valid) {
-                toBeReplacedIter = it;
-                foundInvalidEntry = true;
-                break;
-            }
-        }
-
-        if (!foundInvalidEntry) {
-            std::make_heap(mruList.begin(), mruList.end(), older());
-            toBeReplacedIter = mruList.front();
-        }
-
-        replaceOldEntry(toBeReplacedIter, s3Pred);
+    // Check 2-taken conditions
+    if (!check2TakenConditions(dff_pred, s3_pred)) {
+        DPRINTF(UBTB, "2-taken training rejected: conditions not met\n");
+        // Fall back to training only with dff_pred using the correct entry (previous cycle's hit)
+        updateEntryAtIndex(hit_index, dff_pred, nullptr);
+        return;
     }
+
+    // Train as 2-taken: pass s3_pred as second prediction
+    updateEntryAtIndex(hit_index, dff_pred, &s3_pred);
 }
 
 
@@ -468,6 +685,7 @@ UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
       ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss")
 {
 }
+
 
 }  // namespace btb_pred
 }  // namespace branch_prediction

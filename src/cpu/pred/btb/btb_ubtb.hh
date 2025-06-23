@@ -89,14 +89,20 @@ class UBTB : public TimedBaseBTBPredictor
      * - tag: tag bits from branch address [23:1]
      * - tick: timestamp used for MRU (Most Recently Used) replacement policy
      * - numNTConds: number of not-taken conditional branches before the taken branch
+     * - valid_2nd: existence of the second branch (for 2-taken support)
+     * - branch_info_2nd: branch attributes for the second branch (for 2-taken support)
      */
     typedef struct TickedUBTBEntry : public BTBEntry
     {
         unsigned uctr; //2-bit saturation counter used in replacement policy
         uint64_t tick;  // timestamp for MRU replacement
         int  numNTConds; // number of conditional branches before the taken branch
-        TickedUBTBEntry() : BTBEntry(), uctr(0), tick(0), numNTConds(0) {}
-        TickedUBTBEntry(const BTBEntry &be, uint64_t tick) : BTBEntry(be), uctr(0), tick(tick), numNTConds(0) {}
+        bool valid_2nd; // existence of the second branch
+        BranchInfo branch_info_2nd; // branch attributes for the second branch
+
+        TickedUBTBEntry() : BTBEntry(), uctr(0), tick(0), numNTConds(0), valid_2nd(false), branch_info_2nd() {}
+        TickedUBTBEntry(const BTBEntry &be, uint64_t tick) : BTBEntry(be), uctr(0),
+                        tick(tick), numNTConds(0), valid_2nd(false), branch_info_2nd() {}
     }TickedUBTBEntry;
 
     using UBTBIter = typename std::vector<TickedUBTBEntry>::iterator;
@@ -119,6 +125,19 @@ class UBTB : public TimedBaseBTBPredictor
     void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
                       std::vector<FullBTBPrediction> &stagePreds) override;
 
+    /** New unified prediction function for 2-taken support.
+     * Performs uBTB lookup and fills both primary and secondary predictions if available.
+     * @param startAddr The FB start address to look up
+     * @param history Branch history register (not used)
+     * @param stagePreds Predictions for each pipeline stage (filled with primary prediction)
+     * @param secondPrediction Reference to store secondary prediction if available
+     * @return Pair containing (hit_index, has_second_prediction)
+     */
+    std::pair<int, bool> getTwoTakenPrediction(Addr startAddr,
+                                              const boost::dynamic_bitset<> &history,
+                                              std::vector<FullBTBPrediction> &stagePreds,
+                                              FullBTBPrediction &secondPrediction);
+
     /** Updates the uBTB predictions based on S3 prediction results.
      * This function is called from decoupled_bpred during S3 prediction
      * specifically, it reconciles differences between S1 (uBTB) and S3 predictions,
@@ -129,7 +148,17 @@ class UBTB : public TimedBaseBTBPredictor
      */
     void updateUsingS3Pred(FullBTBPrediction &s3Pred);
 
-    void update2Taken(FullBTBPrediction &s3Pred);
+    /**
+     * Updates the uBTB using S3 prediction with 2-taken support (training/learning phase)
+     *
+     * @param dff_pred The first FB (from DFF buffer, represents previous
+     * S3 pred), factually const but not declared as const
+     * @param s3_pred The second FB (current S3 prediction)
+     * @param hit_index The hit index from getTwoTakenPrediction (-1 if miss)
+     */
+    void updateUsingS3Pred(FullBTBPrediction &dff_pred,
+                          FullBTBPrediction &s3_pred,
+                          int hit_index);
 
     /** for statistics only
      * @param stream The fetch stream containing execution results and prediction metadata
@@ -158,11 +187,17 @@ class UBTB : public TimedBaseBTBPredictor
     void setTrace() override;
     TraceManager *ubtbTrace;
 
-    // for debuggin purpose
+    // for debugging purpose
     void printTickedUBTBEntry(const TickedUBTBEntry &e) {
         DPRINTF(UBTB, "uBTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \
-            cond:%d, indirect:%d, call:%d, return:%d, tick:%lu\n",
-            e.valid, e.pc, e.tag, e.size, e.target, e.isCond, e.isIndirect, e.isCall, e.isReturn, e.tick);
+            cond:%d, indirect:%d, call:%d, return:%d, tick:%lu, valid_2nd:%d",
+            e.valid, e.pc, e.tag, e.size, e.target, e.isCond, e.isIndirect, e.isCall, e.isReturn, e.tick, e.valid_2nd);
+        if (e.valid_2nd) {
+            DPRINTF(UBTB, ", 2nd_pc:%#lx, 2nd_target:%#lx, 2nd_cond:%d, 2nd_indirect:%d, 2nd_call:%d, 2nd_return:%d",
+                e.branch_info_2nd.pc, e.branch_info_2nd.target, e.branch_info_2nd.isCond,
+                e.branch_info_2nd.isIndirect, e.branch_info_2nd.isCall, e.branch_info_2nd.isReturn);
+        }
+        DPRINTF(UBTB, "\n");
     }
 
     void dumpMruList() {
@@ -179,9 +214,9 @@ class UBTB : public TimedBaseBTBPredictor
      */
     struct LastPred
     {
-        UBTBIter hit_entry; // this might point to ubtb.end()
+        int hit_index; // -1 for miss, array index for hit
 
-        LastPred() {
+        LastPred() : hit_index(-1) {
             // Default constructor - will be assigned proper value later
         }
     };
@@ -231,9 +266,9 @@ class UBTB : public TimedBaseBTBPredictor
 
     /** helper method called by putPCHistory: Searches for a entry in the uBTB.
      * @param startAddr The FB start address to look up
-     * @return Iterator to the matching entry if found, or ubtb.end() if not found
+     * @return Index of the matching entry if found, or -1 if not found
      */
-    UBTBIter lookup(Addr startAddr);
+    int lookup(Addr startAddr);
 
     /** helper method called by putPCHistory: Check uBTB entry pc range and update statistics
      * @param entry The uBTB entry to check
@@ -248,13 +283,40 @@ class UBTB : public TimedBaseBTBPredictor
     void fillStagePredictions(const TickedUBTBEntry& entry,
                               std::vector<FullBTBPrediction>& stagePreds);
 
+    /** helper method for 2-taken: Construct a FullBTBPrediction from BranchInfo
+     *  @param branchInfo The branch information for the second prediction
+     *  @param bbStart The basic block start address for the prediction
+     *  @param prediction The prediction object to fill
+     */
+    void fillSecondPrediction(const BranchInfo& branchInfo, Addr bbStart, FullBTBPrediction& prediction);
+
+    /** helper method for 2-taken: Check if two predictions can form a valid 2-taken sequence
+     *  @param dff The first prediction (from DFF buffer)
+     *  @param s3Pred The second prediction (current S3 prediction)
+     *  @return true if the predictions can form a valid 2-taken sequence
+     */
+    bool check2TakenConditions(FullBTBPrediction& dff, const FullBTBPrediction& s3Pred);
+
+    /** Common helper function for training logic - handles entry update based on hit/miss scenarios
+     *  @param entry_index Index of the entry that was hit during prediction (-1 for miss)
+     *  @param pred The S3 prediction to train with
+     *  @param secondPred Second prediction for 2-taken training (can be nullptr for 1-taken)
+     */
+    void updateEntryAtIndex(int entry_index, FullBTBPrediction& pred, FullBTBPrediction* secondPred);
+
     /** helper method called in updateUsingS3Pred: This function replaces an existing uBTB entry with new prediction
      *
-     * @param oldEntry Iterator to the entry to replace
+     * @param entryIndex Index of the entry to replace
      * @param newPrediction The new prediction to store
      */
-    void replaceOldEntry(UBTBIter oldEntry, FullBTBPrediction & newPrediction);
+    void replaceOldEntry(int entryIndex, FullBTBPrediction & newPrediction);
 
+    /** helper method for 2-taken: Add second prediction to an existing uBTB entry
+     *
+     * @param entryIndex Index of the entry to update
+     * @param secondPred The second prediction to add (must not be nullptr)
+     */
+    void addSecondPredictionToEntry(int entryIndex, FullBTBPrediction* secondPred);
 
     /** The uBTB structure:
      *  - Implemented as a fully associative table
