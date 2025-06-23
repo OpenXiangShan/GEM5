@@ -25,13 +25,13 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       enableLoopBuffer(p.enableLoopBuffer),
       enableLoopPredictor(p.enableLoopPredictor),
       enableJumpAheadPredictor(p.enableJumpAheadPredictor),
+      enable2Taken(p.enable2Taken),
       fetchTargetQueue(p.ftq_size),
       fetchStreamQueueSize(p.fsq_size),
       predictWidth(p.predictWidth),
       maxInstsNum(p.predictWidth / 2),
       historyBits(p.maxHistLen),
-      ubtb1(p.ubtb1),
-      ubtb2(p.ubtb2),
+      ubtb(p.ubtb),
       abtb(p.abtb),
       btb(p.btb),
       tage(p.tage),
@@ -50,9 +50,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     bpType = DecoupledBTBType;
     // TODO: better impl (use vector to assign in python)
     // problem: btb->getAndSetNewBTBEntry
-    components.push_back(ubtb1);
-    // we don't push ubtb2 into the component list, because its putPCHistory()
-    // and update methods are called explicitly.
+    components.push_back(ubtb);
     components.push_back(abtb);
     // components.push_back(uras);
     components.push_back(btb);
@@ -583,8 +581,13 @@ DecoupledBPUWithBTB::tick()
         // Check if the second prediction is still valid after overrides.
         validateSecondFBPrediction();
 
-        // Now, update the DFF for the *next* cycle using the results of this one.
-        updateDFF();
+        // Inline updateDFF() - Always store finalPred
+        //  This stored block is used for 2-taken training.
+        // Admittedly, this FB doesn't always directly precede the s3 pred of the next cycle,
+        // actually, when the current cycle produce a two-taken, dff and next cycls's s3 pred are not consecutive.
+        // this case is handled inside updateUsingS3Pred(), it simply train with dff.
+        DPRINTF(DecoupleBP, "updateDFF: Storing finalPred for next cycle (ubtbHitIndex=%d)\n", ubtbHitIndex);
+        predDFF.storePrediction(finalPred, ubtbHitIndex);
 
         bpuState = BpuState::PREDS_READY;
 
@@ -652,39 +655,42 @@ DecoupledBPUWithBTB::requestNewPrediction()
         predsOfEachStage[i].bbStart = s0PC;
     }
 
+    // Reset prediction flags
+    hasSecondPrediction = false;
+    ubtbHitIndex = -1;
+    secondPrediction.btbEntries.clear();
+
     // Query each predictor component with current PC and history
     for (int i = 0; i < numComponents; i++) {
-        components[i]->putPCHistory(s0PC, s0History, predsOfEachStage);  //s0History not used
-    }
+        if (components[i] == ubtb) {
+            // Special handling for uBTB - use 2-taken prediction if enabled
+            if (enable2Taken) {
+                auto [hitIndex, secondAvailable] = ubtb->getTwoTakenPrediction(
+                    s0PC, s0History, predsOfEachStage, secondPrediction);
 
-    // Get prediction from secondary uBTB, if the first prediction is valid.
-    // This uses the same s0PC for lookup, as ubtb2 is trained to hold the
-    // subsequent block's info.
-    // TODO: handles the case when there's abtb prediction
-    if (enable2Taken && predsOfEachStage[0].btbEntries.size() > 0) {
+                // Store hit index for cross-cycle tracking
+                ubtbHitIndex = hitIndex;
 
-        std::vector<FullBTBPrediction> ubtb2Preds(1);
-        ubtb2Preds[0].bbStart = s0PC;
-        ubtb2->putPCHistory(s0PC, s0History, ubtb2Preds); // ubtb2 lookup based on s0PC
+                // Update second prediction state
+                if (secondAvailable) {
+                    // If second prediction is available, first prediction must exist
+                    assert(predsOfEachStage[0].btbEntries.size() > 0 &&
+                           "Second prediction available but no first prediction found");
 
-        // After getting the prediction, morph its start PC to reflect its true position,
-        // which is the target of the first branch.
-        if (ubtb2Preds[0].btbEntries.size() > 0) {
-            ubtb2Preds[0].bbStart = predsOfEachStage[0].getTarget(predictWidth);
-            secondPrediction = ubtb2Preds[0];
-
-
-            hasSecondPrediction = true;
-            // Instead of asserting, let's check the condition and discard the second prediction if it doesn't fit.
-            if (!(ubtb2Preds[0].controlAddr() >= ubtb2Preds[0].bbStart &&
-                  ubtb2Preds[0].controlAddr() < ubtb2Preds[0].getFallThrough(predictWidth))) {
+                    hasSecondPrediction = true;
+                } else {
+                    hasSecondPrediction = false;
+                }
+            } else {
+                // Regular 1-taken prediction for uBTB
+                ubtb->putPCHistory(s0PC, s0History, predsOfEachStage);
+                ubtbHitIndex = -1; // No hit index tracking in 1-taken mode
                 hasSecondPrediction = false;
-                secondPrediction.btbEntries.clear();
-                DPRINTF(DecoupleBP, "Second FB prediction from uBTB2 failed range check, discarding.\n");
+                DPRINTF(DecoupleBP, "1-taken prediction mode\n");
             }
-            DPRINTF(DecoupleBP, "Got second FB prediction from uBTB2 for target %#lx\n", ubtb2Preds[0].bbStart);
         } else {
-            hasSecondPrediction = false;
+            // Regular handling for other components (ABTB, etc.)
+            components[i]->putPCHistory(s0PC, s0History, predsOfEachStage);  //s0History not used
         }
     }
 }
@@ -724,6 +730,15 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
     // 1. Debug output: dump predictions from all stages
     for (int i = 0; i < numStages; i++) {
         printFullBTBPrediction(predsOfEachStage[i]);
+    }
+
+    // Debug output for 2-taken predictions
+    if (enable2Taken) {
+        DPRINTF(DecoupleBP, "2-taken prediction: hit index %d, %ssecond prediction\n",
+               ubtbHitIndex, hasSecondPrediction ? "" : "no ");
+        if (hasSecondPrediction) {
+            printFullBTBPrediction(secondPrediction);
+        }
     }
 
     // 2. Select the most accurate prediction (prioritize later stages)
@@ -2120,55 +2135,7 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
 }
 
 
-bool DecoupledBPUWithBTB::check2TakenConditions(FullBTBPrediction& dff, const FullBTBPrediction& s3Pred) {
 
-    assert(dff.getTarget(predictWidth) == s3Pred.bbStart);
-
-    // 1. Both predictions must have at least one branch.
-    if (dff.btbEntries.empty() || s3Pred.btbEntries.empty()) {
-        return false;
-    }
-
-    auto dffEntry = dff.getTakenEntry();
-    auto& s3PredEntry = s3Pred.btbEntries[0];
-
-    // 2. The first branch must be taken for a 2-taken sequence to form.
-    if (!dff.isTaken()) {
-        return false;
-    }
-
-    // 3. Check branch type compatibility based on spec table.
-
-    // Rule: 'multi-target indirect' as 1st branch is not allowed.
-    if (dffEntry.isIndirect) {
-        return false;
-    }
-
-    // Rule: 'multi-target indirect' as 2nd branch is not allowed.
-    if (s3PredEntry.isIndirect) {
-        return false;
-    }
-
-    // Rule: 'cond' as 2nd branch is not allowed.
-    if (s3PredEntry.isCond) {
-        return false;
-    }
-
-    // Rule: 'ret -> ret' is not allowed to avoid multiple RAS reads.
-    if (dffEntry.isReturn && s3PredEntry.isReturn) {
-        return false;
-    }
-
-    // Rule: 'call -> call' is not allowed to avoid multiple RAS writes.
-    if (dffEntry.isCall && s3PredEntry.isCall) {
-        return false;
-    }
-
-    // (call -> ret is allowed, so no check needed)
-
-    // All conditions passed.
-    return true;
-}
 
 // Renamed function containing only uBTB training logic.
 void DecoupledBPUWithBTB::trainUbtbFor2Taken()
@@ -2176,46 +2143,27 @@ void DecoupledBPUWithBTB::trainUbtbFor2Taken()
     // Get the S3 prediction from s3 predictors. This is our 'ground truth' inside the BP.
     auto& s3_pred = predsOfEachStage[numStages-1];
 
-    // Update ubtb1 based on the S3 prediction.
+    // Update ubtb based on the S3 prediction.
     if (s3_pred.btbEntries.size() > 0) {
-        ubtb1->updateUsingS3Pred(s3_pred);
-    }
-
-    // Perform 2-taken learning for ubtb2.
-    // This compares the *current* S3 prediction with the *previous* cycle's S3 prediction (stored in DFF).
-    if (enable2Taken) {
-        if (predDFF.valid && check2TakenConditions(predDFF.prevS3Pred, s3_pred)) {
-            // trainSecondUBTB logic:
-            // Train uBTB2: when indexed by dff.bbstart, predict the content of s3_pred.
-            // This way, when both ubtb1 and ubtb2 use the same S0PC as input, they predict consecutive FBs.
-            FullBTBPrediction trainingPred = s3_pred;
-            // The training entry should be indexed by the PC of the dff block.
-            trainingPred.bbStart = predDFF.prevS3Pred.bbStart;
-
-            ubtb2->update2Taken(trainingPred);
+        if (enable2Taken) {
+            if (predDFF.valid) {
+                // 2-taken mode with valid DFF: Use overloaded updateUsingS3Pred
+                DPRINTF(DecoupleBP, "trainUbtbFor2Taken: 2-taken training with DFF (prevIndex=%d)\n",
+                       predDFF.prevUbtbHitIndex);
+                ubtb->updateUsingS3Pred(predDFF.prevS3Pred, s3_pred, predDFF.prevUbtbHitIndex);
+            } else {
+                // 2-taken mode with invalid DFF: Skip training
+                DPRINTF(DecoupleBP, "trainUbtbFor2Taken: 2-taken mode but DFF invalid, skipping training\n");
+            }
+        } else {
+            // 1-taken mode: Use original updateUsingS3Pred
+            DPRINTF(DecoupleBP, "trainUbtbFor2Taken: 1-taken training\n");
+            ubtb->updateUsingS3Pred(s3_pred);
         }
     }
 }
 
-// New function to update the DFF buffer for the next cycle.
-void DecoupledBPUWithBTB::updateDFF()
-{
-    // CRITICAL: Update the DFF with the fetch block that will precede
-    // the first fetch block of the next prediction cycle. This stored block
-    // is used for 2-taken training.
 
-    if (hasSecondPrediction) {
-        // Case 1: A valid second prediction exists.
-        // It's the most recent block, so we store it for the next cycle's training.
-         predDFF.storePrediction(secondPrediction);
-     } else {
-        // Case 2: No second prediction.
-        // This could be because the primary prediction was overridden, or uBTB2
-        // simply didn't find a 2-taken entry. In either situation, `finalPred`
-        // represents the one and only fetch block for this cycle. We store it.
-        predDFF.storePrediction(finalPred);
-     }
-}
 
 void DecoupledBPUWithBTB::validateSecondFBPrediction()
 {
