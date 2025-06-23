@@ -711,98 +711,66 @@ void handleBranchAndNextPC(DynInstPtr instruction, PCStateBase &this_pc,
 - **Translation Fault**: 处理地址翻译错误
 - **Cache Miss**: 处理I-cache miss和retry逻辑
 
-## 重构成果总结
+## Fetch状态转移图
 
-### 重构前后对比
+当前fetch阶段支持跨越2个cacheline的指令获取(misaligned fetch)，默认每拍都会访问两个cacheline 来获取66Byte 的fetchBuffer.
 
-#### 原始代码特点：
-- ❌ 单一函数320行，职责混乱
-- ❌ 大量冗余参数和死代码
-- ❌ 多架构代码混杂，难以维护
-- ❌ 逻辑分散，难以理解控制流
+### 状态转移图
 
-#### 重构后代码特点：
-- ✅ 模块化设计，8个专用函数，职责清晰
-- ✅ 精简参数，删除10+个冗余参数
-- ✅ RISC-V专用，删除50+行死代码
-- ✅ 逻辑集中，控制流清晰易懂
-- ✅ 返回类型优化，删除无意义的返回值检查
-
-### 重构技术亮点
-
-1. **职责明确的函数分工**：
-   ```cpp
-   fetch() = selectFetchThread() + checkDecoupledFrontend() + 
-             prepareFetchAddress() + performInstructionFetch()
-   
-   performInstructionFetch() = checkMemoryNeeds() + processInstructionDecoding() + 
-                              handleBranchAndNextPC()
-   ```
-
-2. **RISC-V架构优化**：
-   - 专门针对RISC-V的压缩指令处理
-   - 简化的4字节对齐decoder交互
-   - 保留向量配置指令(vsetvl)的特殊处理
-   - 删除x86/ARM相关的无用代码
-
-3. **解耦前端支持**：
-   - 保持对DecoupledBPUWithBTB等高级分支预测器的完整支持
-   - FTQ(Fetch Target Queue)可用性检查
-   - 支持BTB/FTB/Stream三种预测器类型
-
-4. **参数和接口优化**：
-   - 删除冗余的`need_mem`, `in_rom`, `quiesce`等参数
-   - 简化函数签名，平均减少2-3个参数
-   - 优化返回类型，删除总是返回`true`的函数
-
-5. **错误处理和调试**：
-   - 改进的StallReason传递机制
-   - 保留详细的DPRINTF调试输出
-   - 集中的错误处理逻辑
-
-### 重构收益
-
-1. **可维护性提升**：每个函数职责单一，修改影响范围小
-2. **可读性提升**：逻辑清晰，易于理解和修改
-3. **可测试性提升**：可以独立测试各个模块
-4. **扩展性提升**：为FDIP和2fetch架构预留了清晰的扩展接口
-5. **性能稳定**：编译通过，功能完整，不影响现有性能
-
-### 后续扩展方向
-
-重构为以下高级特性奠定了基础：
-
-1. **FTQ粒度取指**：从PC粒度改为FTQ项粒度
-2. **FDIP支持**：Fetch Directed Instruction Prefetch
-3. **2fetch架构**：同时处理两个FTQ项，提升fetch带宽
-4. **更好的循环优化**：配合Loop Buffer的优化
-
-这个重构展示了现代处理器fetch阶段的复杂性，特别是在支持解耦前端、多线程、性能分析等高级特性时。通过模块化设计，代码既保持了功能完整性，又大大提升了可维护性和扩展性。
-
-## 重构历史
-
-### 阶段1: 功能模块拆分 ✅
-- 将原有320行的fetch()函数拆分为4个独立函数
-- `selectFetchThread()`: 线程选择和基础检查
-- `checkDecoupledFrontend()`: FTQ和预测器检查  
-- `prepareFetchAddress()`: PC和地址计算，缓存检查
-- `performInstructionFetch()`: 主要指令获取循环
-
-### 阶段2: 指令获取循环细化 ✅
-- 进一步拆分performInstructionFetch()为3个专用函数
-- `checkMemoryNeeds()`: 检查decoder内存需求并供给字节
-- `processInstructionDecoding()`: 指令解码和动态指令创建
-- `handleBranchAndNextPC()`: 分支预测和PC状态管理
-
-### 阶段3: 代码清理和优化 ✅
-- 删除x86/ARM架构相关的死代码(50+行)
-- 简化函数参数，删除冗余参数(10+个)
-- 优化返回类型和函数签名
-- 专门针对RISC-V架构优化
-
-### 阶段4: 接口优化和逻辑集中化 ✅
-- 删除冗余的`status_change`和总是返回`true`的函数
-- 逻辑集中化：将newMacro处理集中到handleBranchAndNextPC()
-- 函数职责重新定义，使PC管理更加集中
-
-通过这4个阶段的重构，fetch代码从单一庞大函数转变为清晰的模块化架构，为GEM5 O3 CPU的高级特性实现提供了坚实基础。
+```mermaid
+graph TD
+    %% 基础状态
+    Idle("Idle 空闲状态")
+    Running("Running 正常运行")
+    Blocked("Blocked 被阻塞")
+    Squashing("Squashing 正在清理")
+    
+    %% Cache访问状态
+    ItlbWait("ItlbWait 等待TLB翻译")
+    IcacheWaitResponse("IcacheWaitResponse 等待I-cache响应, 默认等待2个packet")
+    IcacheWaitRetry("IcacheWaitRetry 等待I-cache重试")
+    IcacheAccessComplete("IcacheAccessComplete I-cache访问完成")
+    
+    %% 特殊状态
+    TrapPending("TrapPending 等待trap处理")
+    QuiescePending("QuiescePending 等待quiesce")
+    NoGoodAddr("NoGoodAddr 地址无效")
+    
+    %% 主要状态转换
+    Idle --> Running
+    Running --> ItlbWait
+    ItlbWait --> IcacheWaitResponse
+    ItlbWait --> NoGoodAddr
+    
+    %% Cache访问流程
+    IcacheWaitResponse --> IcacheAccessComplete
+    IcacheWaitResponse --> IcacheWaitRetry
+    IcacheWaitRetry --> IcacheWaitResponse
+    IcacheAccessComplete --> Running
+    
+    %% 阻塞和squash
+    Running --> Blocked
+    Running --> Squashing
+    Blocked --> Running
+    Squashing --> Running
+    
+    %% 特殊情况
+    Running --> TrapPending
+    Running --> QuiescePending
+    TrapPending --> Running
+    QuiescePending --> Running
+    
+    %% 问题状态 (无实际使用)
+    Fetching("Fetching 未使用的状态")
+    
+    %% 样式
+    classDef problem fill:#ff9999
+    classDef normal fill:#e1f5fe
+    classDef cache fill:#fff3e0
+    classDef special fill:#f3e5f5
+    
+    class Fetching problem
+    class Idle,Running,Blocked,Squashing normal
+    class ItlbWait,IcacheWaitResponse,IcacheWaitRetry,IcacheAccessComplete cache
+    class TrapPending,QuiescePending,NoGoodAddr special
+```
