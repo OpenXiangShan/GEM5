@@ -207,44 +207,50 @@ DefaultBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
         }
     }
 
-    for (int s = getDelay(); s < stagePreds.size(); ++s) {
+    FillStageLoop(s) {
         // if (!isL0() && !hit && stagePreds[s].valid) {
         //     DPRINTF(BTB, "BTB: ubtb hit and btb miss, use ubtb result");
         //     incNonL0Stat(btbStats.predUseL0OnL1Miss);
         //     break;
         // }
         DPRINTF(BTB, "BTB: assigning prediction for stage %d\n", s);
-        
         // Copy BTB entries to stage prediction
         stagePreds[s].btbEntries.clear();
-        for (auto e: entries) {
+        for (auto e : entries) {
             stagePreds[s].btbEntries.push_back(BTBEntry(e));
         }
         checkAscending(stagePreds[s].btbEntries);
         dumpBTBEntries(stagePreds[s].btbEntries);
 
-        // Set predictions for each branch
-        for (auto &e : entries) {
-            assert(e.valid);
-            if (e.isCond) {
-                // TODO: a performance bug here, mbtb should not update condTakens!
-                // if (isL0()) {  // only L0 BTB has saturating counter
-                    // use saturating counter of L0 BTB
-                    stagePreds[s].condTakens[e.pc] = e.alwaysTaken || (e.ctr >= 0);
-                // } else {  // L1 BTB condTakens depends on the TAGE predictor
-                // }
-            } else if (e.isIndirect) {
-                // Set predicted target for indirect branches
-                DPRINTF(BTB, "setting indirect target for pc %#lx to %#lx\n", e.pc, e.target);
-                stagePreds[s].indirectTargets[e.pc] = e.target;
-                if (e.isReturn) {
-                    stagePreds[s].returnTarget = e.target;
-                }
-                break;
-            }
-        }
-
         stagePreds[s].predTick = curTick();
+
+        stagePreds[s].condTakens.clear();
+        stagePreds[s].indirectTargets.clear();
+    }
+
+    // Set predictions for each branch
+    for (auto &e : entries) {
+        assert(e.valid);
+        if (e.isCond) {
+            // TODO: a performance bug here, mbtb should not update condTakens!
+            // if (isL0()) {  // only L0 BTB has saturating counter
+            // use saturating counter of L0 BTB
+
+            FillStageLoop(s) stagePreds[s].condTakens.push_back({e.pc, e.alwaysTaken || (e.ctr >= 0)});
+
+            // } else {  // L1 BTB condTakens depends on the TAGE predictor
+            // }
+        } else if (e.isIndirect) {
+            // Set predicted target for indirect branches
+            DPRINTF(BTB, "setting indirect target for pc %#lx to %#lx\n", e.pc, e.target);
+
+            FillStageLoop(s) stagePreds[s].indirectTargets.push_back({e.pc, e.target});
+
+            if (e.isReturn) {
+                FillStageLoop(s) stagePreds[s].returnTarget = e.target;
+            }
+            break;
+        }
     }
 
     // Update S0 prediction source statistics, if the control flow reached this point, we know that uBTB miss
@@ -267,18 +273,16 @@ void
 DefaultBTB::updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
                                    std::vector<FullBTBPrediction>& stagePreds)
 {
-    meta.l0_hit_entries.clear();
-    meta.hit_entries.clear();
-    
+
     // Save L0 BTB entries for L1 BTB's reference
     if (getDelay() >= 1) {
         // L0 should be zero-bubble
-        meta.l0_hit_entries = stagePreds[0].btbEntries;
+        meta->l0_hit_entries = stagePreds[0].btbEntries;
     }
 
     // Save current BTB entries
     for (auto e: entries) {
-        meta.hit_entries.push_back(BTBEntry(e));
+        meta->hit_entries.push_back(BTBEntry(e));
     }
 }
 
@@ -287,6 +291,7 @@ DefaultBTB::putPCHistory(Addr startAddr,
                          const boost::dynamic_bitset<> &history,
                          std::vector<FullBTBPrediction> &stagePreds)
 {
+    meta = std::make_shared<BTBMeta>();
     // Lookup all matching entries in BTB
     auto find_entries = lookup(startAddr);
     
@@ -303,8 +308,7 @@ DefaultBTB::putPCHistory(Addr startAddr,
 std::shared_ptr<void>
 DefaultBTB::getPredictionMeta()
 {
-    std::shared_ptr<void> meta_void_ptr = std::make_shared<BTBMeta>(meta);
-    return meta_void_ptr;
+    return meta;
 }
 
 void

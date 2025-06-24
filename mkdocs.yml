@@ -1,0 +1,103 @@
+site_name: 香山GEM5模拟器文档
+site_url: https://gem5.readthedocs.io/
+repo_url: https://github.com/OpenXiangShan/GEM5
+repo_name: OpenXiangShan/GEM5
+
+theme:
+  name: material
+  language: zh
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.indexes
+    - navigation.top
+    - search.highlight
+    - search.share
+    - search.suggest
+    - content.code.copy
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: 切换到深色模式
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: 切换到浅色模式
+
+plugins:
+  - search:
+      lang:
+        - zh
+        - en
+  - mermaid2:
+      version: '10.0.2'
+  - external-markdown
+  - blog:
+  - rss:
+      match_path: blog/posts/.* 
+      date_from_meta:
+        as_creation: date
+      categories:
+        - categories
+  # - git-revision-date-localized:
+  #     enable_creation_date: true
+  #     type: date
+  - git-committers:
+      enabled: !ENV [CI, false]
+      repository: OpenXiangShan/GEM5
+      branch: xs-dev
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:mermaid2.fence_mermaid_custom
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - footnotes
+  - attr_list
+  - md_in_html
+  - abbr
+  - pymdownx.snippets
+  - def_list
+  - toc:
+
+# nav:
+#   - 主页: index.md
+#   - 介绍: introduction.md
+#   - 快速开始: quick_start.md
+#   - 工具: 
+#     - 概述: tools/index.md
+#     - CI跑分: tools/ci_score.md
+#     - archDB: tools/archdb.md
+#     - perfcct: tools/perfcct.md
+#   - BPU: 
+#     - 概述: bpu/index.md
+#     - bpu: bpu/BPU.md
+#     - gem5前端代码导读: bpu/gem5_前端代码导读.md
+#   - 前端:
+#     - 概述: frontend/index.md
+#   - 中核: 
+#     - 概述: midcore/index.md  
+#   - LSU: 
+#     - 概述: lsu/index.md
+#   - 博客: blog/

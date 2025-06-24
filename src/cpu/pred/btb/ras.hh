@@ -178,7 +178,7 @@ class BTBRAS : public TimedBaseBTBPredictor
         
         std::vector<RASInflightEntry> inflightStack;
 
-        RASMeta meta;
+        std::shared_ptr<RASMeta> meta;
 
 
 };

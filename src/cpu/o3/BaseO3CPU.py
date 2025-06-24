@@ -58,6 +58,9 @@ class CommitPolicy(ScopedEnum):
 class ROBWalkPolicy(ScopedEnum):
     vals = [ 'Rollback', 'Replay', 'ConstCycle', 'NaiveCpt', 'ConfidentCpt' ]
 
+class ROBCompressPolicy(ScopedEnum):
+    vals = [ 'none', 'kmhv2', 'MohBoE' ,'kmhv3' ]
+
 class PerfRecord(ScopedEnum):
     vals = [
         # position tick
@@ -122,7 +125,7 @@ class BaseO3CPU(BaseCPU):
                                    "delay")
     commitToFetchDelay = Param.Cycles(3, "Commit to fetch delay")
     fetchWidth = Param.Unsigned(16, "Fetch width")
-    fetchBufferSize = Param.Unsigned(64, "Fetch buffer size in bytes")
+    fetchBufferSize = Param.Unsigned(66, "Fetch buffer size in bytes")
     fetchQueueSize = Param.Unsigned(48, "Fetch queue size in micro-ops "
                                     "per-thread")
 
@@ -213,7 +216,8 @@ class BaseO3CPU(BaseCPU):
     numPhysRMiscRegs = Param.Unsigned(40, "Number of physical renameable misc registers")
 
     # rob config
-    numRobs = Param.Unsigned(1, "Number of Reorder Buffers");
+    numRobs = Param.Unsigned(1, "Number of Reorder Buffers")
+    RobCompressPolicy = Param.ROBCompressPolicy('kmhv2', "Reorder Buffer Compression Policy")
     numROBEntries = Param.Unsigned(160, "Number of reorder buffer entries")
     CROB_instPerGroup = Param.Unsigned(6, "Max number of inst per group")
     phyregReleaseWidth = Param.Unsigned(6, "Physical register dealloc width")
@@ -241,3 +245,4 @@ class BaseO3CPU(BaseCPU):
 
     store_prefetch_train = Param.Bool(True, "Training store prefetcher with store addresses")
 
+    enableConstantFolding = Param.Bool(False, "Enable Constant Folding (add-immediate elimination)")

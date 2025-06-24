@@ -99,6 +99,14 @@ Commit::processTrapEvent(ThreadID tid)
 
 Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUParams &params)
     : commitPolicy(params.smtCommitPolicy),
+      stuckCheckEvent([this](){
+        if (cpu->curCycle() - this->lastCommitCycle > 40000) {
+            panic("Commit stage is stucked for more than 40,000 cycles!\n"
+                  "Last commit cycle: %lu, current cycle: %lu\n",
+                  lastCommitCycle, cpu->curCycle());
+        }
+        cpu->schedule(this->stuckCheckEvent, cpu->clockEdge(Cycles(40010)));
+      }, "CommitStuckCheckEvent"),
       cpu(_cpu),
       bp(_bp),
       iewToCommitDelay(params.iewToCommitDelay),
@@ -174,6 +182,8 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
     faultNum.insert(RiscvISA::ExceptionCode::LOAD_G_PAGE);
     faultNum.insert(RiscvISA::ExceptionCode::STORE_G_PAGE);
 
+    cpu->schedule(stuckCheckEvent,
+                   cpu->clockEdge(Cycles(40000)));
 }
 
 std::string Commit::name() const { return cpu->name() + ".commit"; }
@@ -738,17 +748,6 @@ Commit::tick()
 
     if (activeThreads->empty())
         return;
-
-    if (cpu->curCycle() - lastCommitCycle > 20000) {
-        if (maybeStucked) {
-            warn("[sn:%s] %s", rob->head->get()->seqNum, rob->head->get()->staticInst->disassemble(0));
-            panic("cpu stucked!!\n");
-        }
-        warn("cpu may be stucked\n");
-        maybeStucked = true;
-    } else {
-        maybeStucked = false;
-    }
 
     std::list<ThreadID>::iterator threads = activeThreads->begin();
     std::list<ThreadID>::iterator end = activeThreads->end();
@@ -1428,7 +1427,7 @@ Commit::commitInsts()
 
 void
 Commit::diffInst(ThreadID tid, const DynInstPtr &inst) {
-    cpu->diffInfo.lastCommittedMsg.push(inst->genDisassembly());
+    cpu->diffInfo.lastCommittedMsg.push(inst);
     if (cpu->diffInfo.lastCommittedMsg.size() > 20) {
         cpu->diffInfo.lastCommittedMsg.pop();
     }
@@ -1438,8 +1437,7 @@ Commit::diffInst(ThreadID tid, const DynInstPtr &inst) {
         const auto &dest = inst->destRegIdx(i);
         if ((dest.isFloatReg() || dest.isIntReg()) && !dest.isZeroReg()) {
             cpu->diffInfo.scalarResults.at(i) = cpu->getArchReg(dest, tid);
-        } else if (dest.isVecReg()) {
-            assert(i == 0);
+        } else if (dest.isVecReg() && dest.index() < 32) {
             cpu->getArchReg(dest, &(cpu->diffInfo.vecResult), tid);
         }
     }
@@ -1695,10 +1693,10 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
     // Update the commit rename map
     for (int i = 0; i < head_inst->numDestRegs(); i++) {
         renameMap[tid]->setEntry(head_inst->flattenedDestIdx(i),
-                                 head_inst->renamedDestIdx(i));
-        DPRINTF(Commit, "Committing rename map entry %s -> p%i\n",
+                                 head_inst->extRenamedDestIdx(i));
+        DPRINTF(Commit, "Committing rename map entry %s -> %s\n",
                 head_inst->destRegIdx(i),
-                head_inst->renamedDestIdx(i)->flatIndex());
+                head_inst->extRenamedDestIdx(i).toString());
     }
 
     // hardware transactional memory
@@ -1816,7 +1814,7 @@ Commit::updateComInstStats(const DynInstPtr &inst)
 
     // To match the old model, don't count nops and instruction
     // prefetches towards the total commit count.
-    if ((!inst->isNop() || inst->staticInst->isMov()) &&
+    if (!inst->isNop() &&
         !inst->isInstPrefetch()) {
         cpu->instDone(tid, inst);
     }
@@ -1850,8 +1848,8 @@ Commit::updateComInstStats(const DynInstPtr &inst)
                     it.pc, it.target);
         }
         DPRINTF(DecoupleBP, "End\n");
-        
-       
+
+
         stats.branches[tid]++;
     }
 
@@ -1885,27 +1883,12 @@ Commit::updateComInstStats(const DynInstPtr &inst)
     if (inst->isVector()) {
         stats.vectorInstructions[tid]++;
         if (!inst->isMicroop() || inst->isLastMicroop()) {
-            auto vecInst = dynamic_cast<RiscvISA::VectorMicroInst *>(inst->staticInst.get());
             if (inst->opClass() == enums::VectorSegUnitStrideLoad) {
-                stats.segUnitStrideNF.sample(vecInst->vmi.nf);
+                stats.segUnitStrideNF.sample(inst->staticInst->getNF());
             } else if (inst->opClass() == enums::VectorSegStridedLoad) {
-                stats.segStrideNF.sample(vecInst->vmi.nf);
+                stats.segStrideNF.sample(inst->staticInst->getNF());
             } else if (inst->opClass() == enums::VectorSegIndexedLoad) {
-                stats.segIndexedNF.sample(vecInst->vmi.nf);
-            }
-        }
-        if (inst->isMicroop()) {
-            auto vecInst = dynamic_cast<RiscvISA::VectorMicroInst *>(inst->staticInst.get());
-            if (vecInst->vma) {
-                stats.vectorVma++;
-            } else {
-                stats.vectorVmu++;
-            }
-
-            if (vecInst->vta) {
-                stats.vectorVta++;
-            } else {
-                stats.vectorVtu++;
+                stats.segIndexedNF.sample(inst->staticInst->getNF());
             }
         }
     }

@@ -53,8 +53,8 @@ class LoopBuffer
         desc.pc = pc;
         return desc;
     }
-    std::map<Addr, std::vector<InstDesc>> specLoopInsts;
-    
+    std::unordered_map<Addr, std::vector<InstDesc>> specLoopInsts;
+
     
     // used in loop
     std::pair<Addr, std::vector<InstDesc>> loopInsts;

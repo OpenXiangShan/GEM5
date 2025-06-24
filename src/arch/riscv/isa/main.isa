@@ -50,11 +50,12 @@ namespace RiscvISA;
 //Include the operand_types and operand definitions
 ##include "operands.isa"
 
-//Include the definitions for the instruction templates
-##include "templates/templates.isa"
-
 //Include the definitions for the instruction formats
 ##include "formats/formats.isa"
+
+//Include the riscv vector implementation
+//Must Include this before "decoder.isa"
+##include "vector/$(rvv_impl)/base.isa"
 
 //Include the decoder definition
 ##include "decoder.isa"

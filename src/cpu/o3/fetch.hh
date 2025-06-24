@@ -41,6 +41,7 @@
 #ifndef __CPU_O3_FETCH_HH__
 #define __CPU_O3_FETCH_HH__
 
+#include <cstring>
 #include <utility>
 
 #include "arch/generic/decoder.hh"
@@ -52,9 +53,9 @@
 #include "cpu/o3/limits.hh"
 #include "cpu/pc_event.hh"
 #include "cpu/pred/bpred_unit.hh"
-#include "cpu/pred/stream/decoupled_bpred.hh"
-#include "cpu/pred/ftb/decoupled_bpred.hh"
 #include "cpu/pred/btb/decoupled_bpred.hh"
+#include "cpu/pred/ftb/decoupled_bpred.hh"
+#include "cpu/pred/stream/decoupled_bpred.hh"
 #include "cpu/timebuf.hh"
 #include "cpu/translation.hh"
 #include "enums/SMTFetchPolicy.hh"
@@ -283,15 +284,54 @@ class Fetch
     void switchToInactive();
 
     /**
-     * Looks up in the branch predictor to see if the next PC should be
-     * either next PC+=MachInst or a branch target.
-     * @param next_PC Next PC variable passed in by reference.  It is
-     * expected to be set to the current PC; it will be updated with what
-     * the next PC will be.
-     * @param next_NPC Used for ISAs which use delay slots.
-     * @return Whether or not a branch was predicted as taken.
+     * initialize the state for this tick cycle
+     * @return whether there is a status change
      */
-    bool lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &pc);
+    bool initializeTickState();
+
+    /**
+     * execute fetch and process instructions
+     * @param status_change status change flag
+     */
+    void fetchAndProcessInstructions(bool status_change);
+
+    /**
+     * handle interrupts and perform related operations
+     */
+    void handleInterrupts();
+
+    /**
+     * send instructions to decode stage
+     * update stall reasons and measure frontend bubbles
+     */
+    void sendInstructionsToDecode();
+
+    /**
+     * update stall reasons based on fetch status
+     * @param insts_to_decode number of instructions to send to decode stage
+     * @param tid thread ID
+     */
+    void updateStallReasons(unsigned insts_to_decode, ThreadID tid);
+
+    /**
+     * measure frontend performance bubbles
+     * @param insts_to_decode number of instructions to send to decode stage
+     * @param tid thread ID
+     */
+    void measureFrontendBubbles(unsigned insts_to_decode, ThreadID tid);
+
+    /**
+     * update branch predictors
+     */
+    void updateBranchPredictors();
+
+    /**
+     * Looks up the branch predictor, gets a prediction, and updates the PC.
+     * @param inst The dynamic instruction object.
+     * @param next_pc The PC state to update with the prediction.
+     * @return true if a branch was predicted taken.
+     */
+    bool lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc);
 
     /**
      * Fetches the cache line that contains the fetch PC.  Returns any
@@ -307,20 +347,44 @@ class Fetch
     bool fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc);
     void finishTranslation(const Fault &fault, const RequestPtr &mem_req);
 
+    /** Handle misaligned fetch that spans two cache lines.
+     * Creates and sends two separate cache requests.
+     * @param vaddr Starting virtual address
+     * @param tid Thread ID
+     * @param pc Program counter
+     * @return true if requests were successfully initiated
+     */
+    bool handleMisalignedFetch(Addr vaddr, ThreadID tid, Addr pc);
+
+    /** Handle normal aligned fetch within a single cache line.
+     * @param vaddr Virtual address to fetch from
+     * @param tid Thread ID
+     * @param pc Program counter
+     * @return true if request was successfully initiated
+     */
+    bool handleAlignedFetch(Addr vaddr, ThreadID tid, Addr pc);
+
+    /** Process misaligned fetch completion when both packets have arrived.
+     * Merges data from both cache lines into the fetch buffer.
+     * @param tid Thread ID
+     * @param pkt Most recently arrived packet
+     * @return Merged packet if both packets have arrived, nullptr otherwise
+     */
+    PacketPtr processMisalignedCompletion(ThreadID tid, PacketPtr pkt);
 
     /** Check if an interrupt is pending and that we need to handle
      */
     bool checkInterrupt(Addr pc) { return interruptPending; }
 
     /** Squashes a specific thread and resets the PC. */
-    void doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqNum seqNum,
+    void doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqNum seqNum,
             ThreadID tid);
 
     /** Squashes a specific thread and resets the PC. Also tells the CPU to
      * remove any instructions between fetch and decode
      *  that should be sqaushed.
      */
-    void squashFromDecode(const PCStateBase &new_pc,
+    void squashFromDecode(PCStateBase &new_pc,
                           const DynInstPtr squashInst,
                           const InstSeqNum seq_num, ThreadID tid);
 
@@ -336,7 +400,7 @@ class Fetch
      * remove any instructions that are not in the ROB. The source of this
      * squash should be the commit stage.
      */
-    void squash(const PCStateBase &new_pc, const InstSeqNum seq_num,
+    void squash(PCStateBase &new_pc, const InstSeqNum seq_num,
                 DynInstPtr squashInst, ThreadID tid);
 
     /** Ticks the fetch stage, processing all inputs signals and fetching
@@ -355,12 +419,6 @@ class Fetch
      * change (ie switching to IcacheMissStall).
      */
     void fetch(bool &status_change);
-
-    /** Align a PC to the start of a fetch buffer block. */
-    Addr fetchBufferAlignPC(Addr addr)
-    {
-        return (addr & ~(fetchBufferMask));
-    }
 
     /** The decoder. */
     InstDecoder *decoder[MaxThreads];
@@ -406,6 +464,66 @@ class Fetch
     /** Set the reasons of all fetch stalls. */
     void setAllFetchStalls(StallReason stall);
 
+    /** Select the thread to fetch from.
+     * @return Thread ID to fetch from, or InvalidThreadID if none available
+     */
+    ThreadID selectFetchThread();
+
+    /** Check decoupled frontend (FTQ) availability.
+     * @param tid Thread ID
+     * @return true if frontend is ready for fetch, false otherwise
+     */
+    bool checkDecoupledFrontend(ThreadID tid);
+
+    /** Prepare fetch address and handle status transitions.
+     * @param tid Thread ID
+     * @param status_change Reference to status change flag
+     * @return true if ready to fetch, false if stalled/idle
+     */
+    bool prepareFetchAddress(ThreadID tid, bool &status_change);
+
+    /**
+     * The main instruction fetching logic, which processes instructions
+     * for a given thread up to the fetch width.
+     * @param tid The thread ID to fetch for.
+     */
+    void performInstructionFetch(ThreadID tid);
+
+    /**
+     * Processes a single instruction, including decoding, building the
+     * dynamic instruction, handling branch prediction, and updating the PC.
+     *
+     * @param tid The thread ID of the instruction.
+     * @param pc The current program counter state (will be updated).
+     * @param curMacroop The current macro-op being processed (if any).
+     * @return true if a branch was predicted.
+     */
+    bool
+    processSingleInstruction(ThreadID tid, PCStateBase &pc,
+                             StaticInstPtr &curMacroop);
+
+    /**
+     * Checks if the decoder requires more memory to proceed and fetches
+     * a cache line if necessary.
+     * @param tid The thread ID to check for.
+     * @param this_pc Current PC state
+     * @param curMacroop Current macroop (if any)
+     * @return StallReason if stalled, NoStall otherwise
+     */
+    StallReason checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
+                                 const StaticInstPtr &curMacroop);
+
+
+    /**
+     * Looks up the branch predictor, gets a prediction, and updates the PC.
+     * @param inst The dynamic instruction object.
+     * @param next_pc The PC state to update with the prediction.
+     * @param predictedBranch Flag indicating if a branch was predicted.
+     * @param newMacro Flag indicating if we are moving to a new macro-op.
+     */
+    void
+    lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc,
+                         bool &predictedBranch, bool &newMacro);
 
   private:
     /** Pointer to the O3CPU. */
@@ -441,9 +559,6 @@ class Fetch
 
     /** PC of each thread. */
     std::unique_ptr<PCStateBase> pc[MaxThreads];
-
-    /** Fetch offset of each thread. */
-    Addr fetchOffset[MaxThreads];
 
     /** Macroop of each thread. */
     StaticInstPtr macroop[MaxThreads];
@@ -504,29 +619,95 @@ class Fetch
     /** Cache block size. */
     unsigned int cacheBlkSize;
 
-    /** The size of the fetch buffer in bytes. The fetch buffer
-     *  itself may be smaller than a cache line.
+    /**
+     * Fetch buffer structure to encapsulate instruction fetch data.
+     * Encapsulates buffer data, PC tracking, validity state, and size.
+     * Designed to prepare for 2fetch implementation with potential multi-stream support.
+     */
+    struct FetchBuffer
+    {
+        /** Pointer to the fetch data buffer */
+        uint8_t *data;
+
+        /** PC of the first instruction loaded into the fetch buffer */
+        Addr startPC;
+
+        /** Whether the fetch buffer data is valid */
+        bool valid;
+
+        /** Size of the fetch buffer in bytes. Set by Fetch class during init. */
+        unsigned size;
+
+        /** Constructor initializes buffer with default size */
+        FetchBuffer() : data(nullptr), startPC(0), valid(false), size(0) {
+        }
+
+        /** Destructor is not needed as Fetch class manages memory */
+        ~FetchBuffer() {
+        }
+
+        /** Reset buffer state */
+        void reset() {
+            valid = false;
+            startPC = 0;
+            // No need to clear data as it will be overwritten
+        }
+
+        /** Check if a PC is within the current buffer range */
+        bool contains(Addr pc) const {
+            return valid && (pc >= startPC) && (pc < startPC + size);
+        }
+
+        /** Get offset of PC within the buffer */
+        unsigned getOffset(Addr pc) const {
+            assert(contains(pc));
+            return pc - startPC;
+        }
+
+        /** Set buffer data and update metadata */
+        void setData(Addr pc, const uint8_t* src_data, unsigned bytes_copied) {
+            startPC = pc;
+            valid = true;
+            memcpy(data, src_data, bytes_copied);
+        }
+
+        /** Get end PC of the buffer */
+        Addr getEndPC() const {
+            return startPC + size;
+        }
+    };
+
+    /** Fetch buffer for each thread */
+    FetchBuffer fetchBuffer[MaxThreads];
+
+    /** The size of the fetch buffer in bytes. Default is 66 bytes,
+    *  make sure we could decode tail 4bytes if it is in [62, 66)
      */
     unsigned fetchBufferSize;
 
-    /** Mask to align a fetch address to a fetch buffer boundary. */
-    Addr fetchBufferMask;
+    // Constants for misaligned fetch handling
+    static constexpr unsigned CACHE_LINE_SIZE_BYTES = 64;
 
-    /** The fetch data that is being fetched and buffered. */
-    uint8_t *fetchBuffer[MaxThreads];
-
-    /** The PC of the first instruction loaded into the fetch buffer. */
-    Addr fetchBufferPC[MaxThreads];
-
-    /** Indicating whether the fetch request is mis-aligned*/
+    /** Indicates whether the current fetch request spans across cache line boundaries.
+     *  When true, the fetch requires two separate cache line accesses that will
+     *  be merged into a single fetch buffer.
+     */
     bool fetchMisaligned[MaxThreads];
 
-    /** The information of access including the address of two requests*/
+    /** Stores access information for misaligned fetches.
+     *  First: original virtual address, Second: address of second cache line
+     */
     std::pair<Addr, Addr> accessInfo[MaxThreads];
 
-    PacketPtr firstPkt[MaxThreads];
+    /** Packet pointer for the first cache line in a misaligned fetch.
+     *  Contains data from the tail of the first cache line.
+     */
+    PacketPtr firstCacheLinePkt[MaxThreads];
 
-    PacketPtr secondPkt[MaxThreads];
+    /** Packet pointer for the second cache line in a misaligned fetch.
+     *  Contains data from the head of the second cache line.
+     */
+    PacketPtr secondCacheLinePkt[MaxThreads];
 
     /** The size of the fetch queue in micro-ops */
     unsigned fetchQueueSize;
@@ -534,19 +715,7 @@ class Fetch
     /** Queue of fetched instructions. Per-thread to prevent HoL blocking. */
     std::deque<DynInstPtr> fetchQueue[MaxThreads];
 
-    /** Whether or not the fetch buffer data is valid. */
-    bool fetchBufferValid[MaxThreads];
-
-    /** Loop buffer with unrolling */
-    // TODO: use the same loop buffer for both of them
-    branch_prediction::ftb_pred::LoopBuffer *loopBuffer;
-
-    bool enableLoopBuffer{false};
-
-    unsigned currentLoopIter{0};
-
-    /** Size of instructions. */
-    int instSize;
+    unsigned currentLoopIter{0};  // todo: remove this
 
     /** Icache stall statistics. */
     Counter lastIcacheStall[MaxThreads];
@@ -596,6 +765,12 @@ class Fetch
     std::pair<Addr, std::vector<branch_prediction::ftb_pred::LoopBuffer::InstDesc>> currentFtqEntryInsts;
 
     bool notTakenBranchEncountered{false};
+
+    /** Check if we need a new FTQ entry for fetch */
+    bool needNewFTQEntry(ThreadID tid);
+
+    /** Get the start PC of the next FTQ entry and update fetchBufferPC */
+    Addr getNextFTQStartPC(ThreadID tid);
 
   protected:
     struct FetchStatGroup : public statistics::Group
@@ -679,8 +854,15 @@ public:
     const FetchStatGroup &getFetchStats() { return fetchStats; }
 
   private:
-    uint8_t* firstDataBuf;
-    uint8_t* secondDataBuf;
+    /** Temporary buffer to store data from the first cache line in misaligned fetch.
+     *  Used during packet merging process.
+     */
+    uint8_t* firstCacheLineDataBuf;
+
+    /** Temporary buffer to store data from the second cache line in misaligned fetch.
+     *  Used during packet merging process.
+     */
+    uint8_t* secondCacheLineDataBuf;
 
     bool waitForVsetvl = false;
 };

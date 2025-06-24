@@ -212,6 +212,15 @@ class Clocked
      */
     Tick nextCycle() const { return clockEdge(Cycles(1)); }
 
+    /**
+     * Calculate current CPU cycle for debug printing purposes.
+     * This provides a convenient way to convert current tick to cycle count
+     * without using magic numbers.
+     *
+     * @return Current cycle count based on this object's clock domain
+     */
+    uint64_t cpuCycle() const { return curTick() / clockPeriod(); }
+
     uint64_t frequency() const { return sim_clock::Frequency / clockPeriod(); }
 
     Tick clockPeriod() const { return clockDomain.clockPeriod(); }

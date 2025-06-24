@@ -154,6 +154,7 @@ def build_test_system(np):
             cpu.scheduler = DefaultScheduler()
             cpu.mmu.pma_checker = PMAChecker(
                 uncacheable=[AddrRange(0, size=0x80000000)])
+            cpu.mmu.functional = args.functional_tlb
     if args.enable_arch_db:
         test_sys.arch_db = ArchDBer(arch_db_file=args.arch_db_file)
         test_sys.arch_db.dump_from_start = args.arch_db_fromstart

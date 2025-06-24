@@ -1,0 +1,11 @@
+Import('*')
+
+SimObject('WayPredictionPolicies.py', sim_objects=[
+    'BaseWpu', 'MRUWpu', 'MMRUWpu', 'UTagWpu', 'IndexMRUWpu', 'RandomWpu'])
+
+Source('base_wpu.cc')
+Source('mru_wpu.cc')
+Source('mmru_wpu.cc')
+Source('utag_wpu.cc')
+Source('index_mru_wpu.cc')
+Source('random_wpu.cc')

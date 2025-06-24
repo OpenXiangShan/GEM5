@@ -59,6 +59,7 @@ BTBRAS::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
                   std::vector<FullBTBPrediction> &stagePreds)
 {
     assert(getDelay() < stagePreds.size());
+    meta = std::make_shared<RASMeta>();
     DPRINTFR(RAS, "putPC startAddr %x", startAddr);
     // checkCorrectness();
     for (int i = getDelay(); i < stagePreds.size(); i++) {
@@ -74,8 +75,7 @@ BTBRAS::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
 std::shared_ptr<void>
 BTBRAS::getPredictionMeta()
 {
-    std::shared_ptr<void> meta_void_ptr = std::make_shared<RASMeta>(meta);
-    return meta_void_ptr;
+    return meta;
 }
 
 void
@@ -103,7 +103,7 @@ BTBRAS::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction
     
     if (takenEntry.isCall || takenEntry.isReturn)
         printStack("after specUpdateHist");
-    DPRINTFR(RAS, "meta TOSR %d TOSW %d\n", meta.TOSR, meta.TOSW);
+    DPRINTFR(RAS, "meta TOSR %d TOSW %d\n", meta->TOSR, meta->TOSW);
 }
 
 void
@@ -346,11 +346,11 @@ BTBRAS::getTop_meta() {
     if (inflightInRange(TOSR)) {
         // result come from inflight queue
         DPRINTF(RAS, "Select from inflight, addr %x\n", inflightStack[TOSR].data.retAddr);
-        meta.ssp = ssp;
-        meta.sctr = sctr;
-        meta.TOSR = TOSR;
-        meta.TOSW = TOSW;
-        meta.target = inflightStack[TOSR].data.retAddr;
+        meta->ssp = ssp;
+        meta->sctr = sctr;
+        meta->TOSR = TOSR;
+        meta->TOSW = TOSW;
+        meta->target = inflightStack[TOSR].data.retAddr;
 
         // additional check: if nos is out of bound, check if commit stack top == inflight[nos]
         /*
@@ -366,12 +366,12 @@ BTBRAS::getTop_meta() {
         return inflightStack[TOSR].data;
     } else {
         // result come from commit queue
-        meta.ssp = ssp;
-        meta.sctr = sctr;
-        meta.TOSR = TOSR;
-        meta.TOSW = TOSW;
+        meta->ssp = ssp;
+        meta->sctr = sctr;
+        meta->TOSR = TOSR;
+        meta->TOSW = TOSW;
+        meta->target = stack[ssp].data.retAddr;
         DPRINTF(RAS, "Select from stack, addr %x\n", stack[ssp].data.retAddr);
-        meta.target = stack[ssp].data.retAddr;
         return stack[ssp].data;
     }
 }

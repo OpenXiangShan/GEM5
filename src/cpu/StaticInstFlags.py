@@ -52,12 +52,14 @@ class StaticInstFlags(Enum):
         'IsOper64',
         'IsHInst',
         'IsNop',            # Is a no-op (no effect at all).
-        'IsMov',
+        'IsMov',            # Move elimination
+        'IsAddImm',         # Constant folding: addi and addi.w elimination
 
         'IsInteger',        # References integer regs.
         'IsFloating',       # References FP regs.
         'IsVector',         # References Vector regs.
         'IsVectorElem',     # References Vector reg elems.
+        'IsSegLoad',        # is segment load in RVV
 
         'IsLoad',           # Reads from memory (load or prefetch).
         'IsStore',          # Writes to memory.

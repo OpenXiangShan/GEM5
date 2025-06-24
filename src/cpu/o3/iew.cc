@@ -697,7 +697,7 @@ IEW::cacheUnblocked()
 }
 
 void
-IEW::instToCommit(const DynInstPtr& inst)
+IEW::readyToFinish(const DynInstPtr& inst)
 {
     // This function should not be called after writebackInsts in a
     // single cycle.  That will cause problems with an instruction
@@ -1129,7 +1129,7 @@ IEW::dispatchInstFromRename(ThreadID tid)
                 inst->clearHtmTransactionalState();
             }
 
-            if (!inst->isNop()) {
+            if (!inst->isNop() && !inst->isEliminated()) {
                 scheduler->addProducer(inst);
             }
 
@@ -1177,11 +1177,11 @@ IEW::dispatchInstFromRename(ThreadID tid)
                 inst->setCanCommit();
                 instQueue.insertBarrier(inst);
                 add_to_iq = false;
-            } else if (inst->isNop()) {
+            } else if (inst->isNop() || inst->isEliminated()) {
                 DPRINTF(IEW,
-                        "[tid:%i] Dispatch: Nop instruction encountered, "
+                        "[tid:%i] Dispatch: Nop instruction [sn:%llu] encountered, "
                         "skipping.\n",
-                        tid);
+                        tid, inst->seqNum);
                 inst->setIssued();
                 inst->setExecuted();
                 inst->setCanCommit();
@@ -1247,6 +1247,9 @@ IEW::dispatchInstFromRename(ThreadID tid)
         block(tid);
         iewStats.stallEvents[DispBWFull]++;
         toRename->iewUnblock[tid] = false;
+        disp_stall = true;
+    } else {
+        disp_stall = false;
     }
 
     if (dispatchStatus[tid] == Idle && insts_to_add) {
@@ -1330,7 +1333,7 @@ IEW::classifyInstToDispQue(ThreadID tid)
             ++iewStats.dispatchedInsts;
             dispQue[id].push_back(inst);
 
-            if (!inst->isNop()) {
+            if (!inst->isNop() && !inst->isEliminated()) {
                 scheduler->addProducer(inst);
             }
 
@@ -1378,6 +1381,9 @@ IEW::classifyInstToDispQue(ThreadID tid)
         block(tid);
         iewStats.stallEvents[DispBWFull]++;
         toRename->iewUnblock[tid] = false;
+        disp_stall = true;
+    } else {
+        disp_stall = false;
     }
 
     if (dispatchStatus[tid] == Idle && insts_to_add) {
@@ -1479,9 +1485,9 @@ IEW::dispatchInstFromDispQue(ThreadID tid)
                 inst->setCanCommit();
                 instQueue.insertBarrier(inst);
                 add_to_iq = false;
-            } else if (inst->isNop()) {
-                DPRINTF(IEW, "[tid:%i] Dispatch: Nop instruction encountered, "
-                        "skipping.\n", tid);
+            } else if (inst->isNop() || inst->isEliminated()) {
+                DPRINTF(IEW, "[tid:%i] Dispatch: Nop instruction [sn:%llu] encountered, "
+                        "skipping.\n", tid, inst->seqNum);
 
                 inst->setIssued();
                 inst->setExecuted();
@@ -1511,6 +1517,7 @@ IEW::dispatchInstFromDispQue(ThreadID tid)
             // If the instruction queue is not full, then add the
             // instruction.
             if (add_to_iq) {
+                DPRINTF(IEW, "[tid:%i] Dispatch: [sn:%llu] dispatched to IQ.\n", tid, inst->seqNum);
                 instQueue.insert(inst, disp_seq);
             }
             ++dis_num_inst;
@@ -1736,13 +1743,13 @@ IEW::executeInsts()
 
             if (!inst->isSplitStoreData()) {
                 inst->setExecuted();
-                instToCommit(inst);
+                readyToFinish(inst);
             } else {
                 DPRINTF(IEW, "Execute: Split store data, [sn:%lli]\n", inst->seqNum);
                 // STD is ready, wake up corresponding load if any
                 instQueue.resolveSTLFFailInst(inst->seqNum);
                 if (inst->sqIt->splitStoreFinish()) {
-                    instToCommit(inst->sqIt->instruction());
+                    readyToFinish(inst->sqIt->instruction());
                 }
             }
         }

@@ -70,52 +70,57 @@ SimpleRenameMap::init(const RegClass &reg_class, SimpleFreeList *_freeList)
 }
 
 SimpleRenameMap::RenameInfo
-SimpleRenameMap::rename(const RegId &arch_reg,
-                        const PhysRegIdPtr provided_dest)
+SimpleRenameMap::rename(const RegId &arch_reg, const VirtRegId& bypass_reg)
 {
-    PhysRegIdPtr renamed_reg;
+    VirtRegId renamed_reg = VirtRegId();
     // Record the current physical register that is renamed to the
     // requested architected register.
-    PhysRegIdPtr prev_reg = map[arch_reg.index()];
+    VirtRegId prev_reg = map[arch_reg.index()];
 
     if (arch_reg.is(InvalidRegClass)) {
-        assert(prev_reg->is(InvalidRegClass));
+        assert(prev_reg.PhyReg()->is(InvalidRegClass));
         renamed_reg = prev_reg;
-    } else if (provided_dest != nullptr) {
-        renamed_reg = provided_dest;
-        if (prev_reg != provided_dest) {
-            map[arch_reg.index()] = provided_dest;
-            renamed_reg->incRef();
-            DPRINTF(Rename, "Increment the ex ref of p%i to %i\n",
-                    renamed_reg->flatIndex(), renamed_reg->getRef());
+    } else if (bypass_reg.PhyReg() != nullptr) {
+
+        // Move elimination & Constant folding
+        renamed_reg = bypass_reg;
+
+        // New mapping
+        map[arch_reg.index()] = renamed_reg;
+
+        if (prev_reg.PhyReg() != bypass_reg.PhyReg()) {
+            // A new archReg map to the same physReg
+            renamed_reg.PhyReg()->incRef();
+            DPRINTF(Rename, "Increment the refcnt of p%i to %i\n",
+                    renamed_reg.PhyReg()->flatIndex(), renamed_reg.PhyReg()->getRef());
         } else {
             DPRINTF(Rename,
                     "Provided destination is the same as the previous one, "
                     "leave ref counter untouched\n");
         }
-    } else if (prev_reg->getNumPinnedWrites() > 0) {
+    } else if (prev_reg.PhyReg()->getNumPinnedWrites() > 0) {
         // Do not rename if the register is pinned
         assert(arch_reg.getNumPinnedWrites() == 0);  // Prevent pinning the
                                                      // same register twice
         DPRINTF(Rename, "Renaming pinned reg, numPinnedWrites %d\n",
-                prev_reg->getNumPinnedWrites());
+                prev_reg.PhyReg()->getNumPinnedWrites());
         renamed_reg = prev_reg;
-        renamed_reg->decrNumPinnedWrites();
+        renamed_reg.PhyReg()->decrNumPinnedWrites();
     } else {
-        renamed_reg = freeList->getReg();
-        DPRINTF(Rename, "Get free reg p%i\n", renamed_reg->flatIndex());
+        renamed_reg.setPhyReg(freeList->getReg());
+        DPRINTF(Rename, "Get free reg p%i\n", renamed_reg.PhyReg()->flatIndex());
         map[arch_reg.index()] = renamed_reg;
-        renamed_reg->setNumPinnedWrites(arch_reg.getNumPinnedWrites());
-        renamed_reg->setNumPinnedWritesToComplete(
+        renamed_reg.PhyReg()->setNumPinnedWrites(arch_reg.getNumPinnedWrites());
+        renamed_reg.PhyReg()->setNumPinnedWritesToComplete(
             arch_reg.getNumPinnedWrites() + 1);
-        DPRINTF(Rename, "Increment the ex ref of p%i to %i\n",
-                renamed_reg->flatIndex(), renamed_reg->getRef());
+        DPRINTF(Rename, "set refcnt of p%i to %i\n",
+                renamed_reg.PhyReg()->flatIndex(), renamed_reg.PhyReg()->getRef());
     }
 
     DPRINTF(Rename, "Renamed reg %d to physical reg %d (%d) old mapping was"
             " %d (%d)\n",
-            arch_reg, renamed_reg->flatIndex(), renamed_reg->flatIndex(),
-            prev_reg->flatIndex(), prev_reg->flatIndex());
+            arch_reg, renamed_reg.PhyReg()->flatIndex(), renamed_reg.PhyReg()->flatIndex(),
+            prev_reg.PhyReg()->flatIndex(), prev_reg.PhyReg()->flatIndex());
 
     return RenameInfo(renamed_reg, prev_reg);
 }

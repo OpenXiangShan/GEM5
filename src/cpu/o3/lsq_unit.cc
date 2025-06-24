@@ -67,6 +67,7 @@
 #include "debug/LSQUnit.hh"
 #include "debug/O3PipeView.hh"
 #include "debug/StoreBuffer.hh"
+#include "debug/StorePipeline.hh"
 #include "mem/packet.hh"
 #include "mem/packet_access.hh"
 #include "mem/request.hh"
@@ -79,10 +80,15 @@ namespace o3
 {
 
 void
-StoreBufferEntry::reset(uint64_t block_vaddr, uint64_t block_paddr, uint64_t offset, uint8_t *datas, uint64_t size)
+StoreBufferEntry::reset(uint64_t block_vaddr, uint64_t block_paddr, uint64_t offset, uint8_t *datas, uint64_t size,
+                        const std::vector<bool> &mask)
 {
     std::fill(validMask.begin(), validMask.begin() + offset, false);
-    std::fill(validMask.begin() + offset, validMask.begin() + offset + size, true);
+
+    for (int i = 0; i < size; i++) {
+        validMask[offset + i] = mask[i];
+    }
+
     std::fill(validMask.begin() + offset + size, validMask.end(), false);
     memcpy(blockDatas.data() + offset, datas, size);
 
@@ -94,12 +100,14 @@ StoreBufferEntry::reset(uint64_t block_vaddr, uint64_t block_paddr, uint64_t off
 }
 
 void
-StoreBufferEntry::merge(uint64_t offset, uint8_t *datas, uint64_t size)
+StoreBufferEntry::merge(uint64_t offset, uint8_t *datas, uint64_t size, const std::vector<bool> &mask)
 {
     assert(offset + size <= validMask.size());
     for (uint64_t i = 0; i < size; ++i) {
-        blockDatas[offset + i] = datas[i];
-        validMask[offset + i] = true;
+        if (mask[i]) {
+            blockDatas[offset + i] = datas[i];
+            validMask[offset + i] = true;
+        }
     }
 }
 
@@ -118,10 +126,10 @@ StoreBufferEntry::recordForward(RequestPtr req, LSQ::LSQRequest *lsqreq)
         if (vice && vice->validMask[offset + i]) {
             // vice is newer
             assert(vice->blockVaddr == blockVaddr);
-            lsqreq->forwardPackets.push_back(
+            lsqreq->SBforwardPackets.push_back(
                 LSQ::LSQRequest::FWDPacket{.idx = goffset + i, .byte = vice->blockDatas[offset + i]});
         } else if (validMask[offset + i]) {
-            lsqreq->forwardPackets.push_back(
+            lsqreq->SBforwardPackets.push_back(
                 LSQ::LSQRequest::FWDPacket{.idx = goffset + i, .byte = blockDatas[offset + i]});
         } else {
             full_forward = false;
@@ -262,7 +270,7 @@ LSQUnit::SQEntry::setStatus(SplitStoreStatus status)
     }
 }
 
-LSQUnit::WritebackEvent::WritebackEvent(const DynInstPtr &_inst,
+LSQUnit::WritebackRegEvent::WritebackRegEvent(const DynInstPtr &_inst,
         PacketPtr _pkt, LSQUnit *lsq_ptr)
     : Event(Default_Pri, AutoDelete),
       inst(_inst), pkt(_pkt), lsqPtr(lsq_ptr)
@@ -272,11 +280,11 @@ LSQUnit::WritebackEvent::WritebackEvent(const DynInstPtr &_inst,
 }
 
 void
-LSQUnit::WritebackEvent::process()
+LSQUnit::WritebackRegEvent::process()
 {
     assert(!lsqPtr->cpu->switchedOut());
 
-    lsqPtr->writeback(inst, pkt);
+    lsqPtr->writebackReg(inst, pkt);
 
     assert(inst->savedRequest);
     inst->savedRequest->writebackDone();
@@ -284,9 +292,9 @@ LSQUnit::WritebackEvent::process()
 }
 
 const char *
-LSQUnit::WritebackEvent::description() const
+LSQUnit::WritebackRegEvent::description() const
 {
-    return "Store writeback";
+    return "writeback to reg";
 }
 
 LSQUnit::bankConflictReplayEvent::bankConflictReplayEvent(LSQUnit *lsq_ptr)
@@ -339,7 +347,13 @@ LSQUnit::recvTimingResp(PacketPtr pkt)
     /* Check that the request is still alive before any further action. */
     if (!request->isReleased()) {
         ret = request->recvTimingResp(pkt);
+    } else if (request->instruction()) {
+        DPRINTF(LoadPipeline, "LSQUnit::recvTimingResp [sn:%lu] pkt: %s - ignored\n",
+                request->instruction()->seqNum, pkt->print());
+        request->instruction()->hasPendingCacheReq(false);
+        request->instruction()->pendingCacheReq = nullptr;
     }
+
     return ret;
 }
 
@@ -438,7 +452,7 @@ LSQUnit::completeDataAccess(PacketPtr pkt)
                     pkt->getHtmTransactionFailedInCacheRC() );
             }
 
-            writeback(inst, request->mainPacket());
+            writebackReg(inst, request->mainPacket());
             if (inst->isStore() || inst->isAtomic()) {
                 request->writebackDone();
                 completeStore(request->instruction()->sqIt);
@@ -850,10 +864,10 @@ LSQUnit::checkSnoop(PacketPtr pkt)
 
     DynInstPtr ld_inst = iter->instruction();
     assert(ld_inst);
-    LSQRequest *request = iter->request();
+    LSQRequest *request = ld_inst->savedRequest;
 
     // Check that this snoop didn't just invalidate our lock flag
-    if (ld_inst->effAddrValid() &&
+    if (ld_inst->effAddrValid() && request &&
         request->isCacheBlockHit(invalidate_addr, cacheBlockMask)
         && ld_inst->memReqFlags & Request::LLSC) {
         ld_inst->tcBase()->getIsaPtr()->handleLockedSnoopHit(ld_inst.get());
@@ -864,7 +878,7 @@ LSQUnit::checkSnoop(PacketPtr pkt)
     while (++iter != loadQueue.end()) {
         ld_inst = iter->instruction();
         assert(ld_inst);
-        request = iter->request();
+        request = ld_inst->savedRequest;// iter->request();
         if (!ld_inst->effAddrValid() || ld_inst->strictlyOrdered())
             continue;
 
@@ -872,7 +886,7 @@ LSQUnit::checkSnoop(PacketPtr pkt)
                     ld_inst->seqNum, invalidate_addr);
 
         if (force_squash ||
-            request->isCacheBlockHit(invalidate_addr, cacheBlockMask)) {
+            (request && request->isCacheBlockHit(invalidate_addr, cacheBlockMask))) {
             if (needsTSO) {
                 // If we have a TSO system, as all loads must be ordered with
                 // all other loads, this load as well as *all* subsequent loads
@@ -906,25 +920,6 @@ LSQUnit::checkSnoop(PacketPtr pkt)
         }
     }
     return;
-}
-
-bool
-LSQUnit::skipNukeReplay(const DynInstPtr& load_inst)
-{
-    // if the load_inst has been marked as `Nuke`
-    // load will be replayed, so no Raw violation happens.
-    if (lsq->enablePipeNukeCheck()) {
-        for (int i = 1; i <= 2; i++) {
-            // check loadPipe s1 & s2
-            auto& stage = loadPipeSx[i];
-            for (int j = 0; j < stage->size; j++) {
-                if (load_inst == stage->insts[j] && stage->flags[j][LdStFlags::Nuke]) {
-                    return true;
-                }
-            }
-        }
-    }
-    return false;
 }
 
 Fault
@@ -992,7 +987,7 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
                 // if this load has been marked as Nuke, the load will then be replayed
                 // So next time this load replaying to pipeline will forward from store correctly
                 // And no RAW violation happens
-                if (skipNukeReplay(ld_inst)) {
+                if (ld_inst->needNukeReplay()) {
                     ++loadIt;
                     continue;
                 }
@@ -1022,28 +1017,15 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
 }
 
 void
-LSQUnit::loadReplayHelper(DynInstPtr inst, LSQRequest* request, bool cacheMiss, bool fastReplay, bool dropReqNow)
+LSQUnit::loadSetReplay(DynInstPtr inst, LSQRequest* request, bool dropReqNow)
 {
     // clear state in this instruction
     inst->effAddrValid(false);
     // Reset DTB translation state
     inst->translationStarted(false);
     inst->translationCompleted(false);
-    if (cacheMiss) {
-        // set it as waiting for dcache refill
-        inst->waitingCacheRefill(true);
-        // insert to missed load replay queue
-        iewStage->cacheMissLdReplay(inst);
-    } else if (fastReplay) {
-        // insert to replayQ directly, replay at next cycle
-        inst->issueQue->retryMem(inst);
-    }
     // clear request in loadQueue
     loadQueue[inst->lqIdx].setRequest(nullptr);
-    // set replayed flag in pipeline
-    setFlagInPipeLine(inst, LdStFlags::Replayed);
-    // cancel subsequent dependent insts of this load
-    iewStage->loadCancel(inst);
     if (dropReqNow) {
         // discard this request
         request->discard();
@@ -1051,40 +1033,7 @@ LSQUnit::loadReplayHelper(DynInstPtr inst, LSQRequest* request, bool cacheMiss, 
         inst->savedRequest = nullptr;
     }
 
-    DPRINTF(LSQUnit, "[sn:%ld]Load Replayed Because of %s, dropReqNow: %d\n", inst->seqNum,
-            cacheMiss  ? "Cache Miss" :
-            fastReplay ? "Nuke Fast Replay": "Other Reason", dropReqNow);
-}
-
-void
-LSQUnit::setFlagInPipeLine(DynInstPtr inst, LdStFlags f)
-{
-    bool found = false;
-    if (inst->isLoad()) {
-        for (int i = (loadPipeSx.size() - 1); i >= 0; i--) {
-            for (int j = 0; j < loadPipeSx[i]->size; j++) {
-                if (inst == loadPipeSx[i]->insts[j]) {
-                    found = true;
-                    (loadPipeSx[i]->flags[j])[f] = true;
-                    break;
-                }
-            }
-        }
-    } else {
-        for (int i = (storePipeSx.size() - 1); i >= 0; i--) {
-            for (int j = 0; j < storePipeSx[i]->size; j++) {
-                if (inst == storePipeSx[i]->insts[j]) {
-                    found = true;
-                    (storePipeSx[i]->flags[j])[f] = true;
-                    break;
-                }
-            }
-        }
-    }
-
-    if (!found) {
-        panic("[sn:%ld] Can not found corresponding inst in PipeLine, isLoad: %d\n", inst->seqNum, inst->isLoad());
-    }
+    DPRINTF(LoadPipeline, "Load [sn:%ld] set replay, dropReqNow: %d\n", inst->seqNum, dropReqNow);
 }
 
 void
@@ -1092,14 +1041,14 @@ LSQUnit::issueToLoadPipe(const DynInstPtr &inst)
 {
     // push to loadPipeS0
     assert(loadPipeSx[0]->size < MaxWidth);
-    int idx = loadPipeSx[0]->size;
+    panic_if(inst->inPipe(), "load [sn:%llu] is already in pipeline", inst->seqNum);
+    inst->beginPipelining();
 
+    int idx = loadPipeSx[0]->size;
     loadPipeSx[0]->insts[idx] = inst;
-    loadPipeSx[0]->flags[idx][LdStFlags::Valid] = true;
     loadPipeSx[0]->size++;
 
-    DPRINTF(LSQUnit, "issueToLoadPipe: [sn:%lli]\n", inst->seqNum);
-    dumpLoadPipe();
+    DPRINTF(LoadPipeline, "issueToLoadPipe: [sn:%llu]\n", inst->seqNum);
 }
 
 void
@@ -1107,46 +1056,60 @@ LSQUnit::issueToStorePipe(const DynInstPtr &inst)
 {
     // push to storePipeS0
     assert(storePipeSx[0]->size < MaxWidth);
-    int idx = storePipeSx[0]->size;
+    panic_if(inst->inPipe(), "load [sn:%llu] is already in pipeline", inst->seqNum);
+    inst->beginPipelining();
 
+    int idx = storePipeSx[0]->size;
     storePipeSx[0]->insts[idx] = inst;
-    storePipeSx[0]->flags[idx][LdStFlags::Valid] = true;
     storePipeSx[0]->size++;
 
     DPRINTF(LSQUnit, "issueToStorePipe: [sn:%lli]\n", inst->seqNum);
-    dumpStorePipe();
 }
 
 Fault
-LSQUnit::loadPipeS0(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
+LSQUnit::loadDoTranslate(const DynInstPtr &inst)
 {
-    DPRINTF(LSQUnit, "LoadPipeS0: Executing load PC %s, [sn:%lli] flags: %s\n",
-            inst->pcState(), inst->seqNum, getLdStFlagStr(flag));
+    DPRINTF(LoadPipeline, "loadDoTranslate: load [sn:%llu]\n", inst->seqNum);
     assert(!inst->isSquashed());
 
     Fault load_fault = NoFault;
     // Now initiateAcc only does TLB access
     load_fault = inst->initiateAcc();
 
+    if (inst->isTranslationDelayed() && load_fault == NoFault) {
+        inst->setTLBMissReplay();
+        DPRINTF(LoadPipeline, "Load [sn:%llu] setTLBMissReplay\n", inst->seqNum);
+    }
+
+    if (inst->savedRequest && inst->savedRequest->isTranslationComplete()) {
+        inst->setNormalLd(inst->savedRequest->isNormalLd());
+    }
+
     return load_fault;
 }
 
 Fault
-LSQUnit::loadPipeS1(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
+LSQUnit::loadDoSendRequest(const DynInstPtr &inst)
 {
-    DPRINTF(LSQUnit, "LoadPipeS1: Executing load PC %s, [sn:%lli] flags: %s\n",
-            inst->pcState(), inst->seqNum, getLdStFlagStr(flag));
+    DPRINTF(LoadPipeline, "loadDoSendRequest: load [sn:%lli]\n", inst->seqNum);
     assert(!inst->isSquashed());
-
     Fault load_fault = inst->getFault();
     LSQRequest* request = inst->savedRequest;
+
+    if (inst->effAddrValid()) {
+        for (int i = 0; i < storePipeSx[1]->size; i++) {
+            auto& store_inst = storePipeSx[1]->insts[i];
+            if (pipeLineNukeCheck(inst, store_inst)) {
+                DPRINTF(LoadPipeline, "Load [sn:%llu] Nuke need replay\n", inst->seqNum);
+                inst->setNukeReplay();
+                return NoFault;
+            }
+        }
+    }
 
     // normal inst cache access
     if (request && request->isTranslationComplete()) {
         if (request->isMemAccessRequired()) {
-            inst->effAddr = request->getVaddr();
-            inst->effAddrValid(true);
-
             Fault fault;
             fault = read(request, inst->lqIdx);
             // inst->getFault() may have the first-fault of a
@@ -1165,21 +1128,14 @@ LSQUnit::loadPipeS1(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
         }
     }
 
-    if (!inst->translationCompleted()) {
-        // TLB miss
-        iewStage->loadCancel(inst);
-    } else {
-        DPRINTF(LSQUnit, "LoadPipeS1: load tlb hit [sn:%lli]\n",
-                inst->seqNum);
-    }
-
     if (load_fault == NoFault && !inst->readMemAccPredicate()) {
-        flag[LdStFlags::readMemAccNotPredicate] = true;
+        assert(inst->readPredicate());
+        inst->setExecuted();
+        inst->completeAcc(nullptr);
+        inst->setSkipFollowingPipe();
+        DPRINTF(LoadPipeline, "Load [sn:%lli] not executed from readMemAccPredicate\n",
+                inst->seqNum);
         return NoFault;
-    }
-
-    if (inst->isTranslationDelayed() && load_fault == NoFault) {
-        return load_fault;
     }
 
     if (load_fault != NoFault && inst->translationCompleted() &&
@@ -1190,150 +1146,113 @@ LSQUnit::loadPipeS1(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
         // then the cache must have been blocked. This load will be re-executed
         // when the cache gets unblocked. We will handle the fault when the
         // mem access is complete.
+        // not replay or cancel
         return NoFault;
     }
 
     if (load_fault != NoFault || !inst->readPredicate()) {
-        flag[LdStFlags::HasFault] = load_fault != NoFault;
-        flag[LdStFlags::readNotPredicate] = !inst->readPredicate();
-    } else {
-        if (inst->effAddrValid()) {
-            // raw violation check (nuke replay)
-            for (int i = 0; i < storePipeSx[1]->size; i++) {
-                auto& store_inst = storePipeSx[1]->insts[i];
-                if (pipeLineNukeCheck(inst, store_inst)) {
-                    DPRINTF(LSQUnit, "LoadPipeS1: Nuke replay at s1, [sn:%lli]\n", inst->seqNum);
-                    flag[LdStFlags::Nuke] = true;
-                    break;
-                }
-            }
-            // rar violation check
-            auto it = inst->lqIt;
-            ++it;
+        if (!inst->readPredicate())
+            inst->forwardOldRegs();
 
-            if (checkLoads)
-                load_fault = checkViolations(it, inst);
+        DPRINTF(LoadPipeline, "Load [sn:%llu] not executed from %s\n",
+                inst->seqNum, (load_fault != NoFault ? "fault" : "readPredicate"));
+        if (!(inst->hasRequest() && inst->strictlyOrdered()) || inst->isAtCommit()) {
+            inst->setExecuted();
         }
+        inst->setSkipFollowingPipe();
+        return load_fault;
+    }
+
+    if (inst->needReplay()) { return NoFault; }
+
+    if (inst->effAddrValid()) {
+        // rar violation check
+        auto it = inst->lqIt;
+        ++it;
+        if (checkLoads)
+            load_fault = checkViolations(it, inst);
     }
 
     return load_fault;
 }
 
 Fault
-LSQUnit::loadPipeS2(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
+LSQUnit::loadDoRecvData(const DynInstPtr &inst)
 {
     Fault fault = inst->getFault();
-    DPRINTF(LSQUnit, "LoadPipeS2: Executing load PC %s, [sn:%lli] flags: %s\n",
-            inst->pcState(), inst->seqNum, getLdStFlagStr(flag));
+    DPRINTF(LoadPipeline, "loadDoRecvData: load [sn:%lli]\n", inst->seqNum);
+
     assert(!inst->isSquashed());
     LSQRequest* request = inst->savedRequest;
 
-    if (flag[LdStFlags::readMemAccNotPredicate]) {
-        assert(inst->readPredicate() && fault == NoFault);
-        inst->setExecuted();
-        inst->completeAcc(nullptr);
-        iewStage->instToCommit(inst);
-        iewStage->activityThisCycle();
-        return NoFault;
-    }
-
-    // If the instruction faulted or predicated false, then we need to send it
-    // along to commit without the instruction completing.
-    if (flag[LdStFlags::HasFault] || flag[LdStFlags::readNotPredicate]) {
-        // Send this instruction to commit, also make sure iew stage
-        // realizes there is activity.  Mark it as executed unless it
-        // is a strictly ordered load that needs to hit the head of
-        // commit.
-        if (flag[LdStFlags::readNotPredicate])
-            inst->forwardOldRegs();
-        DPRINTF(LSQUnit, "LoadPipeS2: Load [sn:%lli] not executed from %s\n",
-                inst->seqNum, (fault != NoFault ? "fault" : "predication"));
-        if (!(inst->hasRequest() && inst->strictlyOrdered()) || inst->isAtCommit()) {
-            inst->setExecuted();
-        }
-        iewStage->instToCommit(inst);
-        iewStage->activityThisCycle();
-        return fault;
-    }
-
-    if (flag[LdStFlags::WakeUpEarly]) {
+    if (inst->wakeUpEarly()) {
         auto& bus = getLsq()->bus;
         bool busFwdSuccess = bus.find(inst->seqNum) != bus.end();
         if (inst->hasPendingCacheReq() || !busFwdSuccess) {
             // Load has been waken up too early, even no TimingResp at load s2
             // Or load received TimingResp any time at [s1, s2], but can not find data on bus
             // replay this load
-            // warn("Tick:%ld Hint & TimingResp not Match, "
-            //     "plz check the timing relationship between Hint & TimingResp, sn:%ld\n", curTick(), inst->seqNum);
-            loadReplayHelper(
-                inst, request,
-                true,  // cache miss
-                false, // Dont fast replay
-                true   // call request->discard() now
-            );
+
+            DPRINTF(LoadPipeline, "Load [sn:%ld]: Early wakeup, no data on bus\n",
+                    inst->seqNum);
+
+            loadSetReplay(inst, request,true);
+            inst->setCacheMissReplay();
+            inst->setWaitingCacheRefill();
             stats.cacheMissReplayEarly++;
+            return fault;
         } else {
             // Load received TimingResp any time at [s1, s2], forward from data bus
-            DPRINTF(LSQUnit, "[sn:%ld]: Forward from bus at load s2, data: %lx\n",
+            DPRINTF(LoadPipeline, "Load [sn:%ld]: Forward from bus at load s2, data: %lx\n",
                     inst->seqNum, *((uint64_t*)(inst->memData)));
             panic_if(bus.size() > lsq->getLQEntries(), "packets on bus should never be greater than LQ size");
-            forwardFrmBus(inst, request);
-        }
-    }
-
-    if (flag[LdStFlags::Replayed] || flag[LdStFlags::LocalAccess]) {
-        return fault;
-    }
-
-    // raw violation check (nuke replay)
-    for (int i = 0; i < storePipeSx[1]->size; i++) {
-        auto& store_inst = storePipeSx[1]->insts[i];
-        if (pipeLineNukeCheck(inst, store_inst)) {
-            DPRINTF(LSQUnit, "LoadPipeS2: Nuke replay at s2, [sn:%lli]\n", inst->seqNum);
-            flag[LdStFlags::Nuke] = true;
-            break;
+            forwardFromBus(inst, request);
         }
     }
 
     // check if cache hit & get cache response?
     // NOTE: cache miss replay has higher priority than nuke replay!
-    if (lsq->enableLdMissReplay() &&
-        request && request->isNormalLd() && !flag[LdStFlags::FullForward] && !flag[LdStFlags::CacheHit]) {
+    if (lsq->enableLdMissReplay() && request && request->isNormalLd() && !inst->fullForward() && !inst->cacheHit()) {
         // cannot get cache data at load s2, replay this load
-        loadReplayHelper(
-            inst, request,
-            true,  // cache miss
-            false, // Dont fast replay
-            false  // call request->discard() later when TimingResp comes
-        );
+        loadSetReplay(inst, request, false);
+        inst->setCacheMissReplay();
+        inst->setWaitingCacheRefill();
+        DPRINTF(LoadPipeline, "Load [sn:%llu] setCacheMissReplay\n", inst->seqNum);
+        return fault;
+    } else if (inst->isNormalLd() && !request) {
+        loadSetReplay(inst, request, false);
+        inst->setBankConflicyReplay();// fast replay
+        DPRINTF(LoadPipeline, "Load [sn:%llu] setBankConflicyReplay\n", inst->seqNum);
         return fault;
     }
 
-    if (flag[LdStFlags::Nuke]) {
-        assert(lsq->enablePipeNukeCheck());
-        // replay load if nuke happens
-        loadReplayHelper(
-            inst, request,
-            false, // cache hit
-            true,  // fast replay
-            true   // call request->discard() now
-        );
-        stats.pipeRawNukeReplay++;
+    for (int i = 0; i < storePipeSx[1]->size; i++) {
+        auto& store_inst = storePipeSx[1]->insts[i];
+        if (pipeLineNukeCheck(inst, store_inst)) {
+            DPRINTF(LoadPipeline, "Load [sn:%llu] Nuke need replay\n", inst->seqNum);
+            inst->setNukeReplay();
+            return fault;
+        }
+    }
+
+    // No nuke happens, prepare the inst data
+    // assert(request->isNormalLd() ? !request->isAnyOutstandingRequest() : true);
+    request = inst->savedRequest;
+    if (inst->fullForward()) {
+        DPRINTF(LoadPipeline, "Load [sn:%llu] fullForward\n", inst->seqNum);
+        assert(request);
+        // forwarding
+        request->forward();
+        PacketPtr pkt = makeFullFwdPkt(inst, request);
+        // this load gets full data from sq or sbuffer
+        writebackReg(inst, pkt);
+        request->writebackDone();
+        delete pkt;
     } else {
-        // no nuke happens, prepare the inst data
-        request = inst->savedRequest;
-        if (flag[LdStFlags::FullForward]) {
-            assert(request);
-            PacketPtr pkt = makeFullFwdPkt(inst, request);
-            // this load gets full data from sq or sbuffer
-            writeback(inst, pkt);
-            request->writebackDone();
-            delete pkt;
-        } else {
-            if (lsq->enableLdMissReplay() && request && request->isNormalLd()) {
-                // assemble cache & sbuffer forwarded data and completeDataAcess
-                request->assemblePackets();
-            }
+        if (lsq->enableLdMissReplay() && request && request->isNormalLd()) {
+            // assemble cache & sbuffer forwarded data and completeDataAcess
+            DPRINTFR(LoadPipeline, "Load [sn:%llu] assemble packet\n", inst->seqNum);
+            request->assemblePackets();
         }
     }
 
@@ -1341,13 +1260,10 @@ LSQUnit::loadPipeS2(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
 }
 
 Fault
-LSQUnit::loadPipeS3(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
+LSQUnit::loadDoWriteback(const DynInstPtr &inst)
 {
-    Fault fault = inst->getFault();
-    DPRINTF(LSQUnit, "LoadPipeS3: Executing load PC %s, [sn:%lli] flags: %s\n",
-            inst->pcState(), inst->seqNum, getLdStFlagStr(flag));
-    assert(!inst->isSquashed());
-    return fault;
+    DPRINTF(LoadPipeline, "loadDoWriteback: load [sn:%lli]\n", inst->seqNum);
+    return NoFault;
 }
 
 void
@@ -1359,71 +1275,107 @@ LSQUnit::executeLoadPipeSx()
         auto& stage = loadPipeSx[i];
         for (int j = 0; j < stage->size; j++) {
             auto& inst = stage->insts[j];
-            auto& flag = stage->flags[j];
-            if (!inst->isSquashed()) {
+            if (!inst) {
+                continue;
+            }
+            if (inst->isSquashed()) {
+                DPRINTF(LoadPipeline, "Instruction was squashed. PC: %s, [tid:%i]"
+                    " [sn:%llu]\n", inst->pcState(), inst->threadNumber,
+                    inst->seqNum);
+                inst->setExecuted();
+                inst->setCanCommit();
+                inst = nullptr;
+                continue;
+            }
+            if (!inst->replayOrSkipFollowingPipe()) {
                 switch (i) {
                     case 0:
-                        fault = loadPipeS0(inst, flag);
+                        fault = loadDoTranslate(inst);
                         break;
                     case 1:
                         iewStage->getScheduler()->specWakeUpFromLoadPipe(inst);
                         // Loads will mark themselves as executed, and their writeback
                         // event adds the instruction to the queue to commit
-                        fault = loadPipeS1(inst, flag);
-
-                        if (inst->isTranslationDelayed() && fault == NoFault) {
-                            // A hw page table walk is currently going on; the
-                            // instruction must be deferred.
-                            DPRINTF(LSQUnit, "Execute: Delayed translation, deferring "
-                            "load.\n");
-                            iewStage->deferMemInst(inst);
-                            flag[LdStFlags::Replayed] = true;
-                        }
+                        fault = loadDoSendRequest(inst);
                         iewStage->SquashCheckAfterExe(inst);
                         break;
                     case 2:
-                        fault = loadPipeS2(inst, flag);
+                        fault = loadDoRecvData(inst);
 
                         if (inst->isDataPrefetch() || inst->isInstPrefetch()) {
                             inst->fault = NoFault;
                         }
                         break;
                     case 3:
-                        fault = loadPipeS3(inst, flag);
+                        fault = loadDoWriteback(inst);
                         break;
                     default:
                         panic("unsupported loadpipe length");
                 }
-            } else {
-                DPRINTF(LSQUnit, "Execute: Instruction was squashed. PC: %s, [tid:%i]"
-                                " [sn:%llu]\n", inst->pcState(), inst->threadNumber,
-                                inst->seqNum);
-                inst->setExecuted();
-                inst->setCanCommit();
-                flag[LdStFlags::Squashed] = true;
+            }
+
+            // If inst was replyed, must clear inst in pipeline
+            if (inst->needSTLFReplay() || inst->needCacheBlockedReplay() || inst->needRescheduleReplay()) {
+                DPRINTF(LoadPipeline, "Load [sn:%llu] replayed\n", inst->seqNum);
+                iewStage->loadCancel(inst);
+                inst->endPipelining();
+                inst = nullptr;
+                continue;
+            }
+
+            if (i == loadWhenToReplay && inst->needReplay()) [[unlikely]] {
+                DPRINTF(LoadPipeline, "Load [sn:%llu] replayed\n", inst->seqNum);
+
+                if (inst->needBankConflicyReplay()) inst->issueQue->retryMem(inst);
+                else if (inst->needCacheMissReplay()) iewStage->cacheMissLdReplay(inst);
+                else if (inst->needNukeReplay()) {
+                    if (inst->cacheHit()) {
+                        loadSetReplay(inst, inst->savedRequest, true);
+                    } else if (inst->hasPendingCacheReq()) {
+                        loadSetReplay(inst, inst->savedRequest, false);
+                    }
+                    inst->issueQue->retryMem(inst);
+                }
+                else if (inst->needTLBMissReplay()) iewStage->deferMemInst(inst);
+
+                iewStage->loadCancel(inst);
+                inst->endPipelining();
+                inst = nullptr;
+                continue;
+            }
+
+            if (i == loadPipeStages - 1 && !inst->needReplay()) {
+                if (inst->isNormalLd() || !inst->readMemAccPredicate()) iewStage->readyToFinish(inst);
+                iewStage->activityThisCycle();
+                inst->endPipelining();
+                DPRINTF(LoadPipeline, "Load [sn:%llu] ready to finish\n",
+                        inst->seqNum);
             }
         }
     }
 }
 
 Fault
-LSQUnit::storePipeS0(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
+LSQUnit::storeDoTranslate(const DynInstPtr &inst)
 {
     // Make sure that a store exists.
     assert(storeQueue.size() != 0);
     assert(!inst->isSquashed());
 
-    DPRINTF(LSQUnit, "StorePipeS0: Executing store PC %s [sn:%lli] flags: %s\n",
-            inst->pcState(), inst->seqNum, getLdStFlagStr(flag));
+    DPRINTF(StorePipeline, "storeDoTranslate: Store [sn:%llu]\n", inst->seqNum);
 
     // Now initiateAcc only does TLB access
     Fault store_fault = inst->initiateAcc();
+
+    if (inst->isTranslationDelayed() && store_fault == NoFault) {
+        inst->setTLBMissReplay();
+    }
 
     return store_fault;
 }
 
 Fault
-LSQUnit::storePipeS1(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
+LSQUnit::storeDoWriteSQ(const DynInstPtr &inst)
 {
     // Make sure that a store exists.
     assert(storeQueue.size() != 0);
@@ -1431,8 +1383,7 @@ LSQUnit::storePipeS1(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
     ssize_t store_idx = inst->sqIdx;
     LSQRequest* request = inst->savedRequest;
 
-    DPRINTF(LSQUnit, "StorePipeS1: Executing store PC %s [sn:%lli] flags: %s\n",
-            inst->pcState(), inst->seqNum, getLdStFlagStr(flag));
+    DPRINTF(StorePipeline, "storeDoWriteSQ: Store [sn:%lli]\n", inst->seqNum);
 
     // Check the recently completed loads to see if any match this store's
     // address.  If so, then we have a memory ordering violation.
@@ -1440,10 +1391,7 @@ LSQUnit::storePipeS1(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
 
     /* This is the place were instructions get the effAddr. */
     if (request && request->isTranslationComplete()) {
-        lsq->isMisaligned(inst, request);
         if (request->isMemAccessRequired() && (inst->getFault() == NoFault)) {
-            inst->effAddr = request->getVaddr();
-            inst->effAddrValid(true);
 
             if (cpu->checker) {
                 inst->reqToVerify = std::make_shared<Request>(*request->req());
@@ -1461,15 +1409,10 @@ LSQUnit::storePipeS1(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
 
     Fault store_fault = inst->getFault();
 
-    if (inst->isTranslationDelayed() &&
-        store_fault == NoFault)
-        return store_fault;
-
     if (!inst->readPredicate()) {
-        DPRINTF(LSQUnit, "StorePipeS1: Store [sn:%lli] not executed from predication\n",
+        DPRINTF(StorePipeline, "Store [sn:%lli] not executed from readPredicate\n",
                 inst->seqNum);
         inst->forwardOldRegs();
-        flag[LdStFlags::readNotPredicate] = true;
         return store_fault;
     }
 
@@ -1485,9 +1428,8 @@ LSQUnit::storePipeS1(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
     }
 
     if (storeQueue[store_idx].size() == 0) {
-        DPRINTF(LSQUnit, "StorePipeS1: Fault on Store PC %s, [sn:%lli], Size = 0\n",
-                inst->pcState(), inst->seqNum);
-        flag[LdStFlags::HasFault] = true;
+        DPRINTF(StorePipeline, "Store [sn:%lli] not executed from storeQueue\n",
+                inst->seqNum);
         return store_fault;
     }
 
@@ -1509,14 +1451,13 @@ LSQUnit::storePipeS1(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag)
 }
 
 Fault
-LSQUnit::emptyStorePipeSx(const DynInstPtr &inst, std::bitset<LdStFlagNum> &flag, uint64_t stage)
+LSQUnit::emptyStorePipeSx(const DynInstPtr &inst, uint64_t stage)
 {
     // empty store pipe stage, Does not perform any operation
     Fault fault = inst->getFault();
     assert(!inst->isSquashed());
 
-    DPRINTF(LSQUnit, "StorePipeS%d: Executing store PC %s [sn:%lli] flags: %s\n",
-            stage, inst->pcState(), inst->seqNum, getLdStFlagStr(flag));
+    DPRINTF(StorePipeline, "emptyStorePipeSx: Store [sn:%lli]\n", inst->seqNum);
     return fault;
 }
 
@@ -1529,23 +1470,27 @@ LSQUnit::executeStorePipeSx()
         auto& stage = storePipeSx[i];
         for (int j = 0; j < stage->size; j++) {
             auto& inst = stage->insts[j];
-            auto& flag = stage->flags[j];
-            if (!inst->isSquashed()) {
+            if (!inst) {
+                continue;
+            }
+
+            if (inst->isSquashed()) {
+                DPRINTF(StorePipeline, "Execute: Instruction was squashed. PC: %s, [tid:%i]"
+                    " [sn:%llu]\n", inst->pcState(), inst->threadNumber,
+                    inst->seqNum);
+                inst->setExecuted();
+                inst->setCanCommit();
+                inst = nullptr;
+                continue;
+            }
+
+            if (!inst->replayOrSkipFollowingPipe()) {
                 switch (i) {
                     case 0:
-                        fault = storePipeS0(inst, flag);
+                        fault = storeDoTranslate(inst);
                         break;
                     case 1:
-                        fault = storePipeS1(inst, flag);
-                        if (inst->isTranslationDelayed() && fault == NoFault) {
-                            // A hw page table walk is currently going on; the
-                            // instruction must be deferred.
-                            DPRINTF(LSQUnit, "Execute: Delayed translation, deferring "
-                                    "store.\n");
-                            iewStage->deferMemInst(inst);
-                            flag[LdStFlags::Replayed] = true;
-                            continue;
-                        }
+                        fault = storeDoWriteSQ(inst);
 
                         iewStage->notifyExecuted(inst);
                         iewStage->SquashCheckAfterExe(inst);
@@ -1553,40 +1498,45 @@ LSQUnit::executeStorePipeSx()
                     case 2:
                     case 3:
                     case 4:
-                        fault = emptyStorePipeSx(inst, flag, i);
+                        fault = emptyStorePipeSx(inst, i);
                         break;
                     default:
                         panic("unsupported storepipe length");
                 }
-                if (i == (lsq->storeWbStage() - 1)) {
-                    // If the store had a fault then it may not have a mem req
-                    if (inst->fault != NoFault || !inst->readPredicate() || !inst->isStoreConditional()) {
-                        // If the instruction faulted, then we need to send it
-                        // along to commit without the instruction completing.
-                        // Send this instruction to commit, also make sure iew
-                        // stage realizes there is activity.
-                        if (!flag[LdStFlags::Replayed]) {
-                            inst->sqIt->setStatus(SplitStoreStatus::StaPipeFinish);
-                            if (!inst->isSplitStoreAddr()) {
-                                inst->sqIt->setStatus(SplitStoreStatus::StdPipeFinish);
-                            }
-                            if (inst->fault != NoFault) {
-                                inst->setExecuted();
-                                iewStage->instToCommit(inst);
-                            } else if (inst->sqIt->splitStoreFinish()) {
-                                iewStage->instToCommit(inst);
-                            }
-                            iewStage->activityThisCycle();
+            }
+
+
+            if (i == storeWhenToReplay && inst->needReplay()) [[unlikely]] {
+                if (inst->needTLBMissReplay()) iewStage->deferMemInst(inst);
+                inst->endPipelining();
+                inst = nullptr;
+                continue;
+            }
+
+            if (i == (lsq->storeWbStage() - 1)) {
+                // If the store had a fault then it may not have a mem req
+                if (inst->fault != NoFault || !inst->readPredicate() || !inst->isStoreConditional()) {
+                    // If the instruction faulted, then we need to send it
+                    // along to commit without the instruction completing.
+                    // Send this instruction to commit, also make sure iew
+                    // stage realizes there is activity.
+                    if (!inst->needReplay()) {
+                        inst->sqIt->setStatus(SplitStoreStatus::StaPipeFinish);
+                        if (!inst->isSplitStoreAddr()) {
+                            inst->sqIt->setStatus(SplitStoreStatus::StdPipeFinish);
                         }
+                        DPRINTF(StorePipeline, "Store [sn:%llu] ready to finish\n",
+                                inst->seqNum);
+                        if (inst->fault != NoFault) {
+                            inst->setExecuted();
+                            iewStage->readyToFinish(inst);
+                        } else if (inst->sqIt->splitStoreFinish()) {
+                            iewStage->readyToFinish(inst);
+                        }
+                        iewStage->activityThisCycle();
                     }
                 }
-            } else {
-                DPRINTF(LSQUnit, "Execute: Instruction was squashed. PC: %s, [tid:%i]"
-                                " [sn:%llu]\n", inst->pcState(), inst->threadNumber,
-                                inst->seqNum);
-                inst->setExecuted();
-                inst->setCanCommit();
-                flag[LdStFlags::Squashed] = true;
+                inst->endPipelining();
             }
         }
     }
@@ -1661,7 +1611,7 @@ LSQUnit::executeAmo(const DynInstPtr &amo_inst)
             amo_inst->isAtCommit()) {
             amo_inst->setExecuted();
         }
-        iewStage->instToCommit(amo_inst);
+        iewStage->readyToFinish(amo_inst);
         iewStage->activityThisCycle();
 
         return amo_fault;
@@ -1814,7 +1764,7 @@ LSQUnit::directStoreToCache()
                     "Instantly completing it.\n",
                     inst->seqNum);
             PacketPtr new_pkt = new Packet(*request->packet());
-            WritebackEvent *wb = new WritebackEvent(inst, new_pkt, this);
+            WritebackRegEvent *wb = new WritebackRegEvent(inst, new_pkt, this);
             cpu->schedule(wb, curTick() + 1);
             completeStore(storeWBIt);
             if (!storeQueue.empty())
@@ -1924,7 +1874,8 @@ LSQUnit::offloadToStoreBuffer()
                 uint64_t offset = vaddr - vbase;
                 DPRINTF(LSQUnit, "Spilt store idx %d [sn:%lli] insert into sbuffer\n", i, inst->seqNum);
                 assert(offset + req->getSize() <= storeWBIt->size());
-                bool success = insertStoreBuffer(vaddr, paddr, (uint8_t *)storeWBIt->data() + offset, req->getSize());
+                bool success = insertStoreBuffer(vaddr, paddr, (uint8_t *)storeWBIt->data() + offset, req->getSize(),
+                                                 req->getByteEnable());
                 if (success) {
                     request->_numOutstandingPackets++;
                 } else {
@@ -1944,7 +1895,8 @@ LSQUnit::offloadToStoreBuffer()
             Addr vaddr = request->getVaddr();
             Addr paddr = request->mainReq()->getPaddr();
             DPRINTF(LSQUnit, "Store [sn:%lli] insert into sbuffer\n", inst->seqNum);
-            bool success = insertStoreBuffer(vaddr, paddr, (uint8_t *)storeWBIt->data(), request->_size);
+            bool success = insertStoreBuffer(vaddr, paddr, (uint8_t *)storeWBIt->data(), request->_size,
+                                             request->mainReq()->getByteEnable());
             if (!success) {
                 break;
             }
@@ -1956,7 +1908,7 @@ LSQUnit::offloadToStoreBuffer()
     }
 }
 
-bool LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t size)
+bool LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t size, const std::vector<bool>& mask)
 {
     // access range must in a cache block
     assert((vaddr & cacheBlockMask) == ((vaddr + size - 1) & cacheBlockMask));
@@ -1970,7 +1922,7 @@ bool LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t
             if (entry->vice) {
                 // merge into vice
                 entry = entry->vice;
-                entry->merge(offset, datas, size);
+                entry->merge(offset, datas, size, mask);
                 DPRINTF(StoreBuffer, "Merging vice entry[%#x] for addr %#x\n",
                         blockPaddr, paddr);
             } else {
@@ -1982,14 +1934,14 @@ bool LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t
                 }
                 stats.sbufferCreateVice++;
                 auto vice = storeBuffer.createVice(entry);
-                vice->reset(blockVaddr, blockPaddr, offset, datas, size);
+                vice->reset(blockVaddr, blockPaddr, offset, datas, size, mask);
                 DPRINTF(StoreBuffer, "Create new vice entry[%#x] for addr %#x\n",
                         blockPaddr, paddr);
             }
         } else {
             // merge into unsent
             storeBuffer.update(entry->index);
-            entry->merge(offset, datas, size);
+            entry->merge(offset, datas, size, mask);
             DPRINTF(StoreBuffer, "Merging entry[%#x] for addr %#x\n",
                     blockPaddr, paddr);
         }
@@ -2002,7 +1954,7 @@ bool LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t
         }
         // insert
         auto entry = storeBuffer.getEmpty();
-        entry->reset(blockVaddr, blockPaddr, offset, datas, size);
+        entry->reset(blockVaddr, blockPaddr, offset, datas, size, mask);
         storeBuffer.insert(entry->index, blockPaddr);
         DPRINTF(StoreBuffer, "Create new entry[%#x] for addr %#x\n",
                 blockPaddr, paddr);
@@ -2268,7 +2220,7 @@ LSQUnit::storePostSend()
 }
 
 void
-LSQUnit::writeback(const DynInstPtr &inst, PacketPtr pkt)
+LSQUnit::writebackReg(const DynInstPtr &inst, PacketPtr pkt)
 {
     assert(!inst->isSplitStoreAddr());
     iewStage->wakeCPU();
@@ -2278,6 +2230,9 @@ LSQUnit::writeback(const DynInstPtr &inst, PacketPtr pkt)
         ++stats.ignoredResponses;
         return;
     }
+
+    DPRINTF(LoadPipeline, "WritebackReg: %s [sn:%lli] data: %#lx\n", enums::OpClassStrings[inst->opClass()], inst->seqNum,
+        inst->memData ? *((uint64_t *)inst->memData) : 0);
 
     if (!inst->isExecuted()) {
         inst->setExecuted();
@@ -2320,11 +2275,11 @@ LSQUnit::writeback(const DynInstPtr &inst, PacketPtr pkt)
         }
     }
 
-    // Need to insert instruction into queue to commit
-    iewStage->instToCommit(inst);
-
-    iewStage->activityThisCycle();
-
+    if (!inst->savedRequest->isNormalLd()) {
+        // Need to insert instruction into queue to commit
+        iewStage->readyToFinish(inst);
+        iewStage->activityThisCycle();
+    }
     // see if this load changed the PC
     iewStage->checkMisprediction(inst);
 }
@@ -2460,7 +2415,9 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
     if (isLoad) {
         bank_conflict = lsq->bankConflictedCheck(data_pkt->req->getVaddr());
     }
-
+    // Record the tick count at the time of sending to let
+    // the subsequent cache understand the request's sending time.
+    data_pkt->sendTick = curTick();
     PacketPtr pkt = data_pkt;
 
     if (!lsq->cacheBlocked() && lsq->cachePortAvailable(isLoad)) {
@@ -2499,7 +2456,7 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
                 if (entry->recordForward(pkt->req, request)) {
                     assert(request->isSplit()); // here must be split request
                     stats.sbufferFullForward++;
-                } else if (!request->forwardPackets.empty()) {
+                } else if (!request->SBforwardPackets.empty()) {
                     stats.sbufferPartiForward++;
                 }
             }
@@ -2599,44 +2556,6 @@ LSQUnit::recvRetry()
 }
 
 void
-LSQUnit::dumpLoadPipe()
-{
-    if (GEM5_UNLIKELY(::gem5::debug::LSQUnit)) {
-        DPRINTFN("Dumping LoadPipe:\n");
-        for (int i = 0; i < loadPipeSx.size(); i++) {
-            DPRINTFN("Load S%d:, size: %d\n", i, loadPipeSx[i]->size);
-            for (int j = 0; j < loadPipeSx[i]->size; j++) {
-                DPRINTFN("  PC: %s, [tid:%i] [sn:%lli] flags: %s\n",
-                        loadPipeSx[i]->insts[j]->pcState(),
-                        loadPipeSx[i]->insts[j]->threadNumber,
-                        loadPipeSx[i]->insts[j]->seqNum,
-                        getLdStFlagStr(loadPipeSx[i]->flags[j])
-                );
-            }
-        }
-    }
-}
-
-void
-LSQUnit::dumpStorePipe()
-{
-    if (GEM5_UNLIKELY(::gem5::debug::LSQUnit)) {
-        DPRINTFN("Dumping StorePipe:\n");
-        for (int i = 0; i < storePipeSx.size(); i++) {
-            DPRINTFN("Store S%d:, size: %d\n", i, storePipeSx[i]->size);
-            for (int j = 0; j < storePipeSx[i]->size; j++) {
-                DPRINTFN("  PC: %s, [tid:%i] [sn:%lli] flags: %s\n",
-                        storePipeSx[i]->insts[j]->pcState(),
-                        storePipeSx[i]->insts[j]->threadNumber,
-                        storePipeSx[i]->insts[j]->seqNum,
-                        getLdStFlagStr(storePipeSx[i]->flags[j])
-                );
-            }
-        }
-    }
-}
-
-void
 LSQUnit::dumpInsts() const
 {
     cprintf("Load store queue: Dumping instructions.\n");
@@ -2720,25 +2639,12 @@ LSQUnit::makeFullFwdPkt(DynInstPtr load_inst, LSQRequest *request)
 }
 
 void
-LSQUnit::forwardFrmBus(DynInstPtr inst, LSQRequest *request)
+LSQUnit::forwardFromBus(DynInstPtr inst, LSQRequest *request)
 {
     // load can get it's data from data bus, actually saved in `inst->memData`
     // So there is no need to access Dcache
 
-    // forward sbuffer again
-    auto entry = storeBuffer.get(request->mainReq()->getPaddr() & cacheBlockMask);
-    if (entry) {
-        if (entry->recordForward(request->mainReq(), request)) {
-            assert(request->isSplit()); // here must be split request
-            stats.sbufferFullForward++;
-        } else {
-            stats.sbufferPartiForward++;
-        }
-    }
-    // merge forward result
-    request->forward();
-    // set as FullForwarded, writeback at load s2
-    setFlagInPipeLine(inst, LdStFlags::FullForward);
+    inst->setFullForward();
     stats.busForwardSuccess++;
 }
 
@@ -2748,7 +2654,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
     LQEntry& load_entry = loadQueue[load_idx];
     const DynInstPtr& load_inst = load_entry.instruction();
 
-    DPRINTF(LSQUnit, "request: size: %u, Addr: %#lx\n",
+    DPRINTF(LoadPipeline, "request: size: %u, Addr: %#lx\n",
             request->mainReq()->getSize(), request->mainReq()->getVaddr());
 
     Addr addr = request->mainReq()->getVaddr();
@@ -2767,7 +2673,11 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         }
     }
 
-    if (lsq->isMisaligned(load_inst, request)) {
+    if (load_inst->getFault() != NoFault) {
+        // If the instruction has an outstanding fault, we cannot complete
+        // the access as this discards the current fault.
+        DPRINTF(LoadPipeline, "Not completing instruction [sn:%lli] access "
+                "due to pending fault.\n", load_inst->seqNum);
         return load_inst->getFault();
     }
 
@@ -2785,11 +2695,13 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         // should not enter this
         // Tell IQ/mem dep unit that this instruction will need to be
         // rescheduled eventually
-        iewStage->rescheduleMemInst(load_inst);
         load_inst->effAddrValid(false);
-        setFlagInPipeLine(load_inst, LdStFlags::Replayed);
+        load_inst->setCanCommit();
+        load_inst->setSkipFollowingPipe();
+        load_inst->setRescheduleReplay();
+        iewStage->rescheduleMemInst(load_inst);
         ++stats.rescheduledLoads;
-        DPRINTF(LSQUnit, "Strictly ordered load [sn:%lli] PC %s\n",
+        DPRINTF(LoadPipeline, "Strictly ordered load [sn:%lli] PC %s\n",
                 load_inst->seqNum, load_inst->pcState());
 
         // Must delete request now that it wasn't handed off to
@@ -2802,7 +2714,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
             load_inst->pcState());
     }
 
-    DPRINTF(LSQUnit, "Read called, load idx: %i, store idx: %i, "
+    DPRINTF(LoadPipeline, "Read called, load idx: %i, store idx: %i, "
             "storeHead: %i addr: %#x%s\n",
             load_idx - 1, load_inst->sqIt._idx, storeQueue.head() - 1,
             request->mainReq()->getPaddr(), request->isSplit() ? " split" :
@@ -2834,9 +2746,11 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
 
         Cycles delay = request->mainReq()->localAccessor(thread, main_pkt);
 
-        WritebackEvent *wb = new WritebackEvent(load_inst, main_pkt, this);
+        WritebackRegEvent *wb = new WritebackRegEvent(load_inst, main_pkt, this);
         cpu->schedule(wb, cpu->clockEdge(delay));
-        setFlagInPipeLine(load_inst, LdStFlags::LocalAccess);
+        load_inst->setSkipFollowingPipe();
+        DPRINTF(LoadPipeline, "Load [sn:%llu] local access, setSkipFollowingPipe",
+                load_inst->seqNum);
         return NoFault;
     }
 
@@ -2859,42 +2773,116 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
               store_it->request()->mainReq()->isCacheMaintenance())) {
             assert(store_it->instruction()->effAddrValid());
 
-            // Check if the store data is within the lower and upper bounds of
-            // addresses that the request needs.
-            auto req_s = request->mainReq()->getPaddr();
-            auto req_e = req_s + request->mainReq()->getSize();
-            auto st_s = store_it->instruction()->physEffAddr;
-            auto st_e = st_s + store_size;
-
-            bool store_has_lower_limit = req_s >= st_s;
-            bool store_has_upper_limit = req_e <= st_e;
-            bool lower_load_has_store_part = req_s < st_e;
-            bool upper_load_has_store_part = req_e > st_s;
-
-            DPRINTF(LSQUnit, "req_s:%x,req_e:%x,st_s:%x,st_e:%x\n", req_s,
-                    req_e, st_s, st_e);
-            DPRINTF(LSQUnit, "store_size:%x,store_pc:%s,req_size:%x,req_pc:%s\n",
-                    store_size, store_it->instruction()->pcState(),
-                    request->mainReq()->getSize(),
-                    request->instruction()->pcState());
-
             auto coverage = AddrRangeCoverage::NoAddrRangeCoverage;
+            if (request->isSplit()){
+                    // If request is split, check if the store data is within the lower and upper bounds of
+                    // addresses that the request needs. Always return partial addr coverage when hit
+                for (int i = 0; i < request->_reqs.size(); i++){
+                    auto req_s = request->_reqs[i]->getPaddr();
+                    auto req_e = req_s + request->_reqs[i]->getSize();
+                    auto st_s = store_it->instruction()->physEffAddr;
+                    auto st_e = st_s + store_size;
 
-            // If the store entry is not atomic (atomic does not have valid
-            // data), the store has all of the data needed, and
-            // the load is not LLSC, then
-            // we can forward data from the store to the load
-            if ((!store_it->instruction()->isAtomic() &&
-                 store_has_lower_limit && store_has_upper_limit &&
-                 !request->mainReq()->isLLSC()) &&
-                (!((req_s > req_e) || (st_s > st_e)))) {
+                    bool store_has_lower_limit = req_s >= st_s;
+                    bool store_has_upper_limit = req_e <= st_e;
+                    bool lower_load_has_store_part = req_s < st_e;
+                    bool upper_load_has_store_part = req_e > st_s;
+                    DPRINTF(LSQUnit, "(split, %d) req_s:%x,req_e:%x,st_s:%x,st_e:%x\n", i, req_s,
+                            req_e, st_s, st_e);
+                    DPRINTF(LSQUnit, "(split, %d) store_size:%x,store_pc:%s,req_size:%x,req_pc:%s\n",
+                            i, store_size, store_it->instruction()->pcState(),
+                            request->mainReq()->getSize(),
+                            request->instruction()->pcState());
+                    // When request is split, still set partial add coverage when 
+                    // current store has all of the data needed
+                    if ((!store_it->instruction()->isAtomic() &&
+                        store_has_lower_limit && store_has_upper_limit &&
+                        !request->mainReq()->isLLSC()) &&
+                        (!((req_s > req_e) || (st_s > st_e)))) {
+
+                        const auto &store_req = store_it->request()->mainReq();
+                        if (store_it->instruction()->isSplitStoreAddr() && !store_it->canForwardToLoad()) {
+                            stats.forwardSTDNotReady++;
+                            // Insert load inst into replayQ and wait for store data to be ready
+                            iewStage->stlfFailLdReplay(load_inst, store_it->instruction()->seqNum);
+                            loadSetReplay(load_inst, request, true);
+                            load_inst->setSTLFReplay();
+                            DPRINTF(LoadPipeline, "Load [sn:%llu] setSTLFReplay\n", load_inst->seqNum);
+                            return NoFault;
+                        } else {
+                            coverage = AddrRangeCoverage::PartialAddrRangeCoverage;
+                            break;
+                        }
+
+                    } else if ((!((req_s > req_e) || (st_s > st_e))) &&
+                            (
+                                // This is the partial store-load forwarding case
+                                // where a store has only part of the load's data
+                                // and the load isn't LLSC
+                                (!request->mainReq()->isLLSC() &&
+                                    ((store_has_lower_limit &&
+                                    lower_load_has_store_part) ||
+                                    (store_has_upper_limit &&
+                                    upper_load_has_store_part) ||
+                                    (lower_load_has_store_part &&
+                                    upper_load_has_store_part))) ||
+                                // The load is LLSC, and the store has all or part
+                                // of the load's data
+                                (request->mainReq()->isLLSC() &&
+                                    ((store_has_lower_limit ||
+                                    upper_load_has_store_part) &&
+                                    (store_has_upper_limit ||
+                                    lower_load_has_store_part))) ||
+                                // The store entry is atomic and has all or part of
+                                // the load's data
+                                (store_it->instruction()->isAtomic() &&
+                                    ((store_has_lower_limit ||
+                                    upper_load_has_store_part) &&
+                                    (store_has_upper_limit ||
+                                    lower_load_has_store_part))))) {
+
+                        coverage = AddrRangeCoverage::PartialAddrRangeCoverage;
+                        break;
+                    }
+                }
+            }else{
+                // Request is not split.
+                // Check if the store data is within the lower and upper bounds of
+                // addresses that the request needs.
+                auto req_s = request->mainReq()->getPaddr();
+                auto req_e = req_s + request->mainReq()->getSize();
+                auto st_s = store_it->instruction()->physEffAddr;
+                auto st_e = st_s + store_size;
+
+                bool store_has_lower_limit = req_s >= st_s;
+                bool store_has_upper_limit = req_e <= st_e;
+                bool lower_load_has_store_part = req_s < st_e;
+                bool upper_load_has_store_part = req_e > st_s;
+
+                DPRINTF(LoadPipeline, "req_s:%x,req_e:%x,st_s:%x,st_e:%x\n", req_s,
+                        req_e, st_s, st_e);
+                DPRINTF(LoadPipeline, "store_size:%x,store_pc:%s,req_size:%x,req_pc:%s\n",
+                        store_size, store_it->instruction()->pcState(),
+                        request->mainReq()->getSize(),
+                        request->instruction()->pcState());
+
+                // If the store entry is not atomic (atomic does not have valid
+                // data), the store has all of the data needed, and
+                // the load is not LLSC, then
+                // we can forward data from the store to the load
+                if ((!store_it->instruction()->isAtomic() &&
+                    store_has_lower_limit && store_has_upper_limit &&
+                    !request->mainReq()->isLLSC()) &&
+                    (!((req_s > req_e) || (st_s > st_e)))) {
 
                 const auto &store_req = store_it->request()->mainReq();
                 if (store_it->instruction()->isSplitStoreAddr() && !store_it->canForwardToLoad()) {
                     stats.forwardSTDNotReady++;
-                    // insert load inst into replayQ and wait for store data to be ready
+                    // Insert load inst into replayQ and wait for store data to be ready
                     iewStage->stlfFailLdReplay(load_inst, store_it->instruction()->seqNum);
-                    loadReplayHelper(load_inst, request, false, false, true);
+                    loadSetReplay(load_inst, request, true);
+                    load_inst->setSTLFReplay();
+                    DPRINTF(LoadPipeline, "Load [sn:%llu] setSTLFReplay\n", load_inst->seqNum);
                     return NoFault;
                 } else {
                     coverage = store_req->isMasked()
@@ -2902,34 +2890,35 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                                 : AddrRangeCoverage::FullAddrRangeCoverage;
                 }
 
-            } else if ((!((req_s > req_e) || (st_s > st_e))) &&
-                       (
-                           // This is the partial store-load forwarding case
-                           // where a store has only part of the load's data
-                           // and the load isn't LLSC
-                           (!request->mainReq()->isLLSC() &&
-                            ((store_has_lower_limit &&
-                              lower_load_has_store_part) ||
-                             (store_has_upper_limit &&
-                              upper_load_has_store_part) ||
-                             (lower_load_has_store_part &&
-                              upper_load_has_store_part))) ||
-                           // The load is LLSC, and the store has all or part
-                           // of the load's data
-                           (request->mainReq()->isLLSC() &&
-                            ((store_has_lower_limit ||
-                              upper_load_has_store_part) &&
-                             (store_has_upper_limit ||
-                              lower_load_has_store_part))) ||
-                           // The store entry is atomic and has all or part of
-                           // the load's data
-                           (store_it->instruction()->isAtomic() &&
-                            ((store_has_lower_limit ||
-                              upper_load_has_store_part) &&
-                             (store_has_upper_limit ||
-                              lower_load_has_store_part))))) {
+                } else if ((!((req_s > req_e) || (st_s > st_e))) &&
+                        (
+                            // This is the partial store-load forwarding case
+                            // where a store has only part of the load's data
+                            // and the load isn't LLSC
+                            (!request->mainReq()->isLLSC() &&
+                                ((store_has_lower_limit &&
+                                lower_load_has_store_part) ||
+                                (store_has_upper_limit &&
+                                upper_load_has_store_part) ||
+                                (lower_load_has_store_part &&
+                                upper_load_has_store_part))) ||
+                            // The load is LLSC, and the store has all or part
+                            // of the load's data
+                            (request->mainReq()->isLLSC() &&
+                                ((store_has_lower_limit ||
+                                upper_load_has_store_part) &&
+                                (store_has_upper_limit ||
+                                lower_load_has_store_part))) ||
+                            // The store entry is atomic and has all or part of
+                            // the load's data
+                            (store_it->instruction()->isAtomic() &&
+                                ((store_has_lower_limit ||
+                                upper_load_has_store_part) &&
+                                (store_has_upper_limit ||
+                                lower_load_has_store_part))))) {
 
-                coverage = AddrRangeCoverage::PartialAddrRangeCoverage;
+                    coverage = AddrRangeCoverage::PartialAddrRangeCoverage;
+                }
             }
 
             if (coverage == AddrRangeCoverage::FullAddrRangeCoverage) {
@@ -2942,22 +2931,26 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                     load_inst->memData =
                         new uint8_t[request->mainReq()->getSize()];
                 }
-                if (store_it->isAllZeros())
-                    memset(load_inst->memData, 0,
-                            request->mainReq()->getSize());
-                else{
-                    memcpy(load_inst->memData,
-                        store_it->data() + shift_amt,
-                        request->mainReq()->getSize());
-
+                if (store_it->isAllZeros()) {
+                    for (int i=0;i<request->mainReq()->getSize();i++) {
+                        request->SQforwardPackets.push_back(
+                            LSQRequest::FWDPacket{i, 0}
+                        );
+                    }
+                }
+                else {
+                    for (int i=0;i<request->mainReq()->getSize();i++) {
+                        request->SQforwardPackets.push_back(
+                            LSQRequest::FWDPacket{i, *(uint8_t*)(store_it->data() + shift_amt + i)}
+                        );
+                    }
                 }
 
-                DPRINTF(LSQUnit, "Forwarding from store idx %i to load to "
-                        "addr %#x\n", store_it._idx,
-                        request->mainReq()->getVaddr());
+                DPRINTF(LoadPipeline, "Forwarding from store [sn:%llu] to load [sn:%llu] "
+                        "addr %#x, data: %#lx\n", store_it->instruction()->seqNum, load_inst->seqNum,
+                        request->mainReq()->getPaddr(), *((uint64_t*)load_inst->memData));
 
-                // set FullForward flag, then this load will be written back at s2
-                setFlagInPipeLine(load_inst, LdStFlags::FullForward);
+                load_inst->setFullForward();
 
                 // Don't need to do anything special for split loads.
                 ++stats.forwLoads;
@@ -2985,14 +2978,14 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
 
                 // Tell IQ/mem dep unit that this instruction will need to be
                 // rescheduled eventually
-                iewStage->rescheduleMemInst(load_inst);
                 load_inst->effAddrValid(false);
-                setFlagInPipeLine(load_inst, LdStFlags::Replayed);
+                load_inst->setRescheduleReplay();
+                iewStage->rescheduleMemInst(load_inst);
                 ++stats.rescheduledLoads;
 
                 // Do not generate a writeback event as this instruction is not
                 // complete.
-                DPRINTF(LSQUnit, "Load-store forwarding mis-match. "
+                DPRINTF(LoadPipeline, "Load-store forwarding mis-match. "
                         "Store idx %i to load addr %#x\n",
                         store_it._idx, request->mainReq()->getVaddr());
 
@@ -3018,22 +3011,14 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                     load_inst->memData = new uint8_t[request->mainReq()->getSize()];
                 }
 
-                request->forward();
-
-                // set FullForward flag, then this load will be written back at s2
-                setFlagInPipeLine(load_inst, LdStFlags::FullForward);
+                load_inst->setFullForward();
+                DPRINTF(LoadPipeline, "Load [sn:%llu] forward from sbuffer, data: %lx\n",
+                        load_inst->seqNum, *((uint64_t*)load_inst->memData));
 
                 return NoFault;
             }
-            // if not fully forward, need to clear buffer
-            request->forwardPackets.clear();
         }
     }
-
-
-    // If there's no forwarding case, then go access memory
-    DPRINTF(LSQUnit, "Doing memory access for inst [sn:%lli] PC %s\n",
-            load_inst->seqNum, load_inst->pcState());
 
     // Allocate memory if this is the first time a load is issued.
     if (!load_inst->memData) {
@@ -3061,26 +3046,27 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         // Load has been waken up too early, TimingResp is not present now
         // try waiting TimingResp and forward bus again at load s2
         assert(request->isLoad());
-        setFlagInPipeLine(load_inst, LdStFlags::WakeUpEarly);
+        DPRINTF(LoadPipeline, "Load [sn:%ld] setWakeUpEarly\n", load_inst->seqNum);
+        load_inst->setWakeUpEarly();
     } else if (busFwdSuccess) {
-        DPRINTF(LSQUnit, "[sn:%ld]: Forward from bus at load s1, data: %lx\n",
-                load_inst->seqNum, *((uint64_t*)(load_inst->memData)));
+        DPRINTF(LoadPipeline, "Load [sn:%ld]: Forward from bus, data: %lx\n",
+                load_inst->seqNum, *((uint64_t*)load_inst->memData));
         panic_if(bus.size() > lsq->getLQEntries(), "packets on bus should never be greater than LQ size");
         for (auto ele : bus) {
             DPRINTF(LSQUnit, " bus:[sn:%ld], paddr:%lx\n", ele.first, ele.second);
         }
         // this load can forward data from bus
-        forwardFrmBus(load_inst, request);
+        forwardFromBus(load_inst, request);
     } else {
+        DPRINTF(LoadPipeline, "Load [sn:%llu] sendPacketToCache\n", load_inst->seqNum);
         // if cannot forward from bus, do real cache access
         request->buildPackets();
         // if the cache is not blocked, do cache access
-        if (!request->sendPacketToCache()) {
-            iewStage->loadCancel(load_inst);
-        }
-        if (!request->isSent()) {
+        request->sendPacketToCache();
+        if (!request->isSent() && !load_inst->needBankConflicyReplay()) {
             iewStage->blockMemInst(load_inst);
-            setFlagInPipeLine(load_inst, LdStFlags::Replayed);
+            load_inst->setCacheBlockedReplay();
+            DPRINTF(LoadPipeline, "Load [sn:%llu] setCacheBlockedReplay\n", load_inst->seqNum);
         }
     }
 
@@ -3093,7 +3079,7 @@ LSQUnit::write(LSQRequest *request, uint8_t *data, ssize_t store_idx)
     auto &entry = storeQueue[store_idx];
     assert(entry.valid());
 
-    DPRINTF(LSQUnit, "Doing write to store idx %i, addr %#x | storeHead:%i, size: %d"
+    DPRINTF(StorePipeline, "Doing write to store idx %i, addr %#x | storeHead:%i, size: %d"
             "[sn:%llu]\n",
             store_idx - 1, request->req()->getPaddr(), storeQueue.head() - 1, request->_size,
             entry.instruction()->seqNum);
@@ -3111,7 +3097,6 @@ LSQUnit::write(LSQRequest *request, uint8_t *data, ssize_t store_idx)
         !request->req()->isAtomic() && !entry.instruction()->isSplitStoreAddr()) {
         memcpy(entry.data(), data, size);
     }
-
 
     // This function only writes the data to the store queue, so no fault
     // can happen here.

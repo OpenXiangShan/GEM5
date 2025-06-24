@@ -49,9 +49,6 @@ namespace RiscvISA
 class ISA;
 class Decoder : public InstDecoder
 {
-  private:
-    bool aligned;
-    bool mid;
   protected:
     //The extended machine instruction being generated
     ExtMachInst emi;

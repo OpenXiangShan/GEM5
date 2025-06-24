@@ -152,6 +152,13 @@ AddOption('--pgo-use', action='store', default=None,
           help='Use pgo profiling results')
 AddOption('--unit-test', action='store_true',
           help='Enable unit test build')
+AddOption('--debug-cycle', action='store_true',
+          help='Enable print cycle in DPRINTF')
+AddOption('--rvv-impl', action='store', default='base',
+          choices=['base', 'simple'],
+          help='Select the implementation of the RVV extension to use')
+
+os.environ['rvv_impl'] = GetOption('rvv_impl')
 
 # Inject the built_tools directory into the python path.
 sys.path[1:1] = [ Dir('#build_tools').abspath ]
@@ -375,6 +382,13 @@ for variant_path in variant_paths:
     # Make a copy of the build-root environment to use for this config.
     env = main.Clone()
     env['BUILDDIR'] = variant_path
+
+    # Check for unit test mode and define UNIT_TEST macro if enabled
+    # This is used to replace debug/DecoupleBP.hh with test_dprintf.hh
+    if GetOption('unit_test'):
+        env.Append(CPPDEFINES=['UNIT_TEST'])
+    if GetOption('debug_cycle'):
+        env.Append(CPPDEFINES=['DEBUG_SHOW_CYCLES'])
 
     try:
         # try-except section is required because

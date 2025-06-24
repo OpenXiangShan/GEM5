@@ -31,6 +31,7 @@ enableSC(p.enableSC),
 tageStats(this, p.numPredictors)
 {
     DPRINTF(TAGE, "BTBTAGE constructor\n");
+    this->needMoreHistories = p.needMoreHistories;
     tageTable.resize(numPredictors);
     tableIndexBits.resize(numPredictors);
     tableIndexMasks.resize(numPredictors);
@@ -55,9 +56,9 @@ tageStats(this, p.numPredictors)
 
         assert(tablePcShifts.size() >= numPredictors);
 
-        tagFoldedHist.push_back(FoldedHist((int)histLengths[i], (int)tableTagBits[i], 16));
-        altTagFoldedHist.push_back(FoldedHist((int)histLengths[i], (int)tableTagBits[i]-1, 16));
-        indexFoldedHist.push_back(FoldedHist((int)histLengths[i], (int)tableIndexBits[i], 16));
+        tagFoldedHist.push_back(FoldedHist((int)histLengths[i], (int)tableTagBits[i], 16, HistoryType::PATH));
+        altTagFoldedHist.push_back(FoldedHist((int)histLengths[i], (int)tableTagBits[i]-1, 16, HistoryType::PATH));
+        indexFoldedHist.push_back(FoldedHist((int)histLengths[i], (int)tableIndexBits[i], 16, HistoryType::PATH));
     }
     // for (unsigned i = 0; i < baseTable.size(); ++i) {
     //     baseTable[i].resize(numBr);
@@ -117,9 +118,9 @@ BTBTAGE::tickStart() {}
 void
 BTBTAGE::recordUsefulMask(const Addr &startPC) {
     // Initialize all usefulMasks
-    meta.usefulMask.resize(numWays);
+    meta->usefulMask.resize(numWays);
     for (unsigned way = 0; way < numWays; way++) {
-        meta.usefulMask[way].resize(numPredictors);
+        meta->usefulMask[way].resize(numPredictors);
     }
 
     // Look up entries in all TAGE tables
@@ -128,13 +129,13 @@ BTBTAGE::recordUsefulMask(const Addr &startPC) {
         for (unsigned way = 0; way < numWays; way++) {
             auto &entry = tageTable[i][index][way];
             // Save useful bit to metadata
-            meta.usefulMask[way][i] = entry.useful;
+            meta->usefulMask[way][i] = entry.useful;
         }
     }
     if (debugFlagOn) {
         std::string buf;
         for (unsigned way = 0; way < numWays; way++) {
-            boost::to_string(meta.usefulMask[way], buf);
+            boost::to_string(meta->usefulMask[way], buf);
             DPRINTF(TAGEUseful, "meta.usefulMask[%u] = %s\n", way, buf.c_str());
         }
     }
@@ -187,8 +188,8 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
         if (match) {
             // Save match information for later recovery
             if (!provided) {
-                meta.hitWay = matching_way;
-                meta.hitFound = true;
+                meta->hitWay = matching_way;
+                meta->hitFound = true;
             }
 
             if (!provided) {
@@ -221,7 +222,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     DPRINTF(TAGE, "tage use_alt %d ? (alt_provided %d ? alt_taken %d : base_taken %d) : main_taken %d\n",
         use_alt, alt_provided, alt_taken, base_taken, main_taken);
 
-    return TagePrediction(btb_entry.pc, main_info, alt_info, use_alt, taken);
+    return TagePrediction(btb_entry.pc, main_info, alt_info, use_alt, taken, alt_pred);
 }
 
 /**
@@ -231,31 +232,32 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
  * @param btbEntries Vector of BTB entries to make predictions for
  * @return Map of branch PC addresses to their predicted outcomes
  */
-std::map<Addr, bool>
-BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries)
+void
+BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
+                      std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, CondTakens& results)
 {
-    // Clear old prediction metadata and save current history state
-    meta.preds.clear();
-    meta.tagFoldedHist = tagFoldedHist;
-    meta.altTagFoldedHist = altTagFoldedHist;
-    meta.indexFoldedHist = indexFoldedHist;
-    // record useful bit to meta.usefulMask
-    recordUsefulMask(startPC);
-
     DPRINTF(TAGE, "lookupHelper startAddr: %#lx\n", startPC);
 
     // Process each BTB entry to make predictions
-    std::map<Addr, bool> cond_takens;
     for (auto &btb_entry : btbEntries) {
         // Only predict for valid conditional branches
         if (btb_entry.isCond && btb_entry.valid) {
             auto pred = generateSinglePrediction(btb_entry, startPC);
-            meta.preds[btb_entry.pc] = pred;
+            meta->preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
-            cond_takens[btb_entry.pc] = pred.taken || btb_entry.alwaysTaken;
+            results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
+            tageInfoForMgscs[btb_entry.pc].tage_pred_taken = pred.taken;
+            tageInfoForMgscs[btb_entry.pc].tage_pred_conf_high = pred.mainInfo.found &&
+                                         abs(pred.mainInfo.entry.counter*2 + 1) == 7; // counter saturated, -4 or 3
+            tageInfoForMgscs[btb_entry.pc].tage_pred_conf_mid = pred.mainInfo.found &&
+                                         (abs(pred.mainInfo.entry.counter*2 + 1) < 7 &&
+                                         abs(pred.mainInfo.entry.counter*2 + 1) > 1); // counter not saturated, -3, -2, 1, 2
+            tageInfoForMgscs[btb_entry.pc].tage_pred_conf_low = !pred.mainInfo.found ||
+                                         (abs(pred.mainInfo.entry.counter*2 + 1) <= 1); // counter initialized, -1 or 0
+            // main predict is different from alt predict/base predict
+            tageInfoForMgscs[btb_entry.pc].tage_pred_alt_diff = pred.mainInfo.found && pred.mainInfo.taken() != pred.altPred;
         }
     }
-    return cond_takens;
 }
 
 /**
@@ -277,19 +279,28 @@ BTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Full
     // IMPORTANT: when this function is called,
     // btb entries should already be in stagePreds
     // get prediction and save it
+
+    // Clear old prediction metadata and save current history state
+    meta = std::make_shared<TageMeta>();
+    meta->tagFoldedHist = tagFoldedHist;
+    meta->altTagFoldedHist = altTagFoldedHist;
+    meta->indexFoldedHist = indexFoldedHist;
+
+    // record useful bit to meta.usefulMask
+    recordUsefulMask(stream_start);
+
     for (int s = getDelay(); s < stagePreds.size(); s++) {
         // TODO: only lookup once for one btb entry in different stages
         auto &stage_pred = stagePreds[s];
-        auto cond_takens = lookupHelper(stream_start, stage_pred.btbEntries);
-        stage_pred.condTakens = cond_takens;
+        stage_pred.condTakens.clear();
+        lookupHelper(stream_start, stage_pred.btbEntries, stage_pred.tageInfoForMgscs, stage_pred.condTakens);
     }
 
 }
 
 std::shared_ptr<void>
 BTBTAGE::getPredictionMeta() {
-    std::shared_ptr<void> meta_void_ptr = std::make_shared<TageMeta>(meta);
-    return meta_void_ptr;
+    return meta;
 }
 
 /**
@@ -662,17 +673,24 @@ BTBTAGE::updateCounter(bool taken, unsigned width, short &counter) {
     }
 }
 
-// Calculate TAGE tag with folded history
+// Calculate TAGE tag with folded history - optimized version using bitwise operations
 Addr
-BTBTAGE::getTageTag(Addr pc, int t, bitset &foldedHist, bitset &altFoldedHist)
+BTBTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist)
 {
-    bitset buf(tableTagBits[t], pc >> floorLog2(blockSize));  // lower bits of PC
-    bitset altTagBuf(altFoldedHist);
-    altTagBuf.resize(tableTagBits[t]);
-    altTagBuf <<= 1;
-    buf ^= foldedHist;
-    buf ^= altTagBuf;
-    return buf.to_ulong();
+    // Create mask for tableTagBits[t] to limit result size
+    Addr mask = (1ULL << tableTagBits[t]) - 1;
+
+    // Extract lower bits of PC directly
+    Addr pcBits = (pc >> floorLog2(blockSize)) & mask;
+
+    // Extract and prepare folded history bits
+    Addr foldedBits = foldedHist & mask;
+
+    // Extract alt tag bits and shift left by 1
+    Addr altTagBits = (altFoldedHist << 1) & mask;
+
+    // XOR all components together
+    return pcBits ^ foldedBits ^ altTagBits;
 }
 
 Addr
@@ -682,11 +700,16 @@ BTBTAGE::getTageTag(Addr pc, int t)
 }
 
 Addr
-BTBTAGE::getTageIndex(Addr pc, int t, bitset &foldedHist)
+BTBTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist)
 {
-    bitset buf(tableIndexBits[t], pc >> floorLog2(blockSize));  // lower bits of PC
-    buf ^= foldedHist;
-    return buf.to_ulong();
+    // Create mask for tableIndexBits[t] to limit result size
+    Addr mask = (1ULL << tableIndexBits[t]) - 1;
+
+    // Extract lower bits of PC and XOR with folded history directly
+    Addr pcBits = (pc >> floorLog2(blockSize)) & mask;
+    Addr foldedBits = foldedHist & mask;
+
+    return pcBits ^ foldedBits;
 }
 
 Addr
@@ -737,22 +760,23 @@ BTBTAGE::getUseAltIdx(Addr pc) {
  * @param taken Whether the branch was taken
  */
 void
-BTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, int shamt, bool taken)
+BTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr pc)
 {
     if (debugFlagOn) {
         std::string buf;
         boost::to_string(history, buf);
-        DPRINTF(TAGE, "in doUpdateHist, shamt %d, taken %d, history %s\n", shamt, taken, buf.c_str());
+        DPRINTF(TAGE, "in doUpdateHist, taken %d, pc %#lx, history %s\n", taken, pc, buf.c_str());
     }
-    if (shamt == 0) {
-        DPRINTF(TAGE, "shamt is 0, returning\n");
+    if (!taken) {
+        DPRINTF(TAGE, "not updating folded history, since FB not taken\n");
         return;
     }
 
     for (int t = 0; t < numPredictors; t++) {
         for (int type = 0; type < 3; type++) {
             auto &foldedHist = type == 0 ? indexFoldedHist[t] : type == 1 ? tagFoldedHist[t] : altTagFoldedHist[t];
-            foldedHist.update(history, shamt, taken);
+            // since we have folded path history, we can put arbitrary shamt here, and it wouldn't make a difference
+            foldedHist.update(history, 2, taken, pc);
         }
     }
 }
@@ -770,12 +794,12 @@ BTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, int shamt, bool ta
  * @param pred The prediction metadata containing history information
  */
 void
-BTBTAGE::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
+BTBTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {
-    int shamt;
+    Addr pc;
     bool cond_taken;
-    std::tie(shamt, cond_taken) = pred.getHistInfo();
-    doUpdateHist(history, shamt, cond_taken);
+    std::tie(pc, cond_taken) = pred.getPHistInfo();
+    doUpdateHist(history, cond_taken, pc);
 }
 
 /**
@@ -792,7 +816,7 @@ BTBTAGE::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPredictio
  * @param cond_taken The actual branch outcome
  */
 void
-BTBTAGE::recoverHist(const boost::dynamic_bitset<> &history,
+BTBTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
     const FetchStream &entry, int shamt, bool cond_taken)
 {
     std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
@@ -801,7 +825,7 @@ BTBTAGE::recoverHist(const boost::dynamic_bitset<> &history,
         altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
         indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
     }
-    doUpdateHist(history, shamt, cond_taken);
+    doUpdateHist(history, cond_taken, entry.getControlPC());
 }
 
 // Check folded history after speculative update and recovery

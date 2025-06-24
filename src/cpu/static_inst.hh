@@ -113,6 +113,8 @@ class StaticInst : public RefCounted, public StaticInstFlags
 
     std::array<uint8_t, RMiscRegClass + 1> _numTypedDestRegs = {};
 
+    unsigned nf = 0;
+
   public:
 
     /// @name Register information.
@@ -169,11 +171,7 @@ class StaticInst : public RefCounted, public StaticInstFlags
     bool isFloating()     const { return flags[IsFloating]; }
     bool isVector()       const { return flags[IsVector]; }
     bool isVectorConfig() const { return opClass() == VectorConfigOp; }
-    bool isVecSegLoad()   const
-    {
-        return opClass() == VectorSegUnitStrideLoadOp || opClass() == VectorSegUnitStrideMaskLoadOp ||
-               opClass() == VectorSegStridedLoadOp || opClass() == VectorSegIndexedLoadOp;
-    }
+    bool isSegLoad()      const { return flags[IsSegLoad]; }
 
     bool isControl()      const { return flags[IsControl]; }
     bool isCall()         const { return flags[IsCall]; }
@@ -213,6 +211,7 @@ class StaticInst : public RefCounted, public StaticInstFlags
     bool isHtmStart() const { return flags[IsHtmStart]; }
     bool isHtmStop() const { return flags[IsHtmStop]; }
     bool isHtmCancel() const { return flags[IsHtmCancel]; }
+    bool isAddImm() const { return flags[IsAddImm]; }
 
     bool
     isHtmCmd() const
@@ -230,6 +229,9 @@ class StaticInst : public RefCounted, public StaticInstFlags
     OpClass opClass() const { return _opClass; }
 
     void resetOpClass(OpClass op_class) { _opClass = op_class; }
+
+    void setNF(unsigned _nf) { nf = _nf; }
+    unsigned getNF() { return nf; }
 
     /// Return logical index (architectural reg num) of i'th destination reg.
     /// Only the entries from 0 through numDestRegs()-1 are valid.
@@ -361,6 +363,13 @@ class StaticInst : public RefCounted, public StaticInstFlags
      */
     virtual const std::string &disassemble(Addr pc,
         const loader::SymbolTable *symtab=nullptr) const;
+
+
+    virtual int64_t getImm() const
+    {
+        panic("imm is not defined, trying to get immediate \
+              from an instruction with no immediate");
+    }
 
     /**
      * Print a separator separated list of this instruction's set flag

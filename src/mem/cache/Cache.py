@@ -44,6 +44,7 @@ from m5.objects.ClockedObject import ClockedObject
 from m5.objects.Compressors import BaseCacheCompressor
 from m5.objects.Prefetcher import BasePrefetcher
 from m5.objects.ReplacementPolicies import *
+from m5.objects.WayPredictionPolicies import *
 from m5.objects.Tags import *
 
 # Enum for cache clusivity, currently mostly inclusive or mostly
@@ -96,7 +97,7 @@ class BaseCache(ClockedObject):
     do_fast_writeline = Param.Bool(True, "Write whole line do not read")
 
     is_read_only = Param.Bool(False, "Is this cache read only (e.g. inst)")
-    enable_wayprediction = Param.Bool(True, "enablewaypredction")
+    wpu = Param.BaseWpu(NULL, "Way prediction unit")
 
     prefetcher = Param.BasePrefetcher(NULL,"Prefetcher attached to cache")
     tags = Param.BaseTags(BaseSetAssoc(), "Tag store")

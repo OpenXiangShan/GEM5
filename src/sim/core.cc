@@ -81,6 +81,9 @@ bool _clockFrequencyFixed = false;
 // Default to 1 THz (1 Tick == 1 ps)
 Tick _ticksPerSecond = 1e12;
 
+// Default CPU clock period for debug printing (3GHz = 333 ticks per cycle)
+Tick _cpuClockPeriod = 333;
+
 } // anonymous namespace
 
 void
@@ -122,6 +125,10 @@ setClockFrequency(Tick tps)
     _ticksPerSecond = tps;
 }
 Tick getClockFrequency() { return _ticksPerSecond; }
+
+Tick getCpuClockPeriod() { return _cpuClockPeriod; }
+
+void setCpuClockPeriod(Tick period) { _cpuClockPeriod = period; }
 
 void
 setOutputDir(const std::string &dir)

@@ -376,6 +376,8 @@ class Packet : public Printable
 
     /// The command field of the packet.
     MemCmd cmd;
+    /// The tick when the packet is sent
+    Tick sendTick = 0;
 
     const PacketId id;
 
@@ -1598,8 +1600,6 @@ class Packet : public Printable
     int pfDepth = 0;
 
     bool tagReadFail = false;
-
-    bool cacheSatisfied = true;
 
     bool fromBOP() const { return pfSource == PrefetchSourceType::HWP_BOP; }
     

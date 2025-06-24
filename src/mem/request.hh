@@ -84,6 +84,7 @@ enum PrefetchSourceType
     StoreStream,
     CDP,
     SOpt,
+    DespacitoStream,
     NUM_PF_SOURCES
 };
 

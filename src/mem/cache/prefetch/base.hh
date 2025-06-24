@@ -557,12 +557,14 @@ class Base : public ClockedObject
      * page crossing references and/or uses virtual addresses for training.
      * @param tlb pointer to the BaseTLB object to add
      */
-    virtual void addTLB(BaseTLB *tlb);
+    virtual void addTLB(BaseTLB *tlb, bool functional);
 
   protected:
     Base *hintDownStream{nullptr};
 
     bool squashMark{false};
+
+    bool functionalTLB{false};
 
   public:
     virtual void addHintDownStream(Base* down_stream)

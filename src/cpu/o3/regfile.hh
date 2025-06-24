@@ -62,6 +62,99 @@ namespace o3
 
 class UnifiedFreeList;
 
+// immediate constant elimination
+class IEOperand : public RefCounted
+{
+public:
+    enum class Type
+    {
+        Invalid,
+        LUI,
+        ADD
+    } type = Type::Invalid;
+    int imm = 0;
+
+    IEOperand() = delete;
+    IEOperand(Type _type, int _imm) : type(_type), imm(_imm)
+    {
+        if (type == Type::Invalid) {
+            panic("Invalid IEOperand type");
+        }
+    }
+
+    uint64_t calculate(uint64_t val) const
+    {
+        switch (type) {
+          case Type::Invalid:
+            panic("Invalid IEOperand type");
+          case Type::LUI:
+            return imm;
+          case Type::ADD:
+            return val + imm;
+        }
+        panic("Unreachable code in IEOperand::calculate");
+    }
+
+    std::string toString() const {
+        switch (type) {
+          case Type::Invalid:
+            panic("Invalid IEOperand type");
+          case Type::LUI:
+            return "LUI(" + std::to_string(imm) + ")";
+          case Type::ADD:
+            return "ADD(" + std::to_string(imm) + ")";
+        }
+        panic("Unreachable code in IEOperand::toString");
+    }
+};
+
+using IEOperPtr = RefCountingPtr<IEOperand>;
+
+class VirtRegId
+{
+  private:
+    PhysRegIdPtr phyReg;
+    IEOperPtr ieop;
+
+  public:
+    VirtRegId() : phyReg(nullptr), ieop(nullptr) {};
+    explicit VirtRegId(PhysRegIdPtr ptr) : phyReg(ptr), ieop(nullptr){};
+    VirtRegId(PhysRegIdPtr ptr, const IEOperPtr& ieop) : phyReg(ptr), ieop(ieop){};
+
+    void setPhyReg(PhysRegIdPtr ptr) { phyReg = ptr; }
+    const PhysRegIdPtr& PhyReg() const { return phyReg; }
+    void setIEOper(const IEOperPtr& ieop_) { ieop = ieop_; }
+    const IEOperPtr& IEOper() const { return ieop; }
+
+    uint64_t correct(uint64_t val) const
+    {
+        if (ieop) {
+            return ieop->calculate(val);;
+        } else {
+            return val;
+        }
+    }
+
+    std::string toString() const
+    {
+        std::string str = "[phys: " + std::to_string(phyReg->flatIndex());
+        if (ieop) {
+            str += ", ieOp: " + ieop->toString();
+        }
+        str += "]";
+        return str;
+    }
+
+    inline bool operator==(const VirtRegId& that) const {
+        return phyReg == that.phyReg &&
+               ieop == that.ieop;
+    }
+    inline bool operator!=(const VirtRegId& that) const {
+        return phyReg != that.phyReg ||
+               ieop != that.ieop;
+    }
+};
+
 /**
  * Simple physical register file class.
  */
@@ -206,6 +299,16 @@ class PhysRegFile
           default:
             panic("Unsupported register class type %d.", type);
         }
+    }
+
+    RegVal
+    getReg(VirtRegId virt_reg) const
+    {
+        const RegClassType type = virt_reg.PhyReg()->classValue();
+        const RegIndex idx = virt_reg.PhyReg()->index();
+
+        DPRINTF(IEW, "RegFile: trying to access %s register %i \n", type, idx);
+        return virt_reg.correct(getReg(virt_reg.PhyReg()));
     }
 
     void

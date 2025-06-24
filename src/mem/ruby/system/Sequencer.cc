@@ -650,7 +650,6 @@ Sequencer::notifyMissCallback(Addr address, bool is_upgrade, bool is_busy)
     // cancel pending loads' speculation
     for (auto &seq_req: seq_req_list) {
         if (seq_req.pkt->isRead() && !seq_req.pkt->isWrite()) {
-            seq_req.pkt->cacheSatisfied = false;
             ruby_custom_signal_callback(seq_req.pkt);
             stat.loadcancel++;
         }

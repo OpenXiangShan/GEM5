@@ -900,6 +900,7 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
                 DPRINTF(Cache, "%s: updated cmd to %s\n", __func__,
                         tgt_pkt->print());
             }
+
             // Reset the bus additional time as it is now accounted for
             tgt_pkt->headerDelay = tgt_pkt->payloadDelay = 0;
             DPRINTF(Cache, "Scheduling %#lx to response to sender %#lx at tick %lu\n",

@@ -48,6 +48,8 @@ class BaseMMU(SimObject):
     itb = Param.BaseTLB("Instruction TLB")
     dtb = Param.BaseTLB("Data TLB")
 
+    functional = Param.Bool(False, "Functional MMU")
+
     @classmethod
     def walkerPorts(cls):
         # This classmethod is used by the BaseCPU. It should return

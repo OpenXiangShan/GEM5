@@ -55,7 +55,6 @@ struct VectorMicroInfo
     int32_t microVs2 = ~0;
     int32_t microVs3 = ~0;
 
-    uint32_t nf = 1;
     uint32_t fn = ~0; // segment idx
     uint32_t offset = ~0; // vload/store baseAddr offset
 };
@@ -101,6 +100,35 @@ inline uint8_t checked_vtype(bool vill, uint8_t vtype) {
     return vtype;
 }
 
+class VectorNonSplitInst : public RiscvStaticInst
+{
+  public:
+    int oldDstIdx = -1;
+    int vmsrcIdx = -1;
+    int vlsrcIdx = -1;
+  protected:
+    const int microIdx = 0; // just for convenience
+    const bool vm;
+    const uint8_t vsew;
+    const int8_t vlmul;
+    const uint32_t sew;
+    const float vflmul;
+    VectorNonSplitInst(const char* mnem, ExtMachInst _machInst,
+                   OpClass __opClass)
+        : RiscvStaticInst(mnem, _machInst, __opClass),
+        vm(_machInst.vm),
+        vsew(_machInst.vtype8.vsew),
+        vlmul(vtype_vlmul(_machInst.vtype8)),
+        sew( (8 << vsew) ),
+        vflmul( vlmul < 0 ? (1.0 / (1 << (-vlmul))) : (1 << vlmul) )
+    {
+        this->flags[IsVector] = true;
+    }
+
+    std::string generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
 class VectorMacroInst : public RiscvMacroInst
 {
   protected:
@@ -129,10 +157,6 @@ public:
     int oldDstIdx = -1;
     int vmsrcIdx = -1;
     int vlsrcIdx = -1;
-    const bool vta,vma;
-
-    virtual bool oldVdEliminable() { return true; }
-
 protected:
     const uint8_t microIdx;
     const bool vm;
@@ -143,33 +167,37 @@ protected:
     VectorMicroInst(const char *mnem, ExtMachInst _machInst, OpClass __opClass,
                     uint8_t _microIdx)
         : RiscvMicroInst(mnem, _machInst, __opClass),
-        vta(_machInst.vtype8.vta),
-        vma(_machInst.vtype8.vma),
         microIdx(_microIdx),
         vm(_machInst.vm),
         vsew(_machInst.vtype8.vsew),
         vlmul(vtype_vlmul(_machInst.vtype8)),
-        sew((8 << vsew)),
-        vflmul(vlmul < 0 ? (1.0 / (1 << (-vlmul))) : (1 << vlmul))
+        sew( (8 << vsew) ),
+        vflmul( vlmul < 0 ? (1.0 / (1 << (-vlmul))) : (1 << vlmul) )
     {
         this->flags[IsVector] = true;
     }
 };
 
-class VectorNonSplitInst : public VectorMicroInst
+class VectorNopMicroInst : public RiscvMicroInst
 {
-  protected:
-    VectorNonSplitInst(const char* mnem, ExtMachInst _machInst,
-                   OpClass __opClass)
-        : VectorMicroInst(mnem, _machInst, __opClass, 0)
+public:
+    VectorNopMicroInst(ExtMachInst _machInst)
+        : RiscvMicroInst("vnop", _machInst, No_OpClass)
+    {}
+
+    Fault execute(ExecContext* xc, Trace::InstRecord* traceData)
+        const override
     {
-        this->flags[IsVector] = true;
-        this->setFirstMicroop();
-        this->setLastMicroop();
+        return NoFault;
     }
 
-    std::string generateDisassembly(
-        Addr pc, const loader::SymbolTable *symtab) const override;
+    std::string generateDisassembly(Addr pc, const loader::SymbolTable *symtab)
+      const override
+    {
+        std::stringstream ss;
+        ss << mnemonic;
+        return ss.str();
+    }
 };
 
 class VectorArithMicroInst : public VectorMicroInst
@@ -384,9 +412,7 @@ class VlWholeMicroInst : public VectorMemMicroInst
     VlWholeMicroInst(const char *mnem, ExtMachInst _machInst,
                      OpClass __opClass, uint8_t _microIdx)
         : VectorMemMicroInst(mnem, _machInst, __opClass, _microIdx)
-    {
-        this->flags[IsLoad] = true;
-    }
+    {}
 
     std::string generateDisassembly(
       Addr pc, const loader::SymbolTable *symtab) const override;
@@ -436,9 +462,7 @@ class VlStrideMicroInst : public VectorMemMicroInst
     VlStrideMicroInst(const char *mnem, ExtMachInst _machInst,
                       OpClass __opClass, uint8_t _microIdx)
         : VectorMemMicroInst(mnem, _machInst, __opClass, _microIdx)
-    {
-        this->flags[IsLoad] = true;
-    }
+    {}
 
     std::string generateDisassembly(
         Addr pc, const loader::SymbolTable *symtab) const override;
@@ -488,9 +512,7 @@ class VlIndexMicroInst : public VectorMemMicroInst
     VlIndexMicroInst(const char *mnem, ExtMachInst _machInst,
                     OpClass __opClass, uint32_t _microIdx)
         : VectorMemMicroInst(mnem, _machInst, __opClass, _microIdx)
-    {
-        this->flags[IsLoad] = true;
-    }
+    {}
 
     std::string generateDisassembly(
         Addr pc, const loader::SymbolTable *symtab) const override;
@@ -651,223 +673,365 @@ class VxsatMicroInst : public VectorArithMicroInst
     }
 };
 
-class VCompressPopcMicroInst : public VectorArithMicroInst
-{
-private:
-    RegId srcRegIdxArr[8];  // vm
-    RegId destRegIdxArr[1]; // vcnt
+// class VCompressPopcMicroInst : public VectorArithMicroInst
+// {
+// private:
+//     RegId srcRegIdxArr[8];  // vm
+//     RegId destRegIdxArr[1]; // vcnt
 
-  public:
-    VCompressPopcMicroInst(ExtMachInst extMachInst)
-        : VectorArithMicroInst("VPopCount", extMachInst,
-          VectorIntegerArithOp, 0)
-    {
-        setRegIdxArrays(reinterpret_cast<RegIdArrayPtr>(
-            &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
-        reinterpret_cast<RegIdArrayPtr>(
-            &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
-        _numSrcRegs = 0;
-        _numDestRegs = 0;
-        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, VecCompressCntReg));
-        _numTypedDestRegs[VecRegClass]++;
-        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, extMachInst.vs1));
-        setSrcRegIdx(_numSrcRegs++, VecRenamedVLReg);
-    }
+//   public:
+//     VCompressPopcMicroInst(ExtMachInst extMachInst)
+//         : VectorArithMicroInst("VPopCount", extMachInst,
+//           VectorIntegerArithOp, 0)
+//     {
+//         setRegIdxArrays(reinterpret_cast<RegIdArrayPtr>(
+//             &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
+//         reinterpret_cast<RegIdArrayPtr>(
+//             &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
+//         _numSrcRegs = 0;
+//         _numDestRegs = 0;
+//         setDestRegIdx(_numDestRegs++, RegId(VecRegClass, VecCompressCntReg));
+//         _numTypedDestRegs[VecRegClass]++;
+//         setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, extMachInst.vs1));
+//         setSrcRegIdx(_numSrcRegs++, VecRenamedVLReg);
+//     }
 
-    Fault execute(ExecContext* xc, Trace::InstRecord* traceData) const override
-    {
-        const int countN = VLEN / sew;
-        const int numVRegs = 1 << std::max<int64_t>(0, vlmul);
+//     Fault execute(ExecContext* xc, Trace::InstRecord* traceData) const override
+//     {
+//         const int countN = VLEN / sew;
+//         const int numVRegs = 1 << std::max<int64_t>(0, vlmul);
 
-        vreg_t vs1;
-        xc->getRegOperand(this, 0, &vs1);
-        int rVl = xc->getRegOperand(this, 1);
-        vreg_t vd = *(vreg_t *)xc->getWritableRegOperand(this, 0);
+//         vreg_t vs1;
+//         xc->getRegOperand(this, 0, &vs1);
+//         int rVl = xc->getRegOperand(this, 1);
+//         vreg_t vd = *(vreg_t *)xc->getWritableRegOperand(this, 0);
 
-        int popCnt = 0;
-        int cnt[8] = {0};
-        for (int i=0; i<numVRegs; i++) {
-            cnt[i] = popcount_in_byte(vs1.as<uint64_t>(), i * countN, (i+1) * countN);
-            popCnt += cnt[i];
-        }
-        popCnt = std::min(popCnt, rVl);
+//         int popCnt = 0;
+//         int cnt[8] = {0};
+//         for (int i=0; i<numVRegs; i++) {
+//             cnt[i] = popcount_in_byte(vs1.as<uint64_t>(), i * countN, (i+1) * countN);
+//             popCnt += cnt[i];
+//         }
+//         popCnt = std::min(popCnt, rVl);
 
-        // vd [popCount(vs1 + numVRegs)...] + [num of each Vd should compress]
-        for (int i=0; i<numVRegs; i++) {
-            vd.as<uint8_t>()[i] = std::min(popCnt, countN);
-            popCnt = std::max(0, popCnt - countN);
-        }
+//         // vd [popCount(vs1 + numVRegs)...] + [num of each Vd should compress]
+//         for (int i=0; i<numVRegs; i++) {
+//             vd.as<uint8_t>()[i] = std::min(popCnt, countN);
+//             popCnt = std::max(0, popCnt - countN);
+//         }
 
-        for (int i=0; i<numVRegs; i++) {
-            vd.as<uint8_t>()[i+8] = std::min(rVl, cnt[i]);
-        }
+//         for (int i=0; i<numVRegs; i++) {
+//             vd.as<uint8_t>()[i+8] = std::min(rVl, cnt[i]);
+//         }
 
-        xc->setRegOperand(this, 0, &vd);
-        if (traceData)
-            traceData->setData(vd);
-        return NoFault;
-    }
+//         xc->setRegOperand(this, 0, &vd);
+//         if (traceData)
+//             traceData->setData(vd);
+//         return NoFault;
+//     }
 
-    std::string generateDisassembly(Addr pc, const loader::SymbolTable *symtab)
-        const override
-    {
-        std::stringstream ss;
-        ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
-        << registerName(srcRegIdx(0)) << ", ";
-        return ss.str();
-    }
+//     std::string generateDisassembly(Addr pc, const loader::SymbolTable *symtab)
+//         const override
+//     {
+//         std::stringstream ss;
+//         ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
+//         << registerName(srcRegIdx(0)) << ", ";
+//         return ss.str();
+//     }
 
-};
+// };
+
+// template<typename Type>
+// class VCompressMicroInst : public VectorArithMicroInst
+// {
+//   private:
+//     RegId srcRegIdxArr[8];  // vs, vcnt, vm, old_vd
+//     RegId destRegIdxArr[1]; // vd
+//     uint8_t vsIdx;
+//     uint8_t vdIdx;
+//   public:
+//     VCompressMicroInst(ExtMachInst extMachInst,
+//         uint8_t microIdx, uint8_t _vsIdx, uint8_t _vdIdx)
+//         : VectorArithMicroInst("Vcompress_micro", extMachInst,
+//           VectorIntegerArithOp, microIdx)
+//         , vsIdx(_vsIdx), vdIdx(_vdIdx)
+//     {
+//         setRegIdxArrays(
+//             reinterpret_cast<RegIdArrayPtr>(
+//                 &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
+//             reinterpret_cast<RegIdArrayPtr>(
+//                 &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
+
+//         _numSrcRegs = 0;
+//         _numDestRegs = 0;
+//         setDestRegIdx(_numDestRegs++, RegId(VecRegClass, extMachInst.vd + _vdIdx));
+//         _numTypedDestRegs[VecRegClass]++;
+//         // vs
+//         setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, extMachInst.vs2 + _vsIdx));
+//         // vcnt
+//         setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, VecCompressCntReg));
+//         // vm
+//         setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, extMachInst.vs1));
+//         // old_vd
+//         setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, extMachInst.vd + _vdIdx));
+//         // rVl
+//         setSrcRegIdx(_numSrcRegs++, VecRenamedVLReg);
+//     }
+
+//     Fault execute(ExecContext* xc, Trace::InstRecord* traceData) const override
+//     {
+//         const int uvlmax = VLEN / sew;
+//         uint32_t elem_num_per_vreg = VLEN / sew;
+
+//         vreg_t vs, vcnt, vm, old_vd;
+//         uint32_t rVl;
+//         xc->getRegOperand(this, 0, &vs);
+//         xc->getRegOperand(this, 1, &vcnt);
+//         xc->getRegOperand(this, 2, &vm);
+//         xc->getRegOperand(this, 3, &old_vd);
+//         rVl = xc->getRegOperand(this, 4);
+
+//         vreg_t vd = *(vreg_t *)xc->getWritableRegOperand(this, 0);
+//         memcpy(vd.as<uint8_t>(), old_vd.as<uint8_t>(), VLENB);
+
+
+//         uint16_t vd_should_compress = vcnt.as<uint8_t>()[vdIdx];
+//         uint16_t vs2_popCnt = vcnt.as<uint8_t>()[8 + vsIdx];
+
+//         uint32_t vd_has_compressed = 0;
+//         uint32_t cur_compressed = 0;
+//         uint32_t lower_num = 0;
+//         uint32_t upper_num = 0;
+//         for (int i=0; i<8; i++) {
+//             if (i < vdIdx) {
+//                 vd_has_compressed += vcnt.as<uint8_t>()[i];
+//             }
+//             if (i < vsIdx) {
+//                 lower_num += vcnt.as<uint8_t>()[8+i];
+//             }
+//         }
+//         upper_num = lower_num + vcnt.as<uint8_t>()[8+vsIdx];
+//         cur_compressed = vd_has_compressed + vcnt.as<uint8_t>()[vdIdx];
+
+//         bool satisfaction = (cur_compressed > lower_num) && (cur_compressed - lower_num <= uvlmax);
+//         if (satisfaction) {
+//             uint32_t vs2rs = vd_has_compressed > lower_num ? vd_has_compressed - lower_num : 0;
+//             uint32_t need_compress_num = cur_compressed > upper_num ?
+//                   cur_compressed - upper_num : cur_compressed - lower_num;
+//             uint32_t vdrs = lower_num > vd_has_compressed ? lower_num - vd_has_compressed : 0;
+//             assert(need_compress_num <= uvlmax);
+//             assert(vdrs < uvlmax);
+
+//             uint32_t compressed = 0;
+//             for (int i=0; i < uvlmax && compressed < need_compress_num; i++) {
+//                 uint32_t ei = vd_has_compressed + vdrs + compressed;
+//                 uint32_t vdElemIdx = vdrs + compressed;
+//                 uint32_t vs2ElemIdx = vs2rs + i;
+//                 if ((ei < rVl) && elem_mask(vm.as<uint8_t>(), ei)) {
+//                     vd.as<Type>()[vdElemIdx] = vs.as<Type>()[i];
+//                     compressed++;
+//                 }
+//             }
+//         }
+
+//         xc->setRegOperand(this, 0, &vd);
+//         if (traceData)
+//             traceData->setData(vd);
+//         return NoFault;
+//     }
+
+//     std::string generateDisassembly(Addr pc, const loader::SymbolTable *symtab)
+//         const override
+//     {
+//         std::stringstream ss;
+//         ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
+//         << registerName(srcRegIdx(0)) << ", "
+//         << registerName(srcRegIdx(1)) << ", "
+//         << registerName(srcRegIdx(2)) << ", "
+//         << registerName(srcRegIdx(3)) << ", ";
+//         return ss.str();
+//     }
+// };
 
 template<typename Type>
-class VCompressMicroInst : public VectorArithMicroInst
+class Vcompress_vm : public VectorNonSplitInst
 {
   private:
-    RegId srcRegIdxArr[8];  // vs, vcnt, vm, old_vd
-    RegId destRegIdxArr[1]; // vd
-    uint8_t vsIdx;
-    uint8_t vdIdx;
+    RegId srcRegIdxArr[20];  // vs, vcnt, vm, old_vd
+    RegId destRegIdxArr[8];  // vd
   public:
-    VCompressMicroInst(ExtMachInst extMachInst,
-        uint8_t microIdx, uint8_t _vsIdx, uint8_t _vdIdx)
-        : VectorArithMicroInst("Vcompress_micro", extMachInst,
-          VectorIntegerArithOp, microIdx)
-        , vsIdx(_vsIdx), vdIdx(_vdIdx)
+    Vcompress_vm(ExtMachInst extMachInst)
+        : VectorNonSplitInst("Vcompress", extMachInst, VectorIntegerArithOp)
     {
-        setRegIdxArrays(
-            reinterpret_cast<RegIdArrayPtr>(
-                &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
-            reinterpret_cast<RegIdArrayPtr>(
-                &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
+        setRegIdxArrays(reinterpret_cast<RegIdArrayPtr>(&std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
+                        reinterpret_cast<RegIdArrayPtr>(&std::remove_pointer_t<decltype(this)>::destRegIdxArr));
 
+        const uint32_t regLength = vflmul < 1 ? 1 : vflmul;
         _numSrcRegs = 0;
         _numDestRegs = 0;
-        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, extMachInst.vd + _vdIdx));
-        _numTypedDestRegs[VecRegClass]++;
+
+        for (int i = 0; i < regLength; i++) {
+            setDestRegIdx(_numDestRegs++, RegId(VecRegClass, extMachInst.vd + i));
+            _numTypedDestRegs[VecRegClass]++;
+        }
         // vs
-        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, extMachInst.vs2 + _vsIdx));
-        // vcnt
-        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, VecCompressCntReg));
+        for (int i = 0; i < regLength; i++) {
+            setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, extMachInst.vs2 + i));
+        }
+        // old_vd
+        for (int i = 0; i < regLength; i++) {
+            setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, extMachInst.vd + i));
+        }
         // vm
         setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, extMachInst.vs1));
-        // old_vd
-        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, extMachInst.vd + _vdIdx));
         // rVl
         setSrcRegIdx(_numSrcRegs++, VecRenamedVLReg);
     }
-
-    Fault execute(ExecContext* xc, Trace::InstRecord* traceData) const override
+    Fault execute(ExecContext *xc, Trace::InstRecord *traceData) const override
     {
+        const uint32_t regLength = vflmul < 1 ? 1 : vflmul;
         const int uvlmax = VLEN / sew;
         uint32_t elem_num_per_vreg = VLEN / sew;
 
-        vreg_t vs, vcnt, vm, old_vd;
+        std::vector<vreg_t> vs_array(regLength);
+        std::vector<vreg_t> old_vd_array(regLength);
+        std::vector<vreg_t> vd_array(regLength);
+
+        vreg_t vm;
         uint32_t rVl;
-        xc->getRegOperand(this, 0, &vs);
-        xc->getRegOperand(this, 1, &vcnt);
-        xc->getRegOperand(this, 2, &vm);
-        xc->getRegOperand(this, 3, &old_vd);
-        rVl = xc->getRegOperand(this, 4);
 
-        vreg_t vd = *(vreg_t *)xc->getWritableRegOperand(this, 0);
-        memcpy(vd.as<uint8_t>(), old_vd.as<uint8_t>(), VLENB);
+        for (uint32_t i = 0; i < regLength; i++) {
+            xc->getRegOperand(this, i, &vs_array[i]);
+        }
+        for (uint32_t i = 0; i < regLength; i++) {
+            xc->getRegOperand(this, i + regLength, &old_vd_array[i]);
+        }
+        xc->getRegOperand(this, regLength * 2, &vm);
 
+        rVl = xc->getRegOperand(this, regLength * 2 + 1);
 
-        uint16_t vd_should_compress = vcnt.as<uint8_t>()[vdIdx];
-        uint16_t vs2_popCnt = vcnt.as<uint8_t>()[8 + vsIdx];
-
-        uint32_t vd_has_compressed = 0;
-        uint32_t cur_compressed = 0;
-        uint32_t lower_num = 0;
-        uint32_t upper_num = 0;
-        for (int i=0; i<8; i++) {
-            if (i < vdIdx) {
-                vd_has_compressed += vcnt.as<uint8_t>()[i];
-            }
-            if (i < vsIdx) {
-                lower_num += vcnt.as<uint8_t>()[8+i];
+        for (uint32_t i = 0; i < regLength; i++) {
+            vd_array[i] = *(vreg_t *)xc->getWritableRegOperand(this, i);
+            memcpy(vd_array[i].as<uint8_t>(), old_vd_array[i].as<uint8_t>(), VLENB);
+        }
+        uint32_t vd_ptr = 0;
+        for (uint32_t i = 0; i < rVl; i++) {
+            if (elem_mask(vm.as<uint8_t>(), i)) {
+                vd_array[vd_ptr / elem_num_per_vreg].as<Type>()[vd_ptr % elem_num_per_vreg] =
+                    vs_array[i / elem_num_per_vreg].as<Type>()[i % elem_num_per_vreg];
+                vd_ptr++;
             }
         }
-        upper_num = lower_num + vcnt.as<uint8_t>()[8+vsIdx];
-        cur_compressed = vd_has_compressed + vcnt.as<uint8_t>()[vdIdx];
-
-        bool satisfaction = (cur_compressed > lower_num) && (cur_compressed - lower_num <= uvlmax);
-        if (satisfaction) {
-            uint32_t vs2rs = vd_has_compressed > lower_num ? vd_has_compressed - lower_num : 0;
-            uint32_t need_compress_num = cur_compressed > upper_num ?
-                  cur_compressed - upper_num : cur_compressed - lower_num;
-            uint32_t vdrs = lower_num > vd_has_compressed ? lower_num - vd_has_compressed : 0;
-            assert(need_compress_num <= uvlmax);
-            assert(vdrs < uvlmax);
-
-            uint32_t compressed = 0;
-            for (int i=0; i < uvlmax && compressed < need_compress_num; i++) {
-                uint32_t ei = vd_has_compressed + vdrs + compressed;
-                uint32_t vdElemIdx = vdrs + compressed;
-                uint32_t vs2ElemIdx = vs2rs + i;
-                if ((ei < rVl) && elem_mask(vm.as<uint8_t>(), ei)) {
-                    vd.as<Type>()[vdElemIdx] = vs.as<Type>()[i];
-                    compressed++;
-                }
-            }
+        for (uint32_t i = 0; i < regLength; i++) {
+            xc->setRegOperand(this, i, &vd_array[i]);
         }
-
-        xc->setRegOperand(this, 0, &vd);
-        if (traceData)
-            traceData->setData(vd);
         return NoFault;
     }
 
     std::string generateDisassembly(Addr pc, const loader::SymbolTable *symtab)
         const override
     {
+        const uint32_t regLength = vflmul < 1 ? 1 : vflmul;
         std::stringstream ss;
         ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
         << registerName(srcRegIdx(0)) << ", "
-        << registerName(srcRegIdx(1)) << ", "
-        << registerName(srcRegIdx(2)) << ", "
-        << registerName(srcRegIdx(3)) << ", ";
+        << registerName(srcRegIdx(regLength * 2)) << ", " ;
         return ss.str();
     }
 };
 
 template<typename Type>
-class Vcompress_vm : public VectorArithMacroInst
+class Vslideup_vi : public VectorNonSplitInst
 {
   private:
-    RegId srcRegIdxArr[8];  // vs, vm
-    RegId destRegIdxArr[1]; // vd
+    RegId srcRegIdxArr[20];  // vs, vcnt, vm, old_vd
+    RegId destRegIdxArr[8];  // vd
+    uint32_t imm;
+    uint8_t vm_bit;
   public:
-    Vcompress_vm(ExtMachInst _machInst)
-        : VectorArithMacroInst("vcompress_vm", _machInst, VectorIntegerArithOp)
+    Vslideup_vi(ExtMachInst extMachInst)
+        : VectorNonSplitInst("Vslideup", extMachInst, VectorIntegerArithOp)
     {
-        const uint32_t num_microops = vflmul < 1 ? 1 : vflmul;
-        const int32_t vlmax = VLEN / sew * vflmul;
+        setRegIdxArrays(reinterpret_cast<RegIdArrayPtr>(&std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
+                        reinterpret_cast<RegIdArrayPtr>(&std::remove_pointer_t<decltype(this)>::destRegIdxArr));
 
-        StaticInstPtr microop;
-        microop = new VCompressPopcMicroInst(_machInst);
-        this->microops.push_back(microop);
+        const uint32_t regLength = vflmul < 1 ? 1 : vflmul;
+        _numSrcRegs = 0;
+        _numDestRegs = 0;
 
-        int8_t microIdx = 0;
-        for (int i = 0; i < num_microops; ++i) {
-            for (int j = 0; j <= i; ++j) {
-                microop = new VCompressMicroInst<Type>(
-                    _machInst, microIdx++, i, j);
-                microop->setDelayedCommit();
-                this->microops.push_back(microop);
+        for (int i = 0; i < regLength; i++) {
+            setDestRegIdx(_numDestRegs++, RegId(VecRegClass, extMachInst.vd + i));
+            _numTypedDestRegs[VecRegClass]++;
+        }
+        // vs
+        for (int i = 0; i < regLength; i++) {
+            setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, extMachInst.vs2 + i));
+        }
+        // old_vd
+        for (int i = 0; i < regLength; i++) {
+            setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, extMachInst.vd + i));
+        }
+        // vm
+            setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, 0));
+        // rVl
+        setSrcRegIdx(_numSrcRegs++, VecRenamedVLReg);
+        imm = extMachInst.vecimm;
+        vm_bit = extMachInst.vm;
+    }
+    Fault execute(ExecContext *xc, Trace::InstRecord *traceData) const override
+    {
+        const uint32_t regLength = vflmul < 1 ? 1 : vflmul;
+        const int uvlmax = VLEN / sew;
+        uint32_t elem_num_per_vreg = VLEN / sew;
+
+        std::vector<vreg_t> vs_array(regLength);
+        std::vector<vreg_t> old_vd_array(regLength);
+        std::vector<vreg_t> vd_array(regLength);
+        vreg_t vm;
+        uint32_t rVl;
+
+        for (uint32_t i = 0; i < regLength; i++) {
+            xc->getRegOperand(this, i, &vs_array[i]);
+        }
+        for (uint32_t i = 0; i < regLength; i++) {
+            xc->getRegOperand(this, i + regLength, &old_vd_array[i]);
+        }
+
+        xc->getRegOperand(this, regLength * 2, &vm);
+        rVl = xc->getRegOperand(this, regLength * 2 + 1);
+
+        for (uint32_t i = 0; i < regLength; i++) {
+            vd_array[i] = *(vreg_t *)xc->getWritableRegOperand(this, i);
+            memcpy(vd_array[i].as<uint8_t>(), old_vd_array[i].as<uint8_t>(), VLENB);
+        }
+        for (uint32_t i = 0; i < rVl; i++) {
+            if (imm + i >= rVl) {
+                break;
+            }
+            if (vm_bit || elem_mask(vm.as<uint8_t>(), imm + i)){
+              vd_array[(imm + i) / elem_num_per_vreg].as<Type>()[(imm + i) % elem_num_per_vreg] =
+                  vs_array[i / elem_num_per_vreg].as<Type>()[i % elem_num_per_vreg];
             }
         }
-        this->microops.front()->setFirstMicroop();
-        this->microops.back()->setLastMicroop();
+        for (uint32_t i = 0; i < regLength; i++) {
+            xc->setRegOperand(this, i, &vd_array[i]);
+        }
+        return NoFault;
     }
 
     std::string generateDisassembly(Addr pc, const loader::SymbolTable *symtab)
         const override
     {
+        const uint32_t regLength = vflmul < 1 ? 1 : vflmul;
         std::stringstream ss;
-        ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
-        << registerName(srcRegIdx(1)) << ", "
-        << registerName(srcRegIdx(0));
+        if (vm_bit){
+          ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
+          << registerName(srcRegIdx(0)) << ", " << imm  << ", ";
+        } else {
+          ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
+          << registerName(srcRegIdx(0)) << ", " << imm  << ", " << registerName(srcRegIdx(regLength * 2)) << ".t, ";
+        }
+
         return ss.str();
     }
 };

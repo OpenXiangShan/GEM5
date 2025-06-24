@@ -49,7 +49,7 @@ SimObject('BranchPredictor.py', sim_objects=[
     'DecoupledStreamBPU', 'DefaultFTB', 'DecoupledBPUWithFTB',
     'TimedBaseFTBPredictor', 'FTBTAGE', 'FTBRAS', 'FTBuRAS', 'FTBITTAGE',
     'DefaultBTB', 'UBTB', 'DecoupledBPUWithBTB',
-    'TimedBaseBTBPredictor', 'BTBRAS', 'BTBTAGE', 'BTBITTAGE'], enums=["BpType"])
+    'TimedBaseBTBPredictor', 'BTBRAS', 'BTBTAGE', 'BTBITTAGE', 'BTBMGSC'], enums=["BpType"])
 
 DebugFlag('Indirect')
 Source('bpred_unit.cc')
@@ -100,6 +100,7 @@ Source('btb/timed_base_pred.cc')
 Source('btb/fetch_target_queue.cc')
 Source('btb/btb_tage.cc')
 Source('btb/btb_ittage.cc')
+Source('btb/btb_mgsc.cc')
 Source('btb/folded_hist.cc')
 Source('btb/ras.cc')
 Source('btb/btb_ubtb.cc')
@@ -125,6 +126,7 @@ DebugFlag('TAGEUseful')
 DebugFlag('ITTAGE')
 DebugFlag('FoldedHist')
 DebugFlag('RAS')
+DebugFlag('MGSC')
 DebugFlag('URAS')
 DebugFlag('DBPFTBStats')
 DebugFlag('FTBStats')

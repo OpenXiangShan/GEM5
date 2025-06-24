@@ -106,6 +106,7 @@ def build_test_system(np, args):
     for cpu in test_sys.cpu:
         cpu.mmu.pma_checker = PMAChecker(
             uncacheable=[AddrRange(0, size=0x80000000)])
+        cpu.mmu.functional = args.functional_tlb
 
     # configure BP
     args.enable_loop_predictor = True
@@ -330,32 +331,40 @@ def build_test_system(np, args):
 
 def setKmhV3IdealParams(args, system):
     for cpu in system.cpu:
+
+        cpu.mmu.itb.size = 96
+
+        cpu.fetchWidth = 32     # 64byte fetch block have up to 32 instructions
         cpu.commitToFetchDelay = 2
         cpu.fetchQueueSize = 64
         cpu.fetchToDecodeDelay = 2
+
         cpu.decodeWidth = 8
         cpu.renameWidth = 8
-        cpu.dispWidth = [10, 10, 10] # 6->10
         cpu.commitWidth = 12
         cpu.squashWidth = 12
         cpu.replayWidth = 12
         cpu.LQEntries = 128
-        cpu.SQEntries = 96
+        cpu.SQEntries = 64
         cpu.SbufferEntries = 24
         cpu.SbufferEvictThreshold = 16
-        cpu.numPhysIntRegs = 354
-        cpu.numPhysFloatRegs = 384
-        cpu.numROBEntries = 640
-        cpu.numDQEntries = [32, 16, 16] # 32->36
-        cpu.mmu.itb.size = 96
-        
-        cpu.BankConflictCheck = False   # real bank conflict 0.2 score
-        cpu.EnableLdMissReplay = False
-        cpu.EnablePipeNukeCheck = False
-        cpu.StoreWbStage = 2 # store writeback at s2
+        cpu.numPhysIntRegs = 224
+        cpu.numPhysFloatRegs = 256
+        cpu.RobCompressPolicy = 'none'
+        cpu.numROBEntries = 320
+        cpu.CROB_instPerGroup = 2 # 1 if not using ROB compression
+        cpu.enableDispatchStage = True
+        cpu.numDQEntries = [8, 8, 8]
+        cpu.dispWidth = [8, 8, 8]
+        cpu.scheduler = KMHV3Scheduler()
 
-        cpu.scheduler = IdealScheduler()
-        # use centralized load/store issue queue, for hmmer
+        cpu.BankConflictCheck = True   # real bank conflict 0.2 score
+        # cpu.EnableLdMissReplay = False
+        # cpu.EnablePipeNukeCheck = False
+        cpu.StoreWbStage = 4 # store writeback at s4
+
+        # enable constant folding
+        cpu.enableConstantFolding = True
 
         # ideal decoupled frontend
         if args.bp_type == 'DecoupledBPUWithFTB' or args.bp_type == 'DecoupledBPUWithBTB':
@@ -371,7 +380,7 @@ def setKmhV3IdealParams(args, system):
                 cpu.branchPred.predictWidth = 64              # max width of a fetch block
                 cpu.branchPred.btb.numEntries = 16384
                 # TODO: BTB TAGE do not bave base table, do not support SC
-                cpu.branchPred.tage.tableSizes = [4096] * 14  # BTB TAGE may need larger table
+                cpu.branchPred.tage.tableSizes = [2048] * 14  # 2ways, 2048 sets
 
             cpu.branchPred.tage.enableSC = False # TODO(bug): When numBr changes, enabling SC will trigger an assert
             cpu.branchPred.ftq_size = 256
@@ -383,24 +392,20 @@ def setKmhV3IdealParams(args, system):
 
         # ideal l1 caches
         if args.caches:
-            cpu.icache.size = '128kB'
-            cpu.dcache.size = '128kB'
-            cpu.icache.enable_wayprediction = False
-            cpu.dcache.enable_wayprediction = False
+            cpu.icache.size = '64kB'
+            cpu.dcache.size = '64kB'
             cpu.dcache.tag_load_read_ports = 100 # 3->100
-            cpu.dcache.mshrs = 32
+            cpu.dcache.mshrs = 16
 
     if args.l2cache:
         for i in range(args.num_cpus):
             system.l2_caches[i].size = '2MB'
-            system.l2_caches[i].enable_wayprediction = False
             system.l2_caches[i].slice_num = 0   # 4 -> 0, no slice
             system.tol2bus_list[i].forward_latency = 0  # 3->0
             system.tol2bus_list[i].response_latency = 0  # 3->0
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 0  # 2->0
 
     if args.l3cache:
-        system.l3.enable_wayprediction = False
         system.l3.mshrs = 128
 
 if __name__ == '__m5_main__':

@@ -1,83 +1,139 @@
 #include "cpu/pred/btb/folded_hist.hh"
 
-namespace gem5 {
+namespace gem5
+{
 
-namespace branch_prediction {
+namespace branch_prediction
+{
 
-namespace btb_pred {
+namespace btb_pred
+{
 
 /**
  * Update the folded history with a new branch outcome.
- * 
+ * Note: pc is used only for path history update!
+ *
  * Example:
  * If we have:
  *   histLen = 8 (original history length)
  *   foldedLen = 4 (compressed history length)
  *   maxShamt = 2 (maximum shift amount)
- * 
+ *
  * Case 1: foldedLen >= histLen (e.g., histLen=4, foldedLen=8)
  * - Simply shift and set new bit
- * Original:  [0,0,0,1]
- * After shift 1 and taken: [0,0,0,0,0,0,1,1]
- * 
+ *
  * Case 2: foldedLen < histLen (e.g., histLen=8, foldedLen=4)
  * - XOR the highest bits that would be lost in shift
  * - Then shift and set new bit
- * Original GHR:     [1,1,0,0,1,0,1,0]
- * Folded (4 bits):  [0,1,1,0]
- * After XOR & shift: [1,0,1,1]
  */
 void
-FoldedHist::update(const boost::dynamic_bitset<> &ghr, int shamt, bool taken)
+FoldedHist::update(const boost::dynamic_bitset<> &ghr, int shamt, bool taken, Addr pc)
 {
-    // Create temporary bitset for manipulation
-    boost::dynamic_bitset<> temp(folded);
+    // Create mask for folded length
+    const uint64_t foldedMask = ((1ULL << foldedLen) - 1);
 
-    // Case 1: When folded length >= history length
-    if (foldedLen >= histLen) {
+    if (type == HistoryType::GLOBAL || type == HistoryType::GLOBALBW || type == HistoryType::LOCAL) {
+        uint64_t temp = folded;
+
+        // Case 1: When folded length >= history length
+        if (foldedLen >= histLen) {
+            // Simple shift and set case
+            temp <<= shamt;
+            // Clear any bits beyond histLen
+            temp &= ((1ULL << histLen) - 1);
+            // Set the newest bit based on branch outcome
+            if (taken) {
+                temp |= 1;
+            }
+        }
+        // Case 2: When folded length < history length
+        else {
+            // Step 1: Handle the bits that would be lost in shift
+            for (int i = 0; i < shamt; i++) {
+                // XOR the highest bits from GHR with corresponding positions in folded history
+                temp ^= (ghr[posHighestBitsInGhr[i]] << posHighestBitsInOldFoldedHist[i]);
+            }
+
+            // Step 2: Perform the shift
+            temp <<= shamt;
+
+            // Step 3: Copy the XORed bits back to lower positions
+            for (int i = 0; i < shamt; i++) {
+                uint64_t highBit = (temp >> (foldedLen + i)) & 1;
+                temp |= (highBit << i);
+            }
+
+            // Step 4: Add new branch outcome
+            if (taken) {
+                temp ^= 1;
+            }
+
+            // Step 5: Mask to folded length
+            temp &= foldedMask;
+        }
+        folded = temp;
+    } else if (type == HistoryType::IMLI) {
+        // Case 1: When folded length >= history length
+        assert(foldedLen >= histLen);  // Requirement of IMLI
+        uint64_t temp = folded;
         // Simple shift and set case
-        temp <<= shamt;
-        // Clear any bits beyond histLen
-        for (int i = histLen; i < foldedLen; i++) {
-            temp[i] = 0;
+        if (taken && temp < ((1ULL << histLen) - 1) && shamt == 1) {  // backward taken, inner most loop
+            temp = temp + 1;                                          // counter++ (index++)
+        } else if (taken && shamt > 1) {                              // backward taken, not inner most loop
+            temp = 1;
+        } else if (!taken) {  // backward not taken, hist = 0
+            temp = 0;
         }
-        // Set the newest bit based on branch outcome
-        temp[0] = taken;
-    } 
-    // Case 2: When folded length < history length
-    else {
-        // Step 1: Handle the bits that would be lost in shift
-        temp.resize(foldedLen + shamt);
-        for (int i = 0; i < shamt; i++) {
-            // XOR the highest bits from GHR with corresponding positions in folded history
-            temp[posHighestBitsInOldFoldedHist[i]] ^= ghr[posHighestBitsInGhr[i]];
-        }
+        folded = temp & foldedMask;
+    } else if (type == HistoryType::PATH) {
+        if (taken) {
+            uint64_t temp = folded;
+            // Case 1: When folded length >= history length
+            if (foldedLen >= histLen) {
+                // Simple shift and set case
+                temp <<= 2;
+                // Clear any bits beyond histLen
+                temp &= ((1ULL << histLen) - 1);
+                // Set the newest bits based on PC
+                uint64_t pcBits = ((pc >> 1) ^ (pc >> 3) ^ (pc >> 5) ^ (pc >> 7));
+                temp |= (pcBits & 0b11);
+            }
+            // Case 2: When folded length < history length
+            else {
+                assert(maxShamt >= 2);
 
-        // Step 2: Perform the shift
-        temp <<= shamt;
-        
-        // Step 3: Copy the XORed bits back to lower positions
-        for (int i = 0; i < shamt; i ++) {
-            temp[i] = temp[foldedLen + i];
+                int phrShamt = 2; // hardcoded to be 2, the shamt passed in the arguments is ignored
+                // Step 1: Handle the bits that would be lost in shift
+                for (int i = 0; i < phrShamt; i++) {
+                    // XOR the highest bits from GHR with corresponding positions in folded history
+                    temp ^= (ghr[posHighestBitsInGhr[i]] << posHighestBitsInOldFoldedHist[i]);
+                }
+
+                // Step 2: Perform the shift
+                temp <<= phrShamt;
+
+
+                // Step 3: Copy the XORed bits back to lower positions
+                for (int i = 0; i < phrShamt; i++) {
+                    uint64_t highBit = (temp >> (foldedLen + i)) & 1;
+                    temp |= (highBit << i);
+                }
+
+                // Step 4: Add new branch outcome
+                temp ^= (((pc>>1)^(pc>>3)^(pc>>5)^(pc>>7)) & 1);
+                temp ^= (((pc>>1)^(pc>>3)^(pc>>5)^(pc>>7)) & 2) ;
+
+                // Mask to folded length
+                temp &= foldedMask;
+            }
+            folded = temp;
         }
-        
-        // Step 4: Add new branch outcome
-        temp[0] ^= taken;
-        
-        // Step 5: Restore original size
-        temp.resize(foldedLen);
     }
-    folded = temp;
 }
 
 /**
  * Recover folded history from another instance.
  * Used during branch misprediction recovery.
- * 
- * Example:
- * hist1: [1,0,1,1]
- * hist2: [0,0,0,0]
- * After hist2.recover(hist1): hist2 = [1,0,1,1]
  */
 void
 FoldedHist::recover(FoldedHist &other)
@@ -91,38 +147,39 @@ FoldedHist::recover(FoldedHist &other)
 }
 
 /**
- * Verify that folded history matches what would be computed from GHR.
- * 
- * Example:
- * pos:             [0,1,2,3,4,5,6,7]
- * GHR (8 bits):    [1,1,0,0,1,0,1,0]
- * pos 0  ^ pos 4 = 1 ^ 1 = 0 -> pos 0
- * pos 1  ^ pos 5 = 1 ^ 0 = 1 -> pos 1
- * pos 2  ^ pos 6 = 0 ^ 1 = 1 -> pos 2
- * pos 3  ^ pos 7 = 0 ^ 0 = 0 -> pos 3
- * Folded (4 bits): [0,1,1,0]
- * 
- * Verification process:
- * 1. Take each bit from GHR
- * 2. XOR into corresponding position in ideal folded history
- * 3. Compare with actual folded history
+ * Verify that folded history matches with what would be computed from GHR.
+ *
+ * History folding XORs foldedLen-sized chunks:
+ * folded = [foldedLen-1:0] ^ [2*foldedLen-1:foldedLen] ^ [3*foldedLen-1:2*foldedLen] ^ ...
+ * this method can be commonly used for checking both GHR and PHR
  */
 void
 FoldedHist::check(const boost::dynamic_bitset<> &ghr)
 {
+    // TODO: support path history in the future
+
     // Create ideal folded history from GHR
-    boost::dynamic_bitset<> ideal(ghr);
-    boost::dynamic_bitset<> idealFolded;
-    
-    // Resize to match history length
-    ideal.resize(histLen);
-    idealFolded.resize(foldedLen);
-    
-    // Fold the history by XORing bits
-    for (int i = 0; i < histLen; i++) {
-        idealFolded[i % foldedLen] ^= ideal[i];
+    uint64_t idealFolded = 0;
+
+    // Create mask for foldedLen bits
+    const uint64_t foldedMask = ((1ULL << foldedLen) - 1);
+
+    // Process in chunks of foldedLen bits
+    for (size_t startBit = 0; startBit < histLen; startBit += foldedLen) {
+        uint64_t chunk = 0;
+        size_t chunkSize = std::min(static_cast<size_t>(foldedLen), histLen - startBit);
+
+        // Extract chunk from bitset
+        for (size_t i = 0; i < chunkSize; i++) {
+            chunk |= (ghr[startBit + i] << i);
+        }
+
+        // XOR this chunk into the ideal folded history
+        idealFolded ^= chunk;
     }
-    
+
+    idealFolded &= foldedMask;
+
     // Verify our folded history matches ideal
     assert(idealFolded == folded);
 }

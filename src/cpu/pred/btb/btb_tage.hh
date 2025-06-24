@@ -80,13 +80,14 @@ class BTBTAGE : public TimedBaseBTBPredictor
             TageTableInfo altInfo;  // Alternative prediction info
             bool useAlt;           // Whether to use alternative prediction, true if main is weak or no main prediction
             bool taken;            // Final prediction (taken/not taken) = use_alt ? alt_provided ? alt_taken : base_taken : main_taken
+            bool altPred;          // Alternative prediction = alt_provided ? alt_taken : base_taken;
 
-            TagePrediction() : btb_pc(0), useAlt(false), taken(false) {}
+            TagePrediction() : btb_pc(0), useAlt(false), taken(false), altPred(false) {}
 
             TagePrediction(Addr btb_pc, TageTableInfo mainInfo, TageTableInfo altInfo,
-                            bool useAlt, bool taken) :
+                            bool useAlt, bool taken, bool altPred) :
                             btb_pc(btb_pc), mainInfo(mainInfo), altInfo(altInfo),
-                            useAlt(useAlt), taken(taken) {}
+                            useAlt(useAlt), taken(taken), altPred(altPred) {}
     };
 
     // Structure to hold allocation results
@@ -112,10 +113,14 @@ class BTBTAGE : public TimedBaseBTBPredictor
     std::shared_ptr<void> getPredictionMeta() override;
 
     // speculative update 3 folded history, according history and pred.taken
-    void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
+    // the other specUpdateHist methods are left blank
+    void specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
 
     // Recover 3 folded history after a misprediction, then update 3 folded history according to history and pred.taken
-    void recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken) override;
+    // the other recoverHist methods are left blank
+    void recoverPHist(const boost::dynamic_bitset<> &history,
+                        const FetchStream &entry,int shamt, bool cond_taken) override;
+
 
     // Update predictor state based on actual branch outcomes
     void update(const FetchStream &entry) override;
@@ -131,19 +136,20 @@ class BTBTAGE : public TimedBaseBTBPredictor
   private:
 
     // Look up predictions in TAGE tables for a stream of instructions
-    std::map<Addr, bool> lookupHelper(const Addr &stream_start, const std::vector<BTBEntry> &btbEntries);
+    void lookupHelper(const Addr &stream_start, const std::vector<BTBEntry> &btbEntries,
+                                      std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, CondTakens& results);
 
     // Calculate TAGE index for a given PC and table
     Addr getTageIndex(Addr pc, int table);
 
-    // Calculate TAGE index with folded history
-    Addr getTageIndex(Addr pc, int table, bitset &foldedHist);
+    // Calculate TAGE index with folded history (uint64_t version for performance)
+    Addr getTageIndex(Addr pc, int table, uint64_t foldedHist);
 
     // Calculate TAGE tag for a given PC and table
     Addr getTageTag(Addr pc, int table);
 
-    // Calculate TAGE tag with folded history
-    Addr getTageTag(Addr pc, int table, bitset &foldedHist, bitset &altFoldedHist);
+    // Calculate TAGE tag with folded history (uint64_t version for performance)
+    Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist);
 
     // Get offset within a block for a given PC
     Addr getOffset(Addr pc) {
@@ -151,7 +157,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
     }
 
     // Update branch history
-    void doUpdateHist(const bitset &history, int shamt, bool taken);
+    void doUpdateHist(const bitset &history, bool taken, Addr pc);
 
     // Number of TAGE predictor tables
     const unsigned numPredictors;
@@ -189,7 +195,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Linear feedback shift register for allocation
     LFSR64 allocLFSR;
 
-    // Maximum history length
+    // Maximum history length, not used
     unsigned maxHistLen;
 
     // Number of ways for set associative design
@@ -292,14 +298,14 @@ public:
 private:
     // Metadata for TAGE predictions
     typedef struct TageMeta {
-        std::map<Addr, TagePrediction> preds;
+        std::unordered_map<Addr, TagePrediction> preds;
         std::vector<bitset> usefulMask;  // Vector of usefulMasks for different ways
         unsigned hitWay;      // hit way index
         bool hitFound;        // whether a hit was found
         std::vector<FoldedHist> tagFoldedHist;
         std::vector<FoldedHist> altTagFoldedHist;
         std::vector<FoldedHist> indexFoldedHist;
-        TageMeta(std::map<Addr, TagePrediction> preds, std::vector<bitset> usefulMask,
+        TageMeta(std::unordered_map<Addr, TagePrediction> preds, std::vector<bitset> usefulMask,
                 unsigned hitWay, bool hitFound, std::vector<FoldedHist> tagFoldedHist,
                 std::vector<FoldedHist> altTagFoldedHist, std::vector<FoldedHist> indexFoldedHist) :
             preds(preds), usefulMask(usefulMask), hitWay(hitWay), hitFound(hitFound),
@@ -354,7 +360,7 @@ private:
     void updateLRU(int table, Addr index, unsigned way);
     unsigned getLRUVictim(int table, Addr index);
 
-    TageMeta meta;
+    std::shared_ptr<TageMeta> meta;
 };
 }
 

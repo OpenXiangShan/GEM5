@@ -145,8 +145,7 @@ class UBTB : public TimedBaseBTBPredictor
      */
     std::shared_ptr<void> getPredictionMeta() override
     {
-        std::shared_ptr<void> meta_void_ptr = std::make_shared<UBTBMeta>(meta);
-        return meta_void_ptr;
+        return meta;
     }
 
     // the following methods are not used
@@ -200,7 +199,7 @@ class UBTB : public TimedBaseBTBPredictor
             hit_entry = TickedUBTBEntry();
         }
     };
-    UBTBMeta meta;
+    std::shared_ptr<UBTBMeta> meta;
 
     // helper methods
     /*

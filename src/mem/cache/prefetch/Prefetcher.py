@@ -93,6 +93,7 @@ class BasePrefetcher(ClockedObject):
         super().__init__(**kwargs)
         self._events = []
         self._tlbs = []
+        self._functional_tlb = False
         self._downstream_pf = []
 
     def addEvent(self, newObject):
@@ -104,7 +105,7 @@ class BasePrefetcher(ClockedObject):
         print("Registering probe listeners for Prefetcher {}".format(self))
         for tlb in self._tlbs:
             print(f"{self} addTLB {tlb}")
-            self.getCCObject().addTLB(tlb.getCCObject())
+            self.getCCObject().addTLB(tlb.getCCObject(), self._functional_tlb)
 
         assert len(self._downstream_pf) <= 1
         if len(self._downstream_pf):
@@ -122,10 +123,11 @@ class BasePrefetcher(ClockedObject):
             raise TypeError("probeNames must have at least one element")
         self.addEvent(HWPProbeEvent(self, simObj, *probeNames))
 
-    def registerTLB(self, simObj):
+    def registerTLB(self, simObj, functional):
         if not isinstance(simObj, SimObject):
             raise TypeError("argument must be a SimObject type")
         self._tlbs.append(simObj)
+        self._functional_tlb = functional
 
     def add_pf_downstream(self, other_prefetcher):
         if not isinstance(other_prefetcher, SimObject):
@@ -929,6 +931,57 @@ class CMCPrefetcher(QueuedPrefetcher):
         "Enable prefetch database"
     )
 
+
+class DespacitoStreamPrefetcher(QueuedPrefetcher):
+    type = "DespacitoStreamPrefetcher"
+    cxx_class = "gem5::prefetch::DespacitoStreamPrefetcher"
+    cxx_header = "mem/cache/prefetch/despacito_stream.hh"
+
+    use_virtual_addresses = False
+    prefetch_on_pf_hit = False
+    on_read = True
+    on_write = False
+    on_data  = True
+    on_inst  = False
+
+    sample_rate = Param.Int(256, "Sample rate")
+    min_distance = Param.Int(4, "Minimum distance")
+    max_distance = Param.Int(8192, "Maximum distance")
+
+    sampler_entries = Param.MemorySize(
+        "32",
+        "num of pattern history table entries"
+    )
+    sampler_assoc = Param.Int(4, "Associativity of the pattern history table")
+    sampler_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.sampler_assoc,
+            size=Parent.sampler_entries),
+        "Indexing policy of pattern history table"
+    )
+    sampler_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(),
+        "Replacement policy of pattern history table"
+    )
+
+    patterns_entries = Param.MemorySize(
+        "64",
+        "num of pattern history table entries"
+    )
+    patterns_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.patterns_entries,
+            size=Parent.patterns_entries),
+        "Indexing policy of pattern history table"
+    )
+    patterns_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(),
+        "Replacement policy of pattern history table"
+    )
+
+
 class XSCompositePrefetcher(QueuedPrefetcher):
     type = "XSCompositePrefetcher"
     cxx_class = 'gem5::prefetch::XSCompositePrefetcher'
@@ -1108,9 +1161,12 @@ class L2CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
                                      "Large BOP used in composite prefetcher ")
     bop_small = Param.BOPPrefetcher(SmallBOPPrefetcher(is_sub_prefetcher=True),
                                      "Small BOP used in composite prefetcher ")
+    despacito_stream = Param.DespacitoStreamPrefetcher(DespacitoStreamPrefetcher(is_sub_prefetcher=True),
+                                                       "DespacitoStream used in composite prefetcher")
     enable_bop = Param.Bool(False, "Enable BOP")
     enable_cdp = Param.Bool(True, "Enable CDP")
     enable_cmc = Param.Bool(False, "Enable CMC")
+    enable_despacito_stream = Param.Bool(True, "Enable despacito stream")
 
 class L3CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
     type = 'L3CompositeWithWorkerPrefetcher'

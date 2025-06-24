@@ -9,7 +9,6 @@
 #include <string>
 #include <vector>
 
-#include "arch/riscv/insts/vector.hh"
 #include "base/logging.hh"
 #include "base/stats/group.hh"
 #include "base/stats/info.hh"
@@ -64,7 +63,6 @@ namespace o3
 
 IssuePort::IssuePort(const IssuePortParams& params) : SimObject(params), rp(params.rp), fu(params.fu)
 {
-    mask.resize(Num_OpClasses, false);
     for (auto it0 : params.fu) {
         for (auto it1 : it0->opDescList) {
             mask.set(it1->opClass);
@@ -131,12 +129,20 @@ IssueQue::IssueQue(const IssueQueParams& params)
         panic("%s: outports > 8 is not supported\n", iqname);
     }
 
+    opNum.resize(enums::Num_OpClass, 0);
+    portBusy.resize(outports, 0);
+
     intRfTypePortId.resize(outports);
     fpRfTypePortId.resize(outports);
+    readyQs.resize(outports, nullptr);
 
-    bool same_fu = true;
+    readyQclassify.resize(Num_OpClasses, nullptr);
+    opPipelined.resize(Num_OpClasses, false);
+
+    std::unordered_map<std::bitset<Num_OpClasses>, ReadyQue*> readyQmap;
     for (int i = 0; i < outports; i++) {
-        for (auto rfp : params.oports[i]->rp) {
+        auto oport = params.oports[i];
+        for (auto rfp : oport->rp) {
             int rf_type = RF_GET_TYPEID(rfp);
             int rf_portid = RF_GET_PORTID(rfp);
             int rf_portPri = RF_GET_PRIORITY(rfp);
@@ -151,50 +157,32 @@ IssueQue::IssueQue(const IssueQueParams& params)
             }
         }
 
+        // safety check for outports
         for (int j = i + 1; j < outports; j++) {
-            if (params.oports[i]->mask != params.oports[j]->mask) {
-                same_fu = false;
-            }
-            if (!same_fu && (params.oports[i]->mask & params.oports[j]->mask).any()) {
-                panic("%s: Found the conflict opClass in different FU, portid: %d and %d\n", iqname, i, j);
+            if ((oport->mask != params.oports[j]->mask) && (oport->mask & params.oports[j]->mask).any()) {
+                panic("%s: Found the same opClass in different FU, portid: %d and %d\n", iqname, i, j);
             }
         }
-    }
+        fuDescs.insert(fuDescs.begin(), oport->fu.begin(), oport->fu.end());
 
-    if (same_fu) {
-        // we only allocate one ReadyQue
-        warn("%s: Use one selector by multiple identical fus\n", iqname);
-        auto t = new ReadyQue;
-        readyQs.resize(outports, t);
-        auto& port = params.oports[0];
-        fuDescs.insert(fuDescs.begin(), port->fu.begin(), port->fu.end());
-    } else {
-        readyQs.resize(outports, nullptr);
-        for (int i = 0; i < outports; i++) {
-            readyQs[i] = new ReadyQue;
-            auto& port = params.oports[i];
-            fuDescs.insert(fuDescs.begin(), port->fu.begin(), port->fu.end());
+        auto it = readyQmap.find(oport->mask);
+        ReadyQue* t = nullptr;
+        if (it == readyQmap.end()) {
+            // create a new ReadyQue
+            t = new ReadyQue;
+            readyQmap[oport->mask] = t;
+        } else {
+            // use the existing one
+            t = it->second;
         }
-    }
-
-    opNum.resize(Num_OpClasses, 0);
-    readyQclassify.resize(Num_OpClasses, nullptr);
-    opPipelined.resize(Num_OpClasses, false);
-    for (int pi = 0; pi < (same_fu ? 1 : outports); pi++) {
-        auto& port = params.oports[pi];
-        for (auto ops : port->fu) {
-            for (auto op : ops->opDescList) {
-                if (readyQclassify[op->opClass]) {
-                    panic("%s: Found the conflict opClass in different FU, opclass: %s\n", iqname,
-                          enums::OpClassStrings[op->opClass]);
-                }
-                readyQclassify[op->opClass] = readyQs.at(pi);
+        readyQs[i] = t;
+        for (auto fu : oport->fu) {
+            for (auto op : fu->opDescList) {
+                readyQclassify[op->opClass] = t;
                 opPipelined[op->opClass] = op->pipelined;
             }
         }
     }
-
-    portBusy.resize(outports, 0);
 }
 
 void
@@ -231,7 +219,6 @@ IssueQue::checkScoreboard(const DynInstPtr& inst)
             return false;
         }
     }
-    inst->checkOldVdElim();
     return true;
 }
 
@@ -267,7 +254,7 @@ IssueQue::issueToFu()
         if (!inst) {
             continue;
         }
-        if (i < replayed) {
+        if (i + replayed >= outports) {
             inst->clearScheduled();
             // only for load/store
             READYQ_PUSH(inst);
@@ -345,9 +332,6 @@ IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
             }
             consumer->markSrcRegReady(srcIdx);
 
-            if (!speculative && consumer->srcRegIdx(srcIdx) == RiscvISA::VecRenamedVLReg) [[unlikely]] {
-                consumer->checkOldVdElim();
-            }
 
             DPRINTF(Schedule, "[sn:%llu] src%d was woken\n", consumer->seqNum, srcIdx);
             addIfReady(consumer);
@@ -547,9 +531,6 @@ IssueQue::insert(const DynInstPtr& inst)
             }
         }
     }
-
-    inst->checkOldVdElim();
-
     if (!addToDepGraph) {
         assert(inst->readyToIssue());
     }
@@ -751,13 +732,15 @@ Scheduler::Scheduler(const SchedulerParams& params)
         }
     } else {
         for (auto it : params.specWakeupNetwork) {
-            auto srcIQ = findIQbyname(it->srcIQ);
-            if (srcIQ) {
-                for (auto dstIQname : it->dstIQ) {
-                    auto dstIQ = findIQbyname(dstIQname);
-                    if (dstIQ) {
-                        wakeMatrix[srcIQ->getId()].push_back(dstIQ);
-                        DPRINTF(Schedule, "build wakeup channel: %s -> %s\n", srcIQ->getName(), dstIQ->getName());
+            for (auto src : it->srcIQs) {
+                auto srcIQ = findIQbyname(src);
+                if (srcIQ) {
+                    for (auto dstIQname : it->dstIQs) {
+                        auto dstIQ = findIQbyname(dstIQname);
+                        if (dstIQ) {
+                            wakeMatrix[srcIQ->getId()].push_back(dstIQ);
+                            DPRINTF(Schedule, "build wakeup channel: %s -> %s\n", srcIQ->getName(), dstIQ->getName());
+                        }
                     }
                 }
             }
@@ -1124,7 +1107,7 @@ Scheduler::loadCancel(const DynInstPtr& inst)
                 for (auto& it : iq->subDepGraph[dst->flatIndex()]) {
                     int srcIdx = it.first;
                     auto& depInst = it.second;
-                    if (depInst->readySrcIdx(srcIdx) && depInst->renamedSrcIdx(srcIdx) != cpu->vecOnesPhysRegId) {
+                    if (depInst->readySrcIdx(srcIdx)) {
                         DPRINTF(Schedule, "cancel [sn:%llu], clear src p%d ready\n", depInst->seqNum,
                                 depInst->renamedSrcIdx(srcIdx)->flatIndex());
                         depInst->issueQue->cancel(depInst);

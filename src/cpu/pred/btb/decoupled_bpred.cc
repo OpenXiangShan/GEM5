@@ -35,6 +35,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       btb(p.btb),
       tage(p.tage),
       ittage(p.ittage),
+      mgsc(p.mgsc),
       ras(p.ras),
     //   uras(p.uras),
       bpDBSwitches(p.bpDBSwitches),
@@ -46,7 +47,6 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
         initDB();
     }
     bpType = DecoupledBTBType;
-    numStages = 3;
     // TODO: better impl (use vector to assign in python)
     // problem: btb->getAndSetNewBTBEntry
     components.push_back(ubtb);
@@ -56,6 +56,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     components.push_back(tage);
     components.push_back(ras);
     components.push_back(ittage);
+    components.push_back(mgsc);
     numComponents = components.size();
     for (int i = 0; i < numComponents; i++) {
         components[i]->setComponentIdx(i);
@@ -88,10 +89,18 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     s0PC = 0x80000000;
 
     s0History.resize(historyBits, 0);
+    s0PHistory.resize(historyBits, 0);
+    s0BwHistory.resize(historyBits, 0);
+    s0IHistory.resize(historyBits, 0);
+    s0LHistory.resize(mgsc->getNumEntriesFirstLocalHistories());
+    for (unsigned int i = 0; i < mgsc->getNumEntriesFirstLocalHistories(); ++i) {
+        s0LHistory[i].resize(historyBits, 0);
+    }
     fetchTargetQueue.setName(name());
 
     commitHistory.resize(historyBits, 0);
     squashing = true;
+    bpuState = BpuState::IDLE;
 
     lp = LoopPredictor(16, 4, enableLoopDB);
     lb.setLp(&lp);
@@ -547,41 +556,50 @@ DecoupledBPUWithBTB::BpTrace::BpTrace(uint64_t fsqId, FetchStream &stream, const
 void
 DecoupledBPUWithBTB::tick()
 {
+    DPRINTF(Override, "DecoupledBPUWithBTB::tick()\n");
+
+    // On squash, reset state if there was a valid prediction.
+    if (squashing) {
+        bpuState = BpuState::IDLE;
+        numOverrideBubbles = 0;
+        DPRINTF(Override, "Squashing, BPU state updated.\n");
+        squashing = false;
+        return;
+    }
+
+    // 1. Request new prediction if FSQ not full and we are idle
+    if (bpuState == BpuState::IDLE && !streamQueueFull()) {
+        requestNewPrediction();
+        bpuState = BpuState::PREDICTOR_DONE;
+    }
+
     // 2. Handle pending prediction if available
-    if (!receivedPred && numOverrideBubbles == 0 && sentPCHist) {
+    if (bpuState == BpuState::PREDICTOR_DONE) {
         DPRINTF(Override, "Generating final prediction for PC %#lx\n", s0PC);
-        generateFinalPredAndCreateBubbles();
+        numOverrideBubbles = generateFinalPredAndCreateBubbles();
+        bpuState = BpuState::PREDICTION_OUTSTANDING;
+
+        // Clear each predictor's output
+        for (int i = 0; i < numStages; i++) {
+            predsOfEachStage[i].btbEntries.clear();
+        }
     }
 
     // 3. Process enqueue operations and bubble counter
-    processEnqueueAndBubbles();
+    tryEnqFetchTarget();
 
-    // 4. Request new prediction if needed
-    requestNewPrediction();
+    // check if:
+    // 1. FSQ has space
+    // 2. there's no bubble
+    // 3. PREDICTION_OUTSTANDING
+    if (validateFSQEnqueue()) {
+        // Create new FSQ entry with the current prediction
+        makeNewPrediction(true);
 
-    DPRINTF(Override, "Prediction cycle complete\n");
-
-    // 5. Clear squashing state for next cycle
-    squashing = false;
-}
-
-/**
- * @brief Processes prediction enqueue operations and bubble counter
- *
- * Tries to enqueue new predictions if not squashing and decrements override bubbles
- */
-void
-DecoupledBPUWithBTB::processEnqueueAndBubbles()
-{
-    // Try to enqueue new predictions if not squashing
-    if (!squashing) {
-        DPRINTF(Override, "DecoupledBPUWithBTB::tick()\n");
-        tryEnqFetchTarget();
-        tryEnqFetchStream();
-    } else {
-        receivedPred = false;
-        DPRINTF(Override, "Squashing, skip this cycle, receivedPred is %d.\n", receivedPred);
+        DPRINTF(Override, "FSQ entry enqueued, prediction state reset\n");
+        bpuState = BpuState::IDLE;
     }
+
 
     // Decrement override bubbles counter
     if (numOverrideBubbles > 0) {
@@ -590,7 +608,8 @@ DecoupledBPUWithBTB::processEnqueueAndBubbles()
         DPRINTF(Override, "Consuming override bubble, %d remaining\n", numOverrideBubbles);
     }
 
-    sentPCHist = false;
+    DPRINTF(Override, "Prediction cycle complete\n");
+
 }
 
 /**
@@ -602,8 +621,7 @@ DecoupledBPUWithBTB::processEnqueueAndBubbles()
 void
 DecoupledBPUWithBTB::requestNewPrediction()
 {
-    // Request new prediction if FSQ not full and not using loop buffer
-    if (!receivedPred && !streamQueueFull()) {
+
         DPRINTF(Override, "Requesting new prediction for PC %#lx\n", s0PC);
 
         // Initialize prediction state for each stage
@@ -613,12 +631,9 @@ DecoupledBPUWithBTB::requestNewPrediction()
 
         // Query each predictor component with current PC and history
         for (int i = 0; i < numComponents; i++) {
-            components[i]->putPCHistory(s0PC, s0History, predsOfEachStage);
+            components[i]->putPCHistory(s0PC, s0History, predsOfEachStage);  //s0History not used
         }
 
-        // Mark that we've sent PC and history to predictors
-        sentPCHist = true;
-    }
 }
 
 void DecoupledBPUWithBTB::overrideStats(OverrideReason overrideReason)
@@ -648,7 +663,7 @@ void DecoupledBPUWithBTB::overrideStats(OverrideReason overrideReason)
 
 // this function collects predictions from all stages and generate bubbles
 // when loop buffer is active, predictions are from saved stream
-void
+unsigned
 DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
 {
     DPRINTF(Override, "In generateFinalPredAndCreateBubbles().\n");
@@ -695,15 +710,13 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
     }
 
     // 4. Record override bubbles and update statistics
-    numOverrideBubbles = first_hit_stage;
-    if (numOverrideBubbles > 0) {
+    if (first_hit_stage > 0) {
         dbpBtbStats.overrideCount++;
     }
 
     // 5. Finalize prediction process
     finalPred.predSource = first_hit_stage;
     finalPred.overrideReason = overrideReason;
-    receivedPred = true;
 
     // Debug output for final prediction
     printFullBTBPrediction(finalPred);
@@ -712,8 +725,8 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
     // Clear stage predictions for next cycle
     clearPreds();
 
-    DPRINTF(Override, "Prediction complete: override bubbles=%d, receivedPred=true\n", 
-            numOverrideBubbles);
+    DPRINTF(Override, "Prediction complete: override bubbles=%d\n", first_hit_stage);
+    return first_hit_stage;
 }
 
 bool
@@ -912,7 +925,7 @@ DecoupledBPUWithBTB::handleSquash(unsigned target_id,
     squashStreamAfter(stream_id);
 
     // Recover history using the extracted function
-    recoverHistoryForSquash(stream, stream_id, squash_pc, is_conditional, actually_taken, squash_type);
+    recoverHistoryForSquash(stream, stream_id, squash_pc, is_conditional, actually_taken, squash_type, redirect_pc);
 
     // Clear predictions for next cycle
     clearPreds();
@@ -1258,7 +1271,7 @@ void
 DecoupledBPUWithBTB::trackTakenBranch(Addr branchAddr)
 {
     // Helper function to update a branch map
-    auto updateBranchMap = [branchAddr](std::map<Addr, int> &branchMap) {
+    auto updateBranchMap = [branchAddr](std::unordered_map<Addr, int> &branchMap) {
         auto it = branchMap.find(branchAddr);
         if (it == branchMap.end()) {
             // Branch not found - add with count 1
@@ -1349,10 +1362,10 @@ DecoupledBPUWithBTB::processFetchDistributions(std::vector<int> &currentPhaseCom
 /**
  * @brief Process BTB entries for a phase
  */
-std::map<Addr, std::pair<BTBEntry, int>>
+std::unordered_map<Addr, std::pair<BTBEntry, int>>
 DecoupledBPUWithBTB::processBTBEntries()
 {
-    std::map<Addr, std::pair<BTBEntry, int>> currentPhaseBTBEntries;
+    std::unordered_map<Addr, std::pair<BTBEntry, int>> currentPhaseBTBEntries;
 
     // Process each BTB entry
     for (auto &it : totalBTBEntries) {
@@ -1384,8 +1397,8 @@ bool
 DecoupledBPUWithBTB::processPhase(bool isSubPhase, int phaseID, int &phaseToDump,
                                 BranchStatsMap &lastPhaseStats,
                                 std::vector<BranchStatsMap> &phaseStatsList,
-                                std::map<Addr, int> &currentPhaseBranches,
-                                std::vector<std::map<Addr, int>> &phaseBranchesList)
+                                std::unordered_map<Addr, int> &currentPhaseBranches,
+                                std::vector<std::unordered_map<Addr, int>> &phaseBranchesList)
 {
     // Check if this phase should be processed
     if (phaseToDump > phaseID) {
@@ -1542,7 +1555,7 @@ DecoupledBPUWithBTB::validateFSQEnqueue()
     }
 
     // 1. Check if a prediction is available to enqueue
-    if (!receivedPred) {
+    if (bpuState != BpuState::PREDICTION_OUTSTANDING) {
         DPRINTF(Override, "No prediction available to enqueue into FSQ\n");
         return false;
     }
@@ -1565,33 +1578,6 @@ DecoupledBPUWithBTB::validateFSQEnqueue()
     return true;
 }
 
-/**
- * @brief Attempts to enqueue a new entry into the Fetch Stream Queue (FSQ)
- * 
- * This function is called after a prediction has been generated and checks 
- * if the prediction can be enqueued into the FSQ. It will:
- * 1. Verify that FTQ has space for new entries
- * 2. Create a new FSQ entry with the prediction
- * 3. Clear prediction state for the next cycle
- */
-void
-DecoupledBPUWithBTB::tryEnqFetchStream()
-{
-    if (!validateFSQEnqueue()) {
-        return;
-    }
-
-    // Create new FSQ entry with current prediction
-    makeNewPrediction(true);
-
-    // Reset prediction state for next cycle
-    for (int i = 0; i < numStages; i++) {
-        predsOfEachStage[i].btbEntries.clear();
-    }
-    
-    receivedPred = false;
-    DPRINTF(Override, "FSQ entry enqueued, prediction state reset\n");
-}
 
 void
 DecoupledBPUWithBTB::setTakenEntryWithStream(FtqEntry &ftq_entry, const FetchStream &stream_entry)
@@ -1610,7 +1596,6 @@ DecoupledBPUWithBTB::setNTEntryWithStream(FtqEntry &ftq_entry, Addr end_pc)
     ftq_entry.target = 0;
     ftq_entry.endPC = end_pc;
 }
-
 /**
  * @brief Validate FTQ and FSQ state before enqueueing a fetch target
  *
@@ -1743,6 +1728,19 @@ DecoupledBPUWithBTB::histShiftIn(int shamt, bool taken, boost::dynamic_bitset<> 
     history[0] = taken;
 }
 
+void
+DecoupledBPUWithBTB::pHistShiftIn(int shamt, bool taken, boost::dynamic_bitset<> &history, Addr pc)
+{
+    if (shamt == 0) {
+        return;
+    }
+    if(taken){
+        history <<= 2;
+        history[0] = (((pc>>1)^(pc>>3)^(pc>>5)^(pc>>7)) & 1);       // pc[1] ^ pc[3] ^ pc[5] ^ pc[7]
+        history[1] = (((pc>>1)^(pc>>3)^(pc>>5)^(pc>>7)) & 2) >> 1;  // pc[2] ^ pc[4] ^ pc[6] ^ pc[8]
+    }
+}
+
 /**
  * @brief Creates a new FetchStream entry with prediction information
  *
@@ -1775,6 +1773,10 @@ DecoupledBPUWithBTB::createFetchStreamEntry()
 
     // Record current history and prediction metadata
     entry.history = s0History;
+    entry.phistory = s0PHistory;
+    entry.bwhistory = s0BwHistory;
+    entry.ihistory = s0IHistory;
+    entry.lhistory = s0LHistory;
     entry.predTick = finalPred.predTick;
     entry.predSource = finalPred.predSource;
     entry.overrideReason = finalPred.overrideReason;
@@ -1835,6 +1837,8 @@ DecoupledBPUWithBTB::makeNewPrediction(bool create_new_stream)
     // 5. Add entry to fetch stream queue
     auto [insertIt, inserted] = fetchStreamQueue.emplace(fsqId, entry);
     assert(inserted);
+    //printf("curr tick: %lu\n", entry.predTick);
+    //printf("curr fsqId: %lu\n", fsqId);
 
     // 6. Record prediction to database if enabled
     if (enablePredFSQTrace) {
@@ -1850,6 +1854,7 @@ DecoupledBPUWithBTB::makeNewPrediction(bool create_new_stream)
     fsqId++;
     printStream(entry);
     dbpBtbStats.fsqEntryEnqueued++;
+
 }
 
 void
@@ -1926,9 +1931,16 @@ DecoupledBPUWithBTB::getPreservedReturnAddr(const DynInstPtr &dynInst)
 void
 DecoupledBPUWithBTB::updateHistoryForPrediction(FetchStream &entry)
 {
-    // Update component-specific history, for TAGE/ITTAGE
+    // Update component-specific history, for TAGE/ITTAGE/MGSC
     for (int i = 0; i < numComponents; i++) {
+        // use old s0History to update folded history, then use finalPred to update folded history
         components[i]->specUpdateHist(s0History, finalPred);
+        if(components[i]->needMoreHistories){
+            components[i]->specUpdatePHist(s0PHistory, finalPred);
+            components[i]->specUpdateBwHist(s0BwHistory, finalPred);
+            components[i]->specUpdateIHist(s0IHistory, finalPred);
+            components[i]->specUpdateLHist(s0LHistory, finalPred);
+        }
     }
 
     // Get prediction information for history updates
@@ -1942,7 +1954,31 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchStream &entry)
     // Update history manager and verify TAGE folded history
     historyManager.addSpeculativeHist(
         entry.startPC, shamt, taken, entry.predBranchInfo, fsqId);
-    tage->checkFoldedHist(s0History, "speculative update");
+
+    // Get prediction information for global backward history updates
+    int bw_shamt;
+    bool bw_taken;
+    std::tie(bw_shamt, bw_taken) = finalPred.getBwHistInfo();
+
+    // Get prediction information for path history updates
+    bool p_taken;
+    Addr p_pc;
+    std::tie(p_pc, p_taken) = finalPred.getPHistInfo(); // p_taken = taken
+
+    // Update global backward history
+    histShiftIn(bw_shamt, bw_taken, s0BwHistory);
+
+    // Update path history
+    pHistShiftIn(1, taken, s0PHistory, p_pc);
+#ifndef NDEBUG
+    tage->checkFoldedHist(s0PHistory, "speculative update");
+#endif
+    // Update imli history
+    histShiftIn(bw_shamt, bw_taken, s0IHistory);  //s0IHistory is not used
+
+    // Update local history
+    histShiftIn(shamt, taken,
+        s0LHistory[mgsc->getPcIndex(finalPred.bbStart, log2(mgsc->getNumEntriesFirstLocalHistories()))]);
 }
 
 /**
@@ -1962,10 +1998,16 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     const PCStateBase &squash_pc,
     bool is_conditional,
     bool actually_taken,
-    SquashType squash_type)
+    SquashType squash_type,
+    Addr redirect_pc)
 {
+    //printf("recover stream_id: %u\n", stream_id);
     // Restore history from the stream
     s0History = stream.history;
+    s0PHistory = stream.phistory;
+    s0BwHistory = stream.bwhistory;
+    s0IHistory = stream.ihistory;
+    s0LHistory = stream.lhistory;
 
     // Get actual history shift information
     int real_shamt;
@@ -1973,13 +2015,38 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     std::tie(real_shamt, real_taken) = stream.getHistInfoDuringSquash(
         squash_pc.instAddr(), is_conditional, actually_taken);
 
+    // Get actual history shift information
+    int real_bw_shamt;
+    bool real_bw_taken;
+    std::tie(real_bw_shamt, real_bw_taken) = stream.getBwHistInfoDuringSquash(
+    squash_pc.instAddr(), is_conditional, actually_taken, redirect_pc);
+
     // Recover component-specific history
     for (int i = 0; i < numComponents; ++i) {
         components[i]->recoverHist(s0History, stream, real_shamt, real_taken);
+        if(components[i]->needMoreHistories){
+            components[i]->recoverPHist(s0PHistory, stream, real_shamt, real_taken);
+            components[i]->recoverBwHist(s0BwHistory, stream, real_bw_shamt, real_bw_taken);
+            components[i]->recoverIHist(s0IHistory, stream, real_bw_shamt, real_bw_taken); //s0IHistory is not used
+            components[i]->recoverLHist(s0LHistory, stream, real_shamt, real_taken);
+        }
     }
 
     // Update global history with actual outcome
     histShiftIn(real_shamt, real_taken, s0History);
+
+    // Update path history with actual outcome
+    pHistShiftIn(1, real_taken, s0PHistory, squash_pc.instAddr());
+
+    // Update global backward history with actual outcome
+    histShiftIn(real_bw_shamt, real_bw_taken, s0BwHistory);
+
+    // Update imli history with actual outcome
+    histShiftIn(real_bw_shamt, real_bw_taken, s0IHistory);  //s0IHistory is not used
+
+    // Update local history with actual outcome
+    histShiftIn(real_shamt, real_taken,
+                s0LHistory[mgsc->getPcIndex(stream.startPC, log2(mgsc->getNumEntriesFirstLocalHistories()))]);
 
     // Update history manager with appropriate branch info
     if (squash_type == SQUASH_CTRL) {
@@ -1988,12 +2055,15 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
         historyManager.squash(stream_id, real_shamt, real_taken, BranchInfo());
     }
 
-    // Perform history consistency checks
+    // Perform history consistency checks when not a fast build variant
+#ifndef NDEBUG
     checkHistory(s0History);
-    tage->checkFoldedHist(s0History,
+    tage->checkFoldedHist(s0PHistory,
         squash_type == SQUASH_CTRL ? "control squash" :
         squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
+#endif
 }
+
 
 }  // namespace btb_pred
 

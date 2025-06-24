@@ -153,15 +153,15 @@ DynInst::operator new(size_t count, Arrays &arrays)
     size_t flat_dest_idx_size = sizeof(*arrays.flatDestIdx) * num_dests;
 
     uintptr_t dest_idx =
-        roundUp(flat_dest_idx + flat_dest_idx_size, alignof(PhysRegIdPtr));
+        roundUp(flat_dest_idx + flat_dest_idx_size, alignof(VirtRegId));
     size_t dest_idx_size = sizeof(*arrays.destIdx) * num_dests;
 
     uintptr_t prev_dest_idx =
-        roundUp(dest_idx + dest_idx_size, alignof(PhysRegIdPtr));
+        roundUp(dest_idx + dest_idx_size, alignof(VirtRegId));
     size_t prev_dest_idx_size = sizeof(*arrays.prevDestIdx) * num_dests;
 
     uintptr_t src_idx =
-        roundUp(prev_dest_idx + prev_dest_idx_size, alignof(PhysRegIdPtr));
+        roundUp(prev_dest_idx + prev_dest_idx_size, alignof(VirtRegId));
     size_t src_idx_size = sizeof(*arrays.srcIdx) * num_srcs;
 
     uintptr_t ready_src_idx =
@@ -177,16 +177,16 @@ DynInst::operator new(size_t count, Arrays &arrays)
 
     // Fill in "arrays" with pointers to all the arrays.
     arrays.flatDestIdx = (RegId *)(buf + flat_dest_idx);
-    arrays.destIdx = (PhysRegIdPtr *)(buf + dest_idx);
-    arrays.prevDestIdx = (PhysRegIdPtr *)(buf + prev_dest_idx);
-    arrays.srcIdx = (PhysRegIdPtr *)(buf + src_idx);
+    arrays.destIdx = (VirtRegId *)(buf + dest_idx);
+    arrays.prevDestIdx = (VirtRegId *)(buf + prev_dest_idx);
+    arrays.srcIdx = (VirtRegId *)(buf + src_idx);
     arrays.readySrcIdx = (uint8_t *)(buf + ready_src_idx);
 
     // Initialize all the extra components.
     new (arrays.flatDestIdx) RegId[num_dests];
-    new (arrays.destIdx) PhysRegIdPtr[num_dests];
-    new (arrays.prevDestIdx) PhysRegIdPtr[num_dests];
-    new (arrays.srcIdx) PhysRegIdPtr[num_srcs];
+    new (arrays.destIdx) VirtRegId[num_dests];
+    new (arrays.prevDestIdx) VirtRegId[num_dests];
+    new (arrays.srcIdx) VirtRegId[num_srcs];
     new (arrays.readySrcIdx) uint8_t[num_srcs];
 
     return buf;
@@ -212,12 +212,12 @@ DynInst::~DynInst()
      */
     for (int i = 0; i < _numDests; i++) {
         _flatDestIdx[i].~RegId();
-        _destIdx[i].~PhysRegIdPtr();
-        _prevDestIdx[i].~PhysRegIdPtr();
+        _destIdx[i].~VirtRegId();
+        _prevDestIdx[i].~VirtRegId();
     }
 
     for (int i = 0; i < _numSrcs; i++)
-        _srcIdx[i].~PhysRegIdPtr();
+        _srcIdx[i].~VirtRegId();
 
     for (int i = 0; i < ((_numSrcs + 7) / 8); i++)
         _readySrcIdx[i].~uint8_t();
@@ -437,7 +437,7 @@ void DynInst::buildStoreAddrUop()
 
     // mark addr ready
     if (!this->readySrcIdx(1)) this->markSrcRegReady(1);
-    this->renameSrcReg(1, UnifiedRenameMap::getInvalid());
+    this->renameSrcReg(1, VirtRegId(UnifiedRenameMap::getInvalid()));
 }
 
 DynInstPtr DynInst::createStoreDataUop()
@@ -450,7 +450,7 @@ DynInstPtr DynInst::createStoreDataUop()
     DynInstPtr stduop = new (arrays) DynInst(arrays, stdinst, macroop, this->seqNum, cpu);
 
     stduop->thread = this->thread;
-    stduop->renameSrcReg(0, this->renamedSrcIdx(1));
+    stduop->renameSrcReg(0, this->extRenamedSrcIdx(1));
 
     if (this->readySrcIdx(1)) {
         stduop->markSrcRegReady(0);

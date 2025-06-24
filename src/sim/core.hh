@@ -100,6 +100,12 @@ bool clockFrequencyFixed();
 void setClockFrequency(Tick ticksPerSecond);
 Tick getClockFrequency(); // Ticks per second.
 
+/** Get CPU clock period for debug printing.
+ * Uses default 3GHz (333 ticks per cycle) if not overridden.
+ */
+Tick getCpuClockPeriod();
+void setCpuClockPeriod(Tick period);
+
 void setOutputDir(const std::string &dir);
 
 void registerExitCallback(const std::function<void()> &callback);

@@ -128,7 +128,6 @@ class CPU : public BaseCPU
     /** Overall CPU status. */
     Status _status;
 
-    PhysRegIdPtr vecOnesPhysRegId;
   private:
 
     /** The tick event used for scheduling CPU ticks. */
@@ -330,7 +329,9 @@ class CPU : public BaseCPU
     void setMiscReg(int misc_reg, RegVal val, ThreadID tid);
 
     RegVal getReg(PhysRegIdPtr phys_reg);
+    RegVal getReg(VirtRegId phys_reg);
     void getReg(PhysRegIdPtr phys_reg, void *val);
+    void getReg(VirtRegId phys_reg, void *val);
     void *getWritableReg(PhysRegIdPtr phys_reg);
 
     void setReg(PhysRegIdPtr phys_reg, RegVal val);
@@ -608,6 +609,8 @@ class CPU : public BaseCPU
 
     /** Issue Width, using for intel topdown stats */
     int issueWidth; // issueWidth = decodeWidth = renameWidth!!!
+
+    bool enableConstantFolding; // Control flag of Constant Folding (add-immediate elimination)
 
     struct CPUStats : public statistics::Group
     {

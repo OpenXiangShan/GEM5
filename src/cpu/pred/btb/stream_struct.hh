@@ -55,6 +55,15 @@ enum class OverrideReason
     HIST_INFO
 };
 
+enum class HistoryType
+{
+    GLOBAL,
+    GLOBALBW,
+    LOCAL,
+    IMLI,
+    PATH
+};
+
 
 /**
  * @brief Branch information structure containing branch properties and targets
@@ -64,7 +73,8 @@ enum class OverrideReason
  * - Branch type (conditional, indirect, call, return)
  * - Instruction size
  */
-typedef struct BranchInfo {
+struct BranchInfo
+{
     Addr pc;
     Addr target;
     bool isCond;
@@ -137,7 +147,7 @@ typedef struct BranchInfo {
     {
         return this->pc != other.pc;
     }
-}BranchInfo;
+};
 
 
 /**
@@ -149,7 +159,7 @@ typedef struct BranchInfo {
  * - Counter for prediction
  * - Tag for BTB lookup
  */
-typedef struct BTBEntry : BranchInfo
+struct BTBEntry : BranchInfo
 {
     bool valid;
     bool alwaysTaken;
@@ -160,9 +170,34 @@ typedef struct BTBEntry : BranchInfo
     BTBEntry(const BranchInfo &bi) : BranchInfo(bi), valid(true), alwaysTaken(true), ctr(0) {}
     BranchInfo getBranchInfo() { return BranchInfo(*this); }
 
-}BTBEntry;
+};
 
-typedef struct LFSR64 {
+/**
+ * @brief Tage prediction info for MGSC
+ */
+struct TageInfoForMGSC
+{
+    // tage info
+    bool tage_pred_taken;
+    bool tage_pred_conf_high;
+    bool tage_pred_conf_mid;
+    bool tage_pred_conf_low;
+    bool tage_pred_alt_diff;
+
+    // Addr offset; // retrived from lowest bits of pc
+    TageInfoForMGSC() : tage_pred_taken(false), tage_pred_conf_high(false),
+                        tage_pred_conf_mid(false), tage_pred_conf_low(false),
+                        tage_pred_alt_diff(false){}
+    TageInfoForMGSC(bool tage_pred_taken, bool tage_pred_conf_high, bool tage_pred_conf_mid,
+                    bool tage_pred_conf_low, bool tage_pred_alt_diff) :
+                    tage_pred_taken(tage_pred_taken), tage_pred_conf_high(tage_pred_conf_high),
+                    tage_pred_conf_mid(tage_pred_conf_mid), tage_pred_conf_low(tage_pred_conf_low),
+                    tage_pred_alt_diff(tage_pred_alt_diff) {}
+
+};
+
+struct LFSR64
+{
     uint64_t lfsr;
     LFSR64() : lfsr(0x1234567887654321UL) {}
     uint64_t get() {
@@ -177,28 +212,31 @@ typedef struct LFSR64 {
             lfsr = (lfsr >> 1) | (bit << 63);
         }
     }
-}LFSR64;
+};
 
 
 using FetchStreamId = uint64_t;
 using FetchTargetId = uint64_t;
 
-typedef struct LoopEntry {
+struct LoopEntry
+{
     bool valid;
     int tripCnt;
     int specCnt;
     int conf;
     bool repair;
     LoopEntry() : valid(false), tripCnt(0), specCnt(0), conf(0), repair(false) {}
-} LoopEntry;
+};
 
-typedef struct LoopRedirectInfo {
+struct LoopRedirectInfo
+{
     LoopEntry e;
     Addr branch_pc;
     bool end_loop;
-} LoopRedirectInfo;
+};
 
-typedef struct JAEntry {
+struct JAEntry
+{
     // jump target: indexPC + jumpAheadBlockNum * blockSize
     int jumpAheadBlockNum; // number of non-predicted blocks ahead
     int conf; // confidence
@@ -206,8 +244,21 @@ typedef struct JAEntry {
     Addr getJumpTarget(Addr indexPC, int blockSize) {
         return indexPC + jumpAheadBlockNum * blockSize;
     }
-} JAEntry;
+};
 
+// {branch pc -> istaken} maps
+using CondTakens = std::vector<std::pair<Addr, bool>>;
+// {branch pc -> target pc} maps
+using IndirectTargets = std::vector<std::pair<Addr, Addr>>;
+
+#define CondTakens_find(condTakens, branch_pc) \
+    std::find_if(condTakens.begin(), condTakens.end(), \
+                 [&branch_pc](const auto &p) { return p.first == branch_pc; })
+#define IndirectTakens_find(indirectTargets, branch_pc) \
+    std::find_if(indirectTargets.begin(), indirectTargets.end(), \
+                 [&branch_pc](const auto &p) { return p.first == branch_pc; })
+
+#define FillStageLoop(x) for (int x = getDelay(); x < stagePreds.size(); ++x)
 
 /**
  * @brief Fetch Stream representing a sequence of instructions with prediction info
@@ -219,7 +270,7 @@ typedef struct JAEntry {
  * - Loop and jump-ahead prediction state
  * - Statistics for profiling
  */
-typedef struct FetchStream
+struct FetchStream
 {
     Addr startPC;       // start pc of the stream
     bool predTaken;     // whether the FetchStream has taken branch
@@ -251,10 +302,14 @@ typedef struct FetchStream
 
     // prediction metas
     // FIXME: use vec
-    std::array<std::shared_ptr<void>, 6> predMetas; // each component has a meta
+    std::array<std::shared_ptr<void>, 7> predMetas; // each component has a meta, TODO
 
     Tick predTick;         // tick of the prediction
     boost::dynamic_bitset<> history; // record GHR/s0History
+    boost::dynamic_bitset<> phistory; // record PATH/s0History
+    boost::dynamic_bitset<> bwhistory; // record BWHR/s0History
+    boost::dynamic_bitset<> ihistory; // record IHR/s0History
+    std::vector<boost::dynamic_bitset<>> lhistory; // record LHR/s0History
     std::queue<Addr> previousPCs; // previous PCs, used by ahead BTB
 
     // for profiling
@@ -279,6 +334,10 @@ typedef struct FetchStream
          predSource(0),
          predTick(0),
          history(),
+         phistory(),
+         bwhistory(),
+         ihistory(),
+         lhistory(),
          fetchInstNum(0),
          commitInstNum(0)
    {
@@ -308,7 +367,7 @@ typedef struct FetchStream
     std::pair<int, bool> getHistInfoDuringSquash(Addr squash_pc, bool is_cond, bool actually_taken)
     {
         int shamt = 0;
-        int cond_taken = false;
+        bool cond_taken = false;
         for (auto &entry : predBTBEntries) {
             if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
                 shamt++;
@@ -317,6 +376,22 @@ typedef struct FetchStream
         if (is_cond) {
             shamt++;
             cond_taken = actually_taken;
+        }
+        return std::make_pair(shamt, cond_taken);
+    }
+
+    std::pair<int, bool> getBwHistInfoDuringSquash(Addr squash_pc, bool is_cond, bool actually_taken, Addr target)
+    {
+        int shamt = 0;
+        bool cond_taken = false;
+        for (auto &entry : predBTBEntries) {
+            if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
+                shamt++;
+            }
+        }
+        if (is_cond) {
+            shamt++;
+            cond_taken = actually_taken && (squash_pc > target);
         }
         return std::make_pair(shamt, cond_taken);
     }
@@ -347,8 +422,7 @@ typedef struct FetchStream
         }
     }
 
-}FetchStream;
-
+};
 /**
  * @brief Full branch prediction combining predictions from all predictors
  * 
@@ -358,16 +432,18 @@ typedef struct FetchStream
  * - Indirect predictors for indirect branches
  * - RAS for return instructions
  */
-typedef struct FullBTBPrediction
+struct FullBTBPrediction
 {
     Addr bbStart;
     std::vector<BTBEntry> btbEntries; // for BTB, only assigned when hit, sorted by inst order
     // for conditional branch predictors, mapped with lowest bits of branches
-    std::map<Addr, bool> condTakens;
+    CondTakens condTakens;
 
     // for indirect predictor, mapped with lowest bits of branches
-    std::map<Addr, Addr> indirectTargets; // {branch pc -> target pc} maps
+    IndirectTargets indirectTargets;
     Addr returnTarget; // for RAS
+
+    std::unordered_map<Addr, TageInfoForMGSC> tageInfoForMgscs;
 
     unsigned predSource;
     OverrideReason overrideReason;
@@ -379,6 +455,7 @@ typedef struct FullBTBPrediction
         condTakens(),
         indirectTargets(),
         returnTarget(0),
+        tageInfoForMgscs(),
         predSource(0),
         predTick(0) {}
 
@@ -390,7 +467,8 @@ typedef struct FullBTBPrediction
                 if (entry.isCond) {
                     // find corresponding direction pred in condTakens
                     // TODO: use lower-bit offset of branch instruction
-                    auto it = condTakens.find(entry.pc);
+                    auto& pc = entry.pc;
+                    auto it = CondTakens_find(condTakens, pc);
                     if (it != condTakens.end()) {
                         if (it->second) {   // find and taken, return the entry
                             return entry;
@@ -423,7 +501,8 @@ typedef struct FullBTBPrediction
             // or btb itself when ipred miss
             if (entry.isIndirect) {
                 if (!entry.isReturn) { // normal indirect, see ittage
-                    auto it = indirectTargets.find(entry.pc);
+                    auto& pc = entry.pc;
+                    auto it = IndirectTakens_find(indirectTargets, pc);
                     if (it != indirectTargets.end()) { // found in ittage, use it
                         target = it->second;
                     }
@@ -484,7 +563,34 @@ typedef struct FullBTBPrediction
     std::vector<boost::dynamic_bitset<>> indexFoldedHist;
     std::vector<boost::dynamic_bitset<>> tagFoldedHist;
 
-    std::pair<int, bool> getHistInfo()
+    std::pair<int, bool> getHistInfo()  //global or local
+    {
+        int shamt = 0; // shamt is the number of bits to shift in history update
+        bool taken = false;
+        for (auto &entry : btbEntries) {
+            if (entry.valid) {
+                if (entry.isCond) { // if found a cond branch, shamt++
+                    shamt++;
+                    auto& pc = entry.pc;
+                    auto it = CondTakens_find(condTakens, pc);
+                    if (it != condTakens.end()) {
+                        if (it->second) { // if the cond branch is taken, taken = true
+                            taken = true;
+                            break;
+                        }
+                    }
+                } else {
+                    // uncond
+                    break;
+                }
+            }
+        }
+        // For example, return (3, true) means 3 bits to shift in history update,
+        // and the third branch is taken, new hist = xxx001
+        return std::make_pair(shamt, taken);
+    }
+
+    std::pair<int, bool> getBwHistInfo() //global backward or imli
     {
         int shamt = 0;
         bool taken = false;
@@ -492,10 +598,11 @@ typedef struct FullBTBPrediction
             if (entry.valid) {
                 if (entry.isCond) {
                     shamt++;
-                    auto it = condTakens.find(entry.pc);
+                    auto& pc = entry.pc;
+                    auto it = CondTakens_find(condTakens, pc);
                     if (it != condTakens.end()) {
                         if (it->second) {
-                            taken = true;
+                            taken = (entry.target < entry.pc); // branch is backward if target < pc
                             break;
                         }
                     }
@@ -508,7 +615,32 @@ typedef struct FullBTBPrediction
         return std::make_pair(shamt, taken);
     }
 
-}FullBTBPrediction;
+    std::pair<Addr, bool> getPHistInfo() //path
+    {
+        bool taken = false;
+        Addr pc = 0;
+        for (auto &entry : btbEntries) {
+            if (entry.valid) {
+                if (entry.isCond) {
+                    auto& _pc = entry.pc;
+                    auto it = CondTakens_find(condTakens, _pc);
+                    if (it != condTakens.end()) {
+                        if (it->second) {
+                            taken = true;
+                            pc = entry.pc; // get the pc of the cond branch
+                            break;
+                        }
+                    }
+                } else {
+                    // uncond
+                    break;
+                }
+            }
+        }
+        return std::make_pair(pc, taken);
+    }
+
+};
 
 /**
  * @brief Fetch Target Queue entry representing a fetch block

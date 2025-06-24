@@ -287,6 +287,9 @@ def addCommonOptions(parser, configure_xiangshan=False):
     parser.add_argument("--kmh-align", action="store_true", default=False,
                         help="""
                         Use kmu config""")
+    parser.add_argument("--functional-tlb", action="store_true", default=False,
+                        help="""
+                        Use functional TLB""")
     parser.add_argument("--list-hwp-types",
                         action=ListHWP, nargs=0,
                         help="List available hardware prefetcher types")

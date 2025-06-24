@@ -7,6 +7,7 @@
 #include "mem/cache/prefetch/cdp.hh"
 #include "mem/cache/prefetch/cmc.hh"
 #include "mem/cache/prefetch/composite_with_worker.hh"
+#include "mem/cache/prefetch/despacito_stream.hh"
 #include "params/L2CompositeWithWorkerPrefetcher.hh"
 
 namespace gem5
@@ -48,14 +49,16 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
     void notifyIns(int ins_num) override { cdp->notifyIns(ins_num); }
 
   private:
-    CDP *cdp;
+    CDP* cdp;
     BOP* largeBOP;
     BOP* smallBOP;
     CMCPrefetcher* cmc;
+    DespacitoStreamPrefetcher* despacitoStream;
 
     const bool enableBOP;
     const bool enableCDP;
     const bool enableCMC;
+    const bool enableDespacitoStream;
 
     bool offloadLowAccuracy = true;
 };

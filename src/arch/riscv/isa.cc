@@ -339,7 +339,7 @@ void ISA::clear()
     miscRegFile[MISCREG_TSELECT] = 1;
     // NMI is always enabled.
     miscRegFile[MISCREG_NMIE] = 1;
-
+    // sync with NEMU
     miscRegFile[MISCREG_VTYPE] = (1lu<<63);
     miscRegFile[MISCREG_HSTATUS] = (uint64_t)2<<32;
     miscRegFile[MISCREG_VSSTATUS] = miscRegFile[MISCREG_STATUS] & NEMU_SSTATUS_RMASK;

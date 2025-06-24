@@ -2,7 +2,6 @@ import configparser
 from logging import warning
 import re
 import os
-import git
 import json
 import psutil
 import time
@@ -214,93 +213,6 @@ def get_file_list(path: str):
 
 def free_numa_cores(n):
     pass
-
-
-def getBranch(cfgfile):
-    '''
-    pull repo and checkout
-    '''
-    try:
-        repo = git.Repo(path=cfgfile['global']['working_dir'])
-    except:
-        print('can\'t to load the repo,will to pull new here')
-        try:
-            repo = git.Repo.clone_from(
-                url=cfgfile['global']['repo_url'], to_path=cfgfile['global']['working_dir'])
-        except:
-            print('cant find the repo,exit')
-            exit(-1)
-    try:
-        repo.git.checkout(cfgfile['global']['repo_branch'])
-        repo.git.pull()
-    except:
-        print('repo init error,exit')
-        exit(-1)
-    return repo
-# return the all commit info
-
-
-def getAllCommitInfo(cfgfile, repo: git.Repo, info: str):
-    '''
-    get branch's commits info:commit:hashcode,author,summary,date
-    Sort by time
-    '''
-    repo.git.checkout(cfgfile['global']['repo_branch'])
-    repo.git.pull()
-    real_log_list = []
-    if info.isdigit():
-        commit_log = repo.git.log(
-            '--pretty={"commit":"%h","author":"%an","summary":"%s","date":"%cd"}', max_count=int(info), date='format:%Y-%m-%d %H:%M')
-        log_list = commit_log.split("\n")
-        real_log_list = [eval(item) for item in log_list]
-    else:
-        commits = info.split(';')
-        for commit in commits:
-            real_log_list.append({
-                "commit": commit,
-                "author": "None",
-                "summary": "None",
-                "date": "None"
-            })
-    return real_log_list
-
-
-def checkCommit(commit_info_path, origin_commits):
-    '''
-    compare the local commits info with origin commits
-    and return the extra commit
-    if local is the newest ,return None
-    '''
-    extra_commits = []
-    # init commits info
-    with open(commit_info_path, 'w') as fs:
-        fs.write(json.dumps(origin_commits))
-    if not os.path.exists(commit_info_path+'.old'):
-        return origin_commits
-    ##
-    local_commits = []
-    # load last has done commit
-    with open(commit_info_path+'.old', 'r') as fs:
-        local_commits = json.loads(fs.read())
-
-    if len(local_commits) == 0:
-        return origin_commits
-
-    for i in range(len(origin_commits)):
-        if origin_commits[i]['commit'] == local_commits[0]['commit']:
-            if i == 0:
-                return []
-            extra_commits = origin_commits[0:i]
-            return extra_commits
-    return origin_commits
-
-
-def saveCommits(commit_info_path):
-    '''
-    save has finished commit
-    '''
-    os.rename(commit_info_path, commit_info_path+'.old')
-
 
 # get cfgfile custom works
 # return [[pre-task,task,post-task]]

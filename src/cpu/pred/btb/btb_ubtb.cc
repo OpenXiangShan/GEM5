@@ -104,50 +104,51 @@ UBTB::PredStatistics(const TickedUBTBEntry entry, Addr startAddr)
 void
 UBTB::fillStagePredictions(const TickedUBTBEntry &entry, std::vector<FullBTBPrediction> &stagePreds)
 {
-    for (int s = getDelay(); s < stagePreds.size(); ++s) {
+    FillStageLoop(s) {
         DPRINTF(UBTB, "UBTB: assigning prediction for stage %d\n", s);
 
         // Copy uBTB entries to stage prediction
         stagePreds[s].btbEntries.clear();
         stagePreds[s].condTakens.clear();  // TODO: consider moving this to another place -- the uBTB shouldn't need to
                                            // take care of this
-        if (entry.valid) {
-            // push back dummy conditional branches before the taken branch, to create the correct speculative history
-            // information, these dummy entries are not taken, thanks to them not being in stagePreds.condTakens.
-            for (int i = 0; i < entry.numNTConds; i++) {
-                auto dummy = BTBEntry();
-                dummy.valid = true;
-                dummy.isCond = true;
-                dummy.pc = 0xdeadbeef;  // a magic number to indicate a dummy entry
-                stagePreds[s].btbEntries.push_back(dummy);
-            }
-
-            stagePreds[s].btbEntries.push_back(BTBEntry(entry));
-            if (entry.isCond) {
-                // the always taken field of BTBEntry is ignored in uBTB
-                // uBTB always assumes present entries to be taken
-                stagePreds[s].condTakens[entry.pc] = true;  //(entry.ctr >= 0);
-
-            } else if (entry.isIndirect) {
-                // Set predicted target for indirect branches
-                DPRINTF(UBTB, "setting indirect target for pc %#lx to %#lx\n", entry.pc, entry.target);
-                stagePreds[s].indirectTargets[entry.pc] = entry.target;
-                if (entry.isReturn) {
-                    stagePreds[s].returnTarget = entry.target;
-                }
-            }
-        }
-
         // Set predictions for each branch
         stagePreds[s].predTick = curTick();
+    }
+
+    if (entry.valid) {
+        // push back dummy conditional branches before the taken branch, to create the correct speculative history
+        // information, these dummy entries are not taken, thanks to them not being in stagePreds.condTakens.
+        for (int i = 0; i < entry.numNTConds; i++) {
+            auto dummy = BTBEntry();
+            dummy.valid = true;
+            dummy.isCond = true;
+            dummy.pc = 0xdeadbeef;  // a magic number to indicate a dummy entry
+            FillStageLoop(s) stagePreds[s].btbEntries.push_back(dummy);
+        }
+
+        FillStageLoop(s) stagePreds[s].btbEntries.push_back(BTBEntry(entry));
+        if (entry.isCond) {
+            // the always taken field of BTBEntry is ignored in uBTB
+            // uBTB always assumes present entries to be taken
+            FillStageLoop(s) stagePreds[s].condTakens.push_back({entry.pc, true});
+        } else if (entry.isIndirect) {
+            // Set predicted target for indirect branches
+            DPRINTF(UBTB, "setting indirect target for pc %#lx to %#lx\n", entry.pc, entry.target);
+            FillStageLoop(s) stagePreds[s].indirectTargets.push_back({entry.pc, entry.target});
+            if (entry.isReturn) {
+                FillStageLoop(s) stagePreds[s].returnTarget = entry.target;
+            }
+        }
     }
 }
 
 void
 UBTB::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history, std::vector<FullBTBPrediction> &stagePreds)
 {
+    meta = std::make_shared<UBTBMeta>();
     auto it = lookup(startAddr);
-    TickedUBTBEntry entry = (it != ubtb.end()) ? *it : TickedUBTBEntry();
+    auto& entry = meta->hit_entry;
+    entry = (it != ubtb.end()) ? *it : TickedUBTBEntry();
 
     PredStatistics(entry, startAddr);
 
@@ -156,7 +157,6 @@ UBTB::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history, std::
 
     // Update metadata for later stages
     lastPred.hit_entry = it;
-    meta.hit_entry = entry;
 }
 
 UBTB::UBTBIter

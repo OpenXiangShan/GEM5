@@ -58,3 +58,4 @@ ready-to-run/
 .cursorignore
 compile_commands.json
 .direnv
+.cursor/

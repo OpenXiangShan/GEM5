@@ -119,7 +119,6 @@ CPU::CPU(const BaseO3CPUParams &params)
       activityRec(name(), NumStages,
                   params.backComSize + params.forwardComSize,
                   params.activity),
-
       globalSeqNum(1),
       system(params.system),
       lastRunningCycle(curCycle()),
@@ -128,6 +127,7 @@ CPU::CPU(const BaseO3CPUParams &params)
       ipc_r("ipc", "", 1000, archDBer),
       cpi_r("cpi", "", 1000, archDBer),
       issueWidth(params.decodeWidth),
+      enableConstantFolding(params.enableConstantFolding),
       cpuStats(this)
 {
     fatal_if(FullSystem && params.numThreads > 1,
@@ -249,16 +249,11 @@ CPU::CPU(const BaseO3CPUParams &params)
                 // want special treatment for the zero register at this point
                 RegId rid = RegId(type, ridx);
                 PhysRegIdPtr phys_reg = freeList.getReg(type);
-                renameMap[tid].setEntry(rid, phys_reg);
-                commitRenameMap[tid].setEntry(rid, phys_reg);
+                renameMap[tid].setEntry(rid, VirtRegId(phys_reg));
+                commitRenameMap[tid].setEntry(rid, VirtRegId(phys_reg));
             }
         }
-        // set default value
-        uint8_t ones[RiscvISA::VLENB];
-        memset(ones, 0xff, RiscvISA::VLENB);
-        setArchReg(RiscvISA::VecOnesReg, ones, tid);
     }
-    vecOnesPhysRegId = commitRenameMap[0].lookup(RiscvISA::VecOnesReg);
 
     rename.setRenameMap(renameMap);
     commit.setRenameMap(commitRenameMap);
@@ -479,7 +474,7 @@ CPU::CPUStats::CPUStats(CPU *cpu)
 
     baseRetiring = committedInsts / (cpu->issueWidth * cpu->baseStats.numCycles);
 
-    frontendBound = cpu->fetch.getFetchStats().fetchBubbles / 
+    frontendBound = cpu->fetch.getFetchStats().fetchBubbles /
         (cpu->issueWidth * cpu->baseStats.numCycles);
 
     frontendLatencyBound = cpu->fetch.getFetchStats().fetchBubbles_max / cpu->baseStats.numCycles;
@@ -496,7 +491,7 @@ CPU::CPUStats::CPUStats(CPU *cpu)
     machineClears = badSpecBound - branchMissPrediction;
 
     backendBound = 1 - (frontendBound + badSpecBound + baseRetiring);
-    
+
     Scheduler* scheduler = cpu->iew.getScheduler();
     const auto &stats = scheduler->getStats();
     // coreBound = (EXEC_STALL_CYCLE - MEMSTALL_ANYLOAD - MEMSTALL_STORE)/CPU_CYCLE
@@ -799,7 +794,7 @@ CPU::insertThread(ThreadID tid)
             type = (RegClassType)(type + 1)) {
         for (RegIndex idx = 0; idx < regClasses.at(type).numRegs(); idx++) {
             PhysRegIdPtr phys_reg = freeList.getReg(type);
-            renameMap[tid].setEntry(RegId(type, idx), phys_reg);
+            renameMap[tid].setEntry(RegId(type, idx), VirtRegId(phys_reg));
             scoreboard.setReg(phys_reg);
         }
     }
@@ -1168,6 +1163,32 @@ CPU::getReg(PhysRegIdPtr phys_reg)
     return regFile.getReg(phys_reg);
 }
 
+RegVal
+CPU::getReg(VirtRegId virt_reg)
+{
+    switch (virt_reg.PhyReg()->classValue()) {
+      case IntRegClass:
+        cpuStats.intRegfileReads++;
+        break;
+      case FloatRegClass:
+        cpuStats.fpRegfileReads++;
+        break;
+      case CCRegClass:
+        cpuStats.ccRegfileReads++;
+        break;
+      case VecRegClass:
+      case VecElemClass:
+        cpuStats.vecRegfileReads++;
+        break;
+      case VecPredRegClass:
+        cpuStats.vecPredRegfileReads++;
+        break;
+      default:
+        break;
+    }
+    return regFile.getReg(virt_reg);
+}
+
 void
 CPU::getReg(PhysRegIdPtr phys_reg, void *val)
 {
@@ -1265,35 +1286,36 @@ CPU::setReg(PhysRegIdPtr phys_reg, const void *val)
 RegVal
 CPU::getArchReg(const RegId &reg, ThreadID tid)
 {
-    PhysRegIdPtr phys_reg = commitRenameMap[tid].lookup(reg);
-    return regFile.getReg(phys_reg);
+    VirtRegId virt_reg = commitRenameMap[tid].lookup(reg);
+    return regFile.getReg(virt_reg);
 }
 
 void
 CPU::getArchReg(const RegId &reg, void *val, ThreadID tid)
 {
-    PhysRegIdPtr phys_reg = commitRenameMap[tid].lookup(reg);
-    regFile.getReg(phys_reg, val);
+    VirtRegId virt_reg = commitRenameMap[tid].lookup(reg);
+    assert(!virt_reg.IEOper());
+    regFile.getReg(virt_reg.PhyReg(), val);
 }
 
 void *
 CPU::getWritableArchReg(const RegId &reg, ThreadID tid)
 {
-    PhysRegIdPtr phys_reg = commitRenameMap[tid].lookup(reg);
+    PhysRegIdPtr phys_reg = commitRenameMap[tid].lookup(reg).PhyReg();
     return regFile.getWritableReg(phys_reg);
 }
 
 void
 CPU::setArchReg(const RegId &reg, RegVal val, ThreadID tid)
 {
-    PhysRegIdPtr phys_reg = commitRenameMap[tid].lookup(reg);
+    PhysRegIdPtr phys_reg = commitRenameMap[tid].lookup(reg).PhyReg();
     regFile.setReg(phys_reg, val);
 }
 
 void
 CPU::setArchReg(const RegId &reg, const void *val, ThreadID tid)
 {
-    PhysRegIdPtr phys_reg = commitRenameMap[tid].lookup(reg);
+    PhysRegIdPtr phys_reg = commitRenameMap[tid].lookup(reg).PhyReg();
     regFile.setReg(phys_reg, val);
 }
 
@@ -1707,7 +1729,7 @@ CPU::readArchIntReg(int reg_idx, ThreadID tid)
 
     cpuStats.intRegfileReads++;
     PhysRegIdPtr phys_reg =
-        commitRenameMap[tid].lookup(RegId(IntRegClass, reg_idx));
+        commitRenameMap[tid].lookup(RegId(IntRegClass, reg_idx)).PhyReg();
 
     DPRINTF(Commit, "Get map: x%i -> p%i\n", reg_idx, phys_reg->flatIndex());
 
@@ -1719,7 +1741,7 @@ CPU::readArchFloatReg(int reg_idx, ThreadID tid)
 {
     cpuStats.fpRegfileReads++;
     PhysRegIdPtr phys_reg =
-        commitRenameMap[tid].lookup(RegId(FloatRegClass, reg_idx));
+        commitRenameMap[tid].lookup(RegId(FloatRegClass, reg_idx)).PhyReg();
     DPRINTF(Commit, "Get map: f%i -> p%i\n", reg_idx, phys_reg->flatIndex());
 
     return regFile.getReg(phys_reg);
@@ -1730,7 +1752,7 @@ CPU::readArchVecReg(int reg_idx, uint64_t *val,ThreadID tid)
 {
     cpuStats.vecRegfileReads++;
     PhysRegIdPtr phys_reg =
-        commitRenameMap[tid].lookup(RegId(VecRegClass, reg_idx));
+        commitRenameMap[tid].lookup(RegId(VecRegClass, reg_idx)).PhyReg();
     DPRINTF(Commit, "Get map: v%i -> p%i\n", reg_idx, phys_reg->flatIndex());
 
     regFile.getReg(phys_reg, val);

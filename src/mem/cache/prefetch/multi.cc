@@ -98,11 +98,11 @@ Multi::getPacket()
     return nullptr;
 }
 void
-Multi::addTLB(BaseTLB *_t)
+Multi::addTLB(BaseTLB *_t, bool functional)
 {
-    Base::addTLB(_t);
+    Base::addTLB(_t, functional);
     for (auto pf : prefetchers)
-        pf->addTLB(_t);
+        pf->addTLB(_t, functional);
 }
 
 } // namespace prefetch

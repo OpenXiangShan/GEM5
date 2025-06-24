@@ -4,7 +4,7 @@
 #include <array>
 #include <queue>
 #include <stack>
-#include <utility> 
+#include <utility>
 #include <vector>
 
 #include "arch/generic/pcstate.hh"
@@ -16,6 +16,7 @@
 #include "cpu/pred/btb/btb_ittage.hh"
 #include "cpu/pred/btb/btb_tage.hh"
 #include "cpu/pred/btb/btb_ubtb.hh"
+#include "cpu/pred/btb/btb_mgsc.hh"
 #include "cpu/pred/btb/fetch_target_queue.hh"
 #include "cpu/pred/btb/jump_ahead_predictor.hh"
 #include "cpu/pred/btb/loop_buffer.hh"
@@ -55,7 +56,7 @@ using CPU = o3::CPU;
 /**
  * @class DecoupledBPUWithBTB
  * @brief A decoupled branch predictor implementation using BTB-based design
- * 
+ *
  * This predictor implements a decoupled front-end with:
  * - Multiple prediction stages (UBTB -> BTB/TAGE/ITTAGE)
  * - Fetch Target Queue (FTQ) for managing predicted targets
@@ -92,7 +93,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     unsigned predictWidth;  // max predict width, default 64
     unsigned maxInstsNum;
 
-    const unsigned historyBits{488};
+    const unsigned historyBits{488}; // will be overridden later by the constructor
 
     const Addr MaxAddr{~(0ULL)};
 
@@ -101,7 +102,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     DefaultBTB *btb{};
     BTBTAGE *tage{};
     BTBITTAGE *ittage{};
-    
+    BTBMGSC *mgsc{};
+
     btb_pred::BTBRAS *ras{};
     // btb_pred::BTBuRAS *uras{};
 
@@ -137,12 +139,21 @@ class DecoupledBPUWithBTB : public BPredUnit
     unsigned numComponents{};
     unsigned numStages{};
 
-    bool sentPCHist{false};     ///< get prediction from BP
-    bool receivedPred{false};   ///< get final prediction from predsOfEachStage[numStages-1]
+    enum class BpuState
+    {
+        IDLE,               // Waiting to start a prediction.
+        PREDICTOR_DONE,         // Prediction in progress (conceptually replaces `predictorFinished`).
+        PREDICTION_OUTSTANDING,         // Prediction is ready to be enqueued (replaces `receivedPred`).
+    };
+    BpuState bpuState;
 
     Addr s0PC;                  ///< Current PC
     // Addr s0StreamStartPC;
-    boost::dynamic_bitset<> s0History;  ///< History bits
+    boost::dynamic_bitset<> s0History;  ///< global History bits
+    boost::dynamic_bitset<> s0PHistory;  ///< path History bits
+    boost::dynamic_bitset<> s0BwHistory;  ///< global backward History bits
+    boost::dynamic_bitset<> s0IHistory;  ///< IMLI History bits
+    std::vector<boost::dynamic_bitset<>> s0LHistory;  ///< local History bits
     FullBTBPrediction finalPred;      ///< Final prediction
 
     boost::dynamic_bitset<> commitHistory;
@@ -157,14 +168,12 @@ class DecoupledBPUWithBTB : public BPredUnit
     using JAInfo = JumpAheadPredictor::JAInfo;
     JAInfo jaInfo;
 
-    void tryEnqFetchStream();
+    bool validateFSQEnqueue();
 
     void tryEnqFetchTarget();
 
     // Helper function to validate FTQ and FSQ state before enqueueing
     bool validateFTQEnqueue();
-
-    bool validateFSQEnqueue();
 
     void makeNewPrediction(bool create_new_stream);
 
@@ -177,13 +186,14 @@ class DecoupledBPUWithBTB : public BPredUnit
     void fillAheadPipeline(FetchStream &entry);
 
     // Tick helper functions
-    void processEnqueueAndBubbles();
     void requestNewPrediction();
 
     Addr computePathHash(Addr br, Addr target);
 
     // TODO: compare phr and ghr
     void histShiftIn(int shamt, bool taken, boost::dynamic_bitset<> &history);
+
+    void pHistShiftIn(int shamt, bool taken, boost::dynamic_bitset<> &history, Addr pc);
 
     void printStream(const FetchStream &e)
     {
@@ -233,13 +243,13 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     /**
      * @brief Generate final prediction from all stages
-     * 
+     *
      * Collects predictions from all stages and:
      * - Selects most accurate prediction
      * - Generates necessary bubbles
      * - Updates prediction state
      */
-    void generateFinalPredAndCreateBubbles();
+    unsigned generateFinalPredAndCreateBubbles();
 
     void clearPreds() {
         for (auto &stagePred : predsOfEachStage) {
@@ -276,7 +286,7 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     /**
      * @brief Statistics collection for branch prediction
-     * 
+     *
      * Tracks detailed statistics about:
      * - Branch types and mispredictions
      * - Predictor component usage
@@ -349,7 +359,7 @@ class DecoupledBPUWithBTB : public BPredUnit
   public:
     /**
      * @brief Main prediction cycle function
-     * 
+     *
      * This function handles:
      * - FSQ/FTQ management
      * - Prediction generation
@@ -510,12 +520,12 @@ class DecoupledBPUWithBTB : public BPredUnit
     std::string buf1, buf2;
 
     std::stack<Addr> streamRAS;
-    
+
     bool debugFlagOn{false};
 
-    std::map<Addr, int> takenBranches;      // branch address -> taken count
-    std::map<Addr, int> currentPhaseTakenBranches;
-    std::map<Addr, int> currentSubPhaseTakenBranches;
+    std::unordered_map<Addr, int> takenBranches;      // branch address -> taken count
+    std::unordered_map<Addr, int> currentPhaseTakenBranches;
+    std::unordered_map<Addr, int> currentSubPhaseTakenBranches;
 
     /**
      * @brief Types of control flow instruction mispredictions
@@ -649,14 +659,14 @@ class DecoupledBPUWithBTB : public BPredUnit
      *
      * Each entry maps branch addresses to execution counts for a phase.
      */
-    std::vector<std::map<Addr, int>> takenBranchesByPhase;
+    std::vector<std::unordered_map<Addr, int>> takenBranchesByPhase;
 
     /**
      * @brief Vector of taken branches for each sub-phase
      *
      * Each entry maps branch addresses to execution counts for a sub-phase.
      */
-    std::vector<std::map<Addr, int>> takenBranchesBySubPhase;
+    std::vector<std::unordered_map<Addr, int>> takenBranchesBySubPhase;
 
     // BTB entry tracking
     /**
@@ -664,21 +674,21 @@ class DecoupledBPUWithBTB : public BPredUnit
      *
      * Maps start address to (BTBEntry, visit count) to track BTB entry usage.
      */
-    std::map<Addr, std::pair<BTBEntry, int>> lastPhaseBTBEntries;
+    std::unordered_map<Addr, std::pair<BTBEntry, int>> lastPhaseBTBEntries;
 
     /**
      * @brief Cumulative BTB entries seen so far
      *
      * Maps start address to (BTBEntry, visit count) with total usage.
      */
-    std::map<Addr, std::pair<BTBEntry, int>> totalBTBEntries;
+    std::unordered_map<Addr, std::pair<BTBEntry, int>> totalBTBEntries;
 
     /**
      * @brief Vector of BTB entries for each phase
      *
      * Each entry contains the BTB entries used during a phase.
      */
-    std::vector<std::map<Addr, std::pair<BTBEntry, int>>> BTBEntriesByPhase;
+    std::vector<std::unordered_map<Addr, std::pair<BTBEntry, int>>> BTBEntriesByPhase;
 
     /**
      * @brief Next phase ID to dump statistics for
@@ -779,7 +789,8 @@ class DecoupledBPUWithBTB : public BPredUnit
         const PCStateBase &squash_pc,
         bool is_conditional,
         bool actually_taken,
-        SquashType squash_type);
+        SquashType squash_type,
+        Addr redirect_pc);
 
     // Common logic for squash handling
     void handleSquash(unsigned target_id,
@@ -890,8 +901,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     bool processPhase(bool isSubPhase, int phaseID, int &phaseToDump,
                      BranchStatsMap &lastPhaseStats,
                      std::vector<BranchStatsMap> &phaseStatsList,
-                     std::map<Addr, int> &currentPhaseBranches,
-                     std::vector<std::map<Addr, int>> &phaseBranchesList);
+                     std::unordered_map<Addr, int> &currentPhaseBranches,
+                     std::vector<std::unordered_map<Addr, int>> &phaseBranchesList);
 
     /**
      * @brief Process fetch instruction distributions for a phase
@@ -907,7 +918,7 @@ class DecoupledBPUWithBTB : public BPredUnit
      *
      * @return std::map<Addr, std::pair<BTBEntry, int>> Map of BTB entries for the phase
      */
-    std::map<Addr, std::pair<BTBEntry, int>> processBTBEntries();
+    std::unordered_map<Addr, std::pair<BTBEntry, int>> processBTBEntries();
 
     /**
      * @brief Process instruction commit and update phase-based statistics

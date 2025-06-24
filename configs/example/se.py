@@ -63,6 +63,7 @@ from common import MemConfig
 from common.FileSystemConfig import config_filesystem
 from common.Caches import *
 from common.cpu2000 import *
+from common.FUScheduler import DefaultScheduler
 
 def get_processes(args):
     """Interprets provided args and returns a list of processes"""
@@ -196,6 +197,9 @@ if args.elastic_trace_en:
 # frequency.
 for cpu in system.cpu:
     cpu.clk_domain = system.cpu_clk_domain
+    # Add scheduler for RISCV CPUs
+    if buildEnv['TARGET_ISA'] == 'riscv':
+        cpu.scheduler = DefaultScheduler()
 
 if ObjectList.is_kvm_cpu(CPUClass) or ObjectList.is_kvm_cpu(FutureClass):
     if buildEnv['TARGET_ISA'] == 'x86':

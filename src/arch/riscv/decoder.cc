@@ -42,44 +42,37 @@ GenericISA::BasicDecodeCache<Decoder, ExtMachInst> Decoder::defaultCache;
 
 void Decoder::reset()
 {
-    aligned = true;
-    mid = false;
     machInst = 0;
     emi = 0;
+    instDone = false;
+    outOfBytes = true;
 }
 
 void
 Decoder::moreBytes(const PCStateBase &pc, Addr fetchPC)
 {
-    // The MSB of the upper and lower halves of a machine instruction.
-    constexpr size_t max_bit = sizeof(machInst) * 8 - 1;
-    constexpr size_t mid_bit = sizeof(machInst) * 4 - 1;
-
+    // Get the instruction from machInst buffer
     auto inst = letoh(machInst);
-    DPRINTF(Decode, "Requesting bytes 0x%08x from address %#x\n", inst,
-            fetchPC);
 
-    bool aligned = pc.instAddr() % sizeof(machInst) == 0;
-    if (aligned) {
-        emi.instBits = inst;
-        if (compressed(inst))
-            emi.instBits = bits(inst, mid_bit, 0);
-        outOfBytes = !compressed(emi);
-        instDone = true;
-    } else {
-        if (mid) {
-            assert(bits(emi.instBits, max_bit, mid_bit + 1) == 0);
-            replaceBits(emi.instBits, max_bit, mid_bit + 1, inst);
-            mid = false;
-            outOfBytes = false;
-            instDone = true;
-        } else {
-            emi.instBits = bits(inst, max_bit, mid_bit + 1);
-            mid = !compressed(emi);
-            outOfBytes = true;
-            instDone = compressed(emi);
-        }
+    DPRINTF(Decode, "Requesting bytes 0x%08x from address %#x\n", inst,
+        fetchPC);
+
+    // We assume fetchPC is always the actual instruction address,
+    // so we can directly work with the instruction
+    emi.instBits = inst;
+
+    // For compressed instruction, we only need the lower 16 bits
+    if (compressed(inst)) {
+        constexpr size_t mid_bit = sizeof(machInst) * 4 - 1; // 15 for 32-bit machInst
+        emi.instBits = bits(inst, mid_bit, 0);
     }
+
+    // For any instruction (compressed or not), we've received enough data
+    instDone = true;    // decoder->instReady() is always true
+
+    // For 32-bit instructions, we still need all 4 bytes
+    // For 16-bit instructions, we already have enough bytes
+    outOfBytes = !compressed(emi); // not used !!!
 }
 
 StaticInstPtr

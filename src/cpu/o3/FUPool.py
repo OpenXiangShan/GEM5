@@ -52,8 +52,8 @@ class SpecWakeupChannel(SimObject):
     cxx_class = 'gem5::o3::SpecWakeupChannel'
     cxx_header = "cpu/o3/issue_queue.hh"
 
-    srcIQ = Param.String("dest IQ name (data path: srcIQ -> dstIQ)")
-    dstIQ = VectorParam.String("dest IQ name")
+    srcs = VectorParam.String("dest IQ name (data path: srcIQ -> dstIQ)")
+    dsts = VectorParam.String("dest IQ name")
 
 class IssuePort(SimObject):
     type = 'IssuePort'
