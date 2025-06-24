@@ -851,6 +851,28 @@ class LSQUnit
 
     bool squashMark{false};
 
+    /**
+     * Helper function to check address range overlap and determine coverage type
+     * for store-to-load forwarding.
+     *
+     * This function handles all combinations of split/non-split loads and stores:
+     * - Load not split + Store not split: Basic address range comparison
+     * - Load split + Store not split: Check each load sub-request against store
+     * - Load not split + Store split: Check load against each store sub-request
+     * - Load split + Store split: Check each load sub-request against each store sub-request
+     *
+     * @param store_it Iterator to store queue entry
+     * @param request Load request pointer
+     * @param load_inst Load instruction pointer
+     * @param load_req_idx Index of load sub-request (-1 if checking entire load)
+     * @param store_req_idx Index of store sub-request (-1 if checking entire store)
+     * @return Coverage type for this address range comparison
+     */
+    AddrRangeCoverage checkStoreLoadForwardingRange(
+                                                   typename StoreQueue::iterator store_it,
+                                                   LSQRequest *request, const DynInstPtr &load_inst,
+                                                   int load_req_idx = -1, int store_req_idx = -1);
+
   public:
     /** Load Forwards data from Data bus. */
     void forwardFromBus(DynInstPtr inst, LSQRequest *request);
