@@ -551,6 +551,7 @@ class Request
     HtmFailureFaultCause _htmAbortCause = HtmFailureFaultCause::INVALID;
 
     bool misalignedFetch = false;
+    bool continue_ptw = false;
 
     int reqNum = 1;
     bool forward_pre_tlb = false;
@@ -647,6 +648,10 @@ class Request
     {
         misalignedFetch = true;
     }
+
+    void setContinuePtw(bool icontinue) { continue_ptw = icontinue; }
+
+    bool get_continue_ptw() { return continue_ptw; }
 
     int getReqNum()
     {
