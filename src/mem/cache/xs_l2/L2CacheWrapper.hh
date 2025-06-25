@@ -7,8 +7,9 @@
 #include <random>
 #include <vector>
 
-#include "mem/cache/CacheWrapper.hh"
-#include "mem/cache/L2MainPipe.hh"
+#include "mem/cache/xs_l2/CacheWrapper.hh"
+#include "mem/cache/xs_l2/L2MainPipe.hh"
+#include "mem/cache/xs_l2/RequestBuffer.hh"
 #include "mem/packet.hh"
 #include "params/L2CacheWrapper.hh"
 #include "sim/cur_tick.hh"
@@ -21,10 +22,11 @@ class L2CacheWrapper : public CacheWrapper
 {
   public:
     L2CacheWrapper(const L2CacheWrapperParams &p);
+    friend class ReqBuffer;
+
   protected:
     // For request buffering logic
-    std::deque<PacketPtr> request_buffer;
-    const unsigned buffer_size;
+    RequestBuffer requestBuffer;
     // is the inner cache blocked?
     bool inner_cache_blocked = false;
     // should we send retry to L1?

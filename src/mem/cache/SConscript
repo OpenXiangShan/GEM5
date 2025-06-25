@@ -32,10 +32,6 @@ SimObject('Cache.py', sim_objects=[
     'WriteAllocator', 'BaseCache', 'Cache', 'NoncoherentCache'],
     enums=['Clusivity'])
 
-SimObject('CacheWrapper.py', sim_objects=[
-    'CacheWrapper', 'L2CacheWrapper',
-])
-
 Source('base.cc')
 Source('cache.cc')
 Source('cache_blk.cc')
@@ -44,9 +40,6 @@ Source('mshr_queue.cc')
 Source('noncoherent_cache.cc')
 Source('write_queue.cc')
 Source('write_queue_entry.cc')
-Source('CacheWrapper.cc')
-Source('L2CacheWrapper.cc')
-Source('L2MainPipe.cc')
 
 DebugFlag('Cache')
 DebugFlag('CacheComp')
@@ -60,8 +53,6 @@ DebugFlag('HWPrefetchOther')
 DebugFlag('StridePrefetcher')
 DebugFlag('MSHR')
 DebugFlag('HWPrefetchQueue')
-DebugFlag('CacheWrapper')
-DebugFlag('L2CacheWrapper')
 
 # CacheTags is so outrageously verbose, printing the cache's entire tag
 # array on each timing access, that you should probably have to ask for

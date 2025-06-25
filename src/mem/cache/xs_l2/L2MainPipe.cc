@@ -1,8 +1,8 @@
-#include "mem/cache/L2MainPipe.hh"
+#include "mem/cache/xs_l2/L2MainPipe.hh"
 
 #include <algorithm>
 
-#include "mem/cache/L2CacheWrapper.hh"
+#include "mem/cache/xs_l2/L2CacheWrapper.hh"
 #include "mem/packet.hh"
 
 namespace gem5

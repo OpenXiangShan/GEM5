@@ -5,7 +5,7 @@ from m5.objects.ClockedObject import ClockedObject
 
 class CacheWrapper(ClockedObject):
     type = 'CacheWrapper'
-    cxx_header = "mem/cache/CacheWrapper.hh"
+    cxx_header = "mem/cache/xs_l2/CacheWrapper.hh"
     cxx_class = 'gem5::CacheWrapper'
 
     cpu_side = ResponsePort("CPU side port, receives requests")
@@ -16,7 +16,7 @@ class CacheWrapper(ClockedObject):
 
 class L2CacheWrapper(CacheWrapper):
     type = 'L2CacheWrapper'
-    cxx_header = "mem/cache/L2CacheWrapper.hh"
+    cxx_header = "mem/cache/xs_l2/L2CacheWrapper.hh"
     cxx_class = 'gem5::L2CacheWrapper'
     buffer_size = Param.Unsigned(4, "Size of the request buffer")
     pipeline_depth = Param.Unsigned(5, "Depth of the response pipeline")

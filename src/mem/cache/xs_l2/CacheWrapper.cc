@@ -1,4 +1,4 @@
-#include "mem/cache/CacheWrapper.hh"
+#include "mem/cache/xs_l2/CacheWrapper.hh"
 
 #include "base/trace.hh"
 #include "debug/CacheWrapper.hh"

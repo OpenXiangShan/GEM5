@@ -1,63 +1,17 @@
 #ifndef __MEM_CACHE_L2_MAIN_PIPE_HH__
 #define __MEM_CACHE_L2_MAIN_PIPE_HH__
 
-#include <cstdint>
 #include <deque>
 #include <unordered_map>
 
 #include "base/types.hh"
+#include "mem/cache/xs_l2/PipelineResources.hh"
 #include "mem/packet.hh"
 
 namespace gem5
 {
 
 class L2CacheWrapper;
-
-// For response pipeline scoreboard
-// Using a bitmask to allow for multiple resource acquisitions per stage
-enum PipelineResources : uint8_t
-{
-    ResFree      = 0,
-    ResDataRead  = 1 << 0, // need a data read operation
-    ResDataWrite = 1 << 1, // need a data write operation
-    ResDirRead   = 1 << 2, // need a directory read operation
-    ResDirWrite  = 1 << 3, // need a directory write operation
-    ResGrantBuf  = 1 << 4, // need a grant buffer operation
-};
-
-inline PipelineResources
-operator|(PipelineResources a, PipelineResources b)
-{
-    return static_cast<PipelineResources>(
-        static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
-}
-
-inline PipelineResources
-operator&(PipelineResources a, PipelineResources b)
-{
-    return static_cast<PipelineResources>(
-        static_cast<uint8_t>(a) & static_cast<uint8_t>(b));
-}
-
-inline PipelineResources
-operator~(PipelineResources a)
-{
-    return static_cast<PipelineResources>(~static_cast<uint8_t>(a));
-}
-
-inline PipelineResources&
-operator|=(PipelineResources& a, PipelineResources b)
-{
-    a = a | b;
-    return a;
-}
-
-inline PipelineResources&
-operator&=(PipelineResources& a, PipelineResources b)
-{
-    a = a & b;
-    return a;
-}
 
 // For task source
 // Indicate the source of the task that is being processed by the pipeline.

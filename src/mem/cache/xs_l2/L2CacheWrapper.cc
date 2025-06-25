@@ -1,8 +1,8 @@
-#include "mem/cache/L2CacheWrapper.hh"
+#include "mem/cache/xs_l2/L2CacheWrapper.hh"
 
 #include "base/trace.hh"
-#include "cache.hh"
 #include "debug/L2CacheWrapper.hh"
+#include "mem/cache/cache.hh"
 #include "mem/packet.hh"
 #include "params/CacheWrapper.hh"
 #include "sim/eventq.hh"
@@ -12,7 +12,7 @@ namespace gem5
 
 L2CacheWrapper::L2CacheWrapper(const L2CacheWrapperParams &p)
     : CacheWrapper(p),
-      buffer_size(p.buffer_size),
+      requestBuffer(p.buffer_size),
       trySendEvent([this]{ trySendFromBuffer(); }, name()),
       processResponsesEvent([this]{ processResponses(); }, name(), false,
                             Event::Maximum_Pri),
@@ -125,7 +125,7 @@ L2CacheWrapper::cpuSidePortRecvTimingReq(PacketPtr pkt)
     // If the request is from write_queue(WriteBackClean/CleanEvict etc.),
     // we cannot buffer it and just forward it to inner cache
     if (!pkt->needsResponse()) {
-        if (inner_cache_blocked || !request_buffer.empty()) {
+        if (inner_cache_blocked || !requestBuffer.empty()) {
             DPRINTF(L2CacheWrapper, "Inner cache busy, rejecting WQ request from CPU side\n");
             pending_l1_retry = true;
             return false;
@@ -143,16 +143,16 @@ L2CacheWrapper::cpuSidePortRecvTimingReq(PacketPtr pkt)
 
     // Then if the request is from L1 MSHR(ReadEx/ReadShare etc.),
     // we can buffer it
-    if (inner_cache_blocked || !request_buffer.empty()) {
+    if (inner_cache_blocked || !requestBuffer.empty()) {
         // If the Wrapper is waiting for inner cache's retry or some pending requestes
         // are in the buffer, we cannot forward it directly to inner cache
-        if (request_buffer.size() >= buffer_size) {
+        if (requestBuffer.isFull()) {
             DPRINTF(L2CacheWrapper, "Buffer full, rejecting request from CPU side\n");
             pending_l1_retry = true;
             return false;
         }
-        request_buffer.push_back(pkt);
-        DPRINTF(L2CacheWrapper, "Request buffered, buffer size: %d\n", request_buffer.size());
+        requestBuffer.push(pkt);
+        DPRINTF(L2CacheWrapper, "Request buffered, buffer size: %d\n", requestBuffer.size());
         return true;
     }
     // If the Wrapper is not waiting for inner cache's retry and
@@ -161,13 +161,13 @@ L2CacheWrapper::cpuSidePortRecvTimingReq(PacketPtr pkt)
     if (!inner_cpu_port.sendTimingReq(pkt)) {
         inner_cache_blocked = true;
         DPRINTF(L2CacheWrapper, "Inner cache busy, try buffering request and blocking\n");
-        if (request_buffer.size() >= buffer_size) {
+        if (requestBuffer.isFull()) {
             DPRINTF(L2CacheWrapper, "Buffer full, rejecting request from CPU side\n");
             pending_l1_retry = true;
             return false;
         }
-        request_buffer.push_back(pkt);
-        DPRINTF(L2CacheWrapper, "Request buffered, buffer size: %d\n", request_buffer.size());
+        requestBuffer.push(pkt);
+        DPRINTF(L2CacheWrapper, "Request buffered, buffer size: %d\n", requestBuffer.size());
         return true;
     }
     DPRINTF(L2CacheWrapper, "Request forwarded directly to inner cache\n");
@@ -179,7 +179,7 @@ L2CacheWrapper::innerCpuPortRecvReqRetry()
 {
     DPRINTF(L2CacheWrapper, "Got req retry from inner cache\n");
     assert(inner_cache_blocked);
-    assert(!request_buffer.empty() || pending_l1_retry);
+    assert(!requestBuffer.empty() || pending_l1_retry);
 
     // inner cache is not blocked anymore
     inner_cache_blocked = false;
@@ -191,32 +191,32 @@ L2CacheWrapper::innerCpuPortRecvReqRetry()
 void
 L2CacheWrapper::trySendFromBuffer()
 {
-    if (request_buffer.empty() && !inner_cache_blocked && pending_l1_retry) {
+    if (requestBuffer.empty() && !inner_cache_blocked && pending_l1_retry) {
         DPRINTF(L2CacheWrapper, "No pending request in buffer, send retry to L1\n");
         pending_l1_retry = false;
         cpu_side_port.sendRetryReq();
         return;
     }
 
-    if (request_buffer.empty() || inner_cache_blocked) {
+    if (requestBuffer.empty() || inner_cache_blocked) {
         DPRINTF(L2CacheWrapper, "No pending request in buffer or inner cache is blocked, skipping\n");
         return;
     }
 
     DPRINTF(L2CacheWrapper, "Attempting to send delayed request from buffer, buffer size: %d\n",
-            request_buffer.size());
+            requestBuffer.size());
 
-    PacketPtr pkt = request_buffer.front();
+    PacketPtr pkt = requestBuffer.front();
 
     if (!inner_cpu_port.sendTimingReq(pkt)) {
         DPRINTF(L2CacheWrapper, "Send delayed request failed, blocking again\n");
         inner_cache_blocked = true;
     } else {
-        request_buffer.pop_front();
+        requestBuffer.pop();
         DPRINTF(L2CacheWrapper, "Send delayed request successful, popping from buffer, buffer size: %d\n",
-                request_buffer.size());
+                requestBuffer.size());
 
-        if (!request_buffer.empty()) {
+        if (!requestBuffer.empty()) {
             // schedule trySendFromBuffer next cycle
             if (!trySendEvent.scheduled()) {
                 schedule(trySendEvent, nextWrapperCycle());
