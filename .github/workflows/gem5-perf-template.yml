@@ -87,23 +87,19 @@ jobs:
           cd $GEM5_HOME
       - name: Build GEM5 fast
         run: |
+          export GEM5_HOME=$(pwd)
+          export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so"
           case "${{ inputs.vector_type }}" in
             "base")
               # use pgo profile to build gem5
-              export GEM5_HOME=$(pwd)
-              export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-so"
               bash util/pgo/basic_pgo_new.sh
               ;;
             "simple")
-              # use pgo profile to build gem5
-              export GEM5_HOME=$(pwd)
-              export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-so"
+              # use pgo profile to build gem5, use simple vector decode strategy in scons
               bash util/pgo/basic_pgo_new_vector.sh
               ;;
             "")
-              # unset vector_type, use "base"
-              export GEM5_HOME=$(pwd)
-              export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-so"
+              # use pgo profile to build gem5
               bash util/pgo/basic_pgo_new.sh
               ;;
             *)
@@ -115,7 +111,7 @@ jobs:
       - name: XS-GEM5 - Run performance test
         # ${{ steps.config.outputs.comment }}
         run: |
-          export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-so"
+          export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so"
           export GCB_RESTORER=""
           export GEM5_HOME=$(pwd)
           export GEM5_BUILD_TYPE=fast
