@@ -46,6 +46,7 @@ Source('write_queue.cc')
 Source('write_queue_entry.cc')
 Source('CacheWrapper.cc')
 Source('L2CacheWrapper.cc')
+Source('L2MainPipe.cc')
 
 DebugFlag('Cache')
 DebugFlag('CacheComp')

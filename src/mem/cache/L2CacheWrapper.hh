@@ -8,8 +8,11 @@
 #include <vector>
 
 #include "mem/cache/CacheWrapper.hh"
+#include "mem/cache/L2MainPipe.hh"
 #include "mem/packet.hh"
 #include "params/L2CacheWrapper.hh"
+#include "sim/cur_tick.hh"
+#include "sim/eventq.hh"
 
 namespace gem5
 {
@@ -28,26 +31,14 @@ class L2CacheWrapper : public CacheWrapper
     bool pending_l1_retry = false;
     EventFunctionWrapper trySendEvent;
 
-    // For response delaying logic
-    struct DelayedResp
-    {
-        PacketPtr pkt;
-        Tick readyTick;
-    };
-
-    struct DelayedRespCompare
-    {
-        bool operator()(const DelayedResp& a, const DelayedResp& b) const {
-            return a.readyTick > b.readyTick;
-        }
-    };
-
+    // For response pipeline logic
     std::list<PacketPtr> pending_l3_requests;
-    std::priority_queue<DelayedResp, std::vector<DelayedResp>, DelayedRespCompare> delayed_responses;
-    bool response_port_blocked = false;
-    EventFunctionWrapper processDelayedResponsesEvent;
-    const Cycles min_response_latency;
-    const Cycles max_response_latency;
+    std::deque<PacketPtr> ready_responses;
+    EventFunctionWrapper processResponsesEvent;
+    EventFunctionWrapper tickMainPipeEvent;
+
+    friend class L2MainPipe;
+    L2MainPipe mainPipe;
 
     bool cpuSidePortRecvTimingReq(PacketPtr pkt) override;
     void innerCpuPortRecvReqRetry() override;
@@ -56,7 +47,10 @@ class L2CacheWrapper : public CacheWrapper
     void innerMemPortRecvRespRetry() override;
 
     void trySendFromBuffer();
-    void processDelayedResponses();
+    void processResponses();
+    void tickMainPipe();
+
+    Tick nextWrapperCycle() const { return curTick() + clockPeriod(); }
 };
 
 } // namespace gem5

@@ -3,7 +3,9 @@
 #include "base/trace.hh"
 #include "cache.hh"
 #include "debug/L2CacheWrapper.hh"
+#include "mem/packet.hh"
 #include "params/CacheWrapper.hh"
+#include "sim/eventq.hh"
 
 namespace gem5
 {
@@ -12,9 +14,10 @@ L2CacheWrapper::L2CacheWrapper(const L2CacheWrapperParams &p)
     : CacheWrapper(p),
       buffer_size(p.buffer_size),
       trySendEvent([this]{ trySendFromBuffer(); }, name()),
-      processDelayedResponsesEvent([this]{ processDelayedResponses(); }, name()),
-      min_response_latency(p.min_response_latency),
-      max_response_latency(p.max_response_latency)
+      processResponsesEvent([this]{ processResponses(); }, name(), false,
+                            Event::Maximum_Pri),
+      tickMainPipeEvent([this]{ tickMainPipe(); }, name()),
+      mainPipe(this, p.pipeline_depth)
 {
     srand(time(NULL));
 }
@@ -59,87 +62,55 @@ L2CacheWrapper::memSidePortRecvTimingResp(PacketPtr pkt)
         return CacheWrapper::memSidePortRecvTimingResp(pkt);
     }
 
-    DPRINTF(L2CacheWrapper, "Found matching tracked request for addr: %#x. Applying delay.\n", pkt->getAddr());
+    DPRINTF(L2CacheWrapper, "Found matching tracked request for addr: %#x. Queueing for pipeline.\n", pkt->getAddr());
     pending_l3_requests.erase(it);
 
-    Cycles delay_cycles{0};
-    if (max_response_latency > min_response_latency) {
-        Tick min_ticks = cyclesToTicks(min_response_latency);
-        Tick max_ticks = cyclesToTicks(max_response_latency);
-        delay_cycles = ticksToCycles(min_ticks + (Tick)(rand() % (max_ticks - min_ticks + 1)));
-    } else {
-        delay_cycles = min_response_latency;
-    }
+    ready_responses.push_back(pkt);
 
-    Tick ready_tick = curTick() + cyclesToTicks(delay_cycles);
-    DPRINTF(L2CacheWrapper, "Response for addr %#x will be delayed by %d cycles, "
-                            "ready at tick %d\n", pkt->getAddr(), delay_cycles, ready_tick);
-
-    // Get the ready tick of the next response to be processed before adding the new one
-    Tick next_ready_tick = delayed_responses.empty() ? MaxTick : delayed_responses.top().readyTick;
-
-    delayed_responses.push({pkt, ready_tick});
-
-    // If the new response is ready sooner than any other pending response,
-    // or if the queue was empty, we need to schedule/reschedule the event.
-    if (ready_tick < next_ready_tick) {
-        if (processDelayedResponsesEvent.scheduled()) {
-            deschedule(processDelayedResponsesEvent);
-        }
-        schedule(processDelayedResponsesEvent, ready_tick);
+    if (!processResponsesEvent.scheduled()) {
+        schedule(processResponsesEvent, nextWrapperCycle());
     }
 
     return true;
 }
 
 void
-L2CacheWrapper::processDelayedResponses()
+L2CacheWrapper::processResponses()
 {
-    if (delayed_responses.empty() || response_port_blocked) {
-        return;
+    // advance pipeline
+    mainPipe.advance(curCycle());
+
+    // we want to build a L2 MSHR grant task
+    if (!ready_responses.empty() && mainPipe.isTaskAvailable(TaskSource::L2MSHRGrant)) {
+        DPRINTF(L2CacheWrapper, "Building L2 MSHR grant task for addr: %#x\n", ready_responses.front()->getAddr());
+        PacketPtr pkt = ready_responses.front();
+        mainPipe.buildTask(pkt, TaskSource::L2MSHRGrant);
+        ready_responses.pop_front();
     }
 
-    const DelayedResp& resp_to_send = delayed_responses.top();
-
-    if (curTick() < resp_to_send.readyTick) {
-        if (processDelayedResponsesEvent.scheduled()) {
-             deschedule(processDelayedResponsesEvent);
-        }
-        schedule(processDelayedResponsesEvent, resp_to_send.readyTick);
-        return;
+    // Reschedule for the next cycle if there is more work to do
+    if (!ready_responses.empty() && !processResponsesEvent.scheduled()) {
+        schedule(processResponsesEvent, nextWrapperCycle());
     }
 
-    DPRINTF(L2CacheWrapper, "Attempting to send delayed response "
-                            "for addr: %#x to inner L2\n", resp_to_send.pkt->getAddr());
+    if (mainPipe.hasWork() && !tickMainPipeEvent.scheduled()) {
+        schedule(tickMainPipeEvent, nextWrapperCycle());
+    }
+}
 
-    if (!inner_mem_port.sendTimingResp(resp_to_send.pkt)) {
-        DPRINTF(L2CacheWrapper, "Inner L2 is busy, cannot send response. Blocking.\n");
-        response_port_blocked = true;
-    } else {
-        DPRINTF(L2CacheWrapper, "Successfully sent delayed response "
-                                "for addr: %#x to inner L2\n", resp_to_send.pkt->getAddr());
-        delayed_responses.pop();
-
-        if (!delayed_responses.empty()) {
-            Tick next_ready = delayed_responses.top().readyTick;
-            if (processDelayedResponsesEvent.scheduled()) {
-                 deschedule(processDelayedResponsesEvent);
-            }
-            schedule(processDelayedResponsesEvent, std::max(next_ready, nextCycle()));
-        }
+void
+L2CacheWrapper::tickMainPipe()
+{
+    mainPipe.advance(curCycle());
+    if (mainPipe.hasWork() && !tickMainPipeEvent.scheduled()) {
+        schedule(tickMainPipeEvent, nextWrapperCycle());
     }
 }
 
 void
 L2CacheWrapper::innerMemPortRecvRespRetry()
 {
-    DPRINTF(L2CacheWrapper, "Got resp retry from inner L2. Unblocking.\n");
-    assert(response_port_blocked);
-    response_port_blocked = false;
-
-    if (!processDelayedResponsesEvent.scheduled() && !delayed_responses.empty()) {
-        schedule(processDelayedResponsesEvent, nextCycle());
-    }
+    panic("L2CacheWrapper should not receive resp retry from inner L2");
 }
 
 bool
@@ -248,7 +219,7 @@ L2CacheWrapper::trySendFromBuffer()
         if (!request_buffer.empty()) {
             // schedule trySendFromBuffer next cycle
             if (!trySendEvent.scheduled()) {
-                schedule(trySendEvent, nextCycle());
+                schedule(trySendEvent, nextWrapperCycle());
             }
         } else if (pending_l1_retry) {
             DPRINTF(L2CacheWrapper, "No pending request in buffer, send retry to L1\n");
