@@ -345,6 +345,14 @@ class Fetch
      * @return Any fault that occured.
      */
     bool fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc);
+
+    /**
+     * Send a pipelined I-cache access request for the next FTQ entry.
+     * @param tid Thread ID
+     * @param pc_state The PC state of the current instruction.
+     */
+    void sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state);
+
     void finishTranslation(const Fault &fault, const RequestPtr &mem_req);
 
     /** Handle misaligned fetch that spans two cache lines.
@@ -739,9 +747,6 @@ class Fetch
 
     /** Instruction port. Note that it has to appear after the fetch stage. */
     IcachePort icachePort;
-
-    /** Set to true if a pipelined I-cache request should be issued. */
-    bool issuePipelinedIfetch[MaxThreads];
 
     /** Event used to delay fault generation of translation faults */
     FinishTranslationEvent finishTranslationEvent;

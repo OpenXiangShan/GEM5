@@ -126,7 +126,6 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         stalls[i] = {false, false};
         // fetchBuffer[i] is initialized by its constructor
         lastIcacheStall[i] = 0;
-        issuePipelinedIfetch[i] = false;
     }
 
     branchPred = params.branchPred;
@@ -1326,11 +1325,6 @@ Fetch::initializeTickState()
     // get the distribution of fetch status
     fetchStats.fetchStatusDist[fetchStatus[0]]++;
 
-    // Reset pipelined fetch flags
-    for (ThreadID i = 0; i < numThreads; ++i) {
-        issuePipelinedIfetch[i] = false;
-    }
-
     // Check signal updates for all active threads
     while (threads != end) {
         ThreadID tid = *threads++;
@@ -1390,16 +1384,6 @@ Fetch::handleInterrupts()
         if (fromCommit->commitInfo[0].clearInterrupt) {
             DPRINTF(Fetch, "Clear interrupt pending.\n");
             interruptPending = false;
-        }
-    }
-
-    // Don't issue pipelined ifetch if interrupt is pending
-    issuePipelinedIfetch[0] = issuePipelinedIfetch[0] && !interruptPending;
-
-    // Issue the next I-cache request if possible.
-    for (ThreadID i = 0; i < numThreads; ++i) {
-        if (issuePipelinedIfetch[i]) {
-            pipelineIcacheAccesses(i);
         }
     }
 }
@@ -1929,39 +1913,13 @@ Fetch::prepareFetchAddress(ThreadID tid, bool &status_change)
         // Check if we need to fetch from icache based on FTQ entry status
         // For RISC-V, we don't need ROM microcode, only check FTQ status and macroop
         if (needNewFTQEntry(tid) && !macroop[tid]) {
-            Addr ftq_start_pc = isDecoupledFrontend() ?
-                getNextFTQStartPC(tid) : this_pc.instAddr();
-
-            if (ftq_start_pc == 0) {
-                // FTQ not available, stall fetch
-                DPRINTF(Fetch, "[tid:%i] Fetch stalled, waiting for FTQ entry for PC %s\n",
-                        tid, this_pc);
-                setAllFetchStalls(StallReason::FTQBubble);
-                ++fetchStats.miscStallCycles;
-                return false;
-            }
-
-            DPRINTF(Fetch, "[tid:%i] Need new FTQ entry, attempting to translate and read "
-                    "instruction, starting at PC %#x (current PC %s)\n",
-                    tid, ftq_start_pc, this_pc);
-
-            fetchCacheLine(ftq_start_pc, tid, this_pc.instAddr());
-
-            if (fetchStatus[tid] == IcacheWaitResponse)
-                ++fetchStats.icacheStallCycles;
-            else if (fetchStatus[tid] == ItlbWait)
-                ++fetchStats.tlbCycles;
-            else
-                ++fetchStats.miscStallCycles;
-            return false;
+            DPRINTF(Fetch, "[tid:%i] Fetch is stalled due to need new FTQ entry\n", tid);
+            return true;    // to send icache request in performInstructionFetch!
         } else if (checkInterrupt(this_pc.instAddr()) && !delayedCommit[tid]) {
             // Stall CPU if an interrupt is posted
             ++fetchStats.miscStallCycles;
             DPRINTF(Fetch, "[tid:%i] Fetch is stalled!\n", tid);
             return false;
-        }
-        if (ftqEmpty()) {
-            DPRINTF(Fetch, "[tid:%i] Fetch is stalled due to ftq empty\n", tid);
         }
         return true;
     } else {
@@ -2174,6 +2132,8 @@ Fetch::performInstructionFetch(ThreadID tid)
     } else if (stall != StallReason::NoStall) {
         DPRINTF(Fetch, "[tid:%i] Done fetching, stalled due to %s.\n", tid,
                 stall == StallReason::IcacheStall ? "ICache" : "other reasons");
+    } else {
+        DPRINTF(Fetch, "[tid:%i] Done fetching, no more instructions to fetch.\n", tid);
     }
 
     // Update persistent state
@@ -2183,24 +2143,25 @@ Fetch::performInstructionFetch(ThreadID tid)
         wroteToTimeBuffer = true;
     }
 
-    // Setup pipelined fetch for next cycle if needed
-    // Check if we need a new FTQ entry based on FTQ state
-    Addr current_pc = pc_state.instAddr();
-    if (needNewFTQEntry(tid)) {
-        DPRINTF(Fetch, "[tid:%i] Setting up pipelined fetch for next cycle, "
-                "need new FTQ entry for PC %#x\n", tid, current_pc);
+    assert(fetchStatus[tid] == Running && "Fetch should be running");
+    sendNextCacheRequest(tid, pc_state);
+}
 
-        issuePipelinedIfetch[tid] =
-            fetchStatus[tid] != IcacheWaitResponse &&
-            fetchStatus[tid] != ItlbWait &&
-            fetchStatus[tid] != IcacheWaitRetry &&
-            fetchStatus[tid] != QuiescePending &&
-            !curMacroop;
-    } else {
-        DPRINTF(Fetch, "[tid:%i] Current FTQ entry still valid for PC %#x, "
-                "no pipelined fetch needed\n", tid, current_pc);
-        issuePipelinedIfetch[tid] = false;
+void
+Fetch::sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state) {
+    if (!needNewFTQEntry(tid)) return;
+
+    Addr ftq_start_pc = isDecoupledFrontend() ?
+            getNextFTQStartPC(tid) : pc_state.instAddr();
+    if (ftq_start_pc == 0) {
+        DPRINTF(Fetch, "[tid:%i] No FTQ entry available for next fetch\n", tid);
+        return;
     }
+    DPRINTF(Fetch, "[tid:%i] Issuing a pipelined I-cache access for new FTQ entry, "
+                "starting at PC %#x (original PC %s)\n",
+                tid, ftq_start_pc, pc_state);
+
+    fetchCacheLine(ftq_start_pc, tid, pc_state.instAddr());
 }
 
 void
@@ -2468,40 +2429,6 @@ Fetch::getNextFTQStartPC(ThreadID tid)
 
     panic("getNextFTQStartPC called with unsupported predictor type");
     return 0;
-}
-
-void
-Fetch::pipelineIcacheAccesses(ThreadID tid)
-{
-    if (!issuePipelinedIfetch[tid]) {
-        return;
-    }
-
-    // The next PC to access - directly use the actual instruction address
-    const PCStateBase &this_pc = *pc[tid];
-    Addr fetchAddr = this_pc.instAddr();
-
-    // Check if we need a new FTQ entry instead of physical address range
-    if (needNewFTQEntry(tid)) {
-        Addr ftq_start_pc = isDecoupledFrontend() ?
-            getNextFTQStartPC(tid) : fetchAddr;
-
-        if (ftq_start_pc == 0) {
-            // FTQ not available, stall pipelined fetch
-            DPRINTF(Fetch, "[tid:%i] Pipelined fetch stalled, waiting for FTQ entry for PC %s\n",
-                    tid, this_pc);
-            return;  // Don't issue pipelined fetch this cycle
-        }
-
-        DPRINTF(Fetch, "[tid:%i] Issuing a pipelined I-cache access for new FTQ entry, "
-                "starting at PC %#x (original PC %s)\n",
-                tid, ftq_start_pc, this_pc);
-
-        fetchCacheLine(ftq_start_pc, tid, this_pc.instAddr());
-    } else {
-        DPRINTF(Fetch, "[tid:%i] Current FTQ entry still valid for PC %s, "
-                "no pipelined access needed\n", tid, this_pc);
-    }
 }
 
 void
