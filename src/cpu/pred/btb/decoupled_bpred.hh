@@ -356,6 +356,8 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Vector predsOfEachStage;
         statistics::Scalar overrideBubbleNum;
         statistics::Scalar overrideCount;
+        statistics::Scalar predProduce2Taken;
+        statistics::Scalar predProduce1Taken;
 
         statistics::Vector commitPredsFromEachStage;
         statistics::Formula commitOverrideBubbleNum;
@@ -370,9 +372,11 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Distribution fsqEntryDist;
         statistics::Scalar fsqEntryEnqueued;
         statistics::Scalar fsqEntryCommitted;
+        statistics::Scalar secondPredCommitted;
         // statistics::Distribution ftqEntryDist;
         statistics::Scalar controlSquashFromDecode;
         statistics::Scalar controlSquashFromCommit;
+        statistics::Scalar controlSquashFromSecondPred;
         statistics::Scalar nonControlSquash;
         statistics::Scalar trapSquash;
 
