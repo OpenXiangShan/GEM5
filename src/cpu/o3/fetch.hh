@@ -355,29 +355,50 @@ class Fetch
 
     void finishTranslation(const Fault &fault, const RequestPtr &mem_req);
 
-    /** Handle misaligned fetch that spans two cache lines.
+    /** Validate if a translation request is expected and should be processed.
+     * @param tid Thread ID
+     * @param mem_req The memory request to validate
+     * @return true if request should be processed, false if should be ignored
+     */
+    bool validateTranslationRequest(ThreadID tid, const RequestPtr &mem_req);
+
+    /** Handle successful translation and initiate cache access.
+     * @param tid Thread ID
+     * @param mem_req The memory request
+     * @param fetchPC The fetch PC address
+     */
+    void handleSuccessfulTranslation(ThreadID tid, const RequestPtr &mem_req, Addr fetchPC);
+
+    /** Handle translation fault by building a noop instruction.
+     * @param tid Thread ID
+     * @param mem_req The memory request that faulted
+     * @param fault The translation fault
+     */
+    void handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fault &fault);
+
+    /** Handle multi-cacheline fetch that spans two cache lines.
      * Creates and sends two separate cache requests.
      * @param vaddr Starting virtual address
      * @param tid Thread ID
      * @param pc Program counter
      * @return true if requests were successfully initiated
      */
-    bool handleMisalignedFetch(Addr vaddr, ThreadID tid, Addr pc);
+    bool handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc);
 
-    /** Process misaligned fetch completion when both packets have arrived.
+    /** Process multi-cacheline fetch completion when both packets have arrived.
      * Merges data from both cache lines into the fetch buffer.
      * @param tid Thread ID
      * @param pkt Most recently arrived packet
      * @return true if all packets have arrived and data is merged, false if still waiting
      */
-    bool processMisalignedCompletion(ThreadID tid, PacketPtr pkt);
+    bool processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt);
 
-    /** Handle retry logic for misaligned fetch when a packet is retried.
+    /** Handle retry logic for multi-cacheline fetch when a packet is retried.
      * Sends the missing cache request for the incomplete packet.
      * @param tid Thread ID
      * @param pkt The retried packet
      */
-    void handleMisalignedRetry(ThreadID tid, PacketPtr pkt);
+    void handleRetryPkt(ThreadID tid, PacketPtr pkt);
 
     /** Check if an interrupt is pending and that we need to handle
      */

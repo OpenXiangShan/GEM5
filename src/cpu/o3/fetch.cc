@@ -437,9 +437,9 @@ Fetch::resetStage()
 }
 
 bool
-Fetch::handleMisalignedFetch(Addr vaddr, ThreadID tid, Addr pc)
+Fetch::handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc)
 {
-    DPRINTF(Fetch, "[tid:%i] Handling misaligned fetch for addr %#x, pc=%#lx\n", tid, vaddr, pc);
+    DPRINTF(Fetch, "[tid:%i] Handling multi-cacheline fetch for addr %#x, pc=%#lx\n", tid, vaddr, pc);
 
     // Reset cache request state for this thread
     cacheReq[tid].reset();
@@ -508,7 +508,7 @@ Fetch::handleMisalignedFetch(Addr vaddr, ThreadID tid, Addr pc)
 }
 
 bool
-Fetch::processMisalignedCompletion(ThreadID tid, PacketPtr pkt)
+Fetch::processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt)
 {
     DPRINTF(Fetch, "[tid:%i] Processing dual cacheline fetch completion.\n", tid);
 
@@ -526,7 +526,7 @@ Fetch::processMisalignedCompletion(ThreadID tid, PacketPtr pkt)
 
         // Handle retry case - need to send the missing request
         if (pkt->isRetriedPkt()) {
-            handleMisalignedRetry(tid, pkt);
+            handleRetryPkt(tid, pkt);
         }
 
         return false;  // Return false to indicate we're still waiting
@@ -569,11 +569,9 @@ void
 Fetch::processCacheCompletion(PacketPtr pkt)
 {
     ThreadID tid = cpu->contextToThread(pkt->req->contextId());
-    assert(pkt->req->isMisalignedFetch() && "Only misaligned fetch is supported");
+    assert(pkt->req->isMisalignedFetch() && "Only multi-cacheline fetch is supported");
 
-    // Handle dual cacheline fetch completion if this is a misaligned request
-    DPRINTF(Fetch, "[tid:%i] Misaligned pkt receive.\n", tid);
-    bool allCompleted = processMisalignedCompletion(tid, pkt);
+    bool allCompleted = processMultiCacheLineCompletion(tid, pkt);
     // If we're still waiting for another packet, return early
     if (!allCompleted) {
         return;
@@ -834,17 +832,6 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
 {
     assert(!cpu->switchedOut());
 
-    // For decoupled frontend, trust the BPU-provided addresses (BPU handles alignment)
-    // RISC-V C extension: mask lowest bit for instruction alignment
-    // This handles cases where PC might be odd due to speculative execution,
-    // but no need to throw INST_ADDR_MISALIGNED fault here
-    if (vaddr % 2 != 0 || pc % 2 != 0) {
-        vaddr = vaddr & ~1;
-        pc = pc & ~1;
-        DPRINTF(Fetch, "[tid:%i] Fetching address is misaligned, aligned to %#x, %#x\n",
-                tid, vaddr, pc);
-    }
-
     // Check for blocking conditions
     if (cacheBlocked) {
         DPRINTF(Fetch, "[tid:%i] Can't fetch cache line, cache blocked\n", tid);
@@ -864,7 +851,138 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
             tid, vaddr, vaddr, pc);
 
     // With 66-byte fetchBufferSize, we always need to access 2 cache lines
-    return handleMisalignedFetch(vaddr, tid, pc);
+    return handleMultiCacheLineFetch(vaddr, tid, pc);
+}
+
+bool
+Fetch::validateTranslationRequest(ThreadID tid, const RequestPtr &mem_req)
+{
+    // Check if this request belongs to current cache request
+    bool isExpectedReq = false;
+    for (size_t i = 0; i < cacheReq[tid].requests.size(); i++) {
+        if (mem_req == cacheReq[tid].requests[i]) {
+            isExpectedReq = true;
+            break;
+        }
+    }
+
+    // Check if request should be processed based on current fetch status
+    if (!(fetchStatus[tid] == IcacheWaitResponse && isExpectedReq) &&
+        (fetchStatus[tid] != ItlbWait || !isExpectedReq)) {
+        DPRINTF(Fetch, "[tid:%i] Ignoring itlb completed after squash\n", tid);
+        DPRINTF(Fetch, "[tid:%i] Ignoring req addr=%#lx\n", tid, mem_req->getVaddr());
+        ++fetchStats.tlbSquashes;
+        return false;
+    }
+
+    return true;
+}
+
+void
+Fetch::handleSuccessfulTranslation(ThreadID tid, const RequestPtr &mem_req, Addr fetchPC)
+{
+    // Check that we're not going off into random memory
+    if (!cpu->system->isMemAddr(mem_req->getPaddr())) {
+        DPRINTF(Fetch, "Address %#x is outside of physical memory, stopping fetch, %lu\n",
+                mem_req->getPaddr(), curTick());
+        fetchStatus[tid] = NoGoodAddr;
+        setAllFetchStalls(StallReason::OtherFetchStall);
+        cacheReq[tid].reset();
+        return;
+    }
+
+    // Build packet here.
+    PacketPtr data_pkt = new Packet(mem_req, MemCmd::ReadReq);
+    data_pkt->dataDynamic(new uint8_t[fetchBufferSize]);
+    // All requests are multi-cacheline, always set send right away
+    data_pkt->setSendRightAway();
+
+    DPRINTF(Fetch, "[tid:%i] Fetching data for addr %#x, pc=%#lx\n",
+                tid, mem_req->getVaddr(), fetchPC);
+
+    fetchBuffer[tid].startPC = fetchPC;
+    fetchBuffer[tid].valid = false;
+    DPRINTF(Fetch, "Fetch: Doing instruction read.\n");
+
+    fetchStats.cacheLines++;
+
+    // Access the cache.
+    if (!icachePort.sendTimingReq(data_pkt)) {
+        DPRINTF(Fetch, "[tid:%i] Out of MSHRs!\n", tid);
+
+        fetchStatus[tid] = IcacheWaitRetry;
+        data_pkt->setRetriedPkt();
+        DPRINTF(Fetch, "[tid:%i] mem_req.addr=%#lx needs retry.\n", tid,
+                mem_req->getVaddr());
+        setAllFetchStalls(StallReason::IcacheStall);
+        retryPkt.push_back(data_pkt);
+        retryTid = tid;
+        cacheBlocked = true;
+    } else {
+        DPRINTF(Fetch, "[tid:%i] Doing Icache access.\n", tid);
+        DPRINTF(Activity, "[tid:%i] Activity: Waiting on I-cache response.\n", tid);
+        lastIcacheStall[tid] = curTick();
+        fetchStatus[tid] = IcacheWaitResponse;
+        setAllFetchStalls(StallReason::IcacheStall);
+        // Notify Fetch Request probe when a packet containing a fetch request is successfully sent
+        ppFetchRequestSent->notify(mem_req);
+    }
+}
+
+void
+Fetch::handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fault &fault)
+{
+    DPRINTF(FetchFault, "fault, mem_req.addr=%#lx\n", mem_req->getVaddr());
+
+    // Don't send an instruction to decode if we can't handle it.
+    if (!(numInst < fetchWidth) || !(fetchQueue[tid].size() < fetchQueueSize)) {
+        if (finishTranslationEvent.scheduled() && finishTranslationEvent.getReq() != mem_req) {
+            DPRINTF(FetchFault, "fault, finishTranslationEvent.getReq().addr=%#lx, mem_req.addr=%#lx\n",
+                    finishTranslationEvent.getReq()->getVaddr(), mem_req->getVaddr());
+            return;
+        }
+        assert(!finishTranslationEvent.scheduled());
+        finishTranslationEvent.setFault(fault);
+        finishTranslationEvent.setReq(mem_req);
+        cpu->schedule(finishTranslationEvent, cpu->clockEdge(Cycles(1)));
+        return;
+    }
+
+    DPRINTF(Fetch, "[tid:%i] Got back req with addr %#x but expected base addr %#x\n",
+            tid, mem_req->getVaddr(), cacheReq[tid].baseAddr);
+
+    // Translation faulted, icache request won't be sent.
+    cacheReq[tid].reset();
+
+    // Send the fault to commit.  This thread will not do anything
+    // until commit handles the fault.  The only other way it can
+    // wake up is if a squash comes along and changes the PC.
+    const PCStateBase &fetch_pc = *pc[tid];
+
+    DPRINTF(Fetch, "[tid:%i] Translation faulted, building noop.\n", tid);
+    // We will use a nop in order to carry the fault.
+    DynInstPtr instruction = buildInst(tid, nopStaticInstPtr, nullptr,
+            fetch_pc, fetch_pc, false);
+    instruction->setVersion(localSquashVer);
+    instruction->setNotAnInst();
+
+    instruction->setPredTarg(fetch_pc);
+    instruction->fault = fault;
+    std::unique_ptr<PCStateBase> next_pc(fetch_pc.clone());
+    instruction->staticInst->advancePC(*next_pc);
+    set(instruction->predPC, next_pc);
+
+    wroteToTimeBuffer = true;
+
+    DPRINTF(Activity, "Activity this cycle.\n");
+    cpu->activityThisCycle();
+
+    fetchStatus[tid] = TrapPending;
+    setAllFetchStalls(StallReason::TrapStall);
+
+    DPRINTF(Fetch, "[tid:%i] Blocked, need to handle the trap.\n", tid);
+    DPRINTF(Fetch, "[tid:%i] fault (%s) detected @ PC %s.\n",
+            tid, fault->name(), *pc[tid]);
 }
 
 void
@@ -872,7 +990,7 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
 {
     ThreadID tid = cpu->contextToThread(mem_req->contextId());
 
-    // For dual cacheline fetch, use the stored base address
+    // For multi-cacheline fetch, use the stored base address
     // Both requests should use the same fetchBufferPC
     Addr fetchPC = cacheReq[tid].baseAddr;
 
@@ -884,134 +1002,18 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
     DPRINTF(Fetch, "[tid:%i] Translation completed for addr %#lx\n",
             tid, mem_req->getVaddr());
 
-    // Check if this request belongs to current cache request
-    bool isExpectedReq = false;
-    for (size_t i = 0; i < cacheReq[tid].requests.size(); i++) {
-        if (mem_req == cacheReq[tid].requests[i]) {
-            isExpectedReq = true;
-            break;
-        }
+    // Validate if this request should be processed
+    if (!validateTranslationRequest(tid, mem_req)) {
+        return;
     }
 
-    // Simplified condition check - all requests are dual cacheline
-    if (!(fetchStatus[tid] == IcacheWaitResponse && isExpectedReq) &&
-        (fetchStatus[tid] != ItlbWait || !isExpectedReq)) {
-            DPRINTF(Fetch, "[tid:%i] Ignoring itlb completed after squash\n", tid);
-            DPRINTF(Fetch, "[tid:%i] Ignoring req addr=%#lx\n", tid, mem_req->getVaddr());
-            ++fetchStats.tlbSquashes;
-            return;
-    }
-
-
-    // If translation was successful, attempt to read the icache block.
+    // Handle translation result
     if (fault == NoFault) {
-        // Check that we're not going off into random memory
-        // If we have, just wait around for commit to squash something and put
-        // us on the right track
-        if (!cpu->system->isMemAddr(mem_req->getPaddr())) {
-            DPRINTF(Fetch, "Address %#x is outside of physical memory, stopping fetch, %lu\n",
-                    mem_req->getPaddr(), curTick());
-            fetchStatus[tid] = NoGoodAddr;
-            setAllFetchStalls(StallReason::OtherFetchStall);
-            cacheReq[tid].reset();
-            return;
-        }
-
-        // Build packet here.
-        PacketPtr data_pkt = new Packet(mem_req, MemCmd::ReadReq);
-        data_pkt->dataDynamic(new uint8_t[fetchBufferSize]);
-        // All requests are dual cacheline, always set send right away
-        data_pkt->setSendRightAway();
-
-        DPRINTF(Fetch, "[tid:%i] Fetching data for addr %#x, pc=%#lx\n",
-                    tid, mem_req->getVaddr(), fetchPC);
-
-        fetchBuffer[tid].startPC = fetchPC;
-        fetchBuffer[tid].valid = false;
-        DPRINTF(Fetch, "Fetch: Doing instruction read.\n");
-
-        fetchStats.cacheLines++;
-
-        // Access the cache.
-        if (!icachePort.sendTimingReq(data_pkt)) {
-            //assert(retryPkt == NULL);
-            // assert(retryTid == InvalidThreadID);
-            DPRINTF(Fetch, "[tid:%i] Out of MSHRs!\n", tid);
-
-            fetchStatus[tid] = IcacheWaitRetry;
-            data_pkt->setRetriedPkt();
-            DPRINTF(Fetch, "[tid:%i] mem_req.addr=%#lx needs retry.\n", tid,
-                    mem_req->getVaddr());
-            setAllFetchStalls(StallReason::IcacheStall);
-            retryPkt.push_back(data_pkt);
-            retryTid = tid;
-            cacheBlocked = true;
-
-        } else {
-            DPRINTF(Fetch, "[tid:%i] Doing Icache access.\n", tid);
-            DPRINTF(Activity, "[tid:%i] Activity: Waiting on I-cache "
-                    "response.\n", tid);
-            lastIcacheStall[tid] = curTick();
-            fetchStatus[tid] = IcacheWaitResponse;
-            setAllFetchStalls(StallReason::IcacheStall);
-            // Notify Fetch Request probe when a packet containing a fetch
-            // request is successfully sent
-            ppFetchRequestSent->notify(mem_req);
-        }
+        handleSuccessfulTranslation(tid, mem_req, fetchPC);
     } else {
-        DPRINTF(FetchFault, "fault, mem_req.addr=%#lx\n", mem_req->getVaddr());
-        // Don't send an instruction to decode if we can't handle it.
-        if (!(numInst < fetchWidth) ||
-                !(fetchQueue[tid].size() < fetchQueueSize)) {
-            if (finishTranslationEvent.scheduled() && finishTranslationEvent.getReq() != mem_req) {
-                DPRINTF(FetchFault, "fault, mem_req.addr=%#lx, finishTranslationEvent.getReq().addr=%#lx, mem_req.addr=%#lx\n",
-                        mem_req->getVaddr(),
-                        finishTranslationEvent.getReq()->getVaddr(), mem_req->getVaddr());
-                return;
-            }
-            assert(!finishTranslationEvent.scheduled());
-            finishTranslationEvent.setFault(fault);
-            finishTranslationEvent.setReq(mem_req);
-            cpu->schedule(finishTranslationEvent,
-                          cpu->clockEdge(Cycles(1)));
-            return;
-        }
-        DPRINTF(Fetch,
-                "[tid:%i] Got back req with addr %#x but expected base addr %#x\n",
-                tid, mem_req->getVaddr(), cacheReq[tid].baseAddr);
-        // Translation faulted, icache request won't be sent.
-        cacheReq[tid].reset();
-
-        // Send the fault to commit.  This thread will not do anything
-        // until commit handles the fault.  The only other way it can
-        // wake up is if a squash comes along and changes the PC.
-        const PCStateBase &fetch_pc = *pc[tid];
-
-        DPRINTF(Fetch, "[tid:%i] Translation faulted, building noop.\n", tid);
-        // We will use a nop in ordier to carry the fault.
-        DynInstPtr instruction = buildInst(tid, nopStaticInstPtr, nullptr,
-                fetch_pc, fetch_pc, false);
-        instruction->setVersion(localSquashVer);
-        instruction->setNotAnInst();
-
-        instruction->setPredTarg(fetch_pc);
-        instruction->fault = fault;
-        std::unique_ptr<PCStateBase> next_pc(fetch_pc.clone());
-        instruction->staticInst->advancePC(*next_pc);
-        set(instruction->predPC, next_pc);
-
-        wroteToTimeBuffer = true;
-
-        DPRINTF(Activity, "Activity this cycle.\n");
-        cpu->activityThisCycle();
-
-        fetchStatus[tid] = TrapPending;
-        setAllFetchStalls(StallReason::TrapStall);
-
-        DPRINTF(Fetch, "[tid:%i] Blocked, need to handle the trap.\n", tid);
-        DPRINTF(Fetch, "[tid:%i] fault (%s) detected @ PC %s.\n",
-                tid, fault->name(), *pc[tid]);
+        handleTranslationFault(tid, mem_req, fault);
     }
+
     _status = updateFetchStatus();
 }
 
@@ -2385,7 +2387,7 @@ Fetch::setAllFetchStalls(StallReason stall)
 }
 
 void
-Fetch::handleMisalignedRetry(ThreadID tid, PacketPtr pkt)
+Fetch::handleRetryPkt(ThreadID tid, PacketPtr pkt)
 {
     DPRINTF(Fetch, "[tid:%i] Retried pkt.\n", tid);
 
