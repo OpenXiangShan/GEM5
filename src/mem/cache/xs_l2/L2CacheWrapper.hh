@@ -22,7 +22,6 @@ class L2CacheWrapper : public CacheWrapper
 {
   public:
     L2CacheWrapper(const L2CacheWrapperParams &p);
-    friend class ReqBuffer;
 
   protected:
     // For request buffering logic
@@ -51,8 +50,6 @@ class L2CacheWrapper : public CacheWrapper
     void trySendFromBuffer();
     void processResponses();
     void tickMainPipe();
-
-    Tick nextWrapperCycle() const { return curTick() + clockPeriod(); }
 };
 
 } // namespace gem5

@@ -19,9 +19,9 @@ L2CacheWrapper::L2CacheWrapper(const L2CacheWrapperParams &p)
       tickMainPipeEvent([this]{ tickMainPipe(); }, name()),
       mainPipe(this, p.pipeline_depth)
 {
-    srand(time(NULL));
 }
 
+/* Memory-Side internal logic */
 bool
 L2CacheWrapper::innerMemPortRecvTimingReq(PacketPtr pkt)
 {
@@ -68,7 +68,7 @@ L2CacheWrapper::memSidePortRecvTimingResp(PacketPtr pkt)
     ready_responses.push_back(pkt);
 
     if (!processResponsesEvent.scheduled()) {
-        schedule(processResponsesEvent, nextWrapperCycle());
+        schedule(processResponsesEvent, nextCycle());
     }
 
     return true;
@@ -90,11 +90,11 @@ L2CacheWrapper::processResponses()
 
     // Reschedule for the next cycle if there is more work to do
     if (!ready_responses.empty() && !processResponsesEvent.scheduled()) {
-        schedule(processResponsesEvent, nextWrapperCycle());
+        schedule(processResponsesEvent, nextCycle());
     }
 
     if (mainPipe.hasWork() && !tickMainPipeEvent.scheduled()) {
-        schedule(tickMainPipeEvent, nextWrapperCycle());
+        schedule(tickMainPipeEvent, nextCycle());
     }
 }
 
@@ -103,7 +103,7 @@ L2CacheWrapper::tickMainPipe()
 {
     mainPipe.advance(curCycle());
     if (mainPipe.hasWork() && !tickMainPipeEvent.scheduled()) {
-        schedule(tickMainPipeEvent, nextWrapperCycle());
+        schedule(tickMainPipeEvent, nextCycle());
     }
 }
 
@@ -113,9 +113,12 @@ L2CacheWrapper::innerMemPortRecvRespRetry()
     panic("L2CacheWrapper should not receive resp retry from inner L2");
 }
 
+/* CPU-Side internal logic */
 bool
 L2CacheWrapper::cpuSidePortRecvTimingReq(PacketPtr pkt)
 {
+    assert(!pending_l1_retry);
+
     // Express snoop packets should bypass any flow control,
     // so always let express snoop packets through even if blocked
     if (pkt->isExpressSnoop()) {
@@ -219,7 +222,7 @@ L2CacheWrapper::trySendFromBuffer()
         if (!requestBuffer.empty()) {
             // schedule trySendFromBuffer next cycle
             if (!trySendEvent.scheduled()) {
-                schedule(trySendEvent, nextWrapperCycle());
+                schedule(trySendEvent, nextCycle());
             }
         } else if (pending_l1_retry) {
             DPRINTF(L2CacheWrapper, "No pending request in buffer, send retry to L1\n");
