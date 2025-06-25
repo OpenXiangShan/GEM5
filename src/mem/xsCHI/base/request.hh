@@ -1,9 +1,20 @@
 #pragma once
+#include <bitset>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
 #include "FlitOpType.hh"
 #include "mem/request.hh"
+#include "params.hh"
+
+namespace gem5
+{   namespace xsCHI
+    {
+    class Request;
+    using ReqPtr = std::shared_ptr<Request>;
+    }}
+#include "flit.hh"
 
 namespace gem5
 {
@@ -73,188 +84,266 @@ protected:
     uint16_t ccid;                    // CCID: 关键块标识符
     uint16_t data_id;                 // DataID: 数据标识符
     uint32_t be;                      // BE: 字节使能
-    std::vector<uint8_t> data;        // Data: 数据载荷
+    uint64_t* data;        // Data: 数据载荷
     uint32_t data_check;              // DataCheck: 数据校验
     bool poison;                      // Poison: 数据损坏标记
     std::vector<uint8_t> tag;         // Tag: 内存标签
     uint32_t tu;                      // TU: 标签更新
     uint32_t rsvdc;                   // RSVDC: 用户自定义
 
-    // ResponseFields
-    // 已合并相关字段
+    // state tracking for dataTransfer
+
+    std::bitset<DATAFLITS_PER_TRANSACTION> dataFlitsReceived; // 已接收的数据Flit位图
+
+
+
+    bool IsRecvSepData; // if this transaction is receiving separated data , true if we received a CHI_RSP_RESPSEPDATA.
+
+    // end of state tracking for dataTransfer
 public:
+    bool dataTransferFinished() {
+        return dataFlitsReceived.all();
+    } // 数据传输是否完成
+    void setRecvSepData() { IsRecvSepData = true; }
+    bool isRecvSepData() { return IsRecvSepData; } // 是否接收了分离数据
+
+    void gatherDataFlit(FlitPtr &flit);
     // getter/setter
-    uint32_t getQosPriority() const { return qos_priority; }
+    uint32_t getQosPriority()  { return qos_priority; }
     void setQosPriority(uint32_t v) { qos_priority = v; }
 
-    uint32_t getTargetId() const { return target_id; }
+    uint32_t getTargetId()  { return target_id; }
     void setTargetId(uint32_t v) { target_id = v; }
 
-    uint32_t getSourceId() const { return source_id; }
+    uint32_t getSourceId()  { return source_id; }
     void setSourceId(uint32_t v) { source_id = v; }
 
-    uint64_t getTransactionId() const { return transaction_id; }
+    uint64_t getTransactionId()  { return transaction_id; }
     void setTransactionId(uint64_t v) { transaction_id = v; }
 
-    uint32_t getLogicalProcessorId() const { return logicalProcessor_id; }
+    uint32_t getLogicalProcessorId()  { return logicalProcessor_id; }
     void setLogicalProcessorId(uint32_t v) { logicalProcessor_id = v; }
 
-    uint32_t getPgroupId() const { return pgroup_id; }
+    uint32_t getPgroupId()  { return pgroup_id; }
     void setPgroupId(uint32_t v) { pgroup_id = v; }
 
-    bool getDeep() const { return deep; }
+    bool getDeep()  { return deep; }
     void setDeep(bool v) { deep = v; }
 
-    uint32_t getReturnNid() const { return return_nid; }
+    uint32_t getReturnNid()  { return return_nid; }
     void setReturnNid(uint32_t v) { return_nid = v; }
 
-    uint64_t getReturnTxnid() const { return return_txnid; }
+    uint64_t getReturnTxnid()  { return return_txnid; }
     void setReturnTxnid(uint64_t v) { return_txnid = v; }
 
-    uint32_t getStashNid() const { return stash_nid; }
+    uint32_t getStashNid()  { return stash_nid; }
     void setStashNid(uint32_t v) { stash_nid = v; }
 
-    bool getStashNidValid() const { return stash_nid_valid; }
+    bool getStashNidValid()  { return stash_nid_valid; }
     void setStashNidValid(bool v) { stash_nid_valid = v; }
 
-    uint32_t getStashLpid() const { return stash_lpid; }
+    uint32_t getStashLpid()  { return stash_lpid; }
     void setStashLpid(uint32_t v) { stash_lpid = v; }
 
-    bool getStashLpidValid() const { return stash_lpid_valid; }
+    bool getStashLpidValid()  { return stash_lpid_valid; }
     void setStashLpidValid(bool v) { stash_lpid_valid = v; }
 
-    uint32_t getStashGroupId() const { return stash_group_id; }
+    uint32_t getStashGroupId()  { return stash_group_id; }
     void setStashGroupId(uint32_t v) { stash_group_id = v; }
 
-    CHI_OP_TYPE getOpcode() const { return opcode; }
+    CHI_OP_TYPE getOpcode()  { return opcode; }
     void setOpcode(CHI_OP_TYPE v) { opcode = v; }
 
-    uint64_t getAddr() const { return addr; }
+    uint64_t getAddr()  { return addr; }
     void setAddr(uint64_t v) { addr = v; }
 
-    bool getNs() const { return ns; }
+    bool getNs()  { return ns; }
     void setNs(bool v) { ns = v; }
 
-    uint32_t getSize() const { return size; }
+    uint32_t getSize()  { return size; }
     void setSize(uint32_t v) { size = v; }
 
-    bool getAllowRetry() const { return allow_retry; }
+    bool getAllowRetry()  { return allow_retry; }
     void setAllowRetry(bool v) { allow_retry = v; }
 
-    uint8_t getPcrdType() const { return pcrd_type; }
+    uint8_t getPcrdType()  { return pcrd_type; }
     void setPcrdType(uint8_t v) { pcrd_type = v; }
 
-    bool getExpCompAck() const { return exp_comp_ack; }
+    bool getExpCompAck()  { return exp_comp_ack; }
     void setExpCompAck(bool v) { exp_comp_ack = v; }
 
-    uint8_t getMemAttr() const { return mem_attr; }
+    uint8_t getMemAttr()  { return mem_attr; }
     void setMemAttr(uint8_t v) { mem_attr = v; }
 
-    uint8_t getSnpAttr() const { return snp_attr; }
+    uint8_t getSnpAttr()  { return snp_attr; }
     void setSnpAttr(uint8_t v) { snp_attr = v; }
 
-    bool getDoDwt() const { return do_dwt; }
+    bool getDoDwt()  { return do_dwt; }
     void setDoDwt(bool v) { do_dwt = v; }
 
-    bool getSnoopMe() const { return snoop_me; }
+    bool getSnoopMe()  { return snoop_me; }
     void setSnoopMe(bool v) { snoop_me = v; }
 
-    bool getLikelyShared() const { return likely_shared; }
+    bool getLikelyShared()  { return likely_shared; }
     void setLikelyShared(bool v) { likely_shared = v; }
 
-    uint8_t getSlcRepHint() const { return slc_rep_hint; }
+    uint8_t getSlcRepHint()  { return slc_rep_hint; }
     void setSlcRepHint(uint8_t v) { slc_rep_hint = v; }
 
-    bool getExcl() const { return excl; }
+    bool getExcl()  { return excl; }
     void setExcl(bool v) { excl = v; }
 
-    bool getOrder() const { return order; }
+    bool getOrder()  { return order; }
     void setOrder(bool v) { order = v; }
 
-    bool getEndian() const { return endian; }
+    bool getEndian()  { return endian; }
     void setEndian(bool v) { endian = v; }
 
-    uint8_t getTagOp() const { return tag_op; }
+    uint8_t getTagOp()  { return tag_op; }
     void setTagOp(uint8_t v) { tag_op = v; }
 
-    uint32_t getTagGroupId() const { return tag_group_id; }
+    uint32_t getTagGroupId()  { return tag_group_id; }
     void setTagGroupId(uint32_t v) { tag_group_id = v; }
 
-    uint64_t getTraceTag() const { return trace_tag; }
+    uint64_t getTraceTag()  { return trace_tag; }
     void setTraceTag(uint64_t v) { trace_tag = v; }
 
-    uint32_t getMpam() const { return mpam; }
+    uint32_t getMpam()  { return mpam; }
     void setMpam(uint32_t v) { mpam = v; }
 
-    uint32_t getFwdNid() const { return fwd_nid; }
+    uint32_t getFwdNid()  { return fwd_nid; }
     void setFwdNid(uint32_t v) { fwd_nid = v; }
 
-    uint64_t getFwdTxnid() const { return fwd_txnid; }
+    uint64_t getFwdTxnid()  { return fwd_txnid; }
     void setFwdTxnid(uint64_t v) { fwd_txnid = v; }
 
-    uint16_t getVmidExt() const { return vmid_ext; }
+    uint16_t getVmidExt()  { return vmid_ext; }
     void setVmidExt(uint16_t v) { vmid_ext = v; }
 
-    bool getDoNotGoToSd() const { return do_not_go_to_sd; }
+    bool getDoNotGoToSd()  { return do_not_go_to_sd; }
     void setDoNotGoToSd(bool v) { do_not_go_to_sd = v; }
 
-    bool getRetToSrc() const { return ret_to_src; }
+    bool getRetToSrc()  { return ret_to_src; }
     void setRetToSrc(bool v) { ret_to_src = v; }
 
-    uint32_t getHomeNid() const { return home_nid; }
+    uint32_t getHomeNid()  { return home_nid; }
     void setHomeNid(uint32_t v) { home_nid = v; }
 
-    uint8_t getCbusy() const { return cbusy; }
+    uint8_t getCbusy()  { return cbusy; }
     void setCbusy(uint8_t v) { cbusy = v; }
 
-    uint64_t getDbid() const { return dbid; }
+    uint64_t getDbid()  { return dbid; }
     void setDbid(uint64_t v) { dbid = v; }
 
-    uint8_t getRespErr() const { return resp_err; }
+    uint8_t getRespErr()  { return resp_err; }
     void setRespErr(uint8_t v) { resp_err = v; }
 
-    uint8_t getResp() const { return resp; }
+    uint8_t getResp()  { return resp; }
     void setResp(uint8_t v) { resp = v; }
 
-    uint8_t getFwdState() const { return fwd_state; }
+    uint8_t getFwdState()  { return fwd_state; }
     void setFwdState(uint8_t v) { fwd_state = v; }
 
-    bool getDataPull() const { return data_pull; }
+    bool getDataPull()  { return data_pull; }
     void setDataPull(bool v) { data_pull = v; }
 
-    uint8_t getDataSource() const { return data_source; }
+    uint8_t getDataSource()  { return data_source; }
     void setDataSource(uint8_t v) { data_source = v; }
 
-    uint16_t getCcid() const { return ccid; }
+    uint16_t getCcid()  { return ccid; }
     void setCcid(uint16_t v) { ccid = v; }
 
-    uint16_t getDataId() const { return data_id; }
+    uint16_t getDataId()  { return data_id; }
     void setDataId(uint16_t v) { data_id = v; }
 
-    uint32_t getBe() const { return be; }
+    uint32_t getBe()  { return be; }
     void setBe(uint32_t v) { be = v; }
 
-    const std::vector<uint8_t>& getData() const { return data; }
-    void setData(const std::vector<uint8_t>& v) { data = v; }
+    uint64_t* getData()  { return data; }
+    void setData(uint64_t* v) { data = v; }
 
-    uint32_t getDataCheck() const { return data_check; }
+    uint32_t getDataCheck()  { return data_check; }
     void setDataCheck(uint32_t v) { data_check = v; }
 
-    bool getPoison() const { return poison; }
+    bool getPoison()  { return poison; }
     void setPoison(bool v) { poison = v; }
 
-    const std::vector<uint8_t>& getTag() const { return tag; }
-    void setTag(const std::vector<uint8_t>& v) { tag = v; }
+     std::vector<uint8_t>& getTag()  { return tag; }
+    void setTag( std::vector<uint8_t>& v) { tag = v; }
 
-    uint32_t getTu() const { return tu; }
+    uint32_t getTu()  { return tu; }
     void setTu(uint32_t v) { tu = v; }
 
-    uint32_t getRsvdc() const { return rsvdc; }
+    uint32_t getRsvdc()  { return rsvdc; }
     void setRsvdc(uint32_t v) { rsvdc = v; }
 
     // 构造函数
     Request();
     Request(CHI_OP_TYPE op, uint64_t addr, uint32_t size);
+
+    ReqPtr createReadResponse();
+
+    bool isResponse()
+    {
+        return (opcode >= CHI_OP_TYPE::CHI_RSP_OP_START &&
+                opcode <= CHI_OP_TYPE::CHI_RSP_OP_END);
+    }
+    bool isRequest()
+    {
+        return (opcode >= CHI_OP_TYPE::CHI_REQ_OP_START &&
+                opcode <= CHI_OP_TYPE::CHI_REQ_OP_END);
+    }
+    bool isSnoop()
+    {
+        return (opcode >= CHI_OP_TYPE::CHI_SNP_OP_START &&
+                opcode <= CHI_OP_TYPE::CHI_SNP_OP_END);
+    }
+    bool isData()
+    {
+        return (opcode >= CHI_OP_TYPE::CHI_DAT_OP_START &&
+                opcode <= CHI_OP_TYPE::CHI_DAT_OP_END);
+    }
+    //     A Snoop transaction includes a Snoop response.
+    // A Snoop response can be with or without data. The forms of Snoop
+    // response are:
+    //  Snoop response without data
+    // • This Snoop response is used when no data transfer is required.
+    //  • It is sent on the SRSP channel and uses the SnpResp opcode.
+    //  • It can include a Data Pull request for stash snoops.
+    //  • Snoop response without data is always used for the response to a SnpDVMOp transaction.
+    //  Snoop response without data to Home and Direct Cache Transfer (DCT)
+    // • This Snoop response is used when the Snoopee sends Data to the Requester and a data
+    // transfer to the Home is not required.
+    //  • It is sent on the SRSP channel and uses the SnpRespFwded opcode.
+    //  Snoop response with data
+    // • This Snoop response is used when a full cache line of data is transferred to Home.
+    //  • It is sent on the WDAT channel and uses the SnpRespData opcode.
+    //  • It can include a Data Pull request for stash snoops.
+    //  Snoop response with partial data
+    // • This Snoop response is used when a partial cache line of data is transferred to the Home.
+    //  • It is sent on the WDAT channel and uses the SnpRespDataPtl opcode.
+    //  • It can include a Data Pull request for stash snoops.
+    //  • It is sent when the combination of the Snoop request and cache line state is:
+    //  — Any Snoop request except SnpMakeInvalid, and the cache line state is UDP.
+    //  Snoop response with data to Home and DCT
+    // • This Snoop response is used when the Snoopee sends Data to the Requester and a data
+    // transfer to the Home is also required.
+    //  • It is sent on the DAT channel and uses the SnpRespDataFwded opcode.
+    //  The Snoop response includes the Resp field, which indicates the following:
+    //  Cache state
+    // Pass Dirty
+    // The final state of the cache line at the snooped node after sending the Snoop response.
+    //  Indicates that the responsibility for updating memory is passed to the Requester or ICN.
+    //  Pass Dirty must only be asserted for a Snoop response with data. The assertion of the Pass Dirty bit
+    // is shown by _PD in the response name
+    bool isSnoopResponse()
+    {
+        return (opcode == CHI_OP_TYPE::CHI_DAT_SNPRESPDATA ||
+                opcode == CHI_OP_TYPE::CHI_DAT_SNPRESPDATAPTL ||
+                opcode == CHI_OP_TYPE::CHI_DAT_SNPRESPDATAFWDED ||
+                opcode == CHI_OP_TYPE::CHI_RSP_SNPRESP ||
+                opcode == CHI_OP_TYPE::CHI_RSP_SNPRESPFWDED);
+    }
 };
 using ReqPtr = std::shared_ptr<Request>;
 } // namespace xsCHI
