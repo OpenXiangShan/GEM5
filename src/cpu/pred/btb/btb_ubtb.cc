@@ -203,7 +203,7 @@ UBTB::getTwoTakenPrediction(Addr startAddr, const boost::dynamic_bitset<> &histo
     auto& entry = meta->hit_entry;
     entry = (hit_index != -1) ? ubtb[hit_index] : TickedUBTBEntry();
 
-    //PredStatistics(entry, startAddr);
+    PredStatistics(entry, startAddr);
 
     // Fill primary prediction for each pipeline stage
     fillStagePredictions(entry, stagePreds);
@@ -358,8 +358,8 @@ UBTB::check2TakenConditions(FullBTBPrediction& dff, const FullBTBPrediction& s3P
         return false;
     }
 
-    auto dffEntry = dff.getTakenEntry();
-    auto& s3PredEntry = s3Pred.btbEntries[0];
+    auto firstBr = dff.getTakenEntry();
+    auto& secondBr = s3Pred.btbEntries[0];
 
     // 2. The first branch must be taken for a 2-taken sequence to form.
     if (!dff.isTaken()) {
@@ -369,27 +369,28 @@ UBTB::check2TakenConditions(FullBTBPrediction& dff, const FullBTBPrediction& s3P
     // 3. Check branch type compatibility based on spec table.
 
     // Rule: 'multi-target indirect' as 1st branch is not allowed.
-    if (dffEntry.isIndirect) {
+    if (firstBr.isIndirect) {
         return false;
     }
 
     // Rule: 'multi-target indirect' as 2nd branch is not allowed.
-    if (s3PredEntry.isIndirect) {
+    if (secondBr.isIndirect) {
         return false;
     }
 
     // Rule: 'cond' as 2nd branch is not allowed.
-    if (s3PredEntry.isCond) {
+    // this rule implies that the second branch is always taken
+    if (secondBr.isCond) {
         return false;
     }
 
     // Rule: 'ret -> ret' is not allowed to avoid multiple RAS reads.
-    if (dffEntry.isReturn && s3PredEntry.isReturn) {
+    if (firstBr.isReturn && secondBr.isReturn) {
         return false;
     }
 
     // Rule: 'call -> call' is not allowed to avoid multiple RAS writes.
-    if (dffEntry.isCall && s3PredEntry.isCall) {
+    if (firstBr.isCall && secondBr.isCall) {
         return false;
     }
 
@@ -523,6 +524,26 @@ UBTB::updateUsingS3Pred(FullBTBPrediction &dff_pred,
 
     // Train as 2-taken: pass s3_pred as second prediction
     updateEntryAtIndex(hit_index, dff_pred, &s3_pred);
+}
+
+void
+UBTB::recoverHist(const boost::dynamic_bitset<> &history,
+                 const FetchStream &entry, int shamt, bool cond_taken)
+{
+    DPRINTF(UBTB, "uBTB squash recovery: clearing all entries (had %lu valid entries)\n",
+           std::count_if(ubtb.begin(), ubtb.end(), [](const TickedUBTBEntry& e) { return e.valid; }));
+
+    // Clear all uBTB entries by marking them as invalid
+    // This removes pollution from wrong-path predictions
+    for (auto &entry : ubtb) {
+        //entry.valid = false;
+        entry.valid_2nd = false;  // Also clear second branch validity
+    }
+
+    // we don't explicitly clear entry.tick, because tick will be updated when the entry is filled again
+
+
+    DPRINTF(UBTB, "uBTB squash recovery complete: all entries cleared\n");
 }
 
 
