@@ -11,7 +11,7 @@ namespace xsCHI
         CHI_REQ_READSHARED            ,
         CHI_REQ_READCLEAN             ,
         CHI_REQ_READONCE              ,
-        CHI_REQ_READNOSNP             ,//need
+        CHI_REQ_READNOSNP             ,
         CHI_REQ_PCRDRETURN            ,
         CHI_REQ_READUNIQUE            ,
         CHI_REQ_CLEANSHARED           ,

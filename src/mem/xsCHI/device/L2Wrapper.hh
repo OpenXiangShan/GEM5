@@ -9,6 +9,11 @@ namespace gem5 {
 namespace xsCHI {
     class L2Wrapper : public Module , public memory::AbstractMemory
     {
+      // L2Wrapper's job : when recv a pkt from Gem5Cache,
+      // it will convert the pkt to a xsCHI request, and send it to Bridge port.
+      // when recv a xsCHI request from Bridge port, the request can only be a snoop request,
+      // it will convert the xsCHI request to a pkt,
+      // and send it to back Gem5Cache.(which currently is not considered, we do not support snoop yet.)
     protected:
      /**
      * A cache response port is used for the CPU-side port of the cache,
@@ -81,6 +86,8 @@ namespace xsCHI {
 
     CpuSidePort cpuSidePort;//for recv origin request,and convert it to xsCHI request
 
+    // extract command , data , address from pkt, and create a xsCHI request,other fields are ignored.
+    // maybe we need to cache these pkts in case we need to send them back to Gem5Cache.
     ReqPtr CreateRequest(PacketPtr pkt);
 
     };
