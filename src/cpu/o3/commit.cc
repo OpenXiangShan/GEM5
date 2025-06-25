@@ -100,10 +100,24 @@ Commit::processTrapEvent(ThreadID tid)
 Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUParams &params)
     : commitPolicy(params.smtCommitPolicy),
       stuckCheckEvent([this](){
+        static std::vector<DynInstPtr> debug_insts;
         if (cpu->curCycle() - this->lastCommitCycle > 40000) {
-            panic("Commit stage is stucked for more than 40,000 cycles!\n"
-                  "Last commit cycle: %lu, current cycle: %lu\n",
-                  lastCommitCycle, cpu->curCycle());
+            if (auto inst = rob->readHeadInst(0)) {
+                warn("can't commit inst %s\n", inst->genDisassembly());
+                debug_insts.insert(debug_insts.begin(),rob->getInstList(0).begin(), rob->getInstList(0).end());
+                warn("dump rob front 10 insts\n");
+                int i = 0;
+                for (auto inst = debug_insts.begin(); inst != debug_insts.end() && i < 10; inst++, i++) {
+                    warn("%s\n", (*inst)->genDisassembly());
+                }
+            } else {
+                warn("rob was empty, may be fetch or rename stuck\n");
+            }
+            panic(
+                "Commit stage is stucked for more than 40,000 cycles!\n"
+                "Last commit cycle: %lu, current cycle: %lu, suggested --debug-start=%llu --debug-end=%llu\n",
+                lastCommitCycle, cpu->curCycle(), cpu->cyclesToTicks(Cycles(lastCommitCycle - 200)),
+                cpu->cyclesToTicks(Cycles(lastCommitCycle + 50)));
         }
         cpu->schedule(this->stuckCheckEvent, cpu->clockEdge(Cycles(40010)));
       }, "CommitStuckCheckEvent"),
@@ -650,6 +664,7 @@ Commit::squashAll(ThreadID tid)
 
     // Send back the sequence number of the squashed instruction.
     toIEW->commitInfo[tid].doneSeqNum = squashed_inst;
+    toIEW->commitInfo[tid].doneMemSeqNum = squashed_inst;
 
     // Send back the squash signal to tell stages that they should
     // squash.
@@ -793,7 +808,7 @@ Commit::tick()
 
             [[maybe_unused]] const DynInstPtr &inst = rob->readHeadInst(tid);
 
-            DPRINTF(Commit,"[tid:%i] Instruction [sn:%llu] PC %s is head of"
+            DPRINTF(Commit,"[tid:%i] Instruction [sn:%llu] %s PC %s is head of"
                     " ROB and ready to commit\n",
                     tid, inst->seqNum, inst->pcState());
 
@@ -993,6 +1008,7 @@ Commit::commit()
             changedROBNumEntries[tid] = true;
 
             toIEW->commitInfo[tid].doneSeqNum = squashed_inst;
+            toIEW->commitInfo[tid].doneMemSeqNum = squashed_inst;
 
             toIEW->commitInfo[tid].squash = true;
 
@@ -1108,7 +1124,7 @@ Commit::commitInsts()
 
     DynInstPtr head_inst;
 
-    int commit_width = rob->numInstCanCommit(commitWidth);
+    int commit_width = rob->countInstsOfGroups(commitWidth);
 
     if (commit_width >= 0) {
         cpu->activityThisCycle();
@@ -1139,7 +1155,7 @@ Commit::commitInsts()
 
         // ThreadID commit_thread = getCommittingThread();
 
-        if (commit_thread == -1 || !rob->isHeadReady(commit_thread))
+        if (commit_thread == -1 || !rob->isHeadGroupReady(commit_thread))
             break;
 
         head_inst = rob->readHeadInst(commit_thread);
@@ -1413,6 +1429,13 @@ Commit::commitInsts()
                 break;
             }
         }
+    }
+
+    // if store was at head group and fronts were all readytocommit
+    // then the store can be written to storebuffer
+    for (int tid = 0; tid < MaxThreads; tid++) {
+        toIEW->commitInfo[tid].doneMemSeqNum =
+            std::max(toIEW->commitInfo[tid].doneSeqNum, rob->getHeadGroupLastDoneSeq(tid));
     }
 
     DPRINTF(CommitRate, "%i\n", num_committed);
@@ -1945,7 +1968,7 @@ Commit::roundRobin()
             commitStatus[tid] == Idle ||
             commitStatus[tid] == FetchTrapPending) {
 
-            if (rob->isHeadReady(tid)) {
+            if (rob->isHeadGroupReady(tid)) {
                 priority_list.erase(pri_iter);
                 priority_list.push_back(tid);
 
@@ -1977,7 +2000,7 @@ Commit::oldestReady()
              commitStatus[tid] == Idle ||
              commitStatus[tid] == FetchTrapPending)) {
 
-            if (rob->isHeadReady(tid)) {
+            if (rob->isHeadGroupReady(tid)) {
 
                 const DynInstPtr &head_inst = rob->readHeadInst(tid);
 

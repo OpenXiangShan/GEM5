@@ -285,6 +285,8 @@ struct TimeStruct
         /// retired or squashed sequence number.
         InstSeqNum doneSeqNum; // *F, I
 
+        InstSeqNum doneMemSeqNum;
+
         uint64_t doneFsqId; // F
         uint64_t squashedStreamId; // F
         uint64_t squashedTargetId; // F

@@ -298,7 +298,7 @@ ROB::countInsts(ThreadID tid)
 }
 
 uint32_t
-ROB::numInstCanCommit(int groups)
+ROB::countInstsOfGroups(int groups)
 {
     int sum = 0;
     for (ThreadID tid = 0; tid < numThreads; tid++) {
@@ -421,40 +421,48 @@ ROB::retireHead(ThreadID tid)
 }
 
 bool
-ROB::isHeadReady(ThreadID tid)
+ROB::isHeadGroupReady(ThreadID tid)
 {
     stats.reads++;
 
     if (!threadGroups[tid].empty() && threadGroups[tid].front() != 0) {
-        auto head_ready = instList[tid].front()->readyToCommit();
+        auto it = instList[tid].begin();
 
-        // check if all insts in the same head group are ready to commit
-        return head_ready && std::all_of(
-            instList[tid].begin(),
-            std::next(instList[tid].begin(), threadGroups[tid].front()),
-            [] (DynInstPtr inst) { return inst->readyToCommit() || inst->isSquashed(); }
-        );
+        for (int i = 0; i < threadGroups[tid].front(); i++, it++) {
+            auto& inst = *it;
+            // first inst must be readyToCommit
+            if (!inst->readyToCommit()) {
+                return false;
+            }
+
+            // if one group has barrier or non-speculative or fault
+            // this group must be committed
+            if (inst->readyToCommit() && (!inst->isExecuted() || inst->faulted())) {
+                return true;
+            }
+        }
+        return true;
     }
 
     return false;
 }
 
-bool
-ROB::canCommit()
+InstSeqNum
+ROB::getHeadGroupLastDoneSeq(ThreadID tid)
 {
-    //@todo: set ActiveThreads through ROB or CPU
-    std::list<ThreadID>::iterator threads = activeThreads->begin();
-    std::list<ThreadID>::iterator end = activeThreads->end();
-
-    while (threads != end) {
-        ThreadID tid = *threads++;
-
-        if (isHeadReady(tid)) {
-            return true;
+    if (!threadGroups[tid].empty() && threadGroups[tid].front() != 0) {
+        auto it = instList[tid].begin();
+        InstSeqNum seqnum = 0;
+        for (int i = 0; i < threadGroups[tid].front(); i++, it++) {
+            auto& inst = *it;
+            if (!inst->readyToCommit() || !inst->isExecuted() || inst->faulted()) {
+                break;
+            }
+            seqnum = inst->seqNum;
         }
+        return seqnum;
     }
-
-    return false;
+    return 0;
 }
 
 unsigned

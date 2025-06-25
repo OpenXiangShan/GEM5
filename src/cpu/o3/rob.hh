@@ -168,10 +168,9 @@ class ROB
 //    bool isHeadReady();
 
     /** Is the oldest group of instructions across a particular thread ready. */
-    bool isHeadReady(ThreadID tid);
+    bool isHeadGroupReady(ThreadID tid);
 
-    /** Is there any commitable head instruction across all threads ready. */
-    bool canCommit();
+    InstSeqNum getHeadGroupLastDoneSeq(ThreadID tid);
 
     /** Re-adjust ROB partitioning. */
     void resetEntries();
@@ -257,13 +256,15 @@ class ROB
         return sum;
     }
 
-    uint32_t numInstCanCommit(int groups);
+    uint32_t countInstsOfGroups(int groups);
 
     bool (ROB::*allocateNewGroup)(const DynInstPtr inst, ThreadID tid);
 
     void commitGroup(const DynInstPtr inst, ThreadID tid);
 
     void squashGroup(const DynInstPtr inst, ThreadID tid);
+
+    auto& getInstList(ThreadID tid) { return instList[tid]; }
 
   private:
     /** Reset the ROB state */

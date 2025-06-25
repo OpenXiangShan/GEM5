@@ -350,8 +350,8 @@ def setKmhV3IdealParams(args, system):
         cpu.SbufferEvictThreshold = 16
         cpu.numPhysIntRegs = 224
         cpu.numPhysFloatRegs = 256
-        cpu.RobCompressPolicy = 'none'
-        cpu.numROBEntries = 320
+        cpu.RobCompressPolicy = 'kmhv3'
+        cpu.numROBEntries = 160
         cpu.CROB_instPerGroup = 2 # 1 if not using ROB compression
         cpu.enableDispatchStage = True
         cpu.numDQEntries = [8, 8, 8]

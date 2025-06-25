@@ -1935,18 +1935,24 @@ IEW::tick()
 
         DPRINTF(IEW,"Processing [tid:%i]\n",tid);
 
-        // Update structures based on instructions committed.
-        if (fromCommit->commitInfo[tid].doneSeqNum != 0 &&
+        if (fromCommit->commitInfo[tid].doneMemSeqNum != 0 &&
             !fromCommit->commitInfo[tid].squash &&
             !fromCommit->commitInfo[tid].robSquashing) {
 
             // Marks some of the entries in the store queue as canWB and
             // they will be moved to the store buffer when appropriate.
-            ldstQueue.commitStores(fromCommit->commitInfo[tid].doneSeqNum,tid);
+            ldstQueue.commitStores(fromCommit->commitInfo[tid].doneMemSeqNum,tid);
+            updateLSQNextCycle = true;
+        }
+
+        // Update structures based on instructions committed.
+        if (fromCommit->commitInfo[tid].doneSeqNum != 0 &&
+            !fromCommit->commitInfo[tid].squash &&
+            !fromCommit->commitInfo[tid].robSquashing) {
 
             ldstQueue.commitLoads(fromCommit->commitInfo[tid].doneSeqNum,tid);
-
             updateLSQNextCycle = true;
+
             instQueue.commit(fromCommit->commitInfo[tid].doneSeqNum,tid);
         }
 
