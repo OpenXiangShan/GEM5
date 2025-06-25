@@ -1040,7 +1040,7 @@ void
 LSQUnit::issueToLoadPipe(const DynInstPtr &inst)
 {
     // push to loadPipeS0
-    assert(loadPipeSx[0]->size < MaxWidth);
+    assert(loadPipeSx[0]->size < MaxPipeWidth);
     panic_if(inst->inPipe(), "load [sn:%llu] is already in pipeline", inst->seqNum);
     inst->beginPipelining();
 
@@ -1055,7 +1055,7 @@ void
 LSQUnit::issueToStorePipe(const DynInstPtr &inst)
 {
     // push to storePipeS0
-    assert(storePipeSx[0]->size < MaxWidth);
+    assert(storePipeSx[0]->size < MaxPipeWidth);
     panic_if(inst->inPipe(), "load [sn:%llu] is already in pipeline", inst->seqNum);
     inst->beginPipelining();
 

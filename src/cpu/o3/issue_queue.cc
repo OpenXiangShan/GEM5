@@ -176,12 +176,24 @@ IssueQue::IssueQue(const IssueQueParams& params)
             t = it->second;
         }
         readyQs[i] = t;
+
+        bool storePipeAcc = false, loadPipeAcc = false;
         for (auto fu : oport->fu) {
             for (auto op : fu->opDescList) {
                 readyQclassify[op->opClass] = t;
                 opPipelined[op->opClass] = op->pipelined;
+
+                if (op->opClass >= MemReadOp && op->opClass <= VectorWholeRegisterLoadOp) {
+                    loadPipeAcc = true;
+                }
+                if (op->opClass >= MemWriteOp && op->opClass <= VectorWholeRegisterStoreOp) {
+                    storePipeAcc = true;
+                }
             }
         }
+
+        if (loadPipeAcc) numLoadPipe++;
+        if (storePipeAcc) numStorePipe++;
     }
 }
 
@@ -240,9 +252,26 @@ IssueQue::issueToFu()
     int replayed = 0;
     int issued = 0;
 
+    int issuedLoad = 0;
+    int issuedStore = 0;
+
     // replay first
     for (;!replayQ.empty() && replayed < outports; replayed++) {
         auto& inst = replayQ.front();
+
+        if (inst->isLoad()) {
+            if (issuedLoad >= numLoadPipe) {
+                break;
+            }
+            issuedLoad++;
+        }
+        if (inst->isStore()) {
+            if (issuedStore >= numStorePipe) {
+                break;
+            }
+            issuedStore++;
+        }
+
         scheduler->addToFU(inst);
         DPRINTF(Schedule, "[sn:%llu] replayed to FU\n", inst->seqNum);
         replayQ.pop();
@@ -254,7 +283,9 @@ IssueQue::issueToFu()
         if (!inst) {
             continue;
         }
-        if (i + replayed >= outports) {
+        if ((i + replayed >= outports) ||
+            (inst->isLoad() && (issuedLoad >= numLoadPipe)) ||
+            (inst->isStore() && (issuedStore >= numStorePipe))) {
             inst->clearScheduled();
             // only for load/store
             READYQ_PUSH(inst);
@@ -265,6 +296,12 @@ IssueQue::issueToFu()
             continue;
         }
 
+        if (inst->isLoad()) {
+            issuedLoad++;
+        }
+        if (inst->isStore()) {
+            issuedStore++;
+        }
         addToFu(inst);
         cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtIssueReadReg);
         issued++;

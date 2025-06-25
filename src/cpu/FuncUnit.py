@@ -40,9 +40,41 @@ from m5.SimObject import SimObject
 from m5.params import *
 
 class OpClass(Enum):
-    vals = ['No_OpClass', 'IntAlu', 'IntBr', 'IntMult', 'IntDiv',
+    vals = ['No_OpClass',
+            'IntAlu', 'IntBr', 'IntMult', 'IntDiv', 'StoreData',
+
             'FloatAdd', 'FloatMult', 'FloatMultAcc', 'FloatDiv', 'FloatSqrt',
             'FloatCmp', 'FloatCvt', 'FloatMv','FloatMisc',
+
+            'IprAccess', 'InstPrefetch',
+
+            'MemRead',
+            'FloatMemRead',
+            'VectorUnitStrideLoad',
+            'VectorSegUnitStrideLoad',
+            'VectorUnitStrideMaskLoad',
+            'VectorSegUnitStrideMaskLoad',
+            'VectorStridedLoad',
+            'VectorSegStridedLoad',
+            'VectorIndexedLoad',
+            'VectorSegIndexedLoad',
+            'VectorUnitStrideFaultOnlyFirstLoad',
+            'VectorWholeRegisterLoad',
+
+            'MemWrite',
+            'FloatMemWrite',
+            'MemAtomic',
+            'VectorUnitStrideStore',
+            'VectorSegUnitStrideStore',
+            'VectorUnitStrideMaskStore',
+            'VectorStridedStore',
+            'VectorIndexedStore',
+            'VectorWholeRegisterStore',
+
+            'VectorIntegerArith', 'VectorFloatArith', 'VectorFloatConvert',
+            'VectorIntegerReduce', 'VectorFloatReduce',
+            'VectorMisc', 'VectorIntegerExtension', 'VectorConfig',
+
             'SimdAdd', 'SimdAddAcc', 'SimdAlu', 'SimdCmp', 'SimdCvt',
             'SimdMisc', 'SimdMult', 'SimdMultAcc', 'SimdShift', 'SimdShiftAcc',
             'SimdDiv', 'SimdSqrt', 'SimdFloatAdd', 'SimdFloatAlu',
@@ -53,31 +85,7 @@ class OpClass(Enum):
             'SimdAes', 'SimdAesMix', 'SimdSha1Hash', 'SimdSha1Hash2',
             'SimdSha256Hash', 'SimdSha256Hash2', 'SimdShaSigma2',
             'SimdShaSigma3',
-            'SimdPredAlu',
-            'MemRead', 'MemWrite', 'FloatMemRead', 'FloatMemWrite', 'StoreData',
-            'MemAtomic',
-            'IprAccess', 'InstPrefetch',
-
-            'VectorUnitStrideLoad', 'VectorSegUnitStrideLoad',
-            'VectorUnitStrideStore', 'VectorSegUnitStrideStore',
-
-            'VectorUnitStrideMaskLoad', 'VectorSegUnitStrideMaskLoad',
-            'VectorUnitStrideMaskStore',
-
-            'VectorStridedLoad', 'VectorSegStridedLoad',
-            'VectorStridedStore',
-
-            'VectorIndexedLoad', 'VectorSegIndexedLoad',
-            'VectorIndexedStore',
-
-            'VectorWholeRegisterLoad',
-            'VectorWholeRegisterStore',
-
-            'VectorUnitStrideFaultOnlyFirstLoad',
-
-            'VectorIntegerArith', 'VectorFloatArith', 'VectorFloatConvert',
-            'VectorIntegerReduce', 'VectorFloatReduce',
-            'VectorMisc', 'VectorIntegerExtension', 'VectorConfig'
+            'SimdPredAlu'
             ]
 
 class OpDesc(SimObject):

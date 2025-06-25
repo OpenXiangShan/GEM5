@@ -81,6 +81,9 @@ class IssueQue : public SimObject
     std::vector<bool> opPipelined;
     int IQID = -1;
 
+    int numLoadPipe = 0;
+    int numStorePipe = 0;
+
     struct select_policy
     {
         bool operator()(const DynInstPtr& a, const DynInstPtr& b) const;
