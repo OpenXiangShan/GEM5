@@ -493,6 +493,8 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(statistics::Group* parent, unsigne
     ADD_STAT(predsOfEachStage, statistics::units::Count::get(), "the number of preds of each stage that account for final pred"),
     ADD_STAT(overrideBubbleNum,  statistics::units::Count::get(), "the number of override bubbles"),
     ADD_STAT(overrideCount, statistics::units::Count::get(), "the number of overrides"),
+    ADD_STAT(predProduce2Taken, statistics::units::Count::get(), "the number of predictions that produce 2-taken"),
+    ADD_STAT(predProduce1Taken, statistics::units::Count::get(), "the number of predictions that produce 1-taken"),
     ADD_STAT(commitPredsFromEachStage, statistics::units::Count::get(),
     "the number of preds of each stage that account for a committed stream"),
     ADD_STAT(commitOverrideBubbleNum, statistics::units::Count::get(),
@@ -511,8 +513,10 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(statistics::Group* parent, unsigne
     ADD_STAT(fsqEntryDist, statistics::units::Count::get(), "the distribution of number of entries in fsq"),
     ADD_STAT(fsqEntryEnqueued, statistics::units::Count::get(), "the number of fsq entries enqueued"),
     ADD_STAT(fsqEntryCommitted, statistics::units::Count::get(), "the number of fsq entries committed at last"),
+    ADD_STAT(secondPredCommitted, statistics::units::Count::get(), "the number of second predictions that committed successfully"),
     ADD_STAT(controlSquashFromDecode, statistics::units::Count::get(), "the number of control squashes in bpu from decode"),
     ADD_STAT(controlSquashFromCommit, statistics::units::Count::get(), "the number of control squashes in bpu from commit"),
+    ADD_STAT(controlSquashFromSecondPred, statistics::units::Count::get(), "the number of control squashes caused by second predictions"),
     ADD_STAT(nonControlSquash, statistics::units::Count::get(), "the number of non-control squashes in bpu"),
     ADD_STAT(trapSquash, statistics::units::Count::get(), "the number of trap squashes in bpu"),
     ADD_STAT(ftqNotValid, statistics::units::Count::get(), "fetch needs ftq req but ftq not valid"),
@@ -558,6 +562,8 @@ void
 DecoupledBPUWithBTB::tick()
 {
     DPRINTF(Override, "DecoupledBPUWithBTB::tick()\n");
+    // Monitor FSQ size for statistics
+    dbpBtbStats.fsqEntryDist.sample(fetchStreamQueue.size(), 1);
 
     // On squash, reset state if there was a valid prediction.
     if (squashing) {
@@ -590,6 +596,13 @@ DecoupledBPUWithBTB::tick()
         predDFF.storePrediction(finalPred, ubtbHitIndex);
 
         bpuState = BpuState::PREDS_READY;
+
+        // Update performance counters based on prediction type
+        if (hasSecondPrediction) {
+            dbpBtbStats.predProduce2Taken++;
+        } else {
+            dbpBtbStats.predProduce1Taken++;
+        }
 
         // Clear predictor outputs.
         for (int i = 0; i < numStages; i++) {
@@ -1038,6 +1051,12 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id, unsigned stream_id,
         return;
     }
     auto &stream = stream_it->second;
+
+    // Track control squashes caused by second predictions
+    if (stream.isSecondFBPred) {
+        dbpBtbStats.controlSquashFromSecondPred++;
+        DPRINTF(DecoupleBP, "Control squash caused by second prediction at %#lx\n", stream.startPC);
+    }
     // Get target address
     Addr real_target = corr_target.instAddr();
     if (!fromCommit && static_inst->isReturn() && !static_inst->isNonSpeculative()) {
@@ -1117,6 +1136,11 @@ void DecoupledBPUWithBTB::update(unsigned stream_id, ThreadID tid)
             updatePredictorComponents(stream);
         } else {
             DPRINTF(DecoupleBP, "Skipping predictor update for second FB prediction at %#lx\n", stream.startPC);
+        }
+
+        // Track successful second prediction commits
+        if (stream.isSecondFBPred) {
+            dbpBtbStats.secondPredCommitted++;
         }
 
         it = fetchStreamQueue.erase(it);
@@ -1618,8 +1642,7 @@ DecoupledBPUWithBTB::dumpFsq(const char *when)
 bool
 DecoupledBPUWithBTB::validateFSQEnqueue()
 {
-    // Monitor FSQ size for statistics
-    dbpBtbStats.fsqEntryDist.sample(fetchStreamQueue.size(), 1);
+
     if (streamQueueFull()) {
         dbpBtbStats.fsqFullCannotEnq++;
         DPRINTF(Override, "FSQ is full (%lu entries)\n", fetchStreamQueue.size());
