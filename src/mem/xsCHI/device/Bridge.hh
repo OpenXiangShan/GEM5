@@ -1,4 +1,7 @@
 #pragma once
+#include <cassert>
+#include <map>
+
 #include "../base/Network/NodeID.hh"
 #include "../base/Network/SystemAddressMap.hh"
 #include "../base/flit.hh"
@@ -85,7 +88,11 @@ class Bridge : public Module
 
         TxnIDManager TXN_Manager; // 事务ID管理器
 
-        FlitPtr createRequestFlit();
+        std::map<int, ReqPtr> outstanding_requests; // 存储由本节点产生的、未完成的请求
+
+        void saveOutstandingRequest(ReqPtr &req, uint32_t txn_id);
+
+        FlitPtr createRequestFlit(ReqPtr req);
         FlitPtr createResponseFlit();
         FlitPtr createSnoopFlit();
         FlitPtr createDataFlit();
@@ -96,7 +103,23 @@ class Bridge : public Module
         //return whether the link can send out flit, considering the condition of link credit.
         bool LinkCanOut();
 
+        // 由本节点创建的transaction完成时调用，构造一个response发送到wrapper，还需要注销TxnID，storage侧不需要考虑时延和流控。
+        void finishTxnAndSendReq(ReqPtr &req);
 
+        // 某一个transaction在处理消息中决定发送一个Flit时调用，将这个Flit加入仲裁逻辑中进行发送。
+        void sendFlit(FlitPtr &flit);
+
+        //readclean readunique readshared readnotshareddirty readprefferunique
+        void handleFlit_AllocatingRead(FlitPtr &flit);
+
+        //writebackfull writecleanfull writebackptl writeevictfull
+        void handleFlit_CopybackWrite(FlitPtr &flit);
+
+        void handleFlit_CLEANUNIQUE_MAKEUNIQUE(FlitPtr &flit);//cleanunique,makeunique
+        void handleFlit_EVICT(FlitPtr &flit);//evict
+
+        void FinishReq_Read(FlitPtr &flit);
+        void sendCompACK(FlitPtr &flit);
 
 };
 

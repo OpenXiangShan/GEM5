@@ -4,6 +4,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
 
 #include "base/logging.hh"
 #include "base/types.hh"
@@ -45,7 +46,7 @@ class Port
     // std::queue<std::unique_ptr<T>> buffer; // 传输缓冲区
     // uint32_t max_buffer_size;         // 最大缓冲条目数
     // uint32_t bandwidth;               // 传输带宽(GB/s)
-    std::function<bool(T&)> receive_callback;
+    std::function<bool(T)> receive_callback;
 public:
 
     Port(Module* module, const std::string& _name, PortID _id) :
@@ -58,11 +59,11 @@ public:
     ~Port() = default;
     void connect(Port<T>* peer_port) { connected_port = peer_port; }
 
-    bool send(T & data) {
+    bool send(T  data) {
         // 将数据发送到连接的端口
         if (connected_port) {
             // 这里可以添加缓冲逻辑
-            return connected_port->receive(data);
+            return connected_port->receive(std::move(data));
         } else {
             panic("Port %s in module %s is not connected to any peer port",
                   owner_module->name(), owner_module->name());
@@ -70,17 +71,17 @@ public:
         }
     }
 
-    bool receive(T & data)
+    bool receive(T  data)
     {
         // 支持匿名函数回调
         if (receive_callback) {
-            return receive_callback(data);
+            return receive_callback(std::move(data));
         } else  {
             panic("Receive callback not set for port in module %s", owner_module->name());
             return false; // 连接失败
         }
     }
-    void setReceiveCallback(std::function<void(T&)> callback) {
+    void setReceiveCallback(std::function<void(T)> callback) {
         receive_callback = callback;
     }
     /** Return a reference to this port's peer. */
