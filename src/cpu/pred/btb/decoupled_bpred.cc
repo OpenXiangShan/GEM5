@@ -1136,6 +1136,8 @@ void DecoupledBPUWithBTB::update(unsigned stream_id, ThreadID tid)
             updatePredictorComponents(stream);
         } else {
             DPRINTF(DecoupleBP, "Skipping predictor update for second FB prediction at %#lx\n", stream.startPC);
+            // ras is the only predictor that relies on update from all FBs
+            ras->update(stream);
         }
 
         // Track successful second prediction commits
