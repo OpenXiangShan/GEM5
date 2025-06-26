@@ -849,11 +849,11 @@ DecoupledBPUWithBTB::processFetchTargetCompletion(const FtqEntry &target_to_fetc
     DPRINTF(DecoupleBP, "running out of ftq entry %lu with %d insts\n",
             fetchTargetQueue.getSupplyingTargetId(), currentFtqEntryInstNum);
 
+    // Get stream ID for the current fetch target before removing from FTQ
+    const auto fsqId = target_to_fetch.fsqID;
+
     // Remove the current entry from FTQ
     fetchTargetQueue.finishCurrentFetchTarget();
-
-    // Get stream ID for the current fetch target
-    const auto fsqId = target_to_fetch.fsqID;
     // Update instruction count in the fetch stream entry
     auto it = fetchStreamQueue.find(fsqId);
     assert(it != fetchStreamQueue.end());

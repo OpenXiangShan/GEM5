@@ -364,21 +364,20 @@ class Fetch
      */
     bool handleMisalignedFetch(Addr vaddr, ThreadID tid, Addr pc);
 
-    /** Handle normal aligned fetch within a single cache line.
-     * @param vaddr Virtual address to fetch from
-     * @param tid Thread ID
-     * @param pc Program counter
-     * @return true if request was successfully initiated
-     */
-    bool handleAlignedFetch(Addr vaddr, ThreadID tid, Addr pc);
-
     /** Process misaligned fetch completion when both packets have arrived.
      * Merges data from both cache lines into the fetch buffer.
      * @param tid Thread ID
      * @param pkt Most recently arrived packet
-     * @return Merged packet if both packets have arrived, nullptr otherwise
+     * @return true if all packets have arrived and data is merged, false if still waiting
      */
-    PacketPtr processMisalignedCompletion(ThreadID tid, PacketPtr pkt);
+    bool processMisalignedCompletion(ThreadID tid, PacketPtr pkt);
+
+    /** Handle retry logic for misaligned fetch when a packet is retried.
+     * Sends the missing cache request for the incomplete packet.
+     * @param tid Thread ID
+     * @param pkt The retried packet
+     */
+    void handleMisalignedRetry(ThreadID tid, PacketPtr pkt);
 
     /** Check if an interrupt is pending and that we need to handle
      */
@@ -574,11 +573,6 @@ class Fetch
     /** Can the fetch stage redirect from an interrupt on this instruction? */
     bool delayedCommit[MaxThreads];
 
-    /** Memory request used to access cache. */
-    RequestPtr memReq[MaxThreads];
-
-    RequestPtr anotherMemReq[MaxThreads];
-
     /** Variable that tracks if fetch has written to the time buffer this
      * cycle. Used to tell CPU if there is activity this cycle.
      */
@@ -696,26 +690,80 @@ class Fetch
     // Constants for misaligned fetch handling
     static constexpr unsigned CACHE_LINE_SIZE_BYTES = 64;
 
-    /** Indicates whether the current fetch request spans across cache line boundaries.
-     *  When true, the fetch requires two separate cache line accesses that will
-     *  be merged into a single fetch buffer.
+    /**
+     * Unified cache request structure to handle multiple cacheline accesses.
+     * Replaces multiple separate state variables for cleaner state management.
+     * Supports extensibility for future 2fetch implementation.
      */
-    bool fetchMisaligned[MaxThreads];
+    struct CacheRequest
+    {
+        /** Vector of packet pointers for multiple cache line requests */
+        std::vector<PacketPtr> packets;
 
-    /** Stores access information for misaligned fetches.
-     *  First: original virtual address, Second: address of second cache line
-     */
-    std::pair<Addr, Addr> accessInfo[MaxThreads];
+        /** Vector of corresponding request pointers */
+        std::vector<RequestPtr> requests;
 
-    /** Packet pointer for the first cache line in a misaligned fetch.
-     *  Contains data from the tail of the first cache line.
-     */
-    PacketPtr firstCacheLinePkt[MaxThreads];
+        /** Base address of the fetch request */
+        Addr baseAddr;
 
-    /** Packet pointer for the second cache line in a misaligned fetch.
-     *  Contains data from the head of the second cache line.
-     */
-    PacketPtr secondCacheLinePkt[MaxThreads];
+        /** Total size of the fetch request in bytes */
+        unsigned totalSize;
+
+        /** Number of completed packets received */
+        unsigned completedPackets;
+
+        /** Constructor */
+        CacheRequest() : baseAddr(0), totalSize(0), completedPackets(0) {}
+
+        /** Check if all packets have been completed */
+        bool allCompleted() const {
+            return completedPackets >= packets.size() && packets.size() > 0;
+        }
+
+        /** Reset the cache request state */
+        void reset() {
+            packets.clear();
+            requests.clear();
+            baseAddr = 0;
+            totalSize = 0;
+            completedPackets = 0;
+        }
+
+        /** Add a new request */
+        void addRequest(RequestPtr req) {
+            requests.push_back(req);
+            packets.push_back(nullptr);  // Initialize with null packet
+        }
+
+        /** Mark a packet as completed by matching request */
+        bool markCompletedAndStorePacket(PacketPtr pkt) {
+          // return false if the packet is not found in the requests
+          bool found_packet = false;
+            // Find and mark the packet as completed by matching the request
+            for (size_t i = 0; i < requests.size(); ++i) {
+                if (requests[i] == pkt->req) {
+                    // Only increment count if this packet wasn't already stored
+                    if (packets[i] == nullptr) {
+                        packets[i] = pkt;  // Store the packet
+                        completedPackets++;
+                        found_packet = true;
+                    }
+                }
+            }
+            if (!found_packet) {
+                return false;
+            }
+            return true;
+        }
+
+        /** Get the number of pending packets */
+        unsigned getPendingCount() const {
+            return packets.size() - completedPackets;
+        }
+    };
+
+    /** Cache request for each thread, replacing multiple redundant state variables */
+    CacheRequest cacheReq[MaxThreads];
 
     /** The size of the fetch queue in micro-ops */
     unsigned fetchQueueSize;
@@ -859,15 +907,6 @@ public:
     const FetchStatGroup &getFetchStats() { return fetchStats; }
 
   private:
-    /** Temporary buffer to store data from the first cache line in misaligned fetch.
-     *  Used during packet merging process.
-     */
-    uint8_t* firstCacheLineDataBuf;
-
-    /** Temporary buffer to store data from the second cache line in misaligned fetch.
-     *  Used during packet merging process.
-     */
-    uint8_t* secondCacheLineDataBuf;
 
     bool waitForVsetvl = false;
 };
