@@ -13,12 +13,24 @@ namespace gem5
 L2CacheWrapper::L2CacheWrapper(const L2CacheWrapperParams &p)
     : CacheWrapper(p),
       requestBuffer(p.buffer_size),
+      reqArb(this),
       trySendEvent([this]{ trySendFromBuffer(); }, name()),
       processResponsesEvent([this]{ processResponses(); }, name(), false,
-                            Event::Maximum_Pri),
-      tickMainPipeEvent([this]{ tickMainPipe(); }, name()),
+                            processResponsesPri),
+      tickMainPipeEvent([this]{ tickMainPipe(); }, name(), false,
+                        tickMainPipePri),
+      arbFailRetryEvent([this]{ innerCpuPortRecvReqRetry(); }, name(), false,
+                        arbFailRetryPri),
       mainPipe(this, p.pipeline_depth)
 {
+}
+
+void
+L2CacheWrapper::scheduleTickMainPipe()
+{
+    if (mainPipe.hasWork() && !tickMainPipeEvent.scheduled()) {
+        schedule(tickMainPipeEvent, nextCycle());
+    }
 }
 
 /* Memory-Side internal logic */
@@ -81,10 +93,14 @@ L2CacheWrapper::processResponses()
     mainPipe.advance(curCycle());
 
     // we want to build a L2 MSHR grant task
-    if (!ready_responses.empty() && mainPipe.isTaskAvailable(TaskSource::L2MSHRGrant)) {
+    if (!ready_responses.empty() &&
+        reqArb.arbitrate(TaskSource::L2MSHRGrant, curCycle()) &&
+        mainPipe.isTaskAvailable(TaskSource::L2MSHRGrant))
+    {
         DPRINTF(L2CacheWrapper, "Building L2 MSHR grant task for addr: %#x\n", ready_responses.front()->getAddr());
         PacketPtr pkt = ready_responses.front();
         mainPipe.buildTask(pkt, TaskSource::L2MSHRGrant);
+        scheduleTickMainPipe();
         ready_responses.pop_front();
     }
 
@@ -92,19 +108,13 @@ L2CacheWrapper::processResponses()
     if (!ready_responses.empty() && !processResponsesEvent.scheduled()) {
         schedule(processResponsesEvent, nextCycle());
     }
-
-    if (mainPipe.hasWork() && !tickMainPipeEvent.scheduled()) {
-        schedule(tickMainPipeEvent, nextCycle());
-    }
 }
 
 void
 L2CacheWrapper::tickMainPipe()
 {
     mainPipe.advance(curCycle());
-    if (mainPipe.hasWork() && !tickMainPipeEvent.scheduled()) {
-        schedule(tickMainPipeEvent, nextCycle());
-    }
+    scheduleTickMainPipe();
 }
 
 void
@@ -114,6 +124,26 @@ L2CacheWrapper::innerMemPortRecvRespRetry()
 }
 
 /* CPU-Side internal logic */
+bool
+L2CacheWrapper::innerCpuPortSendTimingReq(PacketPtr pkt, TaskSource source)
+{
+    if (reqArb.arbitrate(source, curCycle()) &&
+        mainPipe.isTaskAvailable(source))
+    {
+        DPRINTF(L2CacheWrapper, "Request arbitration succeeded, sending request to inner cache\n");
+        bool success = CacheWrapper::cpuSidePortRecvTimingReq(pkt);
+        if (success) {
+            mainPipe.buildTask(pkt, source);
+            scheduleTickMainPipe();
+        }
+        return success;
+    } else {
+        DPRINTF(L2CacheWrapper, "Request arbitration failed, scheduling retry event\n");
+        schedule(arbFailRetryEvent, nextCycle());
+        return false;
+    }
+}
+
 bool
 L2CacheWrapper::cpuSidePortRecvTimingReq(PacketPtr pkt)
 {
@@ -134,7 +164,7 @@ L2CacheWrapper::cpuSidePortRecvTimingReq(PacketPtr pkt)
             return false;
         }
         // directly send to inner cache
-        bool success = CacheWrapper::cpuSidePortRecvTimingReq(pkt);
+        bool success = innerCpuPortSendTimingReq(pkt, TaskSource::L1WQ);
         if (!success) {
             DPRINTF(L2CacheWrapper, "Inner cache busy, rejecting WQ request from CPU side\n");
             inner_cache_blocked = true;
@@ -161,7 +191,7 @@ L2CacheWrapper::cpuSidePortRecvTimingReq(PacketPtr pkt)
     // If the Wrapper is not waiting for inner cache's retry and
     // there is no pending request in the buffer,
     // we can try to forward it directly to inner cache
-    if (!inner_cpu_port.sendTimingReq(pkt)) {
+    if (!innerCpuPortSendTimingReq(pkt, TaskSource::L1MSHR)) {
         inner_cache_blocked = true;
         DPRINTF(L2CacheWrapper, "Inner cache busy, try buffering request and blocking\n");
         if (requestBuffer.isFull()) {
@@ -211,7 +241,7 @@ L2CacheWrapper::trySendFromBuffer()
 
     PacketPtr pkt = requestBuffer.front();
 
-    if (!inner_cpu_port.sendTimingReq(pkt)) {
+    if (!innerCpuPortSendTimingReq(pkt, TaskSource::L1MSHR)) {
         DPRINTF(L2CacheWrapper, "Send delayed request failed, blocking again\n");
         inner_cache_blocked = true;
     } else {

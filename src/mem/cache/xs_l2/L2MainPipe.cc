@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "PipelineResources.hh"
 #include "mem/cache/xs_l2/L2CacheWrapper.hh"
 #include "mem/packet.hh"
 
@@ -12,21 +13,22 @@ L2MainPipe::L2MainPipe(L2CacheWrapper* _owner, unsigned depth)
     : owner(_owner),
       cur_cycle(0)
 {
-    scoreboardResources.resize(depth, PipelineResources::ResFree);
+    scoreboardResources.resize(depth, PipelineResources::Free);
     scoreboardTasks.resize(depth, PipelineTask(TaskSource::NoWhere, nullptr));
 
     // construct the taskResourceMap
-    taskResourceMap[TaskSource::L1MSHR]        = PipelineResources::ResDirRead  |
-                                                 PipelineResources::ResDataRead;
-    taskResourceMap[TaskSource::L1WQ]          = PipelineResources::ResDirRead  |
-                                                 PipelineResources::ResDirWrite |
-                                                 PipelineResources::ResGrantBuf;
-    taskResourceMap[TaskSource::L3Snoop]       = PipelineResources::ResDirRead  |
-                                                 PipelineResources::ResDataRead;
-    taskResourceMap[TaskSource::L2MSHRGrant]   = PipelineResources::ResDirRead  |
-                                                 PipelineResources::ResDataRead |
-                                                 PipelineResources::ResGrantBuf;
-    taskResourceMap[TaskSource::L2MSHRRelease] = PipelineResources::ResDataWrite;
+    taskResourceMap[TaskSource::L1MSHR]        = PipelineResources::DirRead  |
+                                                 PipelineResources::DataRead;
+    taskResourceMap[TaskSource::L1WQ]          = PipelineResources::DirRead  |
+                                                 PipelineResources::DirWrite |
+                                                 PipelineResources::DataWrite|
+                                                 PipelineResources::GrantBuf;
+    taskResourceMap[TaskSource::L3Snoop]       = PipelineResources::DirRead  |
+                                                 PipelineResources::DataRead;
+    taskResourceMap[TaskSource::L2MSHRGrant]   = PipelineResources::DirRead  |
+                                                 PipelineResources::DataRead |
+                                                 PipelineResources::GrantBuf;
+    taskResourceMap[TaskSource::L2MSHRRelease] = PipelineResources::DataWrite;
 }
 
 void
@@ -48,7 +50,7 @@ L2MainPipe::advance()
     // scoreboard update
     scoreboardResources.pop_back();
     scoreboardTasks.pop_back();
-    scoreboardResources.emplace_front(PipelineResources::ResFree);
+    scoreboardResources.emplace_front(PipelineResources::Free);
     scoreboardTasks.emplace_front(TaskSource::NoWhere, nullptr);
 }
 
@@ -58,20 +60,20 @@ L2MainPipe::isResourceAvailable(PipelineResources resource) const
     // Data is muti cycle path 2,
     // so if last cycle needs to read or write data,
     // this cycle is not available to read or write data
-    if (resource & PipelineResources::ResDataRead) {
+    if (resource & PipelineResources::DataRead) {
         return (scoreboardResources[1] &
-               (PipelineResources::ResDataRead |
-                PipelineResources::ResDataWrite)) == 0;
+               (PipelineResources::DataRead |
+                PipelineResources::DataWrite)) == 0;
     }
-    if (resource & PipelineResources::ResDataWrite) {
+    if (resource & PipelineResources::DataWrite) {
         return (scoreboardResources[1] &
-               (PipelineResources::ResDataRead |
-                PipelineResources::ResDataWrite)) == 0;
+               (PipelineResources::DataRead |
+                PipelineResources::DataWrite)) == 0;
     }
     // Dir is SRAM, read and write should not be available at the same time
-    if (resource & PipelineResources::ResDirRead) {
+    if (resource & PipelineResources::DirRead) {
         return (scoreboardResources[2] &
-               (PipelineResources::ResDirWrite)) == 0;
+               (PipelineResources::DirWrite)) == 0;
     }
     return true;
 }
@@ -79,7 +81,8 @@ L2MainPipe::isResourceAvailable(PipelineResources resource) const
 bool
 L2MainPipe::isTaskAvailable(TaskSource source) const
 {
-    return isResourceAvailable(taskResourceMap.at(source));
+    return (scoreboardTasks[0].source == TaskSource::NoWhere) &&
+           isResourceAvailable(taskResourceMap.at(source));
 }
 
 void
@@ -96,13 +99,13 @@ L2MainPipe::sendMSHRGrantPkt()
     // Later pipeline stages have higher grant priority
     for (int i = 4; i >= 2; i--) {
         bool isGrant = scoreboardTasks[i].source == TaskSource::L2MSHRGrant;
-        bool needGrantBuf = scoreboardResources[i] & PipelineResources::ResGrantBuf;
+        bool needGrantBuf = scoreboardResources[i] & PipelineResources::GrantBuf;
         if (isGrant && needGrantBuf) {
             PacketPtr pkt = scoreboardTasks[i].pkt;
             if (!owner->inner_mem_port.sendTimingResp(pkt)) {
                 panic("L2 cache recvTimingResp failed");
             } else {
-                scoreboardResources[i] &= ~PipelineResources::ResGrantBuf;
+                scoreboardResources[i] &= ~PipelineResources::GrantBuf;
             }
             break;
         }

@@ -10,12 +10,12 @@ namespace gem5
 // Using a bitmask to allow for multiple resource acquisitions per stage
 enum PipelineResources : uint8_t
 {
-    ResFree      = 0,
-    ResDataRead  = 1 << 0, // need a data read operation
-    ResDataWrite = 1 << 1, // need a data write operation
-    ResDirRead   = 1 << 2, // need a directory read operation
-    ResDirWrite  = 1 << 3, // need a directory write operation
-    ResGrantBuf  = 1 << 4, // need a grant buffer operation
+    Free      = 0,
+    DataRead  = 1 << 0, // need a data read operation
+    DataWrite = 1 << 1, // need a data write operation
+    DirRead   = 1 << 2, // need a directory read operation
+    DirWrite  = 1 << 3, // need a directory write operation
+    GrantBuf  = 1 << 4, // need a grant buffer operation
 };
 
 inline PipelineResources
