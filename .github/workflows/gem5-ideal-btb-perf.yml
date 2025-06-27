@@ -2,7 +2,7 @@ name: gem5 Ideal BTB Performance Test
 
 on:
   push:
-    branches: [ xs-dev ]
+    branches: [ xs-dev, 2taken-2fetch-limited ]
   pull_request:
     branches: [ xs-dev ]
 
