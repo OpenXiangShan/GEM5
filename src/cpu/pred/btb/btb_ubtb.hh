@@ -378,6 +378,17 @@ class UBTB : public TimedBaseBTBPredictor
         statistics::Scalar returnHits;
         statistics::Scalar returnMisses;
 
+        // 2-taken condition check statistics
+        statistics::Scalar twoTakenConditionChecks;      ///< Total number of 2-taken condition checks
+        statistics::Scalar twoTakenConditionPassed;      ///< Number of times all conditions passed
+        statistics::Scalar twoTakenFailEmptyPreds;       ///< Rejected due to empty predictions
+        statistics::Scalar twoTakenFailFirstNotTaken;    ///< Rejected due to first branch not taken
+        statistics::Scalar twoTakenFailFirstIndirect;    ///< Rejected due to first branch being indirect
+        statistics::Scalar twoTakenFailSecondIndirect;   ///< Rejected due to second branch being indirect
+        statistics::Scalar twoTakenFailSecondCond;       ///< Rejected due to second branch being conditional
+        statistics::Scalar twoTakenFailRetRet;           ///< Rejected due to ret->ret sequence
+        statistics::Scalar twoTakenFailCallCall;         ///< Rejected due to call->call sequence
+
         UBTBStats(statistics::Group* parent);
     } ubtbStats;
 
