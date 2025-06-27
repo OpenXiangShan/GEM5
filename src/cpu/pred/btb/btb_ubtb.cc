@@ -353,8 +353,12 @@ UBTB::check2TakenConditions(FullBTBPrediction& dff, const FullBTBPrediction& s3P
 {
     assert(dff.getTarget(predictWidth) == s3Pred.bbStart);
 
+    // Increment total check counter
+    ubtbStats.twoTakenConditionChecks++;
+
     // 1. Both predictions must have at least one branch.
     if (dff.btbEntries.empty() || s3Pred.btbEntries.empty()) {
+        ubtbStats.twoTakenFailEmptyPreds++;
         return false;
     }
 
@@ -363,6 +367,7 @@ UBTB::check2TakenConditions(FullBTBPrediction& dff, const FullBTBPrediction& s3P
 
     // 2. The first branch must be taken for a 2-taken sequence to form.
     if (!dff.isTaken()) {
+        ubtbStats.twoTakenFailFirstNotTaken++;
         return false;
     }
 
@@ -370,33 +375,39 @@ UBTB::check2TakenConditions(FullBTBPrediction& dff, const FullBTBPrediction& s3P
 
     // Rule: 'multi-target indirect' as 1st branch is not allowed.
     if (firstBr.isIndirect) {
+        ubtbStats.twoTakenFailFirstIndirect++;
         return false;
     }
 
     // Rule: 'multi-target indirect' as 2nd branch is not allowed.
     if (secondBr.isIndirect) {
+        ubtbStats.twoTakenFailSecondIndirect++;
         return false;
     }
 
     // Rule: 'cond' as 2nd branch is not allowed.
     // this rule implies that the second branch is always taken
     if (secondBr.isCond) {
+        ubtbStats.twoTakenFailSecondCond++;
         return false;
     }
 
     // Rule: 'ret -> ret' is not allowed to avoid multiple RAS reads.
     if (firstBr.isReturn && secondBr.isReturn) {
+        ubtbStats.twoTakenFailRetRet++;
         return false;
     }
 
     // Rule: 'call -> call' is not allowed to avoid multiple RAS writes.
     if (firstBr.isCall && secondBr.isCall) {
+        ubtbStats.twoTakenFailCallCall++;
         return false;
     }
 
     // (call -> ret is allowed, so no check needed)
 
     // All conditions passed.
+    ubtbStats.twoTakenConditionPassed++;
     return true;
 }
 
@@ -704,7 +715,27 @@ UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
       ADD_STAT(callHits, statistics::units::Count::get(), "calls committed that was predicted hit"),
       ADD_STAT(callMisses, statistics::units::Count::get(), "calls committed that was predicted miss"),
       ADD_STAT(returnHits, statistics::units::Count::get(), "returns committed that was predicted hit"),
-      ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss")
+      ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss"),
+
+      // 2-taken condition check statistics
+      ADD_STAT(twoTakenConditionChecks, statistics::units::Count::get(),
+               "Total number of 2-taken condition checks performed"),
+      ADD_STAT(twoTakenConditionPassed, statistics::units::Count::get(),
+               "Number of times all 2-taken conditions passed"),
+      ADD_STAT(twoTakenFailEmptyPreds, statistics::units::Count::get(),
+               "2-taken rejected due to empty predictions (dff or s3)"),
+      ADD_STAT(twoTakenFailFirstNotTaken, statistics::units::Count::get(),
+               "2-taken rejected due to first branch not taken"),
+      ADD_STAT(twoTakenFailFirstIndirect, statistics::units::Count::get(),
+               "2-taken rejected due to first branch being indirect"),
+      ADD_STAT(twoTakenFailSecondIndirect, statistics::units::Count::get(),
+               "2-taken rejected due to second branch being indirect"),
+      ADD_STAT(twoTakenFailSecondCond, statistics::units::Count::get(),
+               "2-taken rejected due to second branch being conditional"),
+      ADD_STAT(twoTakenFailRetRet, statistics::units::Count::get(),
+               "2-taken rejected due to ret->ret sequence"),
+      ADD_STAT(twoTakenFailCallCall, statistics::units::Count::get(),
+               "2-taken rejected due to call->call sequence")
 {
 }
 
