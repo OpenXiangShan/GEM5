@@ -57,7 +57,7 @@ class L1Cache(Cache):
     cache_level = 1
 
 class L1_ICache(L1Cache):
-    mshrs = 2
+    mshrs = 16
     is_read_only = True
 
     writeback_clean = False

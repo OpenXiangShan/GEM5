@@ -579,7 +579,7 @@ Fetch::processCacheCompletion(PacketPtr pkt)
         return;
     }
 
-    if (fetchStatus[tid] != IcacheWaitResponse) {
+    if (fetchStatus[tid] != IcacheWaitResponse && fetchStatus[tid] != ItlbWait) {
         DPRINTF(Fetch, "[tid:%i] Invalid fetch state or request\n", tid);
         ++fetchStats.icacheSquashes;
         return;
@@ -634,10 +634,6 @@ Fetch::processCacheCompletion(PacketPtr pkt)
     } else {
         fetchStatus[tid] = IcacheAccessComplete;
     }
-
-    // Set access latency and notify probe point for performance tracking
-    pkt->req->setAccessLatency();
-    cpu->ppInstAccessComplete->notify(pkt);
 }
 
 void
