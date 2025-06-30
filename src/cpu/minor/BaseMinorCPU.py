@@ -144,26 +144,11 @@ class MinorDefaultIntDivFU(MinorFU):
 class MinorDefaultFloatSimdFU(MinorFU):
     opClasses = minorMakeOpClassSet([
         'FloatAdd', 'FloatCmp', 'FloatCvt', 'FloatMisc', 'FloatMult',
-        'FloatMultAcc', 'FloatDiv', 'FloatSqrt',
-        'SimdAdd', 'SimdAddAcc', 'SimdAlu', 'SimdCmp', 'SimdCvt',
-        'SimdMisc', 'SimdMult', 'SimdMultAcc', 'SimdShift', 'SimdShiftAcc',
-        'SimdDiv', 'SimdSqrt', 'SimdFloatAdd', 'SimdFloatAlu', 'SimdFloatCmp',
-        'SimdFloatCvt', 'SimdFloatDiv', 'SimdFloatMisc', 'SimdFloatMult',
-        'SimdFloatMultAcc', 'SimdFloatSqrt', 'SimdReduceAdd', 'SimdReduceAlu',
-        'SimdReduceCmp', 'SimdFloatReduceAdd', 'SimdFloatReduceCmp',
-        'SimdAes', 'SimdAesMix',
-        'SimdSha1Hash', 'SimdSha1Hash2', 'SimdSha256Hash',
-        'SimdSha256Hash2', 'SimdShaSigma2', 'SimdShaSigma3'])
+        'FloatMultAcc', 'FloatDiv', 'FloatSqrt'])
 
     timings = [MinorFUTiming(description='FloatSimd',
         srcRegsRelativeLats=[2])]
     opLat = 6
-
-class MinorDefaultPredFU(MinorFU):
-    opClasses = minorMakeOpClassSet(['SimdPredAlu'])
-    timings = [MinorFUTiming(description="Pred",
-        srcRegsRelativeLats=[2])]
-    opLat = 3
 
 class MinorDefaultMemFU(MinorFU):
     opClasses = minorMakeOpClassSet(['MemRead', 'MemWrite', 'FloatMemRead',
@@ -193,7 +178,7 @@ class MinorDefaultVecFU(MinorFU):
 class MinorDefaultFUPool(MinorFUPool):
     funcUnits = [MinorDefaultIntFU(), MinorDefaultIntFU(),
         MinorDefaultIntMulFU(), MinorDefaultIntDivFU(),
-        MinorDefaultFloatSimdFU(), MinorDefaultPredFU(),
+        MinorDefaultFloatSimdFU(),
         MinorDefaultMemFU(), MinorDefaultVecFU(), MinorDefaultMiscFU()]
 
 class ThreadPolicy(Enum): vals = ['SingleThreaded', 'RoundRobin', 'Random']

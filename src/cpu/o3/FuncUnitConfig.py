@@ -94,44 +94,13 @@ class FP_MAC(FUDesc):
     opList = [ OpDesc(opClass='FloatMultAcc', opLat=4)]
 
 class SIMD_Unit(FUDesc):
-    opList = [ OpDesc(opClass='SimdAdd'),
-               OpDesc(opClass='SimdAddAcc'),
-               OpDesc(opClass='SimdAlu'),
-               OpDesc(opClass='SimdCmp'),
-               OpDesc(opClass='SimdCvt'),
-               OpDesc(opClass='SimdMisc'),
-               OpDesc(opClass='SimdMult'),
-               OpDesc(opClass='SimdMultAcc'),
-               OpDesc(opClass='SimdShift'),
-               OpDesc(opClass='SimdShiftAcc'),
-               OpDesc(opClass='SimdDiv'),
-               OpDesc(opClass='SimdSqrt'),
-               OpDesc(opClass='SimdFloatAdd'),
-               OpDesc(opClass='SimdFloatAlu'),
-               OpDesc(opClass='SimdFloatCmp'),
-               OpDesc(opClass='SimdFloatCvt'),
-               OpDesc(opClass='SimdFloatDiv'),
-               OpDesc(opClass='SimdFloatMisc'),
-               OpDesc(opClass='SimdFloatMult'),
-               OpDesc(opClass='SimdFloatMultAcc'),
-               OpDesc(opClass='SimdFloatSqrt'),
-               OpDesc(opClass='SimdReduceAdd'),
-               OpDesc(opClass='SimdReduceAlu'),
-               OpDesc(opClass='SimdReduceCmp'),
-               OpDesc(opClass='SimdFloatReduceAdd'),
-               OpDesc(opClass='SimdFloatReduceCmp'),
-
-               OpDesc(opClass='VectorIntegerArith'),
+    opList = [ OpDesc(opClass='VectorIntegerArith'),
                OpDesc(opClass='VectorFloatArith'),
                OpDesc(opClass='VectorFloatConvert'),
                OpDesc(opClass='VectorIntegerReduce'),
                OpDesc(opClass='VectorFloatReduce'),
                OpDesc(opClass='VectorMisc'),
                OpDesc(opClass='VectorIntegerExtension')]
-
-class PredALU(FUDesc):
-    opList = [ OpDesc(opClass='SimdPredAlu') ]
-    count = 1
 
 class ReadPort(FUDesc):
     opList = [ OpDesc(opClass='MemRead', opLat=4), # actually execute cycle = loadpipe's stage

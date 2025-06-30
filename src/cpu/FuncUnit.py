@@ -73,19 +73,7 @@ class OpClass(Enum):
 
             'VectorIntegerArith', 'VectorFloatArith', 'VectorFloatConvert',
             'VectorIntegerReduce', 'VectorFloatReduce',
-            'VectorMisc', 'VectorIntegerExtension', 'VectorConfig',
-
-            'SimdAdd', 'SimdAddAcc', 'SimdAlu', 'SimdCmp', 'SimdCvt',
-            'SimdMisc', 'SimdMult', 'SimdMultAcc', 'SimdShift', 'SimdShiftAcc',
-            'SimdDiv', 'SimdSqrt', 'SimdFloatAdd', 'SimdFloatAlu',
-            'SimdFloatCmp', 'SimdFloatCvt', 'SimdFloatDiv', 'SimdFloatMisc',
-            'SimdFloatMult', 'SimdFloatMultAcc', 'SimdFloatSqrt',
-            'SimdReduceAdd', 'SimdReduceAlu', 'SimdReduceCmp',
-            'SimdFloatReduceAdd', 'SimdFloatReduceCmp',
-            'SimdAes', 'SimdAesMix', 'SimdSha1Hash', 'SimdSha1Hash2',
-            'SimdSha256Hash', 'SimdSha256Hash2', 'SimdShaSigma2',
-            'SimdShaSigma3',
-            'SimdPredAlu'
+            'VectorMisc', 'VectorIntegerExtension', 'VectorConfig'
             ]
 
 class OpDesc(SimObject):
