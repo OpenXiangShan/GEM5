@@ -386,6 +386,7 @@ class UBTB : public TimedBaseBTBPredictor
         statistics::Scalar twoTakenFailFirstIndirect;    ///< Rejected due to first branch being indirect
         statistics::Scalar twoTakenFailSecondIndirect;   ///< Rejected due to second branch being indirect
         statistics::Scalar twoTakenFailSecondCond;       ///< Rejected due to second branch being conditional
+        statistics::Scalar twoTakenAcceptAlwaysTaken;   ///< Accepted alwaysTaken conditional branch as 2nd prediction
         statistics::Scalar twoTakenFailRetRet;           ///< Rejected due to ret->ret sequence
         statistics::Scalar twoTakenFailCallCall;         ///< Rejected due to call->call sequence
 
