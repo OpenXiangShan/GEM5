@@ -309,7 +309,6 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             {Blocked, "Blocked"},
             {Fetching, "Fetching"},
             {TrapPending, "TrapPending"},
-            {QuiescePending, "QuiescePending"},
             {ItlbWait, "ItlbWait"},
             {IcacheWaitResponse, "IcacheWaitResponse"},
             {IcacheWaitRetry, "IcacheWaitRetry"},
@@ -577,6 +576,7 @@ Fetch::processCacheCompletion(PacketPtr pkt)
         return;
     }
 
+    // Check state consistency between old and new systems
     if (fetchStatus[tid] != IcacheWaitResponse && fetchStatus[tid] != ItlbWait) {
         DPRINTF(Fetch, "[tid:%i] Invalid fetch state or request\n", tid);
         ++fetchStats.icacheSquashes;
@@ -626,12 +626,25 @@ Fetch::processCacheCompletion(PacketPtr pkt)
 
     switchToActive();
 
+    // Update cache request status to reflect completion
+    if (cacheReq[tid].allReady()) {
+        // All cache requests are complete, mark overall status as complete
+        for (size_t i = 0; i < cacheReq[tid].requestStatus.size(); ++i) {
+            if (cacheReq[tid].requestStatus[i] == CacheWaitResponse) {
+                cacheReq[tid].updateRequestStatus(i, AccessComplete);
+            }
+        }
+    }
+
     // Only switch to IcacheAccessComplete if we're not stalled as well.
     if (checkStall(tid)) {
         fetchStatus[tid] = Blocked;
     } else {
         fetchStatus[tid] = IcacheAccessComplete;
     }
+
+    // Ensure state consistency between new and old systems
+    updateLegacyFetchStatus(tid);
 }
 
 void
@@ -885,6 +898,14 @@ Fetch::handleSuccessfulTranslation(ThreadID tid, const RequestPtr &mem_req, Addr
     if (!cpu->system->isMemAddr(mem_req->getPaddr())) {
         DPRINTF(Fetch, "Address %#x is outside of physical memory, stopping fetch, %lu\n",
                 mem_req->getPaddr(), curTick());
+
+        // Update new cache request status system
+        size_t reqIndex = cacheReq[tid].findRequestIndex(mem_req);
+        if (reqIndex != SIZE_MAX) {
+            cacheReq[tid].markRequestFailed(reqIndex);
+        }
+
+        // Update legacy status for backward compatibility
         fetchStatus[tid] = NoGoodAddr;
         setAllFetchStalls(StallReason::OtherFetchStall);
         cacheReq[tid].reset();
@@ -906,10 +927,19 @@ Fetch::handleSuccessfulTranslation(ThreadID tid, const RequestPtr &mem_req, Addr
 
     fetchStats.cacheLines++;
 
+    // Find the cache request index for status tracking
+    size_t reqIndex = cacheReq[tid].findRequestIndex(mem_req);
+
     // Access the cache.
     if (!icachePort.sendTimingReq(data_pkt)) {
         DPRINTF(Fetch, "[tid:%i] Out of MSHRs!\n", tid);
 
+        // Update new cache request status system
+        if (reqIndex != SIZE_MAX) {
+            cacheReq[tid].updateRequestStatus(reqIndex, CacheWaitRetry);
+        }
+
+        // Update legacy status for backward compatibility
         fetchStatus[tid] = IcacheWaitRetry;
         data_pkt->setRetriedPkt();
         DPRINTF(Fetch, "[tid:%i] mem_req.addr=%#lx needs retry.\n", tid,
@@ -922,6 +952,13 @@ Fetch::handleSuccessfulTranslation(ThreadID tid, const RequestPtr &mem_req, Addr
         DPRINTF(Fetch, "[tid:%i] Doing Icache access.\n", tid);
         DPRINTF(Activity, "[tid:%i] Activity: Waiting on I-cache response.\n", tid);
         lastIcacheStall[tid] = curTick();
+
+        // Update new cache request status system
+        if (reqIndex != SIZE_MAX) {
+            cacheReq[tid].updateRequestStatus(reqIndex, CacheWaitResponse);
+        }
+
+        // Update legacy status for backward compatibility
         fetchStatus[tid] = IcacheWaitResponse;
         setAllFetchStalls(StallReason::IcacheStall);
         // Notify Fetch Request probe when a packet containing a fetch request is successfully sent
@@ -950,6 +987,12 @@ Fetch::handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fau
 
     DPRINTF(Fetch, "[tid:%i] Got back req with addr %#x but expected base addr %#x\n",
             tid, mem_req->getVaddr(), cacheReq[tid].baseAddr);
+
+    // Update new cache request status system
+    size_t reqIndex = cacheReq[tid].findRequestIndex(mem_req);
+    if (reqIndex != SIZE_MAX) {
+        cacheReq[tid].markRequestFailed(reqIndex);
+    }
 
     // Translation faulted, icache request won't be sent.
     cacheReq[tid].reset();
@@ -1014,6 +1057,9 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
         handleTranslationFault(tid, mem_req, fault);
     }
 
+    // Update legacy fetch status based on new cache request state
+    updateLegacyFetchStatus(tid);
+
     _status = updateFetchStatus();
 }
 
@@ -1058,6 +1104,13 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
 
     // Clear the icache miss if it's outstanding.
     DPRINTF(Fetch, "[tid:%i] Squash: clear cacheReq, current fetchStatus[tid]=%d\n", tid, fetchStatus[tid]);
+
+    // Cancel all active cache requests in new status system
+    cacheReq[tid].cancelAllRequests();
+    DPRINTF(Fetch, "[tid:%i] Squash: cancelled all cache requests, status: %s\n",
+            tid, cacheReq[tid].getStatusSummary().c_str());
+
+    // Reset the cache request after cancelling
     cacheReq[tid].reset();
 
     // Get rid of the retrying packet if it was from this thread.
@@ -1635,8 +1688,7 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
     if (checkStall(tid) &&
         fetchStatus[tid] != IcacheWaitResponse &&
         fetchStatus[tid] != IcacheWaitRetry &&
-        fetchStatus[tid] != ItlbWait &&
-        fetchStatus[tid] != QuiescePending) {
+        fetchStatus[tid] != ItlbWait) {
         DPRINTF(Fetch, "[tid:%i] Setting to blocked\n",tid);
 
         fetchStatus[tid] = Blocked;
@@ -2360,10 +2412,6 @@ Fetch::profileStall(ThreadID tid)
         ++fetchStats.pendingTrapStallCycles;
         DPRINTF(Fetch, "[tid:%i] Fetch is waiting for a pending trap!\n",
                 tid);
-    } else if (fetchStatus[tid] == QuiescePending) {
-        ++fetchStats.pendingQuiesceStallCycles;
-        DPRINTF(Fetch, "[tid:%i] Fetch is waiting for a pending quiesce "
-                "instruction!\n", tid);
     } else if (fetchStatus[tid] == IcacheWaitRetry) {
         ++fetchStats.icacheWaitRetryStallCycles;
         DPRINTF(Fetch, "[tid:%i] Fetch is waiting for an I-cache retry!\n",
@@ -2431,6 +2479,143 @@ void
 Fetch::IcachePort::recvReqRetry()
 {
     fetch->recvReqRetry();
+}
+
+Fetch::ThreadStatus
+Fetch::mapCacheStatusToThreadStatus(const CacheRequest& req)
+{
+    // Map the new cache request status to legacy thread status
+    CacheRequestStatus overallStatus = req.getOverallStatus();
+
+    switch (overallStatus) {
+        case CacheIdle:
+            return Running;  // No cache activity, can continue fetch
+
+        case TlbWait:
+            return ItlbWait;  // Waiting for TLB translation
+
+        case CacheWaitResponse:
+            return IcacheWaitResponse;  // Waiting for cache response
+
+        case CacheWaitRetry:
+            return IcacheWaitRetry;  // Waiting for cache retry
+
+        case AccessComplete:
+            return IcacheAccessComplete;  // Cache access completed
+
+        case AccessFailed:
+            return NoGoodAddr;  // Access failed, invalid address
+
+        case Cancelled:
+            return Running;  // Cancelled requests allow normal operation
+
+        default:
+            DPRINTF(Fetch, "Unknown cache request status: %d\n", overallStatus);
+            return Running;  // Default to Running for unknown states
+    }
+}
+
+void
+Fetch::updateLegacyFetchStatus(ThreadID tid)
+{
+    // Update legacy fetchStatus based on new cache request state
+    Fetch::ThreadStatus cacheStatus = mapCacheStatusToThreadStatus(cacheReq[tid]);
+
+    // Only update if we're not in a higher priority state like Squashing or Blocked
+    if (fetchStatus[tid] != Squashing && fetchStatus[tid] != Blocked &&
+        fetchStatus[tid] != TrapPending) {
+
+        // Update to cache-derived status
+        fetchStatus[tid] = cacheStatus;
+
+        DPRINTF(Fetch, "[tid:%i] updateLegacyFetchStatus: Updated from cache state to %d (%s)\n",
+                tid, fetchStatus[tid],
+                cacheStatus == Running ? "Running" :
+                cacheStatus == ItlbWait ? "ItlbWait" :
+                cacheStatus == IcacheWaitResponse ? "IcacheWaitResponse" :
+                cacheStatus == IcacheWaitRetry ? "IcacheWaitRetry" :
+                cacheStatus == IcacheAccessComplete ? "IcacheAccessComplete" :
+                cacheStatus == NoGoodAddr ? "NoGoodAddr" : "Unknown");
+    } else {
+        DPRINTF(Fetch, "[tid:%i] updateLegacyFetchStatus: Keeping priority status %d\n",
+                tid, fetchStatus[tid]);
+    }
+}
+
+Fetch::ThreadStatus
+Fetch::getEffectiveThreadStatus(ThreadID tid)
+{
+    // Get the effective thread status considering both systems
+
+    // High priority states from legacy system take precedence
+    if (fetchStatus[tid] == Squashing || fetchStatus[tid] == Blocked ||
+        fetchStatus[tid] == TrapPending) {
+        return fetchStatus[tid];
+    }
+
+    // For normal operation, consider cache request state
+    if (cacheReq[tid].hasActiveRequests()) {
+        return mapCacheStatusToThreadStatus(cacheReq[tid]);
+    }
+
+    // Default to current legacy status
+    return fetchStatus[tid];
+}
+
+bool
+Fetch::canFetchInstructions(ThreadID tid) const
+{
+    // Check if the thread can fetch instructions based on comprehensive state
+
+    // Cannot fetch if in high priority blocking states
+    if (fetchStatus[tid] == Squashing || fetchStatus[tid] == Blocked ||
+        fetchStatus[tid] == TrapPending) {
+        return false;
+    }
+
+    // Cannot fetch if thread is idle or not in active threads list
+    if (fetchStatus[tid] == Idle) {
+        return false;
+    }
+
+    // Check cache-related constraints
+    if (cacheReq[tid].anyFailed()) {
+        return false;  // Cannot fetch if cache requests failed
+    }
+
+    // Can fetch if no active cache requests or if cache access is complete
+    if (!cacheReq[tid].hasActiveRequests() || cacheReq[tid].allReady()) {
+        return true;
+    }
+
+    // Cannot fetch if actively waiting for cache
+    return false;
+}
+
+bool
+Fetch::hasPendingCacheRequests(ThreadID tid) const
+{
+    return cacheReq[tid].hasActiveRequests();
+}
+
+bool
+Fetch::isWaitingForCache(ThreadID tid) const
+{
+    // Check if waiting for cache based on new state system
+    CacheRequestStatus overallStatus = cacheReq[tid].getOverallStatus();
+
+    return (overallStatus == TlbWait ||
+            overallStatus == CacheWaitResponse ||
+            overallStatus == CacheWaitRetry);
+}
+
+bool
+Fetch::isThreadRunning(ThreadID tid) const
+{
+    // Check if thread is in running state (not blocked by high priority conditions)
+    return (fetchStatus[tid] == Running || fetchStatus[tid] == Fetching ||
+            fetchStatus[tid] == IcacheAccessComplete) &&
+           !checkStall(tid);
 }
 
 } // namespace o3
