@@ -146,9 +146,6 @@ UBTB::fillStagePredictions(const TickedUBTBEntry &entry, std::vector<FullBTBPred
 void
 UBTB::fillSecondPrediction(const BranchInfo &branchInfo, Addr bbStart, FullBTBPrediction &prediction)
 {
-    // According to 2-taken design rules, the second branch should never be conditional
-    assert(!branchInfo.isCond && "Second prediction should never be conditional branch");
-
     prediction.btbEntries.clear();
     prediction.condTakens.clear();
     prediction.indirectTargets.clear();
@@ -158,7 +155,21 @@ UBTB::fillSecondPrediction(const BranchInfo &branchInfo, Addr bbStart, FullBTBPr
 
     // Create BTBEntry from BranchInfo
     BTBEntry entry(branchInfo);
+
+    // According to 2-taken design rules, the second branch should be either:
+    // 1. Unconditional branch, or
+    // 2. Conditional branch marked as alwaysTaken
+    if (entry.isCond && !entry.alwaysTaken) {
+        fatal("Second prediction should only allow unconditional branches or alwaysTaken conditional branches");
+    }
+
     prediction.btbEntries.push_back(entry);
+
+    // Handle conditional branches marked as alwaysTaken
+    if (entry.isCond && entry.alwaysTaken) {
+        DPRINTF(UBTB, "setting alwaysTaken conditional branch for 2nd prediction pc %#lx as taken\n", entry.pc);
+        prediction.condTakens.push_back({entry.pc, true});
+    }
 
     // Handle indirect branches (including returns and calls)
     // TODO: I tend to think indirect branches should not be allowed in the 2nd prediction
@@ -385,11 +396,15 @@ UBTB::check2TakenConditions(FullBTBPrediction& dff, const FullBTBPrediction& s3P
         return false;
     }
 
-    // Rule: 'cond' as 2nd branch is not allowed.
-    // this rule implies that the second branch is always taken
-    if (secondBr.isCond) {
+    // Rule: 'cond' as 2nd branch is not allowed, except for alwaysTaken conditional branches.
+    // this rule implies that the second branch is taken
+    if (secondBr.isCond && !secondBr.alwaysTaken) {
         ubtbStats.twoTakenFailSecondCond++;
         return false;
+    } else if (secondBr.isCond && secondBr.alwaysTaken) {
+        // Track when we accept alwaysTaken conditional branches as second prediction
+        ubtbStats.twoTakenAcceptAlwaysTaken++;
+        DPRINTF(UBTB, "Accepted alwaysTaken conditional branch %#lx as second prediction\n", secondBr.pc);
     }
 
     // Rule: 'ret -> ret' is not allowed to avoid multiple RAS reads.
@@ -732,6 +747,8 @@ UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
                "2-taken rejected due to second branch being indirect"),
       ADD_STAT(twoTakenFailSecondCond, statistics::units::Count::get(),
                "2-taken rejected due to second branch being conditional"),
+      ADD_STAT(twoTakenAcceptAlwaysTaken, statistics::units::Count::get(),
+               "2-taken accepted alwaysTaken conditional branch as second prediction"),
       ADD_STAT(twoTakenFailRetRet, statistics::units::Count::get(),
                "2-taken rejected due to ret->ret sequence"),
       ADD_STAT(twoTakenFailCallCall, statistics::units::Count::get(),
