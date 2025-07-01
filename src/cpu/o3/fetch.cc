@@ -450,12 +450,7 @@ Fetch::handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc)
     cacheReq[tid].addRequest(first_mem_req); // packet will be created later
 
     // Initiate translation for first request
-    size_t reqIndex = cacheReq[tid].findRequestIndex(first_mem_req);
-    if (reqIndex != SIZE_MAX) {
-        updateCacheRequestStatus(tid, reqIndex, TlbWait);
-    } else {
-        warn("Cannot find first_mem_req %#x for TlbWait status update\n", first_mem_req->getVaddr());
-    }
+    updateCacheRequestStatusByRequest(tid, first_mem_req, TlbWait);
     setAllFetchStalls(StallReason::ITlbStall);
     FetchTranslation *trans = new FetchTranslation(this);
     cpu->mmu->translateTiming(first_mem_req, cpu->thread[tid]->getTC(),
@@ -489,12 +484,7 @@ Fetch::handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc)
     DPRINTF(Fetch, "[tid:%i] Initiating translation for second cache line\n", tid);
 
     // Initiate translation for second request
-    size_t reqIndex2 = cacheReq[tid].findRequestIndex(second_mem_req);
-    if (reqIndex2 != SIZE_MAX) {
-        updateCacheRequestStatus(tid, reqIndex2, TlbWait);
-    } else {
-        warn("Cannot find second_mem_req %#x for TlbWait status update\n", second_mem_req->getVaddr());
-    }
+    updateCacheRequestStatusByRequest(tid, second_mem_req, TlbWait);
     setAllFetchStalls(StallReason::ITlbStall);
     FetchTranslation *trans2 = new FetchTranslation(this);
     cpu->mmu->translateTiming(second_mem_req, cpu->thread[tid]->getTC(),
@@ -573,7 +563,7 @@ Fetch::processCacheCompletion(PacketPtr pkt)
     }
 
     // Check if thread is waiting for cache response using new state system
-    if (!isWaitingForCache(tid)) {
+    if (!hasPendingCacheRequests(tid)) {
         DPRINTF(Fetch, "[tid:%i] Thread not waiting for cache, ignoring completion\n", tid);
         ++fetchStats.icacheSquashes;
         return;
@@ -634,7 +624,7 @@ Fetch::processCacheCompletion(PacketPtr pkt)
 
     // Complete cache request or transition to blocked if stalled
     if (checkStall(tid)) {
-        setThreadStatus(tid, Blocked, "downstream stall during cache completion");
+        setThreadStatus(tid, Blocked);
     }
     // Note: Cache request status already updated above by cacheReq[tid].updateRequestStatus()
 
@@ -892,12 +882,7 @@ Fetch::handleSuccessfulTranslation(ThreadID tid, const RequestPtr &mem_req, Addr
                 mem_req->getPaddr(), curTick());
 
         // Update cache request status using new interface
-        size_t reqIndex = cacheReq[tid].findRequestIndex(mem_req);
-        if (reqIndex != SIZE_MAX) {
-            updateCacheRequestStatus(tid, reqIndex, AccessFailed);
-        } else {
-            warn("Cannot find mem_req %#x for AccessFailed status update\n", mem_req->getVaddr());
-        }
+        updateCacheRequestStatusByRequest(tid, mem_req, AccessFailed);
         setAllFetchStalls(StallReason::OtherFetchStall);
         // Note: Don't reset here, let the caller handle cleanup based on overall status
         return;
@@ -918,19 +903,12 @@ Fetch::handleSuccessfulTranslation(ThreadID tid, const RequestPtr &mem_req, Addr
 
     fetchStats.cacheLines++;
 
-    // Find the cache request index for status tracking
-    size_t reqIndex = cacheReq[tid].findRequestIndex(mem_req);
-
     // Access the cache.
     if (!icachePort.sendTimingReq(data_pkt)) {
         DPRINTF(Fetch, "[tid:%i] Out of MSHRs!\n", tid);
 
         // Update cache request status using new interface
-        if (reqIndex != SIZE_MAX) {
-            updateCacheRequestStatus(tid, reqIndex, CacheWaitRetry);
-        } else {
-            warn("Cannot find mem_req %#x for CacheWaitRetry status update\n", mem_req->getVaddr());
-        }
+        updateCacheRequestStatusByRequest(tid, mem_req, CacheWaitRetry);
         data_pkt->setRetriedPkt();
         DPRINTF(Fetch, "[tid:%i] mem_req.addr=%#lx needs retry.\n", tid,
                 mem_req->getVaddr());
@@ -944,11 +922,7 @@ Fetch::handleSuccessfulTranslation(ThreadID tid, const RequestPtr &mem_req, Addr
         lastIcacheStall[tid] = curTick();
 
         // Update cache request status using new interface
-        if (reqIndex != SIZE_MAX) {
-            updateCacheRequestStatus(tid, reqIndex, CacheWaitResponse);
-        } else {
-            warn("Cannot find mem_req %#x for CacheWaitResponse status update\n", mem_req->getVaddr());
-        }
+        updateCacheRequestStatusByRequest(tid, mem_req, CacheWaitResponse);
         setAllFetchStalls(StallReason::IcacheStall);
         // Notify Fetch Request probe when a packet containing a fetch request is successfully sent
         ppFetchRequestSent->notify(mem_req);
@@ -978,10 +952,7 @@ Fetch::handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fau
             tid, mem_req->getVaddr(), cacheReq[tid].baseAddr);
 
     // Update new cache request status system
-    size_t reqIndex = cacheReq[tid].findRequestIndex(mem_req);
-    if (reqIndex != SIZE_MAX) {
-        cacheReq[tid].markRequestFailed(reqIndex);
-    }
+    updateCacheRequestStatusByRequest(tid, mem_req, AccessFailed);
 
     // Translation faulted, icache request won't be sent.
     cacheReq[tid].reset();
@@ -1195,7 +1166,7 @@ Fetch::updateFetchStatus()
     while (threads != end) {
         ThreadID tid = *threads++;
 
-        if (isThreadRunning(tid) || fetchStatus[tid] == Squashing ||
+        if ((canFetchInstructions(tid) && !checkStall(tid)) || fetchStatus[tid] == Squashing ||
             cacheReq[tid].getOverallStatus() == AccessComplete) {
 
             if (_status == Inactive) {
@@ -1670,10 +1641,10 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
         }
     }
 
-    if (checkStall(tid) && !isWaitingForCache(tid)) {
+    if (checkStall(tid) && !hasPendingCacheRequests(tid)) {
         DPRINTF(Fetch, "[tid:%i] Setting to blocked\n",tid);
 
-        setThreadStatus(tid, Blocked, "checkStall condition detected");
+        setThreadStatus(tid, Blocked);
 
         return true;
     }
@@ -2113,12 +2084,7 @@ Fetch::recvReqRetry()
     for (auto it = retryPkt.begin(); it != retryPkt.end();) {
         if (icachePort.sendTimingReq(*it)) {
             // Use new cache state management with specific RequestPtr
-            size_t retryReqIndex = cacheReq[retryTid].findRequestIndex((*it)->req);
-            if (retryReqIndex != SIZE_MAX) {
-                updateCacheRequestStatus(retryTid, retryReqIndex, CacheWaitResponse);
-            } else {
-                warn("Cannot find retry req %#x for CacheWaitResponse status update\n", (*it)->req->getVaddr());
-            }
+            updateCacheRequestStatusByRequest(retryTid, (*it)->req, CacheWaitResponse);
             // Notify Fetch Request probe when a retryPkt is successfully sent.
             // Note that notify must be called before retryPkt is set to NULL.
             ppFetchRequestSent->notify((*it)->req);
@@ -2432,12 +2398,7 @@ Fetch::handleRetryPkt(ThreadID tid, PacketPtr pkt)
         DPRINTF(Fetch, "[tid:%i] send next pkt, addr: %#x, size: %d\n",
                 tid, missingReq->getVaddr(), missingReq->getSize());
 
-        size_t missingReqIndex = cacheReq[tid].findRequestIndex(missingReq);
-        if (missingReqIndex != SIZE_MAX) {
-            updateCacheRequestStatus(tid, missingReqIndex, TlbWait);
-        } else {
-            warn("Cannot find missingReq %#x for TlbWait status update\n", missingReq->getVaddr());
-        }
+        updateCacheRequestStatusByRequest(tid, missingReq, TlbWait);
         FetchTranslation *trans = new FetchTranslation(this);
         cpu->mmu->translateTiming(missingReq, cpu->thread[tid]->getTC(),
                                   trans, BaseMMU::Execute);
@@ -2466,68 +2427,37 @@ Fetch::IcachePort::recvReqRetry()
     fetch->recvReqRetry();
 }
 
-
 bool
 Fetch::canFetchInstructions(ThreadID tid) const
 {
-    // Layer 1: Thread-level blocking conditions
+    // Thread must be in Running state
     if (fetchStatus[tid] != Running) {
         return false;  // Covers Idle, Squashing, Blocked, TrapPending
     }
 
-    // Layer 2: Cache-level constraints
+    // Cache must be ready for new requests or have completed data
     CacheRequestStatus cacheStatus = cacheReq[tid].getOverallStatus();
-
-    // Allow fetch if cache is idle or access completed successfully
-    if (cacheStatus == CacheIdle || cacheStatus == AccessComplete) {
-        return true;
-    }
-
-    // Block if cache failed or actively waiting
-    return false;
+    return (cacheStatus == CacheIdle || cacheStatus == AccessComplete);
 }
 
 bool
 Fetch::hasPendingCacheRequests(ThreadID tid) const
 {
-    // Unified cache request checking - includes all non-idle states
-    CacheRequestStatus overallStatus = cacheReq[tid].getOverallStatus();
-    return overallStatus != CacheIdle && overallStatus != AccessComplete &&
-           overallStatus != AccessFailed && overallStatus != Cancelled;
-}
-
-bool
-Fetch::isWaitingForCache(ThreadID tid) const
-{
-    // More specific check for active waiting states only
+    // Check for any active cache operations (excluding terminal states)
     CacheRequestStatus overallStatus = cacheReq[tid].getOverallStatus();
     return (overallStatus == TlbWait ||
             overallStatus == CacheWaitResponse ||
             overallStatus == CacheWaitRetry);
 }
 
-bool
-Fetch::isThreadRunning(ThreadID tid) const
-{
-    // Simple check: thread is running and not stalled by external conditions
-    return fetchStatus[tid] == Running && !checkStall(tid);
-}
-
 void
-Fetch::setThreadStatus(ThreadID tid, ThreadStatus status, const std::string& reason)
+Fetch::setThreadStatus(ThreadID tid, ThreadStatus status)
 {
     assert(tid < MaxThreads);
 
     ThreadStatus oldStatus = fetchStatus[tid];
     fetchStatus[tid] = status;
-
-    // Unified debug output with optional reason
-    if (reason.empty()) {
-        DPRINTF(Fetch, "[tid:%d] setThreadStatus: %s -> %s\n", tid, fetchStatusStr[oldStatus], fetchStatusStr[status]);
-    } else {
-        DPRINTF(Fetch, "[tid:%d] setThreadStatus: %s -> %s (%s)\n",
-                tid, fetchStatusStr[oldStatus], fetchStatusStr[status], reason.c_str());
-    }
+    DPRINTF(Fetch, "[tid:%d] setThreadStatus: %s -> %s\n", tid, fetchStatusStr[oldStatus], fetchStatusStr[status]);
 }
 
 void
@@ -2535,20 +2465,27 @@ Fetch::updateCacheRequestStatus(ThreadID tid, size_t reqIndex,
                                CacheRequestStatus status)
 {
     assert(tid < MaxThreads);
+    assert(reqIndex < cacheReq[tid].requestStatus.size());
 
-    if (reqIndex < cacheReq[tid].requestStatus.size()) {
-        DPRINTF(Fetch, "[tid:%d] updateCacheRequestStatus[%d]: %d -> %d\n",
-                tid, reqIndex, cacheReq[tid].requestStatus[reqIndex], status);
+    DPRINTF(Fetch, "[tid:%d] updateCacheRequestStatus[%d]: %d -> %d\n",
+            tid, reqIndex, cacheReq[tid].requestStatus[reqIndex], status);
 
-        cacheReq[tid].requestStatus[reqIndex] = status;
-    } else {
-        DPRINTF(Fetch, "[tid:%d] Warning: reqIndex %d out of range (size=%d)\n",
-                tid, reqIndex, cacheReq[tid].requestStatus.size());
-    }
+    cacheReq[tid].requestStatus[reqIndex] = status;
 }
 
+void
+Fetch::updateCacheRequestStatusByRequest(ThreadID tid, const RequestPtr& req,
+                                        CacheRequestStatus status)
+{
+    assert(tid < MaxThreads);
 
-
+    size_t reqIndex = cacheReq[tid].findRequestIndex(req);
+    if (reqIndex != SIZE_MAX) {
+        updateCacheRequestStatus(tid, reqIndex, status);
+    } else {
+        warn("Cannot find req %#x for status update to %d\n", req->getVaddr(), status);
+    }
+}
 
 void
 Fetch::cancelAllCacheRequests(ThreadID tid)

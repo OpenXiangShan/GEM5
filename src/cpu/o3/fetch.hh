@@ -777,17 +777,6 @@ class Fetch
             return true;
         }
 
-        /** Check if there are any active requests (NEW) */
-        bool hasActiveRequests() const {
-            for (const auto& status : requestStatus) {
-                if (status != CacheIdle && status != AccessComplete &&
-                    status != AccessFailed && status != Cancelled) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
         /** Get overall status of the cache request group (NEW) */
         CacheRequestStatus getOverallStatus() const {
             if (requestStatus.empty()) return CacheIdle;
@@ -984,19 +973,7 @@ class Fetch
      */
     bool hasPendingCacheRequests(ThreadID tid) const;
 
-    /**
-     * Check if the thread is waiting for cache response
-     * @param tid Thread ID
-     * @return true if waiting for cache
-     */
-    bool isWaitingForCache(ThreadID tid) const;
 
-    /**
-     * Check if the thread is in a runnable state (not blocked/squashing)
-     * @param tid Thread ID
-     * @return true if thread is in running state
-     */
-    bool isThreadRunning(ThreadID tid) const;
 
     /**
      * State setting interfaces for new state system
@@ -1006,9 +983,8 @@ class Fetch
      * Set the thread status with unified interface
      * @param tid Thread ID
      * @param status New thread status
-     * @param reason Optional reason for status change (for debugging)
      */
-    void setThreadStatus(ThreadID tid, ThreadStatus status, const std::string& reason = "");
+    void setThreadStatus(ThreadID tid, ThreadStatus status);
 
     /**
      * Update cache request status for specific request
@@ -1018,6 +994,15 @@ class Fetch
      */
     void updateCacheRequestStatus(ThreadID tid, size_t reqIndex, CacheRequestStatus status);
 
+    /**
+     * Helper function to update cache request status by RequestPtr
+     * Combines findRequestIndex + updateCacheRequestStatus + warn pattern
+     * @param tid Thread ID
+     * @param req Request pointer to find and update
+     * @param status New cache request status
+     */
+    void updateCacheRequestStatusByRequest(ThreadID tid, const RequestPtr& req,
+                                          CacheRequestStatus status);
 
     /**
      * Cancel all cache requests for thread (used in squash)
