@@ -1135,9 +1135,20 @@ void DecoupledBPUWithBTB::update(unsigned stream_id, ThreadID tid)
         if (!stream.isSecondFBPred) {
             updatePredictorComponents(stream);
         } else {
-            DPRINTF(DecoupleBP, "Skipping predictor update for second FB prediction at %#lx\n", stream.startPC);
-            // ras is the only predictor that relies on update from all FBs
+            DPRINTF(DecoupleBP, "Performing selective update for second FB prediction at %#lx\n", stream.startPC);
+            // For second predictions, only update RAS and MBTB
             ras->update(stream);
+
+            // Prepare stream for MBTB update
+            stream.setUpdateInstEndPC(predictWidth);
+            stream.setUpdateBTBEntries();
+
+            // Generate new BTB entry for MBTB
+            btb->getAndSetNewBTBEntry(stream);
+
+            // Update only MBTB component
+            btb->update(stream);
+
         }
 
         // Track successful second prediction commits
@@ -1876,7 +1887,12 @@ DecoupledBPUWithBTB::createFetchStreamEntry(bool is_second_pred)
     // Save predictors' metadata
     for (int i = 0; i < numComponents; i++) {
         if (is_second_pred) {
-            entry.predMetas[i] = components[i]->getSecondPredictionMeta();
+            // For MBTB during second prediction, use uBTB's stored meta instead
+            if (components[i] == btb) {
+                entry.predMetas[i] = ubtb->getMBTBSecondPredictionMeta();
+            } else {
+                entry.predMetas[i] = components[i]->getSecondPredictionMeta();
+            }
         } else {
             entry.predMetas[i] = components[i]->getPredictionMeta();
         }

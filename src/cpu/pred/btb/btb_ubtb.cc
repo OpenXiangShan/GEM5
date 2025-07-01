@@ -32,6 +32,7 @@
 #include "base/intmath.hh"
 #include "base/trace.hh"
 #include "cpu/o3/dyn_inst.hh"
+#include "cpu/pred/btb/btb.hh"
 #include "debug/Fetch.hh"
 #include "stream_struct.hh"
 
@@ -188,6 +189,9 @@ void
 UBTB::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
                    std::vector<FullBTBPrediction> &stagePreds)
 {
+    // Clear any previous MBTB meta
+    mbtbSecondPredMeta = nullptr;
+
     // Reuse existing lookup and prediction logic
     meta = std::make_shared<UBTBMeta>();
     int hit_index = lookup(startAddr);
@@ -208,6 +212,9 @@ UBTB::getTwoTakenPrediction(Addr startAddr, const boost::dynamic_bitset<> &histo
                            std::vector<FullBTBPrediction> &stagePreds,
                            FullBTBPrediction &secondPrediction)
 {
+    // Clear any previous MBTB meta
+    mbtbSecondPredMeta = nullptr;
+
     // Reuse existing lookup and prediction logic
     meta = std::make_shared<UBTBMeta>();
     int hit_index = lookup(startAddr);
@@ -242,6 +249,10 @@ UBTB::getTwoTakenPrediction(Addr startAddr, const boost::dynamic_bitset<> &histo
 
             if (control_addr >= second_bb_start && control_addr < fall_through) {
                 has_second_prediction = true;
+
+                // Create MBTB meta for the second prediction
+                createMBTBMetaForSecondPrediction(entry.branch_info_2nd);
+
                 DPRINTF(UBTB, "uBTB: Valid second prediction - bbStart: %#lx, controlAddr: %#lx, target: %#lx\n",
                        second_bb_start, control_addr, secondPrediction.getTarget(predictWidth));
             } else {
@@ -347,6 +358,20 @@ UBTB::addSecondPredictionToEntry(int entryIndex, FullBTBPrediction* secondPred)
     }
 }
 
+void
+UBTB::createMBTBMetaForSecondPrediction(const BranchInfo& branch_info_2nd)
+{
+    // Create a standard BTBMeta with the second prediction's branch info
+    mbtbSecondPredMeta = std::make_shared<DefaultBTB::BTBMeta>();
+
+    // Convert BranchInfo to BTBEntry for MBTB - much simpler!
+    BTBEntry btb_entry(branch_info_2nd);
+
+    // Add to hit_entries (standard BTBMeta field)
+    mbtbSecondPredMeta->hit_entries.push_back(btb_entry);
+
+    DPRINTF(UBTB, "Created MBTB meta for 2nd pred branch at PC %#lx\n", btb_entry.pc);
+}
 
 void
 UBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred)

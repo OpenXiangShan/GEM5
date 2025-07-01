@@ -51,6 +51,7 @@
 #include "base/logging.hh"
 #include "base/types.hh"
 #include "config/the_isa.hh"
+#include "cpu/pred/btb/btb.hh"
 #include "cpu/pred/btb/stream_struct.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
 #include "debug/UBTB.hh"
@@ -179,6 +180,13 @@ class UBTB : public TimedBaseBTBPredictor
         return meta;
     }
 
+    /** Retrieve stored MBTB meta for second prediction
+     *  @return Returns the stored MBTB meta or nullptr if none available
+     */
+    std::shared_ptr<void> getMBTBSecondPredictionMeta() const {
+        return mbtbSecondPredMeta;
+    }
+
     // the following methods are not used
     void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override {}
     void recoverHist(const boost::dynamic_bitset<> &history,
@@ -235,6 +243,9 @@ class UBTB : public TimedBaseBTBPredictor
         }
     };
     std::shared_ptr<UBTBMeta> meta;
+
+    // Storage for MBTB meta created during getTwoTakenPrediction
+    std::shared_ptr<DefaultBTB::BTBMeta> mbtbSecondPredMeta{nullptr};
 
     // helper methods
     /*
@@ -317,6 +328,11 @@ class UBTB : public TimedBaseBTBPredictor
      * @param secondPred The second prediction to add (must not be nullptr)
      */
     void addSecondPredictionToEntry(int entryIndex, FullBTBPrediction* secondPred);
+
+    /** Helper to create MBTB meta for second prediction
+     *  @param branch_info_2nd The branch information for the second prediction
+     */
+    void createMBTBMetaForSecondPrediction(const BranchInfo& branch_info_2nd);
 
     /** The uBTB structure:
      *  - Implemented as a fully associative table
