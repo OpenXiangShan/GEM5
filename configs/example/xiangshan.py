@@ -140,7 +140,8 @@ def build_test_system(np, args):
                                             bpDBSwitches=bp_db_switches,
                                             enableLoopBuffer=args.enable_loop_buffer,
                                             enableLoopPredictor=args.enable_loop_predictor,
-                                            enableJumpAheadPredictor=args.enable_jump_ahead_predictor
+                                            enableJumpAheadPredictor=args.enable_jump_ahead_predictor,
+                                            enableTwoTaken=args.enable_two_taken
                                             )
             test_sys.cpu[i].branchPred.tage.enableSC = not args.disable_sc
             test_sys.cpu[i].branchPred.isDumpMisspredPC = True

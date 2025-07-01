@@ -25,6 +25,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       enableLoopBuffer(p.enableLoopBuffer),
       enableLoopPredictor(p.enableLoopPredictor),
       enableJumpAheadPredictor(p.enableJumpAheadPredictor),
+      enableTwoTaken(p.enableTwoTaken),
       fetchTargetQueue(p.ftq_size),
       fetchStreamQueueSize(p.fsq_size),
       predictWidth(p.predictWidth),
@@ -567,39 +568,49 @@ DecoupledBPUWithBTB::tick()
         return;
     }
 
-    // 1. Request new prediction if FSQ not full and we are idle
-    if (bpuState == BpuState::IDLE && !streamQueueFull()) {
-        requestNewPrediction();
-        bpuState = BpuState::PREDICTOR_DONE;
-    }
+    int predsRemainsToBeMade = enableTwoTaken ? 2 : 1;
+    unsigned tempNumOverrideBubbles = 0;
 
-    // 2. Handle pending prediction if available
-    if (bpuState == BpuState::PREDICTOR_DONE) {
-        DPRINTF(Override, "Generating final prediction for PC %#lx\n", s0PC);
-        numOverrideBubbles = generateFinalPredAndCreateBubbles();
-        bpuState = BpuState::PREDICTION_OUTSTANDING;
-
-        // Clear each predictor's output
-        for (int i = 0; i < numStages; i++) {
-            predsOfEachStage[i].btbEntries.clear();
+    while (predsRemainsToBeMade > 0) {
+        // 1. Request new prediction if FSQ not full and we are idle
+        if (bpuState == BpuState::IDLE && !streamQueueFull()) {
+            requestNewPrediction();
+            bpuState = BpuState::PREDICTOR_DONE;
         }
+
+        // 2. Handle pending prediction if available
+        if (bpuState == BpuState::PREDICTOR_DONE) {
+            DPRINTF(Override, "Generating final prediction for PC %#lx\n", s0PC);
+            unsigned bubbles = generateFinalPredAndCreateBubbles();
+            tempNumOverrideBubbles = std::max(bubbles, tempNumOverrideBubbles);
+            bpuState = BpuState::PREDICTION_OUTSTANDING;
+
+            // Clear each predictor's output
+            for (int i = 0; i < numStages; i++) {
+                predsOfEachStage[i].btbEntries.clear();
+            }
+        }
+
+        // 3. Process enqueue operations and bubble counter
+        tryEnqFetchTarget();
+
+        // check if:
+        // 1. FSQ has space
+        // 2. there's no bubble
+        // 3. PREDICTION_OUTSTANDING
+        if (validateFSQEnqueue()) {
+            // Create new FSQ entry with the current prediction
+            makeNewPrediction(true);
+
+            DPRINTF(Override, "FSQ entry enqueued, prediction state reset\n");
+            bpuState = BpuState::IDLE;
+        }
+
+        predsRemainsToBeMade--;
     }
 
-    // 3. Process enqueue operations and bubble counter
-    tryEnqFetchTarget();
-
-    // check if:
-    // 1. FSQ has space
-    // 2. there's no bubble
-    // 3. PREDICTION_OUTSTANDING
-    if (validateFSQEnqueue()) {
-        // Create new FSQ entry with the current prediction
-        makeNewPrediction(true);
-
-        DPRINTF(Override, "FSQ entry enqueued, prediction state reset\n");
-        bpuState = BpuState::IDLE;
-    }
-
+    // Set numOverrideBubbles to the maximum bubbles from all predictions
+    numOverrideBubbles = tempNumOverrideBubbles;
 
     // Decrement override bubbles counter
     if (numOverrideBubbles > 0) {

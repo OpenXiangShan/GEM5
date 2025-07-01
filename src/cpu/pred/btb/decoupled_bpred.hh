@@ -79,6 +79,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     JumpAheadPredictor jap;
     bool enableJumpAheadPredictor{false};
 
+    bool enableTwoTaken{true};
+
   private:
     std::string _name;
 
