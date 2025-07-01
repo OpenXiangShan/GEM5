@@ -951,6 +951,35 @@ DefaultBTB::BTBStats::BTBStats(statistics::Group* parent) :
     }
 }
 
+void
+DefaultBTB::preloadBlock(Addr block_pc)
+{
+    // Only meaningful for ahead-pipelined variants (ABTB) which are mutually exclusive with half-aligned mode.
+    if (aheadPipelinedStages == 0) {
+        return;
+    }
+
+    // Ahead-pipeline and half-aligned cannot coexist (constructor already asserts), reinforce here.
+    assert(!entryHalfAligned);
+
+    // Ignore mis-aligned sentinel addresses (bit0==1).
+    if (block_pc & 0x1) {
+        return;
+    }
+
+    Addr btb_idx = getIndex(block_pc);
+    assert(btb_idx < numSets);
+    auto btb_set = btb[btb_idx];
+    aheadReadBtbEntries.push(std::make_tuple(block_pc, btb_idx, btb_set));
+
+    if (aheadReadBtbEntries.size() >= aheadPipelinedStages+1) {
+        // pop the oldest entry
+        aheadReadBtbEntries.pop();
+    }
+
+    // Silent queue padding – no tag compare/pop or stats.
+}
+
 } // namespace btb_pred
 } // namespace branch_prediction
 } // namespace gem5

@@ -196,7 +196,7 @@ class DefaultBTB : public TimedBaseBTBPredictor
         }
     }
 
-
+    void preloadBlock(Addr pc);
 
   private:
     /** Returns the index into the BTB, based on the branch's PC.
