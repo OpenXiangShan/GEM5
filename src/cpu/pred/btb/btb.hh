@@ -67,6 +67,9 @@ namespace btb_pred
 
 class DefaultBTB : public TimedBaseBTBPredictor
 {
+    // Allow UBTB to access private BTBMeta for second prediction support
+    friend class UBTB;
+
   private:
 
   public:
