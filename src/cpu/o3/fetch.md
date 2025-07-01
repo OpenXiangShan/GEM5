@@ -713,64 +713,137 @@ void handleBranchAndNextPC(DynInstPtr instruction, PCStateBase &this_pc,
 
 ## Fetch状态转移图
 
-当前fetch阶段支持跨越2个cacheline的指令获取(misaligned fetch)，默认每拍都会访问两个cacheline 来获取66Byte 的fetchBuffer.
+当前fetch阶段支持跨越2个cacheline的指令获取(misaligned fetch)，默认每拍都会访问两个cacheline 来获取66Byte 的fetchBuffer。基于对源代码的详细分析，以下是准确的状态转移图。
 
-### 状态转移图
+  正常取指流程：
+  - Running → ItlbWait (在fetchCacheLine()中发起地址翻译)
+  - ItlbWait → IcacheWaitResponse (在finishTranslation()中翻译成功，发送cache请求)
+  - IcacheWaitResponse → IcacheAccessComplete (在processCacheCompletion()中接收到cache数据)
+  - IcacheAccessComplete → Running (在prepareFetchAddress()中准备下一次fetch)
+
+  错误和重试流程：
+  - ItlbWait → IcacheWaitRetry (cache请求被拒绝，MSHR满)
+  - IcacheWaitRetry → IcacheWaitResponse (在recvReqRetry()中重试成功)
+  - ItlbWait → TrapPending (翻译fault)
+  - ItlbWait → NoGoodAddr (无效物理地址)
+
+  Squash流程：
+  - 任何状态 → Squashing (在checkSignalsAndUpdate()中收到squash信号)
+  - Squashing → Running (squash处理完成)
+
+### 详细状态转移图
 
 ```mermaid
 graph TD
     %% 基础状态
-    Idle("Idle 空闲状态")
-    Running("Running 正常运行")
-    Blocked("Blocked 被阻塞")
-    Squashing("Squashing 正在清理")
+    Idle("Idle<br/>空闲状态<br/>线程不活跃")
+    Running("Running<br/>正常运行<br/>可以fetch指令")
+    Blocked("Blocked<br/>被阻塞<br/>checkStall()返回true")
+    Squashing("Squashing<br/>正在清理<br/>pipeline flush")
     
-    %% Cache访问状态
-    ItlbWait("ItlbWait 等待TLB翻译")
-    IcacheWaitResponse("IcacheWaitResponse 等待I-cache响应, 默认等待2个packet")
-    IcacheWaitRetry("IcacheWaitRetry 等待I-cache重试")
-    IcacheAccessComplete("IcacheAccessComplete I-cache访问完成")
+    %% Cache访问状态  
+    ItlbWait("ItlbWait<br/>等待TLB翻译<br/>fetchCacheLine()发起")
+    IcacheWaitResponse("IcacheWaitResponse<br/>等待I-cache响应<br/>等待2个packet完成")
+    IcacheWaitRetry("IcacheWaitRetry<br/>等待I-cache重试<br/>MSHR满,请求被拒绝")
+    IcacheAccessComplete("IcacheAccessComplete<br/>I-cache访问完成<br/>数据已接收")
     
     %% 特殊状态
-    TrapPending("TrapPending 等待trap处理")
-    QuiescePending("QuiescePending 等待quiesce")
-    NoGoodAddr("NoGoodAddr 地址无效")
+    TrapPending("TrapPending<br/>等待trap处理<br/>翻译fault发生")
+    QuiescePending("QuiescePending<br/>等待quiesce<br/>quiesce指令处理")
+    NoGoodAddr("NoGoodAddr<br/>地址无效<br/>超出物理内存范围")
     
-    %% 主要状态转换
-    Idle --> Running
-    Running --> ItlbWait
-    ItlbWait --> IcacheWaitResponse
-    ItlbWait --> NoGoodAddr
+    %% 主要状态转换 - 正常fetch流程
+    Idle -->|"线程激活<br/>checkSignalsAndUpdate()"| Running
+    Running -->|"需要cache line<br/>fetchCacheLine()"| ItlbWait
+    
+    %% TLB翻译完成的多种结果
+    ItlbWait -->|"翻译成功<br/>finishTranslation()<br/>cache请求发送"| IcacheWaitResponse
+    ItlbWait -->|"cache请求被拒绝<br/>finishTranslation()<br/>MSHR满"| IcacheWaitRetry  
+    ItlbWait -->|"翻译fault<br/>finishTranslation()<br/>handleTranslationFault()"| TrapPending
+    ItlbWait -->|"无效物理地址<br/>finishTranslation()<br/>超出内存范围"| NoGoodAddr
     
     %% Cache访问流程
-    IcacheWaitResponse --> IcacheAccessComplete
-    IcacheWaitResponse --> IcacheWaitRetry
-    IcacheWaitRetry --> IcacheWaitResponse
-    IcacheAccessComplete --> Running
+    IcacheWaitResponse -->|"所有packet到达<br/>processCacheCompletion()<br/>数据完整"| IcacheAccessComplete
+    IcacheWaitResponse -->|"cache再次拒绝<br/>port busy"| IcacheWaitRetry
+    IcacheWaitRetry -->|"重试成功<br/>recvReqRetry()<br/>port可用"| IcacheWaitResponse
+    IcacheAccessComplete -->|"准备下次fetch<br/>prepareFetchAddress()"| Running
     
-    %% 阻塞和squash
-    Running --> Blocked
-    Running --> Squashing
-    Blocked --> Running
-    Squashing --> Running
+    %% Squash处理 - 可以从任何状态发生
+    Running -->|"收到squash信号<br/>checkSignalsAndUpdate()<br/>分支误预测/异常"| Squashing
+    Blocked -->|"收到squash信号<br/>checkSignalsAndUpdate()"| Squashing  
+    ItlbWait -->|"收到squash信号<br/>doSquash()<br/>清理请求"| Squashing
+    IcacheWaitResponse -->|"收到squash信号<br/>doSquash()<br/>清理pending请求"| Squashing
+    IcacheWaitRetry -->|"收到squash信号<br/>doSquash()"| Squashing
+    IcacheAccessComplete -->|"收到squash信号<br/>doSquash()"| Squashing
+    TrapPending -->|"收到squash信号<br/>doSquash()"| Squashing
+    NoGoodAddr -->|"收到squash信号<br/>doSquash()"| Squashing
     
-    %% 特殊情况
-    Running --> TrapPending
-    Running --> QuiescePending
-    TrapPending --> Running
-    QuiescePending --> Running
+    %% Squash完成后恢复
+    Squashing -->|"squash处理完成<br/>checkSignalsAndUpdate()<br/>清理状态完成"| Running
     
-    %% 问题状态 (无实际使用)
-    Fetching("Fetching 未使用的状态")
+    %% 阻塞和恢复
+    Running -->|"检测到stall<br/>checkSignalsAndUpdate()<br/>decode/drain stall"| Blocked
+    IcacheAccessComplete -->|"下游stall<br/>processCacheCompletion()<br/>decode busy"| Blocked
+    Blocked -->|"stall清除<br/>checkSignalsAndUpdate()<br/>下游ready"| Running
     
-    %% 样式
-    classDef problem fill:#ff9999
-    classDef normal fill:#e1f5fe
-    classDef cache fill:#fff3e0
-    classDef special fill:#f3e5f5
+    %% 特殊状态处理
+    Running -->|"quiesce指令<br/>特殊系统调用"| QuiescePending
+    TrapPending -->|"trap处理完成<br/>commit阶段处理"| Running
+    QuiescePending -->|"quiesce完成<br/>系统恢复"| Running
+    NoGoodAddr -->|"地址修正<br/>重新fetch"| Running
     
-    class Fetching problem
-    class Idle,Running,Blocked,Squashing normal
+    %% FTQ相关转换(解耦前端)
+    Running -.->|"FTQ空<br/>usedUpFetchTargets=true<br/>需要新fetch target"| Running
+    
+    %% 样式定义
+    classDef normal fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef cache fill:#fff3e0,stroke:#e65100,stroke-width:2px  
+    classDef special fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef squash fill:#ffebee,stroke:#c62828,stroke-width:2px
+    
+    class Idle,Running,Blocked normal
     class ItlbWait,IcacheWaitResponse,IcacheWaitRetry,IcacheAccessComplete cache
     class TrapPending,QuiescePending,NoGoodAddr special
+    class Squashing squash
 ```
+
+### 关键状态转移函数说明
+
+#### 1. checkSignalsAndUpdate() - 主要状态更新函数
+- **处理squash信号**: 来自commit/decode阶段的pipeline flush
+- **处理stall信号**: decode/drain等下游阻塞信号  
+- **状态验证**: 检查各种stall条件并更新状态
+
+#### 2. fetchCacheLine() → finishTranslation() - TLB和Cache访问
+- **发起TLB翻译**: Running → ItlbWait
+- **处理翻译结果**: 根据翻译结果分发到不同状态
+- **多cacheline支持**: 创建2个cache请求以获取66字节数据
+
+#### 3. processCacheCompletion() - Cache响应处理  
+- **数据接收**: IcacheWaitResponse → IcacheAccessComplete
+- **完整性检查**: 确保所有packet都已接收
+- **stall检测**: 如果下游busy则转到Blocked状态
+
+#### 4. doSquash() - Squash操作处理
+- **清理请求**: 清除所有pending的cache/TLB请求
+- **重置状态**: 清理fetchBuffer和相关状态
+- **FTQ重置**: 强制获取新的fetch target
+
+#### 5. recvReqRetry() - 重试处理
+- **重试机制**: IcacheWaitRetry → IcacheWaitResponse  
+- **港口管理**: 处理cache端口繁忙的情况
+
+### 多Cacheline访问特性
+
+当前实现的关键特点:
+- **默认跨2个cacheline**: 每次fetch访问2个64字节cacheline
+- **统一请求管理**: 使用CacheRequest结构管理多个packet
+- **完整性保证**: 只有所有packet到达才转换到IcacheAccessComplete
+- **错误恢复**: 支持部分packet重试和错误处理
+
+### 解耦前端(Decoupled Frontend)集成
+
+- **FTQ检查**: 每周期检查Fetch Target Queue是否有可用目标
+- **目标耗尽**: usedUpFetchTargets标志控制是否需要新的fetch target  
+- **验证逻辑**: validateTranslationRequest()确保请求的有效性
+- **Loop支持**: 跟踪循环迭代和循环内的特殊处理

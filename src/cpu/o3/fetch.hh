@@ -180,15 +180,31 @@ class Fetch
         Idle,
         Squashing,
         Blocked,
-        Fetching,
         TrapPending,
-        QuiescePending,
-        ItlbWait,
-        IcacheWaitResponse,
-        IcacheWaitRetry,
-        IcacheAccessComplete,
-        NoGoodAddr,
         NumFetchStatus
+    };
+
+    std::map<Fetch::ThreadStatus, const char*> fetchStatusStr = {
+        {Running, "Running"},
+        {Idle, "Idle"},
+        {Squashing, "Squashing"},
+        {Blocked, "Blocked"},
+        {TrapPending, "TrapPending"}
+    };
+
+    /** Cache request status for new state management system.
+     * Manages the lifecycle of individual cache access requests.
+     */
+    enum CacheRequestStatus
+    {
+        CacheIdle,              // No active request
+        TlbWait,               // Waiting for TLB translation completion
+        CacheWaitResponse,     // Waiting for cache data return
+        CacheWaitRetry,        // Waiting for cache retry opportunity
+        AccessComplete,        // Access completed, data available
+        AccessFailed,          // Access failed (invalid address etc.)
+        Cancelled,             // Request cancelled (squash etc.)
+        NumCacheRequestStatus
     };
 
   private:
@@ -724,6 +740,9 @@ class Fetch
         /** Vector of corresponding request pointers */
         std::vector<RequestPtr> requests;
 
+        /** Vector of status for each cache request (NEW) */
+        std::vector<CacheRequestStatus> requestStatus;
+
         /** Base address of the fetch request */
         Addr baseAddr;
 
@@ -741,10 +760,57 @@ class Fetch
             return completedPackets >= packets.size() && packets.size() > 0;
         }
 
+        /** Check if any request has failed (NEW) */
+        bool anyFailed() const {
+            for (const auto& status : requestStatus) {
+                if (status == AccessFailed) return true;
+            }
+            return false;
+        }
+
+        /** Check if all requests are ready for processing (NEW) */
+        bool allReady() const {
+            if (requestStatus.empty()) return false;
+            for (const auto& status : requestStatus) {
+                if (status != AccessComplete) return false;
+            }
+            return true;
+        }
+
+        /** Check if there are any active requests (NEW) */
+        bool hasActiveRequests() const {
+            for (const auto& status : requestStatus) {
+                if (status != CacheIdle && status != AccessComplete &&
+                    status != AccessFailed && status != Cancelled) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /** Get overall status of the cache request group (NEW) */
+        CacheRequestStatus getOverallStatus() const {
+            if (requestStatus.empty()) return CacheIdle;
+
+            // Check for specific priority states first
+            for (const auto& status : requestStatus) {
+                if (status == AccessFailed) return AccessFailed;
+                if (status == CacheWaitRetry) return CacheWaitRetry;
+                if (status == TlbWait) return TlbWait;
+                if (status == CacheWaitResponse) return CacheWaitResponse;
+            }
+
+            // Check if all are completed
+            if (allReady()) return AccessComplete;
+
+            return CacheIdle;
+        }
+
         /** Reset the cache request state */
         void reset() {
             packets.clear();
             requests.clear();
+            requestStatus.clear();
             baseAddr = 0;
             totalSize = 0;
             completedPackets = 0;
@@ -754,6 +820,60 @@ class Fetch
         void addRequest(RequestPtr req) {
             requests.push_back(req);
             packets.push_back(nullptr);  // Initialize with null packet
+            requestStatus.push_back(CacheIdle);  // Initialize status
+        }
+
+        /** Mark a specific request as failed (NEW) */
+        void markRequestFailed(size_t index) {
+            if (index < requestStatus.size()) {
+                requestStatus[index] = AccessFailed;
+            }
+        }
+
+        /** Cancel all active requests (NEW) */
+        void cancelAllRequests() {
+            for (auto& status : requestStatus) {
+                if (status != AccessComplete && status != AccessFailed) {
+                    status = Cancelled;
+                }
+            }
+        }
+
+        /** Update status for a specific request by index (NEW) */
+        void updateRequestStatus(size_t index, CacheRequestStatus status) {
+            if (index < requestStatus.size()) {
+                requestStatus[index] = status;
+            }
+        }
+
+        /** Find request index by RequestPtr (NEW) */
+        size_t findRequestIndex(const RequestPtr& req) const {
+            for (size_t i = 0; i < requests.size(); ++i) {
+                if (requests[i] == req) {
+                    return i;
+                }
+            }
+            return SIZE_MAX;  // Not found
+        }
+
+        /** Get status summary string for debugging (NEW) */
+        std::string getStatusSummary() const {
+            std::string summary = "CacheRequest[";
+            for (size_t i = 0; i < requestStatus.size(); ++i) {
+                if (i > 0) summary += ",";
+                switch (requestStatus[i]) {
+                    case CacheIdle: summary += "Idle"; break;
+                    case TlbWait: summary += "TlbWait"; break;
+                    case CacheWaitResponse: summary += "CacheWait"; break;
+                    case CacheWaitRetry: summary += "Retry"; break;
+                    case AccessComplete: summary += "Complete"; break;
+                    case AccessFailed: summary += "Failed"; break;
+                    case Cancelled: summary += "Cancelled"; break;
+                    default: summary += "Unknown"; break;
+                }
+            }
+            summary += "]";
+            return summary;
         }
 
         /** Mark a packet as completed by matching request */
@@ -768,6 +888,10 @@ class Fetch
                         packets[i] = pkt;  // Store the packet
                         completedPackets++;
                         found_packet = true;
+                        // Update status to AccessComplete
+                        if (i < requestStatus.size()) {
+                            requestStatus[i] = AccessComplete;
+                        }
                     }
                 }
             }
@@ -845,6 +969,61 @@ class Fetch
 
     /** Get the start PC of the next FTQ entry and update fetchBufferPC */
     Addr getNextFTQStartPC(ThreadID tid);
+
+    /**
+     * Check if the thread can fetch instructions
+     * @param tid Thread ID
+     * @return true if thread can fetch instructions
+     */
+    bool canFetchInstructions(ThreadID tid) const;
+
+    /**
+     * Check if there are pending cache requests for this thread
+     * @param tid Thread ID
+     * @return true if there are active cache requests
+     */
+    bool hasPendingCacheRequests(ThreadID tid) const;
+
+    /**
+     * Check if the thread is waiting for cache response
+     * @param tid Thread ID
+     * @return true if waiting for cache
+     */
+    bool isWaitingForCache(ThreadID tid) const;
+
+    /**
+     * Check if the thread is in a runnable state (not blocked/squashing)
+     * @param tid Thread ID
+     * @return true if thread is in running state
+     */
+    bool isThreadRunning(ThreadID tid) const;
+
+    /**
+     * State setting interfaces for new state system
+     */
+
+    /**
+     * Set the thread status with unified interface
+     * @param tid Thread ID
+     * @param status New thread status
+     * @param reason Optional reason for status change (for debugging)
+     */
+    void setThreadStatus(ThreadID tid, ThreadStatus status, const std::string& reason = "");
+
+    /**
+     * Update cache request status for specific request
+     * @param tid Thread ID
+     * @param reqIndex Request index
+     * @param status New cache request status
+     */
+    void updateCacheRequestStatus(ThreadID tid, size_t reqIndex, CacheRequestStatus status);
+
+
+    /**
+     * Cancel all cache requests for thread (used in squash)
+     * @param tid Thread ID
+     */
+    void cancelAllCacheRequests(ThreadID tid);
 
   protected:
     struct FetchStatGroup : public statistics::Group
