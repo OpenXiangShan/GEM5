@@ -328,13 +328,13 @@ class LSQUnit
     /** Constructs an LSQ unit. init() must be called prior to use. */
     LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries,
       uint32_t sbufferEvictThreshold, uint64_t storeBufferInactiveThreshold,
-      uint32_t ldPipeStages, uint32_t stPipeStages);
+      uint32_t ldPipeStages, uint32_t stPipeStages, uint32_t maxRARQEntries, uint32_t maxRAWQEntries);
 
     /** We cannot copy LSQUnit because it has stats for which copy
      * contructor is deleted explicitly. However, STL vector requires
      * a valid copy constructor for the base type at compile time.
      */
-    LSQUnit(const LSQUnit &l) : stats(nullptr)
+    LSQUnit(const LSQUnit &l) : maxRARQEntries(0), maxRAWQEntries(0), stats(nullptr)
     {
         panic("LSQUnit is not copy-able");
     }
@@ -499,6 +499,8 @@ class LSQUnit
     /** Returns the number of stores to writeback. */
     int numStoresToSbuffer() { return storesToWB; }
 
+    /** 更新loadCompletedIt和storeCompletedIt */
+    void updateCompletedIt();
 
     LSQ* getLsq() { return lsq; }
 
@@ -685,6 +687,12 @@ class LSQUnit
     /** The load queue. */
     LoadQueue loadQueue;
 
+    /** 指向loadQueue中从头开始连续完成指令的最后一个位置 */
+    typename LoadQueue::iterator loadCompletedIt;
+
+    /** 指向storeQueue中从头开始连续完成指令的最后一个位置 */
+    typename StoreQueue::iterator storeCompletedIt;
+
     const static int MaxPipeWidth = 4;
 
     /** Struct that defines the information passed through Load Pipeline. */
@@ -774,6 +782,23 @@ class LSQUnit
     unsigned lastClockSQPopEntries;
     unsigned lastClockLQPopEntries;
 
+    /** RARReplayQueue for instructions waiting due to RAR dependency */
+    std::deque<DynInstPtr> RARReplayQueue;
+    const int maxRARQEntries;
+
+    /** RAWReplayQueue for instructions waiting due to RAW dependency */
+    std::deque<DynInstPtr> RAWReplayQueue;
+    const int maxRAWQEntries;
+
+    /** Process instructions in RARReplayQueue and RAWReplayQueue */
+    void processReplayQueues();
+
+    /** Add instruction to RARReplayQueue */
+    void addToRARReplayQueue(const DynInstPtr &inst);
+
+    /** Add instruction to RAWReplayQueue */
+    void addToRAWReplayQueue(const DynInstPtr &inst);
+
   protected:
     // Will also need how many read/write ports the Dcache has.  Or keep track
     // of that in stage that is one level up, and only call executeLoad/Store
@@ -843,6 +868,18 @@ class LSQUnit
         statistics::Scalar nonUnitStrideCross16Byte;
         statistics::Scalar unitStrideCross16Byte;
         statistics::Scalar unitStrideAligned;
+
+        /** RAR replay queue related stats */
+        statistics::Scalar RARQueueFull;
+        statistics::Scalar RARQueueReplay;
+        statistics::Histogram RARQueueOccupancy;
+        statistics::Histogram RARQueueLatency;
+
+        /** RAW replay queue related stats */
+        statistics::Scalar RAWQueueFull;
+        statistics::Scalar RAWQueueReplay;
+        statistics::Histogram RAWQueueOccupancy;
+        statistics::Histogram RAWQueueLatency;
     } stats;
 
     void bankConflictReplay();

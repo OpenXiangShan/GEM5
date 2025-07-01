@@ -552,7 +552,8 @@ LSQUnit::completeDataAccess(PacketPtr pkt)
 }
 
 LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries, uint32_t sbufferEvictThreshold,
-    uint64_t storeBufferInactiveThreshold, uint32_t ldPipeStages, uint32_t stPipeStages)
+    uint64_t storeBufferInactiveThreshold, uint32_t ldPipeStages, uint32_t stPipeStages,
+    uint32_t maxRARQEntries, uint32_t maxRAWQEntries)
     : sbufferEvictThreshold(sbufferEvictThreshold),
       sbufferEntries(sbufferEntries),
       storeBufferWritebackInactive(0),
@@ -560,6 +561,8 @@ LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries
       lsqID(-1),
       storeQueue(sqEntries),
       loadQueue(lqEntries),
+      loadCompletedIt(loadQueue.begin()),
+      storeCompletedIt(storeQueue.begin()),
       loadPipe(ldPipeStages - 1, 0),
       storePipe(stPipeStages - 1, 0),
       storesToWB(0),
@@ -573,6 +576,8 @@ LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries
       storeInFlight(false),
       lastClockSQPopEntries(0),
       lastClockLQPopEntries(0),
+      maxRARQEntries(maxRARQEntries),
+      maxRAWQEntries(maxRAWQEntries),
       stats(nullptr)
 {
     // reserve space, we want if sq will be full, sbuffer will start evicting
@@ -667,6 +672,10 @@ LSQUnit::resetState()
 
     storeWBIt = storeQueue.begin();
 
+    // Reset completed iterators
+    loadCompletedIt = loadQueue.begin();
+    storeCompletedIt = storeQueue.begin();
+
     retryPkt = NULL;
     memDepViolator = NULL;
 
@@ -730,13 +739,41 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
       ADD_STAT(STDReadyFirst, "Number of store data ready first"),
       ADD_STAT(nonUnitStrideCross16Byte, "Number of vector non unitStride cross 16-byte boundary"),
       ADD_STAT(unitStrideCross16Byte, "Number of vector unitStride cross 16-byte boundary"),
-      ADD_STAT(unitStrideAligned, "Number of vector unitStride 16-byte aligned")
+      ADD_STAT(unitStrideAligned, "Number of vector unitStride 16-byte aligned"),
+      ADD_STAT(RARQueueFull, "Number of times RAR queue was full"),
+      ADD_STAT(RARQueueReplay, "Number of instructions replayed from RAR queue"),
+      ADD_STAT(RARQueueOccupancy, "RAR queue occupancy distribution"),
+      ADD_STAT(RARQueueLatency, "RAR queue latency distribution"),
+      ADD_STAT(RAWQueueFull, "Number of times RAW queue was full"),
+      ADD_STAT(RAWQueueReplay, "Number of instructions replayed from RAW queue"),
+      ADD_STAT(RAWQueueOccupancy, "RAW queue occupancy distribution"),
+      ADD_STAT(RAWQueueLatency, "RAW queue latency distribution")
 {
     loadToUse
         .init(0, 299, 10)
         .flags(statistics::nozero);
     loadTranslationLat
         .init(0, 299, 10)
+        .flags(statistics::nozero);
+
+    // RAR queue occupancy: 0 to 64 entries
+    RARQueueOccupancy
+        .init(65)  // 0-64 entries (65 buckets)
+        .flags(statistics::nozero);
+
+    // RAR queue latency: 0 to 1000 cycles
+    RARQueueLatency
+        .init(100)  // 100 buckets for latency distribution
+        .flags(statistics::nozero);
+
+    // RAW queue occupancy: 0 to 64 entries
+    RAWQueueOccupancy
+        .init(65)  // 0-64 entries (65 buckets)
+        .flags(statistics::nozero);
+
+    // RAW queue latency: 0 to 1000 cycles
+    RAWQueueLatency
+        .init(100)  // 100 buckets for latency distribution
         .flags(statistics::nozero);
 }
 
@@ -1321,6 +1358,34 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
         }
     }
 
+    if (loadCompletedIt != loadQueue.end()) {
+        int loadDistance = std::distance(loadCompletedIt,inst->lqIt);
+        DPRINTF(LSQUnit, "loadDistance: %d\n in inst[sn:%lli]", loadDistance, inst->seqNum);
+        if (loadDistance >= maxRARQEntries) {
+            DPRINTF(LSQUnit, "RARQueue full, reschedule [sn:%llu], LoadCompletedItIdx: %d, inst->lqItIdx: %d\n",
+                    inst->seqNum, loadCompletedIt._idx, inst->lqIt._idx);
+            stats.RARQueueFull++;
+            loadSetReplay(inst, request, true);
+            addToRARReplayQueue(inst);
+            inst->setRARReplay();
+            return fault;
+        }
+    }
+
+    if (storeCompletedIt != storeQueue.end()) {
+        int storeDistance = std::distance(storeCompletedIt,inst->sqIt);
+        DPRINTF(LSQUnit, "storeDistance: %d\n in inst[sn:%lli]", storeDistance, inst->seqNum);
+        if (storeDistance >= maxRAWQEntries) {
+            DPRINTF(LSQUnit, "RAWQueue full, reschedule [sn:%lli], StoreCompletedItIdx: %d, inst->sqItIdx: %d\n",
+                    inst->seqNum, storeCompletedIt._idx, inst->sqIt._idx);
+            stats.RAWQueueFull++;
+            loadSetReplay(inst, request, true);
+            addToRAWReplayQueue(inst);
+            inst->setRAWReplay();
+            return fault;
+        }
+    }
+
     // No nuke happens, prepare the inst data
     // assert(request->isNormalLd() ? !request->isAnyOutstandingRequest() : true);
     request = inst->savedRequest;
@@ -1633,6 +1698,7 @@ LSQUnit::executePipeSx()
 {
     executeLoadPipeSx();
     executeStorePipeSx();
+    updateCompletedIt();
 }
 
 bool
@@ -2186,6 +2252,16 @@ LSQUnit::squash(const InstSeqNum &squashed_num)
         ++stats.squashedLoads;
     }
 
+    if (loadCompletedIt->valid() && loadCompletedIt->instruction() &&
+        loadCompletedIt->instruction()->seqNum > squashed_num) {
+        for (auto it = loadQueue.end(); it != loadQueue.begin(); it--) {
+            if (it->instruction()->seqNum < squashed_num) {
+                loadCompletedIt = it;
+                break;
+            }
+        }
+    }
+
     for (auto it = inflightLoads.begin(); it != inflightLoads.end();) {
         if ((*it)->instruction()->isSquashed()) {
             it = inflightLoads.erase(it);
@@ -2264,6 +2340,39 @@ LSQUnit::squash(const InstSeqNum &squashed_num)
         storeQueue.pop_back();
         lastClockSQPopEntries++;
         ++stats.squashedStores;
+    }
+
+    if (storeCompletedIt->valid() && storeCompletedIt->instruction() &&
+        storeCompletedIt->instruction()->seqNum > squashed_num) {
+        for (auto it = storeQueue.end(); it != storeQueue.begin(); it--) {
+            if (it->instruction()->seqNum < squashed_num) {
+                storeCompletedIt = it;
+                break;
+            }
+        }
+    }
+
+    // Clean up replay queues - remove squashed instructions
+    while (!RARReplayQueue.empty()) {
+        auto inst = RARReplayQueue.front();
+        if (inst->seqNum > squashed_num) {
+            DPRINTF(LSQUnit, "Removing squashed inst [sn:%llu] from RARReplayQueue\n",
+                    inst->seqNum);
+            RARReplayQueue.pop_front();
+        } else {
+            break;
+        }
+    }
+
+    while (!RAWReplayQueue.empty()) {
+        auto inst = RAWReplayQueue.front();
+        if (inst->seqNum > squashed_num) {
+            DPRINTF(LSQUnit, "Removing squashed inst [sn:%llu] from RAWReplayQueue\n",
+                    inst->seqNum);
+            RAWReplayQueue.pop_front();
+        } else {
+            break;
+        }
     }
 }
 
@@ -2633,6 +2742,49 @@ LSQUnit::checkStaleTranslations() const
 }
 
 void
+LSQUnit::updateCompletedIt()
+{
+    {
+        int distance = 0;
+        for (auto it = loadCompletedIt; it != loadQueue.end() && distance < 3;) {
+            it++;
+            distance++;
+            if (it->valid() && it->instruction() && it->instruction()->isExecuted()) {
+                DPRINTF(LSQUnit, "loadCompletedIt move to [sn:%li]\n", it->instruction()->seqNum);
+                loadCompletedIt = it;
+            } else {
+                break;
+            }
+        }
+    }
+
+    {
+        int distance = 0;
+        for (auto it = storeCompletedIt; it != storeQueue.end() && distance < 3;) {
+            it++;
+            distance++;
+            if (it->addrReady()) {
+                DPRINTF(LSQUnit, "storeCompletedIt move to [sn:%li]\n", it->instruction()->seqNum);
+                storeCompletedIt = it;
+            } else {
+                break;
+            }
+        }
+    }
+
+    if (debug::LSQUnit) {
+        dumpInsts();
+    }
+
+    // Record queue occupancy statistics every cycle
+    stats.RARQueueOccupancy.sample(RARReplayQueue.size());
+    stats.RAWQueueOccupancy.sample(RAWReplayQueue.size());
+
+    // Process replay queues after updating completed iterators
+    processReplayQueues();
+}
+
+void
 LSQUnit::recvRetry()
 {
     if (isStoreBlocked) {
@@ -2650,7 +2802,8 @@ LSQUnit::dumpInsts() const
 
     for (const auto& e: loadQueue) {
         const DynInstPtr &inst(e.instruction());
-        cprintf("%s.[sn:%llu] ", inst->pcState(), inst->seqNum);
+        cprintf("%s.[sn:%llu] %s\n", inst->pcState(), inst->seqNum,
+                inst->isExecuted() ? "Executed" : "Not Executed");
     }
     cprintf("\n");
 
@@ -2659,7 +2812,8 @@ LSQUnit::dumpInsts() const
 
     for (const auto& e: storeQueue) {
         const DynInstPtr &inst(e.instruction());
-        cprintf("%s.[sn:%llu] ", inst->pcState(), inst->seqNum);
+        cprintf("%s.[sn:%llu] %s\n", inst->pcState(), inst->seqNum,
+                e.addrReady() ? "AddrReady" : "Not AddrReady");
     }
 
     cprintf("\n");
@@ -3149,6 +3303,125 @@ LSQUnit::getStoreHeadSeqNum()
         return storeQueue.front().instruction()->seqNum;
     else
         return 0;
+}
+
+void
+LSQUnit::addToRARReplayQueue(const DynInstPtr &inst)
+{
+    DPRINTF(LSQUnit, "Adding inst [sn:%llu] to RARReplayQueue\n", inst->seqNum);
+    // Record entry time for latency calculation
+    inst->RARQueueEntryTick = curTick();
+    RARReplayQueue.push_back(inst);
+    stats.RARQueueOccupancy.sample(RARReplayQueue.size());
+}
+
+void
+LSQUnit::addToRAWReplayQueue(const DynInstPtr &inst)
+{
+    DPRINTF(LSQUnit, "Adding inst [sn:%llu] to RAWReplayQueue\n", inst->seqNum);
+    // Record entry time for latency calculation
+    inst->RAWQueueEntryTick = curTick();
+    RAWReplayQueue.push_back(inst);
+    stats.RAWQueueOccupancy.sample(RAWReplayQueue.size());
+}
+
+void
+LSQUnit::processReplayQueues()
+{
+    // Process RARReplayQueue - iterate through all elements
+    for (auto it = RARReplayQueue.begin(); it != RARReplayQueue.end();) {
+        auto inst = *it;
+
+        // Check if instruction is squashed
+        if (inst->isSquashed()) {
+            DPRINTF(LSQUnit, "Removing squashed inst [sn:%llu] from RARReplayQueue\n",
+                    inst->seqNum);
+            it = RARReplayQueue.erase(it);
+            continue;
+        }
+
+        DPRINTF(LSQUnit, "inst [sn:%llu] loadCompletedIt: %d, inst->lqIt: %d\n",
+                inst->seqNum, loadCompletedIt._idx, inst->lqIt._idx);
+
+        // Check if distance condition is satisfied
+        if (loadCompletedIt != loadQueue.end() && inst->lqIt != loadQueue.end()) {
+            int loadDistance = std::distance(loadCompletedIt, inst->lqIt);
+            if (loadDistance < maxRARQEntries) {
+                // Distance condition satisfied, remove from queue and clear replay flag
+                DPRINTF(LSQUnit, "Distance satisfied for inst [sn:%llu], removing from RARReplayQueue\n",
+                        inst->seqNum);
+
+                // Record latency statistics
+                if (inst->RARQueueEntryTick != (Tick)-1) {
+                    Tick latency = curTick() - inst->RARQueueEntryTick;
+                    stats.RARQueueLatency.sample(latency);
+                }
+                stats.RARQueueReplay++;
+
+                inst->clearRARReplay();
+                inst->clearNeedReplay();
+                iewStage->loadCancel(inst);  // Cancel the current pipeline state
+                inst->issueQue->retryMem(inst);  // Retry the instruction
+                it = RARReplayQueue.erase(it);
+            } else {
+                // Still need to wait, keep in queue and check next element
+                ++it;
+            }
+        } else {
+            // Iterator invalid, remove from queue
+            DPRINTF(LSQUnit, "Invalid iterator for inst [sn:%llu], removing from RARReplayQueue\n",
+                    inst->seqNum);
+            inst->clearRARReplay();
+            inst->clearNeedReplay();
+            it = RARReplayQueue.erase(it);
+        }
+    }
+
+    // Process RAWReplayQueue - iterate through all elements
+    for (auto it = RAWReplayQueue.begin(); it != RAWReplayQueue.end();) {
+        auto inst = *it;
+
+        // Check if instruction is squashed
+        if (inst->isSquashed()) {
+            DPRINTF(LSQUnit, "Removing squashed inst [sn:%llu] from RAWReplayQueue\n",
+                    inst->seqNum);
+            it = RAWReplayQueue.erase(it);
+            continue;
+        }
+
+        // Check if distance condition is satisfied
+        if (storeCompletedIt != storeQueue.end() && inst->sqIt != storeQueue.end()) {
+            int storeDistance = std::distance(storeCompletedIt, inst->sqIt);
+            if (storeDistance < maxRAWQEntries) {
+                // Distance condition satisfied, remove from queue and clear replay flag
+                DPRINTF(LSQUnit, "Distance satisfied for inst [sn:%llu], removing from RAWReplayQueue\n",
+                        inst->seqNum);
+
+                // Record latency statistics
+                if (inst->RAWQueueEntryTick != (Tick)-1) {
+                    Tick latency = curTick() - inst->RAWQueueEntryTick;
+                    stats.RAWQueueLatency.sample(latency);
+                }
+                stats.RAWQueueReplay++;
+
+                inst->clearRAWReplay();
+                inst->clearNeedReplay();
+                iewStage->loadCancel(inst);  // Cancel the current pipeline state
+                inst->issueQue->retryMem(inst);  // Retry the instruction
+                it = RAWReplayQueue.erase(it);
+            } else {
+                // Still need to wait, keep in queue and check next element
+                ++it;
+            }
+        } else {
+            // Iterator invalid, remove from queue
+            DPRINTF(LSQUnit, "Invalid iterator for inst [sn:%llu], removing from RAWReplayQueue\n",
+                    inst->seqNum);
+            inst->clearRAWReplay();
+            inst->clearNeedReplay();
+            it = RAWReplayQueue.erase(it);
+        }
+    }
 }
 
 } // namespace o3
