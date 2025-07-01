@@ -1446,6 +1446,43 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
     }
 
     // Check squash signals from commit.
+    if (handleCommitSignals(tid)) {
+        return true;
+    }
+
+    if (handleDecodeSquash(tid)) {
+        return true;
+    }
+
+    if (checkStall(tid) && !hasPendingCacheRequests(tid)) {
+        DPRINTF(Fetch, "[tid:%i] Setting to blocked\n",tid);
+
+        setThreadStatus(tid, Blocked);
+
+        return true;
+    }
+
+    if (fetchStatus[tid] == Blocked ||
+        fetchStatus[tid] == Squashing) {
+        // Switch status to running if fetch isn't being told to block or
+        // squash this cycle.
+        DPRINTF(Fetch, "[tid:%i] Done squashing, switching to running.\n",
+                tid);
+
+        setThreadStatus(tid, Running);
+
+        return true;
+    }
+
+    // If we've reached this point, we have not gotten any signals that
+    // cause fetch to change its status.  Fetch remains the same as before.
+    return false;
+}
+
+bool
+Fetch::handleCommitSignals(ThreadID tid)
+{
+    // Check squash signals from commit.
     if (fromCommit->commitInfo[tid].squash) {
 
         DPRINTF(Fetch, "[tid:%i] Squashing instructions due to squash "
@@ -1575,6 +1612,12 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
         }
     }
 
+    return false;
+}
+
+bool
+Fetch::handleDecodeSquash(ThreadID tid)
+{
     // Check squash signals from decode.
     if (fromDecode->decodeInfo[tid].squash) {
         DPRINTF(Fetch, "[tid:%i] Squashing instructions due to squash "
@@ -1641,28 +1684,6 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
         }
     }
 
-    if (checkStall(tid) && !hasPendingCacheRequests(tid)) {
-        DPRINTF(Fetch, "[tid:%i] Setting to blocked\n",tid);
-
-        setThreadStatus(tid, Blocked);
-
-        return true;
-    }
-
-    if (fetchStatus[tid] == Blocked ||
-        fetchStatus[tid] == Squashing) {
-        // Switch status to running if fetch isn't being told to block or
-        // squash this cycle.
-        DPRINTF(Fetch, "[tid:%i] Done squashing, switching to running.\n",
-                tid);
-
-        setThreadStatus(tid, Running);
-
-        return true;
-    }
-
-    // If we've reached this point, we have not gotten any signals that
-    // cause fetch to change its status.  Fetch remains the same as before.
     return false;
 }
 

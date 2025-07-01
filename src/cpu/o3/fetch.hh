@@ -457,6 +457,16 @@ class Fetch
      */
     bool checkSignalsAndUpdate(ThreadID tid);
 
+    /** Handles commit signals including squash and update operations.
+     *  @return: Returns true if squash occurred and immediate return needed.
+     */
+    bool handleCommitSignals(ThreadID tid);
+
+    /** Handles decode squash signals.
+     *  @return: Returns true if squash occurred and immediate return needed.
+     */
+    bool handleDecodeSquash(ThreadID tid);
+
     /** Does the actual fetching of instructions and passing them on to the
      * next stage.
      * @param status_change fetch() sets this variable if there was a status
