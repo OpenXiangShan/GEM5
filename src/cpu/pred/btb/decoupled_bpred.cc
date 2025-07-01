@@ -1,15 +1,16 @@
 #include "cpu/pred/btb/decoupled_bpred.hh"
 
-#include "base/output.hh"
 #include "base/debug_helper.hh"
+#include "base/output.hh"
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
-#include "debug/DecoupleBPVerbose.hh"
-#include "debug/DecoupleBPHist.hh"
-#include "debug/Override.hh"
+#include "debug/AheadPipeline.hh"
 #include "debug/BTB.hh"
+#include "debug/DecoupleBPHist.hh"
+#include "debug/DecoupleBPVerbose.hh"
 #include "debug/ITTAGE.hh"
 #include "debug/JumpAheadPredictor.hh"
+#include "debug/Override.hh"
 #include "debug/Profiling.hh"
 #include "sim/core.hh"
 
@@ -587,6 +588,13 @@ DecoupledBPUWithBTB::tick()
         // Check if the second prediction is still valid after overrides.
         validateSecondFBPrediction();
 
+        // If we still have a valid second FB, pad ABTB ahead-pipeline now.
+        if (hasSecondPrediction && abtb && abtb->aheadPipelinedStages > 0) {
+            abtb->preloadBlock(secondPrediction.bbStart);
+            DPRINTF(AheadPipeline, "preloadBlock: queued second FB %#lx for ABTB ahead pipeline (stages=%d)\n",
+                    secondPrediction.bbStart, abtb->aheadPipelinedStages);
+        }
+
         // Inline updateDFF() - Always store finalPred
         //  This stored block is used for 2-taken training.
         // Admittedly, this FB doesn't always directly precede the s3 pred of the next cycle,
@@ -672,6 +680,8 @@ DecoupledBPUWithBTB::requestNewPrediction()
     hasSecondPrediction = false;
     ubtbHitIndex = -1;
     secondPrediction.btbEntries.clear();
+    secondPrediction.predSource = 0;
+    secondPrediction.overrideReason = OverrideReason::NO_OVERRIDE;
 
     // Query each predictor component with current PC and history
     for (int i = 0; i < numComponents; i++) {
