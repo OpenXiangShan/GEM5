@@ -332,7 +332,7 @@ void ISA::clear()
         miscRegFile[MISCREG_STATUS] = (2ULL << UXL_OFFSET) | (2ULL << SXL_OFFSET) |
                                     (1ULL << FS_OFFSET);
     }
-    miscRegFile[MISCREG_MCOUNTEREN] = 0x7;
+    miscRegFile[MISCREG_MCOUNTEREN] = 0;
     miscRegFile[MISCREG_SCOUNTEREN] = 0;
     // don't set it to zero; software may try to determine the supported
     // triggers, starting at zero. simply set a different value here.
