@@ -334,6 +334,12 @@ class UBTB : public TimedBaseBTBPredictor
      */
     void createMBTBMetaForSecondPrediction(const BranchInfo& branch_info_2nd);
 
+    /** Helper function to calculate numNTConds (number of not-taken conditional branches)
+     *  @param prediction The prediction containing history information
+     *  @return Number of conditional branches before the taken branch
+     */
+    int calculateNumNTConds(FullBTBPrediction& prediction);
+
     /** The uBTB structure:
      *  - Implemented as a fully associative table
      *  - Each entry can store one branch

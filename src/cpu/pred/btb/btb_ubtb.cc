@@ -319,11 +319,7 @@ UBTB::replaceOldEntry(int entryIndex, FullBTBPrediction & newPrediction)
     /*  save the number of conditional branches before the taken branch
      *  this is useful in the prediction phase: to generate the correct speculative history information
      */
-    newEntry.numNTConds = newPrediction.getHistInfo().first;
-    if (newPrediction.getTakenEntry().isCond) {
-        newEntry.numNTConds--;
-        assert(newEntry.numNTConds >= 0);
-    }
+    newEntry.numNTConds = calculateNumNTConds(newPrediction);
 
     ubtb[entryIndex] = newEntry;
 
@@ -371,6 +367,25 @@ UBTB::createMBTBMetaForSecondPrediction(const BranchInfo& branch_info_2nd)
     mbtbSecondPredMeta->hit_entries.push_back(btb_entry);
 
     DPRINTF(UBTB, "Created MBTB meta for 2nd pred branch at PC %#lx\n", btb_entry.pc);
+}
+
+int
+UBTB::calculateNumNTConds(FullBTBPrediction& prediction)
+{
+    /*  Calculate the number of conditional branches before the taken branch
+     *  This is useful in the prediction phase to generate correct speculative history information
+     *
+     *  Logic:
+     *  - Start with shift amount from getHistInfo().first (total conditional branches)
+     *  - If the taken branch itself is conditional, subtract 1 (don't count the taken branch)
+     */
+    int numNTConds = prediction.getHistInfo().first;
+    if (prediction.getTakenEntry().isCond) {
+        numNTConds--;
+        assert(numNTConds >= 0 && "numNTConds should not be negative");
+    }
+
+    return numNTConds;
 }
 
 void
@@ -478,7 +493,10 @@ UBTB::updateEntryAtIndex(int entry_index, FullBTBPrediction& pred, FullBTBPredic
             }
         } else {
             // Both S0 and S3 predict taken - check if they match
-            if (entry.pc != pred.controlAddr() || entry.target != pred.getTarget(predictWidth)) {
+            // this check has a correspondence with match() in stream_struct.hh
+            if (entry.pc != pred.controlAddr() ||
+                entry.target != pred.getTarget(predictWidth) ||
+                entry.numNTConds != calculateNumNTConds(pred)) {
                 // S0 and S3 predict different branch instruction
                 updateUCtr(entry.uctr, false);
                 if (entry.uctr == 0) {
