@@ -3,13 +3,15 @@
 #include <algorithm>
 
 #include "PipelineResources.hh"
-#include "mem/cache/xs_l2/L2CacheWrapper.hh"
+#include "base/trace.hh"
+#include "debug/L2MainPipe.hh"
+#include "mem/cache/xs_l2/L2CacheSlice.hh"
 #include "mem/packet.hh"
 
 namespace gem5
 {
 
-L2MainPipe::L2MainPipe(L2CacheWrapper* _owner, unsigned depth)
+L2MainPipe::L2MainPipe(L2CacheSlice* _owner, unsigned depth)
     : owner(_owner),
       cur_cycle(0)
 {

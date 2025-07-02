@@ -7,16 +7,16 @@
 namespace gem5
 {
 
-class L2CacheWrapper;
+class L2CacheSlice;
 
 class RequestArbiter
 {
 public:
-    RequestArbiter(L2CacheWrapper* owner_ptr);
+    RequestArbiter(L2CacheSlice* owner_ptr);
     bool arbitrate(TaskSource task_source, Cycles now);
 
 private:
-    L2CacheWrapper* owner;
+    L2CacheSlice* owner;
 
     // arbitration meta data
     Cycles _cycle;

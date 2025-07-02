@@ -1,14 +1,14 @@
 #include "mem/cache/xs_l2/RequestArbiter.hh"
 
 #include "base/trace.hh"
-#include "debug/L2CacheWrapper.hh"
-#include "mem/cache/xs_l2/L2CacheWrapper.hh"
+#include "debug/L2CacheSlice.hh"
+#include "mem/cache/xs_l2/L2CacheSlice.hh"
 #include "mem/cache/xs_l2/L2MainPipe.hh"
 
 namespace gem5
 {
 
-RequestArbiter::RequestArbiter(L2CacheWrapper* owner_ptr)
+RequestArbiter::RequestArbiter(L2CacheSlice* owner_ptr)
   : owner(owner_ptr)
 {
 }

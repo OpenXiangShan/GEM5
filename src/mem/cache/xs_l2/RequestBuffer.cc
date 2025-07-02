@@ -1,8 +1,6 @@
 #include "mem/cache/xs_l2/RequestBuffer.hh"
 
 #include "base/trace.hh"
-#include "debug/L2CacheWrapper.hh"
-#include "mem/cache/xs_l2/L2CacheWrapper.hh"
 
 namespace gem5
 {

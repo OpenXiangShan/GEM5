@@ -1,265 +1,151 @@
 #include "mem/cache/xs_l2/L2CacheWrapper.hh"
 
+#include <cmath>
+
 #include "base/trace.hh"
 #include "debug/L2CacheWrapper.hh"
-#include "mem/cache/cache.hh"
-#include "mem/packet.hh"
-#include "params/CacheWrapper.hh"
-#include "sim/eventq.hh"
+#include "sim/system.hh"
 
 namespace gem5
 {
 
 L2CacheWrapper::L2CacheWrapper(const L2CacheWrapperParams &p)
-    : CacheWrapper(p),
-      requestBuffer(p.buffer_size),
-      reqArb(this),
-      trySendEvent([this]{ trySendFromBuffer(); }, name()),
-      processResponsesEvent([this]{ processResponses(); }, name(), false,
-                            processResponsesPri),
-      tickMainPipeEvent([this]{ tickMainPipe(); }, name(), false,
-                        tickMainPipePri),
-      arbFailRetryEvent([this]{ innerCpuPortRecvReqRetry(); }, name(), false,
-                        arbFailRetryPri),
-      mainPipe(this, p.pipeline_depth)
+    : ClockedObject(p),
+      cpu_side_port(p.name + ".cpu_side", *this),
+      sliceMask(p.num_slices - 1),
+      block_bits(p.block_bits)
 {
+    if (p.num_slices == 0 || (p.num_slices & (p.num_slices - 1)) != 0) {
+        fatal("L2CacheWrapper: num_slices must be a power of 2.");
+    }
+
+    for (int i = 0; i < p.num_slices; ++i) {
+        slice_cpuside_ports.emplace_back(p.name + ".slice_cpuside_ports." + std::to_string(i), *this, i);
+    }
+}
+
+Port &
+L2CacheWrapper::getPort(const std::string &if_name, PortID idx)
+{
+    if (if_name == "cpu_side") {
+        return cpu_side_port;
+    } else if (if_name == "slice_cpuside_ports") {
+        if (idx >= slice_cpuside_ports.size()) {
+            panic("L2CacheWrapper: %s: unknown index %d", if_name, idx);
+        }
+        return slice_cpuside_ports[idx];
+    } else {
+        return ClockedObject::getPort(if_name, idx);
+    }
+}
+
+// --- CPUSidePort ---
+L2CacheWrapper::CPUSidePort::CPUSidePort(const std::string &name, L2CacheWrapper &owner)
+    : ResponsePort(name, &owner), owner(owner) {}
+
+bool
+L2CacheWrapper::CPUSidePort::recvTimingSnoopResp(PacketPtr pkt)
+{
+    DPRINTF(L2CacheWrapper, "Got timing snoop resp for addr %#x, forwarding to CPU\n", pkt->getAddr());
+    auto slice_id = owner.getSliceId(pkt->getAddr());
+    return owner.slice_cpuside_ports[slice_id].sendTimingSnoopResp(pkt);
+}
+
+Tick
+L2CacheWrapper::CPUSidePort::recvAtomic(PacketPtr pkt)
+{
+    auto slice_id = owner.getSliceId(pkt->getAddr());
+    DPRINTF(L2CacheWrapper, "Got atomic req for addr %#x, routing to slice %d\n", pkt->getAddr(), slice_id);
+    return owner.slice_cpuside_ports[slice_id].sendAtomic(pkt);
 }
 
 void
-L2CacheWrapper::scheduleTickMainPipe()
+L2CacheWrapper::CPUSidePort::recvFunctional(PacketPtr pkt)
 {
-    if (mainPipe.hasWork() && !tickMainPipeEvent.scheduled()) {
-        schedule(tickMainPipeEvent, nextCycle());
+    auto slice_id = owner.getSliceId(pkt->getAddr());
+    DPRINTF(L2CacheWrapper, "Got functional req for addr %#x, routing to slice %d\n", pkt->getAddr(), slice_id);
+    owner.slice_cpuside_ports[slice_id].sendFunctional(pkt);
+}
+
+bool
+L2CacheWrapper::CPUSidePort::recvTimingReq(PacketPtr pkt)
+{
+    auto slice_id = owner.getSliceId(pkt->getAddr());
+    DPRINTF(L2CacheWrapper, "Got timing req for addr %#x, routing to slice %d\n", pkt->getAddr(), slice_id);
+
+    if (!owner.slice_cpuside_ports[slice_id].sendTimingReq(pkt)) {
+        DPRINTF(L2CacheWrapper, "Slice %d is busy, blocking CPU side\n", slice_id);
+        return false;
+    }
+
+    return true;
+}
+
+void
+L2CacheWrapper::CPUSidePort::recvRespRetry()
+{
+    // The component below the wrapper (a slice) is now ready.
+    DPRINTF(L2CacheWrapper, "Got retry from CPU. This should ideally not happen frequently.\n");
+    assert(owner.upper_resp_blocked);
+    assert(owner.resp_waiting_slice.size() > 0);
+
+    owner.upper_resp_blocked = false;
+    auto slice_ids = owner.resp_waiting_slice;
+    for (auto slice_id : slice_ids) {
+        owner.slice_cpuside_ports[slice_id].sendRetryResp();
     }
 }
 
-/* Memory-Side internal logic */
-bool
-L2CacheWrapper::innerMemPortRecvTimingReq(PacketPtr pkt)
+AddrRangeList
+L2CacheWrapper::CPUSidePort::getAddrRanges() const
 {
-    // If the request needs a response, track it
-    bool enqueue = false;
-    if (pkt->needsResponse()) {
-        DPRINTF(L2CacheWrapper, "Tracking request to L3 for addr: %#x\n", pkt->getAddr());
-        pending_l3_requests.push_back(pkt);
-        enqueue = true;
+    return owner.slice_cpuside_ports[0].getAddrRanges();
+}
+
+
+// --- SliceCPUSidePort ---
+L2CacheWrapper::SliceCPUSidePort::SliceCPUSidePort(const std::string& name, L2CacheWrapper &owner, PortID id)
+    : RequestPort(name, &owner), owner(owner), id(id) {}
+
+void
+L2CacheWrapper::SliceCPUSidePort::recvTimingSnoopReq(PacketPtr pkt)
+{
+    DPRINTF(L2CacheWrapper, "Got timing snoop req for addr %#x from slice %d,"
+                            " forwarding to CPU\n", pkt->getAddr(), id);
+    owner.cpu_side_port.sendTimingSnoopReq(pkt);
+}
+
+bool
+L2CacheWrapper::SliceCPUSidePort::recvTimingResp(PacketPtr pkt)
+{
+    DPRINTF(L2CacheWrapper, "Got timing resp for addr %#x from slice %d, forwarding to CPU\n", pkt->getAddr(), id);
+    if (owner.upper_resp_blocked) {
+        DPRINTF(L2CacheWrapper, "Upper resp is blocked, dropping resp for addr %#x\n", pkt->getAddr());
+        owner.resp_waiting_slice.insert(id);
+        return false;
     }
-
-    // First, call the base class implementation to forward the request
-    bool success = CacheWrapper::innerMemPortRecvTimingReq(pkt);
-
-    // If the request was not successfully sent, remove it from the pending list
-    if (!success && enqueue) {
-        pending_l3_requests.pop_back();
+    bool success = owner.cpu_side_port.sendTimingResp(pkt);
+    if (!success) {
+        owner.resp_waiting_slice.insert(id);
+        owner.upper_resp_blocked = true;
+    } else {
+        owner.resp_waiting_slice.erase(id);
     }
-
     return success;
 }
 
-bool
-L2CacheWrapper::memSidePortRecvTimingResp(PacketPtr pkt)
+void
+L2CacheWrapper::SliceCPUSidePort::recvReqRetry()
 {
-    DPRINTF(L2CacheWrapper, "Got resp from memory side for addr: %#x\n", pkt->getAddr());
-
-    auto it = std::find_if(pending_l3_requests.begin(), pending_l3_requests.end(),
-        [&](const PacketPtr& pending_pkt) {
-            return pending_pkt->getAddr() == pkt->getAddr();
-        });
-
-    if (it == pending_l3_requests.end()) {
-        // TODO: Is this case possible?
-        // we didn't find the request in pending_l3_requests, forward it directly.
-        DPRINTF(L2CacheWrapper, "Response for addr %#x is not a tracked L2 miss, "
-                                "forwarding directly. %s\n", pkt->getAddr(), pkt->print());
-        return CacheWrapper::memSidePortRecvTimingResp(pkt);
-    }
-
-    DPRINTF(L2CacheWrapper, "Found matching tracked request for addr: %#x. Queueing for pipeline.\n", pkt->getAddr());
-    pending_l3_requests.erase(it);
-
-    ready_responses.push_back(pkt);
-
-    if (!processResponsesEvent.scheduled()) {
-        schedule(processResponsesEvent, nextCycle());
-    }
-
-    return true;
+    DPRINTF(L2CacheWrapper, "Got retry from slice %d\n", id);
+    owner.cpu_side_port.sendRetryReq();
 }
 
 void
-L2CacheWrapper::processResponses()
+L2CacheWrapper::SliceCPUSidePort::recvRangeChange()
 {
-    // advance pipeline
-    mainPipe.advance(curCycle());
-
-    // we want to build a L2 MSHR grant task
-    if (!ready_responses.empty() &&
-        reqArb.arbitrate(TaskSource::L2MSHRGrant, curCycle()) &&
-        mainPipe.isTaskAvailable(TaskSource::L2MSHRGrant))
-    {
-        DPRINTF(L2CacheWrapper, "Building L2 MSHR grant task for addr: %#x\n", ready_responses.front()->getAddr());
-        PacketPtr pkt = ready_responses.front();
-        mainPipe.buildTask(pkt, TaskSource::L2MSHRGrant);
-        scheduleTickMainPipe();
-        ready_responses.pop_front();
-    }
-
-    // Reschedule for the next cycle if there is more work to do
-    if (!ready_responses.empty() && !processResponsesEvent.scheduled()) {
-        schedule(processResponsesEvent, nextCycle());
-    }
-}
-
-void
-L2CacheWrapper::tickMainPipe()
-{
-    mainPipe.advance(curCycle());
-    scheduleTickMainPipe();
-}
-
-void
-L2CacheWrapper::innerMemPortRecvRespRetry()
-{
-    panic("L2CacheWrapper should not receive resp retry from inner L2");
-}
-
-/* CPU-Side internal logic */
-bool
-L2CacheWrapper::innerCpuPortSendTimingReq(PacketPtr pkt, TaskSource source)
-{
-    if (reqArb.arbitrate(source, curCycle()) &&
-        mainPipe.isTaskAvailable(source))
-    {
-        DPRINTF(L2CacheWrapper, "Request arbitration succeeded, sending request to inner cache\n");
-        bool success = CacheWrapper::cpuSidePortRecvTimingReq(pkt);
-        if (success) {
-            mainPipe.buildTask(pkt, source);
-            scheduleTickMainPipe();
-        }
-        return success;
-    } else {
-        DPRINTF(L2CacheWrapper, "Request arbitration failed, scheduling retry event\n");
-        schedule(arbFailRetryEvent, nextCycle());
-        return false;
-    }
-}
-
-bool
-L2CacheWrapper::cpuSidePortRecvTimingReq(PacketPtr pkt)
-{
-    assert(!pending_l1_retry);
-
-    // Express snoop packets should bypass any flow control,
-    // so always let express snoop packets through even if blocked
-    if (pkt->isExpressSnoop()) {
-        DPRINTF(L2CacheWrapper, "Express snoop request, forwarding directly to inner cache\n");
-        return CacheWrapper::cpuSidePortRecvTimingReq(pkt);
-    }
-    // If the request is from write_queue(WriteBackClean/CleanEvict etc.),
-    // we cannot buffer it and just forward it to inner cache
-    if (!pkt->needsResponse()) {
-        if (inner_cache_blocked || !requestBuffer.empty()) {
-            DPRINTF(L2CacheWrapper, "Inner cache busy, rejecting WQ request from CPU side\n");
-            pending_l1_retry = true;
-            return false;
-        }
-        // directly send to inner cache
-        bool success = innerCpuPortSendTimingReq(pkt, TaskSource::L1WQ);
-        if (!success) {
-            DPRINTF(L2CacheWrapper, "Inner cache busy, rejecting WQ request from CPU side\n");
-            inner_cache_blocked = true;
-            pending_l1_retry = true;
-        }
-        DPRINTF(L2CacheWrapper, "WQ request forwarded to inner cache\n");
-        return success;
-    }
-
-    // Then if the request is from L1 MSHR(ReadEx/ReadShare etc.),
-    // we can buffer it
-    if (inner_cache_blocked || !requestBuffer.empty()) {
-        // If the Wrapper is waiting for inner cache's retry or some pending requestes
-        // are in the buffer, we cannot forward it directly to inner cache
-        if (requestBuffer.isFull()) {
-            DPRINTF(L2CacheWrapper, "Buffer full, rejecting request from CPU side\n");
-            pending_l1_retry = true;
-            return false;
-        }
-        requestBuffer.push(pkt);
-        DPRINTF(L2CacheWrapper, "Request buffered, buffer size: %d\n", requestBuffer.size());
-        return true;
-    }
-    // If the Wrapper is not waiting for inner cache's retry and
-    // there is no pending request in the buffer,
-    // we can try to forward it directly to inner cache
-    if (!innerCpuPortSendTimingReq(pkt, TaskSource::L1MSHR)) {
-        inner_cache_blocked = true;
-        DPRINTF(L2CacheWrapper, "Inner cache busy, try buffering request and blocking\n");
-        if (requestBuffer.isFull()) {
-            DPRINTF(L2CacheWrapper, "Buffer full, rejecting request from CPU side\n");
-            pending_l1_retry = true;
-            return false;
-        }
-        requestBuffer.push(pkt);
-        DPRINTF(L2CacheWrapper, "Request buffered, buffer size: %d\n", requestBuffer.size());
-        return true;
-    }
-    DPRINTF(L2CacheWrapper, "Request forwarded directly to inner cache\n");
-    return true;
-}
-
-void
-L2CacheWrapper::innerCpuPortRecvReqRetry()
-{
-    DPRINTF(L2CacheWrapper, "Got req retry from inner cache\n");
-    assert(inner_cache_blocked);
-    assert(!requestBuffer.empty() || pending_l1_retry);
-
-    // inner cache is not blocked anymore
-    inner_cache_blocked = false;
-
-    // resend the request from the buffer
-    trySendFromBuffer();
-}
-
-void
-L2CacheWrapper::trySendFromBuffer()
-{
-    if (requestBuffer.empty() && !inner_cache_blocked && pending_l1_retry) {
-        DPRINTF(L2CacheWrapper, "No pending request in buffer, send retry to L1\n");
-        pending_l1_retry = false;
-        cpu_side_port.sendRetryReq();
-        return;
-    }
-
-    if (requestBuffer.empty() || inner_cache_blocked) {
-        DPRINTF(L2CacheWrapper, "No pending request in buffer or inner cache is blocked, skipping\n");
-        return;
-    }
-
-    DPRINTF(L2CacheWrapper, "Attempting to send delayed request from buffer, buffer size: %d\n",
-            requestBuffer.size());
-
-    PacketPtr pkt = requestBuffer.front();
-
-    if (!innerCpuPortSendTimingReq(pkt, TaskSource::L1MSHR)) {
-        DPRINTF(L2CacheWrapper, "Send delayed request failed, blocking again\n");
-        inner_cache_blocked = true;
-    } else {
-        requestBuffer.pop();
-        DPRINTF(L2CacheWrapper, "Send delayed request successful, popping from buffer, buffer size: %d\n",
-                requestBuffer.size());
-
-        if (!requestBuffer.empty()) {
-            // schedule trySendFromBuffer next cycle
-            if (!trySendEvent.scheduled()) {
-                schedule(trySendEvent, nextCycle());
-            }
-        } else if (pending_l1_retry) {
-            DPRINTF(L2CacheWrapper, "No pending request in buffer, send retry to L1\n");
-            pending_l1_retry = false;
-            cpu_side_port.sendRetryReq();
-        }
-    }
+    DPRINTF(L2CacheWrapper, "Got range change from slice %d. Propagating to CPU.\n", id);
+    owner.cpu_side_port.sendRangeChange();
 }
 
 } // namespace gem5

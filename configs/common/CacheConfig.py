@@ -40,6 +40,7 @@
 # Configure the M5 cache hierarchy config in one place
 #
 
+import math
 import m5
 from m5.objects import *
 from common.Caches import *
@@ -121,23 +122,70 @@ def config_cache(options, system):
         # Provide a clock for the L2 and the L1-to-L2 bus here as they
         # are not connected using addTwoLevelCacheHierarchy. Use the
         # same clock as the CPUs.
-        system.l2_caches = [l2_cache_class(clk_domain=system.cpu_clk_domain,
-                                           **_get_cache_opts(system.cpu[i], 'l2', options)) for i in range(options.num_cpus)]
-        system.l2_wrappers = [L2CacheWrapper(clk_domain=system.cpu_clk_domain) for i in range(options.num_cpus)]
+        num_l2_slices = options.l2_slices
+        # Create the L2 cache system for each CPU core, which includes a
+        # wrapper, an internal crossbar, and multiple slices.
+        system.l2_wrappers = [L2CacheWrapper(clk_domain=system.cpu_clk_domain,
+                                             num_slices=num_l2_slices,
+                                             block_bits=int(math.log2(system.cache_line_size)))
+                                             for _ in range(options.num_cpus)]
+        for i in range(options.num_cpus):
+            # Create an internal L2 crossbar for the slices
+            system.l2_wrappers[i].xbar = CoherentXBar(clk_domain = system.cpu_clk_domain,
+                                                      width = 512,
+                                                      frontend_latency = 0,
+                                                      forward_latency = 0,
+                                                      response_latency = 0,
+                                                      header_latency = 0,
+                                                      snoop_response_latency = 0,
+                                                      snoop_filter = SnoopFilter(lookup_latency = 0),
+                                                      point_of_unification = True)
+            # Create the L2 cache slice, which contains the pipeline logic
+            system.l2_wrappers[i].slices = [L2CacheSlice(clk_domain=system.cpu_clk_domain)
+                                            for _ in range(num_l2_slices)]
+            # Create the actual classic L2 cache that stores data
+            system.l2_wrappers[i].inner_caches = [l2_cache_class(clk_domain=system.cpu_clk_domain,
+                                                                 **_get_cache_opts(system.cpu[i], 'l2', options))
+                                                 for _ in range(num_l2_slices)]
+
+        # Keep l2_caches for downstream prefetcher connections.
+        # It will store a reference to the 0th slice's inner cache.
         system.tol2bus_list = [L1ToL2Bus(
             clk_domain=system.cpu_clk_domain) for i in range(options.num_cpus)]
+
         for i in range(options.num_cpus):
-            # system.l2_caches.append(l2_cache_class(clk_domain=system.cpu_clk_domain,
-            #                        **_get_cache_opts('l2', options)))
+            l2_wrapper = system.l2_wrappers[i]
+            xbar = l2_wrapper.xbar
+            for j in range(num_l2_slices):
+                # Apply original per-L2-cache configurations to each slice's inner cache
+                cache_slice = l2_wrapper.slices[j]
+                inner_cache = l2_wrapper.inner_caches[j]
 
-            # system.tol2bus_list.append(L2XBar(clk_domain = system.cpu_clk_domain, width=256))
-            system.l2_wrappers[i].cpu_side = system.tol2bus_list[i].mem_side_ports
-            system.l2_wrappers[i].inner_cpu_port = system.l2_caches[i].cpu_side
-            system.l2_caches[i].mem_side = system.l2_wrappers[i].inner_mem_port
+                inner_cache.do_fast_writeline = not options.kmh_align
+                if options.ideal_cache:
+                    inner_cache.response_latency = 0
+                    inner_cache.tag_latency = 1
+                    inner_cache.data_latency = 1
+                    inner_cache.sequential_access = False
+                    inner_cache.writeback_clean = False
+                    inner_cache.mshrs = 64
+                if options.xiangshan_ecore:
+                    inner_cache.response_latency = 66
+                    inner_cache.writeback_clean = False
 
+                # Connect the slice's inner ports to the actual cache
+                cache_slice.inner_cpu_port = inner_cache.cpu_side
+                inner_cache.mem_side = cache_slice.inner_mem_port
+
+                # Connect slice to the wrapper's cpu-side input and the internal xbar's cpu-side input
+                cache_slice.cpu_side = l2_wrapper.slice_cpuside_ports
+                xbar.cpu_side_ports = cache_slice.mem_side
+
+            # Connect the wrapper to the L1-L2 bus
+            l2_wrapper.cpu_side = system.tol2bus_list[i].mem_side_ports
+
+            # Apply original bus configurations
             system.tol2bus_list[i].snoop_filter.max_capacity = "16MB"
-            system.l2_caches[i].do_fast_writeline = not options.kmh_align
-
             if options.ideal_cache:
                 assert not options.l3cache, \
                     "Ideal caches and L3s are exclusive options."
@@ -152,17 +200,6 @@ def config_cache(options, system):
                 system.tol2bus_list[i].snoop_response_latency = 0
                 system.tol2bus_list[i].width = 256 # byte per cycle
 
-                system.l2_caches[i].response_latency = 0
-                system.l2_caches[i].tag_latency = 1
-                system.l2_caches[i].data_latency = 1
-                system.l2_caches[i].sequential_access = False
-                system.l2_caches[i].writeback_clean = False
-                system.l2_caches[i].mshrs = 64
-
-            if options.xiangshan_ecore:
-                system.l2_caches[i].response_latency = 66
-                system.l2_caches[i].writeback_clean = False
-
         if options.l3cache:
             system.l3 = L3Cache(clk_domain=system.cpu_clk_domain,
                                         **_get_cache_opts(NULL, 'l3', options))
@@ -176,10 +213,10 @@ def config_cache(options, system):
         for i in range(options.num_cpus):
             if options.l3cache:
                 # l2 -> tol3bus -> l3
-                system.l2_wrappers[i].mem_side = system.tol3bus.cpu_side_ports
+                system.l2_wrappers[i].xbar.mem_side_ports = system.tol3bus.cpu_side_ports
                 # l3 -> membus
             else:
-                system.l2_wrappers[i].mem_side = system.membus.cpu_side_ports
+                system.l2_wrappers[i].xbar.mem_side_ports = system.membus.cpu_side_ports
 
     if options.memchecker:
         system.memchecker = MemChecker()
@@ -196,16 +233,17 @@ def config_cache(options, system):
                 dcache.response_latency = 0
 
             dcache.do_fast_writeline = not options.kmh_align
+            # NOTE: For now, we disable L2 prefetcher
+            # TODO: add L2 prefetcher back
+            # if (not options.no_pf) and options.l1_to_l2_pf_hint:
+            #     assert dcache.prefetcher != NULL and \
+            #         system.l2_wrappers[i].inner_caches[0].prefetcher != NULL
+                # dcache.prefetcher.add_pf_downstream(system.l2_wrappers[i].inner_caches[0].prefetcher)
 
-            if (not options.no_pf) and options.l1_to_l2_pf_hint:
-                assert dcache.prefetcher != NULL and \
-                    system.l2_caches[i].prefetcher != NULL
-                dcache.prefetcher.add_pf_downstream(system.l2_caches[i].prefetcher)
-
-            if (not options.no_pf) and options.l3cache and options.l2_to_l3_pf_hint:
-                assert system.l2_caches[i].prefetcher != NULL and \
-                    system.l3.prefetcher != NULL
-                system.l2_caches[i].prefetcher.add_pf_downstream(system.l3.prefetcher)
+            # if (not options.no_pf) and options.l3cache and options.l2_to_l3_pf_hint:
+            #     assert system.l2_wrappers[i].inner_caches[0].prefetcher != NULL and \
+            #         system.l3.prefetcher != NULL
+                # system.l2_wrappers[i].inner_caches[0].prefetcher.add_pf_downstream(system.l3.prefetcher)
 
             # If we have a walker cache specified, instantiate two
             # instances here

@@ -5,13 +5,14 @@
 #include <unordered_map>
 
 #include "base/types.hh"
+#include "mem/cache/xs_l2/CacheWrapper.hh"
 #include "mem/cache/xs_l2/PipelineResources.hh"
 #include "mem/packet.hh"
 
 namespace gem5
 {
 
-class L2CacheWrapper;
+class L2CacheSlice;
 
 // For task source
 // Indicate the source of the task that is being processed by the pipeline.
@@ -28,7 +29,7 @@ enum TaskSource
 class L2MainPipe
 {
   public:
-    L2MainPipe(L2CacheWrapper* owner, unsigned depth);
+    L2MainPipe(L2CacheSlice* owner, unsigned depth);
 
     /**
      * Advance the pipeline to the next cycle.
@@ -76,7 +77,7 @@ class L2MainPipe
         PipelineTask(TaskSource source, PacketPtr pkt) : source(source), pkt(pkt) {}
     };
 
-    L2CacheWrapper* owner;
+    L2CacheSlice* owner;
     std::deque<PipelineResources> scoreboardResources; // Bitmask of PipelineResources
     std::deque<PipelineTask> scoreboardTasks; // Bitmask of TaskSource
     std::unordered_map<TaskSource, PipelineResources> taskResourceMap;
