@@ -181,6 +181,7 @@ class Fetch
         Squashing,
         Blocked,
         TrapPending,
+        WaitingCache,
         NumFetchStatus
     };
 
@@ -189,7 +190,8 @@ class Fetch
         {Idle, "Idle"},
         {Squashing, "Squashing"},
         {Blocked, "Blocked"},
-        {TrapPending, "TrapPending"}
+        {TrapPending, "TrapPending"},
+        {WaitingCache, "WaitingCache"}
     };
 
     /** Cache request status for new state management system.

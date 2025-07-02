@@ -425,6 +425,8 @@ bool
 Fetch::handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc)
 {
     DPRINTF(Fetch, "[tid:%i] Handling multi-cacheline fetch for addr %#x, pc=%#lx\n", tid, vaddr, pc);
+    // Transition to WaitingCache state when initiating cache access
+    setThreadStatus(tid, WaitingCache);
 
     // Reset cache request state for this thread
     cacheReq[tid].reset();
@@ -543,9 +545,6 @@ Fetch::processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt)
     delete firstPkt;
     delete secondPkt;
 
-    // Reset cache request state
-    cacheReq[tid].reset();
-
     DPRINTF(Fetch, "[tid:%i] Dual cacheline fetch completion processed successfully.\n", tid);
     return true;
 }
@@ -562,9 +561,11 @@ Fetch::processCacheCompletion(PacketPtr pkt)
         return;
     }
 
-    // Check if thread is waiting for cache response using new state system
-    if (!hasPendingCacheRequests(tid)) {
-        DPRINTF(Fetch, "[tid:%i] Thread not waiting for cache, ignoring completion\n", tid);
+    // Check if this completion should be processed
+    // Either thread is waiting for cache, or cache just completed
+    CacheRequestStatus cacheStatus = cacheReq[tid].getOverallStatus();
+    if (!hasPendingCacheRequests(tid) && cacheStatus != AccessComplete) {
+        DPRINTF(Fetch, "[tid:%i] Thread not waiting for cache and no completion, ignoring\n", tid);
         ++fetchStats.icacheSquashes;
         return;
     }
@@ -612,22 +613,13 @@ Fetch::processCacheCompletion(PacketPtr pkt)
 
     switchToActive();
 
-    // Update cache request status to reflect completion
-    if (cacheReq[tid].allReady()) {
-        // All cache requests are complete, mark overall status as complete
-        for (size_t i = 0; i < cacheReq[tid].requestStatus.size(); ++i) {
-            if (cacheReq[tid].requestStatus[i] == CacheWaitResponse) {
-                cacheReq[tid].updateRequestStatus(i, AccessComplete);
-            }
-        }
-    }
-
-    // Complete cache request or transition to blocked if stalled
+    // Complete cache request and transition to appropriate state
     if (checkStall(tid)) {
         setThreadStatus(tid, Blocked);
+    } else {
+        // Transition from WaitingCache back to Running when cache access completes
+        setThreadStatus(tid, Running);
     }
-    // Note: Cache request status already updated above by cacheReq[tid].updateRequestStatus()
-
 }
 
 void
@@ -1471,6 +1463,14 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
 
         setThreadStatus(tid, Running);
 
+        return true;
+    }
+
+    // Handle WaitingCache state: check if cache request is complete
+    if (fetchStatus[tid] == WaitingCache &&
+        cacheReq[tid].getOverallStatus() == AccessComplete) {
+        // Cache access completed, transition to Running
+        setThreadStatus(tid, Running);
         return true;
     }
 

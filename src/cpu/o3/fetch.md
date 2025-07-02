@@ -847,3 +847,179 @@ graph TD
 - **目标耗尽**: usedUpFetchTargets标志控制是否需要新的fetch target  
 - **验证逻辑**: validateTranslationRequest()确保请求的有效性
 - **Loop支持**: 跟踪循环迭代和循环内的特殊处理
+
+## 新版状态转移图 (Cache状态分离后)
+
+基于cache状态分离重构，我们引入了`WaitingCache`状态来明确区分fetch线程的真实状态。新的设计将fetch整体状态与cache访问状态完全分离。
+
+### 新的状态定义
+
+#### Fetch整体状态 (ThreadStatus)
+```cpp
+enum ThreadStatus {
+    Running,           // 真正可以进行instruction fetch，无任何等待
+    Idle,             // 线程不活跃，无fetch需求
+    Blocked,          // 被下游阻塞，无法继续fetch
+    Squashing,        // 正在执行pipeline flush
+    TrapPending,      // 等待trap处理（translation fault等）
+    WaitingCache,     // 等待任何形式的cache/TLB响应
+};
+```
+
+#### Cache访问状态 (CacheRequestStatus)
+```cpp
+enum CacheRequestStatus {
+    CacheIdle,           // 无活跃请求
+    TlbWait,            // 等待TLB翻译完成
+    CacheWaitResponse,  // 等待cache数据返回
+    CacheWaitRetry,     // 等待cache重试机会
+    AccessComplete,     // 访问完成，数据可用
+    AccessFailed,       // 访问失败（地址无效等）
+    Cancelled           // 请求被取消（squash等）
+};
+```
+
+### 新的状态转移图
+
+```mermaid
+graph TD
+    %% Fetch整体状态转移
+    subgraph "Fetch ThreadStatus (整体状态)"
+        Idle_F("Idle<br/>线程不活跃")
+        Running_F("Running<br/>可以立即fetch<br/>无任何等待")
+        WaitingCache_F("WaitingCache<br/>等待cache/TLB响应<br/>线程仍在运行")
+        Blocked_F("Blocked<br/>被下游阻塞")
+        Squashing_F("Squashing<br/>执行pipeline flush")
+        TrapPending_F("TrapPending<br/>等待trap处理")
+    end
+    
+    %% Cache请求状态转移
+    subgraph "Cache RequestStatus (每个请求的状态)"
+        CacheIdle_C("CacheIdle<br/>无活跃请求")
+        TlbWait_C("TlbWait<br/>等待TLB翻译")
+        CacheWaitResponse_C("CacheWaitResponse<br/>等待cache响应")
+        CacheWaitRetry_C("CacheWaitRetry<br/>等待重试机会")
+        AccessComplete_C("AccessComplete<br/>数据已到达")
+        AccessFailed_C("AccessFailed<br/>访问失败")
+        Cancelled_C("Cancelled<br/>请求被取消")
+    end
+    
+    %% 主要状态转移 - Fetch整体状态
+    Idle_F -->|"线程激活"| Running_F
+    Running_F -->|"需要cache访问<br/>fetchCacheLine()"| WaitingCache_F
+    WaitingCache_F -->|"cache访问完成<br/>processCacheCompletion()"| Running_F
+    WaitingCache_F -->|"translation fault<br/>handleTranslationFault()"| TrapPending_F
+    
+    Running_F -->|"下游stall<br/>decode busy"| Blocked_F
+    WaitingCache_F -->|"下游stall"| Blocked_F
+    Blocked_F -->|"stall清除"| Running_F
+    
+    %% Squash可以从任何状态发生
+    Running_F -->|"收到squash信号"| Squashing_F
+    WaitingCache_F -->|"收到squash信号"| Squashing_F
+    Blocked_F -->|"收到squash信号"| Squashing_F
+    TrapPending_F -->|"收到squash信号"| Squashing_F
+    Squashing_F -->|"squash完成"| Running_F
+    
+    TrapPending_F -->|"trap处理完成"| Running_F
+    
+    %% Cache请求状态转移
+    CacheIdle_C -->|"发起TLB翻译<br/>fetchCacheLine()"| TlbWait_C
+    TlbWait_C -->|"翻译成功<br/>finishTranslation()"| CacheWaitResponse_C
+    TlbWait_C -->|"翻译失败"| AccessFailed_C
+    TlbWait_C -->|"squash中断"| Cancelled_C
+    
+    CacheWaitResponse_C -->|"数据返回<br/>processCacheCompletion()"| AccessComplete_C
+    CacheWaitResponse_C -->|"cache拒绝<br/>MSHR满"| CacheWaitRetry_C
+    CacheWaitResponse_C -->|"squash中断"| Cancelled_C
+    
+    CacheWaitRetry_C -->|"重试成功<br/>recvReqRetry()"| CacheWaitResponse_C
+    CacheWaitRetry_C -->|"squash中断"| Cancelled_C
+    
+    AccessComplete_C -->|"状态清理<br/>reset()"| CacheIdle_C
+    AccessFailed_C -->|"状态清理"| CacheIdle_C
+    Cancelled_C -->|"状态清理"| CacheIdle_C
+    
+    %% 关联关系（虚线表示状态检查）
+    Running_F -.->|"检查cache状态<br/>canFetchInstructions()"| CacheIdle_C
+    WaitingCache_F -.->|"等待完成<br/>hasPendingCacheRequests()"| TlbWait_C
+    WaitingCache_F -.->|"等待完成"| CacheWaitResponse_C
+    WaitingCache_F -.->|"等待完成"| CacheWaitRetry_C
+    
+    %% 样式定义
+    classDef fetchStatus fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
+    classDef cacheStatus fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    classDef transition fill:#e8f5e8,stroke:#388e3c,stroke-width:2px
+    classDef errorStatus fill:#ffebee,stroke:#d32f2f,stroke-width:2px
+    
+    class Idle_F,Running_F,Blocked_F fetchStatus
+    class WaitingCache_F transition
+    class Squashing_F,TrapPending_F errorStatus
+    class CacheIdle_C,TlbWait_C,CacheWaitResponse_C,CacheWaitRetry_C,AccessComplete_C cacheStatus
+    class AccessFailed_C,Cancelled_C errorStatus
+```
+
+### 关键改进
+
+#### 1. 状态语义明确化
+- **Running**: 真正可以立即进行instruction fetch，没有任何等待
+- **WaitingCache**: 线程在运行，但等待cache/TLB响应，不能进行新的fetch
+- **Cache状态独立**: 每个cache请求有自己的生命周期状态
+
+#### 2. 状态转移更清晰
+```cpp
+// 发起cache请求时
+Running → WaitingCache (在fetchCacheLine()中)
+
+// cache完成时  
+WaitingCache → Running (在processCacheCompletion()中)
+
+// 异常情况
+WaitingCache → TrapPending (翻译失败)
+WaitingCache → Squashing (收到squash信号)
+```
+
+#### 3. 状态检查更准确
+```cpp
+bool canFetchInstructions(ThreadID tid) const {
+    // 只有真正Running且没有pending cache请求才能fetch
+    return fetchStatus[tid] == Running && 
+           cacheReq[tid].getOverallStatus() == CacheIdle;
+}
+
+bool isWaitingForCache(ThreadID tid) const {
+    return fetchStatus[tid] == WaitingCache;
+}
+```
+
+#### 4. 解决原有问题
+- **Running语义过载**: 现在Running只表示可以立即fetch
+- **状态转移清晰**: WaitingCache明确表示等待cache响应
+- **调试友好**: 状态转移路径一目了然
+- **扩展性好**: 为2fetch等特性预留空间
+
+### 实现要点
+
+#### 状态一致性检查
+```cpp
+bool validateFetchCacheConsistency(ThreadID tid) const {
+    auto cacheStatus = cacheReq[tid].getOverallStatus();
+    auto threadStatus = fetchStatus[tid];
+    
+    // Running状态时，应该没有pending cache请求
+    if (threadStatus == Running && 
+        (cacheStatus == TlbWait || cacheStatus == CacheWaitResponse || 
+         cacheStatus == CacheWaitRetry)) {
+        return false;
+    }
+    
+    // WaitingCache状态时，应该有active cache请求
+    if (threadStatus == WaitingCache && cacheStatus == CacheIdle) {
+        return false;
+    }
+    
+    return true;
+}
+```
+
+这个新的状态设计解决了之前`Running`状态语义过载的问题，让fetch的状态转移更加清晰和易于理解。
