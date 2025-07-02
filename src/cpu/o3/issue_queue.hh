@@ -105,9 +105,9 @@ class IssueQue : public SimObject
     TimeBuffer<IssueStream>::wire toFu;
 
     std::list<DynInstPtr> instList;
-    uint64_t instNumInsert = 0;
+    int instNumInsert = 0;
     std::vector<uint8_t> opNum;
-    uint64_t instNum = 0;
+    int instNum = 0;
 
     // issueport : regfileport : priority
     std::vector<std::vector<std::pair<int, int>>> intRfTypePortId;
@@ -154,7 +154,8 @@ class IssueQue : public SimObject
     void cancel(const DynInstPtr& inst);
 
   public:
-    inline void clearBusy(uint32_t pi) { portBusy.at(pi) = 0; }
+    int emptyEntries() const { return iqsize - instNum; }
+    int remainingBandWidth() { return std::min(inports - instNumInsert, emptyEntries()); }
 
     IssueQue(const IssueQueParams& params);
     void setIQID(int id) { IQID = id; }
@@ -163,7 +164,6 @@ class IssueQue : public SimObject
 
     void tick();
     bool ready();
-    int emptyEntries() const { return iqsize - instNum; }
     void insert(const DynInstPtr& inst);
     void insertNonSpec(const DynInstPtr& inst);
 

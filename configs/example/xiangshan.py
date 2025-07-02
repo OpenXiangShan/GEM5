@@ -354,9 +354,9 @@ def setKmhV3IdealParams(args, system):
         cpu.numROBEntries = 320
         cpu.CROB_instPerGroup = 2 # 1 if not using ROB compression
         cpu.enableDispatchStage = True
-        cpu.numDQEntries = [8, 8, 8]
+        cpu.numDQEntries = [12, 12, 12]
         cpu.dispWidth = [8, 8, 8]
-        cpu.scheduler = KMHV3Scheduler()
+        cpu.scheduler = KMHV3ExploreScheduker()
 
         cpu.BankConflictCheck = True   # real bank conflict 0.2 score
         # cpu.EnableLdMissReplay = False

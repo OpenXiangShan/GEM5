@@ -543,6 +543,7 @@ void
 IssueQue::insert(const DynInstPtr& inst)
 {
     assert(instNum < iqsize);
+    assert(instNumInsert < inports);
     opNum[inst->opClass()]++;
     instNum++;
     instNumInsert++;
@@ -889,9 +890,11 @@ Scheduler::lookahead(std::deque<DynInstPtr>& insts)
 bool
 Scheduler::ready(const DynInstPtr& inst, int disp_seq)
 {
-    if (inst->staticInst->isSplitStoreAddr() && !ready(StoreDataOp, disp_seq)) {
+    if (inst->isSplitStoreAddr() && !ready(StoreDataOp, disp_seq)) {
         return false;
     }
+
+    auto std_iq = dispTable[StoreDataOp][dispSeqVec.at(disp_seq)];
 
     auto& iqs = dispTable[inst->opClass()];
     assert(!iqs.empty());
@@ -903,7 +906,12 @@ Scheduler::ready(const DynInstPtr& inst, int disp_seq)
             }
         }
     } else {
-        if (iqs[dispSeqVec.at(disp_seq)]->ready()) {
+        auto iq = iqs[dispSeqVec.at(disp_seq)];
+
+        auto double_check = inst->isSplitStoreAddr() && (iq == std_iq);
+
+        if (iq->ready() &&
+            (double_check ? iq->remainingBandWidth() >= 2 : true)) {
             return true;
         }
     }
