@@ -1358,7 +1358,7 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
         }
     }
 
-    if (loadCompletedIdx != loadQueue.tail()) {
+    if (loadCompletedIdx != loadQueue.tail() && inst->isNormalLd()) {
         int loadDistance = inst->lqIt.idx() - loadCompletedIdx;
         DPRINTF(LSQUnit, "loadDistance: %d\n in inst[sn:%lli]", loadDistance, inst->seqNum);
         if (loadDistance >= maxRARQEntries) {
@@ -1372,7 +1372,7 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
         }
     }
 
-    if (storeCompletedIdx != storeQueue.tail()) {
+    if (storeCompletedIdx != storeQueue.tail() && inst->isNormalLd()) {
         int storeDistance = inst->sqIt.idx() - storeCompletedIdx;
         DPRINTF(LSQUnit, "storeDistance: %d\n in inst[sn:%lli]", storeDistance, inst->seqNum);
         if (storeDistance >= maxRAWQEntries) {
@@ -2746,6 +2746,14 @@ LSQUnit::checkStaleTranslations() const
 void
 LSQUnit::updateCompletedIdx()
 {
+    // The current situation is that, when the command execution is completed,
+    // the index (Idx) has not yet moved to the current position.
+    // The command is removed from the queue, which prevents the index from continuing to move normally.
+    if (loadCompletedIdx < loadQueue.head() || loadCompletedIdx > loadQueue.tail())
+        loadCompletedIdx = loadQueue.head();
+    if (storeCompletedIdx < storeQueue.head() || storeCompletedIdx > storeQueue.tail())
+        storeCompletedIdx = storeQueue.head();
+
     // TODO: The step size for forward movement is temporarily fixed
     // and will be modified to be adjustable later.
     int maxLoadCompletedItIdx = loadCompletedIdx + 3;
