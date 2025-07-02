@@ -2808,20 +2808,24 @@ LSQUnit::dumpInsts() const
     cprintf("Load queue size: %i\n", loadQueue.size());
     cprintf("Load queue: ");
 
-    for (const auto& e: loadQueue) {
-        const DynInstPtr &inst(e.instruction());
-        cprintf("%s.[sn:%llu] %s\n", inst->pcState(), inst->seqNum,
-                inst->isExecuted() ? "Executed" : "Not Executed");
+    for (auto it = loadQueue.begin(); it != loadQueue.end(); ++it) {
+        if (it->valid()) {
+            const DynInstPtr &inst(it->instruction());
+            cprintf("idx:%d %s.[sn:%llu] %s\n", it.idx(), inst->pcState(), inst->seqNum,
+                    inst->isExecuted() ? "Executed" : "Not Executed");
+        }
     }
     cprintf("\n");
 
     cprintf("Store queue size: %i\n", storeQueue.size());
     cprintf("Store queue: ");
 
-    for (const auto& e: storeQueue) {
-        const DynInstPtr &inst(e.instruction());
-        cprintf("%s.[sn:%llu] %s\n", inst->pcState(), inst->seqNum,
-                e.addrReady() ? "AddrReady" : "Not AddrReady");
+    for (auto it = storeQueue.begin(); it != storeQueue.end(); ++it) {
+        if (it->valid()) {
+            const DynInstPtr &inst(it->instruction());
+            cprintf("idx:%d %s.[sn:%llu] %s\n", it.idx(), inst->pcState(), inst->seqNum,
+                    it->addrReady() ? "AddrReady" : "Not AddrReady");
+        }
     }
 
     cprintf("\n");
@@ -3352,7 +3356,7 @@ LSQUnit::processReplayQueues()
                 inst->seqNum, loadCompletedIdx, inst->lqIt.idx());
 
         // Check if distance condition is satisfied
-        if (loadCompletedIdx != loadQueue.tail()) {
+        if (loadCompletedIdx >= loadQueue.head() && loadCompletedIdx <= loadQueue.tail()) {
             int loadDistance = inst->lqIt.idx() - loadCompletedIdx;
             if (loadDistance < maxRARQEntries) {
                 // Distance condition satisfied, remove from queue and clear replay flag
@@ -3398,7 +3402,7 @@ LSQUnit::processReplayQueues()
         }
 
         // Check if distance condition is satisfied
-        if (storeCompletedIdx != storeQueue.tail()) {
+        if (storeCompletedIdx >= storeQueue.head() && storeCompletedIdx <= storeQueue.tail()) {
             int storeDistance = inst->sqIt.idx() - storeCompletedIdx;
             if (storeDistance < maxRAWQEntries) {
                 // Distance condition satisfied, remove from queue and clear replay flag
