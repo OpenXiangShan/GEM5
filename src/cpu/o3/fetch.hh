@@ -58,6 +58,7 @@
 #include "cpu/pred/stream/decoupled_bpred.hh"
 #include "cpu/timebuf.hh"
 #include "cpu/translation.hh"
+#include "debug/Fetch.hh"
 #include "enums/SMTFetchPolicy.hh"
 #include "mem/packet.hh"
 #include "mem/port.hh"
@@ -112,9 +113,11 @@ class Fetch
     {
       protected:
         Fetch *fetch;
+        unsigned ftqIndex;
 
       public:
-        FetchTranslation(Fetch *_fetch) : fetch(_fetch) {}
+        FetchTranslation(Fetch *_fetch, unsigned _ftqIndex = 0)
+            : fetch(_fetch), ftqIndex(_ftqIndex) {}
 
         void markDelayed() {}
 
@@ -123,7 +126,7 @@ class Fetch
             gem5::ThreadContext *tc, BaseMMU::Mode mode)
         {
             assert(mode == BaseMMU::Execute);
-            fetch->finishTranslation(fault, req);
+            fetch->finishTranslation(fault, req, ftqIndex);
             delete this;
         }
     };
@@ -207,6 +210,16 @@ class Fetch
         AccessFailed,          // Access failed (invalid address etc.)
         Cancelled,             // Request cancelled (squash etc.)
         NumCacheRequestStatus
+    };
+
+    std::map<CacheRequestStatus, const char*> cacheRequestStatusStr = {
+        {CacheIdle, "CacheIdle"},
+        {TlbWait, "TlbWait"},
+        {CacheWaitResponse, "CacheWaitResponse"},
+        {CacheWaitRetry, "CacheWaitRetry"},
+        {AccessComplete, "AccessComplete"},
+        {AccessFailed, "AccessFailed"},
+        {Cancelled, "Cancelled"}
     };
 
   private:
@@ -311,7 +324,7 @@ class Fetch
      * execute fetch and process instructions
      * @param status_change status change flag
      */
-    void fetchAndProcessInstructions(bool status_change);
+    void fetchAndProcessInstructions(bool status_change, unsigned ftqIndex);
 
     /**
      * handle interrupts and perform related operations
@@ -360,9 +373,10 @@ class Fetch
      * the icache access.
      * @param tid Thread id.
      * @param pc The actual PC of the current instruction.
+     * @param ftqIndex FTQ index for dual fetch support (default: 0)
      * @return Any fault that occured.
      */
-    bool fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc);
+    bool fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc, unsigned ftqIndex = 0);
 
     /**
      * Send a pipelined I-cache access request for the next FTQ entry.
@@ -371,45 +385,47 @@ class Fetch
      */
     void sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state);
 
-    void finishTranslation(const Fault &fault, const RequestPtr &mem_req);
+    void finishTranslation(const Fault &fault, const RequestPtr &mem_req, unsigned ftqIndex = 0);
 
     /** Validate if a translation request is expected and should be processed.
      * @param tid Thread ID
      * @param mem_req The memory request to validate
      * @return true if request should be processed, false if should be ignored
      */
-    bool validateTranslationRequest(ThreadID tid, const RequestPtr &mem_req);
+    bool validateTranslationRequest(ThreadID tid, const RequestPtr &mem_req, unsigned ftqIndex = 0);
 
     /** Handle successful translation and initiate cache access.
      * @param tid Thread ID
      * @param mem_req The memory request
      * @param fetchPC The fetch PC address
      */
-    void handleSuccessfulTranslation(ThreadID tid, const RequestPtr &mem_req, Addr fetchPC);
+    void handleSuccessfulTranslation(ThreadID tid, const RequestPtr &mem_req, Addr fetchPC, unsigned ftqIndex = 0);
 
     /** Handle translation fault by building a noop instruction.
      * @param tid Thread ID
      * @param mem_req The memory request that faulted
      * @param fault The translation fault
      */
-    void handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fault &fault);
+    void handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fault &fault, unsigned ftqIndex = 0);
 
     /** Handle multi-cacheline fetch that spans two cache lines.
      * Creates and sends two separate cache requests.
      * @param vaddr Starting virtual address
      * @param tid Thread ID
      * @param pc Program counter
+     * @param ftqIndex FTQ index for dual fetch support (default: 0)
      * @return true if requests were successfully initiated
      */
-    bool handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc);
+    bool handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc, unsigned ftqIndex = 0);
 
     /** Process multi-cacheline fetch completion when both packets have arrived.
      * Merges data from both cache lines into the fetch buffer.
      * @param tid Thread ID
      * @param pkt Most recently arrived packet
+     * @param ftqIndex FTQ index for dual fetch support (default: 0)
      * @return true if all packets have arrived and data is merged, false if still waiting
      */
-    bool processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt);
+    bool processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt, unsigned ftqIndex = 0);
 
     /** Handle retry logic for multi-cacheline fetch when a packet is retried.
      * Sends the missing cache request for the incomplete packet.
@@ -424,7 +440,7 @@ class Fetch
 
     /** Squashes a specific thread and resets the PC. */
     void doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqNum seqNum,
-            ThreadID tid);
+            ThreadID tid, unsigned ftqIndex = 0);
 
     /** Squashes a specific thread and resets the PC. Also tells the CPU to
      * remove any instructions between fetch and decode
@@ -432,7 +448,7 @@ class Fetch
      */
     void squashFromDecode(PCStateBase &new_pc,
                           const DynInstPtr squashInst,
-                          const InstSeqNum seq_num, ThreadID tid);
+                          const InstSeqNum seq_num, ThreadID tid, unsigned ftqIndex = 0);
 
     /** Checks if a thread is stalled. */
     bool checkStall(ThreadID tid) const;
@@ -447,7 +463,7 @@ class Fetch
      * squash should be the commit stage.
      */
     void squash(PCStateBase &new_pc, const InstSeqNum seq_num,
-                DynInstPtr squashInst, ThreadID tid);
+                DynInstPtr squashInst, ThreadID tid, unsigned ftqIndex = 0);
 
     /** Ticks the fetch stage, processing all inputs signals and fetching
      * as many instructions as possible.
@@ -536,14 +552,14 @@ class Fetch
      * @param status_change Reference to status change flag
      * @return true if ready to fetch, false if stalled/idle
      */
-    bool prepareFetchAddress(ThreadID tid, bool &status_change);
+    bool prepareFetchAddress(ThreadID tid, bool &status_change, unsigned ftqIndex = 0);
 
     /**
      * The main instruction fetching logic, which processes instructions
      * for a given thread up to the fetch width.
      * @param tid The thread ID to fetch for.
      */
-    void performInstructionFetch(ThreadID tid);
+    void performInstructionFetch(ThreadID tid, unsigned ftqIndex = 0);
 
     /**
      * Processes a single instruction, including decoding, building the
@@ -556,7 +572,7 @@ class Fetch
      */
     bool
     processSingleInstruction(ThreadID tid, PCStateBase &pc,
-                             StaticInstPtr &curMacroop);
+                             StaticInstPtr &curMacroop, unsigned ftqIndex = 0);
 
     /**
      * Checks if the decoder requires more memory to proceed and fetches
@@ -567,7 +583,7 @@ class Fetch
      * @return StallReason if stalled, NoStall otherwise
      */
     StallReason checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
-                                 const StaticInstPtr &curMacroop);
+                                 const StaticInstPtr &curMacroop, unsigned ftqIndex = 0);
 
 
     /**
@@ -728,8 +744,34 @@ class Fetch
         }
     };
 
-    /** Fetch buffer for each thread */
-    FetchBuffer fetchBuffer[MaxThreads];
+    /**
+     * Simplified 2fetch coordinator for managing dual FTQ state.
+     * Tracks which FTQ entries are active without complex state machines.
+     */
+    struct Fetch2Coordinator
+    {
+        /** Active status for each FTQ (0 and 1) */
+        bool ftqActive[2];
+
+        /** Reset coordinator state */
+        void reset() {
+            ftqActive[0] = false;
+            ftqActive[1] = false;
+        }
+
+        /** Check if any FTQ has pending fetch */
+        bool hasPendingFetch() const {
+            return ftqActive[0] || ftqActive[1];
+        }
+
+        /** Constructor */
+        Fetch2Coordinator() {
+            reset();
+        }
+    };
+
+    /** Fetch buffer for each thread and FTQ index [tid][ftqIndex] */
+    FetchBuffer fetchBuffer[MaxThreads][2];
 
     /** The size of the fetch buffer in bytes. Default is 66 bytes,
     *  make sure we could decode tail 4bytes if it is in [62, 66)
@@ -908,8 +950,11 @@ class Fetch
         }
     };
 
-    /** Cache request for each thread, replacing multiple redundant state variables */
-    CacheRequest cacheReq[MaxThreads];
+    /** Cache request for each thread and FTQ index [tid][ftqIndex] */
+    CacheRequest cacheReq[MaxThreads][2];
+
+    /** 2fetch coordinator for each thread */
+    Fetch2Coordinator fetch2Coord[MaxThreads];
 
     /** The size of the fetch queue in micro-ops */
     unsigned fetchQueueSize;
@@ -966,10 +1011,10 @@ class Fetch
     bool notTakenBranchEncountered{false};
 
     /** Check if we need a new FTQ entry for fetch */
-    bool needNewFTQEntry(ThreadID tid);
+    bool needNewFTQEntry(ThreadID tid, unsigned ftqIndex = 0);
 
     /** Get the start PC of the next FTQ entry and update fetchBufferPC */
-    Addr getNextFTQStartPC(ThreadID tid);
+    Addr getNextFTQStartPC(ThreadID tid, unsigned ftqIndex = 0);
 
     /**
      * Check if the thread can fetch instructions
@@ -1003,8 +1048,9 @@ class Fetch
      * @param tid Thread ID
      * @param reqIndex Request index
      * @param status New cache request status
+     * @param ftqIndex FTQ index (default: 0)
      */
-    void updateCacheRequestStatus(ThreadID tid, size_t reqIndex, CacheRequestStatus status);
+    void updateCacheRequestStatus(ThreadID tid, size_t reqIndex, CacheRequestStatus status, unsigned ftqIndex = 0);
 
     /**
      * Helper function to update cache request status by RequestPtr
@@ -1012,15 +1058,75 @@ class Fetch
      * @param tid Thread ID
      * @param req Request pointer to find and update
      * @param status New cache request status
+     * @param ftqIndex FTQ index (default: 0)
      */
     void updateCacheRequestStatusByRequest(ThreadID tid, const RequestPtr& req,
-                                          CacheRequestStatus status);
+                                          CacheRequestStatus status, unsigned ftqIndex = 0);
 
     /**
      * Cancel all cache requests for thread (used in squash)
      * @param tid Thread ID
      */
     void cancelAllCacheRequests(ThreadID tid);
+
+    /**
+     * Get overall cache request status across all FTQ indices
+     * @param tid Thread ID
+     * @return Overall cache request status considering all active FTQs
+     */
+    CacheRequestStatus getOverallCacheStatus(ThreadID tid) const;
+
+  private:
+    /**
+     * Compatibility interfaces for 2fetch support
+     * Provide backward-compatible access to 2D arrays using default ftqIndex=0
+     */
+
+    /** Get reference to CacheRequest for backward compatibility */
+    CacheRequest& getCacheReq(ThreadID tid, unsigned ftqIndex = 0) {
+        assert(ftqIndex < 2);
+        return cacheReq[tid][ftqIndex];
+    }
+
+    /** Get reference to FetchBuffer for backward compatibility */
+    FetchBuffer& getFetchBuffer(ThreadID tid, unsigned ftqIndex = 0) {
+        assert(ftqIndex < 2);
+        return fetchBuffer[tid][ftqIndex];
+    }
+
+    /** Check if there are pending dual fetch requests */
+    bool hasPendingDualFetch(ThreadID tid) {
+        return fetch2Coord[tid].hasPendingFetch();
+    }
+
+    /** Check if all active FTQs completed their cache requests */
+    bool allActiveFTQCompleted(ThreadID tid) {
+        for (unsigned i = 0; i < 2; ++i) {
+            if (fetch2Coord[tid].ftqActive[i] && !cacheReq[tid][i].allCompleted()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Dual fetch support methods (integration with BTB predictor)
+     */
+
+    /** Check if BTB predictor has dual FTQ entries available */
+    bool hasDualFTQEntries(ThreadID tid);
+
+    /** Get dual FTQ start PCs from BTB predictor */
+    std::pair<Addr, Addr> getDualFTQPCs(ThreadID tid);
+
+    /** Mark dual FTQ targets as finished in BTB predictor */
+    void finishDualFTQTargets(ThreadID tid);
+
+    /** Determine which FTQ index a packet belongs to */
+    unsigned determineFTQIndex(ThreadID tid, PacketPtr pkt);
+
+    /** Check if dual fetch should be used for this thread */
+    bool shouldUseDualFetch(ThreadID tid);
 
   protected:
     struct FetchStatGroup : public statistics::Group

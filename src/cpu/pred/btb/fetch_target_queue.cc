@@ -264,6 +264,90 @@ FetchTargetQueue::resetPC(Addr new_pc)
     fetchTargetEnqState.pc = new_pc;
 }
 
+/**
+ * @brief Check if FTQ has two consecutive entries available for dual fetch
+ *
+ * This method checks if we have both the current demanded target and
+ * the next consecutive target (current + 1) available in the queue.
+ *
+ * @return true if both current and next targets are available
+ */
+bool
+FetchTargetQueue::hasTwoFetchTargets() const
+{
+    // Check if current target is available
+    auto current_it = ftq.find(fetchDemandTargetId);
+    if (current_it == ftq.end()) {
+        return false;
+    }
+
+    // Check if next consecutive target is available
+    auto next_it = ftq.find(fetchDemandTargetId + 1);
+    if (next_it == ftq.end()) {
+        return false;
+    }
+
+    DPRINTF(DecoupleBP, "FTQ has two consecutive targets: %lu and %lu\n",
+            fetchDemandTargetId, fetchDemandTargetId + 1);
+    return true;
+}
+
+/**
+ * @brief Get start PCs for both current and next FTQ entries
+ *
+ * This method returns the start PCs for both the current demanded target
+ * and the next consecutive target. It assumes hasTwoFetchTargets() returned true.
+ *
+ * @return pair of (current PC, next PC) for dual fetch
+ */
+std::pair<Addr, Addr>
+FetchTargetQueue::getDualFTQPCs()
+{
+    // Get current target
+    auto current_it = ftq.find(fetchDemandTargetId);
+    assert(current_it != ftq.end());
+
+    // Get next target
+    auto next_it = ftq.find(fetchDemandTargetId + 1);
+    assert(next_it != ftq.end());
+
+    Addr current_pc = current_it->second.startPC;
+    Addr next_pc = next_it->second.startPC;
+
+    DPRINTF(DecoupleBP, "FTQ dual fetch PCs: current=%#lx (target %lu), "
+            "next=%#lx (target %lu)\n",
+            current_pc, fetchDemandTargetId, next_pc, fetchDemandTargetId + 1);
+
+    return std::make_pair(current_pc, next_pc);
+}
+
+/**
+ * @brief Mark both current and next fetch targets as finished
+ *
+ * This method is called when dual fetch has consumed both targets.
+ * It removes both entries from the queue and advances the demand ID by 2.
+ */
+void
+FetchTargetQueue::finishDualFetchTargets()
+{
+    DPRINTF(DecoupleBP, "Finishing dual fetch targets: %lu and %lu\n",
+            fetchDemandTargetId, fetchDemandTargetId + 1);
+
+    // Remove both targets from queue
+    ftq.erase(fetchDemandTargetId);
+    ftq.erase(fetchDemandTargetId + 1);
+
+    // Advance demand ID by 2
+    fetchDemandTargetId += 2;
+
+    // Invalidate supply state since we've moved forward
+    supplyFetchTargetState.valid = false;
+    supplyFetchTargetState.entry = nullptr;
+
+    DPRINTF(DecoupleBP, "Dual fetch targets finished, new demand ID: %lu\n",
+            fetchDemandTargetId);
+}
+
 }  // namespace btb_pred
 
 }  // namespace branch_prediction

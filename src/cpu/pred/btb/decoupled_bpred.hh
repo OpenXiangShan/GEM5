@@ -542,6 +542,22 @@ class DecoupledBPUWithBTB : public BPredUnit
         return fetchTargetQueue.getSupplyingStreamId();
     }
 
+    /** Dual fetch support methods */
+    bool hasTwoFetchTargets()
+    {
+        return fetchTargetQueue.hasTwoFetchTargets();
+    }
+
+    std::pair<Addr, Addr> getDualFTQPCs()
+    {
+        return fetchTargetQueue.getDualFTQPCs();
+    }
+
+    void finishDualFetchTargets()
+    {
+        return fetchTargetQueue.finishDualFetchTargets();
+    }
+
     void dumpFsq(const char *when);
 
     // Dummy overriding
