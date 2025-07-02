@@ -561,8 +561,8 @@ LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries
       lsqID(-1),
       storeQueue(sqEntries),
       loadQueue(lqEntries),
-      loadCompletedIt(loadQueue.begin()),
-      storeCompletedIt(storeQueue.begin()),
+      loadCompletedIdx(loadQueue.head()),
+      storeCompletedIdx(storeQueue.head()),
       loadPipe(ldPipeStages - 1, 0),
       storePipe(stPipeStages - 1, 0),
       storesToWB(0),
@@ -673,8 +673,8 @@ LSQUnit::resetState()
     storeWBIt = storeQueue.begin();
 
     // Reset completed iterators
-    loadCompletedIt = loadQueue.begin();
-    storeCompletedIt = storeQueue.begin();
+    loadCompletedIdx = loadQueue.head();
+    storeCompletedIdx = storeQueue.head();
 
     retryPkt = NULL;
     memDepViolator = NULL;
@@ -1358,12 +1358,12 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
         }
     }
 
-    if (loadCompletedIt != loadQueue.end()) {
-        int loadDistance = std::distance(loadCompletedIt,inst->lqIt);
+    if (loadCompletedIdx != loadQueue.tail()) {
+        int loadDistance = inst->lqIt.idx() - loadCompletedIdx;
         DPRINTF(LSQUnit, "loadDistance: %d\n in inst[sn:%lli]", loadDistance, inst->seqNum);
         if (loadDistance >= maxRARQEntries) {
             DPRINTF(LSQUnit, "RARQueue full, reschedule [sn:%llu], LoadCompletedItIdx: %d, inst->lqItIdx: %d\n",
-                    inst->seqNum, loadCompletedIt._idx, inst->lqIt._idx);
+                    inst->seqNum, loadCompletedIdx, inst->lqIt._idx);
             stats.RARQueueFull++;
             loadSetReplay(inst, request, true);
             addToRARReplayQueue(inst);
@@ -1372,12 +1372,12 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
         }
     }
 
-    if (storeCompletedIt != storeQueue.end()) {
-        int storeDistance = std::distance(storeCompletedIt,inst->sqIt);
+    if (storeCompletedIdx != storeQueue.tail()) {
+        int storeDistance = inst->sqIt.idx() - storeCompletedIdx;
         DPRINTF(LSQUnit, "storeDistance: %d\n in inst[sn:%lli]", storeDistance, inst->seqNum);
         if (storeDistance >= maxRAWQEntries) {
             DPRINTF(LSQUnit, "RAWQueue full, reschedule [sn:%lli], StoreCompletedItIdx: %d, inst->sqItIdx: %d\n",
-                    inst->seqNum, storeCompletedIt._idx, inst->sqIt._idx);
+                    inst->seqNum, storeCompletedIdx, inst->sqIt.idx());
             stats.RAWQueueFull++;
             loadSetReplay(inst, request, true);
             addToRAWReplayQueue(inst);
@@ -1698,7 +1698,7 @@ LSQUnit::executePipeSx()
 {
     executeLoadPipeSx();
     executeStorePipeSx();
-    updateCompletedIt();
+    updateCompletedIdx();
 }
 
 bool
@@ -2252,11 +2252,12 @@ LSQUnit::squash(const InstSeqNum &squashed_num)
         ++stats.squashedLoads;
     }
 
+    auto loadCompletedIt = loadQueue.getIterator(loadCompletedIdx);
     if (loadCompletedIt->valid() && loadCompletedIt->instruction() &&
         loadCompletedIt->instruction()->seqNum > squashed_num) {
         for (auto it = loadQueue.end(); it != loadQueue.begin(); it--) {
             if (it->instruction()->seqNum < squashed_num) {
-                loadCompletedIt = it;
+                loadCompletedIdx = it.idx();
                 break;
             }
         }
@@ -2342,11 +2343,12 @@ LSQUnit::squash(const InstSeqNum &squashed_num)
         ++stats.squashedStores;
     }
 
+    auto storeCompletedIt = storeQueue.getIterator(storeCompletedIdx);
     if (storeCompletedIt->valid() && storeCompletedIt->instruction() &&
         storeCompletedIt->instruction()->seqNum > squashed_num) {
         for (auto it = storeQueue.end(); it != storeQueue.begin(); it--) {
             if (it->instruction()->seqNum < squashed_num) {
-                storeCompletedIt = it;
+                storeCompletedIdx = it.idx();
                 break;
             }
         }
@@ -2742,33 +2744,31 @@ LSQUnit::checkStaleTranslations() const
 }
 
 void
-LSQUnit::updateCompletedIt()
+LSQUnit::updateCompletedIdx()
 {
-    {
-        int distance = 0;
-        for (auto it = loadCompletedIt; it != loadQueue.end() && distance < 3;) {
-            it++;
-            distance++;
-            if (it->valid() && it->instruction() && it->instruction()->isExecuted()) {
-                DPRINTF(LSQUnit, "loadCompletedIt move to [sn:%li]\n", it->instruction()->seqNum);
-                loadCompletedIt = it;
-            } else {
-                break;
-            }
+    // TODO: The step size for forward movement is temporarily fixed
+    // and will be modified to be adjustable later.
+    int maxLoadCompletedItIdx = loadCompletedIdx + 3;
+    int currentLoadCompletedIdx = loadCompletedIdx;
+    for (;loadCompletedIdx < maxLoadCompletedItIdx; loadCompletedIdx++) {
+        auto loadCompletedIt = loadQueue.getIterator(loadCompletedIdx);
+        if (loadCompletedIt->valid() && loadCompletedIt->instruction() &&
+            loadCompletedIt->instruction()->isExecuted()) {
+            DPRINTF(LSQUnit, "loadCompletedIdx [%d]->[%d]\n", currentLoadCompletedIdx, loadCompletedIdx);
+        } else {
+            break;
         }
     }
-
-    {
-        int distance = 0;
-        for (auto it = storeCompletedIt; it != storeQueue.end() && distance < 3;) {
-            it++;
-            distance++;
-            if (it->addrReady()) {
-                DPRINTF(LSQUnit, "storeCompletedIt move to [sn:%li]\n", it->instruction()->seqNum);
-                storeCompletedIt = it;
-            } else {
-                break;
-            }
+    // TODO: The step size for forward movement is temporarily fixed
+    // and will be modified to be adjustable later.
+    int maxStoreCompletedItIdx = storeCompletedIdx + 3;
+    int currentStoreCompletedIdx = storeCompletedIdx;
+    for (;storeCompletedIdx < maxStoreCompletedItIdx; storeCompletedIdx++) {
+        auto storeCompletedIt = storeQueue.getIterator(storeCompletedIdx);
+        if (storeCompletedIt->addrReady() || storeCompletedIt->canWB()) {
+            DPRINTF(LSQUnit, "storeCompletedIdx [%d]->[%d]\n", currentStoreCompletedIdx, storeCompletedIdx);
+        } else {
+            break;
         }
     }
 
@@ -3340,12 +3340,12 @@ LSQUnit::processReplayQueues()
             continue;
         }
 
-        DPRINTF(LSQUnit, "inst [sn:%llu] loadCompletedIt: %d, inst->lqIt: %d\n",
-                inst->seqNum, loadCompletedIt._idx, inst->lqIt._idx);
+        DPRINTF(LSQUnit, "inst [sn:%llu] loadCompletedIdx: %d, inst->lqItIdx: %d\n",
+                inst->seqNum, loadCompletedIdx, inst->lqIt.idx());
 
         // Check if distance condition is satisfied
-        if (loadCompletedIt != loadQueue.end() && inst->lqIt != loadQueue.end()) {
-            int loadDistance = std::distance(loadCompletedIt, inst->lqIt);
+        if (loadCompletedIdx != loadQueue.tail()) {
+            int loadDistance = inst->lqIt.idx() - loadCompletedIdx;
             if (loadDistance < maxRARQEntries) {
                 // Distance condition satisfied, remove from queue and clear replay flag
                 DPRINTF(LSQUnit, "Distance satisfied for inst [sn:%llu], removing from RARReplayQueue\n",
@@ -3390,8 +3390,8 @@ LSQUnit::processReplayQueues()
         }
 
         // Check if distance condition is satisfied
-        if (storeCompletedIt != storeQueue.end() && inst->sqIt != storeQueue.end()) {
-            int storeDistance = std::distance(storeCompletedIt, inst->sqIt);
+        if (storeCompletedIdx != storeQueue.tail()) {
+            int storeDistance = inst->sqIt.idx() - storeCompletedIdx;
             if (storeDistance < maxRAWQEntries) {
                 // Distance condition satisfied, remove from queue and clear replay flag
                 DPRINTF(LSQUnit, "Distance satisfied for inst [sn:%llu], removing from RAWReplayQueue\n",

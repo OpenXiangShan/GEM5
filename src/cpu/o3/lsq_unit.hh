@@ -44,6 +44,7 @@
 
 #include <algorithm>
 #include <bitset>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <map>
@@ -499,8 +500,8 @@ class LSQUnit
     /** Returns the number of stores to writeback. */
     int numStoresToSbuffer() { return storesToWB; }
 
-    /** 更新loadCompletedIt和storeCompletedIt */
-    void updateCompletedIt();
+    /** 更新loadCompletedIdx和storeCompletedIdx */
+    void updateCompletedIdx();
 
     LSQ* getLsq() { return lsq; }
 
@@ -688,10 +689,10 @@ class LSQUnit
     LoadQueue loadQueue;
 
     /** 指向loadQueue中从头开始连续完成指令的最后一个位置 */
-    typename LoadQueue::iterator loadCompletedIt;
+    size_t loadCompletedIdx;
 
     /** 指向storeQueue中从头开始连续完成指令的最后一个位置 */
-    typename StoreQueue::iterator storeCompletedIt;
+    size_t storeCompletedIdx;
 
     const static int MaxPipeWidth = 4;
 
