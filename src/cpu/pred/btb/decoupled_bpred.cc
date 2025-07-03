@@ -534,7 +534,13 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(statistics::Group* parent, unsigne
     ADD_STAT(btbEntriesWithDifferentStart, statistics::units::Count::get(), "number of btb entries with different start PC"),
     ADD_STAT(btbEntriesWithOnlyOneJump, statistics::units::Count::get(), "number of btb entries with different start PC starting with a jump"),
     ADD_STAT(predFalseHit, statistics::units::Count::get(), "false hit detected at pred"),
-    ADD_STAT(commitFalseHit, statistics::units::Count::get(), "false hit detected at commit")
+    ADD_STAT(commitFalseHit, statistics::units::Count::get(), "false hit detected at commit"),
+    ADD_STAT(predTwoTakenRatio, statistics::units::Rate<
+                    statistics::units::Count, statistics::units::Count>::get(),
+               "Ratio of 2-taken BPU cycles to total BPU cycles"),
+    ADD_STAT(commitSecondPredRatio, statistics::units::Rate<
+                    statistics::units::Count, statistics::units::Count>::get(),
+               "Ratio of committed second predictions(in a 2 taken pair) to total FSQ entries")
 {
     predsOfEachStage.init(numStages);
     commitPredsFromEachStage.init(numStages+1);
@@ -543,6 +549,10 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(statistics::Group* parent, unsigne
     fsqEntryDist.init(0, fsqSize, 20).flags(statistics::total);
     commitFsqEntryHasInsts.init(0, maxInstsNum >> 1, 1);
     commitFsqEntryFetchedInsts.init(0, maxInstsNum >> 1, 1);
+
+    // Initialize formula statistics
+    predTwoTakenRatio = predProduce2Taken / (predProduce2Taken + predProduce1Taken);
+    commitSecondPredRatio = secondPredCommitted / fsqEntryCommitted;
 }
 
 DecoupledBPUWithBTB::BpTrace::BpTrace(uint64_t fsqId, FetchStream &stream, const DynInstPtr &inst, bool mispred)

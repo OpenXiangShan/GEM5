@@ -412,6 +412,9 @@ class UBTB : public TimedBaseBTBPredictor
         statistics::Scalar twoTakenFailRetRet;           ///< Rejected due to ret->ret sequence
         statistics::Scalar twoTakenFailCallCall;         ///< Rejected due to call->call sequence
 
+        // Formula statistics for performance ratios
+        statistics::Formula twoTakenTrainSuccessfulRatio; ///< Ratio of successful 2-taken conditions to total checks
+
         UBTBStats(statistics::Group* parent);
     } ubtbStats;
 

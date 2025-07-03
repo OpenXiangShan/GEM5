@@ -795,8 +795,13 @@ UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
       ADD_STAT(twoTakenFailRetRet, statistics::units::Count::get(),
                "2-taken rejected due to ret->ret sequence"),
       ADD_STAT(twoTakenFailCallCall, statistics::units::Count::get(),
-               "2-taken rejected due to call->call sequence")
+               "2-taken rejected due to call->call sequence"),
+      ADD_STAT(twoTakenTrainSuccessfulRatio, statistics::units::Rate<
+                    statistics::units::Count, statistics::units::Count>::get(),
+               "Ratio of successful 2-taken conditions to total checks")
 {
+    // Initialize formula statistics
+    twoTakenTrainSuccessfulRatio = twoTakenConditionPassed / twoTakenConditionChecks;
 }
 
 
