@@ -1361,7 +1361,7 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
     if (loadCompletedIdx != loadQueue.tail() && inst->isNormalLd()) {
         int loadDistance = inst->lqIt.idx() - loadCompletedIdx;
         DPRINTF(LSQUnit, "loadDistance: %d\n in inst[sn:%lli]", loadDistance, inst->seqNum);
-        if (loadDistance >= maxRARQEntries) {
+        if (loadDistance > maxRARQEntries) {
             DPRINTF(LSQUnit, "RARQueue full, reschedule [sn:%llu], LoadCompletedItIdx: %d, inst->lqItIdx: %d\n",
                     inst->seqNum, loadCompletedIdx, inst->lqIt._idx);
             stats.RARQueueFull++;
@@ -1375,7 +1375,7 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
     if (storeCompletedIdx != storeQueue.tail() && inst->isNormalLd()) {
         int storeDistance = inst->sqIt.idx() - storeCompletedIdx;
         DPRINTF(LSQUnit, "storeDistance: %d\n in inst[sn:%lli]", storeDistance, inst->seqNum);
-        if (storeDistance >= maxRAWQEntries) {
+        if (storeDistance > maxRAWQEntries) {
             DPRINTF(LSQUnit, "RAWQueue full, reschedule [sn:%lli], StoreCompletedItIdx: %d, inst->sqItIdx: %d\n",
                     inst->seqNum, storeCompletedIdx, inst->sqIt.idx());
             stats.RAWQueueFull++;
@@ -3358,7 +3358,7 @@ LSQUnit::processReplayQueues()
         // Check if distance condition is satisfied
         if (loadCompletedIdx >= loadQueue.head() && loadCompletedIdx <= loadQueue.tail()) {
             int loadDistance = inst->lqIt.idx() - loadCompletedIdx;
-            if (loadDistance < maxRARQEntries) {
+            if (loadDistance <= maxRARQEntries) {
                 // Distance condition satisfied, remove from queue and clear replay flag
                 DPRINTF(LSQUnit, "Distance satisfied for inst [sn:%llu], removing from RARReplayQueue\n",
                         inst->seqNum);
@@ -3404,7 +3404,7 @@ LSQUnit::processReplayQueues()
         // Check if distance condition is satisfied
         if (storeCompletedIdx >= storeQueue.head() && storeCompletedIdx <= storeQueue.tail()) {
             int storeDistance = inst->sqIt.idx() - storeCompletedIdx;
-            if (storeDistance < maxRAWQEntries) {
+            if (storeDistance <= maxRAWQEntries) {
                 // Distance condition satisfied, remove from queue and clear replay flag
                 DPRINTF(LSQUnit, "Distance satisfied for inst [sn:%llu], removing from RAWReplayQueue\n",
                         inst->seqNum);
