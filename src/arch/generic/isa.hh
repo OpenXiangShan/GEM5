@@ -65,11 +65,13 @@ class BaseISA : public SimObject
     ThreadContext *tc = nullptr;
 
     RegClasses _regClasses;
+    bool enableSv48 = false;
 
   public:
     virtual PCStateBase *newPCState(Addr new_inst_addr=0) const = 0;
     virtual void takeOverFrom(ThreadContext *new_tc, ThreadContext *old_tc) {}
     virtual void setThreadContext(ThreadContext *_tc) { tc = _tc; }
+    virtual void setEnableSv48(bool _enableSv48) {  enableSv48= _enableSv48; }
 
     virtual uint64_t getExecutingAsid() const { return 0; }
     virtual bool inUserMode() const = 0;

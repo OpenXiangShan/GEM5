@@ -155,6 +155,8 @@ def build_test_system(np):
             cpu.mmu.pma_checker = PMAChecker(
                 uncacheable=[AddrRange(0, size=0x80000000)])
             cpu.mmu.functional = args.functional_tlb
+            cpu.mmu.enable_sv48 = args.open_sv48
+
     if args.enable_arch_db:
         test_sys.arch_db = ArchDBer(arch_db_file=args.arch_db_file)
         test_sys.arch_db.dump_from_start = args.arch_db_fromstart
@@ -366,6 +368,7 @@ def build_test_system(np):
         test_sys.kvm_vm = KvmVM()
 
     CpuConfig.deprecated_config_difftest(TestCPUClass, test_sys.cpu, args)
+    CpuConfig.deprecated_config_48(TestCPUClass, test_sys.cpu, args)
 
     for i in range(np):
         if args.dump_commit:

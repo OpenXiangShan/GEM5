@@ -73,3 +73,12 @@ def deprecated_config_difftest(cpu_cls, cpu_list, options):
                   "the --difftest-ref-so option, 2) or specify NEMU_HOME that contains "
                   "build/riscv64-nemu-interpreter-so")
         cpu_list[0].difftest_ref_so = options.difftest_ref_so
+
+
+def deprecated_config_48(cpu_cls, cpu_list, options):
+    if not options.open_sv48:
+        return
+    else:
+        assert len(cpu_list) == 1
+        cpu_list[0].enable_sv48 = True
+

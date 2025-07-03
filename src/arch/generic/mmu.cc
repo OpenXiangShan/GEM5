@@ -111,6 +111,7 @@ void
 BaseMMU::translateTiming(const RequestPtr &req, ThreadContext *tc,
                          BaseMMU::Translation *translation, BaseMMU::Mode mode)
 {
+    getTlb(mode)->setPTWmode(enableSv48);
     if (functional) {
         return getTlb(mode)->translateFunctional(req, tc, translation, mode);
     } else {

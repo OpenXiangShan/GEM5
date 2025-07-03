@@ -290,6 +290,9 @@ def addCommonOptions(parser, configure_xiangshan=False):
     parser.add_argument("--functional-tlb", action="store_true", default=False,
                         help="""
                         Use functional TLB""")
+    parser.add_argument("--open-sv48", action="store_true", default=False,
+                        help="""
+                        Enable sv48""")
     parser.add_argument("--list-hwp-types",
                         action=ListHWP, nargs=0,
                         help="List available hardware prefetcher types")
@@ -660,4 +663,3 @@ def addXiangshanFSOptions(parser):
                         action="store",
                         default=None,
                         help="The shared lib file used to do difftest")
-

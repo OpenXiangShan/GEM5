@@ -134,6 +134,38 @@ BitUnion64(PTESv39)
     Bitfield<0> v;
 EndBitUnion(PTESv39)
 
+
+BitUnion64(PTESv48)
+    Bitfield<53, 10> ppn;
+    Bitfield<53, 37> ppn3;
+    Bitfield<36, 28> ppn2;
+    Bitfield<27, 19> ppn1;
+    Bitfield<18, 10> ppn0;
+    Bitfield<7> d;
+    Bitfield<6> a;
+    Bitfield<5> g;
+    Bitfield<4> u;
+    Bitfield<3, 1> perm;
+    Bitfield<3> x;
+    Bitfield<2> w;
+    Bitfield<1> r;
+    Bitfield<0> v;
+EndBitUnion(PTESv48)
+
+
+BitUnion64(PTE)
+    Bitfield<53, 10> ppn;
+    Bitfield<7> d;
+    Bitfield<6> a;
+    Bitfield<5> g;
+    Bitfield<4> u;
+    Bitfield<3, 1> perm;
+    Bitfield<3> x;
+    Bitfield<2> w;
+    Bitfield<1> r;
+    Bitfield<0> v;
+EndBitUnion(PTE)
+
 struct TlbEntry;
 //struct L2TlbEntry;
 typedef Trie<Addr, TlbEntry> TlbEntryTrie;

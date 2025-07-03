@@ -709,11 +709,16 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 if (cur_val != new_val) {
                     tc->getCpuPtr()->flushTLBs();
                 }
-                if ((val & NEMU_SATP_SV39_MASK) >> NEMU_SATP_RIGHT_OFFSET == NEMU_SV39_SIGN0 ||
+                if (enableSv48) {
+                    RegVal writeVal = val & NEMU_SATP48_MASK;
+                    setMiscRegNoEffect(misc_reg, writeVal);
+                }
+                else if ((val & NEMU_SATP_SV39_MASK) >> NEMU_SATP_RIGHT_OFFSET == NEMU_SV39_SIGN0 ||
                     (val & NEMU_SATP_SV39_MASK) >> NEMU_SATP_RIGHT_OFFSET == NEMU_SV39_SIGN1) {
                     RegVal writeVal = val & NEMU_SATP_MASK;
                     setMiscRegNoEffect(misc_reg, writeVal);
                 }
+               // if ()
 
             }
             break;

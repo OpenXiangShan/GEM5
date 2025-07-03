@@ -154,7 +154,10 @@ TLB::getWalker()
 {
     return walker;
 }
-
+void
+TLB::setPTWmode(bool _enable_sv48){
+    walker->openSv48 = _enable_sv48;
+}
 void
 TLB::configL2Tlb(EntryList *List_choose, TlbEntryTrie *Trie_l2_choose, std::vector<TlbEntry> &l2Tlb_choose,
                  size_t size, bool sp)
@@ -1755,6 +1758,17 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
     TlbEntry *pre_back = l2tlb->lookupBackPre(back_pre_block, satp.asid, true);
     backPrePrecision = checkPrePrecision(l2tlb->removeNoUseBackPre, l2tlb->usedBackPre);
     forwardPrePrecision = checkPrePrecision(l2tlb->removeNoUseForwardPre, l2tlb->forwardUsedPre);
+    if (walker->openSv48) {
+        fault = walker->start(0, tc, translation, req, mode, false, false, 3, false, 0);
+
+        if (translation != nullptr || fault != NoFault) {
+            // This gets ignored in atomic mode.
+            delayed = true;
+            return fault;
+        } else {
+            panic("sv48 goes wrong\n");
+        }
+    }
 
     for (int i_e = 1; i_e < 6; i_e++) {
         if (!e[0])
