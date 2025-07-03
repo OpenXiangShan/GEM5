@@ -400,6 +400,10 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar predFalseHit;
         statistics::Scalar commitFalseHit;
 
+        // Formula statistics for performance ratios
+        statistics::Formula predTwoTakenRatio;        ///< Ratio of 2-taken predictions to total predictions
+        statistics::Formula commitSecondPredRatio;      ///< Ratio of committed second predictions to total FSQ entries
+
         DBPBTBStats(statistics::Group* parent, unsigned numStages, unsigned fsqSize, unsigned maxInstsNum);
     } dbpBtbStats;
 
