@@ -413,6 +413,17 @@ class UBTB : public TimedBaseBTBPredictor
         statistics::Scalar twoTakenFailRetRet;           ///< Rejected due to ret->ret sequence
         statistics::Scalar twoTakenFailCallCall;         ///< Rejected due to call->call sequence
 
+        // Training scenario statistics
+        statistics::Scalar trainHitFallThru;            ///< S0 hit but S3 fall through
+        statistics::Scalar trainHitMismatch;            ///< S0 hit, S3 taken, but mismatch
+        statistics::Scalar trainHitMatch;               ///< S0 hit, S3 taken, and match
+        statistics::Scalar trainMissTaken;              ///< S0 miss, S3 taken (new entry)
+        statistics::Scalar trainMissFallThru;           ///< S0 miss, S3 fall through (no action)
+        statistics::Scalar trainHitMismatchReplace;     ///< Hit mismatch leading to replacement
+        statistics::Scalar trainHitFallThruInvalidate;  ///< Hit fall through leading to invalidation
+        statistics::Scalar trainAttempts;               ///< Total number of training attempts (trainCommon calls)
+        statistics::Scalar trainDuplicateEntry;         ///< Early returns due to duplicate entry already existing
+
         // Formula statistics for performance ratios
         statistics::Formula twoTakenTrainSuccessfulRatio; ///< Ratio of successful 2-taken conditions to total checks
 
