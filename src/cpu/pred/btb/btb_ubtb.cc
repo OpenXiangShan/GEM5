@@ -474,6 +474,9 @@ UBTB::trainCommon(int entry_index, FullBTBPrediction& pred, FullBTBPrediction* s
     DPRINTF(UBTB, "updateEntryAtIndex: entry_index=%d, pred.bbStart=%#lx, secondPred=%s\n",
            entry_index, pred.bbStart, secondPred ? "provided" : "null");
 
+    // Count total training attempts
+    ubtbStats.trainAttempts++;
+
     auto s3TakenEntry = pred.getTakenEntry();
 
     if (entry_index >= 0) {
@@ -485,10 +488,12 @@ UBTB::trainCommon(int entry_index, FullBTBPrediction& pred, FullBTBPrediction* s
 
         if (!s3TakenEntry.valid) {
             // S0 has a hit entry, but S3 predicts fall through
+            ubtbStats.trainHitFallThru++;
             updateUCtr(entry.uctr, false);
             if (entry.uctr == 0) {
                 entry.valid = false;
                 entry.valid_2nd = false;
+                ubtbStats.trainHitFallThruInvalidate++;
                 DPRINTF(UBTB, "updateEntryAtIndex: Invalidated entry at index %d (fall through)\n", entry_index);
             }
         } else {
@@ -498,9 +503,11 @@ UBTB::trainCommon(int entry_index, FullBTBPrediction& pred, FullBTBPrediction* s
                 entry.target != pred.getTarget(predictWidth) ||
                 entry.numNTConds != calculateNumNTConds(pred)) {
                 // S0 and S3 predict different branch instruction
+                ubtbStats.trainHitMismatch++;
                 updateUCtr(entry.uctr, false);
                 if (entry.uctr == 0) {
                     // Replace the old entry with the new one
+                    ubtbStats.trainHitMismatchReplace++;
                     replaceEntry(entry_index, const_cast<FullBTBPrediction&>(pred));
                     // Add second prediction if provided
                     if (secondPred != nullptr) {
@@ -510,6 +517,7 @@ UBTB::trainCommon(int entry_index, FullBTBPrediction& pred, FullBTBPrediction* s
                 }
             } else {
                 // S0 and S3 predict the same (brpc and target)
+                ubtbStats.trainHitMatch++;
                 updateUCtr(entry.uctr, true);
 
                 // Add second prediction if provided
@@ -526,10 +534,12 @@ UBTB::trainCommon(int entry_index, FullBTBPrediction& pred, FullBTBPrediction* s
             /* S0 misses, but S3 predicts taken,
              * generate new entry and replace another using LRU
              */
+            ubtbStats.trainMissTaken++;
             // check if the new entry exist in the uBTB
             for (size_t i = 0; i < ubtb.size(); ++i) {
                 if (ubtb[i].tag == getTag(pred.bbStart)) {
                     //warn("updateEntryAtIndex: New entry already exists in uBTB\n");
+                    ubtbStats.trainDuplicateEntry++;
                     return;
                 }
             }
@@ -561,6 +571,7 @@ UBTB::trainCommon(int entry_index, FullBTBPrediction& pred, FullBTBPrediction* s
             DPRINTF(UBTB, "updateEntryAtIndex: Created new entry at index %d (miss->hit)\n", toBeReplacedIndex);
         } else {
             // Both S0 and S3 predict fall through - do nothing
+            ubtbStats.trainMissFallThru++;
             DPRINTF(UBTB, "updateEntryAtIndex: No action needed (miss->fall through)\n");
         }
     }
@@ -796,6 +807,27 @@ UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
                "2-taken rejected due to ret->ret sequence"),
       ADD_STAT(twoTakenFailCallCall, statistics::units::Count::get(),
                "2-taken rejected due to call->call sequence"),
+
+      // Training scenario statistics
+      ADD_STAT(trainHitFallThru, statistics::units::Count::get(),
+               "Training scenarios: S0 hit but S3 fall through"),
+      ADD_STAT(trainHitMismatch, statistics::units::Count::get(),
+               "Training scenarios: S0 hit, S3 taken, but mismatch"),
+      ADD_STAT(trainHitMatch, statistics::units::Count::get(),
+               "Training scenarios: S0 hit, S3 taken, and match"),
+      ADD_STAT(trainMissTaken, statistics::units::Count::get(),
+               "Training scenarios: S0 miss, S3 taken (new entry created)"),
+      ADD_STAT(trainMissFallThru, statistics::units::Count::get(),
+               "Training scenarios: S0 miss, S3 fall through (no action)"),
+      ADD_STAT(trainHitMismatchReplace, statistics::units::Count::get(),
+               "Training scenarios: Hit mismatch leading to entry replacement"),
+      ADD_STAT(trainHitFallThruInvalidate, statistics::units::Count::get(),
+               "Training scenarios: Hit fall through leading to entry invalidation"),
+      ADD_STAT(trainAttempts, statistics::units::Count::get(),
+               "Total number of training attempts (trainCommon function calls)"),
+      ADD_STAT(trainDuplicateEntry, statistics::units::Count::get(),
+               "Early returns due to duplicate entry already existing in uBTB"),
+
       ADD_STAT(twoTakenTrainSuccessfulRatio, statistics::units::Rate<
                     statistics::units::Count, statistics::units::Count>::get(),
                "Ratio of successful 2-taken conditions to total checks")
