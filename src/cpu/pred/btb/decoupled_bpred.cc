@@ -85,8 +85,8 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     predsOfEachStage.resize(numStages);
     for (unsigned i = 0; i < numStages; i++) {
         predsOfEachStage[i].predSource = i;
-        clearPreds();
     }
+    clearPreds();
 
     s0PC = 0x80000000;
 
@@ -593,7 +593,19 @@ DecoupledBPUWithBTB::tick()
 
         // The training logic runs here, based on the previous cycle's DFF state.
         trainUbtbFor2Taken();
+
+        // Store s3_pred BEFORE clearing predictions in generateFinalPredAndCreateBubbles()
+        // This stored block is used for 2-taken training.
+        // Admittedly, this FB doesn't always directly precede the s3 pred of the next cycle,
+        // actually, when the current cycle produce a two-taken, dff and next cycls's s3 pred are not consecutive.
+        // this case is handled inside updateUsingS3Pred(), it simply train with dff.
+        DPRINTF(DecoupleBP, "updateDFF: Storing s3_pred for next cycle (ubtbHitIndex=%d)\n", ubtbHitIndex);
+        predDFF.storePrediction(predsOfEachStage[numStages-1], ubtbHitIndex);
+
         numOverrideBubbles = generateFinalPredAndCreateBubbles();
+
+        // Clear stage predictions for next cycle
+        clearPreds();
 
         // Check if the second prediction is still valid after overrides.
         validateSecondFBPrediction();
@@ -605,14 +617,6 @@ DecoupledBPUWithBTB::tick()
                     secondPrediction.bbStart, abtb->aheadPipelinedStages);
         }
 
-        // Inline updateDFF() - Always store finalPred
-        //  This stored block is used for 2-taken training.
-        // Admittedly, this FB doesn't always directly precede the s3 pred of the next cycle,
-        // actually, when the current cycle produce a two-taken, dff and next cycls's s3 pred are not consecutive.
-        // this case is handled inside updateUsingS3Pred(), it simply train with dff.
-        DPRINTF(DecoupleBP, "updateDFF: Storing finalPred for next cycle (ubtbHitIndex=%d)\n", ubtbHitIndex);
-        predDFF.storePrediction(finalPred, ubtbHitIndex);
-
         bpuState = BpuState::PREDS_READY;
 
         // Update performance counters based on prediction type
@@ -622,10 +626,6 @@ DecoupledBPUWithBTB::tick()
             dbpBtbStats.predProduce1Taken++;
         }
 
-        // Clear predictor outputs.
-        for (int i = 0; i < numStages; i++) {
-            predsOfEachStage[i].btbEntries.clear();
-        }
     }
 
     // try Enqueue FTQ
@@ -819,8 +819,6 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
     printFullBTBPrediction(finalPred);
     dbpBtbStats.predsOfEachStage[first_hit_stage]++;
 
-    // Clear stage predictions for next cycle
-    clearPreds();
 
     DPRINTF(Override, "Prediction complete: override bubbles=%d\n", first_hit_stage);
     return first_hit_stage;
