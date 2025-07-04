@@ -717,9 +717,9 @@ DecoupledBPUWithBTB::requestNewPrediction()
             } else {
                 // Regular 1-taken prediction for uBTB
                 ubtb->putPCHistory(s0PC, s0History, predsOfEachStage);
-                ubtbHitIndex = -1; // No hit index tracking in 1-taken mode
+                ubtbHitIndex = ubtb->getLastHitIndex(); // Get hit index for timing consistency
                 hasSecondPrediction = false;
-                DPRINTF(DecoupleBP, "1-taken prediction mode\n");
+                DPRINTF(DecoupleBP, "1-taken prediction mode (hitIndex=%d)\n", ubtbHitIndex);
             }
         } else {
             // Regular handling for other components (ABTB, etc.)
@@ -2203,23 +2203,23 @@ void DecoupledBPUWithBTB::trainUbtbFor2Taken()
     auto& s3_pred = predsOfEachStage[numStages-1];
 
     // Update ubtb based on the S3 prediction.
-    if (s3_pred.btbEntries.size() > 0) {
-        if (enable2Taken) {
-            if (predDFF.valid) {
-                // 2-taken mode with valid DFF: Use overloaded updateUsingS3Pred
-                DPRINTF(DecoupleBP, "trainUbtbFor2Taken: 2-taken training with DFF (prevIndex=%d)\n",
-                       predDFF.prevUbtbHitIndex);
-                ubtb->train2Taken(predDFF.prevS3Pred, s3_pred, predDFF.prevUbtbHitIndex);
-            } else {
-                // 2-taken mode with invalid DFF: Skip training
-                DPRINTF(DecoupleBP, "trainUbtbFor2Taken: 2-taken mode but DFF invalid, skipping training\n");
-            }
-        } else {
-            // 1-taken mode: Use original updateUsingS3Pred
-            DPRINTF(DecoupleBP, "trainUbtbFor2Taken: 1-taken training\n");
-            ubtb->train1Taken(s3_pred);
+    if (enable2Taken) {
+        if (predDFF.valid) {
+            // 2-taken mode with valid DFF: Use train2Taken
+            DPRINTF(DecoupleBP, "trainUbtbFor2Taken: 2-taken training with DFF (prevIndex=%d)\n",
+                    predDFF.prevUbtbHitIndex);
+            ubtb->train2Taken(predDFF.prevS3Pred, s3_pred, predDFF.prevUbtbHitIndex);
+        }
+    } else {
+        // 1-taken mode: NOW ALSO use DFF content for timing consistency
+        if (predDFF.valid) {
+            // Use DFF content (delayed training) for timing consistency with 2-taken
+            DPRINTF(DecoupleBP, "trainUbtbFor2Taken: 1-taken training with DFF timing (prevIndex=%d)\n",
+                    predDFF.prevUbtbHitIndex);
+            ubtb->train1Taken(predDFF.prevS3Pred, predDFF.prevUbtbHitIndex);
         }
     }
+    predDFF.reset();
 }
 
 

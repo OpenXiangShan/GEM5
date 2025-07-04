@@ -203,7 +203,7 @@ UBTB::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
     // Fill predictions for each pipeline stage
     fillStagePredictions(entry, stagePreds);
 
-    // Update metadata for later stages
+    // Update metadata for later stages - hit index can be retrieved via getLastHitIndex()
     lastPred.hit_index = hit_index;
 }
 
@@ -389,13 +389,10 @@ UBTB::calculateNumNTConds(FullBTBPrediction& prediction)
 }
 
 void
-UBTB::train1Taken(FullBTBPrediction &s3Pred)
+UBTB::train1Taken(FullBTBPrediction &dffPred, int hit_index)
 {
-    DPRINTF(UBTB, "1-taken updateUsingS3Pred: hit_index=%d, s3Pred.bbStart=%#lx\n",
-           lastPred.hit_index, s3Pred.bbStart);
-
-    // Use the common helper function with the hit index from lastPred (no second prediction)
-    trainCommon(lastPred.hit_index, s3Pred, nullptr);
+    // Use the common helper function with the effective hit index (no second prediction)
+    trainCommon(hit_index, dffPred, nullptr);
 }
 
 

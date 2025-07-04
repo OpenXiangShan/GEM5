@@ -122,9 +122,15 @@ class UBTB : public TimedBaseBTBPredictor
      * 1. Looks up BTB entries for the fetch block
      * 2. Updates prediction statistics
      * 3. Fills predictions for each pipeline stage
+     * 4. Stores hit index in lastPred.hit_index for later retrieval
      */
     void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
                       std::vector<FullBTBPrediction> &stagePreds) override;
+
+    /** Get the hit index from the last putPCHistory call
+     * @return Hit index (-1 for miss, array index for hit)
+     */
+    int getLastHitIndex() const { return lastPred.hit_index; }
 
     /** New unified prediction function for 2-taken support.
      * Performs uBTB lookup and fills both primary and secondary predictions if available.
@@ -147,7 +153,7 @@ class UBTB : public TimedBaseBTBPredictor
      *
      * @param s3Pred The S3 prediction containing branch information and target
      */
-    void train1Taken(FullBTBPrediction &s3Pred);
+    void train1Taken(FullBTBPrediction &dffPred, int hit_index = -1);
 
     /**
      * Updates the uBTB using S3 prediction with 2-taken support (training/learning phase)
