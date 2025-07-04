@@ -698,7 +698,7 @@ DecoupledBPUWithBTB::requestNewPrediction()
         if (components[i] == ubtb) {
             // Special handling for uBTB - use 2-taken prediction if enabled
             if (enable2Taken) {
-                auto [hitIndex, secondAvailable] = ubtb->getTwoTakenPrediction(
+                auto [hitIndex, secondAvailable] = ubtb->putPCHistory2Taken(
                     s0PC, s0History, predsOfEachStage, secondPrediction);
 
                 // Store hit index for cross-cycle tracking
@@ -1909,7 +1909,7 @@ DecoupledBPUWithBTB::createFetchStreamEntry(bool is_second_pred)
         if (is_second_pred) {
             // For MBTB during second prediction, use uBTB's stored meta instead
             if (components[i] == btb) {
-                entry.predMetas[i] = ubtb->getMBTBSecondPredictionMeta();
+                entry.predMetas[i] = ubtb->getSecondPredictionMetaForMBTB();
             } else {
                 entry.predMetas[i] = components[i]->getSecondPredictionMeta();
             }
@@ -2211,7 +2211,7 @@ void DecoupledBPUWithBTB::trainUbtbFor2Taken()
                 // 2-taken mode with valid DFF: Use overloaded updateUsingS3Pred
                 DPRINTF(DecoupleBP, "trainUbtbFor2Taken: 2-taken training with DFF (prevIndex=%d)\n",
                        predDFF.prevUbtbHitIndex);
-                ubtb->updateUsingS3Pred(predDFF.prevS3Pred, s3_pred, predDFF.prevUbtbHitIndex);
+                ubtb->train2Taken(predDFF.prevS3Pred, s3_pred, predDFF.prevUbtbHitIndex);
             } else {
                 // 2-taken mode with invalid DFF: Skip training
                 DPRINTF(DecoupleBP, "trainUbtbFor2Taken: 2-taken mode but DFF invalid, skipping training\n");
@@ -2219,7 +2219,7 @@ void DecoupledBPUWithBTB::trainUbtbFor2Taken()
         } else {
             // 1-taken mode: Use original updateUsingS3Pred
             DPRINTF(DecoupleBP, "trainUbtbFor2Taken: 1-taken training\n");
-            ubtb->updateUsingS3Pred(s3_pred);
+            ubtb->train1Taken(s3_pred);
         }
     }
 }

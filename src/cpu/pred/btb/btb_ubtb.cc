@@ -208,7 +208,7 @@ UBTB::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
 }
 
 std::pair<int, bool>
-UBTB::getTwoTakenPrediction(Addr startAddr, const boost::dynamic_bitset<> &history,
+UBTB::putPCHistory2Taken(Addr startAddr, const boost::dynamic_bitset<> &history,
                            std::vector<FullBTBPrediction> &stagePreds,
                            FullBTBPrediction &secondPrediction)
 {
@@ -251,7 +251,7 @@ UBTB::getTwoTakenPrediction(Addr startAddr, const boost::dynamic_bitset<> &histo
                 has_second_prediction = true;
 
                 // Create MBTB meta for the second prediction
-                createMBTBMetaForSecondPrediction(entry.branch_info_2nd);
+                createSecondPredictionMetaForMBTB(entry.branch_info_2nd);
 
                 DPRINTF(UBTB, "uBTB: Valid second prediction - bbStart: %#lx, controlAddr: %#lx, target: %#lx\n",
                        second_bb_start, control_addr, secondPrediction.getTarget(predictWidth));
@@ -306,7 +306,7 @@ UBTB::lookup(Addr startAddr)
 
 
 void
-UBTB::replaceOldEntry(int entryIndex, FullBTBPrediction & newPrediction)
+UBTB::replaceEntry(int entryIndex, FullBTBPrediction & newPrediction)
 {
     assert(entryIndex >= 0 && entryIndex < static_cast<int>(ubtb.size()));
     assert(newPrediction.getTakenEntry().valid);
@@ -355,7 +355,7 @@ UBTB::addSecondPredictionToEntry(int entryIndex, FullBTBPrediction* secondPred)
 }
 
 void
-UBTB::createMBTBMetaForSecondPrediction(const BranchInfo& branch_info_2nd)
+UBTB::createSecondPredictionMetaForMBTB(const BranchInfo& branch_info_2nd)
 {
     // Create a standard BTBMeta with the second prediction's branch info
     mbtbSecondPredMeta = std::make_shared<DefaultBTB::BTBMeta>();
@@ -389,13 +389,13 @@ UBTB::calculateNumNTConds(FullBTBPrediction& prediction)
 }
 
 void
-UBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred)
+UBTB::train1Taken(FullBTBPrediction &s3Pred)
 {
     DPRINTF(UBTB, "1-taken updateUsingS3Pred: hit_index=%d, s3Pred.bbStart=%#lx\n",
            lastPred.hit_index, s3Pred.bbStart);
 
     // Use the common helper function with the hit index from lastPred (no second prediction)
-    updateEntryAtIndex(lastPred.hit_index, s3Pred, nullptr);
+    trainCommon(lastPred.hit_index, s3Pred, nullptr);
 }
 
 
@@ -469,7 +469,7 @@ UBTB::check2TakenConditions(FullBTBPrediction& dff, const FullBTBPrediction& s3P
 // theoretically pred is a const reference, but certain functions
 // like getTakenEntry() are factually const but not declared as const
 void
-UBTB::updateEntryAtIndex(int entry_index, FullBTBPrediction& pred, FullBTBPrediction* secondPred)
+UBTB::trainCommon(int entry_index, FullBTBPrediction& pred, FullBTBPrediction* secondPred)
 {
     DPRINTF(UBTB, "updateEntryAtIndex: entry_index=%d, pred.bbStart=%#lx, secondPred=%s\n",
            entry_index, pred.bbStart, secondPred ? "provided" : "null");
@@ -501,7 +501,7 @@ UBTB::updateEntryAtIndex(int entry_index, FullBTBPrediction& pred, FullBTBPredic
                 updateUCtr(entry.uctr, false);
                 if (entry.uctr == 0) {
                     // Replace the old entry with the new one
-                    replaceOldEntry(entry_index, const_cast<FullBTBPrediction&>(pred));
+                    replaceEntry(entry_index, const_cast<FullBTBPrediction&>(pred));
                     // Add second prediction if provided
                     if (secondPred != nullptr) {
                         addSecondPredictionToEntry(entry_index, secondPred);
@@ -553,7 +553,7 @@ UBTB::updateEntryAtIndex(int entry_index, FullBTBPrediction& pred, FullBTBPredic
             }
 
             // Replace the entry with the new prediction
-            replaceOldEntry(toBeReplacedIndex, const_cast<FullBTBPrediction&>(pred));
+            replaceEntry(toBeReplacedIndex, const_cast<FullBTBPrediction&>(pred));
             // Add second prediction if provided
             if (secondPred != nullptr) {
                 addSecondPredictionToEntry(toBeReplacedIndex, secondPred);
@@ -567,7 +567,7 @@ UBTB::updateEntryAtIndex(int entry_index, FullBTBPrediction& pred, FullBTBPredic
 }
 
 void
-UBTB::updateUsingS3Pred(FullBTBPrediction &dff_pred,
+UBTB::train2Taken(FullBTBPrediction &dff_pred,
                         FullBTBPrediction &s3_pred,
                         int hit_index) // hit index is the index stored in dff, along with dff_pred
 {
@@ -579,7 +579,7 @@ UBTB::updateUsingS3Pred(FullBTBPrediction &dff_pred,
         DPRINTF(UBTB, "2-taken training rejected: FBs are not consecutive (%#lx -> %#lx vs %#lx)\n",
                dff_pred.bbStart, dff_pred.getTarget(predictWidth), s3_pred.bbStart);
         // Fall back to training only with dff_pred using the correct entry (previous cycle's hit)
-        updateEntryAtIndex(hit_index, dff_pred, nullptr);
+        trainCommon(hit_index, dff_pred, nullptr);
         return;
     }
 
@@ -587,12 +587,12 @@ UBTB::updateUsingS3Pred(FullBTBPrediction &dff_pred,
     if (!check2TakenConditions(dff_pred, s3_pred)) {
         DPRINTF(UBTB, "2-taken training rejected: conditions not met\n");
         // Fall back to training only with dff_pred using the correct entry (previous cycle's hit)
-        updateEntryAtIndex(hit_index, dff_pred, nullptr);
+        trainCommon(hit_index, dff_pred, nullptr);
         return;
     }
 
     // Train as 2-taken: pass s3_pred as second prediction
-    updateEntryAtIndex(hit_index, dff_pred, &s3_pred);
+    trainCommon(hit_index, dff_pred, &s3_pred);
 }
 
 void
