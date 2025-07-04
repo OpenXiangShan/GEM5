@@ -134,7 +134,7 @@ class UBTB : public TimedBaseBTBPredictor
      * @param secondPrediction Reference to store secondary prediction if available
      * @return Pair containing (hit_index, has_second_prediction)
      */
-    std::pair<int, bool> getTwoTakenPrediction(Addr startAddr,
+    std::pair<int, bool> putPCHistory2Taken(Addr startAddr,
                                               const boost::dynamic_bitset<> &history,
                                               std::vector<FullBTBPrediction> &stagePreds,
                                               FullBTBPrediction &secondPrediction);
@@ -147,7 +147,7 @@ class UBTB : public TimedBaseBTBPredictor
      *
      * @param s3Pred The S3 prediction containing branch information and target
      */
-    void updateUsingS3Pred(FullBTBPrediction &s3Pred);
+    void train1Taken(FullBTBPrediction &s3Pred);
 
     /**
      * Updates the uBTB using S3 prediction with 2-taken support (training/learning phase)
@@ -157,7 +157,7 @@ class UBTB : public TimedBaseBTBPredictor
      * @param s3_pred The second FB (current S3 prediction)
      * @param hit_index The hit index from getTwoTakenPrediction (-1 if miss)
      */
-    void updateUsingS3Pred(FullBTBPrediction &dff_pred,
+    void train2Taken(FullBTBPrediction &dff_pred,
                           FullBTBPrediction &s3_pred,
                           int hit_index);
 
@@ -183,14 +183,15 @@ class UBTB : public TimedBaseBTBPredictor
     /** Retrieve stored MBTB meta for second prediction
      *  @return Returns the stored MBTB meta or nullptr if none available
      */
-    std::shared_ptr<void> getMBTBSecondPredictionMeta() const {
+    std::shared_ptr<void> getSecondPredictionMetaForMBTB() const {
         return mbtbSecondPredMeta;
     }
 
-    // the following methods are not used
-    void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override {}
     void recoverHist(const boost::dynamic_bitset<> &history,
         const FetchStream &entry, int shamt, bool cond_taken) override;
+
+    // the following methods are not used
+    void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override {}
     void reset();
     void setTrace() override;
     TraceManager *ubtbTrace;
@@ -218,7 +219,7 @@ class UBTB : public TimedBaseBTBPredictor
   private:
 
     /** this struct holds the lastest prediction made by uBTB,
-     * it's set in putPCHistory, and used in updateUsingS3Pred
+     * it's set in putPCHistory, and used in train1Taken
      */
     struct LastPred
     {
@@ -313,14 +314,14 @@ class UBTB : public TimedBaseBTBPredictor
      *  @param pred The S3 prediction to train with
      *  @param secondPred Second prediction for 2-taken training (can be nullptr for 1-taken)
      */
-    void updateEntryAtIndex(int entry_index, FullBTBPrediction& pred, FullBTBPrediction* secondPred);
+    void trainCommon(int entry_index, FullBTBPrediction& pred, FullBTBPrediction* secondPred);
 
     /** helper method called in updateUsingS3Pred: This function replaces an existing uBTB entry with new prediction
      *
      * @param entryIndex Index of the entry to replace
      * @param newPrediction The new prediction to store
      */
-    void replaceOldEntry(int entryIndex, FullBTBPrediction & newPrediction);
+    void replaceEntry(int entryIndex, FullBTBPrediction & newPrediction);
 
     /** helper method for 2-taken: Add second prediction to an existing uBTB entry
      *
@@ -332,7 +333,7 @@ class UBTB : public TimedBaseBTBPredictor
     /** Helper to create MBTB meta for second prediction
      *  @param branch_info_2nd The branch information for the second prediction
      */
-    void createMBTBMetaForSecondPrediction(const BranchInfo& branch_info_2nd);
+    void createSecondPredictionMetaForMBTB(const BranchInfo& branch_info_2nd);
 
     /** Helper function to calculate numNTConds (number of not-taken conditional branches)
      *  @param prediction The prediction containing history information
