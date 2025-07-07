@@ -364,7 +364,7 @@ def setKmhV3IdealParams(args, system):
         cpu.StoreWbStage = 4 # store writeback at s4
 
         # enable constant folding
-        cpu.enableConstantFolding = True
+        cpu.enableConstantFolding = False
 
         # ideal decoupled frontend
         if args.bp_type == 'DecoupledBPUWithFTB' or args.bp_type == 'DecoupledBPUWithBTB':
