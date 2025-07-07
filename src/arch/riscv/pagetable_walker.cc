@@ -317,7 +317,7 @@ Walker::WalkerState::initState(ThreadContext *_tc, const RequestPtr &_req, BaseM
         pmode = walker->tlb->getMemPriv(_tc, mode);
         satp = _tc->readMiscReg(MISCREG_SATP);
         vsatp = 0;
-        //assert(satp.mode == AddrXlateMode::SV39);
+        assert(satp.mode == AddrXlateMode::SV39 || satp.mode == AddrXlateMode::SV48);
         fromPre = _from_forward_pre_req;
         fromBackPre = _from_back_pre_req;
         translateMode = defaultmode;
