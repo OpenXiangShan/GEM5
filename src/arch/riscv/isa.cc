@@ -718,8 +718,6 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                     RegVal writeVal = val & NEMU_SATP_MASK;
                     setMiscRegNoEffect(misc_reg, writeVal);
                 }
-               // if ()
-
             }
             break;
           case MISCREG_TSELECT:
