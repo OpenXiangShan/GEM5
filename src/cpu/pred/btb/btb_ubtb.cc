@@ -185,6 +185,23 @@ UBTB::fillSecondPrediction(const BranchInfo &branchInfo, Addr bbStart, FullBTBPr
     // For direct unconditional branches, no additional setup needed beyond the BTBEntry
 }
 
+// Helper function to construct a fallthrough FullBTBPrediction (for pt_2nd = false case)
+void
+UBTB::fillSecondPredictionFallthrough(Addr secondFBStart, FullBTBPrediction &prediction)
+{
+    prediction.btbEntries.clear();
+    prediction.condTakens.clear();
+    prediction.indirectTargets.clear();
+    prediction.bbStart = secondFBStart;
+    prediction.predTick = curTick();
+    prediction.predSource = 0; // uBTB is stage 0
+
+    // No BTB entries - this FB has no branches, just sequential execution
+    // Target is just the fallthrough address
+    DPRINTF(UBTB, "Created fallthrough second prediction: bbStart=%#lx, target=%#lx\n",
+            secondFBStart, prediction.getTarget(predictWidth));
+}
+
 void
 UBTB::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
                    std::vector<FullBTBPrediction> &stagePreds)
@@ -233,35 +250,51 @@ UBTB::putPCHistory2Taken(Addr startAddr, const boost::dynamic_bitset<> &history,
 
     // Check if we have a second prediction to provide
     if (entry.valid && entry.valid_2nd) {
-        DPRINTF(UBTB, "uBTB: Found second prediction in entry, constructing 2nd FB\n");
-
         // Calculate target address for second prediction (where the second prediction should start)
         Addr second_bb_start = stagePreds[0].getTarget(predictWidth);
 
-        // Construct the second prediction from the stored branch info
-        fillSecondPrediction(entry.branch_info_2nd, second_bb_start, secondPrediction);
+        if (entry.pt_2nd) {
+            // Case 1: Second FB has a taken branch (existing behavior)
+            DPRINTF(UBTB, "uBTB: Found second prediction with branch in entry, constructing 2nd FB\n");
 
-        // Validate range: the second branch should be within its own fetch block
-        if (secondPrediction.btbEntries.size() > 0) {
-            assert(secondPrediction.isTaken()); // this is guaranteed by the 2-taken design rules
-            Addr control_addr = secondPrediction.controlAddr();
-            Addr fall_through = secondPrediction.getFallThrough(predictWidth);
+            fillSecondPrediction(entry.branch_info_2nd, second_bb_start, secondPrediction);
 
-            if (control_addr >= second_bb_start && control_addr < fall_through) {
-                has_second_prediction = true;
+            // Validate range: the second branch should be within its own fetch block
+            if (secondPrediction.btbEntries.size() > 0) {
+                assert(secondPrediction.isTaken()); // this is guaranteed by the 2-taken design rules
+                Addr control_addr = secondPrediction.controlAddr();
+                Addr fall_through = secondPrediction.getFallThrough(predictWidth);
 
-                // Create MBTB meta for the second prediction
-                createSecondPredictionMetaForMBTB(entry.branch_info_2nd);
+                if (control_addr >= second_bb_start && control_addr < fall_through) {
+                    has_second_prediction = true;
+                    ubtbStats.twoTakenPredTaken++;
 
-                DPRINTF(UBTB, "uBTB: Valid second prediction - bbStart: %#lx, controlAddr: %#lx, target: %#lx\n",
-                       second_bb_start, control_addr, secondPrediction.getTarget(predictWidth));
-            } else {
-                // Range check failed, discard second prediction
-                secondPrediction.btbEntries.clear();
-                DPRINTF(UBTB,
-                "uBTB: Second prediction failed range check - bbStart: %#lx, controlAddr: %#lx, fallThrough: %#lx\n",
-                       second_bb_start, control_addr, fall_through);
+                    // Create MBTB meta for the second prediction
+                    createSecondPredictionMetaForMBTB(entry.branch_info_2nd);
+
+                    DPRINTF(UBTB, "uBTB: Valid second prediction - bbStart: %#lx, controlAddr: %#lx, target: %#lx\n",
+                           second_bb_start, control_addr, secondPrediction.getTarget(predictWidth));
+                } else {
+                    // Range check failed, discard second prediction
+                    ubtbStats.twoTakenPredRangeFailed++;
+                    secondPrediction.btbEntries.clear();
+                    DPRINTF(UBTB,
+                    "uBTB: Second prediction failed range check - bbStart: %#lx,\
+                         controlAddr: %#lx, fallThrough: %#lx\n",
+                           second_bb_start, control_addr, fall_through);
+                }
             }
+        } else {
+            // Case 2: Second FB has no branches, just sequential execution (pt_2nd = false)
+            DPRINTF(UBTB, "uBTB: Found fallthrough second prediction (pt_2nd=false), constructing 2nd FB\n");
+
+            fillSecondPredictionFallthrough(second_bb_start, secondPrediction);
+            has_second_prediction = true; // Always valid for fallthrough case
+            mbtbSecondPredMeta = std::make_shared<DefaultBTB::BTBMeta>(); // empty meta is passed for mbtb
+            ubtbStats.twoTakenPredFallThrough++;
+
+            DPRINTF(UBTB, "uBTB: Created fallthrough second prediction - bbStart: %#lx, target: %#lx\n",
+                   second_bb_start, secondPrediction.getTarget(predictWidth));
         }
     }
 
@@ -332,7 +365,6 @@ UBTB::addSecondPredictionToEntry(int entryIndex, FullBTBPrediction* secondPred)
 {
     assert(entryIndex >= 0 && entryIndex < static_cast<int>(ubtb.size()));
     assert(secondPred != nullptr && "Second prediction must not be null");
-    assert(secondPred->getTakenEntry().valid && "Second prediction must be valid for 2-taken");
 
     auto& entry = ubtb[entryIndex];
     assert(entry.valid && "Entry must be valid to add second prediction");
@@ -340,15 +372,30 @@ UBTB::addSecondPredictionToEntry(int entryIndex, FullBTBPrediction* secondPred)
     // Only add if not already present
     if (!entry.valid_2nd) {
         entry.valid_2nd = true;
-        auto s3TakenEntry = secondPred->getTakenEntry();
+        entry.pt_2nd = shouldSetPtSecond(*secondPred);
 
-        // Copy branch info (BTBEntry inherits from BranchInfo)
-        entry.branch_info_2nd = s3TakenEntry;
-        // Override target with the one from prediction (may be set by RAS/ITTAGE)
-        entry.branch_info_2nd.target = secondPred->getTarget(predictWidth);
+        if (entry.pt_2nd) {
+            // pt_2nd = true: second FB has branches
+            auto s3TakenEntry = secondPred->getTakenEntry();
+            assert(s3TakenEntry.valid && "Second prediction must have valid taken entry for pt_2nd = true");
+            assert(s3TakenEntry == secondPred->btbEntries[0] &&
+                "after 2taken condition check, the BPU's Second Pred's first branch must be taken");
 
-        DPRINTF(UBTB, "UBTB: Added second prediction to entry at index %d: secondary PC %#lx\n",
-               entryIndex, secondPred->controlAddr());
+            // Copy branch info (BTBEntry inherits from BranchInfo)
+            entry.branch_info_2nd = s3TakenEntry;
+            // Override target with the one from prediction (may be set by RAS/ITTAGE)
+            entry.branch_info_2nd.target = secondPred->getTarget(predictWidth);
+
+            DPRINTF(UBTB, "UBTB: Added second prediction (pt_2nd=true) to entry at index %d: secondary PC %#lx\n",
+                   entryIndex, secondPred->controlAddr());
+        } else {
+            // pt_2nd = false: second FB has no branches (pure sequential execution)
+            // branch_info_2nd is not used in this case, but should be initialized for safety
+            entry.branch_info_2nd = BTBEntry();  // default constructor initializes to safe values
+
+            DPRINTF(UBTB, "UBTB: Added second prediction (pt_2nd=false) to entry at index %d: fallthrough at %#lx\n",
+                   entryIndex, secondPred->bbStart);
+        }
     } else {
         DPRINTF(UBTB, "UBTB: Entry at index %d already has second prediction, skipping\n", entryIndex);
     }
@@ -388,6 +435,16 @@ UBTB::calculateNumNTConds(FullBTBPrediction& prediction)
     return numNTConds;
 }
 
+bool
+UBTB::shouldSetPtSecond(const FullBTBPrediction& secondPred)
+{
+    // pt_2nd = true if second FB has any branches
+    // pt_2nd = false if second FB has no branches (pure sequential execution)
+    return !secondPred.btbEntries.empty();
+}
+
+
+
 void
 UBTB::train1Taken(FullBTBPrediction &s3Pred)
 {
@@ -407,28 +464,36 @@ UBTB::check2TakenConditions(FullBTBPrediction& dff, const FullBTBPrediction& s3P
     // Increment total check counter
     ubtbStats.twoTakenConditionChecks++;
 
-    // 1. Both predictions must have at least one branch.
-    if (dff.btbEntries.empty() || s3Pred.btbEntries.empty()) {
+    // 1. First prediction must have at least one branch.
+    if (dff.btbEntries.empty()) {
         ubtbStats.twoTakenFailEmptyPreds++;
         return false;
     }
 
     auto firstBr = dff.getTakenEntry();
-    auto& secondBr = s3Pred.btbEntries[0];
 
     // 2. The first branch must be taken for a 2-taken sequence to form.
+    // partly because ubtb only stores entries for 1st FBs that are taken
     if (!dff.isTaken()) {
         ubtbStats.twoTakenFailFirstNotTaken++;
         return false;
     }
 
-    // 3. Check branch type compatibility based on spec table.
-
-    // Rule: 'multi-target indirect' as 1st branch is not allowed.
+    // 3. Rule: 'multi-target indirect' as 1st branch is not allowed.
     if (firstBr.isIndirect) {
         ubtbStats.twoTakenFailFirstIndirect++;
         return false;
     }
+
+    // 4. Handle pt_2nd = false case: second FB has no branches (sequential execution)
+    if (s3Pred.btbEntries.empty()) {
+        // This is the pt_2nd = false case - just sequential execution after taken branch
+        ubtbStats.twoTakenAcceptFallthrough++;
+        return true;
+    }
+
+    // 5. pt_2nd = true case: both FBs have branches - apply compatibility rules
+    auto& secondBr = s3Pred.btbEntries[0];
 
     // Rule: 'multi-target indirect' as 2nd branch is not allowed.
     if (secondBr.isIndirect) {
@@ -437,14 +502,12 @@ UBTB::check2TakenConditions(FullBTBPrediction& dff, const FullBTBPrediction& s3P
     }
 
     // Rule: 'cond' as 2nd branch is not allowed, except for alwaysTaken conditional branches.
-    // this rule implies that the second branch is taken
     if (secondBr.isCond && !secondBr.alwaysTaken) {
         ubtbStats.twoTakenFailSecondCond++;
         return false;
     } else if (secondBr.isCond && secondBr.alwaysTaken) {
-        // Track when we accept alwaysTaken conditional branches as second prediction
         ubtbStats.twoTakenAcceptAlwaysTaken++;
-        DPRINTF(UBTB, "Accepted alwaysTaken conditional branch %#lx as second prediction\n", secondBr.pc);
+        return true;
     }
 
     // Rule: 'ret -> ret' is not allowed to avoid multiple RAS reads.
@@ -459,10 +522,8 @@ UBTB::check2TakenConditions(FullBTBPrediction& dff, const FullBTBPrediction& s3P
         return false;
     }
 
-    // (call -> ret is allowed, so no check needed)
-
-    // All conditions passed.
-    ubtbStats.twoTakenConditionPassed++;
+    // All conditions passed for pt_2nd = true case.
+    ubtbStats.twoTakenAcceptOther++;
     return true;
 }
 
@@ -789,8 +850,6 @@ UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
       // 2-taken condition check statistics
       ADD_STAT(twoTakenConditionChecks, statistics::units::Count::get(),
                "Total number of 2-taken condition checks performed"),
-      ADD_STAT(twoTakenConditionPassed, statistics::units::Count::get(),
-               "Number of times all 2-taken conditions passed"),
       ADD_STAT(twoTakenFailEmptyPreds, statistics::units::Count::get(),
                "2-taken rejected due to empty predictions (dff or s3)"),
       ADD_STAT(twoTakenFailFirstNotTaken, statistics::units::Count::get(),
@@ -801,12 +860,27 @@ UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
                "2-taken rejected due to second branch being indirect"),
       ADD_STAT(twoTakenFailSecondCond, statistics::units::Count::get(),
                "2-taken rejected due to second branch being conditional"),
-      ADD_STAT(twoTakenAcceptAlwaysTaken, statistics::units::Count::get(),
-               "2-taken accepted alwaysTaken conditional branch as second prediction"),
       ADD_STAT(twoTakenFailRetRet, statistics::units::Count::get(),
                "2-taken rejected due to ret->ret sequence"),
       ADD_STAT(twoTakenFailCallCall, statistics::units::Count::get(),
                "2-taken rejected due to call->call sequence"),
+      ADD_STAT(twoTakenAcceptAlwaysTaken, statistics::units::Count::get(),
+               "2-taken accepted alwaysTaken conditional branch as second prediction"),
+      ADD_STAT(twoTakenAcceptFallthrough, statistics::units::Count::get(),
+               "2-taken accepted pt_2nd=false cases (fallthrough execution)"),
+      ADD_STAT(twoTakenAcceptOther, statistics::units::Count::get(),
+               "2-taken accepted other cases (e.g., jump)"),
+      ADD_STAT(twoTakenTrainSuccessfulRatio, statistics::units::Rate<
+        statistics::units::Count, statistics::units::Count>::get(),
+    "Ratio of successful 2-taken conditions to total checks"),
+
+      // pt_2nd prediction tracking statistics
+      ADD_STAT(twoTakenPredTaken, statistics::units::Count::get(),
+               "Number of pt_2nd=true predictions made (second FB has branch)"),
+      ADD_STAT(twoTakenPredFallThrough, statistics::units::Count::get(),
+               "Number of pt_2nd=false predictions made (second FB is fallthrough)"),
+      ADD_STAT(twoTakenPredRangeFailed, statistics::units::Count::get(),
+               "Number of pt_2nd=true predictions that failed range validation"),
 
       // Training scenario statistics
       ADD_STAT(trainHitFallThru, statistics::units::Count::get(),
@@ -826,14 +900,13 @@ UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
       ADD_STAT(trainAttempts, statistics::units::Count::get(),
                "Total number of training attempts (trainCommon function calls)"),
       ADD_STAT(trainDuplicateEntry, statistics::units::Count::get(),
-               "Early returns due to duplicate entry already existing in uBTB"),
+               "Early returns due to duplicate entry already existing in uBTB")
 
-      ADD_STAT(twoTakenTrainSuccessfulRatio, statistics::units::Rate<
-                    statistics::units::Count, statistics::units::Count>::get(),
-               "Ratio of successful 2-taken conditions to total checks")
+
 {
     // Initialize formula statistics
-    twoTakenTrainSuccessfulRatio = twoTakenConditionPassed / twoTakenConditionChecks;
+    twoTakenTrainSuccessfulRatio = (twoTakenAcceptOther + twoTakenAcceptAlwaysTaken + twoTakenAcceptFallthrough)
+     / twoTakenConditionChecks;
 }
 
 
