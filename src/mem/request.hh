@@ -562,8 +562,8 @@ class Request
     int _twoStageTranslateMode = 0;
     bool _vsatp_0_mode = false;
     bool _inGstage = true;
-    int _level = 2;
-    int _twoStageLevel = 2;
+    int _level = 3;
+    int _twoStageLevel = 3;
     Addr _ppn = 0;
     uint64_t _pte = 0;
     bool _finishGVA = false;
@@ -1008,6 +1008,8 @@ class Request
         _virt = virt;
         _twoStageTranslateMode = two_stage_translate_mode;
     }
+
+    void setLevel(int level) { _level = level;}
 
     void setTwoPtwWalk(bool inGstage, int level, int twoStageLevel, Addr ppn, bool finishGVA)
     {

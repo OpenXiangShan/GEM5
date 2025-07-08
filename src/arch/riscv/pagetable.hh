@@ -56,8 +56,11 @@ enum AddrXlateMode
 };
 
 const Addr H_VADDR_BITS = 41;
+const Addr H_SV39X4_VADDR_BITS = 41;
+const Addr H_SV48X4_VADDR_BITS = 50;
 // Sv39 paging
-const Addr VADDR_BITS  = 39;
+const Addr SV39_VADDR_BITS = 39;
+const Addr SV48_VADDR_BITS = 48;
 const Addr LEVEL_BITS  = 9;
 const Addr LEVEL_MASK = ((1 << LEVEL_BITS) - 1);
 const Addr PGMASK = ((1 << 12) - 1);
@@ -65,8 +68,9 @@ const Addr TWO_STAGE_L2_LEVEL_MASK = 0x7ff;
 const Addr VPN_MASK = 0x1ff;
 const Addr PGSHFT = 12;
 const Addr PTESIZE = 8;
-const Addr L2PageTypeNum = 4;
+const Addr L2PageTypeNum = 5; // l3/l2/l1/l0/sp
 const Addr L2PageStoreTypeNum = 5;
+
 
 const Addr L2TLB_BLK_OFFSET = 3;
 const Addr VADDR_CHOOSE_MASK = 7;
@@ -76,23 +80,31 @@ const Addr preHitOnHitLNum = 500;
 const double preHitOnHitPrecision = 0.08;
 const double nextlinePrecision = 0.09;
 
-const int L2L1CheckLevel = 2;
-const int L2L2CheckLevel = 1;
-const int L2L3CheckLevel = 0;
+const int L2L3CheckLevel = 3;
+const int L2L2CheckLevel = 2;
+const int L2L1CheckLevel = 1;
+const int L2L0CheckLevel = 0;
 
+const int L2L1LRU_NUM = 2;
+const int L2L0LRU_NUM = 4;
 
-// L2L1 :L2TLB L1Page
-// L2L2 :L2TLB L2Page
 // L2L3 :L2TLB L3Page
-// L2sp1 :L2TLB L1Page(leaf)
+// L2L2 :L2TLB L2Page
+// L2L1 :L2TLB L1Page
+// L2L0 :L2TLB L0Page(leaf)
+// L2sp3 :L2TLB L3Page(leaf)
 // L2sp2 :L2TLB L2Page(leaf)
+// L2sp1 :L2TLB L1Page(leaf)
 enum l2TLBPage
 {
-    L_L2L1 =1,
+    L_L2L3 =1,
     L_L2L2 ,
-    L_L2L3 ,
+    L_L2L1 ,
+    L_L2L0 ,
+    L_L2sp3,
+    L_L2sp2,
     L_L2sp1,
-    L_L2sp2
+    L_L2SUM
 
 };
 enum HTLBHitState
@@ -134,7 +146,6 @@ BitUnion64(PTESv39)
     Bitfield<0> v;
 EndBitUnion(PTESv39)
 
-
 BitUnion64(PTESv48)
     Bitfield<53, 10> ppn;
     Bitfield<53, 37> ppn3;
@@ -152,9 +163,13 @@ BitUnion64(PTESv48)
     Bitfield<0> v;
 EndBitUnion(PTESv48)
 
-
 BitUnion64(PTE)
     Bitfield<53, 10> ppn;
+    Bitfield<53, 46> ppn4;
+    Bitfield<45, 37> ppn3;
+    Bitfield<36, 28> ppn2;
+    Bitfield<27, 19> ppn1;
+    Bitfield<18, 10> ppn0;
     Bitfield<7> d;
     Bitfield<6> a;
     Bitfield<5> g;
@@ -189,8 +204,8 @@ struct TlbEntry : public Serializable
     // hgatp.vmid
     uint16_t vmid;
 
-    PTESv39 pte;
-    PTESv39 pteVS;
+    PTE pte;
+    PTE pteVS;
 
     TlbEntryTrie::Handle trieHandle;
 
@@ -242,6 +257,33 @@ struct TlbEntry : public Serializable
     void serialize(CheckpointOut &cp) const override;
     void unserialize(CheckpointIn &cp) override;
 };
+
+inline Addr VADDR_SEXT(uint8_t addrXlateMode, Addr vaddr) {
+    switch(addrXlateMode){
+        case AddrXlateMode::BARE : return Addr(sext<SV48_VADDR_BITS>(vaddr));
+        case AddrXlateMode::SV39 : return Addr(sext<SV39_VADDR_BITS>(vaddr));
+        case AddrXlateMode::SV48 : return Addr(sext<SV48_VADDR_BITS>(vaddr));
+        default: panic("addrXlateMode should be BARE/SV39/SV48.");
+    }
+}
+
+inline int64_t H_VADDR_MASK(uint8_t addrXlateMode) {
+    switch(addrXlateMode){
+        case AddrXlateMode::BARE : return ((int64_t)1 << H_SV48X4_VADDR_BITS) - 1;
+        case AddrXlateMode::SV39 : return ((int64_t)1 << H_SV39X4_VADDR_BITS) - 1;
+        case AddrXlateMode::SV48 : return ((int64_t)1 << H_SV48X4_VADDR_BITS) - 1;
+        default: panic("addrXlateMode should be BARE/SV39/SV48.");
+    }
+}
+
+inline int PTW_TOP_LEVEL(uint8_t addrXlateMode) {
+    switch(addrXlateMode){
+        case AddrXlateMode::BARE : return 3;
+        case AddrXlateMode::SV39 : return 2;
+        case AddrXlateMode::SV48 : return 3;
+        default: panic("addrXlateMode should be BARE/SV39/SV48.");
+    }
+}
 
 } // namespace RiscvISA
 } // namespace gem5

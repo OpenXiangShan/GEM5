@@ -536,10 +536,10 @@ ISA::setMiscReg(int misc_reg, RegVal val)
 {
     int v = readMiscReg(MISCREG_VIRMODE);
     if (misc_reg == MISCREG_STATUS) {
-        DPRINTF(RiscvMisc, "setMiscReg: setting mstatus with %#lx\n", val);
+        DPRINTF(RiscvMisc, "setMiscReg: setting status with %#lx\n", val);
     }
     if (misc_reg == MISCREG_HSTATUS) {
-        DPRINTF(RiscvMisc, "setMiscReg: setting mstatus with %#lx\n", val);
+        DPRINTF(RiscvMisc, "setMiscReg: setting hstatus with %#lx\n", val);
     }
     if (misc_reg == MISCREG_IE) {
         DPRINTF(RiscvMisc, "setMiscReg: setting mstatus with %#lx\n", val);
@@ -575,8 +575,9 @@ ISA::setMiscReg(int misc_reg, RegVal val)
         write_val = write_val | write_val2;
         setMiscRegNoEffect(MISCREG_VSSTATUS, write_val);
     } else if ((v == 1) && ((misc_reg == MISCREG_SATP))) {
-        if ((val & NEMU_SATP_SV39_MASK) >> NEMU_SATP_RIGHT_OFFSET == NEMU_SV39_SIGN0 ||
-            (val & NEMU_SATP_SV39_MASK) >> NEMU_SATP_RIGHT_OFFSET == NEMU_SV39_SIGN1) {
+        if ((val & SATP_MODE_MASK) >> NEMU_SATP_RIGHT_OFFSET == NEMU_SATP_BARE ||
+            (val & SATP_MODE_MASK) >> NEMU_SATP_RIGHT_OFFSET == NEMU_SATP_SV39 ||
+            (val & SATP_MODE_MASK) >> NEMU_SATP_RIGHT_OFFSET == NEMU_SATP_SV48) {
             setMiscRegNoEffect(MISCREG_VSATP, val & NEMU_SATP_MASK);
         }
     } else if ((v == 1) && (misc_reg == MISCREG_SEPC)) {
@@ -709,15 +710,13 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 if (cur_val != new_val) {
                     tc->getCpuPtr()->flushTLBs();
                 }
-                if (enableSv48) {
-                    RegVal writeVal = val & NEMU_SATP48_MASK;
-                    setMiscRegNoEffect(misc_reg, writeVal);
-                }
-                else if ((val & NEMU_SATP_SV39_MASK) >> NEMU_SATP_RIGHT_OFFSET == NEMU_SV39_SIGN0 ||
-                    (val & NEMU_SATP_SV39_MASK) >> NEMU_SATP_RIGHT_OFFSET == NEMU_SV39_SIGN1) {
+                if ((val & SATP_MODE_MASK) >> NEMU_SATP_RIGHT_OFFSET == NEMU_SATP_BARE ||
+                    (val & SATP_MODE_MASK) >> NEMU_SATP_RIGHT_OFFSET == NEMU_SATP_SV39 ||
+                    (val & SATP_MODE_MASK) >> NEMU_SATP_RIGHT_OFFSET == NEMU_SATP_SV48) {
                     RegVal writeVal = val & NEMU_SATP_MASK;
                     setMiscRegNoEffect(misc_reg, writeVal);
                 }
+
             }
             break;
           case MISCREG_TSELECT:

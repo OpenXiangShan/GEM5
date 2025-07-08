@@ -238,6 +238,8 @@ namespace RiscvISA
                            bool from_forward_pre_req, bool from_back_pre_req);
 
           private:
+            /** setup the walk state started by a Gstage translation .
+                (hgatp + idx as the base address) */
             Fault startTwoStageWalk(Addr ppn, Addr vaddr);
             Fault startTwoStageWalkFromTLBNotInG(Addr ppn, Addr vaddr);
             Fault startTwoStageWalkFromTLBInG(Addr ppn, Addr vaddr);
@@ -251,6 +253,7 @@ namespace RiscvISA
             Fault pageFault(bool present, bool G);
             Fault pageFaultOnRequestor(RequestorState &requestor, bool G);
             Addr getGVPNi(Addr vaddr, int level);
+            Addr getGVPNi(uint8_t addrXlateMode, Addr vaddr, int level);
             Addr VpniShift(int level);
         };
 

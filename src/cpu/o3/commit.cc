@@ -1260,10 +1260,10 @@ Commit::commitInsts()
 
                     if (v) {
                         if (hstatus.vsxl ==1) {
-                            vsstatus32.sd = (vsstatus32.fs == 3);
+                            vsstatus32.sd = (vsstatus32.fs == 3) || (vsstatus32.vs == 3);
                             cpu->setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSSTATUS, (RegVal)vsstatus32, tid);
                         } else {
-                            vsstatus.sd = (vsstatus.fs == 3);
+                            vsstatus.sd = (vsstatus.fs == 3) || (vsstatus.vs == 3);
                             cpu->setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSSTATUS, (RegVal)vsstatus, tid);
                         }
                     }
@@ -1342,10 +1342,10 @@ Commit::commitInsts()
 
                     if (v) {
                         if (hstatus.vsxl ==1) {
-                            vsstatus32.sd = (vsstatus32.fs == 3);
+                            vsstatus32.sd = (vsstatus32.fs == 3) || (vsstatus.vs == 3);
                             cpu->setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSSTATUS, (RegVal)vsstatus32, tid);
                         } else {
-                            vsstatus.sd = (vsstatus.fs == 3);
+                            vsstatus.sd = (vsstatus.fs == 3) || (vsstatus.vs == 3);
                             cpu->setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSSTATUS, (RegVal)vsstatus, tid);
                         }
                     }
