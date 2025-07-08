@@ -83,6 +83,12 @@ FetchTargetQueue::fetchTargetAvailable() const
            supplyFetchTargetState.targetId == fetchDemandTargetId;
 }
 
+bool
+FetchTargetQueue::fetchTargetAvailable(int nextN) const
+{
+    return ftq.find(fetchDemandTargetId + nextN) != ftq.end();
+}
+
 /**
  * @brief Get the currently available fetch target
  *
@@ -94,6 +100,13 @@ FetchTargetQueue::getTarget()
 {
     assert(fetchTargetAvailable());
     return *supplyFetchTargetState.entry;
+}
+
+FtqEntry&
+FetchTargetQueue::getTarget(int nextN)
+{
+    assert(fetchTargetAvailable(nextN));
+    return ftq[fetchDemandTargetId + nextN];
 }
 
 /**

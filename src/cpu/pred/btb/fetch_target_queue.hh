@@ -106,12 +106,22 @@ class FetchTargetQueue
      */
     bool fetchTargetAvailable() const;
 
+    bool fetchTargetAvailable(int nextN) const;
+
     /**
      * @brief Get the currently available fetch target
      *
      * @return Reference to the current fetch target entry
      */
     FtqEntry &getTarget();
+
+    /**
+     * @brief Get the fetch target at the given index
+     *
+     * @param nextN The index of the target to get
+     * @return Reference to the target entry
+     */
+    FtqEntry &getTarget(int nextN);
 
     /**
      * @brief Get the enqueue state
