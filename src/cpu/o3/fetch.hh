@@ -362,7 +362,7 @@ class Fetch
      * @param next_pc The PC state to update with the prediction.
      * @return true if a branch was predicted taken.
      */
-    bool lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc);
+    bool lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc, unsigned ftqIndex = 0);
 
     /**
      * Fetches the cache line that contains the fetch PC.  Returns any
@@ -525,7 +525,18 @@ class Fetch
     void profileStall(ThreadID tid);
 
 
-    bool ftqEmpty() { return isDecoupledFrontend() && usedUpFetchTargets; }
+    bool ftqEmpty() {
+      if (!isDecoupledFrontend()) return false;
+
+      if (isBTBPred()) {
+          return !dbpbtb->fetchTargetAvailable();
+      } else if (isFTBPred()) {
+          return !dbpftb->fetchTargetAvailable();
+      } else if (isStreamPred()) {
+          return !dbsp->fetchTargetAvailable();
+      }
+      return false;
+  }
 
     /** Set the reasons of all fetch stalls. */
     void setAllFetchStalls(StallReason stall);
@@ -579,17 +590,14 @@ class Fetch
     StallReason checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
                                  const StaticInstPtr &curMacroop, unsigned ftqIndex = 0);
 
-
     /**
-     * Looks up the branch predictor, gets a prediction, and updates the PC.
-     * @param inst The dynamic instruction object.
-     * @param next_pc The PC state to update with the prediction.
-     * @param predictedBranch Flag indicating if a branch was predicted.
-     * @param newMacro Flag indicating if we are moving to a new macro-op.
+     * Fallback to single fetch mode when dual fetch conditions are not met.
+     * @param tid Thread ID
+     * @param pc_state Current PC state
+     * @param reason Human-readable reason for fallback
      */
-    void
-    lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc,
-                         bool &predictedBranch, bool &newMacro);
+    void fallbackToSingleFetch(ThreadID tid, const PCStateBase &pc_state,
+                              const std::string& reason);
 
   private:
     /** Pointer to the O3CPU. */
@@ -679,6 +687,9 @@ class Fetch
 
     /** Cache block size. */
     unsigned int cacheBlkSize;
+
+    /** Enable 2fetch mode for dual FTQ processing */
+    bool enable2Fetch;
 
     /**
      * Fetch buffer structure to encapsulate instruction fetch data.
@@ -1090,7 +1101,8 @@ class Fetch
 
     /** Check if there are pending dual fetch requests */
     bool hasPendingDualFetch(ThreadID tid) {
-        return fetch2Coord[tid].hasPendingFetch();
+        return fetch2Coord[tid].hasPendingFetch() &&
+               allActiveFTQCompleted(tid);
     }
 
     /** Check if all active FTQs completed their cache requests */
@@ -1114,13 +1126,16 @@ class Fetch
     std::pair<Addr, Addr> getDualFTQPCs(ThreadID tid);
 
     /** Mark dual FTQ targets as finished in BTB predictor */
-    void finishDualFTQTargets(ThreadID tid);
+    void finishDualFTQTargets();
 
     /** Determine which FTQ index a packet belongs to */
     unsigned determineFTQIndex(ThreadID tid, PacketPtr pkt);
 
     /** Check if dual fetch should be used for this thread */
     bool shouldUseDualFetch(ThreadID tid);
+
+    /** Process the completion of a fetch target queue entry */
+    void finishCurrentFetchTarget();
 
   protected:
     struct FetchStatGroup : public statistics::Group

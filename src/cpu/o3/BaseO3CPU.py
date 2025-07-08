@@ -128,6 +128,7 @@ class BaseO3CPU(BaseCPU):
     fetchBufferSize = Param.Unsigned(66, "Fetch buffer size in bytes")
     fetchQueueSize = Param.Unsigned(48, "Fetch queue size in micro-ops "
                                     "per-thread")
+    enable2Fetch = Param.Bool(False, "Enable 2fetch mode")
 
     renameToDecodeDelay = Param.Cycles(1, "Rename to decode delay")
     iewToDecodeDelay = Param.Cycles(1, "Issue/Execute/Writeback to decode "

@@ -335,9 +335,9 @@ def setKmhV3IdealParams(args, system):
 
         cpu.mmu.itb.size = 96
 
-        cpu.fetchWidth = 32     # 64byte fetch block have up to 32 instructions
+        cpu.fetchWidth = 64     # 64byte fetch block have up to 32 instructions, for 2fetch max 64 insts
         cpu.commitToFetchDelay = 2
-        cpu.fetchQueueSize = 64
+        cpu.fetchQueueSize = 128
         cpu.fetchToDecodeDelay = 2
 
         cpu.decodeWidth = 8
@@ -367,6 +367,9 @@ def setKmhV3IdealParams(args, system):
         # enable constant folding
         cpu.enableConstantFolding = False
 
+        # enable 2fetch mode for dual fetch functionality
+        cpu.enable2Fetch = True
+
         # ideal decoupled frontend
         if args.bp_type == 'DecoupledBPUWithFTB' or args.bp_type == 'DecoupledBPUWithBTB':
             if args.bp_type == 'DecoupledBPUWithFTB':
@@ -395,6 +398,7 @@ def setKmhV3IdealParams(args, system):
         # ideal l1 caches
         if args.caches:
             cpu.icache.size = '64kB'
+            cpu.icache.tag_load_read_ports = 100 # 3->100
             cpu.dcache.size = '64kB'
             cpu.dcache.tag_load_read_ports = 100 # 3->100
             cpu.dcache.mshrs = 16
