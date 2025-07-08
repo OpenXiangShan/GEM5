@@ -918,9 +918,9 @@ DecoupledBPUWithBTB::decoupledPredict(const StaticInstPtr &inst,
 
     // Increment instruction counter for current FTQ entry
     currentFtqEntryInstNum++;
-    if (run_out_of_this_entry) {
-        processFetchTargetCompletion(target_to_fetch);
-    }
+    // if (run_out_of_this_entry) {
+    //     processFetchTargetCompletion(target_to_fetch);
+    // }
 
     DPRINTF(DecoupleBP, "Predict it %staken to %#lx\n", taken ? "" : "not ",
             target->instAddr());

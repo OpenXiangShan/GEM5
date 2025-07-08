@@ -533,6 +533,11 @@ class DecoupledBPUWithBTB : public BPredUnit
         return fetchTargetQueue.getTarget();
     }
 
+    FtqEntry& getSupplyingFetchTarget(int nextN)
+    {
+        return fetchTargetQueue.getTarget(nextN);
+    }
+
     unsigned getSupplyingTargetId()
     {
         return fetchTargetQueue.getSupplyingTargetId();
@@ -556,6 +561,11 @@ class DecoupledBPUWithBTB : public BPredUnit
     void finishDualFetchTargets()
     {
         return fetchTargetQueue.finishDualFetchTargets();
+    }
+
+    void finishCurrentFetchTarget()
+    {
+        return fetchTargetQueue.finishCurrentFetchTarget();
     }
 
     void dumpFsq(const char *when);
