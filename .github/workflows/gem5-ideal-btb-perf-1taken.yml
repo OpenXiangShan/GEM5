@@ -1,4 +1,4 @@
-name: gem5 Ideal BTB Performance Test
+name: gem5 Ideal BTB Performance Test (1Taken)
 
 on:
   push:
@@ -10,5 +10,5 @@ jobs:
   perf_test:
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
-      script_path: ../kmh_v3_btb.sh
+      script_path: ../kmh_v3_btb_1taken.sh
       benchmark_type: "spec06-0.8c"
