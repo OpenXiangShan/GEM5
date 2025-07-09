@@ -1,7 +1,9 @@
 from m5.params import *
 from m5.proxy import *
+from m5.SimObject import *
 
 from m5.objects.ClockedObject import ClockedObject
+from m5.objects.Prefetcher import *
 
 class CacheWrapper(ClockedObject):
     type = 'CacheWrapper'
@@ -25,6 +27,10 @@ class L2CacheWrapper(ClockedObject):
     type = 'L2CacheWrapper'
     cxx_header = "mem/cache/xs_l2/L2CacheWrapper.hh"
     cxx_class = 'gem5::L2CacheWrapper'
+    cxx_exports = [
+        PyBindMethod("addCacheAccessor"),
+        PyBindMethod("addSliceAccessor"),
+    ]
 
     cpu_side = ResponsePort("CPU side port, receives requests from L1/CPU")
 
@@ -34,3 +40,30 @@ class L2CacheWrapper(ClockedObject):
 
     num_slices = Param.Unsigned("Number of slices")
     block_bits = Param.Unsigned(6, "Log2 of cache block size in bytes")
+
+    prefetcher = Param.BasePrefetcher(L2CompositeWithWorkerPrefetcher(), "Prefetcher attached to L2CacheWrapper")
+    system = Param.System(Parent.any, "System we belong to")
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._cache_accessors = []
+        self._slice_accessors = []
+
+    # Override the normal SimObject::regProbeListeners method and
+    # add the slice accessors to the L2CacheWrapper.
+    def regProbeListeners(self):
+        print("Registering inner cache accessors for L2CacheWrapper {}".format(self))
+        for accessor in self._cache_accessors:
+            self.getCCObject().addCacheAccessor(accessor.getCCObject())
+        for _slice in self._slice_accessors:
+            self.getCCObject().addSliceAccessor(_slice.getCCObject())
+        self.getCCObject().regProbeListeners()
+
+    def addCacheAccessor(self, accessor):
+        print("Adding cache accessor to L2CacheWrapper {}".format(self))
+        self._cache_accessors.append(accessor)
+
+    def addSliceAccessor(self, slice):
+        print("Adding slice accessor to L2CacheWrapper {}".format(self))
+        self._slice_accessors.append(slice)
+

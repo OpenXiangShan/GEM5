@@ -148,18 +148,23 @@ def config_cache(options, system):
                                                                  **_get_cache_opts(system.cpu[i], 'l2', options))
                                                  for _ in range(num_l2_slices)]
 
-        # Keep l2_caches for downstream prefetcher connections.
-        # It will store a reference to the 0th slice's inner cache.
         system.tol2bus_list = [L1ToL2Bus(
             clk_domain=system.cpu_clk_domain) for i in range(options.num_cpus)]
 
         for i in range(options.num_cpus):
             l2_wrapper = system.l2_wrappers[i]
             xbar = l2_wrapper.xbar
+            if not options.no_pf:
+                l2_wrapper.prefetcher = create_prefetcher(system.cpu[i], 'l2_wrapper', options)
             for j in range(num_l2_slices):
                 # Apply original per-L2-cache configurations to each slice's inner cache
                 cache_slice = l2_wrapper.slices[j]
                 inner_cache = l2_wrapper.inner_caches[j]
+
+                l2_wrapper.addCacheAccessor(inner_cache)
+                l2_wrapper.addSliceAccessor(cache_slice)
+                if not options.no_pf and hasattr(inner_cache.prefetcher, 'real_pf'):
+                    inner_cache.prefetcher.real_pf = l2_wrapper.prefetcher
 
                 inner_cache.do_fast_writeline = not options.kmh_align
                 if options.ideal_cache:
@@ -233,17 +238,15 @@ def config_cache(options, system):
                 dcache.response_latency = 0
 
             dcache.do_fast_writeline = not options.kmh_align
-            # NOTE: For now, we disable L2 prefetcher
-            # TODO: add L2 prefetcher back
-            # if (not options.no_pf) and options.l1_to_l2_pf_hint:
-            #     assert dcache.prefetcher != NULL and \
-            #         system.l2_wrappers[i].inner_caches[0].prefetcher != NULL
-                # dcache.prefetcher.add_pf_downstream(system.l2_wrappers[i].inner_caches[0].prefetcher)
+            if (not options.no_pf) and options.l1_to_l2_pf_hint:
+                assert dcache.prefetcher != NULL and \
+                    system.l2_wrappers[i].prefetcher != NULL
+                dcache.prefetcher.add_pf_downstream(system.l2_wrappers[i].prefetcher)
 
-            # if (not options.no_pf) and options.l3cache and options.l2_to_l3_pf_hint:
-            #     assert system.l2_wrappers[i].inner_caches[0].prefetcher != NULL and \
-            #         system.l3.prefetcher != NULL
-                # system.l2_wrappers[i].inner_caches[0].prefetcher.add_pf_downstream(system.l3.prefetcher)
+            if (not options.no_pf) and options.l3cache and options.l2_to_l3_pf_hint:
+                assert system.l2_wrappers[i].prefetcher != NULL and \
+                    system.l3.prefetcher != NULL
+                system.l2_wrappers[i].prefetcher.add_pf_downstream(system.l3.prefetcher)
 
             # If we have a walker cache specified, instantiate two
             # instances here

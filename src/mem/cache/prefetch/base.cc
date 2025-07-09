@@ -338,9 +338,10 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
 {
     DPRINTF(HWPrefetch, "ProbeNotify: %s for %s\n", miss ? "miss" : "hit",
             pkt->print());
-    // Don't notify prefetcher on SWPrefetch, cache maintenance
+    // Don't notify prefetcher on SWPrefetch, HWPrefetch, cache maintenance
     // operations or for writes that we are coaslescing.
     if (pkt->cmd.isSWPrefetch()) return;
+    if (pkt->cmd.isHWPrefetch()) return;
     if (pkt->req->isCacheMaintenance()) return;
 
     if (!pkt->isDemand() && !pkt->cmd.isHWPrefetch()) {

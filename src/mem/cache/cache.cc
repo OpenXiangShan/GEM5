@@ -1498,9 +1498,21 @@ Cache::sendMSHRQueuePacket(MSHR* mshr)
     if (tgt_pkt->cmd == MemCmd::HardPFReq && forwardSnoops) {
         DPRINTF(Cache, "%s: MSHR %s\n", __func__, tgt_pkt->print());
 
-        // we should never have hardware prefetches to allocated
-        // blocks
-        assert(!tags->findBlock(mshr->blkAddr, mshr->isSecure));
+        // if the block is already in the cache(maybe upper level writeback),
+        // we should not send reqs to lower level
+        if (tags->findBlock(mshr->blkAddr, mshr->isSecure)) {
+            printf("HardPFReq, tgt_pkt->addr %#lx, mshr->blkAddr %#lx\n", tgt_pkt->getAddr(), mshr->blkAddr);
+            if (mshrQueue.forceDeallocateTarget(mshr)) {
+                // Clear block if this deallocation resulted freed an
+                // mshr when all had previously been utilized
+                clearBlocked(Blocked_NoMSHRs);
+            }
+
+            // given that no response is expected, delete Request and Packet
+            delete tgt_pkt;
+
+            return false;
+        }
 
         // We need to check the caches above us to verify that
         // they don't have a copy of this block in the dirty state

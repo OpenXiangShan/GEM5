@@ -31,6 +31,7 @@ L2MainPipe::L2MainPipe(L2CacheSlice* _owner, unsigned depth)
                                                  PipelineResources::DataRead |
                                                  PipelineResources::GrantBuf;
     taskResourceMap[TaskSource::L2MSHRRelease] = PipelineResources::DataWrite;
+    taskResourceMap[TaskSource::L2PF]          = PipelineResources::DirRead;
 }
 
 void
@@ -98,6 +99,7 @@ L2MainPipe::buildTask(PacketPtr pkt, TaskSource source)
 void
 L2MainPipe::sendMSHRGrantPkt()
 {
+    // Find from S5 to S3
     // Later pipeline stages have higher grant priority
     for (int i = 4; i >= 2; i--) {
         bool isGrant = scoreboardTasks[i].source == TaskSource::L2MSHRGrant;

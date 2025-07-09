@@ -4,11 +4,15 @@
 #include <unordered_set>
 #include <vector>
 
+#include "mem/cache/base.hh"
+#include "mem/cache/xs_l2/L2CacheSlice.hh"
+#include "mem/cache/xs_l2/SlicedCacheAccessor.hh"
 #include "mem/packet.hh"
 #include "mem/port.hh"
 #include "params/L2CacheWrapper.hh"
 #include "sim/clocked_object.hh"
 #include "sim/port.hh"
+#include "sim/system.hh"
 
 namespace gem5
 {
@@ -48,11 +52,31 @@ namespace gem5
  */
 class L2CacheWrapper : public ClockedObject
 {
+  protected:
+    void processSendPrefetchEvent();
+    EventFunctionWrapper sendPrefetchEvent;
+
+    bool prefetch_blocked = false;
+    PacketPtr outstanding_prefetch = nullptr;
+
+    void scheduleSendPrefetch();
+    bool needPrefetch();
+
   public:
     L2CacheWrapper(const L2CacheWrapperParams &p);
 
     Port &getPort(const std::string &if_name,
                   PortID idx = InvalidPortID) override;
+
+    void addCacheAccessor(BaseCache* accessor)
+    {
+        cache_accessors.push_back(accessor);
+    }
+
+    void addSliceAccessor(L2CacheSlice* slice)
+    {
+        slice_accessors.push_back(slice);
+    }
 
   protected:
     class CPUSidePort : public ResponsePort
@@ -88,19 +112,32 @@ class L2CacheWrapper : public ClockedObject
 
     CPUSidePort cpu_side_port;
     std::vector<SliceCPUSidePort> slice_cpuside_ports;
+    std::vector<CacheAccessor*> cache_accessors;
+    std::vector<L2CacheSlice*> slice_accessors;
 
   private:
     friend class CPUSidePort;
     friend class SliceCPUSidePort;
+    friend class SlicedCacheAccessor;
 
     const uint32_t sliceMask;
     const uint32_t block_bits;
+    SlicedCacheAccessor sliced_cache_accessor;
+    prefetch::Base *prefetcher;
+
+    System* system;
 
     inline PortID getSliceId(Addr addr) const {
         return ((addr >> block_bits) & sliceMask);
     }
 
+    // Return the last tick of next cycle
+    Tick nextCycleLastTick() {
+      return clockEdge(Cycles(2)) - 1;
+    }
+
     bool upper_resp_blocked = false;
+    bool upper_req_blocked = false;
     std::unordered_set<PortID> resp_waiting_slice;
 };
 

@@ -130,6 +130,8 @@ L2CacheSlice::cpuSidePortRecvTimingReq(PacketPtr pkt)
     assert(!pending_l1_retry);
     DPRINTF(L2CacheSlice, "Got req from CPU side for addr: %#x\n", pkt->getAddr());
 
+    bool is_prefetch = pkt->cmd.isHWPrefetch();
+
     // Express snoop packets should bypass any flow control,
     // so always let express snoop packets through even if blocked
     if (pkt->isExpressSnoop()) {
@@ -138,7 +140,7 @@ L2CacheSlice::cpuSidePortRecvTimingReq(PacketPtr pkt)
     }
     // If the request is from write_queue(WriteBackClean/CleanEvict etc.),
     // we cannot buffer it and just forward it to inner cache
-    if (!pkt->needsResponse()) {
+    if (!pkt->needsResponse() && !is_prefetch) {
         if (inner_cache_blocked || !requestBuffer.empty()) {
             DPRINTF(L2CacheSlice, "Inner cache busy, rejecting WQ request from CPU side\n");
             pending_l1_retry = true;
@@ -156,7 +158,7 @@ L2CacheSlice::cpuSidePortRecvTimingReq(PacketPtr pkt)
         return success;
     }
 
-    // Then if the request is from L1 MSHR(ReadEx/ReadShare etc.),
+    // Then the request is from L1 MSHR(ReadEx/ReadShare etc.) or L2 PF,
     // we can buffer it
     if (inner_cache_blocked || !requestBuffer.empty()) {
         // If the Wrapper is waiting for inner cache's retry or some pending requestes
@@ -173,7 +175,8 @@ L2CacheSlice::cpuSidePortRecvTimingReq(PacketPtr pkt)
     // If the Wrapper is not waiting for inner cache's retry and
     // there is no pending request in the buffer,
     // we can try to forward it directly to inner cache
-    if (!innerCpuPortSendTimingReq(pkt, TaskSource::L1MSHR)) {
+    TaskSource source = is_prefetch ? TaskSource::L2PF : TaskSource::L1MSHR;
+    if (!innerCpuPortSendTimingReq(pkt, source)) {
         inner_cache_blocked = true;
         DPRINTF(L2CacheSlice, "Inner cache busy, try buffering request and blocking\n");
         if (requestBuffer.isFull()) {

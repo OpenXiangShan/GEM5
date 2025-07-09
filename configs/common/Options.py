@@ -170,8 +170,10 @@ def addNoISAOptions(parser, configure_xiangshan=False):
                         choices=ObjectList.hwp_list.get_names(), help="L1 icache hardware prefetcher")
     parser.add_argument("--l1d-hwp-type", default='XSCompositePrefetcher',
                         choices=ObjectList.hwp_list.get_names(), help="L1 dcache hardware prefetcher")
-    parser.add_argument("--l2-hwp-type", default='L2CompositeWithWorkerPrefetcher',
+    parser.add_argument("--l2-hwp-type", default='PrefetcherForwarder',
                         choices=ObjectList.hwp_list.get_names(), help="L2 cache hardware prefetcher")
+    parser.add_argument("--l2-wrapper-hwp-type", default='L2CompositeWithWorkerPrefetcher',
+                        choices=ObjectList.hwp_list.get_names(), help="L2 wrapper cache hardware prefetcher")
     parser.add_argument("--l3-hwp-type", default='WorkerPrefetcher',
                         choices=ObjectList.hwp_list.get_names(), help="L3 cache hardware prefetcher")
 

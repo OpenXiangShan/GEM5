@@ -10,6 +10,7 @@ Source('L2CacheWrapper.cc')
 Source('L2MainPipe.cc')
 Source('RequestBuffer.cc')
 Source('RequestArbiter.cc')
+Source('SlicedCacheAccessor.cc')
 
 DebugFlag('CacheWrapper')
 DebugFlag('L2CacheSlice')

@@ -135,6 +135,13 @@ class BasePrefetcher(ClockedObject):
         self._downstream_pf.append(other_prefetcher)
 
 
+class PrefetcherForwarder(BasePrefetcher):
+    type = 'PrefetcherForwarder'
+    cxx_header = "mem/cache/prefetch/forwarder.hh"
+    cxx_class = 'gem5::prefetch::PrefetcherForwarder'
+
+    real_pf = Param.BasePrefetcher(NULL, "The real prefetcher to forward requests to")
+
 class QueuedPrefetcher(BasePrefetcher):
     type = "QueuedPrefetcher"
     abstract = True

@@ -32,6 +32,7 @@ RequestArbiter::arbitrate(TaskSource task_source, Cycles now)
             success = !_has_L2MSHR_grant;
             break;
         case TaskSource::L1MSHR:
+        case TaskSource::L2PF:
             _has_L1MSHR_req = true;
             success = !_has_L2MSHR_grant && !_has_L1WQ_req;
             break;

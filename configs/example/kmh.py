@@ -45,7 +45,7 @@ if __name__ == '__m5_main__':
     # l2cache prefetcher use pht, bop, cmc
     # disable l1prefetcher store pf train
     # disable l1 berti, l2 cdp
-    args.l2_hwp_type = "L2CompositeWithWorkerPrefetcher"
+    args.l2_wrapper_hwp_type = "L2CompositeWithWorkerPrefetcher"
     args.kmh_align = True
 
     assert not args.external_memory_system

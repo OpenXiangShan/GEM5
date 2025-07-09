@@ -105,7 +105,7 @@ namespace way_prediction_policy
 /**
  * A basic cache interface. Implements some common functions for speed.
  */
-class BaseCache : public ClockedObject, CacheAccessor
+class BaseCache : public ClockedObject, public CacheAccessor
 {
   protected:
     /**

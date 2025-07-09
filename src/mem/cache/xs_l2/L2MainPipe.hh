@@ -21,6 +21,7 @@ enum TaskSource
     NoWhere,
     L1MSHR,
     L1WQ,
+    L2PF,
     L3Snoop,
     L2MSHRGrant,
     L2MSHRRelease,
