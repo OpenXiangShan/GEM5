@@ -753,6 +753,13 @@ class DynInst : public ExecContext, public RefCounted
         }
     }
 
+    void clearForwardPackets() {
+        if (savedRequest) {
+            savedRequest->SQforwardPackets.clear();
+            savedRequest->SBforwardPackets.clear();
+        }
+    }
+
     /** Temporarily sets this instruction as a serialize before instruction. */
     void setSerializeBefore() { status.set(SerializeBefore); }
 

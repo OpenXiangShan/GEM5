@@ -1465,6 +1465,11 @@ LSQUnit::executeLoadPipeSx()
                 }
             }
 
+            // Clear forward packets when replayed
+            if (inst->needReplay()) {
+                inst->clearForwardPackets();
+            }
+
             // If inst was replyed, must clear inst in pipeline
             if (inst->needSTLFReplay() || inst->needCacheBlockedReplay() || inst->needRescheduleReplay()) {
                 DPRINTF(LoadPipeline, "Load [sn:%llu] replayed\n", inst->seqNum);
