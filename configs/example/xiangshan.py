@@ -376,21 +376,21 @@ def setKmhV3IdealParams(args, system):
                 cpu.branchPred.uftb.numEntries = 1024
                 cpu.branchPred.ftb.numEntries = 16384
                 cpu.branchPred.tage.baseTableSize = 16384
-                cpu.branchPred.tage.tableSizes = [2048] * 14
+                cpu.branchPred.tage.tableSizes = [2048] * 10
             else:
                 cpu.branchPred.predictWidth = 64              # max width of a fetch block
                 cpu.branchPred.btb.numEntries = 16384
                 # TODO: BTB TAGE do not bave base table, do not support SC
-                cpu.branchPred.tage.tableSizes = [2048] * 14  # 1 way, 2048 sets
+                cpu.branchPred.tage.tableSizes = [2048] * 10  # 1 way, 2048 sets
                 cpu.branchPred.tage.numWays = 1
 
             cpu.branchPred.tage.enableSC = False # TODO(bug): When numBr changes, enabling SC will trigger an assert
             cpu.branchPred.ftq_size = 256
             cpu.branchPred.fsq_size = 256
-            cpu.branchPred.tage.numPredictors = 14
-            cpu.branchPred.tage.TTagBitSizes = [13] * 14
-            cpu.branchPred.tage.TTagPcShifts = [1] * 14
-            cpu.branchPred.tage.histLengths = [4, 7, 12, 16, 21, 29, 38, 51, 68, 90, 120, 160, 283, 499]
+            cpu.branchPred.tage.numPredictors = 10
+            cpu.branchPred.tage.TTagBitSizes = [13] * 10
+            cpu.branchPred.tage.TTagPcShifts = [1] * 10
+            cpu.branchPred.tage.histLengths = [4, 7, 12, 20, 32, 50, 80, 128, 200, 300]
 
         # ideal l1 caches
         if args.caches:
