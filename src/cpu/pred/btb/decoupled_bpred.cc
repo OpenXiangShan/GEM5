@@ -569,7 +569,6 @@ DecoupledBPUWithBTB::tick()
     }
 
     int predsRemainsToBeMade = enableTwoTaken ? 2 : 1;
-    unsigned tempNumOverrideBubbles = 0;
 
     while (predsRemainsToBeMade > 0) {
         // 1. Request new prediction if FSQ not full and we are idle
@@ -581,8 +580,7 @@ DecoupledBPUWithBTB::tick()
         // 2. Handle pending prediction if available
         if (bpuState == BpuState::PREDICTOR_DONE) {
             DPRINTF(Override, "Generating final prediction for PC %#lx\n", s0PC);
-            unsigned bubbles = generateFinalPredAndCreateBubbles();
-            tempNumOverrideBubbles = std::max(bubbles, tempNumOverrideBubbles);
+            numOverrideBubbles = generateFinalPredAndCreateBubbles();
             bpuState = BpuState::PREDICTION_OUTSTANDING;
 
             // Clear each predictor's output
@@ -606,18 +604,15 @@ DecoupledBPUWithBTB::tick()
             bpuState = BpuState::IDLE;
         }
 
+        if (numOverrideBubbles > 0) {
+            numOverrideBubbles--;
+            dbpBtbStats.overrideBubbleNum++;
+            DPRINTF(Override, "Consuming override bubble, %d remaining\n", numOverrideBubbles);
+        }
+
         predsRemainsToBeMade--;
     }
 
-    // Set numOverrideBubbles to the maximum bubbles from all predictions
-    numOverrideBubbles = tempNumOverrideBubbles;
-
-    // Decrement override bubbles counter
-    if (numOverrideBubbles > 0) {
-        numOverrideBubbles--;
-        dbpBtbStats.overrideBubbleNum++;
-        DPRINTF(Override, "Consuming override bubble, %d remaining\n", numOverrideBubbles);
-    }
 
     DPRINTF(Override, "Prediction cycle complete\n");
 
