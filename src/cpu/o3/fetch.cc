@@ -46,6 +46,8 @@
 #include <list>
 #include <map>
 #include <queue>
+#include <set>
+#include <sstream>
 
 #include "arch/generic/tlb.hh"
 #include "arch/riscv/decoder.hh"
@@ -252,7 +254,23 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
     ADD_STAT(frontendBandwidthBound, statistics::units::Rate<
                     statistics::units::Count, statistics::units::Cycle>::get(),
              "Frontend Bandwidth Bound",
-             frontendBound - frontendLatencyBound)
+             frontendBound - frontendLatencyBound),
+    ADD_STAT(twoFetchRequests, statistics::units::Count::get(),
+             "Number of 2 fetch requests"),
+    ADD_STAT(twoFetchSuccess, statistics::units::Count::get(),
+             "Number of 2 fetch requests that are successful"),
+    ADD_STAT(twoFetchFailedDueToBankConflict, statistics::units::Count::get(),
+             "Number of 2 fetch requests that are failed due to bank conflicts"),
+    ADD_STAT(twoFetchFailedDueToFallThrough, statistics::units::Count::get(),
+             "Number of 2 fetch requests that are failed due to fall through"),
+    ADD_STAT(twoFetchFailedDueToInvalidFTQPCs, statistics::units::Count::get(),
+             "Number of 2 fetch requests that are failed due to invalid FTQ PCs"),
+    ADD_STAT(twoFetchFailedDueToFetchRangesSpanMultiplePages, statistics::units::Count::get(),
+             "Number of 2 fetch requests that are failed due to fetch ranges span multiple pages"),
+    ADD_STAT(twoFetchFailedDueToNoNewFTQEntry, statistics::units::Count::get(),
+             "Number of 2 fetch requests that are failed due to no new FTQ entry"),
+    ADD_STAT(twoFetchFailedDueToCacheBlocked, statistics::units::Count::get(),
+             "Number of 2 fetch requests that are failed due to cache blocked")
 {
         icacheStallCycles
             .prereq(icacheStallCycles);
@@ -1943,10 +1961,10 @@ Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
     // Check if the fetch buffer contains enough bytes for this instruction
     // We need at least 4 bytes to decode any RISC-V instruction (including compressed)
     if (fetch_pc < fetchBuffer[tid][ftqIndex].startPC ||
-        fetch_pc + 4 > fetchBuffer[tid][ftqIndex].startPC + fetchBufferSize) {
-        DPRINTF(Fetch, "[tid:%i] PC %#x outside fetch buffer range [%#x, %#x), stalling on ICache\n",
+        fetch_pc + 4 > fetchBuffer[tid][ftqIndex].startPC + fetchBuffer[tid][ftqIndex].validBytes) {
+        DPRINTF(Fetch, "[tid:%i] PC %#x outside valid buffer range [%#x, %#x), stalling on ICache\n",
                 tid, fetch_pc, fetchBuffer[tid][ftqIndex].startPC,
-                fetchBuffer[tid][ftqIndex].startPC + fetchBufferSize);
+                fetchBuffer[tid][ftqIndex].startPC + fetchBuffer[tid][ftqIndex].validBytes);
         return StallReason::IcacheStall;
     }
 
@@ -2164,13 +2182,24 @@ Fetch::fallbackToSingleFetch(ThreadID tid, const PCStateBase &pc_state,
     if (ftq_start_pc != 0) {
         DPRINTF(Fetch, "[tid:%i] Fallback: issuing single cache request, "
                     "starting at PC %#x\n", tid, ftq_start_pc);
-        fetchCacheLine(ftq_start_pc, tid, pc_state.instAddr(), 0);
+        bool success = fetchCacheLine(ftq_start_pc, tid, pc_state.instAddr(), 0);
+
+        // Set validBytes to full buffer size for single fetch mode
+        if (success) {
+            fetchBuffer[tid][0].validBytes = fetchBufferSize;
+            DPRINTF(Fetch, "[tid:%i] Single fetch: set validBytes=%d for FTQ 0\n",
+                    tid, fetchBufferSize);
+        }
     }
 }
 
 void
 Fetch::sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state) {
-    if (!needNewFTQEntry(tid)) return;
+    fetchStats.twoFetchRequests++;
+    if (!needNewFTQEntry(tid)) {
+        fetchStats.twoFetchFailedDueToNoNewFTQEntry++;
+        return;
+    }
 
     // reset fetch2Coord
     fetch2Coord[tid].reset();
@@ -2186,6 +2215,7 @@ Fetch::sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state) {
 
         // Validate FTQ PCs
         if (ftq0_pc == 0 || ftq1_pc == 0) {
+            fetchStats.twoFetchFailedDueToInvalidFTQPCs++;
             fallbackToSingleFetch(tid, pc_state, "Dual FTQ PCs invalid");
             return;
         }
@@ -2196,6 +2226,7 @@ Fetch::sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state) {
 
         // Only use 2fetch when both FTQ start addresses are in the same 4K page
         if (ftq0_page != ftq1_page) {
+            fetchStats.twoFetchFailedDueToFetchRangesSpanMultiplePages++;
             fallbackToSingleFetch(tid, pc_state,
                 csprintf("FTQ addresses in different pages: %#x vs %#x", ftq0_page, ftq1_page));
             return;
@@ -2210,17 +2241,71 @@ Fetch::sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state) {
         // If fetch ranges span too many different pages, fallback to single fetch for consistency
         if (ftq0_end_page != ftq0_page || ftq1_end_page != ftq1_page ||
             ftq0_end_page != ftq1_end_page) {
+            fetchStats.twoFetchFailedDueToFetchRangesSpanMultiplePages++;
             fallbackToSingleFetch(tid, pc_state, "Fetch ranges span multiple pages");
             return;
         }
+
+        // === Bank conflict aware 2fetch implementation ===
+        // Read FTQ information to calculate valid lengths
+        auto ftq0_entry = getFTQEntry(tid, 0);      // FTQ 0
+        auto ftq1_entry = getFTQEntry(tid, 1);      // FTQ 1
+
+        // Check if both FTQ entries have taken branches
+        if (!ftq0_entry.taken || !ftq1_entry.taken) {
+            fetchStats.twoFetchFailedDueToFallThrough++;
+            fallbackToSingleFetch(tid, pc_state,
+                csprintf("FTQ without taken branch: ftq0=%d, ftq1=%d",
+                        ftq0_entry.taken, ftq1_entry.taken));
+            return;
+        }
+
+        // Calculate valid length (from startPC to takenPC + instruction size)
+        unsigned ftq0_validLen = ftq0_entry.takenPC - ftq0_entry.startPC + 4;
+        unsigned ftq1_validLen = ftq1_entry.takenPC - ftq1_entry.startPC + 4;
+
+        // Check for bank conflicts using BankConflictCalculator
+        if (BankConflictCalculator::hasBankConflict(ftq0_entry.startPC, ftq0_validLen,
+                                                   ftq1_entry.startPC, ftq1_validLen)) {
+            DPRINTF(Fetch, "[tid:%i] Bank conflict detected: ftq0[%#x:%d] vs ftq1[%#x:%d]\n",
+                    tid, ftq0_entry.startPC, ftq0_validLen, ftq1_entry.startPC, ftq1_validLen);
+
+            fetchStats.twoFetchFailedDueToBankConflict++;
+            fallbackToSingleFetch(tid, pc_state,
+                csprintf("Bank conflict: ftq0[%#x:%d] vs ftq1[%#x:%d]",
+                        ftq0_entry.startPC, ftq0_validLen, ftq1_entry.startPC, ftq1_validLen));
+            return;
+        }
+
+        fetchStats.twoFetchSuccess++;
+        DPRINTF(Fetch, "[tid:%i] **2FETCH APPROVED** ftq0[%#x:%d bytes] ftq1[%#x:%d bytes]\n",
+                tid, ftq0_entry.startPC, ftq0_validLen, ftq1_entry.startPC, ftq1_validLen);
 
         DPRINTF(Fetch, "[tid:%i] Issuing dual pipelined I-cache accesses: "
                     "FTQ0 PC %#x, FTQ1 PC %#x (original PC %s)\n",
                     tid, ftq0_pc, ftq1_pc, pc_state);
 
-        // Send parallel cache requests for both FTQs
+        // Send parallel cache requests for both FTQs (standard 66 bytes)
         bool success0 = fetchCacheLine(ftq0_pc, tid, pc_state.instAddr(), 0);
         bool success1 = fetchCacheLine(ftq1_pc, tid, pc_state.instAddr(), 1);
+
+        if (!success0 && !success1) {
+            DPRINTF(Fetch, "[tid:%i] Both dual cache requests failed\n", tid);
+            fetchStats.twoFetchFailedDueToCacheBlocked++;
+            return;
+        }
+
+        // === Set fetchBuffer valid bytes for bank conflict limitation ===
+        if (success0) {
+            fetchBuffer[tid][0].validBytes = ftq0_validLen;
+            DPRINTF(Fetch, "[tid:%i][ftq:0] Set validBytes=%d (vs size=%d)\n",
+                    tid, ftq0_validLen, fetchBufferSize);
+        }
+        if (success1) {
+            fetchBuffer[tid][1].validBytes = ftq1_validLen;
+            DPRINTF(Fetch, "[tid:%i][ftq:1] Set validBytes=%d (vs size=%d)\n",
+                    tid, ftq1_validLen, fetchBufferSize);
+        }
 
         if (!success0 && !success1) {
             DPRINTF(Fetch, "[tid:%i] Both dual cache requests failed\n", tid);
@@ -2235,6 +2320,7 @@ Fetch::sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state) {
                 tid, success0 ? "active" : "inactive", success1 ? "active" : "inactive");
 
     } else {
+        fetchStats.twoFetchFailedDueToInvalidFTQPCs++;
         // Single FTQ mode - either 2fetch not enabled or conditions not met
         fallbackToSingleFetch(tid, pc_state, "Single fetch mode selected");
     }
@@ -2796,6 +2882,21 @@ Fetch::getDualFTQPCs(ThreadID tid)
     return std::make_pair(0, 0);
 }
 
+branch_prediction::btb_pred::FtqEntry
+Fetch::getFTQEntry(ThreadID tid, unsigned ftqIndex)
+{
+    assert(tid < MaxThreads);
+    assert(ftqIndex < 2);
+
+    // Get dual FTQ entry from BTB predictor
+    if (isBTBPred() && dbpbtb) {
+        return dbpbtb->getFTQEntry(ftqIndex);
+    }
+
+    // Return invalid entry for unsupported predictors
+    return branch_prediction::btb_pred::FtqEntry();
+}
+
 void
 Fetch::finishDualFTQTargets()
 {
@@ -2813,6 +2914,90 @@ Fetch::finishCurrentFetchTarget()
         dbpbtb->finishCurrentFetchTarget();
     }
 }
+
+//
+// BankConflictCalculator Implementation
+//
+
+std::set<unsigned>
+Fetch::BankConflictCalculator::getBankSet(Addr addr, unsigned len)
+{
+    std::set<unsigned> banks;
+
+    // Iterate through all bytes in the address range
+    for (Addr a = addr; a < addr + len; a++) {
+        // Calculate bank index: (address % cache_line_size) / bank_size
+        unsigned bank = (a % CACHE_LINE_SIZE) / BANK_SIZE;
+        banks.insert(bank);
+    }
+
+    return banks;
+}
+
+bool
+Fetch::BankConflictCalculator::canBeMergedInto64B(Addr addr1, unsigned len1,
+                                                  Addr addr2, unsigned len2)
+{
+    // Calculate the total range that would cover both FTQ ranges
+    Addr start = std::min(addr1, addr2);
+    Addr end1 = addr1 + len1;
+    Addr end2 = addr2 + len2;
+    Addr end = std::max(end1, end2);
+
+    // Check if total range can fit in 64B access
+    return (end - start) <= CACHE_LINE_SIZE;
+}
+
+bool
+Fetch::BankConflictCalculator::hasBankConflict(Addr addr1, unsigned len1,
+                                               Addr addr2, unsigned len2)
+{
+    // Check if two FTQ ranges can be merged into a single 64B access
+    if (canBeMergedInto64B(addr1, len1, addr2, len2)) {
+        // Case 1: RTL can merge into single 64B access
+        // Calculate the merged range and check bank usage directly
+        Addr mergedStart = std::min(addr1, addr2);
+        Addr mergedEnd = std::max(addr1 + len1, addr2 + len2);
+        auto mergedBanks = getBankSet(mergedStart, mergedEnd - mergedStart);
+
+        // Check if merged access exceeds bank limit (8 banks per cycle)
+        return mergedBanks.size() > BANKS_PER_LINE;
+    }
+
+    // Case 2: Cannot merge - RTL will do two separate accesses
+    // Check for bank index conflicts between the two accesses
+    auto banks1 = getBankSet(addr1, len1);
+    auto banks2 = getBankSet(addr2, len2);
+
+    // Check if any bank indices conflict
+    for (auto bank : banks1) {
+        if (banks2.count(bank)) {
+            return true;  // Bank conflict detected
+        }
+    }
+
+    return false;  // No bank conflicts
+}
+
+std::string
+Fetch::BankConflictCalculator::getBankSetString(Addr addr, unsigned len)
+{
+    auto banks = getBankSet(addr, len);
+    std::stringstream ss;
+
+    ss << "banks[";
+    bool first = true;
+    for (auto bank : banks) {
+        if (!first) ss << ",";
+        ss << bank;
+        first = false;
+    }
+    ss << "]";
+
+    return ss.str();
+}
+
+
 
 } // namespace o3
 } // namespace gem5

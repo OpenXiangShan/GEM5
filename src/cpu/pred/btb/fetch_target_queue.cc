@@ -334,6 +334,16 @@ FetchTargetQueue::getDualFTQPCs()
     return std::make_pair(current_pc, next_pc);
 }
 
+FtqEntry
+FetchTargetQueue::getFTQEntry(unsigned ftqIndex)
+{
+    assert(ftqIndex < 2);
+    auto it = ftq.find(fetchDemandTargetId + ftqIndex);
+    assert(it != ftq.end() && "FTQ entry not found");
+    return it->second;
+}
+
+
 /**
  * @brief Mark both current and next fetch targets as finished
  *

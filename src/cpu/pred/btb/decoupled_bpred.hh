@@ -507,6 +507,11 @@ class DecoupledBPUWithBTB : public BPredUnit
         return fetchTargetQueue.getDualFTQPCs();
     }
 
+    FtqEntry getFTQEntry(unsigned ftqIndex)
+    {
+        return fetchTargetQueue.getFTQEntry(ftqIndex);
+    }
+
     void finishDualFetchTargets()
     {
         return fetchTargetQueue.finishDualFetchTargets();

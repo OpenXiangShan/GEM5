@@ -54,6 +54,7 @@
 #include "cpu/pc_event.hh"
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/btb/decoupled_bpred.hh"
+#include "cpu/pred/btb/fetch_target_queue.hh"
 #include "cpu/pred/ftb/decoupled_bpred.hh"
 #include "cpu/pred/stream/decoupled_bpred.hh"
 #include "cpu/timebuf.hh"
@@ -710,8 +711,11 @@ class Fetch
         /** Size of the fetch buffer in bytes. Set by Fetch class during init. */
         unsigned size;
 
+        /** Valid bytes in the fetch buffer (for bank conflict aware 2fetch) */
+        unsigned validBytes;
+
         /** Constructor initializes buffer with default size */
-        FetchBuffer() : data(nullptr), startPC(0), valid(false), size(0) {
+        FetchBuffer() : data(nullptr), startPC(0), valid(false), size(0), validBytes(0) {
         }
 
         /** Destructor is not needed as Fetch class manages memory */
@@ -722,12 +726,13 @@ class Fetch
         void reset() {
             valid = false;
             startPC = 0;
+            validBytes = 0;
             // No need to clear data as it will be overwritten
         }
 
         /** Check if a PC is within the current buffer range */
         bool contains(Addr pc) const {
-            return valid && (pc >= startPC) && (pc < startPC + size);
+            return valid && (pc >= startPC) && (pc < startPC + validBytes);
         }
 
         /** Get offset of PC within the buffer */
@@ -740,6 +745,7 @@ class Fetch
         void setData(Addr pc, const uint8_t* src_data, unsigned bytes_copied) {
             startPC = pc;
             valid = true;
+            validBytes = size;  // Default to full buffer size
             memcpy(data, src_data, bytes_copied);
         }
 
@@ -747,6 +753,70 @@ class Fetch
         Addr getEndPC() const {
             return startPC + size;
         }
+
+        /** Get valid end PC considering bank conflict limitations */
+        Addr getValidEndPC() const {
+            return startPC + validBytes;
+        }
+    };
+
+    /**
+     * Bank conflict calculator for 2fetch bank conflict detection.
+     * Implements cache bank conflict detection logic to determine if two
+     * FTQ entries can be accessed in parallel without bank conflicts.
+     */
+    class BankConflictCalculator
+    {
+    public:
+        /** Cache line size in bytes */
+        static constexpr unsigned CACHE_LINE_SIZE = 64;
+
+        /** Bank size in bytes (cache line / 8 banks) */
+        static constexpr unsigned BANK_SIZE = 8;
+
+        /** Number of banks per cache line */
+        static constexpr unsigned BANKS_PER_LINE = CACHE_LINE_SIZE / BANK_SIZE;
+
+        /**
+         * Get the set of bank indices accessed by an address range
+         * @param addr Starting address of the range
+         * @param len Length of the range in bytes
+         * @return Set of bank indices (0-7) that will be accessed
+         */
+        static std::set<unsigned> getBankSet(Addr addr, unsigned len);
+
+        /**
+         * Check if two FTQ entries have bank conflicts preventing parallel access
+         * @param addr1 Starting address of first FTQ entry
+         * @param len1 Length of first FTQ entry in bytes
+         * @param addr2 Starting address of second FTQ entry
+         * @param len2 Length of second FTQ entry in bytes
+         * @return true if bank conflict exists, false if parallel access is safe
+         */
+        static bool hasBankConflict(Addr addr1, unsigned len1, Addr addr2, unsigned len2);
+
+        /**
+         * Get human-readable string representation of bank usage
+         * @param addr Starting address of the range
+         * @param len Length of the range in bytes
+         * @return String showing which banks are accessed
+         */
+        static std::string getBankSetString(Addr addr, unsigned len);
+
+    private:
+        /**
+         * Check if two FTQ ranges can be merged into a single 64B access
+         * RTL will merge accesses if both ranges can fit within 64B total span
+         * @param addr1 Starting address of first FTQ range
+         * @param len1 Length of first FTQ range
+         * @param addr2 Starting address of second FTQ range
+         * @param len2 Length of second FTQ range
+         * @return true if both ranges can fit in a 64B access
+         */
+        static bool canBeMergedInto64B(Addr addr1, unsigned len1,
+                                      Addr addr2, unsigned len2);
+
+
     };
 
     /**
@@ -1125,6 +1195,9 @@ class Fetch
     /** Get dual FTQ start PCs from BTB predictor */
     std::pair<Addr, Addr> getDualFTQPCs(ThreadID tid);
 
+    /** Get dual FTQ entry from BTB predictor */
+    branch_prediction::btb_pred::FtqEntry getFTQEntry(ThreadID tid, unsigned ftqIndex = 0);
+
     /** Mark dual FTQ targets as finished in BTB predictor */
     void finishDualFTQTargets();
 
@@ -1211,6 +1284,23 @@ class Fetch
         statistics::Formula frontendLatencyBound;
         /** Frontend Bandwidth Bound */
         statistics::Formula frontendBandwidthBound;
+        /** Number of 2 fetch requests */
+        statistics::Scalar twoFetchRequests;
+        /** Number of 2 fetch requests that are successful */
+        statistics::Scalar twoFetchSuccess;
+        /** Number of 2 fetch requests that are failed due to bank conflicts */
+        statistics::Scalar twoFetchFailedDueToBankConflict;
+        /** Number of 2 fetch requests that are failed due to fall through */
+        statistics::Scalar twoFetchFailedDueToFallThrough;
+        /** Number of 2 fetch requests that are failed due to invalid FTQ PCs */
+        statistics::Scalar twoFetchFailedDueToInvalidFTQPCs;
+        /** Number of 2 fetch requests that are failed due to fetch ranges span multiple pages */
+        statistics::Scalar twoFetchFailedDueToFetchRangesSpanMultiplePages;
+        /** Number of 2 fetch requests that are failed due to no new FTQ entry */
+        statistics::Scalar twoFetchFailedDueToNoNewFTQEntry;
+        /** Number of 2 fetch requests that are failed due to cache blocked */
+        statistics::Scalar twoFetchFailedDueToCacheBlocked;
+
     } fetchStats;
 
     SquashVersion localSquashVer;
