@@ -1044,6 +1044,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         // mstatus
         auto gem5_val = readMiscRegNoEffect(
             RiscvISA::MiscRegIndex::MISCREG_STATUS, tid);
+        diffAllStates->gem5RegFile.mstatus = gem5_val;
         // readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_STATUS, 0);
         auto ref_val = diffAllStates->referenceRegFile.mstatus;
         if (gem5_val != ref_val) {
@@ -1056,6 +1057,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         //stval
         gem5_val = readMiscRegNoEffect(
             RiscvISA::MiscRegIndex::MISCREG_STVAL, tid);
+        diffAllStates->gem5RegFile.stval = gem5_val;
         ref_val = diffAllStates->referenceRegFile.stval;
         if (gem5_val != ref_val) {
             csrDiffMessage(gem5_val, ref_val, CsrRegIndex::stval, diffAllStates->gem5RegFile.stval, seq, "stval",
@@ -1068,6 +1070,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         // mtval
         gem5_val = readMiscRegNoEffect(
             RiscvISA::MiscRegIndex::MISCREG_MTVAL, tid);
+        diffAllStates->gem5RegFile.mtval = gem5_val;
         ref_val = diffAllStates->referenceRegFile.mtval;
         DPRINTF(Diff, "stvmtvalal:\tGEM5: %#lx,\tREF: %#lx\n", gem5_val, ref_val);
         if (gem5_val != ref_val) {
@@ -1084,6 +1087,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         // mode
         gem5_val = readMiscRegNoEffect(
             RiscvISA::MiscRegIndex::MISCREG_PRV, tid);
+        diffAllStates->gem5RegFile.mode = gem5_val;
         ref_val = diffAllStates->referenceRegFile.mode;
         DPRINTF(Diff, "priv:\tGEM5: %#lx,\tREF: %#lx\n", gem5_val, ref_val);
         if (gem5_val != ref_val) {
@@ -1091,7 +1095,6 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                     "[0m, GEM5 value: \033[31m%#lx\033[0m\n", "priv",
                     ref_val, gem5_val);
             // diffInfo.errorCsrsValue[CsrRegIndex::stval] = 1;
-            diffAllStates->gem5RegFile.mode = gem5_val;
             if (!diff_at)
                 diff_at = ValueDiff;
         }
@@ -1099,6 +1102,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         // mcause
         gem5_val = readMiscRegNoEffect(
             RiscvISA::MiscRegIndex::MISCREG_MCAUSE, tid);
+        diffAllStates->gem5RegFile.mcause = gem5_val;
         ref_val = diffAllStates->referenceRegFile.mcause;
         if (gem5_val != ref_val) {
             csrDiffMessage(gem5_val, ref_val, CsrRegIndex::mcause, diffAllStates->gem5RegFile.mcause, seq, "mcause",
@@ -1111,6 +1115,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         // scause
         gem5_val = readMiscRegNoEffect(
             RiscvISA::MiscRegIndex::MISCREG_SCAUSE, tid);
+        diffAllStates->gem5RegFile.scause = gem5_val;
         ref_val = diffAllStates->referenceRegFile.scause;
         DPRINTF(Diff, "scause:\tGEM5: %#lx,\tREF: %#lx\n", gem5_val, ref_val);
         if (gem5_val != ref_val) {
@@ -1125,6 +1130,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         // satp
         gem5_val =
             readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_SATP, tid);
+        diffAllStates->gem5RegFile.satp = gem5_val;
         ref_val = diffAllStates->referenceRegFile.satp;
         if (gem5_val != ref_val) {
             csrDiffMessage(gem5_val, ref_val, CsrRegIndex::satp, diffAllStates->gem5RegFile.satp, seq, "satp",
@@ -1136,6 +1142,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
 
         // mie
         gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_IE, tid);
+        diffAllStates->gem5RegFile.mie = gem5_val;
         ref_val = diffAllStates->referenceRegFile.mie;
         if (gem5_val != ref_val) {
             csrDiffMessage(gem5_val, ref_val, CsrRegIndex::mie, diffAllStates->gem5RegFile.mie, seq, "mie", diff_at);
@@ -1145,6 +1152,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         }
         // mip
         gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_IP, tid);
+        diffAllStates->gem5RegFile.mip = gem5_val;
         ref_val = diffAllStates->referenceRegFile.mip;
         if (gem5_val != ref_val) {
             DPRINTF(DiffValue, "mip:\tGEM5: %#lx,\tREF: %#lx\n", gem5_val, ref_val);
@@ -1156,6 +1164,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         }
         //mepc
         gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_MEPC, tid);
+        diffAllStates->gem5RegFile.mepc = gem5_val;
         ref_val = diffAllStates->referenceRegFile.mepc;
         if (gem5_val != ref_val) {
             DPRINTF(DiffValue, "Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
@@ -1171,6 +1180,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         //h difftest
         //mtval2
         auto gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_MTVAL2, tid);
+        diffAllStates->gem5RegFile.mtval2 = gem5_val;
         auto ref_val = diffAllStates->referenceRegFile.mtval2;
         if (gem5_val != ref_val) {
             csrDiffMessage(gem5_val, ref_val, CsrRegIndex::mtval2, diffAllStates->gem5RegFile.mtval2, seq, "mtval2",
@@ -1178,6 +1188,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         }
         //mtinst
         gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_MTINST, tid);
+        diffAllStates->gem5RegFile.mtinst = gem5_val;
         ref_val = diffAllStates->referenceRegFile.mtinst;
         if (gem5_val != ref_val) {
             csrDiffMessage(gem5_val, ref_val, CsrRegIndex::mtinst, diffAllStates->gem5RegFile.mtinst, seq, "mtinst",
@@ -1186,6 +1197,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         //hstatus
         gem5_val = readMiscRegNoEffect(
         RiscvISA::MiscRegIndex::MISCREG_HSTATUS, tid);
+        diffAllStates->gem5RegFile.hstatus = gem5_val;
         ref_val = diffAllStates->referenceRegFile.hstatus;
         if ((gem5_val != ref_val)) {
             csrDiffMessage(gem5_val, ref_val, CsrRegIndex::hstatus, diffAllStates->gem5RegFile.hstatus, seq, "hstatus",
@@ -1194,6 +1206,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         //hideleg
         gem5_val = readMiscRegNoEffect(
         RiscvISA::MiscRegIndex::MISCREG_HIDELEG, tid);
+        diffAllStates->gem5RegFile.hideleg = gem5_val;
         ref_val = diffAllStates->referenceRegFile.hideleg;
         if ((gem5_val != ref_val)) {
             csrDiffMessage(gem5_val, ref_val, CsrRegIndex::hideleg, diffAllStates->gem5RegFile.hideleg, seq, "hideleg",
@@ -1201,6 +1214,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         }
         //hedeleg
         gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_HEDELEG, tid);
+        diffAllStates->gem5RegFile.hedeleg = gem5_val;
         ref_val = diffAllStates->referenceRegFile.hedeleg;
         if (gem5_val != ref_val) {
             csrDiffMessage(gem5_val, ref_val, CsrRegIndex::hedeleg, diffAllStates->gem5RegFile.hedeleg, seq, "hedeleg",
@@ -1208,6 +1222,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         }
         //hcounteren
         gem5_val = readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_HCOUNTEREN, tid);
+        diffAllStates->gem5RegFile.hcounteren = gem5_val;
         ref_val = diffAllStates->referenceRegFile.hcounteren;
         if (gem5_val != ref_val) {
             csrDiffMessage(gem5_val, ref_val, CsrRegIndex::hcounteren, diffAllStates->gem5RegFile.hcounteren, seq,
@@ -1216,6 +1231,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
 
         //htval
         gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_HTVAL, tid);
+        diffAllStates->gem5RegFile.htval = gem5_val;
         ref_val = diffAllStates->referenceRegFile.htval;
         if (gem5_val != ref_val) {
             csrDiffMessage(gem5_val, ref_val, CsrRegIndex::htval, diffAllStates->gem5RegFile.htval, seq, "htval",
@@ -1224,6 +1240,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
 
         // htinst
         gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_HTINST, tid);
+        diffAllStates->gem5RegFile.htinst = gem5_val;
         ref_val = diffAllStates->referenceRegFile.htinst;
         if (gem5_val != ref_val) {
             csrDiffMessage(gem5_val, ref_val, CsrRegIndex::htinst, diffAllStates->gem5RegFile.htinst, seq, "htinst",
@@ -1231,6 +1248,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         }
         // hgatp
         gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_HGATP, tid);
+        diffAllStates->gem5RegFile.hgatp = gem5_val;
         ref_val = diffAllStates->referenceRegFile.hgatp;
         if (gem5_val != ref_val) {
             csrDiffMessage(gem5_val, ref_val, CsrRegIndex::hgatp, diffAllStates->gem5RegFile.hgatp, seq, "hgatp",
@@ -1238,6 +1256,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         }
         // vsstatus
         gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VSSTATUS, tid);
+        diffAllStates->gem5RegFile.vsstatus = gem5_val;
         ref_val = diffAllStates->referenceRegFile.vsstatus;
         if (gem5_val != ref_val) {
             csrDiffMessage(gem5_val, ref_val, CsrRegIndex::vsstatus, diffAllStates->gem5RegFile.vsstatus, seq,
@@ -1245,6 +1264,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         }
         // vstvec
         gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VSTVEC, tid);
+        diffAllStates->gem5RegFile.vstvec = gem5_val;
         ref_val = diffAllStates->referenceRegFile.vstvec;
         if (gem5_val != ref_val) {
             csrDiffMessage(gem5_val, ref_val, CsrRegIndex::vstvec, diffAllStates->gem5RegFile.vstvec, seq, "vstvec",
@@ -1252,6 +1272,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         }
         // vsepc
         gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VSEPC, tid);
+        diffAllStates->gem5RegFile.vsepc = gem5_val;
         ref_val = diffAllStates->referenceRegFile.vsepc;
         if (gem5_val != ref_val) {
             csrDiffMessage(gem5_val, ref_val, CsrRegIndex::vsepc, diffAllStates->gem5RegFile.vsepc, seq, "vsepc",
@@ -1259,6 +1280,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         }
         // vscause
         gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VSCAUSE, tid);
+        diffAllStates->gem5RegFile.vscause = gem5_val;
         ref_val = diffAllStates->referenceRegFile.vscause;
         if (gem5_val != ref_val) {
             csrDiffMessage(gem5_val, ref_val, CsrRegIndex::vscause, diffAllStates->gem5RegFile.vscause, seq, "vscause",
@@ -1266,6 +1288,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         }
         // vstval
         gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VSTVAL, tid);
+        diffAllStates->gem5RegFile.vstval = gem5_val;
         ref_val = diffAllStates->referenceRegFile.vstval;
         if (gem5_val != ref_val) {
             csrDiffMessage(gem5_val, ref_val, CsrRegIndex::vstval, diffAllStates->gem5RegFile.vstval, seq, "vstval",
@@ -1274,6 +1297,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
 
         // vsatp
         gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VSATP, tid);
+        diffAllStates->gem5RegFile.vsatp = gem5_val;
         ref_val = diffAllStates->referenceRegFile.vsatp;
         if (gem5_val != ref_val) {
             csrDiffMessage(gem5_val, ref_val, CsrRegIndex::vsatp, diffAllStates->gem5RegFile.vsatp, seq, "vsatp",
@@ -1282,6 +1306,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
 
         // vsscratch
         gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VSSCRATCH, tid);
+        diffAllStates->gem5RegFile.vsscratch = gem5_val;
         ref_val = diffAllStates->referenceRegFile.vsscratch;
         if (gem5_val != ref_val) {
             csrDiffMessage(gem5_val, ref_val, CsrRegIndex::vsscratch, diffAllStates->gem5RegFile.vsscratch, seq,
@@ -1289,6 +1314,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         }
         // cpu.v diff
         gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VIRMODE, tid);
+        diffAllStates->gem5RegFile.v = gem5_val;
         ref_val = diffAllStates->referenceRegFile.v;
         if (gem5_val != ref_val) {
             csrDiffMessage(gem5_val, ref_val, CsrRegIndex::v, diffAllStates->gem5RegFile.v, seq, "v", diff_at);
