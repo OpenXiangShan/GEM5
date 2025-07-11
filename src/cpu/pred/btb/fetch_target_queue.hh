@@ -239,6 +239,14 @@ class FetchTargetQueue
     std::pair<Addr, Addr> getDualFTQPCs();
 
     /**
+     * @brief Get the FTQ entry at the given index
+     *
+     * @param ftqIndex The index of the entry to get
+     * @return The entry
+     */
+    FtqEntry getFTQEntry(unsigned ftqIndex);
+
+    /**
      * @brief Mark both current and next fetch targets as finished
      *
      * This advances by two targets and removes both from the queue
