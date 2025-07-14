@@ -4,7 +4,7 @@ from m5.SimObject import SimObject
 from m5.params import *
 from m5.objects.FuncUnit import *
 from m5.objects.FuncUnitConfig import *
-from m5.objects.FUPool import *
+from m5.objects.FuncScheduler import *
 
 #  must be consistent with issue_queue.cc
 maxTotalRFPorts = (1 << 6) - 1

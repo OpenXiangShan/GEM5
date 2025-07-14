@@ -31,8 +31,8 @@ import sys
 Import('*')
 
 if env['CONF']['TARGET_ISA'] != 'null':
-    SimObject('FUPool.py', sim_objects=['FUPool', 'SpecWakeupChannel',
-              'IssuePort', 'IssueQue', 'Scheduler'])
+    SimObject('FuncScheduler.py', sim_objects=['FUPool', 'SpecWakeupChannel',
+              'IssuePort', 'IssueQue', 'BaseSelector', 'PAgeSelector', 'Scheduler'])
     SimObject('FuncUnitConfig.py', sim_objects=[])
     SimObject('BaseO3CPU.py', sim_objects=['BaseO3CPU'], enums=[
         'SMTFetchPolicy', 'SMTQueuePolicy', 'CommitPolicy', 'ROBWalkPolicy', 'ROBCompressPolicy', 'PerfRecord'])

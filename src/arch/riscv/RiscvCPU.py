@@ -32,7 +32,7 @@ from m5.objects.RiscvDecoder import RiscvDecoder
 from m5.objects.RiscvMMU import RiscvMMU
 from m5.objects.RiscvInterrupts import RiscvInterrupts
 from m5.objects.RiscvISA import RiscvISA
-from m5.objects.FUPool import *
+from m5.objects.FuncScheduler import *
 
 class RiscvCPU:
     ArchDecoder = RiscvDecoder

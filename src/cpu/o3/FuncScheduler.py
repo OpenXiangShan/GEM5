@@ -63,6 +63,18 @@ class IssuePort(SimObject):
     fu = VectorParam.FUDesc("Combined FU")
     rp = VectorParam.Int([], "Integer register read port id and priority ()")
 
+class BaseSelector(SimObject):
+    type = 'BaseSelector'
+    cxx_class = 'gem5::o3::BaseSelector'
+    cxx_header = "cpu/o3/issue_queue.hh"
+
+class PAgeSelector(BaseSelector):
+    type = 'PAgeSelector'
+    cxx_class = 'gem5::o3::PAgeSelector'
+    cxx_header = "cpu/o3/issue_queue.hh"
+
+    piece = Param.Int(2, "number of instructions in a group")
+
 class IssueQue(SimObject):
     type = 'IssueQue'
     cxx_class = 'gem5::o3::IssueQue'
@@ -72,8 +84,8 @@ class IssueQue(SimObject):
     size = Param.Int(16, "")
     inports = Param.Int(2, "")
     scheduleToExecDelay = Param.Cycles(2, "")
-
     oports = VectorParam.IssuePort("")
+    sel = Param.BaseSelector(BaseSelector(), "Selector for this IQ (default: age first)")
 
 class Scheduler(SimObject):
     type = 'Scheduler'

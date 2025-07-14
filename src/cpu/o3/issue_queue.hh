@@ -18,8 +18,10 @@
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/reg_class.hh"
 #include "cpu/timebuf.hh"
+#include "params/BaseSelector.hh"
 #include "params/IssuePort.hh"
 #include "params/IssueQue.hh"
+#include "params/PAgeSelector.hh"
 #include "params/Scheduler.hh"
 #include "params/SpecWakeupChannel.hh"
 #include "sim/sim_object.hh"
@@ -37,6 +39,9 @@ class CPU;
 class IEW;
 class Scheduler;
 class MemDepUnit;
+
+using ReadyQue = std::list<DynInstPtr>;
+using SelectQue = std::vector<std::pair<uint32_t, DynInstPtr>>;
 
 /**
  *          insert into queue
@@ -66,9 +71,39 @@ class IssuePort : public SimObject
     IssuePort(const IssuePortParams& params);
 };
 
+class BaseSelector : public SimObject
+{
+    Scheduler* scheduler = nullptr;
+    IssueQue* iq = nullptr;
+  protected:
+    ReadyQue::iterator end;
+  public:
+    BaseSelector(const BaseSelectorParams& params) : SimObject(params) {}
+    virtual void setparent(Scheduler* scheduler, IssueQue* iq) { this->scheduler = scheduler; this->iq = iq; }
+    virtual void allocate(const DynInstPtr& inst) {}
+    virtual void deallocate(const DynInstPtr& inst) {}
+    void begin(ReadyQue* readyQ) { end = readyQ->end(); }
+    virtual ReadyQue::iterator select(ReadyQue::iterator begin, int portid);
+};
+
+class PAgeSelector : public BaseSelector
+{
+    std::deque<int> freelist;
+    SelectQue* iqselectQ = nullptr;
+    int numInstperGroup = 0;
+  public:
+    PAgeSelector(const PAgeSelectorParams& params) : BaseSelector(params), numInstperGroup(params.piece) {}
+    void setparent(Scheduler* scheduler, IssueQue* iq) override;
+    void allocate(const DynInstPtr& inst) override;
+    void deallocate(const DynInstPtr& inst) override;
+    ReadyQue::iterator select(ReadyQue::iterator begin, int portid) override;
+};
+
 class IssueQue : public SimObject
 {
     friend class Scheduler;
+    friend class BaseSelector;
+    friend class PAgeSelector;
 
     std::string _name;
     const int inports;
@@ -88,8 +123,6 @@ class IssueQue : public SimObject
     {
         bool operator()(const DynInstPtr& a, const DynInstPtr& b) const;
     };
-    using ReadyQue = std::list<DynInstPtr>;
-    using SelectQue = std::vector<std::pair<uint32_t, DynInstPtr>>;
 
     struct IssueStream
     {
@@ -127,6 +160,7 @@ class IssueQue : public SimObject
 
     CPU* cpu = nullptr;
     Scheduler* scheduler = nullptr;
+    BaseSelector* selector = nullptr;
 
     struct IssueQueStats : public statistics::Group
     {

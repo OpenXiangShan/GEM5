@@ -33,6 +33,7 @@
         assert(opNum[x->opClass()] != 0); \
         opNum[x->opClass()]--;            \
         instNum--;                        \
+        selector->deallocate(x);       \
     } while (0)
 
 #define READYQ_PUSH(x)                                                                    \
@@ -67,6 +68,71 @@ IssuePort::IssuePort(const IssuePortParams& params) : SimObject(params), rp(para
         for (auto it1 : it0->opDescList) {
             mask.set(it1->opClass);
         }
+    }
+}
+
+ReadyQue::iterator
+BaseSelector::select(ReadyQue::iterator begin, int portid)
+{
+    // return the oldest
+    return begin;
+}
+
+void
+PAgeSelector::setparent(Scheduler *scheduler, IssueQue *iq)
+{
+    BaseSelector::setparent(scheduler, iq);
+
+    panic_if(iq->iqsize % numInstperGroup != 0,
+             "POldSelector: IssueQue size % numInstperGroup != 0, "
+             "size: %d, numInstperGroup: %d\n", iq->iqsize, numInstperGroup);
+    iqselectQ = &iq->selectQ;
+    for (int i=0;i<iq->iqsize; i++) {
+        freelist.push_back(i);
+    }
+}
+
+void
+PAgeSelector::allocate(const DynInstPtr &inst)
+{
+    assert(!freelist.empty());
+    inst->iqtag = freelist.front();
+    freelist.pop_front();
+}
+
+void
+PAgeSelector::deallocate(const DynInstPtr &inst)
+{
+    assert(inst->iqtag >= 0 && inst->iqtag < (int)freelist.size());
+    freelist.push_back(inst->iqtag);
+    inst->iqtag = -1; // reset
+}
+
+ReadyQue::iterator
+PAgeSelector::select(ReadyQue::iterator begin, int portid)
+{
+    if (iqselectQ->empty()) {
+        // first one is oldest
+        return begin;
+    } else {
+        // TODO: speed the searching up
+        for (auto it = begin; it != end; it++) {
+            auto& inst = *it;
+
+            bool no_group_conflict = true;
+            for (auto sit = iqselectQ->begin(); sit != iqselectQ->end(); sit++) {
+                // check group conflict
+                if ((inst->iqtag % numInstperGroup) == (sit->second->iqtag % numInstperGroup)) {
+                    no_group_conflict = false;
+                    break;
+                }
+            }
+
+            if (no_group_conflict) {
+                return it;
+            }
+        }
+        return end;
     }
 }
 
@@ -121,7 +187,8 @@ IssueQue::IssueQue(const IssueQueParams& params)
       iqsize(params.size),
       scheduleToExecDelay(params.scheduleToExecDelay),
       iqname(params.name),
-      inflightIssues(scheduleToExecDelay, 0)
+      inflightIssues(scheduleToExecDelay, 0),
+      selector(params.sel)
 {
     toIssue = inflightIssues.getWire(0);
     toFu = inflightIssues.getWire(-scheduleToExecDelay);
@@ -428,11 +495,9 @@ IssueQue::selectInst()
     selectQ.clear();
     for (int pi = 0; pi < outports; pi++) {
         auto readyQ = readyQs[pi];
-
-        for (auto it = readyQ->begin(); it != readyQ->end();) {
+        selector->begin(readyQ);
+        for (auto it = selector->select(readyQ->begin(), pi); it != readyQ->end(); it = selector->select(it, pi)) {
             auto& inst = *it;
-
-            // skipp canceled inst and wb conflict inst
             if (inst->canceled()) {
                 inst->clearInReadyQ();
                 it = readyQ->erase(it);
@@ -550,6 +615,7 @@ IssueQue::insert(const DynInstPtr& inst)
     cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtIssueQue);
 
     DPRINTF(Schedule, "[sn:%llu] %s insert into %s\n", inst->seqNum, enums::OpClassStrings[inst->opClass()], iqname);
+    selector->allocate(inst);
     inst->issueQue = this;
     instList.emplace_back(inst);
     bool addToDepGraph = false;
@@ -568,6 +634,7 @@ IssueQue::insert(const DynInstPtr& inst)
             }
         }
     }
+
     if (!addToDepGraph) {
         assert(inst->readyToIssue());
     }
@@ -838,6 +905,7 @@ Scheduler::issueAndSelect()
     for (auto it : issueQues) {
         it->selectInst();
     }
+
     // inst arbitration
     for (auto inst : arbFailedInsts) {
         inst->setArbFailed();

@@ -450,6 +450,7 @@ class DynInst : public ExecContext, public RefCounted
 
     IssueQue* issueQue = nullptr;
     int issueportid = -1;
+    int iqtag = -1;
 
   public:
     /** Records changes to result? */
