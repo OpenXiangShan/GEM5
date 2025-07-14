@@ -1294,7 +1294,8 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
             DPRINTF(Rename, "[sn:%llu] Inst is nop: %i, is move: %i\n", inst->seqNum, inst->isNop(),
                     inst->isMov());
             stats.moveEliminated++;
-        } else if (cpu->enableConstantFolding && inst->isAddImm()) {
+        } else if (inst->isAddImm() &&
+            (cpu->enableConstantFolding || (cpu->enableMovImmElimination && inst->srcRegIdx(0).isZeroReg()))) {
             // Constant folding
             bypass_reg =
                 map->lookup(tc->flattenRegId(inst->srcRegIdx(0)));

@@ -246,3 +246,4 @@ class BaseO3CPU(BaseCPU):
     store_prefetch_train = Param.Bool(True, "Training store prefetcher with store addresses")
 
     enableConstantFolding = Param.Bool(False, "Enable Constant Folding (add-immediate elimination)")
+    enableMovImmElimination = Param.Bool(False, "Enable MOVI elimination")
