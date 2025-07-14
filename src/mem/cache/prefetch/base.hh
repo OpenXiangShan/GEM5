@@ -275,7 +275,7 @@ class Base : public ClockedObject
         /**
          * @return Returns true if the physical address is valid
          */
-        Addr isPaddrValid() const
+        bool isPaddrValid() const
         {
             return validPaddr;
         }
