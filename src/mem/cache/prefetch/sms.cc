@@ -647,6 +647,9 @@ XSCompositePrefetcher::setParentInfo(System *sys, ProbeManager *pm, CacheAccesso
 {
     Base::setParentInfo(sys, pm, _cache, blk_size);
 
+    Xsstream->setParentInfo(sys, pm, _cache, blk_size);
+    Sstride->setParentInfo(sys, pm, _cache, blk_size);
+
     largeBOP->setParentInfo(sys, pm, _cache, blk_size);
     smallBOP->setParentInfo(sys, pm, _cache, blk_size);
     learnedBOP->setParentInfo(sys, pm, _cache, blk_size);
