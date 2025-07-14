@@ -30,6 +30,10 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       predictWidth(p.predictWidth),
       maxInstsNum(p.predictWidth / 2),
       historyBits(p.maxHistLen),
+      phrbMaxLen(p.phrbMaxLen),
+      phrbXorLen(p.phrbXorLen),
+      phrtMaxLen(p.phrtMaxLen),
+      phrtXorLen(p.phrtXorLen),
       ubtb(p.ubtb),
       abtb(p.abtb),
       btb(p.btb),
@@ -96,6 +100,8 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     for (unsigned int i = 0; i < mgsc->getNumEntriesFirstLocalHistories(); ++i) {
         s0LHistory[i].resize(historyBits, 0);
     }
+    s0phrb.resize(phrbMaxLen, 0);
+    s0phrt.resize(phrtMaxLen, 0);
     fetchTargetQueue.setName(name());
 
     commitHistory.resize(historyBits, 0);
@@ -628,7 +634,7 @@ DecoupledBPUWithBTB::requestNewPrediction()
         for (int i = 0; i < numStages; i++) {
             predsOfEachStage[i].bbStart = s0PC;
         }
-
+        tage->putPhr(s0phrb, s0phrt);
         // Query each predictor component with current PC and history
         for (int i = 0; i < numComponents; i++) {
             components[i]->putPCHistory(s0PC, s0History, predsOfEachStage);  //s0History not used
@@ -933,6 +939,7 @@ DecoupledBPUWithBTB::handleSquash(unsigned target_id,
     // Update PC and stream ID
     s0PC = redirect_pc;
     fsqId = stream_id + 1;
+    
 
     // Squash fetch target queue and redirect to new PC
     fetchTargetQueue.squash(target_id + 1, fsqId, redirect_pc);
@@ -994,6 +1001,7 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id, unsigned stream_id,
     // Call shared squash handling logic
     handleSquash(target_id, stream_id, SQUASH_CTRL, control_pc,
                 real_target, is_conditional, actually_taken, static_inst, control_inst_size);
+
 }
 
 void
@@ -1009,6 +1017,7 @@ DecoupledBPUWithBTB::nonControlSquash(unsigned target_id, unsigned stream_id,
 
     // Call shared squash handling logic
     handleSquash(target_id, stream_id, SQUASH_OTHER, inst_pc, inst_pc.instAddr());
+
 }
 
 void
@@ -1023,6 +1032,7 @@ DecoupledBPUWithBTB::trapSquash(unsigned target_id, unsigned stream_id,
 
     // Call shared squash handling logic
     handleSquash(target_id, stream_id, SQUASH_TRAP, inst_pc, inst_pc.instAddr());
+
 }
 
 void DecoupledBPUWithBTB::update(unsigned stream_id, ThreadID tid)
@@ -1769,6 +1779,7 @@ DecoupledBPUWithBTB::createFetchStreamEntry()
     if (taken) {
         entry.predBranchInfo = finalPred.getTakenEntry().getBranchInfo();
         entry.predBranchInfo.target = nextPC; // Use final target (may not be from BTB)
+
     }
 
     // Record current history and prediction metadata
@@ -1777,9 +1788,13 @@ DecoupledBPUWithBTB::createFetchStreamEntry()
     entry.bwhistory = s0BwHistory;
     entry.ihistory = s0IHistory;
     entry.lhistory = s0LHistory;
+    entry.phrb = s0phrb;
+    entry.phrt = s0phrt;
     entry.predTick = finalPred.predTick;
     entry.predSource = finalPred.predSource;
     entry.overrideReason = finalPred.overrideReason;
+
+
 
     // Save predictors' metadata
     for (int i = 0; i < numComponents; i++) {
@@ -1948,6 +1963,10 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchStream &entry)
     bool taken;
     std::tie(shamt, taken) = finalPred.getHistInfo();
 
+    if (taken) {
+        updatePhr(finalPred.controlAddr(), finalPred.getTarget(predictWidth));
+    }
+
     // Update global history
     histShiftIn(shamt, taken, s0History);
 
@@ -2008,6 +2027,14 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     s0BwHistory = stream.bwhistory;
     s0IHistory = stream.ihistory;
     s0LHistory = stream.lhistory;
+    s0phrb = stream.phrb;
+    s0phrt = stream.phrt;
+
+    // update phr, this isn't supposed to be triggered by trap squash and non-control squash
+    // this is guaranteed by the fact that actually_taken is always false during these squashs. 
+    if (actually_taken) {
+        updatePhr(stream.getControlPC(), redirect_pc);
+    }
 
     // Get actual history shift information
     int real_shamt;
