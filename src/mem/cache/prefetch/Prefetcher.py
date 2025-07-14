@@ -981,6 +981,138 @@ class DespacitoStreamPrefetcher(QueuedPrefetcher):
         "Replacement policy of pattern history table"
     )
 
+class TriangelHashedSetAssociative(SetAssociative):
+    type = "TriangelHashedSetAssociative"
+    cxx_class = "gem5::prefetch::TriangelHashedSetAssociative"
+    cxx_header = "mem/cache/prefetch/triangel.hh"
+
+
+class TriangelPrefetcher(QueuedPrefetcher):
+    type = "TriangelPrefetcher"
+    cxx_class = "gem5::prefetch::Triangel"
+    cxx_header = "mem/cache/prefetch/triangel.hh"
+
+    # Do not consult stride prefetcher on instruction accesses
+    on_inst = False
+    on_write = True
+    on_miss = True
+    prefetch_on_access = False
+    prefetch_on_pf_hit = True  # TODO: check these!
+    # cross_pages = True
+
+    use_scs = Param.Bool(True, "Should use second-chance sampler")
+    use_bloom = Param.Bool(False, "Should use bloom filter instead of dueller")
+    should_lookahead = Param.Bool(True, "Should perform lookahead prefetching")
+    cachetags = Param.BaseTags(Parent.tags, "Cache we belong to")
+    should_rearrange = Param.Bool(True, "Should rearrange on index change")
+    use_hawkeye = Param.Bool(False, "Add hawkeye after the sample cache")
+    use_reuse = Param.Bool(True, "Use ReuseConf")
+    use_pattern = Param.Bool(True, "Use PatternConf")
+    use_pattern2 = Param.Bool(True, "Use Pattern2Conf")
+    use_mrb = Param.Bool(True, "Use ReuseBuffer")
+    timed_scs = Param.Bool(True, "Use timed SCS")
+    perfbias = Param.Bool(False, "Bias away from energy efficiency")
+    smallduel = Param.Bool(False, "Use small set dueller")
+    #  use_requestor_id = Param.Bool(True, "Use requestor id based history")
+    useSampleConfidence = Param.Bool(False, "Use sample confidence")
+    degree = Param.Int(4, "Maximum number of prefetches to generate")
+    cache_delay = Param.Unsigned(25, "Time to access L3 cache")
+
+    sctags = Param.BaseTags(Parent.tags, "Cache we check for second-chance sampling")
+    lookup_assoc = Param.Unsigned(0, "Associativity of the lookup table")
+    lookup_offset = Param.Unsigned(11, "Offset of the lookup table")
+    training_unit_assoc = Param.Unsigned(
+        16, "Associativity of the training unit"
+    )
+    training_unit_entries = Param.MemorySize(
+        "512", "Number of entries of the training unit"
+    )
+    training_unit_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.training_unit_assoc,
+            size=Parent.training_unit_entries,
+        ),
+        "Indexing policy of the training unit",
+    )
+    training_unit_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(), "Replacement policy of the training unit"
+    )
+
+    address_map_actual_entries = Param.MemorySize(
+        "196608", "Number of entries of the History table"
+    )
+    address_map_max_ways = Param.Unsigned(
+        8, "Max reservation of the History Table"
+    )
+    address_map_actual_cache_assoc = Param.Unsigned(
+        12, "Associativity of the History Table"
+    )  # TODO: assert = address_map_line_assoc * cache assoc / 2
+    address_map_rounded_entries = Param.MemorySize(
+        "262144", "Number of entries of the History table"
+    )  # TODO: assert = rnd(address_map_line_assoc) * cache size / 64 / 2
+    address_map_rounded_cache_assoc = Param.Unsigned(
+        16, "Associativity of the History Table"
+    )  # TODO: assert = address_map_line_assoc * cache assoc / 2
+    address_map_cache_indexing_policy = Param.BaseIndexingPolicy(
+        TriangelHashedSetAssociative(
+            entry_size=1,
+            assoc=Parent.address_map_rounded_cache_assoc,
+            size=Parent.address_map_rounded_entries,
+        ),
+        "Indexing policy of the PC table",
+    )
+    address_map_cache_replacement_policy = Param.BaseReplacementPolicy(
+        RRIPRP(), "Replacement policy of the Markov table"
+    )
+    sample_assoc = Param.Int(2, "Associativity of the Sample Cache")
+    sample_entries = Param.MemorySize(
+        "512", "Number of entries of the Sample cache"
+    )
+    sample_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.sample_assoc,
+            size=Parent.sample_entries,
+        ),
+        "Indexing policy of the sample cache",
+    )
+    sample_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(), "Replacement policy of the training unit"
+    )
+    metadata_reuse_assoc = Param.Int(
+        2, "Associativity of the Metadata Reuse Buffer"
+    )
+    metadata_reuse_entries = Param.MemorySize(
+        "256", "Number of entries of the Metadata Reuse Buffer"
+    )
+    metadata_reuse_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.metadata_reuse_assoc,
+            size=Parent.metadata_reuse_entries,
+        ),
+        "Indexing policy of the Prefetched cache",
+    )
+    metadata_reuse_replacement_policy = Param.BaseReplacementPolicy(
+        FIFORP(), "Replacement policy of the Prefetched cache"
+    )
+
+    secondchance_assoc = Param.Int(2, "Associativity of the Second Chance Sampler")
+    secondchance_entries = Param.MemorySize(
+        "64", "Number of entries of the Second Chance Sampler"
+    )
+    secondchance_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.secondchance_assoc,
+            size=Parent.secondchance_entries,
+        ),
+        "Indexing policy of the Second Chance Sampler",
+    )
+    secondchance_replacement_policy = Param.BaseReplacementPolicy(
+        FIFORP(), "Replacement policy of the Second Chance Sampler"
+    )
 
 class XSCompositePrefetcher(QueuedPrefetcher):
     type = "XSCompositePrefetcher"
@@ -1119,6 +1251,32 @@ class XSCompositePrefetcher(QueuedPrefetcher):
     sstride = Param.XSStridePrefetcher(XSStridePrefetcher(is_sub_prefetcher=True), "")
     opt = Param.OptPrefetcher(OptPrefetcher(is_sub_prefetcher=True), "")
     xsstream = Param.XsStreamPrefetcher(XsStreamPrefetcher(is_sub_prefetcher=True), "")
+    triangel = Param.TriangelPrefetcher(TriangelPrefetcher(
+                        is_sub_prefetcher=True,
+                        # cachetags=None,#To take a partition of for the Markov table.
+                        cache_delay=25, #5 cycles more than the L3 cache itself
+                        degree=4,
+                        address_map_max_ways=8,
+                        #The below params assume 1MiB partition max of a 2MiB 16-way cache (So 8 max_ways).
+                        #The density is 12 entries per cache line (actual_cache_assoc) unlike Triage's 16
+                        #And the rounded version sets everything to a power of two -- with the difference between
+                        #actual and rounded based on that ratio between 12 and 16 here.
+                        address_map_actual_entries="196608",
+                        address_map_actual_cache_assoc=12,
+                        address_map_rounded_entries="262144",
+                        address_map_rounded_cache_assoc=16,
+                        #ablation study to disable/retune features
+                        use_bloom=True, # options.triangelbloom
+                        use_scs= True,  # not options.triangelnoscs
+                        timed_scs=True,
+                        use_pattern= True, # not options.triangelnopattern
+                        use_pattern2= True, # not options.trianglenopattern2
+                        use_reuse= True,    # not options.triangelnoreuse
+                        # Adjusts tuning params to make it more aggressive and less DRAM/L3-partition friendly.
+                        perfbias = False, # options.triangelperfbias
+                        should_rearrange = True, # not options.triangelnorearr
+                        use_mrb = True  # not options.triangelnomrb
+                    ), "")
 
     enable_activepage = Param.Bool(True,"Enable activepage stream prefetcher")
     enable_cplx = Param.Bool(False, "Enable CPLX component")
@@ -1126,6 +1284,7 @@ class XSCompositePrefetcher(QueuedPrefetcher):
     enable_temporal = Param.Bool(False, "Enable temporal component")
     enable_berti = Param.Bool(True,"Enable berti component")
     enable_bop = Param.Bool(True, "Enable BOP")
+    enable_triangel = Param.Bool(False, "Enable Triangel component")
 
     enable_sstride = Param.Bool(False,"Enable sms stride component")
     enable_opt = Param.Bool(False,"Enable opt component")
@@ -1174,3 +1333,6 @@ class L3CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
     cxx_header = "mem/cache/prefetch/l3_composite_with_worker.hh"
 
     bop = Param.BasePrefetcher(FallenBOPPrefetcher(is_sub_prefetcher=True), "")
+
+
+

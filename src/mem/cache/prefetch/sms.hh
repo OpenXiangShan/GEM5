@@ -21,6 +21,7 @@
 #include "mem/cache/prefetch/queued.hh"
 #include "mem/cache/prefetch/signature_path.hh"
 #include "mem/cache/prefetch/stride.hh"
+#include "mem/cache/prefetch/triangel.hh"
 #include "mem/cache/prefetch/xs_stream.hh"
 #include "mem/cache/prefetch/xs_stride.hh"
 #include "mem/cache/tags/tagged_entry.hh"
@@ -178,6 +179,8 @@ class XSCompositePrefetcher : public Queued
 
     IPCP *ipcp;
 
+    Triangel *triangel;
+
     CMCPrefetcher* cmc;
     BertiPrefetcher *berti;
     XSStridePrefetcher *Sstride;
@@ -189,6 +192,7 @@ class XSCompositePrefetcher : public Queued
     const bool enableCPLX;
     const bool enableSPP;
     const bool enableTemporal;
+    const bool enableTriangel;
     const bool enableSstride;
     const bool enableBerti;
     const bool enableBOP;

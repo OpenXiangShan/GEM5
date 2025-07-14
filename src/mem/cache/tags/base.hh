@@ -227,6 +227,11 @@ class BaseTags : public ClockedObject
         return (addr & blkMask);
     }
 
+    virtual void clearSetWay(int set, int way)
+    {
+         panic("This tag class does not implement way allocation limit!\n");
+    }
+
     /**
      * Limit the allocation for the cache ways.
      * @param ways The maximum number of ways available for replacement.
@@ -261,6 +266,16 @@ class BaseTags : public ClockedObject
         stats.sampledRefs++;
 
         blk->invalidate();
+    }
+
+    std::vector<CacheBlk*> badBlocks;
+
+    CacheBlk* getBadBlock() {
+      if (badBlocks.empty()) return nullptr;
+
+      CacheBlk* blk = badBlocks.back();
+      badBlocks.pop_back();
+      return blk;
     }
 
     /**

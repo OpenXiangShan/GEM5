@@ -183,6 +183,13 @@ Cache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
             BaseCache::evictBlock(old_blk, writebacks);
         }
 
+        for (int x=0;x<4;x++) {
+                CacheBlk * bad_blk = tags->getBadBlock();
+                if (bad_blk && bad_blk->isValid()) {
+                   BaseCache::evictBlock(bad_blk, writebacks);
+                }
+        }
+
         blk = nullptr;
         // lookupLatency is the latency in case the request is uncacheable.
         lat = lookupLatency;
