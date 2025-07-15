@@ -59,7 +59,7 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
                                   PrefetchSourceType last_pf_source, bool enter_new_region, bool miss_repeat,
                                   int64_t &learned_bop_offset)
 {
-    Addr lookupAddr = pfi.getVAddr();
+    Addr lookupAddr = useVirtualAddresses ? pfi.getVAddr() : pfi.getPaddr();
     Addr stride_hash_pc = strideHashPc(pfi.getPC());
     StrideEntry *entry = stride.findEntry(stride_hash_pc, pfi.isSecure());
     learned_bop_offset = 0;
