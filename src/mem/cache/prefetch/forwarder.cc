@@ -9,7 +9,7 @@ namespace prefetch
 {
 
 PrefetcherForwarder::PrefetcherForwarder(const PrefetcherForwarderParams &p)
-    : Base(p), real_pf(p.real_pf)
+    : Base(p), real_pf(nullptr)
 {
 }
 

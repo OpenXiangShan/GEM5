@@ -139,8 +139,22 @@ class PrefetcherForwarder(BasePrefetcher):
     type = 'PrefetcherForwarder'
     cxx_header = "mem/cache/prefetch/forwarder.hh"
     cxx_class = 'gem5::prefetch::PrefetcherForwarder'
+    cxx_exports = [
+        PyBindMethod("setRealPrefetcher")
+    ]
 
-    real_pf = Param.BasePrefetcher(NULL, "The real prefetcher to forward requests to")
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._real_pf = None
+
+    def regProbeListeners(self):
+        assert self._real_pf is not None
+        self.getCCObject().setRealPrefetcher(self._real_pf.getCCObject())
+        self.getCCObject().regProbeListeners()
+
+    def setRealPrefetcher(self, real_pf):
+        self._real_pf = real_pf
+
 
 class QueuedPrefetcher(BasePrefetcher):
     type = "QueuedPrefetcher"

@@ -163,8 +163,8 @@ def config_cache(options, system):
 
                 l2_wrapper.addCacheAccessor(inner_cache)
                 l2_wrapper.addSliceAccessor(cache_slice)
-                if not options.no_pf and hasattr(inner_cache.prefetcher, 'real_pf'):
-                    inner_cache.prefetcher.real_pf = l2_wrapper.prefetcher
+                if not options.no_pf and options.l2_hwp_type == 'PrefetcherForwarder':
+                    inner_cache.prefetcher.setRealPrefetcher(l2_wrapper.prefetcher)
 
                 inner_cache.do_fast_writeline = not options.kmh_align
                 if options.ideal_cache:

@@ -26,7 +26,7 @@ class PrefetcherForwarder : public Base
   public:
     PrefetcherForwarder(const PrefetcherForwarderParams &p);
 
-    void setRealPrefetcher(Base* real_pf_ptr) { real_pf = real_pf_ptr; }
+    void setRealPrefetcher(Base* real_pf_ptr) {  }
 
     bool observeAccess(const PacketPtr &pkt, bool miss) const override;
 
