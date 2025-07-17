@@ -540,7 +540,13 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(statistics::Group* parent, unsigne
                "Ratio of 2-taken BPU cycles to total BPU cycles"),
     ADD_STAT(commitSecondPredRatio, statistics::units::Rate<
                     statistics::units::Count, statistics::units::Count>::get(),
-               "Ratio of committed second predictions(in a 2 taken pair) to total FSQ entries")
+               "Ratio of committed second predictions(in a 2 taken pair) to total FSQ entries"),
+    ADD_STAT(condSecondPredValidationAttempts, statistics::units::Count::get(),
+               "Number of conditional second prediction validation attempts"),
+    ADD_STAT(condSecondPredValidationPassed, statistics::units::Count::get(),
+               "Number of conditional second prediction validations that passed"),
+    ADD_STAT(condSecondPredValidationFailed, statistics::units::Count::get(),
+               "Number of conditional second prediction validations that failed")
 {
     predsOfEachStage.init(numStages);
     commitPredsFromEachStage.init(numStages+1);
@@ -639,7 +645,13 @@ DecoupledBPUWithBTB::tick()
 
     // Try to enqueue the first (or only) prediction.
     if (bpuState == BpuState::PREDS_READY && validateFSQEnqueue()) {
-        makeNewPrediction(true, false); // Enqueues finalPred
+        makeNewPrediction(true, false); // Enqueues finalPred - updates TAGE folded history
+
+        // CRITICAL: TAGE validation happens AFTER first makeNewPrediction()
+        // This ensures TAGE has correct folded history for validation
+        if (hasSecondPrediction && !validateConditionalSecondPrediction()) {
+            discardConditionalSecondPrediction();
+        }
 
         if (hasSecondPrediction) {
             // 2-taken produced a second prediction.
@@ -692,6 +704,9 @@ DecoupledBPUWithBTB::requestNewPrediction()
     secondPrediction.btbEntries.clear();
     secondPrediction.predSource = 0;
     secondPrediction.overrideReason = OverrideReason::NO_OVERRIDE;
+
+    // Clear validation meta at start of each prediction cycle
+    tageValidationMeta = nullptr;
 
     // Query each predictor component with current PC and history
     for (int i = 0; i < numComponents; i++) {
@@ -1149,25 +1164,8 @@ void DecoupledBPUWithBTB::update(unsigned stream_id, ThreadID tid)
         // Update statistics
         updateStatistics(stream);
 
-        // Update predictor components
-        if (!stream.isSecondFBPred) {
-            updatePredictorComponents(stream);
-        } else {
-            DPRINTF(DecoupleBP, "Performing selective update for second FB prediction at %#lx\n", stream.startPC);
-            // For second predictions, only update RAS and MBTB
-            ras->update(stream);
-
-            // Prepare stream for MBTB update
-            stream.setUpdateInstEndPC(predictWidth);
-            stream.setUpdateBTBEntries();
-
-            // Generate new BTB entry for MBTB
-            btb->getAndSetNewBTBEntry(stream);
-
-            // Update only MBTB component
-            btb->update(stream);
-
-        }
+        // Update predictor components for both first and second predictions
+        updatePredictorComponents(stream);
 
         // Track successful second prediction commits
         if (stream.isSecondFBPred) {
@@ -1290,6 +1288,22 @@ DecoupledBPUWithBTB::updatePredictorComponents(FetchStream &stream)
 
         // Update all predictor components
         for (int i = 0; i < numComponents; ++i) {
+            // Skip ITTAGE updates for 2nd predictions to avoid size mismatch issues
+            if (stream.isSecondFBPred && components[i] == ittage) {
+                DPRINTF(DecoupleBP, "Skipping ITTAGE update for 2nd prediction\n");
+                continue;
+            }
+            // Check for null metadata in second predictions to prevent segmentation fault
+            if (stream.predMetas[i] == nullptr) {
+                assert(stream.isSecondFBPred && "Null metadata should only occur in second predictions");
+                DPRINTF(DecoupleBP, "Skipping update for component %d due to null metadata in second prediction\n", i);
+                continue;
+            }
+
+            // Note: for a 2nd prediction's Fetch Block
+            // MGSC will be no-ops due to empty metadata
+            // TAGE and BTB will train normally due to proper metadata
+            // RAS will update normally due to complete metadata
             components[i]->update(stream);
         }
     }
@@ -1905,10 +1919,22 @@ DecoupledBPUWithBTB::createFetchStreamEntry(bool is_second_pred)
     // Save predictors' metadata
     for (int i = 0; i < numComponents; i++) {
         if (is_second_pred) {
-            // For MBTB during second prediction, use uBTB's stored meta instead
-            if (components[i] == btb) {
+            if (components[i] == tage) {
+                // For TAGE: use validation meta if available (conditional branches)
+                // or empty meta (unconditional/alwaysTaken branches)
+                if (tageValidationMeta && finalPred.btbEntries.size() > 0 &&
+                    finalPred.btbEntries[0].isCond) {
+                    entry.predMetas[i] = tageValidationMeta;
+                    DPRINTF(DecoupleBP, "Using TAGE validation meta for conditional second pred\n");
+                } else {
+                    entry.predMetas[i] = components[i]->getSecondPredictionMeta(); // Empty meta
+                    DPRINTF(DecoupleBP, "Using TAGE empty meta for non-conditional second pred\n");
+                }
+            } else if (components[i] == btb) {
+                // Use uBTB's MBTB meta
                 entry.predMetas[i] = ubtb->getSecondPredictionMetaForMBTB();
             } else {
+                // Default empty/checkpoint meta for other components
                 entry.predMetas[i] = components[i]->getSecondPredictionMeta();
             }
         } else {
@@ -2236,6 +2262,75 @@ void DecoupledBPUWithBTB::validateSecondFBPrediction()
         // We're clearing secondPrediction just to be tidy.
         secondPrediction.btbEntries.clear();
     }
+}
+
+bool DecoupledBPUWithBTB::validateConditionalSecondPrediction()
+{
+    if (!hasSecondPrediction) return true;
+
+    // Only validate conditional branches
+    if (secondPrediction.btbEntries.empty() ||
+        !secondPrediction.btbEntries[0].isCond) {
+        return true;  // Non-conditional branches don't need validation
+    }
+
+    dbpBtbStats.condSecondPredValidationAttempts++;
+
+    // Create validation prediction vector
+    std::vector<FullBTBPrediction> validationPreds(numStages);
+    validationPreds[numStages-1] = secondPrediction;
+
+    // Call TAGE with second prediction's starting address
+    tage->putPCHistory(secondPrediction.bbStart, s0History, validationPreds);
+
+    // Store validation meta for potential training
+    tageValidationMeta = tage->getPredictionMeta();
+
+    // Check TAGE's decision
+    auto& validatedPred = validationPreds[numStages-1];
+    Addr condBranchPC = secondPrediction.btbEntries[0].pc;
+
+    auto condIt = std::find_if(validatedPred.condTakens.begin(),
+                              validatedPred.condTakens.end(),
+                              [condBranchPC](const auto& ct) {
+                                  return ct.first == condBranchPC;
+                              });
+
+    if (condIt == validatedPred.condTakens.end() || !condIt->second) {
+        // TAGE disagrees - discard second prediction
+        DPRINTF(DecoupleBP, "TAGE validation failed for conditional branch %#lx\n",
+                condBranchPC);
+        dbpBtbStats.condSecondPredValidationFailed++;
+        return false;
+    }
+
+    // Update second prediction with TAGE's condTakens
+    secondPrediction.condTakens = validatedPred.condTakens;
+
+    DPRINTF(DecoupleBP, "TAGE validation passed for conditional branch %#lx\n",
+            condBranchPC);
+    dbpBtbStats.condSecondPredValidationPassed++;
+    return true;
+}
+
+void DecoupledBPUWithBTB::discardConditionalSecondPrediction()
+{
+    DPRINTF(DecoupleBP, "Discarding second prediction due to TAGE disagreement\n");
+
+    // Discard second prediction
+    hasSecondPrediction = false;
+    secondPrediction.btbEntries.clear();
+
+    // Add 2 override bubbles as specified
+    numOverrideBubbles = std::max(numOverrideBubbles, 2u);
+
+    // Remove conditional branch from uBTB entry (kick it out)
+    if (ubtbHitIndex >= 0) {
+        ubtb->removeSecondPrediction(ubtbHitIndex);
+    }
+
+    // Clear validation meta
+    tageValidationMeta = nullptr;
 }
 
 }  // namespace btb_pred
