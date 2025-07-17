@@ -112,6 +112,9 @@ class DecoupledBPUWithBTB : public BPredUnit
     FullBTBPrediction secondPrediction;  // Second fetch block prediction from unified uBTB
     bool hasSecondPrediction{false};     // Whether we have a valid second FB prediction
 
+    // TAGE validation state for conditional second predictions
+    std::shared_ptr<void> tageValidationMeta{nullptr};
+
     // Hit index tracking for 2-taken training
     int ubtbHitIndex{-1};  // Store hit index from getTwoTakenPrediction
 
@@ -205,6 +208,10 @@ class DecoupledBPUWithBTB : public BPredUnit
     void update2TakenEntry(Addr prevAddr, const FullBTBPrediction& dff_pred, const FullBTBPrediction& s3_pred);
     void trainUbtbFor2Taken();
     void validateSecondFBPrediction();
+
+    // TAGE validation methods for conditional second predictions
+    bool validateConditionalSecondPrediction();
+    void discardConditionalSecondPrediction();
 
     bool validateFSQEnqueue();
 
@@ -403,6 +410,11 @@ class DecoupledBPUWithBTB : public BPredUnit
         // Formula statistics for performance ratios
         statistics::Formula predTwoTakenRatio;        ///< Ratio of 2-taken predictions to total predictions
         statistics::Formula commitSecondPredRatio;      ///< Ratio of committed second predictions to total FSQ entries
+
+        // Conditional second prediction validation statistics
+        statistics::Scalar condSecondPredValidationAttempts; ///< Number of cond second pred validation attempts
+        statistics::Scalar condSecondPredValidationPassed;   ///< Number of cond second pred validations passed
+        statistics::Scalar condSecondPredValidationFailed;   ///< Number of cond second pred validations failed
 
         DBPBTBStats(statistics::Group* parent, unsigned numStages, unsigned fsqSize, unsigned maxInstsNum);
     } dbpBtbStats;

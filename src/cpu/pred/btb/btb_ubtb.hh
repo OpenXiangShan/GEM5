@@ -102,11 +102,13 @@ class UBTB : public TimedBaseBTBPredictor
         bool valid_2nd; // existence of the second branch
         bool pt_2nd; // predict taken for second FB (true = has branch, false = no branch)
         BranchInfo branch_info_2nd; // branch attributes for the second branch (only valid when pt_2nd = true)
+        bool alwaysTaken_2nd; // whether the second branch is marked as alwaysTaken
 
         TickedUBTBEntry() : BTBEntry(), uctr(0), tick(0), numNTConds(0),
-                            valid_2nd(false), pt_2nd(false), branch_info_2nd() {}
-        TickedUBTBEntry(const BTBEntry &be, uint64_t tick) : BTBEntry(be), uctr(0),
-                        tick(tick), numNTConds(0), valid_2nd(false), pt_2nd(false), branch_info_2nd() {}
+                            valid_2nd(false), pt_2nd(false), branch_info_2nd(), alwaysTaken_2nd(false) {}
+        TickedUBTBEntry(const BTBEntry &be, uint64_t tick) : BTBEntry(be),
+                        uctr(0), tick(tick), numNTConds(0), valid_2nd(false),
+                        pt_2nd(false), branch_info_2nd(), alwaysTaken_2nd(false) {}
     }TickedUBTBEntry;
 
     using UBTBIter = typename std::vector<TickedUBTBEntry>::iterator;
@@ -219,6 +221,11 @@ class UBTB : public TimedBaseBTBPredictor
         }
     }
 
+    /** Remove second prediction from uBTB entry (used when TAGE validation fails)
+     *  @param entryIndex Index of the entry to remove second prediction from
+     */
+    void removeSecondPrediction(int entryIndex);
+
   private:
 
     /** this struct holds the lastest prediction made by uBTB,
@@ -301,9 +308,11 @@ class UBTB : public TimedBaseBTBPredictor
     /** helper method for 2-taken: Construct a FullBTBPrediction from BranchInfo
      *  @param branchInfo The branch information for the second prediction
      *  @param bbStart The basic block start address for the prediction
+     *  @param alwaysTaken Whether the branch is marked as alwaysTaken
      *  @param prediction The prediction object to fill
      */
-    void fillSecondPrediction(const BranchInfo& branchInfo, Addr bbStart, FullBTBPrediction& prediction);
+    void fillSecondPrediction(const BranchInfo& branchInfo, Addr bbStart,
+                             bool alwaysTaken, FullBTBPrediction& prediction);
 
     /** helper method for pt_2nd=false: Construct a fallthrough FullBTBPrediction
      *  @param secondFBStart The start address for the fallthrough prediction
@@ -316,7 +325,7 @@ class UBTB : public TimedBaseBTBPredictor
      *  @param s3Pred The second prediction (current S3 prediction)
      *  @return true if the predictions can form a valid 2-taken sequence
      */
-    bool check2TakenConditions(FullBTBPrediction& dff, const FullBTBPrediction& s3Pred);
+    bool check2TakenConditions(FullBTBPrediction& dff, FullBTBPrediction& s3Pred);
 
     /** Common helper function for training logic - handles entry update based on hit/miss scenarios
      *  @param entry_index Index of the entry that was hit during prediction (-1 for miss)
@@ -423,6 +432,8 @@ class UBTB : public TimedBaseBTBPredictor
         statistics::Scalar twoTakenFailFirstIndirect;    ///< Rejected due to first branch being indirect
         statistics::Scalar twoTakenFailSecondIndirect;   ///< Rejected due to second branch being indirect
         statistics::Scalar twoTakenFailSecondCond;       ///< Rejected due to second branch being conditional
+        statistics::Scalar twoTakenFailCondNotTaken;     ///< Rejected due to cond branch not predicted taken by TAGE
+        statistics::Scalar twoTakenAcceptCondTaken;      ///< Accepted conditional branch predicted taken by TAGE
         statistics::Scalar twoTakenFailRetRet;           ///< Rejected due to ret->ret sequence
         statistics::Scalar twoTakenFailCallCall;         ///< Rejected due to call->call sequence
         statistics::Scalar twoTakenAcceptAlwaysTaken;   ///< Accepted alwaysTaken conditional branch as 2nd prediction
