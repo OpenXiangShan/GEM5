@@ -492,6 +492,8 @@ class Base : public ClockedObject
 
     virtual Tick nextPrefetchReadyTime() const = 0;
 
+    virtual void recvPrefetchFromCache(const PacketPtr &pkt) {}
+
     void
     prefetchUnused(PrefetchSourceType pfSource)
     {

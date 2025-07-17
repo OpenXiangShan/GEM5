@@ -144,9 +144,9 @@ def config_cache(options, system):
             system.l2_wrappers[i].slices = [L2CacheSlice(clk_domain=system.cpu_clk_domain)
                                             for _ in range(num_l2_slices)]
             # Create the actual classic L2 cache that stores data
-            system.l2_wrappers[i].inner_caches = [l2_cache_class(clk_domain=system.cpu_clk_domain,
-                                                                 **_get_cache_opts(system.cpu[i], 'l2', options))
-                                                 for _ in range(num_l2_slices)]
+            for j in range(num_l2_slices):
+                system.l2_wrappers[i].slices[j].inner_cache = l2_cache_class(clk_domain=system.cpu_clk_domain,
+                                                                **_get_cache_opts(system.cpu[i], 'l2', options))
 
         system.tol2bus_list = [L1ToL2Bus(
             clk_domain=system.cpu_clk_domain) for i in range(options.num_cpus)]
@@ -159,7 +159,7 @@ def config_cache(options, system):
             for j in range(num_l2_slices):
                 # Apply original per-L2-cache configurations to each slice's inner cache
                 cache_slice = l2_wrapper.slices[j]
-                inner_cache = l2_wrapper.inner_caches[j]
+                inner_cache = cache_slice.inner_cache
 
                 l2_wrapper.addCacheAccessor(inner_cache)
                 l2_wrapper.addSliceAccessor(cache_slice)

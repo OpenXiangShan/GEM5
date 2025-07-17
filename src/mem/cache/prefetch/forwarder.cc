@@ -128,5 +128,38 @@ PrefetcherForwarder::nofityHitToDownStream(const PacketPtr &pkt)
     }
 }
 
+void
+PrefetcherForwarder::recvPrefetchFromCache(const PacketPtr &pkt)
+{
+    prefetch_queue.push(pkt);
+}
+
+PacketPtr
+PrefetcherForwarder::getPacket()
+{
+    if (prefetch_queue.empty()) {
+        return nullptr;
+    }
+    PacketPtr pkt = prefetch_queue.front();
+    prefetch_queue.pop();
+    return pkt;
+}
+
+bool
+PrefetcherForwarder::hasPendingPacket()
+{
+    return !prefetch_queue.empty();
+}
+
+Tick
+PrefetcherForwarder::nextPrefetchReadyTime() const
+{
+    if (prefetch_queue.empty()) {
+        return MaxTick;
+    }
+    // always ready
+    return curTick();
+}
+
 } // namespace prefetch
 } // namespace gem5

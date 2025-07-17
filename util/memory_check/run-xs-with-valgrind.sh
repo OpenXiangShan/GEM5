@@ -18,7 +18,8 @@ valgrind -s --track-origins=yes --log-file=valgrind-out.txt --error-limit=no \
     --l1d-hwp-type=XSCompositePrefetcher --short-stride-thres=0 \
     --l2cache --l2_size=1MB --l2_assoc=8 \
     --l3cache --l3_size=16MB --l3_assoc=16 \
-    --l1-to-l2-pf-hint --l2-hwp-type=CompositeWithWorkerPrefetcher \
+    --l1-to-l2-pf-hint --l2-hwp-type=PrefetcherForwarder \
+    --l2-wrapper-hwp-type=CompositeWithWorkerPrefetcher \
     --l2-to-l3-pf-hint --l3-hwp-type=WorkerPrefetcher \
     --mem-type=DRAMsim3 \
     --dramsim3-ini=$gem5_home/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini \

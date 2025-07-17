@@ -148,9 +148,11 @@ class PrefetcherForwarder(BasePrefetcher):
         self._real_pf = None
 
     def regProbeListeners(self):
-        assert self._real_pf is not None
-        self.getCCObject().setRealPrefetcher(self._real_pf.getCCObject())
-        self.getCCObject().regProbeListeners()
+        if self._real_pf is None:
+            print(f"real_pf of PrefetcherForwarder is None")
+        else:
+            self.getCCObject().setRealPrefetcher(self._real_pf.getCCObject())
+        super().regProbeListeners()
 
     def setRealPrefetcher(self, real_pf):
         self._real_pf = real_pf

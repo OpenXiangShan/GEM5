@@ -379,12 +379,6 @@ BaseCache::handleTimingReqHit(PacketPtr pkt, CacheBlk *blk, Tick request_time, b
         }
     }
 
-    if (pkt->cmd == MemCmd::HardPFReq) {
-        // useless prefetch, delete it
-        delete pkt;
-        return;
-    }
-
     if (pkt->needsResponse() || pkt->isResponse()) {
         // These delays should have been consumed by now
         DPRINTF(Cache, "In handle timing hit, before make resp, pkt has data: %i\n", pkt->hasData());
@@ -587,6 +581,13 @@ BaseCache::recvTimingReq(PacketPtr pkt)
         return;
     }
 
+    if (pkt->cmd == MemCmd::HardPFReq) {
+        if (prefetcher) {
+            prefetcher->recvPrefetchFromCache(pkt);
+        }
+        return;
+    }
+
     // anything that is merely forwarded pays for the forward latency and
     // the delay provided by the crossbar
     Tick forward_time = clockEdge(forwardLatency) + pkt->headerDelay;
@@ -663,11 +664,9 @@ BaseCache::recvTimingReq(PacketPtr pkt)
             if (actual_way == predicted_way) {
                 stats.wayPreHitTimes++;
                 // way predict success, reduce the request time
-                if (!pkt->cmd.isHWPrefetch()) {
-                    auto cycle_reduction = wpu->getCycleReduction();
-                    assert(cycle_reduction <= lat);
-                    request_time -= clockPeriod() * cycle_reduction;
-                }
+                auto cycle_reduction = wpu->getCycleReduction();
+                assert(cycle_reduction <= lat);
+                request_time -= clockPeriod() * cycle_reduction;
             }
             if (archDBer && pkt->req->hasPC() && cacheLevel == 1) {
                 Addr pc = pkt->req->getPC();
@@ -1897,26 +1896,6 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
 
         // If this a write-through packet it will be sent to cache below
         return !pkt->writeThrough();
-    } else if (pkt->cmd == MemCmd::HardPFReq) {
-        Addr pf_addr = pkt->getBlockAddr(blkSize);
-        PrefetchSourceType pf_type = pkt->req->getXsMetadata().prefetchSource;
-        if (blk) {
-            prefetcher->pfHitInCache(pf_type);
-            if (pf_type == PrefetchSourceType::SStream)
-                prefetcher->streamPflate();
-            return true;
-        } else if (mshrQueue.findMatch(pf_addr, pkt->isSecure())) {
-            prefetcher->pfHitInMSHR(pf_type);
-            if (pf_type == PrefetchSourceType::SStream)
-                prefetcher->streamPflate();
-            return true;
-        } else if (writeBuffer.findMatch(pf_addr, pkt->isSecure())) {
-            prefetcher->pfHitInWB(pf_type);
-            if (pf_type == PrefetchSourceType::SStream)
-                prefetcher->streamPflate();
-            return true;
-        }
-        return false;
     } else if (blk && (pkt->needsWritable() ?
             blk->isSet(CacheBlk::WritableBit) :
             blk->isSet(CacheBlk::ReadableBit))) {
