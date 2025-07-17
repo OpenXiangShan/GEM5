@@ -40,6 +40,7 @@ from m5.SimObject import *
 from m5.params import *
 from m5.proxy import *
 
+
 from m5.objects.ClockedObject import ClockedObject
 from m5.objects.IndexingPolicies import *
 from m5.objects.ReplacementPolicies import *
@@ -84,7 +85,7 @@ class BasePrefetcher(ClockedObject):
     use_virtual_addresses = Param.Bool(False,
         "Use virtual addresses for prefetching")
     page_bytes = Param.MemorySize('4KiB',
-            "Size of pages for virtual addresses")
+        "Size of pages for virtual addresses")
 
     is_sub_prefetcher = Param.Bool(False, "Is this a sub-prefetcher")
 
@@ -1018,9 +1019,10 @@ class TriangelPrefetcher(QueuedPrefetcher):
     degree = Param.Int(4, "Maximum number of prefetches to generate")
     cache_delay = Param.Unsigned(25, "Time to access L3 cache")
 
-    sctags = Param.BaseTags(Parent.tags, "Cache we check for second-chance sampling")
     lookup_assoc = Param.Unsigned(0, "Associativity of the lookup table")
     lookup_offset = Param.Unsigned(11, "Offset of the lookup table")
+
+    # === Training Unit Params Start ===
     training_unit_assoc = Param.Unsigned(
         16, "Associativity of the training unit"
     )
@@ -1038,22 +1040,27 @@ class TriangelPrefetcher(QueuedPrefetcher):
     training_unit_replacement_policy = Param.BaseReplacementPolicy(
         LRURP(), "Replacement policy of the training unit"
     )
+    # === Training Unit Params End ===
 
+    # === Markov Table Params Start ===
     address_map_actual_entries = Param.MemorySize(
         "196608", "Number of entries of the History table"
-    )
+    )  # 最多 2MB L3 的一半用来存 Markov Table，1M L3 最多 196608 条 Markov Table Entry
+    address_map_actual_cache_assoc = Param.Unsigned(
+        12, # TODO: assert = address_map_line_assoc * cache assoc / 2
+        "Associativity of the History Table"
+    )  # 每个 markov entry 42 bit，一个cacheline可以存 12 条，逻辑路
     address_map_max_ways = Param.Unsigned(
         8, "Max reservation of the History Table"
-    )
-    address_map_actual_cache_assoc = Param.Unsigned(
-        12, "Associativity of the History Table"
-    )  # TODO: assert = address_map_line_assoc * cache assoc / 2
+    ) # L3 Cache 为 16 路组相联，最大预留 8 物理路用来存 Markov Table
     address_map_rounded_entries = Param.MemorySize(
-        "262144", "Number of entries of the History table"
-    )  # TODO: assert = rnd(address_map_line_assoc) * cache size / 64 / 2
+        "262144", # TODO: assert = rnd(address_map_line_assoc) * cache size / 64 / 2
+        "Number of entries of the History table"
+    )  # 假如整个 L3 Cache 都用来存 Markov Table，2M L3 最多 262144 条 Markov Table Entry
     address_map_rounded_cache_assoc = Param.Unsigned(
-        16, "Associativity of the History Table"
-    )  # TODO: assert = address_map_line_assoc * cache assoc / 2
+        16, # TODO: assert = address_map_line_assoc * cache assoc / 2
+        "Associativity of the History Table"
+    )  # L3 总路数 16
     address_map_cache_indexing_policy = Param.BaseIndexingPolicy(
         TriangelHashedSetAssociative(
             entry_size=1,
@@ -1065,6 +1072,10 @@ class TriangelPrefetcher(QueuedPrefetcher):
     address_map_cache_replacement_policy = Param.BaseReplacementPolicy(
         RRIPRP(), "Replacement policy of the Markov table"
     )
+    # === Markov Table Params End ===
+
+
+    # === History Sampler Params Start ===
     sample_assoc = Param.Int(2, "Associativity of the Sample Cache")
     sample_entries = Param.MemorySize(
         "512", "Number of entries of the Sample cache"
@@ -1080,6 +1091,9 @@ class TriangelPrefetcher(QueuedPrefetcher):
     sample_replacement_policy = Param.BaseReplacementPolicy(
         LRURP(), "Replacement policy of the training unit"
     )
+    # === History Sampler Params End ===
+
+    # === Reuse Buffer Params Start ===
     metadata_reuse_assoc = Param.Int(
         2, "Associativity of the Metadata Reuse Buffer"
     )
@@ -1097,7 +1111,9 @@ class TriangelPrefetcher(QueuedPrefetcher):
     metadata_reuse_replacement_policy = Param.BaseReplacementPolicy(
         FIFORP(), "Replacement policy of the Prefetched cache"
     )
+    # === Reuse Buffer Params End ===
 
+    # === Second Chance Sampler Params Start ===
     secondchance_assoc = Param.Int(2, "Associativity of the Second Chance Sampler")
     secondchance_entries = Param.MemorySize(
         "64", "Number of entries of the Second Chance Sampler"
@@ -1113,6 +1129,7 @@ class TriangelPrefetcher(QueuedPrefetcher):
     secondchance_replacement_policy = Param.BaseReplacementPolicy(
         FIFORP(), "Replacement policy of the Second Chance Sampler"
     )
+    # === Second Chance Sampler Params End ===
 
 class XSCompositePrefetcher(QueuedPrefetcher):
     type = "XSCompositePrefetcher"
@@ -1256,26 +1273,26 @@ class XSCompositePrefetcher(QueuedPrefetcher):
                         # cachetags=None,#To take a partition of for the Markov table.
                         cache_delay=25, #5 cycles more than the L3 cache itself
                         degree=4,
-                        address_map_max_ways=8,
+                        address_map_max_ways=4,
                         #The below params assume 1MiB partition max of a 2MiB 16-way cache (So 8 max_ways).
                         #The density is 12 entries per cache line (actual_cache_assoc) unlike Triage's 16
                         #And the rounded version sets everything to a power of two -- with the difference between
                         #actual and rounded based on that ratio between 12 and 16 here.
                         address_map_actual_entries="196608",
                         address_map_actual_cache_assoc=12,
-                        address_map_rounded_entries="262144",
-                        address_map_rounded_cache_assoc=16,
+                        address_map_rounded_entries="131072",
+                        address_map_rounded_cache_assoc=8,
                         #ablation study to disable/retune features
                         use_bloom=True, # options.triangelbloom
-                        use_scs= True,  # not options.triangelnoscs
+                        use_scs=True,  # not options.triangelnoscs
                         timed_scs=True,
-                        use_pattern= True, # not options.triangelnopattern
-                        use_pattern2= True, # not options.trianglenopattern2
-                        use_reuse= True,    # not options.triangelnoreuse
+                        use_pattern=True,  # not options.triangelnopattern
+                        use_pattern2=True, # not options.triangelnopattern2
+                        use_reuse=True,    # not options.triangelnoreuse
                         # Adjusts tuning params to make it more aggressive and less DRAM/L3-partition friendly.
-                        perfbias = False, # options.triangelperfbias
-                        should_rearrange = True, # not options.triangelnorearr
-                        use_mrb = True  # not options.triangelnomrb
+                        perfbias=False, # options.triangelperfbias
+                        should_rearrange=True, # not options.triangelnorearr
+                        use_mrb=True  # not options.triangelnomrb
                     ), "")
 
     enable_activepage = Param.Bool(True,"Enable activepage stream prefetcher")

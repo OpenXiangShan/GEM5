@@ -66,8 +66,8 @@ class Triangel : public Queued
     const bool should_lookahead;
     const bool should_rearrange;
 
-    const bool use_scs;
-    const bool use_bloom;
+    const bool use_scs;             // 使用 Second Chance Sampling
+    const bool use_bloom;           // 使用 Bloom Filter
     const bool use_reuse;
     const bool use_pattern;
     const bool use_pattern2;
@@ -79,15 +79,15 @@ class Triangel : public Queued
 
     BaseTags *sctags;
 
-    bool randomChance(int r, int s);
-    const int max_size;
-    const int size_increment;
-    static int64_t global_timestamp;
-    uint64_t second_chance_timestamp;
+    bool randomChance(int r, int s);    // 随机函数
+    const int max_size;                 // Markov表最大entry数
+    const int size_increment;           // 每路cache容纳的Markov表条目数
+    static int64_t global_timestamp;    // 全局时间戳
+    uint64_t second_chance_timestamp;   //
     uint64_t lowest_blocked_entry;
-    static int current_size;
-    static int target_size;
-    const int maxWays;
+    static int current_size;            // 当前容量
+    static int target_size;             // 目标容量
+    const int maxWays;                  // 占用cache的最大关联度
 
     static bloom *blptr;
 
