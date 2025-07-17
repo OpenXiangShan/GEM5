@@ -114,7 +114,7 @@ jobs:
           export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so"
           export GCB_RESTORER=""
           export GEM5_HOME=$(pwd)
-          export GEM5_BUILD_TYPE=opt
+          export GEM5_BUILD_TYPE=fast
           mkdir -p $GEM5_HOME/util/xs_scripts/test
           cd $GEM5_HOME/util/xs_scripts/test
           bash ../parallel_sim.sh `realpath ${{ inputs.script_path }}` \
