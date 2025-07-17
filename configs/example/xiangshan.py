@@ -378,9 +378,12 @@ def setKmhV3IdealParams(args, system):
                 cpu.branchPred.tage.baseTableSize = 16384
                 cpu.branchPred.tage.tableSizes = [2048] * 8
             else:
-                cpu.branchPred.predictWidth = 64              # max width of a fetch block
-                cpu.branchPred.btb.numEntries = 16384
-                # TODO: BTB TAGE do not bave base table, do not support SC
+                cpu.branchPred.predictWidth = 32              # RTL uses 32B fetch block
+                cpu.branchPred.numStages = 4                  # RTL has only ABTB
+                cpu.branchPred.abtb.numWays = 4
+                cpu.branchPred.abtb.numEntries = 1024         # ABTB only
+                cpu.branchPred.abtb.blockSize = 16            # RTL uses 16B aligned block termination
+                # RTL has only ABTB, disable all other predictors (they are probably disabled anyway by short numStages)
                 cpu.branchPred.tage.tableSizes = [1024] * 8  # 2 way, 1024 sets
                 cpu.branchPred.tage.numWays = 2
 

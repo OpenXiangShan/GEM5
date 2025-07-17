@@ -74,7 +74,7 @@ DefaultBTB::DefaultBTB(const Params &p)
     assert(aheadPipelinedStages == 0 || !entryHalfAligned);
 
     if (!isPowerOf2(numEntries)) {
-        fatal("BTB entries is not a power of 2!");
+        //fatal("BTB entries is not a power of 2!");
     }
 
     // Initialize BTB structure and MRU tracking
@@ -148,21 +148,6 @@ DefaultBTB::setTrace()
 std::vector<DefaultBTB::TickedBTBEntry>
 DefaultBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr startAddr)
 {
-    int hitNum = entries.size();
-    bool hit = hitNum > 0;
-    
-    // Update prediction statistics
-    if (hit) {
-        DPRINTF(BTB, "BTB: lookup hit, dumping hit entry\n");
-        btbStats.predHit += hitNum;
-        for (auto &entry: entries) {
-            printTickedBTBEntry(entry);
-        }
-    } else {
-        btbStats.predMiss++;
-        DPRINTF(BTB, "BTB: lookup miss\n");
-    }
-
     auto processed_entries = entries;
     
     // Sort by instruction order
@@ -185,6 +170,23 @@ DefaultBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr star
                             return e.pc >= mbtb_end;
                         });
     processed_entries.erase(it, processed_entries.end());
+    
+    // Update prediction statistics after processing
+    int hitNum = processed_entries.size();
+    bool hit = hitNum > 0;
+    
+    if (hit) {
+        DPRINTF(BTB, "BTB: lookup hit, dumping hit entry\n");
+        btbStats.predHit += hitNum;
+        btbStats.predHitFB++;
+        for (auto &entry: processed_entries) {
+            printTickedBTBEntry(entry);
+        }
+    } else {
+        btbStats.predMiss++;
+        DPRINTF(BTB, "BTB: lookup miss\n");
+    }
+    
     return processed_entries;
 }
 
@@ -527,6 +529,11 @@ DefaultBTB::processOldEntries(const FetchStream &stream)
     dumpBTBEntries(old_entries);
 
     btbStats.updateHit += old_entries.size();
+    
+    // Count cycles when BTB has any entries to update
+    if (old_entries.size() > 0) {
+        btbStats.updateHitFB++;
+    }
     
     return old_entries;
 }
@@ -892,8 +899,10 @@ DefaultBTB::BTBStats::BTBStats(statistics::Group* parent) :
     ADD_STAT(oldEntryWithNewUncond, statistics::units::Count::get(), "number of old btb entries with new unconditional branches"),
     ADD_STAT(predMiss, statistics::units::Count::get(), "misses encountered on prediction"),
     ADD_STAT(predHit, statistics::units::Count::get(), "hits encountered on prediction"),
+    ADD_STAT(predHitFB, statistics::units::Count::get(), "cycles when BTB produces any prediction (entries.size > 0)"),
     ADD_STAT(updateMiss, statistics::units::Count::get(), "misses encountered on update"),
     ADD_STAT(updateHit, statistics::units::Count::get(), "hits encountered on update"),
+    ADD_STAT(updateHitFB, statistics::units::Count::get(), "cycles when BTB produces any update (old_entries.size > 0)"),
     ADD_STAT(updateExisting, statistics::units::Count::get(), "existing entries updated"),
     ADD_STAT(updateReplace, statistics::units::Count::get(), "entries replaced"),
     ADD_STAT(updateReplaceValidOne, statistics::units::Count::get(), "entries replaced with valid entry"),

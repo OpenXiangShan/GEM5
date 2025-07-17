@@ -1162,8 +1162,8 @@ DecoupledBPUWithBTB::updatePredictorComponents(FetchStream &stream)
         stream.setUpdateInstEndPC(predictWidth);
         stream.setUpdateBTBEntries();
 
-        // only mbtb can generate new entry
-        btb->getAndSetNewBTBEntry(stream);
+        // only abtb can generate new entry (RTL has only ABTB)
+        abtb->getAndSetNewBTBEntry(stream);
 
         // Update all predictor components
         for (int i = 0; i < numComponents; ++i) {

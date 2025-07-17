@@ -402,8 +402,10 @@ class DefaultBTB : public TimedBaseBTBPredictor
 
         statistics::Scalar predMiss;
         statistics::Scalar predHit;
+        statistics::Scalar predHitFB;
         statistics::Scalar updateMiss;
         statistics::Scalar updateHit;
+        statistics::Scalar updateHitFB;
         statistics::Scalar updateExisting;
         statistics::Scalar updateReplace;
         statistics::Scalar updateReplaceValidOne;
