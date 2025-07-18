@@ -550,7 +550,8 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(statistics::Group* parent, unsigne
 {
     predsOfEachStage.init(numStages);
     commitPredsFromEachStage.init(numStages+1);
-    commitOverrideBubbleNum = commitPredsFromEachStage[1] + 2 * commitPredsFromEachStage[2] ;
+    // TODO: count the third stage
+    commitOverrideBubbleNum = commitPredsFromEachStage[1] + 2 * commitPredsFromEachStage[2];
     commitOverrideCount = commitPredsFromEachStage[1] + commitPredsFromEachStage[2];
     fsqEntryDist.init(0, fsqSize, 20).flags(statistics::total);
     commitFsqEntryHasInsts.init(0, maxInstsNum >> 1, 1);
@@ -593,8 +594,10 @@ DecoupledBPUWithBTB::tick()
     }
 
     // 1. Request prediction, finalize it, and get ready to enqueue.
-    // This all happens if we're idle and not blocked.
-    if (bpuState == BpuState::IDLE && !streamQueueFull()) {
+    // This all happens if we're idle and not blocked,
+    // AND, no override bubble, with conditonal 2 taken, we might have instances where we're in IDLE
+    // but there's override bubble. (a conditional 2nd prediction is invalidated by TAGE after 2 cycles)
+    if (bpuState == BpuState::IDLE && !streamQueueFull() && numOverrideBubbles == 0) {
         requestNewPrediction();
 
         // The training logic runs here, based on the previous cycle's DFF state.
@@ -613,25 +616,7 @@ DecoupledBPUWithBTB::tick()
         // Clear stage predictions for next cycle
         clearPreds();
 
-        // Check if the second prediction is still valid after overrides.
-        validateSecondFBPrediction();
-
-        // If we still have a valid second FB, pad ABTB ahead-pipeline now.
-        if (hasSecondPrediction && abtb && abtb->aheadPipelinedStages > 0) {
-            abtb->preloadBlock(secondPrediction.bbStart);
-            DPRINTF(AheadPipeline, "preloadBlock: queued second FB %#lx for ABTB ahead pipeline (stages=%d)\n",
-                    secondPrediction.bbStart, abtb->aheadPipelinedStages);
-        }
-
         bpuState = BpuState::PREDS_READY;
-
-        // Update performance counters based on prediction type
-        if (hasSecondPrediction) {
-            dbpBtbStats.predProduce2Taken++;
-        } else {
-            dbpBtbStats.predProduce1Taken++;
-        }
-
     }
 
     // try Enqueue FTQ
@@ -647,10 +632,31 @@ DecoupledBPUWithBTB::tick()
     if (bpuState == BpuState::PREDS_READY && validateFSQEnqueue()) {
         makeNewPrediction(true, false); // Enqueues finalPred - updates TAGE folded history
 
+        // Check if the first prediction is overridden, if so, discard the second prediction.
+        validateSecondFBPrediction();
+
+        if (hasSecondPrediction) {
+            assert(s0PC == secondPrediction.bbStart);
+        }
+
         // CRITICAL: TAGE validation happens AFTER first makeNewPrediction()
         // This ensures TAGE has correct folded history for validation
         if (hasSecondPrediction && !validateConditionalSecondPrediction()) {
             discardConditionalSecondPrediction();
+        }
+
+        // If we still have a valid second FB, pad ABTB ahead-pipeline now.
+        if (hasSecondPrediction && abtb && abtb->aheadPipelinedStages > 0) {
+            abtb->preloadBlock(secondPrediction.bbStart);
+            DPRINTF(AheadPipeline, "preloadBlock: queued second FB %#lx for ABTB ahead pipeline (stages=%d)\n",
+                    secondPrediction.bbStart, abtb->aheadPipelinedStages);
+        }
+
+        // Update performance counters based on prediction type
+        if (hasSecondPrediction) {
+            dbpBtbStats.predProduce2Taken++;
+        } else {
+            dbpBtbStats.predProduce1Taken++;
         }
 
         if (hasSecondPrediction) {
@@ -701,9 +707,11 @@ DecoupledBPUWithBTB::requestNewPrediction()
     // Reset prediction flags
     hasSecondPrediction = false;
     ubtbHitIndex = -1;
-    secondPrediction.btbEntries.clear();
     secondPrediction.predSource = 0;
     secondPrediction.overrideReason = OverrideReason::NO_OVERRIDE;
+    secondPrediction.condTakens.clear();
+    secondPrediction.indirectTargets.clear();
+    secondPrediction.btbEntries.clear();
 
     // Clear validation meta at start of each prediction cycle
     tageValidationMeta = nullptr;
@@ -1922,8 +1930,9 @@ DecoupledBPUWithBTB::createFetchStreamEntry(bool is_second_pred)
             if (components[i] == tage) {
                 // For TAGE: use validation meta if available (conditional branches)
                 // or empty meta (unconditional/alwaysTaken branches)
-                if (tageValidationMeta && finalPred.btbEntries.size() > 0 &&
-                    finalPred.btbEntries[0].isCond) {
+                if (tageValidationMeta ) {
+                    // the second pred is conditional, and was just validated
+                    assert(finalPred.btbEntries.size() > 0 && finalPred.btbEntries[0].isCond);
                     entry.predMetas[i] = tageValidationMeta;
                     DPRINTF(DecoupleBP, "Using TAGE validation meta for conditional second pred\n");
                 } else {
@@ -2259,8 +2268,6 @@ void DecoupledBPUWithBTB::validateSecondFBPrediction()
         DPRINTF(DecoupleBP, "uBTB1 prediction was overridden (finalPred source is stage %d), "
                 "invalidating second FB prediction.\n", finalPred.predSource);
         hasSecondPrediction = false;
-        // We're clearing secondPrediction just to be tidy.
-        secondPrediction.btbEntries.clear();
     }
 }
 
@@ -2270,8 +2277,9 @@ bool DecoupledBPUWithBTB::validateConditionalSecondPrediction()
 
     // Only validate conditional branches
     if (secondPrediction.btbEntries.empty() ||
-        !secondPrediction.btbEntries[0].isCond) {
-        return true;  // Non-conditional branches don't need validation
+        !secondPrediction.btbEntries[0].isCond ||
+        secondPrediction.btbEntries[0].alwaysTaken) {
+        return true;  // Non-conditional branches or always-taken branches don't need validation
     }
 
     dbpBtbStats.condSecondPredValidationAttempts++;
@@ -2319,14 +2327,13 @@ void DecoupledBPUWithBTB::discardConditionalSecondPrediction()
 
     // Discard second prediction
     hasSecondPrediction = false;
-    secondPrediction.btbEntries.clear();
 
     // Add 2 override bubbles as specified
-    numOverrideBubbles = std::max(numOverrideBubbles, 2u);
+    numOverrideBubbles = 2;
 
     // Remove conditional branch from uBTB entry (kick it out)
-    if (ubtbHitIndex >= 0) {
-        ubtb->removeSecondPrediction(ubtbHitIndex);
+    if (predDFF.valid) {
+        ubtb->removeSecondPrediction(predDFF.prevUbtbHitIndex);
     }
 
     // Clear validation meta

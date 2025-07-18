@@ -410,7 +410,7 @@ UBTB::createSecondPredictionMetaForMBTB(const BranchInfo& branch_info_2nd)
     mbtbSecondPredMeta = std::make_shared<DefaultBTB::BTBMeta>();
 
     // Convert BranchInfo to BTBEntry for MBTB - much simpler!
-    BTBEntry btb_entry(branch_info_2nd);
+    BTBEntry btb_entry(branch_info_2nd); // FIXME: we wrongly initialized the BTBEntry with alwaysTaken = true
 
     // Add to hit_entries (standard BTBMeta field)
     mbtbSecondPredMeta->hit_entries.push_back(btb_entry);
