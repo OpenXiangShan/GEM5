@@ -350,8 +350,9 @@ class UBTB : public TimedBaseBTBPredictor
 
     /** Helper to create MBTB meta for second prediction
      *  @param branch_info_2nd The branch information for the second prediction
+     *  @param alwaysTaken Whether the second branch is always taken
      */
-    void createSecondPredictionMetaForMBTB(const BranchInfo& branch_info_2nd);
+    void createSecondPredictionMetaForMBTB(const BranchInfo& branch_info_2nd, bool alwaysTaken);
 
     /** Helper function to calculate numNTConds (number of not-taken conditional branches)
      *  @param prediction The prediction containing history information

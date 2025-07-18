@@ -268,7 +268,7 @@ UBTB::putPCHistory2Taken(Addr startAddr, const boost::dynamic_bitset<> &history,
                     ubtbStats.twoTakenPredTaken++;
 
                     // Create MBTB meta for the second prediction
-                    createSecondPredictionMetaForMBTB(entry.branch_info_2nd);
+                    createSecondPredictionMetaForMBTB(entry.branch_info_2nd, entry.alwaysTaken_2nd);
 
                     DPRINTF(UBTB, "uBTB: Valid second prediction - bbStart: %#lx, controlAddr: %#lx, target: %#lx\n",
                            second_bb_start, control_addr, secondPrediction.getTarget(predictWidth));
@@ -404,13 +404,14 @@ UBTB::addSecondPredictionToEntry(int entryIndex, FullBTBPrediction* secondPred)
 }
 
 void
-UBTB::createSecondPredictionMetaForMBTB(const BranchInfo& branch_info_2nd)
+UBTB::createSecondPredictionMetaForMBTB(const BranchInfo& branch_info_2nd, bool alwaysTaken)
 {
     // Create a standard BTBMeta with the second prediction's branch info
     mbtbSecondPredMeta = std::make_shared<DefaultBTB::BTBMeta>();
 
     // Convert BranchInfo to BTBEntry for MBTB - much simpler!
-    BTBEntry btb_entry(branch_info_2nd); // FIXME: we wrongly initialized the BTBEntry with alwaysTaken = true
+    BTBEntry btb_entry(branch_info_2nd);
+    btb_entry.alwaysTaken = alwaysTaken;
 
     // Add to hit_entries (standard BTBMeta field)
     mbtbSecondPredMeta->hit_entries.push_back(btb_entry);
