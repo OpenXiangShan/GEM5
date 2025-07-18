@@ -69,6 +69,7 @@ GEM5_DEPRECATED_NAMESPACE(Prefetcher, prefetch);
 namespace prefetch
 {
 
+class PrefetcherForwarder;
 struct CustomPfInfo
 {
     float coverage;
@@ -76,6 +77,7 @@ struct CustomPfInfo
 
 class Base : public ClockedObject
 {
+    friend class PrefetcherForwarder;
     class PrefetchListener : public ProbeListenerArgBase<PacketPtr>
     {
       public:
@@ -391,7 +393,7 @@ class Base : public ClockedObject
      * @param pkt The memory request causing the event
      * @param miss whether this event comes from a cache miss
      */
-    bool observeAccess(const PacketPtr &pkt, bool miss) const;
+    virtual bool observeAccess(const PacketPtr &pkt, bool miss) const;
 
     /** Determine if address is in cache */
     bool inCache(Addr addr, bool is_secure) const;
@@ -490,6 +492,8 @@ class Base : public ClockedObject
 
     virtual Tick nextPrefetchReadyTime() const = 0;
 
+    virtual void recvPrefetchFromCache(const PacketPtr &pkt) {}
+
     void
     prefetchUnused(PrefetchSourceType pfSource)
     {
@@ -540,9 +544,9 @@ class Base : public ClockedObject
      * @param pkt The memory request causing the event
      * @param miss whether this event comes from a cache miss
      */
-    void probeNotify(const PacketPtr& pkt, bool miss);
+    virtual void probeNotify(const PacketPtr& pkt, bool miss);
 
-    void coreDirectAddrNotify(const PacketPtr& pkt);
+    virtual void coreDirectAddrNotify(const PacketPtr& pkt);
 
     /**
      * Add a SimObject and a probe name to listen events from
@@ -577,11 +581,11 @@ class Base : public ClockedObject
 
     virtual std::pair<long, long> rxMembusRatio(RequestorID requestorId) {return std::pair<long, long>(0,0);};
 
-    void nofityHitToDownStream(const PacketPtr &pkt);
+    virtual void nofityHitToDownStream(const PacketPtr &pkt);
 
     virtual void pfHitNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt) = 0;
 
-    bool hasHintDownStream() const
+    virtual bool hasHintDownStream() const
     {
         return hintDownStream != nullptr;
     }

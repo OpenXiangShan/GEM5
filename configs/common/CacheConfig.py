@@ -40,6 +40,7 @@
 # Configure the M5 cache hierarchy config in one place
 #
 
+import math
 import m5
 from m5.objects import *
 from common.Caches import *
@@ -160,15 +161,74 @@ def config_cache(options, system):
                 system.l2_caches[i].writeback_clean = False
 
         if options.l3cache:
-            system.l3 = L3Cache(clk_domain=system.cpu_clk_domain,
-                                        **_get_cache_opts(NULL, 'l3', options))
-            system.tol3bus = L2ToL3Bus(clk_domain=system.cpu_clk_domain)
-            system.tol3bus.snoop_filter.max_capacity = "32MB"
-            system.l3.cpu_side = system.tol3bus.mem_side_ports
-            system.l3.mem_side = system.membus.cpu_side_ports
+            if options.newl3cache:
+                # Set the number of slices.
+                num_l3_slices = options.l3_slices
+                # Create the L3 cache system includes a wrapper, an internal crossbar,
+                # and a number of slices.
+                system.l3_wrapper = L3CacheWrapper(clk_domain=system.cpu_clk_domain,
+                                                   num_slices=num_l3_slices,
+                                                   cache_size=options.l3_size,
+                                                   cache_assoc=options.l3_assoc,
+                                                   block_bits=int(math.log2(system.cache_line_size)))
+                # Create the internal crossbar.
+                system.l3_wrapper.xbar = CoherentXBar(clk_domain=system.cpu_clk_domain,
+                                                      width = 512,
+                                                      frontend_latency = 0,
+                                                      forward_latency = 0,
+                                                      response_latency = 0,
+                                                      header_latency = 0,
+                                                      snoop_response_latency = 1,
+                                                      snoop_filter = SnoopFilter(lookup_latency = 0),
+                                                      point_of_unification = True)
+                # Create the L3 cache slice that contains the pipeline logic.
+                system.l3_wrapper.slices = L3CacheSlice(clk_domain=system.cpu_clk_domain)
 
-            system.l3.do_fast_writeline = not options.kmh_align
+                # Create the inner cache for each slice that actually stores the data.
+                for i in range(num_l3_slices):
+                    system.l3_wrapper.slices[i].inner_cache = L3Cache(clk_domain=system.cpu_clk_domain,
+                                                                       **_get_cache_opts(NULL, 'l3', options))
 
+                system.tol3bus = L2ToL3Bus(clk_domain=system.cpu_clk_domain)
+                system.tol3bus.snoop_filter.max_capacity = "32MB"
+
+                for i in range(num_l3_slices):
+                    l3_wrapper = system.l3_wrapper
+                    cache_slice = l3_wrapper.slices[i]
+                    inner_cache = cache_slice.inner_cache
+
+                    # Add accessor to the slices and its inner cache.
+                    l3_wrapper.addCacheAccessor(inner_cache)
+                    l3_wrapper.addSliceAccessor(cache_slice)
+                    cache_slice.setCacheAccessor(inner_cache)
+
+                    # Connect the slice's inward ports to the inner cache ports.
+                    cache_slice.inner_cpu_port = inner_cache.cpu_side
+                    inner_cache.mem_side = cache_slice.inner_mem_port
+
+                    # Connect the slice's outward ports to the slice_cpu_sides unit and inner_xbar cpu side port.
+                    cache_slice.cpu_side = l3_wrapper.slice_cpuside_ports
+                    l3_wrapper.xbar.cpu_side_ports = cache_slice.mem_side
+
+                    # Connect the xbar mem_side to the L3 wrapper's mem_side port
+                    #l3_wrapper.xbar.mem_side_ports = l3_wrapper.mem_side
+                    l3_wrapper.xbar.mem_side_ports = system.membus.cpu_side_ports
+
+                # Connect the L3 wrapper to L2toL3 bus and MEM bus
+                system.l3_wrapper.cpu_side = system.tol3bus.mem_side_ports
+                #system.l3_wrapper.mem_side = system.membus.cpu_side_ports
+
+                #system.l3_wrapper.do_fast_writeline = not options.kmh_align
+
+            else:
+                system.l3 = L3Cache(clk_domain=system.cpu_clk_domain,
+                                            **_get_cache_opts(NULL, 'l3', options))
+                system.tol3bus = L2ToL3Bus(clk_domain=system.cpu_clk_domain)
+                system.tol3bus.snoop_filter.max_capacity = "32MB"
+                system.l3.cpu_side = system.tol3bus.mem_side_ports
+                system.l3.mem_side = system.membus.cpu_side_ports
+
+                system.l3.do_fast_writeline = not options.kmh_align
         for i in range(options.num_cpus):
             if options.l3cache:
                 # l2 -> tol3bus -> l3

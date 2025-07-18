@@ -135,6 +135,29 @@ class BasePrefetcher(ClockedObject):
         self._downstream_pf.append(other_prefetcher)
 
 
+class PrefetcherForwarder(BasePrefetcher):
+    type = 'PrefetcherForwarder'
+    cxx_header = "mem/cache/prefetch/forwarder.hh"
+    cxx_class = 'gem5::prefetch::PrefetcherForwarder'
+    cxx_exports = [
+        PyBindMethod("setRealPrefetcher")
+    ]
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._real_pf = None
+
+    def regProbeListeners(self):
+        if self._real_pf is None:
+            print(f"real_pf of PrefetcherForwarder is None")
+        else:
+            self.getCCObject().setRealPrefetcher(self._real_pf.getCCObject())
+        super().regProbeListeners()
+
+    def setRealPrefetcher(self, real_pf):
+        self._real_pf = real_pf
+
+
 class QueuedPrefetcher(BasePrefetcher):
     type = "QueuedPrefetcher"
     abstract = True
@@ -1172,5 +1195,18 @@ class L3CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
     type = 'L3CompositeWithWorkerPrefetcher'
     cxx_class = 'gem5::prefetch::L3CompositeWithWorkerPrefetcher'
     cxx_header = "mem/cache/prefetch/l3_composite_with_worker.hh"
+
+    cdp = Param.CDP(CDP(is_sub_prefetcher=True), "")
+    cmc = Param.CMCPrefetcher(CMCPrefetcher(is_sub_prefetcher=True), "")
+    bop_large = Param.BOPPrefetcher(BOPPrefetcher(is_sub_prefetcher=True),
+                                     "Large BOP used in composite prefetcher ")
+    bop_small = Param.BOPPrefetcher(SmallBOPPrefetcher(is_sub_prefetcher=True),
+                                     "Small BOP used in composite prefetcher ")
+    despacito_stream = Param.DespacitoStreamPrefetcher(DespacitoStreamPrefetcher(is_sub_prefetcher=True),
+                                                       "DespacitoStream used in composite prefetcher")
+    enable_bop = Param.Bool(False, "Enable BOP")
+    enable_cdp = Param.Bool(True, "Enable CDP")
+    enable_cmc = Param.Bool(False, "Enable CMC")
+    enable_despacito_stream = Param.Bool(True, "Enable despacito stream")
 
     bop = Param.BasePrefetcher(FallenBOPPrefetcher(is_sub_prefetcher=True), "")
