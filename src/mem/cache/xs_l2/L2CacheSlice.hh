@@ -37,7 +37,6 @@ class L2CacheSlice : public CacheWrapper
     EventFunctionWrapper trySendEvent;
 
     // For response pipeline logic
-    std::list<PacketPtr> pending_l3_requests;
     std::deque<PacketPtr> ready_responses;
 
     // lower priority events are scheduled earlier in the same tick

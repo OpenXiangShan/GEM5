@@ -37,45 +37,13 @@ L2CacheSlice::scheduleTickMainPipe()
 bool
 L2CacheSlice::innerMemPortRecvTimingReq(PacketPtr pkt)
 {
-    // If the request needs a response, track it
-    bool enqueue = false;
-    if (pkt->needsResponse()) {
-        DPRINTF(L2CacheSlice, "Tracking request to L3 for addr: %#x\n", pkt->getAddr());
-        pending_l3_requests.push_back(pkt);
-        enqueue = true;
-    }
-
-    // First, call the base class implementation to forward the request
-    bool success = CacheWrapper::innerMemPortRecvTimingReq(pkt);
-
-    // If the request was not successfully sent, remove it from the pending list
-    if (!success && enqueue) {
-        pending_l3_requests.pop_back();
-    }
-
-    return success;
+    return CacheWrapper::innerMemPortRecvTimingReq(pkt);
 }
 
 bool
 L2CacheSlice::memSidePortRecvTimingResp(PacketPtr pkt)
 {
     DPRINTF(L2CacheSlice, "Got resp from memory side for addr: %#x\n", pkt->getAddr());
-
-    auto it = std::find_if(pending_l3_requests.begin(), pending_l3_requests.end(),
-        [&](const PacketPtr& pending_pkt) {
-            return pending_pkt->getAddr() == pkt->getAddr();
-        });
-
-    if (it == pending_l3_requests.end()) {
-        // TODO: Is this case possible?
-        // we didn't find the request in pending_l3_requests, forward it directly.
-        DPRINTF(L2CacheSlice, "Response for addr %#x is not a tracked L2 miss, "
-                                "forwarding directly. %s\n", pkt->getAddr(), pkt->print());
-        return CacheWrapper::memSidePortRecvTimingResp(pkt);
-    }
-
-    DPRINTF(L2CacheSlice, "Found matching tracked request for addr: %#x. Queueing for pipeline.\n", pkt->getAddr());
-    pending_l3_requests.erase(it);
 
     ready_responses.push_back(pkt);
 
