@@ -265,6 +265,12 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
                 cmc->doPrefetch(pfi, addresses, late, pf_source, false);
             }
         }
+
+        bool use_triangel = enableTriangel &&
+                           (pfi.isCacheMiss() || (pfi.isPfFirstHit() && pf_source == PrefetchSourceType::Triangel));
+        if (use_triangel) {
+            triangel->calculatePrefetch(pfi, addresses);
+        }
     }
 }
 
@@ -656,7 +662,8 @@ XSCompositePrefetcher::setParentInfo(System *sys, ProbeManager *pm, CacheAccesso
     if (cmc)
         cmc->setParentInfo(sys, pm, _cache, blk_size);
 
-
+    if (triangel)
+        triangel->setParentInfo(sys, pm, _cache, blk_size);
 
     if (ipcp)
         ipcp->setParentInfo(sys, pm, _cache, blk_size);

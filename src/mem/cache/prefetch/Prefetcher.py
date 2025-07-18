@@ -1274,14 +1274,15 @@ class XSCompositePrefetcher(QueuedPrefetcher):
                         cache_delay=25, #5 cycles more than the L3 cache itself
                         degree=4,
                         address_map_max_ways=4,
-                        #The below params assume 1MiB partition max of a 2MiB 16-way cache (So 8 max_ways).
+                        #The below params assume 1MiB partition max of a 2MiB 8-way cache (So 4 max_ways).
                         #The density is 12 entries per cache line (actual_cache_assoc) unlike Triage's 16
-                        #And the rounded version sets everything to a power of two -- with the difference between
-                        #actual and rounded based on that ratio between 12 and 16 here.
+                        # 因为组相联策略要求必须是 2 的幂，组相联策略代码 assert了路数必须是 2 的幂，
+                        # 所以使用 address_map_rounded_entries 即 16来生成 markov 表
+                        # 但是实际上仅使用 address_map_actual_cache_assoc 路
                         address_map_actual_entries="196608",
                         address_map_actual_cache_assoc=12,
-                        address_map_rounded_entries="131072",
-                        address_map_rounded_cache_assoc=8,
+                        address_map_rounded_entries="262144",
+                        address_map_rounded_cache_assoc=16,
                         #ablation study to disable/retune features
                         use_bloom=True, # options.triangelbloom
                         use_scs=True,  # not options.triangelnoscs

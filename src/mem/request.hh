@@ -85,6 +85,7 @@ enum PrefetchSourceType
     CDP,
     SOpt,
     DespacitoStream,
+    Triangel,
     NUM_PF_SOURCES
 };
 

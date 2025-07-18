@@ -12,7 +12,7 @@ namespace prefetch
 CMCPrefetcher::CMCPrefetcher(const CMCPrefetcherParams &p)
 : Queued(p),
     recorder(new Recorder(p.degree)),
-    storage(p.storage_entries, p.storage_entries, p.storage_indexing_policy,
+    storage(p.storage_assoc, p.storage_entries, p.storage_indexing_policy,
             p.storage_replacement_policy, StorageEntry()),
     degree(p.degree),
     enableDB(p.enablePrefetchDB),

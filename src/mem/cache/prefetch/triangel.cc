@@ -51,6 +51,7 @@
 
 #include "debug/TriangelDebug.hh"
 #include "mem/cache/prefetch/associative_set_impl.hh"
+#include "mem/request.hh"
 #include "params/TriangelPrefetcher.hh"
 
 namespace gem5
@@ -843,7 +844,8 @@ Triangel::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &
 
             // 4. 记录本次预取请求
             if (extraDelay == cacheDelay)
-                addresses.push_back(AddrPriority(lookup << lBlkSize, delay));
+                // addresses.push_back(AddrPriority(lookup << lBlkSize, delay));
+                addresses.push_back(AddrPriority(lookup << lBlkSize, 32 - deg, PrefetchSourceType::Triangel));
             delay += extraDelay;
             deg++;
 

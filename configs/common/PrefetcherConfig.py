@@ -51,6 +51,8 @@ def create_prefetcher(cpu, cache_level, options):
         prefetcher.berti.aggressive_pf = False
         prefetcher.berti.trigger_pht = True
 
+        prefetcher.enable_triangel = True
+
         if options.ideal_cache:
             prefetcher.stream_pf_ahead = False
         if options.kmh_align:
