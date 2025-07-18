@@ -60,10 +60,8 @@ class L2CacheWrapper(ClockedObject):
         self.getCCObject().regProbeListeners()
 
     def addCacheAccessor(self, accessor):
-        print("Adding cache accessor to L2CacheWrapper {}".format(self))
         self._cache_accessors.append(accessor)
 
     def addSliceAccessor(self, slice):
-        print("Adding slice accessor to L2CacheWrapper {}".format(self))
         self._slice_accessors.append(slice)
 

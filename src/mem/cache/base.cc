@@ -45,6 +45,8 @@
 
 #include "mem/cache/base.hh"
 
+#include <algorithm>
+
 #include "base/compiler.hh"
 #include "base/logging.hh"
 #include "base/output.hh"
@@ -584,6 +586,12 @@ BaseCache::recvTimingReq(PacketPtr pkt)
     if (pkt->cmd == MemCmd::HardPFReq) {
         if (prefetcher) {
             prefetcher->recvPrefetchFromCache(pkt);
+            // schedule a prefetch
+            Tick next_pf_time = std::max(prefetcher->nextPrefetchReadyTime(),
+                                         curTick() + cyclesToTicks(Cycles(lookupLatency)));
+            if (next_pf_time != MaxTick) {
+                schedMemSideSendEvent(next_pf_time);
+            }
         }
         return;
     }
