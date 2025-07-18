@@ -1200,10 +1200,8 @@ BaseCache::getNextQueueEntry()
     MSHR *miss_mshr  = mshrQueue.getNext();
     WriteQueueEntry *wq_entry = writeBuffer.getNext();
 
-    // If we got a write buffer request ready, first priority is a
-    // full write buffer, otherwise we favour the miss requests
-    if (wq_entry && (writeBuffer.isFull() || !miss_mshr)) {
-        // need to search MSHR queue for conflicting earlier miss.
+    // 1. Conflict: check for wq_entry conflict with earlier miss
+    if (wq_entry) {
         MSHR *conflict_mshr = mshrQueue.findPending(wq_entry);
 
         if (conflict_mshr && conflict_mshr->order < wq_entry->order) {
@@ -1212,13 +1210,12 @@ BaseCache::getNextQueueEntry()
 
             // @todo Note that we ignore the ready time of the conflict here
         }
+    }
 
-        // No conflicts; issue write
-        return wq_entry;
-    } else if (miss_mshr) {
-        // need to check for conflicting earlier writeback
-        WriteQueueEntry *conflict_mshr = writeBuffer.findPending(miss_mshr);
-        if (conflict_mshr) {
+    // 2. Conflict: check for miss_mshr conflict with writeBuffer
+    if (miss_mshr) {
+        WriteQueueEntry *conflict_wq = writeBuffer.findPending(miss_mshr);
+        if (conflict_wq) {
             // not sure why we don't check order here... it was in the
             // original code but commented out.
 
@@ -1231,17 +1228,28 @@ BaseCache::getNextQueueEntry()
             // should we return wq_entry here instead?  I.e. do we
             // have to flush writes in order?  I don't think so... not
             // for Alpha anyway.  Maybe for x86?
-            return conflict_mshr;
+            return conflict_wq;
 
             // @todo Note that we ignore the ready time of the conflict here
         }
+    }
 
-        // No conflicts; issue read
+    // 3. No conflicts and no writeBuffer pressure, favor miss_mshr
+    if (miss_mshr) {
         return miss_mshr;
     }
 
-    // fall through... no pending requests.  Try a prefetch.
-    assert(!miss_mshr && !wq_entry);
+    // 4. If writeBuffer is full, prioritize it
+    if (!drainWriteBuffer && writeBuffer.isAboutToBeFull(0.5)) {
+        drainWriteBuffer = true;
+    } else if (drainWriteBuffer && writeBuffer.isEmpty()) {
+        drainWriteBuffer = false;
+    }
+    if (wq_entry && drainWriteBuffer) {
+        return wq_entry;
+    }
+
+    // 5. Try to prefetch
     if (prefetcher && mshrQueue.canPrefetch() && !isBlocked()) {
         // If we have a miss queue slot, we can try a prefetch
         bool has_pending_pkt = prefetcher->hasPendingPacket();
@@ -1296,10 +1304,6 @@ BaseCache::getNextQueueEntry()
                 auto buf = allocateMissBuffer(pkt, curTick(), false);
                 return buf;
             }
-            // if (prefetcher->hasHintsWaiting() && !memSidePort.hasSchedSendEvent()) {
-            //     DPRINTF(HWPrefetch, "Prefetcher has hints waiting, issuing them next cycle (%llu).\n", nextCycle());
-            //     memSidePort.schedSendEvent(nextCycle());
-            // }
         } else {
             DPRINTF(HWPrefetch, "No prefetch packet obtained\n");
         }
@@ -1308,6 +1312,11 @@ BaseCache::getNextQueueEntry()
     if (prefetcher && (!mshrQueue.canPrefetch() || isBlocked()) && prefetcher->hasHintDownStream()) {
         DPRINTF(HWPrefetch, "Offloading prefetch to downstream cache\n");
         prefetcher->offloadToDownStream();
+    }
+
+    // 6. Finally, no conflicts, no prefetches, issue write if ready
+    if (wq_entry) {
+        return wq_entry;
     }
 
     return nullptr;
@@ -1703,7 +1712,7 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         if (wb_entry) {
             assert(wb_entry->getNumTargets() == 1);
             PacketPtr wbPkt = wb_entry->getTarget()->pkt;
-            assert(wbPkt->isWriteback());
+            assert(wbPkt->isEviction() || wbPkt->isWriteClean());
 
             if (pkt->isCleanEviction()) {
                 // The CleanEvict and WritebackClean snoops into other
@@ -2119,8 +2128,11 @@ BaseCache::allocateBlock(const PacketPtr pkt, PacketList &writebacks)
 
     // Find replacement victim
     std::vector<CacheBlk*> evict_blks;
+    std::vector<CacheBlk*> clean_blks;
+
     CacheBlk *victim = tags->findVictim(pkt, is_secure, blk_size_bits,
-                                        evict_blks);
+                                        evict_blks, clean_blks, 
+                                        writeBuffer.numAvailable(0.5));
 
     // It is valid to return nullptr if there is no victim
     if (!victim)
@@ -2133,6 +2145,9 @@ BaseCache::allocateBlock(const PacketPtr pkt, PacketList &writebacks)
     if (!handleEvictions(evict_blks, writebacks)) {
         return nullptr;
     }
+    
+    // Update writebacks list
+    cleanBlks(clean_blks, writebacks);
 
     // Insert new block at victimized entry
     tags->insertBlock(pkt, victim);
@@ -2243,11 +2258,77 @@ BaseCache::writebackBlk(CacheBlk *blk)
     return pkt;
 }
 
+void 
+BaseCache::cleanBlks(std::vector<CacheBlk*> clean_blks, PacketList &writebacks)
+{
+    for (auto blk : clean_blks) {
+        Addr blk_addr = regenerateBlkAddr(blk);
+        if (inCache(blk_addr, blk->isSecure()) &&
+            !inMissQueue(blk_addr, blk->isSecure()))
+        {
+            PacketPtr pkt = cleanBlk(blk, Request::DST_POC);
+            if (pkt) {
+                writebacks.push_back(pkt);
+            }
+        }
+    }
+}
+
+PacketPtr
+BaseCache::cleanBlk(CacheBlk *blk, Request::Flags dest)
+{
+    RequestPtr req = std::make_shared<Request>(
+        regenerateBlkAddr(blk), blkSize, 0, Request::wbRequestorId);
+
+    stats.writecleans++;
+
+    if (blk->isSecure()) {
+        req->setFlags(Request::SECURE);
+    }
+    req->taskId(blk->getTaskId());
+    req->setXsMetadata(blk->getXsMetadata());
+
+    PacketPtr pkt = new Packet(req, MemCmd::WriteClean, blkSize);
+
+    if (dest) {
+        req->setFlags(dest);
+        pkt->setWriteThrough();
+    }
+
+    DPRINTF(Cache, "Create %s writable: %d, dirty: %d\n", pkt->print(),
+            blk->isSet(CacheBlk::WritableBit), blk->isSet(CacheBlk::DirtyBit));
+
+    if (blk->isSet(CacheBlk::WritableBit)) {
+        // not asserting shared means we pass the block in modified
+        // state, mark our own block non-writeable
+        blk->clearCoherenceBits(CacheBlk::WritableBit);
+    } else {
+        // we are in the Owned state, tell the receiver
+        pkt->setHasSharers();
+    }
+
+    // make sure the block is not marked dirty
+    blk->clearCoherenceBits(CacheBlk::DirtyBit);
+
+    pkt->allocate();
+    pkt->setDataFromBlock(blk->data, blkSize);
+
+    // When a block is compressed, it must first be decompressed before being
+    // sent for writeback.
+    if (compressor) {
+        pkt->payloadDelay = compressor->getDecompressionLatency(blk);
+    }
+
+    return pkt;
+}
+
 PacketPtr
 BaseCache::writecleanBlk(CacheBlk *blk, Request::Flags dest, PacketId id)
 {
     RequestPtr req = std::make_shared<Request>(
         regenerateBlkAddr(blk), blkSize, 0, Request::wbRequestorId);
+
+    stats.writecleans++;
 
     if (blk->isSecure()) {
         req->setFlags(Request::SECURE);
@@ -2750,6 +2831,8 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "average number of cycles each access was blocked"),
     ADD_STAT(writebacks, statistics::units::Count::get(),
              "number of writebacks"),
+    ADD_STAT(writecleans, statistics::units::Count::get(),
+             "number of writecleans"),
     ADD_STAT(demandMshrHits, statistics::units::Count::get(),
              "number of demand (read+write) MSHR hits"),
     ADD_STAT(overallMshrHits, statistics::units::Count::get(),
@@ -2953,6 +3036,7 @@ BaseCache::CacheStats::regStats()
     blockedCycles
         .subname(Blocked_NoMSHRs, "no_mshrs")
         .subname(Blocked_NoTargets, "no_targets")
+        .subname(Blocked_NoWBBuffers, "no_wb_buffers")
         ;
 
 
@@ -2960,11 +3044,13 @@ BaseCache::CacheStats::regStats()
     blockedCauses
         .subname(Blocked_NoMSHRs, "no_mshrs")
         .subname(Blocked_NoTargets, "no_targets")
+        .subname(Blocked_NoWBBuffers, "no_wb_buffers")
         ;
 
     avgBlocked
         .subname(Blocked_NoMSHRs, "no_mshrs")
         .subname(Blocked_NoTargets, "no_targets")
+        .subname(Blocked_NoWBBuffers, "no_wb_buffers")
         ;
     avgBlocked = blockedCycles / blockedCauses;
 

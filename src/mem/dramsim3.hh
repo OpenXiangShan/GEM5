@@ -108,6 +108,21 @@ class DRAMsim3 : public AbstractMemory
     DRAMsim3Wrapper wrapper;
 
     /**
+     * Is the write ideal(not send to dramsim for timing simulation)?
+     */
+    bool _ideal_write;
+
+    /**
+     * Is the tracer enabled?
+     */
+    bool _enable_tracer;
+
+    /**
+     * The tracer
+     */
+    OutputStream* _tracer;
+
+    /**
      * Is the connected port waiting for a retry from us
      */
     bool retryReq;

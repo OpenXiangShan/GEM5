@@ -386,40 +386,27 @@ CoherentXBar::recvTimingReq(PacketPtr pkt, PortID cpu_side_port_id)
     //   (CleanSharedReq, CleanInvalidReq) and the corresponding
     //   write (WriteClean) which updates the block in the memory
     //   below.
-    if (success &&
-        ((pkt->isClean() && pkt->satisfied()) ||
-         pkt->cmd == MemCmd::WriteClean) &&
-        is_destination) {
-        PacketPtr deferred_rsp = pkt->isWrite() ? nullptr : pkt;
+    if (success && (pkt->isClean() && pkt->satisfied()) && is_destination) 
+    {
+        respond_directly = false;
+        outstandingCMO.emplace(pkt->id, pkt);
+    } else if (success && pkt->cmd == MemCmd::WriteClean && is_destination) {
         auto cmo_lookup = outstandingCMO.find(pkt->id);
-        if (cmo_lookup != outstandingCMO.end()) {
+        if(cmo_lookup != outstandingCMO.end()) {
             // the cache clean request has already reached this xbar
             respond_directly = true;
-            if (pkt->isWrite()) {
-                rsp_pkt = cmo_lookup->second;
-                assert(rsp_pkt);
+            rsp_pkt = cmo_lookup->second;
+            assert(rsp_pkt);
 
-                // determine the destination
-                const auto route_lookup = routeTo.find(rsp_pkt->req);
-                assert(route_lookup != routeTo.end());
-                rsp_port_id = route_lookup->second;
-                assert(rsp_port_id != InvalidPortID);
-                assert(rsp_port_id < respLayers.size());
-                // remove the request from the routing table
-                routeTo.erase(route_lookup);
-            }
+            // determine the destination
+            const auto route_lookup = routeTo.find(rsp_pkt->req);
+            assert(route_lookup != routeTo.end());
+            rsp_port_id = route_lookup->second;
+            assert(rsp_port_id != InvalidPortID);
+            assert(rsp_port_id < respLayers.size());
+            // remove the request from the routing table
+            routeTo.erase(route_lookup);
             outstandingCMO.erase(cmo_lookup);
-        } else {
-            respond_directly = false;
-            outstandingCMO.emplace(pkt->id, deferred_rsp);
-            if (!pkt->isWrite()) {
-                assert(routeTo.find(pkt->req) == routeTo.end());
-                routeTo[pkt->req] = cpu_side_port_id;
-
-                panic_if(routeTo.size() > maxRoutingTableSizeCheck,
-                         "%s: Routing table exceeds %d packets\n",
-                         name(), maxRoutingTableSizeCheck);
-            }
         }
     }
 

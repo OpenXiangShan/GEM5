@@ -621,6 +621,7 @@ class Packet : public Printable
     bool isInvalidate() const        { return cmd.isInvalidate(); }
     bool isEviction() const          { return cmd.isEviction(); }
     bool isClean() const             { return cmd.isClean(); }
+    bool isWriteClean() const        { return cmd == MemCmd::WriteClean; }
     bool fromCache() const           { return cmd.fromCache(); }
     bool isWriteback() const         { return cmd.isWriteback(); }
     bool hasData() const             { return cmd.hasData(); }

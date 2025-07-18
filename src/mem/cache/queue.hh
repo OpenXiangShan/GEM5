@@ -152,9 +152,24 @@ class Queue : public Drainable, public Named
         return (allocated >= numEntries - numReserve);
     }
 
+    bool isAboutToBeFull(double threshold) const
+    {
+        return (allocated >= (numEntries - numReserve) * threshold);
+    }
+
+    int numAllocated() const
+    {
+        return allocated;
+    }
+
     int numInService() const
     {
         return _numInService;
+    }
+
+    int numAvailable(double threshold = 1.0) const
+    {
+        return std::max(int(threshold*(numEntries-numReserve)-allocated), 0);
     }
 
     /**

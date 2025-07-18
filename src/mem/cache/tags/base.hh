@@ -300,6 +300,27 @@ class BaseTags : public ClockedObject
     }
 
     /**
+     * Find replacement victim based on packet.
+     *
+     * @param pkt The packet holding the address to find a victim for.
+     * @param is_secure True if the target memory space is secure.
+     * @param size Size, in bits, of new block to allocate.
+     * @param evict_blks Cache blocks to be evicted.
+     * @param clean_blks Cache blocks to be written back.
+     * @param num_wb_entries Number of writeback entries
+     * @return Cache block to be replaced.
+     */
+    virtual CacheBlk* findVictim(PacketPtr pkt, const bool is_secure,
+                                 const std::size_t size,
+                                 std::vector<CacheBlk*>& evict_blks,
+                                 std::vector<CacheBlk*>& clean_blks,
+                                 const std::size_t& num_wb_entries)
+    {
+        // based on physical address by default
+        return findVictim(pkt, is_secure, size, evict_blks);
+    }
+
+    /**
      * Access block and update replacement data. May not succeed, in which case
      * nullptr is returned. This has all the implications of a cache access and
      * should only be used as such. Returns the tag lookup latency as a side

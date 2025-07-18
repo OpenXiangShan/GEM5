@@ -385,6 +385,9 @@ class BaseCache : public ClockedObject, CacheAccessor
     /** Miss status registers */
     MSHRQueue mshrQueue;
 
+    /** Whether we are draining the write buffer or not */
+    bool drainWriteBuffer;
+
     /** Write/writeback buffer */
     WriteQueue writeBuffer;
 
@@ -919,6 +922,26 @@ class BaseCache : public ClockedObject, CacheAccessor
     PacketPtr writebackBlk(CacheBlk *blk);
 
     /**
+     * Create a writeback request for the given block.
+     *
+     * @param clean_blks The blocks to clean
+     * @param writebacks Return a list of packets with writebacks
+     */
+    void cleanBlks(std::vector<CacheBlk*> clean_blks, PacketList &writebacks);
+
+    /**
+     * Create a writeclean request for the given block.
+     *
+     * Creates a request that writes the block to the cache below
+     * without evicting the block from the current cache.
+     *
+     * @param blk The block to write clean.
+     * @param dest The destination of the write clean operation.
+     * @return The generated write clean packet.
+     */
+    PacketPtr cleanBlk(CacheBlk *blk, Request::Flags dest);
+
+    /**
      * Create a writeclean request for the given block.
      *
      * Creates a request that writes the block to the cache below
@@ -1197,6 +1220,9 @@ class BaseCache : public ClockedObject, CacheAccessor
 
         /** Number of blocks written back per thread. */
         statistics::Vector writebacks;
+
+        /** Number of blocks written clean per thread. */
+        statistics::Scalar writecleans;
 
         /** Demand misses that hit in the MSHRs. */
         statistics::Formula demandMshrHits;
@@ -1623,6 +1649,10 @@ public:
 
     bool inMissQueue(Addr addr, bool is_secure) const override {
         return mshrQueue.findMatch(addr, is_secure);
+    }
+
+    bool inWriteQueue(Addr addr, bool is_secure) const override {
+        return writeBuffer.findMatch(addr, is_secure);
     }
 
     bool coalesce() const override;
