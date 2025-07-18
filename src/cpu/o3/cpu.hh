@@ -611,6 +611,7 @@ class CPU : public BaseCPU
     int issueWidth; // issueWidth = decodeWidth = renameWidth!!!
 
     bool enableConstantFolding; // Control flag of Constant Folding (add-immediate elimination)
+    bool enableMovImmElimination;
 
     struct CPUStats : public statistics::Group
     {

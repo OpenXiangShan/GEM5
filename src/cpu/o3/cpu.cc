@@ -128,6 +128,7 @@ CPU::CPU(const BaseO3CPUParams &params)
       cpi_r("cpi", "", 1000, archDBer),
       issueWidth(params.decodeWidth),
       enableConstantFolding(params.enableConstantFolding),
+      enableMovImmElimination(params.enableMovImmElimination),
       cpuStats(this)
 {
     fatal_if(FullSystem && params.numThreads > 1,
