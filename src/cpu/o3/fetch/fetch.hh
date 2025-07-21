@@ -50,6 +50,7 @@
 #include "config/the_isa.hh"
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
+#include "cpu/o3/fetch/icache_handler.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/pc_event.hh"
 #include "cpu/pred/bpred_unit.hh"
@@ -87,85 +88,8 @@ class CPU;
 class Fetch
 {
   public:
-    /**
-     * IcachePort class for instruction fetch.
-     */
-    class IcachePort : public RequestPort
-    {
-      protected:
-        /** Pointer to fetch. */
-        Fetch *fetch;
-
-      public:
-        /** Default constructor. */
-        IcachePort(Fetch *_fetch, CPU *_cpu);
-
-      protected:
-
-        /** Timing version of receive.  Handles setting fetch to the
-         * proper status to start fetching. */
-        virtual bool recvTimingResp(PacketPtr pkt);
-
-        /** Handles doing a retry of a failed fetch. */
-        virtual void recvReqRetry();
-    };
-
-    class FetchTranslation : public BaseMMU::Translation
-    {
-      protected:
-        Fetch *fetch;
-        unsigned ftqIndex;
-
-      public:
-        FetchTranslation(Fetch *_fetch, unsigned _ftqIndex = 0)
-            : fetch(_fetch), ftqIndex(_ftqIndex) {}
-
-        void markDelayed() {}
-
-        void
-        finish(const Fault &fault, const RequestPtr &req,
-            gem5::ThreadContext *tc, BaseMMU::Mode mode)
-        {
-            assert(mode == BaseMMU::Execute);
-            fetch->finishTranslation(fault, req, ftqIndex);
-            delete this;
-        }
-    };
 
   private:
-    /* Event to delay delivery of a fetch translation result in case of
-     * a fault and the nop to carry the fault cannot be generated
-     * immediately */
-    class FinishTranslationEvent : public Event
-    {
-      private:
-        Fetch *fetch;
-        Fault fault;
-        RequestPtr req;
-
-      public:
-        FinishTranslationEvent(Fetch *_fetch)
-            : fetch(_fetch), req(nullptr)
-        {}
-
-        void setFault(Fault _fault) { fault = _fault; }
-        void setReq(const RequestPtr &_req) { req = _req; }
-        RequestPtr getReq() { return req; }
-
-        /** Process the delayed finish translation */
-        void
-        process()
-        {
-            assert(fetch->numInst < fetch->fetchWidth);
-            fetch->finishTranslation(fault, req);
-        }
-
-        const char *
-        description() const
-        {
-            return "CPU FetchFinishTranslation";
-        }
-      };
 
   public:
     /** Overall fetch status. Used to determine if the CPU can
@@ -199,19 +123,10 @@ class Fetch
     };
 
     /** Cache request status for new state management system.
-     * Manages the lifecycle of individual cache access requests.
+     * Import from ICacheHandler to avoid duplication.
      */
-    enum CacheRequestStatus
-    {
-        CacheIdle,              // No active request
-        TlbWait,               // Waiting for TLB translation completion
-        CacheWaitResponse,     // Waiting for cache data return
-        CacheWaitRetry,        // Waiting for cache retry opportunity
-        AccessComplete,        // Access completed, data available
-        AccessFailed,          // Access failed (invalid address etc.)
-        Cancelled,             // Request cancelled (squash etc.)
-        NumCacheRequestStatus
-    };
+    // Use CacheRequestStatus from ICacheHandler
+    // (enum values available directly in scope)
 
     std::map<CacheRequestStatus, const char*> cacheRequestStatusStr = {
         {CacheIdle, "CacheIdle"},
@@ -267,11 +182,8 @@ class Fetch
     /** Clear all thread-specific states*/
     void clearStates(ThreadID tid);
 
-    /** Handles retrying the fetch access. */
-    void recvReqRetry();
-
-    /** Processes cache completion event. */
-    void processCacheCompletion(PacketPtr pkt);
+    /** Callback handler for ICacheHandler fetch completion */
+    void onFetchCompleted(CacheRequestStatus status, const FetchCallbackData& data);
 
     /** Resume after a drain. */
     void drainResume();
@@ -386,7 +298,6 @@ class Fetch
      */
     void sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state);
 
-    void finishTranslation(const Fault &fault, const RequestPtr &mem_req, unsigned ftqIndex = 0);
 
     /** Validate if a translation request is expected and should be processed.
      * @param tid Thread ID
@@ -496,7 +407,7 @@ class Fetch
     /** The decoder. */
     InstDecoder *decoder[MaxThreads];
 
-    RequestPort &getInstPort() { return icachePort; }
+    RequestPort &getInstPort() { return icacheHandler->getInstPort(); }
 
     branch_prediction::BPredUnit * getBp() { return branchPred; }
 
@@ -683,14 +594,8 @@ class Fetch
     /** The width of decode in instructions. */
     unsigned decodeWidth;
 
-    /** Is the cache blocked?  If so no threads can access it. */
-    bool cacheBlocked;
-
-    /** The packet that is waiting to be retried. */
-    std::vector<PacketPtr> retryPkt;
-
-    /** The thread that is waiting on the cache to tell fetch to retry. */
-    ThreadID retryTid;
+    /** ICacheHandler for managing I-cache and MMU interactions */
+    std::unique_ptr<ICacheHandler> icacheHandler;
 
     /** Cache block size. */
     unsigned int cacheBlkSize;
@@ -862,178 +767,6 @@ class Fetch
     // Constants for misaligned fetch handling
     static constexpr unsigned CACHE_LINE_SIZE_BYTES = 64;
 
-    /**
-     * Unified cache request structure to handle multiple cacheline accesses.
-     * Replaces multiple separate state variables for cleaner state management.
-     * Supports extensibility for future 2fetch implementation.
-     */
-    struct CacheRequest
-    {
-        /** Vector of packet pointers for multiple cache line requests */
-        std::vector<PacketPtr> packets;
-
-        /** Vector of corresponding request pointers */
-        std::vector<RequestPtr> requests;
-
-        /** Vector of status for each cache request (NEW) */
-        std::vector<CacheRequestStatus> requestStatus;
-
-        /** Base address of the fetch request */
-        Addr baseAddr;
-
-        /** Total size of the fetch request in bytes */
-        unsigned totalSize;
-
-        /** Number of completed packets received */
-        unsigned completedPackets;
-
-        /** Constructor */
-        CacheRequest() : baseAddr(0), totalSize(0), completedPackets(0) {}
-
-        /** Check if all packets have been completed */
-        bool allCompleted() const {
-            return completedPackets >= packets.size() && packets.size() > 0;
-        }
-
-        /** Check if any request has failed (NEW) */
-        bool anyFailed() const {
-            for (const auto& status : requestStatus) {
-                if (status == AccessFailed) return true;
-            }
-            return false;
-        }
-
-        /** Check if all requests are ready for processing (NEW) */
-        bool allReady() const {
-            if (requestStatus.empty()) return false;
-            for (const auto& status : requestStatus) {
-                if (status != AccessComplete) return false;
-            }
-            return true;
-        }
-
-        /** Get overall status of the cache request group (NEW) */
-        CacheRequestStatus getOverallStatus() const {
-            if (requestStatus.empty()) return CacheIdle;
-
-            // Check for specific priority states first
-            for (const auto& status : requestStatus) {
-                if (status == AccessFailed) return AccessFailed;
-                if (status == CacheWaitRetry) return CacheWaitRetry;
-                if (status == TlbWait) return TlbWait;
-                if (status == CacheWaitResponse) return CacheWaitResponse;
-            }
-
-            // Check if all are completed
-            if (allReady()) return AccessComplete;
-
-            return CacheIdle;
-        }
-
-        /** Reset the cache request state */
-        void reset() {
-            packets.clear();
-            requests.clear();
-            requestStatus.clear();
-            baseAddr = 0;
-            totalSize = 0;
-            completedPackets = 0;
-        }
-
-        /** Add a new request */
-        void addRequest(RequestPtr req) {
-            requests.push_back(req);
-            packets.push_back(nullptr);  // Initialize with null packet
-            requestStatus.push_back(CacheIdle);  // Initialize status
-        }
-
-        /** Mark a specific request as failed (NEW) */
-        void markRequestFailed(size_t index) {
-            if (index < requestStatus.size()) {
-                requestStatus[index] = AccessFailed;
-            }
-        }
-
-        /** Cancel all active requests (NEW) */
-        void cancelAllRequests() {
-            for (auto& status : requestStatus) {
-                if (status != AccessComplete && status != AccessFailed) {
-                    status = Cancelled;
-                }
-            }
-        }
-
-        /** Update status for a specific request by index (NEW) */
-        void updateRequestStatus(size_t index, CacheRequestStatus status) {
-            if (index < requestStatus.size()) {
-                requestStatus[index] = status;
-            }
-        }
-
-        /** Find request index by RequestPtr (NEW) */
-        size_t findRequestIndex(const RequestPtr& req) const {
-            for (size_t i = 0; i < requests.size(); ++i) {
-                if (requests[i] == req) {
-                    return i;
-                }
-            }
-            return SIZE_MAX;  // Not found
-        }
-
-        /** Get status summary string for debugging (NEW) */
-        std::string getStatusSummary() const {
-            std::string summary = "CacheRequest[";
-            for (size_t i = 0; i < requestStatus.size(); ++i) {
-                if (i > 0) summary += ",";
-                switch (requestStatus[i]) {
-                    case CacheIdle: summary += "Idle"; break;
-                    case TlbWait: summary += "TlbWait"; break;
-                    case CacheWaitResponse: summary += "CacheWait"; break;
-                    case CacheWaitRetry: summary += "Retry"; break;
-                    case AccessComplete: summary += "Complete"; break;
-                    case AccessFailed: summary += "Failed"; break;
-                    case Cancelled: summary += "Cancelled"; break;
-                    default: summary += "Unknown"; break;
-                }
-            }
-            summary += "]";
-            return summary;
-        }
-
-        /** Mark a packet as completed by matching request */
-        bool markCompletedAndStorePacket(PacketPtr pkt) {
-          // return false if the packet is not found in the requests
-          bool found_packet = false;
-            // Find and mark the packet as completed by matching the request
-            for (size_t i = 0; i < requests.size(); ++i) {
-                if (requests[i] == pkt->req) {
-                    // Only increment count if this packet wasn't already stored
-                    if (packets[i] == nullptr) {
-                        packets[i] = pkt;  // Store the packet
-                        completedPackets++;
-                        found_packet = true;
-                        // Update status to AccessComplete
-                        if (i < requestStatus.size()) {
-                            requestStatus[i] = AccessComplete;
-                        }
-                    }
-                }
-            }
-            if (!found_packet) {
-                return false;
-            }
-            return true;
-        }
-
-        /** Get the number of pending packets */
-        unsigned getPendingCount() const {
-            return packets.size() - completedPackets;
-        }
-    };
-
-    /** Cache request for each thread and FTQ index [tid][ftqIndex] */
-    CacheRequest cacheReq[MaxThreads][2];
-
     /** 2fetch coordinator for each thread */
     Fetch2Coordinator fetch2Coord[MaxThreads];
 
@@ -1065,11 +798,6 @@ class Fetch
      */
     bool interruptPending;
 
-    /** Instruction port. Note that it has to appear after the fetch stage. */
-    IcachePort icachePort;
-
-    /** Event used to delay fault generation of translation faults */
-    FinishTranslationEvent finishTranslationEvent;
 
     /** Decoupled frontend related */
     bool isDecoupledFrontend() { return branchPred->isDecoupled(); }
@@ -1125,32 +853,6 @@ class Fetch
     void setThreadStatus(ThreadID tid, ThreadStatus status);
 
     /**
-     * Update cache request status for specific request
-     * @param tid Thread ID
-     * @param reqIndex Request index
-     * @param status New cache request status
-     * @param ftqIndex FTQ index (default: 0)
-     */
-    void updateCacheRequestStatus(ThreadID tid, size_t reqIndex, CacheRequestStatus status, unsigned ftqIndex = 0);
-
-    /**
-     * Helper function to update cache request status by RequestPtr
-     * Combines findRequestIndex + updateCacheRequestStatus + warn pattern
-     * @param tid Thread ID
-     * @param req Request pointer to find and update
-     * @param status New cache request status
-     * @param ftqIndex FTQ index (default: 0)
-     */
-    void updateCacheRequestStatusByRequest(ThreadID tid, const RequestPtr& req,
-                                          CacheRequestStatus status, unsigned ftqIndex = 0);
-
-    /**
-     * Cancel all cache requests for thread (used in squash)
-     * @param tid Thread ID
-     */
-    void cancelAllCacheRequests(ThreadID tid);
-
-    /**
      * Get overall cache request status across all FTQ indices
      * @param tid Thread ID
      * @return Overall cache request status considering all active FTQs
@@ -1162,12 +864,6 @@ class Fetch
      * Compatibility interfaces for 2fetch support
      * Provide backward-compatible access to 2D arrays using default ftqIndex=0
      */
-
-    /** Get reference to CacheRequest for backward compatibility */
-    CacheRequest& getCacheReq(ThreadID tid, unsigned ftqIndex = 0) {
-        assert(ftqIndex < 2);
-        return cacheReq[tid][ftqIndex];
-    }
 
     /** Get reference to FetchBuffer for backward compatibility */
     FetchBuffer& getFetchBuffer(ThreadID tid, unsigned ftqIndex = 0) {
@@ -1183,12 +879,8 @@ class Fetch
 
     /** Check if all active FTQs completed their cache requests */
     bool allActiveFTQCompleted(ThreadID tid) {
-        for (unsigned i = 0; i < 2; ++i) {
-            if (fetch2Coord[tid].ftqActive[i] && !cacheReq[tid][i].allCompleted()) {
-                return false;
-            }
-        }
-        return true;
+        // Delegate to ICacheHandler for state management
+        return icacheHandler->allActiveFTQCompleted(tid);
     }
 
     /**
@@ -1206,9 +898,6 @@ class Fetch
 
     /** Mark dual FTQ targets as finished in BTB predictor */
     void finishDualFTQTargets();
-
-    /** Determine which FTQ index a packet belongs to */
-    unsigned determineFTQIndex(ThreadID tid, PacketPtr pkt);
 
     /** Check if dual fetch should be used for this thread */
     bool shouldUseDualFetch(ThreadID tid);

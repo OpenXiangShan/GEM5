@@ -219,28 +219,6 @@ Fetch::finishDualFTQTargets()
     }
 }
 
-unsigned
-Fetch::determineFTQIndex(ThreadID tid, PacketPtr pkt)
-{
-    assert(tid < MaxThreads);
-    assert(pkt && pkt->req);
-
-    // Check which FTQ index this packet belongs to by matching the request
-    for (unsigned ftqIndex = 0; ftqIndex < 2; ++ftqIndex) {
-        if (fetch2Coord[tid].ftqActive[ftqIndex]) {
-            const auto& requests = cacheReq[tid][ftqIndex].requests;
-            for (const auto& req : requests) {
-                if (req == pkt->req) {
-                    return ftqIndex;
-                }
-            }
-        }
-    }
-
-    // Packet doesn't belong to any active FTQ request
-    return 2;  // Invalid index
-}
-
 void
 Fetch::fallbackToSingleFetch(ThreadID tid, const PCStateBase &pc_state,
                              const std::string& reason)

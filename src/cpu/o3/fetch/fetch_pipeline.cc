@@ -335,28 +335,15 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
     // Clear the icache miss if it's outstanding.
     DPRINTF(Fetch, "[tid:%i] Squash: clear cacheReq, current fetchStatus[tid]=%d\n", tid, fetchStatus[tid]);
 
-    // Cancel all active cache requests in new status system
-    CacheRequest& cacheReqRef = getCacheReq(tid, ftqIndex);
-    cacheReqRef.cancelAllRequests();
-    DPRINTF(Fetch, "[tid:%i] Squash: cancelled all cache requests, status: %s\n",
-            tid, cacheReqRef.getStatusSummary().c_str());
+    // Cancel all active cache requests using ICacheHandler
+    icacheHandler->cancelRequests(tid);
+    DPRINTF(Fetch, "[tid:%i] Squash: cancelled all cache requests via ICacheHandler\n", tid);
 
-    // Reset the cache request after cancelling
-    cacheReqRef.reset();
     // Reset fetch2Coord state for dual FTQ support
     fetch2Coord[tid].reset();
     DPRINTF(Fetch, "[tid:%i] Squash: reset fetch2Coord state for dual FTQ support\n", tid);
 
-    // Get rid of the retrying packet if it was from this thread.
-    if (retryTid == tid) {
-        assert(cacheBlocked);
-        for (auto it : retryPkt) {
-            delete it;
-        }
-        retryPkt.clear();
-        retryTid = InvalidThreadID;
-        cacheBlocked = false;   // clear cache blocked
-    }
+    // Note: Retry packet handling is now managed by ICacheHandler
 
     if (squashInst && !squashInst->isControl()) {
         // csrrw satp need to flush all fetch targets

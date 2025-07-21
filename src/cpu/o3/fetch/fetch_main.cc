@@ -29,12 +29,12 @@ Fetch::updateFetchStatus()
         ThreadID tid = *threads++;
 
         if ((canFetchInstructions(tid) && !checkStall(tid)) || fetchStatus[tid] == Squashing ||
-            cacheReq[tid][0].getOverallStatus() == AccessComplete) {
+            icacheHandler->getOverallCacheStatus(tid) == AccessComplete) {
 
             if (_status == Inactive) {
                 DPRINTF(Activity, "[tid:%i] Activating stage.\n",tid);
 
-                if (cacheReq[tid][0].getOverallStatus() == AccessComplete) {
+                if (icacheHandler->getOverallCacheStatus(tid) == AccessComplete) {
                     DPRINTF(Activity, "[tid:%i] Activating fetch due to cache"
                             "completion\n",tid);
                 }
@@ -346,7 +346,7 @@ Fetch::prepareFetchAddress(ThreadID tid, bool &status_change, unsigned ftqIndex)
     PCStateBase &this_pc = *pc[tid];
 
     // Handle status transitions and cache access
-    if (cacheReq[tid][ftqIndex].getOverallStatus() == AccessComplete) {
+    if (icacheHandler->getOverallCacheStatus(tid) == AccessComplete) {
         DPRINTF(Fetch, "[tid:%i] Icache miss is complete.\n", tid);
         setThreadStatus(tid, Running);
         setAllFetchStalls(StallReason::NoStall);

@@ -94,17 +94,17 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       commitToFetchDelay(params.commitToFetchDelay),
       fetchWidth(params.fetchWidth),
       decodeWidth(params.decodeWidth),
-      retryPkt(),
-      retryTid(InvalidThreadID),
       cacheBlkSize(cpu->cacheLineSize()),
       enable2Fetch(params.enable2Fetch),
       fetchBufferSize(params.fetchBufferSize),
       fetchQueueSize(params.fetchQueueSize),
       numThreads(params.numThreads),
       numFetchingThreads(params.smtNumFetchingThreads),
-      icachePort(this, _cpu),
-      finishTranslationEvent(this), fetchStats(_cpu, this)
+      fetchStats(_cpu, this)
 {
+    // Initialize ICacheHandler for memory system interaction
+    icacheHandler = std::make_unique<ICacheHandler>(_cpu);
+
     if (numThreads > MaxThreads)
         fatal("numThreads (%d) is larger than compiled limit (%d),\n"
               "\tincrease MaxThreads in src/cpu/o3/limits.hh\n",
@@ -383,9 +383,8 @@ Fetch::clearStates(ThreadID tid)
     set(pc[tid], cpu->pcState(tid));
     macroop[tid] = NULL;
     delayedCommit[tid] = false;
-    // Reset all FTQ cache requests and fetch buffers
+    // Reset all FTQ fetch buffers
     for (unsigned ftqIndex = 0; ftqIndex < 2; ++ftqIndex) {
-        cacheReq[tid][ftqIndex].reset();
         fetchBuffer[tid][ftqIndex].reset();
     }
     stalls[tid].decode = false;
@@ -401,7 +400,6 @@ Fetch::resetStage()
 {
     numInst = 0;
     interruptPending = false;
-    cacheBlocked = false;
 
     priorityList.clear();
 
@@ -412,9 +410,8 @@ Fetch::resetStage()
         macroop[tid] = NULL;
 
         delayedCommit[tid] = false;
-        // Reset all FTQ cache requests and fetch buffers
+        // Reset all FTQ fetch buffers
         for (unsigned ftqIndex = 0; ftqIndex < 2; ++ftqIndex) {
-            cacheReq[tid][ftqIndex].reset();
             fetchBuffer[tid][ftqIndex].reset();
         }
 
@@ -456,15 +453,11 @@ void
 Fetch::drainSanityCheck() const
 {
     assert(isDrained());
-    assert(retryPkt.size() == 0);
-    assert(retryTid == InvalidThreadID);
-    assert(!cacheBlocked);
     assert(!interruptPending);
 
     for (ThreadID i = 0; i < numThreads; ++i) {
-        for (unsigned ftqIndex = 0; ftqIndex < 2; ++ftqIndex) {
-            assert(cacheReq[i][ftqIndex].packets.empty());
-        }
+        // Cache request state is now managed by ICacheHandler
+        assert(!icacheHandler->hasPendingCacheRequests(i));
         assert(fetchStatus[i] == Idle || stalls[i].drain);
     }
 
@@ -498,7 +491,7 @@ Fetch::isDrained() const
      * cycle if the finish translation event is scheduled, so make
      * sure that's not the case.
      */
-    return !finishTranslationEvent.scheduled();
+    return true;
 }
 
 void
