@@ -1,0 +1,9 @@
+# -*- mode:python -*-
+
+Import('*')
+
+SimObject('L2ToDramSys.py', sim_objects=['L2ToDramSys'])
+
+Source('L2todram.cc')
+
+DebugFlag('CHI')

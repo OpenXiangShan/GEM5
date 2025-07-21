@@ -239,8 +239,15 @@ def config_mem(options, system):
                     if opt_ramulator2_ini:
                         dram_intf.config_path = opt_ramulator2_ini
                     mem_ctrl = dram_intf
+                    print("Test1",vars(dram_intf))
+                elif hasattr(m5.objects, 'DDRWrapper') and issubclass(intf, m5.objects.DDRWrapper):
+                    if opt_dramsim3_ini:
+                        dram_intf.configFile = opt_dramsim3_ini
+                    mem_ctrl = dram_intf
+                    print("Test2",vars(dram_intf))
                 else:
                     mem_ctrl = dram_intf.controller()
+                    print("Test3",vars(dram_intf))
 
                 mem_ctrls.append(mem_ctrl)
 
@@ -266,7 +273,7 @@ def config_mem(options, system):
 
     # hook up NVM interface when channel is shared with DRAM + NVM
     for i in range(len(nvm_intfs)):
-        mem_ctrls[i].nvm = nvm_intfs[i];
+        mem_ctrls[i].nvm = nvm_intfs[i]
 
     # Connect the controller to the xbar port
     for i in range(len(mem_ctrls)):
@@ -277,6 +284,8 @@ def config_mem(options, system):
             # for each vault. All vaults are same size.
             mem_ctrls[i].dram.device_size = options.hmc_dev_vault_size
         else:
+            if hasattr(m5.objects, 'DDRWrapper') and issubclass(intf, m5.objects.DDRWrapper):
+                break
             # Connect the controllers to the membus
             mem_ctrls[i].port = xbar.mem_side_ports
 

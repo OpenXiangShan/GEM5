@@ -262,27 +262,40 @@ def config_cache(options, system):
                 system.tol2bus_list[i].width = 256 # byte per cycle
 
         if options.l3cache:
-            system.l3 = L3Cache(clk_domain=system.cpu_clk_domain,
-                                        **_get_cache_opts(NULL, 'l3', options))
-            system.tol3bus = L2ToL3Bus(clk_domain=system.cpu_clk_domain)
-            if not options.classic_l2:
+            if options.CHI:
+                # opt_dramsim3_ini = getattr(options, 'dramsim3_ini', None)
+                root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                system.CHIsys = L2ToDramSys(configFile=os.path.join(root_dir, 'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini'))
+                system.CHIsys.L2Wrapper = L2Wrapper(RNBridge=CHIBridge(networkPort=CHIPort(recv_buffer_size=4)))
+                system.CHIsys.L3 = FakeL3(L2side=CHIPort(recv_buffer_size=4),Dramside=CHIPort(recv_buffer_size=4))
+            else:
+                system.l3 = L3Cache(clk_domain=system.cpu_clk_domain,
+                                            **_get_cache_opts(NULL, 'l3', options))
+                system.tol3bus = L2ToL3Bus(clk_domain=system.cpu_clk_domain)
+                if not options.classic_l2:
                 # In Aligned L2, an extra 4 cycles are simulated in L2Cache Pipeline, instead of L2ToL3Bus
                 # So we need to subtract 4 cycles from the L2ToL3Bus response latency
                 assert int(system.tol3bus.response_latency) >= 4
                 system.tol3bus.response_latency -= 4
             system.tol3bus.snoop_filter.max_capacity = "32MB"
-            system.l3.cpu_side = system.tol3bus.mem_side_ports
-            system.l3.mem_side = system.membus.cpu_side_ports
+                system.l3.cpu_side = system.tol3bus.mem_side_ports
+                system.l3.mem_side = system.membus.cpu_side_ports
 
-            system.l3.do_fast_writeline = not options.kmh_align
+                system.l3.do_fast_writeline = not options.kmh_align
 
         for i in range(options.num_cpus):
             if options.l3cache:
                 # l2 -> tol3bus -> l3
                 if options.classic_l2:
-                    system.l2_caches[i].mem_side = system.tol3bus.cpu_side_ports
+                    if options.CHI:
+                        system.l2_caches[i].mem_side = system.CHIsys.cpu_side_port
+                    else:
+                        system.l2_caches[i].mem_side = system.tol3bus.cpu_side_ports
                 else:
-                    system.l2_wrappers[i].xbar.mem_side_ports = system.tol3bus.cpu_side_ports
+                    if options.CHI:
+                        system.l2_wrappers[i].xbar.mem_side_ports = system.CHIsys.cpu_side_port
+                    else:
+                        system.l2_wrappers[i].xbar.mem_side_ports = system.tol3bus.cpu_side_ports
                 # l3 -> membus
             else:
                 if options.classic_l2:
@@ -312,7 +325,7 @@ def config_cache(options, system):
                     l2_prefetcher != NULL
                 dcache.prefetcher.add_pf_downstream(l2_prefetcher)
 
-            if (not options.no_pf) and options.l3cache and options.l2_to_l3_pf_hint:
+            if (not options.no_pf) and options.l3cache and options.l2_to_l3_pf_hint and(not options.CHI):
                 assert l2_prefetcher != NULL and \
                     system.l3.prefetcher != NULL
                 l2_prefetcher.add_pf_downstream(system.l3.prefetcher)
