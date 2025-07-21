@@ -2,7 +2,8 @@
 #include <bitset>
 #include <string>
 
-#include "sim/clocked_object.hh"
+// #include "port.hh"
+// #include "sim/clocked_object.hh"
 
 namespace gem5
 {
@@ -10,16 +11,16 @@ namespace xsCHI
 {
 
 
-class Module : public ClockedObject
+class Module
 {
 public:
-    virtual ~Module() = default;
+    // virtual ~Module() = default;
     // 至少包含一个Port
     // Port* port;
     // ...其他通用成员...
-    std::string name() const { return _name; }
+    // virtual Port getCHIPort();
 protected:
-    std::string _name; // 模块名称
+    // std::string _name; // 模块名称
     //cycle event
     //getPort() const { return port_a; } // 获取端口的虚函数
     //

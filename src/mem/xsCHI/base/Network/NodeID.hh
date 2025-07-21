@@ -1,3 +1,4 @@
+#pragma once
 #include <cassert>
 #include <cmath>
 #include <cstdint>
@@ -28,7 +29,8 @@ namespace xsCHI
             assert(x < 1u<<mesh_coord_bits);
             assert(y < 1u<<mesh_coord_bits);
         }
-        ~NodeID() = default;
+        NodeID(const NodeID& other) = default;
+        // ~NodeID() = default;
 
         uint32_t getNodeID() const
         {

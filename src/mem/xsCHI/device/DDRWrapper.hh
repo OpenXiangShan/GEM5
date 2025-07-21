@@ -13,29 +13,34 @@
 
 #include <boost/heap/priority_queue.hpp>
 
-#include "../base/Network/NodeID.hh"
-#include "../base/flit.hh"
-#include "../base/module.hh"
-#include "../base/port.hh"
-#include "../base/request.hh"
+#include "mem/xsCHI/base/Network/NodeID.hh"
+#include "mem/xsCHI/base/flit.hh"
+
+// #include "mem/xsCHI/base/module.hh"
 #include "mem/abstract_mem.hh"
 #include "mem/dramsim3_wrapper.hh"
-#include "params/DRAMsim3.hh"
+#include "mem/packet.hh"
+#include "mem/xsCHI/base/CHIPort.hh"
+#include "mem/xsCHI/base/Network/SystemAddressMap.hh"
+#include "mem/xsCHI/base/Network/TxnManager.hh"
+#include "mem/xsCHI/base/request.hh"
+#include "params/DDRWrapper.hh"
 #include "sim/clocked_object.hh"
 
+// #include "params/L2ToDramSys.hh"
 namespace gem5
 {
 
 namespace xsCHI
 {
 
-class DDRWrapper : public Module , public memory::AbstractMemory
+class DDRWrapper :  public memory::AbstractMemory
 {
   private:
     NodeID _NodeID;
+    SystemAddressMap *sam;
 
-
-    Port<Request> port;
+    CHIPort* port;
 
     /**
      * Callback functions for dramsim3
@@ -69,8 +74,8 @@ class DDRWrapper : public Module , public memory::AbstractMemory
      * done so that we can return the right packet on completion from
      * DRAMSim.
      */
-    std::unordered_map<Addr, std::queue<ReqPtr> > outstandingReads;
-    std::unordered_map<Addr, std::queue<ReqPtr> > outstandingWrites;
+    std::unordered_map<Addr, std::queue<PacketPtr> > outstandingReads;
+    std::unordered_map<Addr, std::queue<PacketPtr> > outstandingWrites;
 
     /**
      * Count the number of outstanding transactions so that we can
@@ -88,12 +93,12 @@ class DDRWrapper : public Module , public memory::AbstractMemory
 
     struct sort_policy
     {
-        bool operator()(const std::pair<ReqPtr, Tick> a, std::pair<ReqPtr, Tick> b) const {
+        bool operator()(const std::pair<PacketPtr, Tick> a, std::pair<PacketPtr, Tick> b) const {
           return a.second > b.second;
         }
     };
 
-    boost::heap::priority_queue<std::pair<ReqPtr, Tick>, boost::heap::compare<sort_policy>> responseQueue;
+    boost::heap::priority_queue<std::pair<PacketPtr, Tick>, boost::heap::compare<sort_policy>> responseQueue;
 
 
     unsigned int nbrOutstanding() const;
@@ -103,9 +108,9 @@ class DDRWrapper : public Module , public memory::AbstractMemory
      * AbstractMemory to actually create the response packet, and send
      * it back to the outside world requestor.
      *
-     * @param req The packet from the outside world
+     * @param pkt The packet from the outside world
      */
-    void accessAndRespond(ReqPtr req);
+    void accessAndRespond(PacketPtr pkt);
 
     void sendResponse();
 
@@ -128,12 +133,14 @@ class DDRWrapper : public Module , public memory::AbstractMemory
      * Upstream caches need this packet until true is returned, so
      * hold it for deletion until a subsequent call
      */
-    std::unique_ptr<Request> pendingDelete;
+    std::unique_ptr<Packet> pendingDelete;
 
   public:
 
-    typedef DRAMsim3Params Params;
+    typedef DDRWrapperParams Params;
     DDRWrapper(const Params &p);
+    DDRWrapper(const Params &p, NodeID nodeID, SystemAddressMap *sam);
+    DDRWrapper();
 
     /**
      * Read completion callback.
@@ -155,21 +162,34 @@ class DDRWrapper : public Module , public memory::AbstractMemory
 
     DrainState drain() override;
 
-    // virtual Port& getPort(const std::string& if_name,
-    //                       PortID idx = InvalidPortID) override;
+    virtual Port& getPort(const std::string& if_name,
+                          PortID idx = InvalidPortID) override;
 
     void init() override;
     void startup() override;
 
     void resetStats() override;
+    CHIPort* getCHIPort(){return port;}
+
+    void setNodeID(NodeID _ID);
+    void setSAM(SystemAddressMap *sam);
+    // std::string name() const override{ return "DDRWrapper"; }
 
   protected:
 
-    // Tick recvAtomic(ReqPtr req);
-    // void recvFunctional(ReqPtr req);
-    bool recvTimingReq(ReqPtr req);
+    // Tick recvAtomic(PacketPtr pkt);
+    // void recvFunctional(PacketPtr pkt);
+    bool recvTimingReq(PacketPtr pkt);
     void recvRespRetry();
 
+    bool handlePortReceive(FlitPtr &flit);
+
+    std::unordered_map<PacketPtr,ReqPtr> outstandingReadTransferMap;// for read request
+
+    TxnIDManager TXN_Manager;
+    std::unordered_map<int, ReqPtr> outstanding_requests; // 存储由本节点产生的、未完成的请求, SN only for write Transfer
+    void saveOutstandingRequest(ReqPtr &req, uint32_t txn_id);
+    
 };
 
 } // namespace xsCHI

@@ -18,3 +18,5 @@ Import('*')
 
 # Add the test source files
 GTest('testNodeID.test', 'testNodeID.cc')
+GTest('testTxnManager.test', 'testTxnManager.cc')
+GTest('testSAM.test', 'testSAM.cc')

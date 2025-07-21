@@ -1,3 +1,4 @@
+#pragma once
 #include <bitset>
 #include <cassert>
 #include <cstdint>
@@ -13,7 +14,7 @@ namespace xsCHI
     {
     public:
         SystemAddressMap() = default;
-        ~SystemAddressMap() = default;
+        // ~SystemAddressMap() = default;
         // 获取目标ID
         virtual uint32_t getTargetID(uint64_t addr) = 0;
     };
@@ -52,25 +53,24 @@ namespace xsCHI
             std::list<uint32_t> HNF_NodeIDs; // 存储目标ID列表
             uint32_t SelectBits; // 选择位数，表示HNF_NodeIDs的大小
         public:
-            SystemAddressMapRN(std::list<uint32_t> NodeList)
-                : HNF_NodeIDs(NodeList) {
-                    assert(NodeList.size()==1 ||
-                           NodeList.size()==2 ||
-                           NodeList.size()==4 ||
-                           NodeList.size()==8 ||
-                           NodeList.size()==16 ||
-                           NodeList.size()==32 ||
-                           NodeList.size()==64 ||
-                           NodeList.size()==128 ||
-                           NodeList.size()==256);
-                    SelectBits = floorLog2(NodeList.size());
+            SystemAddressMapRN() = default;
+            SystemAddressMapRN(std::list<uint32_t> &NodeList)
+                : HNF_NodeIDs(NodeList)  // 正确：使用传入的列表直接初始化
+            {
+                // 验证节点数量是2的幂
+                size_t size = HNF_NodeIDs.size();
+                assert(size > 0 && "NodeList must not be empty");
+                assert((size & (size - 1)) == 0 && "NodeList size must be power of 2");
 
-                };
-            ~SystemAddressMapRN() = default;
+                SelectBits = floorLog2(size);
+            }
+            // ~SystemAddressMapRN() = default;
             // 获取目标ID
             uint32_t getTargetID(uint64_t addr) override {
                 // HNF_NodeIDs.size() 必为2的幂
-                // SelectBits = log2(HNF_NodeIDs.size())
+                if (HNF_NodeIDs.size()==1){
+                    return *(HNF_NodeIDs.begin());
+                }
                 // 计算每一位select[i]，每位的起始bit和步长按规则推导
                 uint32_t index = 0;
                 for (uint32_t i = 0; i < SelectBits; ++i) {
@@ -97,6 +97,53 @@ namespace xsCHI
     };
     class SystemAddressMapHN : public SystemAddressMap
     {
+        private:
+            std::list<uint32_t> HNF_NodeIDs; // 存储目标ID列表
+            uint32_t SelectBits; // 选择位数，表示HNF_NodeIDs的大小
+        public:
+            SystemAddressMapHN(std::list<uint32_t> NodeList)
+                : HNF_NodeIDs(NodeList) {
+                    assert(NodeList.size()==1 ||
+                           NodeList.size()==2 ||
+                           NodeList.size()==4 ||
+                           NodeList.size()==8 ||
+                           NodeList.size()==16 ||
+                           NodeList.size()==32 ||
+                           NodeList.size()==64 ||
+                           NodeList.size()==128 ||
+                           NodeList.size()==256);
+                    SelectBits = floorLog2(NodeList.size());
 
+                };
+            // ~SystemAddressMapHN() = default;
+            // 获取目标ID
+            uint32_t getTargetID(uint64_t addr) override {
+                // HNF_NodeIDs.size() 必为2的幂
+                if (HNF_NodeIDs.size()==1){
+                    return *(HNF_NodeIDs.begin());
+                }
+                // 计算每一位select[i]，每位的起始bit和步长按规则推导
+                uint32_t index = 0;
+                for (uint32_t i = 0; i < SelectBits; ++i) {
+                    // 起始bit = 6 + i
+                    // 步长 = SelectBits
+                    uint32_t xor_bit = 0;
+                    bool first = true;
+                    for (uint32_t b = 6 + i; b <= 51; b += SelectBits) {
+                        uint32_t bit_val = (addr >> b) & 0x1;
+                        if (first) {
+                            xor_bit = bit_val;
+                            first = false;
+                        } else {
+                            xor_bit ^= bit_val;
+                        }
+                    }
+                    index |= (xor_bit << i);
+                }
+                // 获取index对应的NodeID
+                auto it = HNF_NodeIDs.begin();
+                std::advance(it, index);
+                return *it;
+            };
     };
 }}
