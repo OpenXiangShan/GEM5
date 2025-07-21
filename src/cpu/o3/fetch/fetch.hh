@@ -631,7 +631,7 @@ class Fetch
 
     /** BPredUnit. */
     branch_prediction::BPredUnit *branchPred;
-    
+
     branch_prediction::stream_pred::DecoupledStreamBPU *dbsp;
 
     branch_prediction::ftb_pred::DecoupledBPUWithFTB *dbpftb;
