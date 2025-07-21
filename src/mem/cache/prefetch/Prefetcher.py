@@ -1284,7 +1284,7 @@ class XSCompositePrefetcher(QueuedPrefetcher):
                         address_map_rounded_entries="262144",
                         address_map_rounded_cache_assoc=16,
                         #ablation study to disable/retune features
-                        use_bloom=True, # options.triangelbloom
+                        use_bloom=False, # options.triangelbloom
                         use_scs=True,  # not options.triangelnoscs
                         timed_scs=True,
                         use_pattern=True,  # not options.triangelnopattern

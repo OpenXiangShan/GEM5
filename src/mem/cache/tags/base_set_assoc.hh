@@ -174,9 +174,13 @@ class BaseSetAssoc : public BaseTags
     {
         // Get possible entries to be victimized
         const std::vector<ReplaceableEntry *> entries = indexingPolicy->getPossibleEntries(addr);
+        const std::vector<ReplaceableEntry *> slice = std::vector<ReplaceableEntry *>(
+                                                        entries.begin(),
+                                                        entries.begin()+getWayAllocationMax()
+                                                    );
 
         // Choose replacement victim from replacement candidates
-        CacheBlk *victim = static_cast<CacheBlk *>(replacementPolicy->getVictim(entries));
+        CacheBlk *victim = static_cast<CacheBlk *>(replacementPolicy->getVictim(slice));
 
         // There is only one eviction for this replacement
         evict_blks.push_back(victim);
@@ -218,7 +222,8 @@ class BaseSetAssoc : public BaseTags
     {
         CacheBlk *blk = static_cast<CacheBlk *>(findBlockBySetAndWay(set, indexingPolicy->assoc - 1 - way));
         if (!blk->isSet(CacheBlk::DirtyBit) && blk->isValid())
-            blk->invalidate();  // evictBlock(blk,writebacks);
+            blk->invalidate();
+        // evictBlock(blk,writebacks);
         else if (blk->isSet(CacheBlk::DirtyBit) && blk->isValid())
             badBlocks.push_back(blk);
     }

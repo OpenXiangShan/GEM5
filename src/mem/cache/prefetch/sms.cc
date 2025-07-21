@@ -143,7 +143,9 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
         }
     }
 
-    if ((pf_source == PrefetchSourceType::SStream || pf_source == PrefetchSourceType::StoreStream) || act_match_entry) {
+    if (pf_source == PrefetchSourceType::SStream ||
+        pf_source == PrefetchSourceType::StoreStream ||
+        act_match_entry) {
         auto it = act.begin();
         while (it != act.end()) {
             ACTEntry *it_entry = &(*it);
@@ -266,8 +268,8 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             }
         }
 
-        bool use_triangel = enableTriangel &&
-                           (pfi.isCacheMiss() || (pfi.isPfFirstHit() && pf_source == PrefetchSourceType::Triangel));
+        bool use_triangel = enableTriangel;
+        // && (pfi.isCacheMiss() || (pfi.isPfFirstHit() && pf_source == PrefetchSourceType::Triangel));
         if (use_triangel) {
             triangel->calculatePrefetch(pfi, addresses);
         }
