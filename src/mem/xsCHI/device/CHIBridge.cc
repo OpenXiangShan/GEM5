@@ -1,68 +1,113 @@
 #include <cassert>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 
-#include "Bridge.hh"
+#include "CHIBridge.hh"
+#include "base/trace.hh"
+#include "debug/CHIBridge.hh"
+#include "debug/Cache.hh"
 
 namespace gem5
 {
 namespace xsCHI
 {
-    Bridge::Bridge()
-        : storagePort(new Port<ReqPtr>(this)),
-          networkPort(new Port<FlitPtr>(this)),
-          _NodeID(0),
-          SAM(nullptr)
+    CHIBridge::CHIBridge(const Params &p)
+        : ClockedObject(p),
+          networkPort(p.networkPort),
+          _NodeID(0,0,0),
+          SAM(nullptr),
+          TXN_Manager(1024),// default max outstanding transactions
+          req_handle_event([this] { if (ReceiveReq(Req_tobesent.front())){Req_tobesent.pop();}}, name()),
+            ack_handle_event([this] { TrySendCompACK();}, name())
+
     {
         // 初始化存储端口和网络端口
-        storagePort->setReceiveCallback(
-            [this](ReqPtr req) { handleStoragePortReceive(req); });
+        // storagePort->setReceiveCallback(
+        //     [this](ReqPtr req) { handleStoragePortReceive(req); });
+        DPRINTF(Cache,"CHIBridge Init\n");
         networkPort->setReceiveCallback(
-            [this](FlitPtr flit) { handleNetworkPortReceive(flit); });
+            [this](FlitPtr &flit) { return this->handleNetworkPortReceive(flit); });
+        networkPort->setOwner(this);
     }
 
-    Bridge::~Bridge() = default;
+    // CHIBridge::CHIBridge(const Params &p,NodeID id,SystemAddressMap* sam)
+    //     : ClockedObject(p),
+    //       networkPort(p,this,this->name()+"_networkPort",4),
+    //       _NodeID(id),
+    //       SAM(sam),
+    //       TXN_Manager(1024),// default max outstanding transactions
+    //       req_handle_event([this] { if (ReceiveReq(Req_tobesent.front())){Req_tobesent.pop();}}, name()),
+    //         ack_handle_event([this] { TrySendCompACK();}, name())
 
-    bool Bridge::handleStoragePortReceive(ReqPtr &req)
+    // {
+    //     // 初始化存储端口和网络端口
+    //     // storagePort->setReceiveCallback(
+    //     //     [this](ReqPtr req) { handleStoragePortReceive(req); });
+    //     networkPort.setReceiveCallback(
+    //         [this](FlitPtr &flit) { return this->handleNetworkPortReceive(flit); });
+    // }
+
+    // CHIBridge::~CHIBridge() = default;
+
+    bool CHIBridge::ReceiveReq(ReqPtr &req)
     {
         // we assume only get requests or snoop responses from cache wrapper
-        assert(req->isRequest() || req->isSnoopResponse());
-        if (!LinkCanOut()) {
-            return false; // 如果链路不可用，直接返回
-        }
-        if (req->isRequest()) {
-            // 处理请求
+        assert(req->isRequest());
+        bool success = false;
+        int txn_id = TXN_Manager.getID();
+        DPRINTF(Cache,"RecvCHIReq, op:%s, addr: %#x, size:%d , try allocate Txn_id:%d\n",static_cast<int>(req->getOpcode()),req->getAddr(),req->getSize(),txn_id);
+        if (txn_id < 0) {
+            Req_tobesent.push(req); // 将请求放入待发送队列, try later //err:push req fault
+        }else{
             FlitPtr flit = createRequestFlit(req);
             if (!flit) {
-                return false; // 创建失败
-            }
-            int txn_id = TXN_Manager.getID();
-            if (txn_id < 0) {
-                flit.reset();
-                return false; // 没有可用的TxnID
+                assert(false); // 创建失败
             }
             flit->setTxnId(txn_id);
-            saveOutstandingRequest(req, txn_id);
-            // 发送到网络端口
-            networkPort->send(std::move(flit));
-        } else if (req->isSnoopResponse()) {
-            // this is a snoop response to a Snoop Req which we previously recv a snoop flit and created.
-            // Snoop part is not implemented yet.
-            assert(false && "Snoop response handling not implemented yet");
-        } else {
-            assert(false && "illegal request type");
+            // 尝试发送到网络端口
+            DPRINTF(CHIBridge,"Try send Flit op:%s, addr: %lx, size:%d\n",CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(flit->getOpcode()),flit->getAddr(),flit->getSize());
+            if (networkPort->send(flit)){
+                //send success, we need to save the request and txn_id
+                req->setTransactionId(txn_id);
+                saveOutstandingRequest(req, txn_id);
+                success = true;
+                DPRINTF(CHIBridge,"Send success, outstanding Req num: %d\n",outstanding_requests.size());
+            }else{
+                //send failed, we need to save the request and retry later
+                if (flit!=nullptr) {
+                    flit.reset();
+                }
+                TXN_Manager.releaseID(txn_id);
+                Req_tobesent.push(req); // 将请求放入待发送队列
+                DPRINTF(CHIBridge,"Send Failed, release TxnId: %d, add Req to queue\n",txn_id);
+            }
         }
+        // 如果有待发送的请求，调度处理事件
+        if (!Req_tobesent.empty() && !req_handle_event.scheduled()) {
+            DPRINTF(CHIBridge,"Req_tobesent's number : %d ,Schedule handle event to next Cycle\n",Req_tobesent.size());
+            schedule(req_handle_event, clockEdge(Cycles(1)));
+        }
+        return success; // 返回是否成功发送请求
 
-        return true;
+    }
+    void CHIBridge::ReceiveSnoopResponse(ReqPtr &req)
+    {
+        // 处理来自wrapper的Snoop响应
+        // 目前假设只处理Snoop响应
+        //todo
+        assert(req->isSnoopResponse());
+
     }
 
-    bool Bridge::handleNetworkPortReceive(FlitPtr &flit)
+    bool CHIBridge::handleNetworkPortReceive(FlitPtr &flit)
     {
+        DPRINTF(CHIBridge,"RecvCHIFlit, op:%s, srcId:%d,tgtId:%d, \n",static_cast<int>(flit->getOpcode()),flit->getSrcId(),flit->getTgtId());
         switch (flit->get_Flit_Channel_Type()) {
             case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ: {
                 // RN不应该收到 Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ 类型的Flit
-                // ...处理逻辑待补充...
-                assert(false && "Received a request Flit on network port, which should not happen in Bridge");
-                return true; // 处理成功
+                assert(false && "Received a request Flit on network port, which should not happen in CHIBridge");
+                return false;
             }
             case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_RSP: {
                 // 处理响应Flit
@@ -73,31 +118,26 @@ namespace xsCHI
                     case CHI_OP_TYPE::CHI_REQ_READSHARED:
                     case CHI_OP_TYPE::CHI_REQ_READCLEAN:{
                         // 处理读取请求的响应
-                        handleFlit_AllocatingRead(flit);
-                        break;
+                        return handleFlit_AllocatingRead(flit);
                     }
                     case CHI_OP_TYPE::CHI_REQ_WRITEBACKFULL:
                     case CHI_OP_TYPE::CHI_REQ_WRITECLEANFULL:{
 
-                        handleFlit_CopybackWrite(flit);
-                        break;
+                        return handleFlit_CopybackWrite(flit);
                     }
                     case CHI_OP_TYPE::CHI_REQ_EVICT:{
                         // 处理驱逐请求的响应
-                        handleFlit_EVICT(flit);
-                        break;
+                        return handleFlit_EVICT(flit);
                     }
                     case CHI_OP_TYPE::CHI_REQ_CLEANUNIQUE:{
                         // 处理清理唯一性请求的响应
-                        handleFlit_CLEANUNIQUE_MAKEUNIQUE(flit);
-                        break;
+                        return handleFlit_CLEANUNIQUE_MAKEUNIQUE(flit);
                     }
                     default: {
                         assert(false && "Not supported yet");
                         return false; // 处理失败
                     }
                 }
-                return true; // 处理成功
             }
             case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_SNP: {
                 // 处理Snoop Flit，转化为snoopREQ发给wrapper
@@ -114,15 +154,13 @@ namespace xsCHI
                     case CHI_OP_TYPE::CHI_REQ_READSHARED:
                     case CHI_OP_TYPE::CHI_REQ_READCLEAN:{
                         // 处理读取请求的响应
-                        handleFlit_AllocatingRead(flit);
-                        break;
+                        return handleFlit_AllocatingRead(flit);
                     }
                     default: {
                         assert(false && "Not supported yet");
                         return false; // 处理失败
                     }
                 }
-                return true; // 处理成功
             }
             default:
                 assert(false && "Unknown Flit type");
@@ -130,82 +168,24 @@ namespace xsCHI
         }
     }
 
-    uint32_t Bridge::GenTarID(FlitPtr &flit)
-    {
-        // 需要SAM和flit中的地址
-        if (SAM && flit) {
-            return SAM->getTargetID(flit->getAddr());
-        }
-        return 0;
-    }
 
-    uint32_t Bridge::GenSrcID(FlitPtr &flit)
-    {
-        // 通常返回本节点ID
-        return _NodeID.getNodeID();
-    }
 
-    uint32_t Bridge::GenTxnID(FlitPtr &flit)
-    {
-        // 生成TxnID，实际实现可根据flit类型区分
-        int id = TXN_Manager.getID();
-        return id >= 0 ? static_cast<uint32_t>(id) : 0xFFFFFFFF;
-    }
-
-    uint32_t Bridge::GenHomeNID(FlitPtr &flit)
-    {
-        // ...实际实现可根据flit内容决定...
-        return 0;
-    }
-
-    uint32_t Bridge::GenReturnNID(FlitPtr &flit)
-    {
-        // ...实际实现可根据flit内容决定...
-        return 0;
-    }
-
-    uint32_t Bridge::GenReturnTxnID(FlitPtr &flit)
-    {
-        // ...实际实现可根据flit内容决定...
-        return 0;
-    }
-
-    uint32_t Bridge::GenFwdNid(FlitPtr &flit)
-    {
-        // ...实际实现可根据flit内容决定...
-        return 0;
-    }
-
-    uint32_t Bridge::GenLpid(FlitPtr &flit)
-    {
-        // ...实际实现可根据flit内容决定...
-        return 0;
-    }
-
-    uint32_t Bridge::GenPgroupID(FlitPtr &flit)
-    {
-        // ...实际实现可根据flit内容决定...
-        return 0;
-    }
-
-    uint32_t Bridge::GenStashNid(FlitPtr &flit)
-    {
-        // ...实际实现可根据flit内容决定...
-        return 0;
-    }
-
-    FlitPtr Bridge::createRequestFlit(ReqPtr req)
+    FlitPtr CHIBridge::createRequestFlit(ReqPtr req)
     {
         // 创建请求Flit
-        FlitPtr flit = std::make_unique<Flit>();
+        FlitPtr flit = std::make_unique<Flit>(req->getOpcode(),req->getAddr(),req->getSize());
         if (!flit) {
             return nullptr; // 创建失败
         }
 
         // 设置Flit的相关字段
         flit->setOpcode(req->getOpcode());
-        flit->setTgtId(SAM->getTargetID(req->getAddr()));
+        uint64_t addr = req->getAddr();
+        uint32_t tgtID = SAM->getTargetID(addr);
+        flit->setTgtId(tgtID);
         flit->setSrcId(_NodeID.getNodeID());
+        DPRINTF(CHIBridge,"Create Flit, op:%s, addr: %#x, size:%d , tgtId:%d ,SrcId:%d\n",\
+            static_cast<int>(req->getOpcode()),req->getAddr(),req->getSize(),SAM->getTargetID(req->getAddr()),_NodeID.getNodeID());
         // flit->setTxnId(GenTxnID(flit));
 
 
@@ -215,24 +195,24 @@ namespace xsCHI
         return flit;
     }
 
-    FlitPtr Bridge::createResponseFlit()
+    FlitPtr CHIBridge::createResponseFlit()
     {
         // ...实际实现待补充...
         return nullptr;
     }
 
-    FlitPtr Bridge::createSnoopFlit()
+    FlitPtr CHIBridge::createSnoopFlit()
     {
         // ...实际实现待补充...
         return nullptr;
     }
 
-    FlitPtr Bridge::createDataFlit()
+    FlitPtr CHIBridge::createDataFlit()
     {
         // ...实际实现待补充...
         return nullptr;
     }
-    void Bridge::saveOutstandingRequest(ReqPtr &req, uint32_t txn_id)
+    void CHIBridge::saveOutstandingRequest(ReqPtr &req, uint32_t txn_id)
     {
         // 保存未完成的请求
         //make sure the txn_id is not used by previous request
@@ -240,7 +220,7 @@ namespace xsCHI
                 "TxnID already used by another request");
         outstanding_requests[txn_id] = req;
     }
-    void Bridge::handleFlit_AllocatingRead(FlitPtr &flit)
+    bool CHIBridge::handleFlit_AllocatingRead(FlitPtr &flit)
     {
         ReqPtr req = outstanding_requests[flit->getTxnId()];
         assert(req && "Request not found for the given TxnID");
@@ -252,9 +232,9 @@ namespace xsCHI
                 if (req->dataTransferFinished()) {
                     // we have received both data and response, so we can finish this request
                     FinishReq_Read(flit);
-                    sendCompACK(flit);
+                    sendCompACK(flit);//todo : what to do if send fail?
                 }
-                return;
+                return true;
             }
             case CHI_OP_TYPE::CHI_DAT_DATASEPRESP: {
 
@@ -264,7 +244,7 @@ namespace xsCHI
                         // we have received both data and response, so we can finish this request
                         FinishReq_Read(flit);
                 }
-                return;
+                return true;
             }
             case CHI_OP_TYPE::CHI_RSP_RESPSEPDATA: {
                 // 如果收到 CHI_RSP_RESPSEPDATA Flit，表示接收分离数据
@@ -274,16 +254,16 @@ namespace xsCHI
                     FinishReq_Read(flit);
                 }
                 // even if we dont have all data, we still send a CompACK Flit to storage
-                sendCompACK(flit);
-                return;
+                sendCompACK(flit);//todo : what to do if send fail?
+                return true;
             }
             default:
                 assert(false && "Unsupported read opcode");
-                return; // 不支持的读取操作码
+                return false; // 不支持的读取操作码
 
         }
     }
-    void Bridge::FinishReq_Read(FlitPtr &flit)
+    void CHIBridge::FinishReq_Read(FlitPtr &flit)
     {
         // 处理读取请求完成的逻辑
         ReqPtr req = outstanding_requests[flit->getTxnId()];
@@ -292,14 +272,14 @@ namespace xsCHI
         // todo : construct a response REQ to storage
         ReqPtr response_req = req->createReadResponse();
         assert(response_req && "Failed to create response request");
-        storagePort->send(response_req); // 发送响应请求到存储端口
+        recvReadResp_callback(response_req); // 发送响应请求到存储端口
 
         // 发送完成请求的逻辑
         TXN_Manager.releaseID(flit->getTxnId());
         outstanding_requests.erase(flit->getTxnId());
     }
 
-    void Bridge::sendCompACK(FlitPtr &flit)
+    void CHIBridge::sendCompACK(FlitPtr &flit)
     {
         // 发送COMPACK Flit到网络
         FlitPtr compack_flit = std::make_unique<Flit>();
@@ -323,25 +303,66 @@ namespace xsCHI
                 assert(false && "illegal opcode for COMPACK Flit");
                 break; // 不支持的操作码
         }
-        networkPort->send(std::move(compack_flit));
+        Ack_tobesent.push(std::move(compack_flit)); // 将COMPACK Flit放入待发送队列
+    }
+    void CHIBridge::TrySendCompACK()
+    {
+        assert(!Ack_tobesent.empty() && "Ack_tobesent should not be empty when TrySendCompACK is called");
+        if (networkPort->send(Ack_tobesent.front())){
+            assert(Ack_tobesent.front()==nullptr);
+            Ack_tobesent.pop(); // 发送成功，移除已发送的COMPACK Flit
+        }else{
+            assert(Ack_tobesent.front()!=nullptr);
+        }
+        // 尝试发送COMPACK Flit
+        if (!Ack_tobesent.empty() && !ack_handle_event.scheduled()) {
+            schedule(ack_handle_event, clockEdge(Cycles(1)));
+        }
     }
 
-    void Bridge::handleFlit_CopybackWrite(FlitPtr &flit)
+    bool CHIBridge::handleFlit_CopybackWrite(FlitPtr &flit)
     {
+        ReqPtr req = outstanding_requests[flit->getTxnId()];
+        assert(req && "Request not found for the given TxnID");
         // 处理分配写入的Flit
         switch (flit->getOpcode()) {
             case CHI_OP_TYPE::CHI_RSP_COMPDBIDRESP:{
                 //once we recv a CompDBIDResp Flit, we should start data flit sending.
                 //todo : construct data Flits and send them out, after that we can finish the request
-                break;
+                uint32_t data_id = req->generateWriteDataID();
+                FlitPtr data_flit = std::make_unique<Flit>();
+                assert(data_flit && "Failed to create data Flit");
+                data_flit->setOpcode(CHI_OP_TYPE::CHI_DAT_COPYBACKWRDATA);
+                data_flit->setDataId(data_id);
+                data_flit->setCcid(0); // assuming CCID is always 0
+                data_flit->setData(req);
+                data_flit->setSize(req->getSize());
+                data_flit->setTgtId(flit->getSrcId());
+                data_flit->setSrcId(_NodeID.getNodeID());
+                data_flit->setTxnId(flit->getDbid());
+
+                if (networkPort->send(data_flit)){
+                    //send success, we can save the request and txn_id
+                    req->finishTransferdata(data_id);
+                }else{
+                    //send failed, we cannot delete flit from buffer
+                    return false;
+                }
+                if (req->dataTransferFinished()){
+                    // 发送完成请求的逻辑
+                    TXN_Manager.releaseID(flit->getTxnId());
+                    outstanding_requests.erase(flit->getTxnId());
+                }
+                return true;
             }
             default:
                 assert(false && "Unsupported write opcode");
-                break; // 不支持的读取操作码
+                return false;
 
         }
+        return false;
     }
-    void Bridge::handleFlit_EVICT(FlitPtr &flit)
+    bool CHIBridge::handleFlit_EVICT(FlitPtr &flit)
     {
         // 处理驱逐请求的Flit
         switch (flit->getOpcode()) {
@@ -350,14 +371,14 @@ namespace xsCHI
                 // 发送完成请求的逻辑
                 TXN_Manager.releaseID(flit->getTxnId());
                 outstanding_requests.erase(flit->getTxnId());
-                break;
+                return true;
             }
             default:
                 assert(false && "Unsupported EVICT opcode");
-                break; // 不支持的驱逐操作码
+                return false;
         }
     }
-    void Bridge::handleFlit_CLEANUNIQUE_MAKEUNIQUE(FlitPtr &flit)
+    bool CHIBridge::handleFlit_CLEANUNIQUE_MAKEUNIQUE(FlitPtr &flit)
     {
         // 处理清理唯一性请求的Flit
         switch (flit->getOpcode()) {
@@ -371,12 +392,16 @@ namespace xsCHI
                 TXN_Manager.releaseID(flit->getTxnId());
                 outstanding_requests.erase(flit->getTxnId());
 
-                break;
+                return true;
             }
             default:
                 assert(false && "Unsupported CLEANUNIQUE_MAKEUNIQUE opcode");
-                break; // 不支持的清理唯一性操作码
+                return false;
         }
+    }
+    void
+    CHIBridge::init(){
+        return;
     }
 
 }

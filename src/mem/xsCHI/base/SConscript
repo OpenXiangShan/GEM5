@@ -1,0 +1,11 @@
+# -*- mode:python -*-
+
+Import('*')
+
+SimObject('CHIPort.py', sim_objects=['CHIPort'])
+
+Source('flit.cc')
+Source('CHIPort.cc')
+Source('request.cc')
+
+DebugFlag('CHIPort')

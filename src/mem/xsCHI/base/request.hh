@@ -4,17 +4,19 @@
 #include <memory>
 #include <vector>
 
-#include "FlitOpType.hh"
-#include "mem/request.hh"
-#include "params.hh"
+#include "mem/packet.hh"
+#include "mem/xsCHI/base/FlitOpType.hh"
 
-namespace gem5
-{   namespace xsCHI
-    {
+// #include "mem/request.hh"
+#include "mem/xsCHI/base/params.hh"
+
+namespace gem5 {
+    namespace xsCHI {
+    class Flit;
+    using FlitPtr = std::unique_ptr<Flit>;
     class Request;
     using ReqPtr = std::shared_ptr<Request>;
-    }}
-#include "flit.hh"
+} } // namespace gem5::xsCHI
 
 namespace gem5
 {
@@ -84,7 +86,7 @@ protected:
     uint16_t ccid;                    // CCID: 关键块标识符
     uint16_t data_id;                 // DataID: 数据标识符
     uint32_t be;                      // BE: 字节使能
-    uint64_t* data;        // Data: 数据载荷
+    uint8_t* data;        // Data: 数据载荷
     uint32_t data_check;              // DataCheck: 数据校验
     bool poison;                      // Poison: 数据损坏标记
     std::vector<uint8_t> tag;         // Tag: 内存标签
@@ -93,7 +95,7 @@ protected:
 
     // state tracking for dataTransfer
 
-    std::bitset<DATAFLITS_PER_TRANSACTION> dataFlitsReceived; // 已接收的数据Flit位图
+    std::bitset<DATAFLITS_PER_TRANSACTION> dataFlitsTransferred; // 已接收的数据Flit位图
 
 
 
@@ -102,12 +104,17 @@ protected:
     // end of state tracking for dataTransfer
 public:
     bool dataTransferFinished() {
-        return dataFlitsReceived.all();
+        return dataFlitsTransferred.all();
     } // 数据传输是否完成
+    bool dataTransferStarted() {
+        return dataFlitsTransferred.any();
+    }
     void setRecvSepData() { IsRecvSepData = true; }
     bool isRecvSepData() { return IsRecvSepData; } // 是否接收了分离数据
 
     void gatherDataFlit(FlitPtr &flit);
+    uint32_t generateWriteDataID();
+    void finishTransferdata(int data_id);
     // getter/setter
     uint32_t getQosPriority()  { return qos_priority; }
     void setQosPriority(uint32_t v) { qos_priority = v; }
@@ -259,8 +266,73 @@ public:
     uint32_t getBe()  { return be; }
     void setBe(uint32_t v) { be = v; }
 
-    uint64_t* getData()  { return data; }
-    void setData(uint64_t* v) { data = v; }
+    bool DataValid()
+    {
+        return (data != nullptr);
+    }
+    void
+    getData(uint8_t* p)
+    {
+        // assert(isData() && "Flit must be a data flit to set data");
+        assert(getSize() > 0 && "Flit data size must be greater than 0");
+        assert(p != nullptr && "Destination pointer for data must not be null");
+        assert(data != nullptr && "Flit data must not be null");
+        std::memcpy(p, data, getSize());
+    }
+
+    void
+    setData(const uint8_t *p)
+    {
+        // assert(isData() && "Flit must be a data flit to set data");
+        assert(p != nullptr && "Source pointer for data must not be null");
+        assert(getSize() > 0 && "Flit data size must be greater than 0");
+        if (!DataValid()){
+            // allocate memory for data
+            data = new uint8_t[getSize()];
+        }
+        // we should never be copying data onto itself, which means we
+        // must idenfity packets with static data, as they carry the
+        // same pointer from source to destination and back
+        assert(p != data);
+
+        if (p != data) {
+            // for packet with allocated dynamic data, we copy data from
+            // one to the other, e.g. a forwarded response to a response
+            std::memcpy(data, p, getSize());
+        }
+    }
+    void
+    setData(PacketPtr pkt)
+    {
+        // assert(isData() && "Flit must be a data flit to set data");
+        assert(getSize() > 0 && getSize()==pkt->getSize() && "Flit data size must be greater than 0");
+        if (!DataValid()){
+            // allocate memory for data
+            data = new uint8_t[getSize()];
+        }
+        pkt->getData(data);
+    }
+
+    void
+    setData(ReqPtr Req)
+    {
+        // assert(isData() && "Flit must be a data flit to set data");
+        assert(getSize() > 0 && getSize()==Req->getSize() && "Flit data size must be greater than 0");
+        if (!DataValid()){
+            // allocate memory for data
+            data = new uint8_t[getSize()];
+        }
+        Req->getData(data);
+    }
+
+    //use for deconstruct
+    void deleteData()
+    {
+        if (data != nullptr) {
+            delete [] data;
+            data = nullptr;
+        }
+    }
 
     uint32_t getDataCheck()  { return data_check; }
     void setDataCheck(uint32_t v) { data_check = v; }
@@ -278,8 +350,11 @@ public:
     void setRsvdc(uint32_t v) { rsvdc = v; }
 
     // 构造函数
-    Request();
+    Request() = default;
     Request(CHI_OP_TYPE op, uint64_t addr, uint32_t size);
+    ~Request(){
+        deleteData(); // 确保在析构时释放数据内存
+    }
 
     ReqPtr createReadResponse();
 
@@ -345,6 +420,6 @@ public:
                 opcode == CHI_OP_TYPE::CHI_RSP_SNPRESPFWDED);
     }
 };
-using ReqPtr = std::shared_ptr<Request>;
+
 } // namespace xsCHI
 } // namespace gem5

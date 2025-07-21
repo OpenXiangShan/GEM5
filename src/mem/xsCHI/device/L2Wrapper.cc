@@ -1,19 +1,50 @@
-#include "L2Wrapper.hh"
+#include "mem/xsCHI/device/L2Wrapper.hh"
+
+#include <sys/types.h>
+
+#include <algorithm>
+#include <cassert>
+#include <cstdint>
+#include <memory>
+
+#include "base/compiler.hh"
+#include "base/logging.hh"
+#include "base/trace.hh"
+#include "base/types.hh"
+#include "debug/CHIL2Wrapper.hh"
+#include "mem/packet.hh"
+#include "mem/xsCHI/base/FlitOpType.hh"
+#include "params/Bridge.hh"
+#include "params/ClockedObject.hh"
+#include "params/SimObject.hh"
+#include "sim/cur_tick.hh"
 
 namespace gem5
 {
 namespace xsCHI
 {
+    L2Wrapper::L2Wrapper(const Params &p):
+    ClockedObject(p),
+    cpuSidePort(p.name + ".cpu_side_port", this, "CpuSidePort"),
+    bridge(p.RNBridge)
+    {
+        bridge->set_recvReadResp_callback([this](ReqPtr& req) { this->recvReadResp(req); });
+        DPRINTF(CHIL2Wrapper,"L2Wrapper Construct,without id\n");
+
+    }
+    // L2Wrapper::L2Wrapper(const Params &p,NodeID id,SystemAddressMap* sam):
+    // ClockedObject(p),
+    // cpuSidePort(p.name + ".cpu_side_port", this, "CpuSidePort"),
+    // bridge(p,id,sam)
+    // {
+    //     bridge->set_recvReadResp_callback([this](ReqPtr& req) { this->recvReadResp(req); });
+    //     DPRINTF(CHIL2Wrapper,"L2Wrapper Construct,id:%d",id.getNodeID());
+
+    // }
     bool
     L2Wrapper::CpuSidePort::recvTimingSnoopResp(PacketPtr pkt)
     {
-        // Snoops shouldn't happen when bypassing caches
-        assert(!cache->system->bypassCaches());
-
-        assert(pkt->isResponse());
-
-        // Express snoop responses from requestor to responder, e.g., from L1 to L2
-        cache->recvTimingSnoopResp(pkt);
+        //todo:handle snoop situation！
         return true;
     }
 
@@ -21,32 +52,7 @@ namespace xsCHI
     bool
     L2Wrapper::CpuSidePort::tryTiming(PacketPtr pkt)
     {
-        if (cache->system->bypassCaches() || pkt->isExpressSnoop()
-            || pkt->isStorePFTrain()) {
-            // always let express snoop packets through even if blocked
-            return true;
-        } else if (blocked || mustSendRetry) {
-            // either already committed to send a retry, or blocked
-            mustSendRetry = true;
-            return false;
-        }
-        if (!cache->tryAccessTag(pkt)) {
-            DPRINTF(TagReadFail, "tryAccessTag fails addr: %lx\n", pkt->getAddr());
-            return false;
-        }
-        int sliceidx = cache->getSliceIdx(pkt->getAddr());
-        if (sliceidx >= 0 && cache->cacheLevel != 1) {
-            if (cache->checkSLiceBusy(pkt, sliceidx)) {
-                //no more buffer
-                if (sendRetryEvent.scheduled()) {
-                    owner.reschedule(sendRetryEvent, cache->clockEdge());
-                } else {
-                    owner.schedule(sendRetryEvent, cache->clockEdge());
-                }
-                return false;
-            }
-        }
-        mustSendRetry = false;
+        //no need to do it
         return true;
     }
 
@@ -54,64 +60,168 @@ namespace xsCHI
     L2Wrapper::CpuSidePort::recvTimingReq(PacketPtr pkt)
     {
         assert(pkt->isRequest());
+        DPRINTF(CHIL2Wrapper,"RecvReq, cmd:%s, addr: %lx\n",pkt->cmdString(),pkt->getAddr());
+        ReqPtr req = wrapper->CreateRequest(pkt);
 
-        if (cache->system->bypassCaches()) {
-            // Just forward the packet if caches are disabled.
-            // @todo This should really enqueue the packet rather
-            [[maybe_unused]] bool success = cache->memSidePort.sendTimingReq(pkt);
-            assert(success);
-            return true;
-        } else if (tryTiming(pkt)) {
-            cache->recvTimingReq(pkt);
-            return true;
+        wrapper->bridge->ReceiveReq(req);
+        assert(wrapper->outstanding_pkts.count(pkt->getAddr())==0);
+        wrapper->outstanding_pkts[pkt->getAddr()] = pkt;
+        //always true
+        return true;
+    }
+
+
+
+    // AddrRangeList
+    // L2Wrapper::CpuSidePort::getAddrRanges() const
+    // {
+    //     return cache->getAddrRanges();
+    // }
+
+
+    L2Wrapper::
+    CpuSidePort::CpuSidePort(const std::string &_name, L2Wrapper *wrapper,
+                            const std::string &_label)
+        : CacheResponsePort(_name, wrapper, _label),wrapper(wrapper)
+    {
+    }
+
+    L2Wrapper::CacheResponsePort::CacheResponsePort(const std::string &_name,
+                                            L2Wrapper *wrapper,
+                                            const std::string &_label)
+        : QueuedResponsePort(_name, wrapper, queue),
+        queue(*wrapper, *this, true, _label),
+        blocked(false), mustSendRetry(false),
+        sendRetryEvent([this]{ processSendRetry(); }, _name)
+    {
+    }
+
+    void
+    L2Wrapper::CacheResponsePort::setBlocked()
+    {
+        assert(!blocked);
+        // DPRINTF(CHIL2Wrapper, "Port is blocking new requests\n");
+        blocked = true;
+        // if we already scheduled a retry in this cycle, but it has not yet
+        // happened, cancel it
+        if (sendRetryEvent.scheduled()) {
+            owner.deschedule(sendRetryEvent);
+            // DPRINTF(CHIL2Wrapper, "Port descheduled retry\n");
+            mustSendRetry = true;
         }
-        return false;
+    }
+
+    void
+    L2Wrapper::CacheResponsePort::clearBlocked()
+    {
+        assert(blocked);
+        // DPRINTF(CHIL2Wrapper, "Port is accepting new requests\n");
+        blocked = false;
+        if (mustSendRetry) {
+            // @TODO: need to find a better time (next cycle?)
+            owner.schedule(sendRetryEvent, curTick() + 1);
+        }
+    }
+
+    void
+    L2Wrapper::CacheResponsePort::processSendRetry()
+    {
+        DPRINTF(CHIL2Wrapper, "Port is sending retry\n");
+
+        // reset the flag and call retry
+        mustSendRetry = false;
+        sendRetryReq();
     }
 
     Tick
     L2Wrapper::CpuSidePort::recvAtomic(PacketPtr pkt)
     {
-        if (cache->system->bypassCaches()) {
-            // Forward the request if the system is in cache bypass mode.
-            return cache->memSidePort.sendAtomic(pkt);
-        } else {
-            return cache->recvAtomic(pkt);
-        }
+        panic("not supported");
+        return curTick();
     }
 
     void
     L2Wrapper::CpuSidePort::recvFunctional(PacketPtr pkt)
     {
-        if (cache->system->bypassCaches()) {
-            // The cache should be flushed if we are in cache bypass mode,
-            // so we don't need to check if we need to update anything.
-            cache->memSidePort.sendFunctional(pkt);
-            return;
-        }
-
-        // functional request
-        cache->functionalAccess(pkt, true);
+        panic("not supported");
     }
 
     AddrRangeList
     L2Wrapper::CpuSidePort::getAddrRanges() const
     {
-        return cache->getAddrRanges();
+        std::list<AddrRange> range(0);
+        panic("not supported");
+        return range;
     }
 
-
-    L2Wrapper::
-    CpuSidePort::CpuSidePort(const std::string &_name, L2Wrapper *_cache,
-                            const std::string &_label)
-        : CacheResponsePort(_name, _cache, _label), cache(_cache)
-    {
-    }
     ReqPtr
     L2Wrapper::CreateRequest(PacketPtr pkt)
     {
-        CHI_OP_TYPE cmd;
+        //phrase pkt
+        Addr addr = pkt->getAddr();
+        uint32_t size = pkt->getSize();
+        CHI_OP_TYPE op = CHI_OP_TYPE::CHI_REQ_OP_START;
+        bool pktHasData = false;
+        if (pkt->cmd==MemCmd(MemCmd::ReadExReq)){
+            op = CHI_OP_TYPE::CHI_REQ_READUNIQUE;
+        }else if (pkt->cmd==MemCmd(MemCmd::ReadSharedReq)){
+            op = CHI_OP_TYPE::CHI_REQ_READSHARED;
+        }else if (pkt->cmd==MemCmd(MemCmd::ReadCleanReq)) {
+            op = CHI_OP_TYPE::CHI_REQ_READCLEAN;
+        }else if (pkt->cmd==MemCmd(MemCmd::CleanEvict)) {
+            op = CHI_OP_TYPE::CHI_REQ_EVICT;
+        }else if (pkt->cmd==MemCmd(MemCmd::WritebackDirty)) {
+            op = CHI_OP_TYPE::CHI_REQ_WRITEBACKFULL;
+            pktHasData = true;
+        }else if (pkt->cmd==MemCmd(MemCmd::WritebackClean)){
+            op = CHI_OP_TYPE::CHI_REQ_WRITECLEANFULL;
+            pktHasData = true;
+        }else if (pkt->cmd==MemCmd(MemCmd::HardPFReq)) {
+            op = CHI_OP_TYPE::CHI_REQ_READUNIQUE;
+        }else if (pkt->cmd==MemCmd(MemCmd::UpgradeReq)){
+            op = CHI_OP_TYPE::CHI_REQ_CLEANUNIQUE;
+        }else {
+            assert(false && "unsupported Req!");
+        }
+        DPRINTF(CHIL2Wrapper,"Create Req, op:%s, addr: %lx, size:%d\n",CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(op),addr,size);
+        ReqPtr req = std::make_shared<Request>(op,addr,size);
+        if (pktHasData) {
+            req->setData(pkt);
+        }
+        return req;
+    }
 
+    void
+    L2Wrapper::recvReadResp(ReqPtr &req){
+        DPRINTF(CHIL2Wrapper,"Recv Read Resp, op:%s, addr: %lx, size:%d\n",CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(req->getOpcode()),req->getAddr(),req->getSize());
+        assert(outstanding_pkts.count(req->getAddr())>0);
+        PacketPtr pkt = outstanding_pkts[req->getAddr()];
+        assert(pkt->needsResponse());
+        // todo: properly set delay!
+        assert(pkt->headerDelay == 0);
+        assert(pkt->payloadDelay == 0);
+        pkt->makeTimingResponse();
+        uint8_t *tmp = new uint8_t[req->getSize()];
+        assert(req->getSize()==pkt->getSize());
+        req->getData(tmp);
+        pkt->setData(tmp);
+        delete[] tmp; // 释放临时内存
+        cpuSidePort.schedTimingResp(pkt, curTick());
 
+        outstanding_pkts.erase(req->getAddr());
+
+    }
+    gem5::Port &
+    L2Wrapper::getPort(const std::string &if_name, PortID idx)
+    {
+        return cpuSidePort;
+    }
+    CHIPort*
+    L2Wrapper::getCHIPort(){
+        return bridge->getNetworkPort();
+    }
+    CHIBridge* L2Wrapper::getBridge(){
+        return bridge;
     }
 }
 }
