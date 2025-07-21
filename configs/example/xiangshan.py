@@ -214,6 +214,9 @@ def build_test_system(np, args):
         CacheConfig.config_cache(args, test_sys)
 
         MemConfig.config_mem(args, test_sys)
+        if args.CHI:
+            test_sys.CHIsys.dramsim3 = test_sys.mem_ctrls[0]
+            test_sys.CHIsys.dramsim3.networkPort = CHIPort(recv_buffer_size=4)
 
     if args.mmc_img:
         for mmc, cpu in zip(test_sys.mmcs, test_sys.cpu):

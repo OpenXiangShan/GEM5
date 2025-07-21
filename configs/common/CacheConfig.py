@@ -160,20 +160,30 @@ def config_cache(options, system):
                 system.l2_caches[i].writeback_clean = False
 
         if options.l3cache:
-            system.l3 = L3Cache(clk_domain=system.cpu_clk_domain,
-                                        **_get_cache_opts(NULL, 'l3', options))
-            system.tol3bus = L2ToL3Bus(clk_domain=system.cpu_clk_domain)
-            system.tol3bus.snoop_filter.max_capacity = "32MB"
-            system.l3.cpu_side = system.tol3bus.mem_side_ports
-            system.l3.mem_side = system.membus.cpu_side_ports
+            if options.CHI:
+                # opt_dramsim3_ini = getattr(options, 'dramsim3_ini', None)
+                root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                system.CHIsys = L2ToDramSys(configFile=os.path.join(root_dir, 'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini'))
+                system.CHIsys.L2Wrapper = L2Wrapper(RNBridge=CHIBridge(networkPort=CHIPort(recv_buffer_size=4)))
+                system.CHIsys.L3 = FakeL3(L2side=CHIPort(recv_buffer_size=4),Dramside=CHIPort(recv_buffer_size=4))
+            else:
+                system.l3 = L3Cache(clk_domain=system.cpu_clk_domain,
+                                            **_get_cache_opts(NULL, 'l3', options))
+                system.tol3bus = L2ToL3Bus(clk_domain=system.cpu_clk_domain)
+                system.tol3bus.snoop_filter.max_capacity = "32MB"
+                system.l3.cpu_side = system.tol3bus.mem_side_ports
+                system.l3.mem_side = system.membus.cpu_side_ports
 
-            system.l3.do_fast_writeline = not options.kmh_align
+                system.l3.do_fast_writeline = not options.kmh_align
 
         for i in range(options.num_cpus):
             if options.l3cache:
-                # l2 -> tol3bus -> l3
-                system.l2_caches[i].mem_side = system.tol3bus.cpu_side_ports
-                # l3 -> membus
+                if options.CHI:
+                    system.l2_caches[i].mem_side = system.CHIsys.cpu_side_port
+                else:
+                    # l2 -> tol3bus -> l3
+                    system.l2_caches[i].mem_side = system.tol3bus.cpu_side_ports
+                    # l3 -> membus
             else:
                 system.l2_caches[i].mem_side = system.membus.cpu_side_ports
 
@@ -198,7 +208,7 @@ def config_cache(options, system):
                     system.l2_caches[i].prefetcher != NULL
                 dcache.prefetcher.add_pf_downstream(system.l2_caches[i].prefetcher)
 
-            if (not options.no_pf) and options.l3cache and options.l2_to_l3_pf_hint:
+            if (not options.no_pf) and options.l3cache and options.l2_to_l3_pf_hint and(not options.CHI):
                 assert system.l2_caches[i].prefetcher != NULL and \
                     system.l3.prefetcher != NULL
                 system.l2_caches[i].prefetcher.add_pf_downstream(system.l3.prefetcher)

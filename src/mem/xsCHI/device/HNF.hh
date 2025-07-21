@@ -1,0 +1,56 @@
+#pragma once
+#include <cassert>
+#include <cstdint>
+#include <map>
+#include <unordered_map>
+
+#include "../base/CHIPort.hh"
+#include "../base/Network/NodeID.hh"
+#include "../base/Network/SystemAddressMap.hh"
+#include "../base/Network/TxnManager.hh"
+#include "../base/flit.hh"
+#include "../base/module.hh"
+#include "../base/request.hh"
+#include "params/FakeL3.hh"
+#include "sim/clocked_object.hh"
+#include "sim/eventq.hh"
+
+namespace gem5
+{
+namespace xsCHI
+{
+    class FakeL3 : public ClockedObject
+    {
+    private:
+        CHIPort* L2side;
+        CHIPort* Dramside;
+        NodeID _NodeID;
+        SystemAddressMap *SAM; // 系统地址映射，用于生成目标ID
+        bool handleL2sideRecv(FlitPtr &flit);
+        bool handleDramsideRecv(FlitPtr &flit);
+
+        TxnIDManager TXN_Manager;
+        std::unordered_map<int, ReqPtr> outstanding_requests; // 存储由本节点产生的、未完成的请求, SN only for write Transfer
+        void saveOutstandingRequest(ReqPtr &req, uint32_t txn_id);
+        bool handleFlit_AllocatingRead(FlitPtr &flit);
+        bool handleFlit_CopybackWrite(FlitPtr &flit);
+        bool handleFlit_EVICT(FlitPtr &flit);
+        bool handleFlit_CLEANUNIQUE_MAKEUNIQUE(FlitPtr &flit);
+        const uint32_t L2Id = 0;
+        const uint32_t dramId = 1;
+    public:
+        typedef FakeL3Params Params;
+        FakeL3(const Params &p);
+        // FakeL3(const Params &p,NodeID id,SystemAddressMap *sam);
+        FakeL3();
+        // ~FakeL3() =default;
+        CHIPort* getCHIPort_CPUSIDE();
+        CHIPort* getCHIPort_MEMSIDE();
+        void init() override;
+        void setNodeID(NodeID id){_NodeID = id;}
+        void setSAM(SystemAddressMap* sam){SAM = sam;}
+        // std::string name() const override{ return "FakeL3"; }
+
+    };
+}
+}

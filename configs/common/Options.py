@@ -143,6 +143,7 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--no-l3cache", action="store_true")
     parser.add_argument("--l1-to-l2-pf-hint", action="store_true")
     parser.add_argument("--l2-to-l3-pf-hint", action="store_true")
+    parser.add_argument("--CHI", action="store_true")
 
     parser.add_argument("--num-dirs", type=int, default=1)
     parser.add_argument("--num-l2caches", type=int, default=1)
