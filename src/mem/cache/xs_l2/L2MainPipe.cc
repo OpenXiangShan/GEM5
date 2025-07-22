@@ -63,22 +63,24 @@ L2MainPipe::isResourceAvailable(PipelineResources resource) const
     // Data is muti cycle path 2,
     // so if last cycle needs to read or write data,
     // this cycle is not available to read or write data
+    bool avail = true;
     if (resource & PipelineResources::DataRead) {
-        return (scoreboardResources[1] &
-               (PipelineResources::DataRead |
-                PipelineResources::DataWrite)) == 0;
+        avail &= (scoreboardResources[1] &
+                 (PipelineResources::DataRead |
+                  PipelineResources::DataWrite)) == 0;
     }
     if (resource & PipelineResources::DataWrite) {
-        return (scoreboardResources[1] &
-               (PipelineResources::DataRead |
-                PipelineResources::DataWrite)) == 0;
+        avail &= (scoreboardResources[1] &
+                 (PipelineResources::DataRead |
+                  PipelineResources::DataWrite)) == 0;
     }
+    // Dir Write happens at s3, TODO: make this as a parameter
     // Dir is SRAM, read and write should not be available at the same time
     if (resource & PipelineResources::DirRead) {
-        return (scoreboardResources[2] &
-               (PipelineResources::DirWrite)) == 0;
+        avail &= (scoreboardResources[2] &
+                 (PipelineResources::DirWrite)) == 0;
     }
-    return true;
+    return avail;
 }
 
 bool
