@@ -161,6 +161,11 @@ ICacheHandler::finishTranslation(const Fault &fault, const RequestPtr &mem_req, 
         return;
     }
 
+    // Validate if this request belongs to current cache request (like old validateTranslationRequest)
+    if (!validateTranslationRequest(tid, mem_req, ftqIndex)) {
+        return;
+    }
+
     // Handle translation result
     if (fault == NoFault) {
         // Update status from TlbWait to CacheWaitResponse
@@ -485,6 +490,29 @@ ICacheHandler::updateRequestStatus(ThreadID tid, unsigned ftqIndex, const Reques
         }
     }
     DPRINTF(Fetch, "[tid:%i][ftq:%d] updateRequestStatus: request not found\n", tid, ftqIndex);
+}
+
+bool
+ICacheHandler::validateTranslationRequest(ThreadID tid, const RequestPtr &mem_req, unsigned ftqIndex)
+{
+    // Check if this request belongs to current cache request
+    bool isExpectedReq = false;
+    CacheRequest& cacheReq = getCacheReq(tid, ftqIndex);
+    for (size_t i = 0; i < cacheReq.requests.size(); i++) {
+        if (mem_req == cacheReq.requests[i]) {
+            isExpectedReq = true;
+            break;
+        }
+    }
+
+    // Check if request should be processed
+    if (!isExpectedReq || !hasPendingCacheRequests(tid)) {
+        DPRINTF(Fetch, "[tid:%i] Ignoring translation completed after squash or unexpected request\n", tid);
+        DPRINTF(Fetch, "[tid:%i] Ignoring req addr=%#lx\n", tid, mem_req->getVaddr());
+        return false;
+    }
+
+    return true;
 }
 
 void
