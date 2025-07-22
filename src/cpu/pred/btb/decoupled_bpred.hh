@@ -112,8 +112,11 @@ class DecoupledBPUWithBTB : public BPredUnit
     FullBTBPrediction secondPrediction;  // Second fetch block prediction from unified uBTB
     bool hasSecondPrediction{false};     // Whether we have a valid second FB prediction
 
-    // TAGE validation state for conditional second predictions
+    // TAGE validation state for conditional second predictions (legacy)
     std::shared_ptr<void> tageValidationMeta{nullptr};
+
+    // NEW: Full predictor validation state for enhanced 2-taken
+    std::vector<std::shared_ptr<void>> secondPredValidationMetas;
 
     // Hit index tracking for 2-taken training
     int ubtbHitIndex{-1};  // Store hit index from getTwoTakenPrediction
@@ -209,9 +212,13 @@ class DecoupledBPUWithBTB : public BPredUnit
     void trainUbtbFor2Taken();
     void validateSecondFBPrediction();
 
-    // TAGE validation methods for conditional second predictions
+    // TAGE validation methods for conditional second predictions (legacy)
     bool validateConditionalSecondPrediction();
     void discardConditionalSecondPrediction();
+
+    // NEW: Full predictor validation methods for enhanced 2-taken
+    bool validateUbtbSecondPrediction();
+    void discardUbtbSecondPrediction();
 
     bool validateFSQEnqueue();
 
@@ -411,10 +418,15 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Formula predTwoTakenRatio;        ///< Ratio of 2-taken predictions to total predictions
         statistics::Formula commitSecondPredRatio;      ///< Ratio of committed second predictions to total FSQ entries
 
-        // Conditional second prediction validation statistics
+        // Conditional second prediction validation statistics (legacy)
         statistics::Scalar condSecondPredValidationAttempts; ///< Number of cond second pred validation attempts
         statistics::Scalar condSecondPredValidationPassed;   ///< Number of cond second pred validations passed
         statistics::Scalar condSecondPredValidationFailed;   ///< Number of cond second pred validations failed
+
+        // NEW: Full predictor validation statistics for enhanced 2-taken
+        statistics::Scalar secondPredValidationAttempts;     ///< Number of full validation attempts
+        statistics::Scalar secondPredValidationPassed;       ///< Number of full validations passed
+        statistics::Scalar secondPredValidationFailed;       ///< Number of full validations failed
 
         DBPBTBStats(statistics::Group* parent, unsigned numStages, unsigned fsqSize, unsigned maxInstsNum);
     } dbpBtbStats;

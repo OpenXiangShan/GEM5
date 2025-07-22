@@ -432,14 +432,12 @@ class UBTB : public TimedBaseBTBPredictor
         statistics::Scalar twoTakenFailFirstNotTaken;    ///< Rejected due to first branch not taken
         statistics::Scalar twoTakenFailFirstIndirect;    ///< Rejected due to first branch being indirect
         statistics::Scalar twoTakenFailSecondIndirect;   ///< Rejected due to second branch being indirect
-        statistics::Scalar twoTakenFailSecondCond;       ///< Rejected due to second branch being conditional
-        statistics::Scalar twoTakenFailCondNotTaken;     ///< Rejected due to cond branch not predicted taken by TAGE
-        statistics::Scalar twoTakenAcceptCondTaken;      ///< Accepted conditional branch predicted taken by TAGE
+        statistics::Scalar twoTakenFailSecondNotTaken;   ///< Rejected due to second FB having no taken branch
         statistics::Scalar twoTakenFailRetRet;           ///< Rejected due to ret->ret sequence
         statistics::Scalar twoTakenFailCallCall;         ///< Rejected due to call->call sequence
         statistics::Scalar twoTakenAcceptAlwaysTaken;   ///< Accepted alwaysTaken conditional branch as 2nd prediction
         statistics::Scalar twoTakenAcceptFallthrough;   ///< Accepted pt_2nd=false cases (fallthrough)
-        statistics::Scalar twoTakenAcceptOther;         ///< Accepted other cases (e.g., jump)
+        statistics::Scalar twoTakenAccept;         ///< Accepted other cases (e.g., jump)
         // Formula statistics for performance ratios
         statistics::Formula twoTakenTrainSuccessfulRatio; ///< Ratio of successful 2-taken conditions to total checks
 

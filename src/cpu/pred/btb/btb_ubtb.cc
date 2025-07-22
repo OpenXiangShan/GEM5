@@ -376,10 +376,10 @@ UBTB::addSecondPredictionToEntry(int entryIndex, FullBTBPrediction* secondPred)
             // pt_2nd = true: second FB has branches
             auto s3TakenEntry = secondPred->getTakenEntry();
             assert(s3TakenEntry.valid && "Second prediction must have valid taken entry for pt_2nd = true");
-            assert(s3TakenEntry == secondPred->btbEntries[0] &&
-                "after 2taken condition check, the BPU's Second Pred's first branch must be taken");
+            // NEW: The taken entry is no longer necessarily the first one
+            // assert(s3TakenEntry == secondPred->btbEntries[0] && ...); // DELETED
 
-            // Copy branch info (BTBEntry inherits from BranchInfo)
+            // Copy branch info from the actual taken branch (BTBEntry inherits from BranchInfo)
             entry.branch_info_2nd = s3TakenEntry;
             // Override target with the one from prediction (may be set by RAS/ITTAGE)
             entry.branch_info_2nd.target = secondPred->getTarget(predictWidth);
@@ -496,54 +496,37 @@ UBTB::check2TakenConditions(FullBTBPrediction& dff, FullBTBPrediction& s3Pred)
     }
 
     // 5. pt_2nd = true case: both FBs have branches - apply compatibility rules
-    auto& secondBr = s3Pred.btbEntries[0];
+    // NEW: Get the actual taken branch from the second block prediction (not necessarily first branch)
+    auto s3TakenEntry = s3Pred.getTakenEntry();
+
+    // If there's no taken branch, we can't train a pt_2nd=true entry
+    if (!s3TakenEntry.valid) {
+        ubtbStats.twoTakenFailSecondNotTaken++;
+        return false;
+    }
 
     // Rule: 'multi-target indirect' as 2nd branch is not allowed.
-    if (secondBr.isIndirect) {
+    if (s3TakenEntry.isIndirect) {
         ubtbStats.twoTakenFailSecondIndirect++;
         return false;
     }
 
-    // Rule: 'cond' as 2nd branch is not allowed, except for alwaysTaken conditional branches
-    // NEW: Also allow conditional branches when TAGE predicts them as taken during training
-    if (secondBr.isCond && !secondBr.alwaysTaken) {
-        // Check if TAGE predicted this conditional branch as taken during TRAINING
-        bool tagePredictsTaken = false;
-        auto condIt = std::find_if(s3Pred.condTakens.begin(), s3Pred.condTakens.end(),
-                                  [&](const auto& ct) { return ct.first == secondBr.pc; });
-        if (condIt != s3Pred.condTakens.end()) {
-            tagePredictsTaken = condIt->second;
-        }
 
-        if (!tagePredictsTaken) {
-            ubtbStats.twoTakenFailCondNotTaken++;
-            return false;  // TAGE doesn't predict taken, reject
-        }
-
-        // Assert that TAGE's taken branch matches our second branch
-        assert(s3Pred.getTakenEntry().pc == secondBr.pc);
-
-        ubtbStats.twoTakenAcceptCondTaken++;
-        return true;  // TAGE predicts taken, accept conditional branch
-    } else if (secondBr.isCond && secondBr.alwaysTaken) {
-        ubtbStats.twoTakenAcceptAlwaysTaken++;
-        return true;
-    }
 
     // Rule: 'ret -> ret' is not allowed to avoid multiple RAS reads.
-    if (firstBr.isReturn && secondBr.isReturn) {
+    if (firstBr.isReturn && s3TakenEntry.isReturn) {
         ubtbStats.twoTakenFailRetRet++;
         return false;
     }
 
     // Rule: 'call -> call' is not allowed to avoid multiple RAS writes.
-    if (firstBr.isCall && secondBr.isCall) {
+    if (firstBr.isCall && s3TakenEntry.isCall) {
         ubtbStats.twoTakenFailCallCall++;
         return false;
     }
 
     // All conditions passed for pt_2nd = true case.
-    ubtbStats.twoTakenAcceptOther++;
+    ubtbStats.twoTakenAccept++;
     return true;
 }
 
@@ -893,12 +876,8 @@ UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
                "2-taken rejected due to first branch being indirect"),
       ADD_STAT(twoTakenFailSecondIndirect, statistics::units::Count::get(),
                "2-taken rejected due to second branch being indirect"),
-      ADD_STAT(twoTakenFailSecondCond, statistics::units::Count::get(),
-               "2-taken rejected due to second branch being conditional"),
-      ADD_STAT(twoTakenFailCondNotTaken, statistics::units::Count::get(),
-               "2-taken rejected due to conditional branch not predicted taken by TAGE"),
-      ADD_STAT(twoTakenAcceptCondTaken, statistics::units::Count::get(),
-               "2-taken accepted conditional branch predicted taken by TAGE"),
+      ADD_STAT(twoTakenFailSecondNotTaken, statistics::units::Count::get(),
+               "2-taken rejected due to second FB having no taken branch"),
       ADD_STAT(twoTakenFailRetRet, statistics::units::Count::get(),
                "2-taken rejected due to ret->ret sequence"),
       ADD_STAT(twoTakenFailCallCall, statistics::units::Count::get(),
@@ -907,7 +886,7 @@ UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
                "2-taken accepted alwaysTaken conditional branch as second prediction"),
       ADD_STAT(twoTakenAcceptFallthrough, statistics::units::Count::get(),
                "2-taken accepted pt_2nd=false cases (fallthrough execution)"),
-      ADD_STAT(twoTakenAcceptOther, statistics::units::Count::get(),
+      ADD_STAT(twoTakenAccept, statistics::units::Count::get(),
                "2-taken accepted other cases (e.g., jump)"),
       ADD_STAT(twoTakenTrainSuccessfulRatio, statistics::units::Rate<
         statistics::units::Count, statistics::units::Count>::get(),
@@ -944,7 +923,7 @@ UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
 
 {
     // Initialize formula statistics
-    twoTakenTrainSuccessfulRatio = (twoTakenAcceptOther + twoTakenAcceptAlwaysTaken + twoTakenAcceptFallthrough)
+    twoTakenTrainSuccessfulRatio = (twoTakenAccept+ twoTakenAcceptAlwaysTaken + twoTakenAcceptFallthrough)
      / twoTakenConditionChecks;
 }
 
