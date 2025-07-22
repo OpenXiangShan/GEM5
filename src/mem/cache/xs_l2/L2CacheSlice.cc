@@ -60,13 +60,14 @@ L2CacheSlice::processResponses()
     // advance pipeline
     mainPipe.advance(curCycle());
 
+    PacketPtr pkt = ready_responses.empty() ? nullptr : ready_responses.front();
+
     // we want to build a L2 MSHR grant task
-    if (!ready_responses.empty() &&
+    if (pkt &&
         reqArb.arbitrate(TaskSource::L2MSHRGrant, curCycle()) &&
-        mainPipe.isTaskAvailable(TaskSource::L2MSHRGrant))
+        mainPipe.isTaskAvailable(pkt, TaskSource::L2MSHRGrant))
     {
-        DPRINTF(L2CacheSlice, "Building L2 MSHR grant task for addr: %#x\n", ready_responses.front()->getAddr());
-        PacketPtr pkt = ready_responses.front();
+        DPRINTF(L2CacheSlice, "Building L2 MSHR grant task for addr: %#x\n", pkt->getAddr());
         mainPipe.buildTask(pkt, TaskSource::L2MSHRGrant);
         scheduleTickMainPipe();
         ready_responses.pop_front();
@@ -218,7 +219,7 @@ bool
 L2CacheSlice::innerCpuPortSendTimingReq(PacketPtr pkt, TaskSource source)
 {
     if (reqArb.arbitrate(source, curCycle()) &&
-        mainPipe.isTaskAvailable(source))
+        mainPipe.isTaskAvailable(pkt, source))
     {
         DPRINTF(L2CacheSlice, "Request arbitration succeeded, sending request to inner cache\n");
         bool success = CacheWrapper::cpuSidePortRecvTimingReq(pkt);

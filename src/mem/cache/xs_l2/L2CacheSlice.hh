@@ -7,6 +7,7 @@
 #include <random>
 #include <vector>
 
+#include "mem/cache/base.hh"
 #include "mem/cache/xs_l2/CacheWrapper.hh"
 #include "mem/cache/xs_l2/L2MainPipe.hh"
 #include "mem/cache/xs_l2/RequestArbiter.hh"
@@ -24,6 +25,10 @@ class L2CacheSlice : public CacheWrapper
   public:
     L2CacheSlice(const L2CacheSliceParams &p);
 
+    void setCacheAccessor(BaseCache* accessor) {
+      cache_accessor = accessor;
+    }
+
   protected:
     // For request buffering logic
     RequestBuffer requestBuffer;
@@ -38,6 +43,8 @@ class L2CacheSlice : public CacheWrapper
 
     // For response pipeline logic
     std::deque<PacketPtr> ready_responses;
+
+    CacheAccessor* cache_accessor = nullptr;
 
     // lower priority events are scheduled earlier in the same tick
     const Event::Priority processResponsesPri = Event::Minimum_Pri;

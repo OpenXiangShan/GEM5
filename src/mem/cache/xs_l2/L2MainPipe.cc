@@ -6,6 +6,7 @@
 #include "base/trace.hh"
 #include "debug/L2MainPipe.hh"
 #include "mem/cache/xs_l2/L2CacheSlice.hh"
+#include "mem/cache/xs_l2/PipelineResources.hh"
 #include "mem/packet.hh"
 
 namespace gem5
@@ -19,14 +20,12 @@ L2MainPipe::L2MainPipe(L2CacheSlice* _owner, unsigned depth)
     scoreboardTasks.resize(depth, PipelineTask(TaskSource::NoWhere, nullptr));
 
     // construct the taskResourceMap
-    taskResourceMap[TaskSource::L1MSHR]        = PipelineResources::DirRead  |
-                                                 PipelineResources::DataRead;
+    taskResourceMap[TaskSource::L1MSHR]        = PipelineResources::DirRead;
     taskResourceMap[TaskSource::L1WQ]          = PipelineResources::DirRead  |
                                                  PipelineResources::DirWrite |
                                                  PipelineResources::DataWrite|
                                                  PipelineResources::GrantBuf;
-    taskResourceMap[TaskSource::L3Snoop]       = PipelineResources::DirRead  |
-                                                 PipelineResources::DataRead;
+    taskResourceMap[TaskSource::L3Snoop]       = PipelineResources::DirRead;
     taskResourceMap[TaskSource::L2MSHRGrant]   = PipelineResources::DirRead  |
                                                  PipelineResources::DataRead |
                                                  PipelineResources::GrantBuf;
@@ -57,6 +56,31 @@ L2MainPipe::advance()
     scoreboardTasks.emplace_front(TaskSource::NoWhere, nullptr);
 }
 
+PipelineResources
+L2MainPipe::getExtraResources(PacketPtr pkt, TaskSource source) const
+{
+    PipelineResources extra = PipelineResources::Free;
+    bool hit = owner->cache_accessor->findBlock(pkt->getAddr(), pkt->isSecure()) != nullptr;
+    if (source == TaskSource::L1MSHR) {
+        // acquire from L1 should write directory when hit in L2
+        if (hit) {
+            extra |= PipelineResources::DirWrite;
+
+            // upgrade req does not need data sram reading
+            // otherwise, the req should read from data sram
+            if (!pkt->isUpgrade()) {
+                extra |= PipelineResources::DataRead;
+            }
+        }
+    } else if (source == TaskSource::L3Snoop) {
+        // snoop should write directory and read data sram when hit in L2
+        if (hit) {
+            extra |= PipelineResources::DirWrite | PipelineResources::DataRead;
+        }
+    }
+    return extra;
+}
+
 bool
 L2MainPipe::isResourceAvailable(PipelineResources resource) const
 {
@@ -84,10 +108,10 @@ L2MainPipe::isResourceAvailable(PipelineResources resource) const
 }
 
 bool
-L2MainPipe::isTaskAvailable(TaskSource source) const
+L2MainPipe::isTaskAvailable(PacketPtr pkt, TaskSource source) const
 {
     return (scoreboardTasks[0].source == TaskSource::NoWhere) &&
-           isResourceAvailable(taskResourceMap.at(source));
+           isResourceAvailable(taskResourceMap.at(source) | getExtraResources(pkt, source));
 }
 
 void

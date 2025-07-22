@@ -20,8 +20,27 @@ class L2CacheSlice(CacheWrapper):
     type = 'L2CacheSlice'
     cxx_header = "mem/cache/xs_l2/L2CacheSlice.hh"
     cxx_class = 'gem5::L2CacheSlice'
+    cxx_exports = [
+        PyBindMethod("setCacheAccessor"),
+    ]
+
     buffer_size = Param.Unsigned(4, "Size of the request buffer")
     pipeline_depth = Param.Unsigned(5, "Depth of the response pipeline")
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._cache_accessor = None
+
+    # Override the normal SimObject::regProbeListeners method and
+    # add the cache accessors to the L2CacheSlice.
+    def regProbeListeners(self):
+        if self._cache_accessor is not None:
+            print("Registering inner cache accessor for L2CacheSlice {}".format(self))
+            self.getCCObject().setCacheAccessor(self._cache_accessor.getCCObject())
+        self.getCCObject().regProbeListeners()
+
+    def setCacheAccessor(self, accessor):
+        self._cache_accessor = accessor
 
 class L2CacheWrapper(ClockedObject):
     type = 'L2CacheWrapper'

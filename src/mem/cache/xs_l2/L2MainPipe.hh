@@ -39,6 +39,15 @@ class L2MainPipe
     void advance(Cycles now);
 
     /**
+     * Get the extra resources that are required for the task.
+     * Eg. L1MSHR need DirWrite when hit in L2 cache.
+     * @param pkt The packet to check.
+     * @param source The task source.
+     * @return The extra resources that are required for the task.
+     */
+    PipelineResources getExtraResources(PacketPtr pkt, TaskSource source) const;
+
+    /**
      * Check if a resource is available in the start stage.
      * @param resource The resource to check.
      * @return True if the resource is available, false otherwise.
@@ -47,10 +56,11 @@ class L2MainPipe
 
     /**
      * Check if a task is available in the start stage.
+     * @param pkt The packet to check.
      * @param source The task source to check.
      * @return True if the task is available, false otherwise.
      */
-    bool isTaskAvailable(TaskSource source) const;
+    bool isTaskAvailable(PacketPtr pkt, TaskSource source) const;
 
     /**
      * Build a task in the start stage.
