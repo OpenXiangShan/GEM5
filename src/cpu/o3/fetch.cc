@@ -478,14 +478,9 @@ Fetch::handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc)
 
     cacheReq[tid].addRequest(second_mem_req);  // Add second request to cache request
 
-    // Since we always have dual cacheline fetches now, check for retry state
-    if (cacheReq[tid].getOverallStatus() == CacheWaitRetry) {
-        return true;
-    }
-
     DPRINTF(Fetch, "[tid:%i] Initiating translation for second cache line\n", tid);
 
-    // Initiate translation for second request
+    // Always initiate translation for second request, regardless of first request status
     updateCacheRequestStatusByRequest(tid, second_mem_req, TlbWait);
     setAllFetchStalls(StallReason::ITlbStall);
     FetchTranslation *trans2 = new FetchTranslation(this);
@@ -497,24 +492,32 @@ Fetch::handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc)
 bool
 Fetch::processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt)
 {
-    DPRINTF(Fetch, "[tid:%i] Processing dual cacheline fetch completion.\n", tid);
+    DPRINTF(Fetch, "[tid:%i] Processing dual cacheline fetch completion for addr %#lx.\n",
+            tid, pkt->getAddr());
 
     // Mark this packet as completed in the cache request (this also stores the packet)
     bool found_packet = cacheReq[tid].markCompletedAndStorePacket(pkt);
     if (!found_packet) {
-        DPRINTF(Fetch, "[tid:%i] Packet doesn't match current requests, deleting pkt %#lx\n", tid, pkt->getAddr());
+        DPRINTF(Fetch, "[tid:%i] Packet doesn't match current requests, deleting pkt %#lx\n",
+                tid, pkt->getAddr());
+        DPRINTF(Fetch, "[tid:%i] Expected requests: ", tid);
+        for (size_t i = 0; i < cacheReq[tid].requests.size(); i++) {
+            DPRINTF(Fetch, "req[%d]=0x%lx ", i, cacheReq[tid].requests[i]->getVaddr());
+        }
+        DPRINTF(Fetch, "\n");
         return false;
     }
+
+    DPRINTF(Fetch, "[tid:%i] Packet successfully matched and stored. Current status: %s\n",
+            tid, cacheReq[tid].getStatusSummary().c_str());
 
     // Check if we're still waiting for other packets
     if (!cacheReq[tid].allCompleted()) {
         DPRINTF(Fetch, "[tid:%i] Waiting for remaining packets. Completed: %d, Total: %d\n",
                 tid, cacheReq[tid].completedPackets, cacheReq[tid].packets.size());
 
-        // Handle retry case - need to send the missing request
-        if (pkt->isRetriedPkt()) {
-            handleRetryPkt(tid, pkt);
-        }
+        // Note: retry is handled completely by the standard gem5 recvReqRetry mechanism
+        // No need to handle retry here to avoid duplicate packet sending
 
         return false;  // Return false to indicate we're still waiting
     }
@@ -2099,8 +2102,10 @@ Fetch::recvReqRetry()
         return;
     }
     assert(cacheBlocked);
-    // assert(retryTid != InvalidThreadID);
-    // assert(cacheReq[retryTid].getOverallStatus() == CacheWaitRetry);
+    assert(retryTid != InvalidThreadID);
+    // Note: In multi-cacheline fetch, overall status may not be CacheWaitRetry
+    // if some requests have progressed while others still need retry.
+    // The presence of retryPkt itself indicates retry is needed.
 
     for (auto it = retryPkt.begin(); it != retryPkt.end();) {
         if (icachePort.sendTimingReq(*it)) {
@@ -2401,30 +2406,6 @@ Fetch::setAllFetchStalls(StallReason stall)
     }
 }
 
-void
-Fetch::handleRetryPkt(ThreadID tid, PacketPtr pkt)
-{
-    DPRINTF(Fetch, "[tid:%i] Retried pkt.\n", tid);
-
-    // Find the missing request that needs to be sent
-    RequestPtr missingReq = nullptr;
-    for (size_t i = 0; i < cacheReq[tid].requests.size(); i++) {
-        if (cacheReq[tid].packets[i] == nullptr) {  // This request hasn't completed yet
-            missingReq = cacheReq[tid].requests[i];
-            break;
-        }
-    }
-
-    if (missingReq) {
-        DPRINTF(Fetch, "[tid:%i] send next pkt, addr: %#x, size: %d\n",
-                tid, missingReq->getVaddr(), missingReq->getSize());
-
-        updateCacheRequestStatusByRequest(tid, missingReq, TlbWait);
-        FetchTranslation *trans = new FetchTranslation(this);
-        cpu->mmu->translateTiming(missingReq, cpu->thread[tid]->getTC(),
-                                  trans, BaseMMU::Execute);
-    }
-}
 
 bool
 Fetch::IcachePort::recvTimingResp(PacketPtr pkt)

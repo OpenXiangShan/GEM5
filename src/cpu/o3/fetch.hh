@@ -411,12 +411,6 @@ class Fetch
      */
     bool processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt);
 
-    /** Handle retry logic for multi-cacheline fetch when a packet is retried.
-     * Sends the missing cache request for the incomplete packet.
-     * @param tid Thread ID
-     * @param pkt The retried packet
-     */
-    void handleRetryPkt(ThreadID tid, PacketPtr pkt);
 
     /** Check if an interrupt is pending and that we need to handle
      */
