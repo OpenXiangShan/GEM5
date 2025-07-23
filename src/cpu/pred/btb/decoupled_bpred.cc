@@ -30,13 +30,9 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       predictWidth(p.predictWidth),
       maxInstsNum(p.predictWidth / 2),
       historyBits(p.maxHistLen),
-      ubtb(p.ubtb),
       abtb(p.abtb),
-      btb(p.btb),
-      tage(p.tage),
-      ittage(p.ittage),
-      mgsc(p.mgsc),
-      ras(p.ras),
+      // mgsc(p.mgsc),
+
     //   uras(p.uras),
       bpDBSwitches(p.bpDBSwitches),
       numStages(p.numStages),
@@ -49,14 +45,8 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     bpType = DecoupledBTBType;
     // TODO: better impl (use vector to assign in python)
     // problem: btb->getAndSetNewBTBEntry
-    components.push_back(ubtb);
     components.push_back(abtb);
-    // components.push_back(uras);
-    components.push_back(btb);
-    components.push_back(tage);
-    components.push_back(ras);
-    components.push_back(ittage);
-    components.push_back(mgsc);
+    // components.push_back(mgsc);
     numComponents = components.size();
     for (int i = 0; i < numComponents; i++) {
         components[i]->setComponentIdx(i);
@@ -92,10 +82,10 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     s0PHistory.resize(historyBits, 0);
     s0BwHistory.resize(historyBits, 0);
     s0IHistory.resize(historyBits, 0);
-    s0LHistory.resize(mgsc->getNumEntriesFirstLocalHistories());
-    for (unsigned int i = 0; i < mgsc->getNumEntriesFirstLocalHistories(); ++i) {
-        s0LHistory[i].resize(historyBits, 0);
-    }
+    // s0LHistory.resize(mgsc->getNumEntriesFirstLocalHistories());
+    // for (unsigned int i = 0; i < mgsc->getNumEntriesFirstLocalHistories(); ++i) {
+    //     s0LHistory[i].resize(historyBits, 0);
+    // }
     fetchTargetQueue.setName(name());
 
     commitHistory.resize(historyBits, 0);
@@ -706,7 +696,7 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
 
     // update ubtb using mbtb prediction
     if (predsOfEachStage[numStages - 1].btbEntries.size() > 0) {
-        ubtb->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
+        //ubtb->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
     }
 
     // 4. Record override bubbles and update statistics
@@ -978,7 +968,7 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id, unsigned stream_id,
     Addr real_target = corr_target.instAddr();
     if (!fromCommit && static_inst->isReturn() && !static_inst->isNonSpeculative()) {
         // get ret addr from ras meta
-        real_target = ras->getTopAddrFromMetas(stream);
+        //real_target = ras->getTopAddrFromMetas(stream);
         // TODO: set real target to dynamic inst
     }
 
@@ -1776,7 +1766,7 @@ DecoupledBPUWithBTB::createFetchStreamEntry()
     entry.phistory = s0PHistory;
     entry.bwhistory = s0BwHistory;
     entry.ihistory = s0IHistory;
-    entry.lhistory = s0LHistory;
+    // entry.lhistory = s0LHistory;
     entry.predTick = finalPred.predTick;
     entry.predSource = finalPred.predSource;
     entry.overrideReason = finalPred.overrideReason;
@@ -1918,9 +1908,9 @@ DecoupledBPUWithBTB::getPreservedReturnAddr(const DynInstPtr &dynInst)
     DPRINTF(DecoupleBP, "acquiring reutrn address for inst pc %#lx from decode\n", dynInst->pcState().instAddr());
     auto fsqid = dynInst->getFsqId();
     auto it = fetchStreamQueue.find(fsqid);
-    auto retAddr = ras->getTopAddrFromMetas(it->second);
-    DPRINTF(DecoupleBP, "get ret addr %#lx\n", retAddr);
-    return retAddr;
+    //auto retAddr = ras->getTopAddrFromMetas(it->second);
+    //DPRINTF(DecoupleBP, "get ret addr %#lx\n", retAddr);
+    return dynInst->pcState().getFallThruPC();
 }
 
 /**
@@ -1931,7 +1921,7 @@ DecoupledBPUWithBTB::getPreservedReturnAddr(const DynInstPtr &dynInst)
 void
 DecoupledBPUWithBTB::updateHistoryForPrediction(FetchStream &entry)
 {
-    // Update component-specific history, for TAGE/ITTAGE/MGSC
+    // Update component-specific history, for TAGE/ITTAGE (MGSC commented out)
     for (int i = 0; i < numComponents; i++) {
         // use old s0History to update folded history, then use finalPred to update folded history
         components[i]->specUpdateHist(s0History, finalPred);
@@ -1939,7 +1929,7 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchStream &entry)
             components[i]->specUpdatePHist(s0PHistory, finalPred);
             components[i]->specUpdateBwHist(s0BwHistory, finalPred);
             components[i]->specUpdateIHist(s0IHistory, finalPred);
-            components[i]->specUpdateLHist(s0LHistory, finalPred);
+            // components[i]->specUpdateLHist(s0LHistory, finalPred);
         }
     }
 
@@ -1971,14 +1961,14 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchStream &entry)
     // Update path history
     pHistShiftIn(1, taken, s0PHistory, p_pc);
 #ifndef NDEBUG
-    tage->checkFoldedHist(s0PHistory, "speculative update");
+    //tage->checkFoldedHist(s0PHistory, "speculative update");
 #endif
     // Update imli history
     histShiftIn(bw_shamt, bw_taken, s0IHistory);  //s0IHistory is not used
 
     // Update local history
-    histShiftIn(shamt, taken,
-        s0LHistory[mgsc->getPcIndex(finalPred.bbStart, log2(mgsc->getNumEntriesFirstLocalHistories()))]);
+    // histShiftIn(shamt, taken,
+    //     s0LHistory[mgsc->getPcIndex(finalPred.bbStart, log2(mgsc->getNumEntriesFirstLocalHistories()))]);
 }
 
 /**
@@ -2007,7 +1997,7 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     s0PHistory = stream.phistory;
     s0BwHistory = stream.bwhistory;
     s0IHistory = stream.ihistory;
-    s0LHistory = stream.lhistory;
+    // s0LHistory = stream.lhistory;
 
     // Get actual history shift information
     int real_shamt;
@@ -2028,7 +2018,7 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
             components[i]->recoverPHist(s0PHistory, stream, real_shamt, real_taken);
             components[i]->recoverBwHist(s0BwHistory, stream, real_bw_shamt, real_bw_taken);
             components[i]->recoverIHist(s0IHistory, stream, real_bw_shamt, real_bw_taken); //s0IHistory is not used
-            components[i]->recoverLHist(s0LHistory, stream, real_shamt, real_taken);
+            // components[i]->recoverLHist(s0LHistory, stream, real_shamt, real_taken);
         }
     }
 
@@ -2045,8 +2035,8 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     histShiftIn(real_bw_shamt, real_bw_taken, s0IHistory);  //s0IHistory is not used
 
     // Update local history with actual outcome
-    histShiftIn(real_shamt, real_taken,
-                s0LHistory[mgsc->getPcIndex(stream.startPC, log2(mgsc->getNumEntriesFirstLocalHistories()))]);
+    // histShiftIn(real_shamt, real_taken,
+    //             s0LHistory[mgsc->getPcIndex(stream.startPC, log2(mgsc->getNumEntriesFirstLocalHistories()))]);
 
     // Update history manager with appropriate branch info
     if (squash_type == SQUASH_CTRL) {
@@ -2058,9 +2048,9 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     // Perform history consistency checks when not a fast build variant
 #ifndef NDEBUG
     checkHistory(s0History);
-    tage->checkFoldedHist(s0PHistory,
-        squash_type == SQUASH_CTRL ? "control squash" :
-        squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
+    //tage->checkFoldedHist(s0PHistory,
+        // squash_type == SQUASH_CTRL ? "control squash" :
+        // squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
 #endif
 }
 

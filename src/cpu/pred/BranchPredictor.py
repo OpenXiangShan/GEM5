@@ -1142,13 +1142,7 @@ class DecoupledBPUWithBTB(BranchPredictor):
 
     predictWidth = Param.Unsigned(64, "Maximum range in bytes that a single prediction can cover")
     numStages = Param.Unsigned(4, "Maximum number of stages in the pipeline")
-    ubtb = Param.UBTB(UBTB(), "UBTB predictor")
     abtb = Param.DefaultBTB(ABTB(), "ABTB predictor")
-    btb = Param.DefaultBTB(DefaultBTB(), "BTB")
-    tage = Param.BTBTAGE(BTBTAGE(), "TAGE predictor")
-    ittage = Param.BTBITTAGE(BTBITTAGE(), "ITTAGE predictor")
-    mgsc = Param.BTBMGSC(BTBMGSC(), "MGSC predictor")
-    ras = Param.BTBRAS(BTBRAS(), "RAS")
 
     bpDBSwitches = VectorParam.String([], "Enable which traces in the form of database")
     enableLoopBuffer = Param.Bool(False, "Enable loop buffer to supply inst for loops")

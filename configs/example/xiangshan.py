@@ -142,7 +142,6 @@ def build_test_system(np, args):
                                             enableLoopPredictor=args.enable_loop_predictor,
                                             enableJumpAheadPredictor=args.enable_jump_ahead_predictor
                                             )
-            test_sys.cpu[i].branchPred.tage.enableSC = not args.disable_sc
             test_sys.cpu[i].branchPred.isDumpMisspredPC = True
         else:
             test_sys.cpu[i].branchPred = ObjectList.bp_list.get(args.bp_type)
@@ -378,22 +377,22 @@ def setKmhV3IdealParams(args, system):
                 cpu.branchPred.tage.baseTableSize = 16384
                 cpu.branchPred.tage.tableSizes = [2048] * 8
             else:
+                # Minimize BTB predictors to effectively disable them
                 cpu.branchPred.predictWidth = 32              # RTL uses 32B fetch block
                 cpu.branchPred.numStages = 4                  # RTL has only ABTB
+
+
+                # Keep ABTB at original configuration
                 cpu.branchPred.abtb.numWays = 4
                 cpu.branchPred.abtb.numEntries = 1024         # ABTB only
                 cpu.branchPred.abtb.blockSize = 16            # RTL uses 16B aligned block termination
-                # RTL has only ABTB, disable all other predictors (they are probably disabled anyway by short numStages)
-                cpu.branchPred.tage.tableSizes = [1024] * 8  # 2 way, 1024 sets
-                cpu.branchPred.tage.numWays = 2
 
-            cpu.branchPred.tage.enableSC = False # TODO(bug): When numBr changes, enabling SC will trigger an assert
-            cpu.branchPred.ftq_size = 256
-            cpu.branchPred.fsq_size = 256
-            cpu.branchPred.tage.numPredictors = 8
-            cpu.branchPred.tage.TTagBitSizes = [13] * 8
-            cpu.branchPred.tage.TTagPcShifts = [1] * 8
-            cpu.branchPred.tage.histLengths = [4, 8, 15, 28, 50, 90, 160, 300]
+
+
+
+            cpu.branchPred.ftq_size = 64
+            cpu.branchPred.fsq_size = 64
+
 
         # ideal l1 caches
         if args.caches:

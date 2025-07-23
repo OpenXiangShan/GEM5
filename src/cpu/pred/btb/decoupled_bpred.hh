@@ -97,15 +97,10 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     const Addr MaxAddr{~(0ULL)};
 
-    UBTB *ubtb{};
     DefaultBTB *abtb{};
-    DefaultBTB *btb{};
-    BTBTAGE *tage{};
-    BTBITTAGE *ittage{};
+
     BTBMGSC *mgsc{};
 
-    btb_pred::BTBRAS *ras{};
-    // btb_pred::BTBuRAS *uras{};
 
     // bool enableDB;
     std::vector<std::string> bpDBSwitches;

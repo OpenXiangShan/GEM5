@@ -56,7 +56,7 @@ UBTB::UBTB(const Params &p)
       ubtbStats(this)
 {
     if (!isPowerOf2(numEntries)) {
-        fatal("uBTB entries is not a power of 2!");
+        //fatal("uBTB entries is not a power of 2!");
     }
 
     // Initialize uBTB structure and MRU tracking
