@@ -285,6 +285,18 @@ class DefaultBTB : public TimedBaseBTBPredictor
     void checkPredictionHit(const FetchStream &stream,
                            const BTBMeta* meta);
 
+    /** Update fetch block level statistics
+     *  @param stream Fetch stream containing prediction and execution results
+     *  @param meta BTB metadata from prediction
+     */
+    void updateFetchBlockStatistics(const FetchStream &stream,
+                                   const BTBMeta* meta);
+
+    /** Update statistics for correctly predicted fetch blocks
+     *  @param stream Fetch stream containing execution results
+     */
+    void updateCorrectFetchBlockStats(const FetchStream &stream);
+
     /** Collect entries that need to be updated
      *  @param old_entries Processed old entries
      *  @param stream Fetch stream with update info
@@ -449,6 +461,14 @@ class DefaultBTB : public TimedBaseBTBPredictor
 
         statistics::Scalar returnHits;
         statistics::Scalar returnMisses;
+
+        // Fetch Block level statistics
+        statistics::Scalar FBfallthroughWrong;
+        statistics::Scalar FBpositionWrong;
+        statistics::Scalar FBtargetWrong;
+        statistics::Scalar FBcorrectCond;
+        statistics::Scalar FBcorrectDirect;
+        statistics::Scalar FBcorrectIndirect;
 
         BTBStats(statistics::Group* parent);
     } btbStats;

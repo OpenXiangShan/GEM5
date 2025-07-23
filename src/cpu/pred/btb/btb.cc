@@ -539,6 +539,86 @@ DefaultBTB::processOldEntries(const FetchStream &stream)
 }
 
 /**
+ * Update fetch block level statistics by comparing prediction vs execution
+ */
+void
+DefaultBTB::updateFetchBlockStatistics(const FetchStream &stream, const BTBMeta* meta)
+{
+    // Determine if execution took a branch
+    bool exe_taken = stream.exeTaken;
+    Addr exe_control_pc = stream.getControlPC();
+    Addr exe_target = stream.exeBranchInfo.target;
+
+    // Create BTB prediction using existing fillStagePredictions logic
+    std::vector<TickedBTBEntry> btb_entries;
+    for (const auto &entry : meta->hit_entries) {
+        btb_entries.push_back(TickedBTBEntry(entry, curTick()));
+    }
+
+    // Create FullBTBPrediction and fill it using the same logic as regular prediction
+    // BTB may have delay > 0, so we need enough stages to accommodate this
+    unsigned btb_delay = getDelay();
+    std::vector<FullBTBPrediction> temp_stage_preds(btb_delay + 1);
+    fillStagePredictions(btb_entries, temp_stage_preds);
+    FullBTBPrediction btb_pred = temp_stage_preds[btb_delay];
+
+    // Extract BTB prediction results using the FullBTBPrediction interface
+    bool btb_pred_taken = btb_pred.isTaken();
+    Addr btb_pred_control_pc = btb_pred_taken ? btb_pred.controlAddr() : 0;
+    Addr btb_pred_target = btb_pred_taken ? btb_pred.getTarget(predictWidth) : 0;
+
+    DPRINTF(BTB, "FB stats: exe_taken=%d, btb_pred_taken=%d, exe_pc=%#lx, btb_pred_pc=%#lx\n",
+            exe_taken, btb_pred_taken, exe_control_pc, btb_pred_control_pc);
+
+    // Check for mispredictions (mutually exclusive categories)
+    if (exe_taken != btb_pred_taken) {
+        // Fallthrough mismatch: one side taken, other side fallthrough
+        btbStats.FBfallthroughWrong++;
+        DPRINTF(BTB, "FB fallthrough wrong: exe_taken=%d, btb_pred_taken=%d\n", exe_taken, btb_pred_taken);
+    } else if (exe_taken && btb_pred_taken) {
+        // Both sides predict taken, check position and target
+        if (exe_control_pc != btb_pred_control_pc) {
+            // Position differs
+            btbStats.FBpositionWrong++;
+            DPRINTF(BTB, "FB position wrong: exe_pc=%#lx, btb_pred_pc=%#lx\n", exe_control_pc, btb_pred_control_pc);
+        } else if (exe_target != btb_pred_target) {
+            // Position same but target differs
+            btbStats.FBtargetWrong++;
+            DPRINTF(BTB, "FB target wrong: exe_target=%#lx, btb_pred_target=%#lx\n", exe_target, btb_pred_target);
+        } else {
+            // Perfect match - categorize by branch type
+            updateCorrectFetchBlockStats(stream);
+        }
+    } else {
+        // Both sides predict fallthrough - this is correct
+        // For fallthrough cases, we don't categorize by branch type since no branch was taken
+        DPRINTF(BTB, "FB correct fallthrough\n");
+    }
+}
+
+/**
+ * Update statistics for correctly predicted fetch blocks
+ */
+void
+DefaultBTB::updateCorrectFetchBlockStats(const FetchStream &stream)
+{
+    // Get the executed branch info to determine its type
+    const auto &exe_info = stream.exeBranchInfo;
+
+    if (exe_info.isCond) {
+        btbStats.FBcorrectCond++;
+        DPRINTF(BTB, "FB correct conditional at pc=%#lx\n", exe_info.pc);
+    } else if (exe_info.isIndirect) {
+        btbStats.FBcorrectIndirect++;
+        DPRINTF(BTB, "FB correct indirect at pc=%#lx\n", exe_info.pc);
+    } else {
+        // Direct unconditional jump
+        btbStats.FBcorrectDirect++;
+        DPRINTF(BTB, "FB correct direct at pc=%#lx\n", exe_info.pc);
+    }
+}
+
+/**
  * Check if the branch was predicted correctly
  * Also check L0 BTB prediction status
  */
@@ -714,6 +794,10 @@ DefaultBTB::update(const FetchStream &stream)
     
     // 2. Check prediction hit status, for stats recording
     checkPredictionHit(stream,
+        std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get());
+
+    // 2.5. Update fetch block level statistics
+    updateFetchBlockStatistics(stream,
         std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get());
 
     // 3. Collect entries to update
@@ -936,7 +1020,15 @@ DefaultBTB::BTBStats::BTBStats(statistics::Group* parent) :
     ADD_STAT(callHits, statistics::units::Count::get(), "calls committed that was predicted hit"),
     ADD_STAT(callMisses, statistics::units::Count::get(), "calls committed that was predicted miss"),
     ADD_STAT(returnHits, statistics::units::Count::get(), "returns committed that was predicted hit"),
-    ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss")
+    ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss"),
+
+    // Fetch Block level statistics
+    ADD_STAT(FBfallthroughWrong, statistics::units::Count::get(), "FB prediction wrong: execution fallthrough vs btb taken, or vice versa"),
+    ADD_STAT(FBpositionWrong, statistics::units::Count::get(), "FB prediction wrong: taken branch position differs between execution and prediction"),
+    ADD_STAT(FBtargetWrong, statistics::units::Count::get(), "FB prediction wrong: taken branch target differs between execution and prediction"),
+    ADD_STAT(FBcorrectCond, statistics::units::Count::get(), "FB prediction correct: taken instruction is conditional branch"),
+    ADD_STAT(FBcorrectDirect, statistics::units::Count::get(), "FB prediction correct: taken instruction is direct jump"),
+    ADD_STAT(FBcorrectIndirect, statistics::units::Count::get(), "FB prediction correct: taken instruction is indirect jump")
 
 {
     auto btb = dynamic_cast<branch_prediction::btb_pred::DefaultBTB*>(parent);
