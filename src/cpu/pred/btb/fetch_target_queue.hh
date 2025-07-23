@@ -106,12 +106,22 @@ class FetchTargetQueue
      */
     bool fetchTargetAvailable() const;
 
+    bool fetchTargetAvailable(int nextN) const;
+
     /**
      * @brief Get the currently available fetch target
      *
      * @return Reference to the current fetch target entry
      */
     FtqEntry &getTarget();
+
+    /**
+     * @brief Get the fetch target at the given index
+     *
+     * @param nextN The index of the target to get
+     * @return Reference to the target entry
+     */
+    FtqEntry &getTarget(int nextN);
 
     /**
      * @brief Get the enqueue state
@@ -213,6 +223,35 @@ class FetchTargetQueue
     FtqEntry &getLastInsertedEntry() { return ftq.rbegin()->second; }
 
     void resetPC(Addr new_pc);
+
+    /**
+     * @brief Check if FTQ has two consecutive entries available for dual fetch
+     *
+     * @return true if we have current target and next consecutive target
+     */
+    bool hasTwoFetchTargets() const;
+
+    /**
+     * @brief Get start PCs for both current and next FTQ entries
+     *
+     * @return pair of (current PC, next PC) for dual fetch
+     */
+    std::pair<Addr, Addr> getDualFTQPCs();
+
+    /**
+     * @brief Get the FTQ entry at the given index
+     *
+     * @param ftqIndex The index of the entry to get
+     * @return The entry
+     */
+    FtqEntry getFTQEntry(unsigned ftqIndex);
+
+    /**
+     * @brief Mark both current and next fetch targets as finished
+     *
+     * This advances by two targets and removes both from the queue
+     */
+    void finishDualFetchTargets();
 };
 
 }

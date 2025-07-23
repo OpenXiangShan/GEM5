@@ -60,7 +60,7 @@
 #include "cpu/o3/cpu_def.hh"
 #include "cpu/o3/decode.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
-#include "cpu/o3/fetch.hh"
+#include "cpu/o3/fetch/fetch.hh"
 #include "cpu/o3/free_list.hh"
 #include "cpu/o3/iew.hh"
 #include "cpu/o3/limits.hh"

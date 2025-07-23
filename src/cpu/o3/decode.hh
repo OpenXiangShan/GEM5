@@ -46,7 +46,7 @@
 #include "base/statistics.hh"
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
-#include "cpu/o3/fetch.hh"
+#include "cpu/o3/fetch/fetch.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/timebuf.hh"
 

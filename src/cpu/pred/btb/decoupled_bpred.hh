@@ -482,6 +482,11 @@ class DecoupledBPUWithBTB : public BPredUnit
         return fetchTargetQueue.getTarget();
     }
 
+    FtqEntry& getSupplyingFetchTarget(int nextN)
+    {
+        return fetchTargetQueue.getTarget(nextN);
+    }
+
     unsigned getSupplyingTargetId()
     {
         return fetchTargetQueue.getSupplyingTargetId();
@@ -489,6 +494,32 @@ class DecoupledBPUWithBTB : public BPredUnit
     unsigned getSupplyingStreamId()
     {
         return fetchTargetQueue.getSupplyingStreamId();
+    }
+
+    /** Dual fetch support methods */
+    bool hasTwoFetchTargets()
+    {
+        return fetchTargetQueue.hasTwoFetchTargets();
+    }
+
+    std::pair<Addr, Addr> getDualFTQPCs()
+    {
+        return fetchTargetQueue.getDualFTQPCs();
+    }
+
+    FtqEntry getFTQEntry(unsigned ftqIndex)
+    {
+        return fetchTargetQueue.getFTQEntry(ftqIndex);
+    }
+
+    void finishDualFetchTargets()
+    {
+        return fetchTargetQueue.finishDualFetchTargets();
+    }
+
+    void finishCurrentFetchTarget()
+    {
+        return fetchTargetQueue.finishCurrentFetchTarget();
     }
 
     void dumpFsq(const char *when);
