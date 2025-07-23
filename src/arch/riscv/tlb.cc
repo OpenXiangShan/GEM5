@@ -1104,6 +1104,7 @@ TLB::translateWithTLB(Addr vaddr, uint16_t asid, BaseMMU::Mode mode, uint8_t tra
 {
     TlbEntry *e = lookup(vaddr, asid, mode, false, false, translateMode);
     DPRINTF(TLB, "translateWithTLB vaddr %#x \n", vaddr);
+
     assert(e != nullptr);
     DPRINTF(TLBGPre, "translateWithTLB vaddr %#x paddr %#x\n", vaddr,
             e->paddr << PageShift | (vaddr & mask(e->logBytes)));
@@ -1324,11 +1325,8 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
     } else {
         Addr pgBase = vsatp.ppn << PageShift;
         Addr gPaddr = 0;
-
         Addr paddrBase = 0;
         Addr pg_mask = 0;
-
-
         e[0] = lookup(vaddr, vsatp.asid, mode, false, true, vsstage);
         if (e[0]){
             req->setPte(e[0]->pte);
@@ -1370,7 +1368,6 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
                 if (fault != NoFault) {
                     return std::make_pair(hit_type, fault);
                 }
-
 
                 walker->doL2TLBHitSchedule(req, tc, translation, mode, gPaddr, e_l2tlb, e_l2tlbVsstage, e_l2tlbGstage,
                                            3);
@@ -1578,7 +1575,6 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                     return std::make_pair(hit_type, NoFault);
                 }
             }
-
         } else {
             hit_type = H_L1miss;
             req->setTwoPtwWalk(false, level, twoStageLevel, 0, hitInSp);
@@ -1758,7 +1754,17 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
     TlbEntry *pre_back = l2tlb->lookupBackPre(back_pre_block, satp.asid, true);
     backPrePrecision = checkPrePrecision(l2tlb->removeNoUseBackPre, l2tlb->usedBackPre);
     forwardPrePrecision = checkPrePrecision(l2tlb->removeNoUseForwardPre, l2tlb->forwardUsedPre);
+
     if (walker->openSv48) {
+        TlbEntry *e_sv48entry= lookup(vaddr, satp.asid, mode, false, true, direct);
+        if (e_sv48entry!= nullptr){
+            fault= NoFault;
+            paddr = e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes));
+            req->setPaddr(paddr);
+            return fault;
+        }
+
+
         fault = walker->start(0, tc, translation, req, mode, false, false, 3, false, 0);
 
         if (translation != nullptr || fault != NoFault) {
@@ -1985,6 +1991,7 @@ TLB::misalignDataAddrCheck(const RequestPtr &req, BaseMMU::Mode mode)
 MMUMode
 TLB::isaMMUCheck(ThreadContext *tc, Addr vaddr, BaseMMU::Mode mode)
 {
+
     STATUS status = tc->readMiscReg(MISCREG_STATUS);
     PrivilegeMode pp = (PrivilegeMode)tc->readMiscReg(MISCREG_PRV);
     SATP satp = tc->readMiscReg(MISCREG_SATP);
@@ -2025,12 +2032,13 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
         bool two_stage_translation = false;
         STATUS status = tc->readMiscReg(MISCREG_STATUS);
 
-        if ((pmode == PrivilegeMode::PRV_M || satp.mode == AddrXlateMode::BARE))
+        if ((pmode == PrivilegeMode::PRV_M || satp.mode == AddrXlateMode::BARE)){
             req->setFlags(Request::PHYSICAL);
-
+        }
         Fault fault;
 
         if (req->getFlags() & Request::PHYSICAL) {
+
             req->setTwoStageState(false, 0, 0);
             /**
              * we simply set the virtual address to physical address
@@ -2038,6 +2046,7 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
 
             if ((hgatp.mode == 8 || vsatp.mode == 8) && (pmode < PrivilegeMode::PRV_M)) {
                 fault = doTwoStageTranslate(req, tc, translation, mode, delayed);
+
             } else {
                 req->setPaddr(req->getVaddr());
                 fault = NoFault;
@@ -2081,7 +2090,6 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
 
         if (!delayed && fault == NoFault) {
             pma->check(req);
-
             // do pmp check if any checking condition is met.
             // mainFault will be NoFault if pmp checks are
             // passed, otherwise an address fault will be returned.
@@ -2100,13 +2108,10 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
         assert(req->getSize() > 0);
         if (req->getVaddr() + req->getSize() - 1 < req->getVaddr())
             return std::make_shared<GenericPageTableFault>(req->getVaddr());
-
         Process * p = tc->getProcessPtr();
-
         Fault fault = p->pTable->translate(req);
         if (fault != NoFault)
             return fault;
-
         return NoFault;
     }
 }
