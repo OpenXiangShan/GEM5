@@ -39,11 +39,20 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc, unsigned ftqIndex)
     DPRINTF(Fetch, "[tid:%i] Fetching cache line %#x for addr %#x, pc=%#lx\n",
             tid, vaddr, vaddr, pc);
 
+    // Check if ICacheHandler can accept the request
+    if (icacheHandler->hasPendingCacheRequests(tid)) {
+        DPRINTF(Fetch, "[tid:%i] Can't fetch cache line, ICacheHandler has pending requests\n", tid);
+        setAllFetchStalls(StallReason::IcacheStall);
+        return false;
+    }
+
     // Mark this FTQ as active when we start fetching
     fetch2Coord[tid].ftqActive[ftqIndex] = true;
 
-    DPRINTF(Fetch, "[tid:%i] Setting ftqActive[%d] = true for cache request\n",
-            tid, ftqIndex);
+    DPRINTF(Fetch, "[tid:%i] Setting ftqActive[%d] = true for cache request (addr=%#x)\n",
+            tid, ftqIndex, vaddr);
+    DPRINTF(Fetch, "[tid:%i] FTQ state: ftqActive[0]=%d, ftqActive[1]=%d\n",
+            tid, fetch2Coord[tid].ftqActive[0], fetch2Coord[tid].ftqActive[1]);
 
     // Transition to WaitingCache state when initiating cache access
     setThreadStatus(tid, WaitingCache);
