@@ -1,6 +1,7 @@
 #include "mem/cache/xs_l2/L2MainPipe.hh"
 
 #include <algorithm>
+#include <cstdint>
 
 #include "PipelineResources.hh"
 #include "base/trace.hh"
@@ -31,6 +32,19 @@ L2MainPipe::L2MainPipe(L2CacheSlice* _owner, unsigned depth)
                                                  PipelineResources::GrantBuf;
     taskResourceMap[TaskSource::L2MSHRRelease] = PipelineResources::DataWrite;
     taskResourceMap[TaskSource::L2PF]          = PipelineResources::DirRead;
+}
+
+inline uint64_t
+L2MainPipe::getDirWriteStage() const
+{
+    // -1 is to get the index of scoreboardTasks & scoreboardResources
+    return owner->pipeDataWriteStage - 1;
+}
+
+inline PipelineResources
+L2MainPipe::getPipelineResources(PacketPtr pkt, TaskSource source) const
+{
+    return taskResourceMap.at(source) | getExtraResources(pkt, source);
 }
 
 void
@@ -98,20 +112,44 @@ L2MainPipe::isResourceAvailable(PipelineResources resource) const
                  (PipelineResources::DataRead |
                   PipelineResources::DataWrite)) == 0;
     }
-    // Dir Write happens at s3, TODO: make this as a parameter
     // Dir is SRAM, read and write should not be available at the same time
     if (resource & PipelineResources::DirRead) {
-        avail &= (scoreboardResources[2] &
+        avail &= (scoreboardResources[getDirWriteStage()] &
                  (PipelineResources::DirWrite)) == 0;
     }
     return avail;
 }
 
 bool
+L2MainPipe::setBlockByDir(PacketPtr pkt, TaskSource source) const
+{
+    if (source == TaskSource::L1MSHR) {
+        for (int i = 1; i <= getDirWriteStage(); i++) {
+            bool valid = scoreboardTasks[i].source != TaskSource::NoWhere;
+            bool sameSet = owner->getSetIdx(pkt->getAddr()) == owner->getSetIdx(scoreboardTasks[i].addr);
+            if (valid && sameSet) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool
 L2MainPipe::isTaskAvailable(PacketPtr pkt, TaskSource source) const
 {
-    return (scoreboardTasks[0].source == TaskSource::NoWhere) &&
-           isResourceAvailable(taskResourceMap.at(source) | getExtraResources(pkt, source));
+    PipelineResources resources = getPipelineResources(pkt, source);
+    bool setBlock = setBlockByDir(pkt, source);
+    if (owner->dirReadBypass) {
+        bool sameSet = owner->getSetIdx(pkt->getAddr()) == owner->getSetIdx(scoreboardTasks[getDirWriteStage()].addr);
+        if ((source == TaskSource::L1MSHR) && sameSet) {
+            // here cancel the DirRead resource, to skip the directory read&write check
+            resources &= ~PipelineResources::DirRead;
+        }
+        setBlock = false;
+    }
+    return (scoreboardTasks[0].source == TaskSource::NoWhere) && !setBlock &&
+           isResourceAvailable(resources);
 }
 
 void
@@ -119,7 +157,8 @@ L2MainPipe::buildTask(PacketPtr pkt, TaskSource source)
 {
     scoreboardTasks[0].source = source;
     scoreboardTasks[0].pkt = pkt;
-    scoreboardResources[0] |= taskResourceMap.at(source);
+    scoreboardTasks[0].addr = pkt->getAddr();
+    scoreboardResources[0] |= getPipelineResources(pkt, source);
 }
 
 void

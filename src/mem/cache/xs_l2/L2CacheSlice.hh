@@ -1,6 +1,7 @@
 #ifndef __MEM_CACHE_XS_L2_L2_CACHE_SLICE_HH__
 #define __MEM_CACHE_XS_L2_L2_CACHE_SLICE_HH__
 
+#include <cstdint>
 #include <deque>
 #include <list>
 #include <queue>
@@ -26,7 +27,20 @@ class L2CacheSlice : public CacheWrapper
     L2CacheSlice(const L2CacheSliceParams &p);
 
     void setCacheAccessor(BaseCache* accessor) {
-      cache_accessor = accessor;
+        cache_accessor = accessor;
+    }
+
+    // L2CacheWrapper will call this to provide the implementation for getSetIdx.
+    void setGetSetIdxFunc(std::function<Addr(Addr)> func) {
+        getSetIdx = func;
+    }
+
+    void setPipeDataWriteStage(uint64_t stage) {
+        pipeDataWriteStage = stage;
+    }
+
+    void setDirReadBypass(bool bypass) {
+        dirReadBypass = bypass;
     }
 
   protected:
@@ -57,6 +71,12 @@ class L2CacheSlice : public CacheWrapper
 
     friend class L2MainPipe;
     L2MainPipe mainPipe;
+
+    // This will hold the function to calculate the set index for an address.
+    std::function<Addr(Addr)> getSetIdx;
+
+    uint64_t pipeDataWriteStage = 3;
+    bool dirReadBypass = false;
 
     bool cpuSidePortRecvTimingReq(PacketPtr pkt) override;
     void innerCpuPortRecvReqRetry() override;

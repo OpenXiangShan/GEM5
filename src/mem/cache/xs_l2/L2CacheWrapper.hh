@@ -1,9 +1,11 @@
 #ifndef __MEM_CACHE_XS_L2_L2_CACHE_WRAPPER_HH__
 #define __MEM_CACHE_XS_L2_L2_CACHE_WRAPPER_HH__
 
+#include <cstdint>
 #include <unordered_set>
 #include <vector>
 
+#include "base/types.hh"
 #include "mem/cache/base.hh"
 #include "mem/cache/xs_l2/L2CacheSlice.hh"
 #include "mem/cache/xs_l2/SlicedCacheAccessor.hh"
@@ -76,6 +78,13 @@ class L2CacheWrapper : public ClockedObject
     void addSliceAccessor(L2CacheSlice* slice)
     {
         slice_accessors.push_back(slice);
+        slice->setPipeDataWriteStage(pipe_data_write_stage);
+        slice->setDirReadBypass(dirReadBypass);
+        slice->setGetSetIdxFunc([this](Addr addr) -> Addr {
+            Addr slice_bits = popCount(sliceMask);
+            Addr set_idx = (addr >> (block_bits + slice_bits)) & setMask;
+            return set_idx;
+        });
     }
 
   protected:
@@ -120,8 +129,11 @@ class L2CacheWrapper : public ClockedObject
     friend class SliceCPUSidePort;
     friend class SlicedCacheAccessor;
 
-    const uint32_t sliceMask;
-    const uint32_t block_bits;
+    const Addr sliceMask;
+    const Addr setMask;
+    const Addr block_bits;
+    const uint64_t pipe_data_write_stage;
+    const bool dirReadBypass;
     SlicedCacheAccessor sliced_cache_accessor;
     prefetch::Base *prefetcher;
 

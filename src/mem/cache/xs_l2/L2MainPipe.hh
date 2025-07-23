@@ -1,6 +1,7 @@
 #ifndef __MEM_CACHE_L2_MAIN_PIPE_HH__
 #define __MEM_CACHE_L2_MAIN_PIPE_HH__
 
+#include <cstdint>
 #include <deque>
 #include <unordered_map>
 
@@ -48,6 +49,16 @@ class L2MainPipe
     PipelineResources getExtraResources(PacketPtr pkt, TaskSource source) const;
 
     /**
+     * Set Block mechanism in L2MainPipe.
+     * If some requests are already in the pipeline and have not updated the directory,
+     * then the request at S1 should be blocked if they have the same set address.
+     * @param pkt The packet to check.
+     * @param source The task source.
+     * @return True if should block the packet, false otherwise.
+     */
+    bool setBlockByDir(PacketPtr pkt, TaskSource source) const;
+
+    /**
      * Check if a resource is available in the start stage.
      * @param resource The resource to check.
      * @return True if the resource is available, false otherwise.
@@ -80,12 +91,31 @@ class L2MainPipe
      */
     bool hasWork() const;
 
+    /**
+     * Get the stage of directory write.
+     * @return The stage of directory write.
+     */
+    inline uint64_t getDirWriteStage() const;
+
+    /**
+     * Get the pipeline resources for a task.
+     * @param pkt The packet to get the resources.
+     * @param source The task source.
+     * @return The pipeline resources for the task.
+     */
+    inline PipelineResources getPipelineResources(PacketPtr pkt, TaskSource source) const;
+
   private:
     struct PipelineTask
     {
         TaskSource source;
         PacketPtr pkt;
-        PipelineTask(TaskSource source, PacketPtr pkt) : source(source), pkt(pkt) {}
+        Addr addr;
+        PipelineTask(TaskSource source, PacketPtr pkt) : source(source), pkt(pkt), addr(0) {
+          if (pkt) {
+            addr = pkt->getAddr();
+          }
+        }
     };
 
     L2CacheSlice* owner;

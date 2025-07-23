@@ -58,7 +58,12 @@ class L2CacheWrapper(ClockedObject):
         "Ports to connect to the slices' CPU-side")
 
     num_slices = Param.Unsigned("Number of slices")
+    cache_size = Param.MemorySize("Cache size")
+    cache_assoc = Param.Unsigned("Cache associativity")
     block_bits = Param.Unsigned(6, "Log2 of cache block size in bytes")
+
+    pipe_data_write_stage = Param.Unsigned(3, "the stage of data write in L2MainPipe")
+    dir_read_bypass = Param.Bool(False, "whether to bypass the directory read when set address is the same")
 
     prefetcher = Param.BasePrefetcher(L2CompositeWithWorkerPrefetcher(), "Prefetcher attached to L2CacheWrapper")
     system = Param.System(Parent.any, "System we belong to")

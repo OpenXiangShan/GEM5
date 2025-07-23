@@ -127,6 +127,8 @@ def config_cache(options, system):
         # wrapper, an internal crossbar, and multiple slices.
         system.l2_wrappers = [L2CacheWrapper(clk_domain=system.cpu_clk_domain,
                                              num_slices=num_l2_slices,
+                                             cache_size=options.l2_size,
+                                             cache_assoc=options.l2_assoc,
                                              block_bits=int(math.log2(system.cache_line_size)))
                                              for _ in range(options.num_cpus)]
         for i in range(options.num_cpus):

@@ -14,7 +14,10 @@ L2CacheWrapper::L2CacheWrapper(const L2CacheWrapperParams &p)
       sendPrefetchEvent([this]{ processSendPrefetchEvent(); }, "SendPrefetchEvent"),
       cpu_side_port(p.name + ".cpu_side", *this),
       sliceMask(p.num_slices - 1),
+      setMask((p.cache_size / (1 << p.block_bits) / p.cache_assoc / p.num_slices) - 1),
       block_bits(p.block_bits),
+      pipe_data_write_stage(p.pipe_data_write_stage),
+      dirReadBypass(p.dir_read_bypass),
       sliced_cache_accessor(this),
       prefetcher(p.prefetcher),
       system(p.system)
