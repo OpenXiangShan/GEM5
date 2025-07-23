@@ -49,6 +49,7 @@
 
 #include <vector>
 
+#include "base/logging.hh"
 #include "params/BaseIndexingPolicy.hh"
 #include "sim/sim_object.hh"
 
@@ -137,6 +138,18 @@ class BaseIndexingPolicy : public SimObject
      * @return The tag of the address.
      */
     virtual Addr extractTag(const Addr addr) const;
+
+    /**
+     * Apply a hash function to calculate address set.
+     *
+     * @param addr The address to calculate the set for.
+     * @return The set index for given combination of address and way.
+     */
+    virtual uint32_t extractSet(const Addr addr) const
+    {
+        panic("extractSet() not implemented in %s", name());
+        return 0;
+    }
 
     /**
      * Find all possible entries for insertion and replacement of an address.

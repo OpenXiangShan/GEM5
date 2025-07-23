@@ -93,6 +93,11 @@ class BaseCache(ClockedObject):
     mshrs = Param.Unsigned("Number of MSHRs (max outstanding requests)")
     demand_mshr_reserve = Param.Unsigned(1, "MSHRs reserved for demand access")
     tgts_per_mshr = Param.Unsigned("Max number of accesses per MSHR")
+    # Per-cycle limit for MSHR arbitration (allocations or target merges).
+    # -1 means unlimited (no arbitration limit). Set per cache instance in
+    # python configs, e.g. only enable for DCache.
+    mshr_alloc_per_cycle = Param.Int(-1,
+        "Max number of MSHR allocations/merges allowed per cycle; -1 = unlimited")
     write_buffers = Param.Unsigned(8, "Number of write buffers")
     do_fast_writeline = Param.Bool(True, "Write whole line do not read")
 
@@ -187,4 +192,3 @@ class NoncoherentCache(BaseCache):
     # This is typically a last level cache and any clean
     # writebacks would be unnecessary traffic to the main memory.
     writeback_clean = False
-

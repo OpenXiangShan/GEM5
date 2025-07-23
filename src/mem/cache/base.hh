@@ -46,6 +46,8 @@
 #ifndef __MEM_CACHE_BASE_HH__
 #define __MEM_CACHE_BASE_HH__
 
+#include <sys/types.h>
+
 #include <cassert>
 #include <cstdint>
 #include <queue>
@@ -401,6 +403,20 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
     Cycles lastTagAccessCheckCycle;
 
+    /**
+     * Arbitration state for per-cycle MSHR allocations/merges.
+     * lastMSHRAllocCycle records the last cycle when an allocation/merge
+     * was granted; accessCounter counts grants within the same cycle.
+     */
+    uint64_t lastMSHRAllocCycle;
+    int accessCounter = 0;
+
+    /** Max number of MSHR allocations/merges allowed per cycle.
+     * -1 means unlimited (no arbitration limit). Configured per cache via
+     * the Python SimObject parameter mshr_alloc_per_cycle.
+     */
+    const int mshrAllocPerCycle;
+
     /** Compression method being used. */
     compression::Base* compressor;
 
@@ -556,6 +572,21 @@ class BaseCache : public ClockedObject, public CacheAccessor
      */
     virtual bool access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
                         PacketList &writebacks);
+
+    /**
+     * @brief Checks MSHR arbiter and allocates a slot for the current cycle.
+     *
+     * This function implements the one-miss-per-cycle arbitration logic.
+     * It checks if an MSHR slot has already been used in the current cycle.
+     * If not, it allocates the slot by updating lastMSHRAllocCycle and
+     * returns true. If the slot is already in use, it sets the MSHR
+     * arbitration failure flag on the packet, corrects statistics, and
+     * returns false.
+     *
+     * @param pkt The memory request packet that requires an MSHR.
+     * @return True if arbitration succeeds, false otherwise.
+     */
+    bool checkAndAllocateMSHRCycle(PacketPtr pkt);
 
     /*
      * Handle a timing request that hit in the cache
@@ -1282,6 +1313,17 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
         /** Number of load Tag read fail because of prefetcher. */
         statistics::Scalar loadTagReadFails;
+
+        /**
+         * Number of times MSHR arbitration failed due to the
+         * one-miss-per-cycle limit.
+         */
+        statistics::Scalar MSHRArbFails;
+
+        /** Number of MSHR Alias fails (VA diff) . */
+        statistics::Scalar MSHRAliasFails;
+
+        statistics::Scalar FindHitInWriteBuffer;
 
         /** Number of prefetch req Tag read fail because of load. */
         mutable statistics::Scalar prefetchTagReadFails;

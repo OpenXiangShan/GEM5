@@ -558,13 +558,14 @@ class LSQUnit
 
     void tagReadFailReplaySchedule();
 
-    bool trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, bool &tag_read_fail);
+    bool trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, bool &tag_read_fail,
+                       bool &mshr_used, bool &mshr_alias_fail, bool &hit_in_write_buffer);
 
     bool sbufferSendPacket(PacketPtr data_pkt);
 
-    bool forwardFromStoreBuffer(const DynInstPtr& inst);
+    bool forwardFromStoreBuffer(const DynInstPtr &inst);
 
-    bool forwardFromStoreQueue(const DynInstPtr& inst);
+    bool forwardFromStoreQueue(const DynInstPtr &inst);
 
     /** Debugging function to dump instructions in the LSQ. */
     void dumpInsts() const;

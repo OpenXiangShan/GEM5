@@ -17,6 +17,9 @@ enum LdStReplayType
     BankConflictReplay,
     RARReplay,
     RAWReplay,
+    MshrAliasFailReplay,
+    HitInWriteBufferReplay,
+    MshrArbFailReplay,
     LdStReplayTypeCount
 };
 
@@ -31,6 +34,9 @@ static const char *load_store_replay_event_str[LdStReplayTypeCount] =
     "BankConflictReplay",
     "RARReplay",
     "RAWReplay",
+    "MshrAliasFailReplay",
+    "HitInWriteBufferReplay",
+    "MshrArbFailReplay",
 };
 
 } // namespace o3

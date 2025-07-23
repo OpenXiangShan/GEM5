@@ -192,7 +192,7 @@ SkewedAssociative::deskew(const Addr addr, const uint32_t way) const
 }
 
 uint32_t
-SkewedAssociative::extractSet(const Addr addr, const uint32_t way) const
+SkewedAssociative::getSet(const Addr addr, const uint32_t way) const
 {
     return skew(addr >> setShift, way) & setMask;
 }
@@ -214,7 +214,7 @@ SkewedAssociative::getPossibleEntries(const Addr addr) const
     // Parse all ways
     for (uint32_t way = 0; way < assoc; ++way) {
         // Apply hash to get set, and get way entry in it
-        entries.push_back(sets[extractSet(addr, way)][way]);
+        entries.push_back(sets[getSet(addr, way)][way]);
     }
 
     return entries;

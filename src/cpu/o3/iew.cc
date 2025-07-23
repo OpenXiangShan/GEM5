@@ -1901,6 +1901,8 @@ IEW::tick()
     for (int i = 0;i < dispatchStalls.size();i++) {
         iewStats.dispatchStallReason[dispatchStalls[i]]++;
     }
+    ldstQueue.writebackStoreBuffer();
+
 
     if (exeStatus != Squashing) {
         instQueue.scheduleReadyInsts();
@@ -1922,7 +1924,6 @@ IEW::tick()
     }
 
     // Writeback any stores using any leftover bandwidth.
-    ldstQueue.writebackStoreBuffer();
 
     // Check the committed load/store signals to see if there's a load
     // or store to commit.  Also check if it's being told to execute a

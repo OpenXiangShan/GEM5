@@ -47,6 +47,7 @@
 #include "mem/cache/cache.hh"
 
 #include <cassert>
+#include <cstdio>
 
 #include "base/compiler.hh"
 #include "base/logging.hh"
@@ -404,6 +405,48 @@ Cache::handleTimingReqMiss(PacketPtr pkt, CacheBlk *blk, Tick forward_time,
         // MSHR) this is set to null
         pkt = pf;
     }
+
+    WriteQueueEntry *wb_entry = writeBuffer.findMatch(pkt->getAddr(),
+                                                     pkt->isSecure());
+
+    if (wb_entry != nullptr && level() == 1 && !isReadOnly) {
+        DPRINTF(Cache, "Cache miss for %s, but hit in Write Buffer, triggering replay\n", pkt->print());
+        assert(wb_entry->getNumTargets() == 1);
+        pkt->setHitInWriteBuffer();
+        pkt->req->decAccessDepth();
+        stats.FindHitInWriteBuffer++;
+        return; // don't allocate an MSHR, just replay
+    }
+
+    // When PA is the same, we will check VA index to decide if a alias
+    // happens. If so, we simply send it to replay.
+    else if (mshr && level() == 1 && !isReadOnly) {
+        PacketPtr mshr_pkt = mshr->getTarget()->pkt;
+
+        bool va_mismatch = false;
+
+        if (pkt->req->hasVaddr() && mshr_pkt->req->hasVaddr()) {
+            DPRINTF(Cache,"VA index Set: pkt index %d, MSHR index %d\n",
+                    tags->getIndexingPolicy()->extractSet(pkt->req->getVaddr()),
+                    tags->getIndexingPolicy()->extractSet(mshr_pkt->req->getVaddr()));
+
+            if (tags->getIndexingPolicy()->extractSet(pkt->req->getVaddr()) !=
+                tags->getIndexingPolicy()->extractSet(mshr_pkt->req->getVaddr()) ) {
+                va_mismatch = true;
+            }
+        }
+
+        if (va_mismatch) {
+            DPRINTF(Cache, "MSHR PA Hit but VA Mismatch (aliasing) for %s, triggering replay\n",
+                    pkt->print());
+            pkt->setMshrAliasFailed();
+            stats.MSHRAliasFails++;
+            pkt->req->decAccessDepth();
+            return;
+        }
+    }
+
+
 
     BaseCache::handleTimingReqMiss(pkt, mshr, blk, forward_time, request_time);
 }

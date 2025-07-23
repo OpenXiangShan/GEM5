@@ -360,7 +360,17 @@ class Packet : public Printable
 
         // Signal block present to squash prefetch and cache evict packets
         // through express snoop flag
-        BLOCK_CACHED          = 0x00010000
+        BLOCK_CACHED          = 0x00010000,
+
+        // To check if the MSHR arbiter has failed to allocate an MSHR
+        // for this packet.
+        MSHR_ARB_FAILED       = 0x00020000,
+
+        // Signal that the packet has an aliasing failure.
+        MSHR_ALIAS_FAIL       = 0x00040000,
+
+        // Signal that the packet hit in the write buffer.
+        HIT_IN_WRITE_BUFFER   = 0x00080000
     };
 
     Flags flags;
@@ -779,6 +789,21 @@ class Packet : public Printable
     void setBlockCached()          { flags.set(BLOCK_CACHED); }
     bool isBlockCached() const     { return flags.isSet(BLOCK_CACHED); }
     void clearBlockCached()        { flags.clear(BLOCK_CACHED); }
+
+    //MSHR arbiter failure flag handle
+    void setMshrArbFailed() { flags.set(MSHR_ARB_FAILED); }
+    bool mshrArbFailed() const { return flags.isSet(MSHR_ARB_FAILED); }
+    void clearMshrArbFailed() { flags.clear(MSHR_ARB_FAILED); }
+
+    //MSHR alias failure flag handle
+    void setMshrAliasFailed() { flags.set(MSHR_ALIAS_FAIL); }
+    bool mshrAliasFailed() const { return flags.isSet(MSHR_ALIAS_FAIL); }
+    void clearMshrAliasFailed() { flags.clear(MSHR_ALIAS_FAIL); }
+
+    // Hit in write buffer flag handle
+    void setHitInWriteBuffer() { flags.set(HIT_IN_WRITE_BUFFER); }
+    bool isHitInWriteBuffer() const { return flags.isSet(HIT_IN_WRITE_BUFFER); }
+    void clearHitInWriteBuffer() { flags.clear(HIT_IN_WRITE_BUFFER); }
 
     /**
      * QoS Value getter

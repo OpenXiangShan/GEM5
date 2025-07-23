@@ -44,6 +44,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdio>
 #include <deque>
 #include <list>
 #include <optional>
@@ -51,6 +52,7 @@
 
 #include "base/refcnt.hh"
 #include "base/trace.hh"
+#include "base/types.hh"
 #include "config/the_isa.hh"
 #include "cpu/checker/cpu.hh"
 #include "cpu/exec_context.hh"
@@ -69,7 +71,9 @@
 #include "debug/CommitTrace.hh"
 #include "debug/DecoupleBP.hh"
 #include "debug/HtmCpu.hh"
+#include "debug/LoadPipeline.hh"
 #include "debug/RiscvMisc.hh"
+#include "sim/cur_tick.hh"
 
 namespace gem5
 {
@@ -987,6 +991,10 @@ class DynInst : public ExecContext, public RefCounted
     void setBankConflicyReplay() { setReplay(LdStReplayType::BankConflictReplay); }
     bool needBankConflicyReplay() const { return getReplayType() == LdStReplayType::BankConflictReplay; }
 
+    // MSHR Replay
+    void setMshrArbFailReplay() { setReplay(LdStReplayType::MshrArbFailReplay); }
+    bool needMshrArbFailReplay() const { return getReplayType() == LdStReplayType::MshrArbFailReplay; }
+
     void setRARReplay() { setReplay(LdStReplayType::RARReplay); }
     bool needRARReplay() const { return getReplayType() == LdStReplayType::RARReplay; }
 
@@ -994,6 +1002,11 @@ class DynInst : public ExecContext, public RefCounted
     bool needRAWReplay() const { return getReplayType() == LdStReplayType::RAWReplay; }
 
     void clearNeedReplay() { status.reset(NeedReplay); }
+    void setMshrAliasFailReplay() { setReplay(LdStReplayType::MshrAliasFailReplay); }
+    bool needMshrAliasFailReplay() const { return getReplayType() == LdStReplayType::MshrAliasFailReplay; }
+
+    void setHitInWriteBufferReplay() { setReplay(LdStReplayType::HitInWriteBufferReplay); }
+    bool needHitInWriteBufferReplay() const { return getReplayType() == LdStReplayType::HitInWriteBufferReplay; }
 
     void setFullForward() { status.set(FullForward); }
     bool fullForward() const { return status[FullForward]; }

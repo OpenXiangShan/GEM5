@@ -228,6 +228,15 @@ class BaseTags : public ClockedObject
     }
 
     /**
+     * Get a pointer to the indexing policy object.
+     * @return A const pointer to the BaseIndexingPolicy object.
+     */
+    const BaseIndexingPolicy* getIndexingPolicy() const
+    {
+        return indexingPolicy;
+    }
+
+    /**
      * Limit the allocation for the cache ways.
      * @param ways The maximum number of ways available for replacement.
      */

@@ -91,6 +91,10 @@ class L1_DCache(L1Cache):
 
     demand_mshr_reserve = 6
 
+    # Per-cycle MSHR arbitration for L1 DCache.
+    # -1 means unlimited (disabled); set to 1/2/... to enable.
+    mshr_alloc_per_cycle = 1
+
 class L2Cache(Cache):
     mshrs = 64
     tgts_per_mshr = 20

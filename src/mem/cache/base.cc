@@ -46,14 +46,17 @@
 #include "mem/cache/base.hh"
 
 #include <algorithm>
+#include <cstdio>
 
 #include "base/compiler.hh"
 #include "base/logging.hh"
+#include "base/named.hh"
 #include "base/output.hh"
 #include "base/statistics.hh"
 #include "base/stats/group.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
+#include "cpu/inst_seq.hh"
 #include "debug/ArchDB.hh"
 #include "debug/Cache.hh"
 #include "debug/CacheComp.hh"
@@ -61,6 +64,7 @@
 #include "debug/CacheRepl.hh"
 #include "debug/CacheVerbose.hh"
 #include "debug/HWPrefetch.hh"
+#include "debug/MSHR.hh"
 #include "debug/TagReadFail.hh"
 #include "mem/cache/compressors/base.hh"
 #include "mem/cache/mshr.hh"
@@ -139,6 +143,8 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       sliceNum(p.slice_num),
       freeTagLoadReadPorts(p.tag_load_read_ports),
       lastTagAccessCheckCycle(0),
+      lastMSHRAllocCycle(0),
+      mshrAllocPerCycle(p.mshr_alloc_per_cycle),
       compressor(p.compressor),
       prefetcher(p.prefetcher),
       writeAllocator(p.write_allocator),
@@ -325,6 +331,36 @@ BaseCache::inRange(Addr addr) const
     return false;
 }
 
+bool
+BaseCache::checkAndAllocateMSHRCycle(PacketPtr pkt)
+{
+    // No arbitration limit when set to -1.
+    if (mshrAllocPerCycle < 0)
+        return true;
+
+    uint64_t curCycle = ticksToCycles(curTick());
+
+    // New cycle: reset counter and grant.
+    if (lastMSHRAllocCycle != curCycle) {
+        accessCounter = 1;
+        lastMSHRAllocCycle = curCycle;
+        return true;
+    }
+
+    // Same cycle: allow up to mshrAllocPerCycle grants.
+    if (accessCounter < mshrAllocPerCycle) {
+        accessCounter++;
+        return true;
+    }
+
+    // Exceeded per-cycle limit: fail and account.
+    stats.MSHRArbFails++;
+    pkt->setMshrArbFailed();
+    pkt->req->decAccessDepth();
+    stats.cmdStats(pkt).misses[pkt->req->requestorId()]--;
+    return false;
+}
+
 void
 BaseCache::handleTimingReqHit(PacketPtr pkt, CacheBlk *blk, Tick request_time, bool first_acc_after_pf)
 {
@@ -481,6 +517,11 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                 DPRINTF(Cache, "%s: miss on late pref: %i, pref source: %i, coalescing cpu requests: %i\n", __func__,
                         pkt->missOnLatePf, pkt->pfSource, pkt->coalescingMSHR);
 
+                // MSHR arbiter: per-cycle grant limit is configurable via
+                // mshr_alloc_per_cycle (-1 = unlimited)
+                if (!checkAndAllocateMSHRCycle(pkt)) {
+                    return;
+                }
                 // We use forward_time here because it is the same
                 // considering new targets. We have multiple
                 // requests for the same address here. It
@@ -533,10 +574,16 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                     pkt->req->isCacheMaintenance());
                 blk->clearCoherenceBits(CacheBlk::ReadableBit);
             }
+            // MSHR arbiter: per-cycle grant limit is configurable via
+            // mshr_alloc_per_cycle (-1 = unlimited)
+            if (!checkAndAllocateMSHRCycle(pkt)) {
+                return;
+            }
             // Here we are using forward_time, modelling the latency of
             // a miss (outbound) just as forwardLatency, neglecting the
             // lookupLatency component.
             allocateMissBuffer(pkt, forward_time);
+
         }
     }
 }
@@ -2830,6 +2877,12 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "number of squashed inst block demand hits"),
     ADD_STAT(loadTagReadFails, statistics::units::Count::get(),
              "number of load Tag read fail because of prefetcher"),
+    ADD_STAT(MSHRArbFails,statistics::units::Count::get(),
+             "number of MSHR arbitration fails (one miss per cycle)"),
+    ADD_STAT(MSHRAliasFails, statistics::units::Count::get(),
+             "number of MSHR Alias fails (VA diff)"),
+    ADD_STAT(FindHitInWriteBuffer, statistics::units::Count::get(),
+             "number of hits in write buffer when missing in cache"),
     ADD_STAT(prefetchTagReadFails, statistics::units::Count::get(),
              "number of prefetch req Tag read fail because of load"),
     ADD_STAT(dataExpansions, statistics::units::Count::get(),
@@ -3143,6 +3196,7 @@ BaseCache::CpuSidePort::tryTiming(PacketPtr pkt)
     }
     mustSendRetry = false;
     return true;
+
 }
 
 bool
@@ -3157,7 +3211,23 @@ BaseCache::CpuSidePort::recvTimingReq(PacketPtr pkt)
         assert(success);
         return true;
     } else if (tryTiming(pkt)) {
+        pkt->clearMshrArbFailed();
+        pkt->clearMshrAliasFailed();
+        pkt->clearHitInWriteBuffer();
         cache->recvTimingReq(pkt);
+        if (pkt->mshrArbFailed() || pkt->mshrAliasFailed() ||
+            pkt->isHitInWriteBuffer()) {
+            // If the MSHR arbitration failed, we need to retry later.
+            // We will schedule a retry event to try again.
+            if (sendRetryEvent.scheduled()) {
+                owner.reschedule(sendRetryEvent, cache->nextCycle());
+            } else {
+                owner.schedule(sendRetryEvent, cache->nextCycle());
+            }
+            DPRINTF(Cache, "MSHR arbitration failed for pkt %s, retrying later\n",
+                    pkt->print());
+            return false;
+        }
         return true;
     }
     return false;
