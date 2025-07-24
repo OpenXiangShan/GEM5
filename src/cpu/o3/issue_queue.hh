@@ -127,7 +127,7 @@ class IssueQue : public SimObject
     struct IssueStream
     {
         int size;
-        DynInstPtr insts[8];
+        DynInstPtr insts[16];
         void push(const DynInstPtr& inst);
         DynInstPtr pop();
     };

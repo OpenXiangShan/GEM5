@@ -357,7 +357,7 @@ def setKmhV3IdealParams(args, system):
         cpu.enableDispatchStage = True
         cpu.numDQEntries = [8, 8, 8]
         cpu.dispWidth = [8, 8, 8]
-        cpu.scheduler = KMHV3_MemOpt()
+        cpu.scheduler = UnifyIQ()
 
         cpu.BankConflictCheck = True   # real bank conflict 0.2 score
         # cpu.EnableLdMissReplay = False

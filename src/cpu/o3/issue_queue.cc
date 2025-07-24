@@ -145,7 +145,7 @@ IssueQue::select_policy::operator()(const DynInstPtr& a, const DynInstPtr& b) co
 void
 IssueQue::IssueStream::push(const DynInstPtr& inst)
 {
-    assert(size < 8);
+    assert(size < 16);
     insts[size++] = inst;
 }
 
@@ -192,8 +192,8 @@ IssueQue::IssueQue(const IssueQueParams& params)
 {
     toIssue = inflightIssues.getWire(0);
     toFu = inflightIssues.getWire(-scheduleToExecDelay);
-    if (outports > 8) {
-        panic("%s: outports > 8 is not supported\n", iqname);
+    if (outports > 16) {
+        panic("%s: outports > 16 is not supported\n", iqname);
     }
 
     opNum.resize(enums::Num_OpClass, 0);

@@ -607,4 +607,82 @@ class KMHV3_MemOpt(KMHV3Scheduler):
         SpecWakeupChannel(srcs=__fp_bank, dsts=__fp_bank)
     ]
 
+class UnifyIQ(Scheduler):
+    """
+    Experiment 5: Unified IQ for maximum performance upper bound
+    Target: Test theoretical maximum with unified integer IQ and no constraints
+    """
+    __intIQs = [
+        IssueQue(name='intIQ0', inports=8, size=48, oports=[
+            # 6 ALU ports for maximum integer throughput
+            IssuePort(fu=[IntALU()]),
+            IssuePort(fu=[IntALU()]),
+            IssuePort(fu=[IntALU()]),
+            IssuePort(fu=[IntALU()]),
+            IssuePort(fu=[IntALU()]),
+            IssuePort(fu=[IntALU()]),
+            # 3 BRU ports for branch-heavy workloads
+            IssuePort(fu=[IntBRU()]),
+            IssuePort(fu=[IntBRU()]),
+            IssuePort(fu=[IntBRU()]),
+            # 2 Mult ports for multiply-heavy workloads
+            IssuePort(fu=[IntMult()]),
+            IssuePort(fu=[IntMult()]),
+            # 1 Div/Misc port (div is typically low throughput)
+            IssuePort(fu=[IntDiv(), IntMisc()]),
+        ])
+    ]
+
+    __memIQs = [
+        IssueQue(name='load0', inports=6, size=48, oports=[
+            IssuePort(fu=[ReadPort()]),
+            IssuePort(fu=[ReadPort()]),
+            IssuePort(fu=[ReadPort()]),
+        ]),
+        IssueQue(name='sta0', inports=4, size=32, oports=[
+            IssuePort(fu=[WritePort()]),
+            IssuePort(fu=[WritePort()]),
+        ]),
+        IssueQue(name='std0', inports=4, size=32, oports=[
+            IssuePort(fu=[StoreDataPort()]),
+            IssuePort(fu=[StoreDataPort()]),
+        ])
+    ]
+
+    __fpIQs = [
+        IssueQue(name='fpIQ0', inports=2, size=18, oports=[
+            IssuePort(fu=[FP_ALU(), FP_MISC(), FP_MAC()])
+        ], scheduleToExecDelay=3),
+        IssueQue(name='fpIQ1', inports=2, size=18, oports=[
+            IssuePort(fu=[FP_ALU(), FP_MAC()])
+        ], scheduleToExecDelay=3),
+        IssueQue(name='fpIQ2', inports=2, size=18, oports=[
+            IssuePort(fu=[FP_ALU(), FP_MAC()])
+        ], scheduleToExecDelay=3),
+        IssueQue(name='fpIQ3', inports=2, size=18, oports=[
+            IssuePort(fu=[FP_ALU(), FP_MAC()])
+        ], scheduleToExecDelay=3),
+        IssueQue(name='fpIQ4', inports=2, size=18, oports=[
+            IssuePort(fu=[FP_SLOW()]),
+            IssuePort(fu=[FP_SLOW()])
+        ], scheduleToExecDelay=3),
+        IssueQue(name='vecIQ0', inports=5, size=42, oports=[
+            IssuePort(fu=[SIMD_Unit()]),
+            IssuePort(fu=[SIMD_Unit()]),
+            IssuePort(fu=[SIMD_Unit()]),
+            IssuePort(fu=[SIMD_Unit()]),
+            IssuePort(fu=[SIMD_Unit()])
+        ], scheduleToExecDelay=3),
+    ]
+
+    IQs = __intIQs + __memIQs + __fpIQs
+    __int_bank = [i.name for i in __intIQs]
+    __mem_bank = [i.name for i in __memIQs]
+    __fp_bank = [i.name for i in __fpIQs]
+    specWakeupNetwork = [
+        SpecWakeupChannel(srcs=__int_bank + __mem_bank, dsts=__int_bank + __mem_bank),
+        SpecWakeupChannel(srcs=__fp_bank, dsts=__fp_bank)
+    ]
+
+
 DefaultScheduler = KunminghuScheduler
