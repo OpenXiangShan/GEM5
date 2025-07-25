@@ -42,6 +42,125 @@ namespace gem5
 
 namespace RiscvISA {
 
+
+inline int getPageShiftForLevel(int level){ // 返回每个层级的页大小对应的 log2 值
+    switch (level) {
+        case 0: return 12; // log2(4KB)
+        case 1: return 21; // log2(2MB)
+        case 2: return 30; // log2(1GB)
+        case 3: return 39; // log2(512GB)
+        default: panic("Invalid MPT level: %d", level);
+    }
+}
+
+//MPT Information
+BitUnion32(MPTInfoRaw)
+    Bitfield<31, 12>   reserved;        // 剩余 bits 是保留位
+    Bitfield<11, 6>    mptLogBytes;     // 6位最大63, 支持 log2(64EB) =48, 覆盖所有 napot 层级
+    Bitfield<4>        napot;           // N 位，napot 模式
+    Bitfield<3>        perm_x;
+    Bitfield<2>        perm_w;
+    Bitfield<1>        perm_r;
+    Bitfield<0>        valid;
+EndBitUnion(MPTInfoRaw);
+
+// -----------------------------
+// MPT 权限位定义
+// -----------------------------
+#define MPT_PERM_R  (1 << 0)
+#define MPT_PERM_W  (1 << 1)
+#define MPT_PERM_X  (1 << 2)
+
+
+// -----------------------------
+// Smmp52 相关参数定义
+// -----------------------------
+#define MPT_LEVELS 4                 // Smmp52 使用 4 级页表（L3 → L0）
+#define MPT_MPTE_SIZE 8              // 每个 MPTE 占 8 字节
+#define MPT_NUM_PERMS 16             // 每个 MPTE 控制 16 个子页权限
+#define MPT_PERM_BITS_PER_ENTRY 3    // 每个子页权限占 3 bit
+#define MPT_PERM_MASK 0x7            // 低 3 位掩码
+
+// 各层粒度：单位页大小（注意：不是 MPTE 粒度，是“单页粒度”）
+#define MPT_LEAF_L0_PAGE_SIZE   (1UL << 12) // 4KB
+#define MPT_LEAF_L1_PAGE_SIZE   (1UL << 21) // 2MB
+#define MPT_LEAF_L2_PAGE_SIZE   (1UL << 30) // 1GB
+#define MPT_LEAF_L3_PAGE_SIZE   (1UL << 39) // 512GB
+
+// 每个 MPTE 覆盖范围（单位：字节） = 16 × 单页粒度
+#define MPT_REGION_SIZE_L0   (MPT_NUM_PERMS * MPT_LEAF_L0_PAGE_SIZE) // 64KB
+#define MPT_REGION_SIZE_L1   (MPT_NUM_PERMS * MPT_LEAF_L1_PAGE_SIZE) // 32MB
+#define MPT_REGION_SIZE_L2   (MPT_NUM_PERMS * MPT_LEAF_L2_PAGE_SIZE) // 16GB
+#define MPT_REGION_SIZE_L3   (MPT_NUM_PERMS * MPT_LEAF_L3_PAGE_SIZE) // 8TB     //我们香山没有这样的需求，不过smmpt52的最大支持是这样，将来可拓展。
+
+struct MPTE52
+{
+    uint64_t raw;
+    // 默认构造函数（无效项）
+    MPTE52();
+    // 用原始值构造
+    MPTE52(uint64_t val);
+    // 是否有效
+    bool isValid() const;
+    // 是否为叶子
+    bool isLeaf() const;
+    // N 位（bit 63）
+    bool getN() const;
+    // 下一层页表的物理页号（非叶子时使用）
+    Addr nextLevelPPN() const;
+    // 下一层页表物理地址（按 4KB 页对齐）
+    Addr nextLevelPAddr() const;
+    // 获取第 pi 个页的权限（pi ∈ [0, 15]）
+    uint8_t perms(uint8_t pi) const;
+};
+
+struct MPTCacheEntry
+{
+    // Addr tag;                  // region base（对齐后的地址）   目前这个 tag 用不上，用于查找的 key 是下面 unordered map 中的 Addr，此处 tag 的用处为增加调试信息 + 以后扩展为 set-ass 时可用
+    MPTE52 mpte;               // 缓存的 MPTE  // 这个结构体包含 raw 64-bit 值，N 位在内部就有
+    bool valid = false;
+
+    //让 cache entry 自带粒度信息
+    int level = -1;
+    uint8_t log2RegionSize = 0;   //C++ 的 uint8_t 是8-bit
+};
+struct MPTInfoInTLB
+{
+    MPTInfoRaw raw;
+    MPTInfoInTLB()
+    {
+        raw = 0;
+    }
+
+    bool mptinfoTrust(uint8_t tlbLogBytes) const
+    {
+        return raw.valid && (raw.mptLogBytes >= tlbLogBytes);
+    }
+
+    static MPTInfoInTLB fromEntry(const MPTCacheEntry &entry, Addr rangeOffset)
+    {
+        // 根据 napot 与否判断是否使用 pi（子页索引）
+        uint8_t pi = (rangeOffset >> getPageShiftForLevel(entry.level)) & 0xF;
+        uint8_t perm = entry.mpte.perms(entry.mpte.getN() ? 0 : pi);
+
+        MPTInfoInTLB info;
+        info.raw = 0;
+        info.raw.valid = entry.valid;
+        info.raw.perm_r = (perm & MPT_PERM_R) != 0;
+        info.raw.perm_w = (perm & MPT_PERM_W) != 0;
+        info.raw.perm_x = (perm & MPT_PERM_X) != 0;
+        info.raw.napot = entry.mpte.getN();
+
+        // 不再重复推导，直接使用已有值(在 mpt.cc 中或 tlb.cc 中已近分别考虑过 N 位开启后的等效 size)
+        info.raw.mptLogBytes = entry.log2RegionSize;
+
+        return info;
+    }
+};
+
+
+
+
 BitUnion64(SATP)
     Bitfield<63, 60> mode;
     Bitfield<59, 44> asid;
@@ -166,6 +285,9 @@ BitUnion64(PTE)
     Bitfield<0> v;
 EndBitUnion(PTE)
 
+
+
+
 struct TlbEntry;
 //struct L2TlbEntry;
 typedef Trie<Addr, TlbEntry> TlbEntryTrie;
@@ -210,6 +332,8 @@ struct TlbEntry : public Serializable
     bool fromBackPreReq;
     bool preSign;
 
+    MPTInfoInTLB mptInfo;// JJW
+
     TlbEntry()
         : paddr(0),
           vaddr(0),
@@ -229,7 +353,8 @@ struct TlbEntry : public Serializable
           isPre(false),
           fromForwardPreReq(false),
           fromBackPreReq(false),
-          preSign(false)
+          preSign(false),
+          mptInfo()
     {
     }
 
